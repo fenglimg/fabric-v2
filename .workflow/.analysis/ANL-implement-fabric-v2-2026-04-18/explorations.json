@@ -1,0 +1,87 @@
+{
+  "session_id": "ANL-implement-fabric-v2-2026-04-18",
+  "timestamp": "2026-04-18",
+  "topic": "实现 Fabric v2.0 MCP-First Fortified",
+  "dimensions": ["implementation", "architecture", "governance", "comparison"],
+  "sources": [
+    { "type": "brainstorm", "file": ".workflow/.brainstorm/BS-universal-ai-docs-2026-04-18/synthesis.json" },
+    { "type": "brainstorm", "file": ".workflow/.brainstorm/BS-universal-ai-docs-2026-04-18/ideas/mcp-first-fabric.md" },
+    { "type": "seed", "file": "思路.md" },
+    { "type": "research", "file": ".workflow/.analysis/ANL-implement-fabric-v2-2026-04-18/research.json" }
+  ],
+  "key_findings": [
+    "MCP TS SDK v1.29.0 稳定可用；pin @modelcontextprotocol/sdk@^1 + zod@^3",
+    "6 客户端全支持 MCP stdio — Codex 用 TOML 配置，其余 5 家 JSON（格式分歧需首日设计）",
+    "citty + Bun build --compile 是最佳 CLI 工具链；lefthook 管本仓，husky 推荐给目标项目",
+    "stdio MCP 严禁 stdout 写入（log 必须 stderr），这是静默故障点 — CI 需加 lint",
+    "Roo Code 文档 404，配置路径需运行时探测而非硬编码",
+    "Claude Code CLI vs Desktop 配置路径分裂 — sync-config 需要双写策略",
+    "doc-code drift 检测 2026 无现成工具 — 需自研 git log 启发式（不在 MVP 内）",
+    "fab init 对缺失/不规范项目的处理：Nx 模式（package.json 检测 + 框架 config + README 质量阈值）→ 生成带 TODO 标记的 scaffold，不擅自 AI-guess"
+  ],
+  "code_anchors": [],
+  "call_chains": [],
+  "discussion_points": [
+    "repo 结构：单仓 monorepo（pnpm workspace + server/cli/shared 分包）还是单包？",
+    "Day 2 应拆分为 '5 JSON 客户端模板' + '1 Codex TOML 模板' 两个子任务",
+    "fab init 对 werewolf-minigame 这类缺文档项目：生成带 TODO 的 scaffold + 输出 `fab scan` 诊断报告（新加命令），不依赖现有 README 质量",
+    "Roo Code 未验证路径 — 要不要放入 Kill Switch 3？(目前 KS-3 只覆盖 Codex)",
+    "doc drift 检测明确不在 MVP — v1.1 再做",
+    "Bun build --compile 可选；若用户倾向 Node 生态传统分发，可先 tsup 打包 ESM，延后单二进制"
+  ],
+  "open_questions": [
+    "仓库命名：fabric / fabric-protocol / @fabric-proto/core？是否发 npm？",
+    "目标 Node 版本：20 LTS 还是 22？Bun-only 是否太激进？",
+    "werewolf-minigame 实际是否已存在 / 需要先建？Day 7 端到端测试该如何模拟？",
+    "pre-commit 三件套（sync-meta / human-lint / ledger-append）的最小可行子集 — 是否先做 ledger 验证主链路？",
+    "MVP 之外的维护策略：AGENTS.md 腐烂监测 + 版本升级机制（Fabric 自身更新时如何迁移用户的 .fabric/agents.meta.json）"
+  ],
+  "technical_solutions": [
+    {
+      "round": 1,
+      "solution": "CLI 工具链组合：citty (subcommand router) + Bun build --compile (单二进制) + tsup (ESM 开发打包)",
+      "problem": "fab CLI 需要跨平台分发 + 多 subcommand 维护",
+      "rationale": "citty lazy subcommand + TS-first；Bun --compile 免去 pkg/nexe 维护；tsup 开发热更新",
+      "alternatives": "commander.js (JS-first), clipanion (过度工程), pkg/nexe (2026 不再维护)",
+      "status": "proposed",
+      "evidence_refs": ["research.json#best_practices"],
+      "next_action": "Round 2 与用户确认是否接受 Bun 依赖；不接受则降级 tsx + pkg"
+    },
+    {
+      "round": 1,
+      "solution": "客户端配置写入：ClientConfigWriter 抽象 + JSON/TOML 两实现",
+      "problem": "Codex 用 TOML，其余 5 家 JSON；brainstorm Day 2 未显式处理此分歧",
+      "rationale": "抽象适配器 + @iarna/toml；避免手写 TOML 序列化",
+      "alternatives": "统一 JSON 然后给 Codex 用户手动迁移（用户体验差）",
+      "status": "proposed",
+      "evidence_refs": ["research.json#pitfalls"],
+      "next_action": "纳入 Day 2 子任务"
+    },
+    {
+      "round": 1,
+      "solution": "fab init 文档质量扫描：heuristic chain + `fab scan` 独立诊断命令",
+      "problem": "werewolf-minigame 类项目 README/CONTRIBUTING 可能缺失或低质，brainstorm 描述偏乐观",
+      "rationale": "① package.json deps → 框架检测；② 框架 config 文件存在性；③ README 质量阈值（<200 词 = stub）；④ 生成带 TODO 标记的 scaffold；⑤ 单独 `fab scan` 命令只读诊断，不写文件，给用户清单",
+      "alternatives": "AI 自动生成 README（幻觉风险；不在 MVP） / 直接要求用户先写 README（提高接入门槛）",
+      "status": "proposed",
+      "evidence_refs": ["research.json#codebase_gaps[2]"],
+      "next_action": "Round 2 与用户确认 scan 命令的职责边界"
+    },
+    {
+      "round": 1,
+      "solution": "doc-code drift 检测延后到 v1.1，不入 7 天 MVP",
+      "problem": "用户关注'后续怎么维护' — drift 检测是核心维护能力",
+      "rationale": "2026-04 无现成工具；自研需 git log 启发式 + 规则库，工程量大；MVP 先跑通 MCP 主链路",
+      "alternatives": "MVP 塞进简易版 (仅 mtime 对比) — 但会拖长 7 天时间线",
+      "status": "proposed",
+      "evidence_refs": ["research.json#codebase_gaps[3]"],
+      "next_action": "Round 2 确认；明确 v1.1 milestone 作为维护功能集入口"
+    }
+  ],
+  "external_research": {
+    "findings_count": 11,
+    "best_practices_count": 5,
+    "codebase_gaps_count": 4,
+    "ref": "research.json"
+  }
+}

@@ -1,0 +1,58 @@
+{
+  "topic": "Implement Fabric v2.0 MCP-First Fortified — tooling, scaffolding, doc-quality scanning, drift detection",
+  "mode": "detail-verification",
+  "timestamp": "2026-04-18",
+  "findings": [
+    { "finding": "MCP TypeScript SDK v1.29.0 (2026-03-30) is production-ready; v2 pre-alpha on main not yet published to latest tag", "detail": "Pin `@modelcontextprotocol/sdk@^1`. Requires zod@3 (v4 has breaking changes), tsconfig module:Node16, package.json type:module, deep imports from /server/mcp.js and /server/stdio.js", "confidence": "HIGH", "source_url": "github.com/modelcontextprotocol/typescript-sdk" },
+    { "finding": "All 6 target clients verified MCP-capable in 2026-04 — including Codex", "detail": "Codex is NOT a fallback, it supports stdio MCP. Codex uses TOML config at ~/.codex/config.toml (unique); all others use JSON with mcpServers key", "confidence": "HIGH", "source_url": "modelcontextprotocol.io/clients" },
+    { "finding": "Codex TOML config divergence requires bi-format sync", "detail": "fab sync-config must write TOML for Codex, JSON for 5 others. Use smol-toml or @iarna/toml — not hand-rolled serialization", "confidence": "HIGH", "source_url": "developers.openai.com/codex/mcp" },
+    { "finding": "Stdio is the correct transport — HTTP has attack surface + no latency benefit for local tools", "detail": "MCP spec states clients SHOULD support stdio. Streamable HTTP (new) replaces deprecated SSE. Fabric as local-only tool: stdio exclusively for v1", "confidence": "HIGH", "source_url": "modelcontextprotocol.io/docs/concepts/transports" },
+    { "finding": "Never write to stdout in stdio MCP server — any rogue stdout write corrupts JSON-RPC stream", "detail": "Use process.stderr for all logs. Audit transitive dep logging. This is a silent failure mode", "confidence": "HIGH", "source_url": "modelcontextprotocol.io/quickstart/server" },
+    { "finding": "Roo Code docs unreachable (404) — need runtime config path probe", "detail": "Roo Code (formerly Roo Cline, a Cline fork) MCP config likely in VS Code extension storage: ~/Library/Application Support/Code/User/globalStorage/rooveterinaryinc.roo-cline/settings/cline_mcp_settings.json. Fabric should probe rather than hardcode", "confidence": "MEDIUM", "source_url": "community reports" },
+    { "finding": "Claude Code has TWO config paths — CLI vs Desktop", "detail": "CLI: ~/.claude/settings.json. Desktop: ~/Library/Application Support/Claude/claude_desktop_config.json. Both may need writing depending on user setup", "confidence": "HIGH", "source_url": "modelcontextprotocol.io/clients" },
+    { "finding": "citty (UnJS, v0.2.2 April 2026) is the recommended CLI framework", "detail": "TS-first, lazy subcommands, tiny, actively maintained. Bundle with `bun build --compile` for single binary. Commander.js is JS-first; clipanion is overkill for 4-6 subcommands", "confidence": "HIGH", "source_url": "github.com/unjs/citty" },
+    { "finding": "lefthook for Fabric repo itself; recommend husky in generated pre-commit for target projects", "detail": "Fabric is multi-artifact (CLI + server), lefthook handles parallel hooks. Target projects: husky is familiar (1.5M+ projects, 2kB)", "confidence": "HIGH", "source_url": "lefthook.dev + husky" },
+    { "finding": "Doc-code drift detection is a novel capability — no mainstream tool does it in 2026", "detail": "Closest analog: docstring-coverage (Python). Fabric must define its own heuristic — git log --follow comparing code commit count vs AGENTS.md mtime. Pattern: N code files changed but AGENTS.md untouched in 30 days → warn", "confidence": "MEDIUM" },
+    { "finding": "Projen/Nx pattern for fab init: explicit type inference via package.json + framework config files", "detail": "Industry does NOT do magic auto-detect. Chain: package.json deps → framework config presence (vite/next/cargo/pyproject) → README quality check (<200 words = stub) → generate AGENTS.md with TODO markers rather than AI-guessing", "confidence": "MEDIUM" }
+  ],
+  "best_practices": [
+    { "practice": "Pin @modelcontextprotocol/sdk@^1 and zod@^3", "rationale": "SDK v2 pre-alpha unstable; Zod v4 has breaking .describe()/z.object() changes SDK not ready for" },
+    { "practice": "Use McpServer + StdioServerTransport + registerTool() shape", "rationale": "Current stable API; server.tool() is v2 alias may not work in v1" },
+    { "practice": "tsconfig module:Node16 + package.json type:module", "rationale": "Required for deep imports from SDK; Bundler resolution breaks" },
+    { "practice": "Test with MCP Inspector before client integration", "rationale": "`npx @modelcontextprotocol/inspector node dist/index.js` gives interactive tool testing without real client" },
+    { "practice": "fab init generates TODO-marker scaffolds, never AI-guesses content without opt-in", "rationale": "Nx generator pattern — humans review scaffold before committing; avoids hallucination blast radius" }
+  ],
+  "alternatives": [
+    { "option": "commander.js", "pros": "Mature, huge ecosystem", "cons": "JS-first TS types, no lazy loading, verbose subcommand API", "verdict": "Viable but not optimal" },
+    { "option": "clipanion", "pros": "Strongest typing", "cons": "Yarn-scale complexity, overkill for 4-6 subcommands", "verdict": "Avoid" },
+    { "option": "Streamable HTTP transport", "pros": "Multi-client, remote-capable", "cons": "DNS rebinding attack surface, session mgmt overhead, no benefit for local tool", "verdict": "Avoid for v1; reconsider only if Kill Switch 2 (stdio >2s) triggers" },
+    { "option": "pkg/nexe for single binary", "pros": "Historical industry-standard", "cons": "Largely unmaintained in 2026", "verdict": "Use Bun build --compile instead" }
+  ],
+  "pitfalls": [
+    { "issue": "Transitive deps writing to stdout silently corrupts stdio MCP stream", "mitigation": "Audit all deps for stdout; redirect via process.stderr wrapper; use MCP Inspector to catch during dev", "source": "MCP quickstart" },
+    { "issue": "Codex TOML vs others JSON — bi-format maintenance", "mitigation": "Abstract ClientConfigWriter with JSON/TOML implementations; use @iarna/toml not hand-roll", "source": "openai codex docs" },
+    { "issue": "Zod v4 breaks MCP tool registration", "mitigation": "Lock zod@^3 until SDK declares v4 support", "source": "SDK quickstart pins zod@3" },
+    { "issue": "Roo Code config path unverified — may break Day 2 6-client test", "mitigation": "Runtime probe + fallback to user-supplied path; add to Kill Switch 3 scope", "source": "docs 404" },
+    { "issue": "Claude Code Desktop vs CLI config split — Fabric must write both", "mitigation": "Detect both; offer user confirmation in fab sync-config", "source": "MCP clients page" }
+  ],
+  "codebase_gaps": [
+    { "gap": "No MCP SDK version pinning strategy in brainstorm", "current_approach": "Brainstorm mentions 'stdio MCP' generically", "recommended_approach": "Pin SDK v1.29.x, zod v3.x in package.json with rationale comment" },
+    { "gap": "No explicit plan for Codex TOML divergence in 7-day MVP", "current_approach": "Day 2 says '6 客户端 MCP 配置文件模板' without format distinction", "recommended_approach": "Day 2 split into 2 subtasks: JSON template (5 clients) + TOML template (Codex); write config as first-class Fabric capability" },
+    { "gap": "Doc quality scanning heuristic undefined", "current_approach": "fab init 'scan README/CONTRIBUTING, extract technical sections'", "recommended_approach": "Explicit heuristic chain: parse package.json deps → framework config detection → README quality threshold (200 words, standard sections) → scaffold with TODO markers instead of AI-guess; add `fab scan` as separate read-only diagnosis command" },
+    { "gap": "Doc drift detection not in MVP", "current_approach": "Not mentioned in 7-day plan", "recommended_approach": "Add as v1.1 milestone post-MVP: fab drift-check using git log heuristic; keep out of MVP scope" }
+  ],
+  "sources": [
+    { "title": "MCP TypeScript SDK", "url": "https://github.com/modelcontextprotocol/typescript-sdk", "key_takeaway": "v1.29.0 stable; v2 pre-alpha; use v1.x" },
+    { "title": "MCP Transports Spec", "url": "https://modelcontextprotocol.io/docs/concepts/transports", "key_takeaway": "Stdio primary; HTTP for remote only" },
+    { "title": "MCP Quickstart Server", "url": "https://modelcontextprotocol.io/quickstart/server", "key_takeaway": "McpServer + registerTool shape; never stdout" },
+    { "title": "MCP Clients", "url": "https://modelcontextprotocol.io/clients", "key_takeaway": "6 target clients confirmed including Codex" },
+    { "title": "Codex MCP Docs", "url": "https://developers.openai.com/codex/mcp/", "key_takeaway": "TOML config, ~/.codex/config.toml" },
+    { "title": "citty", "url": "https://github.com/unjs/citty", "key_takeaway": "v0.2.2, lazy subcommands, recommended" },
+    { "title": "Windsurf MCP", "url": "https://docs.windsurf.com/windsurf/cascade/mcp", "key_takeaway": "~/.codeium/windsurf/mcp_config.json" },
+    { "title": "Gemini CLI", "url": "https://github.com/google-gemini/gemini-cli", "key_takeaway": "~/.gemini/settings.json" }
+  ],
+  "_metadata": {
+    "queries_executed": "MCP SDK 2026 + 6-client config research + CLI framework comparison + fab init scanning pattern + drift detection landscape",
+    "results_found": 11
+  }
+}

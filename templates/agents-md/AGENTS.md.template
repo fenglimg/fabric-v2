@@ -1,0 +1,29 @@
+# { projectName } — L0 AGENTS.md
+
+// TODO: describe project purpose.
+
+<!-- TODO: tech stack: detected framework is { frameworkKind }. Verify this manually before replacing TODOs. -->
+
+<!-- fab:index -->
+<!-- /fab:index -->
+
+## Human Documentation References
+
+// TODO: reference README.md sections that are source-of-truth for humans.
+// TODO: reference CONTRIBUTING.md if this project has one.
+
+## L0 AI Constraints
+
+// TODO: list hard constraints, e.g., ban any, require TypeScript strict.
+// TODO: list commands AI may run for validation.
+// TODO: list files or directories AI must not modify without permission.
+
+## @HUMAN
+
+// TODO: human-owned decisions live here. AI must not rewrite locked sentences.
+// TODO: placeholder locked sentence 1.
+// TODO: placeholder locked sentence 2.
+
+## L1 Candidate Notes
+
+// TODO: identify domain folders that may need scoped AGENTS.md files.

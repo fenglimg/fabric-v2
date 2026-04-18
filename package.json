@@ -1,0 +1,16 @@
+{
+  "name": "fabric",
+  "private": true,
+  "version": "0.0.0",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "pnpm -r build",
+    "dev": "pnpm -r dev",
+    "prepare": "lefthook install"
+  },
+  "devDependencies": {
+    "lefthook": "^1.7.18"
+  }
+}

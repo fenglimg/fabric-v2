@@ -1,0 +1,4 @@
+pre-commit:
+  commands:
+    stdio-lint:
+      run: node scripts/lint-stdio.mjs

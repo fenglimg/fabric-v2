@@ -1,0 +1,197 @@
+{
+  "id": "TASK-001",
+  "title": "Day 0-1: Repo Init — pnpm Monorepo + MCP Server Skeleton + stdio-lint",
+  "scope": "packages/server, packages/cli, packages/shared, root config",
+  "action": "Create",
+  "description": "Bootstrap the Fabric v2.0 monorepo from the near-empty pcf directory. Rename conceptual root to 'fabric', initialize pnpm workspace with 3 packages (server, cli, shared), install @modelcontextprotocol/sdk@^1 + zod@^3 + tsup + lefthook, scaffold MCP server with 3 tool skeletons (fab_get_rules, fab_append_intent, fab_update_registry) using McpServer + StdioServerTransport, and configure lefthook to reject console.log in packages/server (stdio lint). All files created from scratch — the only existing file is 思路.md which must not be modified.",
+  "files": [
+    {
+      "path": "package.json",
+      "action": "Create",
+      "target": "root workspace manifest",
+      "change": "pnpm monorepo root with lefthook devDependency and workspace scripts"
+    },
+    {
+      "path": "pnpm-workspace.yaml",
+      "action": "Create",
+      "target": "workspace definition",
+      "change": "declare packages/server, packages/cli, packages/shared as workspace members"
+    },
+    {
+      "path": "packages/server/package.json",
+      "action": "Create",
+      "target": "server package manifest",
+      "change": "@modelcontextprotocol/sdk@^1, zod@^3 deps; type:module; build script via tsup"
+    },
+    {
+      "path": "packages/server/tsconfig.json",
+      "action": "Create",
+      "target": "server TypeScript config",
+      "change": "module:Node16, moduleResolution:Node16, strict:true, type:module compatible"
+    },
+    {
+      "path": "packages/server/src/index.ts",
+      "action": "Create",
+      "target": "MCP server entry point",
+      "change": "McpServer + StdioServerTransport setup; register 3 empty tool skeletons with MANDATORY tool descriptions; all logging to process.stderr only"
+    },
+    {
+      "path": "packages/cli/package.json",
+      "action": "Create",
+      "target": "CLI package manifest",
+      "change": "citty dep; bin field pointing to dist/index.js; type:module"
+    },
+    {
+      "path": "packages/cli/tsconfig.json",
+      "action": "Create",
+      "target": "CLI TypeScript config",
+      "change": "module:Node16, strict:true, same pattern as server"
+    },
+    {
+      "path": "packages/cli/src/index.ts",
+      "action": "Create",
+      "target": "CLI entry point skeleton",
+      "change": "citty defineCommand entry; empty subcommand stubs (init, sync-meta, human-lint, ledger-append, scan)"
+    },
+    {
+      "path": "packages/shared/package.json",
+      "action": "Create",
+      "target": "shared package manifest",
+      "change": "shared types package; no runtime deps; type:module"
+    },
+    {
+      "path": "lefthook.yml",
+      "action": "Create",
+      "target": "lefthook configuration",
+      "change": "pre-commit hook: run stdio-lint script on packages/server/**/*.ts; reject if console.log found"
+    },
+    {
+      "path": "scripts/lint-stdio.mjs",
+      "action": "Create",
+      "target": "stdio lint script",
+      "change": "grep packages/server/src for console.log|console.error|console.warn (only stderr via process.stderr allowed); exit 1 on match"
+    },
+    {
+      "path": "tsconfig.base.json",
+      "action": "Create",
+      "target": "shared TypeScript base config",
+      "change": "Base tsconfig inherited by all packages with common strict settings"
+    }
+  ],
+  "implementation": [
+    "Create root package.json with pnpm workspace config, lefthook devDependency, and pnpm -r build/dev scripts",
+    "Create pnpm-workspace.yaml listing packages/* as workspace members",
+    "Scaffold packages/shared with package.json and empty src/index.ts for shared type exports",
+    "Scaffold packages/server with package.json (@modelcontextprotocol/sdk@^1, zod@^3, tsup), tsconfig.json (module:Node16, type:module), and src/index.ts with McpServer + StdioServerTransport; register fab_get_rules, fab_append_intent, fab_update_registry with MANDATORY-prefixed descriptions; all output to process.stderr",
+    "Scaffold packages/cli with package.json (citty, tsup), tsconfig.json, and src/index.ts with citty defineCommand stubs for 5 subcommands",
+    "Create lefthook.yml with pre-commit stdio-lint hook targeting packages/server/src",
+    "Create scripts/lint-stdio.mjs that greps for console.* in server source and exits 1 on match",
+    "Run pnpm install and verify pnpm -r detects 3 packages; run tsup build for server; verify npx @modelcontextprotocol/inspector lists 3 tools"
+  ],
+  "reference": {
+    "pattern": "McpServer + StdioServerTransport from @modelcontextprotocol/sdk; pnpm workspace monorepo",
+    "files": [
+      "思路.md",
+      ".workflow/.brainstorm/BS-universal-ai-docs-2026-04-18/ideas/mcp-first-fabric.md"
+    ],
+    "examples": "See mcp-first-fabric.md §2 for 5-layer architecture; MCP SDK v1.29 README for McpServer API; lefthook docs for pre-commit hook config"
+  },
+  "convergence": {
+    "criteria": [
+      "pnpm install succeeds with 0 errors; pnpm -r detects exactly 3 packages (server, cli, shared)",
+      "packages/server imports McpServer + StdioServerTransport from @modelcontextprotocol/sdk@^1 without type errors; zod@^3 resolvable; module:Node16 + type:module in tsconfig",
+      "npx @modelcontextprotocol/inspector node packages/server/dist/index.js tools/list returns exactly 3 tools: fab_get_rules, fab_append_intent, fab_update_registry",
+      "Adding console.log to packages/server/src/index.ts triggers lefthook pre-commit rejection with non-zero exit code",
+      "思路.md is unmodified (git diff shows no changes to it)"
+    ]
+  },
+  "rationale": {
+    "chosen_approach": "pnpm monorepo with 3 separate packages for clean separation of concerns; McpServer API (not low-level protocol) for MCP implementation",
+    "alternatives_considered": [
+      "Single package (simpler but couples server and CLI)",
+      "npm workspaces (pnpm preferred per brainstorm decisions)",
+      "HTTP transport instead of stdio (stdio is the locked decision; HTTP only if KS-2 fires)"
+    ],
+    "decision_factors": [
+      "Locked in synthesis.json: pnpm monorepo, @modelcontextprotocol/sdk@^1, zod@^3",
+      "stdio MCP MUST NOT write to stdout — enforcement via lefthook is critical for protocol correctness",
+      "module:Node16 required for ESM/CJS interop with MCP SDK"
+    ],
+    "tradeoffs": "module:Node16 adds verbosity to imports (explicit .js extensions) but is required for MCP SDK compatibility"
+  },
+  "test": {
+    "manual_checks": [
+      "Run pnpm install from repo root — must succeed with 0 errors",
+      "Run pnpm -r build — all 3 packages build without TypeScript errors",
+      "Run npx @modelcontextprotocol/inspector node packages/server/dist/index.js — tools/list must show 3 tools",
+      "Add console.log to packages/server/src/index.ts, run git commit — lefthook must block with clear error",
+      "Remove console.log, run git commit — lefthook must pass"
+    ],
+    "success_metrics": [
+      "0 TypeScript compilation errors across all 3 packages",
+      "3 MCP tools visible in inspector",
+      "lefthook blocks in <1s on console.log detection"
+    ],
+    "unit": [
+      "test_server_tools_registered",
+      "test_stdio_lint_rejects_console_log",
+      "test_stdio_lint_passes_process_stderr"
+    ],
+    "integration": [
+      "test_mcp_inspector_tools_list"
+    ]
+  },
+  "risks": [
+    {
+      "description": "@modelcontextprotocol/sdk@^1.29 API surface may differ from examples in brainstorm docs",
+      "probability": "Low",
+      "impact": "Medium",
+      "mitigation": "Read actual SDK source/README before implementing server; use McpServer.tool() registration API",
+      "fallback": "Pin exact version @1.29.0 if semver range causes issues"
+    },
+    {
+      "description": "module:Node16 import resolution requires explicit .js extensions in TypeScript source",
+      "probability": "High",
+      "impact": "Low",
+      "mitigation": "Configure tsup to handle this; document in tsconfig comment",
+      "fallback": "Use bundler moduleResolution if Node16 causes widespread friction"
+    }
+  ],
+  "code_skeleton": {
+    "interfaces": [
+      {
+        "name": "FabGetRulesInput",
+        "definition": "{ path: string; revision_hash?: string }",
+        "purpose": "Input schema for fab_get_rules MCP tool"
+      },
+      {
+        "name": "FabAppendIntentInput",
+        "definition": "{ entry: { commit_sha?: string; intent: string; affected_paths: string[] } }",
+        "purpose": "Input schema for fab_append_intent MCP tool"
+      },
+      {
+        "name": "FabUpdateRegistryInput",
+        "definition": "{ op: 'add-node' | 'remove-node' | 'update-node'; node_id: string; data?: Record<string, unknown> }",
+        "purpose": "Input schema for fab_update_registry MCP tool"
+      }
+    ],
+    "key_functions": [
+      {
+        "signature": "createFabricServer(): McpServer",
+        "purpose": "Factory function that creates and configures the MCP server with all 3 tools registered",
+        "returns": "McpServer instance ready for transport attachment"
+      },
+      {
+        "signature": "startStdioServer(): Promise<void>",
+        "purpose": "Main entry: creates server, attaches StdioServerTransport, connects",
+        "returns": "Promise<void>"
+      }
+    ],
+    "classes": []
+  },
+  "depends_on": [],
+  "cli_execution_id": "ANL-implement-fabric-v2-2026-04-18-TASK-001",
+  "cli_execution": {
+    "strategy": "new"
+  }
+}

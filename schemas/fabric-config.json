@@ -1,0 +1,70 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://fabric.local/schemas/fabric-config.json",
+  "title": "Fabric configuration",
+  "description": "Configuration for Fabric CLI workspace behavior and MCP client config path overrides.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "Optional JSON Schema URI for editor validation."
+    },
+    "clientPaths": {
+      "type": "object",
+      "description": "Explicit MCP config file paths. These paths override convention-based detection per client.",
+      "additionalProperties": false,
+      "properties": {
+        "claudeCodeCLI": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Path to Claude Code CLI settings.json."
+        },
+        "claudeCodeDesktop": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Path to Claude Desktop claude_desktop_config.json."
+        },
+        "cursor": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Path to Cursor mcp.json."
+        },
+        "windsurf": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Path to Windsurf mcp.json."
+        },
+        "rooCode": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Path to Roo Code mcp.json."
+        },
+        "geminiCLI": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Path to Gemini CLI settings.json."
+        },
+        "codexCLI": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Path to Codex CLI config.toml."
+        }
+      }
+    },
+    "externalFixturePath": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Optional absolute path to an external fixture project used by development smoke tests."
+    },
+    "scanIgnores": {
+      "type": "array",
+      "description": "Additional glob patterns ignored by Fabric scanning commands.",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    }
+  }
+}

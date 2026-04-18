@@ -1,0 +1,161 @@
+{
+  "summary": "Implement Fabric v2.0 MCP-First Fortified from scratch in the pcf greenfield repo: pnpm monorepo (3 packages: server, cli, shared) + MCP stdio server (3 tools: fab_get_rules/fab_append_intent/fab_update_registry) + fab CLI (5 subcommands) + 6-client config generation + pre-commit triple (sync-meta/human-lint/ledger-append) + revision_hash stale detection + 6 bootstrap templates + werewolf-minigame-stub inner fixture + dual-track E2E + roadmap doc. 7-day MVP targeting Claude Code, Cursor, Windsurf, Roo Code, Gemini CLI, Codex CLI.",
+  "approach": "Follow the locked 7-day MVP plan from brainstorm synthesis exactly. TASK-001 (Day 0-1) establishes the monorepo foundation; TASK-002 (6-client config) and TASK-003 (fab CLI) proceed in parallel from that foundation; TASK-004 (pre-commit) builds on TASK-003; TASK-005 (revision_hash) builds on TASK-001 independently; TASK-006 (bootstrap+stub+DevMode) merges TASK-003+TASK-005; TASK-007 (E2E) validates all prior work; TASK-008 (roadmap doc) is independent and can be done any time. All implementation is greenfield — only 思路.md exists and must not be modified.",
+  "task_ids": [
+    "TASK-001",
+    "TASK-002",
+    "TASK-003",
+    "TASK-004",
+    "TASK-005",
+    "TASK-006",
+    "TASK-007",
+    "TASK-008"
+  ],
+  "task_count": 8,
+  "estimated_time": "7 days (40-60 hours total: Day 0-1 repo init, Day 2 6-client config, Day 3 CLI commands, Day 4 pre-commit, Day 5 revision_hash, Day 6 bootstrap+stub, Day 7 E2E)",
+  "recommended_execution": "Codex",
+  "complexity": "High",
+  "design_decisions": [
+    {
+      "decision": "pnpm monorepo with 3 packages (server/cli/shared)",
+      "rationale": "Clean separation of MCP server from CLI tool; locked in synthesis.json",
+      "tradeoff": "Slightly more setup complexity vs single-package but enables independent versioning"
+    },
+    {
+      "decision": "stdio MCP transport (not HTTP) as primary",
+      "rationale": "All 6 target clients support stdio; lowest latency for local use; HTTP only as KS-2 fallback if latency > 2s",
+      "tradeoff": "stdio requires strict stdout discipline (enforced by lefthook); HTTP would be more debuggable"
+    },
+    {
+      "decision": "git pre-commit as sole enforcement layer (not client hooks)",
+      "rationale": "3/6 target clients have hooks, 3 do not; git pre-commit is universal and cross-client; locked in synthesis.json",
+      "tradeoff": "Requires husky/lefthook setup; developers can bypass with --no-verify (documented as unsupported)"
+    },
+    {
+      "decision": "revision_hash cursor on fab_get_rules (not server push)",
+      "rationale": "MCP protocol is request-response only; server push not available in 2026-04 MCP spec; parked in synthesis.json",
+      "tradeoff": "Client must re-call on stale response; 2 round trips vs 1 on cache miss"
+    },
+    {
+      "decision": "fab init generates TODO-marker scaffold, never AI-guesses content",
+      "rationale": "Nx-style scaffolding; human docs are the source of truth; AI must not invent constraints",
+      "tradeoff": "More work for first-time users (must fill in TODOs) but prevents hallucinated constraints"
+    },
+    {
+      "decision": "@iarna/toml for Codex TOML config (not hand-rolled)",
+      "rationale": "Correctness of generated TOML; schema compliance with ~/.codex/config.toml; explicitly required by handoff spec",
+      "tradeoff": "Additional dependency but correctness is non-negotiable"
+    },
+    {
+      "decision": "Dual-track E2E: inner stub + outer real-werewolf-minigame (READ-ONLY)",
+      "rationale": "Inner track is reproducible and safe; outer track validates real-world Cocos Creator scale",
+      "tradeoff": "Outer track requires manual testing against real project; not automatable"
+    },
+    {
+      "decision": "GitHub Copilot explicitly excluded from target clients",
+      "rationale": "Copilot MCP not GA in 2026-04; locked decision in synthesis.json; Copilot users use .github/copilot-instructions.md independently",
+      "tradeoff": "Excludes Copilot users from Fabric v2.0 benefits; addressed in v1.1 roadmap (TASK-008)"
+    }
+  ],
+  "data_flow": {
+    "diagram": "AGENTS.md tree → fab sync-meta → .fabric/agents.meta.json → fab_get_rules (MCP) → AI clients | git staged diff → fab ledger-append → .intent-ledger.jsonl | @HUMAN sections → .fabric/human-lock.json → fab human-lint → pre-commit block",
+    "stages": [
+      {
+        "stage": "authoring",
+        "input": "Human edits AGENTS.md files",
+        "output": "Updated AGENTS.md tree on disk",
+        "component": "Human / text editor",
+        "transformations": ["Direct file edit"]
+      },
+      {
+        "stage": "sync-meta",
+        "input": "AGENTS.md tree on disk",
+        "output": ".fabric/agents.meta.json with updated node hashes + revision; .fabric/human-lock.json for @HUMAN sections",
+        "component": "fab sync-meta (packages/cli)",
+        "transformations": ["sha256 hash per file", "scope_glob mapping", "revision recompute", "@HUMAN section extraction"]
+      },
+      {
+        "stage": "mcp-query",
+        "input": "AI client calls fab_get_rules(path, client_hash?)",
+        "output": "{ revision_hash, stale, rules: { L0, L1, L2, human_locked_nearby } }",
+        "component": "fab_get_rules tool (packages/server)",
+        "transformations": ["path → scope_glob match in agents.meta.json", "load AGENTS.md content", "staleness check against client_hash"]
+      },
+      {
+        "stage": "intent-capture",
+        "input": "git staged diff at pre-commit",
+        "output": "One appended JSON line in .intent-ledger.jsonl",
+        "component": "fab ledger-append (packages/cli)",
+        "transformations": ["git diff --cached → summary", "LedgerEntry construction", "JSONL append"]
+      },
+      {
+        "stage": "human-lint",
+        "input": "Current file content at @HUMAN section lines",
+        "output": "Exit 0 (pass) or Exit 1 with violation report",
+        "component": "fab human-lint (packages/cli)",
+        "transformations": ["line range extraction", "sha256 computation", "hash comparison vs human-lock.json"]
+      },
+      {
+        "stage": "registry-update",
+        "input": "AI calls fab_update_registry(op, node_id, data)",
+        "output": "Updated .fabric/agents.meta.json + new revision_hash returned",
+        "component": "fab_update_registry tool (packages/server)",
+        "transformations": ["op validation via zod", "nodes map mutation", "revision recompute"]
+      }
+    ],
+    "dependencies": [
+      "@modelcontextprotocol/sdk@^1",
+      "zod@^3",
+      "citty",
+      "tsup",
+      "lefthook",
+      "@iarna/toml",
+      "Node.js built-in crypto (sha256)",
+      "Node.js built-in fs (file I/O)",
+      "child_process.spawnSync (git calls)"
+    ]
+  },
+  "_metadata": {
+    "timestamp": "2026-04-18T00:00:00.000Z",
+    "source": "analyze-with-file",
+    "handoff_session": "ANL-implement-fabric-v2-2026-04-18",
+    "plan_type": "feature",
+    "schema_version": "2.0",
+    "planning_mode": "agent-based",
+    "exploration_angles": [],
+    "duration_seconds": 0,
+    "quality_check": {
+      "executed": true,
+      "tool": "internal-review",
+      "recommendation": "PASS",
+      "dimensions": {
+        "completeness": {
+          "passed": true,
+          "notes": "All 7 implementation_scope items mapped to tasks (Day 6-7 split into TASK-006 + TASK-007 as specified); v1.1 roadmap captured in TASK-008"
+        },
+        "task_granularity": {
+          "passed": true,
+          "notes": "Each task maps to 1 day of work (4-12 hours); TASK-007 (E2E) is validation-heavy but scoped appropriately"
+        },
+        "dependencies": {
+          "passed": true,
+          "notes": "No circular deps; TASK-001 is root; TASK-002/003 fork from 001; TASK-004 chains from 003; TASK-005 forks from 001; TASK-006 merges 003+005; TASK-007 chains from 006; TASK-008 independent"
+        },
+        "convergence_criteria": {
+          "passed": true,
+          "notes": "All criteria are quantified and testable; examples: '3 tools visible in inspector', '<300ms pre-commit', '>=60% fab_get_rules call rate', '<10s fab scan on real project'"
+        },
+        "implementation_steps": {
+          "passed": true,
+          "notes": "All tasks have 6-8 implementation steps; TASK-007 has 6 steps (minimum 2 required)"
+        },
+        "constraint_compliance": {
+          "passed": true,
+          "notes": "All constraints from handoff spec honored: never write to stdout in server, @iarna/toml for Codex, READ-ONLY real project, <300ms pre-commit, 7-day MVP timebox, v1.1 deferred"
+        }
+      },
+      "issues": [],
+      "fixes_applied": []
+    }
+  }
+}

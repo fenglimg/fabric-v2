@@ -1,0 +1,35 @@
+{
+  "_metadata": {
+    "exploration_type": "brainstorm-codebase",
+    "timestamp": "2026-04-18",
+    "note": "pcf 仅含 思路.md 与本会话目录；此次 brainstorm 是'协议/范式设计'性质，没有具体代码仓库可供探索。本文件主要记录外部对标物与用户提到的目标接入项目。"
+  },
+  "relevant_files": [
+    { "path": "思路.md", "relevance": "high", "rationale": "种子文档：AGENTS.md 双层架构 + Claude Code hook 触发 agents-md skill 的原始构想" }
+  ],
+  "existing_patterns": [
+    "AGENTS.md 开放标准 (60k+ OSS 采纳; Copilot/Cursor/Windsurf/Codex/Gemini CLI 兼容)",
+    "Claude Code PostToolUse + Stop hook 驱动 skill（思路.md 中的模式）",
+    "Cursor 的 .cursorrules（静态全局规则）及 .cursor/rules/*.mdc（可条件触发，带 globs/alwaysApply）",
+    "Windsurf 的 .windsurfrules + memories",
+    "GitHub Copilot 的 .github/copilot-instructions.md",
+    "Codex/Gemini CLI 原生支持 AGENTS.md"
+  ],
+  "architecture_constraints": [
+    "目标项目 werewolf-minigame 并未在 pcf 目录下（路径校验失败），故视作'典型小游戏前端项目'占位；接入路径需对任意形态项目普适",
+    "多数 AI 客户端仅支持静态规则文件，不具备 Claude Code 级的 hook 能力",
+    "AGENTS.md 规定不超过 4 层、单文件 ≤500 行（理想 ≤200），实质限制了'巨型索引'方案"
+  ],
+  "integration_points": [
+    "各客户端的原生规则文件位置（.cursor/, .windsurf/, .github/, AGENTS.md）",
+    "Git pre-commit/CI 作为跨客户端通用的自动化底座",
+    "MCP server 作为 Claude Code/Cursor/Windsurf 等支持 MCP 的客户端共享的动态接口",
+    "LSP/文件监听作为编辑器侧的注入通道"
+  ],
+  "inspiration_sources": [
+    "单一信息源 + 编译产物（类比 SaaS 的 GraphQL SDL → 多端 SDK 生成）",
+    "事件溯源（Event Sourcing）作为跨端经验沉淀",
+    "ADR (Architecture Decision Records) 的追加-only 模型",
+    "CODEOWNERS / PR 模板等'人类既有协议'的改造而非推翻"
+  ]
+}

@@ -1,0 +1,148 @@
+{
+  "id": "TASK-005",
+  "title": "Day 5: revision_hash Cursor + Stale Response Protocol",
+  "scope": "packages/server/src/tools/",
+  "action": "Implement",
+  "description": "Extend the fab_get_rules MCP tool with the revision_hash cursor mechanism to solve multi-client phantom cache (state tear). The tool must now: (1) read .fabric/agents.meta.json.revision and return it as revision_hash in every response; (2) accept an optional client_hash parameter; (3) if client_hash is provided and does not match current revision, return stale:true; if matches or not provided, return stale:false. This enables clients to detect when their cached rules are outdated. Manual two-terminal test verifies the mechanism works end-to-end.",
+  "files": [
+    {
+      "path": "packages/server/src/tools/get-rules.ts",
+      "action": "Create",
+      "target": "fab_get_rules tool implementation",
+      "change": "Full implementation: read .fabric/agents.meta.json; load L0 + matching L1/L2 AGENTS.md content for requested path; return { revision_hash, stale, rules: { L0, L1, L2, human_locked_nearby } }; accept path and optional client_hash params"
+    },
+    {
+      "path": "packages/server/src/tools/append-intent.ts",
+      "action": "Create",
+      "target": "fab_append_intent tool implementation",
+      "change": "Delegate to .intent-ledger.jsonl append logic (same as CLI ledger-append but callable via MCP); accept entry: { intent, affected_paths }; auto-set timestamp; return success confirmation"
+    },
+    {
+      "path": "packages/server/src/tools/update-registry.ts",
+      "action": "Create",
+      "target": "fab_update_registry tool implementation",
+      "change": "Handle add-node / remove-node / update-node ops on .fabric/agents.meta.json; validate op schema with zod; update file and recompute revision hash; return updated revision_hash"
+    },
+    {
+      "path": "packages/server/src/index.ts",
+      "action": "Implement",
+      "target": "Update server entry to use actual tool implementations",
+      "change": "Replace empty tool stubs with imports from tools/get-rules, tools/append-intent, tools/update-registry; maintain McpServer + StdioServerTransport structure"
+    },
+    {
+      "path": "packages/server/src/meta-reader.ts",
+      "action": "Create",
+      "target": "agents.meta.json reader module",
+      "change": "readAgentsMeta(projectRoot): AgentsMeta; getRevision(projectRoot): string; resolve project root from MCP server working directory"
+    },
+    {
+      "path": "docs/day5-stale-test.md",
+      "action": "Create",
+      "target": "Manual two-terminal stale test procedure",
+      "change": "Step-by-step: Terminal A: start Fabric server; Terminal B: call fab_get_rules to get revision_hash; Terminal A: modify L1 AGENTS.md + run fab sync-meta; Terminal B: call fab_get_rules with old hash — must receive stale:true"
+    }
+  ],
+  "implementation": [
+    "Create packages/server/src/meta-reader.ts: readAgentsMeta reads and parses .fabric/agents.meta.json from project root; getRevision returns agents.meta.json.revision; resolves project root from process.cwd() or MCP server startup arg",
+    "Implement tools/get-rules.ts: define zod schema for { path: string, client_hash?: string }; load L0 AGENTS.md content; resolve matching L1/L2 nodes from agents.meta.json by matching scope_glob against requested path; load their content; check client_hash against current revision — set stale:true if mismatch; return full response object matching §4.3 TypeScript interface from mcp-first-fabric.md",
+    "Implement tools/append-intent.ts: define zod schema for entry input; open .intent-ledger.jsonl in append mode; write JSON line; return { success: true, timestamp }",
+    "Implement tools/update-registry.ts: define zod schema for op input (add-node | remove-node | update-node); read current agents.meta.json; apply operation to nodes map; recompute revision hash (sha256 of all node hashes); write updated file; return { revision_hash: newRevision }",
+    "Update packages/server/src/index.ts to import actual tool implementations from tools/ directory; replace skeleton handlers; verify all output goes to process.stderr only",
+    "Write docs/day5-stale-test.md with exact two-terminal test procedure; include expected response bodies at each step",
+    "Run manual stale test per the doc; record actual vs expected response"
+  ],
+  "reference": {
+    "pattern": "MCP tool implementation with zod validation; revision_hash cursor pattern for cache invalidation",
+    "files": [
+      ".workflow/.brainstorm/BS-universal-ai-docs-2026-04-18/ideas/mcp-first-fabric.md",
+      "packages/server/src/index.ts"
+    ],
+    "examples": "mcp-first-fabric.md §4.3 for exact response interface; §3 for revision_hash rationale (Phantom cache risk); McpServer.tool() registration API for zod-validated inputs"
+  },
+  "convergence": {
+    "criteria": [
+      "fab_get_rules returns revision_hash field in every response (non-null, sha256: prefixed string from agents.meta.json.revision)",
+      "fab_get_rules with no client_hash returns stale:false",
+      "fab_get_rules with client_hash matching current revision returns stale:false; with non-matching client_hash returns stale:true",
+      "Two-terminal manual test: Terminal A runs fab sync-meta after modifying L1 AGENTS.md; Terminal B's subsequent fab_get_rules with old hash receives stale:true in response",
+      "fab_update_registry add-node operation adds node to agents.meta.json and returns new revision_hash; subsequent fab_get_rules reflects the new node"
+    ]
+  },
+  "rationale": {
+    "chosen_approach": "Read-only cursor mechanism (client sends hash, server compares) — no server-push needed; consistent with MCP request-response model",
+    "alternatives_considered": [
+      "Server-push/subscription (not supported by MCP protocol spec as of 2026-04)",
+      "Polling endpoint separate from fab_get_rules (unnecessary complexity)",
+      "File watcher in server (complex, not needed for MVP)"
+    ],
+    "decision_factors": [
+      "MCP protocol is request-response only — no server-push (locked in synthesis.json parked_ideas)",
+      "revision_hash is already computed by fab sync-meta, so server just reads it",
+      "Single hash covers entire AGENTS.md tree; clients don't need per-file hashes for cache invalidation"
+    ],
+    "tradeoffs": "Client must re-call fab_get_rules on stale response to get fresh content (two round trips on stale); acceptable for local stdio MCP where latency is negligible"
+  },
+  "test": {
+    "manual_checks": [
+      "Call fab_get_rules without client_hash — response must contain revision_hash and stale:false",
+      "Call fab_get_rules with client_hash matching current revision — stale:false",
+      "Call fab_get_rules with client_hash set to 'sha256:invalid' — stale:true",
+      "Modify any AGENTS.md file; run fab sync-meta; call fab_get_rules with pre-modification hash — stale:true",
+      "Call fab_update_registry with add-node op; call fab_get_rules — new node appears in rules.L1 or L2"
+    ],
+    "success_metrics": [
+      "revision_hash present in 100% of fab_get_rules responses",
+      "stale:true returned within 1 tool call after any AGENTS.md modification + sync-meta",
+      "0 stdout writes from server process (all logging to stderr)"
+    ],
+    "unit": [
+      "test_get_rules_returns_revision_hash",
+      "test_get_rules_stale_true_on_hash_mismatch",
+      "test_get_rules_stale_false_on_hash_match",
+      "test_update_registry_add_node",
+      "test_update_registry_recomputes_revision",
+      "test_meta_reader_resolves_project_root"
+    ],
+    "integration": [
+      "test_two_terminal_stale_detection",
+      "test_append_intent_writes_to_ledger"
+    ]
+  },
+  "risks": [
+    {
+      "description": "MCP server needs to know project root to read .fabric/agents.meta.json; path resolution when server is started from different directory",
+      "probability": "Medium",
+      "impact": "Medium",
+      "mitigation": "Accept --project-root CLI arg in server startup; fallback to process.cwd(); document in README",
+      "fallback": "Read from environment variable FABRIC_PROJECT_ROOT as alternative to arg"
+    }
+  ],
+  "code_skeleton": {
+    "interfaces": [
+      {
+        "name": "GetRulesResponse",
+        "definition": "{ revision_hash: string; stale: boolean; rules: { L0: string; L1: Array<{path: string; content: string}>; L2: Array<{path: string; content: string}>; human_locked_nearby: Array<{file: string; excerpt: string}> } }",
+        "purpose": "Exact response shape for fab_get_rules per mcp-first-fabric.md §4.3"
+      }
+    ],
+    "key_functions": [
+      {
+        "signature": "handleGetRules(input: { path: string; client_hash?: string }, projectRoot: string): Promise<GetRulesResponse>",
+        "purpose": "Core logic for fab_get_rules: load content, check staleness, return response",
+        "returns": "Promise<GetRulesResponse>"
+      },
+      {
+        "signature": "resolveRulesForPath(path: string, meta: AgentsMeta, projectRoot: string): Promise<RulesBundle>",
+        "purpose": "Match path against scope_globs in meta.nodes; load matched AGENTS.md content",
+        "returns": "Promise<RulesBundle>"
+      }
+    ],
+    "classes": []
+  },
+  "depends_on": ["TASK-001"],
+  "cli_execution_id": "ANL-implement-fabric-v2-2026-04-18-TASK-005",
+  "cli_execution": {
+    "strategy": "fork",
+    "resume_from": "ANL-implement-fabric-v2-2026-04-18-TASK-001"
+  }
+}
