@@ -1,3 +1,4 @@
+import { realpathSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -20,7 +21,7 @@ export async function run(): Promise<void> {
 
 const entrypoint = process.argv[1];
 const currentFilePath = fileURLToPath(import.meta.url);
-const isMainModule = entrypoint !== undefined && resolve(entrypoint) === currentFilePath;
+const isMainModule = entrypoint !== undefined && realpathSync(resolve(entrypoint)) === currentFilePath;
 
 if (isMainModule) {
   void run();
