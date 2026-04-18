@@ -1,0 +1,12 @@
+{
+  "$schema": "https://fabric.local/schemas/human-lock.json",
+  "locked": [],
+  "examples": [
+    {
+      "file": "AGENTS.md",
+      "start_line": 18,
+      "end_line": 22,
+      "hash": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+    }
+  ]
+}
