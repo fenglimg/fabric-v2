@@ -1,7 +1,6 @@
 {
-  "name": "@fabric/cli",
-  "private": true,
-  "version": "0.0.0",
+  "name": "@fenglimg/fabric-cli",
+  "version": "0.1.0",
   "type": "module",
   "bin": {
     "fab": "./dist/index.js"
@@ -16,6 +15,7 @@
     "dev": "tsup src/index.ts --format esm --dts --watch"
   },
   "dependencies": {
+    "@fenglimg/fabric-server": "^0.1.0",
     "@iarna/toml": "^2.2.5",
     "citty": "^0.2.2"
   },

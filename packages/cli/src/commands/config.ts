@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { defineCommand } from "citty";
 
@@ -65,8 +66,9 @@ async function loadFabricConfig(workspaceRoot: string): Promise<FabricConfig> {
   return parsed as FabricConfig;
 }
 
-function resolveServerPath(workspaceRoot: string): string {
-  return resolve(process.env.FAB_SERVER_PATH ?? resolve(workspaceRoot, "packages", "server", "dist", "index.js"));
+function resolveServerPath(): string {
+  if (process.env.FAB_SERVER_PATH) return resolve(process.env.FAB_SERVER_PATH);
+  return fileURLToPath(import.meta.resolve("@fenglimg/fabric-server"));
 }
 
 function writeStderr(message: string): void {
@@ -99,7 +101,7 @@ export const configCmd = defineCommand({
         const workspaceRoot = process.cwd();
         const fabricConfig = await loadFabricConfig(workspaceRoot);
         const selectedClients = parseClientFilter(args.clients);
-        const serverPath = resolveServerPath(workspaceRoot);
+        const serverPath = resolveServerPath();
         const writers = resolveClients(workspaceRoot, fabricConfig).filter((writer) =>
           selectedClients === null ? true : selectedClients.has(writer.clientKind),
         );
