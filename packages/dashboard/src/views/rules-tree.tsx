@@ -1,4 +1,5 @@
 import type { AgentsMeta, AgentsMetaNode, FabricEvent } from "@fenglimg/fabric-shared";
+import { withDerivedAgentsMetaNodeDefaults } from "@fenglimg/fabric-shared";
 import { useEffect, useMemo, useState } from "preact/hooks";
 
 import { getHumanLock, getRules, type HumanLockStatus } from "../api/client";
@@ -133,26 +134,26 @@ export function buildRulesTree(meta: AgentsMeta, lockFiles: Set<string>, filter:
     groups.set(group, [...(groups.get(group) ?? []), node]);
   }
 
-  const root: AgentsMetaNode = {
+  const root: AgentsMetaNode = withDerivedAgentsMetaNodeDefaults({
     file: `revision:${meta.revision}`,
     scope_glob: "**/*",
     deps: [],
     priority: "high",
     hash: meta.revision,
-  };
+  });
 
   return [{
     node: root,
     level: 0,
     defaultExpanded: true,
     children: Array.from(groups.entries()).map(([group, nodes]) => ({
-      node: {
+      node: withDerivedAgentsMetaNodeDefaults({
         file: group,
         scope_glob: `${group}/**/*`,
         deps: [],
         priority: "medium",
         hash: `${nodes.length} nodes`,
-      },
+      }),
       level: 1,
       defaultExpanded: true,
       children: nodes.map((node) => ({
