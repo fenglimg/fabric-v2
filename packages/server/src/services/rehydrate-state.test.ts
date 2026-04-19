@@ -137,7 +137,7 @@ describe("rehydrateAgentsMetaAt", () => {
       diff_stat: "1 file changed",
     })}\n`);
 
-    await expect(rehydrateAgentsMetaAt(projectRoot, { timestamp: 50 })).rejects.toMatchObject<Partial<HistoryReplayError>>({
+    await expect(rehydrateAgentsMetaAt(projectRoot, { timestamp: 50 })).rejects.toMatchObject({
       code: "HISTORY_STATE_NOT_FOUND",
       status: 404,
     });

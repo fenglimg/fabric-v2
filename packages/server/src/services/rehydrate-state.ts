@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
-import { agentsMetaSchema, type AgentsMeta, type AgentsMetaNode } from "@fabric/shared";
+import { agentsMetaSchema, type AgentsMeta, type AgentsMetaNode } from "@fenglimg/fabric-shared";
 
 import { readLedger, type StoredLedgerEntry } from "./read-ledger.js";
 

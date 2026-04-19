@@ -1,4 +1,4 @@
-import type { AiLedgerEntry } from "@fabric/shared";
+import type { AiLedgerEntry } from "@fenglimg/fabric-shared";
 
 import { appendLedgerEntry, type StoredLedgerEntry } from "./read-ledger.js";
 

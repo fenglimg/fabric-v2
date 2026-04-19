@@ -1,4 +1,4 @@
-import { historyStateQuerySchema } from "@fabric/shared";
+import { historyStateQuerySchema } from "@fenglimg/fabric-shared";
 
 import { rehydrateAgentsMetaAt } from "../services/rehydrate-state.js";
 import { type FabricHttpApp, sendUnknownError, sendValidationError } from "./_error.js";

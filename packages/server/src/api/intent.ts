@@ -1,4 +1,4 @@
-import { annotateIntentRequestSchema } from "@fabric/shared";
+import { annotateIntentRequestSchema } from "@fenglimg/fabric-shared";
 
 import { readAgentsMeta } from "../meta-reader.js";
 import { annotateIntent } from "../services/annotate-intent.js";

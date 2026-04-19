@@ -3,7 +3,7 @@ import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { isAbsolute, join, posix, resolve } from "node:path";
 
-import { detectFramework, forensicReportSchema, type ForensicReport, type FrameworkInfo } from "@fabric/shared";
+import { detectFramework, forensicReportSchema, type ForensicReport, type FrameworkInfo } from "@fenglimg/fabric-shared";
 
 import { readAgentsMeta } from "../meta-reader.js";
 import { readHumanLock } from "./read-human-lock.js";

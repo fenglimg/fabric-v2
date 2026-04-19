@@ -1,4 +1,4 @@
-import type { HumanLedgerEntry } from "@fabric/shared";
+import type { HumanLedgerEntry } from "@fenglimg/fabric-shared";
 
 import { assertPathWithinProjectRoot, atomicWriteText } from "./_shared.js";
 import { appendLedgerEntry, type StoredLedgerEntry } from "./read-ledger.js";

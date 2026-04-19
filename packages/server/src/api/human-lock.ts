@@ -1,4 +1,4 @@
-import { humanLockApproveRequestSchema, humanLockFileParamsSchema } from "@fabric/shared";
+import { humanLockApproveRequestSchema, humanLockFileParamsSchema } from "@fenglimg/fabric-shared";
 
 import { readAgentsMeta } from "../meta-reader.js";
 import { approveHumanLock } from "../services/approve-human-lock.js";

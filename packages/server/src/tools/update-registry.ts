@@ -1,4 +1,4 @@
-import { agentsMetaNodeSchema } from "@fabric/shared";
+import { agentsMetaNodeSchema } from "@fenglimg/fabric-shared";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 

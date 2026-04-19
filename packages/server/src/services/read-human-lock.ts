@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 
-import { humanLockEntrySchema, type HumanLockEntry } from "@fabric/shared";
+import { humanLockEntrySchema, type HumanLockEntry } from "@fenglimg/fabric-shared";
 
 import { FABRIC_DIR, HUMAN_LOCK_FILE, assertPathWithinProjectRoot, isNodeError, sha256 } from "./_shared.js";
 

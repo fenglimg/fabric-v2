@@ -30,7 +30,7 @@ export function registerDashboardStatic(
       res.status(404).json({
         error: {
           code: "DASHBOARD_DIST_MISSING",
-          message: `Fabric dashboard dist was not found at ${staticDir}. Run pnpm --filter @fabric/dashboard build.`,
+          message: `Fabric dashboard dist was not found at ${staticDir}. Run pnpm --filter @fenglimg/fabric-dashboard build.`,
         },
       });
     });

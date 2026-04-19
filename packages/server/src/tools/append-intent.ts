@@ -1,6 +1,6 @@
 import { appendFile } from "node:fs/promises";
 
-import { aiLedgerEntrySchema, type AiLedgerEntry } from "@fabric/shared";
+import { aiLedgerEntrySchema, type AiLedgerEntry } from "@fenglimg/fabric-shared";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import { resolveProjectRoot } from "../meta-reader.js";

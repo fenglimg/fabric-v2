@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { appendFile, readFile } from "node:fs/promises";
 import { join } from "node:path";
 
-import { ledgerEntrySchema, type LedgerEntry } from "@fabric/shared";
+import { ledgerEntrySchema, type LedgerEntry } from "@fenglimg/fabric-shared";
 
 import { LEDGER_FILE, isNodeError, sha256 } from "./_shared.js";
 

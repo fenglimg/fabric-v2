@@ -1,5 +1,5 @@
-import type { AgentsMeta } from "@fabric/shared";
-import { agentsMetaNodeSchema } from "@fabric/shared";
+import type { AgentsMeta } from "@fenglimg/fabric-shared";
+import { agentsMetaNodeSchema } from "@fenglimg/fabric-shared";
 import { join } from "node:path";
 
 import { readAgentsMeta } from "../meta-reader.js";

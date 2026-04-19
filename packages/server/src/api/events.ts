@@ -11,7 +11,7 @@ import {
   ledgerEntrySchema,
   type FabricEvent,
   type HumanLockEntry,
-} from "@fabric/shared";
+} from "@fenglimg/fabric-shared";
 import chokidar, { type FSWatcher } from "chokidar";
 
 const AGENTS_META_PATH = ".fabric/agents.meta.json";
@@ -131,7 +131,7 @@ async function ensureWatcher(state: EventsState, projectRoot: string): Promise<v
   state.ledgerRemainder = "";
   state.humanLockSnapshot = await readHumanLockSnapshot(projectRoot);
 
-  const watcher = chokidar.watch(WATCHED_PATHS, {
+  const watcher = chokidar.watch([...WATCHED_PATHS], {
     cwd: projectRoot,
     ignoreInitial: true,
     awaitWriteFinish: {
@@ -418,7 +418,7 @@ async function readActualHumanLockHashes(
     locked.map((entry) => {
       const content = contentByFile.get(entry.file);
 
-      return [getHumanLockKey(entry), content === null ? "missing" : hashLockedContent(content, entry)] as const;
+      return [getHumanLockKey(entry), content == null ? "missing" : hashLockedContent(content, entry)] as const;
     }),
   );
 }

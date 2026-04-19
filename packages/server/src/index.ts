@@ -9,6 +9,8 @@ import { registerAppendIntent } from "./tools/append-intent.js";
 import { registerGetRules } from "./tools/get-rules.js";
 import { registerUpdateRegistry } from "./tools/update-registry.js";
 
+declare const __SERVER_VERSION__: string;
+
 function writeStderr(message: string): void {
   process.stderr.write(`${message}\n`);
 }
@@ -24,7 +26,7 @@ function formatError(error: unknown): string {
 export function createFabricServer(): McpServer {
   const server = new McpServer({
     name: "fabric-context-server",
-    version: "0.0.0",
+    version: __SERVER_VERSION__,
   });
 
   registerGetRules(server);

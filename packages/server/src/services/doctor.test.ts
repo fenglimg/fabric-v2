@@ -5,7 +5,7 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { runDoctorReport } from "./doctor.ts";
+import { runDoctorReport } from "./doctor.js";
 
 const tempRoots: string[] = [];
 

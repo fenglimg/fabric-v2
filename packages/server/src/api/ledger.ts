@@ -1,4 +1,4 @@
-import { ledgerQuerySchema } from "@fabric/shared";
+import { ledgerQuerySchema } from "@fenglimg/fabric-shared";
 
 import { readAgentsMeta } from "../meta-reader.js";
 import { readLedger } from "../services/read-ledger.js";

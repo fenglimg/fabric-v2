@@ -1,10 +1,10 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { agentsMetaSchema, type AgentsMeta } from "@fabric/shared";
+import { agentsMetaSchema, type AgentsMeta } from "@fenglimg/fabric-shared";
 
-export type { AgentsMeta } from "@fabric/shared";
-export { agentsMetaNodeSchema, agentsMetaSchema } from "@fabric/shared";
+export type { AgentsMeta } from "@fenglimg/fabric-shared";
+export { agentsMetaNodeSchema, agentsMetaSchema } from "@fenglimg/fabric-shared";
 
 export class AgentsMetaFileMissingError extends Error {
   readonly code = "FABRIC_META_MISSING";
