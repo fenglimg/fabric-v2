@@ -1,0 +1,107 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`cli i18n > renders en command descriptions and output snapshots 1`] = `
+{
+  "init": {
+    "description": "Initialize Fabric in the target project.",
+    "errors": [],
+    "stderr": [
+      "Created <fixture-1>/.claude/skills/agents-md-init/SKILL.md",
+      "Created <fixture-1>/.claude/hooks/agents-md-init-reminder.cjs",
+      "Created <fixture-1>/.claude/settings.json with Claude Stop hook.",
+    ],
+    "stdout": [
+      "Created <fixture-1>/AGENTS.md",
+      "Created <fixture-1>/.fabric/agents.meta.json",
+      "Created <fixture-1>/.fabric/human-lock.json",
+      "Created <fixture-1>/.fabric/forensic.json",
+      "Next run fab hooks install to add the Day 4 pre-commit pipeline.",
+      "Reason .fabric/forensic.json is ready; use the agents-md-init skill to finish AGENTS.md initialization.",
+    ],
+  },
+  "locale": "en",
+  "scan": {
+    "description": "Scan the project to detect Fabric bootstrap candidates.",
+    "errors": [],
+    "stderr": [],
+    "stdout": [
+      "Fabric scan report",
+      "Target                <fixture-2>",
+      "Framework             cocos-creator",
+      "README quality        stub",
+      "CONTRIBUTING.md       missing",
+      "Files counted         7",
+      "Ignored entries       3",
+      "Existing Fabric files no",
+      "Recommendations:",
+      "[warn] L0: Run fab init to scaffold AGENTS.md with TODO markers.",
+      "[warn] L0: Expand README.md before promoting project facts into AGENTS.md references.",
+      "[warn] L0: Add CONTRIBUTING.md or leave an AGENTS.md TODO reference for contribution flow.",
+      "[warn] L1: Review cocos-creator directories for future scoped AGENTS.md files.",
+    ],
+  },
+  "serve": {
+    "description": "Start the local Fabric MCP HTTP service. Set FABRIC_AUTH_TOKEN to enable Bearer auth for non-localhost binding.",
+    "errors": [
+      "[warn] --host 0.0.0.0 requires FABRIC_AUTH_TOKEN; falling back to 127.0.0.1 for safety",
+    ],
+    "stderr": [],
+    "stdout": [
+      "[ok] Fabric Dashboard http://127.0.0.1:7373",
+    ],
+  },
+}
+`;
+
+exports[`cli i18n > renders zh-CN command descriptions and output snapshots 1`] = `
+{
+  "init": {
+    "description": "在目标项目中初始化 Fabric。",
+    "errors": [],
+    "stderr": [
+      "已创建 <fixture-1>/.claude/skills/agents-md-init/SKILL.md",
+      "已创建 <fixture-1>/.claude/hooks/agents-md-init-reminder.cjs",
+      "已创建 <fixture-1>/.claude/settings.json，并写入 Claude Stop hook。",
+    ],
+    "stdout": [
+      "已创建 <fixture-1>/AGENTS.md",
+      "已创建 <fixture-1>/.fabric/agents.meta.json",
+      "已创建 <fixture-1>/.fabric/human-lock.json",
+      "已创建 <fixture-1>/.fabric/forensic.json",
+      "下一步 运行 fab hooks install 以添加第 4 天的 pre-commit 流水线。",
+      "原因 .fabric/forensic.json 已就绪；请使用 agents-md-init skill 完成 AGENTS.md 初始化。",
+    ],
+  },
+  "locale": "zh-CN",
+  "scan": {
+    "description": "扫描项目以检测 Fabric 引导候选模块。",
+    "errors": [],
+    "stderr": [],
+    "stdout": [
+      "Fabric 扫描报告",
+      "目标             <fixture-2>",
+      "框架             cocos-creator",
+      "README 质量      草稿",
+      "CONTRIBUTING.md  缺失",
+      "文件数           7",
+      "忽略项           3",
+      "现有 Fabric 文件 否",
+      "建议：",
+      "[warn] L0：运行 fab init，为 AGENTS.md 生成带 TODO 标记的初始骨架。",
+      "[warn] L0：先补充 README.md，再把项目事实沉淀到 AGENTS.md 引用中。",
+      "[warn] L0：添加 CONTRIBUTING.md，或在 AGENTS.md 中留下贡献流程的 TODO 引用。",
+      "[warn] L1：检查 cocos-creator 目录，后续为其补充作用域化 AGENTS.md 文件。",
+    ],
+  },
+  "serve": {
+    "description": "启动本地 Fabric MCP HTTP 服务。若需绑定到非 localhost，请设置 FABRIC_AUTH_TOKEN 以启用 Bearer 鉴权。",
+    "errors": [
+      "[warn] --host 0.0.0.0 需要 FABRIC_AUTH_TOKEN；为安全起见已回退到 127.0.0.1",
+    ],
+    "stderr": [],
+    "stdout": [
+      "[ok] Fabric 仪表盘 http://127.0.0.1:7373",
+    ],
+  },
+}
+`;

@@ -3,10 +3,12 @@ import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, renameSyn
 import { dirname, isAbsolute, join, parse, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import type { AgentsMeta } from "@fabric/shared";
+import type { AgentsMeta } from "@fenglimg/fabric-shared";
 import { defineCommand } from "citty";
 
+import { paint } from "../colors.js";
 import { createDebugLogger, resolveDevMode } from "../dev-mode.js";
+import { t } from "../i18n.js";
 import type { FrameworkInfo } from "../scanner/detector.js";
 import { buildForensicReport } from "../scanner/forensic.js";
 import { createScanReport } from "./scan.js";
@@ -57,16 +59,16 @@ const CLAUDE_INIT_REMINDER_COMMAND = ".claude/hooks/agents-md-init-reminder.cjs"
 export const initCommand = defineCommand({
   meta: {
     name: "init",
-    description: "在目标项目中初始化 Fabric。",
+    description: t("cli.init.description"),
   },
   args: {
     target: {
       type: "string",
-      description: "目标项目路径，默认依次使用 CLI 参数、EXTERNAL_FIXTURE_PATH、fabric.config.json 或当前目录。",
+      description: t("cli.init.args.target.description"),
     },
     debug: {
       type: "boolean",
-      description: "将目标解析详情输出到 stderr。",
+      description: t("cli.init.args.debug.description"),
       default: false,
     },
   },
@@ -82,23 +84,33 @@ export const initCommand = defineCommand({
 
     const created = initFabric(target);
 
-    console.log(`Created ${created.agentsPath}`);
-    console.log(`Created ${created.metaPath}`);
-    console.log(`Created ${created.humanLockPath}`);
-    console.log(`Created ${created.forensicPath}`);
+    console.log(t("cli.init.created-path", { label: createdLabel(), path: created.agentsPath }));
+    console.log(t("cli.init.created-path", { label: createdLabel(), path: created.metaPath }));
+    console.log(t("cli.init.created-path", { label: createdLabel(), path: created.humanLockPath }));
+    console.log(t("cli.init.created-path", { label: createdLabel(), path: created.forensicPath }));
     writeStderr(
       created.claudeSkillAction === "created"
-        ? `Installed ${created.claudeSkillPath}`
-        : `Skipped ${created.claudeSkillPath}: already exists.`,
+        ? t("cli.init.created-path", { label: createdLabel(), path: created.claudeSkillPath })
+        : t("cli.init.skipped-existing-path", { label: skippedLabel(), path: created.claudeSkillPath }),
     );
     writeStderr(
       created.claudeHookAction === "created"
-        ? `Installed ${created.claudeHookPath}`
-        : `Skipped ${created.claudeHookPath}: already exists.`,
+        ? t("cli.init.created-path", { label: createdLabel(), path: created.claudeHookPath })
+        : t("cli.init.skipped-existing-path", { label: skippedLabel(), path: created.claudeHookPath }),
     );
     writeStderr(formatClaudeSettingsAction(created.claudeSettingsPath, created.claudeSettingsAction));
-    console.log("Next: run fab hooks install to add the Day 4 pre-commit pipeline.");
-    console.log("Reason: .fabric/forensic.json is ready; use the agents-md-init skill to finish AGENTS.md initialization.");
+    console.log(
+      t("cli.init.next-step", {
+        label: nextLabel(),
+        message: paint.muted(t("cli.init.next-step.message")),
+      }),
+    );
+    console.log(
+      t("cli.init.reason-message", {
+        label: reasonLabel(),
+        message: paint.muted(t("cli.init.reason-message.body")),
+      }),
+    );
   },
 });
 
@@ -235,7 +247,7 @@ function findTemplatePath(relativePath: string): string {
     }
   }
 
-  throw new Error(`Template not found: ${relativePath}`);
+  throw new Error(t("cli.shared.template-not-found", { path: relativePath }));
 }
 
 function templateCandidatesFrom(start: string, relativePath: string): string[] {
@@ -253,7 +265,7 @@ function templateCandidatesFrom(start: string, relativePath: string): string[] {
     current = parent;
   }
 
-  return candidates;
+  return candidates.reverse();
 }
 
 function writeNewFile(path: string, content: string): void {
@@ -297,27 +309,27 @@ function mergeClaudeStopHook(settingsPath: string): ClaudeSettingsAction {
     try {
       const parsed = JSON.parse(readFileSync(settingsPath, "utf8")) as unknown;
       if (!isRecord(parsed)) {
-        writeStderr(`Skipped ${settingsPath}: expected a JSON object.`);
+        writeStderr(t("cli.init.claude-settings.invalid-object", { label: skippedLabel(), path: settingsPath }));
         return "skipped-invalid";
       }
 
       settings = parsed as ClaudeSettings;
     } catch (error) {
       const reason = error instanceof Error ? error.message : "unknown parse error";
-      writeStderr(`Skipped ${settingsPath}: invalid JSON (${reason}).`);
+      writeStderr(t("cli.init.claude-settings.invalid-json", { label: skippedLabel(), path: settingsPath, reason }));
       return "skipped-invalid";
     }
   }
 
   if (settings.hooks !== undefined && !isRecord(settings.hooks)) {
-    writeStderr(`Skipped ${settingsPath}: "hooks" must be a JSON object.`);
+    writeStderr(t("cli.init.claude-settings.invalid-hooks", { label: skippedLabel(), path: settingsPath }));
     return "skipped-invalid";
   }
 
   const hooks = (settings.hooks ?? {}) as Record<string, unknown>;
   const stopHooksValue = hooks.Stop;
   if (stopHooksValue !== undefined && !Array.isArray(stopHooksValue)) {
-    writeStderr(`Skipped ${settingsPath}: "hooks.Stop" must be an array.`);
+    writeStderr(t("cli.init.claude-settings.invalid-stop-array", { label: skippedLabel(), path: settingsPath }));
     return "skipped-invalid";
   }
 
@@ -373,16 +385,36 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function formatClaudeSettingsAction(settingsPath: string, action: ClaudeSettingsAction): string {
   switch (action) {
     case "created":
-      return `Created ${settingsPath} with Claude Stop hook.`;
+      return t("cli.init.claude-settings.created", { label: createdLabel(), path: settingsPath });
     case "updated":
-      return `Updated ${settingsPath} with Claude Stop hook.`;
+      return t("cli.init.claude-settings.updated", { label: updatedLabel(), path: settingsPath });
     case "skipped":
-      return `Skipped ${settingsPath}: Claude Stop hook already present.`;
+      return t("cli.init.claude-settings.skipped", { label: skippedLabel(), path: settingsPath });
     case "skipped-invalid":
-      return `Skipped ${settingsPath}: unable to merge Claude Stop hook.`;
+      return t("cli.init.claude-settings.skipped-invalid", { label: skippedLabel(), path: settingsPath });
     default:
-      return `Updated ${settingsPath}`;
+      return t("cli.init.claude-settings.updated", { label: updatedLabel(), path: settingsPath });
   }
+}
+
+function createdLabel(): string {
+  return paint.success(t("cli.shared.created"));
+}
+
+function skippedLabel(): string {
+  return paint.muted(t("cli.shared.skipped"));
+}
+
+function nextLabel(): string {
+  return paint.ai(t("cli.shared.next"));
+}
+
+function reasonLabel(): string {
+  return paint.human(t("cli.shared.reason"));
+}
+
+function updatedLabel(): string {
+  return paint.success(t("cli.shared.updated"));
 }
 
 function writeStderr(message: string): void {

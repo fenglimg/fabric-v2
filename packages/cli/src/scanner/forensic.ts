@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { basename, extname, isAbsolute, join, posix, relative, resolve, sep } from "node:path";
 
-import { forensicReportSchema, type ForensicEntryPoint, type ForensicReport } from "@fabric/shared";
+import { forensicReportSchema, type ForensicEntryPoint, type ForensicReport } from "@fenglimg/fabric-shared";
 
 import { detectFramework } from "./detector.js";
 

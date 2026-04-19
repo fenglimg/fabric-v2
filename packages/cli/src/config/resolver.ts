@@ -2,14 +2,14 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 
-import type { ClientPaths, FabricConfig } from "@fabric/shared";
+import type { ClientPaths, FabricConfig } from "@fenglimg/fabric-shared";
 import { ClaudeCodeDesktopWriter, getClaudeDesktopConfigPath } from "./claude-code.js";
 import { ClaudeCodeCLIWriter, CursorWriter, GeminiCLIWriter, RooCodeWriter, WindsurfWriter } from "./json.js";
 import { CodexTOMLConfigWriter } from "./toml.js";
 import type { ClientConfigWriter } from "./writer.js";
 
-export type { ClientPaths, FabricConfig } from "@fabric/shared";
-export { clientPathsSchema, fabricConfigSchema } from "@fabric/shared";
+export type { ClientPaths, FabricConfig } from "@fenglimg/fabric-shared";
+export { clientPathsSchema, fabricConfigSchema } from "@fenglimg/fabric-shared";
 
 function hasExplicitPath(clientPaths: ClientPaths | undefined, key: keyof ClientPaths): boolean {
   return typeof clientPaths?.[key] === "string" && clientPaths[key]!.trim().length > 0;

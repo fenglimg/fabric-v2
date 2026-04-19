@@ -2,8 +2,10 @@ import { execSync } from "node:child_process";
 import { appendFileSync, existsSync, readFileSync, statSync } from "node:fs";
 import { basename, isAbsolute, join, resolve } from "node:path";
 
-import type { HumanLedgerEntry, LedgerEntry } from "@fabric/shared";
+import type { HumanLedgerEntry, LedgerEntry } from "@fenglimg/fabric-shared";
 import { defineCommand } from "citty";
+
+import { t } from "../i18n.js";
 
 type LedgerAppendArgs = {
   target: string;
@@ -16,17 +18,17 @@ const INITIAL_PARENT_SHA = "root";
 export const ledgerAppendCommand = defineCommand({
   meta: {
     name: "ledger-append",
-    description: "向 Fabric 意图日志添加一条记录。",
+    description: t("cli.ledger-append.description"),
   },
   args: {
     target: {
       type: "string",
-      description: "目标项目路径，默认为当前工作目录。",
+      description: t("cli.ledger-append.args.target.description"),
       default: process.cwd(),
     },
     staged: {
       type: "boolean",
-      description: "从暂存变更中推导记录（用于 pre-commit 阶段）。",
+      description: t("cli.ledger-append.args.staged.description"),
       default: false,
     },
   },
@@ -35,7 +37,7 @@ export const ledgerAppendCommand = defineCommand({
     assertExistingDirectory(target);
 
     if (!args.staged) {
-      writeStderr("requires --staged in pre-commit context");
+      writeStderr(t("cli.ledger-append.requires-staged"));
       process.exitCode = 1;
       return;
     }
@@ -74,7 +76,7 @@ function normalizeTarget(targetInput: string): string {
 
 function assertExistingDirectory(target: string): void {
   if (!existsSync(target) || !statSync(target).isDirectory()) {
-    throw new Error(`Target must be an existing directory: ${target}`);
+    throw new Error(t("cli.shared.target-invalid", { target }));
   }
 }
 
@@ -108,12 +110,12 @@ function deriveIntent(stagedFiles: string[]): string {
 
   const uniqueNames = Array.from(new Set(stagedFiles.map((file) => basename(file))));
   const head = uniqueNames.slice(0, 2).join(", ");
-  const suffix = uniqueNames.length > 2 ? ` +${uniqueNames.length - 2} more` : "";
+  const suffix = uniqueNames.length > 2 ? t("cli.ledger-append.intent.auto-more", { count: String(uniqueNames.length - 2) }) : "";
 
-  return `auto: ${head}${suffix}`;
+  return t("cli.ledger-append.intent.auto", { head, suffix });
 }
 
-function hasMatchingTailEntry(target: string, entry: LedgerEntry): boolean {
+function hasMatchingTailEntry(target: string, entry: HumanLedgerEntry): boolean {
   const ledgerPath = join(target, LEDGER_FILE);
 
   if (!existsSync(ledgerPath)) {
@@ -131,7 +133,7 @@ function hasMatchingTailEntry(target: string, entry: LedgerEntry): boolean {
   }
 
   try {
-    const parsed = JSON.parse(tail) as Partial<LedgerEntry>;
+    const parsed = JSON.parse(tail) as Partial<HumanLedgerEntry>;
 
     return (
       parsed.parent_sha === entry.parent_sha &&

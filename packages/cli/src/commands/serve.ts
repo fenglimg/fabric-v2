@@ -2,7 +2,9 @@ import { defineCommand } from "citty";
 
 import { startHttpServer } from "@fenglimg/fabric-server";
 
+import { paint, symbol } from "../colors.js";
 import { createDebugLogger, resolveDevMode } from "../dev-mode.js";
+import { t } from "../i18n.js";
 
 const DEFAULT_PORT = 7373;
 
@@ -16,28 +18,26 @@ type ServeArgs = {
 export const serveCommand = defineCommand({
   meta: {
     name: "serve",
-    description:
-      "启动 Fabric 本地 MCP HTTP 服务。set FABRIC_AUTH_TOKEN to enable Bearer auth (required for non-localhost binding).",
+    description: t("cli.serve.description"),
   },
   args: {
     port: {
       type: "string",
-      description: "监听端口，默认 7373。",
+      description: t("cli.serve.args.port.description"),
       default: String(DEFAULT_PORT),
     },
     host: {
       type: "string",
-      description:
-        "监听主机，默认 127.0.0.1。set FABRIC_AUTH_TOKEN to enable Bearer auth (required for non-localhost binding).",
+      description: t("cli.serve.args.host.description"),
       default: "127.0.0.1",
     },
     target: {
       type: "string",
-      description: "目标项目路径，默认依次使用 CLI 参数、EXTERNAL_FIXTURE_PATH、fabric.config.json 或当前目录。",
+      description: t("cli.serve.args.target.description"),
     },
     debug: {
       type: "boolean",
-      description: "将目标解析详情输出到 stderr。",
+      description: t("cli.serve.args.debug.description"),
       default: false,
     },
   },
@@ -64,13 +64,13 @@ export const serveCommand = defineCommand({
       });
     } catch (error) {
       if (isNodeError(error) && error.code === "EADDRINUSE") {
-        throw new Error(`Port ${port} in use — try --port ${port + 1}`);
+        throw new Error(t("cli.serve.error.port-in-use", { port: String(port), nextPort: String(port + 1) }));
       }
 
       throw error;
     }
 
-    console.log(`Fabric Dashboard: http://${host}:${port}`);
+    console.log(`${symbol.ok} ${paint.ai(t("cli.serve.ready.title"))} ${paint.human(`http://${host}:${port}`)}`);
   },
 });
 
@@ -80,7 +80,7 @@ function parsePort(value: string | undefined): number {
   const port = Number.parseInt(value ?? String(DEFAULT_PORT), 10);
 
   if (!Number.isInteger(port) || port < 1 || port > 65535) {
-    throw new Error(`Invalid port: ${value ?? "<unset>"}`);
+    throw new Error(t("cli.shared.invalid-port", { value: value ?? "<unset>" }));
   }
 
   return port;
@@ -90,7 +90,7 @@ function parseHost(value: string | undefined): string {
   const host = value?.trim() ?? "127.0.0.1";
 
   if (host.length === 0) {
-    throw new Error("Invalid host: <empty>");
+    throw new Error(t("cli.shared.invalid-host-empty"));
   }
 
   return host;
@@ -107,7 +107,9 @@ function validateHost(host: string, authToken: string | undefined): string {
   }
 
   if (!isLoopbackHost(host)) {
-    console.error(`⚠ --host ${host} requires FABRIC_AUTH_TOKEN; falling back to 127.0.0.1 for safety`);
+    console.error(
+      `${symbol.warn} ${paint.warn(t("cli.serve.warning.host-fallback", { host }))}`,
+    );
     return "127.0.0.1";
   }
 

@@ -1,7 +1,8 @@
 import { defineCommand } from "citty";
-import { execSync } from "node:child_process";
 import process from "node:process";
+
 import { resolveDevModeTarget } from "../dev-mode.js";
+import { t } from "../i18n.js";
 import syncMetaModule from "./sync-meta.js";
 import humanLintModule from "./human-lint.js";
 import ledgerAppendModule from "./ledger-append.js";
@@ -12,7 +13,9 @@ async function runOrFail(name: string, cmd: CmdLike, args: Record<string, unknow
   try {
     await cmd.run?.({ args });
   } catch (err) {
-    process.stderr.write(`fabric pre-commit: ${name} failed — ${(err as Error).message}\n`);
+    process.stderr.write(
+      `${t("cli.pre-commit.run-failed", { name, message: (err as Error).message })}\n`,
+    );
     process.exit(1);
   }
 }
@@ -20,12 +23,12 @@ async function runOrFail(name: string, cmd: CmdLike, args: Record<string, unknow
 export default defineCommand({
   meta: {
     name: "pre-commit",
-    description: "复合 pre-commit 钩子 —— 在单一 Node 进程中依次执行 sync-meta --check-only、human-lint、ledger-append --staged，300ms 内完成。",
+    description: t("cli.pre-commit.description"),
   },
   args: {
     target: {
       type: "string",
-      description: "项目根目录（默认为当前目录或 EXTERNAL_FIXTURE_PATH）。",
+      description: t("cli.pre-commit.args.target.description"),
     },
   },
   async run({ args }) {

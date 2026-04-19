@@ -4,6 +4,8 @@ import { fileURLToPath } from "node:url";
 
 import { defineCommand } from "citty";
 
+import { t } from "../i18n.js";
+
 type HooksInstallArgs = {
   target: string;
 };
@@ -16,18 +18,18 @@ type PackageJson = {
 export const hooksCommand = defineCommand({
   meta: {
     name: "hooks",
-    description: "管理 Fabric Git 钩子模板。",
+    description: t("cli.hooks.description"),
   },
   subCommands: {
     install: defineCommand({
       meta: {
         name: "install",
-        description: "安装 Fabric Husky pre-commit 钩子模板。",
+        description: t("cli.hooks.install.description"),
       },
       args: {
         target: {
           type: "string",
-          description: "目标项目路径，默认为当前工作目录。",
+          description: t("cli.hooks.install.args.target.description"),
           default: process.cwd(),
         },
       },
@@ -40,7 +42,7 @@ export const hooksCommand = defineCommand({
         const packageJsonPath = join(target, "package.json");
 
         if (!existsSync(packageJsonPath)) {
-          throw new Error(`package.json is required to install hooks: ${packageJsonPath}`);
+          throw new Error(t("cli.hooks.errors.package-json-required", { path: packageJsonPath }));
         }
 
         mkdirSync(huskyDir, { recursive: true });
@@ -78,16 +80,16 @@ export const hooksCommand = defineCommand({
         }
 
         if (hookAction === "skipped") {
-          writeStderr(`Fabric hook already present in ${hookPath}, skipped.`);
+          writeStderr(t("cli.hooks.install.hook-skipped", { path: hookPath }));
         } else if (hookAction === "appended") {
-          writeStderr(`Appended Fabric hook to existing ${hookPath}`);
+          writeStderr(t("cli.hooks.install.hook-appended", { path: hookPath }));
         } else {
-          writeStderr(`Created ${hookPath}`);
+          writeStderr(t("cli.hooks.install.hook-created", { path: hookPath }));
         }
         if (hadPrepare) {
-          writeStderr(`Left existing prepare script unchanged in ${packageJsonPath}`);
+          writeStderr(t("cli.hooks.install.prepare-left", { path: packageJsonPath }));
         } else {
-          writeStderr(`Added prepare script to ${packageJsonPath}`);
+          writeStderr(t("cli.hooks.install.prepare-added", { path: packageJsonPath }));
         }
       },
     }),
@@ -102,7 +104,7 @@ function normalizeTarget(targetInput: string): string {
 
 function assertExistingDirectory(target: string): void {
   if (!existsSync(target) || !statSync(target).isDirectory()) {
-    throw new Error(`Target must be an existing directory: ${target}`);
+    throw new Error(t("cli.shared.target-invalid", { target }));
   }
 }
 
@@ -119,7 +121,7 @@ function findTemplatePath(relativePath: string): string {
     }
   }
 
-  throw new Error(`Template not found: ${relativePath}`);
+  throw new Error(t("cli.shared.template-not-found", { path: relativePath }));
 }
 
 function templateCandidatesFrom(start: string, relativePath: string): string[] {
@@ -137,7 +139,7 @@ function templateCandidatesFrom(start: string, relativePath: string): string[] {
     current = parent;
   }
 
-  return candidates;
+  return candidates.reverse();
 }
 
 function writeStderr(message: string): void {

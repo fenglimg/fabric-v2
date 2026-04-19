@@ -1,1 +1,1 @@
-export { detectFramework, type FrameworkInfo } from "@fabric/shared";
+export { detectFramework, type FrameworkInfo } from "@fenglimg/fabric-shared";

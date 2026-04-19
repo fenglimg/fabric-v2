@@ -1,4 +1,4 @@
-import { cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 
@@ -7,6 +7,11 @@ const WEREWOLF_FIXTURE = resolve(process.cwd(), "../../examples/werewolf-minigam
 export function createWerewolfFixtureRoot(prefix: string): string {
   const root = join(tmpdir(), `${prefix}-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}`);
   cpSync(WEREWOLF_FIXTURE, root, { recursive: true });
+  if (existsSync(join(root, "AGENTS.md"))) {
+    rmSync(join(root, "AGENTS.md"));
+  }
+  rmSync(join(root, ".fabric"), { recursive: true, force: true });
+  rmSync(join(root, ".claude"), { recursive: true, force: true });
   return root;
 }
 

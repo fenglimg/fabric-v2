@@ -2,11 +2,13 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, parse, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import type { FabricConfig } from "@fenglimg/fabric-shared";
 import { defineCommand } from "citty";
 
-import { type FabricConfig, resolveClients } from "../config/resolver.js";
+import { resolveClients } from "../config/resolver.js";
 import type { ClientKind } from "../config/writer.js";
 import { readFabricConfig } from "../dev-mode.js";
+import { t } from "../i18n.js";
 
 type BootstrapClient = "claude" | "cursor" | "windsurf" | "roo" | "gemini" | "codex";
 
@@ -56,18 +58,18 @@ const CLIENT_TARGET_MAP: Record<BootstrapClient, string> = {
 export const bootstrapCommand = defineCommand({
   meta: {
     name: "bootstrap",
-    description: "为支持的 AI 客户端安装 Fabric 引导提示模板。",
+    description: t("cli.bootstrap.description"),
   },
   subCommands: {
     install: defineCommand({
       meta: {
         name: "install",
-        description: "将 Fabric 引导模板复制到各客户端的原生位置。",
+        description: t("cli.bootstrap.install.description"),
       },
       args: {
         clients: {
           type: "string",
-          description: "可选的逗号分隔客户端过滤器，例如 claude,cursor,codex。",
+          description: t("cli.bootstrap.install.args.clients.description"),
         },
       },
       async run({ args }: { args: InstallArgs }) {
@@ -79,7 +81,7 @@ export const bootstrapCommand = defineCommand({
 
         if (clients.size === 0) {
           process.stderr.write(
-            "No bootstrap targets detected. Pass --clients claude,cursor,windsurf,roo,gemini,codex to install explicitly.\n",
+            `${t("cli.bootstrap.install.no-targets")}\n`,
           );
           return;
         }
@@ -104,7 +106,7 @@ function parseClientFilter(value: string | undefined): Set<BootstrapClient> | nu
     const alias = rawClient.trim().toLowerCase();
     const client = CLIENT_ALIASES[alias];
     if (client === undefined) {
-      throw new Error(`Unknown client "${rawClient}". Use a comma-separated list such as claude,cursor,codex.`);
+      throw new Error(t("cli.bootstrap.errors.unknown-client", { client: rawClient }));
     }
 
     clients.add(client);
@@ -159,7 +161,7 @@ function installBootstrap(client: BootstrapClient, workspaceRoot: string): void 
   }
 
   writeFileSync(targetPath, ensureTrailingNewline(template), "utf8");
-  process.stderr.write(`Installed ${targetPath}\n`);
+  process.stderr.write(`${t("cli.bootstrap.install.installed", { path: targetPath })}\n`);
 }
 
 function writeCodexBootstrap(targetPath: string, template: string): void {
@@ -167,19 +169,19 @@ function writeCodexBootstrap(targetPath: string, template: string): void {
 
   if (!existsSync(targetPath)) {
     writeFileSync(targetPath, nextContent, "utf8");
-    process.stderr.write(`Installed ${targetPath}\n`);
+    process.stderr.write(`${t("cli.bootstrap.install.installed", { path: targetPath })}\n`);
     return;
   }
 
   const existing = readFileSync(targetPath, "utf8");
   if (existing.includes("# Fabric Bootstrap")) {
-    process.stderr.write(`Skipped ${targetPath}: Fabric Bootstrap header already present.\n`);
+    process.stderr.write(`${t("cli.bootstrap.install.skipped-header", { path: targetPath })}\n`);
     return;
   }
 
   const separator = existing.startsWith("\n") || existing.length === 0 ? "" : "\n";
   writeFileSync(targetPath, `${nextContent}${separator}${existing}`, "utf8");
-  process.stderr.write(`Prepended ${targetPath}\n`);
+  process.stderr.write(`${t("cli.bootstrap.install.prepended", { path: targetPath })}\n`);
 }
 
 function ensureTrailingNewline(content: string): string {
@@ -199,7 +201,7 @@ function findTemplatePath(relativePath: string): string {
     }
   }
 
-  throw new Error(`Template not found: ${relativePath}`);
+  throw new Error(t("cli.shared.template-not-found", { path: relativePath }));
 }
 
 function templateCandidatesFrom(start: string, relativePath: string): string[] {
@@ -217,5 +219,5 @@ function templateCandidatesFrom(start: string, relativePath: string): string[] {
     current = parent;
   }
 
-  return candidates;
+  return candidates.reverse();
 }

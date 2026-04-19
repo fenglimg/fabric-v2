@@ -2,9 +2,10 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 
-import type { AgentsMeta } from "@fabric/shared";
+import type { AgentsMeta } from "@fenglimg/fabric-shared";
 import { defineCommand } from "citty";
 
+import { t } from "../i18n.js";
 import { resolveIgnores } from "../scanner/ignores.js";
 
 type NodeMeta = AgentsMeta["nodes"][string];
@@ -17,17 +18,17 @@ type SyncMetaArgs = {
 export const syncMetaCommand = defineCommand({
   meta: {
     name: "sync-meta",
-    description: "从 AGENTS.md 文件同步 Fabric 元数据。",
+    description: t("cli.sync-meta.description"),
   },
   args: {
     target: {
       type: "string",
-      description: "目标项目路径，默认为当前工作目录。",
+      description: t("cli.sync-meta.args.target.description"),
       default: process.cwd(),
     },
     "check-only": {
       type: "boolean",
-      description: "如果 .fabric/agents.meta.json 已过期则以代码 1 退出。",
+      description: t("cli.sync-meta.args.check-only.description"),
       default: false,
     },
   },
@@ -39,7 +40,7 @@ export const syncMetaCommand = defineCommand({
 
     if (args["check-only"]) {
       if (!existingMeta || stableStringify(existingMeta) !== stableStringify(computedMeta)) {
-        writeStderr("Fabric metadata drift detected. Run fab sync-meta to update.");
+        writeStderr(t("cli.sync-meta.drift-detected"));
         process.exitCode = 1;
       }
       return;
@@ -51,7 +52,7 @@ export const syncMetaCommand = defineCommand({
 
     mkdirSync(join(target, ".fabric"), { recursive: true });
     writeFileSync(metaPath, `${JSON.stringify(computedMeta, null, 2)}\n`, "utf8");
-    writeStderr(`Updated ${metaPath}`);
+    writeStderr(t("cli.sync-meta.updated", { label: t("cli.shared.updated"), path: metaPath }));
   },
 });
 
@@ -93,7 +94,7 @@ function normalizeTarget(targetInput: string): string {
 
 function assertExistingDirectory(target: string): void {
   if (!existsSync(target) || !statSync(target).isDirectory()) {
-    throw new Error(`Target must be an existing directory: ${target}`);
+    throw new Error(t("cli.shared.target-invalid", { target }));
   }
 }
 

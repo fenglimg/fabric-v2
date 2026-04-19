@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
 
-import type { FabricConfig } from "./config/resolver.js";
+import type { FabricConfig } from "@fenglimg/fabric-shared";
 
 export type DevModeSource = "cli" | "env" | "config" | "cwd";
 

@@ -1,6 +1,6 @@
 {
   "name": "@fenglimg/fabric-cli",
-  "version": "0.1.4",
+  "version": "1.0.0",
   "type": "module",
   "bin": {
     "fab": "dist/index.js"
@@ -17,10 +17,12 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@fabric/shared": "workspace:*",
+    "@fenglimg/fabric-shared": "workspace:*",
     "@fenglimg/fabric-server": "workspace:*",
     "@iarna/toml": "^2.2.5",
-    "citty": "^0.2.2"
+    "citty": "^0.2.2",
+    "picocolors": "^1.1.1",
+    "string-width": "^7.2.0"
   },
   "devDependencies": {
     "@types/iarna__toml": "^2.0.5",

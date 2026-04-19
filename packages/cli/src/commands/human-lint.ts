@@ -3,11 +3,14 @@ import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { isAbsolute, join, resolve } from "node:path";
 
-import type { HumanLockEntry } from "@fabric/shared";
+import type { HumanLockEntry } from "@fenglimg/fabric-shared";
 import { defineCommand } from "citty";
 
-export type { HumanLockEntry } from "@fabric/shared";
-export { humanLockEntrySchema } from "@fabric/shared";
+import { padEnd } from "../colors.js";
+import { t } from "../i18n.js";
+
+export type { HumanLockEntry } from "@fenglimg/fabric-shared";
+export { humanLockEntrySchema } from "@fenglimg/fabric-shared";
 
 type HumanLintArgs = {
   target: string;
@@ -31,12 +34,12 @@ type Violation = {
 export const humanLintCommand = defineCommand({
   meta: {
     name: "human-lint",
-    description: "验证锁定的人工编辑区块。",
+    description: t("cli.human-lint.description"),
   },
   args: {
     target: {
       type: "string",
-      description: "目标项目路径，默认为当前工作目录。",
+      description: t("cli.human-lint.args.target.description"),
       default: process.cwd(),
     },
   },
@@ -90,12 +93,14 @@ export const humanLintCommand = defineCommand({
       return;
     }
 
-    writeStderr("Human-locked content drift detected. Revert the edit or update approved hashes before committing.");
-    writeStderr("Location                         Expected            Got");
+    writeStderr(t("cli.human-lint.drift-detected"));
+    writeStderr(
+      `${padEnd(t("cli.human-lint.table.location"), 32)} ${padEnd(t("cli.human-lint.table.expected"), 18)} ${t("cli.human-lint.table.got")}`,
+    );
 
     for (const violation of violations) {
       writeStderr(
-        `${violation.location.padEnd(32)} ${violation.expected.padEnd(18)} ${violation.actual}`,
+        `${padEnd(violation.location, 32)} ${padEnd(violation.expected, 18)} ${violation.actual}`,
       );
     }
 
@@ -118,7 +123,7 @@ function hashLockedContent(content: string, entry: HumanLockEntry): string {
 
 function shortenHash(value: string): string {
   if (value === "missing") {
-    return value;
+    return t("cli.shared.missing");
   }
 
   return value.slice(0, 15);

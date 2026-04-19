@@ -81,6 +81,6 @@ export class CodexTOMLConfigWriter implements ClientConfigWriter {
     const config = mergeCodexServer(await readTomlConfig(configPath), createServerEntry(serverPath));
 
     await mkdir(dirname(configPath), { recursive: true });
-    await writeFile(configPath, TOML.stringify(config), "utf8");
+    await writeFile(configPath, TOML.stringify(config as TOML.JsonMap), "utf8");
   }
 }

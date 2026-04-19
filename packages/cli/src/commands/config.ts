@@ -3,10 +3,12 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import type { FabricConfig } from "@fenglimg/fabric-shared";
 import { defineCommand } from "citty";
 
-import { resolveClients, type FabricConfig } from "../config/resolver.js";
+import { resolveClients } from "../config/resolver.js";
 import type { ClientKind } from "../config/writer.js";
+import { t } from "../i18n.js";
 
 const CLIENT_ALIASES: Record<string, ClientKind> = {
   claudecodecli: "ClaudeCodeCLI",
@@ -43,7 +45,7 @@ function parseClientFilter(value: string | undefined): Set<ClientKind> | null {
     const alias = rawClient.trim().toLowerCase();
     const clientKind = CLIENT_ALIASES[alias];
     if (clientKind === undefined) {
-      throw new Error(`Unknown client "${rawClient}". Use a comma-separated list such as cursor,codex,gemini.`);
+      throw new Error(t("cli.config.errors.unknown-client", { client: rawClient }));
     }
 
     clients.add(clientKind);
@@ -60,7 +62,7 @@ async function loadFabricConfig(workspaceRoot: string): Promise<FabricConfig> {
 
   const parsed = JSON.parse(await readFile(configPath, "utf8")) as unknown;
   if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
-    throw new Error(`Expected object in ${configPath}`);
+    throw new Error(t("cli.config.errors.expected-object", { path: configPath }));
   }
 
   return parsed as FabricConfig;
@@ -78,22 +80,22 @@ function writeStderr(message: string): void {
 export const configCmd = defineCommand({
   meta: {
     name: "config",
-    description: "管理 Fabric MCP 客户端配置。",
+    description: t("cli.config.description"),
   },
   subCommands: {
     install: defineCommand({
       meta: {
         name: "install",
-        description: "将 Fabric MCP 服务器条目安装到检测到的客户端配置中。",
+        description: t("cli.config.install.description"),
       },
       args: {
         clients: {
           type: "string",
-          description: "可选的逗号分隔客户端过滤器，例如 cursor,codex,gemini。",
+          description: t("cli.config.install.args.clients.description"),
         },
         "dry-run": {
           type: "boolean",
-          description: "预览检测到的写入操作，不修改文件。",
+          description: t("cli.config.install.args.dry-run.description"),
           default: false,
         },
       },
@@ -107,24 +109,24 @@ export const configCmd = defineCommand({
         );
 
         if (writers.length === 0) {
-          writeStderr("未检测到 Fabric MCP 客户端配置。请创建客户端目录或在 fabric.config.json 中设置 clientPaths。");
+          writeStderr(t("cli.config.install.no-configs"));
           return;
         }
 
         for (const writer of writers) {
           const configPath = await writer.detect(workspaceRoot);
           if (configPath === null) {
-            writeStderr(`Skipping ${writer.clientKind}: no config path detected.`);
+            writeStderr(t("cli.config.install.no-config-path", { client: writer.clientKind }));
             continue;
           }
 
           if (args["dry-run"]) {
-            writeStderr(`[dry-run] ${writer.clientKind}: would write ${configPath}`);
+            writeStderr(t("cli.config.install.dry-run", { client: writer.clientKind, path: configPath }));
             continue;
           }
 
           await writer.write(serverPath, workspaceRoot);
-          writeStderr(`${writer.clientKind}: wrote ${configPath}`);
+          writeStderr(t("cli.config.install.wrote", { client: writer.clientKind, path: configPath }));
         }
       },
     }),

@@ -3,7 +3,9 @@ import { isAbsolute, join, relative, resolve, sep } from "node:path";
 
 import { defineCommand } from "citty";
 
+import { displayWidth, padEnd, paint, symbol } from "../colors.js";
 import { createDebugLogger, readFabricConfig, resolveDevMode } from "../dev-mode.js";
+import { t } from "../i18n.js";
 import { detectFramework, type FrameworkInfo } from "../scanner/detector.js";
 import { resolveIgnores } from "../scanner/ignores.js";
 
@@ -62,21 +64,21 @@ export function createScanReport(
 export const scanCommand = defineCommand({
   meta: {
     name: "scan",
-    description: "扫描项目以检测 Fabric 引导候选模块。",
+    description: t("cli.scan.description"),
   },
   args: {
     target: {
       type: "string",
-      description: "扫描的目标绝对路径，默认依次使用 CLI 参数、EXTERNAL_FIXTURE_PATH、fabric.config.json 或当前目录。",
+      description: t("cli.scan.args.target.description"),
     },
     debug: {
       type: "boolean",
-      description: "以格式化输出打印检测证据。",
+      description: t("cli.scan.args.debug.description"),
       default: false,
     },
     json: {
       type: "boolean",
-      description: "以 JSON 格式输出诊断报告。",
+      description: t("cli.scan.args.json.description"),
       default: false,
     },
   },
@@ -124,7 +126,7 @@ function getReadmeQuality(target: string): ReadmeQuality {
 
 function walkFiles(root: string, ignorePatterns: string[]): WalkResult {
   if (!existsSync(root) || !statSync(root).isDirectory()) {
-    throw new Error(`Target must be an existing directory: ${root}`);
+    throw new Error(t("cli.shared.target-invalid", { target: root }));
   }
 
   let fileCount = 0;
@@ -193,40 +195,64 @@ function buildRecommendations(input: {
   const recommendations: string[] = [];
 
   if (!input.hasExistingFabric) {
-    recommendations.push("L0: Run fab init to scaffold AGENTS.md with TODO markers.");
+    recommendations.push(t("cli.scan.recommendation.init"));
   }
 
   if (input.readmeQuality === "stub") {
-    recommendations.push("L0: Expand README.md before promoting project facts into AGENTS.md references.");
+    recommendations.push(t("cli.scan.recommendation.readme"));
   }
 
   if (!input.hasContributing) {
-    recommendations.push("L0: Add CONTRIBUTING.md or leave an AGENTS.md TODO reference for contribution flow.");
+    recommendations.push(t("cli.scan.recommendation.contributing"));
   }
 
   if (input.framework.kind === "unknown") {
-    recommendations.push("L1: Add tech-stack TODOs manually because no framework marker was detected.");
+    recommendations.push(t("cli.scan.recommendation.unknown-framework"));
   } else {
-    recommendations.push(`L1: Review ${input.framework.kind} directories for future scoped AGENTS.md files.`);
+    recommendations.push(t("cli.scan.recommendation.framework-dirs", { framework: input.framework.kind }));
   }
 
   return recommendations;
 }
 
 function printPrettyReport(report: ScanReport, debug: boolean): void {
-  console.log("Fabric scan report");
-  console.log(`Target: ${report.target}`);
-  console.log(`Framework: ${report.framework.kind}`);
+  console.log(paint.ai(t("cli.scan.report.title")));
+
+  const rows: Array<[string, string]> = [
+    [t("cli.scan.report.target"), paint.human(report.target)],
+    [t("cli.scan.report.framework"), paint.ai(report.framework.kind)],
+    [
+      t("cli.scan.report.readme-quality"),
+      report.readmeQuality === "ok"
+        ? paint.success(t("cli.scan.readme-quality.ok"))
+        : paint.warn(t("cli.scan.readme-quality.stub")),
+    ],
+    [
+      t("cli.scan.report.contributing"),
+      report.hasContributing ? paint.success(t("cli.shared.present")) : paint.warn(t("cli.shared.absent")),
+    ],
+    [t("cli.scan.report.files-counted"), String(report.fileCount)],
+    [t("cli.scan.report.ignored-entries"), report.ignoredCount > 0 ? paint.muted(String(report.ignoredCount)) : "0"],
+    [
+      t("cli.scan.report.existing-fabric"),
+      report.hasExistingFabric ? paint.warn(t("cli.shared.yes")) : paint.success(t("cli.shared.no")),
+    ],
+  ];
+
   if (debug) {
-    console.log(`Evidence: ${report.framework.evidence.length > 0 ? report.framework.evidence.join(", ") : "none"}`);
+    rows.splice(2, 0, [
+      t("cli.scan.report.evidence"),
+      report.framework.evidence.length > 0 ? paint.muted(report.framework.evidence.join(", ")) : paint.muted(t("cli.shared.none")),
+    ]);
   }
-  console.log(`README quality: ${report.readmeQuality}`);
-  console.log(`CONTRIBUTING.md: ${report.hasContributing ? "present" : "missing"}`);
-  console.log(`Files counted: ${report.fileCount}`);
-  console.log(`Ignored entries: ${report.ignoredCount}`);
-  console.log(`Existing Fabric files: ${report.hasExistingFabric ? "yes" : "no"}`);
-  console.log("Recommendations:");
+
+  const labelWidth = Math.max(...rows.map(([key]) => displayWidth(key)));
+  for (const [key, value] of rows) {
+    console.log(`${paint.muted(padEnd(key, labelWidth))} ${value}`);
+  }
+
+  console.log(paint.muted(t("cli.scan.report.recommendations")));
   for (const recommendation of report.recommendations) {
-    console.log(`- ${recommendation}`);
+    console.log(`${symbol.warn} ${paint.drift(recommendation)}`);
   }
 }

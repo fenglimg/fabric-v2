@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { forensicReportSchema } from "@fabric/shared";
+import { forensicReportSchema } from "@fenglimg/fabric-shared";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { initFabric } from "../src/commands/init.ts";
