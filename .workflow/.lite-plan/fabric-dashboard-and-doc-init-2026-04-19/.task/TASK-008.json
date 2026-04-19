@@ -1,0 +1,89 @@
+{
+  "id": "TASK-008",
+  "title": "D4 SSE + chokidar /events endpoint",
+  "scope": "packages/server/src/api/events.ts",
+  "action": "Create",
+  "description": "Implement GET /events endpoint returning text/event-stream (Server-Sent Events). Use chokidar to watch .fabric/* and .intent-ledger.jsonl in the project root. On file change, push typed SSE events (meta-changed | ledger-appended | human-lock-changed) with incremental payload. Include connection limit, 30s heartbeat ping, and client cleanup on disconnect. Mount on createFabricHttpApp Express app from TASK-006. Also define the FabricEvent discriminated union in @fabric/shared/schemas/events.ts (already scaffolded in TASK-001).",
+  "files": [
+    {
+      "path": "packages/server/src/api/events.ts",
+      "action": "Create",
+      "target": "GET /events SSE endpoint with chokidar file watcher",
+      "change": "Express router: GET /events sets headers text/event-stream + Cache-Control no-cache + Connection keep-alive; creates chokidar watcher on ['.fabric/*','.intent-ledger.jsonl'] relative to projectRoot; on add/change events: reads changed file, constructs typed FabricEvent payload (meta-changed | ledger-appended | human-lock-changed), writes 'data: {json}\\n\\n' to response; 30s heartbeat interval with ':ping\\n\\n'; client disconnect cleanup (watcher.close + clearInterval); max 10 concurrent connections guard"
+    },
+    {
+      "path": "packages/server/src/http.ts",
+      "action": "Update",
+      "target": "Mount /events SSE router",
+      "change": "Import eventsRouter from api/events.ts; app.use('/events', eventsRouter); pass projectRoot to eventsRouter factory"
+    }
+  ],
+  "implementation": [
+    "Create packages/server/src/api/events.ts: implement createEventsRouter(projectRoot: string): Router factory; set SSE response headers; use chokidar.watch(['.fabric', '.intent-ledger.jsonl'], {cwd: projectRoot, ignoreInitial: true})",
+    "Map chokidar events to FabricEvent types: 'agents.meta.json' change → MetaChangedEvent; '.intent-ledger.jsonl' change → LedgerAppendedEvent (read last N lines as payload); 'human-lock.json' change → HumanLockChangedEvent",
+    "Implement 30s heartbeat: setInterval(() => res.write(':ping\\n\\n'), 30000); clear on res.on('close')",
+    "Implement max-connection guard: keep a Set<Response> of active SSE clients; reject with 503 if > 10",
+    "On req.socket.on('close'): call watcher.close(), clearInterval, remove from clients Set",
+    "Update http.ts to pass projectRoot to createEventsRouter and mount at /events"
+  ],
+  "reference": {
+    "pattern": "SSE endpoint with chokidar watcher",
+    "files": [
+      "packages/server/src/http.ts",
+      "packages/server/src/api/rules.ts",
+      "packages/shared/src/schemas/events.ts"
+    ],
+    "examples": "FabricEvent discriminated union defined in @fabric/shared/schemas/events.ts from TASK-001; chokidar is already a transitive dep or can be added to server package.json"
+  },
+  "convergence": {
+    "criteria": [
+      "curl -N http://127.0.0.1:7373/events maintains open connection (does not immediately close)",
+      "Externally modifying .fabric/agents.meta.json (e.g., touch) triggers 'meta-changed' SSE event within 500ms",
+      "Appending a line to .intent-ledger.jsonl triggers 'ledger-appended' SSE event within 500ms",
+      "10-minute idle connection stays alive (heartbeat pings every 30s visible in curl output)",
+      "Closing the curl connection does not leave dangling chokidar watchers (verify via process lsof)"
+    ]
+  },
+  "rationale": {
+    "chosen_approach": "SSE is unidirectional push — sufficient for Dashboard audit view which only reads data from server; chokidar is the de-facto file-watching library in Node.js ecosystem",
+    "alternatives_considered": [
+      "WebSocket (bidirectional, overkill for one-way push)",
+      "Long polling (inefficient, adds unnecessary HTTP overhead)",
+      "Re-using MCP SSE notifications (couples dashboard events to MCP protocol)"
+    ],
+    "decision_factors": [
+      "SSE is simpler to implement and consume in Preact (native EventSource API)",
+      "chokidar is reliable cross-platform (macOS/Linux/Windows)"
+    ],
+    "tradeoffs": "SSE has browser max-connection-per-origin limit (6) — acceptable for single-user local dashboard with 1 SSE connection"
+  },
+  "test": {
+    "manual_checks": [
+      "curl -N http://127.0.0.1:7373/events — verify persistent connection with periodic ':ping' lines",
+      "In separate terminal: touch /path/to/project/.fabric/agents.meta.json — verify SSE event appears in curl",
+      "echo '{...}' >> /path/to/project/.intent-ledger.jsonl — verify 'ledger-appended' event pushed"
+    ],
+    "success_metrics": [
+      "SSE event delivered within 500ms of file change",
+      "Connection persists > 10 minutes with heartbeat",
+      "No resource leaks on client disconnect"
+    ],
+    "unit": [],
+    "integration": []
+  },
+  "risks": [
+    {
+      "description": "chokidar not available as a direct dependency (only transitive)",
+      "probability": "Low",
+      "impact": "Low",
+      "mitigation": "Add chokidar as explicit dependency in packages/server/package.json; it is already used by many build tools in the ecosystem",
+      "fallback": "Use fs.watch() as fallback (less reliable on macOS) or poll-based approach"
+    }
+  ],
+  "depends_on": ["TASK-006"],
+  "cli_execution_id": "fabric-dashboard-2026-04-19-TASK-008",
+  "cli_execution": {
+    "strategy": "fork",
+    "resume_from": "fabric-dashboard-2026-04-19-TASK-006"
+  }
+}

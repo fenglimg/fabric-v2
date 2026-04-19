@@ -1,0 +1,582 @@
+{
+  "session_id": "ANL-fabric-mcp-dashboard-unified-2026-04-19",
+  "topic": "Fabric 统一服务系统 — MCP Server + Web Dashboard 集成",
+  "completed": "2026-04-19",
+  "total_rounds": 3,
+  "summary": "Fabric 的架构愿景从 v1.0 MVP (stdio MCP + CLI) 延伸为 v1.1 Feature #5 — 一个由 `fab serve` 启动的单进程 Express 应用，在同一端口上同时承载 MCP HTTP (per-session 工厂)、Dashboard REST/SSE API、静态 SPA 资源。Dashboard 定位为'项目语义共识层':基于 pre-commit 三件套 (sync-meta/human-lint/ledger-append) 的数据产物进行可视化，承担人机认知异步仲裁职责,采用'仪式性写入'权限模型 (仅 human-lock approve 和 intent 批注)。关键发现:MCP SDK v1.29 已传递依赖 Hono + Express — 零新增 npm 依赖即可接入 HTTP。5 阶段任务 D1-D5 可直接交接 workflow-lite-plan。",
+  "key_conclusions": [
+    {
+      "point": "MCP SDK v1.29 已内置完整 HTTP 基础设施 (Hono+Express+StreamableHTTPServerTransport+createMcpExpressApp+DNS rebinding 防护+OAuth)，零新增 npm 依赖即可实现 Dashboard + HTTP MCP",
+      "evidence": "@modelcontextprotocol/sdk/package.json 实测 hono^4.11.4 + express^5.2.1；dist/esm/server 含 express.d.ts / streamableHttp.d.ts / webStandardStreamableHttp.d.ts / auth/",
+      "confidence": "high",
+      "code_anchor_refs": [
+        "packages/server/node_modules/@modelcontextprotocol/sdk/dist/esm/server/express.d.ts",
+        "packages/server/node_modules/@modelcontextprotocol/sdk/package.json"
+      ]
+    },
+    {
+      "point": "MCP SDK 契约要求 per-session McpServer 工厂而非单例复用 — HTTP 模式必须每连接创建独立 server+transport",
+      "evidence": "SDK McpServer.connect() '独占 transport 所有权'；官方示例 sseAndStreamableHttpCompatibleServer.js 明确工厂模式",
+      "confidence": "high"
+    },
+    {
+      "point": "`createFabricServer()` 在 server/index.ts:L23-34 已是无副作用工厂，天然契合 per-session 模式；HTTP 接入零改动 stdio 代码",
+      "evidence": "server/src/index.ts 代码实测 — factory 仅 registerXxx 注册 3 tool，不绑定 transport",
+      "confidence": "high",
+      "code_anchor_refs": [
+        "packages/server/src/index.ts:L23-34"
+      ]
+    },
+    {
+      "point": "Dashboard 的三个核心视图 (规则树/人类仓库/意图时间线) 完全映射 pre-commit 三件套的数据产物 — Dashboard 不引入新数据，是已有数据的仲裁视图",
+      "evidence": "sync-meta→agents.meta.json (规则树); human-lint→human-lock.json (人类仓库审计); ledger-append→intent-ledger.jsonl (意图时间线)",
+      "confidence": "high"
+    },
+    {
+      "point": "Intent-ledger 需采用显式 tag 区分方案 (source: 'ai' | 'human')，契合'异步仲裁'语义且避免 schema 失真；为 discriminated union",
+      "evidence": "Round 2 用户决策；append-intent.ts:L9-15 与 ledger-append.ts:L13-19 字段集合差异大 (AI侧缺parent_sha/diff_stat)",
+      "confidence": "high"
+    },
+    {
+      "point": "packages/shared 空占位是上移共享契约的黄金时机 — AgentsMeta / LedgerEntry / HumanLockEntry / FabricConfig 统一后 Dashboard 无需依赖 server/cli 内部",
+      "evidence": "packages/shared/src/index.ts:L1-2 `export {}`; sync-meta.ts 和 init.ts 已有重复 AgentsMeta 定义",
+      "confidence": "high"
+    },
+    {
+      "point": "Dashboard 采用'仪式性写入'模型 (仅 human-lock approve + intent 批注)，与'不中断开发心流'语义一致；规避全量编辑的锁竞争复杂度",
+      "evidence": "Round 2 用户决策",
+      "confidence": "high"
+    },
+    {
+      "point": "Dashboard 定位为 v1.1 Feature #5 最合理 — v1.1 是 maintenance milestone，Dashboard 作为诊断+审计可视化工具契合主题且与 fab doctor 互补",
+      "evidence": "Round 2 用户决策；docs/roadmap.md 现有 4 特性均为 maintenance 属性",
+      "confidence": "high"
+    },
+    {
+      "point": "v1.1 5 特性实施顺序建议: fab doctor → Dashboard(+shared) → drift-check → fab migrate → Copilot fallback；doctor 为 Dashboard 诊断 tab 提供数据源，Copilot 受外部 GA 时间表弹性",
+      "evidence": "依赖分析 — doctor 的 health check 可作为 Dashboard 单独 panel 复用",
+      "confidence": "medium"
+    }
+  ],
+  "code_anchors": [
+    {
+      "file": "packages/server/src/index.ts",
+      "lines": "L23-34",
+      "significance": "createFabricServer() 工厂 — HTTP 接入切割点"
+    },
+    {
+      "file": "packages/server/src/index.ts",
+      "lines": "L36-41",
+      "significance": "startStdioServer() 当前唯一 transport 绑定 — 并列新增 startHttpServer()"
+    },
+    {
+      "file": "packages/server/src/tools/get-rules.ts",
+      "lines": "L160-169",
+      "significance": "MCP tool 响应结构 — Dashboard 规则树数据源"
+    },
+    {
+      "file": "packages/server/src/tools/append-intent.ts",
+      "lines": "L9-15",
+      "significance": "AI 侧 LedgerEntry schema — 加 source:'ai' 后统一"
+    },
+    {
+      "file": "packages/cli/src/commands/ledger-append.ts",
+      "lines": "L13-19",
+      "significance": "CLI 侧 LedgerEntry schema — 加 source:'human' 后统一"
+    },
+    {
+      "file": "packages/cli/src/commands/human-lint.ts",
+      "lines": "L12-17, L115",
+      "significance": "HumanLockEntry + hashLockedContent() — @HUMAN 审计卡基础"
+    },
+    {
+      "file": "packages/cli/src/commands/sync-meta.ts",
+      "lines": "L71-99",
+      "significance": "computeAgentsMeta() 纯函数 — Dashboard drift 直接复用"
+    },
+    {
+      "file": "packages/cli/src/dev-mode.ts",
+      "lines": "L30-56",
+      "significance": "resolveDevMode() — fab serve --target 解析应复用"
+    },
+    {
+      "file": "packages/shared/src/index.ts",
+      "lines": "L1-2",
+      "significance": "空占位 — 迁移 AgentsMeta/LedgerEntry/HumanLockEntry 目标"
+    },
+    {
+      "file": "packages/server/src/meta-reader.ts",
+      "lines": "L6-31",
+      "significance": "AgentsMeta 源定义 — 迁移至 @fabric/shared"
+    }
+  ],
+  "recommendations": [
+    {
+      "action": "D1: Shared Schema 迁移",
+      "rationale": "Dashboard 引入前打好依赖方向基础；消除 server/cli 重复类型；为所有后续 v1.1 特性提供共同契约",
+      "priority": "high",
+      "review_status": "accepted",
+      "steps": [
+        {
+          "description": "packages/shared/src/schemas/ 新增 agents-meta.ts (从 server/meta-reader.ts 迁入 AgentsMeta interface + zod schema)",
+          "target": "packages/shared/src/schemas/agents-meta.ts",
+          "verification": "import 替换后 pnpm -r build 通过"
+        },
+        {
+          "description": "ledger-entry.ts 定义 discriminated union: LedgerEntry = (AiLedgerEntry & {source:'ai'}) | (HumanLedgerEntry & {source:'human'})",
+          "target": "packages/shared/src/schemas/ledger-entry.ts",
+          "verification": "zod safeParse 对两类旧记录（不带 source 字段）降级为 'human'（向后兼容）"
+        },
+        {
+          "description": "human-lock.ts + fabric-config.ts 迁入",
+          "target": "packages/shared/src/schemas/{human-lock,fabric-config}.ts",
+          "verification": "human-lint.ts 和 config/resolver.ts 改为 import from @fabric/shared"
+        },
+        {
+          "description": "server 和 cli package.json 声明 @fabric/shared workspace 依赖",
+          "target": "packages/{server,cli}/package.json",
+          "verification": "pnpm install 链接成功；全链路类型检查通过"
+        }
+      ]
+    },
+    {
+      "action": "D2: MCP HTTP + fab serve 命令",
+      "rationale": "建立 Dashboard 基础设施 — 单 Express app + per-session McpServer 工厂；stdio 模式保留",
+      "priority": "high",
+      "review_status": "accepted",
+      "steps": [
+        {
+          "description": "packages/server/src/http.ts 新增 createFabricHttpApp(port, projectRoot): Express app — 使用 createMcpExpressApp({host:'127.0.0.1'}) + per-session transports map + JsonlEventStore",
+          "target": "packages/server/src/http.ts",
+          "verification": "curl -X POST :7373/mcp 返回合法 JSON-RPC response；mcp-session-id header 正确返回"
+        },
+        {
+          "description": "packages/server/src/index.ts 导出 startHttpServer(options) + 保留 startStdioServer()",
+          "target": "packages/server/src/index.ts",
+          "verification": "两模式互斥启动；stdio 下 console.log 仍被 lint 守卫拦截"
+        },
+        {
+          "description": "packages/cli/src/commands/serve.ts 新增 fab serve 命令 — 接受 --port (默认7373) --target (复用 resolveDevMode) --stdio/--http 互斥标志（默认 --http）",
+          "target": "packages/cli/src/commands/serve.ts",
+          "verification": "fab --help 列出 serve; fab serve 启动 HTTP server 并打印 URL"
+        },
+        {
+          "description": "端口占用检测 + 友好错误 (EADDRINUSE 时建议 --port 其他值)",
+          "target": "packages/cli/src/commands/serve.ts",
+          "verification": "手动占 7373 后 fab serve 输出明确错误提示"
+        }
+      ]
+    },
+    {
+      "action": "D3: Dashboard REST API 层（含 services/ 中间层）",
+      "rationale": "避免 MCP tool 和 HTTP API 重复实现业务逻辑；为 Dashboard 提供数据读写通道",
+      "priority": "high",
+      "review_status": "accepted",
+      "steps": [
+        {
+          "description": "packages/server/src/services/ 新增 3 个纯函数业务层（从现有 tools/ 抽出共用逻辑）",
+          "target": "packages/server/src/services/{get-rules,append-intent,update-registry}.ts",
+          "verification": "tools/*.ts 改为薄 adapter 调 services/；现有 MCP tool 行为不变（回归测试）"
+        },
+        {
+          "description": "REST endpoints: GET /api/rules, GET /api/ledger?source=ai|human&since=<ts>, GET /api/scan, GET /api/human-lock",
+          "target": "packages/server/src/api/{rules,ledger,scan,human-lock}.ts",
+          "verification": "httpie 请求返回预期 JSON；ledger 端点能按 source 过滤"
+        },
+        {
+          "description": "写端点: POST /api/human-lock/approve (更新 locked[].hash), POST /api/intent/annotate (写入新 ledger entry source:'human' + annotation 字段)",
+          "target": "packages/server/src/api/{human-lock,intent}.ts",
+          "verification": "手动 approve 后 human-lock.json hash 更新；annotate 后 intent-ledger 新增条目"
+        },
+        {
+          "description": "错误体契约: 统一返回 {error: {code, message}} — 复用 meta-reader 的 FABRIC_META_MISSING / FABRIC_META_INVALID",
+          "target": "packages/server/src/api/_error.ts",
+          "verification": "缺 .fabric/ 目录时返回 404 + code"
+        }
+      ]
+    },
+    {
+      "action": "D4: 实时 SSE + chokidar 文件监听",
+      "rationale": "审计工作台需实时反映 pre-commit 三件套的输出变化，避免手动刷新 — 契合'不中断心流'",
+      "priority": "high",
+      "review_status": "accepted",
+      "steps": [
+        {
+          "description": "GET /events 端点返回 text/event-stream；chokidar 监听 .fabric/* 和 .intent-ledger.jsonl",
+          "target": "packages/server/src/api/events.ts",
+          "verification": "curl -N :7373/events 保持连接；外部 touch 文件触发事件推送"
+        },
+        {
+          "description": "事件类型: 'meta-changed' | 'ledger-appended' | 'human-lock-changed'; payload 为增量数据",
+          "target": "packages/shared/src/schemas/events.ts",
+          "verification": "类型定义在 shared 包供 Dashboard 前端共用"
+        },
+        {
+          "description": "连接数限制 + 心跳 (30s ping) 防 idle timeout",
+          "target": "packages/server/src/api/events.ts",
+          "verification": "10 分钟空闲后连接不掉"
+        }
+      ]
+    },
+    {
+      "action": "D5: Preact + Vite Dashboard SPA 三视图",
+      "rationale": "用户选定技术栈 — 轻量组件化 + 超小体积符合 maintenance tool 定位",
+      "priority": "high",
+      "review_status": "accepted",
+      "steps": [
+        {
+          "description": "新增 packages/dashboard (Preact + Vite)，配置 vite.config.ts proxy /api, /mcp, /events to :7373",
+          "target": "packages/dashboard/{package.json,vite.config.ts,index.html,src/main.tsx}",
+          "verification": "cd packages/dashboard && pnpm dev 浏览器打开 :5173 显示占位页"
+        },
+        {
+          "description": "视图 1: 规则树浏览器 (RulesTree) — 树形渲染 AgentsMeta.nodes；human_locked_nearby 高亮；stale badge",
+          "target": "packages/dashboard/src/views/rules-tree.tsx",
+          "verification": "浏览器显示示例项目的 AGENTS.md 层级"
+        },
+        {
+          "description": "视图 2: 人类仓库审计 (HumanLockVault) — 列出 .fabric/human-lock.json，实时 drift 状态，approve 按钮",
+          "target": "packages/dashboard/src/views/human-lock.tsx",
+          "verification": "故意改 AGENTS.md @HUMAN 段后 Dashboard 显示 drift；approve 后 drift 消失"
+        },
+        {
+          "description": "视图 3: 意图时间线 (IntentTimeline) — 双栏布局 (AI | Human) 按 ts 排序；diff_stat 展示；annotate 按钮",
+          "target": "packages/dashboard/src/views/intent-timeline.tsx",
+          "verification": "fab_append_intent 调用 + git commit 后，Dashboard 两栏分别出现新条目"
+        },
+        {
+          "description": "生产打包: packages/dashboard 执行 vite build → dist/；server 包构建时将 dist/ copy 到 server/dist/static/ (tsup onSuccess hook 或 pnpm 脚本)",
+          "target": "packages/server/tsup.config.ts + build 脚本",
+          "verification": "pnpm -r build 后 fab serve 无需额外启动 Vite，浏览器 :7373 显示完整 SPA"
+        }
+      ]
+    },
+    {
+      "action": "Roadmap & Docs 更新",
+      "rationale": "v1.1 定位需显式写入 docs/roadmap.md；README 需要更新为 '6 客户端 MCP + Dashboard'",
+      "priority": "medium",
+      "review_status": "accepted",
+      "steps": [
+        {
+          "description": "docs/roadmap.md 新增 '## v1.1 Feature 5: Fabric Serve (Dashboard)' 章节，明确 rationale / trigger / approach sketch",
+          "target": "docs/roadmap.md",
+          "verification": "roadmap 含 5 个 v1.1 特性条目"
+        },
+        {
+          "description": "建议 v1.1 5 特性实施顺序 = fab doctor → Dashboard+shared → drift-check → fab migrate → Copilot fallback",
+          "target": "docs/roadmap.md (ordering note)",
+          "verification": "顺序有依赖分析支撑"
+        },
+        {
+          "description": "README 更新：提及 fab serve 将在 v1.1 提供可视化审计 Dashboard",
+          "target": "README.md",
+          "verification": "v1.0 MVP 说明不变；v1.1 预告加入"
+        }
+      ]
+    },
+    {
+      "action": "可选扩展 (v1.1 内或后续)",
+      "rationale": "本次不阻塞 D1-D5；团队共享/history replay 属演进能力",
+      "priority": "low",
+      "review_status": "accepted",
+      "steps": [
+        {
+          "description": "E1: Bearer auth — 利用 SDK 的 requireBearerAuth 中间件，从 localhost-only 扩展到 LAN 共享",
+          "target": "future",
+          "verification": "待有团队共享需求再启动"
+        },
+        {
+          "description": "E2: fab doctor 诊断 tab 集成到 Dashboard",
+          "target": "future",
+          "verification": "fab doctor 实施后"
+        },
+        {
+          "description": "E3: History replay — 基于 intent-ledger.jsonl 回溯任意时间点规则状态",
+          "target": "future",
+          "verification": "需要快照策略设计"
+        }
+      ]
+    }
+  ],
+  "implementation_scope": [],
+  "open_questions": [
+    "Dashboard 生产时 dist/ 静态文件查找路径策略：tsup copy 进 server/dist/static vs server 运行时 __dirname/../dashboard-dist — 留 lite-plan 决定",
+    "fab doctor 是否与 Dashboard 同期启动还是严格前置？（依赖分析建议 doctor 先，但工程上可并行）",
+    "多 AI 客户端并发写 .intent-ledger.jsonl 是否需要 proper-lockfile（当前结论：JSONL append 在多数 OS 原子性，可不引入）",
+    "Dashboard 是否需要 dark/light 主题切换？（本次分析未涉及 UX 细节）"
+  ],
+  "follow_up_suggestions": [
+    {
+      "type": "implementation",
+      "summary": "进入 workflow-lite-plan 把 D1-D5 5 阶段转为 Day-by-Day 可执行任务"
+    },
+    {
+      "type": "roadmap",
+      "summary": "同步 docs/roadmap.md 加入 v1.1 Feature 5 条目 + 5 特性实施顺序说明"
+    },
+    {
+      "type": "validation",
+      "summary": "D2 完成后优先用 @modelcontextprotocol/inspector 验证 HTTP MCP endpoint，确保与 stdio 行为一致"
+    },
+    {
+      "type": "research",
+      "summary": "D5 前调研 Preact + Vite + DaisyUI/UnoCSS 的集成以快速建 UI，避免从零写样式"
+    }
+  ],
+  "decision_trail": [
+    {
+      "round": 1,
+      "decision": "技术栈：Express v5 via createMcpExpressApp（MCP SDK 官方）",
+      "context": "HTTP 框架选型",
+      "options_considered": "Express(SDK官方) / Hono 直接用 / Fastify / 原生 node:http / 分进程",
+      "chosen": "Express via createMcpExpressApp",
+      "rejected_reasons": "Hono 失去 SDK 安全配置；Fastify 无集成；node:http 重造轮子；分进程无必要",
+      "reason": "零新增依赖 + SDK 官方安全配置 + OAuth 路由预备",
+      "impact": "技术栈锁定"
+    },
+    {
+      "round": 1,
+      "decision": "MCP HTTP 用 per-session McpServer 工厂",
+      "context": "多 transport 场景模式",
+      "options_considered": "per-session 工厂 / 单 McpServer 多 transport / stateless",
+      "chosen": "per-session 工厂 (stateful + JsonlEventStore)",
+      "rejected_reasons": "单 McpServer SDK 不支持；stateless 失去断线重连",
+      "reason": "符合 SDK 契约 + resumability 天然复用 intent-ledger",
+      "impact": "HTTP MCP 实现模式锁定"
+    },
+    {
+      "round": 2,
+      "decision": "Intent-ledger 显式 tag 区分 (source: 'ai' | 'human')",
+      "context": "双路写入 schema 统一",
+      "options_considered": "(A)字段对齐 (B)显式tag (C)保持现状",
+      "chosen": "(B)显式tag",
+      "rejected_reasons": "A 丢失'双仓'语义；C 把复杂度转嫁给 Dashboard",
+      "reason": "契合'异步仲裁'核心语义 — 双栏时间线视觉分离",
+      "impact": "LedgerEntry = discriminated union"
+    },
+    {
+      "round": 2,
+      "decision": "Dashboard 仪式性写入权限（仅 human-lock approve + intent 批注）",
+      "context": "读/写权限边界",
+      "options_considered": "只读 / 仪式性 / 全量编辑",
+      "chosen": "仪式性写入",
+      "rejected_reasons": "全量编辑复杂度高且与 IDE 工作流冲突；纯只读弱化仲裁语义",
+      "reason": "与'不中断心流'契合 — Dashboard 仅承担决定点",
+      "impact": "两个写 API 即可，不需乐观锁"
+    },
+    {
+      "round": 2,
+      "decision": "前端 = Preact + Vite 轻量 SPA",
+      "context": "前端技术栈",
+      "options_considered": "Vanilla / Preact+Vite / HTMX / React",
+      "chosen": "Preact + Vite",
+      "rejected_reasons": "Vanilla 组件化成本高；HTMX 与 SPA 不匹配；React 体积大",
+      "reason": "组件化 + 超小体积 (3KB) + Vite DX",
+      "impact": "新增 packages/dashboard 独立包 + dev proxy 配置"
+    },
+    {
+      "round": 2,
+      "decision": "Dashboard 定位 = v1.1 Feature #5",
+      "context": "Roadmap 位置",
+      "options_considered": "v1.1 / 独立v1.2或v2.0 / 并入v1.0 / 不定位",
+      "chosen": "v1.1 Feature #5",
+      "rejected_reasons": "独立版本破坏节奏；并入v1.0拖长MVP；不定位丢roadmap对齐",
+      "reason": "v1.1 maintenance milestone 主题契合 + 与 fab doctor 互补",
+      "impact": "需更新 docs/roadmap.md 加第5条目"
+    },
+    {
+      "round": 3,
+      "decision": "5 阶段任务分解 D1-D5",
+      "context": "实施路径",
+      "options_considered": "线性分解 / 并行 / 按模块拆",
+      "chosen": "D1(shared)→D2(MCP HTTP)→D3(REST)→D4(SSE)→D5(SPA)",
+      "rejected_reasons": "并行增加 schema 反复修改成本；模块拆分缺乏纵向验证",
+      "reason": "shared 优先消除依赖方向问题；每阶段可独立验证",
+      "impact": "可直接交接 lite-plan"
+    },
+    {
+      "round": 3,
+      "decision": "v1.1 5 特性实施顺序建议",
+      "context": "v1.1 内部排序",
+      "options_considered": "按用户价值 / 按依赖 / 按风险",
+      "chosen": "doctor → Dashboard+shared → drift-check → migrate → Copilot",
+      "rejected_reasons": "按价值过于主观；按风险 Copilot 不确定性太高",
+      "reason": "doctor 的 health check 为 Dashboard 诊断 tab 提供数据；Copilot 依赖外部 GA",
+      "impact": "roadmap 可给出建议顺序"
+    }
+  ],
+  "narrative_trail": [
+    {
+      "round": 1,
+      "starting_point": "用户提出'集成 MCP + Dashboard 统一服务系统'架构愿景",
+      "key_progress": "外部研究确认 MCP SDK v1.29 零新增依赖可行；代码探索确认 createFabricServer 已是纯工厂",
+      "hypothesis_impact": "Confirms 单进程多协议可行；Refutes 单 McpServer 多 transport 直觉",
+      "updated_understanding": "架构主干清晰：单 Express App + per-session MCP 工厂 + REST/SSE/静态",
+      "remaining_questions": "ledger schema 统一 / 写权限 / 前端栈 / roadmap 定位"
+    },
+    {
+      "round": 2,
+      "starting_point": "4 个关键决策点歧义",
+      "key_progress": "用户以'异步仲裁+不中断心流'为主线作出一致取舍",
+      "hypothesis_impact": "Confirms Dashboard 定位清晰化",
+      "updated_understanding": "Dashboard 具化为 v1.1 Feature #5 — 预提交仲裁工作台 + 诊断可视化",
+      "remaining_questions": "monorepo 结构 / 路由表 / 实施顺序细节"
+    },
+    {
+      "round": 3,
+      "starting_point": "架构主干和语义已锁定,需产出工程蓝图",
+      "key_progress": "明确 packages/dashboard 独立包 + shared 充实 + services/ 抽取层 + D1-D5 任务分解",
+      "hypothesis_impact": "Confirms 可交接 lite-plan",
+      "updated_understanding": "实施路径从抽象概念落为具体 PR 序列",
+      "remaining_questions": "生产静态文件查找路径 (lite-plan 决定即可)"
+    }
+  ],
+  "intent_coverage": [
+    {
+      "intent": "架构愿景延伸",
+      "status": "addressed",
+      "where_addressed": "Round 1 + Round 3",
+      "notes": "fab serve 单进程多协议 + 5 阶段蓝图"
+    },
+    {
+      "intent": "MCP Server 定位",
+      "status": "addressed",
+      "where_addressed": "Round 1",
+      "notes": "per-session 工厂 HTTP + stdio 保留"
+    },
+    {
+      "intent": "Web Dashboard 角色",
+      "status": "addressed",
+      "where_addressed": "Round 1 + Round 2",
+      "notes": "项目语义共识层 / 仲裁工作台 / 仪式性写入"
+    },
+    {
+      "intent": "统一服务系统",
+      "status": "addressed",
+      "where_addressed": "Round 1-3",
+      "notes": "单 Express app 承载 4 类端点"
+    },
+    {
+      "intent": "与 v1.0/v1.1 的关系",
+      "status": "addressed",
+      "where_addressed": "Round 2",
+      "notes": "v1.1 Feature #5"
+    }
+  ],
+  "findings_coverage": [
+    {
+      "finding": "MCP SDK v1.29 零新增依赖",
+      "round": 1,
+      "disposition": "recommendation",
+      "target": "Rec #2 (D2 用 createMcpExpressApp)"
+    },
+    {
+      "finding": "SDK 不支持单 server 多 transport",
+      "round": 1,
+      "disposition": "recommendation",
+      "target": "Rec #2 (D2 per-session 工厂)"
+    },
+    {
+      "finding": "createFabricServer 已是纯工厂",
+      "round": 1,
+      "disposition": "recommendation",
+      "target": "Rec #2 (D2 直接复用)"
+    },
+    {
+      "finding": "pre-commit 三件套映射三视图",
+      "round": 1,
+      "disposition": "recommendation",
+      "target": "Rec #5 (D5 三视图设计)"
+    },
+    {
+      "finding": "intent-ledger schema 双轨不一致",
+      "round": 1,
+      "disposition": "recommendation",
+      "target": "Rec #1 (D1 discriminated union)"
+    },
+    {
+      "finding": "shared 包空占位",
+      "round": 1,
+      "disposition": "recommendation",
+      "target": "Rec #1 (D1 迁移)"
+    },
+    {
+      "finding": "纯函数可复用 (computeAgentsMeta/createScanReport/hashLockedContent)",
+      "round": 1,
+      "disposition": "recommendation",
+      "target": "Rec #3 (D3 services/ 直接调)"
+    },
+    {
+      "finding": "EventStore 天然适配 JSONL",
+      "round": 1,
+      "disposition": "recommendation",
+      "target": "Rec #2 (D2 JsonlEventStore)"
+    },
+    {
+      "finding": "OAuth/Auth 内置可延后",
+      "round": 1,
+      "disposition": "deferred",
+      "target": "Rec #7 E1 (Bearer auth 可选扩展)"
+    },
+    {
+      "finding": "默认端口 7373 避免冲突",
+      "round": 1,
+      "disposition": "recommendation",
+      "target": "Rec #2 (D2 默认端口)"
+    },
+    {
+      "finding": "StreamableHTTP GA + SSE deprecated",
+      "round": 1,
+      "disposition": "recommendation",
+      "target": "Rec #2 (D2 StreamableHTTPServerTransport)"
+    },
+    {
+      "finding": "Intent-ledger 显式 tag 方案 B",
+      "round": 2,
+      "disposition": "recommendation",
+      "target": "Rec #1 (D1 discriminated union)"
+    },
+    {
+      "finding": "仪式性写入权限",
+      "round": 2,
+      "disposition": "recommendation",
+      "target": "Rec #3 (D3 两个写 API)"
+    },
+    {
+      "finding": "Preact+Vite 轻量 SPA",
+      "round": 2,
+      "disposition": "recommendation",
+      "target": "Rec #5 (D5)"
+    },
+    {
+      "finding": "v1.1 Feature #5 定位",
+      "round": 2,
+      "disposition": "recommendation",
+      "target": "Rec #6 (roadmap 更新)"
+    },
+    {
+      "finding": "5 特性实施顺序 (doctor→Dashboard→drift→migrate→Copilot)",
+      "round": 3,
+      "disposition": "recommendation",
+      "target": "Rec #6 (roadmap ordering note)"
+    },
+    {
+      "finding": "monorepo 结构增 packages/dashboard",
+      "round": 3,
+      "disposition": "recommendation",
+      "target": "Rec #5 (D5 新增包)"
+    },
+    {
+      "finding": "生产静态文件路径策略未定",
+      "round": 3,
+      "disposition": "deferred",
+      "target": "Open Question — lite-plan 决定"
+    },
+    {
+      "finding": "dark/light 主题未讨论",
+      "round": 3,
+      "disposition": "informational",
+      "target": "—"
+    }
+  ]
+}

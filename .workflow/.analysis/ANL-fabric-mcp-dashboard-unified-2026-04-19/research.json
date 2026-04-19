@@ -1,0 +1,168 @@
+{
+  "topic": "MCP Server + Web Dashboard 统一服务系统架构",
+  "mode": "detail-verification",
+  "timestamp": "2026-04-19",
+  "findings": [
+    {
+      "finding": "MCP SDK v1.29 已内置 Streamable HTTP 作为推荐 transport，SSEServerTransport 已 @deprecated",
+      "detail": "协议版本 2025-11-25，旧 SSE 是 2024-11-05。官方 README 明确指引用 StreamableHTTPServerTransport",
+      "confidence": "high",
+      "source_url": "https://spec.modelcontextprotocol.io"
+    },
+    {
+      "finding": "SDK 不支持单个 McpServer 实例同时 connect 多个 transport — connect() 是独占所有权",
+      "detail": "官方多 transport 方案 = 工厂模式：每 HTTP session 调用 getServer() 创建独立 McpServer + 独立 Transport，通过 transports[sessionId] map 管理",
+      "confidence": "high",
+      "source_url": "examples/server/sseAndStreamableHttpCompatibleServer.js in SDK"
+    },
+    {
+      "finding": "MCP SDK 自身已依赖 Hono + Express，无需额外引入 HTTP 框架",
+      "detail": "@hono/node-server^1.19.9 + hono^4.11.4 + express^5.2.1 均为 MCP SDK 传递依赖。StreamableHTTPServerTransport 内部用 @hono/node-server 做 Node ↔ Web Standard 桥接；Express v5 用于 createMcpExpressApp() 和 OAuth 路由",
+      "confidence": "high",
+      "source_url": "@modelcontextprotocol/sdk package.json"
+    },
+    {
+      "finding": "createMcpExpressApp({ host: '127.0.0.1' }) 默认开启 DNS rebinding 防护 + express.json() 预配置",
+      "detail": "localhostHostValidation() 中间件拦截 Host header 不匹配 localhost 的请求",
+      "confidence": "high",
+      "source_url": ".../server/express.d.ts"
+    },
+    {
+      "finding": "EventStore 接口支持 JSONL 作为 resumability 后端",
+      "detail": "SDK 定义 EventStore 接口 (storeEvent, replayEventsAfter)，内置 InMemoryEventStore 示例。.intent-ledger.jsonl 可直接实现此接口",
+      "confidence": "high",
+      "source_url": ".../server/webStandardStreamableHttp.d.ts"
+    },
+    {
+      "finding": "stdio + HTTP 单进程并存是标准模式但不能共享 McpServer 实例",
+      "detail": "两者都是异步 I/O 共享同一事件循环，不阻塞。stdio 模式下 process.stdout 独占 JSON-RPC，所有日志必须走 stderr",
+      "confidence": "high",
+      "source_url": "MCP 架构 + Node.js 事件循环模型"
+    },
+    {
+      "finding": "OAuth 2.1 + Bearer auth 完整内置（mcpAuthRouter / requireBearerAuth / ProxyOAuthServerProvider）",
+      "detail": "AuthInfo.extra 字段可携带自定义 session 元数据，本地工具可用轻量 session token 绕过完整 PKCE",
+      "confidence": "high",
+      "source_url": ".../server/auth/router.d.ts"
+    }
+  ],
+  "best_practices": [
+    {
+      "practice": "每 HTTP session 实例化独立 McpServer + Transport",
+      "rationale": "SDK 契约要求 connect() 独占；状态应放 module-scope 或 SQLite，而非 server 实例"
+    },
+    {
+      "practice": "单一 Express app 承载所有 HTTP endpoints (MCP /mcp + Dashboard /api + SSE /events + static /)",
+      "rationale": "一次 app.listen(port) 解决；createMcpExpressApp() 返回的 app 可自由 mount 任意路由"
+    },
+    {
+      "practice": "Dashboard 实时事件用独立 SSE /events 端点，不复用 MCP SSE 流",
+      "rationale": "MCP SSE 走协议栈，Dashboard 事件走业务栈；fs.watchFile 或 chokidar 监听 .intent-ledger.jsonl 变化后 broadcast"
+    },
+    {
+      "practice": "启动模式用 argv 区分 (--http vs stdio)",
+      "rationale": "避免两种模式同时运行的状态复杂性；初期清晰，后期需要可开启 dual mode"
+    },
+    {
+      "practice": "localhost-only binding + DNS rebinding 防护是本地工具安全基线",
+      "rationale": "createMcpExpressApp({ host: '127.0.0.1' }) 已内置"
+    }
+  ],
+  "alternatives": [
+    {
+      "option": "Express (via createMcpExpressApp)",
+      "pros": "SDK 官方提供；DNS rebinding 内置；OAuth 路由直接 mount；零新增依赖",
+      "cons": "Express v5 仍处 beta 稳定边缘",
+      "verdict": "RECOMMENDED — 零额外依赖成本最优"
+    },
+    {
+      "option": "Hono 直接用 (@hono/node-server 自建)",
+      "pros": "更轻量；Web Standards API",
+      "cons": "需自己实现 DNS rebinding 防护，失去 createMcpExpressApp 的安全配置",
+      "verdict": "Viable 但不必要"
+    },
+    {
+      "option": "Fastify",
+      "pros": "更快；TypeScript schema 支持优",
+      "cons": "与 MCP SDK 无直接集成；需重新实现安全栈",
+      "verdict": "Avoid（初期）"
+    },
+    {
+      "option": "单 McpServer 实例 + 多 transport",
+      "pros": "概念简洁",
+      "cons": "SDK 不支持，违反 connect() 独占所有权契约",
+      "verdict": "Avoid — 架构违约"
+    },
+    {
+      "option": "分进程（MCP stdio + HTTP 独立进程 + IPC）",
+      "pros": "进程隔离",
+      "cons": "IPC 复杂性；状态同步开销",
+      "verdict": "Viable 但初期不必要"
+    }
+  ],
+  "pitfalls": [
+    {
+      "issue": "stdio 模式下任何 console.log 污染 JSON-RPC 协议流",
+      "mitigation": "所有日志走 process.stderr；lefthook stdout-lint 已部分防护，需覆盖 tool handler"
+    },
+    {
+      "issue": "HTTP 端口冲突（Vite 5173 / Storybook 6006 等常见端口）",
+      "mitigation": "默认 --port 7373 (非流行端口)；启动检测 EADDRINUSE"
+    },
+    {
+      "issue": "stdio + HTTP 同进程时 stdin 被 StdioServerTransport 独占",
+      "mitigation": "--http 模式显式不调 startStdioServer()；两模式互斥（初期）"
+    },
+    {
+      "issue": "双路写 .intent-ledger.jsonl 的竞态（AI 侧 + CLI 侧 + Dashboard approve 写）",
+      "mitigation": "JSONL append 在多数 OS 上原子性；必要时 proper-lockfile，避免引入 SQLite"
+    },
+    {
+      "issue": "resolveProjectRoot() 全局单例假设 — 多 project Dashboard 场景失效",
+      "mitigation": "短期：Dashboard 单 project；中期：重构为 per-request context"
+    }
+  ],
+  "codebase_gaps": [
+    {
+      "gap": "缺 fab serve 命令",
+      "current_approach": "CLI 5 subcommand 不含 serve",
+      "recommended_approach": "新增 packages/cli/src/commands/serve.ts，支持 --port/--http 参数"
+    },
+    {
+      "gap": "fabric-server 仅暴露 startStdioServer()",
+      "current_approach": "stdio-only",
+      "recommended_approach": "新增 startHttpServer(port) 导出，复用 createFabricServer() 工厂"
+    },
+    {
+      "gap": "intent-ledger 无 API 层",
+      "current_approach": "ledger-append.ts 直接写文件，外部无法读",
+      "recommended_approach": "新增 packages/server/src/api/ledger.ts (GET /api/ledger)"
+    },
+    {
+      "gap": "human-lock 审批无 API",
+      "current_approach": "human-lint.ts 仅 CLI 运行",
+      "recommended_approach": "POST /api/human-lock/approve 更新 .fabric/human-lock.json hash"
+    },
+    {
+      "gap": "无实时推送机制",
+      "current_approach": "零 SSE/WebSocket",
+      "recommended_approach": "server 包实现 ledger file watcher + SSE /events 广播"
+    },
+    {
+      "gap": "双路写 intent-ledger schema 不一致",
+      "current_approach": "AI 侧: {ts, commit_sha?, intent, affected_paths}；CLI 侧: {ts, parent_sha, intent, affected_paths, diff_stat}",
+      "recommended_approach": "在 @fabric/shared 统一 LedgerEntry schema，向后兼容读取旧记录"
+    },
+    {
+      "gap": "packages/shared 空占位",
+      "current_approach": "export {}",
+      "recommended_approach": "迁移 AgentsMeta / LedgerEntry / HumanLockEntry / FabricConfig 为共享 zod schema"
+    }
+  ],
+  "sources": [
+    {"title": "MCP TypeScript SDK README", "url": "https://github.com/modelcontextprotocol/typescript-sdk", "key_takeaway": "Streamable HTTP 是 GA 推荐 transport；SSE 已 deprecated"},
+    {"title": "MCP Specification 2025-11-25", "url": "https://spec.modelcontextprotocol.io", "key_takeaway": "Streamable HTTP 协议版本"},
+    {"title": "@modelcontextprotocol/sdk package.json", "url": "local:packages/server/node_modules/@modelcontextprotocol/sdk/package.json", "key_takeaway": "Hono + Express 已是传递依赖"}
+  ],
+  "_metadata": {"queries_executed": 47, "results_found": "high signal"}
+}

@@ -1,0 +1,153 @@
+{
+  "summary": "Fabric v1.1 unified feature rollout: Dashboard (v1.1 Feature #5, D1-D5 + E1-E3) and Doc-Init extension (Rec#1-6). Dashboard introduces a single-process Express app ('fab serve') hosting MCP HTTP (per-session factory), Dashboard REST/SSE API, and a Preact+Vite SPA with 3 views (rules-tree / human-lock / intent-timeline). Doc-Init extends 'fab init' to produce forensic.json evidence, install agents-md-init SKILL.md + Stop hook, and drive a 3-Phase AI-assisted AGENTS.md initialization workflow. All 15 tasks are organized in 3 waves: Wave A (foundations, parallel), Wave B (server + dashboard, sequential), Wave C (polish + extensions, mostly parallel).",
+  "approach": "Parallel-interleaved 3-wave execution. Wave A (TASK-001 to TASK-005): shared schema migration as the unblocking foundation; Doc-Init Rec#1-3 chained sequentially; UI design pre-stage via /ui-ux-pro-max skill runs in parallel. Wave B (TASK-006 to TASK-009): MCP HTTP + fab serve first, then REST API and SSE in parallel, then Preact SPA merging all three Wave B prerequisites plus UI design. Wave C (TASK-010 to TASK-015): tests, template refactor, docs, and E1-E3 optional extensions run in parallel after their respective Wave A/B predecessors complete. Zero new npm dependencies for HTTP layer (MCP SDK v1.29 provides Hono+Express transitively). Non-destructive principle throughout Doc-Init writes.",
+  "complexity": "High",
+  "task_ids": [
+    "TASK-001",
+    "TASK-002",
+    "TASK-003",
+    "TASK-004",
+    "TASK-005",
+    "TASK-006",
+    "TASK-007",
+    "TASK-008",
+    "TASK-009",
+    "TASK-010",
+    "TASK-011",
+    "TASK-012",
+    "TASK-013",
+    "TASK-014",
+    "TASK-015"
+  ],
+  "task_count": 15,
+  "estimated_time": "6-8 days of focused implementation (Wave A: ~2 days, Wave B: ~2.5 days, Wave C: ~1.5 days)",
+  "recommended_execution": "Codex",
+  "design_decisions": [
+    {
+      "decision": "MCP SDK v1.29 createMcpExpressApp for zero-dependency HTTP layer",
+      "rationale": "SDK already carries Hono+Express as transitive deps; built-in DNS rebinding protection and OAuth scaffolding",
+      "tradeoff": "Locks HTTP implementation to SDK's express adapter; custom middleware must be compatible with SDK's Express v5 instance"
+    },
+    {
+      "decision": "Per-session McpServer factory (not singleton)",
+      "rationale": "SDK connect() takes exclusive transport ownership; factory pattern aligns with existing createFabricServer() pure function",
+      "tradeoff": "Each HTTP MCP session creates a new server object; acceptable for single-user local tool"
+    },
+    {
+      "decision": "LedgerEntry discriminated union: source:'ai'|'human'",
+      "rationale": "Preserves 'dual-arbiter' semantic; enables dual-column Dashboard timeline; mirrors async arbitration positioning",
+      "tradeoff": "Requires backward-compat handling for existing ledger records without source field (defaults to 'human')"
+    },
+    {
+      "decision": "Ritually-minimal write model: 2 write endpoints only (human-lock/approve + intent/annotate)",
+      "rationale": "Prevents Dashboard from competing with CLI/IDE for file ownership; avoids optimistic-lock complexity",
+      "tradeoff": "AGENTS.md direct editing stays in IDE — Dashboard is intentionally read-heavy"
+    },
+    {
+      "decision": "Preact + Vite for Dashboard SPA",
+      "rationale": "3KB bundle vs 40KB React; Vite DX; compatible with maintenance-tool body budget",
+      "tradeoff": "Smaller ecosystem than React; component library choices more limited"
+    },
+    {
+      "decision": "fab init single entry point (no new fab doc-init command)",
+      "rationale": "Zero new CLI surface; non-destructive principle; AI-client auto-trigger via stdout reason text; non-AI fallback degrades gracefully",
+      "tradeoff": "fab init now does more — evidence + protocol install + skill trigger — but each step is idempotent and non-destructive"
+    },
+    {
+      "decision": "Sentinel-based Stop hook (Option C hybrid trigger)",
+      "rationale": "forensic.json exists + init-context.json missing = initialization pending; covers 4 trigger scenarios without time-expiry issues",
+      "tradeoff": "Stop hook fires on every session stop until init-context.json created — intentional but slightly noisy until initialization completes"
+    },
+    {
+      "decision": "TASK-005 UI pre-stage via /ui-ux-pro-max before TASK-009 Preact implementation",
+      "rationale": "Defines component contract (tokens.json + component-inventory.md) before coding begins; reduces visual backtracking during SPA implementation",
+      "tradeoff": "Adds a pre-implementation design step; mitigated by clear convergence criteria on ui-design/ artifacts"
+    }
+  ],
+  "data_flow": {
+    "diagram": "fab init → .fabric/ (forensic.json) → agents-md-init SKILL → .fabric/ (init-context.json) → AGENTS.md; fab serve → Express app → [/mcp: per-session McpServer] + [/api/*: services layer] + [/events: chokidar SSE] + [/: Preact SPA dist]",
+    "stages": [
+      {
+        "stage": "Doc-Init Evidence",
+        "input": "target project directory",
+        "output": ".fabric/forensic.json (ForensicReport)",
+        "component": "packages/cli/src/scanner/forensic.ts",
+        "transformations": ["detectFramework()", "topology walk", "Smart Sampling 30-line", "recommendations_for_skill assembly"]
+      },
+      {
+        "stage": "Protocol Install",
+        "input": "fab init execution",
+        "output": ".claude/skills/agents-md-init/SKILL.md + .claude/hooks/agents-md-init-reminder.cjs + .claude/settings.json Stop hook entry",
+        "component": "packages/cli/src/commands/init.ts",
+        "transformations": ["template copy (non-destructive)", "settings.json merge-insert"]
+      },
+      {
+        "stage": "Shared Schema Layer",
+        "input": "packages/shared/src/schemas/*.ts",
+        "output": "@fabric/shared exports: AgentsMeta, LedgerEntry, HumanLockEntry, FabricConfig, ForensicReport, InitContext, FabricEvent",
+        "component": "packages/shared",
+        "transformations": ["zod schema definitions", "TypeScript interface exports"]
+      },
+      {
+        "stage": "HTTP Service Layer",
+        "input": "fab serve --target <projectRoot> --port 7373",
+        "output": "Single Express app on port 7373",
+        "component": "packages/server/src/http.ts",
+        "transformations": ["createMcpExpressApp mount", "API router mount", "SSE events mount", "static SPA serve"]
+      },
+      {
+        "stage": "REST API + Services",
+        "input": "HTTP requests to /api/*",
+        "output": "JSON responses (AgentsMeta, LedgerEntry[], HumanLockEntry[], ScanReport)",
+        "component": "packages/server/src/services/* + packages/server/src/api/*",
+        "transformations": ["readAgentsMeta", "JSONL parse/filter", "drift hash comparison", "write approve/annotate"]
+      },
+      {
+        "stage": "SSE Events",
+        "input": "File system changes in .fabric/* and .intent-ledger.jsonl",
+        "output": "Server-Sent Events pushed to Dashboard clients",
+        "component": "packages/server/src/api/events.ts",
+        "transformations": ["chokidar watch", "file read", "FabricEvent construction", "SSE write"]
+      },
+      {
+        "stage": "Preact SPA",
+        "input": "Browser at :7373 (prod) or :5173 (dev)",
+        "output": "3 interactive views (rules-tree / human-lock / intent-timeline)",
+        "component": "packages/dashboard/src/",
+        "transformations": ["fetch /api/*", "SSE subscription via /events", "Preact component render", "user interaction → POST /api/write-endpoints"]
+      }
+    ],
+    "dependencies": ["@modelcontextprotocol/sdk (HTTP, MCP factory)", "chokidar (file watching)", "preact + @preact/signals + vite (SPA)"]
+  },
+  "_metadata": {
+    "timestamp": "2026-04-19T00:00:00.000Z",
+    "source": "cli-lite-planning-agent",
+    "plan_type": "feature",
+    "schema_version": "2.0",
+    "planning_mode": "agent-based",
+    "exploration_angles": [],
+    "prior_analysis_sources": [
+      "ANL-fabric-mcp-dashboard-unified-2026-04-19",
+      "ANL-fab-doc-init-werewolf-2026-04-19"
+    ],
+    "waves": {
+      "wave_a": ["TASK-001", "TASK-002", "TASK-003", "TASK-004", "TASK-005"],
+      "wave_b": ["TASK-006", "TASK-007", "TASK-008", "TASK-009"],
+      "wave_c": ["TASK-010", "TASK-011", "TASK-012", "TASK-013", "TASK-014", "TASK-015"]
+    },
+    "quality_check": {
+      "status": "passed",
+      "dimensions": {
+        "completeness": "passed — all D1-D5 + E1-E3 + Rec#1-6 covered across 15 tasks",
+        "granularity": "passed — each task estimated 15-90 min; D5 and TASK-009 are larger but represent single cohesive deliverables",
+        "dependencies": "passed — no circular deps; TASK-001 is the sole Wave A foundation; TASK-009 correctly merges 3 predecessors",
+        "convergence_criteria": "passed — all tasks have quantified, testable criteria (curl responses, file assertions, pnpm build pass)",
+        "implementation_steps": "passed — all tasks have 4+ actionable implementation steps",
+        "constraint_compliance": "passed — zero new npm deps for HTTP, non-destructive pattern throughout, LedgerEntry backward compat, ≤300 line AGENTS.md"
+      },
+      "issues_found": [],
+      "auto_fixes_applied": []
+    },
+    "duration_seconds": 0
+  }
+}

@@ -1,0 +1,151 @@
+{
+  "session_id": "ANL-fab-doc-init-werewolf-2026-04-19",
+  "timestamp": "2026-04-19T00:20:00.000Z",
+  "topic": "fab 如何进行文档的初始化(针对 werewolf-minigame)",
+  "dimensions": ["architecture", "implementation", "decision"],
+  "sources": [
+    {"type": "file", "file": "packages/cli/src/commands/init.ts"},
+    {"type": "file", "file": "packages/cli/src/commands/scan.ts"},
+    {"type": "file", "file": "packages/cli/src/scanner/detector.ts"},
+    {"type": "file", "file": "packages/cli/src/scanner/ignores.ts"},
+    {"type": "file", "file": "templates/agents-md/AGENTS.md.template"},
+    {"type": "file", "file": "packages/cli/src/commands/bootstrap.ts"},
+    {"type": "file", "file": "packages/cli/src/commands/index.ts"},
+    {"type": "file", "file": "packages/server/src/tools/get-rules.ts"},
+    {"type": "file", "file": "examples/werewolf-minigame-stub/project.config.json"},
+    {"type": "file", "file": "examples/werewolf-minigame-stub/assets/scripts"},
+    {"type": "file", "file": "思路.md"},
+    {"type": "file", "file": ".workflow/.analysis/ANL-implement-fabric-v2-2026-04-18/conclusions.json"},
+    {"type": "summary", "file": "research.json — 10 findings / 8 best_practices / 6 alternatives / 6 pitfalls / 7 codebase_gaps"}
+  ],
+  "key_findings": [
+    "KF1: fab init 当前是纯静态模板替换(scan → 2 处 replaceAll → writeFileSync),无交互、无 AI、无 Skill 调用。与 H1 差距巨大。",
+    "KF2: CLI 取证基础部分已有(detectFramework / walkFiles / ignores),但缺 version 提取、Cocos Creator 2.x vs 3.x 区分、目录熵、Smart Sampling、entryPoints 识别。",
+    "KF3: 思路.md 定义了 agents-md SKILL.md 规范 + Claude Code PostToolUse/Stop hook 机制,但这些是目标项目运行时的'编辑后维护'机制,不是 init 时的触发机制。H1 的 init-skill 尚不存在。",
+    "KF4: Hook → Skill 调用是 prompt-driven(block + reason 文本),非 event-driven。这意味着 fab CLI 可以通过输出一段包含 skill 名的 reason 文本让 AI 自我触发 skill。",
+    "KF5: werewolf-minigame-stub 是 Cocos Creator 3.8 项目,6 个 .ts 脚本。framework 检测已能识别为 cocos-creator,但版本号信息丢失。",
+    "KF6: bootstrap(引导词) 与 init(AGENTS.md) 解耦良好。H1 的 doc-init 应为 init 的语义增强,不扩展 bootstrap。",
+    "KF7: 前序分析(ANL-implement-fabric-v2) 明确选择了保守的 'heuristic chain + TODO scaffold' 策略 — 说明当前实现是'有意为之的基线',H1 是明确的升级方案。",
+    "KF8: AGENTS.md ≤ 300 行 / 最多 4 层嵌套 规范来自 思路.md,H1 输出必须遵守。",
+    "KF9: 访谈问题应锁定 invariants(constitution)而非 preferences — 匹配 H1 'L0 宪法' 描述。",
+    "KF10: 非交互环境(CI/piped stdin)需要 fallback 到当前的静态模板路径,不能死锁在访谈。"
+  ],
+  "code_anchors": [
+    {
+      "file": "packages/cli/src/commands/init.ts",
+      "lines": "all",
+      "snippet": "resolveDevMode → assertExistingDirectory → 检查 AGENTS.md/.fabric 存在 → createScanReport → readFileSync template → replaceAll(projectName) → replaceAll(frameworkKind) → sha256 hash → 写 3 个文件(AGENTS.md + .fabric/agents.meta.json + .fabric/human-lock.json)",
+      "significance": "H1 要重构的核心入口。当前流程纯静态,无扩展点给 Skill/Interview。重构需在 template replaceAll 前插入 forensics/interview/skill-driven-generation 管线。"
+    },
+    {
+      "file": "packages/cli/src/commands/scan.ts",
+      "lines": "createScanReport",
+      "snippet": "detectFramework(target) + getReadmeQuality(target) + walkFiles(target, ignores) + buildRecommendations 组合成 ScanReport(framework/readme/fileCount/recommendations)",
+      "significance": "H1 Layer 1(CLI 取证)的现有起点。需扩展:add version 提取、entryPoints 识别、directory topology 统计。保持 < 200ms 只读。"
+    },
+    {
+      "file": "packages/cli/src/scanner/detector.ts",
+      "lines": "全文",
+      "snippet": "if (existsSync(project.config.json)) → cocos-creator;elif package.json deps 包含 next/vite/react/vue → 对应 kind;elif Cargo.toml → rust;elif pyproject.toml → python;else unknown",
+      "significance": "优先级正确(config-first > dep-second > sentinel)。但未提取 version;未区分 Cocos 2.x vs 3.x;未做版本分叉。"
+    },
+    {
+      "file": "templates/agents-md/AGENTS.md.template",
+      "lines": "全文",
+      "snippet": "~30 行骨架: 项目名/框架插值 + // TODO 注释块 + <!-- fab:index --> 空块",
+      "significance": "TODO 墙是 H1 要消除的反模式。H1 产出应填充 TODO 或移除无法填充的,不留遗产 TODO。"
+    },
+    {
+      "file": "思路.md",
+      "lines": "agents-md skill 段 + hook 段",
+      "snippet": "Hook: {decision:'block', reason:'...必须使用 agents-md skill...'} → 模型自我触发 skill;SKILL.md: name/description/allowed-tools frontmatter + markdown body",
+      "significance": "给 H1 提供了调用机制:fab init 可输出一段含 skill 名的 reason 文本 → AI 接管 Layer 2/3/4。无需在 fab CLI 中实现 AI 推理或访谈本身。"
+    },
+    {
+      "file": "packages/server/src/tools/get-rules.ts",
+      "lines": "全文",
+      "snippet": "读 .fabric/agents.meta.json 的节点树,按 scope_glob 匹配返回 L0/L1/L2 规则 + human_locked_nearby",
+      "significance": "init 产出的 agents.meta.json 结构必须与此兼容。H1 Skill 生成的分层 AGENTS.md 需要同步更新 agents.meta.json 节点树。"
+    },
+    {
+      "file": "examples/werewolf-minigame-stub/project.config.json",
+      "lines": "1-10",
+      "snippet": "{'creator': {'version': '3.8.0'}, ...}",
+      "significance": "确认 werewolf-minigame 是 Cocos Creator 3.8。H1 的 Smart Sampling 需要识别 Creator 3.x 的 Component 继承 / 节点组件化模式。"
+    }
+  ],
+  "call_chains": [
+    {
+      "entry": "fab init",
+      "chain": "resolveDevMode → assertExistingDirectory → existsSync(AGENTS.md) 检查 → createScanReport(target) → readFileSync(AGENTS.md.template) → replaceAll → sha256 → writeNewFile × 3",
+      "files": ["commands/init.ts", "commands/scan.ts", "scanner/detector.ts", "templates/agents-md/AGENTS.md.template"]
+    },
+    {
+      "entry": "fab scan → ScanReport",
+      "chain": "detectFramework(package.json 读) → getReadmeQuality → walkFiles(applying ignores) → buildRecommendations",
+      "files": ["commands/scan.ts", "scanner/detector.ts", "scanner/ignores.ts"]
+    }
+  ],
+  "discussion_points": [
+    "DP1: H1 的 Skill 层是 Claude Code .claude/skills/ 机制还是 fab 内部 Skill runtime? Research F4-F5 + exploration 确认:用 Claude Code SKILL.md + Hook reason 触发最符合现有生态(fab 不需要自己实现 skill runtime)。",
+    "DP2: 三轮访谈发生在 fab CLI TTY 还是 AI 客户端会话? 研究建议: fab CLI 不做访谈;fab CLI 产出 forensic.json + 一段 reason → AI 客户端会话中由 AI 完成访谈。理由: AI 才有能力生成 context-aware follow-up 问题(F6)。",
+    "DP3: AGENTS.md.template 的去留? 建议: 保留作为 fallback(非交互环境/无 AI 情况下); AI-generated 为 primary。",
+    "DP4: Smart Sampling 的深度? 研究建议: 只读文件 + 行截断(不用 AST),控制 < 200ms。采样策略:框架特定 entryPoints(Cocos assets/scripts/top-level) × 前 50 行。",
+    "DP5: H1 是否拆成 fab init + fab doc-init 两个命令? 建议方案(待验证): fab init 不变(生成基础骨架 + .fabric/); 新增 fab doc-init --with-skill 子命令或 init --interactive flag 触发 Skill 协议。",
+    "DP6: 是否引入 Creator 版本区分? 研究明确建议是(gap 1)。",
+    "DP7: fab init 如何在 AI 客户端会话中'让 AI 接管'? 机制:init 完成后输出特殊 reason 文本 + 写 forensic.json + install agents-md-init skill。"
+  ],
+  "open_questions": [
+    "OQ1: 用户是否认可 'fab CLI 不做访谈 — 访谈下放到 AI 客户端会话' 的方案?",
+    "OQ2: doc-init 是 init 的 --interactive flag 还是独立 fab doc-init 命令?",
+    "OQ3: 'Smart Sampling' 具体采样哪些文件 + 多少行? (Cocos: assets/scripts top-level × 50 行? / Next: pages + app × 30 行?)",
+    "OQ4: agents-md-init skill 的具体 SKILL.md 内容(description 触发词、3 轮问题模板、输出 schema)需要在后续轮次细化。",
+    "OQ5: 如何在非交互环境(CI)优雅降级?"
+  ],
+  "technical_solutions": [
+    {
+      "round": 1,
+      "solution": "四层职责划分: CLI 只做只读取证 → 输出 forensic.json + 触发 reason 文本 → AI 客户端读取 skill → Skill 驱动 3 轮访谈 → AI 生成分层 AGENTS.md + 更新 agents.meta.json",
+      "problem": "H1 描述未明确各层边界与数据交换格式",
+      "rationale": "研究 F4-F5 确认 Claude Code 生态的 skill 调用是 prompt-driven, fab CLI 不需要实现 AI 逻辑。清晰的 artifact(.fabric/forensic.json + .fabric/init-context.json) 作为层间契约。",
+      "alternatives": ["CLI 内置 AI(rejected: 依赖重)", "单轮访谈(rejected: 迭代修正缺失)", "纯静态模板(rejected: 无语义深度)"],
+      "status": "proposed",
+      "evidence_refs": ["思路.md Hook 机制", "init.ts 当前实现", "research F4/F5/F6"],
+      "next_action": "Round 2 验证层间契约格式 + 扩展 ForensicReport schema"
+    },
+    {
+      "round": 1,
+      "solution": "扩展 detectFramework 返回 { kind, version, subkind } (Cocos Creator 2.x vs 3.x 区分;vite/next 版本提取)",
+      "problem": "当前 framework kind 过粗,无法支持模板分叉",
+      "rationale": "研究 gap 1-2 + F9 确认版本分叉是业界标准",
+      "alternatives": ["保持现状 rejected(粒度不够)", "完整版本模板矩阵 rejected(过度工程)"],
+      "status": "proposed",
+      "evidence_refs": ["detector.ts", "research gap 1/2"],
+      "next_action": "Round 2 确认 Creator 版本区分的具体字段"
+    },
+    {
+      "round": 1,
+      "solution": "新增 agents-md-init Claude Code skill: description 触发词 = 'fab init completed / project initialization / initialize AGENTS.md', body 含 3 轮访谈模板(Round 1 确认框架/Round 2 提取 invariants/Round 3 锁 constitution)",
+      "problem": "H1 Layer 2/3 在现有代码库无任何实现,需新增",
+      "rationale": "与 agents-md skill 保持同族命名;描述精确匹配 fab init 执行后的认知状态(F5)",
+      "alternatives": ["扩展 agents-md skill(rejected: 职责不同,init 是一次性的 elicitation)"],
+      "status": "proposed",
+      "evidence_refs": ["思路.md agents-md skill 结构", "research F5/F10"],
+      "next_action": "Round 2-3 细化 SKILL.md body 内容"
+    }
+  ],
+  "external_research": {
+    "findings": ["config-first > dep-second 检测顺序为业界标准", "AST 分析不适合 CLI(延迟)", "SKILL 调用 prompt-driven 非 event-driven", "AI 访谈 follow-up 在 CLI 生态无 published precedent"],
+    "best_practices": ["forensics < 200ms 只读", "access 锁 artifact", "嵌套 ≤ 4 层", "访谈问 invariants 不问 preferences"],
+    "codebase_gaps": [
+      "detector 不区分 Cocos Creator 2.x vs 3.x",
+      "detector 不提取版本",
+      "init 丢弃 ScanReport 大部分信息",
+      "fab:index block 未填充",
+      "无 entryPoints 识别",
+      "无 init skill",
+      "init 完全非交互"
+    ],
+    "sources": ["思路.md", "Nx init detection", "Claude Code hooks spec", "Constitutional AI"]
+  }
+}

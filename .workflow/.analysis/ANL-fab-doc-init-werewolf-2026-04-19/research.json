@@ -1,0 +1,107 @@
+{
+  "topic": "CLI + AI Skill hybrid for project documentation initialization — patterns, fingerprinting, interactive interviews",
+  "mode": "detail-verification",
+  "timestamp": "2026-04-19T00:15:00.000Z",
+  "findings": [
+    {
+      "finding": "F1 — 主流 create-* 脚手架只做全新项目生成,不做对已有项目的探测;对已有项目的 framework 检测由 nx init 等工具负责",
+      "detail": "Nx init 使用优先级列表:框架专属 config 文件(.angular.json/vite.config/next.config) > package.json 依赖名称。fab 当前的 detector.ts 检测顺序(project.config.json > package.json deps > Cargo.toml/pyproject.toml)符合此 best practice",
+      "confidence": "high",
+      "source_url": "training knowledge"
+    },
+    {
+      "finding": "F2 — 业界标准:config-file-first, dep-second 检测顺序",
+      "detail": "Nx 额外做 version-range 提取(vite@^5 vs vite@^4 → 不同模板),fab 当前未提取版本号",
+      "confidence": "high"
+    },
+    {
+      "finding": "F3 — 主流 CLI 脚手架不做 AST 级分析;类似 Copilot Workspace 做 bounded read(src/ top-level files + index.*)",
+      "detail": "dependency-cruiser/madge 是只读分析工具,不是脚手架。Smart Sampling 应避免 AST,采用文件浅采样策略",
+      "confidence": "medium"
+    },
+    {
+      "finding": "F4 — SKILL.md YAML frontmatter 结构确认",
+      "detail": "name / description(作为语义匹配触发器)/ allowed-tools。body 是 Markdown 指令。Skills 位于 .claude/skills/{name}/SKILL.md",
+      "confidence": "high",
+      "source_url": "思路.md lines 210-214"
+    },
+    {
+      "finding": "F5 — Hook → Skill 调用是 prompt-driven, 非 event-driven",
+      "detail": "Hook 输出 {decision:'block', reason:'必须使用 X skill'},模型自我触发 skill。含义:fab-doc-init skill 需要在 description 精确匹配 fab init 执行后的认知状态",
+      "confidence": "high",
+      "source_url": "思路.md lines 183-207"
+    },
+    {
+      "finding": "F6 — Yeoman/Inquirer 的 when(answers) 条件问答 = 经典迭代访谈 precedent",
+      "detail": "但 AI 生成 follow-up 问题的模式在 CLI 中无 published precedent(Devin/OpenHands 的项目 intake 是最接近的 product pattern)",
+      "confidence": "high"
+    },
+    {
+      "finding": "F7 — AGENTS.md 嵌套规范: 每文件 ≤300 行,最多 4 层嵌套",
+      "detail": "<!-- fab:index --> 作为 machine-readable 路由表。这是项目自身 思路.md 确认的规范",
+      "confidence": "high",
+      "source_url": "思路.md"
+    },
+    {
+      "finding": "F8 — Cursor Rules(.cursor/rules/*.mdc) 和 Windsurf AGENTS.md 是主要竞品格式",
+      "detail": "Cursor 用 alwaysApply + globs + description 做作用域控制",
+      "confidence": "high"
+    },
+    {
+      "finding": "F9 — Cocos Creator 版本区分缺失: Creator 2.x vs 3.x 的 project.config.json schema 不同但 fab 都返回 'cocos-creator'",
+      "detail": "Creator 3.x 有 physicsSystem/renderPipeline,UUID meta;Creator 2.x 有 'type':'Creator 2.x'。脚本 API 不兼容 → 模板选择需要区分",
+      "confidence": "high"
+    },
+    {
+      "finding": "F10 — Constitutional AI 的 L0 capture 应问 invariants 而非 preferences",
+      "detail": "'什么永远不能改'而非'你想要什么 feature'。AI 访谈目标是提取硬约束,进入 ## L0 AI Constraints",
+      "confidence": "medium"
+    }
+  ],
+  "best_practices": [
+    {"practice": "config-file 优先于 dep-name 作为主检测信号", "rationale": "config-file 更特定,不会像 deps 那样产生 false positive(Next 项目里也有 react dep)", "source": "Nx"},
+    {"practice": "在 fingerprint 中加入 version 提取", "rationale": "支持模板分叉(vite@5 ESM-native vs vite@3 legacy)", "source": "Nx executor inference"},
+    {"practice": "CLI forensics 严格只读且 < 200ms", "rationale": ">2s 的 init 命令会失去开发者信任;深度 AST 应 defer 到 Skill 层(AI-native)", "source": "create-vite/create-next-app 性能预算"},
+    {"practice": "AI 访谈必须产出 locked artifact (.fabric/init-context.json),而非仅打印到控制台", "rationale": "成为 evidence chain 供 Skill 推理;可复现重新生成", "source": "Yeoman + cookiecutter.json"},
+    {"practice": "AGENTS.md 嵌套 ≤ 4 层,根文件 ≤ 300 行", "rationale": "超过会消耗 AI 过多 context 预算在导航上", "source": "思路.md"},
+    {"practice": "避免 YAML frontmatter in AGENTS.md", "rationale": "除 MCP 外无 AI 客户端原生解析;用 HTML 注释做机读标记", "source": "BS-universal-ai-docs brainstorm"},
+    {"practice": "单文件 vs 嵌套 AGENTS.md 阈值", "rationale": "<500 文件单主框架 → 单文件;有可识别 sub-domain 或 >1000 文件 → 嵌套", "source": "思路.md + training"},
+    {"practice": "访谈问题目标锁定 invariants 而非 preferences", "rationale": "目标是 L0 constitution 的硬约束", "source": "Constitutional AI"}
+  ],
+  "alternatives": [
+    {"option": "纯 CLI 静态模板(现状)", "pros": "快/可预测/零 AI 依赖", "cons": "泛化输出/TODO 墙/无语义深度", "verdict": "当前基线,对 H1 不够"},
+    {"option": "Projen 式声明式 DSL", "pros": "可复现/可版本化", "cons": "要求项目采纳 projen schema/高耦合", "verdict": "外部项目 onboarding 场景不适合"},
+    {"option": "完整 AST 扫描(ts-morph/madge)", "pros": "深度语义", "cons": "慢(>5s)/需 Node resolution/非 TS 项目失败", "verdict": "仅在 Skill 层选择性使用"},
+    {"option": "AI 直接生成 AGENTS.md 无 forensics", "pros": "最大灵活", "cons": "幻觉风险/无 evidence chain/不可复现", "verdict": "避免"},
+    {"option": "Yeoman 脚本式固定问题", "pros": "经考验的 UX/Inquirer 生态", "cons": "无法适应项目特定发现", "verdict": "Round 1 可用,Round 2-3 让 AI 接管"},
+    {"option": "单轮访谈", "pros": "实现简单", "cons": "错过迭代修正/用户无法 course-correct", "verdict": "避免"}
+  ],
+  "pitfalls": [
+    {"issue": "TODO 墙过度生成", "mitigation": "AI 访谈必须填充所有 TODO 或移除无法填充的;硬规则:init 完成后不留 TODO", "source": "current template + Yeoman 反模式"},
+    {"issue": "自动生成内容快速 stale", "mitigation": "agents-md skill + PostToolUse hook 已处理后续编辑;init 时内容应 minimal-but-accurate", "source": ""},
+    {"issue": "Skill 调用不保证触发", "mitigation": "reason 文本用祈使句 + 精确 skill 名;代码库已正确使用 'you MUST use the agents-md skill'", "source": "思路.md"},
+    {"issue": "Cocos Creator 版本检测二义性", "mitigation": "读 project.config.json 的 physicsSystem / renderPipeline / 'type' 字段区分 2.x vs 3.x", "source": "Cocos Creator docs(training)"},
+    {"issue": "工具特定 marker 锁定", "mitigation": "使用自描述注释(e.g. '<!-- FABRIC: AI navigation index — safe to delete if not using fab -->')", "source": "BS brainstorm 反模式"},
+    {"issue": "非交互环境(CI/piped stdin)访谈死锁", "mitigation": "process.stdin.isTTY 检查;非交互时 fallback 到静态模板 + 完整 TODO", "source": ""}
+  ],
+  "codebase_gaps": [
+    {"gap": "detector.ts 不区分 Cocos Creator 2.x vs 3.x", "current_approach": "统一返回 'cocos-creator'", "recommended_approach": "读取 project.config.json 的 physicsSystem/renderPipeline/'type' 字段区分版本,返回 kind + version"},
+    {"gap": "detector.ts 不提取依赖版本", "current_approach": "只做 dep name 存在性检查", "recommended_approach": "从 package.json[deps] 提取 semver range,driving template branching"},
+    {"gap": "init.ts 只使用 scanReport.framework.kind 做插值", "current_approach": "完整 ScanReport 大部分信息被丢弃", "recommended_approach": "利用 readmeQuality/hasContributing 驱动 AGENTS.md 模板变体"},
+    {"gap": "AGENTS.md.template 的 fab:index block 为空", "current_approach": "占位块未被填充", "recommended_approach": "init 时扫描 docs/ 预填充索引"},
+    {"gap": "无 entryPoints[] 提取", "current_approach": "未识别入口文件", "recommended_approach": "识别 src/main.ts / src/index.ts / app.ts / Cocos 的 assets/scripts/ 顶层文件,供 AI 起点参考"},
+    {"gap": "无 fab-doc-init 或 agents-md-init SKILL.md", "current_approach": "agents-md skill 处理代码后编辑;init 无配套 skill", "recommended_approach": "创建 agents-md-init skill,接受 ForensicReport 作为 context"},
+    {"gap": "init.ts 完全非交互", "current_approach": "无 prompt 机制", "recommended_approach": "H1 Layer 3(3 轮访谈)完全缺失,需新设计"}
+  ],
+  "sources": [
+    {"title": "思路.md", "url": "local:思路.md", "key_takeaway": "SKILL.md frontmatter / Hook block+reason 调用模式 / AGENTS.md ≤300 行 4 层嵌套"},
+    {"title": "fab detector.ts", "url": "local:packages/cli/src/scanner/detector.ts", "key_takeaway": "config-first > deps > sentinels 检测顺序"},
+    {"title": "fab init.ts", "url": "local:packages/cli/src/commands/init.ts", "key_takeaway": "当前纯静态模板替换,无交互无 AI"},
+    {"title": "BS-universal-ai-docs brainstorm", "url": "local:.workflow/.brainstorm/BS-universal-ai-docs-2026-04-18/", "key_takeaway": "跨 AI 客户端兼容矩阵 + 6 反模式"}
+  ],
+  "_metadata": {
+    "queries_executed": 0,
+    "results_found": "从训练知识 + 代码库派生",
+    "websearch_status": "blocked (E008)"
+  }
+}

@@ -1,0 +1,104 @@
+{
+  "id": "TASK-006",
+  "title": "D2 MCP HTTP + fab serve — Express app + per-session McpServer factory",
+  "scope": "packages/server/src/ + packages/cli/src/commands/",
+  "action": "Implement",
+  "description": "Create packages/server/src/http.ts implementing createFabricHttpApp(port, projectRoot) returning an Express app that uses createMcpExpressApp from @modelcontextprotocol/sdk/server/express. Implement per-session McpServer factory with JsonlEventStore for MCP resumability. Export startHttpServer() from packages/server/src/index.ts while preserving startStdioServer(). Add packages/cli/src/commands/serve.ts implementing 'fab serve' command with --port (default 7373) and --target flags. Port conflict detection with friendly EADDRINUSE error.",
+  "files": [
+    {
+      "path": "packages/server/src/http.ts",
+      "action": "Create",
+      "target": "createFabricHttpApp Express application factory",
+      "change": "New file: import createMcpExpressApp from @modelcontextprotocol/sdk/server/express; import StreamableHTTPServerTransport; implement per-session transports Map<string, StreamableHTTPServerTransport>; implement JsonlEventStore backed by .intent-ledger.jsonl for MCP resumability; createFabricHttpApp(port, projectRoot) returns Express app with POST /mcp handler using per-session createFabricServer() factory"
+    },
+    {
+      "path": "packages/server/src/index.ts",
+      "action": "Update",
+      "target": "Export startHttpServer() + preserve startStdioServer()",
+      "change": "Add export function startHttpServer(options: {port: number, projectRoot: string}): Promise<http.Server>; ensure startStdioServer() export is preserved and unmodified (stdio mode logs to stderr not stdout)"
+    },
+    {
+      "path": "packages/cli/src/commands/serve.ts",
+      "action": "Create",
+      "target": "fab serve CLI command",
+      "change": "New file: Commander command 'serve'; options: --port <number> default 7373, --target <dir> (resolves via resolveDevMode from cli/src/dev-mode.ts); imports startHttpServer from @fenglimg/fabric-server; EADDRINUSE error handler outputs friendly message 'Port {port} in use — try --port {port+1}'; logs startup URL to stdout"
+    },
+    {
+      "path": "packages/cli/src/index.ts",
+      "action": "Update",
+      "target": "Register serve command",
+      "change": "Import and register the new serve command so it appears in fab --help"
+    }
+  ],
+  "implementation": [
+    "Create packages/server/src/http.ts: implement JsonlEventStore class with getEventsSince(lastEventId) reading .intent-ledger.jsonl; implement per-session transport factory; createFabricHttpApp() mounts createMcpExpressApp() which provides /mcp route with StreamableHTTPServerTransport, DNS rebinding protection (host:127.0.0.1), and session management",
+    "Update packages/server/src/index.ts: export startHttpServer(options) that calls createFabricHttpApp() and returns app.listen(port) as a Promise<Server>; preserve existing startStdioServer() export unchanged",
+    "Create packages/cli/src/commands/serve.ts: resolve projectRoot using resolveDevMode() from cli/src/dev-mode.ts (reuses existing target resolution logic); call startHttpServer; handle EADDRINUSE with process.on('uncaughtException'); print 'Fabric Dashboard: http://127.0.0.1:{port}' on successful start",
+    "Register serve command in packages/cli/src/index.ts",
+    "Test: curl -X POST http://127.0.0.1:7373/mcp with valid MCP JSON-RPC initialize request; verify mcp-session-id header in response"
+  ],
+  "reference": {
+    "pattern": "Per-session McpServer factory + createMcpExpressApp SDK pattern",
+    "files": [
+      "packages/server/src/index.ts",
+      "packages/cli/src/dev-mode.ts",
+      "packages/server/node_modules/@modelcontextprotocol/sdk/dist/esm/server/express.d.ts",
+      "packages/server/node_modules/@modelcontextprotocol/sdk/dist/esm/server/streamableHttp.d.ts"
+    ],
+    "examples": "createFabricServer() at packages/server/src/index.ts:L23-34 is already a pure factory — use directly in per-session handler; resolveDevMode at packages/cli/src/dev-mode.ts:L30-56"
+  },
+  "convergence": {
+    "criteria": [
+      "curl -X POST http://127.0.0.1:7373/mcp -H 'Content-Type: application/json' -d '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",...}' returns valid MCP JSON-RPC response with mcp-session-id header",
+      "fab serve starts without error and prints 'Fabric Dashboard: http://127.0.0.1:7373'",
+      "fab --help lists 'serve' command",
+      "stdio mode (fab mcp) still works unchanged — startStdioServer() unaffected",
+      "Occupying port 7373 and then running fab serve produces friendly EADDRINUSE error message suggesting alternative port"
+    ]
+  },
+  "rationale": {
+    "chosen_approach": "Use SDK's createMcpExpressApp for zero-dependency HTTP MCP with built-in DNS rebinding protection; per-session factory is required by SDK contract",
+    "alternatives_considered": [
+      "Single McpServer multi-transport (SDK explicitly disallows)",
+      "Stateless MCP mode (loses resumability via JsonlEventStore)",
+      "Separate HTTP process (unnecessary complexity for single-user local tool)"
+    ],
+    "decision_factors": [
+      "Zero new npm dependencies (Hono + Express already transitive in SDK v1.29)",
+      "SDK contract: connect() takes exclusive transport ownership",
+      "createFabricServer() already a pure factory — no refactoring needed"
+    ],
+    "tradeoffs": "Per-session factory creates a new McpServer per HTTP connection — acceptable for single-user local dashboard, not for high-concurrency scenarios"
+  },
+  "test": {
+    "manual_checks": [
+      "fab serve --target examples/werewolf-minigame-stub --port 7373 — verify startup message",
+      "curl -X POST http://127.0.0.1:7373/mcp with MCP initialize request — verify valid response",
+      "fab mcp (stdio mode) — verify still works independently",
+      "Occupy 7373 with nc -l 7373 then fab serve — verify friendly error message"
+    ],
+    "success_metrics": [
+      "MCP HTTP endpoint returns valid JSON-RPC response within 500ms",
+      "mcp-session-id header present in MCP response",
+      "fab serve startup time < 2 seconds",
+      "stdio mode unaffected by HTTP changes"
+    ],
+    "unit": [],
+    "integration": ["@modelcontextprotocol/inspector can validate HTTP MCP endpoint behavior post-implementation"]
+  },
+  "risks": [
+    {
+      "description": "StreamableHTTPServerTransport API differs between SDK minor versions",
+      "probability": "Low",
+      "impact": "Medium",
+      "mitigation": "Pin @modelcontextprotocol/sdk version in package.json; read actual SDK .d.ts types before implementing",
+      "fallback": "Fall back to SSEServerTransport (deprecated but present) if StreamableHTTP unavailable in installed version"
+    }
+  ],
+  "depends_on": ["TASK-001"],
+  "cli_execution_id": "fabric-dashboard-2026-04-19-TASK-006",
+  "cli_execution": {
+    "strategy": "fork",
+    "resume_from": "fabric-dashboard-2026-04-19-TASK-001"
+  }
+}

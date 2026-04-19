@@ -1,0 +1,104 @@
+{
+  "id": "TASK-015",
+  "title": "Dashboard E3 — History replay time-travel rule state",
+  "scope": "packages/server/src/api/ + packages/dashboard/src/views/",
+  "action": "Implement",
+  "description": "Implement time-travel rule state replay using .intent-ledger.jsonl rehydration. Add GET /api/replay?at=<isoTimestamp> endpoint that reconstructs the rule state (AgentsMeta + active human-locks) as of the specified timestamp by replaying all ledger entries up to that point. Add a HistoryReplay view in the Preact SPA with a timeline scrubber; moving the scrubber re-renders the RulesTree and HumanLockVault views with the historical state. Depends on TASK-009 (SPA scaffold).",
+  "files": [
+    {
+      "path": "packages/server/src/api/replay.ts",
+      "action": "Create",
+      "target": "GET /api/replay?at=<isoTimestamp> endpoint",
+      "change": "New Express router: GET /api/replay?at=ISO8601; reads .intent-ledger.jsonl; filters entries where entry.ts <= at; reconstructs rule state snapshot: {rules: AgentsMeta, humanLock: HumanLockEntry[], ledger: LedgerEntry[]}; returns snapshot JSON; 400 if at parameter missing or invalid"
+    },
+    {
+      "path": "packages/dashboard/src/views/history-replay.tsx",
+      "action": "Create",
+      "target": "HistoryReplay view — timeline scrubber + historical state views",
+      "change": "New Preact view: fetches GET /api/ledger to get all timestamps; renders timeline scrubber (date range slider); on scrubber change: fetches GET /api/replay?at={selectedTimestamp}; renders RulesTree and HumanLockVault components with historical data (not live data); shows 'Viewing state as of {timestamp}' banner; Reset button returns to live view"
+    },
+    {
+      "path": "packages/dashboard/src/app.tsx",
+      "action": "Update",
+      "target": "Add History tab to navigation",
+      "change": "Add 5th nav tab '#/history' → HistoryReplay view; update hash router"
+    },
+    {
+      "path": "packages/dashboard/src/api/client.ts",
+      "action": "Update",
+      "target": "Add getReplay(at) fetch wrapper",
+      "change": "Add getReplay(at: string): Promise<ReplaySnapshot> fetch function"
+    },
+    {
+      "path": "packages/server/src/http.ts",
+      "action": "Update",
+      "target": "Mount /api/replay router",
+      "change": "Import replayRouter from api/replay.ts; app.use('/api', replayRouter)"
+    }
+  ],
+  "implementation": [
+    "Implement api/replay.ts: rehydration function replayToTimestamp(projectRoot, at): read all ledger entries from .intent-ledger.jsonl; filter by ts <= at; reconstruct AgentsMeta state by applying AI ledger entries sequentially (rule changes); reconstruct HumanLockEntry[] active locks at that timestamp",
+    "Note: full AgentsMeta rehydration requires ledger entries to capture rule state changes — if the current ledger format doesn't capture this, replay returns only ledger entries up to timestamp (partial replay)",
+    "Implement HistoryReplay Preact view with range slider input; derive timestamps from ledger entries",
+    "Add to app.tsx navigation and api/client.ts"
+  ],
+  "reference": {
+    "pattern": "Event sourcing / replay pattern on JSONL log",
+    "files": [
+      "packages/server/src/api/ledger.ts",
+      "packages/dashboard/src/views/rules-tree.tsx",
+      "packages/dashboard/src/views/human-lock.tsx"
+    ],
+    "examples": "Ledger endpoint from TASK-007; RulesTree and HumanLockVault views from TASK-009 reused with injected historical data"
+  },
+  "convergence": {
+    "criteria": [
+      "GET http://127.0.0.1:7373/api/replay?at=2026-04-19T00:00:00Z returns {rules, humanLock, ledger} snapshot",
+      "GET /api/replay with invalid or missing at parameter returns HTTP 400",
+      "Dashboard History tab renders timeline scrubber with timestamps from ledger",
+      "Moving the scrubber to a past timestamp re-renders views with historical data",
+      "Reset button returns to live view"
+    ]
+  },
+  "rationale": {
+    "chosen_approach": "Rehydrate from .intent-ledger.jsonl as append-only event log; JSONL is the natural source of truth for time-ordered state reconstruction",
+    "alternatives_considered": [
+      "Periodic snapshots (requires additional storage and snapshot management)",
+      "Full git history integration (complex, requires git access in server context)"
+    ],
+    "decision_factors": [
+      "intent-ledger.jsonl is already append-only log with timestamps — natural event source",
+      "No additional storage required"
+    ],
+    "tradeoffs": "Replay quality depends on how completely ledger entries capture state changes; initial version may show only partial state (ledger entries, not full AgentsMeta diff). Noted in implementation note."
+  },
+  "test": {
+    "manual_checks": [
+      "Generate some intent-ledger entries across different timestamps, then GET /api/replay?at=<past_timestamp> — verify returned ledger only contains entries before that time",
+      "Navigate to History tab — verify scrubber appears with timestamp range",
+      "Move scrubber to past time — verify views show historical data"
+    ],
+    "success_metrics": [
+      "/api/replay returns correct time-filtered snapshot",
+      "History tab renders without errors",
+      "Scrubber interaction triggers re-fetch and view update"
+    ],
+    "unit": [],
+    "integration": []
+  },
+  "risks": [
+    {
+      "description": "Ledger entries don't capture enough state to fully reconstruct AgentsMeta at a past timestamp",
+      "probability": "Medium",
+      "impact": "Medium",
+      "mitigation": "For v1 replay, return only ledger entries up to timestamp (partial view); document full state replay as v1.2 enhancement requiring richer ledger schema",
+      "fallback": "Ship as 'ledger history viewer' (time-filtered ledger entries) which is still valuable; label full state replay as future work"
+    }
+  ],
+  "depends_on": ["TASK-009"],
+  "cli_execution_id": "fabric-dashboard-2026-04-19-TASK-015",
+  "cli_execution": {
+    "strategy": "fork",
+    "resume_from": "fabric-dashboard-2026-04-19-TASK-009"
+  }
+}

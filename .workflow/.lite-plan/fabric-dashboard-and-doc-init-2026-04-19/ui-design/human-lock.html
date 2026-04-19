@@ -1,0 +1,332 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Fabric Dashboard — Human Lock Vault</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --color-surface-canvas: #0B1016; --color-surface-panel: #0F172A;
+    --color-surface-raised: #1E293B; --color-surface-overlay: #334155;
+    --color-surface-code: #020617;
+    --color-border-subtle: #1E293B; --color-border-default: #334155; --color-border-strong: #475569;
+    --color-text-primary: #F8FAFC; --color-text-secondary: #CBD5E1;
+    --color-text-muted: #94A3B8; --color-text-dim: #64748B; --color-text-mono: #E2E8F0;
+    --color-state-locked-bg: rgba(245,158,11,.08); --color-state-locked-border: #B45309; --color-state-locked-text: #FBBF24;
+    --color-state-drift-bg: rgba(234,88,12,.10); --color-state-drift-border: #C2410C; --color-state-drift-text: #FB923C;
+    --color-state-approved-bg: rgba(34,197,94,.1); --color-state-approved-border: #166534; --color-state-approved-text: #4ADE80;
+    --color-action-primary: #22C55E; --color-action-primary-hover: #16A34A;
+    --font-family-mono: 'Space Mono','JetBrains Mono','SF Mono','Monaco',ui-monospace,monospace;
+    --font-family-sans: 'Inter',-apple-system,system-ui,sans-serif;
+    --font-size-xs: 11px; --font-size-sm: 12px; --font-size-base: 13px;
+    --font-size-md: 14px; --font-size-lg: 16px; --font-size-xl: 20px;
+    --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px;
+    --space-5: 20px; --space-6: 24px; --space-8: 32px;
+    --radius-sm: 3px; --radius-md: 6px; --radius-lg: 8px; --radius-pill: 999px;
+    --layout-header-height: 48px; --layout-sidebar-width: 240px;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; height: 100%; }
+  body { background: var(--color-surface-canvas); color: var(--color-text-secondary);
+         font-family: var(--font-family-sans); font-size: var(--font-size-base);
+         line-height: 1.5; -webkit-font-smoothing: antialiased; }
+  .app { display: grid; grid-template-columns: var(--layout-sidebar-width) 1fr; min-height: 100vh; }
+  .sidebar { background: var(--color-surface-panel); border-right: 1px solid var(--color-border-subtle); padding: var(--space-4); }
+  .brand { display: flex; align-items: center; gap: var(--space-2); font-family: var(--font-family-mono); font-weight: 700;
+           font-size: var(--font-size-md); color: var(--color-text-primary); padding: var(--space-2); margin-bottom: var(--space-4); }
+  .brand-logo { width: 18px; height: 18px; border: 1px solid var(--color-text-mono); border-radius: var(--radius-sm);
+                display: inline-flex; align-items: center; justify-content: center; font-size: 10px; color: var(--color-text-mono); }
+  .nav-item { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-2) var(--space-3);
+              border-radius: var(--radius-md); color: var(--color-text-muted); font-size: var(--font-size-sm);
+              cursor: pointer; transition: background 180ms, color 180ms; margin-bottom: 2px; }
+  .nav-item:hover { background: var(--color-surface-raised); color: var(--color-text-primary); }
+  .nav-item.active { background: var(--color-surface-raised); color: var(--color-text-primary); }
+  .nav-item .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--color-text-dim); }
+  .nav-item.active .dot { background: var(--color-action-primary); }
+  .nav-section { font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em;
+                 color: var(--color-text-dim); padding: var(--space-4) var(--space-3) var(--space-2); }
+  .main { display: flex; flex-direction: column; min-width: 0; }
+  .header { height: var(--layout-header-height); border-bottom: 1px solid var(--color-border-subtle);
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 0 var(--space-6); background: var(--color-surface-panel); }
+  .breadcrumb { font-family: var(--font-family-mono); font-size: var(--font-size-sm); color: var(--color-text-muted); }
+  .breadcrumb .sep { color: var(--color-text-dim); margin: 0 var(--space-1); }
+  .breadcrumb strong { color: var(--color-text-primary); font-weight: 400; }
+  .badge-live { display: inline-flex; align-items: center; gap: var(--space-1); padding: 2px var(--space-2);
+                border-radius: var(--radius-pill); background: rgba(34,197,94,.12); color: #4ADE80;
+                font-family: var(--font-family-mono); font-size: 10px; border: 1px solid rgba(34,197,94,.3); }
+  .badge-live .pulse { width: 6px; height: 6px; background: #22C55E; border-radius: 50%; animation: pulse 2s infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .4; } }
+  .view { padding: var(--space-6); flex: 1; overflow: auto; }
+  .view-header { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: var(--space-5); }
+  .view-title { font-size: var(--font-size-xl); font-weight: 700; color: var(--color-text-primary); margin: 0; }
+  .view-subtitle { font-size: var(--font-size-sm); color: var(--color-text-muted); margin-top: var(--space-1); }
+  /* Filter bar */
+  .filter-bar { display: flex; gap: var(--space-2); margin-bottom: var(--space-4); }
+  .chip { background: var(--color-surface-raised); border: 1px solid var(--color-border-subtle);
+          color: var(--color-text-muted); padding: var(--space-2) var(--space-3); border-radius: var(--radius-pill);
+          font-size: var(--font-size-sm); cursor: pointer; transition: all 180ms;
+          display: inline-flex; align-items: center; gap: var(--space-2); }
+  .chip:hover { border-color: var(--color-border-default); color: var(--color-text-primary); }
+  .chip.active { background: var(--color-surface-overlay); color: var(--color-text-primary); border-color: var(--color-border-default); }
+  .chip .count { font-family: var(--font-family-mono); font-size: 10px; background: var(--color-surface-code);
+                 color: var(--color-text-muted); padding: 1px 5px; border-radius: var(--radius-pill); }
+  .chip.drift.active { background: var(--color-state-drift-bg); color: var(--color-state-drift-text); border-color: var(--color-state-drift-border); }
+  .chip.ok.active { background: var(--color-state-approved-bg); color: var(--color-state-approved-text); border-color: var(--color-state-approved-border); }
+  /* Cards */
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(420px, 1fr)); gap: var(--space-4); }
+  .card { background: var(--color-surface-panel); border: 1px solid var(--color-border-subtle);
+          border-radius: var(--radius-lg); overflow: hidden; transition: border-color 180ms; display: flex; flex-direction: column; }
+  .card:hover { border-color: var(--color-border-default); }
+  .card.drift { border-left: 3px solid var(--color-state-drift-border); }
+  .card.drift:hover { border-color: var(--color-state-drift-border); }
+  .card.ok { border-left: 3px solid var(--color-state-approved-border); }
+  .card-head { padding: var(--space-4); display: flex; align-items: center; gap: var(--space-3);
+               border-bottom: 1px solid var(--color-border-subtle); background: var(--color-surface-panel); }
+  .card-icon { width: 28px; height: 28px; border-radius: var(--radius-md);
+               display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .card.drift .card-icon { background: var(--color-state-drift-bg); color: var(--color-state-drift-text); border: 1px solid var(--color-state-drift-border); }
+  .card.ok .card-icon { background: var(--color-state-approved-bg); color: var(--color-state-approved-text); border: 1px solid var(--color-state-approved-border); }
+  .card-path { font-family: var(--font-family-mono); font-size: var(--font-size-base);
+               color: var(--color-text-primary); min-width: 0; flex: 1; }
+  .card-path .lines { color: var(--color-text-muted); font-size: var(--font-size-sm); }
+  .status-pill { display: inline-flex; align-items: center; gap: 4px; padding: 2px var(--space-2); border-radius: var(--radius-pill);
+                 font-family: var(--font-family-mono); font-size: 10px; letter-spacing: 0.04em; text-transform: uppercase;
+                 border: 1px solid transparent; line-height: 1; }
+  .status-drift { background: var(--color-state-drift-bg); color: var(--color-state-drift-text); border-color: var(--color-state-drift-border); }
+  .status-ok { background: var(--color-state-approved-bg); color: var(--color-state-approved-text); border-color: var(--color-state-approved-border); }
+  /* hash comparison */
+  .card-body { padding: var(--space-4); flex: 1; display: flex; flex-direction: column; gap: var(--space-3); }
+  .hash-block { font-family: var(--font-family-mono); font-size: var(--font-size-sm); }
+  .hash-row { display: grid; grid-template-columns: 110px 1fr; gap: var(--space-2); align-items: center; padding: var(--space-1) 0; }
+  .hash-k { color: var(--color-text-muted); text-transform: uppercase; font-size: 10px; letter-spacing: 0.06em; }
+  .hash-v { color: var(--color-text-primary); word-break: break-all; }
+  .hash-v.drift-old { color: var(--color-state-drift-text); text-decoration: line-through; }
+  .hash-v.new { color: var(--color-text-primary); }
+  /* code preview (locked content) */
+  .preview {
+    background: var(--color-surface-code); border: 1px solid var(--color-border-subtle);
+    border-radius: var(--radius-md); overflow: hidden; font-family: var(--font-family-mono);
+    font-size: var(--font-size-sm); line-height: 1.55;
+  }
+  .preview-head { padding: var(--space-1) var(--space-3); background: var(--color-surface-panel);
+                  color: var(--color-text-dim); font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase;
+                  border-bottom: 1px solid var(--color-border-subtle);
+                  display: flex; justify-content: space-between; align-items: center; }
+  .preview-body { padding: var(--space-3); overflow-x: auto; color: var(--color-text-mono); white-space: pre; }
+  .line-add { background: rgba(34,197,94,.08); color: #86EFAC; display: inline-block; width: 100%; }
+  .line-del { background: rgba(220,38,38,.08); color: #FCA5A5; display: inline-block; width: 100%; text-decoration: line-through; }
+  .line-ctx { color: var(--color-text-mono); }
+  .line-num { color: var(--color-text-dim); user-select: none; display: inline-block; width: 28px; text-align: right; padding-right: 8px; }
+  /* footer actions */
+  .card-foot { padding: var(--space-3) var(--space-4); border-top: 1px solid var(--color-border-subtle);
+               display: flex; justify-content: space-between; align-items: center; gap: var(--space-3); }
+  .meta-line { font-family: var(--font-family-mono); font-size: var(--font-size-xs); color: var(--color-text-dim); }
+  .btn { font-family: var(--font-family-sans); font-size: var(--font-size-sm);
+         padding: var(--space-2) var(--space-4); border-radius: var(--radius-md);
+         border: 1px solid var(--color-border-default); background: var(--color-surface-raised);
+         color: var(--color-text-secondary); cursor: pointer; transition: all 180ms;
+         display: inline-flex; align-items: center; gap: var(--space-2); font-weight: 500; }
+  .btn:hover { border-color: var(--color-border-strong); color: var(--color-text-primary); }
+  .btn-approve { background: var(--color-action-primary); color: #052E16; border-color: transparent; }
+  .btn-approve:hover { background: var(--color-action-primary-hover); }
+  .btn-approve:disabled { background: var(--color-state-approved-bg); color: var(--color-state-approved-text);
+                          border: 1px solid var(--color-state-approved-border); cursor: default; }
+  .btn-ghost { background: transparent; border-color: var(--color-border-subtle); }
+  /* Empty state */
+  .empty-card { background: var(--color-surface-panel); border: 1px dashed var(--color-border-default);
+                border-radius: var(--radius-lg); padding: var(--space-6); text-align: center;
+                color: var(--color-text-muted); font-size: var(--font-size-sm); }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { animation-duration: 0ms !important; transition-duration: 0ms !important; }
+  }
+</style>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="brand">
+        <span class="brand-logo">F</span>
+        <span>fabric</span>
+        <span style="margin-left:auto; color: var(--color-text-dim); font-size: 10px; font-weight: 400;">v1.1</span>
+      </div>
+      <div class="nav-item"><span class="dot"></span>Rules Tree</div>
+      <div class="nav-item active"><span class="dot"></span>Human Lock</div>
+      <div class="nav-item"><span class="dot"></span>Intent Timeline</div>
+      <div class="nav-section">Diagnostics</div>
+      <div class="nav-item"><span class="dot"></span>Doctor</div>
+      <div class="nav-item"><span class="dot"></span>Drift Check</div>
+    </aside>
+
+    <main class="main">
+      <header class="header">
+        <div class="breadcrumb">
+          <span>~/projects/werewolf-minigame</span>
+          <span class="sep">/</span>
+          <strong>human-lock</strong>
+        </div>
+        <div style="display: flex; align-items: center; gap: var(--space-3);">
+          <span class="badge-live"><span class="pulse"></span>CONNECTED</span>
+          <span style="font-family: var(--font-family-mono); font-size: 11px; color: var(--color-text-muted);">:7373</span>
+        </div>
+      </header>
+
+      <section class="view">
+        <div class="view-header">
+          <div>
+            <h1 class="view-title">Human Lock Vault</h1>
+            <p class="view-subtitle">Protected regions awaiting approval · ritual writes only</p>
+          </div>
+        </div>
+
+        <div class="filter-bar" role="tablist">
+          <button class="chip active" role="tab" aria-selected="true">All<span class="count">5</span></button>
+          <button class="chip drift active" role="tab" aria-selected="false">Drift<span class="count">2</span></button>
+          <button class="chip ok" role="tab" aria-selected="false">Approved<span class="count">3</span></button>
+          <button class="chip" role="tab" aria-selected="false">By file</button>
+          <div style="flex:1;"></div>
+          <button class="btn btn-ghost" aria-label="bulk approve">Approve all drift…</button>
+        </div>
+
+        <div class="grid">
+          <!-- drift card -->
+          <article class="card drift" role="region" aria-label="Locked region — Network.ts">
+            <header class="card-head">
+              <div class="card-icon" aria-hidden="true">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+              </div>
+              <div class="card-path">assets/scripts/Network.ts<span class="lines"> · L27–L52</span></div>
+              <span class="status-pill status-drift">drift</span>
+            </header>
+
+            <div class="card-body">
+              <div class="hash-block">
+                <div class="hash-row"><span class="hash-k">locked hash</span><span class="hash-v drift-old">sha256:f33ab0…9d21</span></div>
+                <div class="hash-row"><span class="hash-k">current hash</span><span class="hash-v new">sha256:c48a21…2b7f</span></div>
+                <div class="hash-row"><span class="hash-k">diff</span><span class="hash-v" style="color: var(--color-state-drift-text);">+12 / −3 lines · 26 bytes reflow</span></div>
+              </div>
+              <div class="preview">
+                <div class="preview-head"><span>Network.ts · L27–L52 · 3-line context</span><span>TS</span></div>
+                <div class="preview-body"><span class="line-ctx"><span class="line-num">26</span>  const ROLES = [</span>
+<span class="line-ctx"><span class="line-num">27</span>    { id: 'werewolf', count: 3 },</span>
+<span class="line-del"><span class="line-num">28</span>    { id: 'villager', count: 7 },</span>
+<span class="line-add"><span class="line-num">28</span>    { id: 'villager', count: 6 },</span>
+<span class="line-add"><span class="line-num">29</span>    { id: 'seer', count: 1 },</span>
+<span class="line-ctx"><span class="line-num">30</span>  ]</span></div>
+              </div>
+            </div>
+
+            <footer class="card-foot">
+              <span class="meta-line">locked by @alice · 3d ago · rev 31</span>
+              <div style="display: flex; gap: var(--space-2);">
+                <button class="btn btn-ghost">View diff</button>
+                <button class="btn btn-approve">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                  Approve new hash
+                </button>
+              </div>
+            </footer>
+          </article>
+
+          <!-- drift card 2 -->
+          <article class="card drift" role="region" aria-label="Locked region — Player.ts">
+            <header class="card-head">
+              <div class="card-icon">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/></svg>
+              </div>
+              <div class="card-path">assets/scripts/Player.ts<span class="lines"> · L12–L18</span></div>
+              <span class="status-pill status-drift">drift</span>
+            </header>
+            <div class="card-body">
+              <div class="hash-block">
+                <div class="hash-row"><span class="hash-k">locked hash</span><span class="hash-v drift-old">sha256:21d99e…1a08</span></div>
+                <div class="hash-row"><span class="hash-k">current hash</span><span class="hash-v new">sha256:88ca3f…e011</span></div>
+                <div class="hash-row"><span class="hash-k">diff</span><span class="hash-v" style="color: var(--color-state-drift-text);">+1 / −1 line</span></div>
+              </div>
+              <div class="preview">
+                <div class="preview-head"><span>Player.ts · L12–L18</span><span>TS</span></div>
+                <div class="preview-body"><span class="line-ctx"><span class="line-num">11</span>  @property(Node)</span>
+<span class="line-del"><span class="line-num">12</span>  private avatar: Node | null = null</span>
+<span class="line-add"><span class="line-num">12</span>  private avatar!: Node</span>
+<span class="line-ctx"><span class="line-num">13</span>  </span></div>
+              </div>
+            </div>
+            <footer class="card-foot">
+              <span class="meta-line">locked by @alice · 12d ago · rev 27</span>
+              <div style="display: flex; gap: var(--space-2);">
+                <button class="btn btn-ghost">View diff</button>
+                <button class="btn btn-approve">Approve new hash</button>
+              </div>
+            </footer>
+          </article>
+
+          <!-- approved / ok card -->
+          <article class="card ok" role="region" aria-label="Locked region — Game.ts">
+            <header class="card-head">
+              <div class="card-icon">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+              </div>
+              <div class="card-path">assets/scripts/Game.ts<span class="lines"> · L41–L58</span></div>
+              <span class="status-pill status-ok">confirmed</span>
+            </header>
+            <div class="card-body">
+              <div class="hash-block">
+                <div class="hash-row"><span class="hash-k">locked hash</span><span class="hash-v">sha256:8c01bb…44e2</span></div>
+                <div class="hash-row"><span class="hash-k">current hash</span><span class="hash-v">sha256:8c01bb…44e2 ✓</span></div>
+                <div class="hash-row"><span class="hash-k">diff</span><span class="hash-v">none — in sync</span></div>
+              </div>
+              <div class="preview" style="opacity:.85;">
+                <div class="preview-head"><span>Game.ts · L41–L58</span><span>TS</span></div>
+                <div class="preview-body"><span class="line-ctx"><span class="line-num">41</span>  @ccclass("Game")</span>
+<span class="line-ctx"><span class="line-num">42</span>  export class Game extends Component {</span>
+<span class="line-ctx"><span class="line-num">43</span>    start(): void { /* … */ }</span>
+<span class="line-ctx"><span class="line-num">44</span>  }</span></div>
+              </div>
+            </div>
+            <footer class="card-foot">
+              <span class="meta-line">approved @alice · 1h ago · rev 34</span>
+              <div style="display: flex; gap: var(--space-2);">
+                <button class="btn btn-ghost">View in IDE</button>
+                <button class="btn btn-approve" disabled>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                  Approved
+                </button>
+              </div>
+            </footer>
+          </article>
+
+          <!-- ok card 2 -->
+          <article class="card ok" role="region" aria-label="Prefabs">
+            <header class="card-head">
+              <div class="card-icon">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
+              </div>
+              <div class="card-path">assets/prefabs/**<span class="lines"> · 2 files</span></div>
+              <span class="status-pill status-ok">protected</span>
+            </header>
+            <div class="card-body">
+              <div class="hash-block">
+                <div class="hash-row"><span class="hash-k">scope</span><span class="hash-v">glob — protect whole folder</span></div>
+                <div class="hash-row"><span class="hash-k">files</span><span class="hash-v">Main.prefab, Player.prefab</span></div>
+                <div class="hash-row"><span class="hash-k">drift</span><span class="hash-v">none — all .meta match</span></div>
+              </div>
+            </div>
+            <footer class="card-foot">
+              <span class="meta-line">protected @alice · locked since init</span>
+              <button class="btn btn-ghost">List files</button>
+            </footer>
+          </article>
+        </div>
+
+        <div class="empty-card" style="margin-top: var(--space-5);">
+          No more locked regions. Add a lock via <code style="font-family: var(--font-family-mono); color: var(--color-text-primary);">fab human-lint --lock &lt;path&gt;</code> in your IDE.
+        </div>
+      </section>
+    </main>
+  </div>
+</body>
+</html>

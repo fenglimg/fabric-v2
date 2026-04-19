@@ -1,0 +1,163 @@
+{
+  "session_id": "ANL-fab-doc-init-werewolf-2026-04-19",
+  "timestamp": "2026-04-19T00:00:00.000Z",
+  "topic": "fab 如何进行文档的初始化（生成相关的文档，当前考虑的项目是 werewolf-minigame）",
+  "dimensions": [
+    "architecture",
+    "implementation",
+    "decision"
+  ],
+  "relevant_files": [
+    {
+      "path": "packages/cli/src/commands/init.ts",
+      "annotation": "现有 fab init 命令的完整实现。调用 createScanReport() 做 framework 探测，读取 AGENTS.md.template，做 {projectName}/{frameworkKind} 两处字符串替换，写出 AGENTS.md + .fabric/agents.meta.json + .fabric/human-lock.json。目前无交互、无 Skill 调用、无访谈协议，属于纯 CLI 静态脚手架模式。这是 H1 待改造的核心入口。",
+      "dimensions": [
+        "architecture",
+        "implementation",
+        "decision"
+      ]
+    },
+    {
+      "path": "packages/cli/src/commands/scan.ts",
+      "annotation": "createScanReport() 实现：detectFramework + getReadmeQuality + walkFiles + buildRecommendations。这是 CLI 层已有的「取证」能力基础。当前只做 framework kind 检测和文件计数，尚无目录熵计算、Smart Sampling、依赖指纹等 H1 期望的深度取证。",
+      "dimensions": [
+        "architecture",
+        "implementation"
+      ]
+    },
+    {
+      "path": "packages/cli/src/scanner/detector.ts",
+      "annotation": "框架检测逻辑。支持 cocos-creator（依赖 project.config.json 存在）、vite/next/react/vue（依赖 package.json 中的 dep 名称）、rust（Cargo.toml）、python（pyproject.toml）、unknown。werewolf-minigame-stub 有 project.config.json，会被正确识别为 cocos-creator。",
+      "dimensions": [
+        "implementation"
+      ]
+    },
+    {
+      "path": "packages/cli/src/scanner/ignores.ts",
+      "annotation": "Cocos Creator 专项忽略规则（*.meta、library/、temp/、build/ 等），已是实现的一部分。H1 扩展取证时需要在这个 ignore 基础上做 Smart Sampling。",
+      "dimensions": [
+        "implementation"
+      ]
+    },
+    {
+      "path": "templates/agents-md/AGENTS.md.template",
+      "annotation": "现有 AGENTS.md 模板文件，仅含两处插值占位符：{projectName} 和 {frameworkKind}。内容是带大量 // TODO 注释的极简骨架（约 30 行）。H1 的「语义深度分层 AGENTS.md」与此模板距离极大：需要 Skill 层进行访谈后由 AI 生成，而非静态 .template 文件。",
+      "dimensions": [
+        "architecture",
+        "implementation",
+        "decision"
+      ]
+    },
+    {
+      "path": "packages/cli/src/commands/bootstrap.ts",
+      "annotation": "fab bootstrap install 命令：将 6 个 AI 客户端的引导词模板（CLAUDE.md、cursor-fabric-bootstrap.mdc 等）复制到目标项目对应位置。与 init 解耦，独立命令。H1 方案中此命令保持不变，doc-init 是 init 的语义增强而非 bootstrap 的扩展。",
+      "dimensions": [
+        "architecture"
+      ]
+    },
+    {
+      "path": "templates/bootstrap/CLAUDE.md",
+      "annotation": "Claude Code 客户端引导词模板，5 行核心约束（fab_get_rules 强制调用 + fab_update_registry + @HUMAN 保护 + fab_append_intent）。这是 H1「交互层」完成后 AI 会遵守的约束集，已与 fab 协议深度绑定。",
+      "dimensions": [
+        "architecture"
+      ]
+    },
+    {
+      "path": "packages/cli/src/commands/index.ts",
+      "annotation": "所有 CLI 命令注册表。当前有 bootstrap、init、scan、sync-meta、human-lint、ledger-append、hooks、config、pre-commit。没有 doc-init 独立命令，H1 设计需要决策：是扩展 init 还是新增独立 doc-init 子命令。",
+      "dimensions": [
+        "architecture",
+        "decision"
+      ]
+    },
+    {
+      "path": "examples/werewolf-minigame-stub/project.config.json",
+      "annotation": "werewolf-minigame Cocos Creator 标识文件，内含 creator.version: 3.8.0。fab scan 通过检测此文件判定 framework.kind = \"cocos-creator\"。这是 H1 Skill 层需要深度语义化理解的项目类型入口证据。",
+      "dimensions": [
+        "implementation"
+      ]
+    },
+    {
+      "path": "examples/werewolf-minigame-stub/assets/scripts",
+      "annotation": "werewolf-minigame-stub 的实际 TypeScript 脚本目录（6 个 .ts + .meta 文件）。H1 的 Smart Sampling 切片应从此处采样关键代码模式（Component 继承、事件系统、Node 引用模式等）以输入 Skill 推断。",
+      "dimensions": [
+        "implementation"
+      ]
+    },
+    {
+      "path": "思路.md",
+      "annotation": "项目的核心设计规范文档。定义了 AGENTS.md+docs 两层架构的规范与设计原理，包含 Claude Code hook（agents-md-reminder.cjs）与 agents-md SKILL.md 的完整实现蓝图。这是 fab 整个工具链的「宪法」文档，H1 设计的 Skill 层逻辑与此文档中的 agents-md skill 高度相关。",
+      "dimensions": [
+        "architecture",
+        "decision"
+      ]
+    },
+    {
+      "path": "packages/server/src/tools/get-rules.ts",
+      "annotation": "fab_get_rules MCP tool 实现。读取 .fabric/agents.meta.json 中的节点树，按 scope_glob 匹配返回 L0/L1/L2 规则内容 + human_locked_nearby。这是 H1 初始化完成后 AI 运行期访问规则的核心工具，说明 fab init 产出的 .fabric/ 目录必须与此格式兼容。",
+      "dimensions": [
+        "architecture"
+      ]
+    },
+    {
+      "path": ".workflow/.analysis/ANL-implement-fabric-v2-2026-04-18/conclusions.json",
+      "annotation": "前序分析会话结论。明确记录了「fab init 对缺文档项目的正确策略是 Nx 模式 heuristic chain + TODO-marker scaffold」，说明当前实现是有意为之的保守策略，而非未完成功能。H1 是对此策略的升级方案。",
+      "dimensions": [
+        "decision"
+      ]
+    }
+  ],
+  "patterns": [
+    "fab init 当前是纯 CLI 静态脚手架：scan → template 字符串替换 → 写文件，无交互无 AI 参与",
+    "框架检测已支持 cocos-creator（project.config.json 优先级最高），werewolf-minigame-stub 会被正确识别",
+    "模板系统极简：AGENTS.md.template 只有 {projectName} 和 {frameworkKind} 两处占位符，内容以 TODO 骨架为主",
+    "bootstrap（引导词安装）与 init（AGENTS.md 生成）是两个解耦命令，各司其职",
+    "fab 当前无 Skill 对接机制：思路.md 中定义了 agents-md SKILL.md 规范，但 fab CLI 本身没有调用 Skill 的代码",
+    "H1 所需的「取证层」基础能力（detectFramework + walkFiles + ignores）已存在，但缺少目录熵/Smart Sampling/依赖指纹等深度分析",
+    "server 层（MCP tools）与 CLI 层解耦：init 只生成文件，不与 MCP server 通信",
+    "non-destructive 原则贯穿 init：AGENTS.md 或 .fabric/ 已存在则 ABORT，不覆盖"
+  ],
+  "module_map": {
+    "cli": {
+      "role": "fab CLI 主包，包含所有子命令（init/scan/bootstrap/hooks/config/sync-meta/human-lint/ledger-append/pre-commit），使用 citty 框架注册命令，tsup 打包",
+      "entry": "packages/cli/src/index.ts（主入口，实际 src/ 下有 index.ts）",
+      "commands": [
+        "init — 在目标项目初始化 Fabric（生成 AGENTS.md + .fabric/ 目录），当前无交互无 AI",
+        "scan — 只读诊断，输出 ScanReport（框架/README质量/文件数/建议），可输出 JSON",
+        "bootstrap install — 向 6 个 AI 客户端写入引导词模板",
+        "config install — 向 6 个 AI 客户端写入 MCP server 配置",
+        "hooks install — 安装 husky pre-commit 钩子",
+        "sync-meta — 同步 .fabric/agents.meta.json 中的文件 hash",
+        "human-lint — 检查 @HUMAN 段是否被篡改",
+        "ledger-append — 追加意图记录到 .intent-ledger.jsonl",
+        "pre-commit — 串联 sync-meta + human-lint + ledger-append 的 pre-commit 主流程"
+      ]
+    },
+    "server": {
+      "role": "fabric-server MCP 包，暴露 3 个 MCP stdio tools（fab_get_rules / fab_update_registry / fab_append_intent），供 AI 客户端运行时调用，读取 .fabric/agents.meta.json 和 AGENTS.md 树"
+    },
+    "shared": {
+      "role": "共享工具库包（packages/shared/src/），为 CLI 和 server 提供共用类型/工具函数"
+    },
+    "templates": {
+      "agents-md": "AGENTS.md.template — 只有 {projectName}/{frameworkKind} 两处插值的极简骨架，约 30 行，满是 TODO 注释",
+      "bootstrap": "6 个 AI 客户端引导词模板（CLAUDE.md、cursor-fabric-bootstrap.mdc、windsurf-fabric.md、roo-fabric.md、GEMINI.md、codex-AGENTS-header.md），内容是 5 行 fab 协议约束",
+      "fabric": "human-lock.json — 初始空的人类锁定记录模板",
+      "husky": "pre-commit — Git pre-commit 钩子脚本模板，串联 fab pre-commit 命令"
+    }
+  },
+  "existing_init_behavior": "fab init 当前工作流：(1) resolveDevMode 解析目标目录（支持 CLI --target 参数、EXTERNAL_FIXTURE_PATH 环境变量、fabric.config.json 配置、当前目录四路 fallback）；(2) assertExistingDirectory 校验目录存在；(3) 检查 AGENTS.md 和 .fabric/ 是否已存在（存在则 ABORT，non-destructive 原则）；(4) 调用 createScanReport(target) 得到 ScanReport（含 framework.kind）；(5) 读取 templates/agents-md/AGENTS.md.template，做 { projectName } 和 { frameworkKind } 两处字符串 replaceAll；(6) sha256 hash AGENTS.md 内容，生成 agents.meta.json（revision + L0 节点）；(7) mkdirSync .fabric/，writeNewFile 写出三个文件：AGENTS.md、.fabric/agents.meta.json、.fabric/human-lock.json。整个流程无用户交互、无 AI 参与、无 Skill 调用、无访谈协议。当前 AGENTS.md 模板内容极为简单：项目名 + 框架种类 + 一堆 TODO 注释 + fab:index 索引占位块。没有 doc-init 的独立雏形。",
+  "skill_integration_status": "fab CLI 当前没有任何 Skill 调用代码。思路.md 中定义了 agents-md SKILL.md 规范（包含决策流程、Claude Code PostToolUse+Stop hook、agents-md-reminder.cjs 脚本），但这些是「目标项目运行时」应安装的机制，而非 fab CLI 本身执行的逻辑。fab bootstrap install 将引导词写入客户端配置（CLAUDE.md/GEMINI.md 等），引导 AI 遵守 fab 协议，但没有触发 Skill 的调用链。H1 中提到的「Skill 层语义推断」在当前代码库中不存在，需要新设计。",
+  "sikao_md_excerpt": "【核心架构】定义了 AGENTS.md+docs 两层文档架构：AGENTS.md 始终加载（≤300行），含硬性约束/关键约定摘要/文档维护规则/docs索引列表；docs/ 是项目级文档，AI 按需加载。内部模块也可按需生成 AGENTS.md（嵌套不超过 4 层）。【如何让 AI 强制更新 AGENTS.md】通过 Claude Code/Cursor 的 PostToolUse + Stop hook，触发 agents-md-reminder.cjs 脚本。脚本在 Stop 时输出 {decision: 'block', reason: '...必须使用 agents-md skill...'} 来阻止 AI 停止，强制触发 agents-md skill 判断是否需要更新文档。【agents-md SKILL.md 规范】AI 更新 AGENTS.md 的决策流程：从修改文件目录向上查找 AGENTS.md（最多 3 层）→ 判断修改是否影响已记录内容 → 有影响则同步更新 → 未找到则询问用户是否创建。创建 AGENTS.md 后，同目录下应有 CLAUDE.md 引用 @AGENTS.md。核心规则：嵌套不超过 4 层；只更新相关部分；注意事项是最有价值的部分。【设计关键洞察】「本规范用于约定项目中的基础知识文档的内容与结构，辅助 AI 获取项目知识。本规范与具体 AI 工具无关。」",
+  "questions_for_user": [
+    "H1 的 Skill 层是否指 Claude Code 的 .claude/skills/{skill-name}/SKILL.md 机制？还是 fab 的一个新的内部 Skill 运行时？当前代码库中没有 .claude/ 目录，fab CLI 也没有 Skill 调度代码。",
+    "H1 的「三轮深度访谈」是在 fab init 命令的 TTY 交互中发生（readline 问答），还是在 AI 客户端的会话中发生（AI 主导问用户）？两者实现路径差异极大。",
+    "当前 AGENTS.md.template 是 30 行 TODO 骨架。H1 期望的「语义深度分层 AGENTS.md」输出由 AI 生成后，是否仍然需要 .template 文件？还是 template 只是 fallback，AI 生成的才是 primary 输出？",
+    "H1 的 Smart Sampling（关键代码切片）具体指：(a) fab 读取 werewolf-minigame 的若干关键 .ts 文件并截取若干行；还是 (b) 依赖某个 AST 分析工具？当前 scan.ts 只做文件计数，不读取代码内容。",
+    "H1 的四层协议是否仍然在 fab init 这一个命令下完成？还是拆成 fab init（取证+写基础文件）+ fab doc-init（访谈+AI生成文档）两个独立命令？",
+    "werewolf-minigame 的真实项目路径是否可以通过 EXTERNAL_FIXTURE_PATH 环境变量指定来验证 H1 的 Smart Sampling 效果？当前 examples/werewolf-minigame-stub 是精简 Cocos Creator fixture（6 个 .ts 文件）。"
+  ],
+  "_metadata": {
+    "duration_s": 45
+  }
+}

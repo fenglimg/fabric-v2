@@ -1,0 +1,160 @@
+{
+  "id": "TASK-007",
+  "title": "D3 Dashboard REST API + services/ middle layer",
+  "scope": "packages/server/src/services/ + packages/server/src/api/ + packages/server/src/tools/",
+  "action": "Implement",
+  "description": "Extract pure-function business logic from existing MCP tools into services/{get-rules,append-intent,update-registry}.ts. Refactor tools/* as thin adapters calling services. Add REST API endpoints: GET /api/rules, GET /api/ledger, GET /api/scan, GET /api/human-lock (4 read endpoints) + POST /api/human-lock/approve, POST /api/intent/annotate (2 write endpoints). Add unified error body contract via api/_error.ts. Mount all API routes on the createFabricHttpApp Express app from TASK-006.",
+  "files": [
+    {
+      "path": "packages/server/src/services/get-rules.ts",
+      "action": "Create",
+      "target": "Pure-function getRules(projectRoot) service",
+      "change": "Extract core logic from tools/get-rules.ts: readAgentsMeta + human_locked_nearby computation + stale detection; return RulesResult type matching existing MCP tool response shape"
+    },
+    {
+      "path": "packages/server/src/services/append-intent.ts",
+      "action": "Create",
+      "target": "Pure-function appendIntent(projectRoot, entry) service",
+      "change": "Extract core logic from tools/append-intent.ts; accepts LedgerEntry from @fabric/shared; writes with source:'ai' tag; returns success/error"
+    },
+    {
+      "path": "packages/server/src/services/update-registry.ts",
+      "action": "Create",
+      "target": "Pure-function updateRegistry(projectRoot, updates) service",
+      "change": "Extract core logic from tools/update-registry.ts; pure function with no transport coupling"
+    },
+    {
+      "path": "packages/server/src/tools/get-rules.ts",
+      "action": "Update",
+      "target": "Thin adapter wrapper at L160-169",
+      "change": "Replace inline business logic with call to services/get-rules.ts; tool handler becomes: const result = await getRules(projectRoot); return formatMcpResult(result)"
+    },
+    {
+      "path": "packages/server/src/tools/append-intent.ts",
+      "action": "Update",
+      "target": "Thin adapter wrapper",
+      "change": "Replace inline business logic with call to services/append-intent.ts"
+    },
+    {
+      "path": "packages/server/src/tools/update-registry.ts",
+      "action": "Update",
+      "target": "Thin adapter wrapper",
+      "change": "Replace inline business logic with call to services/update-registry.ts"
+    },
+    {
+      "path": "packages/server/src/api/_error.ts",
+      "action": "Create",
+      "target": "Unified error body factory",
+      "change": "Export sendError(res, status, code, message) helper; reuse FABRIC_META_MISSING / FABRIC_META_INVALID error codes from meta-reader.ts; all API endpoints use this for consistent {error:{code,message}} responses"
+    },
+    {
+      "path": "packages/server/src/api/rules.ts",
+      "action": "Create",
+      "target": "GET /api/rules endpoint",
+      "change": "Express router: GET /api/rules calls services/get-rules; returns AgentsMeta with human_locked_nearby; 404 if .fabric/ missing"
+    },
+    {
+      "path": "packages/server/src/api/ledger.ts",
+      "action": "Create",
+      "target": "GET /api/ledger endpoint",
+      "change": "Express router: GET /api/ledger?source=ai|human&since=<isoTimestamp>; reads .intent-ledger.jsonl; filters by source and since; returns LedgerEntry[] from @fabric/shared"
+    },
+    {
+      "path": "packages/server/src/api/scan.ts",
+      "action": "Create",
+      "target": "GET /api/scan endpoint",
+      "change": "Express router: GET /api/scan calls createScanReport(projectRoot) from cli/scan; returns ScanReport JSON"
+    },
+    {
+      "path": "packages/server/src/api/human-lock.ts",
+      "action": "Create",
+      "target": "GET /api/human-lock + POST /api/human-lock/approve endpoints",
+      "change": "GET returns HumanLockEntry[] with drift status (compare stored hash vs current file hash); POST /approve accepts {file, start_line, end_line, new_hash} body; updates human-lock.json locked[].hash; writes source:'human' audit entry to intent-ledger.jsonl"
+    },
+    {
+      "path": "packages/server/src/api/intent.ts",
+      "action": "Create",
+      "target": "POST /api/intent/annotate endpoint",
+      "change": "POST body: {ledger_entry_id: string, annotation: string}; appends new LedgerEntry with source:'human', annotation field, links to original entry via parent reference; returns created entry"
+    },
+    {
+      "path": "packages/server/src/http.ts",
+      "action": "Update",
+      "target": "Mount API routes on Express app",
+      "change": "Import routers from api/rules, api/ledger, api/scan, api/human-lock, api/intent; app.use('/api', rulesRouter, ledgerRouter, scanRouter, humanLockRouter, intentRouter)"
+    }
+  ],
+  "implementation": [
+    "Create services/ directory with 3 pure-function files extracting logic from existing tool handlers; each service function takes (projectRoot: string, ...params) and returns typed result or throws FabricError",
+    "Refactor tools/get-rules.ts, tools/append-intent.ts, tools/update-registry.ts as thin adapters (each ~10-15 lines calling the service function and formatting MCP response)",
+    "Create api/_error.ts with sendError helper and error code constants",
+    "Create 4 read endpoints (rules, ledger, scan, human-lock GET) and 2 write endpoints (human-lock/approve POST, intent/annotate POST)",
+    "Update http.ts to mount all API routers; add express.json() middleware for POST body parsing",
+    "Regression test: existing MCP tool behavior unchanged — run existing tests if any"
+  ],
+  "reference": {
+    "pattern": "Service-function middle layer pattern (SSOT for business logic)",
+    "files": [
+      "packages/server/src/tools/get-rules.ts",
+      "packages/server/src/tools/append-intent.ts",
+      "packages/server/src/tools/update-registry.ts",
+      "packages/server/src/meta-reader.ts",
+      "packages/server/src/http.ts"
+    ],
+    "examples": "computeAgentsMeta() in cli/sync-meta.ts:L71-99 is an example pure function; hashLockedContent() in cli/human-lint.ts:L115 for drift detection"
+  },
+  "convergence": {
+    "criteria": [
+      "GET http://127.0.0.1:7373/api/rules returns {nodes:[...]} JSON matching AgentsMeta shape",
+      "GET http://127.0.0.1:7373/api/ledger?source=ai returns LedgerEntry[] with only source:'ai' entries",
+      "GET http://127.0.0.1:7373/api/human-lock returns HumanLockEntry[] with drift:true for modified @HUMAN sections",
+      "POST http://127.0.0.1:7373/api/human-lock/approve with valid body updates human-lock.json locked[].hash correctly",
+      "POST http://127.0.0.1:7373/api/intent/annotate appends new source:'human' entry to .intent-ledger.jsonl",
+      "Missing .fabric/ directory returns 404 with {error:{code:'FABRIC_META_MISSING',message:'...'}}",
+      "Existing MCP tools (get-rules, append-intent, update-registry via stdio) behavior unchanged after refactor to thin adapters"
+    ]
+  },
+  "rationale": {
+    "chosen_approach": "Services layer as pure functions enables sharing between MCP tools and HTTP API without duplication; thin adapter pattern for tools minimizes risk of breaking existing behavior",
+    "alternatives_considered": [
+      "HTTP API calling MCP JSON-RPC internally (adds parsing overhead and blurs boundaries)",
+      "Duplicating logic in HTTP handlers (maintenance nightmare as tools evolve)"
+    ],
+    "decision_factors": [
+      "SSOT principle: business logic in one place",
+      "Ritually-minimal write model: only 2 write endpoints (approve + annotate)"
+    ],
+    "tradeoffs": "Introduces an intermediate services layer; small complexity increase offset by reduced duplication"
+  },
+  "test": {
+    "manual_checks": [
+      "curl http://127.0.0.1:7373/api/rules — verify JSON matches AgentsMeta shape",
+      "curl 'http://127.0.0.1:7373/api/ledger?source=ai' — verify all entries have source:'ai'",
+      "Manually edit @HUMAN section content then curl /api/human-lock — verify drift:true on that entry",
+      "POST /api/human-lock/approve — verify human-lock.json updated",
+      "POST /api/intent/annotate — verify .intent-ledger.jsonl has new source:'human' entry"
+    ],
+    "success_metrics": [
+      "All 7 REST endpoints return correct HTTP status codes (200 for success, 404 for missing fabric)",
+      "MCP tools via stdio continue to work (regression: no behavior change)",
+      "pnpm -r build passes"
+    ],
+    "unit": [],
+    "integration": []
+  },
+  "risks": [
+    {
+      "description": "Refactoring MCP tools to thin adapters may introduce subtle behavior regression",
+      "probability": "Medium",
+      "impact": "Medium",
+      "mitigation": "Extract services first (add new files), then refactor tool handlers to call services; run any existing tests between each step",
+      "fallback": "If a tool regression is found, revert the tool adapter change and keep the original logic in the tool while still exposing via service for HTTP"
+    }
+  ],
+  "depends_on": ["TASK-006"],
+  "cli_execution_id": "fabric-dashboard-2026-04-19-TASK-007",
+  "cli_execution": {
+    "strategy": "resume",
+    "resume_from": "fabric-dashboard-2026-04-19-TASK-006"
+  }
+}

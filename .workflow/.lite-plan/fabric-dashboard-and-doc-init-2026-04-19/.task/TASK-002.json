@@ -1,0 +1,92 @@
+{
+  "id": "TASK-002",
+  "title": "Doc-Init Rec#1 — fab init forensic.json + detector extension",
+  "scope": "packages/cli/src/",
+  "action": "Implement",
+  "description": "Extend packages/cli/src/scanner/detector.ts to return {kind, version, subkind} for Cocos Creator 2.x/3.x distinction and Vite/Next version detection. Add packages/cli/src/scanner/forensic.ts implementing buildForensicReport(target) that produces a ForensicReport conforming to the @fabric/shared ForensicReport schema. Extend init.ts initFabric() to write forensic.json after the existing 3 writeNewFile calls, install SKILL.md and hook (handled in TASK-003/004), and emit stdout reason text triggering the agents-md-init skill.",
+  "files": [
+    {
+      "path": "packages/cli/src/scanner/detector.ts",
+      "action": "Update",
+      "target": "FrameworkInfo return type + Cocos 2.x/3.x detection logic",
+      "change": "Extend FrameworkInfo to { kind, version, subkind, evidence[] }; read project.config.json creator.version for Cocos Creator version; distinguish 2.x (subkind:'javascript-traditional') vs 3.x (subkind:'typescript-component'); extract Vite/Next version from package.json dependencies"
+    },
+    {
+      "path": "packages/cli/src/scanner/forensic.ts",
+      "action": "Create",
+      "target": "buildForensicReport(target: string): ForensicReport",
+      "change": "New file: import detectFramework from detector.ts; scan topology (total_files, by_ext, key_dirs, max_depth); identify entry_points (top-level .ts/.js in key script dirs); Smart Sampling — read first 30 lines of each entry_point with pattern_hint; build recommendations_for_skill array based on framework.kind; return ForensicReport conforming to @fabric/shared schema"
+    },
+    {
+      "path": "packages/cli/src/commands/init.ts",
+      "action": "Update",
+      "target": "initFabric() function — append forensic.json write + stdout reason at lines 75-106",
+      "change": "After existing writeNewFile x3 (AGENTS.md/agents.meta.json/human-lock.json), add: (1) call buildForensicReport(target) and writeNewFile(forensic.json, JSON.stringify(report, null, 2)); (2) non-destructive guard: if forensic.json already exists, ABORT with consistent message; (3) stdout: console.log reason text ending with 'use the agents-md-init skill'"
+    }
+  ],
+  "implementation": [
+    "Update packages/cli/src/scanner/detector.ts: add version and subkind to FrameworkInfo type; implement readCreatorVersion(target) to parse project.config.json; add Cocos 2.x vs 3.x subkind branching logic; add vite/next version extraction from target package.json dependencies",
+    "Create packages/cli/src/scanner/forensic.ts: define buildForensicReport(target) function; compute topology by walking target directory with fs.readdirSync; collect entry_points from key dirs; implement Smart Sampling (readFileSync + slice to 30 lines); assemble recommendations_for_skill from framework.kind switch; import ForensicReport type from @fabric/shared",
+    "Update packages/cli/src/commands/init.ts: import buildForensicReport; after writeNewFile x3, add writeNewFile guard for forensic.json; call buildForensicReport and write JSON; append console.log with reason text including skill name",
+    "Verify non-destructive behavior: running fab init a second time should ABORT (forensic.json already exists)"
+  ],
+  "reference": {
+    "pattern": "Extension of existing detector + new forensic scanner",
+    "files": [
+      "packages/cli/src/scanner/detector.ts",
+      "packages/cli/src/commands/init.ts",
+      "packages/cli/src/commands/scan.ts",
+      "packages/shared/src/schemas/forensic-report.ts"
+    ],
+    "examples": "Mirror non-destructive guard pattern from existing init.ts writeNewFile checks; mirror detector.ts detectFramework() shape for extension; ForensicReport schema from TASK-001"
+  },
+  "convergence": {
+    "criteria": [
+      "fab init on examples/werewolf-minigame-stub produces .fabric/forensic.json with framework.kind='cocos-creator', framework.version='3.8.0', framework.subkind='typescript-component'",
+      "forensic.json entry_points[] contains at least assets/scripts/Game.ts and assets/scripts/Player.ts",
+      "fab init stdout includes text containing 'agents-md-init' skill reference",
+      "Running fab init a second time on same target ABORTs with a clear message (non-destructive guard)",
+      "pnpm -r build passes with updated detector.ts FrameworkInfo type",
+      "ForensicReport produced by buildForensicReport passes @fabric/shared forensicReportSchema.safeParse() without errors"
+    ]
+  },
+  "rationale": {
+    "chosen_approach": "Separate forensic.ts module keeps scanner concerns isolated from init.ts orchestration; detector.ts extension is additive (no breaking changes to existing detectors)",
+    "alternatives_considered": [
+      "Inline forensic logic inside scan.ts (couples scan + init outputs)",
+      "FAB CLI calling Claude API directly for Layer 2 (rejected: dependency on AI at CLI level)"
+    ],
+    "decision_factors": ["<200ms performance constraint (only file reads, no AST)", "Non-destructive principle", "ForensicReport as inter-layer contract uses @fabric/shared schema from TASK-001"],
+    "tradeoffs": "Smart Sampling is line-truncation not AST — loses some semantic richness but stays fast and dependency-free"
+  },
+  "test": {
+    "manual_checks": [
+      "cd /path/to/werewolf-minigame-stub && fab init — verify .fabric/forensic.json is created with correct framework fields",
+      "fab init a second time — verify ABORT message about forensic.json already existing",
+      "Inspect forensic.json code_samples[] — each entry should have path, lines, snippet (≤30 lines), pattern_hint"
+    ],
+    "success_metrics": [
+      "forensic.json schema validation passes (ForensicReport zod.safeParse = success)",
+      "framework.version = '3.8.0' on werewolf-minigame-stub",
+      "entry_points.length >= 2",
+      "fab init completes in <200ms for werewolf-minigame-stub"
+    ],
+    "unit": ["init-forensic.test.ts (created in TASK-010): initFabric on werewolf-minigame-stub asserts forensic.json fields"],
+    "integration": []
+  },
+  "risks": [
+    {
+      "description": "project.config.json absent in Cocos 3.x projects or has different schema",
+      "probability": "Low",
+      "impact": "Medium",
+      "mitigation": "Add try/catch around project.config.json parsing; fallback to version='unknown' and subkind inferred from tsconfig presence",
+      "fallback": "If version undetectable, forensic.json still valid — version field becomes 'unknown' and recommendations_for_skill adds a note"
+    }
+  ],
+  "depends_on": ["TASK-001"],
+  "cli_execution_id": "fabric-dashboard-2026-04-19-TASK-002",
+  "cli_execution": {
+    "strategy": "fork",
+    "resume_from": "fabric-dashboard-2026-04-19-TASK-001"
+  }
+}
