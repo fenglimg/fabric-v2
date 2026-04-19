@@ -11,7 +11,7 @@ It also verifies the `.fabric/agents.meta.json` manual-edit guard and the `<300m
 ## Prerequisites
 
 - Run from the Fabric repository root.
-- Build the CLI before testing: `pnpm --filter @fabric/cli build`
+- Build the CLI before testing: `pnpm --filter @fenglimg/fabric-cli build`
 - Use a disposable local repository for the hook checks.
 
 ## Scenario A: Fresh Repo Passes and Appends Ledger

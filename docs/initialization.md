@@ -1,5 +1,7 @@
 # Initialization Guide
 
+> Start with the canonical onboarding guide: [Getting Started](./getting-started.md). This document is the deep-dive technical reference for the `fab init` state machine, Claude handoff, and initialization internals.
+
 `fab init` is the first half of initialization, not the whole story. It equips the project with the evidence and protocol that let Claude Code finish a project-specific `AGENTS.md` through the `agents-md-init` skill.
 
 ## Overview

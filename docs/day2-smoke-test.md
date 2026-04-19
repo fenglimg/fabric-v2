@@ -5,7 +5,7 @@ This smoke test verifies that `fab config install` writes a Fabric MCP server en
 ## Prerequisites
 
 - Run from the Fabric repository root.
-- Build the CLI and MCP server before testing real clients: `pnpm --filter @fabric/cli build` and `pnpm --filter @fabric/server build`.
+- Build the CLI and MCP server before testing real clients: `pnpm --filter @fenglimg/fabric-cli build` and `pnpm --filter @fenglimg/fabric-server build`.
 - If the server entry should point somewhere else, set `FAB_SERVER_PATH=/absolute/path/to/server/dist/index.js` before running the install command.
 - Have at least one target client installed and configured locally.
 
@@ -22,19 +22,19 @@ This smoke test verifies that `fab config install` writes a Fabric MCP server en
 3. Preview the writes:
 
    ```bash
-   FAB_SERVER_PATH="$PWD/packages/server/dist/index.js" pnpm --filter @fabric/cli exec fab config install --dry-run
+   FAB_SERVER_PATH="$PWD/packages/server/dist/index.js" pnpm --filter @fenglimg/fabric-cli exec fab config install --dry-run
    ```
 
 4. Install the detected configs:
 
    ```bash
-   FAB_SERVER_PATH="$PWD/packages/server/dist/index.js" pnpm --filter @fabric/cli exec fab config install
+   FAB_SERVER_PATH="$PWD/packages/server/dist/index.js" pnpm --filter @fenglimg/fabric-cli exec fab config install
    ```
 
 5. To target a subset, pass a comma-separated list:
 
    ```bash
-   pnpm --filter @fabric/cli exec fab config install --clients cursor,codex,gemini
+   pnpm --filter @fenglimg/fabric-cli exec fab config install --clients cursor,codex,gemini
    ```
 
 ## Expected Config Targets

@@ -45,7 +45,7 @@ Use this read-only equivalent from the Fabric repo:
 
 ```bash
 cd "$FABRIC_REPO"
-EXTERNAL_FIXTURE_PATH="$REAL_TARGET" pnpm --filter @fabric/cli exec fab scan --debug --json
+EXTERNAL_FIXTURE_PATH="$REAL_TARGET" pnpm --filter @fenglimg/fabric-cli exec fab scan --debug --json
 ```
 
 Expected scan diagnostics:
@@ -84,7 +84,7 @@ Run a read-only timing check:
 
 ```bash
 cd "$FABRIC_REPO"
-EXTERNAL_FIXTURE_PATH="$REAL_TARGET" time pnpm --filter @fabric/cli exec fab scan --debug
+EXTERNAL_FIXTURE_PATH="$REAL_TARGET" time pnpm --filter @fenglimg/fabric-cli exec fab scan --debug
 ```
 
 Expected result:

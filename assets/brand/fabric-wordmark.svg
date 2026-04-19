@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 96" role="img" aria-labelledby="title desc">
+  <title id="title">fabric wordmark</title>
+  <desc id="desc">Lowercase fabric wordmark with a subtle diagonal loom thread motif.</desc>
+  <g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M34 63 78 19" stroke-width="3" opacity=".22" />
+    <path d="M46 70 90 26" stroke-width="3" opacity=".32" />
+    <path d="M58 77 102 33" stroke-width="3" opacity=".22" />
+    <path d="M34 33h76" stroke-width="2" opacity=".18" />
+    <path d="M34 49h76" stroke-width="2" opacity=".18" />
+    <path d="M34 65h76" stroke-width="2" opacity=".18" />
+  </g>
+  <text
+    x="122"
+    y="63"
+    fill="currentColor"
+    font-family="Space Mono, JetBrains Mono, SFMono-Regular, Consolas, monospace"
+    font-size="48"
+    font-weight="700"
+    letter-spacing="-1"
+  >fabric</text>
+</svg>

@@ -5,7 +5,7 @@
 Start the Fabric MCP server:
 
 ```bash
-pnpm --filter @fabric/server dev
+pnpm --filter @fenglimg/fabric-server dev
 ```
 
 Alternative:

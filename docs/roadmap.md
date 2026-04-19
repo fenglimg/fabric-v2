@@ -1,75 +1,50 @@
-# Fabric v2.0 Roadmap
+# Fabric Roadmap
 
-Status: v1.0 = 7-day MVP (in progress); v1.1 = Maintenance milestone (deferred)
+Fabric is moving from an internal prototype to a publishable product line under the `@fenglimg/fabric-*` scope. This roadmap is organized as a three-phase SemVer plan so the public contract, implementation status, and release gates stay aligned.
 
-## v1.1 Feature 1: `drift-check`
+## v1.0
 
-**Purpose**
+- theme: `Control Plane MVP`
+- focus: ship the smallest trustworthy control plane that lets a maintainer initialize a repo, inspect it, and start a guarded local session with one install path.
+- release_signal: `npm publish @fenglimg/fabric-cli@1.0.0` succeeds; a clean-project `fab init -> fab serve` smoke test passes without manual file edits.
 
-Add a maintenance-oriented check for doc-code drift so Fabric can warn when implementation activity has likely outpaced AGENTS.md updates.
+### Scope
 
-**Rationale for deferral**
+1. `fab init` writes the minimum protocol skeleton into a repository.
+2. `fab scan` and related CLI inspection flows generate evidence before AI-assisted setup.
+3. MCP runtime dispatch is available through the packaged server path.
+4. `fab serve` provides the first local control-plane session for maintainers.
+5. Core docs stay consistent with the first public npm release under `@fenglimg/fabric-*`.
 
-This is explicitly deferred out of the v1.0 MVP because April 2026 research indicates there is no mainstream tool that already solves doc-code drift detection well enough to adopt directly. The feature needs a Fabric-specific heuristic, which makes it valuable but non-essential for the first 7-day release.
+## v1.1
 
-**Trigger for revisit**
+- theme: `Observable Maintenance`
+- focus: make the system inspectable after adoption so maintainers can diagnose drift, observe state, and recover trust without reading raw ledger files by hand.
+- release_signal: after `fab serve`, the Dashboard is reachable at `http://localhost:3333`, loads project state successfully, and can inspect ledger/rules data in one local smoke test.
 
-Revisit when the v1.1 maintenance milestone starts.
+### Features
 
-**Proposed approach sketch**
+1. Feature #5: Dashboard
+   Web UI for ledger and rules inspection, launched by `fab serve`, with the Dashboard explicitly locked to the v1.1 milestone.
+2. Feature #1: `drift-check`
+   Warn when implementation activity has likely moved ahead of AGENTS.md or other human-maintained protocol surfaces.
+3. Feature #2: `fab migrate`
+   Upgrade `.fabric/` metadata safely when schema versions change over time.
+4. Feature #3: `fab doctor`
+   Diagnose installation, hook, config, and client-integration problems across supported AI clients.
+5. Feature #4: Copilot fallback compile
+   Flatten the structured protocol into `.github/copilot-instructions.md` if GitHub Copilot becomes a viable secondary target.
 
-Use a warning-oriented heuristic rather than a hard gate. Compare code-history activity against documentation freshness, starting with `git log --follow` on relevant code files and an AGENTS.md modification-time heuristic. If a path accumulates N code commits without a corresponding AGENTS.md update, Fabric should surface a warning for human review.
+## v1.2
 
-## v1.1 Feature 2: `fab migrate`
+- theme: `Portability & Trust`
+- focus: make Fabric releasable, auditable, and portable across providers without using the roadmap itself as a changelog surrogate.
+- release_signal: a tag push auto-generates a new `CHANGELOG.md` entry, follows the documented `RELEASING.md` workflow, and keeps published packages isolated to the `@fenglimg/fabric-*` scope.
 
-**Purpose**
+### Scope
 
-Provide a migration helper for Fabric-managed metadata so projects can upgrade safely when `.fabric/` formats change over time.
-
-**Rationale for deferral**
-
-The current MVP only needs to establish the first working format. Schema migration becomes important once `agents.meta.json` starts evolving, especially around likely future changes such as a richer `nodes` field and revision format adjustments. Building migration machinery before the first schema exists would add maintenance overhead without immediate user value.
-
-**Trigger for revisit**
-
-Revisit when a breaking change to the `.fabric/` format is introduced or approved.
-
-**Proposed approach sketch**
-
-Adopt explicit schema versioning for Fabric metadata and pair each version bump with migration transformers. The command should detect the on-disk version, apply ordered transforms to the target version, and leave a clear audit trail of what changed.
-
-## v1.1 Feature 3: `fab doctor`
-
-**Purpose**
-
-Offer a self-diagnosis command for installation and support troubleshooting across Fabric's six target AI clients.
-
-**Rationale for deferral**
-
-The 6-client setup is one of the hardest parts of the Fabric experience, but the MVP first needs to ship the actual server, CLI, config generation, and pre-commit flow. A diagnostic layer is valuable once real support issues appear, not before there is enough field feedback to shape the checks.
-
-**Trigger for revisit**
-
-Revisit when support issues related to setup, health, or client integration begin to surface.
-
-**Proposed approach sketch**
-
-Probe all six client configurations for a valid Fabric server entry, check local hook health for both `lefthook` and `husky`, and validate the integrity of `.fabric/agents.meta.json`. The command should focus on actionable diagnostics and remediation hints rather than automatic repair.
-
-## v1.1 Feature 4: Copilot fallback compile
-
-**Purpose**
-
-Create a fallback path for GitHub Copilot users by compiling the AGENTS.md tree into a single `.github/copilot-instructions.md` target when Copilot becomes viable for Fabric.
-
-**Rationale for deferral**
-
-GitHub Copilot is not a Fabric v1.0 target client because Copilot MCP is not GA as of April 2026. Supporting it now would force Fabric into a fallback compilation path before the target platform is ready, while also weakening the MCP-first design that v1.0 is built around.
-
-**Trigger for revisit**
-
-Revisit when GitHub announces Copilot MCP general availability.
-
-**Proposed approach sketch**
-
-Add a `fab compile` command that flattens the AGENTS.md hierarchy into a single `.github/copilot-instructions.md` file. The output should include prominent warnings that structure, layering, and some Fabric semantics are compressed in the fallback target.
+1. Add `CHANGELOG.md` governance so released behavior is tracked outside the roadmap.
+2. Add `RELEASING.md` with build, tag, publish, rollback, and smoke-test policy.
+3. Enforce scope isolation so public packages ship only as `@fenglimg/fabric-*` and version drift is blocked in CI.
+4. Strengthen multi-provider trust with explicit release checks for CLI, MCP, and Dashboard surfaces.
+5. Keep roadmap promises separate from released artifacts, with measurable release gates instead of aspirational notes.
