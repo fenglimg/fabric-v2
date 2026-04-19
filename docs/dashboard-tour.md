@@ -1,12 +1,12 @@
-# Dashboard Tour
+# Dashboard 导览
 
-> v1.1 Feature
+> v1.1 功能
 >
 > Dashboard 明确归入 v1.1，不属于 Fabric v1.0 的发布面承诺。
 > 本文记录的是 v1.1 的观测面体验目标，以及它如何承接 v1.0 已落盘的规则、锁和 ledger。
 
 Dashboard 不是第二个编辑器，也不是另一个配置中心。
-它是 Fabric 的 observability plane:
+它是 Fabric 的 observability plane：
 
 - CLI 负责把规则织进仓库。
 - MCP 负责运行时分发。
@@ -27,7 +27,7 @@ Fabric Dashboard: http://127.0.0.1:7373
 2. 最近发生了哪些人机协作事件。
 3. 当前有哪些 agent 或角色在参与这套语义契约。
 
-[Screenshot: Dashboard shell with header, version badge, and connected status]
+[截图占位：Dashboard shell，含 header、version badge、CONNECTED 状态]
 
 建议的首屏元素：
 
@@ -38,20 +38,20 @@ Fabric Dashboard: http://127.0.0.1:7373
 
 ## Ledger View
 
-> v1.1 Feature: Ledger View 把 append-only intent history 变成维护者可读的时间线。
+> v1.1 Feature：Ledger View 把 append-only intent history 变成维护者可读的时间线。
 
-[Screenshot: Ledger view showing recent AI and Human entries]
+[截图占位：Ledger view，展示最近的 AI 与 Human entry]
 
-Ledger View 负责解释“最近发生了什么”，而不是只展示原始 JSONL。
+Ledger View 负责解释「最近发生了什么」，而不是只展示原始 JSONL。
 它应至少覆盖以下信息：
 
-- Source
+- Source  
   区分 AI 与 Human 来源。
-- Time
+- Time  
   告诉维护者事件先后顺序。
-- Diff Summary
+- Diff Summary  
   用一句话概括变更影响。
-- Status
+- Status  
   显示是否已通过锁校验或需要人工确认。
 
 推荐的展示片段：
@@ -62,21 +62,21 @@ Ledger View 负责解释“最近发生了什么”，而不是只展示原始 J
 | Human | 09:11 | confirm `role-balance-config` remains maintainer-owned |
 | AI | 08:56 | `Player.ts`: rename ambiguous `state` field to `roleState` |
 
-Ledger View 的价值在于，它把“谁改了什么”升级为
-“谁出于什么意图，在什么语义边界上做了改动”。
+Ledger View 的价值在于，它把「谁改了什么」升级为
+「谁出于什么意图，在什么语义边界上做了改动」。
 
 ## Rules View
 
-> v1.1 Feature: Rules View 让 `AGENTS.md` 第一次从静态文本变成可检查的结构树。
+> v1.1 Feature：Rules View 让 `AGENTS.md` 第一次从静态文本变成可检查的结构树。
 
-[Screenshot: Rules view with root scope, revision hash, and per-domain nodes]
+[截图占位：Rules view，含 root scope、revision hash、各 domain 节点]
 
 Rules View 应展示当前规则树及其同步状态：
 
 - `revision_hash`
 - 最近一次 `fab sync-meta` 时间
 - 根规则与子 scope 的层级关系
-- 每个节点的路径、hash、priority 和附近人类锁状态
+- 每个节点的路径、hash、priority 和附近 human lock 状态
 
 近似线框可以是：
 
@@ -96,9 +96,9 @@ Rules View 回答的问题是：
 
 ## Agents View
 
-> v1.1 Feature: Agents View 让维护者看到 agent roster、职责边界与协作协议，而不是只看文件清单。
+> v1.1 Feature：Agents View 让维护者看到 agent roster、职责边界与协作协议，而不是只看文件清单。
 
-[Screenshot: Agents view showing five werewolf roles and their responsibilities]
+[截图占位：Agents view，展示五个狼人杀角色与职责]
 
 对于 `examples/werewolf-minigame-stub` 这样的样例，
 Agents View 应至少覆盖 5 个角色 agent：
@@ -124,9 +124,9 @@ Agents View 应至少覆盖 5 个角色 agent：
 
 ## Human Lock 与 Drift Signals
 
-[Screenshot: Human Lock card showing `role-balance-config` with green status]
+[截图占位：Human Lock 卡片，`role-balance-config` 为绿色状态]
 
-Dashboard 不应该只展示“有锁”。
+Dashboard 不应该只展示「有锁」。
 它还要展示锁的健康状态：
 
 - `approved_hash`
@@ -145,7 +145,7 @@ Dashboard 真正成立，不在于首屏截图，
 
 一个典型循环是：
 
-1. AI 在客户端里完成一次小改动。
+1. AI 在 client 里完成一次小改动。
 2. pre-commit 执行 `fab sync-meta --check-only`、`fab human-lint`、`fab ledger-append --staged`。
 3. SSE 把新事件推到 Dashboard。
 4. 维护者在 Ledger View 看到新增记录，在 Rules View 或 Human Lock 卡片里判断是否存在 drift。

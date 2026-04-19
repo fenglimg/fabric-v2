@@ -1,30 +1,30 @@
-# Day 5 Stale Detection Test
+# Day 5 Stale Detection 测试
 
-## Terminal A
+## 终端 A（启动 server）
 
-Start the Fabric MCP server:
+启动 Fabric MCP server：
 
 ```bash
 pnpm --filter @fenglimg/fabric-server dev
 ```
 
-Alternative:
+或：
 
 ```bash
 node packages/server/dist/index.js
 ```
 
-Keep this terminal open for the whole test.
+整个测试期间保持此终端打开。
 
-## Terminal B
+## 终端 B（Inspector 与首次 tools/call）
 
-Start MCP Inspector in a second terminal. Configure it to launch the same Fabric server command for this workspace, then call `fab_get_rules`:
+在第二个终端启动 MCP Inspector。将其配置为对本 workspace 启动相同的 Fabric server command，然后调用 `fab_get_rules`：
 
 ```bash
 pnpm dlx @modelcontextprotocol/inspector
 ```
 
-Inspector launch settings:
+Inspector 启动设置：
 
 ```text
 Command: node
@@ -32,7 +32,7 @@ Args: packages/server/dist/index.js
 Working Directory: /Users/wepie/Desktop/personal-projects/pcf
 ```
 
-After the Inspector session is connected, call:
+Inspector session 连接后，调用：
 
 ```json
 {
@@ -46,7 +46,7 @@ After the Inspector session is connected, call:
 }
 ```
 
-Expected response shape:
+预期响应形态：
 
 ```json
 {
@@ -59,21 +59,21 @@ Expected response shape:
 }
 ```
 
-Record the returned `revision_hash` as `<X>`.
+将返回的 `revision_hash` 记为 `<X>`。
 
-## Terminal A
+## 终端 A（修改规则并 sync-meta）
 
-Modify `L1/features/foo/AGENTS.md`, then refresh metadata:
+修改 `L1/features/foo/AGENTS.md`，然后刷新 metadata：
 
 ```bash
 fab sync-meta
 ```
 
-This must update `.fabric/agents.meta.json.revision` from `<X>` to a new hash `<Y>`.
+这必须把 `.fabric/agents.meta.json.revision` 从 `<X>` 更新为新 hash `<Y>`。
 
-## Terminal B
+## 终端 B（携带旧 client_hash 再次调用）
 
-Call `fab_get_rules` again, now with the old client hash:
+再次调用 `fab_get_rules`，此时携带旧的 client hash：
 
 ```json
 {
@@ -88,7 +88,7 @@ Call `fab_get_rules` again, now with the old client hash:
 }
 ```
 
-Expected response shape:
+预期响应形态：
 
 ```json
 {
@@ -101,9 +101,9 @@ Expected response shape:
 }
 ```
 
-## Pass Criteria
+## 通过标准
 
-- First call returns `stale: false`.
-- Second call returns `stale: true`.
-- Second call returns a different `revision_hash` (`<Y> != <X>`).
-- The second response includes refreshed rule content from the edited L1 file.
+- 第一次调用返回 `stale: false`。
+- 第二次调用返回 `stale: true`。
+- 第二次调用返回不同的 `revision_hash`（`<Y> != <X>`）。
+- 第二次响应包含来自已编辑 L1 文件的刷新后 rule content。

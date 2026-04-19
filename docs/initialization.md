@@ -1,64 +1,64 @@
-# Initialization Guide
+# 初始化指南
 
-> Start with the canonical onboarding guide: [Getting Started](./getting-started.md). This document is the deep-dive technical reference for the `fab init` state machine, Claude handoff, and initialization internals.
+> 请从标准上手路径开始：[Getting Started](./getting-started.md)。本文是 `fab init` 状态机、Claude handoff 与 initialization 内部的深度技术参考。
 
-`fab init` is the first half of initialization, not the whole story. It equips the project with the evidence and protocol that let Claude Code finish a project-specific `AGENTS.md` through the `agents-md-init` skill.
+`fab init` 只是 initialization 的前半段，而非全部。它为项目提供 evidence 与 protocol，使 Claude Code 能通过 `agents-md-init` skill 完成项目专属的 `AGENTS.md`。
 
-## Overview
+## 概览
 
-`fab init` does three things in one command:
+`fab init` 在一条命令里做三件事：
 
-1. Evidence: scans the repo and writes `.fabric/forensic.json`.
-2. Protocol install: writes the fallback `AGENTS.md`, `.fabric/agents.meta.json`, `.fabric/human-lock.json`, and Claude integration files under `.claude/`.
-3. Trigger: prints a reason line for same-session handoff and installs a Stop hook for cross-session handoff.
+1. Evidence：扫描仓库并写入 `.fabric/forensic.json`。
+2. Protocol install：写入 fallback `AGENTS.md`、`.fabric/agents.meta.json`、`.fabric/human-lock.json`，以及 `.claude/` 下的 Claude 集成文件。
+3. Trigger：打印同 session handoff 的 reason 行，并安装 Stop hook 以支持跨 session handoff。
 
-That split is intentional: Fabric keeps the CLI step fast and deterministic, then lets the AI client finish the semantic initialization.
+这种拆分是故意的：Fabric 让 CLI 步骤快速且确定，再由 AI client 完成 semantic initialization。
 
-## Prerequisites
+## 前置条件
 
-- Install the CLI once:
+- 全局安装 CLI 一次：
 
   ```bash
   npm install -g @fenglimg/fabric-cli
   ```
 
-- Run `fab init` from the target project root.
-- Start from a clean project state for initialization:
-  - `AGENTS.md` must not already exist.
-  - `.fabric/` must not already exist.
-- Claude Code is required for the full Stage 3 to Stage 6 flow.
-- The running example below uses `werewolf-minigame`, a Cocos Creator 3.8 TypeScript project.
+- 在目标项目根目录运行 `fab init`。
+- 从干净的初始化项目状态开始：
+  - 尚不存在 `AGENTS.md`。
+  - 尚不存在 `.fabric/`。
+- 完整 Stage 3 到 Stage 6 流程需要 Claude Code。
+- 下文运行示例使用 `werewolf-minigame`，一个 Cocos Creator 3.8 TypeScript 项目。
 
-## 7-Stage Journey
+## 7 阶段旅程
 
-### Stage 1: Installation
+### Stage 1：Installation
 
-Install Fabric once on your machine:
+在机器上安装 Fabric 一次：
 
 ```bash
 npm install -g @fenglimg/fabric-cli
 ```
 
-At this point the project itself is unchanged. There is still no `.fabric/` directory, no `.claude/` initialization assets, and no generated `AGENTS.md`.
+此时项目本身尚未改变。仍无 `.fabric/` 目录、无 `.claude/` initialization 资产、无生成的 `AGENTS.md`。
 
 ---
 
-### Stage 2: Run `fab init`
+### Stage 2：运行 `fab init`
 
-From the project root:
+在项目根目录：
 
 ```bash
 cd ~/projects/werewolf-minigame
 fab init
 ```
 
-What happens during this step:
+本步会发生：
 
-- Fabric scans the repo and writes `.fabric/forensic.json`.
-- Fabric writes a safe fallback `AGENTS.md` plus metadata files.
-- Fabric installs `.claude/skills/agents-md-init/SKILL.md`, `.claude/hooks/agents-md-init-reminder.cjs`, and `.claude/settings.json`.
+- Fabric 扫描仓库并写入 `.fabric/forensic.json`。
+- Fabric 写入安全的 fallback `AGENTS.md` 与 metadata 文件。
+- Fabric 安装 `.claude/skills/agents-md-init/SKILL.md`、`.claude/hooks/agents-md-init-reminder.cjs` 与 `.claude/settings.json`。
 
-Real output from a disposable `werewolf-minigame` example run:
+来自 disposable `werewolf-minigame` 示例运行的真实输出：
 
 ```text
 Created /tmp/werewolf-minigame-init-guide-example/werewolf-minigame/AGENTS.md
@@ -72,32 +72,32 @@ Next: run fab hooks install to add the Day 4 pre-commit pipeline.
 Reason: .fabric/forensic.json is ready; use the agents-md-init skill to finish AGENTS.md initialization.
 ```
 
-After Stage 2, the project is ready for AI takeover, but initialization is still pending until `.fabric/init-context.json` exists.
+Stage 2 之后，项目已准备好由 AI 接管，但在 `.fabric/init-context.json` 出现之前，initialization 仍为 pending。
 
 ---
 
-### Stage 3: AI Takeover
+### Stage 3：AI Takeover
 
-Open the same repo in Claude Code and send a normal message. Two trigger paths are supported:
+在 Claude Code 中打开同一仓库并发送普通消息。支持两种触发路径：
 
-- Same-session path: if `fab init` was run from Claude Code's Bash tool, the model sees the reason line from Stage 2 and triggers `agents-md-init`.
-- Cross-session path: if `fab init` was run in an external terminal, the Stop hook checks for `.fabric/forensic.json` without `.fabric/init-context.json` and blocks until `agents-md-init` runs.
+- Same-session path：若在 Claude Code 的 Bash tool 中运行 `fab init`，模型会看到 Stage 2 的 reason 行并触发 `agents-md-init`。
+- Cross-session path：若在外部终端运行 `fab init`，Stop hook 会检测存在 `.fabric/forensic.json` 但缺少 `.fabric/init-context.json`，并阻塞直到运行 `agents-md-init`。
 
-Example prompt:
+示例 prompt：
 
 ```text
 I just ran fab init in this repo. Finish AGENTS.md initialization.
 ```
 
-The important mental model is: Stage 2 equips the repo, Stage 3 hands the repo to the skill.
+关键心智模型：Stage 2 装备仓库，Stage 3 把仓库交给 skill。
 
 ---
 
-### Stage 4: Phase 1 Framework Confirm
+### Stage 4：Phase 1 Framework Confirm
 
-`agents-md-init` starts by reading `.fabric/forensic.json` and confirming the detected framework assumptions.
+`agents-md-init` 先读取 `.fabric/forensic.json`，并确认检测到的 framework 假设。
 
-Example `werewolf-minigame` exchange:
+`werewolf-minigame` 示例对话：
 
 ```text
 AI: I detected a Cocos Creator 3.8 project with scripts under assets/scripts.
@@ -109,15 +109,15 @@ AI: I detected a Cocos Creator 3.8 project with scripts under assets/scripts.
 Developer: Yes. It is TypeScript, and we mainly use @property(Node).
 ```
 
-This phase is short on purpose. The goal is to validate the framework model before Fabric asks for hard constraints.
+本阶段刻意保持简短：在 Fabric 询问硬约束之前，先验证 framework model。
 
 ---
 
-### Stage 5: Phase 2 Invariants
+### Stage 5：Phase 2 Invariants
 
-Next, the skill collects project rules that must become L0 constraints in `AGENTS.md`.
+接下来 skill 收集必须成为 `AGENTS.md` 中 L0 constraints 的项目规则。
 
-Example `werewolf-minigame` exchange:
+`werewolf-minigame` 示例对话：
 
 ```text
 AI: I need to lock the project invariants:
@@ -130,46 +130,46 @@ AI: I need to lock the project invariants:
 Developer: Yes to all five.
 ```
 
-This phase should produce hard rules, not preferences. If a rule is uncertain, leave it out and add it later during daily maintenance.
+本阶段应产出硬规则，而非偏好。若某条规则不确定，先省略，留待日常维护再补。
 
 ---
 
-### Stage 6: Phase 3 Generate
+### Stage 6：Phase 3 Generate
 
-After the interview, the skill writes the semantic initialization outputs:
+Interview 结束后，skill 写入 semantic initialization 输出：
 
 - `.fabric/init-context.json`
-- a complete project-specific `AGENTS.md`
-- an updated `.fabric/agents.meta.json` hash
+- 完整的项目专属 `AGENTS.md`
+- 更新后的 `.fabric/agents.meta.json` hash
 
-For `werewolf-minigame`, the generated result should encode details such as:
+对 `werewolf-minigame`，生成结果应编码例如：
 
-- Cocos Creator 3.8 with `@ccclass + extends Component`
-- no `async/await` inside `update()` or `lateUpdate()`
-- protected paths for `assets/prefabs/**`, `assets/scenes/**`, and `**/*.meta`
-- `NetworkManager` as the required network boundary
+- Cocos Creator 3.8 与 `@ccclass + extends Component`
+- 在 `update()` 或 `lateUpdate()` 中不使用 `async/await`
+- 保护路径 `assets/prefabs/**`、`assets/scenes/**` 与 `**/*.meta`
+- `NetworkManager` 作为必需的 network boundary
 
-When this stage succeeds, initialization is complete because both state artifacts now exist:
+当本阶段成功时，initialization 即完成，因为两份 state artifact 均已存在：
 
 - `.fabric/forensic.json`
 - `.fabric/init-context.json`
 
 ---
 
-### Stage 7: Daily Dev
+### Stage 7：Daily Dev
 
-From this point on, treat `AGENTS.md` as a maintained project contract rather than a one-time scaffold.
+从此将 `AGENTS.md` 视为持续维护的项目 contract，而非一次性 scaffold。
 
-Typical follow-up commands:
+典型后续命令：
 
 ```bash
 fab hooks install
 fab sync-meta
 ```
 
-Use the ongoing `agents-md` workflow whenever project architecture, invariants, or protected paths change. The initialization skill is one-time setup; daily development is about keeping `AGENTS.md` and `.fabric/agents.meta.json` aligned with the codebase.
+当项目架构、invariants 或 protected paths 变化时，使用持续的 `agents-md` workflow。Initialization skill 为一次性 setup；日常开发是保持 `AGENTS.md` 与 `.fabric/agents.meta.json` 与 codebase 对齐。
 
-## State Machine
+## 状态机
 
 ```text
 [empty project]
@@ -189,20 +189,20 @@ Use the ongoing `agents-md` workflow whenever project architecture, invariants, 
 [AGENTS.md stays in sync with code]
 ```
 
-## Compatibility Matrix
+## 兼容性矩阵
 
 | Scenario | Trigger mechanism | Result |
 | --- | --- | --- |
-| `fab init` run from Claude Code Bash tool | The model reads the Stage 2 reason line from the tool result | `agents-md-init` can trigger immediately in the same session |
-| `fab init` run in an external terminal | Claude Code Stop hook sees `forensic.json` without `init-context.json` | The next Claude Code session is blocked until initialization continues |
-| `fab init` run in CI or another non-TTY environment | No interactive takeover; the command only writes files and logs the reason line | The fallback `AGENTS.md` and `.fabric/` artifacts are still valid, but `.fabric/init-context.json` will not be created automatically |
-| Non-Claude clients | `.claude/` files are harmless no-ops outside Claude Code | The scaffolded `AGENTS.md` still works as a fallback, but there is no automatic `agents-md-init` handoff today |
+| 自 Claude Code Bash tool 运行 `fab init` | 模型从 tool 结果读取 Stage 2 reason 行 | 可在同 session 立即触发 `agents-md-init` |
+| 在外部终端运行 `fab init` | Claude Code Stop hook 发现存在 `forensic.json` 但无 `init-context.json` | 下一次 Claude Code session 在 initialization 继续前被阻塞 |
+| 在 CI 或其他非 TTY 环境运行 `fab init` | 无 interactive takeover；命令仅写文件并记录 reason 行 | Fallback `AGENTS.md` 与 `.fabric/` artifact 仍有效，但 `.fabric/init-context.json` 不会自动创建 |
+| 非 Claude client | `.claude/` 文件在 Claude Code 外为无害 no-op | Scaffold 的 `AGENTS.md` 仍可作为 fallback，但今日尚无自动 `agents-md-init` handoff |
 
-## Troubleshooting
+## 故障排除
 
-### The hook did not trigger
+### Hook 未触发
 
-Check the sentinel state first:
+先检查 sentinel state：
 
 ```bash
 test -f .fabric/forensic.json && echo "forensic: ok"
@@ -210,39 +210,182 @@ test ! -f .fabric/init-context.json && echo "init-context: missing"
 test -f .claude/hooks/agents-md-init-reminder.cjs && echo "hook: ok"
 ```
 
-Then confirm that `.claude/settings.json` contains the Stop hook entry for `.claude/hooks/agents-md-init-reminder.cjs`. If all three files exist, open the repo in Claude Code and send a message such as:
+然后确认 `.claude/settings.json` 包含指向 `.claude/hooks/agents-md-init-reminder.cjs` 的 Stop hook entry。若三者皆存在，在 Claude Code 中打开仓库并发送例如：
 
 ```text
 Use the agents-md-init skill to finish this project's initialization.
 ```
 
-### `.fabric/forensic.json` is missing
+### 缺少 `.fabric/forensic.json`
 
-Initialization never completed Stage 2. Go back to the project root and run:
+Initialization 未完成 Stage 2。回到项目根目录运行：
 
 ```bash
 fab init
 ```
 
-If the command aborts because `AGENTS.md` or `.fabric/` already exists, inspect those files first instead of overwriting them. `fab init` is intentionally non-destructive.
+若因已存在 `AGENTS.md` 或 `.fabric/` 而中止，先检查这些文件，不要覆盖。`fab init` 刻意设计为非破坏性。
 
-### `AGENTS.md` was not generated, or it is still only the scaffold
+### 未生成 `AGENTS.md`，或仍为 scaffold
 
-`fab init` always writes a fallback `AGENTS.md` in Stage 2. The richer version is generated later by `agents-md-init`.
+`fab init` 在 Stage 2 总会写入 fallback `AGENTS.md`。更丰富的版本稍后由 `agents-md-init` 生成。
 
-If `AGENTS.md` is missing completely, Stage 2 did not finish. If `AGENTS.md` exists but still looks generic, Stage 3 to Stage 6 have not finished yet. Open Claude Code in the repo and continue the initialization interview.
+若 `AGENTS.md` 完全缺失，Stage 2 未完成。若存在但仍偏通用，Stage 3 到 Stage 6 尚未完成。在仓库中打开 Claude Code 并继续 initialization interview。
 
-### `init-context.json` is invalid or incomplete
+### `init-context.json` 无效或不完整
 
-The Stop hook only blocks while `.fabric/init-context.json` is missing. If the file exists but is malformed, move it aside and rerun the initialization interview:
+Stop hook 仅在缺少 `.fabric/init-context.json` 时阻塞。若文件存在但 malformed，将其移开并重新跑 initialization interview：
 
 ```bash
 mv .fabric/init-context.json .fabric/init-context.invalid.json
 ```
 
-Then reopen Claude Code in the project and ask it to use `agents-md-init` again. Keep `.fabric/forensic.json` in place so the skill can reuse the original evidence pack.
+然后重新在项目中打开 Claude Code，并要求再次使用 `agents-md-init`。保留 `.fabric/forensic.json`，以便 skill 复用原始 evidence pack。
 
-## Reference Links
+## Matcha 交互 / Matcha Interaction
+
+Matcha 模式是 `Check-not-Ask`：先由 CLI 准备 evidence，再由 client 用一屏 Architecture Review 让用户只做纠错或确认，而不是串行回答 5 到 7 个问题。
+
+Phase 0 到 Phase 2 的流转可以用 `werewolf-minigame-stub` 理解：
+
+1. Phase 0：读取 `.fabric/forensic.json` 的 `framework`、`assertions[]`、`candidate_files[]`，并在 `15 files x 100 lines` 的预算内补读关键样本。
+2. Phase 1：把候选结论整理成一屏 `Architecture Review`，按 `framework`、`architecture_pattern`、`proposed_rule`、`domain_boundary` 四个分区展示，每项都附 `file:line` 锚点。
+3. Phase 2：只把确认后的集合写入 `.fabric/init-context.json` 和 `.fabric/agents/`，不在业务目录落任何 rule file。
+
+单屏 Review 的具体示例如下：
+
+```md
+# Architecture Review
+
+## framework
+- [HIGH] 这是一个 Cocos Creator TypeScript Component 项目，核心类通过 `@ccclass(...)` 暴露给引擎。
+  evidence: examples/werewolf-minigame-stub/assets/scripts/Game.ts:5, examples/werewolf-minigame-stub/assets/scripts/Network.ts:5, examples/werewolf-minigame-stub/assets/scripts/Player.ts:5
+  write status: implicit accept unless corrected
+
+## architecture_pattern
+- [HIGH] 主要游戏脚本集中在 `assets/scripts/`，适合映射到 `.fabric/agents/assets/scripts/*.md` 的镜像节点。
+  evidence: examples/werewolf-minigame-stub/assets/scripts/Game.ts:1, examples/werewolf-minigame-stub/assets/scripts/Network.ts:1, examples/werewolf-minigame-stub/assets/scripts/Player.ts:1
+  write status: implicit accept unless corrected
+
+## proposed_rule
+- [HIGH] 初始化输出必须保留 Cocos component decorators、lifecycle methods 与配对的 `.meta` sidecar。
+  evidence: examples/werewolf-minigame-stub/assets/scripts/Game.ts:5, examples/werewolf-minigame-stub/assets/scripts/Game.ts.meta:1
+  write status: implicit accept unless corrected
+
+## domain_boundary
+- [MEDIUM] 网络相关约束应汇总到独立边界，再映射到 mirror 节点或 `_cross` 节点。
+  evidence: examples/werewolf-minigame-stub/assets/scripts/Network.ts:5
+  write status: explicit accept required
+```
+
+用户在这个屏幕里只需要做两类动作：
+
+- 纠正某个 `HIGH` 项，例如“framework 不是泛化的 cocos，而是 Cocos Creator 3.8 TypeScript”。
+- 显式接受某个 `MEDIUM` 或 `LOW` 项，例如“接受 `domain_boundary`：网络边界统一落到 `.fabric/agents/_cross/security.md`”。
+
+Phase 2 的输出也是具体可见的：`HIGH` 且未被纠正的项会直接进入 `.fabric/init-context.json`；被显式接受的 `MEDIUM` 项会补充生成对应的 `.fabric/agents/root.md`、`.fabric/agents/assets/scripts/*.md` 或 `.fabric/agents/_cross/*.md` 节点。
+
+## 置信度分档 / Confidence Tiers
+
+`HIGH`、`MEDIUM`、`LOW` 不是文案语气，而是可写入决策的定量门槛。当前实现使用量化规则决定每个 assertion 能否默认进入 Phase 2。
+
+| Tier | 定量定义 | 写入语义 | 用户动作 |
+| --- | --- | --- | --- |
+| `HIGH` | `astLevel = true`，或 `coverage.ratio >= 0.8` 且 `co_occurring_patterns.length >= 2` | 默认可写 | 不反对即接受；若错误则直接纠正 |
+| `MEDIUM` | 不满足 `HIGH`，且无冲突，通常是 `0.5 <= coverage.ratio < 0.8` 或只有单一模式证据 | 不可默认写入 | 必须显式回复“接受” |
+| `LOW` | `coverage.ratio < 0.5`，或存在冲突信号 `hasConflict = true` | 不可默认写入 | 只有显式接受后才能写，否则丢弃 |
+
+用户纠错流程应保持固定：
+
+1. 看 Phase 1 的整屏输出，而不是被逐题追问。
+2. 对错误的 `HIGH` 项直接给出修正版，修正后版本替换原项进入 Phase 2。
+3. 对 `MEDIUM` 或 `LOW` 项明确回复“接受”或“不接受”；未明确接受的内容不得写入 `.fabric/init-context.json` 或 `.fabric/agents/`。
+
+一个最小化回复示例：
+
+```text
+修正 framework：这是 Cocos Creator 3.8 TypeScript。
+接受 domain_boundary：网络相关约束写入 .fabric/agents/_cross/security.md。
+不接受 proposed_rule：当前项目没有强制单一 NetworkManager。
+```
+
+这意味着：
+
+- 第一行会覆盖原先的 `HIGH` framework 结论。
+- 第二行会让一个原本 `MEDIUM` 的边界项变成可写集合。
+- 第三行会阻止该规则进入任何输出文件。
+
+## Shadow Mirroring 架构 / Shadow Mirroring Architecture
+
+Shadow Mirroring 的核心不是“把 `AGENTS.md` 挪个地方”，而是把语义规则树完整收敛到 `.fabric/agents/`，并让物理文件路径与业务路径脱钩。
+
+一个典型目录结构如下：
+
+```text
+.fabric/
+  agents/
+    root.md
+    packages/
+      cli/
+        index.md
+        src/
+          commands/
+            index.md
+      server/
+        index.md
+    _cross/
+      security.md
+```
+
+这里有三个关键约束：
+
+- `.fabric/agents/root.md` 是全局入口，承载 bootstrap 之后仍需长期生效的全局规则。
+- `.fabric/agents/{path}/index.md` 是 mirror 节点，按源码目录 1:1 镜像。例如 `packages/cli/` 的语义规则放在 `.fabric/agents/packages/cli/index.md`，而不是放在 `packages/cli/AGENTS.md`。
+- `.fabric/agents/_cross/security.md` 这类文件承载跨切面规则，例如安全、发布、审计等，不归属于单一业务目录。
+
+`agents.meta.json` 中的 `topology_type` 只允许两种值：
+
+| 节点文件 | `topology_type` | 典型 `scope_glob` |
+| --- | --- | --- |
+| `AGENTS.md` | `mirror` | `**` |
+| `.fabric/agents/root.md` | `mirror` | `**` |
+| `.fabric/agents/packages/cli/index.md` | `mirror` | `packages/cli/**` |
+| `.fabric/agents/packages/server/src/commands/index.md` | `mirror` | `packages/server/src/commands/**` |
+| `.fabric/agents/_cross/security.md` | `cross-cutting` | `**` |
+
+`scope_glob` 决定“这条规则管谁”，而不是“这条规则放在哪”。例如客户端请求 `packages/server/src/index.ts` 时，`fab_get_rules` 会用 `scope_glob` 匹配 `packages/server/**` 与 `**`，再返回命中的 mirror 节点和 cross-cutting 节点。
+
+最重要的一条是业务目录零规则文件：
+
+- `packages/cli/AGENTS.md` 不应继续存在。
+- `packages/server/AGENTS.md` 不应继续存在。
+- `src/AGENTS.md` 或任何同类 colocated rule file 都不应继续存在。
+
+规则只应存在于 `.fabric/agents/` 与 `.fabric/agents/_cross/`，不需要桥接文件，也不需要 `@import` 聚合层。
+
+## 客户端兼容性与迁移 / Client Compatibility & Migration
+
+Fabric requires MCP-capable client。更直接地说：如果 client 不能稳定调用 `fab_get_rules`、`fab_update_registry` 和 `fab_append_intent`，它就无法完整执行 Fabric Protocol。
+
+| Client | MCP 能力 | 是否兼容 Fabric | 说明 |
+| --- | --- | --- | --- |
+| Claude Code | 有 | ✅ | 可直接消费 `.claude/` bootstrap 与 Fabric MCP tools |
+| Cursor w/ MCP | 有 | ✅ | 需要把 Fabric server 配进 MCP 列表 |
+| Codex | 有 | ✅ | 能调用同一组 MCP tools，适合作为并行实现 client |
+| Gemini CLI | 有 | ✅ | 只要接入同一个 MCP server，即可走相同协议 |
+| legacy Cursor（无 MCP） | 无 | ❌ | 无法可靠调用 `fab_get_rules`，会回到 perception-phase vacuum |
+| 纯 IDE | 无 | ❌ | 只能看文件，不能执行 Fabric runtime protocol |
+
+迁移到 Shadow Mirroring 时，按下面四步走即可：
+
+1. 将 `packages/X/AGENTS.md` 的语义内容迁移到 `.fabric/agents/packages/X/index.md`。例如把 `packages/server/AGENTS.md` 的边界规则移到 `.fabric/agents/packages/server/index.md`。
+2. 删除原来的 colocated `AGENTS.md`，确保业务目录恢复为 ZERO rule files。
+3. 运行 `fab sync-meta`，让 `.fabric/agents.meta.json` 重新生成 `layer`、`topology_type` 与 `scope_glob`。
+4. 用 `fab_get_rules` 验证迁移结果。例如请求 `packages/server/src/index.ts`，预期返回至少包含 `AGENTS.md`、`.fabric/agents/root.md` 与 `.fabric/agents/packages/server/index.md`，而不再返回 `packages/server/AGENTS.md`。
+
+如果迁移后仍然看到 colocated `AGENTS.md` 被命中，说明镜像树还没收敛完成；先清理旧节点，再重新执行 `fab sync-meta` 和 `fab_get_rules` 验证。
+
+## 参考链接
 
 - [`agents-md-init` skill template](../templates/claude-skills/agents-md-init/SKILL.md)
 - [`agents-md-init` Stop hook template](../templates/claude-hooks/agents-md-init-reminder.cjs)

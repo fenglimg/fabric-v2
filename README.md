@@ -36,6 +36,18 @@ Use the canonical onboarding guide for the full 7-stage walkthrough, expected CL
 
 `fab init` now does more than create a scaffold. It writes the evidence pack in `.fabric/`, installs the Claude handoff files under `.claude/`, and leaves a safe fallback `AGENTS.md` for non-Claude flows. Start with the canonical onboarding guide at [docs/getting-started.md](./docs/getting-started.md), then use [docs/initialization.md](./docs/initialization.md) for the deep-dive state machine and `agents-md-init` interview flow.
 
+## Compliance Audit
+
+Enable compliance telemetry reporting in `fabric.config.json`:
+
+```json
+{
+  "auditMode": "warn"
+}
+```
+
+Run `fab doctor --audit` to cross-check AI edit intents against prior `fab_get_rules` calls in the last 5 minutes. `warn` prints violations but keeps exit code `0`, `strict` prints violations and exits non-zero, and `off` keeps the audit disabled by default unless you request a manual preview with `--audit`.
+
 ## Roadmap
 
 See [docs/roadmap.md](./docs/roadmap.md) for the deferred v1.1 maintenance milestone, including `drift-check`, `fab migrate`, `fab doctor`, and the Copilot fallback path.

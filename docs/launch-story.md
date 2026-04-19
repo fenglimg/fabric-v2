@@ -1,15 +1,15 @@
-# Fabric v1.0 Launch Story
+# Fabric v1.0 首发叙事
 
 > 人机协作的语义共识平面
 >
-> The Consensus Plane for AI-Human Collaboration
+> The Consensus Plane for AI-Human Collaboration（AI–Human 协作的共识平面）
 
 这份文档把 `.workflow/.analysis/ANL-fabric-product-2026-04-19/v1.0-launch-story.md`
 中的 1279 行首发脚本，压缩成一个可公开阅读的三幕版本。
 它保留维护者视角、关键技术演示和版本边界，
 同时移除重复铺陈，方便团队直接分发给评审、设计和文档读者。
 
-## Reference User
+## 参考用户画像
 
 我是一个 6 人 Cocos Creator 游戏团队的仓库维护者。
 我们在做一个狼人杀小项目。

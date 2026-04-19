@@ -1,25 +1,25 @@
-# Getting Started with Fabric
+# Fabric 上手
 
-Fabric v1.0 gives maintainers one canonical onboarding path from local install to the first ledger-backed collaboration event. If you are evaluating Fabric for the first time, start here.
+Fabric v1.0 为维护者提供从本地安装到首条 ledger-backed 协作事件的标准上手路径。若你首次评估 Fabric，从这里开始。
 
-If you need contribution and local repo setup details, see [Contributing](./contributing.md). If you need the deeper `fab init` mechanics and state machine, see [Initialization Guide](./initialization.md). If you want the product-facing narrative version, see [Launch Story](./launch-story.md).
+贡献与本地仓库设置见 [Contributing](./contributing.md)。`fab init` 状态机与更深 mechanics 见 [Initialization Guide](./initialization.md)。产品叙事版见 [Launch Story](./launch-story.md)。
 
-## Stage 1: Install Fabric
+## 阶段 1：安装 Fabric
 
-Install the CLI once on your machine:
+在机器上全局安装 CLI 一次：
 
 ```bash
 npm install -g @fenglimg/fabric-cli
 ```
 
-If you are validating Fabric from this monorepo instead of npm, build the workspace first:
+若在本 monorepo 内验证 Fabric 而非 npm，先构建 workspace：
 
 ```bash
 pnpm install
 pnpm -r build
 ```
 
-You should now have the `fab` command available:
+此时应能使用 `fab` 命令：
 
 ```text
 $ fab --help
@@ -27,9 +27,9 @@ Fabric CLI - AI 智能体协作框架 (fab v1.0.0)
 USAGE fab bootstrap|init|scan|serve|sync-meta|human-lint|ledger-append|hooks|config|pre-commit
 ```
 
-## Stage 2: Initialize Fabric
+## 阶段 2：初始化 Fabric
 
-Move into the project that will adopt Fabric. For a first run, use a disposable repository or a clean branch.
+进入要接入 Fabric 的项目。首次运行建议使用 disposable repository 或干净分支。
 
 ```bash
 cd ~/projects/my-app
@@ -37,13 +37,13 @@ git status --short
 fab init
 ```
 
-Recommended preconditions:
+推荐前置条件：
 
-- `AGENTS.md` does not already exist.
-- `.fabric/` does not already exist.
-- Existing `.claude/`, `.cursor/`, `.codex/`, `.windsurf/`, or `.roo/` config is reviewed before any write step.
+- 尚不存在 `AGENTS.md`。
+- 尚不存在 `.fabric/`。
+- 在任意写入步骤前，先审阅既有 `.claude/`、`.cursor/`、`.codex/`、`.windsurf/` 或 `.roo/` config。
 
-Chinese-localized stdout example from the v1.0 launch story:
+v1.0 launch story 中的中文本地化 stdout 示例：
 
 ```text
 $ fab init
@@ -88,34 +88,34 @@ Next: 在 Claude Code 中输入「我刚执行了 fab init，请使用 agents-md
 Next: 如需先接入提交守卫，继续执行 `fab hooks install`
 ```
 
-After this stage, the repo has the fallback contract and evidence pack, but semantic initialization is not complete until the client-side interview finishes.
+本阶段结束后，仓库具备 fallback contract 与 evidence pack，但在 client-side interview 完成前，semantic initialization 尚未结束。
 
-## Stage 3: Complete the AI Handoff
+## 阶段 3：完成 AI Handoff
 
-Open the same repository in Claude Code and continue the initialization transaction with a normal message:
+在 Claude Code 中打开同一仓库，用普通消息继续 initialization transaction：
 
 ```text
 I just ran fab init in this repo. Finish AGENTS.md initialization.
 ```
 
-Expected outcome:
+预期结果：
 
-- `agents-md-init` reads `.fabric/forensic.json`.
-- The maintainer confirms framework facts and invariants.
-- Fabric writes `.fabric/init-context.json` and updates `AGENTS.md` for the actual project.
+- `agents-md-init` 读取 `.fabric/forensic.json`。
+- 维护者确认 framework facts 与 invariants。
+- Fabric 写入 `.fabric/init-context.json` 并更新面向实际项目的 `AGENTS.md`。
 
-For the deeper interview flow, including the framework-confirm and invariants phases, see [Initialization Guide](./initialization.md).
+更完整的 interview 流程（含 framework-confirm 与 invariants 阶段）见 [Initialization Guide](./initialization.md)。
 
-## Stage 4: Configure Agents and Hooks
+## 阶段 4：配置 Agents 与 Hooks
 
-Install the Git hook pipeline and bootstrap prompts first:
+先安装 Git hook pipeline 与 bootstrap prompts：
 
 ```bash
 fab hooks install
 fab bootstrap install --clients claude,cursor,windsurf,roo,gemini,codex
 ```
 
-Typical output:
+典型输出：
 
 ```text
 Installed <project>/.husky/pre-commit
@@ -128,13 +128,13 @@ Installed <project>/GEMINI.md
 Prepended <project>/AGENTS.md
 ```
 
-Then preview MCP config writes:
+然后预览 MCP config 写入：
 
 ```bash
 fab config install --clients claude,cursor,windsurf,roo,gemini,codex --dry-run
 ```
 
-Expected output shape:
+预期输出形态：
 
 ```text
 [dry-run] ClaudeCodeCLI: would write <path>
@@ -145,69 +145,69 @@ Expected output shape:
 [dry-run] CodexCLI: would write <path>
 ```
 
-If you are running from this monorepo and need an explicit server entry, see [Contributing](./contributing.md#fabric_server_path-for-local-development).
+若在本 monorepo 运行且需要显式 server entry，见 [Contributing](./contributing.md#fab_server_path)。
 
-## Stage 5: Start the Local Control Plane
+## 阶段 5：启动本地 Control Plane
 
-Launch the local Fabric HTTP server:
+启动本地 Fabric HTTP server：
 
 ```bash
 fab serve
 ```
 
-Actual CLI output from the current implementation:
+当前实现的实际 CLI 输出：
 
 ```text
 Fabric Dashboard: http://127.0.0.1:7373
 ```
 
-This is the local control-plane session for maintainers. Keep it running while you verify MCP clients or inspect the Dashboard.
+这是面向维护者的本地 control-plane session。验证 MCP client 或检查 Dashboard 时请保持其运行。
 
-## Stage 6: Verify MCP Is Active
+## 阶段 6：验证 MCP 已激活
 
-Restart each configured client so it reloads the Fabric MCP entry, then confirm the Fabric tools are present:
+重启各已配置 client 以重新加载 Fabric MCP entry，然后确认存在以下 Fabric tools：
 
 - `fab_get_rules`
 - `fab_append_intent`
 - `fab_update_registry`
 
-Minimal smoke prompt:
+最小 smoke prompt：
 
 ```text
 Before editing any file, call fab_get_rules for README.md and summarize the active Fabric rules.
 ```
 
-What success looks like:
+成功表现：
 
-- The client invokes `fab_get_rules`.
-- The response includes `revision_hash`.
-- The response includes L0 rules from `AGENTS.md`.
+- Client 调用 `fab_get_rules`。
+- 响应包含 `revision_hash`。
+- 响应包含来自 `AGENTS.md` 的 L0 rules。
 
-If tools do not appear, verify that the MCP config file contains `mcpServers.fabric` or `[mcp.servers.fabric]`, then restart the client again.
+若 tools 未出现，确认 MCP config 文件包含 `mcpServers.fabric` 或 `[mcp.servers.fabric]`，然后再次重启 client。
 
-## Stage 7: Record the First Ledger Entry
+## 阶段 7：记录首条 Ledger Entry
 
-Make a small staged change and let Fabric append the first intent ledger entry through the hook pipeline:
+做一小段 staged 改动，让 Fabric 通过 hook pipeline 追加首条 intent ledger entry：
 
 ```bash
 git add README.md
 FABRIC_INTENT="docs: refine onboarding copy" fab ledger-append --staged
 ```
 
-Result:
+结果：
 
 ```text
 .intent-ledger.jsonl receives a new append-only JSON line with parent_sha, intent, affected_paths, and diff_stat.
 ```
 
-At this point the repo has completed the v1.0 onboarding loop:
+至此仓库完成 v1.0 onboarding loop：
 
-1. Fabric is installed.
-2. The project is initialized.
-3. Client rules are distributed through MCP.
-4. The first collaboration event is recorded in the ledger.
+1. Fabric 已安装。
+2. 项目已初始化。
+3. Client rules 通过 MCP 分发。
+4. 首条协作事件已写入 ledger。
 
-## Next Reads
+## 延伸阅读
 
 - [Launch Story](./launch-story.md)
 - [Dashboard Tour](./dashboard-tour.md)

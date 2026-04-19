@@ -2,7 +2,7 @@
 
 ## 背景
 
-Day 6 的目标是把 Brainstorm §4.2 的 5 行首屏引导词落到 6 个客户端，并补一个可复现的 Cocos Creator stub fixture，方便 Day 7 做 inner-track E2E。
+Day 6 的目标是把 Brainstorm §4.2 的 5 行首屏引导词落到 6 个客户端，并补一个可复现的 Cocos Creator stub fixture，方便 Day 7 做 inner-track 的 E2E。
 
 这 5 行策略的作用是：
 

@@ -1,30 +1,30 @@
-# Day 7 Kill Switch Tracking
+# Day 7 Kill Switch 追踪
 
-This is the canonical tracking sheet for Day 7 validation.
+Day 7 验证的 canonical tracking sheet。
 
-Success thresholds:
+成功阈值：
 
 | Kill Switch | Metric | Success Threshold | Failure Response |
 |---|---|---|---|
-| KS-1 | `fab_get_rules` call rate across 30 attempts | `>=60%` | Add `fab_write_file` hard gate, strengthen `MANDATORY` tool descriptions, revisit breathing prompt |
-| KS-2 | p95 `fab_get_rules` stdio latency | `<2000ms` | Evaluate HTTP transport plus keepalive |
-| KS-3 | Codex MCP liveness | Codex `tools/list` shows all 3 Fabric tools | Degrade Codex path to native `AGENTS.md` reading |
+| KS-1 | 30 次尝试中 `fab_get_rules` call rate | `>=60%` | 增加 `fab_write_file` hard gate、强化 `MANDATORY` tool descriptions、回顾 breathing prompt |
+| KS-2 | p95 `fab_get_rules` stdio latency | `<2000ms` | 评估 HTTP transport 与 keepalive |
+| KS-3 | Codex MCP liveness | Codex `tools/list` 显示全部 3 个 Fabric tools | Codex 路径降级为原生读取 `AGENTS.md` |
 
-## KS-1: Tool-Call Adoption
+## KS-1：Tool-Call Adoption
 
-Task for every attempt:
+每次尝试的任务：
 
 ```text
 Add a Timer.ts component to this Cocos Creator stub.
 ```
 
-Success calculation:
+成功计算：
 
 ```text
 call_rate = attempts_with_fab_get_rules / 30
 ```
 
-| Client | Attempt | Task Given | Called `fab_get_rules`? (Y/N) | Time-to-first-tool-call | Notes |
+| Client | Attempt | Task Given | 是否调用 `fab_get_rules`？(Y/N) | Time-to-first-tool-call | Notes |
 |---|---:|---|---|---|---|
 | Claude Code | 1 | Add a Timer.ts component |  |  |  |
 | Claude Code | 2 | Add a Timer.ts component |  |  |  |
@@ -57,15 +57,15 @@ call_rate = attempts_with_fab_get_rules / 30
 | Codex CLI | 4 | Add a Timer.ts component |  |  |  |
 | Codex CLI | 5 | Add a Timer.ts component |  |  |  |
 
-KS-1 result:
+KS-1 结果：
 
 | Total Attempts | Calls Observed | Call Rate | Threshold | Pass/Fail | Notes |
 |---:|---:|---:|---:|---|---|
 | 30 |  |  | 60% |  |  |
 
-## KS-2: Stdio Latency
+## KS-2：Stdio Latency
 
-Record every observed `fab_get_rules` call. If a client does not call the tool, leave latency blank and record the miss in KS-1.
+记录每次观察到的 `fab_get_rules` 调用。若 client 未调用该 tool，latency 留空并在 KS-1 记录未命中。
 
 | Client | Attempt | `fab_get_rules` Start Time | End Time | Latency (ms) | Notes |
 |---|---:|---|---|---:|---|
@@ -100,15 +100,15 @@ Record every observed `fab_get_rules` call. If a client does not call the tool, 
 | Codex CLI | 4 |  |  |  |  |
 | Codex CLI | 5 |  |  |  |  |
 
-KS-2 result:
+KS-2 结果：
 
 | Samples Included | p95 Latency (ms) | Threshold | Pass/Fail | Notes |
 |---:|---:|---:|---|---|
 |  |  | 2000 |  |  |
 
-## KS-3: Codex MCP Liveness
+## KS-3：Codex MCP Liveness
 
-Codex must list all three Fabric tools.
+Codex 必须列出全部三种 Fabric tools。
 
 | Check | Expected | Observed | Pass/Fail | Notes |
 |---|---|---|---|---|
@@ -117,21 +117,21 @@ Codex must list all three Fabric tools.
 | `fab_append_intent` present | Yes |  |  |  |
 | `fab_update_registry` present | Yes |  |  |  |
 
-KS-3 result:
+KS-3 结果：
 
 | Codex Tools Listed | Required Tools Present | Pass/Fail | Notes |
 |---|---|---|---|
 |  | `fab_get_rules`, `fab_append_intent`, `fab_update_registry` |  |  |
 
-## Final Day 7 Verdict
+## Day 7 最终结论
 
-| Criterion | Pass/Fail | Evidence Link or Notes |
+| Criterion | Pass/Fail | Evidence Link 或 Notes |
 |---|---|---|
-| Inner-track stub initialized and scanned |  |  |
+| Inner-track stub 已初始化并完成 scan |  |  |
 | KS-1 call rate `>=60%` |  |  |
 | KS-2 p95 latency `<2000ms` |  |  |
-| KS-3 Codex tools/list passed |  |  |
-| Outer-track scan detected real Cocos project |  |  |
-| Outer-track scan completed `<10s` |  |  |
-| Private configs preserved |  |  |
-| Hook behavior non-destructive |  |  |
+| KS-3 Codex tools/list 通过 |  |  |
+| Outer-track scan 检测到真实 Cocos 项目 |  |  |
+| Outer-track scan 在 `<10s` 内完成 |  |  |
+| Private config 已保留 |  |  |
+| Hook 行为非破坏性 |  |  |

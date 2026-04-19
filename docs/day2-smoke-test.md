@@ -1,65 +1,65 @@
-# Day 2 Smoke Test: MCP Client Config Installation
+# Day 2 Smoke Test：MCP Client Config 安装
 
-This smoke test verifies that `fab config install` writes a Fabric MCP server entry and that all target clients can list the Fabric tools.
+本 smoke test 验证 `fab config install` 会写入 Fabric MCP server entry，且各目标 client 能列出 Fabric tools。
 
-## Prerequisites
+## 前置条件
 
-- Run from the Fabric repository root.
-- Build the CLI and MCP server before testing real clients: `pnpm --filter @fenglimg/fabric-cli build` and `pnpm --filter @fenglimg/fabric-server build`.
-- If the server entry should point somewhere else, set `FAB_SERVER_PATH=/absolute/path/to/server/dist/index.js` before running the install command.
-- Have at least one target client installed and configured locally.
+- 在 Fabric 仓库根目录运行。
+- 在测试真实 client 前先构建 CLI 与 MCP server：`pnpm --filter @fenglimg/fabric-cli build` 与 `pnpm --filter @fenglimg/fabric-server build`。
+- 若 server entry 应指向其他位置，在运行 install 命令前设置 `FAB_SERVER_PATH=/absolute/path/to/server/dist/index.js`。
+- 至少安装并本地配置一种目标 client。
 
-## Install Configs
+## 安装 Configs
 
-1. Create or confirm workspace-local client directories for workspace-based clients:
-   - Cursor: `.cursor/`
-   - Windsurf: `.windsurf/`
-   - Roo Code: `.roo/`
-2. Confirm global client directories exist for global clients:
-   - Claude Code CLI: `~/.claude/`
-   - Gemini CLI: `~/.gemini/`, or a workspace `GEMINI.md`
-   - Codex CLI: `~/.codex/`
-3. Preview the writes:
+1. 为基于 workspace 的 client 创建或确认 workspace-local 目录：
+   - Cursor：`.cursor/`
+   - Windsurf：`.windsurf/`
+   - Roo Code：`.roo/`
+2. 确认全局 client 的全局目录存在：
+   - Claude Code CLI：`~/.claude/`
+   - Gemini CLI：`~/.gemini/`，或 workspace `GEMINI.md`
+   - Codex CLI：`~/.codex/`
+3. 预览写入：
 
    ```bash
    FAB_SERVER_PATH="$PWD/packages/server/dist/index.js" pnpm --filter @fenglimg/fabric-cli exec fab config install --dry-run
    ```
 
-4. Install the detected configs:
+4. 安装检测到的 config：
 
    ```bash
    FAB_SERVER_PATH="$PWD/packages/server/dist/index.js" pnpm --filter @fenglimg/fabric-cli exec fab config install
    ```
 
-5. To target a subset, pass a comma-separated list:
+5. 若只针对子集，传入逗号分隔列表：
 
    ```bash
    pnpm --filter @fenglimg/fabric-cli exec fab config install --clients cursor,codex,gemini
    ```
 
-## Expected Config Targets
+## 预期 Config 目标
 
-- Claude Code CLI: `~/.claude/settings.json`
-- Claude Desktop: `~/Library/Application Support/Claude/claude_desktop_config.json` on macOS
-- Cursor: `<workspace>/.cursor/mcp.json`
-- Windsurf: `<workspace>/.windsurf/mcp.json`
-- Roo Code: `<workspace>/.roo/mcp.json`
-- Gemini CLI: `~/.gemini/settings.json`
-- Codex CLI: `~/.codex/config.toml`
+- Claude Code CLI：`~/.claude/settings.json`
+- Claude Desktop：macOS 上 `~/Library/Application Support/Claude/claude_desktop_config.json`
+- Cursor：`<workspace>/.cursor/mcp.json`
+- Windsurf：`<workspace>/.windsurf/mcp.json`
+- Roo Code：`<workspace>/.roo/mcp.json`
+- Gemini CLI：`~/.gemini/settings.json`
+- Codex CLI：`~/.codex/config.toml`
 
-Each JSON client should contain `mcpServers.fabric`. Codex should contain `[mcp.servers.fabric]`.
+各 JSON client 应包含 `mcpServers.fabric`。Codex 应包含 `[mcp.servers.fabric]`。
 
-## Client Verification
+## Client 验证
 
-For each installed client:
+对每个已安装 client：
 
-1. Restart the client so it reloads MCP configuration.
-2. Open the MCP tools view or run the client's `tools/list` equivalent.
-3. Confirm these tools appear:
+1. 重启 client 以重新加载 MCP configuration。
+2. 打开 MCP tools 视图或运行该 client 的 `tools/list` 等价操作。
+3. 确认出现以下 tools：
    - `fab_get_rules`
    - `fab_append_intent`
    - `fab_update_registry`
-4. Run a minimal tool call if the client supports direct invocation:
+4. 若 client 支持直接调用，运行最小 tool call：
 
    ```json
    {
@@ -67,13 +67,13 @@ For each installed client:
    }
    ```
 
-5. Record pass/fail for the client before moving to the next one.
+5. 在进入下一个 client 前记录 pass/fail。
 
-## Troubleshooting
+## 故障排除
 
-- If no clients are detected, create the workspace-local directory for the client or add an explicit path in `fabric.config.json`.
-- If a client cannot start the server, confirm `FAB_SERVER_PATH` points to a built JavaScript file and that Node can execute it.
-- If Codex rejects the config, inspect `~/.codex/config.toml` and confirm the Fabric entry is under `[mcp.servers.fabric]`.
-- If JSON clients lose existing settings, stop and inspect the before/after file. The writer is expected to preserve unrelated top-level keys and other `mcpServers` entries.
-- If Claude Desktop is not detected on macOS, create or locate `~/Library/Application Support/Claude/claude_desktop_config.json`, or set `clientPaths.claudeCodeDesktop` in `fabric.config.json`.
-- If Roo Code or Windsurf uses a non-workspace config path in your installation, do not rely on runtime probing. Set `clientPaths.rooCode` or `clientPaths.windsurf` explicitly.
+- 若未检测到任何 client，为该 client 创建 workspace-local 目录，或在 `fabric.config.json` 中添加显式 path。
+- 若 client 无法启动 server，确认 `FAB_SERVER_PATH` 指向已构建的 JavaScript 文件且 Node 可执行。
+- 若 Codex 拒绝 config，检查 `~/.codex/config.toml`，确认 Fabric entry 位于 `[mcp.servers.fabric]` 下。
+- 若 JSON client 丢失既有 settings，先停止并检查 before/after 文件。Writer 预期保留无关 top-level keys 与其他 `mcpServers` entry。
+- 若 macOS 上未检测到 Claude Desktop，创建或定位 `~/Library/Application Support/Claude/claude_desktop_config.json`，或在 `fabric.config.json` 中设置 `clientPaths.claudeCodeDesktop`。
+- 若 Roo Code 或 Windsurf 在你安装中使用非 workspace config path，不要依赖 runtime probing。显式设置 `clientPaths.rooCode` 或 `clientPaths.windsurf`。

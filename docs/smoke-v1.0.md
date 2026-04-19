@@ -1,26 +1,26 @@
-# Fabric v1.0 Smoke Test
+# Fabric v1.0 Smoke 测试
 
-Run this checklist against the published npm artifact for Fabric v1.0. Do not substitute a local monorepo build when validating a public release.
+针对已发布的 Fabric v1.0 npm artifact 运行本清单。验证公开 release 时不要用本地 monorepo build 替代。
 
-## Preconditions
+## 前置条件
 
-- Node.js 20 or newer
-- npm access to the public registry
-- A disposable test repository
-- A free local port at `127.0.0.1:7373`
+- Node.js 20 或更高版本
+- 可访问 public registry 的 npm
+- Disposable test repository
+- `127.0.0.1:7373` 上的空闲本地端口
 
-## Smoke Checklist
+## Smoke 清单
 
-1. **Install the published CLI**
+1. **安装已发布的 CLI**
 
    ```bash
    npm install -g @fenglimg/fabric-cli@1.0.0
    fab --help
    ```
 
-   Verify that `fab` is available and that the help output includes `fab v1.0.0`.
+   确认 `fab` 可用，且 help 输出包含 `fab v1.0.0`。
 
-2. **Initialize a clean repository**
+2. **初始化干净仓库**
 
    ```bash
    mkdir fabric-smoke-v1 && cd fabric-smoke-v1
@@ -28,17 +28,17 @@ Run this checklist against the published npm artifact for Fabric v1.0. Do not su
    fab init
    ```
 
-   Verify that `AGENTS.md`, `.fabric/agents.meta.json`, `.fabric/human-lock.json`, and `.fabric/forensic.json` are created without manual edits.
+   确认在未手工编辑的情况下创建了 `AGENTS.md`、`.fabric/agents.meta.json`、`.fabric/human-lock.json` 与 `.fabric/forensic.json`。
 
-3. **Start the local control plane**
+3. **启动本地 control plane**
 
    ```bash
    fab serve
    ```
 
-   Verify that the CLI prints `Fabric Dashboard: http://127.0.0.1:7373` or the localized equivalent and keep the server running for the remaining checks.
+   确认 CLI 打印 `Fabric Dashboard: http://127.0.0.1:7373` 或其本地化等价输出，并在后续检查期间保持 server 运行。
 
-4. **Hit the MCP HTTP endpoint with an initialize request**
+4. **用 initialize 请求命中 MCP HTTP endpoint**
 
    ```bash
    curl -i -sS \
@@ -47,26 +47,26 @@ Run this checklist against the published npm artifact for Fabric v1.0. Do not su
      http://127.0.0.1:7373/mcp
    ```
 
-   Verify that the response is JSON-RPC, includes a server name, and returns an `Mcp-Session-Id` response header.
+   确认响应为 JSON-RPC、包含 server name，并返回 `Mcp-Session-Id` response header。
 
-5. **Verify the REST surface for repository state**
+5. **验证 repository state 的 REST surface**
 
    ```bash
    curl -sS http://127.0.0.1:7373/api/rules
    ```
 
-   Verify that the response is valid JSON and includes repository rule metadata instead of an HTTP error.
+   确认响应为合法 JSON，包含 repository rule metadata，而非 HTTP error。
 
-6. **Open the Dashboard**
+6. **打开 Dashboard**
 
-   Open `http://127.0.0.1:7373` in a browser.
+   在浏览器中打开 `http://127.0.0.1:7373`。
 
-   Verify that the Fabric Dashboard loads, the sidebar renders all primary views, and the UI does not show a missing-assets error.
+   确认 Fabric Dashboard 可加载、sidebar 渲染所有 primary views，且 UI 不出现 missing-assets error。
 
-7. **Verify release identity inside the UI**
+7. **在 UI 内验证 release identity**
 
-   In the Dashboard header/sidebar brand area, verify that the version badge displays `v1.0.0`.
+   在 Dashboard header/sidebar 品牌区，确认 version badge 显示 `v1.0.0`。
 
-8. **Optional localization spot-check**
+8. **可选：本地化 spot-check**
 
-   Restart the CLI with `FAB_LANG=zh-CN fab serve` and confirm the ready output is localized while the server remains reachable at the same URL.
+   使用 `FAB_LANG=zh-CN fab serve` 重启 CLI，确认 ready 输出已本地化，且 server 仍在同一 URL 可达。

@@ -1,21 +1,21 @@
-# Day 7 Inner Track: Stub E2E Runbook
+# Day 7 Inner Track：Stub E2E 操作手册
 
-This runbook validates Fabric against the disposable `examples/werewolf-minigame-stub` fixture. It is an operational checklist; record results in `docs/day7-kill-switch-tracking.md`.
+本 runbook 针对 disposable fixture `examples/werewolf-minigame-stub` 验证 Fabric。这是操作清单；结果记录在 `docs/day7-kill-switch-tracking.md`。
 
-Do not run these steps against `/Users/wepie/Desktop/projects/werewolf-minigame/`. That project is covered by the outer-track runbook.
+不要对 `/Users/wepie/Desktop/projects/werewolf-minigame/` 运行这些步骤。该项目由 outer-track runbook 覆盖。
 
-## Prerequisites
+## 前置条件
 
-- Run from the Fabric repository root: `/Users/wepie/Desktop/personal-projects/pcf`.
-- Use the disposable target: `examples/werewolf-minigame-stub`.
-- Confirm the six clients are installed or available for manual testing:
+- 在 Fabric 仓库根目录运行：`/Users/wepie/Desktop/personal-projects/pcf`。
+- 使用 disposable target：`examples/werewolf-minigame-stub`。
+- 确认六种 client 已安装或可用于手工测试：
   - Claude Code
   - Cursor
   - Windsurf
   - Roo Code
   - Gemini CLI
   - Codex CLI
-- Build Fabric before starting manual client checks:
+- 在开始手工 client 检查前构建 Fabric：
 
   ```bash
   pnpm install
@@ -23,32 +23,32 @@ Do not run these steps against `/Users/wepie/Desktop/projects/werewolf-minigame/
   pnpm -C packages/server bundle
   ```
 
-- Expected build artifacts:
-  - `packages/cli/dist/index.js` exists.
-  - `packages/server/dist/index.js` exists.
-  - If `pnpm -C packages/server bundle` is not available in the current workspace, stop and confirm the Day 7 build command with the maintainer before continuing.
+- 预期 build artifact：
+  - 存在 `packages/cli/dist/index.js`。
+  - 存在 `packages/server/dist/index.js`。
+  - 若当前 workspace 无 `pnpm -C packages/server bundle`，停止并在继续前与 maintainer 确认 Day 7 build 命令。
 
-## Step 1: Initialize and Scan the Stub
+## Step 1：初始化并扫描 Stub
 
-1. Set the target path once:
+1. 一次性设置 target path：
 
    ```bash
    STUB_TARGET="$PWD/examples/werewolf-minigame-stub"
    ```
 
-2. Initialize Fabric on the stub:
+2. 在 stub 上初始化 Fabric：
 
    ```bash
    pnpm -C packages/cli exec fab init --target ./examples/werewolf-minigame-stub
    ```
 
-   If path resolution fails when using `pnpm -C packages/cli`, use the absolute target:
+   若使用 `pnpm -C packages/cli` 时 path 解析失败，使用绝对 target：
 
    ```bash
    pnpm -C packages/cli exec fab init --target "$STUB_TARGET"
    ```
 
-3. Expected `fab init` output shape:
+3. 预期 `fab init` 输出形态：
 
    ```text
    Created .../examples/werewolf-minigame-stub/AGENTS.md
@@ -57,19 +57,19 @@ Do not run these steps against `/Users/wepie/Desktop/projects/werewolf-minigame/
    Next: run fab hooks install to add the Day 4 pre-commit pipeline.
    ```
 
-4. Scan the stub and request JSON diagnostics:
+4. 扫描 stub 并请求 JSON diagnostics：
 
    ```bash
    fab scan --target ./examples/werewolf-minigame-stub --json --debug
    ```
 
-   Equivalent CLI-package invocation:
+   等价的 CLI package 调用：
 
    ```bash
    pnpm -C packages/cli exec fab scan --target "$STUB_TARGET" --json --debug
    ```
 
-5. Expected JSON diagnostic:
+5. 预期 JSON diagnostic：
 
    ```json
    {
@@ -83,28 +83,28 @@ Do not run these steps against `/Users/wepie/Desktop/projects/werewolf-minigame/
    }
    ```
 
-6. Acceptance notes:
-   - `framework.kind` must be `cocos-creator`.
-   - `framework.evidence` should include `project.config.json`.
-   - `readmeQuality` may be `stub` for the intentionally small fixture README, or `ok` if the README has been expanded.
-   - `ignoredCount` should include Cocos `.meta` sidecar files.
+6. 验收说明：
+   - `framework.kind` 必须为 `cocos-creator`。
+   - `framework.evidence` 应包含 `project.config.json`。
+   - 对刻意精简的 fixture README，`readmeQuality` 可为 `stub`；若 README 已扩展可为 `ok`。
+   - `ignoredCount` 应包含 Cocos `.meta` sidecar 文件。
 
-## Step 2: Install Bootstrap and MCP Config for the Stub
+## Step 2：为 Stub 安装 Bootstrap 与 MCP Config
 
-1. Move into the stub so workspace-local client files are written under the fixture:
+1. 进入 stub，使 workspace-local client 文件写在 fixture 下：
 
    ```bash
    cd "$STUB_TARGET"
    ```
 
-2. Install all six bootstrap prompts:
+2. 安装全部六种 bootstrap prompts：
 
    ```bash
    FABRIC_REPO="/Users/wepie/Desktop/personal-projects/pcf"
    node "$FABRIC_REPO/packages/cli/dist/index.js" bootstrap install --clients claude,cursor,windsurf,roo,gemini,codex
    ```
 
-3. Expected bootstrap output shape:
+3. 预期 bootstrap 输出形态：
 
    ```text
    Installed .../CLAUDE.md
@@ -115,14 +115,14 @@ Do not run these steps against `/Users/wepie/Desktop/projects/werewolf-minigame/
    Prepended .../AGENTS.md
    ```
 
-4. Preview MCP config writes:
+4. 预览 MCP config 写入：
 
    ```bash
    FAB_SERVER_PATH="$FABRIC_REPO/packages/server/dist/index.js" \
      node "$FABRIC_REPO/packages/cli/dist/index.js" config install --clients claude,cursor,windsurf,roo,gemini,codex --dry-run
    ```
 
-5. Expected dry-run output shape:
+5. 预期 dry-run 输出形态：
 
    ```text
    [dry-run] ClaudeCodeCLI: would write ...
@@ -133,14 +133,14 @@ Do not run these steps against `/Users/wepie/Desktop/projects/werewolf-minigame/
    [dry-run] CodexCLI: would write ...
    ```
 
-6. Install MCP config entries:
+6. 安装 MCP config entry：
 
    ```bash
    FAB_SERVER_PATH="$FABRIC_REPO/packages/server/dist/index.js" \
      node "$FABRIC_REPO/packages/cli/dist/index.js" config install --clients claude,cursor,windsurf,roo,gemini,codex
    ```
 
-7. Expected install output shape:
+7. 预期 install 输出形态：
 
    ```text
    ClaudeCodeCLI: wrote ...
@@ -151,141 +151,141 @@ Do not run these steps against `/Users/wepie/Desktop/projects/werewolf-minigame/
    CodexCLI: wrote ...
    ```
 
-8. Abort conditions:
-   - Any client config loses existing non-Fabric settings.
-   - Any existing `mcpServers` entry other than `fabric` disappears.
-   - `FAB_SERVER_PATH` does not point to `packages/server/dist/index.js`.
+8. 中止条件：
+   - 任何 client config 丢失既有非 Fabric settings。
+   - 任何既有 `mcpServers` entry（`fabric` 以外）消失。
+   - `FAB_SERVER_PATH` 未指向 `packages/server/dist/index.js`。
 
-## Step 3: Six-Client Smoke Loop
+## Step 3：六 Client Smoke Loop
 
-Run five attempts per client. Record every attempt in `docs/day7-kill-switch-tracking.md`.
+每个 client 运行五次尝试。每次尝试记录在 `docs/day7-kill-switch-tracking.md`。
 
-For each client:
+对每个 client：
 
-1. Restart the client so MCP configuration reloads.
-2. Open or navigate to `examples/werewolf-minigame-stub`.
-3. Confirm the client can see Fabric MCP tools if it has a tools view.
-4. Give this exact task:
+1. 重启 client 以重新加载 MCP configuration。
+2. 打开或导航到 `examples/werewolf-minigame-stub`。
+3. 若 client 有 tools 视图，确认可见 Fabric MCP tools。
+4. 给出完全相同的任务：
 
    ```text
    Add a Timer.ts component to this Cocos Creator stub.
    ```
 
-5. Observe whether the AI invokes `fab_get_rules` before creating or editing files.
-6. Record:
+5. 观察 AI 是否在创建或编辑文件之前调用 `fab_get_rules`。
+6. 记录：
    - Client
    - Attempt number
    - Task given
-   - Called `fab_get_rules`? `Y` or `N`
+   - 是否调用 `fab_get_rules`？`Y` 或 `N`
    - Time-to-first-tool-call
    - Notes
-7. Revert the fixture changes between attempts so each attempt starts from the same state.
+7. 在尝试之间 revert fixture 改动，使每次尝试从相同状态开始。
 
-Client checklist:
+Client checklist：
 
 | Client | Stub Directory | Task Given | Evidence to Capture |
 |---|---|---|---|
-| Claude Code | `examples/werewolf-minigame-stub` | `Add a Timer.ts component to this Cocos Creator stub.` | Tool-call transcript or screenshot |
+| Claude Code | `examples/werewolf-minigame-stub` | `Add a Timer.ts component to this Cocos Creator stub.` | Tool-call transcript 或 screenshot |
 | Cursor | `examples/werewolf-minigame-stub` | `Add a Timer.ts component to this Cocos Creator stub.` | Composer/agent log |
 | Windsurf | `examples/werewolf-minigame-stub` | `Add a Timer.ts component to this Cocos Creator stub.` | Cascade/tool log |
 | Roo Code | `examples/werewolf-minigame-stub` | `Add a Timer.ts component to this Cocos Creator stub.` | Roo tool trace |
 | Gemini CLI | `examples/werewolf-minigame-stub` | `Add a Timer.ts component to this Cocos Creator stub.` | CLI transcript |
 | Codex CLI | `examples/werewolf-minigame-stub` | `Add a Timer.ts component to this Cocos Creator stub.` | CLI transcript |
 
-## Step 4: Kill Switch 1 Tracking Sheet
+## Step 4：Kill Switch 1 Tracking Sheet
 
-Use the canonical table in `docs/day7-kill-switch-tracking.md`.
+使用 `docs/day7-kill-switch-tracking.md` 中的 canonical table。
 
-Minimum sample size:
+最小样本量：
 
 - 6 clients
-- 5 attempts per client
-- 30 total attempts
+- 每个 client 5 次尝试
+- 共 30 次尝试
 
-Success criterion:
+成功判据：
 
 ```text
 fab_get_rules call rate >= 60%
 ```
 
-Calculation:
+计算：
 
 ```text
 call_rate = attempts_with_fab_get_rules / 30
 ```
 
-Pass example:
+通过示例：
 
 ```text
 18 / 30 = 60%: PASS
 ```
 
-Fail example:
+失败示例：
 
 ```text
 17 / 30 = 56.7%: KS-1 FAIL
 ```
 
-## Step 5: Kill Switch 2 Stdio Latency
+## Step 5：Kill Switch 2 Stdio Latency
 
-Measure every observed `fab_get_rules` call.
+测量每次观察到的 `fab_get_rules` 调用。
 
-Procedure:
+流程：
 
-1. Wrap or timestamp each `fab_get_rules` call with:
-   - Start time immediately before the tool call is sent.
-   - End time immediately after the tool result is visible to the client.
-2. Record latency in milliseconds in `docs/day7-kill-switch-tracking.md`.
-3. Compute p95 after all attempts complete.
+1. 为每次 `fab_get_rules` 调用包裹或打时间戳：
+   - 在 tool call 发送前立即记录 start time。
+   - 在 client 可见 tool result 后立即记录 end time。
+2. 以毫秒为单位将 latency 记入 `docs/day7-kill-switch-tracking.md`。
+3. 全部尝试结束后计算 p95。
 
-Success criterion:
+成功判据：
 
 ```text
 p95(fab_get_rules latency) < 2000ms
 ```
 
-Failure response:
+失败响应：
 
-- If p95 is `>= 2000ms`, mark KS-2 failed.
-- Do not tune client behavior during the sample.
-- Open a follow-up task to evaluate HTTP transport plus keepalive.
+- 若 p95 `>= 2000ms`，标记 KS-2 失败。
+- 在采样期间不要调优 client 行为。
+- 打开 follow-up task 评估 HTTP transport 与 keepalive。
 
-## Step 6: Kill Switch 3 Codex MCP Liveness
+## Step 6：Kill Switch 3 Codex MCP Liveness
 
-Codex liveness was verified earlier in Day 2, but Day 7 must re-confirm it.
+Codex liveness 在 Day 2 已验证过，但 Day 7 必须再次确认。
 
-Procedure:
+流程：
 
-1. Restart Codex CLI.
-2. Open `examples/werewolf-minigame-stub`.
-3. Run Codex's MCP `tools/list` equivalent.
-4. Confirm all three Fabric tools are listed:
+1. 重启 Codex CLI。
+2. 打开 `examples/werewolf-minigame-stub`。
+3. 运行 Codex 的 MCP `tools/list` 等价操作。
+4. 确认列出全部三种 Fabric tools：
    - `fab_get_rules`
    - `fab_append_intent`
    - `fab_update_registry`
-5. Record the result in `docs/day7-kill-switch-tracking.md`.
+5. 将结果记入 `docs/day7-kill-switch-tracking.md`。
 
-Success criterion:
+成功判据：
 
 ```text
 Codex tools/list includes all 3 Fabric tools.
 ```
 
-Failure response:
+失败响应：
 
-- If `tools/list` fails or any Fabric tool is missing, mark KS-3 failed.
-- Use the fallback plan from Brainstorm Section 6: Codex degrades to native `AGENTS.md` reading.
+- 若 `tools/list` 失败或缺少任一 Fabric tool，标记 KS-3 失败。
+- 使用 Brainstorm Section 6 的 fallback plan：Codex 降级为原生读取 `AGENTS.md`。
 
-## Rollback Procedure if KS-1 Fails
+## 若 KS-1 失败的 Rollback Procedure
 
-If KS-1 call rate is below 60%, stop the Day 7 validation and do not continue to outer-track testing.
+若 KS-1 call rate 低于 60%，停止 Day 7 验证，不要继续 outer-track testing。
 
-Apply this remediation plan in a separate implementation task:
+在单独的 implementation task 中应用以下 remediation plan：
 
-1. Add a `fab_write_file` MCP gate.
-2. Require `fab_write_file` to reject writes unless `fab_get_rules` has been called in the same session for the target path.
-3. Modify Fabric tool descriptions with a stronger `MANDATORY` prefix.
-4. Revisit the five-line breathing prompt from Brainstorm Section 4.2.
-5. Re-run the full 30-attempt KS-1 sample after the remediation is implemented.
+1. 增加 `fab_write_file` MCP gate。
+2. 要求 `fab_write_file` 除非在同 session 已对 target path 调用过 `fab_get_rules`，否则拒绝写入。
+3. 用更强的 `MANDATORY` 前缀修改 Fabric tool descriptions。
+4. 回顾 Brainstorm Section 4.2 的 five-line breathing prompt。
+5. remediation 实现后重新跑完整 30 次 KS-1 采样。
 
-Do not mark Day 7 as passed until KS-1, KS-2, and KS-3 all pass.
+在 KS-1、KS-2、KS-3 全部通过前，不要将 Day 7 标为通过。

@@ -1,15 +1,15 @@
-# Fabric Quickstart
+# Fabric 快速入口
 
-`docs/getting-started.md` is now the canonical onboarding entry for Fabric v1.0.
+`docs/getting-started.md` 现为 Fabric v1.0 的标准上手入口。
 
-Use [Getting Started](./getting-started.md) for the full 7-stage path:
+完整 7 阶段路径请见 [Getting Started](./getting-started.md)：
 
-1. Install Fabric
-2. Prepare the target project
-3. Run `fab init`
-4. Configure agents and hooks
-5. Start `fab serve`
-6. Verify MCP is active
-7. Record the first ledger entry
+1. 安装 Fabric
+2. 准备目标项目
+3. 运行 `fab init`
+4. 配置 agents 与 hooks
+5. 启动 `fab serve`
+6. 确认 MCP 已激活
+7. 记录首条 ledger entry
 
-This page is kept only as a compatibility redirect for existing links. `FAB_SERVER_PATH` setup and contributor-focused local development instructions now live in [Contributing](./contributing.md).
+本页仅作为既有链接的兼容重定向。`FAB_SERVER_PATH` 设置与面向贡献者的本地开发说明现位于 [Contributing](./contributing.md)。

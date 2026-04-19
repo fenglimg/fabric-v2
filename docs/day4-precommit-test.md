@@ -1,22 +1,22 @@
-# Day 4 Pre-commit Pipeline Test
+# Day 4 Pre-commit Pipeline 测试
 
-This test plan verifies the Day 4 pre-commit triple:
+本测试计划验证 Day 4 pre-commit 三重：
 
 1. `fab sync-meta --check-only`
 2. `fab human-lint`
 3. `fab ledger-append --staged`
 
-It also verifies the `.fabric/agents.meta.json` manual-edit guard and the `<300ms` timing target on a trivial diff.
+同时验证 `.fabric/agents.meta.json` 手工编辑 guard，以及在 trivial diff 上 `<300ms` 的 timing 目标。
 
-## Prerequisites
+## 前置条件
 
-- Run from the Fabric repository root.
-- Build the CLI before testing: `pnpm --filter @fenglimg/fabric-cli build`
-- Use a disposable local repository for the hook checks.
+- 在 Fabric 仓库根目录运行。
+- 测试前构建 CLI：`pnpm --filter @fenglimg/fabric-cli build`
+- 使用 disposable local repository 进行 hook 检查。
 
-## Scenario A: Fresh Repo Passes and Appends Ledger
+## Scenario A：新仓库通过并追加 Ledger
 
-1. Create a temporary repository and initialize it:
+1. 创建临时仓库并初始化：
 
    ```bash
    mkdir /tmp/fabric-day4
@@ -29,39 +29,39 @@ It also verifies the `.fabric/agents.meta.json` manual-edit guard and the `<300m
    git add .
    ```
 
-2. Run the hook directly:
+2. 直接运行 hook：
 
    ```bash
    ./.husky/pre-commit
    ```
 
-3. Expected results:
-   - Exit code is `0`.
-   - `.intent-ledger.jsonl` exists.
-   - `git diff --cached --name-only` includes `.intent-ledger.jsonl`.
+3. 预期结果：
+   - Exit code 为 `0`。
+   - 存在 `.intent-ledger.jsonl`。
+   - `git diff --cached --name-only` 包含 `.intent-ledger.jsonl`。
 
-4. Expected terminal output:
+4. 预期终端输出：
 
    ```text
    Installed /tmp/fabric-day4/.husky/pre-commit
    Added prepare script to /tmp/fabric-day4/package.json
    ```
 
-5. Inspect the ledger:
+5. 检查 ledger：
 
    ```bash
    cat .intent-ledger.jsonl
    ```
 
-6. Expected JSON line shape:
+6. 预期 JSON 行形态：
 
    ```json
    {"ts":1713410000000,"parent_sha":"root","intent":"auto: README.md","affected_paths":["README.md"],"diff_stat":" README.md | 1 +\n 1 file changed, 1 insertion(+)"}
    ```
 
-## Scenario B: Locked Human Section Drift Blocks Commit
+## Scenario B：Locked Human Section Drift 阻止 Commit
 
-1. Replace `.fabric/human-lock.json` with a real lock entry that targets `AGENTS.md`:
+1. 将 `.fabric/human-lock.json` 替换为指向 `AGENTS.md` 的真实 lock entry：
 
    ```bash
    node <<'EOF'
@@ -78,7 +78,7 @@ It also verifies the `.fabric/agents.meta.json` manual-edit guard and the `<300m
    git add .fabric/human-lock.json AGENTS.md
    ```
 
-2. Edit one line inside the locked range, then stage it:
+2. 在锁定范围内编辑一行并 stage：
 
    ```bash
    perl -0pi -e 's/AI must not rewrite locked sentences\./AI must never rewrite locked sentences./' AGENTS.md
@@ -86,11 +86,11 @@ It also verifies the `.fabric/agents.meta.json` manual-edit guard and the `<300m
    ./.husky/pre-commit
    ```
 
-3. Expected result:
-   - Exit code is `1`.
-   - Commit is blocked before `ledger-append`.
+3. 预期结果：
+   - Exit code 为 `1`。
+   - 在 `ledger-append` 之前 commit 被阻止。
 
-4. Expected terminal output includes:
+4. 预期终端输出包含：
 
    ```text
    Human-locked content drift detected. Revert the edit or update approved hashes before committing.
@@ -98,9 +98,9 @@ It also verifies the `.fabric/agents.meta.json` manual-edit guard and the `<300m
    AGENTS.md:17-20                 sha256:...          sha256:...
    ```
 
-## Scenario C: Manual `agents.meta.json` Edit Is Blocked
+## Scenario C：手工编辑 `agents.meta.json` 被阻止
 
-1. Edit `.fabric/agents.meta.json` directly and stage it:
+1. 直接编辑 `.fabric/agents.meta.json` 并 stage：
 
    ```bash
    perl -0pi -e 's/"priority": "high"/"priority": "low"/' .fabric/agents.meta.json
@@ -108,29 +108,29 @@ It also verifies the `.fabric/agents.meta.json` manual-edit guard and the `<300m
    ./.husky/pre-commit
    ```
 
-2. Expected result without override:
-   - Exit code is `1`.
-   - The guard message is printed to `stderr`.
+2. 无 override 时的预期结果：
+   - Exit code 为 `1`。
+   - Guard message 打印到 `stderr`。
 
-3. Expected terminal output:
+3. 预期终端输出：
 
    ```text
    .fabric/agents.meta.json cannot be manually edited; use fab_update_registry
    ```
 
-4. Override check:
+4. Override 检查：
 
    ```bash
    FAB_ALLOW_META_EDIT=1 ./.husky/pre-commit
    ```
 
-5. Expected override result:
-   - Hook continues past the guard.
-   - If no other drift exists, exit code is `0`.
+5. Override 预期结果：
+   - Hook 越过 guard 继续。
+   - 若无其他 drift，exit code 为 `0`。
 
-## Scenario D: Timing Budget Stays Under 300ms
+## Scenario D：Timing Budget 保持在 300ms 以下
 
-1. Reset to a trivial staged diff:
+1. Reset 到 trivial staged diff：
 
    ```bash
    git reset
@@ -138,16 +138,16 @@ It also verifies the `.fabric/agents.meta.json` manual-edit guard and the `<300m
    git add README.md
    ```
 
-2. Measure the hook runtime:
+2. 测量 hook 运行时间：
 
    ```bash
    time ./.husky/pre-commit
    ```
 
-3. Expected result:
-   - Total wall-clock time should stay below `0.300s` on a trivial diff on a warmed local machine.
+3. 预期结果：
+   - 在已预热的本地机器上，trivial diff 的总 wall-clock 时间应低于 `0.300s`。
 
-4. Expected `time` output shape:
+4. 预期 `time` 输出形态：
 
    ```text
    real    0m0.2xxs
@@ -155,8 +155,8 @@ It also verifies the `.fabric/agents.meta.json` manual-edit guard and the `<300m
    sys     0m0.xxxs
    ```
 
-## Notes
+## 备注
 
-- `ledger-append` uses `parent_sha: "root"` on the first commit because `HEAD` does not exist yet.
-- If Scenario C fails early with `meta drift; run: fab sync-meta`, run `fab sync-meta`, restage `.fabric/agents.meta.json`, and rerun the guard check.
-- The hook template is written with mode `755` by `fab hooks install`; no manual `chmod` step is required after installation.
+- 首次 commit 时 `ledger-append` 使用 `parent_sha: "root"`，因为 `HEAD` 尚不存在。
+- 若 Scenario C 过早失败并提示 `meta drift; run: fab sync-meta`，运行 `fab sync-meta`，重新 stage `.fabric/agents.meta.json`，再重跑 guard 检查。
+- Hook template 由 `fab hooks install` 以 mode `755` 写入；安装后无需手工 `chmod`。

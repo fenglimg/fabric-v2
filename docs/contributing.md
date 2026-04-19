@@ -1,35 +1,35 @@
-# Contributing to Fabric
+# 参与 Fabric 贡献
 
-This guide covers local development prerequisites, the recommended pnpm workflow, and the environment details that were moved out of the README so npm users can keep the landing page focused on product onboarding.
+本指南涵盖本地开发前置条件、推荐的 pnpm 工作流，以及从 README 迁出的环境说明，便于 npm 用户把落地页聚焦在产品上手。
 
-## Prerequisites
+## 前置条件
 
-- Node.js 20 or newer
-- pnpm 9 or newer
+- Node.js 20 或更高版本
+- pnpm 9 或更高版本
 - Git
-- At least one MCP client for local verification: Claude Code, Cursor, Windsurf, Roo Code, Gemini CLI, or Codex CLI
+- 至少一种 MCP client 用于本地验证：Claude Code、Cursor、Windsurf、Roo Code、Gemini CLI 或 Codex CLI
 
-Install workspace dependencies from the repository root:
+在仓库根目录安装 workspace 依赖：
 
 ```bash
 pnpm install
 ```
 
-## Development Environment
+## 开发环境
 
-Build the workspace before testing CLI flows:
+在测试 CLI 流程前先构建 workspace：
 
 ```bash
 pnpm -r build
 ```
 
-Use the monorepo development loop when iterating on package code:
+迭代 package 代码时使用 monorepo 开发循环：
 
 ```bash
 pnpm dev
 ```
 
-Useful focused commands:
+常用定向命令：
 
 ```bash
 pnpm --filter @fenglimg/fabric-cli test
@@ -37,60 +37,60 @@ pnpm --filter @fenglimg/fabric-server build
 pnpm --filter @fenglimg/fabric-dashboard build
 ```
 
-## `FAB_SERVER_PATH` for Local Development
+## FAB_SERVER_PATH
 
-`fab config install` resolves the packaged server entry automatically. When you are testing from this monorepo and want client configs to point at a locally built server, set `FAB_SERVER_PATH` explicitly:
+`fab config install` 会自动解析已打包的 server entry。若在本 monorepo 内测试，希望 client config 指向本地构建的 server，请显式设置 `FAB_SERVER_PATH`：
 
 ```bash
 export FAB_SERVER_PATH="$PWD/packages/server/dist/index.js"
 ```
 
-Preview config writes before modifying any client config:
+在修改任何 client config 之前，先预览 config 写入：
 
 ```bash
 FAB_SERVER_PATH="$FAB_SERVER_PATH" pnpm --filter @fenglimg/fabric-cli exec fab config install --clients claude,cursor,windsurf,roo,gemini,codex --dry-run
 ```
 
-Then install the Fabric MCP config:
+然后安装 Fabric MCP config：
 
 ```bash
 FAB_SERVER_PATH="$FAB_SERVER_PATH" pnpm --filter @fenglimg/fabric-cli exec fab config install --clients claude,cursor,windsurf,roo,gemini,codex
 ```
 
-If the file does not exist, rebuild the server package first:
+若文件不存在，请先重建 server package：
 
 ```bash
 pnpm --filter @fenglimg/fabric-server build
 ```
 
-## Contribution Workflow
+## 贡献流程
 
-1. Create a branch for one focused change.
-2. Read the relevant docs and command implementations before editing.
-3. Make small, reviewable commits that preserve existing client config and repo state.
-4. Run tests and validation commands before opening a PR.
-5. Update documentation when behavior or expected CLI output changes.
+1. 为单一聚焦的改动创建分支。
+2. 编辑前阅读相关文档与命令实现。
+3. 提交小而可 review 的 commit，保留既有 client config 与仓库状态。
+4. 开 PR 前运行测试与校验命令。
+5. 行为或预期 CLI 输出变化时更新文档。
 
-## Validation Checklist
+## 校验清单
 
-Run the narrowest checks that cover your change, then rerun broader workspace checks before release-sensitive merges:
+先运行能覆盖你改动的最窄检查，再在面向 release 的合并前重跑更宽的 workspace 检查：
 
 ```bash
 pnpm test
 pnpm -r build
 ```
 
-For doc-driven onboarding changes, also verify the key entry points:
+若以文档驱动的上手路径有改动，同时验证关键入口：
 
 ```bash
 rg -n "Placeholder workflow|FAB_SERVER_PATH" README.md docs
 ```
 
-## Release-Sensitive Areas
+## 对 Release 敏感的区域
 
-Be conservative when editing:
+编辑时请保守处理：
 
-- `README.md` and `docs/getting-started.md`: npm-facing onboarding path
-- `packages/cli/src/commands/*.ts`: user-visible command behavior and output
-- `packages/server/src/**`: MCP runtime behavior
-- `packages/cli/templates/**`: bootstrap and hook compatibility across clients
+- `README.md` 与 `docs/getting-started.md`：面向 npm 的上手路径
+- `packages/cli/src/commands/*.ts`：用户可见的命令行为与输出
+- `packages/server/src/**`：MCP runtime 行为
+- `packages/cli/templates/**`：跨 client 的 bootstrap 与 hook 兼容性
