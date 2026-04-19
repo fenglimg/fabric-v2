@@ -2,23 +2,12 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 
+import type { AgentsMeta } from "@fabric/shared";
 import { defineCommand } from "citty";
 
 import { resolveIgnores } from "../scanner/ignores.js";
 
-type NodeMeta = {
-  file: string;
-  scope_glob: string;
-  deps: string[];
-  priority: string;
-  hash: string;
-};
-
-type AgentsMeta = {
-  revision: string;
-  nodes: Record<string, NodeMeta>;
-  [key: string]: unknown;
-};
+type NodeMeta = AgentsMeta["nodes"][string];
 
 type SyncMetaArgs = {
   target: string;

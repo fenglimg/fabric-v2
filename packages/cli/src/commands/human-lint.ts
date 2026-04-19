@@ -3,17 +3,14 @@ import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { isAbsolute, join, resolve } from "node:path";
 
+import type { HumanLockEntry } from "@fabric/shared";
 import { defineCommand } from "citty";
+
+export type { HumanLockEntry } from "@fabric/shared";
+export { humanLockEntrySchema } from "@fabric/shared";
 
 type HumanLintArgs = {
   target: string;
-};
-
-type HumanLockEntry = {
-  file: string;
-  start_line: number;
-  end_line: number;
-  hash: string;
 };
 
 type HumanLockFile = {

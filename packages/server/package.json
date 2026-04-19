@@ -8,15 +8,20 @@
     "dist"
   ],
   "scripts": {
-    "build": "tsup src/index.ts --format esm --dts --clean",
+    "build": "tsup src/index.ts --format esm --dts --clean && node scripts/copy-dashboard.mjs",
     "dev": "tsup src/index.ts --format esm --dts --watch"
   },
   "dependencies": {
+    "@fabric/shared": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.29.0",
+    "chokidar": "^4.0.3",
+    "express": "^5.2.1",
     "minimatch": "^10.0.1",
     "zod": "^3.25.0"
   },
   "devDependencies": {
+    "@fabric/dashboard": "workspace:*",
+    "@types/express": "^5.0.6",
     "@types/node": "^22.15.0",
     "tsup": "^8.5.0",
     "typescript": "^5.8.3"

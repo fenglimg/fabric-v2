@@ -2,26 +2,14 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 
+import type { ClientPaths, FabricConfig } from "@fabric/shared";
 import { ClaudeCodeDesktopWriter, getClaudeDesktopConfigPath } from "./claude-code.js";
 import { ClaudeCodeCLIWriter, CursorWriter, GeminiCLIWriter, RooCodeWriter, WindsurfWriter } from "./json.js";
 import { CodexTOMLConfigWriter } from "./toml.js";
 import type { ClientConfigWriter } from "./writer.js";
 
-export type ClientPaths = {
-  claudeCodeCLI?: string;
-  claudeCodeDesktop?: string;
-  cursor?: string;
-  windsurf?: string;
-  rooCode?: string;
-  geminiCLI?: string;
-  codexCLI?: string;
-};
-
-export type FabricConfig = {
-  clientPaths?: ClientPaths;
-  externalFixturePath?: string;
-  scanIgnores?: string[];
-};
+export type { ClientPaths, FabricConfig } from "@fabric/shared";
+export { clientPathsSchema, fabricConfigSchema } from "@fabric/shared";
 
 function hasExplicitPath(clientPaths: ClientPaths | undefined, key: keyof ClientPaths): boolean {
   return typeof clientPaths?.[key] === "string" && clientPaths[key]!.trim().length > 0;

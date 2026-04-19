@@ -13,10 +13,12 @@
   ],
   "scripts": {
     "build": "tsup",
-    "dev": "tsup --watch"
+    "dev": "tsup --watch",
+    "test": "vitest run"
   },
   "dependencies": {
-    "@fenglimg/fabric-server": "^0.1.0",
+    "@fabric/shared": "workspace:*",
+    "@fenglimg/fabric-server": "workspace:*",
     "@iarna/toml": "^2.2.5",
     "citty": "^0.2.2"
   },

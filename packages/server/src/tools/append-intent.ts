@@ -1,24 +1,20 @@
 import { appendFile } from "node:fs/promises";
-import { join } from "node:path";
 
+import { aiLedgerEntrySchema, type AiLedgerEntry } from "@fabric/shared";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { z } from "zod";
 
 import { resolveProjectRoot } from "../meta-reader.js";
+import { appendIntent } from "../services/append-intent.js";
 
 type AppendIntentInput = {
-  entry: {
-    commit_sha?: string;
-    intent: string;
-    affected_paths: string[];
-  };
+  entry: Omit<AiLedgerEntry, "id" | "source" | "ts">;
 };
 
 const inputSchema = {
-  entry: z.object({
-    commit_sha: z.string().optional(),
-    intent: z.string(),
-    affected_paths: z.array(z.string()),
+  entry: aiLedgerEntrySchema.omit({
+    id: true,
+    source: true,
+    ts: true,
   }),
 };
 
@@ -40,15 +36,9 @@ export function registerAppendIntent(server: McpServer): void {
     inputSchema,
     async ({ entry }: AppendIntentInput) => {
       const projectRoot = resolveProjectRoot();
-      const ledgerPath = join(projectRoot, ".intent-ledger.jsonl");
-      const ts = Date.now();
+      const result = await appendIntent(projectRoot, { entry });
 
-      await appendFile(ledgerPath, `${JSON.stringify({ ts, ...entry })}\n`, "utf8");
-
-      return createTextResponse({
-        success: true,
-        timestamp: ts,
-      });
+      return createTextResponse(result);
     },
   );
 }

@@ -1,34 +1,10 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { z } from "zod";
+import { agentsMetaSchema, type AgentsMeta } from "@fabric/shared";
 
-export interface AgentsMeta {
-  revision: string;
-  nodes: Record<
-    string,
-    {
-      file: string;
-      scope_glob: string;
-      deps: string[];
-      priority: "high" | "medium" | "low";
-      hash: string;
-    }
-  >;
-}
-
-const agentsMetaNodeSchema = z.object({
-  file: z.string(),
-  scope_glob: z.string(),
-  deps: z.array(z.string()),
-  priority: z.enum(["high", "medium", "low"]),
-  hash: z.string(),
-});
-
-const agentsMetaSchema = z.object({
-  revision: z.string(),
-  nodes: z.record(agentsMetaNodeSchema),
-});
+export type { AgentsMeta } from "@fabric/shared";
+export { agentsMetaNodeSchema, agentsMetaSchema } from "@fabric/shared";
 
 export class AgentsMetaFileMissingError extends Error {
   readonly code = "FABRIC_META_MISSING";

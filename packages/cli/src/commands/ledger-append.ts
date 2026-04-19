@@ -2,19 +2,12 @@ import { execSync } from "node:child_process";
 import { appendFileSync, existsSync, readFileSync, statSync } from "node:fs";
 import { basename, isAbsolute, join, resolve } from "node:path";
 
+import type { HumanLedgerEntry, LedgerEntry } from "@fabric/shared";
 import { defineCommand } from "citty";
 
 type LedgerAppendArgs = {
   target: string;
   staged?: boolean;
-};
-
-type LedgerEntry = {
-  ts: number;
-  parent_sha: string;
-  intent: string;
-  affected_paths: string[];
-  diff_stat: string;
 };
 
 const LEDGER_FILE = ".intent-ledger.jsonl";
@@ -55,8 +48,9 @@ export const ledgerAppendCommand = defineCommand({
 
     const intent = deriveIntent(stagedFiles);
     const diffStat = readDiffStat(target).trim();
-    const entry: LedgerEntry = {
+    const entry: HumanLedgerEntry = {
       ts: Date.now(),
+      source: "human",
       parent_sha: readParentSha(target),
       intent,
       affected_paths: stagedFiles,
