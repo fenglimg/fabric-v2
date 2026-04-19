@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 
-import { detectFramework, type FrameworkInfo } from "@fenglimg/fabric-shared";
+import { detectFramework, type FrameworkInfo } from "@fenglimg/fabric-shared/node";
 
 import { type FabricHttpApp, sendUnknownError } from "./_error.js";
 

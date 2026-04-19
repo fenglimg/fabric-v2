@@ -8,4 +8,3 @@ export * from "./schemas/fabric-config.js";
 export * from "./schemas/forensic-report.js";
 export * from "./schemas/init-context.js";
 export * from "./schemas/events.js";
-export * from "./detector.js";
