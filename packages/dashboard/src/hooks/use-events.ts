@@ -1,5 +1,5 @@
 import { signal } from "@preact/signals-core";
-import type { FabricEvent } from "@fabric/shared";
+import type { FabricEvent } from "@fenglimg/fabric-shared";
 import { useEffect, useState } from "preact/hooks";
 
 import { getEvents, parseFabricEvent } from "../api/client";

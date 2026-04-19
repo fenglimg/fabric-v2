@@ -1,8 +1,9 @@
-import type { FabricEvent, LedgerEntry } from "@fabric/shared";
+import type { FabricEvent, LedgerEntry } from "@fenglimg/fabric-shared";
 import { useEffect, useMemo, useState } from "preact/hooks";
 
 import { getHistoryState, getLedger, type HistoryReplayResult } from "../api/client";
 import { DriftIndicator, TimelineEntry, TreeNode } from "../components";
+import { useI18n } from "../i18n/use-i18n";
 import { buildRulesTree, ViewHeader } from "./rules-tree";
 
 export type HistoryReplayViewProps = {
@@ -10,6 +11,7 @@ export type HistoryReplayViewProps = {
 };
 
 export function HistoryReplayView({ lastEvent }: HistoryReplayViewProps) {
+  const { locale, t } = useI18n();
   const [entries, setEntries] = useState<LedgerEntry[]>([]);
   const [selectedEntryId, setSelectedEntryId] = useState<string | null>(null);
   const [snapshot, setSnapshot] = useState<HistoryReplayResult | null>(null);
@@ -85,7 +87,9 @@ export function HistoryReplayView({ lastEvent }: HistoryReplayViewProps) {
     [entries, selectedEntryId],
   );
   const selectedEntry = selectedIndex >= 0 ? entries[selectedIndex] ?? null : null;
-  const selectedLabel = selectedEntry === null ? "No historical entry selected" : new Date(selectedEntry.ts).toLocaleString();
+  const selectedLabel = selectedEntry === null
+    ? t("dashboard.history-replay.selected.none")
+    : new Date(selectedEntry.ts).toLocaleString(locale);
   const tree = useMemo(
     () => snapshot === null ? [] : buildRulesTree(snapshot.meta, new Set<string>(), ""),
     [snapshot],
@@ -94,12 +98,12 @@ export function HistoryReplayView({ lastEvent }: HistoryReplayViewProps) {
   return (
     <section className="view">
       <ViewHeader
-        title="History Replay"
-        subtitle="Time-travel through ledger commits and rehydrate the rules tree at any recorded point"
+        title={t("dashboard.history-replay.title")}
+        subtitle={t("dashboard.history-replay.subtitle")}
       />
       {error !== null ? <DriftIndicator kind="banner" severity="stale" message={error} /> : null}
       <div className="filter-bar history-toolbar">
-        <span className="filter-label">Scrub</span>
+        <span className="filter-label">{t("dashboard.history-replay.toolbar.scrub")}</span>
         <input
           className="history-slider"
           type="range"
@@ -122,14 +126,14 @@ export function HistoryReplayView({ lastEvent }: HistoryReplayViewProps) {
           disabled={entries.length === 0}
           onClick={() => setSelectedEntryId(entries.at(-1)?.id ?? null)}
         >
-          Latest
+          {t("dashboard.history-replay.toolbar.latest")}
         </button>
       </div>
       <div className="view-split history-layout">
         <div className="tree-panel history-timeline-panel">
           <div className="status-line">
-            <span>{entries.length} replay points</span>
-            <span>{snapshot?.metadata.replayed_count ?? 0} entries applied</span>
+            <span>{t("dashboard.history-replay.status.replay-points", { count: String(entries.length) })}</span>
+            <span>{t("dashboard.history-replay.status.entries-applied", { count: String(snapshot?.metadata.replayed_count ?? 0) })}</span>
           </div>
           <div className="history-timeline-list">
             {entries.length > 0 ? [...entries].reverse().map((entry) => (
@@ -145,31 +149,39 @@ export function HistoryReplayView({ lastEvent }: HistoryReplayViewProps) {
                     setSelectedEntryId(entry.id ?? null);
                   }
                 }}
-              >
+                >
                 <TimelineEntry entry={entry} readOnly />
               </div>
-            )) : <div className="empty-card">No ledger entries found for replay.</div>}
+            )) : <div className="empty-card">{t("dashboard.history-replay.empty.entries")}</div>}
           </div>
         </div>
         <div className="tree-panel">
           <div className="tree-filter history-state-head">
             <div>
-              <div className="history-state-title">Viewing state as of {selectedLabel}</div>
+              <div className="history-state-title">{t("dashboard.history-replay.state.title", { label: selectedLabel })}</div>
               <div className="meta-line">
-                ledger {snapshot?.metadata.at_ledger_id ?? "n/a"} · commit {snapshot?.metadata.at_commit ?? "unavailable"} · {snapshot?.metadata.mode ?? "pending"}
+                {t("dashboard.history-replay.state.meta", {
+                  ledgerId: snapshot?.metadata.at_ledger_id ?? t("dashboard.history-replay.meta.na"),
+                  commit: snapshot?.metadata.at_commit ?? t("dashboard.history-replay.meta.not-available"),
+                  mode: snapshot?.metadata.mode ?? t("dashboard.history-replay.meta.pending"),
+                })}
               </div>
             </div>
           </div>
           <div className="status-line">
-            <span>{snapshot === null ? "loading snapshot" : `${Object.keys(snapshot.meta.nodes).length} nodes`}</span>
-            <span>{snapshot?.meta.revision ?? "unknown revision"}</span>
+            <span>
+              {snapshot === null
+                ? t("dashboard.history-replay.status.loading")
+                : t("dashboard.history-replay.status.nodes", { count: String(Object.keys(snapshot.meta.nodes).length) })}
+            </span>
+            <span>{snapshot?.meta.revision ?? t("dashboard.history-replay.status.unknown-revision")}</span>
           </div>
-          <div className="tree" role="tree" aria-label="Historical fabric rules tree">
-            {loadingSnapshot ? <div className="empty-card">Loading historical snapshot...</div> : null}
+          <div className="tree" role="tree" aria-label={t("dashboard.history-replay.tree.aria-label")}>
+            {loadingSnapshot ? <div className="empty-card">{t("dashboard.history-replay.empty.loading")}</div> : null}
             {!loadingSnapshot && tree.length > 0 ? tree.map((node) => (
               <TreeNode key={node.node.file} {...node} readOnly />
             )) : null}
-            {!loadingSnapshot && tree.length === 0 ? <div className="empty-card">Select a timeline entry to replay its state.</div> : null}
+            {!loadingSnapshot && tree.length === 0 ? <div className="empty-card">{t("dashboard.history-replay.empty.select")}</div> : null}
           </div>
         </div>
       </div>

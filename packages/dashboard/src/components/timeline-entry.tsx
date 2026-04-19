@@ -1,6 +1,7 @@
-import type { AiLedgerEntry, LedgerEntry } from "@fabric/shared";
+import type { AiLedgerEntry, LedgerEntry } from "@fenglimg/fabric-shared";
 import { useState } from "preact/hooks";
 
+import { useI18n } from "../i18n/use-i18n";
 import { ApproveButton } from "./approve-button";
 import { SourceBadge } from "./source-badge";
 
@@ -17,6 +18,7 @@ export function TimelineEntry({
   expanded = false,
   readOnly = false,
 }: TimelineEntryProps) {
+  const { locale, t } = useI18n();
   const [open, setOpen] = useState(expanded);
   const [annotation, setAnnotation] = useState("");
   const isAi = entry.source === "ai";
@@ -34,18 +36,24 @@ export function TimelineEntry({
   };
 
   return (
-    <article className={`timeline-entry timeline-${entry.source}`} aria-label={`${entry.source} intent ${entry.intent}`}>
+    <article
+      className={`timeline-entry timeline-${entry.source}`}
+      aria-label={t("dashboard.timeline-entry.aria-label", {
+        source: t(`dashboard.source.${entry.source}`),
+        intent: entry.intent,
+      })}
+    >
       <div className={`dot-axis ${entry.source}`} aria-hidden="true" />
       <div className="timeline-head">
         <SourceBadge source={entry.source} />
-        {isAi ? <span className="commit-hash">{entry.commit_sha ?? "working tree"}</span> : null}
-        {!isAi ? <span className="commit-hash">parent {entry.parent_sha}</span> : null}
+        {isAi ? <span className="commit-hash">{entry.commit_sha ?? t("dashboard.timeline-entry.working-tree")}</span> : null}
+        {!isAi ? <span className="commit-hash">{t("dashboard.timeline-entry.parent", { parent: entry.parent_sha })}</span> : null}
         {!isAi ? <span className="diff-badge">{entry.diff_stat}</span> : null}
-        <time className="entry-time" dateTime={new Date(entry.ts).toISOString()}>{formatTime(entry.ts)}</time>
+        <time className="entry-time" dateTime={new Date(entry.ts).toISOString()}>{formatTime(entry.ts, locale)}</time>
       </div>
       <h3 className="entry-title">{entry.intent}</h3>
       <div className="entry-meta">
-        <span><span className="meta-key">paths</span> {entry.affected_paths.length}</span>
+        <span><span className="meta-key">{t("dashboard.timeline-entry.paths")}</span> {entry.affected_paths.length}</span>
         {entry.affected_paths.slice(0, 3).map((path) => <span key={path}>{path}</span>)}
       </div>
       {!isAi && entry.annotation !== undefined ? (
@@ -54,7 +62,7 @@ export function TimelineEntry({
       {isAi && canAnnotate ? (
         <div className="entry-foot">
           <button className="ghost-button" type="button" onClick={() => setOpen((value) => !value)}>
-            Annotate
+            {t("dashboard.timeline-entry.annotate")}
           </button>
         </div>
       ) : null}
@@ -66,25 +74,23 @@ export function TimelineEntry({
             void submitAnnotation();
           }}
         >
-          <label htmlFor={`annotate-${entry.id ?? entry.ts}`}>Human annotation</label>
+          <label htmlFor={`annotate-${entry.id ?? entry.ts}`}>{t("dashboard.timeline-entry.annotation-label")}</label>
           <input
             id={`annotate-${entry.id ?? entry.ts}`}
             className="annotate-input"
             value={annotation}
             onInput={(event) => setAnnotation(event.currentTarget.value)}
-            placeholder="Explain review outcome or approval context..."
+            placeholder={t("dashboard.timeline-entry.annotation-placeholder")}
           />
-          <ApproveButton variant="annotate" size="sm" onClick={submitAnnotation}>
-            Save annotation
-          </ApproveButton>
+          <ApproveButton variant="annotate" size="sm" onClick={submitAnnotation}>{t("dashboard.timeline-entry.annotation-save")}</ApproveButton>
         </form>
       ) : null}
     </article>
   );
 }
 
-function formatTime(ts: number): string {
-  return new Intl.DateTimeFormat(undefined, {
+function formatTime(ts: number, locale: string): string {
+  return new Intl.DateTimeFormat(locale, {
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit",

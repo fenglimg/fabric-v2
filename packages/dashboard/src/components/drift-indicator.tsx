@@ -1,3 +1,5 @@
+import { useI18n } from "../i18n/use-i18n";
+
 export type DriftIndicatorProps = {
   kind: "dot" | "pill" | "banner";
   severity: "drift" | "stale" | "orphan" | "locked" | "ok";
@@ -6,19 +8,20 @@ export type DriftIndicatorProps = {
 };
 
 const defaultMessage: Record<DriftIndicatorProps["severity"], string> = {
-  ok: "confirmed",
-  drift: "hash drift",
-  stale: "stale",
-  orphan: "orphan",
-  locked: "attention",
+  ok: "dashboard.shared.status.confirmed",
+  drift: "dashboard.shared.status.hash-drift",
+  stale: "dashboard.shared.status.stale",
+  orphan: "dashboard.shared.status.orphan",
+  locked: "dashboard.shared.status.attention",
 };
 
 export function DriftIndicator({ kind, severity, message, diffStats }: DriftIndicatorProps) {
+  const { t } = useI18n();
   if (severity === "ok" && kind === "dot") {
     return null;
   }
 
-  const label = message ?? defaultMessage[severity];
+  const label = message ?? t(defaultMessage[severity]);
   const stats =
     diffStats === undefined ? "" : ` +${diffStats.added} / -${diffStats.removed}`;
   const className = `drift-indicator drift-${kind} drift-${severity}`;

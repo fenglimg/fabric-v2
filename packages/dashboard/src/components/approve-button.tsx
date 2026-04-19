@@ -1,6 +1,8 @@
 import type { ComponentChildren } from "preact";
 import { useState } from "preact/hooks";
 
+import { useI18n } from "../i18n/use-i18n";
+
 export type ApproveButtonProps = {
   variant: "approve" | "annotate";
   state?: "idle" | "busy" | "success" | "error";
@@ -20,6 +22,7 @@ export function ApproveButton({
   children,
   ariaLabel,
 }: ApproveButtonProps) {
+  const { t } = useI18n();
   const [internalState, setInternalState] = useState<ButtonState>(state);
   const effectiveState = state === "idle" ? internalState : state;
   const busy = effectiveState === "busy";
@@ -51,7 +54,7 @@ export function ApproveButton({
     >
       {busy ? <span className="spinner" aria-hidden="true" /> : null}
       {effectiveState === "success" ? <span aria-hidden="true">✓</span> : null}
-      {effectiveState === "error" ? "Retry" : children}
+      {effectiveState === "error" ? t("dashboard.approve-button.retry") : children}
     </button>
   );
 }

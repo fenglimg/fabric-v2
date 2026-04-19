@@ -1,8 +1,9 @@
-import type { FabricEvent, HumanLockEntry } from "@fabric/shared";
+import type { FabricEvent, HumanLockEntry } from "@fenglimg/fabric-shared";
 import { useEffect, useMemo, useState } from "preact/hooks";
 
 import { approveHumanLock, getHumanLock, type HumanLockStatus } from "../api/client";
 import { DriftIndicator, LockCard } from "../components";
+import { useI18n } from "../i18n/use-i18n";
 import { ViewHeader } from "./rules-tree";
 
 export type HumanLockViewProps = {
@@ -10,6 +11,7 @@ export type HumanLockViewProps = {
 };
 
 export function HumanLockView({ lastEvent }: HumanLockViewProps) {
+  const { t } = useI18n();
   const [entries, setEntries] = useState<HumanLockStatus[]>([]);
   const [filter, setFilter] = useState<"all" | "drift" | "approved">("all");
   const [busyKey, setBusyKey] = useState<string | null>(null);
@@ -68,11 +70,11 @@ export function HumanLockView({ lastEvent }: HumanLockViewProps) {
   return (
     <section className="view">
       <ViewHeader
-        title="Human Lock Vault"
-        subtitle="Protected regions awaiting approval · ritual writes only"
+        title={t("dashboard.human-lock.title")}
+        subtitle={t("dashboard.human-lock.subtitle")}
       />
       {error !== null ? <DriftIndicator kind="banner" severity="drift" message={error} /> : null}
-      <div className="filter-bar" role="tablist" aria-label="Human lock filters">
+      <div className="filter-bar" role="tablist" aria-label={t("dashboard.human-lock.filters.aria-label")}>
         {(["all", "drift", "approved"] as const).map((item) => (
           <button
             key={item}
@@ -82,10 +84,15 @@ export function HumanLockView({ lastEvent }: HumanLockViewProps) {
             aria-selected={filter === item}
             onClick={() => setFilter(item)}
           >
-            {item}<span className="count">{counts[item]}</span>
+            {t(`dashboard.human-lock.filters.${item}`)}<span className="count">{counts[item]}</span>
           </button>
         ))}
-        <span className="filter-date">{counts.drift} drift · {counts.approved} confirmed</span>
+        <span className="filter-date">
+          {t("dashboard.human-lock.summary", {
+            drift: String(counts.drift),
+            approved: String(counts.approved),
+          })}
+        </span>
       </div>
       <div className="lock-grid">
         {visible.length > 0 ? visible.map((entry) => (
@@ -96,7 +103,7 @@ export function HumanLockView({ lastEvent }: HumanLockViewProps) {
             onApprove={approve}
             busy={busyKey === keyFor(entry)}
           />
-        )) : <div className="empty-card">No human lock entries for this filter.</div>}
+        )) : <div className="empty-card">{t("dashboard.human-lock.empty")}</div>}
       </div>
     </section>
   );

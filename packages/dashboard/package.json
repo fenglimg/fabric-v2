@@ -1,7 +1,7 @@
 {
-  "name": "@fabric/dashboard",
+  "name": "@fenglimg/fabric-dashboard",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
@@ -9,7 +9,7 @@
     "preview": "vite preview --host 127.0.0.1"
   },
   "dependencies": {
-    "@fabric/shared": "workspace:*",
+    "@fenglimg/fabric-shared": "workspace:*",
     "@preact/signals-core": "^1.8.0",
     "preact": "^10.27.0"
   },

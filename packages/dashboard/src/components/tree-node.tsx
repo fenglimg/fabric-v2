@@ -1,6 +1,7 @@
-import type { AgentsMetaNode } from "@fabric/shared";
+import type { AgentsMetaNode } from "@fenglimg/fabric-shared";
 import { useState } from "preact/hooks";
 
+import { useI18n } from "../i18n/use-i18n";
 import { DriftIndicator } from "./drift-indicator";
 
 export type TreeNodeProps = {
@@ -26,6 +27,7 @@ export function TreeNode({
   readOnly = false,
   children = [],
 }: TreeNodeProps) {
+  const { t } = useI18n();
   const [expanded, setExpanded] = useState(defaultExpanded);
   const hasChildren = children.length > 0;
   const path = node.file;
@@ -83,9 +85,9 @@ export function TreeNode({
         <span className="tree-caret" aria-hidden="true">{hasChildren ? "›" : "·"}</span>
         <span className="tree-icon" aria-hidden="true">{level === 0 ? "F" : level === 1 ? "D" : "R"}</span>
         <span className="tree-label">{path}</span>
-        {humanLockedNearby ? <span className="badge badge-locked">locked</span> : null}
+        {humanLockedNearby ? <span className="badge badge-locked">{t("dashboard.tree-node.locked")}</span> : null}
         {staleReason !== null ? (
-          <DriftIndicator kind="pill" severity={staleSeverity} message={staleReason} />
+          <DriftIndicator kind="pill" severity={staleSeverity} message={t(`dashboard.tree-node.stale.${staleReason}`)} />
         ) : null}
         <span className="tree-meta">
           <span className="badge badge-level">L{level}</span>

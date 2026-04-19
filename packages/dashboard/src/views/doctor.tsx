@@ -1,8 +1,9 @@
-import type { FabricEvent } from "@fabric/shared";
+import type { FabricEvent } from "@fenglimg/fabric-shared";
 import { useEffect, useState } from "preact/hooks";
 
 import { getDoctor, type DoctorCheck, type DoctorReport, type DoctorStatus } from "../api/client";
 import { DriftIndicator } from "../components";
+import { useI18n } from "../i18n/use-i18n";
 import { ViewHeader } from "./rules-tree";
 
 export type DoctorViewProps = {
@@ -10,6 +11,7 @@ export type DoctorViewProps = {
 };
 
 export function DoctorView({ lastEvent }: DoctorViewProps) {
+  const { locale, t } = useI18n();
   const [report, setReport] = useState<DoctorReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -46,66 +48,72 @@ export function DoctorView({ lastEvent }: DoctorViewProps) {
   return (
     <section className="view">
       <ViewHeader
-        title="Doctor Console"
-        subtitle="fab doctor surface · framework, entry points, revision drift, protected paths"
+        title={t("dashboard.doctor.title")}
+        subtitle={t("dashboard.doctor.subtitle")}
       />
       {error !== null ? <DriftIndicator kind="banner" severity="stale" message={error} /> : null}
       <div className="filter-bar doctor-toolbar">
-        <span className="filter-label">Overall</span>
+        <span className="filter-label">{t("dashboard.doctor.toolbar.overall")}</span>
         <DriftIndicator
           kind="pill"
           severity={mapSeverity(report?.status ?? "warn")}
-          message={report === null ? "loading" : report.status}
+          message={report === null ? t("dashboard.shared.loading") : t(`dashboard.shared.status.${report.status}`)}
         />
         <span className="filter-date">
           {report === null
-            ? "No summary yet"
-            : `${formatFramework(report.summary.framework)} · ${report.summary.entryPoints.length} entry point${report.summary.entryPoints.length === 1 ? "" : "s"}`}
+            ? t("dashboard.doctor.toolbar.no-summary")
+            : report.summary.entryPoints.length === 1
+              ? t("dashboard.doctor.toolbar.entry-point-summary", {
+                  framework: formatFramework(report.summary.framework, t),
+                  count: "1",
+                })
+              : t("dashboard.doctor.toolbar.entry-points-summary", {
+                  framework: formatFramework(report.summary.framework, t),
+                  count: String(report.summary.entryPoints.length),
+                })}
         </span>
-        <button className="ghost-button" type="button" onClick={() => void load()}>
-          Refresh
-        </button>
+        <button className="ghost-button" type="button" onClick={() => void load()}>{t("dashboard.shared.refresh")}</button>
       </div>
-      {loading && report === null ? <div className="empty-card">Loading doctor report...</div> : null}
+      {loading && report === null ? <div className="empty-card">{t("dashboard.doctor.empty.loading")}</div> : null}
       {report !== null ? (
         <div className="doctor-layout">
           <div className="doctor-summary-grid">
             <SummaryCard
-              label="Framework"
-              value={formatFramework(report.summary.framework)}
+              label={t("dashboard.doctor.summary.framework")}
+              value={formatFramework(report.summary.framework, t)}
               detail={
                 report.summary.metaRevision === null
-                  ? "No meta revision yet"
+                  ? t("dashboard.doctor.summary.no-meta-revision")
                   : `rev ${report.summary.metaRevision}`
               }
             />
             <SummaryCard
-              label="Protected paths"
+              label={t("dashboard.doctor.summary.protected-paths")}
               value={
                 report.summary.protectedPathCount === 0
-                  ? "No tracked paths"
-                  : `${report.summary.protectedPathCount} tracked`
+                  ? t("dashboard.doctor.summary.tracked-paths.none")
+                  : t("dashboard.doctor.summary.tracked-paths.some", { count: String(report.summary.protectedPathCount) })
               }
               detail={
                 report.summary.protectedPathsIntact
-                  ? "All approved hashes intact"
-                  : `${report.summary.driftCount} drifted`
+                  ? t("dashboard.doctor.summary.hashes-intact")
+                  : t("dashboard.doctor.summary.drifted", { count: String(report.summary.driftCount) })
               }
             />
             <SummaryCard
-              label="Intent ledger"
-              value={formatAge(report.summary.lastLedgerEntryAgeMs)}
+              label={t("dashboard.doctor.summary.intent-ledger")}
+              value={formatAge(report.summary.lastLedgerEntryAgeMs, t)}
               detail={
                 report.summary.lastLedgerEntryTs === null
-                  ? "No ledger entries yet"
-                  : new Date(report.summary.lastLedgerEntryTs).toLocaleString()
+                  ? t("dashboard.doctor.summary.no-ledger-entries")
+                  : new Date(report.summary.lastLedgerEntryTs).toLocaleString(locale)
               }
             />
           </div>
           <div className="doctor-panels">
             <article className="doctor-card">
               <div className="doctor-card-head">
-                <h3>Entry points</h3>
+                <h3>{t("dashboard.doctor.card.entry-points")}</h3>
                 <span>{report.summary.entryPoints.length}</span>
               </div>
               {report.summary.entryPoints.length > 0 ? (
@@ -118,12 +126,12 @@ export function DoctorView({ lastEvent }: DoctorViewProps) {
                   ))}
                 </div>
               ) : (
-                <div className="empty-card doctor-empty">No current entry points detected.</div>
+                <div className="empty-card doctor-empty">{t("dashboard.doctor.empty.entry-points")}</div>
               )}
             </article>
             <article className="doctor-card">
               <div className="doctor-card-head">
-                <h3>Checks</h3>
+                <h3>{t("dashboard.doctor.card.checks")}</h3>
                 <span>{report.checks.length}</span>
               </div>
               <div className="doctor-check-list">
@@ -158,11 +166,12 @@ function SummaryCard({
 }
 
 function CheckRow({ check }: { check: DoctorCheck }) {
+  const { t } = useI18n();
   return (
     <div className={`doctor-check doctor-check-${check.status}`}>
       <div className="doctor-check-head">
         <strong>{check.name}</strong>
-        <DriftIndicator kind="pill" severity={mapSeverity(check.status)} message={check.status} />
+        <DriftIndicator kind="pill" severity={mapSeverity(check.status)} message={t(`dashboard.shared.status.${check.status}`)} />
       </div>
       <p>{check.message}</p>
     </div>
@@ -180,38 +189,44 @@ function mapSeverity(status: DoctorStatus): "ok" | "locked" | "stale" {
   }
 }
 
-function formatFramework(framework: DoctorReport["summary"]["framework"]): string {
+function formatFramework(
+  framework: DoctorReport["summary"]["framework"],
+  t: ReturnType<typeof useI18n>["t"],
+): string {
   const parts = [framework.kind, framework.version, framework.subkind].filter(
     (part) => part !== "unknown",
   );
 
-  return parts.length > 0 ? parts.join(" · ") : "unknown";
+  return parts.length > 0 ? parts.join(" · ") : t("dashboard.doctor.framework.unknown");
 }
 
-function formatAge(ageMs: number | null): string {
+function formatAge(
+  ageMs: number | null,
+  t: ReturnType<typeof useI18n>["t"],
+): string {
   if (ageMs === null) {
-    return "No entries";
+    return t("dashboard.doctor.age.none");
   }
 
   const seconds = Math.floor(ageMs / 1000);
   if (seconds < 60) {
-    return `${seconds}s ago`;
+    return t("dashboard.doctor.age.seconds", { count: String(seconds) });
   }
 
   const minutes = Math.floor(seconds / 60);
   if (minutes < 60) {
-    return `${minutes}m ago`;
+    return t("dashboard.doctor.age.minutes", { count: String(minutes) });
   }
 
   const hours = Math.floor(minutes / 60);
   if (hours < 48) {
-    return `${hours}h ago`;
+    return t("dashboard.doctor.age.hours", { count: String(hours) });
   }
 
   const days = Math.floor(hours / 24);
   if (days < 14) {
-    return `${days}d ago`;
+    return t("dashboard.doctor.age.days", { count: String(days) });
   }
 
-  return `${Math.floor(days / 7)}w ago`;
+  return t("dashboard.doctor.age.weeks", { count: String(Math.floor(days / 7)) });
 }

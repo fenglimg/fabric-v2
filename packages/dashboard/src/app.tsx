@@ -2,25 +2,67 @@ import type { ComponentChildren } from "preact";
 import { useEffect, useMemo, useState } from "preact/hooks";
 
 import { useEvents } from "./hooks/use-events";
+import { I18nProvider } from "./i18n/provider";
+import { useI18n } from "./i18n/use-i18n";
 import { DoctorView } from "./views/doctor";
 import { HistoryReplayView } from "./views/history-replay";
 import { HumanLockView } from "./views/human-lock";
 import { IntentTimelineView } from "./views/intent-timeline";
 import { RulesTreeView } from "./views/rules-tree";
 
+declare const __DASHBOARD_VERSION__: string;
+
 type Route = "rules" | "locks" | "timeline" | "history" | "doctor";
 
-const routes: { id: Route; hash: string; label: string; subtitle: string }[] = [
-  { id: "rules", hash: "#/rules", label: "Rules Tree", subtitle: "meta graph" },
-  { id: "locks", hash: "#/locks", label: "Human Lock", subtitle: "protected regions" },
-  { id: "timeline", hash: "#/timeline", label: "Intent Timeline", subtitle: "ledger stream" },
-  { id: "history", hash: "#/history", label: "History Replay", subtitle: "time travel" },
-  { id: "doctor", hash: "#/doctor", label: "Doctor", subtitle: "fab diagnostics" },
-];
-
 export function App() {
+  return (
+    <I18nProvider>
+      <AppContent />
+    </I18nProvider>
+  );
+}
+
+function AppContent() {
+  const { t } = useI18n();
   const [route, setRoute] = useState<Route>(readRoute());
   const events = useEvents();
+  const routes = [
+    {
+      id: "rules" as const,
+      hash: "#/rules",
+      label: t("dashboard.app.nav.rules.label-bilingual"),
+      subtitle: t("dashboard.app.nav.rules.subtitle"),
+      breadcrumb: t("dashboard.app.breadcrumb.rules"),
+    },
+    {
+      id: "locks" as const,
+      hash: "#/locks",
+      label: t("dashboard.app.nav.locks.label-bilingual"),
+      subtitle: t("dashboard.app.nav.locks.subtitle"),
+      breadcrumb: t("dashboard.app.breadcrumb.locks"),
+    },
+    {
+      id: "timeline" as const,
+      hash: "#/timeline",
+      label: t("dashboard.app.nav.timeline.label-bilingual"),
+      subtitle: t("dashboard.app.nav.timeline.subtitle"),
+      breadcrumb: t("dashboard.app.breadcrumb.timeline"),
+    },
+    {
+      id: "history" as const,
+      hash: "#/history",
+      label: t("dashboard.app.nav.history.label-bilingual"),
+      subtitle: t("dashboard.app.nav.history.subtitle"),
+      breadcrumb: t("dashboard.app.breadcrumb.history"),
+    },
+    {
+      id: "doctor" as const,
+      hash: "#/doctor",
+      label: t("dashboard.app.nav.doctor.label-bilingual"),
+      subtitle: t("dashboard.app.nav.doctor.subtitle"),
+      breadcrumb: t("dashboard.app.breadcrumb.doctor"),
+    },
+  ];
 
   useEffect(() => {
     const handleHashChange = () => setRoute(readRoute());
@@ -34,14 +76,14 @@ export function App() {
   const activeRoute = useMemo(() => routes.find((item) => item.id === route) ?? routes[0], [route]);
 
   return (
-    <AppShell connected={events.connected} port={readPort()} activeRoute={activeRoute.label}>
+    <AppShell connected={events.connected} port={readPort()} activeRoute={activeRoute.id}>
       <aside className="sidebar">
         <div className="brand">
           <span className="brand-logo">F</span>
           <span>fabric</span>
-          <span className="brand-version">v1.1</span>
+          <span className="brand-version">{`v${__DASHBOARD_VERSION__}`}</span>
         </div>
-        <nav aria-label="Dashboard views">
+        <nav aria-label={t("dashboard.app.nav.aria-label")}>
           {routes.map((item) => (
             <a
               key={item.id}
@@ -55,20 +97,20 @@ export function App() {
             </a>
           ))}
         </nav>
-        <div className="nav-section">Diagnostics</div>
-        <span className="nav-item muted-nav"><span className="dot" />Drift Check</span>
+        <div className="nav-section">{t("dashboard.app.nav.section.diagnostics")}</div>
+        <span className="nav-item muted-nav"><span className="dot" />{t("dashboard.app.nav.drift-check")}</span>
       </aside>
       <main className="main">
         <header className="header">
           <div className="breadcrumb">
             <span>{window.location.pathname === "/" ? "~" : window.location.pathname}</span>
             <span className="sep">/</span>
-            <strong>{activeRoute.label.toLowerCase().replaceAll(" ", "-")}</strong>
+            <strong>{activeRoute.breadcrumb}</strong>
           </div>
           <div className="header-actions">
             <span className={`badge-live ${events.connected ? "connected" : "disconnected"}`}>
               <span className="pulse" aria-hidden="true" />
-              {events.connected ? "CONNECTED" : "CONNECTING"}
+              {events.connected ? t("dashboard.app.header.connected") : t("dashboard.app.header.connecting")}
             </span>
             <span className="port-label">:{readPort()} /events</span>
           </div>
@@ -80,7 +122,7 @@ export function App() {
         {route === "doctor" ? <DoctorView lastEvent={events.lastEvent} /> : null}
       </main>
       <div className="live-region" aria-live="polite" aria-atomic="true">
-        {events.lastEvent === null ? "" : `Received ${events.lastEvent.type}`}
+        {events.lastEvent === null ? "" : t("dashboard.app.live-region.received", { type: events.lastEvent.type })}
       </div>
     </AppShell>
   );

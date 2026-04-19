@@ -1,14 +1,16 @@
-import type { AgentsMeta, AgentsMetaNode, FabricEvent } from "@fabric/shared";
+import type { AgentsMeta, AgentsMetaNode, FabricEvent } from "@fenglimg/fabric-shared";
 import { useEffect, useMemo, useState } from "preact/hooks";
 
 import { getHumanLock, getRules, type HumanLockStatus } from "../api/client";
 import { DriftIndicator, TreeNode, type TreeNodeProps } from "../components";
+import { useI18n } from "../i18n/use-i18n";
 
 export type RulesTreeViewProps = {
   lastEvent: FabricEvent | null;
 };
 
 export function RulesTreeView({ lastEvent }: RulesTreeViewProps) {
+  const { t } = useI18n();
   const [rules, setRules] = useState<AgentsMeta | null>(null);
   const [locks, setLocks] = useState<HumanLockStatus[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
@@ -43,8 +45,8 @@ export function RulesTreeView({ lastEvent }: RulesTreeViewProps) {
   return (
     <section className="view">
       <ViewHeader
-        title="Rules Tree Browser"
-        subtitle=".fabric/agents.meta.json · L0/L1/L2 hierarchy · hash drift aware"
+        title={t("dashboard.rules-tree.title")}
+        subtitle={t("dashboard.rules-tree.subtitle")}
       />
       {error !== null ? <DriftIndicator kind="banner" severity="stale" message={error} /> : null}
       <div className="view-split">
@@ -53,16 +55,23 @@ export function RulesTreeView({ lastEvent }: RulesTreeViewProps) {
             <input
               value={filter}
               onInput={(event) => setFilter(event.currentTarget.value)}
-              placeholder="Filter by file, glob, priority, hash..."
-              aria-label="Filter rules tree"
+              placeholder={t("dashboard.rules-tree.filter.placeholder")}
+              aria-label={t("dashboard.rules-tree.filter.aria-label")}
             />
-            <button className="ghost-button" type="button" onClick={() => void load()}>Refresh</button>
+            <button className="ghost-button" type="button" onClick={() => void load()}>{t("dashboard.shared.refresh")}</button>
           </div>
           <div className="status-line">
-            <span>{rules === null ? "loading rules" : `${Object.keys(rules.nodes).length} nodes · rev ${rules.revision}`}</span>
-            <span>{locks.length} human locks</span>
+            <span>
+              {rules === null
+                ? t("dashboard.rules-tree.status.loading")
+                : t("dashboard.rules-tree.status.nodes", {
+                    count: String(Object.keys(rules.nodes).length),
+                    revision: rules.revision,
+                  })}
+            </span>
+            <span>{t("dashboard.rules-tree.status.locks", { count: String(locks.length) })}</span>
           </div>
-          <div className="tree" role="tree" aria-label="Fabric rules tree">
+          <div className="tree" role="tree" aria-label={t("dashboard.rules-tree.tree.aria-label")}>
             {tree.length > 0 ? tree.map((node) => (
               <TreeNode
                 key={node.node.file}
@@ -70,20 +79,20 @@ export function RulesTreeView({ lastEvent }: RulesTreeViewProps) {
                 selected={node.node.file === selected}
                 onSelect={setSelected}
               />
-            )) : <div className="empty-card">No matching rules found.</div>}
+            )) : <div className="empty-card">{t("dashboard.rules-tree.empty")}</div>}
           </div>
         </div>
         <aside className="detail-panel">
-          <h3>Node Detail</h3>
+          <h3>{t("dashboard.rules-tree.detail.title")}</h3>
           {selectedNode === null ? (
-            <p className="muted">Select a rule node to inspect scope, dependencies, priority and hash.</p>
+            <p className="muted">{t("dashboard.rules-tree.detail.empty")}</p>
           ) : (
             <div className="kv">
-              <Kv label="file" value={selectedNode.file} />
-              <Kv label="scope" value={selectedNode.scope_glob} />
-              <Kv label="priority" value={selectedNode.priority} />
-              <Kv label="hash" value={selectedNode.hash} />
-              <pre className="code">{selectedNode.deps.length > 0 ? selectedNode.deps.join("\n") : "no deps"}</pre>
+              <Kv label={t("dashboard.rules-tree.detail.file")} value={selectedNode.file} />
+              <Kv label={t("dashboard.rules-tree.detail.scope")} value={selectedNode.scope_glob} />
+              <Kv label={t("dashboard.rules-tree.detail.priority")} value={selectedNode.priority} />
+              <Kv label={t("dashboard.rules-tree.detail.hash")} value={selectedNode.hash} />
+              <pre className="code">{selectedNode.deps.length > 0 ? selectedNode.deps.join("\n") : t("dashboard.rules-tree.detail.no-deps")}</pre>
             </div>
           )}
         </aside>

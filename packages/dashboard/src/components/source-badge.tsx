@@ -1,3 +1,5 @@
+import { useI18n } from "../i18n/use-i18n";
+
 export type SourceBadgeProps = {
   source: "ai" | "human";
   size?: "sm" | "md";
@@ -15,6 +17,7 @@ export function SourceBadge({
   selected = false,
   onClick,
 }: SourceBadgeProps) {
+  const { t } = useI18n();
   const className = [
     "source-badge",
     `source-badge-${source}`,
@@ -24,7 +27,7 @@ export function SourceBadge({
   ]
     .filter(Boolean)
     .join(" ");
-  const label = source.toUpperCase();
+  const label = t(`dashboard.source.${source}`);
 
   if (interactive) {
     return (

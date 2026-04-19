@@ -3,7 +3,7 @@ import type {
   FabricEvent,
   HumanLockEntry,
   LedgerEntry,
-} from "@fabric/shared";
+} from "@fenglimg/fabric-shared";
 
 export type HumanLockStatus = HumanLockEntry & {
   drift: boolean;
