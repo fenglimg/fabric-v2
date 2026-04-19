@@ -1,5 +1,6 @@
 export const allCommands = {
   bootstrap: () => import("./bootstrap.js").then((module) => module.default),
+  doctor: () => import("./doctor.js").then((module) => module.default),
   init: () => import("./init.js").then((module) => module.default),
   scan: () => import("./scan.js").then((module) => module.default),
   serve: () => import("./serve.js").then((module) => module.default),

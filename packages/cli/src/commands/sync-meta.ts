@@ -2,11 +2,17 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 
-import type { AgentsMeta } from "@fenglimg/fabric-shared";
+import {
+  agentsMetaSchema,
+  deriveAgentsMetaLayer,
+  deriveAgentsMetaTopologyType,
+  type AgentsLayer,
+  type AgentsMeta,
+  type AgentsTopologyType,
+} from "@fenglimg/fabric-shared";
 import { defineCommand } from "citty";
 
 import { t } from "../i18n.js";
-import { resolveIgnores } from "../scanner/ignores.js";
 
 type NodeMeta = AgentsMeta["nodes"][string];
 
@@ -64,12 +70,18 @@ export function computeAgentsMeta(target: string): AgentsMeta {
   const metaPath = join(target, ".fabric", "agents.meta.json");
   const existingMeta = readExistingMeta(metaPath);
   const existingByFile = indexExistingNodesByFile(existingMeta);
-  const agentsFiles = findAgentsFiles(target);
+  const agentsFiles = findFabricAgentsFiles(target);
   const nodes: Record<string, NodeMeta> = {};
+
+  const bootstrapNode = createBootstrapNode(target, existingByFile.get("AGENTS.md")?.node);
+
+  if (bootstrapNode !== undefined) {
+    nodes.L0 = bootstrapNode;
+  }
 
   for (const file of agentsFiles) {
     const existing = existingByFile.get(file);
-    const id = existing?.id ?? deriveNodeId(file);
+    const id = deriveNodeId(file);
     const hash = sha256(readFileSync(join(target, file), "utf8"));
     const defaults = createDefaultNodeMeta(file);
 
@@ -104,16 +116,21 @@ function readExistingMeta(metaPath: string): AgentsMeta | undefined {
   }
 
   try {
-    return JSON.parse(readFileSync(metaPath, "utf8")) as AgentsMeta;
+    return agentsMetaSchema.parse(JSON.parse(readFileSync(metaPath, "utf8")));
   } catch {
     return undefined;
   }
 }
 
-function findAgentsFiles(target: string): string[] {
-  const ignorePatterns = resolveIgnores();
+function findFabricAgentsFiles(target: string): string[] {
+  const agentsRoot = join(target, ".fabric", "agents");
+
+  if (!existsSync(agentsRoot) || !statSync(agentsRoot).isDirectory()) {
+    return [];
+  }
+
   const files: string[] = [];
-  const stack = [target];
+  const stack = [agentsRoot];
 
   while (stack.length > 0) {
     const current = stack.pop();
@@ -125,13 +142,9 @@ function findAgentsFiles(target: string): string[] {
       const absolutePath = join(current, entry.name);
       const relativePath = toPosixPath(relative(target, absolutePath));
 
-      if (shouldIgnore(relativePath, entry.isDirectory(), ignorePatterns)) {
-        continue;
-      }
-
       if (entry.isDirectory()) {
         stack.push(absolutePath);
-      } else if (entry.isFile() && entry.name === "AGENTS.md") {
+      } else if (entry.isFile() && entry.name.endsWith(".md")) {
         files.push(relativePath);
       }
     }
@@ -140,27 +153,12 @@ function findAgentsFiles(target: string): string[] {
   return files.sort();
 }
 
-function shouldIgnore(relativePath: string, isDirectory: boolean, ignorePatterns: string[]): boolean {
-  return ignorePatterns.some((pattern) => matchesIgnorePattern(relativePath, isDirectory, pattern));
+export function deriveLayer(relativePath: string): AgentsLayer {
+  return deriveAgentsMetaLayer(relativePath);
 }
 
-function matchesIgnorePattern(relativePath: string, isDirectory: boolean, pattern: string): boolean {
-  const normalizedPattern = toPosixPath(pattern);
-
-  if (normalizedPattern === "**/*.meta") {
-    return relativePath.endsWith(".meta");
-  }
-
-  if (normalizedPattern.endsWith("/**")) {
-    const directoryPrefix = normalizedPattern.slice(0, -3);
-    return (
-      relativePath === directoryPrefix ||
-      relativePath.startsWith(`${directoryPrefix}/`) ||
-      (isDirectory && `${relativePath}/` === directoryPrefix)
-    );
-  }
-
-  return relativePath === normalizedPattern;
+export function deriveTopologyType(relativePath: string): AgentsTopologyType {
+  return deriveAgentsMetaTopologyType(relativePath);
 }
 
 function indexExistingNodesByFile(existingMeta: AgentsMeta | undefined): Map<string, { id: string; node: NodeMeta }> {
@@ -178,19 +176,71 @@ function deriveNodeId(file: string): string {
     return "L0";
   }
 
-  return file.replace(/\/AGENTS\.md$/, "");
+  const layer = deriveLayer(file);
+  const relativeStem = getMirrorRelativeStem(file);
+
+  return `${layer}/${relativeStem}`;
 }
 
 function createDefaultNodeMeta(file: string): NodeMeta {
-  const scope = file === "AGENTS.md" ? "**" : `${file.replace(/\/AGENTS\.md$/, "")}/**`;
+  const layer = deriveLayer(file);
+  const topologyType = deriveTopologyType(file);
 
   return {
     file,
-    scope_glob: scope,
-    deps: file === "AGENTS.md" ? [] : ["L0"],
-    priority: file === "AGENTS.md" ? "high" : "medium",
+    scope_glob: deriveScopeGlob(file),
+    deps: layer === "L0" ? [] : ["L0"],
+    priority: layer === "L0" ? "high" : "medium",
+    layer,
+    topology_type: topologyType,
     hash: "",
   };
+}
+
+function createBootstrapNode(target: string, existing: NodeMeta | undefined): NodeMeta | undefined {
+  const bootstrapPath = join(target, "AGENTS.md");
+
+  if (!existsSync(bootstrapPath)) {
+    return undefined;
+  }
+
+  const hash = sha256(readFileSync(bootstrapPath, "utf8"));
+
+  return {
+    ...createDefaultNodeMeta("AGENTS.md"),
+    ...existing,
+    file: "AGENTS.md",
+    hash,
+  };
+}
+
+function deriveScopeGlob(file: string): string {
+  if (file === "AGENTS.md") {
+    return "**";
+  }
+
+  const stem = getMirrorRelativeStem(file);
+  const segments = stem.split("/").filter(Boolean);
+
+  if (segments.length === 0 || stem === "root") {
+    return "**";
+  }
+
+  if (segments[0] === "_cross") {
+    return "**";
+  }
+
+  if (segments.at(-1) === "rules") {
+    segments.pop();
+  }
+
+  const scopePath = segments.join("/");
+
+  return scopePath === "" ? "**" : `${scopePath}/**`;
+}
+
+function getMirrorRelativeStem(file: string): string {
+  return file.replace(/^\.fabric\/agents\//, "").replace(/\.md$/, "");
 }
 
 function sortNodes(nodes: Record<string, NodeMeta>): Record<string, NodeMeta> {

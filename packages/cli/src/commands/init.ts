@@ -214,6 +214,8 @@ function createInitialMeta(agentsHash: string): AgentsMeta {
         scope_glob: "**",
         deps: [],
         priority: "high",
+        layer: "L0",
+        topology_type: "mirror",
         hash: agentsHash,
       },
     },

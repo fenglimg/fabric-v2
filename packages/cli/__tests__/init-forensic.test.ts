@@ -43,7 +43,14 @@ describe("initFabric forensic report", () => {
         );
       }
     }
-    expect(parsed.success && parsed.data.recommendations_for_skill.length).toBeGreaterThan(0);
+    expect(parsed.success && parsed.data.assertions.length).toBeGreaterThanOrEqual(5);
+    expect(parsed.success && parsed.data.candidate_files.length).toBeLessThanOrEqual(12);
+    expect(parsed.success && new Set(parsed.data.candidate_files.map((entry) => entry.family)).size).toBeGreaterThanOrEqual(3);
+    expect(parsed.success && parsed.data.sampling_budget).toEqual({
+      max_files: 15,
+      max_lines_per_file: 100,
+    });
+    expect(parsed.success && parsed.data.recommendations_for_skill?.length).toBeGreaterThan(0);
     expect(parsed.success && parsed.data.target).toBe(target);
     expect(result.forensicPath).toBe(join(target, ".fabric", "forensic.json"));
   });
