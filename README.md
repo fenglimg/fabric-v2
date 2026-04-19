@@ -20,6 +20,10 @@ pnpm -r build
 pnpm dlx @modelcontextprotocol/inspector node packages/server/dist/index.js
 ```
 
+## Initialization Guide
+
+`fab init` now does more than create a scaffold. It writes the evidence pack in `.fabric/`, installs the Claude handoff files under `.claude/`, and leaves a safe fallback `AGENTS.md` for non-Claude flows. For the full 7-stage walkthrough from `fab init` to the `agents-md-init` interview, see [docs/initialization.md](./docs/initialization.md).
+
 ## Roadmap
 
 See [docs/roadmap.md](./docs/roadmap.md) for the deferred v1.1 maintenance milestone, including `drift-check`, `fab migrate`, `fab doctor`, and the Copilot fallback path.
