@@ -1,37 +1,20 @@
-# { projectName } — L0 AGENTS.md
+# { projectName } — Fabric Bootstrap Protocol
 
-<!-- This is the fallback template. If you have Claude Code, run the agents-md-init skill for a semantically richer AGENTS.md. -->
+## CORE RULES (DO NOT TRANSLATE)
 
-This file is the non-AI fallback scaffold for a Cocos Creator codebase. Prefer conservative edits and preserve editor-generated assets.
+MUST: Treat this file as the Fabric Protocol bootstrap for this repository.
+MUST: Treat `.fabric/agents/` as the authoritative home for all AI shadow constraints.
+MUST: Before ANY code reading, architecture planning, or logic modification, call `fab_get_rules(path=<target file>)`.
+MUST: When creating or changing an L1/L2 rule node, keep `.fabric/agents.meta.json` synchronized through Fabric tooling.
+MUST: Preserve protected tokens exactly: `AGENTS.md`, `.fabric/agents/`, `.fabric/agents.meta.json`, `fab_get_rules`, `shadow constraints`, `Shadow Mirroring`, `MUST`, `NEVER`.
+NEVER: Add import-style directive lines to this bootstrap file.
+NEVER: Put Cocos, asset, prefab, scene, repository rule bodies, or submodule rules in this file.
+NEVER: Create colocated `AGENTS.md` rule files under source directories.
 
-<!-- fab:index -->
-<!-- /fab:index -->
+## 使用说明 / Explanation
 
-## Human Documentation References
-
-- `README.md` is the source of truth for gameplay intent, scene flow, setup, and packaging steps.
-- Cocos Editor settings, prefab wiring, and scene structure are human-reviewed surfaces; ask before broad refactors.
-- When code and editor data disagree, inspect both before changing either side.
-
-## L0 AI Constraints
-
-- Component scripts must follow the existing Cocos pattern: import from `cc`, destructure decorators from `_decorator`, apply `@ccclass`, and extend `Component`.
-- Respect Cocos lifecycle order. Put initialization in `onLoad` or `start`, cleanup in `onDestroy`, and keep `update` lightweight and frame-safe.
-- Do not mark `update()` as `async` and do not introduce blocking or network-heavy work into frame callbacks.
-- Preserve `.meta` files, prefab references, scene bindings, and asset UUID relationships unless the task explicitly requires coordinated editor changes.
-- Prefer targeted script edits over renaming assets, moving prefab trees, or restructuring `assets/` folders.
-
-## Cocos Baseline
-
-- Keep gameplay logic inside component boundaries or small helpers that are already imported by components.
-- When adding new nodes or serialized fields, match the repository's existing decorator and property style.
-- Validate with the smallest relevant TypeScript or project command first; only ask for editor-side verification when asset wiring changes.
-
-## @HUMAN
-
-- Human-owned decisions belong in this section or `.fabric/human-lock.json`; AI must pause before changing them.
-- Record protected scenes, prefabs, release assets, or multiplayer protocol invariants here.
-
-## L1 Candidate Notes
-
-- Add scoped AGENTS.md files only for large subtrees such as `assets/scripts`, `assets/prefabs`, or `assets/scenes` when they gain distinct local rules.
+- 本文件只负责启动 Fabric Bootstrap Protocol，不承载 Cocos 业务或编辑器规则。
+- Detected framework kind: `cocos-creator`.
+- This repository uses `Shadow Mirroring`: source directories contain ZERO rule files, while `.fabric/agents/` mirrors source paths for AI constraints.
+- 根级规则应放在 `.fabric/agents/root.md`；跨领域规则应放在 `.fabric/agents/_cross/`。
+- If `.fabric/agents/root.md` is missing, stop normal coding and run the initialization flow that creates shadow constraints.

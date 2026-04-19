@@ -1,35 +1,20 @@
-# { projectName } — L0 AGENTS.md
+# { projectName } — Fabric Bootstrap Protocol
 
-<!-- This is the fallback template. If you have Claude Code, run the agents-md-init skill for a semantically richer AGENTS.md. -->
+## CORE RULES (DO NOT TRANSLATE)
 
-This file is the non-AI fallback scaffold for repositories that have not gone through semantic AGENTS initialization yet.
+MUST: Treat this file as the Fabric Protocol bootstrap for this repository.
+MUST: Treat `.fabric/agents/` as the authoritative home for all AI shadow constraints.
+MUST: Before ANY code reading, architecture planning, or logic modification, call `fab_get_rules(path=<target file>)`.
+MUST: When creating or changing an L1/L2 rule node, keep `.fabric/agents.meta.json` synchronized through Fabric tooling.
+MUST: Preserve protected tokens exactly: `AGENTS.md`, `.fabric/agents/`, `.fabric/agents.meta.json`, `fab_get_rules`, `shadow constraints`, `Shadow Mirroring`, `MUST`, `NEVER`.
+NEVER: Add import-style directive lines to this bootstrap file.
+NEVER: Put framework, domain, repository rule bodies, or submodule rules in this file.
+NEVER: Create colocated `AGENTS.md` rule files under source directories.
 
-<!-- fab:index -->
-<!-- /fab:index -->
+## 使用说明 / Explanation
 
-## Human Documentation References
-
-- `README.md` is the source of truth for setup, scripts, runtime expectations, and product behavior.
-- `CONTRIBUTING.md`, if present, overrides local assumptions for branching, review, and release workflow.
-- When documentation and code disagree, pause and ask a human before rewriting either source.
-
-## L0 AI Constraints
-
-- Keep changes small, reversible, and validated with the narrowest relevant command before broader builds.
-- Match existing repository patterns before introducing new abstractions, tooling, or file structure.
-- Avoid modifying secrets, deployment configuration, lockfiles, or generated artifacts unless the task explicitly requires it.
-
-## Framework Baseline
-
-- Fabric did not match this repository to a first-class scaffold. Detected framework kind: `{ frameworkKind }`.
-- Treat the current source tree and existing docs as the primary evidence before writing new rules.
-- Add L1 AGENTS.md files only for directories that have clearly different runtime, build, or safety constraints.
-
-## @HUMAN
-
-- Human-owned decisions belong in this section or `.fabric/human-lock.json`; AI must pause before changing them.
-- Record release gates, product invariants, or directories that need explicit approval here.
-
-## L1 Candidate Notes
-
-- Promote a directory to L1 only when it has its own commands, deployment surface, or irreversible side effects.
+- 本文件只负责启动 Fabric Bootstrap Protocol，不承载项目业务规则。
+- Detected framework kind: `{ frameworkKind }`.
+- This repository uses `Shadow Mirroring`: source directories contain ZERO rule files, while `.fabric/agents/` mirrors source paths for AI constraints.
+- 根级规则应放在 `.fabric/agents/root.md`；跨领域规则应放在 `.fabric/agents/_cross/`。
+- If `.fabric/agents/root.md` is missing, stop normal coding and run the initialization flow that creates shadow constraints.

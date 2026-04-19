@@ -1,37 +1,20 @@
-# { projectName } — L0 AGENTS.md
+# { projectName } — Fabric Bootstrap Protocol
 
-<!-- This is the fallback template. If you have Claude Code, run the agents-md-init skill for a semantically richer AGENTS.md. -->
+## CORE RULES (DO NOT TRANSLATE)
 
-This file is the non-AI fallback scaffold for a Next.js application using the App Router by default.
+MUST: Treat this file as the Fabric Protocol bootstrap for this repository.
+MUST: Treat `.fabric/agents/` as the authoritative home for all AI shadow constraints.
+MUST: Before ANY code reading, architecture planning, or logic modification, call `fab_get_rules(path=<target file>)`.
+MUST: When creating or changing an L1/L2 rule node, keep `.fabric/agents.meta.json` synchronized through Fabric tooling.
+MUST: Preserve protected tokens exactly: `AGENTS.md`, `.fabric/agents/`, `.fabric/agents.meta.json`, `fab_get_rules`, `shadow constraints`, `Shadow Mirroring`, `MUST`, `NEVER`.
+NEVER: Add import-style directive lines to this bootstrap file.
+NEVER: Put Next.js, route, repository rule bodies, or submodule rules in this file.
+NEVER: Create colocated `AGENTS.md` rule files under source directories.
 
-<!-- fab:index -->
-<!-- /fab:index -->
+## 使用说明 / Explanation
 
-## Human Documentation References
-
-- `README.md` is the source of truth for product flows, local setup, and deployment expectations.
-- Operational behavior for routes, caching, auth, or background jobs should be verified against code and docs together before refactoring.
-- If `CONTRIBUTING.md` exists, follow its review and release gates over local assumptions.
-
-## L0 AI Constraints
-
-- Treat `app/` as App Router unless the repository clearly uses another convention.
-- Keep React Server Components on the server side by default. Add `"use client"` only for components that need browser APIs, local state, effects, or event handlers.
-- Do not import server-only modules into client components, and do not access browser-only globals from server components or route handlers.
-- Keep data fetching, cache behavior, and mutations aligned with existing route, server action, and API handler patterns.
-- Prefer small route-local changes over broad restructuring of layouts, middleware, or caching policy.
-
-## Next Baseline
-
-- Preserve the server/client boundary at file level so the bundle stays predictable and hydration issues stay local.
-- Reuse existing patterns for route handlers, metadata, and loading or error states before creating new abstractions.
-- Validate the narrowest route or package command first, then run the broader build once local behavior is stable.
-
-## @HUMAN
-
-- Human-owned decisions belong in this section or `.fabric/human-lock.json`; AI must pause before changing them.
-- Record protected routes, auth assumptions, cache invariants, or SEO requirements here.
-
-## L1 Candidate Notes
-
-- Add scoped AGENTS.md files only for areas such as `app`, `components`, or `lib` when they gain strong local conventions.
+- 本文件只负责启动 Fabric Bootstrap Protocol，不承载 Next.js 业务或路由规则。
+- Detected framework kind: `next`.
+- This repository uses `Shadow Mirroring`: source directories contain ZERO rule files, while `.fabric/agents/` mirrors source paths for AI constraints.
+- 根级规则应放在 `.fabric/agents/root.md`；跨领域规则应放在 `.fabric/agents/_cross/`。
+- If `.fabric/agents/root.md` is missing, stop normal coding and run the initialization flow that creates shadow constraints.
