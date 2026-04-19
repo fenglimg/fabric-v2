@@ -1,29 +1,35 @@
 # { projectName } — L0 AGENTS.md
 
-// TODO: describe project purpose.
+<!-- This is the fallback template. If you have Claude Code, run the agents-md-init skill for a semantically richer AGENTS.md. -->
 
-<!-- TODO: tech stack: detected framework is { frameworkKind }. Verify this manually before replacing TODOs. -->
+This file is the non-AI fallback scaffold for repositories that have not gone through semantic AGENTS initialization yet.
 
 <!-- fab:index -->
 <!-- /fab:index -->
 
 ## Human Documentation References
 
-// TODO: reference README.md sections that are source-of-truth for humans.
-// TODO: reference CONTRIBUTING.md if this project has one.
+- `README.md` is the source of truth for setup, scripts, runtime expectations, and product behavior.
+- `CONTRIBUTING.md`, if present, overrides local assumptions for branching, review, and release workflow.
+- When documentation and code disagree, pause and ask a human before rewriting either source.
 
 ## L0 AI Constraints
 
-// TODO: list hard constraints, e.g., ban any, require TypeScript strict.
-// TODO: list commands AI may run for validation.
-// TODO: list files or directories AI must not modify without permission.
+- Keep changes small, reversible, and validated with the narrowest relevant command before broader builds.
+- Match existing repository patterns before introducing new abstractions, tooling, or file structure.
+- Avoid modifying secrets, deployment configuration, lockfiles, or generated artifacts unless the task explicitly requires it.
+
+## Framework Baseline
+
+- Fabric did not match this repository to a first-class scaffold. Detected framework kind: `{ frameworkKind }`.
+- Treat the current source tree and existing docs as the primary evidence before writing new rules.
+- Add L1 AGENTS.md files only for directories that have clearly different runtime, build, or safety constraints.
 
 ## @HUMAN
 
-// TODO: human-owned decisions live here. AI must not rewrite locked sentences.
-// TODO: placeholder locked sentence 1.
-// TODO: placeholder locked sentence 2.
+- Human-owned decisions belong in this section or `.fabric/human-lock.json`; AI must pause before changing them.
+- Record release gates, product invariants, or directories that need explicit approval here.
 
 ## L1 Candidate Notes
 
-// TODO: identify domain folders that may need scoped AGENTS.md files.
+- Promote a directory to L1 only when it has its own commands, deployment surface, or irreversible side effects.
