@@ -1,0 +1,107 @@
+{
+  "id": "TASK-010",
+  "title": "Extract v1.0-launch-story.md to docs/ + examples/ — three-act distribution",
+  "description": "将 1279 行 v1.0-launch-story.md 三幕脚本转化为公开访问的产品文档: 精简版 docs/launch-story.md, fab init 中文化 stdout 嵌入 getting-started.md Stage 2, examples/werewolf-minigame-stub/AGENTS.md 承接第二幕 300 行 werewolf 样例 (成为 E2E 夹具), docs/dashboard-tour.md 扩写第三幕 (标注 v1.1 专属). 前置: TASK-001 (roadmap 结构) + TASK-004 (getting-started 文档结构).",
+  "type": "docs",
+  "priority": "medium",
+  "effort": "large",
+  "action": "Create",
+  "scope": ["docs/launch-story.md", "docs/getting-started.md", "examples/werewolf-minigame-stub/", "docs/dashboard-tour.md"],
+  "depends_on": ["TASK-001", "TASK-004"],
+  "parallel_group": 7,
+  "files": [
+    {
+      "path": "docs/launch-story.md",
+      "action": "create",
+      "target": "condensed launch narrative",
+      "change": "精简版 v1.0-launch-story.md: 保留三幕结构, 裁剪至 200-300 行, 移除过度重复, 保留核心叙事弧和关键技术演示"
+    },
+    {
+      "path": "docs/getting-started.md",
+      "action": "modify",
+      "target": "Stage 2 section (fab init)",
+      "change": "在 Stage 2 'Initialize Fabric' 嵌入 fab init 的中文化 stdout 示例 (from launch story Act 1); 展示真实的 forensic evidence 输出"
+    },
+    {
+      "path": "examples/werewolf-minigame-stub/AGENTS.md",
+      "action": "create",
+      "target": "werewolf example AGENTS.md",
+      "change": "基于 launch story 第二幕 ~300 行 werewolf AGENTS.md 样例创建; 完整的 5-agent (村民/狼人/预言家/女巫/猎人) AGENTS.md; 可作为 E2E 测试夹具"
+    },
+    {
+      "path": "examples/werewolf-minigame-stub/README.md",
+      "action": "create",
+      "target": "example readme",
+      "change": "简短说明: werewolf-minigame-stub 是演示 Fabric multi-agent 协作的最小可运行样例"
+    },
+    {
+      "path": "docs/dashboard-tour.md",
+      "action": "create",
+      "target": "dashboard tour document",
+      "change": "扩写 launch story 第三幕 Dashboard 演示部分; 标注 'v1.1 专属' 标签; 截图占位符 + 功能说明; 覆盖 Ledger view / Rules view / Agents view"
+    }
+  ],
+  "implementation": [
+    "Read ANL-fabric-product-2026-04-19/v1.0-launch-story.md lines 1-400 (Act 1: first-run story)",
+    "Read v1.0-launch-story.md lines 400-800 (Act 2: werewolf AGENTS.md ~300 lines)",
+    "Read v1.0-launch-story.md lines 800-1279 (Act 3: Dashboard tour)",
+    "Create docs/launch-story.md: condense to 200-300 lines keeping narrative arc — intro + Act 1 condensed + Act 2 condensed + Act 3 condensed + closing",
+    "Update docs/getting-started.md Stage 2: find Stage 2 section, insert fab init stdout example block from Act 1 (the forensic evidence discovery sequence)",
+    "Create examples/werewolf-minigame-stub/AGENTS.md: extract and finalize werewolf AGENTS.md from Act 2 — 5 agents with roles, responsibilities, communication protocols",
+    "Create examples/werewolf-minigame-stub/README.md: 3-5 line description",
+    "Create docs/dashboard-tour.md: expand Act 3 content into structured tour; add [Screenshot: xxx] placeholders; add '> v1.1 Feature' callout boxes; cover 3 main views",
+    "Verify: launch-story.md line count <= 350; werewolf AGENTS.md has 5 agent definitions"
+  ],
+  "reference": {
+    "pattern": "Three-act story extraction into product documentation",
+    "files": [
+      "ANL-fabric-product-2026-04-19/v1.0-launch-story.md",
+      "docs/getting-started.md",
+      "docs/initialization.md"
+    ],
+    "examples": "AGENTS.md structure: frontmatter + agent definitions + protocols + example interactions"
+  },
+  "convergence": {
+    "criteria": [
+      "docs/launch-story.md exists with line count between 150-400",
+      "docs/getting-started.md Stage 2 section contains a code block showing fab init stdout output",
+      "examples/werewolf-minigame-stub/AGENTS.md exists and contains >= 5 agent definitions",
+      "docs/dashboard-tour.md exists and contains 'v1.1' tag/callout in >= 1 location",
+      "docs/dashboard-tour.md covers >= 3 Dashboard view sections (Ledger, Rules, Agents)"
+    ],
+    "definition_of_done": "1279 行脚本的核心价值以 4 个文档位置公开访问; werewolf AGENTS.md 可作为真实 E2E 夹具使用"
+  },
+  "rationale": {
+    "chosen_approach": "三幕分发 — 每幕对应一个文档角色; 精简版 launch-story 保留叙事完整性",
+    "alternatives_considered": ["直接 publish 原始 1279 行脚本", "仅保留 examples/ 不建 launch-story.md"],
+    "decision_factors": ["原始脚本包含 v1.1 Dashboard 内容, 需标注区分", "werewolf AGENTS.md 是 multi-agent 协作的最佳演示案例", "getting-started 需要真实 stdout 示例增加可信度"],
+    "tradeoffs": "精简版 launch-story.md 需要判断哪些内容可裁剪, 保留叙事弧的完整性"
+  },
+  "test": {
+    "manual_checks": [
+      "wc -l docs/launch-story.md → between 150-400",
+      "grep 'v1.1' docs/dashboard-tour.md → >= 1 match",
+      "Count agent definitions in examples/werewolf-minigame-stub/AGENTS.md → >= 5",
+      "docs/getting-started.md Stage 2 has code block with fab init output"
+    ],
+    "success_metrics": [
+      "launch-story.md <= 400 lines",
+      "werewolf AGENTS.md >= 5 agent sections",
+      "dashboard-tour.md covers 3 views"
+    ]
+  },
+  "cli_execution_id": "fabric-product-2026-04-19-TASK-010",
+  "cli_execution": {
+    "strategy": "merge_fork",
+    "merge_from": [
+      "fabric-product-2026-04-19-TASK-001",
+      "fabric-product-2026-04-19-TASK-004"
+    ]
+  },
+  "commit": {
+    "type": "docs",
+    "scope": "launch-story",
+    "message_template": "docs(launch-story): three-act distribution to docs/ + examples/"
+  },
+  "status": "pending"
+}

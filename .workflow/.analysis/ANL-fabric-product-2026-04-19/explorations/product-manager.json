@@ -1,0 +1,691 @@
+{
+  "perspective": "product-manager",
+  "relevant_files": [
+    "README.md",
+    "docs/initialization.md",
+    "docs/quickstart.md",
+    "docs/roadmap.md",
+    "docs/day4-precommit-test.md",
+    "docs/day6-bootstrap.md",
+    "packages/cli/src/index.ts",
+    "packages/cli/src/commands/init.ts",
+    "packages/cli/src/commands/hooks.ts",
+    "packages/cli/src/commands/pre-commit.ts",
+    "packages/cli/src/commands/bootstrap.ts",
+    "packages/cli/src/commands/config.ts",
+    "packages/cli/src/commands/serve.ts",
+    "packages/dashboard/src/app.tsx",
+    "packages/dashboard/src/views/rules-tree.tsx",
+    "packages/dashboard/src/views/human-lock.tsx",
+    "packages/dashboard/src/views/intent-timeline.tsx",
+    "packages/dashboard/src/views/doctor.tsx",
+    "packages/dashboard/src/hooks/use-events.ts",
+    "packages/dashboard/src/api/client.ts",
+    "packages/server/src/tools/get-rules.ts",
+    "packages/server/src/tools/append-intent.ts",
+    "packages/server/src/tools/update-registry.ts",
+    "packages/server/src/api/events.ts",
+    ".workflow/.analysis/ANL-fabric-product-2026-04-19/exploration-codebase.json",
+    ".workflow/.analysis/ANL-fabric-product-2026-04-19/research.json",
+    ".workflow/.analysis/ANL-fabric-product-2026-04-19/discussion.md",
+    ".workflow/.lite-plan/fabric-dashboard-and-doc-init-2026-04-19/plan.json",
+    ".workflow/.analysis/ANL-fabric-mcp-dashboard-unified-2026-04-19/explorations.json",
+    ".workflow/.analysis/ANL-implement-fabric-v2-2026-04-18/discussion.md"
+  ],
+  "key_findings": [
+    {
+      "title": "Fabric 已具备从初始化到守护 commit 的 control-plane 闭环，但公开入口仍未把这条主线讲清楚",
+      "evidence": [
+        "docs/initialization.md:30-168",
+        "docs/quickstart.md:7-218",
+        "README.md:13-21"
+      ],
+      "implication": "v1.0 的发布叙事不能再以 repo build/inspector 为首页主路径，而要以 install -> init -> connect -> commit 为主叙事。"
+    },
+    {
+      "title": "CLI、MCP、AI client 已形成可运行的 control plane，Dashboard 应被定义为 observability plane，而不是第二个编辑器",
+      "evidence": [
+        "packages/server/src/tools/get-rules.ts:26-37",
+        "packages/server/src/tools/append-intent.ts:32-43",
+        "packages/server/src/tools/update-registry.ts:31-42",
+        "packages/dashboard/src/views/human-lock.tsx:44-66",
+        ".workflow/.lite-plan/fabric-dashboard-and-doc-init-2026-04-19/plan.json"
+      ],
+      "implication": "角色边界应明确为：CLI 负责安装与落规，MCP 负责运行时分发，AI client 负责执行，Dashboard 负责看见状态并只提供仪式性写操作。"
+    },
+    {
+      "title": "当前 roadmap 对 v1.1 的定义与实际实现进度不一致，Dashboard/fab serve 已是事实上的 v1.1 核心卖点",
+      "evidence": [
+        "docs/roadmap.md:1-75",
+        "packages/cli/src/commands/serve.ts:16-74",
+        "packages/dashboard/src/app.tsx:13-80",
+        ".workflow/.analysis/ANL-fabric-product-2026-04-19/research.json",
+        ".workflow/.lite-plan/fabric-dashboard-and-doc-init-2026-04-19/plan.json"
+      ],
+      "implication": "需要把版本边界重切为：v1.0 交付 control-plane MVP，v1.1 交付 observable maintenance，v1.2 交付 portability 和升级能力。"
+    },
+    {
+      "title": "产品的 aha moment 不是“能跑 MCP inspector”，而是“AI 在任意客户端第一次主动调用 fab_get_rules，然后 commit 被守住”",
+      "evidence": [
+        "docs/quickstart.md:188-218",
+        "packages/server/src/tools/get-rules.ts:27-35",
+        "packages/cli/src/commands/pre-commit.ts:34-50",
+        "docs/day4-precommit-test.md:17-60"
+      ],
+      "implication": "发布叙事要围绕 first protected edit 和 first guarded commit 设计，而不是围绕底层 transport 或工具链细节。"
+    },
+    {
+      "title": "Dashboard 当前能力证明了 Fabric 可以从“规则协议”升级为“团队观察台”，但仍必须坚持读多写少",
+      "evidence": [
+        "packages/dashboard/src/app.tsx:13-80",
+        "packages/dashboard/src/views/rules-tree.tsx:11-91",
+        "packages/dashboard/src/views/human-lock.tsx:68-102",
+        "packages/dashboard/src/views/intent-timeline.tsx:56-84",
+        "packages/dashboard/src/views/doctor.tsx:46-139"
+      ],
+      "implication": "Dashboard 的成功标准不是替代 IDE，而是把规则树、人工锁、意图流、诊断结果聚合成支持维护者判断的单屏入口。"
+    },
+    {
+      "title": "研究结论支持用 Prisma/Supabase 式文案定义 Fabric：CLI = control plane，Dashboard = observe plane",
+      "evidence": [
+        ".workflow/.analysis/ANL-fabric-product-2026-04-19/research.json"
+      ],
+      "implication": "对外文案应减少“这是一个 MCP server”式描述，增加“先用 CLI 落规，再用 Dashboard 看状态”的心智模型。"
+    },
+    {
+      "title": "当前 README、quickstart、initialization 三处入口割裂，造成产品故事分叉",
+      "evidence": [
+        "README.md:13-40",
+        "docs/initialization.md:1-247",
+        "docs/quickstart.md:1-224"
+      ],
+      "implication": "v1.0 应形成一个 canonical getting-started 页面，其他文档下沉为 deep dive；否则用户难以判断应该从哪里开始。"
+    }
+  ],
+  "code_anchors": [
+    {
+      "file": "README.md",
+      "lines": "13-21",
+      "snippet": "Placeholder workflow: pnpm install / pnpm -r build / inspector",
+      "significance": "仓库首页仍是开发者构建视角，不是产品用户视角；这是发布叙事当前最大的断点。"
+    },
+    {
+      "file": "docs/initialization.md",
+      "lines": "7-13",
+      "snippet": "`fab init` does three things in one command: Evidence / Protocol install / Trigger",
+      "significance": "定义了 Fabric 的核心产品动作：CLI 不只建 scaffold，而是同时准备 AI handoff。"
+    },
+    {
+      "file": "docs/initialization.md",
+      "lines": "157-168",
+      "snippet": "Stage 7: Daily Dev -> fab hooks install / fab sync-meta",
+      "significance": "把产品价值从一次性初始化延长到持续维护，证明 daily commit 才是生命周期终点。"
+    },
+    {
+      "file": "docs/quickstart.md",
+      "lines": "36-63",
+      "snippet": ".husky/pre-commit runs fab sync-meta --check-only / fab human-lint / fab ledger-append --staged",
+      "significance": "这是 v1.0 最强的 trust story：Fabric 在 commit 边界同时守 metadata、human lock、intent log。"
+    },
+    {
+      "file": "packages/cli/src/commands/init.ts",
+      "lines": "83-101",
+      "snippet": "Created ... Next: run fab hooks install ... Reason: .fabric/forensic.json is ready",
+      "significance": "命令末尾已经具备 next-step hint，适合作为统一 onboarding copy 模板推广到其他命令。"
+    },
+    {
+      "file": "packages/cli/src/commands/pre-commit.ts",
+      "lines": "34-48",
+      "snippet": "sync-meta --check-only -> human-lint -> ledger-append --staged",
+      "significance": "daily commit 的单一编排点，也是 Dashboard 三大核心数据面的生产链。"
+    },
+    {
+      "file": "packages/cli/src/commands/bootstrap.ts",
+      "lines": "149-182",
+      "snippet": "installBootstrap() + writeCodexBootstrap()",
+      "significance": "同一套协议能被分发到 6 个 AI client，是 Fabric 区别于单客户端规则文件的核心卖点。"
+    },
+    {
+      "file": "packages/cli/src/commands/config.ts",
+      "lines": "100-128",
+      "snippet": "config install writes Fabric MCP server entry into detected clients",
+      "significance": "把多客户端接入从手工配置改为产品化动作，是从“协议”到“工具”的关键跨越。"
+    },
+    {
+      "file": "packages/cli/src/commands/serve.ts",
+      "lines": "44-74",
+      "snippet": "startHttpServer(...) -> console.log(`Fabric Dashboard: http://${host}:${port}`)",
+      "significance": "fab serve 是 control plane 向 observability plane 开口的桥，天然应成为 v1.1 发布主标题。"
+    },
+    {
+      "file": "packages/dashboard/src/app.tsx",
+      "lines": "13-19",
+      "snippet": "Rules Tree / Human Lock / Intent Timeline / History Replay / Doctor",
+      "significance": "Dashboard 已经隐含了产品信息架构：规则、锁、意图、历史、诊断。"
+    },
+    {
+      "file": "packages/dashboard/src/app.tsx",
+      "lines": "39-43",
+      "snippet": "fabric v1.1",
+      "significance": "UI 已把自己声明为 v1.1 能力，但 roadmap 还没同步，这是版本叙事不一致的直接证据。"
+    },
+    {
+      "file": "packages/dashboard/src/views/human-lock.tsx",
+      "lines": "44-66",
+      "snippet": "approveHumanLock({ file, start_line, end_line, new_hash })",
+      "significance": "Dashboard 允许的写操作是“批准漂移”而不是“自由编辑”，证明其产品定位应是 ritual write。"
+    },
+    {
+      "file": "packages/dashboard/src/views/intent-timeline.tsx",
+      "lines": "45-53",
+      "snippet": "annotateIntent({ ledger_entry_id, annotation })",
+      "significance": "Dashboard 的第二个写入口是注解而非改写事实，强化其 observability-first 定位。"
+    },
+    {
+      "file": "packages/server/src/tools/get-rules.ts",
+      "lines": "27-35",
+      "snippet": "\"MANDATORY: Call before modifying any file\"",
+      "significance": "这是 AI client 的行为起点，也是 Fabric 把 AGENTS.md 从文档升级为运行时协议的关键句。"
+    },
+    {
+      "file": "packages/server/src/api/events.ts",
+      "lines": "17-25",
+      "snippet": "WATCHED_PATHS = [.fabric/agents.meta.json, .fabric/human-lock.json, .fabric/forensic.json, .intent-ledger.jsonl]",
+      "significance": "Dashboard 观察的不是抽象状态，而是 4 个关键项目事实源；这定义了 observability plane 的真实边界。"
+    }
+  ],
+  "call_chains": [
+    {
+      "name": "repo-evaluation-to-first-init",
+      "entry": "README 快速试用",
+      "chain": [
+        "pnpm install",
+        "pnpm -r build",
+        "fab init"
+      ],
+      "user_value": "让评估者先得到可运行的 CLI，再进入项目级启用流程。",
+      "sources": [
+        "README.md:17-21",
+        "packages/cli/src/commands/init.ts:83-101"
+      ]
+    },
+    {
+      "name": "init-to-ai-handoff",
+      "entry": "fab init 结束时的 reason line",
+      "chain": [
+        "fab init 写入 .fabric/forensic.json 和 fallback AGENTS.md",
+        "用户在 Claude Code 中发出完成初始化请求",
+        "agents-md-init interview 生成 init-context.json 和完整 AGENTS.md"
+      ],
+      "user_value": "把“机械初始化”和“语义初始化”分开，既保证 CLI 可预测，又保留 AI 的项目适配能力。",
+      "sources": [
+        "docs/initialization.md:77-154",
+        "packages/cli/src/commands/init.ts:83-101"
+      ]
+    },
+    {
+      "name": "bootstrap-and-connect-six-clients",
+      "entry": "fab bootstrap install",
+      "chain": [
+        "向 6 个 AI client 写入 bootstrap prompt",
+        "fab config install --dry-run",
+        "fab config install",
+        "重启客户端",
+        "客户端第一次调用 fab_get_rules"
+      ],
+      "user_value": "把“协议分发”和“MCP 接入”压缩成可复制的多客户端启用流程。",
+      "sources": [
+        "docs/quickstart.md:70-218",
+        "packages/cli/src/commands/bootstrap.ts:149-182",
+        "packages/cli/src/commands/config.ts:100-128",
+        "packages/server/src/tools/get-rules.ts:27-35"
+      ]
+    },
+    {
+      "name": "daily-commit-guardrail",
+      "entry": "fab hooks install",
+      "chain": [
+        ".husky/pre-commit 被安装到目标项目",
+        "sync-meta --check-only 检查 AGENTS.md 与 agents.meta.json 是否漂移",
+        "human-lint 检查 @HUMAN 锁",
+        "ledger-append --staged 记录本次意图"
+      ],
+      "user_value": "把 Fabric 的价值从“启动时配置”延伸到“每次 commit 都被守住”。",
+      "sources": [
+        "packages/cli/src/commands/hooks.ts:34-91",
+        "packages/cli/src/commands/pre-commit.ts:31-50",
+        "docs/day4-precommit-test.md:17-156"
+      ]
+    },
+    {
+      "name": "serve-to-observe",
+      "entry": "fab serve",
+      "chain": [
+        "startHttpServer(projectRoot, host, port)",
+        "Dashboard 通过 /api/* 拉取规则、锁、意图、doctor",
+        "Dashboard 通过 /events 订阅实时变化",
+        "维护者在 Human Lock / Intent Timeline 上执行批准或注解"
+      ],
+      "user_value": "把原本隐形的 project contract 变成可观察、可审核、可讲述的日常维护界面。",
+      "sources": [
+        "packages/cli/src/commands/serve.ts:44-74",
+        "packages/dashboard/src/api/client.ts:106-158",
+        "packages/dashboard/src/hooks/use-events.ts:32-69",
+        "packages/dashboard/src/views/human-lock.tsx:44-66",
+        "packages/dashboard/src/views/intent-timeline.tsx:45-53"
+      ]
+    }
+  ],
+  "user_journey_map": [
+    {
+      "stage": 1,
+      "name": "本地可运行",
+      "command": "pnpm install && pnpm -r build",
+      "persona_state": "评估者刚克隆或进入 Fabric 仓库，目标是先得到一个可运行的 `fab` 和 server 产物。",
+      "output": "本地 monorepo 构建完成，可执行 `fab` 相关命令。",
+      "next_action": "进入目标项目执行 `fab init`。",
+      "failure_mode": "README 首屏仍是 placeholder workflow，用户可能把 Fabric 理解成 repo demo 而非产品 onboarding。",
+      "touchpoints": [
+        "README",
+        "CLI"
+      ]
+    },
+    {
+      "stage": 2,
+      "name": "项目植入",
+      "command": "fab init",
+      "persona_state": "维护者希望把 Fabric 非破坏性地植入现有项目，但不想立即手写全部 AGENTS 规则。",
+      "output": "生成 `AGENTS.md` fallback、`.fabric/forensic.json`、`.fabric/agents.meta.json`、`.fabric/human-lock.json`，并给出 `Next` 与 `Reason`。",
+      "next_action": "在 AI client 中完成项目语义初始化。",
+      "failure_mode": "目标项目已有 `AGENTS.md` 或 `.fabric/` 时命令会中止；若用户没有理解 handoff 机制，会误以为初始化已经完成。",
+      "touchpoints": [
+        "CLI",
+        "Docs",
+        "AI Client"
+      ]
+    },
+    {
+      "stage": 3,
+      "name": "AI 接管初始化",
+      "command": "在 Claude Code 中发送“Finish AGENTS.md initialization”类请求",
+      "persona_state": "用户已接受 Fabric 的基本 scaffold，但需要 AI 根据真实项目结构补全不可变规则。",
+      "output": "生成 `.fabric/init-context.json` 与完整项目化 `AGENTS.md`，初始化真正闭环。",
+      "next_action": "安装 pre-commit 流水线，把规则从文档升级为守卫。",
+      "failure_mode": "如果用户在非 Claude 客户端中停下，当前自动 handoff 价值会下降为手工继续。",
+      "touchpoints": [
+        "AI Client",
+        "Docs",
+        "AGENTS.md"
+      ]
+    },
+    {
+      "stage": 4,
+      "name": "提交边界加固",
+      "command": "fab hooks install",
+      "persona_state": "用户已经接受 Fabric 是项目合同，现在希望 commit 不再绕开合同。",
+      "output": "`.husky/pre-commit` 被安装，未来每次 commit 都会跑 sync-meta、human-lint、ledger-append。",
+      "next_action": "把同一套规则传播给真实使用的 AI client。",
+      "failure_mode": "已有 hook 时若没有看清 append/skip 行为，可能担心 Fabric 覆盖现有团队钩子。",
+      "touchpoints": [
+        "CLI",
+        "Git Hook",
+        "Docs"
+      ]
+    },
+    {
+      "stage": 5,
+      "name": "协议分发到 AI 客户端",
+      "command": "fab bootstrap install --clients claude,cursor,windsurf,roo,gemini,codex",
+      "persona_state": "团队已经有多种 AI client，核心诉求是“同一套规则，不必手工维护 6 份文案”。",
+      "output": "各客户端拿到 Fabric bootstrap；Codex 通过 prepend `AGENTS.md` 头部接入。",
+      "next_action": "写入 MCP config，让客户端真正能调用 Fabric 工具。",
+      "failure_mode": "若现有客户端私有配置很多，用户会先担心覆盖风险，需要 dry-run / additive 叙事。",
+      "touchpoints": [
+        "CLI",
+        "AI Client",
+        "Docs"
+      ]
+    },
+    {
+      "stage": 6,
+      "name": "连接运行时规则服务",
+      "command": "fab config install --dry-run && fab config install",
+      "persona_state": "用户现在不再只想“读规则”，而是希望 AI 在编辑时主动向 Fabric 取规则。",
+      "output": "客户端 MCP 配置写入完成，重启后能看到 `fab_get_rules` / `fab_append_intent` / `fab_update_registry`。",
+      "next_action": "让任一客户端完成一次最小 smoke request，验证 MCP 生效。",
+      "failure_mode": "server path 不存在、未重启客户端、或已有配置冲突都会导致“装了但工具没出现”。",
+      "touchpoints": [
+        "CLI",
+        "MCP",
+        "AI Client",
+        "Docs"
+      ]
+    },
+    {
+      "stage": 7,
+      "name": "第一次受保护的 AI 编辑",
+      "command": "Before editing any file, call fab_get_rules for README.md ...",
+      "persona_state": "用户开始相信 Fabric 不是静态文档，而是运行时合同。",
+      "output": "AI client 返回带 `revision_hash` 的规则摘要，真正形成“改之前先问 Fabric”的习惯。",
+      "next_action": "在需要观察全局状态时启动 `fab serve`。",
+      "failure_mode": "如果客户端未自动调用工具，用户会把 Fabric 误判为只会写文件、不会真正参与执行。",
+      "touchpoints": [
+        "AI Client",
+        "MCP"
+      ]
+    },
+    {
+      "stage": 8,
+      "name": "可观察维护模式",
+      "command": "fab serve --port 7373",
+      "persona_state": "维护者已经进入日常协作阶段，希望统一查看规则树、人工锁、意图时间线和诊断状态。",
+      "output": "本地 Dashboard 在 `http://127.0.0.1:7373` 提供 rules / locks / timeline / history / doctor 视图，并通过 `/events` 实时刷新。",
+      "next_action": "把 Dashboard 当作维护台，而不是编辑器；只在批准漂移或补注解时写入。",
+      "failure_mode": "当前 UI 只有 `CONNECTING` 状态而无明确 unavailable 屏，会让用户误以为服务挂了还是网络慢。",
+      "touchpoints": [
+        "CLI",
+        "Dashboard",
+        "Events API"
+      ]
+    },
+    {
+      "stage": 9,
+      "name": "Daily Commit 闭环",
+      "command": "git add ... && git commit",
+      "persona_state": "用户的成功标准从“部署好了 Fabric”转变为“每一次 commit 都更可信”。",
+      "output": "漂移会被阻止、`@HUMAN` 区被守住、`.intent-ledger.jsonl` 追加本次意图，Dashboard 时间线同步更新。",
+      "next_action": "随着项目演化持续维护 `AGENTS.md`，而不是把它遗忘为一次性模板。",
+      "failure_mode": "若 ledger 没写入或 users 绕过 hook，Fabric 会退化成静态规则文件而非协作协议。",
+      "touchpoints": [
+        "Git Hook",
+        "CLI",
+        "Dashboard",
+        "AGENTS.md"
+      ]
+    }
+  ],
+  "role_matrix": {
+    "cli": {
+      "plane": "control plane",
+      "primary_role": "把 Fabric 安装进项目，并把规则、防线、接入配置落到磁盘与 Git 边界。",
+      "owns": [
+        "fab init",
+        "fab hooks install",
+        "fab bootstrap install",
+        "fab config install",
+        "fab serve",
+        "daily commit 前的本地守卫"
+      ],
+      "best_for": [
+        "一次性安装与升级",
+        "明确的下一步提示",
+        "非破坏性写入"
+      ],
+      "does_not_do": [
+        "不负责长期可视化观察",
+        "不负责在会话中解释项目语义",
+        "不直接替代 AI 客户端执行任务"
+      ],
+      "handoff_to": [
+        "ai_client",
+        "mcp",
+        "dashboard"
+      ]
+    },
+    "dashboard": {
+      "plane": "observability plane",
+      "primary_role": "把规则树、人工锁、意图流、历史与诊断变成维护者可见的单一观察台。",
+      "owns": [
+        "Rules Tree",
+        "Human Lock Vault",
+        "Intent Timeline",
+        "History Replay",
+        "Doctor Console"
+      ],
+      "best_for": [
+        "读多写少的维护流程",
+        "跨 AI / Human 的状态对齐",
+        "支撑团队沟通与发布演示"
+      ],
+      "does_not_do": [
+        "不承担大规模内容编辑",
+        "不与 IDE 竞争文件所有权",
+        "不应成为 Fabric 的唯一入口"
+      ],
+      "handoff_to": [
+        "cli",
+        "ai_client"
+      ],
+      "special_note": "仅保留批准 human-lock 漂移和给 intent 补注解两类 ritual write。"
+    },
+    "mcp": {
+      "plane": "runtime control plane",
+      "primary_role": "在 AI 真正要改文件时按路径下发规则，并把意图与 registry 变更收束到唯一协议入口。",
+      "owns": [
+        "fab_get_rules",
+        "fab_append_intent",
+        "fab_update_registry"
+      ],
+      "best_for": [
+        "把 AGENTS.md 从静态说明书升级为运行时约束",
+        "跨客户端保持同一行为契约",
+        "为 Dashboard 提供可信事实源"
+      ],
+      "does_not_do": [
+        "不做 onboarding 文案",
+        "不承担 UI 解释成本",
+        "不直接处理 Git hook 体验"
+      ],
+      "handoff_to": [
+        "ai_client",
+        "dashboard"
+      ]
+    },
+    "ai_client": {
+      "plane": "execution edge",
+      "primary_role": "在 Claude Code、Cursor、Windsurf、Roo、Gemini、Codex 的原生环境里消费 Fabric 规则并完成实际任务。",
+      "owns": [
+        "读取 bootstrap prompt",
+        "会话内调用 MCP 工具",
+        "完成 AGENTS 初始化访谈",
+        "执行真实编码/修改动作"
+      ],
+      "best_for": [
+        "把 Fabric 协议带到用户原本的工作流里",
+        "承接 same-session 或 cross-session handoff",
+        "验证 Fabric 是否真的能改变 AI 行为"
+      ],
+      "does_not_do": [
+        "不应自己发明另一套规则源",
+        "不应直接改 registry 文件",
+        "不应绕开 fab_get_rules 开始改文件"
+      ],
+      "handoff_to": [
+        "mcp",
+        "dashboard",
+        "cli"
+      ]
+    }
+  },
+  "version_feature_matrix": {
+    "v1.0": {
+      "theme": "Control Plane MVP",
+      "positioning": "先把 Fabric 做成一个可安装、可连接、可守住 daily commit 的协议产品。",
+      "feature_set": [
+        {
+          "feature": "fab init + AI handoff",
+          "why_here": "这是把 Fabric 种进项目的起点，且已具备非破坏性和 next-step 提示。 "
+        },
+        {
+          "feature": "fab hooks install + pre-commit triple",
+          "why_here": "这是 v1.0 的核心信任资产，直接支撑 daily commit 闭环。"
+        },
+        {
+          "feature": "fab bootstrap install for 6 clients",
+          "why_here": "多客户端一致性是 Fabric 的差异化卖点，必须在首发版本出现。"
+        },
+        {
+          "feature": "fab config install + first MCP smoke",
+          "why_here": "若没有客户端真正调起 `fab_get_rules`，Fabric 只是文件生成器，不是运行时协议。"
+        },
+        {
+          "feature": "基础 getting-started 文档闭环",
+          "why_here": "当前 README 仍是 placeholder，v1.0 首发前必须让首屏故事和真实能力一致。"
+        }
+      ],
+      "release_signal": "新用户可以在一个干净项目中于 15 分钟内完成 install/build -> init -> AI handoff -> hooks -> bootstrap -> config -> first fab_get_rules -> first guarded commit，并且 README 不再保留 placeholder workflow。",
+      "out_of_scope": [
+        "Dashboard 作为常驻观察台",
+        "doctor/support 控制台",
+        "schema migration",
+        "Copilot fallback compile"
+      ]
+    },
+    "v1.1": {
+      "theme": "Observable Maintenance",
+      "positioning": "把 Fabric 从“能守规则”升级为“能看见规则状态与维护代价”。",
+      "feature_set": [
+        {
+          "feature": "fab serve + Dashboard Feature #5",
+          "why_here": "这是当前最明确的产品升级点，能把 CLI 控制面和维护观察面分层讲清。"
+        },
+        {
+          "feature": "Rules Tree / Human Lock / Intent Timeline / History Replay / Doctor",
+          "why_here": "这些视图已经对应真实事实源，能支持维护者做 release readiness 和故障定位。"
+        },
+        {
+          "feature": "明确的 service health 与 support diagnostics",
+          "why_here": "6 客户端接入复杂度在 v1.1 才开始需要支持台式能力，符合 roadmap 中 doctor 的动机。"
+        },
+        {
+          "feature": "统一文案：CLI = control plane, Dashboard = observability plane",
+          "why_here": "没有这条文案，用户会继续问“我到底该用 CLI 还是 Dashboard”。"
+        }
+      ],
+      "release_signal": "维护者无需打开多个文件即可在 Dashboard 看见规则树、human lock 漂移、intent 流和诊断结果；`fab serve` 成为对外演示 Fabric 的默认命令。",
+      "out_of_scope": [
+        "跨版本 schema 升级工具",
+        "Copilot fallback compile 的正式承诺",
+        "更广的生态兼容承诺"
+      ]
+    },
+    "v1.2": {
+      "theme": "Portability And Trust At Scale",
+      "positioning": "把 Fabric 从单项目本地工具推进到可持续演进、可迁移、可对外发布的成熟产品。",
+      "feature_set": [
+        {
+          "feature": "drift-check",
+          "why_here": "当 Dashboard 已可见状态后，下一步是把“文档跟不上代码”前移为可管理风险。"
+        },
+        {
+          "feature": "fab migrate",
+          "why_here": "一旦 `.fabric/` schema 开始迭代，升级路径就必须产品化。"
+        },
+        {
+          "feature": "Copilot fallback compile",
+          "why_here": "这是扩大生态覆盖面的手段，应放在 control plane 和 observe plane 稳定之后。"
+        },
+        {
+          "feature": "版本/发布叙事正规化",
+          "why_here": "当前多包版本分裂、README/roadmap 不一致；v1.2 应补齐 changelog、releasing、统一 package story。"
+        }
+      ],
+      "release_signal": "Fabric 可以在不重做用户心智的前提下支持 schema 升级、更多客户端策略和更正式的对外版本承诺。",
+      "out_of_scope": [
+        "重品牌或视觉系统大改",
+        "把 Dashboard 变成通用 IDE"
+      ]
+    }
+  },
+  "persona": {
+    "primary": {
+      "name": "多 AI 客户端协作的仓库维护者",
+      "context": "通常是技术负责人、核心维护者或 AI enablement owner，负责让团队在 Claude Code / Cursor / Codex 等不同客户端下仍遵守同一套项目规则。",
+      "job_to_be_done": "在不牺牲现有工作流的前提下，把 AGENTS.md 变成所有 AI 客户端都会真正执行的项目合同，并确保每次 commit 都有最小可信度。",
+      "pain_points": [
+        "规则散落在多个客户端配置里，容易漂移",
+        "AI 能写代码，但难保证总是先读项目约束",
+        "团队缺少对 human lock、intent、meta drift 的统一观察面"
+      ],
+      "success_metric": "任意支持客户端都能先调 `fab_get_rules` 再动手，且 daily commit 能自动阻止明显违规。",
+      "why_primary": "当前代码与文档的绝大多数能力都围绕“多客户端一致性 + daily commit 防线”展开，而不是单人玩具工作流。"
+    },
+    "secondary": [
+      {
+        "name": "AI-native 的单人全栈开发者",
+        "job_to_be_done": "希望在一个项目内快速获得规则守卫，而不想维护复杂平台。"
+      },
+      {
+        "name": "平台工程或开发体验负责人",
+        "job_to_be_done": "希望把 Fabric 包装成团队标准件，用统一协议治理多个仓库。"
+      }
+    ]
+  },
+  "narrative_pillars": [
+    {
+      "pillar": "同一份人类合同，六个 AI 客户端共用",
+      "why_it_matters": "Fabric 的核心卖点不是某个单点命令，而是跨客户端一致性。"
+    },
+    {
+      "pillar": "CLI 负责落规，MCP 负责分发，Dashboard 负责看见",
+      "why_it_matters": "这能把当前散落的能力收束成简单心智模型，减少用户对组件职责的困惑。"
+    },
+    {
+      "pillar": "先保护 daily commit，再扩展高级治理",
+      "why_it_matters": "pre-commit triple 是最能产生立即价值的可信边界，适合作为 v1.0 的发布中心。"
+    },
+    {
+      "pillar": "每一步都给出下一步",
+      "why_it_matters": "研究显示 getting-started 需要单页、可验证、逐步推进；Fabric 已在 `fab init` 中具备这个势能。"
+    },
+    {
+      "pillar": "AGENTS.md 仍是人类真源，Fabric 只把它升级为运行时协议",
+      "why_it_matters": "这能避免用户误解 Fabric 会替代文档或抢夺仓库所有权。"
+    }
+  ],
+  "questions_for_user": [
+    "v1.0 的首发故事要以“从 monorepo 评估 Fabric”开场，还是要强行切到“npm install -g 后在任意项目启用”的最终消费叙事？当前代码和 README 两种故事并存。",
+    "是否确认把 Dashboard / `fab serve` 正式写入 roadmap 作为 v1.1 Feature #5？当前实现与计划已经默认它是 v1.1 头部能力。",
+    "是否接受把 v1.1 定义为 observability milestone，而把 `drift-check` / `fab migrate` / Copilot fallback 的一部分顺延到 v1.2，以避免 v1.1 目标过载？",
+    "对外一句话定位是否采用“Fabric 是多 AI 客户端协作的 consensus plane / control plane”这类叙事，还是保留更朴素的“AGENTS.md protocol + MCP server”表述？",
+    "primary persona 是否锁定为仓库维护者/技术负责人，而不是一般开发者？这将直接影响首页文案、成功案例与 demo 设计。"
+  ],
+  "_metadata": {
+    "generated_at": "2026-04-19T07:01:37Z",
+    "session_id": "ANL-fabric-product-2026-04-19",
+    "analysis_scope": "产品经理视角；专注用户旅程、角色边界、发布叙事、版本切分；不展开 i18n 技术实现与品牌视觉执行。",
+    "sources_used": [
+      ".workflow/.analysis/ANL-fabric-product-2026-04-19/exploration-codebase.json",
+      ".workflow/.analysis/ANL-fabric-product-2026-04-19/research.json",
+      ".workflow/.analysis/ANL-fabric-product-2026-04-19/discussion.md",
+      ".workflow/.lite-plan/fabric-dashboard-and-doc-init-2026-04-19/plan.json",
+      ".workflow/.analysis/ANL-fabric-mcp-dashboard-unified-2026-04-19/explorations.json",
+      ".workflow/.analysis/ANL-implement-fabric-v2-2026-04-18/discussion.md",
+      "README.md",
+      "docs/roadmap.md",
+      "docs/initialization.md",
+      "docs/quickstart.md",
+      "docs/day4-precommit-test.md",
+      "docs/day6-bootstrap.md",
+      "packages/cli/src/commands/*.ts",
+      "packages/cli/src/index.ts",
+      "packages/dashboard/src/app.tsx",
+      "packages/dashboard/src/views/*.tsx",
+      "packages/dashboard/src/hooks/use-events.ts",
+      "packages/dashboard/src/api/client.ts",
+      "packages/server/src/tools/*.ts",
+      "packages/server/src/api/events.ts"
+    ],
+    "validation_plan": [
+      "JSON syntax validation",
+      "field presence check against EXPECTED schema",
+      "manual spot-check of line anchors against source files"
+    ],
+    "confidence": "high",
+    "notable_assumptions": [
+      "将 `pnpm install` 视为当前仓库评估路径的起点，同时把 `fab init` 视为正式产品 onboarding 的起点。",
+      "将 Dashboard 定位为 observability plane，而非与 IDE/CLI 并列的自由编辑面。",
+      "将 v1.1 重新定义为可观察维护里程碑，是基于当前实现状态与 roadmap 缺口的产品切分建议。"
+    ]
+  }
+}

@@ -1,0 +1,168 @@
+{
+  "id": "TASK-008",
+  "title": "Wire i18n into CLI commands and Dashboard views — en + zh-CN first-class",
+  "description": "将 8 个 CLI 命令的 meta.description + stdout 输出替换为 t('key') 调用, Dashboard 5 个 views + components 通过 useI18n() 消费翻译. Dashboard 导航标签使用双语形式如 '规则树 Rules Tree'. CLI 添加 zh-CN / en snapshot 测试覆盖. 前置: TASK-005 (shared i18n 基础) 和 TASK-006 (CLI colors, 避免相同文件冲突).",
+  "type": "feature",
+  "priority": "medium",
+  "effort": "large",
+  "action": "Implement",
+  "scope": ["packages/cli/src/i18n.ts", "packages/cli/src/commands/", "packages/dashboard/src/i18n/", "packages/dashboard/src/views/", "packages/dashboard/src/components/"],
+  "depends_on": ["TASK-005", "TASK-006"],
+  "parallel_group": 5,
+  "files": [
+    {
+      "path": "packages/cli/src/i18n.ts",
+      "action": "create",
+      "target": "CLI i18n bootstrap",
+      "change": "Import createTranslator, detectNodeLocale from @fabric/shared; create and export t() bound to detected locale"
+    },
+    {
+      "path": "packages/cli/src/commands/init.ts",
+      "action": "modify",
+      "target": "meta.description + all stdout strings",
+      "change": "Import t from '../i18n'; replace hardcoded description and log strings with t('cli.init.*') keys"
+    },
+    {
+      "path": "packages/cli/src/commands/scan.ts",
+      "action": "modify",
+      "target": "meta.description + all stdout strings",
+      "change": "Replace hardcoded strings with t('cli.scan.*') keys"
+    },
+    {
+      "path": "packages/cli/src/commands/serve.ts",
+      "action": "modify",
+      "target": "meta.description + all stdout strings",
+      "change": "Replace hardcoded strings with t('cli.serve.*') keys"
+    },
+    {
+      "path": "packages/shared/src/i18n/locales/en.ts",
+      "action": "modify",
+      "target": "add all CLI + Dashboard translation keys",
+      "change": "Fill in en locale entries for all 8 CLI commands and 5 Dashboard views based on current hardcoded strings"
+    },
+    {
+      "path": "packages/shared/src/i18n/locales/zh-CN.ts",
+      "action": "modify",
+      "target": "add all CLI + Dashboard translation keys",
+      "change": "Fill in zh-CN locale entries — Chinese translations of all CLI/Dashboard strings"
+    },
+    {
+      "path": "packages/dashboard/src/i18n/provider.tsx",
+      "action": "create",
+      "target": "React i18n context provider",
+      "change": "I18nProvider component wrapping app; detects browser locale (navigator.language); provides i18n context"
+    },
+    {
+      "path": "packages/dashboard/src/i18n/use-i18n.ts",
+      "action": "create",
+      "target": "useI18n hook",
+      "change": "Custom hook: useI18n() → { t, locale } from context"
+    },
+    {
+      "path": "packages/dashboard/src/i18n/runtime.ts",
+      "action": "create",
+      "target": "Dashboard i18n runtime",
+      "change": "Load locale messages, detect browser locale (navigator.language with FAB_LANG override), use createTranslator from @fabric/shared"
+    },
+    {
+      "path": "packages/dashboard/src/views/LedgerView.tsx",
+      "action": "modify",
+      "target": "all display strings",
+      "change": "Import useI18n; replace hardcoded strings with t() calls; nav label = bilingual format"
+    },
+    {
+      "path": "packages/dashboard/src/views/RulesView.tsx",
+      "action": "modify",
+      "target": "all display strings + nav label",
+      "change": "Nav label: '规则树 Rules Tree'; all strings via t()"
+    },
+    {
+      "path": "packages/dashboard/src/views/AgentsView.tsx",
+      "action": "modify",
+      "target": "all display strings + nav label",
+      "change": "Nav label: '智能体 Agents'; all strings via t()"
+    },
+    {
+      "path": "packages/dashboard/src/views/SettingsView.tsx",
+      "action": "modify",
+      "target": "all display strings",
+      "change": "All strings via t()"
+    },
+    {
+      "path": "packages/cli/__tests__/i18n.test.ts",
+      "action": "create",
+      "target": "CLI i18n snapshot tests",
+      "change": "Snapshot tests for CLI init/scan/serve output in zh-CN locale (FAB_LANG=zh-CN) and en locale (NO_COLOR=1)"
+    }
+  ],
+  "implementation": [
+    "Create packages/cli/src/i18n.ts: import detectNodeLocale, createTranslator from @fabric/shared; populate and export t = createTranslator(detectNodeLocale(), messages)",
+    "Fill packages/shared/src/i18n/locales/en.ts and zh-CN.ts with actual strings from CLI commands (init, scan, serve, + remaining 5 commands) and Dashboard views",
+    "Update packages/cli/src/commands/init.ts, scan.ts, serve.ts and remaining 5 command files to use t() — change meta.description and all console.log strings",
+    "Create packages/dashboard/src/i18n/runtime.ts: browser locale detection using navigator.language, normalize via @fabric/shared normalizeLocale, createTranslator",
+    "Create packages/dashboard/src/i18n/use-i18n.ts: React context hook",
+    "Create packages/dashboard/src/i18n/provider.tsx: wrap app root with I18nProvider",
+    "Update packages/dashboard/src/app.tsx to wrap with I18nProvider",
+    "Update 5 Dashboard views to use useI18n() — bilingual nav labels per spec",
+    "Create packages/cli/__tests__/i18n.test.ts: snapshot 8 commands in zh-CN + en + NO_COLOR=1",
+    "Run pnpm -r build && pnpm -r test to verify"
+  ],
+  "reference": {
+    "pattern": "React Context i18n provider + Node locale detection",
+    "files": [
+      "packages/shared/src/i18n/create-translator.ts",
+      "packages/shared/src/i18n/detect-node-locale.ts",
+      "packages/dashboard/src/views/LedgerView.tsx"
+    ],
+    "examples": "Bilingual nav label format: '规则树 Rules Tree' — zh first, en after space"
+  },
+  "convergence": {
+    "criteria": [
+      "packages/cli/src/i18n.ts exists and exports t function",
+      "FAB_LANG=zh-CN fab scan produces Chinese output for meta.description and status messages",
+      "FAB_LANG=en fab scan produces English output",
+      "Dashboard nav label for RulesView contains '规则树 Rules Tree' (bilingual format)",
+      "packages/dashboard/src/i18n/provider.tsx, use-i18n.ts, runtime.ts all exist",
+      "packages/cli/__tests__/i18n.test.ts exists with zh-CN and en snapshots",
+      "pnpm -r build succeeds",
+      "pnpm --filter @fabric/cli test succeeds with all i18n snapshots passing"
+    ],
+    "definition_of_done": "CLI 8 命令 + Dashboard 5 views 通过 t() 消费翻译, 双 locale snapshot 测试覆盖, FAB_LANG 切换生效"
+  },
+  "rationale": {
+    "chosen_approach": "shared 包提供基础 i18n 基础设施 (TASK-005), CLI 和 Dashboard 各自消费 — 避免循环依赖",
+    "alternatives_considered": ["CLI 和 Dashboard 各自维护独立 i18n 实现", "使用 react-i18next", "编译时 i18n (无运行时)"],
+    "decision_factors": ["locked decision: default locale = en, zh-CN 一等公民", "shared 包的 createTranslator 可同时服务 CLI (Node) 和 Dashboard (browser)", "snapshot 测试是 locale 回归的关键守卫"],
+    "tradeoffs": "8 CLI 命令的字符串收集工作量较大; zh-CN 翻译质量取决于初始填充"
+  },
+  "risks": [
+    {
+      "description": "en.ts / zh-CN.ts key 集合在 TASK-005 骨架阶段可能不完整, TASK-008 需要补全",
+      "probability": "High",
+      "impact": "Low",
+      "mitigation": "TASK-008 开始时先收集所有命令的硬编字符串, 再填充 locales",
+      "fallback": "缺失 key 时 createTranslator 返回 key 本身作为 fallback"
+    },
+    {
+      "description": "TASK-006 和 TASK-008 都修改 commands/*.ts, 合并时可能冲突",
+      "probability": "Medium",
+      "impact": "Medium",
+      "mitigation": "TASK-008 depends_on TASK-006, 串行执行避免冲突",
+      "fallback": "手动解决冲突, 保留 colors.ts 替换 + t() 包裹"
+    }
+  ],
+  "cli_execution_id": "fabric-product-2026-04-19-TASK-008",
+  "cli_execution": {
+    "strategy": "merge_fork",
+    "merge_from": [
+      "fabric-product-2026-04-19-TASK-005",
+      "fabric-product-2026-04-19-TASK-006"
+    ]
+  },
+  "commit": {
+    "type": "feat",
+    "scope": "i18n",
+    "message_template": "feat(i18n): wire CLI + Dashboard with en/zh-CN, bilingual nav labels"
+  },
+  "status": "pending"
+}

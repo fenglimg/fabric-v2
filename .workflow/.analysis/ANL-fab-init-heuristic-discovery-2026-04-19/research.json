@@ -1,0 +1,63 @@
+{
+  "topic": "Check-not-Ask CLI UX + AI-agent instruction file topology + batch confirmation UX",
+  "mode": "detail-verification",
+  "timestamp": "2026-04-19T00:00:00.000Z",
+  "findings": [
+    {"finding": "Claude Code's new CLAUDE_CODE_NEW_INIT uses explore → gap-fill → reviewable-proposal → write — this IS the target Matcha pattern", "detail": "subagent explores codebase, fills gaps via follow-up questions, presents reviewable proposal BEFORE writing", "confidence": "High", "source_url": "https://code.claude.com/docs/en/memory"},
+    {"finding": "npm init is canonical 'detect-then-default' baseline in CLI tooling", "detail": "strictly additive; reads existing package.json; -y accepts all inferred defaults; NO other mainstream scaffolder (create-vite, create-next-app) does this", "confidence": "High", "source_url": "https://docs.npmjs.com/cli/v10/commands/npm-init"},
+    {"finding": "No established canonical term for 'Check-not-Ask'", "detail": "Closest terms: 'inferred defaults with confirmation' (npm), 'smart defaults' (Poetry, weaker), 'progressive disclosure' (Nielsen Norman)", "confidence": "High", "source_url": "https://clig.dev"},
+    {"finding": "Claude Code CLAUDE.md resolution: ALL ancestors CONCATENATE, not nearest-wins", "detail": "Files in ancestor dirs loaded fully at launch; subdirectory files lazy-load on-demand; local instructions appended LAST (recency weight)", "confidence": "High", "source_url": "https://code.claude.com/docs/en/memory"},
+    {"finding": ".claude/rules/*.md with paths: frontmatter = canonical 'co-located without duplication' solution", "detail": "Single rules file, path-scoped via YAML frontmatter — avoids physical co-location while preserving scope", "confidence": "High", "source_url": "https://code.claude.com/docs/en/memory"},
+    {"finding": "@import syntax in CLAUDE.md provides TOC/cross-reference (max depth 5)", "detail": "Root CLAUDE.md can @import subfiles, expanded inline at load time; no auto-sync but explicit hierarchy", "confidence": "High", "source_url": "https://code.claude.com/docs/en/memory"},
+    {"finding": "Cursor centralizes (.cursor/rules/), Claude Code distributes — two schools", "detail": "Cursor: central + subfolders. Claude Code: nearest+concatenate. AGENTS.md can bridge via @import", "confidence": "Medium", "source_url": "https://cursor.com/docs/context/rules"},
+    {"finding": "openai/codex uses single root-level AGENTS.md organized by domain (not co-located)", "detail": "Real-world example of centralized strategy in a multi-module repo", "confidence": "High", "source_url": "https://github.com/openai/codex"},
+    {"finding": "Inquirer.js has NO native 'batch assertion' prompt type", "detail": "Closest is checkbox (select from list); custom prompts needed for 'toggle which are wrong' UX", "confidence": "High", "source_url": "https://github.com/SBoudrias/Inquirer.js"}
+  ],
+  "best_practices": [
+    {"practice": "Frame as 'correct if wrong', not 'confirm each'", "rationale": "Shifts cognitive load to exception-handling — user only intervenes when AI is wrong", "source": "derived from Claude Code /init + CLI UX principles"},
+    {"practice": "Annotate evidence inline (file:line) with each inference", "rationale": "Builds trust; allows 2-sec verification; distinguishes from silent 'smart defaults'", "source": "npm init vs Poetry comparison"},
+    {"practice": "Three confidence tiers: HIGH = pre-accept with note, MEDIUM = batch-confirm, LOW = always-ask with evidence gap disclosure", "rationale": "Proportional user effort; calibrated per-inference-type risk", "source": "synthesis of clig.dev + /init model"},
+    {"practice": "Hybrid topology for monorepos: root concatenating rules + .claude/rules/*.md with paths: frontmatter for scope", "rationale": "Avoids physical duplication while respecting Claude Code's concatenation model; matches Cursor-style central org while being Claude Code native", "source": "code.claude.com/docs/en/memory"},
+    {"practice": "Root CLAUDE.md/AGENTS.md should @import children for explicit TOC", "rationale": "Navigable hierarchy; makes lazy-loading behavior visible to humans", "source": "Claude Code docs"},
+    {"practice": "Order inferences by 'load-bearing-ness': framework → patterns → invariants → scoped rules", "rationale": "If item 3 is wrong, items 4-7 may cascade — users need top-to-bottom priority signal", "source": "HCI wizard vs batch form studies"},
+    {"practice": "Always provide --yes / --no-confirm flag-based bypass", "rationale": "Preserves scriptability (clig.dev principle)", "source": "clig.dev"},
+    {"practice": "NEVER infer ban/require invariants at HIGH confidence without DIRECT code evidence", "rationale": "File presence != pattern adherence (e.g. tsconfig strict=false exists); direct grep/Read of code is required", "source": "derived from false-positive pitfall analysis"}
+  ],
+  "alternatives": [
+    {"option": "Blank-form questioning (current Phase 1/2)", "pros": "No false-positive risk; simple mental model", "cons": "Slow; forces user to recall knowledge that's already in code", "verdict": "Avoid for known-context init"},
+    {"option": "Full auto-accept with --interactive to override", "pros": "Fastest for experts", "cons": "Hides assumptions; erodes trust when wrong", "verdict": "Viable only with --dry-run preview"},
+    {"option": "Per-item confirm yes/no loop", "pros": "Granular control", "cons": "High cognitive fatigue for 5+ items", "verdict": "Avoid for batched inferences"},
+    {"option": "Batch assertion display → single correction pass", "pros": "Efficient; shows evidence; mirrors Claude /init", "cons": "Needs good visual design; riskier if user skims", "verdict": "RECOMMENDED primary pattern"},
+    {"option": "Tiered confidence (auto-accept HIGH, confirm MEDIUM, always-ask LOW)", "pros": "Proportional effort", "cons": "Requires calibrated scoring", "verdict": "RECOMMENDED implementation strategy"},
+    {"option": "Full co-located topology (AGENTS.md in every package)", "pros": "Obvious locality; matches file-tree mental model", "cons": "Claude Code lazy-loads subdirs — sub-rules invisible from root; duplication of cross-cutting concerns", "verdict": "Partial — use for truly independent sub-packages only"},
+    {"option": "Full centralized (.fabric/agents/*.md)", "pros": "Single source of truth; easy fab sync-meta", "cons": "Not Claude-Code-native (won't be picked up by CLAUDE.md resolution); loses locality", "verdict": "Reject for Claude Code use; works for tool-agnostic docs only"},
+    {"option": "Hybrid: co-located for scope-bound + .claude/rules/*.md with paths: frontmatter for cross-cutting", "pros": "Matches Claude Code's native resolution; scope-accurate; no duplication", "cons": "Two-file-type mental model", "verdict": "RECOMMENDED — this IS the Claude-Code-native best practice"}
+  ],
+  "pitfalls": [
+    {"issue": "False positive at HIGH confidence breeds distrust", "mitigation": "Require DIRECT code evidence (grep match count) for HIGH tier, not just file presence", "source": "CLI UX principles"},
+    {"issue": "Batch confirmation hides interdependencies — if item 3 wrong, 4-7 may cascade", "mitigation": "Order top-down by load-bearing-ness; note dependencies ('this assumes TypeScript, confirmed above')", "source": "HCI forms research"},
+    {"issue": "Silent smart defaults = magic, not trust (Poetry pitfall)", "mitigation": "Always DISPLAY inferences before asking, never silently apply", "source": "Poetry docs analysis"},
+    {"issue": "Claude Code lazy-loads subdirectory CLAUDE.md — sub-rules invisible until triggered", "mitigation": "Root CLAUDE.md must @import children for visibility; fabric must emit an index block", "source": "code.claude.com/docs/en/memory"},
+    {"issue": "claudeMdExcludes is not auto-applied — monorepo noise", "mitigation": "fab init should emit a note about excludes config for large repos", "source": "derived"},
+    {"issue": "Cursor (.cursor/rules) and Claude Code (CLAUDE.md tree) use different topologies — dual maintenance in mixed-tool teams", "mitigation": "Use AGENTS.md as bridge + CLAUDE.md @imports AGENTS.md; single source of truth", "source": "cross-reading of both docs"}
+  ],
+  "codebase_gaps": [
+    {"gap": "forensic.json has no per-inference confidence field", "current_approach": "code_samples[].pattern_hint is a bare string; recommendations_for_skill is natural language string[]", "recommended_approach": "Structured assertions: {assertion: string, type: 'framework'|'pattern'|'invariant', confidence: 0-1, evidence: [{file, lines, match}], proposed_rule?: {type: ban|require|protect, body: string}}"},
+    {"gap": "SKILL Phase 1/2 is 'display then ask' not 'infer then correct'", "current_approach": "SKILL reads forensic, shows summary, asks questions", "recommended_approach": "SKILL reads forensic + supplementally reads N source files + generates inference batch + displays with evidence anchors + waits for corrections"},
+    {"gap": "No Claude-Code-native use of .claude/rules/ with paths: frontmatter", "current_approach": "SKILL only generates AGENTS.md files (either root or co-located per domain_groups)", "recommended_approach": "For CROSS-CUTTING concerns (security/testing/performance), generate .claude/rules/{concern}.md with paths: frontmatter; keep scope-bound rules co-located"},
+    {"gap": "L0 <!-- fab:index --> is manually filled by SKILL Phase 3; fab sync-meta does not maintain it", "current_approach": "Drift risk when sync-meta adds/removes nodes without updating L0 index", "recommended_approach": "fab sync-meta should also rewrite L0 index block OR emit @import lines that Claude Code resolves natively"},
+    {"gap": "No evidence-backref in current SKILL talk tracks", "current_approach": "Phase 1 says 'Cocos 3.8 detected' without file:line link", "recommended_approach": "Every assertion presented to user should carry file:line anchor inline, e.g. '[Cocos Creator 3.8] evidence: project.config.json:3-7'"},
+    {"gap": "Hard rule 'NEVER infer unconfirmed invariants' conflicts with Matcha 'default-accept HIGH confidence'", "current_approach": "SKILL cannot pre-accept ANY invariant", "recommended_approach": "Redefine rule: NEVER WRITE an unconfirmed invariant to init-context.json — but DISPLAY pre-accepted high-confidence inferences with user's implicit acceptance (unless explicitly rejected in batch Check)"}
+  ],
+  "sources": [
+    {"title": "Claude Code Memory Documentation", "url": "https://code.claude.com/docs/en/memory", "key_takeaway": "Authoritative source — CLAUDE.md resolution, lazy-loading, .claude/rules/ paths frontmatter, @import syntax, /init flow"},
+    {"title": "npm init documentation", "url": "https://docs.npmjs.com/cli/v10/commands/npm-init", "key_takeaway": "Only canonical detect-then-default in mainstream tooling — strictly additive"},
+    {"title": "CLI Guidelines (clig.dev)", "url": "https://clig.dev", "key_takeaway": "Risk-scaled confirmations + scriptability principle; no guidance on batch"},
+    {"title": "Cursor Rules Documentation", "url": "https://cursor.com/docs/context/rules", "key_takeaway": "Centralized .cursor/rules/ with subfolders — alternative school to Claude Code"},
+    {"title": "Inquirer.js", "url": "https://github.com/SBoudrias/Inquirer.js", "key_takeaway": "No native batch-assertion prompt; checkbox is closest"},
+    {"title": "openai/codex AGENTS.md", "url": "https://github.com/openai/codex", "key_takeaway": "Real-world centralized root-level AGENTS.md example"},
+    {"title": "vitejs/vite create-vite", "url": "https://github.com/vitejs/vite", "key_takeaway": "No detection — direct blank-form questioning (what NOT to do)"},
+    {"title": "Poetry CLI", "url": "https://python-poetry.org/docs/cli/", "key_takeaway": "'Smart defaults' without display — anti-pattern for trust"}
+  ],
+  "_metadata": {"queries_executed": 12, "results_found": "high-value"}
+}

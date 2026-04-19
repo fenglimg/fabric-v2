@@ -622,7 +622,7 @@ if (forensicExists && !initCtxExists) {
 
 - **Developer**: 持有 werewolf-minigame(Cocos Creator 3.8)项目的开发者
 - **AI Client**: Claude Code(本地 CLI 或 IDE 插件)
-- **fab CLI**: `@fenglimg/fabric-cli`(本次方案的 CLI 工具)
+- **fab CLI**: `@fabric/fabric-cli`(本次方案的 CLI 工具)
 - **agents-md-init skill**: 新增的一次性初始化 skill(在 AI Client 中执行)
 - **agents-md skill**: 已有规范的持续性文档维护 skill(思路.md 定义,Round 3 顺便铺平)
 
@@ -632,7 +632,7 @@ if (forensicExists && !initCtxExists) {
 
 ```
 Developer 终端:
-  $ npm install -g @fenglimg/fabric-cli
+  $ npm install -g @fabric/fabric-cli
 ```
 
 状态:fab CLI 可全局调用。项目仍原样,无任何 .fabric/ 或 .claude/ 目录。

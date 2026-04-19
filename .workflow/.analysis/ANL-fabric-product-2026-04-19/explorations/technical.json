@@ -1,0 +1,957 @@
+{
+  "perspective": "technical-implementation",
+  "relevant_files": [
+    "package.json",
+    "pnpm-workspace.yaml",
+    "lefthook.yml",
+    "packages/cli/package.json",
+    "packages/cli/tsup.config.ts",
+    "packages/cli/src/index.ts",
+    "packages/cli/src/commands/init.ts",
+    "packages/cli/src/commands/scan.ts",
+    "packages/cli/src/commands/serve.ts",
+    "packages/dashboard/package.json",
+    "packages/dashboard/vite.config.ts",
+    "packages/dashboard/index.html",
+    "packages/dashboard/src/app.tsx",
+    "packages/dashboard/src/views/rules-tree.tsx",
+    "packages/dashboard/src/views/human-lock.tsx",
+    "packages/dashboard/src/views/intent-timeline.tsx",
+    "packages/dashboard/src/views/history-replay.tsx",
+    "packages/dashboard/src/views/doctor.tsx",
+    "packages/dashboard/src/components/drift-indicator.tsx",
+    "packages/dashboard/src/components/timeline-entry.tsx",
+    "packages/dashboard/src/components/lock-card.tsx",
+    "packages/dashboard/src/api/client.ts",
+    "packages/server/package.json",
+    "packages/server/src/index.ts",
+    "packages/server/src/api/_error.ts",
+    "packages/server/src/tools/get-rules.ts",
+    "packages/server/src/tools/append-intent.ts",
+    "packages/server/src/tools/update-registry.ts",
+    "packages/server/scripts/copy-dashboard.mjs",
+    "packages/shared/package.json",
+    "packages/shared/src/index.ts",
+    "packages/cli/templates/claude-skills/agents-md-init/SKILL.md",
+    ".workflow/.analysis/ANL-fabric-product-2026-04-19/exploration-codebase.json",
+    ".workflow/.analysis/ANL-fabric-product-2026-04-19/research.json"
+  ],
+  "key_findings": [
+    {
+      "id": "KF1",
+      "summary": "现有 build-time 版本注入模式已经在 CLI 成熟落地，Dashboard 和 Server 只缺同构接入点。",
+      "detail": "CLI 通过 `packages/cli/tsup.config.ts` 读取包版本并注入 `__CLI_VERSION__`，`packages/cli/src/index.ts` 再把该常量挂到 citty meta.version。Dashboard 仍在 `app.tsx` 硬编码 `v1.1`，Server 仍在 `src/index.ts` 硬编码 `0.0.0`，两者都可以直接复用相同的『package.json -> build define -> runtime constant』链路。",
+      "evidence": [
+        "packages/cli/tsup.config.ts:5-13",
+        "packages/cli/src/index.ts:9-16",
+        "packages/dashboard/src/app.tsx:39-42",
+        "packages/server/src/index.ts:24-28"
+      ]
+    },
+    {
+      "id": "KF2",
+      "summary": "当前 monorepo 版本源已经漂移，发布前必须先统一版本策略，再谈 i18n 和 release automation。",
+      "detail": "根包、dashboard、shared 仍是 `0.0.0`；CLI 是 `0.1.4`；Server 是 `0.1.0`。同时 npm scope 也混用 `@fabric/*` 与 `@fabric/*`。如果不先收敛『单一版本源 + 单一包 scope』，后续 CHANGELOG、tag、Dashboard badge、MCP server version 和 npm publish 都会继续失真。",
+      "evidence": [
+        "package.json:2-12",
+        "packages/cli/package.json:2-24",
+        "packages/server/package.json:2-23",
+        "packages/dashboard/package.json:2-15",
+        "packages/shared/package.json:2-10"
+      ]
+    },
+    {
+      "id": "KF3",
+      "summary": "CLI 的用户可见字符串主要集中在三类：命令元信息、中英混合 stdout/stderr 提示、英文错误文本。",
+      "hardcoded_string_groups": [
+        {
+          "category": "命令元信息和参数说明",
+          "files": [
+            "packages/cli/src/index.ts",
+            "packages/cli/src/commands/init.ts",
+            "packages/cli/src/commands/scan.ts",
+            "packages/cli/src/commands/serve.ts",
+            "packages/cli/src/commands/bootstrap.ts",
+            "packages/cli/src/commands/config.ts",
+            "packages/cli/src/commands/hooks.ts",
+            "packages/cli/src/commands/pre-commit.ts",
+            "packages/cli/src/commands/human-lint.ts",
+            "packages/cli/src/commands/ledger-append.ts",
+            "packages/cli/src/commands/sync-meta.ts"
+          ],
+          "examples": [
+            "Fabric CLI - AI 智能体协作框架",
+            "在目标项目中初始化 Fabric。",
+            "启动 Fabric 本地 MCP HTTP 服务。set FABRIC_AUTH_TOKEN to enable Bearer auth..."
+          ]
+        },
+        {
+          "category": "stdout/stderr 结果和 next-step hint",
+          "files": [
+            "packages/cli/src/commands/init.ts",
+            "packages/cli/src/commands/scan.ts",
+            "packages/cli/src/commands/serve.ts",
+            "packages/cli/src/commands/bootstrap.ts"
+          ],
+          "examples": [
+            "Created ...",
+            "Installed ...",
+            "Next: run fab hooks install to add the Day 4 pre-commit pipeline.",
+            "Reason: .fabric/forensic.json is ready...",
+            "Fabric scan report",
+            "Fabric Dashboard: http://127.0.0.1:7373"
+          ]
+        },
+        {
+          "category": "英文错误和安全告警",
+          "files": [
+            "packages/cli/src/commands/init.ts",
+            "packages/cli/src/commands/scan.ts",
+            "packages/cli/src/commands/serve.ts",
+            "packages/cli/src/commands/bootstrap.ts",
+            "packages/cli/src/commands/config.ts",
+            "packages/cli/src/commands/hooks.ts"
+          ],
+          "examples": [
+            "ABORT: ... already exists. fab init is non-destructive.",
+            "Target must be an existing directory: ...",
+            "Invalid port: <unset>",
+            "Unknown client \"...\". Use a comma-separated list such as ...",
+            "⚠ --host ... requires FABRIC_AUTH_TOKEN; falling back to 127.0.0.1 for safety"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "KF4",
+      "summary": "Dashboard 的用户可见字符串分布最广，且覆盖 shell、5 个视图、共享组件、aria 标签和 API fallback 文本，适合优先接入 i18n provider。",
+      "hardcoded_string_groups": [
+        {
+          "category": "Shell 与导航",
+          "files": [
+            "packages/dashboard/index.html",
+            "packages/dashboard/src/app.tsx"
+          ],
+          "examples": [
+            "lang=\"en\"",
+            "Fabric Dashboard",
+            "Rules Tree / Human Lock / Intent Timeline / History Replay / Doctor",
+            "Diagnostics / Drift Check",
+            "CONNECTED / CONNECTING",
+            "Received ${events.lastEvent.type}"
+          ]
+        },
+        {
+          "category": "Rules Tree",
+          "files": [
+            "packages/dashboard/src/views/rules-tree.tsx"
+          ],
+          "examples": [
+            "Rules Tree Browser",
+            "Filter by file, glob, priority, hash...",
+            "Refresh",
+            "No matching rules found.",
+            "Node Detail",
+            "Select a rule node to inspect scope, dependencies, priority and hash."
+          ]
+        },
+        {
+          "category": "Human Lock / Intent Timeline / History Replay / Doctor",
+          "files": [
+            "packages/dashboard/src/views/human-lock.tsx",
+            "packages/dashboard/src/views/intent-timeline.tsx",
+            "packages/dashboard/src/views/history-replay.tsx",
+            "packages/dashboard/src/views/doctor.tsx"
+          ],
+          "examples": [
+            "Human Lock Vault",
+            "Intent Timeline",
+            "History Replay",
+            "Doctor Console",
+            "No ledger entries found.",
+            "Latest",
+            "Loading doctor report...",
+            "No current entry points detected."
+          ]
+        },
+        {
+          "category": "共享组件和 API fallback",
+          "files": [
+            "packages/dashboard/src/components/drift-indicator.tsx",
+            "packages/dashboard/src/components/timeline-entry.tsx",
+            "packages/dashboard/src/components/lock-card.tsx",
+            "packages/dashboard/src/components/tree-node.tsx",
+            "packages/dashboard/src/components/approve-button.tsx",
+            "packages/dashboard/src/components/source-badge.tsx",
+            "packages/dashboard/src/api/client.ts"
+          ],
+          "examples": [
+            "confirmed / hash drift / stale / orphan / attention",
+            "Annotate / Human annotation / Save annotation",
+            "locked hash / current hash / Approve new hash / ✓ Confirmed",
+            "locked",
+            "Retry",
+            "Fabric API request failed with HTTP ..."
+          ]
+        }
+      ]
+    },
+    {
+      "id": "KF5",
+      "summary": "Server 侧用户可见字符串集中在 MCP tool 描述、REST error message 和 doctor 诊断文案；这些文本更适合按『协议文案』与『运营诊断文案』拆键。",
+      "hardcoded_string_groups": [
+        {
+          "category": "MCP tool 描述和参数说明",
+          "files": [
+            "packages/server/src/tools/get-rules.ts",
+            "packages/server/src/tools/append-intent.ts",
+            "packages/server/src/tools/update-registry.ts"
+          ],
+          "examples": [
+            "MANDATORY: Call before modifying any file...",
+            "Revision hash from prior fab_get_rules response; enables stale detection",
+            "MANDATORY: Call after a completed task...",
+            "MANDATORY: Call to add, remove, or update Fabric registry nodes..."
+          ]
+        },
+        {
+          "category": "REST error payload 与 dashboard fallback",
+          "files": [
+            "packages/server/src/api/_error.ts",
+            "packages/dashboard/src/api/client.ts"
+          ],
+          "examples": [
+            "BAD_REQUEST",
+            "PATH_OUTSIDE_PROJECT_ROOT",
+            "HUMAN_LOCK_ENTRY_NOT_FOUND",
+            "LEDGER_ENTRY_NOT_FOUND",
+            "INTERNAL_ERROR",
+            "Unexpected error: ..."
+          ]
+        },
+        {
+          "category": "Doctor 诊断摘要",
+          "files": [
+            "packages/server/src/services/doctor.ts",
+            "packages/dashboard/src/views/doctor.tsx"
+          ],
+          "examples": [
+            "Forensic snapshot / Framework fingerprint / Meta revision / Protected paths / Intent ledger",
+            "agents.meta.json revision ... is stale",
+            "Framework baseline matches live scan: ...",
+            "No ledger entries yet"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "KF6",
+      "summary": "AI prompt 与 skill 模板已经是混合语言状态，真正要保护的不是『全部英文』，而是『不可翻译的机器契约层』。",
+      "detail": "`packages/cli/templates/claude-skills/agents-md-init/SKILL.md` 的 frontmatter 与术语关键字是英文，主体流程和提问策略是中文。说明该项目天然需要『English machine contract + localized explanatory wrapper』模型，而不是简单地把所有 prompt 全量本地化。",
+      "evidence": [
+        "packages/cli/templates/claude-skills/agents-md-init/SKILL.md:1-4",
+        "packages/cli/templates/claude-skills/agents-md-init/SKILL.md:9-86"
+      ]
+    },
+    {
+      "id": "KF7",
+      "summary": "shared 包当前正好适合承载 i18n 原语，但不应塞入 Preact hook 或 Node-only 逻辑。",
+      "detail": "`@fabric/shared` 现在只导出 schema 和 detector，没有 UI/runtime 依赖。最佳落点是把 locale type、message catalog、translator factory、locale normalize/detect primitive 放入 shared；Dashboard 的 provider hook 留在 dashboard，CLI 的终端渲染和颜色留在 cli，Server 的 env 读取 adapter 留在 server。",
+      "evidence": [
+        "packages/shared/src/index.ts:1-9",
+        "packages/shared/package.json:14-23"
+      ]
+    },
+    {
+      "id": "KF8",
+      "summary": "发布基础设施当前几乎为空白：无 CHANGELOG、无 RELEASING、无 GitHub workflow、无版本同步校验、无 release gate。",
+      "detail": "仓库根目录没有 `.github/`，也没有 CHANGELOG/RELEASING 文档。现有自动化只有 `lefthook install` 和单个 `scripts/lint-stdio.mjs`。这意味着版本统一、i18n 回归验证、`NO_COLOR=1` 兼容、dashboard build copy 和 npm publish 都缺少制度化入口。",
+      "evidence": [
+        "package.json:8-16",
+        "lefthook.yml:1-4",
+        "packages/server/scripts/copy-dashboard.mjs:10-18"
+      ]
+    }
+  ],
+  "code_anchors": [
+    {
+      "file": "packages/cli/tsup.config.ts",
+      "lines": "5-13",
+      "snippet": "const { version } = JSON.parse(readFileSync(\"./package.json\", \"utf8\")); define: { __CLI_VERSION__: JSON.stringify(version) }",
+      "significance": "现有版本注入基线。Dashboard 和 Server 直接复用同一模式最稳。"
+    },
+    {
+      "file": "packages/cli/src/index.ts",
+      "lines": "9-16",
+      "snippet": "declare const __CLI_VERSION__: string; meta: { name: \"fab\", version: __CLI_VERSION__ }",
+      "significance": "运行时消费 build define 的最小模式，说明无需额外 runtime 读取 package.json。"
+    },
+    {
+      "file": "packages/dashboard/vite.config.ts",
+      "lines": "1-20",
+      "snippet": "defineConfig({ plugins:[preact()], server:{...}, build:{ outDir:\"dist\" } })",
+      "significance": "Dashboard 当前没有 `define` 常量，是接入 `__DASHBOARD_VERSION__` 和 `__DASHBOARD_LANG__` 的首要入口。"
+    },
+    {
+      "file": "packages/dashboard/src/app.tsx",
+      "lines": "13-18,39-44,68-83",
+      "snippet": "routes 数组内硬编码导航文案；brand-version 写死 `v1.1`；连接状态和 live region 也硬编码英文。",
+      "significance": "Dashboard shell 是 i18n 第一批迁移面，同时也是版本漂移最明显的位置。"
+    },
+    {
+      "file": "packages/server/src/index.ts",
+      "lines": "24-28",
+      "snippet": "new McpServer({ name: \"fabric-context-server\", version: \"0.0.0\" })",
+      "significance": "Server 版本常量仍写死，应复用 CLI 的 define 注入到 MCP server metadata。"
+    },
+    {
+      "file": "packages/cli/src/commands/init.ts",
+      "lines": "85-101",
+      "snippet": "console.log(`Created ...`); writeStderr(`Installed ...`); console.log(\"Next: ...\"); console.log(\"Reason: ...\")",
+      "significance": "CLI 最重要的 onboarding 输出面；需要先抽离 message key，再叠加语义色。"
+    },
+    {
+      "file": "packages/cli/src/commands/scan.ts",
+      "lines": "216-230",
+      "snippet": "console.log(\"Fabric scan report\"); console.log(`Target: ...`); console.log(\"Recommendations:\")",
+      "significance": "CLI 报表类输出需要 i18n + string-width 共同治理，否则中英文宽度会破坏对齐。"
+    },
+    {
+      "file": "packages/cli/src/commands/serve.ts",
+      "lines": "19-21,73,82-110",
+      "snippet": "description 混合中英；成功输出 `Fabric Dashboard: ...`；错误和告警仍为英文。",
+      "significance": "serve 命令同时覆盖 CLI、Server、Dashboard 三个 surface，是 locale 检测参数 `--lang` 的最关键入口。"
+    },
+    {
+      "file": "packages/dashboard/src/views/rules-tree.tsx",
+      "lines": "45-86",
+      "snippet": "title/subtitle、input placeholder、button、empty-state、kv label 全部硬编码。",
+      "significance": "代表 Dashboard 视图层的典型迁移面，适合验证 provider + typed key 的落地方式。"
+    },
+    {
+      "file": "packages/dashboard/src/components/drift-indicator.tsx",
+      "lines": "8-24",
+      "snippet": "defaultMessage: { ok:\"confirmed\", drift:\"hash drift\", stale:\"stale\", orphan:\"orphan\", locked:\"attention\" }",
+      "significance": "共享组件文本必须先抽到公共 key，否则每个 view 会继续复制同义状态文案。"
+    },
+    {
+      "file": "packages/server/src/tools/get-rules.ts",
+      "lines": "7-30",
+      "snippet": "zod describe(\"Target file path...\") + tool description \"MANDATORY: Call before modifying any file...\"",
+      "significance": "MCP tool 文案属于 AI-facing 协议层，应该与人类 UI 文案分开管理。"
+    },
+    {
+      "file": "packages/server/src/api/_error.ts",
+      "lines": "27-128",
+      "snippet": "sendError(..., code, message) 与 normalizeApiError() 直接透传英文 message。",
+      "significance": "REST error text 是 Dashboard 的最终 fallback 文案，需要决定是否本地化 message 还是只本地化 code 对应显示。"
+    },
+    {
+      "file": "packages/cli/templates/claude-skills/agents-md-init/SKILL.md",
+      "lines": "1-4,9-86",
+      "snippet": "frontmatter 英文；流程说明和提问正文中文；关键 token 如 `ban`/`require`/`protect` 保持英文。",
+      "significance": "AI prompt 语言保护策略的现实样本，应保留不可翻译 token，并只本地化解释层。"
+    },
+    {
+      "file": "packages/server/scripts/copy-dashboard.mjs",
+      "lines": "10-18",
+      "snippet": "copied dashboard dist to ... / dashboard dist copy skipped ...",
+      "significance": "发布和 build 日志也属于 operator-facing 文案，应纳入 release/checklist 与 i18n 范围。"
+    }
+  ],
+  "call_chains": [
+    {
+      "entry": "版本注入复用链",
+      "chain": "package.json version -> build config 读取版本 -> define 注入 `__CLI_VERSION__` / `__DASHBOARD_VERSION__` / `__SERVER_VERSION__` -> runtime declare const -> CLI meta.version / Dashboard badge / McpServer.version 渲染",
+      "files": [
+        "packages/cli/tsup.config.ts",
+        "packages/cli/src/index.ts",
+        "packages/dashboard/vite.config.ts",
+        "packages/dashboard/src/app.tsx",
+        "packages/server/src/index.ts"
+      ]
+    },
+    {
+      "entry": "统一 locale 解析链",
+      "chain": "argv `--lang` -> `process.env.FAB_LANG` -> `process.env.LC_ALL` -> `process.env.LC_MESSAGES` -> `process.env.LANG` -> normalizeLocale() -> createTranslator(locale) -> CLI/Server message formatter -> Dashboard boot payload",
+      "files": [
+        "packages/cli/src/commands/*.ts",
+        "packages/server/src/index.ts",
+        "packages/shared/src/index.ts",
+        "packages/dashboard/src/app.tsx"
+      ]
+    },
+    {
+      "entry": "Dashboard locale 启动链",
+      "chain": "fab serve --lang zh-CN -> CLI resolveLocale() -> startHttpServer({ locale }) -> server 静态 HTML 注入 `window.__FAB_LOCALE__` 或 `/api/runtime` -> dashboard createI18nProvider(locale) -> views/components 使用 `t()` 读取文案",
+      "files": [
+        "packages/cli/src/commands/serve.ts",
+        "packages/server/src/index.ts",
+        "packages/server/src/http.ts",
+        "packages/dashboard/index.html",
+        "packages/dashboard/src/app.tsx"
+      ]
+    },
+    {
+      "entry": "发布链",
+      "chain": "更新根版本 -> 运行 version sync -> 生成/更新 CHANGELOG.md -> build cli/dashboard/server/shared -> 校验 version constants + locale snapshots + NO_COLOR=1 -> 打 tag -> publish npm 包 -> 创建 release notes",
+      "files": [
+        "package.json",
+        "packages/*/package.json",
+        "CHANGELOG.md",
+        "RELEASING.md",
+        ".github/workflows/ci.yml",
+        ".github/workflows/release.yml"
+      ]
+    }
+  ],
+  "i18n_implementation_plan": {
+    "library_choice": {
+      "recommended": "自研最小 hook + shared 词典",
+      "why": [
+        "当前 surface 总量不大，但跨 CLI、Server、Dashboard、AI prompt 四类运行时；自研最小层可以做到零 codegen、零框架耦合、零额外 build step。",
+        "仍然可以用 TypeScript 的 `as const` + `satisfies` 获得 key 完整性校验，满足『可维护且足够 type-safe』。",
+        "相比 typesafe-i18n，少一个生成环节，发布链更短；相比 i18next，bundle 和概念复杂度都更低。"
+      ],
+      "comparison": {
+        "typesafe-i18n": {
+          "pros": [
+            "成熟的 TS-first 方案",
+            "runtime 体积小",
+            "适合纯 CLI 或纯前端项目"
+          ],
+          "cons": [
+            "引入 codegen 与生成文件管理",
+            "Monorepo 多运行时共享时需要额外包装",
+            "对当前规模属于可用但不是最省摩擦的选择"
+          ],
+          "verdict": "可选备胎，不是首选"
+        },
+        "self_built_minimal_hook": {
+          "pros": [
+            "零 codegen",
+            "shared 包内即可统一 catalog、locale type 和 translator factory",
+            "CLI/Server/Dashboard 可共用 key 和 fallback 逻辑"
+          ],
+          "cons": [
+            "需要自己维护少量基础设施",
+            "复杂 ICU/复数规则若未来扩大需要补能力"
+          ],
+          "verdict": "推荐"
+        }
+      }
+    },
+    "directory_structure": {
+      "shared": [
+        "packages/shared/src/i18n/locales/en.ts",
+        "packages/shared/src/i18n/locales/zh-CN.ts",
+        "packages/shared/src/i18n/types.ts",
+        "packages/shared/src/i18n/normalize-locale.ts",
+        "packages/shared/src/i18n/create-translator.ts",
+        "packages/shared/src/i18n/detect-node-locale.ts",
+        "packages/shared/src/i18n/index.ts"
+      ],
+      "cli": [
+        "packages/cli/src/i18n.ts",
+        "packages/cli/src/colors.ts"
+      ],
+      "dashboard": [
+        "packages/dashboard/src/i18n/provider.tsx",
+        "packages/dashboard/src/i18n/use-i18n.ts",
+        "packages/dashboard/src/i18n/runtime.ts"
+      ],
+      "server": [
+        "packages/server/src/i18n.ts",
+        "packages/server/src/runtime-config.ts"
+      ]
+    },
+    "message_key_scheme": {
+      "rules": [
+        "按 surface.domain.slot 命名，禁止把整句直接散落在组件或命令文件中。",
+        "协议层 key 与 UI 层 key 分离，避免 AI-facing 文案被 UI 翻译策略污染。",
+        "brand、tool name、文件路径、命令名不进入翻译词典。"
+      ],
+      "examples": [
+        "common.actions.refresh",
+        "common.status.loading",
+        "cli.init.created.agents",
+        "cli.init.next.hooks_install",
+        "cli.scan.header.title",
+        "cli.serve.warn.host_requires_token",
+        "dashboard.nav.rules.label",
+        "dashboard.rules_tree.empty.no_match",
+        "dashboard.doctor.summary.no_ledger_entries",
+        "server.tools.get_rules.description",
+        "server.errors.path_outside_project_root",
+        "prompt.agents_init.phase2.ask_invariants"
+      ]
+    },
+    "detection_logic_pseudocode": [
+      "function resolveLocale(input) {",
+      "  const raw = input.argv.lang ?? input.env.FAB_LANG ?? input.env.LC_ALL ?? input.env.LC_MESSAGES ?? input.env.LANG ?? input.browserLanguage ?? 'en';",
+      "  const normalized = normalizeLocale(raw);",
+      "  if (normalized === 'zh' || normalized === 'zh-CN' || normalized.startsWith('zh-')) return 'zh-CN';",
+      "  if (normalized === 'en' || normalized.startsWith('en-')) return 'en';",
+      "  return 'en';",
+      "}",
+      "CLI: command args 新增 `lang?: string`，在命令入口调用 resolveLocale({ argv: args, env: process.env })。",
+      "Server: `fab serve --lang` 解析后传给 startHttpServer({ locale })；未传时走 env fallback。",
+      "Dashboard(prod): 从 server 注入的 runtime locale 读取；Dashboard(dev): 若无 server 注入，则退回浏览器语言再 normalize。",
+      "规则：一个进程只使用一个 locale，严禁同时输出双语。"
+    ],
+    "migration_phases": [
+      {
+        "phase": 0,
+        "goal": "冻结 key 和字符串盘点",
+        "scope": [
+          "完成当前 hardcoded 文案清单",
+          "先定义 key scheme 与 shared catalog 结构"
+        ],
+        "exit_criteria": [
+          "所有用户可见字符串都被归档到 key",
+          "新增文本必须先加 key 后落代码"
+        ]
+      },
+      {
+        "phase": 1,
+        "goal": "搭 shared i18n 原语",
+        "scope": [
+          "实现 locale type、catalog、normalizeLocale、createTranslator",
+          "做 en 基线词典，zh-CN 用 `satisfies` 强约束与 en 对齐"
+        ],
+        "exit_criteria": [
+          "@fabric/shared 暴露稳定 i18n 原语",
+          "单元测试覆盖 locale normalize 和 key parity"
+        ]
+      },
+      {
+        "phase": 2,
+        "goal": "迁移 CLI",
+        "scope": [
+          "先迁 `init`、`scan`、`serve` 三个高暴露命令",
+          "同时引入 `colors.ts` 语义色模块",
+          "补 `--lang` 解析与 `NO_COLOR=1` 回归"
+        ],
+        "exit_criteria": [
+          "CLI 高暴露命令不再直接硬编码用户可见字符串",
+          "中英文输出都可通过 snapshot 稳定验证"
+        ]
+      },
+      {
+        "phase": 3,
+        "goal": "迁移 Server",
+        "scope": [
+          "MCP tool 描述、error message、doctor message 全部转 key",
+          "明确『协议层英文优先』与『UI 层可本地化』边界"
+        ],
+        "exit_criteria": [
+          "Server 不再直接透传散落英文文案",
+          "Dashboard 能基于 error code 做本地化映射"
+        ]
+      },
+      {
+        "phase": 4,
+        "goal": "迁移 Dashboard",
+        "scope": [
+          "接入 provider/useI18n",
+          "依次迁移 shell、共享组件、5 个视图"
+        ],
+        "exit_criteria": [
+          "Dashboard 组件文件中不再保留可见硬编码文案",
+          "页面标题、aria、empty state、button 文案全部走 key"
+        ]
+      },
+      {
+        "phase": 5,
+        "goal": "迁移模板与 prompt",
+        "scope": [
+          "整理 AI prompt 保留层和可本地化层",
+          "给 bootstrap/skill 模板加 lint 规则"
+        ],
+        "exit_criteria": [
+          "机器契约 token 不会在翻译过程中漂移",
+          "zh 解释层可独立维护"
+        ]
+      }
+    ],
+    "test_strategy": {
+      "unit": [
+        "locale normalize/parse: `--lang` > `FAB_LANG` > `LC_ALL`/`LC_MESSAGES`/`LANG` > default",
+        "key parity test: `zh-CN` 必须完整覆盖 `en` catalog",
+        "translator fallback test: 未知 locale 自动回落 en"
+      ],
+      "integration": [
+        "CLI `init` / `scan` / `serve` 在 `en` 与 `zh-CN` 下输出快照",
+        "Server API error code -> dashboard localized message 映射验证",
+        "Dashboard runtime locale boot 验证"
+      ],
+      "regression": [
+        "`NO_COLOR=1` 下 CLI 文案仍可读",
+        "TTY / 非 TTY 双模式输出一致",
+        "CJK 文本在 scan/report 类输出中不破坏宽度"
+      ],
+      "ci_gates": [
+        "json/schema/lint",
+        "vitest locale snapshots",
+        "build 后 grep 检查不应再保留已迁移 surface 的硬编码文案"
+      ]
+    },
+    "bundle_impact": {
+      "recommended_path": "自研最小层仅增加共享词典和少量 helper，预期 runtime 体积接近 0 成本；Dashboard 不需要动态按语言分包。",
+      "dashboard": "en + zh-CN 两份静态 catalog 以当前视图体量估算是小幅增量，远低于引入完整 i18n 框架的成本。",
+      "cli": "Node 侧体积基本可忽略；若引入 `string-width`，仅影响报表类输出而不改变架构。",
+      "typesafe_i18n_if_chosen": "额外引入 codegen 与小型 runtime，仍不大，但会增加 CI/release 复杂度。"
+    }
+  },
+  "version_unification_plan": {
+    "strategy": "单 release train，所有 workspace 包共享同一发布版本。",
+    "canonical_source_of_truth": "根 `package.json.version`",
+    "scope_alignment": {
+      "status": "待决策",
+      "problem": "目前混用 `@fabric/fabric-cli` / `@fabric/fabric-server` 与 `@fabric/shared` / `@fabric/dashboard`。",
+      "recommendation": "在第一次公开发布前统一为单一 npm scope；技术上先完成 scope 决策，再批量改包名和 import，避免二次 breaking rename。"
+    },
+    "sync_mechanism": {
+      "recommended_files": [
+        "scripts/release/sync-versions.mjs",
+        "scripts/release/check-versions.mjs"
+      ],
+      "rules": [
+        "根版本是唯一可手改版本。",
+        "CLI、Server、Dashboard、Shared 的 `package.json.version` 全量同步为根版本。",
+        "workspace 依赖继续保留 `workspace:*`，但 build-time define 读取各包本地 version，从而显示统一版本。"
+      ]
+    },
+    "build_injection_reuse": {
+      "cli": {
+        "current": "已实现 `__CLI_VERSION__`",
+        "next": "保持不变，仅把版本源切到统一后的包版本"
+      },
+      "dashboard": {
+        "current": "无 define，`app.tsx` 硬编码 `v1.1`",
+        "next": "在 `vite.config.ts` 中注入 `__DASHBOARD_VERSION__`，在 `app.tsx` 消费"
+      },
+      "server": {
+        "current": "`src/index.ts` 写死 `0.0.0`，build 由 package.json inline tsup 命令触发",
+        "next": "新增 `packages/server/tsup.config.ts` 或在 build script 加 define，把 `__SERVER_VERSION__` 注入 `McpServer.version`"
+      }
+    },
+    "migration_steps": [
+      "确定统一 npm scope",
+      "把根版本提升为真实 release version，而不是 `0.0.0` 占位",
+      "同步 packages/*/package.json 版本",
+      "给 Dashboard/Server 补 build-time version define",
+      "增加 CI 校验脚本，阻止版本漂移",
+      "最后再补 CHANGELOG/tag/publish 自动化"
+    ],
+    "ci_guards": [
+      "若任一 `packages/*/package.json.version` 与根版本不一致则失败",
+      "若 Dashboard badge / McpServer.version / CLI meta.version 与包版本不一致则失败",
+      "若包名 scope 不在允许名单内则失败"
+    ],
+    "release_policy": {
+      "pre_1_0": "允许较快迭代，但所有包仍共享单版本号，避免表面稳定实则漂移。",
+      "post_1_0": "严格语义化版本；MINOR 代表新增 surface，PATCH 代表修复，MAJOR 代表 breaking rename 或协议变更。"
+    }
+  },
+  "release_infrastructure_checklist": [
+    {
+      "item": "新增根 `CHANGELOG.md`",
+      "purpose": "用 Keep a Changelog 维护真实已发布变更，而不是继续把 roadmap 兼任 changelog。",
+      "target_files": [
+        "CHANGELOG.md"
+      ]
+    },
+    {
+      "item": "新增 `RELEASING.md`",
+      "purpose": "固化版本 bump、build、tag、publish、回滚与 smoke test 步骤。",
+      "target_files": [
+        "RELEASING.md"
+      ]
+    },
+    {
+      "item": "新增版本同步与校验脚本",
+      "purpose": "把根版本同步到 workspace 包，并在 CI 中阻止漂移。",
+      "target_files": [
+        "scripts/release/sync-versions.mjs",
+        "scripts/release/check-versions.mjs"
+      ]
+    },
+    {
+      "item": "新增 CI workflow",
+      "purpose": "在每次 PR/merge 上统一执行 typecheck、test、build、version check、`NO_COLOR=1` CLI snapshot。",
+      "target_files": [
+        ".github/workflows/ci.yml"
+      ]
+    },
+    {
+      "item": "新增 release workflow",
+      "purpose": "tag 后自动构建、生成 release notes、发布 npm 包，并附带 Dashboard static artifact。",
+      "target_files": [
+        ".github/workflows/release.yml"
+      ]
+    },
+    {
+      "item": "为 dashboard copy 增加显式 release gate",
+      "purpose": "确保 server publish 前一定包含最新 dashboard dist，而不是仅在构建日志里 best effort 拷贝。",
+      "target_files": [
+        "packages/server/scripts/copy-dashboard.mjs",
+        "scripts/release/verify-dashboard-dist.mjs"
+      ]
+    },
+    {
+      "item": "新增 changelog 生成或校验脚本",
+      "purpose": "把 conventional commits 与 CHANGELOG 同步起来，减少手写遗漏。",
+      "target_files": [
+        "scripts/release/update-changelog.mjs"
+      ]
+    },
+    {
+      "item": "新增 smoke checklist",
+      "purpose": "发布前人工确认 `fab init`、`fab scan`、`fab serve`、dashboard 加载、MCP tool 调用、zh/en locale 与无色输出。",
+      "target_files": [
+        "RELEASING.md"
+      ]
+    },
+    {
+      "item": "在 CI 加入 i18n lint",
+      "purpose": "防止新代码重新引入硬编码用户可见字符串。",
+      "target_files": [
+        "scripts/i18n/check-hardcoded-strings.mjs",
+        ".github/workflows/ci.yml"
+      ]
+    },
+    {
+      "item": "为 npm publish 前置权限和 provenance 做准备",
+      "purpose": "第一次公开发布前明确 npm token、scope ownership、access 与 provenance 开关。",
+      "target_files": [
+        ".github/workflows/release.yml",
+        "RELEASING.md"
+      ]
+    }
+  ],
+  "shared_package_plan": {
+    "goal": "让 `@fabric/shared` 同时承担 schema 契约与 i18n 原语，但保持 framework-agnostic。",
+    "proposed_layout": {
+      "keep_existing": [
+        "src/schemas/*",
+        "src/detector.ts"
+      ],
+      "add": [
+        "src/i18n/locales/en.ts",
+        "src/i18n/locales/zh-CN.ts",
+        "src/i18n/types.ts",
+        "src/i18n/normalize-locale.ts",
+        "src/i18n/create-translator.ts",
+        "src/i18n/detect-node-locale.ts",
+        "src/i18n/index.ts"
+      ],
+      "barrel_exports": [
+        "export * from './i18n/index.js';",
+        "保留现有 schema barrel，避免破坏已有 import"
+      ]
+    },
+    "ownership_boundaries": [
+      "shared 只放纯函数、纯类型、纯词典，不引入 Preact、Express、citty 或终端 ANSI 依赖。",
+      "dashboard 自己实现 provider/hook；cli 自己实现 colors 与 stdout adapter；server 自己实现 env/runtime config adapter。"
+    ],
+    "migration_order": [
+      "先落 shared i18n primitives",
+      "再迁 CLI",
+      "再迁 Server",
+      "最后迁 Dashboard 组件层"
+    ],
+    "compatibility_rules": [
+      "shared locale type 只暴露支持集，例如 `en | zh-CN`。",
+      "新增语言必须先补齐 `en` baseline 对齐测试，再扩展 consumers。"
+    ]
+  },
+  "cli_color_module_spec": {
+    "target_file": "packages/cli/src/colors.ts",
+    "goal": "把 CLI 输出从 ad-hoc 字符串打印升级为与 Dashboard token 对齐的语义色系统。",
+    "dependency_choice": {
+      "recommended": "picocolors",
+      "why": [
+        "极小、稳定、Node 侧常见",
+        "易于在 `NO_COLOR=1` 或非 TTY 下整体关闭",
+        "比自己写 ANSI wrapper 更省维护"
+      ],
+      "fallback": "若坚持零新增依赖，可实现同 API 的 no-op wrapper，并后续再替换实现。"
+    },
+    "semantic_tokens": [
+      {
+        "name": "success",
+        "dashboard_token": "--color-state-approved-accent",
+        "hex": "#22c55e",
+        "usage": [
+          "Created",
+          "Updated",
+          "Connected",
+          "Confirmed"
+        ]
+      },
+      {
+        "name": "warn",
+        "dashboard_token": "--color-state-locked-accent",
+        "hex": "#f59e0b",
+        "usage": [
+          "Fallback safety warning",
+          "Skipped"
+        ]
+      },
+      {
+        "name": "error",
+        "dashboard_token": "--color-state-stale-accent",
+        "hex": "#ef4444",
+        "usage": [
+          "ABORT",
+          "Invalid host/port",
+          "Drift or stale failure"
+        ]
+      },
+      {
+        "name": "drift",
+        "dashboard_token": "--color-state-drift-accent",
+        "hex": "#ea580c",
+        "usage": [
+          "hash drift",
+          "stale revision warnings"
+        ]
+      },
+      {
+        "name": "ai",
+        "dashboard_token": "--color-source-ai-accent",
+        "hex": "#6366f1",
+        "usage": [
+          "AI source tag",
+          "Reason hint prefix"
+        ]
+      },
+      {
+        "name": "human",
+        "dashboard_token": "--color-source-human-accent",
+        "hex": "#14b8a6",
+        "usage": [
+          "Human source tag",
+          "@HUMAN or approval prompts"
+        ]
+      },
+      {
+        "name": "muted",
+        "dashboard_token": "--color-text-dim",
+        "hex": "#64748b",
+        "usage": [
+          "secondary labels",
+          "paths",
+          "counts"
+        ]
+      }
+    ],
+    "api_surface": [
+      "paint.success(text)",
+      "paint.warn(text)",
+      "paint.error(text)",
+      "paint.drift(text)",
+      "paint.ai(text)",
+      "paint.human(text)",
+      "paint.muted(text)",
+      "label.created(path)",
+      "label.skipped(path)",
+      "label.next(text)",
+      "label.reason(text)",
+      "symbol.ok",
+      "symbol.warn",
+      "symbol.error"
+    ],
+    "behavior_rules": [
+      "默认只在 TTY 且未设置 `NO_COLOR` 时输出 ANSI。",
+      "文本语义必须独立于颜色存在，不能依赖颜色表达关键状态。",
+      "scan/report 等需要对齐的输出，颜色渲染前先做宽度计算；若引入 CJK，推荐与 `string-width` 搭配。"
+    ],
+    "adoption_order": [
+      "先替换 `init`、`scan`、`serve`",
+      "再扩展到 bootstrap/config/hook 类命令"
+    ]
+  },
+  "ai_prompt_preservation_policy": {
+    "core_principle": "机器契约英文优先，解释层可本地化；绝不翻译会影响模型行为或协议解析的 token。",
+    "protected_tokens": [
+      "MUST",
+      "NEVER",
+      "MANDATORY",
+      "ban",
+      "require",
+      "protect",
+      "AGENTS.md",
+      ".fabric/forensic.json",
+      "fab_get_rules",
+      "fab_append_intent",
+      "fab_update_registry",
+      "JSON keys",
+      "CLI commands",
+      "file paths",
+      "glob patterns"
+    ],
+    "file_level_rules": [
+      {
+        "scope": "AI-facing protocol text",
+        "targets": [
+          "packages/cli/templates/bootstrap/*",
+          "packages/cli/templates/claude-skills/*"
+        ],
+        "policy": "核心规则句、命令、路径、枚举值保持英文或原文；中文仅用于解释、示例和补充说明。"
+      },
+      {
+        "scope": "MCP tool description",
+        "targets": [
+          "packages/server/src/tools/*.ts"
+        ],
+        "policy": "默认保留英文，因为它直接服务模型调用决策；若需要本地化，只提供并行的人类说明，不替换协议原文。"
+      },
+      {
+        "scope": "Dashboard/CLI 人类界面",
+        "targets": [
+          "packages/cli/src/**/*.ts",
+          "packages/dashboard/src/**/*.tsx"
+        ],
+        "policy": "允许 fully localized UI key，但不可改动底层 command name / event type / schema field。"
+      }
+    ],
+    "implementation_rules": [
+      "把 prompt 拆成 `core` 与 `wrapper` 两层：`core` 不翻译，`wrapper` 可按 locale 输出。",
+      "在词典中为 protected token 增加 `do_not_translate` 注记或独立常量，不让翻译层接触。",
+      "为 prompt 文件增加 lint：若检测到受保护 token 被译名替换，则 CI 失败。"
+    ],
+    "quality_guardrails": [
+      "英文硬约束优先于中文解释层。",
+      "不要把模型会消费的 schema key、本地文件路径、命令名翻译成中文同义词。",
+      "需要双语说明时，采用『英文规则 + 中文注释』而不是中英混杂同一句。"
+    ]
+  },
+  "questions_for_user": [
+    "公开 npm scope 你希望最终统一到 `@fabric/*` 还是 `@fabric/*`？这会直接影响 version unification 的迁移顺序。",
+    "无显式 `--lang` / `FAB_LANG` 时，Fabric 默认语言希望是 `en` 还是 `zh-CN`？我当前方案默认 `en`。",
+    "Dashboard 是否必须严格跟随 `fab serve --lang` 的进程级 locale，还是允许浏览器端覆盖？我当前方案推荐单进程单 locale。",
+    "AI prompt 你是否接受『英文硬规则不翻译，中文仅做解释层』的策略？这是当前技术上最稳的语言保护边界。"
+  ],
+  "_metadata": {
+    "created_at": "2026-04-19",
+    "ccw_tx_id": "ccw-tx-prod-tech-1776581989-61c62791",
+    "session": "ANL-fabric-product-2026-04-19",
+    "sources_used": [
+      ".workflow/.analysis/ANL-fabric-product-2026-04-19/exploration-codebase.json",
+      ".workflow/.analysis/ANL-fabric-product-2026-04-19/research.json",
+      ".workflow/.analysis/ANL-fabric-mcp-dashboard-unified-2026-04-19/explorations.json",
+      ".workflow/.analysis/ANL-fab-doc-init-werewolf-2026-04-19/explorations.json"
+    ],
+    "constraints_observed": [
+      "只产出 JSON 文件",
+      "未修改源码",
+      "专注代码级实施路径"
+    ],
+    "validation": [
+      "基于真实代码锚点和 package 配置归纳",
+      "字符串盘点按 CLI / Dashboard / Server / AI prompt 分类覆盖"
+    ]
+  }
+}

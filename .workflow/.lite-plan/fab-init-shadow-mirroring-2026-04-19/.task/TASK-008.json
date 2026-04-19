@@ -1,0 +1,88 @@
+{
+  "id": "TASK-008",
+  "title": "Update docs/initialization.md — Matcha user journey + Shadow Mirroring chapter + MCP client compatibility matrix",
+  "scope": "docs/initialization.md",
+  "action": "Update",
+  "priority": "medium",
+  "description": "Update docs/initialization.md to document the Shadow Mirroring architecture and Matcha (Check-not-Ask) user experience. Add: (1) Matcha interaction example with Phase 0/1/2 walkthrough using werewolf-minigame-stub as concrete scenario; (2) HIGH/MEDIUM/LOW confidence tiers explanation and user correction flow; (3) Shadow Mirroring architecture chapter with .fabric/agents/ directory structure diagram + _cross/ rule set examples; (4) MCP client compatibility matrix (Claude Code / Cursor with MCP / Codex / Gemini CLI / etc) with explicit 'Fabric requires MCP-capable client' declaration; (5) migration guide from colocated AGENTS.md to .fabric/agents/. Can start early and update iteratively; final version should be written after TASK-002 SKILL.md is stable.",
+  "files": [
+    {
+      "path": "docs/initialization.md",
+      "action": "Update",
+      "target": "Existing initialization.md content",
+      "change": "Add Phase 0/1/2 Matcha interaction example using werewolf stub; show HIGH default-accept flow and MEDIUM explicit confirm flow. Add Shadow Mirroring chapter: .fabric/agents/ directory tree example, _cross/ purpose, zero business-dir rule files principle. Add MCP client compatibility matrix. Add migration guide section. Update any Phase 1/2/3 references to match new Phase 0/1/2 naming."
+    }
+  ],
+  "implementation": [
+    "Read docs/initialization.md in full to understand current structure before modifying",
+    "Draft Matcha interaction example: Phase 0 (reading forensic.json candidate_files), Phase 1 (single-screen batch Check with confidence icons), Phase 2 (auto-construct writing to .fabric/agents/)",
+    "Draft HIGH/MEDIUM/LOW confidence explanation: thresholds, implicit vs explicit accept, user correction syntax examples",
+    "Draft Shadow Mirroring chapter: ASCII directory tree showing .fabric/agents/ mirror structure, _cross/ subtree example, explanation of why business dirs have zero rule files",
+    "Draft MCP client compatibility matrix table: clients, MCP support, fab_get_rules availability, recommended usage",
+    "Draft migration guide: numbered steps from colocated AGENTS.md to .fabric/agents/ topology",
+    "Write all new sections into initialization.md; update existing Phase references if needed"
+  ],
+  "reference": {
+    "pattern": "Existing initialization.md doc style",
+    "files": [
+      "docs/initialization.md",
+      ".workflow/.analysis/ANL-fab-init-heuristic-discovery-2026-04-19/conclusions.json"
+    ],
+    "examples": "conclusions.json recommendations[5].steps provides specific doc update items: werewolf sample Architecture Review, HIGH/MEDIUM/LOW flow, @import and .fabric/ directory structure examples"
+  },
+  "convergence": {
+    "criteria": [
+      "docs/initialization.md contains a Phase 0/1/2 Matcha interaction example using werewolf-minigame-stub",
+      "Example covers both HIGH implicit accept scenario and MEDIUM explicit confirmation scenario",
+      "Shadow Mirroring chapter present with .fabric/agents/ directory tree example showing root.md + assets/ mirror + _cross/ subtree",
+      "Chapter explicitly states: business directories contain ZERO rule files",
+      "MCP client compatibility matrix present with ≥ 4 clients listed; includes 'Fabric requires MCP-capable client' statement",
+      "Migration guide present with concrete steps from colocated AGENTS.md to .fabric/agents/ topology",
+      "Existing Phase 1/2/3 references updated to Phase 0/1/2 naming consistent with TASK-002 SKILL.md rewrite"
+    ]
+  },
+  "rationale": {
+    "chosen_approach": "Update existing docs/initialization.md rather than creating a new doc; add new sections without removing existing content that remains valid",
+    "alternatives_considered": [
+      "Create separate shadow-mirroring.md doc (duplicates initialization context; fragmentation)",
+      "Rewrite initialization.md from scratch (breaks existing user links and references)"
+    ],
+    "decision_factors": [
+      "initialization.md is the authoritative fab init user guide",
+      "Shadow Mirroring is a topology change within initialization, not a separate workflow",
+      "Migration guide must live alongside the initialization doc to be discoverable"
+    ],
+    "tradeoffs": "Doc update can start early (TASK-008 has no hard schema dependencies) but final examples should reference stable SKILL.md behavior from TASK-002"
+  },
+  "test": {
+    "manual_checks": [
+      "Read docs/initialization.md after update; verify all convergence criteria sections are present",
+      "Verify Matcha example shows realistic werewolf assertions with confidence icons",
+      "Verify directory tree shows .fabric/agents/ with root.md + assets/ mirror + _cross/ structure"
+    ],
+    "success_metrics": [
+      "All 7 convergence criteria sections present in updated doc",
+      "No orphaned Phase 1/2/3 references (old 3-round naming) remaining in the doc"
+    ],
+    "unit": [],
+    "integration": []
+  },
+  "risks": [
+    {
+      "description": "Doc written before TASK-002 SKILL.md finalized may describe Phase 1 display format incorrectly",
+      "probability": "Medium",
+      "impact": "Low",
+      "mitigation": "Write structural sections (Shadow Mirroring chapter, compatibility matrix, migration guide) first; write Matcha interaction example after TASK-002 is complete",
+      "fallback": "Mark Phase 0/1/2 example section as 'preview' until TASK-002 is merged"
+    }
+  ],
+  "code_skeleton": null,
+  "depends_on": ["TASK-005"],
+  "estimated_time": "30 minutes",
+  "executor_hint": "agent",
+  "cli_execution_id": "fab-init-shadow-mirroring-2026-04-19-TASK-008",
+  "cli_execution": {
+    "strategy": "fork",
+    "resume_from": "fab-init-shadow-mirroring-2026-04-19-TASK-005"
+  }
+}

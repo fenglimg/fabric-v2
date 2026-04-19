@@ -41,7 +41,7 @@
   },
   "convergence": {
     "criteria": [
-      "pnpm --filter @fenglimg/fabric-cli test — all 3 new test files pass",
+      "pnpm --filter @fabric/fabric-cli test — all 3 new test files pass",
       "init-forensic.test.ts: forensic.json schema validation passes via ForensicReport.safeParse()",
       "init-forensic.test.ts: framework.version === '3.8.0' for werewolf-minigame-stub",
       "init-claude-install.test.ts: all 3 .claude/ artifacts present after initFabric",
@@ -59,7 +59,7 @@
   },
   "test": {
     "manual_checks": [
-      "pnpm --filter @fenglimg/fabric-cli test — verify all 3 test files show green",
+      "pnpm --filter @fabric/fabric-cli test — verify all 3 test files show green",
       "Review test output for asserting correct framework fields (cocos-creator 3.8.0)"
     ],
     "success_metrics": [

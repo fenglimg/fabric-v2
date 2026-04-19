@@ -1,0 +1,119 @@
+{
+  "id": "TASK-002",
+  "title": "Unify npm scope to @fabric/* and set all packages to version 1.0.0",
+  "description": "将所有 package.json 的 name 字段从 @fabric/* 迁移到 @fabric/*，统一 version 为 1.0.0，更新 templates/bootstrap 中的遗留 scope 引用，重建 pnpm-lock.yaml。cli 0.1.4 / server 0.1.0 / dashboard 0.0.0 版本不一致 + @fabric vs @fabric scope 混用是 npm publish 的直接阻塞项。",
+  "type": "chore",
+  "priority": "high",
+  "effort": "medium",
+  "action": "Update",
+  "scope": ["package.json", "packages/*/package.json", "templates/bootstrap/*"],
+  "depends_on": [],
+  "parallel_group": 1,
+  "files": [
+    {
+      "path": "package.json",
+      "action": "modify",
+      "target": "name, version, workspaces",
+      "change": "更新 root package name 为 fabric-monorepo 或保持; 确认 workspaces 引用正确"
+    },
+    {
+      "path": "packages/cli/package.json",
+      "action": "modify",
+      "target": "name, version",
+      "change": "name: @fabric/cli, version: 1.0.0"
+    },
+    {
+      "path": "packages/server/package.json",
+      "action": "modify",
+      "target": "name, version",
+      "change": "name: @fabric/server, version: 1.0.0"
+    },
+    {
+      "path": "packages/dashboard/package.json",
+      "action": "modify",
+      "target": "name, version",
+      "change": "name: @fabric/dashboard, version: 1.0.0"
+    },
+    {
+      "path": "packages/shared/package.json",
+      "action": "modify",
+      "target": "name, version",
+      "change": "name: @fabric/shared, version: 1.0.0"
+    },
+    {
+      "path": "templates/bootstrap/CLAUDE.md",
+      "action": "modify",
+      "target": "scope references",
+      "change": "Replace @fabric/* with @fabric/* in any references"
+    },
+    {
+      "path": "templates/bootstrap/GEMINI.md",
+      "action": "modify",
+      "target": "scope references",
+      "change": "Replace @fabric/* with @fabric/* in any references"
+    },
+    {
+      "path": "pnpm-lock.yaml",
+      "action": "modify",
+      "target": "all package name references",
+      "change": "Regenerate via pnpm install after package.json changes"
+    }
+  ],
+  "implementation": [
+    "Search for all @fabric occurrences: grep -r '@fabric' . --include='*.json' --include='*.md' --include='*.ts' --exclude-dir=node_modules",
+    "Update packages/cli/package.json: name → @fabric/cli, version → 1.0.0; update any internal dependencies that reference @fabric/*",
+    "Update packages/server/package.json: name → @fabric/server, version → 1.0.0",
+    "Update packages/dashboard/package.json: name → @fabric/dashboard, version → 1.0.0",
+    "Update packages/shared/package.json: name → @fabric/shared, version → 1.0.0",
+    "Update root package.json workspaces and any cross-package dependencies",
+    "Scan templates/bootstrap/* for @fabric references and replace with @fabric",
+    "Run pnpm install to regenerate pnpm-lock.yaml",
+    "Verify: pnpm -r ls | grep version; grep -r '@fabric' . --exclude-dir=node_modules"
+  ],
+  "reference": {
+    "pattern": "pnpm workspace monorepo package naming convention",
+    "files": ["packages/cli/package.json", "packages/server/package.json"],
+    "examples": "Internal deps use 'workspace:*' protocol: '@fabric/shared': 'workspace:*'"
+  },
+  "convergence": {
+    "criteria": [
+      "grep -r '@fabric' . --exclude-dir=node_modules returns 0 matches",
+      "pnpm -r ls shows all 4 packages at version 1.0.0",
+      "packages/cli/package.json name = '@fabric/cli'",
+      "packages/server/package.json name = '@fabric/server'",
+      "packages/dashboard/package.json name = '@fabric/dashboard'",
+      "packages/shared/package.json name = '@fabric/shared'",
+      "templates/bootstrap/* contains no @fabric references",
+      "pnpm install completes without errors"
+    ],
+    "definition_of_done": "所有包统一为 @fabric scope + 1.0.0 版本, pnpm install 无报错"
+  },
+  "rationale": {
+    "chosen_approach": "批量替换所有 package.json + templates, 然后重建 lockfile — 一次性清除所有遗留 scope",
+    "alternatives_considered": ["逐包迁移并发布 pre-release", "保留 @fabric 作为 alias"],
+    "decision_factors": ["npm publish 阻塞项", "locked decision: npm scope = @fabric/*", "templates 会生成用户项目 package.json, 必须一致"],
+    "tradeoffs": "一次性替换可能遗漏 markdown 文档中的引用, 需要全量 grep 确认"
+  },
+  "test": {
+    "commands": ["grep -r '@fabric' . --exclude-dir=node_modules --exclude-dir=.git", "pnpm -r ls", "pnpm install"],
+    "manual_checks": [
+      "grep -r '@fabric' . --exclude-dir=node_modules returns empty",
+      "pnpm -r ls shows 4 packages all at 1.0.0",
+      "templates/bootstrap/* files show @fabric not @fabric"
+    ],
+    "success_metrics": [
+      "0 occurrences of @fabric outside node_modules",
+      "4 workspace packages at version 1.0.0"
+    ]
+  },
+  "cli_execution_id": "fabric-product-2026-04-19-TASK-002",
+  "cli_execution": {
+    "strategy": "new"
+  },
+  "commit": {
+    "type": "chore",
+    "scope": "packages",
+    "message_template": "chore(packages): migrate scope @fabric→@fabric, unify version 1.0.0"
+  },
+  "status": "pending"
+}

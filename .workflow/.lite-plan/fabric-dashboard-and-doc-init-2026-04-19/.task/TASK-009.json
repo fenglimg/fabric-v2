@@ -9,7 +9,7 @@
       "path": "packages/dashboard/package.json",
       "action": "Create",
       "target": "dashboard package manifest",
-      "change": "New package.json: name '@fenglimg/fabric-dashboard', private: true; devDependencies: preact, @preact/signals, vite, @preact/preset-vite; dependencies: none (api client is fetch-based); scripts: dev/build/preview"
+      "change": "New package.json: name '@fabric/fabric-dashboard', private: true; devDependencies: preact, @preact/signals, vite, @preact/preset-vite; dependencies: none (api client is fetch-based); scripts: dev/build/preview"
     },
     {
       "path": "packages/dashboard/vite.config.ts",
@@ -147,7 +147,7 @@
       "description": "tsup copy of dashboard dist is order-dependent (dashboard must build before server)",
       "probability": "Medium",
       "impact": "Low",
-      "mitigation": "Add 'preinstall': 'pnpm --filter @fenglimg/fabric-dashboard build' to server build script; or use pnpm workspace topological order",
+      "mitigation": "Add 'preinstall': 'pnpm --filter @fabric/fabric-dashboard build' to server build script; or use pnpm workspace topological order",
       "fallback": "Use runtime __dirname/../dashboard-dist path lookup (server reads from sibling directory at runtime)"
     }
   ],

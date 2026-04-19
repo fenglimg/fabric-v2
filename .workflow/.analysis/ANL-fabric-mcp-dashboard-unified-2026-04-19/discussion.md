@@ -272,7 +272,7 @@ packages/
 │   │   │   ├── serve.ts        [新增] fab serve --port 7373 --target <dir>
 │   │   │   └── ... (现有 9 个)
 │   │   └── ...
-│   └── package.json            [修改] 依赖 @fabric/shared, optional peer on @fenglimg/fabric-dashboard
+│   └── package.json            [修改] 依赖 @fabric/shared, optional peer on @fabric/fabric-dashboard
 │
 ├── shared/          [修改] 从 placeholder 充实
 │   ├── src/
@@ -301,7 +301,7 @@ packages/
     ├── index.html              [新增] Vite entry HTML
     ├── vite.config.ts          [新增] proxy /api, /mcp, /events to :7373
     ├── tsconfig.json
-    └── package.json            [新增] @fenglimg/fabric-dashboard (private or published)
+    └── package.json            [新增] @fabric/fabric-dashboard (private or published)
 ```
 
 ### 关键数据流

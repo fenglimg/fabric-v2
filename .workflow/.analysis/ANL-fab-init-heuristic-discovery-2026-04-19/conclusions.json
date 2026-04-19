@@ -1,0 +1,700 @@
+{
+  "session_id": "ANL-fab-init-heuristic-discovery-2026-04-19",
+  "topic": "fab init 启发式语义探索（Heuristic Discovery）重构 — Check-not-Ask + Shadow Mirroring 架构 + Matcha 交互",
+  "completed": "2026-04-19T00:00:00.000Z",
+  "total_rounds": 3,
+  "summary": "把 fab init 后的 agents-md-init SKILL 从'展示摘要+提问'的被动模式升级为'Phase 0 主动侦察 → Phase 1 单轮 Architecture Review 批量 Check → Phase 2 自动构造'的 Check-not-Ask 协议。核心改造：(1) ForensicReport schema 新增结构化 ForensicAssertion（含定量置信度 + evidence 锚 + proposed_rule）取代自然语言 recommendations_for_skill；(2) forensic.ts 按 pattern family 预给 candidate_files (≤12)，SKILL 在 15×100 token 硬预算内 Read + Grep 补采；(3) L1/L2 物理拓扑采用混合原则 — scope-bound 用 colocated AGENTS.md，cross-cutting 用 .claude/rules/{concern}.md paths-frontmatter（SKILL 涌现式生成，init 不预创建）；(4) 根 AGENTS.md 使用 Claude-Code-native @import 语法做索引，sync-meta 不再维护 <!-- fab:index --> 块；(5) 硬规则按 DISPLAY/WRITE 分离 — HIGH 档批量隐式接受，WRITE 要求显式/隐式确认；(6) agents-meta.ts schema 扩展 layer + topology_type + paths_frontmatter 字段。6/6 关键决策（Q1-Q6）全部选推荐方向，证据链与用户直觉一致。",
+  "key_conclusions": [
+    {
+      "point": "SKILL 从 3 Phase 3 轮（2+5 问 = 7 回应）降级为 3 Phase 1 轮交互（Phase 0 无交互、Phase 1 单屏批量 Check、Phase 2 无交互），参照 Claude Code 新 /init 流程 explore → gap-fill → reviewable proposal",
+      "evidence": "Round 1 research: code.claude.com/docs/en/memory; Round 2 Phase 0/1/2 伪代码",
+      "confidence": "high",
+      "code_anchor_refs": [
+        "templates/claude-skills/agents-md-init/SKILL.md:18-39"
+      ]
+    },
+    {
+      "point": "ForensicReport.recommendations_for_skill 从 string[] 升级为 ForensicAssertion[] 结构化断言 — 含 type / statement / confidence / evidence[] / coverage / proposed_rule?，是 Check-not-Ask 落地的第一短板",
+      "evidence": "Round 1 gap 分析 + Round 2 schema 设计",
+      "confidence": "high",
+      "code_anchor_refs": [
+        "packages/shared/src/schemas/forensic-report.ts",
+        "packages/cli/src/scanner/forensic.ts:294-323"
+      ]
+    },
+    {
+      "point": "置信度三档必须定量 — HIGH 要求 coverage ratio ≥ 0.8 + multi-pattern 共现（或 AST 级强特征如 @ccclass），否则 MEDIUM/LOW；防止 '文件存在 ≠ 模式遵守' 的典型误判",
+      "evidence": "Round 1 pitfall 研究; Q1 决策",
+      "confidence": "high",
+      "code_anchor_refs": []
+    },
+    {
+      "point": "L1/L2 物理拓扑采用混合原则 — scope-bound 约束用 colocated AGENTS.md（Claude Code ancestor 链拼接懒加载）；cross-cutting 约束用 .claude/rules/{concern}.md with paths: frontmatter（Claude Code 原生 path-scoped 加载）",
+      "evidence": "Round 1 research: code.claude.com/docs/en/memory 明确 concat + paths-frontmatter 机制",
+      "confidence": "high",
+      "code_anchor_refs": []
+    },
+    {
+      "point": "根 AGENTS.md 索引机制采用 @import 原生语法替代 <!-- fab:index --> 注释块；fab sync-meta 不再维护索引，仅维护 hash 链，避免双套同步",
+      "evidence": "Round 1 research: @import max depth 5; Q4 决策",
+      "confidence": "high",
+      "code_anchor_refs": [
+        "packages/cli/src/commands/sync-meta.ts:61-89"
+      ]
+    },
+    {
+      "point": "SKILL 硬规则按 DISPLAY/WRITE 分离 — NEVER WRITE unconfirmed；但 DISPLAY HIGH 档 = 隐式接受（批量展示时用户不纠正即视同意）；MEDIUM/LOW 必须显式接受",
+      "evidence": "Round 1 pitfall: Poetry silent defaults 反模式; Round 2 硬规则重写",
+      "confidence": "high",
+      "code_anchor_refs": [
+        "templates/claude-skills/agents-md-init/SKILL.md:88-92"
+      ]
+    },
+    {
+      "point": "forensic.ts 增加 candidate_files: CandidateFileEntry[]（按 pattern family 预给 top-3，总量 ≤ 12），SKILL 在 15×100 行 token 硬限内 Read 补采 — token 可预算，行为可测",
+      "evidence": "Q2 + Q6 决策; Round 2 family 分配规则",
+      "confidence": "high",
+      "code_anchor_refs": [
+        "packages/cli/src/scanner/forensic.ts:215-227"
+      ]
+    },
+    {
+      "point": "跨切面约束（security/testing/performance）由 SKILL 侦察时涌现式生成 .claude/rules/*.md，init 不预创建骨架（避免 YAGNI 和对不相关项目的过早推测）",
+      "evidence": "Q3 决策",
+      "confidence": "high",
+      "code_anchor_refs": []
+    },
+    {
+      "point": "agents-meta.ts AgentsMetaNode 扩展 layer（L0/L1/L2）+ topology_type（colocated|rules-frontmatter）+ paths_frontmatter? 字段；sync-meta 扩展扫描 .claude/rules/*.md 并解析 paths: frontmatter",
+      "evidence": "Round 2 schema 设计",
+      "confidence": "high",
+      "code_anchor_refs": [
+        "packages/shared/src/schemas/agents-meta.ts:3-14",
+        "packages/cli/src/commands/sync-meta.ts:112-141"
+      ]
+    },
+    {
+      "point": "现有 SKILL allowed-tools 已声明 Read/Glob/Grep/Bash 但 Phase 1/2 从不调用 → 本次改造是'话术升级 + Phase 0 主动侦察步骤'，工具权限无需修改，成本最低",
+      "evidence": "Round 1 exploration: SKILL.md:1-5 vs 18-39",
+      "confidence": "high",
+      "code_anchor_refs": [
+        "templates/claude-skills/agents-md-init/SKILL.md:1-5"
+      ]
+    }
+  ],
+  "code_anchors": [
+    {
+      "file": "templates/claude-skills/agents-md-init/SKILL.md",
+      "lines": "1-5",
+      "significance": "allowed-tools 已声明但空置 — 本次改造核心对象"
+    },
+    {
+      "file": "templates/claude-skills/agents-md-init/SKILL.md",
+      "lines": "18-39",
+      "significance": "Phase 1/2 被动问询话术 — 必须重写为 Phase 0/1/2 主动侦察模式"
+    },
+    {
+      "file": "templates/claude-skills/agents-md-init/SKILL.md",
+      "lines": "88-92",
+      "significance": "硬规则与 Matcha 冲突 — 必须按 DISPLAY/WRITE 分离重写"
+    },
+    {
+      "file": "packages/cli/src/scanner/forensic.ts",
+      "lines": "294-323",
+      "significance": "buildSkillRecommendations() 需重写为 buildAssertions()，输出 ForensicAssertion[]"
+    },
+    {
+      "file": "packages/cli/src/scanner/forensic.ts",
+      "lines": "249-267",
+      "significance": "inferPatternHint() 需升级为返回 {pattern, confidence, evidence_lines, co_occurring}"
+    },
+    {
+      "file": "packages/cli/src/scanner/forensic.ts",
+      "lines": "215-227",
+      "significance": "buildCodeSamples() 新增 candidate_files 输出 — 按 pattern family × top-3"
+    },
+    {
+      "file": "packages/shared/src/schemas/forensic-report.ts",
+      "lines": "all",
+      "significance": "schema 必须新增 ForensicAssertion + CandidateFileEntry + sampling_budget 字段"
+    },
+    {
+      "file": "packages/shared/src/schemas/agents-meta.ts",
+      "lines": "3-14",
+      "significance": "AgentsMetaNode 扩展 layer + topology_type + paths_frontmatter"
+    },
+    {
+      "file": "packages/shared/src/schemas/init-context.ts",
+      "lines": "all",
+      "significance": "InitContextInvariant 增加 confidence_snapshot 字段；InitContextDomainGroup 增加 topology_type"
+    },
+    {
+      "file": "packages/cli/src/commands/sync-meta.ts",
+      "lines": "112-141",
+      "significance": "findAgentsFiles 扩展为 findAgentsFiles + findRulesFiles；解析 .claude/rules/*.md 的 paths: frontmatter"
+    },
+    {
+      "file": "packages/cli/src/commands/init.ts",
+      "lines": "208-221",
+      "significance": "createInitialMeta() 的 L0 节点增加 layer: 'L0' + topology_type: 'colocated'"
+    },
+    {
+      "file": "templates/agents-md/AGENTS.md.template",
+      "lines": "all",
+      "significance": "fallback 模板的 <!-- fab:index --> 块需改为 @import 语法示例"
+    }
+  ],
+  "recommendations": [
+    {
+      "action": "升级 ForensicReport schema — 新增 ForensicAssertion[] 替代 recommendations_for_skill: string[]，新增 candidate_files[] 和 sampling_budget",
+      "rationale": "Check-not-Ask 落地的第一短板。CLI 端做语义推断成本低、可测试；SKILL 只消费结构化输入做批量展示。否则 SKILL 无法区分 HIGH/MEDIUM/LOW 做默认接受决策",
+      "priority": "high",
+      "steps": [
+        {
+          "description": "在 packages/shared/src/schemas/forensic-report.ts 定义 ForensicAssertion、CandidateFileEntry、CandidateFileFamily 类型和 Zod schema",
+          "target": "packages/shared/src/schemas/forensic-report.ts",
+          "verification": "类型完整，schema 可解析含 assertions + candidate_files 的 forensic.json"
+        },
+        {
+          "description": "forensic.ts 新增 buildAssertions() 函数 — 从 framework/topology/code_samples 推断结构化断言；附带 coverage 定量计算",
+          "target": "packages/cli/src/scanner/forensic.ts",
+          "verification": "werewolf-minigame-stub 跑出 ≥ 5 条 assertion，每条含 type/statement/confidence/evidence；HIGH 必须有 grep match_count"
+        },
+        {
+          "description": "forensic.ts 新增 buildCandidateFiles() 按 entry/component/config/test/domain 五个 family 各选 top-3 文件，总量 ≤ 12",
+          "target": "packages/cli/src/scanner/forensic.ts",
+          "verification": "werewolf-minigame-stub 跑出 candidate_files 含所有 5 类 family 的代表"
+        },
+        {
+          "description": "保留旧 buildSkillRecommendations 为 DEPRECATED 一个版本期以做迁移窗口；新 SKILL 只读 assertions[]",
+          "target": "packages/cli/src/scanner/forensic.ts",
+          "verification": "两个字段并存，单元测试覆盖旧/新路径"
+        }
+      ],
+      "review_status": "accepted"
+    },
+    {
+      "action": "重写 templates/claude-skills/agents-md-init/SKILL.md — Phase 0 主动侦察 + Phase 1 单轮 Architecture Review + Phase 2 自动构造",
+      "rationale": "当前 Phase 1/2 是被动'展示+提问'，允许工具但不调用。按单轮 Architecture Review 重写是 Matcha 交互落地、Check-not-Ask 生效的核心",
+      "priority": "high",
+      "steps": [
+        {
+          "description": "重写 SKILL.md 的 Phase 段落：Phase 0（Read forensic.assertions + Read candidate_files，硬限 15×100 行，可 Grep 补采），Phase 1（单屏批量展示 framework/patterns/invariants/domain 四类 + 证据锚 + 置信度图标），Phase 2（合并 assertions → init-context.json + AGENTS.md + @import 索引 + 可选 .claude/rules/*.md）",
+          "target": "templates/claude-skills/agents-md-init/SKILL.md",
+          "verification": "三 Phase 话术清晰，Phase 1 展示结构有明确 HIGH/MEDIUM/LOW 视觉标记"
+        },
+        {
+          "description": "重写 Hard Rules 段 — 按 DISPLAY/WRITE 分离：NEVER WRITE unconfirmed invariant；HIGH DISPLAY 允许隐式接受；HIGH 标准必须 coverage 0.8 + multi-pattern 共现或 AST 级强特征",
+          "target": "templates/claude-skills/agents-md-init/SKILL.md",
+          "verification": "硬规则段与 ForensicAssertion.confidence 语义一致"
+        },
+        {
+          "description": "在 SKILL.md 添加 Phase 2 @import 索引生成规则 — 列出子 AGENTS.md 和 .claude/rules/*.md，一律用 @ 前缀路径，最多 depth 5",
+          "target": "templates/claude-skills/agents-md-init/SKILL.md",
+          "verification": "生成样例用 @packages/foo/AGENTS.md 语法"
+        },
+        {
+          "description": "在 SKILL.md Precondition 段追加 'MUST read forensic.json.assertions[] AND forensic.json.candidate_files[] before Phase 1'",
+          "target": "templates/claude-skills/agents-md-init/SKILL.md",
+          "verification": "Phase 0 行为强制可审计"
+        }
+      ],
+      "review_status": "accepted"
+    },
+    {
+      "action": "扩展 agents-meta.ts 与 sync-meta.ts — 新增 layer/topology_type/paths_frontmatter 字段 + 扫描 .claude/rules/*.md",
+      "rationale": "Q4 决定 @import 做索引后，sync-meta 仍需识别 rules-frontmatter 类型节点以维护 hash 链；否则跨切面规则变动无审计",
+      "priority": "high",
+      "steps": [
+        {
+          "description": "agents-meta.ts schema 新增 layer ('L0'|'L1'|'L2')、topology_type ('colocated'|'rules-frontmatter')、paths_frontmatter? (string[]) 字段",
+          "target": "packages/shared/src/schemas/agents-meta.ts",
+          "verification": "Zod schema 可解析含新字段的 agents.meta.json"
+        },
+        {
+          "description": "sync-meta.ts findAgentsFiles 分裂为 findAgentsFiles（AGENTS.md colocated）+ findRulesFiles（.claude/rules/*.md + paths: frontmatter 解析）",
+          "target": "packages/cli/src/commands/sync-meta.ts",
+          "verification": "sync-meta 在含 .claude/rules/security.md 的 fixture 上产出 topology_type=rules-frontmatter 节点"
+        },
+        {
+          "description": "deriveLayer() 新函数：AGENTS.md 在根 = L0；一层子目录 = L1；两层或 .claude/rules/* = L2",
+          "target": "packages/cli/src/commands/sync-meta.ts",
+          "verification": "给定三种文件路径返回正确 layer"
+        },
+        {
+          "description": "createInitialMeta() 为 L0 节点添加 layer='L0' + topology_type='colocated'",
+          "target": "packages/cli/src/commands/init.ts",
+          "verification": "fab init 后 agents.meta.json 的 L0 节点含两字段"
+        },
+        {
+          "description": "提供 meta 向后兼容 — 旧 meta 无新字段时按 'colocated' + 从路径推断 layer 默认填充",
+          "target": "packages/cli/src/commands/sync-meta.ts",
+          "verification": "旧 agents.meta.json 运行 sync-meta 后被无损升级"
+        }
+      ],
+      "review_status": "accepted"
+    },
+    {
+      "action": "扩展 init-context.ts schema — InitContextInvariant 加 confidence_snapshot，InitContextDomainGroup 加 topology_type",
+      "rationale": "SKILL 写入的 invariants 必须保留批量 Check 时的置信度快照，供未来 audit 或 fab sync-meta 校验；domain_groups 要记录拓扑选择",
+      "priority": "medium",
+      "steps": [
+        {
+          "description": "init-context.ts schema: InitContextInvariant 增加 confidence_snapshot: 'high'|'medium'|'low' + source_evidence: {file, lines}[]",
+          "target": "packages/shared/src/schemas/init-context.ts",
+          "verification": "schema 可解析含新字段的 init-context.json"
+        },
+        {
+          "description": "init-context.ts schema: InitContextDomainGroup 增加 topology_type: 'colocated'|'rules-frontmatter' + target_path: string（colocated = 子目录，rules-frontmatter = .claude/rules/*.md）",
+          "target": "packages/shared/src/schemas/init-context.ts",
+          "verification": "schema 可解析"
+        },
+        {
+          "description": "SKILL.md Phase 2 明确要求：每个 invariant 写入时必须带 confidence_snapshot 和 source_evidence；每个 domain_group 必须带 topology_type",
+          "target": "templates/claude-skills/agents-md-init/SKILL.md",
+          "verification": "产出 init-context.json 含这些字段"
+        }
+      ],
+      "review_status": "accepted"
+    },
+    {
+      "action": "werewolf-minigame-stub 端到端测试 fixture — 覆盖 forensic.assertions 生成、SKILL 批量 Check 展示产出、init-context 结构",
+      "rationale": "Cocos Creator 3.x 项目是 fabric 的典型用例；端到端 fixture 保障 Matcha 范式在真实项目上可复现",
+      "priority": "medium",
+      "steps": [
+        {
+          "description": "新增 packages/cli/tests/init-assertions.test.ts — 对 examples/werewolf-minigame-stub 跑 buildForensicReport，断言 assertions 含 Cocos framework (HIGH)、@ccclass pattern (HIGH)、protect .meta (HIGH) 三条必备",
+          "target": "packages/cli/tests/init-assertions.test.ts",
+          "verification": "三条 HIGH assertion 命中"
+        },
+        {
+          "description": "新增 init-candidate-files.test.ts — 断言 candidate_files 含 entry/component/config 三个 family 的代表",
+          "target": "packages/cli/tests/init-candidate-files.test.ts",
+          "verification": "family 覆盖完整"
+        },
+        {
+          "description": "新增 init-context-schema.test.ts — 用 mock SKILL 输出填充 init-context.json，断言 schema 通过 + confidence_snapshot + topology_type 字段存在",
+          "target": "packages/cli/tests/init-context-schema.test.ts",
+          "verification": "schema 校验通过"
+        }
+      ],
+      "review_status": "accepted"
+    },
+    {
+      "action": "更新 docs/initialization.md — 添加 Matcha 范式的用户旅程示例",
+      "rationale": "docs/initialization.md 是 fab init 的权威使用说明，需要新增 Phase 0/1/2 的单轮 Architecture Review 样例与对话摘录，用户才能知道期望什么",
+      "priority": "medium",
+      "steps": [
+        {
+          "description": "在 docs/initialization.md 的 Phase 4 节补充 werewolf 样例 Architecture Review 文本（framework/pattern/invariant/domain 四分区 + 证据锚）",
+          "target": "docs/initialization.md",
+          "verification": "样例覆盖 HIGH 默认接受 + MEDIUM 需确认两种场景"
+        },
+        {
+          "description": "补充 HIGH/MEDIUM/LOW 三档说明 + 用户如何用自然语言纠错（'第2条改成 X'）",
+          "target": "docs/initialization.md",
+          "verification": "新手可读懂操作流程"
+        },
+        {
+          "description": "添加 @import 索引样例 + .claude/rules/*.md 的使用场景（跨切面约束）",
+          "target": "docs/initialization.md",
+          "verification": "涵盖混合拓扑两种情况"
+        }
+      ],
+      "review_status": "accepted"
+    }
+  ],
+  "implementation_scope": [],
+  "open_questions": [
+    "werewolf 之外的代表项目（Vite/Next/React-native）是否需要各自定义 framework-specific 的 pattern family 优先级？（目前五大 family 是通用的，但对 Next 来说 'app/route' 可能需要独立 family）",
+    "ForensicAssertion 的 coverage 计算需要精确的 'same-type files total' — 例如 Cocos 下 'Component 类文件'的判定边界；需要 detector 返回 type-specific file classifiers，还是交给 forensic.ts 按 extension + glob 简单归类？",
+    "当 fab init 运行时 forensic.ts 能否全量扫描大型项目（>5000 文件）而不超 200ms 预算？candidate_files 按 top-3 × 5 family 的 top 计算需要目录级 size 统计，可能需要限制最大扫描深度"
+  ],
+  "follow_up_suggestions": [
+    {
+      "type": "implementation",
+      "summary": "高优先级 3 项推荐（schema + SKILL.md + sync-meta）可直接 handoff workflow-lite-plan 做任务分解"
+    },
+    {
+      "type": "validation",
+      "summary": "建议先在 werewolf-minigame-stub 上跑新 forensic + 手工 Phase 1 对话验证整体节奏，再批量落地 schema 升级"
+    },
+    {
+      "type": "documentation",
+      "summary": "docs/initialization.md 更新应作为最后一步（依赖 SKILL.md 已生效）"
+    }
+  ],
+  "decision_trail": [
+    {
+      "round": 1,
+      "decision": "分析视角采用单一综合视角（Technical + UX merged）",
+      "context": "Phase 1 scoping",
+      "options_considered": [
+        "多视角并行",
+        "单一综合"
+      ],
+      "chosen": "单一综合",
+      "rejected_reasons": [
+        "3 个 Intent 强相关"
+      ],
+      "reason": "主题聚焦",
+      "impact": "Phase 2 单一 explore + research agent"
+    },
+    {
+      "round": 1,
+      "decision": "以 H1/H2/H3 作为起始假设而非中立评估",
+      "context": "用户 prompt 已明确 3 目标",
+      "options_considered": [
+        "中立评估",
+        "假设验证"
+      ],
+      "chosen": "假设验证",
+      "rejected_reasons": [
+        "中立评估浪费轮次"
+      ],
+      "reason": "用户倾向明确",
+      "impact": "Round 1 目标从 'what' 直接升到 'how'"
+    },
+    {
+      "round": 2,
+      "decision": "Q1 置信度策略 = 定量三档（覆盖率 + 共现）",
+      "context": "HIGH 默认接受需要严格量化",
+      "options_considered": [
+        "定量三档",
+        "按证据强度分级",
+        "统一单档"
+      ],
+      "chosen": "定量三档",
+      "rejected_reasons": [
+        "其他方案无法对抗文件存在 ≠ 模式遵守"
+      ],
+      "reason": "可测试 + 抗误判",
+      "impact": "forensic.ts 必须输出 coverage.ratio + co_occurring_patterns"
+    },
+    {
+      "round": 2,
+      "decision": "Q2 补采策略 = CLI 预给 candidate_files",
+      "context": "token 可预测性",
+      "options_considered": [
+        "CLI 预给",
+        "SKILL 自主 Glob",
+        "只扩大 forensic 采样"
+      ],
+      "chosen": "CLI 预给",
+      "rejected_reasons": [
+        "SKILL 自主不可预测",
+        "只扩大采样无 pattern 分组"
+      ],
+      "reason": "推断权在 CLI 便宜",
+      "impact": "forensic.ts 新增 buildCandidateFiles()"
+    },
+    {
+      "round": 2,
+      "decision": "Q3 跨切面约束 = SKILL 涌现式生成",
+      "context": "避免过早推测不相关项目",
+      "options_considered": [
+        "涌现式",
+        "预创建骨架",
+        "完全不生成"
+      ],
+      "chosen": "涌现式",
+      "rejected_reasons": [
+        "预创建违反 YAGNI",
+        "完全不生成丢失架构能力"
+      ],
+      "reason": "侦察后才知道",
+      "impact": ".claude/rules/ 不在 init 时预创建"
+    },
+    {
+      "round": 2,
+      "decision": "Q4 L0 索引 = @import 原生语法",
+      "context": "利用 Claude Code 原生机制避免双套",
+      "options_considered": [
+        "@import",
+        "sync-meta 重写 fab:index",
+        "两套都支持"
+      ],
+      "chosen": "@import",
+      "rejected_reasons": [
+        "双套机制维护成本高"
+      ],
+      "reason": "Claude Code 原生解析零漂移",
+      "impact": "sync-meta 不再维护 fab:index 块，只维护 hash"
+    },
+    {
+      "round": 2,
+      "decision": "Q5 Matcha 粒度 = 单轮 Architecture Review",
+      "context": "减少 round-trip + 看全局",
+      "options_considered": [
+        "单轮",
+        "两轮分层批量",
+        "HIGH 忽略+MEDIUM 批量"
+      ],
+      "chosen": "单轮",
+      "rejected_reasons": [
+        "两轮分层仍分散",
+        "HIGH 忽略缺少审计面"
+      ],
+      "reason": "最贴近 Claude Code /init 范式",
+      "impact": "SKILL 从 3 Phase 3 轮变为 3 Phase 1 轮交互"
+    },
+    {
+      "round": 2,
+      "decision": "Q6 token 预算 = 15 文件 × 100 行硬限",
+      "context": "可预算可降级",
+      "options_considered": [
+        "硬限",
+        "family 自适应",
+        "不限制"
+      ],
+      "chosen": "硬限",
+      "rejected_reasons": [
+        "自适应难以测试",
+        "不限制成本不可控"
+      ],
+      "reason": "简单可测 + 降级策略明确",
+      "impact": "SKILL Phase 0 需监控已读文件数，超限降级为 family 前 3"
+    }
+  ],
+  "narrative_trail": [
+    {
+      "round": 1,
+      "starting_point": "用户 3 个目标（Check-not-Ask / 物理拓扑 / Matcha），以 H1/H2/H3 为假设",
+      "key_progress": "代码探测 3 大结构性问题（工具空置 / 数据契约缺结构 / 硬规则冲突）+ 研究找到 Claude Code /init 范式与 ancestor-concat + paths-frontmatter 原生机制",
+      "hypothesis_impact": "Confirms H1/H2/H3（H2 Modifies 为'混合语义决定'非二选一）",
+      "updated_understanding": "三大改造技术方案骨架清晰",
+      "remaining_questions": "Q1-Q6 六个决策点待锁定"
+    },
+    {
+      "round": 2,
+      "starting_point": "Q1-Q6 决策点",
+      "key_progress": "用户 6/6 选推荐项 → 具体 schema 字段、置信度量化公式、SKILL.md 话术、硬规则重述、agents-meta 扩展全部落到可执行等级",
+      "hypothesis_impact": "Confirms — 3 Intent 全部 addressed",
+      "updated_understanding": "架构从'应该这样'升级为'这样做'，可直接 handoff lite-plan",
+      "remaining_questions": "无阻塞"
+    }
+  ],
+  "intent_coverage": [
+    {
+      "intent": "I1 Check-not-Ask 主动侦察",
+      "status": "addressed",
+      "where_addressed": "Round 1 (gap 定位) + Round 2 (ForensicAssertion schema + candidate_files + Phase 0 伪代码 + 置信度公式 + 硬规则重写)",
+      "notes": "全部落到代码级设计"
+    },
+    {
+      "intent": "I2 分层文档物理拓扑",
+      "status": "addressed",
+      "where_addressed": "Round 1 (Claude Code 原生机制发现) + Round 2 (混合原则 + @import 索引 + agents-meta layer/topology_type + sync-meta 扩展)",
+      "notes": "包含迁移路径设计"
+    },
+    {
+      "intent": "I3 Matcha 交互优化",
+      "status": "addressed",
+      "where_addressed": "Round 1 (/init 范式参照) + Round 2 (单轮 Architecture Review 话术模板 + 证据锚 + HIGH 隐式接受)",
+      "notes": "包含 HIGH/MEDIUM/LOW 视觉结构 + 用户纠错语法示例"
+    }
+  ],
+  "findings_coverage": [
+    {
+      "finding": "SKILL allowed-tools 已声明但 Phase 1/2 不调用",
+      "round": 1,
+      "disposition": "recommendation",
+      "target": "Rec #2 (SKILL.md 重写)"
+    },
+    {
+      "finding": "recommendations_for_skill 是 string[] 无结构",
+      "round": 1,
+      "disposition": "recommendation",
+      "target": "Rec #1 (schema 升级)"
+    },
+    {
+      "finding": "硬规则 NEVER infer unconfirmed 与 Matcha 冲突",
+      "round": 1,
+      "disposition": "recommendation",
+      "target": "Rec #2 (硬规则重写)"
+    },
+    {
+      "finding": "Claude Code CLAUDE.md ancestor 链拼接 + 子目录懒加载",
+      "round": 1,
+      "disposition": "informational",
+      "target": "—（作为设计约束接受）"
+    },
+    {
+      "finding": ".claude/rules/*.md paths-frontmatter 是原生跨切面原语",
+      "round": 1,
+      "disposition": "recommendation",
+      "target": "Rec #3 (sync-meta 扩展)"
+    },
+    {
+      "finding": "fab sync-meta 只扫 AGENTS.md 不维护 fab:index",
+      "round": 1,
+      "disposition": "recommendation",
+      "target": "Rec #3 (sync-meta 扩展 findRulesFiles)"
+    },
+    {
+      "finding": "HIGH confidence 需 DIRECT code evidence 非仅文件存在",
+      "round": 1,
+      "disposition": "absorbed",
+      "target": "→ Rec #1 (coverage 公式定义)"
+    },
+    {
+      "finding": "npm init 是唯一 canonical detect-then-default",
+      "round": 1,
+      "disposition": "informational",
+      "target": "—（作为设计 inspiration）"
+    },
+    {
+      "finding": "Claude Code 新 /init 是 Matcha 参照蓝本",
+      "round": 1,
+      "disposition": "informational",
+      "target": "—（作为范式参照）"
+    },
+    {
+      "finding": "Cursor 集中 vs Claude Code 分布",
+      "round": 1,
+      "disposition": "informational",
+      "target": "—"
+    },
+    {
+      "finding": "Inquirer.js 无原生 batch 断言 prompt",
+      "round": 1,
+      "disposition": "informational",
+      "target": "—（说明 Matcha 需自定义话术而非第三方组件）"
+    },
+    {
+      "finding": "Poetry silent smart defaults 反模式",
+      "round": 1,
+      "disposition": "absorbed",
+      "target": "→ Rec #2 (必须 DISPLAY 证据锚)"
+    },
+    {
+      "finding": "Q1-Q6 全选推荐",
+      "round": 2,
+      "disposition": "informational",
+      "target": "—（证明方向一致性）"
+    },
+    {
+      "finding": "ForensicAssertion schema 设计方案",
+      "round": 2,
+      "disposition": "recommendation",
+      "target": "Rec #1"
+    },
+    {
+      "finding": "candidate_files pattern family 规则",
+      "round": 2,
+      "disposition": "recommendation",
+      "target": "Rec #1"
+    },
+    {
+      "finding": "SKILL.md Phase 0/1/2 伪代码",
+      "round": 2,
+      "disposition": "recommendation",
+      "target": "Rec #2"
+    },
+    {
+      "finding": "硬规则 DISPLAY/WRITE 分离设计",
+      "round": 2,
+      "disposition": "recommendation",
+      "target": "Rec #2"
+    },
+    {
+      "finding": "agents-meta layer + topology_type 设计",
+      "round": 2,
+      "disposition": "recommendation",
+      "target": "Rec #3"
+    },
+    {
+      "finding": "init-context confidence_snapshot 扩展",
+      "round": 2,
+      "disposition": "recommendation",
+      "target": "Rec #4"
+    },
+    {
+      "finding": "向后兼容迁移路径（旧 meta 无新字段）",
+      "round": 2,
+      "disposition": "absorbed",
+      "target": "→ Rec #3 (迁移步骤)"
+    }
+  ],
+  "round3_delta": {
+    "trigger": "User proposed Zero-Pollution Runtime Association architecture, challenging Round 2 hybrid topology conclusion",
+    "verdict": "User committed to pure Shadow Mirroring (影子镜像) architecture: abandon colocated AGENTS.md and .claude/rules/*.md; all semantic docs live in .fabric/agents/ 1:1 source mirror + _cross/ subtree for cross-cutting; MCP-only dispatch via strengthened bootstrap protocol that mandates fab_get_rules(path) before any code reading, architecture planning, or logic modification.",
+    "key_finding_overturning_r2": "Code evidence (packages/server/src/tools/get-rules.ts:28-29 + 6 bootstrap templates in templates/bootstrap/) shows system is ALREADY MCP-first, not ambient-first as R2 implicitly assumed. fab_get_rules tool registered with description MANDATORY: Call before modifying any file.",
+    "decisions": [
+      {
+        "cq": "CQ1",
+        "choice": "Strengthen MCP protocol (Shadow Mirroring)",
+        "rationale": "User explicit commitment: MANDATORY fab_get_rules before any reading/planning/editing; forbid reasoning without local shadow context"
+      },
+      {
+        "cq": "CQ2",
+        "choice": "Abandon non-MCP fallback completely",
+        "rationale": "Pure Zero-Pollution; product requires MCP-capable clients; human review migrates to .fabric/agents/"
+      },
+      {
+        "cq": "CQ3",
+        "choice": "_cross/ subtree + scope_glob mapping",
+        "rationale": "Maintains SSOT without DRY violation; leverages existing minimatch decoupling in get-rules.ts:38"
+      },
+      {
+        "cq": "CQ4",
+        "choice": "Pure Zero-Pollution, no bridge artifacts",
+        "rationale": "Perception-phase vacuum addressed by CQ1 strengthened protocol, not by ambient bridge"
+      }
+    ],
+    "reversed_r2_conclusions": [
+      "Round 2 Rec #3 hybrid topology (colocated + .claude/rules/ paths-frontmatter) — REVERSED",
+      "Round 2 @import native indexing — ABANDONED (no colocated files to @import)",
+      "Round 2 agents-meta.paths_frontmatter field — DROPPED",
+      "Round 2 .claude/rules/ emergent generation — DROPPED"
+    ],
+    "preserved_r2_conclusions": [
+      "Rec #1 ForensicAssertion schema (orthogonal)",
+      "Rec #2 first half: SKILL Phase 0 active reconnaissance (orthogonal)",
+      "Rec #2 Phase 1 single-round Architecture Review batch Check (orthogonal)",
+      "Rec #4 InitContextInvariant.confidence_snapshot (orthogonal)",
+      "Confidence quantification formula (orthogonal)",
+      "candidate_files CLI prepackaging (orthogonal)",
+      "DISPLAY vs WRITE hard rule split (orthogonal)"
+    ],
+    "new_technical_solutions": [
+      {
+        "name": "Shadow Mirroring architecture",
+        "status": "Validated",
+        "design": ".fabric/agents/ 1:1 source mirror tree + _cross/ subtree for cross-cutting; business dirs (src/, packages/) contain ZERO rule files; fab_get_rules reads from .fabric/agents/ via agents.meta.json scope_glob mapping"
+      },
+      {
+        "name": "Bootstrap protocol strengthening",
+        "status": "Validated",
+        "design": "All 6 bootstrap templates (CLAUDE.md, cursor-fabric-bootstrap.mdc, GEMINI.md, codex-AGENTS-header.md, roo-fabric.md, windsurf-fabric.md) upgrade hard rule from Before editing any file to Before any code reading, architecture planning, or logic modification; add NEVER: Reason about or modify code before obtaining local shadow context via MCP"
+      },
+      {
+        "name": "agents-meta.ts schema simplification",
+        "status": "Validated",
+        "design": "topology_type: mirror | cross-cutting + layer: L0|L1|L2; drop paths_frontmatter field; sync-meta scans only .fabric/agents/**/*.md"
+      }
+    ],
+    "new_recommendations": [
+      {
+        "id": "Rec#7",
+        "title": "Upgrade all 6 bootstrap templates to strengthen fab_get_rules mandate (read/plan/edit scope)",
+        "priority": "high"
+      },
+      {
+        "id": "Rec#8",
+        "title": "Simplify root AGENTS.md to Fabric Bootstrap Protocol only (drop @import, drop colocated child refs); update werewolf-minigame-stub example",
+        "priority": "high"
+      },
+      {
+        "id": "Rec#9",
+        "title": "(Optional) Add fab_plan_context(paths[]) MCP tool for batch multi-path rule queries at planning phase",
+        "priority": "medium"
+      },
+      {
+        "id": "Rec#10",
+        "title": "(Optional) Telemetry/hook to monitor bootstrap rule compliance (warn when fab_get_rules was not called before edit)",
+        "priority": "medium"
+      }
+    ]
+  }
+}

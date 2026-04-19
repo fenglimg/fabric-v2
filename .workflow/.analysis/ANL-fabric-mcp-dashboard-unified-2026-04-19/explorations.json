@@ -37,7 +37,7 @@
   "call_chains": [
     {
       "entry": "fab serve --port 7373 --target ./werewolf-minigame (proposed)",
-      "chain": "CLI parse -> resolveDevMode() -> process.env.FABRIC_PROJECT_ROOT = target -> import { createFabricServer } from @fenglimg/fabric-server -> createMcpExpressApp({ host:'127.0.0.1' }) -> app.post('/mcp', session-factory handler) -> app.get('/api/ledger', readLedger handler) -> app.get('/api/rules', readAgentsMeta handler) -> app.get('/events', SSE watcher) -> app.use('/', static(dashboard-dist)) -> app.listen(port)",
+      "chain": "CLI parse -> resolveDevMode() -> process.env.FABRIC_PROJECT_ROOT = target -> import { createFabricServer } from @fabric/fabric-server -> createMcpExpressApp({ host:'127.0.0.1' }) -> app.post('/mcp', session-factory handler) -> app.get('/api/ledger', readLedger handler) -> app.get('/api/rules', readAgentsMeta handler) -> app.get('/events', SSE watcher) -> app.use('/', static(dashboard-dist)) -> app.listen(port)",
       "files": ["packages/cli/src/commands/serve.ts (NEW)", "packages/cli/src/dev-mode.ts", "packages/server/src/index.ts", "packages/server/src/http.ts (NEW)"]
     },
     {

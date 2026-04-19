@@ -1,0 +1,100 @@
+{
+  "id": "TASK-009",
+  "title": "New fab_plan_context(paths[]) MCP tool — batch multi-path rule queries for planning phase",
+  "scope": "packages/server/src/tools/",
+  "action": "Create",
+  "priority": "medium",
+  "description": "(OPTIONAL — can skip to ship core Shadow Mirroring faster) New MCP tool fab_plan_context that accepts paths: string[] + optional client_hash. Returns aggregated rules from multiple paths in one call: {revision_hash, stale, entries: [{path, rules}]}. Service layer reuses get-rules logic, batches execution, and deduplicates cross-cutting scope_glob matches. Register in packages/server/src/index.ts. Tool description emphasizes Plan/Architecture phase use. This complements the bootstrap protocol upgrade (TASK-005) by enabling efficient multi-path context gathering at planning phase without N sequential fab_get_rules calls.",
+  "files": [
+    {
+      "path": "packages/server/src/tools/plan-context.ts",
+      "action": "Create",
+      "target": "New MCP tool registration file",
+      "change": "Create fab_plan_context tool definition: params {paths: string[], client_hash?: string}; description explains batch multi-path rule query for planning/architecture phase; registers tool handler calling planContextService."
+    },
+    {
+      "path": "packages/server/src/services/plan-context.ts",
+      "action": "Create",
+      "target": "New service file",
+      "change": "Create planContextService: takes paths[], calls getRulesService for each path, deduplicates rules from overlapping scope_glob matches (rules from _cross/ files with global scope_glob appear once not N times), returns {revision_hash, stale, entries: [{path, rules}]}."
+    },
+    {
+      "path": "packages/server/src/index.ts",
+      "action": "Update",
+      "target": "Tool registration section",
+      "change": "Import and register fab_plan_context tool alongside existing fab_get_rules and other tools."
+    }
+  ],
+  "implementation": [
+    "Read packages/server/src/tools/get-rules.ts and packages/server/src/services/get-rules.ts to understand existing tool/service pattern before implementing",
+    "Design planContextService: iterate paths[], call getRulesForPath() for each, collect rules, deduplicate by (scope_glob + content) hash to avoid duplicates from _cross/ global matches",
+    "Implement packages/server/src/services/plan-context.ts following get-rules.ts service pattern",
+    "Implement packages/server/src/tools/plan-context.ts following get-rules.ts tool registration pattern",
+    "Register in packages/server/src/index.ts",
+    "Write unit tests: multi-path deduplication correctness, cross-cutting scope_glob aggregation"
+  ],
+  "reference": {
+    "pattern": "packages/server/src/tools/get-rules.ts + packages/server/src/services/get-rules.ts pattern",
+    "files": [
+      "packages/server/src/tools/get-rules.ts",
+      "packages/server/src/services/get-rules.ts",
+      "packages/server/src/index.ts"
+    ],
+    "examples": "Follow exact tool registration and service injection patterns from get-rules; reuse minimatch-based scope_glob matching from get-rules.ts:38"
+  },
+  "convergence": {
+    "criteria": [
+      "fab_plan_context tool registered in server/src/index.ts",
+      "Tool accepts paths: string[] and optional client_hash",
+      "Returns {revision_hash, stale, entries: [{path, rules}]}",
+      "Cross-cutting rules (scope_glob matching multiple paths) deduplicated — appear once in aggregated output not N times",
+      "Unit test: 3 paths with overlapping _cross/ scope_glob returns deduplicated rules",
+      "tsc --noEmit passes for packages/server"
+    ]
+  },
+  "rationale": {
+    "chosen_approach": "New tool + service following existing get-rules pattern; reuse service logic rather than duplicating",
+    "alternatives_considered": [
+      "Extend fab_get_rules to accept paths[] array (breaking change to existing tool signature)",
+      "Client-side batching via N sequential fab_get_rules calls (N round-trips vs 1)"
+    ],
+    "decision_factors": [
+      "Planning phase may need context for 5-15 files simultaneously; sequential calls are slow",
+      "Deduplication of cross-cutting rules is server-side concern — client cannot know which rules overlap"
+    ],
+    "tradeoffs": "New tool increases server surface; optional so can defer"
+  },
+  "test": {
+    "manual_checks": [
+      "Call fab_plan_context with 3 paths in werewolf fixture; verify rules returned per path and cross-cutting _cross/ rules deduplicated"
+    ],
+    "success_metrics": [
+      "tsc --noEmit exits 0 for packages/server",
+      "Unit tests pass: multi-path aggregation + deduplication"
+    ],
+    "unit": [
+      "plan-context.test.ts: multi-path rule aggregation with cross-cutting deduplication",
+      "plan-context.test.ts: stale detection when revision_hash changes"
+    ],
+    "integration": []
+  },
+  "risks": [],
+  "code_skeleton": {
+    "key_functions": [
+      {
+        "signature": "planContextService(paths: string[], clientHash?: string): {revision_hash: string; stale: boolean; entries: Array<{path: string; rules: string}>}",
+        "purpose": "Batch multi-path rule aggregation with cross-cutting deduplication for planning phase",
+        "returns": "{revision_hash, stale, entries}"
+      }
+    ],
+    "classes": []
+  },
+  "optional": true,
+  "depends_on": [],
+  "estimated_time": "45 minutes",
+  "executor_hint": "codex",
+  "cli_execution_id": "fab-init-shadow-mirroring-2026-04-19-TASK-009",
+  "cli_execution": {
+    "strategy": "new"
+  }
+}

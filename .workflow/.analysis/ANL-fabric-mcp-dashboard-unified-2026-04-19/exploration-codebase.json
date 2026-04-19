@@ -375,7 +375,7 @@
     },
     {
       "path": "packages/cli/package.json",
-      "annotation": "CLI 包依赖 @fenglimg/fabric-server，建立了 cli->server 的单向依赖",
+      "annotation": "CLI 包依赖 @fabric/fabric-server，建立了 cli->server 的单向依赖",
       "dimensions": [
         "architecture",
         "decision"
@@ -383,8 +383,8 @@
       "relevance": 0.72,
       "role": "context_only",
       "discovery_source": "bash-scan",
-      "rationale": "cli 包通过 npm 依赖 server 包（@fenglimg/fabric-server: ^0.1.0）；fab serve 命令需在 cli 包实现，调用 server 包的 createFabricServer()；依赖方向已存在",
-      "topic_relation": "fab serve 命令的实现位置确定：在 packages/cli/src/commands/ 下新增 serve.ts，import createFabricServer from @fenglimg/fabric-server，不需调整依赖图"
+      "rationale": "cli 包通过 npm 依赖 server 包（@fabric/fabric-server: ^0.1.0）；fab serve 命令需在 cli 包实现，调用 server 包的 createFabricServer()；依赖方向已存在",
+      "topic_relation": "fab serve 命令的实现位置确定：在 packages/cli/src/commands/ 下新增 serve.ts，import createFabricServer from @fabric/fabric-server，不需调整依赖图"
     }
   ],
   "patterns": [
@@ -436,7 +436,7 @@
       },
       "dev_mode": "packages/cli/src/dev-mode.ts (resolveDevMode: cli > env > config > cwd)",
       "dependencies": [
-        "@fenglimg/fabric-server@^0.1.0",
+        "@fabric/fabric-server@^0.1.0",
         "citty@^0.2.2",
         "@iarna/toml@^2.2.5"
       ]
@@ -507,7 +507,7 @@
     "createFabricServer() (packages/server/src/index.ts:L23-34) 返回无副作用的 McpServer 实例，tool 注册完全解耦于 transport；HTTP 和 stdio 可共享同一 server 实例",
     "@modelcontextprotocol/sdk v1.29.0 已引入（packages/server/package.json）；SDK 是否包含 StreamableHTTPServerTransport 需验证",
     "packages/shared/src/index.ts 当前仅有 export {} 占位，是零实现状态",
-    "packages/cli 通过 npm 依赖 @fenglimg/fabric-server；fab serve 命令可在 cli 包实现并 import server 包的 createFabricServer",
+    "packages/cli 通过 npm 依赖 @fabric/fabric-server；fab serve 命令可在 cli 包实现并 import server 包的 createFabricServer",
     "零 HTTP 框架依赖：server/package.json 和 cli/package.json 均无 express/fastify/hono 等 HTTP 库",
     "CLI 有 9 个 subcommand (packages/cli/src/commands/index.ts)，无 serve 命令；需新增",
     ".intent-ledger.jsonl 两路写入字段不一致：AI 侧缺 parent_sha/diff_stat，CLI 侧缺 commit_sha（可选字段）",
@@ -520,7 +520,7 @@
     "AgentsMeta interface 定义在 server 包 (meta-reader.ts:L6-18)，CLI 命令中有重复的本地 AgentsMeta type 定义（sync-meta.ts:L9-22, init.ts:L14-28）"
   ],
   "integration_anchors": [
-    "fab serve 命令新增点：packages/cli/src/commands/serve.ts，import { createFabricServer } from @fenglimg/fabric-server，通过 process.env.FABRIC_PROJECT_ROOT = target 传入项目根，同时绑定 stdio transport（保留 MCP 功能）和 HTTP transport（新增 Dashboard API）",
+    "fab serve 命令新增点：packages/cli/src/commands/serve.ts，import { createFabricServer } from @fabric/fabric-server，通过 process.env.FABRIC_PROJECT_ROOT = target 传入项目根，同时绑定 stdio transport（保留 MCP 功能）和 HTTP transport（新增 Dashboard API）",
     "HTTP transport 插入点：packages/server/src/index.ts:L36-41，与 startStdioServer() 并列新增 startHttpServer(port) 函数，或由 fab serve 在 server 包外部直接 new McpServer + HTTP transport 而不修改 server/index.ts",
     "MCP tool 镜像 HTTP API：3 个 MCP tool（fab_get_rules/fab_append_intent/fab_update_registry）的 handler 逻辑可封装为 service function，HTTP handler 和 MCP tool handler 均调用同一 service，避免逻辑重复",
     "AgentsMeta 类型迁移锚点：packages/shared/src/index.ts 当前为空，将 AgentsMeta + LedgerEntry + HumanLockEntry 迁移至此，server 和 Dashboard 均从 @fabric/shared import，解除 Dashboard 对 server 内部的直接依赖",

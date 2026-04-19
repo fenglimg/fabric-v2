@@ -1,0 +1,116 @@
+{
+  "id": "TASK-006",
+  "title": "Simplify root AGENTS.md to Bootstrap Protocol + werewolf fixture Shadow Mirroring sync",
+  "scope": "examples/werewolf-minigame-stub/AGENTS.md",
+  "action": "Update",
+  "priority": "high",
+  "description": "Simplify the root AGENTS.md template to contain only the Fabric Bootstrap Protocol (no @import lines, no submodule rules, no Scope Map / Hard Rules / Semantic Roster content). Rewrite examples/werewolf-minigame-stub/AGENTS.md as a Shadow Mirroring example — it should demonstrate that the project's AI constraints live in .fabric/agents/ not in AGENTS.md itself. Create the corresponding .fabric/agents/ mirror structure for the werewolf example (root.md + individual agent files mirroring assets/scripts/). This makes the werewolf example a living reference for Shadow Mirroring topology and shows users what the SKILL (TASK-002) will generate.",
+  "files": [
+    {
+      "path": "examples/werewolf-minigame-stub/AGENTS.md",
+      "action": "Update",
+      "target": "Entire file — Scope Map, Hard Rules, Semantic Roster, Agent sections",
+      "change": "Rewrite to Bootstrap Protocol only: (1) header identifying this as Fabric Bootstrap Protocol, (2) reference to .fabric/agents/ as the location of all AI constraints, (3) brief instruction to run fab_get_rules before any code reading/planning/editing, (4) pointer to .fabric/agents/root.md for full constraint set. Remove all Scope Map, Hard Rules, Semantic Roster, Agent sections, Collaboration Model, Cross-Agent Safety, @HUMAN Lock Range Example — these migrate to .fabric/agents/ mirror structure."
+    },
+    {
+      "path": "examples/werewolf-minigame-stub/.fabric/agents/root.md",
+      "action": "Create",
+      "target": "New file — L0 root shadow constraints",
+      "change": "Create L0 root.md containing: Repository Identity (project type, fixture purpose), Scope Map (protected surfaces: assets/prefabs/**, assets/scenes/**, **/*.meta), Hard Rules MUST/NEVER (same content as current AGENTS.md Hard Rules section), Working Contract, Cross-Agent Safety Rules, Drift Expectations, Review Checklist. This becomes the Shadow Mirroring L0 equivalent of the current colocated AGENTS.md content."
+    },
+    {
+      "path": "examples/werewolf-minigame-stub/.fabric/agents/assets/scripts/villager.md",
+      "action": "Create",
+      "target": "New file — L1 Villager agent shadow rules",
+      "change": "Create mirror file for villager agent: Mission, Owned Decisions, Visible Information, Collaboration Contract, MUST/NEVER rules from current AGENTS.md Agent: Villager section. Path mirrors assets/scripts/villager.ts (or equivalent)."
+    },
+    {
+      "path": "examples/werewolf-minigame-stub/.fabric/agents/assets/scripts/werewolf.md",
+      "action": "Create",
+      "target": "New file — L1 Werewolf agent shadow rules",
+      "change": "Create mirror file for werewolf agent from current AGENTS.md Agent: Werewolf section."
+    },
+    {
+      "path": "examples/werewolf-minigame-stub/.fabric/agents/_cross/role-balance.md",
+      "action": "Create",
+      "target": "New file — cross-cutting role balance constraints",
+      "change": "Create cross-cutting rules file for cross-agent safety: role-balance edit requires human review, resolution order changes require written explanation, private-information flow changes require maintainer sign-off. Includes @HUMAN Lock Range Example. scope_glob: '**' (global cross-cutting)."
+    }
+  ],
+  "implementation": [
+    "Read examples/werewolf-minigame-stub/AGENTS.md in full before modifying",
+    "Identify which sections migrate to root.md (Repository Identity, Scope Map, Hard Rules, Working Contract), which to agent files (Agent: X sections), which to _cross/ (Cross-Agent Safety, @HUMAN Lock)",
+    "Create .fabric/agents/ directory structure in werewolf fixture",
+    "Write .fabric/agents/root.md with L0 content (migrated from AGENTS.md global sections)",
+    "Write .fabric/agents/assets/scripts/villager.md with villager agent rules",
+    "Write .fabric/agents/assets/scripts/werewolf.md with werewolf agent rules",
+    "Write .fabric/agents/_cross/role-balance.md with cross-cutting rules",
+    "Rewrite examples/werewolf-minigame-stub/AGENTS.md as Bootstrap Protocol only (≤ 30 lines)",
+    "Verify: no game-specific content remains in AGENTS.md root; all semantic content in .fabric/agents/"
+  ],
+  "reference": {
+    "pattern": "Shadow Mirroring topology: .fabric/agents/ 1:1 source mirror + _cross/ subtree for cross-cutting",
+    "files": [
+      "examples/werewolf-minigame-stub/AGENTS.md",
+      "templates/bootstrap/CLAUDE.md"
+    ],
+    "examples": "conclusions.json round3_delta.new_technical_solutions[0] defines Shadow Mirroring: .fabric/agents/ 1:1 source mirror tree; business dirs (src/) contain ZERO rule files"
+  },
+  "convergence": {
+    "criteria": [
+      "examples/werewolf-minigame-stub/AGENTS.md ≤ 30 lines, contains no Scope Map / Hard Rules / Agent sections",
+      "examples/werewolf-minigame-stub/AGENTS.md references .fabric/agents/ as constraint location",
+      "examples/werewolf-minigame-stub/.fabric/agents/root.md exists and contains Repository Identity + Scope Map + global Hard Rules",
+      "examples/werewolf-minigame-stub/.fabric/agents/assets/scripts/villager.md exists with villager-specific rules",
+      "examples/werewolf-minigame-stub/.fabric/agents/_cross/role-balance.md exists with cross-cutting constraints",
+      "grep -r 'SCOPE MAP' examples/werewolf-minigame-stub/AGENTS.md returns zero matches (migrated to .fabric/agents/)",
+      "The .fabric/agents/ directory structure mirrors the source directory structure (assets/scripts/ → .fabric/agents/assets/scripts/)"
+    ]
+  },
+  "rationale": {
+    "chosen_approach": "Migrate content from colocated AGENTS.md to .fabric/agents/ mirror tree, leaving AGENTS.md as Bootstrap Protocol only — makes the werewolf fixture a living example of Shadow Mirroring topology that users can reference",
+    "alternatives_considered": [
+      "Keep AGENTS.md as-is and only add .fabric/agents/ alongside it (creates confusion about which is authoritative during migration)"
+    ],
+    "decision_factors": [
+      "R3-CQ2: product requires MCP-capable clients; AGENTS.md is not read by MCP; .fabric/agents/ is",
+      "werewolf example is the primary reference fixture for Fabric documentation and tests",
+      "Bootstrap Protocol only in AGENTS.md is consistent with TASK-005 bootstrap template upgrade"
+    ],
+    "tradeoffs": "Werewolf fixture content is reorganized, not reduced — all semantic content preserved in .fabric/agents/; test fixtures referencing AGENTS.md sections may need updates"
+  },
+  "test": {
+    "manual_checks": [
+      "wc -l examples/werewolf-minigame-stub/AGENTS.md — should be ≤ 30 lines",
+      "ls examples/werewolf-minigame-stub/.fabric/agents/ — should show root.md, assets/, _cross/ directories",
+      "cat examples/werewolf-minigame-stub/.fabric/agents/_cross/role-balance.md — should show cross-cutting rules"
+    ],
+    "success_metrics": [
+      "AGENTS.md root is Bootstrap Protocol only (verified by line count and grep for removed sections)",
+      ".fabric/agents/ mirror tree contains all migrated semantic content",
+      "No game-specific content lost (grep across .fabric/agents/ finds all original Agent sections)"
+    ],
+    "unit": [],
+    "integration": [
+      "TASK-007 e2e fixture test: sync-meta run on werewolf fixture produces agents.meta.json with entries for all .fabric/agents/ files"
+    ]
+  },
+  "risks": [
+    {
+      "description": "Existing tests or documentation may reference specific line numbers or sections of werewolf AGENTS.md",
+      "probability": "Medium",
+      "impact": "Low",
+      "mitigation": "Preserve all semantic content in .fabric/agents/; update any tests that reference specific AGENTS.md sections",
+      "fallback": "Add redirect comment in AGENTS.md pointing to the new .fabric/agents/ location"
+    }
+  ],
+  "code_skeleton": null,
+  "depends_on": ["TASK-005"],
+  "estimated_time": "30 minutes",
+  "executor_hint": "agent",
+  "cli_execution_id": "fab-init-shadow-mirroring-2026-04-19-TASK-006",
+  "cli_execution": {
+    "strategy": "fork",
+    "resume_from": "fab-init-shadow-mirroring-2026-04-19-TASK-005"
+  }
+}

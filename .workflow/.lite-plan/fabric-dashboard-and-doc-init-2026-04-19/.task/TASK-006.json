@@ -21,7 +21,7 @@
       "path": "packages/cli/src/commands/serve.ts",
       "action": "Create",
       "target": "fab serve CLI command",
-      "change": "New file: Commander command 'serve'; options: --port <number> default 7373, --target <dir> (resolves via resolveDevMode from cli/src/dev-mode.ts); imports startHttpServer from @fenglimg/fabric-server; EADDRINUSE error handler outputs friendly message 'Port {port} in use — try --port {port+1}'; logs startup URL to stdout"
+      "change": "New file: Commander command 'serve'; options: --port <number> default 7373, --target <dir> (resolves via resolveDevMode from cli/src/dev-mode.ts); imports startHttpServer from @fabric/fabric-server; EADDRINUSE error handler outputs friendly message 'Port {port} in use — try --port {port+1}'; logs startup URL to stdout"
     },
     {
       "path": "packages/cli/src/index.ts",
