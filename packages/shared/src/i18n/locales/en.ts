@@ -46,6 +46,24 @@ export const enMessages: Messages = {
   "cli.config.install.dry-run": "[dry-run] {client}: would write {path}",
   "cli.config.install.wrote": "{client}: wrote {path}",
 
+  "cli.doctor.description": "Run Fabric doctor checks and optional compliance audit reporting.",
+  "cli.doctor.args.target.description":
+    "Target project path. Defaults to CLI arg, EXTERNAL_FIXTURE_PATH, fabric.config.json, then cwd.",
+  "cli.doctor.args.audit.description": "Print fab_get_rules compliance violations for AI edit intents.",
+  "cli.doctor.args.window-minutes.description":
+    "Audit lookback window in minutes for matching fab_get_rules calls. Default 5.",
+  "cli.doctor.errors.invalid-window": "Invalid audit window: {value}",
+  "cli.doctor.audit.preview-only":
+    "auditMode is off in fabric.config.json; running fab doctor --audit as a manual preview only.",
+  "cli.doctor.audit.none": "No AI edit intents recorded yet for compliance audit.",
+  "cli.doctor.audit.clean": "All {count} audited edit paths have a preceding fab_get_rules call within {window}.",
+  "cli.doctor.audit.violations":
+    "{count} audited edit paths are missing a preceding fab_get_rules call within {window}.",
+  "cli.doctor.audit.table.path": "Path",
+  "cli.doctor.audit.table.edit": "Edit time",
+  "cli.doctor.audit.table.rules": "Last rules",
+  "cli.doctor.audit.table.intent": "Intent",
+
   "cli.hooks.description": "Manage Fabric Git hook templates.",
   "cli.hooks.install.description": "Install the Fabric Husky pre-commit hook template.",
   "cli.hooks.install.args.target.description": "Target project path, default is the current working directory.",

@@ -33,10 +33,13 @@ const BOOTSTRAP_REQUIRED_TOKENS = [
   "fab_update_registry",
   "AGENTS.md",
   "FABRIC.md",
+  ".fabric/agents/",
   ".fabric/agents.meta.json",
   ".fabric/human-lock.json",
   "ledger_entry",
   "agent_meta",
+  "shadow constraints",
+  "Shadow Mirroring",
   "MUST",
   "NEVER",
 ];

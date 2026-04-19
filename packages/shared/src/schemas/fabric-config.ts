@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+export const auditModeSchema = z.enum(["strict", "warn", "off"]);
+
 export const clientPathsSchema = z.object({
   claudeCodeCLI: z.string().optional(),
   claudeCodeDesktop: z.string().optional(),
@@ -14,4 +16,6 @@ export const fabricConfigSchema = z.object({
   clientPaths: clientPathsSchema.optional(),
   externalFixturePath: z.string().optional(),
   scanIgnores: z.array(z.string()).optional(),
+  auditMode: auditModeSchema.optional(),
+  audit_mode: auditModeSchema.optional(),
 });

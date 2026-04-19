@@ -44,6 +44,23 @@ export const zhCNMessages: Messages = {
   "cli.config.install.dry-run": "[dry-run] {client}：将写入 {path}",
   "cli.config.install.wrote": "{client}：已写入 {path}",
 
+  "cli.doctor.description": "运行 Fabric doctor 检查，并可选输出合规审计报告。",
+  "cli.doctor.args.target.description":
+    "目标项目路径。默认依次使用 CLI 参数、EXTERNAL_FIXTURE_PATH、fabric.config.json、当前目录。",
+  "cli.doctor.args.audit.description": "输出 AI 编辑意图缺少 fab_get_rules 前置调用的违规项。",
+  "cli.doctor.args.window-minutes.description":
+    "匹配 fab_get_rules 调用的回看时间窗口，单位为分钟。默认 5 分钟。",
+  "cli.doctor.errors.invalid-window": "无效的审计时间窗口：{value}",
+  "cli.doctor.audit.preview-only":
+    "fabric.config.json 中 auditMode 为 off；当前 fab doctor --audit 仅执行手动预览，不会改变退出码。",
+  "cli.doctor.audit.none": "当前还没有可用于合规审计的 AI 编辑意图记录。",
+  "cli.doctor.audit.clean": "已审计的 {count} 个编辑路径都在 {window} 内存在前置 fab_get_rules 调用。",
+  "cli.doctor.audit.violations": "有 {count} 个已审计编辑路径在 {window} 内缺少前置 fab_get_rules 调用。",
+  "cli.doctor.audit.table.path": "路径",
+  "cli.doctor.audit.table.edit": "编辑时间",
+  "cli.doctor.audit.table.rules": "最近规则调用",
+  "cli.doctor.audit.table.intent": "意图",
+
   "cli.hooks.description": "管理 Fabric Git 钩子模板。",
   "cli.hooks.install.description": "安装 Fabric Husky pre-commit 钩子模板。",
   "cli.hooks.install.args.target.description": "目标项目路径，默认为当前工作目录。",
