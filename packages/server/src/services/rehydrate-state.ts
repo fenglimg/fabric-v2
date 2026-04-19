@@ -162,6 +162,8 @@ function buildLedgerFallbackMeta(entries: StoredLedgerEntry[]): AgentsMeta {
         scope_glob: affectedPath,
         deps: [],
         priority: "medium",
+        layer: "L2",
+        topology_type: "mirror",
         hash: `replayed:${hashBase ?? entry.id}`,
       };
     }

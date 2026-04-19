@@ -7,9 +7,17 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 
 import { registerAppendIntent } from "./tools/append-intent.js";
 import { registerGetRules } from "./tools/get-rules.js";
+import { registerPlanContext } from "./tools/plan-context.js";
 import { registerUpdateRegistry } from "./tools/update-registry.js";
 
 declare const __SERVER_VERSION__: string;
+
+export {
+  runDoctorAuditReport,
+  runDoctorReport,
+  type DoctorAuditReport,
+  type DoctorReport,
+} from "./services/doctor.js";
 
 function writeStderr(message: string): void {
   process.stderr.write(`${message}\n`);
@@ -30,6 +38,7 @@ export function createFabricServer(): McpServer {
   });
 
   registerGetRules(server);
+  registerPlanContext(server);
   registerAppendIntent(server);
   registerUpdateRegistry(server);
 

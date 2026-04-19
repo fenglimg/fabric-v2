@@ -3,9 +3,22 @@ import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { isAbsolute, join, posix, resolve } from "node:path";
 
-import { detectFramework, forensicReportSchema, type ForensicReport, type FrameworkInfo } from "@fenglimg/fabric-shared";
+import {
+  detectFramework,
+  forensicReportSchema,
+  type AuditMode,
+  type ForensicReport,
+  type FrameworkInfo,
+} from "@fenglimg/fabric-shared";
 
 import { readAgentsMeta } from "../meta-reader.js";
+import {
+  DEFAULT_AUDIT_WINDOW_MS,
+  findPrecedingGetRulesEvent,
+  normalizeAuditPath,
+  readAuditLog,
+  type GetRulesAuditEntry,
+} from "./audit-log.js";
 import { readHumanLock } from "./read-human-lock.js";
 import { readLedger } from "./read-ledger.js";
 
@@ -34,12 +47,39 @@ export type DoctorSummary = {
   lastLedgerEntryTs: number | null;
   lastLedgerEntryAgeMs: number | null;
   metaRevision: string | null;
+  audit:
+    | {
+        enabled: boolean;
+        mode: AuditMode;
+        checkedPathCount: number;
+        violationCount: number;
+        windowMs: number;
+      }
+    | null;
 };
 
 export type DoctorReport = {
   status: DoctorStatus;
   checks: DoctorCheck[];
   summary: DoctorSummary;
+  audit: DoctorAuditReport | null;
+};
+
+export type DoctorAuditViolation = {
+  editTs: number;
+  entryId: string;
+  intent: string;
+  lastGetRulesTs: number | null;
+  path: string;
+};
+
+export type DoctorAuditReport = {
+  mode: AuditMode;
+  skipped: boolean;
+  windowMs: number;
+  checkedPathCount: number;
+  violationCount: number;
+  violations: DoctorAuditViolation[];
 };
 
 type EntryPoint = DoctorSummary["entryPoints"][number];
@@ -112,11 +152,12 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
   const framework = detectFramework(projectRoot);
   const entryPoints = collectEntryPoints(projectRoot);
 
-  const [savedForensic, metaSnapshot, humanLockSnapshot, ledgerSnapshot] = await Promise.all([
+  const [savedForensic, metaSnapshot, humanLockSnapshot, ledgerSnapshot, auditReport] = await Promise.all([
     readSavedForensic(projectRoot),
     inspectMetaRevision(projectRoot),
     inspectHumanLock(projectRoot),
     inspectLedger(projectRoot),
+    runDoctorAuditReport(projectRoot),
   ]);
 
   const checks: DoctorCheck[] = [
@@ -126,6 +167,10 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     createProtectedPathsCheck(humanLockSnapshot),
     createLedgerCheck(ledgerSnapshot),
   ];
+
+  if (!auditReport.skipped) {
+    checks.push(createAuditCheck(auditReport));
+  }
 
   return {
     status: reduceStatus(checks.map((check) => check.status)),
@@ -145,7 +190,64 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
       lastLedgerEntryTs: ledgerSnapshot.lastEntryTs,
       lastLedgerEntryAgeMs: ledgerSnapshot.lastEntryAgeMs,
       metaRevision: metaSnapshot.revision,
+      audit: auditReport.skipped
+        ? null
+        : {
+            enabled: true,
+            mode: auditReport.mode,
+            checkedPathCount: auditReport.checkedPathCount,
+            violationCount: auditReport.violationCount,
+            windowMs: auditReport.windowMs,
+          },
     },
+    audit: auditReport.skipped ? null : auditReport,
+  };
+}
+
+export async function runDoctorAuditReport(
+  target: string,
+  options: {
+    force?: boolean;
+    mode?: AuditMode;
+    windowMs?: number;
+  } = {},
+): Promise<DoctorAuditReport> {
+  const projectRoot = normalizeTarget(target);
+  const mode = options.mode ?? readDoctorAuditMode(projectRoot);
+  const windowMs = options.windowMs ?? DEFAULT_AUDIT_WINDOW_MS;
+
+  if (mode === "off" && options.force !== true) {
+    return {
+      mode,
+      skipped: true,
+      windowMs,
+      checkedPathCount: 0,
+      violationCount: 0,
+      violations: [],
+    };
+  }
+
+  const [ledgerEntries, auditEntries] = await Promise.all([
+    readLedger(projectRoot, { source: "ai" }),
+    readAuditLog(projectRoot),
+  ]);
+  const getRulesEntries = auditEntries.filter(
+    (entry): entry is GetRulesAuditEntry => entry.event === "get_rules",
+  );
+  const { checkedPathCount, violations } = collectAuditViolations(
+    projectRoot,
+    ledgerEntries,
+    getRulesEntries,
+    windowMs,
+  );
+
+  return {
+    mode,
+    skipped: false,
+    windowMs,
+    checkedPathCount,
+    violationCount: violations.length,
+    violations,
   };
 }
 
@@ -295,6 +397,30 @@ function createLedgerCheck(snapshot: LedgerSnapshot): DoctorCheck {
   };
 }
 
+function createAuditCheck(report: DoctorAuditReport): DoctorCheck {
+  if (report.checkedPathCount === 0) {
+    return {
+      name: "Rules fetch audit",
+      status: "warn",
+      message: "No AI edit intents recorded yet for compliance audit.",
+    };
+  }
+
+  if (report.violationCount > 0) {
+    return {
+      name: "Rules fetch audit",
+      status: report.mode === "strict" ? "error" : "warn",
+      message: `${report.violationCount} edit path${report.violationCount === 1 ? "" : "s"} lack a preceding fab_get_rules call within ${formatDuration(report.windowMs)}.`,
+    };
+  }
+
+  return {
+    name: "Rules fetch audit",
+    status: "ok",
+    message: `All ${report.checkedPathCount} audited edit path${report.checkedPathCount === 1 ? "" : "s"} have a preceding fab_get_rules call within ${formatDuration(report.windowMs)}.`,
+  };
+}
+
 async function readSavedForensic(projectRoot: string): Promise<SavedForensic> {
   const forensicPath = join(projectRoot, ".fabric", "forensic.json");
 
@@ -415,6 +541,90 @@ async function inspectLedger(projectRoot: string): Promise<LedgerSnapshot> {
     lastEntryTs: lastEntry,
     lastEntryAgeMs: lastEntry === null ? null : Math.max(Date.now() - lastEntry, 0),
   };
+}
+
+function collectAuditViolations(
+  projectRoot: string,
+  ledgerEntries: Array<{
+    id: string;
+    ts: number;
+    intent: string;
+    affected_paths: string[];
+  }>,
+  getRulesEntries: GetRulesAuditEntry[],
+  windowMs: number,
+): {
+  checkedPathCount: number;
+  violations: DoctorAuditViolation[];
+} {
+  let checkedPathCount = 0;
+  const violations: DoctorAuditViolation[] = [];
+
+  for (const entry of ledgerEntries) {
+    for (const affectedPath of entry.affected_paths) {
+      const normalizedPath = normalizeAuditPath(projectRoot, affectedPath);
+      const matched = findPrecedingGetRulesEvent(getRulesEntries, normalizedPath, entry.ts, windowMs);
+
+      checkedPathCount += 1;
+      if (matched !== null) {
+        continue;
+      }
+
+      violations.push({
+        editTs: entry.ts,
+        entryId: entry.id,
+        intent: entry.intent,
+        lastGetRulesTs: findLatestGetRulesTs(getRulesEntries, normalizedPath, entry.ts),
+        path: normalizedPath,
+      });
+    }
+  }
+
+  return {
+    checkedPathCount,
+    violations,
+  };
+}
+
+function findLatestGetRulesTs(
+  entries: GetRulesAuditEntry[],
+  path: string,
+  ts: number,
+): number | null {
+  let latest: number | null = null;
+
+  for (const entry of entries) {
+    if (entry.path !== path || entry.ts > ts) {
+      continue;
+    }
+
+    latest = latest === null || entry.ts > latest ? entry.ts : latest;
+  }
+
+  return latest;
+}
+
+function readDoctorAuditMode(projectRoot: string): AuditMode {
+  const configPath = join(projectRoot, "fabric.config.json");
+
+  try {
+    const parsed = JSON.parse(readFileSync(configPath, "utf8")) as unknown;
+    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return "off";
+    }
+
+    const configuredMode =
+      readAuditModeValue((parsed as Record<string, unknown>).auditMode) ??
+      readAuditModeValue((parsed as Record<string, unknown>).audit_mode);
+
+    return configuredMode ?? "off";
+  } catch (error) {
+    if (isMissingFileError(error)) {
+      return "off";
+    }
+
+    return "off";
+  }
 }
 
 function normalizeTarget(targetInput: string): string {
@@ -539,6 +749,32 @@ function formatAge(ageMs: number): string {
   }
 
   return `${Math.floor(days / 7)}w`;
+}
+
+function formatDuration(durationMs: number): string {
+  const minutes = Math.floor(durationMs / (60 * 1000));
+  if (minutes < 1) {
+    return `${Math.max(Math.floor(durationMs / 1000), 1)}s`;
+  }
+
+  if (minutes < 60) {
+    return `${minutes}m`;
+  }
+
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) {
+    return `${hours}h`;
+  }
+
+  return `${Math.floor(hours / 24)}d`;
+}
+
+function readAuditModeValue(value: unknown): AuditMode | null {
+  if (value === "strict" || value === "warn" || value === "off") {
+    return value;
+  }
+
+  return null;
 }
 
 function sha256(content: string): string {

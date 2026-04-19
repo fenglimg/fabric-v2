@@ -3,17 +3,25 @@ import { join } from "node:path";
 
 import { minimatch } from "minimatch";
 
-import { readAgentsMeta } from "../meta-reader.js";
+import { readAgentsMeta, type AgentsMeta } from "../meta-reader.js";
+import { appendGetRulesAuditEvent } from "./audit-log.js";
 import { readHumanLock } from "./read-human-lock.js";
 
-type RulesEntry = {
+export type RulesEntry = {
   path: string;
   content: string;
 };
 
-type HumanLockedNearby = {
+export type HumanLockedNearby = {
   file: string;
   excerpt: string;
+};
+
+export type RulesPayload = {
+  L0: string;
+  L1: RulesEntry[];
+  L2: RulesEntry[];
+  human_locked_nearby: HumanLockedNearby[];
 };
 
 export type GetRulesInput = {
@@ -24,12 +32,18 @@ export type GetRulesInput = {
 export type GetRulesResult = {
   revision_hash: string;
   stale: boolean;
-  rules: {
-    L0: string;
-    L1: RulesEntry[];
-    L2: RulesEntry[];
-    human_locked_nearby: HumanLockedNearby[];
-  };
+  rules: RulesPayload;
+};
+
+export type GetRulesContext = {
+  meta: AgentsMeta;
+  l0Content: string;
+  humanLockedNearby: HumanLockedNearby[];
+};
+
+type LoadedRule = {
+  level: "L1" | "L2" | null;
+  entry: RulesEntry;
 };
 
 const PRIORITY_ORDER: Record<"high" | "medium" | "low", number> = {
@@ -39,13 +53,85 @@ const PRIORITY_ORDER: Record<"high" | "medium" | "low", number> = {
 };
 
 export async function getRules(projectRoot: string, input: GetRulesInput): Promise<GetRulesResult> {
-  const meta = readAgentsMeta(projectRoot);
-  const stale = input.client_hash !== undefined && input.client_hash !== meta.revision;
-  const requestedPath = normalizePath(input.path);
-  const l0Content = await readFile(join(projectRoot, "AGENTS.md"), "utf8");
+  const context = await loadGetRulesContext(projectRoot);
+  const stale = input.client_hash !== undefined && input.client_hash !== context.meta.revision;
+  const rules = await resolveRulesForPath(projectRoot, context, input.path);
+  const result = {
+    revision_hash: context.meta.revision,
+    stale,
+    rules,
+  };
 
+  try {
+    await appendGetRulesAuditEvent(projectRoot, {
+      path: input.path,
+      client_hash: input.client_hash,
+    });
+  } catch {
+    // Compliance telemetry is best-effort and must not block rule delivery.
+  }
+
+  return result;
+}
+
+export async function loadGetRulesContext(projectRoot: string): Promise<GetRulesContext> {
+  const meta = readAgentsMeta(projectRoot);
+  const l0Content = await readFile(join(projectRoot, "AGENTS.md"), "utf8");
+  const humanLockedNearby = (await readHumanLock(projectRoot)).map((entry) => ({
+    file: entry.file,
+    excerpt: JSON.stringify(entry),
+  }));
+
+  return {
+    meta,
+    l0Content,
+    humanLockedNearby,
+  };
+}
+
+export async function resolveRulesForPath(
+  projectRoot: string,
+  context: GetRulesContext,
+  path: string,
+  options: {
+    dedupeByPath?: boolean;
+  } = {},
+): Promise<RulesPayload> {
+  const loadedRules = await loadRulesForPath(projectRoot, context.meta, path);
+  const { L1, L2 } = partitionRulesByLevel(loadedRules, options.dedupeByPath ?? false);
+
+  return {
+    L0: context.l0Content,
+    L1,
+    L2,
+    human_locked_nearby: context.humanLockedNearby,
+  };
+}
+
+export function normalizeRulesPath(value: string): string {
+  return value.replaceAll("\\", "/");
+}
+
+function classifyNode(nodeId: string): "L1" | "L2" | null {
+  if (nodeId.startsWith("L1/")) {
+    return "L1";
+  }
+
+  if (nodeId.startsWith("L2/")) {
+    return "L2";
+  }
+
+  return null;
+}
+
+async function loadRulesForPath(
+  projectRoot: string,
+  meta: AgentsMeta,
+  path: string,
+): Promise<LoadedRule[]> {
+  const requestedPath = normalizeRulesPath(path);
   const matchedNodes = Object.entries(meta.nodes)
-    .filter(([, node]) => minimatch(requestedPath, normalizePath(node.scope_glob), { dot: true }))
+    .filter(([, node]) => minimatch(requestedPath, normalizeRulesPath(node.scope_glob), { dot: true }))
     .sort((left, right) => {
       const [leftId, leftNode] = left;
       const [rightId, rightNode] = right;
@@ -54,7 +140,7 @@ export async function getRules(projectRoot: string, input: GetRulesInput): Promi
       return priorityDelta !== 0 ? priorityDelta : leftId.localeCompare(rightId);
     });
 
-  const loadedRules = await Promise.all(
+  return await Promise.all(
     matchedNodes.map(async ([nodeId, node]) => ({
       level: classifyNode(nodeId),
       entry: {
@@ -63,7 +149,12 @@ export async function getRules(projectRoot: string, input: GetRulesInput): Promi
       },
     })),
   );
+}
 
+function partitionRulesByLevel(
+  loadedRules: LoadedRule[],
+  dedupeByPath: boolean,
+): Pick<RulesPayload, "L1" | "L2"> {
   const l1: RulesEntry[] = [];
   const l2: RulesEntry[] = [];
 
@@ -78,35 +169,21 @@ export async function getRules(projectRoot: string, input: GetRulesInput): Promi
     }
   }
 
-  const humanLockedNearby = (await readHumanLock(projectRoot)).map((entry) => ({
-    file: entry.file,
-    excerpt: JSON.stringify(entry),
-  }));
-
   return {
-    revision_hash: meta.revision,
-    stale,
-    rules: {
-      L0: l0Content,
-      L1: l1,
-      L2: l2,
-      human_locked_nearby: humanLockedNearby,
-    },
+    L1: dedupeByPath ? dedupeEntriesByPath(l1) : l1,
+    L2: dedupeByPath ? dedupeEntriesByPath(l2) : l2,
   };
 }
 
-function normalizePath(value: string): string {
-  return value.replaceAll("\\", "/");
-}
+function dedupeEntriesByPath(entries: RulesEntry[]): RulesEntry[] {
+  const seenPaths = new Set<string>();
 
-function classifyNode(nodeId: string): "L1" | "L2" | null {
-  if (nodeId.startsWith("L1/")) {
-    return "L1";
-  }
+  return entries.filter((entry) => {
+    if (seenPaths.has(entry.path)) {
+      return false;
+    }
 
-  if (nodeId.startsWith("L2/")) {
-    return "L2";
-  }
-
-  return null;
+    seenPaths.add(entry.path);
+    return true;
+  });
 }
