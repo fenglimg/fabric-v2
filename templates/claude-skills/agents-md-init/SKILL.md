@@ -6,9 +6,9 @@ allowed-tools: Read, Write, Glob, Grep, Bash
 
 ## Precondition
 
-必须先 Read `.fabric/forensic.json`。若该文件不存在，终止 skill 并告知用户：`请先运行 fab init 生成证据包`。
+MUST read `.fabric/forensic.json` before any other action. If the file does not exist, stop the skill and tell the user: `请先运行 fab init 生成证据包`.
 
-把以下状态视为 initialization pending：
+Treat the following state as initialization pending:
 
 - `.fabric/forensic.json` 存在
 - `.fabric/init-context.json` 不存在
@@ -76,11 +76,16 @@ allowed-tools: Read, Write, Glob, Grep, Bash
 
 4. 最终输出：向用户列出生成文件清单，并建议后续维护时运行 `fab sync-meta`。
 
-## Hard Rules
+## Hard Rules (DO NOT TRANSLATE)
 
-- Zero TODO: 不生成任何 `TODO`、`TBD`、placeholder、stub
-- No YAML frontmatter in outputs: 除本 skill 自身外，生成的 `AGENTS.md` 不得包含 YAML frontmatter
-- Root AGENTS.md <= 300 lines
-- AGENTS 嵌套总层级 <= 4
-- 不得自动推测用户未确认的 invariants
-- 有不确定内容时删除，不要留占位符
+- MUST read `.fabric/forensic.json` before any initialization interview or file write.
+- MUST write `.fabric/init-context.json` with `framework`, `architecture_patterns`, `invariants`, `domain_groups`, `interview_trail`, and `forensic_ref`.
+- MUST keep `invariants[].type` values exactly `ban`, `require`, or `protect`.
+- MUST generate root `AGENTS.md` with no more than 300 lines.
+- MUST keep generated `AGENTS.md` nesting depth at 4 levels or less.
+- MUST update `.fabric/agents.meta.json` when generated `AGENTS.md` files change, preserving the revision hash chain.
+- MUST preserve protected tokens exactly: `AGENTS.md`, `FABRIC.md`, `.fabric/agents.meta.json`, `.fabric/human-lock.json`, `.fabric/init-context.json`, `.fabric/forensic.json`, `MUST`, `NEVER`.
+- NEVER generate `TODO`, `TBD`, placeholder, or stub content.
+- NEVER include YAML frontmatter in generated `AGENTS.md` files.
+- NEVER infer unconfirmed invariants; ask the user or omit the rule.
+- NEVER leave uncertain content as a placeholder.
