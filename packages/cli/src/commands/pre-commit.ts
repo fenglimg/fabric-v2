@@ -20,13 +20,12 @@ async function runOrFail(name: string, cmd: CmdLike, args: Record<string, unknow
 export default defineCommand({
   meta: {
     name: "pre-commit",
-    description:
-      "Composite pre-commit hook — runs sync-meta --check-only, human-lint, ledger-append --staged in a single Node process for <300ms budget.",
+    description: "复合 pre-commit 钩子 —— 在单一 Node 进程中依次执行 sync-meta --check-only、human-lint、ledger-append --staged，300ms 内完成。",
   },
   args: {
     target: {
       type: "string",
-      description: "Project root (default: cwd or EXTERNAL_FIXTURE_PATH)",
+      description: "项目根目录（默认为当前目录或 EXTERNAL_FIXTURE_PATH）。",
     },
   },
   async run({ args }) {

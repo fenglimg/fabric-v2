@@ -96,9 +96,16 @@ export class ClaudeCodeCLIWriter extends JsonClientConfigWriter {
     super(configuredPath);
   }
 
-  protected defaultPath(): string | null {
-    const claudeDir = join(homedir(), ".claude");
-    return existsSync(claudeDir) ? join(claudeDir, "settings.json") : null;
+  // Writes to project-level .claude/settings.json so MCP is scoped to the project.
+  // Detection in resolver still checks ~/ to confirm Claude Code is installed.
+  protected defaultPath(workspaceRoot: string): string | null {
+    const globalClaudeDir = join(homedir(), ".claude");
+    const projectClaudeDir = join(workspaceRoot, ".claude");
+    if (!existsSync(globalClaudeDir) && !existsSync(projectClaudeDir)) {
+      return null;
+    }
+
+    return join(projectClaudeDir, "settings.json");
   }
 }
 

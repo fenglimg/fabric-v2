@@ -28,17 +28,17 @@ type SyncMetaArgs = {
 export const syncMetaCommand = defineCommand({
   meta: {
     name: "sync-meta",
-    description: "Sync Fabric metadata from AGENTS.md files.",
+    description: "从 AGENTS.md 文件同步 Fabric 元数据。",
   },
   args: {
     target: {
       type: "string",
-      description: "Target project path. Defaults to the current working directory.",
+      description: "目标项目路径，默认为当前工作目录。",
       default: process.cwd(),
     },
     "check-only": {
       type: "boolean",
-      description: "Exit with code 1 if .fabric/agents.meta.json is stale.",
+      description: "如果 .fabric/agents.meta.json 已过期则以代码 1 退出。",
       default: false,
     },
   },

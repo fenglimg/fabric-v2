@@ -16,18 +16,18 @@ type PackageJson = {
 export const hooksCommand = defineCommand({
   meta: {
     name: "hooks",
-    description: "Manage Fabric git hook templates.",
+    description: "管理 Fabric Git 钩子模板。",
   },
   subCommands: {
     install: defineCommand({
       meta: {
         name: "install",
-        description: "Install the Fabric Husky pre-commit hook template.",
+        description: "安装 Fabric Husky pre-commit 钩子模板。",
       },
       args: {
         target: {
           type: "string",
-          description: "Target project path. Defaults to the current working directory.",
+          description: "目标项目路径，默认为当前工作目录。",
           default: process.cwd(),
         },
       },
@@ -44,7 +44,24 @@ export const hooksCommand = defineCommand({
         }
 
         mkdirSync(huskyDir, { recursive: true });
-        writeFileSync(hookPath, readFileSync(findTemplatePath("templates/husky/pre-commit"), "utf8"), "utf8");
+        const templateContent = readFileSync(findTemplatePath("templates/husky/pre-commit"), "utf8");
+
+        let hookAction: "created" | "appended" | "skipped";
+        if (existsSync(hookPath)) {
+          const existing = readFileSync(hookPath, "utf8");
+          if (existing.includes("FAB_BIN=")) {
+            hookAction = "skipped";
+          } else {
+            const fabricBlock = templateContent.replace(/^#!\/bin\/sh\n/, "");
+            const separator = existing.endsWith("\n") ? "\n" : "\n\n";
+            writeFileSync(hookPath, `${existing}${separator}# --- Fabric ---\n${fabricBlock}`, "utf8");
+            hookAction = "appended";
+          }
+        } else {
+          writeFileSync(hookPath, templateContent, "utf8");
+          hookAction = "created";
+        }
+
         chmodSync(hookPath, 0o755);
 
         const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf8")) as PackageJson;
@@ -60,7 +77,13 @@ export const hooksCommand = defineCommand({
           writeFileSync(packageJsonPath, `${JSON.stringify(packageJson, null, 2)}\n`, "utf8");
         }
 
-        writeStderr(`Installed ${hookPath}`);
+        if (hookAction === "skipped") {
+          writeStderr(`Fabric hook already present in ${hookPath}, skipped.`);
+        } else if (hookAction === "appended") {
+          writeStderr(`Appended Fabric hook to existing ${hookPath}`);
+        } else {
+          writeStderr(`Created ${hookPath}`);
+        }
         if (hadPrepare) {
           writeStderr(`Left existing prepare script unchanged in ${packageJsonPath}`);
         } else {

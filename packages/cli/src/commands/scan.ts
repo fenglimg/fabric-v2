@@ -62,21 +62,21 @@ export function createScanReport(
 export const scanCommand = defineCommand({
   meta: {
     name: "scan",
-    description: "Scan a project for Fabric bootstrap candidates.",
+    description: "扫描项目以检测 Fabric 引导候选模块。",
   },
   args: {
     target: {
       type: "string",
-      description: "Absolute target path to scan. Defaults to CLI target, EXTERNAL_FIXTURE_PATH, fabric.config.json, or cwd.",
+      description: "扫描的目标绝对路径，默认依次使用 CLI 参数、EXTERNAL_FIXTURE_PATH、fabric.config.json 或当前目录。",
     },
     debug: {
       type: "boolean",
-      description: "Print detector evidence in pretty output.",
+      description: "以格式化输出打印检测证据。",
       default: false,
     },
     json: {
       type: "boolean",
-      description: "Print the diagnostic report as JSON.",
+      description: "以 JSON 格式输出诊断报告。",
       default: false,
     },
   },

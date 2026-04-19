@@ -78,22 +78,22 @@ function writeStderr(message: string): void {
 export const configCmd = defineCommand({
   meta: {
     name: "config",
-    description: "Manage Fabric MCP client configuration.",
+    description: "管理 Fabric MCP 客户端配置。",
   },
   subCommands: {
     install: defineCommand({
       meta: {
         name: "install",
-        description: "Install Fabric MCP server entries into detected client configs.",
+        description: "将 Fabric MCP 服务器条目安装到检测到的客户端配置中。",
       },
       args: {
         clients: {
           type: "string",
-          description: "Optional comma-separated client filter, e.g. cursor,codex,gemini.",
+          description: "可选的逗号分隔客户端过滤器，例如 cursor,codex,gemini。",
         },
         "dry-run": {
           type: "boolean",
-          description: "Print detected writes without changing files.",
+          description: "预览检测到的写入操作，不修改文件。",
           default: false,
         },
       },
@@ -107,7 +107,7 @@ export const configCmd = defineCommand({
         );
 
         if (writers.length === 0) {
-          writeStderr("No Fabric MCP client configs detected. Create a client directory or set fabric.config.json clientPaths.");
+          writeStderr("未检测到 Fabric MCP 客户端配置。请创建客户端目录或在 fabric.config.json 中设置 clientPaths。");
           return;
         }
 

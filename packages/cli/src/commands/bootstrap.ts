@@ -56,18 +56,18 @@ const CLIENT_TARGET_MAP: Record<BootstrapClient, string> = {
 export const bootstrapCommand = defineCommand({
   meta: {
     name: "bootstrap",
-    description: "Install Fabric bootstrap prompt templates for supported AI clients.",
+    description: "为支持的 AI 客户端安装 Fabric 引导提示模板。",
   },
   subCommands: {
     install: defineCommand({
       meta: {
         name: "install",
-        description: "Copy Fabric bootstrap templates into client-native locations.",
+        description: "将 Fabric 引导模板复制到各客户端的原生位置。",
       },
       args: {
         clients: {
           type: "string",
-          description: "Optional comma-separated client filter, e.g. claude,cursor,codex.",
+          description: "可选的逗号分隔客户端过滤器，例如 claude,cursor,codex。",
         },
       },
       async run({ args }: { args: InstallArgs }) {

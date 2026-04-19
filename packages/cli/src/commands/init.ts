@@ -33,16 +33,16 @@ type InitArgs = {
 export const initCommand = defineCommand({
   meta: {
     name: "init",
-    description: "Initialize Fabric in a target project.",
+    description: "在目标项目中初始化 Fabric。",
   },
   args: {
     target: {
       type: "string",
-      description: "Target project path. Defaults to CLI target, EXTERNAL_FIXTURE_PATH, fabric.config.json, or cwd.",
+      description: "目标项目路径，默认依次使用 CLI 参数、EXTERNAL_FIXTURE_PATH、fabric.config.json 或当前目录。",
     },
     debug: {
       type: "boolean",
-      description: "Print target resolution details to stderr.",
+      description: "将目标解析详情输出到 stderr。",
       default: false,
     },
   },

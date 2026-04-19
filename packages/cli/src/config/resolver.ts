@@ -44,7 +44,7 @@ export function resolveClients(workspaceRoot: string, fabricConfig: FabricConfig
 
   addIfDetected(
     writers,
-    existsSync(join(homedir(), ".claude")),
+    existsSync(join(homedir(), ".claude")) || existsSync(join(workspaceRoot, ".claude")),
     (configuredPath) => new ClaudeCodeCLIWriter(configuredPath),
     hasExplicitPath(clientPaths, "claudeCodeCLI") ? clientPaths!.claudeCodeCLI : undefined,
   );

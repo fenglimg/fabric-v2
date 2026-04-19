@@ -6,11 +6,13 @@ import { defineCommand, runMain } from "citty";
 
 import { allCommands } from "./commands/index.js";
 
+declare const __CLI_VERSION__: string;
+
 export const main = defineCommand({
   meta: {
     name: "fab",
-    version: "0.0.0",
-    description: "Fabric CLI",
+    version: __CLI_VERSION__,
+    description: "Fabric CLI - AI 智能体协作框架",
   },
   subCommands: allCommands,
 });

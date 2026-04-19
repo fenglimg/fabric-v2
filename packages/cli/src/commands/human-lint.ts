@@ -34,12 +34,12 @@ type Violation = {
 export const humanLintCommand = defineCommand({
   meta: {
     name: "human-lint",
-    description: "Validate locked human sections.",
+    description: "验证锁定的人工编辑区块。",
   },
   args: {
     target: {
       type: "string",
-      description: "Target project path. Defaults to the current working directory.",
+      description: "目标项目路径，默认为当前工作目录。",
       default: process.cwd(),
     },
   },

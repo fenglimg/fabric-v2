@@ -23,17 +23,17 @@ const INITIAL_PARENT_SHA = "root";
 export const ledgerAppendCommand = defineCommand({
   meta: {
     name: "ledger-append",
-    description: "Append a Fabric intent ledger entry.",
+    description: "向 Fabric 意图日志添加一条记录。",
   },
   args: {
     target: {
       type: "string",
-      description: "Target project path. Defaults to the current working directory.",
+      description: "目标项目路径，默认为当前工作目录。",
       default: process.cwd(),
     },
     staged: {
       type: "boolean",
-      description: "Derive the entry from staged changes for pre-commit.",
+      description: "从暂存变更中推导记录（用于 pre-commit 阶段）。",
       default: false,
     },
   },
