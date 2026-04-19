@@ -1,28 +1,5 @@
 import { z } from "zod";
 
-export interface AiLedgerEntry {
-  id?: string;
-  ts: number;
-  source: "ai";
-  commit_sha?: string;
-  intent: string;
-  affected_paths: string[];
-}
-
-export interface HumanLedgerEntry {
-  id?: string;
-  ts: number;
-  source: "human";
-  parent_sha: string;
-  parent_ledger_entry_id?: string;
-  intent: string;
-  affected_paths: string[];
-  diff_stat: string;
-  annotation?: string;
-}
-
-export type LedgerEntry = AiLedgerEntry | HumanLedgerEntry;
-
 const ledgerEntryBaseSchema = {
   id: z.string().optional(),
   ts: z.number().int().nonnegative(),

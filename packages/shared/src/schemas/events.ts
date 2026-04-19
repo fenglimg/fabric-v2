@@ -1,9 +1,11 @@
 import { z } from "zod";
 
-import { agentsMetaSchema, type AgentsMeta } from "./agents-meta.js";
+import type { AgentsMeta } from "../types/agents.js";
+import type { HumanLockEntry, LedgerEntry } from "../types/ledger.js";
+import { agentsMetaSchema } from "./agents-meta.js";
 import { forensicReportSchema, type ForensicReport } from "./forensic-report.js";
-import { humanLockEntrySchema, type HumanLockEntry } from "./human-lock.js";
-import { ledgerEntrySchema, type LedgerEntry } from "./ledger-entry.js";
+import { humanLockEntrySchema } from "./human-lock.js";
+import { ledgerEntrySchema } from "./ledger-entry.js";
 
 export interface MetaUpdatedEvent {
   type: "meta:updated";

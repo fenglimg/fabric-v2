@@ -1,11 +1,5 @@
 import { z } from "zod";
-
-export interface HumanLockEntry {
-  file: string;
-  start_line: number;
-  end_line: number;
-  hash: string;
-}
+import type { HumanLockEntry } from "../types/ledger.js";
 
 export interface HumanLockFile {
   locked?: HumanLockEntry[];

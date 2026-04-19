@@ -1,0 +1,23 @@
+export const PROTECTED_TOKENS = [
+  "fab_get_rules",
+  "fab_append_intent",
+  "fab_update_registry",
+  "fabric_rules",
+  "ledger_entry",
+  "ledger_entry_id",
+  "agent_meta",
+  "AGENTS.md",
+  "FABRIC.md",
+  ".fabric/agents.meta.json",
+  ".fabric/human-lock.json",
+  ".fabric/init-context.json",
+  ".fabric/forensic.json",
+  ".intent-ledger.jsonl",
+  "@HUMAN",
+  "CORE RULES",
+  "DO NOT TRANSLATE",
+  "MUST",
+  "NEVER",
+] as const;
+
+export type ProtectedToken = (typeof PROTECTED_TOKENS)[number];
