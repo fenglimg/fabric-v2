@@ -1,3 +1,4 @@
+import type { Server as HttpServer } from "node:http";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -38,6 +39,30 @@ export async function startStdioServer(): Promise<void> {
   const transport = new StdioServerTransport();
 
   await server.connect(transport);
+}
+
+export async function startHttpServer(options: {
+  port: number;
+  projectRoot: string;
+  host?: string;
+  authToken?: string;
+  dashboardDistPath?: string;
+  dev?: boolean;
+}): Promise<HttpServer> {
+  const { createFabricHttpApp } = await import("./http.js");
+  const { port, projectRoot, host = "127.0.0.1", authToken, dashboardDistPath, dev } = options;
+  const app = createFabricHttpApp({ projectRoot, host, authToken, dashboardDistPath, dev });
+
+  return await new Promise<HttpServer>((resolveServer, rejectServer) => {
+    const server = app.listen(port, host);
+
+    server.once("listening", () => {
+      resolveServer(server);
+    });
+    server.once("error", (error: Error) => {
+      rejectServer(error);
+    });
+  });
 }
 
 const entrypoint = process.argv[1];
