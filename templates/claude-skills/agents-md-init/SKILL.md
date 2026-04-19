@@ -153,7 +153,7 @@ Write targets:
 - Do not emit import-aggregation lines
 - Keep every generated rule artifact under `.fabric/agents/` or `.fabric/agents/_cross/`
 
-## Hard Rules (DISPLAY / WRITE Split)
+## Hard Rules (DO NOT TRANSLATE) — DISPLAY / WRITE Split
 
 ### DISPLAY Rules
 

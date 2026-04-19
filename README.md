@@ -10,6 +10,8 @@ The Consensus Plane for AI-Human Collaboration
 
 Fabric v1.0 is an MCP-first, cross-client AGENTS.md protocol for six AI clients: Claude Code, Cursor, Windsurf, Roo Code, Gemini CLI, and Codex CLI. It keeps AGENTS.md as the human-maintained source of truth, distributes rules through a local MCP server, and adds git-level defenses so behavior stays consistent across clients without compiling client-specific rule files first.
 
+> **v1.1 — Shadow Mirroring (current)**: all AI rules now live under `.fabric/agents/` as a 1:1 source mirror plus a `_cross/` subtree for cross-cutting concerns; business directories contain zero rule files. Bootstrap protocol mandates `fab_get_rules(path=...)` before any code reading, architecture planning, or logic modification. See [`CHANGELOG.md`](./CHANGELOG.md#110---2026-04-19) for the full feature list and migration notes.
+
 ```text
 AI Agent <-> Fabric Ledger <-> Human Developer
    asks        records rules        approves
