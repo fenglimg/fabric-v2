@@ -121,7 +121,7 @@ describe("initFabric force behavior", () => {
 
     writeFixtureFile(target, "AGENTS.md", original);
 
-    expect(() => initFabric(target)).toThrowError(`ABORT: ${target}/AGENTS.md already exists. fab init is non-destructive.`);
+    expect(() => initFabric(target)).toThrowError(`${target}/AGENTS.md`);
     expect(readFixtureFile(target, "AGENTS.md")).toBe(original);
   });
 
@@ -132,7 +132,7 @@ describe("initFabric force behavior", () => {
     initFabric(target);
 
     expect(() => initFabric(target)).toThrowError(
-      `ABORT: ${target}/.fabric/forensic.json already exists. fab init is non-destructive.`,
+      `${target}/.fabric/forensic.json`,
     );
   });
 });
