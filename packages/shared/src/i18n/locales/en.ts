@@ -176,6 +176,12 @@ export const enMessages: Messages = {
     "--host {host} requires FABRIC_AUTH_TOKEN; falling back to 127.0.0.1 for safety",
   "cli.serve.error.port-in-use": "Port {port} in use - try --port {nextPort}",
 
+  "cli.update.description": "Refresh MCP host configuration and git hooks without re-creating Fabric files.",
+  "cli.update.args.target.description":
+    "Target project path. Defaults to CLI arg, EXTERNAL_FIXTURE_PATH, fabric.config.json, then cwd.",
+  "cli.update.args.no-mcp.description": "Skip re-configuring MCP clients",
+  "cli.update.args.no-hooks.description": "Skip re-installing git hooks",
+
   "cli.sync-meta.description": "Sync Fabric metadata from AGENTS.md files.",
   "cli.sync-meta.args.target.description": "Target project path, default is the current working directory.",
   "cli.sync-meta.args.check-only.description":

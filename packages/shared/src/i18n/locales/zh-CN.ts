@@ -167,6 +167,12 @@ export const zhCNMessages: Messages = {
   "cli.serve.warning.host-fallback": "--host {host} 需要 FABRIC_AUTH_TOKEN；为安全起见已回退到 127.0.0.1",
   "cli.serve.error.port-in-use": "端口 {port} 已被占用，可尝试 --port {nextPort}",
 
+  "cli.update.description": "刷新 MCP 主机配置和 git hooks，不重新创建 Fabric 文件。",
+  "cli.update.args.target.description":
+    "目标项目路径。默认依次使用 CLI 参数、EXTERNAL_FIXTURE_PATH、fabric.config.json、当前目录。",
+  "cli.update.args.no-mcp.description": "跳过重新配置 MCP 客户端",
+  "cli.update.args.no-hooks.description": "跳过重新安装 git hooks",
+
   "cli.sync-meta.description": "从 AGENTS.md 文件同步 Fabric 元数据。",
   "cli.sync-meta.args.target.description": "目标项目路径，默认为当前工作目录。",
   "cli.sync-meta.args.check-only.description": "如果 .fabric/agents.meta.json 已过期，则以代码 1 退出。",

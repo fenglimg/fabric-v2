@@ -22,6 +22,7 @@
     "@fenglimg/fabric-server": "workspace:*",
     "@iarna/toml": "^2.2.5",
     "citty": "^0.2.2",
+    "minimatch": "^10.0.1",
     "picocolors": "^1.1.1",
     "string-width": "^7.2.0"
   },

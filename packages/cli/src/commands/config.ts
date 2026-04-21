@@ -9,6 +9,7 @@ import { defineCommand } from "citty";
 import { resolveClients } from "../config/resolver.js";
 import type { ClientKind } from "../config/writer.js";
 import { t } from "../i18n.js";
+import { hooksCommand } from "./hooks.js";
 
 const CLIENT_ALIASES: Record<string, ClientKind> = {
   claude: "ClaudeCodeCLI",
@@ -106,6 +107,7 @@ export const configCmd = defineCommand({
     description: t("cli.config.description"),
   },
   subCommands: {
+    hooks: hooksCommand,
     install: defineCommand({
       meta: {
         name: "install",
