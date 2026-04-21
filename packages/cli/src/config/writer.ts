@@ -19,6 +19,9 @@ export interface ClientConfigWriter {
   write(serverPath: string, workspaceRoot: string, overridePath?: string): Promise<void>;
 }
 
+/**
+ * serverPath may be absolute (global install) or project-relative (local install).
+ */
 export function createServerEntry(serverPath: string): ServerEntry {
   return {
     command: process.execPath,

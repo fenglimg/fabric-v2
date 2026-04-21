@@ -11,6 +11,7 @@ import type { ClientKind } from "../config/writer.js";
 import { t } from "../i18n.js";
 
 const CLIENT_ALIASES: Record<string, ClientKind> = {
+  claude: "ClaudeCodeCLI",
   claudecodecli: "ClaudeCodeCLI",
   "claude-code-cli": "ClaudeCodeCLI",
   claudecli: "ClaudeCodeCLI",
@@ -35,7 +36,28 @@ type InstallArgs = {
   "dry-run"?: boolean;
 };
 
-function parseClientFilter(value: string | undefined): Set<ClientKind> | null {
+type InstallMcpClientsOptions = {
+  clients?: ClientKind[];
+  force?: boolean;
+  dryRun?: boolean;
+  localServerPath?: string;
+};
+
+type McpInstallAction = "wrote" | "dry-run" | "skipped";
+
+type McpInstallDetail = {
+  client: ClientKind;
+  path: string | null;
+  action: McpInstallAction;
+};
+
+export type InstallMcpClientsResult = {
+  installed: ClientKind[];
+  skipped: ClientKind[];
+  details: McpInstallDetail[];
+};
+
+export function parseClientFilter(value: string | undefined): Set<ClientKind> | null {
   if (value === undefined || value.trim().length === 0) {
     return null;
   }
@@ -68,7 +90,8 @@ async function loadFabricConfig(workspaceRoot: string): Promise<FabricConfig> {
   return parsed as FabricConfig;
 }
 
-function resolveServerPath(): string {
+function resolveServerPath(override?: string): string {
+  if (override) return override;
   if (process.env.FAB_SERVER_PATH) return resolve(process.env.FAB_SERVER_PATH);
   return fileURLToPath(import.meta.resolve("@fenglimg/fabric-server"));
 }
@@ -100,33 +123,31 @@ export const configCmd = defineCommand({
         },
       },
       async run({ args }: { args: InstallArgs }) {
-        const workspaceRoot = process.cwd();
-        const fabricConfig = await loadFabricConfig(workspaceRoot);
         const selectedClients = parseClientFilter(args.clients);
-        const serverPath = resolveServerPath();
-        const writers = resolveClients(workspaceRoot, fabricConfig).filter((writer) =>
-          selectedClients === null ? true : selectedClients.has(writer.clientKind),
-        );
+        const result = await installMcpClients(process.cwd(), {
+          clients: selectedClients === null ? undefined : Array.from(selectedClients),
+          dryRun: args["dry-run"],
+        });
 
-        if (writers.length === 0) {
+        if (result.details.length === 0) {
           writeStderr(t("cli.config.install.no-configs"));
           return;
         }
 
-        for (const writer of writers) {
-          const configPath = await writer.detect(workspaceRoot);
-          if (configPath === null) {
-            writeStderr(t("cli.config.install.no-config-path", { client: writer.clientKind }));
+        for (const detail of result.details) {
+          if (detail.action === "skipped") {
+            writeStderr(t("cli.config.install.no-config-path", { client: detail.client }));
             continue;
           }
 
-          if (args["dry-run"]) {
-            writeStderr(t("cli.config.install.dry-run", { client: writer.clientKind, path: configPath }));
+          if (detail.action === "dry-run" && detail.path !== null) {
+            writeStderr(t("cli.config.install.dry-run", { client: detail.client, path: detail.path }));
             continue;
           }
 
-          await writer.write(serverPath, workspaceRoot);
-          writeStderr(t("cli.config.install.wrote", { client: writer.clientKind, path: configPath }));
+          if (detail.path !== null) {
+            writeStderr(t("cli.config.install.wrote", { client: detail.client, path: detail.path }));
+          }
         }
       },
     }),
@@ -134,3 +155,40 @@ export const configCmd = defineCommand({
 });
 
 export default configCmd;
+
+export async function installMcpClients(
+  target: string,
+  options: InstallMcpClientsOptions = {},
+): Promise<InstallMcpClientsResult> {
+  const workspaceRoot = resolve(target);
+  const fabricConfig = await loadFabricConfig(workspaceRoot);
+  const selectedClients = options.clients === undefined ? null : new Set(options.clients);
+  const serverPath = resolveServerPath(options.localServerPath);
+  const writers = resolveClients(workspaceRoot, fabricConfig).filter((writer) =>
+    selectedClients === null ? true : selectedClients.has(writer.clientKind),
+  );
+  const installed: ClientKind[] = [];
+  const skipped: ClientKind[] = [];
+  const details: McpInstallDetail[] = [];
+
+  for (const writer of writers) {
+    const configPath = await writer.detect(workspaceRoot);
+    if (configPath === null) {
+      skipped.push(writer.clientKind);
+      details.push({ client: writer.clientKind, path: null, action: "skipped" });
+      continue;
+    }
+
+    if (options.dryRun) {
+      skipped.push(writer.clientKind);
+      details.push({ client: writer.clientKind, path: configPath, action: "dry-run" });
+      continue;
+    }
+
+    await writer.write(serverPath, workspaceRoot);
+    installed.push(writer.clientKind);
+    details.push({ client: writer.clientKind, path: configPath, action: "wrote" });
+  }
+
+  return { installed, skipped, details };
+}

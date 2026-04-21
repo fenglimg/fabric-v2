@@ -16,6 +16,30 @@ type InstallArgs = {
   clients?: string;
 };
 
+type InstallBootstrapOptions = {
+  clients?: ClientKind[];
+  force?: boolean;
+};
+
+type BootstrapInstallAction = "installed" | "overwritten" | "prepended" | "skipped";
+
+type BootstrapInstallDetail = {
+  client: ClientKind;
+  path: string;
+  action: BootstrapInstallAction;
+};
+
+export type BootstrapInstallResult = {
+  installed: ClientKind[];
+  skipped: ClientKind[];
+  details: BootstrapInstallDetail[];
+};
+
+type BootstrapTarget = {
+  client: ClientKind;
+  bootstrapClient: BootstrapClient;
+};
+
 const CLIENT_ALIASES: Record<string, BootstrapClient> = {
   claude: "claude",
   "claude-code": "claude",
@@ -75,19 +99,29 @@ export const bootstrapCommand = defineCommand({
       async run({ args }: { args: InstallArgs }) {
         const workspaceRoot = process.cwd();
         const selectedClients = parseClientFilter(args.clients);
-        const fabricConfig = readFabricConfig(workspaceRoot);
-        const detectedClients = detectBootstrapClients(workspaceRoot, fabricConfig);
-        const clients = selectedClients ?? detectedClients;
+        const result = await installBootstrap(workspaceRoot, {
+          clients: selectedClients === null ? undefined : Array.from(selectedClients, mapBootstrapClientToClientKind),
+        });
 
-        if (clients.size === 0) {
+        if (result.details.length === 0) {
           process.stderr.write(
             `${t("cli.bootstrap.install.no-targets")}\n`,
           );
           return;
         }
 
-        for (const client of clients) {
-          installBootstrap(client, workspaceRoot);
+        for (const detail of result.details) {
+          if (detail.action === "skipped") {
+            process.stderr.write(`${t("cli.bootstrap.install.skipped-header", { path: detail.path })}\n`);
+            continue;
+          }
+
+          if (detail.action === "prepended") {
+            process.stderr.write(`${t("cli.bootstrap.install.prepended", { path: detail.path })}\n`);
+            continue;
+          }
+
+          process.stderr.write(`${t("cli.bootstrap.install.installed", { path: detail.path })}\n`);
         }
       },
     }),
@@ -95,6 +129,31 @@ export const bootstrapCommand = defineCommand({
 });
 
 export default bootstrapCommand;
+
+export async function installBootstrap(
+  target: string,
+  options: InstallBootstrapOptions = {},
+): Promise<BootstrapInstallResult> {
+  const workspaceRoot = resolve(target);
+  const fabricConfig = readFabricConfig(workspaceRoot);
+  const targets = resolveBootstrapTargets(workspaceRoot, fabricConfig, options.clients);
+  const installed: ClientKind[] = [];
+  const skipped: ClientKind[] = [];
+  const details: BootstrapInstallDetail[] = [];
+
+  for (const bootstrapTarget of targets) {
+    const detail = installBootstrapTarget(bootstrapTarget, workspaceRoot, options);
+    details.push(detail);
+
+    if (detail.action === "skipped") {
+      skipped.push(bootstrapTarget.client);
+    } else {
+      installed.push(bootstrapTarget.client);
+    }
+  }
+
+  return { installed, skipped, details };
+}
 
 function parseClientFilter(value: string | undefined): Set<BootstrapClient> | null {
   if (value === undefined || value.trim().length === 0) {
@@ -115,17 +174,27 @@ function parseClientFilter(value: string | undefined): Set<BootstrapClient> | nu
   return clients;
 }
 
-function detectBootstrapClients(workspaceRoot: string, fabricConfig: FabricConfig): Set<BootstrapClient> {
-  const clients = new Set<BootstrapClient>();
+function resolveBootstrapTargets(
+  workspaceRoot: string,
+  fabricConfig: FabricConfig,
+  selectedClients?: ClientKind[],
+): BootstrapTarget[] {
+  const targets: BootstrapTarget[] = [];
+  const seenClients = new Set<BootstrapClient>();
+  const clientKinds =
+    selectedClients ?? resolveClients(workspaceRoot, fabricConfig).map((writer) => writer.clientKind);
 
-  for (const writer of resolveClients(workspaceRoot, fabricConfig)) {
-    const bootstrapClient = mapClientKind(writer.clientKind);
-    if (bootstrapClient !== null) {
-      clients.add(bootstrapClient);
+  for (const clientKind of clientKinds) {
+    const bootstrapClient = mapClientKind(clientKind);
+    if (bootstrapClient === null || seenClients.has(bootstrapClient)) {
+      continue;
     }
+
+    seenClients.add(bootstrapClient);
+    targets.push({ client: clientKind, bootstrapClient });
   }
 
-  return clients;
+  return targets;
 }
 
 function mapClientKind(clientKind: ClientKind): BootstrapClient | null {
@@ -148,40 +217,98 @@ function mapClientKind(clientKind: ClientKind): BootstrapClient | null {
   }
 }
 
-function installBootstrap(client: BootstrapClient, workspaceRoot: string): void {
-  const targetPath = resolve(workspaceRoot, CLIENT_TARGET_MAP[client]);
-  const templatePath = findTemplatePath(CLIENT_TEMPLATE_MAP[client]);
+function mapBootstrapClientToClientKind(client: BootstrapClient): ClientKind {
+  switch (client) {
+    case "claude":
+      return "ClaudeCodeCLI";
+    case "cursor":
+      return "Cursor";
+    case "windsurf":
+      return "Windsurf";
+    case "roo":
+      return "RooCode";
+    case "gemini":
+      return "GeminiCLI";
+    case "codex":
+      return "CodexCLI";
+  }
+}
+
+function installBootstrapTarget(
+  target: BootstrapTarget,
+  workspaceRoot: string,
+  options: InstallBootstrapOptions,
+): BootstrapInstallDetail {
+  const targetPath = resolve(workspaceRoot, CLIENT_TARGET_MAP[target.bootstrapClient]);
+  const templatePath = findTemplatePath(CLIENT_TEMPLATE_MAP[target.bootstrapClient]);
   const template = readFileSync(templatePath, "utf8");
 
   mkdirSync(dirname(targetPath), { recursive: true });
 
-  if (client === "codex") {
-    writeCodexBootstrap(targetPath, template);
-    return;
+  if (target.bootstrapClient === "codex") {
+    return {
+      client: target.client,
+      path: targetPath,
+      action: writeCodexBootstrap(targetPath, template, options.force),
+    };
   }
 
+  const existed = existsSync(targetPath);
   writeFileSync(targetPath, ensureTrailingNewline(template), "utf8");
-  process.stderr.write(`${t("cli.bootstrap.install.installed", { path: targetPath })}\n`);
+  return {
+    client: target.client,
+    path: targetPath,
+    action: existed ? "overwritten" : "installed",
+  };
 }
 
-function writeCodexBootstrap(targetPath: string, template: string): void {
+function writeCodexBootstrap(targetPath: string, template: string, force?: boolean): BootstrapInstallAction {
   const nextContent = ensureTrailingNewline(template);
 
   if (!existsSync(targetPath)) {
     writeFileSync(targetPath, nextContent, "utf8");
-    process.stderr.write(`${t("cli.bootstrap.install.installed", { path: targetPath })}\n`);
-    return;
+    return "installed";
   }
 
   const existing = readFileSync(targetPath, "utf8");
   if (existing.includes("# Fabric Bootstrap")) {
-    process.stderr.write(`${t("cli.bootstrap.install.skipped-header", { path: targetPath })}\n`);
-    return;
+    if (!force) {
+      return "skipped";
+    }
+
+    const remainder = stripExistingCodexBootstrap(existing, nextContent);
+    writeFileSync(targetPath, joinBootstrapSections(nextContent, remainder), "utf8");
+    return "overwritten";
   }
 
-  const separator = existing.startsWith("\n") || existing.length === 0 ? "" : "\n";
-  writeFileSync(targetPath, `${nextContent}${separator}${existing}`, "utf8");
-  process.stderr.write(`${t("cli.bootstrap.install.prepended", { path: targetPath })}\n`);
+  writeFileSync(targetPath, joinBootstrapSections(nextContent, existing), "utf8");
+  return force ? "overwritten" : "prepended";
+}
+
+function stripExistingCodexBootstrap(existing: string, template: string): string {
+  if (existing.startsWith(template)) {
+    return existing.slice(template.length).replace(/^\n+/, "");
+  }
+
+  if (!existing.startsWith("# Fabric Bootstrap")) {
+    return existing;
+  }
+
+  const nextTopLevelHeadingIndex = existing.indexOf("\n# ", "# Fabric Bootstrap".length);
+  if (nextTopLevelHeadingIndex === -1) {
+    return "";
+  }
+
+  return existing.slice(nextTopLevelHeadingIndex + 1).replace(/^\n+/, "");
+}
+
+function joinBootstrapSections(header: string, body: string): string {
+  if (body.trim().length === 0) {
+    return header;
+  }
+
+  const separator = body.startsWith("\n") ? "" : "\n";
+  return `${header}${separator}${body}`;
 }
 
 function ensureTrailingNewline(content: string): string {

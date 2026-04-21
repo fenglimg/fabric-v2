@@ -29,14 +29,17 @@ AI Agent <-> Fabric Ledger <-> Human Developer
 ## Quick Start
 
 1. Install Fabric and build once if you are validating from this monorepo.
-2. Run `fab init`, `fab hooks install`, and `fab bootstrap install` in the target project.
-3. Install MCP config, start `fab serve`, and verify `fab_get_rules` in your client.
+2. Run `fabric init` in the target project for the one-shot setup flow.
+3. Start `fabric serve` and verify `fab_get_rules` in your client.
+
+`fab` is a permanent alias, so you can use either binary. The docs use `fabric` as the primary command.
+`fabric init` auto-runs `bootstrap install`, `config install`, and `hooks install`. Use those standalone commands only when you want a targeted re-run.
 
 Use the canonical onboarding guide for the full 7-stage walkthrough, expected CLI output, and MCP activation checks: [docs/getting-started.md](./docs/getting-started.md).
 
 ## Initialization Guide
 
-`fab init` now does more than create a scaffold. It writes the evidence pack in `.fabric/`, installs the Claude handoff files under `.claude/`, and leaves a safe fallback `AGENTS.md` for non-Claude flows. Start with the canonical onboarding guide at [docs/getting-started.md](./docs/getting-started.md), then use [docs/initialization.md](./docs/initialization.md) for the deep-dive state machine and `agents-md-init` interview flow.
+`fabric init` now does more than create a scaffold. It writes the evidence pack in `.fabric/`, installs the Claude handoff files under `.claude/`, and leaves a safe fallback `AGENTS.md` for non-Claude flows. Start with the canonical onboarding guide at [docs/getting-started.md](./docs/getting-started.md), then use [docs/initialization.md](./docs/initialization.md) for the deep-dive state machine and `agents-md-init` interview flow.
 
 ## Compliance Audit
 
@@ -48,11 +51,19 @@ Enable compliance telemetry reporting in `fabric.config.json`:
 }
 ```
 
-Run `fab doctor --audit` to cross-check AI edit intents against prior `fab_get_rules` calls in the last 5 minutes. `warn` prints violations but keeps exit code `0`, `strict` prints violations and exits non-zero, and `off` keeps the audit disabled by default unless you request a manual preview with `--audit`.
+Run `fabric doctor --audit` to cross-check AI edit intents against prior `fab_get_rules` calls in the last 5 minutes. `warn` prints violations but keeps exit code `0`, `strict` prints violations and exits non-zero, and `off` keeps the audit disabled by default unless you request a manual preview with `--audit`.
 
 ## Roadmap
 
-See [docs/roadmap.md](./docs/roadmap.md) for the deferred v1.1 maintenance milestone, including `drift-check`, `fab migrate`, `fab doctor`, and the Copilot fallback path.
+See [docs/roadmap.md](./docs/roadmap.md) for the deferred v1.1 maintenance milestone, including `drift-check`, `fabric migrate`, `fabric doctor`, and the Copilot fallback path.
+
+## Advanced Commands
+
+Use these only when you need a targeted re-run outside the default `fabric init` flow:
+
+- `fabric bootstrap install`
+- `fabric config install`
+- `fabric hooks install`
 
 ## Day 7 Validation
 

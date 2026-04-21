@@ -3,7 +3,11 @@
 # Runs: sync-meta --check-only → human-lint → ledger-append --staged → meta-guard
 # Uses local binary (no npx spawn) to avoid 3× Node startup cost.
 
-FAB_BIN="./node_modules/.bin/fab"
+FAB_BIN="./node_modules/.bin/fabric"
+
+if [ ! -x "$FAB_BIN" ]; then
+  FAB_BIN="./node_modules/.bin/fab"
+fi
 
 if [ ! -x "$FAB_BIN" ]; then
   echo "fabric: $FAB_BIN not found. Run 'pnpm install' at repo root." >&2

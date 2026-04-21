@@ -2,7 +2,9 @@
 
 Fabric v1.0 为维护者提供从本地安装到首条 ledger-backed 协作事件的标准上手路径。若你首次评估 Fabric，从这里开始。
 
-贡献与本地仓库设置见 [Contributing](./contributing.md)。`fab init` 状态机与更深 mechanics 见 [Initialization Guide](./initialization.md)。产品叙事版见 [Launch Story](./launch-story.md)。
+贡献与本地仓库设置见 [Contributing](./contributing.md)。`fabric init` 状态机与更深 mechanics 见 [Initialization Guide](./initialization.md)。产品叙事版见 [Launch Story](./launch-story.md)。
+
+> `fabric` 是主命令，`fab` 是永久别名，两者等价。下文统一使用 `fabric`。
 
 ## 阶段 1：安装 Fabric
 
@@ -19,12 +21,12 @@ pnpm install
 pnpm -r build
 ```
 
-此时应能使用 `fab` 命令：
+此时应能使用 `fabric`（或其别名 `fab`）命令：
 
 ```text
-$ fab --help
-Fabric CLI - AI 智能体协作框架 (fab v1.0.0)
-USAGE fab bootstrap|init|scan|serve|sync-meta|human-lint|ledger-append|hooks|config|pre-commit
+$ fabric --help
+Initialize and manage Fabric projects. Use "fabric init" for one-shot setup.
+USAGE fabric init|scan|serve|doctor|sync-meta|human-lint|ledger-append|pre-commit
 ```
 
 ## 阶段 2：初始化 Fabric
@@ -34,7 +36,7 @@ USAGE fab bootstrap|init|scan|serve|sync-meta|human-lint|ledger-append|hooks|con
 ```bash
 cd ~/projects/my-app
 git status --short
-fab init
+fabric init
 ```
 
 推荐前置条件：
@@ -46,9 +48,9 @@ fab init
 v1.0 launch story 中的中文本地化 stdout 示例：
 
 ```text
-$ fab init
+$ fabric init
 
-Fabric v1.0 · control plane
+Fabric v1.2 · control plane
 
 正在扫描项目根目录...
 检测到项目类型: Cocos Creator 3.8 TypeScript Component project
@@ -77,15 +79,19 @@ Installed `.claude/skills/agents-md-init/SKILL.md`
 Installed `.claude/hooks/agents-md-init-reminder.cjs`
 Created `.claude/settings.json` with Claude Stop hook
 
-已完成首轮落规。
-说明:
-  - 已写入 fallback `AGENTS.md`
-  - 已写入 evidence artifact，供后续 AI interview 复用
-  - 当前状态 = initialization pending
+--- Installing bootstrap templates... ---
+Installed CLAUDE.md
+Installed .cursor/rules/fabric-bootstrap.mdc
 
-Reason: `.fabric/forensic.json` is ready; use the `agents-md-init` skill to finish `AGENTS.md` initialization.
-Next: 在 Claude Code 中输入「我刚执行了 fab init，请使用 agents-md-init 完成当前项目初始化。」
-Next: 如需先接入提交守卫，继续执行 `fab hooks install`
+--- Configuring MCP clients... ---
+Wrote ClaudeCodeCLI config
+Wrote Cursor .cursor/mcp.json
+
+--- Installing git hooks... ---
+Created .husky/pre-commit
+Added prepare script to package.json
+
+已完成一站式初始化。
 ```
 
 本阶段结束后，仓库具备 fallback contract 与 evidence pack，但在 client-side interview 完成前，semantic initialization 尚未结束。
@@ -95,7 +101,7 @@ Next: 如需先接入提交守卫，继续执行 `fab hooks install`
 在 Claude Code 中打开同一仓库，用普通消息继续 initialization transaction：
 
 ```text
-I just ran fab init in this repo. Finish AGENTS.md initialization.
+I just ran fabric init in this repo. Finish AGENTS.md initialization.
 ```
 
 预期结果：
@@ -106,53 +112,34 @@ I just ran fab init in this repo. Finish AGENTS.md initialization.
 
 更完整的 interview 流程（含 framework-confirm 与 invariants 阶段）见 [Initialization Guide](./initialization.md)。
 
-## 阶段 4：配置 Agents 与 Hooks
+## 阶段 4：验证 Agents 与 Hooks
 
-先安装 Git hook pipeline 与 bootstrap prompts：
+`fabric init` 已自动完成 bootstrap、MCP config 与 git hooks 的安装。本阶段只需验证结果。
 
-```bash
-fab hooks install
-fab bootstrap install --clients claude,cursor,windsurf,roo,gemini,codex
-```
-
-典型输出：
+检查 bootstrap 安装结果：
 
 ```text
-Installed <project>/.husky/pre-commit
-Added prepare script to <project>/package.json
-Installed <project>/CLAUDE.md
-Installed <project>/.cursor/rules/fabric-bootstrap.mdc
-Installed <project>/.windsurf/rules/fabric.md
-Installed <project>/.roo/rules/fabric.md
-Installed <project>/GEMINI.md
-Prepended <project>/AGENTS.md
+$ ls CLAUDE.md .cursor/rules/fabric-bootstrap.mdc 2>/dev/null
+CLAUDE.md
+.cursor/rules/fabric-bootstrap.mdc
 ```
 
-然后预览 MCP config 写入：
-
-```bash
-fab config install --clients claude,cursor,windsurf,roo,gemini,codex --dry-run
-```
-
-预期输出形态：
+检查 git hooks：
 
 ```text
-[dry-run] ClaudeCodeCLI: would write <path>
-[dry-run] Cursor: would write <project>/.cursor/mcp.json
-[dry-run] Windsurf: would write <project>/.windsurf/mcp.json
-[dry-run] RooCode: would write <project>/.roo/mcp.json
-[dry-run] GeminiCLI: would write <path>
-[dry-run] CodexCLI: would write <path>
+$ cat .husky/pre-commit | head -3
+#!/bin/sh
+FAB_BIN=$(command -v fabric || command -v fab || echo "")
 ```
 
-若在本 monorepo 运行且需要显式 server entry，见 [Contributing](./contributing.md#fab_server_path)。
+> 如需对某个阶段做针对性重跑，可使用独立命令：`fabric bootstrap install`、`fabric config install`、`fabric hooks install`。也可通过 `--no-bootstrap`、`--no-mcp`、`--no-hooks` 跳过 `fabric init` 中的对应阶段。
 
 ## 阶段 5：启动本地 Control Plane
 
 启动本地 Fabric HTTP server：
 
 ```bash
-fab serve
+fabric serve
 ```
 
 当前实现的实际 CLI 输出：

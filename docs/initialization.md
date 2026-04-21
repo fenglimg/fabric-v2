@@ -1,16 +1,19 @@
 # 初始化指南
 
-> 请从标准上手路径开始：[Getting Started](./getting-started.md)。本文是 `fab init` 状态机、Claude handoff 与 initialization 内部的深度技术参考。
+> 请从标准上手路径开始：[Getting Started](./getting-started.md)。本文是 `fabric init` 状态机、Claude handoff 与 initialization 内部的深度技术参考。
 
-`fab init` 只是 initialization 的前半段，而非全部。它为项目提供 evidence 与 protocol，使 Claude Code 能通过 `agents-md-init` skill 完成项目专属的 `AGENTS.md`。
+`fabric init` 是一站式初始化命令。它为项目提供 evidence 与 protocol，自动完成 bootstrap、MCP config 与 git hooks 安装，并使 Claude Code 能通过 `agents-md-init` skill 完成项目专属的 `AGENTS.md`。
+
+> `fabric` 是主命令，`fab` 是永久别名。下文统一使用 `fabric`。
 
 ## 概览
 
-`fab init` 在一条命令里做三件事：
+`fabric init` 在一条命令里做三件事：
 
 1. Evidence：扫描仓库并写入 `.fabric/forensic.json`。
 2. Protocol install：写入 fallback `AGENTS.md`、`.fabric/agents.meta.json`、`.fabric/human-lock.json`，以及 `.claude/` 下的 Claude 集成文件。
-3. Trigger：打印同 session handoff 的 reason 行，并安装 Stop hook 以支持跨 session handoff。
+3. One-shot setup：自动执行 bootstrap install、MCP config install 与 git hooks install。
+4. Trigger：打印同 session handoff 的 reason 行，并安装 Stop hook 以支持跨 session handoff。
 
 这种拆分是故意的：Fabric 让 CLI 步骤快速且确定，再由 AI client 完成 semantic initialization。
 
@@ -22,7 +25,7 @@
   npm install -g @fenglimg/fabric-cli
   ```
 
-- 在目标项目根目录运行 `fab init`。
+- 在目标项目根目录运行 `fabric init`。
 - 从干净的初始化项目状态开始：
   - 尚不存在 `AGENTS.md`。
   - 尚不存在 `.fabric/`。
@@ -43,13 +46,13 @@ npm install -g @fenglimg/fabric-cli
 
 ---
 
-### Stage 2：运行 `fab init`
+### Stage 2：运行 `fabric init`
 
 在项目根目录：
 
 ```bash
 cd ~/projects/werewolf-minigame
-fab init
+fabric init
 ```
 
 本步会发生：
@@ -57,6 +60,7 @@ fab init
 - Fabric 扫描仓库并写入 `.fabric/forensic.json`。
 - Fabric 写入安全的 fallback `AGENTS.md` 与 metadata 文件。
 - Fabric 安装 `.claude/skills/agents-md-init/SKILL.md`、`.claude/hooks/agents-md-init-reminder.cjs` 与 `.claude/settings.json`。
+- Fabric 自动运行 bootstrap install、MCP config install 与 git hooks install。
 
 来自 disposable `werewolf-minigame` 示例运行的真实输出：
 
@@ -68,7 +72,12 @@ Created /tmp/werewolf-minigame-init-guide-example/werewolf-minigame/.fabric/fore
 Installed /tmp/werewolf-minigame-init-guide-example/werewolf-minigame/.claude/skills/agents-md-init/SKILL.md
 Installed /tmp/werewolf-minigame-init-guide-example/werewolf-minigame/.claude/hooks/agents-md-init-reminder.cjs
 Created /tmp/werewolf-minigame-init-guide-example/werewolf-minigame/.claude/settings.json with Claude Stop hook.
-Next: run fab hooks install to add the Day 4 pre-commit pipeline.
+--- Installing bootstrap templates... ---
+...
+--- Configuring MCP clients... ---
+...
+--- Installing git hooks... ---
+...
 Reason: .fabric/forensic.json is ready; use the agents-md-init skill to finish AGENTS.md initialization.
 ```
 
@@ -80,13 +89,13 @@ Stage 2 之后，项目已准备好由 AI 接管，但在 `.fabric/init-context.
 
 在 Claude Code 中打开同一仓库并发送普通消息。支持两种触发路径：
 
-- Same-session path：若在 Claude Code 的 Bash tool 中运行 `fab init`，模型会看到 Stage 2 的 reason 行并触发 `agents-md-init`。
-- Cross-session path：若在外部终端运行 `fab init`，Stop hook 会检测存在 `.fabric/forensic.json` 但缺少 `.fabric/init-context.json`，并阻塞直到运行 `agents-md-init`。
+- Same-session path：若在 Claude Code 的 Bash tool 中运行 `fabric init`，模型会看到 Stage 2 的 reason 行并触发 `agents-md-init`。
+- Cross-session path：若在外部终端运行 `fabric init`，Stop hook 会检测存在 `.fabric/forensic.json` 但缺少 `.fabric/init-context.json`，并阻塞直到运行 `agents-md-init`。
 
 示例 prompt：
 
 ```text
-I just ran fab init in this repo. Finish AGENTS.md initialization.
+I just ran fabric init in this repo. Finish AGENTS.md initialization.
 ```
 
 关键心智模型：Stage 2 装备仓库，Stage 3 把仓库交给 skill。
@@ -163,9 +172,11 @@ Interview 结束后，skill 写入 semantic initialization 输出：
 典型后续命令：
 
 ```bash
-fab hooks install
-fab sync-meta
+fabric hooks install   # 针对性重跑
+fabric sync-meta
 ```
+
+> `fabric init` 已在 Stage 2 自动运行 hooks install。此处独立命令仅用于需要针对性重跑的场景。
 
 当项目架构、invariants 或 protected paths 变化时，使用持续的 `agents-md` workflow。Initialization skill 为一次性 setup；日常开发是保持 `AGENTS.md` 与 `.fabric/agents.meta.json` 与 codebase 对齐。
 
@@ -174,7 +185,7 @@ fab sync-meta
 ```text
 [empty project]
     |
-    | fab init
+    | fabric init (scaffold + bootstrap + MCP + hooks)
     v
 [forensic.json exists] + [init-context.json missing]
     |   ^
@@ -193,9 +204,9 @@ fab sync-meta
 
 | Scenario | Trigger mechanism | Result |
 | --- | --- | --- |
-| 自 Claude Code Bash tool 运行 `fab init` | 模型从 tool 结果读取 Stage 2 reason 行 | 可在同 session 立即触发 `agents-md-init` |
-| 在外部终端运行 `fab init` | Claude Code Stop hook 发现存在 `forensic.json` 但无 `init-context.json` | 下一次 Claude Code session 在 initialization 继续前被阻塞 |
-| 在 CI 或其他非 TTY 环境运行 `fab init` | 无 interactive takeover；命令仅写文件并记录 reason 行 | Fallback `AGENTS.md` 与 `.fabric/` artifact 仍有效，但 `.fabric/init-context.json` 不会自动创建 |
+| 自 Claude Code Bash tool 运行 `fabric init` | 模型从 tool 结果读取 Stage 2 reason 行 | 可在同 session 立即触发 `agents-md-init` |
+| 在外部终端运行 `fabric init` | Claude Code Stop hook 发现存在 `forensic.json` 但无 `init-context.json` | 下一次 Claude Code session 在 initialization 继续前被阻塞 |
+| 在 CI 或其他非 TTY 环境运行 `fabric init` | 无 interactive takeover；命令仅写文件并记录 reason 行 | Fallback `AGENTS.md` 与 `.fabric/` artifact 仍有效，但 `.fabric/init-context.json` 不会自动创建 |
 | 非 Claude client | `.claude/` 文件在 Claude Code 外为无害 no-op | Scaffold 的 `AGENTS.md` 仍可作为 fallback，但今日尚无自动 `agents-md-init` handoff |
 
 ## 故障排除
@@ -221,10 +232,10 @@ Use the agents-md-init skill to finish this project's initialization.
 Initialization 未完成 Stage 2。回到项目根目录运行：
 
 ```bash
-fab init
+fabric init
 ```
 
-若因已存在 `AGENTS.md` 或 `.fabric/` 而中止，先检查这些文件，不要覆盖。`fab init` 刻意设计为非破坏性。
+若因已存在 `AGENTS.md` 或 `.fabric/` 而中止，先检查这些文件，不要覆盖。`fabric init` 刻意设计为非破坏性（除非使用 `--force`）。
 
 ### 未生成 `AGENTS.md`，或仍为 scaffold
 

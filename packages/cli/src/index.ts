@@ -5,15 +5,14 @@ import { fileURLToPath } from "node:url";
 import { defineCommand, runMain } from "citty";
 
 import { allCommands } from "./commands/index.js";
-import { t } from "./i18n.js";
 
 declare const __CLI_VERSION__: string;
 
 export const main = defineCommand({
   meta: {
-    name: "fab",
+    name: "fabric",
     version: __CLI_VERSION__,
-    description: t("cli.main.description"),
+    description: 'Initialize and manage Fabric projects. Use "fabric init" for one-shot setup.',
   },
   subCommands: allCommands,
 });
