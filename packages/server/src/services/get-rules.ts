@@ -3,6 +3,7 @@ import { join } from "node:path";
 
 import { minimatch } from "minimatch";
 
+import { contextCache } from "../cache.js";
 import { readAgentsMeta, type AgentsMeta } from "../meta-reader.js";
 import { appendGetRulesAuditEvent } from "./audit-log.js";
 import { readHumanLock } from "./read-human-lock.js";
@@ -75,18 +76,26 @@ export async function getRules(projectRoot: string, input: GetRulesInput): Promi
 }
 
 export async function loadGetRulesContext(projectRoot: string): Promise<GetRulesContext> {
-  const meta = readAgentsMeta(projectRoot);
+  const cached = contextCache.get<GetRulesContext>("context", projectRoot);
+  if (cached !== undefined) {
+    return cached;
+  }
+
+  const meta = await readAgentsMeta(projectRoot);
   const l0Content = await readFile(join(projectRoot, "AGENTS.md"), "utf8");
   const humanLockedNearby = (await readHumanLock(projectRoot)).map((entry) => ({
     file: entry.file,
     excerpt: JSON.stringify(entry),
   }));
 
-  return {
+  const context: GetRulesContext = {
     meta,
     l0Content,
     humanLockedNearby,
   };
+
+  contextCache.set("context", projectRoot, context);
+  return context;
 }
 
 export async function resolveRulesForPath(

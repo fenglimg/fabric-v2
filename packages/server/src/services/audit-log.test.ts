@@ -67,7 +67,12 @@ describe("audit-log", () => {
         window_ms: 5_000,
       },
     ]);
-    expect(editEntries.map((entry) => entry.compliant)).toEqual([true, false]);
+    expect(editEntries.entries.map((entry) => entry.compliant)).toEqual([true, false]);
+    expect(editEntries.compliance).toEqual({
+      compliant: false,
+      matched_get_rules_ts: new Date(1_000).toISOString(),
+      window_ms: 5_000,
+    });
   });
 });
 

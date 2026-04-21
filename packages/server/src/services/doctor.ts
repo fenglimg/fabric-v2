@@ -451,7 +451,7 @@ async function readSavedForensic(projectRoot: string): Promise<SavedForensic> {
 
 async function inspectMetaRevision(projectRoot: string): Promise<MetaDriftResult> {
   try {
-    const meta = readAgentsMeta(projectRoot);
+    const meta = await readAgentsMeta(projectRoot);
     const entries = Object.entries(meta.nodes).sort(([left], [right]) => left.localeCompare(right));
     const missingFiles: string[] = [];
     let driftCount = 0;

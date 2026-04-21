@@ -2,6 +2,7 @@ import type { AgentsMeta } from "@fenglimg/fabric-shared";
 import { agentsMetaNodeSchema } from "@fenglimg/fabric-shared";
 import { join } from "node:path";
 
+import { contextCache } from "../cache.js";
 import { readAgentsMeta } from "../meta-reader.js";
 import { FABRIC_DIR, atomicWriteText, sha256 } from "./_shared.js";
 
@@ -21,7 +22,7 @@ export async function updateRegistry(
   input: UpdateRegistryInput,
 ): Promise<UpdateRegistryResult> {
   const metaPath = join(projectRoot, FABRIC_DIR, "agents.meta.json");
-  const currentMeta = readAgentsMeta(projectRoot);
+  const currentMeta = await readAgentsMeta(projectRoot);
   const nextMeta = applyRegistryOperation(currentMeta, input.op, input.node_id, input.data);
   const newRevision = computeRevision(nextMeta);
 
@@ -36,6 +37,9 @@ export async function updateRegistry(
       2,
     )}\n`,
   );
+
+  // Eagerly invalidate the meta cache so the next read sees the fresh file.
+  contextCache.invalidate("meta_write", projectRoot);
 
   return {
     revision_hash: newRevision,

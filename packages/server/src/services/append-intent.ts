@@ -1,6 +1,6 @@
 import type { AiLedgerEntry } from "@fenglimg/fabric-shared";
 
-import { appendEditIntentAuditEvents } from "./audit-log.js";
+import { appendEditIntentAuditEvents, type EditIntentComplianceResult } from "./audit-log.js";
 import { appendLedgerEntry, type StoredLedgerEntry } from "./read-ledger.js";
 
 export type AppendIntentInput = {
@@ -11,6 +11,7 @@ export type AppendIntentResult = {
   success: true;
   timestamp: number;
   entry: StoredLedgerEntry;
+  compliance?: EditIntentComplianceResult;
 };
 
 export async function appendIntent(
@@ -24,13 +25,16 @@ export async function appendIntent(
     source: "ai",
   });
 
+  let compliance: EditIntentComplianceResult | undefined;
+
   try {
-    await appendEditIntentAuditEvents(projectRoot, {
+    const auditResult = await appendEditIntentAuditEvents(projectRoot, {
       affected_paths: entry.affected_paths,
       intent: entry.intent,
       ledger_entry_id: entry.id,
       ts,
     });
+    compliance = auditResult.compliance;
   } catch {
     // Compliance telemetry is best-effort and must not block intent recording.
   }
@@ -39,5 +43,6 @@ export async function appendIntent(
     success: true,
     timestamp: ts,
     entry,
+    compliance,
   };
 }
