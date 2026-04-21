@@ -1,3 +1,7 @@
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { cleanupFixtureRoot, createWerewolfFixtureRoot } from "./helpers/init-test-utils.ts";
@@ -6,6 +10,7 @@ const tempRoots: string[] = [];
 const originalFabLang = process.env.FAB_LANG;
 const originalNoColor = process.env.NO_COLOR;
 const originalAuthToken = process.env.FABRIC_AUTH_TOKEN;
+const originalHome = process.env.HOME;
 
 afterEach(() => {
   while (tempRoots.length > 0) {
@@ -19,6 +24,7 @@ afterEach(() => {
   restoreEnv("FAB_LANG", originalFabLang);
   restoreEnv("NO_COLOR", originalNoColor);
   restoreEnv("FABRIC_AUTH_TOKEN", originalAuthToken);
+  restoreEnv("HOME", originalHome);
 });
 
 describe("cli i18n", () => {
@@ -39,6 +45,10 @@ async function collectSnapshots(locale: "en" | "zh-CN") {
   process.env.FAB_LANG = locale;
   process.env.NO_COLOR = "1";
   delete process.env.FABRIC_AUTH_TOKEN;
+
+  const isolatedHome = mkdtempSync(join(tmpdir(), "fab-i18n-home-"));
+  tempRoots.push(isolatedHome);
+  process.env.HOME = isolatedHome;
 
   const initTarget = trackFixture(`fab-i18n-init-${locale}`);
   vi.resetModules();
