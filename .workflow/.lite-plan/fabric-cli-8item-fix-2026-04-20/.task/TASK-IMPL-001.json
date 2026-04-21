@@ -1,0 +1,64 @@
+{
+  "id": "IMPL-001",
+  "title": "Dual-bin rename: add 'fabric' binary alongside permanent 'fab' alias",
+  "scope": "packages/cli",
+  "action": "Update",
+  "description": "Add 'fabric' as the primary binary name in package.json bin field and update citty root command meta.name to 'fabric' so help output shows 'fabric' as the canonical name. 'fab' remains a permanent alias pointing to the same dist/index.js. Update the husky pre-commit template and any README examples that reference 'fab' to use 'fabric' primarily.",
+  "estimated_time": 20,
+  "files": [
+    {
+      "path": "packages/cli/package.json",
+      "change": "Add 'fabric': 'dist/index.js' entry alongside existing 'fab': 'dist/index.js' in the bin field so both binaries are installed."
+    },
+    {
+      "path": "packages/cli/src/index.ts",
+      "change": "Change defineCommand meta.name from 'fab' to 'fabric' (L14) so USAGE header shows 'fabric' in all help output."
+    },
+    {
+      "path": "templates/husky/pre-commit",
+      "change": "Update FAB_BIN= idempotency check to detect both 'fabric' and 'fab' binary names so hook works after rename."
+    },
+    {
+      "path": "README.md",
+      "change": "Update CLI examples to show 'fabric' as primary invocation; note 'fab' as permanent alias in a short footnote."
+    },
+    {
+      "path": "packages/cli/README.md",
+      "change": "Mirror README.md updates — use 'fabric' in code examples, note 'fab' alias."
+    }
+  ],
+  "implementation": [
+    "Open packages/cli/package.json and add 'fabric': 'dist/index.js' to the bin object (keep 'fab' entry unchanged).",
+    "Open packages/cli/src/index.ts and change meta.name from 'fab' to 'fabric' on L14.",
+    "Open templates/husky/pre-commit and update the FAB_BIN= guard to detect both 'fabric' and 'fab' (e.g. use 'which fabric || which fab' or check for either string in path).",
+    "Run 'pnpm -w build' and verify 'fabric --help' shows 'fabric' in USAGE header and 'fab --help' continues to work identically.",
+    "Search README files for 'fab ' command examples and update to 'fabric' with a note that 'fab' is a permanent alias."
+  ],
+  "reference": {
+    "pattern": "bin field in package.json supports multiple entries pointing to same dist file; citty meta.name controls USAGE display only",
+    "files": [
+      "packages/cli/package.json",
+      "packages/cli/src/index.ts"
+    ],
+    "examples": "exploration-patterns.json (fab_to_fabric_cost): 'rename is a two-file atomic change'; bin field dual-entry: { 'fabric': 'dist/index.js', 'fab': 'dist/index.js' }"
+  },
+  "anchor_context": [
+    "packages/cli/package.json:L5-L7 — current bin field",
+    "packages/cli/src/index.ts:L14 — meta.name: 'fab'",
+    "templates/husky/pre-commit — FAB_BIN= check",
+    "exploration-patterns.json (fab_to_fabric_cost section)"
+  ],
+  "convergence": {
+    "criteria": [
+      "'fabric --help' exits 0 and USAGE line shows 'fabric [command]'",
+      "'fab --help' exits 0 and output is functionally identical to 'fabric --help'",
+      "pnpm pack lists both 'fabric' and 'fab' in the bin section of packed package.json",
+      "No README file contains bare 'fab ' examples without a note about the alias"
+    ]
+  },
+  "depends_on": [],
+  "cli_execution_id": "fabric-cli-8item-fix-2026-04-20-IMPL-001",
+  "cli_execution": {
+    "strategy": "new"
+  }
+}

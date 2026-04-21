@@ -1,0 +1,463 @@
+{
+  "perspective": "Business",
+  "relevant_files": [
+    {
+      "path": "packages/cli/src/commands/init.ts",
+      "relevance": 0.95,
+      "role": "modify_target",
+      "rationale": "Contains the complete onboarding flow — fab init — which is the first and most critical user-facing interaction. Three sequential stages (bootstrap, MCP install, hooks) and atomic file writes determine whether a new user succeeds or hits an error on first run.",
+      "discovery_source": "bash-scan",
+      "topic_relation": "Business analysis targets onboarding friction; this file is the full implementation of the new-user journey including all decision points, skip flags, and error paths.",
+      "key_code": [
+        {
+          "symbol": "initCommand.run()",
+          "location": "L134-L256",
+          "description": "Three-stage sequential init flow: files created first (AGENTS.md, meta, human-lock, forensic), then bootstrap, MCP install, hooks — each stage independently skippable and wrapped in try/catch with failure recorded but not aborting subsequent stages."
+        },
+        {
+          "symbol": "initFabric()",
+          "location": "L261-L333",
+          "description": "Synchronous file scaffold: creates 4 project files and 3 Claude-specific config files (skill, hook, settings.json merge) in a single atomic operation. If any file exists and --force is absent, throws and aborts the entire init."
+        },
+        {
+          "symbol": "mergeClaudeStopHook()",
+          "location": "L500-L559",
+          "description": "Merges fabric reminder hook into Claude settings.json with graceful idempotency — skips if already present, returns 'skipped-invalid' if settings.json is malformed JSON or has unexpected hooks structure."
+        }
+      ]
+    },
+    {
+      "path": "packages/cli/src/commands/serve.ts",
+      "relevance": 0.88,
+      "role": "modify_target",
+      "rationale": "The serve command is the user's daily-driver command for starting the system. Its UX — how it handles port conflicts, host security fallback, and auth token input — directly determines the friction of daily use.",
+      "discovery_source": "bash-scan",
+      "topic_relation": "Business analysis asks about daily workflow overhead; serve is the server start command a user runs every session and the quality of its error messages and security defaults affects productivity.",
+      "key_code": [
+        {
+          "symbol": "validateHost()",
+          "location": "L104-L117",
+          "description": "Silent security fallback: if user passes a non-loopback host without FABRIC_AUTH_TOKEN, silently falls back to 127.0.0.1 with only a console.error warning — user may not notice their requested host was ignored."
+        },
+        {
+          "symbol": "EADDRINUSE error path",
+          "location": "L66-L70",
+          "description": "Port-in-use error includes a suggested nextPort (port+1) in the message, giving the user an actionable recovery path — good UX practice."
+        },
+        {
+          "symbol": "readAuthTokenFromEnv()",
+          "location": "L99-L102",
+          "description": "Auth token sourced only from FABRIC_AUTH_TOKEN env var — there is no CLI flag for it, requiring the user to know to set an env var to enable remote hosting. No documentation prompt at startup."
+        }
+      ]
+    },
+    {
+      "path": "packages/cli/src/commands/index.ts",
+      "relevance": 0.82,
+      "role": "context_only",
+      "rationale": "Defines the complete public command surface: 8 visible commands (init, scan, serve, doctor, sync-meta, human-lint, ledger-append, pre-commit) and 3 hidden commands (bootstrap, config, hooks). The hidden/visible distinction reveals intentional command discoverability decisions.",
+      "discovery_source": "bash-scan",
+      "topic_relation": "Business analysis of command discoverability — which commands users can find vs which are deliberately hidden from help output, and what is missing from the visible surface.",
+      "key_code": [
+        {
+          "symbol": "allCommands map",
+          "location": "L1-L34",
+          "description": "bootstrap, config, and hooks are explicitly marked hidden:true — these are low-level plumbing commands hidden from users. The 8 visible commands represent the intended user-facing surface."
+        }
+      ]
+    },
+    {
+      "path": "packages/cli/src/config/resolver.ts",
+      "relevance": 0.85,
+      "role": "dependency",
+      "rationale": "Auto-detection of 7 AI clients (Claude CLI, Claude Desktop, Cursor, Windsurf, RooCode, Gemini CLI, Codex) by probing filesystem markers. This zero-configuration multi-client support is a key product value proposition — the user does not need to manually specify which clients they use.",
+      "discovery_source": "bash-scan",
+      "topic_relation": "Business analysis of setup friction: auto-detection reduces the configuration burden during onboarding and is the mechanism behind the 'one command does everything' value proposition.",
+      "key_code": [
+        {
+          "symbol": "resolveClients()",
+          "location": "L29-L83",
+          "description": "Probes 7 filesystem markers: ~/.claude, project/.claude, Claude Desktop config path, .cursor/, .windsurf/, .roo/, ~/.gemini or GEMINI.md, ~/.codex. Any detected client gets its MCP config written automatically — no user input required."
+        }
+      ]
+    },
+    {
+      "path": "packages/dashboard/src/app.tsx",
+      "relevance": 0.87,
+      "role": "modify_target",
+      "rationale": "Dashboard root defines the 5-view navigation model (rules, locks, timeline, history, doctor) and the real-time connection indicator. The visual structure, nav labels, and default route reveal which features are prioritized for the user.",
+      "discovery_source": "bash-scan",
+      "topic_relation": "Business analysis of dashboard experience — the nav structure defines what information hierarchy is presented to users and what is readily accessible vs buried.",
+      "key_code": [
+        {
+          "symbol": "routes array + hash-based routing",
+          "location": "L29-L65",
+          "description": "Five named views with bilingual labels and subtitles; defaults to #/rules on first open. 'drift-check' appears as a muted (disabled) nav item under diagnostics, indicating a planned but unimplemented feature."
+        },
+        {
+          "symbol": "events.connected badge",
+          "location": "L111-L113",
+          "description": "Connection status badge in header shows 'connected' or 'connecting' state — but no 'disconnected' state with a retry action, meaning users who lose connection see 'connecting' indefinitely with no recovery affordance."
+        }
+      ]
+    },
+    {
+      "path": "packages/dashboard/src/api/client.ts",
+      "relevance": 0.80,
+      "role": "dependency",
+      "rationale": "7 API endpoints define what data the dashboard can display and what actions users can take. The presence of approveHumanLock and annotateIntent as writable endpoints reveals that the dashboard is not purely read-only — it supports user workflow actions.",
+      "discovery_source": "bash-scan",
+      "topic_relation": "Business analysis of dashboard capabilities — understanding which user actions are possible in the dashboard versus requiring CLI commands directly impacts product completeness.",
+      "key_code": [
+        {
+          "symbol": "approveHumanLock()",
+          "location": "L134-L138",
+          "description": "POST /api/human-lock/approve — the only approval workflow action in the dashboard, allowing users to accept AI changes to human-locked regions without leaving the browser."
+        },
+        {
+          "symbol": "annotateIntent()",
+          "location": "L140-L142",
+          "description": "POST /api/intent/annotate — allows users to add annotations to ledger entries. This is a collaborative review action that adds human context to AI-recorded intent."
+        },
+        {
+          "symbol": "readApiError()",
+          "location": "L201-L212",
+          "description": "Error parsing: extracts error.message from API response body, falls back to 'Fabric API request failed with HTTP {status}'. Generic fallback message has low actionability for users debugging issues."
+        }
+      ]
+    },
+    {
+      "path": "packages/dashboard/src/hooks/use-events.ts",
+      "relevance": 0.83,
+      "role": "dependency",
+      "rationale": "SSE event subscription and real-time update mechanism. Caps the in-memory event buffer at 50. The 5 subscribed event types determine which user-visible state updates are live vs require manual refresh.",
+      "discovery_source": "bash-scan",
+      "topic_relation": "Business analysis of real-time dashboard experience — event types and the connection lifecycle directly determine how promptly users see agent activity without needing to refresh.",
+      "key_code": [
+        {
+          "symbol": "eventTypes array",
+          "location": "L7-L13",
+          "description": "Subscribes to: meta:updated, lock:drift, lock:approved, ledger:appended, drift:detected. All dashboard views react to these 5 events — any agent activity that produces these events instantly updates the dashboard."
+        },
+        {
+          "symbol": "fabricEventsSignal buffer",
+          "location": "L46",
+          "description": "Events capped at 50 in memory: `[event, ...fabricEventsSignal.value].slice(0, 50)`. If the user is away for an extended session, older events are silently dropped — no indication of lost events."
+        },
+        {
+          "symbol": "source.onerror handler",
+          "location": "L57",
+          "description": "On SSE error, only sets connected=false. No reconnection retry logic — reconnection relies entirely on browser's native EventSource auto-retry. User sees 'connecting' state with no indication of how long until reconnect or option to force-reconnect."
+        }
+      ]
+    },
+    {
+      "path": "packages/server/src/tools/get-rules.ts",
+      "relevance": 0.90,
+      "role": "dependency",
+      "rationale": "fab_get_rules is MANDATORY before every file modification. Its per-call overhead (reads AGENTS.md + human-lock + resolves node graph) runs on every single file the agent touches, directly determining how much latency the user experiences waiting for the agent.",
+      "discovery_source": "bash-scan",
+      "topic_relation": "Business analysis of agent efficiency — this tool's call frequency and I/O cost translates directly into user wait time during every coding session.",
+      "key_code": [
+        {
+          "symbol": "loadGetRulesContext()",
+          "location": "L77-L90",
+          "description": "Per-call: reads agents.meta.json (sync), reads AGENTS.md (async), reads and maps entire human-lock.json. No caching — every fab_get_rules call re-reads all three files from disk, multiplied across every file the agent edits."
+        },
+        {
+          "symbol": "client_hash stale detection",
+          "location": "L57",
+          "description": "If agent passes prior client_hash, server compares against current revision — returns stale:true if rules changed. This allows the agent to skip sending full context on unchanged rules, reducing payload size but not the file I/O cost."
+        },
+        {
+          "symbol": "appendGetRulesAuditEvent() best-effort",
+          "location": "L65-L72",
+          "description": "Compliance audit logging is wrapped in try/catch and silently swallowed on failure — audit events do not block tool responses. Good reliability design that doesn't punish users when audit storage fails."
+        }
+      ]
+    },
+    {
+      "path": "packages/server/src/tools/plan-context.ts",
+      "relevance": 0.85,
+      "role": "dependency",
+      "rationale": "fab_plan_context batches multiple path queries in one round-trip, reducing agent-to-server calls during planning phases. This directly reduces the number of MCP round-trips a user waits through when the agent plans a multi-file change.",
+      "discovery_source": "bash-scan",
+      "topic_relation": "Business analysis of agent efficiency — batching reduces round-trip count from N (one per file) to 1 during planning, meaning multi-file tasks start faster for users.",
+      "key_code": [
+        {
+          "symbol": "planContext() — shared loadGetRulesContext",
+          "location": "L23-L41",
+          "description": "Calls loadGetRulesContext() once, then resolves rules for all unique paths in parallel via Promise.all. Single context load for N paths means the fixed overhead (meta + AGENTS.md + human-lock reads) is paid once instead of N times."
+        },
+        {
+          "symbol": "dedupePaths()",
+          "location": "L43-L56",
+          "description": "Normalizes and deduplicates input paths before resolution. Protects against agents accidentally sending duplicate paths (e.g., same file listed twice in a plan), preventing wasted work."
+        }
+      ]
+    },
+    {
+      "path": "packages/server/src/tools/append-intent.ts",
+      "relevance": 0.78,
+      "role": "dependency",
+      "rationale": "fab_append_intent is MANDATORY after every completed task. This post-task ledger write contributes to audit history visible in the dashboard's timeline view — the user-visible record of what the AI did and why.",
+      "discovery_source": "bash-scan",
+      "topic_relation": "Business analysis of transparency features — intent ledger is the primary mechanism for users to review AI activity history, making this tool's reliability critical to the oversight value proposition."
+    },
+    {
+      "path": "packages/server/src/tools/update-registry.ts",
+      "relevance": 0.72,
+      "role": "dependency",
+      "rationale": "fab_update_registry allows agents to add/remove/update rule registry nodes. Its MANDATORY description means agents use it instead of directly editing .fabric files — keeping the registry consistent and server-readable at all times.",
+      "discovery_source": "bash-scan",
+      "topic_relation": "Business analysis of agent workflow — registry mutation via MCP tool rather than direct file edit ensures the server state stays consistent, reducing user-visible inconsistency errors."
+    },
+    {
+      "path": "packages/cli/src/commands/doctor.ts",
+      "relevance": 0.80,
+      "role": "context_only",
+      "rationale": "Doctor command is the primary self-service troubleshooting tool. Its --audit flag surfaces rule-compliance violations in a table format. The quality of its output directly determines how quickly users can diagnose problems.",
+      "discovery_source": "bash-scan",
+      "topic_relation": "Business analysis of error experience — doctor is the error recovery tool and its actionability determines whether users can self-serve when things go wrong.",
+      "key_code": [
+        {
+          "symbol": "audit violation table",
+          "location": "L83-L89",
+          "description": "Prints path + edit timestamp + last-get-rules timestamp + intent in tabular form for each violation. Gives users specific file-level evidence of which edits bypassed rules, enabling targeted remediation."
+        },
+        {
+          "symbol": "auditReport.mode === 'strict' exit code 1",
+          "location": "L93-L95",
+          "description": "In strict mode, violations set process.exitCode=1, enabling CI/CD gate integration. But the mode is determined by server config — users may not know they are in 'preview' mode vs 'strict' mode."
+        }
+      ]
+    },
+    {
+      "path": "packages/cli/src/commands/pre-commit.ts",
+      "relevance": 0.75,
+      "role": "context_only",
+      "rationale": "Pre-commit hook chains sync-meta, human-lint, and ledger-append in sequence — a silent three-step process that runs on every git commit. Any failure here blocks the commit with a CLI error message that may be unclear to users unfamiliar with fabric.",
+      "discovery_source": "bash-scan",
+      "topic_relation": "Business analysis of daily workflow friction — pre-commit hooks add overhead to every commit and any failure creates a blocking error the user must resolve before being able to commit."
+    }
+  ],
+  "key_findings": [
+    {
+      "id": "F1",
+      "title": "One-command onboarding is nearly complete but has a silent failure mode",
+      "severity": "medium",
+      "description": "fab init runs 3 stages (bootstrap, MCP install, hooks) in sequence and reports each stage's result. However, if the very first synchronous file scaffold (initFabric) fails — e.g., because AGENTS.md already exists and --force was not passed — the entire command aborts with a raw Node Error message rather than a user-friendly explanation. The helpful stage summary never prints. New users attempting to re-init an existing project get a terse 'abort-existing' error with no suggestion to use --force.",
+      "business_impact": "First-run experience is critical. A confusing error on re-init attempts increases support load and reduces confidence in the product.",
+      "files": ["packages/cli/src/commands/init.ts"]
+    },
+    {
+      "id": "F2",
+      "title": "Command surface has 8 visible + 3 hidden commands with no upgrade path guidance",
+      "severity": "low",
+      "description": "The CLI exposes 8 user-facing commands. Three (bootstrap, config, hooks) are hidden but callable — there is no documentation or help text directing users from a visible command to these hidden commands when needed. There is also no 'update' or 'upgrade' command, meaning users who need to refresh their MCP config after upgrading fabric have no clear CLI path (they would need to know to re-run init --force or the hidden config command).",
+      "business_impact": "Command discoverability gap increases support queries. Absence of upgrade/update command means users who upgrade fabric may have stale MCP configs without knowing it.",
+      "files": ["packages/cli/src/commands/index.ts"]
+    },
+    {
+      "id": "F3",
+      "title": "fab_get_rules has no in-process caching — per-file I/O multiplied by every agent edit",
+      "severity": "high",
+      "description": "Every fab_get_rules call re-reads three files from disk: agents.meta.json (sync readFileSync), AGENTS.md (async readFile), and human-lock.json (async readFile + map). For a task touching 10 files, this is 30 disk reads for the same 3 stable files. The client_hash stale detection only reduces response payload size — it does not reduce I/O. fab_plan_context partially mitigates this for the planning phase by amortizing context load across N paths, but single-file edit calls remain uncached.",
+      "business_impact": "Each additional file in an agent edit adds latency the user waits through. At scale (20+ file tasks), this overhead becomes noticeable and degrades the 'fast AI assistant' user experience.",
+      "files": ["packages/server/src/tools/get-rules.ts", "packages/server/src/tools/plan-context.ts"]
+    },
+    {
+      "id": "F4",
+      "title": "Dashboard has 5 views but 1 nav item is visibly disabled (drift-check) with no ETA",
+      "severity": "low",
+      "description": "The sidebar shows a muted 'drift-check' nav item under diagnostics that is rendered but not clickable (it is a span, not an anchor). Users who notice it will wonder if it is broken or coming soon. There is no tooltip or label explaining its status. Additionally the 5 active views cover rules/locks/timeline/history/doctor — there is no 'settings' or 'configuration' view, meaning users cannot adjust fabric settings from the dashboard.",
+      "business_impact": "Incomplete UI elements erode trust. Missing settings view means users must leave the dashboard and edit config files manually — higher friction for non-developer users.",
+      "files": ["packages/dashboard/src/app.tsx"]
+    },
+    {
+      "id": "F5",
+      "title": "Dashboard SSE disconnection has no user-visible recovery path",
+      "severity": "medium",
+      "description": "When the SSE connection drops, use-events.ts sets connected=false and closes the EventSource. The browser's native EventSource retry mechanism will attempt reconnection, but the dashboard shows 'connecting' indefinitely with no timeout message, no retry button, and no indication of how long the server has been unreachable. Users cannot tell if the server crashed vs briefly restarting.",
+      "business_impact": "Users working in the dashboard while the server restarts have no feedback about when it will recover. This creates anxiety and may cause unnecessary server restarts or page reloads.",
+      "files": ["packages/dashboard/src/hooks/use-events.ts", "packages/dashboard/src/app.tsx"]
+    },
+    {
+      "id": "F6",
+      "title": "serve command silently downgrades host without user acknowledgment",
+      "severity": "medium",
+      "description": "If a user specifies --host 0.0.0.0 (for remote access) without setting FABRIC_AUTH_TOKEN, the serve command silently falls back to 127.0.0.1. Only a console.error warning is printed — there is no interactive prompt to confirm, no suggestion to set the env var, and no explanation of what FABRIC_AUTH_TOKEN is or how to set it. The server starts successfully so the user may not notice the host was overridden.",
+      "business_impact": "Users wanting to access the dashboard from another machine may spend significant time debugging why they cannot connect, not realizing the host was silently changed.",
+      "files": ["packages/cli/src/commands/serve.ts"]
+    },
+    {
+      "id": "F7",
+      "title": "Auto-detection covers 7 AI clients but detection signals are weak for some",
+      "severity": "low",
+      "description": "Gemini CLI detection checks for ~/.gemini directory OR a GEMINI.md file in the project root. A GEMINI.md in the project does not actually mean Gemini CLI is installed — it may be user documentation. Similarly, RooCode detection only checks for a .roo directory, which could be a false positive. Weak detection leads to writing MCP configs to clients the user does not have, potentially cluttering their config directories.",
+      "business_impact": "False-positive client detection creates unnecessary config files and may confuse users who see unexpected files in their project directories.",
+      "files": ["packages/cli/src/config/resolver.ts"]
+    },
+    {
+      "id": "F8",
+      "title": "Pre-commit pipeline adds 3 serial checks on every commit with no fast-path",
+      "severity": "medium",
+      "description": "The pre-commit command runs sync-meta --check-only, then human-lint, then ledger-append --staged in series. Each step is a separate Node process invocation with full startup overhead. For small commits or commits unrelated to fabric-managed files, all three checks still run. There is no mechanism to skip when no fabric-relevant files are in the staged diff.",
+      "business_impact": "Every git commit is slower by 3 CLI startup cycles. On large teams or high-commit-frequency workflows, this adds up to meaningful developer friction and may cause developers to bypass hooks.",
+      "files": ["packages/cli/src/commands/pre-commit.ts"]
+    }
+  ],
+  "code_anchors": [
+    {
+      "file": "packages/cli/src/commands/init.ts",
+      "lines": "L277-L315",
+      "snippet": "const forensicGuardAction = prepareFreshPath(forensicPath, options);\nconst agentsAction = prepareFreshPath(agentsPath, options);\n// ...\nmkdirSync(fabricDir, { recursive: false });\nwriteNewFile(agentsPath, agentsContent, options);\nwriteNewFile(metaPath, ...);\nwriteNewFile(humanLockPath, ...);\nwriteNewFile(forensicPath, ...);",
+      "significance": "prepareFreshPath throws immediately if a path exists and --force is absent. This means re-running fab init on an existing project produces a raw Error with 'abort-existing' i18n key — the error is thrown before any stage summary prints, leaving users with no success feedback about what was already in place."
+    },
+    {
+      "file": "packages/cli/src/commands/serve.ts",
+      "lines": "L104-L116",
+      "snippet": "function validateHost(host: string, authToken: string | undefined): string {\n  if (authToken !== undefined) { return host; }\n  if (!isLoopbackHost(host)) {\n    console.error(`${symbol.warn} ${paint.warn(t('cli.serve.warning.host-fallback', { host }))}`);\n    return '127.0.0.1';\n  }\n  return host;\n}",
+      "significance": "Silent host downgrade: only a console.error with no subsequent guidance on how to set FABRIC_AUTH_TOKEN. The server starts normally so the user may not see the warning if stderr is not monitored. There is also no documentation for the env var on the successful start line."
+    },
+    {
+      "file": "packages/server/src/services/get-rules.ts",
+      "lines": "L77-L90",
+      "snippet": "export async function loadGetRulesContext(projectRoot: string): Promise<GetRulesContext> {\n  const meta = readAgentsMeta(projectRoot);         // sync disk read\n  const l0Content = await readFile(join(projectRoot, 'AGENTS.md'), 'utf8');  // async disk read\n  const humanLockedNearby = (await readHumanLock(projectRoot)).map(entry => ({ // async disk read\n    file: entry.file,\n    excerpt: JSON.stringify(entry),\n  }));\n  return { meta, l0Content, humanLockedNearby };\n}",
+      "significance": "Three disk reads on every fab_get_rules call with no in-process cache. loadGetRulesContext is called independently by both getRules() and planContext() — no shared cache between them. For a task touching 10 files sequentially, this is 30 reads of 3 files that almost certainly have not changed."
+    },
+    {
+      "file": "packages/dashboard/src/app.tsx",
+      "lines": "L100-L102",
+      "snippet": "<div className=\"nav-section\">{t('dashboard.app.nav.section.diagnostics')}</div>\n<span className=\"nav-item muted-nav\"><span className=\"dot\" />{t('dashboard.app.nav.drift-check')}</span>",
+      "significance": "drift-check is a span (not an anchor/button) with a muted-nav class — it is decorative and non-interactive. No tooltip, no coming-soon label, no issue link. Users who see this may assume the feature is broken or the UI has a bug."
+    },
+    {
+      "file": "packages/dashboard/src/hooks/use-events.ts",
+      "lines": "L55-L57",
+      "snippet": "source.onopen = () => setConnected(true);\nsource.onerror = () => setConnected(false);",
+      "significance": "Minimal error handling: onerror just sets connected=false. No timestamp of when disconnection occurred, no reconnection countdown, no exponential backoff control. The browser EventSource will retry with its default strategy — users have no visibility into this."
+    },
+    {
+      "file": "packages/cli/src/commands/pre-commit.ts",
+      "lines": "L38-L50",
+      "snippet": "await runOrFail('sync-meta --check-only', syncMetaModule, { target, 'check-only': true });\nawait runOrFail('human-lint', humanLintModule, { target });\nawait runOrFail('ledger-append --staged', ledgerAppendModule, { target, staged: true });",
+      "significance": "Three serial awaits with no conditional skip. Even a commit that touches no fabric-managed files (e.g., a README edit) runs all three checks. Each is a full Node module execution with startup cost. No diffing to detect fabric-relevant staged files before running checks."
+    }
+  ],
+  "call_chains": [
+    {
+      "entry": "fab init (new user onboarding)",
+      "chain": [
+        "initCommand.run() — parse args, resolve target",
+        "initFabric() — create AGENTS.md, .fabric/*, Claude hooks (throws on existing files)",
+        "installBootstrap() — write bootstrap content to detected AI client config files",
+        "configCommand.installMcpClients() — resolveClients() detects AI hosts, writes MCP config",
+        "installHooks() — create .husky/pre-commit, add prepare script to package.json",
+        "printInitStageSummary() — display ran/skipped/failed for each stage"
+      ],
+      "files": [
+        "packages/cli/src/commands/init.ts",
+        "packages/cli/src/commands/bootstrap.ts",
+        "packages/cli/src/commands/hooks.ts",
+        "packages/cli/src/config/resolver.ts"
+      ]
+    },
+    {
+      "entry": "Agent edits a file (per-file daily workflow overhead)",
+      "chain": [
+        "Agent calls fab_get_rules(path, client_hash?) via MCP",
+        "registerGetRules() handler → getRules(projectRoot, input)",
+        "loadGetRulesContext() — readAgentsMeta (sync) + readFile(AGENTS.md) + readHumanLock (async)",
+        "resolveRulesForPath() — minimatch against all meta.nodes, sort by priority, load matched files",
+        "appendGetRulesAuditEvent() — best-effort audit write (swallowed on error)",
+        "Return JSON payload with L0/L1/L2 rules + human_locked_nearby",
+        "Agent edits file",
+        "Agent calls fab_append_intent(entry) via MCP",
+        "appendIntent() — write ledger entry to .fabric/ledger.jsonl",
+        "SSE event 'ledger:appended' emitted → dashboard updates"
+      ],
+      "files": [
+        "packages/server/src/tools/get-rules.ts",
+        "packages/server/src/services/get-rules.ts",
+        "packages/server/src/tools/append-intent.ts",
+        "packages/server/src/services/append-intent.ts"
+      ]
+    },
+    {
+      "entry": "User opens dashboard",
+      "chain": [
+        "App mounts → useEvents() subscribes to GET /events (SSE)",
+        "Default route #/rules → RulesTreeView renders",
+        "RulesTreeView.load() → parallel: GET /api/rules + GET /api/human-lock",
+        "Parse AgentsMeta → buildRulesTree() → render tree nodes",
+        "SSE event received → parseFabricEvent() → setState with lastEvent",
+        "Views with matching lastEvent.type re-call load()"
+      ],
+      "files": [
+        "packages/dashboard/src/app.tsx",
+        "packages/dashboard/src/hooks/use-events.ts",
+        "packages/dashboard/src/api/client.ts",
+        "packages/dashboard/src/views/rules-tree.tsx"
+      ]
+    },
+    {
+      "entry": "git commit (daily workflow, every commit)",
+      "chain": [
+        ".husky/pre-commit script → fab pre-commit",
+        "runOrFail('sync-meta --check-only') — compute meta from .fabric/agents/, compare to agents.meta.json",
+        "runOrFail('human-lint') — check staged diff for @HUMAN section modifications",
+        "runOrFail('ledger-append --staged') — extract staged diff, write human ledger entry",
+        "Exit 0 on success, exit 1 on any failure (blocks commit)"
+      ],
+      "files": [
+        "packages/cli/src/commands/pre-commit.ts",
+        "packages/cli/src/commands/sync-meta.ts",
+        "packages/cli/src/commands/human-lint.ts",
+        "packages/cli/src/commands/ledger-append.ts"
+      ]
+    }
+  ],
+  "questions_for_user": [
+    {
+      "id": "Q1",
+      "question": "Is fab_get_rules called once per file or once per agent task? If an agent edits 10 files, does the current design result in 10 separate get_rules calls, or does the agent batch them via fab_plan_context first?",
+      "rationale": "The caching cost analysis depends on actual call frequency. If the agent consistently uses fab_plan_context during planning and fab_get_rules only for single-file edits, the uncached I/O may be acceptable. If fab_get_rules is called N times serially, it is a performance gap."
+    },
+    {
+      "id": "Q2",
+      "question": "What is the intended recovery flow when a user tries to fab init on a project that already has AGENTS.md? Is --force the expected path, or should init detect existing fabric and offer an 'update' mode?",
+      "rationale": "The current behavior (throw with abort-existing) is technically correct but user-unfriendly. The product decision is whether init should be idempotent or whether a separate 'upgrade' command should handle the re-init case."
+    },
+    {
+      "id": "Q3",
+      "question": "Is the 'drift-check' nav item in the dashboard a placeholder for a planned feature? If so, does it have a target release timeline, and should it be hidden until implemented?",
+      "rationale": "Visible but non-functional UI elements hurt perceived product quality. Either ship it or hide it — showing a disabled nav item with no explanation is worse than not showing it."
+    },
+    {
+      "id": "Q4",
+      "question": "For remote dashboard access (non-localhost), what is the intended UX for setting FABRIC_AUTH_TOKEN? Should it be a CLI flag, an interactive prompt, or an env var? The current serve command only reads it from env with no CLI guidance.",
+      "rationale": "Remote access is a real use case (team dashboards, CI environments). The silent host downgrade and undocumented env var create significant friction for this scenario."
+    },
+    {
+      "id": "Q5",
+      "question": "Is there a roadmap for a 'settings' or 'configuration' view in the dashboard? Currently users cannot modify any fabric configuration from the browser — all configuration requires CLI commands or manual file editing.",
+      "rationale": "Dashboard-based configuration would significantly reduce friction for non-developer users (product managers, designers) who want oversight of AI activity but cannot use the CLI comfortably."
+    }
+  ],
+  "_metadata": {
+    "analysis_session": "ANL-cli-mcp-agent-web-audit-2026-04-21",
+    "layer": "Layer 2+3 — Structure Tracing + Code Anchor Extraction",
+    "perspective": "Business — User Experience and Product Value",
+    "files_read": 15,
+    "primary_focus_areas": [
+      "Onboarding flow (fab init)",
+      "Daily workflow (agent tool call overhead)",
+      "Dashboard experience (5 views, real-time events)",
+      "Command discoverability (8 visible, 3 hidden)",
+      "Error experience (serve, init, pre-commit, dashboard)"
+    ],
+    "analysis_date": "2026-04-21",
+    "analyst": "claude-sonnet-4-6"
+  }
+}

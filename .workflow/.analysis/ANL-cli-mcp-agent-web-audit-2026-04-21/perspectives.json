@@ -1,0 +1,205 @@
+{
+  "shared_discovery": {
+    "relevant_files_count": 32,
+    "patterns": [
+      "Dual-transport MCP server (stdio + HTTP Streamable)",
+      "4 MCP tools form full agent loop: get_rules -> plan_context -> append_intent -> update_registry",
+      "Synchronous readFileSync on hot path (every tool call)",
+      "Session-per-connection McpServer instances",
+      "JsonlEventStore for MCP event replay (O(n) full scan)",
+      "SSE event system separate from MCP transport (chokidar + debounce)",
+      "Compliance audit trail with 5-min cross-reference window",
+      "L0/L1/L2 rules layering with scope_glob minimatch",
+      "Hash-based revision tracking for stale detection",
+      "Multi-client MCP configuration (7 AI host types)"
+    ],
+    "module_map": {
+      "@fenglimg/fabric-cli": {"role": "CLI", "entry_point": "packages/cli/src/index.ts"},
+      "@fenglimg/fabric-server": {"role": "MCP-Server + HTTP-API", "entry_point": "packages/server/src/index.ts"},
+      "@fenglimg/fabric-dashboard": {"role": "Web-Client", "entry_point": "packages/dashboard/src/main.tsx"},
+      "@fenglimg/fabric-shared": {"role": "Shared", "entry_point": "packages/shared/src/index.ts"}
+    }
+  },
+  "perspectives": [
+    {
+      "name": "Technical",
+      "tool": "cli-explore-agent",
+      "findings": [
+        "KF-001: readAgentsMeta() uses synchronous readFileSync on every tool call — blocks event loop, no caching. Minimum 2x per edit cycle, potentially 3x.",
+        "KF-002: audit.jsonl grows unbounded, fully re-read on every fab_append_intent — O(n) linear scan per affected_path.",
+        "KF-003: loadGetRulesContext() executes 3 I/O ops per call (meta sync + AGENTS.md async + human-lock async + K hash reads). No cross-call caching.",
+        "KF-004: JsonlEventStore.replayEventsAfter() does O(n) full file scan on every MCP reconnect.",
+        "KF-005: SSE /events endpoint uses native EventSource which cannot send Authorization headers — breaks authenticated deployments.",
+        "KF-006: Incremental ledger byte-offset reader (readLedgerAppendedEvents) is well-designed — audit-log and JsonlEventStore should adopt same pattern."
+      ],
+      "insights": [
+        "Per-tool-call I/O budget: fab_get_rules = 1 sync + 2+ async + N rule file reads + 1 audit write",
+        "10-file edit cycle = minimum 30 redundant reads of 3 stable files",
+        "SSE total latency floor: ~195ms (120ms awaitWriteFinish + 75ms debounce)"
+      ],
+      "questions": [
+        "Is the synchronous readFileSync in meta-reader.ts intentional for simplicity, or a known bottleneck?",
+        "Is audit.jsonl rotation/truncation planned?"
+      ],
+      "code_anchors": [
+        {"file": "packages/server/src/meta-reader.ts", "lines": "L43", "significance": "Synchronous readFileSync — single most impactful bottleneck"},
+        {"file": "packages/server/src/services/get-rules.ts", "lines": "L77-L90", "significance": "loadGetRulesContext() — 3 I/O ops with no caching"},
+        {"file": "packages/server/src/services/audit-log.ts", "lines": "L28-L65", "significance": "Full audit.jsonl re-read on every append_intent"},
+        {"file": "packages/server/src/http.ts", "lines": "L49-L119", "significance": "JsonlEventStore O(n) replay"},
+        {"file": "packages/server/src/api/events.ts", "lines": "L75-L95", "significance": "Incremental byte-offset reader — best I/O pattern in codebase"}
+      ],
+      "call_chains": [
+        {"entry": "fab_get_rules tool handler", "chain": "tools/get-rules.ts -> services/get-rules.ts::getRules() -> meta-reader.ts::readAgentsMeta() [sync] + services/get-rules.ts::loadGetRulesContext() [3 I/O] -> resolveRulesForPath() [N file reads] -> audit-log.ts::appendGetRulesAuditEvent()", "files": ["packages/server/src/tools/get-rules.ts", "packages/server/src/services/get-rules.ts", "packages/server/src/meta-reader.ts", "packages/server/src/services/audit-log.ts"]},
+        {"entry": "fab_append_intent tool handler", "chain": "tools/append-intent.ts -> services/append-intent.ts::appendIntent() -> audit-log.ts::appendEditIntentAuditEvents() [full audit.jsonl read per affected_path]", "files": ["packages/server/src/tools/append-intent.ts", "packages/server/src/services/append-intent.ts", "packages/server/src/services/audit-log.ts"]},
+        {"entry": "MCP session creation", "chain": "POST /mcp -> http.ts::createSession() -> index.ts::createFabricServer() [new McpServer + 4 tool registrations] + new StreamableHTTPServerTransport + JsonlEventStore.replayEventsAfter() [O(n)]", "files": ["packages/server/src/http.ts", "packages/server/src/index.ts"]},
+        {"entry": "SSE event chain", "chain": "chokidar file watch [120ms awaitWriteFinish] -> events.ts debounce [75ms] -> broadcast to <=10 SSE clients -> dashboard use-events.ts EventSource", "files": ["packages/server/src/api/events.ts", "packages/dashboard/src/hooks/use-events.ts"]}
+      ]
+    },
+    {
+      "name": "Architectural",
+      "tool": "cli-explore-agent",
+      "findings": [
+        "KF-01: CLI->Server boundary is clean (4 explicit params) but dashboardDistPath/dev options not exposed through CLI.",
+        "KF-02: process.env.FABRIC_PROJECT_ROOT is global mutation — breaks concurrent server instances, violates explicit-dependency principle.",
+        "KF-03: One McpServer per HTTP session — O(n) tool registrations, no shared instance with per-request context.",
+        "KF-04: JsonlEventStore shares ledger file path with intent entries — mixed concerns in one file.",
+        "KF-05: SSE event loss on reconnect — no Last-Event-ID replay, events during disconnect permanently lost.",
+        "KF-06: Dashboard defines parallel TypeScript types instead of importing from shared — two sources of truth for API response surface.",
+        "KF-07: /mcp endpoint has no bearer auth even when FABRIC_AUTH_TOKEN is set — asymmetric security surface."
+      ],
+      "insights": [
+        "Clean separation between CLI/Server/Dashboard/Shared packages, but coupling leaks through process.env",
+        "MCP Host config detection is convention-based (filesystem probes), no runtime confirmation",
+        "Extension seam for new tools is open (add tool registration in createFabricServer), but new transports require http.ts changes"
+      ],
+      "questions": [
+        "Should /mcp endpoint be covered by bearer auth?",
+        "Is the per-session McpServer pattern a deliberate isolation choice?"
+      ],
+      "code_anchors": [
+        {"file": "packages/server/src/http.ts", "lines": "L128", "significance": "process.env.FABRIC_PROJECT_ROOT global mutation"},
+        {"file": "packages/server/src/http.ts", "lines": "L131-L135", "significance": "/mcp unauthenticated when FABRIC_AUTH_TOKEN set"},
+        {"file": "packages/server/src/http.ts", "lines": "L172-L200", "significance": "Per-session McpServer creation"},
+        {"file": "packages/dashboard/src/api/client.ts", "lines": "L1-L30", "significance": "Parallel type definitions — drift risk with shared"},
+        {"file": "packages/server/src/api/events.ts", "lines": "L1-L20", "significance": "No Last-Event-ID replay buffer"}
+      ],
+      "call_chains": [
+        {"entry": "CLI serve -> Server start", "chain": "cli/commands/serve.ts::run() [parse args + validateHost + readAuthToken] -> server/index.ts::startHttpServer() [dynamic import http.ts] -> http.ts::createFabricHttpApp() [set process.env, mount routes, create sessions Map]", "files": ["packages/cli/src/commands/serve.ts", "packages/server/src/index.ts", "packages/server/src/http.ts"]},
+        {"entry": "MCP Host config install", "chain": "cli/commands/init.ts -> config/resolver.ts::resolveClients() [7 filesystem probes] -> config/json.ts::writeJsonClientConfig() [merge mcpServers entry]", "files": ["packages/cli/src/commands/init.ts", "packages/cli/src/config/resolver.ts", "packages/cli/src/config/json.ts"]}
+      ]
+    },
+    {
+      "name": "Business",
+      "tool": "cli-explore-agent",
+      "findings": [
+        "F1: fab init aborts entirely if AGENTS.md exists without --force — no guidance on re-initialization.",
+        "F2: 8 visible + 3 hidden commands. No update/upgrade command for refreshing MCP configs after version upgrade.",
+        "F3: fab_get_rules re-reads 3 files per call with no cache. 10-file edit = 30 redundant reads — directly impacts user-perceived agent latency.",
+        "F4: Dashboard drift-check nav item is visible but non-interactive (muted span, no explanation).",
+        "F5: SSE disconnection shows 'connecting' indefinitely — no retry button, timeout message, or server status indication.",
+        "F6: serve command silently downgrades non-loopback host without FABRIC_AUTH_TOKEN — user may not notice.",
+        "F7: Gemini CLI detection via GEMINI.md presence is fragile — false positives possible.",
+        "F8: pre-commit runs all 3 checks serially with no fast-path for commits touching no fabric-managed files."
+      ],
+      "insights": [
+        "Onboarding is well-designed (one-command setup) but has a sharp abort edge",
+        "Daily workflow overhead is dominated by uncached file reads in MCP tools",
+        "Dashboard has 5 views but incomplete polish (dead nav item, no disconnect UX)"
+      ],
+      "questions": [
+        "Is an update/upgrade command planned for post-install MCP config refresh?",
+        "Should pre-commit skip all checks when no fabric-managed files are in the commit?"
+      ],
+      "code_anchors": [
+        {"file": "packages/cli/src/commands/init.ts", "lines": "L261-L333", "significance": "initFabric() — aborts entirely on existing files without --force"},
+        {"file": "packages/cli/src/commands/index.ts", "lines": "L1-L30", "significance": "Command registry — missing update/upgrade"},
+        {"file": "packages/dashboard/src/app.tsx", "lines": "L50-L70", "significance": "Dead drift-check nav item"},
+        {"file": "packages/cli/src/commands/serve.ts", "lines": "L104-L117", "significance": "Silent host downgrade"}
+      ],
+      "call_chains": [
+        {"entry": "fab init onboarding", "chain": "cli/commands/init.ts::run() -> initFabric() [4 files + 3 config files] -> bootstrapStage() -> mcpInstallStage() [resolveClients + writeConfig per client] -> hooksStage() [mergeClaudeStopHook]", "files": ["packages/cli/src/commands/init.ts", "packages/cli/src/config/resolver.ts", "packages/cli/src/config/json.ts"]}
+      ]
+    },
+    {
+      "name": "Domain Expert",
+      "tool": "cli-explore-agent",
+      "findings": [
+        "KF-01: MANDATORY directive overuse — fab_update_registry uses MANDATORY but is situationally required. Signal dilution risk.",
+        "KF-02: No outputSchema on any of 4 tools — agents receive untyped JSON blobs, must parse blindly. Highest-impact conformance gap.",
+        "KF-03: enableJsonResponse:true eliminates all streaming — fab_plan_context with large paths arrays cannot emit progress.",
+        "KF-04: Compliance score (compliant:boolean) stored in audit.jsonl but never returned to agent — audited in secret, cannot self-correct.",
+        "KF-05: AGENTS.md (L0) embedded in every tool response — should be MCP Resource with subscribe:true for agent-side caching.",
+        "KF-06: JsonlEventStore O(n) without TTL — unbounded growth.",
+        "KF-07: fab_plan_context paths.min(1) creates semantic overlap with fab_get_rules at n=1.",
+        "KF-08: fab_update_registry data field is z.record(z.unknown()).optional() — fully untyped at protocol boundary."
+      ],
+      "insights": [
+        "Server is conformant with MCP 2024-11-05 core spec; all gaps are in best-practice areas from 2025-03-26+ revisions",
+        "Compliance audit pattern is elegant and novel — but one-way observation mirror (agents audited but never informed)",
+        "Only tools primitive used — resources, prompts, sampling could each add value"
+      ],
+      "questions": [
+        "Should compliance results be returned to the agent in fab_append_intent response?",
+        "Is there a plan to adopt MCP resources for AGENTS.md and rule files?"
+      ],
+      "code_anchors": [
+        {"file": "packages/server/src/tools/get-rules.ts", "lines": "L27-L38", "significance": "No outputSchema, no annotations, generic path string type"},
+        {"file": "packages/server/src/tools/update-registry.ts", "lines": "L10-L20", "significance": "z.record(z.unknown()) — untyped data at MCP boundary"},
+        {"file": "packages/server/src/tools/plan-context.ts", "lines": "L8-L11", "significance": "paths.min(1) — overlap with fab_get_rules at n=1"},
+        {"file": "packages/server/src/tools/append-intent.ts", "lines": "L14-L18", "significance": "Internal Zod schema reused as MCP tool contract — coupling risk"}
+      ],
+      "call_chains": [
+        {"entry": "Agent compliance loop", "chain": "Agent calls fab_get_rules [audit event logged] -> Agent modifies files -> Agent calls fab_append_intent [cross-references audit within 5-min window -> sets compliant:boolean in audit.jsonl] -> compliance result NOT returned to agent", "files": ["packages/server/src/tools/get-rules.ts", "packages/server/src/tools/append-intent.ts", "packages/server/src/services/audit-log.ts"]}
+      ]
+    }
+  ],
+  "external_research": {
+    "findings": [
+      "MCP 2025-06-18 adds outputSchema for structuredContent responses — current tools return text-wrapped JSON",
+      "MCP resources with subscribe:true enables agent-side caching — eliminates redundant AGENTS.md reads",
+      "Missing notifications/tools/list_changed after sync-meta — agent uses stale tool list",
+      "SSE Last-Event-ID spec requires client to persist and resend — current dashboard drops it",
+      "enableJsonResponse:true trades streaming for simplicity — correct for current tool latencies"
+    ],
+    "best_practices": [
+      "Tool descriptions with imperative MANDATORY phrasing for enforcing call order",
+      "outputSchema reduces LLM token waste by providing type hints",
+      "Static context should be MCP resources, not embedded in tool responses",
+      "SSE reconnect must use Last-Event-ID to prevent event loss"
+    ],
+    "codebase_gaps": [
+      {"gap": "No MCP resources primitive", "current": "Re-read AGENTS.md on every tool call", "recommended": "Expose as resources with subscribe:true"},
+      {"gap": "No outputSchema", "current": "JSON.stringify in text content", "recommended": "structuredContent + outputSchema per MCP 2025-06-18"},
+      {"gap": "No notifications/tools/list_changed", "current": "Stale tool list after sync-meta", "recommended": "Emit notification after sync-meta"},
+      {"gap": "SSE missing Last-Event-ID", "current": "Events lost on reconnect", "recommended": "Capture and resend Last-Event-ID"},
+      {"gap": "No MCP prompts", "current": "Agent discovers workflow via tool descriptions only", "recommended": "Expose workflow templates as MCP prompts"}
+    ],
+    "sources": [
+      "https://modelcontextprotocol.io/docs/concepts/architecture",
+      "https://modelcontextprotocol.io/docs/concepts/transports",
+      "https://modelcontextprotocol.io/docs/concepts/tools",
+      "https://modelcontextprotocol.io/docs/concepts/resources",
+      "https://modelcontextprotocol.io/docs/concepts/prompts"
+    ]
+  },
+  "synthesis": {
+    "convergent_themes": [
+      "readAgentsMeta() synchronous hot path is the #1 performance bottleneck — all 4 perspectives agree (Technical: I/O blocking, Architectural: coupling smell, Business: user latency, Domain: protocol inefficiency)",
+      "SSE event loss on reconnect (no Last-Event-ID) — confirmed by Technical, Architectural, Business, and Research",
+      "/mcp endpoint unauthenticated — Architectural and Technical both flag this as a security gap",
+      "audit.jsonl unbounded growth with O(n) full reads — Technical and Domain Expert convergent",
+      "No outputSchema on any tool — Domain Expert and Research both identify as highest-impact MCP conformance gap",
+      "Missing MCP resources primitive for AGENTS.md/rule files — Domain Expert and Research convergent"
+    ],
+    "conflicting_views": [
+      "Technical ranks readFileSync as #1 priority; Domain Expert ranks missing outputSchema higher — both valid, different impact dimensions (I/O latency vs token waste)",
+      "Business sees init abort UX as top friction; other perspectives focus on runtime performance — both valid for different user moments"
+    ],
+    "unique_contributions": [
+      "Technical: Precise I/O budget per tool call (1 sync + 2+ async + N rule reads + 1 audit write); incremental byte-offset reader as positive pattern to replicate",
+      "Architectural: /mcp auth gap, dashboard parallel types drift risk, CLI->Server option exposure gap (dashboardDistPath/dev not CLI-accessible)",
+      "Business: Missing update/upgrade command, dead drift-check nav item, pre-commit serial overhead for non-fabric commits, Gemini CLI false-positive detection",
+      "Domain Expert: MANDATORY overuse dilution, compliance score invisible to agents (one-way audit mirror), fab_plan_context/fab_get_rules overlap at n=1, untyped fab_update_registry data field"
+    ]
+  }
+}

@@ -1,0 +1,105 @@
+{
+  "id": "TASK-005",
+  "title": "pre-commit fast-skip via staged-file scope_glob matching (Rec#8)",
+  "description": "Add an early-exit fast path to the pre-commit hook: read staged file paths from git, match them against each agent's scope_glob from agents.meta.json, and exit 0 immediately if no staged file falls within any fabric-managed scope. This reduces non-fabric commit overhead from ~500ms (3 serial checks) to ~50ms (one git query + one glob match).",
+  "type": "enhancement",
+  "priority": "medium",
+  "effort": "small",
+  "action": "Update",
+  "scope": "packages/cli/src/commands/",
+  "focus_paths": [
+    "packages/cli/src/commands/pre-commit.ts"
+  ],
+  "depends_on": [],
+  "parallel_group": 1,
+  "files": [
+    {
+      "path": "packages/cli/src/commands/pre-commit.ts",
+      "action": "modify",
+      "target": "pre-commit handler",
+      "changes": [
+        "At top of handler (before any existing checks): run `git diff --cached --name-only` to get staged file paths",
+        "Read agents.meta.json to get all scope_glob patterns across all registered agents",
+        "Test each staged file against scope_glob patterns using micromatch or minimatch (already in dep tree likely)",
+        "If zero staged files match any scope_glob: log 'No fabric-managed files staged, skipping checks' and exit 0",
+        "Otherwise: proceed with existing 3-check pipeline unchanged"
+      ]
+    }
+  ],
+  "implementation": [
+    "Read pre-commit.ts lines 1-60 to understand the existing pipeline (sync-meta --check-only, human-lint, ledger-append --staged)",
+    "Check package.json dependencies for existing glob-matching library (micromatch, minimatch, picomatch)",
+    "Add getStagedFiles(): string[] helper using execa or child_process to run git diff --cached --name-only",
+    "Add matchesFabricScope(stagedFiles, agentsMeta): boolean using glob matching",
+    "Insert fast-path guard at top of handler: if (!matchesFabricScope(...)) return exit(0)",
+    "Add --no-skip flag or FABRIC_PRE_COMMIT_SKIP=false env override for emergency bypass",
+    "Test with a commit that changes only non-fabric files (e.g. README.md) and confirm near-instant exit"
+  ],
+  "reference": {
+    "pattern": "Staged-file filtering pattern (common in lint-staged, husky configs)",
+    "files": [
+      "packages/cli/src/commands/pre-commit.ts",
+      "packages/cli/src/commands/sync-meta.ts"
+    ],
+    "examples": "Read scope_glob from agents.meta.json (same pattern as sync-meta); use existing meta-reader utility"
+  },
+  "rationale": {
+    "chosen_approach": "Early-exit guard using existing agents.meta scope_glob data — no new data structures needed",
+    "alternatives_considered": [
+      "Cache staged files in a temp file between hook invocations (too complex, hooks are short-lived)",
+      "Skip pre-commit entirely via --no-verify (defeats the purpose; not user-transparent)"
+    ],
+    "decision_factors": [
+      "agents.meta.json is already read by other commands; one read is acceptable for a fast-path decision",
+      "scope_glob is the canonical source of which files are fabric-managed — semantically correct filter"
+    ],
+    "tradeoffs": "One extra readFile call for agents.meta.json at hook start; offset by saving 3 serial checks on every non-fabric commit"
+  },
+  "risks": [
+    {
+      "description": "Glob matching edge cases: scope_glob patterns with ** may not match correctly depending on library behavior",
+      "probability": "Low",
+      "impact": "Medium",
+      "mitigation": "Use micromatch which is the standard in Node.js tooling; test with sample scope_glob patterns from real agents.meta.json",
+      "fallback": "If uncertain, err toward running full checks (false negatives are safe, false positives just slow)"
+    }
+  ],
+  "convergence": {
+    "criteria": [
+      "Committing only non-fabric files (e.g. README.md) exits pre-commit in < 100ms",
+      "Committing fabric-managed files still runs the full 3-check pipeline",
+      "pre-commit.ts reads scope_glob from agents.meta.json, not a hardcoded list",
+      "FABRIC_PRE_COMMIT_SKIP=false or equivalent override forces full checks"
+    ],
+    "verification": "Time `git commit` with only README.md staged on a repo with agents.meta.json present; confirm < 100ms; then stage a fabric-managed file and confirm full pipeline runs",
+    "definition_of_done": "Non-fabric commits complete the pre-commit hook in under 100ms with a clear log message explaining the skip"
+  },
+  "test": {
+    "unit": [
+      "matchesFabricScope: returns false when staged files contain only non-glob-matching paths",
+      "matchesFabricScope: returns true when at least one staged file matches a scope_glob",
+      "getStagedFiles: parses git diff --cached --name-only output correctly"
+    ],
+    "manual_checks": [
+      "Stage only package.json (not fabric-managed), run pre-commit hook, confirm 'skipping checks' message and fast exit",
+      "Stage a file matching an agent's scope_glob, run pre-commit hook, confirm full pipeline runs"
+    ],
+    "success_metrics": [
+      "Non-fabric commit pre-commit latency < 100ms (vs ~500ms before)",
+      "0 false negatives: fabric-managed staged files always trigger full pipeline"
+    ]
+  },
+  "cli_execution": {
+    "id": "fabric-cli-mcp-chain-optimize-2026-04-21-TASK-005",
+    "strategy": "new"
+  },
+  "commit": {
+    "type": "feat",
+    "scope": "cli",
+    "message_template": "feat(cli): pre-commit fast-skip via scope_glob staged-file match"
+  },
+  "source": {
+    "tool": "lite-plan",
+    "session_id": "fabric-cli-mcp-chain-optimize-2026-04-21"
+  }
+}

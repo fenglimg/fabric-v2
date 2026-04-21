@@ -1,0 +1,103 @@
+{
+  "id": "IMPL-004",
+  "title": "Init auto-runs bootstrap + config-install + hooks (integrated one-shot flow)",
+  "scope": "packages/cli/src/commands/init.ts",
+  "action": "Update",
+  "description": "After core initFabric() completes, orchestrate three additional stages inside the init command handler: (1) bootstrap stage — invoke installBootstrap() for detected clients unless --no-bootstrap; (2) MCP config stage — invoke resolveClients() + each writer.write() unless --no-mcp; (3) hooks stage — invoke the hooks installer unless --no-hooks. Each stage prints a section header and respects --force for overwrite decisions. Final summary prints stage outcomes. 'fabric init --no-bootstrap --no-mcp --no-hooks' must behave identically to today's pure init.",
+  "estimated_time": 60,
+  "files": [
+    {
+      "path": "packages/cli/src/commands/init.ts",
+      "change": "After the core initFabric() call in the run() handler, add three conditional orchestration blocks for bootstrap, MCP config, and hooks stages; import installBootstrap from bootstrap.ts, resolveClients from config/resolver.ts, resolveServerPath from config.ts, and the hooks installer logic from hooks.ts."
+    },
+    {
+      "path": "packages/cli/src/commands/bootstrap.ts",
+      "change": "Ensure installBootstrap() is exported as a standalone async function (not only wired to the citty command) so init.ts can import and call it directly."
+    },
+    {
+      "path": "packages/cli/src/commands/hooks.ts",
+      "change": "Extract the core hook installation logic into an exported installHooks(target: string, options?) async function so init.ts can call it directly without going through citty."
+    },
+    {
+      "path": "packages/shared/src/i18n/locales/en.ts",
+      "change": "Add cli.init.stages.bootstrap, cli.init.stages.mcp, cli.init.stages.hooks section header keys and cli.init.stages.skipped / cli.init.stages.completed status keys."
+    },
+    {
+      "path": "packages/shared/src/i18n/locales/zh-CN.ts",
+      "change": "Mirror all stage header and status keys added to en.ts."
+    }
+  ],
+  "implementation": [
+    "Read packages/cli/src/commands/bootstrap.ts to confirm installBootstrap() is exported or wrap the install logic in a new exported function; if currently only accessible through citty command, extract the inner logic.",
+    "Read packages/cli/src/commands/hooks.ts to confirm the husky install logic; extract to an exported installHooks(target, options?) function that mirrors what hooksCommand.run() does.",
+    "In init.ts run() handler, after the await initFabric() call, add a bootstrap stage block: if (!args['no-bootstrap']) { print section header; detect clients with resolveClients(); call installBootstrap() for detected bootstrap clients; print result }.",
+    "Add MCP config stage block: if (!args['no-mcp']) { print section header; resolveClients(); resolveServerPath(); call writer.write(serverPath, target) for each writer; print result — pass force from args }.",
+    "Add hooks stage block: if (!args['no-hooks']) { print section header; call installHooks(target, { force: args.force }); print result }.",
+    "Add cli.init.stages.* i18n keys to both locale files.",
+    "Verify that 'fabric init --no-bootstrap --no-mcp --no-hooks' produces identical output to the current 'fab init' — write a brief snapshot test or add a manual check step.",
+    "Run pnpm test to confirm no regressions."
+  ],
+  "reference": {
+    "pattern": "Extract inner logic into standalone exported functions, import in init.ts, call conditionally based on options flags; same pattern used by resolveClients() which is already shared between config.ts and bootstrap.ts",
+    "files": [
+      "packages/cli/src/commands/bootstrap.ts",
+      "packages/cli/src/commands/hooks.ts",
+      "packages/cli/src/config/resolver.ts"
+    ],
+    "examples": "exploration-architecture.json (installBootstrap, L151-L165): already overwrite-friendly; exploration-integration-points.json (GAP-2): init must call resolveClients() to auto-configure MCP clients"
+  },
+  "anchor_context": [
+    "packages/cli/src/commands/bootstrap.ts:L151-L165 — installBootstrap() exported function",
+    "packages/cli/src/commands/bootstrap.ts:L40-L47 — CLIENT_TEMPLATE_MAP",
+    "packages/cli/src/commands/hooks.ts:L36-L96 — hooks install logic + FAB_BIN= skip check",
+    "packages/cli/src/config/resolver.ts:L29-L83 — resolveClients() auto-detection",
+    "packages/cli/src/commands/config.ts:L71-L74 — resolveServerPath()",
+    "exploration-integration-points.json (init_artifact_catalog) — what init creates vs what config install creates",
+    "exploration-integration-points.json (GAP-2) — gap: init does not call config install"
+  ],
+  "convergence": {
+    "criteria": [
+      "'fabric init' on a fresh project: creates core artifacts + bootstrap files (for detected clients) + MCP config entries + husky hook in a single pass",
+      "'fabric init --no-bootstrap --no-mcp --no-hooks' produces the same output as today's 'fab init' (only core AGENTS.md + .fabric/ + .claude/ scaffold)",
+      "Each integrated stage prints a distinct section header so user can track progress",
+      "'fabric init --force' propagates force flag to all three sub-stages",
+      "No regression on 'fabric bootstrap install' or 'fabric config install' called standalone"
+    ]
+  },
+  "rationale": {
+    "chosen_approach": "Orchestrate by importing and calling exported functions from sibling command modules; each stage is conditional on skipX flags",
+    "alternatives_considered": [
+      "Spawn child processes for each sub-command — too heavy and loses in-process error handling",
+      "Create a new 'fabric setup' meta-command — adds surface area; user said 'init is the sole entrypoint'"
+    ],
+    "decision_factors": [
+      "User said: 'init is the SOLE user-facing entrypoint; other commands should be hidden'",
+      "opt-out flags (--no-bootstrap, --no-mcp, --no-hooks) preserve escape hatch for users who want partial init",
+      "In-process function calls keep error handling and logging consistent"
+    ],
+    "tradeoffs": "init.ts becomes larger; mitigated by delegating each stage to its own module function"
+  },
+  "test": {
+    "manual_checks": [
+      "fabric init on fresh Claude-only project: AGENTS.md + .fabric/ + .claude/ hooks + CLAUDE.md bootstrap + .claude/settings.json mcpServers entry + .husky/pre-commit all created",
+      "fabric init --no-bootstrap --no-mcp --no-hooks: only AGENTS.md + .fabric/ + .claude/ hooks created — identical to current behavior",
+      "fabric init --force on initialized project: all stages forced"
+    ],
+    "success_metrics": [
+      "All existing init-nondestructive.test.ts tests pass",
+      "All init-force.test.ts tests pass",
+      "Manual one-shot init on clean fixture creates all expected artifacts without additional commands"
+    ],
+    "unit": [],
+    "integration": [
+      "init-integrated: one-shot creates all artifact layers",
+      "init-integrated: --no-bootstrap skips bootstrap stage artifacts"
+    ]
+  },
+  "depends_on": ["IMPL-003"],
+  "cli_execution_id": "fabric-cli-8item-fix-2026-04-20-IMPL-004",
+  "cli_execution": {
+    "strategy": "resume",
+    "resume_from": "fabric-cli-8item-fix-2026-04-20-IMPL-003"
+  }
+}

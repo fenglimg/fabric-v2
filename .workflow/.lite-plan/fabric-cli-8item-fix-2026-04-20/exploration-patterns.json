@@ -1,0 +1,240 @@
+{
+  "_metadata": {
+    "exploration_angle": "patterns",
+    "exploration_index": 3,
+    "project": "@fenglimg/fabric-cli",
+    "generated_at": "2026-04-20",
+    "sources": ["bash-scan", "cli-analysis"]
+  },
+  "patterns": {
+    "file_write_skip_abort": {
+      "name": "File-write: skip / abort decision",
+      "description": "Every file write in init.ts checks existence first. If a file already exists the function throws an ABORT Error. Optional files (skill, hook) use copyTemplateIfMissing which returns 'created'|'skipped' and never throws.",
+      "source_anchor": "packages/cli/src/commands/init.ts:140-149 (top-level guards), L273-279 (writeNewFile helper), L281-289 (copyTemplateIfMissing helper)",
+      "inject_force_here": "packages/cli/src/commands/init.ts:140-149 — three existsSync guards before any work begins. To add --force, wrap each guard: `if (existsSync(X) && !args.force) throw new Error(...)`",
+      "snippet": "// Current guard pattern (init.ts L140-149)\nif (existsSync(forensicPath)) {\n  throw new Error(`ABORT: ${forensicPath} already exists. fab init is non-destructive.`);\n}\nif (existsSync(agentsPath)) {\n  throw new Error(`ABORT: ${agentsPath} already exists. fab init is non-destructive.`);\n}\nif (existsSync(fabricDir)) {\n  throw new Error(`ABORT: ${fabricDir} already exists. fab init is non-destructive.`);\n}\n\n// writeNewFile (init.ts L273-279)\nfunction writeNewFile(path: string, content: string): void {\n  if (existsSync(path)) {\n    throw new Error(`ABORT: ${path} already exists. fab init is non-destructive.`);\n  }\n  writeFileSync(path, content, 'utf8');\n}\n\n// copyTemplateIfMissing (init.ts L281-289) — skip-not-abort pattern\nfunction copyTemplateIfMissing(templatePath: string, targetPath: string): 'created' | 'skipped' {\n  mkdirSync(dirname(targetPath), { recursive: true });\n  if (existsSync(targetPath)) return 'skipped';\n  copyFileSync(templatePath, targetPath);\n  return 'created';\n}",
+      "force_injection_pattern": "// With --force: delete blocking files before calling initFabric, OR\n// pass force flag through and change guards:\nif (existsSync(forensicPath) && !args.force) {\n  throw new Error(`ABORT: ${forensicPath} already exists. fab init is non-destructive.`);\n}\nif (args.force && existsSync(fabricDir)) {\n  rmSync(fabricDir, { recursive: true });\n}\nif (args.force && existsSync(agentsPath)) {\n  rmSync(agentsPath);\n}"
+    },
+    "citty_command_with_boolean_flag": {
+      "name": "Citty command definition with boolean flag",
+      "description": "Commands use defineCommand({ meta, args, run }). Boolean flags use type:'boolean', default:false. Args type annotation is a local type alias. The run function destructures { args }.",
+      "source_anchor": "packages/cli/src/commands/init.ts:59-115 (initCommand), packages/cli/src/commands/sync-meta.ts:24-63 (check-only boolean flag example)",
+      "snippet": "// From init.ts L59-75\nexport const initCommand = defineCommand({\n  meta: {\n    name: 'init',\n    description: t('cli.init.description'),\n  },\n  args: {\n    target: {\n      type: 'string',\n      description: t('cli.init.args.target.description'),\n    },\n    debug: {\n      type: 'boolean',\n      description: t('cli.init.args.debug.description'),\n      default: false,\n    },\n  },\n  async run({ args }: { args: InitArgs }) { ... }\n});\n\n// sync-meta.ts: check-only boolean flag L29-39\n'check-only': {\n  type: 'boolean',\n  description: t('cli.sync-meta.args.check-only.description'),\n  default: false,\n},\n\n// Adding --force follows exact same pattern:\nforce: {\n  type: 'boolean',\n  description: t('cli.init.args.force.description'),\n  default: false,\n},",
+      "notes": "Hyphenated flags like check-only map to args['check-only']. For --force, use force (no hyphen) → args.force. Local type alias must be updated: type InitArgs = { target?: string; debug?: boolean; force?: boolean }."
+    },
+    "citty_subcommand_registration": {
+      "name": "Command registration in allCommands router",
+      "description": "All commands are lazy-loaded via allCommands in commands/index.ts. Each entry is a function returning a dynamic import. The key becomes the CLI subcommand name (e.g. 'sync-meta' → fab sync-meta).",
+      "source_anchor": "packages/cli/src/commands/index.ts:1-13",
+      "snippet": "// commands/index.ts\nexport const allCommands = {\n  bootstrap: () => import('./bootstrap.js').then((m) => m.default),\n  init:      () => import('./init.js').then((m) => m.default),\n  'sync-meta': () => import('./sync-meta.js').then((m) => m.default),\n  // ... etc\n};\n\n// Adding a 'fabric' alias alongside 'fab' would require changing\n// packages/cli/src/index.ts meta.name from 'fab' to 'fabric'.\n// There is no alias/multi-name mechanism in citty — rename is atomic.",
+      "rename_cost": "Renaming fab→fabric is a one-line change at packages/cli/src/index.ts:14 (meta.name:'fab'→'fabric'). No subCommand registration changes needed. Binary name in package.json bin field is separate."
+    },
+    "i18n_key_format_and_usage": {
+      "name": "i18n key format, catalog registration, and call site usage",
+      "description": "Keys follow dot-notation namespace: 'cli.<command>.<context>.<qualifier>'. Variables use {varName} placeholder syntax. Both en and zh-CN catalogs must have identical keys. The t() function falls back en→key if missing.",
+      "source_anchor": "packages/shared/src/i18n/locales/en.ts (all CLI keys), packages/shared/src/i18n/locales/zh-CN.ts (mirror), packages/shared/src/i18n/create-translator.ts:10-28",
+      "key_naming_convention": "cli.<command>.<area>.<qualifier> — examples: 'cli.init.args.debug.description', 'cli.init.created-path', 'cli.shared.skipped'. For --force flag: 'cli.init.args.force.description'. For force-overwrite message: 'cli.init.force-overwrite-path'.",
+      "snippet": "// 1. Add key to en.ts\n'cli.init.args.force.description': 'Overwrite existing Fabric files (non-destructive guard is bypassed).',\n'cli.init.force-overwrite-path': '{label} {path}: overwritten.',\n\n// 2. Add matching key to zh-CN.ts (REQUIRED — both catalogs must stay in sync)\n'cli.init.args.force.description': '覆盖已存在的 Fabric 文件（跳过非破坏性保护）。',\n'cli.init.force-overwrite-path': '{label} {path}：已覆盖。',\n\n// 3. Use at call site in command file\nimport { t } from '../i18n.js';\nforce: {\n  type: 'boolean',\n  description: t('cli.init.args.force.description'),\n  default: false,\n},\nconsole.log(t('cli.init.force-overwrite-path', { label: createdLabel(), path: agentsPath }));",
+      "translator_signature": "t(key: string, vars?: Record<string, string>): string — from packages/shared/src/i18n/create-translator.ts:17",
+      "catalog_location": "packages/shared/src/i18n/locales/en.ts and zh-CN.ts — these are the ONLY places to add new keys. The CLI imports createTranslator and detectNodeLocale from @fenglimg/fabric-shared."
+    },
+    "error_abort_pattern": {
+      "name": "Error / ABORT throw pattern",
+      "description": "Errors are plain 'throw new Error(message)'. No custom error class or helper. ABORT messages use inline template literals with the file path embedded. The citty framework catches unhandled errors and prints them. There is one i18n key for abort-existing (added but NOT yet used in the code — current code still uses raw template literals).",
+      "source_anchor": "packages/cli/src/commands/init.ts:141-149 (raw throw), packages/shared/src/i18n/locales/en.ts:104 (i18n key defined but unused: 'cli.init.errors.abort-existing')",
+      "snippet": "// Current raw pattern (init.ts L141)\nthrow new Error(`ABORT: ${forensicPath} already exists. fab init is non-destructive.`);\n\n// There IS an i18n key defined but not used yet:\n// en.ts L104: 'cli.init.errors.abort-existing': 'ABORT: {path} already exists. fab init is non-destructive.'\n// zh-CN.ts L99: 'cli.init.errors.abort-existing': '中止：{path} 已存在。fab init 是非破坏性的。'\n\n// Recommended pattern for new --force-aware abort:\nif (existsSync(agentsPath) && !args.force) {\n  throw new Error(t('cli.init.errors.abort-existing', { path: agentsPath }));\n}\n// Use the existing i18n key — avoid raw template literals",
+      "observation": "The i18n key 'cli.init.errors.abort-existing' was added to both catalogs but the implementation still uses raw template literals. The --force fix should also migrate these to use t() — or leave raw for consistency with current code. Recommend using t() to be consistent with i18n intent."
+    },
+    "test_pattern": {
+      "name": "Vitest test pattern for command handlers",
+      "description": "Tests are in packages/cli/__tests__/*.test.ts. Framework is vitest with node environment. Fixture isolation uses createWerewolfFixtureRoot() (copies example project to tmpdir) + cleanupFixtureRoot() in afterEach. Command handlers are imported directly and called with .run?.({args}) — no CLI process spawn needed. i18n tests use vi.resetModules() + dynamic import to test locale switching.",
+      "source_anchor": "packages/cli/__tests__/init-nondestructive.test.ts:1-96, packages/cli/__tests__/helpers/init-test-utils.ts:1-32, packages/cli/vitest.config.ts:1-18",
+      "snippet": "// vitest.config.ts: environment + alias\nexport default defineConfig({\n  resolve: { alias: { '@fenglimg/fabric-shared': resolve(packageRoot, '../shared/src/index.ts') } },\n  test: { environment: 'node', include: ['__tests__/**/*.test.ts'] },\n});\n\n// Test file structure:\nimport { afterEach, describe, expect, it } from 'vitest';\nimport { initFabric } from '../src/commands/init.ts';\nimport { cleanupFixtureRoot, createWerewolfFixtureRoot, writeFixtureFile } from './helpers/init-test-utils.ts';\n\nconst tempRoots: string[] = [];\naftterEach(() => { while (tempRoots.length > 0) cleanupFixtureRoot(tempRoots.pop()!); });\n\ndescribe('initFabric --force behavior', () => {\n  it('overwrites existing AGENTS.md when --force is passed', () => {\n    const target = createWerewolfFixtureRoot('fab-init-force');\n    tempRoots.push(target);\n    writeFixtureFile(target, 'AGENTS.md', '# old\\n');\n\n    // Test direct handler call (not CLI spawn)\n    expect(() => initFabric(target, { force: true })).not.toThrow();\n    expect(readFixtureFile(target, 'AGENTS.md')).not.toBe('# old\\n');\n  });\n});\n\n// createWerewolfFixtureRoot copies examples/werewolf-minigame-stub to /tmp,\n// strips AGENTS.md and .fabric so init has a clean slate.",
+      "fixture_path": "examples/werewolf-minigame-stub (referenced by __tests__/helpers/init-test-utils.ts:5)",
+      "no_e2e_infra": "There is no end-to-end CLI spawn test infra — tests call exported handler functions directly. One exception: init-claude-install.test.ts:52 uses spawnSync to test the hook CJS script itself."
+    },
+    "backward_compat_pattern": {
+      "name": "Backward compatibility / deprecation signals",
+      "description": "No formal deprecation mechanism exists. The codebase uses CLIENT_ALIASES maps for client name normalization (claude/claude-code/claudecode all map to same canonical). One @deprecated JSDoc comment exists in scanner/forensic.ts for a transitional migration helper. Legacy meta format is handled silently in computeAgentsMeta (reads old format, writes new).",
+      "source_anchor": "packages/cli/src/commands/bootstrap.ts:19-38 (CLIENT_ALIASES), packages/cli/src/scanner/forensic.ts:1026 (@deprecated JSDoc), packages/cli/__tests__/sync-meta.test.ts:27 (legacy migration test)",
+      "snippet": "// CLIENT_ALIASES pattern (bootstrap.ts L19-38) — multiple names → single canonical\nconst CLIENT_ALIASES: Record<string, BootstrapClient> = {\n  'claude': 'claude',\n  'claude-code': 'claude',\n  'claudecode': 'claude',\n  // ...\n};\n\n// @deprecated signal (forensic.ts L1026)\n/**\n * @deprecated Transitional migration helper. Prefer buildAssertions() for structured confidence/evidence output.\n */\n\n// No aliasing for CLI binary name — 'fab' is the only registered binary.\n// Adding 'fabric' as alias requires package.json bin field change.",
+      "fab_to_fabric_cost": "The binary name 'fab' is set in packages/cli/package.json bin field and in src/index.ts meta.name. Adding 'fabric' as alias: add 'fabric': 'dist/index.js' to bin in package.json. The meta.name in index.ts only affects help text. Citty has no built-in alias support for the root command name."
+    }
+  },
+  "key_files": [
+    {
+      "path": "packages/cli/src/commands/init.ts",
+      "relevance": 1.0,
+      "role": "modify_target",
+      "discovery_source": "bash-scan",
+      "rationale": "Primary target for --force flag injection: contains all three existsSync ABORT guards (L140-149), writeNewFile helper (L273-279), copyTemplateIfMissing helper (L281-289), and the initCommand defineCommand with args schema (L59-115)",
+      "topic_relation": "This file IS the file-write pattern — every pattern to inject --force is defined here. The injection points are L64-73 (args), L75 (InitArgs type), L140-149 (guards), and writeNewFile L276.",
+      "key_code": [
+        {"symbol": "initCommand.args", "location": "L64-73", "description": "Citty args schema with target:string and debug:boolean — add force:boolean here"},
+        {"symbol": "existsSync guards", "location": "L140-149", "description": "Three ABORT guards before any work — primary --force injection points"},
+        {"symbol": "writeNewFile()", "location": "L273-279", "description": "Throws ABORT if file exists; needs --force bypass to call writeFileSync without the guard"},
+        {"symbol": "copyTemplateIfMissing()", "location": "L281-289", "description": "Returns 'created'|'skipped', never throws — already has skip behavior, no change needed for --force"}
+      ]
+    },
+    {
+      "path": "packages/cli/src/commands/index.ts",
+      "relevance": 0.8,
+      "role": "integration_point",
+      "discovery_source": "bash-scan",
+      "rationale": "Defines allCommands map that registers all subcommands with citty. The key string becomes the CLI verb. Renaming fab→fabric requires no change here — only src/index.ts meta.name and package.json bin field.",
+      "topic_relation": "Command registration pattern — shows how lazy dynamic imports hook into citty router. Adding a new command or alias would follow this pattern.",
+      "key_code": [
+        {"symbol": "allCommands", "location": "L1-13", "description": "Record of command-name → lazy import function. All commands registered here. Hyphenated keys like 'sync-meta' become 'fab sync-meta'."}
+      ]
+    },
+    {
+      "path": "packages/cli/src/index.ts",
+      "relevance": 0.8,
+      "role": "modify_target",
+      "discovery_source": "bash-scan",
+      "rationale": "Root citty command definition with meta.name:'fab'. Rename fab→fabric requires changing this meta.name field and the package.json bin entry.",
+      "topic_relation": "fab→fabric rename cost: single-line change here + package.json bin field. No subcommand registration changes.",
+      "key_code": [
+        {"symbol": "main.meta.name", "location": "L14", "description": "'fab' — changing to 'fabric' changes help text and tab completion. Binary rename is separate in package.json."}
+      ]
+    },
+    {
+      "path": "packages/shared/src/i18n/locales/en.ts",
+      "relevance": 1.0,
+      "role": "modify_target",
+      "discovery_source": "bash-scan",
+      "rationale": "English i18n catalog — all new user-facing strings for --force flag must be added here. Key 'cli.init.errors.abort-existing' already defined (L104) but not yet used in code.",
+      "topic_relation": "i18n pattern source — key format, interpolation syntax ({varName}), namespace structure all defined by existing keys in this file. New --force keys must follow same dot-notation pattern.",
+      "key_code": [
+        {"symbol": "'cli.init.errors.abort-existing'", "location": "L104", "description": "Existing abort key with {path} interpolation — already in catalog, not yet called via t() in init.ts"},
+        {"symbol": "'cli.init.args.debug.description'", "location": "L87", "description": "Pattern for flag description key — 'cli.init.args.<flag>.description'"}
+      ]
+    },
+    {
+      "path": "packages/shared/src/i18n/locales/zh-CN.ts",
+      "relevance": 1.0,
+      "role": "modify_target",
+      "discovery_source": "bash-scan",
+      "rationale": "zh-CN catalog must mirror every key added to en.ts. Both catalogs are typed as Messages which is Record<string,string> — missing keys fall back to en then to the key itself.",
+      "topic_relation": "Any new --force flag strings added to en.ts require identical keys added here with Chinese translation.",
+      "key_code": [
+        {"symbol": "'cli.init.errors.abort-existing'", "location": "L99", "description": "zh-CN version of abort key — '中止：{path} 已存在。fab init 是非破坏性的。'"}
+      ]
+    },
+    {
+      "path": "packages/shared/src/i18n/create-translator.ts",
+      "relevance": 0.7,
+      "role": "context_only",
+      "discovery_source": "bash-scan",
+      "rationale": "Shows t() function signature and fallback behavior: activeMessages[key] ?? fallbackMessages[key] ?? key. Variables replaced via replaceAll('{name}', value).",
+      "topic_relation": "i18n pattern implementation — interpolation uses {varName} not %s or ${}. All variables passed as Record<string,string> second argument.",
+      "key_code": [
+        {"symbol": "createTranslator()", "location": "L10-28", "description": "Returns (key, vars?) => string. Falls back en→key. Variables interpolated with replaceAll('{name}', value)."}
+      ]
+    },
+    {
+      "path": "packages/cli/__tests__/init-nondestructive.test.ts",
+      "relevance": 0.9,
+      "role": "test_target",
+      "discovery_source": "bash-scan",
+      "rationale": "Canonical test file for init abort behavior — directly tests the guards that --force bypasses. New --force tests should follow this exact structure.",
+      "topic_relation": "Test pattern for --force: add new describe block 'initFabric --force behavior' that pre-creates blocking files then expects no throw when force:true is passed.",
+      "key_code": [
+        {"symbol": "afterEach cleanup", "location": "L15-19", "description": "Drains tempRoots array and calls cleanupFixtureRoot — required teardown pattern for all init tests"},
+        {"symbol": "writeFixtureFile + expect toThrowError", "location": "L25-31", "description": "Setup: write file, then call initFabric, assert throw with ABORT message — pattern to invert for --force test"}
+      ]
+    },
+    {
+      "path": "packages/cli/__tests__/helpers/init-test-utils.ts",
+      "relevance": 0.9,
+      "role": "pattern_reference",
+      "discovery_source": "bash-scan",
+      "rationale": "Test helper utilities: createWerewolfFixtureRoot (isolated tmpdir with example project), cleanupFixtureRoot, writeFixtureFile, readFixtureFile — all new init tests reuse these.",
+      "topic_relation": "Test pattern infrastructure — all init-related tests use these helpers. No new helper needed for --force tests.",
+      "key_code": [
+        {"symbol": "createWerewolfFixtureRoot()", "location": "L7-16", "description": "Copies examples/werewolf-minigame-stub to tmpdir, removes AGENTS.md and .fabric to create clean init target"},
+        {"symbol": "writeFixtureFile()", "location": "L22-28", "description": "Creates file at relative path within fixture root — used to pre-seed blocking files in non-destructive tests"}
+      ]
+    },
+    {
+      "path": "packages/cli/vitest.config.ts",
+      "relevance": 0.7,
+      "role": "config",
+      "discovery_source": "bash-scan",
+      "rationale": "Vitest config with @fenglimg/fabric-shared alias pointing to shared/src/index.ts for in-source testing without build step. Test glob: __tests__/**/*.test.ts.",
+      "topic_relation": "Test infrastructure — any new test files must go in __tests__/ with .test.ts extension. The shared alias means direct TS source is used in tests.",
+      "key_code": [
+        {"symbol": "resolve.alias", "location": "L10-12", "description": "Maps @fenglimg/fabric-shared to ../shared/src/index.ts — new test files get this automatically"}
+      ]
+    },
+    {
+      "path": "packages/cli/src/commands/sync-meta.ts",
+      "relevance": 0.7,
+      "role": "pattern_reference",
+      "discovery_source": "bash-scan",
+      "rationale": "Best example of a boolean flag (check-only) with hyphenated name and how args['check-only'] is accessed in run(). Secondary example of the defineCommand pattern.",
+      "topic_relation": "Citty boolean flag pattern reference — shows hyphenated flag in args object key, type: boolean, default: false, and access via args['check-only'].",
+      "key_code": [
+        {"symbol": "'check-only' arg definition", "location": "L35-39", "description": "Boolean flag with hyphen: type:'boolean', default:false. Accessed as args['check-only'] in run()"}
+      ]
+    },
+    {
+      "path": "packages/cli/src/commands/bootstrap.ts",
+      "relevance": 0.6,
+      "role": "pattern_reference",
+      "discovery_source": "bash-scan",
+      "rationale": "Contains nested subCommands pattern (bootstrap install) and CLIENT_ALIASES map showing how input normalization / backward-compat is handled without formal deprecation.",
+      "topic_relation": "Backward-compat pattern: CLIENT_ALIASES maps many input strings to one canonical. fab→fabric rename analogy: no alias system exists in citty, rename is atomic.",
+      "key_code": [
+        {"symbol": "CLIENT_ALIASES", "location": "L19-38", "description": "Maps 'claude-code', 'claudecode', 'claudecli' etc to canonical 'claude' — the alias-not-deprecation pattern used throughout"}
+      ]
+    }
+  ],
+  "integration_points": {
+    "force_flag_citty_hookup": {
+      "description": "Add force:boolean to initCommand.args in init.ts, pass through to initFabric() via updated function signature.",
+      "files": [
+        "packages/cli/src/commands/init.ts — initCommand.args (L64-73) and InitArgs type (L20-23)"
+      ]
+    },
+    "i18n_registration": {
+      "description": "New keys must be added to BOTH locale files before use. Keys are resolved at import time via t() which is called eagerly for meta.description fields.",
+      "files": [
+        "packages/shared/src/i18n/locales/en.ts",
+        "packages/shared/src/i18n/locales/zh-CN.ts"
+      ]
+    },
+    "fab_to_fabric_rename": {
+      "description": "Two-file change: src/index.ts meta.name + packages/cli/package.json bin field. allCommands in commands/index.ts unchanged. No citty alias mechanism for root command.",
+      "files": [
+        "packages/cli/src/index.ts:14 (meta.name)",
+        "packages/cli/package.json (bin field)"
+      ]
+    }
+  },
+  "clarification_needs": [
+    {
+      "question": "i18n key naming for --force strings: should force-aware overwrite use 'cli.init.force-overwrite-path' or reuse 'cli.init.created-path' with a different label?",
+      "context": "The existing 'cli.init.created-path' key outputs '{label} {path}'. The label comes from createdLabel()/skippedLabel() helpers. A force-overwrite case could reuse this key with a new 'overwritten' label string, or add a dedicated 'cli.init.force-overwrite-path' key.",
+      "recommendation": "Add 'cli.shared.overwritten' label key (mirrors cli.shared.created/updated pattern) and reuse 'cli.init.created-path' template — minimizes catalog additions."
+    },
+    {
+      "question": "Should --force tests be added to init-nondestructive.test.ts or a new init-force.test.ts file?",
+      "context": "init-nondestructive.test.ts tests the ABORT behavior. A --force flag inverts exactly those scenarios. Keeping them in one file documents the relationship but makes the file larger.",
+      "recommendation": "New file __tests__/init-force.test.ts — mirrors naming convention of init-nondestructive.test.ts and keeps concerns separated."
+    },
+    {
+      "question": "Should initFabric() accept a force option inline, or should the command handler delete blocking files before calling initFabric()?",
+      "context": "initFabric() is exported and tested directly. Changing its signature (add options param) is clean but breaks any external callers. Deleting files in the command handler before calling initFabric() keeps the function signature stable.",
+      "recommendation": "Add optional options param: initFabric(target: string, options?: { force?: boolean }) — backward-compatible since options defaults to undefined/false."
+    }
+  ],
+  "summary": {
+    "file_write_pattern": "init.ts uses three top-level existsSync ABORT guards (L140-149) plus writeNewFile helper (L273-279). Force injection point: wrap each guard with && !args.force, add rmSync cleanup before writes.",
+    "flag_pattern": "defineCommand args with type:'boolean', default:false. Local type alias updated. Hyphenated flags use args['flag-name'].",
+    "i18n_pattern": "Keys in packages/shared/src/i18n/locales/en.ts + zh-CN.ts. Format: 'cli.<command>.<area>.<qualifier>'. Variables as {varName}. Both catalogs must be updated simultaneously.",
+    "error_pattern": "throw new Error(message). i18n key 'cli.init.errors.abort-existing' exists in both catalogs but raw template literals still used in code — migrate to t() when adding --force.",
+    "test_pattern": "Vitest, node environment. Tests in __tests__/*.test.ts. Use createWerewolfFixtureRoot + cleanupFixtureRoot in afterEach. Call command handlers directly (not CLI spawn). No new test infra needed.",
+    "backward_compat_pattern": "No formal deprecation system. CLIENT_ALIASES pattern normalizes multi-name inputs. fab→fabric rename is a two-file atomic change with no alias support."
+  }
+}

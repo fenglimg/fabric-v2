@@ -1,0 +1,376 @@
+{
+  "project_structure": "Monorepo with 4 packages under packages/: cli (@fenglimg/fabric-cli), server (@fenglimg/fabric-server), shared (@fenglimg/fabric-shared), dashboard (@fenglimg/fabric-dashboard). CLI is the user-facing binary (bin: 'fab' → dist/index.js). Server is an HTTP+MCP server bundled as a dependency of CLI. Shared provides Zod schemas and i18n. Templates/ at monorepo root holds all file templates copied by init/bootstrap. CLI commands are lazy-loaded via citty subcommands registered in commands/index.ts. The server is imported directly as a workspace:* package dep, NOT spawned as a child process — it runs in-process when `fab serve` is called. The server also ships a standalone stdio entry point (startStdioServer) for MCP clients that need stdio transport. config install registers the server's dist/index.js path as an MCP server entry in each AI client's config file.",
+  "relevant_files": [
+    {
+      "path": "packages/cli/package.json",
+      "relevance": 1.0,
+      "rationale": "Contains the bin field { 'fab': 'dist/index.js' } — task #1 requires renaming bin to 'fabric' and optionally keeping 'fab' as a backward-compat alias. This is the single source of truth for binary name.",
+      "role": "modify_target",
+      "discovery_source": "bash-scan",
+      "key_symbols": ["bin"],
+      "key_code": [
+        {
+          "symbol": "bin",
+          "location": "L5-L7",
+          "description": "Declares { 'fab': 'dist/index.js' } — must be changed to { 'fabric': 'dist/index.js', 'fab': 'dist/index.js' } for backward-compat or just renamed to 'fabric'"
+        }
+      ],
+      "topic_relation": "Architecture exploration: the bin field is the entry point of the entire CLI binary; rename must also be reflected in index.ts meta.name and hooks template."
+    },
+    {
+      "path": "packages/cli/src/index.ts",
+      "relevance": 1.0,
+      "rationale": "Defines the root citty command with meta.name: 'fab' — must be updated to 'fabric' for task #1. Also the main entry point that wires all subcommands via allCommands.",
+      "role": "modify_target",
+      "discovery_source": "bash-scan",
+      "key_symbols": ["main", "run"],
+      "key_code": [
+        {
+          "symbol": "main",
+          "location": "L12-L19",
+          "description": "defineCommand with meta.name='fab' — changing this changes what citty shows in help output. This is the root command object that receives all subCommands from allCommands."
+        }
+      ],
+      "topic_relation": "Architecture exploration: the meta.name is the displayed binary name in all help text; must be coordinated with package.json bin rename."
+    },
+    {
+      "path": "packages/cli/src/commands/init.ts",
+      "relevance": 1.0,
+      "rationale": "Core file for tasks #2, #3, #5. Contains initFabric() with triple abort guards (L140-149: aborts if forensicPath/agentsPath/fabricDir exist), copyTemplateIfMissing() for claude skills (L281-289, skips if exists), mergeClaudeStopHook() for settings.json (L301: skips if hook already present). The abort message says 'fab init is non-destructive.' at L141,145,149,276.",
+      "role": "modify_target",
+      "discovery_source": "bash-scan",
+      "key_symbols": ["initFabric", "copyTemplateIfMissing", "copyExecutableTemplateIfMissing", "mergeClaudeStopHook", "writeNewFile"],
+      "key_code": [
+        {
+          "symbol": "initFabric",
+          "location": "L119-L189",
+          "description": "Main init logic. Abort guards at L140-149 throw Error('ABORT: ... fab init is non-destructive.') for forensicPath, agentsPath, fabricDir. These must become conditional on --force flag for task #3."
+        },
+        {
+          "symbol": "writeNewFile",
+          "location": "L273-L279",
+          "description": "Throws 'ABORT: path already exists. fab init is non-destructive.' if file exists. For --force/overwrite mode (task #2,#3), this must overwrite instead of abort."
+        },
+        {
+          "symbol": "copyTemplateIfMissing",
+          "location": "L281-L290",
+          "description": "Skips copy if targetPath exists (L283-285). This powers the skip behavior for .claude/skills/* and .claude/hooks/*. For --force mode, should overwrite."
+        },
+        {
+          "symbol": "mergeClaudeStopHook",
+          "location": "L301-L359",
+          "description": "Merges fabric Stop hook into .claude/settings.json. Returns 'skipped' if hook already present (L339-341). For --force mode, may need to re-merge."
+        }
+      ],
+      "topic_relation": "Architecture exploration: init.ts is the central file for task #2 (overwrite vs skip), task #3 (--force flag), and task #5 (absorbing config/hooks/bootstrap into one-shot init)."
+    },
+    {
+      "path": "packages/cli/src/commands/index.ts",
+      "relevance": 0.9,
+      "rationale": "The command registry — lists all 11 top-level commands. Key reference for task #8 (consolidation). Currently has: bootstrap, doctor, init, scan, serve, sync-meta, human-lint, ledger-append, hooks, config, pre-commit.",
+      "role": "modify_target",
+      "discovery_source": "bash-scan",
+      "key_symbols": ["allCommands"],
+      "key_code": [
+        {
+          "symbol": "allCommands",
+          "location": "L1-L13",
+          "description": "Object with 11 lazy-loaded command entries. Any consolidation (task #8) requires updating this registry. Commands for potential merge: hooks+pre-commit, bootstrap+init, scan+doctor."
+        }
+      ],
+      "topic_relation": "Architecture exploration: this is the single place to add, remove, or alias commands; any subcommand consolidation for task #8 happens here."
+    },
+    {
+      "path": "packages/cli/src/commands/config.ts",
+      "relevance": 1.0,
+      "rationale": "Contains the CLIENT_ALIASES registry (L13-31) where 'claude' is missing but claudecli/claudecodecli are present. Task #6 requires adding 'claude' as an alias. Also shows how resolveServerPath() uses import.meta.resolve to find the server package path for MCP registration.",
+      "role": "modify_target",
+      "discovery_source": "bash-scan",
+      "key_symbols": ["CLIENT_ALIASES", "parseClientFilter", "resolveServerPath"],
+      "key_code": [
+        {
+          "symbol": "CLIENT_ALIASES",
+          "location": "L13-L31",
+          "description": "Maps alias strings to ClientKind. 'claude' key is absent — only 'claudecli', 'claudecodecli', etc. are present. fab config install --clients=claude fails with 'unknown client' at L47-49. Fix: add claude:'ClaudeCodeCLI' entry."
+        },
+        {
+          "symbol": "resolveServerPath",
+          "location": "L71-L74",
+          "description": "Returns path to fabric-server's dist/index.js via import.meta.resolve(). This path is written into MCP client configs by config install. For task #7 (global vs local), this path logic needs to support both global npm install and local workspace."
+        }
+      ],
+      "topic_relation": "Architecture exploration: config.ts owns the client allowlist for MCP registration (task #6) and server path resolution strategy (task #7 global vs local install)."
+    },
+    {
+      "path": "packages/cli/src/config/resolver.ts",
+      "relevance": 0.95,
+      "rationale": "resolveClients() detects which AI clients are installed and returns ClientConfigWriter instances. Detection logic for ClaudeCodeCLI (L33-38) checks ~/.claude OR project .claude — this is the auto-detection used by both config install and bootstrap.",
+      "role": "dependency",
+      "discovery_source": "bash-scan",
+      "key_symbols": ["resolveClients"],
+      "key_code": [
+        {
+          "symbol": "resolveClients",
+          "location": "L29-L83",
+          "description": "Auto-detects installed AI clients by filesystem presence (e.g. ~/.claude, ~/.gemini, .cursor dir). Returns array of ClientConfigWriter. Used by both config.ts and bootstrap.ts. For task #4 (Q&A), this is how CLI knows which clients need MCP config."
+        }
+      ],
+      "topic_relation": "Architecture exploration: the client detection strategy determines whether global npm install -g suffices or if per-project setup is needed; relevant to tasks #4 and #7."
+    },
+    {
+      "path": "packages/cli/src/config/writer.ts",
+      "relevance": 0.85,
+      "rationale": "Defines ClientKind type union and ClientConfigWriter interface. Adding a new client (task #6) requires extending ClientKind; shows the contract that all client writers must implement.",
+      "role": "type_definition",
+      "discovery_source": "bash-scan",
+      "key_symbols": ["ClientKind", "ClientConfigWriter", "createServerEntry"],
+      "key_code": [
+        {
+          "symbol": "ClientKind",
+          "location": "L1-L8",
+          "description": "Union type: ClaudeCodeCLI | ClaudeCodeDesktop | Cursor | Windsurf | RooCode | GeminiCLI | CodexCLI. No standalone 'Claude' variant needed — 'claude' alias in config.ts should map to ClaudeCodeCLI."
+        }
+      ],
+      "topic_relation": "Architecture exploration: the ClientKind union is the authoritative set of supported MCP clients; task #6 does not require a new type, just a new alias in config.ts."
+    },
+    {
+      "path": "packages/cli/src/config/json.ts",
+      "relevance": 0.85,
+      "rationale": "ClaudeCodeCLIWriter.defaultPath() writes MCP config to project-level .claude/settings.json (L100-109). This is how fab config install registers the MCP server. For task #7 (global vs local), understanding this path choice is critical.",
+      "role": "dependency",
+      "discovery_source": "bash-scan",
+      "key_symbols": ["ClaudeCodeCLIWriter", "writeJsonClientConfig"],
+      "key_code": [
+        {
+          "symbol": "ClaudeCodeCLIWriter.defaultPath",
+          "location": "L99-L110",
+          "description": "Writes to .claude/settings.json in workspaceRoot (project-local), NOT ~/.claude/settings.json. Detection checks both ~/.claude and project .claude. For global install mode (task #7), would need to write to ~/.claude/settings.json instead."
+        }
+      ],
+      "topic_relation": "Architecture exploration: shows the project-local vs global config path decision for MCP server registration, directly relevant to task #7."
+    },
+    {
+      "path": "packages/cli/src/config/claude-code.ts",
+      "relevance": 0.8,
+      "rationale": "ClaudeCodeDesktopWriter and writeClaudeCodeAll() utility. Shows how Claude Desktop config path is resolved cross-platform. Relevant for task #7 global mode and understanding the full claude client surface.",
+      "role": "dependency",
+      "discovery_source": "bash-scan",
+      "key_symbols": ["ClaudeCodeDesktopWriter", "getClaudeDesktopConfigPath", "writeClaudeCodeAll"],
+      "key_code": [
+        {
+          "symbol": "getClaudeDesktopConfigPath",
+          "location": "L8-L21",
+          "description": "Returns OS-specific path to claude_desktop_config.json. Darwin: ~/Library/Application Support/Claude/. Win32: %APPDATA%/Claude/. Linux: ~/.config/Claude/."
+        }
+      ],
+      "topic_relation": "Architecture exploration: the two Claude clients (CLI + Desktop) need separate handling; relevant to task #4 Q&A on global install sufficiency."
+    },
+    {
+      "path": "packages/cli/src/commands/bootstrap.ts",
+      "relevance": 0.9,
+      "rationale": "bootstrap install copies CLAUDE.md/GEMINI.md/cursor-bootstrap.mdc/etc. to the target project. This is separate from init but both should be absorbed into a one-shot init (task #5). Has its own CLIENT_ALIASES and CLIENT_TEMPLATE_MAP.",
+      "role": "context_only",
+      "discovery_source": "bash-scan",
+      "key_symbols": ["bootstrapCommand", "installBootstrap", "CLIENT_TEMPLATE_MAP", "CLIENT_TARGET_MAP"],
+      "key_code": [
+        {
+          "symbol": "CLIENT_TEMPLATE_MAP",
+          "location": "L40-L47",
+          "description": "Maps client keys to template paths in templates/bootstrap/. Templates are CLAUDE.md, GEMINI.md, cursor-fabric-bootstrap.mdc, windsurf-fabric.md, roo-fabric.md, codex-AGENTS-header.md."
+        },
+        {
+          "symbol": "installBootstrap",
+          "location": "L151-L165",
+          "description": "Writes bootstrap template to CLIENT_TARGET_MAP[client]. Overwrites existing files (no skip guard except codex which checks for '# Fabric Bootstrap' header). Bootstrap is intentionally overwrite-friendly unlike init."
+        }
+      ],
+      "topic_relation": "Architecture exploration: bootstrap is a candidate for absorption into init (task #5); unlike init, it already has overwrite semantics, making consolidation tractable."
+    },
+    {
+      "path": "packages/cli/src/commands/hooks.ts",
+      "relevance": 0.85,
+      "rationale": "hooks install sets up husky pre-commit hook. This is a separate command from init but task #5 wants init to absorb it. Has skip logic (L54: checks for 'FAB_BIN=' presence) and append logic for existing hooks.",
+      "role": "context_only",
+      "discovery_source": "bash-scan",
+      "key_symbols": ["hooksCommand"],
+      "key_code": [
+        {
+          "symbol": "hooksCommand run",
+          "location": "L36-L96",
+          "description": "Installs .husky/pre-commit hook and adds 'prepare: husky install' to package.json scripts. Skip logic: checks if 'FAB_BIN=' already in hook file. Append logic for existing hooks without fabric block."
+        }
+      ],
+      "topic_relation": "Architecture exploration: hooks install is a candidate for absorption into init (task #5); its skip/append logic needs to be compatible with init's --force flag."
+    },
+    {
+      "path": "packages/cli/src/commands/serve.ts",
+      "relevance": 0.9,
+      "rationale": "serve command calls startHttpServer() from @fenglimg/fabric-server directly (in-process import, L3). This is the key for task #4 Q&A — CLI and server are tightly coupled via a workspace:* dependency, not a spawned process.",
+      "role": "context_only",
+      "discovery_source": "bash-scan",
+      "key_symbols": ["serveCommand", "startHttpServer"],
+      "key_code": [
+        {
+          "symbol": "serveCommand run",
+          "location": "L44-L75",
+          "description": "Calls startHttpServer({port, projectRoot, host, authToken}) from @fenglimg/fabric-server. Server runs in the same Node.js process as the CLI. No child process or IPC involved."
+        }
+      ],
+      "topic_relation": "Architecture exploration: the in-process coupling between CLI and server is critical context for task #4 Q&A — global npm install -g @fenglimg/fabric-cli IS enough because server is bundled."
+    },
+    {
+      "path": "packages/server/src/index.ts",
+      "relevance": 0.9,
+      "rationale": "Dual-mode server: startStdioServer() for MCP stdio transport (used when clients invoke the server binary directly) and startHttpServer() for HTTP+StreamableHTTP transport (used by fab serve). When run as main module (L79-85), it auto-starts stdio mode — this is the mode used by MCP clients configured via config install.",
+      "role": "context_only",
+      "discovery_source": "bash-scan",
+      "key_symbols": ["startStdioServer", "startHttpServer", "createFabricServer"],
+      "key_code": [
+        {
+          "symbol": "isMainModule check",
+          "location": "L79-L85",
+          "description": "When the server dist/index.js is invoked directly (as registered in .claude/settings.json mcpServers), it auto-starts stdio transport. This is the global install path: node /path/to/fabric-server/dist/index.js."
+        },
+        {
+          "symbol": "createFabricServer",
+          "location": "L34-L46",
+          "description": "Creates McpServer and registers 4 MCP tools: get-rules, plan-context, append-intent, update-registry. These are available to AI clients."
+        }
+      ],
+      "topic_relation": "Architecture exploration: the dual-mode design (stdio for MCP clients, HTTP for web dashboard) is central to task #7 (local vs global install modes)."
+    },
+    {
+      "path": "packages/server/src/http.ts",
+      "relevance": 0.75,
+      "rationale": "HTTP server with StreamableHTTP MCP transport plus REST API endpoints. Relevant for task #7 to understand what 'local install mode' provides beyond global stdio mode (dashboard, REST APIs, SSE events).",
+      "role": "context_only",
+      "discovery_source": "bash-scan",
+      "key_symbols": ["createFabricHttpApp"],
+      "key_code": [
+        {
+          "symbol": "createFabricHttpApp",
+          "location": "L121-L170",
+          "description": "Registers REST APIs (rules, ledger, history, scan, doctor, human-lock, intent) + MCP over HTTP + dashboard static files. This richer feature set justifies project-local 'fab serve' vs global stdio-only MCP registration."
+        }
+      ],
+      "topic_relation": "Architecture exploration: HTTP mode provides more features than stdio mode, which is the key architectural distinction between local and global install scenarios (task #7)."
+    },
+    {
+      "path": "packages/shared/src/schemas/fabric-config.ts",
+      "relevance": 0.75,
+      "rationale": "Defines fabricConfigSchema and clientPathsSchema — the fabric.config.json schema. clientPathsSchema has 7 keys (claudeCodeCLI, claudeCodeDesktop, cursor, windsurf, rooCode, geminiCLI, codexCLI) but no 'claude' short key. Not directly modified for task #6 since ClientKind is sufficient.",
+      "role": "type_definition",
+      "discovery_source": "bash-scan",
+      "key_symbols": ["fabricConfigSchema", "clientPathsSchema"],
+      "key_code": [
+        {
+          "symbol": "clientPathsSchema",
+          "location": "L5-L13",
+          "description": "Zod schema for fabric.config.json clientPaths section. No change needed for task #6 — just an alias addition in config.ts."
+        }
+      ],
+      "topic_relation": "Architecture exploration: the shared config schema constrains what users can configure in fabric.config.json; relevant background for init flow redesign (task #5,#8)."
+    },
+    {
+      "path": "packages/cli/src/commands/pre-commit.ts",
+      "relevance": 0.7,
+      "rationale": "pre-commit command chains sync-meta --check-only, human-lint, and ledger-append --staged. This is the command installed into .husky/pre-commit by hooks install. Relevant for command overlap analysis (task #8) — hooks/pre-commit overlap.",
+      "role": "context_only",
+      "discovery_source": "bash-scan",
+      "key_symbols": ["preCommitCommand"],
+      "key_code": [
+        {
+          "symbol": "preCommitCommand run",
+          "location": "L34-L55",
+          "description": "Orchestrates 3 sub-steps: sync-meta check-only → human-lint → ledger-append --staged. The hooks command installs the husky hook that calls this command."
+        }
+      ],
+      "topic_relation": "Architecture exploration: hooks install + pre-commit command are tightly coupled — hooks sets up the runner, pre-commit is the runner. Consolidation candidate for task #8."
+    },
+    {
+      "path": "packages/cli/src/commands/doctor.ts",
+      "relevance": 0.65,
+      "rationale": "doctor command calls runDoctorReport/runDoctorAuditReport from @fenglimg/fabric-server. Uses the server package as a library. Overlap with scan (scan checks project state, doctor checks fabric health) — consolidation candidate for task #8.",
+      "role": "context_only",
+      "discovery_source": "bash-scan",
+      "key_symbols": ["doctorCommand"],
+      "topic_relation": "Architecture exploration: doctor is a candidate for merging with scan in task #8 consolidation."
+    },
+    {
+      "path": "templates/husky/pre-commit",
+      "relevance": 0.75,
+      "rationale": "The husky pre-commit hook template installed by hooks install. Contains 'FAB_BIN=' which is the signature checked for idempotency. For task #1 (rename fab→fabric), this template needs updating.",
+      "role": "modify_target",
+      "discovery_source": "bash-scan",
+      "key_symbols": ["FAB_BIN"],
+      "topic_relation": "Architecture exploration: if bin is renamed to 'fabric', the hook template must reference 'fabric' not 'fab', or use a generic detection approach."
+    },
+    {
+      "path": "templates/bootstrap/CLAUDE.md",
+      "relevance": 0.65,
+      "rationale": "Bootstrap template for Claude clients, copied to CLAUDE.md in the target project by bootstrap install. Relevant for task #5 (init should copy this) and any fab→fabric references in the template content.",
+      "role": "context_only",
+      "discovery_source": "bash-scan",
+      "topic_relation": "Architecture exploration: bootstrap templates are candidates for inclusion in one-shot init (task #5)."
+    }
+  ],
+  "patterns": "1. Command pattern: All commands use citty defineCommand with typed args. Commands are lazy-loaded via dynamic import in commands/index.ts. Each command file exports a default and/or named export.\n\n2. Init flow pattern: initFabric() is a pure function exported separately from the citty command wrapper. It follows a 'fail-fast abort-if-exists' pattern with three guard checks at the top, then sequentially creates files. Skip/overwrite decisions are centralized in copyTemplateIfMissing() and writeNewFile().\n\n3. Client config pattern: ClientConfigWriter interface (detect + write methods) with abstract base class JsonClientConfigWriter. Client aliases are flat Record<string, ClientKind> maps. Resolution is environment-based (filesystem presence detection in resolver.ts).\n\n4. Template discovery pattern: findTemplatePath() walks upward from both process.cwd() and the module's own directory, trying both. This supports both development (monorepo) and global npm install scenarios.\n\n5. Server coupling pattern: CLI imports @fenglimg/fabric-server as workspace:* dep. serve command calls startHttpServer() in-process. config install writes the server's dist/index.js path into AI client configs for stdio transport. Doctor command also imports from server package as a library.\n\n6. i18n pattern: All user-facing strings go through t() from i18n.ts. Keys follow cli.{command}.{key} convention.",
+  "dependencies": "Internal workspace deps:\n- packages/cli → @fenglimg/fabric-server (workspace:*) — CLI imports server functions directly\n- packages/cli → @fenglimg/fabric-shared (workspace:*) — shared schemas, types, i18n\n- packages/server → @fenglimg/fabric-shared (workspace:*)\n- packages/server → @fenglimg/fabric-dashboard (workspace:*, devDep) — dashboard built assets\n\nExternal deps (CLI):\n- citty ^0.2.2 — CLI framework (subcommands, args)\n- picocolors ^1.1.1 — terminal colors\n- @iarna/toml ^2.2.5 — Codex TOML config writing\n- string-width ^7.2.0 — display width for table formatting\n\nExternal deps (Server):\n- @modelcontextprotocol/sdk ^1.29.0 — MCP server, StdioServerTransport, StreamableHTTPServerTransport\n- express ^5.2.1 — HTTP server\n- chokidar ^4.0.3 — file watching\n- minimatch ^10.0.1 — glob matching\n- zod ^3.25.0 — schema validation",
+  "integration_points": "1. CLI ↔ Server boundary: serve.ts L3 imports startHttpServer from @fenglimg/fabric-server. doctor.ts L3 imports runDoctorReport/runDoctorAuditReport. config.ts L72-74 resolves server path via import.meta.resolve('@fenglimg/fabric-server') for writing into MCP client configs.\n\n2. CLI ↔ Templates boundary: findTemplatePath() in init.ts/bootstrap.ts/hooks.ts traverses upward from module dir to find templates/ directory. All template paths are relative strings like 'templates/agents-md/AGENTS.md.template'. Templates are read from disk at runtime.\n\n3. CLI ↔ .claude/settings.json boundary: init.ts mergeClaudeStopHook() reads and writes .claude/settings.json with atomic rename. config install (ClaudeCodeCLIWriter) also writes to .claude/settings.json for mcpServers. These two operations write to the SAME file — potential conflict if both run.\n\n4. Server ↔ MCP client boundary: When registered via config install, the server is invoked as 'node /path/to/dist/index.js' — stdio transport, auto-started by the MCP client on demand. The client never knows about fab/fabric CLI.\n\n5. hooks ↔ pre-commit boundary: hooks install writes .husky/pre-commit which calls 'fab pre-commit' (or similar). pre-commit command is the actual orchestrator. Rename fab→fabric breaks any existing installed hooks.",
+  "constraints": "1. Backward compatibility (bin alias): Existing users have 'fab' in their PATH after npm install -g. Any pre-commit hooks, CI scripts, README instructions reference 'fab'. A hard rename without alias will break existing installs.\n\n2. Monorepo workspace deps: packages/cli depends on @fenglimg/fabric-server via workspace:*. Any change to server package API requires coordinated CLI update.\n\n3. init non-destructive guarantee: The existing UX contract is 'fab init is non-destructive' — adding --force must be opt-in to preserve this guarantee for new users.\n\n4. Template path discovery: Templates are resolved by walking upward from module dir. This works for both npm global install and monorepo dev. Any new templates must be in the templates/ directory and listed in package.json files array.\n\n5. .claude/settings.json write conflict: Both init (mergeClaudeStopHook) and config install (ClaudeCodeCLIWriter) write to .claude/settings.json. One-shot init that absorbs config install must serialize these writes carefully.\n\n6. citty subcommand structure: Commands like 'config install', 'bootstrap install', 'hooks install' are nested subcommands. Consolidating into init means either making init itself handle all options or adding subcommands to init.\n\n7. Server stdio vs HTTP modes: MCP clients registered via config install use stdio transport (server runs as child process of AI client). fab serve uses HTTP+StreamableHTTP. These are separate use cases — global install needs stdio only, local serve needs HTTP.",
+  "clarification_needs": [
+    {
+      "question": "How should the fab → fabric rename handle backward compatibility? Should 'fab' remain as an alias indefinitely, be deprecated with a warning, or be dropped entirely?",
+      "context": "The package.json bin field currently only has 'fab'. Existing global installs, CI pipelines, husky hooks templates, and user muscle memory all use 'fab'. The bin field supports multiple entries (e.g., { 'fabric': 'dist/index.js', 'fab': 'dist/index.js' }). citty's root command meta.name is also 'fab' and appears in help text.",
+      "options": [
+        "Add 'fabric' as primary, keep 'fab' as permanent alias (both bin entries)",
+        "Add 'fabric' as primary, keep 'fab' with deprecation warning in run()",
+        "Rename to 'fabric' only, update all templates and docs (breaking for existing installs)",
+        "Keep 'fab' as primary name, only add 'fabric' as an additional alias"
+      ],
+      "recommended": 0
+    },
+    {
+      "question": "What is the exact scope of --force flag for init? Should it overwrite everything, or only specific file categories?",
+      "context": "init currently writes 5 types of artifacts: (1) AGENTS.md + .fabric/ core files — these have the hard abort, (2) .claude/skills/* — copyTemplateIfMissing skips, (3) .claude/hooks/* — copyTemplateIfMissing skips, (4) .claude/settings.json — mergeClaudeStopHook skips if hook already present. A blanket --force could clobber user-customized AGENTS.md or .claude/settings.json. Selective --force per category might be too complex.",
+      "options": [
+        "--force overwrites all files unconditionally (simpler, potentially destructive to customized AGENTS.md)",
+        "--force re-runs init from scratch but preserves user customizations in .claude/settings.json (complex merge logic)",
+        "--force flag only removes the abort guards; file-level skip logic (copyTemplateIfMissing) still applies",
+        "Add separate --overwrite-claude flag just for .claude/* files, keeping core init abort guards"
+      ],
+      "recommended": 0
+    },
+    {
+      "question": "Which commands should init absorb in the one-shot redesign (task #5), and should it be fully automatic or offer selection flags?",
+      "context": "Currently separate: bootstrap install (writes CLAUDE.md/GEMINI.md/etc.), config install (writes MCP server config to AI client configs), hooks install (sets up husky pre-commit). All three have their own client detection logic. Absorbing all three into init creates a very heavy init command. Alternatively, init could call these as optional steps with --no-bootstrap, --no-mcp, --no-hooks flags.",
+      "options": [
+        "Init absorbs bootstrap + config + hooks fully automatic (no flags needed, detect and apply all)",
+        "Init absorbs all three but with --no-X flags to opt-out individual steps",
+        "Init absorbs only config (MCP setup) + hooks; bootstrap stays separate as it is project-file-focused",
+        "Keep commands separate but create a new 'fab setup' meta-command that chains init + bootstrap + config + hooks"
+      ],
+      "recommended": 1
+    },
+    {
+      "question": "For MCP server deployment (task #7), should the local vs global install distinction be a config flag, auto-detected, or exposed as separate commands?",
+      "context": "Currently: config install writes the server's absolute dist/index.js path (resolved via import.meta.resolve) as stdio MCP server. Global install: npm install -g puts server at a global path, this works for stdio mode. Local install: fab serve runs HTTP mode at localhost:7373 — MCP clients can be pointed to HTTP endpoint instead of spawning a new process. The two modes use different transports (stdio vs streamable-HTTP) and different config formats in the AI client config.",
+      "options": [
+        "Auto-detect: if fab is globally installed, register stdio; if project-local, register HTTP endpoint",
+        "Add --mode=stdio|http flag to config install to let user choose explicitly",
+        "Document both modes in README as manual config steps; no CLI change needed",
+        "Add 'config install --global' and 'config install --local' as distinct subcommands"
+      ],
+      "recommended": 1
+    }
+  ],
+  "_metadata": {
+    "timestamp": "2026-04-20T00:00:00.000Z",
+    "task_description": "8-item fix/enhancement bundle: rename fab→fabric, init overwrite behavior, --force flag, CLI↔MCP coupling Q&A, one-shot init redesign, claude client support in config install, local vs global MCP server modes, command consolidation",
+    "source": "cli-explore-agent",
+    "exploration_angle": "architecture",
+    "exploration_index": 1,
+    "total_explorations": 3,
+    "duration_seconds": 180
+  }
+}

@@ -1,0 +1,507 @@
+{
+  "perspective": "Technical",
+  "relevant_files": [
+    {
+      "path": "packages/server/src/tools/get-rules.ts",
+      "relevance": 1.0,
+      "role": "modify_target",
+      "rationale": "MCP tool handler for fab_get_rules — the mandatory before-edit gate. Every tool call invokes resolveProjectRoot() then delegates to the getRules() service, triggering the full hot-path: 1 readFileSync + 1 async readFile(AGENTS.md) + N async readFile per matched rule node + 1 audit log write.",
+      "topic_relation": "This is the entry point of the most performance-critical path in the system. Every agent edit cycle must pass through here, making any overhead compound with edit frequency.",
+      "discovery_source": "bash-scan",
+      "key_code": [
+        {
+          "symbol": "registerGetRules()",
+          "location": "L26-L38",
+          "description": "Registers fab_get_rules tool. On every invocation: calls resolveProjectRoot() (process.env read), then getRules(projectRoot, input). No caching, no memoization — full I/O stack on every call."
+        }
+      ]
+    },
+    {
+      "path": "packages/server/src/services/get-rules.ts",
+      "relevance": 1.0,
+      "role": "modify_target",
+      "rationale": "Core service for rule resolution. getRules() orchestrates: loadGetRulesContext() (readAgentsMeta sync + readFile AGENTS.md async + readHumanLock async) → resolveRulesForPath() (N readFile per matched node) → appendGetRulesAuditEvent() (audit log append). Four distinct I/O operations minimum per call.",
+      "topic_relation": "Contains the primary performance bottleneck: readAgentsMeta() is synchronous and blocks the event loop; the parallel rule file reads are unbounded by node count; audit log is fire-and-forget but still allocates.",
+      "discovery_source": "bash-scan",
+      "key_code": [
+        {
+          "symbol": "getRules()",
+          "location": "L55-L75",
+          "description": "Orchestrator: calls loadGetRulesContext(), then resolveRulesForPath(), then appendGetRulesAuditEvent() in a try/catch that silently swallows errors. Returns revision_hash, stale flag, and rules payload."
+        },
+        {
+          "symbol": "loadGetRulesContext()",
+          "location": "L77-L90",
+          "description": "Executes THREE I/O operations on every call: readAgentsMeta(projectRoot) [synchronous readFileSync + JSON.parse + zod.parse], readFile(AGENTS.md) [async], readHumanLock(projectRoot) [async, reads and hashes every locked file]. No caching between calls."
+        },
+        {
+          "symbol": "loadRulesForPath()",
+          "location": "L127-L152",
+          "description": "Iterates all meta.nodes, applies minimatch glob filter, sorts by priority, then Promise.all()s readFile() for every matched node. O(N) file reads where N = matched nodes. With many L1/L2 rules this becomes a significant parallel I/O burst."
+        }
+      ]
+    },
+    {
+      "path": "packages/server/src/meta-reader.ts",
+      "relevance": 1.0,
+      "role": "modify_target",
+      "rationale": "readAgentsMeta() uses readFileSync — a synchronous, blocking read of .fabric/agents.meta.json — called on every MCP tool invocation (get_rules, plan_context, update_registry). This is the most impactful single-line bottleneck in the entire hot path.",
+      "topic_relation": "A synchronous file read in an async Node.js MCP server blocks the entire event loop for every tool call. Called at minimum 2x per agent interaction cycle (fab_get_rules + fab_append_intent via audit), potentially 3x if fab_plan_context is also used.",
+      "discovery_source": "bash-scan",
+      "key_code": [
+        {
+          "symbol": "readAgentsMeta()",
+          "location": "L37-L57",
+          "description": "Uses readFileSync (synchronous, event-loop-blocking). Performs: readFileSync → JSON.parse → agentsMetaSchema.parse (Zod validation). No caching, no memoization. Called by get-rules service, plan-context service, and update-registry service."
+        },
+        {
+          "symbol": "resolveProjectRoot()",
+          "location": "L33-L35",
+          "description": "Returns process.env.FABRIC_PROJECT_ROOT ?? process.cwd(). Called on every tool invocation from every tool handler. Trivially cheap but architecturally notable: project root is never cached in the tool layer."
+        }
+      ]
+    },
+    {
+      "path": "packages/server/src/http.ts",
+      "relevance": 0.95,
+      "role": "integration_point",
+      "rationale": "HTTP app factory that manages MCP session lifecycle. createSession() dynamically imports index.js, instantiates a fresh McpServer + StreamableHTTPServerTransport per connection, registers onsessioninitialized/onsessionclosed callbacks, and calls server.connect(transport). JsonlEventStore persists every MCP message to .intent-ledger.jsonl for replay.",
+      "topic_relation": "Session-per-connection design means every new MCP client spawns a full McpServer instance with all four tools re-registered. The JsonlEventStore appends every event to a growing JSONL file; replayEventsAfter() reads the ENTIRE file to find a starting offset — O(N) scan on every reconnect.",
+      "discovery_source": "bash-scan",
+      "key_code": [
+        {
+          "symbol": "createSession()",
+          "location": "L172-L200",
+          "description": "Creates a new McpServer + StreamableHTTPServerTransport pair. Uses dynamic import of index.js. Registers session in the sessions Map via onsessioninitialized callback. Each session is fully independent with no shared state beyond the eventStore."
+        },
+        {
+          "symbol": "JsonlEventStore.replayEventsAfter()",
+          "location": "L72-L97",
+          "description": "Reads the entire ledger file via readEvents(), finds the startIndex by linear scan (findIndex), then replays all subsequent events matching streamId. O(total_events) on every reconnect — grows unbounded as the ledger accumulates."
+        },
+        {
+          "symbol": "JsonlEventStore.getStreamIdForEventId()",
+          "location": "L66-L70",
+          "description": "Also reads the entire JSONL file on every call (readEvents()). Used to resolve session continuity. Same O(N) scan issue as replayEventsAfter."
+        }
+      ]
+    },
+    {
+      "path": "packages/server/src/services/audit-log.ts",
+      "relevance": 0.95,
+      "role": "dependency",
+      "rationale": "Compliance audit subsystem called from both getRules (appendGetRulesAuditEvent) and appendIntent (appendEditIntentAuditEvents). The compliance check in appendEditIntentAuditEvents reads the ENTIRE audit log file to cross-reference get_rules events within a 5-minute window — O(M) scan per intent append.",
+      "topic_relation": "appendEditIntentAuditEvents() performs a full readAuditLog() on every fab_append_intent call. As the audit log grows, this scan becomes progressively slower. The compliance window is 5 minutes (DEFAULT_AUDIT_WINDOW_MS = 300000ms) but there is no truncation or index.",
+      "discovery_source": "bash-scan",
+      "key_code": [
+        {
+          "symbol": "appendEditIntentAuditEvents()",
+          "location": "L52-L89",
+          "description": "Full sequence: readAuditLog(projectRoot) [reads entire .fabric/audit.jsonl] → filter to get_rules entries → for each affected_path, findPrecedingGetRulesEvent() [linear scan of all get_rules entries] → appendAuditLogEntries(). O(M * P) where M = audit log entries, P = affected_paths."
+        },
+        {
+          "symbol": "findPrecedingGetRulesEvent()",
+          "location": "L113-L140",
+          "description": "Linear scan over all get_rules entries to find the most recent within windowMs. No early termination once a better match is found — scans all entries. Returns the latest matching entry."
+        },
+        {
+          "symbol": "DEFAULT_AUDIT_WINDOW_MS",
+          "location": "L7",
+          "description": "5-minute compliance window (300000ms). Any fab_get_rules call within 5 minutes of a fab_append_intent marks that path as compliant. This window is not configurable at runtime."
+        }
+      ]
+    },
+    {
+      "path": "packages/server/src/api/events.ts",
+      "relevance": 0.9,
+      "role": "integration_point",
+      "rationale": "SSE push subsystem that bridges file-system changes to dashboard clients. Uses chokidar with 75ms debounce to watch 4 files. For ledger changes, reads only new bytes since last offset (incremental). For human-lock changes, re-reads and re-hashes all locked files. Maximum 10 concurrent SSE clients.",
+      "topic_relation": "The human-lock snapshot on every human-lock.json change re-reads and SHA256-hashes every locked file — O(L) file reads where L = locked file count. The watcher starts lazily on first client connection and stops when the last client disconnects, meaning watcher startup overhead hits each first connection.",
+      "discovery_source": "bash-scan",
+      "key_code": [
+        {
+          "symbol": "scheduleFileChange() + publishFileChange()",
+          "location": "L169-L197",
+          "description": "75ms debounce timer per file path. On fire, calls readEventsForFile() which dispatches to specialized readers. The debounce prevents burst storms but adds 75ms latency to every event reaching the dashboard."
+        },
+        {
+          "symbol": "readLedgerAppendedEvents()",
+          "location": "L295-L333",
+          "description": "Incremental ledger read using byte offset tracking (state.ledgerOffset). Opens file handle, reads only bytes since last offset, parses new JSONL lines. Efficiently O(new_bytes) rather than O(total_bytes). Best-designed reader in the subsystem."
+        },
+        {
+          "symbol": "readHumanLockSnapshot() → readActualHumanLockHashes()",
+          "location": "L383-L424",
+          "description": "On every human-lock.json change: reads human-lock.json, reads every locked file, computes SHA256 for each locked range. O(L) file reads + O(C) hash computations where L = unique locked files, C = locked entries. Called on each human-lock change event."
+        }
+      ]
+    },
+    {
+      "path": "packages/server/src/services/plan-context.ts",
+      "relevance": 0.85,
+      "role": "dependency",
+      "rationale": "planContext() calls loadGetRulesContext() exactly once (shared context) then resolveRulesForPath() for each unique path in parallel. This is the only tool that amortizes the meta read cost across multiple paths — but still calls readAgentsMeta() synchronously once per invocation.",
+      "topic_relation": "Better-designed than get-rules for batch use: context is loaded once and shared. However, it still triggers the synchronous readAgentsMeta() hot path and a parallel burst of readFile() calls for each matched rule node across all paths.",
+      "discovery_source": "bash-scan",
+      "key_code": [
+        {
+          "symbol": "planContext()",
+          "location": "L22-L41",
+          "description": "Calls loadGetRulesContext() once, then Promise.all() over unique paths calling resolveRulesForPath(). Correctly amortizes context loading. Does NOT call appendGetRulesAuditEvent — audit telemetry is absent from plan_context, creating an audit coverage gap."
+        }
+      ]
+    },
+    {
+      "path": "packages/server/src/services/append-intent.ts",
+      "relevance": 0.85,
+      "role": "dependency",
+      "rationale": "appendIntent() calls appendLedgerEntry() (writes to .intent-ledger.jsonl) then appendEditIntentAuditEvents() (reads entire audit log). The audit call is in a try/catch that silences errors, consistent with the best-effort telemetry pattern.",
+      "topic_relation": "The ledger append triggers the SSE events subsystem via chokidar watching .intent-ledger.jsonl, completing the write → watch → push → UI update chain. The audit cross-reference is the main performance concern here.",
+      "discovery_source": "bash-scan",
+      "key_code": [
+        {
+          "symbol": "appendIntent()",
+          "location": "L16-L43",
+          "description": "Writes ledger entry first, then fires audit telemetry. The audit call (appendEditIntentAuditEvents) is wrapped in try/catch with empty catch — errors are silently discarded. This means compliance failures are invisible to callers."
+        }
+      ]
+    },
+    {
+      "path": "packages/server/src/services/update-registry.ts",
+      "relevance": 0.8,
+      "role": "dependency",
+      "rationale": "updateRegistry() calls readAgentsMeta() synchronously, computes new registry state, then atomicWriteText() to agents.meta.json. Writing agents.meta.json triggers the chokidar watcher which pushes a meta:updated SSE event to all dashboard clients.",
+      "topic_relation": "Third caller of readAgentsMeta() synchronous hot path. The atomicWriteText triggers the SSE chain: chokidar detects agents.meta.json change → debounce 75ms → readMetaUpdatedEvent() reads and re-parses the file → broadcastEvent() to all SSE clients.",
+      "discovery_source": "bash-scan",
+      "key_code": [
+        {
+          "symbol": "updateRegistry()",
+          "location": "L19-L44",
+          "description": "Reads meta synchronously, applies operation (add/remove/update node), computes new SHA256 revision by joining all node hashes sorted by ID, then atomicWrite. computeRevision() sorts and concatenates all node hashes — O(N log N) where N = node count."
+        }
+      ]
+    },
+    {
+      "path": "packages/cli/src/commands/serve.ts",
+      "relevance": 0.8,
+      "role": "integration_point",
+      "rationale": "CLI entry point for the server stack. Parses args, resolves dev-mode target directory, reads FABRIC_AUTH_TOKEN from env, enforces loopback-only when no auth token is present (security default), then calls startHttpServer().",
+      "topic_relation": "Security-relevant: if no FABRIC_AUTH_TOKEN is set, validateHost() silently falls back to 127.0.0.1 regardless of --host argument, printing only a warning. This silent override could confuse operators.",
+      "discovery_source": "bash-scan",
+      "key_code": [
+        {
+          "symbol": "validateHost()",
+          "location": "L104-L117",
+          "description": "If no authToken and non-loopback host requested: prints a warning and overrides host to 127.0.0.1. The security intent is sound but the silent override (warning only, no error) may be surprising in automated deployments."
+        }
+      ]
+    },
+    {
+      "path": "packages/dashboard/src/hooks/use-events.ts",
+      "relevance": 0.8,
+      "role": "integration_point",
+      "rationale": "Dashboard SSE consumer. Creates an EventSource to /events on mount, registers typed event listeners for all 5 event types, updates Preact signals and local state on each event. Keeps last 50 events in fabricEventsSignal. Closes EventSource on unmount.",
+      "topic_relation": "Terminal end of the SSE chain. Parses incoming events via parseFabricEvent() (JSON.parse + type check). The fabricEventsSignal buffer is capped at 50 events (slice(0, 50)) — older events are silently dropped, which may affect UI correctness for high-frequency update scenarios.",
+      "discovery_source": "bash-scan",
+      "key_code": [
+        {
+          "symbol": "useEvents()",
+          "location": "L25-L72",
+          "description": "Creates EventSource on useEffect mount. Listens for meta:updated, lock:drift, lock:approved, ledger:appended, drift:detected. Updates three Preact signals on each event. Returns state with connected flag, lastEvent, and version counter."
+        },
+        {
+          "symbol": "handleEvent()",
+          "location": "L40-L51",
+          "description": "Receives MessageEvent, parses via parseFabricEvent(), prepends to fabricEventsSignal.value and slices to 50. This means only the 50 most recent events are retained in memory — silent drop for burst scenarios."
+        }
+      ]
+    },
+    {
+      "path": "packages/dashboard/src/api/client.ts",
+      "relevance": 0.75,
+      "role": "integration_point",
+      "rationale": "Dashboard API client. getEvents() creates a bare EventSource('/events') with no authentication header — if the server requires bearer auth, SSE connections from the dashboard will fail silently (EventSource API does not support custom headers in browsers).",
+      "topic_relation": "Auth gap: createBearerAuthMiddleware is applied to /api and /events routes in http.ts, but EventSource cannot send Authorization headers in browsers. Dashboard SSE will break if FABRIC_AUTH_TOKEN is set.",
+      "discovery_source": "bash-scan",
+      "key_code": [
+        {
+          "symbol": "getEvents()",
+          "location": "L156-L158",
+          "description": "Returns new EventSource('/events') with no options. Browser EventSource API cannot send Authorization: Bearer headers. This means when authToken is configured server-side, the dashboard's SSE stream cannot authenticate and will receive 401/403."
+        }
+      ]
+    }
+  ],
+  "key_findings": [
+    {
+      "id": "KF-001",
+      "title": "Synchronous readFileSync on every MCP tool call hot path",
+      "severity": "high",
+      "description": "readAgentsMeta() in meta-reader.ts uses Node.js readFileSync (blocking I/O) and is called on every invocation of fab_get_rules, fab_plan_context, and fab_update_registry. In a busy agent session with multiple concurrent tool calls, this blocks the entire Node.js event loop. No caching or memoization exists — agents.meta.json is parsed fresh (including Zod schema validation) on every call.",
+      "files": ["packages/server/src/meta-reader.ts", "packages/server/src/services/get-rules.ts", "packages/server/src/services/plan-context.ts", "packages/server/src/services/update-registry.ts"],
+      "discovery_source": "bash-scan"
+    },
+    {
+      "id": "KF-002",
+      "title": "O(M) audit log full-scan on every fab_append_intent call",
+      "severity": "high",
+      "description": "appendEditIntentAuditEvents() reads the entire .fabric/audit.jsonl file on every call to cross-reference preceding get_rules events. As the project ages and the audit log grows (no truncation, no rotation), this scan becomes progressively slower. With multiple affected_paths, each path triggers a separate linear scan of all get_rules entries.",
+      "files": ["packages/server/src/services/audit-log.ts", "packages/server/src/services/append-intent.ts"],
+      "discovery_source": "bash-scan"
+    },
+    {
+      "id": "KF-003",
+      "title": "JsonlEventStore.replayEventsAfter reads entire ledger file on every reconnect",
+      "severity": "medium",
+      "description": "The MCP event store (JsonlEventStore in http.ts) reads the entire .intent-ledger.jsonl on reconnect to find the replay start point (linear findIndex scan). Both replayEventsAfter() and getStreamIdForEventId() are O(N) over total accumulated MCP events. The ledger is shared with the intent ledger and mixes mcp-event and ledger entries, requiring filtering.",
+      "files": ["packages/server/src/http.ts"],
+      "discovery_source": "bash-scan"
+    },
+    {
+      "id": "KF-004",
+      "title": "fab_plan_context has no audit telemetry — compliance gap",
+      "severity": "medium",
+      "description": "planContext() calls loadGetRulesContext() and resolveRulesForPath() but never calls appendGetRulesAuditEvent(). The compliance check in appendEditIntentAuditEvents() looks for preceding get_rules audit events within the 5-minute window. An agent that only uses fab_plan_context (not fab_get_rules) before editing will always be marked non-compliant.",
+      "files": ["packages/server/src/services/plan-context.ts", "packages/server/src/services/audit-log.ts"],
+      "discovery_source": "bash-scan"
+    },
+    {
+      "id": "KF-005",
+      "title": "Dashboard SSE breaks when FABRIC_AUTH_TOKEN is configured",
+      "severity": "high",
+      "description": "http.ts applies createBearerAuthMiddleware to the /events route when authToken is set. The dashboard's getEvents() creates a bare EventSource('/events') with no authentication — browsers cannot send Authorization headers with EventSource. This means the dashboard's real-time update stream is broken in any authenticated deployment.",
+      "files": ["packages/server/src/http.ts", "packages/dashboard/src/api/client.ts"],
+      "discovery_source": "bash-scan"
+    },
+    {
+      "id": "KF-006",
+      "title": "Human-lock snapshot re-hashes all locked files on every change event",
+      "severity": "medium",
+      "description": "readHumanLockSnapshot() in events.ts reads and SHA256-hashes every locked file range on every change to .fabric/human-lock.json. This is called both at SSE watcher startup and on each human-lock change. With many locked files this is a significant I/O and CPU cost on what should be a lightweight event dispatch.",
+      "files": ["packages/server/src/api/events.ts"],
+      "discovery_source": "bash-scan"
+    },
+    {
+      "id": "KF-007",
+      "title": "Session-per-connection MCP server instantiation with no pooling",
+      "severity": "low",
+      "description": "createSession() in http.ts dynamically imports index.js and creates a fresh McpServer + StreamableHTTPServerTransport for every new MCP connection. There is no session pooling or reuse. For short-lived agent sessions (common with per-task AI tooling), this means repeated server setup/teardown overhead.",
+      "files": ["packages/server/src/http.ts", "packages/server/src/index.ts"],
+      "discovery_source": "bash-scan"
+    },
+    {
+      "id": "KF-008",
+      "title": "Error swallowing in audit telemetry hides compliance failures silently",
+      "severity": "medium",
+      "description": "Both getRules() and appendIntent() wrap audit log calls in try/catch with empty catch blocks, logging nothing. The comment 'Compliance telemetry is best-effort and must not block' is intentional, but the consequence is that disk-full, permission errors, or logic bugs in audit writes are completely invisible to operators and agents.",
+      "files": ["packages/server/src/services/get-rules.ts", "packages/server/src/services/append-intent.ts"],
+      "discovery_source": "bash-scan"
+    }
+  ],
+  "code_anchors": [
+    {
+      "file": "packages/server/src/meta-reader.ts",
+      "lines": "37-57",
+      "snippet": "export function readAgentsMeta(projectRoot: string): AgentsMeta {\n  const metaPath = getAgentsMetaPath(projectRoot);\n  let raw: string;\n  try {\n    raw = readFileSync(metaPath, 'utf8');\n  } catch (error) {\n    if (error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT') {\n      throw new AgentsMetaFileMissingError(metaPath);\n    }\n    throw error;\n  }\n  try {\n    return agentsMetaSchema.parse(JSON.parse(raw));\n  } catch (error) {\n    throw new AgentsMetaInvalidError(metaPath, error);\n  }\n}",
+      "significance": "readFileSync is synchronous and blocks the Node.js event loop. Called on every fab_get_rules, fab_plan_context, and fab_update_registry invocation. In a concurrent agent session with multiple tool calls in flight, this creates a hard serialization point. The Zod schema parse adds additional CPU cost on every call."
+    },
+    {
+      "file": "packages/server/src/services/get-rules.ts",
+      "lines": "77-90",
+      "snippet": "export async function loadGetRulesContext(projectRoot: string): Promise<GetRulesContext> {\n  const meta = readAgentsMeta(projectRoot); // SYNC\n  const l0Content = await readFile(join(projectRoot, 'AGENTS.md'), 'utf8');\n  const humanLockedNearby = (await readHumanLock(projectRoot)).map((entry) => ({\n    file: entry.file,\n    excerpt: JSON.stringify(entry),\n  }));\n  return { meta, l0Content, humanLockedNearby };\n}",
+      "significance": "Three distinct I/O operations on every call: synchronous meta read, async AGENTS.md read, async readHumanLock (which itself reads human-lock.json AND hashes every locked file). The readHumanLock call re-reads all locked files for drift detection even though the tool only needs the file metadata (path + excerpt). This is the costliest function per invocation in the hot path."
+    },
+    {
+      "file": "packages/server/src/services/get-rules.ts",
+      "lines": "127-152",
+      "snippet": "async function loadRulesForPath(\n  projectRoot: string,\n  meta: AgentsMeta,\n  path: string,\n): Promise<LoadedRule[]> {\n  const requestedPath = normalizeRulesPath(path);\n  const matchedNodes = Object.entries(meta.nodes)\n    .filter(([, node]) => minimatch(requestedPath, normalizeRulesPath(node.scope_glob), { dot: true }))\n    .sort((left, right) => { ... });\n  return await Promise.all(\n    matchedNodes.map(async ([nodeId, node]) => ({\n      level: classifyNode(nodeId),\n      entry: {\n        path: node.file,\n        content: await readFile(join(projectRoot, node.file), 'utf8'),\n      },\n    }))\n  );\n}",
+      "significance": "Promise.all over matched nodes means all rule files are read concurrently. While efficient per-call, with a large registry (many L1/L2 rules matching a broad glob) this fires many concurrent readFile calls. There is no limit on concurrency. Combined with the synchronous meta read above, this creates a burst I/O pattern on every tool call."
+    },
+    {
+      "file": "packages/server/src/services/audit-log.ts",
+      "lines": "52-89",
+      "snippet": "export async function appendEditIntentAuditEvents(\n  projectRoot: string,\n  input: { affected_paths: string[]; intent: string; ledger_entry_id: string; ts?: number; window_ms?: number; }\n): Promise<EditIntentAuditEntry[]> {\n  const ts = input.ts ?? Date.now();\n  const windowMs = input.window_ms ?? DEFAULT_AUDIT_WINDOW_MS; // 5 * 60 * 1000\n  const getRulesEntries = (await readAuditLog(projectRoot)).filter(isGetRulesAuditEntry);\n  const entries = input.affected_paths.map((affectedPath) => {\n    const path = normalizeAuditPath(projectRoot, affectedPath);\n    const matchedGetRules = findPrecedingGetRulesEvent(getRulesEntries, path, ts, windowMs);\n    return { ..., compliant: matchedGetRules !== null, ... };\n  });\n  if (entries.length === 0) return [];\n  await appendAuditLogEntries(projectRoot, entries);\n  return entries;\n}",
+      "significance": "readAuditLog() reads and parses the ENTIRE .fabric/audit.jsonl on every call — no caching, no index. The file accumulates indefinitely (no rotation, no truncation). With 1000 entries and 5 affected_paths, this is 1000-line parse + 5 linear scans. The compliance window (5min) is not used to filter the read — all historical entries are loaded regardless."
+    },
+    {
+      "file": "packages/server/src/http.ts",
+      "lines": "49-119",
+      "snippet": "class JsonlEventStore implements EventStore {\n  constructor(private readonly ledgerPath: string) {}\n  async storeEvent(streamId, message): Promise<EventId> {\n    const eventId = randomUUID();\n    const entry = { kind: 'mcp-event', eventId, streamId, message };\n    await appendFile(this.ledgerPath, `${JSON.stringify(entry)}\\n`, 'utf8');\n    return eventId;\n  }\n  async replayEventsAfter(lastEventId, { send }): Promise<StreamId> {\n    const events = await this.readEvents(); // reads ENTIRE file\n    const startIndex = events.findIndex((event) => event.eventId === lastEventId); // O(N)\n    if (startIndex === -1) throw new Error(`Unknown event ID: ${lastEventId}`);\n    const streamId = events[startIndex]?.streamId;\n    for (const event of events.slice(startIndex + 1)) {\n      if (event.streamId !== streamId) continue;\n      await send(event.eventId, event.message);\n    }\n    return streamId;\n  }\n  private async readEvents(): Promise<StoredMcpEvent[]> { /* readFile entire file */ }\n}",
+      "significance": "The event store shares .intent-ledger.jsonl with the intent ledger (LEDGER_FILE = '.intent-ledger.jsonl'). Every MCP protocol message is appended. On reconnect, readEvents() reads ALL entries (both mcp-event and ledger entries are in the same file), filters, then scans. The file grows without bound and there is no compaction mechanism."
+    },
+    {
+      "file": "packages/server/src/http.ts",
+      "lines": "172-200",
+      "snippet": "async function createSession(eventStore, sessions): Promise<FabricHttpSession> {\n  const { createFabricServer } = await import('./index.js');\n  const server = createFabricServer();\n  const transport = new StreamableHTTPServerTransport({\n    sessionIdGenerator: randomUUID,\n    enableJsonResponse: true,\n    eventStore,\n    onsessioninitialized: async (sessionId) => {\n      sessions.set(sessionId, { server, transport });\n    },\n    onsessionclosed: async (sessionId) => {\n      sessions.delete(sessionId);\n    },\n  });\n  transport.onclose = () => { const sessionId = transport.sessionId; if (sessionId) sessions.delete(sessionId); };\n  await server.connect(transport);\n  return { server, transport };\n}",
+      "significance": "Dynamic import of index.js on every new session. While Node.js caches modules after first import, createFabricServer() creates a new McpServer and re-registers all four tools on every connection. The onsessionclosed and transport.onclose both call sessions.delete — potential double-delete on abnormal close, though Map.delete is idempotent so this is safe."
+    },
+    {
+      "file": "packages/server/src/api/events.ts",
+      "lines": "295-333",
+      "snippet": "async function readLedgerAppendedEvents(state, projectRoot): Promise<FabricEvent[]> {\n  const ledgerPath = join(projectRoot, LEDGER_PATH);\n  const nextSize = await readFileSize(ledgerPath);\n  if (nextSize < state.ledgerOffset) { state.ledgerOffset = 0; state.ledgerRemainder = ''; }\n  if (nextSize === state.ledgerOffset) return [];\n  const startOffset = state.ledgerOffset;\n  state.ledgerOffset = nextSize;\n  const handle = await open(ledgerPath, 'r');\n  try {\n    const length = nextSize - startOffset;\n    const buffer = Buffer.alloc(length);\n    await handle.read(buffer, 0, length, startOffset);\n    const chunk = `${state.ledgerRemainder}${buffer.toString('utf8')}`;\n    const lines = chunk.split(/\\r?\\n/);\n    state.ledgerRemainder = chunk.endsWith('\\n') ? '' : lines.pop() ?? '';\n    return lines.map(...).filter(...);\n  } finally { await handle.close(); }\n}",
+      "significance": "This is the best-designed I/O reader in the codebase: uses byte offset tracking to read only new bytes appended since last check. Handles file truncation (if nextSize < offset, reset). Handles partial lines at chunk boundaries via ledgerRemainder. Correctly avoids re-reading growing files — O(new_bytes) not O(total_bytes). Sets the pattern that audit-log and JsonlEventStore should follow."
+    },
+    {
+      "file": "packages/dashboard/src/api/client.ts",
+      "lines": "156-158",
+      "snippet": "export function getEvents(): EventSource {\n  return new EventSource('/events');\n}",
+      "significance": "Browser EventSource API does not support custom request headers. When FABRIC_AUTH_TOKEN is configured, http.ts adds createBearerAuthMiddleware to the /events route requiring Authorization: Bearer <token>. The dashboard's EventSource cannot send this header, so all SSE connections will fail with 401/403 in authenticated deployments. The REST API calls use fetch() with headers and work correctly."
+    }
+  ],
+  "call_chains": [
+    {
+      "entry": "fab_get_rules MCP tool call",
+      "chain": [
+        "tools/get-rules.ts:registerGetRules() → resolveProjectRoot() [process.env read]",
+        "→ services/get-rules.ts:getRules(projectRoot, {path, client_hash})",
+        "→ services/get-rules.ts:loadGetRulesContext(projectRoot)",
+        "  → meta-reader.ts:readAgentsMeta(projectRoot) [SYNC: readFileSync + JSON.parse + zod.parse]",
+        "  → fs/promises:readFile(AGENTS.md) [ASYNC]",
+        "  → services/read-human-lock.ts:readHumanLock(projectRoot) [ASYNC: reads human-lock.json + hashes each locked file]",
+        "→ services/get-rules.ts:resolveRulesForPath(projectRoot, context, path)",
+        "  → loadRulesForPath(projectRoot, meta, path)",
+        "    → Object.entries(meta.nodes).filter(minimatch) → sort by priority",
+        "    → Promise.all(matchedNodes.map(readFile)) [ASYNC: N concurrent rule file reads]",
+        "  → partitionRulesByLevel(loadedRules)",
+        "→ services/audit-log.ts:appendGetRulesAuditEvent(projectRoot, {path, client_hash}) [ASYNC, try/catch swallows errors]",
+        "  → appendAuditLogEntries() → mkdir(recursive) + appendFile(audit.jsonl)"
+      ],
+      "files": [
+        "packages/server/src/tools/get-rules.ts",
+        "packages/server/src/meta-reader.ts",
+        "packages/server/src/services/get-rules.ts",
+        "packages/server/src/services/read-human-lock.ts",
+        "packages/server/src/services/audit-log.ts"
+      ],
+      "io_operations_per_call": "1 sync readFileSync (meta) + 1 async readFile (AGENTS.md) + 1 async readFile (human-lock.json) + K async readFile (locked files for hashing) + N async readFile (matched rule files) + 1 mkdir + 1 appendFile (audit)",
+      "blocking_operations": ["readAgentsMeta() uses readFileSync — blocks event loop"]
+    },
+    {
+      "entry": "HTTP POST /mcp (new connection, no Mcp-Session-Id header)",
+      "chain": [
+        "http.ts:app.all('/mcp') → sessionId = undefined",
+        "→ isInitializeRequest(req.body) check [must be true or 400]",
+        "→ createSession(eventStore, sessions)",
+        "  → dynamic import('./index.js') [module cache hit after first load]",
+        "  → index.ts:createFabricServer() → new McpServer() + register 4 tools",
+        "  → new StreamableHTTPServerTransport({sessionIdGenerator: randomUUID, enableJsonResponse: true, eventStore, onsessioninitialized, onsessionclosed})",
+        "  → server.connect(transport) [establishes MCP protocol handler]",
+        "  → onsessioninitialized(sessionId) → sessions.set(sessionId, {server, transport})",
+        "→ session.transport.handleRequest(req, res, req.body) [processes initialize message]",
+        "→ eventStore.storeEvent(streamId, message) [appendFile to .intent-ledger.jsonl]"
+      ],
+      "files": [
+        "packages/server/src/http.ts",
+        "packages/server/src/index.ts"
+      ],
+      "io_operations_per_call": "1 dynamic module import (cached) + N tool registrations + 1 appendFile (MCP event to ledger)",
+      "blocking_operations": ["None — fully async after module cache warms"]
+    },
+    {
+      "entry": "fab_append_intent MCP tool call",
+      "chain": [
+        "tools/append-intent.ts:registerAppendIntent() → resolveProjectRoot()",
+        "→ services/append-intent.ts:appendIntent(projectRoot, {entry})",
+        "→ services/read-ledger.ts:appendLedgerEntry(projectRoot, {...entry, ts, source:'ai'})",
+        "  → ledgerEntrySchema.parse() [Zod validation]",
+        "  → appendFile(.intent-ledger.jsonl) [ASYNC write]",
+        "  ← returns StoredLedgerEntry",
+        "[chokidar detects .intent-ledger.jsonl change → 75ms debounce → readLedgerAppendedEvents() → broadcastEvent() to SSE clients]",
+        "→ services/audit-log.ts:appendEditIntentAuditEvents(projectRoot, {affected_paths, intent, ledger_entry_id, ts})",
+        "  → readAuditLog(projectRoot) [ASYNC: readFile entire .fabric/audit.jsonl]",
+        "  → filter to isGetRulesAuditEntry entries",
+        "  → for each affected_path: findPrecedingGetRulesEvent(entries, path, ts, 300000) [O(M) linear scan]",
+        "  → build EditIntentAuditEntry[] with compliant flag",
+        "  → appendAuditLogEntries() → mkdir + appendFile(.fabric/audit.jsonl)",
+        "[try/catch swallows all errors from audit operations]"
+      ],
+      "files": [
+        "packages/server/src/tools/append-intent.ts",
+        "packages/server/src/services/append-intent.ts",
+        "packages/server/src/services/read-ledger.ts",
+        "packages/server/src/services/audit-log.ts",
+        "packages/server/src/api/events.ts"
+      ],
+      "io_operations_per_call": "1 appendFile (ledger) + 1 readFile (entire audit.jsonl) + 1 mkdir + 1 appendFile (audit entries)",
+      "blocking_operations": ["None — all async, but readAuditLog is O(M) unbounded read"]
+    },
+    {
+      "entry": "readAgentsMeta() — caller map across agent interaction cycle",
+      "chain": [
+        "fab_get_rules → tools/get-rules.ts → services/get-rules.ts:loadGetRulesContext() → meta-reader.ts:readAgentsMeta() [call #1]",
+        "fab_plan_context → tools/plan-context.ts → services/plan-context.ts:planContext() → loadGetRulesContext() → readAgentsMeta() [call #2, if used instead of or in addition to get_rules]",
+        "fab_update_registry → tools/update-registry.ts → services/update-registry.ts:updateRegistry() → readAgentsMeta() [call #3]",
+        "api/events.ts:readMetaUpdatedEvent() [NOT readAgentsMeta — uses readFile async + agentsMetaSchema.parse directly — avoids sync hot path]"
+      ],
+      "files": [
+        "packages/server/src/meta-reader.ts",
+        "packages/server/src/services/get-rules.ts",
+        "packages/server/src/services/plan-context.ts",
+        "packages/server/src/services/update-registry.ts"
+      ],
+      "calls_per_cycle": "Minimum 2 (get_rules + update_registry), maximum 3 (+ plan_context). Full agent edit cycle: get_rules(1) + update_registry(1) = 2 synchronous readFileSync calls minimum. Each call parses agents.meta.json with Zod.",
+      "blocking_operations": ["All three callers use synchronous readFileSync via readAgentsMeta()"]
+    },
+    {
+      "entry": "File system change → SSE push → Dashboard UI update",
+      "chain": [
+        "File write to one of: .fabric/agents.meta.json, .fabric/human-lock.json, .fabric/forensic.json, .intent-ledger.jsonl",
+        "→ chokidar watcher detects 'change' event (awaitWriteFinish: stabilityThreshold 120ms, pollInterval 20ms)",
+        "→ api/events.ts:scheduleFileChange(state, projectRoot, relativePath) [75ms debounce timer]",
+        "→ publishFileChange(state, projectRoot, relativePath)",
+        "→ readEventsForFile() dispatches by path:",
+        "  [AGENTS_META_PATH] → readMetaUpdatedEvent() → readFile async + agentsMetaSchema.parse → FabricEvent{type:'meta:updated'}",
+        "  [HUMAN_LOCK_PATH] → readHumanLockEvents() → readHumanLockSnapshot() → readFile(human-lock.json) + readActualHumanLockHashes() [reads+hashes all locked files] → diff against previous snapshot → FabricEvent[]",
+        "  [FORENSIC_PATH] → readDriftDetectedEvent() → readFile async + forensicReportSchema.parse → FabricEvent{type:'drift:detected'}",
+        "  [LEDGER_PATH] → readLedgerAppendedEvents() → incremental byte-offset read → parseLedgerAppendedEvent() → FabricEvent{type:'ledger:appended'}",
+        "→ broadcastEvent(state, event) → fabricEventSchema.parse(event) → SSE frame write to all connected clients",
+        "→ dashboard/src/api/client.ts:EventSource('/events') receives MessageEvent",
+        "→ dashboard/src/hooks/use-events.ts:handleEvent() → parseFabricEvent() → update fabricEventsSignal + setState()"
+      ],
+      "files": [
+        "packages/server/src/api/events.ts",
+        "packages/dashboard/src/api/client.ts",
+        "packages/dashboard/src/hooks/use-events.ts"
+      ],
+      "total_latency_budget": "~120ms awaitWriteFinish stabilityThreshold + 75ms debounce = ~195ms minimum from file write to SSE dispatch",
+      "blocking_operations": ["readHumanLockSnapshot re-hashes all locked files on every human-lock change — scales with locked file count"]
+    }
+  ],
+  "questions_for_user": [
+    {
+      "id": "Q-001",
+      "question": "Is FABRIC_AUTH_TOKEN ever set in production or CI deployments? If yes, the dashboard SSE stream (/events) is currently broken because EventSource cannot send Authorization headers. Was this intended to be accessed without auth, or should a cookie/query-param auth mechanism be added for the SSE endpoint?",
+      "context": "http.ts applies bearer auth middleware to /events, but dashboard/src/api/client.ts uses bare EventSource which cannot set headers."
+    },
+    {
+      "id": "Q-002",
+      "question": "Is there a known upper bound on .fabric/audit.jsonl size? The file grows unbounded with no rotation or truncation. Given that appendEditIntentAuditEvents() reads the entire file on every fab_append_intent call, at what point does this become a performance problem in your typical project lifetime?",
+      "context": "audit-log.ts:readAuditLog() + findPrecedingGetRulesEvent() — O(M) scan per call, no size limit."
+    },
+    {
+      "id": "Q-003",
+      "question": "Was the synchronous readFileSync in readAgentsMeta() a deliberate choice (e.g., to simplify error handling, or because it's called from synchronous contexts)? The update-registry service could switch to async readFile, but get-rules and plan-context services call it from async contexts already — is a migration to async + in-process cache acceptable?",
+      "context": "meta-reader.ts:readAgentsMeta() is the only synchronous I/O in the hot path. All callers are async."
+    },
+    {
+      "id": "Q-004",
+      "question": "The compliance audit check (5-minute window) only matches against fab_get_rules calls, not fab_plan_context calls. Is this intentional? An agent doing batch planning via fab_plan_context then editing will always be marked non-compliant even if it correctly fetched rules for those paths.",
+      "context": "plan-context.ts:planContext() does not call appendGetRulesAuditEvent(). audit-log.ts:appendEditIntentAuditEvents() only looks for get_rules audit events."
+    },
+    {
+      "id": "Q-005",
+      "question": "The .intent-ledger.jsonl file is used as both the MCP JsonlEventStore (for protocol-level replay) and the intent ledger (for business events). Is this co-location intentional? It means the event store grows with both MCP protocol noise and business entries, making replayEventsAfter() scan both kinds of entries. Would separating these files improve clarity and performance?",
+      "context": "http.ts LEDGER_FILE = '.intent-ledger.jsonl' is used as JsonlEventStore path; read-ledger.ts also uses the same file filtering out kind='mcp-event' entries."
+    }
+  ],
+  "_metadata": {
+    "generated_at": "2026-04-21",
+    "analysis_mode": "deep-scan",
+    "phases_completed": ["bash-scan", "call-chain-trace", "code-anchor-extraction"],
+    "files_traced": 12,
+    "session": "ANL-cli-mcp-agent-web-audit-2026-04-21",
+    "layer": 2,
+    "discovery_sources_used": ["bash-scan"],
+    "notes": "All findings are traceable to direct source code reads. No Gemini/Qwen semantic analysis was required — the call chains are unambiguous from static reading. Five complete call chains traced 3+ levels deep."
+  }
+}

@@ -1,0 +1,136 @@
+{
+  "id": "TASK-004",
+  "title": "CLI command reorganization + new fab update command (Rec#10 + Rec#11)",
+  "description": "Improve CLI command discoverability and add a missing update lifecycle command: (1) remove hidden flag from config command, (2) move hooks as a fab config subcommand (fab config hooks), (3) remove standalone bootstrap entry point (functionality already inside init), (4) create new fab update command that re-runs MCP host install + hooks phases without recreating fabric files. Together these close the post-upgrade workflow gap and surface previously hidden commands.",
+  "type": "feature",
+  "priority": "medium",
+  "effort": "medium",
+  "action": "Implement",
+  "scope": "packages/cli/src/commands/",
+  "focus_paths": [
+    "packages/cli/src/commands/index.ts",
+    "packages/cli/src/commands/config.ts",
+    "packages/cli/src/commands/ (new update.ts)"
+  ],
+  "depends_on": [],
+  "parallel_group": 1,
+  "files": [
+    {
+      "path": "packages/cli/src/commands/index.ts",
+      "action": "modify",
+      "target": "command registration",
+      "changes": [
+        "Remove hidden: true from config command registration",
+        "Remove standalone bootstrap command entry (if registered separately from init)",
+        "Register new update command"
+      ]
+    },
+    {
+      "path": "packages/cli/src/commands/config.ts",
+      "action": "modify",
+      "target": "config command subcommands",
+      "changes": [
+        "Add hooks subcommand: fab config hooks — exposing the hooks management functionality",
+        "Keep existing config show/set/get behavior unchanged"
+      ]
+    },
+    {
+      "path": "packages/cli/src/commands/update.ts",
+      "action": "create",
+      "target": "update command",
+      "changes": [
+        "Create new update command that re-runs the MCP host install phase from init (update claude/cursor config, update mcp server registration)",
+        "Re-run hooks install phase (update pre-commit and post-merge hooks)",
+        "Compare current config against template and patch only changed fields (diff-and-apply, not overwrite)",
+        "Skip file creation steps (do not re-create .fabric/, AGENTS.md, etc.)",
+        "Output summary of what was updated"
+      ]
+    }
+  ],
+  "implementation": [
+    "Read packages/cli/src/commands/index.ts to map all 11 registered commands and identify bootstrap and hidden config registrations",
+    "Read packages/cli/src/commands/config.ts to understand existing subcommand structure and add hooks subcommand",
+    "Read packages/cli/src/commands/init.ts to identify the MCP install phase and hooks phase logic to reuse in update.ts",
+    "Extract reusable installMcpHost() and installHooks() functions from init.ts (or call them directly from update.ts)",
+    "Create packages/cli/src/commands/update.ts implementing the update command using extracted functions",
+    "Remove hidden flag from config in index.ts; remove bootstrap registration if present",
+    "Update CLI help text and test that fab --help shows config and update commands"
+  ],
+  "reference": {
+    "pattern": "Existing init command phases (MCP install + hooks install)",
+    "files": [
+      "packages/cli/src/commands/init.ts",
+      "packages/cli/src/commands/config.ts",
+      "packages/cli/src/commands/index.ts"
+    ],
+    "examples": "Extract the MCP install and hooks phases from init.ts as standalone functions; call them from both init and update"
+  },
+  "rationale": {
+    "chosen_approach": "Bundle CLI reorg + new update command as one task since both touch command registration in index.ts",
+    "alternatives_considered": [
+      "Separate tasks for reorg and update command (double the index.ts modifications)",
+      "Implement update as an alias for 'init --skip-files' flag (less explicit, harder to document)"
+    ],
+    "decision_factors": [
+      "index.ts is the shared registration file for both changes — combined edit is cleaner",
+      "fab update as a first-class command improves discoverability vs a flag on init"
+    ],
+    "tradeoffs": "Extracting init phases into reusable functions is a mild refactor; low risk since init behavior is unchanged"
+  },
+  "risks": [
+    {
+      "description": "Removing hidden: true from config command may surface subcommands that are not fully polished for public consumption",
+      "probability": "Low",
+      "impact": "Low",
+      "mitigation": "Review config subcommands before removing hidden flag; ensure all show reasonable help text",
+      "fallback": "Mark individual subcommands as hidden if needed while making parent config visible"
+    },
+    {
+      "description": "fab update diff-and-apply logic for MCP host config may be complex if config format varies by host (Claude vs Cursor)",
+      "probability": "Medium",
+      "impact": "Low",
+      "mitigation": "Start with full-overwrite of the fab section in each host config (not user-defined sections); add diff logic as follow-up",
+      "fallback": "fab update with --force flag for clean overwrite"
+    }
+  ],
+  "convergence": {
+    "criteria": [
+      "fab --help lists config command (not hidden)",
+      "fab --help lists update command",
+      "fab config hooks --help shows hooks management options",
+      "fab update runs without creating new fabric files (no new AGENTS.md, .fabric/ created)",
+      "fab update updates MCP host config entry and git hooks",
+      "Bootstrap command no longer appears as standalone top-level command (if it was previously registered)"
+    ],
+    "verification": "Run fab --help and confirm config + update are visible; run fab update in a test project and confirm only MCP config + hooks updated; run fab config hooks --help",
+    "definition_of_done": "Users upgrading fabric can run fab update to refresh their MCP host integration without re-running full init"
+  },
+  "test": {
+    "unit": [
+      "installMcpHost: applies updated MCP server config without touching user-defined sections",
+      "installHooks: overwrites pre-commit and post-merge with current templates"
+    ],
+    "manual_checks": [
+      "In a project with fabric initialized, run fab update — confirm MCP config updated, hooks updated, fabric files untouched",
+      "Run fab --help — confirm config and update are listed",
+      "Run fab config hooks — confirm hooks subcommand is accessible"
+    ],
+    "success_metrics": [
+      "fab --help shows >= 2 more visible commands than before (config + update)",
+      "fab update completes in < 5 seconds on a typical project"
+    ]
+  },
+  "cli_execution": {
+    "id": "fabric-cli-mcp-chain-optimize-2026-04-21-TASK-004",
+    "strategy": "new"
+  },
+  "commit": {
+    "type": "feat",
+    "scope": "cli",
+    "message_template": "feat(cli): add fab update command + surface config command + hooks as config subcommand"
+  },
+  "source": {
+    "tool": "lite-plan",
+    "session_id": "fabric-cli-mcp-chain-optimize-2026-04-21"
+  }
+}

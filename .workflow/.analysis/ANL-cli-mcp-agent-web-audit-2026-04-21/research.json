@@ -1,0 +1,47 @@
+{
+  "topic": "CLI -> MCP Host -> MCP Server -> Agent -> Web Client 闭环交互链路优化",
+  "mode": "detail-verification",
+  "timestamp": "2026-04-21T05:00:00Z",
+  "findings": [
+    {"finding": "MCP Protocol Version 2025-06-18 supersedes old HTTP+SSE transport. Project uses StreamableHTTPServerTransport — correct modern approach.", "detail": "Streamable HTTP is the current recommended transport for multi-client remote scenarios.", "confidence": "high", "source_url": "https://modelcontextprotocol.io/docs/concepts/transports"},
+    {"finding": "enableJsonResponse: true disables streaming progress — long-running tools cannot stream progress updates", "detail": "If tools become slow (large monorepos), switch to SSE streaming with progress notifications.", "confidence": "high", "source_url": "https://modelcontextprotocol.io/specification/2025-06-18/basic/transports"},
+    {"finding": "MCP 2025-06-18 adds optional outputSchema to tool definitions for structuredContent responses", "detail": "Current tools return JSON.stringify(payload) as text. Adding outputSchema reduces LLM token waste.", "confidence": "high", "source_url": "https://modelcontextprotocol.io/docs/concepts/tools"},
+    {"finding": "MCP resources with subscribe:true enables agent-side caching with notifications/resources/updated", "detail": "AGENTS.md and rule files re-read on every tool call. Resources primitive eliminates redundant file I/O.", "confidence": "high", "source_url": "https://modelcontextprotocol.io/docs/concepts/resources"},
+    {"finding": "MCP prompts primitive pre-packages multi-step tool sequences", "detail": "Reduces unnecessary back-and-forth for common workflows like 'start a new feature'.", "confidence": "medium", "source_url": "https://modelcontextprotocol.io/docs/concepts/prompts"},
+    {"finding": "Missing notifications/tools/list_changed after sync-meta", "detail": "When listChanged:true is advertised, server SHOULD send this notification. Agent continues using stale tool list.", "confidence": "high", "source_url": "https://modelcontextprotocol.io/docs/concepts/architecture"}
+  ],
+  "best_practices": [
+    {"practice": "Tool descriptions drive LLM behavior — imperative phrasing ('MANDATORY: Call before...') is a common pattern for enforcing call order", "rationale": "Tool description and inputSchema are the primary mechanism for LLM to decide when/how to call tools", "source": "modelcontextprotocol.io/docs/concepts/tools"},
+    {"practice": "outputSchema reduces token waste by providing type hints to LLM", "rationale": "LLM receives structured output hints, reducing need to infer structure from text", "source": "modelcontextprotocol.io/docs/concepts/tools"},
+    {"practice": "SSE reconnect should use Last-Event-ID header", "rationale": "Auto-reconnect without Last-Event-ID loses events during disconnect period", "source": "MDN Web Docs / SSE spec"},
+    {"practice": "Expose static/semi-static context as MCP resources with subscribe:true", "rationale": "Allows agent-side caching, eliminates redundant file reads, reduces payload size", "source": "modelcontextprotocol.io/docs/concepts/resources"}
+  ],
+  "alternatives": [
+    {"option": "Switch agent transport to stdio", "pros": "Zero network overhead, simplest lifecycle", "cons": "Cannot serve web client from same process; breaks HTTP dual-mode", "verdict": "Avoid for this architecture"},
+    {"option": "Add WebSocket for /events", "pros": "Full-duplex, lower latency than SSE", "cons": "SSE is simpler, HTTP-native, auto-reconnect built-in; no bidirectional need from server", "verdict": "Avoid — SSE is correct here"},
+    {"option": "Use MCP sampling for agent sub-tasks", "pros": "Server can request LLM completions without API keys", "cons": "Adds round-trip through host; over-engineering for current scope", "verdict": "Viable but premature"},
+    {"option": "Add MCP prompts primitive for workflow templates", "pros": "Pre-packages multi-step tool sequences", "cons": "Requires host UI to expose prompt picker", "verdict": "Viable for future UX"}
+  ],
+  "pitfalls": [
+    {"issue": "FABRIC_PROJECT_ROOT via process.env is global mutation — breaks if two servers in same process", "mitigation": "Pass projectRoot explicitly through context object", "source": "codebase /packages/server/src/http.ts"},
+    {"issue": "JsonlEventStore full scan on every replay — grows with server lifetime", "mitigation": "Cap event store or use in-memory ring buffer with persistence", "source": "codebase /packages/server/src/http.ts"},
+    {"issue": "One McpServer instance per HTTP session — tool registrations replicated per session", "mitigation": "Shared server with per-request context injection via session metadata", "source": "codebase"},
+    {"issue": "Missing MCP-Protocol-Version header enforcement", "mitigation": "Validate header on all HTTP requests post-initialization per spec", "source": "modelcontextprotocol.io/specification/2025-06-18/basic/transports"}
+  ],
+  "codebase_gaps": [
+    {"gap": "No MCP resources primitive", "current_approach": "Re-read AGENTS.md and rule files on every fab_get_rules call", "recommended_approach": "Expose as MCP resources with subscribe:true + notifications/resources/updated"},
+    {"gap": "No notifications/tools/list_changed", "current_approach": "Agent uses stale tool list until reconnect after sync-meta", "recommended_approach": "Emit notifications/tools/list_changed after sync-meta completes"},
+    {"gap": "No outputSchema on any tool", "current_approach": "All tools return text with JSON.stringify(payload)", "recommended_approach": "Add outputSchema for structuredContent responses per MCP 2025-06-18"},
+    {"gap": "SSE /events missing Last-Event-ID reconnect", "current_approach": "EventSource auto-reconnects but doesn't pass Last-Event-ID; missed events lost", "recommended_approach": "Capture lastEventId, reconnect with Last-Event-ID header"},
+    {"gap": "No event buffer for SSE reconnect at HTTP layer", "current_approach": "Only sends events after connection established", "recommended_approach": "Small ring-buffer of last N events per client, replay on reconnect"}
+  ],
+  "sources": [
+    {"title": "MCP Architecture", "url": "https://modelcontextprotocol.io/docs/concepts/architecture", "key_takeaway": "Host/Client/Server roles, JSON-RPC 2.0, primitive types"},
+    {"title": "MCP Transports", "url": "https://modelcontextprotocol.io/docs/concepts/transports", "key_takeaway": "stdio vs Streamable HTTP, session management, resumability"},
+    {"title": "MCP Tools", "url": "https://modelcontextprotocol.io/docs/concepts/tools", "key_takeaway": "outputSchema, structuredContent, error handling, annotations"},
+    {"title": "MCP Resources", "url": "https://modelcontextprotocol.io/docs/concepts/resources", "key_takeaway": "subscribe capability, notifications/resources/updated"},
+    {"title": "MCP Prompts", "url": "https://modelcontextprotocol.io/docs/concepts/prompts", "key_takeaway": "Prompt templates for pre-packaging interaction sequences"},
+    {"title": "MCP Lifecycle", "url": "https://modelcontextprotocol.io/specification/2025-06-18/basic/lifecycle", "key_takeaway": "Initialization sequence, capability negotiation"}
+  ],
+  "_metadata": {"queries_executed": 30, "results_found": 6}
+}

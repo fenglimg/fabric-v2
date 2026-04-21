@@ -1,0 +1,60 @@
+{
+  "id": "IMPL-002",
+  "title": "Add 'claude' alias to config install CLIENT_ALIASES registry",
+  "scope": "packages/cli/src/commands/config.ts",
+  "action": "Fix",
+  "description": "The CLIENT_ALIASES map in config.ts is missing a 'claude' key, causing 'fabric config install --clients=claude' to throw 'unknown client'. Add 'claude' as an alias mapping to the existing ClientKind 'ClaudeCodeCLI'. Add matching i18n labels to both locale files and extend the config-install test to verify the new alias works.",
+  "estimated_time": 25,
+  "files": [
+    {
+      "path": "packages/cli/src/commands/config.ts",
+      "change": "Add 'claude': 'ClaudeCodeCLI' entry to the CLIENT_ALIASES Record<string, ClientKind> at L13-L31 — this is a one-line addition that resolves the 'unknown client' error."
+    },
+    {
+      "path": "packages/shared/src/i18n/locales/en.ts",
+      "change": "Add 'cli.config.clients.claude' label key following the convention of adjacent client label keys so the install summary prints a human-readable client name."
+    },
+    {
+      "path": "packages/shared/src/i18n/locales/zh-CN.ts",
+      "change": "Mirror the new 'cli.config.clients.claude' key added to en.ts with Chinese translation."
+    },
+    {
+      "path": "packages/cli/__tests__/config-install.test.ts",
+      "change": "Add test case asserting that parseClientFilter(['claude']) returns a ClientKind of ClaudeCodeCLI and does not throw; verify --dry-run produces a valid server entry."
+    }
+  ],
+  "implementation": [
+    "Open packages/cli/src/commands/config.ts and locate the CLIENT_ALIASES object (L13-L31); add the line '\"claude\": \"ClaudeCodeCLI\"' following the pattern of adjacent entries.",
+    "Check if existing tests cover CLIENT_ALIASES resolution; if packages/cli/__tests__/config-install.test.ts exists, add a describe block for the 'claude' alias; otherwise create the file following the Vitest pattern from __tests__/init-nondestructive.test.ts.",
+    "Open packages/shared/src/i18n/locales/en.ts and add 'cli.config.clients.claude': 'Claude Code CLI' in the config.clients section.",
+    "Open packages/shared/src/i18n/locales/zh-CN.ts and add the matching zh-CN key.",
+    "Run 'pnpm --filter @fenglimg/fabric-cli test' to confirm no regressions on cursor/codex/gemini installs."
+  ],
+  "reference": {
+    "pattern": "CLIENT_ALIASES is a flat Record<string, ClientKind> map; new aliases require no new ClientKind type and no new writer class",
+    "files": [
+      "packages/cli/src/commands/config.ts",
+      "packages/cli/src/config/writer.ts"
+    ],
+    "examples": "exploration-architecture.json (CLIENT_ALIASES, L13-L31): 'claude key is absent — add claude: ClaudeCodeCLI'; writer.ts (ClientKind, L1-L8): 'ClaudeCodeCLI already in union — no new type needed'"
+  },
+  "anchor_context": [
+    "packages/cli/src/commands/config.ts:L13-L31 — CLIENT_ALIASES object",
+    "packages/cli/src/commands/config.ts:L47-L49 — parseClientFilter error throw",
+    "packages/cli/src/config/writer.ts:L1-L8 — ClientKind union type",
+    "packages/shared/src/i18n/locales/en.ts:L104 — existing key format reference"
+  ],
+  "convergence": {
+    "criteria": [
+      "'fabric config install --clients=claude --dry-run' exits 0 and prints a server entry for ClaudeCodeCLI",
+      "Emitted config schema matches {mcpServers: {fabric: {command: 'node', args: [serverPath]}}} format used by ClaudeCodeCLIWriter",
+      "No regression: 'fabric config install --clients=cursor --dry-run' and '--clients=codex --dry-run' both still exit 0",
+      "New test case in config-install.test.ts passes"
+    ]
+  },
+  "depends_on": [],
+  "cli_execution_id": "fabric-cli-8item-fix-2026-04-20-IMPL-002",
+  "cli_execution": {
+    "strategy": "new"
+  }
+}

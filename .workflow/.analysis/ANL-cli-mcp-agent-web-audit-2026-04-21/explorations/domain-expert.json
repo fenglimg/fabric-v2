@@ -1,0 +1,410 @@
+{
+  "perspective": "Domain Expert",
+  "perspective_angle": "MCP协议与Agent模式的行业最佳实践对比",
+  "relevant_files": [
+    {
+      "path": "packages/server/src/tools/get-rules.ts",
+      "relevance": 0.95,
+      "role": "modify_target",
+      "rationale": "fab_get_rules tool description uses imperative 'MANDATORY' instruction — a behavioral hint to LLM agents. This is the most critical tool for MCP spec conformance analysis: its description, inputSchema, and missing outputSchema are the primary protocol gap targets.",
+      "topic_relation": "For MCP best practices, this tool's description is both the strength (imperative framing ensures compliance) and the weakness (no examples, no outputSchema, 'path' param has no format hint for relative vs absolute). The client_hash pattern is a custom ETag-like mechanism not using MCP's native caching primitives.",
+      "discovery_source": "bash-scan",
+      "key_code": [
+        {
+          "symbol": "server.tool('fab_get_rules', ...)",
+          "location": "L27-L38",
+          "description": "Tool registration with bare string description 'MANDATORY: Call before modifying any file to retrieve Fabric rules for a target path.' — no example invocation, no outputSchema, no annotations object. The inputSchema has 'path' with a generic string type and no format constraint (relative/absolute ambiguity)."
+        },
+        {
+          "symbol": "client_hash param",
+          "location": "L9-L12",
+          "description": "Custom ETag/revision-hash mechanism for stale detection. Deviates from MCP spec which has no native caching primitive at tool level — this is a well-designed workaround but adds agent cognitive overhead."
+        }
+      ]
+    },
+    {
+      "path": "packages/server/src/tools/plan-context.ts",
+      "relevance": 0.90,
+      "role": "modify_target",
+      "rationale": "fab_plan_context is the batch tool designed to reduce round-trips during planning. Its description is the best-written of the four — specifying phase context ('during plan or architecture phases') and the efficiency reason ('one round-trip'). This is closest to MCP best practices.",
+      "topic_relation": "This tool demonstrates the correct approach to batching in MCP: a single tool call replacing N sequential fab_get_rules calls. However the description does not specify minimum batch size guidance, and the paths array has min(1) — identical semantics to the single-path tool for n=1, creating overlap ambiguity.",
+      "discovery_source": "bash-scan",
+      "key_code": [
+        {
+          "symbol": "paths z.array(z.string()).min(1)",
+          "location": "L8-L11",
+          "description": "min(1) makes paths[1] semantically equivalent to fab_get_rules — the agent has no guidance on when to prefer one over the other. Best practice would recommend min(2) or description guidance like 'Use for 2+ paths; use fab_get_rules for single-file queries.'"
+        }
+      ]
+    },
+    {
+      "path": "packages/server/src/tools/append-intent.ts",
+      "relevance": 0.92,
+      "role": "modify_target",
+      "rationale": "fab_append_intent is the post-task compliance recording tool. Its MANDATORY description creates the obligation half of the audit loop. Critical for MCP pattern analysis because it represents an agent-behavior enforcement pattern not in the MCP spec itself.",
+      "topic_relation": "The inputSchema uses aiLedgerEntrySchema.omit() — a domain schema reused at the protocol boundary. This couples the MCP tool contract to the internal Zod schema. Best practice would define a stable MCP-facing schema separately from the internal storage schema.",
+      "discovery_source": "bash-scan",
+      "key_code": [
+        {
+          "symbol": "aiLedgerEntrySchema.omit({ id: true, source: true, ts: true })",
+          "location": "L14-L18",
+          "description": "Internal Zod schema directly used as MCP inputSchema. The 'source' and 'id' fields are stripped server-side — but the agent doesn't know this. An outputSchema could confirm what was stored. More importantly, the entry object nesting (entry: { ... }) adds one level of wrapping that increases token cost with no protocol benefit."
+        }
+      ]
+    },
+    {
+      "path": "packages/server/src/tools/update-registry.ts",
+      "relevance": 0.85,
+      "role": "modify_target",
+      "rationale": "fab_update_registry is the most dangerous tool — a state-mutating operation on the registry. Its description ('instead of editing registry files directly') is the weakest: it describes what NOT to do rather than when TO do it. Also missing: no confirmation of what changed in the response.",
+      "topic_relation": "MCP best practices for mutating tools recommend idempotency hints, error cases in description, and structured output confirming the mutation. The op enum approach is good (single tool, multiple operations), but the data field being z.record(z.unknown()) is untyped — the agent cannot know what fields are valid for each op without out-of-band documentation.",
+      "discovery_source": "bash-scan",
+      "key_code": [
+        {
+          "symbol": "data: z.record(z.unknown()).optional()",
+          "location": "L16-L18",
+          "description": "Fully untyped data payload for add-node and update-node operations. The agent must guess the valid fields. Best practice: use a discriminated union inputSchema keyed on 'op' so each operation has a typed, documented data shape."
+        },
+        {
+          "symbol": "description: 'MANDATORY: Call to add, remove, or update...'",
+          "location": "L33-L34",
+          "description": "MANDATORY framing here is semantically weaker — the tool is situational (only needed when modifying registry), not always-required. This overuse of MANDATORY may dilute the behavioral signal for the two truly mandatory tools."
+        }
+      ]
+    },
+    {
+      "path": "packages/server/src/http.ts",
+      "relevance": 0.95,
+      "role": "integration_point",
+      "rationale": "HTTP transport setup is the core MCP protocol compliance surface. enableJsonResponse:true, JsonlEventStore, per-session McpServer instantiation, and dual-path session routing (initialize vs subsequent) are all spec-critical decisions analyzed here.",
+      "topic_relation": "StreamableHTTPServerTransport with enableJsonResponse:true disables SSE streaming — all MCP responses are single JSON objects. This is a deliberate design trade-off that sacrifices streaming capability for simplicity. Per MCP 2024-11-05 spec, this is conformant but loses the ability to use server-sent progress notifications for long-running tool calls.",
+      "discovery_source": "bash-scan",
+      "key_code": [
+        {
+          "symbol": "new StreamableHTTPServerTransport({ enableJsonResponse: true, ... })",
+          "location": "L178-L188",
+          "description": "enableJsonResponse:true forces all MCP responses into single JSON HTTP responses rather than SSE streams. This means tools cannot emit progress notifications or streaming partial results. For tools like fab_plan_context that may read many files, there's no way to signal progress to the agent."
+        },
+        {
+          "symbol": "JsonlEventStore.replayEventsAfter()",
+          "location": "L72-L97",
+          "description": "Full file scan on every replay request — reads the entire ledger, finds the start index, then replays. No in-memory index. For high-frequency MCP sessions this is O(n) on every reconnect. The EventStore is spec-required for resumability, but the implementation has no TTL or pruning."
+        },
+        {
+          "symbol": "onsessionclosed + transport.onclose",
+          "location": "L182-L195",
+          "description": "Dual cleanup: onsessionclosed callback AND transport.onclose handler both call sessions.delete(). This is defensive but creates a potential double-delete (harmless for Map.delete but indicative of lifecycle uncertainty). The MCP spec's session lifecycle is being guarded at two separate layers."
+        }
+      ]
+    },
+    {
+      "path": "packages/server/src/index.ts",
+      "relevance": 0.88,
+      "role": "integration_point",
+      "rationale": "McpServer factory — the point where all tool registrations converge and where server identity (name, version) is declared. The dual-transport design (stdio for CLI-embedded, HTTP for serve mode) is the core architectural decision for MCP protocol coverage.",
+      "topic_relation": "createFabricServer() creates a new McpServer per invocation — this is correct for HTTP per-session isolation. However for stdio mode, the single server instance means tools share the same process-level state (resolveProjectRoot reads process.env). The stdio path is fine for single-agent use but would break under concurrent agents sharing a stdio server.",
+      "discovery_source": "bash-scan",
+      "key_code": [
+        {
+          "symbol": "new McpServer({ name: 'fabric-context-server', version: __SERVER_VERSION__ })",
+          "location": "L35-L38",
+          "description": "Server identity declared with name and version. Missing: capabilities declaration. MCP servers should declare capabilities (tools, resources, prompts, logging, experimental) in the server info. The SDK may infer these, but explicit declaration is best practice for client compatibility."
+        }
+      ]
+    },
+    {
+      "path": "packages/server/src/services/audit-log.ts",
+      "relevance": 0.90,
+      "role": "integration_point",
+      "rationale": "The compliance audit trail is the most architecturally distinctive feature — it cross-references get_rules and edit_intent events within a 5-minute window to determine if the agent followed the get-before-edit rule. This is entirely custom; there is no MCP primitive for this.",
+      "topic_relation": "MCP has a built-in logging capability (server/logging) for structured log messages to the client. The audit-log here is server-internal — the agent never sees whether its behavior was compliant. Best practice would surface compliance status in the fab_append_intent response, enabling the agent to self-correct within the same session.",
+      "discovery_source": "bash-scan",
+      "key_code": [
+        {
+          "symbol": "findPrecedingGetRulesEvent(getRulesEntries, path, ts, windowMs)",
+          "location": "L113-L140",
+          "description": "Linear scan through all historical get_rules events to find the most recent match within windowMs (5 min). No indexing by path. Compliant status is determined by whether any get_rules call for the exact same path occurred in the window. The path normalization (normalizeAuditPath) handles both absolute and relative paths."
+        },
+        {
+          "symbol": "DEFAULT_AUDIT_WINDOW_MS = 5 * 60 * 1000",
+          "location": "L7",
+          "description": "Hard-coded 5-minute compliance window. Not exposed to agents or configurable per tool call. If an agent's task spans longer than 5 minutes between get_rules and edit_intent, it will be marked non-compliant even if behaviorally correct. Should be a configurable parameter or returned in the get_rules response."
+        },
+        {
+          "symbol": "compliant: matchedGetRules !== null",
+          "location": "L74-L75",
+          "description": "Boolean compliance flag stored in audit log but never returned to the MCP client (agent). The agent is performing an audit-invisible action — it cannot see its own compliance score. MCP's logging notification (notifications/message) could relay compliance status back in real time."
+        }
+      ]
+    },
+    {
+      "path": "packages/cli/src/config/resolver.ts",
+      "relevance": 0.80,
+      "role": "context_only",
+      "rationale": "Client auto-detection covers 7 AI hosts (Claude Code CLI, Claude Code Desktop, Cursor, Windsurf, RooCode, Gemini CLI, Codex). The detection logic is filesystem-probe based (existsSync), which is reliable but non-atomic.",
+      "topic_relation": "From MCP protocol perspective, each host receives identical server configuration (the 'fabric' entry). There is no capability negotiation at install time — all hosts get the same 4 tools regardless of what MCP features they support. Best practice: check host MCP version before writing config to avoid incompatible feature flags.",
+      "discovery_source": "bash-scan",
+      "key_code": [
+        {
+          "symbol": "resolveClients(workspaceRoot, fabricConfig)",
+          "location": "L29-L83",
+          "description": "Probes 7 filesystem markers sequentially to detect installed AI hosts. No parallel detection, no version detection, no capability probing. Writes identical MCP server config to all detected hosts without knowing which MCP spec version each host implements."
+        }
+      ]
+    },
+    {
+      "path": "packages/cli/src/config/json.ts",
+      "relevance": 0.75,
+      "role": "context_only",
+      "rationale": "MCP config writers show how the server entry is injected into host config files. The key concern is that ClaudeCodeCLIWriter writes to project-scoped .claude/settings.json rather than the global config — this is intentional (project scoping) but limits multi-project use without re-running init.",
+      "topic_relation": "The server entry written is the stdio command entry (npx/node path), not the HTTP URL. This means all hosts default to stdio transport — the HTTP transport is only used when 'fabric serve' is explicitly run. The MCP protocol allows both transports but the HTTP path (with session resumability and event replay) is never used by any agent unless manually configured.",
+      "discovery_source": "bash-scan",
+      "key_code": [
+        {
+          "symbol": "config.mcpServers = { ...existingServers, fabric: serverEntry }",
+          "location": "L53-L57",
+          "description": "Merges into mcpServers under the fixed key 'fabric'. No version migration — if the server entry format changes, existing configs silently remain at old format until next 'fabric init'. No notification to the agent/host that the config was updated."
+        }
+      ]
+    }
+  ],
+  "key_findings": [
+    {
+      "id": "KF-01",
+      "title": "MANDATORY Directive Pattern: Effective But Brittle",
+      "severity": "medium",
+      "category": "tool-description-quality",
+      "description": "Two of four tools (fab_get_rules, fab_append_intent) use 'MANDATORY:' as the first word of their description. This is an effective behavioral signal to instruction-following LLMs that causes them to treat these calls as required pre/post conditions. However, fab_update_registry also uses MANDATORY even though it is only situationally required. Overuse risks signal dilution — agents may start ignoring MANDATORY as noise.",
+      "evidence": [
+        "get-rules.ts:L29 — 'MANDATORY: Call before modifying any file'",
+        "append-intent.ts:L35 — 'MANDATORY: Call after a completed task'",
+        "update-registry.ts:L34 — 'MANDATORY: Call to add, remove, or update...' (situational, not always-required)"
+      ],
+      "recommendation": "Reserve MANDATORY for truly unconditional requirements. For update-registry, use conditional framing: 'Required when adding, removing, or updating Fabric registry nodes. Never edit registry files directly.'"
+    },
+    {
+      "id": "KF-02",
+      "title": "No outputSchema on Any Tool — Agent Blind to Response Shape",
+      "severity": "high",
+      "category": "mcp-spec-conformance",
+      "description": "The MCP SDK supports outputSchema on tool registrations (since 2025-03-26 spec revision). None of the 4 tools declare an outputSchema. As a result, agents receive untyped JSON blobs wrapped in content[0].text and must parse them without structural guidance. The GetRulesResult shape (revision_hash, stale, rules.{L0,L1[],L2[]}) is rich but invisible to the agent at registration time.",
+      "evidence": [
+        "get-rules.ts:L27-L38 — no outputSchema in server.tool() call",
+        "plan-context.ts:L29-L41 — no outputSchema",
+        "append-intent.ts:L32-L44 — no outputSchema",
+        "update-registry.ts:L31-L43 — no outputSchema"
+      ],
+      "recommendation": "Add outputSchema to all tools, especially fab_get_rules where the response shape (L0/L1/L2/human_locked_nearby) is non-obvious. This enables MCP-aware hosts to validate responses and reduces token overhead from agents asking 'what does this return?'"
+    },
+    {
+      "id": "KF-03",
+      "title": "enableJsonResponse:true Eliminates Streaming — No Progress for Long Operations",
+      "severity": "medium",
+      "category": "transport-configuration",
+      "description": "StreamableHTTPServerTransport is configured with enableJsonResponse:true, disabling SSE streaming entirely. This means tool calls that involve reading many files (fab_plan_context with large paths arrays) cannot emit progress notifications. Agents waiting for large batch operations have no feedback signal. This also prevents MCP server-sent 'notifications/message' log messages during tool execution.",
+      "evidence": [
+        "http.ts:L178-L188 — enableJsonResponse: true",
+        "plan-context.ts — paths array with no max bound, could theoretically read dozens of rule files"
+      ],
+      "recommendation": "For long-running tools (fab_plan_context), either: (a) add a max paths limit, or (b) switch enableJsonResponse to false and use SSE streaming with progress notifications. Option (a) is simpler and aligns with the current sync model."
+    },
+    {
+      "id": "KF-04",
+      "title": "Audit Compliance Score Is Invisible to Agents",
+      "severity": "high",
+      "category": "compliance-pattern",
+      "description": "The audit-log service computes a 'compliant: boolean' flag for every edit_intent event by cross-referencing get_rules events in a 5-minute window. This compliance determination is stored in .fabric/audit.jsonl but never surfaced to the MCP client. The agent that called fab_append_intent never learns whether its behavior was compliant. MCP's notifications/message mechanism could relay this in real time.",
+      "evidence": [
+        "audit-log.ts:L74-L75 — compliant flag computed and stored",
+        "append-intent.ts:L27-L43 — result returned to agent contains {success, timestamp, entry} but no compliant field",
+        "audit-log.ts:L7 — 5-minute window hard-coded, not configurable"
+      ],
+      "recommendation": "Include compliance status in the fab_append_intent response: { success, timestamp, entry, compliance: { compliant: boolean, matched_get_rules_ts: number|null, window_ms: number } }. This closes the feedback loop and lets agents self-correct within the session."
+    },
+    {
+      "id": "KF-05",
+      "title": "No MCP Resources or Prompts — Missing Primitives for Static Content",
+      "severity": "medium",
+      "category": "mcp-primitives-coverage",
+      "description": "The server exposes only tools. MCP defines three content primitives: tools (actions), resources (readable content), and prompts (reusable templates). The AGENTS.md global ruleset (L0) is read-only contextual content that would be better served as an MCP Resource (uri: 'fabric://agents.md'). This would allow agents to cache it and request updates via resources/read rather than embedding it in every fab_get_rules response.",
+      "evidence": [
+        "index.ts:L40-L46 — only 4 tools registered, no resources or prompts",
+        "get-rules.ts service:L78-L80 — L0 (AGENTS.md) is read and included in every fab_get_rules response",
+        "plan-context.ts service — similarly includes L0 in every batch response"
+      ],
+      "recommendation": "Register 'fabric://agents.md' as an MCP resource with a stable URI and ETag. Agents can request it once and cache. Tool responses can reference the resource URI instead of embedding the full content, reducing token overhead per tool call."
+    },
+    {
+      "id": "KF-06",
+      "title": "JsonlEventStore Has O(n) Replay Without TTL — Memory/IO Risk at Scale",
+      "severity": "low",
+      "category": "transport-configuration",
+      "description": "JsonlEventStore.replayEventsAfter() reads the entire .intent-ledger.jsonl, scans for the event ID, then replays subsequent events. There is no in-memory cache, no TTL, and no pruning. The store grows unbounded. For the current use case (low-frequency MCP sessions, stdio primary path) this is acceptable, but the HTTP path could accumulate events over time without cleanup.",
+      "evidence": [
+        "http.ts:L72-L97 — full file read + linear scan on every replayEventsAfter call",
+        "http.ts:L52-L63 — storeEvent appends to file without size check"
+      ],
+      "recommendation": "Add a pruning strategy: keep only the last N events or events within a time window. The EventStore contract only requires replay from a given ID forward, so old events can be safely pruned after session cleanup."
+    },
+    {
+      "id": "KF-07",
+      "title": "fab_plan_context vs fab_get_rules Semantic Overlap at n=1",
+      "severity": "low",
+      "category": "tool-description-quality",
+      "description": "fab_plan_context accepts paths with min(1), meaning a single-element array call is semantically identical to fab_get_rules. Agents may not know which to prefer for single-file pre-edit checks. This creates tool selection ambiguity that wastes LLM reasoning cycles.",
+      "evidence": [
+        "plan-context.ts:L9-L11 — z.array(z.string()).min(1)",
+        "get-rules.ts:L7-L8 — single path parameter"
+      ],
+      "recommendation": "Change plan-context paths to min(2) OR update the description to explicitly state 'Use this tool when querying 2 or more paths; use fab_get_rules for single-file queries.'"
+    },
+    {
+      "id": "KF-08",
+      "title": "fab_update_registry data Field Is Untyped — Agent Cannot Validate Input",
+      "severity": "medium",
+      "category": "tool-description-quality",
+      "description": "The data field for add-node and update-node operations is typed as z.record(z.unknown()).optional(). The agent has no schema guidance on what fields are valid for each operation. The actual validation (agentsMetaNodeSchema.parse) happens server-side and will throw with a Zod error message. Best practice is discriminated union inputs so each operation's data is typed at the schema level.",
+      "evidence": [
+        "update-registry.ts:L16-L18 — untyped data",
+        "update-registry.ts (service):L64 — agentsMetaNodeSchema.parse(data) validates at runtime"
+      ],
+      "recommendation": "Use a discriminated union: z.discriminatedUnion('op', [addNodeSchema, removeNodeSchema, updateNodeSchema]) where each has a typed data field matching agentsMetaNodeSchema."
+    }
+  ],
+  "code_anchors": [
+    {
+      "file": "packages/server/src/tools/get-rules.ts",
+      "lines": "7-38",
+      "snippet": "const inputSchema = {\n  path: z.string().describe('Target file path to query rules for'),\n  client_hash: z\n    .string()\n    .optional()\n    .describe('Revision hash from prior fab_get_rules response; enables stale detection'),\n};\n\nexport function registerGetRules(server: McpServer): void {\n  server.tool(\n    'fab_get_rules',\n    'MANDATORY: Call before modifying any file to retrieve Fabric rules for a target path.',\n    inputSchema,\n    async ({ path, client_hash }: GetRulesInput) => { ... }\n  );\n}",
+      "significance": "The tool description is terse: one sentence, no example input format, no description of the response shape (L0/L1/L2). The 'path' parameter description says 'target file path' but doesn't specify relative-to-project-root or absolute. The client_hash pattern is a sound ETag analog but is not documented in terms of lifecycle (when to store, when to send). This is the highest-traffic MCP tool and its description is the primary LLM behavioral guidance."
+    },
+    {
+      "file": "packages/server/src/http.ts",
+      "lines": "172-200",
+      "snippet": "async function createSession(\n  eventStore: EventStore,\n  sessions: Map<string, FabricHttpSession>,\n): Promise<FabricHttpSession> {\n  const { createFabricServer } = await import('./index.js');\n  const server = createFabricServer();\n  const transport = new StreamableHTTPServerTransport({\n    sessionIdGenerator: randomUUID,\n    enableJsonResponse: true,\n    eventStore,\n    onsessioninitialized: async (sessionId) => {\n      sessions.set(sessionId, { server, transport });\n    },\n    onsessionclosed: async (sessionId) => {\n      sessions.delete(sessionId);\n    },\n  });\n\n  transport.onclose = () => {\n    const sessionId = transport.sessionId;\n    if (sessionId !== undefined) {\n      sessions.delete(sessionId);\n    }\n  };\n\n  await server.connect(transport);\n  return { server, transport };\n}",
+      "significance": "Per-session McpServer instantiation is architecturally correct for HTTP isolation. enableJsonResponse:true is the key protocol trade-off — conformant per MCP spec but disables SSE progress notifications. The dual cleanup (onsessionclosed + transport.onclose) is defensive but indicates lifecycle complexity. Dynamic import of createFabricServer adds latency on first session creation."
+    },
+    {
+      "file": "packages/server/src/services/audit-log.ts",
+      "lines": "52-89",
+      "snippet": "export async function appendEditIntentAuditEvents(\n  projectRoot: string,\n  input: { affected_paths: string[]; intent: string; ledger_entry_id: string; ts?: number; window_ms?: number; },\n): Promise<EditIntentAuditEntry[]> {\n  const ts = input.ts ?? Date.now();\n  const windowMs = input.window_ms ?? DEFAULT_AUDIT_WINDOW_MS;\n  const getRulesEntries = (await readAuditLog(projectRoot)).filter(isGetRulesAuditEntry);\n  const entries = input.affected_paths.map((affectedPath) => {\n    const path = normalizeAuditPath(projectRoot, affectedPath);\n    const matchedGetRules = findPrecedingGetRulesEvent(getRulesEntries, path, ts, windowMs);\n    return {\n      kind: 'audit-event' as const,\n      event: 'edit_intent' as const,\n      ts, path,\n      compliant: matchedGetRules !== null,\n      ...\n    };\n  });\n  await appendAuditLogEntries(projectRoot, entries);\n  return entries;\n}",
+      "significance": "The entire audit log is re-read on every fab_append_intent call to populate getRulesEntries. This is O(n) on audit log size. The compliance result is stored but not returned to the agent. This is the key feedback-loop gap: agents are audited but not informed of audit results in real time. The window_ms parameter is accepted from the caller but has no MCP-level exposure — it's an internal service parameter."
+    },
+    {
+      "file": "packages/server/src/services/audit-log.ts",
+      "lines": "113-140",
+      "snippet": "export function findPrecedingGetRulesEvent(\n  entries: GetRulesAuditEntry[],\n  path: string,\n  ts: number,\n  windowMs: number,\n): GetRulesAuditEntry | null {\n  let matched: GetRulesAuditEntry | null = null;\n  for (const entry of entries) {\n    if (entry.path !== path) continue;\n    if (entry.ts > ts) continue;\n    if (ts - entry.ts > windowMs) continue;\n    if (matched === null || entry.ts > matched.ts) {\n      matched = entry;\n    }\n  }\n  return matched;\n}",
+      "significance": "Linear scan without index. For a project with many files and many sessions over time, this grows with audit log size. The path matching is exact string equality after normalization — no glob or prefix matching, which means an agent that called fab_get_rules for 'src/auth/index.ts' won't satisfy the compliance check for 'src/auth/utils.ts'. This is intentional but may be overly strict."
+    },
+    {
+      "file": "packages/server/src/tools/append-intent.ts",
+      "lines": "13-44",
+      "snippet": "const inputSchema = {\n  entry: aiLedgerEntrySchema.omit({\n    id: true,\n    source: true,\n    ts: true,\n  }),\n};\n\nexport function registerAppendIntent(server: McpServer): void {\n  server.tool(\n    'fab_append_intent',\n    'MANDATORY: Call after a completed task to append an intent ledger entry for Fabric.',\n    inputSchema,\n    async ({ entry }: AppendIntentInput) => {\n      const projectRoot = resolveProjectRoot();\n      const result = await appendIntent(projectRoot, { entry });\n      return createTextResponse(result);\n    },\n  );\n}",
+      "significance": "The entry nesting is an extra JSON level that adds token overhead. The description 'after a completed task' is ambiguous — after any subtask? After the entire conversation? The agent must infer task granularity. MCP best practice: add an example in the description. The stripped fields (id, source, ts) are server-assigned but this is not documented in the tool description — agents may attempt to provide them."
+    },
+    {
+      "file": "packages/server/src/http.ts",
+      "lines": "49-119",
+      "snippet": "class JsonlEventStore implements EventStore {\n  async storeEvent(streamId, message): Promise<EventId> {\n    const eventId = randomUUID();\n    await appendFile(this.ledgerPath, `${JSON.stringify(entry)}\\n`, 'utf8');\n    return eventId;\n  }\n\n  async replayEventsAfter(lastEventId, { send }): Promise<StreamId> {\n    const events = await this.readEvents();\n    const startIndex = events.findIndex(e => e.eventId === lastEventId);\n    if (startIndex === -1) throw new Error(`Unknown event ID: ${lastEventId}`);\n    const streamId = events[startIndex]?.streamId;\n    for (const event of events.slice(startIndex + 1)) {\n      if (event.streamId !== streamId) continue;\n      await send(event.eventId, event.message);\n    }\n    return streamId;\n  }\n}",
+      "significance": "The EventStore shares the .intent-ledger.jsonl file with domain ledger entries. The kind:'mcp-event' discriminator enables cohabitation, but the readEvents() method must parse and filter all lines on every call. MCP session resumability (Last-Event-ID header reconnect) is supported but the implementation cost grows with file size. Separate files for domain vs MCP events would be cleaner."
+    }
+  ],
+  "call_chains": [
+    {
+      "entry": "Agent invokes fab_get_rules (pre-edit compliance)",
+      "chain": "agent → MCP client → POST /mcp → StreamableHTTPServerTransport → McpServer.handleRequest → registerGetRules handler → getRules(projectRoot) → resolveRulesForPath → loadRulesForPath (minimatch glob) + readAuditLog (appendGetRulesAuditEvent, best-effort) → createTextResponse({revision_hash, stale, rules:{L0,L1[],L2[],human_locked_nearby}}) → JSON response",
+      "files": [
+        "packages/server/src/http.ts",
+        "packages/server/src/tools/get-rules.ts",
+        "packages/server/src/services/get-rules.ts",
+        "packages/server/src/services/audit-log.ts"
+      ]
+    },
+    {
+      "entry": "Agent invokes fab_append_intent (post-task compliance recording)",
+      "chain": "agent → MCP client → POST /mcp → McpServer → registerAppendIntent handler → appendIntent(projectRoot) → appendLedgerEntry (stores to .intent-ledger.jsonl) → appendEditIntentAuditEvents (reads full audit log, computes compliant flag, appends audit entries) → return {success, timestamp, entry} [compliant flag NOT returned to agent]",
+      "files": [
+        "packages/server/src/tools/append-intent.ts",
+        "packages/server/src/services/append-intent.ts",
+        "packages/server/src/services/audit-log.ts"
+      ]
+    },
+    {
+      "entry": "HTTP session initialization (agent first connects)",
+      "chain": "POST /mcp with {method:'initialize'} (no Mcp-Session-Id header) → isInitializeRequest check → createSession(eventStore, sessions) → dynamic import createFabricServer() → new McpServer + registerAll4Tools → new StreamableHTTPServerTransport({enableJsonResponse:true, eventStore, sessionIdGenerator:randomUUID}) → server.connect(transport) → onsessioninitialized callback → sessions.set(sessionId, {server,transport}) → handleRequest → JSON response with Mcp-Session-Id header",
+      "files": [
+        "packages/server/src/http.ts",
+        "packages/server/src/index.ts"
+      ]
+    },
+    {
+      "entry": "fab serve CLI command starts the HTTP server",
+      "chain": "fabric serve [port] → CLI serve command → startHttpServer({port, projectRoot, host, authToken}) → createFabricHttpApp(options) → createMcpExpressApp({host}) → mount all REST API routes + /mcp handler + /events SSE handler → app.listen(port, host) → server listening",
+      "files": [
+        "packages/cli/src/commands/serve.ts",
+        "packages/server/src/index.ts",
+        "packages/server/src/http.ts"
+      ]
+    },
+    {
+      "entry": "fabric init writes MCP config to all detected AI hosts",
+      "chain": "fabric init → init command → resolveClients(workspaceRoot, fabricConfig) → existsSync probes for 7 host markers → instantiate writer per detected host → writer.write(serverPath, workspaceRoot) → writeJsonClientConfig(configPath, serverEntry) → merge fabric entry into mcpServers → writeFile (atomic overwrite)",
+      "files": [
+        "packages/cli/src/config/resolver.ts",
+        "packages/cli/src/config/json.ts"
+      ]
+    }
+  ],
+  "questions_for_user": [
+    {
+      "id": "Q1",
+      "question": "Should compliance results (compliant: boolean, matched_get_rules_ts) be returned in the fab_append_intent response so agents can self-correct in the same session?",
+      "context": "Currently, the compliant flag is computed and stored in audit.jsonl but never returned to the MCP client. The agent has no way to know if it violated the get-before-edit rule.",
+      "impact": "Closing this feedback loop would enable agents to re-call fab_get_rules and retry if they detect a compliance miss, without human intervention."
+    },
+    {
+      "id": "Q2",
+      "question": "Is the 5-minute audit compliance window (DEFAULT_AUDIT_WINDOW_MS) intentionally fixed, or should it be configurable per-project via fabric.config.json?",
+      "context": "Long-running multi-file refactors could easily exceed 5 minutes between a fab_get_rules call and the final fab_append_intent, producing false non-compliance.",
+      "impact": "A configurable window (e.g., in fabric.config.json) would better fit varied project workflows without changing tool contracts."
+    },
+    {
+      "id": "Q3",
+      "question": "Is there a reason fab_plan_context accepts paths with min(1) instead of min(2)? The current constraint creates semantic overlap with fab_get_rules for single-file queries.",
+      "context": "plan-context.ts L9-L11. With min(1), agents may use either tool for single-file queries, creating non-deterministic behavior.",
+      "impact": "Changing to min(2) enforces a clean separation between the single-file and batch tools, reducing agent decision overhead."
+    },
+    {
+      "id": "Q4",
+      "question": "Has there been consideration of exposing AGENTS.md (the L0 global ruleset) as an MCP Resource instead of embedding it in every tool response?",
+      "context": "The L0 content (AGENTS.md) is included in every fab_get_rules and fab_plan_context response. For projects with large AGENTS.md files, this multiplies token cost per tool call.",
+      "impact": "An MCP Resource at fabric://agents.md would allow agents to cache it and only re-fetch when revision_hash changes, reducing per-call token overhead."
+    },
+    {
+      "id": "Q5",
+      "question": "Why does the HTTP transport use enableJsonResponse:true? Was streaming (SSE progress notifications) considered and rejected, or is this a simplicity choice?",
+      "context": "http.ts L185. With enableJsonResponse:true, server-sent progress notifications (e.g., 'loaded 5 of 12 rule files') are impossible during tool execution.",
+      "impact": "For the current 4-tool set with fast execution times, this is fine. If tools become slower (e.g., fab_plan_context with many paths), the lack of streaming becomes a UX issue for agent operators."
+    }
+  ],
+  "_metadata": {
+    "perspective": "Domain Expert",
+    "sub_perspective": "MCP协议与Agent模式行业最佳实践",
+    "analysis_depth": "deep-scan",
+    "files_read": 9,
+    "generated_at": "2026-04-21T00:00:00Z",
+    "session": "ANL-cli-mcp-agent-web-audit-2026-04-21",
+    "key_findings_count": 8,
+    "code_anchors_count": 6,
+    "call_chains_count": 5,
+    "questions_count": 5,
+    "mcp_spec_version_assessed": "2024-11-05 / 2025-03-26",
+    "primary_gaps": [
+      "No outputSchema on any tool (KF-02)",
+      "Audit compliance invisible to agents (KF-04)",
+      "No MCP Resources for static content (KF-05)"
+    ],
+    "protocol_conformance_score": "conformant with gaps",
+    "notes": "Server is fully conformant with MCP 2024-11-05 core spec. Gaps are in best-practice areas (outputSchema, resources, streaming) that were added or clarified in the 2025-03-26 revision. The custom compliance audit pattern is architecturally sound but creates a one-way audit mirror — agents are observed but not informed."
+  }
+}
