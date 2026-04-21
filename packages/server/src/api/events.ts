@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from "node:crypto";
+import { createHash } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { open, readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
@@ -23,11 +23,49 @@ const WATCHED_PATHS = [AGENTS_META_PATH, HUMAN_LOCK_PATH, FORENSIC_PATH, LEDGER_
 const CONNECTION_LIMIT = 10;
 const HEARTBEAT_INTERVAL_MS = 30_000;
 const WATCH_DEBOUNCE_MS = 75;
+const RING_BUFFER_CAPACITY = 50;
 
 type EventsRequest = IncomingMessage;
 type EventsResponse = ServerResponse<IncomingMessage> & {
   flushHeaders?: () => void;
 };
+
+type BufferedEvent = {
+  id: number;
+  type: string;
+  data: string;
+};
+
+class RingBuffer {
+  private readonly buf: (BufferedEvent | undefined)[];
+  private head = 0;
+  private count = 0;
+
+  constructor(private readonly capacity: number) {
+    this.buf = new Array<BufferedEvent | undefined>(capacity).fill(undefined);
+  }
+
+  push(event: BufferedEvent): void {
+    this.buf[this.head] = event;
+    this.head = (this.head + 1) % this.capacity;
+    if (this.count < this.capacity) {
+      this.count++;
+    }
+  }
+
+  replayFrom(afterId: number): BufferedEvent[] {
+    const result: BufferedEvent[] = [];
+    const total = this.count;
+    const start = this.count < this.capacity ? 0 : this.head;
+    for (let i = 0; i < total; i++) {
+      const entry = this.buf[(start + i) % this.capacity];
+      if (entry !== undefined && entry.id > afterId) {
+        result.push(entry);
+      }
+    }
+    return result;
+  }
+}
 
 type EventsState = {
   clients: Set<EventsResponse>;
@@ -36,6 +74,8 @@ type EventsState = {
   ledgerOffset: number;
   ledgerRemainder: string;
   humanLockSnapshot: HumanLockSnapshot;
+  nextEventId: number;
+  ringBuffer: RingBuffer;
 };
 
 type HumanLockSnapshot = {
@@ -58,6 +98,8 @@ export function createEventsHandler(options: CreateEventsHandlerOptions) {
     ledgerOffset: 0,
     ledgerRemainder: "",
     humanLockSnapshot: createEmptyHumanLockSnapshot(),
+    nextEventId: 1,
+    ringBuffer: new RingBuffer(RING_BUFFER_CAPACITY),
   };
 
   return async function handleEvents(req: EventsRequest, res: EventsResponse): Promise<void> {
@@ -84,6 +126,16 @@ export function createEventsHandler(options: CreateEventsHandlerOptions) {
     res.setHeader("X-Accel-Buffering", "no");
     res.flushHeaders?.();
     res.write(": connected\n\n");
+
+    const lastEventId = readLastEventId(req);
+    if (lastEventId !== undefined) {
+      const missed = state.ringBuffer.replayFrom(lastEventId);
+      for (const entry of missed) {
+        if (!res.writableEnded) {
+          res.write(`id: ${entry.id}\nevent: ${entry.type}\ndata: ${entry.data}\n\n`);
+        }
+      }
+    }
 
     state.clients.add(res);
     const heartbeat = setInterval(() => {
@@ -356,7 +408,12 @@ function parseLedgerAppendedEvent(line: string): FabricEvent | null {
 
 function broadcastEvent(state: EventsState, event: FabricEvent): void {
   const payload = fabricEventSchema.parse(event);
-  const frame = `id: ${randomUUID()}\nevent: ${payload.type}\ndata: ${JSON.stringify(payload)}\n\n`;
+  const eventId = state.nextEventId++;
+  const data = JSON.stringify(payload);
+  const frame = `id: ${eventId}\nevent: ${payload.type}\ndata: ${data}\n\n`;
+
+  state.ringBuffer.push({ id: eventId, type: payload.type, data });
+
   const disconnectedClients: EventsResponse[] = [];
 
   for (const client of state.clients) {
@@ -456,6 +513,25 @@ function areSetsEqual(left: Set<string>, right: Set<string>): boolean {
   }
 
   return true;
+}
+
+function readLastEventId(req: EventsRequest): number | undefined {
+  const header = req.headers["last-event-id"];
+  const headerValue = Array.isArray(header) ? header[0] : header;
+
+  const rawUrl = req.url ?? "";
+  const queryStart = rawUrl.indexOf("?");
+  const queryString = queryStart >= 0 ? rawUrl.slice(queryStart + 1) : "";
+  const params = new URLSearchParams(queryString);
+  const queryValue = params.get("lastEventId") ?? undefined;
+
+  const raw = headerValue ?? queryValue;
+  if (raw === undefined || raw.length === 0) {
+    return undefined;
+  }
+
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined;
 }
 
 function normalizePath(value: string): string {

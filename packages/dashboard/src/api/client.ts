@@ -153,6 +153,144 @@ export async function getHistoryState(query: HistoryStateQuery): Promise<History
   return await getJson<HistoryReplayResult>(withQuery("/api/history/state", params));
 }
 
+export type SseEventHandler = (type: string, data: string, id: string) => void;
+export type SseCloseHandler = () => void;
+
+export type SseConnection = {
+  close: () => void;
+};
+
+let cachedAuthToken: string | null | undefined;
+
+export function openSseConnection(
+  path: string,
+  lastEventId: string | null,
+  onEvent: SseEventHandler,
+  onOpen: () => void,
+  onClose: SseCloseHandler,
+): SseConnection {
+  let closed = false;
+  const controller = new AbortController();
+  let closeNotified = false;
+  const headers = buildAuthHeaders({ Accept: "text/event-stream" });
+
+  if (lastEventId !== null && lastEventId.length > 0) {
+    headers["Last-Event-ID"] = lastEventId;
+  }
+
+  void (async () => {
+    try {
+      const response = await fetch(path, {
+        headers,
+        signal: controller.signal,
+      });
+
+      if (!response.ok || response.body === null) {
+        notifyCloseOnce(() => {
+          onClose();
+        });
+        return;
+      }
+
+      onOpen();
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = "";
+
+      while (!closed) {
+        const { done, value } = await reader.read();
+        if (done) {
+          break;
+        }
+
+        buf += decoder.decode(value, { stream: true });
+        buf = buf.replace(/\r\n/g, "\n");
+
+        let boundary: number;
+        while ((boundary = buf.indexOf("\n\n")) >= 0) {
+          const block = buf.slice(0, boundary);
+          buf = buf.slice(boundary + 2);
+          parseSseBlock(block, onEvent);
+        }
+      }
+    } catch {
+      // intentionally swallowed — caller handles reconnect via onClose
+    } finally {
+      if (!closed) {
+        notifyCloseOnce(() => {
+          onClose();
+        });
+      }
+    }
+  })();
+
+  return {
+    close() {
+      closed = true;
+      controller.abort();
+    },
+  };
+
+  function notifyCloseOnce(fn: () => void): void {
+    if (closeNotified) {
+      return;
+    }
+
+    closeNotified = true;
+    fn();
+  }
+}
+
+function parseSseBlock(block: string, onEvent: SseEventHandler): void {
+  let type = "message";
+  let data = "";
+  let id = "";
+
+  for (const line of block.split("\n")) {
+    if (line.startsWith("event:")) {
+      type = line.slice(6).trim();
+    } else if (line.startsWith("data:")) {
+      data = data.length > 0 ? `${data}\n${line.slice(5).trim()}` : line.slice(5).trim();
+    } else if (line.startsWith("id:")) {
+      id = line.slice(3).trim();
+    }
+  }
+
+  if (data.length > 0) {
+    onEvent(type, data, id);
+  }
+}
+
+function readAuthToken(): string | null {
+  if (cachedAuthToken !== undefined) {
+    return cachedAuthToken;
+  }
+
+  const w = window as unknown as Record<string, unknown>;
+  const injected = w["__FABRIC_AUTH_TOKEN__"];
+  if (typeof injected === "string" && injected.length > 0) {
+    cachedAuthToken = injected;
+    return cachedAuthToken;
+  }
+
+  const currentUrl = new URL(window.location.href);
+  const params = currentUrl.searchParams;
+  const token = params.get("token");
+  if (token !== null && token.length > 0) {
+    params.delete("token");
+    const nextSearch = params.toString();
+    const nextUrl = `${currentUrl.pathname}${nextSearch.length > 0 ? `?${nextSearch}` : ""}${currentUrl.hash}`;
+    window.history.replaceState({}, document.title, nextUrl);
+    cachedAuthToken = token;
+    return cachedAuthToken;
+  }
+
+  cachedAuthToken = null;
+  return cachedAuthToken;
+}
+
+/** @deprecated Use openSseConnection instead */
 export function getEvents(): EventSource {
   return new EventSource("/events");
 }
@@ -168,7 +306,7 @@ export function parseFabricEvent(raw: string): FabricEvent | null {
 
 async function getJson<T>(path: string): Promise<T> {
   const response = await fetch(path, {
-    headers: { Accept: "application/json" },
+    headers: buildAuthHeaders({ Accept: "application/json" }),
   });
 
   return await readJsonResponse<T>(response);
@@ -177,10 +315,10 @@ async function getJson<T>(path: string): Promise<T> {
 async function postJson<T>(path: string, body: unknown): Promise<T> {
   const response = await fetch(path, {
     method: "POST",
-    headers: {
+    headers: buildAuthHeaders({
       Accept: "application/json",
       "Content-Type": "application/json",
-    },
+    }),
     body: JSON.stringify(body),
   });
 
@@ -214,4 +352,16 @@ function readApiError(payload: unknown, status: number): string {
 function withQuery(path: string, params: URLSearchParams): string {
   const query = params.toString();
   return query.length > 0 ? `${path}?${query}` : path;
+}
+
+function buildAuthHeaders(headers: Record<string, string>): Record<string, string> {
+  const token = readAuthToken();
+  if (token === null) {
+    return headers;
+  }
+
+  return {
+    ...headers,
+    Authorization: `Bearer ${token}`,
+  };
 }
