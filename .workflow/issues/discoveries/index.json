@@ -1,0 +1,20 @@
+[
+  {
+    "discovery_id": "DSC-20260421-184152",
+    "created_at": "2026-04-21T18:44:16+08:00",
+    "target_pattern": "**/*",
+    "scope": "full-repo",
+    "perspectives": [
+      "bug",
+      "ux",
+      "test",
+      "quality",
+      "security",
+      "performance",
+      "maintainability",
+      "best-practices"
+    ],
+    "total_findings": 6,
+    "issues_generated": 4
+  }
+]

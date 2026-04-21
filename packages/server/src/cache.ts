@@ -21,6 +21,7 @@ type CacheEntry<T> = {
 export type AuditCursor = {
   offset: number;
   remainder: string;
+  windowEntries: Array<{ ts: number }>;
 };
 
 export class ContextCache {

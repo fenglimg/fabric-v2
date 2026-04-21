@@ -1,0 +1,17 @@
+{
+  "perspective": "maintainability",
+  "findings": [
+    {
+      "id": "MAINT-001",
+      "title": "HTTP cache watcher has no shutdown path",
+      "priority": "medium",
+      "category": "resource",
+      "description": "createFabricHttpApp creates a persistent chokidar watcher as soon as the app is built, but the returned API exposes no disposer and startHttpServer only returns the HttpServer. Repeated start/stop cycles can leave file watchers and debounce timers alive, especially in tests or local restart flows.",
+      "file": "packages/server/src/http.ts",
+      "line": 137,
+      "snippet": "const cacheWatcher = chokidar.watch([\".fabric/agents.meta.json\", \"AGENTS.md\"], {",
+      "suggested_issue": "Tie cacheWatcher cleanup to server.close() or return an explicit disposer from createFabricHttpApp/startHttpServer, then add lifecycle coverage.",
+      "confidence": 0.84
+    }
+  ]
+}

@@ -126,7 +126,8 @@ function hasMatchingTailEntry(target: string, entry: HumanLedgerEntry): boolean 
     .trim()
     .split(/\r?\n/)
     .filter(Boolean)
-    .slice(-1)[0];
+    .reverse()
+    .find((line) => isLedgerEntryLine(line));
 
   if (!tail) {
     return false;
@@ -143,6 +144,15 @@ function hasMatchingTailEntry(target: string, entry: HumanLedgerEntry): boolean 
       parsed.affected_paths.every((value, index) => value === entry.affected_paths[index]) &&
       normalizeDiffStat(parsed.diff_stat) === normalizeDiffStat(entry.diff_stat)
     );
+  } catch {
+    return false;
+  }
+}
+
+function isLedgerEntryLine(line: string): boolean {
+  try {
+    const parsed = JSON.parse(line) as Record<string, unknown>;
+    return parsed.kind !== "mcp-event";
   } catch {
     return false;
   }

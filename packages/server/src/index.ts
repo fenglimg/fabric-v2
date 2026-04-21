@@ -93,6 +93,10 @@ export async function startHttpServer(options: {
   return await new Promise<HttpServer>((resolveServer, rejectServer) => {
     const server = app.listen(port, host);
 
+    server.once("close", () => {
+      void app.dispose();
+    });
+
     server.once("listening", () => {
       resolveServer(server);
     });

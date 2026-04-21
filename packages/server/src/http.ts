@@ -50,6 +50,10 @@ export type CreateFabricHttpAppOptions = {
   dev?: boolean;
 };
 
+export type FabricHttpApp = ReturnType<typeof createMcpExpressApp> & {
+  dispose: () => Promise<void>;
+};
+
 class JsonlEventStore implements EventStore {
   constructor(private readonly ledgerPath: string) {}
 
@@ -124,7 +128,7 @@ class JsonlEventStore implements EventStore {
 
 export function createFabricHttpApp(options: CreateFabricHttpAppOptions) {
   const { projectRoot, host = DEFAULT_HOST, authToken, dashboardDistPath, dev } = options;
-  const app = createMcpExpressApp({ host });
+  const app = createMcpExpressApp({ host }) as FabricHttpApp;
   const ledgerPath = join(projectRoot, LEDGER_FILE);
   const eventStore = new JsonlEventStore(ledgerPath);
   const sessions = new Map<string, FabricHttpSession>();
@@ -167,6 +171,18 @@ export function createFabricHttpApp(options: CreateFabricHttpAppOptions) {
       }, NOTIFY_DEBOUNCE_MS);
     }
   });
+
+  let disposed = false;
+  app.dispose = async () => {
+    if (disposed) {
+      return;
+    }
+
+    disposed = true;
+    clearTimeout(agentsMdNotifyTimer);
+    clearTimeout(toolListNotifyTimer);
+    await cacheWatcher.close();
+  };
 
   app.disable("x-powered-by");
   if (authToken !== undefined) {

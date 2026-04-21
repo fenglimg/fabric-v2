@@ -1,4 +1,5 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { agentsLayerSchema, agentsTopologyTypeSchema } from "@fenglimg/fabric-shared";
 import { z } from "zod";
 
 import { resolveProjectRoot } from "../meta-reader.js";
@@ -8,24 +9,30 @@ type UpdateRegistryInput = {
   op: "add-node" | "remove-node" | "update-node";
   node_id: string;
   data?: {
-    file: string;
-    scope_glob: string;
+    file?: string;
+    scope_glob?: string;
     deps?: string[];
-    priority?: number;
+    priority?: "high" | "medium" | "low";
+    layer?: "L0" | "L1" | "L2";
+    topology_type?: "mirror" | "cross-cutting";
+    hash?: string;
   };
 };
+
+const nodeInputSchema = z.object({
+  file: z.string().optional(),
+  scope_glob: z.string().optional(),
+  deps: z.array(z.string()).optional(),
+  priority: z.enum(["high", "medium", "low"]).optional(),
+  layer: agentsLayerSchema.optional(),
+  topology_type: agentsTopologyTypeSchema.optional(),
+  hash: z.string().optional(),
+});
 
 const inputSchema = {
   op: z.enum(["add-node", "remove-node", "update-node"]),
   node_id: z.string(),
-  data: z
-    .object({
-      file: z.string(),
-      scope_glob: z.string(),
-      deps: z.array(z.string()).optional(),
-      priority: z.number().optional(),
-    })
-    .optional(),
+  data: nodeInputSchema.optional(),
 };
 
 const outputSchema = z.object({

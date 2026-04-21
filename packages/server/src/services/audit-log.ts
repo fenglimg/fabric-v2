@@ -182,6 +182,8 @@ async function readAuditLogWindowed(
   const cursor = contextCache.getAuditCursor(projectRoot);
   const startOffset = cursor !== undefined && cursor.offset <= fileSize ? cursor.offset : 0;
   const priorRemainder = startOffset > 0 && cursor !== undefined ? cursor.remainder : "";
+  const priorWindowEntries =
+    startOffset > 0 && cursor !== undefined ? (cursor.windowEntries as AuditLogEntry[]) : [];
 
   // File was rotated or truncated — reset cursor and re-read from start.
   const effectiveStart = cursor !== undefined && cursor.offset > fileSize ? 0 : startOffset;
@@ -204,20 +206,26 @@ async function readAuditLogWindowed(
     } catch (error) {
       // Byte-offset seek failed — fall back to full read and reset cursor.
       contextCache.resetAuditCursor(projectRoot);
-      return readAuditLogFull(projectRoot);
+      return (await readAuditLogFull(projectRoot)).filter((entry) => ts - entry.ts <= windowMs && entry.ts <= ts);
     }
 
     const lines = chunk.split(/\r?\n/);
     const remainder = chunk.endsWith("\n") ? "" : (lines.pop() ?? "");
+    const windowEntries = [...priorWindowEntries, ...parseAuditLogText(lines.join("\n"))].filter(
+      (entry) => ts - entry.ts <= windowMs && entry.ts <= ts,
+    );
 
-    contextCache.setAuditCursor(projectRoot, { offset: fileSize, remainder });
-    newEntries = parseAuditLogText(lines.join("\n"));
+    contextCache.setAuditCursor(projectRoot, { offset: fileSize, remainder, windowEntries });
+    newEntries = windowEntries;
   } else {
     // No new data; update cursor offset in case file grew between calls.
+    const windowEntries = priorWindowEntries.filter((entry) => ts - entry.ts <= windowMs && entry.ts <= ts);
     contextCache.setAuditCursor(projectRoot, {
       offset: fileSize,
       remainder: cursor?.remainder ?? "",
+      windowEntries,
     });
+    newEntries = windowEntries;
   }
 
   // Build the final set: entries already seen before the cursor (not tracked
@@ -227,13 +235,13 @@ async function readAuditLogWindowed(
   // window boundary if the cursor had been reset.
   if (effectiveStart === 0 && cursor !== undefined && cursor.offset > fileSize) {
     // Cursor was reset because file rotated — newEntries is the full file.
-    return newEntries.filter((e) => ts - e.ts <= windowMs);
+    return newEntries.filter((entry) => ts - entry.ts <= windowMs && entry.ts <= ts);
   }
 
   // If this is the first call (no cursor) we already have the full file in
   // newEntries; otherwise we only have the tail.  In either case filter by
   // window and return.
-  return newEntries.filter((e) => ts - e.ts <= windowMs && e.ts <= ts);
+  return newEntries;
 }
 
 // ---------------------------------------------------------------------------
@@ -305,9 +313,6 @@ async function appendAuditLogEntries(projectRoot: string, entries: AuditLogEntry
 
   await mkdir(auditDir, { recursive: true });
   await appendFile(auditPath, `${entries.map((entry) => JSON.stringify(entry)).join("\n")}\n`, "utf8");
-
-  // Reset the audit cursor so the next windowed read picks up the appended bytes.
-  contextCache.resetAuditCursor(projectRoot);
 }
 
 function parseAuditLogLine(line: string): AuditLogEntry | null {

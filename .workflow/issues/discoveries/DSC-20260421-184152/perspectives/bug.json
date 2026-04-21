@@ -1,0 +1,41 @@
+{
+  "perspective": "bug",
+  "findings": [
+    {
+      "id": "BUG-001",
+      "title": "Windowed audit reads drop still-valid get_rules events after the first call",
+      "priority": "high",
+      "category": "boundary",
+      "description": "readAuditLogWindowed only filters the newly appended tail once a cursor exists. The function comment says it needs the entire visible window, but the implementation returns only newEntries. A second edit-intent append inside the same 5 minute window can miss an earlier get_rules event and report false non-compliance.",
+      "file": "packages/server/src/services/audit-log.ts",
+      "line": 164,
+      "snippet": "return newEntries.filter((e) => ts - e.ts <= windowMs && e.ts <= ts);",
+      "suggested_issue": "Retain or reconstruct the full active time window when a cursor exists, then add a regression test covering two edit-intent appends within one audit window.",
+      "confidence": 0.97
+    },
+    {
+      "id": "BUG-002",
+      "title": "fab_update_registry rejects valid priority values",
+      "priority": "high",
+      "category": "input-validation",
+      "description": "The tool input schema and TypeScript type define data.priority as number, but the persisted agents meta schema only accepts 'high' | 'medium' | 'low'. Passing the documented enum value fails tool validation, while passing a number survives tool validation but fails in updateRegistry when agentsMetaNodeSchema parses the node.",
+      "file": "packages/server/src/tools/update-registry.ts",
+      "line": 14,
+      "snippet": "priority?: number;",
+      "suggested_issue": "Align fab_update_registry inputSchema and UpdateRegistryInput with agentsMetaNodeSchema so add-node and update-node accept the same priority enum end-to-end.",
+      "confidence": 0.99
+    },
+    {
+      "id": "BUG-003",
+      "title": "MCP event lines in .intent-ledger.jsonl defeat CLI duplicate suppression",
+      "priority": "high",
+      "category": "integration-gap",
+      "description": "HTTP mode appends MCP transport events into .intent-ledger.jsonl, while ledger-append de-duplicates only against the last physical line in that file. If the tail line is kind='mcp-event', hasMatchingTailEntry returns false and the same human commit intent can be appended again on the next pre-commit run.",
+      "file": "packages/cli/src/commands/ledger-append.ts",
+      "line": 118,
+      "snippet": "const parsed = JSON.parse(tail) as Partial<HumanLedgerEntry>;",
+      "suggested_issue": "Either separate MCP transport storage from the human/AI intent ledger or make hasMatchingTailEntry scan backward to the most recent real ledger entry.",
+      "confidence": 0.93
+    }
+  ]
+}

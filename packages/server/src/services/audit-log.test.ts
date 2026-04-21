@@ -74,6 +74,76 @@ describe("audit-log", () => {
       window_ms: 5_000,
     });
   });
+
+  it("retains earlier in-window get_rules entries across cursor-based reads", async () => {
+    const target = createFixtureRoot("audit-log-window");
+
+    await appendGetRulesAuditEvent(target, {
+      path: "src/example.ts",
+      ts: 1_000,
+      client_hash: "rev-1",
+    });
+
+    expect(await readAuditLog(target, { ts: 2_000, windowMs: 5_000 })).toEqual([
+      {
+        kind: "audit-event",
+        event: "get_rules",
+        ts: 1_000,
+        path: "src/example.ts",
+        client_hash: "rev-1",
+      },
+    ]);
+
+    const firstEdit = await appendEditIntentAuditEvents(target, {
+      affected_paths: ["src/example.ts"],
+      intent: "first edit",
+      ledger_entry_id: "ledger:first",
+      ts: 3_000,
+      window_ms: 5_000,
+    });
+    const secondEdit = await appendEditIntentAuditEvents(target, {
+      affected_paths: ["src/example.ts"],
+      intent: "second edit",
+      ledger_entry_id: "ledger:second",
+      ts: 4_000,
+      window_ms: 5_000,
+    });
+
+    expect(firstEdit.compliance.compliant).toBe(true);
+    expect(secondEdit.compliance.compliant).toBe(true);
+    expect(secondEdit.entries[0]?.matched_get_rules_ts).toBe(1_000);
+    expect(await readAuditLog(target, { ts: 4_000, windowMs: 5_000 })).toEqual([
+      {
+        kind: "audit-event",
+        event: "get_rules",
+        ts: 1_000,
+        path: "src/example.ts",
+        client_hash: "rev-1",
+      },
+      {
+        kind: "audit-event",
+        event: "edit_intent",
+        ts: 3_000,
+        path: "src/example.ts",
+        compliant: true,
+        intent: "first edit",
+        ledger_entry_id: "ledger:first",
+        matched_get_rules_ts: 1_000,
+        window_ms: 5_000,
+      },
+      {
+        kind: "audit-event",
+        event: "edit_intent",
+        ts: 4_000,
+        path: "src/example.ts",
+        compliant: true,
+        intent: "second edit",
+        ledger_entry_id: "ledger:second",
+        matched_get_rules_ts: 1_000,
+        window_ms: 5_000,
+      },
+    ]);
+  });
 });
 
 function createFixtureRoot(prefix: string): string {
