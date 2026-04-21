@@ -11,7 +11,10 @@ import {
   type StreamId,
 } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import type { JSONRPCMessage } from "@modelcontextprotocol/sdk/types.js";
+import chokidar from "chokidar";
 
+import { contextCache } from "./cache.js";
+import { AGENTS_MD_RESOURCE_URI } from "./constants.js";
 import { registerDoctorApi } from "./api/doctor.js";
 import { createEventsHandler } from "./api/events.js";
 import { registerHistoryApi } from "./api/history.js";
@@ -25,6 +28,7 @@ import { createBearerAuthMiddleware } from "./middleware/bearer-auth.js";
 
 const DEFAULT_HOST = "127.0.0.1";
 const LEDGER_FILE = ".intent-ledger.jsonl";
+const NOTIFY_DEBOUNCE_MS = 200;
 
 type FabricHttpSession = {
   server: McpServer;
@@ -127,11 +131,49 @@ export function createFabricHttpApp(options: CreateFabricHttpAppOptions) {
 
   process.env.FABRIC_PROJECT_ROOT = projectRoot;
 
+  // Watch agents.meta.json and AGENTS.md to invalidate the hot-path cache.
+  // This is a persistent, lightweight watcher separate from the SSE watcher
+  // in api/events.ts (which is client-lifecycle-based).
+  const cacheWatcher = chokidar.watch(
+    [".fabric/agents.meta.json", "AGENTS.md"],
+    {
+      cwd: projectRoot,
+      ignoreInitial: true,
+      awaitWriteFinish: {
+        stabilityThreshold: 120,
+        pollInterval: 20,
+      },
+    },
+  );
+
+  let agentsMdNotifyTimer: ReturnType<typeof setTimeout> | undefined;
+  let toolListNotifyTimer: ReturnType<typeof setTimeout> | undefined;
+
+  cacheWatcher.on("change", (relativePath: string) => {
+    const normalized = relativePath.replaceAll("\\", "/");
+    if (normalized === ".fabric/agents.meta.json") {
+      contextCache.invalidate("file_watch", projectRoot);
+      // Debounced: notify all sessions that the tool list may have changed
+      clearTimeout(toolListNotifyTimer);
+      toolListNotifyTimer = setTimeout(() => {
+        notifyAllSessions(sessions, "tools/list_changed");
+      }, NOTIFY_DEBOUNCE_MS);
+    } else if (normalized === "AGENTS.md") {
+      contextCache.invalidate("file_watch", projectRoot);
+      // Debounced: notify all sessions that the AGENTS.md resource was updated
+      clearTimeout(agentsMdNotifyTimer);
+      agentsMdNotifyTimer = setTimeout(() => {
+        notifyAllSessions(sessions, "resource_updated", AGENTS_MD_RESOURCE_URI);
+      }, NOTIFY_DEBOUNCE_MS);
+    }
+  });
+
   app.disable("x-powered-by");
   if (authToken !== undefined) {
     const bearerAuth = createBearerAuthMiddleware(authToken);
     app.use("/api", bearerAuth);
     app.use("/events", bearerAuth);
+    app.use("/mcp", bearerAuth);
   }
 
   registerRulesApi(app, projectRoot);
@@ -167,6 +209,34 @@ export function createFabricHttpApp(options: CreateFabricHttpAppOptions) {
   registerDashboardStatic(app, { dashboardDistPath, dev });
 
   return app;
+}
+
+/**
+ * Sends an MCP notification to all active sessions.
+ *
+ * @param sessions  The active sessions map.
+ * @param kind      "tools/list_changed" | "resource_updated" | "resources/list_changed"
+ * @param uri       Resource URI — required when kind is "resource_updated".
+ */
+export function notifyAllSessions(
+  sessions: Map<string, FabricHttpSession>,
+  kind: "tools/list_changed" | "resource_updated" | "resources/list_changed",
+  uri?: string,
+): void {
+  for (const { server } of sessions.values()) {
+    try {
+      if (kind === "tools/list_changed") {
+        server.sendToolListChanged();
+      } else if (kind === "resources/list_changed") {
+        server.sendResourceListChanged();
+      } else if (kind === "resource_updated" && uri !== undefined) {
+        // McpServer only exposes list-level notify; fine-grained update requires inner Server API
+        void server.server.sendResourceUpdated({ uri });
+      }
+    } catch {
+      // Best-effort — a disconnected session should not block others.
+    }
+  }
 }
 
 async function createSession(

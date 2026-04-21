@@ -1,10 +1,12 @@
+import { readFile } from "node:fs/promises";
 import type { Server as HttpServer } from "node:http";
-import { resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 
+import { AGENTS_MD_RESOURCE_URI } from "./constants.js";
 import { registerAppendIntent } from "./tools/append-intent.js";
 import { registerGetRules } from "./tools/get-rules.js";
 import { registerPlanContext } from "./tools/plan-context.js";
@@ -31,6 +33,8 @@ function formatError(error: unknown): string {
   return `Unknown error: ${String(error)}`;
 }
 
+export { AGENTS_MD_RESOURCE_URI } from "./constants.js";
+
 export function createFabricServer(): McpServer {
   const server = new McpServer({
     name: "fabric-context-server",
@@ -41,6 +45,28 @@ export function createFabricServer(): McpServer {
   registerPlanContext(server);
   registerAppendIntent(server);
   registerUpdateRegistry(server);
+
+  server.registerResource(
+    "AGENTS.md",
+    AGENTS_MD_RESOURCE_URI,
+    {
+      description: "L0 fabric rules file — global agent instructions for this project",
+      mimeType: "text/markdown",
+    },
+    async (_uri: URL) => {
+      const projectRoot = process.env.FABRIC_PROJECT_ROOT ?? process.cwd();
+      const content = await readFile(join(projectRoot, "AGENTS.md"), "utf8");
+      return {
+        contents: [
+          {
+            uri: AGENTS_MD_RESOURCE_URI,
+            mimeType: "text/markdown",
+            text: content,
+          },
+        ],
+      };
+    },
+  );
 
   return server;
 }
