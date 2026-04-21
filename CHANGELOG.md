@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-04-21
+
+### Added
+
+- **ContextCache**: unified hot-path cache for agents.meta.json, GetRulesContext, and audit.jsonl sliding-window byte-offset cursor. TTL-based with eager invalidation on meta writes and file-watch events.
+- **AGENTS.md MCP resource** (`fabric://agents-md`): clients can now read project-level L0 rules directly via MCP resource protocol.
+- **File-watch notifications**: chokidar watches `agents.meta.json` and `AGENTS.md`, invalidates cache, and sends debounced `tools/list_changed` / `resource_updated` MCP notifications to all active sessions.
+- **SSE ring buffer + reconnect**: server-side 50-entry ring buffer enables `Last-Event-ID`-based replay for reconnecting clients. Dashboard SSE client rewritten with fetch-based streaming, exponential-backoff reconnect, and event ID tracking.
+- **`fabric update` CLI command**: refreshes MCP host configuration and git hooks without re-creating Fabric files — useful after CLI upgrades.
+- **Pre-commit fast-path**: hook now reads staged files and skips all checks when none match any fabric-managed `scope_glob`, `AGENTS.md`, or ledger files.
+- **`EditIntentComplianceResult`**: `appendEditIntentAuditEvents` returns structured compliance data (compliant, matched_get_rules_ts, window_ms) alongside audit entries.
+
+### Changed
+
+- All four MCP tools (`fab_append_intent`, `fab_get_rules`, `fab_plan_context`, `fab_update_registry`) migrated from `server.tool()` to `server.registerTool()` with typed `outputSchema` definitions.
+- Audit log reads use byte-offset cursor tracking — consecutive calls never re-read already-seen bytes.
+- Service layer (`get-rules`, `update-registry`, `append-intent`) uses ContextCache for meta and context lookups.
+- Auth middleware now covers `/mcp` endpoint in addition to `/api` and `/events`.
+- `bootstrap` and `config` subcommands unhidden from CLI help output.
+
+## [1.2.0] - 2026-04-20
+
+### Added
+
+- **One-shot `fabric init`**: streamlined initialization flow.
+- **`fabric` binary alias**: the CLI can now be invoked as `fabric` in addition to `fab`.
+
 ## [1.1.0] - 2026-04-19
 
 ### Added
