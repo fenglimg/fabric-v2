@@ -43,9 +43,16 @@ export function registerAppendIntent(server: McpServer): void {
       const projectRoot = resolveProjectRoot();
       const result = await appendIntent(projectRoot, { entry });
 
+      const structuredContent: z.infer<typeof outputSchema> = {
+        success: result.success,
+        timestamp: result.timestamp,
+        entry: { ...result.entry },
+        compliance: result.compliance,
+      };
+
       return {
         content: [{ type: "text" as const, text: JSON.stringify(result) }],
-        structuredContent: result as z.infer<typeof outputSchema>,
+        structuredContent,
       };
     },
   );
