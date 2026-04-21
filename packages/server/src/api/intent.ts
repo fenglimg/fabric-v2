@@ -14,7 +14,7 @@ export function registerIntentApi(app: FabricHttpApp, projectRoot: string): void
     }
 
     try {
-      readAgentsMeta(projectRoot);
+      await readAgentsMeta(projectRoot);
       const result = await annotateIntent(projectRoot, validation.data);
       res.status(result.created ? 201 : 200).json(result);
     } catch (error) {

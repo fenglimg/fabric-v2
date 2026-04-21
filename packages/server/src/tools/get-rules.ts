@@ -12,27 +12,38 @@ const inputSchema = {
     .describe("Revision hash from prior fab_get_rules response; enables stale detection"),
 };
 
-function createTextResponse(payload: unknown) {
-  return {
-    content: [
-      {
-        type: "text" as const,
-        text: JSON.stringify(payload),
-      },
-    ],
-  };
-}
+const rulesEntrySchema = z.object({ path: z.string(), content: z.string() });
+const humanLockedSchema = z.object({ file: z.string(), excerpt: z.string() });
+
+const outputSchema = z.object({
+  revision_hash: z.string(),
+  stale: z.boolean(),
+  rules: z.object({
+    L0: z.string(),
+    L1: z.array(rulesEntrySchema),
+    L2: z.array(rulesEntrySchema),
+    human_locked_nearby: z.array(humanLockedSchema),
+  }),
+});
 
 export function registerGetRules(server: McpServer): void {
-  server.tool(
+  server.registerTool(
     "fab_get_rules",
-    "MANDATORY: Call before modifying any file to retrieve Fabric rules for a target path.",
-    inputSchema,
+    {
+      description:
+        "Call before modifying any file to retrieve Fabric rules for a target path.",
+      inputSchema,
+      outputSchema,
+      annotations: { readOnlyHint: true },
+    },
     async ({ path, client_hash }: GetRulesInput) => {
       const projectRoot = resolveProjectRoot();
       const result = await getRules(projectRoot, { path, client_hash });
 
-      return createTextResponse(result);
+      return {
+        content: [{ type: "text" as const, text: JSON.stringify(result) }],
+        structuredContent: result,
+      };
     },
   );
 }

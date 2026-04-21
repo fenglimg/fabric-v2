@@ -17,7 +17,7 @@ export function registerLedgerApi(app: FabricHttpApp, projectRoot: string): void
     }
 
     try {
-      readAgentsMeta(projectRoot);
+      await readAgentsMeta(projectRoot);
       res.json(await readLedger(projectRoot, validation.data));
     } catch (error) {
       sendUnknownError(res, error);

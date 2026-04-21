@@ -8,7 +8,7 @@ import { type FabricHttpApp, sendError, sendUnknownError, sendValidationError } 
 export function registerHumanLockApi(app: FabricHttpApp, projectRoot: string): void {
   app.get("/api/human-lock", async (_req, res) => {
     try {
-      readAgentsMeta(projectRoot);
+      await readAgentsMeta(projectRoot);
       res.json(await readHumanLock(projectRoot));
     } catch (error) {
       sendUnknownError(res, error);
@@ -27,7 +27,7 @@ export function registerHumanLockApi(app: FabricHttpApp, projectRoot: string): v
     }
 
     try {
-      readAgentsMeta(projectRoot);
+      await readAgentsMeta(projectRoot);
       const entry = await readHumanLockEntry(projectRoot, validation.data.file);
 
       if (entry === null) {
@@ -55,7 +55,7 @@ export function registerHumanLockApi(app: FabricHttpApp, projectRoot: string): v
     }
 
     try {
-      readAgentsMeta(projectRoot);
+      await readAgentsMeta(projectRoot);
       res.json(await approveHumanLock(projectRoot, validation.data));
     } catch (error) {
       sendUnknownError(res, error);
