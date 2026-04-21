@@ -33,8 +33,8 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build shared (needed for downstream typechecks)
-        run: pnpm --filter @fenglimg/fabric-shared build
+      - name: Build workspace (needed for cross-package typechecks)
+        run: pnpm -r build
 
       - name: Typecheck workspace
         run: pnpm -r exec tsc --noEmit
