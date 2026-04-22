@@ -99,7 +99,7 @@ Added prepare script to package.json
 
 ## 阶段 3：完成 AI Handoff
 
-在 Claude Code 中打开同一仓库，用普通消息继续 initialization transaction：
+在 Claude Code 或 Codex 中打开同一仓库，用普通消息继续 initialization transaction：
 
 ```text
 I just ran fabric init in this repo. Finish AGENTS.md initialization.
@@ -107,9 +107,11 @@ I just ran fabric init in this repo. Finish AGENTS.md initialization.
 
 预期结果：
 
-- `agents-md-init` 读取 `.fabric/forensic.json`。
+- Claude 的 `agents-md-init` 或 Codex 的 repo skill `fabric-init` 读取 `.fabric/forensic.json`。
 - 维护者确认 framework facts 与 invariants。
 - Fabric 写入 `.fabric/init-context.json` 并更新项目专属 rule nodes 与 metadata。
+
+若使用 Codex 并希望 hooks 自动提醒，请确认 Codex 配置中已启用 `features.codex_hooks = true`。否则 `.codex/hooks.json` 不会生效，但你仍可手动使用 repo skill `.agents/skills/fabric-init/SKILL.md`。
 
 更完整的 interview 流程（含 framework-confirm 与 invariants 阶段）见 [Initialization Guide](./initialization.md)。
 

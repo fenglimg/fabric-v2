@@ -2,7 +2,7 @@
 
 > 请从标准上手路径开始：[Getting Started](./getting-started.md)。本文是 `fabric init` 状态机、Claude handoff 与 initialization 内部的深度技术参考。
 
-`fabric init` 是一站式初始化命令。它为项目提供 evidence 与 protocol，自动完成 bootstrap、MCP config 与 git hooks 安装，并使 Claude Code 能通过 `agents-md-init` skill 完成项目专属的规则初始化。
+`fabric init` 是一站式初始化命令。它为项目提供 evidence 与 protocol，自动完成 bootstrap、MCP config 与 git hooks 安装，并使 Claude Code 或 Codex 在安装对应 follow-up assets 后继续完成项目专属的规则初始化。
 
 > `fabric` 是主命令，`fab` 是永久别名。下文统一使用 `fabric`。
 
@@ -13,7 +13,7 @@
 1. Evidence：扫描仓库并写入 `.fabric/forensic.json`。
 2. Protocol install：写入 `.fabric/bootstrap/README.md`、`.fabric/agents.meta.json`、`.fabric/human-lock.json`，以及 `.claude/` 下的 Claude 集成文件。
 3. One-shot setup：自动执行 bootstrap install、MCP config install 与 git hooks install。
-4. Trigger：打印同 session handoff 的 reason 行，并安装 Stop hook 以支持跨 session handoff。
+4. Trigger：打印同 session handoff 的 reason 行，并安装可用客户端的 follow-up assets 以支持跨 session handoff。
 
 这种拆分是故意的：Fabric 让 CLI 步骤快速且确定，再由 AI client 完成 semantic initialization。
 
@@ -25,7 +25,10 @@
 - `fabric bootstrap install` 只负责确保或刷新这份内部 guide。
 - bootstrap 阶段不再生成根级 `AGENTS.md`、`CLAUDE.md` 或 `GEMINI.md`。
 - Claude Code 的 handoff 仍通过 `.claude/skills/agents-md-init/SKILL.md`、Stop hook 与 `.claude/settings.json` 接力。
+- Codex 的 handoff 通过 repo skill `.agents/skills/fabric-init/SKILL.md` 与 repo hooks `.codex/hooks.json` 接力。
 - 其他 MCP-capable 客户端通过各自的 MCP config 发现 Fabric server，并在运行期调用 `fab_get_rules`。
+
+> Codex hooks 依赖 `features.codex_hooks = true`。若该 feature 未启用，Codex 仍可手动使用 repo skill `.agents/skills/fabric-init/SKILL.md`，但 `.codex/hooks.json` 中的 `SessionStart` / `Stop` hooks 不会触发。
 
 当前 bootstrap hard rules 仍保持同一组核心约束：
 
@@ -85,7 +88,7 @@ fabric init
 
 - Fabric 扫描仓库并写入 `.fabric/forensic.json`。
 - Fabric 写入 `.fabric/bootstrap/README.md` 与 metadata 文件。
-- Fabric 安装 `.claude/skills/agents-md-init/SKILL.md`、`.claude/hooks/agents-md-init-reminder.cjs` 与 `.claude/settings.json`。
+- Fabric 安装 `.claude/skills/agents-md-init/SKILL.md`、`.claude/hooks/agents-md-init-reminder.cjs`、`.claude/settings.json`，并安装 Codex 的 `.agents/skills/fabric-init/SKILL.md`、`.codex/hooks.json` 与 `.codex/hooks/*.cjs`。
 - Fabric 自动运行 bootstrap install、MCP config install 与 git hooks install。
 
 来自 disposable `werewolf-minigame` 示例运行的真实输出：
@@ -116,7 +119,7 @@ Stage 2 之后，项目已准备好由 AI 接管，但在 `.fabric/init-context.
 在 Claude Code 中打开同一仓库并发送普通消息。支持两种触发路径：
 
 - Same-session path：若在 Claude Code 的 Bash tool 中运行 `fabric init`，模型会看到 Stage 2 的 reason 行并触发 `agents-md-init`。
-- Cross-session path：若在外部终端运行 `fabric init`，Stop hook 会检测存在 `.fabric/forensic.json` 但缺少 `.fabric/init-context.json`，并阻塞直到运行 `agents-md-init`。
+- Cross-session path：若在外部终端运行 `fabric init`，Claude Stop hook 或 Codex Stop hook 会检测存在 `.fabric/forensic.json` 但缺少 `.fabric/init-context.json`，并继续提醒完成 initialization follow-up。
 
 示例 prompt：
 
@@ -232,9 +235,10 @@ fabric sync-meta
 | Scenario | Trigger mechanism | Result |
 | --- | --- | --- |
 | 自 Claude Code Bash tool 运行 `fabric init` | 模型从 tool 结果读取 Stage 2 reason 行 | 可在同 session 立即触发 `agents-md-init` |
-| 在外部终端运行 `fabric init` | Claude Code Stop hook 发现存在 `forensic.json` 但无 `init-context.json` | 下一次 Claude Code session 在 initialization 继续前被阻塞 |
+| 在外部终端运行 `fabric init` | Claude Code Stop hook 或 Codex Stop hook 发现存在 `forensic.json` 但无 `init-context.json` | 下一次客户端 session 会收到 initialization follow-up 提醒 |
 | 在 CI 或其他非 TTY 环境运行 `fabric init` | 无 interactive takeover；命令仅写文件并记录 reason 行 | `.fabric/bootstrap/README.md` 与 `.fabric/` artifact 仍有效，但 `.fabric/init-context.json` 不会自动创建 |
-| 非 Claude client | `.claude/` 文件在 Claude Code 外为无害 no-op | `.fabric/bootstrap/README.md` 可作为稳定 bootstrap 入口，但今日尚无自动 `agents-md-init` handoff |
+| Codex（已启用 `features.codex_hooks = true`） | repo `.codex/hooks.json` 的 `SessionStart` / `Stop` hooks + `.agents/skills/fabric-init/SKILL.md` | 可在仓库内得到 initialization 提醒与 follow-up 上下文 |
+| 其他非 Claude client | `.claude/` 与 `.codex/` 文件在无关客户端中为无害 no-op | `.fabric/bootstrap/README.md` 可作为稳定 bootstrap 入口 |
 
 ## 故障排除
 
@@ -246,9 +250,10 @@ fabric sync-meta
 test -f .fabric/forensic.json && echo "forensic: ok"
 test ! -f .fabric/init-context.json && echo "init-context: missing"
 test -f .claude/hooks/agents-md-init-reminder.cjs && echo "hook: ok"
+test -f .codex/hooks.json && echo "codex hooks: ok"
 ```
 
-然后确认 `.claude/settings.json` 包含指向 `.claude/hooks/agents-md-init-reminder.cjs` 的 Stop hook entry。若三者皆存在，在 Claude Code 中打开仓库并发送例如：
+然后确认 `.claude/settings.json` 包含指向 `.claude/hooks/agents-md-init-reminder.cjs` 的 Stop hook entry，或 `.codex/hooks.json` 已存在且 Codex 侧启用了 `features.codex_hooks = true`。若条件满足，在对应客户端中打开仓库并继续 initialization。
 
 ```text
 Use the agents-md-init skill to finish this project's initialization.
