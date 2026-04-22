@@ -2,18 +2,29 @@
 
 > 请从标准上手路径开始：[Getting Started](./getting-started.md)。本文是 `fabric init` 状态机、Claude handoff 与 initialization 内部的深度技术参考。
 
-`fabric init` 是一站式初始化命令。它为项目提供 evidence 与 protocol，自动完成 bootstrap、MCP config 与 git hooks 安装，并使 Claude Code 或 Codex 在安装对应 follow-up assets 后继续完成项目专属的规则初始化。
+`fabric init` 是 Fabric 的 canonical installer。它先构建初始化计划，再根据运行环境进入以下路径之一：
+
+- `fabric init`
+  在 TTY 中打开 wizard，确认计划后执行。
+- `fabric init --yes`
+  直接接受当前计划并执行，不进入 wizard。
+- `fabric init --plan`
+  仅打印初始化计划，不写文件。
+- `fabric init --reapply --yes`
+  对已有 Fabric setup 重新应用 Fabric 管理的 scaffold 与阶段安装器。
+
+执行路径一旦确认，`fabric init` 会为项目提供 evidence 与 protocol，自动完成 bootstrap、MCP config 与 git hooks 安装，并使 Claude Code 或 Codex 在安装对应 follow-up assets 后继续完成项目专属的规则初始化。
 
 > `fabric` 是主命令，`fab` 是永久别名。下文统一使用 `fabric`。
 
 ## 概览
 
-`fabric init` 在一条命令里做三件事：
+`fabric init` 在一条命令里做四件事：
 
-1. Evidence：扫描仓库并写入 `.fabric/forensic.json`。
-2. Protocol install：写入 `.fabric/bootstrap/README.md`、`.fabric/agents.meta.json`、`.fabric/human-lock.json`，以及 `.claude/` 下的 Claude 集成文件。
-3. One-shot setup：自动执行 bootstrap install、MCP config install 与 git hooks install。
-4. Trigger：打印同 session handoff 的 reason 行，并安装可用客户端的 follow-up assets 以支持跨 session handoff。
+1. Plan：收集 target、阶段选择和 MCP 安装范围，必要时通过 TTY wizard 让用户确认。
+2. Evidence：扫描仓库并写入 `.fabric/forensic.json`。
+3. Protocol install：写入 `.fabric/bootstrap/README.md`、`.fabric/agents.meta.json`、`.fabric/human-lock.json`，以及 Claude/Codex follow-up assets。
+4. Follow-up setup：自动执行 bootstrap install、MCP config install、git hooks install，并打印同 session handoff 的 reason 行。
 
 这种拆分是故意的：Fabric 让 CLI 步骤快速且确定，再由 AI client 完成 semantic initialization。
 
@@ -86,6 +97,11 @@ fabric init
 
 本步会发生：
 
+- 若当前终端为 TTY，先显示 wizard 并让你确认 plan。
+- 若使用 `--plan`，本步只输出计划摘要，不写任何文件。
+- 若使用 `--yes`，跳过 wizard，直接按当前 flags 执行。
+- 若使用 `--reapply --yes`，会以“重应用”模式覆盖 Fabric 管理的 scaffold 文件。
+
 - Fabric 扫描仓库并写入 `.fabric/forensic.json`。
 - Fabric 写入 `.fabric/bootstrap/README.md` 与 metadata 文件。
 - Fabric 安装 `.claude/skills/agents-md-init/SKILL.md`、`.claude/hooks/agents-md-init-reminder.cjs`、`.claude/settings.json`，并安装 Codex 的 `.agents/skills/fabric-init/SKILL.md`、`.codex/hooks.json` 与 `.codex/hooks/*.cjs`。
@@ -110,7 +126,7 @@ completed bootstrap: ...
 Reason: .fabric/forensic.json is ready; some detected clients still need manual follow-up because no Fabric skill is installed for them yet.
 ```
 
-Stage 2 之后，项目已准备好由 AI 接管，但在 `.fabric/init-context.json` 出现之前，initialization 仍为 pending。
+Stage 2 之后，项目已准备好由 AI 接管，但在 `.fabric/init-context.json` 出现之前，initialization 仍为 pending。若你只运行了 `fabric init --plan`，则 Stage 2 其实尚未开始，因为没有任何文件被写入。
 
 ---
 
@@ -236,7 +252,8 @@ fabric sync-meta
 | --- | --- | --- |
 | 自 Claude Code Bash tool 运行 `fabric init` | 模型从 tool 结果读取 Stage 2 reason 行 | 可在同 session 立即触发 `agents-md-init` |
 | 在外部终端运行 `fabric init` | Claude Code Stop hook 或 Codex Stop hook 发现存在 `forensic.json` 但无 `init-context.json` | 下一次客户端 session 会收到 initialization follow-up 提醒 |
-| 在 CI 或其他非 TTY 环境运行 `fabric init` | 无 interactive takeover；命令仅写文件并记录 reason 行 | `.fabric/bootstrap/README.md` 与 `.fabric/` artifact 仍有效，但 `.fabric/init-context.json` 不会自动创建 |
+| 在 CI 或其他非 TTY 环境运行 `fabric init --yes` | 无 wizard takeover；命令直接写文件并记录 reason 行 | `.fabric/bootstrap/README.md` 与 `.fabric/` artifact 仍有效，但 `.fabric/init-context.json` 不会自动创建 |
+| 在任意环境运行 `fabric init --plan` | 只打印计划与核心写入摘要 | 不落盘，适合在 CI/脚本里先做审批或预览 |
 | Codex（已启用 `features.codex_hooks = true`） | repo `.codex/hooks.json` 的 `SessionStart` / `Stop` hooks + `.agents/skills/fabric-init/SKILL.md` | 可在仓库内得到 initialization 提醒与 follow-up 上下文 |
 | 其他非 Claude client | `.claude/` 与 `.codex/` 文件在无关客户端中为无害 no-op | `.fabric/bootstrap/README.md` 可作为稳定 bootstrap 入口 |
 
@@ -268,6 +285,13 @@ fabric init
 ```
 
 若因已存在 `.fabric/bootstrap/README.md`、`.fabric/forensic.json` 或其他 `.fabric/` 文件而中止，先检查这些文件，不要覆盖。`fabric init` 刻意设计为非破坏性（除非使用 `--force`）。
+若你确认要重新应用 Fabric 管理的 scaffold，请优先使用：
+
+```bash
+fabric init --reapply --yes
+```
+
+`--force` 仍是底层执行选项，但从用户心智模型上，`--reapply` 才是当前推荐的重应用入口。
 
 ### 未生成 `.fabric/bootstrap/README.md`，或仍为通用 bootstrap
 

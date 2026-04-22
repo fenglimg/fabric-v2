@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-04-22
+
+### Added
+
+- Added first-class Codex follow-up assets during `fabric init`, including the repo skill at `.agents/skills/fabric-init/SKILL.md`, `SessionStart` / `Stop` hook templates under `.codex/hooks/`, and repo-level `.codex/hooks.json` wiring that works with `features.codex_hooks = true`.
+- Added a default `@clack/prompts`-based TTY wizard for `fabric init`, plus adapter-level test coverage that locks intro / grouped planning / cancel / outro behavior.
+
+### Changed
+
+- Reframed `fabric init` around a canonical plan model: `fabric init` now launches the TTY wizard by default, `fabric init --yes` is the non-interactive execution path, `fabric init --plan` is the dry-run preview path, and `fabric init --reapply --yes` is the managed reapply path for existing setups.
+- The wizard now groups stage selection and MCP install scope into one planning interaction, and `--plan` / `--reapply` flows now render explicit mode banners instead of relying on implicit output cues.
+- Init planning/execution was split into reusable plan and executor primitives so scaffold generation, stage execution order, and wizard rewrites all flow through one typed model.
+
+### Documentation
+
+- Updated `README.md`, `docs/getting-started.md`, and `docs/initialization.md` to present the new `fabric init` mental model, including TTY wizard guidance, non-interactive variants, dry-run usage, and reapply semantics.
+
+### Tests
+
+- Expanded init acceptance coverage for plan-only, reapply, MCP install scope, non-destructive planning, and real `@clack/prompts` adapter mocking.
+
 ## [1.3.1] - 2026-04-22
 
 ### Changed

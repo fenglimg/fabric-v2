@@ -29,17 +29,24 @@ AI Agent <-> Fabric Ledger <-> Human Developer
 ## Quick Start
 
 1. Install Fabric and build once if you are validating from this monorepo.
-2. Run `fabric init` in the target project for the one-shot setup flow.
+2. Run `fabric init` in the target project. In a TTY it opens the guided wizard by default.
 3. Start `fabric serve` and verify `fab_get_rules` in your client.
 
 `fab` is a permanent alias, so you can use either binary. The docs use `fabric` as the primary command.
-`fabric init` auto-runs `bootstrap install`, `config install`, and `hooks install`. Use those standalone commands only when you want a targeted re-run.
+`fabric init` is now the canonical installer surface:
+
+- `fabric init` launches the TTY wizard and then executes the selected plan.
+- `fabric init --yes` accepts the current CLI flag plan and runs non-interactively.
+- `fabric init --plan` prints the install plan without writing files.
+- `fabric init --reapply --yes` forcefully reapplies Fabric-managed scaffold files and follow-up stages over an existing setup.
+
+`fabric init` still auto-runs bootstrap, MCP config, and git hooks. Use the standalone commands only when you want a narrowly targeted re-run outside the main init flow.
 
 Use the canonical onboarding guide for the full 7-stage walkthrough, expected CLI output, and MCP activation checks: [docs/getting-started.md](./docs/getting-started.md).
 
 ## Initialization Guide
 
-`fabric init` now does more than create a scaffold. It writes the evidence pack in `.fabric/`, installs the Claude handoff files under `.claude/`, and keeps the bootstrap guide inside `.fabric/bootstrap/README.md` instead of generating root-level bootstrap docs. Start with [docs/getting-started.md](./docs/getting-started.md), then use [docs/initialization.md](./docs/initialization.md) for the deep-dive state machine, bootstrap protocol, and `agents-md-init` handoff flow.
+`fabric init` now does more than create a scaffold. It builds an installation plan, lets TTY users confirm or reshape that plan through the wizard, writes the evidence pack in `.fabric/`, installs Claude/Codex follow-up assets, and keeps the bootstrap guide inside `.fabric/bootstrap/README.md` instead of generating root-level bootstrap docs. Start with [docs/getting-started.md](./docs/getting-started.md), then use [docs/initialization.md](./docs/initialization.md) for the deep-dive state machine, canonical flags, bootstrap protocol, and `agents-md-init` / `fabric-init` handoff flow.
 
 ## Compliance Audit
 
@@ -64,6 +71,12 @@ Use these only when you need a targeted re-run outside the default `fabric init`
 - `fabric bootstrap install`
 - `fabric config install`
 - `fabric hooks install`
+
+Canonical `init` variants:
+
+- `fabric init --plan`
+- `fabric init --yes`
+- `fabric init --reapply --yes`
 
 `fabric bootstrap install` now refreshes the internal bootstrap guide at `.fabric/bootstrap/README.md`. It no longer emits root `AGENTS.md`, `CLAUDE.md`, or `GEMINI.md`.
 

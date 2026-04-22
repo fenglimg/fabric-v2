@@ -44,7 +44,43 @@ fabric init
 - 尚不存在 `.fabric/`。
 - 在任意写入步骤前，先审阅既有 `.claude/`、`.cursor/`、`.codex/`、`.windsurf/` 或 `.roo/` config。
 
-当前初始化流程的中文本地化 stdout 示例：
+Canonical `init` 心智模型：
+
+- `fabric init`
+  在 TTY 中启动 wizard，确认 target、阶段选择和 MCP 安装范围后执行。
+- `fabric init --yes`
+  使用当前 CLI flags 直接执行，不进入 wizard。
+- `fabric init --plan`
+  仅打印安装计划，不写文件。
+- `fabric init --reapply --yes`
+  针对已初始化仓库重新应用 Fabric 管理的 scaffold 和后续阶段。
+
+当前推荐的首次初始化路径是：先在 TTY 中运行 `fabric init`，确认 wizard 给出的计划，再让命令执行。若你要在 CI、脚本或非交互终端里运行，请显式使用 `--yes` 或 `--plan`。
+
+`fabric init --plan` 的最小示例：
+
+```text
+$ fabric init --plan
+Fabric init dry run
+Fabric init plan
+Target: /path/to/repo
+Plan: bootstrap=yes mcp=yes hooks=yes mcp-install=global
+Detected clients: Claude Code CLI, Codex CLI
+Core writes:
+  - /path/to/repo/.fabric/bootstrap/README.md
+  - /path/to/repo/.fabric/agents.meta.json
+  - /path/to/repo/.fabric/human-lock.json
+  - /path/to/repo/.fabric/forensic.json
+Mode=default bootstrap=yes mcp=yes hooks=yes
+```
+
+非交互执行时的典型调用：
+
+```bash
+fabric init --yes
+```
+
+当前初始化流程的中文本地化输出应理解为“plan -> scaffold -> stages -> reason”，而不是旧版的单次一把梭示例：
 
 ```text
 $ fabric init
@@ -93,7 +129,7 @@ Added prepare script to package.json
 已完成一站式初始化。
 ```
 
-这里的 `bootstrap` 阶段只会确保 `.fabric/bootstrap/README.md` 存在并保持最新，不再生成根级 `AGENTS.md`、`CLAUDE.md` 或 `GEMINI.md`。
+这里的 `bootstrap` 阶段只会确保 `.fabric/bootstrap/README.md` 存在并保持最新，不再生成根级 `AGENTS.md`、`CLAUDE.md` 或 `GEMINI.md`。若仓库已经存在 Fabric 产物，默认 `fabric init` 会保持非破坏性并中止；需要重应用时使用 `fabric init --reapply --yes`。
 
 本阶段结束后，仓库已具备内部 bootstrap guide 与 evidence pack，但在 client-side review 完成前，semantic initialization 尚未结束。
 
@@ -135,7 +171,7 @@ $ cat .husky/pre-commit | head -3
 FAB_BIN=$(command -v fabric || command -v fab || echo "")
 ```
 
-> 如需对某个阶段做针对性重跑，可使用独立命令：`fabric bootstrap install`、`fabric config install`、`fabric hooks install`。也可通过 `--no-bootstrap`、`--no-mcp`、`--no-hooks` 跳过 `fabric init` 中的对应阶段。
+> 如需对某个阶段做针对性重跑，可使用独立命令：`fabric bootstrap install`、`fabric config install`、`fabric hooks install`。`--no-bootstrap`、`--no-mcp`、`--no-hooks` 仍可用，但现在属于兼容标志，本质上是在改写 `init` 计划，而不是新的主命令模型。
 
 ## 阶段 5：启动本地 Control Plane
 
