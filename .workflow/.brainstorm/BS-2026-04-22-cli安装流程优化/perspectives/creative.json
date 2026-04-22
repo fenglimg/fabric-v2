@@ -1,0 +1,39 @@
+{
+  "perspective": "creative",
+  "ideas": [
+    {
+      "title": "Interactive Install Concierge",
+      "description": "Add a guided installer that asks about target ecosystem, install scope, MCP mode, hooks, and follow-up assets before executing.",
+      "novelty": 4,
+      "feasibility": 4,
+      "rationale": "Keeps Fabric's one-shot promise but turns it into a choose-and-confirm experience for TTY users."
+    },
+    {
+      "title": "Dual-path install story",
+      "description": "Split the product story into `fabric init` for automation and `fabric install` for guided onboarding.",
+      "novelty": 4,
+      "feasibility": 5,
+      "rationale": "Avoids overloading one command with conflicting expectations."
+    },
+    {
+      "title": "Capability-aware setup cards",
+      "description": "Show a pre-install matrix as selectable cards/choices, then only run the stages that matter for the detected clients.",
+      "novelty": 3,
+      "feasibility": 3,
+      "rationale": "Transforms today's passive summary into an actionable setup decision surface."
+    }
+  ],
+  "key_findings": [
+    "The most visible UX gap is the absence of user decisions between preflight and execution.",
+    "A wizard can become the primary product shape of init once compatibility constraints are relaxed."
+  ],
+  "challenged_assumptions": [
+    "A better install UX does not require a full-screen TUI."
+  ],
+  "open_questions": [
+    "Should the guided path live under `fabric install`, `fabric init --wizard`, or both?"
+  ],
+  "_metadata": {
+    "timestamp": "2026-04-22T22:20:43+0800"
+  }
+}

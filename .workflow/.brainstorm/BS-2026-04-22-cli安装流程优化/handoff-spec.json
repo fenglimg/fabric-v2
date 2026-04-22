@@ -1,0 +1,55 @@
+{
+  "session_id": "BS-2026-04-22-cli安装流程优化",
+  "topic": "重写 fabric init 为安装向导，优化 CLI 安装流程",
+  "scope_items": [
+    {
+      "title": "重构 init 为 install state machine",
+      "description": "将现有 `fabric init` 从线性 one-shot 执行器重构为 Preflight -> Detect -> Plan -> Confirm -> Execute -> Post-setup 的状态机。",
+      "implementation_approach": [
+        "定义 install plan 数据结构",
+        "拆分当前 init 中的流程判断与执行逻辑",
+        "统一 stage result 结构用于 wizard 和非交互模式"
+      ],
+      "priority": "high",
+      "estimated_complexity": "high"
+    },
+    {
+      "title": "为 init 增加交互式 prompt 层",
+      "description": "让 `fabric init` 在 TTY 下默认进入安装向导，并提供 stage/target/component 选择与确认。",
+      "implementation_approach": [
+        "选择 prompt 库（优先 inquirer 或 @clack/prompts）",
+        "实现 mode/target/component/backup/confirm 等问题流",
+        "保留 `--yes` / `--plan` / `--reapply` 等非交互或半交互变体"
+      ],
+      "priority": "high",
+      "estimated_complexity": "medium"
+    },
+    {
+      "title": "重写 init 参数与帮助文案",
+      "description": "将当前以 `--no-bootstrap/--no-mcp/--no-hooks` 为中心的参数表面重构为 plan-driven 入口。",
+      "implementation_approach": [
+        "重新设计 CLI 参数说明",
+        "更新 i18n 文案",
+        "决定哪些旧参数保留兼容映射，哪些直接移除"
+      ],
+      "priority": "high",
+      "estimated_complexity": "medium"
+    },
+    {
+      "title": "更新文档与测试体系",
+      "description": "让 README、getting-started、initialization 以及 CLI 测试与新的 init 向导流程保持一致。",
+      "implementation_approach": [
+        "更新 onboarding 文档和示例输出",
+        "新增向导模式测试与非交互模式测试",
+        "调整快照与 capability summary 断言"
+      ],
+      "priority": "medium",
+      "estimated_complexity": "medium"
+    }
+  ],
+  "recommended_workflow": "workflow-lite-plan",
+  "_metadata": {
+    "generated": "2026-04-22T22:24:30+0800",
+    "source_session": "BS-2026-04-22-cli安装流程优化"
+  }
+}

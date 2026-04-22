@@ -1,0 +1,40 @@
+{
+  "perspective": "pragmatic",
+  "ideas": [
+    {
+      "title": "Reuse current installer primitives",
+      "description": "Keep `initFabric`, `installBootstrap`, `installMcpClients`, and `installHooks` as the execution layer and only add orchestration prompts above them.",
+      "novelty": 2,
+      "feasibility": 5,
+      "rationale": "This is the lowest-risk path and preserves test coverage."
+    },
+    {
+      "title": "Use prompt-driven CLI, not terminal app",
+      "description": "If Fabric adds interactivity, prefer `inquirer` or `@clack/prompts` plus simple summary formatting.",
+      "novelty": 2,
+      "feasibility": 5,
+      "rationale": "Matches ccw's real implementation and avoids unnecessary architecture churn."
+    },
+    {
+      "title": "Separate CI-safe and TTY-safe paths",
+      "description": "Wizard mode should be opt-in or TTY-only; non-TTY should stay deterministic and argument-driven.",
+      "novelty": 3,
+      "feasibility": 5,
+      "rationale": "Prevents install prompts from breaking automation."
+    }
+  ],
+  "key_findings": [
+    "The current Fabric stack is intentionally lightweight and script-friendly.",
+    "The biggest risk is conflating onboarding UX with the automation-oriented init command."
+  ],
+  "challenged_assumptions": [
+    "The current `interactive` summary in `fabric init` is not enough to qualify as a wizard."
+  ],
+  "open_questions": [
+    "Would `@clack/prompts` offer a smaller surface than `inquirer` while still supporting the required flow?",
+    "If init is rewritten, should `--yes` become the new script-safe compatibility mode?"
+  ],
+  "_metadata": {
+    "timestamp": "2026-04-22T22:20:43+0800"
+  }
+}
