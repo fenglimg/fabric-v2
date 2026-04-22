@@ -1,6 +1,6 @@
 # Fabric 上手
 
-Fabric v1.0 为维护者提供从本地安装到首条 ledger-backed 协作事件的标准上手路径。若你首次评估 Fabric，从这里开始。
+Fabric v1.3.1 为维护者提供从本地安装到首条 ledger-backed 协作事件的标准上手路径。若你首次评估 Fabric，从这里开始。
 
 贡献与本地仓库设置见 [Contributing](./contributing.md)。`fabric init` 状态机与更深 mechanics 见 [Initialization Guide](./initialization.md)。产品叙事版见 [Launch Story](./launch-story.md)。
 
@@ -41,11 +41,10 @@ fabric init
 
 推荐前置条件：
 
-- 尚不存在 `AGENTS.md`。
 - 尚不存在 `.fabric/`。
 - 在任意写入步骤前，先审阅既有 `.claude/`、`.cursor/`、`.codex/`、`.windsurf/` 或 `.roo/` config。
 
-v1.0 launch story 中的中文本地化 stdout 示例：
+当前初始化流程的中文本地化 stdout 示例：
 
 ```text
 $ fabric init
@@ -67,9 +66,10 @@ Fabric v1.2 · control plane
   - `framework.subkind`: `typescript-component`
   - `entry_points[0].path`: `assets/scripts/Game.ts`
   - `topology.by_ext[".ts"]`: 3
-  - `recommendations_for_skill`: 6 items
+  - `assertions`: grouped evidence items
+  - `candidate_files`: prioritized review queue
 
-Created `AGENTS.md`
+Created `.fabric/bootstrap/README.md`
 Created `.fabric/agents.meta.json`
 Created `.fabric/human-lock.json`
 Created `.fabric/forensic.json`
@@ -80,8 +80,7 @@ Installed `.claude/hooks/agents-md-init-reminder.cjs`
 Created `.claude/settings.json` with Claude Stop hook
 
 --- Installing bootstrap templates... ---
-Installed CLAUDE.md
-Installed .cursor/rules/fabric-bootstrap.mdc
+completed bootstrap: ...
 
 --- Configuring MCP clients... ---
 Wrote ClaudeCodeCLI config
@@ -94,7 +93,9 @@ Added prepare script to package.json
 已完成一站式初始化。
 ```
 
-本阶段结束后，仓库具备 fallback contract 与 evidence pack，但在 client-side interview 完成前，semantic initialization 尚未结束。
+这里的 `bootstrap` 阶段只会确保 `.fabric/bootstrap/README.md` 存在并保持最新，不再生成根级 `AGENTS.md`、`CLAUDE.md` 或 `GEMINI.md`。
+
+本阶段结束后，仓库已具备内部 bootstrap guide 与 evidence pack，但在 client-side review 完成前，semantic initialization 尚未结束。
 
 ## 阶段 3：完成 AI Handoff
 
@@ -108,7 +109,7 @@ I just ran fabric init in this repo. Finish AGENTS.md initialization.
 
 - `agents-md-init` 读取 `.fabric/forensic.json`。
 - 维护者确认 framework facts 与 invariants。
-- Fabric 写入 `.fabric/init-context.json` 并更新面向实际项目的 `AGENTS.md`。
+- Fabric 写入 `.fabric/init-context.json` 并更新项目专属 rule nodes 与 metadata。
 
 更完整的 interview 流程（含 framework-confirm 与 invariants 阶段）见 [Initialization Guide](./initialization.md)。
 
@@ -119,9 +120,9 @@ I just ran fabric init in this repo. Finish AGENTS.md initialization.
 检查 bootstrap 安装结果：
 
 ```text
-$ ls CLAUDE.md .cursor/rules/fabric-bootstrap.mdc 2>/dev/null
-CLAUDE.md
-.cursor/rules/fabric-bootstrap.mdc
+$ ls .fabric/bootstrap/README.md .cursor/mcp.json 2>/dev/null
+.fabric/bootstrap/README.md
+.cursor/mcp.json
 ```
 
 检查 git hooks：
@@ -168,7 +169,7 @@ Before editing any file, call fab_get_rules for README.md and summarize the acti
 
 - Client 调用 `fab_get_rules`。
 - 响应包含 `revision_hash`。
-- 响应包含来自 `AGENTS.md` 的 L0 rules。
+- 响应包含来自 bootstrap guide 或 scoped rule nodes 的 L0/L1 rules。
 
 若 tools 未出现，确认 MCP config 文件包含 `mcpServers.fabric` 或 `[mcp_servers.fabric]`，然后再次重启 client。
 
@@ -187,7 +188,7 @@ FABRIC_INTENT="docs: refine onboarding copy" fab ledger-append --staged
 .intent-ledger.jsonl receives a new append-only JSON line with parent_sha, intent, affected_paths, and diff_stat.
 ```
 
-至此仓库完成 v1.0 onboarding loop：
+至此仓库完成当前稳定版 onboarding loop：
 
 1. Fabric 已安装。
 2. 项目已初始化。

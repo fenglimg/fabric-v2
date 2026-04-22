@@ -11,6 +11,8 @@
 
 `fabric init` auto-runs `bootstrap install`, `config install`, and `hooks install`. Use them standalone only for targeted re-runs.
 
+`fabric bootstrap install` refreshes the internal bootstrap guide at `.fabric/bootstrap/README.md`. It does not generate root `AGENTS.md`, `CLAUDE.md`, or `GEMINI.md`.
+
 ## Common Commands
 
 - `fabric init`

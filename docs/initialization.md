@@ -2,7 +2,7 @@
 
 > 请从标准上手路径开始：[Getting Started](./getting-started.md)。本文是 `fabric init` 状态机、Claude handoff 与 initialization 内部的深度技术参考。
 
-`fabric init` 是一站式初始化命令。它为项目提供 evidence 与 protocol，自动完成 bootstrap、MCP config 与 git hooks 安装，并使 Claude Code 能通过 `agents-md-init` skill 完成项目专属的 `AGENTS.md`。
+`fabric init` 是一站式初始化命令。它为项目提供 evidence 与 protocol，自动完成 bootstrap、MCP config 与 git hooks 安装，并使 Claude Code 能通过 `agents-md-init` skill 完成项目专属的规则初始化。
 
 > `fabric` 是主命令，`fab` 是永久别名。下文统一使用 `fabric`。
 
@@ -11,11 +11,38 @@
 `fabric init` 在一条命令里做三件事：
 
 1. Evidence：扫描仓库并写入 `.fabric/forensic.json`。
-2. Protocol install：写入 fallback `AGENTS.md`、`.fabric/agents.meta.json`、`.fabric/human-lock.json`，以及 `.claude/` 下的 Claude 集成文件。
+2. Protocol install：写入 `.fabric/bootstrap/README.md`、`.fabric/agents.meta.json`、`.fabric/human-lock.json`，以及 `.claude/` 下的 Claude 集成文件。
 3. One-shot setup：自动执行 bootstrap install、MCP config install 与 git hooks install。
 4. Trigger：打印同 session handoff 的 reason 行，并安装 Stop hook 以支持跨 session handoff。
 
 这种拆分是故意的：Fabric 让 CLI 步骤快速且确定，再由 AI client 完成 semantic initialization。
+
+## Bootstrap 协议与客户端适配
+
+从 `v1.3.1` 开始，bootstrap 阶段已经收敛为“内部 bootstrap guide + 客户端配置”模型：
+
+- 可见 bootstrap 入口固定为 `.fabric/bootstrap/README.md`。
+- `fabric bootstrap install` 只负责确保或刷新这份内部 guide。
+- bootstrap 阶段不再生成根级 `AGENTS.md`、`CLAUDE.md` 或 `GEMINI.md`。
+- Claude Code 的 handoff 仍通过 `.claude/skills/agents-md-init/SKILL.md`、Stop hook 与 `.claude/settings.json` 接力。
+- 其他 MCP-capable 客户端通过各自的 MCP config 发现 Fabric server，并在运行期调用 `fab_get_rules`。
+
+当前 bootstrap hard rules 仍保持同一组核心约束：
+
+1. 把 Fabric Protocol 明确为规则来源。
+2. 在任何代码读取、架构规划或逻辑修改前先调用 `fab_get_rules`。
+3. 把 registry 更新与直接编辑 `.fabric/agents.meta.json` 严格分离。
+4. 把 `.fabric/human-lock.json` 中的 `@HUMAN` 保护范围视为显式停机点。
+5. 在完整任务结束后调用 `fab_append_intent` 记录意图。
+
+需要针对性重跑时仍可使用：
+
+```bash
+fabric bootstrap install
+fabric bootstrap install --clients claude,cursor,windsurf,roo,gemini,codex
+```
+
+这里的 `--clients` 仅用于约束检测与阶段输出；真正的 bootstrap artifact 仍然只会写回 `.fabric/bootstrap/README.md`。
 
 ## 前置条件
 
@@ -27,7 +54,6 @@
 
 - 在目标项目根目录运行 `fabric init`。
 - 从干净的初始化项目状态开始：
-  - 尚不存在 `AGENTS.md`。
   - 尚不存在 `.fabric/`。
 - 完整 Stage 3 到 Stage 6 流程需要 Claude Code。
 - 下文运行示例使用 `werewolf-minigame`，一个 Cocos Creator 3.8 TypeScript 项目。
@@ -42,7 +68,7 @@
 npm install -g @fenglimg/fabric-cli
 ```
 
-此时项目本身尚未改变。仍无 `.fabric/` 目录、无 `.claude/` initialization 资产、无生成的 `AGENTS.md`。
+此时项目本身尚未改变。仍无 `.fabric/` 目录、无 `.claude/` initialization 资产、无生成的 bootstrap guide。
 
 ---
 
@@ -58,14 +84,14 @@ fabric init
 本步会发生：
 
 - Fabric 扫描仓库并写入 `.fabric/forensic.json`。
-- Fabric 写入安全的 fallback `AGENTS.md` 与 metadata 文件。
+- Fabric 写入 `.fabric/bootstrap/README.md` 与 metadata 文件。
 - Fabric 安装 `.claude/skills/agents-md-init/SKILL.md`、`.claude/hooks/agents-md-init-reminder.cjs` 与 `.claude/settings.json`。
 - Fabric 自动运行 bootstrap install、MCP config install 与 git hooks install。
 
 来自 disposable `werewolf-minigame` 示例运行的真实输出：
 
 ```text
-Created /tmp/werewolf-minigame-init-guide-example/werewolf-minigame/AGENTS.md
+Created /tmp/werewolf-minigame-init-guide-example/werewolf-minigame/.fabric/bootstrap/README.md
 Created /tmp/werewolf-minigame-init-guide-example/werewolf-minigame/.fabric/agents.meta.json
 Created /tmp/werewolf-minigame-init-guide-example/werewolf-minigame/.fabric/human-lock.json
 Created /tmp/werewolf-minigame-init-guide-example/werewolf-minigame/.fabric/forensic.json
@@ -73,12 +99,12 @@ Installed /tmp/werewolf-minigame-init-guide-example/werewolf-minigame/.claude/sk
 Installed /tmp/werewolf-minigame-init-guide-example/werewolf-minigame/.claude/hooks/agents-md-init-reminder.cjs
 Created /tmp/werewolf-minigame-init-guide-example/werewolf-minigame/.claude/settings.json with Claude Stop hook.
 --- Installing bootstrap templates... ---
-...
+completed bootstrap: ...
 --- Configuring MCP clients... ---
 ...
 --- Installing git hooks... ---
 ...
-Reason: .fabric/forensic.json is ready; use the agents-md-init skill to finish AGENTS.md initialization.
+Reason: .fabric/forensic.json is ready; some detected clients still need manual follow-up because no Fabric skill is installed for them yet.
 ```
 
 Stage 2 之后，项目已准备好由 AI 接管，但在 `.fabric/init-context.json` 出现之前，initialization 仍为 pending。
@@ -95,7 +121,7 @@ Stage 2 之后，项目已准备好由 AI 接管，但在 `.fabric/init-context.
 示例 prompt：
 
 ```text
-I just ran fabric init in this repo. Finish AGENTS.md initialization.
+I just ran fabric init in this repo. Finish Fabric initialization.
 ```
 
 关键心智模型：Stage 2 装备仓库，Stage 3 把仓库交给 skill。
@@ -124,7 +150,7 @@ Developer: Yes. It is TypeScript, and we mainly use @property(Node).
 
 ### Stage 5：Phase 2 Invariants
 
-接下来 skill 收集必须成为 `AGENTS.md` 中 L0 constraints 的项目规则。
+接下来 skill 收集必须成为项目 rule nodes 与 init context 的硬规则。
 
 `werewolf-minigame` 示例对话：
 
@@ -148,7 +174,7 @@ Developer: Yes to all five.
 Interview 结束后，skill 写入 semantic initialization 输出：
 
 - `.fabric/init-context.json`
-- 完整的项目专属 `AGENTS.md`
+- `.fabric/agents/` 下确认后的项目专属 rule nodes
 - 更新后的 `.fabric/agents.meta.json` hash
 
 对 `werewolf-minigame`，生成结果应编码例如：
@@ -168,6 +194,7 @@ Interview 结束后，skill 写入 semantic initialization 输出：
 ### Stage 7：Daily Dev
 
 从此将 `AGENTS.md` 视为持续维护的项目 contract，而非一次性 scaffold。
+从此将 `.fabric/bootstrap/README.md`、`.fabric/agents/` 与 `.fabric/agents.meta.json` 视为持续维护的项目 contract，而非一次性 scaffold。
 
 典型后续命令：
 
@@ -193,11 +220,11 @@ fabric sync-meta
     |
     | Claude Code + agents-md-init
     v
-[forensic.json exists] + [init-context.json exists] + [AGENTS.md completed]
+[forensic.json exists] + [init-context.json exists] + [rule nodes completed]
     |
     | ongoing edits + agents-md maintenance
     v
-[AGENTS.md stays in sync with code]
+[rule graph stays in sync with code]
 ```
 
 ## 兼容性矩阵
@@ -206,8 +233,8 @@ fabric sync-meta
 | --- | --- | --- |
 | 自 Claude Code Bash tool 运行 `fabric init` | 模型从 tool 结果读取 Stage 2 reason 行 | 可在同 session 立即触发 `agents-md-init` |
 | 在外部终端运行 `fabric init` | Claude Code Stop hook 发现存在 `forensic.json` 但无 `init-context.json` | 下一次 Claude Code session 在 initialization 继续前被阻塞 |
-| 在 CI 或其他非 TTY 环境运行 `fabric init` | 无 interactive takeover；命令仅写文件并记录 reason 行 | Fallback `AGENTS.md` 与 `.fabric/` artifact 仍有效，但 `.fabric/init-context.json` 不会自动创建 |
-| 非 Claude client | `.claude/` 文件在 Claude Code 外为无害 no-op | Scaffold 的 `AGENTS.md` 仍可作为 fallback，但今日尚无自动 `agents-md-init` handoff |
+| 在 CI 或其他非 TTY 环境运行 `fabric init` | 无 interactive takeover；命令仅写文件并记录 reason 行 | `.fabric/bootstrap/README.md` 与 `.fabric/` artifact 仍有效，但 `.fabric/init-context.json` 不会自动创建 |
+| 非 Claude client | `.claude/` 文件在 Claude Code 外为无害 no-op | `.fabric/bootstrap/README.md` 可作为稳定 bootstrap 入口，但今日尚无自动 `agents-md-init` handoff |
 
 ## 故障排除
 
@@ -235,13 +262,13 @@ Initialization 未完成 Stage 2。回到项目根目录运行：
 fabric init
 ```
 
-若因已存在 `AGENTS.md` 或 `.fabric/` 而中止，先检查这些文件，不要覆盖。`fabric init` 刻意设计为非破坏性（除非使用 `--force`）。
+若因已存在 `.fabric/bootstrap/README.md`、`.fabric/forensic.json` 或其他 `.fabric/` 文件而中止，先检查这些文件，不要覆盖。`fabric init` 刻意设计为非破坏性（除非使用 `--force`）。
 
-### 未生成 `AGENTS.md`，或仍为 scaffold
+### 未生成 `.fabric/bootstrap/README.md`，或仍为通用 bootstrap
 
-`fab init` 在 Stage 2 总会写入 fallback `AGENTS.md`。更丰富的版本稍后由 `agents-md-init` 生成。
+`fab init` 在 Stage 2 总会写入 `.fabric/bootstrap/README.md`。更丰富的项目规则稍后由 `agents-md-init` 写入 `.fabric/agents/`。
 
-若 `AGENTS.md` 完全缺失，Stage 2 未完成。若存在但仍偏通用，Stage 3 到 Stage 6 尚未完成。在仓库中打开 Claude Code 并继续 initialization interview。
+若 `.fabric/bootstrap/README.md` 完全缺失，Stage 2 未完成。若存在但 `.fabric/init-context.json` 仍缺失，说明 Stage 3 到 Stage 6 尚未完成。在仓库中打开 Claude Code 并继续 initialization review。
 
 ### `init-context.json` 无效或不完整
 

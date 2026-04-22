@@ -2,15 +2,15 @@
   <img src="./assets/brand/fabric-wordmark.svg" alt="fabric wordmark" width="220">
 </p>
 
-# Fabric v1.0
+# Fabric v1.3.1
 
 人机协作的语义共识平面
 
 The Consensus Plane for AI-Human Collaboration
 
-Fabric v1.0 is an MCP-first, cross-client AGENTS.md protocol for six AI clients: Claude Code, Cursor, Windsurf, Roo Code, Gemini CLI, and Codex CLI. It keeps AGENTS.md as the human-maintained source of truth, distributes rules through a local MCP server, and adds git-level defenses so behavior stays consistent across clients without compiling client-specific rule files first.
+Fabric v1.3.1 is an MCP-first, cross-client AGENTS.md protocol for six AI clients: Claude Code, Cursor, Windsurf, Roo Code, Gemini CLI, and Codex CLI. It keeps Fabric rule state inside `.fabric/`, distributes scoped rules through a local MCP server, and adds git-level defenses so behavior stays consistent across clients without compiling client-specific rule files first.
 
-> **v1.1 — Shadow Mirroring (current)**: all AI rules now live under `.fabric/agents/` as a 1:1 source mirror plus a `_cross/` subtree for cross-cutting concerns; business directories contain zero rule files. Bootstrap protocol mandates `fab_get_rules(path=...)` before any code reading, architecture planning, or logic modification. See [`CHANGELOG.md`](./CHANGELOG.md#110---2026-04-19) for the full feature list and migration notes.
+> **Current release: v1.3.1**. Fabric now keeps the visible bootstrap artifact at `.fabric/bootstrap/README.md`, uses Shadow Mirroring under `.fabric/agents/`, and expects MCP-backed clients to load rules with `fab_get_rules(path=...)` before code work. See [`CHANGELOG.md`](./CHANGELOG.md#131---2026-04-22) for the patch notes and [`docs/initialization.md`](./docs/initialization.md) for the updated init flow.
 
 ```text
 AI Agent <-> Fabric Ledger <-> Human Developer
@@ -39,7 +39,7 @@ Use the canonical onboarding guide for the full 7-stage walkthrough, expected CL
 
 ## Initialization Guide
 
-`fabric init` now does more than create a scaffold. It writes the evidence pack in `.fabric/`, installs the Claude handoff files under `.claude/`, and leaves a safe fallback `AGENTS.md` for non-Claude flows. Start with the canonical onboarding guide at [docs/getting-started.md](./docs/getting-started.md), then use [docs/initialization.md](./docs/initialization.md) for the deep-dive state machine and `agents-md-init` interview flow.
+`fabric init` now does more than create a scaffold. It writes the evidence pack in `.fabric/`, installs the Claude handoff files under `.claude/`, and keeps the bootstrap guide inside `.fabric/bootstrap/README.md` instead of generating root-level bootstrap docs. Start with [docs/getting-started.md](./docs/getting-started.md), then use [docs/initialization.md](./docs/initialization.md) for the deep-dive state machine, bootstrap protocol, and `agents-md-init` handoff flow.
 
 ## Compliance Audit
 
@@ -55,7 +55,7 @@ Run `fabric doctor --audit` to cross-check AI edit intents against prior `fab_ge
 
 ## Roadmap
 
-See [docs/roadmap.md](./docs/roadmap.md) for the deferred v1.1 maintenance milestone, including `drift-check`, `fabric migrate`, `fabric doctor`, and the Copilot fallback path.
+See [docs/roadmap.md](./docs/roadmap.md) for the planned follow-up milestones, including `drift-check`, `fabric migrate`, `fabric doctor`, and the Copilot fallback path.
 
 ## Advanced Commands
 
@@ -65,13 +65,15 @@ Use these only when you need a targeted re-run outside the default `fabric init`
 - `fabric config install`
 - `fabric hooks install`
 
-## Day 7 Validation
+`fabric bootstrap install` now refreshes the internal bootstrap guide at `.fabric/bootstrap/README.md`. It no longer emits root `AGENTS.md`, `CLAUDE.md`, or `GEMINI.md`.
 
-- [Inner-track stub E2E runbook](./docs/day7-inner-track.md)
-- [Outer-track real-project runbook](./docs/day7-outer-track.md)
-- [Kill switch tracking sheet](./docs/day7-kill-switch-tracking.md)
+## Validation
+
 - [Getting Started](./docs/getting-started.md)
+- [Initialization Guide](./docs/initialization.md)
+- [Release Smoke Checklist](./docs/smoke-v1.0.md)
+- [Release Checklist](./RELEASING.md)
 
 ## Status
 
-v1.0 MVP follows the 7-day plan in `.workflow/.lite-plan/`. GitHub Copilot is explicitly not a Fabric v1.0 target client; see [docs/roadmap.md](./docs/roadmap.md) for the possible v1.1 fallback path.
+The current stable line is `v1.3.1`. Historical launch planning remains in `.workflow/`, while the maintained public entry points are this README, the docs under `docs/`, and the tag-driven release flow in `.github/workflows/release.yml`.

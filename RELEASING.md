@@ -1,4 +1,4 @@
-# Releasing Fabric v1.0
+# Releasing Fabric
 
 This document defines the manual release path for Fabric. The workflow is intentionally explicit: every public release must pass the same ordered checks before a tag is pushed and before npm publication is treated as complete.
 
@@ -28,20 +28,20 @@ This document defines the manual release path for Fabric. The workflow is intent
    pnpm install
    pnpm -r exec tsc --noEmit
    pnpm -r --if-present test
-   node scripts/lint-protected-tokens.ts
+   node --experimental-strip-types scripts/lint-protected-tokens.ts
    NO_COLOR=1 pnpm --filter @fenglimg/fabric-cli test
    ```
 
 5. **Create release tag / tag 创建**
-   Create and push an annotated tag in the `v<version>` format from the exact commit you want to release.
+   Create and push an annotated tag in the `v<version>` format from the exact commit you want to release. The tag push is the trigger for `.github/workflows/release.yml`; no manual publish dispatch is required.
 
    ```bash
-   git tag -a v1.0.0 -m "Fabric v1.0.0"
-   git push origin v1.0.0
+   git tag -a v1.3.1 -m "Fabric v1.3.1"
+   git push origin v1.3.1
    ```
 
 6. **Wait for publish workflow / release.yml 触发**
-   Confirm the tag push starts `.github/workflows/release.yml` and that the workflow reaches the publish step with the expected `NODE_AUTH_TOKEN` secret configured.
+   Confirm the tag push starts `.github/workflows/release.yml` automatically and that the workflow reaches the publish step with the expected `NODE_AUTH_TOKEN` secret configured.
 
 7. **Confirm npm publication / npm publish 确认**
    Verify the release packages are visible on npm and resolve to the tagged version.

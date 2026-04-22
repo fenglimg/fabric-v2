@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.1] - 2026-04-22
+
+### Changed
+
+- `fabric init` and `fabric bootstrap install` now keep the bootstrap source of truth inside `.fabric/bootstrap/README.md`; the bootstrap stage no longer emits root-level `AGENTS.md`, `CLAUDE.md`, or `GEMINI.md`.
+- `sync-meta` now treats `.fabric/bootstrap/README.md` as the canonical L0 bootstrap node while still accepting legacy root `AGENTS.md` metadata as a migration input.
+
+### Fixed
+
+- Resolved the CLI typecheck regression in `packages/cli/src/commands/bootstrap.ts` caused by a stray `ensureTrailingNewline` reference after the bootstrap internalization refactor.
+- Normalized bootstrap and skill template line endings to LF so `scripts/lint-protected-tokens.ts` passes consistently in GitHub Actions and tag-triggered release builds.
+
+### Documentation
+
+- Merged the Day 6 bootstrap notes into `docs/initialization.md`, retired the temporary Day 2/4/5/7 runbooks, and refreshed `README.md`, `docs/getting-started.md`, `packages/cli/README.md`, and `RELEASING.md` to match the stable `v1.3.1` release flow.
+
 ## [1.3.0] - 2026-04-21
 
 ### Added
