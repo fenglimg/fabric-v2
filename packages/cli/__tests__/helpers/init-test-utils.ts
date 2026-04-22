@@ -37,8 +37,13 @@ export function createEmptyFixtureRoot(prefix: string): string {
   return root;
 }
 
-export function setProcessTty(stdoutValue: boolean, stderrValue: boolean = stdoutValue): () => void {
+export function setProcessTty(
+  stdoutValue: boolean,
+  stderrValue: boolean = stdoutValue,
+  stdinValue: boolean = stdoutValue,
+): () => void {
   const descriptors = [
+    [process.stdin, Object.getOwnPropertyDescriptor(process.stdin, "isTTY"), stdinValue] as const,
     [process.stdout, Object.getOwnPropertyDescriptor(process.stdout, "isTTY"), stdoutValue] as const,
     [process.stderr, Object.getOwnPropertyDescriptor(process.stderr, "isTTY"), stderrValue] as const,
   ];

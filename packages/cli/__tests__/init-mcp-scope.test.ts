@@ -148,6 +148,7 @@ describe("init MCP install scope", () => {
           bootstrap: false,
           hooks: false,
           mcp: false,
+          yes: true,
         },
       });
     } finally {
@@ -194,6 +195,7 @@ describe("init MCP install scope", () => {
           bootstrap: false,
           hooks: false,
           mcp: false,
+          yes: true,
         },
       });
     } finally {

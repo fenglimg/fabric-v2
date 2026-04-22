@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { initFabric } from "../src/commands/init.ts";
+import { buildInitExecutionPlan, buildInitFabricPlan, initFabric } from "../src/commands/init.ts";
 import {
   cleanupFixtureRoot,
   createWerewolfFixtureRoot,
@@ -19,6 +19,52 @@ afterEach(() => {
 });
 
 describe("initFabric non-destructive behavior", () => {
+  it("builds a scaffold plan without writing files before execution", () => {
+    const target = createWerewolfFixtureRoot("fab-init-plan-only");
+    tempRoots.push(target);
+
+    const plan = buildInitFabricPlan(target);
+
+    expect(plan.bootstrapAction).toBe("created");
+    expect(plan.metaAction).toBe("created");
+    expect(existsSync(`${target}/.fabric/bootstrap/README.md`)).toBe(false);
+    expect(existsSync(`${target}/.fabric/agents.meta.json`)).toBe(false);
+    expect(plan.codexHooksConfig.action).toBe("created");
+  });
+
+  it("builds an execution plan that preserves staged init order without writing files", () => {
+    const target = createWerewolfFixtureRoot("fab-init-execution-plan");
+    tempRoots.push(target);
+
+    const plan = buildInitExecutionPlan({
+      target,
+      options: { skipBootstrap: true },
+      mcpInstallMode: "local",
+      interactive: true,
+    });
+
+    expect(plan.steps.map((step) => step.name)).toEqual([
+      "preflight",
+      "scaffold",
+      "bootstrap",
+      "mcp",
+      "hooks",
+      "post-setup",
+    ]);
+    expect(plan.stages).toEqual([
+      { name: "bootstrap", skipped: true },
+      {
+        name: "mcp",
+        skipped: false,
+        installMode: "local",
+        localServerPath: "node_modules/@fenglimg/fabric-server/dist/index.js",
+        packageManager: "npm",
+      },
+      { name: "hooks", skipped: false },
+    ]);
+    expect(existsSync(`${target}/.fabric/bootstrap/README.md`)).toBe(false);
+  });
+
   it("aborts when the internal bootstrap guide already exists and keeps the file intact", () => {
     const target = createWerewolfFixtureRoot("fab-init-agents-guard");
     tempRoots.push(target);

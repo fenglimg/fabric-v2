@@ -4,6 +4,7 @@ import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, renameSyn
 import { dirname, isAbsolute, join, parse, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { cancel, confirm, group, intro, isCancel, log, note, outro, select } from "@clack/prompts";
 import type { AgentsMeta } from "@fenglimg/fabric-shared";
 import { defineCommand } from "citty";
 
@@ -21,6 +22,9 @@ type InitArgs = {
   target?: string;
   debug?: boolean;
   force?: boolean;
+  yes?: boolean;
+  plan?: boolean;
+  reapply?: boolean;
   bootstrap?: boolean;
   mcp?: boolean;
   hooks?: boolean;
@@ -36,6 +40,8 @@ type InitOptions = {
   skipBootstrap?: boolean;
   skipMcp?: boolean;
   skipHooks?: boolean;
+  planOnly?: boolean;
+  reapply?: boolean;
 };
 
 type InitWriteAction = "created" | "overwritten";
@@ -52,6 +58,31 @@ type InitStageDisposition = "ran" | "skipped" | "failed";
 type InitStageRecord = {
   name: InitStageName;
   disposition: InitStageDisposition;
+};
+
+export type InitScaffoldResult = {
+  bootstrapPath: string;
+  bootstrapAction: InitWriteAction;
+  metaPath: string;
+  metaAction: InitWriteAction;
+  humanLockPath: string;
+  humanLockAction: InitWriteAction;
+  forensicPath: string;
+  forensicAction: InitWriteAction;
+  claudeSkillPath: string;
+  claudeSkillAction: ClaudeHookAction;
+  codexSkillPath: string;
+  codexSkillAction: ClaudeHookAction;
+  codexSessionStartHookPath: string;
+  codexSessionStartHookAction: ClaudeHookAction;
+  codexStopHookPath: string;
+  codexStopHookAction: ClaudeHookAction;
+  codexHooksConfigPath: string;
+  codexHooksConfigAction: CodexHooksAction;
+  claudeHookPath: string;
+  claudeHookAction: ClaudeHookAction;
+  claudeSettingsPath: string;
+  claudeSettingsAction: ClaudeSettingsAction;
 };
 
 type InitCapabilityRow = {
@@ -80,6 +111,117 @@ type CodexHooksConfig = {
   };
 };
 
+type InitExecutionPhaseName = "preflight" | "scaffold" | InitStageName | "post-setup";
+
+type InitExecutionStep =
+  | { name: "preflight" }
+  | { name: "scaffold" }
+  | { name: "bootstrap"; skipped: boolean }
+  | { name: "mcp"; skipped: boolean }
+  | { name: "hooks"; skipped: boolean }
+  | { name: "post-setup" };
+
+type InitStagePlan =
+  | { name: "bootstrap"; skipped: boolean }
+  | { name: "mcp"; skipped: boolean; installMode: McpInstallMode; localServerPath?: string; packageManager?: "pnpm" | "npm" | "yarn" }
+  | { name: "hooks"; skipped: boolean };
+
+type InitWizardSelection = {
+  bootstrap: boolean;
+  mcp: boolean;
+  hooks: boolean;
+  mcpInstallMode: McpInstallMode;
+};
+
+type InitWizardContext = {
+  target: string;
+  options: InitOptions;
+  supports: DetectedClientSupport[];
+  mcpInstallMode: McpInstallMode;
+  lockedStages: InitStageName[];
+};
+
+type InitWizardAdapter = {
+  run(context: InitWizardContext): Promise<InitWizardSelection | null>;
+};
+
+type InitCliIntent = {
+  target: string;
+  options: InitOptions;
+  mcpInstallMode: McpInstallMode;
+  interactiveSummary: boolean;
+  wizardEnabled: boolean;
+};
+
+type InitOptionalTemplateWritePlan = {
+  path: string;
+  action: ClaudeHookAction;
+  templatePath: string;
+  executable?: boolean;
+};
+
+type InitJsonWritePlan = {
+  path: string;
+  action: CodexHooksAction;
+  value: unknown;
+};
+
+type InitClaudeSettingsWritePlan =
+  | {
+      path: string;
+      action: Extract<ClaudeSettingsAction, "created" | "updated" | "overwritten">;
+      value: ClaudeSettings;
+    }
+  | {
+      path: string;
+      action: Extract<ClaudeSettingsAction, "skipped" | "skipped-invalid">;
+      value: null;
+    };
+
+export type InitScaffoldPlan = {
+  target: string;
+  options?: InitOptions;
+  fabricDir: string;
+  replaceFabricDir: boolean;
+  bootstrapPath: string;
+  bootstrapAction: InitWriteAction;
+  bootstrapContent: string;
+  metaPath: string;
+  metaAction: InitWriteAction;
+  meta: AgentsMeta;
+  humanLockPath: string;
+  humanLockAction: InitWriteAction;
+  humanLockContent: string;
+  forensicPath: string;
+  forensicAction: InitWriteAction;
+  forensicReport: ReturnType<typeof buildForensicReport>;
+  claudeSkill: InitOptionalTemplateWritePlan;
+  codexSkill: InitOptionalTemplateWritePlan;
+  codexSessionStartHook: InitOptionalTemplateWritePlan;
+  codexStopHook: InitOptionalTemplateWritePlan;
+  codexHooksConfig: InitJsonWritePlan;
+  claudeHook: InitOptionalTemplateWritePlan;
+  claudeSettings: InitClaudeSettingsWritePlan;
+};
+
+export type InitExecutionPlan = {
+  target: string;
+  options: InitOptions;
+  mcpInstallMode: McpInstallMode;
+  interactive: boolean;
+  supports: DetectedClientSupport[];
+  scaffold: InitScaffoldPlan;
+  stages: InitStagePlan[];
+  steps: InitExecutionStep[];
+};
+
+export type InitExecutionResult = {
+  plan: InitExecutionPlan;
+  created: InitScaffoldResult;
+  stageResults: InitStageRecord[];
+  finalSupports: DetectedClientSupport[];
+};
+
 type ClaudeStopHookEntry = {
   matcher: string;
   hooks: ClaudeCommandHook[];
@@ -102,6 +244,7 @@ const CODEX_SESSION_START_COMMAND = ".codex/hooks/fabric-session-start.cjs";
 const CODEX_STOP_COMMAND = ".codex/hooks/fabric-stop-reminder.cjs";
 const LOCAL_FABRIC_SERVER_PATH = join("node_modules", "@fenglimg", "fabric-server", "dist", "index.js");
 const FABRIC_SERVER_PACKAGE = "@fenglimg/fabric-server";
+const INIT_WIZARD_GROUP_CANCELLED = Symbol("init-wizard-group-cancelled");
 
 export const initCommand = defineCommand({
   meta: {
@@ -121,6 +264,21 @@ export const initCommand = defineCommand({
     force: {
       type: "boolean",
       description: t("cli.init.args.force.description"),
+      default: false,
+    },
+    yes: {
+      type: "boolean",
+      description: t("cli.init.args.yes.description"),
+      default: false,
+    },
+    plan: {
+      type: "boolean",
+      description: t("cli.init.args.plan.description"),
+      default: false,
+    },
+    reapply: {
+      type: "boolean",
+      description: t("cli.init.args.reapply.description"),
       default: false,
     },
     bootstrap: {
@@ -150,173 +308,176 @@ export const initCommand = defineCommand({
     },
   },
   async run({ args }: { args: InitArgs }) {
-    const logger = createDebugLogger(args.debug);
-    const resolution = resolveDevMode(args.target, process.cwd());
-    const target = normalizeTarget(resolution.target);
-    const mcpInstallMode = resolveMcpInstallMode(args["mcp-install"]);
-    const options: InitOptions = {
-      force: args.force,
-      skipBootstrap: args.bootstrap === false ? true : args.skipBootstrap,
-      skipMcp: args.mcp === false ? true : args.skipMcp,
-      skipHooks: args.hooks === false ? true : args.skipHooks,
-    };
-
-    logger(`init target source: ${resolution.source}`);
-    for (const step of resolution.chain) {
-      logger(step);
-    }
-
-    const supports = detectClientSupports(target);
-    const interactive = args.interactive !== false && isInteractiveInit();
-
-    if (options.force) {
-      writeStderr(t("cli.init.force.warning", { path: target }));
-    }
-
-    if (interactive) {
-      printInitPlanSummary(target, options, mcpInstallMode, supports);
-    }
-
-    const created = initFabric(target, options);
-
-    console.log(formatInitPathAction(created.bootstrapPath, created.bootstrapAction));
-    console.log(formatInitPathAction(created.metaPath, created.metaAction));
-    console.log(formatInitPathAction(created.humanLockPath, created.humanLockAction));
-    console.log(formatInitPathAction(created.forensicPath, created.forensicAction));
-    writeStderr(
-      formatOptionalInitPathAction(created.claudeSkillPath, created.claudeSkillAction),
-    );
-    writeStderr(
-      formatOptionalInitPathAction(created.claudeHookPath, created.claudeHookAction),
-    );
-    writeStderr(
-      formatOptionalInitPathAction(created.codexSessionStartHookPath, created.codexSessionStartHookAction),
-    );
-    writeStderr(
-      formatOptionalInitPathAction(created.codexStopHookPath, created.codexStopHookAction),
-    );
-    writeStderr(formatCodexHooksAction(created.codexHooksConfigPath, created.codexHooksConfigAction));
-    writeStderr(formatClaudeSettingsAction(created.claudeSettingsPath, created.claudeSettingsAction));
-    const stageResults: InitStageRecord[] = [];
-
-    if (options.skipBootstrap) {
-      stageResults.push({ name: "bootstrap", disposition: "skipped" });
-    } else {
-      console.log(formatInitStageHeader(t("cli.init.stages.bootstrap")));
-      try {
-        const result = await installBootstrap(target, { force: options.force });
-        if (result.details.length === 0) {
-          console.log(formatInitStageResult("bootstrap", "skipped", 0, 0, t("cli.bootstrap.install.no-targets")));
-          stageResults.push({ name: "bootstrap", disposition: "skipped" });
-        } else {
-          console.log(
-            formatInitStageResult("bootstrap", "completed", result.installed.length, result.skipped.length),
-          );
-          stageResults.push({ name: "bootstrap", disposition: "ran" });
-        }
-      } catch (error: unknown) {
-        writeStderr(formatInitStageFailure("bootstrap", error));
-        stageResults.push({ name: "bootstrap", disposition: "failed" });
-      }
-    }
-
-    if (options.skipMcp) {
-      stageResults.push({ name: "mcp", disposition: "skipped" });
-    } else {
-      console.log(formatInitStageHeader(t("cli.init.stages.mcp")));
-      try {
-        let localServerPath: string | undefined;
-
-        if (mcpInstallMode === "local") {
-          const manager = detectPackageManager(target);
-          writeStderr(t("cli.init.mcp.install.local"));
-          writeStderr(t("cli.init.mcp.local.installing", { manager }));
-          installLocalFabricServer(target, manager);
-          writeStderr(t("cli.init.mcp.local.installed"));
-          localServerPath = LOCAL_FABRIC_SERVER_PATH;
-        } else {
-          writeStderr(t("cli.init.mcp.install.global"));
-        }
-
-        const result = await configCommand.installMcpClients(target, {
-          force: options.force,
-          localServerPath,
-        });
-        if (result.details.length === 0) {
-          console.log(formatInitStageResult("mcp", "skipped", 0, 0, t("cli.config.install.no-configs")));
-          stageResults.push({ name: "mcp", disposition: "skipped" });
-        } else {
-          console.log(formatInitStageResult("mcp", "completed", result.installed.length, result.skipped.length));
-          stageResults.push({ name: "mcp", disposition: "ran" });
-        }
-      } catch (error: unknown) {
-        writeStderr(formatInitStageFailure("mcp", error));
-        stageResults.push({ name: "mcp", disposition: "failed" });
-      }
-    }
-
-    if (options.skipHooks) {
-      stageResults.push({ name: "hooks", disposition: "skipped" });
-    } else {
-      console.log(formatInitStageHeader(t("cli.init.stages.hooks")));
-      try {
-        const result = await installHooks(target, { force: options.force });
-        console.log(formatInitStageResult("hooks", "completed", result.installed.length, result.skipped.length));
-        stageResults.push({ name: "hooks", disposition: "ran" });
-      } catch (error: unknown) {
-        writeStderr(formatInitStageFailure("hooks", error));
-        stageResults.push({ name: "hooks", disposition: "failed" });
-      }
-    }
-
-    if (shouldPrintHooksNextStep(options, stageResults)) {
-      console.log(
-        t("cli.init.next-step", {
-          label: nextLabel(),
-          message: paint.muted(t("cli.init.next-step.message")),
-        }),
-      );
-    }
-
-    const finalSupports = detectClientSupports(target);
-
-    console.log(
-      t("cli.init.reason-message", {
-        label: reasonLabel(),
-        message: paint.muted(formatInitReasonMessage(finalSupports)),
-      }),
-    );
-    printInitStageSummary(stageResults);
-    printInitCapabilitySummary(finalSupports, stageResults, options);
+    await runInitCommand(args);
   },
 });
 
 export default initCommand;
 
-export function initFabric(target: string, options?: InitOptions): {
-  bootstrapPath: string;
-  bootstrapAction: InitWriteAction;
-  metaPath: string;
-  metaAction: InitWriteAction;
-  humanLockPath: string;
-  humanLockAction: InitWriteAction;
-  forensicPath: string;
-  forensicAction: InitWriteAction;
-  claudeSkillPath: string;
-  claudeSkillAction: ClaudeHookAction;
-  codexSkillPath: string;
-  codexSkillAction: ClaudeHookAction;
-  codexSessionStartHookPath: string;
-  codexSessionStartHookAction: ClaudeHookAction;
-  codexStopHookPath: string;
-  codexStopHookAction: ClaudeHookAction;
-  codexHooksConfigPath: string;
-  codexHooksConfigAction: CodexHooksAction;
-  claudeHookPath: string;
-  claudeHookAction: ClaudeHookAction;
-  claudeSettingsPath: string;
-  claudeSettingsAction: ClaudeSettingsAction;
-} {
+async function runInitCommand(args: InitArgs): Promise<InitExecutionResult> {
+  const logger = createDebugLogger(args.debug);
+  const resolution = resolveDevMode(args.target, process.cwd());
+  const intent = resolveInitCliIntent(args, resolution.target);
+
+  logger(`init target source: ${resolution.source}`);
+  for (const step of resolution.chain) {
+    logger(step);
+  }
+
+  if (intent.options.planOnly) {
+    writeStderr(t("cli.init.compat.plan"));
+  }
+
+  if (args.interactive === false) {
+    writeStderr(t("cli.init.compat.interactive"));
+  }
+
+  if (args.bootstrap === false || args.mcp === false || args.hooks === false) {
+    writeStderr(t("cli.init.compat.legacy-stage-flags"));
+  }
+
+  const supports = detectClientSupports(intent.target);
+  const basePlan = buildInitExecutionPlan({
+    target: intent.target,
+    options: intent.options,
+    mcpInstallMode: intent.mcpInstallMode,
+    interactive: intent.interactiveSummary && !intent.wizardEnabled,
+    supports,
+  });
+  const plan = intent.wizardEnabled
+    ? await resolveInitExecutionPlanWithWizard(basePlan, args, createDefaultInitWizardAdapter())
+    : basePlan;
+
+  if (plan === null) {
+    writeStderr(t("cli.init.wizard.cancelled"));
+    throw new Error(t("cli.init.wizard.cancelled"));
+  }
+
+  return executeInitExecutionPlan(plan);
+}
+
+function resolveInitCliIntent(args: InitArgs, targetInput: string): InitCliIntent {
+  const target = normalizeTarget(targetInput);
+  const mcpInstallMode = resolveMcpInstallMode(args["mcp-install"]);
+  const terminalInteractive = isInteractiveInit();
+  const planOnly = args.plan === true;
+  const reapply = args.reapply === true;
+  const options: InitOptions = {
+    force: reapply ? true : args.force,
+    skipBootstrap: args.bootstrap === false ? true : args.skipBootstrap,
+    skipMcp: args.mcp === false ? true : args.skipMcp,
+    skipHooks: args.hooks === false ? true : args.skipHooks,
+    planOnly,
+    reapply,
+  };
+
+  return {
+    target,
+    options,
+    mcpInstallMode,
+    interactiveSummary: args.interactive !== false && terminalInteractive,
+    wizardEnabled: shouldUseInitWizard(args, terminalInteractive) && !planOnly,
+  };
+}
+
+export function buildInitExecutionPlan(input: {
+  target: string;
+  options?: InitOptions;
+  mcpInstallMode?: McpInstallMode;
+  interactive?: boolean;
+  supports?: DetectedClientSupport[];
+}): InitExecutionPlan {
+  const options = input.options ?? {};
+  const scaffold = buildInitFabricPlan(input.target, options);
+  const supports = input.supports ?? detectClientSupports(input.target);
+  const mcpInstallMode = input.mcpInstallMode ?? "global";
+  const stages: InitStagePlan[] = [
+    { name: "bootstrap", skipped: Boolean(options.skipBootstrap) },
+    {
+      name: "mcp",
+      skipped: Boolean(options.skipMcp),
+      installMode: mcpInstallMode,
+      localServerPath: mcpInstallMode === "local" ? LOCAL_FABRIC_SERVER_PATH : undefined,
+      packageManager: mcpInstallMode === "local" ? detectPackageManager(input.target) : undefined,
+    },
+    { name: "hooks", skipped: Boolean(options.skipHooks) },
+  ];
+
+  return {
+    target: input.target,
+    options,
+    mcpInstallMode,
+    interactive: input.interactive ?? false,
+    supports,
+    scaffold,
+    stages,
+    steps: [
+      { name: "preflight" },
+      { name: "scaffold" },
+      ...stages.map((stage) => ({ name: stage.name, skipped: stage.skipped }) as InitExecutionStep),
+      { name: "post-setup" },
+    ],
+  };
+}
+
+export async function executeInitExecutionPlan(plan: InitExecutionPlan): Promise<InitExecutionResult> {
+  if (plan.options.force) {
+    writeStderr(t("cli.init.force.warning", { path: plan.target }));
+  }
+
+  if (plan.options.reapply && !plan.options.planOnly && !plan.interactive) {
+    writeStderr(formatInitModeBanner(plan.options));
+  }
+
+  if (plan.interactive) {
+    printInitPlanSummary(plan.target, plan.options, plan.mcpInstallMode, plan.supports);
+  }
+
+  if (plan.options.planOnly) {
+    printInitPlanPreview(plan);
+    return {
+      plan,
+      created: buildPlanOnlyScaffoldResult(plan.scaffold),
+      stageResults: plan.stages.map((stage) => ({ name: stage.name, disposition: "skipped" })),
+      finalSupports: plan.supports,
+    };
+  }
+
+  let created: InitScaffoldResult | null = null;
+  const stageResults: InitStageRecord[] = [];
+  let finalSupports = plan.supports;
+
+  for (const step of plan.steps) {
+    switch (step.name) {
+      case "preflight":
+        break;
+      case "scaffold":
+        created = executeInitFabricPlan(plan.scaffold);
+        printInitScaffoldResult(created);
+        break;
+      case "bootstrap":
+      case "mcp":
+      case "hooks":
+        stageResults.push(await executeInitStagePlan(plan, step.name));
+        break;
+      case "post-setup":
+        finalSupports = detectClientSupports(plan.target);
+        printInitPostSetup(plan, stageResults, finalSupports);
+        break;
+      default:
+        exhaustiveInitExecutionStep(step);
+    }
+  }
+
+  return {
+    plan,
+    created: created ?? unreachableInitScaffold(),
+    stageResults,
+    finalSupports,
+  };
+}
+
+export function buildInitFabricPlan(target: string, options?: InitOptions): InitScaffoldPlan {
   assertExistingDirectory(target);
 
   const fabricDir = join(target, ".fabric");
@@ -332,11 +493,11 @@ export function initFabric(target: string, options?: InitOptions): {
   const metaPath = join(fabricDir, "agents.meta.json");
   const humanLockPath = join(fabricDir, "human-lock.json");
 
-  prepareWritableDirectory(fabricDir, options);
-  const bootstrapAction = prepareFreshPath(bootstrapPath, options);
-  const metaAction = prepareFreshPath(metaPath, options);
-  const humanLockAction = prepareFreshPath(humanLockPath, options);
-  const forensicAction = prepareFreshPath(forensicPath, options);
+  const replaceFabricDir = shouldReplaceWritableDirectory(fabricDir, options);
+  const bootstrapAction = planFreshPath(bootstrapPath, options);
+  const metaAction = planFreshPath(metaPath, options);
+  const humanLockAction = planFreshPath(humanLockPath, options);
+  const forensicAction = planFreshPath(forensicPath, options);
 
   const forensicReport = buildForensicReport(target);
   const humanLockTemplate = readFileSync(findTemplatePath("templates/fabric/human-lock.json"), "utf8");
@@ -344,56 +505,683 @@ export function initFabric(target: string, options?: InitOptions): {
   const bootstrapHash = sha256(bootstrapContent);
   const meta = createInitialMeta(bootstrapHash);
 
-  mkdirSync(fabricDir, { recursive: true });
-  mkdirSync(dirname(bootstrapPath), { recursive: true });
-  writeNewFile(bootstrapPath, bootstrapContent, options);
-  writeNewFile(metaPath, `${JSON.stringify(meta, null, 2)}\n`, options);
-  writeNewFile(humanLockPath, humanLockTemplate.endsWith("\n") ? humanLockTemplate : `${humanLockTemplate}\n`, options);
-  writeNewFile(forensicPath, `${JSON.stringify(forensicReport, null, 2)}\n`, options);
-  const claudeSkillAction = copyTemplateIfMissing(findTemplatePath(CLAUDE_INIT_SKILL_TEMPLATE), claudeSkillPath, options);
-  const codexSkillAction = copyTemplateIfMissing(findTemplatePath(CODEX_INIT_SKILL_TEMPLATE), codexSkillPath, options);
-  const codexSessionStartHookAction = copyExecutableTemplateIfMissing(
-    findTemplatePath(CODEX_SESSION_START_HOOK_TEMPLATE),
-    codexSessionStartHookPath,
-    options,
-  );
-  const codexStopHookAction = copyExecutableTemplateIfMissing(
-    findTemplatePath(CODEX_STOP_HOOK_TEMPLATE),
-    codexStopHookPath,
-    options,
-  );
-  const codexHooksConfigAction = writeCodexHooksConfig(codexHooksConfigPath, options);
-  const claudeHookAction = copyExecutableTemplateIfMissing(
-    findTemplatePath(CLAUDE_INIT_REMINDER_HOOK_TEMPLATE),
-    claudeHookPath,
-    options,
-  );
-  const claudeSettingsAction = mergeClaudeStopHook(claudeSettingsPath, options);
-
   return {
+    target,
+    options,
+    fabricDir,
+    replaceFabricDir,
     bootstrapPath,
     bootstrapAction,
+    bootstrapContent,
     metaPath,
     metaAction,
+    meta,
     humanLockPath,
     humanLockAction,
+    humanLockContent: humanLockTemplate.endsWith("\n") ? humanLockTemplate : `${humanLockTemplate}\n`,
     forensicPath,
     forensicAction,
-    claudeSkillPath,
-    claudeSkillAction,
-    codexSkillPath,
-    codexSkillAction,
-    codexSessionStartHookPath,
-    codexSessionStartHookAction,
-    codexStopHookPath,
-    codexStopHookAction,
-    codexHooksConfigPath,
-    codexHooksConfigAction,
-    claudeHookPath,
-    claudeHookAction,
-    claudeSettingsPath,
-    claudeSettingsAction,
+    forensicReport,
+    claudeSkill: buildOptionalTemplateWritePlan(claudeSkillPath, findTemplatePath(CLAUDE_INIT_SKILL_TEMPLATE), options),
+    codexSkill: buildOptionalTemplateWritePlan(codexSkillPath, findTemplatePath(CODEX_INIT_SKILL_TEMPLATE), options),
+    codexSessionStartHook: buildOptionalTemplateWritePlan(
+      codexSessionStartHookPath,
+      findTemplatePath(CODEX_SESSION_START_HOOK_TEMPLATE),
+      options,
+      true,
+    ),
+    codexStopHook: buildOptionalTemplateWritePlan(
+      codexStopHookPath,
+      findTemplatePath(CODEX_STOP_HOOK_TEMPLATE),
+      options,
+      true,
+    ),
+    codexHooksConfig: buildCodexHooksConfigPlan(codexHooksConfigPath, options),
+    claudeHook: buildOptionalTemplateWritePlan(
+      claudeHookPath,
+      findTemplatePath(CLAUDE_INIT_REMINDER_HOOK_TEMPLATE),
+      options,
+      true,
+    ),
+    claudeSettings: buildClaudeSettingsWritePlan(claudeSettingsPath, options),
   };
+}
+
+export function executeInitFabricPlan(plan: InitScaffoldPlan): InitScaffoldResult {
+  if (plan.replaceFabricDir) {
+    rmSync(plan.fabricDir, { force: true });
+  }
+
+  mkdirSync(plan.fabricDir, { recursive: true });
+  mkdirSync(dirname(plan.bootstrapPath), { recursive: true });
+
+  preparePlannedPath(plan.bootstrapPath, plan.bootstrapAction);
+  writeFileSync(plan.bootstrapPath, plan.bootstrapContent, "utf8");
+
+  preparePlannedPath(plan.metaPath, plan.metaAction);
+  writeFileSync(plan.metaPath, `${JSON.stringify(plan.meta, null, 2)}\n`, "utf8");
+
+  preparePlannedPath(plan.humanLockPath, plan.humanLockAction);
+  writeFileSync(plan.humanLockPath, plan.humanLockContent, "utf8");
+
+  preparePlannedPath(plan.forensicPath, plan.forensicAction);
+  writeFileSync(plan.forensicPath, `${JSON.stringify(plan.forensicReport, null, 2)}\n`, "utf8");
+
+  applyOptionalTemplateWritePlan(plan.claudeSkill);
+  applyOptionalTemplateWritePlan(plan.codexSkill);
+  applyOptionalTemplateWritePlan(plan.codexSessionStartHook);
+  applyOptionalTemplateWritePlan(plan.codexStopHook);
+  applyJsonWritePlan(plan.codexHooksConfig);
+  applyOptionalTemplateWritePlan(plan.claudeHook);
+  applyClaudeSettingsWritePlan(plan.claudeSettings);
+
+  return {
+    bootstrapPath: plan.bootstrapPath,
+    bootstrapAction: plan.bootstrapAction,
+    metaPath: plan.metaPath,
+    metaAction: plan.metaAction,
+    humanLockPath: plan.humanLockPath,
+    humanLockAction: plan.humanLockAction,
+    forensicPath: plan.forensicPath,
+    forensicAction: plan.forensicAction,
+    claudeSkillPath: plan.claudeSkill.path,
+    claudeSkillAction: plan.claudeSkill.action,
+    codexSkillPath: plan.codexSkill.path,
+    codexSkillAction: plan.codexSkill.action,
+    codexSessionStartHookPath: plan.codexSessionStartHook.path,
+    codexSessionStartHookAction: plan.codexSessionStartHook.action,
+    codexStopHookPath: plan.codexStopHook.path,
+    codexStopHookAction: plan.codexStopHook.action,
+    codexHooksConfigPath: plan.codexHooksConfig.path,
+    codexHooksConfigAction: plan.codexHooksConfig.action,
+    claudeHookPath: plan.claudeHook.path,
+    claudeHookAction: plan.claudeHook.action,
+    claudeSettingsPath: plan.claudeSettings.path,
+    claudeSettingsAction: plan.claudeSettings.action,
+  };
+}
+
+export function initFabric(target: string, options?: InitOptions): InitScaffoldResult {
+  return executeInitFabricPlan(buildInitFabricPlan(target, options));
+}
+
+export function shouldUseInitWizard(
+  args: Pick<InitArgs, "interactive" | "yes">,
+  terminalInteractive = isInteractiveInit(),
+): boolean {
+  return terminalInteractive && args.interactive !== false && args.yes !== true;
+}
+
+export async function resolveInitExecutionPlanWithWizard(
+  basePlan: InitExecutionPlan,
+  args: Pick<InitArgs, "bootstrap" | "mcp" | "hooks">,
+  wizardAdapter: InitWizardAdapter,
+): Promise<InitExecutionPlan | null> {
+  const selection = await wizardAdapter.run({
+    target: basePlan.target,
+    options: basePlan.options,
+    supports: basePlan.supports,
+    mcpInstallMode: basePlan.mcpInstallMode,
+    lockedStages: collectLockedWizardStages(args),
+  });
+
+  if (selection === null) {
+    return null;
+  }
+
+  return buildInitExecutionPlan({
+    target: basePlan.target,
+    options: {
+      ...basePlan.options,
+      skipBootstrap: !selection.bootstrap,
+      skipMcp: !selection.mcp,
+      skipHooks: !selection.hooks,
+    },
+    mcpInstallMode: selection.mcp ? selection.mcpInstallMode : basePlan.mcpInstallMode,
+    interactive: false,
+    supports: basePlan.supports,
+  });
+}
+
+function unreachableInitScaffold(): never {
+  throw new Error("Init scaffold step did not execute");
+}
+
+function exhaustiveInitExecutionStep(value: never): never {
+  throw new Error(`Unsupported init execution step: ${JSON.stringify(value)}`);
+}
+
+function exhaustiveInitStagePlan(value: never): never {
+  throw new Error(`Unsupported init stage plan: ${JSON.stringify(value)}`);
+}
+
+function printInitScaffoldResult(created: InitScaffoldResult): void {
+  console.log(formatInitPathAction(created.bootstrapPath, created.bootstrapAction));
+  console.log(formatInitPathAction(created.metaPath, created.metaAction));
+  console.log(formatInitPathAction(created.humanLockPath, created.humanLockAction));
+  console.log(formatInitPathAction(created.forensicPath, created.forensicAction));
+  writeStderr(formatOptionalInitPathAction(created.claudeSkillPath, created.claudeSkillAction));
+  writeStderr(formatOptionalInitPathAction(created.codexSkillPath, created.codexSkillAction));
+  writeStderr(
+    formatOptionalInitPathAction(created.codexSessionStartHookPath, created.codexSessionStartHookAction),
+  );
+  writeStderr(
+    formatOptionalInitPathAction(created.codexStopHookPath, created.codexStopHookAction),
+  );
+  writeStderr(formatCodexHooksAction(created.codexHooksConfigPath, created.codexHooksConfigAction));
+  writeStderr(formatOptionalInitPathAction(created.claudeHookPath, created.claudeHookAction));
+  writeStderr(formatClaudeSettingsAction(created.claudeSettingsPath, created.claudeSettingsAction));
+}
+
+function printInitPostSetup(
+  plan: InitExecutionPlan,
+  stageResults: InitStageRecord[],
+  finalSupports: DetectedClientSupport[],
+): void {
+  if (shouldPrintHooksNextStep(plan.options, stageResults)) {
+    console.log(
+      t("cli.init.next-step", {
+        label: nextLabel(),
+        message: paint.muted(t("cli.init.next-step.message")),
+      }),
+    );
+  }
+
+  console.log(
+    t("cli.init.reason-message", {
+      label: reasonLabel(),
+      message: paint.muted(formatInitReasonMessage(finalSupports)),
+    }),
+  );
+  printInitStageSummary(stageResults);
+  printInitCapabilitySummary(finalSupports, stageResults, plan.options);
+}
+
+function printInitPlanPreview(plan: InitExecutionPlan): void {
+  console.log(t("cli.init.plan.preview-title"));
+  printInitPlanSummary(plan.target, plan.options, plan.mcpInstallMode, plan.supports);
+  console.log(
+    t("cli.init.plan.preview-result", {
+      mode: plan.options.reapply ? t("cli.init.mode.reapply") : t("cli.init.mode.default"),
+      bootstrap: yesNoLabel(!plan.options.skipBootstrap),
+      mcp: yesNoLabel(!plan.options.skipMcp),
+      hooks: yesNoLabel(!plan.options.skipHooks),
+    }),
+  );
+}
+
+function buildPlanOnlyScaffoldResult(plan: InitScaffoldPlan): InitScaffoldResult {
+  return {
+    bootstrapPath: plan.bootstrapPath,
+    bootstrapAction: plan.bootstrapAction,
+    metaPath: plan.metaPath,
+    metaAction: plan.metaAction,
+    humanLockPath: plan.humanLockPath,
+    humanLockAction: plan.humanLockAction,
+    forensicPath: plan.forensicPath,
+    forensicAction: plan.forensicAction,
+    claudeSkillPath: plan.claudeSkill.path,
+    claudeSkillAction: plan.claudeSkill.action,
+    codexSkillPath: plan.codexSkill.path,
+    codexSkillAction: plan.codexSkill.action,
+    codexSessionStartHookPath: plan.codexSessionStartHook.path,
+    codexSessionStartHookAction: plan.codexSessionStartHook.action,
+    codexStopHookPath: plan.codexStopHook.path,
+    codexStopHookAction: plan.codexStopHook.action,
+    codexHooksConfigPath: plan.codexHooksConfig.path,
+    codexHooksConfigAction: plan.codexHooksConfig.action,
+    claudeHookPath: plan.claudeHook.path,
+    claudeHookAction: plan.claudeHook.action,
+    claudeSettingsPath: plan.claudeSettings.path,
+    claudeSettingsAction: plan.claudeSettings.action,
+  };
+}
+
+async function executeInitStagePlan(
+  plan: InitExecutionPlan,
+  stageName: InitStageName,
+): Promise<InitStageRecord> {
+  const stage = plan.stages.find((entry) => entry.name === stageName);
+  if (stage === undefined) {
+    throw new Error(`Missing init stage plan: ${stageName}`);
+  }
+
+  if (stage.skipped) {
+    return { name: stageName, disposition: "skipped" };
+  }
+
+  console.log(formatInitStageHeader(t(`cli.init.stages.${stageName}`)));
+
+  try {
+    switch (stage.name) {
+      case "bootstrap": {
+        const result = await installBootstrap(plan.target, { force: plan.options.force });
+        if (result.details.length === 0) {
+          console.log(formatInitStageResult("bootstrap", "skipped", 0, 0, t("cli.bootstrap.install.no-targets")));
+          return { name: "bootstrap", disposition: "skipped" };
+        }
+
+        console.log(
+          formatInitStageResult("bootstrap", "completed", result.installed.length, result.skipped.length),
+        );
+        return { name: "bootstrap", disposition: "ran" };
+      }
+      case "mcp": {
+        if (stage.installMode === "local") {
+          const manager = stage.packageManager ?? detectPackageManager(plan.target);
+          writeStderr(t("cli.init.mcp.install.local"));
+          writeStderr(t("cli.init.mcp.local.installing", { manager }));
+          installLocalFabricServer(plan.target, manager);
+          writeStderr(t("cli.init.mcp.local.installed"));
+        } else {
+          writeStderr(t("cli.init.mcp.install.global"));
+        }
+
+        const result = await configCommand.installMcpClients(plan.target, {
+          force: plan.options.force,
+          localServerPath: stage.localServerPath,
+        });
+        if (result.details.length === 0) {
+          console.log(formatInitStageResult("mcp", "skipped", 0, 0, t("cli.config.install.no-configs")));
+          return { name: "mcp", disposition: "skipped" };
+        }
+
+        console.log(formatInitStageResult("mcp", "completed", result.installed.length, result.skipped.length));
+        return { name: "mcp", disposition: "ran" };
+      }
+      case "hooks": {
+        const result = await installHooks(plan.target, { force: plan.options.force });
+        console.log(formatInitStageResult("hooks", "completed", result.installed.length, result.skipped.length));
+        return { name: "hooks", disposition: "ran" };
+      }
+      default:
+        return exhaustiveInitStagePlan(stage);
+    }
+  } catch (error: unknown) {
+    writeStderr(formatInitStageFailure(stageName, error));
+    return { name: stageName, disposition: "failed" };
+  }
+}
+
+function shouldReplaceWritableDirectory(path: string, options?: InitOptions): boolean {
+  if (!existsSync(path)) {
+    return false;
+  }
+
+  if (statSync(path).isDirectory()) {
+    return false;
+  }
+
+  if (!options?.force) {
+    throw new Error(t("cli.init.errors.abort-existing", { path }));
+  }
+
+  return true;
+}
+
+function planFreshPath(path: string, options?: InitOptions): InitWriteAction {
+  if (!existsSync(path)) {
+    return "created";
+  }
+
+  if (!options?.force) {
+    throw new Error(t("cli.init.errors.abort-existing", { path }));
+  }
+
+  return "overwritten";
+}
+
+function preparePlannedPath(path: string, action: InitWriteAction): void {
+  mkdirSync(dirname(path), { recursive: true });
+  if (action === "overwritten" && existsSync(path)) {
+    rmSync(path, { recursive: true, force: true });
+  }
+}
+
+function buildOptionalTemplateWritePlan(
+  path: string,
+  templatePath: string,
+  options?: InitOptions,
+  executable = false,
+): InitOptionalTemplateWritePlan {
+  const existed = existsSync(path);
+  if (existed && !options?.force) {
+    return { path, action: "skipped", templatePath, executable };
+  }
+
+  return {
+    path,
+    action: existed ? "overwritten" : "created",
+    templatePath,
+    executable,
+  };
+}
+
+function applyOptionalTemplateWritePlan(plan: InitOptionalTemplateWritePlan): void {
+  if (plan.action === "skipped") {
+    return;
+  }
+
+  mkdirSync(dirname(plan.path), { recursive: true });
+  copyFileSync(plan.templatePath, plan.path);
+  if (plan.executable) {
+    chmodSync(plan.path, 0o755);
+  }
+}
+
+function buildCodexHooksConfigValue(): CodexHooksConfig {
+  return {
+    hooks: {
+      SessionStart: [
+        {
+          matcher: "*",
+          hooks: [{ type: "command", command: CODEX_SESSION_START_COMMAND }],
+        },
+      ],
+      Stop: [
+        {
+          matcher: "*",
+          hooks: [{ type: "command", command: CODEX_STOP_COMMAND }],
+        },
+      ],
+    },
+  };
+}
+
+function buildCodexHooksConfigPlan(configPath: string, options?: InitOptions): InitJsonWritePlan {
+  const action = !existsSync(configPath)
+    ? "created"
+    : options?.force
+      ? "overwritten"
+      : "skipped";
+
+  return {
+    path: configPath,
+    action,
+    value: buildCodexHooksConfigValue(),
+  };
+}
+
+function applyJsonWritePlan(plan: InitJsonWritePlan): void {
+  if (plan.action === "skipped") {
+    return;
+  }
+
+  mkdirSync(dirname(plan.path), { recursive: true });
+  writeJsonAtomically(plan.path, plan.value);
+}
+
+function buildClaudeSettingsWritePlan(settingsPath: string, options?: InitOptions): InitClaudeSettingsWritePlan {
+  let settings: ClaudeSettings;
+  let action: Extract<ClaudeSettingsAction, "created" | "updated" | "overwritten"> = "updated";
+
+  if (!existsSync(settingsPath)) {
+    settings = {};
+    action = "created";
+  } else {
+    try {
+      const parsed = JSON.parse(readFileSync(settingsPath, "utf8")) as unknown;
+      if (!isRecord(parsed)) {
+        writeStderr(t("cli.init.claude-settings.invalid-object", { label: skippedLabel(), path: settingsPath }));
+        return { path: settingsPath, action: "skipped-invalid", value: null };
+      }
+
+      settings = parsed as ClaudeSettings;
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : "unknown parse error";
+      writeStderr(t("cli.init.claude-settings.invalid-json", { label: skippedLabel(), path: settingsPath, reason }));
+      return { path: settingsPath, action: "skipped-invalid", value: null };
+    }
+  }
+
+  if (settings.hooks !== undefined && !isRecord(settings.hooks)) {
+    writeStderr(t("cli.init.claude-settings.invalid-hooks", { label: skippedLabel(), path: settingsPath }));
+    return { path: settingsPath, action: "skipped-invalid", value: null };
+  }
+
+  const hooks = (settings.hooks ?? {}) as Record<string, unknown>;
+  const stopHooksValue = hooks.Stop;
+  if (stopHooksValue !== undefined && !Array.isArray(stopHooksValue)) {
+    writeStderr(t("cli.init.claude-settings.invalid-stop-array", { label: skippedLabel(), path: settingsPath }));
+    return { path: settingsPath, action: "skipped-invalid", value: null };
+  }
+
+  const stopHooks = Array.isArray(stopHooksValue) ? stopHooksValue : [];
+  const hasExistingFabricHook = hasClaudeInitReminderHook(stopHooks);
+  if (hasExistingFabricHook && !options?.force) {
+    return { path: settingsPath, action: "skipped", value: null };
+  }
+
+  const nextStopHooks = hasExistingFabricHook && options?.force ? removeClaudeInitReminderHook(stopHooks) : [...stopHooks];
+  nextStopHooks.push({
+    matcher: "*",
+    hooks: [
+      {
+        type: "command",
+        command: CLAUDE_INIT_REMINDER_COMMAND,
+      },
+    ],
+  } satisfies ClaudeStopHookEntry);
+
+  const nextSettings: ClaudeSettings = {
+    ...settings,
+    hooks: {
+      ...hooks,
+      Stop: nextStopHooks as ClaudeStopHookEntry[],
+    },
+  };
+
+  return {
+    path: settingsPath,
+    action: hasExistingFabricHook && options?.force ? "overwritten" : action,
+    value: nextSettings,
+  };
+}
+
+function applyClaudeSettingsWritePlan(plan: InitClaudeSettingsWritePlan): void {
+  if (plan.value === null) {
+    return;
+  }
+
+  mkdirSync(dirname(plan.path), { recursive: true });
+  writeJsonAtomically(plan.path, plan.value);
+}
+
+export function createDefaultInitWizardAdapter(): InitWizardAdapter {
+  return {
+    async run(context) {
+      intro(t("cli.init.wizard.intro"));
+      note(
+        t("cli.init.wizard.overview.body", {
+          target: context.target,
+          mode: formatInitModeBadge(context.options),
+        }),
+        t("cli.init.wizard.overview.title"),
+      );
+      printInitPlanSummary(context.target, context.options, context.mcpInstallMode, context.supports);
+
+      log.step(t("cli.init.wizard.step.target"));
+      const continueWithTarget = await confirm({
+        message: t("cli.init.wizard.target.confirm", { target: context.target }),
+        initialValue: true,
+      });
+      if (isCancel(continueWithTarget) || !continueWithTarget) {
+        emitInitWizardCancellation();
+        return null;
+      }
+
+      log.step(t("cli.init.wizard.step.plan"));
+      let groupedSelection: InitWizardSelection;
+      try {
+        groupedSelection = await group<InitWizardSelection>(
+          {
+            bootstrap: async () =>
+              context.lockedStages.includes("bootstrap")
+                ? false
+                : confirmInGroup({
+                  message: t("cli.init.wizard.stage.bootstrap", {
+                    defaultValue: formatPromptDefault(!context.options.skipBootstrap),
+                  }),
+                  initialValue: !context.options.skipBootstrap,
+                }),
+            mcp: async () =>
+              context.lockedStages.includes("mcp")
+                ? false
+                : confirmInGroup({
+                  message: t("cli.init.wizard.stage.mcp", {
+                    defaultValue: formatPromptDefault(!context.options.skipMcp),
+                  }),
+                  initialValue: !context.options.skipMcp,
+                }),
+            mcpInstallMode: async ({ results }) =>
+              results.mcp
+                ? selectMcpInstallModeInGroup({
+                  message: t("cli.init.wizard.mcp-install", { defaultValue: context.mcpInstallMode }),
+                  initialValue: context.mcpInstallMode,
+                  options: [
+                    { value: "global", label: "global", hint: t("cli.init.mcp.install.global") },
+                    { value: "local", label: "local", hint: t("cli.init.mcp.install.local") },
+                  ],
+                })
+                : context.mcpInstallMode,
+            hooks: async () =>
+              context.lockedStages.includes("hooks")
+                ? false
+                : confirmInGroup({
+                  message: t("cli.init.wizard.stage.hooks", {
+                    defaultValue: formatPromptDefault(!context.options.skipHooks),
+                  }),
+                  initialValue: !context.options.skipHooks,
+                }),
+          },
+          {
+            onCancel() {
+              throw INIT_WIZARD_GROUP_CANCELLED;
+            },
+          },
+        );
+      } catch (error) {
+        if (error === INIT_WIZARD_GROUP_CANCELLED) {
+          emitInitWizardCancellation();
+          return null;
+        }
+
+        throw error;
+      }
+
+      if (groupedSelection === null) {
+        emitInitWizardCancellation();
+        return null;
+      }
+
+      const previewOptions: InitOptions = {
+        ...context.options,
+        skipBootstrap: !groupedSelection.bootstrap,
+        skipMcp: !groupedSelection.mcp,
+        skipHooks: !groupedSelection.hooks,
+      };
+      log.step(t("cli.init.wizard.step.review"));
+      printInitPlanSummary(context.target, previewOptions, groupedSelection.mcpInstallMode, context.supports);
+
+      const confirmed = await confirm({
+        message: t("cli.init.wizard.execute.confirm"),
+        initialValue: true,
+      });
+      if (isCancel(confirmed) || !confirmed) {
+        emitInitWizardCancellation();
+        return null;
+      }
+
+      outro(t("cli.init.wizard.outro"));
+
+      return groupedSelection;
+    },
+  };
+}
+
+function emitInitWizardCancellation(): void {
+  cancel(t("cli.init.wizard.cancelled"));
+}
+
+async function confirmInGroup(options: { message: string; initialValue: boolean }): Promise<boolean> {
+  const result = await confirm(options);
+  if (isCancel(result)) {
+    throw INIT_WIZARD_GROUP_CANCELLED;
+  }
+
+  return result;
+}
+
+async function selectMcpInstallModeInGroup(options: {
+  message: string;
+  initialValue: McpInstallMode;
+  options: Array<{ value: McpInstallMode; label?: string; hint?: string; disabled?: boolean }>;
+}): Promise<McpInstallMode> {
+  const result = await select({
+    message: options.message,
+    initialValue: options.initialValue,
+    options: options.options,
+  });
+
+  if (isCancel(result)) {
+    throw INIT_WIZARD_GROUP_CANCELLED;
+  }
+
+  return result;
+}
+
+function collectLockedWizardStages(args: Pick<InitArgs, "bootstrap" | "mcp" | "hooks">): InitStageName[] {
+  const lockedStages: InitStageName[] = [];
+
+  if (args.bootstrap === false) {
+    lockedStages.push("bootstrap");
+  }
+
+  if (args.mcp === false) {
+    lockedStages.push("mcp");
+  }
+
+  if (args.hooks === false) {
+    lockedStages.push("hooks");
+  }
+
+  return lockedStages;
+}
+
+function formatPromptDefault(value: boolean): string {
+  return value ? "Y/n" : "y/N";
+}
+
+function formatInitModeBanner(options: InitOptions): string {
+  if (options.planOnly && options.reapply) {
+    return t("cli.init.plan.mode-banner.plan-reapply");
+  }
+
+  if (options.planOnly) {
+    return t("cli.init.plan.mode-banner.plan");
+  }
+
+  if (options.reapply) {
+    return t("cli.init.plan.mode-banner.reapply");
+  }
+
+  return t("cli.init.plan.mode-banner.default");
+}
+
+function formatInitModeBadge(options: InitOptions): string {
+  if (options.planOnly && options.reapply) {
+    return t("cli.init.mode.badge.plan-reapply");
+  }
+
+  if (options.planOnly) {
+    return t("cli.init.mode.badge.plan");
+  }
+
+  if (options.reapply) {
+    return t("cli.init.mode.badge.reapply");
+  }
+
+  return t("cli.init.mode.badge.default");
 }
 
 function normalizeTarget(targetInput: string): string {
@@ -747,7 +1535,7 @@ function shouldPrintHooksNextStep(options: InitOptions, stageResults: InitStageR
 }
 
 function isInteractiveInit(): boolean {
-  return Boolean(process.stdout.isTTY) && Boolean(process.stderr.isTTY);
+  return Boolean(process.stdin.isTTY) && Boolean(process.stdout.isTTY) && Boolean(process.stderr.isTTY);
 }
 
 function printInitPlanSummary(
@@ -757,6 +1545,7 @@ function printInitPlanSummary(
   supports: DetectedClientSupport[],
 ): void {
   console.log(t("cli.init.plan.title"));
+  console.log(formatInitModeBanner(options));
   console.log(t("cli.init.plan.target", { target }));
   console.log(
     t("cli.init.plan.actions", {
