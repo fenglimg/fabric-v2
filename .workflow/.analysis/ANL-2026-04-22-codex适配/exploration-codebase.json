@@ -1,0 +1,101 @@
+{
+  "project_type": "nodejs",
+  "relevant_files": [
+    {
+      "path": "packages/cli/src/config/resolver.ts",
+      "relevance": "high",
+      "summary": "Codex client detection and capability matrix live here; current matrix marks Codex hook/skill unsupported.",
+      "dimensions": ["implementation", "decision"]
+    },
+    {
+      "path": "packages/cli/src/config/toml.ts",
+      "relevance": "high",
+      "summary": "Codex config writer updates ~/.codex/config.toml with MCP server blocks only.",
+      "dimensions": ["implementation"]
+    },
+    {
+      "path": "packages/cli/src/commands/init.ts",
+      "relevance": "high",
+      "summary": "Init installs Claude-specific skill/hook/settings assets but no Codex equivalents.",
+      "dimensions": ["implementation", "architecture"]
+    },
+    {
+      "path": "packages/cli/__tests__/init-mcp-scope.test.ts",
+      "relevance": "high",
+      "summary": "Tests codify that Codex currently shows manual follow-up rather than installed skill/hook support.",
+      "dimensions": ["implementation", "comparison"]
+    },
+    {
+      "path": "docs/initialization.md",
+      "relevance": "medium",
+      "summary": "Initialization docs are Claude-centric and describe non-Claude clients as lacking automated handoff.",
+      "dimensions": ["architecture", "comparison"]
+    },
+    {
+      "path": ".workflow/.analysis/ANL-2026-04-21-fabric-init-cli-ux/conclusions.json",
+      "relevance": "medium",
+      "summary": "Previous analysis already identified Codex as partial support and suggested capability matrix improvements.",
+      "dimensions": ["decision"]
+    }
+  ],
+  "patterns": [
+    {
+      "pattern": "Client capability matrix in code",
+      "files": ["packages/cli/src/config/resolver.ts"],
+      "description": "Capabilities are statically expressed per client and consumed by init summary output."
+    },
+    {
+      "pattern": "Client-specific init asset install",
+      "files": ["packages/cli/src/commands/init.ts"],
+      "description": "Init currently writes client follow-up assets only for Claude."
+    },
+    {
+      "pattern": "Codex TOML config specialization",
+      "files": ["packages/cli/src/config/toml.ts"],
+      "description": "Codex diverges from JSON-based clients only at MCP config layer."
+    },
+    {
+      "pattern": "Manual follow-up encoded in tests",
+      "files": ["packages/cli/__tests__/init-mcp-scope.test.ts"],
+      "description": "Current UX expectation intentionally treats Codex as partially integrated."
+    }
+  ],
+  "constraints": [
+    "There are existing uncommitted changes in templates/bootstrap/* and templates/claude-skills/*; implementation work must avoid overwriting them without coordination.",
+    "Fabric init is intentionally non-destructive and preserves existing files/settings unless forced.",
+    "Any Codex integration should preserve current TOML MCP config behavior and add assets incrementally."
+  ],
+  "integration_points": [
+    {
+      "location": "packages/cli/src/config/resolver.ts",
+      "description": "Update Codex capabilities and possibly expose finer-grained capability states."
+    },
+    {
+      "location": "packages/cli/src/commands/init.ts",
+      "description": "Install repo-scoped Codex assets and adjust reason/follow-up output."
+    },
+    {
+      "location": "packages/cli/src/config/toml.ts",
+      "description": "Potentially add support for skill toggles or Codex feature guidance in config.toml."
+    },
+    {
+      "location": "docs/initialization.md and README.md",
+      "description": "Document Codex parity path and any hook feature-flag caveat."
+    },
+    {
+      "location": "packages/cli/__tests__/*",
+      "description": "Extend current Codex tests to assert installed assets and new capability states."
+    }
+  ],
+  "key_findings": [
+    "Codex is already a first-class detected client in Fabric, but only for MCP config.",
+    "Capability reporting is now stale relative to official Codex docs.",
+    "Repo-scoped skill support means Fabric does not need a Codex-only private skill directory to add initialization workflows.",
+    "Repo-scoped hooks.json support means Fabric can build a Codex-native follow-up flow after fab init.",
+    "Because Codex tool hooks are still Bash-centric, SessionStart and Stop are the safer first integration points than PreToolUse/PostToolUse."
+  ],
+  "_metadata": {
+    "timestamp": "2026-04-22T00:20:00+08:00",
+    "exploration_scope": "Codex support in init/config/bootstrap plus adjacent docs and prior analysis sessions"
+  }
+}

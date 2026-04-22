@@ -1,0 +1,150 @@
+{
+  "topic": "Codex skill and hook support relevant to Fabric integration",
+  "timestamp": "2026-04-22T00:25:00+08:00",
+  "findings": [
+    {
+      "finding": "Codex officially supports agent skills in CLI, IDE extension, and Codex app.",
+      "detail": "Skills are defined as directories with SKILL.md and optional scripts/references/assets; Codex starts from metadata and loads full instructions on demand.",
+      "confidence": "high",
+      "source_url": "https://developers.openai.com/codex/skills"
+    },
+    {
+      "finding": "Codex officially scans repository skill directories under .agents/skills up to repo root.",
+      "detail": "Repo, user, admin, and system skill scopes are documented; repo root .agents/skills is a supported first-class path.",
+      "confidence": "high",
+      "source_url": "https://developers.openai.com/codex/skills"
+    },
+    {
+      "finding": "Codex officially supports lifecycle hooks loaded from hooks.json.",
+      "detail": "Useful locations include ~/.codex/hooks.json and <repo>/.codex/hooks.json; multiple matching files are loaded together.",
+      "confidence": "high",
+      "source_url": "https://developers.openai.com/codex/hooks"
+    },
+    {
+      "finding": "Stop hooks can continue the Codex run by returning a block decision with a reason.",
+      "detail": "The reason becomes a continuation prompt rather than a hard rejection, which maps well to Fabric's reminder/handoff pattern.",
+      "confidence": "high",
+      "source_url": "https://developers.openai.com/codex/hooks"
+    },
+    {
+      "finding": "SessionStart hooks can inject additional developer context.",
+      "detail": "This provides a native entry point for reminding Codex to load Fabric bootstrap/init context before editing.",
+      "confidence": "high",
+      "source_url": "https://developers.openai.com/codex/hooks"
+    },
+    {
+      "finding": "Codex tool interception hooks are not yet a full enforcement layer.",
+      "detail": "PreToolUse and PostToolUse currently only support Bash-oriented events and do not intercept MCP, Write, or WebSearch.",
+      "confidence": "high",
+      "source_url": "https://developers.openai.com/codex/hooks"
+    },
+    {
+      "finding": "Codex hook loading is feature-flagged.",
+      "detail": "Configuration reference documents features.codex_hooks as the switch that enables lifecycle hooks from hooks.json, and marks it under development/off by default.",
+      "confidence": "high",
+      "source_url": "https://developers.openai.com/codex/config-reference"
+    },
+    {
+      "finding": "Codex config.toml also supports skill toggling by path.",
+      "detail": "skills.config entries can disable a skill without deleting it, which gives Fabric an optional future integration point.",
+      "confidence": "high",
+      "source_url": "https://developers.openai.com/codex/skills"
+    }
+  ],
+  "best_practices": [
+    {
+      "practice": "Prefer repo-scoped skills for repository workflows",
+      "rationale": "Keeps initialization logic versioned with the repository and available to all users entering the repo.",
+      "source": "https://developers.openai.com/codex/skills"
+    },
+    {
+      "practice": "Use clear skill descriptions and keep each skill focused",
+      "rationale": "Implicit invocation in Codex is driven by skill description scope and boundaries.",
+      "source": "https://developers.openai.com/codex/skills"
+    },
+    {
+      "practice": "Treat PreToolUse/PostToolUse as guardrails, not complete enforcement",
+      "rationale": "Current Codex docs explicitly warn these events do not intercept all tool activity.",
+      "source": "https://developers.openai.com/codex/hooks"
+    },
+    {
+      "practice": "Use SessionStart and Stop for workflow steering",
+      "rationale": "These events have broader semantic fit for reminders, context loading, and continuation prompts.",
+      "source": "https://developers.openai.com/codex/hooks"
+    }
+  ],
+  "alternatives": [
+    {
+      "option": "Only document a manual Codex follow-up step",
+      "pros": ["Lowest implementation cost", "No experimental hooks dependency"],
+      "cons": ["No closed-loop handoff", "Still weaker than Claude path", "User experience remains partial"],
+      "verdict": "Useful fallback but no longer the best primary path"
+    },
+    {
+      "option": "Add repo skill first, delay hooks",
+      "pros": ["Stable and immediately useful", "No dependency on experimental hook feature", "Fits official repo skill model"],
+      "cons": ["No automatic reminder after init", "Relies on explicit or implicit skill invocation"],
+      "verdict": "Strong phase-1 path"
+    },
+    {
+      "option": "Add repo skill plus SessionStart/Stop hooks",
+      "pros": ["Closest parity with Claude-style handoff", "Uses Codex-native workflow hooks", "Can bootstrap context and continuation"],
+      "cons": ["Depends on features.codex_hooks", "Needs careful messaging because hook support is under development"],
+      "verdict": "Best medium-term path"
+    }
+  ],
+  "pitfalls": [
+    {
+      "issue": "Assuming Codex hooks can enforce all tool behavior",
+      "mitigation": "Restrict early design to SessionStart and Stop; document Bash-only limitations for other events.",
+      "source": "https://developers.openai.com/codex/hooks"
+    },
+    {
+      "issue": "Installing Codex-specific skill files outside official discovery paths",
+      "mitigation": "Use repo .agents/skills rather than inventing a nonstandard .codex/skills path.",
+      "source": "https://developers.openai.com/codex/skills"
+    },
+    {
+      "issue": "Treating experimental hooks as universally available",
+      "mitigation": "Gate docs/output with the feature-flag requirement and preserve a no-hook fallback path.",
+      "source": "https://developers.openai.com/codex/config-reference"
+    }
+  ],
+  "codebase_gaps": [
+    {
+      "gap": "Capability matrix still says Codex has no hook or skill support",
+      "current_approach": "resolver.ts reports hook=false and skill=false for CodexCLI",
+      "recommended_approach": "Separate official capability from Fabric-installed capability, then update init summaries accordingly"
+    },
+    {
+      "gap": "fab init has no Codex follow-up assets",
+      "current_approach": "Only Claude skill/hook/settings assets are installed",
+      "recommended_approach": "Install a repo skill under .agents/skills and optionally .codex/hooks.json plus helper scripts"
+    },
+    {
+      "gap": "Docs still frame non-Claude clients as lacking automated handoff",
+      "current_approach": "initialization docs are Claude-centric",
+      "recommended_approach": "Document Codex parity plan and clarify hook feature-flag caveat"
+    }
+  ],
+  "sources": [
+    {
+      "title": "Agent Skills - Codex",
+      "url": "https://developers.openai.com/codex/skills",
+      "key_takeaway": "Repo .agents/skills is an official Codex skill discovery path"
+    },
+    {
+      "title": "Hooks - Codex",
+      "url": "https://developers.openai.com/codex/hooks",
+      "key_takeaway": "Codex supports repo .codex/hooks.json and Stop/SessionStart workflow hooks"
+    },
+    {
+      "title": "Configuration Reference - Codex",
+      "url": "https://developers.openai.com/codex/config-reference",
+      "key_takeaway": "features.codex_hooks enables hooks from hooks.json and is documented as under development/off by default"
+    }
+  ],
+  "_metadata": {
+    "queries_executed": 3
+  }
+}
