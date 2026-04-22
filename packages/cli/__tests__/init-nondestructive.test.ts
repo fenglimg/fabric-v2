@@ -19,16 +19,16 @@ afterEach(() => {
 });
 
 describe("initFabric non-destructive behavior", () => {
-  it("aborts when AGENTS.md already exists and keeps the file intact", () => {
+  it("aborts when the internal bootstrap guide already exists and keeps the file intact", () => {
     const target = createWerewolfFixtureRoot("fab-init-agents-guard");
     tempRoots.push(target);
-    const original = "# custom agents\n";
+    const original = "# custom bootstrap\n";
 
-    writeFixtureFile(target, "AGENTS.md", original);
+    writeFixtureFile(target, ".fabric/bootstrap/README.md", original);
 
-    expect(() => initFabric(target)).toThrowError(`${target}/AGENTS.md`);
-    expect(readFixtureFile(target, "AGENTS.md")).toBe(original);
-    expect(existsSync(`${target}/.fabric`)).toBe(false);
+    expect(() => initFabric(target)).toThrowError(`${target}/.fabric/bootstrap/README.md`);
+    expect(readFixtureFile(target, ".fabric/bootstrap/README.md")).toBe(original);
+    expect(existsSync(`${target}/.fabric/agents.meta.json`)).toBe(false);
   });
 
   it("aborts when forensic.json already exists and does not overwrite it", () => {

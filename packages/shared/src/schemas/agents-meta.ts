@@ -47,7 +47,7 @@ export function withDerivedAgentsMetaNodeDefaults(node: AgentsMetaNodeInput): Ag
 export function deriveAgentsMetaLayer(file: string): AgentsLayer {
   const normalized = normalizePath(file);
 
-  if (normalized === "AGENTS.md") {
+  if (normalized === "AGENTS.md" || normalized === ".fabric/bootstrap/README.md") {
     return "L0";
   }
 

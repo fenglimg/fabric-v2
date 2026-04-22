@@ -33,6 +33,7 @@ describe("initFabric Claude install", () => {
     expect(existsSync(installedSkillPath)).toBe(true);
     expect(existsSync(hookPath)).toBe(true);
     expect(existsSync(settingsPath)).toBe(true);
+    expect(existsSync(join(target, ".fabric", "bootstrap", "README.md"))).toBe(true);
     expect(hashFile(installedSkillPath)).toBe(hashFile(skillTemplatePath));
     expect(statSync(hookPath).mode & 0o111).not.toBe(0);
 
@@ -41,6 +42,22 @@ describe("initFabric Claude install", () => {
     );
 
     expect(stopCommands).toContain(".claude/hooks/agents-md-init-reminder.cjs");
+    expect(readFileSync(join(target, ".fabric", "bootstrap", "README.md"), "utf8")).toContain("Fabric protocol source of truth");
+  });
+
+  it("keeps bootstrap content internal instead of writing a root Claude file", async () => {
+    const target = createWerewolfFixtureRoot("fab-init-claude-bootstrap-thin");
+    tempRoots.push(target);
+
+    const { installBootstrap } = await import("../src/commands/bootstrap.ts");
+    await installBootstrap(target, { clients: ["ClaudeCodeCLI"] });
+
+    const guidePath = join(target, ".fabric", "bootstrap", "README.md");
+    expect(existsSync(guidePath)).toBe(true);
+    expect(existsSync(join(target, "CLAUDE.md"))).toBe(false);
+    expect(existsSync(join(target, "GEMINI.md"))).toBe(false);
+    expect(existsSync(join(target, "AGENTS.md"))).toBe(false);
+    expect(readFileSync(guidePath, "utf8")).toContain(".fabric/bootstrap/README.md");
   });
 
   it("executes the reminder hook only while init-context is missing", () => {

@@ -1,0 +1,87 @@
+{
+  "session_id": "ANL-2026-04-21-fabric-init-cli-ux",
+  "timestamp": "2026-04-21T00:20:00+08:00",
+  "topic": "优化 fabric 当前 init 流程的交互/UI 体验，并收敛 AGENTS.md/CLAUDE.md/GEMINI.md 与 skill 安装策略",
+  "dimensions": ["architecture", "implementation", "comparison", "decision"],
+  "sources": [
+    {
+      "type": "code",
+      "file": "packages/cli/src/commands/init.ts",
+      "summary": "Current init orchestration and Claude-only post-init installation chain."
+    },
+    {
+      "type": "code",
+      "file": "packages/cli/src/commands/bootstrap.ts",
+      "summary": "Per-client bootstrap template fanout."
+    },
+    {
+      "type": "code",
+      "file": "packages/cli/src/config/resolver.ts",
+      "summary": "Client detection logic including Codex."
+    },
+    {
+      "type": "code",
+      "file": "packages/cli/templates/claude-skills/agents-md-init/SKILL.md",
+      "summary": "Current deep init completion path is Claude-centric."
+    },
+    {
+      "type": "history",
+      "file": ".workflow/.analysis/ANL-fab-doc-init-werewolf-2026-04-19/conclusions.json",
+      "summary": "Prior product framing: fab init is evidence + protocol install, not semantic completion."
+    },
+    {
+      "type": "history",
+      "file": ".workflow/.analysis/ANL-fab-init-heuristic-discovery-2026-04-19/conclusions.json",
+      "summary": "Prior architecture direction toward reduced duplicated maintenance and structured rule sources."
+    },
+    {
+      "type": "research",
+      "file": "research.json",
+      "summary": "Workflow CLI install patterns favor preflight planning and explicit capability differences."
+    }
+  ],
+  "key_findings": [
+    "Fabric init currently behaves like a script with summaries, not like a guided installer. That explains the user's 'too simple / no UI feel' complaint more accurately than saying it has no flow.",
+    "The real source of document duplication is bootstrap architecture: each client receives a native file target, so content duplication is structurally encouraged.",
+    "Claude is the only client with a tested continuation path after init. Codex is detected and configured, but deeper onboarding is absent or implicit.",
+    "A pragmatic redesign is to keep current execution primitives but add an orchestration layer and move protocol content into .fabric as the single source of truth."
+  ],
+  "discussion_points": [
+    "Should root AGENTS.md remain the project-level canonical entry, or become only another shim pointing at .fabric-owned guidance?",
+    "Is Codex skill parity worth building immediately, or should the first phase only make the missing capability explicit?",
+    "Should interactive mode become default when TTY is available, with current behavior preserved as non-interactive fallback?"
+  ],
+  "open_questions": [
+    "Which clients absolutely require a native external file for reliable discovery?",
+    "What is the minimal viable shape of a Codex follow-up capability: real skill, AGENTS section, or manual next-step only?",
+    "How much of the current AGENTS.md fallback should remain if .fabric becomes the protocol source?"
+  ],
+  "external_research": {
+    "findings": [
+      {
+        "finding": "Modern workflow CLI installers usually expose detection, options, and next steps explicitly.",
+        "confidence": "medium"
+      },
+      {
+        "finding": "Client-specific gaps should be surfaced directly, not hidden behind generic success messages.",
+        "confidence": "medium"
+      }
+    ],
+    "best_practices": [
+      "Preflight summary before changes",
+      "Single source of truth with thin adapters",
+      "Capability reporting for partial support"
+    ],
+    "codebase_gaps": [
+      "No wizard/preflight plan in init",
+      "No .fabric-owned bootstrap source document",
+      "No explicit Codex skill parity reporting"
+    ],
+    "sources": [
+      {
+        "title": "Claude Code Workflow repository",
+        "url": "https://github.com/catlog22/Claude-Code-Workflow"
+      }
+    ]
+  }
+}

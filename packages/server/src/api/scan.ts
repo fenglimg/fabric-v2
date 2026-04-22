@@ -46,7 +46,7 @@ function createScanReport(targetInput: string = process.cwd()): ScanReport {
   const framework = detectFramework(target);
   const readmeQuality = getReadmeQuality(target);
   const hasContributing = existsSync(join(target, "CONTRIBUTING.md"));
-  const hasExistingFabric = existsSync(join(target, "AGENTS.md")) || existsSync(join(target, ".fabric"));
+  const hasExistingFabric = existsSync(join(target, ".fabric", "bootstrap", "README.md")) || existsSync(join(target, ".fabric"));
   const walkResult = walkFiles(target, DEFAULT_IGNORES);
 
   return {
@@ -155,21 +155,21 @@ function buildRecommendations(input: {
   const recommendations: string[] = [];
 
   if (!input.hasExistingFabric) {
-    recommendations.push("L0: Run fab init to scaffold AGENTS.md with TODO markers.");
+    recommendations.push("L0: Run fab init to scaffold .fabric/bootstrap/README.md with TODO markers.");
   }
 
   if (input.readmeQuality === "stub") {
-    recommendations.push("L0: Expand README.md before promoting project facts into AGENTS.md references.");
+    recommendations.push("L0: Expand README.md before promoting project facts into Fabric references.");
   }
 
   if (!input.hasContributing) {
-    recommendations.push("L0: Add CONTRIBUTING.md or leave an AGENTS.md TODO reference for contribution flow.");
+    recommendations.push("L0: Add CONTRIBUTING.md or leave a bootstrap TODO reference for contribution flow.");
   }
 
   if (input.framework.kind === "unknown") {
     recommendations.push("L1: Add tech-stack TODOs manually because no framework marker was detected.");
   } else {
-    recommendations.push(`L1: Review ${input.framework.kind} directories for future scoped AGENTS.md files.`);
+    recommendations.push(`L1: Review ${input.framework.kind} directories for future scoped Fabric rule files.`);
   }
 
   return recommendations;

@@ -12,7 +12,7 @@ const WEREWOLF_FIXTURE = fileURLToPath(new URL("../../../examples/werewolf-minig
 
 describe("sync-meta shadow mirroring regression", () => {
   it("derives layer and topology for mirror and cross-cutting paths", () => {
-    expect(deriveLayer("AGENTS.md")).toBe("L0");
+    expect(deriveLayer(".fabric/bootstrap/README.md")).toBe("L0");
     expect(deriveLayer(".fabric/agents/root.md")).toBe("L0");
     expect(deriveLayer(".fabric/agents/assets/scripts/hunter.md")).toBe("L1");
     expect(deriveLayer(".fabric/agents/assets/scripts/balance/night-order.md")).toBe("L2");
@@ -24,7 +24,7 @@ describe("sync-meta shadow mirroring regression", () => {
   it("scans only shadow-mirroring markdown files and preserves layer metadata", () => {
     const meta = agentsMetaSchema.parse(computeAgentsMeta(WEREWOLF_FIXTURE));
     const shadowNodes = Object.entries(meta.nodes)
-      .filter(([, node]) => node.file !== "AGENTS.md")
+      .filter(([, node]) => node.file !== ".fabric/bootstrap/README.md")
       .map(([id, node]) => ({
         id,
         file: node.file,
@@ -101,7 +101,6 @@ describe("sync-meta shadow mirroring regression", () => {
     };
     for (const dir of businessDirs) walk(dir);
 
-    expect(existsSync(join(WEREWOLF_FIXTURE, "AGENTS.md"))).toBe(true);
     expect(colocatedAgents).toEqual([]);
   });
 
@@ -116,7 +115,7 @@ describe("sync-meta shadow mirroring regression", () => {
             revision: "legacy-shadow",
             nodes: {
               L0: {
-                file: "AGENTS.md",
+                file: ".fabric/bootstrap/README.md",
                 scope_glob: "**",
                 deps: [],
                 priority: "high",
@@ -140,7 +139,7 @@ describe("sync-meta shadow mirroring regression", () => {
       const meta = agentsMetaSchema.parse(computeAgentsMeta(target));
 
       expect(meta.nodes.L0).toMatchObject({
-        file: "AGENTS.md",
+        file: ".fabric/bootstrap/README.md",
         layer: "L0",
         topology_type: "mirror",
       });

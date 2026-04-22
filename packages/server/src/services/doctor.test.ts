@@ -54,14 +54,14 @@ describe("runDoctorReport", () => {
 
   it("returns ok when forensic, meta, locks, and ledger are aligned", async () => {
     const target = createFixtureRoot("doctor-ok");
-    const agentsPath = join(target, "AGENTS.md");
+    const bootstrapPath = join(target, ".fabric", "bootstrap", "README.md");
     const mainPath = join(target, "src", "main.ts");
     const humanPath = join(target, "src", "human.ts");
-    const agentsContent = "# Project Rules\n";
+    const bootstrapContent = "# Project Rules\n";
     const humanContent = "const kept = true;\n";
     const now = Date.now();
 
-    mkdirSync(join(target, ".fabric"), { recursive: true });
+    mkdirSync(join(target, ".fabric", "bootstrap"), { recursive: true });
     mkdirSync(join(target, "src"), { recursive: true });
     writeFileSync(
       join(target, "package.json"),
@@ -74,11 +74,11 @@ describe("runDoctorReport", () => {
       }, null, 2)}\n`,
       "utf8",
     );
-    writeFileSync(agentsPath, agentsContent, "utf8");
+    writeFileSync(bootstrapPath, bootstrapContent, "utf8");
     writeFileSync(mainPath, "export const boot = true;\n", "utf8");
     writeFileSync(humanPath, humanContent, "utf8");
 
-    const agentsHash = sha256(agentsContent);
+    const bootstrapHash = sha256(bootstrapContent);
     const forensic = {
       version: "1.0",
       generated_at: new Date(now).toISOString(),
@@ -127,14 +127,14 @@ describe("runDoctorReport", () => {
     writeFileSync(
       join(target, ".fabric", "agents.meta.json"),
       `${JSON.stringify({
-        revision: sha256(agentsHash),
+        revision: sha256(bootstrapHash),
         nodes: {
           L0: {
-            file: "AGENTS.md",
+            file: ".fabric/bootstrap/README.md",
             scope_glob: "**",
             deps: [],
             priority: "high",
-            hash: agentsHash,
+            hash: bootstrapHash,
           },
         },
       }, null, 2)}\n`,
@@ -161,7 +161,7 @@ describe("runDoctorReport", () => {
         source: "human",
         parent_sha: "abc1234",
         intent: "refresh doctor",
-        affected_paths: ["AGENTS.md"],
+        affected_paths: [".fabric/bootstrap/README.md"],
         diff_stat: "1 file changed",
       })}\n`,
       "utf8",
@@ -225,15 +225,15 @@ describe("runDoctorReport", () => {
 
   it("adds a rules fetch audit check when warn mode is enabled", async () => {
     const target = createFixtureRoot("doctor-audit-warn");
-    const agentsPath = join(target, "AGENTS.md");
+    const bootstrapPath = join(target, ".fabric", "bootstrap", "README.md");
     const mainPath = join(target, "src", "main.ts");
     const auditPath = join(target, "src", "audit.ts");
     const humanPath = join(target, "src", "human.ts");
-    const agentsContent = "# Project Rules\n";
+    const bootstrapContent = "# Project Rules\n";
     const humanContent = "const kept = true;\n";
     const now = Date.now();
 
-    mkdirSync(join(target, ".fabric"), { recursive: true });
+    mkdirSync(join(target, ".fabric", "bootstrap"), { recursive: true });
     mkdirSync(join(target, "src"), { recursive: true });
     writeFileSync(
       join(target, "fabric.config.json"),
@@ -253,12 +253,12 @@ describe("runDoctorReport", () => {
       }, null, 2)}\n`,
       "utf8",
     );
-    writeFileSync(agentsPath, agentsContent, "utf8");
+    writeFileSync(bootstrapPath, bootstrapContent, "utf8");
     writeFileSync(mainPath, "export const boot = true;\n", "utf8");
     writeFileSync(auditPath, "export const audit = true;\n", "utf8");
     writeFileSync(humanPath, humanContent, "utf8");
 
-    const agentsHash = sha256(agentsContent);
+    const bootstrapHash = sha256(bootstrapContent);
     writeFileSync(
       join(target, ".fabric", "forensic.json"),
       `${JSON.stringify({
@@ -303,14 +303,14 @@ describe("runDoctorReport", () => {
     writeFileSync(
       join(target, ".fabric", "agents.meta.json"),
       `${JSON.stringify({
-        revision: sha256(agentsHash),
+        revision: sha256(bootstrapHash),
         nodes: {
           L0: {
-            file: "AGENTS.md",
+            file: ".fabric/bootstrap/README.md",
             scope_glob: "**",
             deps: [],
             priority: "high",
-            hash: agentsHash,
+            hash: bootstrapHash,
           },
         },
       }, null, 2)}\n`,

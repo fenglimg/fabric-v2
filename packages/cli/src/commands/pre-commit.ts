@@ -57,10 +57,11 @@ function tryReadAgentsMeta(target: string): AgentsMeta | null {
 
 function matchesFabricScope(stagedFiles: string[], meta: AgentsMeta): boolean {
   const scopeGlobs = Object.values(meta.nodes)
-    .filter((node) => node.file !== "AGENTS.md")
+    .filter((node) => node.file !== ".fabric/bootstrap/README.md" && node.file !== "AGENTS.md")
     .map((node) => node.scope_glob);
 
   return stagedFiles.some((file) =>
+    file === ".fabric/bootstrap/README.md" ||
     file === "AGENTS.md" ||
     file === ".fabric/agents.meta.json" ||
     file === ".fabric/human-lock.json" ||

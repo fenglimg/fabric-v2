@@ -135,11 +135,11 @@ export function createFabricHttpApp(options: CreateFabricHttpAppOptions) {
 
   process.env.FABRIC_PROJECT_ROOT = projectRoot;
 
-  // Watch agents.meta.json and AGENTS.md to invalidate the hot-path cache.
+  // Watch agents.meta.json and bootstrap README to invalidate the hot-path cache.
   // This is a persistent, lightweight watcher separate from the SSE watcher
   // in api/events.ts (which is client-lifecycle-based).
   const cacheWatcher = chokidar.watch(
-    [".fabric/agents.meta.json", "AGENTS.md"],
+    [".fabric/agents.meta.json", ".fabric/bootstrap/README.md"],
     {
       cwd: projectRoot,
       ignoreInitial: true,
@@ -162,9 +162,9 @@ export function createFabricHttpApp(options: CreateFabricHttpAppOptions) {
       toolListNotifyTimer = setTimeout(() => {
         notifyAllSessions(sessions, "tools/list_changed");
       }, NOTIFY_DEBOUNCE_MS);
-    } else if (normalized === "AGENTS.md") {
+    } else if (normalized === ".fabric/bootstrap/README.md") {
       contextCache.invalidate("file_watch", projectRoot);
-      // Debounced: notify all sessions that the AGENTS.md resource was updated
+      // Debounced: notify all sessions that the bootstrap README resource was updated
       clearTimeout(agentsMdNotifyTimer);
       agentsMdNotifyTimer = setTimeout(() => {
         notifyAllSessions(sessions, "resource_updated", AGENTS_MD_RESOURCE_URI);

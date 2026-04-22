@@ -19,18 +19,20 @@ afterEach(() => {
 });
 
 describe("initFabric force behavior", () => {
-  it("overwrites an existing AGENTS.md when force is enabled", () => {
+  it("overwrites an existing internal bootstrap guide when force is enabled", () => {
     const target = createWerewolfFixtureRoot("fab-init-force-agents");
     const control = createWerewolfFixtureRoot("fab-init-force-agents-control");
     tempRoots.push(target, control);
 
-    writeFixtureFile(target, "AGENTS.md", "# custom agents\n");
+    writeFixtureFile(target, ".fabric/bootstrap/README.md", "# custom bootstrap\n");
 
     const result = initFabric(target, { force: true });
     initFabric(control);
 
-    expect(result.agentsAction).toBe("overwritten");
-    expect(readFixtureFile(target, "AGENTS.md")).toBe(readFixtureFile(control, "AGENTS.md"));
+    expect(result.bootstrapAction).toBe("overwritten");
+    expect(readFixtureFile(target, ".fabric/bootstrap/README.md")).toBe(
+      readFixtureFile(control, ".fabric/bootstrap/README.md"),
+    );
   });
 
   it("overwrites a pre-existing Claude skill file when force is enabled", () => {
@@ -117,12 +119,12 @@ describe("initFabric force behavior", () => {
   it("still aborts on a pre-existing guard file when force is not enabled", () => {
     const target = createWerewolfFixtureRoot("fab-init-force-guard");
     tempRoots.push(target);
-    const original = "# custom agents\n";
+    const original = "# custom bootstrap\n";
 
-    writeFixtureFile(target, "AGENTS.md", original);
+    writeFixtureFile(target, ".fabric/bootstrap/README.md", original);
 
-    expect(() => initFabric(target)).toThrowError(`${target}/AGENTS.md`);
-    expect(readFixtureFile(target, "AGENTS.md")).toBe(original);
+    expect(() => initFabric(target)).toThrowError(`${target}/.fabric/bootstrap/README.md`);
+    expect(readFixtureFile(target, ".fabric/bootstrap/README.md")).toBe(original);
   });
 
   it("remains non-destructive for an already initialized project without options", () => {

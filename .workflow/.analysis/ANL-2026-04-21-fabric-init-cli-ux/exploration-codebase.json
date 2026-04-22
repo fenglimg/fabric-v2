@@ -1,0 +1,115 @@
+{
+  "project_type": "nodejs-monorepo",
+  "relevant_files": [
+    {
+      "path": "packages/cli/src/commands/init.ts",
+      "relevance": "primary",
+      "summary": "Main init orchestration. Writes core Fabric files, installs Claude-specific skill/hook/settings, then runs bootstrap/mcp/hooks sequentially.",
+      "dimensions": ["implementation", "architecture"]
+    },
+    {
+      "path": "packages/cli/src/commands/bootstrap.ts",
+      "relevance": "primary",
+      "summary": "Maps clients to bootstrap templates and native target files, causing multi-file external bootstrap artifacts.",
+      "dimensions": ["implementation", "decision"]
+    },
+    {
+      "path": "packages/cli/src/config/resolver.ts",
+      "relevance": "primary",
+      "summary": "Client detection logic. Detects Claude, Cursor, Windsurf, Roo, Gemini, and Codex based on local/home paths.",
+      "dimensions": ["architecture", "implementation"]
+    },
+    {
+      "path": "packages/cli/templates/claude-skills/agents-md-init/SKILL.md",
+      "relevance": "primary",
+      "summary": "Claude-only follow-up initialization skill. Indicates Fabric currently models deep init completion through Claude skill continuation.",
+      "dimensions": ["architecture", "decision"]
+    },
+    {
+      "path": "packages/shared/src/i18n/locales/zh-CN.ts",
+      "relevance": "supporting",
+      "summary": "Current init copy emphasizes sequential stages and a Claude-oriented next step message.",
+      "dimensions": ["implementation"]
+    },
+    {
+      "path": "packages/cli/__tests__/init-claude-install.test.ts",
+      "relevance": "supporting",
+      "summary": "Confirms installed Claude skill/hook/settings and sentinel behavior, showing a complete Claude-only flow exists.",
+      "dimensions": ["implementation"]
+    },
+    {
+      "path": "packages/cli/__tests__/config-install.test.ts",
+      "relevance": "supporting",
+      "summary": "Confirms Codex only has TOML config installation coverage, not skill/hook coverage.",
+      "dimensions": ["implementation", "comparison"]
+    },
+    {
+      "path": ".workflow/.analysis/ANL-fab-doc-init-werewolf-2026-04-19/conclusions.json",
+      "relevance": "historical",
+      "summary": "Prior analysis defines fab init as evidence + protocol install, with AI skill taking over for semantic initialization.",
+      "dimensions": ["decision", "architecture"]
+    },
+    {
+      "path": ".workflow/.analysis/ANL-fab-init-heuristic-discovery-2026-04-19/conclusions.json",
+      "relevance": "historical",
+      "summary": "Prior analysis already pushes toward reducing duplicated maintenance and making rule sources more structured.",
+      "dimensions": ["decision", "architecture"]
+    }
+  ],
+  "patterns": [
+    {
+      "pattern": "Sequential init orchestration",
+      "files": ["packages/cli/src/commands/init.ts"],
+      "description": "Init runs core file creation first, then bootstrap, MCP config, and hooks in order. Output is post-action summary, not pre-action planning."
+    },
+    {
+      "pattern": "Client-native bootstrap file fanout",
+      "files": ["packages/cli/src/commands/bootstrap.ts", "packages/cli/templates/bootstrap/CLAUDE.md", "packages/cli/templates/bootstrap/GEMINI.md", "packages/cli/templates/bootstrap/codex-AGENTS-header.md"],
+      "description": "Bootstrap writes client-specific prompt files into each client's expected native location."
+    },
+    {
+      "pattern": "Claude-specialized follow-up completion",
+      "files": ["packages/cli/src/commands/init.ts", "packages/cli/templates/claude-skills/agents-md-init/SKILL.md", "packages/cli/__tests__/init-claude-install.test.ts"],
+      "description": "Claude receives a complete post-init continuation mechanism via skill + hook + settings merge."
+    },
+    {
+      "pattern": "Codex partial integration",
+      "files": ["packages/cli/src/config/resolver.ts", "packages/cli/__tests__/config-install.test.ts", "packages/cli/src/commands/bootstrap.ts"],
+      "description": "Codex is supported for MCP config and bootstrap header insertion, but not for deeper init continuation."
+    }
+  ],
+  "constraints": [
+    "Current init is intentionally non-destructive by default and aborts on existing key artifacts unless --force is used.",
+    "Different AI clients have different native bootstrap entrypoints, so removing all external files may reduce discoverability or compatibility.",
+    "Claude continuation flow is already tested and should not be regressed casually.",
+    "Codex support already exists at config/bootstrap level, so any redesign should preserve existing TOML integration."
+  ],
+  "integration_points": [
+    {
+      "location": "packages/cli/src/commands/init.ts",
+      "description": "Best insertion point for interactive planning UI and capability summary because all init stages already pass through here."
+    },
+    {
+      "location": "packages/cli/src/commands/bootstrap.ts",
+      "description": "Best insertion point for converting full bootstrap templates into thin shims pointing at .fabric-owned docs."
+    },
+    {
+      "location": "packages/cli/src/config/resolver.ts",
+      "description": "Best insertion point for building a client capability registry instead of only presence detection."
+    },
+    {
+      "location": "packages/shared/src/i18n/locales/*.ts",
+      "description": "Required for new wizard copy, status labels, and capability matrix copy."
+    }
+  ],
+  "key_findings": [
+    "The current init flow has stages but lacks a preflight planning/selection layer, which is why it feels thin despite doing many things.",
+    "External multi-file bootstrap output is a direct result of per-client native target mapping, not an incidental bug.",
+    "Claude has a complete post-init continuation chain; Codex does not, creating an inconsistent multi-client experience.",
+    "A .fabric-centered single source of truth is feasible without removing all client-native files, by converting them into thin shims."
+  ],
+  "_metadata": {
+    "timestamp": "2026-04-21T00:20:00+08:00",
+    "exploration_scope": "fabric init UX, bootstrap artifact layout, skill installation parity"
+  }
+}

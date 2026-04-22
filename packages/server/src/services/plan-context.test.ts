@@ -17,10 +17,11 @@ afterEach(async () => {
 describe("planContext", () => {
   it("aggregates unique paths and deduplicates repeated rule files per entry", async () => {
     const projectRoot = await createTempProject();
+    await mkdir(join(projectRoot, ".fabric", "bootstrap"), { recursive: true });
     await mkdir(join(projectRoot, ".fabric", "agents", "packages", "server", "src"), { recursive: true });
     await mkdir(join(projectRoot, ".fabric", "agents", "_cross"), { recursive: true });
 
-    await writeFile(join(projectRoot, "AGENTS.md"), "# Root rules\n");
+    await writeFile(join(projectRoot, ".fabric", "bootstrap", "README.md"), "# Root rules\n");
     await writeFile(join(projectRoot, ".fabric", "human-lock.json"), `${JSON.stringify({ locked: [] }, null, 2)}\n`);
     await writeFile(
       join(projectRoot, ".fabric", "agents", "packages", "server", "AGENTS.md"),
@@ -118,9 +119,9 @@ describe("planContext", () => {
 
   it("marks the response stale when the client hash does not match the current revision", async () => {
     const projectRoot = await createTempProject();
-    await mkdir(join(projectRoot, ".fabric"), { recursive: true });
+    await mkdir(join(projectRoot, ".fabric", "bootstrap"), { recursive: true });
 
-    await writeFile(join(projectRoot, "AGENTS.md"), "# Root rules\n");
+    await writeFile(join(projectRoot, ".fabric", "bootstrap", "README.md"), "# Root rules\n");
     await writeFile(join(projectRoot, ".fabric", "human-lock.json"), `${JSON.stringify({ locked: [] }, null, 2)}\n`);
     await writeFile(
       join(projectRoot, ".fabric", "agents.meta.json"),

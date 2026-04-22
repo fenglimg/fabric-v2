@@ -82,7 +82,7 @@ export async function loadGetRulesContext(projectRoot: string): Promise<GetRules
   }
 
   const meta = await readAgentsMeta(projectRoot);
-  const l0Content = await readFile(join(projectRoot, "AGENTS.md"), "utf8");
+  const l0Content = await readFile(join(projectRoot, ".fabric", "bootstrap", "README.md"), "utf8");
   const humanLockedNearby = (await readHumanLock(projectRoot)).map((entry) => ({
     file: entry.file,
     excerpt: JSON.stringify(entry),

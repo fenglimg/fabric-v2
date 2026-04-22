@@ -1,0 +1,79 @@
+{
+  "source": "analyze-with-file",
+  "session_id": "ANL-2026-04-21-fabric-init-cli-ux",
+  "session_folder": ".workflow/.analysis/ANL-2026-04-21-fabric-init-cli-ux",
+  "summary": "重构重点是把 fab init 从线性脚本升级为控制台向导，并把协议文档收敛到 .fabric 单一源，同时显式暴露 Codex 等客户端的能力缺口。",
+  "implementation_scope": [
+    {
+      "objective": "为 fab init 增加交互式 preflight / plan / apply / verify 向导层",
+      "rationale": "解决当前 init 缺少 UI 感、预览和可选交互流程的问题。",
+      "priority": "high",
+      "target_files": [
+        "packages/cli/src/commands/init.ts",
+        "packages/shared/src/i18n/locales/en.ts",
+        "packages/shared/src/i18n/locales/zh-CN.ts"
+      ],
+      "acceptance_criteria": [
+        "TTY 场景下 init 在执行前展示检测结果和 planned writes",
+        "支持 preset 或关键步骤选择，且非交互模式兼容现有 flags",
+        "执行结束后输出 capability matrix 而不是只有 stage summary"
+      ],
+      "change_summary": "在 init orchestration 外层加入向导状态机和结果面板"
+    },
+    {
+      "objective": "把 bootstrap 主文档收敛到 .fabric，外部客户端文件变成薄 shim",
+      "rationale": "减少 AGENTS.md / CLAUDE.md / GEMINI.md 的重复与漂移。",
+      "priority": "high",
+      "target_files": [
+        "packages/cli/src/commands/bootstrap.ts",
+        "packages/cli/templates/bootstrap/CLAUDE.md",
+        "packages/cli/templates/bootstrap/GEMINI.md",
+        "packages/cli/templates/bootstrap/codex-AGENTS-header.md",
+        "packages/cli/templates/agents-md/AGENTS.md.template"
+      ],
+      "acceptance_criteria": [
+        "完整协议说明在 .fabric 内部有单一来源",
+        "外部客户端文件不再重复承载整套规则，只保留入口和引用",
+        "根 AGENTS.md 的职责相对清晰，不再与客户端 bootstrap 大量重叠"
+      ],
+      "change_summary": "重构 bootstrap 模板与文档布局，形成 .fabric single source + external shims"
+    },
+    {
+      "objective": "定义并输出 client capability matrix，显式报告 Codex skill 缺口",
+      "rationale": "避免用户误以为所有客户端都已被完整初始化。",
+      "priority": "high",
+      "target_files": [
+        "packages/cli/src/config/resolver.ts",
+        "packages/cli/src/commands/init.ts",
+        "packages/cli/__tests__/init-claude-install.test.ts",
+        "packages/cli/__tests__/config-install.test.ts"
+      ],
+      "acceptance_criteria": [
+        "init 输出可显示每个客户端的 bootstrap/mcp/hook/skill 状态",
+        "Codex 在缺少 skill 时会被清晰标记为 manual or unsupported follow-up",
+        "Claude 的现有完整链路不会回归"
+      ],
+      "change_summary": "新增能力矩阵与动态 next-step 叙事"
+    }
+  ],
+  "key_findings": [
+    {
+      "point": "当前 init 有步骤但没有向导，因此体验上显得过于简略。",
+      "confidence": "high"
+    },
+    {
+      "point": "多份外部文件是 bootstrap 架构结果，不能只靠删模板解决。",
+      "confidence": "high"
+    },
+    {
+      "point": "Codex 目前是部分接入，需要显式暴露能力边界。",
+      "confidence": "high"
+    }
+  ],
+  "decision_context": [
+    {
+      "decision": "先做向导和 capability matrix，再收敛文档源，最后考虑 Codex/Gemini skill parity",
+      "reason": "分阶段风险最低，且能最快改善用户感知"
+    }
+  ]
+}

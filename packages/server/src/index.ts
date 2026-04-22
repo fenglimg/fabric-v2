@@ -47,15 +47,15 @@ export function createFabricServer(): McpServer {
   registerUpdateRegistry(server);
 
   server.registerResource(
-    "AGENTS.md",
+    "bootstrap README",
     AGENTS_MD_RESOURCE_URI,
     {
-      description: "L0 fabric rules file — global agent instructions for this project",
+      description: "L0 fabric bootstrap file — global agent instructions for this project",
       mimeType: "text/markdown",
     },
     async (_uri: URL) => {
       const projectRoot = process.env.FABRIC_PROJECT_ROOT ?? process.cwd();
-      const content = await readFile(join(projectRoot, "AGENTS.md"), "utf8");
+      const content = await readFile(join(projectRoot, ".fabric", "bootstrap", "README.md"), "utf8");
       return {
         contents: [
           {

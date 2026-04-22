@@ -1,0 +1,244 @@
+{
+  "session_id": "ANL-2026-04-21-fabric-init-cli-ux",
+  "topic": "优化 fabric 当前 init 流程的交互/UI 体验，并收敛 AGENTS.md/CLAUDE.md/GEMINI.md 与 skill 安装策略",
+  "completed": "2026-04-21T00:25:00+08:00",
+  "total_rounds": 2,
+  "summary": "当前 Fabric 的 init 真实问题不是能力不足，而是产品化表达不足。`fab init` 已具备写核心文件、跑 bootstrap / mcp / hooks、并为 Claude 安装后续 skill/hook 的能力，但它仍以线性脚本方式暴露给用户，缺少检测、预览、选择和能力验证，因此用户会感觉流程简陋。另一方面，`bootstrap.ts` 以客户端原生入口为目标写出 `AGENTS.md`、`CLAUDE.md`、`GEMINI.md` 等多份文件，使规则说明天然分散。Codex 已接入 MCP/config 和 bootstrap header，却没有与 Claude 等价的 post-init skill 闭环，这正是用户指出 `.codex` 下没有对应 skill 的根本原因。最合理的改造方向是：先把 init 做成控制台向导，并引入 client capability matrix；再把真正的协议文档收敛到 `.fabric` 内部，让外部客户端文件降为薄适配层；最后再决定是否补齐 Codex/Gemini 的完整 skill 安装。",
+  "key_conclusions": [
+    {
+      "point": "`fab init` 目前是'有步骤、没向导'，因此应该优先补检测/预览/选择/验证状态机，而不是只加颜色或更多日志。",
+      "evidence": "`packages/cli/src/commands/init.ts:155-255` 顺序执行所有阶段并在事后打印 summary。",
+      "confidence": "high"
+    },
+    {
+      "point": "`AGENTS.md`、`CLAUDE.md`、`GEMINI.md` 的分裂来自 bootstrap 的 per-client target map，因此要收敛产物，必须把 `.fabric` 提升为单一事实源。",
+      "evidence": "`packages/cli/src/commands/bootstrap.ts:64-80` 明确把不同模板写向不同原生目标文件。",
+      "confidence": "high"
+    },
+    {
+      "point": "Claude 已经有完整的 init follow-up 协议，Codex 只有部分接入。短期最需要的是把这个能力差距显式展示，而不是继续隐含在成功输出里。",
+      "evidence": "`packages/cli/__tests__/init-claude-install.test.ts:20-79` 与 `packages/cli/__tests__/config-install.test.ts:28-113` 的覆盖差异。",
+      "confidence": "high"
+    },
+    {
+      "point": "最稳妥的重构路径是分阶段：P0 向导 + capability matrix，P1 `.fabric` 单一源 + 外部薄 shim，P2 再补 Codex/Gemini skill parity。",
+      "evidence": "现有执行原语已可复用；大部分问题出在 orchestration 和 information architecture，而不是底层写文件能力。",
+      "confidence": "high"
+    }
+  ],
+  "recommendations": [
+    {
+      "action": "把 `fab init` 升级为交互式控制台向导",
+      "rationale": "解决用户感知中的'太简略、没有 UI、没有可选流程'问题，同时复用现有 init 执行逻辑。",
+      "priority": "high",
+      "evidence_refs": [
+        "packages/cli/src/commands/init.ts:155-255",
+        "packages/shared/src/i18n/locales/zh-CN.ts:100-112"
+      ],
+      "steps": [
+        {
+          "description": "新增 preflight detect 阶段，展示检测到的项目类型、客户端、潜在冲突和 planned writes。",
+          "target": "packages/cli/src/commands/init.ts",
+          "verification": "在真正写文件前，终端能看到明确的计划摘要。"
+        },
+        {
+          "description": "新增 preset 或交互式选择层，例如 minimal / standard / full，并允许切换 bootstrap、mcp、hooks、skills。",
+          "target": "packages/cli/src/commands/init.ts",
+          "verification": "用户可在交互中选择执行范围；非交互模式保留当前 flags 兼容。"
+        },
+        {
+          "description": "新增 apply stepper 和 verify summary，让执行后结果包含成功、跳过、失败和 partial 状态。",
+          "target": "packages/cli/src/commands/init.ts",
+          "verification": "init 完成后输出不再只是 stage summary，而是更清晰的安装结果面板。"
+        }
+      ],
+      "review_status": "accepted"
+    },
+    {
+      "action": "把 Fabric 协议文档收敛到 `.fabric`，外部客户端文件改为薄适配层",
+      "rationale": "减少 AGENTS/CLAUDE/GEMINI 多份规则文档的重复维护和用户困惑。",
+      "priority": "high",
+      "evidence_refs": [
+        "packages/cli/src/commands/bootstrap.ts:64-80",
+        "packages/cli/src/commands/init.ts:279-315"
+      ],
+      "steps": [
+        {
+          "description": "新增 `.fabric/guide.md` 或 `.fabric/bootstrap/` 目录，作为 bootstrap 与 follow-up protocol 的单一事实源。",
+          "target": ".fabric/* template path + packages/cli/templates/bootstrap/*",
+          "verification": "真正完整的协议说明只保留一份，内容不再散落到多个客户端模板中。"
+        },
+        {
+          "description": "将 `CLAUDE.md`、`GEMINI.md`、Codex bootstrap header 等改成最小 shim，只保留原生入口和指向 `.fabric` 的引用。",
+          "target": "packages/cli/templates/bootstrap/*",
+          "verification": "bootstrap 后仍有客户端原生入口，但其内容显著缩短且不再承担主文档职责。"
+        },
+        {
+          "description": "重新定义根 `AGENTS.md` 的职责，使其更偏项目级总规则入口，而不是客户端 bootstrap 承载层。",
+          "target": "packages/cli/templates/agents-md/* and related init flow",
+          "verification": "根 AGENTS.md 角色清晰，不再与 CLAUDE/GEMINI bootstrap 重叠。"
+        }
+      ],
+      "review_status": "accepted"
+    },
+    {
+      "action": "引入 client capability matrix，并显式报告 Codex/Gemini 的缺口",
+      "rationale": "把当前半完成支持产品化，让用户知道 Fabric 对每个客户端装到了哪一步。",
+      "priority": "high",
+      "evidence_refs": [
+        "packages/cli/src/config/resolver.ts:29-82",
+        "packages/cli/__tests__/init-claude-install.test.ts:20-79",
+        "packages/cli/__tests__/config-install.test.ts:28-113"
+      ],
+      "steps": [
+        {
+          "description": "为每个客户端定义能力项：mcp-config、bootstrap、hook、skill、manual-followup。",
+          "target": "packages/cli/src/config/resolver.ts or new capability module",
+          "verification": "init 结束时可输出每个客户端的完整能力状态。"
+        },
+        {
+          "description": "如果客户端只完成部分支持，例如 Codex 只有 MCP/config + bootstrap，则明确显示 manual or unsupported next step。",
+          "target": "packages/cli/src/commands/init.ts",
+          "verification": "用户在 init 输出里能直接看到 Codex 缺什么。"
+        },
+        {
+          "description": "后续再决定是否真正补齐 Codex/Gemini skill 安装链，而不是当前先默默忽略。",
+          "target": "future planning scope",
+          "verification": "路线图明确且不会再出现'看起来成功其实不完整'的状态。"
+        }
+      ],
+      "review_status": "accepted"
+    },
+    {
+      "action": "把 init 的文案从 Claude-centric 改成 capability-centric",
+      "rationale": "当前 `reason-message` 默认要求用户调用 Claude skill，不适合多客户端语境。",
+      "priority": "medium",
+      "evidence_refs": [
+        "packages/shared/src/i18n/locales/zh-CN.ts:109-112"
+      ],
+      "steps": [
+        {
+          "description": "将 reason/next-step 文案改为根据检测到的客户端和已安装能力动态生成。",
+          "target": "packages/shared/src/i18n/locales/*.ts and init orchestration",
+          "verification": "Claude-only、Codex-only、multi-client 场景下都会给出正确后续动作。"
+        }
+      ],
+      "review_status": "accepted"
+    }
+  ],
+  "open_questions": [
+    "根 `AGENTS.md` 最终是保留为真正项目入口，还是进一步降为 `.fabric` 的 shim？",
+    "Codex 的 follow-up 机制最终应采用独立 skill、AGENTS section，还是仅用 manual step？",
+    "交互式向导是否默认启用，并在无 TTY 场景自动退化为当前非交互流程？"
+  ],
+  "follow_up_suggestions": [
+    {
+      "type": "task",
+      "summary": "先做一轮只改 init orchestration/UI 的 lite-plan，不触碰 bootstrap 文档重构。"
+    },
+    {
+      "type": "task",
+      "summary": "随后单独起一轮文档信息架构改造，设计 `.fabric` 单一事实源和客户端 shim 模板。"
+    },
+    {
+      "type": "research",
+      "summary": "补一轮针对 Codex 客户端技能机制的定向研究，明确是否存在标准 skill 安装入口。"
+    }
+  ],
+  "decision_trail": [
+    {
+      "round": 1,
+      "decision": "将问题拆为 init UX 状态机、bootstrap 文档事实源、Codex skill parity 三条主线",
+      "context": "用户提出的两个问题背后实际上是同一套初始化协议问题",
+      "options_considered": ["只看 UI", "只看文档产物", "整体初始化协议分析"],
+      "chosen": "整体初始化协议分析",
+      "rejected_reasons": "只看单点无法解释为什么问题会反复出现",
+      "reason": "更容易得到可执行而非零散的结论",
+      "impact": "建议变成一套连续演进路径"
+    },
+    {
+      "round": 2,
+      "decision": "采用分阶段重构而不是一步到位统一所有客户端 skill",
+      "context": "当前 Claude 链路已经可用，而 Codex/Gemini 缺口仍不明确",
+      "options_considered": ["一步到位统一", "只做 UI 美化", "分阶段收敛"],
+      "chosen": "分阶段收敛",
+      "rejected_reasons": "一步到位风险高，只做 UI 美化收益太小",
+      "reason": "先解决最痛的 UX 与信息架构问题，再补齐客户端深层协议",
+      "impact": "推荐按 P0/P1/P2 执行"
+    }
+  ],
+  "narrative_trail": [
+    {
+      "round": 1,
+      "starting_point": "用户主观感受是 init 太简略、文档太散",
+      "key_progress": "确认 init 已有阶段但无向导，确认多文档来自 bootstrap 设计，确认 Codex 只有部分接入",
+      "hypothesis_impact": "modified and confirmed",
+      "updated_understanding": "真正问题是状态机和单一事实源缺失",
+      "remaining_questions": "根 AGENTS.md 和 Codex follow-up 的最终形态"
+    },
+    {
+      "round": 2,
+      "starting_point": "基于现状给出可执行方案",
+      "key_progress": "形成向导化 init、.fabric 单一源、client capability matrix 的分阶段方案",
+      "hypothesis_impact": "confirmed",
+      "updated_understanding": "问题可通过 orchestration + information architecture 重构解决，无需推倒底层执行逻辑",
+      "remaining_questions": "客户端 shim 边界和 Codex skill 最终实现方式"
+    }
+  ],
+  "intent_coverage": [
+    {
+      "intent": "优化 init 流程的 UI 感与可选交互流程",
+      "status": "addressed",
+      "where_addressed": "Recommendation 1",
+      "notes": "给出 5 步向导状态机和交互方式"
+    },
+    {
+      "intent": "把 AGENTS.md/CLAUDE.md/GEMINI.md 收敛到 .fabric 内部",
+      "status": "addressed",
+      "where_addressed": "Recommendation 2",
+      "notes": "建议采用 .fabric 单一源 + 外部薄 shim"
+    },
+    {
+      "intent": "减少多份文件，只保留一份或尽量不生成",
+      "status": "addressed",
+      "where_addressed": "Recommendation 2",
+      "notes": "结论是不宜一次性删光，但可以只保留薄入口"
+    },
+    {
+      "intent": "解决 .codex 下没有安装相应 skill 的缺陷",
+      "status": "addressed",
+      "where_addressed": "Recommendation 3 and 4",
+      "notes": "短期先显式暴露缺口，长期再补 parity"
+    }
+  ],
+  "findings_coverage": [
+    {
+      "finding": "init has stages but no wizard",
+      "round": 1,
+      "disposition": "recommendation",
+      "target": "Recommendation 1",
+      "reason": "Needs orchestration redesign"
+    },
+    {
+      "finding": "bootstrap fanout causes duplicate external docs",
+      "round": 1,
+      "disposition": "recommendation",
+      "target": "Recommendation 2",
+      "reason": "Needs single-source doc architecture"
+    },
+    {
+      "finding": "Codex only has partial integration",
+      "round": 1,
+      "disposition": "recommendation",
+      "target": "Recommendation 3",
+      "reason": "Needs explicit capability reporting and later parity"
+    },
+    {
+      "finding": "current wording is Claude-centric",
+      "round": 2,
+      "disposition": "recommendation",
+      "target": "Recommendation 4",
+      "reason": "Needs capability-centric messaging"
+    }
+  ]
+}

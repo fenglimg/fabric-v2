@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   cleanupFixtureRoot,
+  createEmptyFixtureRoot,
   createWerewolfFixtureRoot,
   writeFixtureFile,
 } from "./helpers/init-test-utils.ts";
@@ -100,6 +101,51 @@ describe("init MCP install scope", () => {
     expect(execFileSyncMock).not.toHaveBeenCalled();
     expect(readCursorServerPath(target)).toBe(globalServerPath);
   });
+
+  it("prints the capability summary and manual follow-up for Codex in interactive mode", async () => {
+    const target = createEmptyFixtureRoot("fab-init-capability-codex");
+    tempRoots.push(target);
+    process.env.FAB_SERVER_PATH = globalServerPath;
+
+    const { initCommand } = await loadInitCommand();
+    const stdout: string[] = [];
+    vi.spyOn(console, "log").mockImplementation((message?: unknown) => {
+      stdout.push(String(message ?? ""));
+    });
+    vi.spyOn(process.stderr, "write").mockImplementation(((chunk: string | Uint8Array) => {
+      void chunk;
+      return true;
+    }) as typeof process.stderr.write);
+    vi.spyOn(process.stdout, "isTTY", "get").mockReturnValue(true);
+    vi.spyOn(process.stderr, "isTTY", "get").mockReturnValue(true);
+
+    const originalHome = process.env.HOME;
+    const codexHome = createEmptyFixtureRoot("fab-init-capability-codex-home");
+    tempRoots.push(codexHome);
+    process.env.HOME = codexHome;
+    writeFixtureFile(codexHome, ".codex/.gitkeep", "");
+
+    try {
+      await initCommand.run?.({
+        args: {
+          target,
+          bootstrap: false,
+          hooks: false,
+          mcp: false,
+        },
+      });
+    } finally {
+      if (originalHome === undefined) {
+        delete process.env.HOME;
+      } else {
+        process.env.HOME = originalHome;
+      }
+    }
+
+    expect(stdout.some((line) => line.includes("Client capability summary"))).toBe(true);
+    expect(stdout.some((line) => line.includes("Codex CLI"))).toBe(true);
+    expect(stdout.some((line) => line.includes("manual step required"))).toBe(true);
+  });
 });
 
 function readCursorServerPath(root: string): string {
@@ -120,6 +166,8 @@ function silenceInitOutput(): void {
     void chunk;
     return true;
   }) as typeof process.stderr.write);
+  vi.spyOn(process.stdout, "isTTY", "get").mockReturnValue(false);
+  vi.spyOn(process.stderr, "isTTY", "get").mockReturnValue(false);
 }
 
 async function loadInitCommand() {

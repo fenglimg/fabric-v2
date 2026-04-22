@@ -41,7 +41,7 @@ export function createScanReport(
   const framework = detectFramework(target);
   const readmeQuality = getReadmeQuality(target);
   const hasContributing = existsSync(join(target, "CONTRIBUTING.md"));
-  const hasExistingFabric = existsSync(join(target, "AGENTS.md")) || existsSync(join(target, ".fabric"));
+  const hasExistingFabric = existsSync(join(target, ".fabric", "bootstrap", "README.md")) || existsSync(join(target, ".fabric"));
   const walkResult = walkFiles(target, resolveIgnores(fabricConfig));
 
   return {

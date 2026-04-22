@@ -1,6 +1,5 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join, parse, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
 
 import type { FabricConfig } from "@fenglimg/fabric-shared";
 import { defineCommand } from "citty";
@@ -61,23 +60,7 @@ const CLIENT_ALIASES: Record<string, BootstrapClient> = {
   codexcli: "codex",
 };
 
-const CLIENT_TEMPLATE_MAP: Record<BootstrapClient, string> = {
-  claude: "templates/bootstrap/CLAUDE.md",
-  cursor: "templates/bootstrap/cursor-fabric-bootstrap.mdc",
-  windsurf: "templates/bootstrap/windsurf-fabric.md",
-  roo: "templates/bootstrap/roo-fabric.md",
-  gemini: "templates/bootstrap/GEMINI.md",
-  codex: "templates/bootstrap/codex-AGENTS-header.md",
-};
-
-const CLIENT_TARGET_MAP: Record<BootstrapClient, string> = {
-  claude: "CLAUDE.md",
-  cursor: ".cursor/rules/fabric-bootstrap.mdc",
-  windsurf: ".windsurf/rules/fabric.md",
-  roo: ".roo/rules/fabric.md",
-  gemini: "GEMINI.md",
-  codex: "AGENTS.md",
-};
+const FABRIC_GUIDE_PATH = ".fabric/bootstrap/README.md";
 
 export const bootstrapCommand = defineCommand({
   meta: {
@@ -141,15 +124,15 @@ export async function installBootstrap(
   const skipped: ClientKind[] = [];
   const details: BootstrapInstallDetail[] = [];
 
-  for (const bootstrapTarget of targets) {
-    const detail = installBootstrapTarget(bootstrapTarget, workspaceRoot, options);
-    details.push(detail);
+  ensureFabricBootstrapGuide(workspaceRoot, options.force);
 
-    if (detail.action === "skipped") {
-      skipped.push(bootstrapTarget.client);
-    } else {
-      installed.push(bootstrapTarget.client);
-    }
+  for (const bootstrapTarget of targets) {
+    details.push({
+      client: bootstrapTarget.client,
+      path: resolve(workspaceRoot, FABRIC_GUIDE_PATH),
+      action: "skipped",
+    });
+    skipped.push(bootstrapTarget.client);
   }
 
   return { installed, skipped, details };
@@ -234,117 +217,25 @@ function mapBootstrapClientToClientKind(client: BootstrapClient): ClientKind {
   }
 }
 
-function installBootstrapTarget(
-  target: BootstrapTarget,
-  workspaceRoot: string,
-  options: InstallBootstrapOptions,
-): BootstrapInstallDetail {
-  const targetPath = resolve(workspaceRoot, CLIENT_TARGET_MAP[target.bootstrapClient]);
-  const templatePath = findTemplatePath(CLIENT_TEMPLATE_MAP[target.bootstrapClient]);
-  const template = readFileSync(templatePath, "utf8");
-
-  mkdirSync(dirname(targetPath), { recursive: true });
-
-  if (target.bootstrapClient === "codex") {
-    return {
-      client: target.client,
-      path: targetPath,
-      action: writeCodexBootstrap(targetPath, template, options.force),
-    };
+function ensureFabricBootstrapGuide(workspaceRoot: string, force?: boolean): void {
+  const guidePath = resolve(workspaceRoot, FABRIC_GUIDE_PATH);
+  if (existsSync(guidePath) && !force) {
+    return;
   }
 
-  const existed = existsSync(targetPath);
-  writeFileSync(targetPath, ensureTrailingNewline(template), "utf8");
-  return {
-    client: target.client,
-    path: targetPath,
-    action: existed ? "overwritten" : "installed",
-  };
-}
-
-function writeCodexBootstrap(targetPath: string, template: string, force?: boolean): BootstrapInstallAction {
-  const nextContent = ensureTrailingNewline(template);
-
-  if (!existsSync(targetPath)) {
-    writeFileSync(targetPath, nextContent, "utf8");
-    return "installed";
-  }
-
-  const existing = readFileSync(targetPath, "utf8");
-  if (existing.includes("# Fabric Bootstrap")) {
-    if (!force) {
-      return "skipped";
-    }
-
-    const remainder = stripExistingCodexBootstrap(existing, nextContent);
-    writeFileSync(targetPath, joinBootstrapSections(nextContent, remainder), "utf8");
-    return "overwritten";
-  }
-
-  writeFileSync(targetPath, joinBootstrapSections(nextContent, existing), "utf8");
-  return force ? "overwritten" : "prepended";
-}
-
-function stripExistingCodexBootstrap(existing: string, template: string): string {
-  if (existing.startsWith(template)) {
-    return existing.slice(template.length).replace(/^\n+/, "");
-  }
-
-  if (!existing.startsWith("# Fabric Bootstrap")) {
-    return existing;
-  }
-
-  const nextTopLevelHeadingIndex = existing.indexOf("\n# ", "# Fabric Bootstrap".length);
-  if (nextTopLevelHeadingIndex === -1) {
-    return "";
-  }
-
-  return existing.slice(nextTopLevelHeadingIndex + 1).replace(/^\n+/, "");
-}
-
-function joinBootstrapSections(header: string, body: string): string {
-  if (body.trim().length === 0) {
-    return header;
-  }
-
-  const separator = body.startsWith("\n") ? "" : "\n";
-  return `${header}${separator}${body}`;
-}
-
-function ensureTrailingNewline(content: string): string {
-  return content.endsWith("\n") ? content : `${content}\n`;
-}
-
-function findTemplatePath(relativePath: string): string {
-  const currentModuleDir = dirname(fileURLToPath(import.meta.url));
-  const candidates = [
-    ...templateCandidatesFrom(process.cwd(), relativePath),
-    ...templateCandidatesFrom(currentModuleDir, relativePath),
-  ];
-
-  for (const candidate of candidates) {
-    if (existsSync(candidate)) {
-      return candidate;
-    }
-  }
-
-  throw new Error(t("cli.shared.template-not-found", { path: relativePath }));
-}
-
-function templateCandidatesFrom(start: string, relativePath: string): string[] {
-  const candidates: string[] = [];
-  let current = resolve(start);
-
-  while (true) {
-    candidates.push(join(current, ...relativePath.split("/")));
-
-    const parent = dirname(current);
-    if (parent === current || parse(current).root === current) {
-      break;
-    }
-
-    current = parent;
-  }
-
-  return candidates.reverse();
+  mkdirSync(dirname(guidePath), { recursive: true });
+  writeFileSync(
+    guidePath,
+    ensureTrailingNewline([
+      "# Fabric Bootstrap Guide",
+      "",
+      "- Fabric protocol source of truth lives under `.fabric/`.",
+      "- L0 bootstrap entry is this file: `.fabric/bootstrap/README.md`.",
+      "- Before editing any file, call `fab_get_rules(path=<target file>)`.",
+      "- Update registry through Fabric tools, never by directly editing `.fabric/agents.meta.json`.",
+      "- Human protected regions are tracked in `.fabric/human-lock.json`.",
+      "- External bootstrap files such as `CLAUDE.md`, `GEMINI.md`, and root `AGENTS.md` are intentionally not generated.",
+    ].join("\n")),
+    "utf8",
+  );
 }

@@ -45,7 +45,7 @@ describe("pre-commit command", () => {
               revision: "sha256:test",
               nodes: {
                 L0: {
-                  file: "AGENTS.md",
+                  file: ".fabric/bootstrap/README.md",
                   scope_glob: "**",
                   deps: [],
                   priority: "high",

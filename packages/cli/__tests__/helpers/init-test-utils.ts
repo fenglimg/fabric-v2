@@ -29,3 +29,10 @@ export function writeFixtureFile(root: string, relativePath: string, content: st
 export function readFixtureFile(root: string, relativePath: string): string {
   return readFileSync(join(root, ...relativePath.split("/")), "utf8");
 }
+
+export function createEmptyFixtureRoot(prefix: string): string {
+  const root = join(tmpdir(), `${prefix}-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}`);
+  mkdirSync(root, { recursive: true });
+  writeFileSync(join(root, "package.json"), '{\n  "name": "fixture"\n}\n', "utf8");
+  return root;
+}

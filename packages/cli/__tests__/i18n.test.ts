@@ -49,6 +49,8 @@ async function collectSnapshots(locale: "en" | "zh-CN") {
   const isolatedHome = mkdtempSync(join(tmpdir(), "fab-i18n-home-"));
   tempRoots.push(isolatedHome);
   process.env.HOME = isolatedHome;
+  vi.spyOn(process.stdout, "isTTY", "get").mockReturnValue(false);
+  vi.spyOn(process.stderr, "isTTY", "get").mockReturnValue(false);
 
   const initTarget = trackFixture(`fab-i18n-init-${locale}`);
   vi.resetModules();

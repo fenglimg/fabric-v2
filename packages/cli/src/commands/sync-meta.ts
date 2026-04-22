@@ -73,7 +73,7 @@ export function computeAgentsMeta(target: string): AgentsMeta {
   const agentsFiles = findFabricAgentsFiles(target);
   const nodes: Record<string, NodeMeta> = {};
 
-  const bootstrapNode = createBootstrapNode(target, existingByFile.get("AGENTS.md")?.node);
+  const bootstrapNode = createBootstrapNode(target, existingByFile.get(".fabric/bootstrap/README.md")?.node);
 
   if (bootstrapNode !== undefined) {
     nodes.L0 = bootstrapNode;
@@ -172,7 +172,7 @@ function indexExistingNodesByFile(existingMeta: AgentsMeta | undefined): Map<str
 }
 
 function deriveNodeId(file: string): string {
-  if (file === "AGENTS.md") {
+  if (file === ".fabric/bootstrap/README.md") {
     return "L0";
   }
 
@@ -198,7 +198,7 @@ function createDefaultNodeMeta(file: string): NodeMeta {
 }
 
 function createBootstrapNode(target: string, existing: NodeMeta | undefined): NodeMeta | undefined {
-  const bootstrapPath = join(target, "AGENTS.md");
+  const bootstrapPath = join(target, ".fabric", "bootstrap", "README.md");
 
   if (!existsSync(bootstrapPath)) {
     return undefined;
@@ -207,15 +207,15 @@ function createBootstrapNode(target: string, existing: NodeMeta | undefined): No
   const hash = sha256(readFileSync(bootstrapPath, "utf8"));
 
   return {
-    ...createDefaultNodeMeta("AGENTS.md"),
+    ...createDefaultNodeMeta(".fabric/bootstrap/README.md"),
     ...existing,
-    file: "AGENTS.md",
+    file: ".fabric/bootstrap/README.md",
     hash,
   };
 }
 
 function deriveScopeGlob(file: string): string {
-  if (file === "AGENTS.md") {
+  if (file === ".fabric/bootstrap/README.md") {
     return "**";
   }
 

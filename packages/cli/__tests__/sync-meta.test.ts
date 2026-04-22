@@ -41,7 +41,7 @@ describe("sync-meta shadow mirroring", () => {
             revision: "legacy",
             nodes: {
               L0: {
-                file: "AGENTS.md",
+                file: ".fabric/bootstrap/README.md",
                 scope_glob: "**",
                 deps: [],
                 priority: "high",
@@ -64,13 +64,14 @@ describe("sync-meta shadow mirroring", () => {
       const meta = agentsMetaSchema.parse(computeAgentsMeta(target));
 
       expect(Object.values(meta.nodes).map((node) => node.file)).toEqual([
-        "AGENTS.md",
+        ".fabric/bootstrap/README.md",
         ".fabric/agents/_cross/security.md",
         ".fabric/agents/packages/server/rules.md",
         ".fabric/agents/packages/server/routes/api.md",
       ]);
       expect(Object.values(meta.nodes).some((node) => node.file === "packages/server/AGENTS.md")).toBe(false);
       expect(meta.nodes.L0).toMatchObject({
+        file: ".fabric/bootstrap/README.md",
         layer: "L0",
         topology_type: "mirror",
       });
@@ -103,7 +104,7 @@ describe("sync-meta shadow mirroring", () => {
       const meta = agentsMetaSchema.parse(JSON.parse(readFixtureFile(target, ".fabric/agents.meta.json")));
 
       expect(meta.nodes.L0).toMatchObject({
-        file: "AGENTS.md",
+        file: ".fabric/bootstrap/README.md",
         layer: "L0",
         topology_type: "mirror",
       });

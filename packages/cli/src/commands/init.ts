@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import type { AgentsMeta } from "@fenglimg/fabric-shared";
 import { defineCommand } from "citty";
 
-import { paint } from "../colors.js";
+import { displayWidth, paint, padEnd } from "../colors.js";
 import { createDebugLogger, resolveDevMode } from "../dev-mode.js";
 import { t } from "../i18n.js";
 import type { FrameworkInfo } from "../scanner/detector.js";
@@ -16,6 +16,7 @@ import * as configCommand from "./config.js";
 import { installHooks } from "./hooks.js";
 import { buildForensicReport } from "../scanner/forensic.js";
 import { createScanReport } from "./scan.js";
+import { detectClientSupports, type DetectedClientSupport } from "../config/resolver.js";
 
 type PackageJson = {
   name?: string;
@@ -28,6 +29,7 @@ type InitArgs = {
   bootstrap?: boolean;
   mcp?: boolean;
   hooks?: boolean;
+  interactive?: boolean;
   "mcp-install"?: string;
   skipBootstrap?: boolean;
   skipMcp?: boolean;
@@ -54,6 +56,15 @@ type InitStageDisposition = "ran" | "skipped" | "failed";
 type InitStageRecord = {
   name: InitStageName;
   disposition: InitStageDisposition;
+};
+
+type InitCapabilityRow = {
+  client: string;
+  bootstrap: string;
+  mcp: string;
+  hook: string;
+  skill: string;
+  followUp: string;
 };
 
 type McpInstallMode = "global" | "local";
@@ -125,6 +136,11 @@ export const initCommand = defineCommand({
       default: true,
       negativeDescription: t("cli.init.args.no-hooks.description"),
     },
+    interactive: {
+      type: "boolean",
+      description: t("cli.init.args.interactive.description"),
+      default: true,
+    },
     "mcp-install": {
       type: "string",
       default: "global",
@@ -148,13 +164,20 @@ export const initCommand = defineCommand({
       logger(step);
     }
 
+    const supports = detectClientSupports(target);
+    const interactive = args.interactive !== false && isInteractiveInit();
+
     if (options.force) {
       writeStderr(t("cli.init.force.warning", { path: target }));
     }
 
+    if (interactive) {
+      printInitPlanSummary(target, options, mcpInstallMode, supports);
+    }
+
     const created = initFabric(target, options);
 
-    console.log(formatInitPathAction(created.agentsPath, created.agentsAction));
+    console.log(formatInitPathAction(created.bootstrapPath, created.bootstrapAction));
     console.log(formatInitPathAction(created.metaPath, created.metaAction));
     console.log(formatInitPathAction(created.humanLockPath, created.humanLockAction));
     console.log(formatInitPathAction(created.forensicPath, created.forensicAction));
@@ -249,18 +272,19 @@ export const initCommand = defineCommand({
     console.log(
       t("cli.init.reason-message", {
         label: reasonLabel(),
-        message: paint.muted(t("cli.init.reason-message.body")),
+        message: paint.muted(formatInitReasonMessage(supports)),
       }),
     );
     printInitStageSummary(stageResults);
+    printInitCapabilitySummary(supports, stageResults, options);
   },
 });
 
 export default initCommand;
 
 export function initFabric(target: string, options?: InitOptions): {
-  agentsPath: string;
-  agentsAction: InitWriteAction;
+  bootstrapPath: string;
+  bootstrapAction: InitWriteAction;
   metaPath: string;
   metaAction: InitWriteAction;
   humanLockPath: string;
@@ -276,33 +300,35 @@ export function initFabric(target: string, options?: InitOptions): {
 } {
   assertExistingDirectory(target);
 
-  const agentsPath = join(target, "AGENTS.md");
   const fabricDir = join(target, ".fabric");
+  const bootstrapPath = join(fabricDir, "bootstrap", "README.md");
   const forensicPath = join(fabricDir, "forensic.json");
   const claudeSkillPath = join(target, ".claude", "skills", "agents-md-init", "SKILL.md");
   const claudeHookPath = join(target, ".claude", "hooks", "agents-md-init-reminder.cjs");
   const claudeSettingsPath = join(target, ".claude", "settings.json");
+  const metaPath = join(fabricDir, "agents.meta.json");
+  const humanLockPath = join(fabricDir, "human-lock.json");
 
-  const forensicGuardAction = prepareFreshPath(forensicPath, options);
-  const agentsAction = prepareFreshPath(agentsPath, options);
-  const fabricDirAction = prepareFreshPath(fabricDir, options);
-  const forensicAction = forensicGuardAction === "overwritten" || fabricDirAction === "overwritten" ? "overwritten" : "created";
+  prepareWritableDirectory(fabricDir, options);
+  const bootstrapAction = prepareFreshPath(bootstrapPath, options);
+  const metaAction = prepareFreshPath(metaPath, options);
+  const humanLockAction = prepareFreshPath(humanLockPath, options);
+  const forensicAction = prepareFreshPath(forensicPath, options);
 
   const scanReport = createScanReport(target);
   const forensicReport = buildForensicReport(target);
   const template = readFileSync(findAgentsTemplatePath(scanReport.framework.kind), "utf8");
   const humanLockTemplate = readFileSync(findTemplatePath("templates/fabric/human-lock.json"), "utf8");
   const packageName = readPackageName(target) ?? parse(target).base;
-  const agentsContent = template
+  const bootstrapContent = template
     .replaceAll("{ projectName }", packageName)
     .replaceAll("{ frameworkKind }", scanReport.framework.kind);
-  const agentsHash = sha256(agentsContent);
-  const meta = createInitialMeta(agentsHash);
-  const metaPath = join(fabricDir, "agents.meta.json");
-  const humanLockPath = join(fabricDir, "human-lock.json");
+  const bootstrapHash = sha256(bootstrapContent);
+  const meta = createInitialMeta(bootstrapHash);
 
-  mkdirSync(fabricDir, { recursive: false });
-  writeNewFile(agentsPath, agentsContent, options);
+  mkdirSync(fabricDir, { recursive: true });
+  mkdirSync(dirname(bootstrapPath), { recursive: true });
+  writeNewFile(bootstrapPath, bootstrapContent, options);
   writeNewFile(metaPath, `${JSON.stringify(meta, null, 2)}\n`, options);
   writeNewFile(humanLockPath, humanLockTemplate.endsWith("\n") ? humanLockTemplate : `${humanLockTemplate}\n`, options);
   writeNewFile(forensicPath, `${JSON.stringify(forensicReport, null, 2)}\n`, options);
@@ -315,12 +341,12 @@ export function initFabric(target: string, options?: InitOptions): {
   const claudeSettingsAction = mergeClaudeStopHook(claudeSettingsPath, options);
 
   return {
-    agentsPath,
-    agentsAction,
+    bootstrapPath,
+    bootstrapAction,
     metaPath,
-    metaAction: fabricDirAction,
+    metaAction,
     humanLockPath,
-    humanLockAction: fabricDirAction,
+    humanLockAction,
     forensicPath,
     forensicAction,
     claudeSkillPath,
@@ -333,8 +359,8 @@ export function initFabric(target: string, options?: InitOptions): {
 }
 
 function findAgentsTemplatePath(frameworkKind: FrameworkInfo["kind"]): string {
-  // This selection only powers the non-AI fallback scaffold. The agents-md-init
-  // skill can replace it later with a richer project-specific AGENTS.md.
+  // This selection powers the internal L0 bootstrap guide. Project-specific
+  // rules are finalized later under .fabric/agents/ by the init skill.
   const relativePath = AGENTS_TEMPLATE_BY_FRAMEWORK[frameworkKind] ?? "templates/agents-md/AGENTS.md.template";
   return findTemplatePath(relativePath);
 }
@@ -393,7 +419,7 @@ function createInitialMeta(agentsHash: string): AgentsMeta {
     revision: sha256(agentsHash),
     nodes: {
       L0: {
-        file: "AGENTS.md",
+        file: ".fabric/bootstrap/README.md",
         scope_glob: "**",
         deps: [],
         priority: "high",
@@ -464,6 +490,18 @@ function prepareFreshPath(path: string, options?: InitOptions): InitWriteAction 
 
   rmSync(path, { recursive: true, force: true });
   return "overwritten";
+}
+
+function prepareWritableDirectory(path: string, options?: InitOptions): void {
+  if (!existsSync(path) || statSync(path).isDirectory()) {
+    return;
+  }
+
+  if (!options?.force) {
+    throw new Error(t("cli.init.errors.abort-existing", { path }));
+  }
+
+  rmSync(path, { force: true });
 }
 
 function writeNewFile(path: string, content: string, options?: InitOptions): InitWriteAction {
@@ -656,6 +694,162 @@ function collectInitStageNames(stageResults: InitStageRecord[], disposition: Ini
 
 function shouldPrintHooksNextStep(options: InitOptions, stageResults: InitStageRecord[]): boolean {
   return Boolean(options.skipHooks) || stageResults.some((stage) => stage.name === "hooks" && stage.disposition === "failed");
+}
+
+function isInteractiveInit(): boolean {
+  return Boolean(process.stdout.isTTY) && Boolean(process.stderr.isTTY);
+}
+
+function printInitPlanSummary(
+  target: string,
+  options: InitOptions,
+  mcpInstallMode: McpInstallMode,
+  supports: DetectedClientSupport[],
+): void {
+  console.log(t("cli.init.plan.title"));
+  console.log(t("cli.init.plan.target", { target }));
+  console.log(
+    t("cli.init.plan.actions", {
+      bootstrap: yesNoLabel(!options.skipBootstrap),
+      mcp: yesNoLabel(!options.skipMcp),
+      hooks: yesNoLabel(!options.skipHooks),
+      mcpInstall: mcpInstallMode,
+    }),
+  );
+
+  const detected = supports.filter((support) => support.detected);
+  console.log(
+    t("cli.init.plan.detected", {
+      clients: detected.length > 0 ? detected.map((support) => support.label).join(", ") : t("cli.shared.none"),
+    }),
+  );
+  console.log(t("cli.init.plan.writes"));
+  console.log(`  - ${target}/.fabric/bootstrap/README.md`);
+  console.log(`  - ${target}/.fabric/agents.meta.json`);
+  console.log(`  - ${target}/.fabric/human-lock.json`);
+  console.log(`  - ${target}/.fabric/forensic.json`);
+}
+
+function printInitCapabilitySummary(
+  supports: DetectedClientSupport[],
+  stageResults: InitStageRecord[],
+  options: InitOptions,
+): void {
+  const detected = supports.filter((support) => support.detected);
+  if (detected.length === 0) {
+    console.log(t("cli.init.capabilities.none"));
+    return;
+  }
+
+  console.log(t("cli.init.capabilities.title"));
+  const rows = detected.map((support) => toCapabilityRow(support, stageResults, options));
+  const headers: InitCapabilityRow = {
+    client: t("cli.init.capabilities.header.client"),
+    bootstrap: t("cli.init.capabilities.header.bootstrap"),
+    mcp: t("cli.init.capabilities.header.mcp"),
+    hook: t("cli.init.capabilities.header.hook"),
+    skill: t("cli.init.capabilities.header.skill"),
+    followUp: t("cli.init.capabilities.header.follow-up"),
+  };
+
+  const widths = {
+    client: Math.max(displayWidth(headers.client), ...rows.map((row) => displayWidth(row.client))),
+    bootstrap: Math.max(displayWidth(headers.bootstrap), ...rows.map((row) => displayWidth(row.bootstrap))),
+    mcp: Math.max(displayWidth(headers.mcp), ...rows.map((row) => displayWidth(row.mcp))),
+    hook: Math.max(displayWidth(headers.hook), ...rows.map((row) => displayWidth(row.hook))),
+    skill: Math.max(displayWidth(headers.skill), ...rows.map((row) => displayWidth(row.skill))),
+    followUp: Math.max(displayWidth(headers.followUp), ...rows.map((row) => displayWidth(row.followUp))),
+  };
+
+  console.log(formatCapabilityTableRow(headers, widths));
+  console.log(formatCapabilityDivider(widths));
+  for (const row of rows) {
+    console.log(formatCapabilityTableRow(row, widths));
+  }
+}
+
+function toCapabilityRow(
+  support: DetectedClientSupport,
+  stageResults: InitStageRecord[],
+  options: InitOptions,
+): InitCapabilityRow {
+  const stage = (name: InitStageName): InitStageDisposition | null =>
+    stageResults.find((entry) => entry.name === name)?.disposition ?? null;
+  const bootstrap = support.capabilities.bootstrap
+    ? capabilityStatus(options.skipBootstrap ? "skipped" : stage("bootstrap"))
+    : t("cli.init.capabilities.status.na");
+  const mcp = support.capabilities.mcp
+    ? capabilityStatus(options.skipMcp ? "skipped" : stage("mcp"))
+    : t("cli.init.capabilities.status.na");
+  const hook = support.capabilities.hook
+    ? capabilityStatus("ran")
+    : t("cli.init.capabilities.status.na");
+  const skill = support.capabilities.skill
+    ? t("cli.init.capabilities.status.installed")
+    : t("cli.init.capabilities.status.manual");
+
+  return {
+    client: support.label,
+    bootstrap,
+    mcp,
+    hook,
+    skill,
+    followUp: support.capabilities.skill
+      ? t("cli.init.capabilities.follow-up.ready")
+      : t("cli.init.capabilities.follow-up.manual"),
+  };
+}
+
+function capabilityStatus(disposition: InitStageDisposition | "ran" | "skipped" | null): string {
+  switch (disposition) {
+    case "ran":
+      return t("cli.init.capabilities.status.ready");
+    case "skipped":
+      return t("cli.init.capabilities.status.skipped");
+    case "failed":
+      return t("cli.init.capabilities.status.failed");
+    case null:
+      return t("cli.init.capabilities.status.na");
+    default:
+      return t("cli.init.capabilities.status.ready");
+  }
+}
+
+function formatCapabilityTableRow(
+  row: InitCapabilityRow,
+  widths: Record<keyof InitCapabilityRow, number>,
+): string {
+  return [
+    padEnd(row.client, widths.client),
+    padEnd(row.bootstrap, widths.bootstrap),
+    padEnd(row.mcp, widths.mcp),
+    padEnd(row.hook, widths.hook),
+    padEnd(row.skill, widths.skill),
+    padEnd(row.followUp, widths.followUp),
+  ].join("  ");
+}
+
+function formatCapabilityDivider(widths: Record<keyof InitCapabilityRow, number>): string {
+  return [
+    "".padEnd(widths.client, "-"),
+    "".padEnd(widths.bootstrap, "-"),
+    "".padEnd(widths.mcp, "-"),
+    "".padEnd(widths.hook, "-"),
+    "".padEnd(widths.skill, "-"),
+    "".padEnd(widths.followUp, "-"),
+  ].join("  ");
+}
+
+function formatInitReasonMessage(supports: DetectedClientSupport[]): string {
+  if (supports.some((support) => support.detected && support.capabilities.skill)) {
+    return t("cli.init.reason-message.body");
+  }
+
+  return t("cli.init.reason-message.manual-body");
+}
+
+function yesNoLabel(value: boolean): string {
+  return value ? t("cli.shared.yes") : t("cli.shared.no");
 }
 
 function formatInitPathAction(path: string, action: InitWriteAction): string {
