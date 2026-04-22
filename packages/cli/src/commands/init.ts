@@ -43,6 +43,7 @@ type InitWriteAction = "created" | "overwritten";
 type ClaudeHookAction = InitWriteAction | "skipped";
 
 type ClaudeSettingsAction = "created" | "overwritten" | "skipped" | "skipped-invalid" | "updated";
+type CodexHooksAction = "created" | "overwritten" | "skipped";
 
 type InitStageName = "bootstrap" | "mcp" | "hooks";
 
@@ -72,6 +73,13 @@ type ClaudeSettings = {
   [key: string]: unknown;
 };
 
+type CodexHooksConfig = {
+  hooks: {
+    SessionStart: Array<{ matcher: string; hooks: Array<{ type: "command"; command: string }> }>;
+    Stop: Array<{ matcher: string; hooks: Array<{ type: "command"; command: string }> }>;
+  };
+};
+
 type ClaudeStopHookEntry = {
   matcher: string;
   hooks: ClaudeCommandHook[];
@@ -87,6 +95,11 @@ type ClaudeCommandHook = {
 const CLAUDE_INIT_SKILL_TEMPLATE = "templates/claude-skills/agents-md-init/SKILL.md";
 const CLAUDE_INIT_REMINDER_HOOK_TEMPLATE = "templates/claude-hooks/agents-md-init-reminder.cjs";
 const CLAUDE_INIT_REMINDER_COMMAND = ".claude/hooks/agents-md-init-reminder.cjs";
+const CODEX_INIT_SKILL_TEMPLATE = "templates/codex-skills/fabric-init/SKILL.md";
+const CODEX_SESSION_START_HOOK_TEMPLATE = "templates/codex-hooks/fabric-session-start.cjs";
+const CODEX_STOP_HOOK_TEMPLATE = "templates/codex-hooks/fabric-stop-reminder.cjs";
+const CODEX_SESSION_START_COMMAND = ".codex/hooks/fabric-session-start.cjs";
+const CODEX_STOP_COMMAND = ".codex/hooks/fabric-stop-reminder.cjs";
 const LOCAL_FABRIC_SERVER_PATH = join("node_modules", "@fenglimg", "fabric-server", "dist", "index.js");
 const FABRIC_SERVER_PACKAGE = "@fenglimg/fabric-server";
 
@@ -176,6 +189,13 @@ export const initCommand = defineCommand({
     writeStderr(
       formatOptionalInitPathAction(created.claudeHookPath, created.claudeHookAction),
     );
+    writeStderr(
+      formatOptionalInitPathAction(created.codexSessionStartHookPath, created.codexSessionStartHookAction),
+    );
+    writeStderr(
+      formatOptionalInitPathAction(created.codexStopHookPath, created.codexStopHookAction),
+    );
+    writeStderr(formatCodexHooksAction(created.codexHooksConfigPath, created.codexHooksConfigAction));
     writeStderr(formatClaudeSettingsAction(created.claudeSettingsPath, created.claudeSettingsAction));
     const stageResults: InitStageRecord[] = [];
 
@@ -258,14 +278,16 @@ export const initCommand = defineCommand({
       );
     }
 
+    const finalSupports = detectClientSupports(target);
+
     console.log(
       t("cli.init.reason-message", {
         label: reasonLabel(),
-        message: paint.muted(formatInitReasonMessage(supports)),
+        message: paint.muted(formatInitReasonMessage(finalSupports)),
       }),
     );
     printInitStageSummary(stageResults);
-    printInitCapabilitySummary(supports, stageResults, options);
+    printInitCapabilitySummary(finalSupports, stageResults, options);
   },
 });
 
@@ -282,6 +304,14 @@ export function initFabric(target: string, options?: InitOptions): {
   forensicAction: InitWriteAction;
   claudeSkillPath: string;
   claudeSkillAction: ClaudeHookAction;
+  codexSkillPath: string;
+  codexSkillAction: ClaudeHookAction;
+  codexSessionStartHookPath: string;
+  codexSessionStartHookAction: ClaudeHookAction;
+  codexStopHookPath: string;
+  codexStopHookAction: ClaudeHookAction;
+  codexHooksConfigPath: string;
+  codexHooksConfigAction: CodexHooksAction;
   claudeHookPath: string;
   claudeHookAction: ClaudeHookAction;
   claudeSettingsPath: string;
@@ -293,6 +323,10 @@ export function initFabric(target: string, options?: InitOptions): {
   const bootstrapPath = join(fabricDir, "bootstrap", "README.md");
   const forensicPath = join(fabricDir, "forensic.json");
   const claudeSkillPath = join(target, ".claude", "skills", "agents-md-init", "SKILL.md");
+  const codexSkillPath = join(target, ".agents", "skills", "fabric-init", "SKILL.md");
+  const codexSessionStartHookPath = join(target, ".codex", "hooks", "fabric-session-start.cjs");
+  const codexStopHookPath = join(target, ".codex", "hooks", "fabric-stop-reminder.cjs");
+  const codexHooksConfigPath = join(target, ".codex", "hooks.json");
   const claudeHookPath = join(target, ".claude", "hooks", "agents-md-init-reminder.cjs");
   const claudeSettingsPath = join(target, ".claude", "settings.json");
   const metaPath = join(fabricDir, "agents.meta.json");
@@ -317,6 +351,18 @@ export function initFabric(target: string, options?: InitOptions): {
   writeNewFile(humanLockPath, humanLockTemplate.endsWith("\n") ? humanLockTemplate : `${humanLockTemplate}\n`, options);
   writeNewFile(forensicPath, `${JSON.stringify(forensicReport, null, 2)}\n`, options);
   const claudeSkillAction = copyTemplateIfMissing(findTemplatePath(CLAUDE_INIT_SKILL_TEMPLATE), claudeSkillPath, options);
+  const codexSkillAction = copyTemplateIfMissing(findTemplatePath(CODEX_INIT_SKILL_TEMPLATE), codexSkillPath, options);
+  const codexSessionStartHookAction = copyExecutableTemplateIfMissing(
+    findTemplatePath(CODEX_SESSION_START_HOOK_TEMPLATE),
+    codexSessionStartHookPath,
+    options,
+  );
+  const codexStopHookAction = copyExecutableTemplateIfMissing(
+    findTemplatePath(CODEX_STOP_HOOK_TEMPLATE),
+    codexStopHookPath,
+    options,
+  );
+  const codexHooksConfigAction = writeCodexHooksConfig(codexHooksConfigPath, options);
   const claudeHookAction = copyExecutableTemplateIfMissing(
     findTemplatePath(CLAUDE_INIT_REMINDER_HOOK_TEMPLATE),
     claudeHookPath,
@@ -335,6 +381,14 @@ export function initFabric(target: string, options?: InitOptions): {
     forensicAction,
     claudeSkillPath,
     claudeSkillAction,
+    codexSkillPath,
+    codexSkillAction,
+    codexSessionStartHookPath,
+    codexSessionStartHookAction,
+    codexStopHookPath,
+    codexStopHookAction,
+    codexHooksConfigPath,
+    codexHooksConfigAction,
     claudeHookPath,
     claudeHookAction,
     claudeSettingsPath,
@@ -496,6 +550,39 @@ function copyExecutableTemplateIfMissing(templatePath: string, targetPath: strin
   }
 
   return action;
+}
+
+function writeCodexHooksConfig(configPath: string, options?: InitOptions): CodexHooksAction {
+  mkdirSync(dirname(configPath), { recursive: true });
+
+  const nextConfig: CodexHooksConfig = {
+    hooks: {
+      SessionStart: [
+        {
+          matcher: "*",
+          hooks: [{ type: "command", command: CODEX_SESSION_START_COMMAND }],
+        },
+      ],
+      Stop: [
+        {
+          matcher: "*",
+          hooks: [{ type: "command", command: CODEX_STOP_COMMAND }],
+        },
+      ],
+    },
+  };
+
+  if (!existsSync(configPath)) {
+    writeJsonAtomically(configPath, nextConfig);
+    return "created";
+  }
+
+  if (!options?.force) {
+    return "skipped";
+  }
+
+  writeJsonAtomically(configPath, nextConfig);
+  return "overwritten";
 }
 
 function mergeClaudeStopHook(settingsPath: string, options?: InitOptions): ClaudeSettingsAction {
@@ -731,6 +818,19 @@ function printInitCapabilitySummary(
   }
 }
 
+function formatCodexHooksAction(configPath: string, action: CodexHooksAction): string {
+  switch (action) {
+    case "created":
+      return t("cli.init.codex-hooks.created", { label: createdLabel(), path: configPath });
+    case "overwritten":
+      return t("cli.init.codex-hooks.updated", { label: overwrittenLabel(), path: configPath });
+    case "skipped":
+      return t("cli.init.codex-hooks.skipped", { label: skippedLabel(), path: configPath });
+    default:
+      return t("cli.init.codex-hooks.updated", { label: updatedLabel(), path: configPath });
+  }
+}
+
 function toCapabilityRow(
   support: DetectedClientSupport,
   stageResults: InitStageRecord[],
@@ -744,12 +844,8 @@ function toCapabilityRow(
   const mcp = support.capabilities.mcp
     ? capabilityStatus(options.skipMcp ? "skipped" : stage("mcp"))
     : t("cli.init.capabilities.status.na");
-  const hook = support.capabilities.hook
-    ? capabilityStatus("ran")
-    : t("cli.init.capabilities.status.na");
-  const skill = support.capabilities.skill
-    ? t("cli.init.capabilities.status.installed")
-    : t("cli.init.capabilities.status.manual");
+  const hook = capabilityInstallStatus(support, "hook");
+  const skill = capabilityInstallStatus(support, "skill");
 
   return {
     client: support.label,
@@ -757,10 +853,32 @@ function toCapabilityRow(
     mcp,
     hook,
     skill,
-    followUp: support.capabilities.skill
+    followUp: hasInstalledCapability(support, "skill")
       ? t("cli.init.capabilities.follow-up.ready")
-      : t("cli.init.capabilities.follow-up.manual"),
+      : support.capabilities.skill
+        ? t("cli.init.capabilities.follow-up.install")
+        : t("cli.init.capabilities.follow-up.manual"),
   };
+}
+
+function capabilityInstallStatus(
+  support: DetectedClientSupport,
+  capability: "hook" | "skill",
+): string {
+  if (!support.capabilities[capability]) {
+    return t("cli.init.capabilities.status.na");
+  }
+
+  return hasInstalledCapability(support, capability)
+    ? t("cli.init.capabilities.status.installed")
+    : t("cli.init.capabilities.status.supported");
+}
+
+function hasInstalledCapability(
+  support: DetectedClientSupport,
+  capability: "hook" | "skill",
+): boolean {
+  return support.installedCapabilities?.[capability] === true;
 }
 
 function capabilityStatus(disposition: InitStageDisposition | "ran" | "skipped" | null): string {
@@ -804,8 +922,25 @@ function formatCapabilityDivider(widths: Record<keyof InitCapabilityRow, number>
 }
 
 function formatInitReasonMessage(supports: DetectedClientSupport[]): string {
-  if (supports.some((support) => support.detected && support.capabilities.skill)) {
-    return t("cli.init.reason-message.body");
+  const detected = supports.filter((support) => support.detected);
+  const installedSkillClients = detected.filter((support) => hasInstalledCapability(support, "skill"));
+  const hasClaudeSkill = installedSkillClients.some((support) => support.clientKind === "ClaudeCodeCLI");
+  const hasCodexSkill = installedSkillClients.some((support) => support.clientKind === "CodexCLI");
+
+  if (hasClaudeSkill && hasCodexSkill) {
+    return t("cli.init.reason-message.multi-body");
+  }
+
+  if (hasClaudeSkill) {
+    return t("cli.init.reason-message.claude-body");
+  }
+
+  if (hasCodexSkill) {
+    return t("cli.init.reason-message.codex-body");
+  }
+
+  if (detected.some((support) => support.capabilities.skill)) {
+    return t("cli.init.reason-message.installable-body");
   }
 
   return t("cli.init.reason-message.manual-body");

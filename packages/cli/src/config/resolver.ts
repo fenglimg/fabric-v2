@@ -24,6 +24,7 @@ export type DetectedClientSupport = {
   bootstrapTargetPath: string | null;
   configPath: string | null;
   capabilities: Partial<Record<DetectedClientCapability, boolean>>;
+  installedCapabilities?: Partial<Record<DetectedClientCapability, boolean>>;
 };
 
 function hasExplicitPath(clientPaths: ClientPaths | undefined, key: keyof ClientPaths): boolean {
@@ -123,6 +124,10 @@ export function detectClientSupports(
         hook: true,
         skill: true,
       },
+      installedCapabilities: {
+        hook: true,
+        skill: true,
+      },
     },
     {
       clientKind: "ClaudeCodeDesktop",
@@ -198,8 +203,12 @@ export function detectClientSupports(
       capabilities: {
         bootstrap: true,
         mcp: true,
-        hook: false,
-        skill: false,
+        hook: true,
+        skill: true,
+      },
+      installedCapabilities: {
+        hook: existsSync(join(workspaceRoot, ".codex", "hooks.json")),
+        skill: existsSync(join(workspaceRoot, ".agents", "skills", "fabric-init", "SKILL.md")),
       },
     },
   ];

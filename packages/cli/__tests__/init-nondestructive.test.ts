@@ -93,4 +93,32 @@ describe("initFabric non-destructive behavior", () => {
     expect(readFixtureFile(target, ".claude/skills/agents-md-init/SKILL.md")).toBe(original);
     expect(existsSync(result.forensicPath)).toBe(true);
   });
+
+  it("keeps a pre-existing custom Codex repo skill unchanged while finishing init", () => {
+    const target = createWerewolfFixtureRoot("fab-init-custom-codex-skill");
+    tempRoots.push(target);
+    const original = "# custom codex skill\n";
+
+    writeFixtureFile(target, ".agents/skills/fabric-init/SKILL.md", original);
+
+    const result = initFabric(target);
+
+    expect(result.codexSkillAction).toBe("skipped");
+    expect(readFixtureFile(target, ".agents/skills/fabric-init/SKILL.md")).toBe(original);
+    expect(existsSync(result.forensicPath)).toBe(true);
+  });
+
+  it("keeps a pre-existing Codex hooks config unchanged while finishing init", () => {
+    const target = createWerewolfFixtureRoot("fab-init-custom-codex-hooks");
+    tempRoots.push(target);
+    const original = '{\n  "hooks": {}\n}\n';
+
+    writeFixtureFile(target, ".codex/hooks.json", original);
+
+    const result = initFabric(target);
+
+    expect(result.codexHooksConfigAction).toBe("skipped");
+    expect(readFixtureFile(target, ".codex/hooks.json")).toBe(original);
+    expect(existsSync(result.forensicPath)).toBe(true);
+  });
 });

@@ -67,6 +67,38 @@ describe("initFabric force behavior", () => {
     );
   });
 
+  it("overwrites a pre-existing Codex repo skill when force is enabled", () => {
+    const target = createWerewolfFixtureRoot("fab-init-force-codex-skill");
+    const control = createWerewolfFixtureRoot("fab-init-force-codex-skill-control");
+    tempRoots.push(target, control);
+
+    writeFixtureFile(target, ".agents/skills/fabric-init/SKILL.md", "# custom codex skill\n");
+
+    const result = initFabric(target, { force: true });
+    initFabric(control);
+
+    expect(result.codexSkillAction).toBe("overwritten");
+    expect(readFixtureFile(target, ".agents/skills/fabric-init/SKILL.md")).toBe(
+      readFixtureFile(control, ".agents/skills/fabric-init/SKILL.md"),
+    );
+  });
+
+  it("overwrites a pre-existing Codex hooks config when force is enabled", () => {
+    const target = createWerewolfFixtureRoot("fab-init-force-codex-hooks");
+    const control = createWerewolfFixtureRoot("fab-init-force-codex-hooks-control");
+    tempRoots.push(target, control);
+
+    writeFixtureFile(target, ".codex/hooks.json", '{\n  "hooks": { "Stop": [] }\n}\n');
+
+    const result = initFabric(target, { force: true });
+    initFabric(control);
+
+    expect(result.codexHooksConfigAction).toBe("overwritten");
+    expect(readFixtureFile(target, ".codex/hooks.json")).toBe(
+      readFixtureFile(control, ".codex/hooks.json"),
+    );
+  });
+
   it("replaces only the Fabric Claude Stop hook while preserving user settings", () => {
     const target = createWerewolfFixtureRoot("fab-init-force-settings");
     tempRoots.push(target);

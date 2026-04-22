@@ -10,6 +10,7 @@ import { cleanupFixtureRoot, createWerewolfFixtureRoot } from "./helpers/init-te
 
 const tempRoots: string[] = [];
 const skillTemplatePath = resolve(process.cwd(), "../../templates/claude-skills/agents-md-init/SKILL.md");
+const codexSkillTemplatePath = resolve(process.cwd(), "../../templates/codex-skills/fabric-init/SKILL.md");
 
 afterEach(() => {
   while (tempRoots.length > 0) {
@@ -24,6 +25,10 @@ describe("initFabric Claude install", () => {
 
     const result = initFabric(target);
     const installedSkillPath = result.claudeSkillPath;
+    const installedCodexSkillPath = result.codexSkillPath;
+    const installedCodexHooksPath = result.codexHooksConfigPath;
+    const installedCodexSessionStartHookPath = result.codexSessionStartHookPath;
+    const installedCodexStopHookPath = result.codexStopHookPath;
     const hookPath = result.claudeHookPath;
     const settingsPath = result.claudeSettingsPath;
     const settings = JSON.parse(readFileSync(settingsPath, "utf8")) as {
@@ -31,10 +36,17 @@ describe("initFabric Claude install", () => {
     };
 
     expect(existsSync(installedSkillPath)).toBe(true);
+    expect(existsSync(installedCodexSkillPath)).toBe(true);
+    expect(existsSync(installedCodexHooksPath)).toBe(true);
+    expect(existsSync(installedCodexSessionStartHookPath)).toBe(true);
+    expect(existsSync(installedCodexStopHookPath)).toBe(true);
     expect(existsSync(hookPath)).toBe(true);
     expect(existsSync(settingsPath)).toBe(true);
     expect(existsSync(join(target, ".fabric", "bootstrap", "README.md"))).toBe(true);
     expect(hashFile(installedSkillPath)).toBe(hashFile(skillTemplatePath));
+    expect(hashFile(installedCodexSkillPath)).toBe(hashFile(codexSkillTemplatePath));
+    expect(statSync(installedCodexSessionStartHookPath).mode & 0o111).not.toBe(0);
+    expect(statSync(installedCodexStopHookPath).mode & 0o111).not.toBe(0);
     expect(statSync(hookPath).mode & 0o111).not.toBe(0);
 
     const stopCommands = (settings.hooks?.Stop ?? []).flatMap((entry) =>
@@ -42,6 +54,8 @@ describe("initFabric Claude install", () => {
     );
 
     expect(stopCommands).toContain(".claude/hooks/agents-md-init-reminder.cjs");
+    expect(readFileSync(installedCodexHooksPath, "utf8")).toContain(".codex/hooks/fabric-session-start.cjs");
+    expect(readFileSync(installedCodexHooksPath, "utf8")).toContain(".codex/hooks/fabric-stop-reminder.cjs");
     expect(readFileSync(join(target, ".fabric", "bootstrap", "README.md"), "utf8")).toContain("Fabric Bootstrap Protocol");
   });
 
@@ -82,6 +96,41 @@ describe("initFabric Claude install", () => {
     writeFileSync(join(target, ".fabric", "init-context.json"), "{\n  \"ready\": true\n}\n", "utf8");
 
     const quiet = spawnSync(process.execPath, [claudeHookPath], {
+      cwd: target,
+      env: {
+        ...process.env,
+        NODE: process.execPath,
+        NODE_ENV: "test",
+      },
+      encoding: "utf8",
+    });
+
+    expect(quiet.status).toBe(0);
+    expect(quiet.stdout).toBe("");
+  });
+
+  it("executes the Codex stop hook only while init-context is missing", () => {
+    const target = createWerewolfFixtureRoot("fab-init-codex-hook");
+    tempRoots.push(target);
+
+    const { codexStopHookPath } = initFabric(target);
+    const blocked = spawnSync(process.execPath, [codexStopHookPath], {
+      cwd: target,
+      env: {
+        ...process.env,
+        NODE: process.execPath,
+        NODE_ENV: "test",
+      },
+      encoding: "utf8",
+    });
+
+    expect(blocked.status).toBe(0);
+    expect(blocked.stdout).not.toBe("");
+    expect(JSON.parse(blocked.stdout) as { decision?: string }).toMatchObject({ decision: "block" });
+
+    writeFileSync(join(target, ".fabric", "init-context.json"), "{\n  \"ready\": true\n}\n", "utf8");
+
+    const quiet = spawnSync(process.execPath, [codexStopHookPath], {
       cwd: target,
       env: {
         ...process.env,

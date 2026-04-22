@@ -118,7 +118,7 @@ describe("init MCP install scope", () => {
     expect(readCursorServerPath(target)).toBe(globalServerPath);
   });
 
-  it("prints the capability summary and manual follow-up for Codex in interactive mode", async () => {
+  it("prints the final capability summary for Codex after repo assets are installed", async () => {
     process.env.FAB_LANG = "en";
     const target = createEmptyFixtureRoot("fab-init-capability-codex");
     tempRoots.push(target);
@@ -160,7 +160,57 @@ describe("init MCP install scope", () => {
 
     expect(stdout.some((line) => line.includes("Client capability summary"))).toBe(true);
     expect(stdout.some((line) => line.includes("Codex CLI"))).toBe(true);
-    expect(stdout.some((line) => line.includes("manual step required"))).toBe(true);
+    expect(stdout.some((line) => line.includes("installed"))).toBe(true);
+    expect(stdout.some((line) => line.includes("continue in client"))).toBe(true);
+  });
+
+  it("prints the Codex-specific reason after Codex repo assets are installed", async () => {
+    process.env.FAB_LANG = "en";
+    const target = createEmptyFixtureRoot("fab-init-capability-codex-installed");
+    tempRoots.push(target);
+    process.env.FAB_SERVER_PATH = globalServerPath;
+
+    const { initCommand } = await loadInitCommand();
+    const stdout: string[] = [];
+    vi.spyOn(console, "log").mockImplementation((message?: unknown) => {
+      stdout.push(String(message ?? ""));
+    });
+    vi.spyOn(process.stderr, "write").mockImplementation(((chunk: string | Uint8Array) => {
+      void chunk;
+      return true;
+    }) as typeof process.stderr.write);
+    restoreTtyMocks.push(setProcessTty(true));
+
+    const originalHome = process.env.HOME;
+    const codexHome = createEmptyFixtureRoot("fab-init-capability-codex-installed-home");
+    tempRoots.push(codexHome);
+    process.env.HOME = codexHome;
+    writeFixtureFile(codexHome, ".codex/.gitkeep", "");
+
+    try {
+      await initCommand.run?.({
+        args: {
+          target,
+          bootstrap: false,
+          hooks: false,
+          mcp: false,
+        },
+      });
+    } finally {
+      if (originalHome === undefined) {
+        delete process.env.HOME;
+      } else {
+        process.env.HOME = originalHome;
+      }
+    }
+
+    expect(
+      stdout.some((line) =>
+        line.includes(
+          "Claude can use agents-md-init, and Codex can use .agents/skills/fabric-init/SKILL.md with features.codex_hooks = true.",
+        )
+      ),
+    ).toBe(true);
   });
 });
 

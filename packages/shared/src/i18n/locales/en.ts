@@ -128,17 +128,28 @@ export const enMessages: Messages = {
   "cli.init.capabilities.header.follow-up": "Follow-up",
   "cli.init.capabilities.status.ready": "ready",
   "cli.init.capabilities.status.installed": "installed",
+  "cli.init.capabilities.status.supported": "supported",
   "cli.init.capabilities.status.manual": "manual",
   "cli.init.capabilities.status.skipped": "skipped",
   "cli.init.capabilities.status.failed": "failed",
   "cli.init.capabilities.status.na": "n/a",
   "cli.init.capabilities.follow-up.ready": "continue in client",
+  "cli.init.capabilities.follow-up.install": "install client assets",
   "cli.init.capabilities.follow-up.manual": "manual step required",
   "cli.init.next-step.message": "run fab hooks install to add the Day 4 pre-commit pipeline.",
-  "cli.init.reason-message.body":
+  "cli.init.reason-message.claude-body":
     ".fabric/forensic.json is ready; use the agents-md-init skill to finish internal Fabric initialization.",
+  "cli.init.reason-message.codex-body":
+    ".fabric/forensic.json is ready; continue with the repo skill at .agents/skills/fabric-init/SKILL.md and enable features.codex_hooks = true for Codex hooks.",
+  "cli.init.reason-message.multi-body":
+    ".fabric/forensic.json is ready; continue in your installed client flow: Claude can use agents-md-init, and Codex can use .agents/skills/fabric-init/SKILL.md with features.codex_hooks = true.",
+  "cli.init.reason-message.installable-body":
+    ".fabric/forensic.json is ready; some detected clients support Fabric follow-up but still need client assets installed.",
   "cli.init.reason-message.manual-body":
     ".fabric/forensic.json is ready; some detected clients still need manual follow-up because no Fabric skill is installed for them yet.",
+  "cli.init.codex-hooks.created": "{label} {path} with Codex hooks config (requires features.codex_hooks = true).",
+  "cli.init.codex-hooks.updated": "{label} {path} with Codex hooks config (requires features.codex_hooks = true).",
+  "cli.init.codex-hooks.skipped": "{label} {path}: Codex hooks config already present.",
   "cli.init.claude-settings.created": "{label} {path} with Claude Stop hook.",
   "cli.init.claude-settings.updated": "{label} {path} with Claude Stop hook.",
   "cli.init.claude-settings.skipped": "{label} {path}: Claude Stop hook already present.",
