@@ -48,13 +48,13 @@ export FAB_SERVER_PATH="$PWD/packages/server/dist/index.js"
 在修改任何 client config 之前，先预览 config 写入：
 
 ```bash
-FAB_SERVER_PATH="$FAB_SERVER_PATH" pnpm --filter @fenglimg/fabric-cli exec fab config install --clients claude,cursor,windsurf,roo,gemini,codex --dry-run
+FAB_SERVER_PATH="$FAB_SERVER_PATH" node "$PWD/packages/cli/dist/index.js" config install --clients claude,cursor,windsurf,roo,gemini,codex --dry-run
 ```
 
 然后安装 Fabric MCP config：
 
 ```bash
-FAB_SERVER_PATH="$FAB_SERVER_PATH" pnpm --filter @fenglimg/fabric-cli exec fab config install --clients claude,cursor,windsurf,roo,gemini,codex
+FAB_SERVER_PATH="$FAB_SERVER_PATH" node "$PWD/packages/cli/dist/index.js" config install --clients claude,cursor,windsurf,roo,gemini,codex
 ```
 
 若文件不存在，请先重建 server package：

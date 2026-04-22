@@ -170,7 +170,7 @@ Before editing any file, call fab_get_rules for README.md and summarize the acti
 - 响应包含 `revision_hash`。
 - 响应包含来自 `AGENTS.md` 的 L0 rules。
 
-若 tools 未出现，确认 MCP config 文件包含 `mcpServers.fabric` 或 `[mcp.servers.fabric]`，然后再次重启 client。
+若 tools 未出现，确认 MCP config 文件包含 `mcpServers.fabric` 或 `[mcp_servers.fabric]`，然后再次重启 client。
 
 ## 阶段 7：记录首条 Ledger Entry
 

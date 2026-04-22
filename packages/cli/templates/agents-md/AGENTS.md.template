@@ -14,6 +14,7 @@ NEVER: Create colocated `AGENTS.md` rule files under source directories.
 ## 使用说明 / Explanation
 
 - 本文件只负责启动 Fabric Bootstrap Protocol，不承载项目业务规则。
+- 详细 bootstrap 说明位于 `.fabric/bootstrap/README.md`。
 - Detected framework kind: `{ frameworkKind }`.
 - This repository uses `Shadow Mirroring`: source directories contain ZERO rule files, while `.fabric/agents/` mirrors source paths for AI constraints.
 - 根级规则应放在 `.fabric/agents/root.md`；跨领域规则应放在 `.fabric/agents/_cross/`。

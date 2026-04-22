@@ -33,7 +33,7 @@
 Task intent 命令：
 
 ```bash
-EXTERNAL_FIXTURE_PATH=/Users/wepie/Desktop/projects/werewolf-minigame pnpm -C packages/cli exec fab scan --target  --debug --dry-run
+EXTERNAL_FIXTURE_PATH=/Users/wepie/Desktop/projects/werewolf-minigame node "$FABRIC_REPO/packages/cli/dist/index.js" scan --debug
 ```
 
 当前 CLI 说明：
@@ -45,7 +45,7 @@ EXTERNAL_FIXTURE_PATH=/Users/wepie/Desktop/projects/werewolf-minigame pnpm -C pa
 
 ```bash
 cd "$FABRIC_REPO"
-EXTERNAL_FIXTURE_PATH="$REAL_TARGET" pnpm --filter @fenglimg/fabric-cli exec fab scan --debug --json
+EXTERNAL_FIXTURE_PATH="$REAL_TARGET" node "$FABRIC_REPO/packages/cli/dist/index.js" scan --debug --json
 ```
 
 预期 scan diagnostics：
@@ -84,7 +84,7 @@ EXTERNAL_FIXTURE_PATH="$REAL_TARGET" pnpm --filter @fenglimg/fabric-cli exec fab
 
 ```bash
 cd "$FABRIC_REPO"
-EXTERNAL_FIXTURE_PATH="$REAL_TARGET" time pnpm --filter @fenglimg/fabric-cli exec fab scan --debug
+EXTERNAL_FIXTURE_PATH="$REAL_TARGET" time node "$FABRIC_REPO/packages/cli/dist/index.js" scan --debug
 ```
 
 预期结果：
@@ -147,7 +147,7 @@ EXTERNAL_FIXTURE_PATH="$REAL_TARGET" time pnpm --filter @fenglimg/fabric-cli exe
 5. 真实 install 前，目视确认计划写入：
    - 不会 wholesale 替换任何私有文件。
    - 既有 `mcpServers` entry 将保留。
-   - 仅添加或更新 `mcpServers.fabric` 或 `[mcp.servers.fabric]`。
+   - 仅添加或更新 `mcpServers.fabric` 或 `[mcp_servers.fabric]`。
    - 在可能范围内，既有非 Fabric key 保持 byte-for-byte。
 
 6. 当且仅当用户批准 additive config writes 时运行：
@@ -165,7 +165,7 @@ EXTERNAL_FIXTURE_PATH="$REAL_TARGET" time pnpm --filter @fenglimg/fabric-cli exe
 
 8. 预期 diff：
    - 对 JSON client 为 additive `mcpServers.fabric` entry。
-   - 对 Codex TOML 为 additive `[mcp.servers.fabric]` entry。
+   - 对 Codex TOML 为 additive `[mcp_servers.fabric]` entry。
    - 不删除既有 `mcpServers` entry。
    - 不删除私有 user settings。
    - config file format writer 正常序列化之外，无不相关 formatting churn。

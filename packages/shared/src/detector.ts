@@ -17,6 +17,9 @@ export type FrameworkInfo = {
 };
 
 type PackageJson = {
+  creator?: {
+    version?: string;
+  };
   dependencies?: Record<string, string>;
   devDependencies?: Record<string, string>;
   peerDependencies?: Record<string, string>;
@@ -49,6 +52,17 @@ export function detectFramework(root: string): FrameworkInfo {
   const packageJsonPath = join(root, "package.json");
   if (existsSync(packageJsonPath)) {
     const packageJson = readPackageJson(packageJsonPath);
+    const creatorVersion = packageJson.creator?.version;
+
+    if (typeof creatorVersion === "string" && creatorVersion.trim().length > 0) {
+      return {
+        kind: "cocos-creator",
+        version: creatorVersion,
+        subkind: inferCocosSubkind(root, creatorVersion),
+        evidence: [`package.json: creator.version=${creatorVersion}`],
+      };
+    }
+
     const deps = collectDependencyVersions(packageJson);
 
     for (const [dependencyName, kind] of [

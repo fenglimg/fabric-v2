@@ -22,19 +22,19 @@
 3. 预览写入：
 
    ```bash
-   FAB_SERVER_PATH="$PWD/packages/server/dist/index.js" pnpm --filter @fenglimg/fabric-cli exec fab config install --dry-run
+   FAB_SERVER_PATH="$PWD/packages/server/dist/index.js" node "$PWD/packages/cli/dist/index.js" config install --dry-run
    ```
 
 4. 安装检测到的 config：
 
    ```bash
-   FAB_SERVER_PATH="$PWD/packages/server/dist/index.js" pnpm --filter @fenglimg/fabric-cli exec fab config install
+   FAB_SERVER_PATH="$PWD/packages/server/dist/index.js" node "$PWD/packages/cli/dist/index.js" config install
    ```
 
 5. 若只针对子集，传入逗号分隔列表：
 
    ```bash
-   pnpm --filter @fenglimg/fabric-cli exec fab config install --clients cursor,codex,gemini
+   node "$PWD/packages/cli/dist/index.js" config install --clients cursor,codex,gemini
    ```
 
 ## 预期 Config 目标
@@ -47,7 +47,7 @@
 - Gemini CLI：`~/.gemini/settings.json`
 - Codex CLI：`~/.codex/config.toml`
 
-各 JSON client 应包含 `mcpServers.fabric`。Codex 应包含 `[mcp.servers.fabric]`。
+各 JSON client 应包含 `mcpServers.fabric`。Codex 应包含 `[mcp_servers.fabric]`。
 
 ## Client 验证
 
@@ -73,7 +73,7 @@
 
 - 若未检测到任何 client，为该 client 创建 workspace-local 目录，或在 `fabric.config.json` 中添加显式 path。
 - 若 client 无法启动 server，确认 `FAB_SERVER_PATH` 指向已构建的 JavaScript 文件且 Node 可执行。
-- 若 Codex 拒绝 config，检查 `~/.codex/config.toml`，确认 Fabric entry 位于 `[mcp.servers.fabric]` 下。
+- 若 Codex 拒绝 config，检查 `~/.codex/config.toml`，确认 Fabric entry 位于 `[mcp_servers.fabric]` 下。
 - 若 JSON client 丢失既有 settings，先停止并检查 before/after 文件。Writer 预期保留无关 top-level keys 与其他 `mcpServers` entry。
 - 若 macOS 上未检测到 Claude Desktop，创建或定位 `~/Library/Application Support/Claude/claude_desktop_config.json`，或在 `fabric.config.json` 中设置 `clientPaths.claudeCodeDesktop`。
 - 若 Roo Code 或 Windsurf 在你安装中使用非 workspace config path，不要依赖 runtime probing。显式设置 `clientPaths.rooCode` 或 `clientPaths.windsurf`。

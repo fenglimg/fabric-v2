@@ -39,13 +39,13 @@
 2. 在 stub 上初始化 Fabric：
 
    ```bash
-   pnpm -C packages/cli exec fab init --target ./examples/werewolf-minigame-stub
+   node "$PWD/packages/cli/dist/index.js" init --target ./examples/werewolf-minigame-stub
    ```
 
    若使用 `pnpm -C packages/cli` 时 path 解析失败，使用绝对 target：
 
    ```bash
-   pnpm -C packages/cli exec fab init --target "$STUB_TARGET"
+   node "$PWD/packages/cli/dist/index.js" init --target "$STUB_TARGET"
    ```
 
 3. 预期 `fab init` 输出形态：
@@ -60,13 +60,13 @@
 4. 扫描 stub 并请求 JSON diagnostics：
 
    ```bash
-   fab scan --target ./examples/werewolf-minigame-stub --json --debug
+   node "$PWD/packages/cli/dist/index.js" scan --target ./examples/werewolf-minigame-stub --json --debug
    ```
 
    等价的 CLI package 调用：
 
    ```bash
-   pnpm -C packages/cli exec fab scan --target "$STUB_TARGET" --json --debug
+   node "$PWD/packages/cli/dist/index.js" scan --target "$STUB_TARGET" --json --debug
    ```
 
 5. 预期 JSON diagnostic：

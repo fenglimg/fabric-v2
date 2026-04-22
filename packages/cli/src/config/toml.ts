@@ -3,12 +3,8 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { homedir } from "node:os";
 
-import * as TOML from "@iarna/toml";
-
 import type { ClientConfigWriter, ServerEntry } from "./writer.js";
 import { createServerEntry } from "./writer.js";
-
-type TomlObject = Record<string, unknown>;
 
 function expandHome(filePath: string): string {
   if (filePath === "~") {
@@ -22,36 +18,70 @@ function expandHome(filePath: string): string {
   return filePath;
 }
 
-function asObject(value: unknown): TomlObject {
-  return value !== null && typeof value === "object" && !Array.isArray(value) ? (value as TomlObject) : {};
+function escapeTomlString(value: string): string {
+  return JSON.stringify(value);
 }
 
-async function readTomlConfig(configPath: string): Promise<TomlObject> {
-  try {
-    const raw = await readFile(configPath, "utf8");
-    if (raw.trim().length === 0) {
-      return {};
-    }
+function serializeTomlStringArray(values: string[]): string {
+  return `[${values.map((value) => escapeTomlString(value)).join(", ")}]`;
+}
 
-    return TOML.parse(raw) as TomlObject;
+function serializeTomlInlineTable(values: Record<string, string>): string {
+  const entries = Object.entries(values)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([key, value]) => `${key} = ${escapeTomlString(value)}`);
+
+  return `{ ${entries.join(", ")} }`;
+}
+
+function serializeCodexServerBlock(serverName: string, serverEntry: ServerEntry): string {
+  const lines = [
+    `[mcp_servers.${serverName}]`,
+    `command = ${escapeTomlString(serverEntry.command)}`,
+    `args = ${serializeTomlStringArray(serverEntry.args)}`,
+  ];
+
+  if (serverEntry.env !== undefined && Object.keys(serverEntry.env).length > 0) {
+    lines.push(`env = ${serializeTomlInlineTable(serverEntry.env)}`);
+  }
+
+  return `${lines.join("\n")}\n`;
+}
+
+function trimTrailingBlankLines(value: string): string {
+  return value.replace(/\s+$/u, "");
+}
+
+function upsertCodexServerBlock(rawConfig: string, serverName: string, serverEntry: ServerEntry): string {
+  const block = serializeCodexServerBlock(serverName, serverEntry);
+  const normalized = rawConfig.replace(/\r\n/g, "\n");
+  const legacyPattern = new RegExp(String.raw`\n?\[mcp\.servers\.${serverName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\]\n[\s\S]*?(?=\n\[[^\n]+\]\n|$)`, "g");
+  const currentPattern = new RegExp(
+    String.raw`\n?\[mcp_servers\.${serverName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\]\n[\s\S]*?(?=\n\[[^\n]+\]\n|$)`,
+    "g",
+  );
+
+  const withoutLegacy = normalized.replace(legacyPattern, "");
+  const withoutExisting = withoutLegacy.replace(currentPattern, "");
+  const trimmed = trimTrailingBlankLines(withoutExisting);
+
+  if (trimmed.length === 0) {
+    return block;
+  }
+
+  return `${trimmed}\n\n${block}`;
+}
+
+async function readTomlConfigText(configPath: string): Promise<string> {
+  try {
+    return await readFile(configPath, "utf8");
   } catch (error: unknown) {
     if (error instanceof Error && "code" in error && error.code === "ENOENT") {
-      return {};
+      return "";
     }
 
     throw error;
   }
-}
-
-function mergeCodexServer(config: TomlObject, serverEntry: ServerEntry): TomlObject {
-  const mcp = asObject(config.mcp);
-  const servers = asObject(mcp.servers);
-
-  servers.fabric = serverEntry;
-  mcp.servers = servers;
-  config.mcp = mcp;
-
-  return config;
 }
 
 export class CodexTOMLConfigWriter implements ClientConfigWriter {
@@ -78,9 +108,12 @@ export class CodexTOMLConfigWriter implements ClientConfigWriter {
       return;
     }
 
-    const config = mergeCodexServer(await readTomlConfig(configPath), createServerEntry(serverPath));
+    const rawConfig = await readTomlConfigText(configPath);
+    const nextConfig = upsertCodexServerBlock(rawConfig, "fabric", createServerEntry(serverPath));
 
     await mkdir(dirname(configPath), { recursive: true });
-    await writeFile(configPath, TOML.stringify(config as TOML.JsonMap), "utf8");
+    await writeFile(configPath, nextConfig, "utf8");
   }
 }
+
+export { serializeCodexServerBlock, upsertCodexServerBlock };
