@@ -7,20 +7,15 @@ import { fileURLToPath } from "node:url";
 import type { AgentsMeta } from "@fenglimg/fabric-shared";
 import { defineCommand } from "citty";
 
+import { buildFabricBootstrapGuide } from "../bootstrap-guide.js";
 import { displayWidth, paint, padEnd } from "../colors.js";
 import { createDebugLogger, resolveDevMode } from "../dev-mode.js";
 import { t } from "../i18n.js";
-import type { FrameworkInfo } from "../scanner/detector.js";
 import { installBootstrap } from "./bootstrap.js";
 import * as configCommand from "./config.js";
 import { installHooks } from "./hooks.js";
 import { buildForensicReport } from "../scanner/forensic.js";
-import { createScanReport } from "./scan.js";
 import { detectClientSupports, type DetectedClientSupport } from "../config/resolver.js";
-
-type PackageJson = {
-  name?: string;
-};
 
 type InitArgs = {
   target?: string;
@@ -87,12 +82,6 @@ type ClaudeCommandHook = {
   type: string;
   command: string;
   [key: string]: unknown;
-};
-
-const AGENTS_TEMPLATE_BY_FRAMEWORK: Partial<Record<FrameworkInfo["kind"], string>> = {
-  "cocos-creator": "templates/agents-md/variants/cocos.md",
-  vite: "templates/agents-md/variants/vite.md",
-  next: "templates/agents-md/variants/next.md",
 };
 
 const CLAUDE_INIT_SKILL_TEMPLATE = "templates/claude-skills/agents-md-init/SKILL.md";
@@ -315,14 +304,9 @@ export function initFabric(target: string, options?: InitOptions): {
   const humanLockAction = prepareFreshPath(humanLockPath, options);
   const forensicAction = prepareFreshPath(forensicPath, options);
 
-  const scanReport = createScanReport(target);
   const forensicReport = buildForensicReport(target);
-  const template = readFileSync(findAgentsTemplatePath(scanReport.framework.kind), "utf8");
   const humanLockTemplate = readFileSync(findTemplatePath("templates/fabric/human-lock.json"), "utf8");
-  const packageName = readPackageName(target) ?? parse(target).base;
-  const bootstrapContent = template
-    .replaceAll("{ projectName }", packageName)
-    .replaceAll("{ frameworkKind }", scanReport.framework.kind);
+  const bootstrapContent = buildFabricBootstrapGuide(target);
   const bootstrapHash = sha256(bootstrapContent);
   const meta = createInitialMeta(bootstrapHash);
 
@@ -356,13 +340,6 @@ export function initFabric(target: string, options?: InitOptions): {
     claudeSettingsPath,
     claudeSettingsAction,
   };
-}
-
-function findAgentsTemplatePath(frameworkKind: FrameworkInfo["kind"]): string {
-  // This selection powers the internal L0 bootstrap guide. Project-specific
-  // rules are finalized later under .fabric/agents/ by the init skill.
-  const relativePath = AGENTS_TEMPLATE_BY_FRAMEWORK[frameworkKind] ?? "templates/agents-md/AGENTS.md.template";
-  return findTemplatePath(relativePath);
 }
 
 function normalizeTarget(targetInput: string): string {
@@ -429,20 +406,6 @@ function createInitialMeta(agentsHash: string): AgentsMeta {
       },
     },
   };
-}
-
-function readPackageName(target: string): string | undefined {
-  const packageJsonPath = join(target, "package.json");
-  if (!existsSync(packageJsonPath)) {
-    return undefined;
-  }
-
-  try {
-    const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf8")) as PackageJson;
-    return packageJson.name;
-  } catch {
-    return undefined;
-  }
 }
 
 function findTemplatePath(relativePath: string): string {

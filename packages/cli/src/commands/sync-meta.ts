@@ -73,7 +73,10 @@ export function computeAgentsMeta(target: string): AgentsMeta {
   const agentsFiles = findFabricAgentsFiles(target);
   const nodes: Record<string, NodeMeta> = {};
 
-  const bootstrapNode = createBootstrapNode(target, existingByFile.get(".fabric/bootstrap/README.md")?.node);
+  const bootstrapNode = createBootstrapNode(
+    target,
+    existingByFile.get(".fabric/bootstrap/README.md")?.node ?? existingByFile.get("AGENTS.md")?.node,
+  );
 
   if (bootstrapNode !== undefined) {
     nodes.L0 = bootstrapNode;
@@ -199,12 +202,14 @@ function createDefaultNodeMeta(file: string): NodeMeta {
 
 function createBootstrapNode(target: string, existing: NodeMeta | undefined): NodeMeta | undefined {
   const bootstrapPath = join(target, ".fabric", "bootstrap", "README.md");
+  const legacyBootstrapPath = join(target, "AGENTS.md");
+  const sourcePath = existsSync(bootstrapPath) ? bootstrapPath : existsSync(legacyBootstrapPath) ? legacyBootstrapPath : undefined;
 
-  if (!existsSync(bootstrapPath)) {
+  if (sourcePath === undefined) {
     return undefined;
   }
 
-  const hash = sha256(readFileSync(bootstrapPath, "utf8"));
+  const hash = sha256(readFileSync(sourcePath, "utf8"));
 
   return {
     ...createDefaultNodeMeta(".fabric/bootstrap/README.md"),

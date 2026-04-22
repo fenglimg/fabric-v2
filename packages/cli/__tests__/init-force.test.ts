@@ -134,7 +134,7 @@ describe("initFabric force behavior", () => {
     initFabric(target);
 
     expect(() => initFabric(target)).toThrowError(
-      `${target}/.fabric/forensic.json`,
+      `${target}/.fabric/bootstrap/README.md`,
     );
   });
 });

@@ -42,7 +42,7 @@ describe("initFabric Claude install", () => {
     );
 
     expect(stopCommands).toContain(".claude/hooks/agents-md-init-reminder.cjs");
-    expect(readFileSync(join(target, ".fabric", "bootstrap", "README.md"), "utf8")).toContain("Fabric protocol source of truth");
+    expect(readFileSync(join(target, ".fabric", "bootstrap", "README.md"), "utf8")).toContain("Fabric Bootstrap Protocol");
   });
 
   it("keeps bootstrap content internal instead of writing a root Claude file", async () => {
@@ -57,7 +57,7 @@ describe("initFabric Claude install", () => {
     expect(existsSync(join(target, "CLAUDE.md"))).toBe(false);
     expect(existsSync(join(target, "GEMINI.md"))).toBe(false);
     expect(existsSync(join(target, "AGENTS.md"))).toBe(false);
-    expect(readFileSync(guidePath, "utf8")).toContain(".fabric/bootstrap/README.md");
+    expect(readFileSync(guidePath, "utf8")).toContain("Fabric Bootstrap Protocol");
   });
 
   it("executes the reminder hook only while init-context is missing", () => {
@@ -65,7 +65,7 @@ describe("initFabric Claude install", () => {
     tempRoots.push(target);
 
     const { claudeHookPath } = initFabric(target);
-    const blocked = spawnSync(claudeHookPath, [], {
+    const blocked = spawnSync(process.execPath, [claudeHookPath], {
       cwd: target,
       env: {
         ...process.env,
@@ -81,7 +81,7 @@ describe("initFabric Claude install", () => {
 
     writeFileSync(join(target, ".fabric", "init-context.json"), "{\n  \"ready\": true\n}\n", "utf8");
 
-    const quiet = spawnSync(claudeHookPath, [], {
+    const quiet = spawnSync(process.execPath, [claudeHookPath], {
       cwd: target,
       env: {
         ...process.env,

@@ -4,17 +4,22 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { cleanupFixtureRoot, createWerewolfFixtureRoot } from "./helpers/init-test-utils.ts";
+import { cleanupFixtureRoot, createWerewolfFixtureRoot, setProcessTty } from "./helpers/init-test-utils.ts";
 
 const tempRoots: string[] = [];
 const originalFabLang = process.env.FAB_LANG;
 const originalNoColor = process.env.NO_COLOR;
 const originalAuthToken = process.env.FABRIC_AUTH_TOKEN;
 const originalHome = process.env.HOME;
+const restoreTtyMocks: Array<() => void> = [];
 
 afterEach(() => {
   while (tempRoots.length > 0) {
     cleanupFixtureRoot(tempRoots.pop() as string);
+  }
+
+  while (restoreTtyMocks.length > 0) {
+    restoreTtyMocks.pop()?.();
   }
 
   vi.restoreAllMocks();
@@ -49,8 +54,7 @@ async function collectSnapshots(locale: "en" | "zh-CN") {
   const isolatedHome = mkdtempSync(join(tmpdir(), "fab-i18n-home-"));
   tempRoots.push(isolatedHome);
   process.env.HOME = isolatedHome;
-  vi.spyOn(process.stdout, "isTTY", "get").mockReturnValue(false);
-  vi.spyOn(process.stderr, "isTTY", "get").mockReturnValue(false);
+  restoreTtyMocks.push(setProcessTty(false));
 
   const initTarget = trackFixture(`fab-i18n-init-${locale}`);
   vi.resetModules();

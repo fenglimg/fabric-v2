@@ -7,11 +7,14 @@ import {
   cleanupFixtureRoot,
   createEmptyFixtureRoot,
   createWerewolfFixtureRoot,
+  setProcessTty,
   writeFixtureFile,
 } from "./helpers/init-test-utils.ts";
 
 const tempRoots: string[] = [];
+const restoreTtyMocks: Array<() => void> = [];
 const originalFabServerPath = process.env.FAB_SERVER_PATH;
+const originalFabLang = process.env.FAB_LANG;
 const require = createRequire(import.meta.url);
 const globalServerPath = require.resolve("@fenglimg/fabric-server");
 
@@ -24,6 +27,16 @@ afterEach(() => {
     process.env.FAB_SERVER_PATH = originalFabServerPath;
   }
 
+  if (originalFabLang === undefined) {
+    delete process.env.FAB_LANG;
+  } else {
+    process.env.FAB_LANG = originalFabLang;
+  }
+
+  while (restoreTtyMocks.length > 0) {
+    restoreTtyMocks.pop()?.();
+  }
+
   while (tempRoots.length > 0) {
     cleanupFixtureRoot(tempRoots.pop() as string);
   }
@@ -31,6 +44,7 @@ afterEach(() => {
 
 describe("init MCP install scope", () => {
   it("uses the global fabric-server path when --mcp-install=global", async () => {
+    process.env.FAB_LANG = "en";
     const target = createWerewolfFixtureRoot("fab-init-mcp-global");
     tempRoots.push(target);
     writeFixtureFile(target, ".cursor/.gitkeep", "");
@@ -54,6 +68,7 @@ describe("init MCP install scope", () => {
   });
 
   it("installs fabric-server locally and writes the project-relative server path", async () => {
+    process.env.FAB_LANG = "en";
     const target = createWerewolfFixtureRoot("fab-init-mcp-local");
     tempRoots.push(target);
     writeFixtureFile(target, ".cursor/.gitkeep", "");
@@ -81,6 +96,7 @@ describe("init MCP install scope", () => {
   });
 
   it("defaults to the global fabric-server path when --mcp-install is omitted", async () => {
+    process.env.FAB_LANG = "en";
     const target = createWerewolfFixtureRoot("fab-init-mcp-default");
     tempRoots.push(target);
     writeFixtureFile(target, ".cursor/.gitkeep", "");
@@ -103,6 +119,7 @@ describe("init MCP install scope", () => {
   });
 
   it("prints the capability summary and manual follow-up for Codex in interactive mode", async () => {
+    process.env.FAB_LANG = "en";
     const target = createEmptyFixtureRoot("fab-init-capability-codex");
     tempRoots.push(target);
     process.env.FAB_SERVER_PATH = globalServerPath;
@@ -116,8 +133,7 @@ describe("init MCP install scope", () => {
       void chunk;
       return true;
     }) as typeof process.stderr.write);
-    vi.spyOn(process.stdout, "isTTY", "get").mockReturnValue(true);
-    vi.spyOn(process.stderr, "isTTY", "get").mockReturnValue(true);
+    restoreTtyMocks.push(setProcessTty(true));
 
     const originalHome = process.env.HOME;
     const codexHome = createEmptyFixtureRoot("fab-init-capability-codex-home");
@@ -166,8 +182,7 @@ function silenceInitOutput(): void {
     void chunk;
     return true;
   }) as typeof process.stderr.write);
-  vi.spyOn(process.stdout, "isTTY", "get").mockReturnValue(false);
-  vi.spyOn(process.stderr, "isTTY", "get").mockReturnValue(false);
+  restoreTtyMocks.push(setProcessTty(false));
 }
 
 async function loadInitCommand() {

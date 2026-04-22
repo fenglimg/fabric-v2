@@ -1,9 +1,9 @@
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { resolve } from "node:path";
 
 import type { FabricConfig } from "@fenglimg/fabric-shared";
 import { defineCommand } from "citty";
 
+import { ensureFabricBootstrapGuide, FABRIC_GUIDE_PATH } from "../bootstrap-guide.js";
 import { resolveClients } from "../config/resolver.js";
 import type { ClientKind } from "../config/writer.js";
 import { readFabricConfig } from "../dev-mode.js";
@@ -59,8 +59,6 @@ const CLIENT_ALIASES: Record<string, BootstrapClient> = {
   "codex-cli": "codex",
   codexcli: "codex",
 };
-
-const FABRIC_GUIDE_PATH = ".fabric/bootstrap/README.md";
 
 export const bootstrapCommand = defineCommand({
   meta: {
@@ -215,27 +213,4 @@ function mapBootstrapClientToClientKind(client: BootstrapClient): ClientKind {
     case "codex":
       return "CodexCLI";
   }
-}
-
-function ensureFabricBootstrapGuide(workspaceRoot: string, force?: boolean): void {
-  const guidePath = resolve(workspaceRoot, FABRIC_GUIDE_PATH);
-  if (existsSync(guidePath) && !force) {
-    return;
-  }
-
-  mkdirSync(dirname(guidePath), { recursive: true });
-  writeFileSync(
-    guidePath,
-    ensureTrailingNewline([
-      "# Fabric Bootstrap Guide",
-      "",
-      "- Fabric protocol source of truth lives under `.fabric/`.",
-      "- L0 bootstrap entry is this file: `.fabric/bootstrap/README.md`.",
-      "- Before editing any file, call `fab_get_rules(path=<target file>)`.",
-      "- Update registry through Fabric tools, never by directly editing `.fabric/agents.meta.json`.",
-      "- Human protected regions are tracked in `.fabric/human-lock.json`.",
-      "- External bootstrap files such as `CLAUDE.md`, `GEMINI.md`, and root `AGENTS.md` are intentionally not generated.",
-    ].join("\n")),
-    "utf8",
-  );
 }

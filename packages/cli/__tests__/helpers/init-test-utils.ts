@@ -36,3 +36,29 @@ export function createEmptyFixtureRoot(prefix: string): string {
   writeFileSync(join(root, "package.json"), '{\n  "name": "fixture"\n}\n', "utf8");
   return root;
 }
+
+export function setProcessTty(stdoutValue: boolean, stderrValue: boolean = stdoutValue): () => void {
+  const descriptors = [
+    [process.stdout, Object.getOwnPropertyDescriptor(process.stdout, "isTTY"), stdoutValue] as const,
+    [process.stderr, Object.getOwnPropertyDescriptor(process.stderr, "isTTY"), stderrValue] as const,
+  ];
+
+  for (const [stream, , value] of descriptors) {
+    Object.defineProperty(stream, "isTTY", {
+      configurable: true,
+      value,
+      writable: true,
+    });
+  }
+
+  return () => {
+    for (const [stream, descriptor] of descriptors) {
+      if (descriptor === undefined) {
+        delete (stream as NodeJS.WriteStream & { isTTY?: boolean }).isTTY;
+        continue;
+      }
+
+      Object.defineProperty(stream, "isTTY", descriptor);
+    }
+  };
+}
