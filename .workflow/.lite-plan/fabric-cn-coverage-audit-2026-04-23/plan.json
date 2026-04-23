@@ -1,0 +1,53 @@
+{
+  "summary": "审计当前中文本土化改造仍未覆盖的高影响入口，重点定位 CLI 安装文档、AI 首读文档、模板提醒文案和测试/locale 尾项中的残留旧术语与旧叙事。",
+  "approach": "先探索后执行。优先覆盖 AI 最先会读到的入口文件，再检查已改深度文档中的残留问题，随后扫描模板和 hook 文案，最后收尾 locale 与测试断言，并用一次全局审计输出保留项与未覆盖项。",
+  "complexity": "Medium",
+  "recommended_execution": "Codex",
+  "constraints": [
+    "本轮先做覆盖审计，不直接修改代码或文档",
+    "需要区分说明性保留词与真正的未覆盖缺口",
+    "仓库当前缺少 .fabric/agents.meta.json，无法使用 Fabric 规则校验"
+  ],
+  "exploration_angles": [
+    {
+      "id": "E1",
+      "angle": "entry-docs",
+      "goal": "定位 AI 首轮最容易读到但尚未完成本土化的入口文档"
+    },
+    {
+      "id": "E2",
+      "angle": "deep-docs-gaps",
+      "goal": "复查已改文档中的残留英文术语和内部叙事"
+    },
+    {
+      "id": "E3",
+      "angle": "template-and-hook-copy",
+      "goal": "定位模板、hook 和 skill 中会直接影响 AI 对话质量的英文/内部词"
+    },
+    {
+      "id": "E4",
+      "angle": "tests-and-locales-tail",
+      "goal": "定位 locale 与测试中的尾项，区分应保留项与应继续改项"
+    }
+  ],
+  "task_ids": [
+    "T1",
+    "T2",
+    "T3",
+    "T4",
+    "T5"
+  ],
+  "task_count": 5,
+  "execution_order": [
+    "Wave 1: T1",
+    "Wave 2: T2",
+    "Wave 3: T3",
+    "Wave 4: T4",
+    "Wave 5: T5"
+  ],
+  "_metadata": {
+    "timestamp": "2026-04-23T00:00:00+08:00",
+    "plan_type": "coverage-audit",
+    "planning_mode": "manual-lite-plan"
+  }
+}

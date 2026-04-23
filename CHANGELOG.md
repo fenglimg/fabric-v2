@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.1] - 2026-04-23
+
+### Changed
+
+- Refined zh-CN wording across CLI copy, Dashboard labels, and initialization-related prompts to reduce translationese and internal jargon in the main user path.
+- Updated first-read onboarding docs, including `README.md`, `packages/cli/README.md`, `docs/quickstart.md`, `docs/getting-started.md`, and `docs/initialization.md`, so install and follow-up guidance read as direct Chinese-first instructions.
+- Tightened AI-facing follow-up copy in the Codex initialization skill and related hook text so repository initialization reminders are easier for clients to act on.
+
+### Documentation
+
+- Added `docs/chinese-localization.md` as the terminology baseline for future zh-CN wording changes.
+- Rewrote `docs/dashboard-tour.md`, `docs/launch-story.md`, and `docs/brand.md` to align public storytelling with the new localized terminology.
+
+### Tests
+
+- Refreshed CLI i18n snapshots and init surface assertions to match the new wording, with CLI init/i18n tests and dashboard build verification passing.
+
 ## [1.5.0] - 2026-04-23
 
 ### Added

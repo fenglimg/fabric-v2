@@ -132,7 +132,7 @@ describe("init CLI surface", () => {
       },
     } as never);
 
-    expect(stderr.some((line) => line.includes("Using canonical --plan mode"))).toBe(true);
+    expect(stderr.some((line) => line.includes("Using standard --plan mode"))).toBe(true);
     expect(stderr.some((line) => line.includes("Compatibility: --interactive=false"))).toBe(true);
     expect(stderr.some((line) => line.includes("legacy --no-* flags"))).toBe(true);
     expect(stdout.some((line) => line.includes("Fabric init dry run"))).toBe(true);

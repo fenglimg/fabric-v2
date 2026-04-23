@@ -1,0 +1,66 @@
+{
+  "summary": "规划 Fabric 当前中文本土化改造，重点解决术语混乱、翻译腔、内部概念直接面向用户，以及 Web Dashboard 与文档界面的中文阅读负担问题。",
+  "approach": "先探索后执行。第一阶段已从术语系统、CLI 文案、Dashboard 文案、用户文档四个角度收集问题与良好样例；第二阶段将按 5 个任务推进：先建立命名基线，再分别收敛 CLI 文案与 Dashboard 文案，然后重写用户向文档，最后统一做测试、快照与遗留术语清理。",
+  "complexity": "Medium",
+  "recommended_execution": "Codex",
+  "constraints": [
+    "本轮先做规划，不直接修改产品代码",
+    "需要保持现有产品语义不变，重点调整命名和表达层",
+    "CLI、Dashboard、文档要共享同一套中文命名口径",
+    "仓库当前缺少 .fabric/agents.meta.json，无法使用 Fabric 规则校验，只能按现有仓库内容规划"
+  ],
+  "exploration_angles": [
+    {
+      "id": "E1",
+      "angle": "terminology-system",
+      "goal": "建立术语分层与命名收口原则"
+    },
+    {
+      "id": "E2",
+      "angle": "cli-copy",
+      "goal": "收敛 CLI 和 zh-CN locale 中的中文文案"
+    },
+    {
+      "id": "E3",
+      "angle": "dashboard-copy",
+      "goal": "收敛 Dashboard 导航、状态、标题和元信息文案"
+    },
+    {
+      "id": "E4",
+      "angle": "docs-onboarding",
+      "goal": "重写用户向文档中的内部术语和翻译腔表达"
+    }
+  ],
+  "task_ids": [
+    "T1",
+    "T2",
+    "T3",
+    "T4",
+    "T5"
+  ],
+  "task_count": 5,
+  "likely_task_groups": [
+    "建立一份中文命名表和禁用词表",
+    "批量调整 packages/shared/src/i18n/locales/zh-CN.ts 与相关测试快照",
+    "按视图收敛 Dashboard 的 label/subtitle/status/meta 文案",
+    "改写 docs/getting-started.md、docs/initialization.md、docs/dashboard-tour.md 的用户向表达",
+    "统一回归测试与遗留术语扫描"
+  ],
+  "execution_order": [
+    "Wave 1: T1",
+    "Wave 2: T2 + T3",
+    "Wave 3: T4",
+    "Wave 4: T5"
+  ],
+  "source_sessions": [
+    ".workflow/.analysis/ANL-2026-04-22-codex适配/conclusions.json",
+    ".workflow/.analysis/ANL-2026-04-23-ai-client-init-rules-web-interaction/conclusions.json",
+    ".workflow/.analysis/ANL-2026-04-21-fabric-init-cli-ux/conclusions.json",
+    ".workflow/.team/UAN-2026-04-23-cn-localization/explorations/exploration-002.json"
+  ],
+  "_metadata": {
+    "timestamp": "2026-04-23T00:00:00+08:00",
+    "plan_type": "localization",
+    "planning_mode": "manual-lite-plan"
+  }
+}

@@ -51,7 +51,7 @@ Dashboard 与长文 UI 正文使用 `--font-family-sans` 的 sans stack：
 
 - 精准: 说明规则、状态、失败原因和下一步，不使用模糊承诺。
 - 协作: 明确 AI Agent、Fabric Ledger、Human Developer 的边界与交接点。
-- 透明: 展示可审计证据，例如 CLI 输出、ledger entry、metadata revision。
+- 透明: 展示可审计证据，例如 CLI 输出、ledger entry、metadata 版本。
 
 英文基调:
 

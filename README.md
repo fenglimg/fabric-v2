@@ -2,15 +2,15 @@
   <img src="./assets/brand/fabric-wordmark.svg" alt="fabric wordmark" width="220">
 </p>
 
-# Fabric v1.5.0
+# Fabric v1.5.1
 
-人机协作的语义共识平面
+让 AI 与维护者围绕同一套仓库规则协作
 
 The Consensus Plane for AI-Human Collaboration
 
-Fabric v1.5.0 is an MCP-first, cross-client AGENTS.md protocol for six AI clients: Claude Code, Cursor, Windsurf, Roo Code, Gemini CLI, and Codex CLI. It keeps Fabric rule state inside `.fabric/`, distributes scoped rules through a local MCP server, and adds git-level defenses so behavior stays consistent across clients without compiling client-specific rule files first.
+Fabric v1.5.1 is an MCP-first, cross-client AGENTS.md protocol for six AI clients: Claude Code, Cursor, Windsurf, Roo Code, Gemini CLI, and Codex CLI. It keeps Fabric rule state inside `.fabric/`, distributes scoped rules through a local MCP server, and adds git-level defenses so behavior stays consistent across clients without compiling client-specific rule files first.
 
-> **Current release: v1.5.0**. Fabric now adds CLI human-lock approval, richer TechProfile detection, activation-tiered rule loading, the `/api/rules/context` endpoint, and the Dashboard Rule Topology module. See [`CHANGELOG.md`](./CHANGELOG.md#150---2026-04-23) for the release notes and [`docs/initialization.md`](./docs/initialization.md) for the updated init flow.
+> **Current release: v1.5.1**. Fabric 现在支持 CLI 侧的 human-lock 批准、更丰富的 TechProfile 检测、分层规则激活、`/api/rules/context` 接口，以及 Dashboard 的规则命中页；本补丁版继续收口中文入口文档、Dashboard 文案和 AI 初始化提示。更新说明见 [`CHANGELOG.md`](./CHANGELOG.md#151---2026-04-23)，初始化流程见 [`docs/initialization.md`](./docs/initialization.md)。
 
 ```text
 AI Agent <-> Fabric Ledger <-> Human Developer
@@ -26,27 +26,31 @@ AI Agent <-> Fabric Ledger <-> Human Developer
 - Distribution: the Fabric MCP server serves scoped rules to supported clients on demand.
 - Defense: pre-commit enforcement protects `@HUMAN` boundaries, metadata integrity, and workflow hygiene.
 
-## Quick Start
+## 快速开始
 
-1. Install Fabric and build once if you are validating from this monorepo.
-2. Run `fabric init` in the target project. In a TTY it opens the guided wizard by default.
-3. Start `fabric serve` and verify `fab_get_rules` in your client.
+1. 安装 Fabric；如果你在这个 monorepo 里验证，再额外构建一次。
+2. 在目标项目里运行 `fabric init`。如果当前终端支持 TTY，它会默认进入向导。
+3. 启动 `fabric serve`，再去客户端里验证 `fab_get_rules` 是否可用。
 
-`fab` is a permanent alias, so you can use either binary. The docs use `fabric` as the primary command.
-`fabric init` is now the canonical installer surface:
+`fab` 是永久别名，本文统一使用 `fabric`。
+`fabric init` 的常用方式如下：
 
-- `fabric init` launches the TTY wizard and then executes the selected plan.
-- `fabric init --yes` accepts the current CLI flag plan and runs non-interactively.
-- `fabric init --plan` prints the install plan without writing files.
-- `fabric init --reapply --yes` forcefully reapplies Fabric-managed scaffold files and follow-up stages over an existing setup.
+- `fabric init`
+  在 TTY 中打开向导，确认计划后执行。
+- `fabric init --yes`
+  直接接受当前计划并以非交互方式执行。
+- `fabric init --plan`
+  仅打印安装计划，不写文件。
+- `fabric init --reapply --yes`
+  对已有仓库重新应用 Fabric 管理的文件和后续阶段。
 
-`fabric init` still auto-runs bootstrap, MCP config, and git hooks. Use the standalone commands only when you want a narrowly targeted re-run outside the main init flow.
+`fabric init` 仍会自动执行 bootstrap、MCP 配置和 git hooks。只有在你想单独重跑某个阶段时，才需要使用独立命令。
 
-Use the canonical onboarding guide for the full 7-stage walkthrough, expected CLI output, and MCP activation checks: [docs/getting-started.md](./docs/getting-started.md).
+完整的 7 阶段上手路径、CLI 示例输出和 MCP 检查方式见 [docs/getting-started.md](./docs/getting-started.md)。
 
-## Initialization Guide
+## 初始化说明
 
-`fabric init` now does more than create a scaffold. It builds an installation plan, lets TTY users confirm or reshape that plan through the wizard, writes the evidence pack in `.fabric/`, installs Claude/Codex follow-up assets, and keeps the bootstrap guide inside `.fabric/bootstrap/README.md` instead of generating root-level bootstrap docs. Start with [docs/getting-started.md](./docs/getting-started.md), then use [docs/initialization.md](./docs/initialization.md) for the deep-dive state machine, canonical flags, bootstrap protocol, and `agents-md-init` / `fabric-init` handoff flow.
+`fabric init` 不只是生成脚手架。它会先构建安装计划，让 TTY 用户通过向导确认或调整计划，把初始化依据写进 `.fabric/`，安装 Claude/Codex 的后续资产，并把内部初始化说明保留在 `.fabric/bootstrap/README.md`，而不是再生成根目录的 bootstrap 文档。建议先看 [docs/getting-started.md](./docs/getting-started.md)，再用 [docs/initialization.md](./docs/initialization.md) 深入了解状态机、命令参数、bootstrap 协议以及 `agents-md-init` / `fabric-init` 的接力流程。
 
 ## Compliance Audit
 
@@ -71,23 +75,23 @@ fabric approve --all
 
 `fabric approve` only updates drifted entries from `.fabric/human-lock.json`; use interactive mode when reviewing each protected range and `--all` only after an external review has already confirmed the drift.
 
-## Rule Topology Dashboard
+## 规则命中页
 
-`fabric serve` now exposes `/api/rules/context?path=<file>` and the Dashboard opens on Rule Topology. The view shows directory coverage inferred from `scope_glob` plus the exact L1/L2 rules and description-only stubs loaded for a sample path.
+`fabric serve` 现在会暴露 `/api/rules/context?path=<file>`，Dashboard 默认打开规则命中页。这个页面会展示基于 `scope_glob` 推断出的目录覆盖情况，以及样本路径实际加载到的 L1/L2 规则和 description-only stub。
 
-## Roadmap
+## 路线图
 
-See [docs/roadmap.md](./docs/roadmap.md) for the planned follow-up milestones, including `drift-check`, `fabric migrate`, `fabric doctor`, and the Copilot fallback path.
+后续里程碑见 [docs/roadmap.md](./docs/roadmap.md)，其中包括 `drift-check`、`fabric migrate`、`fabric doctor` 和 Copilot fallback path。
 
-## Advanced Commands
+## 进阶命令
 
-Use these only when you need a targeted re-run outside the default `fabric init` flow:
+只有在需要单独重跑某个阶段时，才使用下面这些命令：
 
 - `fabric bootstrap install`
 - `fabric config install`
 - `fabric hooks install`
 
-Canonical `init` variants:
+常用 `init` 变体：
 
 - `fabric init --plan`
 - `fabric init --yes`
@@ -95,15 +99,15 @@ Canonical `init` variants:
 - `fabric approve --interactive`
 - `fabric approve --all`
 
-`fabric bootstrap install` now refreshes the internal bootstrap guide at `.fabric/bootstrap/README.md`. It no longer emits root `AGENTS.md`, `CLAUDE.md`, or `GEMINI.md`.
+`fabric bootstrap install` 现在只会刷新 `.fabric/bootstrap/README.md` 里的内部初始化说明，不会再生成根级 `AGENTS.md`、`CLAUDE.md` 或 `GEMINI.md`。
 
-## Validation
+## 验证与延伸阅读
 
-- [Getting Started](./docs/getting-started.md)
-- [Initialization Guide](./docs/initialization.md)
+- [Fabric 上手](./docs/getting-started.md)
+- [初始化指南](./docs/initialization.md)
 - [Release Smoke Checklist](./docs/smoke-v1.0.md)
 - [Release Checklist](./RELEASING.md)
 
-## Status
+## 当前状态
 
-The current stable line is `v1.5.0`. Historical launch planning remains in `.workflow/`, while the maintained public entry points are this README, the docs under `docs/`, and the tag-driven release flow in `.github/workflows/release.yml`.
+当前稳定版本是 `v1.5.1`。历史规划仍保留在 `.workflow/`，对外维护的入口以本 README、`docs/` 下的文档和 `.github/workflows/release.yml` 中的发布流程为准。

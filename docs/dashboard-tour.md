@@ -6,7 +6,7 @@
 > 本文记录它如何承接已落盘的规则、锁、ledger 与 rules-context API。
 
 Dashboard 不是第二个编辑器，也不是另一个配置中心。
-它是 Fabric 的 observability plane：
+它更像 Fabric 的观察面板：
 
 - CLI 负责把规则织进仓库。
 - MCP 负责运行时分发。
@@ -66,11 +66,11 @@ Ledger View 负责解释「最近发生了什么」，而不是只展示原始 J
 Ledger View 的价值在于，它把「谁改了什么」升级为
 「谁出于什么意图，在什么语义边界上做了改动」。
 
-## Rule Topology View
+## 规则命中页
 
-> v1.5.0 Feature：Rule Topology 把 `fab_get_rules(path=...)` 的命中结果变成只读调试面板。
+> v1.5.0 Feature：规则命中页把 `fab_get_rules(path=...)` 的命中结果变成只读调试面板。
 
-Dashboard 默认进入 Rule Topology。维护者输入一个样本路径后，前端调用：
+Dashboard 默认进入规则命中页。维护者输入一个样本路径后，前端调用：
 
 ```text
 GET /api/rules/context?path=<sample-path>
@@ -81,14 +81,14 @@ GET /api/rules/context?path=<sample-path>
 - Coverage Heatmap：根据 `agents.meta.json` 的 `scope_glob` 推导目录覆盖密度。
 - Hit Reason Panel：展示当前样本路径命中的 L1/L2 规则、`activation.tier`，以及 description-only stubs。
 
-Rule Topology 回答的问题是：
+规则命中页回答的问题是：
 当前规则为什么会被加载、哪些目录还缺少明确规则、哪些大型规则包只是以描述方式参与判断。
 
 ## Rules View
 
 > v1.1 Feature：Rules View 让 `AGENTS.md` 第一次从静态文本变成可检查的结构树。
 
-[截图占位：Rules view，含 root scope、revision hash、各 domain 节点]
+[截图占位：规则树视图，含 root scope、revision hash、各 domain 节点]
 
 Rules View 应展示当前规则树及其同步状态：
 
@@ -141,9 +141,9 @@ Agents View 应至少覆盖 5 个角色 agent：
 哪些角色拥有夜晚动作，
 哪些角色会对胜负判定产生直接影响。
 
-## Human Lock 与 Drift Signals
+## 人工保护与漂移信号
 
-[截图占位：Human Lock 卡片，`role-balance-config` 为绿色状态]
+[截图占位：人工保护卡片，`role-balance-config` 为绿色状态]
 
 Dashboard 不应该只展示「有锁」。
 它还要展示锁的健康状态：
@@ -167,7 +167,7 @@ Dashboard 真正成立，不在于首屏截图，
 1. AI 在 client 里完成一次小改动。
 2. pre-commit 执行 `fab sync-meta --check-only`、`fab human-lint`、`fab ledger-append --staged`。
 3. SSE 把新事件推到 Dashboard。
-4. 维护者在 Ledger View 看到新增记录，在 Rules View 或 Human Lock 卡片里判断是否存在 drift。
+4. 维护者在 Ledger View 看到新增记录，再去规则树或人工保护卡片里判断是否存在 drift。
 
 如果一切正常，Dashboard 显示绿色健康状态。
 如果有人碰到了 `@HUMAN` 锁或破坏了规则边界，
@@ -186,6 +186,6 @@ Dashboard 的早期叙事必须清楚标注为 v1.1，
 
 - v1.0 先解决落规和分发。
 - v1.1 再解决可观测维护。
-- v1.5.0 增加 Rule Topology，用 rules-context API 解释规则命中原因。
+- v1.5.0 增加规则命中页，用 rules-context API 解释规则命中原因。
 
 如果需要完整的三幕产品叙事，请阅读 [Launch Story](./launch-story.md)。

@@ -1,19 +1,19 @@
 # @fenglimg/fabric-cli
 
-`fabric` is the primary CLI binary for Fabric. `fab` is a permanent alias, so you can use either binary.
+`fabric` 是 Fabric 的主命令，`fab` 是永久别名，两者等价。
 
-## Quick Start
+## 快速开始
 
-1. Install dependencies from the monorepo root with `pnpm install`.
-2. Build the CLI with `pnpm --filter @fenglimg/fabric-cli build`.
-3. Run `fabric init` in the target project for the one-shot setup flow.
-4. Start `fabric serve` and verify `fab_get_rules` in your client.
+1. 在 monorepo 根目录运行 `pnpm install`。
+2. 用 `pnpm --filter @fenglimg/fabric-cli build` 构建 CLI。
+3. 在目标项目运行 `fabric init`，完成一站式初始化。
+4. 启动 `fabric serve`，再去客户端里验证 `fab_get_rules`。
 
-`fabric init` auto-runs `bootstrap install`, `config install`, and `hooks install`. Use them standalone only for targeted re-runs.
+`fabric init` 会自动执行 `bootstrap install`、`config install` 和 `hooks install`。只有在需要单独重跑某个阶段时，才需要单独调用它们。
 
-`fabric bootstrap install` refreshes the internal bootstrap guide at `.fabric/bootstrap/README.md`. It does not generate root `AGENTS.md`, `CLAUDE.md`, or `GEMINI.md`.
+`fabric bootstrap install` 只会刷新 `.fabric/bootstrap/README.md` 里的内部初始化说明，不会再生成根级 `AGENTS.md`、`CLAUDE.md` 或 `GEMINI.md`。
 
-## Common Commands
+## 常用命令
 
 - `fabric init`
 - `fabric serve`
@@ -21,10 +21,10 @@
 - `fabric approve --interactive`
 - `fabric approve --all`
 
-## Advanced Commands
+## 进阶命令
 
 - `fabric bootstrap install`
 - `fabric config install`
 - `fabric hooks install`
 
-`fabric approve` updates drifted entries in `.fabric/human-lock.json` after review. Use `--interactive` for per-entry confirmation and `--all` only when drift has already been reviewed elsewhere.
+`fabric approve` 会在审查完成后更新 `.fabric/human-lock.json` 中已经发生漂移的条目。需要逐项确认时使用 `--interactive`，只有在别处已经完成审查时才使用 `--all`。

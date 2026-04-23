@@ -2,7 +2,7 @@
 
 Fabric v1.5.0 为维护者提供从本地安装到首条 ledger-backed 协作事件的标准上手路径。若你首次评估 Fabric，从这里开始。
 
-贡献与本地仓库设置见 [Contributing](./contributing.md)。`fabric init` 状态机与更深 mechanics 见 [Initialization Guide](./initialization.md)。产品叙事版见 [Launch Story](./launch-story.md)。
+贡献与本地仓库设置见 [Contributing](./contributing.md)。`fabric init` 的状态机和更深入说明见 [初始化指南](./initialization.md)。产品叙事版见 [Launch Story](./launch-story.md)。
 
 > `fabric` 是主命令，`fab` 是永久别名，两者等价。下文统一使用 `fabric`。
 
@@ -44,7 +44,7 @@ fabric init
 - 尚不存在 `.fabric/`。
 - 在任意写入步骤前，先审阅既有 `.claude/`、`.cursor/`、`.codex/`、`.windsurf/` 或 `.roo/` config。
 
-Canonical `init` 心智模型：
+`fabric init` 的标准用法：
 
 - `fabric init`
   在 TTY 中启动 wizard，确认 target、阶段选择和 MCP 安装范围后执行。
@@ -80,7 +80,7 @@ Mode=default bootstrap=yes mcp=yes hooks=yes
 fabric init --yes
 ```
 
-当前初始化流程的中文本地化输出应理解为“plan -> scaffold -> stages -> reason”，而不是旧版的单次一把梭示例：
+当前初始化流程更适合理解为“先看计划，再写入基础文件，然后执行各阶段，最后给出下一步”，而不是旧版的一次性长输出：
 
 ```text
 $ fabric init
@@ -95,8 +95,8 @@ Fabric v1.2 · control plane
   - assets/scripts/*.ts
   - @ccclass + extends Component
 
-正在生成证据包...
-证据包摘要 / `.fabric/forensic.json`
+正在生成初始化依据...
+初始化依据摘要 / `.fabric/forensic.json`
   - `framework.kind`: `cocos-creator`
   - `framework.version`: `3.8.0`
   - `framework.subkind`: `typescript-component`
@@ -131,14 +131,14 @@ Added prepare script to package.json
 
 这里的 `bootstrap` 阶段只会确保 `.fabric/bootstrap/README.md` 存在并保持最新，不再生成根级 `AGENTS.md`、`CLAUDE.md` 或 `GEMINI.md`。若仓库已经存在 Fabric 产物，默认 `fabric init` 会保持非破坏性并中止；需要重应用时使用 `fabric init --reapply --yes`。
 
-本阶段结束后，仓库已具备内部 bootstrap guide 与 evidence pack，但在 client-side review 完成前，semantic initialization 尚未结束。
+本阶段结束后，仓库已经具备内部 bootstrap 说明和初始化依据，但在客户端完成后续确认前，初始化还没有真正结束。
 
-## 阶段 3：完成 AI Handoff
+## 阶段 3：完成 AI 接力
 
-在 Claude Code 或 Codex 中打开同一仓库，用普通消息继续 initialization transaction：
+在 Claude Code 或 Codex 中打开同一仓库，用普通消息继续后续初始化：
 
 ```text
-I just ran fabric init in this repo. Finish AGENTS.md initialization.
+我刚运行了 fabric init，请继续完成这个仓库的 Fabric 初始化。
 ```
 
 预期结果：
@@ -147,9 +147,9 @@ I just ran fabric init in this repo. Finish AGENTS.md initialization.
 - 维护者确认 framework facts 与 invariants。
 - Fabric 写入 `.fabric/init-context.json` 并更新项目专属 rule nodes 与 metadata。
 
-若使用 Codex 并希望 hooks 自动提醒，请确认 Codex 配置中已启用 `features.codex_hooks = true`。否则 `.codex/hooks.json` 不会生效，但你仍可手动使用 repo skill `.agents/skills/fabric-init/SKILL.md`。
+若使用 Codex 并希望 hooks 自动提醒，请确认 Codex 配置中已启用 `features.codex_hooks = true`。否则 `.codex/hooks.json` 不会生效，但你仍可手动使用仓库内的 repo skill `.agents/skills/fabric-init/SKILL.md`。
 
-更完整的 interview 流程（含 framework-confirm 与 invariants 阶段）见 [Initialization Guide](./initialization.md)。
+更完整的确认流程（包括框架确认和不变式确认）见 [初始化指南](./initialization.md)。
 
 ## 阶段 4：验证 Agents 与 Hooks
 
@@ -206,8 +206,8 @@ Before editing any file, call fab_get_rules for README.md and summarize the acti
 成功表现：
 
 - Client 调用 `fab_get_rules`。
-- 响应包含 `revision_hash`。
-- 响应包含来自 bootstrap guide 或 scoped rule nodes 的 L0/L1/L2 rules。
+- 响应包含 `revision_hash` 这类版本字段。
+- 响应包含来自内部 bootstrap 说明或 scoped rule nodes 的 L0/L1/L2 rules。
 - 若命中 `activation.tier = "description"` 的节点，响应会包含 `description_stubs`，提示客户端可按描述决定是否进一步加载完整规则。
 
 若 tools 未出现，确认 MCP config 文件包含 `mcpServers.fabric` 或 `[mcp_servers.fabric]`，然后再次重启 client。
@@ -243,7 +243,7 @@ fabric approve --all
 
 1. Fabric 已安装。
 2. 项目已初始化。
-3. Client rules 通过 MCP 分发，并可用 Dashboard Rule Topology 检查命中原因。
+3. Client rules 通过 MCP 分发，并可用 Dashboard 的“规则命中”页面检查命中原因。
 4. 首条协作事件已写入 ledger。
 5. 有意发生的 human-lock drift 已通过 `fabric approve` 明确批准。
 
@@ -252,5 +252,5 @@ fabric approve --all
 - [Launch Story](./launch-story.md)
 - [Dashboard Tour](./dashboard-tour.md)
 - [Contributing](./contributing.md)
-- [Initialization Guide](./initialization.md)
+- [初始化指南](./initialization.md)
 - [Roadmap](./roadmap.md)
