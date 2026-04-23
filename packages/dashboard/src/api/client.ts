@@ -38,6 +38,29 @@ export type ScanReport = {
   recommendations: string[];
 };
 
+export type RulesContextEntry = {
+  path: string;
+  content: string;
+};
+
+export type RulesDescriptionStub = {
+  path: string;
+  description: string;
+};
+
+export type RulesHumanLockedNearby = {
+  file: string;
+  excerpt: string;
+};
+
+export type RulesContextPayload = {
+  L0: string;
+  L1: RulesContextEntry[];
+  L2: RulesContextEntry[];
+  human_locked_nearby: RulesHumanLockedNearby[];
+  description_stubs?: RulesDescriptionStub[];
+};
+
 export type DoctorStatus = "ok" | "warn" | "error";
 
 export type DoctorCheck = {
@@ -105,6 +128,12 @@ type HistoryStateQuery = {
 
 export async function getRules(): Promise<AgentsMeta> {
   return await getJson<AgentsMeta>("/api/rules");
+}
+
+export async function getRulesContext(path: string): Promise<RulesContextPayload> {
+  const params = new URLSearchParams();
+  params.set("path", path);
+  return await getJson<RulesContextPayload>(withQuery("/api/rules/context", params));
 }
 
 export async function getLedger(query: LedgerQuery = {}): Promise<LedgerEntry[]> {

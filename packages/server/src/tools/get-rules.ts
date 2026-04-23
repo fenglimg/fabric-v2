@@ -14,6 +14,7 @@ const inputSchema = {
 
 const rulesEntrySchema = z.object({ path: z.string(), content: z.string() });
 const humanLockedSchema = z.object({ file: z.string(), excerpt: z.string() });
+const descriptionStubSchema = z.object({ path: z.string(), description: z.string() });
 
 const outputSchema = z.object({
   revision_hash: z.string(),
@@ -23,6 +24,7 @@ const outputSchema = z.object({
     L1: z.array(rulesEntrySchema),
     L2: z.array(rulesEntrySchema),
     human_locked_nearby: z.array(humanLockedSchema),
+    description_stubs: z.array(descriptionStubSchema).optional(),
   }),
 });
 

@@ -522,6 +522,153 @@ input:focus-visible,
   margin-left: auto;
 }
 
+.topology-toolbar {
+  background: var(--color-surface-panel);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-lg);
+  margin-bottom: var(--space-4);
+}
+
+.topology-status {
+  background: var(--color-surface-panel);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-lg);
+  margin-bottom: var(--space-4);
+}
+
+.topology-split {
+  grid-template-columns: minmax(0, 1.2fr) minmax(320px, 1fr);
+}
+
+.topology-card {
+  background: var(--color-surface-panel);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
+  min-height: 280px;
+  overflow: hidden;
+}
+
+.topology-card-head {
+  align-items: start;
+  border-bottom: 1px solid var(--color-border-subtle);
+  display: flex;
+  gap: var(--space-3);
+  justify-content: space-between;
+  padding: var(--space-4);
+}
+
+.topology-card-head h3 {
+  color: var(--color-text-primary);
+  margin: 0;
+}
+
+.coverage-grid,
+.reason-list {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-4);
+}
+
+.coverage-row,
+.reason-card,
+.module-placeholder {
+  background: color-mix(in srgb, var(--color-surface-raised) 88%, transparent);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+}
+
+.coverage-row {
+  padding: var(--space-3);
+}
+
+.coverage-row-main,
+.reason-card-head,
+.reason-card-meta {
+  align-items: center;
+  display: flex;
+  gap: var(--space-2);
+  justify-content: space-between;
+}
+
+.coverage-row-meta,
+.reason-card-meta,
+.reason-description {
+  color: var(--color-text-muted);
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-xs);
+}
+
+.coverage-row-meta,
+.reason-card-meta {
+  margin-top: var(--space-2);
+}
+
+.coverage-path,
+.reason-card strong {
+  color: var(--color-text-primary);
+  font-family: var(--font-family-mono);
+  overflow-wrap: anywhere;
+}
+
+.coverage-chip-full,
+.reason-tier-always {
+  background: rgba(34, 197, 94, 0.12);
+  border-color: rgba(34, 197, 94, 0.3);
+  color: #86efac;
+}
+
+.coverage-chip-partial,
+.reason-tier-path {
+  background: rgba(250, 204, 21, 0.12);
+  border-color: rgba(250, 204, 21, 0.3);
+  color: #fde68a;
+}
+
+.coverage-chip-none,
+.reason-tier-description {
+  background: rgba(148, 163, 184, 0.12);
+  border-color: rgba(148, 163, 184, 0.3);
+  color: #cbd5e1;
+}
+
+.coverage-full {
+  box-shadow: inset 2px 0 0 rgba(34, 197, 94, 0.45);
+}
+
+.coverage-partial {
+  box-shadow: inset 2px 0 0 rgba(250, 204, 21, 0.45);
+}
+
+.coverage-none {
+  box-shadow: inset 2px 0 0 rgba(148, 163, 184, 0.25);
+}
+
+.reason-card {
+  padding: var(--space-3);
+}
+
+.reason-description {
+  line-height: 1.6;
+  margin: var(--space-2) 0 0;
+}
+
+.module-placeholder {
+  padding: var(--space-6);
+}
+
+.module-placeholder strong {
+  color: var(--color-text-primary);
+  display: block;
+  font-family: var(--font-family-mono);
+  margin-bottom: var(--space-2);
+}
+
+.module-placeholder p {
+  color: var(--color-text-muted);
+  margin: 0;
+}
+
 .filter-label {
   color: var(--color-text-dim);
   font-size: var(--font-size-xs);
@@ -1206,6 +1353,7 @@ button.source-badge {
 @media (max-width: 720px) {
   .app-shell,
   .view-split,
+  .topology-split,
   .timeline-grid,
   .col-headers,
   .doctor-panels,

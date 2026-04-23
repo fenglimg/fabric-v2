@@ -1,6 +1,10 @@
 import { z } from "zod";
 
-import type { AgentsLayer, AgentsMetaNode, AgentsTopologyType } from "../types/agents.js";
+import type {
+  AgentsLayer,
+  AgentsMetaNode,
+  AgentsTopologyType,
+} from "../types/agents.js";
 
 const FABRIC_AGENTS_PREFIX = ".fabric/agents/";
 
@@ -21,6 +25,12 @@ const agentsMetaNodeBaseSchema = z.object({
   layer: agentsLayerSchema,
   topology_type: agentsTopologyTypeSchema,
   hash: z.string(),
+  activation: z
+    .object({
+      tier: z.enum(["always", "path", "description"]),
+      description: z.string().optional(),
+    })
+    .optional(),
 });
 
 export const agentsMetaNodeSchema = z.preprocess((value) => {

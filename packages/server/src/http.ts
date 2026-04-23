@@ -22,6 +22,7 @@ import { registerHumanLockApi } from "./api/human-lock.js";
 import { registerIntentApi } from "./api/intent.js";
 import { registerLedgerApi } from "./api/ledger.js";
 import { registerRulesApi } from "./api/rules.js";
+import { registerRulesContextApi } from "./api/rules-context.js";
 import { registerScanApi } from "./api/scan.js";
 import { registerDashboardStatic } from "./api/static.js";
 import { createBearerAuthMiddleware } from "./middleware/bearer-auth.js";
@@ -193,6 +194,7 @@ export function createFabricHttpApp(options: CreateFabricHttpAppOptions) {
   }
 
   registerRulesApi(app, projectRoot);
+  registerRulesContextApi(app, projectRoot);
   registerLedgerApi(app, projectRoot);
   registerHistoryApi(app, projectRoot);
   registerScanApi(app, projectRoot);

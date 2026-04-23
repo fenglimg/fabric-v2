@@ -54,6 +54,34 @@ afterEach(() => {
 });
 
 describe("dashboard api client", () => {
+  it("encodes the requested path when fetching rules context", async () => {
+    setMockWindow("http://127.0.0.1:7373/#/topology");
+    const fetchMock = vi.fn().mockResolvedValue(createJsonResponse({
+      L0: "",
+      L1: [],
+      L2: [],
+      human_locked_nearby: [],
+    }));
+
+    Object.defineProperty(globalThis, "fetch", {
+      configurable: true,
+      value: fetchMock,
+    });
+
+    const client = await import("./client.ts");
+
+    await client.getRulesContext("packages/dashboard/src/views/rule-topology.tsx");
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/rules/context?path=packages%2Fdashboard%2Fsrc%2Fviews%2Frule-topology.tsx",
+      expect.objectContaining({
+        headers: {
+          Accept: "application/json",
+        },
+      }),
+    );
+  });
+
   it("reuses a URL token for both JSON requests and SSE reconnects", async () => {
     const { replaceState } = setMockWindow("http://127.0.0.1:7373/?token=secret&view=doctor#/rules");
     const fetchMock = vi

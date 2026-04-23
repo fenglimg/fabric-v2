@@ -13,6 +13,11 @@ export type RulesEntry = {
   content: string;
 };
 
+export type DescriptionStub = {
+  path: string;
+  description: string;
+};
+
 export type HumanLockedNearby = {
   file: string;
   excerpt: string;
@@ -23,6 +28,7 @@ export type RulesPayload = {
   L1: RulesEntry[];
   L2: RulesEntry[];
   human_locked_nearby: HumanLockedNearby[];
+  description_stubs?: DescriptionStub[];
 };
 
 export type GetRulesInput = {
@@ -45,6 +51,11 @@ export type GetRulesContext = {
 type LoadedRule = {
   level: "L1" | "L2" | null;
   entry: RulesEntry;
+};
+
+type LoadedRulesResult = {
+  rules: LoadedRule[];
+  stubs: DescriptionStub[];
 };
 
 const PRIORITY_ORDER: Record<"high" | "medium" | "low", number> = {
@@ -106,7 +117,7 @@ export async function resolveRulesForPath(
     dedupeByPath?: boolean;
   } = {},
 ): Promise<RulesPayload> {
-  const loadedRules = await loadRulesForPath(projectRoot, context.meta, path);
+  const { rules: loadedRules, stubs } = await loadRulesForPath(projectRoot, context.meta, path);
   const { L1, L2 } = partitionRulesByLevel(loadedRules, options.dedupeByPath ?? false);
 
   return {
@@ -114,6 +125,7 @@ export async function resolveRulesForPath(
     L1,
     L2,
     human_locked_nearby: context.humanLockedNearby,
+    description_stubs: stubs.length > 0 ? dedupeDescriptionStubsByPath(stubs) : undefined,
   };
 }
 
@@ -137,10 +149,10 @@ async function loadRulesForPath(
   projectRoot: string,
   meta: AgentsMeta,
   path: string,
-): Promise<LoadedRule[]> {
+): Promise<LoadedRulesResult> {
   const requestedPath = normalizeRulesPath(path);
   const matchedNodes = Object.entries(meta.nodes)
-    .filter(([, node]) => minimatch(requestedPath, normalizeRulesPath(node.scope_glob), { dot: true }))
+    .filter(([, node]) => shouldLoadNodeForPath(requestedPath, node))
     .sort((left, right) => {
       const [leftId, leftNode] = left;
       const [rightId, rightNode] = right;
@@ -149,15 +161,28 @@ async function loadRulesForPath(
       return priorityDelta !== 0 ? priorityDelta : leftId.localeCompare(rightId);
     });
 
-  return await Promise.all(
-    matchedNodes.map(async ([nodeId, node]) => ({
+  const rules: LoadedRule[] = [];
+  const stubs: DescriptionStub[] = [];
+
+  for (const [nodeId, node] of matchedNodes) {
+    if (node.activation?.tier === "description") {
+      stubs.push({
+        path: node.file,
+        description: node.activation.description ?? "",
+      });
+      continue;
+    }
+
+    rules.push({
       level: classifyNode(nodeId),
       entry: {
         path: node.file,
         content: await readFile(join(projectRoot, node.file), "utf8"),
       },
-    })),
-  );
+    });
+  }
+
+  return { rules, stubs };
 }
 
 function partitionRulesByLevel(
@@ -193,6 +218,34 @@ function dedupeEntriesByPath(entries: RulesEntry[]): RulesEntry[] {
     }
 
     seenPaths.add(entry.path);
+    return true;
+  });
+}
+
+function shouldLoadNodeForPath(
+  requestedPath: string,
+  node: AgentsMeta["nodes"][string],
+): boolean {
+  switch (node.activation?.tier) {
+    case "always":
+      return true;
+    case "description":
+      return true;
+    case "path":
+    case undefined:
+      return minimatch(requestedPath, normalizeRulesPath(node.scope_glob), { dot: true });
+  }
+}
+
+function dedupeDescriptionStubsByPath(stubs: DescriptionStub[]): DescriptionStub[] {
+  const seenPaths = new Set<string>();
+
+  return stubs.filter((stub) => {
+    if (seenPaths.has(stub.path)) {
+      return false;
+    }
+
+    seenPaths.add(stub.path);
     return true;
   });
 }

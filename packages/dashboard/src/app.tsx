@@ -8,11 +8,12 @@ import { DoctorView } from "./views/doctor";
 import { HistoryReplayView } from "./views/history-replay";
 import { HumanLockView } from "./views/human-lock";
 import { IntentTimelineView } from "./views/intent-timeline";
+import { RuleTopologyView } from "./views/rule-topology";
 import { RulesTreeView } from "./views/rules-tree";
 
 declare const __DASHBOARD_VERSION__: string;
 
-type Route = "rules" | "locks" | "timeline" | "history" | "doctor";
+type Route = "topology" | "forensic" | "semantic" | "ledger" | "rules" | "locks" | "timeline" | "history" | "doctor";
 
 export function App() {
   return (
@@ -26,7 +27,37 @@ function AppContent() {
   const { t } = useI18n();
   const [route, setRoute] = useState<Route>(readRoute());
   const events = useEvents();
-  const routes = [
+  const moduleRoutes = [
+    {
+      id: "topology" as const,
+      hash: "#/topology",
+      label: t("dashboard.app.nav.module-a.label-bilingual"),
+      subtitle: t("dashboard.app.nav.module-a.subtitle"),
+      breadcrumb: t("dashboard.app.breadcrumb.topology"),
+    },
+    {
+      id: "forensic" as const,
+      hash: "#/forensic",
+      label: t("dashboard.app.nav.module-b.label-bilingual"),
+      subtitle: t("dashboard.app.nav.module-b.subtitle"),
+      breadcrumb: t("dashboard.app.breadcrumb.forensic"),
+    },
+    {
+      id: "semantic" as const,
+      hash: "#/semantic",
+      label: t("dashboard.app.nav.module-c.label-bilingual"),
+      subtitle: t("dashboard.app.nav.module-c.subtitle"),
+      breadcrumb: t("dashboard.app.breadcrumb.semantic"),
+    },
+    {
+      id: "ledger" as const,
+      hash: "#/ledger",
+      label: t("dashboard.app.nav.module-d.label-bilingual"),
+      subtitle: t("dashboard.app.nav.module-d.subtitle"),
+      breadcrumb: t("dashboard.app.breadcrumb.ledger"),
+    },
+  ];
+  const diagnosticRoutes = [
     {
       id: "rules" as const,
       hash: "#/rules",
@@ -68,12 +99,15 @@ function AppContent() {
     const handleHashChange = () => setRoute(readRoute());
     window.addEventListener("hashchange", handleHashChange);
     if (window.location.hash === "") {
-      window.location.hash = "#/rules";
+      window.location.hash = "#/topology";
     }
     return () => window.removeEventListener("hashchange", handleHashChange);
   }, []);
 
-  const activeRoute = useMemo(() => routes.find((item) => item.id === route) ?? routes[0], [route]);
+  const activeRoute = useMemo(
+    () => [...moduleRoutes, ...diagnosticRoutes].find((item) => item.id === route) ?? moduleRoutes[0],
+    [diagnosticRoutes, moduleRoutes, route],
+  );
 
   return (
     <AppShell connected={events.connected} port={readPort()} activeRoute={activeRoute.id}>
@@ -84,7 +118,7 @@ function AppContent() {
           <span className="brand-version">{`v${__DASHBOARD_VERSION__}`}</span>
         </div>
         <nav aria-label={t("dashboard.app.nav.aria-label")}>
-          {routes.map((item) => (
+          {moduleRoutes.map((item) => (
             <a
               key={item.id}
               className={`nav-item ${item.id === route ? "active" : ""}`}
@@ -97,7 +131,21 @@ function AppContent() {
             </a>
           ))}
         </nav>
+        <div className="nav-section">{t("dashboard.app.nav.section.modules-status")}</div>
+        <span className="nav-item muted-nav"><span className="dot" />{t("dashboard.app.nav.modules.read-only")}</span>
         <div className="nav-section">{t("dashboard.app.nav.section.diagnostics")}</div>
+        {diagnosticRoutes.map((item) => (
+          <a
+            key={item.id}
+            className={`nav-item ${item.id === route ? "active" : ""}`}
+            href={item.hash}
+            aria-current={item.id === route ? "page" : undefined}
+          >
+            <span className="dot" aria-hidden="true" />
+            <span>{item.label}</span>
+            <small>{item.subtitle}</small>
+          </a>
+        ))}
         <span className="nav-item muted-nav"><span className="dot" />{t("dashboard.app.nav.drift-check")}</span>
       </aside>
       <main className="main">
@@ -115,6 +163,10 @@ function AppContent() {
             <span className="port-label">:{readPort()} /events</span>
           </div>
         </header>
+        {route === "topology" ? <RuleTopologyView lastEvent={events.lastEvent} /> : null}
+        {route === "forensic" ? <ModulePlaceholder title={t("dashboard.module-placeholder.forensic.title")} subtitle={t("dashboard.module-placeholder.forensic.subtitle")} /> : null}
+        {route === "semantic" ? <ModulePlaceholder title={t("dashboard.module-placeholder.semantic.title")} subtitle={t("dashboard.module-placeholder.semantic.subtitle")} /> : null}
+        {route === "ledger" ? <ModulePlaceholder title={t("dashboard.module-placeholder.ledger.title")} subtitle={t("dashboard.module-placeholder.ledger.subtitle")} /> : null}
         {route === "rules" ? <RulesTreeView lastEvent={events.lastEvent} /> : null}
         {route === "locks" ? <HumanLockView lastEvent={events.lastEvent} /> : null}
         {route === "timeline" ? <IntentTimelineView lastEvent={events.lastEvent} /> : null}
@@ -125,6 +177,25 @@ function AppContent() {
         {events.lastEvent === null ? "" : t("dashboard.app.live-region.received", { type: events.lastEvent.type })}
       </div>
     </AppShell>
+  );
+}
+
+function ModulePlaceholder({ title, subtitle }: { title: string; subtitle: string }) {
+  const { t } = useI18n();
+
+  return (
+    <section className="view">
+      <div className="view-header">
+        <div>
+          <h1 className="view-title">{title}</h1>
+          <p className="view-subtitle">{subtitle}</p>
+        </div>
+      </div>
+      <div className="empty-card module-placeholder">
+        <strong>{t("dashboard.module-placeholder.coming-soon")}</strong>
+        <p>{t("dashboard.module-placeholder.read-only")}</p>
+      </div>
+    </section>
   );
 }
 
@@ -148,6 +219,14 @@ function AppShell({
 
 function readRoute(): Route {
   switch (window.location.hash) {
+    case "#/topology":
+      return "topology";
+    case "#/forensic":
+      return "forensic";
+    case "#/semantic":
+      return "semantic";
+    case "#/ledger":
+      return "ledger";
     case "#/locks":
       return "locks";
     case "#/timeline":
@@ -157,8 +236,9 @@ function readRoute(): Route {
     case "#/doctor":
       return "doctor";
     case "#/rules":
-    default:
       return "rules";
+    default:
+      return "topology";
   }
 }
 

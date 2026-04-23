@@ -1,4 +1,5 @@
 export const allCommands = {
+  approve: () => import("./approve.js").then((module) => module.default),
   init: () => import("./init.js").then((module) => module.default),
   update: () => import("./update.js").then((module) => module.default),
   scan: () => import("./scan.js").then((module) => module.default),
