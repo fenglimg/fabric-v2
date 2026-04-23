@@ -1,9 +1,9 @@
 # Dashboard 导览
 
-> v1.1 功能
+> v1.5.0 功能
 >
-> Dashboard 明确归入 v1.1，不属于 Fabric v1.0 的发布面承诺。
-> 本文记录的是 v1.1 的观测面体验目标，以及它如何承接 v1.0 已落盘的规则、锁和 ledger。
+> Dashboard 已从早期 v1.1 观测面扩展到 v1.5.0 的规则拓扑检查面。
+> 本文记录它如何承接已落盘的规则、锁、ledger 与 rules-context API。
 
 Dashboard 不是第二个编辑器，也不是另一个配置中心。
 它是 Fabric 的 observability plane：
@@ -21,11 +21,12 @@ Fabric Dashboard: http://127.0.0.1:7373
 ## 页面定位
 
 维护者打开 Dashboard 的第一目标，不是立即改配置，
-而是快速回答三个问题：
+而是快速回答四个问题：
 
 1. 规则现在是什么状态。
 2. 最近发生了哪些人机协作事件。
 3. 当前有哪些 agent 或角色在参与这套语义契约。
+4. 某个具体路径为什么会命中这些规则。
 
 [截图占位：Dashboard shell，含 header、version badge、CONNECTED 状态]
 
@@ -64,6 +65,24 @@ Ledger View 负责解释「最近发生了什么」，而不是只展示原始 J
 
 Ledger View 的价值在于，它把「谁改了什么」升级为
 「谁出于什么意图，在什么语义边界上做了改动」。
+
+## Rule Topology View
+
+> v1.5.0 Feature：Rule Topology 把 `fab_get_rules(path=...)` 的命中结果变成只读调试面板。
+
+Dashboard 默认进入 Rule Topology。维护者输入一个样本路径后，前端调用：
+
+```text
+GET /api/rules/context?path=<sample-path>
+```
+
+该视图包含两块信息：
+
+- Coverage Heatmap：根据 `agents.meta.json` 的 `scope_glob` 推导目录覆盖密度。
+- Hit Reason Panel：展示当前样本路径命中的 L1/L2 规则、`activation.tier`，以及 description-only stubs。
+
+Rule Topology 回答的问题是：
+当前规则为什么会被加载、哪些目录还缺少明确规则、哪些大型规则包只是以描述方式参与判断。
 
 ## Rules View
 
@@ -160,12 +179,13 @@ Dashboard 真正成立，不在于首屏截图，
 
 ## 与 v1.0 的关系
 
-Dashboard 必须清楚标注为 v1.1，
-否则会让 v1.0 的发布面看起来承诺过多。
+Dashboard 的早期叙事必须清楚标注为 v1.1，
+否则会让 v1.0 的发布面看起来承诺过多。到 v1.5.0，Dashboard 已经成为稳定控制平面的一部分，但仍保持只读优先。
 
 正确的叙事是：
 
 - v1.0 先解决落规和分发。
 - v1.1 再解决可观测维护。
+- v1.5.0 增加 Rule Topology，用 rules-context API 解释规则命中原因。
 
 如果需要完整的三幕产品叙事，请阅读 [Launch Story](./launch-story.md)。

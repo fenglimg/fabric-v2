@@ -1,6 +1,6 @@
 # Fabric 上手
 
-Fabric v1.3.1 为维护者提供从本地安装到首条 ledger-backed 协作事件的标准上手路径。若你首次评估 Fabric，从这里开始。
+Fabric v1.5.0 为维护者提供从本地安装到首条 ledger-backed 协作事件的标准上手路径。若你首次评估 Fabric，从这里开始。
 
 贡献与本地仓库设置见 [Contributing](./contributing.md)。`fabric init` 状态机与更深 mechanics 见 [Initialization Guide](./initialization.md)。产品叙事版见 [Launch Story](./launch-story.md)。
 
@@ -207,7 +207,8 @@ Before editing any file, call fab_get_rules for README.md and summarize the acti
 
 - Client 调用 `fab_get_rules`。
 - 响应包含 `revision_hash`。
-- 响应包含来自 bootstrap guide 或 scoped rule nodes 的 L0/L1 rules。
+- 响应包含来自 bootstrap guide 或 scoped rule nodes 的 L0/L1/L2 rules。
+- 若命中 `activation.tier = "description"` 的节点，响应会包含 `description_stubs`，提示客户端可按描述决定是否进一步加载完整规则。
 
 若 tools 未出现，确认 MCP config 文件包含 `mcpServers.fabric` 或 `[mcp_servers.fabric]`，然后再次重启 client。
 
@@ -226,12 +227,25 @@ FABRIC_INTENT="docs: refine onboarding copy" fab ledger-append --staged
 .intent-ledger.jsonl receives a new append-only JSON line with parent_sha, intent, affected_paths, and diff_stat.
 ```
 
+若本次变更有意更新了 `@HUMAN` 保护区，先审查 drift，再批准新的 human-lock hash：
+
+```bash
+fabric approve --interactive
+```
+
+已经在其他流程里完成逐项审查时，可以使用：
+
+```bash
+fabric approve --all
+```
+
 至此仓库完成当前稳定版 onboarding loop：
 
 1. Fabric 已安装。
 2. 项目已初始化。
-3. Client rules 通过 MCP 分发。
+3. Client rules 通过 MCP 分发，并可用 Dashboard Rule Topology 检查命中原因。
 4. 首条协作事件已写入 ledger。
+5. 有意发生的 human-lock drift 已通过 `fabric approve` 明确批准。
 
 ## 延伸阅读
 

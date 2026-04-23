@@ -18,9 +18,13 @@
 - `fabric init`
 - `fabric serve`
 - `fabric doctor --audit`
+- `fabric approve --interactive`
+- `fabric approve --all`
 
 ## Advanced Commands
 
 - `fabric bootstrap install`
 - `fabric config install`
 - `fabric hooks install`
+
+`fabric approve` updates drifted entries in `.fabric/human-lock.json` after review. Use `--interactive` for per-entry confirmation and `--all` only when drift has already been reviewed elsewhere.

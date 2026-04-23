@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-04-23
+
+### Added
+
+- Added the `fabric approve` command for approving drifted human-lock entries from the CLI, with `--all` and interactive approval modes.
+- Added lazy `web-tree-sitter` probing to the CLI build so forensic analysis can validate AST parsing feasibility without adding startup cost.
+- Added `activation.tier` metadata for rule nodes (`always`, `path`, `description`) and surfaced description-only rules as stubs in `fab_get_rules` payloads.
+- Added `/api/rules/context` for the Dashboard to inspect the same resolved rule context returned by `fab_get_rules`.
+- Added the Dashboard Rule Topology module with a coverage heatmap, hit-reason panel, new module navigation, and placeholders for the next read-only modules.
+
+### Changed
+
+- `scan`, `bootstrap`, and `init` planning now use async scanner paths so future AST-backed forensic work can share the same detection pipeline.
+- Framework detection now returns a richer `TechProfile` shape with confidence, framework identity, co-package evidence, and reserved AST evidence fields.
+- The HTTP server now exports human-lock approval/read services for CLI reuse and registers the rules-context API beside the existing rules endpoint.
+
+### Documentation
+
+- Updated release-facing docs to describe v1.5.0, the new approve workflow, rule activation tiers, the rules-context API, and Dashboard topology inspection.
+
+### Tests
+
+- Added coverage for `fabric approve`, tree-sitter probing, rule activation metadata, rules context resolution, Dashboard coverage heatmap, and hit-reason rendering.
+
 ## [1.4.0] - 2026-04-22
 
 ### Added

@@ -2,15 +2,15 @@
   <img src="./assets/brand/fabric-wordmark.svg" alt="fabric wordmark" width="220">
 </p>
 
-# Fabric v1.3.1
+# Fabric v1.5.0
 
 人机协作的语义共识平面
 
 The Consensus Plane for AI-Human Collaboration
 
-Fabric v1.3.1 is an MCP-first, cross-client AGENTS.md protocol for six AI clients: Claude Code, Cursor, Windsurf, Roo Code, Gemini CLI, and Codex CLI. It keeps Fabric rule state inside `.fabric/`, distributes scoped rules through a local MCP server, and adds git-level defenses so behavior stays consistent across clients without compiling client-specific rule files first.
+Fabric v1.5.0 is an MCP-first, cross-client AGENTS.md protocol for six AI clients: Claude Code, Cursor, Windsurf, Roo Code, Gemini CLI, and Codex CLI. It keeps Fabric rule state inside `.fabric/`, distributes scoped rules through a local MCP server, and adds git-level defenses so behavior stays consistent across clients without compiling client-specific rule files first.
 
-> **Current release: v1.3.1**. Fabric now keeps the visible bootstrap artifact at `.fabric/bootstrap/README.md`, uses Shadow Mirroring under `.fabric/agents/`, and expects MCP-backed clients to load rules with `fab_get_rules(path=...)` before code work. See [`CHANGELOG.md`](./CHANGELOG.md#131---2026-04-22) for the patch notes and [`docs/initialization.md`](./docs/initialization.md) for the updated init flow.
+> **Current release: v1.5.0**. Fabric now adds CLI human-lock approval, richer TechProfile detection, activation-tiered rule loading, the `/api/rules/context` endpoint, and the Dashboard Rule Topology module. See [`CHANGELOG.md`](./CHANGELOG.md#150---2026-04-23) for the release notes and [`docs/initialization.md`](./docs/initialization.md) for the updated init flow.
 
 ```text
 AI Agent <-> Fabric Ledger <-> Human Developer
@@ -60,6 +60,21 @@ Enable compliance telemetry reporting in `fabric.config.json`:
 
 Run `fabric doctor --audit` to cross-check AI edit intents against prior `fab_get_rules` calls in the last 5 minutes. `warn` prints violations but keeps exit code `0`, `strict` prints violations and exits non-zero, and `off` keeps the audit disabled by default unless you request a manual preview with `--audit`.
 
+## Human-Lock Approval
+
+When a protected region drifts intentionally, approve the new hash from the CLI:
+
+```bash
+fabric approve --interactive
+fabric approve --all
+```
+
+`fabric approve` only updates drifted entries from `.fabric/human-lock.json`; use interactive mode when reviewing each protected range and `--all` only after an external review has already confirmed the drift.
+
+## Rule Topology Dashboard
+
+`fabric serve` now exposes `/api/rules/context?path=<file>` and the Dashboard opens on Rule Topology. The view shows directory coverage inferred from `scope_glob` plus the exact L1/L2 rules and description-only stubs loaded for a sample path.
+
 ## Roadmap
 
 See [docs/roadmap.md](./docs/roadmap.md) for the planned follow-up milestones, including `drift-check`, `fabric migrate`, `fabric doctor`, and the Copilot fallback path.
@@ -77,6 +92,8 @@ Canonical `init` variants:
 - `fabric init --plan`
 - `fabric init --yes`
 - `fabric init --reapply --yes`
+- `fabric approve --interactive`
+- `fabric approve --all`
 
 `fabric bootstrap install` now refreshes the internal bootstrap guide at `.fabric/bootstrap/README.md`. It no longer emits root `AGENTS.md`, `CLAUDE.md`, or `GEMINI.md`.
 
@@ -89,4 +106,4 @@ Canonical `init` variants:
 
 ## Status
 
-The current stable line is `v1.3.1`. Historical launch planning remains in `.workflow/`, while the maintained public entry points are this README, the docs under `docs/`, and the tag-driven release flow in `.github/workflows/release.yml`.
+The current stable line is `v1.5.0`. Historical launch planning remains in `.workflow/`, while the maintained public entry points are this README, the docs under `docs/`, and the tag-driven release flow in `.github/workflows/release.yml`.
