@@ -18,6 +18,12 @@ export type DescriptionStub = {
   description: string;
 };
 
+export type SharedDescriptionStub = DescriptionStub & {
+  stable_id: string;
+  identity_source: NonNullable<AgentsMeta["nodes"][string]["identity_source"]>;
+  level: "L1" | "L2";
+};
+
 export type HumanLockedNearby = {
   file: string;
   excerpt: string;
@@ -49,13 +55,23 @@ export type GetRulesContext = {
 };
 
 type LoadedRule = {
-  level: "L1" | "L2" | null;
+  level: "L1" | "L2";
+  stable_id: string;
+  identity_source: NonNullable<AgentsMeta["nodes"][string]["identity_source"]>;
   entry: RulesEntry;
 };
 
-type LoadedRulesResult = {
+export type LoadedRulesResult = {
   rules: LoadedRule[];
-  stubs: DescriptionStub[];
+  stubs: SharedDescriptionStub[];
+};
+
+export type MatchedRuleNode = {
+  node_id: string;
+  level: "L1" | "L2" | null;
+  stable_id: string;
+  identity_source: NonNullable<AgentsMeta["nodes"][string]["identity_source"]>;
+  node: AgentsMeta["nodes"][string];
 };
 
 const PRIORITY_ORDER: Record<"high" | "medium" | "low", number> = {
@@ -117,23 +133,97 @@ export async function resolveRulesForPath(
     dedupeByPath?: boolean;
   } = {},
 ): Promise<RulesPayload> {
-  const { rules: loadedRules, stubs } = await loadRulesForPath(projectRoot, context.meta, path);
-  const { L1, L2 } = partitionRulesByLevel(loadedRules, options.dedupeByPath ?? false);
-
-  return {
-    L0: context.l0Content,
-    L1,
-    L2,
-    human_locked_nearby: context.humanLockedNearby,
-    description_stubs: stubs.length > 0 ? dedupeDescriptionStubsByPath(stubs) : undefined,
-  };
+  const matchedNodes = matchRuleNodes(context.meta, path);
+  const loaded = await loadMatchedRules(projectRoot, matchedNodes);
+  return buildRulesPayload(context, loaded, options);
 }
 
 export function normalizeRulesPath(value: string): string {
   return value.replaceAll("\\", "/");
 }
 
-function classifyNode(nodeId: string): "L1" | "L2" | null {
+export function matchRuleNodes(meta: AgentsMeta, path: string): MatchedRuleNode[] {
+  const requestedPath = normalizeRulesPath(path);
+
+  return Object.entries(meta.nodes)
+    .filter(([, node]) => shouldLoadNodeForPath(requestedPath, node))
+    .sort((left, right) => {
+      const [leftId, leftNode] = left;
+      const [rightId, rightNode] = right;
+      const priorityDelta = PRIORITY_ORDER[leftNode.priority] - PRIORITY_ORDER[rightNode.priority];
+
+      return priorityDelta !== 0 ? priorityDelta : leftId.localeCompare(rightId);
+    })
+    .map(([nodeId, node]) => ({
+      node_id: nodeId,
+      level: classifyNode(nodeId, node),
+      stable_id: node.stable_id ?? nodeId,
+      identity_source: node.identity_source ?? "derived",
+      node,
+    }));
+}
+
+export async function loadMatchedRules(
+  projectRoot: string,
+  matchedNodes: MatchedRuleNode[],
+  fileContentCache: Map<string, Promise<string>> = new Map(),
+): Promise<LoadedRulesResult> {
+  const rules: LoadedRule[] = [];
+  const stubs: SharedDescriptionStub[] = [];
+
+  for (const matchedNode of matchedNodes) {
+    if (matchedNode.level === null) {
+      continue;
+    }
+
+    if (matchedNode.node.activation?.tier === "description") {
+      stubs.push({
+        stable_id: matchedNode.stable_id,
+        identity_source: matchedNode.identity_source,
+        level: matchedNode.level,
+        path: matchedNode.node.file,
+        description: matchedNode.node.activation.description ?? "",
+      });
+      continue;
+    }
+
+    rules.push({
+      level: matchedNode.level,
+      stable_id: matchedNode.stable_id,
+      identity_source: matchedNode.identity_source,
+      entry: {
+        path: matchedNode.node.file,
+        content: await readRuleContent(projectRoot, matchedNode.node.file, fileContentCache),
+      },
+    });
+  }
+
+  return { rules, stubs };
+}
+
+export function buildRulesPayload(
+  context: GetRulesContext,
+  loaded: LoadedRulesResult,
+  options: {
+    dedupeByPath?: boolean;
+  } = {},
+): RulesPayload {
+  const { L1, L2 } = partitionRulesByLevel(loaded.rules, options.dedupeByPath ?? false);
+
+  return {
+    L0: context.l0Content,
+    L1,
+    L2,
+    human_locked_nearby: context.humanLockedNearby,
+    description_stubs:
+      loaded.stubs.length > 0 ? dedupeDescriptionStubsByPath(loaded.stubs).map(toDescriptionStub) : undefined,
+  };
+}
+
+function classifyNode(
+  nodeId: string,
+  node: AgentsMeta["nodes"][string],
+): "L1" | "L2" | null {
   if (nodeId.startsWith("L1/")) {
     return "L1";
   }
@@ -142,47 +232,7 @@ function classifyNode(nodeId: string): "L1" | "L2" | null {
     return "L2";
   }
 
-  return null;
-}
-
-async function loadRulesForPath(
-  projectRoot: string,
-  meta: AgentsMeta,
-  path: string,
-): Promise<LoadedRulesResult> {
-  const requestedPath = normalizeRulesPath(path);
-  const matchedNodes = Object.entries(meta.nodes)
-    .filter(([, node]) => shouldLoadNodeForPath(requestedPath, node))
-    .sort((left, right) => {
-      const [leftId, leftNode] = left;
-      const [rightId, rightNode] = right;
-      const priorityDelta = PRIORITY_ORDER[leftNode.priority] - PRIORITY_ORDER[rightNode.priority];
-
-      return priorityDelta !== 0 ? priorityDelta : leftId.localeCompare(rightId);
-    });
-
-  const rules: LoadedRule[] = [];
-  const stubs: DescriptionStub[] = [];
-
-  for (const [nodeId, node] of matchedNodes) {
-    if (node.activation?.tier === "description") {
-      stubs.push({
-        path: node.file,
-        description: node.activation.description ?? "",
-      });
-      continue;
-    }
-
-    rules.push({
-      level: classifyNode(nodeId),
-      entry: {
-        path: node.file,
-        content: await readFile(join(projectRoot, node.file), "utf8"),
-      },
-    });
-  }
-
-  return { rules, stubs };
+  return node.layer === "L0" ? null : node.layer;
 }
 
 function partitionRulesByLevel(
@@ -248,4 +298,26 @@ function dedupeDescriptionStubsByPath(stubs: DescriptionStub[]): DescriptionStub
     seenPaths.add(stub.path);
     return true;
   });
+}
+
+function toDescriptionStub(stub: DescriptionStub): DescriptionStub {
+  return {
+    path: stub.path,
+    description: stub.description,
+  };
+}
+
+async function readRuleContent(
+  projectRoot: string,
+  file: string,
+  fileContentCache: Map<string, Promise<string>>,
+): Promise<string> {
+  const cached = fileContentCache.get(file);
+  if (cached !== undefined) {
+    return await cached;
+  }
+
+  const pending = readFile(join(projectRoot, file), "utf8");
+  fileContentCache.set(file, pending);
+  return await pending;
 }
