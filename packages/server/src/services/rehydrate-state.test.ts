@@ -62,7 +62,8 @@ describe("rehydrateAgentsMetaAt", () => {
     git(projectRoot, "commit", "-m", "meta b");
     const commitB = git(projectRoot, "rev-parse", "--short", "HEAD").trim();
 
-    await writeFile(join(projectRoot, ".intent-ledger.jsonl"), [
+    await mkdir(join(projectRoot, ".fabric"), { recursive: true });
+    await writeFile(join(projectRoot, ".fabric", ".intent-ledger.jsonl"), [
       JSON.stringify({
         id: "ledger:a",
         ts: 10,
@@ -101,7 +102,8 @@ describe("rehydrateAgentsMetaAt", () => {
 
   it("falls back to a ledger-derived snapshot when git history cannot be resolved", async () => {
     const projectRoot = await createTempProject();
-    await writeFile(join(projectRoot, ".intent-ledger.jsonl"), `${JSON.stringify({
+    await mkdir(join(projectRoot, ".fabric"), { recursive: true });
+    await writeFile(join(projectRoot, ".fabric", ".intent-ledger.jsonl"), `${JSON.stringify({
       id: "ledger:fallback",
       ts: 30,
       source: "ai",
@@ -127,7 +129,8 @@ describe("rehydrateAgentsMetaAt", () => {
 
   it("throws a not-found error when no ledger entry exists at the requested time", async () => {
     const projectRoot = await createTempProject();
-    await writeFile(join(projectRoot, ".intent-ledger.jsonl"), `${JSON.stringify({
+    await mkdir(join(projectRoot, ".fabric"), { recursive: true });
+    await writeFile(join(projectRoot, ".fabric", ".intent-ledger.jsonl"), `${JSON.stringify({
       id: "ledger:late",
       ts: 100,
       source: "human",

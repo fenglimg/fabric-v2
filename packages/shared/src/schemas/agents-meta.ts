@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import type {
+  AgentsIdentitySource,
   AgentsLayer,
   AgentsMetaNode,
   AgentsTopologyType,
@@ -10,9 +11,11 @@ const FABRIC_AGENTS_PREFIX = ".fabric/agents/";
 
 export const AGENTS_META_LAYERS = ["L0", "L1", "L2"] as const;
 export const AGENTS_META_TOPOLOGY_TYPES = ["mirror", "cross-cutting"] as const;
+export const AGENTS_META_IDENTITY_SOURCES = ["declared", "derived"] as const;
 
 export const agentsLayerSchema = z.enum(AGENTS_META_LAYERS);
 export const agentsTopologyTypeSchema = z.enum(AGENTS_META_TOPOLOGY_TYPES);
+export const agentsIdentitySourceSchema = z.enum(AGENTS_META_IDENTITY_SOURCES);
 
 type AgentsMetaNodeInput = Omit<AgentsMetaNode, "layer" | "topology_type"> &
   Partial<Pick<AgentsMetaNode, "layer" | "topology_type">>;
@@ -25,6 +28,8 @@ const agentsMetaNodeBaseSchema = z.object({
   layer: agentsLayerSchema,
   topology_type: agentsTopologyTypeSchema,
   hash: z.string(),
+  stable_id: z.string().optional(),
+  identity_source: agentsIdentitySourceSchema.optional(),
   activation: z
     .object({
       tier: z.enum(["always", "path", "description"]),
@@ -47,11 +52,37 @@ export const agentsMetaSchema = z.object({
 });
 
 export function withDerivedAgentsMetaNodeDefaults(node: AgentsMetaNodeInput): AgentsMetaNode {
+  const stableId = node.stable_id ?? deriveAgentsMetaStableId(node.file);
+  const identitySource = deriveAgentsMetaIdentitySource(node);
+
   return {
     ...node,
     layer: node.layer ?? deriveAgentsMetaLayer(node.file),
     topology_type: node.topology_type ?? deriveAgentsMetaTopologyType(node.file),
+    stable_id: stableId,
+    identity_source: identitySource,
   };
+}
+
+export function deriveAgentsMetaStableId(file: string): string {
+  const normalized = normalizePath(file);
+
+  if (normalized === "AGENTS.md" || normalized === ".fabric/bootstrap/README.md") {
+    return "bootstrap";
+  }
+
+  return getDepthSource(normalized).replace(/\.md$/u, "");
+}
+
+export function deriveAgentsMetaIdentitySource(
+  node: Pick<AgentsMetaNode, "file"> & Partial<Pick<AgentsMetaNode, "stable_id" | "identity_source">>,
+): AgentsIdentitySource {
+  if (node.identity_source !== undefined) {
+    return node.identity_source;
+  }
+
+  const derivedStableId = deriveAgentsMetaStableId(node.file);
+  return node.stable_id !== undefined && node.stable_id !== derivedStableId ? "declared" : "derived";
 }
 
 export function deriveAgentsMetaLayer(file: string): AgentsLayer {

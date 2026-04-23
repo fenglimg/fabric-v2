@@ -5,9 +5,11 @@ import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import {
   agentsMetaSchema,
   deriveAgentsMetaLayer,
+  deriveAgentsMetaStableId,
   deriveAgentsMetaTopologyType,
   type AgentsLayer,
   type AgentsMeta,
+  type AgentsIdentitySource,
   type AgentsTopologyType,
 } from "@fenglimg/fabric-shared";
 import { defineCommand } from "citty";
@@ -15,6 +17,11 @@ import { defineCommand } from "citty";
 import { t } from "../i18n.js";
 
 type NodeMeta = AgentsMeta["nodes"][string];
+
+type RuleIdentity = {
+  stableId: string;
+  identitySource: AgentsIdentitySource;
+};
 
 type SyncMetaArgs = {
   target: string;
@@ -84,15 +91,19 @@ export function computeAgentsMeta(target: string): AgentsMeta {
 
   for (const file of agentsFiles) {
     const existing = existingByFile.get(file);
+    const source = readFileSync(join(target, file), "utf8");
     const id = deriveNodeId(file);
-    const hash = sha256(readFileSync(join(target, file), "utf8"));
+    const hash = sha256(source);
     const defaults = createDefaultNodeMeta(file);
+    const identity = deriveRuleIdentity(file, source, existing?.node);
 
     nodes[id] = {
       ...defaults,
       ...existing?.node,
       file,
       hash,
+      stable_id: identity.stableId,
+      identity_source: identity.identitySource,
     };
   }
 
@@ -210,12 +221,18 @@ function createBootstrapNode(target: string, existing: NodeMeta | undefined): No
   }
 
   const hash = sha256(readFileSync(sourcePath, "utf8"));
+  const identity = {
+    stableId: existing?.stable_id ?? deriveAgentsMetaStableId(".fabric/bootstrap/README.md"),
+    identitySource: existing?.identity_source ?? "derived",
+  } satisfies RuleIdentity;
 
   return {
     ...createDefaultNodeMeta(".fabric/bootstrap/README.md"),
     ...existing,
     file: ".fabric/bootstrap/README.md",
     hash,
+    stable_id: identity.stableId,
+    identity_source: identity.identitySource,
   };
 }
 
@@ -253,8 +270,10 @@ function sortNodes(nodes: Record<string, NodeMeta>): Record<string, NodeMeta> {
 }
 
 function computeRevision(nodes: Record<string, NodeMeta>): string {
-  const hashes = Object.values(sortNodes(nodes)).map((node) => node.hash).join("");
-  return sha256(hashes);
+  const revisionSource = Object.entries(sortNodes(nodes))
+    .map(([id, node]) => [id, node.hash, node.stable_id ?? "", node.identity_source ?? ""].join("|"))
+    .join("\n");
+  return sha256(revisionSource);
 }
 
 function writeStderr(message: string): void {
@@ -282,4 +301,37 @@ function toPosixPath(path: string): string {
 
 function sha256(content: string): string {
   return `sha256:${createHash("sha256").update(content).digest("hex")}`;
+}
+
+function deriveRuleIdentity(file: string, source: string, existing: NodeMeta | undefined): RuleIdentity {
+  const declaredStableId = extractDeclaredStableId(source);
+  const derivedStableId = deriveAgentsMetaStableId(file);
+
+  if (declaredStableId !== undefined) {
+    return {
+      stableId: declaredStableId,
+      identitySource: "declared",
+    };
+  }
+
+  if (
+    existing?.identity_source === "declared" &&
+    existing.stable_id !== undefined &&
+    existing.stable_id !== derivedStableId
+  ) {
+    return {
+      stableId: existing.stable_id,
+      identitySource: "declared",
+    };
+  }
+
+  return {
+    stableId: derivedStableId,
+    identitySource: "derived",
+  };
+}
+
+function extractDeclaredStableId(source: string): string | undefined {
+  const match = /^(?:\uFEFF)?<!--\s*fab:rule-id\s+([A-Za-z0-9][A-Za-z0-9/_-]*)\s*-->\s*(?:\r?\n|$)/u.exec(source);
+  return match?.[1];
 }

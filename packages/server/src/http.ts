@@ -26,9 +26,9 @@ import { registerRulesContextApi } from "./api/rules-context.js";
 import { registerScanApi } from "./api/scan.js";
 import { registerDashboardStatic } from "./api/static.js";
 import { createBearerAuthMiddleware } from "./middleware/bearer-auth.js";
+import { ensureParentDirectory, getLedgerPath, getLegacyLedgerPath, isNodeError } from "./services/_shared.js";
 
 const DEFAULT_HOST = "127.0.0.1";
-const LEDGER_FILE = ".intent-ledger.jsonl";
 const NOTIFY_DEBOUNCE_MS = 200;
 
 type FabricHttpSession = {
@@ -56,7 +56,10 @@ export type FabricHttpApp = ReturnType<typeof createMcpExpressApp> & {
 };
 
 class JsonlEventStore implements EventStore {
-  constructor(private readonly ledgerPath: string) {}
+  constructor(
+    private readonly projectRoot: string,
+    private readonly ledgerPath: string,
+  ) {}
 
   async storeEvent(streamId: StreamId, message: JSONRPCMessage): Promise<EventId> {
     const eventId = randomUUID();
@@ -67,6 +70,7 @@ class JsonlEventStore implements EventStore {
       message,
     };
 
+    await ensureParentDirectory(this.ledgerPath);
     await appendFile(this.ledgerPath, `${JSON.stringify(entry)}\n`, "utf8");
 
     return eventId;
@@ -112,10 +116,18 @@ class JsonlEventStore implements EventStore {
       raw = await readFile(this.ledgerPath, "utf8");
     } catch (error) {
       if (isNodeError(error) && error.code === "ENOENT") {
-        return [];
-      }
+        try {
+          raw = await readFile(getLegacyLedgerPath(this.projectRoot), "utf8");
+        } catch (legacyError) {
+          if (isNodeError(legacyError) && legacyError.code === "ENOENT") {
+            return [];
+          }
 
-      throw error;
+          throw legacyError;
+        }
+      } else {
+        throw error;
+      }
     }
 
     return raw
@@ -130,8 +142,8 @@ class JsonlEventStore implements EventStore {
 export function createFabricHttpApp(options: CreateFabricHttpAppOptions) {
   const { projectRoot, host = DEFAULT_HOST, authToken, dashboardDistPath, dev } = options;
   const app = createMcpExpressApp({ host }) as FabricHttpApp;
-  const ledgerPath = join(projectRoot, LEDGER_FILE);
-  const eventStore = new JsonlEventStore(ledgerPath);
+  const ledgerPath = getLedgerPath(projectRoot);
+  const eventStore = new JsonlEventStore(projectRoot, ledgerPath);
   const sessions = new Map<string, FabricHttpSession>();
 
   process.env.FABRIC_PROJECT_ROOT = projectRoot;

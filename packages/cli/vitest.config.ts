@@ -8,6 +8,7 @@ const packageRoot = fileURLToPath(new URL(".", import.meta.url));
 export default defineConfig({
   resolve: {
     alias: {
+      "@fenglimg/fabric-server": resolve(packageRoot, "../server/src/index.ts"),
       "@fenglimg/fabric-shared/node": resolve(packageRoot, "../shared/src/node.ts"),
       "@fenglimg/fabric-shared/i18n": resolve(packageRoot, "../shared/src/i18n/index.ts"),
       "@fenglimg/fabric-shared": resolve(packageRoot, "../shared/src/index.ts"),

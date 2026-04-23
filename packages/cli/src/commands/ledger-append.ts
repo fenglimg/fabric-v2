@@ -1,8 +1,9 @@
 import { execSync } from "node:child_process";
-import { appendFileSync, existsSync, readFileSync, statSync } from "node:fs";
-import { basename, isAbsolute, join, resolve } from "node:path";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, statSync } from "node:fs";
+import { basename, isAbsolute, resolve } from "node:path";
 
-import type { HumanLedgerEntry, LedgerEntry } from "@fenglimg/fabric-shared";
+import { getLedgerPath, getLegacyLedgerPath, LEGACY_LEDGER_PATH, LEDGER_PATH } from "@fenglimg/fabric-server";
+import type { HumanLedgerEntry } from "@fenglimg/fabric-shared";
 import { defineCommand } from "citty";
 
 import { t } from "../i18n.js";
@@ -12,7 +13,6 @@ type LedgerAppendArgs = {
   staged?: boolean;
 };
 
-const LEDGER_FILE = ".intent-ledger.jsonl";
 const INITIAL_PARENT_SHA = "root";
 
 export const ledgerAppendCommand = defineCommand({
@@ -42,7 +42,7 @@ export const ledgerAppendCommand = defineCommand({
       return;
     }
 
-    const stagedFiles = getStagedFiles(target).filter((file) => file !== LEDGER_FILE);
+    const stagedFiles = getStagedFiles(target).filter((file) => file !== LEGACY_LEDGER_PATH && file !== LEDGER_PATH);
 
     if (stagedFiles.length === 0) {
       return;
@@ -63,8 +63,10 @@ export const ledgerAppendCommand = defineCommand({
       return;
     }
 
-    appendFileSync(join(target, LEDGER_FILE), `${JSON.stringify(entry)}\n`, "utf8");
-    execGit(target, `git add ${LEDGER_FILE}`);
+    const ledgerPath = getLedgerPath(target);
+    mkdirSync(resolve(target, ".fabric"), { recursive: true });
+    appendFileSync(ledgerPath, `${JSON.stringify(entry)}\n`, "utf8");
+    execGit(target, `git add ${LEDGER_PATH}`);
   },
 });
 
@@ -116,7 +118,7 @@ function deriveIntent(stagedFiles: string[]): string {
 }
 
 function hasMatchingTailEntry(target: string, entry: HumanLedgerEntry): boolean {
-  const ledgerPath = join(target, LEDGER_FILE);
+  const ledgerPath = resolveTailLedgerPath(target);
 
   if (!existsSync(ledgerPath)) {
     return false;
@@ -149,6 +151,15 @@ function hasMatchingTailEntry(target: string, entry: HumanLedgerEntry): boolean 
   }
 }
 
+function resolveTailLedgerPath(target: string): string {
+  const canonicalPath = getLedgerPath(target);
+  if (existsSync(canonicalPath)) {
+    return canonicalPath;
+  }
+
+  return getLegacyLedgerPath(target);
+}
+
 function isLedgerEntryLine(line: string): boolean {
   try {
     const parsed = JSON.parse(line) as Record<string, unknown>;
@@ -169,7 +180,8 @@ function normalizeDiffStat(diffStat: unknown): string {
     .map((line) => line.replace(/\s+\|\s+/g, " | "))
     .map((line) => line.replace(/\s+/g, " "))
     .filter((line) => line.length > 0)
-    .filter((line) => !line.includes(LEDGER_FILE))
+    .filter((line) => !line.includes(LEGACY_LEDGER_PATH))
+    .filter((line) => !line.includes(LEDGER_PATH))
     .filter((line) => !/\d+ files? changed(?:, \d+ insertions?\(\+\))?(?:, \d+ deletions?\(-\))?$/.test(line.trim()))
     .join("\n");
 }

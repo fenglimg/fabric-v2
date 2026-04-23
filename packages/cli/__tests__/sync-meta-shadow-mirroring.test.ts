@@ -120,6 +120,8 @@ describe("sync-meta shadow mirroring regression", () => {
                 deps: [],
                 priority: "high",
                 hash: "sha256:legacy-bootstrap",
+                stable_id: "bootstrap",
+                identity_source: "derived",
               },
               "L1/_cross/role-balance": {
                 file: ".fabric/agents/_cross/role-balance.md",
@@ -127,6 +129,8 @@ describe("sync-meta shadow mirroring regression", () => {
                 deps: ["L0"],
                 priority: "medium",
                 hash: "sha256:legacy-cross",
+                stable_id: "_cross/role-balance",
+                identity_source: "derived",
               },
             },
           },

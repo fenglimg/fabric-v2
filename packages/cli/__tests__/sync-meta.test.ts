@@ -46,6 +46,8 @@ describe("sync-meta shadow mirroring", () => {
                 deps: [],
                 priority: "high",
                 hash: "sha256:legacy-root",
+                stable_id: "bootstrap",
+                identity_source: "derived",
               },
               "legacy/server": {
                 file: ".fabric/agents/packages/server/rules.md",
@@ -53,6 +55,8 @@ describe("sync-meta shadow mirroring", () => {
                 deps: ["L0"],
                 priority: "medium",
                 hash: "sha256:legacy-server",
+                stable_id: "packages/server/rules",
+                identity_source: "derived",
               },
             },
           },
@@ -108,6 +112,64 @@ describe("sync-meta shadow mirroring", () => {
         layer: "L0",
         topology_type: "mirror",
       });
+    } finally {
+      cleanupFixtureRoot(target);
+    }
+  });
+
+  it("extracts declared stable ids from rule comments and marks derived identities otherwise", async () => {
+    const target = createWerewolfFixtureRoot("fab-sync-meta-stable-id");
+
+    try {
+      await initFabric(target);
+      writeFixtureFile(
+        target,
+        ".fabric/agents/packages/server/rules.md",
+        "<!-- fab:rule-id rules/server-core -->\n# server rules\n",
+      );
+      writeFixtureFile(target, ".fabric/agents/packages/server/routes/api.md", "# api rules\n");
+
+      const meta = agentsMetaSchema.parse(computeAgentsMeta(target));
+
+      expect(meta.nodes["L1/packages/server/rules"]).toMatchObject({
+        stable_id: "rules/server-core",
+        identity_source: "declared",
+      });
+      expect(meta.nodes["L2/packages/server/routes/api"]).toMatchObject({
+        stable_id: "packages/server/routes/api",
+        identity_source: "derived",
+      });
+    } finally {
+      cleanupFixtureRoot(target);
+    }
+  });
+
+  it("updates revision when stable identity metadata changes", async () => {
+    const target = createWerewolfFixtureRoot("fab-sync-meta-revision");
+
+    try {
+      await initFabric(target);
+      writeFixtureFile(target, ".fabric/agents/packages/server/rules.md", "# server rules\n");
+
+      const before = agentsMetaSchema.parse(computeAgentsMeta(target));
+
+      writeFixtureFile(
+        target,
+        ".fabric/agents/packages/server/rules.md",
+        "<!-- fab:rule-id rules/server-core -->\n# server rules\n",
+      );
+
+      const after = agentsMetaSchema.parse(computeAgentsMeta(target));
+
+      expect(before.nodes["L1/packages/server/rules"]).toMatchObject({
+        stable_id: "packages/server/rules",
+        identity_source: "derived",
+      });
+      expect(after.nodes["L1/packages/server/rules"]).toMatchObject({
+        stable_id: "rules/server-core",
+        identity_source: "declared",
+      });
+      expect(after.revision).not.toBe(before.revision);
     } finally {
       cleanupFixtureRoot(target);
     }

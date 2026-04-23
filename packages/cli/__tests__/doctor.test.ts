@@ -35,6 +35,9 @@ describe("doctor command", () => {
           lastLedgerEntryTs: null,
           lastLedgerEntryAgeMs: null,
           metaRevision: null,
+          ledgerPath: "/tmp/fabric-target/.fabric/.intent-ledger.jsonl",
+          legacyLedgerPath: "/tmp/fabric-target/.intent-ledger.jsonl",
+          legacyLedgerDetected: false,
           audit: null,
         },
         audit: null,
@@ -93,5 +96,59 @@ describe("doctor command", () => {
     expect(errors).toHaveLength(1);
     expect(errors[0]).toMatch(/cli\.doctor\.audit\.violations|fab_get_rules/);
     expect(process.exitCode).toBe(1);
+  });
+
+  it("runs doctor --fix and prints the migration message", async () => {
+    vi.doMock("@fenglimg/fabric-server", () => ({
+      runDoctorReport: vi.fn(),
+      runDoctorFix: vi.fn().mockResolvedValue({
+        changed: true,
+        migratedLedger: true,
+        message: "Migrated legacy ledger from /tmp/fabric-target/.intent-ledger.jsonl to /tmp/fabric-target/.fabric/.intent-ledger.jsonl.",
+        report: {
+          status: "ok",
+          checks: [],
+          summary: {
+            target: "/tmp/fabric-target",
+            framework: { kind: "vite", version: "^7.0.0", subkind: "vite-application" },
+            entryPoints: [],
+            driftCount: 0,
+            protectedPathCount: 0,
+            protectedPathsIntact: true,
+            lastLedgerEntryTs: null,
+            lastLedgerEntryAgeMs: null,
+            metaRevision: null,
+            ledgerPath: "/tmp/fabric-target/.fabric/.intent-ledger.jsonl",
+            legacyLedgerPath: "/tmp/fabric-target/.intent-ledger.jsonl",
+            legacyLedgerDetected: false,
+            audit: null,
+          },
+          audit: null,
+        },
+      }),
+      runDoctorAuditReport: vi.fn(),
+    }));
+
+    const { doctorCommand } = await import("../src/commands/doctor.ts");
+    const stdout: string[] = [];
+    const stdoutSpy = vi.spyOn(process.stdout, "write").mockImplementation(((chunk: string | Uint8Array) => {
+      stdout.push(String(chunk).replace(/\n$/, ""));
+      return true;
+    }) as typeof process.stdout.write);
+
+    try {
+      await doctorCommand.run?.({
+        args: {
+          target: "/tmp/fabric-target",
+          fix: true,
+          audit: false,
+          "window-minutes": "5",
+        },
+      } as never);
+    } finally {
+      stdoutSpy.mockRestore();
+    }
+
+    expect(stdout.some((line) => line.includes("Migrated legacy ledger"))).toBe(true);
   });
 });

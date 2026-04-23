@@ -3,6 +3,7 @@ export type AgentsLayer = "L0" | "L1" | "L2";
 export type AgentsTopologyType = "mirror" | "cross-cutting";
 
 export type AgentsActivationTier = "always" | "path" | "description";
+export type AgentsIdentitySource = "declared" | "derived";
 
 export interface AgentsMetaNodeActivation {
   tier: AgentsActivationTier;
@@ -17,6 +18,8 @@ export interface AgentsMetaNode {
   layer: AgentsLayer;
   topology_type: AgentsTopologyType;
   hash: string;
+  stable_id?: string;
+  identity_source?: AgentsIdentitySource;
   activation?: AgentsMetaNodeActivation;
 }
 

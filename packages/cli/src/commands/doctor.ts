@@ -1,6 +1,6 @@
 import { defineCommand } from "citty";
 
-import { runDoctorAuditReport, runDoctorReport } from "@fenglimg/fabric-server";
+import { runDoctorAuditReport, runDoctorFix, runDoctorReport } from "@fenglimg/fabric-server";
 
 import { padEnd, paint, symbol } from "../colors.js";
 import { resolveDevMode } from "../dev-mode.js";
@@ -11,6 +11,7 @@ const DEFAULT_AUDIT_WINDOW_MINUTES = 5;
 type DoctorArgs = {
   target?: string;
   audit?: boolean;
+  fix?: boolean;
   "window-minutes"?: string;
 };
 
@@ -29,6 +30,11 @@ export const doctorCommand = defineCommand({
       description: t("cli.doctor.args.audit.description"),
       default: false,
     },
+    fix: {
+      type: "boolean",
+      description: t("cli.doctor.args.fix.description"),
+      default: false,
+    },
     "window-minutes": {
       type: "string",
       description: t("cli.doctor.args.window-minutes.description"),
@@ -38,7 +44,12 @@ export const doctorCommand = defineCommand({
   async run({ args }: { args: DoctorArgs }) {
     const workspaceRoot = process.cwd();
     const resolution = resolveDevMode(args.target, workspaceRoot);
-    const report = await runDoctorReport(resolution.target);
+    const fixReport = args.fix ? await runDoctorFix(resolution.target) : null;
+    const report = fixReport?.report ?? await runDoctorReport(resolution.target);
+
+    if (fixReport !== null) {
+      writeStdout(fixReport.message);
+    }
 
     writeStdout(`${renderStatus(report.status)} ${paint.ai("fab doctor")} ${paint.human(resolution.target)}`);
     for (const check of report.checks) {

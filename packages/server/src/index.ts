@@ -16,12 +16,15 @@ declare const __SERVER_VERSION__: string;
 
 export {
   runDoctorAuditReport,
+  runDoctorFix,
   runDoctorReport,
   type DoctorAuditReport,
+  type DoctorFixReport,
   type DoctorReport,
 } from "./services/doctor.js";
 export { approveHumanLock, type ApproveHumanLockInput, type ApproveHumanLockResult } from "./services/approve-human-lock.js";
 export { readHumanLock, readHumanLockEntry, type HumanLockStatus } from "./services/read-human-lock.js";
+export { LEGACY_LEDGER_PATH, LEDGER_PATH, getLedgerPath, getLegacyLedgerPath } from "./services/_shared.js";
 
 function writeStderr(message: string): void {
   process.stderr.write(`${message}\n`);

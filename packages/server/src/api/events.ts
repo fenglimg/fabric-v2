@@ -13,12 +13,13 @@ import {
   type HumanLockEntry,
 } from "@fenglimg/fabric-shared";
 import chokidar, { type FSWatcher } from "chokidar";
+import { resolveLedgerPaths } from "../services/read-ledger.js";
+import { LEGACY_LEDGER_PATH, LEDGER_PATH, getLedgerPath } from "../services/_shared.js";
 
 const AGENTS_META_PATH = ".fabric/agents.meta.json";
 const HUMAN_LOCK_PATH = ".fabric/human-lock.json";
 const FORENSIC_PATH = ".fabric/forensic.json";
-const LEDGER_PATH = ".intent-ledger.jsonl";
-const WATCHED_PATHS = [AGENTS_META_PATH, HUMAN_LOCK_PATH, FORENSIC_PATH, LEDGER_PATH] as const;
+const WATCHED_PATHS = [AGENTS_META_PATH, HUMAN_LOCK_PATH, FORENSIC_PATH, LEDGER_PATH, LEGACY_LEDGER_PATH] as const;
 
 const CONNECTION_LIMIT = 10;
 const HEARTBEAT_INTERVAL_MS = 30_000;
@@ -71,6 +72,7 @@ type EventsState = {
   clients: Set<EventsResponse>;
   watcher?: FSWatcher;
   pendingTimers: Map<string, NodeJS.Timeout>;
+  activeLedgerPath: string;
   ledgerOffset: number;
   ledgerRemainder: string;
   humanLockSnapshot: HumanLockSnapshot;
@@ -95,6 +97,7 @@ export function createEventsHandler(options: CreateEventsHandlerOptions) {
   const state: EventsState = {
     clients: new Set<EventsResponse>(),
     pendingTimers: new Map<string, NodeJS.Timeout>(),
+    activeLedgerPath: getLedgerPath(projectRoot),
     ledgerOffset: 0,
     ledgerRemainder: "",
     humanLockSnapshot: createEmptyHumanLockSnapshot(),
@@ -179,11 +182,13 @@ async function ensureWatcher(state: EventsState, projectRoot: string): Promise<v
     return;
   }
 
-  state.ledgerOffset = await readFileSize(join(projectRoot, LEDGER_PATH));
+  const ledgerState = await resolveLedgerWatchState(projectRoot);
+  state.activeLedgerPath = ledgerState.path;
+  state.ledgerOffset = ledgerState.size;
   state.ledgerRemainder = "";
   state.humanLockSnapshot = await readHumanLockSnapshot(projectRoot);
 
-  const watcher = chokidar.watch([...WATCHED_PATHS], {
+  const watcher = chokidar.watch(WATCHED_PATHS, {
     cwd: projectRoot,
     ignoreInitial: true,
     awaitWriteFinish: {
@@ -267,7 +272,7 @@ async function readEventsForFile(
     return event === null ? [] : [event];
   }
 
-  if (relativePath === LEDGER_PATH) {
+  if (relativePath === LEDGER_PATH || relativePath === LEGACY_LEDGER_PATH) {
     return await readLedgerAppendedEvents(state, projectRoot);
   }
 
@@ -348,8 +353,15 @@ async function readLedgerAppendedEvents(
   state: EventsState,
   projectRoot: string,
 ): Promise<FabricEvent[]> {
-  const ledgerPath = join(projectRoot, LEDGER_PATH);
-  const nextSize = await readFileSize(ledgerPath);
+  const ledgerState = await resolveLedgerWatchState(projectRoot);
+  const ledgerPath = ledgerState.path;
+  const nextSize = ledgerState.size;
+
+  if (ledgerPath !== state.activeLedgerPath) {
+    state.activeLedgerPath = ledgerPath;
+    state.ledgerOffset = 0;
+    state.ledgerRemainder = "";
+  }
 
   if (nextSize < state.ledgerOffset) {
     state.ledgerOffset = 0;
@@ -382,6 +394,13 @@ async function readLedgerAppendedEvents(
   } finally {
     await handle.close();
   }
+}
+
+async function resolveLedgerWatchState(projectRoot: string): Promise<{ path: string; size: number }> {
+  const paths = await resolveLedgerPaths(projectRoot);
+  const path = paths.usingLegacy ? paths.legacyPath : paths.primaryPath;
+  const size = await readFileSize(path);
+  return { path, size };
 }
 
 function parseLedgerAppendedEvent(line: string): FabricEvent | null {

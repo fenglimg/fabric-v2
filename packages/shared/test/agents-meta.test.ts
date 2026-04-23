@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   agentsMetaNodeSchema,
+  deriveAgentsMetaIdentitySource,
+  deriveAgentsMetaStableId,
   withDerivedAgentsMetaNodeDefaults,
 } from "../src/schemas/agents-meta";
 
@@ -52,5 +54,36 @@ describe("agentsMetaNodeSchema", () => {
         },
       }).activation,
     ).toEqual({ tier: "always" });
+  });
+
+  it("derives stable identity metadata when declarations are absent", () => {
+    const parsed = agentsMetaNodeSchema.parse({
+      file: ".fabric/agents/packages/server/rules.md",
+      scope_glob: "packages/server/**",
+      deps: [],
+      priority: "medium",
+      hash: "sha256:test",
+    });
+
+    expect(parsed.stable_id).toBe("packages/server/rules");
+    expect(parsed.identity_source).toBe("derived");
+    expect(deriveAgentsMetaStableId(".fabric/bootstrap/README.md")).toBe("bootstrap");
+    expect(deriveAgentsMetaIdentitySource(parsed)).toBe("derived");
+  });
+
+  it("preserves declared stable identity metadata", () => {
+    const parsed = agentsMetaNodeSchema.parse({
+      file: ".fabric/agents/packages/server/rules.md",
+      scope_glob: "packages/server/**",
+      deps: [],
+      priority: "medium",
+      hash: "sha256:test",
+      stable_id: "rules/server-core",
+      identity_source: "declared",
+    });
+
+    expect(parsed.stable_id).toBe("rules/server-core");
+    expect(parsed.identity_source).toBe("declared");
+    expect(deriveAgentsMetaIdentitySource(parsed)).toBe("declared");
   });
 });

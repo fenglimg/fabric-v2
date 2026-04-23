@@ -2,6 +2,7 @@
 
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 
 type TemplateKind = "bootstrap" | "skill";
 
@@ -63,6 +64,8 @@ const REGISTRY_REQUIRED_TOKENS = [
 ];
 
 const CJK_PATTERN = /[\u3400-\u9fff]/;
+const FAB_RULE_ID_HEADER_PATTERN = /<!--\s*fab:rule-id\s+([A-Za-z0-9][A-Za-z0-9/_-]*)\s*-->/u;
+const OPTIONAL_FRONTMATTER_PATTERN = /^(?:\uFEFF)?---\r?\n[\s\S]*?\r?\n---\r?\n*/u;
 
 function relativePath(filePath: string): string {
   return path.relative(ROOT, filePath);
@@ -167,8 +170,10 @@ function validateEnglishCore(
   pushMissingTokenViolations(violations, filePath, section, requiredTokens);
 }
 
-function validateBootstrapFile(filePath: string, source: string): Violation[] {
+export function validateBootstrapFile(filePath: string, source: string): Violation[] {
   const violations: Violation[] = [];
+
+  validateRuleIdHeader(violations, filePath, source);
 
   if (!/^##\s+CORE RULES\b.*DO NOT TRANSLATE.*$/m.test(source)) {
     violations.push({
@@ -190,7 +195,7 @@ function validateBootstrapFile(filePath: string, source: string): Violation[] {
   return violations;
 }
 
-function validateSkillFile(filePath: string, source: string): Violation[] {
+export function validateSkillFile(filePath: string, source: string): Violation[] {
   const violations: Violation[] = [];
 
   if (!/^---\nname:\s*[A-Za-z0-9_-]+\ndescription:\s*[A-Za-z0-9]/m.test(source)) {
@@ -211,6 +216,37 @@ function validateSkillFile(filePath: string, source: string): Violation[] {
   validateEnglishCore(violations, filePath, hardRulesSection, SKILL_REQUIRED_TOKENS);
 
   return violations;
+}
+
+function validateRuleIdHeader(violations: Violation[], filePath: string, source: string): void {
+  const bodyStart = source.match(OPTIONAL_FRONTMATTER_PATTERN)?.[0].length ?? 0;
+  const remainingSource = source.slice(bodyStart);
+  const commentHeaders = [...remainingSource.matchAll(/<!--([\s\S]*?)-->/gu)].filter((match) => match.index === 0);
+  const fabHeaders = commentHeaders.filter((match) => match[0].includes("fab:rule-id"));
+
+  if (fabHeaders.length === 0) {
+    violations.push({
+      filePath,
+      message: "missing leading '<!-- fab:rule-id <stable-id> -->' header comment",
+    });
+    return;
+  }
+
+  if (fabHeaders.length > 1) {
+    violations.push({
+      filePath,
+      message: "only one leading fab:rule-id header comment is allowed",
+    });
+  }
+
+  const headerMatch = FAB_RULE_ID_HEADER_PATTERN.exec(remainingSource);
+  if (headerMatch?.index !== 0) {
+    violations.push({
+      filePath,
+      message:
+        "fab:rule-id header must be the first semantic line, or follow frontmatter, and use '<!-- fab:rule-id <stable-id> -->' syntax",
+    });
+  }
 }
 
 function validateProtectedTokenRegistry(tokens: string[]): Violation[] {
@@ -235,7 +271,7 @@ function validateProtectedTokenRegistry(tokens: string[]): Violation[] {
   return violations;
 }
 
-async function main(): Promise<void> {
+export async function main(): Promise<void> {
   const protectedTokenSource = await readFile(PROTECTED_TOKENS_PATH, "utf8");
   const protectedTokens = parseProtectedTokens(protectedTokenSource);
   const violations = validateProtectedTokenRegistry(protectedTokens);
@@ -277,4 +313,9 @@ async function main(): Promise<void> {
   process.exitCode = 1;
 }
 
-await main();
+const entryPath = process.argv[1];
+const isMainModule = entryPath !== undefined && pathToFileURL(entryPath).href === import.meta.url;
+
+if (isMainModule) {
+  await main();
+}

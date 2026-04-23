@@ -2,15 +2,15 @@
   <img src="./assets/brand/fabric-wordmark.svg" alt="fabric wordmark" width="220">
 </p>
 
-# Fabric v1.5.1
+# Fabric v1.5.2
 
 让 AI 与维护者围绕同一套仓库规则协作
 
 The Consensus Plane for AI-Human Collaboration
 
-Fabric v1.5.1 is an MCP-first, cross-client AGENTS.md protocol for six AI clients: Claude Code, Cursor, Windsurf, Roo Code, Gemini CLI, and Codex CLI. It keeps Fabric rule state inside `.fabric/`, distributes scoped rules through a local MCP server, and adds git-level defenses so behavior stays consistent across clients without compiling client-specific rule files first.
+Fabric v1.5.2 is an MCP-first, cross-client AGENTS.md protocol for six AI clients: Claude Code, Cursor, Windsurf, Roo Code, Gemini CLI, and Codex CLI. It keeps Fabric rule state inside `.fabric/`, distributes scoped rules through a local MCP server, and adds git-level defenses so behavior stays consistent across clients without compiling client-specific rule files first.
 
-> **Current release: v1.5.1**. Fabric 现在支持 CLI 侧的 human-lock 批准、更丰富的 TechProfile 检测、分层规则激活、`/api/rules/context` 接口，以及 Dashboard 的规则命中页；本补丁版继续收口中文入口文档、Dashboard 文案和 AI 初始化提示。更新说明见 [`CHANGELOG.md`](./CHANGELOG.md#151---2026-04-23)，初始化流程见 [`docs/initialization.md`](./docs/initialization.md)。
+> **Current release: v1.5.2**. Fabric 本次补丁版把 intent ledger 正式收口到 `.fabric/`，为规则节点预编译稳定 `stable_id`，让 `fab_plan_context` 支持共享规则 bundle，并新增 tooling manifest 作为脚本知识入口。更新说明见 [`CHANGELOG.md`](./CHANGELOG.md#152---2026-04-24)，初始化流程见 [`docs/initialization.md`](./docs/initialization.md)。
 
 ```text
 AI Agent <-> Fabric Ledger <-> Human Developer
@@ -22,7 +22,7 @@ AI Agent <-> Fabric Ledger <-> Human Developer
 
 - Regulation: AGENTS.md layers define the human-readable rule system.
 - Metadata: `.fabric/agents.meta.json` stores machine-oriented routing and revision data.
-- Intent: `.intent-ledger.jsonl` records append-only task intent history.
+- Intent: `.fabric/.intent-ledger.jsonl` records append-only task intent history. Legacy root `.intent-ledger.jsonl` remains read-only compatible until you run `fabric doctor --fix`.
 - Distribution: the Fabric MCP server serves scoped rules to supported clients on demand.
 - Defense: pre-commit enforcement protects `@HUMAN` boundaries, metadata integrity, and workflow hygiene.
 
@@ -110,4 +110,4 @@ fabric approve --all
 
 ## 当前状态
 
-当前稳定版本是 `v1.5.1`。历史规划仍保留在 `.workflow/`，对外维护的入口以本 README、`docs/` 下的文档和 `.github/workflows/release.yml` 中的发布流程为准。
+当前稳定版本是 `v1.5.2`。历史规划仍保留在 `.workflow/`，对外维护的入口以本 README、`docs/` 下的文档和 `.github/workflows/release.yml` 中的发布流程为准。

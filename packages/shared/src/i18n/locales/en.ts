@@ -63,6 +63,7 @@ export const enMessages: Messages = {
   "cli.doctor.args.target.description":
     "Target project path. Defaults to CLI arg, EXTERNAL_FIXTURE_PATH, fabric.config.json, then cwd.",
   "cli.doctor.args.audit.description": "Print fab_get_rules compliance violations for AI edit intents.",
+  "cli.doctor.args.fix.description": "Migrate the legacy root ledger into .fabric/.intent-ledger.jsonl when needed.",
   "cli.doctor.args.window-minutes.description":
     "Audit lookback window in minutes for matching fab_get_rules calls. Default 5.",
   "cli.doctor.errors.invalid-window": "Invalid audit window: {value}",

@@ -3,6 +3,8 @@ alwaysApply: true
 description: Fabric Protocol bootstrap rules
 ---
 
+<!-- fab:rule-id bootstrap/cursor -->
+
 # Fabric Bootstrap
 
 ## CORE RULES (DO NOT TRANSLATE)

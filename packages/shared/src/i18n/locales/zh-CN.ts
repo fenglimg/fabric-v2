@@ -61,6 +61,7 @@ export const zhCNMessages: Messages = {
   "cli.doctor.args.target.description":
     "目标项目路径。默认依次使用 CLI 参数、EXTERNAL_FIXTURE_PATH、fabric.config.json、当前目录。",
   "cli.doctor.args.audit.description": "输出 AI 编辑意图缺少 fab_get_rules 前置调用的违规项。",
+  "cli.doctor.args.fix.description": "需要时将旧的根目录 ledger 迁移到 .fabric/.intent-ledger.jsonl。",
   "cli.doctor.args.window-minutes.description":
     "匹配 fab_get_rules 调用的回看时间窗口，单位为分钟。默认 5 分钟。",
   "cli.doctor.errors.invalid-window": "无效的审计时间窗口：{value}",

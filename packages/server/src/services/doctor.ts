@@ -15,7 +15,8 @@ import {
   type GetRulesAuditEntry,
 } from "./audit-log.js";
 import { readHumanLock } from "./read-human-lock.js";
-import { readLedger } from "./read-ledger.js";
+import { migrateLegacyLedger, readLedger, resolveLedgerPaths } from "./read-ledger.js";
+export { LEGACY_LEDGER_PATH, LEDGER_PATH, getLedgerPath } from "./_shared.js";
 
 export type DoctorStatus = "ok" | "warn" | "error";
 
@@ -42,6 +43,9 @@ export type DoctorSummary = {
   lastLedgerEntryTs: number | null;
   lastLedgerEntryAgeMs: number | null;
   metaRevision: string | null;
+  ledgerPath: string;
+  legacyLedgerPath: string;
+  legacyLedgerDetected: boolean;
   audit:
     | {
         enabled: boolean;
@@ -58,6 +62,13 @@ export type DoctorReport = {
   checks: DoctorCheck[];
   summary: DoctorSummary;
   audit: DoctorAuditReport | null;
+};
+
+export type DoctorFixReport = {
+  changed: boolean;
+  migratedLedger: boolean;
+  message: string;
+  report: DoctorReport;
 };
 
 export type DoctorAuditViolation = {
@@ -96,6 +107,7 @@ type MetaDriftResult =
       nodeCount: number;
       driftCount: number;
       missingFiles: string[];
+      derivedIdentityFiles: string[];
       unexpectedError?: undefined;
     }
   | {
@@ -104,6 +116,7 @@ type MetaDriftResult =
       nodeCount: 0;
       driftCount: 0;
       missingFiles: string[];
+      derivedIdentityFiles: string[];
       unexpectedError?: string;
     };
 
@@ -124,6 +137,9 @@ type LedgerSnapshot = {
   count: number;
   lastEntryTs: number | null;
   lastEntryAgeMs: number | null;
+  primaryPath: string;
+  legacyPath: string;
+  usingLegacy: boolean;
 };
 
 const SCRIPT_EXTENSIONS = new Set([".js", ".jsx", ".ts", ".tsx"]);
@@ -185,6 +201,9 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
       lastLedgerEntryTs: ledgerSnapshot.lastEntryTs,
       lastLedgerEntryAgeMs: ledgerSnapshot.lastEntryAgeMs,
       metaRevision: metaSnapshot.revision,
+      ledgerPath: ledgerSnapshot.primaryPath,
+      legacyLedgerPath: ledgerSnapshot.legacyPath,
+      legacyLedgerDetected: ledgerSnapshot.usingLegacy,
       audit: auditReport.skipped
         ? null
         : {
@@ -196,6 +215,21 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
           },
     },
     audit: auditReport.skipped ? null : auditReport,
+  };
+}
+
+export async function runDoctorFix(target: string): Promise<DoctorFixReport> {
+  const projectRoot = normalizeTarget(target);
+  const migration = await migrateLegacyLedger(projectRoot);
+  const report = await runDoctorReport(projectRoot);
+
+  return {
+    changed: migration.migrated,
+    migratedLedger: migration.migrated,
+    message: migration.migrated
+      ? `Migrated legacy ledger from ${migration.from} to ${migration.to}.`
+      : `No legacy ledger migration needed. Canonical ledger path: ${migration.to}.`,
+    report,
   };
 }
 
@@ -329,6 +363,21 @@ function createMetaRevisionCheck(snapshot: MetaDriftResult): DoctorCheck {
     };
   }
 
+  if (snapshot.derivedIdentityFiles.length > 0) {
+    const [firstFile] = snapshot.derivedIdentityFiles;
+    const suffix = snapshot.derivedIdentityFiles.length > 1 ? ` (+${snapshot.derivedIdentityFiles.length - 1} more)` : "";
+
+    return {
+      name: "Meta revision",
+      status: "warn",
+      message:
+        `agents.meta.json revision ${snapshot.revision} matches ${snapshot.nodeCount} tracked AGENTS files, ` +
+        `but ${snapshot.derivedIdentityFiles.length} rule node${snapshot.derivedIdentityFiles.length === 1 ? "" : "s"} ` +
+        `still use derived identities. Add \`<!-- fab:rule-id ... -->\` to the rule file header instead of editing meta directly ` +
+        `(${firstFile}${suffix}).`,
+    };
+  }
+
   return {
     name: "Meta revision",
     status: "ok",
@@ -361,6 +410,14 @@ function createProtectedPathsCheck(snapshot: HumanLockSnapshot): DoctorCheck {
 }
 
 function createLedgerCheck(snapshot: LedgerSnapshot): DoctorCheck {
+  if (snapshot.usingLegacy) {
+    return {
+      name: "Intent ledger",
+      status: "warn",
+      message: `Legacy ledger path detected at ${snapshot.legacyPath}. Fabric now reads ${snapshot.primaryPath} by default; run fab doctor --fix to migrate.`,
+    };
+  }
+
   if (snapshot.lastEntryTs === null || snapshot.lastEntryAgeMs === null) {
     return {
       name: "Intent ledger",
@@ -454,10 +511,11 @@ async function inspectMetaRevision(projectRoot: string): Promise<MetaDriftResult
     const meta = await readAgentsMeta(projectRoot);
     const entries = Object.entries(meta.nodes).sort(([left], [right]) => left.localeCompare(right));
     const missingFiles: string[] = [];
+    const derivedIdentityFiles: string[] = [];
     let driftCount = 0;
 
     const revisionSource = entries
-      .map(([, node]) => {
+      .map(([id, node]) => {
         const absolutePath = join(projectRoot, node.file);
 
         if (!existsSync(absolutePath)) {
@@ -471,9 +529,13 @@ async function inspectMetaRevision(projectRoot: string): Promise<MetaDriftResult
           driftCount += 1;
         }
 
-        return actualHash;
+        if (node.file !== ".fabric/bootstrap/README.md" && node.identity_source !== "declared") {
+          derivedIdentityFiles.push(node.file);
+        }
+
+        return [id, actualHash, node.stable_id ?? "", node.identity_source ?? ""].join("|");
       })
-      .join("");
+      .join("\n");
 
     const revision = sha256(revisionSource);
 
@@ -483,6 +545,7 @@ async function inspectMetaRevision(projectRoot: string): Promise<MetaDriftResult
       nodeCount: entries.length,
       driftCount: revision === meta.revision ? driftCount : Math.max(driftCount, 1),
       missingFiles,
+      derivedIdentityFiles,
     };
   } catch (error) {
     return {
@@ -491,6 +554,7 @@ async function inspectMetaRevision(projectRoot: string): Promise<MetaDriftResult
       nodeCount: 0,
       driftCount: 0,
       missingFiles: [],
+      derivedIdentityFiles: [],
       unexpectedError: error instanceof Error ? error.message : String(error),
     };
   }
@@ -525,6 +589,7 @@ async function inspectHumanLock(projectRoot: string): Promise<HumanLockSnapshot>
 }
 
 async function inspectLedger(projectRoot: string): Promise<LedgerSnapshot> {
+  const paths = await resolveLedgerPaths(projectRoot);
   const entries = await readLedger(projectRoot);
   const lastEntry = entries.reduce<number | null>(
     (latest, entry) => (latest === null || entry.ts > latest ? entry.ts : latest),
@@ -535,6 +600,9 @@ async function inspectLedger(projectRoot: string): Promise<LedgerSnapshot> {
     count: entries.length,
     lastEntryTs: lastEntry,
     lastEntryAgeMs: lastEntry === null ? null : Math.max(Date.now() - lastEntry, 0),
+    primaryPath: paths.primaryPath,
+    legacyPath: paths.legacyPath,
+    usingLegacy: paths.usingLegacy,
   };
 }
 

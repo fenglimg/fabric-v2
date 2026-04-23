@@ -100,6 +100,65 @@ describe("pre-commit command", () => {
     expect(humanLintRun).not.toHaveBeenCalled();
     expect(ledgerRun).not.toHaveBeenCalled();
   });
+
+  it("treats the canonical ledger path as fabric-managed", async () => {
+    const syncRun = vi.fn();
+    const humanLintRun = vi.fn();
+    const ledgerRun = vi.fn();
+
+    vi.doMock("node:child_process", () => ({
+      execSync: vi.fn().mockReturnValue(".fabric/.intent-ledger.jsonl\n"),
+    }));
+    vi.doMock("node:fs", async () => {
+      const actual = await vi.importActual<typeof import("node:fs")>("node:fs");
+      return {
+        ...actual,
+        readFileSync: vi.fn((path: string, encoding?: BufferEncoding) => {
+          if (path.endsWith(".fabric/agents.meta.json")) {
+            return JSON.stringify({
+              revision: "sha256:test",
+              nodes: {
+                L0: {
+                  file: ".fabric/bootstrap/README.md",
+                  scope_glob: "**",
+                  deps: [],
+                  priority: "high",
+                  hash: "sha256:l0",
+                  layer: "L0",
+                  topology_type: "mirror",
+                },
+              },
+            });
+          }
+
+          return actual.readFileSync(path, encoding as never);
+        }),
+      };
+    });
+    vi.doMock("../src/dev-mode.js", () => ({
+      resolveDevModeTarget: vi.fn().mockReturnValue("/tmp/fabric-project"),
+    }));
+    vi.doMock("../src/commands/sync-meta.js", () => ({
+      default: { run: syncRun },
+    }));
+    vi.doMock("../src/commands/human-lint.js", () => ({
+      default: { run: humanLintRun },
+    }));
+    vi.doMock("../src/commands/ledger-append.js", () => ({
+      default: { run: ledgerRun },
+    }));
+    vi.doMock("@fenglimg/fabric-server", () => ({
+      LEDGER_PATH: ".fabric/.intent-ledger.jsonl",
+      LEGACY_LEDGER_PATH: ".intent-ledger.jsonl",
+    }));
+
+    const command = (await import("../src/commands/pre-commit.ts")).default;
+    await command.run?.({ args: {} } as never);
+
+    expect(syncRun).toHaveBeenCalledOnce();
+    expect(humanLintRun).toHaveBeenCalledOnce();
+    expect(ledgerRun).toHaveBeenCalledOnce();
+  });
 });
 
 describe("update command", () => {

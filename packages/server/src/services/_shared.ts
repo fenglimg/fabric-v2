@@ -1,16 +1,30 @@
-import { resolve, sep } from "node:path";
+import { dirname, join, resolve, sep } from "node:path";
 import { createHash } from "node:crypto";
-import { rename, writeFile } from "node:fs/promises";
+import { mkdir, rename, writeFile } from "node:fs/promises";
 
 export const FABRIC_DIR = ".fabric";
 export const HUMAN_LOCK_FILE = "human-lock.json";
 export const LEDGER_FILE = ".intent-ledger.jsonl";
+export const LEDGER_PATH = `${FABRIC_DIR}/${LEDGER_FILE}`;
+export const LEGACY_LEDGER_PATH = LEDGER_FILE;
 
 export async function atomicWriteText(path: string, content: string): Promise<void> {
   const tempPath = `${path}.${process.pid}.${Date.now()}.tmp`;
 
   await writeFile(tempPath, content, "utf8");
   await rename(tempPath, path);
+}
+
+export function getLedgerPath(projectRoot: string): string {
+  return join(projectRoot, LEDGER_PATH);
+}
+
+export function getLegacyLedgerPath(projectRoot: string): string {
+  return join(projectRoot, LEGACY_LEDGER_PATH);
+}
+
+export async function ensureParentDirectory(path: string): Promise<void> {
+  await mkdir(dirname(path), { recursive: true });
 }
 
 export function sha256(content: string): string {

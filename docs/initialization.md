@@ -226,6 +226,8 @@ fabric sync-meta
 
 当项目架构、invariants 或 protected paths 变化时，使用持续的 `agents-md` workflow。Initialization skill 为一次性 setup；日常开发是保持 `AGENTS.md` 与 `.fabric/agents.meta.json` 与 codebase 对齐。
 
+如果需要理解 repo 内部脚本的作用、输入输出边界和维护约束，优先查看 [`docs/tooling-manifest.json`](./tooling-manifest.json) 与 [`docs/tooling-manifest.md`](./tooling-manifest.md)。这层 tooling knowledge 与规则树分离维护，manifest 是真源，未来的 JSDoc 提取只能作为同步增强。
+
 ## 状态机
 
 ```text

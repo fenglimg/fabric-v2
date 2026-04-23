@@ -1,6 +1,6 @@
 # Fabric 上手
 
-Fabric v1.5.0 为维护者提供从本地安装到首条 ledger-backed 协作事件的标准上手路径。若你首次评估 Fabric，从这里开始。
+Fabric v1.5.2 为维护者提供从本地安装到首条 ledger-backed 协作事件的标准上手路径。若你首次评估 Fabric，从这里开始。
 
 贡献与本地仓库设置见 [Contributing](./contributing.md)。`fabric init` 的状态机和更深入说明见 [初始化指南](./initialization.md)。产品叙事版见 [Launch Story](./launch-story.md)。
 
@@ -224,7 +224,7 @@ FABRIC_INTENT="docs: refine onboarding copy" fab ledger-append --staged
 结果：
 
 ```text
-.intent-ledger.jsonl receives a new append-only JSON line with parent_sha, intent, affected_paths, and diff_stat.
+`.fabric/.intent-ledger.jsonl` receives a new append-only JSON line with `parent_sha`, `intent`, `affected_paths`, and `diff_stat`. Legacy root `.intent-ledger.jsonl` stays read-compatible until you run `fab doctor --fix`.
 ```
 
 若本次变更有意更新了 `@HUMAN` 保护区，先审查 drift，再批准新的 human-lock hash：

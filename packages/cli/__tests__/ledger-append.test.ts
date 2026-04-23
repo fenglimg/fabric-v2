@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -25,7 +25,14 @@ afterEach(() => {
 describe("ledger-append command", () => {
   it("ignores trailing mcp-event lines when checking for duplicate human entries", async () => {
     const target = createFixtureRoot("ledger-append");
-    const ledgerPath = join(target, ".intent-ledger.jsonl");
+    const ledgerPath = join(target, ".fabric", ".intent-ledger.jsonl");
+    mkdirSync(join(target, ".fabric"), { recursive: true });
+    vi.doMock("@fenglimg/fabric-server", () => ({
+      LEDGER_PATH: ".fabric/.intent-ledger.jsonl",
+      LEGACY_LEDGER_PATH: ".intent-ledger.jsonl",
+      getLedgerPath: (projectRoot: string) => join(projectRoot, ".fabric", ".intent-ledger.jsonl"),
+      getLegacyLedgerPath: (projectRoot: string) => join(projectRoot, ".intent-ledger.jsonl"),
+    }));
 
     process.env.FABRIC_INTENT = "dedupe check";
 
@@ -61,7 +68,7 @@ describe("ledger-append command", () => {
           return "abc123\n";
         }
 
-        if (command === "git add .intent-ledger.jsonl") {
+        if (command === "git add .fabric/.intent-ledger.jsonl") {
           return "";
         }
 

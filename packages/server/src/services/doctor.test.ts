@@ -1,11 +1,11 @@
 import { createHash } from "node:crypto";
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { runDoctorAuditReport, runDoctorReport } from "./doctor.js";
+import { runDoctorAuditReport, runDoctorFix, runDoctorReport } from "./doctor.js";
 
 const tempRoots: string[] = [];
 
@@ -127,7 +127,7 @@ describe("runDoctorReport", () => {
     writeFileSync(
       join(target, ".fabric", "agents.meta.json"),
       `${JSON.stringify({
-        revision: sha256(bootstrapHash),
+        revision: sha256(`L0|${bootstrapHash}|bootstrap|derived`),
         nodes: {
           L0: {
             file: ".fabric/bootstrap/README.md",
@@ -135,6 +135,8 @@ describe("runDoctorReport", () => {
             deps: [],
             priority: "high",
             hash: bootstrapHash,
+            stable_id: "bootstrap",
+            identity_source: "derived",
           },
         },
       }, null, 2)}\n`,
@@ -155,7 +157,7 @@ describe("runDoctorReport", () => {
       "utf8",
     );
     writeFileSync(
-      join(target, ".intent-ledger.jsonl"),
+      join(target, ".fabric", ".intent-ledger.jsonl"),
       `${JSON.stringify({
         ts: now - 10 * 60 * 1000,
         source: "human",
@@ -195,7 +197,7 @@ describe("runDoctorReport", () => {
       "utf8",
     );
     writeFileSync(
-      join(target, ".intent-ledger.jsonl"),
+      join(target, ".fabric", ".intent-ledger.jsonl"),
       `${JSON.stringify({
         id: "ledger:audit-miss",
         ts: now,
@@ -303,7 +305,7 @@ describe("runDoctorReport", () => {
     writeFileSync(
       join(target, ".fabric", "agents.meta.json"),
       `${JSON.stringify({
-        revision: sha256(bootstrapHash),
+        revision: sha256(`L0|${bootstrapHash}|bootstrap|derived`),
         nodes: {
           L0: {
             file: ".fabric/bootstrap/README.md",
@@ -311,6 +313,8 @@ describe("runDoctorReport", () => {
             deps: [],
             priority: "high",
             hash: bootstrapHash,
+            stable_id: "bootstrap",
+            identity_source: "derived",
           },
         },
       }, null, 2)}\n`,
@@ -369,6 +373,96 @@ describe("runDoctorReport", () => {
       violationCount: 0,
       windowMs: 5 * 60 * 1000,
     });
+  });
+
+  it("warns when tracked rule nodes still rely on derived stable identities", async () => {
+    const target = createFixtureRoot("doctor-derived-stable-id");
+    const bootstrapPath = join(target, ".fabric", "bootstrap", "README.md");
+    const rulePath = join(target, ".fabric", "agents", "packages", "server", "rules.md");
+    const bootstrapContent = "# Project Rules\n";
+    const ruleContent = "# server rules\n";
+    const bootstrapHash = sha256(bootstrapContent);
+    const ruleHash = sha256(ruleContent);
+    const revision = sha256(
+      [
+        `L0|${bootstrapHash}|bootstrap|derived`,
+        `L1/packages/server/rules|${ruleHash}|packages/server/rules|derived`,
+      ].join("\n"),
+    );
+
+    mkdirSync(join(target, ".fabric", "bootstrap"), { recursive: true });
+    mkdirSync(join(target, ".fabric", "agents", "packages", "server"), { recursive: true });
+    writeFileSync(bootstrapPath, bootstrapContent, "utf8");
+    writeFileSync(rulePath, ruleContent, "utf8");
+    writeFileSync(
+      join(target, ".fabric", "agents.meta.json"),
+      `${JSON.stringify({
+        revision,
+        nodes: {
+          L0: {
+            file: ".fabric/bootstrap/README.md",
+            scope_glob: "**",
+            deps: [],
+            priority: "high",
+            hash: bootstrapHash,
+            stable_id: "bootstrap",
+            identity_source: "derived",
+          },
+          "L1/packages/server/rules": {
+            file: ".fabric/agents/packages/server/rules.md",
+            scope_glob: "packages/server/**",
+            deps: ["L0"],
+            priority: "medium",
+            hash: ruleHash,
+            stable_id: "packages/server/rules",
+            identity_source: "derived",
+          },
+        },
+      }, null, 2)}\n`,
+      "utf8",
+    );
+
+    const report = await runDoctorReport(target);
+    const metaCheck = report.checks.find((check) => check.name === "Meta revision");
+
+    expect(metaCheck).toEqual({
+      name: "Meta revision",
+      status: "warn",
+      message:
+        "agents.meta.json revision " +
+        `${revision} matches 2 tracked AGENTS files, but 1 rule node still use derived identities. ` +
+        "Add `<!-- fab:rule-id ... -->` to the rule file header instead of editing meta directly " +
+        "(.fabric/agents/packages/server/rules.md).",
+    });
+  });
+
+  it("warns when only the legacy root ledger exists and migrates it with doctor --fix", async () => {
+    const target = createFixtureRoot("doctor-ledger-migrate");
+    const now = Date.now();
+
+    mkdirSync(join(target, ".fabric"), { recursive: true });
+    writeFileSync(
+      join(target, ".intent-ledger.jsonl"),
+      `${JSON.stringify({
+        id: "ledger:legacy",
+        ts: now,
+        source: "human",
+        parent_sha: "root",
+        intent: "legacy ledger",
+        affected_paths: ["README.md"],
+        diff_stat: "1 file changed",
+      })}\n`,
+      "utf8",
+    );
+
+    const report = await runDoctorReport(target);
+    const fix = await runDoctorFix(target);
+
+    expect(report.summary.legacyLedgerDetected).toBe(true);
+    expect(report.checks.find((check) => check.name === "Intent ledger")?.status).toBe("warn");
+    expect(fix.migratedLedger).toBe(true);
+    expect(existsSync(join(target, ".intent-ledger.jsonl"))).toBe(false);
+    expect(existsSync(join(target, ".fabric", ".intent-ledger.jsonl"))).toBe(true);
   });
 });
 

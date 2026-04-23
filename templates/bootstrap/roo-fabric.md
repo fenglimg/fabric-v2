@@ -1,3 +1,4 @@
+<!-- fab:rule-id bootstrap/roo -->
 # Fabric Bootstrap
 
 ## CORE RULES (DO NOT TRANSLATE)

@@ -14,7 +14,7 @@ export const PROTECTED_TOKENS = [
   ".fabric/human-lock.json",
   ".fabric/init-context.json",
   ".fabric/forensic.json",
-  ".intent-ledger.jsonl",
+  ".fabric/.intent-ledger.jsonl",
   "@HUMAN",
   "shadow constraints",
   "Shadow Mirroring",
