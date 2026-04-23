@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.2] - 2026-04-24
+
+### Added
+
+- Added stable `stable_id` precompilation for rule nodes plus validation coverage, so rule bundles can reference deterministic English anchors instead of path-derived fallbacks.
+- Added `docs/tooling-manifest.json` and `docs/tooling-manifest.md` as the explicit tooling knowledge layer for script contracts and review anchors.
+
+### Changed
+
+- Moved the canonical intent ledger path to `.fabric/.intent-ledger.jsonl`, keeping the legacy root path read-compatible until `fabric doctor --fix` performs an explicit migration.
+- `fabric doctor` now detects legacy ledger placement and can migrate it only under `--fix`, avoiding silent file moves during normal reads.
+- `fab_plan_context` now returns a shared resolved bundle shape so one planning pass can serve multiple edit targets without repeating the same directory-level rule resolution work.
+- Updated onboarding and initialization docs to point to the new ledger location and tooling manifest entry points.
+
+### Tests
+
+- Added coverage for ledger-path compatibility, doctor-led migration, stable rule ID extraction, protected-token linting, and shared plan-context bundle resolution.
+
 ## [1.5.1] - 2026-04-23
 
 ### Changed
