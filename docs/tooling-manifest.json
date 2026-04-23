@@ -1,0 +1,122 @@
+{
+  "version": 1,
+  "source_of_truth": "manifest",
+  "jsdoc_policy": "optional-enhancer-only",
+  "tools": [
+    {
+      "id": "copy-dashboard-dist",
+      "path": "packages/server/scripts/copy-dashboard.mjs",
+      "owner": "@fenglimg/fabric-server",
+      "runtime": "node",
+      "category": "build",
+      "purpose": "Copy the built dashboard bundle into the server static output during the server build.",
+      "inputs": [
+        {
+          "name": "dashboard_dist",
+          "kind": "filesystem",
+          "path": "packages/dashboard/dist",
+          "required": true,
+          "description": "Built dashboard assets produced before the server packaging step."
+        },
+        {
+          "name": "server_static_output",
+          "kind": "filesystem",
+          "path": "packages/server/dist/static",
+          "required": false,
+          "description": "Target directory recreated on each run before files are copied."
+        }
+      ],
+      "outputs": [
+        {
+          "kind": "filesystem",
+          "path": "packages/server/dist/static",
+          "description": "Fresh static asset copy used by the packaged server."
+        }
+      ],
+      "side_effects": [
+        "Removes and recreates packages/server/dist/static before copying files.",
+        "Writes build-status lines to stderr."
+      ],
+      "related_rules": [
+        {
+          "anchor": "dashboard-static-serving",
+          "target": "packages/server/src/http.ts",
+          "description": "The copied assets are served by the Fabric HTTP server."
+        },
+        {
+          "anchor": "server-build-coupling",
+          "target": "packages/server/package.json",
+          "description": "The server build pipeline invokes this script after tsup."
+        }
+      ],
+      "maintenance": {
+        "update_when": [
+          "dashboard output location changes",
+          "server static serving path changes",
+          "copy semantics or side effects change"
+        ],
+        "change_log_expectation": "Update this manifest entry in the same change that alters the script contract."
+      }
+    },
+    {
+      "id": "lint-protected-tokens",
+      "path": "scripts/lint-protected-tokens.ts",
+      "owner": "repo-root",
+      "runtime": "node",
+      "category": "quality-gate",
+      "purpose": "Validate bootstrap and skill templates against protected English tokens, hard-rule wording, and leading fab:rule-id headers.",
+      "inputs": [
+        {
+          "name": "bootstrap_templates",
+          "kind": "glob",
+          "path": "templates/bootstrap/**",
+          "required": true,
+          "description": "Bootstrap template files that must preserve protected protocol tokens."
+        },
+        {
+          "name": "claude_skill_templates",
+          "kind": "glob",
+          "path": "templates/claude-skills/**",
+          "required": true,
+          "description": "Skill templates that must keep English hard-rule sections stable."
+        },
+        {
+          "name": "protected_token_registry",
+          "kind": "filesystem",
+          "path": "packages/shared/src/i18n/protected-tokens.ts",
+          "required": true,
+          "description": "Registry of tokens that must not drift across localized surfaces."
+        }
+      ],
+      "outputs": [
+        {
+          "kind": "stdout",
+          "description": "Lists validation violations and exits non-zero when the template contract is broken."
+        }
+      ],
+      "side_effects": [
+        "No repository writes; process exit code becomes the quality gate signal."
+      ],
+      "related_rules": [
+        {
+          "anchor": "protected-token-registry",
+          "target": "packages/shared/src/i18n/protected-tokens.ts",
+          "description": "The script enforces the registry used by localized copy and template validation."
+        },
+        {
+          "anchor": "stable-rule-header",
+          "target": "packages/cli/__tests__/lint-protected-tokens.test.ts",
+          "description": "The quality gate protects the leading fab:rule-id header contract."
+        }
+      ],
+      "maintenance": {
+        "update_when": [
+          "required tokens change",
+          "template directories change",
+          "header validation or failure semantics change"
+        ],
+        "change_log_expectation": "Update this manifest entry whenever the lint contract or enforced token set changes."
+      }
+    }
+  ]
+}

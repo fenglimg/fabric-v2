@@ -1,0 +1,553 @@
+{
+  "session_id": "ANL-2026-04-23-规则加载中文锚点脚本文档ledger路径",
+  "topic": "规则加载逻辑优化、中文化与英文锚点、脚本文档化、ledger 路径 bug",
+  "completed": "2026-04-23T00:50:00+08:00",
+  "total_rounds": 6,
+  "summary": "四个议题本质上都指向 Fabric 协议对象边界尚未完全收敛。规则加载已有 batch tool 但未形成 shared context 视图；双语规则已有 wrapper/core 分层但缺少系统化英文 metadata anchors；脚本说明尚未并入 Fabric 认知树；`.intent-ledger.jsonl` 则已经以根目录路径渗透到代码、文档与 UI 文案，属于需要兼容式迁移的真实 bugfix。经过多轮讨论，最终决策基线已经收敛：stable id 采用 HTML comment 声明并由 sync-meta 预编译进 meta；identity 采用 `stable_id + identity_source`；revision 需要覆盖身份元数据；ledger 路径收敛到 `.fabric/.intent-ledger.jsonl` 并通过 `doctor --fix` 显式迁移；`fab_plan_context` 扩展 shared resolved bundle 视图；tooling registry 以 manifest 为真源，JSDoc 只是提取器。",
+  "key_conclusions": [
+    {
+      "point": "规则加载优化应优先做协议层增强，而不是只做微观缓存。",
+      "evidence": "planContext 目前只是 unique path + Promise.all(resolveRulesForPath)，未提供 shared union 与跨路径文件内容复用。",
+      "confidence": "high"
+    },
+    {
+      "point": "中文化与稳定英文锚点并不冲突，冲突点只在于缺少结构化英文字段。",
+      "evidence": "模板和 lint 已强制 English-only core sections、protected tokens、Reason 行与 file:line anchors。",
+      "confidence": "high"
+    },
+    {
+      "point": "脚本文档化值得做，但应纳入现有 Fabric 认知树，而不是平行造新系统。",
+      "evidence": "Fabric 已经以 .fabric/agents/ 作为规则镜像树；脚本是跨切面工具知识，更适合挂入 mirror/cross-cutting 体系。",
+      "confidence": "medium"
+    },
+    {
+      "point": "ledger 路径问题不是单点实现错误，而是跨层路径常量分叉。",
+      "evidence": "server 共享常量、CLI 本地常量、pre-commit、protected tokens、docs、dashboard copy 都引用根目录 .intent-ledger.jsonl。",
+      "confidence": "high"
+    },
+    {
+      "point": "用户提出的 shared view / stable ids / tooling framing 方向正确，但需要按现有 schema 与 side-effect 边界分阶段落地。",
+      "evidence": "AgentsMetaNode 目前没有 rule_id/tools 字段，Dashboard 也并未直接读取 ledger 文件路径；因此应优先改 protocol 和 metadata，而不是一次性扩大所有 schema。",
+      "confidence": "high"
+    },
+    {
+      "point": "下一步最需要先决策的不是缓存细节，而是“稳定对象标识”与“元数据承载格式”。",
+      "evidence": "resolved bundle、rule refs、tooling registry 都需要稳定 id；而 Frontmatter 方案当前又与 AGENTS.md 生成约束冲突。",
+      "confidence": "high"
+    },
+    {
+      "point": "在现有候选里，HTML comment header 是最平衡的 stable id 承载方案。",
+      "evidence": "它不触发现有 AGENTS.md 无 frontmatter 约束，也不需要引入新的 Markdown metadata parser，同时让规则文件本体保持自描述。",
+      "confidence": "high"
+    },
+    {
+      "point": "stable id 的最佳实现路径是“规则文件声明 + sync-meta 预编译 + doctor 固化”，而不是在 get-rules 热路径动态提取。",
+      "evidence": "sync-meta 本身就是规则文件到 meta 的编译入口，预编译后 Dashboard、Doctor、MCP 和 shared bundle 都可共用同一身份视图。",
+      "confidence": "high"
+    },
+    {
+      "point": "关键架构分叉已经全部拍板，后续可以直接进入实现规划。",
+      "evidence": "用户已明确接受推荐决策，剩余问题降级为实现细节与任务排序。",
+      "confidence": "high"
+    }
+  ],
+  "recommendations": [
+    {
+      "action": "扩展 fab_plan_context，使其返回 per-path 结果之外的 shared resolved bundle 视图与 preflight diagnostics",
+      "rationale": "这比纯 client 侧 memoization 更稳，也更符合“探索后、编辑前”的批量预取场景；同时可在规划阶段暴露冲突、stub-only、前置脚本等诊断信息。Session 级复用应建立在现有 revision_hash 之上，而不是新增平行有效期字段。",
+      "priority": "high",
+      "evidence_refs": [
+        "packages/server/src/services/get-rules.ts:112",
+        "packages/server/src/services/get-rules.ts:148",
+        "packages/server/src/services/plan-context.ts:22",
+        "packages/server/src/services/plan-context.ts:29"
+      ],
+      "steps": [
+        {
+          "description": "定义 planContext 的 shared output，例如 shared_entries、resolved_bundle_id、file_map、description_stub_union",
+          "target": "packages/server/src/services/plan-context.ts",
+          "verification": "同批路径中重复命中的规则文件只需解析一次，且 client 能看到 shared + per-path 两层结果"
+        },
+        {
+          "description": "在 get-rules service 内引入按 revision + rule file path 的内容缓存，避免同一批次重复 readFile",
+          "target": "packages/server/src/services/get-rules.ts",
+          "verification": "批量请求多个相似路径时命中规则文件读取次数下降"
+        },
+        {
+          "description": "保留执行前最终单文件 fab_get_rules 确认，避免 shared 视图替代精确校验",
+          "target": "protocol/design",
+          "verification": "批量规划与单文件执行形成两阶段闭环"
+        },
+        {
+          "description": "沿用 revision_hash/client_hash/stale 作为 bundle 复用失效判定，不另加 valid_until_hash 同义字段",
+          "target": "MCP contract",
+          "verification": "协议语义不重复，client 仍能安全地做 session 内复用"
+        },
+        {
+          "description": "在 shared view 旁增加 preflight diagnostics，标记规则冲突、仅 description stub 命中、需预先执行的脚本或同步动作",
+          "target": "packages/server/src/services/plan-context.ts and consumers",
+          "verification": "规划阶段能提前看到风险与前置动作，而不是在编辑时才发现"
+        }
+      ],
+      "review_status": "accepted"
+    },
+    {
+      "action": "采用“HTML comment 声明 + sync-meta 预编译”作为 stable id 主方案，再为规则与脚本文档建立“中文正文 + 英文锚点字段”双轨 schema",
+      "rationale": "这样可以保持中文可读性，同时让 AI/client 稳定引用英文 id、token 与 evidence anchor；slug id 比 uuid 更符合 Fabric 的可审计和可维护目标。HTML comment 方案目前比 Frontmatter 更兼容现有 AGENTS 规则，而预编译进 meta 又能保持热路径干净。",
+      "priority": "high",
+      "evidence_refs": [
+        "scripts/lint-protected-tokens.ts:112",
+        "docs/initialization.md:319",
+        "docs/launch-story.md:91",
+        "packages/shared/src/i18n/protected-tokens.ts:1"
+      ],
+      "steps": [
+        {
+          "description": "定义最小英文稳定字段集合：rule_id、script_id、anchors、token_refs、change_log_ref，并优先采用 slug-like ids 而非 uuid",
+          "target": "schema / docs",
+          "verification": "每条规则和脚本说明都能在不依赖中文正文的情况下被稳定索引"
+        },
+        {
+          "description": "固定 HTML comment header 语法、位置与唯一性约束，例如只允许文件开头一条 `fab:rule-id` 注释",
+          "target": "format decision",
+          "verification": "stable id 方案与现有 AGENTS.md 生成规范不冲突，且可被轻量解析"
+        },
+        {
+          "description": "在 sync-meta 中预编译 stable id 到 meta，并优先用来源枚举字段如 `identity_source: declared|derived` 替代单纯 `is_ephemeral`",
+          "target": "packages/cli/src/commands/sync-meta.ts and schema",
+          "verification": "Doctor、Dashboard、MCP 与 shared bundle 消费同一份身份元数据"
+        },
+        {
+          "description": "继续保留中文 explanation / label，但禁止翻译 protected tokens 与英文 anchor 值",
+          "target": "templates and lint",
+          "verification": "lint 能覆盖新增字段并阻止 token drift"
+        },
+        {
+          "description": "将 file:line 从唯一锚点降级为证据锚点，并补上 stable id 作为协议锚点",
+          "target": "docs and templates",
+          "verification": "代码重构后，协议引用仍稳定，证据定位仍可追溯"
+        },
+        {
+          "description": "对缺失显式 rule id 的规则文件只生成 deterministic fallback 作为迁移辅助，并通过 doctor --fix 固化 comment anchor",
+          "target": "migration flow",
+          "verification": "旧规则文件可平滑接入，新规则文件具备稳定 id"
+        },
+        {
+          "description": "同步扩展 revision 计算逻辑，使 stable id / identity source 变化也会触发 stale 检测",
+          "target": "packages/cli/src/commands/sync-meta.ts",
+          "verification": "身份元数据变化不会被 revision 机制漏掉"
+        }
+      ],
+      "review_status": "accepted"
+    },
+    {
+      "action": "引入最小 tooling manifest，并把关键脚本先视为 tooling knowledge 挂入现有 Fabric 框架",
+      "rationale": "先有可维护的脚本索引，再决定是否升级为 agents-meta 节点，风险更低；脚本本质上既是文档对象，也是 Agent 可调用工具对象。JSDoc 提取可作为 JS/TS 脚本的增强路径，但不应成为唯一协议真源。",
+      "priority": "medium",
+      "evidence_refs": [
+        "packages/server/scripts/copy-dashboard.mjs:1",
+        "scripts/lint-protected-tokens.ts:1",
+        "docs/initialization.md:423"
+      ],
+      "steps": [
+        {
+          "description": "为关键脚本记录 purpose、inputs、outputs、owned_by、related_rules、change_log_ref",
+          "target": "docs/scripts manifest or .fabric/agents/_cross/tooling docs",
+          "verification": "维护者能快速看懂脚本用途与业务关联"
+        },
+        {
+          "description": "如果引入 JSDoc 提取，只把它作为 manifest 生成器或同步器，而不是所有脚本元数据的唯一来源",
+          "target": "tooling registry pipeline",
+          "verification": "JS/TS 脚本可自动抽取，其它脚本仍有统一接入路径"
+        },
+        {
+          "description": "定义脚本变更何时需要同步更新脚本文档或 manifest",
+          "target": "contribution rule",
+          "verification": "脚本修改不会长期脱离说明"
+        },
+        {
+          "description": "确认脚本知识主要面向 AI 规则加载还是人类导航，再决定落点是 .fabric/agents 还是 docs；在此之前不急于扩展 agents.meta.json 为 tools 节点",
+          "target": "architecture decision",
+          "verification": "落点与主要消费者一致"
+        }
+      ],
+      "review_status": "accepted"
+    },
+    {
+      "action": "把 ledger 路径收敛到 .fabric 内，并通过兼容迁移修复根目录裸露问题",
+      "rationale": "这符合 Fabric 的存储边界，也避免 ledger 与源码树平铺污染仓库根目录；但迁移应显式触发，避免读操作产生副作用。",
+      "priority": "high",
+      "evidence_refs": [
+        "packages/server/src/services/_shared.ts:7",
+        "packages/cli/src/commands/ledger-append.ts:15",
+        "packages/cli/src/commands/pre-commit.ts:63",
+        "packages/shared/src/i18n/protected-tokens.ts:17",
+        "docs/getting-started.md:227"
+      ],
+      "steps": [
+        {
+          "description": "先统一 server / cli / pre-commit 的 ledger path 常量来源，消除重复定义",
+          "target": "packages/server/src/services/_shared.ts plus CLI shared import path",
+          "verification": "全仓仅保留一处真实 ledger path 定义"
+        },
+        {
+          "description": "实现优先读写 .fabric 内新路径，必要时兼容读取旧根路径并提供迁移提示",
+          "target": "read-ledger / ledger-append / related services",
+          "verification": "旧仓库不会立即损坏，新仓库默认写入 .fabric 内"
+        },
+        {
+          "description": "将迁移动作设计为显式命令或 doctor fix，而不是在普通读取时静默 mv",
+          "target": "CLI migration flow",
+          "verification": "迁移不会在读路径上意外污染 worktree 或与并发工具冲突"
+        },
+        {
+          "description": "同步更新 docs、UI subtitle、protected tokens、tests 与 fast-path staged file checks",
+          "target": "docs, i18n, tests, dashboard copy, pre-commit",
+          "verification": "用户心智和实现路径保持一致"
+        }
+      ],
+      "review_status": "accepted"
+    }
+  ],
+  "open_questions": [
+    "批量规则查询是否接受 MCP output schema 变更，还是必须保持向后兼容？",
+    "identity 字段最终采用 `stable_id + is_ephemeral`，还是 `stable_id + identity_source`？",
+    "脚本文档的主要消费者是 AI 规则加载还是人类维护者？",
+    "ledger 路径迁移最终采用 doctor fix、独立 migrate 命令，还是别的显式修复入口？"
+  ],
+  "follow_up_suggestions": [
+    {
+      "type": "task",
+      "summary": "先做一个小范围实现计划：ledger path constant unification + stable-id-in-meta schema update。"
+    },
+    {
+      "type": "task",
+      "summary": "并行起草 resolved bundle output shape、stable-id extraction rules、tooling manifest 草案。"
+    },
+    {
+      "type": "task",
+      "summary": "补一页 design note，给出当前模式 vs shared-bundle 模式的时序对比图。"
+    }
+  ],
+  "decision_trail": [
+    {
+      "round": 1,
+      "decision": "把四个议题统一视为协议对象收敛问题",
+      "context": "用户提出四个相关但看似分散的议题",
+      "options_considered": [
+        "逐题孤立回答",
+        "按系统层次统一回答"
+      ],
+      "chosen": "按系统层次统一回答",
+      "rejected_reasons": "逐题回答容易遗漏共享根因",
+      "reason": "规则加载、双语 token、脚本知识和 ledger 路径都依赖一致的协议边界",
+      "impact": "recommendations 以框架收敛为主"
+    },
+    {
+      "round": 1,
+      "decision": "将 fab_plan_context 视为现有基础，而非另起新接口",
+      "context": "用户提出编辑前批量传入待编辑文件的设想",
+      "options_considered": [
+        "重造一个新的 batch 接口",
+        "在现有 fab_plan_context 上增强"
+      ],
+      "chosen": "增强现有 fab_plan_context",
+      "rejected_reasons": "重复接口会增加客户端心智和兼容成本",
+      "reason": "现有 tool 名称与用途已经匹配 planning/exploration 场景",
+      "impact": "优化方向转为 shared output / shared cache"
+    },
+    {
+      "round": 2,
+      "decision": "对用户追加建议采取选择性吸收，而非整包采纳",
+      "context": "用户补充了 shared_logic_hash、tools 节点、自动迁移等更具体设计建议",
+      "options_considered": [
+        "整包采纳",
+        "按现有 schema 与副作用边界筛选采纳"
+      ],
+      "chosen": "按现有 schema 与副作用边界筛选采纳",
+      "rejected_reasons": "部分建议方向正确，但直接落地会扩大 schema 变更面或引入读路径副作用",
+      "reason": "需要保持兼容与系统边界清晰",
+      "impact": "recommendations 增加 phased rollout 约束"
+    },
+    {
+      "round": 3,
+      "decision": "把 stable id / metadata carrier 决策前置到性能实现之前",
+      "context": "用户提出 resolved_bundle_id、rule_id、JSDoc tooling registry 等更完整设计",
+      "options_considered": [
+        "先做 plan_context shared bundle，再补 stable id",
+        "先锁定 stable id 与 metadata 格式，再推进 shared bundle"
+      ],
+      "chosen": "先锁定 stable id 与 metadata 格式，再推进 shared bundle",
+      "rejected_reasons": "否则 shared bundle、rule refs、tooling registry 后续都可能返工",
+      "reason": "对象标识是后续协议对象的共同基础",
+      "impact": "实施优先级调整为 constants/path + stable id format + shared bundle + tooling registry"
+    },
+    {
+      "round": 4,
+      "decision": "将 HTML comment header 上升为 stable id 首选 carrier",
+      "context": "用户提出使用 HTML 注释承载规则 ID，并配合 doctor --fix 固化",
+      "options_considered": [
+        "Frontmatter",
+        "HTML comment header",
+        "sidecar manifest only"
+      ],
+      "chosen": "HTML comment header",
+      "rejected_reasons": "Frontmatter 与现有 AGENTS 规范冲突；纯 sidecar manifest 缺少文件本体自描述",
+      "reason": "兼容性与可维护性平衡最好",
+      "impact": "stable id 方案初步收敛"
+    },
+    {
+      "round": 5,
+      "decision": "将 sync-meta 预编译进 meta 设为 stable id 的首选实现方式",
+      "context": "用户提出在 agents.meta.json 中保存 stable_id 并由 doctor 提示/修复",
+      "options_considered": [
+        "get-rules 热路径动态解析",
+        "sync-meta 预编译进 meta"
+      ],
+      "chosen": "sync-meta 预编译进 meta",
+      "rejected_reasons": "热路径动态解析会重复做文本提取，也会让身份语义分散在多个消费点",
+      "reason": "预编译更符合 Fabric 的 registry/compiled-meta 模型",
+      "impact": "stable id 方案从 carrier 选择推进到实现方式选择"
+    },
+    {
+      "round": 6,
+      "decision": "采纳推荐决策作为最终基线并转入执行范围",
+      "context": "用户明确表示直接按照推荐方案即可",
+      "options_considered": [
+        "继续逐项确认",
+        "直接按推荐值定稿"
+      ],
+      "chosen": "直接按推荐值定稿",
+      "rejected_reasons": "高风险分叉已全部讨论，再确认收益很低",
+      "reason": "需要把讨论转化为可执行 handoff",
+      "impact": "analysis 阶段结束，可进入 plan/implement"
+    }
+  ],
+  "narrative_trail": [
+    {
+      "round": 1,
+      "starting_point": "从用户提出的四个议题出发",
+      "key_progress": "确认 batch query、English core token discipline、ledger root path spread 都已有现成实现证据",
+      "hypothesis_impact": "confirmed and refined",
+      "updated_understanding": "问题主要不是缺机制，而是已有机制尚未完整收敛到协议对象层",
+      "remaining_questions": "API 兼容、script docs 落点、ledger 迁移策略"
+    },
+    {
+      "round": 2,
+      "starting_point": "基于用户补充的 5 条具体设计建议",
+      "key_progress": "确认 shared view、stable ids、tooling framing 值得采纳，同时否定了 Dashboard 直接拼路径和 read-time silent mv 的做法",
+      "hypothesis_impact": "confirmed and constrained",
+      "updated_understanding": "下一步应采用 phased rollout：先 protocol/shared constants，再 metadata anchors，再评估 tooling meta 扩展",
+      "remaining_questions": "bundle data model、stable id 落点、显式迁移入口"
+    },
+    {
+      "round": 3,
+      "starting_point": "用户提出更进阶的工程见解与执行优先级",
+      "key_progress": "确认 resolved_bundle_id 与 doctor --fix 非常合理，同时识别出 valid_until_hash 语义重叠、frontmatter 规范冲突、JSDoc 语言绑定三个关键约束",
+      "hypothesis_impact": "refined",
+      "updated_understanding": "真正需要先拍板的是 stable object identity 与 metadata carrier，而不是继续增加新的缓存术语",
+      "remaining_questions": "frontmatter 是否局部放开、rule_refs 的落点、JSDoc 的角色"
+    },
+    {
+      "round": 4,
+      "starting_point": "在 metadata carrier 仍未定的前提下，用户提出 HTML comment anchor 方案",
+      "key_progress": "确认该方案目前最兼容现状，并进一步明确了 header 位置约束、fallback id 语义和 bundle identity 计算边界",
+      "hypothesis_impact": "confirmed",
+      "updated_understanding": "stable id carrier 可以先按 HTML comment header 收敛，后续围绕它设计 lint、doctor fix 与 meta indexing",
+      "remaining_questions": "解析时机与 bundle id 的最终组成"
+    },
+    {
+      "round": 5,
+      "starting_point": "在 carrier 基本确定后，用户提出将 stable id 预编译进 meta",
+      "key_progress": "确认 sync-meta 是最自然的编译入口，同时识别出 revision 计算必须覆盖身份元数据这一关键补丁",
+      "hypothesis_impact": "confirmed and refined",
+      "updated_understanding": "最佳路径已收敛为：comment 声明源 -> sync-meta 编译 -> doctor 固化 -> get-rules 消费编译结果",
+      "remaining_questions": "identity schema 形态、revision 组成、doctor fix 是否自动 rerun sync-meta"
+    },
+    {
+      "round": 6,
+      "starting_point": "用户授权直接采纳推荐方案",
+      "key_progress": "把所有关键分叉从候选项转成最终基线，并为下游实现 handoff 做准备",
+      "hypothesis_impact": "confirmed",
+      "updated_understanding": "当前已不存在阻塞实施的架构悬而未决问题",
+      "remaining_questions": "仅剩实现排期与回归覆盖细节"
+    }
+  ],
+  "intent_coverage": [
+    {
+      "intent": "规则加载逻辑如何优化，是否在探索后编辑前批量传入文件",
+      "status": "addressed",
+      "where_addressed": "Recommendation 1",
+      "notes": "建议扩展 fab_plan_context 为 shared + per-path 双层视图"
+    },
+    {
+      "intent": "规则如何中文化同时保持准确稳定英文锚点",
+      "status": "addressed",
+      "where_addressed": "Recommendation 2",
+      "notes": "建议把英文稳定性收敛为结构化字段，而不是依赖正文"
+    },
+    {
+      "intent": "是否支持脚本级说明与变更维护，以及如何融入框架",
+      "status": "addressed",
+      "where_addressed": "Recommendation 3",
+      "notes": "建议先做最小 manifest，再决定是否纳入 agents-meta"
+    },
+    {
+      "intent": ".intent-ledger.jsonl 裸露到 .fabric 外是否属于 bugfix",
+      "status": "addressed",
+      "where_addressed": "Recommendation 4",
+      "notes": "建议视为真实 bugfix，并采用兼容迁移"
+    },
+    {
+      "intent": "结合用户追加建议校正实现边界",
+      "status": "addressed",
+      "where_addressed": "Round 2 and updated recommendations",
+      "notes": "已明确哪些建议直接采纳、哪些建议需调整或分阶段处理"
+    },
+    {
+      "intent": "继续审视进阶工程建议并调整执行优先级",
+      "status": "addressed",
+      "where_addressed": "Round 3 and updated recommendations",
+      "notes": "已把 stable id / metadata carrier 前置为新的先决议题"
+    },
+    {
+      "intent": "评判 HTML 注释作为 ID 锚点的可行性",
+      "status": "addressed",
+      "where_addressed": "Round 4 and Recommendation 2",
+      "notes": "已将其提升为当前首选 stable id carrier，并补充了边界条件"
+    },
+    {
+      "intent": "评判 stable id 是否应预编译进 meta",
+      "status": "addressed",
+      "where_addressed": "Round 5 and Recommendation 2",
+      "notes": "已将 sync-meta 预编译上升为当前首选实现方式"
+    },
+    {
+      "intent": "按推荐方案直接定稿",
+      "status": "addressed",
+      "where_addressed": "Round 6 and accepted recommendations",
+      "notes": "所有关键推荐已被接受并作为最终基线"
+    }
+  ],
+  "findings_coverage": [
+    {
+      "finding": "getRules caches context but not resolved rule sets",
+      "round": 1,
+      "disposition": "recommendation",
+      "target": "Recommendation 1",
+      "reason": "Directly motivates batch shared-view enhancement"
+    },
+    {
+      "finding": "planContext exists but lacks shared union/file-content reuse",
+      "round": 1,
+      "disposition": "recommendation",
+      "target": "Recommendation 1",
+      "reason": "Directly maps to planContext protocol upgrade"
+    },
+    {
+      "finding": "English protected token preservation already exists",
+      "round": 1,
+      "disposition": "recommendation",
+      "target": "Recommendation 2",
+      "reason": "Should be extended into metadata anchors"
+    },
+    {
+      "finding": "Script knowledge lacks a first-class home",
+      "round": 1,
+      "disposition": "recommendation",
+      "target": "Recommendation 3",
+      "reason": "Needs a minimal documentation/manifest layer"
+    },
+    {
+      "finding": "Ledger path assumptions are duplicated across layers",
+      "round": 1,
+      "disposition": "recommendation",
+      "target": "Recommendation 4",
+      "reason": "Requires constant unification and migration"
+    },
+    {
+      "finding": "AgentsMetaNode currently has no room for rule_id/tools metadata",
+      "round": 2,
+      "disposition": "recommendation",
+      "target": "Recommendation 2 and Recommendation 3",
+      "reason": "Explains why stable ids and tooling metadata need phased schema evolution"
+    },
+    {
+      "finding": "Dashboard already consumes ledger through /api/ledger rather than file paths",
+      "round": 2,
+      "disposition": "informational",
+      "target": "No direct code action",
+      "reason": "Refines migration scope to API/backend layers"
+    },
+    {
+      "finding": "Read-time silent ledger migration would create risky side effects",
+      "round": 2,
+      "disposition": "recommendation",
+      "target": "Recommendation 4",
+      "reason": "Supports explicit migration command/fix flow"
+    },
+    {
+      "finding": "valid_until_hash overlaps with existing revision_hash/client_hash/stale semantics",
+      "round": 3,
+      "disposition": "recommendation",
+      "target": "Recommendation 1",
+      "reason": "Supports reuse of existing revision semantics rather than adding a parallel field"
+    },
+    {
+      "finding": "Frontmatter proposal conflicts with current AGENTS no-frontmatter rule",
+      "round": 3,
+      "disposition": "recommendation",
+      "target": "Recommendation 2",
+      "reason": "Forces a metadata carrier decision before adopting frontmatter broadly"
+    },
+    {
+      "finding": "JSDoc extraction is useful but language-bound",
+      "round": 3,
+      "disposition": "recommendation",
+      "target": "Recommendation 3",
+      "reason": "Supports manifest-as-protocol and JSDoc-as-extractor split"
+    },
+    {
+      "finding": "Doctor --fix is the safest explicit migration entrypoint for ledger relocation",
+      "round": 3,
+      "disposition": "recommendation",
+      "target": "Recommendation 4",
+      "reason": "Balances repair capability with user control"
+    },
+    {
+      "finding": "HTML comment header is the most compatible stable id carrier under current constraints",
+      "round": 4,
+      "disposition": "recommendation",
+      "target": "Recommendation 2",
+      "reason": "Resolves frontmatter conflict while keeping rule files self-describing"
+    },
+    {
+      "finding": "Deterministic fallback ids should be migration aids, not durable protocol ids",
+      "round": 4,
+      "disposition": "recommendation",
+      "target": "Recommendation 2",
+      "reason": "Prevents path-derived identity from leaking into long-term audit semantics"
+    },
+    {
+      "finding": "sync-meta is the natural place to precompile stable ids into agents.meta.json",
+      "round": 5,
+      "disposition": "recommendation",
+      "target": "Recommendation 2",
+      "reason": "Keeps identity extraction out of the get-rules hot path and centralizes metadata"
+    },
+    {
+      "finding": "Revision calculation must include identity metadata once stable ids are precompiled",
+      "round": 5,
+      "disposition": "recommendation",
+      "target": "Recommendation 2",
+      "reason": "Prevents stale detection from missing stable-id or source-state changes"
+    },
+    {
+      "finding": "All critical architecture decisions are now resolved",
+      "round": 6,
+      "disposition": "informational",
+      "target": "Handoff to planning/execution",
+      "reason": "Implementation can proceed without further architectural blocking questions"
+    }
+  ]
+}

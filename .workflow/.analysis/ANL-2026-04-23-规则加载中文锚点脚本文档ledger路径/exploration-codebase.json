@@ -1,0 +1,126 @@
+{
+  "project_type": "nodejs",
+  "relevant_files": [
+    {
+      "path": "packages/server/src/services/get-rules.ts",
+      "relevance": "high",
+      "summary": "Current single-path rules resolution pipeline with cached context but repeated node filtering and file reads.",
+      "dimensions": ["architecture", "implementation"]
+    },
+    {
+      "path": "packages/server/src/services/plan-context.ts",
+      "relevance": "high",
+      "summary": "Current multi-path wrapper over resolveRulesForPath; no shared union or cross-path file-content reuse.",
+      "dimensions": ["architecture", "implementation"]
+    },
+    {
+      "path": "packages/shared/src/i18n/protected-tokens.ts",
+      "relevance": "high",
+      "summary": "Central registry for protected English tokens; currently includes .intent-ledger.jsonl.",
+      "dimensions": ["implementation", "decision"]
+    },
+    {
+      "path": "scripts/lint-protected-tokens.ts",
+      "relevance": "high",
+      "summary": "Enforces English-only core sections and protected-token preservation in templates.",
+      "dimensions": ["implementation", "decision"]
+    },
+    {
+      "path": "packages/cli/src/commands/ledger-append.ts",
+      "relevance": "high",
+      "summary": "CLI path handling for human ledger append; duplicates ledger filename constant.",
+      "dimensions": ["implementation", "decision"]
+    },
+    {
+      "path": "packages/server/src/services/_shared.ts",
+      "relevance": "high",
+      "summary": "Shared server constants include LEDGER_FILE at repository root.",
+      "dimensions": ["implementation"]
+    },
+    {
+      "path": "packages/cli/src/commands/pre-commit.ts",
+      "relevance": "medium",
+      "summary": "Fast path and staged file detection explicitly treat .intent-ledger.jsonl as root file.",
+      "dimensions": ["implementation"]
+    },
+    {
+      "path": "docs/initialization.md",
+      "relevance": "high",
+      "summary": "Documents activation tiers and file:line evidence anchors.",
+      "dimensions": ["architecture", "decision"]
+    },
+    {
+      "path": "docs/getting-started.md",
+      "relevance": "medium",
+      "summary": "User-facing onboarding still teaches root .intent-ledger.jsonl behavior.",
+      "dimensions": ["decision"]
+    },
+    {
+      "path": "docs/launch-story.md",
+      "relevance": "medium",
+      "summary": "Explains preserved English Reason line as stable token channel.",
+      "dimensions": ["decision"]
+    }
+  ],
+  "patterns": [
+    {
+      "pattern": "Context-only caching for rules loading",
+      "files": [
+        "packages/server/src/services/get-rules.ts"
+      ],
+      "description": "Meta/bootstrap/human-lock are cached once, but path-specific rule resolution is recomputed."
+    },
+    {
+      "pattern": "English protected token preservation with Chinese wrapper copy",
+      "files": [
+        "scripts/lint-protected-tokens.ts",
+        "templates/bootstrap/windsurf-fabric.md",
+        "templates/codex-skills/fabric-init/SKILL.md"
+      ],
+      "description": "Templates separate English hard-rule sections from Chinese explanation text."
+    },
+    {
+      "pattern": "Ledger path hardcoded at multiple layers",
+      "files": [
+        "packages/server/src/services/_shared.ts",
+        "packages/cli/src/commands/ledger-append.ts",
+        "packages/cli/src/commands/pre-commit.ts",
+        "packages/shared/src/i18n/protected-tokens.ts",
+        "docs/getting-started.md"
+      ],
+      "description": "Repository-root .intent-ledger.jsonl is assumed across code, docs, and UI copy."
+    }
+  ],
+  "constraints": [
+    "Fabric currently depends on .fabric/agents.meta.json to resolve rules; the file is missing in the current workspace, so MCP rule introspection fails locally.",
+    "The worktree already contains unrelated uncommitted changes in .fabric/audit.jsonl, .intent-ledger.jsonl, and packages/cli/src/scanner/tree-sitter-probe.ts; analysis must remain read-only."
+  ],
+  "integration_points": [
+    {
+      "location": "packages/server/src/tools/get-rules.ts",
+      "description": "MCP single-path tool surface for rules resolution."
+    },
+    {
+      "location": "packages/server/src/tools/plan-context.ts",
+      "description": "MCP batch-path tool surface for planning and architecture review."
+    },
+    {
+      "location": "packages/server/src/api/rules-context.ts",
+      "description": "HTTP API mirrors getRules payload for dashboard inspection."
+    },
+    {
+      "location": "packages/dashboard/src/views/rule-topology.tsx",
+      "description": "Dashboard consumer of rules payload including description stubs."
+    }
+  ],
+  "key_findings": [
+    "Batch rules querying exists but does not yet optimize shared rule resolution.",
+    "Bilingual stability is already enforced at template level through English-only core sections and protected tokens.",
+    "Script knowledge currently has no first-class home in Fabric's mirrored rule topology.",
+    "Ledger path behavior is spread across implementation, docs, and token registries."
+  ],
+  "_metadata": {
+    "timestamp": "2026-04-23T00:00:00+08:00",
+    "exploration_scope": "rules loading, bilingual anchors, script documentation, ledger path"
+  }
+}

@@ -1,0 +1,50 @@
+{
+  "session_id": "ANL-2026-04-23-规则加载中文锚点脚本文档ledger路径",
+  "timestamp": "2026-04-23T00:00:00+08:00",
+  "topic": "规则加载逻辑优化、中文化与英文锚点、脚本文档化、ledger 路径 bug",
+  "dimensions": ["architecture", "implementation", "decision"],
+  "sources": [
+    {
+      "type": "code",
+      "file": "packages/server/src/services/get-rules.ts",
+      "summary": "Single-path rules resolution and context caching."
+    },
+    {
+      "type": "code",
+      "file": "packages/server/src/services/plan-context.ts",
+      "summary": "Current batch wrapper around path resolution."
+    },
+    {
+      "type": "code",
+      "file": "packages/cli/src/commands/ledger-append.ts",
+      "summary": "CLI ledger path handling."
+    },
+    {
+      "type": "code",
+      "file": "scripts/lint-protected-tokens.ts",
+      "summary": "Protected-token and English-core enforcement."
+    },
+    {
+      "type": "docs",
+      "file": "docs/initialization.md",
+      "summary": "Activation tiers and evidence anchors."
+    }
+  ],
+  "key_findings": [
+    "getRules caches context, not resolved rule sets.",
+    "planContext deduplicates input paths but not matched node/file-content reuse across paths.",
+    "English protected tokens already provide a stable protocol layer under Chinese explanation copy.",
+    "Ledger path assumptions are duplicated across server, CLI, docs, UI, and protected token registry."
+  ],
+  "discussion_points": [
+    "Should planContext expose a shared union/shared cache view explicitly to clients?",
+    "What is the minimum stable English anchor schema for bilingual rules and script docs?",
+    "Should script documentation live in .fabric/agents/_cross/tooling or in docs with a manifest?",
+    "How should ledger path migration preserve backward compatibility?"
+  ],
+  "open_questions": [
+    "API shape change vs internal optimization only for batch rules loading",
+    "Whether script docs should enter agents.meta or remain docs-only",
+    "Compatibility window for reading legacy root ledger files"
+  ]
+}
