@@ -30,6 +30,10 @@ describe("detectFramework", () => {
       version: "3.8.0",
       subkind: "typescript-component",
       evidence: ["project.config.json: creator.version=3.8.0"],
+      framework: "cocos-creator",
+      confidence: "HIGH",
+      ast_evidence: [],
+      co_packages: ["tsconfig.json"],
     });
   });
 
@@ -59,6 +63,37 @@ describe("detectFramework", () => {
       version: "3.8.7",
       subkind: "typescript-component",
       evidence: ["package.json: creator.version=3.8.7"],
+      framework: "cocos-creator",
+      confidence: "HIGH",
+      ast_evidence: [],
+      co_packages: ["tsconfig.json"],
+    });
+  });
+
+  it("returns a structured TechProfile for package-detected web frameworks", () => {
+    const root = makeTempProject("fabric-detector-react-profile");
+
+    writeFileSync(
+      join(root, "package.json"),
+      JSON.stringify(
+        {
+          dependencies: {
+            react: "^19.0.0",
+            "react-dom": "^19.0.0",
+          },
+        },
+        null,
+        2,
+      ),
+      "utf8",
+    );
+
+    expect(detectFramework(root)).toMatchObject({
+      kind: "react",
+      framework: "react",
+      confidence: "HIGH",
+      ast_evidence: [],
+      co_packages: ["react-dom"],
     });
   });
 });

@@ -34,14 +34,14 @@ const DEFAULT_IGNORES = [
 export function registerScanApi(app: FabricHttpApp, projectRoot: string): void {
   app.get("/api/scan", async (_req, res) => {
     try {
-      res.json(createScanReport(projectRoot));
+      res.json(await createScanReport(projectRoot));
     } catch (error) {
       sendUnknownError(res, error);
     }
   });
 }
 
-function createScanReport(targetInput: string = process.cwd()): ScanReport {
+async function createScanReport(targetInput: string = process.cwd()): Promise<ScanReport> {
   const target = normalizeTarget(targetInput);
   const framework = detectFramework(target);
   const readmeQuality = getReadmeQuality(target);

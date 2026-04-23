@@ -122,7 +122,7 @@ export async function installBootstrap(
   const skipped: ClientKind[] = [];
   const details: BootstrapInstallDetail[] = [];
 
-  ensureFabricBootstrapGuide(workspaceRoot, options.force);
+  await ensureFabricBootstrapGuide(workspaceRoot, options.force);
 
   for (const bootstrapTarget of targets) {
     details.push({

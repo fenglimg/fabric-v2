@@ -194,7 +194,7 @@ export type InitScaffoldPlan = {
   humanLockContent: string;
   forensicPath: string;
   forensicAction: InitWriteAction;
-  forensicReport: ReturnType<typeof buildForensicReport>;
+  forensicReport: Awaited<ReturnType<typeof buildForensicReport>>;
   claudeSkill: InitOptionalTemplateWritePlan;
   codexSkill: InitOptionalTemplateWritePlan;
   codexSessionStartHook: InitOptionalTemplateWritePlan;
@@ -337,7 +337,7 @@ async function runInitCommand(args: InitArgs): Promise<InitExecutionResult> {
   }
 
   const supports = detectClientSupports(intent.target);
-  const basePlan = buildInitExecutionPlan({
+  const basePlan = await buildInitExecutionPlan({
     target: intent.target,
     options: intent.options,
     mcpInstallMode: intent.mcpInstallMode,
@@ -380,15 +380,15 @@ function resolveInitCliIntent(args: InitArgs, targetInput: string): InitCliInten
   };
 }
 
-export function buildInitExecutionPlan(input: {
+export async function buildInitExecutionPlan(input: {
   target: string;
   options?: InitOptions;
   mcpInstallMode?: McpInstallMode;
   interactive?: boolean;
   supports?: DetectedClientSupport[];
-}): InitExecutionPlan {
+}): Promise<InitExecutionPlan> {
   const options = input.options ?? {};
-  const scaffold = buildInitFabricPlan(input.target, options);
+  const scaffold = await buildInitFabricPlan(input.target, options);
   const supports = input.supports ?? detectClientSupports(input.target);
   const mcpInstallMode = input.mcpInstallMode ?? "global";
   const stages: InitStagePlan[] = [
@@ -477,7 +477,7 @@ export async function executeInitExecutionPlan(plan: InitExecutionPlan): Promise
   };
 }
 
-export function buildInitFabricPlan(target: string, options?: InitOptions): InitScaffoldPlan {
+export async function buildInitFabricPlan(target: string, options?: InitOptions): Promise<InitScaffoldPlan> {
   assertExistingDirectory(target);
 
   const fabricDir = join(target, ".fabric");
@@ -499,9 +499,9 @@ export function buildInitFabricPlan(target: string, options?: InitOptions): Init
   const humanLockAction = planFreshPath(humanLockPath, options);
   const forensicAction = planFreshPath(forensicPath, options);
 
-  const forensicReport = buildForensicReport(target);
+  const forensicReport = await buildForensicReport(target);
   const humanLockTemplate = readFileSync(findTemplatePath("templates/fabric/human-lock.json"), "utf8");
-  const bootstrapContent = buildFabricBootstrapGuide(target);
+  const bootstrapContent = await buildFabricBootstrapGuide(target);
   const bootstrapHash = sha256(bootstrapContent);
   const meta = createInitialMeta(bootstrapHash);
 
@@ -601,8 +601,8 @@ export function executeInitFabricPlan(plan: InitScaffoldPlan): InitScaffoldResul
   };
 }
 
-export function initFabric(target: string, options?: InitOptions): InitScaffoldResult {
-  return executeInitFabricPlan(buildInitFabricPlan(target, options));
+export async function initFabric(target: string, options?: InitOptions): Promise<InitScaffoldResult> {
+  return executeInitFabricPlan(await buildInitFabricPlan(target, options));
 }
 
 export function shouldUseInitWizard(

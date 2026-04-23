@@ -14,7 +14,13 @@ export type FrameworkInfo = {
   version: string;
   subkind: string;
   evidence: string[];
+  framework: string;
+  confidence: "HIGH" | "MEDIUM" | "LOW";
+  ast_evidence: string[];
+  co_packages: string[];
 };
+
+export type TechProfile = FrameworkInfo;
 
 type PackageJson = {
   creator?: {
@@ -46,6 +52,10 @@ export function detectFramework(root: string): FrameworkInfo {
         version === "unknown"
           ? ["project.config.json"]
           : [`project.config.json: creator.version=${version}`],
+      framework: "cocos-creator",
+      confidence: "HIGH",
+      ast_evidence: [],
+      co_packages: collectProjectFileEvidence(root, ["package.json", "tsconfig.json"]),
     };
   }
 
@@ -55,11 +65,16 @@ export function detectFramework(root: string): FrameworkInfo {
     const creatorVersion = packageJson.creator?.version;
 
     if (typeof creatorVersion === "string" && creatorVersion.trim().length > 0) {
+      const deps = collectDependencyVersions(packageJson);
       return {
         kind: "cocos-creator",
         version: creatorVersion,
         subkind: inferCocosSubkind(root, creatorVersion),
         evidence: [`package.json: creator.version=${creatorVersion}`],
+        framework: "cocos-creator",
+        confidence: "HIGH",
+        ast_evidence: [],
+        co_packages: collectCoPackages(deps, "cocos-creator", root),
       };
     }
 
@@ -79,6 +94,10 @@ export function detectFramework(root: string): FrameworkInfo {
           version,
           subkind: inferPackageSubkind(kind),
           evidence,
+          framework: kind,
+          confidence: determinePackageConfidence(kind, deps, root),
+          ast_evidence: [],
+          co_packages: collectCoPackages(deps, kind, root),
         };
       }
     }
@@ -92,6 +111,10 @@ export function detectFramework(root: string): FrameworkInfo {
       version: "unknown",
       subkind: "cargo-project",
       evidence: ["Cargo.toml"],
+      framework: "rust",
+      confidence: "HIGH",
+      ast_evidence: [],
+      co_packages: collectProjectFileEvidence(root, ["Cargo.lock"]),
     };
   }
 
@@ -101,6 +124,10 @@ export function detectFramework(root: string): FrameworkInfo {
       version: "unknown",
       subkind: "pyproject",
       evidence: ["pyproject.toml"],
+      framework: "python",
+      confidence: "HIGH",
+      ast_evidence: [],
+      co_packages: collectProjectFileEvidence(root, ["uv.lock", "poetry.lock", "requirements.txt"]),
     };
   }
 
@@ -109,6 +136,10 @@ export function detectFramework(root: string): FrameworkInfo {
     version: "unknown",
     subkind: "unknown",
     evidence,
+    framework: "unknown",
+    confidence: "LOW",
+    ast_evidence: [],
+    co_packages: [],
   };
 }
 
@@ -165,4 +196,43 @@ function inferPackageSubkind(kind: FrameworkInfo["kind"]): string {
     default:
       return "unknown";
   }
+}
+
+function determinePackageConfidence(
+  kind: FrameworkInfo["kind"],
+  deps: Map<string, string>,
+  root: string,
+): FrameworkInfo["confidence"] {
+  const coPackages = collectCoPackages(deps, kind, root);
+  return coPackages.length > 0 ? "HIGH" : "MEDIUM";
+}
+
+function collectCoPackages(deps: Map<string, string>, kind: FrameworkInfo["kind"], root: string): string[] {
+  const expectedPackagesByFramework: Partial<Record<FrameworkInfo["kind"], string[]>> = {
+    next: ["react", "react-dom", "typescript"],
+    vite: ["@vitejs/plugin-react", "@vitejs/plugin-vue", "typescript", "react", "vue"],
+    react: ["react-dom", "@types/react", "@types/react-dom"],
+    vue: ["@vitejs/plugin-vue", "typescript"],
+    "cocos-creator": ["typescript"],
+  };
+  const expectedProjectFilesByFramework: Partial<Record<FrameworkInfo["kind"], string[]>> = {
+    next: ["next.config.js", "next.config.mjs", "next.config.ts", "tsconfig.json"],
+    vite: ["vite.config.js", "vite.config.mjs", "vite.config.ts", "tsconfig.json"],
+    react: ["tsconfig.json"],
+    vue: ["vue.config.js", "vite.config.ts", "tsconfig.json"],
+    "cocos-creator": ["project.config.json", "tsconfig.json"],
+  };
+
+  return [
+    ...compactStrings((expectedPackagesByFramework[kind] ?? []).map((packageName) => (deps.has(packageName) ? packageName : null))),
+    ...collectProjectFileEvidence(root, expectedProjectFilesByFramework[kind] ?? []),
+  ];
+}
+
+function collectProjectFileEvidence(root: string, relativePaths: string[]): string[] {
+  return relativePaths.filter((relativePath) => existsSync(join(root, relativePath)));
+}
+
+function compactStrings(values: Array<string | null | undefined>): string[] {
+  return [...new Set(values.filter((value): value is string => value !== null && value !== undefined && value.length > 0))];
 }

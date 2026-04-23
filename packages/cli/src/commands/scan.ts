@@ -33,10 +33,10 @@ type ScanArgs = {
   json?: boolean;
 };
 
-export function createScanReport(
+export async function createScanReport(
   targetInput: string = process.cwd(),
   fabricConfig?: { scanIgnores?: string[] },
-): ScanReport {
+): Promise<ScanReport> {
   const target = normalizeTarget(targetInput);
   const framework = detectFramework(target);
   const readmeQuality = getReadmeQuality(target);
@@ -93,7 +93,7 @@ export const scanCommand = defineCommand({
       logger(step);
     }
 
-    const report = createScanReport(resolution.target, fabricConfig);
+    const report = await createScanReport(resolution.target, fabricConfig);
 
     if (args.json) {
       console.log(JSON.stringify(report, null, 2));

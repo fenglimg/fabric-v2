@@ -32,7 +32,7 @@ describe("init CLI surface", () => {
     tempRoots.push(target);
 
     const { buildInitExecutionPlan } = await import("../src/commands/init.ts");
-    const plan = buildInitExecutionPlan({
+    const plan = await buildInitExecutionPlan({
       target,
       options: { force: true, reapply: true },
       mcpInstallMode: "global",

@@ -12,23 +12,23 @@ import {
 } from "./helpers/init-test-utils.ts";
 
 describe("sync-meta shadow mirroring", () => {
-  it("derives layer from mirror paths", () => {
+  it("derives layer from mirror paths", async () => {
     expect(deriveLayer(".fabric/agents/root.md")).toBe("L0");
     expect(deriveLayer(".fabric/agents/packages/server/rules.md")).toBe("L1");
     expect(deriveLayer(".fabric/agents/packages/server/routes/api.md")).toBe("L2");
     expect(deriveLayer(".fabric/agents/_cross/security.md")).toBe("L1");
   });
 
-  it("derives topology type from mirror paths", () => {
+  it("derives topology type from mirror paths", async () => {
     expect(deriveTopologyType(".fabric/agents/packages/server/rules.md")).toBe("mirror");
     expect(deriveTopologyType(".fabric/agents/_cross/security.md")).toBe("cross-cutting");
   });
 
-  it("migrates legacy meta and ignores colocated AGENTS.md files", () => {
+  it("migrates legacy meta and ignores colocated AGENTS.md files", async () => {
     const target = createWerewolfFixtureRoot("fab-sync-meta-shadow-mirroring");
 
     try {
-      initFabric(target);
+      await initFabric(target);
       writeFixtureFile(target, ".fabric/agents/packages/server/rules.md", "# server rules\n");
       writeFixtureFile(target, ".fabric/agents/packages/server/routes/api.md", "# api rules\n");
       writeFixtureFile(target, ".fabric/agents/_cross/security.md", "# security rules\n");
@@ -95,11 +95,11 @@ describe("sync-meta shadow mirroring", () => {
     }
   });
 
-  it("keeps init-produced L0 metadata typed from first write", () => {
+  it("keeps init-produced L0 metadata typed from first write", async () => {
     const target = createWerewolfFixtureRoot("fab-init-meta-layer");
 
     try {
-      initFabric(target);
+      await initFabric(target);
 
       const meta = agentsMetaSchema.parse(JSON.parse(readFixtureFile(target, ".fabric/agents.meta.json")));
 

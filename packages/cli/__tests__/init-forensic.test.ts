@@ -16,11 +16,11 @@ afterEach(() => {
 });
 
 describe("initFabric forensic report", () => {
-  it("writes a valid forensic report for the werewolf Cocos fixture", () => {
+  it("writes a valid forensic report for the werewolf Cocos fixture", async () => {
     const target = createWerewolfFixtureRoot("fab-init-forensic");
     tempRoots.push(target);
 
-    const result = initFabric(target);
+    const result = await initFabric(target);
     const forensicPath = result.forensicPath;
 
     expect(existsSync(forensicPath)).toBe(true);

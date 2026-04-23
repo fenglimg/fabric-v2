@@ -19,11 +19,11 @@ afterEach(() => {
 });
 
 describe("initFabric non-destructive behavior", () => {
-  it("builds a scaffold plan without writing files before execution", () => {
+  it("builds a scaffold plan without writing files before execution", async () => {
     const target = createWerewolfFixtureRoot("fab-init-plan-only");
     tempRoots.push(target);
 
-    const plan = buildInitFabricPlan(target);
+    const plan = await buildInitFabricPlan(target);
 
     expect(plan.bootstrapAction).toBe("created");
     expect(plan.metaAction).toBe("created");
@@ -32,11 +32,11 @@ describe("initFabric non-destructive behavior", () => {
     expect(plan.codexHooksConfig.action).toBe("created");
   });
 
-  it("builds an execution plan that preserves staged init order without writing files", () => {
+  it("builds an execution plan that preserves staged init order without writing files", async () => {
     const target = createWerewolfFixtureRoot("fab-init-execution-plan");
     tempRoots.push(target);
 
-    const plan = buildInitExecutionPlan({
+    const plan = await buildInitExecutionPlan({
       target,
       options: { skipBootstrap: true },
       mcpInstallMode: "local",
@@ -65,32 +65,32 @@ describe("initFabric non-destructive behavior", () => {
     expect(existsSync(`${target}/.fabric/bootstrap/README.md`)).toBe(false);
   });
 
-  it("aborts when the internal bootstrap guide already exists and keeps the file intact", () => {
+  it("aborts when the internal bootstrap guide already exists and keeps the file intact", async () => {
     const target = createWerewolfFixtureRoot("fab-init-agents-guard");
     tempRoots.push(target);
     const original = "# custom bootstrap\n";
 
     writeFixtureFile(target, ".fabric/bootstrap/README.md", original);
 
-    expect(() => initFabric(target)).toThrowError(`${target}/.fabric/bootstrap/README.md`);
+    await expect(initFabric(target)).rejects.toThrowError(`${target}/.fabric/bootstrap/README.md`);
     expect(readFixtureFile(target, ".fabric/bootstrap/README.md")).toBe(original);
     expect(existsSync(`${target}/.fabric/agents.meta.json`)).toBe(false);
   });
 
-  it("aborts when forensic.json already exists and does not overwrite it", () => {
+  it("aborts when forensic.json already exists and does not overwrite it", async () => {
     const target = createWerewolfFixtureRoot("fab-init-forensic-guard");
     tempRoots.push(target);
     const original = "{\n  \"existing\": true\n}\n";
 
     writeFixtureFile(target, ".fabric/forensic.json", original);
 
-    expect(() => initFabric(target)).toThrowError(
+    await expect(initFabric(target)).rejects.toThrowError(
       `${target}/.fabric/forensic.json`,
     );
     expect(readFixtureFile(target, ".fabric/forensic.json")).toBe(original);
   });
 
-  it("merges the Claude Stop hook with an existing settings file", () => {
+  it("merges the Claude Stop hook with an existing settings file", async () => {
     const target = createWerewolfFixtureRoot("fab-init-settings-merge");
     tempRoots.push(target);
 
@@ -113,7 +113,7 @@ describe("initFabric non-destructive behavior", () => {
       )}\n`,
     );
 
-    const result = initFabric(target);
+    const result = await initFabric(target);
     const settings = JSON.parse(readFileSync(result.claudeSettingsPath, "utf8")) as {
       hooks?: { Stop?: Array<{ hooks?: Array<{ command?: string }> }> };
     };
@@ -126,42 +126,42 @@ describe("initFabric non-destructive behavior", () => {
     expect(stopCommands).toHaveLength(2);
   });
 
-  it("keeps a pre-existing custom skill file unchanged while finishing init", () => {
+  it("keeps a pre-existing custom skill file unchanged while finishing init", async () => {
     const target = createWerewolfFixtureRoot("fab-init-custom-skill");
     tempRoots.push(target);
     const original = "# custom skill\n";
 
     writeFixtureFile(target, ".claude/skills/agents-md-init/SKILL.md", original);
 
-    const result = initFabric(target);
+    const result = await initFabric(target);
 
     expect(result.claudeSkillAction).toBe("skipped");
     expect(readFixtureFile(target, ".claude/skills/agents-md-init/SKILL.md")).toBe(original);
     expect(existsSync(result.forensicPath)).toBe(true);
   });
 
-  it("keeps a pre-existing custom Codex repo skill unchanged while finishing init", () => {
+  it("keeps a pre-existing custom Codex repo skill unchanged while finishing init", async () => {
     const target = createWerewolfFixtureRoot("fab-init-custom-codex-skill");
     tempRoots.push(target);
     const original = "# custom codex skill\n";
 
     writeFixtureFile(target, ".agents/skills/fabric-init/SKILL.md", original);
 
-    const result = initFabric(target);
+    const result = await initFabric(target);
 
     expect(result.codexSkillAction).toBe("skipped");
     expect(readFixtureFile(target, ".agents/skills/fabric-init/SKILL.md")).toBe(original);
     expect(existsSync(result.forensicPath)).toBe(true);
   });
 
-  it("keeps a pre-existing Codex hooks config unchanged while finishing init", () => {
+  it("keeps a pre-existing Codex hooks config unchanged while finishing init", async () => {
     const target = createWerewolfFixtureRoot("fab-init-custom-codex-hooks");
     tempRoots.push(target);
     const original = '{\n  "hooks": {}\n}\n';
 
     writeFixtureFile(target, ".codex/hooks.json", original);
 
-    const result = initFabric(target);
+    const result = await initFabric(target);
 
     expect(result.codexHooksConfigAction).toBe("skipped");
     expect(readFixtureFile(target, ".codex/hooks.json")).toBe(original);

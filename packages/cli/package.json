@@ -25,7 +25,10 @@
     "citty": "^0.2.2",
     "minimatch": "^10.0.1",
     "picocolors": "^1.1.1",
-    "string-width": "^7.2.0"
+    "string-width": "^7.2.0",
+    "tree-sitter-javascript": "^0.25.0",
+    "tree-sitter-typescript": "^0.23.2",
+    "web-tree-sitter": "^0.26.8"
   },
   "devDependencies": {
     "@types/iarna__toml": "^2.0.5",

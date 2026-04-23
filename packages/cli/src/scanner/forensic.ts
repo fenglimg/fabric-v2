@@ -1,4 +1,6 @@
+import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { createRequire } from "node:module";
 import { basename, extname, isAbsolute, join, posix, relative, resolve, sep } from "node:path";
 
 import {
@@ -14,8 +16,14 @@ import { detectFramework } from "./detector.js";
 
 declare const __CLI_VERSION__: string | undefined;
 
+const require = createRequire(import.meta.url);
+
 type PackageJson = {
   name?: string;
+  dependencies?: Record<string, string>;
+  devDependencies?: Record<string, string>;
+  peerDependencies?: Record<string, string>;
+  optionalDependencies?: Record<string, string>;
 };
 
 export type FileInfo = {
@@ -52,6 +60,33 @@ export type CodeSampleResult = ForensicReport["code_samples"][number] & {
   evidence: ForensicEvidenceAnchor[];
 };
 
+type TreeSitterModule = typeof import("web-tree-sitter");
+type TreeSitterLanguage = import("web-tree-sitter").Language;
+type TreeSitterParser = import("web-tree-sitter").Parser;
+type TreeSitterSyntaxNode = import("web-tree-sitter").Node;
+
+type TreeSitterLanguageKind = "javascript" | "typescript" | "tsx";
+
+type TreeSitterParserBundle = {
+  parser: TreeSitterParser;
+  language: TreeSitterLanguage;
+};
+
+type ImportAnalysis = {
+  imports: string[];
+  astLevel: boolean;
+};
+
+type FrameworkImportProfile = {
+  pattern: string;
+  family: CandidateFileEntry["family"];
+  statement: string;
+  proposedRule?: string;
+  alternatives?: string[];
+  rationale: string;
+  packages: string[];
+};
+
 const IGNORED_DIRECTORIES = new Set([
   ".fabric",
   ".git",
@@ -79,8 +114,47 @@ const SCRIPT_EXTENSIONS = new Set([".js", ".jsx", ".ts", ".tsx"]);
 const DOMAIN_FILE_EXTENSIONS = new Set([".js", ".jsx", ".ts", ".tsx", ".json", ".md"]);
 const EXPECTED_CONFIG_FILES_BY_FRAMEWORK: Record<string, string[]> = {
   "cocos-creator": ["package.json", "project.config.json", "tsconfig.json"],
+  react: ["package.json", "tsconfig.json"],
   next: ["package.json", "tsconfig.json"],
   vite: ["package.json", "tsconfig.json"],
+};
+const FRAMEWORK_IMPORT_PROFILES: Record<string, FrameworkImportProfile> = {
+  "cocos-creator": {
+    pattern: "cocos-component-class",
+    family: "component",
+    statement: "Sampled entry files use Cocos Creator component classes.",
+    proposedRule: "Treat assets/scripts/*.ts and adjacent .meta files as framework-owned structure unless the user says otherwise.",
+    alternatives: ["Generic TypeScript utility module"],
+    rationale: "Cocos framework imports and component markers co-occur in sampled entry files.",
+    packages: ["cc"],
+  },
+  react: {
+    pattern: "react-root",
+    family: "entry",
+    statement: "Sampled entry files import React framework packages.",
+    proposedRule: "Keep root rendering and component composition aligned with React entry conventions.",
+    alternatives: ["Server-rendered route module"],
+    rationale: "AST import declarations reference React packages rather than comments or strings.",
+    packages: ["react", "react-dom", "react/jsx-runtime", "react-dom/client"],
+  },
+  vite: {
+    pattern: "vite-main-entry",
+    family: "entry",
+    statement: "Sampled entry files use the conventional Vite main entrypoint.",
+    proposedRule: "Keep primary bootstrapping logic inside src/main.*.",
+    alternatives: ["Alternative bundler entrypoint"],
+    rationale: "Entry path and framework imports align with a Vite bootstrap surface.",
+    packages: ["@vitejs/plugin-react", "@vitejs/plugin-vue", "vite", "react", "vue"],
+  },
+  next: {
+    pattern: "next-route-component",
+    family: "entry",
+    statement: "Sampled entry files align with Next.js route modules.",
+    proposedRule: "Preserve route-segment boundaries when editing app/ or pages/ files.",
+    alternatives: ["Generic source module"],
+    rationale: "Route placement and Next/React imports anchor these files to the request surface.",
+    packages: ["next", "next/link", "next/navigation", "react"],
+  },
 };
 const SAMPLE_LIMIT = 5;
 const SAMPLE_LINE_LIMIT = 30;
@@ -92,12 +166,18 @@ const DEFAULT_SAMPLING_BUDGET: ForensicReport["sampling_budget"] = {
   max_lines_per_file: 100,
 };
 
-export function buildForensicReport(targetInput: string): ForensicReport {
+let treeSitterModulePromise: Promise<TreeSitterModule> | null = null;
+let parserInitPromise: Promise<void> | null = null;
+let languagePromiseByKind: Partial<Record<TreeSitterLanguageKind, Promise<TreeSitterLanguage>>> = {};
+let parserBundlePromiseByKind: Partial<Record<TreeSitterLanguageKind, Promise<TreeSitterParserBundle>>> = {};
+
+export async function buildForensicReport(targetInput: string): Promise<ForensicReport> {
   const target = normalizeTarget(targetInput);
   const framework = detectFramework(target);
   const topology = buildTopology(target);
-  const entryPoints = collectEntryPoints(topology.files);
-  const codeSamples = buildCodeSamples(target, entryPoints);
+  const entryPoints = collectEntryPoints(target, topology.files);
+  const packageDependencies = readPackageDependencies(target);
+  const codeSamples = await buildCodeSamples(target, entryPoints, framework.kind, topology, packageDependencies);
   const assertions = buildAssertions(framework.kind, topology, codeSamples);
   const candidateFiles = buildCandidateFiles(topology, codeSamples, entryPoints);
   const readme = readReadmeInfo(target);
@@ -210,7 +290,7 @@ function isKeyDirectory(relativePath: string): boolean {
   return KEY_DIRECTORY_NAMES.has(name);
 }
 
-function collectEntryPoints(files: FileInfo[]): ForensicEntryPoint[] {
+function collectEntryPoints(target: string, files: FileInfo[]): ForensicEntryPoint[] {
   const entryPoints: ForensicEntryPoint[] = [];
 
   for (const file of files) {
@@ -226,7 +306,9 @@ function collectEntryPoints(files: FileInfo[]): ForensicEntryPoint[] {
     });
   }
 
-  return entryPoints;
+  return entryPoints.sort((left, right) =>
+    compareCandidateScore(readGitChurnWeight(target, right.path), readGitChurnWeight(target, left.path)),
+  );
 }
 
 function getEntryPointReason(relativePath: string): string | null {
@@ -257,21 +339,35 @@ function getEntryPointReason(relativePath: string): string | null {
   return null;
 }
 
-function buildCodeSamples(target: string, entryPoints: ForensicEntryPoint[]): CodeSampleResult[] {
-  return entryPoints.slice(0, SAMPLE_LIMIT).map((entryPoint) => {
+async function buildCodeSamples(
+  target: string,
+  entryPoints: ForensicEntryPoint[],
+  frameworkKind: string,
+  topology: TopologyResult,
+  packageDependencies: Map<string, string>,
+): Promise<CodeSampleResult[]> {
+  const samples: CodeSampleResult[] = [];
+
+  for (const entryPoint of entryPoints.slice(0, SAMPLE_LIMIT)) {
     const absolutePath = join(target, ...entryPoint.path.split("/"));
     const sample = readFirstLines(absolutePath, SAMPLE_LINE_LIMIT);
-    const patternAnalysis = inferPatternHint(entryPoint.path, sample.snippet);
+    const patternAnalysis = await inferPatternHint(entryPoint.path, sample.snippet, {
+      frameworkKind,
+      topology,
+      packageDependencies,
+    });
 
-    return {
+    samples.push({
       path: entryPoint.path,
       lines: `1-${sample.lineCount}`,
       snippet: sample.snippet,
       pattern_hint: patternAnalysis.pattern,
       pattern_analysis: patternAnalysis,
       evidence: buildEvidenceAnchors(entryPoint.path, sample.snippet, patternAnalysis.evidence_lines),
-    };
-  });
+    });
+  }
+
+  return samples;
 }
 
 function readFirstLines(path: string, lineLimit: number): { snippet: string; lineCount: number } {
@@ -294,7 +390,127 @@ function readFirstLines(path: string, lineLimit: number): { snippet: string; lin
   }
 }
 
-function inferPatternHint(relativePath: string, snippet: string): PatternHintResult {
+function readPackageDependencies(target: string): Map<string, string> {
+  const packageJsonPath = join(target, "package.json");
+  if (!existsSync(packageJsonPath)) {
+    return new Map();
+  }
+
+  try {
+    const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf8")) as PackageJson;
+    return new Map([
+      ...Object.entries(packageJson.dependencies ?? {}),
+      ...Object.entries(packageJson.devDependencies ?? {}),
+      ...Object.entries(packageJson.peerDependencies ?? {}),
+      ...Object.entries(packageJson.optionalDependencies ?? {}),
+    ]);
+  } catch {
+    return new Map();
+  }
+}
+
+function readGitChurnWeight(target: string, relativePath: string): number {
+  try {
+    const output = execFileSync("git", ["log", "--follow", "--oneline", "-20", "--", relativePath], {
+      cwd: target,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+      timeout: 1_000,
+    });
+    return output.split(/\r?\n/).filter((line) => line.trim().length > 0).length;
+  } catch {
+    return 0;
+  }
+}
+
+export async function inferPatternHint(
+  relativePath: string,
+  snippet: string,
+  options: {
+    frameworkKind?: string;
+    topology?: TopologyResult;
+    packageDependencies?: Map<string, string>;
+  } = {},
+): Promise<PatternHintResult> {
+  const input = {
+    relativePath,
+    snippet,
+    frameworkKind: options.frameworkKind ?? "unknown",
+    topology: options.topology ?? createEmptyTopology(),
+    packageDependencies: options.packageDependencies ?? new Map<string, string>(),
+  };
+  const importAnalysis = await analyzeImports(input.relativePath, input.snippet);
+
+  if (importAnalysis.astLevel) {
+    const astResult = buildAstPatternHint(input, importAnalysis.imports);
+    if (astResult !== null) {
+      return astResult;
+    }
+  }
+
+  return inferTextPatternHint(input.relativePath, input.snippet);
+}
+
+function createEmptyTopology(): TopologyResult {
+  return {
+    total_files: 0,
+    by_ext: {},
+    key_dirs: [],
+    max_depth: 0,
+    files: [],
+  };
+}
+
+function buildAstPatternHint(
+  input: {
+    relativePath: string;
+    snippet: string;
+    frameworkKind: string;
+    topology: TopologyResult;
+    packageDependencies: Map<string, string>;
+  },
+  imports: string[],
+): PatternHintResult | null {
+  const profile = resolveFrameworkImportProfile(input.frameworkKind, input.relativePath, imports);
+  if (profile === null) {
+    return null;
+  }
+
+  const matchingImports = imports.filter((source) => matchesAnyFrameworkPackage(source, profile.packages));
+  const configFiles = getExpectedConfigFiles(input.frameworkKind).filter((file) => hasFile(input.topology.files, file));
+  const packageMatches = profile.packages.filter((packageName) => input.packageDependencies.has(packageName));
+  const coOccurring = compactPatternNames([
+    ...matchingImports.map((source) => `import:${source}`),
+    ...configFiles.map(normalizeConfigPattern),
+    ...packageMatches.map((packageName) => `package:${packageName}`),
+    input.relativePath.startsWith("app/") ? "app-router" : null,
+    input.relativePath.startsWith("pages/") ? "pages-router" : null,
+    input.relativePath === "src/main.ts" || input.relativePath === "src/main.js" ? "main-entry" : null,
+    input.snippet.includes("@ccclass(") ? "ccclass-decorator" : null,
+    input.snippet.includes("extends Component") ? "component-base" : null,
+  ]);
+
+  return {
+    pattern: profile.pattern,
+    type: "pattern",
+    confidence: scoreFrameworkConfidence({
+      importCount: matchingImports.length,
+      configCount: configFiles.length,
+      packageCount: packageMatches.length,
+      astLevel: true,
+    }),
+    evidence_lines: matchingImports.length > 0 ? matchingImports : imports.slice(0, 3),
+    co_occurring: coOccurring,
+    family: profile.family,
+    ast_level: true,
+    statement: profile.statement,
+    proposed_rule: profile.proposedRule,
+    alternatives: profile.alternatives,
+    rationale: profile.rationale,
+  };
+}
+
+function inferTextPatternHint(relativePath: string, snippet: string): PatternHintResult {
   const cocosCoOccurring = compactPatternNames([
     snippet.includes('from "cc"') || snippet.includes("from 'cc'") ? "cc-import" : null,
     snippet.includes("@ccclass(") || snippet.includes("ccclass(") ? "ccclass-decorator" : null,
@@ -303,11 +519,16 @@ function inferPatternHint(relativePath: string, snippet: string): PatternHintRes
   ]);
 
   if (cocosCoOccurring.length > 0) {
-    const astLevel = snippet.includes("@ccclass(");
     return {
       pattern: "cocos-component-class",
       type: "pattern",
-      confidence: determineConfidence(1, cocosCoOccurring, astLevel),
+      confidence: scoreFrameworkConfidence({
+        importCount: 0,
+        configCount: 0,
+        packageCount: 0,
+        astLevel: false,
+        keywordCount: cocosCoOccurring.length,
+      }),
       evidence_lines: compactPatternNames([
         snippet.includes("_decorator") ? "_decorator" : null,
         snippet.includes("@ccclass(") ? "@ccclass(" : null,
@@ -315,7 +536,7 @@ function inferPatternHint(relativePath: string, snippet: string): PatternHintRes
       ]),
       co_occurring: cocosCoOccurring,
       family: "component",
-      ast_level: astLevel,
+      ast_level: false,
       statement: "Sampled entry files use Cocos Creator component classes.",
       proposed_rule: "Treat assets/scripts/*.ts and adjacent .meta files as framework-owned structure unless the user says otherwise.",
       alternatives: ["Generic TypeScript utility module"],
@@ -333,7 +554,13 @@ function inferPatternHint(relativePath: string, snippet: string): PatternHintRes
     return {
       pattern: "react-root",
       type: "pattern",
-      confidence: determineConfidence(1, reactCoOccurring, false),
+      confidence: scoreFrameworkConfidence({
+        importCount: 0,
+        configCount: 0,
+        packageCount: 0,
+        astLevel: false,
+        keywordCount: reactCoOccurring.length,
+      }),
       evidence_lines: compactPatternNames([
         snippet.includes("createRoot(") ? "createRoot(" : null,
         snippet.includes("ReactDOM.render(") ? "ReactDOM.render(" : null,
@@ -358,7 +585,13 @@ function inferPatternHint(relativePath: string, snippet: string): PatternHintRes
     return {
       pattern: "next-route-component",
       type: "pattern",
-      confidence: determineConfidence(1, coOccurring, false),
+      confidence: scoreFrameworkConfidence({
+        importCount: 0,
+        configCount: 0,
+        packageCount: 0,
+        astLevel: false,
+        keywordCount: coOccurring.length,
+      }),
       evidence_lines: compactPatternNames([
         relativePath.startsWith("app/") ? "app/" : null,
         relativePath.startsWith("pages/") ? "pages/" : null,
@@ -383,7 +616,13 @@ function inferPatternHint(relativePath: string, snippet: string): PatternHintRes
     return {
       pattern: "vite-main-entry",
       type: "pattern",
-      confidence: determineConfidence(1, coOccurring, false),
+      confidence: scoreFrameworkConfidence({
+        importCount: 0,
+        configCount: 0,
+        packageCount: 0,
+        astLevel: false,
+        keywordCount: coOccurring.length,
+      }),
       evidence_lines: ["src/main"],
       co_occurring: coOccurring,
       family: "entry",
@@ -407,6 +646,162 @@ function inferPatternHint(relativePath: string, snippet: string): PatternHintRes
     alternatives: ["Framework-specific entrypoint"],
     rationale: "No strong framework markers were detected in the sampled snippet.",
   };
+}
+
+async function analyzeImports(relativePath: string, snippet: string): Promise<ImportAnalysis> {
+  if (snippet.trim().length === 0) {
+    return { imports: [], astLevel: false };
+  }
+
+  try {
+    const imports = await extractImports(snippet, getLanguageKindForPath(relativePath));
+    return { imports, astLevel: true };
+  } catch {
+    return { imports: [], astLevel: false };
+  }
+}
+
+async function extractImports(source: string, languageKind: TreeSitterLanguageKind): Promise<string[]> {
+  const { parser } = await loadTreeSitter(languageKind);
+  let tree: import("web-tree-sitter").Tree | null = null;
+
+  try {
+    tree = parser.parse(source);
+    if (tree === null || tree.rootNode.hasError) {
+      throw new Error("tree-sitter parse failed");
+    }
+
+    const imports: string[] = [];
+    collectImportSources(tree.rootNode, imports);
+    return compactPatternNames(imports);
+  } finally {
+    tree?.delete();
+  }
+}
+
+async function loadTreeSitter(languageKind: TreeSitterLanguageKind): Promise<TreeSitterParserBundle> {
+  parserBundlePromiseByKind[languageKind] ??= createTreeSitterParserBundle(languageKind);
+  return parserBundlePromiseByKind[languageKind];
+}
+
+async function createTreeSitterParserBundle(languageKind: TreeSitterLanguageKind): Promise<TreeSitterParserBundle> {
+  const treeSitter = await loadTreeSitterModule();
+  await initTreeSitterParser(treeSitter);
+  const language = await loadTreeSitterLanguage(treeSitter, languageKind);
+  const parser = new treeSitter.Parser();
+  parser.setLanguage(language);
+  return { parser, language };
+}
+
+function loadTreeSitterModule(): Promise<TreeSitterModule> {
+  treeSitterModulePromise ??= import("web-tree-sitter");
+  return treeSitterModulePromise;
+}
+
+function initTreeSitterParser(treeSitter: TreeSitterModule): Promise<void> {
+  parserInitPromise ??= treeSitter.Parser.init({
+    locateFile: (scriptName: string) =>
+      scriptName.endsWith(".wasm") ? require.resolve("web-tree-sitter/web-tree-sitter.wasm") : scriptName,
+  });
+  return parserInitPromise;
+}
+
+function loadTreeSitterLanguage(
+  treeSitter: TreeSitterModule,
+  languageKind: TreeSitterLanguageKind,
+): Promise<TreeSitterLanguage> {
+  languagePromiseByKind[languageKind] ??= treeSitter.Language.load(resolveTreeSitterGrammarPath(languageKind));
+  return languagePromiseByKind[languageKind];
+}
+
+function resolveTreeSitterGrammarPath(languageKind: TreeSitterLanguageKind): string {
+  switch (languageKind) {
+    case "typescript":
+      return require.resolve("tree-sitter-typescript/tree-sitter-typescript.wasm");
+    case "tsx":
+      return require.resolve("tree-sitter-typescript/tree-sitter-tsx.wasm");
+    case "javascript":
+      return require.resolve("tree-sitter-javascript/tree-sitter-javascript.wasm");
+  }
+}
+
+function getLanguageKindForPath(relativePath: string): TreeSitterLanguageKind {
+  const extension = extname(relativePath);
+  if (extension === ".tsx") {
+    return "tsx";
+  }
+  if (extension === ".ts") {
+    return "typescript";
+  }
+  return "javascript";
+}
+
+function collectImportSources(node: TreeSitterSyntaxNode, imports: string[]): void {
+  if (node.type === "import_statement" || node.type === "import_declaration") {
+    const sourceNode = node.childForFieldName("source");
+    if (sourceNode !== null) {
+      const source = stripStringLiteral(sourceNode.text);
+      if (source.length > 0) {
+        imports.push(source);
+      }
+    }
+  }
+
+  for (let index = 0; index < node.namedChildCount; index += 1) {
+    const child = node.namedChild(index);
+    if (child !== null) {
+      collectImportSources(child, imports);
+    }
+  }
+}
+
+function stripStringLiteral(value: string): string {
+  return value.replace(/^['"]|['"]$/g, "");
+}
+
+function resolveFrameworkImportProfile(
+  frameworkKind: string,
+  relativePath: string,
+  imports: string[],
+): FrameworkImportProfile | null {
+  const primaryProfile = FRAMEWORK_IMPORT_PROFILES[frameworkKind];
+  if (primaryProfile !== undefined && imports.some((source) => matchesAnyFrameworkPackage(source, primaryProfile.packages))) {
+    return primaryProfile;
+  }
+
+  if ((relativePath.startsWith("app/") || relativePath.startsWith("pages/")) && FRAMEWORK_IMPORT_PROFILES.next !== undefined) {
+    return FRAMEWORK_IMPORT_PROFILES.next;
+  }
+
+  return Object.values(FRAMEWORK_IMPORT_PROFILES).find((profile) =>
+    imports.some((source) => matchesAnyFrameworkPackage(source, profile.packages)),
+  ) ?? null;
+}
+
+function matchesAnyFrameworkPackage(source: string, packageNames: string[]): boolean {
+  return packageNames.some((packageName) => source === packageName || source.startsWith(`${packageName}/`));
+}
+
+function scoreFrameworkConfidence(input: {
+  importCount: number;
+  configCount: number;
+  packageCount: number;
+  astLevel: boolean;
+  keywordCount?: number;
+}): ForensicAssertion["confidence"] {
+  if (!input.astLevel) {
+    return (input.keywordCount ?? 0) > 0 ? "MEDIUM" : "LOW";
+  }
+
+  if (input.importCount > 3) {
+    return "HIGH";
+  }
+
+  if (input.importCount >= 1 && input.importCount <= 3) {
+    return input.configCount > 0 || input.packageCount > 0 ? "MEDIUM" : "MEDIUM";
+  }
+
+  return input.configCount > 0 || input.packageCount > 0 ? "MEDIUM" : "LOW";
 }
 
 function readReadmeInfo(target: string): ReadmeInfo {

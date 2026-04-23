@@ -1,20 +1,28 @@
+import { execFileSync } from "node:child_process";
+
 import { describe, expect, it } from "vitest";
 
 import {
   buildAssertions,
   buildCandidateFiles,
   buildForensicReport,
+  inferPatternHint,
   type CodeSampleResult,
   type TopologyResult,
 } from "../src/scanner/forensic.ts";
-import { cleanupFixtureRoot, createWerewolfFixtureRoot } from "./helpers/init-test-utils.ts";
+import {
+  cleanupFixtureRoot,
+  createEmptyFixtureRoot,
+  createWerewolfFixtureRoot,
+  writeFixtureFile,
+} from "./helpers/init-test-utils.ts";
 
 describe("forensic scanner helpers", () => {
-  it("builds structured assertions and candidate files for the werewolf fixture", () => {
+  it("builds structured assertions and candidate files for the werewolf fixture", async () => {
     const target = createWerewolfFixtureRoot("fab-forensic-assertions");
 
     try {
-      const report = buildForensicReport(target);
+      const report = await buildForensicReport(target);
       const highAssertions = report.assertions.filter((assertion) => assertion.confidence === "HIGH");
 
       expect(report.assertions.length).toBeGreaterThanOrEqual(5);
@@ -46,7 +54,7 @@ describe("forensic scanner helpers", () => {
     }
   });
 
-  it("applies the HIGH, MEDIUM, and LOW confidence thresholds", () => {
+  it("applies the HIGH, MEDIUM, and LOW confidence thresholds", async () => {
     const highAssertions = buildAssertions(
       "cocos-creator",
       makeTopology([
@@ -165,7 +173,7 @@ describe("forensic scanner helpers", () => {
     expect(lowAssertions.some((assertion) => assertion.confidence === "LOW")).toBe(true);
   });
 
-  it("caps candidate files, preserves families, and de-duplicates by path", () => {
+  it("caps candidate files, preserves families, and de-duplicates by path", async () => {
     const topology = makeTopology([
       "src/main.ts",
       "src/App.tsx",
@@ -227,6 +235,140 @@ describe("forensic scanner helpers", () => {
     expect(candidates.some((candidate) => candidate.family === "config")).toBe(true);
     expect(candidates.some((candidate) => candidate.family === "test")).toBe(true);
     expect(candidates.some((candidate) => candidate.family === "domain")).toBe(true);
+  });
+
+  it("uses AST imports to raise React TypeScript samples to HIGH confidence", async () => {
+    const target = createEmptyFixtureRoot("fab-forensic-react-ast");
+
+    try {
+      writeFixtureFile(
+        target,
+        "package.json",
+        JSON.stringify(
+          {
+            name: "react-ast-fixture",
+            dependencies: {
+              react: "^19.0.0",
+              "react-dom": "^19.0.0",
+            },
+            devDependencies: {
+              typescript: "^5.8.0",
+            },
+          },
+          null,
+          2,
+        ),
+      );
+      writeFixtureFile(target, "tsconfig.json", "{}\n");
+      const snippet = [
+        'import React, { StrictMode, useEffect, useState } from "react";',
+        'import type { ReactNode } from "react";',
+        'import { createRoot } from "react-dom/client";',
+        'import { flushSync } from "react-dom";',
+        'import { jsx as _jsx } from "react/jsx-runtime";',
+        "type AppProps = { children?: ReactNode };",
+        "export function App(_props: AppProps) {",
+        "  const [ready, setReady] = useState(false);",
+        "  useEffect(() => setReady(true), []);",
+        "  return _jsx(StrictMode, { children: ready });",
+        "}",
+        'createRoot(document.getElementById("root")!).render(<App />);',
+      ].join("\n");
+      writeFixtureFile(target, "src/App.tsx", snippet);
+
+      const pattern = await inferPatternHint("src/App.tsx", snippet, {
+        frameworkKind: "react",
+        topology: makeTopology(["package.json", "tsconfig.json", "src/App.tsx"]),
+        packageDependencies: new Map([
+          ["react", "^19.0.0"],
+          ["react-dom", "^19.0.0"],
+        ]),
+      });
+      const report = await buildForensicReport(target);
+      const appSample = report.code_samples.find((sample) => sample.path === "src/App.tsx");
+      const frameworkAssertion = report.assertions.find((assertion) => assertion.type === "framework");
+
+      expect(pattern).toMatchObject({
+        pattern: "react-root",
+        ast_level: true,
+        confidence: "HIGH",
+      });
+      expect(appSample?.pattern_hint).toBe("react-root");
+      expect(frameworkAssertion).toMatchObject({
+        confidence: "HIGH",
+      });
+    } finally {
+      cleanupFixtureRoot(target);
+    }
+  });
+
+  it("keeps text fallback capped at MEDIUM when AST parsing is unavailable", async () => {
+    const target = createEmptyFixtureRoot("fab-forensic-react-fallback");
+
+    try {
+      writeFixtureFile(
+        target,
+        "package.json",
+        JSON.stringify(
+          {
+            name: "react-fallback-fixture",
+            dependencies: {
+              react: "^19.0.0",
+            },
+          },
+          null,
+          2,
+        ),
+      );
+      const snippet = [
+        'import { createRoot } from "react-dom/client";',
+        "type Broken = { value: string;",
+        "createRoot(document.body).render(null);",
+      ].join("\n");
+      writeFixtureFile(target, "src/App.tsx", snippet);
+
+      const pattern = await inferPatternHint("src/App.tsx", snippet, {
+        frameworkKind: "react",
+        topology: makeTopology(["package.json", "src/App.tsx"]),
+        packageDependencies: new Map([["react", "^19.0.0"]]),
+      });
+      const report = await buildForensicReport(target);
+      const appSample = report.code_samples.find((sample) => sample.path === "src/App.tsx");
+
+      expect(pattern).toMatchObject({
+        pattern: "react-root",
+        ast_level: false,
+        confidence: "MEDIUM",
+      });
+      expect(appSample?.pattern_hint).toBe("react-root");
+    } finally {
+      cleanupFixtureRoot(target);
+    }
+  });
+
+  it("samples top-churned entry files before lexicographically earlier entries", async () => {
+    const target = createEmptyFixtureRoot("fab-forensic-git-churn");
+
+    try {
+      writeFixtureFile(target, "package.json", JSON.stringify({ name: "churn-fixture", dependencies: { react: "^19.0.0" } }));
+      writeFixtureFile(target, "src/App.tsx", 'import { createRoot } from "react-dom/client";\ncreateRoot(document.body).render(null);\n');
+      writeFixtureFile(target, "src/main.ts", "export const main = true;\n");
+      execFileSync("git", ["init"], { cwd: target, stdio: "ignore" });
+      execFileSync("git", ["config", "user.email", "test@example.com"], { cwd: target });
+      execFileSync("git", ["config", "user.name", "Test User"], { cwd: target });
+      execFileSync("git", ["add", "."], { cwd: target });
+      execFileSync("git", ["commit", "-m", "initial"], { cwd: target, stdio: "ignore" });
+      writeFixtureFile(target, "src/main.ts", "export const main = 1;\n");
+      execFileSync("git", ["add", "src/main.ts"], { cwd: target });
+      execFileSync("git", ["commit", "-m", "churn main"], { cwd: target, stdio: "ignore" });
+
+      const report = await buildForensicReport(target);
+
+      expect(report.entry_points.map((entry) => entry.path).slice(0, 2)).toEqual(["src/main.ts", "src/App.tsx"]);
+      expect(report.code_samples[0]?.path).toBe("src/main.ts");
+    } finally {
+      cleanupFixtureRoot(target);
+    }
   });
 });
 

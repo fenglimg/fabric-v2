@@ -18,9 +18,9 @@ const AGENTS_TEMPLATE_BY_FRAMEWORK: Partial<Record<FrameworkInfo["kind"], string
 
 export const FABRIC_GUIDE_PATH = ".fabric/bootstrap/README.md";
 
-export function buildFabricBootstrapGuide(target: string): string {
+export async function buildFabricBootstrapGuide(target: string): Promise<string> {
   const workspaceRoot = normalizeTarget(target);
-  const scanReport = createScanReport(workspaceRoot);
+  const scanReport = await createScanReport(workspaceRoot);
   const template = readFileSync(findBootstrapTemplatePath(scanReport.framework.kind), "utf8");
   const packageName = readPackageName(workspaceRoot) ?? parse(workspaceRoot).base;
 
@@ -31,14 +31,14 @@ export function buildFabricBootstrapGuide(target: string): string {
   );
 }
 
-export function ensureFabricBootstrapGuide(workspaceRoot: string, force?: boolean): void {
+export async function ensureFabricBootstrapGuide(workspaceRoot: string, force?: boolean): Promise<void> {
   const guidePath = resolve(workspaceRoot, FABRIC_GUIDE_PATH);
   if (existsSync(guidePath) && !force) {
     return;
   }
 
   mkdirSync(dirname(guidePath), { recursive: true });
-  writeFileSync(guidePath, buildFabricBootstrapGuide(workspaceRoot), "utf8");
+  writeFileSync(guidePath, await buildFabricBootstrapGuide(workspaceRoot), "utf8");
 }
 
 function findBootstrapTemplatePath(frameworkKind: FrameworkInfo["kind"]): string {

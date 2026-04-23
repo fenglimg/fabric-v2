@@ -11,11 +11,11 @@ import { buildForensicReport } from "../src/scanner/forensic.ts";
 const WEREWOLF_FIXTURE = fileURLToPath(new URL("../../../examples/werewolf-minigame-stub", import.meta.url));
 
 describe("init-context shadow mirroring e2e", () => {
-  it("simulates forensic to skill output with confidence snapshots and topology types", () => {
+  it("simulates forensic to skill output with confidence snapshots and topology types", async () => {
     const target = cloneFixture("fab-init-context-shadow");
 
     try {
-      const report = buildForensicReport(target);
+      const report = await buildForensicReport(target);
       const frameworkAssertion = requireAssertion(report.assertions, "framework");
       const metaProtectionAssertion = report.assertions.find(
         (assertion) => assertion.proposed_rule === "Do not edit or delete .meta sidecars without explicit user confirmation.",

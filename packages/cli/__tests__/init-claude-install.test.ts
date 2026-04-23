@@ -19,11 +19,11 @@ afterEach(() => {
 });
 
 describe("initFabric Claude install", () => {
-  it("installs the skill, hook, and merged settings", () => {
+  it("installs the skill, hook, and merged settings", async () => {
     const target = createWerewolfFixtureRoot("fab-init-claude");
     tempRoots.push(target);
 
-    const result = initFabric(target);
+    const result = await initFabric(target);
     const installedSkillPath = result.claudeSkillPath;
     const installedCodexSkillPath = result.codexSkillPath;
     const installedCodexHooksPath = result.codexHooksConfigPath;
@@ -74,11 +74,11 @@ describe("initFabric Claude install", () => {
     expect(readFileSync(guidePath, "utf8")).toContain("Fabric Bootstrap Protocol");
   });
 
-  it("executes the reminder hook only while init-context is missing", () => {
+  it("executes the reminder hook only while init-context is missing", async () => {
     const target = createWerewolfFixtureRoot("fab-init-hook");
     tempRoots.push(target);
 
-    const { claudeHookPath } = initFabric(target);
+    const { claudeHookPath } = await initFabric(target);
     const blocked = spawnSync(process.execPath, [claudeHookPath], {
       cwd: target,
       env: {
@@ -109,11 +109,11 @@ describe("initFabric Claude install", () => {
     expect(quiet.stdout).toBe("");
   });
 
-  it("executes the Codex stop hook only while init-context is missing", () => {
+  it("executes the Codex stop hook only while init-context is missing", async () => {
     const target = createWerewolfFixtureRoot("fab-init-codex-hook");
     tempRoots.push(target);
 
-    const { codexStopHookPath } = initFabric(target);
+    const { codexStopHookPath } = await initFabric(target);
     const blocked = spawnSync(process.execPath, [codexStopHookPath], {
       cwd: target,
       env: {
