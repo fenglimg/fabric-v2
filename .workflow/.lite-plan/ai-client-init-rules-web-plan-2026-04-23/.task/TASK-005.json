@@ -1,0 +1,146 @@
+{
+  "id": "TASK-005",
+  "title": "Dashboard Module A first batch: coverage heatmap + hit reason visualization",
+  "scope": "packages/dashboard/src/views/ + packages/dashboard/src/components/",
+  "action": "Implement",
+  "description": "Establish Dashboard four-module layout structure and implement Module A first batch: coverage heatmap (which directories have rule coverage vs knowledge deserts) and hit reason visualization (why each rule was loaded: Glob/Description/Always-on). Depends on TASK-001 (RulesPayload.description_stubs and tier-aware matchReason). Dashboard is zero-write — no approve or mutate operations. Second-screen monitoring view.",
+  "files": [
+    {
+      "path": "packages/dashboard/src/views/rule-topology.tsx",
+      "action": "Create",
+      "target": "new Rule Topology view",
+      "change": "New view component for Module A: Rule Topology. Renders two sections: CoverageHeatmap and HitReasonPanel. Reads rules data from SSE hook. No write operations — read-only display."
+    },
+    {
+      "path": "packages/dashboard/src/components/coverage-heatmap.tsx",
+      "action": "Create",
+      "target": "new CoverageHeatmap component",
+      "change": "Visualize directory coverage: cross agents.meta.json scope_glob patterns against project file tree (available from existing server endpoint). Color directories by coverage density: green=covered, yellow=partial, gray=no rules. Use CSS grid or simple tree list with color-coded rows."
+    },
+    {
+      "path": "packages/dashboard/src/components/hit-reason-panel.tsx",
+      "action": "Create",
+      "target": "new HitReasonPanel component",
+      "change": "Display each rule with its activation tier badge: Always-on / Glob match / Description stub. For Glob rules: show matched pattern. For Description stubs: show description text. For Always-on: show 'Global'. Data sourced from RulesPayload including new description_stubs array from TASK-001."
+    },
+    {
+      "path": "packages/dashboard/src/app.tsx",
+      "action": "Update",
+      "target": "app router / navigation",
+      "change": "Add route or tab for new rule-topology view. Establish four-module navigation skeleton (A: Rule Topology, B: Cognitive Forensic, C: Semantic Timeline, D: Historical Ledger) with placeholder stubs for B/C/D."
+    },
+    {
+      "path": "packages/dashboard/src/components/index.ts",
+      "action": "Update",
+      "target": "component exports",
+      "change": "Export CoverageHeatmap and HitReasonPanel from component index"
+    }
+  ],
+  "implementation": [
+    "Read existing views (rules-tree.tsx, human-lock.tsx) to understand SSE hook usage and data access patterns",
+    "Read use-events.ts and api/client.ts to understand available data endpoints",
+    "Confirm RulesPayload type is accessible in dashboard (check shared package re-exports)",
+    "Create rule-topology.tsx view with two-panel layout: CoverageHeatmap (left/top) + HitReasonPanel (right/bottom)",
+    "Implement CoverageHeatmap: fetch agents meta nodes, extract scope_glob patterns, group by directory prefix, render colored directory tree",
+    "Implement HitReasonPanel: consume SSE rules events, display each rule entry with tier badge (Always-on/Glob/Description)",
+    "Add four-module navigation skeleton to app.tsx with A=active, B/C/D=placeholder stubs",
+    "Register rule-topology route in app router"
+  ],
+  "reference": {
+    "pattern": "SSE hook consumption pattern from existing views",
+    "files": [
+      "packages/dashboard/src/views/rules-tree.tsx",
+      "packages/dashboard/src/hooks/use-events.ts",
+      "packages/dashboard/src/api/client.ts",
+      "packages/dashboard/src/app.tsx"
+    ],
+    "examples": "Follow rules-tree.tsx for SSE data consumption; follow human-lock.tsx for list rendering pattern"
+  },
+  "convergence": {
+    "criteria": [
+      "rule-topology view renders without runtime errors",
+      "CoverageHeatmap displays at least covered vs uncovered directory distinction",
+      "HitReasonPanel shows activation tier for each rule (Always-on / Glob / Description badges)",
+      "Description stubs display description text (not file content) from RulesPayload.description_stubs",
+      "Four-module navigation skeleton present in app.tsx (A active, B/C/D labeled stubs)",
+      "Zero write operations in new components (no POST/PUT/DELETE calls)",
+      "TypeScript compilation passes with zero new errors"
+    ]
+  },
+  "rationale": {
+    "chosen_approach": "Module A first batch (S-complexity features) as proof of concept for four-module architecture before investing in M/L features",
+    "alternatives_considered": ["Build full Module A before starting B/C/D", "Start with Module B (forensic) which depends on REC-2"],
+    "decision_factors": ["Coverage heatmap + hit reason are S-complexity and directly enabled by TASK-001", "Establishes navigation skeleton for all four modules"],
+    "tradeoffs": "B/C/D modules are stubs only — acceptable since they depend on future tasks (REC-2, semantic timeline data)"
+  },
+  "test": {
+    "manual_checks": [
+      "Open Dashboard rule-topology view and verify heatmap renders directory list",
+      "Verify tier badges display correctly for Always-on, Glob, and Description rules",
+      "Confirm no network write requests are made by the new components (check browser network tab)"
+    ],
+    "success_metrics": [
+      "CoverageHeatmap renders directory tree with coverage colors in under 200ms after data load",
+      "HitReasonPanel correctly distinguishes all 3 tier types with distinct visual badges"
+    ],
+    "unit": [
+      "test_coverage_heatmap_renders_directories",
+      "test_hit_reason_panel_shows_tier_badges",
+      "test_description_stub_displays_description_text"
+    ],
+    "integration": [
+      "test_rule_topology_view_mounts_without_error",
+      "test_navigation_skeleton_has_four_modules"
+    ]
+  },
+  "risks": [
+    {
+      "description": "RulesPayload.description_stubs field not yet available if TASK-001 not completed first",
+      "probability": "Low",
+      "impact": "Medium",
+      "mitigation": "Defensive: handle undefined description_stubs with empty array fallback; show placeholder when stubs absent",
+      "fallback": "Render tier badge as 'Unknown' when stubs array missing"
+    },
+    {
+      "description": "agents.meta.json scope_glob parsing for coverage heatmap requires directory-level grouping logic",
+      "probability": "Low",
+      "impact": "Low",
+      "mitigation": "Use minimatch negation patterns to infer directory prefix from glob like 'src/auth/**/*.ts' → 'src/auth'",
+      "fallback": "Display full glob string instead of directory group"
+    }
+  ],
+  "code_skeleton": {
+    "interfaces": [
+      {
+        "name": "DirectoryCoverage",
+        "definition": "{ path: string; covered: boolean; matchingGlobs: string[]; density: 'full' | 'partial' | 'none' }",
+        "purpose": "Coverage status for a single directory path"
+      }
+    ],
+    "functions": [
+      {
+        "signature": "buildCoverageMap(nodes: AgentsMetaNode[], fileTree: string[]): DirectoryCoverage[]",
+        "purpose": "Cross scope_glob patterns against project file tree to compute per-directory coverage",
+        "returns": "Array of DirectoryCoverage objects for rendering"
+      }
+    ],
+    "classes": [
+      {
+        "name": "CoverageHeatmap",
+        "purpose": "React component rendering directory coverage grid with color coding",
+        "methods": ["render coverage grid", "handle directory expand/collapse"]
+      },
+      {
+        "name": "HitReasonPanel",
+        "purpose": "React component rendering per-rule tier badges from RulesPayload",
+        "methods": ["render rule list", "render tier badge by activation type"]
+      }
+    ]
+  },
+  "depends_on": ["TASK-001"],
+  "cli_execution_id": "ai-client-init-rules-web-plan-2026-04-23-TASK-005",
+  "cli_execution": {
+    "strategy": "fork",
+    "resume_from": "ai-client-init-rules-web-plan-2026-04-23-TASK-001"
+  }
+}

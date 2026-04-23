@@ -1,0 +1,117 @@
+{
+  "id": "TASK-003",
+  "title": "REC-2: Replace text pattern matching with tree-sitter AST scanning in forensic.ts + extend detector.ts",
+  "scope": "packages/cli/src/scanner/forensic.ts + packages/cli/src/scanner/detector.ts",
+  "action": "Implement",
+  "description": "Replace inferPatternHint() text-based pattern matching with tree-sitter AST import analysis. Upgrade confidence scoring so web frameworks can reach HIGH confidence (currently capped at MEDIUM). Extend detector.ts to return structured tech profile with AST-level detection results. Add git churn weighted sampling for smarter file selection during forensic scan.",
+  "files": [
+    {
+      "path": "packages/cli/src/scanner/forensic.ts",
+      "action": "Update",
+      "target": "inferPatternHint() function and PatternHintResult type",
+      "change": "Replace text regex matching with AST import node traversal via web-tree-sitter. Upgrade confidence algorithm: >3 import statements from framework package = HIGH, 1-3 = MEDIUM, keyword-only = LOW. Set ast_level: true when AST parsing succeeded. Add optional git churn weighting: files with more recent git changes get higher priority in sample selection."
+    },
+    {
+      "path": "packages/cli/src/scanner/detector.ts",
+      "action": "Update",
+      "target": "detectFramework() and exports",
+      "change": "Extend detectFramework() return type to structured TechProfile: { framework: string; version?: string; confidence: 'HIGH' | 'MEDIUM' | 'LOW'; ast_evidence: string[]; co_packages: string[] }. This is re-exported from @fenglimg/fabric-shared/node — may need shared package update or local type extension."
+    }
+  ],
+  "implementation": [
+    "Import web-tree-sitter lazily at top of inferPatternHint() — load WASM once per process via module-level singleton",
+    "Parse candidate files with tree-sitter JavaScript/TypeScript grammar, extract all import declarations (ImportDeclaration nodes)",
+    "Build import source list, cross-reference against EXPECTED_CONFIG_FILES_BY_FRAMEWORK registry for framework identification",
+    "Implement confidence scoring: count import occurrences + config file presence + package.json deps → HIGH/MEDIUM/LOW threshold",
+    "Update PatternHintResult to set ast_level: true when AST parsed, retain text fallback when WASM unavailable",
+    "Add git churn helper: run `git log --follow --oneline -20 <file>` per candidate, weight selection by recency",
+    "Extend detector.ts TechProfile type and update detectFramework() return shape",
+    "Update callers of detectFramework() to handle new structured return (check forensic.ts usage of detector output)"
+  ],
+  "reference": {
+    "pattern": "Lazy WASM loading singleton, text fallback pattern",
+    "files": [
+      "packages/cli/src/scanner/forensic.ts",
+      "packages/cli/src/scanner/detector.ts"
+    ],
+    "examples": "PatternHintResult.ast_level boolean already exists — set it true when AST path taken"
+  },
+  "convergence": {
+    "criteria": [
+      "A React TypeScript file with 5+ React imports returns confidence=HIGH (previously MEDIUM)",
+      "PatternHintResult.ast_level is true when tree-sitter parsed the file",
+      "Text-based fallback still functions when WASM unavailable (ast_level=false, confidence capped at MEDIUM)",
+      "detectFramework() returns structured TechProfile with at minimum { framework, confidence, ast_evidence }",
+      "git churn weighting adjusts file selection order (top-churned files sampled first)",
+      "Existing forensic scan CLI output shape unchanged (PatternHintResult fields all present)"
+    ]
+  },
+  "rationale": {
+    "chosen_approach": "AST import traversal is structurally precise — no false positives from comments or strings that text regex produces",
+    "alternatives_considered": ["Enhanced regex with structural hints", "ESLint AST parser", "@ast-grep/napi"],
+    "decision_factors": ["web-tree-sitter already validated in TASK-002", "PatternHintResult.ast_level boolean already exists in codebase"],
+    "tradeoffs": "WASM adds ~3.5MB to CLI package; git churn adds subprocess call overhead (acceptable for scan command, not hot path)"
+  },
+  "test": {
+    "manual_checks": [
+      "Run fab scan on a React TypeScript project and verify confidence=HIGH for React framework",
+      "Disable WASM (rename WASM file) and verify graceful fallback to text matching",
+      "Verify git churn sampling changes file order when git history differs"
+    ],
+    "success_metrics": [
+      "Web framework confidence reaches HIGH for projects with >3 framework import files",
+      "Scan command completes within 5 seconds on a 500-file project",
+      "Zero regressions in existing forensic report shape"
+    ],
+    "unit": [
+      "test_ast_import_extraction_react_tsx",
+      "test_confidence_HIGH_threshold_exceeded",
+      "test_fallback_text_when_wasm_unavailable",
+      "test_git_churn_weights_file_selection"
+    ],
+    "integration": [
+      "test_full_scan_structured_tech_profile_output"
+    ]
+  },
+  "risks": [
+    {
+      "description": "tree-sitter grammar parses TSX differently from TS — import nodes may have different AST shapes",
+      "probability": "Medium",
+      "impact": "Medium",
+      "mitigation": "Test ImportDeclaration extraction against both .ts and .tsx sample files before full implementation",
+      "fallback": "Use tree-sitter-typescript grammar which handles TSX via embedded language"
+    },
+    {
+      "description": "git churn subprocess calls fail in projects without git history",
+      "probability": "Low",
+      "impact": "Low",
+      "mitigation": "Wrap git command in try/catch; return neutral weight if git unavailable",
+      "fallback": "Skip churn weighting silently"
+    }
+  ],
+  "code_skeleton": {
+    "functions": [
+      {
+        "signature": "loadTreeSitter(): Promise<Parser>",
+        "purpose": "Module-level singleton that loads WASM once, returns cached parser",
+        "returns": "tree-sitter Parser instance"
+      },
+      {
+        "signature": "extractImports(src: string, lang: Language): string[]",
+        "purpose": "Parse source with tree-sitter, walk ImportDeclaration nodes, return source specifiers",
+        "returns": "Array of import source strings e.g. ['react', '@tanstack/react-query']"
+      },
+      {
+        "signature": "scoreConfidence(imports: string[], framework: string): 'HIGH' | 'MEDIUM' | 'LOW'",
+        "purpose": "Count framework-related imports and apply threshold: >=3 → HIGH, 1-2 → MEDIUM, 0 → LOW",
+        "returns": "Confidence level string"
+      }
+    ]
+  },
+  "depends_on": ["TASK-002"],
+  "cli_execution_id": "ai-client-init-rules-web-plan-2026-04-23-TASK-003",
+  "cli_execution": {
+    "strategy": "fork",
+    "resume_from": "ai-client-init-rules-web-plan-2026-04-23-TASK-002"
+  }
+}

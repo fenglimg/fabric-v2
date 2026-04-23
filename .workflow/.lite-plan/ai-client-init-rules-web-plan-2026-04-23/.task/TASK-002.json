@@ -1,0 +1,88 @@
+{
+  "id": "TASK-002",
+  "title": "Evaluate web-tree-sitter WASM integration feasibility for CLI package",
+  "scope": "packages/cli",
+  "action": "Implement",
+  "description": "Evaluate and validate web-tree-sitter WASM integration in the CLI package before implementing forensic AST upgrade. Assess bundle size impact (~3.5MB WASM), Node.js runtime compatibility, WASM loading strategy (lazy vs eager), and grammar availability for JavaScript/TypeScript. Produce a brief technical decision record confirming the approach or identifying blockers. This step gates TASK-003.",
+  "files": [
+    {
+      "path": "packages/cli/package.json",
+      "action": "Update",
+      "target": "dependencies section",
+      "change": "Add web-tree-sitter dependency (evaluate version compatibility with existing Node.js target)"
+    },
+    {
+      "path": "packages/cli/src/scanner/tree-sitter-probe.ts",
+      "action": "Create",
+      "target": "new probe file",
+      "change": "Create minimal probe that loads web-tree-sitter and parses a trivial JS file; confirm WASM loads correctly in CLI Node.js context; delete after validation or keep as test fixture"
+    }
+  ],
+  "implementation": [
+    "Add web-tree-sitter to packages/cli/package.json and install",
+    "Create minimal probe script that loads WASM and parses a trivial JS snippet",
+    "Test probe against Node.js version used by CLI (check engines field in package.json)",
+    "Evaluate lazy loading strategy: load WASM only when inferPatternHint() is called",
+    "Confirm tree-sitter-javascript grammar binary is available or can be loaded from npm",
+    "Document decision: bundle size impact, loading latency, and integration approach in planning-context note"
+  ],
+  "reference": {
+    "pattern": "CLI scanner pattern in packages/cli/src/scanner/",
+    "files": [
+      "packages/cli/src/scanner/forensic.ts",
+      "packages/cli/package.json"
+    ],
+    "examples": "Lazy import at call site to avoid startup overhead"
+  },
+  "convergence": {
+    "criteria": [
+      "web-tree-sitter installs without peer dependency conflicts",
+      "WASM loads successfully in CLI's Node.js runtime (no native module errors)",
+      "tree-sitter-javascript grammar parses a 10-line TypeScript/JS file to AST without errors",
+      "Bundle size impact documented (expected ~3.5MB WASM, acceptable for CLI package)",
+      "Decision on lazy vs eager loading documented"
+    ]
+  },
+  "rationale": {
+    "chosen_approach": "Gated evaluation step before full implementation prevents wasted LOC if WASM integration is blocked",
+    "alternatives_considered": ["Skip evaluation and implement directly", "Use @ast-grep/napi instead"],
+    "decision_factors": ["3.5MB WASM is non-trivial for CLI startup", "Grammar compatibility varies by version"],
+    "tradeoffs": "Adds one task step but eliminates risk of discovering blockers mid-implementation"
+  },
+  "test": {
+    "manual_checks": [
+      "Run probe script and confirm AST root node is returned",
+      "Check that pnpm install succeeds with no peer dep errors"
+    ],
+    "success_metrics": [
+      "Probe executes in under 2 seconds in Node.js CLI context",
+      "Zero native module compilation errors"
+    ],
+    "unit": [
+      "probe_loads_wasm_successfully",
+      "probe_parses_trivial_js_snippet"
+    ],
+    "integration": []
+  },
+  "risks": [
+    {
+      "description": "WASM loading fails in specific Node.js version or bundler context",
+      "probability": "Low",
+      "impact": "High",
+      "mitigation": "Test against exact Node.js version in package.json engines field",
+      "fallback": "Use @ast-grep/napi or fall back to enhanced regex with structural hints"
+    },
+    {
+      "description": "3.5MB WASM causes unacceptable CLI startup regression",
+      "probability": "Medium",
+      "impact": "Medium",
+      "mitigation": "Use lazy loading — only load WASM when scanner is explicitly invoked",
+      "fallback": "Ship WASM as optional peer dependency"
+    }
+  ],
+  "depends_on": [],
+  "cli_execution_id": "ai-client-init-rules-web-plan-2026-04-23-TASK-002",
+  "cli_execution": {
+    "strategy": "new"
+  }
+}

@@ -1,0 +1,538 @@
+{
+  "perspective": "Technical",
+  "relevant_files": [
+    {
+      "path": "packages/cli/src/commands/init.ts",
+      "relevance": 0.98,
+      "role": "modify_target",
+      "rationale": "初始化流程的顶层协调器：initFabric()同步写入4个核心文件(.fabric/bootstrap/README.md, agents.meta.json, human-lock.json, forensic.json)，mergeClaudeStopHook()原子写入Stop hook；run()方法串行执行bootstrap→mcp→hooks三阶段，每阶段独立try/catch容错，phase失败不中断后续阶段",
+      "discovery_source": "bash-scan",
+      "topic_relation": "AI客户端初始化的实现主干，直接决定哪些文件被生成、哪些客户端被配置、错误如何处理",
+      "key_code": [
+        {
+          "symbol": "initFabric()",
+          "location": "L274-L343",
+          "description": "同步执行7步文件写入：目录准备→forensic扫描→human-lock→bootstrap生成→agents.meta.json→skill模板复制→hook注入→settings.json合并，全部在单次调用内完成无回滚"
+        },
+        {
+          "symbol": "createInitialMeta()",
+          "location": "L394-L409",
+          "description": "生成初始agents.meta.json，只有L0节点，scope_glob='**'覆盖所有文件，revision=sha256(agentsHash)，hash=sha256(bootstrapContent)，为后续L1/L2节点建立基准版本链"
+        },
+        {
+          "symbol": "mergeClaudeStopHook()",
+          "location": "L501-L561",
+          "description": "读取现有.claude/settings.json并做防御性类型检查（isRecord, Array.isArray），幂等插入Stop hook条目，使用writeJsonAtomically原子写入防损坏，返回5种状态（created/updated/overwritten/skipped/skipped-invalid）"
+        },
+        {
+          "symbol": "writeJsonAtomically()",
+          "location": "L585-L589",
+          "description": "写临时文件${path}.${pid}.tmp后rename到目标路径，利用OS级rename原子性防止配置文件被截断写入破坏"
+        }
+      ]
+    },
+    {
+      "path": "packages/cli/src/scanner/forensic.ts",
+      "relevance": 0.97,
+      "role": "dependency",
+      "rationale": "取证扫描引擎：buildForensicReport()是init流程中唯一的CPU密集型同步操作，执行文件系统DFS遍历+文本模式识别，生成结构化ForensicReport作为AGENTS.md初始化的证据包；分析深度为文本级别(非AST)，仅对entry points读取前30行",
+      "discovery_source": "bash-scan",
+      "topic_relation": "AI初始化规则的知识来源，forensic报告的质量直接决定AGENTS.md生成的准确性",
+      "key_code": [
+        {
+          "symbol": "buildTopology()",
+          "location": "L138-L200",
+          "description": "迭代式DFS（栈而非递归）遍历文件树，跳过IGNORED_DIRECTORIES集合（含.fabric/.git/node_modules/dist等），统计by_ext频率分布，识别KEY_DIRECTORY_NAMES中的关键目录。性能关键：无深度限制，大型mono-repo可能很慢"
+        },
+        {
+          "symbol": "inferPatternHint()",
+          "location": "L297-L410",
+          "description": "文本扫描（非AST）识别4种框架模式：cocos-component-class（cc-import+ccclass+Component三co-occurring）、react-root（createRoot/ReactDOM.render）、next-route-component（app//pages/路径）、vite-main-entry（src/main.*路径），fallback为source-entry/LOW置信度"
+        },
+        {
+          "symbol": "buildAssertions()",
+          "location": "L437-L452",
+          "description": "生成6类断言：framework、dominant-pattern、entry-directory、meta-sidecar、config、domain；confidence算法：AST级→HIGH，ratio>=0.8且co_occurring>=2→HIGH，ratio>=0.5→MEDIUM，其余LOW"
+        },
+        {
+          "symbol": "buildCandidateFiles()",
+          "location": "L454-L533",
+          "description": "按family（entry/component/config/test/domain）分组，各自有独立limit（entry=1, component/config/test/domain各3），避免重复选择，最终切片到CANDIDATE_FILE_LIMIT=12。关键：entry family limit=1意味着只有最优入口被标记"
+        }
+      ]
+    },
+    {
+      "path": "packages/server/src/services/get-rules.ts",
+      "relevance": 0.96,
+      "role": "dependency",
+      "rationale": "规则解析核心引擎：getRules()是AI客户端perception阶段的直接服务端点，通过minimatch做glob匹配，按priority排序，分L1/L2返回规则内容；stale检测逻辑client_hash≠meta.revision时标记stale；loadGetRulesContext()使用5s TTL缓存避免高频磁盘读取",
+      "discovery_source": "bash-scan",
+      "topic_relation": "AI客户端Web交互的服务端实现核心，决定AI每次请求规则时获得什么内容、如何判断缓存是否过期",
+      "key_code": [
+        {
+          "symbol": "getRules()",
+          "location": "L56-L76",
+          "description": "主入口：1)加载context（缓存优先）2)stale=client_hash!==meta.revision 3)resolveRulesForPath做glob匹配 4)appendGetRulesAuditEvent（best-effort，catch块确保不阻塞规则返回）。注意：audit写入失败被静默忽略"
+        },
+        {
+          "symbol": "loadRulesForPath()",
+          "location": "L136-L161",
+          "description": "核心匹配逻辑：遍历agents.meta.json所有nodes，对每个node.scope_glob用minimatch匹配请求path，匹配成功则并行读取规则文件内容；排序算法：先按priority（high=0/medium=1/low=2），同priority按nodeId字母序（字典稳定排序）"
+        },
+        {
+          "symbol": "partitionRulesByLevel()",
+          "location": "L163-L185",
+          "description": "按nodeId前缀分类：L1/开头→L1数组，L2/开头→L2数组，null（包括L0节点）被丢弃。关键边界：L0内容通过context.l0Content单独返回，不走loadedRules路径，因此L0节点的scope_glob='**'不会导致L0内容重复出现在L1/L2中"
+        },
+        {
+          "symbol": "loadGetRulesContext()",
+          "location": "L78-L99",
+          "description": "读取agentsMeta + L0 bootstrap README + humanLock，合并为GetRulesContext并写入5s TTL缓存；缓存key=projectRoot。潜在问题：如果同一projectRoot有多次getRules并发调用，第一个请求会并发读取文件，第二个才能命中缓存"
+        }
+      ]
+    },
+    {
+      "path": "packages/server/src/http.ts",
+      "relevance": 0.93,
+      "role": "integration_point",
+      "rationale": "HTTP+MCP双模式服务器：cacheWatcher监听2个文件（agents.meta.json和bootstrap/README.md），触发MCP通知；JsonlEventStore实现EventStore接口支持MCP会话断线重连；createFabricHttpApp暴露7个REST API端点+/events SSE+/mcp端点",
+      "discovery_source": "bash-scan",
+      "topic_relation": "Web交互层的服务端骨架，SSE推送和MCP会话管理都经过此文件",
+      "key_code": [
+        {
+          "symbol": "cacheWatcher (chokidar)",
+          "location": "L141-L173",
+          "description": "监听agents.meta.json和bootstrap/README.md两个文件，awaitWriteFinish.stabilityThreshold=120ms防抖动；agents.meta.json变化→contextCache.invalidate('file_watch')→200ms防抖→notifyAllSessions('tools/list_changed')；README变化→200ms防抖→notifyAllSessions('resource_updated', AGENTS_MD_RESOURCE_URI)"
+        },
+        {
+          "symbol": "JsonlEventStore",
+          "location": "L57-L127",
+          "description": "MCP EventStore实现：storeEvent追加写.intent-ledger.jsonl，getStreamIdForEventId全文件扫描（O(n)），replayEventsAfter从lastEventId之后重放同streamId的所有事件。性能隐患：readEvents()每次都全量读取ledger文件"
+        },
+        {
+          "symbol": "createSession()",
+          "location": "L258-L286",
+          "description": "每个新MCP会话动态import('./index.js')创建独立McpServer实例，StreamableHTTPServerTransport配置sessionId生成和session生命周期钩子（onsessioninitialized/onsessionclosed）；transport.onclose作为备用清理路径"
+        }
+      ]
+    },
+    {
+      "path": "packages/server/src/api/events.ts",
+      "relevance": 0.92,
+      "role": "integration_point",
+      "rationale": "SSE事件推送完整实现：RingBuffer(50)支持断线重连replay，chokidar监听4个.fabric文件，每类文件变化映射到不同FabricEvent类型；human-lock变化触发最复杂的快照diff逻辑（lock:approved vs lock:drift）；连接上限10个",
+      "discovery_source": "bash-scan",
+      "topic_relation": "Web dashboard实时更新的基础设施，直接影响用户看到的规则树和drift状态的实时性",
+      "key_code": [
+        {
+          "symbol": "RingBuffer",
+          "location": "L39-L68",
+          "description": "固定容量50的环形缓冲，push()覆盖最旧条目，replayFrom(afterId)从正确起始位遍历返回id>afterId的所有事件。算法：count<capacity时从0开始，否则从head（最旧位置）开始，确保按插入序返回。注意：id是单调递增整数，非UUID"
+        },
+        {
+          "symbol": "ensureWatcher()",
+          "location": "L177-L203",
+          "description": "lazy初始化：第一个SSE客户端连接时才创建chokidar watcher，同时记录ledger当前大小（offset），以便后续增量读取；最后一个客户端断开时stopWatcher()关闭watcher（节省资源）"
+        },
+        {
+          "symbol": "readHumanLockEvents()",
+          "location": "L307-L345",
+          "description": "快照差分算法：读取当前human-lock.json，与state中上一快照比较hashByKey；changedEntries=hash变化的条目；approvedEntries=实际文件hash与新记录hash匹配的（真正批准）；触发lock:approved或lock:drift两个互斥事件路径"
+        },
+        {
+          "symbol": "readLedgerAppendedEvents()",
+          "location": "L347-L385",
+          "description": "增量读取ledger：记录上次读取offset，新size>offset时只读取新增字节；处理跨块的不完整行（remainder缓冲）；ledger缩小时重置offset=0（防日志轮转异常）；过滤掉kind='mcp-event'行（EventStore内部条目）"
+        }
+      ]
+    },
+    {
+      "path": "packages/cli/templates/claude-hooks/agents-md-init-reminder.cjs",
+      "relevance": 0.88,
+      "role": "integration_point",
+      "rationale": "Claude Code Stop Hook实现：检查forensic.json存在但init-context.json不存在时输出block决策JSON；极简判断逻辑，阻塞条件是二元的（不考虑forensic内容质量）；decision='block'强制中断对话流",
+      "discovery_source": "bash-scan",
+      "topic_relation": "init规则执行的强制入口，是取证扫描和AGENTS.md生成之间的守门机制",
+      "key_code": [
+        {
+          "symbol": "Stop Hook判断逻辑",
+          "location": "L1-L19",
+          "description": "两个条件：1)forensicPath不存在→exit(0)（未init，静默放行）2)initContextPath存在→exit(0)（已完成访谈，放行）；两者都不满足→stdout输出{decision:'block', reason:'...'}要求用户调用agents-md-init skill。注意：只检查文件存在性，不验证内容有效性"
+        }
+      ]
+    },
+    {
+      "path": "packages/cli/templates/claude-skills/agents-md-init/SKILL.md",
+      "relevance": 0.87,
+      "role": "context_only",
+      "rationale": "3阶段初始化访谈流程规范：Phase1框架确认(1轮)、Phase2不变式提取(1轮，覆盖ban/require/protect三类)、Phase3构造落地(自动)；Hard Rules规定零placeholder、AGENTS.md<=300行、嵌套<=4层",
+      "discovery_source": "bash-scan",
+      "topic_relation": "规定了从forensic.json到AGENTS.md的人机协作流程，是AI执行初始化访谈的完整规范",
+      "key_code": [
+        {
+          "symbol": "Phase3构造落地",
+          "location": "Phase 3 section",
+          "description": "写入init-context.json（包含framework/architecture_patterns/invariants/domain_groups/interview_trail/forensic_ref），生成分层AGENTS.md（根<=300行），更新agents.meta.json的nodes树保持revision hash链一致性"
+        }
+      ]
+    },
+    {
+      "path": "packages/cli/src/config/resolver.ts",
+      "relevance": 0.85,
+      "role": "dependency",
+      "rationale": "客户端检测与capability矩阵：通过existsSync探测7个AI客户端的特征路径，返回每个客户端的4维能力矩阵；只有ClaudeCodeCLI同时支持bootstrap/mcp/hook/skill四个维度；detection逻辑不区分installed vs configured（~/.claude存在即认为Claude Code已安装）",
+      "discovery_source": "bash-scan",
+      "topic_relation": "init命令决定为哪些客户端写配置的依据，capability矩阵控制init summary输出",
+      "key_code": [
+        {
+          "symbol": "detectClientSupports()",
+          "location": "L100-L206",
+          "description": "7个客户端检测：ClaudeCodeCLI（~/.claude或./.claude目录）、ClaudeCodeDesktop（跨平台config路径）、Cursor（.cursor/目录）、Windsurf（.windsurf/）、RooCode（.roo/）、GeminiCLI（~/.gemini或./GEMINI.md）、CodexCLI（~/.codex）；只有ClaudeCodeCLI的capabilities.skill=true，其余clients的hook和skill均为false"
+        }
+      ]
+    },
+    {
+      "path": "packages/cli/src/config/json.ts",
+      "relevance": 0.80,
+      "role": "dependency",
+      "rationale": "JSON格式MCP配置写入器：抽象基类JsonClientConfigWriter实现detect/write，各子类覆盖defaultPath()；writeJsonClientConfig()读取现有JSON（ENOENT静默忽略）然后合并mcpServers.fabric字段，不覆盖其他字段",
+      "discovery_source": "bash-scan",
+      "topic_relation": "MCP阶段向AI客户端注入fabric server配置的具体实现",
+      "key_code": [
+        {
+          "symbol": "writeJsonClientConfig()",
+          "location": "L49-L60",
+          "description": "合并写入逻辑：如果mcpServers已存在且为对象则spread合并，否则重建；mkdir -p确保目录存在；最终写入带换行符的格式化JSON。注意：不验证配置语义正确性，仅做结构级合并"
+        }
+      ]
+    },
+    {
+      "path": "packages/dashboard/src/api/client.ts",
+      "relevance": 0.82,
+      "role": "integration_point",
+      "rationale": "Dashboard前端API客户端：openSseConnection()手动实现fetch+ReadableStream的SSE解析（非EventSource），支持Last-Event-ID重连；Bearer token从window.__FABRIC_AUTH_TOKEN__或URL参数读取，URL参数读取后从history移除；getEvents()标记为deprecated",
+      "discovery_source": "bash-scan",
+      "topic_relation": "Web端与服务端交互的完整实现，SSE连接生命周期管理和认证机制都在此文件",
+      "key_code": [
+        {
+          "symbol": "openSseConnection()",
+          "location": "L165-L243",
+          "description": "fetch流式读取实现：使用AbortController控制取消，TextDecoder处理UTF-8流，手动按\\n\\n分割SSE块；异常被静默吞掉（catch块空），通过onClose回调让调用方决定重连策略；parseSseBlock()支持event/data/id三字段"
+        },
+        {
+          "symbol": "readAuthToken()",
+          "location": "L265-L291",
+          "description": "三级token读取：1)缓存优先 2)window.__FABRIC_AUTH_TOKEN__注入变量 3)URL搜索参数token（读取后replaceState清除URL参数防止bookmarking泄露）；cachedAuthToken=null表示无token（非undefined）"
+        }
+      ]
+    },
+    {
+      "path": "packages/server/src/cache.ts",
+      "relevance": 0.72,
+      "role": "dependency",
+      "rationale": "服务端热路径缓存：ContextCache使用3个独立slot（meta/context/audit），meta和context槽位默认5s TTL；invalidate('file_watch')同时清除meta和context两个slot；无LRU机制，每个projectRoot一个entry",
+      "discovery_source": "bash-scan",
+      "topic_relation": "get-rules服务的性能关键，避免每次AI请求都重读磁盘；chokidar触发invalidation保证缓存一致性",
+      "key_code": [
+        {
+          "symbol": "ContextCache.invalidate()",
+          "location": "L94-L112",
+          "description": "meta_write只清meta slot；file_watch同时清meta和context（因为AGENTS.md规则内容可能变化）；无projectRoot参数时清全部（全局失效）。file_watch由chokidar的change事件触发，meta_write由服务主动写meta文件后调用"
+        }
+      ]
+    }
+  ],
+  "key_findings": [
+    {
+      "id": "KF-01",
+      "title": "initFabric() 无回滚机制，7步写入操作是全有或全无式的",
+      "category": "error-handling-gap",
+      "severity": "medium",
+      "description": "initFabric()依次执行prepareFreshPath、writeNewFile、copyTemplateIfMissing等7个写入步骤，若中间步骤失败（如磁盘满），已写入的文件不会回滚。例如：forensicPath写入成功但metaPath写入失败，项目将处于.fabric/forensic.json存在但agents.meta.json不存在的中间状态，这会触发Stop Hook（因为init-context.json不存在）但fab_get_rules无法工作",
+      "evidence_file": "packages/cli/src/commands/init.ts",
+      "evidence_lines": "L300-L325",
+      "recommendation": "引入transaction-like机制：先在临时目录生成所有文件，最后一次性move；或至少在失败时清理已写入文件"
+    },
+    {
+      "id": "KF-02",
+      "title": "forensic扫描是纯文本匹配，confidence级别HIGH可能被误判",
+      "category": "correctness",
+      "severity": "low",
+      "description": "inferPatternHint()注释为'ast_level: true'仅在检测到@ccclass(装饰器语法时（L306），但这只是字符串includes()检查，不是真正的AST解析。determineConfidence()将astLevel=true提升到HIGH置信度（L912-L914），但字符串匹配可能匹配注释中的@ccclass。代码样本只读前30行（SAMPLE_LINE_LIMIT），可能错过文件主体中的关键模式",
+      "evidence_file": "packages/cli/src/scanner/forensic.ts",
+      "evidence_lines": "L305-L308, L903-L916",
+      "recommendation": "在代码注释中明确说明是文本级匹配，不要将其描述为AST级别；或实际接入TypeScript Parser做decorator检测"
+    },
+    {
+      "id": "KF-03",
+      "title": "getRules()的audit写入失败被完全静默",
+      "category": "observability-gap",
+      "severity": "low",
+      "description": "appendGetRulesAuditEvent()在try/catch中被调用，catch块注释说'must not block rule delivery'。这意味着审计日志可能悄无声息地丢失（磁盘满、权限问题），没有任何指标或日志记录此失败。在需要合规审计的场景下，这是一个隐蔽的问题",
+      "evidence_file": "packages/server/src/services/get-rules.ts",
+      "evidence_lines": "L66-L74",
+      "recommendation": "在catch块中至少写一条console.warn或stderr日志；或提供一个可配置的审计模式选项（严格模式下audit失败会抛出）"
+    },
+    {
+      "id": "KF-04",
+      "title": "JsonlEventStore.readEvents()是O(n)全量读取，随ledger增大性能下降",
+      "category": "performance",
+      "severity": "medium",
+      "description": "JsonlEventStore用于MCP StreamableHTTP的重连事件重放，getStreamIdForEventId()和replayEventsAfter()都调用readEvents()全量读取.intent-ledger.jsonl文件。与api/events.ts的增量读取不同，这里每次都从头读取整个文件。随着使用时间增长，ledger文件可能变大导致重连变慢",
+      "evidence_file": "packages/server/src/http.ts",
+      "evidence_lines": "L57-L127",
+      "recommendation": "添加文件大小上限或按时间分片的ledger轮转；或为JsonlEventStore添加内存索引缓存eventId→offset映射"
+    },
+    {
+      "id": "KF-05",
+      "title": "SSE watcher是lazy创建eager销毁，最后一个客户端断开后状态丢失",
+      "category": "correctness",
+      "severity": "medium",
+      "description": "ensureWatcher()在第一个客户端连接时初始化ledgerOffset（当前文件大小）和humanLockSnapshot；stopWatcher()在最后一个客户端断开时重置watcher=undefined，但不清理ledgerOffset和humanLockSnapshot。当下一个客户端连接时，ensureWatcher()重新读取当前ledger大小，期间的ledger增量可能被跳过（如果ledger在无客户端期间增长了，新的ledgerOffset=当前大小，之前的增量消失）",
+      "evidence_file": "packages/server/src/api/events.ts",
+      "evidence_lines": "L177-L219",
+      "recommendation": "stopWatcher()时保留ledgerOffset和humanLockSnapshot，不重置为初始状态；或在watcher重建时对比保存的snapshot检测期间发生的变化"
+    },
+    {
+      "id": "KF-06",
+      "title": "Stop Hook的阻塞条件不验证forensic.json内容有效性",
+      "category": "correctness",
+      "severity": "low",
+      "description": "agents-md-init-reminder.cjs只检查forensicPath文件存在性，不解析内容。如果forensic.json因init中途失败而损坏（空文件或截断JSON），Hook仍会block并要求用户运行agents-md-init，但SKILL.md的第一步是Read .fabric/forensic.json，此时Skill会遇到JSON解析错误",
+      "evidence_file": "packages/cli/templates/claude-hooks/agents-md-init-reminder.cjs",
+      "evidence_lines": "L1-L19",
+      "recommendation": "Hook中增加JSON.parse()验证，或在init完成时写入一个.fabric/.init-complete标记文件，Hook检查标记文件而非内容文件"
+    },
+    {
+      "id": "KF-07",
+      "title": "get-rules的并发首次请求无防重入，可能触发多次磁盘读取",
+      "category": "performance",
+      "severity": "low",
+      "description": "loadGetRulesContext()先检查缓存（miss），然后读取3个文件（readAgentsMeta+readFile+readHumanLock），最后set缓存。如果在第一次请求读取文件期间有第二个请求到来，两者都会cache miss并都触发磁盘读取，只有后写入者的结果被保留。在低并发场景下影响不大，高并发burst时可能放大磁盘IO",
+      "evidence_file": "packages/server/src/services/get-rules.ts",
+      "evidence_lines": "L78-L99",
+      "recommendation": "引入promise-based singleflight机制，同一projectRoot的并发首次请求共享同一个Promise"
+    },
+    {
+      "id": "KF-08",
+      "title": "客户端检测仅验证目录存在性，无法区分已卸载客户端",
+      "category": "correctness",
+      "severity": "low",
+      "description": "detectClientSupports()通过existsSync(join(homedir(), '.claude'))检测Claude Code，但~/.claude目录在卸载后可能依然存在（残留配置）。这会导致init向实际不存在的客户端写入配置，并在capability summary中错误地标记为已配置",
+      "evidence_file": "packages/cli/src/config/resolver.ts",
+      "evidence_lines": "L104-L112",
+      "recommendation": "增加更可靠的检测方式：如检查claude二进制文件存在（which claude），或检查特定版本标记文件"
+    }
+  ],
+  "code_anchors": [
+    {
+      "file": "packages/cli/src/scanner/forensic.ts",
+      "lines": "L95-L132",
+      "snippet": "export function buildForensicReport(targetInput: string): ForensicReport {\n  const target = normalizeTarget(targetInput);\n  const framework = detectFramework(target);\n  const topology = buildTopology(target);\n  const entryPoints = collectEntryPoints(topology.files);\n  const codeSamples = buildCodeSamples(target, entryPoints);\n  const assertions = buildAssertions(framework.kind, topology, codeSamples);\n  const candidateFiles = buildCandidateFiles(topology, codeSamples, entryPoints);\n  const readme = readReadmeInfo(target);\n  // ... build report ...\n  const validation = forensicReportSchema.safeParse(report);\n  if (!validation.success) {\n    throw new Error(`ForensicReport schema validation failed: ${validation.error.message}`);\n  }\n  return validation.data;\n}",
+      "significance": "Zod schema验证在最后作为质量门禁，但这意味着如果任何中间步骤产生非预期输出，错误会在最后才抛出，调试困难。pipeline是顺序依赖的（topology→entryPoints→codeSamples→assertions），无并行化"
+    },
+    {
+      "file": "packages/cli/src/scanner/forensic.ts",
+      "lines": "L903-L926",
+      "snippet": "function determineConfidence(\n  ratio: number,\n  coOccurringPatterns: string[],\n  astLevel: boolean,\n  hasConflict = false,\n): ForensicAssertion[\"confidence\"] {\n  if (hasConflict) return \"LOW\";\n  if (astLevel) return \"HIGH\";\n  if (ratio < 0.5) return \"LOW\";\n  if (ratio >= 0.8 && coOccurringPatterns.length >= 2) return \"HIGH\";\n  return \"MEDIUM\";\n}",
+      "significance": "置信度算法：astLevel是最强提升因子（直接HIGH），但astLevel的判断仅是字符串includes('@ccclass(')这一层级的检测，与真正的AST解析完全不同。hasConflict参数存在但当前所有调用都使用默认值false，未被启用"
+    },
+    {
+      "file": "packages/server/src/services/get-rules.ts",
+      "lines": "L136-L161",
+      "snippet": "async function loadRulesForPath(\n  projectRoot: string,\n  meta: AgentsMeta,\n  path: string,\n): Promise<LoadedRule[]> {\n  const requestedPath = normalizeRulesPath(path);\n  const matchedNodes = Object.entries(meta.nodes)\n    .filter(([, node]) => minimatch(requestedPath, normalizeRulesPath(node.scope_glob), { dot: true }))\n    .sort((left, right) => {\n      const priorityDelta = PRIORITY_ORDER[leftNode.priority] - PRIORITY_ORDER[rightNode.priority];\n      return priorityDelta !== 0 ? priorityDelta : leftId.localeCompare(rightId);\n    });\n  return await Promise.all(\n    matchedNodes.map(async ([nodeId, node]) => ({\n      level: classifyNode(nodeId),\n      entry: {\n        path: node.file,\n        content: await readFile(join(projectRoot, node.file), \"utf8\"),\n      },\n    })),\n  );\n}",
+      "significance": "Promise.all并行读取所有匹配规则文件，是性能友好的设计；但如果某个规则文件不存在会抛出未处理的ENOENT错误，导致整个getRules调用失败。没有对node.file路径做path traversal防护（如../../攻击）"
+    },
+    {
+      "file": "packages/server/src/api/events.ts",
+      "lines": "L56-L68",
+      "snippet": "replayFrom(afterId: number): BufferedEvent[] {\n  const result: BufferedEvent[] = [];\n  const total = this.count;\n  const start = this.count < this.capacity ? 0 : this.head;\n  for (let i = 0; i < total; i++) {\n    const entry = this.buf[(start + i) % this.capacity];\n    if (entry !== undefined && entry.id > afterId) {\n      result.push(entry);\n    }\n  }\n  return result;\n}",
+      "significance": "RingBuffer.replayFrom()算法：当缓冲区未满时从索引0开始（保留插入顺序），满时从head（最老条目）开始遍历。用entry.id > afterId过滤而非entry.id >= afterId+1，在极端边界情况下如果id有跳跃（理论上不会但RingBuffer不保证连续性）可能漏事件"
+    },
+    {
+      "file": "packages/server/src/http.ts",
+      "lines": "L156-L173",
+      "snippet": "cacheWatcher.on(\"change\", (relativePath: string) => {\n  const normalized = relativePath.replaceAll(\"\\\\\", \"/\");\n  if (normalized === \".fabric/agents.meta.json\") {\n    contextCache.invalidate(\"file_watch\", projectRoot);\n    clearTimeout(toolListNotifyTimer);\n    toolListNotifyTimer = setTimeout(() => {\n      notifyAllSessions(sessions, \"tools/list_changed\");\n    }, NOTIFY_DEBOUNCE_MS);\n  } else if (normalized === \".fabric/bootstrap/README.md\") {\n    contextCache.invalidate(\"file_watch\", projectRoot);\n    clearTimeout(agentsMdNotifyTimer);\n    agentsMdNotifyTimer = setTimeout(() => {\n      notifyAllSessions(sessions, \"resource_updated\", AGENTS_MD_RESOURCE_URI);\n    }, NOTIFY_DEBOUNCE_MS);\n  }\n});",
+      "significance": "200ms防抖正确防止了高频写入导致的通知风暴；但两个timer变量是模块级变量（非per-session），如果同时有多个projectRoot的server实例（不太可能但理论上可能），timers会互相覆盖。cache.invalidate()在timer触发前已同步执行，保证了缓存失效早于通知发出"
+    },
+    {
+      "file": "packages/cli/src/commands/init.ts",
+      "lines": "L501-L560",
+      "snippet": "function mergeClaudeStopHook(settingsPath: string, options?: InitOptions): ClaudeSettingsAction {\n  // ... 读取并验证现有settings ...\n  const hasExistingFabricHook = hasClaudeInitReminderHook(stopHooks);\n  if (hasExistingFabricHook && !options?.force) {\n    return \"skipped\";\n  }\n  const nextStopHooks = hasExistingFabricHook && options?.force\n    ? removeClaudeInitReminderHook(stopHooks)\n    : [...stopHooks];\n  nextStopHooks.push({\n    matcher: \"*\",\n    hooks: [{ type: \"command\", command: CLAUDE_INIT_REMINDER_COMMAND }],\n  });\n  settings.hooks = { ...hooks, Stop: nextStopHooks };\n  writeJsonAtomically(settingsPath, settings);\n  return hasExistingFabricHook && options?.force ? \"overwritten\" : action;\n}",
+      "significance": "幂等性设计：hasClaudeInitReminderHook通过字符串匹配command路径检测已有hook，避免重复注入；force=true时先移除后重新添加。但matcher='*'是全局匹配，会在每次对话stop时触发hook，即使文件毫不相关——这是性能和用户体验的权衡"
+    },
+    {
+      "file": "packages/dashboard/src/api/client.ts",
+      "lines": "L181-L232",
+      "snippet": "void (async () => {\n  try {\n    const response = await fetch(path, { headers, signal: controller.signal });\n    if (!response.ok || response.body === null) {\n      notifyCloseOnce(() => { onClose(); });\n      return;\n    }\n    onOpen();\n    const reader = response.body.getReader();\n    const decoder = new TextDecoder();\n    let buf = \"\";\n    while (!closed) {\n      const { done, value } = await reader.read();\n      if (done) break;\n      buf += decoder.decode(value, { stream: true });\n      buf = buf.replace(/\\r\\n/g, \"\\n\");\n      let boundary: number;\n      while ((boundary = buf.indexOf(\"\\n\\n\")) >= 0) {\n        const block = buf.slice(0, boundary);\n        buf = buf.slice(boundary + 2);\n        parseSseBlock(block, onEvent);\n      }\n    }\n  } catch {\n    // intentionally swallowed\n  } finally {\n    if (!closed) { notifyCloseOnce(() => { onClose(); }); }\n  }\n})();",
+      "significance": "手动SSE实现而非EventSource：支持自定义headers（Bearer token）是这样做的原因，EventSource不支持自定义请求头。catch块完全静默异常，依赖onClose回调触发调用方重连。TextDecoder(stream:true)正确处理UTF-8多字节字符跨chunk边界的情况"
+    }
+  ],
+  "call_chains": [
+    {
+      "entry": "fab init (CLI命令)",
+      "description": "完整初始化流程调用链",
+      "chain": [
+        "initCommand.run() [init.ts:L139]",
+        "→ detectClientSupports(target) [resolver.ts:L100]",
+        "→ initFabric(target, options) [init.ts:L274]",
+        "  → buildForensicReport(target) [forensic.ts:L95]",
+        "    → buildTopology(root) [forensic.ts:L138] — DFS文件扫描",
+        "    → detectFramework(target) [detector.ts]",
+        "    → collectEntryPoints(files) [forensic.ts:L213]",
+        "    → buildCodeSamples(target, entryPoints) [forensic.ts:L260] — 读取前30行",
+        "    → buildAssertions(frameworkKind, topology, codeSamples) [forensic.ts:L437]",
+        "    → buildCandidateFiles(topology, codeSamples, entryPoints) [forensic.ts:L454]",
+        "  → buildFabricBootstrapGuide(target) [bootstrap-guide.ts]",
+        "  → createInitialMeta(bootstrapHash) [init.ts:L394]",
+        "  → writeNewFile(forensicPath, ...) [init.ts:L470]",
+        "  → copyExecutableTemplateIfMissing(hookTemplate, hookPath) [init.ts:L492]",
+        "  → mergeClaudeStopHook(settingsPath, options) [init.ts:L501]",
+        "→ installBootstrap(target, {force}) [bootstrap.ts]",
+        "→ configCommand.installMcpClients(target, {...}) [config.ts]",
+        "→ installHooks(target, {force}) [hooks.ts]"
+      ],
+      "files": [
+        "packages/cli/src/commands/init.ts",
+        "packages/cli/src/scanner/forensic.ts",
+        "packages/cli/src/scanner/detector.ts",
+        "packages/cli/src/bootstrap-guide.ts",
+        "packages/cli/src/config/resolver.ts",
+        "packages/cli/src/commands/bootstrap.ts",
+        "packages/cli/src/commands/hooks.ts"
+      ]
+    },
+    {
+      "entry": "AI客户端调用 fab_get_rules MCP工具",
+      "description": "规则获取完整调用链（perception phase）",
+      "chain": [
+        "fab_get_rules MCP tool handler [tools/get-rules.ts]",
+        "→ getRules(projectRoot, {path, client_hash}) [services/get-rules.ts:L56]",
+        "  → loadGetRulesContext(projectRoot) [services/get-rules.ts:L78]",
+        "    → contextCache.get('context', projectRoot) [cache.ts] — 缓存hit则直接返回",
+        "    → readAgentsMeta(projectRoot) [meta-reader.ts:L39]",
+        "      → contextCache.get('meta', projectRoot) — 缓存hit",
+        "      → readFile('.fabric/agents.meta.json') — 缓存miss时磁盘读",
+        "    → readFile('.fabric/bootstrap/README.md') — L0内容",
+        "    → readHumanLock(projectRoot) [services/read-human-lock.ts]",
+        "    → contextCache.set('context', projectRoot, context) — 5s TTL",
+        "  → resolveRulesForPath(projectRoot, context, path) [services/get-rules.ts:L101]",
+        "    → loadRulesForPath(projectRoot, meta, path) [services/get-rules.ts:L136]",
+        "      → minimatch(requestedPath, node.scope_glob) — 对所有nodes遍历",
+        "      → Promise.all(matchedNodes.map(readFile)) — 并行读规则文件",
+        "    → partitionRulesByLevel(loadedRules) [services/get-rules.ts:L163]",
+        "  → appendGetRulesAuditEvent(projectRoot, {...}) [services/audit-log.ts] — 异步best-effort",
+        "← return {revision_hash, stale, rules: {L0, L1, L2, human_locked_nearby}}"
+      ],
+      "files": [
+        "packages/server/src/tools/get-rules.ts",
+        "packages/server/src/services/get-rules.ts",
+        "packages/server/src/cache.ts",
+        "packages/server/src/meta-reader.ts",
+        "packages/server/src/services/read-human-lock.ts",
+        "packages/server/src/services/audit-log.ts"
+      ]
+    },
+    {
+      "entry": "Claude Code Stop Hook触发 → 3阶段访谈",
+      "description": "从hook触发到AGENTS.md生成的完整流程",
+      "chain": [
+        "Claude Code 对话结束 (Stop事件)",
+        "→ .claude/hooks/agents-md-init-reminder.cjs 执行",
+        "  → existsSync('.fabric/forensic.json') ? continue : exit(0)",
+        "  → existsSync('.fabric/init-context.json') ? exit(0) : block",
+        "  → stdout输出 {decision:'block', reason:'...'}",
+        "→ Claude Code显示block消息，提示调用agents-md-init skill",
+        "→ 用户触发 agents-md-init Skill (SKILL.md)",
+        "  → Phase1: Read .fabric/forensic.json, 展示framework/topology摘要",
+        "    → 用户确认框架假设",
+        "  → Phase2: 基于recommendations_for_skill提问ban/require/protect",
+        "    → 用户提供不变式",
+        "  → Phase3 (自动):",
+        "    → Write .fabric/init-context.json",
+        "    → Write AGENTS.md (根 + 各domain_group)",
+        "    → Update .fabric/agents.meta.json (nodes + revision hash链)"
+      ],
+      "files": [
+        "packages/cli/templates/claude-hooks/agents-md-init-reminder.cjs",
+        "packages/cli/templates/claude-skills/agents-md-init/SKILL.md",
+        "packages/shared/src/schemas/init-context.ts"
+      ]
+    },
+    {
+      "entry": "文件系统变化 → SSE推送到Dashboard",
+      "description": "服务端文件变化到Dashboard实时更新的完整链路",
+      "chain": [
+        "chokidar watcher检测文件变化 (.fabric/*.json or .intent-ledger.jsonl)",
+        "→ scheduleFileChange(state, projectRoot, relativePath) [events.ts:L221]",
+        "  → clearTimeout(existingTimer) — 防抖取消之前定时器",
+        "  → setTimeout(75ms) — 75ms防抖",
+        "→ publishFileChange(state, projectRoot, relativePath) [events.ts:L239]",
+        "→ readEventsForFile(state, projectRoot, relativePath) [events.ts:L251]",
+        "  → agents.meta.json: readMetaUpdatedEvent() → FabricEvent{type:'meta:updated'}",
+        "  → human-lock.json: readHumanLockEvents() → lock:approved | lock:drift",
+        "  → forensic.json: readDriftDetectedEvent() → drift:detected",
+        "  → .intent-ledger.jsonl: readLedgerAppendedEvents() → ledger:appended",
+        "→ broadcastEvent(state, event) [events.ts:L409]",
+        "  → state.ringBuffer.push({id, type, data}) — 存入RingBuffer",
+        "  → for client of state.clients: client.write(frame) — SSE推送",
+        "← Dashboard onEvent回调处理 (client.ts)",
+        "← parseFabricEvent(data) → React状态更新"
+      ],
+      "files": [
+        "packages/server/src/api/events.ts",
+        "packages/dashboard/src/api/client.ts"
+      ]
+    }
+  ],
+  "questions_for_user": [
+    {
+      "id": "Q-01",
+      "question": "buildTopology()使用无深度限制的DFS遍历，对于大型monorepo（如含有大量子包的项目），扫描时间可能很长。是否考虑添加扫描深度上限或文件数量上限？当前CANDIDATE_FILE_LIMIT=12意味着最多12个候选文件，但拓扑扫描会遍历所有文件",
+      "context": "forensic.ts L138-L200, DEFAULT_SAMPLING_BUDGET: max_files=15",
+      "priority": "medium"
+    },
+    {
+      "id": "Q-02",
+      "question": "JsonlEventStore.readEvents()每次都全量读取.intent-ledger.jsonl，随着项目使用时间增长文件可能很大。当前有没有ledger轮转或清理机制？.intent-ledger.jsonl文件的生命周期管理是怎样的？",
+      "context": "http.ts L107-L127",
+      "priority": "high"
+    },
+    {
+      "id": "Q-03",
+      "question": "Stop Hook的block只检查init-context.json是否存在。如果用户手动创建了一个空的或无效的init-context.json，hook就会放行，但实际上AGENTS.md可能没有被正确生成。是否需要对init-context.json内容做最小化验证？",
+      "context": "agents-md-init-reminder.cjs L8-L10",
+      "priority": "medium"
+    },
+    {
+      "id": "Q-04",
+      "question": "getRules()中规则文件读取失败（ENOENT）会直接抛出未处理异常，导致整个规则获取失败。在agents.meta.json中引用了不存在的规则文件这种情况是否有实际发生的可能性？是否需要graceful degradation（跳过不存在的规则文件并返回部分结果）？",
+      "context": "get-rules.ts L152-L158 (Promise.all with readFile)",
+      "priority": "medium"
+    },
+    {
+      "id": "Q-05",
+      "question": "window.__FABRIC_AUTH_TOKEN__的注入机制：服务器如何将token注入到dashboard HTML页面？是否是通过server-side模板注入（如index.html中的占位符替换）还是其他方式？这个注入路径在代码中哪里实现？",
+      "context": "dashboard/src/api/client.ts L272-L278",
+      "priority": "low"
+    },
+    {
+      "id": "Q-06",
+      "question": "SSE的RingBuffer容量是50，heartbeat是30s，这意味着如果dashboard断线超过约25分钟（50个心跳包）就可能错过事件。这个容量是否基于实际使用场景测量过？对于长时间运行的AI会话（如几小时），是否需要更大的buffer或持久化replay？",
+      "context": "events.ts RING_BUFFER_CAPACITY=50, HEARTBEAT_INTERVAL_MS=30_000",
+      "priority": "low"
+    }
+  ],
+  "_metadata": {
+    "perspective": "Technical",
+    "generated_at": "2026-04-23T00:00:00+08:00",
+    "analysis_mode": "deep-scan",
+    "layer": "Layer 2+3 — Structure Tracing + Code Anchor Extraction",
+    "files_traced": 10,
+    "key_findings_count": 8,
+    "code_anchors_count": 7,
+    "call_chains_count": 4,
+    "discovery_sources": ["bash-scan", "manual"],
+    "based_on_layer1": "exploration-codebase.json"
+  }
+}

@@ -1,0 +1,569 @@
+{
+  "perspective": "Business",
+  "relevant_files": [
+    {
+      "path": "packages/cli/src/commands/init.ts",
+      "relevance": 0.95,
+      "role": "modify_target",
+      "discovery_source": "manual",
+      "rationale": "Defines the complete `fab init` onboarding flow — the single command that determines every new user's first-impression of Fabric. The multi-stage pipeline (bootstrap, mcp, hooks) combined with the capability matrix output shapes the entire time-to-value equation.",
+      "topic_relation": "Business value is directly determined here: this is the product's first touchpoint. Every friction point — silent failures, capability gaps for non-Claude clients, mandatory file writes before MCP setup — maps back to onboarding ROI.",
+      "key_code": [
+        {
+          "symbol": "initCommand.run()",
+          "location": "L139-L269",
+          "description": "Orchestrates 3 sequential blocking stages (bootstrap, mcp, hooks) with per-stage error capture. Stages run serially; a slow npm install for local MCP blocks user from seeing final capability table."
+        },
+        {
+          "symbol": "printInitCapabilitySummary()",
+          "location": "L696-L732",
+          "description": "Renders the per-client capability matrix table at end of init. Shows 6 columns (client, bootstrap, mcp, hook, skill, follow-up) — the moment users learn their AI client is not fully supported."
+        },
+        {
+          "symbol": "toCapabilityRow()",
+          "location": "L734-L764",
+          "description": "Maps per-client support to row data. For any non-Claude client the skill column shows 'manual' and follow-up shows 'manual' — revealing the two-tier support reality at init time."
+        },
+        {
+          "symbol": "mergeClaudeStopHook()",
+          "location": "L501-L561",
+          "description": "Surgically merges the agents-md-init-reminder Stop hook into Claude settings.json. Silent skips on 4 error conditions (skipped-invalid) leave users without the hook and no explanation until they hit the reminder."
+        },
+        {
+          "symbol": "shouldPrintHooksNextStep()",
+          "location": "L658-L660",
+          "description": "Only prints the manual hook setup instruction when hooks are skipped OR failed — correct business logic but the condition is narrow, so users who got a partial success may still miss the follow-up."
+        }
+      ]
+    },
+    {
+      "path": "packages/cli/src/scanner/forensic.ts",
+      "relevance": 0.85,
+      "role": "dependency",
+      "discovery_source": "manual",
+      "rationale": "Auto-forensic scan runs synchronously inside `fab init`, building the context package that enables the AI initialization interview. The quality of this automated scan directly determines how much the user must manually correct in Phase 1 of the interview.",
+      "topic_relation": "From a business perspective, the forensic scan is the primary automation investment — it eliminates manual project description work. The scan budget (5 samples, 30 lines each, 12 candidate files) determines what percentage of projects get accurate auto-detection vs need user correction.",
+      "key_code": [
+        {
+          "symbol": "buildForensicReport()",
+          "location": "L95-L132",
+          "description": "Main entry point. Detects framework, builds topology, collects 5 entry-point code samples, generates assertions and candidate file list. Synchronous, runs inside fab init. Zod schema validation at end ensures data quality."
+        },
+        {
+          "symbol": "SAMPLE_LIMIT / CANDIDATE_FILE_LIMIT",
+          "location": "L85-L89",
+          "description": "Hard caps: 5 code samples (30 lines each), 12 candidate files total. Conservative budget keeps init fast but may miss patterns in larger codebases, increasing Phase 1 interview correction burden."
+        },
+        {
+          "symbol": "inferPatternHint()",
+          "location": "L297-L410",
+          "description": "Pattern recognizer supporting 4 frameworks: cocos-creator, react-root, next-route-component, vite-main-entry. Unrecognized projects fall back to 'source-entry' with LOW confidence — triggering manual framework confirmation in Phase 1."
+        },
+        {
+          "symbol": "buildSkillRecommendations()",
+          "location": "L1028-L1057",
+          "description": "Deprecated helper generating Chinese-language recommendations for the skill interview. Mixed-language output (English code + Chinese recommendations) creates a localization gap for non-Chinese users."
+        }
+      ]
+    },
+    {
+      "path": "packages/cli/templates/claude-skills/agents-md-init/SKILL.md",
+      "relevance": 0.90,
+      "role": "pattern_reference",
+      "discovery_source": "manual",
+      "rationale": "Defines the 3-phase initialization interview that converts forensic scan data into a live AGENTS.md. This is the core user experience for first-time AI rule setup — the gap between 'installed Fabric' and 'Fabric working for my project'.",
+      "topic_relation": "The interview structure (3 phases, 3 rounds, minimum) is the critical time-to-value gate. Users cannot get value from Fabric rules until this interview completes. The mandatory round-trip nature means a new developer needs 3+ AI interactions before productivity gains begin.",
+      "key_code": [
+        {
+          "symbol": "Phase 1 — Framework Confirmation",
+          "location": "L19-L27",
+          "description": "1 interview round asking 1-2 framework clarification questions. Low friction — forensic data pre-populates answers for supported frameworks."
+        },
+        {
+          "symbol": "Phase 2 — Invariant Extraction",
+          "location": "L29-L43",
+          "description": "1 round asking 3-5 yes/no questions about bans, requirements, and protected paths. Design explicitly rejects vague answers, demanding specifics. This is where the interview can stall if users are unfamiliar with their own codebase constraints."
+        },
+        {
+          "symbol": "Phase 3 — Construction and Landing",
+          "location": "L44-L77",
+          "description": "Automated phase writing init-context.json, generating layered AGENTS.md, updating agents.meta.json, and listing generated files. The value delivery moment — but requires phases 1 and 2 to complete successfully first."
+        },
+        {
+          "symbol": "Hard Rules / Zero TODO constraint",
+          "location": "L79-L87",
+          "description": "Prohibits placeholders, stubs, TODOs in generated output. High quality bar but means partial interviews cannot be saved and resumed — must complete all 3 phases in one session."
+        }
+      ]
+    },
+    {
+      "path": "packages/cli/templates/claude-hooks/agents-md-init-reminder.cjs",
+      "relevance": 0.80,
+      "role": "integration_point",
+      "discovery_source": "manual",
+      "rationale": "Stop Hook that blocks every AI session completion until AGENTS.md initialization interview is done. This is the enforcement mechanism that prevents users from skipping the interview — but also represents a hard friction point for every Claude session during the pending period.",
+      "topic_relation": "From a UX value perspective, this hook creates a mandatory interruption on every AI stop event after fab init until the interview completes. The block decision creates anxiety-inducing friction (the AI cannot complete) for users who are still learning the system.",
+      "key_code": [
+        {
+          "symbol": "decision: 'block' emit",
+          "location": "L12-L18",
+          "description": "Emits a JSON block decision to stdout that Claude's Stop hook system intercepts. The blocking message is in Chinese ('fab init 已完成证据收集') — a localization issue for non-Chinese-speaking users."
+        },
+        {
+          "symbol": "Exit condition check",
+          "location": "L8-L10",
+          "description": "Only blocks when forensic.json exists AND init-context.json does NOT exist. Once init completes the hook becomes a silent pass-through (exit 0). Clean binary state with no intermediate conditions."
+        }
+      ]
+    },
+    {
+      "path": "packages/cli/src/config/resolver.ts",
+      "relevance": 0.88,
+      "role": "dependency",
+      "discovery_source": "manual",
+      "rationale": "Defines which AI clients are supported and at what capability tier. The capability matrix here directly governs the business proposition for each client's user base — whether they get full automation or must fall back to manual configuration.",
+      "topic_relation": "The support tiers reveal a significant product stratification: only Claude Code CLI users get the full experience (bootstrap + mcp + hook + skill). All 6 other clients get bootstrap + mcp only. This 4-capability vs 2-capability gap is the core multi-client ROI question.",
+      "key_code": [
+        {
+          "symbol": "detectClientSupports() — Claude Code CLI entry",
+          "location": "L113-L126",
+          "description": "Only client with all 4 capabilities: bootstrap=true, mcp=true, hook=true, skill=true. This is the 'full product' experience."
+        },
+        {
+          "symbol": "detectClientSupports() — all other 6 clients",
+          "location": "L127-L205",
+          "description": "ClaudeCodeDesktop, Cursor, Windsurf, RooCode, GeminiCLI, CodexCLI all have hook=false, skill=false. Users on these clients cannot receive the automated interview or the Stop hook enforcement — they must manually manage AGENTS.md."
+        },
+        {
+          "symbol": "resolveClients() detection logic",
+          "location": "L44-L98",
+          "description": "Detection is filesystem-based: checks ~/.claude, .cursor, .windsurf, .roo, ~/.gemini, ~/.codex presence. Zero configuration required for detection — good zero-config UX. But detection happens at init time only, not at runtime."
+        }
+      ]
+    },
+    {
+      "path": "packages/dashboard/src/api/client.ts",
+      "relevance": 0.78,
+      "role": "integration_point",
+      "discovery_source": "manual",
+      "rationale": "Provides the full API surface for the dashboard, including SSE real-time connection, rules retrieval, human-lock approval workflow, and history replay. The SSE implementation determines the perceived responsiveness of the dashboard.",
+      "topic_relation": "Dashboard value is delivered through this client: real-time lock drift alerts, one-click approval workflow, and time-travel rule inspection. The token-from-URL mechanism (L277-L287) enables shareable dashboard links — reducing the friction of opening the dashboard from CLI.",
+      "key_code": [
+        {
+          "symbol": "openSseConnection()",
+          "location": "L165-L243",
+          "description": "Full SSE client with Last-Event-ID replay support, AbortController cleanup, and silent error swallowing with onClose callback. No automatic reconnect logic — caller is responsible for reconnect, creating a gap in the resilience story."
+        },
+        {
+          "symbol": "readAuthToken() URL param extraction",
+          "location": "L265-L291",
+          "description": "Strips token from URL after reading it via window.history.replaceState. Enables one-click dashboard launch from CLI with auth pre-filled — good UX for the common case."
+        },
+        {
+          "symbol": "approveHumanLock()",
+          "location": "L134-L138",
+          "description": "One API call to approve a drifted human lock entry. Enables the dashboard's primary write action — approving AI changes to protected code regions."
+        }
+      ]
+    },
+    {
+      "path": "packages/dashboard/src/views/rules-tree.tsx",
+      "relevance": 0.72,
+      "role": "context_only",
+      "discovery_source": "manual",
+      "rationale": "Rules tree visualization showing the AGENTS.md node hierarchy with human-lock indicators and drift warnings. Provides the 'current state' view of all AI rules.",
+      "topic_relation": "From a business perspective, this view answers 'what rules does my AI know right now?' — a question users need to answer to trust AI behavior. The filter+select interaction is minimal and functional but limited to read-only inspection; no editing capability.",
+      "key_code": [
+        {
+          "symbol": "buildRulesTree()",
+          "location": "L125-L167",
+          "description": "Builds a 3-level tree: root revision → directory groups → individual nodes. Groups by first path segment which creates confusing groupings for flat or deeply nested AGENTS.md structures."
+        },
+        {
+          "symbol": "useEffect SSE refresh triggers",
+          "location": "L36-L39",
+          "description": "Reloads on meta:updated, drift:detected, lock:drift events — reactive to all relevant state changes. No polling fallback if SSE disconnects, leaving stale data silently."
+        }
+      ]
+    },
+    {
+      "path": "packages/dashboard/src/views/doctor.tsx",
+      "relevance": 0.75,
+      "role": "context_only",
+      "discovery_source": "manual",
+      "rationale": "Health diagnostic view that shows framework detection, protected path integrity, and intent ledger activity. The single 'overall status' indicator is the primary health signal for the project's AI governance state.",
+      "topic_relation": "The Doctor view is the dashboard's 'is Fabric working?' answer. The 3-card summary (framework + protected paths + intent ledger age) provides actionable diagnostics without requiring deep Fabric knowledge from the user.",
+      "key_code": [
+        {
+          "symbol": "DoctorView SSE refresh triggers",
+          "location": "L37-L46",
+          "description": "Reloads on 5 event types: meta:updated, lock:approved, lock:drift, ledger:appended, drift:detected. Most reactive of all views — appropriate for a health dashboard."
+        },
+        {
+          "symbol": "formatAge()",
+          "location": "L203-L231",
+          "description": "Human-readable age formatting for last ledger entry (seconds → weeks). Enables users to spot stale intent tracking without reading timestamps."
+        }
+      ]
+    },
+    {
+      "path": "packages/dashboard/src/views/human-lock.tsx",
+      "relevance": 0.80,
+      "role": "context_only",
+      "discovery_source": "manual",
+      "rationale": "Primary action view in the dashboard — allows users to approve AI changes to human-protected code regions. This is where the 'human oversight' value proposition is exercised.",
+      "topic_relation": "Human-lock approval is the dashboard's highest-value interaction: it converts a blocking drift condition into an approved state, unblocking AI operations on protected code. The approve() function (L46-L67) is the only write action in the entire dashboard.",
+      "key_code": [
+        {
+          "symbol": "approve()",
+          "location": "L46-L67",
+          "description": "Calls approveHumanLock API and updates local state optimistically. Single-entry approval only — no bulk approve action for users with many drifted locks."
+        },
+        {
+          "symbol": "filter tabs (all/drift/approved)",
+          "location": "L77-L89",
+          "description": "Three-way filter with counts. Drift count is the primary attention signal for users — shows how many protected regions need review."
+        }
+      ]
+    },
+    {
+      "path": "packages/dashboard/src/views/intent-timeline.tsx",
+      "relevance": 0.68,
+      "role": "context_only",
+      "discovery_source": "manual",
+      "rationale": "Shows the chronological ledger of AI and human intents with annotation capability. Provides the audit trail that justifies AI governance overhead.",
+      "topic_relation": "The intent timeline is the 'why' record — showing what AI was asked to do and what humans actually did. The annotate() capability (L47-L56) allows humans to add context to AI entries, creating a collaborative audit trail that increases governance value.",
+      "key_code": [
+        {
+          "symbol": "useEffect SSE live update",
+          "location": "L37-L39",
+          "description": "On ledger:appended events, inserts the new entry directly into state without a full reload. This is the most efficient SSE pattern in the codebase — O(1) prepend instead of full fetch."
+        },
+        {
+          "symbol": "annotate()",
+          "location": "L47-L56",
+          "description": "Adds human annotation to an AI ledger entry. Requires entry.id — if missing (older entries), the annotation fails. No graceful fallback shown to user."
+        }
+      ]
+    },
+    {
+      "path": "packages/dashboard/src/views/history-replay.tsx",
+      "relevance": 0.65,
+      "role": "context_only",
+      "discovery_source": "manual",
+      "rationale": "Time-travel view allowing users to see the exact state of all AI rules at any past ledger entry point. Advanced feature for debugging rule regressions or understanding how rules evolved.",
+      "topic_relation": "History replay is a power-user feature with high business value for teams doing code review: 'what were the AI rules when this commit was made?' The slider scrub UX (L107-L120) makes time travel accessible, but the feature requires a populated ledger to be useful at all.",
+      "key_code": [
+        {
+          "symbol": "selectedEntryId effect → getHistoryState()",
+          "location": "L52-L83",
+          "description": "Fetches rule snapshot for selected ledger point with cancellation support. Each slider move triggers an API call — no debounce on slider input, potentially causing rapid-fire requests."
+        },
+        {
+          "symbol": "metadata.mode: 'git-show' | 'ledger-fallback'",
+          "location": "L87 in client.ts (HistoryReplayMetadata type)",
+          "description": "Server attempts git-show first, falls back to ledger replay. Users may not understand why results differ between modes — no explanation surfaced in the UI."
+        }
+      ]
+    },
+    {
+      "path": "packages/server/src/api/events.ts",
+      "relevance": 0.82,
+      "role": "integration_point",
+      "discovery_source": "manual",
+      "rationale": "SSE event pipeline that powers all real-time dashboard updates. The debounce timing, connection limit, and ring buffer capacity directly determine dashboard responsiveness and resilience under concurrent use.",
+      "topic_relation": "The SSE server is the backbone of dashboard UX responsiveness. The 75ms debounce keeps UI smooth, 30s heartbeat prevents proxy timeouts, and 50-event ring buffer enables reconnection recovery. Connection limit of 10 is the ceiling for concurrent dashboard users.",
+      "key_code": [
+        {
+          "symbol": "CONNECTION_LIMIT = 10",
+          "location": "L23",
+          "description": "Hard cap of 10 concurrent SSE connections. Returns HTTP 503 when exceeded. Teams with more than 10 concurrent dashboard users will get errors — unexplained to users unless they inspect the response."
+        },
+        {
+          "symbol": "WATCH_DEBOUNCE_MS = 75 / HEARTBEAT_INTERVAL_MS = 30_000",
+          "location": "L25-L26",
+          "description": "75ms debounce on file change (prevents event storm during bulk writes), 30s heartbeat (keeps connection alive through proxies). Conservative but appropriate settings."
+        },
+        {
+          "symbol": "RingBuffer (capacity 50)",
+          "location": "L39-L68",
+          "description": "Stores last 50 events for reconnection replay via Last-Event-ID. On reconnect, missed events are replayed before new ones — enables seamless reconnection UX without full page reload."
+        },
+        {
+          "symbol": "stopWatcher() on last client disconnect",
+          "location": "L205-L219",
+          "description": "Tears down the file watcher when all SSE clients disconnect. Efficient resource management but means the first new connection after a quiet period incurs watcher startup latency."
+        }
+      ]
+    }
+  ],
+  "key_findings": [
+    {
+      "id": "BIZ-01",
+      "title": "Onboarding requires 3 AI interaction rounds before any productivity value is delivered",
+      "severity": "high",
+      "category": "time-to-value",
+      "description": "The path from `fab init` to first useful AI interaction requires: (1) running fab init (synchronous, may include npm install for local MCP), (2) opening Claude and triggering the Stop hook block, (3) completing a 3-phase interview (3 rounds minimum). Users cannot bypass any phase. For developers unfamiliar with their project's invariants, Phase 2 may require additional research before answering, extending the interview to multiple sessions — but the Zero TODO hard rule means partial state cannot be saved.",
+      "evidence_files": [
+        "packages/cli/src/commands/init.ts",
+        "packages/cli/templates/claude-skills/agents-md-init/SKILL.md",
+        "packages/cli/templates/claude-hooks/agents-md-init-reminder.cjs"
+      ]
+    },
+    {
+      "id": "BIZ-02",
+      "title": "6 of 7 supported AI clients receive a second-class experience with no automation path",
+      "severity": "high",
+      "category": "multi-client-roi",
+      "description": "Only Claude Code CLI users get all 4 capabilities (bootstrap, mcp, hook, skill). The remaining 6 clients — Claude Code Desktop, Cursor, Windsurf, Roo Code, Gemini CLI, Codex CLI — receive bootstrap + mcp only. These users see 'manual' in the skill and follow-up columns of the init capability table, meaning they must manually set up AGENTS.md with no interview assistance and no enforcement hook. This creates a hidden premium tier.",
+      "evidence_files": [
+        "packages/cli/src/config/resolver.ts",
+        "packages/cli/src/commands/init.ts"
+      ]
+    },
+    {
+      "id": "BIZ-03",
+      "title": "Stop Hook creates blocking friction during init-pending period with a Chinese-only message",
+      "severity": "medium",
+      "category": "ux-friction",
+      "description": "The agents-md-init-reminder.cjs Stop Hook emits a block decision on every Claude session completion while forensic.json exists but init-context.json does not. The block message is written in Chinese ('fab init 已完成证据收集，但项目 AGENTS.md 初始化尚未完成'), creating a localization issue for non-Chinese users who will see an unexplained block in an unfamiliar language.",
+      "evidence_files": [
+        "packages/cli/templates/claude-hooks/agents-md-init-reminder.cjs"
+      ]
+    },
+    {
+      "id": "BIZ-04",
+      "title": "Forensic scan recommendations are written in Chinese, creating a localization split",
+      "severity": "medium",
+      "category": "localization-gap",
+      "description": "The buildSkillRecommendations() function in forensic.ts generates Chinese-language recommendations ('建议向用户确认...') that are embedded in the forensic.json data package. This data is then presented to the AI during the initialization interview. Non-Chinese-language AI sessions will receive mixed-language context, potentially causing the AI to generate AGENTS.md content in an inconsistent language.",
+      "evidence_files": [
+        "packages/cli/src/scanner/forensic.ts"
+      ]
+    },
+    {
+      "id": "BIZ-05",
+      "title": "Dashboard has no automatic SSE reconnection — stale data shown silently after disconnect",
+      "severity": "medium",
+      "category": "dashboard-reliability",
+      "description": "The openSseConnection() client swallows all errors and calls onClose() on disconnect, delegating reconnect responsibility to each view. Examining all 5 views (rules-tree, doctor, human-lock, intent-timeline, history-replay), none implement reconnection logic — they rely on SSE event updates but have no fallback poll or reconnect. After a disconnect, all views show stale data indefinitely with no visual indicator until the user manually refreshes.",
+      "evidence_files": [
+        "packages/dashboard/src/api/client.ts",
+        "packages/dashboard/src/views/rules-tree.tsx",
+        "packages/dashboard/src/views/doctor.tsx"
+      ]
+    },
+    {
+      "id": "BIZ-06",
+      "title": "Human-lock approval is single-entry only — no bulk approve for teams with many drifted locks",
+      "severity": "low",
+      "category": "workflow-efficiency",
+      "description": "The HumanLockView's approve() function processes one lock entry at a time via a single API call. Teams that accumulate many drifted human-lock entries (e.g., after a refactor of protected code) must approve each entry individually. The UI shows drift count clearly, but the remediation workflow has no bulk action.",
+      "evidence_files": [
+        "packages/dashboard/src/views/human-lock.tsx"
+      ]
+    },
+    {
+      "id": "BIZ-07",
+      "title": "History replay slider has no debounce — can generate rapid-fire API calls",
+      "severity": "low",
+      "category": "performance",
+      "description": "In HistoryReplayView, each selectedEntryId change immediately fires getHistoryState(). The range slider input fires on every pixel of movement. While there is cancellation support (cancelled flag), each move triggers a new network request. On a ledger with 100+ entries, a user dragging the slider across the full range will generate dozens of concurrent requests.",
+      "evidence_files": [
+        "packages/dashboard/src/views/history-replay.tsx"
+      ]
+    },
+    {
+      "id": "BIZ-08",
+      "title": "SSE connection limit of 10 creates an invisible ceiling for team adoption",
+      "severity": "low",
+      "category": "scalability",
+      "description": "The server enforces a hard cap of 10 concurrent SSE connections, returning HTTP 503 for the 11th. Teams with more than 10 developers simultaneously using the dashboard will silently fail for some users. The 503 response includes a machine-readable error but the dashboard client has no specific handling for this error code — users see a generic load failure.",
+      "evidence_files": [
+        "packages/server/src/api/events.ts"
+      ]
+    },
+    {
+      "id": "BIZ-09",
+      "title": "fab init is fully zero-configuration for client detection but config overrides require hidden knowledge",
+      "severity": "positive",
+      "category": "developer-experience",
+      "description": "The resolveClients() and detectClientSupports() functions use filesystem presence checks (~/.claude, .cursor, .windsurf, etc.) for automatic detection with zero user input required. This is a genuine zero-config onboarding win. However, the override mechanism via fabric.json clientPaths is undocumented in the init output — users who want to configure non-standard paths must discover this capability independently.",
+      "evidence_files": [
+        "packages/cli/src/config/resolver.ts"
+      ]
+    },
+    {
+      "id": "BIZ-10",
+      "title": "Forensic auto-scan is the key automation investment that reduces manual setup burden",
+      "severity": "positive",
+      "category": "automation-value",
+      "description": "buildForensicReport() automates framework detection, entry-point discovery, code sampling, pattern assertion, and candidate file selection — all without user input. For the 3 supported frameworks (cocos-creator, next, vite), this eliminates the need for users to manually describe their project to the AI. The Zod schema validation ensures the data package is always structurally valid before the AI interview begins.",
+      "evidence_files": [
+        "packages/cli/src/scanner/forensic.ts"
+      ]
+    }
+  ],
+  "code_anchors": [
+    {
+      "file": "packages/cli/src/commands/init.ts",
+      "lines": "182-250",
+      "snippet": "if (options.skipBootstrap) {\n  stageResults.push({ name: 'bootstrap', disposition: 'skipped' });\n} else {\n  // ... installBootstrap\n}\n// then MCP stage\n// then hooks stage",
+      "significance": "Three stages run sequentially. If installBootstrap blocks (e.g., npm install for local MCP), the entire init is stalled. No progress indication between stages — user sees blank terminal until each stage completes. For teams with slow npm registries, this dead time creates an ambiguous 'is it hung?' UX."
+    },
+    {
+      "file": "packages/cli/src/commands/init.ts",
+      "lines": "501-561",
+      "snippet": "function mergeClaudeStopHook(settingsPath, options): ClaudeSettingsAction {\n  // ...\n  if (!isRecord(parsed)) { writeStderr(...); return 'skipped-invalid'; }\n  // ...\n  if (!isRecord(settings.hooks)) { writeStderr(...); return 'skipped-invalid'; }\n  if (stopHooksValue !== undefined && !Array.isArray(stopHooksValue)) { writeStderr(...); return 'skipped-invalid'; }\n}",
+      "significance": "Four silent failure paths all return 'skipped-invalid' and emit stderr messages. The stderr channel is used consistently throughout init for optional/diagnostic messages while stdout carries the main output. Users piping init output to a file will miss these warning messages entirely."
+    },
+    {
+      "file": "packages/cli/src/config/resolver.ts",
+      "lines": "113-205",
+      "snippet": "// Claude Code CLI: { bootstrap: true, mcp: true, hook: true, skill: true }\n// Claude Code Desktop: { bootstrap: true, mcp: true, hook: false, skill: false }\n// Cursor: { bootstrap: true, mcp: true, hook: false, skill: false }\n// Windsurf, RooCode, GeminiCLI, CodexCLI: same as Desktop",
+      "significance": "The 4-capability vs 2-capability split is baked into the resolver as hard-coded boolean literals. Adding hook/skill support for a new client requires code changes — there is no configuration path for extending capabilities without a code deployment."
+    },
+    {
+      "file": "packages/cli/templates/claude-hooks/agents-md-init-reminder.cjs",
+      "lines": "12-18",
+      "snippet": "process.stdout.write(\n  JSON.stringify({\n    decision: 'block',\n    reason: 'fab init 已完成证据收集，但项目 AGENTS.md 初始化尚未完成。调用 agents-md-init skill...',\n  })\n);",
+      "significance": "The block reason is hardcoded in Chinese. Unlike the rest of the CLI which uses i18n (t() function), this template bypasses the translation system. This is a localization regression — the CLI framework clearly supports i18n but the hook file cannot use it as a CommonJS template."
+    },
+    {
+      "file": "packages/cli/src/scanner/forensic.ts",
+      "lines": "1028-1057",
+      "snippet": "// @deprecated Transitional migration helper\nfunction buildSkillRecommendations(...): string[] {\n  recommendations.push('建议向用户确认 Cocos Creator Component 生命周期...');\n  recommendations.push('建议询问 assets/prefabs...');\n}",
+      "significance": "Marked @deprecated but still active in the main buildForensicReport() call path. Chinese-only recommendations are embedded in forensic.json and read by the AI skill during Phase 2. The deprecation suggests a planned migration to the structured assertions system but the migration is incomplete."
+    },
+    {
+      "file": "packages/dashboard/src/api/client.ts",
+      "lines": "217-219",
+      "snippet": "} catch {\n  // intentionally swallowed — caller handles reconnect via onClose\n}",
+      "significance": "The comment documents intent but the 5 dashboard views reviewed do NOT implement reconnect logic. The 'caller handles reconnect' contract is unfulfilled — this is a silent reliability gap that only manifests after SSE disconnects in production environments."
+    },
+    {
+      "file": "packages/server/src/api/events.ts",
+      "lines": "23-26",
+      "snippet": "const CONNECTION_LIMIT = 10;\nconst HEARTBEAT_INTERVAL_MS = 30_000;\nconst WATCH_DEBOUNCE_MS = 75;\nconst RING_BUFFER_CAPACITY = 50;",
+      "significance": "All SSE tuning constants are module-level hardcoded values with no external configuration. Teams needing to increase the connection limit for larger teams must fork or patch the server code — there is no config file or environment variable override path."
+    }
+  ],
+  "call_chains": [
+    {
+      "entry": "fab init (CLI command)",
+      "chain": [
+        "initCommand.run() — init.ts:139",
+        "detectClientSupports() — resolver.ts:100",
+        "printInitPlanSummary() — init.ts:666",
+        "initFabric() — init.ts:274",
+        "  buildForensicReport() — forensic.ts:95",
+        "    detectFramework() — detector.ts",
+        "    buildTopology() — forensic.ts:138",
+        "    collectEntryPoints() — forensic.ts:213",
+        "    buildCodeSamples() — forensic.ts:260",
+        "    buildAssertions() — forensic.ts:437",
+        "    buildCandidateFiles() — forensic.ts:454",
+        "  buildFabricBootstrapGuide() — bootstrap-guide.ts:21",
+        "  mergeClaudeStopHook() — init.ts:501",
+        "installBootstrap() — bootstrap.ts (stage 1)",
+        "configCommand.installMcpClients() — config.ts (stage 2)",
+        "installHooks() — hooks.ts (stage 3)",
+        "printInitCapabilitySummary() — init.ts:696"
+      ],
+      "files": [
+        "packages/cli/src/commands/init.ts",
+        "packages/cli/src/config/resolver.ts",
+        "packages/cli/src/scanner/forensic.ts",
+        "packages/cli/src/bootstrap-guide.ts",
+        "packages/cli/src/commands/bootstrap.ts",
+        "packages/cli/src/commands/config.ts",
+        "packages/cli/src/commands/hooks.ts"
+      ]
+    },
+    {
+      "entry": "Stop Hook fires on Claude session end",
+      "chain": [
+        "agents-md-init-reminder.cjs executes (spawned by Claude Stop hook)",
+        "existsSync('.fabric/forensic.json') — check init ran",
+        "existsSync('.fabric/init-context.json') — check interview done",
+        "if pending: emit {decision:'block', reason:'...'} → Claude blocks session completion",
+        "Claude surfaces block message to user (Chinese text)",
+        "User invokes agents-md-init skill",
+        "  Read .fabric/forensic.json — precondition check",
+        "  Phase 1: framework confirmation (1 round)",
+        "  Phase 2: invariant extraction (1 round, 3-5 questions)",
+        "  Phase 3: write init-context.json + AGENTS.md + update agents.meta.json"
+      ],
+      "files": [
+        "packages/cli/templates/claude-hooks/agents-md-init-reminder.cjs",
+        "packages/cli/templates/claude-skills/agents-md-init/SKILL.md"
+      ]
+    },
+    {
+      "entry": "Dashboard SSE event → view refresh",
+      "chain": [
+        "File change on disk (.fabric/agents.meta.json, human-lock.json, forensic.json, .intent-ledger.jsonl)",
+        "chokidar watcher fires (75ms debounce) — events.ts:221",
+        "scheduleFileChange() → publishFileChange() — events.ts:239",
+        "readEventsForFile() dispatches to specific reader — events.ts:251",
+        "broadcastEvent() writes SSE frame to all clients — events.ts:409",
+        "RingBuffer.push() stores for reconnect replay — events.ts:415",
+        "Client openSseConnection() parseSseBlock() → onEvent() — client.ts:245",
+        "parseFabricEvent() validates payload — client.ts:298",
+        "View useEffect([lastEvent]) checks event type → calls load()/setEntries()",
+        "React/Preact re-renders affected view"
+      ],
+      "files": [
+        "packages/server/src/api/events.ts",
+        "packages/dashboard/src/api/client.ts",
+        "packages/dashboard/src/views/rules-tree.tsx",
+        "packages/dashboard/src/views/doctor.tsx",
+        "packages/dashboard/src/views/human-lock.tsx",
+        "packages/dashboard/src/views/intent-timeline.tsx"
+      ]
+    }
+  ],
+  "questions_for_user": [
+    {
+      "id": "Q1",
+      "question": "What percentage of Fabric users are on Claude Code CLI vs other clients? If most users are on Cursor/Windsurf, the 2-tier capability gap (no skill, no hook) is a major product gap — should hook and skill support be extended to those clients?",
+      "business_context": "Client capability matrix in resolver.ts shows 6/7 clients get partial support. If the user base is primarily non-Claude, the value proposition is significantly diminished."
+    },
+    {
+      "id": "Q2",
+      "question": "Is the 3-phase mandatory interview the intended onboarding path for all users, or is there a planned 'quick start' mode where users can accept auto-detected defaults without an interview?",
+      "business_context": "The Zero TODO hard rule and 3-round minimum create a hard gate. An 'accept-defaults' path would dramatically reduce time-to-value for experienced developers who trust the forensic scan results."
+    },
+    {
+      "id": "Q3",
+      "question": "The Stop Hook block message is hardcoded in Chinese — is Fabric intentionally targeting a Chinese-speaking user base, or is this a localization oversight that should be addressed with i18n?",
+      "business_context": "The CLI framework uses i18n (t() function with locale detection) but the hook template bypasses it. This affects all non-Chinese users' first encounter with the init enforcement."
+    },
+    {
+      "id": "Q4",
+      "question": "Is the dashboard intended to be a required part of the Fabric workflow, or a nice-to-have for power users? The current architecture (no CLI integration, separate server process required) makes it optional — but the human-lock approval workflow has no CLI equivalent.",
+      "business_context": "If human-lock approval requires the dashboard, then the dashboard is a required dependency, not optional. This affects infrastructure requirements and team adoption friction."
+    },
+    {
+      "id": "Q5",
+      "question": "Should the SSE connection limit (currently 10) be configurable via environment variable? Teams with >10 developers hitting the dashboard simultaneously will get unexplained errors with no upgrade path.",
+      "business_context": "The hard-coded limit is a team-size ceiling. It's a simple config change to make it configurable, and the business risk is disproportionate to the engineering cost."
+    },
+    {
+      "id": "Q6",
+      "question": "The buildSkillRecommendations() function is marked @deprecated but still actively runs. What is the migration timeline to the structured assertions system, and what happens to users who get Chinese-language recommendations in their forensic.json during the transition period?",
+      "business_context": "The deprecation creates a data quality risk: the assertions system exists in parallel but doesn't cover all recommendation cases. Mixed-language forensic.json can cause inconsistent AI-generated AGENTS.md."
+    }
+  ],
+  "_metadata": {
+    "generated_at": "2026-04-23T00:00:00Z",
+    "analysis_session": "ANL-2026-04-23-ai-client-init-rules-web-interaction",
+    "layer": 2,
+    "perspective": "Business",
+    "analysis_mode": "deep-scan",
+    "files_read": 12,
+    "discovery_sources": ["manual", "bash-scan"],
+    "coverage_summary": "Full coverage of all 12 files identified in Layer 1. Analysis covers onboarding flow (init.ts + forensic.ts + SKILL.md + hook), multi-client support matrix (resolver.ts), all 5 dashboard views, the full SSE pipeline (events.ts + client.ts). No additional files needed for Business perspective conclusions.",
+    "confidence": "high"
+  }
+}

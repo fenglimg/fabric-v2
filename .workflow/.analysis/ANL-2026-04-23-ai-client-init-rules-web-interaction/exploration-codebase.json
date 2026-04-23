@@ -1,0 +1,274 @@
+{
+  "relevant_files": [
+    {
+      "path": "packages/cli/src/commands/init.ts",
+      "annotation": "AI客户端初始化的主入口命令，协调三大阶段（bootstrap、mcp、hooks）的完整流程，写入.fabric/bootstrap/README.md、agents.meta.json、human-lock.json、forensic.json，并向.claude/settings.json注入Stop hook",
+      "dimensions": ["architecture", "implementation"]
+    },
+    {
+      "path": "packages/cli/src/config/resolver.ts",
+      "annotation": "客户端检测与支持矩阵，通过文件系统探针（~/.claude、.cursor、.windsurf、.roo、~/.gemini、~/.codex）识别7种AI客户端，返回每个客户端的capability matrix（bootstrap/mcp/hook/skill）",
+      "dimensions": ["architecture", "implementation"]
+    },
+    {
+      "path": "packages/cli/src/config/json.ts",
+      "annotation": "JSON格式MCP配置写入器，ClaudeCodeCLIWriter写到.claude/settings.json，CursorWriter/.cursor/mcp.json，WindsurfWriter/.windsurf/mcp.json，RooCodeWriter/.roo/mcp.json，GeminiCLIWriter写~/.gemini/settings.json，统一注入fabric MCP server entry",
+      "dimensions": ["implementation"]
+    },
+    {
+      "path": "packages/cli/src/config/claude-code.ts",
+      "annotation": "Claude Code双模式（CLI + Desktop）MCP配置写入器，Desktop模式识别跨平台配置路径（macOS Library/Application Support/Claude，Windows APPDATA），writeClaudeCodeAll同时写两处",
+      "dimensions": ["implementation"]
+    },
+    {
+      "path": "packages/cli/src/config/toml.ts",
+      "annotation": "Codex CLI专用TOML格式配置写入器，写到~/.codex/config.toml，采用与JSON writer相同的detect/write接口设计",
+      "dimensions": ["implementation"]
+    },
+    {
+      "path": "packages/cli/src/commands/bootstrap.ts",
+      "annotation": "Bootstrap安装命令，负责将AGENTS.md/README.md引导文档写入各AI客户端能识别的路径，当前实现为skipped（统一通过initFabric），包含BootstrapClient别名映射和目标解析逻辑",
+      "dimensions": ["implementation"]
+    },
+    {
+      "path": "packages/cli/src/bootstrap-guide.ts",
+      "annotation": "Bootstrap文档生成器，buildFabricBootstrapGuide根据项目框架类型（cocos-creator/vite/next/generic）选择对应模板，注入projectName和frameworkKind，生成.fabric/bootstrap/README.md",
+      "dimensions": ["implementation"]
+    },
+    {
+      "path": "packages/cli/src/scanner/forensic.ts",
+      "annotation": "项目取证扫描器，从0到1构建项目认知的核心，扫描文件拓扑、检测框架、识别入口点、分析代码模式，生成forensicReport作为AI初始化访谈的证据包",
+      "dimensions": ["architecture", "implementation", "concept"]
+    },
+    {
+      "path": "packages/cli/src/scanner/detector.ts",
+      "annotation": "框架检测器，通过config文件指纹（project.config.json→cocos-creator, vite.config.*→vite, next.config.*→next）识别项目技术栈",
+      "dimensions": ["implementation"]
+    },
+    {
+      "path": "packages/cli/src/scanner/ignores.ts",
+      "annotation": "扫描忽略规则配置，定义哪些目录（node_modules、dist、.git等）在forensic扫描中跳过",
+      "dimensions": ["implementation"]
+    },
+    {
+      "path": "packages/cli/templates/bootstrap/CLAUDE.md",
+      "annotation": "Claude Code / Gemini CLI的bootstrap规则模板，包含硬规则（MUST/NEVER）指令，要求AI在修改任何文件前调用fab_get_rules MCP工具，是AI客户端首次加载项目时获取规则认知的核心入口",
+      "dimensions": ["concept", "architecture"]
+    },
+    {
+      "path": "packages/cli/templates/bootstrap/cursor-fabric-bootstrap.mdc",
+      "annotation": "Cursor专用bootstrap规则模板（.mdc格式，alwaysApply:true），Cursor以Rules方式读取，内容与CLAUDE.md相同但用Cursor的@AGENTS.md格式包装",
+      "dimensions": ["concept", "implementation"]
+    },
+    {
+      "path": "packages/cli/templates/bootstrap/GEMINI.md",
+      "annotation": "Gemini CLI的bootstrap规则模板，与CLAUDE.md内容完全相同，Gemini读取GEMINI.md文件获取项目规则",
+      "dimensions": ["concept"]
+    },
+    {
+      "path": "packages/cli/templates/bootstrap/codex-AGENTS-header.md",
+      "annotation": "Codex CLI的AGENTS.md头部模板，Codex通过AGENTS.md文件获取规则",
+      "dimensions": ["concept"]
+    },
+    {
+      "path": "packages/cli/templates/bootstrap/roo-fabric.md",
+      "annotation": "Roo Code的bootstrap规则模板",
+      "dimensions": ["concept"]
+    },
+    {
+      "path": "packages/cli/templates/bootstrap/windsurf-fabric.md",
+      "annotation": "Windsurf的bootstrap规则模板",
+      "dimensions": ["concept"]
+    },
+    {
+      "path": "packages/cli/templates/claude-hooks/agents-md-init-reminder.cjs",
+      "annotation": "Claude Code Stop Hook实现，每次对话结束时自动触发，检查.fabric/forensic.json存在但.fabric/init-context.json不存在则发出block信号，强制用户完成AGENTS.md初始化访谈（3阶段流程）",
+      "dimensions": ["implementation", "concept"]
+    },
+    {
+      "path": "packages/cli/templates/claude-skills/agents-md-init/SKILL.md",
+      "annotation": "Claude Code Skill文件，定义3阶段初始化访谈流程（框架确认→不变式提取→构造落地），引导AI从forensic.json读取证据，与用户对话确认架构约束，最终生成init-context.json和分层AGENTS.md",
+      "dimensions": ["concept", "implementation"]
+    },
+    {
+      "path": "packages/server/src/index.ts",
+      "annotation": "Fabric MCP Server入口，createFabricServer注册fab_get_rules、fab_plan_context、fab_append_intent、fab_update_registry四个MCP工具，以及bootstrap README资源，支持stdio和HTTP两种传输模式",
+      "dimensions": ["architecture", "implementation"]
+    },
+    {
+      "path": "packages/server/src/http.ts",
+      "annotation": "HTTP服务器核心，创建Express+MCP StreamableHTTP会话，注册全部REST API端点，用chokidar监听.fabric/agents.meta.json和.fabric/bootstrap/README.md变化自动通知MCP客户端（tools/list_changed、resource_updated），集成bearer auth中间件",
+      "dimensions": ["architecture", "implementation"]
+    },
+    {
+      "path": "packages/server/src/services/get-rules.ts",
+      "annotation": "规则解析引擎核心，getRules根据请求路径做glob匹配（minimatch），从agents.meta.json节点中找出覆盖该路径的所有规则节点，按priority排序后分L1/L2返回，附带L0内容和human_locked_nearby，支持stale检测（client_hash对比）",
+      "dimensions": ["architecture", "implementation", "concept"]
+    },
+    {
+      "path": "packages/server/src/tools/get-rules.ts",
+      "annotation": "fab_get_rules MCP工具注册，暴露path+client_hash输入，通过getRules服务返回结构化L0/L1/L2规则树，是AI客户端在perception阶段获取项目规则的主要接口",
+      "dimensions": ["implementation"]
+    },
+    {
+      "path": "packages/server/src/api/rules.ts",
+      "annotation": "REST API /api/rules端点，返回agents.meta.json原始元数据（非规则解析，仅元数据），供Web dashboard读取规则树结构",
+      "dimensions": ["implementation"]
+    },
+    {
+      "path": "packages/server/src/api/scan.ts",
+      "annotation": "REST API /api/scan端点，运行createScanReport对项目做健康扫描（框架检测、README质量、文件统计、Fabric状态），返回recommendations，是Web dashboard首页扫描结果的数据源",
+      "dimensions": ["implementation"]
+    },
+    {
+      "path": "packages/server/src/api/events.ts",
+      "annotation": "SSE事件推送处理器，用chokidar监听.fabric目录4个关键文件变化，向所有连接的dashboard客户端推送meta:updated、drift:detected、lock:drift等实时事件，包含RingBuffer实现支持断线重连replay",
+      "dimensions": ["architecture", "implementation"]
+    },
+    {
+      "path": "packages/server/src/api/intent.ts",
+      "annotation": "REST API /api/intent/annotate端点，接收ledger_entry_id和annotation对意图条目添加注释，是Web界面与本地AI操作记录交互的桥梁",
+      "dimensions": ["implementation"]
+    },
+    {
+      "path": "packages/server/src/api/doctor.ts",
+      "annotation": "REST API /api/doctor端点，运行DoctorReport全面诊断Fabric配置健康状态，包括drift检测、human-lock完整性、audit违规等",
+      "dimensions": ["implementation"]
+    },
+    {
+      "path": "packages/server/src/middleware/bearer-auth.ts",
+      "annotation": "Bearer Token认证中间件，对/api、/events、/mcp路径做timing-safe token验证，支持FABRIC_AUTH_TOKEN环境变量，是Web server与远程访问场景的安全层",
+      "dimensions": ["implementation"]
+    },
+    {
+      "path": "packages/server/src/services/doctor.ts",
+      "annotation": "DoctorReport服务，检查Fabric初始化状态、drift数量、protected path完整性、ledger最近活动、audit合规性，多维度健康检查",
+      "dimensions": ["implementation"]
+    },
+    {
+      "path": "packages/dashboard/src/api/client.ts",
+      "annotation": "Dashboard前端API客户端，封装所有REST调用（getRules、getLedger、getScan、getDoctor、getHumanLock、approveHumanLock、annotateIntent、getHistoryState），实现SSE连接管理（openSseConnection）和Bearer token注入（从window.__FABRIC_AUTH_TOKEN__或URL参数读取）",
+      "dimensions": ["architecture", "implementation"]
+    },
+    {
+      "path": "packages/dashboard/src/views/rules-tree.tsx",
+      "annotation": "Dashboard规则树视图（Preact组件），从/api/rules获取agents.meta.json并可视化展示规则节点树结构，响应SSE meta:updated/drift:detected事件自动刷新，支持过滤和节点详情展示",
+      "dimensions": ["implementation"]
+    },
+    {
+      "path": "packages/dashboard/src/views/doctor.tsx",
+      "annotation": "Dashboard健康诊断视图，展示DoctorReport结果包括各项check状态和summary",
+      "dimensions": ["implementation"]
+    },
+    {
+      "path": "packages/dashboard/src/views/intent-timeline.tsx",
+      "annotation": "Dashboard意图时间线视图，展示AI操作ledger条目，支持注释和历史回放",
+      "dimensions": ["implementation"]
+    },
+    {
+      "path": "packages/dashboard/src/views/human-lock.tsx",
+      "annotation": "Dashboard人工保护视图，展示human-lock.json中的保护范围，支持approve操作",
+      "dimensions": ["implementation"]
+    },
+    {
+      "path": "packages/dashboard/src/views/history-replay.tsx",
+      "annotation": "Dashboard历史回放视图，通过/api/history/state在特定ledger时间点重建agents.meta.json状态",
+      "dimensions": ["implementation"]
+    },
+    {
+      "path": "packages/shared/src/schemas/agents-meta.ts",
+      "annotation": "AgentsMeta核心数据结构定义，包含agentsMetaSchema（Zod验证）、deriveAgentsMetaLayer（自动从文件路径推断L0/L1/L2层级）和deriveAgentsMetaTopologyType（mirror vs cross-cutting），是规则层级分类的关键逻辑",
+      "dimensions": ["architecture", "concept"]
+    },
+    {
+      "path": "packages/shared/src/schemas/fabric-config.ts",
+      "annotation": "FabricConfig配置结构（fabricConfigSchema），定义clientPaths（各客户端配置路径覆盖）、scanIgnores（扫描忽略规则）、auditMode（strict/warn/off），是.fabric/fabric.json的schema",
+      "dimensions": ["architecture"]
+    },
+    {
+      "path": "packages/cli/src/commands/serve.ts",
+      "annotation": "fab serve命令，启动HTTP服务器（默认7373端口），支持FABRIC_AUTH_TOKEN环境变量开启Bearer auth，无token时强制回落到127.0.0.1确保安全",
+      "dimensions": ["implementation"]
+    },
+    {
+      "path": "packages/cli/templates/fabric/fabric-config.json",
+      "annotation": ".fabric/fabric.json配置模板，包含clientPaths覆盖字段，允许用户手动指定各AI客户端配置文件路径",
+      "dimensions": ["concept"]
+    },
+    {
+      "path": "packages/shared/src/schemas/init-context.ts",
+      "annotation": "InitContext数据结构，存储3阶段访谈结果（framework、architecture_patterns、invariants、domain_groups、interview_trail），是forensic扫描到AGENTS.md生成中间产物的schema",
+      "dimensions": ["concept"]
+    },
+    {
+      "path": "packages/shared/src/schemas/forensic-report.ts",
+      "annotation": "ForensicReport数据结构，存储项目取证分析完整结果，包括拓扑、框架、入口点、代码样本、模式提示和skill推荐，是项目认知从0到1的数据载体",
+      "dimensions": ["concept", "architecture"]
+    }
+  ],
+  "patterns": [
+    "Shadow Mirroring架构：业务代码目录（src/、packages/）零规则文件，所有AI规则在.fabric/agents/中按源码路径1:1镜像，跨领域放_cross/",
+    "三层规则体系L0/L1/L2：L0为全局bootstrap（.fabric/bootstrap/README.md），L1为模块级规则（.fabric/agents/下1-2级），L2为文件级规则（.fabric/agents/下3+级），按priority(high/medium/low)排序检索",
+    "Perception-phase mandatory rule fetch：AI客户端在任何代码操作前必须调用fab_get_rules(path)获取shadow context，通过MCP工具而非文件读取，防止perception-phase vacuum",
+    "客户端能力矩阵检测：initFabric运行时通过文件系统探针（~/.claude、.cursor等目录存在性）自动检测已安装的AI客户端，每个客户端有bootstrap/mcp/hook/skill四维能力矩阵",
+    "双传输模式MCP服务器：同一服务支持stdio（本地MCP客户端直连）和HTTP StreamableHTTP（Web端MCP会话），共享相同tool/resource注册",
+    "实时双向推送：SSE/chokidar组合，.fabric目录文件变化→服务端推送FabricEvent→Web dashboard响应式刷新（RingBuffer支持断线重放）；agents.meta.json变化→MCP tools/list_changed通知",
+    "取证驱动初始化：fab init生成forensic.json取证包→Stop Hook检测pending状态→agents-md-init Skill引导3阶段访谈→生成init-context.json→生成分层AGENTS.md，完整的认知建立流水线",
+    "原子JSON写入：writeJsonAtomically使用临时文件+rename防止配置文件损坏",
+    "Bearer Token安全层：fab serve无token时强制127.0.0.1限制访问，有token时允许外网访问，timing-safe比较防时序攻击，dashboard从window.__FABRIC_AUTH_TOKEN__或URL参数读取",
+    "配置路径覆盖机制：.fabric/fabric.json的clientPaths字段允许用户覆盖每个AI客户端的配置文件路径，resolver的addIfDetected支持configuredPath优先于文件探针"
+  ],
+  "module_map": {
+    "cli": {
+      "description": "CLI工具包（fab命令），负责项目初始化、配置管理和服务启动",
+      "entry_points": ["packages/cli/src/commands/init.ts", "packages/cli/src/commands/serve.ts"],
+      "sub_modules": {
+        "commands": "各子命令实现（init、bootstrap、config、hooks、serve、scan、doctor、sync-meta等）",
+        "config": "AI客户端配置读写器（claude-code、json、toml、resolver、writer）",
+        "scanner": "项目取证扫描（forensic、detector、ignores）",
+        "bootstrap-guide": "bootstrap文档生成器",
+        "templates": "各AI客户端规则模板（CLAUDE.md、GEMINI.md、cursor-fabric-bootstrap.mdc等）"
+      }
+    },
+    "server": {
+      "description": "Fabric MCP+HTTP服务器，提供规则查询、事件推送、REST API",
+      "entry_points": ["packages/server/src/index.ts（stdio）", "packages/server/src/http.ts（HTTP）"],
+      "sub_modules": {
+        "tools": "MCP工具（fab_get_rules、fab_plan_context、fab_append_intent、fab_update_registry）",
+        "api": "REST端点（rules、scan、doctor、events、ledger、history、human-lock、intent、static）",
+        "services": "业务逻辑（get-rules、doctor、annotate-intent、read-ledger、read-human-lock、rehydrate-state、audit-log等）",
+        "middleware": "bearer-auth中间件"
+      }
+    },
+    "dashboard": {
+      "description": "Web管理界面（Preact SPA），可视化规则树、健康状态、意图记录",
+      "entry_points": ["packages/dashboard/src/main.tsx"],
+      "sub_modules": {
+        "api": "REST API客户端（client.ts）",
+        "views": "页面视图（rules-tree、doctor、intent-timeline、human-lock、history-replay）",
+        "components": "通用组件",
+        "hooks": "自定义hooks"
+      }
+    },
+    "shared": {
+      "description": "跨包共享的类型定义和Zod schema",
+      "schemas": ["agents-meta、fabric-config、forensic-report、human-lock、ledger-entry、events、init-context、api-contracts"]
+    }
+  },
+  "questions_for_user": [
+    "fab init的Stop Hook（agents-md-init-reminder.cjs）触发后，3阶段访谈流程是全自动的还是需要人工介入？从SKILL.md看需要用户回答问题，但Hook只是block信号",
+    "forensic.ts的patternHints和codeSamples分析深度如何？是否做了AST级别分析还是仅文本匹配？",
+    "fab_get_rules的stale检测（client_hash vs revision）在AI客户端实践中如何使用？客户端是否会缓存revision_hash并在下次调用时传入？",
+    "dashboard的Bearer Token从URL参数读取后会从history中移除，但window.__FABRIC_AUTH_TOKEN__的注入方式是什么？是通过server-side模板注入还是其他机制？",
+    "L0规则（bootstrap/README.md）是通过MCP resource暴露（AGENTS_MD_RESOURCE_URI）的，AI客户端是主动订阅resource_updated事件还是每次都重新fetch？",
+    "agents.meta.json的revision字段是sha256(agentsHash)，当L1/L2规则更新时revision如何更新？是通过fab_update_registry工具自动计算还是需要手动触发？"
+  ],
+  "_metadata": {
+    "timestamp": "2026-04-23T00:00:00Z",
+    "tool": "claude-sonnet-4-6-bash-scan",
+    "layer": "Layer 1 - Module Discovery",
+    "analysis_mode": "deep-scan",
+    "total_files_analyzed": 40,
+    "discovery_sources": ["bash-scan", "manual"]
+  }
+}

@@ -1,0 +1,159 @@
+{
+  "views": [
+    {
+      "name": "RulesTreeView",
+      "path": "packages/dashboard/src/views/rules-tree.tsx",
+      "type": "read-write",
+      "capabilities": [
+        "Display hierarchical rules tree grouped by directory",
+        "Show lock status indicators on nodes",
+        "Display node detail panel (file, scope_glob, priority, hash, deps)",
+        "Filter tree by text query",
+        "Select individual tree node to inspect"
+      ],
+      "user_actions": [
+        "Type in filter input to search nodes",
+        "Click a tree node to select and view detail",
+        "Click refresh button to reload rules + locks"
+      ]
+    },
+    {
+      "name": "HumanLockView",
+      "path": "packages/dashboard/src/views/human-lock.tsx",
+      "type": "read-write",
+      "capabilities": [
+        "Display all human-lock entries with drift status",
+        "Filter locks by all / drift / approved",
+        "Approve a drifted lock — writes hash update to server"
+      ],
+      "user_actions": [
+        "Click filter chips (all / drift / approved) to narrow list",
+        "Click approve button on a LockCard to call POST /api/human-lock/approve"
+      ]
+    },
+    {
+      "name": "IntentTimelineView",
+      "path": "packages/dashboard/src/views/intent-timeline.tsx",
+      "type": "read-write",
+      "capabilities": [
+        "Display ledger entries in dual-column AI / human timeline",
+        "Filter by source (all / ai / human)",
+        "Add text annotation to an AI ledger entry"
+      ],
+      "user_actions": [
+        "Click filter buttons to change source view",
+        "Submit annotation text on a TimelineEntry to call POST /api/intent/annotate"
+      ]
+    },
+    {
+      "name": "HistoryReplayView",
+      "path": "packages/dashboard/src/views/history-replay.tsx",
+      "type": "read-only",
+      "capabilities": [
+        "Scrub through ledger history using a range slider",
+        "View point-in-time rules tree snapshot for any ledger entry",
+        "Jump to latest entry with a button",
+        "Display replay metadata (mode, commit, replayed count)"
+      ],
+      "user_actions": [
+        "Drag slider to select ledger time point (triggers GET /api/history/state)",
+        "Click timeline list item to jump to that entry",
+        "Click 'Latest' button to seek to newest entry"
+      ]
+    },
+    {
+      "name": "DoctorView",
+      "path": "packages/dashboard/src/views/doctor.tsx",
+      "type": "read-only",
+      "capabilities": [
+        "Display overall system health status (ok / warn / error)",
+        "Show summary cards: framework, protected paths, intent ledger age",
+        "List entry points with reason",
+        "List named diagnostic checks with per-check status and message"
+      ],
+      "user_actions": [
+        "Click refresh button to re-run GET /api/doctor"
+      ]
+    }
+  ],
+  "write_operations": [
+    {
+      "action": "Approve human lock",
+      "ui_element": "ApproveButton (variant=approve) inside LockCard",
+      "endpoint": "/api/human-lock/approve",
+      "method": "POST",
+      "effect": "Updates the lock entry's accepted hash to the current file hash, clearing drift state"
+    },
+    {
+      "action": "Annotate intent entry",
+      "ui_element": "ApproveButton (variant=annotate) inside TimelineEntry",
+      "endpoint": "/api/intent/annotate",
+      "method": "POST",
+      "effect": "Creates a new human ledger entry linked to the referenced AI ledger entry ID, storing the annotation text"
+    }
+  ],
+  "sse_subscriptions": [
+    {
+      "view": "all views (shared hook)",
+      "events": [
+        "meta:updated",
+        "lock:drift",
+        "lock:approved",
+        "ledger:appended",
+        "drift:detected"
+      ],
+      "update_mechanism": "useEvents() hook in app.tsx opens a single SSE connection to /events via openSseConnection(). It maintains a RingBuffer of 50 events (fabricEventsSignal). On disconnect, exponential backoff reconnect triggers: initial 1s, multiplier 2x, cap 30s. lastEvent is passed as a prop to every view. Each view's useEffect watches lastEvent.type and calls its own load() when relevant event types arrive — pull-on-push pattern (SSE triggers a fresh GET, not direct state injection). Exception: IntentTimelineView's ledger:appended injects the payload directly into state without a refetch."
+    }
+  ],
+  "interaction_gaps": [
+    {
+      "gap": "No rule editing or creation UI",
+      "description": "RulesTreeView is purely read/browse. Users can inspect rule metadata (file, scope, priority, hash, deps) but cannot edit, create, or delete any rule from the dashboard.",
+      "impact": "Rule management must happen outside the dashboard via CLI or direct file edits, creating a context switch for operators."
+    },
+    {
+      "gap": "No bulk approve for human locks",
+      "description": "HumanLockView requires approving each drifted lock individually. There is no 'approve all drifted' action.",
+      "impact": "High friction when many files drift simultaneously, e.g. after a large refactor."
+    },
+    {
+      "gap": "Annotation is append-only with no edit or delete",
+      "description": "IntentTimelineView can add a human annotation to an AI entry but there is no UI to edit or remove an existing annotation.",
+      "impact": "Incorrect annotations are permanent from the dashboard's perspective."
+    },
+    {
+      "gap": "HistoryReplay is view-only — no rollback action",
+      "description": "The history replay view lets users inspect past rule states but provides no mechanism to restore or roll back to a snapshot.",
+      "impact": "Operators who identify a regression in rules cannot act from the dashboard; they must use CLI."
+    },
+    {
+      "gap": "Doctor view has no remediation actions",
+      "description": "Diagnostic checks surface ok/warn/error status with messages but no clickable fix action exists for any check.",
+      "impact": "Doctor is purely observational — all remediation happens outside the dashboard."
+    },
+    {
+      "gap": "No SSE reconnection visibility for the user",
+      "description": "The header shows a 'connecting' badge during reconnect, but there is no indication of how many retries have occurred or what the next retry delay is.",
+      "impact": "Users cannot distinguish a transient blip from a prolonged outage without browser dev tools."
+    }
+  ],
+  "read_write_ratio": {
+    "read_count": 3,
+    "write_count": 2,
+    "summary": "3 of 5 views are functionally read-only (RulesTree offers filtering/selection but no mutations; HistoryReplay only queries; Doctor only queries). Only 2 views trigger server mutations: HumanLockView (approve lock) and IntentTimelineView (annotate entry). Total distinct write endpoints: 2 (POST /api/human-lock/approve, POST /api/intent/annotate). The dashboard is predominantly an observation and triage tool, with narrow but concrete write capabilities centered on human oversight actions."
+  },
+  "_metadata": {
+    "files_analyzed": [
+      "packages/dashboard/src/app.tsx",
+      "packages/dashboard/src/api/client.ts",
+      "packages/dashboard/src/hooks/use-events.ts",
+      "packages/dashboard/src/views/rules-tree.tsx",
+      "packages/dashboard/src/views/human-lock.tsx",
+      "packages/dashboard/src/views/intent-timeline.tsx",
+      "packages/dashboard/src/views/history-replay.tsx",
+      "packages/dashboard/src/views/doctor.tsx",
+      "packages/dashboard/src/components/approve-button.tsx"
+    ],
+    "timestamp": "2026-04-23T00:00:00Z"
+  }
+}
