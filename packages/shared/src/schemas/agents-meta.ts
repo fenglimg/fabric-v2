@@ -10,7 +10,7 @@ import type {
 const FABRIC_AGENTS_PREFIX = ".fabric/agents/";
 
 export const AGENTS_META_LAYERS = ["L0", "L1", "L2"] as const;
-export const AGENTS_META_TOPOLOGY_TYPES = ["mirror", "cross-cutting"] as const;
+export const AGENTS_META_TOPOLOGY_TYPES = ["mirror", "cross-cutting", "domain", "local", "global"] as const;
 export const AGENTS_META_IDENTITY_SOURCES = ["declared", "derived"] as const;
 
 export const agentsLayerSchema = z.enum(AGENTS_META_LAYERS);
@@ -20,11 +20,34 @@ export const agentsIdentitySourceSchema = z.enum(AGENTS_META_IDENTITY_SOURCES);
 type AgentsMetaNodeInput = Omit<AgentsMetaNode, "layer" | "topology_type"> &
   Partial<Pick<AgentsMetaNode, "layer" | "topology_type">>;
 
+export const ruleDescriptionSchema = z
+  .object({
+    summary: z.string(),
+    intent_clues: z.array(z.string()),
+    tech_stack: z.array(z.string()),
+    impact: z.array(z.string()),
+    must_read_if: z.string(),
+    entities: z.array(z.string()).optional(),
+  })
+  .strict();
+
+export const ruleDescriptionIndexItemSchema = z
+  .object({
+    stable_id: z.string(),
+    level: agentsLayerSchema,
+    required: z.boolean(),
+    selectable: z.boolean(),
+    description: ruleDescriptionSchema,
+  })
+  .strict();
+
 const agentsMetaNodeBaseSchema = z.object({
   file: z.string(),
+  content_ref: z.string().optional(),
   scope_glob: z.string(),
   deps: z.array(z.string()),
   priority: z.enum(["high", "medium", "low"]),
+  level: agentsLayerSchema.optional(),
   layer: agentsLayerSchema,
   topology_type: agentsTopologyTypeSchema,
   hash: z.string(),
@@ -36,6 +59,7 @@ const agentsMetaNodeBaseSchema = z.object({
       description: z.string().optional(),
     })
     .optional(),
+  description: ruleDescriptionSchema.optional(),
 });
 
 export const agentsMetaNodeSchema = z.preprocess((value) => {
@@ -57,7 +81,8 @@ export function withDerivedAgentsMetaNodeDefaults(node: AgentsMetaNodeInput): Ag
 
   return {
     ...node,
-    layer: node.layer ?? deriveAgentsMetaLayer(node.file),
+    layer: node.layer ?? node.level ?? deriveAgentsMetaLayer(node.file),
+    level: node.level ?? node.layer ?? deriveAgentsMetaLayer(node.file),
     topology_type: node.topology_type ?? deriveAgentsMetaTopologyType(node.file),
     stable_id: stableId,
     identity_source: identitySource,

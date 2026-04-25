@@ -27,9 +27,33 @@ describe("initFabric non-destructive behavior", () => {
 
     expect(plan.bootstrapAction).toBe("created");
     expect(plan.metaAction).toBe("created");
+    expect((plan as { taxonomyAction?: string }).taxonomyAction).toBe("created");
+    expect((plan as { taxonomyContent?: string }).taxonomyContent).toContain("Fabric Initial Taxonomy");
+    expect((plan as { taxonomyContent?: string }).taxonomyContent).toContain("L0");
+    expect((plan as { taxonomyContent?: string }).taxonomyContent).toContain("L1");
+    expect((plan as { taxonomyContent?: string }).taxonomyContent).toContain("L2");
     expect(existsSync(`${target}/.fabric/bootstrap/README.md`)).toBe(false);
     expect(existsSync(`${target}/.fabric/agents.meta.json`)).toBe(false);
+    expect(existsSync(`${target}/.fabric/INITIAL_TAXONOMY.md`)).toBe(false);
     expect(plan.codexHooksConfig.action).toBe("created");
+  });
+
+  it("writes a Markdown-only initial taxonomy artifact during init", async () => {
+    const target = createWerewolfFixtureRoot("fab-init-taxonomy");
+    tempRoots.push(target);
+
+    const result = await initFabric(target);
+    const taxonomyPath = `${target}/.fabric/INITIAL_TAXONOMY.md`;
+    const taxonomy = readFixtureFile(target, ".fabric/INITIAL_TAXONOMY.md");
+
+    expect((result as { taxonomyPath?: string }).taxonomyPath).toBe(taxonomyPath);
+    expect((result as { taxonomyAction?: string }).taxonomyAction).toBe("created");
+    expect(taxonomy).toContain("# Fabric Initial Taxonomy");
+    expect(taxonomy).toContain("L0");
+    expect(taxonomy).toContain("L1");
+    expect(taxonomy).toContain("L2");
+    expect(taxonomy).toContain("Evolution Guide");
+    expect(existsSync(`${target}/.fabric/INITIAL_TAXONOMY.json`)).toBe(false);
   });
 
   it("builds an execution plan that preserves staged init order without writing files", async () => {

@@ -65,6 +65,8 @@ export type InitScaffoldResult = {
   bootstrapAction: InitWriteAction;
   metaPath: string;
   metaAction: InitWriteAction;
+  taxonomyPath: string;
+  taxonomyAction: InitWriteAction;
   humanLockPath: string;
   humanLockAction: InitWriteAction;
   forensicPath: string;
@@ -189,6 +191,9 @@ export type InitScaffoldPlan = {
   metaPath: string;
   metaAction: InitWriteAction;
   meta: AgentsMeta;
+  taxonomyPath: string;
+  taxonomyAction: InitWriteAction;
+  taxonomyContent: string;
   humanLockPath: string;
   humanLockAction: InitWriteAction;
   humanLockContent: string;
@@ -483,6 +488,7 @@ export async function buildInitFabricPlan(target: string, options?: InitOptions)
   const fabricDir = join(target, ".fabric");
   const bootstrapPath = join(fabricDir, "bootstrap", "README.md");
   const forensicPath = join(fabricDir, "forensic.json");
+  const taxonomyPath = join(fabricDir, "INITIAL_TAXONOMY.md");
   const claudeSkillPath = join(target, ".claude", "skills", "agents-md-init", "SKILL.md");
   const codexSkillPath = join(target, ".agents", "skills", "fabric-init", "SKILL.md");
   const codexSessionStartHookPath = join(target, ".codex", "hooks", "fabric-session-start.cjs");
@@ -496,12 +502,14 @@ export async function buildInitFabricPlan(target: string, options?: InitOptions)
   const replaceFabricDir = shouldReplaceWritableDirectory(fabricDir, options);
   const bootstrapAction = planFreshPath(bootstrapPath, options);
   const metaAction = planFreshPath(metaPath, options);
+  const taxonomyAction = planFreshPath(taxonomyPath, options);
   const humanLockAction = planFreshPath(humanLockPath, options);
   const forensicAction = planFreshPath(forensicPath, options);
 
   const forensicReport = await buildForensicReport(target);
   const humanLockTemplate = readFileSync(findTemplatePath("templates/fabric/human-lock.json"), "utf8");
   const bootstrapContent = await buildFabricBootstrapGuide(target);
+  const taxonomyContent = buildInitialTaxonomyMarkdown(forensicReport);
   const bootstrapHash = sha256(bootstrapContent);
   const meta = createInitialMeta(bootstrapHash);
 
@@ -516,6 +524,9 @@ export async function buildInitFabricPlan(target: string, options?: InitOptions)
     metaPath,
     metaAction,
     meta,
+    taxonomyPath,
+    taxonomyAction,
+    taxonomyContent,
     humanLockPath,
     humanLockAction,
     humanLockContent: humanLockTemplate.endsWith("\n") ? humanLockTemplate : `${humanLockTemplate}\n`,
@@ -561,6 +572,9 @@ export function executeInitFabricPlan(plan: InitScaffoldPlan): InitScaffoldResul
   preparePlannedPath(plan.metaPath, plan.metaAction);
   writeFileSync(plan.metaPath, `${JSON.stringify(plan.meta, null, 2)}\n`, "utf8");
 
+  preparePlannedPath(plan.taxonomyPath, plan.taxonomyAction);
+  writeFileSync(plan.taxonomyPath, ensureTrailingNewline(plan.taxonomyContent), "utf8");
+
   preparePlannedPath(plan.humanLockPath, plan.humanLockAction);
   writeFileSync(plan.humanLockPath, plan.humanLockContent, "utf8");
 
@@ -580,6 +594,8 @@ export function executeInitFabricPlan(plan: InitScaffoldPlan): InitScaffoldResul
     bootstrapAction: plan.bootstrapAction,
     metaPath: plan.metaPath,
     metaAction: plan.metaAction,
+    taxonomyPath: plan.taxonomyPath,
+    taxonomyAction: plan.taxonomyAction,
     humanLockPath: plan.humanLockPath,
     humanLockAction: plan.humanLockAction,
     forensicPath: plan.forensicPath,
@@ -658,6 +674,7 @@ function exhaustiveInitStagePlan(value: never): never {
 function printInitScaffoldResult(created: InitScaffoldResult): void {
   console.log(formatInitPathAction(created.bootstrapPath, created.bootstrapAction));
   console.log(formatInitPathAction(created.metaPath, created.metaAction));
+  console.log(formatInitPathAction(created.taxonomyPath, created.taxonomyAction));
   console.log(formatInitPathAction(created.humanLockPath, created.humanLockAction));
   console.log(formatInitPathAction(created.forensicPath, created.forensicAction));
   writeStderr(formatOptionalInitPathAction(created.claudeSkillPath, created.claudeSkillAction));
@@ -716,6 +733,8 @@ function buildPlanOnlyScaffoldResult(plan: InitScaffoldPlan): InitScaffoldResult
     bootstrapAction: plan.bootstrapAction,
     metaPath: plan.metaPath,
     metaAction: plan.metaAction,
+    taxonomyPath: plan.taxonomyPath,
+    taxonomyAction: plan.taxonomyAction,
     humanLockPath: plan.humanLockPath,
     humanLockAction: plan.humanLockAction,
     forensicPath: plan.forensicPath,
@@ -1248,6 +1267,80 @@ function createInitialMeta(agentsHash: string): AgentsMeta {
       },
     },
   };
+}
+
+function buildInitialTaxonomyMarkdown(
+  forensicReport: Awaited<ReturnType<typeof buildForensicReport>>,
+): string {
+  const framework = [forensicReport.framework.kind, forensicReport.framework.subkind]
+    .filter((value) => value.trim() !== "")
+    .join(" / ") || "unknown";
+  const keyDirs = forensicReport.topology.key_dirs.slice(0, 8);
+  const candidateFiles = forensicReport.candidate_files.slice(0, 8);
+
+  return `# Fabric Initial Taxonomy
+
+**Date**: ${forensicReport.generated_at}
+**Base Architecture**: L0/L1/L2 Tiered System
+**Detected Framework**: ${framework}
+
+## Origin Logic
+
+- **L0 判定**: 全局协作稳定性规则。典型来源包括仓库根配置、package metadata、Fabric 内部协议和不可随局部业务漂移的约束。
+- **L1 判定**: 领域/模块级规则。依据技术栈、目录职责、框架特征和功能模块划分，而不是路径深度。
+- **L2 判定**: 具体脚本、资源或局部业务状态规则。用于承载特定文件、资源、历史补丁和局部处理细则。
+
+## Initial L1 Buckets
+
+${formatInitialL1Buckets(keyDirs)}
+
+## L2 Candidate Signals
+
+${formatInitialL2Signals(candidateFiles)}
+
+## Evolution Guide
+
+- 涉及全仓协作稳定性的规则进入 L0。
+- 涉及技术领域、框架模块或功能模块的规则进入 L1。
+- 涉及具体文件、具体资源或局部业务状态的规则进入 L2。
+- 冲突时执行解释固定为 L2 > L1 > L0；同层内才使用 priority 排序。
+`;
+}
+
+function formatInitialL1Buckets(keyDirs: string[]): string {
+  if (keyDirs.length === 0) {
+    return "- **L1-General**: 初始化时未检测到稳定目录轴线，后续依据技术栈和模块职责演进。";
+  }
+
+  return keyDirs
+    .map((dir) => `- **L1-${sanitizeTaxonomyLabel(dir)}**: 挂载依据——forensic topology detected \`${dir}\`.`)
+    .join("\n");
+}
+
+function formatInitialL2Signals(candidateFiles: Awaited<ReturnType<typeof buildForensicReport>>["candidate_files"]): string {
+  if (candidateFiles.length === 0) {
+    return "- 暂未识别明确 L2 候选文件。";
+  }
+
+  return candidateFiles
+    .map((entry) => `- \`${entry.path}\`: ${entry.family} — ${entry.rationale}`)
+    .join("\n");
+}
+
+function sanitizeTaxonomyLabel(value: string): string {
+  const sanitized = value
+    .replaceAll("\\", "/")
+    .split("/")
+    .filter(Boolean)
+    .join("-")
+    .replace(/[^A-Za-z0-9_-]+/gu, "-")
+    .replace(/^-+|-+$/gu, "");
+
+  return sanitized === "" ? "General" : sanitized;
+}
+
+function ensureTrailingNewline(value: string): string {
+  return value.endsWith("\n") ? value : `${value}\n`;
 }
 
 function findTemplatePath(relativePath: string): string {
