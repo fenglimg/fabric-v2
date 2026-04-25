@@ -27,7 +27,20 @@ export type EditIntentAuditEntry = AuditLogBaseEntry & {
   window_ms: number;
 };
 
-export type AuditLogEntry = GetRulesAuditEntry | EditIntentAuditEntry;
+export type RuleSelectionAuditEntry = AuditLogBaseEntry & {
+  event: "rule_selection";
+  selection_token: string;
+  target_paths: string[];
+  required_stable_ids: string[];
+  ai_selectable_stable_ids: string[];
+  ai_selected_stable_ids: string[];
+  final_stable_ids: string[];
+  ai_selection_reasons: Record<string, string>;
+  rejected_stable_ids: string[];
+  ignored_stable_ids: string[];
+};
+
+export type AuditLogEntry = GetRulesAuditEntry | EditIntentAuditEntry | RuleSelectionAuditEntry;
 
 export async function appendGetRulesAuditEvent(
   projectRoot: string,
@@ -43,6 +56,43 @@ export async function appendGetRulesAuditEvent(
     ts: input.ts ?? Date.now(),
     path: normalizeAuditPath(projectRoot, input.path),
     client_hash: input.client_hash,
+  };
+
+  await appendAuditLogEntries(projectRoot, [entry]);
+
+  return entry;
+}
+
+export async function appendRuleSelectionAuditEvent(
+  projectRoot: string,
+  input: {
+    path: string;
+    selection_token: string;
+    target_paths: string[];
+    required_stable_ids: string[];
+    ai_selectable_stable_ids: string[];
+    ai_selected_stable_ids: string[];
+    final_stable_ids: string[];
+    ai_selection_reasons: Record<string, string>;
+    rejected_stable_ids: string[];
+    ignored_stable_ids: string[];
+    ts?: number;
+  },
+): Promise<RuleSelectionAuditEntry> {
+  const entry: RuleSelectionAuditEntry = {
+    kind: "audit-event",
+    event: "rule_selection",
+    ts: input.ts ?? Date.now(),
+    path: normalizeAuditPath(projectRoot, input.path),
+    selection_token: input.selection_token,
+    target_paths: input.target_paths.map((path) => normalizeAuditPath(projectRoot, path)),
+    required_stable_ids: input.required_stable_ids,
+    ai_selectable_stable_ids: input.ai_selectable_stable_ids,
+    ai_selected_stable_ids: input.ai_selected_stable_ids,
+    final_stable_ids: input.final_stable_ids,
+    ai_selection_reasons: input.ai_selection_reasons,
+    rejected_stable_ids: input.rejected_stable_ids,
+    ignored_stable_ids: input.ignored_stable_ids,
   };
 
   await appendAuditLogEntries(projectRoot, [entry]);
@@ -358,8 +408,49 @@ function parseAuditLogLine(line: string): AuditLogEntry | null {
       };
     }
 
+    if (
+      parsed.event === "rule_selection" &&
+      typeof parsed.selection_token === "string" &&
+      Array.isArray(parsed.target_paths) &&
+      Array.isArray(parsed.required_stable_ids) &&
+      Array.isArray(parsed.ai_selectable_stable_ids) &&
+      Array.isArray(parsed.ai_selected_stable_ids) &&
+      Array.isArray(parsed.final_stable_ids) &&
+      isStringRecord(parsed.ai_selection_reasons) &&
+      Array.isArray(parsed.rejected_stable_ids) &&
+      Array.isArray(parsed.ignored_stable_ids)
+    ) {
+      return {
+        kind: "audit-event",
+        event: "rule_selection",
+        ts: parsed.ts,
+        path: parsed.path,
+        selection_token: parsed.selection_token,
+        target_paths: parsed.target_paths.filter(isString),
+        required_stable_ids: parsed.required_stable_ids.filter(isString),
+        ai_selectable_stable_ids: parsed.ai_selectable_stable_ids.filter(isString),
+        ai_selected_stable_ids: parsed.ai_selected_stable_ids.filter(isString),
+        final_stable_ids: parsed.final_stable_ids.filter(isString),
+        ai_selection_reasons: parsed.ai_selection_reasons,
+        rejected_stable_ids: parsed.rejected_stable_ids.filter(isString),
+        ignored_stable_ids: parsed.ignored_stable_ids.filter(isString),
+      };
+    }
+
     return null;
   } catch {
     return null;
   }
+}
+
+function isString(value: unknown): value is string {
+  return typeof value === "string";
+}
+
+function isStringRecord(value: unknown): value is Record<string, string> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return false;
+  }
+
+  return Object.values(value).every((entry) => typeof entry === "string");
 }

@@ -1,0 +1,253 @@
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
+
+import type { AgentsLayer } from "@fenglimg/fabric-shared";
+
+import { readAgentsMeta, type AgentsMeta } from "../meta-reader.js";
+import { appendRuleSelectionAuditEvent } from "./audit-log.js";
+import { normalizeRulesPath } from "./get-rules.js";
+import { readSelectionToken } from "./plan-context.js";
+
+export const RULE_SECTION_NAMES = ["MANDATORY_INJECTION", "CONTEXT_INFO"] as const;
+
+export type RuleSectionName = typeof RULE_SECTION_NAMES[number];
+
+export type GetRuleSectionsInput = {
+  selection_token: string;
+  sections: RuleSectionName[];
+  ai_selected_stable_ids: string[];
+  ai_selection_reasons: Record<string, string>;
+};
+
+export type RuleSectionDiagnostic = {
+  code: "missing_section";
+  severity: "warn";
+  stable_id: string;
+  section: RuleSectionName;
+  message: string;
+};
+
+export type RuleSectionResult = {
+  revision_hash: string;
+  precedence: ["L2", "L1", "L0"];
+  selected_stable_ids: string[];
+  rules: Array<{
+    stable_id: string;
+    level: AgentsLayer;
+    path: string;
+    sections: Record<RuleSectionName, string>;
+  }>;
+  diagnostics: RuleSectionDiagnostic[];
+};
+
+type RuleNodeEntry = {
+  stable_id: string;
+  level: AgentsLayer;
+  path: string;
+  priority: AgentsMeta["nodes"][string]["priority"];
+  node: AgentsMeta["nodes"][string];
+};
+
+const PRIORITY_ORDER: Record<AgentsMeta["nodes"][string]["priority"], number> = {
+  high: 0,
+  medium: 1,
+  low: 2,
+};
+
+export function parseRuleSections(content: string): Map<RuleSectionName, string> {
+  const sections = new Map<RuleSectionName, string[]>();
+  const lines = content.split(/\r?\n/u);
+  let activeSection: RuleSectionName | undefined;
+  let buffer: string[] = [];
+
+  const flush = (): void => {
+    if (activeSection === undefined) {
+      return;
+    }
+
+    const text = buffer.join("\n").trim();
+    if (text.length === 0) {
+      buffer = [];
+      return;
+    }
+
+    sections.set(activeSection, [...(sections.get(activeSection) ?? []), text]);
+    buffer = [];
+  };
+
+  for (const line of lines) {
+    const heading = /^(#{2,6})\s+\[([A-Z_]+)\]\s*$/u.exec(line.trim());
+
+    if (heading !== null) {
+      flush();
+      activeSection = isRuleSectionName(heading[2]) ? heading[2] : undefined;
+      continue;
+    }
+
+    if (/^#{1,6}\s+/u.test(line)) {
+      flush();
+      activeSection = undefined;
+      continue;
+    }
+
+    if (activeSection !== undefined) {
+      buffer.push(line);
+    }
+  }
+
+  flush();
+
+  return new Map(
+    Array.from(sections.entries()).map(([section, values]) => [section, values.join("\n\n")]),
+  );
+}
+
+export async function getRuleSections(
+  projectRoot: string,
+  input: GetRuleSectionsInput,
+): Promise<RuleSectionResult> {
+  const token = readSelectionToken(input.selection_token);
+  if (token === undefined) {
+    throw new Error("selection_token is missing or expired");
+  }
+
+  validateAiSelections(token.ai_selectable_stable_ids, input.ai_selected_stable_ids, input.ai_selection_reasons);
+
+  const meta = await readAgentsMeta(projectRoot);
+  const selectedStableIds = [...token.required_stable_ids, ...input.ai_selected_stable_ids];
+  const selectedRules = sortRuleNodes(selectedStableIds.map((stableId) => findRuleNode(meta, stableId)));
+  const diagnostics: RuleSectionDiagnostic[] = [];
+  const rules = [];
+
+  for (const rule of selectedRules) {
+    const content = await readFile(join(projectRoot, rule.path), "utf8");
+    const parsedSections = parseRuleSections(content);
+    const sections = {} as Record<RuleSectionName, string>;
+
+    for (const section of input.sections) {
+      const sectionContent = parsedSections.get(section);
+      sections[section] = sectionContent ?? "";
+
+      if (sectionContent === undefined) {
+        diagnostics.push({
+          code: "missing_section",
+          severity: "warn",
+          stable_id: rule.stable_id,
+          section,
+          message: `Rule ${rule.stable_id} does not define section ${section}.`,
+        });
+      }
+    }
+
+    rules.push({
+      stable_id: rule.stable_id,
+      level: rule.level,
+      path: rule.path,
+      sections,
+    });
+  }
+
+  const result: RuleSectionResult = {
+    revision_hash: meta.revision,
+    precedence: ["L2", "L1", "L0"],
+    selected_stable_ids: rules.map((rule) => rule.stable_id),
+    rules,
+    diagnostics,
+  };
+
+  await appendRuleSelectionAuditEvent(projectRoot, {
+    path: token.target_paths[0] ?? "",
+    selection_token: input.selection_token,
+    target_paths: token.target_paths,
+    required_stable_ids: token.required_stable_ids,
+    ai_selectable_stable_ids: token.ai_selectable_stable_ids,
+    ai_selected_stable_ids: input.ai_selected_stable_ids,
+    final_stable_ids: result.selected_stable_ids,
+    ai_selection_reasons: pickSelectionReasons(input.ai_selected_stable_ids, input.ai_selection_reasons),
+    rejected_stable_ids: [],
+    ignored_stable_ids: [],
+  });
+
+  return result;
+}
+
+function validateAiSelections(
+  aiSelectableStableIds: string[],
+  aiSelectedStableIds: string[],
+  aiSelectionReasons: Record<string, string>,
+): void {
+  const selectable = new Set(aiSelectableStableIds);
+
+  for (const stableId of aiSelectedStableIds) {
+    if (!selectable.has(stableId)) {
+      throw new Error(`Invalid L1 rule selection: ${stableId}`);
+    }
+
+    if (aiSelectionReasons[stableId]?.trim() === "") {
+      throw new Error(`Missing AI selection reason for ${stableId}`);
+    }
+
+    if (aiSelectionReasons[stableId] === undefined) {
+      throw new Error(`Missing AI selection reason for ${stableId}`);
+    }
+  }
+}
+
+function findRuleNode(meta: AgentsMeta, stableId: string): RuleNodeEntry {
+  for (const [nodeId, node] of Object.entries(meta.nodes)) {
+    const nodeStableId = node.stable_id ?? nodeId;
+
+    if (nodeStableId !== stableId) {
+      continue;
+    }
+
+    const level = node.level ?? node.layer;
+    return {
+      stable_id: nodeStableId,
+      level,
+      path: normalizeRulesPath(node.content_ref ?? node.file),
+      priority: node.priority,
+      node,
+    };
+  }
+
+  throw new Error(`Selected rule is not present in agents.meta.json: ${stableId}`);
+}
+
+function sortRuleNodes(rules: RuleNodeEntry[]): RuleNodeEntry[] {
+  return [...rules].sort((left, right) => {
+    const levelDelta = outputLevelOrder(left.level) - outputLevelOrder(right.level);
+    if (levelDelta !== 0) {
+      return levelDelta;
+    }
+
+    const priorityDelta = PRIORITY_ORDER[left.priority] - PRIORITY_ORDER[right.priority];
+    if (priorityDelta !== 0) {
+      return priorityDelta;
+    }
+
+    return left.stable_id.localeCompare(right.stable_id);
+  });
+}
+
+function outputLevelOrder(level: AgentsLayer): number {
+  switch (level) {
+    case "L0":
+      return 0;
+    case "L1":
+      return 1;
+    case "L2":
+      return 2;
+  }
+}
+
+function isRuleSectionName(value: string): value is RuleSectionName {
+  return RULE_SECTION_NAMES.includes(value as RuleSectionName);
+}
+
+function pickSelectionReasons(
+  selectedStableIds: string[],
+  reasons: Record<string, string>,
+): Record<string, string> {
+  return Object.fromEntries(selectedStableIds.map((stableId) => [stableId, reasons[stableId] ?? ""]));
+}

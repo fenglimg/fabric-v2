@@ -1,5 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { agentsLayerSchema, agentsTopologyTypeSchema } from "@fenglimg/fabric-shared";
+import type { AgentsTopologyType } from "@fenglimg/fabric-shared";
 import { z } from "zod";
 
 import { resolveProjectRoot } from "../meta-reader.js";
@@ -14,7 +15,7 @@ type UpdateRegistryInput = {
     deps?: string[];
     priority?: "high" | "medium" | "low";
     layer?: "L0" | "L1" | "L2";
-    topology_type?: "mirror" | "cross-cutting";
+    topology_type?: AgentsTopologyType;
     hash?: string;
   };
 };

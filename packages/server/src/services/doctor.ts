@@ -13,6 +13,7 @@ import {
   normalizeAuditPath,
   readAuditLog,
   type GetRulesAuditEntry,
+  type RuleSelectionAuditEntry,
 } from "./audit-log.js";
 import { readHumanLock } from "./read-human-lock.js";
 import { migrateLegacyLedger, readLedger, resolveLedgerPaths } from "./read-ledger.js";
@@ -75,7 +76,7 @@ export type DoctorAuditViolation = {
   editTs: number;
   entryId: string;
   intent: string;
-  lastGetRulesTs: number | null;
+  lastRuleAccessTs: number | null;
   path: string;
 };
 
@@ -89,6 +90,7 @@ export type DoctorAuditReport = {
 };
 
 type EntryPoint = DoctorSummary["entryPoints"][number];
+type RuleAccessAuditEntry = GetRulesAuditEntry | RuleSelectionAuditEntry;
 
 type SavedForensic =
   | {
@@ -260,13 +262,13 @@ export async function runDoctorAuditReport(
     readLedger(projectRoot, { source: "ai" }),
     readAuditLog(projectRoot),
   ]);
-  const getRulesEntries = auditEntries.filter(
-    (entry): entry is GetRulesAuditEntry => entry.event === "get_rules",
+  const ruleAccessEntries = auditEntries.filter(
+    (entry): entry is RuleAccessAuditEntry => entry.event === "get_rules" || entry.event === "rule_selection",
   );
   const { checkedPathCount, violations } = collectAuditViolations(
     projectRoot,
     ledgerEntries,
-    getRulesEntries,
+    ruleAccessEntries,
     windowMs,
   );
 
@@ -462,14 +464,14 @@ function createAuditCheck(report: DoctorAuditReport): DoctorCheck {
     return {
       name: "Rules fetch audit",
       status: report.mode === "strict" ? "error" : "warn",
-      message: `${report.violationCount} edit path${report.violationCount === 1 ? "" : "s"} lack a preceding fab_get_rules call within ${formatDuration(report.windowMs)}.`,
+      message: `${report.violationCount} edit path${report.violationCount === 1 ? "" : "s"} lack a preceding rule_selection or get_rules event within ${formatDuration(report.windowMs)}.`,
     };
   }
 
   return {
     name: "Rules fetch audit",
     status: "ok",
-    message: `All ${report.checkedPathCount} audited edit path${report.checkedPathCount === 1 ? "" : "s"} have a preceding fab_get_rules call within ${formatDuration(report.windowMs)}.`,
+    message: `All ${report.checkedPathCount} audited edit path${report.checkedPathCount === 1 ? "" : "s"} have a preceding rule_selection or get_rules event within ${formatDuration(report.windowMs)}.`,
   };
 }
 
@@ -614,7 +616,7 @@ function collectAuditViolations(
     intent: string;
     affected_paths: string[];
   }>,
-  getRulesEntries: GetRulesAuditEntry[],
+  ruleAccessEntries: RuleAccessAuditEntry[],
   windowMs: number,
 ): {
   checkedPathCount: number;
@@ -626,7 +628,7 @@ function collectAuditViolations(
   for (const entry of ledgerEntries) {
     for (const affectedPath of entry.affected_paths) {
       const normalizedPath = normalizeAuditPath(projectRoot, affectedPath);
-      const matched = findPrecedingGetRulesEvent(getRulesEntries, normalizedPath, entry.ts, windowMs);
+      const matched = findPrecedingRuleAccessEvent(ruleAccessEntries, normalizedPath, entry.ts, windowMs);
 
       checkedPathCount += 1;
       if (matched !== null) {
@@ -637,7 +639,7 @@ function collectAuditViolations(
         editTs: entry.ts,
         entryId: entry.id,
         intent: entry.intent,
-        lastGetRulesTs: findLatestGetRulesTs(getRulesEntries, normalizedPath, entry.ts),
+        lastRuleAccessTs: findLatestRuleAccessTs(ruleAccessEntries, normalizedPath, entry.ts),
         path: normalizedPath,
       });
     }
@@ -649,15 +651,65 @@ function collectAuditViolations(
   };
 }
 
-function findLatestGetRulesTs(
-  entries: GetRulesAuditEntry[],
+function findPrecedingRuleAccessEvent(
+  entries: RuleAccessAuditEntry[],
+  path: string,
+  ts: number,
+  windowMs: number,
+): RuleAccessAuditEntry | null {
+  const getRulesMatch = findPrecedingGetRulesEvent(entries.filter(isGetRulesAuditEntry), path, ts, windowMs);
+  const ruleSelectionMatch = findPrecedingRuleSelectionEvent(entries.filter(isRuleSelectionAuditEntry), path, ts, windowMs);
+
+  if (getRulesMatch === null) {
+    return ruleSelectionMatch;
+  }
+
+  if (ruleSelectionMatch === null) {
+    return getRulesMatch;
+  }
+
+  return getRulesMatch.ts >= ruleSelectionMatch.ts ? getRulesMatch : ruleSelectionMatch;
+}
+
+function findPrecedingRuleSelectionEvent(
+  entries: RuleSelectionAuditEntry[],
+  path: string,
+  ts: number,
+  windowMs: number,
+): RuleSelectionAuditEntry | null {
+  let matched: RuleSelectionAuditEntry | null = null;
+
+  for (const entry of entries) {
+    if (!entry.target_paths.includes(path) && entry.path !== path) {
+      continue;
+    }
+
+    if (entry.ts > ts || ts - entry.ts > windowMs) {
+      continue;
+    }
+
+    if (matched === null || entry.ts > matched.ts) {
+      matched = entry;
+    }
+  }
+
+  return matched;
+}
+
+function findLatestRuleAccessTs(
+  entries: RuleAccessAuditEntry[],
   path: string,
   ts: number,
 ): number | null {
   let latest: number | null = null;
 
   for (const entry of entries) {
-    if (entry.path !== path || entry.ts > ts) {
+    const matchesPath =
+      entry.event === "rule_selection"
+        ? entry.path === path || entry.target_paths.includes(path)
+        : entry.path === path;
+
+    if (!matchesPath || entry.ts > ts) {
       continue;
     }
 
@@ -665,6 +717,14 @@ function findLatestGetRulesTs(
   }
 
   return latest;
+}
+
+function isGetRulesAuditEntry(entry: RuleAccessAuditEntry): entry is GetRulesAuditEntry {
+  return entry.event === "get_rules";
+}
+
+function isRuleSelectionAuditEntry(entry: RuleAccessAuditEntry): entry is RuleSelectionAuditEntry {
+  return entry.event === "rule_selection";
 }
 
 function readDoctorAuditMode(projectRoot: string): AuditMode {

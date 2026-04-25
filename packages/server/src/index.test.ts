@@ -49,5 +49,29 @@ describe("startHttpServer", () => {
     await Promise.resolve();
 
     expect(dispose).toHaveBeenCalledTimes(1);
+  }, 10_000);
+});
+
+describe("createFabricServer", () => {
+  it("registers fab_get_rule_sections and does not register fab_get_rules", async () => {
+    const registerTool = vi.fn();
+    const registerResource = vi.fn();
+    vi.stubGlobal("__SERVER_VERSION__", "test");
+
+    vi.doMock("@modelcontextprotocol/sdk/server/mcp.js", () => ({
+      McpServer: vi.fn(() => ({
+        registerTool,
+        registerResource,
+      })),
+    }));
+
+    const { createFabricServer } = await import("./index.js");
+
+    createFabricServer();
+
+    const toolNames = registerTool.mock.calls.map((call) => call[0]);
+    expect(toolNames).toContain("fab_get_rule_sections");
+    expect(toolNames).toContain("fab_plan_context");
+    expect(toolNames).not.toContain("fab_get_rules");
   });
 });

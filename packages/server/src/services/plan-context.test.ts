@@ -5,7 +5,6 @@ import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { planContext } from "./plan-context.js";
-import { sha256 } from "./_shared.js";
 
 const tempDirs: string[] = [];
 
@@ -16,182 +15,143 @@ afterEach(async () => {
 });
 
 describe("planContext", () => {
-  it("aggregates unique paths and deduplicates repeated rule files per entry", async () => {
+  it("returns a neutral requirement profile, description index, and selection token", async () => {
     const projectRoot = await createTempProject();
-    await mkdir(join(projectRoot, ".fabric", "bootstrap"), { recursive: true });
-    await mkdir(join(projectRoot, ".fabric", "agents", "packages", "server", "src"), { recursive: true });
-    await mkdir(join(projectRoot, ".fabric", "agents", "_cross"), { recursive: true });
-
-    await writeFile(join(projectRoot, ".fabric", "bootstrap", "README.md"), "# Root rules\n");
+    await mkdir(join(projectRoot, ".fabric", "rules"), { recursive: true });
     await writeFile(join(projectRoot, ".fabric", "human-lock.json"), `${JSON.stringify({ locked: [] }, null, 2)}\n`);
-    await writeFile(
-      join(projectRoot, ".fabric", "agents", "packages", "server", "AGENTS.md"),
-      "# Package rules\n",
-    );
-    await writeFile(
-      join(projectRoot, ".fabric", "agents", "packages", "server", "src", "AGENTS.md"),
-      "# Source rules\n",
-    );
-    await writeFile(
-      join(projectRoot, ".fabric", "agents", "_cross", "typescript.md"),
-      "# TypeScript cross-cutting rules\n",
-    );
+    await writeFile(join(projectRoot, ".fabric", "rules", "global.md"), "# Global\n");
+    await writeFile(join(projectRoot, ".fabric", "rules", "ui.md"), "# UI\n");
+    await writeFile(join(projectRoot, ".fabric", "rules", "battle-view.md"), "# Battle View\n");
     await writeFile(
       join(projectRoot, ".fabric", "agents.meta.json"),
       `${JSON.stringify({
-        revision: "rev-plan",
+        revision: "rev-neutral",
         nodes: {
-          "L1/packages/server": {
-            file: ".fabric/agents/packages/server/AGENTS.md",
-            scope_glob: "packages/server/**",
-            deps: [],
-            priority: "medium",
-            hash: "sha256:l1",
-            stable_id: "rules/package-server",
-            identity_source: "declared",
-          },
-          "L2/packages/server/src": {
-            file: ".fabric/agents/packages/server/src/AGENTS.md",
-            scope_glob: "packages/server/src/**",
-            deps: [],
-            priority: "medium",
-            hash: "sha256:l2",
-            stable_id: "rules/server-src",
-            identity_source: "declared",
-          },
-          "L2/_cross/typescript-global": {
-            file: ".fabric/agents/_cross/typescript.md",
-            scope_glob: "**/*.ts",
+          "L0/global": {
+            stable_id: "global-protocol",
+            file: ".fabric/rules/global.md",
+            content_ref: ".fabric/rules/global.md",
+            scope_glob: "**",
             deps: [],
             priority: "high",
-            hash: "sha256:cross",
-            stable_id: "rules/ts-global",
-            identity_source: "declared",
+            level: "L0",
+            layer: "L0",
+            topology_type: "global",
+            hash: "sha256:global",
+            description: {
+              summary: "Global protocol",
+              intent_clues: ["协作稳定"],
+              tech_stack: ["Fabric"],
+              impact: ["Governance"],
+              must_read_if: "任何编辑前",
+            },
           },
-          "L2/_cross/typescript-shadow": {
-            file: ".fabric/agents/_cross/typescript.md",
-            scope_glob: "packages/server/src/views/**/*.ts",
-            deps: [],
+          "L1/ui": {
+            stable_id: "ui-batch-rendering",
+            file: ".fabric/rules/ui.md",
+            content_ref: ".fabric/rules/ui.md",
+            scope_glob: "**",
+            deps: ["L0/global"],
             priority: "medium",
-            hash: "sha256:cross",
-            stable_id: "rules/ts-shadow",
-            identity_source: "derived",
+            level: "L1",
+            layer: "L1",
+            topology_type: "domain",
+            hash: "sha256:ui",
+            description: {
+              summary: "UI batch rendering",
+              intent_clues: ["优化 drawcall", "Label 闪烁"],
+              tech_stack: ["Cocos", "UI"],
+              impact: ["Performance"],
+              must_read_if: "修改多个 UI 节点的层级或混合模式时",
+            },
+          },
+          "L2/battle-view": {
+            stable_id: "battle-view-local",
+            file: ".fabric/rules/battle-view.md",
+            content_ref: ".fabric/rules/battle-view.md",
+            scope_glob: "assets/scripts/ui/BattleView.ts",
+            deps: ["L0/global"],
+            priority: "medium",
+            level: "L2",
+            layer: "L2",
+            topology_type: "local",
+            hash: "sha256:battle",
+            description: {
+              summary: "BattleView local lifecycle",
+              intent_clues: ["BattleView"],
+              tech_stack: ["Cocos", "UI"],
+              impact: ["Correctness"],
+              must_read_if: "修改 BattleView.ts 时",
+            },
           },
         },
       }, null, 2)}\n`,
     );
 
     const result = await planContext(projectRoot, {
-      paths: [
-        "packages\\server\\src\\views\\dashboard.ts",
-        "packages/server/src/views/dashboard.ts",
-        "packages/server/src/lib/util.ts",
-      ],
+      paths: ["assets/scripts/ui/BattleView.ts"],
+      intent: "我想优化战斗界面的渲染性能",
+      known_tech: ["Cocos Creator", "TypeScript"],
+      detected_entities: {
+        "assets/scripts/ui/BattleView.ts": ["cc.Label", "SpriteAtlas", "Layout"],
+      },
     });
 
-    expect(result).toMatchObject({
-      revision_hash: "rev-plan",
-      stale: false,
+    expect(result.revision_hash).toBe("rev-neutral");
+    expect(result.selection_token).toEqual(expect.any(String));
+    expect(result.entries).toHaveLength(1);
+    expect(result.entries[0]).toMatchObject({
+      path: "assets/scripts/ui/BattleView.ts",
+      required_stable_ids: ["global-protocol", "battle-view-local"],
+      ai_selectable_stable_ids: ["ui-batch-rendering"],
+      initial_selected_stable_ids: ["global-protocol", "battle-view-local"],
     });
-    expect(result.entries.map((entry) => entry.path)).toEqual([
-      "packages/server/src/views/dashboard.ts",
-      "packages/server/src/lib/util.ts",
-    ]);
-    expect(result.entries[0]?.rules.L0).toBe("# Root rules\n");
-    expect(result.entries[0]?.rules.L1).toEqual([
-      {
-        path: ".fabric/agents/packages/server/AGENTS.md",
-        content: "# Package rules\n",
-      },
-    ]);
-    expect(result.entries[0]?.rules.L2).toEqual([
-      {
-        path: ".fabric/agents/_cross/typescript.md",
-        content: "# TypeScript cross-cutting rules\n",
-      },
-      {
-        path: ".fabric/agents/packages/server/src/AGENTS.md",
-        content: "# Source rules\n",
-      },
-    ]);
-    expect(result.entries[1]?.rules.L2).toEqual([
-      {
-        path: ".fabric/agents/_cross/typescript.md",
-        content: "# TypeScript cross-cutting rules\n",
-      },
-      {
-        path: ".fabric/agents/packages/server/src/AGENTS.md",
-        content: "# Source rules\n",
-      },
-    ]);
-    expect(result.shared.resolved_bundle_id).toBe(
-      sha256([
-        "rev-plan",
-        "rules/package-server",
-        "rules/server-src",
-        "rules/ts-global",
-        "rules/ts-shadow",
-      ].join("\n")),
-    );
-    expect(result.shared.shared_entries).toEqual([
-      {
-        stable_id: "rules/package-server",
-        identity_source: "declared",
+    expect(result.entries[0]?.requirement_profile).toMatchObject({
+      target_path: "assets/scripts/ui/BattleView.ts",
+      extension: ".ts",
+      user_intent: "我想优化战斗界面的渲染性能",
+      known_tech: ["Cocos Creator", "TypeScript"],
+      detected_entities: ["cc.Label", "SpriteAtlas", "Layout"],
+    });
+    expect(result.entries[0]?.requirement_profile).not.toHaveProperty("score");
+    expect(result.entries[0]?.requirement_profile).not.toHaveProperty("match_reasons");
+
+    const index = result.entries[0]?.description_index ?? [];
+    expect(index).toEqual([
+      expect.objectContaining({
+        stable_id: "global-protocol",
+        level: "L0",
+        required: true,
+        selectable: false,
+      }),
+      expect.objectContaining({
+        stable_id: "ui-batch-rendering",
         level: "L1",
-        path: ".fabric/agents/packages/server/AGENTS.md",
-        content: "# Package rules\n",
-      },
-      {
-        stable_id: "rules/server-src",
-        identity_source: "declared",
+        required: false,
+        selectable: true,
+      }),
+      expect.objectContaining({
+        stable_id: "battle-view-local",
         level: "L2",
-        path: ".fabric/agents/packages/server/src/AGENTS.md",
-        content: "# Source rules\n",
-      },
-      {
-        stable_id: "rules/ts-global",
-        identity_source: "declared",
-        level: "L2",
-        path: ".fabric/agents/_cross/typescript.md",
-        content: "# TypeScript cross-cutting rules\n",
-      },
-      {
-        stable_id: "rules/ts-shadow",
-        identity_source: "derived",
-        level: "L2",
-        path: ".fabric/agents/_cross/typescript.md",
-        content: "# TypeScript cross-cutting rules\n",
-      },
+        required: true,
+        selectable: false,
+      }),
     ]);
-    expect(result.shared.file_map).toEqual({
-      "packages/server/src/views/dashboard.ts": {
-        L1: ["rules/package-server"],
-        L2: ["rules/ts-global", "rules/server-src"],
-        description_stubs: [],
-      },
-      "packages/server/src/lib/util.ts": {
-        L1: ["rules/package-server"],
-        L2: ["rules/ts-global", "rules/server-src"],
-        description_stubs: [],
-      },
-    });
-    expect(result.shared.preflight_diagnostics).toEqual([
-      {
-        code: "derived_identity",
-        severity: "warn",
-        stable_ids: ["rules/ts-shadow"],
-        message:
-          "Resolved bundle includes 1 rule node that still rely on derived identities. " +
-          "Declare `<!-- fab:rule-id ... -->` in the source rule file to stabilize audit references.",
-      },
-    ]);
+    for (const item of index) {
+      expect(item).not.toHaveProperty("score");
+      expect(item).not.toHaveProperty("confidence");
+      expect(item).not.toHaveProperty("match_reasons");
+      expect(item).not.toHaveProperty("negative_reasons");
+      expect(item).not.toHaveProperty("matched_profile_fields");
+      expect(item.description).not.toHaveProperty("id");
+    }
+    expect(result.shared.required_stable_ids).toEqual(["global-protocol", "battle-view-local"]);
+    expect(result.shared.ai_selectable_stable_ids).toEqual(["ui-batch-rendering"]);
   });
 
   it("marks the response stale when the client hash does not match the current revision", async () => {
     const projectRoot = await createTempProject();
-    await mkdir(join(projectRoot, ".fabric", "bootstrap"), { recursive: true });
-
-    await writeFile(join(projectRoot, ".fabric", "bootstrap", "README.md"), "# Root rules\n");
+    await mkdir(join(projectRoot, ".fabric"), { recursive: true });
     await writeFile(join(projectRoot, ".fabric", "human-lock.json"), `${JSON.stringify({ locked: [] }, null, 2)}\n`);
     await writeFile(
       join(projectRoot, ".fabric", "agents.meta.json"),
@@ -212,93 +172,20 @@ describe("planContext", () => {
       entries: [
         {
           path: "src/index.ts",
-          rules: {
-            L0: "# Root rules\n",
-            L1: [],
-            L2: [],
-            human_locked_nearby: [],
-          },
+          required_stable_ids: [],
+          ai_selectable_stable_ids: [],
+          initial_selected_stable_ids: [],
+          description_index: [],
         },
       ],
       shared: {
-        resolved_bundle_id: sha256("rev-current"),
-        shared_entries: [],
-        file_map: {
-          "src/index.ts": {
-            L1: [],
-            L2: [],
-            description_stubs: [],
-          },
-        },
-        description_stub_union: [],
+        required_stable_ids: [],
+        ai_selectable_stable_ids: [],
+        description_index: [],
         preflight_diagnostics: [],
       },
     });
-  });
-
-  it("keeps description stubs in each entry and the shared union with a stub-only diagnostic", async () => {
-    const projectRoot = await createTempProject();
-    await mkdir(join(projectRoot, ".fabric", "bootstrap"), { recursive: true });
-    await mkdir(join(projectRoot, ".fabric", "agents", "descriptions"), { recursive: true });
-
-    await writeFile(join(projectRoot, ".fabric", "bootstrap", "README.md"), "# Root rules\n");
-    await writeFile(join(projectRoot, ".fabric", "human-lock.json"), `${JSON.stringify({ locked: [] }, null, 2)}\n`);
-    await writeFile(
-      join(projectRoot, ".fabric", "agents", "descriptions", "typescript.md"),
-      "# TypeScript description\n",
-    );
-    await writeFile(
-      join(projectRoot, ".fabric", "agents.meta.json"),
-      `${JSON.stringify({
-        revision: "rev-description",
-        nodes: {
-          "L2/description": {
-            file: ".fabric/agents/descriptions/typescript.md",
-            scope_glob: "**/*.ts",
-            deps: [],
-            priority: "medium",
-            hash: "sha256:description",
-            stable_id: "rules/ts-description",
-            identity_source: "declared",
-            activation: {
-              tier: "description",
-              description: "Load the TypeScript guidance only when the edit is confirmed.",
-            },
-          },
-        },
-      }, null, 2)}\n`,
-    );
-
-    const result = await planContext(projectRoot, {
-      paths: ["src/index.ts"],
-    });
-
-    expect(result.entries[0]?.rules.description_stubs).toEqual([
-      {
-        path: ".fabric/agents/descriptions/typescript.md",
-        description: "Load the TypeScript guidance only when the edit is confirmed.",
-      },
-    ]);
-    expect(result.shared.description_stub_union).toEqual([
-      {
-        stable_id: "rules/ts-description",
-        identity_source: "declared",
-        level: "L2",
-        path: ".fabric/agents/descriptions/typescript.md",
-        description: "Load the TypeScript guidance only when the edit is confirmed.",
-      },
-    ]);
-    expect(result.shared.preflight_diagnostics).toEqual([
-      {
-        code: "description_stub_only",
-        severity: "info",
-        path: "src/index.ts",
-        stable_ids: ["rules/ts-description"],
-        message:
-          "Path src/index.ts only matched description stubs and no loadable L1/L2 rules. " +
-          "Run fab_get_rules on the final target before editing if you need the full rule text.",
-      },
-    ]);
+    expect(result.selection_token).toEqual(expect.any(String));
   });
 });
 

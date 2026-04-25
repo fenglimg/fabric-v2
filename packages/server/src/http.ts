@@ -26,7 +26,7 @@ import { registerRulesContextApi } from "./api/rules-context.js";
 import { registerScanApi } from "./api/scan.js";
 import { registerDashboardStatic } from "./api/static.js";
 import { createBearerAuthMiddleware } from "./middleware/bearer-auth.js";
-import { ensureParentDirectory, getLedgerPath, getLegacyLedgerPath, isNodeError } from "./services/_shared.js";
+import { ensureParentDirectory, getLedgerPath, getLegacyLedgerPath } from "./services/_shared.js";
 
 const DEFAULT_HOST = "127.0.0.1";
 const NOTIFY_DEBOUNCE_MS = 200;

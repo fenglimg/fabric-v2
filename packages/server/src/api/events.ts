@@ -188,7 +188,7 @@ async function ensureWatcher(state: EventsState, projectRoot: string): Promise<v
   state.ledgerRemainder = "";
   state.humanLockSnapshot = await readHumanLockSnapshot(projectRoot);
 
-  const watcher = chokidar.watch(WATCHED_PATHS, {
+  const watcher = chokidar.watch([...WATCHED_PATHS], {
     cwd: projectRoot,
     ignoreInitial: true,
     awaitWriteFinish: {

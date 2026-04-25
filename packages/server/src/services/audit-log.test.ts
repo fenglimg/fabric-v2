@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   appendEditIntentAuditEvents,
   appendGetRulesAuditEvent,
+  appendRuleSelectionAuditEvent,
   readAuditLog,
 } from "./audit-log.js";
 
@@ -141,6 +142,46 @@ describe("audit-log", () => {
         ledger_entry_id: "ledger:second",
         matched_get_rules_ts: 1_000,
         window_ms: 5_000,
+      },
+    ]);
+  });
+
+  it("appends and reads rule_selection telemetry entries", async () => {
+    const target = createFixtureRoot("audit-log-rule-selection");
+
+    await appendRuleSelectionAuditEvent(target, {
+      ts: 5_000,
+      path: "assets/scripts/ui/BattleView.ts",
+      selection_token: "selection:rev:abc",
+      target_paths: ["assets/scripts/ui/BattleView.ts"],
+      required_stable_ids: ["global-protocol", "battle-view-local"],
+      ai_selectable_stable_ids: ["ui-batch-rendering"],
+      ai_selected_stable_ids: ["ui-batch-rendering"],
+      final_stable_ids: ["global-protocol", "ui-batch-rendering", "battle-view-local"],
+      ai_selection_reasons: {
+        "ui-batch-rendering": "BattleView touches UI rendering.",
+      },
+      rejected_stable_ids: [],
+      ignored_stable_ids: [],
+    });
+
+    expect(await readAuditLog(target)).toEqual([
+      {
+        kind: "audit-event",
+        event: "rule_selection",
+        ts: 5_000,
+        path: "assets/scripts/ui/BattleView.ts",
+        selection_token: "selection:rev:abc",
+        target_paths: ["assets/scripts/ui/BattleView.ts"],
+        required_stable_ids: ["global-protocol", "battle-view-local"],
+        ai_selectable_stable_ids: ["ui-batch-rendering"],
+        ai_selected_stable_ids: ["ui-batch-rendering"],
+        final_stable_ids: ["global-protocol", "ui-batch-rendering", "battle-view-local"],
+        ai_selection_reasons: {
+          "ui-batch-rendering": "BattleView touches UI rendering.",
+        },
+        rejected_stable_ids: [],
+        ignored_stable_ids: [],
       },
     ]);
   });

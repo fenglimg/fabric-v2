@@ -8,8 +8,8 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 
 import { AGENTS_MD_RESOURCE_URI } from "./constants.js";
 import { registerAppendIntent } from "./tools/append-intent.js";
-import { registerGetRules } from "./tools/get-rules.js";
 import { registerPlanContext } from "./tools/plan-context.js";
+import { registerRuleSections } from "./tools/rule-sections.js";
 import { registerUpdateRegistry } from "./tools/update-registry.js";
 
 declare const __SERVER_VERSION__: string;
@@ -46,8 +46,8 @@ export function createFabricServer(): McpServer {
     version: __SERVER_VERSION__,
   });
 
-  registerGetRules(server);
   registerPlanContext(server);
+  registerRuleSections(server);
   registerAppendIntent(server);
   registerUpdateRegistry(server);
 

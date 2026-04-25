@@ -220,7 +220,7 @@ describe("runDoctorReport", () => {
         entryId: "ledger:audit-miss",
         path: "src/missing.ts",
         intent: "modify src/missing.ts",
-        lastGetRulesTs: null,
+        lastRuleAccessTs: null,
       }),
     ]);
   });
@@ -338,9 +338,18 @@ describe("runDoctorReport", () => {
       join(target, ".fabric", "audit.jsonl"),
       `${JSON.stringify({
         kind: "audit-event",
-        event: "get_rules",
+        event: "rule_selection",
         ts: now - 60_000,
         path: "src/audit.ts",
+        selection_token: "selection:rev:doctor",
+        target_paths: ["src/audit.ts"],
+        required_stable_ids: ["bootstrap"],
+        ai_selectable_stable_ids: [],
+        ai_selected_stable_ids: [],
+        final_stable_ids: ["bootstrap"],
+        ai_selection_reasons: {},
+        rejected_stable_ids: [],
+        ignored_stable_ids: [],
       })}\n`,
       "utf8",
     );
@@ -363,7 +372,7 @@ describe("runDoctorReport", () => {
     expect(auditCheck).toEqual({
       name: "Rules fetch audit",
       status: "ok",
-      message: "All 1 audited edit path have a preceding fab_get_rules call within 5m.",
+      message: "All 1 audited edit path have a preceding rule_selection or get_rules event within 5m.",
     });
     expect(report.audit?.violationCount).toBe(0);
     expect(report.summary.audit).toEqual({
