@@ -48,6 +48,8 @@ fabric init
 初始化会写入或刷新：
 
 - `.fabric/bootstrap/README.md`
+- `.fabric/INITIAL_TAXONOMY.md`
+- `.fabric/rules/`
 - `.fabric/agents.meta.json`
 - `.fabric/human-lock.json`
 - `.fabric/forensic.json`
@@ -68,8 +70,8 @@ fabric init
 
 - 客户端读取 `.fabric/forensic.json`。
 - 维护者确认 framework facts、invariants、受保护区域。
-- 规则节点写入 `.fabric/agents/`。
-- `.fabric/agents.meta.json` 通过 Fabric tooling 同步。
+- 规则正文写入 `.fabric/rules/`。
+- `.fabric/agents.meta.json` 通过 Fabric tooling 维护 `stable_id`、L0/L1/L2 映射和结构化 description。
 
 Codex hooks 需要本机配置启用 `features.codex_hooks = true`；否则 `.codex/hooks.json` 不会自动触发，但仍可手动执行仓库 skill。
 
@@ -100,20 +102,22 @@ http://127.0.0.1:7373
 
 - `fab_get_rules`
 - `fab_plan_context`
+- `fab_get_rule_sections`
 - `fab_append_intent`
 - `fab_update_registry`
 
 最小验证 prompt：
 
 ```text
-Before editing any file, call fab_get_rules for README.md and summarize the active Fabric rules.
+Before editing any file, call fab_plan_context for README.md, pick any relevant L1 stable_ids yourself from the returned descriptions, then call fab_get_rule_sections for MANDATORY_INJECTION and CONTEXT_INFO.
 ```
 
 成功信号：
 
 - 返回 `revision_hash`。
-- 返回 `rules.L0`、`rules.L1`、`rules.L2`。
-- 命中 description-only 节点时返回 `description_stubs`。
+- `fab_plan_context` 返回 `selection_token`、`requirement_profile`、`description_index`。
+- `description_index` 中 L0/L2 为 `required: true`，L1 为 `selectable: true`。
+- `fab_get_rule_sections` 返回所请求的 section；缺失 section 只返回空字符串和 warning diagnostic，不回退全文。
 - `client_hash` 与当前 revision 不一致时 `stale: true`。
 
 ## 6. 写入首条 intent ledger

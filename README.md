@@ -10,7 +10,7 @@ The Consensus Plane for AI-Human Collaboration
 
 Fabric v1.5.2 is an MCP-first, cross-client AGENTS.md protocol for six AI clients: Claude Code, Cursor, Windsurf, Roo Code, Gemini CLI, and Codex CLI. It keeps Fabric rule state inside `.fabric/`, distributes scoped rules through a local MCP server, and adds git-level defenses so behavior stays consistent across clients without compiling client-specific rule files first.
 
-> **Current release: v1.5.2**. Fabric 本次补丁版把 intent ledger 正式收口到 `.fabric/`，为规则节点预编译稳定 `stable_id`，让 `fab_plan_context` 支持共享规则 bundle，并新增 tooling manifest 作为脚本知识入口。更新说明见 [`CHANGELOG.md`](./CHANGELOG.md#152---2026-04-24)，初始化流程见 [`docs/initialization.md`](./docs/initialization.md)。
+> **Current release: v1.5.2**. Fabric 当前开发线已切到 L0/L1/L2 认知分层协议：规则正文进入 `.fabric/rules/`，`.fabric/agents.meta.json` 以 `stable_id` 索引结构化 description，`fab_plan_context` 先返回中立候选池与 `selection_token`，再由 `fab_get_rule_sections` 获取结构化规则段落。初始化流程见 [`docs/initialization.md`](./docs/initialization.md)。
 
 ```text
 AI Agent <-> Fabric Ledger <-> Human Developer
@@ -20,7 +20,7 @@ AI Agent <-> Fabric Ledger <-> Human Developer
 
 ## Architecture
 
-- Regulation: AGENTS.md layers define the human-readable rule system.
+- Regulation: `.fabric/rules/` contains sectioned rule Markdown for the L0/L1/L2 system.
 - Metadata: `.fabric/agents.meta.json` stores machine-oriented routing and revision data.
 - Intent: `.fabric/.intent-ledger.jsonl` records append-only task intent history. Legacy root `.intent-ledger.jsonl` remains read-only compatible until you run `fabric doctor --fix`.
 - Distribution: the Fabric MCP server serves scoped rules to supported clients on demand.
@@ -30,7 +30,7 @@ AI Agent <-> Fabric Ledger <-> Human Developer
 
 1. 安装 Fabric；如果你在这个 monorepo 里验证，再额外构建一次。
 2. 在目标项目里运行 `fabric init`。如果当前终端支持 TTY，它会默认进入向导。
-3. 启动 `fabric serve`，再去客户端里验证 `fab_get_rules` 是否可用。
+3. 启动 `fabric serve`，再去客户端里验证 `fab_plan_context` 与 `fab_get_rule_sections` 是否可用。
 
 `fab` 是永久别名，本文统一使用 `fabric`。
 `fabric init` 的常用方式如下：
@@ -62,7 +62,7 @@ Enable compliance telemetry reporting in `fabric.config.json`:
 }
 ```
 
-Run `fabric doctor --audit` to cross-check AI edit intents against prior `fab_get_rules` calls in the last 5 minutes. `warn` prints violations but keeps exit code `0`, `strict` prints violations and exits non-zero, and `off` keeps the audit disabled by default unless you request a manual preview with `--audit`.
+Run `fabric doctor --audit` to cross-check AI edit intents against prior rule access events in the last 5 minutes. New clients write `rule_selection` events through `fab_get_rule_sections`; legacy `get_rules` events remain accepted. `warn` prints violations but keeps exit code `0`, `strict` prints violations and exits non-zero, and `off` keeps the audit disabled by default unless you request a manual preview with `--audit`.
 
 ## Human-Lock Approval
 
@@ -77,7 +77,7 @@ fabric approve --all
 
 ## 规则命中页
 
-`fabric serve` 现在会暴露 `/api/rules/context?path=<file>`，Dashboard 默认打开规则命中页。这个页面会展示基于 `scope_glob` 推断出的目录覆盖情况，以及样本路径实际加载到的 L1/L2 规则和 description-only stub。
+`fabric serve` 仍会暴露 `/api/rules/context?path=<file>` 供 Dashboard 做只读观察。MCP 编辑闭环以 `fab_plan_context` + `fab_get_rule_sections` 为准。
 
 ## 路线图
 

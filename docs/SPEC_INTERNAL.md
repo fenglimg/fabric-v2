@@ -1,500 +1,165 @@
 # SPEC_INTERNAL: 执行流协议
 
-本文是 Fabric-v2 核心执行流的协议说明。修改 `packages/` 中核心引擎逻辑前，必须先在本文提交逻辑变更点并经维护者审核。
+本文是 Fabric-v2 核心执行流的当前协议说明。修改 `packages/` 中核心引擎逻辑前，必须先同步本文的逻辑变更点。
 
 ## 当前闭环
 
 ```text
-CLI command
-  -> packages/cli/src/index.ts 注册 subcommands
-  -> fabric serve 启动 server HTTP app
-  -> server 注册 MCP tools 和 REST/SSE APIs
-  -> client 调用 fab_get_rules 或 fab_plan_context
-  -> server 加载 .fabric/agents.meta.json + L0 bootstrap + human-lock
-  -> path 按 scope_glob 和 priority 命中 rule nodes
-  -> rules payload 返回 L0/L1/L2、human lock 和 description stubs
-  -> AI 在取回 rules 后执行修改
-  -> fab_append_intent 写入 ledger，并尽力记录 audit compliance
+fabric init
+  -> 写入 .fabric/bootstrap/README.md、.fabric/INITIAL_TAXONOMY.md、.fabric/agents.meta.json
+  -> 规则正文进入 .fabric/rules/
+
+fabric serve
+  -> 注册 MCP tools
+  -> client 先调用 fab_plan_context
+  -> server 返回中立 requirement_profile、L0/L1/L2 description_index、selection_token
+  -> AI 只对 L1 自行选择 stable_id，并给出 ai_selection_reasons
+  -> client 调用 fab_get_rule_sections
+  -> server 合并 required L0/L2 + AI-selected L1
+  -> server 返回结构化 sections，并写入 .fabric/audit.jsonl 的 rule_selection
+  -> AI 在取回规则段落后执行修改
+  -> fab_append_intent 写入 ledger
 ```
 
-证据：
+## 分层与身份
 
-- CLI entry 使用 `citty` 和 lazy subcommand map：`packages/cli/src/index.ts:11`, `packages/cli/src/commands/index.ts:1`。
-- `fabric serve` 调用 `@fenglimg/fabric-server` 的 `startHttpServer`：`packages/cli/src/commands/serve.ts:58`。
-- Server 集中注册 MCP tools：`packages/server/src/index.ts:43`。
-- HTTP app 注册 REST APIs、`/events`、`/mcp` 和 static Dashboard：`packages/server/src/http.ts:208`。
-- `fab_get_rules` 包装 `getRules`：`packages/server/src/tools/get-rules.ts:31`。
-- `getRules` 加载 context、解析 path rules、追加 audit event：`packages/server/src/services/get-rules.ts:83`。
-- Intent append 先写 ledger，再尽力写 compliance audit：`packages/server/src/services/append-intent.ts:17`。
+- `stable_id` 是唯一规则身份。`description.id` 禁止出现。
+- L0 是全局协作稳定性规则。
+- L1 是领域/模块规则，由 AI 从候选 description 中选择。
+- L2 是具体脚本或资源的本地规则，由 server 自动要求。
+- 跨层 precedence 固定为 `L2 > L1 > L0`。
+- `priority` 只在同层内排序，不改变跨层 precedence。
 
-## 核心服务：`fab_get_rules`
+## Registry Shape
 
-MCP tool 名称：
-
-```text
-fab_get_rules
-```
-
-Input schema：
+`.fabric/agents.meta.json` 的 rule node 关键字段：
 
 ```ts
-type GetRulesInput = {
-  path: string;
-  client_hash?: string;
+type RuleDescription = {
+  summary: string;
+  intent_clues: string[];
+  tech_stack: string[];
+  impact: string[];
+  must_read_if: string;
+  entities?: string[];
+};
+
+type RuleNode = {
+  stable_id: string;
+  level: "L0" | "L1" | "L2";
+  layer: "L0" | "L1" | "L2";
+  file: string;
+  content_ref?: string;
+  scope_glob: string;
+  priority: "high" | "medium" | "low";
+  description: RuleDescription;
 };
 ```
 
-证据：
+规则正文优先放在 `.fabric/rules/`，`content_ref` 指向要读取的 Markdown。
 
-- Runtime input type：`packages/server/src/services/get-rules.ts:40`。
-- Tool zod schema：`packages/server/src/tools/get-rules.ts:7`。
+## `fab_plan_context`
 
-Output schema：
-
-```ts
-type GetRulesResult = {
-  revision_hash: string;
-  stale: boolean;
-  rules: {
-    L0: string;
-    L1: Array<{ path: string; content: string }>;
-    L2: Array<{ path: string; content: string }>;
-    human_locked_nearby: Array<{ file: string; excerpt: string }>;
-    description_stubs?: Array<{ path: string; description: string }>;
-  };
-};
-```
-
-证据：
-
-- Runtime output type：`packages/server/src/services/get-rules.ts:45`。
-- Tool output schema：`packages/server/src/tools/get-rules.ts:19`。
-- Dashboard mirrored type：`packages/dashboard/src/api/client.ts:56`。
-
-流程：
-
-```ts
-async function getRules(projectRoot, input) {
-  context = await loadGetRulesContext(projectRoot);
-  stale = input.client_hash !== undefined && input.client_hash !== context.meta.revision;
-  rules = await resolveRulesForPath(projectRoot, context, input.path);
-  try appendGetRulesAuditEvent(projectRoot, input);
-  return { revision_hash: context.meta.revision, stale, rules };
-}
-```
-
-证据：`packages/server/src/services/get-rules.ts:83`。
-
-Context 加载：
-
-```ts
-context = {
-  meta: read .fabric/agents.meta.json,
-  l0Content: read .fabric/bootstrap/README.md,
-  humanLockedNearby: read .fabric/human-lock.json and stringify entries
-}
-```
-
-证据：
-
-- Context cache 读取：`packages/server/src/services/get-rules.ts:105`。
-- Meta 读取：`packages/server/src/meta-reader.ts:39`。
-- L0 bootstrap 读取：`packages/server/src/services/get-rules.ts:111`。
-- Human lock 投影：`packages/server/src/services/get-rules.ts:113`。
-
-## Rule 命中与 Priority
-
-Path 规范化：
-
-```ts
-requestedPath = input.path.replaceAll("\\", "/");
-```
-
-证据：`packages/server/src/services/get-rules.ts:141`。
-
-Priority 顺序：
-
-```ts
-priorityWeight = { high: 0, medium: 1, low: 2 };
-```
-
-证据：`packages/server/src/services/get-rules.ts:77`。
-
-伪代码：
-
-```ts
-function matchRuleNodes(meta, path) {
-  requestedPath = normalize(path);
-
-  return Object.entries(meta.nodes)
-    .filter(([id, node]) => shouldLoadNodeForPath(requestedPath, node))
-    .sort(([leftId, leftNode], [rightId, rightNode]) => {
-      priorityDelta = weight[leftNode.priority] - weight[rightNode.priority];
-      if (priorityDelta !== 0) return priorityDelta;
-      return leftId.localeCompare(rightId);
-    })
-    .map(([nodeId, node]) => ({
-      node_id: nodeId,
-      level: classifyNode(nodeId, node),
-      stable_id: node.stable_id ?? nodeId,
-      identity_source: node.identity_source ?? "derived",
-      node
-    }));
-}
-```
-
-证据：
-
-- Match 与 sort：`packages/server/src/services/get-rules.ts:145`。
-- Level classification：`packages/server/src/services/get-rules.ts:223`。
-- Stable ID fallback：`packages/server/src/services/get-rules.ts:157`。
-
-Rule 加载：
-
-```ts
-for matchedNode:
-  if level is null: skip
-  if activation.tier == "description":
-    emit description_stub only
-  else:
-    read node.file content into L1 or L2
-```
-
-证据：`packages/server/src/services/get-rules.ts:166`。
-
-Payload 构造：
-
-```ts
-payload = {
-  L0: context.l0Content,
-  L1: loaded rules where level == "L1",
-  L2: loaded rules where level == "L2",
-  human_locked_nearby: context.humanLockedNearby,
-  description_stubs: deduped stubs if any
-}
-```
-
-证据：
-
-- Payload composition：`packages/server/src/services/get-rules.ts:204`。
-- L1/L2 partition：`packages/server/src/services/get-rules.ts:238`。
-
-## 核心服务：`fab_plan_context`
-
-用途：在 planning 阶段一次查询 2 个以上 paths，并产出 shared bundle view。
+用途：编辑或架构规划前，返回中立的规则候选索引和一次性选择 token。
 
 Input：
 
 ```ts
 type PlanContextInput = {
   paths: string[];
+  intent?: string;
+  known_tech?: string[];
+  detected_entities?: Record<string, string[]>;
   client_hash?: string;
 };
 ```
 
-证据：
+Output 要点：
 
-- Runtime input type：`packages/server/src/services/plan-context.ts:12`。
-- Tool schema 要求 `paths.min(2)`：`packages/server/src/tools/plan-context.ts:7`。
+- `selection_token`
+- 每个 path 的轻量 `requirement_profile`
+- `description_index[]`
+- `required_stable_ids[]`：L0/L2
+- `ai_selectable_stable_ids[]`：L1
+- `initial_selected_stable_ids[]`：只包含 required ids
 
-Output：
+`fab_plan_context` 不返回 L1 的 `score`、`confidence`、`match_reasons`、`negative_reasons` 或 `matched_profile_fields`。L1 判断由 AI 在读取 description 后自行完成。
+
+## `fab_get_rule_sections`
+
+用途：在 AI 选择 L1 后，按结构化 section 获取真正注入上下文。
+
+Input：
 
 ```ts
-type PlanContextResult = {
+type GetRuleSectionsInput = {
+  selection_token: string;
+  sections: Array<"MANDATORY_INJECTION" | "CONTEXT_INFO">;
+  ai_selected_stable_ids: string[];
+  ai_selection_reasons: Record<string, string>;
+};
+```
+
+规则：
+
+- `selection_token` 缺失或过期是 hard error。
+- AI 只能选择 token 中的 L1 stable_ids。
+- 选择 L0/L2、未知 stable_id、或缺少 selection reason 都是 hard error。
+- server 最终合并 `required_stable_ids + ai_selected_stable_ids`。
+- 缺失 section 返回空字符串和 warning diagnostic，禁止回退全文。
+- 成功解析后追加 `rule_selection` audit event。
+
+Output 要点：
+
+```ts
+type GetRuleSectionsResult = {
   revision_hash: string;
-  stale: boolean;
-  entries: Array<{ path: string; rules: RulesPayload }>;
-  shared: {
-    resolved_bundle_id: string;
-    shared_entries: Array<{
-      stable_id: string;
-      identity_source: "declared" | "derived";
-      level: "L1" | "L2";
-      path: string;
-      content: string;
-    }>;
-    file_map: Record<string, {
-      L1: string[];
-      L2: string[];
-      description_stubs: string[];
-    }>;
-    description_stub_union: SharedDescriptionStub[];
-    preflight_diagnostics: Array<{
-      code: "description_stub_only" | "derived_identity";
-      severity: "info" | "warn";
-      message: string;
-      path?: string;
-      stable_ids?: string[];
-    }>;
-  };
+  precedence: ["L2", "L1", "L0"];
+  selected_stable_ids: string[];
+  rules: Array<{
+    stable_id: string;
+    level: "L0" | "L1" | "L2";
+    path: string;
+    sections: Record<string, string>;
+  }>;
+  diagnostics: Array<{
+    code: "missing_section";
+    severity: "warn";
+    stable_id: string;
+    section: string;
+    message: string;
+  }>;
 };
 ```
 
-证据：
+## Audit
 
-- Runtime result type：`packages/server/src/services/plan-context.ts:17`。
-- Tool output schema：`packages/server/src/tools/plan-context.ts:29`。
-
-流程：
+`fab_get_rule_sections` 写入 `.fabric/audit.jsonl`：
 
 ```ts
-uniquePaths = normalize and dedupe input.paths;
-for each path:
-  matchedNodes[path] = matchRuleNodes(meta, path);
-  loaded[path] = loadMatchedRules(projectRoot, matchedNodes[path], sharedFileContentCache);
-entries = uniquePaths.map(path => buildRulesPayload(..., { dedupeByPath: true }));
-shared = buildSharedView(revision, uniquePaths, matchedNodes, loaded);
-```
-
-证据：
-
-- Path dedupe：`packages/server/src/services/plan-context.ts:87`。
-- Shared file content cache：`packages/server/src/services/plan-context.ts:59`。
-- Entries 使用 `dedupeByPath`：`packages/server/src/services/plan-context.ts:71`。
-- Shared bundle ID：`packages/server/src/services/plan-context.ts:184`。
-
-## 核心服务：`fab_update_registry`
-
-用途：通过 tool 修改 `.fabric/agents.meta.json`，禁止直接手改。
-
-Input：
-
-```ts
-type UpdateRegistryInput = {
-  op: "add-node" | "remove-node" | "update-node";
-  node_id: string;
-  data?: Record<string, unknown>;
+type RuleSelectionAuditEntry = {
+  kind: "audit-event";
+  event: "rule_selection";
+  ts: number;
+  path: string;
+  selection_token: string;
+  target_paths: string[];
+  required_stable_ids: string[];
+  ai_selectable_stable_ids: string[];
+  ai_selected_stable_ids: string[];
+  final_stable_ids: string[];
+  ai_selection_reasons: Record<string, string>;
+  rejected_stable_ids: string[];
+  ignored_stable_ids: string[];
 };
 ```
 
-证据：
+`fabric doctor --audit` 接受新 `rule_selection` 事件，也兼容旧 `get_rules` 事件。
 
-- Service input：`packages/server/src/services/update-registry.ts:9`。
-- Tool input：`packages/server/src/tools/update-registry.ts:8`。
+## Legacy Surface
 
-变更语义：
-
-```ts
-if op == "remove-node":
-  delete nodes[node_id]
-if op == "add-node":
-  nodes[node_id] = agentsMetaNodeSchema.parse(data)
-if op == "update-node":
-  nodes[node_id] = agentsMetaNodeSchema.parse({ ...current, ...data })
-revision = sha256(sorted node hashes joined)
-atomicWrite(.fabric/agents.meta.json, nextMetaWithRevision)
-invalidate meta cache
-```
-
-证据：
-
-- Operation apply：`packages/server/src/services/update-registry.ts:70`。
-- Revision computation：`packages/server/src/services/update-registry.ts:50`。
-- Atomic write：`packages/server/src/services/update-registry.ts:29`。
-- Cache invalidation：`packages/server/src/services/update-registry.ts:41`。
-
-已知约束：tool schema 目前没有在 `data` 中暴露 `stable_id`、`identity_source` 和 `activation`，但 service parser 支持 schema defaults 和 existing node merge。证据：tool `nodeInputSchema` 位于 `packages/server/src/tools/update-registry.ts:22`；shared node schema 位于 `packages/shared/src/schemas/agents-meta.ts:23`。
-
-## 核心服务：`fab_append_intent`
-
-Input：
-
-```ts
-type AppendIntentInput = {
-  entry: Omit<AiLedgerEntry, "id" | "source" | "ts">;
-};
-```
-
-证据：`packages/server/src/tools/append-intent.ts:8`。
-
-Output：
-
-```ts
-type AppendIntentResult = {
-  success: true;
-  timestamp: number;
-  entry: StoredLedgerEntry;
-  compliance?: {
-    compliant: boolean;
-    matched_get_rules_ts: string | null;
-    window_ms: number;
-  };
-};
-```
-
-证据：
-
-- Tool output schema：`packages/server/src/tools/append-intent.ts:20`。
-- Service result type：`packages/server/src/services/append-intent.ts:10`。
-
-流程：
-
-```ts
-ts = Date.now();
-entry = appendLedgerEntry({ ...input.entry, ts, source: "ai" });
-try appendEditIntentAuditEvents(projectRoot, affected_paths, intent, ledger_entry_id, ts);
-return { success: true, timestamp: ts, entry, compliance };
-```
-
-证据：`packages/server/src/services/append-intent.ts:17`。
-
-## MCP 上的 JSON-RPC
-
-Stdio 模式：
+`fab_get_rules` 和旧 rules context API 仍可作为旧代码与 Dashboard 只读观察面存在，但 MCP 编辑闭环不再依赖它们。新客户端应使用：
 
 ```text
-client process
-  -> node packages/server/dist/index.js
-  -> startStdioServer()
-  -> McpServer.connect(StdioServerTransport)
+fab_plan_context -> fab_get_rule_sections -> edit -> fab_append_intent
 ```
-
-证据：
-
-- Stdio transport import：`packages/server/src/index.ts:7`。
-- Stdio start：`packages/server/src/index.ts:79`。
-- Main module 启动 stdio server：`packages/server/src/index.ts:118`。
-
-HTTP 模式：
-
-```text
-POST /mcp initialize without Mcp-Session-Id
-  -> createSession()
-  -> new StreamableHTTPServerTransport({ sessionIdGenerator, enableJsonResponse, eventStore })
-  -> server.connect(transport)
-  -> transport.handleRequest(req, res, body)
-subsequent POST /mcp with Mcp-Session-Id
-  -> find session
-  -> transport.handleRequest(req, res, body)
-```
-
-证据：
-
-- `/mcp` route：`packages/server/src/http.ts:217`。
-- 缺少 session 时，只有 initialize 请求会被接受：`packages/server/src/http.ts:231`。
-- Session create：`packages/server/src/http.ts:272`。
-- `enableJsonResponse: true`：`packages/server/src/http.ts:278`。
-- JSON-RPC error format：`packages/server/src/http.ts:357`。
-
-Initialize request 示例：
-
-```json
-{
-  "jsonrpc": "2.0",
-  "id": 1,
-  "method": "initialize",
-  "params": {
-    "protocolVersion": "2025-03-26",
-    "capabilities": {},
-    "clientInfo": { "name": "client", "version": "0.0.0" }
-  }
-}
-```
-
-Initialize 后的 tool call 示例：
-
-```json
-{
-  "jsonrpc": "2.0",
-  "id": 2,
-  "method": "tools/call",
-  "params": {
-    "name": "fab_get_rules",
-    "arguments": {
-      "path": "packages/server/src/services/get-rules.ts",
-      "client_hash": "sha256:previous"
-    }
-  }
-}
-```
-
-Tool handler response shape：
-
-```json
-{
-  "content": [{ "type": "text", "text": "{...json...}" }],
-  "structuredContent": {
-    "revision_hash": "sha256:...",
-    "stale": false,
-    "rules": {
-      "L0": "...",
-      "L1": [],
-      "L2": [],
-      "human_locked_nearby": []
-    }
-  }
-}
-```
-
-证据：
-
-- Tool handlers 同时返回 `content` 和 `structuredContent`：`packages/server/src/tools/get-rules.ts:45`, `packages/server/src/tools/plan-context.ts:91`。
-- HTTP event store 持久化 JSON-RPC messages：`packages/server/src/http.ts:58`。
-- Event replay 使用 event id 和 stream id：`packages/server/src/http.ts:85`。
-
-## Cache 与 Invalidation
-
-Hot-path cache slots：
-
-- `meta`: parsed `.fabric/agents.meta.json`
-- `context`: `GetRulesContext`
-- `audit`: sliding-window cursor for `.fabric/audit.jsonl`
-
-证据：`packages/server/src/cache.ts:1`。
-
-Invalidation 规则：
-
-- `meta_write` clears meta slot only.
-- `file_watch` clears meta and context.
-- HTTP app watches `.fabric/agents.meta.json` and `.fabric/bootstrap/README.md`.
-
-证据：
-
-- Cache API：`packages/server/src/cache.ts:43`。
-- Invalidation semantics：`packages/server/src/cache.ts:94`。
-- Watcher paths：`packages/server/src/http.ts:151`。
-- Tool/resource notifications：`packages/server/src/http.ts:169`。
-
-## Stable ID 协议
-
-Schema fields：
-
-```ts
-type AgentsMetaNode = {
-  file: string;
-  scope_glob: string;
-  deps: string[];
-  priority: "high" | "medium" | "low";
-  layer: "L0" | "L1" | "L2";
-  topology_type: "mirror" | "cross-cutting";
-  hash: string;
-  stable_id?: string;
-  identity_source?: "declared" | "derived";
-  activation?: { tier: "always" | "path" | "description"; description?: string };
-};
-```
-
-证据：`packages/shared/src/schemas/agents-meta.ts:23`。
-
-Derivation 规则：
-
-- `.fabric/bootstrap/README.md` and `AGENTS.md` derive `stable_id = "bootstrap"`.
-- Other files derive stable id from depth source and strip `.md`.
-- Declared id is parsed from first-line HTML comment `<!-- fab:rule-id ... -->`.
-
-证据：
-
-- Stable ID derivation：`packages/shared/src/schemas/agents-meta.ts:67`。
-- Identity source derivation：`packages/shared/src/schemas/agents-meta.ts:77`。
-- `sync-meta` declared-id regex：`packages/cli/src/commands/sync-meta.ts:334`。
-
-## 变更门禁
-
-修改下列节点前，必须先更新本文：
-
-- Rule matching, priority, activation, dedupe: `packages/server/src/services/get-rules.ts`
-- Batch planning and shared bundle: `packages/server/src/services/plan-context.ts`
-- Registry mutation and revision hash: `packages/server/src/services/update-registry.ts`
-- MCP transport/session protocol: `packages/server/src/http.ts`, `packages/server/src/index.ts`
-- Stable ID derivation: `packages/shared/src/schemas/agents-meta.ts`, `packages/cli/src/commands/sync-meta.ts`
-- Init scaffold and metadata generation: `packages/cli/src/commands/init.ts`, `packages/cli/src/commands/sync-meta.ts`
