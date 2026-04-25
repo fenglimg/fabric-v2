@@ -1,0 +1,172 @@
+{
+  "id": "IMPL-001.5",
+  "title": "Enforce test quality gate before live E2E",
+  "status": "pending",
+  "context_package_path": ".workflow/active/WFS-test-fabric-cognitive-oops-e2e/.process/context-package.json",
+  "cli_execution_id": "WFS-test-fabric-cognitive-oops-e2e-IMPL-001.5",
+  "cli_execution": {
+    "strategy": "resume",
+    "resume_from": "WFS-test-fabric-cognitive-oops-e2e-IMPL-001.3"
+  },
+  "meta": {
+    "type": "test-fix",
+    "agent": "@code-developer",
+    "execution_group": null,
+    "module": "test-workflow",
+    "test_framework": "vitest",
+    "coverage_target": "80%",
+    "execution_config": {
+      "method": "cli",
+      "cli_tool": "codex",
+      "enable_resume": true,
+      "previous_cli_id": "WFS-test-fabric-cognitive-oops-e2e-IMPL-001.3"
+    }
+  },
+  "context": {
+    "requirements": [
+      "Gate 4 validation layers: [L0, L1, L2 entry readiness, L3 entry readiness]",
+      "Check 5 must-pass items: [build command present, focused Vitest commands present, read-only safety preserved, disposable-copy strategy documented, max_iterations=10 recorded]",
+      "Review 3 blocker severities from IMPL-001.3: [must-fix-before-e2e, can-fix-during-IMPL-002, informational]",
+      "Produce 2 outcomes only: [go, no-go]",
+      "Bind 1 downstream task to the gate result: [IMPL-002]"
+    ],
+    "focus_paths": [
+      ".workflow/active/WFS-test-fabric-cognitive-oops-e2e/IMPL_PLAN.md",
+      ".workflow/active/WFS-test-fabric-cognitive-oops-e2e/TODO_LIST.md",
+      ".workflow/active/WFS-test-fabric-cognitive-oops-e2e/.task/IMPL-001.json",
+      ".workflow/active/WFS-test-fabric-cognitive-oops-e2e/.task/IMPL-001.3-validation.json",
+      ".workflow/active/WFS-test-fabric-cognitive-oops-e2e/.task/IMPL-001.5-review.json",
+      ".workflow/active/WFS-test-fabric-cognitive-oops-e2e/.task/IMPL-002.json"
+    ],
+    "acceptance": [
+      "4 validation layers are explicitly scored: verify by reviewing gate outcomes for [L0, L1, L2 entry readiness, L3 entry readiness]",
+      "5 must-pass items are checked: verify by matching [build command, focused Vitest commands, read-only safety, disposable-copy strategy, max_iterations=10]",
+      "1 go/no-go decision is produced: verify by enumerating exactly one of [go, no-go]",
+      "1 downstream handoff exists for IMPL-002: verify by matching the gate result to IMPL-002 readiness",
+      "0 production source files are modified by the review task: verify by limiting output to workflow artifacts only"
+    ],
+    "depends_on": [
+      "IMPL-001.3"
+    ],
+    "inherited": {
+      "from": "IMPL-001.3",
+      "context": [
+        "Static validation findings and severity buckets are available",
+        "Potential blockers are already classified for gating"
+      ]
+    },
+    "shared_context": {
+      "review_mode": "quality-gate",
+      "execution_policy": "No live E2E until gate passes",
+      "conventions": [
+        "Use measurable pass/fail criteria only",
+        "Do not rerun full analysis when prior task already produced blocker findings",
+        "Keep the decision binary so IMPL-002 can start or stop cleanly"
+      ]
+    },
+    "artifacts": [
+      {
+        "type": "impl_plan",
+        "source": "workflow-test-fix-cycle",
+        "path": ".workflow/active/WFS-test-fabric-cognitive-oops-e2e/IMPL_PLAN.md",
+        "priority": "highest",
+        "usage": "Gate the written plan against required commands and safety constraints",
+        "contains": "task ordering, constraints, and max_iterations=10"
+      },
+      {
+        "type": "validation_task",
+        "source": "workflow-test-fix-cycle",
+        "path": ".workflow/active/WFS-test-fabric-cognitive-oops-e2e/.task/IMPL-001.3-validation.json",
+        "priority": "high",
+        "usage": "Use static findings and blocker buckets as gate input",
+        "contains": "severity mapping and contract-drift checks"
+      }
+    ]
+  },
+  "flow_control": {
+    "pre_analysis": [
+      {
+        "step": "load_impl_plan",
+        "action": "Load the current test-fix plan and ensure required commands and limits are written down",
+        "commands": [
+          "Read(.workflow/active/WFS-test-fabric-cognitive-oops-e2e/IMPL_PLAN.md)"
+        ],
+        "output_to": "impl_plan",
+        "on_error": "fail"
+      },
+      {
+        "step": "load_validation_findings",
+        "action": "Load the static validation task and use it as the quality-gate input",
+        "commands": [
+          "Read(.workflow/active/WFS-test-fabric-cognitive-oops-e2e/.task/IMPL-001.3-validation.json)"
+        ],
+        "output_to": "validation_task",
+        "on_error": "fail"
+      },
+      {
+        "step": "check_required_commands_and_limits",
+        "action": "Verify required commands, safety split, and max_iterations value are present before live execution",
+        "commands": [
+          "bash(rg 'pnpm -r build|fabric init --plan|fabric init --yes|fabric doctor --audit|max_iterations|10' .workflow/active/WFS-test-fabric-cognitive-oops-e2e/IMPL_PLAN.md .workflow/active/WFS-test-fabric-cognitive-oops-e2e/.task -n --max-count 120)"
+        ],
+        "output_to": "gate_checks",
+        "on_error": "fail"
+      }
+    ],
+    "implementation_approach": [
+      {
+        "step": 1,
+        "title": "Evaluate layer readiness",
+        "description": "Score L0, L1, L2 entry readiness, and L3 entry readiness using only the written plan and inherited blocker inventory.",
+        "modification_points": [
+          "Score 4 layers: [L0, L1, L2 entry readiness, L3 entry readiness]",
+          "Check 5 must-pass items: [build command, focused Vitest commands, read-only safety, disposable-copy strategy, max_iterations=10]",
+          "Consume 3 blocker severities from the inherited validation task"
+        ],
+        "logic_flow": [
+          "Load the plan and validation findings",
+          "Evaluate each layer against must-pass criteria",
+          "Mark any remaining must-fix blockers",
+          "Prepare a binary execution recommendation"
+        ],
+        "depends_on": [],
+        "output": "layer_gate_scores"
+      },
+      {
+        "step": 2,
+        "title": "Issue go/no-go decision",
+        "description": "Produce a single gate result for IMPL-002 and identify the exact condition set behind it.",
+        "modification_points": [
+          "Emit 1 binary outcome: [go or no-go]",
+          "Attach 1 downstream handoff target: [IMPL-002]",
+          "Record 0 non-workflow file edits"
+        ],
+        "logic_flow": [
+          "Summarize must-pass status",
+          "Choose go or no-go",
+          "Connect the result to IMPL-002 start conditions"
+        ],
+        "depends_on": [
+          1
+        ],
+        "output": "quality_gate_result"
+      }
+    ],
+    "target_files": [
+      ".workflow/active/WFS-test-fabric-cognitive-oops-e2e/.task/IMPL-001.5-review.json",
+      ".workflow/active/WFS-test-fabric-cognitive-oops-e2e/IMPL_PLAN.md",
+      ".workflow/active/WFS-test-fabric-cognitive-oops-e2e/TODO_LIST.md"
+    ],
+    "reusable_test_tools": [
+      "packages/cli/__tests__/init-nondestructive.test.ts",
+      "packages/server/src/services/plan-context.test.ts",
+      "packages/server/src/services/rule-sections.test.ts",
+      "packages/server/src/services/doctor.test.ts"
+    ],
+    "test_commands": {
+      "run_tests": "pnpm -r build && pnpm --filter @fenglimg/fabric-cli test && pnpm --filter @fenglimg/fabric-server exec vitest run src/index.test.ts src/services/plan-context.test.ts src/services/rule-sections.test.ts src/services/audit-log.test.ts src/services/doctor.test.ts src/tools/rule-sections.test.ts && pnpm --filter @fenglimg/fabric-shared exec vitest run test/agents-meta.test.ts",
+      "run_coverage": "pnpm --filter @fenglimg/fabric-cli test -- --coverage",
+      "run_specific": "pnpm --filter @fenglimg/fabric-server exec vitest run {test_file}"
+    }
+  }
+}

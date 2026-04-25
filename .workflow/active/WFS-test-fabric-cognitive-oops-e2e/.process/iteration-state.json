@@ -1,0 +1,11 @@
+{
+  "status": "completed",
+  "iterations": [
+    {
+      "iteration": 1,
+      "strategy": "conservative",
+      "pass_rate": 100,
+      "summary": ".workflow/active/WFS-test-fabric-cognitive-oops-e2e/.summaries/iteration-summaries/iteration-1-summary.md"
+    }
+  ]
+}

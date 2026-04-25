@@ -1,0 +1,211 @@
+{
+  "id": "IMPL-001.3",
+  "title": "Run L0 static validation and AI issue scan",
+  "status": "pending",
+  "context_package_path": ".workflow/active/WFS-test-fabric-cognitive-oops-e2e/.process/context-package.json",
+  "cli_execution_id": "WFS-test-fabric-cognitive-oops-e2e-IMPL-001.3",
+  "cli_execution": {
+    "strategy": "resume",
+    "resume_from": "WFS-test-fabric-cognitive-oops-e2e-IMPL-001"
+  },
+  "meta": {
+    "type": "test-fix",
+    "agent": "@test-fix-agent",
+    "execution_group": null,
+    "module": "test-workflow",
+    "test_framework": "vitest",
+    "coverage_target": "80%",
+    "execution_config": {
+      "method": "cli",
+      "cli_tool": "codex",
+      "enable_resume": true,
+      "previous_cli_id": "WFS-test-fabric-cognitive-oops-e2e-IMPL-001"
+    }
+  },
+  "context": {
+    "requirements": [
+      "Validate 4 contract groups: [commit coverage mapping, tool exposure, docs/runtime agreement, target-repo safety assumptions]",
+      "Run 4 analysis classes: [static command review, changed-surface verification, AI issue scan, execution blocker classification]",
+      "Classify findings into 3 severities: [must-fix-before-e2e, can-fix-during-IMPL-002, informational]",
+      "Cross-check 3 commit surfaces: [c4d957a, c7b1988, 383fefc]",
+      "Verify 2 protocol tools remain primary in the live contract: [fab_plan_context, fab_get_rule_sections]"
+    ],
+    "focus_paths": [
+      ".workflow/active/WFS-test-fabric-cognitive-oops-e2e/.process/context-package.json",
+      ".workflow/active/WFS-test-fabric-cognitive-oops-e2e/.process/TEST_ANALYSIS_RESULTS.md",
+      "packages/cli/src/commands/init.ts",
+      "packages/server/src/index.ts",
+      "packages/server/src/tools/plan-context.ts",
+      "packages/server/src/tools/rule-sections.ts",
+      "packages/server/src/services/doctor.ts",
+      "README.md",
+      "docs/getting-started.md",
+      "docs/initialization.md",
+      "docs/SPEC_INTERNAL.md"
+    ],
+    "acceptance": [
+      "4 contract groups are explicitly reviewed: verify by producing findings for [coverage mapping, tool exposure, docs/runtime agreement, safety assumptions]",
+      "3 commit surfaces are mapped to concrete validation commands: verify by matching [c4d957a -> init/schema, c7b1988 -> plan-context/sections/audit/doctor, 383fefc -> docs contract]",
+      "2 tool-exposure checks are completed: verify by confirming fab_plan_context and fab_get_rule_sections appear in registration/docs scans",
+      "1 blocker list with 3 severity buckets is produced: verify by enumerating [must-fix-before-e2e, can-fix-during-IMPL-002, informational]",
+      "0 write-heavy commands are scheduled for /mnt/c/Project/oops-framework during this task: verify by reviewing the task output and command list"
+    ],
+    "depends_on": [
+      "IMPL-001"
+    ],
+    "inherited": {
+      "from": "IMPL-001",
+      "context": [
+        "Validation inventory is already quantified",
+        "Read-only versus disposable-copy safety split is already defined"
+      ]
+    },
+    "shared_context": {
+      "tech_stack": [
+        "TypeScript",
+        "Vitest",
+        "Fabric CLI",
+        "MCP-style tool registration"
+      ],
+      "risk_strategy": "Escalate contract drift before live E2E and keep original oops-framework repo read-only",
+      "conventions": [
+        "Prefer code-and-test reality over stale planning assumptions",
+        "Classify blockers before running the disposable-copy flow",
+        "Do not modify production code during static validation"
+      ]
+    },
+    "artifacts": [
+      {
+        "type": "test_analysis",
+        "source": "workflow-test-fix-cycle",
+        "path": ".workflow/active/WFS-test-fabric-cognitive-oops-e2e/.process/TEST_ANALYSIS_RESULTS.md",
+        "priority": "highest",
+        "usage": "Use the L0 plan, risk list, and scenario inventory as the baseline for static validation",
+        "contains": "coverage gaps, AI issue scan risks, and 15 E2E scenarios"
+      },
+      {
+        "type": "context_package",
+        "source": "workflow-test-fix-cycle",
+        "path": ".workflow/active/WFS-test-fabric-cognitive-oops-e2e/.process/context-package.json",
+        "priority": "highest",
+        "usage": "Map changed files and commands to the validation surface",
+        "contains": "commit-to-path inventory and target-repo safety notes"
+      }
+    ]
+  },
+  "flow_control": {
+    "pre_analysis": [
+      {
+        "step": "load_context_package",
+        "action": "Load context package to map changed commits and target-repo constraints",
+        "commands": [
+          "Read(.workflow/active/WFS-test-fabric-cognitive-oops-e2e/.process/context-package.json)"
+        ],
+        "output_to": "context_package",
+        "on_error": "fail"
+      },
+      {
+        "step": "load_test_analysis",
+        "action": "Load the L0-L3 test analysis and AI-code issue scan risks",
+        "commands": [
+          "Read(.workflow/active/WFS-test-fabric-cognitive-oops-e2e/.process/TEST_ANALYSIS_RESULTS.md)"
+        ],
+        "output_to": "test_analysis",
+        "on_error": "fail"
+      },
+      {
+        "step": "review_tool_registration_and_docs",
+        "action": "Search for the current plan-context and rule-sections contract across code and docs",
+        "commands": [
+          "bash(rg 'fab_plan_context|fab_get_rule_sections|fab_get_rules|doctor --audit' packages README.md docs -n --max-count 120)"
+        ],
+        "output_to": "contract_scan",
+        "on_error": "fail"
+      },
+      {
+        "step": "review_test_entrypoints",
+        "action": "Confirm the focused Vitest entrypoints that must pass before live E2E",
+        "commands": [
+          "bash(rg 'describe\\(|it\\(' packages/cli/__tests__ packages/server/src packages/shared/test -g '*test.ts' -n --max-count 200)"
+        ],
+        "output_to": "test_entrypoints",
+        "on_error": "fail"
+      }
+    ],
+    "implementation_approach": [
+      {
+        "step": 1,
+        "title": "Map changed functionality to validation coverage",
+        "description": "Cross-check the 3 validation commits against existing tests, tool registration, and docs to find missing proof points.",
+        "modification_points": [
+          "Map 3 commits: [c4d957a, c7b1988, 383fefc]",
+          "Check 4 contract groups: [coverage mapping, tool exposure, docs/runtime agreement, safety assumptions]",
+          "Identify 2 primary tool surfaces: [fab_plan_context, fab_get_rule_sections]"
+        ],
+        "logic_flow": [
+          "Read commit/path inventory from the context package",
+          "Match each changed surface to tests and docs",
+          "Highlight gaps where runtime proof is still missing",
+          "Separate static-only gaps from live-E2E gaps"
+        ],
+        "depends_on": [],
+        "output": "coverage_gap_map"
+      },
+      {
+        "step": 2,
+        "title": "Run AI issue scan and blocker classification",
+        "description": "Review the plan for root-test blind spots, token lifecycle risk, target-repo safety risk, and docs/runtime drift before execution.",
+        "modification_points": [
+          "Classify findings into 3 severities: [must-fix-before-e2e, can-fix-during-IMPL-002, informational]",
+          "Review 4 risk classes: [test blind spot, token lifecycle, target dirty state, docs/runtime drift]",
+          "Produce 1 blocker handoff for the quality gate task"
+        ],
+        "logic_flow": [
+          "Apply the AI issue scan risk list from test analysis",
+          "Determine whether each finding blocks execution or can be handled during IMPL-002",
+          "Document exact blocker wording and evidence",
+          "Pass the blocker inventory to the review gate"
+        ],
+        "depends_on": [
+          1
+        ],
+        "output": "blocker_inventory"
+      },
+      {
+        "step": 3,
+        "title": "Emit validation findings for downstream gate",
+        "description": "Finalize a concise static-validation report that the quality gate can consume without rerunning the same analysis.",
+        "modification_points": [
+          "Produce 1 static validation summary with 3 severity buckets",
+          "Record 0 original-repo write actions",
+          "Link 1 downstream dependency to IMPL-001.5"
+        ],
+        "logic_flow": [
+          "Compile coverage mapping and issue scan findings",
+          "Verify all commands in this task are read-only",
+          "Pass the result forward as gate input"
+        ],
+        "depends_on": [
+          2
+        ],
+        "output": "validation_findings"
+      }
+    ],
+    "target_files": [
+      ".workflow/active/WFS-test-fabric-cognitive-oops-e2e/.task/IMPL-001.3-validation.json",
+      ".workflow/active/WFS-test-fabric-cognitive-oops-e2e/IMPL_PLAN.md",
+      ".workflow/active/WFS-test-fabric-cognitive-oops-e2e/TODO_LIST.md"
+    ],
+    "reusable_test_tools": [
+      "packages/server/src/index.test.ts",
+      "packages/server/src/tools/rule-sections.test.ts",
+      "packages/server/src/services/doctor.test.ts",
+      "packages/cli/__tests__/init-nondestructive.test.ts"
+    ],
+    "test_commands": {
+      "run_tests": "pnpm --filter @fenglimg/fabric-cli test && pnpm --filter @fenglimg/fabric-server exec vitest run src/index.test.ts src/tools/rule-sections.test.ts src/services/doctor.test.ts && pnpm --filter @fenglimg/fabric-shared exec vitest run test/agents-meta.test.ts",
+      "run_coverage": "pnpm --filter @fenglimg/fabric-server exec vitest run src/index.test.ts src/tools/rule-sections.test.ts src/services/doctor.test.ts --coverage",
+      "run_specific": "pnpm --filter @fenglimg/fabric-server exec vitest run {test_file}"
+    }
+  }
+}

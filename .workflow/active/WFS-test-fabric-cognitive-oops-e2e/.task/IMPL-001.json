@@ -1,0 +1,216 @@
+{
+  "id": "IMPL-001",
+  "title": "Generate test harness and disposable-copy execution design",
+  "status": "pending",
+  "context_package_path": ".workflow/active/WFS-test-fabric-cognitive-oops-e2e/.process/context-package.json",
+  "cli_execution_id": "WFS-test-fabric-cognitive-oops-e2e-IMPL-001",
+  "cli_execution": {
+    "strategy": "new"
+  },
+  "meta": {
+    "type": "test-gen",
+    "agent": "@code-developer",
+    "execution_group": null,
+    "module": "test-workflow",
+    "test_framework": "vitest",
+    "coverage_target": "80%",
+    "execution_config": {
+      "method": "cli",
+      "cli_tool": "codex",
+      "enable_resume": true,
+      "previous_cli_id": null
+    }
+  },
+  "context": {
+    "requirements": [
+      "Define 6 command groups: [build, cli-vitest, server-vitest, shared-vitest, read-only-preflight, disposable-copy-e2e]",
+      "Document 5 representative target paths: [README.md, assets/script/Main.ts, assets/script/game/initialize/Initialize.ts, assets/script/game/common/config/GameUIConfig.ts, doc/using.md]",
+      "Document 4 disposable-copy artifact checks: [.fabric/INITIAL_TAXONOMY.md, .fabric/bootstrap/README.md, .fabric/agents.meta.json, .fabric/forensic.json]",
+      "Define 2 built-service entry points to invoke from Node scripts: [planContext, getRuleSections]",
+      "Preserve 2 safety modes: [read-only checks in /mnt/c/Project/oops-framework, write-heavy validation in a disposable copy only]"
+    ],
+    "focus_paths": [
+      ".workflow/active/WFS-test-fabric-cognitive-oops-e2e/IMPL_PLAN.md",
+      ".workflow/active/WFS-test-fabric-cognitive-oops-e2e/.process/context-package.json",
+      ".workflow/active/WFS-test-fabric-cognitive-oops-e2e/.process/TEST_ANALYSIS_RESULTS.md",
+      "packages/cli",
+      "packages/server",
+      "packages/shared",
+      "README.md",
+      "docs/getting-started.md",
+      "docs/initialization.md",
+      "docs/SPEC_INTERNAL.md"
+    ],
+    "acceptance": [
+      "6 command groups are enumerated in the task output: verify by reviewing the generated harness plan against the explicit list",
+      "3 focused Fabric validation commands are present: verify by matching [pnpm -r build, pnpm --filter @fenglimg/fabric-cli test, pnpm --filter @fenglimg/fabric-server exec vitest run src/index.test.ts src/services/plan-context.test.ts src/services/rule-sections.test.ts src/services/audit-log.test.ts src/services/doctor.test.ts src/tools/rule-sections.test.ts]",
+      "1 shared-schema validation command is present: verify by matching [pnpm --filter @fenglimg/fabric-shared exec vitest run test/agents-meta.test.ts]",
+      "2 target-repo CLI commands are present with safety split: verify by matching [fabric init --plan in original repo, fabric init --yes in disposable copy]",
+      "1 Node script or equivalent invocation plan exists for built server services: verify by matching [planContext + getRuleSections] in the harness design"
+    ],
+    "depends_on": [],
+    "shared_context": {
+      "tech_stack": [
+        "TypeScript",
+        "pnpm workspace",
+        "Vitest",
+        "Fabric CLI",
+        "Fabric server"
+      ],
+      "validation_commits": [
+        "c4d957a",
+        "c7b1988",
+        "383fefc"
+      ],
+      "conventions": [
+        "Do not modify production source files",
+        "Treat /mnt/c/Project/oops-framework as read-only except inside a disposable copy",
+        "Use focused package-level Vitest commands instead of relying on pnpm -r --if-present test"
+      ]
+    },
+    "artifacts": [
+      {
+        "type": "test_analysis",
+        "source": "workflow-test-fix-cycle",
+        "path": ".workflow/active/WFS-test-fabric-cognitive-oops-e2e/.process/TEST_ANALYSIS_RESULTS.md",
+        "priority": "highest",
+        "usage": "L0-L3 validation layers, scenario list, and safety rules",
+        "contains": "15 scenario checks and weighted acceptance criteria"
+      },
+      {
+        "type": "context_package",
+        "source": "workflow-test-fix-cycle",
+        "path": ".workflow/active/WFS-test-fabric-cognitive-oops-e2e/.process/context-package.json",
+        "priority": "highest",
+        "usage": "Commit mapping, command baselines, target repo characteristics, and candidate E2E flow",
+        "contains": "8-step disposable-copy execution plan and changed-surface inventory"
+      },
+      {
+        "type": "workflow_session",
+        "source": "workflow-test-fix-cycle",
+        "path": ".workflow/active/WFS-test-fabric-cognitive-oops-e2e/workflow-session.json",
+        "priority": "high",
+        "usage": "Session boundaries and project roots",
+        "contains": "workflow id, implementation repo, target repo, and phase gate"
+      }
+    ]
+  },
+  "flow_control": {
+    "pre_analysis": [
+      {
+        "step": "load_context_package",
+        "action": "Load context package for commit surfaces, command baselines, and target repo safety notes",
+        "commands": [
+          "Read(.workflow/active/WFS-test-fabric-cognitive-oops-e2e/.process/context-package.json)"
+        ],
+        "output_to": "context_package",
+        "on_error": "fail"
+      },
+      {
+        "step": "load_test_analysis",
+        "action": "Load the test analysis for L0-L3 layers, risk notes, and scenario inventory",
+        "commands": [
+          "Read(.workflow/active/WFS-test-fabric-cognitive-oops-e2e/.process/TEST_ANALYSIS_RESULTS.md)"
+        ],
+        "output_to": "test_analysis",
+        "on_error": "fail"
+      },
+      {
+        "step": "scan_changed_validation_surfaces",
+        "action": "Inspect changed code and docs surfaces that the harness must validate",
+        "commands": [
+          "bash(rg 'planContext|getRuleSections|fabric init|doctor --audit|INITIAL_TAXONOMY' packages README.md docs -n --max-count 80)",
+          "bash(rg 'vitest run|defineCommand|fab_get_rule_sections|fab_plan_context' packages -n --max-count 80)"
+        ],
+        "output_to": "surface_scan",
+        "on_error": "fail"
+      },
+      {
+        "step": "map_existing_test_commands",
+        "action": "Confirm package-level build and test command patterns before generating the harness task",
+        "commands": [
+          "bash(rg '\"build\"|\"test\"' package.json packages/*/package.json -n --max-count 80)"
+        ],
+        "output_to": "command_inventory",
+        "on_error": "fail"
+      }
+    ],
+    "implementation_approach": [
+      {
+        "step": 1,
+        "title": "Assemble validation inventory",
+        "description": "Extract the 6 command groups, 5 representative target paths, 4 artifact checks, and 2 server service entry points from the loaded context.",
+        "modification_points": [
+          "Document 6 command groups: [build, cli-vitest, server-vitest, shared-vitest, read-only-preflight, disposable-copy-e2e]",
+          "Enumerate 5 target paths: [README.md, assets/script/Main.ts, assets/script/game/initialize/Initialize.ts, assets/script/game/common/config/GameUIConfig.ts, doc/using.md]",
+          "Enumerate 4 artifact checks: [.fabric/INITIAL_TAXONOMY.md, .fabric/bootstrap/README.md, .fabric/agents.meta.json, .fabric/forensic.json]"
+        ],
+        "logic_flow": [
+          "Read current session artifacts",
+          "Extract command, path, and artifact inventories",
+          "Resolve gaps against the changed commit surfaces",
+          "Produce a single harness-oriented task definition"
+        ],
+        "depends_on": [],
+        "output": "validation_inventory"
+      },
+      {
+        "step": 2,
+        "title": "Design safe execution split",
+        "description": "Translate the inventory into read-only checks for the original repo and write-heavy checks for a disposable copy.",
+        "modification_points": [
+          "Assign 2 original-repo commands: [git status --short, fabric init --plan]",
+          "Assign 4 disposable-copy actions: [filesystem copy, fabric init --yes, service smoke calls, fabric doctor --audit]",
+          "Define 2 built-service calls: [planContext, getRuleSections]"
+        ],
+        "logic_flow": [
+          "Lock the original repo to read-only",
+          "Route all write-heavy commands to the disposable copy",
+          "Record server-process continuity for selection_token checks",
+          "Embed the safety split into acceptance criteria"
+        ],
+        "depends_on": [
+          1
+        ],
+        "output": "safe_harness_design"
+      },
+      {
+        "step": 3,
+        "title": "Emit execution-ready task details",
+        "description": "Finalize the harness task with concrete commands, focus paths, and verification statements usable by downstream validation and E2E tasks.",
+        "modification_points": [
+          "Produce 5 measurable acceptance checks for command presence and safety rules",
+          "Record 1 downstream dependency edge to IMPL-001.3",
+          "Record 1 session-level convention set for no-production-edits behavior"
+        ],
+        "logic_flow": [
+          "Fold the harness design into quantified requirements",
+          "Attach measurable command-based acceptance checks",
+          "Preserve downstream continuity for validation and execution tasks"
+        ],
+        "depends_on": [
+          2
+        ],
+        "output": "harness_task_definition"
+      }
+    ],
+    "target_files": [
+      ".workflow/active/WFS-test-fabric-cognitive-oops-e2e/IMPL_PLAN.md",
+      ".workflow/active/WFS-test-fabric-cognitive-oops-e2e/TODO_LIST.md",
+      ".workflow/active/WFS-test-fabric-cognitive-oops-e2e/.task/IMPL-001.json"
+    ],
+    "reusable_test_tools": [
+      "packages/cli/__tests__/init-nondestructive.test.ts",
+      "packages/server/src/services/plan-context.test.ts",
+      "packages/server/src/services/rule-sections.test.ts",
+      "packages/server/src/services/audit-log.test.ts",
+      "packages/server/src/services/doctor.test.ts",
+      "packages/shared/test/agents-meta.test.ts"
+    ],
+    "test_commands": {
+      "run_tests": "pnpm --filter @fenglimg/fabric-cli test && pnpm --filter @fenglimg/fabric-server exec vitest run src/index.test.ts src/services/plan-context.test.ts src/services/rule-sections.test.ts src/services/audit-log.test.ts src/services/doctor.test.ts src/tools/rule-sections.test.ts && pnpm --filter @fenglimg/fabric-shared exec vitest run test/agents-meta.test.ts",
+      "run_coverage": "pnpm --filter @fenglimg/fabric-cli test -- --coverage",
+      "run_specific": "pnpm --filter @fenglimg/fabric-server exec vitest run {test_file}"
+    }
+  }
+}

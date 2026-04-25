@@ -1,0 +1,243 @@
+{
+  "id": "IMPL-002",
+  "title": "Execute disposable-copy E2E flow and fix blockers",
+  "status": "pending",
+  "context_package_path": ".workflow/active/WFS-test-fabric-cognitive-oops-e2e/.process/context-package.json",
+  "cli_execution_id": "WFS-test-fabric-cognitive-oops-e2e-IMPL-002",
+  "cli_execution": {
+    "strategy": "resume",
+    "resume_from": "WFS-test-fabric-cognitive-oops-e2e-IMPL-001.5"
+  },
+  "meta": {
+    "type": "test-fix",
+    "agent": "@test-fix-agent",
+    "execution_group": null,
+    "module": "test-workflow",
+    "test_framework": "vitest",
+    "coverage_target": "80%",
+    "execution_config": {
+      "method": "cli",
+      "cli_tool": "codex",
+      "enable_resume": true,
+      "previous_cli_id": "WFS-test-fabric-cognitive-oops-e2e-IMPL-001.5"
+    }
+  },
+  "context": {
+    "requirements": [
+      "Execute 8 E2E phases: [preflight snapshot, read-only init planning, disposable copy creation, scaffold validation, project rule completion, plan-context smoke checks, rule-section failure-path checks, audit/doctor verification]",
+      "Validate 15 named scenarios from TEST_ANALYSIS_RESULTS.md",
+      "Run 4 mandatory Fabric confidence commands before external E2E: [pnpm -r build, pnpm --filter @fenglimg/fabric-cli test, pnpm --filter @fenglimg/fabric-server exec vitest run src/index.test.ts src/services/plan-context.test.ts src/services/rule-sections.test.ts src/services/audit-log.test.ts src/services/doctor.test.ts src/tools/rule-sections.test.ts, pnpm --filter @fenglimg/fabric-shared exec vitest run test/agents-meta.test.ts]",
+      "Run 2 original-repo read-only commands only: [git status --short, fabric init --plan]",
+      "Run 6 disposable-copy protocol commands/actions: [filesystem copy, fabric init --yes, start fabric serve, call planContext, call getRuleSections, run fabric doctor --audit]",
+      "Allow a maximum of 10 fix iterations with a summary artifact for each iteration"
+    ],
+    "focus_paths": [
+      ".workflow/active/WFS-test-fabric-cognitive-oops-e2e/.process/context-package.json",
+      ".workflow/active/WFS-test-fabric-cognitive-oops-e2e/.process/TEST_ANALYSIS_RESULTS.md",
+      ".workflow/active/WFS-test-fabric-cognitive-oops-e2e/.summaries/iteration-summaries",
+      "packages/cli",
+      "packages/server",
+      "packages/shared",
+      "/mnt/c/Project/oops-framework"
+    ],
+    "acceptance": [
+      "4 Fabric confidence commands pass before external E2E: verify by exit code 0 for the enumerated build and focused Vitest commands",
+      "2 original-repo checks remain read-only: verify by limiting in-place commands to [git status --short, fabric init --plan]",
+      "4 disposable-copy scaffold artifacts exist after init: verify by [test -f .fabric/INITIAL_TAXONOMY.md && test -f .fabric/bootstrap/README.md && test -f .fabric/agents.meta.json && test -f .fabric/forensic.json] in the copy",
+      "5 representative paths return plan-context output with required fields: verify by checking [revision_hash, selection_token, required_stable_ids, ai_selectable_stable_ids, description_index] for each path",
+      "4 rule-section failure paths behave correctly: verify by checking hard errors for [missing/expired token, invalid L1 id, required-only id as AI choice, missing ai_selection_reasons]",
+      "1 audit compatibility check passes: verify by [fabric doctor --audit] exit code 0 in the disposable copy after rule_selection logging",
+      "10 iterations maximum is enforced: verify by counting iteration summaries in .workflow/active/WFS-test-fabric-cognitive-oops-e2e/.summaries/iteration-summaries and stopping at 10"
+    ],
+    "depends_on": [
+      "IMPL-001.5"
+    ],
+    "inherited": {
+      "from": "IMPL-001.5",
+      "context": [
+        "Quality gate result controls whether live execution starts",
+        "Harness commands and safety split are already documented"
+      ]
+    },
+    "shared_context": {
+      "tech_stack": [
+        "TypeScript",
+        "pnpm workspace",
+        "Vitest",
+        "Node.js",
+        "Fabric CLI and server"
+      ],
+      "target_strategy": "Use a disposable filesystem copy of /mnt/c/Project/oops-framework for all write-heavy validation",
+      "max_iterations": 10,
+      "conventions": [
+        "Never write directly to the original dirty oops-framework repo",
+        "Keep the same live server process for token lifecycle scenarios when needed",
+        "Fix blockers iteratively and record each cycle in iteration summaries"
+      ]
+    },
+    "artifacts": [
+      {
+        "type": "test_analysis",
+        "source": "workflow-test-fix-cycle",
+        "path": ".workflow/active/WFS-test-fabric-cognitive-oops-e2e/.process/TEST_ANALYSIS_RESULTS.md",
+        "priority": "highest",
+        "usage": "Drive L0-L3 execution and 15 scenario checks",
+        "contains": "layer goals, failure paths, and acceptance criteria"
+      },
+      {
+        "type": "context_package",
+        "source": "workflow-test-fix-cycle",
+        "path": ".workflow/active/WFS-test-fabric-cognitive-oops-e2e/.process/context-package.json",
+        "priority": "highest",
+        "usage": "Supply the 8-step candidate E2E flow and changed commit surfaces",
+        "contains": "command baselines, target repo shape, and safety notes"
+      },
+      {
+        "type": "quality_gate",
+        "source": "workflow-test-fix-cycle",
+        "path": ".workflow/active/WFS-test-fabric-cognitive-oops-e2e/.task/IMPL-001.5-review.json",
+        "priority": "high",
+        "usage": "Gate live E2E start conditions",
+        "contains": "binary go/no-go review logic"
+      }
+    ]
+  },
+  "flow_control": {
+    "pre_analysis": [
+      {
+        "step": "load_context_package",
+        "action": "Load context package for the candidate E2E flow, commands, and safety notes",
+        "commands": [
+          "Read(.workflow/active/WFS-test-fabric-cognitive-oops-e2e/.process/context-package.json)"
+        ],
+        "output_to": "context_package",
+        "on_error": "fail"
+      },
+      {
+        "step": "load_test_analysis",
+        "action": "Load the L0-L3 analysis and scenario list to drive execution order",
+        "commands": [
+          "Read(.workflow/active/WFS-test-fabric-cognitive-oops-e2e/.process/TEST_ANALYSIS_RESULTS.md)"
+        ],
+        "output_to": "test_analysis",
+        "on_error": "fail"
+      },
+      {
+        "step": "verify_quality_gate_inputs",
+        "action": "Confirm that the quality gate task documents required commands, safety split, and iteration limit",
+        "commands": [
+          "Read(.workflow/active/WFS-test-fabric-cognitive-oops-e2e/.task/IMPL-001.5-review.json)"
+        ],
+        "output_to": "quality_gate",
+        "on_error": "fail"
+      },
+      {
+        "step": "prepare_execution_command_map",
+        "action": "Build the exact command map for local build, focused tests, read-only preflight, disposable-copy init, server smoke calls, and doctor audit",
+        "commands": [
+          "bash(rg 'pnpm -r build|vitest run|fabric init --plan|fabric init --yes|fabric doctor --audit|planContext|getRuleSections' .workflow/active/WFS-test-fabric-cognitive-oops-e2e packages README.md docs -n --max-count 160)"
+        ],
+        "output_to": "execution_command_map",
+        "on_error": "fail"
+      }
+    ],
+    "implementation_approach": [
+      {
+        "step": 1,
+        "title": "Establish local confidence and safe target entry",
+        "description": "Run Fabric build and focused Vitest checks, then perform only read-only preflight commands in the original oops-framework repo.",
+        "modification_points": [
+          "Run 4 Fabric confidence commands: [pnpm -r build, cli test, server vitest, shared vitest]",
+          "Run 2 original-repo commands: [git status --short, fabric init --plan]",
+          "Capture 1 init branch decision: [init vs reapply behavior]"
+        ],
+        "logic_flow": [
+          "Build the implementation repo",
+          "Run focused CLI/server/shared tests",
+          "Inspect the original target repo read-only",
+          "Capture the init planning result for downstream copy execution"
+        ],
+        "depends_on": [],
+        "output": "preflight_results"
+      },
+      {
+        "step": 2,
+        "title": "Execute disposable-copy scaffold and service smoke",
+        "description": "Create a filesystem copy, run write-heavy init there, then start the built server and call planContext for the representative target paths.",
+        "modification_points": [
+          "Run 6 copy-side actions: [filesystem copy, fabric init --yes, verify 4 artifacts, start fabric serve, call planContext, collect required output fields]",
+          "Validate 5 representative target paths: [README.md, assets/script/Main.ts, assets/script/game/initialize/Initialize.ts, assets/script/game/common/config/GameUIConfig.ts, doc/using.md]",
+          "Check 5 required plan-context fields: [revision_hash, selection_token, required_stable_ids, ai_selectable_stable_ids, description_index]"
+        ],
+        "logic_flow": [
+          "Create a disposable copy of the dirty target repo",
+          "Run init in the copy according to the plan result",
+          "Verify scaffold artifacts exist",
+          "Start the server and smoke-test plan-context across 5 paths"
+        ],
+        "depends_on": [
+          1
+        ],
+        "output": "smoke_e2e_results"
+      },
+      {
+        "step": 3,
+        "title": "Run rule-section, audit, and doctor protocol checks",
+        "description": "Exercise valid and invalid getRuleSections flows, verify rule_selection audit events, and confirm fabric doctor --audit accepts the protocol.",
+        "modification_points": [
+          "Validate 4 failure paths: [missing/expired token, invalid L1 id, required-only id as AI choice, missing ai_selection_reasons]",
+          "Validate 2 requested sections: [MANDATORY_INJECTION, CONTEXT_INFO]",
+          "Validate 1 audit flow: [rule_selection written before fabric doctor --audit]"
+        ],
+        "logic_flow": [
+          "Use valid L1 selections for success-path rule-section retrieval",
+          "Probe the 4 hard-error behaviors",
+          "Verify missing-section warning semantics",
+          "Check audit logging and doctor compatibility"
+        ],
+        "depends_on": [
+          2
+        ],
+        "output": "protocol_validation_results"
+      },
+      {
+        "step": 4,
+        "title": "Iterate on blockers within the test-fix limit",
+        "description": "Fix blockers discovered during execution and repeat the affected checks until success or until the maximum iteration count is reached.",
+        "modification_points": [
+          "Allow up to 10 iterations",
+          "Write 1 summary artifact per iteration under .workflow/active/WFS-test-fabric-cognitive-oops-e2e/.summaries/iteration-summaries",
+          "Stop after 1 terminal condition: [all acceptance checks pass or iteration 10 reached]"
+        ],
+        "logic_flow": [
+          "Classify the current blocker",
+          "Apply the minimal fix needed for the failing validation surface",
+          "Rerun only the affected commands",
+          "Record outcome and continue until pass or limit"
+        ],
+        "depends_on": [
+          3
+        ],
+        "output": "final_e2e_status"
+      }
+    ],
+    "target_files": [
+      ".workflow/active/WFS-test-fabric-cognitive-oops-e2e/.task/IMPL-002.json",
+      ".workflow/active/WFS-test-fabric-cognitive-oops-e2e/.summaries/iteration-summaries"
+    ],
+    "reusable_test_tools": [
+      "packages/cli/__tests__/init-nondestructive.test.ts",
+      "packages/server/src/services/plan-context.test.ts",
+      "packages/server/src/services/rule-sections.test.ts",
+      "packages/server/src/services/audit-log.test.ts",
+      "packages/server/src/services/doctor.test.ts",
+      "packages/server/src/index.test.ts",
+      "packages/shared/test/agents-meta.test.ts"
+    ],
+    "test_commands": {
+      "run_tests": "pnpm -r build && pnpm --filter @fenglimg/fabric-cli test && pnpm --filter @fenglimg/fabric-server exec vitest run src/index.test.ts src/services/plan-context.test.ts src/services/rule-sections.test.ts src/services/audit-log.test.ts src/services/doctor.test.ts src/tools/rule-sections.test.ts && pnpm --filter @fenglimg/fabric-shared exec vitest run test/agents-meta.test.ts",
+      "run_coverage": "pnpm --filter @fenglimg/fabric-server exec vitest run src/index.test.ts src/services/plan-context.test.ts src/services/rule-sections.test.ts src/services/audit-log.test.ts src/services/doctor.test.ts src/tools/rule-sections.test.ts --coverage",
+      "run_specific": "pnpm --filter @fenglimg/fabric-server exec vitest run {test_file}"
+    }
+  }
+}

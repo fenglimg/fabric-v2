@@ -1,0 +1,358 @@
+{
+  "metadata": {
+    "session_id": "WFS-test-fabric-cognitive-oops-e2e",
+    "workflow": "workflow-test-fix-cycle",
+    "generated_at": "2026-04-25T00:00:00+08:00",
+    "implementation_repo": "/mnt/c/Project/fabric-v2",
+    "target_repo": "/mnt/c/Project/oops-framework",
+    "validation_commits": [
+      {
+        "sha": "916d3fe",
+        "summary": "workflow artifact commit; no new target-facing runtime contract beyond planning evidence"
+      },
+      {
+        "sha": "c4d957a",
+        "summary": "tiered rule schema and init taxonomy"
+      },
+      {
+        "sha": "c7b1988",
+        "summary": "sectioned rule selection flow, audit logging, doctor compatibility, tool registration"
+      },
+      {
+        "sha": "383fefc",
+        "summary": "docs for the cognitive alignment protocol"
+      }
+    ]
+  },
+  "project_type": {
+    "implementation_repo": "pnpm TypeScript monorepo with CLI, MCP server, shared schemas, and Vitest-based tests",
+    "target_repo": "single-package Cocos Creator 3.8 TypeScript project with gameplay code under assets/script and content/config assets under assets/resources",
+    "e2e_goal": "validate the new Fabric cognitive alignment protocol against a real external app repo without risking user work"
+  },
+  "test_frameworks": {
+    "fabric_v2": [
+      "Vitest",
+      "package-level service/tool tests",
+      "manual MCP or HTTP smoke validation for final E2E"
+    ],
+    "oops_framework": [
+      "no automated Node test framework detected",
+      "Cocos Creator project structure suggests manual or tool-driven integration validation rather than npm test scripts"
+    ]
+  },
+  "build_commands": {
+    "fabric_v2": {
+      "package_manager": "pnpm",
+      "commands": [
+        "pnpm install",
+        "pnpm -r build",
+        "pnpm --filter @fenglimg/fabric-cli test",
+        "pnpm --filter @fenglimg/fabric-server exec vitest run src/index.test.ts src/services/plan-context.test.ts src/services/rule-sections.test.ts src/services/audit-log.test.ts src/services/doctor.test.ts src/tools/rule-sections.test.ts",
+        "pnpm --filter @fenglimg/fabric-shared exec vitest run test/agents-meta.test.ts"
+      ]
+    },
+    "oops_framework": {
+      "package_manager": {
+        "preferred": "npm",
+        "evidence": [
+          "package-lock.json present",
+          "single root package.json",
+          "no workspace markers"
+        ],
+        "secondary_marker": "yarn.lock also present, so team history may be mixed"
+      },
+      "commands": [
+        "git status --short",
+        "fabric init --plan",
+        "fabric serve"
+      ],
+      "notes": [
+        "No npm/yarn build or test scripts were detected in package.json.",
+        "Actual write validation should happen only in a disposable filesystem copy of the current working tree."
+      ]
+    }
+  },
+  "affected_fabric_files": [
+    {
+      "surface": "init taxonomy generation",
+      "commit": "c4d957a",
+      "paths": [
+        "packages/cli/src/commands/init.ts",
+        "packages/cli/__tests__/init-nondestructive.test.ts"
+      ],
+      "why_it_matters": "E2E must confirm .fabric/INITIAL_TAXONOMY.md is planned and written in the right non-destructive mode."
+    },
+    {
+      "surface": "shared agents meta schema and stable_id-only description identity",
+      "commit": "c4d957a",
+      "paths": [
+        "packages/shared/src/schemas/agents-meta.ts",
+        "packages/shared/src/types/agents.ts",
+        "packages/shared/test/agents-meta.test.ts"
+      ],
+      "why_it_matters": "The registry shape now treats stable_id as the only rule identity and drives plan-context/rule-sections contracts."
+    },
+    {
+      "surface": "fab_plan_context neutral profile, description index, and selection token",
+      "commit": "c7b1988",
+      "paths": [
+        "packages/server/src/services/plan-context.ts",
+        "packages/server/src/tools/plan-context.ts",
+        "packages/server/src/services/plan-context.test.ts"
+      ],
+      "why_it_matters": "E2E must verify neutral requirement_profile output, required vs selectable stable_ids, and selection_token issuance."
+    },
+    {
+      "surface": "fab_get_rule_sections section fetch, hard errors, and warning diagnostics",
+      "commit": "c7b1988",
+      "paths": [
+        "packages/server/src/services/rule-sections.ts",
+        "packages/server/src/tools/rule-sections.ts",
+        "packages/server/src/services/rule-sections.test.ts",
+        "packages/server/src/tools/rule-sections.test.ts"
+      ],
+      "why_it_matters": "E2E must prove server-side merge of required plus AI-selected rules, hard failures for invalid selections, and warning-only behavior for missing sections."
+    },
+    {
+      "surface": "rule_selection audit and doctor audit compatibility",
+      "commit": "c7b1988",
+      "paths": [
+        "packages/server/src/services/audit-log.ts",
+        "packages/server/src/services/audit-log.test.ts",
+        "packages/server/src/services/doctor.ts",
+        "packages/server/src/services/doctor.test.ts",
+        "packages/server/src/api/events.ts"
+      ],
+      "why_it_matters": "E2E must confirm rule_selection events are written to .fabric/audit.jsonl and accepted by fabric doctor --audit."
+    },
+    {
+      "surface": "tool registration and protocol exposure",
+      "commit": "c7b1988",
+      "paths": [
+        "packages/server/src/index.ts",
+        "packages/server/src/index.test.ts",
+        "packages/server/src/http.ts",
+        "packages/server/src/tools/update-registry.ts"
+      ],
+      "why_it_matters": "Server registration must expose fab_plan_context and fab_get_rule_sections while the new protocol remains consistent with serve/http behavior."
+    },
+    {
+      "surface": "documentation contract",
+      "commit": "383fefc",
+      "paths": [
+        "README.md",
+        "docs/getting-started.md",
+        "docs/initialization.md",
+        "docs/SPEC_INTERNAL.md"
+      ],
+      "why_it_matters": "The live user-facing contract now instructs plan-context then section fetch, not the legacy get-rules-first path."
+    }
+  ],
+  "e2e_target_state": {
+    "repo_root": "/mnt/c/Project/oops-framework",
+    "repo_shape": {
+      "kind": "single-package app repo",
+      "framework_hint": "Cocos Creator 3.8.7",
+      "main_code_paths": [
+        "assets/script",
+        "assets/resources",
+        "doc"
+      ]
+    },
+    "package_manager_state": {
+      "preferred_for_local_commands": "npm",
+      "markers_found": [
+        "package.json",
+        "package-lock.json",
+        "yarn.lock"
+      ],
+      "scripts_detected": []
+    },
+    "fabric_presence": {
+      "has_fabric_dir": true,
+      "fabric_dirs_present": [
+        ".fabric/agents",
+        ".fabric/bootstrap"
+      ],
+      "fabric_files_present": [],
+      "missing_expected_files_for_protocol_validation": [
+        ".fabric/bootstrap/README.md",
+        ".fabric/INITIAL_TAXONOMY.md",
+        ".fabric/agents.meta.json",
+        ".fabric/forensic.json",
+        ".fabric/audit.jsonl"
+      ],
+      "interpretation": "The target repo appears partially prepared for Fabric but not actually initialized."
+    },
+    "adjacent_ai_tooling_state": {
+      "dirs_present_but_empty": [
+        ".agents",
+        ".claude",
+        ".codex",
+        ".husky"
+      ]
+    },
+    "working_tree": {
+      "dirty": true,
+      "risk_level": "high",
+      "summary": "The repo has a large volume of pre-existing uncommitted changes across assets, settings, package manifests, docs, and scripts."
+    },
+    "candidate_validation_paths": [
+      {
+        "path": "README.md",
+        "reason": "good bootstrap/global path for initial plan-context smoke validation"
+      },
+      {
+        "path": "assets/script/Main.ts",
+        "reason": "top-level runtime entry point; likely to exercise broad L0 plus app-level L1/L2 routing"
+      },
+      {
+        "path": "assets/script/game/initialize/Initialize.ts",
+        "reason": "closest business path to initialization and flow orchestration"
+      },
+      {
+        "path": "assets/script/game/common/config/GameUIConfig.ts",
+        "reason": "UI/config domain candidate for L1 selection behavior"
+      },
+      {
+        "path": "assets/script/game/common/config/GameResPath.ts",
+        "reason": "resource/config domain candidate with narrow local scope"
+      },
+      {
+        "path": "doc/using.md",
+        "reason": "non-code path to confirm docs handling and neutral description output"
+      }
+    ],
+    "safe_write_strategy": "Keep the current repo read-only. For any real init or reapply run, make a disposable filesystem copy of the current working tree and validate there."
+  },
+  "candidate_e2e_flow": [
+    {
+      "step": 1,
+      "name": "Preflight snapshot in place",
+      "mode": "read-only",
+      "actions": [
+        "Record git status --short in /mnt/c/Project/oops-framework.",
+        "Confirm that .fabric exists but is incomplete and currently lacks agents.meta/bootstrap README/taxonomy."
+      ],
+      "goal": "Establish that the source repo is unsafe for direct write validation."
+    },
+    {
+      "step": 2,
+      "name": "Read-only init planning in place",
+      "mode": "read-only",
+      "actions": [
+        "Use the locally built Fabric CLI and run fabric init --plan in the target repo.",
+        "Capture whether Fabric treats the repo as uninitialized or partial-reapply state."
+      ],
+      "goal": "Validate planning behavior without touching user work."
+    },
+    {
+      "step": 3,
+      "name": "Disposable copy for write validation",
+      "mode": "safe-write",
+      "actions": [
+        "Create a filesystem copy of /mnt/c/Project/oops-framework that preserves the current dirty working tree.",
+        "Do not use git stash, reset, or a clean worktree because that would drop or rewrite user changes."
+      ],
+      "goal": "Provide a realistic but safe E2E sandbox."
+    },
+    {
+      "step": 4,
+      "name": "Scaffold validation in disposable copy",
+      "mode": "write",
+      "actions": [
+        "Build Fabric from /mnt/c/Project/fabric-v2 with pnpm -r build.",
+        "Run the built CLI against the disposable copy with init or init --reapply --yes depending on step-2 output.",
+        "Verify .fabric/INITIAL_TAXONOMY.md, .fabric/bootstrap/README.md, .fabric/agents.meta.json, and .fabric/forensic.json."
+      ],
+      "goal": "Validate the c4d957a init/taxonomy surface end-to-end."
+    },
+    {
+      "step": 5,
+      "name": "Project rule completion",
+      "mode": "write",
+      "actions": [
+        "Continue the Fabric initialization handoff in an MCP-capable client so project-specific rules are populated.",
+        "Ensure the disposable copy contains enough rule nodes and rule content to exercise L1 selection and L2 local matching."
+      ],
+      "goal": "Avoid a shallow bootstrap-only test that would miss the cognitive alignment surfaces."
+    },
+    {
+      "step": 6,
+      "name": "plan-context smoke checks",
+      "mode": "read-write in disposable copy",
+      "actions": [
+        "Start fabric serve against the disposable copy.",
+        "Call fab_plan_context for README.md, assets/script/Main.ts, assets/script/game/initialize/Initialize.ts, and assets/script/game/common/config/GameUIConfig.ts.",
+        "Assert revision_hash, stale behavior, selection_token, neutral requirement_profile, required_stable_ids, ai_selectable_stable_ids, and description_index."
+      ],
+      "goal": "Validate the new neutral planning contract from c7b1988."
+    },
+    {
+      "step": 7,
+      "name": "rule section and failure-path checks",
+      "mode": "read-write in disposable copy",
+      "actions": [
+        "Call fab_get_rule_sections with MANDATORY_INJECTION and CONTEXT_INFO using valid L1 selections.",
+        "Confirm missing sections return empty strings plus warning diagnostics only.",
+        "Probe hard-error paths: expired or unknown selection_token, invalid L1 selection, selecting required-only ids, and missing ai_selection_reasons."
+      ],
+      "goal": "Validate sectioned retrieval semantics and guarded failure behavior."
+    },
+    {
+      "step": 8,
+      "name": "Audit and doctor compatibility checks",
+      "mode": "read-write in disposable copy",
+      "actions": [
+        "Verify .fabric/audit.jsonl receives rule_selection events after successful section fetches.",
+        "Create a minimal staged edit or equivalent auditable change in the disposable copy.",
+        "Run fabric doctor --audit and confirm rule_selection satisfies the preceding-rule-access requirement."
+      ],
+      "goal": "Validate audit-log and doctor compatibility for the new protocol."
+    }
+  ],
+  "risks_and_safety_notes": [
+    "Do not run fabric init --reapply --yes in /mnt/c/Project/oops-framework directly. The target repo has extensive unrelated uncommitted changes.",
+    "A git worktree is not sufficient for preserving the current dirty state because worktrees track committed history, not the present working copy.",
+    "The safest write strategy is a plain filesystem copy of the target repo before any Fabric write validation.",
+    "The current target already has empty .fabric, .agents, .claude, .codex, and .husky directories. That partial state may affect init/reapply branching and should be captured during the plan-only pass.",
+    "Because .fabric/agents.meta.json is currently missing, fab_plan_context and fab_get_rule_sections are not meaningfully testable on the target repo until scaffold plus project-rule completion are done.",
+    "Commit 916d3fe is mostly workflow evidence and should not drive E2E assertions by itself; runtime validation should focus on c4d957a, c7b1988, and 383fefc.",
+    "Tool-registration validation should explicitly confirm fab_get_rule_sections is present and the old MCP edit loop no longer depends on fab_get_rules as the primary path.",
+    "The target repo has no npm test/build scripts, so E2E success criteria must be protocol-level rather than package-script-level."
+  ],
+  "recommended_test_layers": {
+    "L0": {
+      "goal": "Static preflight and no-write safety checks",
+      "checks": [
+        "Map the changed Fabric files and protocol docs to expected runtime behavior.",
+        "Inspect target repo package markers, .fabric state, and dirty working tree.",
+        "Run only read-only commands in the original target repo."
+      ]
+    },
+    "L1": {
+      "goal": "Fabric repo unit and integration confidence",
+      "checks": [
+        "Run shared schema tests for stable_id-only description behavior.",
+        "Run CLI init tests for taxonomy generation and non-destructive behavior.",
+        "Run server tests for plan-context, rule-sections, audit-log, doctor, and tool registration."
+      ]
+    },
+    "L2": {
+      "goal": "Disposable-copy protocol smoke E2E",
+      "checks": [
+        "Validate init plan and actual scaffold writes in a disposable copy of oops-framework.",
+        "Start fabric serve against the copy and exercise fab_plan_context on representative target files.",
+        "Exercise fab_get_rule_sections for both success and warning cases."
+      ]
+    },
+    "L3": {
+      "goal": "Full behavioral E2E with audit compatibility",
+      "checks": [
+        "Use real project-specific rules in the disposable copy, not bootstrap-only metadata.",
+        "Verify rule_selection audit entries are written after section fetches.",
+        "Confirm fabric doctor --audit accepts the new rule_selection flow and remains compatible with the updated edit loop."
+      ]
+    }
+  }
+}
