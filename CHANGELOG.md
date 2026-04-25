@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-04-25
+
+### Added
+
+- Added the L0/L1/L2 cognitive alignment protocol with structured rule descriptions, `.fabric/rules/` rule bodies, and `.fabric/INITIAL_TAXONOMY.md` initialization notes.
+- Added `fab_get_rule_sections` for sectioned rule retrieval with AI-selected L1 IDs, required L0/L2 inclusion, selection-token validation, and `rule_selection` audit events.
+- Added neutral `fab_plan_context` planning output that returns required/selectable rule descriptions and a lightweight requirement profile without server-side L1 ranking details.
+
+### Changed
+
+- `agents.meta.json` now uses `stable_id` as the unified rule identity and indexes level, required/selectable flags, and description metadata.
+- `fabric doctor --audit` accepts the new `rule_selection` telemetry while keeping legacy audit compatibility.
+- Replaced the public editing loop around `fab_get_rules` with `fab_plan_context` plus `fab_get_rule_sections`.
+
+### Fixed
+
+- Hardened initial taxonomy generation against incomplete forensic reports from tests and minimal target projects.
+- Updated CLI snapshots for the new taxonomy output and relaxed the slow pre-commit update test timeout for local CI variance.
+
+### Tests
+
+- Added and validated the full cognitive rule-selection flow against the real `/mnt/c/Project/oops-framework` repository using the locally built CLI and MCP server.
+- Verified build, CLI tests, focused server tests, shared metadata tests, and `fabric doctor --audit`.
+
 ## [1.5.2] - 2026-04-24
 
 ### Added

@@ -1,6 +1,6 @@
 {
   "name": "@fenglimg/fabric-cli",
-  "version": "1.5.2",
+  "version": "1.6.0",
   "type": "module",
   "bin": {
     "fab": "dist/index.js",

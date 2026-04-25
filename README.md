@@ -2,15 +2,15 @@
   <img src="./assets/brand/fabric-wordmark.svg" alt="fabric wordmark" width="220">
 </p>
 
-# Fabric v1.5.2
+# Fabric v1.6.0
 
 让 AI 与维护者围绕同一套仓库规则协作
 
 The Consensus Plane for AI-Human Collaboration
 
-Fabric v1.5.2 is an MCP-first, cross-client AGENTS.md protocol for six AI clients: Claude Code, Cursor, Windsurf, Roo Code, Gemini CLI, and Codex CLI. It keeps Fabric rule state inside `.fabric/`, distributes scoped rules through a local MCP server, and adds git-level defenses so behavior stays consistent across clients without compiling client-specific rule files first.
+Fabric v1.6.0 is an MCP-first, cross-client AGENTS.md protocol for six AI clients: Claude Code, Cursor, Windsurf, Roo Code, Gemini CLI, and Codex CLI. It keeps Fabric rule state inside `.fabric/`, distributes scoped rules through a local MCP server, and adds git-level defenses so behavior stays consistent across clients without compiling client-specific rule files first.
 
-> **Current release: v1.5.2**. Fabric 当前开发线已切到 L0/L1/L2 认知分层协议：规则正文进入 `.fabric/rules/`，`.fabric/agents.meta.json` 以 `stable_id` 索引结构化 description，`fab_plan_context` 先返回中立候选池与 `selection_token`，再由 `fab_get_rule_sections` 获取结构化规则段落。初始化流程见 [`docs/initialization.md`](./docs/initialization.md)。
+> **Current release: v1.6.0**. Fabric 当前稳定线已切到 L0/L1/L2 认知分层协议：规则正文进入 `.fabric/rules/`，`.fabric/agents.meta.json` 以 `stable_id` 索引结构化 description，`fab_plan_context` 先返回中立候选池与 `selection_token`，再由 `fab_get_rule_sections` 获取结构化规则段落。初始化流程见 [`docs/initialization.md`](./docs/initialization.md)。
 
 ```text
 AI Agent <-> Fabric Ledger <-> Human Developer
@@ -111,4 +111,4 @@ fabric approve --all
 
 ## 当前状态
 
-当前稳定版本是 `v1.5.2`。历史规划仍保留在 `.workflow/`，对外维护的入口以本 README、`docs/` 下的文档和 `.github/workflows/release.yml` 中的发布流程为准。
+当前稳定版本是 `v1.6.0`。历史规划仍保留在 `.workflow/`，对外维护的入口以本 README、`docs/` 下的文档和 `.github/workflows/release.yml` 中的发布流程为准。
