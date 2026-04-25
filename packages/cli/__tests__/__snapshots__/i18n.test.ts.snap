@@ -19,6 +19,7 @@ exports[`cli i18n > renders en command descriptions and output snapshots 1`] = `
     "stdout": [
       "Created <fixture-2>/.fabric/bootstrap/README.md",
       "Created <fixture-2>/.fabric/agents.meta.json",
+      "Created <fixture-2>/.fabric/INITIAL_TAXONOMY.md",
       "Created <fixture-2>/.fabric/human-lock.json",
       "Created <fixture-2>/.fabric/forensic.json",
       "Next Installing bootstrap templates...",
@@ -89,6 +90,7 @@ exports[`cli i18n > renders zh-CN command descriptions and output snapshots 1`] 
     "stdout": [
       "已创建 <fixture-2>/.fabric/bootstrap/README.md",
       "已创建 <fixture-2>/.fabric/agents.meta.json",
+      "已创建 <fixture-2>/.fabric/INITIAL_TAXONOMY.md",
       "已创建 <fixture-2>/.fabric/human-lock.json",
       "已创建 <fixture-2>/.fabric/forensic.json",
       "下一步 正在安装 bootstrap 模板...",

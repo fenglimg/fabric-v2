@@ -1272,15 +1272,17 @@ function createInitialMeta(agentsHash: string): AgentsMeta {
 function buildInitialTaxonomyMarkdown(
   forensicReport: Awaited<ReturnType<typeof buildForensicReport>>,
 ): string {
-  const framework = [forensicReport.framework.kind, forensicReport.framework.subkind]
+  const frameworkInfo = forensicReport.framework;
+  const framework = [frameworkInfo?.kind ?? "unknown", frameworkInfo?.subkind ?? ""]
     .filter((value) => value.trim() !== "")
     .join(" / ") || "unknown";
-  const keyDirs = forensicReport.topology.key_dirs.slice(0, 8);
-  const candidateFiles = forensicReport.candidate_files.slice(0, 8);
+  const keyDirs = forensicReport.topology?.key_dirs?.slice(0, 8) ?? [];
+  const candidateFiles = forensicReport.candidate_files?.slice(0, 8) ?? [];
+  const generatedAt = forensicReport.generated_at ?? new Date().toISOString();
 
   return `# Fabric Initial Taxonomy
 
-**Date**: ${forensicReport.generated_at}
+**Date**: ${generatedAt}
 **Base Architecture**: L0/L1/L2 Tiered System
 **Detected Framework**: ${framework}
 

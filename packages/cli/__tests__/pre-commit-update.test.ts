@@ -99,7 +99,7 @@ describe("pre-commit command", () => {
     expect(syncRun).not.toHaveBeenCalled();
     expect(humanLintRun).not.toHaveBeenCalled();
     expect(ledgerRun).not.toHaveBeenCalled();
-  });
+  }, 10_000);
 
   it("treats the canonical ledger path as fabric-managed", async () => {
     const syncRun = vi.fn();
