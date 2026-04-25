@@ -94,7 +94,12 @@ Input：
 ```ts
 type GetRuleSectionsInput = {
   selection_token: string;
-  sections: Array<"MANDATORY_INJECTION" | "CONTEXT_INFO">;
+  sections: Array<
+    | "MISSION_STATEMENT"
+    | "MANDATORY_INJECTION"
+    | "BUSINESS_LOGIC_CHUNKS"
+    | "CONTEXT_INFO"
+  >;
   ai_selected_stable_ids: string[];
   ai_selection_reasons: Record<string, string>;
 };
@@ -155,6 +160,14 @@ type RuleSelectionAuditEntry = {
 ```
 
 `fabric doctor --audit` 接受新 `rule_selection` 事件，也兼容旧 `get_rules` 事件。
+
+`fabric doctor` also reports L2 `[BUSINESS_LOGIC_CHUNKS]` anchor health when rule nodes declare that section:
+
+- `missing`: a chunk omits a valid `Anchor`.
+- `stale`: a chunk anchor has no matching `@fabric-anchor <ID>` in source.
+- `duplicate`: the same source `@fabric-anchor <ID>` appears more than once.
+
+This is diagnostic-only. Fabric does not block commits for deleted anchors and does not dynamically prune business chunks.
 
 ## Legacy Surface
 

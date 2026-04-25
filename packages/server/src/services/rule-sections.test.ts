@@ -20,8 +20,18 @@ describe("parseRuleSections", () => {
   it("extracts structured sections without falling back to full content", () => {
     const sections = parseRuleSections(`# 规则：对象池规范
 
+## [MISSION_STATEMENT]
+- 本脚本只负责资源池生命周期。
+
 ## [MANDATORY_INJECTION]
 - 必须在 onDestroy 中执行 unuse 逻辑。
+
+## [BUSINESS_LOGIC_CHUNKS]
+### ID: BL-CC-POOL-001
+- **Anchor**: \`BL-CC-POOL-001\`
+- **Intent**: 保持资源释放顺序稳定。
+- **Scars**: 连续 Tab 切换曾出现黑屏。
+- **Constraint**: 必须延迟一帧释放资源。
 
 ## [CONTEXT_INFO]
 - 此规则关联到：assets/scripts/core/PoolManager.ts
@@ -30,7 +40,9 @@ describe("parseRuleSections", () => {
 不应该进入结构化 section。
 `);
 
+    expect(sections.get("MISSION_STATEMENT")).toBe("- 本脚本只负责资源池生命周期。");
     expect(sections.get("MANDATORY_INJECTION")).toBe("- 必须在 onDestroy 中执行 unuse 逻辑。");
+    expect(sections.get("BUSINESS_LOGIC_CHUNKS")).toContain("BL-CC-POOL-001");
     expect(sections.get("CONTEXT_INFO")).toBe("- 此规则关联到：assets/scripts/core/PoolManager.ts");
     expect(Array.from(sections.keys())).not.toContain("普通说明");
   });
@@ -57,7 +69,7 @@ describe("getRuleSections", () => {
 
     const result = await getRuleSections(projectRoot, {
       selection_token: plan.selection_token,
-      sections: ["MANDATORY_INJECTION", "CONTEXT_INFO"],
+      sections: ["MISSION_STATEMENT", "MANDATORY_INJECTION", "BUSINESS_LOGIC_CHUNKS", "CONTEXT_INFO"],
       ai_selected_stable_ids: ["ui-batch-rendering"],
       ai_selection_reasons: {
         "ui-batch-rendering": "BattleView.ts touches UI rendering nodes and labels.",
@@ -72,7 +84,9 @@ describe("getRuleSections", () => {
         stable_id: "global-protocol",
         level: "L0",
         sections: {
+          MISSION_STATEMENT: "",
           MANDATORY_INJECTION: "Global mandatory.",
+          BUSINESS_LOGIC_CHUNKS: "",
           CONTEXT_INFO: "",
         },
       }),
@@ -80,7 +94,9 @@ describe("getRuleSections", () => {
         stable_id: "ui-batch-rendering",
         level: "L1",
         sections: {
+          MISSION_STATEMENT: "",
           MANDATORY_INJECTION: "UI mandatory.",
+          BUSINESS_LOGIC_CHUNKS: "",
           CONTEXT_INFO: "UI context.",
         },
       }),
@@ -88,7 +104,15 @@ describe("getRuleSections", () => {
         stable_id: "battle-view-local",
         level: "L2",
         sections: {
+          MISSION_STATEMENT: "BattleView owns combat UI lifecycle boundaries.",
           MANDATORY_INJECTION: "BattleView mandatory.",
+          BUSINESS_LOGIC_CHUNKS: [
+            "### ID: BL-BATTLE-001",
+            "- **Anchor**: `BL-BATTLE-001`",
+            "- **Intent**: Avoid flicker when tabs switch quickly.",
+            "- **Scars**: Releasing assets immediately caused black frames.",
+            "- **Constraint**: Keep delayed release.",
+          ].join("\n"),
           CONTEXT_INFO: "BattleView context.",
         },
       }),
@@ -98,8 +122,36 @@ describe("getRuleSections", () => {
         code: "missing_section",
         severity: "warn",
         stable_id: "global-protocol",
+        section: "MISSION_STATEMENT",
+        message: "Rule global-protocol does not define section MISSION_STATEMENT.",
+      },
+      {
+        code: "missing_section",
+        severity: "warn",
+        stable_id: "global-protocol",
+        section: "BUSINESS_LOGIC_CHUNKS",
+        message: "Rule global-protocol does not define section BUSINESS_LOGIC_CHUNKS.",
+      },
+      {
+        code: "missing_section",
+        severity: "warn",
+        stable_id: "global-protocol",
         section: "CONTEXT_INFO",
         message: "Rule global-protocol does not define section CONTEXT_INFO.",
+      },
+      {
+        code: "missing_section",
+        severity: "warn",
+        stable_id: "ui-batch-rendering",
+        section: "MISSION_STATEMENT",
+        message: "Rule ui-batch-rendering does not define section MISSION_STATEMENT.",
+      },
+      {
+        code: "missing_section",
+        severity: "warn",
+        stable_id: "ui-batch-rendering",
+        section: "BUSINESS_LOGIC_CHUNKS",
+        message: "Rule ui-batch-rendering does not define section BUSINESS_LOGIC_CHUNKS.",
       },
     ]);
     expect(await readAuditLog(projectRoot)).toEqual([
@@ -205,8 +257,18 @@ UI context.
 `);
   await writeFile(join(projectRoot, ".fabric", "rules", "battle-view.md"), `# Battle
 
+## [MISSION_STATEMENT]
+BattleView owns combat UI lifecycle boundaries.
+
 ## [MANDATORY_INJECTION]
 BattleView mandatory.
+
+## [BUSINESS_LOGIC_CHUNKS]
+### ID: BL-BATTLE-001
+- **Anchor**: \`BL-BATTLE-001\`
+- **Intent**: Avoid flicker when tabs switch quickly.
+- **Scars**: Releasing assets immediately caused black frames.
+- **Constraint**: Keep delayed release.
 
 ## [CONTEXT_INFO]
 BattleView context.

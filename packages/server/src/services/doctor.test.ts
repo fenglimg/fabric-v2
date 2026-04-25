@@ -445,6 +445,103 @@ describe("runDoctorReport", () => {
     });
   });
 
+  it("reports BUSINESS_LOGIC_CHUNKS anchors that are missing, stale, or duplicated", async () => {
+    const target = createFixtureRoot("doctor-business-anchors");
+    const bootstrapPath = join(target, ".fabric", "bootstrap", "README.md");
+    const rulePath = join(target, ".fabric", "rules", "battle.md");
+    const battlePath = join(target, "src", "Battle.ts");
+    const otherPath = join(target, "src", "Other.ts");
+    const bootstrapContent = "# Project Rules\n";
+    const ruleContent = `# Battle Rule
+
+## [BUSINESS_LOGIC_CHUNKS]
+### ID: BL-OK
+- **Anchor**: \`BL-OK\`
+- **Intent**: Keep working anchor.
+- **Scars**: Historical behavior.
+- **Constraint**: Preserve it.
+
+### ID: BL-STALE
+- **Anchor**: \`BL-STALE\`
+- **Intent**: Reference a removed anchor.
+- **Scars**: Historical behavior.
+- **Constraint**: Preserve it.
+
+### ID: BL-MISSING
+- **Intent**: Missing anchor field.
+- **Scars**: Historical behavior.
+- **Constraint**: Add an anchor.
+
+### ID: BL-DUP
+- **Anchor**: \`BL-DUP\`
+- **Intent**: Detect duplicate source anchors.
+- **Scars**: Historical behavior.
+- **Constraint**: Keep one anchor.
+`;
+    const battleContent = [
+      "// @fabric-anchor BL-OK",
+      "export const battle = true;",
+      "// @fabric-anchor BL-DUP",
+      "",
+    ].join("\n");
+    const otherContent = "// @fabric-anchor BL-DUP\nexport const other = true;\n";
+
+    mkdirSync(join(target, ".fabric", "bootstrap"), { recursive: true });
+    mkdirSync(join(target, ".fabric", "rules"), { recursive: true });
+    mkdirSync(join(target, "src"), { recursive: true });
+    writeFileSync(bootstrapPath, bootstrapContent, "utf8");
+    writeFileSync(rulePath, ruleContent, "utf8");
+    writeFileSync(battlePath, battleContent, "utf8");
+    writeFileSync(otherPath, otherContent, "utf8");
+    writeFileSync(
+      join(target, ".fabric", "agents.meta.json"),
+      `${JSON.stringify({
+        revision: "rev-business-anchors",
+        nodes: {
+          L0: {
+            file: ".fabric/bootstrap/README.md",
+            scope_glob: "**",
+            deps: [],
+            priority: "high",
+            layer: "L0",
+            hash: sha256(bootstrapContent),
+            stable_id: "bootstrap",
+            identity_source: "declared",
+          },
+          "L2/battle": {
+            file: ".fabric/rules/battle.md",
+            content_ref: ".fabric/rules/battle.md",
+            scope_glob: "src/Battle.ts",
+            deps: ["L0"],
+            priority: "medium",
+            layer: "L2",
+            level: "L2",
+            topology_type: "local",
+            hash: sha256(ruleContent),
+            stable_id: "battle-local",
+            identity_source: "declared",
+          },
+        },
+      }, null, 2)}\n`,
+      "utf8",
+    );
+
+    const report = await runDoctorReport(target);
+    const anchorCheck = report.checks.find((check) => check.name === "Business logic anchors");
+
+    expect(report.summary.businessLogicAnchors).toEqual({
+      chunkCount: 4,
+      anchorCount: 3,
+      missingCount: 1,
+      staleCount: 1,
+      duplicateCount: 1,
+    });
+    expect(anchorCheck?.status).toBe("warn");
+    expect(anchorCheck?.message).toContain("1 missing, 1 stale, 1 duplicate");
+    expect(anchorCheck?.message).toContain("BL-STALE not found");
+    expect(anchorCheck?.message).toContain("BL-DUP duplicated");
+  });
+
   it("warns when only the legacy root ledger exists and migrates it with doctor --fix", async () => {
     const target = createFixtureRoot("doctor-ledger-migrate");
     const now = Date.now();

@@ -8,7 +8,12 @@ import { appendRuleSelectionAuditEvent } from "./audit-log.js";
 import { normalizeRulesPath } from "./get-rules.js";
 import { readSelectionToken } from "./plan-context.js";
 
-export const RULE_SECTION_NAMES = ["MANDATORY_INJECTION", "CONTEXT_INFO"] as const;
+export const RULE_SECTION_NAMES = [
+  "MISSION_STATEMENT",
+  "MANDATORY_INJECTION",
+  "BUSINESS_LOGIC_CHUNKS",
+  "CONTEXT_INFO",
+] as const;
 
 export type RuleSectionName = typeof RULE_SECTION_NAMES[number];
 
@@ -58,6 +63,7 @@ export function parseRuleSections(content: string): Map<RuleSectionName, string>
   const sections = new Map<RuleSectionName, string[]>();
   const lines = content.split(/\r?\n/u);
   let activeSection: RuleSectionName | undefined;
+  let activeSectionDepth = 0;
   let buffer: string[] = [];
 
   const flush = (): void => {
@@ -81,12 +87,20 @@ export function parseRuleSections(content: string): Map<RuleSectionName, string>
     if (heading !== null) {
       flush();
       activeSection = isRuleSectionName(heading[2]) ? heading[2] : undefined;
+      activeSectionDepth = activeSection === undefined ? 0 : heading[1].length;
       continue;
     }
 
-    if (/^#{1,6}\s+/u.test(line)) {
+    const ordinaryHeading = /^(#{1,6})\s+/u.exec(line.trim());
+    if (ordinaryHeading !== null) {
+      if (activeSection !== undefined && ordinaryHeading[1].length > activeSectionDepth) {
+        buffer.push(line);
+        continue;
+      }
+
       flush();
       activeSection = undefined;
+      activeSectionDepth = 0;
       continue;
     }
 

@@ -15,8 +15,10 @@ import {
   type GetRulesAuditEntry,
   type RuleSelectionAuditEntry,
 } from "./audit-log.js";
+import { normalizeRulesPath } from "./get-rules.js";
 import { readHumanLock } from "./read-human-lock.js";
 import { migrateLegacyLedger, readLedger, resolveLedgerPaths } from "./read-ledger.js";
+import { parseRuleSections } from "./rule-sections.js";
 export { LEGACY_LEDGER_PATH, LEDGER_PATH, getLedgerPath } from "./_shared.js";
 
 export type DoctorStatus = "ok" | "warn" | "error";
@@ -47,6 +49,7 @@ export type DoctorSummary = {
   ledgerPath: string;
   legacyLedgerPath: string;
   legacyLedgerDetected: boolean;
+  businessLogicAnchors: BusinessLogicAnchorSummary | null;
   audit:
     | {
         enabled: boolean;
@@ -87,6 +90,26 @@ export type DoctorAuditReport = {
   checkedPathCount: number;
   violationCount: number;
   violations: DoctorAuditViolation[];
+};
+
+export type BusinessLogicAnchorSummary = {
+  chunkCount: number;
+  anchorCount: number;
+  missingCount: number;
+  staleCount: number;
+  duplicateCount: number;
+};
+
+export type BusinessLogicAnchorIssue = {
+  kind: "missing" | "stale" | "duplicate";
+  anchor?: string;
+  chunk_id?: string;
+  rule_path?: string;
+  locations?: string[];
+};
+
+export type BusinessLogicAnchorSnapshot = BusinessLogicAnchorSummary & {
+  issues: BusinessLogicAnchorIssue[];
 };
 
 type EntryPoint = DoctorSummary["entryPoints"][number];
@@ -165,12 +188,20 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
   const framework = detectFramework(projectRoot);
   const entryPoints = collectEntryPoints(projectRoot);
 
-  const [savedForensic, metaSnapshot, humanLockSnapshot, ledgerSnapshot, auditReport] = await Promise.all([
+  const [
+    savedForensic,
+    metaSnapshot,
+    humanLockSnapshot,
+    ledgerSnapshot,
+    auditReport,
+    businessLogicAnchorSnapshot,
+  ] = await Promise.all([
     readSavedForensic(projectRoot),
     inspectMetaRevision(projectRoot),
     inspectHumanLock(projectRoot),
     inspectLedger(projectRoot),
     runDoctorAuditReport(projectRoot),
+    inspectBusinessLogicAnchors(projectRoot),
   ]);
 
   const checks: DoctorCheck[] = [
@@ -183,6 +214,10 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
 
   if (!auditReport.skipped) {
     checks.push(createAuditCheck(auditReport));
+  }
+
+  if (businessLogicAnchorSnapshot !== null) {
+    checks.push(createBusinessLogicAnchorCheck(businessLogicAnchorSnapshot));
   }
 
   return {
@@ -206,6 +241,15 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
       ledgerPath: ledgerSnapshot.primaryPath,
       legacyLedgerPath: ledgerSnapshot.legacyPath,
       legacyLedgerDetected: ledgerSnapshot.usingLegacy,
+      businessLogicAnchors: businessLogicAnchorSnapshot === null
+        ? null
+        : {
+            chunkCount: businessLogicAnchorSnapshot.chunkCount,
+            anchorCount: businessLogicAnchorSnapshot.anchorCount,
+            missingCount: businessLogicAnchorSnapshot.missingCount,
+            staleCount: businessLogicAnchorSnapshot.staleCount,
+            duplicateCount: businessLogicAnchorSnapshot.duplicateCount,
+          },
       audit: auditReport.skipped
         ? null
         : {
@@ -475,6 +519,52 @@ function createAuditCheck(report: DoctorAuditReport): DoctorCheck {
   };
 }
 
+function createBusinessLogicAnchorCheck(snapshot: BusinessLogicAnchorSnapshot): DoctorCheck {
+  if (snapshot.chunkCount === 0) {
+    return {
+      name: "Business logic anchors",
+      status: "ok",
+      message: "No BUSINESS_LOGIC_CHUNKS anchors declared.",
+    };
+  }
+
+  if (snapshot.issues.length === 0) {
+    return {
+      name: "Business logic anchors",
+      status: "ok",
+      message:
+        `${snapshot.chunkCount} business logic chunk${snapshot.chunkCount === 1 ? "" : "s"} ` +
+        `resolved to ${snapshot.anchorCount} source anchor${snapshot.anchorCount === 1 ? "" : "s"}.`,
+    };
+  }
+
+  const parts = [
+    snapshot.missingCount > 0 ? `${snapshot.missingCount} missing` : null,
+    snapshot.staleCount > 0 ? `${snapshot.staleCount} stale` : null,
+    snapshot.duplicateCount > 0 ? `${snapshot.duplicateCount} duplicate` : null,
+  ].filter((part) => part !== null);
+  const examples = snapshot.issues.slice(0, 3).map(formatBusinessLogicAnchorIssue).join("; ");
+  const suffix = snapshot.issues.length > 3 ? `; +${snapshot.issues.length - 3} more` : "";
+
+  return {
+    name: "Business logic anchors",
+    status: "warn",
+    message: `${parts.join(", ")} BUSINESS_LOGIC_CHUNKS anchor issue${snapshot.issues.length === 1 ? "" : "s"}: ${examples}${suffix}.`,
+  };
+}
+
+function formatBusinessLogicAnchorIssue(issue: BusinessLogicAnchorIssue): string {
+  if (issue.kind === "missing") {
+    return `${issue.rule_path ?? "unknown rule"}:${issue.chunk_id ?? "unknown chunk"} missing Anchor`;
+  }
+
+  if (issue.kind === "stale") {
+    return `${issue.anchor ?? "unknown anchor"} not found`;
+  }
+
+  return `${issue.anchor ?? "unknown anchor"} duplicated at ${(issue.locations ?? []).join(", ")}`;
+}
+
 async function readSavedForensic(projectRoot: string): Promise<SavedForensic> {
   const forensicPath = join(projectRoot, ".fabric", "forensic.json");
 
@@ -606,6 +696,206 @@ async function inspectLedger(projectRoot: string): Promise<LedgerSnapshot> {
     legacyPath: paths.legacyPath,
     usingLegacy: paths.usingLegacy,
   };
+}
+
+async function inspectBusinessLogicAnchors(projectRoot: string): Promise<BusinessLogicAnchorSnapshot | null> {
+  let meta;
+  try {
+    meta = await readAgentsMeta(projectRoot);
+  } catch {
+    return null;
+  }
+
+  const chunks = collectBusinessLogicChunks(projectRoot, meta);
+  const sourceAnchors = collectSourceAnchors(projectRoot);
+  const issues: BusinessLogicAnchorIssue[] = [];
+  const chunkAnchorCount = chunks.filter((chunk) => chunk.anchor !== undefined).length;
+  const referencedAnchors = new Set(
+    chunks.flatMap((chunk) => (chunk.anchor === undefined ? [] : [chunk.anchor])),
+  );
+
+  for (const chunk of chunks) {
+    if (chunk.anchor === undefined) {
+      issues.push({
+        kind: "missing",
+        chunk_id: chunk.id,
+        rule_path: chunk.rulePath,
+      });
+      continue;
+    }
+
+    const locations = sourceAnchors.get(chunk.anchor) ?? [];
+    if (locations.length === 0) {
+      issues.push({
+        kind: "stale",
+        anchor: chunk.anchor,
+        chunk_id: chunk.id,
+        rule_path: chunk.rulePath,
+      });
+    }
+  }
+
+  for (const [anchor, locations] of sourceAnchors) {
+    if (!referencedAnchors.has(anchor) || locations.length <= 1) {
+      continue;
+    }
+
+    issues.push({
+      kind: "duplicate",
+      anchor,
+      locations,
+    });
+  }
+
+  return {
+    chunkCount: chunks.length,
+    anchorCount: chunkAnchorCount,
+    missingCount: issues.filter((issue) => issue.kind === "missing").length,
+    staleCount: issues.filter((issue) => issue.kind === "stale").length,
+    duplicateCount: issues.filter((issue) => issue.kind === "duplicate").length,
+    issues,
+  };
+}
+
+function collectBusinessLogicChunks(
+  projectRoot: string,
+  meta: Awaited<ReturnType<typeof readAgentsMeta>>,
+): Array<{ id: string | undefined; anchor: string | undefined; rulePath: string }> {
+  const chunks = [];
+
+  for (const node of Object.values(meta.nodes)) {
+    const level = node.level ?? node.layer;
+    if (level !== "L2") {
+      continue;
+    }
+
+    const rulePath = normalizeRulesPath(node.content_ref ?? node.file);
+    const absoluteRulePath = join(projectRoot, rulePath);
+    if (!existsSync(absoluteRulePath)) {
+      continue;
+    }
+
+    const sections = parseRuleSections(readFileSync(absoluteRulePath, "utf8"));
+    const businessSection = sections.get("BUSINESS_LOGIC_CHUNKS");
+    if (businessSection === undefined) {
+      continue;
+    }
+
+    chunks.push(...parseBusinessLogicChunks(businessSection, rulePath));
+  }
+
+  return chunks;
+}
+
+function parseBusinessLogicChunks(
+  section: string,
+  rulePath: string,
+): Array<{ id: string | undefined; anchor: string | undefined; rulePath: string }> {
+  const chunks: Array<{ id: string | undefined; anchor: string | undefined; rulePath: string }> = [];
+  const lines = section.split(/\r?\n/u);
+  let current: string[] = [];
+
+  const flush = (): void => {
+    if (current.length === 0) {
+      return;
+    }
+
+    const text = current.join("\n");
+    const id = readBusinessChunkId(text);
+    const anchor = readBusinessChunkAnchor(text);
+    if (id === undefined && anchor === undefined) {
+      current = [];
+      return;
+    }
+
+    chunks.push({
+      id,
+      anchor,
+      rulePath,
+    });
+    current = [];
+  };
+
+  for (const line of lines) {
+    if (/^#{3,6}\s+ID\s*:/iu.test(line.trim())) {
+      flush();
+    }
+
+    current.push(line);
+  }
+
+  flush();
+  return chunks;
+}
+
+function readBusinessChunkId(chunk: string): string | undefined {
+  return /^#{3,6}\s+ID\s*:\s*([A-Za-z0-9][A-Za-z0-9_.:-]*)\s*$/imu.exec(chunk)?.[1];
+}
+
+function readBusinessChunkAnchor(chunk: string): string | undefined {
+  const match =
+    /^\s*[-*]\s*(?:\*\*)?Anchor(?:\*\*)?\s*:\s*`?([A-Za-z0-9][A-Za-z0-9_.:-]*)`?\s*$/imu.exec(chunk) ??
+    /^\s*Anchor\s*:\s*`?([A-Za-z0-9][A-Za-z0-9_.:-]*)`?\s*$/imu.exec(chunk);
+
+  return match?.[1];
+}
+
+function collectSourceAnchors(projectRoot: string): Map<string, string[]> {
+  const anchors = new Map<string, string[]>();
+
+  for (const file of collectSourceFiles(projectRoot)) {
+    const source = readFileSync(join(projectRoot, file), "utf8");
+    const lines = source.split(/\r?\n/u);
+
+    lines.forEach((line, index) => {
+      const matches = line.matchAll(/@fabric-anchor\s+([A-Za-z0-9][A-Za-z0-9_.:-]*)/gu);
+      for (const match of matches) {
+        const anchor = match[1];
+        anchors.set(anchor, [...(anchors.get(anchor) ?? []), `${file}:${index + 1}`]);
+      }
+    });
+  }
+
+  return anchors;
+}
+
+function collectSourceFiles(root: string): string[] {
+  if (!existsSync(root) || !statSync(root).isDirectory()) {
+    return [];
+  }
+
+  const files: string[] = [];
+  const stack = [root];
+
+  while (stack.length > 0) {
+    const current = stack.pop();
+    if (current === undefined) {
+      continue;
+    }
+
+    for (const entry of readdirSync(current, { withFileTypes: true })) {
+      const absolutePath = join(current, entry.name);
+      const relativePath = posix.normalize(absolutePath.slice(root.length + 1).split("\\").join("/"));
+
+      if (entry.isDirectory()) {
+        if (!IGNORED_DIRECTORIES.has(entry.name)) {
+          stack.push(absolutePath);
+        }
+        continue;
+      }
+
+      if (!entry.isFile()) {
+        continue;
+      }
+
+      const extension = relativePath.slice(relativePath.lastIndexOf("."));
+      if (SCRIPT_EXTENSIONS.has(extension)) {
+        files.push(relativePath);
+      }
+    }
+  }
+
+  return files.sort();
 }
 
 function collectAuditViolations(

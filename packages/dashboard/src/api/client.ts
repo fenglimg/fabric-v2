@@ -89,7 +89,31 @@ export type DoctorReport = {
     lastLedgerEntryTs: number | null;
     lastLedgerEntryAgeMs: number | null;
     metaRevision: string | null;
+    ledgerPath: string;
+    legacyLedgerPath: string;
+    legacyLedgerDetected: boolean;
+    businessLogicAnchors: {
+      chunkCount: number;
+      anchorCount: number;
+      missingCount: number;
+      staleCount: number;
+      duplicateCount: number;
+    } | null;
   };
+  audit: {
+    mode: "strict" | "warn" | "off";
+    skipped: boolean;
+    windowMs: number;
+    checkedPathCount: number;
+    violationCount: number;
+    violations: Array<{
+      editTs: number;
+      entryId: string;
+      intent: string;
+      lastRuleAccessTs: number | null;
+      path: string;
+    }>;
+  } | null;
 };
 
 export type ApproveHumanLockResult = {

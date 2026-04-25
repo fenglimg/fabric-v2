@@ -21,7 +21,12 @@ describe("registerRuleSections", () => {
     };
 
     expect(definition.inputSchema.selection_token.safeParse("selection:rev:abc").success).toBe(true);
-    expect(definition.inputSchema.sections.safeParse(["MANDATORY_INJECTION", "CONTEXT_INFO"]).success).toBe(true);
+    expect(definition.inputSchema.sections.safeParse([
+      "MISSION_STATEMENT",
+      "MANDATORY_INJECTION",
+      "BUSINESS_LOGIC_CHUNKS",
+      "CONTEXT_INFO",
+    ]).success).toBe(true);
     expect(definition.inputSchema.sections.safeParse(["UNKNOWN"]).success).toBe(false);
     expect(definition.inputSchema.ai_selected_stable_ids.safeParse(["ui-batch-rendering"]).success).toBe(true);
     expect(definition.inputSchema.ai_selection_reasons.safeParse({

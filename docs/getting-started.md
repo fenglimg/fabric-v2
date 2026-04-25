@@ -109,7 +109,7 @@ http://127.0.0.1:7373
 最小验证 prompt：
 
 ```text
-Before editing any file, call fab_plan_context for README.md, pick any relevant L1 stable_ids yourself from the returned descriptions, then call fab_get_rule_sections for MANDATORY_INJECTION and CONTEXT_INFO.
+Before editing any file, call fab_plan_context for README.md, pick any relevant L1 stable_ids yourself from the returned descriptions, then call fab_get_rule_sections for MISSION_STATEMENT, MANDATORY_INJECTION, BUSINESS_LOGIC_CHUNKS, and CONTEXT_INFO.
 ```
 
 成功信号：
@@ -118,6 +118,8 @@ Before editing any file, call fab_plan_context for README.md, pick any relevant 
 - `fab_plan_context` 返回 `selection_token`、`requirement_profile`、`description_index`。
 - `description_index` 中 L0/L2 为 `required: true`，L1 为 `selectable: true`。
 - `fab_get_rule_sections` 返回所请求的 section；缺失 section 只返回空字符串和 warning diagnostic，不回退全文。
+- L2 规则可提供 `[MISSION_STATEMENT]` 作为脚本职责、物理边界和长期契约的身份握手。
+- L2 规则可提供 `[BUSINESS_LOGIC_CHUNKS]` 记录反直觉业务约束；`fabric doctor` 会诊断其中的 `Anchor` 是否 stale、duplicate 或 missing。
 - `client_hash` 与当前 revision 不一致时 `stale: true`。
 
 ## 6. 写入首条 intent ledger

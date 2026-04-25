@@ -97,7 +97,7 @@ export const doctorCommand = defineCommand({
 
     for (const violation of auditReport.violations) {
       writeStderr(
-        `${padEnd(violation.path, 32)} ${padEnd(new Date(violation.editTs).toISOString(), 22)} ${padEnd(formatRulesTs(violation.lastGetRulesTs), 22)} ${violation.intent}`,
+        `${padEnd(violation.path, 32)} ${padEnd(new Date(violation.editTs).toISOString(), 22)} ${padEnd(formatRulesTs(violation.lastRuleAccessTs), 22)} ${violation.intent}`,
       );
     }
 

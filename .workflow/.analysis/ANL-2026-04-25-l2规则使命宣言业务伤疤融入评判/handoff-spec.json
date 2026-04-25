@@ -1,0 +1,55 @@
+{
+  "source": "analyze-with-file",
+  "session_id": "ANL-2026-04-25-l2规则使命宣言业务伤疤融入评判",
+  "session_folder": ".workflow/.analysis/ANL-2026-04-25-l2规则使命宣言业务伤疤融入评判",
+  "summary": "Integrate MISSION_STATEMENT as a first-class L2 rule section and BUSINESS_LOGIC_CHUNKS as a structured L2 section plus @fabric-anchor lifecycle governance.",
+  "implementation_scope": [
+    {
+      "objective": "Extend structured rule sections with MISSION_STATEMENT and BUSINESS_LOGIC_CHUNKS",
+      "priority": "high",
+      "target_files": [
+        "packages/server/src/services/rule-sections.ts",
+        "packages/server/src/tools/rule-sections.ts",
+        "packages/server/src/services/rule-sections.test.ts"
+      ],
+      "acceptance_criteria": [
+        "fab_get_rule_sections accepts both new section names",
+        "parser returns the requested new sections without full-content fallback",
+        "missing new sections produce warning diagnostics"
+      ]
+    },
+    {
+      "objective": "Define L2 Markdown templates and documentation",
+      "priority": "high",
+      "target_files": [
+        "docs/initialization.md",
+        "docs/getting-started.md",
+        "examples/werewolf-minigame-stub/README.md"
+      ],
+      "acceptance_criteria": [
+        "MISSION_STATEMENT fields are documented",
+        "BUSINESS_LOGIC_CHUNKS fields are documented",
+        "docs clarify these sections are fetch-stage content, not RuleDescription"
+      ]
+    },
+    {
+      "objective": "Add doctor-only @fabric-anchor diagnostics for business chunks",
+      "priority": "high",
+      "target_files": [
+        "packages/server/src/services/doctor.ts",
+        "packages/shared/src/types/agents.ts"
+      ],
+      "acceptance_criteria": [
+        "anchor IDs can be scanned from source files",
+        "missing or duplicate anchors produce diagnostics",
+        "stale anchors are reported by doctor without blocking commits"
+      ]
+    }
+  ],
+  "decision_context": [
+    "MISSION_STATEMENT belongs in L2 Markdown section content because it is path-specific and should be read after script identity is known.",
+    "BUSINESS_LOGIC_CHUNKS needs section injection plus doctor-only source-code anchor diagnostics.",
+    "Pre-commit warnings and dynamic pruning were explicitly removed from the implementation scope.",
+    "RuleDescription should remain a lightweight plan-context index and should not carry full mission or scar content."
+  ]
+}
