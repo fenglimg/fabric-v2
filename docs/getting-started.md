@@ -1,256 +1,158 @@
-# Fabric 上手
+# Fabric 技术上手
 
-Fabric v1.5.2 为维护者提供从本地安装到首条 ledger-backed 协作事件的标准上手路径。若你首次评估 Fabric，从这里开始。
+本文只保留工程接入步骤。叙事、发布故事、品牌说明不再作为 `docs/` 的核心入口。
 
-贡献与本地仓库设置见 [Contributing](./contributing.md)。`fabric init` 的状态机和更深入说明见 [初始化指南](./initialization.md)。产品叙事版见 [Launch Story](./launch-story.md)。
+## 1. 安装
 
-> `fabric` 是主命令，`fab` 是永久别名，两者等价。下文统一使用 `fabric`。
-
-## 阶段 1：安装 Fabric
-
-在机器上全局安装 CLI 一次：
+全局安装发布版 CLI：
 
 ```bash
 npm install -g @fenglimg/fabric-cli
 ```
 
-若在本 monorepo 内验证 Fabric 而非 npm，先构建 workspace：
+在本 monorepo 内验证本地源码时，先构建 workspace：
 
 ```bash
 pnpm install
 pnpm -r build
 ```
 
-此时应能使用 `fabric`（或其别名 `fab`）命令：
-
-```text
-$ fabric --help
-Initialize and manage Fabric projects. Use "fabric init" for one-shot setup.
-USAGE fabric init|scan|serve|doctor|sync-meta|human-lint|ledger-append|pre-commit
-```
-
-## 阶段 2：初始化 Fabric
-
-进入要接入 Fabric 的项目。首次运行建议使用 disposable repository 或干净分支。
+检查命令入口：
 
 ```bash
-cd ~/projects/my-app
+fabric --help
+fab --help
+```
+
+`fabric` 是主命令，`fab` 是永久别名。
+
+## 2. 初始化目标项目
+
+进入目标仓库，先确认工作区干净或位于可丢弃分支：
+
+```bash
+cd /path/to/project
 git status --short
 fabric init
 ```
 
-推荐前置条件：
+常用模式：
 
-- 尚不存在 `.fabric/`。
-- 在任意写入步骤前，先审阅既有 `.claude/`、`.cursor/`、`.codex/`、`.windsurf/` 或 `.roo/` config。
+| 命令 | 作用 |
+| --- | --- |
+| `fabric init` | TTY 下进入 wizard，确认计划后写入。 |
+| `fabric init --yes` | 非交互执行当前计划。 |
+| `fabric init --plan` | 只打印计划，不写文件。 |
+| `fabric init --reapply --yes` | 对已初始化仓库重应用 Fabric 管理文件。 |
 
-`fabric init` 的标准用法：
+初始化会写入或刷新：
 
-- `fabric init`
-  在 TTY 中启动 wizard，确认 target、阶段选择和 MCP 安装范围后执行。
-- `fabric init --yes`
-  使用当前 CLI flags 直接执行，不进入 wizard。
-- `fabric init --plan`
-  仅打印安装计划，不写文件。
-- `fabric init --reapply --yes`
-  针对已初始化仓库重新应用 Fabric 管理的 scaffold 和后续阶段。
+- `.fabric/bootstrap/README.md`
+- `.fabric/agents.meta.json`
+- `.fabric/human-lock.json`
+- `.fabric/forensic.json`
+- 已检测 AI client 的 MCP 配置
+- Git hook 模板
 
-当前推荐的首次初始化路径是：先在 TTY 中运行 `fabric init`，确认 wizard 给出的计划，再让命令执行。若你要在 CI、脚本或非交互终端里运行，请显式使用 `--yes` 或 `--plan`。
+`fabric init` 默认非破坏性。已有 Fabric 产物时，除非显式使用 `--reapply` 或相关 force 行为，否则应中止或跳过冲突写入。
 
-`fabric init --plan` 的最小示例：
+## 3. 完成客户端接力
 
-```text
-$ fabric init --plan
-Fabric init dry run
-Fabric init plan
-Target: /path/to/repo
-Plan: bootstrap=yes mcp=yes hooks=yes mcp-install=global
-Detected clients: Claude Code CLI, Codex CLI
-Core writes:
-  - /path/to/repo/.fabric/bootstrap/README.md
-  - /path/to/repo/.fabric/agents.meta.json
-  - /path/to/repo/.fabric/human-lock.json
-  - /path/to/repo/.fabric/forensic.json
-Mode=default bootstrap=yes mcp=yes hooks=yes
-```
-
-非交互执行时的典型调用：
-
-```bash
-fabric init --yes
-```
-
-当前初始化流程更适合理解为“先看计划，再写入基础文件，然后执行各阶段，最后给出下一步”，而不是旧版的一次性长输出：
-
-```text
-$ fabric init
-
-Fabric v1.2 · control plane
-
-正在扫描项目根目录...
-检测到项目类型: Cocos Creator 3.8 TypeScript Component project
-检测依据:
-  - project.config.json
-  - creator.version = 3.8.0
-  - assets/scripts/*.ts
-  - @ccclass + extends Component
-
-正在生成初始化依据...
-初始化依据摘要 / `.fabric/forensic.json`
-  - `framework.kind`: `cocos-creator`
-  - `framework.version`: `3.8.0`
-  - `framework.subkind`: `typescript-component`
-  - `entry_points[0].path`: `assets/scripts/Game.ts`
-  - `topology.by_ext[".ts"]`: 3
-  - `assertions`: grouped evidence items
-  - `candidate_files`: prioritized review queue
-
-Created `.fabric/bootstrap/README.md`
-Created `.fabric/agents.meta.json`
-Created `.fabric/human-lock.json`
-Created `.fabric/forensic.json`
-
-正在安装 Claude Code 初始化接力...
-Installed `.claude/skills/agents-md-init/SKILL.md`
-Installed `.claude/hooks/agents-md-init-reminder.cjs`
-Created `.claude/settings.json` with Claude Stop hook
-
---- Installing bootstrap templates... ---
-completed bootstrap: ...
-
---- Configuring MCP clients... ---
-Wrote ClaudeCodeCLI config
-Wrote Cursor .cursor/mcp.json
-
---- Installing git hooks... ---
-Created .husky/pre-commit
-Added prepare script to package.json
-
-已完成一站式初始化。
-```
-
-这里的 `bootstrap` 阶段只会确保 `.fabric/bootstrap/README.md` 存在并保持最新，不再生成根级 `AGENTS.md`、`CLAUDE.md` 或 `GEMINI.md`。若仓库已经存在 Fabric 产物，默认 `fabric init` 会保持非破坏性并中止；需要重应用时使用 `fabric init --reapply --yes`。
-
-本阶段结束后，仓库已经具备内部 bootstrap 说明和初始化依据，但在客户端完成后续确认前，初始化还没有真正结束。
-
-## 阶段 3：完成 AI 接力
-
-在 Claude Code 或 Codex 中打开同一仓库，用普通消息继续后续初始化：
+在 Claude Code、Codex 或其他 MCP-capable client 中打开同一仓库，继续初始化：
 
 ```text
 我刚运行了 fabric init，请继续完成这个仓库的 Fabric 初始化。
 ```
 
-预期结果：
+预期动作：
 
-- Claude 的 `agents-md-init` 或 Codex 的 repo skill `fabric-init` 读取 `.fabric/forensic.json`。
-- 维护者确认 framework facts 与 invariants。
-- Fabric 写入 `.fabric/init-context.json` 并更新项目专属 rule nodes 与 metadata。
+- 客户端读取 `.fabric/forensic.json`。
+- 维护者确认 framework facts、invariants、受保护区域。
+- 规则节点写入 `.fabric/agents/`。
+- `.fabric/agents.meta.json` 通过 Fabric tooling 同步。
 
-若使用 Codex 并希望 hooks 自动提醒，请确认 Codex 配置中已启用 `features.codex_hooks = true`。否则 `.codex/hooks.json` 不会生效，但你仍可手动使用仓库内的 repo skill `.agents/skills/fabric-init/SKILL.md`。
+Codex hooks 需要本机配置启用 `features.codex_hooks = true`；否则 `.codex/hooks.json` 不会自动触发，但仍可手动执行仓库 skill。
 
-更完整的确认流程（包括框架确认和不变式确认）见 [初始化指南](./initialization.md)。
-
-## 阶段 4：验证 Agents 与 Hooks
-
-`fabric init` 已自动完成 bootstrap、MCP config 与 git hooks 的安装。本阶段只需验证结果。
-
-检查 bootstrap 安装结果：
-
-```text
-$ ls .fabric/bootstrap/README.md .cursor/mcp.json 2>/dev/null
-.fabric/bootstrap/README.md
-.cursor/mcp.json
-```
-
-检查 git hooks：
-
-```text
-$ cat .husky/pre-commit | head -3
-#!/bin/sh
-FAB_BIN=$(command -v fabric || command -v fab || echo "")
-```
-
-> 如需对某个阶段做针对性重跑，可使用独立命令：`fabric bootstrap install`、`fabric config install`、`fabric hooks install`。`--no-bootstrap`、`--no-mcp`、`--no-hooks` 仍可用，但现在属于兼容标志，本质上是在改写 `init` 计划，而不是新的主命令模型。
-
-## 阶段 5：启动本地 Control Plane
-
-启动本地 Fabric HTTP server：
+## 4. 启动本地服务
 
 ```bash
 fabric serve
 ```
 
-当前实现的实际 CLI 输出：
+默认地址：
 
 ```text
-Fabric Dashboard: http://127.0.0.1:7373
+http://127.0.0.1:7373
 ```
 
-这是面向维护者的本地 control-plane session。验证 MCP client 或检查 Dashboard 时请保持其运行。
+`fabric serve` 同时承载：
 
-## 阶段 6：验证 MCP 已激活
+- Dashboard 静态页面
+- REST API：`/api/*`
+- SSE：`/events`
+- Streamable HTTP MCP：`/mcp`
 
-重启各已配置 client 以重新加载 Fabric MCP entry，然后确认存在以下 Fabric tools：
+需要非 loopback host 时必须设置 `FABRIC_AUTH_TOKEN`，否则 CLI 会回退到 `127.0.0.1`。
+
+## 5. 验证 MCP 规则分发
+
+重启已配置的 AI client，确认存在 Fabric tools：
 
 - `fab_get_rules`
+- `fab_plan_context`
 - `fab_append_intent`
 - `fab_update_registry`
 
-最小 smoke prompt：
+最小验证 prompt：
 
 ```text
 Before editing any file, call fab_get_rules for README.md and summarize the active Fabric rules.
 ```
 
-成功表现：
+成功信号：
 
-- Client 调用 `fab_get_rules`。
-- 响应包含 `revision_hash` 这类版本字段。
-- 响应包含来自内部 bootstrap 说明或 scoped rule nodes 的 L0/L1/L2 rules。
-- 若命中 `activation.tier = "description"` 的节点，响应会包含 `description_stubs`，提示客户端可按描述决定是否进一步加载完整规则。
+- 返回 `revision_hash`。
+- 返回 `rules.L0`、`rules.L1`、`rules.L2`。
+- 命中 description-only 节点时返回 `description_stubs`。
+- `client_hash` 与当前 revision 不一致时 `stale: true`。
 
-若 tools 未出现，确认 MCP config 文件包含 `mcpServers.fabric` 或 `[mcp_servers.fabric]`，然后再次重启 client。
+## 6. 写入首条 intent ledger
 
-## 阶段 7：记录首条 Ledger Entry
-
-做一小段 staged 改动，让 Fabric 通过 hook pipeline 追加首条 intent ledger entry：
+完成一段真实 staged 改动后追加 intent：
 
 ```bash
 git add README.md
-FABRIC_INTENT="docs: refine onboarding copy" fab ledger-append --staged
+FABRIC_INTENT="docs: refine onboarding copy" fabric ledger-append --staged
 ```
 
-结果：
+当前 ledger 主路径是：
 
 ```text
-`.fabric/.intent-ledger.jsonl` receives a new append-only JSON line with `parent_sha`, `intent`, `affected_paths`, and `diff_stat`. Legacy root `.intent-ledger.jsonl` stays read-compatible until you run `fab doctor --fix`.
+.fabric/.intent-ledger.jsonl
 ```
 
-若本次变更有意更新了 `@HUMAN` 保护区，先审查 drift，再批准新的 human-lock hash：
+旧根路径 `.intent-ledger.jsonl` 只保留兼容读取，迁移应通过 `fabric doctor --fix` 完成。
+
+## 7. 处理 human-lock drift
+
+有意修改受保护区域后，使用 CLI 审批：
 
 ```bash
 fabric approve --interactive
 ```
 
-已经在其他流程里完成逐项审查时，可以使用：
+已经完成外部审查时可批量审批：
 
 ```bash
 fabric approve --all
 ```
 
-至此仓库完成当前稳定版 onboarding loop：
+Dashboard 只用于观察状态和定位问题；核心写入动作以 CLI/MCP tool 为准。
 
-1. Fabric 已安装。
-2. 项目已初始化。
-3. Client rules 通过 MCP 分发，并可用 Dashboard 的“规则命中”页面检查命中原因。
-4. 首条协作事件已写入 ledger。
-5. 有意发生的 human-lock drift 已通过 `fabric approve` 明确批准。
+## 8. 继续阅读
 
-## 延伸阅读
-
-- [Launch Story](./launch-story.md)
-- [Dashboard Tour](./dashboard-tour.md)
-- [Contributing](./contributing.md)
-- [初始化指南](./initialization.md)
-- [Roadmap](./roadmap.md)
+- [SPEC_INTERNAL](./SPEC_INTERNAL.md)：执行流协议。
+- [CODEBASE_LANDSCAPE](./CODEBASE_LANDSCAPE.md)：源码全景图。
+- [ARCHITECTURE_DECISIONS](./ARCHITECTURE_DECISIONS.md)：已实现架构决策。
+- [CONVENTIONS](./CONVENTIONS.md)：开发约定。
+- [RULE_REGISTRY](./RULE_REGISTRY.md)：Stable ID 与规则注册状态。

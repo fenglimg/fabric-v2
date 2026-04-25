@@ -188,4 +188,4 @@ Dashboard 的早期叙事必须清楚标注为 v1.1，
 - v1.1 再解决可观测维护。
 - v1.5.0 增加规则命中页，用 rules-context API 解释规则命中原因。
 
-如果需要完整的三幕产品叙事，请阅读 [Launch Story](./launch-story.md)。
+Dashboard 的协议边界和源码入口见 [SPEC_INTERNAL](./SPEC_INTERNAL.md) 与 [CODEBASE_LANDSCAPE](./CODEBASE_LANDSCAPE.md)。

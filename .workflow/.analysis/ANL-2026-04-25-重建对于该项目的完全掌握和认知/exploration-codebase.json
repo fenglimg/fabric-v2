@@ -1,0 +1,48 @@
+{
+  "session_id": "ANL-2026-04-25-重建对于该项目的完全掌握和认知",
+  "project_type": "nodejs-monorepo",
+  "timestamp": "2026-04-25",
+  "relevant_files": [
+    {
+      "path": "packages/server/src/services/get-rules.ts",
+      "summary": "Single-path rule resolution: context load, priority sorting, activation stubs, payload build.",
+      "evidence": ["packages/server/src/services/get-rules.ts:83", "packages/server/src/services/get-rules.ts:145"]
+    },
+    {
+      "path": "packages/server/src/services/plan-context.ts",
+      "summary": "Batch planning view with shared bundle, file map, derived identity diagnostics.",
+      "evidence": ["packages/server/src/services/plan-context.ts:52", "packages/server/src/services/plan-context.ts:172"]
+    },
+    {
+      "path": "packages/server/src/http.ts",
+      "summary": "HTTP control plane: REST APIs, SSE, Streamable HTTP MCP sessions, Dashboard static.",
+      "evidence": ["packages/server/src/http.ts:142", "packages/server/src/http.ts:217"]
+    },
+    {
+      "path": "packages/cli/src/commands/sync-meta.ts",
+      "summary": "Compiles .fabric/agents markdown into agents.meta.json and extracts declared stable IDs.",
+      "evidence": ["packages/cli/src/commands/sync-meta.ts:74", "packages/cli/src/commands/sync-meta.ts:334"]
+    },
+    {
+      "path": "packages/shared/src/schemas/agents-meta.ts",
+      "summary": "Agents metadata schema and default derivation for layer, topology, stable ID, identity source.",
+      "evidence": ["packages/shared/src/schemas/agents-meta.ts:23", "packages/shared/src/schemas/agents-meta.ts:54"]
+    },
+    {
+      "path": "packages/dashboard/src/api/client.ts",
+      "summary": "Dashboard REST/SSE client; no direct MCP client.",
+      "evidence": ["packages/dashboard/src/api/client.ts:129", "packages/dashboard/src/api/client.ts:194"]
+    }
+  ],
+  "key_findings": [
+    "Rule priority is high, medium, low; same priority falls back to node id ordering.",
+    "Stable IDs are declared via HTML comment, compiled by sync-meta, and surfaced in plan-context diagnostics.",
+    "Current root .fabric registry is incomplete; only .fabric/audit.jsonl exists.",
+    "Dashboard is architecturally observation-first but currently still has approve/annotate write paths."
+  ],
+  "constraints": [
+    "Do not edit packages/ before updating SPEC_INTERNAL.md for core engine changes.",
+    "Do not directly edit .fabric/agents.meta.json; use Fabric tooling.",
+    "When packages/ changes, CODEBASE_LANDSCAPE.md must be synchronized."
+  ]
+}

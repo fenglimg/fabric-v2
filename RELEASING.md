@@ -52,8 +52,8 @@ This document defines the manual release path for Fabric. The workflow is intent
    npm view @fenglimg/fabric-server version
    ```
 
-8. **Run post-publish smoke test / smoke test**
-   Follow `docs/smoke-v1.0.md` end-to-end against the published artifacts, not the local monorepo build.
+8. **Run post-publish validation / 发布后验证**
+   Validate the published artifacts against the technical onboarding path in `docs/getting-started.md`: install the published CLI, run `fabric init`, start `fabric serve`, verify MCP tools, append one ledger entry, and approve intentional human-lock drift when applicable.
 
 9. **Create GitHub Release / GitHub Release**
    Create a GitHub Release for the new tag, using the matching `CHANGELOG.md` notes and any known caveats from the smoke run.

@@ -105,7 +105,8 @@ fabric approve --all
 
 - [Fabric 上手](./docs/getting-started.md)
 - [初始化指南](./docs/initialization.md)
-- [Release Smoke Checklist](./docs/smoke-v1.0.md)
+- [执行流协议](./docs/SPEC_INTERNAL.md)
+- [源码全景图](./docs/CODEBASE_LANDSCAPE.md)
 - [Release Checklist](./RELEASING.md)
 
 ## 当前状态

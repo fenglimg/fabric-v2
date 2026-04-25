@@ -1,0 +1,93 @@
+{
+  "session_id": "ANL-2026-04-25-重建对于该项目的完全掌握和认知",
+  "topic": "重建对于 Fabric-v2 项目的完全掌握和认知",
+  "completed": "2026-04-25",
+  "summary": "Fabric-v2 docs have been thinned and converted from narrative-oriented documents into engineering reference documents. The core architecture is now documented through SPEC_INTERNAL, CODEBASE_LANDSCAPE, ARCHITECTURE_DECISIONS, CONVENTIONS, and RULE_REGISTRY, with source-line evidence and explicit future collaboration rules.",
+  "key_conclusions": [
+    {
+      "point": "The rule delivery kernel is get-rules plus plan-context over MCP/HTTP server services.",
+      "evidence": "packages/server/src/services/get-rules.ts:83; packages/server/src/services/plan-context.ts:52",
+      "confidence": "high"
+    },
+    {
+      "point": "Stable ID is already an implemented architecture concept, not just a proposal.",
+      "evidence": "packages/shared/src/schemas/agents-meta.ts:31; packages/cli/src/commands/sync-meta.ts:334",
+      "confidence": "high"
+    },
+    {
+      "point": "The current repository root lacks an active Fabric registry, so rule scanning must distinguish template/example rules from active rules.",
+      "evidence": ".fabric contains only audit.jsonl; fab_plan_context reported missing .fabric/agents.meta.json",
+      "confidence": "high"
+    },
+    {
+      "point": "Dashboard observation-first is a target constraint with current implementation drift.",
+      "evidence": "packages/dashboard/src/views/human-lock.tsx:46; packages/server/src/api/human-lock.ts:49",
+      "confidence": "high"
+    }
+  ],
+  "recommendations": [
+    {
+      "action": "Keep SPEC_INTERNAL as the pre-code-change gate for core engine logic.",
+      "priority": "high",
+      "evidence_refs": ["docs/SPEC_INTERNAL.md"],
+      "review_status": "accepted"
+    },
+    {
+      "action": "Update CODEBASE_LANDSCAPE whenever packages/ responsibilities change.",
+      "priority": "high",
+      "evidence_refs": ["docs/CODEBASE_LANDSCAPE.md", "docs/CONVENTIONS.md"],
+      "review_status": "accepted"
+    },
+    {
+      "action": "Use RULE_REGISTRY to bind stable IDs and distinguish active registry from templates/examples.",
+      "priority": "high",
+      "evidence_refs": ["docs/RULE_REGISTRY.md"],
+      "review_status": "accepted"
+    },
+    {
+      "action": "Handle Dashboard write-path drift in a separate implementation task if strict read-only is required.",
+      "priority": "medium",
+      "evidence_refs": ["docs/ARCHITECTURE_DECISIONS.md"],
+      "review_status": "accepted"
+    }
+  ],
+  "intent_coverage": [
+    {
+      "intent": "Thin docs and remove narrative/ritual files.",
+      "status": "addressed",
+      "where_addressed": "docs deletion and getting-started rewrite"
+    },
+    {
+      "intent": "Generate three kernel whitepapers.",
+      "status": "addressed",
+      "where_addressed": "SPEC_INTERNAL, CODEBASE_LANDSCAPE, ARCHITECTURE_DECISIONS"
+    },
+    {
+      "intent": "Create collaboration contract and RULE_REGISTRY.",
+      "status": "addressed",
+      "where_addressed": "CONVENTIONS and RULE_REGISTRY"
+    }
+  ],
+  "findings_coverage": [
+    {
+      "finding": "get-rules hot path and priority algorithm",
+      "disposition": "recommendation",
+      "target": "SPEC_INTERNAL"
+    },
+    {
+      "finding": "Stable ID implementation exists",
+      "disposition": "recommendation",
+      "target": "RULE_REGISTRY"
+    },
+    {
+      "finding": "Root .fabric registry missing",
+      "disposition": "recommendation",
+      "target": "RULE_REGISTRY"
+    },
+    {
+      "finding": "Dashboard write-path drift",
+      "disposition": "recommendation",
+      "target": "ARCHITECTURE_DECISIONS"
+    }
+  ]
+}

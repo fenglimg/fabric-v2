@@ -1,0 +1,112 @@
+# RULE_REGISTRY: Stable ID 与规则注册状态
+
+本文记录当前仓库可确认的规则身份事实。它不是 `.fabric/agents.meta.json` 的替代品；真实运行时索引仍必须由 Fabric tooling 生成和维护。
+
+## 当前项目 Registry 状态
+
+当前项目根目录只有：
+
+```text
+.fabric/audit.jsonl
+```
+
+缺失：
+
+```text
+.fabric/agents.meta.json
+.fabric/bootstrap/README.md
+.fabric/agents/
+.fabric/human-lock.json
+```
+
+直接证据：
+
+- `fab_plan_context` 对本次目标路径返回 `Fabric agents metadata file is missing: /mnt/c/Project/fabric-v2/.fabric/agents.meta.json`。
+- `find .fabric -maxdepth 3 -type f` 只返回 `.fabric/audit.jsonl`。
+
+结论：
+
+- 本仓库当前不能把根 `.fabric/` 当作完整 Fabric runtime registry。
+- 下方表格记录的是源码、模板和 example 中的规则身份来源，不等价于当前项目已激活规则。
+- 若要让本仓库自身成为 Fabric-managed project，应先运行 `fabric init` 或恢复 `.fabric/agents.meta.json`，再用 `fabric sync-meta` 固化规则索引。
+
+## Stable ID 契约
+
+| 规则 | 状态 |
+| --- | --- |
+| 核心规则文件首选 `<!-- fab:rule-id scope/name -->`。 | 已实现解析。 |
+| `sync-meta` 将声明 ID 编译为 `stable_id`。 | 已实现。 |
+| 未声明 ID 时使用派生 ID，`identity_source = "derived"`。 | 已实现。 |
+| `fab_plan_context` 对派生 ID 给出 warning。 | 已实现。 |
+| 修改规则节点时同步更新本文件。 | 本次建立。 |
+
+证据：
+
+- Declared ID regex：`packages/cli/src/commands/sync-meta.ts:334`。
+- Shared stable-id derivation：`packages/shared/src/schemas/agents-meta.ts:67`。
+- Identity source derivation：`packages/shared/src/schemas/agents-meta.ts:77`。
+- Derived identity diagnostic：`packages/server/src/services/plan-context.ts:172`。
+
+## 模板中声明的 Rule IDs
+
+| Stable ID | 文件 | 范围 | 备注 |
+| --- | --- | --- | --- |
+| `bootstrap/claude` | `templates/bootstrap/CLAUDE.md` | Bootstrap template | 已声明 `fab:rule-id`。 |
+| `bootstrap/codex` | `templates/bootstrap/codex-AGENTS-header.md` | Bootstrap template | 已声明 `fab:rule-id`。 |
+| `bootstrap/cursor` | `templates/bootstrap/cursor-fabric-bootstrap.mdc` | Bootstrap template | 已声明 `fab:rule-id`。 |
+| `bootstrap/gemini` | `templates/bootstrap/GEMINI.md` | Bootstrap template | 已声明 `fab:rule-id`。 |
+| `bootstrap/roo` | `templates/bootstrap/roo-fabric.md` | Bootstrap template | 已声明 `fab:rule-id`。 |
+| `bootstrap/windsurf` | `templates/bootstrap/windsurf-fabric.md` | Bootstrap template | 已声明 `fab:rule-id`。 |
+
+重复的 package templates：
+
+- `packages/cli/templates/bootstrap/*` 镜像根目录 `templates/bootstrap/*`，用于 packaged CLI assets。
+- 部分 package templates 首行仍缺少 `fab:rule-id`，在把 package templates 当作 canonical rule source 前应先统一。
+
+## Example Rule Files
+
+`examples/werewolf-minigame-stub/.fabric/agents/` 下的 example project rule files：
+
+| Derived Stable ID | 文件 | Layer Derivation |
+| --- | --- | --- |
+| `root` | `examples/werewolf-minigame-stub/.fabric/agents/root.md` | 由 depth source 派生。 |
+| `_cross/role-balance` | `examples/werewolf-minigame-stub/.fabric/agents/_cross/role-balance.md` | Cross-cutting L1。 |
+| `assets/scripts/hunter` | `examples/werewolf-minigame-stub/.fabric/agents/assets/scripts/hunter.md` | 按 depth 派生 Mirror L1/L2。 |
+| `assets/scripts/seer` | `examples/werewolf-minigame-stub/.fabric/agents/assets/scripts/seer.md` | 按 depth 派生 Mirror L1/L2。 |
+| `assets/scripts/villager` | `examples/werewolf-minigame-stub/.fabric/agents/assets/scripts/villager.md` | 按 depth 派生 Mirror L1/L2。 |
+| `assets/scripts/werewolf` | `examples/werewolf-minigame-stub/.fabric/agents/assets/scripts/werewolf.md` | 按 depth 派生 Mirror L1/L2。 |
+| `assets/scripts/witch` | `examples/werewolf-minigame-stub/.fabric/agents/assets/scripts/witch.md` | 按 depth 派生 Mirror L1/L2。 |
+
+这些是 examples，不是当前根项目的 active rules。
+
+## 核心模块 Stable IDs
+
+这些 IDs 用来绑定开发者文档和核心实现节点。除非未来有 rule file 显式声明，否则它们不是 `.fabric/agents.meta.json` rule nodes。
+
+| Stable ID | 模块 | Source |
+| --- | --- | --- |
+| `core/cli-entry` | CLI command root 和 lazy command registry | `packages/cli/src/index.ts`, `packages/cli/src/commands/index.ts` |
+| `core/init-engine` | Init wizard、scaffold、stage execution | `packages/cli/src/commands/init.ts` |
+| `core/sync-meta` | Rule metadata compiler 和 stable-id extraction | `packages/cli/src/commands/sync-meta.ts` |
+| `core/forensic-scan` | Forensic project scan 和 evidence model | `packages/cli/src/scanner/forensic.ts` |
+| `core/server-mcp` | MCP server creation 和 tool registration | `packages/server/src/index.ts` |
+| `core/http-app` | REST/SSE/MCP HTTP app 和 session lifecycle | `packages/server/src/http.ts` |
+| `core/get-rules` | Single-path rule resolution service | `packages/server/src/services/get-rules.ts` |
+| `core/plan-context` | Batch planning 和 shared rule bundle | `packages/server/src/services/plan-context.ts` |
+| `core/update-registry` | Registry mutation service 和 MCP tool | `packages/server/src/services/update-registry.ts`, `packages/server/src/tools/update-registry.ts` |
+| `core/append-intent` | Intent ledger append 和 compliance audit | `packages/server/src/services/append-intent.ts` |
+| `core/audit-log` | Get-rules/edit-intent audit log | `packages/server/src/services/audit-log.ts` |
+| `core/events` | SSE event projection 和 replay | `packages/server/src/api/events.ts` |
+| `core/dashboard-api-client` | Dashboard REST/SSE client | `packages/dashboard/src/api/client.ts` |
+| `core/rule-topology-view` | Dashboard rule hit explanation | `packages/dashboard/src/views/rule-topology.tsx` |
+| `core/agents-meta-schema` | Rule metadata schema 和 identity derivation | `packages/shared/src/schemas/agents-meta.ts` |
+| `core/events-schema` | Fabric event schema | `packages/shared/src/schemas/events.ts` |
+
+## 必须同步的更新流程
+
+新增或修改 core function 时：
+
+1. 在本文新增或更新 module Stable ID。
+2. 如果 execution flow、schema、rule priority、MCP transport、Stable ID、cache 或 audit behavior 发生变化，更新 [SPEC_INTERNAL](./SPEC_INTERNAL.md)。
+3. 如果 `packages/` 文件新增、删除、重命名或职责变化，更新 [CODEBASE_LANDSCAPE](./CODEBASE_LANDSCAPE.md)。
+4. 如果变更创建或修改 `.fabric/agents/` rules，使用 `fab_update_registry` 或 `fabric sync-meta`；不要直接编辑 `.fabric/agents.meta.json`。
