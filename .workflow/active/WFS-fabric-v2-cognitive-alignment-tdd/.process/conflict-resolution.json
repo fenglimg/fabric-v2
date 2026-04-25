@@ -1,0 +1,34 @@
+{
+  "conflicts": [
+    {
+      "area": "Uncommitted workspace state",
+      "severity": "medium",
+      "description": "The workspace already has unrelated modifications in .fabric/audit.jsonl, .intent-ledger.jsonl, and packages/cli/src/scanner/tree-sitter-probe.ts.",
+      "strategy": "isolate",
+      "impact": "Do not stage, revert, rewrite, or depend on these files during the TDD refactor plan. Avoid tree-sitter-based entity detection in v1."
+    },
+    {
+      "area": "plan-context currently reuses get-rules internals",
+      "severity": "medium",
+      "description": "packages/server/src/services/plan-context.ts currently builds on get-rules matching/loading/payload helpers, but the locked protocol replaces full rule payloads with neutral description_index plus selection_token.",
+      "strategy": "refactor behind tests",
+      "impact": "Plan tasks must first add Red tests for neutral plan-context output, then introduce lower-level registry/description helpers before deleting or bypassing the old get-rules payload model."
+    },
+    {
+      "area": "Test command coverage",
+      "severity": "medium",
+      "description": "Root pnpm -r --if-present test does not reliably run server/shared/dashboard tests because only packages/cli has a test script.",
+      "strategy": "adapt test commands",
+      "impact": "TDD tasks should either add package test scripts or specify direct vitest run paths for shared/server/dashboard red tests."
+    },
+    {
+      "area": "Legacy API removal",
+      "severity": "medium",
+      "description": "The user approved discarding fab_get_rules, but docs, dashboard REST mirror, and server registration still refer to the old contract.",
+      "strategy": "sequence removal after replacement tests",
+      "impact": "Create and test fab_get_rule_sections before removing registration/docs for fab_get_rules; include docs/dashboard follow-up tasks."
+    }
+  ],
+  "resolved_at": "2026-04-25T00:00:00+08:00",
+  "summary": "Proceed with isolated TDD planning. Avoid unrelated WIP, keep v1 deterministic without tree-sitter dependency, generate tests before protocol changes, and sequence old API removal after new section API coverage."
+}

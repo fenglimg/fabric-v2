@@ -1,0 +1,49 @@
+{
+  "id": "IMPL-4",
+  "title": "Rule Section Parser and fab_get_rule_sections",
+  "priority": "high",
+  "target_files": [
+    "packages/server/src/services/rule-sections.ts",
+    "packages/server/src/services/rule-sections.test.ts",
+    "packages/server/src/tools/rule-sections.ts",
+    "packages/server/src/tools/rule-sections.test.ts",
+    "packages/server/src/index.ts"
+  ],
+  "acceptance_criteria": [
+    "Parser extracts requested sections by stable_id and section name.",
+    "Missing requested section returns empty content plus warning diagnostic.",
+    "No fallback to full rule content exists.",
+    "fab_get_rule_sections validates selection_token, ai_selected_stable_ids, ai_selection_reasons, and sections.",
+    "Invalid L1 selection and missing reasons are hard errors."
+  ],
+  "implementation": [
+    {
+      "step": 1,
+      "tdd_phase": "red",
+      "description": "Write failing parser/service/tool tests for section extraction, token validation, required+AI selected merge, missing-section warning, and hard errors.",
+      "verification": "pnpm exec vitest run packages/server/src/services/rule-sections.test.ts packages/server/src/tools/rule-sections.test.ts",
+      "expected_failure": "Tests fail because rule-sections service/tool do not exist."
+    },
+    {
+      "step": 2,
+      "tdd_phase": "green",
+      "description": "Implement rule section parser, section retrieval service, fab_get_rule_sections tool, and registration.",
+      "verification": "pnpm exec vitest run packages/server/src/services/rule-sections.test.ts packages/server/src/tools/rule-sections.test.ts packages/server/src/index.test.ts",
+      "test_fix_cycle": {
+        "max_iterations": 3,
+        "auto_revert": true
+      }
+    },
+    {
+      "step": 3,
+      "tdd_phase": "refactor",
+      "description": "Separate parser, token resolution, validation, and tool schema code; remove fab_get_rules registration after replacement coverage passes.",
+      "verification": "pnpm exec vitest run packages/server/src/services/rule-sections.test.ts packages/server/src/tools/rule-sections.test.ts packages/server/src/index.test.ts",
+      "quality_checks": [
+        "No full-content fallback.",
+        "Hard errors are deterministic.",
+        "Old fab_get_rules is not registered if removal is in scope."
+      ]
+    }
+  ]
+}

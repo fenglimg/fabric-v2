@@ -1,0 +1,46 @@
+{
+  "id": "IMPL-1",
+  "title": "Shared Registry Schema and Stable Identity",
+  "priority": "high",
+  "target_files": [
+    "packages/shared/src/types/agents.ts",
+    "packages/shared/src/schemas/agents-meta.ts",
+    "packages/shared/test/agents-meta.test.ts"
+  ],
+  "acceptance_criteria": [
+    "RuleDescription has summary, intent_clues, tech_stack, impact, must_read_if, optional entities, and no id.",
+    "RuleDescriptionIndexItem uses stable_id as identity and exposes level, required, selectable, description.",
+    "Registry-first nodes support .fabric/rules content_ref and explicit L0/L1/L2 levels.",
+    "New schema tests pass without relying on path-depth L1 derivation for new nodes."
+  ],
+  "implementation": [
+    {
+      "step": 1,
+      "tdd_phase": "red",
+      "description": "Write failing shared schema tests for registry-first rule nodes, RuleDescription without id, stable_id-only identity, and minimal RuleDescriptionIndexItem.",
+      "verification": "pnpm exec vitest run packages/shared/test/agents-meta.test.ts",
+      "expected_failure": "Tests fail because the schema lacks RuleDescription, content_ref, and id rejection/omission behavior."
+    },
+    {
+      "step": 2,
+      "tdd_phase": "green",
+      "description": "Implement the minimal shared types/schemas required for those tests to pass.",
+      "verification": "pnpm exec vitest run packages/shared/test/agents-meta.test.ts",
+      "test_fix_cycle": {
+        "max_iterations": 3,
+        "auto_revert": true
+      }
+    },
+    {
+      "step": 3,
+      "tdd_phase": "refactor",
+      "description": "Refactor schema helpers and naming to keep legacy characterization separate from new registry-first semantics.",
+      "verification": "pnpm exec vitest run packages/shared/test/agents-meta.test.ts",
+      "quality_checks": [
+        "No RuleDescription.id field exists.",
+        "stable_id remains node-level identity.",
+        "Type exports remain consumable by server and CLI."
+      ]
+    }
+  ]
+}

@@ -1,0 +1,46 @@
+{
+  "id": "IMPL-6",
+  "title": "Precedence, Priority, and Final Section Ordering",
+  "priority": "medium",
+  "target_files": [
+    "packages/server/src/services/rule-sections.ts",
+    "packages/server/src/services/rule-sections.test.ts",
+    "packages/shared/src/types/agents.ts"
+  ],
+  "acceptance_criteria": [
+    "Section output exposes fixed precedence L2 > L1 > L0.",
+    "priority only sorts within the same layer.",
+    "L0/L2 remain server-required and cannot be AI-selected manually.",
+    "Final stable id order is deterministic."
+  ],
+  "implementation": [
+    {
+      "step": 1,
+      "tdd_phase": "red",
+      "description": "Write failing tests for precedence metadata, same-layer priority sorting, and AI attempts to select L0/L2.",
+      "verification": "pnpm exec vitest run packages/server/src/services/rule-sections.test.ts",
+      "expected_failure": "Tests fail because precedence/order metadata is not implemented."
+    },
+    {
+      "step": 2,
+      "tdd_phase": "green",
+      "description": "Implement deterministic final ordering and precedence metadata in the section service.",
+      "verification": "pnpm exec vitest run packages/server/src/services/rule-sections.test.ts",
+      "test_fix_cycle": {
+        "max_iterations": 3,
+        "auto_revert": true
+      }
+    },
+    {
+      "step": 3,
+      "tdd_phase": "refactor",
+      "description": "Centralize ordering logic and keep cross-layer precedence independent from same-layer priority.",
+      "verification": "pnpm exec vitest run packages/server/src/services/rule-sections.test.ts",
+      "quality_checks": [
+        "L2 > L1 > L0 is encoded once.",
+        "priority never changes cross-layer semantics.",
+        "Output order is stable across runs."
+      ]
+    }
+  ]
+}

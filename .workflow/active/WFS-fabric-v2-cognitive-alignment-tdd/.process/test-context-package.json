@@ -1,0 +1,331 @@
+{
+  "test_framework": "vitest",
+  "test_commands": [
+    {
+      "package": "root",
+      "command": "pnpm -r --if-present test",
+      "source": "package.json"
+    },
+    {
+      "package": "packages/cli",
+      "command": "vitest run",
+      "source": "packages/cli/package.json"
+    }
+  ],
+  "test_patterns": {
+    "unit": [
+      "packages/cli/__tests__/**/*.test.ts",
+      "packages/shared/test/**/*.test.ts",
+      "packages/server/src/**/*.test.ts",
+      "packages/dashboard/src/**/*.test.ts"
+    ],
+    "integration": [
+      "packages/cli/__tests__/init-*.test.ts",
+      "packages/cli/__tests__/sync-meta*.test.ts",
+      "packages/server/src/services/*.test.ts",
+      "packages/server/src/index.test.ts"
+    ]
+  },
+  "coverage_summary": {
+    "framework_detection": {
+      "summary": "Vitest is the active framework. Root devDependencies include vitest, all discovered tests import from vitest, and packages/cli/vitest.config.ts defines a Node test environment.",
+      "evidence": [
+        "package.json",
+        "packages/cli/vitest.config.ts"
+      ]
+    },
+    "command_wiring": {
+      "scripted_packages": [
+        "root",
+        "packages/cli"
+      ],
+      "unscripted_packages_with_tests": [
+        "packages/server",
+        "packages/shared",
+        "packages/dashboard"
+      ],
+      "risk": "The manifest-detected root command only runs package test scripts with --if-present, so current package.json wiring guarantees CLI tests but does not guarantee server/shared/dashboard tests run from the root script."
+    },
+    "by_package": {
+      "packages/shared": {
+        "status": "partial",
+        "covered_topics": [
+          "agents-meta stable_id and identity_source defaults",
+          "legacy init-context schema compatibility"
+        ],
+        "missing_topics": [
+          "registry-first rule description schema",
+          "stable_id-only RuleDescription contract negative tests",
+          "domain/topology/content_ref fields for the new registry model"
+        ]
+      },
+      "packages/cli": {
+        "status": "partial",
+        "covered_topics": [
+          "init planning and non-destructive behavior",
+          "init force/reapply behavior",
+          "sync-meta legacy shadow-mirroring behavior",
+          "stable_id extraction from fab:rule-id comments"
+        ],
+        "missing_topics": [
+          "INITIAL_TAXONOMY.md generation contract",
+          "registry-first sync-meta against .fabric/rules",
+          "explicit semantic L0/L1/L2 taxonomy instead of path-depth derivation"
+        ]
+      },
+      "packages/server": {
+        "status": "partial",
+        "covered_topics": [
+          "fab_get_rules legacy path matching and description stubs",
+          "fab_plan_context shared bundle assembly and stale handling",
+          "audit-log get_rules/edit_intent telemetry",
+          "update-registry tool schema enum validation"
+        ],
+        "missing_topics": [
+          "selection_token issuance, cache TTL, and expiry errors",
+          "fab_get_rule_sections tool/service contract",
+          "required_stable_ids plus ai_selected_stable_ids merge",
+          "hard errors for invalid L1 selections and missing selection reasons",
+          "rule_selection telemetry in .fabric/audit.jsonl",
+          "neutral requirement_profile and minimal description_index output",
+          "section parsing and missing-section warnings without full-content fallback",
+          "L2 > L1 > L0 precedence tests for final section output"
+        ]
+      },
+      "packages/dashboard": {
+        "status": "light",
+        "covered_topics": [
+          "API client request encoding and token reuse",
+          "UI rendering for description stubs and hit reasons"
+        ],
+        "missing_topics": [
+          "display of selection-token protocol fields",
+          "rendering of requirement_profile/description_index for the new plan-context shape",
+          "audit/rule-selection visualization"
+        ]
+      }
+    },
+    "locked_protocol_baseline": {
+      "well_covered_existing_baseline": [
+        "legacy stable_id handling",
+        "legacy plan-context description stubs",
+        "legacy get_rules path resolution",
+        "legacy audit get_rules/edit_intent compliance"
+      ],
+      "mostly_uncovered_locked_refactor": [
+        "selection_token protocol",
+        "fab_get_rule_sections",
+        "rule_selection telemetry",
+        "minimal RuleDescriptionIndexItem schema",
+        "neutral requirement_profile",
+        "INITIAL_TAXONOMY.md init artifact"
+      ]
+    }
+  },
+  "coverage_gaps": [
+    {
+      "topic": "agents-meta schema",
+      "package": "packages/shared",
+      "gap": "Current tests only validate legacy shadow-mirroring nodes and derived stable_id behavior.",
+      "needed_red_tests": [
+        "accept registry-first nodes rooted in .fabric/rules",
+        "reject RuleDescription.id and require stable_id-only identity",
+        "validate minimal structured description fields summary, intent_clues, tech_stack, impact, must_read_if, entities"
+      ]
+    },
+    {
+      "topic": "init",
+      "package": "packages/cli",
+      "gap": "Init tests cover bootstrap/hooks/MCP setup but not the locked taxonomy artifact.",
+      "needed_red_tests": [
+        "generate .fabric/INITIAL_TAXONOMY.md on init",
+        "encode the three-tier L0/L1/L2 constitution in scaffold output",
+        "preserve Markdown-only artifact contract without JSON sidecar"
+      ]
+    },
+    {
+      "topic": "sync-meta",
+      "package": "packages/cli",
+      "gap": "Existing tests lock in the old path-depth shadow-mirroring model, which is the opposite of the new protocol.",
+      "needed_red_tests": [
+        "stop deriving L1 from mirror path depth",
+        "compute semantic layers from explicit registry metadata",
+        "read rule bodies from .fabric/rules instead of .fabric/agents"
+      ]
+    },
+    {
+      "topic": "plan-context",
+      "package": "packages/server",
+      "gap": "Current tests assert legacy entries.rules/shared.description_stub_union output, not selection-token planning output.",
+      "needed_red_tests": [
+        "return selection_token",
+        "return requirement_profile without score/confidence/match_reasons/negative_reasons",
+        "return description_index with required/selectable flags",
+        "separate required_stable_ids from ai_selectable_stable_ids",
+        "keep initial_selected_stable_ids equal to required_stable_ids"
+      ]
+    },
+    {
+      "topic": "get-rules replacement",
+      "package": "packages/server",
+      "gap": "There are no tests for fab_get_rule_sections because the tool/service do not exist yet.",
+      "needed_red_tests": [
+        "resolve final_stable_ids from token.required plus ai_selected L1 ids",
+        "hard error on expired or missing selection_token",
+        "hard error when ai_selected_stable_ids include ids outside ai_selectable_stable_ids",
+        "hard error when ai_selection_reasons are missing or incomplete",
+        "return empty section plus warning when a requested section is absent",
+        "never fallback to full rule content"
+      ]
+    },
+    {
+      "topic": "audit-log",
+      "package": "packages/server",
+      "gap": "Audit tests only cover get_rules and edit_intent events.",
+      "needed_red_tests": [
+        "append rule_selection events to .fabric/audit.jsonl",
+        "record required_stable_ids, ai_selectable_stable_ids, ai_selected_stable_ids, final_stable_ids",
+        "record selection_reasons and rejected_or_ignored_ids"
+      ]
+    },
+    {
+      "topic": "tools",
+      "package": "packages/server",
+      "gap": "Tool coverage exists for update-registry schema validation only.",
+      "needed_red_tests": [
+        "fab_plan_context tool schema/output update",
+        "fab_get_rule_sections tool registration and input validation",
+        "tool-level contract coverage for selection reasons and allowed section enums"
+      ]
+    },
+    {
+      "topic": "dashboard support",
+      "package": "packages/dashboard",
+      "gap": "Current UI tests reflect legacy description-stub behavior only.",
+      "needed_red_tests": [
+        "render required versus selectable items from description_index",
+        "show neutral requirement_profile fields only",
+        "display missing-section diagnostics and selection reasoning where applicable"
+      ]
+    }
+  ],
+  "test_utilities": [
+    {
+      "path": "packages/cli/__tests__/helpers/init-test-utils.ts",
+      "helpers": [
+        "createWerewolfFixtureRoot",
+        "createEmptyFixtureRoot",
+        "cleanupFixtureRoot",
+        "writeFixtureFile",
+        "readFixtureFile",
+        "setProcessTty"
+      ],
+      "usage": "Primary reusable fixture helper for CLI init/sync-meta/forensic tests. Clones examples/werewolf-minigame-stub or creates empty temp roots."
+    },
+    {
+      "path": "packages/server/src/services/plan-context.test.ts",
+      "helpers": [
+        "createTempProject"
+      ],
+      "usage": "Async temp project builder for server plan-context service tests using mkdtemp, mkdir, and writeFile."
+    },
+    {
+      "path": "packages/server/src/services/get-rules.test.ts",
+      "helpers": [
+        "createTempProject"
+      ],
+      "usage": "Async temp project helper for get-rules service tests with in-test .fabric scaffolding."
+    },
+    {
+      "path": "packages/server/src/services/audit-log.test.ts",
+      "helpers": [
+        "createFixtureRoot"
+      ],
+      "usage": "Sync temp root helper for audit-log telemetry tests."
+    },
+    {
+      "path": "packages/server/src/services/doctor.test.ts",
+      "helpers": [
+        "createFixtureRoot"
+      ],
+      "usage": "Comprehensive temp project builder for doctor/audit integration-style tests."
+    },
+    {
+      "path": "packages/shared/test/detector.test.ts",
+      "helpers": [
+        "createFixtureRoot"
+      ],
+      "usage": "Simple shared package temp project helper for framework detection tests."
+    }
+  ],
+  "conventions": {
+    "imports": "Tests consistently import describe/it/expect from vitest, adding afterEach and vi when cleanup or mocking is needed.",
+    "layout": {
+      "cli": "__tests__ directory",
+      "shared": "test directory",
+      "server": "co-located src/*.test.ts",
+      "dashboard": "co-located src/*.test.ts"
+    },
+    "environment": "Node environment is explicit in packages/cli/vitest.config.ts and matches current test style across the repo.",
+    "fixtures": "Tests prefer tmpdir-based disposable projects; CLI tests often clone examples/werewolf-minigame-stub for higher-fidelity integration coverage.",
+    "cleanup": "afterEach typically removes temp roots and restores mocks/modules.",
+    "mocking": "Use vi.spyOn, vi.doMock, vi.restoreAllMocks, and vi.resetModules for process, module, and child_process behavior.",
+    "assertion_style": [
+      "toEqual",
+      "toMatchObject",
+      "rejects.toThrowError",
+      "inline snapshots for selected regression coverage"
+    ],
+    "current_runner_limitations": "Only packages/cli defines a local test script and Vitest config; the other packages have test files but no package.json test script."
+  },
+  "relevant_existing_tests": [
+    {
+      "path": "packages/shared/test/agents-meta.test.ts",
+      "relevance": "Current baseline for stable_id and identity_source behavior in agents-meta."
+    },
+    {
+      "path": "packages/cli/__tests__/sync-meta.test.ts",
+      "relevance": "Direct coverage for sync-meta stable_id extraction and current path-derived L0/L1/L2 behavior that must be refactored."
+    },
+    {
+      "path": "packages/cli/__tests__/sync-meta-shadow-mirroring.test.ts",
+      "relevance": "Regression suite for the old shadow-mirroring model; useful as inversion evidence for new Red tests."
+    },
+    {
+      "path": "packages/cli/__tests__/init-nondestructive.test.ts",
+      "relevance": "Best current coverage for init planning/buildInitExecutionPlan and file creation guards."
+    },
+    {
+      "path": "packages/cli/__tests__/init-force.test.ts",
+      "relevance": "Covers forced overwrite semantics around init scaffolding."
+    },
+    {
+      "path": "packages/server/src/services/plan-context.test.ts",
+      "relevance": "Primary existing server coverage for plan-context stale handling, shared bundle assembly, and description stubs."
+    },
+    {
+      "path": "packages/server/src/services/get-rules.test.ts",
+      "relevance": "Primary existing server coverage for legacy fab_get_rules path matching and description stub behavior."
+    },
+    {
+      "path": "packages/server/src/services/audit-log.test.ts",
+      "relevance": "Current telemetry baseline; should be extended for rule_selection events."
+    },
+    {
+      "path": "packages/server/src/tools/update-registry.test.ts",
+      "relevance": "Only direct server tool schema test currently in scope; establishes tool-level validation pattern."
+    },
+    {
+      "path": "packages/server/src/services/doctor.test.ts",
+      "relevance": "Higher-level audit/compliance behavior that will likely consume new rule_selection telemetry later."
+    },
+    {
+      "path": "packages/dashboard/src/components/hit-reason-panel.test.ts",
+      "relevance": "Dashboard-side rendering baseline for description stubs and hit reasons."
+    },
+    {
+      "path": "packages/dashboard/src/api/client.test.ts",
+      "relevance": "Dashboard API client baseline for rules-context requests and token propagation."
+    }
+  ]
+}

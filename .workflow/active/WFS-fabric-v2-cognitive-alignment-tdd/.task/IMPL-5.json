@@ -1,0 +1,47 @@
+{
+  "id": "IMPL-5",
+  "title": "Rule Selection Audit Telemetry",
+  "priority": "high",
+  "target_files": [
+    "packages/server/src/services/audit-log.ts",
+    "packages/server/src/services/audit-log.test.ts",
+    "packages/server/src/services/rule-sections.ts",
+    "packages/server/src/services/rule-sections.test.ts"
+  ],
+  "acceptance_criteria": [
+    "rule_selection audit events append to .fabric/audit.jsonl.",
+    "Events include target paths, required ids, AI-selectable ids, AI-selected ids, final ids, selection reasons, rejected/ignored ids, and timestamp.",
+    "readAuditLog can parse existing get_rules/edit_intent and new rule_selection entries.",
+    "Successful section resolution records telemetry."
+  ],
+  "implementation": [
+    {
+      "step": 1,
+      "tdd_phase": "red",
+      "description": "Write failing audit-log and section-service tests for rule_selection telemetry.",
+      "verification": "pnpm exec vitest run packages/server/src/services/audit-log.test.ts packages/server/src/services/rule-sections.test.ts",
+      "expected_failure": "Tests fail because audit-log union/helper lacks rule_selection support."
+    },
+    {
+      "step": 2,
+      "tdd_phase": "green",
+      "description": "Add rule_selection audit entry type, append helper, parser support, and service integration.",
+      "verification": "pnpm exec vitest run packages/server/src/services/audit-log.test.ts packages/server/src/services/rule-sections.test.ts",
+      "test_fix_cycle": {
+        "max_iterations": 3,
+        "auto_revert": true
+      }
+    },
+    {
+      "step": 3,
+      "tdd_phase": "refactor",
+      "description": "Keep audit event shape stable and reuse existing append/read utilities without adding a new state file.",
+      "verification": "pnpm exec vitest run packages/server/src/services/audit-log.test.ts packages/server/src/services/rule-sections.test.ts",
+      "quality_checks": [
+        "Audit destination remains .fabric/audit.jsonl.",
+        "Existing audit tests still pass.",
+        "Telemetry includes complete AI selection reasons."
+      ]
+    }
+  ]
+}

@@ -1,0 +1,475 @@
+{
+  "critical_files": [
+    {
+      "path": "packages/shared/src/types/agents.ts",
+      "role": "shared rule node types",
+      "relevance": "high",
+      "why": "Current node model still centers on file/scope/layer and lacks registry-first content_ref and structured RuleDescription fields."
+    },
+    {
+      "path": "packages/shared/src/schemas/agents-meta.ts",
+      "role": "shared registry schema and default derivation",
+      "relevance": "high",
+      "why": "Contains path-depth layer derivation, stable_id defaults, and identity_source logic that conflict with the locked explicit L0/L1/L2 semantics."
+    },
+    {
+      "path": "packages/shared/test/agents-meta.test.ts",
+      "role": "schema characterization tests",
+      "relevance": "high",
+      "why": "Primary place to lock legacy parsing, explicit level handling, stable_id-only identity, and future content_ref compatibility."
+    },
+    {
+      "path": "packages/server/src/services/get-rules.ts",
+      "role": "legacy single-path rule loading service",
+      "relevance": "high",
+      "why": "Currently reads full rule bodies from node.file, returns L0/L1/L2 payloads, and implements description-tier behavior that will be replaced by fab_get_rule_sections."
+    },
+    {
+      "path": "packages/server/src/tools/get-rules.ts",
+      "role": "legacy MCP tool contract",
+      "relevance": "high",
+      "why": "Registers fab_get_rules and exposes the old output shape that the refactor plans to remove."
+    },
+    {
+      "path": "packages/server/src/services/plan-context.ts",
+      "role": "plan context service",
+      "relevance": "high",
+      "why": "Current implementation returns rule bundles and shared_entries; it must be redesigned around requirement_profile, description_index, required_stable_ids, ai_selectable_stable_ids, and selection_token."
+    },
+    {
+      "path": "packages/server/src/tools/plan-context.ts",
+      "role": "plan context MCP tool schema",
+      "relevance": "high",
+      "why": "Current zod schema only accepts paths/client_hash and exposes the old shared bundle payload."
+    },
+    {
+      "path": "packages/server/src/services/audit-log.ts",
+      "role": "audit event storage",
+      "relevance": "high",
+      "why": "Owns .fabric/audit.jsonl append/read logic and is the natural extension point for rule_selection telemetry."
+    },
+    {
+      "path": "packages/server/src/services/get-rules.test.ts",
+      "role": "legacy rule loading tests",
+      "relevance": "high",
+      "why": "Captures current always/path/description behavior and should become characterization coverage before replacing the API."
+    },
+    {
+      "path": "packages/server/src/services/plan-context.test.ts",
+      "role": "plan context tests",
+      "relevance": "high",
+      "why": "Current expectations encode shared bundle and description stub behavior; they are the starting point for Red-Green migration to neutral description-index output."
+    },
+    {
+      "path": "packages/server/src/services/audit-log.test.ts",
+      "role": "audit log tests",
+      "relevance": "high",
+      "why": "Best place to add rule_selection append/read assertions without coupling telemetry validation to tool wiring."
+    },
+    {
+      "path": "packages/server/src/index.ts",
+      "role": "server tool registration",
+      "relevance": "medium",
+      "why": "Will need fab_get_rule_sections registration and likely removal of fab_get_rules registration."
+    },
+    {
+      "path": "packages/server/src/http.ts",
+      "role": "HTTP watcher and app composition",
+      "relevance": "medium",
+      "why": "Watches only .fabric/agents.meta.json and .fabric/bootstrap/README.md today; registry-first content files or taxonomy/docs changes may require broader invalidation."
+    },
+    {
+      "path": "packages/server/src/api/rules-context.ts",
+      "role": "REST mirror endpoint",
+      "relevance": "medium",
+      "why": "Currently proxies getRules for dashboard rule context and will drift if the MCP contract changes without an aligned HTTP story."
+    },
+    {
+      "path": "packages/cli/src/commands/init.ts",
+      "role": "init scaffold generation",
+      "relevance": "high",
+      "why": "Current init writes bootstrap/meta/human-lock/forensic only; it is the implementation entry point for generating .fabric/INITIAL_TAXONOMY.md."
+    },
+    {
+      "path": "packages/cli/src/commands/sync-meta.ts",
+      "role": "registry compiler",
+      "relevance": "high",
+      "why": "Compiles .fabric/agents/**/*.md into agents.meta.json and derives layer from path depth; this must align with explicit registry-first levels and legacy import compatibility."
+    },
+    {
+      "path": "packages/cli/__tests__/sync-meta.test.ts",
+      "role": "registry compiler tests",
+      "relevance": "medium",
+      "why": "Useful to lock current stable_id/layer derivation and then migrate toward explicit level semantics."
+    },
+    {
+      "path": "packages/cli/__tests__/init-*.test.ts",
+      "role": "init scaffolding tests",
+      "relevance": "medium",
+      "why": "Likely location for adding characterization and new assertions around INITIAL_TAXONOMY artifact creation."
+    },
+    {
+      "path": "docs/SPEC_INTERNAL.md",
+      "role": "internal protocol spec",
+      "relevance": "high",
+      "why": "Documents the current closed loop around fab_get_rules and fab_plan_context and must be updated alongside the refactor."
+    },
+    {
+      "path": "docs/getting-started.md",
+      "role": "user-facing onboarding docs",
+      "relevance": "medium",
+      "why": "Still teaches fab_get_rules/fab_plan_context as the primary runtime tools."
+    },
+    {
+      "path": "docs/initialization.md",
+      "role": "init protocol docs",
+      "relevance": "medium",
+      "why": "Explains bootstrap and agent metadata lifecycle and will need alignment if init starts writing INITIAL_TAXONOMY and registry-first rule content."
+    },
+    {
+      "path": "docs/RULE_REGISTRY.md",
+      "role": "registry state and constraints",
+      "relevance": "medium",
+      "why": "Already documents the missing root .fabric runtime and current stable_id contract; useful as planning context and likely update target."
+    }
+  ],
+  "patterns": [
+    {
+      "name": "Registry metadata with derived defaults",
+      "files": [
+        "packages/shared/src/schemas/agents-meta.ts",
+        "packages/cli/src/commands/sync-meta.ts"
+      ],
+      "notes": "The current system derives layer/topology/stable_id from file paths. The refactor needs explicit semantic levels with legacy parsing retained only as compatibility input."
+    },
+    {
+      "name": "Description-tier stub delivery",
+      "files": [
+        "packages/server/src/services/get-rules.ts",
+        "packages/server/src/services/plan-context.ts",
+        "packages/server/src/services/get-rules.test.ts",
+        "packages/server/src/services/plan-context.test.ts"
+      ],
+      "notes": "Description activation already exists, but it is string-only and still lives inside the old rule-loading model."
+    },
+    {
+      "name": "Tool schema mirrors service types",
+      "files": [
+        "packages/server/src/tools/get-rules.ts",
+        "packages/server/src/tools/plan-context.ts"
+      ],
+      "notes": "Server tools expose zod schemas that closely track service return shapes, so protocol changes will cascade directly through both layers."
+    },
+    {
+      "name": "Audit logging is append-only JSONL with best-effort writes",
+      "files": [
+        "packages/server/src/services/audit-log.ts",
+        "packages/server/src/services/audit-log.test.ts"
+      ],
+      "notes": "Existing get_rules and edit_intent events show the intended telemetry style for new rule_selection events."
+    },
+    {
+      "name": "Init scaffolding is centralized in one CLI plan/execution flow",
+      "files": [
+        "packages/cli/src/commands/init.ts"
+      ],
+      "notes": "Adding INITIAL_TAXONOMY should go through buildInitFabricPlan and executeInitFabricPlan rather than ad hoc file writes elsewhere."
+    },
+    {
+      "name": "Current runtime root assumes bootstrap plus agents.meta plus optional agents tree",
+      "files": [
+        "packages/server/src/services/get-rules.ts",
+        "packages/server/src/http.ts",
+        "docs/RULE_REGISTRY.md"
+      ],
+      "notes": "The repository root currently lacks a complete .fabric runtime, so server-level tests should keep using isolated fixtures."
+    }
+  ],
+  "dependencies": [
+    {
+      "from": "packages/cli/src/commands/sync-meta.ts",
+      "to": "packages/shared/src/schemas/agents-meta.ts",
+      "type": "internal",
+      "notes": "CLI registry compilation imports shared schema helpers and will inherit any schema break."
+    },
+    {
+      "from": "packages/server/src/services/get-rules.ts",
+      "to": "packages/server/src/meta-reader.ts",
+      "type": "internal",
+      "notes": "Rule resolution starts from parsed .fabric/agents.meta.json."
+    },
+    {
+      "from": "packages/server/src/services/get-rules.ts",
+      "to": "packages/server/src/services/audit-log.ts",
+      "type": "internal",
+      "notes": "fab_get_rules appends compliance telemetry after rule delivery."
+    },
+    {
+      "from": "packages/server/src/services/plan-context.ts",
+      "to": "packages/server/src/services/get-rules.ts",
+      "type": "internal",
+      "notes": "plan_context reuses get-rules loaders, matching, and payload builders; the new protocol may need a shared lower-level rule index layer instead."
+    },
+    {
+      "from": "packages/server/src/tools/plan-context.ts",
+      "to": "packages/server/src/services/plan-context.ts",
+      "type": "internal",
+      "notes": "Tool schema is thin and directly exposes the service output."
+    },
+    {
+      "from": "packages/server/src/tools/get-rules.ts",
+      "to": "packages/server/src/services/get-rules.ts",
+      "type": "internal",
+      "notes": "Removing or replacing the old tool requires coordinated registration and documentation changes."
+    },
+    {
+      "from": "packages/server/src/index.ts",
+      "to": "packages/server/src/tools/get-rules.ts",
+      "type": "internal",
+      "notes": "Server startup currently registers fab_get_rules."
+    },
+    {
+      "from": "packages/server/src/index.ts",
+      "to": "packages/server/src/tools/plan-context.ts",
+      "type": "internal",
+      "notes": "Server startup currently registers fab_plan_context."
+    },
+    {
+      "from": "packages/server/src/http.ts",
+      "to": "packages/server/src/api/rules-context.ts",
+      "type": "internal",
+      "notes": "Dashboard/API layer mirrors the old getRules service behavior."
+    },
+    {
+      "from": "packages/cli/src/commands/init.ts",
+      "to": "packages/cli/src/commands/sync-meta.ts",
+      "type": "conceptual",
+      "notes": "Init establishes the scaffold and sync-meta establishes registry shape; taxonomy generation will likely need to share forensic/init facts with registry generation."
+    },
+    {
+      "from": "packages/server/package.json",
+      "to": "@fenglimg/fabric-shared",
+      "type": "workspace-package",
+      "notes": "Schema changes in shared will propagate into server compile and runtime contracts."
+    },
+    {
+      "from": "packages/cli/package.json",
+      "to": "@fenglimg/fabric-server",
+      "type": "workspace-package",
+      "notes": "CLI surfaces user-facing tool behavior and docs must stay aligned with server protocol changes."
+    },
+    {
+      "from": "packages/server/package.json",
+      "to": "@modelcontextprotocol/sdk",
+      "type": "external",
+      "notes": "New fab_get_rule_sections remains constrained by current MCP registration patterns."
+    },
+    {
+      "from": "packages/server/package.json",
+      "to": "zod",
+      "type": "external",
+      "notes": "All tool contracts and shared schema validation are zod-based."
+    },
+    {
+      "from": "packages/server/package.json",
+      "to": "minimatch",
+      "type": "external",
+      "notes": "Current path matching uses minimatch; requirement-profile and locality matching should not silently break existing glob semantics."
+    }
+  ],
+  "integration_points": [
+    {
+      "surface": "MCP tool registration",
+      "files": [
+        "packages/server/src/index.ts",
+        "packages/server/src/tools/get-rules.ts",
+        "packages/server/src/tools/plan-context.ts"
+      ],
+      "impact": "Add fab_get_rule_sections, redefine fab_plan_context, and remove or retire fab_get_rules."
+    },
+    {
+      "surface": "Rule registry parsing and compilation",
+      "files": [
+        "packages/shared/src/types/agents.ts",
+        "packages/shared/src/schemas/agents-meta.ts",
+        "packages/cli/src/commands/sync-meta.ts"
+      ],
+      "impact": "Introduce structured descriptions and content_ref while preserving legacy file-based nodes during migration."
+    },
+    {
+      "surface": "Plan-time selection protocol",
+      "files": [
+        "packages/server/src/services/plan-context.ts",
+        "packages/server/src/tools/plan-context.ts",
+        "packages/server/src/services/plan-context.test.ts"
+      ],
+      "impact": "Add requirement_profile, description_index, selection_token, required/ai-selectable stable ids, and neutral diagnostics."
+    },
+    {
+      "surface": "Edit-time section fetch and precedence merge",
+      "files": [
+        "packages/server/src/services/get-rules.ts",
+        "packages/server/src/tools/get-rules.ts"
+      ],
+      "impact": "Replace full rule loading with section-based fetch that merges required_stable_ids with AI-selected L1 ids under fixed L2 > L1 > L0 precedence."
+    },
+    {
+      "surface": "Telemetry and audit feedback loop",
+      "files": [
+        "packages/server/src/services/audit-log.ts",
+        "packages/server/src/services/audit-log.test.ts",
+        ".fabric/audit.jsonl"
+      ],
+      "impact": "Append rule_selection events without interfering with unrelated local audit WIP."
+    },
+    {
+      "surface": "HTTP/dashboard compatibility",
+      "files": [
+        "packages/server/src/http.ts",
+        "packages/server/src/api/rules-context.ts"
+      ],
+      "impact": "Any contract change in MCP tools likely requires corresponding REST/read-model updates or explicit deprecation."
+    },
+    {
+      "surface": "Init artifacts and documentation",
+      "files": [
+        "packages/cli/src/commands/init.ts",
+        "docs/SPEC_INTERNAL.md",
+        "docs/getting-started.md",
+        "docs/initialization.md"
+      ],
+      "impact": "INITIAL_TAXONOMY generation and the new cognitive-alignment protocol must be documented alongside code changes."
+    }
+  ],
+  "conflict_risk": "medium",
+  "conflict_areas": [
+    {
+      "path": ".fabric/audit.jsonl",
+      "status": "modified",
+      "reason": "Explicitly marked as unrelated WIP by the task. Relevant to telemetry design, but must not be overwritten during planning or future implementation."
+    },
+    {
+      "path": ".intent-ledger.jsonl",
+      "status": "modified",
+      "reason": "Explicitly marked as unrelated WIP by the task and outside the cognitive-alignment refactor scope."
+    },
+    {
+      "path": "packages/cli/src/scanner/tree-sitter-probe.ts",
+      "status": "modified",
+      "reason": "Explicitly marked as unrelated WIP. The locked protocol also says entity detection should stay optional and not depend on tree-sitter in the first version."
+    },
+    {
+      "path": "packages/shared/src/schemas/agents-meta.ts",
+      "status": "high-touch area",
+      "reason": "Likely to change together with sync-meta, server services, and tests; broad schema churn raises coordination risk across packages."
+    },
+    {
+      "path": "packages/server/src/services/get-rules.ts",
+      "status": "high-touch area",
+      "reason": "Legacy behavior is central to current MCP, HTTP, audit, and tests, so replacement will have broad cascading impact."
+    },
+    {
+      "path": "packages/server/src/services/plan-context.ts",
+      "status": "high-touch area",
+      "reason": "The TDD plan requires a major contract rewrite rather than a small extension."
+    }
+  ],
+  "constraints": [
+    "Use the locked protocol inputs as authoritative: .fabric/rules/ for new rule bodies, stable_id-only identity, fab_get_rule_sections replacing fab_get_rules, and .fabric/INITIAL_TAXONOMY.md as markdown-only.",
+    "Do not overwrite or clean unrelated WIP in .fabric/audit.jsonl, .intent-ledger.jsonl, or packages/cli/src/scanner/tree-sitter-probe.ts.",
+    "Treat the repository root .fabric directory as incomplete runtime state; favor isolated fixtures in tests instead of assuming the current repo is initialized.",
+    "Requirement Profile generation must stay deterministic and lightweight: path heuristics, intent keyword extraction, known_tech merge, optional detected_entities hints only.",
+    "RuleDescription must not define its own id. Identity remains at node stable_id.",
+    "fab_plan_context output must stay neutral for L1 selection: no score, confidence, match_reasons, negative_reasons, or matched_profile_fields in the returned description index.",
+    "selection_token storage is in-memory with TTL in the first version; invalid or expired token must be a deterministic hard error.",
+    "If ai_selected_stable_ids is non-empty, ai_selection_reasons must fully cover those ids; missing or invalid L1 selections are hard errors.",
+    "Missing requested sections must return empty section payloads with warning diagnostics and no fallback to full rule content.",
+    "Cross-layer precedence is fixed at L2 > L1 > L0; priority only sorts within the same layer."
+  ],
+  "recommended_task_slices": [
+    {
+      "name": "Slice 1: Characterize current init and registry behavior",
+      "goal": "Freeze current init outputs, stable_id derivation, and legacy agents.meta parsing before structural changes.",
+      "tests_first": [
+        "packages/shared/test/agents-meta.test.ts",
+        "packages/cli/__tests__/sync-meta.test.ts",
+        "packages/cli/__tests__/init-*.test.ts"
+      ],
+      "target_files": [
+        "packages/shared/src/schemas/agents-meta.ts",
+        "packages/cli/src/commands/sync-meta.ts",
+        "packages/cli/src/commands/init.ts"
+      ]
+    },
+    {
+      "name": "Slice 2: Introduce shared schema for registry-first rule nodes",
+      "goal": "Add structured RuleDescription, content_ref compatibility, explicit level semantics, and stable_id-only identity in shared types and parsing.",
+      "tests_first": [
+        "packages/shared/test/agents-meta.test.ts"
+      ],
+      "target_files": [
+        "packages/shared/src/types/agents.ts",
+        "packages/shared/src/schemas/agents-meta.ts"
+      ]
+    },
+    {
+      "name": "Slice 3: Add INITIAL_TAXONOMY artifact generation",
+      "goal": "Extend init scaffolding to write .fabric/INITIAL_TAXONOMY.md from deterministic init/forensic facts.",
+      "tests_first": [
+        "packages/cli/__tests__/init-*.test.ts"
+      ],
+      "target_files": [
+        "packages/cli/src/commands/init.ts"
+      ]
+    },
+    {
+      "name": "Slice 4: Refactor fab_plan_context to neutral description-index protocol",
+      "goal": "Replace rule bundle output with requirement_profile, description_index, required_stable_ids, ai_selectable_stable_ids, selection_policy, and selection_token.",
+      "tests_first": [
+        "packages/server/src/services/plan-context.test.ts",
+        "packages/server/src/index.test.ts"
+      ],
+      "target_files": [
+        "packages/server/src/services/plan-context.ts",
+        "packages/server/src/tools/plan-context.ts",
+        "packages/server/src/index.ts"
+      ]
+    },
+    {
+      "name": "Slice 5: Implement selection-token cache and section fetch API",
+      "goal": "Add fab_get_rule_sections with token validation, AI-selected L1 merge, structured section parsing, missing-section warnings, and hard protocol errors.",
+      "tests_first": [
+        "packages/server/src/services/get-rules.test.ts",
+        "packages/server/src/index.test.ts"
+      ],
+      "target_files": [
+        "packages/server/src/services/get-rules.ts",
+        "packages/server/src/tools/get-rules.ts",
+        "packages/server/src/index.ts"
+      ]
+    },
+    {
+      "name": "Slice 6: Append rule_selection telemetry",
+      "goal": "Extend audit-log service and tests to record rule_selection events in .fabric/audit.jsonl without changing unrelated working data.",
+      "tests_first": [
+        "packages/server/src/services/audit-log.test.ts"
+      ],
+      "target_files": [
+        "packages/server/src/services/audit-log.ts"
+      ]
+    },
+    {
+      "name": "Slice 7: Align HTTP surfaces and docs",
+      "goal": "Update REST/read-only endpoints and the protocol docs so onboarding and internal specs match the new rule delivery model.",
+      "tests_first": [],
+      "target_files": [
+        "packages/server/src/api/rules-context.ts",
+        "packages/server/src/http.ts",
+        "docs/SPEC_INTERNAL.md",
+        "docs/getting-started.md",
+        "docs/initialization.md",
+        "docs/RULE_REGISTRY.md"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,47 @@
+{
+  "id": "IMPL-2",
+  "title": "Init Taxonomy Artifact",
+  "priority": "high",
+  "target_files": [
+    "packages/cli/src/commands/init.ts",
+    "packages/cli/__tests__/init-nondestructive.test.ts",
+    "packages/cli/__tests__/init-forensic.test.ts",
+    "docs/initialization.md"
+  ],
+  "acceptance_criteria": [
+    "buildInitFabricPlan includes taxonomyPath, taxonomyAction, and taxonomyContent.",
+    "executeInitFabricPlan writes .fabric/INITIAL_TAXONOMY.md.",
+    "The artifact is Markdown-only and includes L0/L1/L2 definitions, initial bucket logic, and evolution guide.",
+    "Existing non-destructive init behavior remains intact."
+  ],
+  "implementation": [
+    {
+      "step": 1,
+      "tdd_phase": "red",
+      "description": "Write failing init tests for plan-only and execution behavior around .fabric/INITIAL_TAXONOMY.md.",
+      "verification": "pnpm --filter @fenglimg/fabric-cli test -- packages/cli/__tests__/init-nondestructive.test.ts packages/cli/__tests__/init-forensic.test.ts",
+      "expected_failure": "Tests fail because taxonomy fields and file writing do not exist."
+    },
+    {
+      "step": 2,
+      "tdd_phase": "green",
+      "description": "Add taxonomy plan fields, deterministic Markdown generation, file write, and result metadata.",
+      "verification": "pnpm --filter @fenglimg/fabric-cli test -- packages/cli/__tests__/init-nondestructive.test.ts packages/cli/__tests__/init-forensic.test.ts",
+      "test_fix_cycle": {
+        "max_iterations": 3,
+        "auto_revert": true
+      }
+    },
+    {
+      "step": 3,
+      "tdd_phase": "refactor",
+      "description": "Extract taxonomy Markdown generation into a focused helper and update initialization docs.",
+      "verification": "pnpm --filter @fenglimg/fabric-cli test -- packages/cli/__tests__/init-nondestructive.test.ts packages/cli/__tests__/init-forensic.test.ts",
+      "quality_checks": [
+        "No JSON sidecar is generated.",
+        "Existing overwrite guards apply to taxonomy file.",
+        "Docs mention INITIAL_TAXONOMY.md."
+      ]
+    }
+  ]
+}

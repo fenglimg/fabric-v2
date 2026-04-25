@@ -1,0 +1,29 @@
+{
+  "session_id": "WFS-fabric-v2-cognitive-alignment-tdd",
+  "task_ids": [
+    "IMPL-1",
+    "IMPL-2",
+    "IMPL-3",
+    "IMPL-4",
+    "IMPL-5",
+    "IMPL-6",
+    "IMPL-7"
+  ],
+  "recommended_execution": [
+    "IMPL-1",
+    "IMPL-2",
+    "IMPL-3",
+    "IMPL-4",
+    "IMPL-5",
+    "IMPL-6",
+    "IMPL-7"
+  ],
+  "complexity": "high",
+  "conflict_risk": "medium",
+  "tdd_compliance": true,
+  "notes": [
+    "Planning only; no production code modified.",
+    "Use direct Vitest commands for server/shared/dashboard unless package scripts are added.",
+    "Avoid unrelated WIP files: .fabric/audit.jsonl, .intent-ledger.jsonl, packages/cli/src/scanner/tree-sitter-probe.ts."
+  ]
+}

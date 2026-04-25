@@ -1,0 +1,94 @@
+{
+  "source": "analyze-with-file",
+  "session_id": "ANL-2026-04-25-fabric-v2核心认知对齐方案",
+  "session_folder": ".workflow/.analysis/ANL-2026-04-25-fabric-v2核心认知对齐方案",
+  "summary": "Implement Fabric-v2 registry-first cognitive alignment: init taxonomy, structured descriptions, requirement-profile ranking, section-based mandatory injection, and explicit L2 > L1 > L0 precedence.",
+  "implementation_scope": [
+    {
+      "objective": "Implement init taxonomy contract",
+      "priority": "high",
+      "target_files": [
+        "packages/cli/src/commands/init.ts",
+        "packages/cli/src/bootstrap-guide.ts",
+        "docs/initialization.md",
+        "packages/cli/__tests__/init-*.test.ts"
+      ],
+      "acceptance_criteria": [
+        "fabric init writes .fabric/INITIAL_TAXONOMY.md",
+        "taxonomy content records L0/L1/L2 origin logic and initial L1 bucket rationale",
+        "bootstrap guide includes the three-tier constitution"
+      ]
+    },
+    {
+      "objective": "Move to registry-first rule topology",
+      "priority": "high",
+      "target_files": [
+        "packages/shared/src/types/agents.ts",
+        "packages/shared/src/schemas/agents-meta.ts",
+        "packages/cli/src/commands/sync-meta.ts",
+        "packages/server/src/services/get-rules.ts",
+        "packages/server/src/services/update-registry.ts"
+      ],
+      "acceptance_criteria": [
+        "new nodes can declare domain/module level independent from .fabric/agents path depth",
+        "legacy .fabric/agents/**/*.md nodes remain importable",
+        "registry mutation validates the new schema"
+      ]
+    },
+    {
+      "objective": "Schema-ize descriptions and add profile ranking",
+      "priority": "high",
+      "target_files": [
+        "packages/shared/src/schemas/agents-meta.ts",
+        "packages/server/src/services/plan-context.ts",
+        "packages/server/src/tools/plan-context.ts",
+        "packages/dashboard/src/api/client.ts"
+      ],
+      "acceptance_criteria": [
+        "description supports summary, intent_clues, tech_stack, impact, must_read_if, entities",
+        "fab_plan_context can accept profile hints",
+        "fab_plan_context returns ranked candidates with match reasons"
+      ]
+    },
+    {
+      "objective": "Add structured rule section injection",
+      "priority": "medium",
+      "target_files": [
+        "packages/server/src/services",
+        "packages/server/src/tools",
+        "packages/shared/src/schemas/api-contracts.ts"
+      ],
+      "acceptance_criteria": [
+        "rule sections such as [MANDATORY_INJECTION] can be parsed",
+        "a batch API/tool returns selected sections by stable_id",
+        "missing sections degrade gracefully"
+      ]
+    },
+    {
+      "objective": "Encode conflict precedence",
+      "priority": "medium",
+      "target_files": [
+        "packages/server/src/services/get-rules.ts",
+        "packages/server/src/services/plan-context.ts",
+        "docs/SPEC_INTERNAL.md"
+      ],
+      "acceptance_criteria": [
+        "payload exposes effective L0/L1/L2 order",
+        "docs state L2 > L1 > L0",
+        "tests prove deterministic precedence"
+      ]
+    }
+  ],
+  "key_findings": [
+    "Current schema uses plain activation.description strings.",
+    "Current L1/L2 topology is path-depth derived from .fabric/agents.",
+    "Current plan-context has description stubs but no Requirement Profile ranking.",
+    "Current init does not generate INITIAL_TAXONOMY.md.",
+    "Current rule delivery reads full MD content, not selected sections."
+  ],
+  "decision_context": [
+    "Use registry-first plus content_ref instead of storing all rule content inside agents.meta.json.",
+    "Generate Requirement Profile server-side with optional client hints.",
+    "Add section-based injection as a separate delivery layer."
+  ]
+}

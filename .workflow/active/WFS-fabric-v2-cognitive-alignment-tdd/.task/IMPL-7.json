@@ -1,0 +1,51 @@
+{
+  "id": "IMPL-7",
+  "title": "Documentation and Consumer Alignment",
+  "priority": "medium",
+  "target_files": [
+    "docs/SPEC_INTERNAL.md",
+    "docs/initialization.md",
+    "docs/getting-started.md",
+    "docs/RULE_REGISTRY.md",
+    "packages/server/src/index.ts",
+    "packages/server/src/api/rules-context.ts",
+    "packages/dashboard/src/api/client.ts",
+    "packages/dashboard/src/components/hit-reason-panel.test.ts"
+  ],
+  "acceptance_criteria": [
+    "Docs describe .fabric/rules, stable_id-only identity, neutral fab_plan_context, selection_token, and fab_get_rule_sections.",
+    "Docs no longer present fab_get_rules as the primary rule fetch protocol.",
+    "Server tool registration matches the new protocol.",
+    "Dashboard/HTTP consumers are either updated or explicitly deferred with tracked follow-up."
+  ],
+  "implementation": [
+    {
+      "step": 1,
+      "tdd_phase": "red",
+      "description": "Write failing tool registration and any affected consumer tests showing fab_get_rule_sections is exposed and old assumptions are stale.",
+      "verification": "pnpm exec vitest run packages/server/src/index.test.ts packages/dashboard/src/components/hit-reason-panel.test.ts",
+      "expected_failure": "Tests fail until server registration/docs/consumer contracts are aligned."
+    },
+    {
+      "step": 2,
+      "tdd_phase": "green",
+      "description": "Update docs, registration, and consumer contracts or create explicit follow-up deferrals where UI changes are out of scope.",
+      "verification": "pnpm exec vitest run packages/server/src/index.test.ts packages/dashboard/src/components/hit-reason-panel.test.ts",
+      "test_fix_cycle": {
+        "max_iterations": 3,
+        "auto_revert": true
+      }
+    },
+    {
+      "step": 3,
+      "tdd_phase": "refactor",
+      "description": "Remove stale wording about path-depth L1 derivation, description stubs, and full-rule injection; keep docs aligned with locked analysis artifacts.",
+      "verification": "pnpm exec vitest run packages/server/src/index.test.ts packages/dashboard/src/components/hit-reason-panel.test.ts",
+      "quality_checks": [
+        "Docs match decision-locks.md and tdd-entry-decisions.md.",
+        "No new dashboard write surfaces are introduced.",
+        "Old API removal is explicit."
+      ]
+    }
+  ]
+}

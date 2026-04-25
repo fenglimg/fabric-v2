@@ -1,0 +1,127 @@
+{
+  "project_type": "typescript-monorepo",
+  "topic": "ADR-002 MCP-first Rule Distribution rules architecture",
+  "timestamp": "2026-04-25T12:18:19+08:00",
+  "limitations": [
+    "fab_get_rules could not load local Fabric context because .fabric/agents.meta.json is missing in this checkout."
+  ],
+  "relevant_files": [
+    {
+      "path": "docs/ARCHITECTURE_DECISIONS.md",
+      "relevance": "primary ADR source",
+      "summary": "Records ADR-002 and adjacent decisions for rule selection, stable identity, MCP transport, Dashboard consumer boundaries."
+    },
+    {
+      "path": "packages/shared/src/schemas/agents-meta.ts",
+      "relevance": "registry schema",
+      "summary": "Defines AgentsMetaNode fields including priority, activation, stable_id, identity_source, derived defaults."
+    },
+    {
+      "path": "packages/server/src/services/get-rules.ts",
+      "relevance": "resolution service",
+      "summary": "Implements stale detection, rule node matching, priority sort, activation behavior, description stubs, and human-lock injection."
+    },
+    {
+      "path": "packages/server/src/tools/get-rules.ts",
+      "relevance": "MCP contract",
+      "summary": "Defines fab_get_rules input/output schema for single target file rule lookup."
+    },
+    {
+      "path": "packages/server/src/services/plan-context.ts",
+      "relevance": "planning read model",
+      "summary": "Builds batch per-path results plus shared bundle, file map, description stub union, preflight diagnostics."
+    },
+    {
+      "path": "packages/server/src/tools/plan-context.ts",
+      "relevance": "MCP contract",
+      "summary": "Defines fab_plan_context output schema for multi-path planning/architecture review."
+    },
+    {
+      "path": "packages/server/src/services/read-human-lock.ts",
+      "relevance": "human-lock state",
+      "summary": "Reads .fabric/human-lock.json, calculates drift/current_hash, and returns HumanLockStatus."
+    },
+    {
+      "path": "packages/shared/src/schemas/human-lock.ts",
+      "relevance": "human-lock schema",
+      "summary": "Defines human lock entry shape: file, start_line, end_line, hash."
+    },
+    {
+      "path": "packages/server/src/services/update-registry.ts",
+      "relevance": "registry mutation",
+      "summary": "Applies add/remove/update operations and computes revision for MCP registry mutations."
+    },
+    {
+      "path": "packages/cli/src/commands/sync-meta.ts",
+      "relevance": "registry compilation",
+      "summary": "Computes agents.meta.json from rule files, stable identity comments, hashes, and revision source."
+    },
+    {
+      "path": "packages/dashboard/src/components/hit-reason-panel.tsx",
+      "relevance": "UI consumer",
+      "summary": "Combines AgentsMeta and RulesContextPayload to display hit reasons, activation tiers, and description stubs."
+    }
+  ],
+  "patterns": [
+    {
+      "pattern": "Source of Truth -> Resolution Service -> Delivery Contract",
+      "files": [
+        "packages/shared/src/schemas/agents-meta.ts",
+        "packages/server/src/services/get-rules.ts",
+        "packages/server/src/tools/get-rules.ts"
+      ],
+      "description": "Rules are declared in meta/source files, resolved centrally in server services, then delivered through MCP/HTTP payloads."
+    },
+    {
+      "pattern": "Single-path execution vs multi-path planning",
+      "files": [
+        "packages/server/src/tools/get-rules.ts",
+        "packages/server/src/tools/plan-context.ts"
+      ],
+      "description": "fab_get_rules is the final per-target lookup; fab_plan_context is a batch planning read model with shared bundle output."
+    },
+    {
+      "pattern": "Read-model UI",
+      "files": [
+        "packages/dashboard/src/api/client.ts",
+        "packages/dashboard/src/views/rule-topology.tsx",
+        "packages/dashboard/src/components/hit-reason-panel.tsx"
+      ],
+      "description": "Dashboard consumes REST read models and recombines meta plus context for visualization."
+    }
+  ],
+  "constraints": [
+    "MCP-first rule delivery keeps client prompts from becoming separate compiled truth sources.",
+    "Legacy nodes without activation default to path-based matching.",
+    "Human-lock is stateful protection data, not rule metadata.",
+    "Description stubs intentionally avoid reading full backing rule content."
+  ],
+  "risks": [
+    {
+      "risk": "description tier is globally returned",
+      "evidence": "packages/server/src/services/get-rules.ts:279",
+      "impact": "Could add context noise at larger rule scale unless documented as global semantic candidate list."
+    },
+    {
+      "risk": "revision hash algorithms differ between sync-meta and update-registry",
+      "evidence": "packages/cli/src/commands/sync-meta.ts:272; packages/server/src/services/update-registry.ts:50",
+      "impact": "Some registry metadata changes may have weaker stale semantics depending on mutation path."
+    },
+    {
+      "risk": "fab_update_registry input schema does not expose activation/stable_id/identity_source",
+      "evidence": "packages/server/src/tools/update-registry.ts:22",
+      "impact": "New registry fields are readable but not fully maintainable through the recommended MCP mutation tool."
+    },
+    {
+      "risk": "human_locked_nearby naming does not match all-entry behavior",
+      "evidence": "packages/server/src/services/get-rules.ts:111",
+      "impact": "Clients may assume path proximity filtering that is not implemented."
+    }
+  ],
+  "key_findings": [
+    "ADR-002 is directionally sound because centralized rule resolution avoids cross-client behavior drift.",
+    "The architecture should be reviewed as a set of object boundaries, not as a flat list of fields.",
+    "priority and activation belong to registry metadata; description_stubs and human_locked_nearby are derived payload views.",
+    "The most important follow-up is clarifying description tier semantics and unifying registry mutation/revision behavior."
+  ]
+}

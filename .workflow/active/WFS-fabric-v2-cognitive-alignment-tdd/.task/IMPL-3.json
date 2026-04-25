@@ -1,0 +1,47 @@
+{
+  "id": "IMPL-3",
+  "title": "Neutral fab_plan_context and Selection Token Issuance",
+  "priority": "high",
+  "target_files": [
+    "packages/server/src/services/plan-context.ts",
+    "packages/server/src/tools/plan-context.ts",
+    "packages/server/src/services/plan-context.test.ts"
+  ],
+  "acceptance_criteria": [
+    "planContext returns selection_token.",
+    "planContext returns lightweight requirement_profile without L1 judgment fields.",
+    "planContext returns description_index with stable_id, level, required, selectable, description.",
+    "L0/L2 are required and L1 is AI-selectable.",
+    "L1 candidates do not include score, confidence, match_reasons, negative_reasons, or matched_profile_fields."
+  ],
+  "implementation": [
+    {
+      "step": 1,
+      "tdd_phase": "red",
+      "description": "Write failing plan-context tests for neutral output, minimal description_index, required/selectable ids, and absence of ranking/reason fields.",
+      "verification": "pnpm exec vitest run packages/server/src/services/plan-context.test.ts",
+      "expected_failure": "Tests fail because current planContext returns legacy rules/shared bundle output."
+    },
+    {
+      "step": 2,
+      "tdd_phase": "green",
+      "description": "Implement deterministic requirement_profile, description index assembly, and in-memory selection token cache with TTL.",
+      "verification": "pnpm exec vitest run packages/server/src/services/plan-context.test.ts",
+      "test_fix_cycle": {
+        "max_iterations": 3,
+        "auto_revert": true
+      }
+    },
+    {
+      "step": 3,
+      "tdd_phase": "refactor",
+      "description": "Extract registry/index/token helpers so plan-context no longer depends on full get-rules payload builders.",
+      "verification": "pnpm exec vitest run packages/server/src/services/plan-context.test.ts",
+      "quality_checks": [
+        "Selection token code is isolated and testable.",
+        "No L1 ranking hints leak into normal output.",
+        "Tool schema matches service output."
+      ]
+    }
+  ]
+}

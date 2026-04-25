@@ -1,0 +1,102 @@
+{
+  "session_id": "ANL-2026-04-25-adr-002-mcp-first-rule-distribution-rules-architecture",
+  "timestamp": "2026-04-25T12:18:19+08:00",
+  "topic": "ADR-002 MCP-first Rule Distribution rules architecture",
+  "dimensions": [
+    "architecture",
+    "decision",
+    "implementation",
+    "concept"
+  ],
+  "sources": [
+    {
+      "type": "file",
+      "file": "docs/ARCHITECTURE_DECISIONS.md",
+      "summary": "ADR-002 and related rule architecture decisions."
+    },
+    {
+      "type": "file",
+      "file": "packages/shared/src/schemas/agents-meta.ts",
+      "summary": "AgentsMetaNode schema and derived defaults."
+    },
+    {
+      "type": "file",
+      "file": "packages/server/src/services/get-rules.ts",
+      "summary": "Core resolution behavior."
+    },
+    {
+      "type": "file",
+      "file": "packages/server/src/services/plan-context.ts",
+      "summary": "Batch planning shared bundle behavior."
+    },
+    {
+      "type": "file",
+      "file": "packages/server/src/services/read-human-lock.ts",
+      "summary": "Human-lock status and drift calculation."
+    },
+    {
+      "type": "file",
+      "file": "packages/server/src/tools/get-rules.ts",
+      "summary": "fab_get_rules MCP tool contract."
+    },
+    {
+      "type": "file",
+      "file": "packages/server/src/tools/plan-context.ts",
+      "summary": "fab_plan_context MCP tool contract."
+    },
+    {
+      "type": "file",
+      "file": "packages/dashboard/src/components/hit-reason-panel.tsx",
+      "summary": "Dashboard hit reason read model consumer."
+    }
+  ],
+  "key_findings": [
+    {
+      "id": "F1",
+      "summary": "ADR-002 is an architectural boundary decision: rules are resolved and distributed through server/MCP instead of precompiled client prompts.",
+      "evidence": "docs/ARCHITECTURE_DECISIONS.md:23"
+    },
+    {
+      "id": "F2",
+      "summary": "AgentsMetaNode is the registry metadata source for priority and activation.",
+      "evidence": "packages/shared/src/schemas/agents-meta.ts:23"
+    },
+    {
+      "id": "F3",
+      "summary": "RulesPayload is a derived delivery contract containing L0/L1/L2 content plus human lock and description stub views.",
+      "evidence": "packages/server/src/tools/get-rules.ts:19"
+    },
+    {
+      "id": "F4",
+      "summary": "Description activation currently returns a stub for every path, regardless of scope_glob.",
+      "evidence": "packages/server/src/services/get-rules.ts:279"
+    },
+    {
+      "id": "F5",
+      "summary": "Human-lock is independent state that server injects into rule context, not a rule node field.",
+      "evidence": "packages/server/src/services/read-human-lock.ts:19"
+    },
+    {
+      "id": "F6",
+      "summary": "Plan context already creates a second read model with shared bundle and diagnostics.",
+      "evidence": "packages/server/src/services/plan-context.ts:102"
+    },
+    {
+      "id": "F7",
+      "summary": "Registry revision calculation differs between sync-meta and update-registry.",
+      "evidence": "packages/cli/src/commands/sync-meta.ts:272; packages/server/src/services/update-registry.ts:50"
+    }
+  ],
+  "discussion_points": [
+    "Should description tier be globally visible or path-scoped?",
+    "Should update-registry expose activation/stable_id/identity_source?",
+    "Should revision semantics be unified across sync-meta and update-registry?",
+    "Should deps become behavior or remain metadata?",
+    "Should human_locked_nearby be renamed or filtered by target path?"
+  ],
+  "open_questions": [
+    "Which data structures are true sources of truth vs derived read models?",
+    "Which output contracts must remain backward compatible?",
+    "How much semantic filtering should server perform before returning description stubs?"
+  ]
+}
