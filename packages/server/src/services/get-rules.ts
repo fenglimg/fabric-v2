@@ -40,6 +40,8 @@ export type RulesPayload = {
 export type GetRulesInput = {
   path: string;
   client_hash?: string;
+  correlation_id?: string;
+  session_id?: string;
 };
 
 export type GetRulesResult = {
@@ -83,6 +85,13 @@ const PRIORITY_ORDER: Record<"high" | "medium" | "low", number> = {
 export async function getRules(projectRoot: string, input: GetRulesInput): Promise<GetRulesResult> {
   const context = await loadGetRulesContext(projectRoot);
   const stale = input.client_hash !== undefined && input.client_hash !== context.meta.revision;
+  const matchedNodes = matchRuleNodes(context.meta, input.path);
+  const requiredStableIds = matchedNodes
+    .filter((node) => node.level === "L2")
+    .map((node) => node.stable_id);
+  const aiSelectableStableIds = matchedNodes
+    .filter((node) => node.level === "L1")
+    .map((node) => node.stable_id);
   const rules = await resolveRulesForPath(projectRoot, context, input.path);
   const result = {
     revision_hash: context.meta.revision,
@@ -94,6 +103,11 @@ export async function getRules(projectRoot: string, input: GetRulesInput): Promi
     await appendGetRulesAuditEvent(projectRoot, {
       path: input.path,
       client_hash: input.client_hash,
+      required_stable_ids: requiredStableIds,
+      ai_selectable_stable_ids: aiSelectableStableIds,
+      final_stable_ids: [...requiredStableIds, ...aiSelectableStableIds],
+      correlation_id: input.correlation_id,
+      session_id: input.session_id,
     });
   } catch {
     // Compliance telemetry is best-effort and must not block rule delivery.

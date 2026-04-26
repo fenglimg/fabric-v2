@@ -17,6 +17,14 @@ const inputSchema = {
   ai_selection_reasons: z
     .record(z.string().min(1))
     .describe("Reason for each AI-selected L1 stable_id"),
+  correlation_id: z
+    .string()
+    .optional()
+    .describe("Optional caller-provided correlation id for Event Ledger records"),
+  session_id: z
+    .string()
+    .optional()
+    .describe("Optional caller-provided session id for Event Ledger records"),
 };
 
 const outputSchema = z.object({

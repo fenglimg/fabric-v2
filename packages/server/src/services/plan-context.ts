@@ -1,6 +1,7 @@
 import type { RuleDescription, RuleDescriptionIndexItem } from "@fenglimg/fabric-shared";
 
 import { readAgentsMeta, type AgentsMeta } from "../meta-reader.js";
+import { appendEventLedgerEvent } from "./event-ledger.js";
 import { normalizeRulesPath } from "./get-rules.js";
 
 export type PlanContextInput = {
@@ -9,6 +10,8 @@ export type PlanContextInput = {
   known_tech?: string[];
   detected_entities?: Record<string, string[]>;
   client_hash?: string;
+  correlation_id?: string;
+  session_id?: string;
 };
 
 export type RequirementProfile = {
@@ -106,7 +109,7 @@ export async function planContext(
   const sharedDescriptionIndex = dedupeDescriptionIndex(entries.flatMap((entry) => entry.description_index));
   const selectionToken = createSelectionToken(meta.revision, uniquePaths, requiredStableIds, aiSelectableStableIds);
 
-  return {
+  const result: PlanContextResult = {
     revision_hash: meta.revision,
     stale,
     selection_token: selectionToken,
@@ -118,6 +121,27 @@ export async function planContext(
       preflight_diagnostics: buildPreflightDiagnostics(meta),
     },
   };
+
+  try {
+    await appendEventLedgerEvent(projectRoot, {
+      event_type: "rule_context_planned",
+      target_paths: uniquePaths,
+      required_stable_ids: requiredStableIds,
+      ai_selectable_stable_ids: aiSelectableStableIds,
+      final_stable_ids: requiredStableIds,
+      selection_token: selectionToken,
+      client_hash: input.client_hash,
+      intent: input.intent,
+      known_tech: input.known_tech,
+      diagnostics: result.shared.preflight_diagnostics,
+      correlation_id: input.correlation_id,
+      session_id: input.session_id,
+    });
+  } catch {
+    // Planning telemetry is best-effort and must not block rule discovery.
+  }
+
+  return result;
 }
 
 export function readSelectionToken(token: string, now = Date.now()): SelectionTokenState | undefined {

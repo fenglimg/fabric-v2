@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { planContext } from "./plan-context.js";
 import { readAuditLog } from "./audit-log.js";
+import { readEventLedger } from "./event-ledger.js";
 import { getRuleSections, parseRuleSections } from "./rule-sections.js";
 
 const tempDirs: string[] = [];
@@ -74,6 +75,8 @@ describe("getRuleSections", () => {
       ai_selection_reasons: {
         "ui-batch-rendering": "BattleView.ts touches UI rendering nodes and labels.",
       },
+      correlation_id: "corr-sections",
+      session_id: "session-sections",
     });
 
     expect(result.revision_hash).toBe("rev-sections");
@@ -157,6 +160,11 @@ describe("getRuleSections", () => {
     expect(await readAuditLog(projectRoot)).toEqual([
       expect.objectContaining({
         kind: "audit-event",
+        event: "get_rules",
+        path: "assets/scripts/ui/BattleView.ts",
+      }),
+      expect.objectContaining({
+        kind: "audit-event",
         event: "rule_selection",
         path: "assets/scripts/ui/BattleView.ts",
         target_paths: ["assets/scripts/ui/BattleView.ts"],
@@ -169,6 +177,37 @@ describe("getRuleSections", () => {
         },
         rejected_stable_ids: [],
         ignored_stable_ids: [],
+      }),
+    ]);
+    expect(await readEventLedger(projectRoot)).toEqual([
+      expect.objectContaining({
+        event_type: "rule_context_planned",
+        target_paths: ["assets/scripts/ui/BattleView.ts"],
+      }),
+      expect.objectContaining({
+        event_type: "rule_selection",
+        selection_token: plan.selection_token,
+        target_paths: ["assets/scripts/ui/BattleView.ts"],
+        required_stable_ids: ["global-protocol", "battle-view-local"],
+        ai_selectable_stable_ids: ["ui-batch-rendering"],
+        ai_selected_stable_ids: ["ui-batch-rendering"],
+        final_stable_ids: ["global-protocol", "ui-batch-rendering", "battle-view-local"],
+        ai_selection_reasons: {
+          "ui-batch-rendering": "BattleView.ts touches UI rendering nodes and labels.",
+        },
+        correlation_id: "corr-sections",
+        session_id: "session-sections",
+      }),
+      expect.objectContaining({
+        event_type: "rule_sections_fetched",
+        selection_token: plan.selection_token,
+        target_paths: ["assets/scripts/ui/BattleView.ts"],
+        requested_sections: ["MISSION_STATEMENT", "MANDATORY_INJECTION", "BUSINESS_LOGIC_CHUNKS", "CONTEXT_INFO"],
+        final_stable_ids: ["global-protocol", "ui-batch-rendering", "battle-view-local"],
+        ai_selected_stable_ids: ["ui-batch-rendering"],
+        diagnostics: result.diagnostics,
+        correlation_id: "corr-sections",
+        session_id: "session-sections",
       }),
     ]);
   });

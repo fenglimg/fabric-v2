@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { runDoctorAuditReport, runDoctorFix, runDoctorReport } from "./doctor.js";
+import { appendEventLedgerEvent, readEventLedger } from "./event-ledger.js";
 
 const tempRoots: string[] = [];
 
@@ -223,6 +224,51 @@ describe("runDoctorReport", () => {
         lastRuleAccessTs: null,
       }),
     ]);
+  });
+
+  it("uses Event Ledger projections for strict audit compliance", async () => {
+    const target = createFixtureRoot("doctor-audit-events");
+    const now = Date.now();
+
+    writeFileSync(
+      join(target, "fabric.config.json"),
+      `${JSON.stringify({
+        auditMode: "strict",
+      }, null, 2)}\n`,
+      "utf8",
+    );
+    await appendEventLedgerEvent(target, {
+      event_type: "rule_selection",
+      id: "event:selection",
+      ts: now - 60_000,
+      selection_token: "selection:rev:doctor-events",
+      target_paths: ["src/audit.ts"],
+      required_stable_ids: ["bootstrap"],
+      ai_selectable_stable_ids: [],
+      ai_selected_stable_ids: [],
+      final_stable_ids: ["bootstrap"],
+      ai_selection_reasons: {},
+      rejected_stable_ids: [],
+      ignored_stable_ids: [],
+    });
+    await appendEventLedgerEvent(target, {
+      event_type: "edit_intent_checked",
+      id: "event:edit",
+      ts: now,
+      path: "src/audit.ts",
+      compliant: true,
+      intent: "refresh audit flow",
+      ledger_entry_id: "ledger:event-audit-hit",
+      matched_rule_context_ts: now - 60_000,
+      window_ms: 5 * 60 * 1000,
+    });
+
+    const audit = await runDoctorAuditReport(target);
+
+    expect(audit.mode).toBe("strict");
+    expect(audit.checkedPathCount).toBe(1);
+    expect(audit.violationCount).toBe(0);
+    expect(audit.violations).toEqual([]);
   });
 
   it("adds a rules fetch audit check when warn mode is enabled", async () => {
@@ -570,6 +616,97 @@ describe("runDoctorReport", () => {
     expect(existsSync(join(target, ".intent-ledger.jsonl"))).toBe(false);
     expect(existsSync(join(target, ".fabric", ".intent-ledger.jsonl"))).toBe(true);
   });
+
+  it("keeps report read-only while surfacing rule drift details", async () => {
+    const target = createFixtureRoot("doctor-drift-read-only");
+    const bootstrapPath = join(target, ".fabric", "bootstrap", "README.md");
+    const baselineContent = "# Project Rules\n";
+    const changedContent = "# Project Rules\n\nChanged.\n";
+    const baselineHash = sha256(baselineContent);
+
+    mkdirSync(join(target, ".fabric", "bootstrap"), { recursive: true });
+    writeFileSync(bootstrapPath, changedContent, "utf8");
+    writeFileSync(
+      join(target, ".fabric", "agents.meta.json"),
+      `${JSON.stringify(createSingleNodeMeta(baselineHash), null, 2)}\n`,
+      "utf8",
+    );
+
+    const report = await runDoctorReport(target);
+
+    expect(report.checks.find((check) => check.name === "Meta revision")?.message).toContain(
+      `.fabric/bootstrap/README.md (bootstrap) expected ${baselineHash} actual ${sha256(changedContent)}`,
+    );
+    expect(report.summary.metaDriftDetails).toEqual([
+      {
+        file: ".fabric/bootstrap/README.md",
+        stable_id: "bootstrap",
+        expected_hash: baselineHash,
+        actual_hash: sha256(changedContent),
+      },
+    ]);
+    expect(await readEventLedger(target)).toEqual([]);
+  });
+
+  it("records drift and baseline sync events from doctor --fix", async () => {
+    const target = createFixtureRoot("doctor-baseline-sync");
+    const bootstrapPath = join(target, ".fabric", "bootstrap", "README.md");
+    const baselineContent = "# Project Rules\n";
+    const changedContent = "# Project Rules\n\nChanged.\n";
+    const baselineHash = sha256(baselineContent);
+    const changedHash = sha256(changedContent);
+
+    mkdirSync(join(target, ".fabric", "bootstrap"), { recursive: true });
+    writeFileSync(bootstrapPath, changedContent, "utf8");
+    writeFileSync(
+      join(target, ".fabric", "agents.meta.json"),
+      `${JSON.stringify(createSingleNodeMeta(baselineHash), null, 2)}\n`,
+      "utf8",
+    );
+
+    const before = await runDoctorReport(target);
+    const fix = await runDoctorFix(target);
+    const after = await runDoctorReport(target);
+    const events = await readEventLedger(target);
+    const nextMeta = JSON.parse(readFileSync(join(target, ".fabric", "agents.meta.json"), "utf8")) as {
+      revision: string;
+      nodes: { L0: { hash: string } };
+    };
+
+    expect(before.checks.find((check) => check.name === "Meta revision")?.status).toBe("error");
+    expect(fix.syncedBaseline).toBe(true);
+    expect(after.checks.find((check) => check.name === "Meta revision")?.status).toBe("ok");
+    expect(nextMeta.nodes.L0.hash).toBe(changedHash);
+    expect(events.map((event) => event.event_type)).toEqual([
+      "rule_drift_detected",
+      "rule_baseline_accepted",
+      "baseline_synced",
+    ]);
+    expect(events[0]).toMatchObject({
+      event_type: "rule_drift_detected",
+      drifted_stable_ids: ["bootstrap"],
+      stale_files: [".fabric/bootstrap/README.md"],
+      details: [
+        {
+          file: ".fabric/bootstrap/README.md",
+          stable_id: "bootstrap",
+          expected_hash: baselineHash,
+          actual_hash: changedHash,
+        },
+      ],
+    });
+    expect(events[1]).toMatchObject({
+      event_type: "rule_baseline_accepted",
+      accepted_stable_ids: ["bootstrap"],
+      source: "doctor_fix",
+    });
+    expect(events[2]).toMatchObject({
+      event_type: "baseline_synced",
+      synced_files: [".fabric/bootstrap/README.md"],
+      accepted_stable_ids: ["bootstrap"],
+      source: "doctor_fix",
+    });
+  });
 });
 
 function createFixtureRoot(prefix: string): string {
@@ -580,4 +717,23 @@ function createFixtureRoot(prefix: string): string {
 
 function sha256(content: string): string {
   return `sha256:${createHash("sha256").update(content).digest("hex")}`;
+}
+
+function createSingleNodeMeta(hash: string): object {
+  return {
+    revision: sha256(`L0|${hash}|bootstrap|derived`),
+    nodes: {
+      L0: {
+        file: ".fabric/bootstrap/README.md",
+        scope_glob: "**",
+        deps: [],
+        priority: "high",
+        layer: "L0",
+        topology_type: "mirror",
+        hash,
+        stable_id: "bootstrap",
+        identity_source: "derived",
+      },
+    },
+  };
 }

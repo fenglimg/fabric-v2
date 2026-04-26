@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { agentsMetaSchema } from "@fenglimg/fabric-shared";
 
 import { initFabric } from "../src/commands/init.ts";
-import { computeAgentsMeta, deriveLayer, deriveTopologyType } from "../src/commands/sync-meta.ts";
+import { computeAgentsMeta, deriveLayer, deriveTopologyType, syncMetaCommand } from "../src/commands/sync-meta.ts";
 import {
   cleanupFixtureRoot,
   createWerewolfFixtureRoot,
@@ -174,4 +174,88 @@ describe("sync-meta shadow mirroring", () => {
       cleanupFixtureRoot(target);
     }
   });
+
+  it("records baseline acceptance events when sync-meta rewrites agents.meta.json", async () => {
+    const target = createWerewolfFixtureRoot("fab-sync-meta-events");
+
+    try {
+      await initFabric(target);
+      writeFixtureFile(target, ".fabric/agents/packages/server/rules.md", "# server rules\n");
+      await syncMetaCommand.run?.({
+        args: {
+          target,
+          "check-only": false,
+        },
+      } as never);
+
+      const firstEvents = await readEventLedger(target);
+      const meta = agentsMetaSchema.parse(JSON.parse(readFixtureFile(target, ".fabric/agents.meta.json")));
+      const serverNode = meta.nodes["L1/packages/server/rules"];
+
+      expect(firstEvents.map((event) => event.event_type)).toEqual([
+        "rule_baseline_accepted",
+        "baseline_synced",
+      ]);
+      expect(firstEvents[0]).toMatchObject({
+        event_type: "rule_baseline_accepted",
+        revision: meta.revision,
+        accepted_stable_ids: expect.arrayContaining(["bootstrap", "packages/server/rules"]),
+        source: "sync_meta",
+      });
+      expect(firstEvents[1]).toMatchObject({
+        event_type: "baseline_synced",
+        synced_files: [".fabric/agents/packages/server/rules.md"],
+        accepted_stable_ids: expect.arrayContaining(["bootstrap", "packages/server/rules"]),
+        source: "sync_meta",
+      });
+
+      writeFixtureFile(target, ".fabric/agents/packages/server/rules.md", "# server rules\n\nChanged.\n");
+      await syncMetaCommand.run?.({
+        args: {
+          target,
+          "check-only": false,
+        },
+      } as never);
+
+      const events = await readEventLedger(target);
+      const nextMeta = agentsMetaSchema.parse(JSON.parse(readFixtureFile(target, ".fabric/agents.meta.json")));
+      const appendedEvents = events.slice(firstEvents.length);
+
+      expect(appendedEvents.map((event) => event.event_type)).toEqual([
+        "rule_drift_detected",
+        "rule_baseline_accepted",
+        "baseline_synced",
+      ]);
+      expect(appendedEvents[0]).toMatchObject({
+        event_type: "rule_drift_detected",
+        drifted_stable_ids: ["packages/server/rules"],
+        stale_files: [".fabric/agents/packages/server/rules.md"],
+        details: [
+          {
+            file: ".fabric/agents/packages/server/rules.md",
+            stable_id: "packages/server/rules",
+            expected_hash: serverNode.hash,
+            actual_hash: nextMeta.nodes["L1/packages/server/rules"].hash,
+          },
+        ],
+      });
+      expect(appendedEvents[2]).toMatchObject({
+        event_type: "baseline_synced",
+        revision: nextMeta.revision,
+        previous_revision: meta.revision,
+        synced_files: [".fabric/agents/packages/server/rules.md"],
+        source: "sync_meta",
+      });
+    } finally {
+      cleanupFixtureRoot(target);
+    }
+  });
 });
+
+function readEventLedger(target: string): Array<Record<string, unknown>> {
+  return readFixtureFile(target, ".fabric/events.jsonl")
+    .split(/\r?\n/u)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .map((line) => JSON.parse(line) as Record<string, unknown>);
+}

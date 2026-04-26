@@ -1,5 +1,5 @@
-import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { createHash, randomUUID } from "node:crypto";
+import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 
 import {
@@ -21,6 +21,20 @@ type NodeMeta = AgentsMeta["nodes"][string];
 type RuleIdentity = {
   stableId: string;
   identitySource: AgentsIdentitySource;
+};
+
+type MetaDriftDetail = {
+  file: string;
+  stable_id: string;
+  expected_hash: string;
+  actual_hash: string | null;
+};
+
+type EventLedgerEnvelope = {
+  kind: "fabric-event";
+  id: string;
+  ts: number;
+  schema_version: 1;
 };
 
 type SyncMetaArgs = {
@@ -65,6 +79,14 @@ export const syncMetaCommand = defineCommand({
 
     mkdirSync(join(target, ".fabric"), { recursive: true });
     writeFileSync(metaPath, `${JSON.stringify(computedMeta, null, 2)}\n`, "utf8");
+    recordBaselineSynced(target, {
+      previousRevision: existingMeta?.revision,
+      revision: computedMeta.revision,
+      syncedFiles: collectSyncedFiles(existingMeta, computedMeta),
+      acceptedStableIds: collectStableIds(computedMeta),
+      driftDetails: collectDriftDetails(existingMeta, computedMeta),
+      source: "sync_meta",
+    });
     writeStderr(t("cli.sync-meta.updated", { label: t("cli.shared.updated"), path: metaPath }));
   },
 });
@@ -274,6 +296,113 @@ function computeRevision(nodes: Record<string, NodeMeta>): string {
     .map(([id, node]) => [id, node.hash, node.stable_id ?? "", node.identity_source ?? ""].join("|"))
     .join("\n");
   return sha256(revisionSource);
+}
+
+function collectSyncedFiles(existingMeta: AgentsMeta | undefined, computedMeta: AgentsMeta): string[] {
+  if (existingMeta === undefined) {
+    return Object.values(computedMeta.nodes).map((node) => node.file).sort();
+  }
+
+  const existingByFile = indexExistingNodesByFile(existingMeta);
+  return Object.values(computedMeta.nodes)
+    .filter((node) => {
+      const existing = existingByFile.get(node.file)?.node;
+      return (
+        existing === undefined ||
+        existing.hash !== node.hash ||
+        existing.stable_id !== node.stable_id ||
+        existing.identity_source !== node.identity_source
+      );
+    })
+    .map((node) => node.file)
+    .sort();
+}
+
+function collectStableIds(meta: AgentsMeta): string[] {
+  return Object.values(meta.nodes)
+    .map((node) => node.stable_id)
+    .filter((stableId): stableId is string => stableId !== undefined)
+    .sort();
+}
+
+function collectDriftDetails(existingMeta: AgentsMeta | undefined, computedMeta: AgentsMeta): MetaDriftDetail[] {
+  if (existingMeta === undefined) {
+    return [];
+  }
+
+  const computedByFile = indexExistingNodesByFile(computedMeta);
+  return Object.values(existingMeta.nodes)
+    .map((existingNode): MetaDriftDetail | null => {
+      const computedNode = computedByFile.get(existingNode.file)?.node;
+      const stableId = existingNode.stable_id ?? computedNode?.stable_id;
+
+      if (computedNode === undefined || stableId === undefined || existingNode.hash === computedNode.hash) {
+        return null;
+      }
+
+      return {
+        file: existingNode.file,
+        stable_id: stableId,
+        expected_hash: existingNode.hash,
+        actual_hash: computedNode.hash,
+      };
+    })
+    .filter((detail): detail is MetaDriftDetail => detail !== null);
+}
+
+function recordBaselineSynced(
+  target: string,
+  input: {
+    previousRevision?: string;
+    revision: string;
+    syncedFiles: string[];
+    acceptedStableIds: string[];
+    driftDetails: MetaDriftDetail[];
+    source: "sync_meta";
+  },
+): void {
+  const eventPath = join(target, ".fabric", "events.jsonl");
+
+  if (input.driftDetails.length > 0) {
+    appendEventLedgerEvent(eventPath, {
+      event_type: "rule_drift_detected",
+      revision: input.previousRevision ?? input.revision,
+      drifted_stable_ids: input.driftDetails.map((detail) => detail.stable_id),
+      missing_files: input.driftDetails.filter((detail) => detail.actual_hash === null).map((detail) => detail.file),
+      stale_files: input.driftDetails.filter((detail) => detail.actual_hash !== null).map((detail) => detail.file),
+      details: input.driftDetails,
+    });
+  }
+
+  appendEventLedgerEvent(eventPath, {
+    event_type: "rule_baseline_accepted",
+    revision: input.revision,
+    previous_revision: input.previousRevision,
+    accepted_stable_ids: input.acceptedStableIds,
+    source: input.source,
+  });
+  appendEventLedgerEvent(eventPath, {
+    event_type: "baseline_synced",
+    revision: input.revision,
+    previous_revision: input.previousRevision,
+    synced_files: input.syncedFiles,
+    accepted_stable_ids: input.acceptedStableIds,
+    source: input.source,
+  });
+}
+
+function appendEventLedgerEvent(eventPath: string, event: Record<string, unknown>): void {
+  appendFileSync(
+    eventPath,
+    `${JSON.stringify({
+      ...event,
+      kind: "fabric-event",
+      id: `event:${randomUUID()}`,
+      ts: Date.now(),
+      schema_version: 1,
+    } satisfies EventLedgerEnvelope & Record<string, unknown>)}\n`,
+    "utf8",
+  );
 }
 
 function writeStderr(message: string): void {

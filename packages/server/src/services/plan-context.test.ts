@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 
 import { afterEach, describe, expect, it } from "vitest";
 
+import { readEventLedger } from "./event-ledger.js";
 import { planContext } from "./plan-context.js";
 
 const tempDirs: string[] = [];
@@ -95,6 +96,8 @@ describe("planContext", () => {
       detected_entities: {
         "assets/scripts/ui/BattleView.ts": ["cc.Label", "SpriteAtlas", "Layout"],
       },
+      correlation_id: "corr-plan",
+      session_id: "session-plan",
     });
 
     expect(result.revision_hash).toBe("rev-neutral");
@@ -147,6 +150,21 @@ describe("planContext", () => {
     }
     expect(result.shared.required_stable_ids).toEqual(["global-protocol", "battle-view-local"]);
     expect(result.shared.ai_selectable_stable_ids).toEqual(["ui-batch-rendering"]);
+    expect(await readEventLedger(projectRoot, { event_type: "rule_context_planned" })).toEqual([
+      expect.objectContaining({
+        event_type: "rule_context_planned",
+        target_paths: ["assets/scripts/ui/BattleView.ts"],
+        required_stable_ids: ["global-protocol", "battle-view-local"],
+        ai_selectable_stable_ids: ["ui-batch-rendering"],
+        final_stable_ids: ["global-protocol", "battle-view-local"],
+        selection_token: result.selection_token,
+        intent: "我想优化战斗界面的渲染性能",
+        known_tech: ["Cocos Creator", "TypeScript"],
+        diagnostics: [],
+        correlation_id: "corr-plan",
+        session_id: "session-plan",
+      }),
+    ]);
   });
 
   it("marks the response stale when the client hash does not match the current revision", async () => {

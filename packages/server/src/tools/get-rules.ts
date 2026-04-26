@@ -10,6 +10,14 @@ const inputSchema = {
     .string()
     .optional()
     .describe("Revision hash from prior fab_get_rules response; enables stale detection"),
+  correlation_id: z
+    .string()
+    .optional()
+    .describe("Optional caller-provided correlation id for Event Ledger records"),
+  session_id: z
+    .string()
+    .optional()
+    .describe("Optional caller-provided session id for Event Ledger records"),
 };
 
 const rulesEntrySchema = z.object({ path: z.string(), content: z.string() });
@@ -38,9 +46,9 @@ export function registerGetRules(server: McpServer): void {
       outputSchema,
       annotations: { readOnlyHint: true },
     },
-    async ({ path, client_hash }: GetRulesInput) => {
+    async ({ path, client_hash, correlation_id, session_id }: GetRulesInput) => {
       const projectRoot = resolveProjectRoot();
-      const result = await getRules(projectRoot, { path, client_hash });
+      const result = await getRules(projectRoot, { path, client_hash, correlation_id, session_id });
 
       return {
         content: [{ type: "text" as const, text: JSON.stringify(result) }],

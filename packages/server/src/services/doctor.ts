@@ -3,9 +3,10 @@ import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { isAbsolute, join, posix, resolve } from "node:path";
 
-import { forensicReportSchema, type AuditMode, type ForensicReport } from "@fenglimg/fabric-shared";
+import { forensicReportSchema, type AgentsMeta, type AuditMode, type ForensicReport } from "@fenglimg/fabric-shared";
 import { detectFramework, type FrameworkInfo } from "@fenglimg/fabric-shared/node";
 
+import { contextCache } from "../cache.js";
 import { readAgentsMeta } from "../meta-reader.js";
 import {
   DEFAULT_AUDIT_WINDOW_MS,
@@ -15,6 +16,8 @@ import {
   type GetRulesAuditEntry,
   type RuleSelectionAuditEntry,
 } from "./audit-log.js";
+import { atomicWriteText } from "./_shared.js";
+import { appendEventLedgerEvent } from "./event-ledger.js";
 import { normalizeRulesPath } from "./get-rules.js";
 import { readHumanLock } from "./read-human-lock.js";
 import { migrateLegacyLedger, readLedger, resolveLedgerPaths } from "./read-ledger.js";
@@ -50,6 +53,7 @@ export type DoctorSummary = {
   legacyLedgerPath: string;
   legacyLedgerDetected: boolean;
   businessLogicAnchors: BusinessLogicAnchorSummary | null;
+  metaDriftDetails: MetaDriftDetail[];
   audit:
     | {
         enabled: boolean;
@@ -71,6 +75,7 @@ export type DoctorReport = {
 export type DoctorFixReport = {
   changed: boolean;
   migratedLedger: boolean;
+  syncedBaseline: boolean;
   message: string;
   report: DoctorReport;
 };
@@ -112,6 +117,13 @@ export type BusinessLogicAnchorSnapshot = BusinessLogicAnchorSummary & {
   issues: BusinessLogicAnchorIssue[];
 };
 
+export type MetaDriftDetail = {
+  file: string;
+  stable_id: string;
+  expected_hash: string;
+  actual_hash: string | null;
+};
+
 type EntryPoint = DoctorSummary["entryPoints"][number];
 type RuleAccessAuditEntry = GetRulesAuditEntry | RuleSelectionAuditEntry;
 
@@ -129,18 +141,26 @@ type MetaDriftResult =
   | {
       present: true;
       revision: string;
+      liveRevision: string;
       nodeCount: number;
       driftCount: number;
       missingFiles: string[];
+      staleFiles: string[];
+      driftedStableIds: string[];
+      details: MetaDriftDetail[];
       derivedIdentityFiles: string[];
       unexpectedError?: undefined;
     }
   | {
       present: false;
       revision: null;
+      liveRevision: null;
       nodeCount: 0;
       driftCount: 0;
       missingFiles: string[];
+      staleFiles: string[];
+      driftedStableIds: string[];
+      details: MetaDriftDetail[];
       derivedIdentityFiles: string[];
       unexpectedError?: string;
     };
@@ -250,6 +270,7 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
             staleCount: businessLogicAnchorSnapshot.staleCount,
             duplicateCount: businessLogicAnchorSnapshot.duplicateCount,
           },
+      metaDriftDetails: metaSnapshot.present ? metaSnapshot.details : [],
       audit: auditReport.skipped
         ? null
         : {
@@ -267,14 +288,22 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
 export async function runDoctorFix(target: string): Promise<DoctorFixReport> {
   const projectRoot = normalizeTarget(target);
   const migration = await migrateLegacyLedger(projectRoot);
+  const sync = await syncExistingMetaBaseline(projectRoot, "doctor_fix");
   const report = await runDoctorReport(projectRoot);
-
-  return {
-    changed: migration.migrated,
-    migratedLedger: migration.migrated,
-    message: migration.migrated
+  const messages = [
+    migration.migrated
       ? `Migrated legacy ledger from ${migration.from} to ${migration.to}.`
       : `No legacy ledger migration needed. Canonical ledger path: ${migration.to}.`,
+    sync.synced
+      ? `Accepted rule baseline ${sync.previousRevision} -> ${sync.revision}.`
+      : "No rule baseline sync needed.",
+  ];
+
+  return {
+    changed: migration.migrated || sync.synced,
+    migratedLedger: migration.migrated,
+    syncedBaseline: sync.synced,
+    message: messages.join(" "),
     report,
   };
 }
@@ -401,11 +430,14 @@ function createMetaRevisionCheck(snapshot: MetaDriftResult): DoctorCheck {
       `${snapshot.driftCount} tracked AGENTS file drift`,
       snapshot.missingFiles.length > 0 ? `${snapshot.missingFiles.length} missing tracked file` : null,
     ].filter((part) => part !== null);
+    const examples = snapshot.details.slice(0, 3).map(formatMetaDriftDetail).join("; ");
+    const suffix = snapshot.details.length > 3 ? `; +${snapshot.details.length - 3} more` : "";
+    const detailText = examples.length > 0 ? ` Details: ${examples}${suffix}.` : "";
 
     return {
       name: "Meta revision",
       status: "error",
-      message: `agents.meta.json revision ${snapshot.revision} is stale: ${parts.join(" · ")}.`,
+      message: `agents.meta.json revision ${snapshot.revision} is stale: ${parts.join(" · ")}.${detailText}`,
     };
   }
 
@@ -565,6 +597,11 @@ function formatBusinessLogicAnchorIssue(issue: BusinessLogicAnchorIssue): string
   return `${issue.anchor ?? "unknown anchor"} duplicated at ${(issue.locations ?? []).join(", ")}`;
 }
 
+function formatMetaDriftDetail(detail: MetaDriftDetail): string {
+  const actualHash = detail.actual_hash ?? "<missing>";
+  return `${detail.file} (${detail.stable_id}) expected ${detail.expected_hash} actual ${actualHash}`;
+}
+
 async function readSavedForensic(projectRoot: string): Promise<SavedForensic> {
   const forensicPath = join(projectRoot, ".fabric", "forensic.json");
 
@@ -603,6 +640,9 @@ async function inspectMetaRevision(projectRoot: string): Promise<MetaDriftResult
     const meta = await readAgentsMeta(projectRoot);
     const entries = Object.entries(meta.nodes).sort(([left], [right]) => left.localeCompare(right));
     const missingFiles: string[] = [];
+    const staleFiles: string[] = [];
+    const driftedStableIds: string[] = [];
+    const details: MetaDriftDetail[] = [];
     const derivedIdentityFiles: string[] = [];
     let driftCount = 0;
 
@@ -612,12 +652,27 @@ async function inspectMetaRevision(projectRoot: string): Promise<MetaDriftResult
 
         if (!existsSync(absolutePath)) {
           missingFiles.push(node.file);
+          driftedStableIds.push(node.stable_id ?? id);
+          details.push({
+            file: node.file,
+            stable_id: node.stable_id ?? id,
+            expected_hash: node.hash,
+            actual_hash: null,
+          });
           driftCount += 1;
           return "missing";
         }
 
         const actualHash = sha256(readFileSync(absolutePath, "utf8"));
         if (actualHash !== node.hash) {
+          staleFiles.push(node.file);
+          driftedStableIds.push(node.stable_id ?? id);
+          details.push({
+            file: node.file,
+            stable_id: node.stable_id ?? id,
+            expected_hash: node.hash,
+            actual_hash: actualHash,
+          });
           driftCount += 1;
         }
 
@@ -630,26 +685,214 @@ async function inspectMetaRevision(projectRoot: string): Promise<MetaDriftResult
       .join("\n");
 
     const revision = sha256(revisionSource);
+    const revisionDrift = revision !== meta.revision;
 
     return {
       present: true,
       revision: meta.revision,
+      liveRevision: revision,
       nodeCount: entries.length,
-      driftCount: revision === meta.revision ? driftCount : Math.max(driftCount, 1),
+      driftCount: revisionDrift && driftCount === 0 ? 1 : driftCount,
       missingFiles,
+      staleFiles,
+      driftedStableIds: dedupeStrings(driftedStableIds),
+      details,
       derivedIdentityFiles,
     };
   } catch (error) {
     return {
       present: false,
       revision: null,
+      liveRevision: null,
       nodeCount: 0,
       driftCount: 0,
       missingFiles: [],
+      staleFiles: [],
+      driftedStableIds: [],
+      details: [],
       derivedIdentityFiles: [],
       unexpectedError: error instanceof Error ? error.message : String(error),
     };
   }
+}
+
+type BaselineSyncSource = "doctor_fix" | "sync_meta";
+
+type BaselineSyncResult = {
+  synced: boolean;
+  previousRevision: string | undefined;
+  revision: string | undefined;
+  syncedFiles: string[];
+  acceptedStableIds: string[];
+};
+
+export async function syncExistingMetaBaseline(
+  target: string,
+  source: BaselineSyncSource = "sync_meta",
+): Promise<BaselineSyncResult> {
+  const projectRoot = normalizeTarget(target);
+  const snapshot = await inspectMetaRevision(projectRoot);
+
+  if (!snapshot.present) {
+    return {
+      synced: false,
+      previousRevision: undefined,
+      revision: undefined,
+      syncedFiles: [],
+      acceptedStableIds: [],
+    };
+  }
+
+  const meta = await readAgentsMeta(projectRoot);
+
+  if (snapshot.details.length === 0 || snapshot.missingFiles.length > 0) {
+    return {
+      synced: false,
+      previousRevision: meta.revision,
+      revision: snapshot.liveRevision,
+      syncedFiles: [],
+      acceptedStableIds: [],
+    };
+  }
+
+  await appendRuleDriftDetectedEvent(projectRoot, snapshot);
+
+  const nextMeta = acceptExistingMetaDrift(meta, snapshot.details);
+  const nextRevision = computeMetaRevision(nextMeta.nodes);
+  const metaPath = join(projectRoot, ".fabric", "agents.meta.json");
+
+  await atomicWriteText(metaPath, `${JSON.stringify({ ...nextMeta, revision: nextRevision }, null, 2)}\n`);
+  contextCache.invalidate("meta_write", projectRoot);
+
+  await appendBaselineEvents(projectRoot, {
+    source,
+    previousRevision: meta.revision,
+    revision: nextRevision,
+    syncedFiles: snapshot.staleFiles,
+    acceptedStableIds: snapshot.driftedStableIds,
+  });
+
+  return {
+    synced: true,
+    previousRevision: meta.revision,
+    revision: nextRevision,
+    syncedFiles: snapshot.staleFiles,
+    acceptedStableIds: snapshot.driftedStableIds,
+  };
+}
+
+export async function recordBaselineSynced(
+  target: string,
+  input: {
+    previousRevision?: string;
+    revision: string;
+    syncedFiles: string[];
+    acceptedStableIds: string[];
+    driftDetails?: MetaDriftDetail[];
+    source?: BaselineSyncSource;
+  },
+): Promise<void> {
+  const projectRoot = normalizeTarget(target);
+  const driftDetails = input.driftDetails ?? [];
+
+  if (driftDetails.length > 0) {
+    await appendRuleDriftDetectedEvent(projectRoot, {
+      present: true,
+      revision: input.previousRevision ?? input.revision,
+      liveRevision: input.revision,
+      nodeCount: input.acceptedStableIds.length,
+      driftCount: driftDetails.length,
+      missingFiles: driftDetails.filter((detail) => detail.actual_hash === null).map((detail) => detail.file),
+      staleFiles: driftDetails.filter((detail) => detail.actual_hash !== null).map((detail) => detail.file),
+      driftedStableIds: driftDetails.map((detail) => detail.stable_id),
+      details: driftDetails,
+      derivedIdentityFiles: [],
+    });
+  }
+
+  await appendBaselineEvents(projectRoot, {
+    source: input.source ?? "sync_meta",
+    previousRevision: input.previousRevision,
+    revision: input.revision,
+    syncedFiles: input.syncedFiles,
+    acceptedStableIds: input.acceptedStableIds,
+  });
+}
+
+function acceptExistingMetaDrift(meta: AgentsMeta, details: MetaDriftDetail[]): AgentsMeta {
+  const actualHashesByFile = new Map(
+    details
+      .filter((detail): detail is MetaDriftDetail & { actual_hash: string } => detail.actual_hash !== null)
+      .map((detail) => [detail.file, detail.actual_hash]),
+  );
+  const nodes = Object.fromEntries(
+    Object.entries(meta.nodes).map(([id, node]) => [
+      id,
+      {
+        ...node,
+        hash: actualHashesByFile.get(node.file) ?? node.hash,
+      },
+    ]),
+  );
+
+  return {
+    ...meta,
+    nodes,
+  };
+}
+
+function computeMetaRevision(nodes: AgentsMeta["nodes"]): string {
+  const revisionSource = Object.entries(nodes)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([id, node]) => [id, node.hash, node.stable_id ?? "", node.identity_source ?? ""].join("|"))
+    .join("\n");
+
+  return sha256(revisionSource);
+}
+
+async function appendRuleDriftDetectedEvent(
+  projectRoot: string,
+  snapshot: Extract<MetaDriftResult, { present: true }>,
+): Promise<void> {
+  if (snapshot.driftedStableIds.length === 0 && snapshot.missingFiles.length === 0 && snapshot.staleFiles.length === 0) {
+    return;
+  }
+
+  await appendEventLedgerEvent(projectRoot, {
+    event_type: "rule_drift_detected",
+    revision: snapshot.revision,
+    drifted_stable_ids: snapshot.driftedStableIds,
+    missing_files: snapshot.missingFiles,
+    stale_files: snapshot.staleFiles,
+    details: snapshot.details,
+  });
+}
+
+async function appendBaselineEvents(
+  projectRoot: string,
+  input: {
+    source: BaselineSyncSource;
+    previousRevision?: string;
+    revision: string;
+    syncedFiles: string[];
+    acceptedStableIds: string[];
+  },
+): Promise<void> {
+  await appendEventLedgerEvent(projectRoot, {
+    event_type: "rule_baseline_accepted",
+    revision: input.revision,
+    previous_revision: input.previousRevision,
+    accepted_stable_ids: input.acceptedStableIds,
+    source: input.source,
+  });
+  await appendEventLedgerEvent(projectRoot, {
+    event_type: "baseline_synced",
+    revision: input.revision,
+    previous_revision: input.previousRevision,
+    synced_files: input.syncedFiles,
+    accepted_stable_ids: input.acceptedStableIds,
+    source: input.source,
+  });
 }
 
 async function inspectHumanLock(projectRoot: string): Promise<HumanLockSnapshot> {
@@ -1188,6 +1431,10 @@ function readAuditModeValue(value: unknown): AuditMode | null {
   }
 
   return null;
+}
+
+function dedupeStrings(values: string[]): string[] {
+  return Array.from(new Set(values));
 }
 
 function sha256(content: string): string {

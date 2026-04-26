@@ -5,6 +5,7 @@ import type { AgentsLayer } from "@fenglimg/fabric-shared";
 
 import { readAgentsMeta, type AgentsMeta } from "../meta-reader.js";
 import { appendRuleSelectionAuditEvent } from "./audit-log.js";
+import { appendEventLedgerEvent } from "./event-ledger.js";
 import { normalizeRulesPath } from "./get-rules.js";
 import { readSelectionToken } from "./plan-context.js";
 
@@ -22,6 +23,8 @@ export type GetRuleSectionsInput = {
   sections: RuleSectionName[];
   ai_selected_stable_ids: string[];
   ai_selection_reasons: Record<string, string>;
+  correlation_id?: string;
+  session_id?: string;
 };
 
 export type RuleSectionDiagnostic = {
@@ -180,7 +183,25 @@ export async function getRuleSections(
     ai_selection_reasons: pickSelectionReasons(input.ai_selected_stable_ids, input.ai_selection_reasons),
     rejected_stable_ids: [],
     ignored_stable_ids: [],
+    correlation_id: input.correlation_id,
+    session_id: input.session_id,
   });
+
+  try {
+    await appendEventLedgerEvent(projectRoot, {
+      event_type: "rule_sections_fetched",
+      selection_token: input.selection_token,
+      target_paths: token.target_paths,
+      requested_sections: input.sections,
+      final_stable_ids: result.selected_stable_ids,
+      ai_selected_stable_ids: input.ai_selected_stable_ids,
+      diagnostics,
+      correlation_id: input.correlation_id,
+      session_id: input.session_id,
+    });
+  } catch {
+    // Fetch telemetry is best-effort and must not block rule delivery.
+  }
 
   return result;
 }

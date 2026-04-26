@@ -25,6 +25,14 @@ const inputSchema = {
     .string()
     .optional()
     .describe("Revision hash from a prior fab_plan_context response; enables stale detection"),
+  correlation_id: z
+    .string()
+    .optional()
+    .describe("Optional caller-provided correlation id for Event Ledger records"),
+  session_id: z
+    .string()
+    .optional()
+    .describe("Optional caller-provided session id for Event Ledger records"),
 };
 
 const ruleDescriptionSchema = z.object({
@@ -103,9 +111,17 @@ export function registerPlanContext(server: McpServer): void {
       outputSchema,
       annotations: { readOnlyHint: true },
     },
-    async ({ paths, intent, known_tech, detected_entities, client_hash }: PlanContextInput) => {
+    async ({ paths, intent, known_tech, detected_entities, client_hash, correlation_id, session_id }: PlanContextInput) => {
       const projectRoot = resolveProjectRoot();
-      const result = await planContext(projectRoot, { paths, intent, known_tech, detected_entities, client_hash });
+      const result = await planContext(projectRoot, {
+        paths,
+        intent,
+        known_tech,
+        detected_entities,
+        client_hash,
+        correlation_id,
+        session_id,
+      });
 
       return {
         content: [{ type: "text" as const, text: JSON.stringify(result) }],
