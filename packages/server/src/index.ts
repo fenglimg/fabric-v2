@@ -7,23 +7,30 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 
 import { AGENTS_MD_RESOURCE_URI } from "./constants.js";
-import { registerAppendIntent } from "./tools/append-intent.js";
 import { registerPlanContext } from "./tools/plan-context.js";
 import { registerRuleSections } from "./tools/rule-sections.js";
-import { registerUpdateRegistry } from "./tools/update-registry.js";
 
 declare const __SERVER_VERSION__: string;
 
 export {
-  runDoctorAuditReport,
   runDoctorFix,
   runDoctorReport,
-  type DoctorAuditReport,
   type DoctorFixReport,
   type DoctorReport,
 } from "./services/doctor.js";
-export { approveHumanLock, type ApproveHumanLockInput, type ApproveHumanLockResult } from "./services/approve-human-lock.js";
-export { readHumanLock, readHumanLockEntry, type HumanLockStatus } from "./services/read-human-lock.js";
+export {
+  buildRuleMeta,
+  computeRuleTestIndex,
+  computeRulesBasedAgentsMeta,
+  deriveRuleMetaLayer,
+  deriveRuleMetaTopologyType,
+  isSameRuleTestIndex,
+  stableStringify,
+  writeRuleMeta,
+  type RuleMetaBuildResult,
+  type RuleMetaBuildSource,
+  type WriteRuleMetaOptions,
+} from "./services/rule-meta-builder.js";
 export {
   EVENT_LEDGER_PATH,
   LEGACY_LEDGER_PATH,
@@ -55,8 +62,6 @@ export function createFabricServer(): McpServer {
 
   registerPlanContext(server);
   registerRuleSections(server);
-  registerAppendIntent(server);
-  registerUpdateRegistry(server);
 
   server.registerResource(
     "bootstrap README",

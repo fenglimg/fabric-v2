@@ -3,7 +3,6 @@ import { createHash } from "node:crypto";
 import { mkdir, rename, writeFile } from "node:fs/promises";
 
 export const FABRIC_DIR = ".fabric";
-export const HUMAN_LOCK_FILE = "human-lock.json";
 export const LEDGER_FILE = ".intent-ledger.jsonl";
 export const LEDGER_PATH = `${FABRIC_DIR}/${LEDGER_FILE}`;
 export const LEGACY_LEDGER_PATH = LEDGER_FILE;

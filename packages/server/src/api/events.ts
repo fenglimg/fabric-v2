@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { open, readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
@@ -7,10 +6,8 @@ import {
   agentsMetaSchema,
   fabricEventSchema,
   forensicReportSchema,
-  humanLockFileSchema,
   ledgerEntrySchema,
   type FabricEvent,
-  type HumanLockEntry,
 } from "@fenglimg/fabric-shared";
 import { eventLedgerEventSchema } from "@fenglimg/fabric-shared";
 import chokidar, { type FSWatcher } from "chokidar";
@@ -24,11 +21,9 @@ import {
 } from "../services/_shared.js";
 
 const AGENTS_META_PATH = ".fabric/agents.meta.json";
-const HUMAN_LOCK_PATH = ".fabric/human-lock.json";
 const FORENSIC_PATH = ".fabric/forensic.json";
 const WATCHED_PATHS = [
   AGENTS_META_PATH,
-  HUMAN_LOCK_PATH,
   FORENSIC_PATH,
   EVENT_LEDGER_PATH,
   LEDGER_PATH,
@@ -91,17 +86,8 @@ type EventsState = {
   ledgerRemainder: string;
   eventLedgerOffset: number;
   eventLedgerRemainder: string;
-  humanLockSnapshot: HumanLockSnapshot;
   nextEventId: number;
   ringBuffer: RingBuffer;
-};
-
-type HumanLockSnapshot = {
-  locked: HumanLockEntry[];
-  drifted: HumanLockEntry[];
-  driftedKeys: Set<string>;
-  hashByKey: Map<string, string>;
-  actualHashByKey: Map<string, string>;
 };
 
 export type CreateEventsHandlerOptions = {
@@ -118,7 +104,6 @@ export function createEventsHandler(options: CreateEventsHandlerOptions) {
     ledgerRemainder: "",
     eventLedgerOffset: 0,
     eventLedgerRemainder: "",
-    humanLockSnapshot: createEmptyHumanLockSnapshot(),
     nextEventId: 1,
     ringBuffer: new RingBuffer(RING_BUFFER_CAPACITY),
   };
@@ -206,7 +191,6 @@ async function ensureWatcher(state: EventsState, projectRoot: string): Promise<v
   state.ledgerRemainder = "";
   state.eventLedgerOffset = await readFileSize(getEventLedgerPath(projectRoot));
   state.eventLedgerRemainder = "";
-  state.humanLockSnapshot = await readHumanLockSnapshot(projectRoot);
 
   const watcher = chokidar.watch([...WATCHED_PATHS], {
     cwd: projectRoot,
@@ -283,10 +267,6 @@ async function readEventsForFile(
     return event === null ? [] : [event];
   }
 
-  if (relativePath === HUMAN_LOCK_PATH) {
-    return await readHumanLockEvents(state, projectRoot);
-  }
-
   if (relativePath === FORENSIC_PATH) {
     const event = await readDriftDetectedEvent(projectRoot);
     return event === null ? [] : [event];
@@ -331,46 +311,6 @@ async function readDriftDetectedEvent(projectRoot: string): Promise<FabricEvent 
     type: "drift:detected",
     payload: parsed,
   };
-}
-
-async function readHumanLockEvents(state: EventsState, projectRoot: string): Promise<FabricEvent[]> {
-  const previousSnapshot = state.humanLockSnapshot;
-  const currentSnapshot = await readHumanLockSnapshot(projectRoot);
-  state.humanLockSnapshot = currentSnapshot;
-
-  const changedEntries = currentSnapshot.locked.filter((entry) => {
-    const key = getHumanLockKey(entry);
-    return previousSnapshot.hashByKey.get(key) !== entry.hash;
-  });
-  const approvedEntries = changedEntries.filter((entry) => {
-    const key = getHumanLockKey(entry);
-    return currentSnapshot.actualHashByKey.get(key) === entry.hash;
-  });
-
-  const driftChanged = !areSetsEqual(previousSnapshot.driftedKeys, currentSnapshot.driftedKeys);
-  const events: FabricEvent[] = [];
-
-  if (approvedEntries.length > 0 || (changedEntries.length > 0 && currentSnapshot.drifted.length === 0)) {
-    events.push({
-      type: "lock:approved",
-      payload: {
-        locked: currentSnapshot.locked,
-        approved: approvedEntries.length > 0 ? approvedEntries : changedEntries,
-      },
-    });
-  }
-
-  if (currentSnapshot.drifted.length > 0 && (driftChanged || approvedEntries.length === 0)) {
-    events.push({
-      type: "lock:drift",
-      payload: {
-        locked: currentSnapshot.locked,
-        drifted: currentSnapshot.drifted,
-      },
-    });
-  }
-
-  return events;
 }
 
 async function readLedgerAppendedEvents(
@@ -542,83 +482,6 @@ function broadcastEvent(state: EventsState, event: FabricEvent): void {
   }
 }
 
-async function readHumanLockSnapshot(projectRoot: string): Promise<HumanLockSnapshot> {
-  const humanLockPath = join(projectRoot, HUMAN_LOCK_PATH);
-  const raw = await readUtf8File(humanLockPath);
-  if (raw === null) {
-    return createEmptyHumanLockSnapshot();
-  }
-
-  const parsed = humanLockFileSchema.parse(JSON.parse(raw));
-  const locked = parsed.locked ?? [];
-  const actualHashByKey = await readActualHumanLockHashes(projectRoot, locked);
-  const drifted = locked.filter((entry) => actualHashByKey.get(getHumanLockKey(entry)) !== entry.hash);
-
-  return {
-    locked,
-    drifted,
-    driftedKeys: new Set(drifted.map((entry) => getHumanLockKey(entry))),
-    hashByKey: new Map(locked.map((entry) => [getHumanLockKey(entry), entry.hash])),
-    actualHashByKey,
-  };
-}
-
-async function readActualHumanLockHashes(
-  projectRoot: string,
-  locked: HumanLockEntry[],
-): Promise<Map<string, string>> {
-  const uniqueFiles = Array.from(new Set(locked.map((entry) => entry.file)));
-  const fileContents = await Promise.all(
-    uniqueFiles.map(async (file) => {
-      const raw = await readUtf8File(join(projectRoot, file));
-      return [file, raw] as const;
-    }),
-  );
-  const contentByFile = new Map(fileContents);
-
-  return new Map(
-    locked.map((entry) => {
-      const content = contentByFile.get(entry.file);
-
-      return [getHumanLockKey(entry), content == null ? "missing" : hashLockedContent(content, entry)] as const;
-    }),
-  );
-}
-
-function hashLockedContent(content: string, entry: HumanLockEntry): string {
-  const lines = content.split(/\r?\n/);
-  const slice = lines.slice(Math.max(entry.start_line - 1, 0), Math.max(entry.end_line, 0)).join("\n");
-
-  return `sha256:${createHash("sha256").update(slice).digest("hex")}`;
-}
-
-function getHumanLockKey(entry: HumanLockEntry): string {
-  return `${entry.file}:${entry.start_line}:${entry.end_line}`;
-}
-
-function createEmptyHumanLockSnapshot(): HumanLockSnapshot {
-  return {
-    locked: [],
-    drifted: [],
-    driftedKeys: new Set<string>(),
-    hashByKey: new Map<string, string>(),
-    actualHashByKey: new Map<string, string>(),
-  };
-}
-
-function areSetsEqual(left: Set<string>, right: Set<string>): boolean {
-  if (left.size !== right.size) {
-    return false;
-  }
-
-  for (const value of left) {
-    if (!right.has(value)) {
-      return false;
-    }
-  }
-
-  return true;
-}
 
 function readLastEventId(req: EventsRequest): number | undefined {
   const header = req.headers["last-event-id"];

@@ -60,6 +60,7 @@ const agentsMetaNodeBaseSchema = z.object({
     })
     .optional(),
   description: ruleDescriptionSchema.optional(),
+  sections: z.array(z.string()).optional(),
 });
 
 export const agentsMetaNodeSchema = z.preprocess((value) => {

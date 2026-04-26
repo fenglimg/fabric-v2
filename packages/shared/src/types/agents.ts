@@ -41,6 +41,7 @@ export interface AgentsMetaNode {
   identity_source?: AgentsIdentitySource;
   activation?: AgentsMetaNodeActivation;
   description?: RuleDescription;
+  sections?: string[];
 }
 
 export interface AgentsMeta {
