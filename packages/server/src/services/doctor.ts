@@ -3,7 +3,16 @@ import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { isAbsolute, join, posix, resolve } from "node:path";
 
-import { forensicReportSchema, type AgentsMeta, type AuditMode, type ForensicReport } from "@fenglimg/fabric-shared";
+import {
+  forensicReportSchema,
+  ruleTestIndexSchema,
+  type AgentsMeta,
+  type AuditMode,
+  type ForensicReport,
+  type RuleTestIndex,
+  type RuleTestLink,
+  type RuleTestOrphanAnnotation,
+} from "@fenglimg/fabric-shared";
 import { detectFramework, type FrameworkInfo } from "@fenglimg/fabric-shared/node";
 
 import { contextCache } from "../cache.js";
@@ -187,6 +196,42 @@ type LedgerSnapshot = {
   usingLegacy: boolean;
 };
 
+type RuleTestContractIssueKind =
+  | "stale_rule"
+  | "stale_test"
+  | "orphan"
+  | "missing_test_file"
+  | "missing_coverage";
+
+type RuleTestContractIssue = {
+  kind: RuleTestContractIssueKind;
+  rule_stable_id: string;
+  rule_file?: string;
+  test_file?: string;
+  annotation_line?: number;
+  expected_hash?: string;
+  actual_hash?: string | null;
+};
+
+type RuleTestContractsSnapshot =
+  | {
+      present: false;
+      reason: string;
+    }
+  | {
+      present: true;
+      revision: string | undefined;
+      ruleCount: number;
+      linkCount: number;
+      coveredCount: number;
+      staleRuleCount: number;
+      staleTestCount: number;
+      orphanCount: number;
+      missingTestFileCount: number;
+      missingCoverageCount: number;
+      issues: RuleTestContractIssue[];
+    };
+
 const SCRIPT_EXTENSIONS = new Set([".js", ".jsx", ".ts", ".tsx"]);
 const IGNORED_DIRECTORIES = new Set([
   ".fabric",
@@ -215,6 +260,7 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     ledgerSnapshot,
     auditReport,
     businessLogicAnchorSnapshot,
+    ruleTestContractsSnapshot,
   ] = await Promise.all([
     readSavedForensic(projectRoot),
     inspectMetaRevision(projectRoot),
@@ -222,6 +268,7 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     inspectLedger(projectRoot),
     runDoctorAuditReport(projectRoot),
     inspectBusinessLogicAnchors(projectRoot),
+    inspectRuleTestContracts(projectRoot),
   ]);
 
   const checks: DoctorCheck[] = [
@@ -230,6 +277,7 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     createMetaRevisionCheck(metaSnapshot),
     createProtectedPathsCheck(humanLockSnapshot),
     createLedgerCheck(ledgerSnapshot),
+    createRuleTestContractsCheck(ruleTestContractsSnapshot),
   ];
 
   if (!auditReport.skipped) {
@@ -527,6 +575,52 @@ function createLedgerCheck(snapshot: LedgerSnapshot): DoctorCheck {
   };
 }
 
+function createRuleTestContractsCheck(snapshot: RuleTestContractsSnapshot): DoctorCheck {
+  if (!snapshot.present) {
+    return {
+      name: "Rule-test contracts",
+      status: "warn",
+      message: snapshot.reason,
+    };
+  }
+
+  if (snapshot.issues.length === 0) {
+    if (snapshot.ruleCount === 0) {
+      return {
+        name: "Rule-test contracts",
+        status: "ok",
+        message: "No rule nodes are tracked; static rule-test coverage has nothing to inspect.",
+      };
+    }
+
+    return {
+      name: "Rule-test contracts",
+      status: "ok",
+      message:
+        `${snapshot.coveredCount} of ${snapshot.ruleCount} rule${snapshot.ruleCount === 1 ? "" : "s"} have static rule-test coverage ` +
+        `across ${snapshot.linkCount} link${snapshot.linkCount === 1 ? "" : "s"}.`,
+    };
+  }
+
+  const parts = [
+    snapshot.staleRuleCount > 0 ? `${snapshot.staleRuleCount} stale_rule` : null,
+    snapshot.staleTestCount > 0 ? `${snapshot.staleTestCount} stale_test` : null,
+    snapshot.orphanCount > 0 ? `${snapshot.orphanCount} orphan` : null,
+    snapshot.missingTestFileCount > 0 ? `${snapshot.missingTestFileCount} missing_test_file` : null,
+    snapshot.missingCoverageCount > 0 ? `${snapshot.missingCoverageCount} missing_coverage` : null,
+  ].filter((part) => part !== null);
+  const examples = snapshot.issues.slice(0, 3).map(formatRuleTestContractIssue).join("; ");
+  const suffix = snapshot.issues.length > 3 ? `; +${snapshot.issues.length - 3} more` : "";
+
+  return {
+    name: "Rule-test contracts",
+    status: "warn",
+    message:
+      `Static rule-test coverage has ${parts.join(", ")} issue${snapshot.issues.length === 1 ? "" : "s"} ` +
+      `(${snapshot.coveredCount}/${snapshot.ruleCount} covered): ${examples}${suffix}.`,
+  };
+}
+
 function createAuditCheck(report: DoctorAuditReport): DoctorCheck {
   if (report.checkedPathCount === 0) {
     return {
@@ -600,6 +694,25 @@ function formatBusinessLogicAnchorIssue(issue: BusinessLogicAnchorIssue): string
 function formatMetaDriftDetail(detail: MetaDriftDetail): string {
   const actualHash = detail.actual_hash ?? "<missing>";
   return `${detail.file} (${detail.stable_id}) expected ${detail.expected_hash} actual ${actualHash}`;
+}
+
+function formatRuleTestContractIssue(issue: RuleTestContractIssue): string {
+  if (issue.kind === "missing_coverage") {
+    return `${issue.rule_stable_id} missing_coverage`;
+  }
+
+  if (issue.kind === "orphan") {
+    const location = issue.test_file === undefined ? "" : ` at ${issue.test_file}:${issue.annotation_line ?? "?"}`;
+    return `${issue.rule_stable_id} orphan${location}`;
+  }
+
+  if (issue.kind === "missing_test_file") {
+    return `${issue.rule_stable_id} missing_test_file ${issue.test_file ?? "<unknown>"}`;
+  }
+
+  const actualHash = issue.actual_hash ?? "<missing>";
+  const target = issue.kind === "stale_rule" ? issue.rule_file : issue.test_file;
+  return `${issue.rule_stable_id} ${issue.kind} ${target ?? "<unknown>"} expected ${issue.expected_hash ?? "<unknown>"} actual ${actualHash}`;
 }
 
 async function readSavedForensic(projectRoot: string): Promise<SavedForensic> {
@@ -997,6 +1110,142 @@ async function inspectBusinessLogicAnchors(projectRoot: string): Promise<Busines
     staleCount: issues.filter((issue) => issue.kind === "stale").length,
     duplicateCount: issues.filter((issue) => issue.kind === "duplicate").length,
     issues,
+  };
+}
+
+async function inspectRuleTestContracts(projectRoot: string): Promise<RuleTestContractsSnapshot> {
+  let meta: AgentsMeta;
+  try {
+    meta = await readAgentsMeta(projectRoot);
+  } catch (error) {
+    return {
+      present: false,
+      reason: error instanceof Error ? error.message : String(error),
+    };
+  }
+
+  const indexPath = join(projectRoot, ".fabric", "rule-test.index.json");
+  let index: RuleTestIndex;
+  try {
+    const raw = await readFile(indexPath, "utf8");
+    index = ruleTestIndexSchema.parse(JSON.parse(raw));
+  } catch (error) {
+    if (isMissingFileError(error)) {
+      return {
+        present: false,
+        reason: ".fabric/rule-test.index.json is missing; run sync-meta to generate static rule-test coverage.",
+      };
+    }
+
+    return {
+      present: false,
+      reason: error instanceof Error ? error.message : String(error),
+    };
+  }
+
+  const ruleNodesByStableId = collectRuleNodesByStableId(meta);
+  const coveredStableIds = new Set<string>();
+  const issues: RuleTestContractIssue[] = [];
+
+  for (const link of index.links) {
+    const ruleNode = ruleNodesByStableId.get(link.rule_stable_id);
+    if (ruleNode === undefined) {
+      issues.push(createOrphanIssue(link));
+      continue;
+    }
+
+    coveredStableIds.add(link.rule_stable_id);
+
+    if (ruleNode.hash !== link.rule_hash) {
+      issues.push({
+        kind: "stale_rule",
+        rule_stable_id: link.rule_stable_id,
+        rule_file: ruleNode.file,
+        test_file: link.test_file,
+        annotation_line: link.annotation_line,
+        expected_hash: link.rule_hash,
+        actual_hash: ruleNode.hash,
+      });
+    }
+
+    const testPath = join(projectRoot, link.test_file);
+    if (!existsSync(testPath)) {
+      issues.push({
+        kind: "missing_test_file",
+        rule_stable_id: link.rule_stable_id,
+        rule_file: ruleNode.file,
+        test_file: link.test_file,
+        annotation_line: link.annotation_line,
+        expected_hash: link.test_hash,
+        actual_hash: null,
+      });
+      continue;
+    }
+
+    const actualTestHash = sha256(readFileSync(testPath, "utf8"));
+    if (actualTestHash !== link.test_hash) {
+      issues.push({
+        kind: "stale_test",
+        rule_stable_id: link.rule_stable_id,
+        rule_file: ruleNode.file,
+        test_file: link.test_file,
+        annotation_line: link.annotation_line,
+        expected_hash: link.test_hash,
+        actual_hash: actualTestHash,
+      });
+    }
+  }
+
+  for (const annotation of index.orphan_annotations) {
+    issues.push(createOrphanIssue(annotation));
+  }
+
+  for (const stableId of Array.from(ruleNodesByStableId.keys()).sort()) {
+    if (coveredStableIds.has(stableId)) {
+      continue;
+    }
+
+    const ruleNode = ruleNodesByStableId.get(stableId);
+    issues.push({
+      kind: "missing_coverage",
+      rule_stable_id: stableId,
+      rule_file: ruleNode?.file,
+    });
+  }
+
+  return {
+    present: true,
+    revision: index.revision,
+    ruleCount: ruleNodesByStableId.size,
+    linkCount: index.links.length,
+    coveredCount: coveredStableIds.size,
+    staleRuleCount: issues.filter((issue) => issue.kind === "stale_rule").length,
+    staleTestCount: issues.filter((issue) => issue.kind === "stale_test").length,
+    orphanCount: issues.filter((issue) => issue.kind === "orphan").length,
+    missingTestFileCount: issues.filter((issue) => issue.kind === "missing_test_file").length,
+    missingCoverageCount: issues.filter((issue) => issue.kind === "missing_coverage").length,
+    issues,
+  };
+}
+
+function collectRuleNodesByStableId(meta: AgentsMeta): Map<string, AgentsMeta["nodes"][string]> {
+  const nodes = new Map<string, AgentsMeta["nodes"][string]>();
+
+  for (const [nodeId, node] of Object.entries(meta.nodes)) {
+    nodes.set(node.stable_id ?? nodeId, node);
+  }
+
+  return nodes;
+}
+
+function createOrphanIssue(
+  annotation: Pick<RuleTestLink | RuleTestOrphanAnnotation, "rule_stable_id" | "test_file" | "annotation_line">,
+): RuleTestContractIssue {
+  return {
+    kind: "orphan",
+    rule_stable_id: annotation.rule_stable_id,
+    test_file: annotation.test_file,
+    annotation_line: annotation.annotation_line,
   };
 }
 

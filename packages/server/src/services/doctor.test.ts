@@ -49,6 +49,7 @@ describe("runDoctorReport", () => {
       "Meta revision",
       "Protected paths",
       "Intent ledger",
+      "Rule-test contracts",
     ]);
     expect(report.checks.find((check) => check.name === "Forensic snapshot")?.status).toBe("error");
   });
@@ -57,8 +58,10 @@ describe("runDoctorReport", () => {
     const target = createFixtureRoot("doctor-ok");
     const bootstrapPath = join(target, ".fabric", "bootstrap", "README.md");
     const mainPath = join(target, "src", "main.ts");
+    const testPath = join(target, "src", "main.test.ts");
     const humanPath = join(target, "src", "human.ts");
     const bootstrapContent = "# Project Rules\n";
+    const testContent = "// @fabric-verify bootstrap\nexpect(true).toBe(true);\n";
     const humanContent = "const kept = true;\n";
     const now = Date.now();
 
@@ -77,6 +80,7 @@ describe("runDoctorReport", () => {
     );
     writeFileSync(bootstrapPath, bootstrapContent, "utf8");
     writeFileSync(mainPath, "export const boot = true;\n", "utf8");
+    writeFileSync(testPath, testContent, "utf8");
     writeFileSync(humanPath, humanContent, "utf8");
 
     const bootstrapHash = sha256(bootstrapContent);
@@ -158,6 +162,26 @@ describe("runDoctorReport", () => {
       "utf8",
     );
     writeFileSync(
+      join(target, ".fabric", "rule-test.index.json"),
+      `${JSON.stringify({
+        schema_version: 1,
+        generated_at: new Date(now).toISOString(),
+        revision: sha256(`L0|${bootstrapHash}|bootstrap|derived`),
+        links: [
+          {
+            rule_stable_id: "bootstrap",
+            rule_file: ".fabric/bootstrap/README.md",
+            rule_hash: bootstrapHash,
+            test_file: "src/main.test.ts",
+            test_hash: sha256(testContent),
+            annotation_line: 1,
+          },
+        ],
+        orphan_annotations: [],
+      }, null, 2)}\n`,
+      "utf8",
+    );
+    writeFileSync(
       join(target, ".fabric", ".intent-ledger.jsonl"),
       `${JSON.stringify({
         ts: now - 10 * 60 * 1000,
@@ -183,6 +207,142 @@ describe("runDoctorReport", () => {
     expect(report.summary.driftCount).toBe(0);
     expect(report.summary.protectedPathsIntact).toBe(true);
     expect(report.checks.every((check) => check.status === "ok")).toBe(true);
+  });
+
+  it("reports covered static rule-test contracts as ok", async () => {
+    const target = createRuleTestFixture("doctor-rule-test-covered", [
+      {
+        stableId: "bootstrap",
+        ruleContent: "# Project Rules\n",
+        testContent: "// @fabric-verify bootstrap\nexpect(true).toBe(true);\n",
+      },
+    ]);
+
+    const report = await runDoctorReport(target);
+    const contractCheck = report.checks.find((check) => check.name === "Rule-test contracts");
+
+    expect(contractCheck).toEqual({
+      name: "Rule-test contracts",
+      status: "ok",
+      message: "1 of 1 rule have static rule-test coverage across 1 link.",
+    });
+  });
+
+  it("warns when a covered rule hash is stale", async () => {
+    const target = createRuleTestFixture("doctor-rule-test-stale-rule", [
+      {
+        stableId: "bootstrap",
+        ruleContent: "# Project Rules\n",
+        testContent: "// @fabric-verify bootstrap\nexpect(true).toBe(true);\n",
+        indexedRuleContent: "# Old Project Rules\n",
+      },
+    ]);
+
+    const report = await runDoctorReport(target);
+    const contractCheck = report.checks.find((check) => check.name === "Rule-test contracts");
+
+    expect(contractCheck?.status).toBe("warn");
+    expect(contractCheck?.message).toContain("1 stale_rule");
+    expect(contractCheck?.message).toContain("bootstrap stale_rule .fabric/bootstrap/README.md");
+  });
+
+  it("warns when a covered test hash is stale", async () => {
+    const target = createRuleTestFixture("doctor-rule-test-stale-test", [
+      {
+        stableId: "bootstrap",
+        ruleContent: "# Project Rules\n",
+        testContent: "// @fabric-verify bootstrap\nexpect(true).toBe(true);\n",
+        indexedTestContent: "// @fabric-verify bootstrap\nexpect(false).toBe(false);\n",
+      },
+    ]);
+
+    const report = await runDoctorReport(target);
+    const contractCheck = report.checks.find((check) => check.name === "Rule-test contracts");
+
+    expect(contractCheck?.status).toBe("warn");
+    expect(contractCheck?.message).toContain("1 stale_test");
+    expect(contractCheck?.message).toContain("bootstrap stale_test tests/bootstrap.test.ts");
+  });
+
+  it("warns for orphan stable IDs declared in the rule-test index", async () => {
+    const target = createRuleTestFixture("doctor-rule-test-orphan", [
+      {
+        stableId: "bootstrap",
+        ruleContent: "# Project Rules\n",
+        testContent: "// @fabric-verify bootstrap\nexpect(true).toBe(true);\n",
+      },
+    ], {
+      orphanStableId: "missing-rule",
+    });
+
+    const report = await runDoctorReport(target);
+    const contractCheck = report.checks.find((check) => check.name === "Rule-test contracts");
+
+    expect(contractCheck?.status).toBe("warn");
+    expect(contractCheck?.message).toContain("1 orphan");
+    expect(contractCheck?.message).toContain("missing-rule orphan at tests/orphan.test.ts:1");
+  });
+
+  it("warns when an indexed rule-test file is missing", async () => {
+    const target = createRuleTestFixture("doctor-rule-test-missing-test", [
+      {
+        stableId: "bootstrap",
+        ruleContent: "# Project Rules\n",
+        testContent: "// @fabric-verify bootstrap\nexpect(true).toBe(true);\n",
+        removeTestFile: true,
+      },
+    ]);
+
+    const report = await runDoctorReport(target);
+    const contractCheck = report.checks.find((check) => check.name === "Rule-test contracts");
+
+    expect(contractCheck?.status).toBe("warn");
+    expect(contractCheck?.message).toContain("1 missing_test_file");
+    expect(contractCheck?.message).toContain("bootstrap missing_test_file tests/bootstrap.test.ts");
+  });
+
+  it("warns when the rule-test index is missing", async () => {
+    const target = createRuleTestFixture("doctor-rule-test-missing-index", [
+      {
+        stableId: "bootstrap",
+        ruleContent: "# Project Rules\n",
+        testContent: "// @fabric-verify bootstrap\nexpect(true).toBe(true);\n",
+      },
+    ], {
+      writeIndex: false,
+    });
+
+    const report = await runDoctorReport(target);
+    const contractCheck = report.checks.find((check) => check.name === "Rule-test contracts");
+
+    expect(contractCheck).toEqual({
+      name: "Rule-test contracts",
+      status: "warn",
+      message: ".fabric/rule-test.index.json is missing; run sync-meta to generate static rule-test coverage.",
+    });
+  });
+
+  it("warns when a tracked rule has no static rule-test coverage", async () => {
+    const target = createRuleTestFixture("doctor-rule-test-missing-coverage", [
+      {
+        stableId: "bootstrap",
+        ruleContent: "# Project Rules\n",
+        testContent: "// @fabric-verify bootstrap\nexpect(true).toBe(true);\n",
+      },
+      {
+        stableId: "server-rule",
+        ruleContent: "# Server Rules\n",
+        testContent: "// @fabric-verify server-rule\nexpect(true).toBe(true);\n",
+        omitLink: true,
+      },
+    ]);
+
+    const report = await runDoctorReport(target);
+    const contractCheck = report.checks.find((check) => check.name === "Rule-test contracts");
+
+    expect(contractCheck?.status).toBe("warn");
+    expect(contractCheck?.message).toContain("1 missing_coverage");
+    expect(contractCheck?.message).toContain("server-rule missing_coverage");
   });
 
   it("surfaces compliance violations when strict audit mode finds edits without prior rules fetches", async () => {
@@ -712,6 +872,115 @@ describe("runDoctorReport", () => {
 function createFixtureRoot(prefix: string): string {
   const root = mkdtempSync(join(tmpdir(), `${prefix}-`));
   tempRoots.push(root);
+  return root;
+}
+
+function createRuleTestFixture(
+  prefix: string,
+  rules: Array<{
+    stableId: string;
+    ruleContent: string;
+    testContent: string;
+    indexedRuleContent?: string;
+    indexedTestContent?: string;
+    omitLink?: boolean;
+    removeTestFile?: boolean;
+  }>,
+  options: {
+    orphanStableId?: string;
+    writeIndex?: boolean;
+  } = {},
+): string {
+  const root = createFixtureRoot(prefix);
+  const nodes: Record<string, object> = {};
+  const links = [];
+
+  mkdirSync(join(root, ".fabric", "bootstrap"), { recursive: true });
+  mkdirSync(join(root, ".fabric", "rules"), { recursive: true });
+  mkdirSync(join(root, "tests"), { recursive: true });
+
+  for (const [index, rule] of rules.entries()) {
+    const nodeId = index === 0 ? "L0" : `L1/${rule.stableId}`;
+    const ruleFile = index === 0 ? ".fabric/bootstrap/README.md" : `.fabric/rules/${rule.stableId}.md`;
+    const testFile = `tests/${rule.stableId}.test.ts`;
+    const ruleHash = sha256(rule.ruleContent);
+    const testHash = sha256(rule.testContent);
+
+    writeFileSync(join(root, ruleFile), rule.ruleContent, "utf8");
+    if (rule.removeTestFile !== true) {
+      writeFileSync(join(root, testFile), rule.testContent, "utf8");
+    }
+
+    nodes[nodeId] = {
+      file: ruleFile,
+      scope_glob: "**",
+      deps: index === 0 ? [] : ["L0"],
+      priority: index === 0 ? "high" : "medium",
+      hash: ruleHash,
+      stable_id: rule.stableId,
+      identity_source: "declared",
+    };
+
+    if (rule.omitLink === true) {
+      continue;
+    }
+
+    links.push({
+      rule_stable_id: rule.stableId,
+      rule_file: ruleFile,
+      rule_hash: sha256(rule.indexedRuleContent ?? rule.ruleContent),
+      test_file: testFile,
+      test_hash: sha256(rule.indexedTestContent ?? rule.testContent),
+      annotation_line: 1,
+    });
+  }
+
+  const revision = sha256(
+    Object.entries(nodes)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([id, node]) => {
+        const typedNode = node as { hash: string; stable_id: string; identity_source: string };
+        return [id, typedNode.hash, typedNode.stable_id, typedNode.identity_source].join("|");
+      })
+      .join("\n"),
+  );
+
+  writeFileSync(
+    join(root, ".fabric", "agents.meta.json"),
+    `${JSON.stringify({ revision, nodes }, null, 2)}\n`,
+    "utf8",
+  );
+
+  if (options.writeIndex !== false) {
+    const orphanTestContent = `// @fabric-verify ${options.orphanStableId ?? "unused"}\n`;
+    const orphanAnnotations = options.orphanStableId === undefined
+      ? []
+      : [
+          {
+            rule_stable_id: options.orphanStableId,
+            test_file: "tests/orphan.test.ts",
+            test_hash: sha256(orphanTestContent),
+            annotation_line: 1,
+          },
+        ];
+
+    if (options.orphanStableId !== undefined) {
+      writeFileSync(join(root, "tests", "orphan.test.ts"), orphanTestContent, "utf8");
+    }
+
+    writeFileSync(
+      join(root, ".fabric", "rule-test.index.json"),
+      `${JSON.stringify({
+        schema_version: 1,
+        generated_at: new Date().toISOString(),
+        revision,
+        links,
+        orphan_annotations: orphanAnnotations,
+      }, null, 2)}\n`,
+      "utf8",
+    );
+  }
+
   return root;
 }
 
