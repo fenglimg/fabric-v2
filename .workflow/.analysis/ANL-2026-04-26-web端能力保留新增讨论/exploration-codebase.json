@@ -1,0 +1,117 @@
+{
+  "session_id": "ANL-2026-04-26-web端能力保留新增讨论",
+  "topic": "在 ANL-2026-04-26-fabric-cli-mcp-server-crud-职责优化 的前提下，讨论当前 Web 端应该保留和新增哪些能力。",
+  "project_type": "nodejs",
+  "timestamp": "2026-04-26T20:20:00+08:00",
+  "prior_session": {
+    "session_id": "ANL-2026-04-26-fabric-cli-mcp-server-crud-职责优化",
+    "core_constraints": [
+      "CLI 是 control plane，负责 init、sync-meta、doctor --fix、approve、config/hooks/bootstrap 等本地高影响写入。",
+      "MCP server 不应镜像完整 CRUD，新主路径保持 read-only context protocol 与自动 telemetry。",
+      "HTTP/Dashboard 是 observe/approval plane，业务逻辑应沉到共享 service，避免 CLI、HTTP、MCP 各自复制。",
+      "deprecated MCP 写工具应兼容保留但退出新工作流。"
+    ]
+  },
+  "relevant_files": [
+    {
+      "path": "packages/dashboard/src/app.tsx",
+      "relevance": "high",
+      "summary": "定义 Web 路由和导航。已有 topology、rules、locks、timeline、history、doctor 六个实页，forensic、semantic、ledger 三个占位页。侧栏已显式提示模块区 read-only。",
+      "evidence": "packages/dashboard/src/app.tsx:16, packages/dashboard/src/app.tsx:30, packages/dashboard/src/app.tsx:60, packages/dashboard/src/app.tsx:166"
+    },
+    {
+      "path": "packages/dashboard/src/api/client.ts",
+      "relevance": "high",
+      "summary": "Web API client 目前包括规则、规则上下文、ledger、scan、doctor、human-lock、intent annotate、history replay 和 SSE。",
+      "evidence": "packages/dashboard/src/api/client.ts:153, packages/dashboard/src/api/client.ts:175, packages/dashboard/src/api/client.ts:187, packages/dashboard/src/api/client.ts:193"
+    },
+    {
+      "path": "packages/server/src/http.ts",
+      "relevance": "high",
+      "summary": "同一个 HTTP app 同时承载 REST API、SSE、MCP HTTP 和静态 Dashboard；Web 能力应与 REST/SSE 绑定，不越界接管 MCP tool。",
+      "evidence": "packages/server/src/http.ts:222, packages/server/src/http.ts:230, packages/server/src/http.ts:231, packages/server/src/http.ts:253"
+    },
+    {
+      "path": "packages/dashboard/src/views/rule-topology.tsx",
+      "relevance": "high",
+      "summary": "规则拓扑页通过 /api/rules 和 /api/rules/context 展示规则命中、覆盖热图和 hit reason，是 Web 应保留并强化的核心观察能力。",
+      "evidence": "packages/dashboard/src/views/rule-topology.tsx:23, packages/dashboard/src/views/rule-topology.tsx:25, packages/dashboard/src/views/rule-topology.tsx:78"
+    },
+    {
+      "path": "packages/dashboard/src/views/rules-tree.tsx",
+      "relevance": "high",
+      "summary": "规则树页读取 agents meta 与 human-lock 状态，支持搜索、选中节点和查看依赖/哈希。",
+      "evidence": "packages/dashboard/src/views/rules-tree.tsx:20, packages/dashboard/src/views/rules-tree.tsx:51, packages/dashboard/src/views/rules-tree.tsx:70"
+    },
+    {
+      "path": "packages/dashboard/src/views/human-lock.tsx",
+      "relevance": "high",
+      "summary": "human-lock 页是当前 Web 明确保留的审批写入口，只提交 approve，而不直接编辑规则文件。",
+      "evidence": "packages/dashboard/src/views/human-lock.tsx:46, packages/dashboard/src/views/human-lock.tsx:54, packages/dashboard/src/views/human-lock.tsx:97"
+    },
+    {
+      "path": "packages/dashboard/src/views/intent-timeline.tsx",
+      "relevance": "high",
+      "summary": "意图时间线页读取 ledger 并允许对 AI ledger 追加 human annotation，这是 Web 合理保留的审计型 append 写入口。",
+      "evidence": "packages/dashboard/src/views/intent-timeline.tsx:21, packages/dashboard/src/views/intent-timeline.tsx:47, packages/dashboard/src/views/intent-timeline.tsx:52"
+    },
+    {
+      "path": "packages/dashboard/src/views/history-replay.tsx",
+      "relevance": "medium",
+      "summary": "历史回放页以 ledger 点位还原规则状态，是 Web 观察/解释面，不产生项目文件写入。",
+      "evidence": "packages/dashboard/src/views/history-replay.tsx:21, packages/dashboard/src/views/history-replay.tsx:61, packages/dashboard/src/views/history-replay.tsx:105"
+    },
+    {
+      "path": "packages/dashboard/src/views/doctor.tsx",
+      "relevance": "high",
+      "summary": "Doctor 页当前只读取 /api/doctor，不执行 doctor --fix；这符合 Web 只观察、CLI 负责修复的边界。",
+      "evidence": "packages/dashboard/src/views/doctor.tsx:20, packages/dashboard/src/views/doctor.tsx:31, packages/dashboard/src/views/doctor.tsx:48"
+    },
+    {
+      "path": "packages/server/src/api/scan.ts",
+      "relevance": "medium",
+      "summary": "REST scan API 当前已存在，但 Dashboard 尚未直接展示 scan；同时前提会话已指出 scan 逻辑与 CLI 双实现，是新增 Web 能力前应先收敛的 service 缺口。",
+      "evidence": "packages/server/src/api/scan.ts:134, packages/server/src/api/scan.ts:144"
+    }
+  ],
+  "patterns": [
+    {
+      "pattern": "Web refreshes from SSE but uses REST as source of truth",
+      "files": [
+        "packages/dashboard/src/hooks/use-events.ts",
+        "packages/dashboard/src/views/*.tsx"
+      ],
+      "description": "页面监听 meta、lock、ledger、drift 事件后重新拉取 REST API，而不是在前端直接维护业务状态。"
+    },
+    {
+      "pattern": "Web write operations are narrow approval/annotation writes",
+      "files": [
+        "packages/dashboard/src/views/human-lock.tsx",
+        "packages/dashboard/src/views/intent-timeline.tsx",
+        "packages/server/src/api/human-lock.ts",
+        "packages/server/src/api/intent.ts"
+      ],
+      "description": "当前写入只包括 human-lock approve 和 intent annotation，且都通过服务端 schema/service 执行。"
+    },
+    {
+      "pattern": "CLI-only repair remains visible but not executable in Web",
+      "files": [
+        "packages/dashboard/src/views/doctor.tsx",
+        "packages/server/src/api/doctor.ts"
+      ],
+      "description": "Doctor 页面展示诊断，不提供修复按钮，保留 CLI 作为 repair control plane。"
+    }
+  ],
+  "constraints": [
+    "当前仓库缺少 .fabric/agents.meta.json，Fabric MCP 规则上下文不可用，本轮改用源码与既有分析会话作为证据。",
+    "Web 端不应新增直接文件编辑、sync-meta、doctor --fix、init/update、hook/config 安装等高影响写能力。",
+    "新增 Web 能力应优先复用 REST/service，保持 SSE 刷新和 read-only/approval 语义。"
+  ],
+  "key_findings": [
+    "Web 端应定位为 observe + explain + approve，而不是第三个 CRUD control plane。",
+    "现有 Rules/Topology/Locks/Timeline/History/Doctor 都应保留；其中 Locks approve 和 Timeline annotation 是合理写入口。",
+    "forensic、semantic、ledger 三个占位模块不应继续只占导航，应收敛为可执行的观察页或降级隐藏。",
+    "最值得新增的是 Scan/Onboarding Readiness、MCP Runtime Status、Tooling Manifest/Command Boundary 和 Deprecated Surface Warnings 这类解释型能力。",
+    "不建议新增 Web 端规则 CRUD、registry 编辑、doctor fix、sync-meta 或 MCP tool 调用面。"
+  ]
+}

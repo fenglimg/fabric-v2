@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fabric v2 - Hybrid Dual-Theme UI</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'SF Pro Display', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'SF Mono', 'Menlo', 'monospace'],
+                    },
+                    colors: {
+                        // Light Mode (Minimalist)
+                        light: {
+                            bg: '#fbfcfd',
+                            surface: '#ffffff',
+                            border: '#e4e4e7', // zinc-200
+                            text: '#18181b',   // zinc-900
+                            muted: '#71717a',  // zinc-500
+                        },
+                        // Dark Mode (Glassmorphism)
+                        dark: {
+                            bg: '#09090b',
+                            surface: 'rgba(255, 255, 255, 0.03)',
+                            border: 'rgba(255, 255, 255, 0.08)',
+                            text: '#f4f4f5',   // zinc-100
+                            muted: '#a1a1aa',  // zinc-400
+                        },
+                        brand: {
+                            accent: '#3b82f6', // Blue 500
+                            warning: '#f59e0b', // Amber 500
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        /* Smooth transitions for theme switching */
+        * { transition: background-color 0.3s ease, border-color 0.3s ease, color 0.3s ease, box-shadow 0.3s ease, backdrop-filter 0.3s ease; }
+        
+        body { font-family: 'Inter', sans-serif; }
+        
+        /* Dark Mode Ambient Blobs */
+        .ambient-blob { 
+            position: fixed; border-radius: 50%; filter: blur(100px); z-index: 0; pointer-events: none; opacity: 0; transition: opacity 0.5s ease; mix-blend-screen: screen;
+        }
+        .dark .ambient-blob { opacity: 0.3; }
+        
+        /* Scrollbar styling */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: rgba(156, 163, 175, 0.3); border-radius: 3px; }
+        .dark ::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.1); }
+    </style>
+</head>
+<body class="h-screen w-screen flex overflow-hidden antialiased bg-light-bg text-light-text dark:bg-dark-bg dark:text-dark-text selection:bg-brand-accent/30 relative">
+
+    <!-- Ambient Background (Only visible in Dark Mode) -->
+    <div class="ambient-blob bg-purple-600 w-[500px] h-[500px] top-[-20%] left-[-10%]"></div>
+    <div class="ambient-blob bg-brand-accent w-[500px] h-[500px] bottom-[-20%] right-[10%]"></div>
+
+    <div class="flex h-full w-full z-10 p-0 sm:p-4 gap-4">
+        <!-- Sidebar Navigation -->
+        <aside class="w-64 flex flex-col overflow-hidden 
+                      bg-light-surface border-r border-light-border sm:border sm:rounded-2xl sm:shadow-sm
+                      dark:bg-dark-surface dark:border-dark-border dark:backdrop-blur-2xl dark:shadow-2xl">
+            <div class="p-6">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-3">
+                        <div class="w-8 h-8 rounded-xl bg-gradient-to-br from-brand-accent to-purple-600 flex items-center justify-center font-bold text-white shadow-md">F</div>
+                        <span class="font-semibold text-light-text dark:text-dark-text">Fabric <span class="text-light-muted dark:text-dark-muted font-normal">v2</span></span>
+                    </div>
+                </div>
+            </div>
+
+            <nav class="flex-1 px-4 space-y-1.5 mt-2">
+                <div class="text-[10px] font-bold text-light-muted dark:text-dark-muted uppercase tracking-widest mb-3 px-3">Insights</div>
+                
+                <a href="#" class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-light-muted hover:bg-light-border/50 hover:text-light-text
+                                   dark:text-dark-muted dark:hover:bg-white/5 dark:hover:text-dark-text">
+                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                    Readiness
+                </a>
+                
+                <a href="#" class="flex items-center gap-3 px-3 py-2.5 rounded-xl font-medium 
+                                   bg-brand-accent/10 text-brand-accent border border-brand-accent/20
+                                   dark:bg-white/10 dark:text-white dark:border-white/10 dark:shadow-[0_0_15px_rgba(255,255,255,0.05)]">
+                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" /></svg>
+                    Rules Explain
+                </a>
+                
+                <a href="#" class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-light-muted hover:bg-light-border/50 hover:text-light-text
+                                   dark:text-dark-muted dark:hover:bg-white/5 dark:hover:text-dark-text">
+                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                    Timeline
+                </a>
+                
+                <a href="#" class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-light-muted hover:bg-light-border/50 hover:text-light-text
+                                   dark:text-dark-muted dark:hover:bg-white/5 dark:hover:text-dark-text">
+                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" /></svg>
+                    Health
+                </a>
+            </nav>
+
+            <div class="p-4 border-t border-light-border dark:border-dark-border mx-4 mb-4 mt-auto rounded-xl bg-light-border/30 dark:bg-black/20">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-2">
+                        <div class="w-2 h-2 rounded-full bg-green-500 animate-pulse shadow-[0_0_8px_#22c55e]"></div>
+                        <span class="text-[10px] font-bold text-light-muted dark:text-dark-muted font-mono uppercase">MCP Connected</span>
+                    </div>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Content Area -->
+        <main class="flex-1 flex flex-col gap-4 min-w-0">
+            <!-- Header -->
+            <header class="h-16 flex items-center justify-between px-6 shrink-0 
+                           bg-light-surface border-b border-light-border sm:border sm:rounded-2xl sm:shadow-sm
+                           dark:bg-dark-surface dark:border-dark-border dark:backdrop-blur-2xl dark:shadow-xl">
+                <div>
+                    <h1 class="text-lg font-semibold">Rules Explain</h1>
+                    <p class="text-xs text-light-muted dark:text-dark-muted font-mono mt-0.5">Topology & Context Analyzer</p>
+                </div>
+
+                <div class="flex items-center gap-4">
+                    <!-- Search Bar -->
+                    <div class="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm
+                                bg-light-border/30 border border-light-border text-light-muted
+                                dark:bg-black/20 dark:border-dark-border dark:text-dark-muted">
+                        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+                        <span class="font-mono text-xs">Search path...</span>
+                        <span class="ml-4 px-1.5 py-0.5 rounded text-[10px] font-bold bg-white dark:bg-white/10 border border-light-border dark:border-dark-border shadow-sm">⌘K</span>
+                    </div>
+
+                    <div class="w-px h-6 bg-light-border dark:bg-dark-border hidden md:block"></div>
+
+                    <!-- Theme Toggle -->
+                    <button onclick="document.documentElement.classList.toggle('dark')" 
+                            class="p-2 rounded-lg bg-light-border/50 hover:bg-light-border text-light-text dark:bg-white/10 dark:hover:bg-white/20 dark:text-dark-text transition-colors shadow-sm"
+                            title="Toggle Theme">
+                        <!-- Sun Icon (shows in dark mode) -->
+                        <svg class="w-5 h-5 hidden dark:block" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
+                        <!-- Moon Icon (shows in light mode) -->
+                        <svg class="w-5 h-5 block dark:hidden" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" /></svg>
+                    </button>
+                </div>
+            </header>
+
+            <!-- Content Split View -->
+            <div class="flex-1 flex flex-col md:flex-row gap-4 min-h-0">
+                
+                <!-- Left Pane: File Tree / Registry -->
+                <div class="w-full md:w-1/3 xl:w-1/4 flex flex-col overflow-hidden
+                            bg-light-surface border-r border-light-border sm:border sm:rounded-2xl sm:shadow-sm
+                            dark:bg-dark-surface dark:border-dark-border dark:backdrop-blur-2xl dark:shadow-xl">
+                    <div class="p-4 border-b border-light-border dark:border-dark-border flex justify-between items-center bg-light-surface/90 dark:bg-transparent z-10 shrink-0">
+                        <span class="text-xs font-bold uppercase tracking-wider text-light-muted dark:text-dark-muted">Registry Tree</span>
+                        <span class="text-[10px] font-mono bg-light-border/50 dark:bg-white/10 px-2 py-0.5 rounded-full border border-light-border dark:border-dark-border">14 Nodes</span>
+                    </div>
+                    
+                    <div class="p-3 overflow-y-auto space-y-0.5 flex-1">
+                        <!-- Folder -->
+                        <div class="flex items-center gap-2 px-3 py-2 hover:bg-light-border/30 dark:hover:bg-white/5 rounded-lg cursor-pointer text-sm">
+                            <svg class="w-4 h-4 text-light-muted dark:text-dark-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" /></svg>
+                            <span class="font-mono font-medium">.fabric/rules</span>
+                        </div>
+                        
+                        <!-- L0 Rule -->
+                        <div class="flex items-center gap-2 px-3 py-2 ml-4 hover:bg-light-border/30 dark:hover:bg-white/5 rounded-lg cursor-pointer text-sm">
+                            <span class="text-[10px] font-bold text-light-muted dark:text-dark-muted bg-light-border/50 dark:bg-white/10 px-1.5 py-0.5 rounded">L0</span>
+                            <span class="font-mono text-light-muted dark:text-dark-muted">global.md</span>
+                        </div>
+
+                        <!-- Selected L1 Rule -->
+                        <div class="flex items-center gap-2 px-3 py-2 ml-8 cursor-pointer text-sm rounded-lg
+                                    bg-brand-accent/10 border border-brand-accent/20 
+                                    dark:bg-purple-500/10 dark:border-purple-500/20 dark:shadow-[inset_0_0_12px_rgba(168,85,247,0.05)]">
+                            <span class="text-[10px] font-bold text-brand-accent dark:text-purple-400 bg-brand-accent/20 dark:bg-purple-500/20 px-1.5 py-0.5 rounded">L1</span>
+                            <span class="font-mono font-bold text-brand-accent dark:text-purple-100">dashboard.md</span>
+                        </div>
+                        
+                        <!-- L2 Rule -->
+                        <div class="flex items-center gap-2 px-3 py-2 ml-12 hover:bg-light-border/30 dark:hover:bg-white/5 rounded-lg cursor-pointer text-sm">
+                            <span class="text-[10px] font-bold text-brand-warning dark:text-brand-warning bg-brand-warning/10 dark:bg-brand-warning/10 px-1.5 py-0.5 rounded">L2</span>
+                            <span class="font-mono text-light-muted dark:text-dark-muted">ui-conventions.md</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Right Pane: Detail & Context -->
+                <div class="flex-1 flex flex-col overflow-hidden
+                            bg-light-surface border border-light-border sm:rounded-2xl sm:shadow-sm
+                            dark:bg-dark-surface dark:border-dark-border dark:backdrop-blur-2xl dark:shadow-xl">
+                    
+                    <div class="p-6 md:p-8 overflow-y-auto flex-1">
+                        <!-- Detail Header -->
+                        <div class="mb-8">
+                            <div class="inline-block px-2.5 py-1 text-xs font-bold rounded-lg font-mono mb-3 border
+                                        bg-brand-accent/10 text-brand-accent border-brand-accent/20
+                                        dark:bg-purple-500/20 dark:text-purple-300 dark:border-purple-500/30">L1 LAYER</div>
+                            <div class="flex justify-between items-start">
+                                <div>
+                                    <h2 class="text-2xl font-bold font-mono tracking-tight text-light-text dark:text-white/90">packages/dashboard.md</h2>
+                                    <p class="text-sm text-light-muted dark:text-dark-muted mt-2">Dashboard specific domain rules and architectural constraints.</p>
+                                </div>
+                                <div class="text-right hidden sm:block">
+                                    <div class="text-[10px] font-bold text-light-muted dark:text-dark-muted uppercase tracking-widest mb-1">Hash Revision</div>
+                                    <div class="font-mono text-xs px-2.5 py-1 rounded-md border
+                                                bg-light-border/30 border-light-border text-light-text
+                                                dark:bg-black/30 dark:border-dark-border dark:text-dark-text shadow-inner">a7f8b9c...</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Grid Info -->
+                        <div class="grid grid-cols-2 md:grid-cols-3 gap-4 mb-8">
+                            <div class="p-4 rounded-xl border bg-light-bg/50 border-light-border dark:bg-black/20 dark:border-dark-border">
+                                <div class="text-[10px] font-bold text-light-muted dark:text-dark-muted uppercase tracking-widest mb-2">Scope Glob</div>
+                                <div class="font-mono text-sm font-medium text-light-text dark:text-dark-text">packages/dashboard/**</div>
+                            </div>
+                            <div class="p-4 rounded-xl border bg-light-bg/50 border-light-border dark:bg-black/20 dark:border-dark-border">
+                                <div class="text-[10px] font-bold text-light-muted dark:text-dark-muted uppercase tracking-widest mb-2">Priority</div>
+                                <div class="flex items-center gap-2 text-sm font-medium text-light-text dark:text-dark-text">
+                                    <div class="w-2 h-2 rounded-full bg-green-500 shadow-[0_0_8px_#22c55e]"></div>
+                                    High
+                                </div>
+                            </div>
+                            <div class="p-4 rounded-xl border bg-light-bg/50 border-light-border dark:bg-black/20 dark:border-dark-border">
+                                <div class="text-[10px] font-bold text-light-muted dark:text-dark-muted uppercase tracking-widest mb-2">Topology Type</div>
+                                <div class="font-mono text-sm font-medium text-light-text dark:text-dark-text">mirror</div>
+                            </div>
+                        </div>
+
+                        <!-- Action Required Box (CLI Boundary) -->
+                        <div class="p-5 rounded-xl relative overflow-hidden mb-8 border
+                                    bg-brand-warning/5 border-brand-warning/30 
+                                    dark:bg-amber-500/5 dark:border-amber-500/20">
+                            <!-- Subtle Glow in dark mode -->
+                            <div class="absolute top-0 left-0 w-1 h-full bg-brand-warning dark:bg-amber-500 shadow-[0_0_10px_#f59e0b]"></div>
+                            
+                            <h3 class="text-sm font-bold mb-2 flex items-center gap-2 text-brand-warning dark:text-amber-400">
+                                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+                                CLI Action Required
+                            </h3>
+                            <p class="text-sm mb-4 text-light-text dark:text-dark-muted">Registry node is out of sync with filesystem. Meta update required.</p>
+                            
+                            <!-- Terminal Snippet -->
+                            <div class="rounded-lg p-3 font-mono text-xs flex justify-between items-center border shadow-inner
+                                        bg-zinc-900 border-zinc-800 text-zinc-300
+                                        dark:bg-black/50 dark:border-white/5 dark:text-white/80">
+                                <span><span class="text-zinc-500 dark:text-white/30 mr-2">$</span>fabric doctor --fix</span>
+                                <button class="text-zinc-400 hover:text-white dark:text-white/40 dark:hover:text-white transition-colors flex items-center gap-1.5 bg-white/5 px-2 py-1 rounded">
+                                    <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
+                                    Copy
+                                </button>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+</body>
+</html>

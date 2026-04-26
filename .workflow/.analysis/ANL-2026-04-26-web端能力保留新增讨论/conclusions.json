@@ -1,0 +1,257 @@
+{
+  "session_id": "ANL-2026-04-26-web端能力保留新增讨论",
+  "topic": "在 ANL-2026-04-26-fabric-cli-mcp-server-crud-职责优化 的前提下，讨论当前 Web 端应该保留和新增哪些能力。",
+  "completed": "2026-04-26T20:50:00+08:00",
+  "total_rounds": 2,
+  "summary": "基于当前分支校正后，Web 端不应继续以 Approval/Human Lock 作为一级主题；该路径已从 Dashboard/API 中拆除。推荐将 Web 重构收敛为四个一级主题：Readiness、Rules Explain、Timeline、Health。Readiness 负责项目准备状态和 scan；Rules Explain 负责规则拓扑、规则树和命中解释；Timeline 负责 ledger、annotation 和 history replay；Health 负责 doctor、forensic/audit、runtime status 与 tooling boundary。Web 仍不应执行 doctor --fix、init、update、sync-meta、registry CRUD 或 MCP tool 代理调用。",
+  "supersedes": [
+    "Round 1 中关于 Locks/Human Lock/Approval 为当前保留能力的判断已过期。",
+    "Round 1 中 observe + explain + approve 的定位修正为 observe + explain + annotate，其中 annotation 归入 Timeline。"
+  ],
+  "recommended_information_architecture": [
+    {
+      "theme": "Readiness",
+      "meaning": "项目是否已经准备好使用 Fabric。",
+      "capabilities": [
+        "Project Scan",
+        "Setup Status",
+        "Framework / README / CONTRIBUTING readiness",
+        "Recommended CLI Next Steps"
+      ],
+      "boundary": "只读，不执行 fab init、fab update 或 sync-meta。"
+    },
+    {
+      "theme": "Rules Explain",
+      "meaning": "为什么某个文件会命中这些规则，当前规则体系是什么样。",
+      "capabilities": [
+        "Rule Topology",
+        "Rules Tree",
+        "Rule Hit Explanation",
+        "Coverage / Dependencies",
+        "L0 / L1 / L2 context"
+      ],
+      "boundary": "不编辑规则或 registry；human_locked_nearby 仅作为 legacy/future extension，不作为当前核心能力。"
+    },
+    {
+      "theme": "Timeline",
+      "meaning": "系统发生过什么，状态如何演化。",
+      "capabilities": [
+        "Intent Timeline",
+        "Human annotation via annotateIntent",
+        "History Replay",
+        "Event / legacy ledger status"
+      ],
+      "boundary": "annotation 是审计补充，不等同于审批系统。"
+    },
+    {
+      "theme": "Health",
+      "meaning": "Fabric 当前是否健康，哪里有问题，下一步应该怎么处理。",
+      "capabilities": [
+        "Doctor Report",
+        "Fixable / Manual / Warning Issues",
+        "Forensic / Audit",
+        "Runtime Status",
+        "Tooling Boundary"
+      ],
+      "boundary": "只展示建议 CLI，不直接执行 doctor --fix 或其他修复命令。"
+    }
+  ],
+  "key_conclusions": [
+    {
+      "point": "Web 端推荐收敛为四个一级主题：Readiness、Rules Explain、Timeline、Health。",
+      "evidence": "packages/dashboard/src/app.tsx; packages/dashboard/src/api/client.ts; current branch no longer has human-lock route/API/client",
+      "confidence": "high"
+    },
+    {
+      "point": "Approval / Human Lock 不应作为当前强保留能力或一级主题。",
+      "evidence": "current branch removed packages/dashboard/src/views/human-lock.tsx, lock-card.tsx, packages/server/src/api/human-lock.ts, approve client and REST registration",
+      "confidence": "high"
+    },
+    {
+      "point": "当前仍成立的核心保留能力是 Rules Explain、Timeline、History Replay 和 Doctor/Health。",
+      "evidence": "packages/dashboard/src/views/rule-topology.tsx; packages/dashboard/src/views/rules-tree.tsx; packages/dashboard/src/views/intent-timeline.tsx; packages/dashboard/src/views/history-replay.tsx; packages/dashboard/src/views/doctor.tsx",
+      "confidence": "high"
+    },
+    {
+      "point": "Readiness 是最值得新增的一级主题，因为 /api/scan 和 getScan() 已存在，但 Dashboard 尚无页面。",
+      "evidence": "packages/dashboard/src/api/client.ts getScan; packages/server/src/api/scan.ts registerScanApi",
+      "confidence": "high"
+    },
+    {
+      "point": "Boundary / Runtime 很重要，但更适合放在 Health 子视图，而不是单独作为第五个一级主题。",
+      "evidence": "packages/server/src/http.ts registers REST/SSE/MCP/static in one runtime; dashboard already displays SSE connection status",
+      "confidence": "medium"
+    }
+  ],
+  "recommendations": [
+    {
+      "action": "将 Web 一级导航收敛为 Readiness / Rules Explain / Timeline / Health",
+      "rationale": "四主题对应当前真实数据面和用户问题，避免继续保留过期 Approval 或旧占位空壳。",
+      "priority": "high",
+      "evidence_refs": [
+        "packages/dashboard/src/app.tsx",
+        "packages/dashboard/src/api/client.ts"
+      ],
+      "steps": [
+        {
+          "description": "把 topology + rules 并入 Rules Explain。",
+          "target": "packages/dashboard/src/app.tsx",
+          "verification": "规则拓扑、规则树、规则命中解释均在 Rules Explain 下可达。"
+        },
+        {
+          "description": "把 timeline + history 并入 Timeline。",
+          "target": "packages/dashboard/src/app.tsx",
+          "verification": "Intent Timeline、annotation、History Replay 在同一主题下组织。"
+        },
+        {
+          "description": "把 doctor + runtime/boundary + future forensic/audit 并入 Health。",
+          "target": "packages/dashboard/src/app.tsx",
+          "verification": "Health 下能查看 doctor report 与 runtime/tooling boundary，不提供修复执行按钮。"
+        }
+      ],
+      "review_status": "accepted"
+    },
+    {
+      "action": "新增 Readiness 页面接入已有 getScan()",
+      "rationale": "Readiness 是当前缺失但已有后端基础的一级主题，能解释项目是否 ready 和下一步 CLI。",
+      "priority": "high",
+      "evidence_refs": [
+        "packages/dashboard/src/api/client.ts",
+        "packages/server/src/api/scan.ts"
+      ],
+      "steps": [
+        {
+          "description": "实现 read-only scan/readiness view。",
+          "target": "packages/dashboard/src/views/readiness.tsx",
+          "verification": "页面只调用 GET /api/scan。"
+        },
+        {
+          "description": "展示推荐 CLI next steps，但不执行 init/update/sync-meta。",
+          "target": "packages/dashboard/src/views/readiness.tsx",
+          "verification": "无对应 POST API 或命令执行按钮。"
+        }
+      ],
+      "review_status": "accepted"
+    },
+    {
+      "action": "废弃 Approval 一级主题，除非未来重新设计确认模型",
+      "rationale": "当前 human-lock Web/API 写路径已拆除，继续保留 Approval 会制造空概念。",
+      "priority": "high",
+      "evidence_refs": [
+        "current branch removed human-lock dashboard/API/client files"
+      ],
+      "steps": [
+        {
+          "description": "不要在重构导航中新增 Approval 一级项。",
+          "target": "packages/dashboard/src/app.tsx",
+          "verification": "一级导航不包含 Approval/Locks。"
+        },
+        {
+          "description": "将 annotateIntent 归入 Timeline，而不是 Approval。",
+          "target": "packages/dashboard/src/views/intent-timeline.tsx",
+          "verification": "annotation 文案表达为审计补充，不表达为审批。"
+        }
+      ],
+      "review_status": "accepted"
+    },
+    {
+      "action": "移除或并入旧 Forensic / Semantic / Ledger 占位模块",
+      "rationale": "这些旧一等导航仍是 ModulePlaceholder，不应作为产品承诺继续暴露。",
+      "priority": "medium",
+      "evidence_refs": [
+        "packages/dashboard/src/app.tsx"
+      ],
+      "steps": [
+        {
+          "description": "Semantic 能力并入 Rules Explain。",
+          "target": "packages/dashboard/src/views/rule-topology.tsx or future semantic subview",
+          "verification": "路径命中解释仍复用 /api/rules/context。"
+        },
+        {
+          "description": "Ledger 能力并入 Timeline。",
+          "target": "packages/dashboard/src/views/intent-timeline.tsx or future ledger subview",
+          "verification": "ledger 分析作为 Timeline 子视图，而非空占位。"
+        },
+        {
+          "description": "Forensic/Audit 并入 Health。",
+          "target": "packages/dashboard/src/views/doctor.tsx or future health subview",
+          "verification": "doctor/audit/forensic 信息在 Health 下展示。"
+        }
+      ],
+      "review_status": "accepted"
+    },
+    {
+      "action": "继续禁止 Web 高影响写能力",
+      "rationale": "CLI 仍是 control plane，Web 不应执行本地修复或配置写入。",
+      "priority": "high",
+      "evidence_refs": [
+        "ANL-2026-04-26-fabric-cli-mcp-server-crud-职责优化/conclusions.json"
+      ],
+      "steps": [
+        {
+          "description": "Health/Readiness 中只展示建议命令，不执行 doctor --fix、init、update、sync-meta。",
+          "target": "packages/dashboard/src/views",
+          "verification": "Dashboard API client 不新增这些 POST/command execution 方法。"
+        },
+        {
+          "description": "不新增 Web MCP tool invocation console。",
+          "target": "packages/dashboard/src",
+          "verification": "Web 不代理 deprecated MCP write tools 或 runtime tool calls。"
+        }
+      ],
+      "review_status": "accepted"
+    }
+  ],
+  "open_questions": [
+    "Readiness 页面是否需要先等待 scan shared service 收敛，还是可以先接现有 /api/scan 做 UI 骨架？",
+    "四主题下是否使用 tabs 子路由，还是单页内分区？",
+    "Health 的 Runtime & Boundaries 是否需要新增 /api/status，还是先从 SSE connection、doctor report 和静态 manifest 拼装？"
+  ],
+  "intent_coverage": [
+    {
+      "intent": "以前提会话为基础",
+      "status": "addressed",
+      "where_addressed": "Round 1 and Round 2",
+      "notes": "继续继承 CLI=control、MCP=runtime context、Web=observe/explain 的边界。"
+    },
+    {
+      "intent": "讨论当前 Web 端应该保留哪些能力",
+      "status": "addressed",
+      "where_addressed": "Round 2 revised architecture",
+      "notes": "保留 Rules Explain、Timeline、History Replay、Health/Doctor；不再保留 Approval/Human Lock。"
+    },
+    {
+      "intent": "讨论当前 Web 端应该新增哪些能力",
+      "status": "addressed",
+      "where_addressed": "Round 2 recommendations",
+      "notes": "新增 Readiness；Runtime/Boundary 放入 Health；旧占位模块并入四主题。"
+    }
+  ],
+  "findings_coverage": [
+    {
+      "finding": "Human Lock / Approval Web 写路径已拆除",
+      "disposition": "recommendation",
+      "target": "Rec #3"
+    },
+    {
+      "finding": "当前稳定一级主题应基于真实数据面",
+      "disposition": "recommendation",
+      "target": "Rec #1"
+    },
+    {
+      "finding": "Scan API 已存在但缺 Dashboard 页面",
+      "disposition": "recommendation",
+      "target": "Rec #2"
+    },
+    {
+      "finding": "Forensic / Semantic / Ledger 是旧占位模块",
+      "disposition": "recommendation",
+      "target": "Rec #4"
+    },
+    {
+      "finding": "Web 不应新增高影响写能力",
+      "disposition": "recommendation",
+      "target": "Rec #5"
+    }
+  ]
+}
