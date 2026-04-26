@@ -60,16 +60,16 @@ export const zhCNMessages: Messages = {
   "cli.doctor.description": "运行 Fabric doctor 检查，并可选输出合规审计报告。",
   "cli.doctor.args.target.description":
     "目标项目路径。默认依次使用 CLI 参数、EXTERNAL_FIXTURE_PATH、fabric.config.json、当前目录。",
-  "cli.doctor.args.audit.description": "输出 AI 编辑意图缺少 fab_get_rules 前置调用的违规项。",
-  "cli.doctor.args.fix.description": "需要时将旧的根目录 ledger 迁移到 .fabric/.intent-ledger.jsonl。",
+  "cli.doctor.args.audit.description": "基于 Event Ledger 投影输出规则上下文合规违规项。",
+  "cli.doctor.args.fix.description": "需要时迁移旧意图账本，并用 typed Event Ledger 记录接受规则 baseline 变更。",
   "cli.doctor.args.window-minutes.description":
-    "匹配 fab_get_rules 调用的回看时间窗口，单位为分钟。默认 5 分钟。",
+    "匹配规则上下文事件的回看时间窗口，单位为分钟。默认 5 分钟。",
   "cli.doctor.errors.invalid-window": "无效的审计时间窗口：{value}",
   "cli.doctor.audit.preview-only":
     "fabric.config.json 中 auditMode 为 off；当前 fab doctor --audit 仅执行手动预览，不会改变退出码。",
   "cli.doctor.audit.none": "当前还没有可用于合规审计的 AI 编辑意图记录。",
-  "cli.doctor.audit.clean": "已审计的 {count} 个编辑路径都在 {window} 内存在前置 fab_get_rules 调用。",
-  "cli.doctor.audit.violations": "有 {count} 个已审计编辑路径在 {window} 内缺少前置 fab_get_rules 调用。",
+  "cli.doctor.audit.clean": "已审计的 {count} 个编辑路径都在 {window} 内存在前置规则上下文。",
+  "cli.doctor.audit.violations": "有 {count} 个已审计编辑路径在 {window} 内缺少前置规则上下文。",
   "cli.doctor.audit.table.path": "路径",
   "cli.doctor.audit.table.edit": "编辑时间",
   "cli.doctor.audit.table.rules": "最近规则调用",

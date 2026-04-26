@@ -16,9 +16,9 @@ fabric serve
   -> AI 只对 L1 自行选择 stable_id，并给出 ai_selection_reasons
   -> client 调用 fab_get_rule_sections
   -> server 合并 required L0/L2 + AI-selected L1
-  -> server 返回结构化 sections，并写入 .fabric/audit.jsonl 的 rule_selection
+  -> server 返回结构化 sections，并写入 .fabric/events.jsonl 的 rule_selection event
   -> AI 在取回规则段落后执行修改
-  -> fab_append_intent 写入 ledger
+  -> MCP、doctor、sync-meta 自动写入 .fabric/events.jsonl typed Event Ledger
 ```
 
 ## 分层与身份
@@ -139,14 +139,15 @@ type GetRuleSectionsResult = {
 
 ## Audit
 
-`fab_get_rule_sections` 写入 `.fabric/audit.jsonl`：
+`fab_get_rule_sections` 写入 `.fabric/events.jsonl`。旧 `.fabric/audit.jsonl` 只作为 compatibility fallback 读取：
 
 ```ts
 type RuleSelectionAuditEntry = {
-  kind: "audit-event";
-  event: "rule_selection";
+  kind: "fabric-event";
+  event_type: "rule_selection";
+  schema_version: 1;
+  id: string;
   ts: number;
-  path: string;
   selection_token: string;
   target_paths: string[];
   required_stable_ids: string[];
@@ -171,8 +172,12 @@ This is diagnostic-only. Fabric does not block commits for deleted anchors and d
 
 ## Legacy Surface
 
-`fab_get_rules` 和旧 rules context API 仍可作为旧代码与 Dashboard 只读观察面存在，但 MCP 编辑闭环不再依赖它们。新客户端应使用：
+`fab_get_rules` 和旧 rules context API 仍可作为旧代码与 Dashboard 只读观察面存在，但 MCP 编辑闭环不再依赖它们。
+
+`fab_append_intent` 和 `fab_update_registry` 是已废弃的兼容 surface。新客户端不要把它们作为 core protocol，也不要在 bootstrap guidance 中要求调用它们。新客户端应使用：
 
 ```text
-fab_plan_context -> fab_get_rule_sections -> edit -> fab_append_intent
+fab_plan_context -> fab_get_rule_sections -> edit
 ```
+
+执行证据由 MCP/service instrumentation 自动写入 `.fabric/events.jsonl`。规则 baseline 变更通过 `fabric sync-meta` 或 `fabric doctor --fix` 接受，并记录 `rule_baseline_accepted` / `baseline_synced` typed events。

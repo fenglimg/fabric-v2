@@ -29,14 +29,14 @@ const PROTECTED_TOKENS_PATH = path.join(
 );
 
 const BOOTSTRAP_REQUIRED_TOKENS = [
-  "fab_get_rules",
-  "fab_append_intent",
-  "fab_update_registry",
+  "fab_plan_context",
+  "fab_get_rule_sections",
   "AGENTS.md",
   "FABRIC.md",
   ".fabric/agents/",
   ".fabric/agents.meta.json",
   ".fabric/human-lock.json",
+  ".fabric/events.jsonl",
   "ledger_entry",
   "agent_meta",
   "shadow constraints",

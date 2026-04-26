@@ -7,6 +7,8 @@ import { appendIntent } from "../services/append-intent.js";
 
 type AppendIntentInput = {
   entry: Omit<AiLedgerEntry, "id" | "source" | "ts">;
+  correlation_id?: string;
+  session_id?: string;
 };
 
 const inputSchema = {
@@ -15,6 +17,14 @@ const inputSchema = {
     source: true,
     ts: true,
   }),
+  correlation_id: z
+    .string()
+    .optional()
+    .describe("Optional caller-provided correlation id for Event Ledger records"),
+  session_id: z
+    .string()
+    .optional()
+    .describe("Optional caller-provided session id for Event Ledger records"),
 };
 
 const outputSchema = z.object({
@@ -34,14 +44,15 @@ export function registerAppendIntent(server: McpServer): void {
   server.registerTool(
     "fab_append_intent",
     {
-      description: "Call after a completed task to append an intent ledger entry for Fabric.",
+      description:
+        "Deprecated compatibility surface. Do not call in new workflows; Fabric writes typed Event Ledger records to .fabric/events.jsonl automatically from MCP, doctor, and sync-meta activity.",
       inputSchema,
       outputSchema,
       annotations: { readOnlyHint: false },
     },
-    async ({ entry }: AppendIntentInput) => {
+    async ({ entry, correlation_id, session_id }: AppendIntentInput) => {
       const projectRoot = resolveProjectRoot();
-      const result = await appendIntent(projectRoot, { entry });
+      const result = await appendIntent(projectRoot, { entry, correlation_id, session_id });
 
       const structuredContent: z.infer<typeof outputSchema> = {
         success: result.success,

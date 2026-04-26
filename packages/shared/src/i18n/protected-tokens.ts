@@ -1,7 +1,6 @@
 export const PROTECTED_TOKENS = [
-  "fab_get_rules",
-  "fab_append_intent",
-  "fab_update_registry",
+  "fab_plan_context",
+  "fab_get_rule_sections",
   "fabric_rules",
   "ledger_entry",
   "ledger_entry_id",
@@ -15,6 +14,7 @@ export const PROTECTED_TOKENS = [
   ".fabric/init-context.json",
   ".fabric/forensic.json",
   ".fabric/.intent-ledger.jsonl",
+  ".fabric/events.jsonl",
   "@HUMAN",
   "shadow constraints",
   "Shadow Mirroring",

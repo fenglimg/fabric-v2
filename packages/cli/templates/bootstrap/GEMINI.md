@@ -1,6 +1,8 @@
 # Fabric Bootstrap
 - 主说明文档已收敛到 `.fabric/bootstrap/README.md`。
 - 项目级 bootstrap 入口仍然是 `AGENTS.md`。
-- 修改任何文件前必须调用 `fab_get_rules(path=<被改文件>)`。
+- 修改任何文件前必须调用 `fab_plan_context(paths=[<被改文件>])`，再调用 `fab_get_rule_sections` 获取规则段落。
+- 不要调用已废弃的 `fab_append_intent` 或 `fab_update_registry`；MCP、doctor 和 sync-meta 会自动写入 `.fabric/events.jsonl`。
+- 规则 baseline 变更通过 `fabric sync-meta` 或 `fabric doctor --fix` 接受。
 
 @AGENTS.md

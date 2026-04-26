@@ -53,7 +53,7 @@ describe("startHttpServer", () => {
 });
 
 describe("createFabricServer", () => {
-  it("registers fab_get_rule_sections and does not register fab_get_rules", async () => {
+  it("registers current tools and marks legacy mutation tools deprecated", async () => {
     const registerTool = vi.fn();
     const registerResource = vi.fn();
     vi.stubGlobal("__SERVER_VERSION__", "test");
@@ -70,8 +70,13 @@ describe("createFabricServer", () => {
     createFabricServer();
 
     const toolNames = registerTool.mock.calls.map((call) => call[0]);
+    const toolDescriptions = new Map(
+      registerTool.mock.calls.map((call) => [call[0], call[1]?.description as string | undefined]),
+    );
     expect(toolNames).toContain("fab_get_rule_sections");
     expect(toolNames).toContain("fab_plan_context");
     expect(toolNames).not.toContain("fab_get_rules");
+    expect(toolDescriptions.get("fab_append_intent")).toContain("Deprecated compatibility surface");
+    expect(toolDescriptions.get("fab_update_registry")).toContain("Deprecated compatibility surface");
   });
 });

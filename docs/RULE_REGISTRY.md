@@ -7,7 +7,7 @@
 当前项目根目录只有：
 
 ```text
-.fabric/audit.jsonl
+.fabric/events.jsonl
 ```
 
 缺失：
@@ -22,7 +22,7 @@
 直接证据：
 
 - `fab_plan_context` 对本次目标路径返回 `Fabric agents metadata file is missing: /mnt/c/Project/fabric-v2/.fabric/agents.meta.json`。
-- `find .fabric -maxdepth 3 -type f` 只返回 `.fabric/audit.jsonl`。
+- Event Ledger 的 canonical path 是 `.fabric/events.jsonl`；旧 `.fabric/audit.jsonl` 只作为 compatibility fallback 读取。
 
 结论：
 
@@ -109,4 +109,4 @@
 1. 在本文新增或更新 module Stable ID。
 2. 如果 execution flow、schema、rule priority、MCP transport、Stable ID、cache 或 audit behavior 发生变化，更新 [SPEC_INTERNAL](./SPEC_INTERNAL.md)。
 3. 如果 `packages/` 文件新增、删除、重命名或职责变化，更新 [CODEBASE_LANDSCAPE](./CODEBASE_LANDSCAPE.md)。
-4. 如果变更创建或修改 `.fabric/agents/` rules，使用 `fab_update_registry` 或 `fabric sync-meta`；不要直接编辑 `.fabric/agents.meta.json`。
+4. 如果变更创建或修改 `.fabric/agents/` rules，使用 `fabric sync-meta` 或 `fabric doctor --fix` 接受 baseline；不要直接编辑 `.fabric/agents.meta.json`。

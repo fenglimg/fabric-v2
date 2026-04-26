@@ -149,21 +149,21 @@
 
 结论：此 ADR 是目标约束，并存在已知 implementation drift。未来新增任何 Dashboard write 行为，都必须先更新 ADR。
 
-## ADR-009: Append-only Ledger With Compatibility Path
+## ADR-009: Event Ledger With Compatibility Reads
 
-决策：当前 ledger path 是 `.fabric/.intent-ledger.jsonl`；legacy root `.intent-ledger.jsonl` 保持 read-compatible。
+决策：当前 Event Ledger path 是 `.fabric/events.jsonl`。旧 `.fabric/.intent-ledger.jsonl` 与 legacy root `.intent-ledger.jsonl` 只保持 read-compatible fallback，不再作为新写入目标。
 
 原因：
 
-- 将 Fabric state 收口到 `.fabric/` 下。
+- 将 Fabric state 收口到一个 typed Event Ledger。
 - 避免静默移动 user history。
-- 让 doctor/fix 负责 migration。
+- 让 doctor/fix 负责 legacy migration and compatibility projection。
 
 证据：
 
-- Constants：`packages/server/src/services/_shared.ts:5`。
-- HTTP MCP event store 使用 `getLedgerPath(projectRoot)`：`packages/server/src/http.ts:145`。
-- Event watcher 同时监听 `.fabric/.intent-ledger.jsonl` 和 legacy path：`packages/server/src/api/events.ts:19`。
+- Constants：`packages/server/src/services/_shared.ts:9`。
+- Event Ledger append/read service：`packages/server/src/services/event-ledger.ts:16`。
+- Legacy ledger projection/fallback：`packages/server/src/services/read-ledger.ts:46`。
 
 ## ADR-010: Audit Compliance Is Best-effort
 
@@ -172,13 +172,13 @@
 原因：
 
 - 不能因为 audit logging 失败就让 Fabric edit 失败。
-- Audit 是 evidence，不是 primary data path。
+- Audit compatibility views are evidence，不是 primary data path。
 
 证据：
 
-- `getRules` 会吞掉 audit append failure：`packages/server/src/services/get-rules.ts:93`。
-- `appendIntent` 会吞掉 compliance audit failure：`packages/server/src/services/append-intent.ts:30`。
-- Audit window 默认 5 分钟：`packages/server/src/services/audit-log.ts:7`。
+- `readAuditLog` 从 `.fabric/events.jsonl` projection 读取，并兼容旧 `.fabric/audit.jsonl`：`packages/server/src/services/audit-log.ts:194`。
+- `appendIntent` 会吞掉 compliance telemetry failure：`packages/server/src/services/append-intent.ts:28`。
+- Audit window 默认 5 分钟：`packages/server/src/services/audit-log.ts:8`。
 
 ## ADR-011: Dashboard Static Served By Server Package
 

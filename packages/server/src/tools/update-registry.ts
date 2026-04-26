@@ -46,7 +46,7 @@ export function registerUpdateRegistry(server: McpServer): void {
     "fab_update_registry",
     {
       description:
-        "Call to add, remove, or update Fabric registry nodes. Use instead of editing .fabric/agents.meta.json directly.",
+        "Deprecated compatibility surface. Do not call in new workflows; update rule files and use fabric sync-meta or fabric doctor --fix to accept the .fabric/agents.meta.json baseline and typed Event Ledger records.",
       inputSchema,
       outputSchema,
       annotations: { destructiveHint: true },

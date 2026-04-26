@@ -100,11 +100,10 @@ http://127.0.0.1:7373
 
 重启已配置的 AI client，确认存在 Fabric tools：
 
-- `fab_get_rules`
 - `fab_plan_context`
 - `fab_get_rule_sections`
-- `fab_append_intent`
-- `fab_update_registry`
+
+`fab_append_intent` and `fab_update_registry` are deprecated compatibility surfaces. New workflows should not require or call them.
 
 最小验证 prompt：
 
@@ -124,20 +123,24 @@ Before editing any file, call fab_plan_context for README.md, pick any relevant 
 
 ## 6. 写入首条 intent ledger
 
-完成一段真实 staged 改动后追加 intent：
-
-```bash
-git add README.md
-FABRIC_INTENT="docs: refine onboarding copy" fabric ledger-append --staged
-```
-
-当前 ledger 主路径是：
+Fabric 现在把 MCP 调用、doctor baseline 接受和 sync-meta baseline 同步自动写入 typed Event Ledger：
 
 ```text
-.fabric/.intent-ledger.jsonl
+.fabric/events.jsonl
 ```
 
-旧根路径 `.intent-ledger.jsonl` 只保留兼容读取，迁移应通过 `fabric doctor --fix` 完成。
+常见事件类型包括：
+
+- `rule_context_planned`
+- `rule_selection`
+- `rule_sections_fetched`
+- `edit_intent_checked`
+- `rule_drift_detected`
+- `rule_baseline_accepted`
+- `baseline_synced`
+- `mcp_event`
+
+旧的 `.fabric/.intent-ledger.jsonl` 和根路径 `.intent-ledger.jsonl` 只保留兼容读取；迁移和 baseline 接受应通过 `fabric doctor --fix` 或 `fabric sync-meta` 完成。
 
 ## 7. 处理 human-lock drift
 
