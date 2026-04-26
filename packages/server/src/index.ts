@@ -24,7 +24,14 @@ export {
 } from "./services/doctor.js";
 export { approveHumanLock, type ApproveHumanLockInput, type ApproveHumanLockResult } from "./services/approve-human-lock.js";
 export { readHumanLock, readHumanLockEntry, type HumanLockStatus } from "./services/read-human-lock.js";
-export { LEGACY_LEDGER_PATH, LEDGER_PATH, getLedgerPath, getLegacyLedgerPath } from "./services/_shared.js";
+export {
+  EVENT_LEDGER_PATH,
+  LEGACY_LEDGER_PATH,
+  LEDGER_PATH,
+  getEventLedgerPath,
+  getLedgerPath,
+  getLegacyLedgerPath,
+} from "./services/_shared.js";
 
 function writeStderr(message: string): void {
   process.stderr.write(`${message}\n`);

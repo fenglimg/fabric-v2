@@ -95,7 +95,7 @@ describe("doctor command", () => {
     expect(stdout.some((line) => line.includes("fab doctor"))).toBe(true);
     expect(stderr.some((line) => line.includes("src/app.ts"))).toBe(true);
     expect(errors).toHaveLength(1);
-    expect(errors[0]).toMatch(/cli\.doctor\.audit\.violations|fab_get_rules/);
+    expect(errors[0]).toMatch(/audited edit paths are missing preceding rule context/);
     expect(process.exitCode).toBe(1);
   });
 

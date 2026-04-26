@@ -12,14 +12,28 @@ import {
   type FabricEvent,
   type HumanLockEntry,
 } from "@fenglimg/fabric-shared";
+import { eventLedgerEventSchema } from "@fenglimg/fabric-shared";
 import chokidar, { type FSWatcher } from "chokidar";
 import { resolveLedgerPaths } from "../services/read-ledger.js";
-import { LEGACY_LEDGER_PATH, LEDGER_PATH, getLedgerPath } from "../services/_shared.js";
+import {
+  EVENT_LEDGER_PATH,
+  LEGACY_LEDGER_PATH,
+  LEDGER_PATH,
+  getEventLedgerPath,
+  getLedgerPath,
+} from "../services/_shared.js";
 
 const AGENTS_META_PATH = ".fabric/agents.meta.json";
 const HUMAN_LOCK_PATH = ".fabric/human-lock.json";
 const FORENSIC_PATH = ".fabric/forensic.json";
-const WATCHED_PATHS = [AGENTS_META_PATH, HUMAN_LOCK_PATH, FORENSIC_PATH, LEDGER_PATH, LEGACY_LEDGER_PATH] as const;
+const WATCHED_PATHS = [
+  AGENTS_META_PATH,
+  HUMAN_LOCK_PATH,
+  FORENSIC_PATH,
+  EVENT_LEDGER_PATH,
+  LEDGER_PATH,
+  LEGACY_LEDGER_PATH,
+] as const;
 
 const CONNECTION_LIMIT = 10;
 const HEARTBEAT_INTERVAL_MS = 30_000;
@@ -75,6 +89,8 @@ type EventsState = {
   activeLedgerPath: string;
   ledgerOffset: number;
   ledgerRemainder: string;
+  eventLedgerOffset: number;
+  eventLedgerRemainder: string;
   humanLockSnapshot: HumanLockSnapshot;
   nextEventId: number;
   ringBuffer: RingBuffer;
@@ -100,6 +116,8 @@ export function createEventsHandler(options: CreateEventsHandlerOptions) {
     activeLedgerPath: getLedgerPath(projectRoot),
     ledgerOffset: 0,
     ledgerRemainder: "",
+    eventLedgerOffset: 0,
+    eventLedgerRemainder: "",
     humanLockSnapshot: createEmptyHumanLockSnapshot(),
     nextEventId: 1,
     ringBuffer: new RingBuffer(RING_BUFFER_CAPACITY),
@@ -186,6 +204,8 @@ async function ensureWatcher(state: EventsState, projectRoot: string): Promise<v
   state.activeLedgerPath = ledgerState.path;
   state.ledgerOffset = ledgerState.size;
   state.ledgerRemainder = "";
+  state.eventLedgerOffset = await readFileSize(getEventLedgerPath(projectRoot));
+  state.eventLedgerRemainder = "";
   state.humanLockSnapshot = await readHumanLockSnapshot(projectRoot);
 
   const watcher = chokidar.watch([...WATCHED_PATHS], {
@@ -270,6 +290,10 @@ async function readEventsForFile(
   if (relativePath === FORENSIC_PATH) {
     const event = await readDriftDetectedEvent(projectRoot);
     return event === null ? [] : [event];
+  }
+
+  if (relativePath === EVENT_LEDGER_PATH) {
+    return await readEventLedgerAppendedEvents(state, projectRoot);
   }
 
   if (relativePath === LEDGER_PATH || relativePath === LEGACY_LEDGER_PATH) {
@@ -396,6 +420,46 @@ async function readLedgerAppendedEvents(
   }
 }
 
+async function readEventLedgerAppendedEvents(
+  state: EventsState,
+  projectRoot: string,
+): Promise<FabricEvent[]> {
+  const eventLedgerPath = getEventLedgerPath(projectRoot);
+  const nextSize = await readFileSize(eventLedgerPath);
+
+  if (nextSize < state.eventLedgerOffset) {
+    state.eventLedgerOffset = 0;
+    state.eventLedgerRemainder = "";
+  }
+
+  if (nextSize === state.eventLedgerOffset) {
+    return [];
+  }
+
+  const startOffset = state.eventLedgerOffset;
+  state.eventLedgerOffset = nextSize;
+
+  const handle = await open(eventLedgerPath, "r");
+
+  try {
+    const length = nextSize - startOffset;
+    const buffer = Buffer.alloc(length);
+    await handle.read(buffer, 0, length, startOffset);
+
+    const chunk = `${state.eventLedgerRemainder}${buffer.toString("utf8")}`;
+    const lines = chunk.split(/\r?\n/);
+    state.eventLedgerRemainder = chunk.endsWith("\n") ? "" : lines.pop() ?? "";
+
+    return lines
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0)
+      .map(parseEventLedgerAppendedEvent)
+      .filter((event): event is FabricEvent => event !== null);
+  } finally {
+    await handle.close();
+  }
+}
+
 async function resolveLedgerWatchState(projectRoot: string): Promise<{ path: string; size: number }> {
   const paths = await resolveLedgerPaths(projectRoot);
   const path = paths.usingLegacy ? paths.legacyPath : paths.primaryPath;
@@ -419,6 +483,28 @@ function parseLedgerAppendedEvent(line: string): FabricEvent | null {
     return {
       type: "ledger:appended",
       payload: validation.data,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function parseEventLedgerAppendedEvent(line: string): FabricEvent | null {
+  try {
+    const parsed = eventLedgerEventSchema.safeParse(JSON.parse(line));
+    if (!parsed.success || parsed.data.event_type !== "edit_intent_checked") {
+      return null;
+    }
+
+    return {
+      type: "ledger:appended",
+      payload: {
+        id: parsed.data.ledger_entry_id,
+        ts: parsed.data.ts,
+        source: "ai",
+        intent: parsed.data.intent,
+        affected_paths: [parsed.data.path],
+      },
     };
   } catch {
     return null;

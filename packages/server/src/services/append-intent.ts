@@ -1,10 +1,12 @@
 import type { AiLedgerEntry } from "@fenglimg/fabric-shared";
 
 import { appendEditIntentAuditEvents, type EditIntentComplianceResult } from "./audit-log.js";
-import { appendLedgerEntry, type StoredLedgerEntry } from "./read-ledger.js";
+import { createStoredLedgerEntry, type StoredLedgerEntry } from "./read-ledger.js";
 
 export type AppendIntentInput = {
   entry: Omit<AiLedgerEntry, "id" | "source" | "ts">;
+  correlation_id?: string;
+  session_id?: string;
 };
 
 export type AppendIntentResult = {
@@ -19,7 +21,7 @@ export async function appendIntent(
   input: AppendIntentInput,
 ): Promise<AppendIntentResult> {
   const ts = Date.now();
-  const entry = await appendLedgerEntry(projectRoot, {
+  const entry = createStoredLedgerEntry({
     ...input.entry,
     ts,
     source: "ai",
@@ -33,6 +35,8 @@ export async function appendIntent(
       intent: entry.intent,
       ledger_entry_id: entry.id,
       ts,
+      correlation_id: input.correlation_id,
+      session_id: input.session_id,
     });
     compliance = auditResult.compliance;
   } catch {

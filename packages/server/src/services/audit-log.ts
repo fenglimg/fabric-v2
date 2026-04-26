@@ -1,8 +1,9 @@
-import { appendFile, mkdir, open, stat } from "node:fs/promises";
+import { open, stat } from "node:fs/promises";
 import { isAbsolute, join, posix, relative, resolve } from "node:path";
 
 import { contextCache } from "../cache.js";
 import { FABRIC_DIR, isNodeError } from "./_shared.js";
+import { appendEventLedgerEvent, readEventLedger, type StoredEventLedgerEvent } from "./event-ledger.js";
 
 export const AUDIT_LOG_FILE = `${FABRIC_DIR}/audit.jsonl`;
 export const DEFAULT_AUDIT_WINDOW_MS = 5 * 60 * 1000;
@@ -48,6 +49,11 @@ export async function appendGetRulesAuditEvent(
     path: string;
     client_hash?: string;
     ts?: number;
+    required_stable_ids?: string[];
+    ai_selectable_stable_ids?: string[];
+    final_stable_ids?: string[];
+    correlation_id?: string;
+    session_id?: string;
   },
 ): Promise<GetRulesAuditEntry> {
   const entry: GetRulesAuditEntry = {
@@ -58,7 +64,15 @@ export async function appendGetRulesAuditEvent(
     client_hash: input.client_hash,
   };
 
-  await appendAuditLogEntries(projectRoot, [entry]);
+  await appendAuditLogEventLedgerEvents(projectRoot, [entry], {
+    rule_context: {
+      required_stable_ids: input.required_stable_ids,
+      ai_selectable_stable_ids: input.ai_selectable_stable_ids,
+      final_stable_ids: input.final_stable_ids,
+    },
+    correlation_id: input.correlation_id,
+    session_id: input.session_id,
+  });
 
   return entry;
 }
@@ -77,6 +91,8 @@ export async function appendRuleSelectionAuditEvent(
     rejected_stable_ids: string[];
     ignored_stable_ids: string[];
     ts?: number;
+    correlation_id?: string;
+    session_id?: string;
   },
 ): Promise<RuleSelectionAuditEntry> {
   const entry: RuleSelectionAuditEntry = {
@@ -95,7 +111,10 @@ export async function appendRuleSelectionAuditEvent(
     ignored_stable_ids: input.ignored_stable_ids,
   };
 
-  await appendAuditLogEntries(projectRoot, [entry]);
+  await appendAuditLogEventLedgerEvents(projectRoot, [entry], {
+    correlation_id: input.correlation_id,
+    session_id: input.session_id,
+  });
 
   return entry;
 }
@@ -114,6 +133,8 @@ export async function appendEditIntentAuditEvents(
     ledger_entry_id: string;
     ts?: number;
     window_ms?: number;
+    correlation_id?: string;
+    session_id?: string;
   },
 ): Promise<{ entries: EditIntentAuditEntry[]; compliance: EditIntentComplianceResult }> {
   const ts = input.ts ?? Date.now();
@@ -151,7 +172,10 @@ export async function appendEditIntentAuditEvents(
     return { entries, compliance };
   }
 
-  await appendAuditLogEntries(projectRoot, entries);
+  await appendAuditLogEventLedgerEvents(projectRoot, entries, {
+    correlation_id: input.correlation_id,
+    session_id: input.session_id,
+  });
 
   return { entries, compliance };
 }
@@ -172,11 +196,19 @@ export async function readAuditLog(
   projectRoot: string,
   opts?: { windowMs: number; ts: number },
 ): Promise<AuditLogEntry[]> {
+  const eventEntries = await readAuditLogFromEventLedger(projectRoot);
+
   if (opts === undefined) {
-    return readAuditLogFull(projectRoot);
+    const legacyEntries = await readAuditLogFull(projectRoot);
+    return mergeAuditLogEntries(legacyEntries, eventEntries);
   }
 
-  return readAuditLogWindowed(projectRoot, opts.ts, opts.windowMs);
+  const legacyEntries = await readAuditLogWindowed(projectRoot, opts.ts, opts.windowMs);
+  const windowedEventEntries = eventEntries.filter(
+    (entry) => opts.ts - entry.ts <= opts.windowMs && entry.ts <= opts.ts,
+  );
+
+  return mergeAuditLogEntries(legacyEntries, windowedEventEntries);
 }
 
 // ---------------------------------------------------------------------------
@@ -357,12 +389,156 @@ function isGetRulesAuditEntry(entry: AuditLogEntry): entry is GetRulesAuditEntry
   return entry.event === "get_rules";
 }
 
-async function appendAuditLogEntries(projectRoot: string, entries: AuditLogEntry[]): Promise<void> {
-  const auditPath = join(projectRoot, AUDIT_LOG_FILE);
-  const auditDir = join(projectRoot, FABRIC_DIR);
+async function appendAuditLogEventLedgerEvents(
+  projectRoot: string,
+  entries: AuditLogEntry[],
+  metadata: {
+    rule_context?: {
+      required_stable_ids?: string[];
+      ai_selectable_stable_ids?: string[];
+      final_stable_ids?: string[];
+    };
+    correlation_id?: string;
+    session_id?: string;
+  } = {},
+): Promise<void> {
+  for (const entry of entries) {
+    if (entry.event === "get_rules") {
+      await appendEventLedgerEvent(projectRoot, {
+        event_type: "rule_context_planned",
+        ts: entry.ts,
+        target_paths: [entry.path],
+        required_stable_ids: metadata.rule_context?.required_stable_ids ?? [],
+        ai_selectable_stable_ids: metadata.rule_context?.ai_selectable_stable_ids ?? [],
+        final_stable_ids: metadata.rule_context?.final_stable_ids ?? [],
+        client_hash: entry.client_hash,
+        correlation_id: metadata.correlation_id,
+        session_id: metadata.session_id,
+      });
+      continue;
+    }
 
-  await mkdir(auditDir, { recursive: true });
-  await appendFile(auditPath, `${entries.map((entry) => JSON.stringify(entry)).join("\n")}\n`, "utf8");
+    if (entry.event === "rule_selection") {
+      await appendEventLedgerEvent(projectRoot, {
+        event_type: "rule_selection",
+        ts: entry.ts,
+        selection_token: entry.selection_token,
+        target_paths: entry.target_paths,
+        required_stable_ids: entry.required_stable_ids,
+        ai_selectable_stable_ids: entry.ai_selectable_stable_ids,
+        ai_selected_stable_ids: entry.ai_selected_stable_ids,
+        final_stable_ids: entry.final_stable_ids,
+        ai_selection_reasons: entry.ai_selection_reasons,
+        rejected_stable_ids: entry.rejected_stable_ids,
+        ignored_stable_ids: entry.ignored_stable_ids,
+        correlation_id: metadata.correlation_id,
+        session_id: metadata.session_id,
+      });
+      continue;
+    }
+
+    await appendEventLedgerEvent(projectRoot, {
+      event_type: "edit_intent_checked",
+      ts: entry.ts,
+      path: entry.path,
+      compliant: entry.compliant,
+      intent: entry.intent,
+      ledger_entry_id: entry.ledger_entry_id,
+      ledger_source: "ai",
+      matched_rule_context_ts: entry.matched_get_rules_ts,
+      window_ms: entry.window_ms,
+      correlation_id: metadata.correlation_id,
+      session_id: metadata.session_id,
+    });
+  }
+}
+
+async function readAuditLogFromEventLedger(projectRoot: string): Promise<AuditLogEntry[]> {
+  const events = await readEventLedger(projectRoot);
+  return events
+    .map((event) => projectAuditEvent(projectRoot, event))
+    .filter((entry): entry is AuditLogEntry => entry !== null);
+}
+
+function projectAuditEvent(projectRoot: string, event: StoredEventLedgerEvent): AuditLogEntry | null {
+  if (event.event_type === "rule_context_planned") {
+    const [path] = event.target_paths;
+    if (path === undefined) {
+      return null;
+    }
+
+    return {
+      kind: "audit-event",
+      event: "get_rules",
+      ts: event.ts,
+      path: normalizeAuditPath(projectRoot, path),
+      client_hash: event.client_hash,
+    };
+  }
+
+  if (event.event_type === "rule_selection") {
+    const [path] = event.target_paths;
+    if (path === undefined) {
+      return null;
+    }
+
+    return {
+      kind: "audit-event",
+      event: "rule_selection",
+      ts: event.ts,
+      path: normalizeAuditPath(projectRoot, path),
+      selection_token: event.selection_token,
+      target_paths: event.target_paths.map((targetPath) => normalizeAuditPath(projectRoot, targetPath)),
+      required_stable_ids: event.required_stable_ids,
+      ai_selectable_stable_ids: event.ai_selectable_stable_ids,
+      ai_selected_stable_ids: event.ai_selected_stable_ids,
+      final_stable_ids: event.final_stable_ids,
+      ai_selection_reasons: event.ai_selection_reasons,
+      rejected_stable_ids: event.rejected_stable_ids,
+      ignored_stable_ids: event.ignored_stable_ids,
+    };
+  }
+
+  if (event.event_type === "edit_intent_checked") {
+    return {
+      kind: "audit-event",
+      event: "edit_intent",
+      ts: event.ts,
+      path: normalizeAuditPath(projectRoot, event.path),
+      compliant: event.compliant,
+      intent: event.intent,
+      ledger_entry_id: event.ledger_entry_id,
+      matched_get_rules_ts: event.matched_rule_context_ts,
+      window_ms: event.window_ms,
+    };
+  }
+
+  return null;
+}
+
+function mergeAuditLogEntries(
+  legacyEntries: AuditLogEntry[],
+  eventEntries: AuditLogEntry[],
+): AuditLogEntry[] {
+  const entries = new Map<string, AuditLogEntry>();
+
+  for (const entry of [...legacyEntries, ...eventEntries]) {
+    entries.set(getAuditEntryIdentity(entry), entry);
+  }
+
+  return Array.from(entries.values()).sort((left, right) => left.ts - right.ts);
+}
+
+function getAuditEntryIdentity(entry: AuditLogEntry): string {
+  if (entry.event === "get_rules") {
+    return `${entry.event}:${entry.ts}:${entry.path}:${entry.client_hash ?? ""}`;
+  }
+
+  if (entry.event === "rule_selection") {
+    return `${entry.event}:${entry.ts}:${entry.selection_token}:${entry.target_paths.join("\0")}`;
+  }
+
+  return `${entry.event}:${entry.ts}:${entry.ledger_entry_id}:${entry.path}`;
 }
 
 function parseAuditLogLine(line: string): AuditLogEntry | null {

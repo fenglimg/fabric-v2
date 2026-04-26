@@ -101,13 +101,13 @@ describe("pre-commit command", () => {
     expect(ledgerRun).not.toHaveBeenCalled();
   }, 10_000);
 
-  it("treats the canonical ledger path as fabric-managed", async () => {
+  it("treats the Event Ledger path as fabric-managed", async () => {
     const syncRun = vi.fn();
     const humanLintRun = vi.fn();
     const ledgerRun = vi.fn();
 
     vi.doMock("node:child_process", () => ({
-      execSync: vi.fn().mockReturnValue(".fabric/.intent-ledger.jsonl\n"),
+      execSync: vi.fn().mockReturnValue(".fabric/events.jsonl\n"),
     }));
     vi.doMock("node:fs", async () => {
       const actual = await vi.importActual<typeof import("node:fs")>("node:fs");
@@ -148,6 +148,7 @@ describe("pre-commit command", () => {
       default: { run: ledgerRun },
     }));
     vi.doMock("@fenglimg/fabric-server", () => ({
+      EVENT_LEDGER_PATH: ".fabric/events.jsonl",
       LEDGER_PATH: ".fabric/.intent-ledger.jsonl",
       LEGACY_LEDGER_PATH: ".intent-ledger.jsonl",
     }));

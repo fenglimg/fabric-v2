@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { appendLedgerEntry, migrateLegacyLedger, readLedger, resolveLedgerPaths } from "./read-ledger.js";
+import { appendEventLedgerEvent } from "./event-ledger.js";
 
 const tempDirs: string[] = [];
 
@@ -55,7 +56,7 @@ describe("readLedger", () => {
     expect(entries[0]?.intent).toBe("legacy");
   });
 
-  it("always appends new entries to the canonical ledger path", async () => {
+  it("appends new entries to the Event Ledger without touching legacy ledger files", async () => {
     const projectRoot = await createTempProject();
     await writeFile(
       join(projectRoot, ".intent-ledger.jsonl"),
@@ -65,11 +66,15 @@ describe("readLedger", () => {
 
     await appendLedgerEntry(projectRoot, createEntry("new", "src/app.ts"));
 
-    const canonicalRaw = await readFile(join(projectRoot, ".fabric", ".intent-ledger.jsonl"), "utf8");
+    const eventRaw = await readFile(join(projectRoot, ".fabric", "events.jsonl"), "utf8");
     const legacyRaw = await readFile(join(projectRoot, ".intent-ledger.jsonl"), "utf8");
 
-    expect(canonicalRaw).toContain("\"intent\":\"new\"");
+    expect(eventRaw).toContain("\"event_type\":\"edit_intent_checked\"");
+    expect(eventRaw).toContain("\"intent\":\"new\"");
     expect(legacyRaw).toContain("\"intent\":\"legacy\"");
+    await expect(readFile(join(projectRoot, ".fabric", ".intent-ledger.jsonl"), "utf8")).rejects.toMatchObject({
+      code: "ENOENT",
+    });
   });
 
   it("migrates the legacy ledger into the canonical path without a read-side move", async () => {
@@ -92,6 +97,85 @@ describe("readLedger", () => {
       code: "ENOENT",
     });
     expect(after[0]?.intent).toBe("legacy");
+  });
+
+  it("projects compatible AI ledger entries from Event Ledger edit_intent_checked records", async () => {
+    const projectRoot = await createTempProject();
+
+    await appendEventLedgerEvent(projectRoot, {
+      event_type: "edit_intent_checked",
+      id: "event:edit-a",
+      ts: 2_000,
+      path: "src/a.ts",
+      compliant: true,
+      intent: "edit projected files",
+      ledger_entry_id: "ledger:projected",
+      matched_rule_context_ts: 1_500,
+      window_ms: 5_000,
+    });
+    await appendEventLedgerEvent(projectRoot, {
+      event_type: "edit_intent_checked",
+      id: "event:edit-b",
+      ts: 2_500,
+      path: "src/b.ts",
+      compliant: true,
+      intent: "edit projected files",
+      ledger_entry_id: "ledger:projected",
+      matched_rule_context_ts: 1_500,
+      window_ms: 5_000,
+    });
+
+    await expect(readFile(join(projectRoot, ".fabric", ".intent-ledger.jsonl"), "utf8")).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    expect(await readLedger(projectRoot)).toEqual([
+      {
+        id: "ledger:projected",
+        ts: 2_000,
+        source: "ai",
+        intent: "edit projected files",
+        affected_paths: ["src/a.ts", "src/b.ts"],
+      },
+    ]);
+  });
+
+  it("keeps richer legacy ledger entries when Event Ledger contains duplicate projected rows", async () => {
+    const projectRoot = await createTempProject();
+    await mkdir(join(projectRoot, ".fabric"), { recursive: true });
+    await writeFile(
+      join(projectRoot, ".fabric", ".intent-ledger.jsonl"),
+      `${JSON.stringify({
+        id: "ledger:shared",
+        ts: 1_000,
+        source: "ai",
+        commit_sha: "abc1234",
+        intent: "legacy wins",
+        affected_paths: ["src/legacy.ts"],
+      })}\n`,
+      "utf8",
+    );
+    await appendEventLedgerEvent(projectRoot, {
+      event_type: "edit_intent_checked",
+      id: "event:duplicate",
+      ts: 1_000,
+      path: "src/projected.ts",
+      compliant: true,
+      intent: "projected duplicate",
+      ledger_entry_id: "ledger:shared",
+      matched_rule_context_ts: null,
+      window_ms: 5_000,
+    });
+
+    expect(await readLedger(projectRoot)).toEqual([
+      {
+        id: "ledger:shared",
+        ts: 1_000,
+        source: "ai",
+        commit_sha: "abc1234",
+        intent: "legacy wins",
+        affected_paths: ["src/legacy.ts"],
+      },
+    ]);
   });
 });
 

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { appendFile, readFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { createMcpExpressApp } from "@modelcontextprotocol/sdk/server/express.js";
@@ -26,7 +26,8 @@ import { registerRulesContextApi } from "./api/rules-context.js";
 import { registerScanApi } from "./api/scan.js";
 import { registerDashboardStatic } from "./api/static.js";
 import { createBearerAuthMiddleware } from "./middleware/bearer-auth.js";
-import { ensureParentDirectory, getLedgerPath, getLegacyLedgerPath } from "./services/_shared.js";
+import { getLedgerPath, getLegacyLedgerPath } from "./services/_shared.js";
+import { appendEventLedgerEvent, readEventLedger } from "./services/event-ledger.js";
 
 const DEFAULT_HOST = "127.0.0.1";
 const NOTIFY_DEBOUNCE_MS = 200;
@@ -56,22 +57,17 @@ export type FabricHttpApp = ReturnType<typeof createMcpExpressApp> & {
 };
 
 class JsonlEventStore implements EventStore {
-  constructor(
-    private readonly projectRoot: string,
-    private readonly ledgerPath: string,
-  ) {}
+  constructor(private readonly projectRoot: string) {}
 
   async storeEvent(streamId: StreamId, message: JSONRPCMessage): Promise<EventId> {
     const eventId = randomUUID();
-    const entry: StoredMcpEvent = {
-      kind: "mcp-event",
-      eventId,
-      streamId,
-      message,
-    };
 
-    await ensureParentDirectory(this.ledgerPath);
-    await appendFile(this.ledgerPath, `${JSON.stringify(entry)}\n`, "utf8");
+    await appendEventLedgerEvent(this.projectRoot, {
+      event_type: "mcp_event",
+      mcp_event_id: eventId,
+      stream_id: streamId,
+      message,
+    });
 
     return eventId;
   }
@@ -110,10 +106,29 @@ class JsonlEventStore implements EventStore {
   }
 
   private async readEvents(): Promise<StoredMcpEvent[]> {
+    const eventLedgerEvents = await readEventLedger(this.projectRoot);
+    const projectedEvents = eventLedgerEvents
+      .flatMap((event): StoredMcpEvent[] => {
+        if (event.event_type !== "mcp_event") {
+          return [];
+        }
+
+        return [{
+          kind: "mcp-event",
+          eventId: event.mcp_event_id,
+          streamId: event.stream_id,
+          message: event.message as JSONRPCMessage,
+        }];
+      });
+
+    if (projectedEvents.length > 0) {
+      return projectedEvents;
+    }
+
     let raw: string;
 
     try {
-      raw = await readFile(this.ledgerPath, "utf8");
+      raw = await readFile(getLedgerPath(this.projectRoot), "utf8");
     } catch (error) {
       if (isNodeError(error) && error.code === "ENOENT") {
         try {
@@ -142,8 +157,7 @@ class JsonlEventStore implements EventStore {
 export function createFabricHttpApp(options: CreateFabricHttpAppOptions) {
   const { projectRoot, host = DEFAULT_HOST, authToken, dashboardDistPath, dev } = options;
   const app = createMcpExpressApp({ host }) as FabricHttpApp;
-  const ledgerPath = getLedgerPath(projectRoot);
-  const eventStore = new JsonlEventStore(projectRoot, ledgerPath);
+  const eventStore = new JsonlEventStore(projectRoot);
   const sessions = new Map<string, FabricHttpSession>();
 
   process.env.FABRIC_PROJECT_ROOT = projectRoot;

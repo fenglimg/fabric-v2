@@ -6,7 +6,7 @@ import process from "node:process";
 import { agentsMetaSchema, type AgentsMeta } from "@fenglimg/fabric-shared";
 import { defineCommand } from "citty";
 import { minimatch } from "minimatch";
-import { LEGACY_LEDGER_PATH, LEDGER_PATH } from "@fenglimg/fabric-server";
+import { EVENT_LEDGER_PATH, LEGACY_LEDGER_PATH, LEDGER_PATH } from "@fenglimg/fabric-server";
 
 import { resolveDevModeTarget } from "../dev-mode.js";
 import { t } from "../i18n.js";
@@ -66,6 +66,7 @@ function matchesFabricScope(stagedFiles: string[], meta: AgentsMeta): boolean {
     file === "AGENTS.md" ||
     file === ".fabric/agents.meta.json" ||
     file === ".fabric/human-lock.json" ||
+    file === EVENT_LEDGER_PATH ||
     file === LEDGER_PATH ||
     file === LEGACY_LEDGER_PATH ||
     scopeGlobs.some((pattern) => minimatch(file, pattern, { dot: true })),
