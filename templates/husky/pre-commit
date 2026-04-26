@@ -1,28 +1,9 @@
 #!/bin/sh
-# Fabric pre-commit hook — sub-300ms budget via single Node process
-# Runs: sync-meta --check-only → human-lint → ledger-append --staged → meta-guard
-# Uses local binary (no npx spawn) to avoid 3× Node startup cost.
+# Fabric pre-commit hook: block manual edits to generated metadata.
 
-FAB_BIN="./node_modules/.bin/fabric"
-
-if [ ! -x "$FAB_BIN" ]; then
-  FAB_BIN="./node_modules/.bin/fab"
-fi
-
-if [ ! -x "$FAB_BIN" ]; then
-  echo "fabric: $FAB_BIN not found. Run 'pnpm install' at repo root." >&2
-  exit 1
-fi
-
-# Single Node invocation covering all three checks + meta guard.
-# The `pre-commit` meta-command chains sync-meta/human-lint/ledger-append
-# inside one process for minimal startup overhead.
-"$FAB_BIN" pre-commit || exit $?
-
-# Guard: block manual edits to .fabric/agents.meta.json
 if git diff --cached --name-only | grep -q '^\.fabric/agents\.meta\.json$'; then
   if [ "$FAB_ALLOW_META_EDIT" != '1' ]; then
-    echo '.fabric/agents.meta.json cannot be manually edited; use fabric sync-meta, fabric doctor --fix, or set FAB_ALLOW_META_EDIT=1' >&2
+    echo '.fabric/agents.meta.json cannot be manually edited; update .fabric/rules and run fabric doctor --fix, or set FAB_ALLOW_META_EDIT=1' >&2
     exit 1
   fi
 fi

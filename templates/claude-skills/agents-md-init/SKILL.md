@@ -1,6 +1,6 @@
 ---
 name: agents-md-init
-description: Use this skill when `fab init` just completed, `.fabric/forensic.json` exists, and Shadow Mirroring initialization still needs to be finalized. This skill performs active reconnaissance, runs a single-round Architecture Review batch check, writes confirmed rule nodes only under `.fabric/agents/`, updates `.fabric/init-context.json`, and refreshes `.fabric/agents.meta.json`.
+description: Use this skill when `fab init` just completed, `.fabric/forensic.json` exists, and rule source initialization initialization still needs to be finalized. This skill performs active reconnaissance, runs a single-round Architecture Review batch check, writes confirmed rule nodes only under `.fabric/rules/`, updates `.fabric/init-context.json`, and refreshes `.fabric/agents.meta.json`.
 allowed-tools: Read, Glob, Grep, Bash
 ---
 
@@ -131,17 +131,17 @@ Write targets:
   - any user corrections
   - any explicit accepts for `MEDIUM` or `LOW`
 
-2. Write rule nodes only inside the Shadow Mirroring tree.
+2. Write rule nodes only inside the rule source initialization tree.
 
-- Mirror path rule: strip the project-root prefix from the source directory, then prepend `.fabric/agents/`.
-- Example: `packages/server/src` -> `.fabric/agents/packages/server/src/AGENTS.md`
-- Cross-cutting concerns go to `.fabric/agents/_cross/{concern}.md`
+- Mirror path rule: strip the project-root prefix from the source directory, then prepend `.fabric/rules/`.
+- Example: `packages/server/src` -> `.fabric/rules/packages/server/src/AGENTS.md`
+- Cross-cutting concerns go to `.fabric/rules/_cross/{concern}.md`
 - Use `topology_type: "mirror"` for mirrored nodes and `topology_type: "cross-cutting"` for `_cross` nodes
 - Create directories with `mkdir -p` before writing files when needed
 
 3. Update `.fabric/agents.meta.json`.
 
-- Add or refresh nodes for every generated Shadow Mirroring file
+- Add or refresh nodes for every generated rule source initialization file
 - Persist `layer` and `topology_type` on each node
 - Derive `layer` from the mirrored path depth already used by the repository schema
 - Keep the revision chain internally consistent
@@ -149,9 +149,9 @@ Write targets:
 4. Keep Phase 2 zero-pollution.
 
 - Do not create rule sidecars in business directories
-- Do not create legacy hidden rule folders outside `.fabric/agents/`
+- Do not create legacy hidden rule folders outside `.fabric/rules/`
 - Do not emit import-aggregation lines
-- Keep every generated rule artifact under `.fabric/agents/` or `.fabric/agents/_cross/`
+- Keep every generated rule artifact under `.fabric/rules/` or `.fabric/rules/_cross/`
 
 ## Hard Rules (DO NOT TRANSLATE) — DISPLAY / WRITE Split
 
@@ -169,11 +169,11 @@ Write targets:
 
 ### WRITE Rules
 
-- NEVER write any unconfirmed invariant or domain rule into `.fabric/agents/`.
+- NEVER write any unconfirmed invariant or domain rule into `.fabric/rules/`.
 - NEVER write any `MEDIUM` or `LOW` item unless the user explicitly accepted it.
 - NEVER infer missing invariants, domain boundaries, or rule text from weak evidence.
 - NEVER generate placeholder, stub, `TODO`, or `TBD` content.
-- NEVER write rule artifacts outside the Shadow Mirroring tree.
+- NEVER write rule artifacts outside the rule source initialization tree.
 - MUST write `.fabric/init-context.json` with `confidence_snapshot` preserved for every written invariant.
 - MUST update `.fabric/agents.meta.json` with `layer` and `topology_type` for each generated node.
-- MUST preserve protected tokens exactly: `AGENTS.md`, `FABRIC.md`, `.fabric/agents/`, `.fabric/agents/_cross/`, `.fabric/agents.meta.json`, `.fabric/human-lock.json`, `.fabric/init-context.json`, `.fabric/forensic.json`, `Shadow Mirroring`, `MUST`, `NEVER`.
+- MUST preserve protected tokens exactly: `AGENTS.md`, `FABRIC.md`, `.fabric/rules/`, `.fabric/rules/_cross/`, `.fabric/agents.meta.json`, `.fabric/init-context.json`, `.fabric/forensic.json`, `rule source initialization`, `MUST`, `NEVER`.

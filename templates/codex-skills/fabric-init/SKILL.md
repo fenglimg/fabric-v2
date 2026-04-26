@@ -9,7 +9,7 @@ MUST: Read `.fabric/forensic.json` before taking any other action.
 MUST: Treat `.fabric/bootstrap/README.md` as the current bootstrap contract for this repository.
 MUST: If `.fabric/init-context.json` already exists, stop and report that initialization follow-up appears complete.
 MUST: Use evidence from `.fabric/forensic.json` and the repository layout to guide the initialization follow-up.
-MUST: Preserve protected tokens exactly: `AGENTS.md`, `FABRIC.md`, `.fabric/agents.meta.json`, `.fabric/human-lock.json`, `.fabric/init-context.json`, `.fabric/forensic.json`, `MUST`, `NEVER`.
+MUST: Preserve protected tokens exactly: `AGENTS.md`, `FABRIC.md`, `.fabric/agents.meta.json`, `.fabric/init-context.json`, `.fabric/forensic.json`, `MUST`, `NEVER`.
 NEVER: Claim initialization is complete without checking `.fabric/init-context.json`.
 NEVER: Rewrite or translate protected tokens.
 NEVER: ignore `.fabric/bootstrap/README.md` while deciding next initialization steps.

@@ -74,7 +74,7 @@ allowed-tools: Read, Write, Glob, Grep, Bash
 - 更新所有变更 AGENTS 文件的 hash
 - 保持 revision hash 链内部一致
 
-4. 最终输出：向用户列出生成文件清单，并建议后续维护时运行 `fab sync-meta`。
+4. 最终输出：向用户列出生成文件清单，并建议后续维护时运行 `fabric doctor --fix`。
 
 ## Hard Rules
 

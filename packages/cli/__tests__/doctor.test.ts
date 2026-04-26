@@ -10,147 +10,130 @@ afterEach(() => {
 });
 
 describe("doctor command", () => {
-  it("sets a non-zero exit code when strict audit mode finds violations", async () => {
+  it("prints JSON reports and exits non-zero on errors", async () => {
     vi.doMock("@fenglimg/fabric-server", () => ({
-      runDoctorReport: vi.fn().mockResolvedValue({
-        status: "warn",
-        checks: [
-          {
-            name: "Intent ledger",
-            status: "ok",
-            message: "Last ledger entry is 1m old (1 total entry).",
-          },
-        ],
-        summary: {
-          target: "/tmp/fabric-target",
-          framework: {
-            kind: "vite",
-            version: "^7.0.0",
-            subkind: "vite-application",
-          },
-          entryPoints: [],
-          driftCount: 0,
-          protectedPathCount: 0,
-          protectedPathsIntact: true,
-          lastLedgerEntryTs: null,
-          lastLedgerEntryAgeMs: null,
-          metaRevision: null,
-          ledgerPath: "/tmp/fabric-target/.fabric/.intent-ledger.jsonl",
-          legacyLedgerPath: "/tmp/fabric-target/.intent-ledger.jsonl",
-          legacyLedgerDetected: false,
-          businessLogicAnchors: null,
-          audit: null,
-        },
-        audit: null,
-      }),
-      runDoctorAuditReport: vi.fn().mockResolvedValue({
-        mode: "strict",
-        skipped: false,
-        windowMs: 5 * 60 * 1000,
-        checkedPathCount: 1,
-        violationCount: 1,
-        violations: [
-          {
-            editTs: Date.parse("2026-04-19T00:00:00.000Z"),
-            entryId: "ledger:audit",
-            intent: "touch src/app.ts",
-            lastRuleAccessTs: null,
-            path: "src/app.ts",
-          },
-        ],
-      }),
+      runDoctorReport: vi.fn().mockResolvedValue(createReport("error")),
+      runDoctorFix: vi.fn(),
     }));
 
     const { doctorCommand } = await import("../src/commands/doctor.ts");
-    const stdout: string[] = [];
-    const stderr: string[] = [];
-    const errors: string[] = [];
-
-    const stdoutSpy = vi.spyOn(process.stdout, "write").mockImplementation(((chunk: string | Uint8Array) => {
-      stdout.push(String(chunk).replace(/\n$/, ""));
-      return true;
-    }) as typeof process.stdout.write);
-    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(((chunk: string | Uint8Array) => {
-      stderr.push(String(chunk).replace(/\n$/, ""));
-      return true;
-    }) as typeof process.stderr.write);
-    const errorSpy = vi.spyOn(console, "error").mockImplementation((...args) => {
-      errors.push(args.map(String).join(" "));
-    });
+    const stdout = captureStdout();
 
     try {
       await doctorCommand.run?.({
         args: {
           target: "/tmp/fabric-target",
-          audit: true,
-          "window-minutes": "5",
+          json: true,
+          strict: false,
+          fix: false,
         },
       } as never);
     } finally {
-      stdoutSpy.mockRestore();
-      stderrSpy.mockRestore();
-      errorSpy.mockRestore();
+      stdout.restore();
     }
 
-    expect(stdout.some((line) => line.includes("fab doctor"))).toBe(true);
-    expect(stderr.some((line) => line.includes("src/app.ts"))).toBe(true);
-    expect(errors).toHaveLength(1);
-    expect(errors[0]).toMatch(/audited edit paths are missing preceding rule context/);
+    expect(JSON.parse(stdout.lines.join("\n")).status).toBe("error");
     expect(process.exitCode).toBe(1);
   });
 
-  it("runs doctor --fix and prints the migration message", async () => {
+  it("treats warnings as failures in strict mode", async () => {
+    vi.doMock("@fenglimg/fabric-server", () => ({
+      runDoctorReport: vi.fn().mockResolvedValue(createReport("warn")),
+      runDoctorFix: vi.fn(),
+    }));
+
+    const { doctorCommand } = await import("../src/commands/doctor.ts");
+    const stdout = captureStdout();
+
+    try {
+      await doctorCommand.run?.({
+        args: {
+          target: "/tmp/fabric-target",
+          json: false,
+          strict: true,
+          fix: false,
+        },
+      } as never);
+    } finally {
+      stdout.restore();
+    }
+
+    expect(stdout.lines.some((line) => line.includes("Warnings:"))).toBe(true);
+    expect(process.exitCode).toBe(1);
+  });
+
+  it("runs doctor --fix and prints deterministic fix summary", async () => {
     vi.doMock("@fenglimg/fabric-server", () => ({
       runDoctorReport: vi.fn(),
       runDoctorFix: vi.fn().mockResolvedValue({
         changed: true,
-        migratedLedger: true,
-        message: "Migrated legacy ledger from /tmp/fabric-target/.intent-ledger.jsonl to /tmp/fabric-target/.fabric/.intent-ledger.jsonl.",
-        report: {
-          status: "ok",
-          checks: [],
-          summary: {
-            target: "/tmp/fabric-target",
-            framework: { kind: "vite", version: "^7.0.0", subkind: "vite-application" },
-            entryPoints: [],
-            driftCount: 0,
-            protectedPathCount: 0,
-            protectedPathsIntact: true,
-            lastLedgerEntryTs: null,
-            lastLedgerEntryAgeMs: null,
-            metaRevision: null,
-            ledgerPath: "/tmp/fabric-target/.fabric/.intent-ledger.jsonl",
-            legacyLedgerPath: "/tmp/fabric-target/.intent-ledger.jsonl",
-            legacyLedgerDetected: false,
-            businessLogicAnchors: null,
-            audit: null,
-          },
-          audit: null,
-        },
+        fixed: [{ code: "agents_meta_stale", name: "Agents metadata", message: "stale" }],
+        remaining_manual_errors: [],
+        warnings: [],
+        message: "Applied 1 deterministic doctor fix. No manual errors remain.",
+        report: createReport("ok"),
       }),
-      runDoctorAuditReport: vi.fn(),
     }));
 
     const { doctorCommand } = await import("../src/commands/doctor.ts");
-    const stdout: string[] = [];
-    const stdoutSpy = vi.spyOn(process.stdout, "write").mockImplementation(((chunk: string | Uint8Array) => {
-      stdout.push(String(chunk).replace(/\n$/, ""));
-      return true;
-    }) as typeof process.stdout.write);
+    const stdout = captureStdout();
 
     try {
       await doctorCommand.run?.({
         args: {
           target: "/tmp/fabric-target",
           fix: true,
-          audit: false,
-          "window-minutes": "5",
+          json: false,
+          strict: false,
         },
       } as never);
     } finally {
-      stdoutSpy.mockRestore();
+      stdout.restore();
     }
 
-    expect(stdout.some((line) => line.includes("Migrated legacy ledger"))).toBe(true);
+    expect(stdout.lines.some((line) => line.includes("Applied 1 deterministic doctor fix"))).toBe(true);
+    expect(process.exitCode).toBe(originalExitCode);
   });
 });
+
+function captureStdout(): { lines: string[]; restore: () => void } {
+  const lines: string[] = [];
+  const spy = vi.spyOn(process.stdout, "write").mockImplementation(((chunk: string | Uint8Array) => {
+    lines.push(String(chunk).replace(/\n$/, ""));
+    return true;
+  }) as typeof process.stdout.write);
+
+  return {
+    lines,
+    restore: () => spy.mockRestore(),
+  };
+}
+
+function createReport(status: "ok" | "warn" | "error") {
+  return {
+    status,
+    checks: [
+      {
+        name: "Agents metadata",
+        status,
+        message: status === "ok" ? "aligned" : "not aligned",
+      },
+    ],
+    fixable_errors: status === "error" ? [{ code: "agents_meta_stale", name: "Agents metadata", message: "not aligned" }] : [],
+    manual_errors: [],
+    warnings: status === "warn" ? [{ code: "derived_identity", name: "Rule identity", message: "derived identity" }] : [],
+    summary: {
+      target: "/tmp/fabric-target",
+      framework: { kind: "vite", version: "^7.0.0", subkind: "vite-application" },
+      entryPoints: [],
+      metaRevision: "sha256:old",
+      computedMetaRevision: "sha256:new",
+      ruleCount: 1,
+      eventLedgerPath: "/tmp/fabric-target/.fabric/events.jsonl",
+      fixableErrorCount: status === "error" ? 1 : 0,
+      manualErrorCount: 0,
+      warningCount: status === "warn" ? 1 : 0,
+      targetFiles: {},
+    },
+  };
+}

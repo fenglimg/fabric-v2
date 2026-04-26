@@ -152,7 +152,7 @@ describe("forensic shadow mirroring fixture", () => {
             "ratio": 1,
             "total": 3,
           },
-          "proposed_rule": "Preserve domain-specific module names when mirroring structure into AGENTS.md or .fabric/agents/.",
+          "proposed_rule": "Preserve domain-specific module names when mirroring structure into .fabric/rules/.",
           "statement": "Sampled modules are named as concrete domain concepts (Game, Network, Player).",
           "type": "domain",
         },

@@ -67,8 +67,8 @@ export type InitScaffoldResult = {
   metaAction: InitWriteAction;
   taxonomyPath: string;
   taxonomyAction: InitWriteAction;
-  humanLockPath: string;
-  humanLockAction: InitWriteAction;
+  eventsPath: string;
+  eventsAction: InitWriteAction;
   forensicPath: string;
   forensicAction: InitWriteAction;
   claudeSkillPath: string;
@@ -194,9 +194,9 @@ export type InitScaffoldPlan = {
   taxonomyPath: string;
   taxonomyAction: InitWriteAction;
   taxonomyContent: string;
-  humanLockPath: string;
-  humanLockAction: InitWriteAction;
-  humanLockContent: string;
+  rulesDir: string;
+  eventsPath: string;
+  eventsAction: InitWriteAction;
   forensicPath: string;
   forensicAction: InitWriteAction;
   forensicReport: Awaited<ReturnType<typeof buildForensicReport>>;
@@ -489,6 +489,8 @@ export async function buildInitFabricPlan(target: string, options?: InitOptions)
   const bootstrapPath = join(fabricDir, "bootstrap", "README.md");
   const forensicPath = join(fabricDir, "forensic.json");
   const taxonomyPath = join(fabricDir, "INITIAL_TAXONOMY.md");
+  const rulesDir = join(fabricDir, "rules");
+  const eventsPath = join(fabricDir, "events.jsonl");
   const claudeSkillPath = join(target, ".claude", "skills", "agents-md-init", "SKILL.md");
   const codexSkillPath = join(target, ".agents", "skills", "fabric-init", "SKILL.md");
   const codexSessionStartHookPath = join(target, ".codex", "hooks", "fabric-session-start.cjs");
@@ -497,17 +499,15 @@ export async function buildInitFabricPlan(target: string, options?: InitOptions)
   const claudeHookPath = join(target, ".claude", "hooks", "agents-md-init-reminder.cjs");
   const claudeSettingsPath = join(target, ".claude", "settings.json");
   const metaPath = join(fabricDir, "agents.meta.json");
-  const humanLockPath = join(fabricDir, "human-lock.json");
 
   const replaceFabricDir = shouldReplaceWritableDirectory(fabricDir, options);
   const bootstrapAction = planFreshPath(bootstrapPath, options);
   const metaAction = planFreshPath(metaPath, options);
   const taxonomyAction = planFreshPath(taxonomyPath, options);
-  const humanLockAction = planFreshPath(humanLockPath, options);
+  const eventsAction = planFreshPath(eventsPath, options);
   const forensicAction = planFreshPath(forensicPath, options);
 
   const forensicReport = await buildForensicReport(target);
-  const humanLockTemplate = readFileSync(findTemplatePath("templates/fabric/human-lock.json"), "utf8");
   const bootstrapContent = await buildFabricBootstrapGuide(target);
   const taxonomyContent = buildInitialTaxonomyMarkdown(forensicReport);
   const bootstrapHash = sha256(bootstrapContent);
@@ -527,9 +527,9 @@ export async function buildInitFabricPlan(target: string, options?: InitOptions)
     taxonomyPath,
     taxonomyAction,
     taxonomyContent,
-    humanLockPath,
-    humanLockAction,
-    humanLockContent: humanLockTemplate.endsWith("\n") ? humanLockTemplate : `${humanLockTemplate}\n`,
+    rulesDir,
+    eventsPath,
+    eventsAction,
     forensicPath,
     forensicAction,
     forensicReport,
@@ -575,8 +575,9 @@ export function executeInitFabricPlan(plan: InitScaffoldPlan): InitScaffoldResul
   preparePlannedPath(plan.taxonomyPath, plan.taxonomyAction);
   writeFileSync(plan.taxonomyPath, ensureTrailingNewline(plan.taxonomyContent), "utf8");
 
-  preparePlannedPath(plan.humanLockPath, plan.humanLockAction);
-  writeFileSync(plan.humanLockPath, plan.humanLockContent, "utf8");
+  mkdirSync(plan.rulesDir, { recursive: true });
+  preparePlannedPath(plan.eventsPath, plan.eventsAction);
+  writeFileSync(plan.eventsPath, "", "utf8");
 
   preparePlannedPath(plan.forensicPath, plan.forensicAction);
   writeFileSync(plan.forensicPath, `${JSON.stringify(plan.forensicReport, null, 2)}\n`, "utf8");
@@ -596,8 +597,8 @@ export function executeInitFabricPlan(plan: InitScaffoldPlan): InitScaffoldResul
     metaAction: plan.metaAction,
     taxonomyPath: plan.taxonomyPath,
     taxonomyAction: plan.taxonomyAction,
-    humanLockPath: plan.humanLockPath,
-    humanLockAction: plan.humanLockAction,
+    eventsPath: plan.eventsPath,
+    eventsAction: plan.eventsAction,
     forensicPath: plan.forensicPath,
     forensicAction: plan.forensicAction,
     claudeSkillPath: plan.claudeSkill.path,
@@ -675,7 +676,7 @@ function printInitScaffoldResult(created: InitScaffoldResult): void {
   console.log(formatInitPathAction(created.bootstrapPath, created.bootstrapAction));
   console.log(formatInitPathAction(created.metaPath, created.metaAction));
   console.log(formatInitPathAction(created.taxonomyPath, created.taxonomyAction));
-  console.log(formatInitPathAction(created.humanLockPath, created.humanLockAction));
+  console.log(formatInitPathAction(created.eventsPath, created.eventsAction));
   console.log(formatInitPathAction(created.forensicPath, created.forensicAction));
   writeStderr(formatOptionalInitPathAction(created.claudeSkillPath, created.claudeSkillAction));
   writeStderr(formatOptionalInitPathAction(created.codexSkillPath, created.codexSkillAction));
@@ -735,8 +736,6 @@ function buildPlanOnlyScaffoldResult(plan: InitScaffoldPlan): InitScaffoldResult
     metaAction: plan.metaAction,
     taxonomyPath: plan.taxonomyPath,
     taxonomyAction: plan.taxonomyAction,
-    humanLockPath: plan.humanLockPath,
-    humanLockAction: plan.humanLockAction,
     forensicPath: plan.forensicPath,
     forensicAction: plan.forensicAction,
     claudeSkillPath: plan.claudeSkill.path,
@@ -1660,7 +1659,8 @@ function printInitPlanSummary(
   console.log(t("cli.init.plan.writes"));
   console.log(`  - ${target}/.fabric/bootstrap/README.md`);
   console.log(`  - ${target}/.fabric/agents.meta.json`);
-  console.log(`  - ${target}/.fabric/human-lock.json`);
+  console.log(`  - ${target}/.fabric/INITIAL_TAXONOMY.md`);
+  console.log(`  - ${target}/.fabric/events.jsonl`);
   console.log(`  - ${target}/.fabric/forensic.json`);
 }
 

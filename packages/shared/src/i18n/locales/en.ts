@@ -59,25 +59,12 @@ export const enMessages: Messages = {
   "cli.config.install.dry-run": "[dry-run] {client}: would write {path}",
   "cli.config.install.wrote": "{client}: wrote {path}",
 
-  "cli.doctor.description": "Run Fabric doctor checks and optional compliance audit reporting.",
+  "cli.doctor.description": "Run Fabric target-state diagnostics.",
   "cli.doctor.args.target.description":
     "Target project path. Defaults to CLI arg, EXTERNAL_FIXTURE_PATH, fabric.config.json, then cwd.",
-  "cli.doctor.args.audit.description": "Print rule-context compliance violations from Event Ledger projections.",
-  "cli.doctor.args.fix.description":
-    "Migrate legacy intent ledger data when needed and accept rule baseline changes with typed Event Ledger records.",
-  "cli.doctor.args.window-minutes.description":
-    "Audit lookback window in minutes for matching rule context events. Default 5.",
-  "cli.doctor.errors.invalid-window": "Invalid audit window: {value}",
-  "cli.doctor.audit.preview-only":
-    "auditMode is off in fabric.config.json; running fab doctor --audit as a manual preview only.",
-  "cli.doctor.audit.none": "No AI edit intents recorded yet for compliance audit.",
-  "cli.doctor.audit.clean": "All {count} audited edit paths have preceding rule context within {window}.",
-  "cli.doctor.audit.violations":
-    "{count} audited edit paths are missing preceding rule context within {window}.",
-  "cli.doctor.audit.table.path": "Path",
-  "cli.doctor.audit.table.edit": "Edit time",
-  "cli.doctor.audit.table.rules": "Last rules",
-  "cli.doctor.audit.table.intent": "Intent",
+  "cli.doctor.args.fix.description": "Repair deterministic derived Fabric state, including meta, rule-test index, bootstrap, and events ledger.",
+  "cli.doctor.args.json.description": "Print the doctor report as JSON.",
+  "cli.doctor.args.strict.description": "Treat warnings as failures.",
 
   "cli.hooks.description": "Manage Fabric Git hook templates.",
   "cli.hooks.install.description": "Install the Fabric Husky pre-commit hook template.",

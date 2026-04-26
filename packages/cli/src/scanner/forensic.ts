@@ -1124,7 +1124,7 @@ function buildDomainAssertion(codeSamples: CodeSampleResult[]): ForensicAssertio
       namedModules.length >= 2 ? "domain-named-components" : null,
       namedSamples.some((sample) => sample.snippet.includes("start():")) ? "lifecycle-hook" : null,
     ]),
-    proposedRule: "Preserve domain-specific module names when mirroring structure into AGENTS.md or .fabric/agents/.",
+    proposedRule: "Preserve domain-specific module names when mirroring structure into .fabric/rules/.",
   });
 }
 
