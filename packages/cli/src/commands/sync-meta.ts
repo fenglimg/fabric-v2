@@ -3,14 +3,17 @@ import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statS
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 
 import {
+  RULE_TEST_INDEX_SCHEMA_VERSION,
   agentsMetaSchema,
   deriveAgentsMetaLayer,
   deriveAgentsMetaStableId,
   deriveAgentsMetaTopologyType,
+  ruleTestIndexSchema,
   type AgentsLayer,
   type AgentsMeta,
   type AgentsIdentitySource,
   type AgentsTopologyType,
+  type RuleTestIndex,
 } from "@fenglimg/fabric-shared";
 import { defineCommand } from "citty";
 
@@ -35,6 +38,13 @@ type EventLedgerEnvelope = {
   id: string;
   ts: number;
   schema_version: 1;
+};
+
+type FabricVerifyAnnotation = {
+  stableId: string;
+  testFile: string;
+  testHash: string;
+  line: number;
 };
 
 type SyncMetaArgs = {
@@ -62,32 +72,49 @@ export const syncMetaCommand = defineCommand({
   async run({ args }: { args: SyncMetaArgs }) {
     const target = normalizeTarget(args.target);
     const metaPath = join(target, ".fabric", "agents.meta.json");
+    const ruleTestIndexPath = join(target, ".fabric", "rule-test.index.json");
     const computedMeta = computeAgentsMeta(target);
     const existingMeta = readExistingMeta(metaPath);
+    const existingRuleTestIndex = readExistingRuleTestIndex(ruleTestIndexPath);
+    const computedRuleTestIndex = computeRuleTestIndex(target, computedMeta, existingRuleTestIndex);
 
     if (args["check-only"]) {
-      if (!existingMeta || stableStringify(existingMeta) !== stableStringify(computedMeta)) {
+      if (
+        !existingMeta ||
+        stableStringify(existingMeta) !== stableStringify(computedMeta) ||
+        !existingRuleTestIndex ||
+        !isSameRuleTestIndex(existingRuleTestIndex, computedRuleTestIndex)
+      ) {
         writeStderr(t("cli.sync-meta.drift-detected"));
         process.exitCode = 1;
       }
       return;
     }
 
-    if (existingMeta && stableStringify(existingMeta) === stableStringify(computedMeta)) {
+    if (
+      existingMeta &&
+      stableStringify(existingMeta) === stableStringify(computedMeta) &&
+      existingRuleTestIndex &&
+      isSameRuleTestIndex(existingRuleTestIndex, computedRuleTestIndex)
+    ) {
       return;
     }
 
     mkdirSync(join(target, ".fabric"), { recursive: true });
     writeFileSync(metaPath, `${JSON.stringify(computedMeta, null, 2)}\n`, "utf8");
-    recordBaselineSynced(target, {
-      previousRevision: existingMeta?.revision,
-      revision: computedMeta.revision,
-      syncedFiles: collectSyncedFiles(existingMeta, computedMeta),
-      acceptedStableIds: collectStableIds(computedMeta),
-      driftDetails: collectDriftDetails(existingMeta, computedMeta),
-      source: "sync_meta",
-    });
+    writeFileSync(ruleTestIndexPath, `${JSON.stringify(computedRuleTestIndex, null, 2)}\n`, "utf8");
+    if (!existingMeta || stableStringify(existingMeta) !== stableStringify(computedMeta)) {
+      recordBaselineSynced(target, {
+        previousRevision: existingMeta?.revision,
+        revision: computedMeta.revision,
+        syncedFiles: collectSyncedFiles(existingMeta, computedMeta),
+        acceptedStableIds: collectStableIds(computedMeta),
+        driftDetails: collectDriftDetails(existingMeta, computedMeta),
+        source: "sync_meta",
+      });
+    }
     writeStderr(t("cli.sync-meta.updated", { label: t("cli.shared.updated"), path: metaPath }));
+    writeStderr(t("cli.sync-meta.updated", { label: t("cli.shared.updated"), path: ruleTestIndexPath }));
   },
 });
 
@@ -158,6 +185,18 @@ function readExistingMeta(metaPath: string): AgentsMeta | undefined {
   }
 }
 
+function readExistingRuleTestIndex(indexPath: string): RuleTestIndex | undefined {
+  if (!existsSync(indexPath)) {
+    return undefined;
+  }
+
+  try {
+    return ruleTestIndexSchema.parse(JSON.parse(readFileSync(indexPath, "utf8")));
+  } catch {
+    return undefined;
+  }
+}
+
 function findFabricAgentsFiles(target: string): string[] {
   const agentsRoot = join(target, ".fabric", "agents");
 
@@ -187,6 +226,168 @@ function findFabricAgentsFiles(target: string): string[] {
   }
 
   return files.sort();
+}
+
+function findFabricVerifyAnnotations(target: string): FabricVerifyAnnotation[] {
+  const files = findTestFiles(target);
+  const annotations: FabricVerifyAnnotation[] = [];
+  const annotationPattern = /^\s*\/\/\s*@fabric-verify\s+([A-Za-z0-9][A-Za-z0-9/_-]*)\s*$/u;
+
+  for (const testFile of files) {
+    const source = readFileSync(join(target, testFile), "utf8");
+    const testHash = sha256(source);
+    const lines = source.split(/\r?\n/u);
+
+    for (const [index, line] of lines.entries()) {
+      const match = annotationPattern.exec(line);
+      if (match === null) {
+        continue;
+      }
+
+      annotations.push({
+        stableId: match[1],
+        testFile,
+        testHash,
+        line: index + 1,
+      });
+    }
+  }
+
+  return annotations.sort((left, right) => compareAnnotationEntries(left, right));
+}
+
+function findTestFiles(target: string): string[] {
+  const ignoredRootSegments = new Set([".git", ".fabric", "node_modules", "dist", "build", "coverage"]);
+  const files: string[] = [];
+  const stack = [target];
+
+  while (stack.length > 0) {
+    const current = stack.pop();
+    if (current === undefined) {
+      continue;
+    }
+
+    for (const entry of readdirSync(current, { withFileTypes: true })) {
+      const absolutePath = join(current, entry.name);
+      const relativePath = toPosixPath(relative(target, absolutePath));
+      const [rootSegment] = relativePath.split("/");
+
+      if (entry.isDirectory()) {
+        if (!ignoredRootSegments.has(rootSegment) && !ignoredRootSegments.has(entry.name)) {
+          stack.push(absolutePath);
+        }
+        continue;
+      }
+
+      if (entry.isFile() && isTestFile(relativePath)) {
+        files.push(relativePath);
+      }
+    }
+  }
+
+  return files.sort();
+}
+
+function isTestFile(relativePath: string): boolean {
+  return /\.(?:test|spec)\.[cm]?[jt]sx?$/u.test(relativePath);
+}
+
+function indexRulesByStableId(meta: AgentsMeta): Map<string, NodeMeta> {
+  const rules = new Map<string, NodeMeta>();
+
+  for (const node of Object.values(meta.nodes)) {
+    if (node.stable_id !== undefined) {
+      rules.set(node.stable_id, node);
+    }
+  }
+
+  return rules;
+}
+
+function indexPreviousRuleTestEntries(
+  entries: Array<
+    Pick<RuleTestIndex["links"][number], "rule_stable_id" | "test_file" | "test_hash" | "annotation_line"> &
+      Partial<Pick<RuleTestIndex["links"][number], "rule_hash" | "previous_rule_hash" | "previous_test_hash">>
+  >,
+): Map<string, { rule_hash?: string; previous_rule_hash?: string; test_hash: string; previous_test_hash?: string }> {
+  const previous = new Map<
+    string,
+    { rule_hash?: string; previous_rule_hash?: string; test_hash: string; previous_test_hash?: string }
+  >();
+
+  for (const entry of entries) {
+    previous.set(createRuleTestEntryKey(entry.rule_stable_id, entry.test_file, entry.annotation_line), {
+      rule_hash: entry.rule_hash,
+      previous_rule_hash: entry.previous_rule_hash,
+      test_hash: entry.test_hash,
+      previous_test_hash: entry.previous_test_hash,
+    });
+  }
+
+  return previous;
+}
+
+function createRuleTestEntryKey(stableId: string, testFile: string, line: number): string {
+  return `${stableId}\0${testFile}\0${line}`;
+}
+
+function getPreviousRuleTestHashes(
+  previous:
+    | { rule_hash?: string; previous_rule_hash?: string; test_hash: string; previous_test_hash?: string }
+    | undefined,
+  ruleHash: string,
+  testHash: string,
+): { previousRuleHash?: string; previousTestHash?: string } {
+  if (previous === undefined) {
+    return {};
+  }
+
+  return {
+    previousRuleHash:
+      previous.rule_hash !== undefined && previous.rule_hash !== ruleHash
+        ? previous.rule_hash
+        : previous.previous_rule_hash,
+    previousTestHash: previous.test_hash !== testHash ? previous.test_hash : previous.previous_test_hash,
+  };
+}
+
+function getPreviousTestHash(
+  previous: { test_hash: string; previous_test_hash?: string } | undefined,
+  testHash: string,
+): string | undefined {
+  if (previous === undefined) {
+    return undefined;
+  }
+
+  return previous.test_hash !== testHash ? previous.test_hash : previous.previous_test_hash;
+}
+
+function compareRuleTestEntries(
+  left: Pick<RuleTestIndex["links"][number], "rule_stable_id" | "test_file" | "annotation_line">,
+  right: Pick<RuleTestIndex["links"][number], "rule_stable_id" | "test_file" | "annotation_line">,
+): number {
+  return (
+    left.rule_stable_id.localeCompare(right.rule_stable_id) ||
+    left.test_file.localeCompare(right.test_file) ||
+    left.annotation_line - right.annotation_line
+  );
+}
+
+function compareAnnotationEntries(left: FabricVerifyAnnotation, right: FabricVerifyAnnotation): number {
+  return (
+    left.stableId.localeCompare(right.stableId) ||
+    left.testFile.localeCompare(right.testFile) ||
+    left.line - right.line
+  );
+}
+
+function isSameRuleTestIndex(left: RuleTestIndex, right: RuleTestIndex): boolean {
+  return stableStringify(toComparableRuleTestIndex(left)) === stableStringify(toComparableRuleTestIndex(right));
+}
+
+function toComparableRuleTestIndex(index: RuleTestIndex): Omit<RuleTestIndex, "generated_at"> {
+  const { generated_at: _generatedAt, ...comparable } = index;
+  return comparable;
 }
 
 export function deriveLayer(relativePath: string): AgentsLayer {
@@ -256,6 +457,64 @@ function createBootstrapNode(target: string, existing: NodeMeta | undefined): No
     stable_id: identity.stableId,
     identity_source: identity.identitySource,
   };
+}
+
+export function computeRuleTestIndex(
+  target: string,
+  computedMeta: AgentsMeta,
+  previousIndex?: RuleTestIndex,
+): RuleTestIndex {
+  assertExistingDirectory(target);
+
+  const previousLinks = indexPreviousRuleTestEntries(previousIndex?.links ?? []);
+  const previousOrphans = indexPreviousRuleTestEntries(previousIndex?.orphan_annotations ?? []);
+  const rulesByStableId = indexRulesByStableId(computedMeta);
+  const links: RuleTestIndex["links"] = [];
+  const orphanAnnotations: RuleTestIndex["orphan_annotations"] = [];
+
+  for (const annotation of findFabricVerifyAnnotations(target)) {
+    const rule = rulesByStableId.get(annotation.stableId);
+    const key = createRuleTestEntryKey(annotation.stableId, annotation.testFile, annotation.line);
+
+    if (rule === undefined) {
+      const previous = previousOrphans.get(key) ?? previousLinks.get(key);
+      orphanAnnotations.push({
+        rule_stable_id: annotation.stableId,
+        test_file: annotation.testFile,
+        test_hash: annotation.testHash,
+        previous_test_hash: getPreviousTestHash(previous, annotation.testHash),
+        annotation_line: annotation.line,
+      });
+      continue;
+    }
+
+    const previous = previousLinks.get(key) ?? previousOrphans.get(key);
+    const previousHashes = getPreviousRuleTestHashes(previous, rule.hash, annotation.testHash);
+    links.push({
+      rule_stable_id: annotation.stableId,
+      rule_file: rule.file,
+      rule_hash: rule.hash,
+      previous_rule_hash: previousHashes.previousRuleHash,
+      test_file: annotation.testFile,
+      test_hash: annotation.testHash,
+      previous_test_hash: previousHashes.previousTestHash,
+      annotation_line: annotation.line,
+    });
+  }
+
+  const index: RuleTestIndex = {
+    schema_version: RULE_TEST_INDEX_SCHEMA_VERSION,
+    generated_at: new Date().toISOString(),
+    revision: computedMeta.revision,
+    previous_revision:
+      previousIndex?.revision !== undefined && previousIndex.revision !== computedMeta.revision
+        ? previousIndex.revision
+        : previousIndex?.previous_revision,
+    links: links.sort(compareRuleTestEntries),
+    orphan_annotations: orphanAnnotations.sort(compareRuleTestEntries),
+  };
+
+  return index;
 }
 
 function deriveScopeGlob(file: string): string {

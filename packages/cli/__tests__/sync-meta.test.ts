@@ -1,15 +1,29 @@
-import { describe, expect, it } from "vitest";
+import { existsSync } from "node:fs";
 
-import { agentsMetaSchema } from "@fenglimg/fabric-shared";
+import { afterEach, describe, expect, it } from "vitest";
+
+import { agentsMetaSchema, ruleTestIndexSchema } from "@fenglimg/fabric-shared";
 
 import { initFabric } from "../src/commands/init.ts";
-import { computeAgentsMeta, deriveLayer, deriveTopologyType, syncMetaCommand } from "../src/commands/sync-meta.ts";
+import {
+  computeAgentsMeta,
+  computeRuleTestIndex,
+  deriveLayer,
+  deriveTopologyType,
+  syncMetaCommand,
+} from "../src/commands/sync-meta.ts";
 import {
   cleanupFixtureRoot,
   createWerewolfFixtureRoot,
   readFixtureFile,
   writeFixtureFile,
 } from "./helpers/init-test-utils.ts";
+
+const originalExitCode = process.exitCode;
+
+afterEach(() => {
+  process.exitCode = originalExitCode;
+});
 
 describe("sync-meta shadow mirroring", () => {
   it("derives layer from mirror paths", async () => {
@@ -188,7 +202,7 @@ describe("sync-meta shadow mirroring", () => {
         },
       } as never);
 
-      const firstEvents = await readEventLedger(target);
+      const firstEvents = readEventLedger(target);
       const meta = agentsMetaSchema.parse(JSON.parse(readFixtureFile(target, ".fabric/agents.meta.json")));
       const serverNode = meta.nodes["L1/packages/server/rules"];
 
@@ -217,7 +231,7 @@ describe("sync-meta shadow mirroring", () => {
         },
       } as never);
 
-      const events = await readEventLedger(target);
+      const events = readEventLedger(target);
       const nextMeta = agentsMetaSchema.parse(JSON.parse(readFixtureFile(target, ".fabric/agents.meta.json")));
       const appendedEvents = events.slice(firstEvents.length);
 
@@ -246,6 +260,217 @@ describe("sync-meta shadow mirroring", () => {
         synced_files: [".fabric/agents/packages/server/rules.md"],
         source: "sync_meta",
       });
+    } finally {
+      cleanupFixtureRoot(target);
+    }
+  });
+
+  it("writes a rule-test index from single-line fabric verify annotations", async () => {
+    const target = createWerewolfFixtureRoot("fab-sync-meta-rule-test-index");
+
+    try {
+      await initFabric(target);
+      writeFixtureFile(
+        target,
+        ".fabric/agents/packages/server/rules.md",
+        "<!-- fab:rule-id rules/server-core -->\n# server rules\n",
+      );
+      writeFixtureFile(
+        target,
+        "packages/server/rules.contract.test.ts",
+        [
+          "import { describe, it } from 'vitest';",
+          "",
+          "// @fabric-verify rules/server-core",
+          "describe('server rule contract', () => {",
+          "  it('keeps the contract explicit', () => {});",
+          "});",
+          "",
+        ].join("\n"),
+      );
+
+      await syncMetaCommand.run?.({
+        args: {
+          target,
+          "check-only": false,
+        },
+      } as never);
+
+      const meta = agentsMetaSchema.parse(JSON.parse(readFixtureFile(target, ".fabric/agents.meta.json")));
+      const index = ruleTestIndexSchema.parse(JSON.parse(readFixtureFile(target, ".fabric/rule-test.index.json")));
+
+      expect(index).toMatchObject({
+        schema_version: 1,
+        revision: meta.revision,
+        links: [
+          {
+            rule_stable_id: "rules/server-core",
+            rule_file: ".fabric/agents/packages/server/rules.md",
+            rule_hash: meta.nodes["L1/packages/server/rules"].hash,
+            test_file: "packages/server/rules.contract.test.ts",
+            annotation_line: 3,
+          },
+        ],
+        orphan_annotations: [],
+      });
+      expect(index.links[0].test_hash).toMatch(/^sha256:/u);
+      expect(index.links[0]).not.toHaveProperty("previous_rule_hash");
+      expect(index.links[0]).not.toHaveProperty("previous_test_hash");
+    } finally {
+      cleanupFixtureRoot(target);
+    }
+  });
+
+  it("records orphan annotations when no computed rule has the referenced stable id", async () => {
+    const target = createWerewolfFixtureRoot("fab-sync-meta-rule-test-orphan");
+
+    try {
+      await initFabric(target);
+      writeFixtureFile(
+        target,
+        "packages/server/orphan.contract.test.ts",
+        [
+          "import { describe, it } from 'vitest';",
+          "",
+          "// @fabric-verify rules/missing",
+          "describe('missing rule contract', () => {",
+          "  it('stays visible', () => {});",
+          "});",
+          "",
+        ].join("\n"),
+      );
+
+      const meta = computeAgentsMeta(target);
+      const index = computeRuleTestIndex(target, meta);
+
+      expect(index.links).toEqual([]);
+      expect(index.orphan_annotations).toMatchObject([
+        {
+          rule_stable_id: "rules/missing",
+          test_file: "packages/server/orphan.contract.test.ts",
+          annotation_line: 3,
+        },
+      ]);
+      expect(index.orphan_annotations[0].test_hash).toMatch(/^sha256:/u);
+    } finally {
+      cleanupFixtureRoot(target);
+    }
+  });
+
+  it("preserves previous rule and test hashes from the prior index when either side changes", async () => {
+    const target = createWerewolfFixtureRoot("fab-sync-meta-rule-test-previous");
+
+    try {
+      await initFabric(target);
+      writeFixtureFile(
+        target,
+        ".fabric/agents/packages/server/rules.md",
+        "<!-- fab:rule-id rules/server-core -->\n# server rules\n",
+      );
+      writeFixtureFile(
+        target,
+        "packages/server/rules.contract.test.ts",
+        [
+          "import { describe, it } from 'vitest';",
+          "",
+          "// @fabric-verify rules/server-core",
+          "describe('server rule contract', () => {",
+          "  it('keeps the contract explicit', () => {});",
+          "});",
+          "",
+        ].join("\n"),
+      );
+
+      const firstMeta = computeAgentsMeta(target);
+      const firstIndex = computeRuleTestIndex(target, firstMeta);
+      const firstLink = firstIndex.links[0];
+
+      writeFixtureFile(
+        target,
+        ".fabric/agents/packages/server/rules.md",
+        "<!-- fab:rule-id rules/server-core -->\n# server rules\n\nChanged.\n",
+      );
+      writeFixtureFile(
+        target,
+        "packages/server/rules.contract.test.ts",
+        [
+          "import { describe, it } from 'vitest';",
+          "",
+          "// @fabric-verify rules/server-core",
+          "describe('server rule contract', () => {",
+          "  it('keeps the contract explicit after a test edit', () => {});",
+          "});",
+          "",
+        ].join("\n"),
+      );
+
+      const nextMeta = computeAgentsMeta(target);
+      const nextIndex = computeRuleTestIndex(target, nextMeta, firstIndex);
+
+      expect(nextIndex.previous_revision).toBe(firstMeta.revision);
+      expect(nextIndex.links[0]).toMatchObject({
+        previous_rule_hash: firstLink.rule_hash,
+        previous_test_hash: firstLink.test_hash,
+      });
+    } finally {
+      cleanupFixtureRoot(target);
+    }
+  });
+
+  it("fails check-only when the rule-test index is stale even if agents meta is current", async () => {
+    const target = createWerewolfFixtureRoot("fab-sync-meta-rule-test-check-only");
+
+    try {
+      await initFabric(target);
+      writeFixtureFile(
+        target,
+        ".fabric/agents/packages/server/rules.md",
+        "<!-- fab:rule-id rules/server-core -->\n# server rules\n",
+      );
+      writeFixtureFile(
+        target,
+        "packages/server/rules.contract.test.ts",
+        [
+          "import { describe, it } from 'vitest';",
+          "",
+          "// @fabric-verify rules/server-core",
+          "describe('server rule contract', () => {",
+          "  it('keeps the contract explicit', () => {});",
+          "});",
+          "",
+        ].join("\n"),
+      );
+
+      await syncMetaCommand.run?.({
+        args: {
+          target,
+          "check-only": false,
+        },
+      } as never);
+      expect(existsSync(`${target}/.fabric/rule-test.index.json`)).toBe(true);
+
+      writeFixtureFile(
+        target,
+        "packages/server/rules.contract.test.ts",
+        [
+          "import { describe, it } from 'vitest';",
+          "",
+          "// @fabric-verify rules/server-core",
+          "describe('server rule contract', () => {",
+          "  it('changes without resyncing the sidecar', () => {});",
+          "});",
+          "",
+        ].join("\n"),
+      );
+
+      await syncMetaCommand.run?.({
+        args: {
+          target,
+          "check-only": true,
+        },
+      } as never);
+
+      expect(process.exitCode).toBe(1);
     } finally {
       cleanupFixtureRoot(target);
     }
