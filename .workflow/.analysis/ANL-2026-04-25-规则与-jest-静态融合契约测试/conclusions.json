@@ -1,0 +1,272 @@
+{
+  "session_id": "ANL-2026-04-25-规则与-jest-静态融合契约测试",
+  "topic": "规则与 Jest 的静态融合：契约式测试",
+  "completed": "2026-04-25T23:45:22+08:00",
+  "total_rounds": 1,
+  "summary": "Use a static rule-test contract index. Tests declare coverage with comments such as // @fabric-verify L2-Pool-001; sync-meta scans those annotations and writes .fabric/rule-test.index.json with rule hashes and test file hashes; doctor compares current rule hashes against the index and warns when a rule changed but its linked tests did not. L0/L1 map to generic and domain-level Jest contract suites; L2 maps to script-specific tests with explicit annotations.",
+  "key_conclusions": [
+    {
+      "point": "The integration should be static traceability, not dynamic Jest generation.",
+      "evidence": "User requirement; packages/cli/src/commands/sync-meta.ts:74",
+      "confidence": "high"
+    },
+    {
+      "point": "sync-meta is the right place to build the rule-test index.",
+      "evidence": "packages/cli/src/commands/sync-meta.ts:92-107 and :272-276",
+      "confidence": "high"
+    },
+    {
+      "point": "doctor is the right place to report stale contract coverage.",
+      "evidence": "packages/server/src/services/doctor.ts:163 and :346",
+      "confidence": "high"
+    },
+    {
+      "point": "werewolf-minigame's Jest taxonomy maps cleanly to Fabric layers.",
+      "evidence": "/mnt/c/Project/werewolf-minigame/tests/README.md:75-99",
+      "confidence": "high"
+    },
+    {
+      "point": "A sidecar .fabric/rule-test.index.json should be used instead of putting test links into agents.meta.json.",
+      "evidence": "packages/shared/src/schemas/agents-meta.ts:44-63",
+      "confidence": "medium"
+    }
+  ],
+  "recommendations": [
+    {
+      "action": "Add a generated rule-test sidecar index",
+      "rationale": "Rule selection metadata should stay focused on rules, while test verification metadata needs its own lifecycle and diagnostics.",
+      "priority": "high",
+      "evidence_refs": [
+        "packages/shared/src/schemas/agents-meta.ts:44",
+        "packages/cli/src/commands/sync-meta.ts:100"
+      ],
+      "steps": [
+        {
+          "description": "Define .fabric/rule-test.index.json with revision, generated_at, links[], orphan_annotations[], and unverified_required_rules[].",
+          "target": "packages/shared/src/schemas",
+          "verification": "Schema tests accept valid links and reject malformed stable IDs or missing hashes."
+        },
+        {
+          "description": "Each link stores rule_stable_id, rule_hash_at_sync, test_file, test_hash_at_sync, annotation_line, and optional describe_path.",
+          "target": "packages/shared/src/types",
+          "verification": "Fixture parsing preserves line number and target rule ID."
+        }
+      ],
+      "review_status": "pending"
+    },
+    {
+      "action": "Extend sync-meta to scan Jest annotations",
+      "rationale": "sync-meta already owns deterministic metadata compilation and check-only drift detection.",
+      "priority": "high",
+      "evidence_refs": [
+        "packages/cli/src/commands/sync-meta.ts:74",
+        "packages/cli/src/commands/sync-meta.ts:272"
+      ],
+      "steps": [
+        {
+          "description": "Scan configured test roots for @fabric-verify comments in *.test.ts, *.spec.ts, *.test.tsx, and *.spec.tsx.",
+          "target": "packages/cli/src/commands/sync-meta.ts or helper module",
+          "verification": "sync-meta tests create fixtures with annotations and assert generated links."
+        },
+        {
+          "description": "Resolve rule_stable_id against computed AgentsMeta nodes and record orphan annotations when missing.",
+          "target": "packages/cli/src/commands/sync-meta.ts",
+          "verification": "Unknown stable_id does not crash sync but appears in orphan_annotations."
+        },
+        {
+          "description": "Make --check-only compare both agents.meta.json and rule-test.index.json.",
+          "target": "packages/cli/src/commands/sync-meta.ts",
+          "verification": "Check-only exits non-zero when annotation index is stale."
+        }
+      ],
+      "review_status": "pending"
+    },
+    {
+      "action": "Add a doctor Rule-test contracts check",
+      "rationale": "The user-facing warning belongs in doctor, matching existing meta drift and audit diagnostics.",
+      "priority": "high",
+      "evidence_refs": [
+        "packages/server/src/services/doctor.ts:163",
+        "packages/server/src/services/doctor.ts:346"
+      ],
+      "steps": [
+        {
+          "description": "Read AgentsMeta and the rule-test index, then compare current rule hashes and current test hashes.",
+          "target": "packages/server/src/services/doctor.ts",
+          "verification": "Doctor test warns when rule hash changed but linked test hash still equals test_hash_at_sync."
+        },
+        {
+          "description": "Report missing test files, orphan annotations, and unverified required rules as separate diagnostics.",
+          "target": "packages/server/src/services/doctor.ts",
+          "verification": "Doctor test covers missing test file and orphan annotation cases."
+        },
+        {
+          "description": "Use warn by default and allow strict mode later through config.",
+          "target": "packages/shared/src/types/config.ts",
+          "verification": "Default doctor status remains warn for stale tests unless strict mode is configured."
+        }
+      ],
+      "review_status": "pending"
+    },
+    {
+      "action": "Document L0/L1/L2 Jest contract mapping",
+      "rationale": "Without documentation, annotations can become shallow labels with no testing quality standard.",
+      "priority": "medium",
+      "evidence_refs": [
+        "/mnt/c/Project/werewolf-minigame/tests/README.md:75",
+        "/mnt/c/Project/werewolf-minigame/tests/TESTING_GUIDE.md:14"
+      ],
+      "steps": [
+        {
+          "description": "L0 rules define project-wide convention suites, such as memory leak and lifecycle cleanup contracts.",
+          "target": "docs/CONVENTIONS.md",
+          "verification": "Docs include example __tests__/conventions/*.test.ts and @fabric-verify L0-*."
+        },
+        {
+          "description": "L1 rules define domain suites and assertion libraries, such as logic firewall invariants.",
+          "target": "docs/CONVENTIONS.md",
+          "verification": "Docs map logic firewall tests and support/assertions helpers to L1."
+        },
+        {
+          "description": "L2 rules require script-local tests with explicit @fabric-verify comments or describe labels.",
+          "target": "docs/CONVENTIONS.md",
+          "verification": "Docs show PoolManager.test.ts with @fabric-verify L2-Pool-001."
+        }
+      ],
+      "review_status": "pending"
+    },
+    {
+      "action": "Keep Jest helpers rule-agnostic",
+      "rationale": "The tests should verify behavior and contracts; Fabric should verify traceability and staleness.",
+      "priority": "medium",
+      "evidence_refs": [
+        "/mnt/c/Project/werewolf-minigame/tests/env/setup-after-each/ui-contract-teardown.ts:100",
+        "/mnt/c/Project/werewolf-minigame/tests/support/harness/ui/ui-contract.ts:83"
+      ],
+      "steps": [
+        {
+          "description": "Do not add rule ID parameters to mountUIContract, expectZeroResidue, or other assertion helpers.",
+          "target": "project Jest support libraries",
+          "verification": "Annotations live in test files, not helper function arguments."
+        },
+        {
+          "description": "Allow describe naming such as describe('[fabric:L2-Pool-001] PoolManager contract') only as a secondary human-readable marker.",
+          "target": "docs/CONVENTIONS.md",
+          "verification": "Scanner tests prioritize @fabric-verify comments."
+        }
+      ],
+      "review_status": "pending"
+    }
+  ],
+  "open_questions": [
+    "Should rules opt into required test coverage through metadata, for example verification.required = true?",
+    "Should stale rule-test coverage be warn by default and error only under strict config?",
+    "Should @fabric-verify allow multiple rule IDs on one line?"
+  ],
+  "follow_up_suggestions": [
+    {
+      "type": "task",
+      "summary": "Implement shared RuleTestIndex schema and sync-meta scanner fixtures."
+    },
+    {
+      "type": "task",
+      "summary": "Implement doctor Rule-test contracts check with stale, missing, and orphan cases."
+    },
+    {
+      "type": "docs",
+      "summary": "Add contract testing conventions to docs/CONVENTIONS.md and SPEC_INTERNAL.md."
+    }
+  ],
+  "decision_trail": [
+    {
+      "round": 1,
+      "decision": "Use static annotation plus generated index.",
+      "context": "User required no dynamic test code generation.",
+      "options_considered": [
+        "Dynamic Jest generation",
+        "Rule-aware Jest helpers",
+        "Static comments plus generated sidecar index"
+      ],
+      "chosen": "Static comments plus generated sidecar index",
+      "rejected_reasons": "Dynamic generation and rule-aware helpers increase coupling and complexity.",
+      "reason": "It preserves ordinary Jest tests while adding Fabric traceability.",
+      "impact": "Implementation scope is sync-meta scanner, shared schema, doctor check, and docs."
+    },
+    {
+      "round": 1,
+      "decision": "Use content hash as primary staleness signal.",
+      "context": "User mentioned Git commit hash, but Fabric already computes sha256 rule hashes.",
+      "options_considered": [
+        "Git commit hash",
+        "File mtime",
+        "Content sha256"
+      ],
+      "chosen": "Content sha256",
+      "rejected_reasons": "Commit hash is unavailable before commit and mtime is unstable.",
+      "reason": "Content hash is deterministic and matches existing Fabric metadata behavior.",
+      "impact": "Doctor can run without Git history dependency."
+    }
+  ],
+  "intent_coverage": [
+    {
+      "intent": "No dynamic test generation",
+      "status": "addressed",
+      "where_addressed": "Recommendation 1 and 2",
+      "notes": "Only static annotation scanning is proposed."
+    },
+    {
+      "intent": "Integrate L0/L1/L2",
+      "status": "addressed",
+      "where_addressed": "Recommendation 4",
+      "notes": "Maps each layer to a Jest contract granularity."
+    },
+    {
+      "intent": "Rules referenced by tests, not embedded in tests",
+      "status": "addressed",
+      "where_addressed": "Recommendation 5",
+      "notes": "Jest helpers remain rule-agnostic."
+    },
+    {
+      "intent": "Rule changes trigger stale test warning",
+      "status": "addressed",
+      "where_addressed": "Recommendation 3",
+      "notes": "Doctor compares rule and test hashes from the index."
+    },
+    {
+      "intent": "Refer to werewolf-minigame Jest norms",
+      "status": "addressed",
+      "where_addressed": "Recommendation 4",
+      "notes": "logic firewall/runtime contract/shell regression are used as reference taxonomy."
+    }
+  ],
+  "findings_coverage": [
+    {
+      "finding": "sync-meta compiles rule hashes and stable IDs",
+      "round": 1,
+      "disposition": "recommendation",
+      "target": "Rec #1 and Rec #2",
+      "reason": "The rule-test index should reuse this compiler phase."
+    },
+    {
+      "finding": "doctor is composable and already reports stale metadata",
+      "round": 1,
+      "disposition": "recommendation",
+      "target": "Rec #3",
+      "reason": "Stale contract coverage is another health check."
+    },
+    {
+      "finding": "werewolf-minigame has a mature Jest contract taxonomy",
+      "round": 1,
+      "disposition": "recommendation",
+      "target": "Rec #4",
+      "reason": "Use it as the concrete convention reference."
+    },
+    {
+      "finding": "Jest helpers should stay rule-agnostic",
+      "round": 1,
+      "disposition": "recommendation",
+      "target": "Rec #5",
+      "reason": "Prevents rule logic from leaking into tests."
+    }
+  ]
+}

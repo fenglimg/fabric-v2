@@ -1,0 +1,285 @@
+{
+  "session_id": "ANL-2026-04-25-ledger-意图账本-重构",
+  "topic": "Ledger (意图账本) 重构：通过服务器已有接口打点记录，以及规则文件更改如何审计",
+  "completed": "2026-04-25T00:00:00+08:00",
+  "total_rounds": 1,
+  "summary": "Ledger 重构应建立在现有双轨模型之上：.fabric/.intent-ledger.jsonl 作为用户可读的意图/事实时间线，.fabric/audit.jsonl 作为协议级证据链。现有 fab_append_intent 和 fab_get_rule_sections 已经能打点；规则变更主路径应收敛为“规则原文是真源，agents.meta.json 是生成索引/hash baseline”。因此 fab_update_registry 不应作为常规规则修改入口，重点应转向 doctor hash drift 发现后的显式确认、baseline sync、Ledger 记录闭环。普通 doctor report 应保持只读，drift 记录应通过显式 record/fix/approve 流程写入 audit 和必要的 Ledger entry。",
+  "key_conclusions": [
+    {
+      "point": "服务器已有接口已经承担主要打点能力，但 fab_append_intent 不是自动覆盖所有服务器调用的全局 hook。",
+      "evidence": "packages/server/src/services/append-intent.ts:17; packages/server/src/services/rule-sections.ts:158; packages/server/src/tools/append-intent.ts:33",
+      "confidence": "high"
+    },
+    {
+      "point": "Ledger 与 audit log 应继续分层，而不是合并为单一事件流。",
+      "evidence": "packages/shared/src/types/ledger.ts:1; packages/server/src/services/audit-log.ts:16; packages/server/src/services/audit-log.ts:30",
+      "confidence": "high"
+    },
+    {
+      "point": "doctor hash drift 是规则文件变更审计的合适后验发现机制。",
+      "evidence": "packages/server/src/services/doctor.ts:511; packages/server/src/services/doctor.ts:529; packages/server/src/services/doctor.ts:548",
+      "confidence": "high"
+    },
+    {
+      "point": "普通 doctor report 不应隐式写 Ledger；drift 记录必须显式触发，doctor error 必须通过 baseline sync 或回滚消除。",
+      "evidence": "packages/server/src/services/doctor.ts:163; packages/server/src/services/doctor.ts:223",
+      "confidence": "high"
+    },
+    {
+      "point": "fab_update_registry 可以弱化或废弃为常规入口，因为更清晰的真源模型是直接维护规则文本，再由 sync/doctor 更新 agents.meta.json hash baseline。",
+      "evidence": "packages/server/src/services/update-registry.ts:20; packages/server/src/services/doctor.ts:529",
+      "confidence": "high"
+    },
+    {
+      "point": "Ledger schema 扩展应保守，以可选 metadata/kind 为优先，hash 明细仍以 audit log 为真源。",
+      "evidence": "packages/shared/src/types/ledger.ts:1; packages/server/src/services/read-ledger.ts:81",
+      "confidence": "medium"
+    }
+  ],
+  "recommendations": [
+    {
+      "action": "正式定义 Ledger/audit 分层契约",
+      "rationale": "现有系统已经分离了意图事实和协议证据；将这个边界制度化可以避免 Ledger 噪声化，也让 doctor audit 能稳定关联证据。",
+      "priority": "high",
+      "evidence_refs": [
+        "packages/server/src/services/append-intent.ts:17",
+        "packages/server/src/services/audit-log.ts:16",
+        "packages/server/src/services/audit-log.ts:30",
+        "packages/server/src/services/rule-sections.ts:158"
+      ],
+      "steps": [
+        {
+          "description": "在 docs 或 shared types 附近记录事件分类：Ledger 记录 completed facts，audit log 记录 protocol evidence。",
+          "target": "docs/protocol or packages/shared/src/types",
+          "verification": "文档明确 task completed、rule drift confirmed、registry change completed、get_rules、rule_selection、edit_intent 的归属。"
+        },
+        {
+          "description": "更新 doctor audit 说明，明确 Ledger entry 与 audit evidence 的关联关系。",
+          "target": "packages/server/src/services/doctor.ts and docs",
+          "verification": "doctor audit 文案仍以 ledger edit intent 为检查对象，以 audit events 为前置证据。"
+        }
+      ],
+      "review_status": "pending"
+    },
+    {
+      "action": "扩展服务器打点覆盖面，保留 fab_append_intent 作为最终意图记录入口",
+      "rationale": "fab_append_intent 已经写 Ledger 并触发 edit compliance；重构应强化调用约定，而不是新增并行写入口。",
+      "priority": "high",
+      "evidence_refs": [
+        "packages/server/src/tools/append-intent.ts:33",
+        "packages/server/src/services/append-intent.ts:30"
+      ],
+      "steps": [
+        {
+          "description": "明确完成任务后调用 fab_append_intent，affected_paths 包含业务文件、规则文件和 meta 文件。",
+          "target": "tool docs / AGENTS guidance",
+          "verification": "任务完成记录能被 /api/ledger 和 doctor audit 读取。"
+        },
+        {
+          "description": "保留 audit telemetry best-effort 语义，不让 audit 写失败阻断 ledger append。",
+          "target": "packages/server/src/services/append-intent.ts",
+          "verification": "现有 try/catch 语义保持，测试覆盖 audit failure 不影响 ledger write。"
+        }
+      ],
+      "review_status": "pending"
+    },
+    {
+      "action": "为 doctor hash drift 增加显式记录闭环",
+      "rationale": "doctor 已经能发现规则文件 hash drift，但缺少 old/current hash 细节和持久化记录；显式记录能避免读命令副作用。",
+      "priority": "high",
+      "evidence_refs": [
+        "packages/server/src/services/doctor.ts:511",
+        "packages/server/src/services/doctor.ts:529",
+        "packages/server/src/services/doctor.ts:548"
+      ],
+      "steps": [
+        {
+          "description": "让 inspectMetaRevision 返回 drift detail，包括 node_id、stable_id、file、expected_hash、actual_hash、identity_source。",
+          "target": "packages/server/src/services/doctor.ts",
+          "verification": "doctor tests 能断言 drift detail，而不只断言 driftCount。"
+        },
+        {
+          "description": "新增 audit event rule_drift_detected，并由显式 doctor record/fix 操作写入。",
+          "target": "packages/server/src/services/audit-log.ts",
+          "verification": "audit-log tests 覆盖 append/read/parse rule_drift_detected。"
+        },
+        {
+          "description": "在用户确认或 fix 后追加 Ledger entry，记录 drift 发现和处理动作。",
+          "target": "packages/server/src/services/doctor.ts or new doctor recording service",
+          "verification": "report 不写文件；record/fix 写 audit 和 ledger。"
+        }
+      ],
+      "review_status": "pending"
+    },
+    {
+      "action": "弱化或废弃 fab_update_registry 作为常规规则修改入口，改用规则原文 + baseline sync",
+      "rationale": "一个地方维护原始规则文本更清晰；agents.meta.json 应作为生成索引和 hash baseline，而不是第二个规则真源。",
+      "priority": "high",
+      "evidence_refs": [
+        "packages/server/src/tools/update-registry.ts:44",
+        "packages/server/src/services/update-registry.ts:20",
+        "packages/server/src/services/doctor.ts:529"
+      ],
+      "steps": [
+        {
+          "description": "将规则修改主路径定义为直接编辑规则文本，禁止通过 meta 直接表达规则内容变化。",
+          "target": "protocol/design",
+          "verification": "文档和工具说明明确 rules text is source of truth，agents.meta.json is derived baseline。"
+        },
+        {
+          "description": "将 fab_update_registry 从外部推荐工具中移除或标记为内部/迁移兼容入口。",
+          "target": "packages/server/src/tools/update-registry.ts and tool docs",
+          "verification": "Agent 默认不会通过 fab_update_registry 修改规则结构，必要迁移仍有兼容路径。"
+        },
+        {
+          "description": "由 sync-meta 或 doctor fix 读取规则原文、计算新 hash、更新 agents.meta.json baseline。",
+          "target": "packages/cli/src/commands/sync-meta.ts or packages/server/src/services/doctor.ts",
+          "verification": "规则文本变更后，执行 baseline sync 可消除 doctor hash drift error。"
+        }
+      ],
+      "review_status": "pending"
+    },
+    {
+      "action": "保守扩展 Ledger schema，仅在必要时添加可选 kind/metadata",
+      "rationale": "Ledger 已被 timeline/history/read APIs 消费，过度拆分 entry 类型会放大迁移成本；hash 细节更适合 audit log。",
+      "priority": "medium",
+      "evidence_refs": [
+        "packages/shared/src/types/ledger.ts:1",
+        "packages/server/src/services/read-ledger.ts:71",
+        "packages/dashboard/src/views/intent-timeline.tsx:17",
+        "packages/dashboard/src/views/history-replay.tsx:15"
+      ],
+      "steps": [
+        {
+          "description": "评估 shared schema 增加可选 kind/metadata 的兼容性。",
+          "target": "packages/shared/src/schemas/ledger-entry.ts",
+          "verification": "旧 ledger entries 继续通过 schema，dashboard 不因未知 metadata 失败。"
+        },
+        {
+          "description": "将 old/current hash、selection token、mutation detail 保持在 audit event 中，通过 ledger id 或 correlation id 关联。",
+          "target": "packages/server/src/services/audit-log.ts",
+          "verification": "doctor audit 能从 ledger entry 查到相关 audit evidence。"
+        }
+      ],
+      "review_status": "pending"
+    }
+  ],
+  "open_questions": [
+    "Ledger schema 是否接受可选 kind/metadata，还是暂时只使用 intent + affected_paths？",
+    "doctor drift 记录命令名采用 --audit-record、--record-drift，还是并入 --fix？",
+    "fab_update_registry 是直接删除，还是保留为内部/迁移兼容但不推荐给 Agent 使用？"
+  ],
+  "follow_up_suggestions": [
+    {
+      "type": "task",
+      "summary": "实现 rule_drift_detected audit event，并补 doctor drift detail 与 baseline sync 测试。"
+    },
+    {
+      "type": "task",
+      "summary": "弱化或废弃 fab_update_registry 外部入口，改为规则原文 + sync baseline 规则修改闭环。"
+    },
+    {
+      "type": "research",
+      "summary": "确认 Ledger schema 是否扩展可选 kind/metadata。"
+    }
+  ],
+  "decision_trail": [
+    {
+      "round": 1,
+      "decision": "Ledger 与 audit log 继续分层。",
+      "context": "现有代码已将 intent 与协议事件分开存储。",
+      "options_considered": ["单 Ledger 事件流", "分层日志", "第三类 change-log"],
+      "chosen": "分层日志",
+      "rejected_reasons": "单流噪声过高；第三类日志增加查询复杂度。",
+      "reason": "保持 timeline 可读，同时保留机器可审计证据。",
+      "impact": "后续实现补 audit event 和显式 ledger facts，不替换存储。"
+    },
+    {
+      "round": 1,
+      "decision": "doctor report 保持读路径，drift 记录必须显式触发。",
+      "context": "doctor 已经能发现 hash drift，但普通 report 若写文件会产生副作用。",
+      "options_considered": ["每次 report 自动写 Ledger", "只 report", "显式 record/fix 写入"],
+      "chosen": "显式 record/fix 写入",
+      "rejected_reasons": "自动写入会导致重复和副作用；只 report 缺少持久证据。",
+      "reason": "审计记录需要可追踪，但读命令不应污染 worktree。",
+      "impact": "需要新增 doctor drift detail 和显式写入测试。"
+    },
+    {
+      "round": 1,
+      "decision": "弱化或废弃 fab_update_registry 的常规使用，规则原文作为唯一真源。",
+      "context": "用户指出可以直接修改当前规则，并通过 agents.meta.json 文件 hash 判断变化。",
+      "options_considered": ["fab_update_registry 作为主要入口", "规则原文为真源 + meta baseline", "两者长期并存"],
+      "chosen": "规则原文为真源 + meta baseline",
+      "rejected_reasons": "fab_update_registry 容易造成 meta 与规则文本双真源；长期并存增加审计解释成本。",
+      "reason": "更符合维护者心智，也让 doctor hash drift 和 sync-meta baseline 更新形成自然闭环。",
+      "impact": "后续实现重点转向 baseline sync / doctor fix，而不是 registry mutation 审计。"
+    }
+  ],
+  "narrative_trail": [
+    {
+      "round": 1,
+      "starting_point": "服务器已有接口和 doctor hash 对比代码。",
+      "key_progress": "确认现有 Ledger/audit 双轨和两个主要缺口：doctor drift 记录、registry mutation 审计。",
+      "hypothesis_impact": "将问题从 Ledger 重写转化为分层审计闭环补齐。",
+      "updated_understanding": "Ledger 是事实时间线，audit log 是协议证据链，规则文本是真源，agents.meta.json 是 hash baseline。",
+      "remaining_questions": "Ledger schema 扩展边界、doctor 显式记录命令形态、fab_update_registry 兼容保留策略。"
+    }
+  ],
+  "intent_coverage": [
+    {
+      "intent": "通过服务器已经拥有的接口进行打点记录",
+      "status": "addressed",
+      "where_addressed": "Round 1, Recommendations 1-2",
+      "notes": "已有 fab_append_intent 和 fab_get_rule_sections；fab_update_registry 是补齐点。"
+    },
+    {
+      "intent": "对规则文件更改如何审计",
+      "status": "addressed",
+      "where_addressed": "Round 1, Recommendations 3-4",
+      "notes": "以 doctor hash drift 为发现机制，以显式 record/fix 作为写入边界。"
+    },
+    {
+      "intent": "意图账本记录具体的更改过程",
+      "status": "transformed",
+      "where_addressed": "Recommendations 1, 3, 5",
+      "notes": "具体过程拆分为 Ledger 事实摘要和 audit log 结构化证据。"
+    }
+  ],
+  "findings_coverage": [
+    {
+      "finding": "fab_append_intent 已是 Ledger 写入口",
+      "round": 1,
+      "disposition": "recommendation",
+      "target": "Rec #1, Rec #2",
+      "reason": "作为最终意图记录入口保留并制度化。"
+    },
+    {
+      "finding": "audit log 已有 get_rules/edit_intent/rule_selection",
+      "round": 1,
+      "disposition": "recommendation",
+      "target": "Rec #1",
+      "reason": "支撑分层契约。"
+    },
+    {
+      "finding": "fab_get_rule_sections 已记录 rule selection",
+      "round": 1,
+      "disposition": "absorbed",
+      "target": "Rec #1",
+      "reason": "作为现有 audit path 的证据。"
+    },
+    {
+      "finding": "doctor 发现 hash drift 但不记录",
+      "round": 1,
+      "disposition": "recommendation",
+      "target": "Rec #3",
+      "reason": "需要显式记录闭环。"
+    },
+    {
+      "finding": "fab_update_registry mutation 未审计",
+      "round": 1,
+      "disposition": "transformed",
+      "target": "Rec #4",
+      "reason": "用户澄清后，方向从审计 mutation 转为废弃常规 registry mutation，改用规则原文与 baseline sync。"
+    }
+  ]
+}

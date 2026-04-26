@@ -170,6 +170,63 @@ type RuleSelectionAuditEntry = {
 
 This is diagnostic-only. Fabric does not block commits for deleted anchors and does not dynamically prune business chunks.
 
+## RuleTestIndex V1
+
+V1 only implements static rule-test traceability. It records declared coverage and hash drift signals; it does not prove that a test passed or that the test semantically covers the rule.
+
+Tests declare a rule link with a static comment:
+
+```ts
+// @fabric-verify <stable_id>
+```
+
+Example for an L2 script test:
+
+```ts
+// @fabric-verify assets/scripts/seer
+describe("seer script contract", () => {
+  it("preserves the inspected-player result shape", () => {
+    // ordinary Jest assertions stay project-owned
+  });
+});
+```
+
+`fabric sync-meta` scans test files for `@fabric-verify` comments and writes `.fabric/rule-test.index.json` as a generated sidecar. The sidecar is separate from `.fabric/agents.meta.json` so rule selection metadata stays focused on rule discovery and precedence.
+
+V1 `RuleTestIndex` entries record static facts:
+
+```ts
+type RuleTestIndexEntry = {
+  stable_id: string;
+  rule_hash: string;
+  test_path: string;
+  test_hash: string;
+  previous_rule_hash?: string;
+  previous_test_hash?: string;
+  line?: number;
+};
+```
+
+When regenerating the sidecar, `sync-meta` preserves `previous_rule_hash` and `previous_test_hash` from the last index entry. This lets `fabric doctor` distinguish ordinary coverage from drift, for example a rule hash changing while the linked test hash stayed the same.
+
+`fabric doctor` uses the sidecar for static contract checks only:
+
+- `covered`: a rule has at least one declared `@fabric-verify` entry.
+- `stale_rule`: the current rule hash differs from the indexed rule hash and the linked test did not move with it.
+- `stale_test`: the indexed test hash no longer matches the current test file.
+- `orphan`: an index entry references a stable_id that is not present in the current rule registry.
+- `missing`: a rule that requires declared coverage has no current index entry.
+
+Explicit V1 exclusions:
+
+- No Jest runner or test execution.
+- No pass/fail evidence.
+- No `.fabric/rule-test.results.jsonl`.
+- No `doctor --fix` acknowledgement flow.
+- No AI audit or test quality analysis.
+- No config hash.
+- No semantic coverage proof.
+
 ## Legacy Surface
 
 `fab_get_rules` 和旧 rules context API 仍可作为旧代码与 Dashboard 只读观察面存在，但 MCP 编辑闭环不再依赖它们。

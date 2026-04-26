@@ -1,0 +1,110 @@
+{
+  "project_type": "nodejs-monorepo",
+  "relevant_files": [
+    {
+      "path": "packages/server/src/services/append-intent.ts",
+      "relevance": "primary",
+      "summary": "Server-side service for appending AI intent ledger entries; after writing the ledger entry it best-effort appends edit_intent audit events.",
+      "dimensions": ["implementation", "architecture"]
+    },
+    {
+      "path": "packages/server/src/tools/append-intent.ts",
+      "relevance": "primary",
+      "summary": "MCP tool registration for fab_append_intent; exposes the existing server interface for task-completion intent recording.",
+      "dimensions": ["implementation"]
+    },
+    {
+      "path": "packages/server/src/services/audit-log.ts",
+      "relevance": "primary",
+      "summary": "JSONL audit event infrastructure for get_rules, edit_intent, and rule_selection events.",
+      "dimensions": ["architecture", "security", "implementation"]
+    },
+    {
+      "path": "packages/server/src/services/rule-sections.ts",
+      "relevance": "primary",
+      "summary": "Fetches selected rule sections and records rule_selection audit events with token, required ids, selected ids, final ids, and selection reasons.",
+      "dimensions": ["implementation", "security"]
+    },
+    {
+      "path": "packages/server/src/services/doctor.ts",
+      "relevance": "primary",
+      "summary": "Runs health checks, audit compliance checks, and meta hash drift detection. It detects rule file drift but does not currently record drift into ledger/audit as a mutation fact.",
+      "dimensions": ["architecture", "implementation", "decision"]
+    },
+    {
+      "path": "packages/server/src/services/update-registry.ts",
+      "relevance": "primary",
+      "summary": "Mutation service for agents.meta.json registry operations; currently writes meta and invalidates cache without ledger/audit event recording.",
+      "dimensions": ["architecture", "implementation"]
+    },
+    {
+      "path": "packages/shared/src/types/ledger.ts",
+      "relevance": "primary",
+      "summary": "Current public LedgerEntry types are minimal: AI entries include intent, affected paths, optional commit; human entries include parent sha and diff stat.",
+      "dimensions": ["architecture", "implementation"]
+    },
+    {
+      "path": "packages/server/src/services/read-ledger.ts",
+      "relevance": "primary",
+      "summary": "Canonical .fabric/.intent-ledger.jsonl storage, legacy read fallback, append, and migration behavior.",
+      "dimensions": ["implementation"]
+    }
+  ],
+  "patterns": [
+    {
+      "pattern": "Ledger append followed by best-effort audit append",
+      "files": ["packages/server/src/services/append-intent.ts"],
+      "description": "Ledger write is primary; compliance telemetry failures are intentionally non-blocking."
+    },
+    {
+      "pattern": "Protocol telemetry in .fabric/audit.jsonl",
+      "files": ["packages/server/src/services/audit-log.ts", "packages/server/src/services/rule-sections.ts"],
+      "description": "Rules access and selection are stored as audit-event records, not Ledger entries."
+    },
+    {
+      "pattern": "Doctor hash drift detection is read-only",
+      "files": ["packages/server/src/services/doctor.ts"],
+      "description": "Doctor compares actual file hashes with meta hashes and returns drift counts/check messages without appending records."
+    },
+    {
+      "pattern": "Registry mutation has centralized server entrypoint",
+      "files": ["packages/server/src/tools/update-registry.ts", "packages/server/src/services/update-registry.ts"],
+      "description": "fab_update_registry is the intended path for registry metadata mutation and is a natural audit/ledger hook point."
+    }
+  ],
+  "constraints": [
+    "Analyze-with-file is read-only; no source code was modified.",
+    "Ledger schema is currently intentionally small and consumed by dashboard/history/timeline flows.",
+    "Audit log parser is a typed union; adding event kinds requires parser, tests, and doctor consumers to be updated.",
+    "runDoctorReport is read-oriented. Any write-side drift recording should be explicit to avoid surprising worktree changes.",
+    "Current repository root lacks .fabric/agents.meta.json, so rule context MCP calls can fail before normal analysis. Doctor/report flows need graceful degradation."
+  ],
+  "integration_points": [
+    {
+      "location": "fab_append_intent -> appendIntent -> appendLedgerEntry -> appendEditIntentAuditEvents",
+      "description": "Primary task-completion intent recording and compliance event hook."
+    },
+    {
+      "location": "fab_get_rule_sections -> getRuleSections -> appendRuleSelectionAuditEvent",
+      "description": "Rule selection telemetry hook after AI-selected L1 rules are validated."
+    },
+    {
+      "location": "runDoctorReport -> inspectMetaRevision",
+      "description": "Existing rule file hash drift detector; can feed a drift audit report or explicit record command."
+    },
+    {
+      "location": "fab_update_registry -> updateRegistry",
+      "description": "Central registry mutation interface; should record metadata mutation details or at least append an audit event."
+    }
+  ],
+  "key_findings": [
+    "Existing server APIs already record both ledger entries and audit events; the refactor should classify and complete those hooks rather than replace them.",
+    "Rules access/selection telemetry belongs in audit log; completed edits and important discovered drift facts belong in Ledger.",
+    "Doctor can detect rule file hash drift, but currently does not preserve old/current hash details in a durable record.",
+    "Registry mutation via fab_update_registry is unaudited today and is a high-leverage place to record rule metadata changes."
+  ],
+  "_metadata": {
+    "timestamp": "2026-04-25T00:00:00+08:00",
+    "exploration_scope": "Ledger, audit-log, rule selection, doctor hash drift, registry mutation"
+  }
+}

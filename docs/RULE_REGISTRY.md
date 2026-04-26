@@ -47,6 +47,38 @@
 - Identity source derivation：`packages/shared/src/schemas/agents-meta.ts:77`。
 - Derived identity diagnostic：`packages/server/src/services/plan-context.ts:172`。
 
+## RuleTestIndex V1 Sidecar
+
+`.fabric/rule-test.index.json` 是 `fabric sync-meta` 生成的 V1 静态契约测试 sidecar，不是 registry 真源，也不替代 `.fabric/agents.meta.json`。
+
+V1 sidecar 只记录：
+
+- 测试文件中的 `// @fabric-verify <stable_id>` 声明。
+- 对应 rule/test 的当前 hash。
+- 上一次索引中的 `previous_rule_hash` 和 `previous_test_hash`，用于 `fabric doctor` 判断 hash drift。
+- 声明位置等静态定位信息。
+
+`fabric doctor` 可基于该 sidecar 报告 covered、stale_rule、stale_test、orphan、missing。`orphan` 表示测试声明引用了当前 registry 中不存在的 Stable ID；`missing` 表示需要声明覆盖的规则没有当前索引项。
+
+V1 明确不记录或承诺：
+
+- Jest runner 或测试执行。
+- pass/fail evidence。
+- `.fabric/rule-test.results.jsonl`。
+- `doctor --fix` acknowledgement。
+- AI audit、config hash、测试质量分析或 semantic coverage proof。
+
+最小 L2 script test 声明示例：
+
+```ts
+// @fabric-verify assets/scripts/seer
+describe("seer script contract", () => {
+  it("keeps the rule-visible behavior stable", () => {
+    // normal project assertions
+  });
+});
+```
+
 ## 模板中声明的 Rule IDs
 
 | Stable ID | 文件 | 范围 | 备注 |
