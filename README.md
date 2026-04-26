@@ -2,29 +2,41 @@
   <img src="./assets/brand/fabric-wordmark.svg" alt="fabric wordmark" width="220">
 </p>
 
-# Fabric v1.6.0
+# Fabric v1.7.0
 
 让 AI 与维护者围绕同一套仓库规则协作
 
 The Consensus Plane for AI-Human Collaboration
 
-Fabric v1.6.0 is an MCP-first, cross-client AGENTS.md protocol for six AI clients: Claude Code, Cursor, Windsurf, Roo Code, Gemini CLI, and Codex CLI. It keeps Fabric rule state inside `.fabric/`, distributes scoped rules through a local MCP server, and adds git-level defenses so behavior stays consistent across clients without compiling client-specific rule files first.
+Fabric v1.7.0 is an MCP-first, cross-client AGENTS.md protocol for six AI clients: Claude Code, Cursor, Windsurf, Roo Code, Gemini CLI, and Codex CLI. It keeps Fabric rule state inside `.fabric/`, distributes scoped rules through a local MCP server, and adds git-level defenses so behavior stays consistent across clients without compiling client-specific rule files first.
 
-> **Current release: v1.6.0**. Fabric 当前稳定线已切到 L0/L1/L2 认知分层协议：规则正文进入 `.fabric/rules/`，`.fabric/agents.meta.json` 以 `stable_id` 索引结构化 description，`fab_plan_context` 先返回中立候选池与 `selection_token`，再由 `fab_get_rule_sections` 获取结构化规则段落。初始化流程见 [`docs/initialization.md`](./docs/initialization.md)。
+> **Current release: v1.7.0**. Fabric 当前稳定线已切到 L0/L1/L2 认知分层协议：规则正文进入 `.fabric/rules/`，`.fabric/agents.meta.json` 以 `stable_id` 索引结构化 description，`fab_plan_context` 先返回中立候选池与 `selection_token`，再由 `fab_get_rule_sections` 获取结构化规则段落。初始化流程见 [`docs/initialization.md`](./docs/initialization.md)。
 
 ```text
-AI Agent <-> Fabric Ledger <-> Human Developer
-   asks        records rules        approves
-   acts        preserves intent     maintains truth
+AI Agent <-> Fabric MCP <-> Human Developer
+   plans       serves rules     maintains truth
+   acts        records events   reviews drift
 ```
 
 ## Architecture
 
 - Regulation: `.fabric/rules/` contains sectioned rule Markdown for the L0/L1/L2 system.
 - Metadata: `.fabric/agents.meta.json` stores machine-oriented routing and revision data.
-- Intent: `.fabric/.intent-ledger.jsonl` records append-only task intent history. Legacy root `.intent-ledger.jsonl` remains read-only compatible until you run `fabric doctor --fix`.
+- Taxonomy: `.fabric/INITIAL_TAXONOMY.md` keeps the first accepted domain map.
+- Event Ledger: `.fabric/events.jsonl` is the only append-only Fabric ledger.
 - Distribution: the Fabric MCP server serves scoped rules to supported clients on demand.
-- Defense: pre-commit enforcement protects `@HUMAN` boundaries, metadata integrity, and workflow hygiene.
+- Defense: `fabric doctor` diagnoses target-state drift and `fabric doctor --fix` repairs deterministic derived files.
+
+## Command Surface
+
+Fabric exposes four public CLI commands:
+
+- `fabric init`
+- `fabric scan`
+- `fabric doctor`
+- `fabric serve`
+
+`fab` is a permanent alias. Public docs should not recommend lower-level stage rerun commands; `fabric init` owns initialization wiring, and `fabric doctor --fix` owns deterministic derived-state repair.
 
 ## 快速开始
 
@@ -52,28 +64,22 @@ AI Agent <-> Fabric Ledger <-> Human Developer
 
 `fabric init` 不只是生成脚手架。它会先构建安装计划，让 TTY 用户通过向导确认或调整计划，把初始化依据写进 `.fabric/`，安装 Claude/Codex 的后续资产，并把内部初始化说明保留在 `.fabric/bootstrap/README.md`，而不是再生成根目录的 bootstrap 文档。建议先看 [docs/getting-started.md](./docs/getting-started.md)，再用 [docs/initialization.md](./docs/initialization.md) 深入了解状态机、命令参数、bootstrap 协议以及 `agents-md-init` / `fabric-init` 的接力流程。
 
-## Compliance Audit
+## Doctor
 
-Enable compliance telemetry reporting in `fabric.config.json`:
+`fabric doctor` validates the target `.fabric/` state for MCP readiness:
 
-```json
-{
-  "auditMode": "warn"
-}
-```
+- `.fabric/rules/` is the rule source of truth.
+- `.fabric/agents.meta.json` points each `content_ref` at an existing `.fabric/rules/*` file.
+- Rule sections are parseable.
+- `.fabric/events.jsonl` exists, is writable, and is parseable.
+- `.fabric/bootstrap/README.md`, `.fabric/INITIAL_TAXONOMY.md`, `.fabric/forensic.json`, and `.fabric/init-context.json` exist when required for their roles.
+- `.fabric/rule-test.index.json` is present and fresh, or reported as fixable drift.
 
-Run `fabric doctor --audit` to cross-check AI edit intents against prior rule access events in the last 5 minutes. New clients write `rule_selection` events through `fab_get_rule_sections`; legacy `get_rules` events remain accepted. `warn` prints violations but keeps exit code `0`, `strict` prints violations and exits non-zero, and `off` keeps the audit disabled by default unless you request a manual preview with `--audit`.
+Supported modes:
 
-## Human-Lock Approval
-
-When a protected region drifts intentionally, approve the new hash from the CLI:
-
-```bash
-fabric approve --interactive
-fabric approve --all
-```
-
-`fabric approve` only updates drifted entries from `.fabric/human-lock.json`; use interactive mode when reviewing each protected range and `--all` only after an external review has already confirmed the drift.
+- `fabric doctor --json` prints the structured report.
+- `fabric doctor --strict` exits non-zero when warnings or errors remain.
+- `fabric doctor --fix` rebuilds deterministic derived state: `.fabric/agents.meta.json`, `.fabric/rule-test.index.json`, missing `.fabric/events.jsonl`, deterministic bootstrap README, and stale hashes. It must not repair semantic rule conflicts or missing human confirmation.
 
 ## 规则命中页
 
@@ -81,25 +87,19 @@ fabric approve --all
 
 ## 路线图
 
-后续里程碑见 [docs/roadmap.md](./docs/roadmap.md)，其中包括 `drift-check`、`fabric migrate`、`fabric doctor` 和 Copilot fallback path。
-
-## 进阶命令
-
-只有在需要单独重跑某个阶段时，才使用下面这些命令：
-
-- `fabric bootstrap install`
-- `fabric config install`
-- `fabric hooks install`
+后续里程碑见 [docs/roadmap.md](./docs/roadmap.md)。
 
 常用 `init` 变体：
 
 - `fabric init --plan`
 - `fabric init --yes`
 - `fabric init --reapply --yes`
-- `fabric approve --interactive`
-- `fabric approve --all`
 
-`fabric bootstrap install` 现在只会刷新 `.fabric/bootstrap/README.md` 里的内部初始化说明，不会再生成根级 `AGENTS.md`、`CLAUDE.md` 或 `GEMINI.md`。
+常用 `doctor` 变体：
+
+- `fabric doctor --json`
+- `fabric doctor --strict`
+- `fabric doctor --fix`
 
 ## 验证与延伸阅读
 
@@ -111,4 +111,4 @@ fabric approve --all
 
 ## 当前状态
 
-当前稳定版本是 `v1.6.0`。历史规划仍保留在 `.workflow/`，对外维护的入口以本 README、`docs/` 下的文档和 `.github/workflows/release.yml` 中的发布流程为准。
+当前稳定版本是 `v1.7.0`。历史规划仍保留在 `.workflow/`，对外维护的入口以本 README、`docs/` 下的文档和 `.github/workflows/release.yml` 中的发布流程为准。

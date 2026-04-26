@@ -1,0 +1,134 @@
+{
+  "project_type": "nodejs",
+  "topic": "fabric CLI and mcp_server CRUD command responsibility optimization",
+  "timestamp": "2026-04-26T18:50:14+0800",
+  "tooling_limitations": [
+    "ACE/smart_search/read_file MCP discovery tools were not available in this session; local shell search/read commands were used as fallback.",
+    "Fabric MCP rule context was unavailable because .fabric/agents.meta.json is missing in this repository."
+  ],
+  "relevant_files": [
+    {
+      "path": "packages/cli/src/commands/index.ts",
+      "relevance": "CLI command registry",
+      "summary": "Registers approve, init, update, scan, serve, doctor, sync-meta, human-lint, ledger-append, pre-commit, bootstrap, config, hooks.",
+      "dimensions": ["architecture", "implementation"]
+    },
+    {
+      "path": "packages/cli/src/commands/init.ts",
+      "relevance": "Create/orchestration command",
+      "summary": "Builds and executes init execution plan: preflight, scaffold, bootstrap, mcp, hooks, post-setup; writes .fabric and client assets.",
+      "dimensions": ["architecture", "implementation", "decision"]
+    },
+    {
+      "path": "packages/cli/src/commands/sync-meta.ts",
+      "relevance": "Registry update/check command",
+      "summary": "Rebuilds .fabric/agents.meta.json and rule-test.index.json from .fabric/agents/**/*.md; records baseline sync events.",
+      "dimensions": ["implementation", "decision"]
+    },
+    {
+      "path": "packages/server/src/index.ts",
+      "relevance": "MCP server factory",
+      "summary": "Registers fab_plan_context, fab_get_rule_sections, fab_append_intent, fab_update_registry, and bootstrap README resource.",
+      "dimensions": ["architecture", "implementation"]
+    },
+    {
+      "path": "packages/server/src/http.ts",
+      "relevance": "HTTP/MCP/Dashboard host",
+      "summary": "Creates Express MCP app, mounts REST APIs, SSE events, /mcp transport, static dashboard, cache watcher and notifications.",
+      "dimensions": ["architecture", "performance"]
+    },
+    {
+      "path": "packages/server/src/tools/plan-context.ts",
+      "relevance": "MCP read-only planning context",
+      "summary": "Read-only MCP tool producing neutral description index and selection token.",
+      "dimensions": ["architecture", "implementation"]
+    },
+    {
+      "path": "packages/server/src/tools/rule-sections.ts",
+      "relevance": "MCP read-only rule fetch",
+      "summary": "Read-only MCP tool fetching structured rule sections after selection token validation.",
+      "dimensions": ["architecture", "implementation"]
+    },
+    {
+      "path": "packages/server/src/tools/update-registry.ts",
+      "relevance": "Deprecated destructive MCP write",
+      "summary": "Compatibility tool for add/remove/update registry node; description says use rule files + sync-meta/doctor --fix instead.",
+      "dimensions": ["architecture", "decision"]
+    },
+    {
+      "path": "packages/server/src/api/scan.ts",
+      "relevance": "Duplicated read/diagnostic API",
+      "summary": "Implements scan report separately from CLI scan, with hardcoded ignores and non-i18n recommendations.",
+      "dimensions": ["implementation", "decision"]
+    }
+  ],
+  "patterns": [
+    {
+      "pattern": "CLI direct service imports",
+      "files": [
+        "packages/cli/src/commands/doctor.ts",
+        "packages/cli/src/commands/approve.ts",
+        "packages/cli/src/commands/ledger-append.ts"
+      ],
+      "description": "CLI calls server services directly for local control-plane actions, avoiding HTTP."
+    },
+    {
+      "pattern": "MCP runtime read tools",
+      "files": [
+        "packages/server/src/tools/plan-context.ts",
+        "packages/server/src/tools/rule-sections.ts"
+      ],
+      "description": "Agent-facing tools are structured, read-only, and emit audit/event telemetry best-effort."
+    },
+    {
+      "pattern": "Deprecated compatibility write tools",
+      "files": [
+        "packages/server/src/tools/append-intent.ts",
+        "packages/server/src/tools/update-registry.ts"
+      ],
+      "description": "Older write surfaces remain registered but descriptions discourage new workflow usage."
+    },
+    {
+      "pattern": "REST/Dashboard observable state",
+      "files": [
+        "packages/server/src/api/rules.ts",
+        "packages/server/src/api/ledger.ts",
+        "packages/server/src/api/human-lock.ts",
+        "packages/server/src/api/history.ts",
+        "packages/server/src/api/events.ts"
+      ],
+      "description": "HTTP APIs expose registry, ledger, human lock, history and SSE for Dashboard/UI consumption."
+    }
+  ],
+  "constraints": [
+    "Do not treat MCP as a full local mutation API; high-impact writes should remain explicit CLI actions.",
+    "Registry should be file-derived via .fabric/agents/**/*.md + sync-meta, not manually mutated in meta as a primary workflow.",
+    "Dashboard/HTTP and CLI should share business services to avoid behavior drift.",
+    "MCP stdio must preserve stdout discipline; CLI output can use stdout/stderr as user interface."
+  ],
+  "integration_points": [
+    {
+      "location": "packages/cli/src/commands/serve.ts -> packages/server/src/index.ts",
+      "description": "CLI starts HTTP server that hosts REST, SSE, Dashboard and MCP HTTP transport."
+    },
+    {
+      "location": "packages/server/src/http.ts /mcp",
+      "description": "Per-session MCP server factory with StreamableHTTP transport and event store."
+    },
+    {
+      "location": "packages/server/src/cache.ts + http watcher",
+      "description": "Shared hot-path cache invalidated by meta/bootstrap changes."
+    },
+    {
+      "location": "packages/server/src/services/read-ledger.ts",
+      "description": "Projects legacy and typed Event Ledger entries into a common ledger read model."
+    }
+  ],
+  "key_findings": [
+    "CLI is already the broad control plane and should remain owner for install/scaffold/sync/repair/delete-like operations.",
+    "MCP should remain runtime context and telemetry, with destructive compatibility tools deprecated.",
+    "HTTP/Dashboard APIs should remain observe/approval surface but need shared service reuse.",
+    "scan is the clearest duplicated implementation and should be extracted first.",
+    "Command documentation should distinguish public user commands from plumbing commands."
+  ]
+}

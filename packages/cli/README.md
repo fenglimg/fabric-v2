@@ -7,24 +7,18 @@
 1. 在 monorepo 根目录运行 `pnpm install`。
 2. 用 `pnpm --filter @fenglimg/fabric-cli build` 构建 CLI。
 3. 在目标项目运行 `fabric init`，完成一站式初始化。
-4. 启动 `fabric serve`，再去客户端里验证 `fab_get_rules`。
+4. 启动 `fabric serve`，再去客户端里验证 `fab_plan_context` 和 `fab_get_rule_sections`。
 
-`fabric init` 会自动执行 `bootstrap install`、`config install` 和 `hooks install`。只有在需要单独重跑某个阶段时，才需要单独调用它们。
-
-`fabric bootstrap install` 只会刷新 `.fabric/bootstrap/README.md` 里的内部初始化说明，不会再生成根级 `AGENTS.md`、`CLAUDE.md` 或 `GEMINI.md`。
+`fabric init` 会自动准备 bootstrap、MCP 配置和 git hooks。公共命令面只保留 `init`、`scan`、`doctor`、`serve`。
 
 ## 常用命令
 
 - `fabric init`
+- `fabric scan`
+- `fabric doctor`
+- `fabric doctor --json`
+- `fabric doctor --strict`
+- `fabric doctor --fix`
 - `fabric serve`
-- `fabric doctor --audit`
-- `fabric approve --interactive`
-- `fabric approve --all`
 
-## 进阶命令
-
-- `fabric bootstrap install`
-- `fabric config install`
-- `fabric hooks install`
-
-`fabric approve` 会在审查完成后更新 `.fabric/human-lock.json` 中已经发生漂移的条目。需要逐项确认时使用 `--interactive`，只有在别处已经完成审查时才使用 `--all`。
+`fabric doctor --fix` 只修复确定性的派生状态，例如 `.fabric/agents.meta.json`、`.fabric/rule-test.index.json`、缺失的 `.fabric/events.jsonl` 和 stale hashes；语义冲突、缺失 rule section、未完成的初始化确认仍需要人工处理。

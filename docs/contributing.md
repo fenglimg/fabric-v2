@@ -39,22 +39,22 @@ pnpm --filter @fenglimg/fabric-dashboard build
 
 ## FAB_SERVER_PATH
 
-`fab config install` 会自动解析已打包的 server entry。若在本 monorepo 内测试，希望 client config 指向本地构建的 server，请显式设置 `FAB_SERVER_PATH`：
+`fabric init` 会把 MCP client config 指向已打包的 server entry。若在本 monorepo 内测试，希望 client config 指向本地构建的 server，请显式设置 `FAB_SERVER_PATH`：
 
 ```bash
 export FAB_SERVER_PATH="$PWD/packages/server/dist/index.js"
 ```
 
-在修改任何 client config 之前，先预览 config 写入：
+在目标测试仓库中运行初始化预览：
 
 ```bash
-FAB_SERVER_PATH="$FAB_SERVER_PATH" node "$PWD/packages/cli/dist/index.js" config install --clients claude,cursor,windsurf,roo,gemini,codex --dry-run
+FAB_SERVER_PATH="$FAB_SERVER_PATH" node "$PWD/packages/cli/dist/index.js" init --plan
 ```
 
-然后安装 Fabric MCP config：
+然后执行 Fabric 初始化：
 
 ```bash
-FAB_SERVER_PATH="$FAB_SERVER_PATH" node "$PWD/packages/cli/dist/index.js" config install --clients claude,cursor,windsurf,roo,gemini,codex
+FAB_SERVER_PATH="$FAB_SERVER_PATH" node "$PWD/packages/cli/dist/index.js" init
 ```
 
 若文件不存在，请先重建 server package：

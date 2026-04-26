@@ -1,0 +1,336 @@
+{
+  "session_id": "ANL-2026-04-26-fabric-cli-mcp-server-crud-职责优化",
+  "topic": "现有框架下，fabric cli和 mcp_server 优化支持的相关命令(增删改查)，以及相应命令的功能和职责划分和优化。",
+  "completed": "2026-04-26T19:12:00+0800",
+  "total_rounds": 2,
+  "summary": "当前 Fabric 不缺命令，而是需要把已形成的架构边界制度化：CLI 是 control plane，负责初始化、安装、同步、修复、审批和 hook 自动化；MCP server 是 agent runtime context plane，主路径应保持 read-only cognitive protocol，即 fab_plan_context -> fab_get_rule_sections -> edit；HTTP/Dashboard 是 observe/approval plane；业务逻辑应沉到共享 service，避免 CLI/HTTP/MCP 各自复制。最优优化路径不是把 MCP 扩展成完整 CRUD，而是先把 CLI 命令分层公开，再抽掉 scan 这类重复实现，最后为 deprecated MCP 写工具建立兼容退场策略。",
+  "key_conclusions": [
+    {
+      "point": "CLI 已经是事实上的 control plane，应继续拥有高影响本地写入：init、sync-meta、doctor --fix、approve、config/hooks/bootstrap 重跑。",
+      "evidence": "packages/cli/src/commands/index.ts:1; packages/cli/src/commands/init.ts:388; packages/cli/src/commands/sync-meta.ts:72",
+      "confidence": "high"
+    },
+    {
+      "point": "MCP server 不应镜像完整 CRUD；新协议主路径应保持 read-only context + 自动 telemetry。",
+      "evidence": "packages/server/src/index.ts:50; docs/getting-started.md:101-107; docs/SPEC_INTERNAL.md:236-240",
+      "confidence": "high"
+    },
+    {
+      "point": "文档已形成命令分层，但 CLI help/manifest/测试还没有系统表达：primary、advanced stage rerun、automation/internal、deprecated/compat。",
+      "evidence": "README.md:36-48; README.md:86-102; packages/cli/src/commands/index.ts:1",
+      "confidence": "high"
+    },
+    {
+      "point": "scan 是最明确的 service 收敛缺口：CLI 和 HTTP API 有两份报告实现，ignore 与文案策略不一致。",
+      "evidence": "packages/cli/src/commands/scan.ts:36; packages/server/src/api/scan.ts:21",
+      "confidence": "high"
+    },
+    {
+      "point": "fab_append_intent 与 fab_update_registry 应保留兼容但从所有新 workflow、bootstrap guidance 和推荐测试中退出。",
+      "evidence": "packages/server/src/tools/update-registry.ts:44; docs/getting-started.md:106; docs/SPEC_INTERNAL.md:240",
+      "confidence": "high"
+    }
+  ],
+  "recommendations": [
+    {
+      "action": "建立 CLI 命令公开层级并同步 help/docs/manifest",
+      "rationale": "现有命令平铺注册，用户看到的是实现模块列表而不是操作模型；文档已经有主路径和进阶命令雏形，应固化为一致 taxonomy。",
+      "priority": "high",
+      "evidence_refs": [
+        "packages/cli/src/commands/index.ts:1",
+        "README.md:36-48",
+        "README.md:86-102",
+        "packages/cli/README.md:18-28"
+      ],
+      "steps": [
+        {
+          "description": "定义 Primary / Advanced stage rerun / Automation internal / Deprecated compat 四层命令 taxonomy。",
+          "target": "docs/tooling-manifest.json + docs/tooling-manifest.md",
+          "verification": "manifest 中每个 CLI/MCP 命令都有 level、owner_surface、crud_role、recommended_usage 字段或等价信息。"
+        },
+        {
+          "description": "更新 README、packages/cli/README、getting-started，使常用命令与进阶/内部/兼容命令清晰分组。",
+          "target": "README.md, packages/cli/README.md, docs/getting-started.md",
+          "verification": "公开文档不再把 plumbing 命令与主路径混在同一层级。"
+        },
+        {
+          "description": "如 citty help 不支持分组，至少在命令 description 中写出 advanced/internal/deprecated 语义，并补 snapshot/CLI surface 测试。",
+          "target": "packages/cli/src/commands/*.ts, packages/cli/__tests__",
+          "verification": "测试能防止低层命令重新被描述成主路径。"
+        }
+      ],
+      "review_status": "pending"
+    },
+    {
+      "action": "抽取共享 scan service，消除 CLI 与 HTTP 双实现",
+      "rationale": "scan 是 read-only 诊断入口，当前两份实现已出现 ignore 与文案漂移风险。",
+      "priority": "high",
+      "evidence_refs": [
+        "packages/cli/src/commands/scan.ts:36-45",
+        "packages/server/src/api/scan.ts:21-50"
+      ],
+      "steps": [
+        {
+          "description": "把 createScanReport、ReadmeQuality、walk/ignore/recommendation 逻辑抽到共享模块。",
+          "target": "packages/shared/src/node.ts or packages/server/src/services/scan.ts",
+          "verification": "CLI scan 和 HTTP /api/scan 调用同一 report builder。"
+        },
+        {
+          "description": "保留 CLI 的 i18n pretty rendering，HTTP 返回结构化 JSON，不复制业务判断。",
+          "target": "packages/cli/src/commands/scan.ts, packages/server/src/api/scan.ts",
+          "verification": "同一 fixture 下 CLI --json 与 HTTP API 核心字段一致。"
+        },
+        {
+          "description": "补 CLI/API 对齐测试，覆盖 fabric.config.json scanIgnores 或默认 ignore 策略。",
+          "target": "packages/cli/__tests__ + packages/server/src/api/scan.test.ts",
+          "verification": "更改 ignore/recommendation 规则时两端测试同时约束。"
+        }
+      ],
+      "review_status": "pending"
+    },
+    {
+      "action": "制定 deprecated MCP 写工具退场策略",
+      "rationale": "fab_append_intent 和 fab_update_registry 已在描述中 deprecated，但仍注册在 MCP server 中；需要防止新 workflow 继续依赖。",
+      "priority": "high",
+      "evidence_refs": [
+        "packages/server/src/tools/append-intent.ts",
+        "packages/server/src/tools/update-registry.ts",
+        "docs/SPEC_INTERNAL.md:236-240",
+        "docs/getting-started.md:101-107"
+      ],
+      "steps": [
+        {
+          "description": "在 tooling manifest 和 docs 中把两个工具标为 compat/deprecated，并列出替代路径。",
+          "target": "docs/tooling-manifest.json + docs/SPEC_INTERNAL.md",
+          "verification": "新协议文档只推荐 fab_plan_context 与 fab_get_rule_sections。"
+        },
+        {
+          "description": "补测试确保 bootstrap guidance、protected tokens、getting-started 不要求调用 deprecated tools。",
+          "target": "packages/cli/__tests__/lint-protected-tokens.test.ts or docs tests",
+          "verification": "出现 'call fab_update_registry' 类新流程文案时测试失败。"
+        },
+        {
+          "description": "定义兼容窗口：当前版本继续注册；后续版本可隐藏、feature flag 或移除。",
+          "target": "docs/roadmap.md or CHANGELOG.md",
+          "verification": "发布说明明确兼容状态，避免旧客户端突然失效。"
+        }
+      ],
+      "review_status": "pending"
+    },
+    {
+      "action": "明确 update、sync-meta、doctor --fix 的边界",
+      "rationale": "这三个命令都涉及更新/修复，若不写清会造成重跑 integration surface、重建 registry、接受 baseline 三种动作混淆。",
+      "priority": "medium",
+      "evidence_refs": [
+        "packages/cli/src/commands/update.ts",
+        "packages/cli/src/commands/sync-meta.ts",
+        "packages/cli/src/commands/doctor.ts",
+        "docs/RULE_REGISTRY.md:144"
+      ],
+      "steps": [
+        {
+          "description": "定义 update = 重跑 integration surface；sync-meta = 从规则源重建派生索引；doctor --fix = 迁移/接受已知 baseline 修复。",
+          "target": "README.md, docs/getting-started.md, docs/RULE_REGISTRY.md",
+          "verification": "每个命令都有一句互斥职责描述。"
+        },
+        {
+          "description": "决定 update 是 primary 还是 advanced；若保持 primary，补 README 常用命令和测试。",
+          "target": "README.md, packages/cli/README.md, packages/cli/__tests__",
+          "verification": "用户能从文档判断什么时候用 init --reapply、update、sync-meta、doctor --fix。"
+        }
+      ],
+      "review_status": "pending"
+    },
+    {
+      "action": "保留 MCP read-only core，并只考虑新增读状态工具或资源",
+      "rationale": "MCP annotations 是行为提示，不应作为 destructive safety 的唯一边界；新 MCP 能力应优先是 read-only doctor/scan/status 或 resource links。",
+      "priority": "medium",
+      "evidence_refs": [
+        "packages/server/src/tools/plan-context.ts:104",
+        "packages/server/src/tools/rule-sections.ts",
+        "packages/server/src/index.ts:61",
+        "packages/server/src/http.ts:183-199"
+      ],
+      "steps": [
+        {
+          "description": "评估是否需要 read-only fab_doctor_status 或 scan/status resource，而不是新增写工具。",
+          "target": "packages/server/src/tools or resources",
+          "verification": "任何新增 MCP tool 都有 annotations、outputSchema、替代 REST/resource 理由。"
+        },
+        {
+          "description": "如新增资源，复用现有 cache invalidation 与 resource/tool list notifications。",
+          "target": "packages/server/src/http.ts, packages/server/src/index.ts",
+          "verification": "meta/bootstrap 变化后客户端能收到合适通知或 stale signal。"
+        }
+      ],
+      "review_status": "pending"
+    }
+  ],
+  "open_questions": [
+    "update 最终应归入 primary 还是 advanced stage rerun？",
+    "scan service 更适合放在 @fenglimg/fabric-shared/node，还是 @fenglimg/fabric-server services 并由 CLI 继续直接 import server？",
+    "deprecated MCP 写工具的隐藏/移除窗口应绑定 v1.x minor 还是 v2.0？"
+  ],
+  "follow_up_suggestions": [
+    {
+      "type": "task",
+      "summary": "先做 P0 文档/help/manifest 命令分层，不改命令可用性。"
+    },
+    {
+      "type": "task",
+      "summary": "随后抽 scan shared service，并补 CLI/API 对齐测试。"
+    },
+    {
+      "type": "task",
+      "summary": "最后制定 deprecated MCP tools 的兼容窗口和防回退测试。"
+    }
+  ],
+  "decision_trail": [
+    {
+      "round": 1,
+      "decision": "沿用 CLI=control / Dashboard=observe / MCP=runtime dispatch 的三面分工，并在本轮细化 CRUD。",
+      "context": "历史分析和当前源码均体现该结构。",
+      "options_considered": ["重新定义所有面", "纯 CRUD 分层", "沿用三面分工并细化 CRUD"],
+      "chosen": "沿用三面分工并细化 CRUD",
+      "rejected_reasons": "重新定义会与既有路线冲突；纯 CRUD 无法表达 agent runtime 安全边界。",
+      "reason": "更贴合当前实现和产品叙事。",
+      "impact": "建议集中在边界制度化和重复实现收敛。"
+    },
+    {
+      "round": 1,
+      "decision": "将 fab_update_registry 与 fab_append_intent 视为兼容入口，不作为新职责模型核心。",
+      "context": "两个 tool 描述已显式 deprecated。",
+      "options_considered": ["继续完善为 CRUD", "立即删除", "保留兼容但降级"],
+      "chosen": "保留兼容但降级",
+      "rejected_reasons": "完善会强化旧语义；立即删除有兼容风险。",
+      "reason": "符合当前文档和兼容现实。",
+      "impact": "新流程只推荐 read-only cognitive protocol。"
+    },
+    {
+      "round": 2,
+      "decision": "命令重组采用四层公开模型，而不是删除命令。",
+      "context": "README 已有主/进阶分层，测试要求兼容旧入口。",
+      "options_considered": ["删除低层命令", "全部同等公开", "四层分级"],
+      "chosen": "四层分级",
+      "rejected_reasons": "删除风险高；全部公开继续混淆。",
+      "reason": "兼容且能改善用户心智。",
+      "impact": "P0 可以从 docs/help/manifest 开始。"
+    }
+  ],
+  "narrative_trail": [
+    {
+      "round": 1,
+      "starting_point": "从 CLI/MCP/HTTP/service 入口建立职责图。",
+      "key_progress": "确认命令数量不是主要问题，边界与重复实现才是主要问题。",
+      "hypothesis_impact": "将完整 MCP CRUD 假设修正为 CLI control + MCP runtime。",
+      "updated_understanding": "高影响写操作留 CLI，MCP 主路径保持 read-only context。",
+      "remaining_questions": "命令如何公开分层。"
+    },
+    {
+      "round": 2,
+      "starting_point": "用户选择命令重组方向。",
+      "key_progress": "从 README、getting-started、SPEC 和测试确认主/进阶/内部/兼容四层模型。",
+      "hypothesis_impact": "将删除低层命令修正为保留兼容并调整公开层级。",
+      "updated_understanding": "先分层和收敛服务，再处理 deprecated MCP tools。",
+      "remaining_questions": "update 层级和 scan service 归属。"
+    }
+  ],
+  "intent_coverage": [
+    {
+      "intent": "fabric cli 支持的相关命令(增删改查)",
+      "status": "addressed",
+      "where_addressed": "Round 1 CRUD matrix, Round 2 CLI taxonomy",
+      "notes": "覆盖 public/advanced/internal 命令。"
+    },
+    {
+      "intent": "mcp_server 支持的相关命令(增删改查)",
+      "status": "addressed",
+      "where_addressed": "Round 1 MCP tool surface, Round 2 deprecated strategy",
+      "notes": "确认新协议 read-only core，写工具为 compat/deprecated。"
+    },
+    {
+      "intent": "相应命令的功能和职责划分",
+      "status": "addressed",
+      "where_addressed": "Round 1 responsibility matrix, conclusions recommendations",
+      "notes": "形成 CLI/MCP/HTTP/service 四面边界。"
+    },
+    {
+      "intent": "优化",
+      "status": "addressed",
+      "where_addressed": "Recommendations #1-#5",
+      "notes": "输出可执行优化路线。"
+    }
+  ],
+  "findings_coverage": [
+    {
+      "finding": "CLI is the broad control plane and should own high-impact local writes.",
+      "round": 1,
+      "disposition": "recommendation",
+      "target": "Rec #1 and Rec #4",
+      "reason": "Converted to CLI taxonomy and command boundary clarification."
+    },
+    {
+      "finding": "MCP exposes two read-only cognitive tools plus deprecated write tools.",
+      "round": 1,
+      "disposition": "recommendation",
+      "target": "Rec #3 and Rec #5",
+      "reason": "Converted to deprecated strategy and read-only core recommendation."
+    },
+    {
+      "finding": "HTTP server hosts REST, SSE, Dashboard and MCP HTTP.",
+      "round": 1,
+      "disposition": "absorbed",
+      "target": "Rec #5",
+      "reason": "Used to justify resources/notifications and observe/runtime distinction."
+    },
+    {
+      "finding": "init is a scaffold/bootstrap/mcp/hooks orchestration command.",
+      "round": 1,
+      "disposition": "absorbed",
+      "target": "Rec #1",
+      "reason": "Supports primary vs advanced stage rerun taxonomy."
+    },
+    {
+      "finding": "sync-meta is canonical registry rebuild/update path.",
+      "round": 1,
+      "disposition": "recommendation",
+      "target": "Rec #3 and Rec #4",
+      "reason": "Used to replace update-registry and clarify sync-meta boundary."
+    },
+    {
+      "finding": "scan has duplicated CLI and HTTP implementations.",
+      "round": 1,
+      "disposition": "recommendation",
+      "target": "Rec #2",
+      "reason": "Converted to shared service extraction."
+    },
+    {
+      "finding": "README already separates init primary path from advanced bootstrap/config/hooks commands.",
+      "round": 2,
+      "disposition": "recommendation",
+      "target": "Rec #1",
+      "reason": "Converted to help/docs/manifest synchronization."
+    },
+    {
+      "finding": "fabric serve is primary runtime host.",
+      "round": 2,
+      "disposition": "absorbed",
+      "target": "Rec #1 and Rec #5",
+      "reason": "Supports primary command taxonomy and runtime boundary."
+    },
+    {
+      "finding": "Deprecated MCP tools are excluded from new workflow docs.",
+      "round": 2,
+      "disposition": "recommendation",
+      "target": "Rec #3",
+      "reason": "Converted to compatibility and anti-regression tests."
+    },
+    {
+      "finding": "Tests preserve --plan, --reapply and legacy flag compatibility.",
+      "round": 2,
+      "disposition": "absorbed",
+      "target": "Rec #1",
+      "reason": "Justifies non-breaking taxonomy change before deletion/hiding."
+    }
+  ]
+}

@@ -28,11 +28,11 @@
 
 - 保持 scoped rules 对 path 敏感。
 - 允许 clients 传入 `client_hash`，并检测 stale rule revisions。
-- 将 priority、activation、human-lock、description-stub 逻辑集中在 server。
+- 将 priority、activation、description-stub 逻辑集中在 server。
 
 证据：
 
-- `fab_get_rules` description 要求修改文件前调用：`packages/server/src/tools/get-rules.ts:35`。
+- `fab_plan_context` 和 `fab_get_rule_sections` 是当前 MCP 编辑闭环。
 - `client_hash` stale detection：`packages/server/src/services/get-rules.ts:85`。
 - Rule matching 和 priority 位于 service：`packages/server/src/services/get-rules.ts:145`。
 - Bootstrap README 保持为 MCP resource：`packages/server/src/index.ts:54`。
@@ -65,14 +65,14 @@
 
 - 兼容 Markdown rule files 和现有 AGENTS-style documents。
 - 不需要解析 frontmatter。
-- `sync-meta` 可以低成本提取。
+- 规则索引 builder 可以低成本提取。
 - 中文正文可以保留，同时给 clients 一个稳定英文 anchor。
 
 证据：
 
 - Shared schema 支持 `stable_id` 和 `identity_source`：`packages/shared/src/schemas/agents-meta.ts:31`。
 - 已有 derived fallback：`packages/shared/src/schemas/agents-meta.ts:67`。
-- `sync-meta` 用 HTML comment regex 提取 declared id：`packages/cli/src/commands/sync-meta.ts:334`。
+- 规则索引 builder 用 HTML comment regex 提取 declared id。
 - 现有 bootstrap templates 已使用 `fab:rule-id`：`templates/bootstrap/CLAUDE.md:1`, `templates/bootstrap/codex-AGENTS-header.md:1`。
 
 影响：
@@ -80,9 +80,9 @@
 - 没有 declared IDs 的 rule files 仍可路由，但 `identity_source: "derived"` 应视为 migration warning。
 - `fab_plan_context` 已经输出 `derived_identity` diagnostics：`packages/server/src/services/plan-context.ts:172`。
 
-## ADR-005: `sync-meta` Precompiles Rule Identity
+## ADR-005: Doctor Fix Precompiles Rule Identity
 
-决策：stable identity 由 `fabric sync-meta` 编译进 `.fabric/agents.meta.json`，不在 `get-rules` hot path 中临时提取。
+决策：stable identity 由 `fabric doctor --fix` 从 `.fabric/rules/` 编译进 `.fabric/agents.meta.json`，不在 rule delivery hot path 中临时提取。
 
 原因：
 
@@ -92,9 +92,9 @@
 
 证据：
 
-- `sync-meta` 从 `.fabric/agents/**/*.md` 计算 node metadata：`packages/cli/src/commands/sync-meta.ts:74`。
-- 每个 node 写入 `stable_id` 和 `identity_source`：`packages/cli/src/commands/sync-meta.ts:100`。
-- Revision source 包含 `id`、`hash`、`stable_id`、`identity_source`：`packages/cli/src/commands/sync-meta.ts:272`。
+- `.fabric/rules/` 是规则正文真源。
+- `.fabric/agents.meta.json` 是 derived machine index。
+- Revision source 包含 `id`、`hash`、`stable_id`、`identity_source`。
 
 ## ADR-006: Streamable HTTP MCP Uses Per-session Servers
 
@@ -140,45 +140,42 @@
 - 将可审查的状态变更保留在能追加 ledger/audit context 的 CLI/MCP paths。
 - 降低 `.fabric/*` 上的 concurrent write ambiguity。
 
-当前实现状态：
+当前目标状态：
 
-- Read-heavy views 已实现：rule topology 读取 `getRules` 和 `getRulesContext`：`packages/dashboard/src/views/rule-topology.tsx:23`。
-- 但当前 Dashboard 仍通过 UI 暴露 human-lock approval：`packages/dashboard/src/views/human-lock.tsx:46`。
-- Server 仍暴露 `POST /api/human-lock/approve`：`packages/server/src/api/human-lock.ts:49`。
-- Server 仍暴露 `POST /api/intent/annotate`：`packages/server/src/api/intent.ts:7`。
+- Read-heavy views 读取 rules、doctor、events 和 rules-context read models。
+- Dashboard 不作为规则真源。
+- Dashboard 不承担 deterministic derived-state repair；使用 `fabric doctor --fix`。
 
-结论：此 ADR 是目标约束，并存在已知 implementation drift。未来新增任何 Dashboard write 行为，都必须先更新 ADR。
+## ADR-009: Event Ledger Is The Only Ledger
 
-## ADR-009: Event Ledger With Compatibility Reads
-
-决策：当前 Event Ledger path 是 `.fabric/events.jsonl`。旧 `.fabric/.intent-ledger.jsonl` 与 legacy root `.intent-ledger.jsonl` 只保持 read-compatible fallback，不再作为新写入目标。
+决策：当前 Event Ledger path 是 `.fabric/events.jsonl`，并且是唯一 ledger。
 
 原因：
 
 - 将 Fabric state 收口到一个 typed Event Ledger。
-- 避免静默移动 user history。
-- 让 doctor/fix 负责 legacy migration and compatibility projection。
+- 避免多个 ledger 读写路径产生冲突。
+- 让 doctor/fix 只负责目标状态诊断和 deterministic repair。
 
 证据：
 
 - Constants：`packages/server/src/services/_shared.ts:9`。
 - Event Ledger append/read service：`packages/server/src/services/event-ledger.ts:16`。
-- Legacy ledger projection/fallback：`packages/server/src/services/read-ledger.ts:46`。
 
-## ADR-010: Audit Compliance Is Best-effort
+## ADR-010: Doctor Is Target-State Diagnosis
 
-决策：compliance telemetry 不得阻塞 rule delivery 或 intent recording。
+决策：`fabric doctor` 默认只读，围绕 target-state MCP readiness 诊断 `.fabric/`。
 
 原因：
 
-- 不能因为 audit logging 失败就让 Fabric edit 失败。
-- Audit compatibility views are evidence，不是 primary data path。
+- 诊断输出必须可机器读取。
+- `--strict` 让 CI 能把 warnings/errors 变成非零退出。
+- `--fix` 只修复可确定重建的派生状态。
 
 证据：
 
-- `readAuditLog` 从 `.fabric/events.jsonl` projection 读取，并兼容旧 `.fabric/audit.jsonl`：`packages/server/src/services/audit-log.ts:194`。
-- `appendIntent` 会吞掉 compliance telemetry failure：`packages/server/src/services/append-intent.ts:28`。
-- Audit window 默认 5 分钟：`packages/server/src/services/audit-log.ts:8`。
+- Doctor report categories are `fixable_errors`、`manual_errors`、`warnings`。
+- Fixable state includes `.fabric/agents.meta.json`、`.fabric/rule-test.index.json`、missing `.fabric/events.jsonl`、deterministic bootstrap README、stale meta hashes。
+- Manual state includes missing rule sections、semantic conflicts、incomplete init-context confirmation、MCP client local config issues、business-code-versus-rule mismatch。
 
 ## ADR-011: Dashboard Static Served By Server Package
 

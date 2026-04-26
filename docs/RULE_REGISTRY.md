@@ -1,6 +1,6 @@
 # RULE_REGISTRY: Stable ID 与规则注册状态
 
-本文记录当前仓库可确认的规则身份事实。它不是 `.fabric/agents.meta.json` 的替代品；真实运行时索引仍必须由 Fabric tooling 生成和维护。
+本文记录当前仓库可确认的规则身份事实。它不是 `.fabric/agents.meta.json` 的替代品；真实运行时索引必须由 `fabric doctor --fix` 从 `.fabric/rules/` 生成和维护。
 
 ## 当前项目 Registry 状态
 
@@ -15,41 +15,42 @@
 ```text
 .fabric/agents.meta.json
 .fabric/bootstrap/README.md
-.fabric/agents/
-.fabric/human-lock.json
+.fabric/INITIAL_TAXONOMY.md
+.fabric/rules/
+.fabric/rule-test.index.json
 ```
 
 直接证据：
 
 - `fab_plan_context` 对本次目标路径返回 `Fabric agents metadata file is missing: /mnt/c/Project/fabric-v2/.fabric/agents.meta.json`。
-- Event Ledger 的 canonical path 是 `.fabric/events.jsonl`；旧 `.fabric/audit.jsonl` 只作为 compatibility fallback 读取。
+- Event Ledger 的 canonical path 是 `.fabric/events.jsonl`。
 
 结论：
 
 - 本仓库当前不能把根 `.fabric/` 当作完整 Fabric runtime registry。
 - 下方表格记录的是源码、模板和 example 中的规则身份来源，不等价于当前项目已激活规则。
-- 若要让本仓库自身成为 Fabric-managed project，应先运行 `fabric init` 或恢复 `.fabric/agents.meta.json`，再用 `fabric sync-meta` 固化规则索引。
+- 若要让本仓库自身成为 Fabric-managed project，应先运行 `fabric init` 或恢复 `.fabric/rules/`，再用 `fabric doctor --fix` 固化派生索引。
 
 ## Stable ID 契约
 
 | 规则 | 状态 |
 | --- | --- |
 | 核心规则文件首选 `<!-- fab:rule-id scope/name -->`。 | 已实现解析。 |
-| `sync-meta` 将声明 ID 编译为 `stable_id`。 | 已实现。 |
+| `fabric doctor --fix` 将声明 ID 编译为 `stable_id`。 | 目标实现。 |
 | 未声明 ID 时使用派生 ID，`identity_source = "derived"`。 | 已实现。 |
 | `fab_plan_context` 对派生 ID 给出 warning。 | 已实现。 |
 | 修改规则节点时同步更新本文件。 | 本次建立。 |
 
 证据：
 
-- Declared ID regex：`packages/cli/src/commands/sync-meta.ts:334`。
+- Declared ID regex：规则索引 builder 负责解析 `fab:rule-id`。
 - Shared stable-id derivation：`packages/shared/src/schemas/agents-meta.ts:67`。
 - Identity source derivation：`packages/shared/src/schemas/agents-meta.ts:77`。
 - Derived identity diagnostic：`packages/server/src/services/plan-context.ts:172`。
 
 ## RuleTestIndex V1 Sidecar
 
-`.fabric/rule-test.index.json` 是 `fabric sync-meta` 生成的 V1 静态契约测试 sidecar，不是 registry 真源，也不替代 `.fabric/agents.meta.json`。
+`.fabric/rule-test.index.json` 是 `fabric doctor --fix` 生成的 V1 静态契约测试 sidecar，不是 registry 真源，也不替代 `.fabric/agents.meta.json`。
 
 V1 sidecar 只记录：
 
@@ -97,17 +98,17 @@ describe("seer script contract", () => {
 
 ## Example Rule Files
 
-`examples/werewolf-minigame-stub/.fabric/agents/` 下的 example project rule files：
+`examples/werewolf-minigame-stub/.fabric/rules/` 下的 example project rule files：
 
 | Derived Stable ID | 文件 | Layer Derivation |
 | --- | --- | --- |
-| `root` | `examples/werewolf-minigame-stub/.fabric/agents/root.md` | 由 depth source 派生。 |
-| `_cross/role-balance` | `examples/werewolf-minigame-stub/.fabric/agents/_cross/role-balance.md` | Cross-cutting L1。 |
-| `assets/scripts/hunter` | `examples/werewolf-minigame-stub/.fabric/agents/assets/scripts/hunter.md` | 按 depth 派生 Mirror L1/L2。 |
-| `assets/scripts/seer` | `examples/werewolf-minigame-stub/.fabric/agents/assets/scripts/seer.md` | 按 depth 派生 Mirror L1/L2。 |
-| `assets/scripts/villager` | `examples/werewolf-minigame-stub/.fabric/agents/assets/scripts/villager.md` | 按 depth 派生 Mirror L1/L2。 |
-| `assets/scripts/werewolf` | `examples/werewolf-minigame-stub/.fabric/agents/assets/scripts/werewolf.md` | 按 depth 派生 Mirror L1/L2。 |
-| `assets/scripts/witch` | `examples/werewolf-minigame-stub/.fabric/agents/assets/scripts/witch.md` | 按 depth 派生 Mirror L1/L2。 |
+| `root` | `examples/werewolf-minigame-stub/.fabric/rules/root.md` | 由 depth source 派生。 |
+| `_cross/role-balance` | `examples/werewolf-minigame-stub/.fabric/rules/_cross/role-balance.md` | Cross-cutting L1。 |
+| `assets/scripts/hunter` | `examples/werewolf-minigame-stub/.fabric/rules/assets/scripts/hunter.md` | 按 depth 派生 Mirror L1/L2。 |
+| `assets/scripts/seer` | `examples/werewolf-minigame-stub/.fabric/rules/assets/scripts/seer.md` | 按 depth 派生 Mirror L1/L2。 |
+| `assets/scripts/villager` | `examples/werewolf-minigame-stub/.fabric/rules/assets/scripts/villager.md` | 按 depth 派生 Mirror L1/L2。 |
+| `assets/scripts/werewolf` | `examples/werewolf-minigame-stub/.fabric/rules/assets/scripts/werewolf.md` | 按 depth 派生 Mirror L1/L2。 |
+| `assets/scripts/witch` | `examples/werewolf-minigame-stub/.fabric/rules/assets/scripts/witch.md` | 按 depth 派生 Mirror L1/L2。 |
 
 这些是 examples，不是当前根项目的 active rules。
 
@@ -119,15 +120,12 @@ describe("seer script contract", () => {
 | --- | --- | --- |
 | `core/cli-entry` | CLI command root 和 lazy command registry | `packages/cli/src/index.ts`, `packages/cli/src/commands/index.ts` |
 | `core/init-engine` | Init wizard、scaffold、stage execution | `packages/cli/src/commands/init.ts` |
-| `core/sync-meta` | Rule metadata compiler 和 stable-id extraction | `packages/cli/src/commands/sync-meta.ts` |
+| `core/rule-index-builder` | Rule metadata compiler、stable-id extraction 和 rule-test sidecar builder | target server service |
 | `core/forensic-scan` | Forensic project scan 和 evidence model | `packages/cli/src/scanner/forensic.ts` |
 | `core/server-mcp` | MCP server creation 和 tool registration | `packages/server/src/index.ts` |
 | `core/http-app` | REST/SSE/MCP HTTP app 和 session lifecycle | `packages/server/src/http.ts` |
 | `core/get-rules` | Single-path rule resolution service | `packages/server/src/services/get-rules.ts` |
 | `core/plan-context` | Batch planning 和 shared rule bundle | `packages/server/src/services/plan-context.ts` |
-| `core/update-registry` | Registry mutation service 和 MCP tool | `packages/server/src/services/update-registry.ts`, `packages/server/src/tools/update-registry.ts` |
-| `core/append-intent` | Intent ledger append 和 compliance audit | `packages/server/src/services/append-intent.ts` |
-| `core/audit-log` | Get-rules/edit-intent audit log | `packages/server/src/services/audit-log.ts` |
 | `core/events` | SSE event projection 和 replay | `packages/server/src/api/events.ts` |
 | `core/dashboard-api-client` | Dashboard REST/SSE client | `packages/dashboard/src/api/client.ts` |
 | `core/rule-topology-view` | Dashboard rule hit explanation | `packages/dashboard/src/views/rule-topology.tsx` |
@@ -141,4 +139,4 @@ describe("seer script contract", () => {
 1. 在本文新增或更新 module Stable ID。
 2. 如果 execution flow、schema、rule priority、MCP transport、Stable ID、cache 或 audit behavior 发生变化，更新 [SPEC_INTERNAL](./SPEC_INTERNAL.md)。
 3. 如果 `packages/` 文件新增、删除、重命名或职责变化，更新 [CODEBASE_LANDSCAPE](./CODEBASE_LANDSCAPE.md)。
-4. 如果变更创建或修改 `.fabric/agents/` rules，使用 `fabric sync-meta` 或 `fabric doctor --fix` 接受 baseline；不要直接编辑 `.fabric/agents.meta.json`。
+4. 如果变更创建或修改 `.fabric/rules/` rules，使用 `fabric doctor --fix` 接受 baseline；不要直接编辑 `.fabric/agents.meta.json`。

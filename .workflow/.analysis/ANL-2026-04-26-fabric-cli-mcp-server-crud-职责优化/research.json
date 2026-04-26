@@ -1,0 +1,100 @@
+{
+  "topic": "MCP tool/resource responsibility boundaries for Fabric CLI and mcp_server CRUD optimization",
+  "timestamp": "2026-04-26T18:50:14+0800",
+  "findings": [
+    {
+      "finding": "MCP ToolAnnotations include readOnlyHint, destructiveHint, idempotentHint and openWorldHint, but the spec frames them as hints rather than hard security controls.",
+      "detail": "This supports using annotations to improve client UX while still keeping high-impact local writes behind explicit CLI commands.",
+      "confidence": "high",
+      "source_url": "https://modelcontextprotocol.io/specification/draft/schema"
+    },
+    {
+      "finding": "MCP resources are intended for server-exposed context, with optional listChanged and subscription/update notifications.",
+      "detail": "Fabric's bootstrap README resource and cache/resource notifications align with this model; future rule/ledger read surfaces can use resources/resource links rather than destructive tools.",
+      "confidence": "high",
+      "source_url": "https://modelcontextprotocol.io/specification/2025-03-26/server/resources"
+    },
+    {
+      "finding": "MCP tools may return resource links and can be notified via tools/list_changed; tools are better for actions, resources for context.",
+      "detail": "This supports splitting rule discovery into tool-driven selection plus resource-backed context where useful.",
+      "confidence": "medium",
+      "source_url": "https://modelcontextprotocol.io/specification/2025-06-18/server/tools"
+    }
+  ],
+  "best_practices": [
+    {
+      "practice": "Use MCP read-only tools for model-invoked context computation, and reserve destructive filesystem changes for explicit human-driven CLI workflows.",
+      "rationale": "Tool annotations are advisory; responsibility boundaries should not depend solely on client behavior.",
+      "source": "https://modelcontextprotocol.io/specification/draft/schema"
+    },
+    {
+      "practice": "Expose stable context as MCP resources where possible, and use notifications for changed resource/tool lists.",
+      "rationale": "Resources are the protocol-native context surface; notifications keep clients from using stale context.",
+      "source": "https://modelcontextprotocol.io/specification/2025-03-26/server/resources"
+    }
+  ],
+  "alternatives": [
+    {
+      "option": "Full CRUD MCP server",
+      "pros": ["Agents can manage all Fabric state directly"],
+      "cons": ["Higher destructive risk", "Conflicts with file-derived registry", "Harder to make user intent explicit"],
+      "verdict": "Reject as default model; keep only compatibility or narrowly scoped append telemetry."
+    },
+    {
+      "option": "Read-only MCP server plus CLI-only writes",
+      "pros": ["Clear safety boundary", "Matches existing plan-context/rule-sections model"],
+      "cons": ["Agents need user/CLI handoff for changes"],
+      "verdict": "Preferred target model with limited append-only telemetry."
+    },
+    {
+      "option": "REST API as single source for all surfaces",
+      "pros": ["Dashboard and CLI could share HTTP semantics"],
+      "cons": ["CLI would depend on a running server for local tasks", "stdio MCP remains separate"],
+      "verdict": "Reject for CLI; share services instead of routing CLI through HTTP."
+    }
+  ],
+  "pitfalls": [
+    {
+      "issue": "Treating MCP annotations as enforcement",
+      "mitigation": "Keep destructive writes out of default MCP flow and gate them via CLI or explicit compatibility tooling.",
+      "source": "https://modelcontextprotocol.io/specification/draft/schema"
+    },
+    {
+      "issue": "Duplicating read/diagnostic behavior across CLI and HTTP",
+      "mitigation": "Extract common service modules and let CLI/HTTP render differently.",
+      "source": "codebase analysis"
+    }
+  ],
+  "codebase_gaps": [
+    {
+      "gap": "scan report generation duplicated between CLI and HTTP API",
+      "current_approach": "CLI has config-aware i18n implementation; server API has separate hardcoded implementation.",
+      "recommended_approach": "Move scan report construction into shared or server service and reuse from both surfaces."
+    },
+    {
+      "gap": "Deprecated write MCP tools remain registered alongside new read-only cognitive protocol",
+      "current_approach": "Tool descriptions discourage use but tools are still available.",
+      "recommended_approach": "Document compatibility status, add tests that new docs/workflows do not call them, and plan a removal/hidden phase."
+    }
+  ],
+  "sources": [
+    {
+      "title": "MCP Schema Reference - ToolAnnotations",
+      "url": "https://modelcontextprotocol.io/specification/draft/schema",
+      "key_takeaway": "Annotations are advisory hints for tool behavior."
+    },
+    {
+      "title": "MCP Resources",
+      "url": "https://modelcontextprotocol.io/specification/2025-03-26/server/resources",
+      "key_takeaway": "Resources are the protocol-native context surface with optional change notifications."
+    },
+    {
+      "title": "MCP Tools",
+      "url": "https://modelcontextprotocol.io/specification/2025-06-18/server/tools",
+      "key_takeaway": "Tools are model-invoked actions and may link resources."
+    }
+  ],
+  "_metadata": {
+    "queries_executed": 2
+  }
+}

@@ -6,7 +6,7 @@
 
 ```text
 fabric init
-  -> 写入 .fabric/bootstrap/README.md、.fabric/INITIAL_TAXONOMY.md、.fabric/agents.meta.json
+  -> 写入 .fabric/bootstrap/README.md、.fabric/INITIAL_TAXONOMY.md、.fabric/forensic.json、.fabric/events.jsonl
   -> 规则正文进入 .fabric/rules/
 
 fabric serve
@@ -18,7 +18,7 @@ fabric serve
   -> server 合并 required L0/L2 + AI-selected L1
   -> server 返回结构化 sections，并写入 .fabric/events.jsonl 的 rule_selection event
   -> AI 在取回规则段落后执行修改
-  -> MCP、doctor、sync-meta 自动写入 .fabric/events.jsonl typed Event Ledger
+  -> MCP、doctor 自动写入 .fabric/events.jsonl typed Event Ledger
 ```
 
 ## 分层与身份
@@ -56,7 +56,7 @@ type RuleNode = {
 };
 ```
 
-规则正文优先放在 `.fabric/rules/`，`content_ref` 指向要读取的 Markdown。
+规则正文必须放在 `.fabric/rules/`，`content_ref` 指向要读取的 Markdown。`.fabric/agents.meta.json` 是派生机器索引，不是规则真源。
 
 ## `fab_plan_context`
 
@@ -112,7 +112,7 @@ type GetRuleSectionsInput = {
 - 选择 L0/L2、未知 stable_id、或缺少 selection reason 都是 hard error。
 - server 最终合并 `required_stable_ids + ai_selected_stable_ids`。
 - 缺失 section 返回空字符串和 warning diagnostic，禁止回退全文。
-- 成功解析后追加 `rule_selection` audit event。
+- 成功解析后追加 `rule_selection` event。
 
 Output 要点：
 
@@ -137,9 +137,9 @@ type GetRuleSectionsResult = {
 };
 ```
 
-## Audit
+## Event Ledger
 
-`fab_get_rule_sections` 写入 `.fabric/events.jsonl`。旧 `.fabric/audit.jsonl` 只作为 compatibility fallback 读取：
+`fab_get_rule_sections` 写入 `.fabric/events.jsonl`。这是唯一 Fabric ledger：
 
 ```ts
 type RuleSelectionAuditEntry = {
@@ -160,7 +160,7 @@ type RuleSelectionAuditEntry = {
 };
 ```
 
-`fabric doctor --audit` 接受新 `rule_selection` 事件，也兼容旧 `get_rules` 事件。
+`fabric doctor` 检查 `.fabric/events.jsonl` 是否存在、可写、可解析。
 
 `fabric doctor` also reports L2 `[BUSINESS_LOGIC_CHUNKS]` anchor health when rule nodes declare that section:
 
@@ -191,7 +191,7 @@ describe("seer script contract", () => {
 });
 ```
 
-`fabric sync-meta` scans test files for `@fabric-verify` comments and writes `.fabric/rule-test.index.json` as a generated sidecar. The sidecar is separate from `.fabric/agents.meta.json` so rule selection metadata stays focused on rule discovery and precedence.
+`fabric doctor --fix` scans test files for `@fabric-verify` comments and writes `.fabric/rule-test.index.json` as a generated sidecar. The sidecar is separate from `.fabric/agents.meta.json` so rule selection metadata stays focused on rule discovery and precedence.
 
 V1 `RuleTestIndex` entries record static facts:
 
@@ -207,7 +207,7 @@ type RuleTestIndexEntry = {
 };
 ```
 
-When regenerating the sidecar, `sync-meta` preserves `previous_rule_hash` and `previous_test_hash` from the last index entry. This lets `fabric doctor` distinguish ordinary coverage from drift, for example a rule hash changing while the linked test hash stayed the same.
+When regenerating the sidecar, `fabric doctor --fix` preserves `previous_rule_hash` and `previous_test_hash` from the last index entry. This lets `fabric doctor` distinguish ordinary coverage from drift, for example a rule hash changing while the linked test hash stayed the same.
 
 `fabric doctor` uses the sidecar for static contract checks only:
 
@@ -222,19 +222,39 @@ Explicit V1 exclusions:
 - No Jest runner or test execution.
 - No pass/fail evidence.
 - No `.fabric/rule-test.results.jsonl`.
-- No `doctor --fix` acknowledgement flow.
+- No separate acknowledgement flow outside `doctor --fix`.
 - No AI audit or test quality analysis.
 - No config hash.
 - No semantic coverage proof.
 
-## Legacy Surface
+## Target Command And State Surface
 
-`fab_get_rules` 和旧 rules context API 仍可作为旧代码与 Dashboard 只读观察面存在，但 MCP 编辑闭环不再依赖它们。
-
-`fab_append_intent` 和 `fab_update_registry` 是已废弃的兼容 surface。新客户端不要把它们作为 core protocol，也不要在 bootstrap guidance 中要求调用它们。新客户端应使用：
+Public CLI commands:
 
 ```text
-fab_plan_context -> fab_get_rule_sections -> edit
+fabric init
+fabric scan
+fabric doctor
+fabric serve
 ```
 
-执行证据由 MCP/service instrumentation 自动写入 `.fabric/events.jsonl`。规则 baseline 变更通过 `fabric sync-meta` 或 `fabric doctor --fix` 接受，并记录 `rule_baseline_accepted` / `baseline_synced` typed events。
+Doctor modes:
+
+```text
+fabric doctor --json
+fabric doctor --strict
+fabric doctor --fix
+```
+
+Target `.fabric/` state:
+
+- `.fabric/bootstrap/README.md`
+- `.fabric/INITIAL_TAXONOMY.md`
+- `.fabric/forensic.json`
+- `.fabric/init-context.json`
+- `.fabric/rules/`
+- `.fabric/agents.meta.json`
+- `.fabric/rule-test.index.json`
+- `.fabric/events.jsonl`
+
+`.fabric/rules/` is the rule source of truth. `.fabric/events.jsonl` is the only ledger. `fabric doctor --fix` may rebuild deterministic derived state and append `rule_baseline_accepted` / `baseline_synced` typed events, but it must not repair missing rule sections, rule semantic conflicts, incomplete init-context confirmation, MCP client local config issues, or business-code-versus-rule mismatch.

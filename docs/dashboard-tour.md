@@ -52,8 +52,8 @@ Ledger View 负责解释「最近发生了什么」，而不是只展示原始 J
   告诉维护者事件先后顺序。
 - Diff Summary  
   用一句话概括变更影响。
-- Status  
-  显示是否已通过锁校验或需要人工确认。
+- Status
+  显示事件是否属于正常 rule selection、doctor repair、drift signal 或 manual follow-up。
 
 推荐的展示片段：
 
@@ -68,7 +68,7 @@ Ledger View 的价值在于，它把「谁改了什么」升级为
 
 ## 规则命中页
 
-> v1.5.0 Feature：规则命中页把 `fab_get_rules(path=...)` 的命中结果变成只读调试面板。
+> v1.5.0 Feature：规则命中页把 rules-context API 的命中结果变成只读调试面板。
 
 Dashboard 默认进入规则命中页。维护者输入一个样本路径后，前端调用：
 
@@ -93,20 +93,20 @@ GET /api/rules/context?path=<sample-path>
 Rules View 应展示当前规则树及其同步状态：
 
 - `revision_hash`
-- 最近一次 `fab sync-meta` 时间
+- 最近一次 `fabric doctor --fix` 时间
 - 根规则与子 scope 的层级关系
-- 每个节点的路径、hash、priority 和附近 human lock 状态
+- 每个节点的路径、hash、priority 和 section parse 状态
 
 近似线框可以是：
 
 ```text
 root
-├─ AGENTS.md                         rev 84f7a2c1   synced 09:06
+├─ .fabric/rules/root.md             rev 84f7a2c1   checked 09:06
 ├─ gameplay
-│  ├─ assets/scripts/Game.ts        hash a3b018d9   nearby lock: yes
-│  └─ assets/scripts/Player.ts      hash 61cbf7a4   nearby lock: no
+│  ├─ assets/scripts/Game.ts        hash a3b018d9   sections: ok
+│  └─ assets/scripts/Player.ts      hash 61cbf7a4   sections: ok
 └─ network
-   └─ assets/scripts/Network.ts     hash 4d9bc771   nearby lock: no
+   └─ assets/scripts/Network.ts     hash 4d9bc771   sections: ok
 ```
 
 Rules View 回答的问题是：
@@ -141,18 +141,18 @@ Agents View 应至少覆盖 5 个角色 agent：
 哪些角色拥有夜晚动作，
 哪些角色会对胜负判定产生直接影响。
 
-## 人工保护与漂移信号
+## Doctor 与漂移信号
 
-[截图占位：人工保护卡片，`role-balance-config` 为绿色状态]
+[截图占位：doctor 卡片，`rule-test.index` 为绿色状态]
 
-Dashboard 不应该只展示「有锁」。
-它还要展示锁的健康状态：
+Dashboard 不应该只展示原始文件。
+它还要展示 doctor 的健康状态：
 
-- `approved_hash`
-- `current_hash`
-- drift status
-- label
-- affected file and line range
+- `fixable_errors`
+- `manual_errors`
+- `warnings`
+- target `.fabric/` file
+- affected rule stable_id
 
 当漂移发生时，Ledger View 和 Rules View 也应该同步给出告警信号，
 这样维护者不需要依赖口头同步就能追溯风险来源。
@@ -165,17 +165,17 @@ Dashboard 真正成立，不在于首屏截图，
 一个典型循环是：
 
 1. AI 在 client 里完成一次小改动。
-2. pre-commit 执行 `fab sync-meta --check-only`、`fab human-lint`、`fab ledger-append --staged`。
+2. 维护者或 CI 执行 `fabric doctor --strict`，必要时执行 `fabric doctor --fix`。
 3. SSE 把新事件推到 Dashboard。
-4. 维护者在 Ledger View 看到新增记录，再去规则树或人工保护卡片里判断是否存在 drift。
+4. 维护者在 Ledger View 看到新增记录，再去规则树或 doctor 卡片里判断是否存在 drift。
 
 如果一切正常，Dashboard 显示绿色健康状态。
-如果有人碰到了 `@HUMAN` 锁或破坏了规则边界，
+如果有人破坏了规则边界或留下派生索引 drift，
 维护者应该能在一个界面里看到：
 
 - 哪个文件发生了问题
 - 来自哪个来源
-- 问题属于锁漂移、规则不同步还是 agent 职责越界
+- 问题属于 fixable derived drift、manual rule issue 还是 agent 职责越界
 
 ## 与 v1.0 的关系
 
