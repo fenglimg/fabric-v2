@@ -6,14 +6,13 @@ import { I18nProvider } from "./i18n/provider";
 import { useI18n } from "./i18n/use-i18n";
 import { DoctorView } from "./views/doctor";
 import { HistoryReplayView } from "./views/history-replay";
-import { HumanLockView } from "./views/human-lock";
 import { IntentTimelineView } from "./views/intent-timeline";
 import { RuleTopologyView } from "./views/rule-topology";
 import { RulesTreeView } from "./views/rules-tree";
 
 declare const __DASHBOARD_VERSION__: string;
 
-type Route = "topology" | "forensic" | "semantic" | "ledger" | "rules" | "locks" | "timeline" | "history" | "doctor";
+type Route = "topology" | "forensic" | "semantic" | "ledger" | "rules" | "timeline" | "history" | "doctor";
 
 export function App() {
   return (
@@ -64,13 +63,6 @@ function AppContent() {
       label: t("dashboard.app.nav.rules.label-bilingual"),
       subtitle: t("dashboard.app.nav.rules.subtitle"),
       breadcrumb: t("dashboard.app.breadcrumb.rules"),
-    },
-    {
-      id: "locks" as const,
-      hash: "#/locks",
-      label: t("dashboard.app.nav.locks.label-bilingual"),
-      subtitle: t("dashboard.app.nav.locks.subtitle"),
-      breadcrumb: t("dashboard.app.breadcrumb.locks"),
     },
     {
       id: "timeline" as const,
@@ -168,7 +160,6 @@ function AppContent() {
         {route === "semantic" ? <ModulePlaceholder title={t("dashboard.module-placeholder.semantic.title")} subtitle={t("dashboard.module-placeholder.semantic.subtitle")} /> : null}
         {route === "ledger" ? <ModulePlaceholder title={t("dashboard.module-placeholder.ledger.title")} subtitle={t("dashboard.module-placeholder.ledger.subtitle")} /> : null}
         {route === "rules" ? <RulesTreeView lastEvent={events.lastEvent} /> : null}
-        {route === "locks" ? <HumanLockView lastEvent={events.lastEvent} /> : null}
         {route === "timeline" ? <IntentTimelineView lastEvent={events.lastEvent} /> : null}
         {route === "history" ? <HistoryReplayView lastEvent={events.lastEvent} /> : null}
         {route === "doctor" ? <DoctorView lastEvent={events.lastEvent} /> : null}
@@ -227,8 +218,6 @@ function readRoute(): Route {
       return "semantic";
     case "#/ledger":
       return "ledger";
-    case "#/locks":
-      return "locks";
     case "#/timeline":
       return "timeline";
     case "#/history":

@@ -1,21 +1,8 @@
 import type {
   AgentsMeta,
   FabricEvent,
-  HumanLockEntry,
   LedgerEntry,
 } from "@fenglimg/fabric-shared";
-
-export type HumanLockStatus = HumanLockEntry & {
-  drift: boolean;
-  current_hash: string;
-};
-
-export type ApproveHumanLockBody = {
-  file: string;
-  start_line: number;
-  end_line: number;
-  new_hash: string;
-};
 
 export type AnnotateIntentBody = {
   ledger_entry_id: string;
@@ -69,9 +56,19 @@ export type DoctorCheck = {
   message: string;
 };
 
+export type DoctorIssue = {
+  code: string;
+  name: string;
+  message: string;
+  path?: string;
+};
+
 export type DoctorReport = {
   status: DoctorStatus;
   checks: DoctorCheck[];
+  fixable_errors: DoctorIssue[];
+  manual_errors: DoctorIssue[];
+  warnings: DoctorIssue[];
   summary: {
     target: string;
     framework: {
@@ -83,43 +80,15 @@ export type DoctorReport = {
       path: string;
       reason: string;
     }>;
-    driftCount: number;
-    protectedPathCount: number;
-    protectedPathsIntact: boolean;
-    lastLedgerEntryTs: number | null;
-    lastLedgerEntryAgeMs: number | null;
     metaRevision: string | null;
-    ledgerPath: string;
-    legacyLedgerPath: string;
-    legacyLedgerDetected: boolean;
-    businessLogicAnchors: {
-      chunkCount: number;
-      anchorCount: number;
-      missingCount: number;
-      staleCount: number;
-      duplicateCount: number;
-    } | null;
+    computedMetaRevision: string | null;
+    ruleCount: number;
+    eventLedgerPath: string;
+    fixableErrorCount: number;
+    manualErrorCount: number;
+    warningCount: number;
+    targetFiles: Record<string, boolean>;
   };
-  audit: {
-    mode: "strict" | "warn" | "off";
-    skipped: boolean;
-    windowMs: number;
-    checkedPathCount: number;
-    violationCount: number;
-    violations: Array<{
-      editTs: number;
-      entryId: string;
-      intent: string;
-      lastRuleAccessTs: number | null;
-      path: string;
-    }>;
-  } | null;
-};
-
-export type ApproveHumanLockResult = {
-  updated: boolean;
-  entry: HumanLockStatus;
-  ledger_entry?: LedgerEntry;
 };
 
 export type AnnotateIntentResult = {
@@ -178,16 +147,6 @@ export async function getScan(): Promise<ScanReport> {
 
 export async function getDoctor(): Promise<DoctorReport> {
   return await getJson<DoctorReport>("/api/doctor");
-}
-
-export async function getHumanLock(): Promise<HumanLockStatus[]> {
-  return await getJson<HumanLockStatus[]>("/api/human-lock");
-}
-
-export async function approveHumanLock(
-  body: ApproveHumanLockBody,
-): Promise<ApproveHumanLockResult> {
-  return await postJson<ApproveHumanLockResult>("/api/human-lock/approve", body);
 }
 
 export async function annotateIntent(body: AnnotateIntentBody): Promise<AnnotateIntentResult> {

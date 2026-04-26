@@ -2,7 +2,7 @@ import type { AgentsMeta, AgentsMetaNode, FabricEvent } from "@fenglimg/fabric-s
 import { withDerivedAgentsMetaNodeDefaults } from "@fenglimg/fabric-shared";
 import { useEffect, useMemo, useState } from "preact/hooks";
 
-import { getHumanLock, getRules, type HumanLockStatus } from "../api/client";
+import { getRules } from "../api/client";
 import { DriftIndicator, TreeNode, type TreeNodeProps } from "../components";
 import { useI18n } from "../i18n/use-i18n";
 
@@ -13,16 +13,13 @@ export type RulesTreeViewProps = {
 export function RulesTreeView({ lastEvent }: RulesTreeViewProps) {
   const { t } = useI18n();
   const [rules, setRules] = useState<AgentsMeta | null>(null);
-  const [locks, setLocks] = useState<HumanLockStatus[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [filter, setFilter] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   const load = async () => {
     try {
-      const [nextRules, nextLocks] = await Promise.all([getRules(), getHumanLock().catch(() => [])]);
-      setRules(nextRules);
-      setLocks(nextLocks);
+      setRules(await getRules());
       setError(null);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : String(loadError));
@@ -34,12 +31,12 @@ export function RulesTreeView({ lastEvent }: RulesTreeViewProps) {
   }, []);
 
   useEffect(() => {
-    if (lastEvent?.type === "meta:updated" || lastEvent?.type === "drift:detected" || lastEvent?.type === "lock:drift") {
+    if (lastEvent?.type === "meta:updated" || lastEvent?.type === "drift:detected") {
       void load();
     }
   }, [lastEvent]);
 
-  const lockFiles = useMemo(() => new Set(locks.map((entry) => entry.file)), [locks]);
+  const lockFiles = useMemo(() => new Set<string>(), []);
   const tree = useMemo(() => rules === null ? [] : buildRulesTree(rules, lockFiles, filter), [rules, lockFiles, filter]);
   const selectedNode = selected === null ? null : rules?.nodes[selected] ?? null;
 
@@ -70,7 +67,6 @@ export function RulesTreeView({ lastEvent }: RulesTreeViewProps) {
                     revision: rules.revision,
                   })}
             </span>
-            <span>{t("dashboard.rules-tree.status.locks", { count: String(locks.length) })}</span>
           </div>
           <div className="tree" role="tree" aria-label={t("dashboard.rules-tree.tree.aria-label")}>
             {tree.length > 0 ? tree.map((node) => (

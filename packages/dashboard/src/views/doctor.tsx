@@ -11,7 +11,7 @@ export type DoctorViewProps = {
 };
 
 export function DoctorView({ lastEvent }: DoctorViewProps) {
-  const { locale, t } = useI18n();
+  const { t } = useI18n();
   const [report, setReport] = useState<DoctorReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -36,8 +36,6 @@ export function DoctorView({ lastEvent }: DoctorViewProps) {
   useEffect(() => {
     if (
       lastEvent?.type === "meta:updated" ||
-      lastEvent?.type === "lock:approved" ||
-      lastEvent?.type === "lock:drift" ||
       lastEvent?.type === "ledger:appended" ||
       lastEvent?.type === "drift:detected"
     ) {
@@ -88,26 +86,14 @@ export function DoctorView({ lastEvent }: DoctorViewProps) {
               }
             />
             <SummaryCard
-              label={t("dashboard.doctor.summary.protected-paths")}
-              value={
-                report.summary.protectedPathCount === 0
-                  ? t("dashboard.doctor.summary.tracked-paths.none")
-                  : t("dashboard.doctor.summary.tracked-paths.some", { count: String(report.summary.protectedPathCount) })
-              }
-              detail={
-                report.summary.protectedPathsIntact
-                  ? t("dashboard.doctor.summary.hashes-intact")
-                  : t("dashboard.doctor.summary.drifted", { count: String(report.summary.driftCount) })
-              }
+              label="Rule index"
+              value={`${report.summary.ruleCount} rules`}
+              detail={report.summary.computedMetaRevision === null ? t("dashboard.doctor.summary.no-meta-revision") : `computed ${report.summary.computedMetaRevision}`}
             />
             <SummaryCard
-              label={t("dashboard.doctor.summary.intent-ledger")}
-              value={formatAge(report.summary.lastLedgerEntryAgeMs, t)}
-              detail={
-                report.summary.lastLedgerEntryTs === null
-                  ? t("dashboard.doctor.summary.no-ledger-entries")
-                  : new Date(report.summary.lastLedgerEntryTs).toLocaleString(locale)
-              }
+              label="Issues"
+              value={`${report.summary.fixableErrorCount}/${report.summary.manualErrorCount}/${report.summary.warningCount}`}
+              detail="fixable / manual / warnings"
             />
           </div>
           <div className="doctor-panels">
@@ -200,33 +186,3 @@ function formatFramework(
   return parts.length > 0 ? parts.join(" · ") : t("dashboard.doctor.framework.unknown");
 }
 
-function formatAge(
-  ageMs: number | null,
-  t: ReturnType<typeof useI18n>["t"],
-): string {
-  if (ageMs === null) {
-    return t("dashboard.doctor.age.none");
-  }
-
-  const seconds = Math.floor(ageMs / 1000);
-  if (seconds < 60) {
-    return t("dashboard.doctor.age.seconds", { count: String(seconds) });
-  }
-
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) {
-    return t("dashboard.doctor.age.minutes", { count: String(minutes) });
-  }
-
-  const hours = Math.floor(minutes / 60);
-  if (hours < 48) {
-    return t("dashboard.doctor.age.hours", { count: String(hours) });
-  }
-
-  const days = Math.floor(hours / 24);
-  if (days < 14) {
-    return t("dashboard.doctor.age.days", { count: String(days) });
-  }
-
-  return t("dashboard.doctor.age.weeks", { count: String(Math.floor(days / 7)) });
-}
