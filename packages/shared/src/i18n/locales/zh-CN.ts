@@ -438,4 +438,31 @@ export const zhCNMessages: Messages = {
   "dashboard.lock-card.diff.without-bytes": "+{added} / -{removed}",
 
   "dashboard.approve-button.retry": "重试",
+
+  "dashboard.readiness.filter.analysis": "项目分析",
+  "dashboard.readiness.loading": "正在加载扫描数据...",
+  "dashboard.readiness.summary.framework": "框架",
+  "dashboard.readiness.summary.files": "文件",
+  "dashboard.readiness.summary.status": "Fabric 状态",
+  "dashboard.readiness.card.evidence": "准备情况凭证",
+  "dashboard.readiness.card.recommendations": "建议与后续步骤",
+  "dashboard.readiness.readme.description": "项目文档的质量",
+  "dashboard.readiness.contributing.description": "AI与人类协作的贡献指南",
+  "dashboard.readiness.fully-ready": "项目已完全准备就绪。",
+  "dashboard.readiness.init-prompt": "运行此命令进行初始化：",
+
+  "dashboard.rules-explain.analyze": "分析路径",
+  "dashboard.rules-explain.detail.topology-type": "拓扑类型",
+
+  "dashboard.timeline.history-replay.title": "历史回放",
+  "dashboard.timeline.close": "关闭",
+
+  "dashboard.health.ledger-path.label": "事件账本路径",
+  "dashboard.health.ledger-path.detail": "只能追加写入的时间线数据源",
+  "dashboard.health.boundary.title": "控制平面边界",
+  "dashboard.health.boundary.description": "Web 控制台作为纯查看器 (Viewer) 运行。所有规则、元数据和修复操作都必须通过 CLI 进行管理。",
+  "dashboard.health.boundary.cli-action": "需要执行 CLI 操作：",
+  "dashboard.health.boundary.cli-prompt": "检测到 {count} 个可修复的问题。请在终端中运行以下命令以自动修复元数据。",
+  "dashboard.health.runtime.connected": "MCP 运行时已连接",
+  "dashboard.health.runtime.disconnected": "MCP 运行时已断开",
 };

@@ -109,7 +109,7 @@ describe("rehydrateAgentsMetaAt", () => {
       source: "ai",
       commit_sha: "deadbeef",
       intent: "touch dashboard",
-      affected_paths: ["packages/dashboard/src/views/history-replay.tsx"],
+      affected_paths: ["packages/dashboard/src/views/timeline.tsx"],
     })}\n`);
 
     const result = await rehydrateAgentsMetaAt(projectRoot, { timestamp: 30 });
@@ -120,9 +120,9 @@ describe("rehydrateAgentsMetaAt", () => {
       replayed_count: 1,
       mode: "ledger-fallback",
     });
-    expect(result.meta.nodes["packages/dashboard/src/views/history-replay.tsx"]).toMatchObject({
-      file: "packages/dashboard/src/views/history-replay.tsx",
-      scope_glob: "packages/dashboard/src/views/history-replay.tsx",
+    expect(result.meta.nodes["packages/dashboard/src/views/timeline.tsx"]).toMatchObject({
+      file: "packages/dashboard/src/views/timeline.tsx",
+      scope_glob: "packages/dashboard/src/views/timeline.tsx",
       priority: "medium",
     });
   });
@@ -158,5 +158,8 @@ function git(projectRoot: string, ...args: string[]): string {
     cwd: projectRoot,
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],
+  });
+}
+
   });
 }

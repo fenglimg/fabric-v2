@@ -16,29 +16,34 @@ export function CoverageHeatmap({ nodes }: { nodes: AgentsMetaNode[] }) {
   const coverage = buildDirectoryCoverage(nodes);
 
   return (
-    <section className="topology-card">
-      <div className="topology-card-head">
+    <section class="flex flex-col bg-light-surface border border-light-border sm:rounded-2xl sm:shadow-sm dark:bg-dark-surface dark:border-dark-border dark:shadow-xl overflow-hidden min-h-[280px]">
+      <div class="p-4 border-b border-light-border dark:border-dark-border flex justify-between items-start bg-light-surface/90 dark:bg-transparent shrink-0">
         <div>
-          <h3>{t("dashboard.rule-topology.heatmap.title")}</h3>
-          <p className="muted">{t("dashboard.rule-topology.heatmap.subtitle")}</p>
+          <h3 class="text-sm font-bold text-light-text dark:text-dark-text m-0">{t("dashboard.rule-topology.heatmap.title")}</h3>
+          <p class="text-xs text-light-muted dark:text-dark-muted mt-1">{t("dashboard.rule-topology.heatmap.subtitle")}</p>
         </div>
-        <span className="badge badge-level">{t("dashboard.rule-topology.heatmap.count", { count: String(coverage.length) })}</span>
+        <span class="text-[10px] font-mono bg-light-border/50 dark:bg-white/10 px-2 py-0.5 rounded-full border border-light-border dark:border-dark-border whitespace-nowrap">
+          {t("dashboard.rule-topology.heatmap.count", { count: String(coverage.length) })}
+        </span>
       </div>
+      
       {coverage.length === 0 ? (
-        <div className="empty-card">{t("dashboard.rule-topology.heatmap.empty")}</div>
+        <div class="p-8 flex-1 flex items-center justify-center text-sm text-light-muted dark:text-dark-muted">
+          {t("dashboard.rule-topology.heatmap.empty")}
+        </div>
       ) : (
-        <div className="coverage-grid" role="list" aria-label={t("dashboard.rule-topology.heatmap.aria-label")}>
+        <div class="flex-1 overflow-y-auto p-4 flex flex-col gap-3" role="list" aria-label={t("dashboard.rule-topology.heatmap.aria-label")}>
           {coverage.map((entry) => (
-            <article key={entry.path} className={`coverage-row coverage-${entry.density}`} role="listitem">
-              <div className="coverage-row-main">
-                <span className="coverage-path">{entry.path}</span>
-                <span className={`badge coverage-chip coverage-chip-${entry.density}`}>
+            <article key={entry.path} class={`p-3 rounded-xl border bg-light-bg/50 dark:bg-black/20 flex flex-col ${getDensityBorder(entry.density)}`} role="listitem">
+              <div class="flex justify-between items-center gap-2">
+                <span class="font-mono text-sm font-medium text-light-text dark:text-dark-text truncate">{entry.path}</span>
+                <span class={`text-[10px] font-bold px-1.5 py-0.5 rounded whitespace-nowrap ${getDensityClass(entry.density)}`}>
                   {t(`dashboard.rule-topology.heatmap.density.${entry.density}`)}
                 </span>
               </div>
-              <div className="coverage-row-meta">
-                <span>{t("dashboard.rule-topology.heatmap.rules", { count: String(entry.directRuleCount) })}</span>
-                <span>{entry.matchingGlobs.slice(0, 2).join(" · ") || t("dashboard.rule-topology.heatmap.uncovered")}</span>
+              <div class="flex justify-between items-center gap-2 mt-2 text-xs font-mono text-light-muted dark:text-dark-muted">
+                <span class="whitespace-nowrap">{t("dashboard.rule-topology.heatmap.rules", { count: String(entry.directRuleCount) })}</span>
+                <span class="truncate opacity-80">{entry.matchingGlobs.slice(0, 2).join(" · ") || t("dashboard.rule-topology.heatmap.uncovered")}</span>
               </div>
             </article>
           ))}
@@ -46,6 +51,22 @@ export function CoverageHeatmap({ nodes }: { nodes: AgentsMetaNode[] }) {
       )}
     </section>
   );
+}
+
+function getDensityClass(density: CoverageDensity): string {
+  switch(density) {
+    case "full": return "bg-green-500/10 text-green-600 border border-green-500/30 dark:bg-green-500/20 dark:text-green-400";
+    case "partial": return "bg-amber-500/10 text-amber-600 border border-amber-500/30 dark:bg-amber-500/20 dark:text-amber-400";
+    case "none": return "bg-slate-500/10 text-slate-600 border border-slate-500/30 dark:bg-slate-500/20 dark:text-slate-400";
+  }
+}
+
+function getDensityBorder(density: CoverageDensity): string {
+  switch(density) {
+    case "full": return "border-l-4 border-l-green-500/50 border-t-light-border border-r-light-border border-b-light-border dark:border-t-dark-border dark:border-r-dark-border dark:border-b-dark-border";
+    case "partial": return "border-l-4 border-l-amber-500/50 border-t-light-border border-r-light-border border-b-light-border dark:border-t-dark-border dark:border-r-dark-border dark:border-b-dark-border";
+    case "none": return "border-l-4 border-l-slate-500/30 border-t-light-border border-r-light-border border-b-light-border dark:border-t-dark-border dark:border-r-dark-border dark:border-b-dark-border";
+  }
 }
 
 export function buildDirectoryCoverage(nodes: AgentsMetaNode[]): DirectoryCoverage[] {

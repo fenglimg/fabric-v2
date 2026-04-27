@@ -1,16 +1,16 @@
 # Dashboard 导览
 
-> v1.5.0 功能
+> v2.0 功能
 >
-> Dashboard 已从早期 v1.1 观测面扩展到 v1.5.0 的规则拓扑检查面。
-> 本文记录它如何承接已落盘的规则、锁、ledger 与 rules-context API。
+> Dashboard 已重构为只读的诊断观测面。
+> 本文记录它如何通过四大核心主题（Readiness、Rules Explain、Timeline、Health）承接已落盘的规则、账本与健康状态。
 
 Dashboard 不是第二个编辑器，也不是另一个配置中心。
 它更像 Fabric 的观察面板：
 
-- CLI 负责把规则织进仓库。
-- MCP 负责运行时分发。
-- Dashboard 负责把规则生态展开给维护者看。
+- CLI 负责把规则织进仓库并执行修复。
+- MCP 负责运行时将上下文分发给 AI 客户端。
+- Dashboard 负责把规则生态与健康状态展开给维护者看。
 
 当前仓库实现里，`fab serve` 默认会打印本地地址：
 
@@ -23,169 +23,72 @@ Fabric Dashboard: http://127.0.0.1:7373
 维护者打开 Dashboard 的第一目标，不是立即改配置，
 而是快速回答四个问题：
 
-1. 规则现在是什么状态。
-2. 最近发生了哪些人机协作事件。
-3. 当前有哪些 agent 或角色在参与这套语义契约。
-4. 某个具体路径为什么会命中这些规则。
+1. **Readiness**: 这个项目准备好使用 Fabric 了吗？
+2. **Rules Explain**: 为什么某个路径会命中这些规则，当前的规则拓扑是怎样的？
+3. **Timeline**: 过去发生了哪些人机协作或审查注释（Audit Annotation）事件？
+4. **Health**: 当前系统的健康状态如何，需要哪些 CLI 操作来修复？
 
-[截图占位：Dashboard shell，含 header、version badge、CONNECTED 状态]
+[截图占位：Dashboard shell，含四大一级导航、版本徽章、CONNECTED 状态]
 
 建议的首屏元素：
 
 - `fabric` wordmark 与 `F` lettermark
 - 当前版本徽章
-- `CONNECTED` 状态
+- `CONNECTED` (MCP Runtime) 状态
 - 中文主标签 / 英文副标签的双语导航
 
-## Ledger View
+## Readiness (准备情况)
 
-> v1.1 Feature：Ledger View 把 append-only intent history 变成维护者可读的时间线。
+> 回答：「项目准备好使用 Fabric 了吗？」
 
-[截图占位：Ledger view，展示最近的 AI 与 Human entry]
+Readiness 主题聚焦于项目的高维扫描（Scan）结果，完全只读。
+包含信息：
 
-Ledger View 负责解释「最近发生了什么」，而不是只展示原始 JSONL。
-它应至少覆盖以下信息：
+- **Framework**: 探测到的框架和版本。
+- **Files**: 项目文件与忽略文件计数。
+- **Fabric Status**: 是否已初始化 `.fabric` 目录。
+- **Readiness Evidence**: `README.md` 与 `CONTRIBUTING.md` 质量。
+- **Recommendations**: 根据扫描结果给出的下一步建议（以纯文本 CLI 命令的形式提供）。
 
-- Source  
-  区分 AI 与 Human 来源。
-- Time  
-  告诉维护者事件先后顺序。
-- Diff Summary  
-  用一句话概括变更影响。
-- Status
-  显示事件是否属于正常 rule selection、doctor repair、drift signal 或 manual follow-up。
+## Rules Explain (规则解析)
 
-推荐的展示片段：
+> 回答：「为什么命中这条规则，规则系统全貌如何？」
 
-| Source | Time | Diff Summary |
-| --- | --- | --- |
-| AI | 09:14 | `Game.ts`: tighten phase transition guard before daybreak |
-| Human | 09:11 | confirm `role-balance-config` remains maintainer-owned |
-| AI | 08:56 | `Player.ts`: rename ambiguous `state` field to `roleState` |
+取代了早期独立的 Rules View 和 Topology View，融合为沉浸式的分屏面板。
 
-Ledger View 的价值在于，它把「谁改了什么」升级为
-「谁出于什么意图，在什么语义边界上做了改动」。
+- **Registry Tree (左侧)**: `.fabric/rules/` 的文件层级拓扑展示。
+- **Context & Heatmap (右侧)**: 
+  - **Hit Reason**: 根据输入的样本路径，展示 L0/L1/L2 与 description stubs 命中详情。
+  - **Coverage Heatmap**: 展现当前规则系统的目录覆盖率。
 
-## 规则命中页
+这里**不会**提供规则的增删改查（CRUD）功能。
 
-> v1.5.0 Feature：规则命中页把 rules-context API 的命中结果变成只读调试面板。
+## Timeline (时间线)
 
-Dashboard 默认进入规则命中页。维护者输入一个样本路径后，前端调用：
+> 回答：「过去发生了什么，状态如何演变？」
 
-```text
-GET /api/rules/context?path=<sample-path>
-```
+取代了早期独立的 Ledger 和 History 视图。
 
-该视图包含两块信息：
+- **Intent Timeline**: 按时间倒序排列的意图账本，过滤 AI 和 Human 来源。
+- **Audit Annotation**: 允许人类维护者添加审计备注（不再使用 "Approval" 语义）。
+- **History Replay**: 在侧边栏选择历史节点，实时渲染出该节点时刻的规则树（Registry Tree）状态快照。
 
-- Coverage Heatmap：根据 `agents.meta.json` 的 `scope_glob` 推导目录覆盖密度。
-- Hit Reason Panel：展示当前样本路径命中的 L1/L2 规则、`activation.tier`，以及 description-only stubs。
+Timeline 将「谁改了什么」升级为「谁出于什么意图，在什么语义边界上做了改动」。
 
-规则命中页回答的问题是：
-当前规则为什么会被加载、哪些目录还缺少明确规则、哪些大型规则包只是以描述方式参与判断。
+## Health (系统健康)
 
-## Rules View
+> 回答：「系统健康吗，我需要怎么做？」
 
-> v1.1 Feature：Rules View 让 `AGENTS.md` 第一次从静态文本变成可检查的结构树。
+结合了 Doctor 和运行时连接状态监测。
 
-[截图占位：规则树视图，含 root scope、revision hash、各 domain 节点]
+- **Control Plane Boundaries**: 明确界定 Dashboard 仅作为查看器（Viewer），任何修复动作（如漂移修正）必须通过复制 `$ fabric doctor --fix` 等命令在 CLI 中执行。
+- **Doctor Summary**: 快速查看 Fixable Errors / Manual Errors / Warnings 的数量，以及元数据版本信息。
+- **Issue List**: 具体按错误类别列出的诊断列表。
+- **MCP Connection**: 实时侦测并展示当前 SSE 运行时的存活状态。
 
-Rules View 应展示当前规则树及其同步状态：
+## 与早期版本的关系
 
-- `revision_hash`
-- 最近一次 `fabric doctor --fix` 时间
-- 根规则与子 scope 的层级关系
-- 每个节点的路径、hash、priority 和 section parse 状态
-
-近似线框可以是：
-
-```text
-root
-├─ .fabric/rules/root.md             rev 84f7a2c1   checked 09:06
-├─ gameplay
-│  ├─ assets/scripts/Game.ts        hash a3b018d9   sections: ok
-│  └─ assets/scripts/Player.ts      hash 61cbf7a4   sections: ok
-└─ network
-   └─ assets/scripts/Network.ts     hash 4d9bc771   sections: ok
-```
-
-Rules View 回答的问题是：
-当前仓库的 semantic contract 到底长什么样，
-以及它是否仍然和磁盘上的 artifact 保持同步。
-
-## Agents View
-
-> v1.1 Feature：Agents View 让维护者看到 agent roster、职责边界与协作协议，而不是只看文件清单。
-
-[截图占位：Agents view，展示五个狼人杀角色与职责]
-
-对于 `examples/werewolf-minigame-stub` 这样的样例，
-Agents View 应至少覆盖 5 个角色 agent：
-
-- Villager
-- Werewolf
-- Seer
-- Witch
-- Hunter
-
-每个 agent 卡片应展示：
-
-- Role purpose
-- Owned decisions
-- Inputs and outputs
-- Forbidden actions
-- Collaboration partners
-
-这样维护者一眼就能知道：
-哪些角色是共享状态消费者，
-哪些角色拥有夜晚动作，
-哪些角色会对胜负判定产生直接影响。
-
-## Doctor 与漂移信号
-
-[截图占位：doctor 卡片，`rule-test.index` 为绿色状态]
-
-Dashboard 不应该只展示原始文件。
-它还要展示 doctor 的健康状态：
-
-- `fixable_errors`
-- `manual_errors`
-- `warnings`
-- target `.fabric/` file
-- affected rule stable_id
-
-当漂移发生时，Ledger View 和 Rules View 也应该同步给出告警信号，
-这样维护者不需要依赖口头同步就能追溯风险来源。
-
-## Daily Loop
-
-Dashboard 真正成立，不在于首屏截图，
-而在于团队进入日常节奏后仍然有用。
-
-一个典型循环是：
-
-1. AI 在 client 里完成一次小改动。
-2. 维护者或 CI 执行 `fabric doctor --strict`，必要时执行 `fabric doctor --fix`。
-3. SSE 把新事件推到 Dashboard。
-4. 维护者在 Ledger View 看到新增记录，再去规则树或 doctor 卡片里判断是否存在 drift。
-
-如果一切正常，Dashboard 显示绿色健康状态。
-如果有人破坏了规则边界或留下派生索引 drift，
-维护者应该能在一个界面里看到：
-
-- 哪个文件发生了问题
-- 来自哪个来源
-- 问题属于 fixable derived drift、manual rule issue 还是 agent 职责越界
-
-## 与 v1.0 的关系
-
-Dashboard 的早期叙事必须清楚标注为 v1.1，
-否则会让 v1.0 的发布面看起来承诺过多。到 v1.5.0，Dashboard 已经成为稳定控制平面的一部分，但仍保持只读优先。
-
-正确的叙事是：
-
-- v1.0 先解决落规和分发。
-- v1.1 再解决可观测维护。
-- v1.5.0 增加规则命中页，用 rules-context API 解释规则命中原因。
+Dashboard 在演进过程中，彻底移除了 "Approval"（审批）和 "Human Lock"（人工锁定）等存在歧义的写操作控制流，将 Web 端的定位收敛为纯粹的只读可观测平台（Viewer）。
+写操作的职责全权交由 CLI（例如 `fab sync-meta`、`fab doctor --fix`）与 MCP 工具处理。
 
 Dashboard 的协议边界和源码入口见 [SPEC_INTERNAL](./SPEC_INTERNAL.md) 与 [CODEBASE_LANDSCAPE](./CODEBASE_LANDSCAPE.md)。

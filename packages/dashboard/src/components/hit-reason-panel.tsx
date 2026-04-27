@@ -22,32 +22,39 @@ export function HitReasonPanel({
   const items = buildHitReasonItems(meta, rulesContext);
 
   return (
-    <section className="topology-card">
-      <div className="topology-card-head">
+    <section class="flex flex-col bg-light-surface border border-light-border sm:rounded-2xl sm:shadow-sm dark:bg-dark-surface dark:border-dark-border dark:shadow-xl overflow-hidden min-h-[280px]">
+      <div class="p-4 border-b border-light-border dark:border-dark-border flex justify-between items-start bg-light-surface/90 dark:bg-transparent shrink-0">
         <div>
-          <h3>{t("dashboard.rule-topology.hit-reason.title")}</h3>
-          <p className="muted">{t("dashboard.rule-topology.hit-reason.subtitle")}</p>
+          <h3 class="text-sm font-bold text-light-text dark:text-dark-text m-0">{t("dashboard.rule-topology.hit-reason.title")}</h3>
+          <p class="text-xs text-light-muted dark:text-dark-muted mt-1">{t("dashboard.rule-topology.hit-reason.subtitle")}</p>
         </div>
-        <span className="badge badge-level">{t("dashboard.rule-topology.hit-reason.count", { count: String(items.length) })}</span>
+        <span class="text-[10px] font-mono bg-light-border/50 dark:bg-white/10 px-2 py-0.5 rounded-full border border-light-border dark:border-dark-border whitespace-nowrap">
+          {t("dashboard.rule-topology.hit-reason.count", { count: String(items.length) })}
+        </span>
       </div>
+      
       {items.length === 0 ? (
-        <div className="empty-card">{t("dashboard.rule-topology.hit-reason.empty")}</div>
+        <div class="p-8 flex-1 flex items-center justify-center text-sm text-light-muted dark:text-dark-muted">
+          {t("dashboard.rule-topology.hit-reason.empty")}
+        </div>
       ) : (
-        <div className="reason-list" role="list" aria-label={t("dashboard.rule-topology.hit-reason.aria-label")}>
+        <div class="flex-1 overflow-y-auto p-4 flex flex-col gap-3" role="list" aria-label={t("dashboard.rule-topology.hit-reason.aria-label")}>
           {items.map((item) => (
-            <article key={`${item.layer}:${item.file}:${item.tier}`} className="reason-card" role="listitem">
-              <div className="reason-card-head">
-                <strong>{item.file}</strong>
-                <span className={`badge reason-tier reason-tier-${item.tier}`}>
+            <article key={`${item.layer}:${item.file}:${item.tier}`} class="p-4 rounded-xl border bg-light-bg/50 border-light-border dark:bg-black/20 dark:border-dark-border flex flex-col" role="listitem">
+              <div class="flex justify-between items-center gap-2 mb-2">
+                <strong class="font-mono text-sm text-light-text dark:text-dark-text truncate">{item.file}</strong>
+                <span class={`text-[10px] font-bold px-1.5 py-0.5 rounded whitespace-nowrap ${getTierClass(item.tier)}`}>
                   {t(`dashboard.rule-topology.hit-reason.tier.${item.tier}`)}
                 </span>
               </div>
-              <div className="reason-card-meta">
+              <div class="flex justify-between items-center gap-2 text-xs font-mono text-light-muted dark:text-dark-muted">
                 <span>{item.layer}</span>
-                <span>{item.tier === "always" ? t("dashboard.rule-topology.hit-reason.global") : item.scope}</span>
+                <span class="truncate">{item.tier === "always" ? t("dashboard.rule-topology.hit-reason.global") : item.scope}</span>
               </div>
               {item.description !== null && item.description.length > 0 ? (
-                <p className="reason-description">{item.description}</p>
+                <p class="text-sm text-light-text dark:text-dark-muted mt-3 leading-relaxed border-t border-light-border dark:border-dark-border pt-3">
+                  {item.description}
+                </p>
               ) : null}
             </article>
           ))}
@@ -55,6 +62,15 @@ export function HitReasonPanel({
       )}
     </section>
   );
+}
+
+function getTierClass(tier: AgentsActivationTier): string {
+  switch(tier) {
+    case "always": return "bg-green-500/10 text-green-600 border border-green-500/30 dark:bg-green-500/20 dark:text-green-400";
+    case "path": return "bg-amber-500/10 text-amber-600 border border-amber-500/30 dark:bg-amber-500/20 dark:text-amber-400";
+    case "description": return "bg-slate-500/10 text-slate-600 border border-slate-500/30 dark:bg-slate-500/20 dark:text-slate-400";
+    default: return "bg-light-border/50 text-light-muted dark:bg-white/10 dark:text-dark-muted";
+  }
 }
 
 export function buildHitReasonItems(

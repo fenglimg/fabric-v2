@@ -32,7 +32,6 @@
 | `Rule Topology` | 规则命中 |
 | `Rules Tree` | 规则树 |
 | `History Replay` | 历史回放 |
-| `Human Lock` | 人工保护 |
 | `follow-up` / `handoff` | 后续初始化 |
 | `evidence pack` | 初始化依据 |
 | `semantic initialization` | 后续初始化 |

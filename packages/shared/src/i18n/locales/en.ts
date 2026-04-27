@@ -452,4 +452,31 @@ export const enMessages: Messages = {
   "dashboard.lock-card.diff.without-bytes": "+{added} / -{removed}",
 
   "dashboard.approve-button.retry": "Retry",
+
+  "dashboard.readiness.filter.analysis": "Project Analysis",
+  "dashboard.readiness.loading": "Loading scan data...",
+  "dashboard.readiness.summary.framework": "Framework",
+  "dashboard.readiness.summary.files": "Files",
+  "dashboard.readiness.summary.status": "Fabric Status",
+  "dashboard.readiness.card.evidence": "Readiness Evidence",
+  "dashboard.readiness.card.recommendations": "Recommendations & Next Steps",
+  "dashboard.readiness.readme.description": "Quality of project documentation",
+  "dashboard.readiness.contributing.description": "Contribution guidelines for AI/Human",
+  "dashboard.readiness.fully-ready": "Project is fully ready.",
+  "dashboard.readiness.init-prompt": "Run this command to initialize:",
+
+  "dashboard.rules-explain.analyze": "Analyze Path",
+  "dashboard.rules-explain.detail.topology-type": "Topology Type",
+
+  "dashboard.timeline.history-replay.title": "History Replay",
+  "dashboard.timeline.close": "Close",
+
+  "dashboard.health.ledger-path.label": "Event Ledger Path",
+  "dashboard.health.ledger-path.detail": "Append-only timeline source",
+  "dashboard.health.boundary.title": "Control Plane Boundaries",
+  "dashboard.health.boundary.description": "The Web Dashboard operates as a Viewer. All rules, metadata, and fixes must be managed via the CLI.",
+  "dashboard.health.boundary.cli-action": "CLI Action Required:",
+  "dashboard.health.boundary.cli-prompt": "You have {count} fixable issues. Run the following command in your terminal to repair metadata automatically.",
+  "dashboard.health.runtime.connected": "MCP Runtime Connected",
+  "dashboard.health.runtime.disconnected": "MCP Runtime Disconnected",
 };

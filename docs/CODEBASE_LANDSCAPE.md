@@ -49,7 +49,7 @@ fab_plan_context / fab_get_rule_sections
   -> 返回 structuredContent
 
 Dashboard rule view
-  dashboard/views/rule-topology.tsx
+  dashboard/views/rules-explain.tsx
   -> dashboard/api/client.ts getRules + getRulesContext
   -> server/api/rules.ts + rules-context.ts
   -> server/services/get-rules.ts
@@ -117,15 +117,14 @@ Dashboard rule view
 | `src/app.tsx` | App shell 和 view routing。 | Dashboard source node，待补精确行号 |
 | `src/api/client.ts` | REST 和 SSE 的 browser API client。 | `packages/dashboard/src/api/client.ts:129`, `packages/dashboard/src/api/client.ts:194` |
 | `src/hooks/use-events.ts` | SSE hook layer。 | 使用 API client 的 `openSseConnection` |
-| `src/views/rule-topology.tsx` | Rule hit explanation view；调用 `getRules` 和 `getRulesContext`。 | `packages/dashboard/src/views/rule-topology.tsx:23` |
-| `src/views/rules-tree.tsx` | Rules tree view；从 `AgentsMeta` 构造分组 tree。 | `packages/dashboard/src/views/rules-tree.tsx:13`, `packages/dashboard/src/views/rules-tree.tsx:125` |
-| `src/views/intent-timeline.tsx` | Ledger timeline view。 | Dashboard source node，待补精确行号 |
-| `src/views/history-replay.tsx` | History replay view。 | Dashboard source node，待补精确行号 |
-| `src/views/doctor.tsx` | Doctor report view。 | Dashboard source node，待补精确行号 |
-| `src/components/coverage-heatmap.tsx` | Rule coverage visualization。 | rule topology 使用：`packages/dashboard/src/views/rule-topology.tsx:5` |
-| `src/components/hit-reason-panel.tsx` | Per-path hit reason panel。 | rule topology 使用：`packages/dashboard/src/views/rule-topology.tsx:5` |
-| `src/components/drift-indicator.tsx` | Error/drift banner component。 | rules views 使用 |
-| `src/components/tree-node.tsx` | Rules tree node renderer。 | rules tree 使用：`packages/dashboard/src/views/rules-tree.tsx:6` |
+| `src/views/readiness.tsx` | Readiness check view。 | Dashboard readiness node |
+| `src/views/rules-explain.tsx` | Rule hit explanation and tree view。 | Dashboard rules node |
+| `src/views/timeline.tsx` | Ledger timeline and history replay view。 | Dashboard timeline node |
+| `src/views/health.tsx` | Doctor report and runtime health view。 | Dashboard health node |
+| `src/components/coverage-heatmap.tsx` | Rule coverage visualization。 | rules explain 使用：`packages/dashboard/src/views/rules-explain.tsx` |
+| `src/components/hit-reason-panel.tsx` | Per-path hit reason panel。 | rules explain 使用：`packages/dashboard/src/views/rules-explain.tsx` |
+| `src/components/drift-indicator.tsx` | Error/drift banner component。 | rules explain 使用 |
+| `src/components/tree-node.tsx` | Rules tree node renderer。 | rules explain 使用 |
 | `src/components/source-badge.tsx` | Source label component。 | component node |
 | `src/components/timeline-entry.tsx` | Ledger event renderer。 | component node |
 | `src/i18n/*` | Dashboard i18n runtime/provider/hook。 | views/components 导入 |

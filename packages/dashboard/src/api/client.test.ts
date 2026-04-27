@@ -70,10 +70,10 @@ describe("dashboard api client", () => {
 
     const client = await import("./client.ts");
 
-    await client.getRulesContext("packages/dashboard/src/views/rule-topology.tsx");
+    await client.getRulesContext("packages/dashboard/src/views/rules-explain.tsx");
 
-    expect(fetchMock).toHaveBeenCalledWith(
-      "/api/rules/context?path=packages%2Fdashboard%2Fsrc%2Fviews%2Frule-topology.tsx",
+    expect(global.fetch).toHaveBeenCalledWith(
+      "/api/rules/context?path=packages%2Fdashboard%2Fsrc%2Fviews%2Frules-explain.tsx",
       expect.objectContaining({
         headers: {
           Accept: "application/json",

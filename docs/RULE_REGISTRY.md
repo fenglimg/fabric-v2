@@ -128,7 +128,7 @@ describe("seer script contract", () => {
 | `core/plan-context` | Batch planning 和 shared rule bundle | `packages/server/src/services/plan-context.ts` |
 | `core/events` | SSE event projection 和 replay | `packages/server/src/api/events.ts` |
 | `core/dashboard-api-client` | Dashboard REST/SSE client | `packages/dashboard/src/api/client.ts` |
-| `core/rule-topology-view` | Dashboard rule hit explanation | `packages/dashboard/src/views/rule-topology.tsx` |
+| `core/rule-topology-view` | Dashboard rule hit explanation | `packages/dashboard/src/views/rules-explain.tsx` |
 | `core/agents-meta-schema` | Rule metadata schema 和 identity derivation | `packages/shared/src/schemas/agents-meta.ts` |
 | `core/events-schema` | Fabric event schema | `packages/shared/src/schemas/events.ts` |
 
