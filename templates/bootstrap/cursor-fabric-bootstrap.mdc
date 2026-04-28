@@ -13,7 +13,7 @@ MUST: Treat this file as the Fabric Protocol bootstrap for this repository.
 MUST: Before ANY code reading, architecture planning, or logic modification, call the MCP tool `fab_plan_context(paths=[<target file>])`, then call `fab_get_rule_sections` with selected L1 stable_ids before editing.
 MUST: Treat `.fabric/events.jsonl` as the automatic typed Event Ledger; MCP tools, `fabric doctor --fix` write records without manual `ledger_entry` calls.
 MUST: When creating or changing an L1/L2 rule node, update rule sources and run `fabric doctor --fix`; keep `.fabric/agents.meta.json` as the generated `agent_meta` baseline.
-MUST: Preserve protected tokens exactly: `AGENTS.md`, `FABRIC.md`, `.fabric/rules/`, `.fabric/agents.meta.json, `.fabric/events.jsonl`, `ledger_entry`, `agent_meta`, `shadow constraints`, `Shadow Mirroring`, `MUST`, `NEVER`.
+MUST: Preserve protected tokens exactly: `AGENTS.md`, `FABRIC.md`, `.fabric/agents/`, `.fabric/rules/`, `.fabric/agents.meta.json`, `.fabric/human-lock.json`, `.fabric/events.jsonl`, `ledger_entry`, `agent_meta`, `shadow constraints`, `Shadow Mirroring`, `MUST`, `NEVER`.
 NEVER: Translate, rename, or paraphrase MCP tool names, JSON keys, file paths, or the keywords `MUST` and `NEVER`.
 NEVER: Reason about or modify code before obtaining local shadow constraints via MCP.
 NEVER: Edit `.fabric/agents.meta.json` directly.

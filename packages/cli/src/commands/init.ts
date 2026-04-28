@@ -736,6 +736,8 @@ function buildPlanOnlyScaffoldResult(plan: InitScaffoldPlan): InitScaffoldResult
     metaAction: plan.metaAction,
     taxonomyPath: plan.taxonomyPath,
     taxonomyAction: plan.taxonomyAction,
+    eventsPath: plan.eventsPath,
+    eventsAction: plan.eventsAction,
     forensicPath: plan.forensicPath,
     forensicAction: plan.forensicAction,
     claudeSkillPath: plan.claudeSkill.path,

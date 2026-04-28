@@ -16,6 +16,7 @@ export {
   runDoctorFix,
   runDoctorReport,
   type DoctorFixReport,
+  type DoctorIssue,
   type DoctorReport,
 } from "./services/doctor.js";
 export {

@@ -1,4 +1,4 @@
-import { createServer, type Server } from "node:http";
+import { createServer, type RequestListener, type Server } from "node:http";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -56,7 +56,7 @@ async function createTempProject(): Promise<string> {
   return projectRoot;
 }
 
-async function listen(handler: Parameters<typeof createServer>[0]): Promise<Server> {
+async function listen(handler: RequestListener): Promise<Server> {
   const server = createServer(handler);
   servers.push(server);
   server.listen(0, "127.0.0.1");

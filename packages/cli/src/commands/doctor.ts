@@ -1,6 +1,6 @@
 import { defineCommand } from "citty";
 
-import { runDoctorFix, runDoctorReport, type DoctorIssue, type DoctorReport } from "@fenglimg/fabric-server";
+import { runDoctorFix, runDoctorReport, type DoctorReport } from "@fenglimg/fabric-server";
 
 import { paint, symbol } from "../colors.js";
 import { resolveDevMode } from "../dev-mode.js";
@@ -12,6 +12,8 @@ type DoctorArgs = {
   json?: boolean;
   strict?: boolean;
 };
+
+type DoctorIssue = DoctorReport["fixable_errors"][number];
 
 export const doctorCommand = defineCommand({
   meta: {

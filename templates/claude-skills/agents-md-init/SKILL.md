@@ -176,4 +176,4 @@ Write targets:
 - NEVER write rule artifacts outside the rule source initialization tree.
 - MUST write `.fabric/init-context.json` with `confidence_snapshot` preserved for every written invariant.
 - MUST update `.fabric/agents.meta.json` with `layer` and `topology_type` for each generated node.
-- MUST preserve protected tokens exactly: `AGENTS.md`, `FABRIC.md`, `.fabric/rules/`, `.fabric/rules/_cross/`, `.fabric/agents.meta.json`, `.fabric/init-context.json`, `.fabric/forensic.json`, `rule source initialization`, `MUST`, `NEVER`.
+- MUST preserve protected tokens exactly: `AGENTS.md`, `FABRIC.md`, `.fabric/rules/`, `.fabric/rules/_cross/`, `.fabric/agents.meta.json`, `.fabric/human-lock.json`, `.fabric/init-context.json`, `.fabric/forensic.json`, `rule source initialization`, `MUST`, `NEVER`.

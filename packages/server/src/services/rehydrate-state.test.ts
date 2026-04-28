@@ -160,6 +160,3 @@ function git(projectRoot: string, ...args: string[]): string {
     stdio: ["ignore", "pipe", "pipe"],
   });
 }
-
-  });
-}
