@@ -1,0 +1,53 @@
+{
+  "session_id": "ANL-2026-04-28-init规则目录与taxonomy设计讨论",
+  "timestamp": "2026-04-28T12:58:00+08:00",
+  "topic": "fab init directory layout, layered rules, bootstrap, taxonomy, Chinese rule sections",
+  "dimensions": [
+    "architecture",
+    "implementation",
+    "concept",
+    "decision"
+  ],
+  "key_findings": [
+    {
+      "finding": "L0/L1/L2 are currently metadata concepts, not directory concepts.",
+      "confidence": "high",
+      "evidence": [
+        "/Users/wepie/Desktop/projects/werewolf-minigame/.fabric/agents.meta.json",
+        "packages/shared/src/schemas/agents-meta.ts"
+      ]
+    },
+    {
+      "finding": "INITIAL_TAXONOMY.md is generated directly by CLI init from forensicReport.",
+      "confidence": "high",
+      "evidence": [
+        "packages/cli/src/commands/init.ts"
+      ]
+    },
+    {
+      "finding": "Chinese content inside structured rule sections is already supported.",
+      "confidence": "high",
+      "evidence": [
+        "packages/server/src/services/rule-sections.test.ts"
+      ]
+    },
+    {
+      "finding": "Bootstrap README is a protocol entrypoint and not a regular structured rule file.",
+      "confidence": "high",
+      "evidence": [
+        "templates/agents-md/variants/cocos.md",
+        "packages/server/src/services/rule-sections.ts"
+      ]
+    }
+  ],
+  "discussion_points": [
+    "Whether to optimize human readability through directories or through generated views.",
+    "Whether bootstrap should remain separate from rule bodies.",
+    "Whether taxonomy should be moved under .fabric/taxonomy with compatibility.",
+    "Whether Chinese should become default rule body language while keeping protected tokens stable."
+  ],
+  "open_questions": [
+    "Should a future migration introduce explicit rules/l0|l1|l2 while preserving mirror path semantics?",
+    "Should bootstrap README gain optional structured sections for consistency?"
+  ]
+}

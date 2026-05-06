@@ -1,0 +1,616 @@
+{
+  "perspective": "Interaction Layer (Round 4)",
+
+  "rule_change_review": {
+    "detection_pipeline": [
+      {
+        "trigger": "edit .fabric/rules/<id>.md content (no rename)",
+        "detected_by": "doctor-only-on-demand + serve-staleness-via-meta",
+        "verification_steps": [
+          "doctor.inspectMeta (services/doctor.ts:322) calls tryBuildRuleMeta which re-hashes every .fabric/rules/*.md",
+          "buildRuleMeta computes new revision hash (rule-meta-builder.ts:64-66) from sorted node hashes",
+          "createMetaCheck (doctor.ts:540-557) compares stored meta.revision vs computedRevision; emits agents_meta_stale (fixable_error)",
+          "doctor --fix calls writeRuleMeta which atomicWrites agents.meta.json + rule-test.index.json AND appends 3 events to events.jsonl: rule_drift_detected, rule_baseline_accepted, baseline_synced",
+          "After --fix runs, rule-meta-builder.ts:281 invalidates contextCache via the doctor.ts:281 contextCache.invalidate('meta_write', projectRoot)"
+        ],
+        "gaps": [
+          "fab serve does NOT watch .fabric/rules/*.md (http.ts:167-177 only watches .fabric/agents.meta.json + .fabric/bootstrap/README.md). Editing a rule file with serve running produces NO file_watch invalidation, NO tool/list_changed notification, NO resource_updated notification. Stale rule content can sit in 5-second cache.",
+          "fab scan (cli/commands/scan.ts) does NOT inspect .fabric/rules/ at all — it scans the user project for framework signals only. There is no equivalent of `fabric scan --rules`.",
+          "Doctor only re-hashes when the user runs the command. There is no background reconciliation."
+        ]
+      },
+      {
+        "trigger": "edit .fabric/rules/<id>.md to change <!-- fab:rule-id NEW_ID --> declared stable_id",
+        "detected_by": "doctor-on-demand-as-staleness",
+        "verification_steps": [
+          "deriveRuleIdentity (rule-meta-builder.ts:680-706) reads the new declared stable_id and writes it to nodes[id].stable_id",
+          "computeRevision (rule-meta-builder.ts:566-571) hashes [id|hash|stable_id|identity_source] so a stable_id change DOES trigger a revision change → agents_meta_stale",
+          "rule-test.index.json links keyed by old stable_id become orphan_annotations after writeRuleMeta runs"
+        ],
+        "gaps": [
+          "There is no validation that the new stable_id is unique. Two rules declaring the same `<!-- fab:rule-id duplicate -->` would silently overwrite in indexRulesByStableId (rule-meta-builder.ts:372-382 — Map.set wins, last-write keeps).",
+          "stable_id format is enforced only by regex in extractDeclaredStableId (rule-meta-builder.ts:710 — /[A-Za-z0-9][A-Za-z0-9/_-]*/). An invalid id is silently ignored (returns undefined), then derived stable_id is used WITHOUT a doctor warning that the user's intended id was rejected.",
+          "@fabric-verify annotations in test files (key-by string) are NEVER validated to point at actual stable_ids until they get re-indexed; until then they live as orphan_annotations forever with no doctor surface."
+        ]
+      },
+      {
+        "trigger": "edit .fabric/agents.meta.json description field manually (drift from rule .md frontmatter)",
+        "detected_by": "doctor-on-demand-as-staleness-but-without-explanation",
+        "verification_steps": [
+          "computeRulesBasedAgentsMeta (rule-meta-builder.ts:128-147) re-extracts description via extractRuleDescription from the .md source on each build",
+          "stableStringify comparison at rule-meta-builder.ts:71-72 will detect the drift",
+          "Result: agents_meta_stale (fixable). doctor --fix overwrites the manual description with the .md-derived one"
+        ],
+        "gaps": [
+          "User has no warning that their hand-edited description will be silently nuked on next doctor --fix. The agents.meta.json description field is effectively REGENERATED ALWAYS — but doctor's stale-message just says 'revision X does not match Y' without naming WHICH fields drifted.",
+          "If a user wants to override the description, they must edit the rule .md frontmatter (there is no 'authoritative meta' mode)."
+        ]
+      },
+      {
+        "trigger": "user manually creates .fabric/rules/foo/bar.md without running any tool",
+        "detected_by": "doctor-on-demand-only",
+        "verification_steps": [
+          "buildRuleMeta finds the new file via findFabricRuleFiles (rule-meta-builder.ts:277-306)",
+          "A new node is added with derived stable_id; revision changes; agents_meta_stale fires",
+          "After doctor --fix, agents.meta.json now has the node and fab_plan_context can return it"
+        ],
+        "gaps": [
+          "BEFORE doctor --fix runs, fab_plan_context (services/plan-context.ts:218 — Object.entries(meta.nodes)) and get-rules (services/get-rules.ts:157) iterate ONLY agents.meta.json.nodes. So a manually-added rule is INVISIBLE to AI agents until doctor --fix is run. There is no auto-discovery.",
+          "fab serve's chokidar at http.ts:167 does not watch .fabric/rules/, so even with the daemon running the new rule does not trigger any cache invalidation or tools/list_changed notification.",
+          "No CLI command surfaces 'unindexed rules detected' to the user proactively."
+        ]
+      },
+      {
+        "trigger": "delete .fabric/rules/<id>.md",
+        "detected_by": "doctor-on-demand-as-content_ref_missing",
+        "verification_steps": [
+          "buildRuleMeta no longer sees the file → node disappears from computed meta",
+          "But createRuleContentRefCheck (doctor.ts:559-585) inspects ONLY the existing meta.json's content_refs. If meta still has the entry, content_ref_missing fires (manual_error, NOT fixable).",
+          "doctor --fix on stale meta would, via writeRuleMeta, drop the node and write the new revision. Indirect cleanup."
+        ],
+        "gaps": [
+          "content_ref_missing is classified manual_error (doctor.ts:574-581) but the fix is in fact deterministic: regenerate meta. User is told to manually fix what the system could fix automatically.",
+          "The dangling rule-test.index.json links pointing at the deleted stable_id become orphan_annotations after doctor --fix. There is no cleanup ledger event for 'rule_deleted' — only baseline_synced gets logged.",
+          "If a user deletes ALL rules, agents.meta.json shrinks to just L0 — no warning that 'this empty meta means AI gets only L0 context.'"
+        ]
+      },
+      {
+        "trigger": "rename .fabric/rules/foo.md to .fabric/rules/bar.md (no fab:rule-id declared)",
+        "detected_by": "doctor-on-demand-as-stable_id-shift",
+        "verification_steps": [
+          "deriveAgentsMetaStableId is computed from path. Renaming the file changes the derived stable_id.",
+          "buildRuleMeta inserts a NEW node (new id, new derived stable_id) and the old one disappears. revision changes."
+        ],
+        "gaps": [
+          "All @fabric-verify test annotations pinning the old stable_id become orphan_annotations silently (no error, no warning code).",
+          "If users want to preserve identity across renames, they MUST add an explicit `<!-- fab:rule-id stable -->` BEFORE renaming. This contract is documented only in rule-meta-builder.ts source code (identity_source: 'declared' branch at L684-689) and not surfaced anywhere in the CLI / docs / wizard."
+        ]
+      }
+    ],
+    "approval_gate_exists": false,
+    "stable_id_change_handling": "Edit-and-pray. A stable_id change (declared via `<!-- fab:rule-id ... -->` in the .md) is detected at write-time (next doctor or doctor --fix run) only as a 'revision drift'. The doctor message does NOT distinguish 'a hash drifted' from 'a stable_id changed' — they both surface as agents_meta_stale. Downstream consumers (rule-test.index.json links, @fabric-verify annotations in test files) that referenced the old stable_id silently become orphan_annotations after the next writeRuleMeta. There is no symmetric 'old_stable_ids' carryover; once the rebuild happens the old id is gone from meta and the only trace is in events.jsonl rule_drift_detected/baseline_synced events.",
+    "meta_rule_drift_handling": "agents.meta.json is REGENERATED FROM SCRATCH on every writeRuleMeta call (rule-meta-builder.ts:128-153). Description, sections, hash, content_ref are ALL recomputed from the .md source. Hand-edits to agents.meta.json are silently overwritten on the next doctor --fix. The only fields that survive are those merged via `...existing?.node` (rule-meta-builder.ts:138) — which currently means: priority, deps, scope_glob, layer, topology_type, level, stable_id (only when identity_source === 'declared' AND existing was declared). No doctor check warns the user 'your manual edits to agents.meta.json will be regenerated.' Users who treat agents.meta.json as authoritative get bitten on first doctor --fix.",
+    "manual_rule_addition_discoverability": "Invisible to fab_plan_context until doctor --fix runs. Both plan-context.ts:218 and get-rules.ts:157 iterate Object.entries(meta.nodes) — meaning an unindexed rule file under .fabric/rules/ never reaches an AI client. The chokidar watcher in http.ts:167 watches only agents.meta.json + bootstrap README, NOT .fabric/rules/, so even a long-running serve does not auto-invalidate when a new rule file appears. There is also no scan-time signal: scan command (cli/commands/scan.ts) does not inspect .fabric/rules/. The de facto contract is: 'the AI must call fabric doctor --fix between adding a rule and using it.' This contract is not stated in user docs.",
+    "deletion_dangling_refs": "Two-way drift. (1) Removing a rule file leaves agents.meta.json with a content_ref pointing at a missing path → createRuleContentRefCheck emits content_ref_missing as MANUAL_ERROR even though doctor.ts:255 could trivially regenerate the meta to drop the entry. The user is told to fix manually but doctor --fix actually does fix it (via the rule_meta rebuild path) — except content_ref_missing is NOT in the fixable_error code list at doctor.ts:271. There is a real bug: content_ref_missing is auto-recoverable but not auto-fixed. (2) rule-test.index.json links pointing at the now-missing rule become orphan_annotations after writeRuleMeta runs, with no surface in doctor (no orphan_annotations_present check exists). The cumulative orphans list grows over time with zero visibility.",
+    "pain_points": [
+      {
+        "scenario": "User edits a rule file while `fab serve` is running, expects AI to immediately see the change",
+        "mental_model": "Live-reload — hot-reload semantics, edit and refresh",
+        "reality": "chokidar at http.ts:167 watches only agents.meta.json + bootstrap README. Rule .md edits go undetected until doctor --fix runs and rewrites agents.meta.json. AI agents continue serving 5-second-cached stale content.",
+        "severity": "medium",
+        "fix_idea": "Extend cacheWatcher pattern at http.ts:167 to include `.fabric/rules/**/*.md`. On change, contextCache.invalidate('file_watch', projectRoot) PLUS a debounced 'doctor staleness hint' notification (just an info-level log to stdout — not a hard re-meta build, since rebuild requires writing). Cost: ~15 LOC. R-code: defer to v1.8.0 batch alongside R3 signal handlers."
+      },
+      {
+        "scenario": "User adds .fabric/rules/security/jwt.md by hand; asks Claude/Codex to use it",
+        "mental_model": "If I drop a rule file in .fabric/rules/, the AI sees it",
+        "reality": "fab_plan_context iterates meta.nodes only. Until doctor --fix is run the new rule is invisible. AI returns 'rule not found' or silently ignores.",
+        "severity": "high",
+        "fix_idea": "Add a doctor warning code `rules_dir_unindexed` that lists .md files under .fabric/rules/ NOT present as nodes in agents.meta.json. Trivial extension of rule-meta-builder findings. Make it auto-fixable via the existing writeRuleMeta path. Doctor message: 'N rule files in .fabric/rules/ are not indexed in agents.meta.json. Run `fab doctor --fix` to index them.'"
+      },
+      {
+        "scenario": "User edits agents.meta.json by hand to override a rule's description field",
+        "mental_model": "agents.meta.json is the authoritative metadata I can edit",
+        "reality": "Description is regenerated from .md frontmatter on every doctor --fix. User edit is silently nuked. No warning. Symptom: 'why did my description change back?'",
+        "severity": "medium",
+        "fix_idea": "Either (a) add a doctor INFO check `agents_meta_user_edited` that warns 'description fields in agents.meta.json are derived from rule .md frontmatter; edits will be overwritten — use frontmatter `description:` instead', OR (b) document explicitly in initialization.md that agents.meta.json is a derived artifact like rule-test.index.json. Recommend (b) for v1.7.1."
+      },
+      {
+        "scenario": "User renames .fabric/rules/auth.md → .fabric/rules/security/auth.md without adding fab:rule-id",
+        "mental_model": "Rename is a path change, identity is the file's purpose",
+        "reality": "Derived stable_id changes from `auth` to `security/auth`. All @fabric-verify annotations in test files become orphan_annotations after writeRuleMeta. No CLI command surfaces this; the user only finds out when a downstream consumer fails or by reading rule-test.index.json directly.",
+        "severity": "medium",
+        "fix_idea": "Add a doctor warning `rule_test_orphans_present` (informational) when rule-test.index.json.orphan_annotations.length > 0. Currently they exist silently. Cost: <20 LOC, fits the same pattern as createRuleTestIndexCheck. Defer the actual fix (cross-rename detection) — the warning alone gives users a signal that something they did broke a link."
+      },
+      {
+        "scenario": "User deletes .fabric/rules/old.md, runs fab doctor",
+        "mental_model": "Deleting a rule should clean up its meta entry",
+        "reality": "doctor reports content_ref_missing as manual_error. User is told to manually fix what doctor --fix would actually fix (regen meta drops the node). Frustrating: manual_error is misleading.",
+        "severity": "medium",
+        "fix_idea": "Reclassify content_ref_missing from manual_error to fixable_error and route it through the existing writeRuleMeta path in runDoctorFix (doctor.ts:270-282). One-line change to the issue list AND createRuleContentRefCheck status mapping. Cost: ~10 LOC. Defer to v1.8.0 batch."
+      },
+      {
+        "scenario": "Two rules accidentally declare the same `<!-- fab:rule-id duplicate -->`",
+        "mental_model": "Duplicate IDs would be a hard error",
+        "reality": "indexRulesByStableId (rule-meta-builder.ts:372-382) silently overwrites — last sort-order wins. No doctor check surfaces duplicates. Downstream: @fabric-verify annotations may resolve to the wrong rule, or rule-test.index.json links point at one of the duplicates non-deterministically.",
+        "severity": "high",
+        "fix_idea": "Add doctor manual_error `stable_id_collision` that detects duplicate stable_ids during inspectMeta. Print all colliding files. Block doctor --fix until resolved (manual_error blocks the green-light state). Cost: ~25 LOC. Defer to v1.8.0; significant correctness fix."
+      },
+      {
+        "scenario": "User declares `<!-- fab:rule-id 123-bad-id -->` (starts with digit OR uses unsupported chars)",
+        "mental_model": "The system will tell me my id is invalid",
+        "reality": "extractDeclaredStableId regex requires `[A-Za-z0-9][A-Za-z0-9/_-]*` — first char must be alphanumeric. If invalid, regex returns undefined, code falls back to derived stable_id silently. User believes they declared an id but the system uses a derived one.",
+        "severity": "medium",
+        "fix_idea": "On invalid declared id, append a doctor warning `rule_declared_id_invalid` that names the file and the rejected pattern. Continue using derived id but make the rejection visible. Cost: ~15 LOC."
+      }
+    ]
+  },
+
+  "initialization_pipeline": {
+    "stages": [
+      {
+        "name": "stage 0: preflight + intent resolution",
+        "entry_point": "packages/cli/src/commands/init.ts:322 runInitCommand → :364 resolveInitCliIntent → :388 buildInitExecutionPlan",
+        "inputs": ["CLI args (target/yes/plan/reapply/force/bootstrap/mcp/hooks/interactive/mcp-install)", "process.cwd()", "TTY detection (isInteractiveInit)"],
+        "outputs": ["InitCliIntent: { target, options, mcpInstallMode, interactiveSummary, wizardEnabled }"],
+        "invariants": ["target must exist as directory (assertExistingDirectory at L1213)", "force or reapply allows overwrite of existing artifacts; otherwise planFreshPath throws cli.init.errors.abort-existing"],
+        "error_modes": ["abort-existing (recoverable: retry with --reapply or --force)", "wizard cancelled (irrecoverable: user must rerun)"],
+        "recoverable": true
+      },
+      {
+        "name": "stage 1: scaffold (fabric-managed files)",
+        "entry_point": "packages/cli/src/commands/init.ts:485 buildInitFabricPlan + :561 executeInitFabricPlan",
+        "inputs": ["target dir", "InitOptions (force/reapply)", "framework via buildFabricBootstrapGuide (bootstrap-guide.ts:21)", "forensic via buildForensicReport"],
+        "outputs": [".fabric/bootstrap/README.md (framework-aware)", ".fabric/forensic.json", ".fabric/INITIAL_TAXONOMY.md", ".fabric/agents.meta.json (STUB L0 ONLY: nodes={L0:{...}}; no rules yet)", ".fabric/events.jsonl (empty)", ".fabric/rules/ (empty dir)", ".claude/skills/agents-md-init/SKILL.md", ".agents/skills/fabric-init/SKILL.md", ".codex/hooks/*.cjs", ".codex/hooks.json", ".claude/hooks/agents-md-init-reminder.cjs", ".claude/settings.json (Stop hook merged)"],
+        "invariants": ["agents.meta.json scaffold is INTENTIONALLY a stub — only L0 node, revision = sha256(L0 hash), no rules. The CLI does NOT call buildRuleMeta during init.", "events.jsonl is created EMPTY — no init event written by the CLI. First event ledger entry only happens later when an AI skill invokes writeRuleMeta.", "All file writes use writeFileSync (synchronous, NON-atomic). Mid-init crash leaves partial state.", "rmSync(plan.fabricDir) at L562-564 only fires if plan.replaceFabricDir is true — i.e., when .fabric exists as a FILE, not a directory. With --reapply on existing init, .fabric/rules/ is NOT wiped; existing user rules survive."],
+        "error_modes": ["template not found (cli.shared.template-not-found in findTemplatePath at L1349-1363) — irrecoverable without reinstall", "EPERM/EACCES on writeFileSync — irrecoverable per file", "JSON parse failure on existing .claude/settings.json — gracefully degrades to skipped-invalid (init.ts:946-953) but the user's claude Stop-hook merge silently fails"],
+        "recoverable": false
+      },
+      {
+        "name": "stage 2: bootstrap (cross-client install)",
+        "entry_point": "packages/cli/src/commands/init.ts:777 case 'bootstrap' → installBootstrap (commands/bootstrap.ts:114)",
+        "inputs": ["target", "force option", "DetectedClientSupport[] (from resolver.ts)"],
+        "outputs": ["per-client bootstrap markdown copied to client-native locations (.cursor/, .codex/, .claude/, etc.)"],
+        "invariants": ["resolveClients returns writers ONLY for detected clients (existsSync(<client_dir>) check). Undetected clients are silently skipped.", "Skipping ALL clients yields cli.bootstrap.install.no-targets warning but is NOT an error."],
+        "error_modes": ["per-client copy failure caught at executeInitStagePlan L820-823 → stage disposition='failed', other stages continue. Failure REASON is printed to stderr but NOT structured into result."],
+        "recoverable": true
+      },
+      {
+        "name": "stage 3: mcp (per-client MCP server config)",
+        "entry_point": "packages/cli/src/commands/init.ts:789 case 'mcp' → configCommand.installMcpClients",
+        "inputs": ["mcpInstallMode (global vs local)", "packageManager (when local)", "DetectedClientSupport[]"],
+        "outputs": ["~/.claude/settings.json mcpServers update (NONCOMPLIANT: should be ~/.claude.json or .mcp.json — captured in architectural.json R5)", ".cursor/mcp.json", "~/.codex/config.toml [mcp_servers.fabric] block", "node_modules/@fenglimg/fabric-server (when local mode)"],
+        "invariants": ["Local-mode install adds the dependency BEFORE writing client configs. If npm install fails the MCP config files reference a path that does not yet exist."],
+        "error_modes": ["pnpm/npm install failure (caught in stage failure block) — leaves Claude/Cursor pointing at a missing node_modules path", "TOML upsert failure — caught and propagated"],
+        "recoverable": true
+      },
+      {
+        "name": "stage 4: hooks (husky pre-commit hook)",
+        "entry_point": "packages/cli/src/commands/init.ts:812 case 'hooks' → installHooks (commands/hooks.ts)",
+        "inputs": ["target", "force option"],
+        "outputs": [".husky/* hook templates"],
+        "invariants": ["No hard dependency on prior stages — hooks are independent."],
+        "error_modes": ["husky install failure caught at executeInitStagePlan"],
+        "recoverable": true
+      },
+      {
+        "name": "stage 5 (HANDOFF): AI-driven taxonomy + rules generation",
+        "entry_point": "(NOT in CLI) — packages/cli/templates/claude-skills/agents-md-init/SKILL.md OR packages/cli/templates/codex-skills/fabric-init/SKILL.md",
+        "inputs": [".fabric/forensic.json (from stage 1)", ".fabric/INITIAL_TAXONOMY.md (from stage 1)", ".fabric/bootstrap/README.md (from stage 1)", "user interview answers (Phase 1: framework confirm; Phase 2: invariants extraction; Phase 3: rules construction)"],
+        "outputs": [".fabric/init-context.json (NEW — written by AI, NOT by CLI)", ".fabric/rules/**/*.md (NEW — written by AI)", "agents.meta.json updated (AI is supposed to update node tree and revision hash)"],
+        "invariants": ["Claude path: claude-skills/agents-md-init/SKILL.md prescribes the 3-phase workflow with explicit invariants extraction and rule writing. Codex path: codex-skills/fabric-init/SKILL.md is much thinner — only says 'summarize next initialization actions', does NOT prescribe writing init-context.json or generating rules.", "Claude/Codex Stop hooks (claude-hooks/agents-md-init-reminder.cjs L8-18; codex-hooks/fabric-stop-reminder.cjs) BLOCK the AI from declaring 'done' when forensic.json exists but init-context.json does not. This is the only enforcement gate.", "agents.meta.json revision integrity is the AI's responsibility — there is no schema check that the AI's update produces a hash chain consistent with the rule files it wrote."],
+        "error_modes": [
+          "AI ignores or partially completes the skill → init-context.json never written → doctor's createInitContextCheck (doctor.ts:530-538) reports init_context_missing as MANUAL_ERROR forever; doctor exit code is 1 forever; doctor --fix does NOT auto-fix this.",
+          "AI writes init-context.json but generates no rule files → agents.meta.json stays at the L0-only stub. fab_plan_context returns only L0 context. AI effectively has no project-specific rules until the user manually writes rules and runs doctor --fix.",
+          "AI writes rule files BUT does not update agents.meta.json → next doctor flags agents_meta_stale (recoverable via doctor --fix).",
+          "Codex skill is too thin to drive the full handoff → Codex users may end up in a different / under-initialized state vs Claude users."
+        ],
+        "recoverable": false
+      }
+    ],
+    "seams": [
+      {
+        "from": "stage 1 scaffold output (.fabric/forensic.json, .fabric/INITIAL_TAXONOMY.md, .fabric/bootstrap/README.md)",
+        "to": "stage 5 AI skill (Claude agents-md-init / Codex fabric-init)",
+        "contract": "Implicit. The AI skill consumes forensic.json keys: framework, topology.by_ext, entry_points, recommendations_for_skill. The AI skill consumes INITIAL_TAXONOMY.md as text context. There is NO formal schema versioning between the CLI's forensic output and the SKILL's expected input.",
+        "drift_risk": "If the CLI changes forensic.json shape (renames a field, adds a section the SKILL doesn't expect), the SKILL silently produces wrong invariants. There is no test asserting forensic.json fields the SKILL templates rely on remain stable. The protected_tokens list in shared/i18n DOES protect literal strings 'AGENTS.md', '.fabric/forensic.json' but does not protect FIELD NAMES inside forensic.json.",
+        "pain_point": "Roundtripping a SKILL update requires republishing CLI templates (the SKILL is a copyfile from packages/cli/templates/ at init time). A user who initialized 6 months ago has a stale skill in .claude/skills/agents-md-init/SKILL.md. There is no doctor check 'skill_template_outdated'."
+      },
+      {
+        "from": "stage 1 scaffold writes agents.meta.json STUB (only L0 node)",
+        "to": "stage 5 AI skill SHOULD update agents.meta.json with L1/L2 nodes after writing rule files",
+        "contract": "Both CLI and SKILL share the agentsMetaSchema (packages/shared) — but only the SKILL prose says 'update revision hash'. Nothing in the CLI sets up the AI for using rule-meta-builder.writeRuleMeta — the AI is implicitly expected to write meta by hand OR call MCP somehow.",
+        "drift_risk": "The AI may hand-write a meta.json with a wrong revision hash (it cannot easily compute sha256 of sorted rule entries). On next doctor --fix, the meta is regenerated from the .md files and the AI's hash is replaced. If the AI also wrote stable_ids that don't match derived stable_ids, those are kept (identity_source=declared) — but if the AI wrote them WITHOUT the `<!-- fab:rule-id -->` comment in the source .md, the next writeRuleMeta wipes them.",
+        "pain_point": "The right user flow is 'AI writes rule files → AI tells user to run doctor --fix'. But the SKILL.md prescribes 'AI updates agents.meta.json directly' (skill L43-46). These two flows produce different end-states. Sound only if the AI has run the full computeRevision logic — which it can't reliably do."
+      },
+      {
+        "from": "stage 1 scaffold writes empty .fabric/events.jsonl",
+        "to": "writeRuleMeta later appends rule_drift_detected/rule_baseline_accepted/baseline_synced events",
+        "contract": "events.jsonl format is JSONL of eventLedgerEventSchema (shared). Events are append-only. CLI does NOT write any 'init_completed' event during scaffold.",
+        "drift_risk": "Low — schema is shared; init is a no-op writer of this file.",
+        "pain_point": "There is no 'init_completed' event in the ledger, so a downstream consumer cannot reconstruct 'when did this project finish init?' from the ledger alone — it must look at .fabric/forensic.json.generated_at. Minor."
+      },
+      {
+        "from": "init's claude-settings merger (init.ts:934-1008)",
+        "to": "user's pre-existing ~/.claude/settings.json with Stop hooks",
+        "contract": "init merges Fabric's Stop hook into existing settings.hooks.Stop array. If settings.json is invalid JSON or hooks is non-record, init returns 'skipped-invalid' and writes nothing.",
+        "drift_risk": "Medium. (1) settings.json is the WRONG file for MCP config per Claude Code spec (architectural.json R5) — Fabric is leaning on a path that may be removed by Claude Code in a future version. (2) Two parallel CLAUDE installs (a different tool ALSO writes Stop hooks) → array can grow unbounded with duplicate Fabric hooks, init has no de-dup.",
+        "pain_point": "init silently skips the merge if user's settings.json has any structural issue, with only a stderr log. The user would notice only by reading stderr or running doctor on Claude install (which Fabric does not check)."
+      },
+      {
+        "from": "init's pre-existing root-level CLAUDE.md / AGENTS.md / .windsurfrules check",
+        "to": "Fabric's bootstrap README at .fabric/bootstrap/README.md",
+        "contract": "NONE. init does not check for, ingest, warn about, or migrate any pre-existing root-level CLAUDE.md, AGENTS.md, or .windsurfrules. (Verified: zero references in init.ts.)",
+        "drift_risk": "High for migration-from-other-tools users. A user with an existing CLAUDE.md gets two truth sources: their pre-existing one (which their AI client still reads as system prompt) and Fabric's MCP-resource-served bootstrap README. There is no warning, no merge, no documentation about which wins.",
+        "pain_point": "Architectural.json correctly noted that Fabric SIDESTEPS the AGENTS.md drift problem by not writing those files itself. But the OTHER side of that — silent coexistence with user-existing files from prior tools — is unhandled. A migrating user thinks Fabric replaced their CLAUDE.md when in fact both are still active."
+      },
+      {
+        "from": "init.ts: synchronous writeFileSync sequence (init.ts:570-583)",
+        "to": "downstream doctor + serve readers",
+        "contract": "Files are expected to all-or-none exist after init returns. No transactional guarantee.",
+        "drift_risk": "Mid-init crash (Ctrl-C between L573 and L583) leaves partial state: bootstrap README written, agents.meta.json written, taxonomy written, rules dir created — but events.jsonl or forensic.json potentially missing. doctor would correctly detect missing files but the user has no clear 'init was interrupted, run --reapply' guidance.",
+        "pain_point": "init has no rollback / resume semantics. --reapply does what 'recover from partial init' should do but the relationship is not documented."
+      }
+    ],
+    "taxonomy_to_rules": {
+      "deterministic": false,
+      "user_confirmable": false,
+      "description": "INITIAL_TAXONOMY.md is a markdown summary of forensic findings (key_dirs as L1 buckets, candidate_files as L2 signals). It is NEVER mechanically converted into rules — it is a reading prompt for the AI skill. The actual taxonomy → rules step happens during stage 5 (AI-driven), where the AI interviews the user (Phase 1: framework confirm, Phase 2: invariants Q&A, Phase 3: write rule files). Output rule files have no structural guarantee that they match the L1 buckets named in INITIAL_TAXONOMY.md — the AI can deviate freely. There is no doctor check verifying that L1 rules cover the L1 buckets of INITIAL_TAXONOMY.md."
+    },
+    "agents_md_init_handoff": {
+      "explanation": "Two-step flow embedded across (1) CLI scaffold stage that writes templates to .claude/skills/ and .agents/skills/ AND a Stop hook that blocks the AI until init-context.json exists, and (2) AI skill execution where the AI reads forensic.json + bootstrap README, interviews the user, then writes init-context.json + rule files + (optionally) updates agents.meta.json. Claude path is well-prescribed (3-phase workflow, ~150-line SKILL.md). Codex path (codex-skills/fabric-init/SKILL.md, ~25 lines) is much thinner — it does not prescribe writing init-context.json, generating rules, or updating agents.meta.json. Codex hook (codex-hooks/fabric-stop-reminder.cjs) checks the same gate but the underlying SKILL is incapable of satisfying it without ad-hoc AI interpretation. Cursor has NO equivalent skill or hook in the bootstrap output — Cursor users get stuck at the post-init handoff with no automation.",
+      "problem_areas": [
+        "Codex skill content is dramatically thinner than Claude skill (verified: cli/templates/codex-skills/fabric-init/SKILL.md vs cli/templates/claude-skills/agents-md-init/SKILL.md). Codex users get a different handoff outcome and may finish init with no rules written.",
+        "Cursor: there is NO cursor-skill or cursor-hook in init's scaffold output (init.ts L494-501 emits Claude + Codex paths only). Cursor users receive bootstrap + MCP config but no hand-off automation. They must manually invoke the AI to do the agents-md-init flow without any reminder.",
+        "init-context.json is required by doctor (createInitContextCheck) but is written by an external AI process. doctor reports init_context_missing as MANUAL_ERROR with NO actionable hint pointing the user to the agents-md-init skill. Message: '.fabric/init-context.json is missing.' — does not say 'run the agents-md-init skill in your AI client'.",
+        "The agents.meta.json STUB written by init has revision = sha256(L0_hash) — a real value. After the AI writes rules, if the AI does not update agents.meta.json, doctor --fix WILL regenerate it, which produces a NEW revision and triggers rule_drift_detected event in events.jsonl with previous_revision = the L0-only stub. The first-ever drift event is therefore noise from the init-handoff itself, not from a real change."
+      ]
+    },
+    "preexisting_files_handling": {
+      "behavior": "ignore",
+      "gaps": [
+        "init does NOT scan for or warn about pre-existing root-level CLAUDE.md, AGENTS.md, .windsurfrules, .cursorrules, GEMINI.md (note: GEMINI.md is now part of the retired-clients set anyway). For migrating users these files continue to be read by the AI client as system prompts, in parallel with Fabric's MCP-served bootstrap. Two truth sources, no migration prompt.",
+        "init does check for pre-existing .claude/settings.json (L943-955) — but only for the JSON parse / hooks shape. Other pre-existing keys are preserved (passthrough merge on L985 at `{...hooks, Stop: [...] }`).",
+        "init does check for pre-existing .codex/hooks.json (L911-923) — if exists and !force/reapply, action='skipped'. Existing user hooks are preserved.",
+        "init does NOT check for pre-existing ~/.codex/config.toml [mcp_servers] entries beyond Fabric's own block — verified: toml.ts upsertCodexServerBlock only touches its own [mcp_servers.fabric] block.",
+        "init does NOT detect or warn about a pre-existing .fabric/ from another tool (e.g., a different fabric-named project) before overwriting — only `--reapply` / `--force` gate prevents the overwrite, and the gate's error message says 'abort-existing' without explaining 'this is YOUR previous Fabric init, not another tool.'"
+      ]
+    },
+    "reapply_semantics": {
+      "preserved": [
+        ".fabric/rules/**/*.md (NEVER touched by executeInitFabricPlan — rmSync at L562-564 only fires when .fabric is a FILE, not a directory)",
+        ".fabric/init-context.json (init NEVER writes this; --reapply does not delete it)",
+        ".fabric/.intent-ledger.jsonl (not in init's plan)",
+        "user's existing .codex/hooks.json keys other than Fabric's (init merges, not overwrites)",
+        "user's existing .claude/settings.json keys other than hooks.Stop (init merges)"
+      ],
+      "overwritten": [
+        ".fabric/bootstrap/README.md (regenerated from framework template — may overwrite user customization)",
+        ".fabric/agents.meta.json (REGENERATED AS L0-ONLY STUB — destroys any rule nodes the AI wrote in stage 5; the user must run doctor --fix afterward to recover the rule index)",
+        ".fabric/INITIAL_TAXONOMY.md (regenerated from current forensic — may have shifted text)",
+        ".fabric/forensic.json (regenerated from current scan)",
+        ".fabric/events.jsonl (TRUNCATED TO EMPTY — destroys all drift history!)",
+        ".claude/skills/agents-md-init/SKILL.md (overwritten when force=true; reapply implies force)",
+        ".agents/skills/fabric-init/SKILL.md (same)",
+        ".codex/hooks/*.cjs (same)",
+        ".codex/hooks.json (overwritten when force; original user customizations to non-Fabric hooks lost)"
+      ],
+      "checked": [
+        "Existence check (planFreshPath at L842-852) gates writes — but with --reapply force=true is implied, so all checks resolve to 'overwritten' silently.",
+        "No checksum / version comparison between existing scaffold files and what init would write — init does NOT skip a write if the existing file is bit-identical to the template."
+      ]
+    },
+    "pain_points": [
+      {
+        "scenario": "User runs `fab init --reapply` to refresh after a Fabric upgrade",
+        "severity": "high",
+        "fix_idea": "events.jsonl is TRUNCATED to empty by --reapply (planFreshPath returns 'overwritten' for eventsPath at L507; executeInitFabricPlan rewrites it empty at L580). All drift history is lost — including baseline_synced events that other tools may rely on. Recommend: --reapply should NOT truncate events.jsonl. Either skip if exists or rotate it to events.jsonl.bak with a one-line ledger entry 'init_reapplied'. Cost: ~10 LOC in executeInitFabricPlan."
+      },
+      {
+        "scenario": "User runs `fab init --reapply` after AI has populated rules",
+        "severity": "high",
+        "fix_idea": "agents.meta.json is regenerated as the L0-only stub (createInitialMeta at L1256-1271). The user's stage-5 AI-written nodes vanish. doctor will then flag agents_meta_stale, but the experience is jarring: the user just ran `--reapply` to 'refresh,' and now they need a SECOND command (`doctor --fix`) to recover. Recommend: --reapply should call writeRuleMeta as a final step, OR skip writing agents.meta.json if .fabric/rules/ has any .md files. Cost: ~20 LOC."
+      },
+      {
+        "scenario": "User runs `fab init` on a repo with existing CLAUDE.md from a prior tool",
+        "severity": "medium",
+        "fix_idea": "init does not detect or surface this. AI gets two parallel system-prompt sources. Recommend: after stage 1, scan workspace root for [CLAUDE.md, AGENTS.md, .cursorrules, .windsurfrules]. If any exist, print a stderr WARNING listing them with text 'Fabric uses MCP resources, not root-level files. These pre-existing files are still read by your AI client and may conflict with .fabric/bootstrap/README.md — consider migrating their content into rules under .fabric/rules/ and removing the originals.' Cost: ~30 LOC. Defer to v1.8.0."
+      },
+      {
+        "scenario": "User runs `fab init` and the AI never executes the agents-md-init skill (skill ignored, network error, model issue)",
+        "severity": "medium",
+        "fix_idea": "User is stuck with init-context.json missing forever. doctor reports manual_error with no action hint. Recommend: createInitContextCheck error message should include 'Run the `agents-md-init` skill in Claude Code, or `fabric-init` in Codex. Without it Fabric only has L0 context.' Cost: ~5 LOC i18n change."
+      },
+      {
+        "scenario": "Cursor user finishes init (bootstrap + MCP only) and has no skill/hook to drive stage 5",
+        "severity": "high",
+        "fix_idea": "init does not emit a Cursor-specific skill or hook. Cursor users hit a dead-end at stage 5. Recommend (v1.8.0): EITHER (a) add a Cursor-equivalent skill template under templates/cursor-rules/agents-md-init.mdc and emit it during init, OR (b) document explicitly in initialization.md that Cursor users must manually copy the agents-md-init skill content into a Cursor rule. Cost: ~50 LOC + new template file. Out of stabilization scope but a real first-class-citizen gap for Cursor."
+      },
+      {
+        "scenario": "Codex user follows codex-skills/fabric-init/SKILL.md and it does not produce init-context.json",
+        "severity": "high",
+        "fix_idea": "Codex skill is much thinner than Claude skill — it does not prescribe writing init-context.json. Codex users either bridge the gap by accident or get stuck. Recommend: bring codex-skills/fabric-init/SKILL.md to feature parity with claude-skills/agents-md-init/SKILL.md (replicate the 3-phase workflow). Cost: ~80 LOC of skill markdown. Defer to v1.8.0; high parity-ROI."
+      },
+      {
+        "scenario": "init is interrupted (Ctrl-C) mid-scaffold",
+        "severity": "medium",
+        "fix_idea": "Synchronous writeFileSync sequence at executeInitFabricPlan L569-583 has no rollback. Some files are written, some are not. Doctor on the half-init project gives a confusing mix of present/missing checks. Recommend: print a final stderr 'Fabric init complete' line to stdout AFTER every scaffold write succeeds, AND have doctor's first paragraph say 'If an init was interrupted, run `fab init --reapply` to recover.' Cost: ~10 LOC + doctor output tweak."
+      },
+      {
+        "scenario": "User clones a repo with existing .fabric/ from a previous Fabric version",
+        "severity": "low",
+        "fix_idea": "init aborts on existing files unless --reapply. The error message says 'abort-existing' but doesn't suggest --reapply. Recommend: error message should explicitly hint 'Use `fab init --reapply` to refresh existing files; use `fab doctor` to diagnose without writes.' Cost: ~5 LOC i18n."
+      }
+    ]
+  },
+
+  "interaction_pain_points": [
+    {
+      "area": "tty_vs_noninteractive",
+      "severity": "low",
+      "example": "packages/cli/src/commands/init.ts:625-630 shouldUseInitWizard branches on isInteractiveInit() AND args.interactive AND !args.yes. With --yes, wizard is bypassed and the entire user-confirmation flow disappears — no preview, no confirmation, just execute. With non-TTY (CI), behavior is identical to --yes (silent execute). No preview-on-stderr happens unless --plan is passed.",
+      "fix_idea": "Compliant for the --yes case (explicit user opt-in to non-interactive). For non-TTY without --yes, current behavior silently degrades to --yes-equivalent. Recommend: when non-TTY AND no --yes AND no --plan, print a stderr WARNING 'No TTY detected; proceeding non-interactively. Use --plan to preview or --yes to suppress this warning.' Cost: ~10 LOC."
+    },
+    {
+      "area": "errors",
+      "severity": "high",
+      "example": "packages/server/src/services/doctor.ts:498-624 every doctor check message is hardcoded English and lacks an action hint. createInitContextCheck (L530-538) says '.fabric/init-context.json is missing.' — does not say 'run agents-md-init skill in your AI client'. createTaxonomyCheck says '.fabric/INITIAL_TAXONOMY.md is missing.' — does not say 'run fab init --reapply'.",
+      "fix_idea": "Append actionable hints to every error message. Pattern: '<problem>. Recommended fix: <command or skill>.' Touch all 9 issueCheck callsites. Cost: ~40 LOC. Defer to v1.8.0; high-ROI for first-time users."
+    },
+    {
+      "area": "errors",
+      "severity": "medium",
+      "example": "packages/cli/src/commands/init.ts:820-823 catches stage failures and prints formatInitStageFailure, but the disposition is recorded as 'failed' without surfacing the cause structurally. The stderr reason vanishes from the InitExecutionResult; downstream callers (e.g., a CI script doing `fab init --json`) cannot tell WHY a stage failed.",
+      "fix_idea": "Capture the error message in InitStageRecord (extend the type to include `reason?: string`). Persist into result.stageResults. Cost: ~15 LOC in init.ts."
+    },
+    {
+      "area": "confirmations",
+      "severity": "medium",
+      "example": "packages/cli/src/commands/init.ts:1024-1031 and 1106-1113 — wizard asks 'continue with target?' AND 'execute confirm?'. Both default initialValue=true. With Enter-key spam users sail through. There is NO confirmation specifically gated on --reapply (which is destructive: wipes events.jsonl, regenerates agents.meta.json).",
+      "fix_idea": "Add a wizard step (only when options.reapply === true) that says 'WARNING: --reapply will overwrite .fabric/bootstrap/README.md, .fabric/agents.meta.json, .fabric/INITIAL_TAXONOMY.md, .fabric/forensic.json AND TRUNCATE .fabric/events.jsonl. Existing rule files are preserved. Continue?' default=false. Cost: ~20 LOC + i18n strings."
+    },
+    {
+      "area": "client_switch",
+      "severity": "high",
+      "example": "User starts with Cursor; later adopts Codex. The natural action is `fab init --reapply` to add Codex configs. But --reapply destroys .fabric/events.jsonl AND regenerates agents.meta.json to L0-stub. There is no docs page covering 'how to add a client to an existing Fabric project'. docs/getting-started.md L46 mentions --reapply but only for 'reapply' purposes, not 'add a client'.",
+      "fix_idea": "Two parts. (1) `fab config install --clients=codex` already EXISTS as a non-destructive way to add a client's MCP config — but it skips bootstrap/hooks. Document this flow explicitly: 'To add a client to an existing project: `fab config install --clients=<new>` then `fab bootstrap install --clients=<new>`.' (2) Make --reapply less destructive (per init pain points above). Cost: docs ~30 lines + the init fixes already proposed."
+    },
+    {
+      "area": "multi_project",
+      "severity": "low",
+      "example": "Fabric in repo A and repo B share NOTHING by default. ~/.codex/config.toml has [mcp_servers.fabric] block (single-server, last-write-wins). ~/.claude/settings.json has Stop hooks (merged additively across runs but the hook command is the SAME path /.claude/hooks/agents-md-init-reminder.cjs which is REPO-LOCAL, not user-global). Result: opening repo B with claude code DOES read repo-B's .claude/hooks/, so things work — but the global ~/.claude/settings.json points its Stop hook at REPO-A's path. Quietly inconsistent.",
+      "fix_idea": "Confirm whether ~/.claude/settings.json Stop hook should be repo-relative or absolute. Currently CLAUDE_INIT_REMINDER_COMMAND (init.ts:244) is '.claude/hooks/agents-md-init-reminder.cjs' — relative, which Claude Code resolves against cwd at runtime. If true, this is fine; if Claude resolves vs the settings.json location, it's broken. Recommend: add a vitest spec asserting Claude's settings.json gets a relative path AND a docs note. Cost: ~15 LOC."
+    },
+    {
+      "area": "verbosity",
+      "severity": "medium",
+      "example": "doctor --fix runs writeRuleMeta which silently appends 3 events to events.jsonl (rule_drift_detected, rule_baseline_accepted, baseline_synced) AND bumps the revision hash. The user sees 'Applied N deterministic doctor fixes.' but does NOT see WHICH revision they're now at, WHICH stable_ids changed, or that ledger entries were written. The data is in events.jsonl but the UI is silent.",
+      "fix_idea": "Append to runDoctorFix message: 'Revision: <prev> → <new>. Synced files: N. See .fabric/events.jsonl for details.' Cost: ~10 LOC in createFixMessage (doctor.ts:677-686)."
+    },
+    {
+      "area": "completions",
+      "severity": "low",
+      "example": "No bash/zsh/fish completion files in repo. citty (the CLI framework) supports completions but none are exported via package.json bin or generated artifacts. `fabric --help` and `fab --help` work but lack auto-complete for subcommands and --clients=cursor,codex.",
+      "fix_idea": "citty has built-in completion generation via runMain. Wire a `fabric completion <shell>` subcommand that emits the script. Cost: ~30 LOC + 1 test. Out of stabilization scope (additive functionality); document as a v1.9 follow-up."
+    },
+    {
+      "area": "help",
+      "severity": "low",
+      "example": "fabric --help shows top-level command list. fabric init --help shows args from i18n. Help text is short — `cli.init.args.reapply.description` = 'Reapply Fabric-managed files and stage installers over an existing setup' (en.ts:94). It does NOT enumerate which files are reapplied, which are preserved, or warn about events.jsonl truncation. The reapply_semantics audit above is invisible to help readers.",
+      "fix_idea": "Expand --reapply help text to include: 'Overwrites: bootstrap README, agents.meta.json (to stub), INITIAL_TAXONOMY.md, forensic.json. TRUNCATES: events.jsonl. Preserves: .fabric/rules/, .fabric/init-context.json. Use `fab doctor --fix` after to rebuild the rule index.' Plus equivalent zh-CN. Cost: ~10 LOC i18n."
+    },
+    {
+      "area": "i18n",
+      "severity": "high",
+      "example": "packages/server/src/services/doctor.ts emits ONLY English messages. All 9 createXxxCheck functions use hardcoded English strings (L498, L505, L519, L532, L542, L569, L594, L605, L621). The CLI doctor wrapper at packages/cli/src/commands/doctor.ts:72-74 prints English section headers ('Fixable errors:', 'Manual errors:', 'Warnings:') hardcoded. Yet the rest of the CLI (init, scan, bootstrap, config) has full zh-CN/en i18n via t().",
+      "fix_idea": "Two-stage. (1) Quick fix in v1.7.1: translate the 3 doctor section headers in cli/commands/doctor.ts to use t(). Cost: ~10 LOC. (2) Full fix in v1.8.0: lift doctor messages from doctor.ts to i18n keys. Issue: doctor.ts is in @fenglimg/fabric-server which currently does NOT import @fenglimg/fabric-shared/i18n. Either route messages back to CLI for translation, OR add a translation layer accepting i18n locale via runDoctorReport options. Cost: ~80 LOC. Defer (b) to v1.8.0."
+    },
+    {
+      "area": "verbosity",
+      "severity": "low",
+      "example": "fab serve prints `${symbol.ok} fabric serve http://host:port` ONLY (serve.ts:73). No info on what was loaded, no 'watching .fabric/agents.meta.json + bootstrap README for changes' note. Users debugging 'why is my edit not picked up?' have no signal.",
+      "fix_idea": "Add stderr lines: 'Watching: .fabric/agents.meta.json, .fabric/bootstrap/README.md' and 'Cache TTL: 5s'. Also note that .fabric/rules/ is NOT watched (current bug per rule_change_review pain points). Cost: ~10 LOC."
+    },
+    {
+      "area": "errors",
+      "severity": "medium",
+      "example": "packages/cli/src/commands/serve.ts:65-71 catches EADDRINUSE and re-throws a translated message suggesting 'try port + 1'. But other startHttpServer errors (e.g., chokidar watcher failure, AUTH_TOKEN required) are NOT caught and surface as raw stack traces. Domain.json already flagged signal-handler absence (R3); add to that the other startup error paths.",
+      "fix_idea": "Wrap startHttpServer in a try/catch that maps known error.code values to translated user-friendly messages (EACCES → 'permission denied for port <port>', ENOTFOUND → 'host unreachable'). Cost: ~30 LOC. Defer to v1.8.0 alongside R3."
+    }
+  ],
+
+  "stabilization_recommendations": [
+    {
+      "id": "R14",
+      "title": "Reclassify content_ref_missing as fixable_error and route through writeRuleMeta",
+      "scope": "1.8.0",
+      "effort_loc": 12,
+      "priority": "P1",
+      "rationale": "Currently doctor reports content_ref_missing as manual_error even though doctor --fix's existing writeRuleMeta path would auto-recover (the missing-file's node would be dropped from the regenerated meta). Mislabel forces users to do manual work the system already automates. Pure issue-classification change in createRuleContentRefCheck (doctor.ts:574-581) plus add 'content_ref_missing' to the fix-routing condition at doctor.ts:271.",
+      "evidence_refs": [
+        "packages/server/src/services/doctor.ts:574-581 (current manual_error classification)",
+        "packages/server/src/services/doctor.ts:270-282 (fix routing — would already work for content_ref_missing if added)",
+        "packages/server/src/services/rule-meta-builder.ts:128-153 (regen drops missing-file nodes)"
+      ]
+    },
+    {
+      "id": "R15",
+      "title": "Add doctor warning rules_dir_unindexed for manually-added rules",
+      "scope": "1.8.0",
+      "effort_loc": 35,
+      "priority": "P1",
+      "rationale": "Manual additions to .fabric/rules/ are silently invisible to fab_plan_context until doctor --fix runs. This is the #1 surprise for users who treat .fabric/rules/ like a normal directory. New doctor warning surfaces unindexed .md files; doctor --fix already regenerates correctly. Surface it.",
+      "evidence_refs": [
+        "packages/server/src/services/doctor.ts:540-557 createMetaCheck (extension point)",
+        "packages/server/src/services/rule-meta-builder.ts:277-306 findFabricRuleFiles (already enumerates .md files)",
+        "packages/server/src/services/plan-context.ts:218 (only iterates meta.nodes)",
+        "packages/server/src/services/get-rules.ts:157 (same — meta-only)"
+      ]
+    },
+    {
+      "id": "R16",
+      "title": "Add doctor manual_error stable_id_collision for duplicate fab:rule-id declarations",
+      "scope": "1.8.0",
+      "effort_loc": 25,
+      "priority": "P1",
+      "rationale": "Two rules with the same stable_id silently overwrite via Map.set last-wins (rule-meta-builder.ts:372-382). Downstream rule-test linkage is non-deterministic. Inspect duplicates inside inspectMeta (doctor.ts:322) using meta.nodes; fail with a manual_error code. Block doctor --fix until resolved (manual_errors take priority).",
+      "evidence_refs": [
+        "packages/server/src/services/rule-meta-builder.ts:372-382 indexRulesByStableId (collision site)",
+        "packages/server/src/services/doctor.ts:540-557 createMetaCheck (insertion point)"
+      ]
+    },
+    {
+      "id": "R17",
+      "title": "--reapply preserves events.jsonl AND skips agents.meta.json regen if rules exist",
+      "scope": "1.8.0",
+      "effort_loc": 30,
+      "priority": "P0",
+      "rationale": "Two destructive surprises in --reapply that contradict the user's intent ('refresh, don't reset'). Fix in executeInitFabricPlan at init.ts:572-580: (a) if eventsPath exists, skip the rewrite (or rotate to events.jsonl.bak with one ledger entry 'init_reapplied'); (b) if .fabric/rules/ contains .md files, skip the agents.meta.json overwrite — leave it for the user to run doctor --fix. Both behaviors are conservative and recoverable.",
+      "evidence_refs": [
+        "packages/cli/src/commands/init.ts:572-573 (agents.meta.json overwrite)",
+        "packages/cli/src/commands/init.ts:579-580 (events.jsonl truncation to empty)",
+        "packages/cli/src/commands/init.ts:1256-1271 createInitialMeta (the L0-stub being written)"
+      ]
+    },
+    {
+      "id": "R18",
+      "title": "i18n the 3 hardcoded section headers in CLI doctor wrapper",
+      "scope": "1.7.1",
+      "effort_loc": 10,
+      "priority": "P0",
+      "rationale": "doctor.ts:72-74 hardcodes 'Fixable errors:', 'Manual errors:', 'Warnings:' — every other CLI command uses t(). zh-CN users see jarring mixed output. Quick fix in 1.7.1 (deprecation release) restores i18n surface uniformity.",
+      "evidence_refs": [
+        "packages/cli/src/commands/doctor.ts:72-74 hardcoded English",
+        "packages/shared/src/i18n/locales/en.ts (extension point — add cli.doctor.section.* keys)",
+        "packages/shared/src/i18n/locales/zh-CN.ts (mirror)"
+      ]
+    },
+    {
+      "id": "R19",
+      "title": "Append actionable hints to all 9 doctor check messages",
+      "scope": "1.8.0",
+      "effort_loc": 45,
+      "priority": "P1",
+      "rationale": "Every issueCheck() callsite emits a problem statement with no fix hint. First-time users hit init_context_missing or taxonomy_missing and get no clue what to do. Pattern: append '. Recommended: <command-or-skill-name>.' to every message. Pair with R-26 (server-side i18n) so Chinese users get equivalent hints.",
+      "evidence_refs": [
+        "packages/server/src/services/doctor.ts:498-624 (all 9 createXxxCheck functions)"
+      ]
+    },
+    {
+      "id": "R20",
+      "title": "Bring codex-skills/fabric-init/SKILL.md to feature parity with claude-skills/agents-md-init/SKILL.md",
+      "scope": "1.8.0",
+      "effort_loc": 80,
+      "priority": "P1",
+      "rationale": "The Codex SKILL is dramatically thinner than the Claude SKILL — does not prescribe writing init-context.json, generating rules, or updating agents.meta.json. Codex users get a different (worse) handoff. Since 1.7.0 narrows scope to {Claude, Codex, Cursor}, parity is a brand-quality must-have. Replicate the 3-phase workflow in Codex's SKILL markdown.",
+      "evidence_refs": [
+        "packages/cli/templates/claude-skills/agents-md-init/SKILL.md (~150 lines, 3-phase workflow)",
+        "packages/cli/templates/codex-skills/fabric-init/SKILL.md (~25 lines, summary-only)",
+        "templates/claude-skills/agents-md-init/SKILL.md (root copy, same content)",
+        "templates/codex-skills/fabric-init/SKILL.md (root copy)"
+      ]
+    },
+    {
+      "id": "R21",
+      "title": "Doctor warning rule_test_orphans_present when orphan_annotations.length > 0",
+      "scope": "1.8.0",
+      "effort_loc": 18,
+      "priority": "P2",
+      "rationale": "@fabric-verify annotations whose stable_id no longer exists become orphan_annotations silently. Today they accumulate in rule-test.index.json with no doctor surface. Surfacing them as a warning gives users a signal that a rename / deletion broke a test linkage. Pure additive doctor check.",
+      "evidence_refs": [
+        "packages/server/src/services/rule-meta-builder.ts:174-183 (orphan_annotations construction)",
+        "packages/server/src/services/doctor.ts:600-611 createRuleTestIndexCheck (extension point)"
+      ]
+    },
+    {
+      "id": "R22",
+      "title": "Doctor warning rule_declared_id_invalid when extractDeclaredStableId rejects a comment",
+      "scope": "1.8.0",
+      "effort_loc": 20,
+      "priority": "P2",
+      "rationale": "If a user writes `<!-- fab:rule-id 1bad -->`, the regex rejects it silently and falls back to derived. User believes their declared id was honored. Surface the rejection.",
+      "evidence_refs": [
+        "packages/server/src/services/rule-meta-builder.ts:708-712 extractDeclaredStableId (rejection site, currently silent)"
+      ]
+    },
+    {
+      "id": "R23",
+      "title": "Watch .fabric/rules/**/*.md in fab serve cacheWatcher",
+      "scope": "1.8.0",
+      "effort_loc": 15,
+      "priority": "P1",
+      "rationale": "Currently chokidar at http.ts:167 watches only agents.meta.json + bootstrap README. Editing a rule file with serve running doesn't invalidate the cache. Extend the watch glob; on change, contextCache.invalidate('file_watch'). Note: this does NOT auto-rebuild meta — that requires doctor --fix. But it does ensure the next plan-context call re-hashes from disk.",
+      "evidence_refs": [
+        "packages/server/src/http.ts:167-177 cacheWatcher (extension point)",
+        "packages/server/src/services/doctor.ts:281 contextCache.invalidate('meta_write') (existing pattern to mirror)"
+      ]
+    },
+    {
+      "id": "R24",
+      "title": "init-context-missing message points users at the agents-md-init / fabric-init skill",
+      "scope": "1.7.1",
+      "effort_loc": 8,
+      "priority": "P0",
+      "rationale": "Every fresh fab-init produces init_context_missing as a manual_error with message '.fabric/init-context.json is missing.' This is the #1 confusing post-init error because doctor --fix doesn't resolve it (only an AI skill can). Append to the message: 'Run the agents-md-init skill in Claude Code (or fabric-init in Codex) to generate it.' Tiny i18n change.",
+      "evidence_refs": [
+        "packages/server/src/services/doctor.ts:530-538 createInitContextCheck (current message)"
+      ]
+    },
+    {
+      "id": "R25",
+      "title": "init scaffold detects pre-existing CLAUDE.md / AGENTS.md / .cursorrules and warns",
+      "scope": "1.8.0",
+      "effort_loc": 30,
+      "priority": "P2",
+      "rationale": "Migrating users with prior tooling end up with two parallel system-prompt sources (their root file + Fabric's MCP-served bootstrap). init silently ignores. Add a stderr warning during stage 1 listing detected files with text 'These pre-existing files are still consumed by your AI client; consider migrating their content to .fabric/rules/.' Pure additive — no behavior change.",
+      "evidence_refs": [
+        "packages/cli/src/commands/init.ts:485-559 buildInitFabricPlan (extension point)"
+      ]
+    },
+    {
+      "id": "R26",
+      "title": "Lift doctor messages to i18n catalog (full server-side i18n)",
+      "scope": "defer",
+      "effort_loc": 80,
+      "priority": "P2",
+      "rationale": "doctor.ts emits English-only because @fenglimg/fabric-server doesn't import @fenglimg/fabric-shared/i18n. Pair with R19 (action hints) to ship full doctor i18n. Defer past v1.8.0 — the fix has architectural implications (translation locale must be threaded through runDoctorReport options) and isn't pure stability.",
+      "evidence_refs": [
+        "packages/server/src/services/doctor.ts (no i18n usage)",
+        "packages/cli/src/commands/doctor.ts (CLI is the i18n boundary today)"
+      ]
+    },
+    {
+      "id": "R27",
+      "title": "--reapply wizard step warns about destructive operations",
+      "scope": "1.8.0",
+      "effort_loc": 22,
+      "priority": "P1",
+      "rationale": "Even after R17 makes --reapply less destructive, the wizard should explicitly call out which files will be touched. Adds a wizard step gated on options.reapply that lists the files and requires explicit confirmation (default=false, the only false-default in the wizard).",
+      "evidence_refs": [
+        "packages/cli/src/commands/init.ts:1010-1119 createDefaultInitWizardAdapter (insertion point)"
+      ]
+    }
+  ],
+
+  "questions_for_user": [
+    "R17 / --reapply semantics: option (a) preserve events.jsonl + don't touch agents.meta.json when rules/ has files; option (b) rotate events.jsonl to events.jsonl.bak and append a 'init_reapplied' ledger entry; option (c) status quo + bigger wizard warning. Recommendation: (a) — minimum surprise. Confirm direction before coding.",
+    "R20 (Codex skill parity): replicate the Claude SKILL.md content verbatim (translated UX-language to match Codex conventions), or take the opportunity to redesign both into a shared template with per-client overlays? Recommendation: verbatim parity now, redesign in a future cycle.",
+    "Cursor handoff gap (no skill, no hook in init scaffold): is this in-scope for v1.8.0? It's not strictly stability; it's first-class-citizen completeness for the kept-3 client set. Recommendation: defer to v1.9 unless we're treating Cursor parity as a brand quality must-have.",
+    "R26 (server-side i18n in doctor): the rough design is to thread `locale: 'en' | 'zh-CN'` through runDoctorReport options OR have the CLI re-translate keyed messages after reading the report. Which approach?",
+    "Should we add an explicit 'fab init --status' / 'fab status' command to surface the init-context-missing/handoff-incomplete state without running the full doctor sweep? This is a UX nicety not in stabilization scope, but the data exists in createInitContextCheck.",
+    "Doctor warning vs error semantics: R15 (rules_dir_unindexed) and R21 (rule_test_orphans_present) — should these be warnings (don't fail strict mode) or fixable_errors? Recommendation: warnings — they don't block correct operation, only surface drift signals."
+  ],
+
+  "_metadata": {
+    "perspective_focus": "interaction layer, init pipeline, rule-change review",
+    "scan_strategy": "Read prior 4 explorations + discussion timeline; targeted reads of rule-meta-builder.ts (797 lines, full), doctor.ts (relevant sections L1-625, L665-820), init.ts (key seams: cmd def, runInitCommand, buildInitFabricPlan, executeInitFabricPlan, executeInitStagePlan, wizard, taxonomy generators, --reapply path), serve.ts (full), scan.ts (full), bootstrap-guide.ts (full), http.ts (chokidar watcher block). Searched for init-context.json writers (none in cli, all in skill templates and external hooks). Confirmed Claude vs Codex skill parity gap by reading both SKILL.md files. Verified plan-context and get-rules iterate meta.nodes only.",
+    "files_read_fully": 8,
+    "files_read_partially": 5,
+    "discovery_sources": ["bash-scan", "manual"],
+    "key_implicit_dependencies": [
+      "init-context.json: read by doctor (mandatory check), read by 3 hooks (Stop blockers), written by AI skills (Claude rich, Codex thin) — never written by CLI",
+      "agents.meta.json.nodes: drives fab_plan_context, get-rules iteration, doctor content_ref check — but rule files in .fabric/rules/ are only indexed via doctor --fix, not auto-discovered",
+      "stable_id (declared via fab:rule-id): consumed by @fabric-verify test annotations; collision/invalid silently degrade to derived stable_id; not watched/validated proactively",
+      "Stop hooks block AI completion until init-context.json exists — but the hook does not validate WHO writes the file or that it has the right schema, just existence"
+    ]
+  }
+}

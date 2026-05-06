@@ -1,0 +1,77 @@
+{
+  "session_id": "ANL-2026-05-06-stabilize-three-clients",
+  "topic": "在不加入新功能的基础上完善和稳定 Fabric v1.7.0，并将 AI 客户端范围收敛到 Claude / Codex / Cursor",
+  "depth": "standard",
+  "dimensions": [
+    "implementation",
+    "performance",
+    "architecture",
+    "interaction"
+  ],
+  "perspectives": [
+    "Technical",
+    "Architectural",
+    "Domain Expert",
+    "Business"
+  ],
+  "focus_areas": [
+    "客户端范围收敛",
+    "代码质量与一致性",
+    "稳定性与回归防护",
+    "运行时健壮性"
+  ],
+  "current_round": 4,
+  "current_phase": "phase-4",
+  "confidence": {
+    "dimensions": {
+      "architecture": 0.901,
+      "implementation": 0.918,
+      "performance": 0.921,
+      "interaction": 0.875
+    },
+    "overall": 0.904,
+    "weakest": "interaction",
+    "history": [
+      {
+        "round": 1,
+        "overall": 0.724
+      },
+      {
+        "round": 2,
+        "overall": 0.862
+      },
+      {
+        "round": 3,
+        "overall": 0.896
+      },
+      {
+        "round": 4,
+        "overall": 0.904
+      }
+    ]
+  },
+  "quality": {
+    "pressure_pass_done": true,
+    "challenge_modes_used": [
+      "devils_advocate",
+      "cross_verification_gemini"
+    ],
+    "stall_counter": 0,
+    "last_findings_count": 25,
+    "readiness_gate_passed": true,
+    "residual_risks": [],
+    "parked_topics": [
+      {
+        "id": "R28-rule-change-observability",
+        "round": 5,
+        "reason": "6 cross-cutting open questions; needs dedicated session",
+        "interacts_with": [
+          "R2",
+          "R4",
+          "R23",
+          "F23"
+        ]
+      }
+    ]
+  }
+}

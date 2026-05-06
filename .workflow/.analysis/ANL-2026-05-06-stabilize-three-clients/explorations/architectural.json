@@ -1,0 +1,416 @@
+{
+  "perspective": "Architectural",
+  "relevant_files": [
+    "packages/cli/src/config/json.ts",
+    "packages/cli/src/config/resolver.ts",
+    "packages/cli/src/config/writer.ts",
+    "packages/cli/src/config/toml.ts",
+    "packages/cli/src/config/claude-code.ts",
+    "packages/cli/src/commands/bootstrap.ts",
+    "packages/cli/src/commands/config.ts",
+    "packages/cli/src/commands/doctor.ts",
+    "packages/cli/src/bootstrap-guide.ts",
+    "packages/server/src/index.ts",
+    "packages/server/src/tools/plan-context.ts",
+    "packages/server/src/tools/rule-sections.ts",
+    "packages/server/src/tools/get-rules.ts",
+    "packages/server/src/services/_shared.ts",
+    "packages/server/src/services/event-ledger.ts",
+    "packages/server/src/services/audit-log.ts",
+    "packages/server/src/services/doctor.ts",
+    "packages/server/src/services/rule-meta-builder.ts",
+    "packages/server/src/api/_error.ts",
+    "packages/shared/src/index.ts",
+    "packages/shared/src/types/config.ts",
+    "packages/shared/src/types/index.ts",
+    "packages/shared/src/schemas/fabric-config.ts",
+    "packages/dashboard/src/api/client.ts",
+    "schemas/fabric-config.json"
+  ],
+  "key_findings": [
+    {
+      "finding": "Dispatch is per-client subclass, not per-format. JsonClientConfigWriter is an abstract base; 5 concrete subclasses (ClaudeCodeCLIWriter, CursorWriter, WindsurfWriter, RooCodeWriter, GeminiCLIWriter) differ ONLY in clientKind literal + defaultPath() body. CodexTOMLConfigWriter is its own class because the file format is TOML.",
+      "evidence_refs": [
+        "packages/cli/src/config/json.ts:62-90",
+        "packages/cli/src/config/json.ts:92-164",
+        "packages/cli/src/config/toml.ts:87-117"
+      ],
+      "architectural_concern": "The current abstraction is correctly format-aligned at the BASE class level — JsonClientConfigWriter already handles all JSON clients identically. The ONLY per-client differences are (a) the clientKind label and (b) the heuristic for finding the config file. This means the research recommendation 'split emitters by FORMAT not CLIENT' is ALREADY effectively implemented at the base-class level; the subclasses are now thin metadata containers, not behaviorally distinct writers."
+    },
+    {
+      "finding": "Detect-then-construct logic is duplicated between resolveClients() and detectClientSupports(). Each client appears twice: once as an addIfDetected() block (resolver.ts:49-96) and once as a row in the DetectedClientSupport array (resolver.ts:101-214). The detection predicates are duplicated character-for-character.",
+      "evidence_refs": [
+        "packages/cli/src/config/resolver.ts:49-96",
+        "packages/cli/src/config/resolver.ts:101-214"
+      ],
+      "architectural_concern": "Two parallel client tables that must stay in sync. Removing 3 clients requires synchronized edits in both blocks; adding any future client requires updating 2 places. After narrowing to 3 clients the duplication remains but is less painful (4 entries × 2 = 8 edit sites). A single ClientDescriptor[] table-driven design would unify both."
+    },
+    {
+      "finding": "Two near-identical CLIENT_ALIASES maps with DIFFERENT value spaces. bootstrap.ts:42-61 maps to BootstrapClient ('claude'|'cursor'|...) ; config.ts:14-33 maps to ClientKind ('ClaudeCodeCLI'|...). Same surface aliases, different downstream targets, no shared source of truth.",
+      "evidence_refs": [
+        "packages/cli/src/commands/bootstrap.ts:42-61",
+        "packages/cli/src/commands/config.ts:14-33"
+      ],
+      "architectural_concern": "BootstrapClient is an extra indirection layer that exists ONLY in bootstrap.ts to support the mapClientKind/mapBootstrapClientToClientKind round-trip (bootstrap.ts:181-216). Since installBootstrap() ultimately operates on ClientKind, the BootstrapClient union appears to be vestigial. Deleting it (and merging both alias maps into a single shared alias→ClientKind table in shared/) would remove ~30 lines AND eliminate a class of drift bugs."
+    },
+    {
+      "finding": "MCP server tools have NO shared schema with downstream consumers. plan-context.ts and rule-sections.ts each define inputSchema and outputSchema inline as Zod schemas; the resulting types (PlanContextInput, GetRuleSectionsInput) come from the SERVICE layer, not from Zod inference. Dashboard re-defines DoctorReport/RulesContextPayload as TypeScript interfaces independently of the server's Zod schemas.",
+      "evidence_refs": [
+        "packages/server/src/tools/plan-context.ts:7-102",
+        "packages/server/src/tools/rule-sections.ts:11-51",
+        "packages/server/src/tools/get-rules.ts:7-37",
+        "packages/dashboard/src/api/client.ts:51-80"
+      ],
+      "architectural_concern": "Schema drift surface. The MCP tool's declared output schema and the service implementation's actual return shape are NOT type-linked — if planContext() drops a field, the Zod outputSchema is the only validator catching it (and only at MCP call time). Dashboard is even more decoupled: it re-declares DoctorReport-shaped types from scratch (dashboard/src/api/client.ts:66-80 mirrors server/src/services/doctor.ts:62-69). Per research, schema mismatches are the #1 MCP failure category (38%). Recommended: derive TS types via z.infer<> AND export Zod schemas from packages/shared/src/schemas/api-contracts.ts (that file already exists) so server, MCP tools, and dashboard reference one source."
+    },
+    {
+      "finding": "Mixed write semantics with NO file locking. atomicWriteText (services/_shared.ts:12-17) is a tmp-file + rename(2) atomic snapshot, used only by rule-meta-builder.ts. Append-only writes (events.jsonl via event-ledger.ts:35; audit indirectly via appendEventLedgerEvent) use raw appendFile with no fsync, no flock, no rotation. Init scaffold (cli/src/commands/init.ts:570-583) uses synchronous writeFileSync without atomicity.",
+      "evidence_refs": [
+        "packages/server/src/services/_shared.ts:12-17",
+        "packages/server/src/services/event-ledger.ts:21-38",
+        "packages/server/src/services/rule-meta-builder.ts:93-94",
+        "packages/cli/src/commands/init.ts:570-583",
+        "packages/cli/src/commands/init.ts:1414,1558"
+      ],
+      "architectural_concern": "Three durability tiers coexist with no documented contract: (1) atomic snapshot files (agents.meta.json, rule-test.index.json), (2) append-only ledgers (events.jsonl), (3) scaffold writes (everything in init). No single 'state writer service' arbitrates concurrent fabric serve + fabric doctor --fix on the same .fabric/. Per research fsyncgate findings, an unsynced append on partial write is unrecoverable; doctor's parseable check (services/doctor.ts:418-434) detects but does not auto-recover."
+    },
+    {
+      "finding": "Doctor checks are organized as 9 hand-written create*Check functions invoked sequentially in runDoctorReport(). NOT a registry pattern; adding a new check requires editing runDoctorReport() (doctor.ts:212-222), inspectXxx Promise.all (doctor.ts:195-209), AND the createXxxCheck(). Fix actions are hard-coded if-then chains in runDoctorFix() (doctor.ts:260-282), keyed by string code.",
+      "evidence_refs": [
+        "packages/server/src/services/doctor.ts:195-222",
+        "packages/server/src/services/doctor.ts:255-294",
+        "packages/server/src/services/doctor.ts:496-624",
+        "packages/server/src/services/doctor.ts:665-675"
+      ],
+      "architectural_concern": "Adding a new check (e.g., 'events.jsonl tail-corruption truncation' or 'deprecated clientPaths key migration' from research) costs 3 separate edit sites. A DoctorCheckDescriptor[] table — { name, inspect, render, fixCode?, fix? } — would make checks first-class pluggable units. Current pattern is medium-extensibility: adding logic is ~30-line work-in-three-places, not 5-line."
+    },
+    {
+      "finding": "Dispatch loops over Client[] are concentrated in 2 files; everywhere else uses ClientKind only as a discriminator. resolveClients() builds writers via a 7-call addIfDetected sequence (NOT a Client[].map); detectClientSupports() returns a hard-coded array of 7 rows. Outside config/, every consumer just receives ClientKind values flowing through.",
+      "evidence_refs": [
+        "packages/cli/src/config/resolver.ts:49-96",
+        "packages/cli/src/config/resolver.ts:114-215",
+        "packages/cli/src/commands/bootstrap.ts:181-216",
+        "packages/cli/src/commands/config.ts:14-33"
+      ],
+      "architectural_concern": "Blast radius for narrowing 6→3 is small AND well-scoped. The ClientKind union (writer.ts:1-8) is the typed source of truth — TS will surface every consumer the moment 3 literals are removed. There is no for-loop over ALL_CLIENTS that would silently lose 3 iterations; every dispatch site is a hand-written block that the compiler will flag."
+    },
+    {
+      "finding": "ClaudeCodeCLI detection pattern leaks: defaultPath returns null only if BOTH ~/.claude AND ./.claude are absent, but it always writes to project-level ./.claude/settings.json. The ~/.claude check is just an installation heuristic.",
+      "evidence_refs": [
+        "packages/cli/src/config/json.ts:101-109",
+        "packages/cli/src/config/resolver.ts:51"
+      ],
+      "architectural_concern": "Coupling between detection and write target is implicit. After narrowing scope, the heuristic-vs-target separation should be made explicit in a ClientDescriptor (detectionEvidence vs writeTarget fields). Same shape applies to GeminiCLI today (json.ts:158-163) — but that writer is being deleted."
+    },
+    {
+      "finding": "HTTP error normalizer uses brittle string-prefix matching for 3 message classes. _error.ts:93-115 maps 'Path escapes project root:' → 403, 'Cannot find human lock entry:' → 404, 'Cannot find ledger entry:' → 404. Source of these messages is _shared.ts:51 (one location) and the rest live in service files that throw raw Error instances with hardcoded prefixes.",
+      "evidence_refs": [
+        "packages/server/src/api/_error.ts:93-115",
+        "packages/server/src/services/_shared.ts:51"
+      ],
+      "architectural_concern": "Any reword of these 3 message prefixes silently degrades correct HTTP status to 500. No tests pin the prefix contract. Recommended: typed error classes (PathOutsideProjectRootError, HumanLockEntryNotFoundError, LedgerEntryNotFoundError) in _shared.ts; _error.ts uses instanceof. Quick fix even within stabilization scope: ~80 lines net."
+    },
+    {
+      "finding": "Server signal handling and graceful shutdown are ABSENT in startStdioServer(). server.connect(transport) returns and the function exits; no SIGINT/SIGTERM/SIGHUP handlers; transport close + deadline exit not implemented. HTTP server has only a 'close' listener that calls app.dispose().",
+      "evidence_refs": [
+        "packages/server/src/index.ts:92-97",
+        "packages/server/src/index.ts:99-125"
+      ],
+      "architectural_concern": "Per research, Claude Code session lifecycle leaks server processes (issue #15945, 70+ zombies observed). Stdio server in particular has no exit deadline. This is a stability gap for the kept-clients (Claude Code being the leakiest). Cost: ~40 lines in index.ts; high stability ROI."
+    },
+    {
+      "finding": "MCP bootstrap README resource handler at index.ts:74-86 throws raw fs.readFile errors back to MCP transport when .fabric/bootstrap/README.md is missing. No mapping to MCP error codes; clients see a stack trace instead of a clean 'resource_unavailable' response.",
+      "evidence_refs": [
+        "packages/server/src/index.ts:74-86"
+      ],
+      "architectural_concern": "Resource error envelope is non-conformant with MCP spec patterns. Symmetric to the HTTP _error.ts brittleness but at the MCP transport boundary. Fix: catch ENOENT, return content array with a markdown placeholder OR throw a typed McpError. Same fix interacts with research's 'declare readOnlyHint' recommendation."
+    },
+    {
+      "finding": "Shared package is import-only — no circular dependencies. cli depends on shared; server depends on shared; dashboard depends on shared; cli depends on server (for runDoctorReport, startHttpServer). Server does NOT depend on cli; dashboard does NOT depend on server (re-defines API types). No package imports another package's internal src/* path.",
+      "evidence_refs": [
+        "packages/cli/package.json",
+        "packages/server/package.json",
+        "packages/dashboard/package.json",
+        "packages/shared/package.json",
+        "packages/cli/src/commands/doctor.ts:3",
+        "packages/cli/src/commands/serve.ts:3"
+      ],
+      "architectural_concern": "Dependency DAG is clean (shared ← {cli,server,dashboard}; cli ← server). The asymmetry is dashboard NOT importing server types — instead the dashboard re-declares DoctorReport, RulesContextPayload etc. (dashboard/src/api/client.ts). This is intentional decoupling (dashboard is bundled separately and shipped via static path) but creates a 4th type-drift surface (server schema → server types → JSON over HTTP → dashboard re-typed copy). Should be lifted to packages/shared/src/schemas/api-contracts.ts."
+    },
+    {
+      "finding": "Shared package has 13 root-level export modules including 11 schema files. No subpath isolation between API contracts, file schemas (forensic/agents-meta), and i18n. Everything is flattened through src/index.ts barrel.",
+      "evidence_refs": [
+        "packages/shared/src/index.ts:1-12",
+        "packages/shared/src/schemas/",
+        "packages/shared/src/types/index.ts:1-3"
+      ],
+      "architectural_concern": "Medium dumping-ground risk. Subpath exports exist (./i18n, ./types, ./node) but ./schemas does NOT have a dedicated subpath — schemas are mingled into root export. As scope shrinks (3 clients) some schemas (e.g., parts of fabric-config) will become smaller; but unrelated schemas (event-ledger, ledger-entry, human-lock, audit) will continue to grow. Adding api-contracts.ts is the natural home for the MCP↔CLI shared schema lift. No urgent split needed for v1.7.0."
+    }
+  ],
+  "code_anchors": [
+    {
+      "file": "packages/cli/src/config/json.ts",
+      "lines": "62-90",
+      "snippet": "abstract class JsonClientConfigWriter implements ClientConfigWriter {\n  abstract readonly clientKind: ClientKind;\n  protected abstract defaultPath(workspaceRoot: string): string | null;\n  async detect(...) { ... }\n  async write(serverPath, workspaceRoot, overridePath?) {\n    const configPath = await this.detect(workspaceRoot, overridePath);\n    if (configPath === null) return;\n    await writeJsonClientConfig(configPath, createServerEntry(serverPath));\n  }\n}",
+      "significance": "The format-based abstraction ALREADY EXISTS. write() is identical for all 5 JSON clients. Subclasses contribute only the clientKind literal and defaultPath() heuristic. After 6→3 narrowing this base class will have only 2 subclasses (ClaudeCodeCLI, Cursor) plus the separate ClaudeCodeDesktop writer."
+    },
+    {
+      "file": "packages/cli/src/config/resolver.ts",
+      "lines": "49-96",
+      "snippet": "addIfDetected(writers, existsSync(...), (p) => new ClaudeCodeCLIWriter(p), ...);\naddIfDetected(writers, existsSync(getClaudeDesktopConfigPath()), (p) => new ClaudeCodeDesktopWriter(p), ...);\naddIfDetected(writers, existsSync(join(workspaceRoot, \".cursor\")), (p) => new CursorWriter(p), ...);\naddIfDetected(writers, existsSync(join(workspaceRoot, \".windsurf\")), (p) => new WindsurfWriter(p), ...);\n// ...3 more...\naddIfDetected(writers, existsSync(join(homedir(), \".codex\")), (p) => new CodexTOMLConfigWriter(p), ...);",
+      "significance": "Hand-written 7-call sequence. Detection predicate appears verbatim again at L106-112 inside detectClientSupports. Removing 3 clients = 3 deletions in EACH of 2 places."
+    },
+    {
+      "file": "packages/cli/src/config/writer.ts",
+      "lines": "1-8",
+      "snippet": "export type ClientKind =\n  | \"ClaudeCodeCLI\"\n  | \"ClaudeCodeDesktop\"\n  | \"Cursor\"\n  | \"Windsurf\"\n  | \"RooCode\"\n  | \"GeminiCLI\"\n  | \"CodexCLI\";",
+      "significance": "Single source of truth for client identity. Removing 3 literals (Windsurf, RooCode, GeminiCLI) is the typed pivot — every consumer that switches on these literals will fail compilation. There is no implicit Client[] iteration; narrowing impact is bounded by the TS compiler."
+    },
+    {
+      "file": "packages/server/src/services/event-ledger.ts",
+      "lines": "21-38",
+      "snippet": "export async function appendEventLedgerEvent(projectRoot, event) {\n  const eventPath = getEventLedgerPath(projectRoot);\n  const nextEvent = eventLedgerEventSchema.parse({...event, kind:\"fabric-event\", ...});\n  await ensureParentDirectory(eventPath);\n  await appendFile(eventPath, `${JSON.stringify(nextEvent)}\\n`, \"utf8\");\n  return nextEvent;\n}",
+      "significance": "The ONLY append site for events.jsonl. No fsync, no flock, no rotation. CLI doctor --fix and MCP server can both call this concurrently when sharing a project root. Per fsyncgate research, this is unrecoverable on partial-write."
+    },
+    {
+      "file": "packages/server/src/services/doctor.ts",
+      "lines": "212-222",
+      "snippet": "const checks: DoctorCheck[] = [\n  createBootstrapCheck(bootstrapExists),\n  createTaxonomyCheck(taxonomyExists),\n  createForensicCheck(forensic, framework.kind, entryPoints.length),\n  createInitContextCheck(initContext),\n  createMetaCheck(meta),\n  createRuleContentRefCheck(meta),\n  createRuleSectionsCheck(ruleSections),\n  createRuleTestIndexCheck(ruleTestIndex),\n  createEventLedgerCheck(eventLedger),\n];",
+      "significance": "Fixed-arity check list. Adding any new check (deprecated client migration, ledger tail truncation, MCP handshake conformance) requires editing this array AND the parallel inspectXxx Promise.all at L195-209 AND a new fix branch at L260-282."
+    },
+    {
+      "file": "packages/server/src/api/_error.ts",
+      "lines": "92-115",
+      "snippet": "if (error instanceof Error) {\n  if (error.message.startsWith(\"Path escapes project root:\")) { return { status: 403, ... } }\n  if (error.message.startsWith(\"Cannot find human lock entry:\")) { return { status: 404, ... } }\n  if (error.message.startsWith(\"Cannot find ledger entry:\")) { return { status: 404, ... } }\n  ...\n}",
+      "significance": "String-prefix to HTTP-status table. Untyped, untested, brittle. Reword guard MUST be a contract test before any v1.7.0 stabilization edit goes near service files."
+    },
+    {
+      "file": "packages/server/src/index.ts",
+      "lines": "67-97",
+      "snippet": "server.registerResource(\"bootstrap README\", AGENTS_MD_RESOURCE_URI, {...},\n  async (_uri) => {\n    const projectRoot = process.env.FABRIC_PROJECT_ROOT ?? process.cwd();\n    const content = await readFile(join(projectRoot, \".fabric\", \"bootstrap\", \"README.md\"), \"utf8\");\n    return { contents: [{ uri: AGENTS_MD_RESOURCE_URI, mimeType: \"text/markdown\", text: content }] };\n  });\n// ...\nexport async function startStdioServer(): Promise<void> {\n  const server = createFabricServer();\n  const transport = new StdioServerTransport();\n  await server.connect(transport);\n}",
+      "significance": "(1) Resource handler throws raw fs error if README missing — non-conformant MCP envelope. (2) startStdioServer has zero signal handling. Both connect to research's stability findings (zombie processes, MCP error contract drift)."
+    },
+    {
+      "file": "packages/dashboard/src/api/client.ts",
+      "lines": "51-80",
+      "snippet": "export type DoctorStatus = \"ok\" | \"warn\" | \"error\";\nexport type DoctorCheck = { name: string; status: DoctorStatus; message: string; };\nexport type DoctorReport = {\n  status: DoctorStatus;\n  checks: DoctorCheck[];\n  fixable_errors: DoctorIssue[];\n  manual_errors: DoctorIssue[];\n  warnings: DoctorIssue[];\n  summary: { ... }\n};",
+      "significance": "Dashboard re-declares DoctorReport from scratch instead of importing from server. Drift surface — server adds `kind` and `code` to DoctorCheck (server doctor.ts:25-32), dashboard's DoctorCheck is missing those fields entirely. Suggests api-contracts.ts in shared/ as the lift target."
+    }
+  ],
+  "call_chains": [
+    {
+      "entry": "fab config install",
+      "chain": [
+        "configCmd.subCommands.install.run (config.ts:127)",
+        "parseClientFilter (config.ts:61) — uses CLIENT_ALIASES_v2",
+        "installMcpClients (config.ts:161)",
+        "loadFabricConfig — reads fabric.config.json",
+        "resolveClients (resolver.ts:45) — addIfDetected ×7 → ClientConfigWriter[]",
+        "writer.detect → writer.write per writer",
+        "writeJsonClientConfig (json.ts:49) OR upsertCodexServerBlock (toml.ts:55)"
+      ],
+      "files": [
+        "packages/cli/src/commands/config.ts",
+        "packages/cli/src/config/resolver.ts",
+        "packages/cli/src/config/json.ts",
+        "packages/cli/src/config/toml.ts",
+        "packages/cli/src/config/claude-code.ts",
+        "packages/shared/src/types/config.ts"
+      ]
+    },
+    {
+      "entry": "fab bootstrap install",
+      "chain": [
+        "bootstrapCommand.subCommands.install.run (bootstrap.ts:80)",
+        "parseClientFilter (bootstrap.ts:139) — uses CLIENT_ALIASES_v1 → BootstrapClient",
+        "Array.from(...).map(mapBootstrapClientToClientKind) — round-trip BootstrapClient→ClientKind",
+        "installBootstrap (bootstrap.ts:114)",
+        "ensureFabricBootstrapGuide (bootstrap-guide.ts:34)",
+        "buildFabricBootstrapGuide → readFileSync(templates/agents-md/variants/{cocos|vite|next}.md)",
+        "resolveBootstrapTargets → resolveClients (resolver.ts:45) AGAIN — second resolve call on same workspace"
+      ],
+      "files": [
+        "packages/cli/src/commands/bootstrap.ts",
+        "packages/cli/src/bootstrap-guide.ts",
+        "packages/cli/src/config/resolver.ts"
+      ]
+    },
+    {
+      "entry": "fab doctor [--fix]",
+      "chain": [
+        "doctorCommand.run (cli/commands/doctor.ts:44)",
+        "runDoctorFix OR runDoctorReport from @fenglimg/fabric-server",
+        "runDoctorReport (server/services/doctor.ts:191)",
+        "Promise.all([inspectForensic, inspectInitContext, inspectMeta, inspectEventLedger, inspectRuleSections, inspectRuleTestIndex])",
+        "9 createXxxCheck calls assemble DoctorCheck[]",
+        "[fix path] writeDefaultBootstrap | ensureEventLedger | writeRuleMeta",
+        "atomicWriteText for snapshots; appendFile flag:'a' for events.jsonl"
+      ],
+      "files": [
+        "packages/cli/src/commands/doctor.ts",
+        "packages/server/src/services/doctor.ts",
+        "packages/server/src/services/rule-meta-builder.ts",
+        "packages/server/src/services/_shared.ts"
+      ]
+    },
+    {
+      "entry": "MCP fab_plan_context tool call",
+      "chain": [
+        "registerPlanContext handler (tools/plan-context.ts:113)",
+        "resolveProjectRoot (meta-reader.ts)",
+        "planContext (services/plan-context.ts) — service layer, types defined locally not from Zod inference",
+        "Result wrapped as { content: text+JSON, structuredContent } per MCP spec",
+        "outputSchema validates structuredContent at MCP boundary"
+      ],
+      "files": [
+        "packages/server/src/tools/plan-context.ts",
+        "packages/server/src/services/plan-context.ts"
+      ]
+    },
+    {
+      "entry": "fab serve (HTTP API)",
+      "chain": [
+        "startHttpServer (server/index.ts:99)",
+        "createFabricHttpApp (http.ts) — registers /api/* routes",
+        "Service handlers throw plain Error / typed errors",
+        "_error.ts:sendUnknownError → normalizeApiError",
+        "instanceof check → message-prefix check → fallback INTERNAL_ERROR"
+      ],
+      "files": [
+        "packages/server/src/index.ts",
+        "packages/server/src/api/_error.ts",
+        "packages/server/src/services/_shared.ts"
+      ]
+    }
+  ],
+  "client_adapter_assessment": {
+    "current_pattern": "JsonClientConfigWriter abstract base + 5 thin subclasses sharing identical write() logic, paired with a separate CodexTOMLConfigWriter (different format, different file shape — TOML serializer with [mcp_servers.<name>] block upsert) and ClaudeCodeDesktopWriter (different default path resolution per OS, but reuses writeJsonClientConfig). The base class is ALREADY format-aligned: every JSON-format client writer differs only in clientKind label + defaultPath() heuristic. Detection logic is duplicated outside the writer class, in resolver.ts (resolveClients addIfDetected sequence + detectClientSupports row table).",
+    "format_split_verdict": "Defer",
+    "rationale": "The research recommendation 'split emitters by FORMAT not by CLIENT' is essentially what the code already does: there is one JSON writer family and one TOML writer. After narrowing 6→3 the JSON family will have only 2 subclasses (ClaudeCodeCLI, Cursor) plus ClaudeCodeDesktop, and the TOML emitter (Codex). At that scale, collapsing 2 trivial subclasses into a single table-driven JsonClientConfigWriter saves perhaps 25 lines but introduces a small abstraction (ClientDescriptor interface, registry lookup) that a maintainer must understand. Net stability benefit is near zero — the subclasses are not where bugs live; bugs live in the duplicated detection logic in resolver.ts. Do the resolver consolidation (single ClientDescriptor[] table covering both resolveClients and detectClientSupports) but leave the JSON writer subclasses alone. Format-split is the RIGHT mental model; the code already encodes it; further refactor is churn.",
+    "files_changed_estimate": 4
+  },
+  "mcp_cli_contract": {
+    "shared_types": [
+      "@fenglimg/fabric-shared exports schemas (agents-meta, rule-test-index, ledger-entry, human-lock, fabric-config, forensic-report, init-context, events, event-ledger, api-contracts) consumed by both CLI and server",
+      "CLI imports runDoctorFix, runDoctorReport, DoctorReport, DoctorIssue, type DoctorFixReport from @fenglimg/fabric-server (cli/src/commands/doctor.ts:3)",
+      "CLI imports startHttpServer from @fenglimg/fabric-server (cli/src/commands/serve.ts:3)",
+      "Server services import schemas from @fenglimg/fabric-shared (eventLedgerEventSchema, agentsMetaSchema, forensicReportSchema, ruleTestIndexSchema)"
+    ],
+    "drift_risk_points": [
+      "MCP tool input/output Zod schemas (plan-context.ts:7-102, rule-sections.ts:11-51, get-rules.ts:7-37) are NOT z.infer-derived — Service input types (PlanContextInput, GetRuleSectionsInput, GetRulesInput) live in service files and could diverge from the tool's declared inputSchema",
+      "Service return types are NOT validated against outputSchema by TypeScript — only at MCP runtime via SDK",
+      "Dashboard re-declares DoctorReport, RulesContextPayload, ScanReport types in dashboard/src/api/client.ts:51-80+ instead of importing from @fenglimg/fabric-server. Server's DoctorCheck has kind/code/fixable fields (services/doctor.ts:25-32); dashboard's DoctorCheck (api/client.ts:53-57) lacks them",
+      "HTTP API responses go through JSON.stringify/parse boundary with NO declared schema asserting wire shape — _error.ts builds ApiErrorBody locally, no shared schema",
+      "Server resource handler index.ts:74-86 returns raw filesystem error to MCP transport — error envelope is non-conformant"
+    ],
+    "validation_strategy": "Three lifts, all small. (1) Lift the 3 MCP tool schemas into packages/shared/src/schemas/api-contracts.ts as exported Zod schemas; tools import + register; service input types use z.infer; dashboard imports inferred TS types. Eliminates 4 drift surfaces with one move. (2) Add a contract test in packages/server that snapshot-compares the SDK-emitted JSON Schema (from McpServer.tools.list response) against committed golden files — directly addresses research's 38% schema-mismatch finding. (3) Replace string-prefix matching in _error.ts with typed error classes (PathOutsideProjectRootError, HumanLockEntryNotFoundError, LedgerEntryNotFoundError) defined in services/_shared.ts; instanceof checks. Add a vitest covering all 3 prefixes."
+  },
+  "state_write_audit": [
+    {
+      "file": ".fabric/agents.meta.json",
+      "uses_atomic": true,
+      "race_risk": "Low. atomicWriteText (rule-meta-builder.ts:93) uses tmp + rename(2). Concurrent doctor --fix + serve writing same path: last-writer-wins, both observe consistent file. No flock means doctor could observe a stale meta during another writer's tmp-write window — but never a partial file.",
+      "recommendation": "Keep current atomicWriteText. Add tmp-name uniqueness check (current uses pid+ts+'.tmp' which is fine). No urgent change."
+    },
+    {
+      "file": ".fabric/rule-test.index.json",
+      "uses_atomic": true,
+      "race_risk": "Same as agents.meta.json — written via atomicWriteText (rule-meta-builder.ts:94) immediately after meta. Two atomic writes are not transactional together; if process dies between them, meta is fresh and index is stale. Doctor's stale-index check (services/doctor.ts:467-494) catches this and is fixable.",
+      "recommendation": "Keep. Doctor recovery path already exists."
+    },
+    {
+      "file": ".fabric/events.jsonl",
+      "uses_atomic": false,
+      "race_risk": "HIGH. Raw appendFile (event-ledger.ts:35) with no fsync, no flock, no rotation. Concurrent appenders (CLI doctor --fix + MCP server writing audit-derived events) on the SAME projectRoot can interleave bytes on filesystems that don't atomically guarantee O_APPEND for >PIPE_BUF writes. Per fsyncgate research, an fsync error on this file is unrecoverable. Doctor parseable check (services/doctor.ts:418-434) detects but does not auto-recover.",
+      "recommendation": "Three-step (cheap → expensive): (1) Add fsync after each append (open with 'a', write, fdatasync, close — ~10 lines change); (2) Tolerate trailing partial line on read (parseEventLedgerLine already returns null silently — make it surface as a doctor warning); (3) Add doctor --fix code 'event_ledger_partial_write' that truncates to last newline. Optional advanced: a single ledger-writer service that queues in-process appends (single-process serializer). Multi-process serialization needs flock or a lock file — research-level work, defer past v1.7.0."
+    },
+    {
+      "file": ".fabric/audit.jsonl",
+      "uses_atomic": false,
+      "race_risk": "Medium. Audit appends route through appendEventLedgerEvent (audit-log.ts:407,422,440), so they share the events.jsonl risk profile (audit.jsonl is NOT separately written; it appears to be a planned-but-currently-merged ledger — see audit-log.ts:8 declaring AUDIT_LOG_FILE but no direct write). Worth confirming during stabilization that AUDIT_LOG_FILE is either a true second ledger or dead code.",
+      "recommendation": "Confirm AUDIT_LOG_FILE intent. If dead (all writes go to events.jsonl via appendEventLedgerEvent), remove the constant and its reference. If live, mirror the events.jsonl recommendations."
+    },
+    {
+      "file": ".fabric/.intent-ledger.jsonl",
+      "uses_atomic": false,
+      "race_risk": "Medium. read-ledger.ts reads it; rehydrate-state.ts reads it; tests write to it directly via fs.writeFile. Production write path is unclear from server/services — needs verification during stabilization.",
+      "recommendation": "Audit writers; same fsync + tail-tolerance treatment as events.jsonl."
+    },
+    {
+      "file": ".fabric/bootstrap/README.md",
+      "uses_atomic": true,
+      "race_risk": "Low. doctor.ts writeDefaultBootstrap (665-669) uses atomicWriteText. Init phase writes via writeFileSync (cli/init.ts:570) — not atomic but only runs during scaffold (no concurrency).",
+      "recommendation": "Per research issue: writeDefaultBootstrap writes a 1-line stub instead of calling buildFabricBootstrapGuide. Doctor --fix should call buildFabricBootstrapGuide so the recovered file matches what init would have written."
+    },
+    {
+      "file": ".fabric/init-context.json",
+      "uses_atomic": false,
+      "race_risk": "Low. Written by init only (cli/init.ts:1558 via writeFileSync(tempPath) followed presumably by rename — needs full read of init.ts:1550-1570 to confirm). Doctor only reads it.",
+      "recommendation": "Confirm rename pairing; if absent, lift to atomicWriteText. Single concern."
+    },
+    {
+      "file": ".fabric/forensic.json",
+      "uses_atomic": false,
+      "race_risk": "Low. Init-only write (cli/init.ts:583). Same caveat as init-context.json.",
+      "recommendation": "Lift to atomic write during init refactor; not blocking."
+    }
+  ],
+  "doctor_extensibility": {
+    "current_pattern": "9 hand-coded check creators (createBootstrapCheck...createEventLedgerCheck), invoked sequentially in runDoctorReport's checks array (doctor.ts:212-222). Inspections are pre-fetched in a fixed-arity Promise.all (195-209). Fix actions are if-then chains keyed by string code in runDoctorFix (260-282). Each new check requires ≥3 edit sites (inspect + check creator + array entry; +1 if fixable). No registry, no plug-in surface.",
+    "extensibility_score": "medium",
+    "recommendation": "For v1.7.0 stabilization: do NOT refactor doctor into a registry pattern (high churn, low immediate ROI). DO add the 3 specific checks research recommends in their current style: (a) event_ledger_partial_write (fixable: truncate to last newline) — natural extension of existing parseable check; (b) bootstrap_stub_only (warn) — when README.md is exactly the 1-line stub from writeDefaultBootstrap, suggest re-running buildFabricBootstrapGuide; (c) deprecated_client_paths (fixable in next minor) — when fabric.config.json contains windsurf/rooCode/geminiCLI keys, warn now and offer --fix to strip in subsequent release. Cost: ~120 lines, no architectural change. AFTER v1.7.0 ships, consider lifting to a DoctorCheckDescriptor[] registry as a v1.8 cleanup — that becomes a 1-place edit for future checks."
+  },
+  "scope_narrowing_blast_radius": {
+    "simplifications_unlocked": [
+      "ClientKind union shrinks from 7 to 4 literals (writer.ts:1-8) — TS will surface every dispatch site, no runtime grep needed",
+      "JsonClientConfigWriter subclass count drops from 5 to 2 (delete WindsurfWriter, RooCodeWriter, GeminiCLIWriter from json.ts:125-164) — net -40 lines",
+      "resolver.ts addIfDetected sequence shrinks from 7 calls to 4; detectClientSupports table shrinks from 7 rows to 4. Both edits the same file (resolver.ts:49-96 + 101-214) — net -55 lines",
+      "BootstrapClient union (bootstrap.ts:12) shrinks from 6 to 3 literals; mapClientKind switch (181-199) drops 3 cases; mapBootstrapClientToClientKind switch (201-216) drops 3 cases — net -12 lines",
+      "CLIENT_ALIASES_v1 (bootstrap.ts:42-61) drops 7 alias entries; CLIENT_ALIASES_v2 (config.ts:14-33) drops 7 alias entries — net -14 lines, opens path to merging the two maps",
+      "ClientPaths interface (shared/types/config.ts:1-9) drops 3 fields; clientPathsSchema (shared/schemas/fabric-config.ts:5-13) drops 3 fields; schemas/fabric-config.json drops 3 properties — schema becomes 3-field smaller, public JSON Schema simpler",
+      "i18n strings simplify: en.ts/zh-CN.ts example client lists go from 6 to 3, translations stay aligned",
+      "Templates fan-out cleanup: 6 unreferenced template files deletable (3 in templates/bootstrap/, 3 in packages/cli/templates/bootstrap/) — net -250 lines of orphan markdown",
+      "Future MCP tool surface stays well under Cursor's 40-tool ceiling (research-confirmed pitfall) — currently 2 registered tools, no narrowing-related risk",
+      "After narrowing, the BootstrapClient indirection layer (bootstrap.ts:12 + map functions) becomes near-trivial — opens follow-up consolidation: delete BootstrapClient entirely, use ClientKind directly with a 3-entry switch for bootstrap-mode display labels"
+    ],
+    "false_positives": [
+      "packages/cli/__tests__/init-claude-install.test.ts:72 asserts !exists(GEMINI.md) — looks like a Gemini-specific assertion but is actually a NEGATIVE assertion (Fabric must NOT emit GEMINI.md). KEEP and strengthen its rationale per research's 'GEMINI.md must never be referenced' guidance",
+      "templates/agents-md/AGENTS.md.template + variants/{cocos,vite,next}.md — these are framework-keyed (cocos/vite/next), NOT client-keyed (claude/cursor/codex). The variant set must NOT be confused with bootstrap-templates. Verified at bootstrap-guide.ts:13-17 — template selection is by FrameworkInfo.kind, not ClientKind",
+      "packages/cli/templates/codex-skills/, codex-hooks/, claude-skills/, claude-hooks/ — all KEEP. These are kept-client-specific and serve the 3 surviving clients. Not deletion targets",
+      "packages/cli/src/config/claude-code.ts (ClaudeCodeDesktopWriter) — KEEP. Distinct from ClaudeCodeCLIWriter (Desktop has OS-specific config paths darwin/win32/linux). Often visually conflated with ClaudeCodeCLI",
+      "packages/server/src/services/_shared.ts EVENT_LEDGER_PATH and LEGACY_LEDGER_PATH — these are ledger-file constants, not client-related. Naming similarity ('legacy') could trigger a 'remove legacy' instinct",
+      "packages/cli/src/scanner/forensic.ts, detector.ts — framework-detection scanner, NOT client-detection. Wholly orthogonal to client-scope narrowing"
+    ],
+    "high_risk_areas": [
+      "fabric.config.json backward compatibility: existing user files may contain windsurf/rooCode/geminiCLI keys. Current schema is non-strict (passthrough), so removal will silently ignore — but a strict() addition in the same change would break users. Recommend: keep passthrough + add doctor warning 'deprecated_client_paths_present' in v1.7.0; flip to strict in v1.8",
+      "schemas/fabric-config.json is the PUBLIC artifact (referenced by users via $schema). Any drift between this JSON Schema and packages/shared/src/schemas/fabric-config.ts will silently mis-validate. Currently NO CI gate compares them. High risk — recommend adding a contract test that round-trips zod-to-json-schema and compares with committed copy",
+      "i18n snapshot: __snapshots__/i18n.test.ts.snap pins current strings. Trim requires snapshot regeneration; reviewer must verify no UNINTENTIONAL drift in unrelated strings",
+      "CHANGELOG.md history at L118, L186 mentions retired clients. Per research+research.json question, do NOT rewrite history; add new release entry calling out the scope reduction. False instinct says 'edit historical lines for consistency'",
+      "Resolver order matters in some downstream consumers. resolveClients returns writers in a specific sequence (Claude, ClaudeDesktop, Cursor, Windsurf, Roo, Gemini, Codex). If any consumer depends on iteration order (e.g., 'first detected client wins'), removal shifts the order. Quick scan of installMcpClients (config.ts:161) suggests no order-dependence — but worth a contract test",
+      "packages/cli/src/commands/init.ts (1897 lines) — confirmed via grep to have NO direct windsurf/roo/gemini references. But it routes through resolveClients() and DetectedClientSupport, so its TYPESCRIPT surface narrows automatically. Risk: edge cases in init's wizard flow that branch on client COUNT (not identity) could behave differently when fewer clients are detected"
+    ]
+  },
+  "shared_package_health": {
+    "export_count": 13,
+    "cyclic_deps": [],
+    "dumping_ground_score": "medium"
+  },
+  "questions_for_user": [
+    "MCP tool schema lift: do we proceed with lifting plan-context/rule-sections/get-rules input/output Zod schemas into packages/shared/src/schemas/api-contracts.ts in v1.7.0? It addresses the #1 MCP failure category (38% schema mismatch per research) AND removes the dashboard re-declaration drift surface. Cost ~3 files moved, ~100 lines net reorganization",
+    "Doctor extension scope for v1.7.0: which of the 3 proposed new checks (event_ledger_partial_write [fixable], bootstrap_stub_only [warn], deprecated_client_paths [warn now / fixable in v1.8]) are in-scope? My recommendation is all three because they fit the existing pattern with no refactor",
+    "Server signal handling: add SIGINT/SIGTERM/SIGHUP handlers to startStdioServer (~40 lines)? Research-confirmed pitfall (zombie processes, claude-code issue #15945). Highest stability ROI of any non-doctor change",
+    "Typed errors for HTTP _error.ts: replace 3 string-prefix matches with typed Error subclasses + instanceof? Cost ~80 lines, eliminates a brittle silent-degrade-to-500 risk. Recommended yes",
+    "BootstrapClient layer removal: after narrowing, the BootstrapClient union + 2 map functions become a 3-entry round-trip with no semantic value. Delete entirely and merge bootstrap.ts CLIENT_ALIASES into config.ts (single ClientKind alias map)? Cost ~50 line net reduction",
+    "ClientDescriptor table-drive of resolver.ts: replace 7 addIfDetected calls AND parallel detectClientSupports table with a single ClientDescriptor[] iterated twice. After narrowing it's 4 entries × 1 table = simpler than 4 entries × 2 sites. Recommended yes — but only AFTER scope narrowing lands, to avoid a 2-step refactor",
+    "atomically library adoption: research recommends switching to npm 'atomically' (queues writes to same path, faster). Currently we have hand-rolled atomicWriteText. Switching gains queueing semantics for free but adds a runtime dep on the published cli package. Worth it for v1.7.0 stability or defer?",
+    "Snapshot tests for emitted client configs: add vitest .snap fixtures for (ClaudeCodeCLI × project, Cursor × project, ClaudeCodeDesktop × user, CodexCLI × user) — 4 snapshots covering all 3 surviving clients. Catches accidental config-format drift; aligns with research's recommendation. Recommended yes for v1.7.0",
+    "schemas/fabric-config.json drift gate: add a CI step that uses zod-to-json-schema to regenerate the JSON Schema from clientPathsSchema and diff against committed schemas/fabric-config.json. Catches schema-drift before publish",
+    "Audit AUDIT_LOG_FILE constant: is .fabric/audit.jsonl a planned future ledger or dead code? audit-log.ts declares AUDIT_LOG_FILE but no production write path uses it directly — all writes go via appendEventLedgerEvent into events.jsonl. Confirm and remove if dead"
+  ],
+  "_metadata": {
+    "perspective_focus": "module boundaries, contracts, blast radius",
+    "scan_strategy": "Read all 5 client-adapter files end-to-end + all 3 MCP tool registrations + doctor.ts (821 lines) + _shared.ts atomic-write surface + event-ledger.ts append-only path + dashboard api/client.ts type re-declarations + shared/index.ts barrel exports + package.json dependency directions for cycle detection",
+    "files_read_fully": 18,
+    "evidence_density": "every finding cites file:line; every assessment cross-references research.json findings"
+  }
+}

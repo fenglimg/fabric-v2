@@ -1,0 +1,348 @@
+{
+  "perspective": "Domain Expert (MCP/AGENTS.md)",
+  "relevant_files": [
+    "packages/cli/src/config/json.ts",
+    "packages/cli/src/config/toml.ts",
+    "packages/cli/src/config/claude-code.ts",
+    "packages/cli/src/config/resolver.ts",
+    "packages/cli/src/config/writer.ts",
+    "packages/cli/src/commands/init.ts",
+    "packages/cli/src/commands/bootstrap.ts",
+    "packages/cli/src/commands/config.ts",
+    "packages/cli/src/bootstrap-guide.ts",
+    "packages/cli/__tests__/init-claude-install.test.ts",
+    "packages/cli/__tests__/config-install.test.ts",
+    "packages/server/src/index.ts",
+    "packages/server/src/tools/plan-context.ts",
+    "packages/server/src/tools/rule-sections.ts",
+    "packages/server/src/tools/get-rules.ts",
+    "packages/server/src/api/_error.ts",
+    "packages/shared/src/types/config.ts",
+    "packages/shared/src/schemas/fabric-config.ts",
+    "schemas/fabric-config.json",
+    "templates/agents-md/AGENTS.md.template",
+    "templates/agents-md/variants/{cocos,vite,next}.md"
+  ],
+  "key_findings": [
+    {
+      "finding": "Fabric writes MCP server entry to .claude/settings.json under mcpServers key — but Claude Code's documented MCP server file is ~/.claude.json (user) or .mcp.json (project root). settings.json is for hooks/permissions, not MCP server registration.",
+      "spec_compliance": "noncompliant",
+      "evidence_refs": [
+        "packages/cli/src/config/json.ts:99-109",
+        "packages/cli/src/config/json.ts:49-60",
+        "research.json:Claude Code MCP setup: ~/.claude.json or .mcp.json"
+      ]
+    },
+    {
+      "finding": "Fabric does NOT write a root-level CLAUDE.md, AGENTS.md, or GEMINI.md. The bootstrap protocol writes only to .fabric/bootstrap/README.md, which is exposed to ALL clients via MCP resource (AGENTS_MD_RESOURCE_URI). The drift problem cited in research (CLAUDE.md ≠ AGENTS.md) is sidestepped by design — there is no parallel-file maintenance burden because Fabric does not own the project-root agent file.",
+      "spec_compliance": "compliant",
+      "evidence_refs": [
+        "packages/cli/src/commands/init.ts:489",
+        "packages/cli/src/commands/init.ts:570",
+        "packages/cli/src/bootstrap-guide.ts:19,21",
+        "packages/cli/__tests__/init-claude-install.test.ts:71-73",
+        "packages/server/src/index.ts:67-87"
+      ]
+    },
+    {
+      "finding": "MCP tool annotations: only readOnlyHint:true is declared; idempotentHint, destructiveHint:false, openWorldHint, and human-readable title are missing. Spec 2025-03-26 names all four annotations.",
+      "spec_compliance": "partial",
+      "evidence_refs": [
+        "packages/server/src/tools/plan-context.ts:112",
+        "packages/server/src/tools/rule-sections.ts:61",
+        "packages/server/src/tools/get-rules.ts:47"
+      ]
+    },
+    {
+      "finding": "Codex TOML format compliance is exact: writes [mcp_servers.fabric] table at ~/.codex/config.toml; even migrates legacy [mcp.servers.fabric] block. Research-aligned.",
+      "spec_compliance": "compliant",
+      "evidence_refs": [
+        "packages/cli/src/config/toml.ts:37-49,87-117",
+        "packages/cli/__tests__/config-install.test.ts:81-113"
+      ]
+    },
+    {
+      "finding": "Cursor writer compliant for project scope (.cursor/mcp.json) but does not offer user-scope (~/.cursor/mcp.json). Research lists both as valid.",
+      "spec_compliance": "partial",
+      "evidence_refs": [
+        "packages/cli/src/config/json.ts:112-123"
+      ]
+    },
+    {
+      "finding": "MCP server has ZERO process signal handlers (no SIGINT/SIGTERM/SIGHUP). Research's pitfall #15945 (Claude Code zombie servers) is unmitigated. startStdioServer connects transport but never calls server.close() / transport.close() on shutdown.",
+      "spec_compliance": "noncompliant",
+      "evidence_refs": [
+        "packages/server/src/index.ts:92-97",
+        "packages/server/src/index.ts:131-136",
+        "Grep for SIGINT|SIGTERM|SIGHUP|process.on across packages: no matches"
+      ]
+    },
+    {
+      "finding": "MCP bootstrap README resource (AGENTS_MD_RESOURCE_URI) throws raw fs.readFile ENOENT errors directly back to the MCP client when the file is missing. Spec error code -32603 (internal) or a structured ResourceNotFound is appropriate, but the SDK only sees an unstructured Error.",
+      "spec_compliance": "partial",
+      "evidence_refs": [
+        "packages/server/src/index.ts:74-86"
+      ]
+    },
+    {
+      "finding": "HTTP API error normalizer uses fragile string-prefix matching for 3 specific messages. 'Cannot find human lock entry:' prefix is checked but NEVER thrown anywhere in packages/server (orphan branch — dead code, possible silent breakage if reintroduced with wording change).",
+      "spec_compliance": "partial",
+      "evidence_refs": [
+        "packages/server/src/api/_error.ts:93-115",
+        "Grep 'Cannot find human lock entry' in packages: only at _error.ts:101"
+      ]
+    },
+    {
+      "finding": "MCP tool input schemas use Zod (peer dep contract met). Output schemas are also declared via outputSchema parameter — better than spec minimum. However, schemas are inline-defined in tools/*.ts and NOT exported to packages/shared, so dashboard/clients cannot reuse them; high schema drift risk per research finding #38%.",
+      "spec_compliance": "partial",
+      "evidence_refs": [
+        "packages/server/src/tools/plan-context.ts:7-102",
+        "packages/server/src/tools/rule-sections.ts:11-51",
+        "packages/server/src/tools/get-rules.ts:7-37"
+      ]
+    },
+    {
+      "finding": "Tool surface size: 2 tools registered in createFabricServer (fab_plan_context, fab_get_rule_sections). fab_get_rules is exported but NOT registered in the server. Well under Cursor 40-tool ceiling and the research-recommended ≤5 budget.",
+      "spec_compliance": "compliant",
+      "evidence_refs": [
+        "packages/server/src/index.ts:64-65",
+        "packages/server/src/tools/get-rules.ts:39 (registerGetRules exported but never called)"
+      ]
+    },
+    {
+      "finding": "fab_get_rules tool is implemented and exported (packages/server/src/tools/get-rules.ts) but NEVER wired into createFabricServer — dead-code surface that diverges from spec-compliance promises if its protected token ('fabric_rules') is mentioned in user-facing strings without a backing tool.",
+      "spec_compliance": "partial",
+      "evidence_refs": [
+        "packages/server/src/index.ts:10-11 (only plan-context + rule-sections imported)",
+        "packages/server/src/tools/get-rules.ts:39-59"
+      ]
+    },
+    {
+      "finding": "Initialize/initialized handshake is delegated to @modelcontextprotocol/sdk McpServer. SDK handles the lifecycle correctly, so spec compliance for handshake is delegated and NOT batched (spec requires no batching of initialize). Capability declaration uses SDK defaults — if Fabric needs to advertise resources/tools, it does so implicitly via registerResource/registerTool calls.",
+      "spec_compliance": "compliant",
+      "evidence_refs": [
+        "packages/server/src/index.ts:58-62 (new McpServer with name+version)",
+        "packages/server/package.json:dependencies @modelcontextprotocol/sdk ^1.29.0"
+      ]
+    },
+    {
+      "finding": "ClientKind union (writer.ts L1-8) lists 7 clients. After scope reduction to Claude/Codex/Cursor, this is the typed source of truth that needs trimming to 4 (ClaudeCodeCLI, ClaudeCodeDesktop, Cursor, CodexCLI). TypeScript will surface every consumer.",
+      "spec_compliance": "compliant",
+      "evidence_refs": [
+        "packages/cli/src/config/writer.ts:1-8"
+      ]
+    },
+    {
+      "finding": "fabric.config.json schema (3 sources of truth: types/config.ts, schemas/fabric-config.ts Zod, schemas/fabric-config.json JSON-Schema) all consistently list windsurf/rooCode/geminiCLI fields. JSON-Schema sets additionalProperties:false at root and clientPaths levels — so removing fields will reject existing user config files containing them.",
+      "spec_compliance": "compliant",
+      "evidence_refs": [
+        "packages/shared/src/types/config.ts:1-9",
+        "packages/shared/src/schemas/fabric-config.ts:5-13",
+        "schemas/fabric-config.json:7,15"
+      ]
+    }
+  ],
+  "agents_md_audit": {
+    "writes_agents_md_for": [],
+    "writes_claude_md_for": [],
+    "uses_symlink": false,
+    "drift_protection": "By design, Fabric does not write any root-level agent file (CLAUDE.md, AGENTS.md, GEMINI.md, .windsurfrules). The single source of truth is .fabric/bootstrap/README.md, exposed via MCP resource URI to all clients. The init-claude-install.test.ts (L71-73) is the regression guard asserting these files are NEVER created. AGENTS.md.template + framework variants exist under templates/agents-md/ but are read-only inputs, not write targets — they are templates the user can copy manually if they want a project-root AGENTS.md.",
+    "latent_bugs": [
+      "GEMINI.md detection in resolver (L86, L111) and json.ts (L160) — used as a trigger to enable GeminiCLIWriter. After Gemini scope removal, this dual existence-check becomes dead code but is harmless until removed.",
+      "scanner/forensic.ts L1444 emits a Chinese recommendation referencing 'AGENTS.md 分层边界' — this is a user-facing string that survives scope reduction (talks about layered AGENTS.md, not a write target). No latent write bug, but recommendation text should stay aligned with what Fabric actually emits.",
+      "Cache invalidation comment at packages/server/src/cache.ts:91 says 'AGENTS.md may have changed' — this comment is talking about .fabric/agents/**/AGENTS.md (the rule taxonomy), NOT root-level. Easy to misread; suggest renaming the variable / clarifying the comment to 'rule files'."
+    ]
+  },
+  "client_config_audit": [
+    {
+      "client": "claude",
+      "expected_format": "JSON",
+      "actual_format": "JSON",
+      "expected_path": "~/.claude.json (user) or .mcp.json (project root)",
+      "actual_path": "<workspace>/.claude/settings.json (mcpServers key)",
+      "compliant": false,
+      "notes": "MISMATCH: Fabric writes mcpServers.fabric into .claude/settings.json (packages/cli/src/config/json.ts:99-109). Per Claude Code docs, settings.json holds hooks/permissions; MCP servers belong in ~/.claude.json (user scope) or .mcp.json (project root, committable). Fabric's choice puts MCP registration in the wrong file. Symptom: users following Anthropic's docs to inspect/disable Fabric will look in the wrong place; Claude Code's published MCP loader may not even read mcpServers from settings.json (needs verification). Fabric ALSO writes hooks (Stop hook for agents-md-init-reminder) into settings.json, which IS a correct use of that file (init.ts:934-999). Fix: split into two writers — ClaudeCodeMcpWriter (writes .mcp.json or ~/.claude.json) and ClaudeCodeHooksWriter (settings.json)."
+    },
+    {
+      "client": "codex",
+      "expected_format": "TOML",
+      "actual_format": "TOML",
+      "expected_path": "~/.codex/config.toml (user scope only — Codex CLI does not have a project-scope MCP file)",
+      "actual_path": "~/.codex/config.toml",
+      "compliant": true,
+      "notes": "Format and path compliant. CodexTOMLConfigWriter.detect (toml.ts:95-103) only checks ~/.codex existence; no project-scope option. This matches research — Codex CLI is user-scope only. The writer also handles legacy [mcp.servers.fabric] migration to current [mcp_servers.fabric] (toml.ts:55-73), which is conservative and correct. Inline-table env serialization (toml.ts:29-35) is sorted-by-key, deterministic — good for snapshot tests."
+    },
+    {
+      "client": "cursor",
+      "expected_format": "JSON",
+      "actual_format": "JSON",
+      "expected_path": "~/.cursor/mcp.json (user) or .cursor/mcp.json (project)",
+      "actual_path": "<workspace>/.cursor/mcp.json (project scope only)",
+      "compliant": true,
+      "notes": "Compliant for project scope. CursorWriter (json.ts:112-123) only emits the project-scope path; no user-scope option. This is acceptable because project scope is the recommended Cursor pattern, but a future enhancement could allow --scope=user. JSON shape (mcpServers.fabric = {command, args, env?}) matches Cursor docs exactly via shared writeJsonClientConfig helper (json.ts:49-60)."
+    }
+  ],
+  "tool_annotation_audit": [
+    {
+      "tool": "fab_plan_context",
+      "current_annotations": {
+        "readOnlyHint": true
+      },
+      "recommended_annotations": {
+        "readOnlyHint": true,
+        "idempotentHint": true,
+        "destructiveHint": false,
+        "openWorldHint": false,
+        "title": "Plan Fabric Rule Selection"
+      },
+      "rationale": "Read-only (does not mutate state); idempotent (same paths+intent yield same revision_hash and selection_token); openWorldHint=false (only reads .fabric/agents.meta.json under projectRoot — closed world). Title improves UX in clients that surface tool catalogs."
+    },
+    {
+      "tool": "fab_get_rule_sections",
+      "current_annotations": {
+        "readOnlyHint": true
+      },
+      "recommended_annotations": {
+        "readOnlyHint": true,
+        "idempotentHint": true,
+        "destructiveHint": false,
+        "openWorldHint": false,
+        "title": "Fetch Fabric Rule Sections"
+      },
+      "rationale": "Same reasoning as fab_plan_context. Reads rule .md files only; does not write. Same selection_token returns same rules until revision changes. Note: this tool DOES emit Event Ledger records (correlation_id, session_id params) — that is a side effect, but appending audit logs is conventionally NOT considered destructive in MCP semantics. If strict, set readOnlyHint:false but mark idempotentHint:true."
+    },
+    {
+      "tool": "fab_get_rules",
+      "current_annotations": {
+        "readOnlyHint": true
+      },
+      "recommended_annotations": {
+        "readOnlyHint": true,
+        "idempotentHint": true,
+        "destructiveHint": false,
+        "openWorldHint": false,
+        "title": "Get Fabric Rules for Path"
+      },
+      "rationale": "Currently registered nowhere (orphan tool). Annotations are correct but moot until tools/get-rules.ts is wired into createFabricServer (or removed)."
+    }
+  ],
+  "error_mapping_audit": [
+    {
+      "file": "packages/server/src/api/_error.ts",
+      "line": 101,
+      "current_code": "404 HUMAN_LOCK_ENTRY_NOT_FOUND (string-prefix match)",
+      "should_be": "Either remove (orphan — no thrower) OR convert to typed HumanLockEntryNotFoundError class with explicit error.code/error.status fields, mirroring AgentsMetaFileMissingError pattern (L76-82).",
+      "rationale": "No throw site found in packages/server/src for 'Cannot find human lock entry:'. This branch is dead code OR the throw site is missing. Either way, string-prefix matching is brittle (research's pattern: any rewording silently degrades to 500)."
+    },
+    {
+      "file": "packages/server/src/api/_error.ts",
+      "line": 109,
+      "current_code": "404 LEDGER_ENTRY_NOT_FOUND (string-prefix match)",
+      "should_be": "Convert to typed LedgerEntryNotFoundError class. Existing throw site at packages/server/src/services/annotate-intent.ts:23 throws Error directly with that exact prefix.",
+      "rationale": "The throw site exists (annotate-intent.ts:23) but uses anonymous Error. Spec maps to MCP -32602 (invalid params: caller specified a non-existent ledger_entry_id). HTTP API gives 404, which is the correct REST mapping. Fix: introduce LedgerEntryNotFoundError extending Error with code/status, throw it from annotate-intent.ts, simplify _error.ts to instanceof check."
+    },
+    {
+      "file": "packages/server/src/api/_error.ts",
+      "line": 93,
+      "current_code": "403 PATH_OUTSIDE_PROJECT_ROOT (string-prefix match)",
+      "should_be": "Convert to PathOutsideProjectRootError class. Throw site at packages/server/src/services/_shared.ts:51.",
+      "rationale": "Same brittleness pattern. Should follow AgentsMetaFileMissingError typed-class pattern."
+    },
+    {
+      "file": "packages/server/src/services/rule-sections.ts",
+      "line": "128, 218, 222, 226, 249",
+      "current_code": "throw new Error('selection_token is missing or expired') etc — all anonymous Error",
+      "should_be": "MCP -32602 (invalid params) for token/selection issues. Currently surfaces as unstructured Error to MCP client; SDK will likely wrap as -32603 internal.",
+      "rationale": "Per spec 2025-11-25, invalid client-provided params should return -32602. These throws indicate caller passed an invalid selection_token / stable_id / missing reason — all client-input-validation failures. Define InvalidSelectionTokenError, InvalidL1RuleSelectionError, MissingSelectionReasonError extending Error with code: -32602."
+    },
+    {
+      "file": "packages/server/src/services/rule-meta-builder.ts",
+      "line": "235",
+      "current_code": "throw new Error(`Target directory does not exist: ${projectRoot}`)",
+      "should_be": "MCP -32603 (internal) — server misconfiguration, not caller fault. Currently anonymous.",
+      "rationale": "If the project root doesn't exist when the server starts a tool call, that's a server-side problem (caller cannot fix). Anonymous Error is at least mapped to -32603 by SDK, but a typed ProjectRootMissingError improves clarity."
+    },
+    {
+      "file": "packages/server/src/index.ts",
+      "line": "74-86",
+      "current_code": "Resource handler throws raw fs.readFile ENOENT (no try/catch, no mapping)",
+      "should_be": "Map ENOENT to MCP ResourceNotFoundError equivalent — current SDK exposes this via the registerResource handler returning a structured error or throwing an Error with .code:'ResourceNotFound'.",
+      "rationale": "If .fabric/bootstrap/README.md is absent, MCP client receives raw 'ENOENT: ...' which is opaque. Wrap in try/catch; on ENOENT throw new Error with descriptive message and (if SDK supports) structured code."
+    },
+    {
+      "file": "packages/server/src/services/event-ledger.ts",
+      "line": "81-83",
+      "current_code": "parseEventLedgerLine returns null on parse failure (silent drop)",
+      "should_be": "Surface parse errors via doctor's createEventLedgerCheck; do not throw at parse time, but emit a parseable=false signal that doctor reports.",
+      "rationale": "Already handled by doctor.ts:431 parseable check. The smell is the dropped signal — invalid lines vanish from any consumer that doesn't run doctor. Acceptable for read paths, but document the contract."
+    }
+  ],
+  "handshake_lifecycle_audit": {
+    "initialize_handler_exists": true,
+    "initialize_handler_evidence": "Delegated to @modelcontextprotocol/sdk McpServer (packages/server/src/index.ts:59). SDK handles initialize → response → initialized exchange per spec 2025-11-25.",
+    "capability_declaration": "Implicit via registerTool (fab_plan_context, fab_get_rule_sections) and registerResource (AGENTS_MD_RESOURCE_URI). SDK auto-emits server capabilities = { tools, resources }. No explicit prompts/sampling capabilities — correct because Fabric does not implement them.",
+    "signal_handlers": [],
+    "signal_handler_evidence": "Grep for SIGINT|SIGTERM|SIGHUP|process.on across packages/: NO MATCHES. Server relies on parent (Claude/Codex/Cursor) to terminate the child process. This matches the zombie-server pattern reported in claude-code issue #15945.",
+    "shutdown_drain": "no",
+    "shutdown_drain_evidence": "startStdioServer (index.ts:92-97) connects transport but never registers shutdown logic. startHttpServer (index.ts:99-125) registers .once('close') for app.dispose() but not for parent SIGINT.",
+    "leakage_risk": "MEDIUM-HIGH. With ~/.claude/settings.json restart cycles or Cursor MCP refresh, the parent client may abandon the stdio child without sending SIGTERM cleanly. Without handlers, in-flight tool calls are not drained; .fabric/events.jsonl appendFile may leave a partial line (research's fsyncgate pitfall). Mitigation: (1) install SIGINT/SIGTERM/SIGHUP handlers in startStdioServer that call server.close()/transport.close(); (2) wrap appendFile in atomic-flush + rotation; (3) document a max-shutdown-deadline (e.g., 5s) before process.exit.",
+    "additional_lifecycle_gaps": [
+      "No explicit transport.close() call on stdio EOF — SDK may handle this, but not verified by any test.",
+      "No top-level uncaughtException / unhandledRejection handlers — a poisoned ledger or schema crash could crash the server with no diagnostic emitted to stderr beyond formatError IIFE catch (L132-135).",
+      "Resource handler at index.ts:74-86 has no error boundary; thrown errors propagate to MCP client raw.",
+      "No version negotiation logic visible — relies entirely on SDK. Acceptable, but if client sends unsupported protocol version, behavior is SDK-defined."
+    ]
+  },
+  "tool_surface_count": 2,
+  "tool_surface_count_detail": {
+    "registered": ["fab_plan_context", "fab_get_rule_sections"],
+    "exported_but_not_registered": ["fab_get_rules"],
+    "research_budget": "≤5 (Cursor 40-tool ceiling guidance)",
+    "comment": "Well within budget. fab_get_rules is orphan — wire it in or delete. The 2 registered tools form a coherent narrative (plan → fetch) which is good MCP UX."
+  },
+  "schema_drift_surface": {
+    "schema_locations": [
+      "packages/server/src/tools/plan-context.ts:7-102 (inputSchema + outputSchema, inline Zod)",
+      "packages/server/src/tools/rule-sections.ts:11-51 (inputSchema + outputSchema, inline Zod)",
+      "packages/server/src/tools/get-rules.ts:7-37 (orphan tool)",
+      "packages/shared/src/schemas/fabric-config.ts (clientPathsSchema, fabricConfigSchema — different domain: workspace config, not MCP tool I/O)",
+      "packages/shared/src/schemas/agents-meta.ts (rule meta schemas)",
+      "schemas/fabric-config.json (published JSON Schema for fabric.config.json)"
+    ],
+    "shared_export": false,
+    "shared_export_detail": "MCP tool schemas (plan-context, rule-sections, get-rules) are inline-defined in each tool file; NONE are exported to packages/shared. Dashboard / clients cannot import them; consumers re-derive types or stringly-type. This is the #1 drift vector per research's 38% MCP failure finding.",
+    "backward_compat_tests": "no",
+    "backward_compat_evidence": "No vitest snapshot test asserts the SDK-emitted JSON Schema for any of the 3 tools. No golden-file fixture per research recommendation. CI lint-protected-tokens guards string identifiers but NOT schema shape.",
+    "recommended_fixes": [
+      "Move inputSchema + outputSchema definitions to packages/shared/src/schemas/mcp-tools.ts; export named (e.g., planContextInputSchema, planContextOutputSchema); import in tools/*.ts.",
+      "Add packages/server/test/tool-schema-snapshot.test.ts that imports each tool's schema, calls zodToJsonSchema (or use SDK's emitted schema via server.tool(...)?.toJSON()), and snapshots to __snapshots__/tool-schema.snap. CI fails on drift.",
+      "Add a contract test that boots a fake MCP client (using SDK's ClientStdioTransport to a mock pair), calls tools/list, and asserts the returned schema matches the committed snapshot byte-for-byte."
+    ]
+  },
+  "questions_for_user": [
+    "确认 Claude Code 的 MCP server 注册路径：研究文档说 ~/.claude.json（user）或 .mcp.json（project root），但代码写的是 .claude/settings.json。是否要在 v1.7.0 稳定化中拆分 ClaudeCodeCLIWriter 为两个 writer（一个写 .mcp.json 处理 MCP，另一个保留 settings.json 写 hooks）？这是 spec-compliance bug，但拆分会改变用户文件布局，需要用户确认是否在 minor 版本里推出。",
+    "对 fab_get_rules 工具：它在 packages/server/src/tools/get-rules.ts 中实现并 export，但 createFabricServer 没有注册它。是 (a) 注册它（恢复成 3-tool 工具集，仍 ≤5），(b) 删除整个 get-rules.ts（清理孤儿代码），还是 (c) 保留导出供 HTTP API 使用但不注册到 MCP？历史决策不明，需要项目所有者澄清。",
+    "MCP server 是否要在 v1.7.0 稳定化里加 SIGINT/SIGTERM/SIGHUP handlers？研究指出这是 Claude Code zombie-server 问题（issue #15945）的根因，无 handler 时父进程异常退出会留下子进程。修复成本很小（~30 行），收益是 production stability。",
+    "MCP tool annotations 是否升级到 spec 2025-03-26 完整集（destructiveHint:false / openWorldHint:false / title）？目前只有 readOnlyHint:true。改动小，提升 Cursor / Claude 自动批准 UX。",
+    "_error.ts 字符串前缀匹配是否要重构为 typed error classes？这个重构碰到 packages/server/src/api/* 的多个文件，但能消除研究 pitfall（rewording silently degrades to 500）和 dead-code 'Cannot find human lock entry' 分支。",
+    "MCP tool input/output schema 是否要 export 到 packages/shared 并加 snapshot 契约测试？这是研究 pitfall #38% schema drift 的直接对应。代价：schema 文件搬家 + 1 个新测试文件；收益：CI 拦住 schema 回归。",
+    "Cursor user-scope 配置（~/.cursor/mcp.json）是否要支持？目前只写 project-scope，但有的 monorepo 用户可能希望 user-scope 一次配置全部 workspace。低优先级，但 v1.7.0 稳定化窗口可以一并处理。"
+  ],
+  "_metadata": {
+    "perspective_focus": "MCP spec / AGENTS.md / client config formats",
+    "audit_method": "Read all server tool files, all CLI config writers, error normalizer, init.ts plan execution, init-claude-install.test.ts; ripgrep for AGENTS.md/CLAUDE.md/SIGINT/throw-sites cross-package; cross-checked actual paths against research's documented client paths.",
+    "spec_versions_referenced": [
+      "MCP Specification 2025-11-25 (lifecycle, error codes, capabilities)",
+      "MCP Tool Annotations 2025-03-26 (readOnlyHint/destructiveHint/idempotentHint/openWorldHint/title)",
+      "Codex MCP docs (TOML at ~/.codex/config.toml, [mcp_servers.<name>])",
+      "Cursor MCP docs (JSON at ~/.cursor/mcp.json or .cursor/mcp.json; 40-tool ceiling)",
+      "Claude Code MCP docs (~/.claude.json or .mcp.json)"
+    ],
+    "compliance_summary": {
+      "compliant": ["Codex TOML format/path", "Cursor JSON project-scope", "AGENTS.md non-write design", "MCP handshake delegation to SDK", "Tool surface count"],
+      "partial": ["Cursor user-scope missing", "Tool annotations incomplete", "Resource handler raw error", "_error.ts string-prefix matching", "Schema not exported / no drift tests"],
+      "noncompliant": ["Claude MCP write target (.claude/settings.json instead of .mcp.json or ~/.claude.json)", "No process signal handlers (zombie risk)"]
+    },
+    "confidence": "high — all findings are line-cited; audit covers 100% of MCP tool files, 100% of config writers, error normalizer, and stdio entry point."
+  }
+}

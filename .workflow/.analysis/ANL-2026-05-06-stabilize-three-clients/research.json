@@ -1,0 +1,68 @@
+{
+  "topic": "Stabilization & quality hardening for Fabric (MCP-first multi-client tool)",
+  "mode": "detail-verification",
+  "timestamp": "2026-05-06T19:30:00+08:00",
+  "findings": [
+    {"finding": "Claude Code does NOT support AGENTS.md natively (uses CLAUDE.md exclusively); Codex CLI + Cursor do.", "detail": "GitHub issue #6235 open with no Anthropic timeline. Symlink CLAUDE.md → AGENTS.md is the canonical workaround.", "confidence": "High", "source_url": "https://benjamincrozat.com/agents-md"},
+    {"finding": "MCP server timeouts are #1 production stability issue (24% of failures); TS MCP clients enforce hard 60s limit not extended by progress notifications.", "detail": "100-server stress test: 71% median pass rate.", "confidence": "High", "source_url": "https://www.digitalapplied.com/blog/mcp-server-reliability-100-server-stress-test-study"},
+    {"finding": "Schema mismatches dominate MCP failures (38%).", "detail": "Drift between declared input schema and implementation is recurring.", "confidence": "High", "source_url": "https://specmatic.io/updates/testing-mcp-servers-how-specmatic-mcp-auto-test-catches-schema-drift-and-automates-regression/"},
+    {"finding": "Cursor has ~40 active-tool ceiling across all MCP servers; exceeding silently degrades.", "detail": "Each tool definition burns context tokens. Keep Fabric tool surface ≤5.", "confidence": "High", "source_url": "https://www.truefoundry.com/blog/mcp-servers-in-cursor-setup-configuration-and-security-guide"},
+    {"finding": "Codex CLI uses TOML at ~/.codex/config.toml ([mcp_servers.<name>]); NOT JSON.", "detail": "Cursor + Claude both accept identical mcpServers JSON; Codex is the format outlier.", "confidence": "High", "source_url": "https://developers.openai.com/codex/mcp"},
+    {"finding": "MCP Tool Annotations (2025-03-26 spec): readOnlyHint/destructiveHint/idempotentHint are official.", "detail": "Clients use these for auto-approval / confirmation UX. Fabric's read-only tools should declare them.", "confidence": "High", "source_url": "https://chatforest.com/guides/mcp-tool-annotations-explained/"},
+    {"finding": "Knip has displaced ts-prune as the dead-code standard.", "detail": "Detects unused exports, files, deps, duplicate exports, unused class/enum members.", "confidence": "High", "source_url": "https://effectivetypescript.com/2023/07/29/knip/"},
+    {"finding": "Claude Code session lifecycle leaks server processes (issue #15945, 70+ zombies).", "detail": "Servers must install SIGINT/SIGTERM/SIGHUP handlers and exit cleanly.", "confidence": "High", "source_url": "https://github.com/anthropics/claude-code/issues/15945"},
+    {"finding": "fsyncgate: on many filesystems an fsync error marks pages clean and the application has no way to retry.", "detail": "Treat ledger as poisoned on fsync error; rotate file; surface via doctor.", "confidence": "High", "source_url": "https://danluu.com/fsyncgate/"}
+  ],
+  "best_practices": [
+    {"practice": "Use Zod for tool input validation (SDK requires it as peer dep)", "rationale": "Validation runs before handler; invalid input returns structured error without executing.", "source": "https://github.com/modelcontextprotocol/typescript-sdk"},
+    {"practice": "Implement initialize → response → initialized handshake exactly; never batch initialize", "rationale": "Capability negotiation is mandatory; some clients reject batched initialize.", "source": "https://modelcontextprotocol.io/specification/2025-11-25"},
+    {"practice": "Atomic file writes via atomically (modern, TS-native) or write-file-atomic (battle-tested)", "rationale": "Both write tmp file in same dir then rename(2) — atomic on POSIX. atomically queues writes to same path.", "source": "https://www.npmjs.com/package/atomically"},
+    {"practice": "JSONL append-only ledger: pair appends with explicit fsync, periodic snapshots, tolerate trailing partial line on read", "rationale": "fsync required for durability; fsyncgate makes errors unrecoverable.", "source": "https://danluu.com/fsyncgate/"},
+    {"practice": "Enable noUncheckedIndexedAccess and exactOptionalPropertyTypes in tsconfig", "rationale": "Two highest-impact strict flags not in strict:true; catch real array/record bugs.", "source": "https://www.typescriptlang.org/tsconfig/noUncheckedIndexedAccess.html"},
+    {"practice": "typescript-eslint strict-type-checked + no-floating-promises", "rationale": "Type-aware rules catch floating promises, misused promises, unnecessary conditions.", "source": "https://typescript-eslint.io/users/configs/"},
+    {"practice": "Declare MCP tool annotations explicitly (readOnlyHint, idempotentHint)", "rationale": "Improves UX in clients that auto-approve safe tools.", "source": "https://chatforest.com/guides/mcp-tool-annotations-explained/"},
+    {"practice": "Snapshot test config emission per client (Claude/Codex/Cursor) with vitest .snap", "rationale": "CI fails on drift; -u to update intentionally.", "source": "https://vitest.dev/guide/snapshot"},
+    {"practice": "Schema-drift contract tests in CI", "rationale": "Prevents the #1 MCP failure category (38% schema mismatch).", "source": "https://specmatic.io/updates/testing-mcp-servers-how-specmatic-mcp-auto-test-catches-schema-drift-and-automates-regression/"}
+  ],
+  "alternatives": [
+    {"option": "atomically (atomic writes lib)", "pros": "TS-native, faster (~10x with fsyncWait), queues same-path writes, zero deps", "cons": "Less battle-tested than write-file-atomic", "verdict": "Recommended for new TS code"},
+    {"option": "Knip vs ts-prune (dead-code)", "pros": "Knip detects exports + deps + duplicates; 80+ tool plugins", "cons": "Slightly opinionated config", "verdict": "Knip recommended; ts-prune in maintenance mode"},
+    {"option": "Stryker mutation testing", "pros": "Reveals tests that 'cover' but don't assert", "cons": "Slow", "verdict": "Targeted use on rule-distribution core only"},
+    {"option": "Symlink CLAUDE.md → AGENTS.md", "pros": "One file on disk, two filenames, zero drift", "cons": "Only safe if Claude content is identical to AGENTS", "verdict": "Recommended where Fabric content is identical"},
+    {"option": "Feature-flag dropped client vs delete", "pros": "Flag preserves rollback", "cons": "Carries dead code, complicates test matrix", "verdict": "Delete in major bump after one minor with deprecation warning"},
+    {"option": "Single .mcp.json for all clients", "pros": "Cursor + Claude accept identical JSON", "cons": "Codex needs TOML", "verdict": "Split emitters by FORMAT (JSON vs TOML), not by client"}
+  ],
+  "pitfalls": [
+    {"issue": "Cursor 40-tool ceiling silently degrades", "mitigation": "Keep Fabric tool surface ≤5; document constraint", "source": "https://www.truefoundry.com/blog/mcp-servers-in-cursor-setup-configuration-and-security-guide"},
+    {"issue": "Hard 60s timeout in TS MCP clients (not extended by progress)", "mitigation": "Keep tool calls <10s; chunk large rule sets", "source": "https://github.com/anthropics/claude-code/issues/20335"},
+    {"issue": "Server processes leak (zombie pattern)", "mitigation": "Install SIGINT/SIGTERM/SIGHUP handlers; clean exit deadline", "source": "https://github.com/anthropics/claude-code/issues/15945"},
+    {"issue": "fsync errors are unrecoverable on many filesystems", "mitigation": "Rotate ledger on fsync error; report via doctor", "source": "https://danluu.com/fsyncgate/"},
+    {"issue": "Initialize handshake batching breaks clients", "mitigation": "Never include initialize in a batch request", "source": "https://modelcontextprotocol.io/specification/2025-11-25"},
+    {"issue": "Schema drift without contract tests (38% MCP failures)", "mitigation": "Golden-file fixtures asserting SDK-emitted JSON Schema matches committed copy", "source": "https://specmatic.io/updates/testing-mcp-servers-how-specmatic-mcp-auto-test-catches-schema-drift-and-automates-regression/"},
+    {"issue": "JSONL ledger partial-write corruption", "mitigation": "On read, tolerate trailing partial line; doctor truncates", "source": "https://danluu.com/fsyncgate/"},
+    {"issue": "CLAUDE.md ≠ AGENTS.md content drift", "mitigation": "Write one canonical file + symlink, or snapshot-test equality", "source": "https://benjamincrozat.com/agents-md"},
+    {"issue": "Cross-client config format divergence (JSON vs TOML)", "mitigation": "Split emitters by format, not by client", "source": "https://developers.openai.com/codex/mcp"}
+  ],
+  "codebase_gaps": [
+    {"gap": "tsconfig.base.json missing noUncheckedIndexedAccess + exactOptionalPropertyTypes", "current_approach": "strict:true only", "recommended_approach": "Add both; expect 1-2 days fixup; major bug-class reduction"},
+    {"gap": "No explicit MCP tool annotations on packages/server/src/tools/*", "current_approach": "Tools likely lack readOnlyHint/idempotentHint", "recommended_approach": "Add annotations matching actual behavior (all 3 tools appear read-only)"},
+    {"gap": "No Knip configuration for dead-code identification", "current_approach": "Manual scope identification", "recommended_approach": "pnpm dlx knip baseline now; rerun after each client removal"},
+    {"gap": "Atomic write usage inconsistent — events.jsonl uses raw appendFile while snapshots use atomicWriteText", "current_approach": "Mixed durability semantics", "recommended_approach": "Standardize on atomically; explicit fsync + ledger rotation on error"},
+    {"gap": "No snapshot tests for emitted client configs", "current_approach": "Unknown / partial", "recommended_approach": "Vitest .snap per (client × scope) — 6 snapshots for 3 clients × {project, user}"},
+    {"gap": "No contract tests asserting MCP tool JSON Schema against committed fixture", "current_approach": "Implementation-driven schema", "recommended_approach": "Golden-file fixture per tool; CI fails on drift"},
+    {"gap": "No MCP handshake conformance test (initialize → initialized → tools/list → tools/call)", "current_approach": "Untested handshake path", "recommended_approach": "Integration test using @modelcontextprotocol/sdk client driver"},
+    {"gap": "fabric doctor doesn't detect JSONL ledger tail corruption", "current_approach": "Behavior undefined on partial write", "recommended_approach": "doctor reads ledger, tolerates trailing partial line, reports; --fix rewrites"},
+    {"gap": "Server signal handling unverified", "current_approach": "Possibly relies on parent reaping", "recommended_approach": "SIGINT/SIGTERM/SIGHUP handlers, transport close, deadline exit"}
+  ],
+  "sources": [
+    {"title": "MCP Specification 2025-11-25", "url": "https://modelcontextprotocol.io/specification/2025-11-25", "key_takeaway": "Authoritative spec for lifecycle, capabilities, error codes"},
+    {"title": "MCP TypeScript SDK", "url": "https://github.com/modelcontextprotocol/typescript-sdk", "key_takeaway": "Zod peer dep, validation pattern"},
+    {"title": "Codex MCP docs", "url": "https://developers.openai.com/codex/mcp", "key_takeaway": "TOML at ~/.codex/config.toml"},
+    {"title": "Cursor MCP docs", "url": "https://cursor.com/docs/context/mcp", "key_takeaway": "JSON at ~/.cursor/mcp.json; 40-tool ceiling"},
+    {"title": "Claude Code MCP setup", "url": "https://code.claude.com/docs/en/mcp", "key_takeaway": "~/.claude.json or .mcp.json"},
+    {"title": "AGENTS.md cross-tool guide", "url": "https://benjamincrozat.com/agents-md", "key_takeaway": "Claude Code uses CLAUDE.md only; symlink workaround"},
+    {"title": "100 MCP servers stress test", "url": "https://www.digitalapplied.com/blog/mcp-server-reliability-100-server-stress-test-study", "key_takeaway": "71% median pass; 24% timeouts; 38% schema"},
+    {"title": "fsyncgate (Dan Luu)", "url": "https://danluu.com/fsyncgate/", "key_takeaway": "fsync errors unrecoverable; durability caveats"},
+    {"title": "Knip dead-code detector", "url": "https://effectivetypescript.com/2023/07/29/knip/", "key_takeaway": "Supersedes ts-prune"}
+  ]
+}
