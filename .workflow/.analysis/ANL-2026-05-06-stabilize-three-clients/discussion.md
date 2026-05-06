@@ -605,12 +605,47 @@ Overall: **0.904** | Weakest: **interaction (0.875)** | Δ vs Round 3: **+0.008*
 - Cursor SKILL 从零开始建，需要参考 Claude/Codex 哪一套作为模板？
 - `--reapply` 修复后是否还需要一个新的 `--reset` 命令显式提供"清空"语义？
 
-### Round 5 - Rule Change Observability (Parked for Dedicated Discussion)
-
-**Status**: ⏸ **PARKED — needs deeper standalone discussion before binding to a release**
+### Round 6 - Implementation Confirmation (2026-05-06 22:00 UTC+8)
 
 #### User Input
-> 用户提问："当前如何处理人为更改已有的规则文件的呢？如何确保可以实时同步呢？感觉一个好的交互方式应该是不阻碍允许修改，但是有相应的事件记录具体哪些进行了修改"
+> User confirmed two-step release strategy (1.7.1 → 1.8.0), fully delegated to Claude Code for implementation.
+> Discussed MCP config scope design for R5 (Claude config path fix).
+
+#### Key Decisions
+
+> **Decision**: `fab init` MCP config scope — support both `--scope project|user` CLI flag and interactive prompt
+> - **Context**: R5 fixes Claude MCP config path from `.claude/settings.json` to `.mcp.json` / `~/.claude.json`
+> - **Chosen**: `--scope` flag for automation/scripts; interactive question when flag omitted. Default: `project` scope (Fabric's core value is project-level rules; team-sharing is the primary use case)
+> - **Rejected**: Single-mode (flag-only or prompt-only) — loses either automation or discoverability
+> - **Impact**: R5 implementation now includes interactive init flow
+
+> **Decision**: `.mcp.json` merge strategy on init — create if absent, deep-merge if exists
+> - **Context**: User may already have other MCP servers configured in `.mcp.json`
+> - **Chosen**: Deep-merge `mcpServers.fabric` into existing JSON; preserve all other `mcpServers.*` entries
+> - **Rejected**: Overwrite (destroys user's existing MCP config); skip-if-exists (silent failure, confusing)
+> - **Impact**: R5 implementation requires JSON deep-merge utility
+
+> **Decision**: Old `settings.json` `mcpServers.fabric` cleanup — doctor detects, `--fix` auto-removes
+> - **Context**: Existing installations have incorrect `mcpServers.fabric` in `.claude/settings.json` (hooks/permissions file)
+> - **Chosen**: Doctor warns on detection; `--fix` removes the fabric entry from settings.json; writes `mcp_config_migrated` ledger event
+> - **Rejected**: Silent removal (hides migration from user); manual-only (poor UX for known-wrong config)
+> - **Impact**: New doctor check code `mcp_config_in_wrong_file`; fixable via `--fix`
+
+#### Updated Decision Trail (new entries)
+
+| D11 | R6 | `fab init` MCP scope: `--scope project|user` flag + interactive prompt, default project | User: team-sharing = primary use case | Adopted |
+| D12 | R6 | `.mcp.json` deep-merge on init (preserve existing entries) | User: don't destroy user's existing MCP config | Adopted |
+| D13 | R6 | Doctor `--fix` auto-removes stale settings.json mcpServers.fabric | Derived from D11/D12: cleanup the old path | Adopted |
+
+
+
+**Status**: ✅ **RESOLVED — unified sync pattern adopted for 1.8.0**
+
+#### User Input (Round 5)
+> User: "当前如何处理人为更改已有的规则文件的呢？如何确保可以实时同步呢？"
+
+#### User Input (Round 7)
+> User confirmed: one-step to full observability. File system = truth; meta.json = auto-derived cache; drop explicit baseline. Sync only when truth is needed.
 
 #### Current Behavior (verified, for reference)
 
@@ -630,42 +665,83 @@ When a user edits `.fabric/rules/<id>.md`:
 - ✅ `doctor --fix` does sync meta + write ledger + invalidate contextCache
 - ✅ Stable-id preservation contract (`<!-- fab:rule-id X -->`) survives renames
 
-#### Proposed Direction (NOT bound to 1.8.0; needs deeper discussion)
+#### Core Principle
 
-Sketch — DO NOT TREAT AS COMMITTED:
+> **Do not block modifications, but make every change fully traceable.**
+> **File system = single source of truth. `agents.meta.json` = auto-derived cache.**
+> **Sync only when truth is needed — no background writes, no watcher complexity, no races.**
 
-**R28 (PROPOSED, DEFERRED)** — Rule-change observability: real-time sync + event attribution
-- Extend `fab serve` watcher glob to include `.fabric/rules/**/*.md`
-- On change, debounced 300ms → compute hash diff against stored meta → append granular ledger events:
-  - `rule_content_changed { stable_id, path, prev_hash, new_hash, fields_diff[], source }`
-  - `rule_added { path, derived_stable_id, source }`
-  - `rule_removed { stable_id, last_known_path, source }`
-  - `rule_id_changed { path, prev_stable_id, new_stable_id, source }`
-- New doctor check `rule_drift_pending` (informational) — summarize pending drift since last `baseline_synced`
-- Estimated work: ~150 LoC; multiple touch points
+#### Resolved Target Behavior
 
-#### Open Questions Blocking Commitment
+| User Action | User Expectation | New Reality |
+|---|---|---|
+| Edit `.fabric/rules/foo.md` | AI sees new rule on next call | MCP call detects mtime change -> incremental sync -> AI gets latest |
+| Drop a `.md` into rules/ | File placed = active | Same as above |
+| Edit rules while `fab serve` runs | Service should notice | MCP call triggers sync; watcher downgraded to cache invalidation flag only |
+| Teammate changed a rule | Should be traceable | `rule_content_changed` ledger event records exact file, what changed |
 
-1. **Cache-only vs full meta auto-sync**: when watcher fires, do we (a) only invalidate `contextCache` (conservative — keeps "edit ↔ baseline" boundary explicit), or (b) auto-rewrite `agents.meta.json` with `source:"watch_autosync"` ledger tag (aggressive — full real-time but writes files in background)?
-2. **Approval semantics**: should there be an explicit `fab doctor --baseline` (or similar) command that promotes accumulated `rule_*_changed` events into a `baseline_synced` event? Or keep using `doctor --fix` as the implicit baseline command?
-3. **Event volume / retention**: if a developer rapidly saves a file 50 times, do we coalesce into one event or write 50? Implication for ledger size and rotation strategy (couples to R2 ledger fix).
-4. **`agents.meta.json` description field semantics**: today it's regenerated on every doctor --fix from `.md` frontmatter. Should the new ledger record `description_overridden_by_user` events when meta.json description differs from .md-derived? Coupling to F23 finding.
-5. **Cross-process locking interaction**: watcher fires in `fab serve` while user runs `fab doctor --fix` from another shell — both would try to write meta + ledger. Couples to R4 (PID lockfile).
-6. **Notification surface**: should ledger events trigger MCP `notifications/resources/updated` to push the change to the active client, or only invalidate cache and let the next tool call read fresh? UX vs network-cost tradeoff.
+**R28 (RESOLVED, 1.8.0 P0)** — Rule-change observability via unified sync pattern:
 
-#### Decision Log
+**Unified Sync Path** (every MCP entry touching Fabric rules runs this):
+```
+MCP call -> mtime detect -> if stale: incremental sync -> ledger events -> response with status summary
+```
 
-> **Decision**: Park R28 for dedicated discussion before binding to 1.8.0
-> - **Context**: Topic surfaces 6 cross-cutting open questions that interact with R2 (ledger), R4 (lockfile), F23 (meta drift), and broader UX semantics
-> - **Chosen**: Document current behavior + proposal sketch; do NOT add R28 to recommendation list yet
-> - **Rejected**: Bind R28 to 1.8.0 P1 immediately — too many unresolved tradeoffs, risk of half-baked design landing in stabilization release
-> - **Impact**: Recommendation count remains at 27. R23 stays as-is (simple watch-glob extension). A dedicated future analysis session should resolve the 6 open questions and then either spawn a refined R28 or bundle it into 1.9.0
+**Sync trigger points:**
 
-#### Round 5 Status
-- No new recommendations added to active list
-- R23 (watch glob extension) **remains** in 1.8.0 P1 as-is — independent of R28 outcome
-- Confidence unchanged (this round explored an additional direction but did not modify the existing plan)
-- A `discussion-rule-observability.md` follow-up doc could capture the dedicated session when scheduled
+| Trigger | Scope | Action |
+|----------|--------|--------|
+| `fab serve` startup | Full scan | Scan rules/ -> hash vs meta -> auto-repair all diffs -> write `meta_reconciled_on_startup` event |
+| MCP tool call (`fab_plan_context`, `get-rules`, etc.) | Incremental | Check mtime -> if stale: process only changed files -> write granular ledger events -> response includes warnings/status |
+| `fab doctor --fix` | Full repair | Consistency repairer: rebuild meta from filesystem, write `meta_reconciled` event |
+
+**Watcher role: DOWNGRADED** — watches `.fabric/rules/` only to set a dirty flag for cache invalidation. Writes nothing.
+
+**Granular Ledger Events:**
+- `rule_content_changed { stable_id, path, prev_hash, new_hash, changed_fields[], source: "mcp_sync" }`
+- `rule_added { path, derived_stable_id, source }`
+- `rule_removed { stable_id, last_known_path, source }`
+- `meta_reconciled { reason: "startup" | "doctor_fix" | "crash_recovery", fixes_applied[] }`
+- `meta_manually_diverged { field, expected, actual }`
+
+**Event Dedup:** One file x one effective change x one debounce (500ms) = one event. Hash-identical saves = no event.
+
+**Doctor Role Change:** "Baseline promoter" -> "Consistency repairer". `baseline_synced` event -> `meta_reconciled`.
+
+Estimated work: ~200 LoC; coupled with R2 (ledger), R4 (lockfile), R11 (typed errors), R24 (action hints).
+
+#### Resolved Open Questions
+
+1. **Cache-only vs auto-sync** → Auto-sync at access points (serve startup + MCP calls). Never in background watcher. **(D21)**
+2. **Approval semantics** → Dropped. No explicit baseline command needed. **(D21, D22)**
+3. **Event volume** → One event per file per 500ms debounce window. Hash-identical saves produce no event. **(D23)**
+4. **Description field** → Serve startup full scan auto-repairs. Doctor detects manual meta tampering as `meta_manually_diverged`. **(D24)**
+5. **Cross-process locking** → Watcher writes nothing; no conflict. Only serve startup + MCP calls + doctor write. **(D25)**
+6. **Notification surface** → (See sub-question below — MCP notifications push pending)
+
+#### Rule Quality Gate (Hybrid B+C)
+
+**MCP-call-time incremental sync:**
+- Lightweight validation on changed files: frontmatter parsable, `<!-- fab:rule-id -->` format, required fields present
+- On failure -> write `rule_validation_error` ledger event; skip bad rule; include in structured warnings
+- On pass -> update meta, invalidate cache
+
+**Read-side tolerance:**
+- Rule parser skips corrupted entries individually
+- Response includes structured machine-actionable warnings with typed error codes + file:line + action_hint
+- AI consumers can precisely cite problems, execute fix commands, and self-assess whether to continue
+
+**Doctor keeps deep audit:** Cross-reference consistency, hash-chain integrity, rule-test linkage — periodic full physical.
+
+#### Updated Recommendations
+
+> **R28** — `[1.8.0, P0, NEW]` Rule-change observability: unified sync at serve startup (full) + MCP calls (incremental via mtime) + doctor (consistency repairer). Granular ledger events. Machine-actionable structured warnings. Watcher cache-invalidation only. ~200 LoC. Coupled: R2/R4/R11/R24.
+
+> **R23** — `[1.8.0, P0]` (was P1, merged into R28) Extend watcher glob + serve startup full scan. Subsumed.
+
+#### Decision Log (Round 5 + 7)
+
+> D21-D26 recorded in main Decision Trail. All 6 open questions resolved.
 
 ## Synthesis & Conclusions
 
@@ -690,7 +766,7 @@ Sketch — DO NOT TREAT AS COMMITTED:
 | F6 | 7 dead helpers in init.ts (~170 LoC) | recommendation | R8 |
 | F7 | writeDefaultBootstrap silent stub | recommendation | R9 |
 | F8 | Dashboard re-declares DoctorReport type | deferred | next minor (Gemini G9 accept) |
-| F9 | fab_get_rules orphan tool (registered nowhere) | recommendation | R10 (delete or register) |
+| F9 | fab_get_rules orphan tool (registered nowhere) | → R8 (merged into dead code removal) |
 | F10 | _error.ts string-prefix HTTP-status matching | recommendation | R11 |
 | F11 | 22 atomic-write callsites, 14 candidates for shared helper | recommendation | R7 |
 | F12 | Concurrency: serve vs doctor --fix / init --reapply races | recommendation | R4 |
@@ -703,7 +779,7 @@ All findings have a non-null disposition. ✅
 
 ### Executive Summary
 
-Fabric v1.7.0 is feature-complete; the remaining work is **stability + scope discipline**, not new functionality. Across 3 rounds and a Gemini cross-verification we identified **16 findings → 12 actionable recommendations + 1 deferral**, sequenced into a two-release plan totalling roughly **600 LoC** of changes plus tests, all at I/O / lifecycle boundaries with zero business-logic risk.
+Fabric v1.7.0 is feature-complete; the remaining work is **stability + scope discipline**, not new functionality. Across 6 rounds (including Gemini cross-verification and user confirmation rounds) we identified **16 findings resolving to ~24 actionable recommendations + 5 deferrals**, sequenced into a two-release plan totalling roughly **~950 LoC** of changes plus tests, all at I/O / lifecycle boundaries with zero business-logic risk.
 
 The most surprising finding is a latent bug: Claude Code MCP configuration is being emitted to `.claude/settings.json` (which is for hooks/permissions) instead of `.mcp.json` / `~/.claude.json`. The most coupling-sensitive change is the signal-handler design — Gemini correctly pointed out that "graceful drain" without an explicit `fsync` is a corruption window, not a corruption fix. The single highest-ROI test layer is golden-file contract tests for emitted MCP tool schemas + emitted client configs, which closes the industry's #1 MCP failure category (38% schema drift).
 
@@ -723,49 +799,81 @@ The 6→3 client narrowing is mechanical (15 files, ClientKind is a typed pivot)
 
 > **R0** — `[1.7.1, P0]` Emit deprecation warnings via `fabric doctor` for any `clientPaths.{windsurf,rooCode,geminiCLI}` keys present in `fabric.config.json`; document migration in CHANGELOG and a new `docs/migration-1.8.md`. Keep zod schema `passthrough()` so users do not see hard validation errors. **No code removal yet.** Effort: ~1-2 days. Evidence: business.json sequencing recommendation; risk_register top item.
 
-**RELEASE 1.8.0 (stabilization milestone, ~10-14 days work, ~600 LoC + tests)**
+**RELEASE 1.8.0 (stabilization milestone, ~10-14 days work, ~950 LoC + tests)**
 
-> **R1** — `[1.8.0, P0, FIRST]` Remove Windsurf / Roo Code / Gemini CLI support: 10 code/schema/i18n files + 6 template-file deletions + 5 doc updates + add `clientScope` test fixture preventing reintroduction. Effort: ~1 day mechanical. Evidence: exploration-codebase.json client_scope_map (full file list); architectural.json blast_radius. Acceptance: `pnpm test` green; `grep -ri 'windsurf\|roo\|gemini' packages/` returns 0 hits in `src/`.
+**P0 (ordered, 9 items):**
 
-> **R7** — `[1.8.0, P0, SECOND]` Build `packages/shared/src/node/atomic-write.ts` exporting `atomicWriteText`, `atomicWriteJson`, and `createLedgerWriteQueue(path)` (path-keyed in-process queue). Migrate the 14 P0/P1 callsites in priority order. Effort: ~2 days. Evidence: stability-deepdive.json atomic_write_inventory. Acceptance: every `.fabric/*` write goes through the helper; old direct-fs calls land in lint-stdio gate.
+> **R1** — `[1.8.0, P0, FIRST]` Remove Windsurf / Roo Code / Gemini CLI support: 10 code/schema/i18n files + 6 template-file deletions + 5 doc updates + add `clientScope` test fixture preventing reintroduction. Effort: ~1 day mechanical. Evidence: exploration-codebase.json client_scope_map. Acceptance: `pnpm test` green; `grep -ri 'windsurf\|roo\|gemini' packages/` returns 0 hits in `src/`.
 
-> **R2** — `[1.8.0, P0]` Lift the SSE reader's tail-tolerance pattern into `readEventLedger`; introduce `LedgerWarning[]` returned to doctor; add fixable check `event_ledger_partial_write` with `truncateLedgerToLastNewline`. ~120 LoC. Evidence: stability-deepdive.json ledger_fix_plan; existing pattern at `packages/server/src/api/events.ts:363-401`. Acceptance: corrupted JSONL fixture surfaces a warning, `--fix` makes it parseable, no real entries lost in test.
+> **R7** — `[1.8.0, P0, SECOND]` Build `packages/shared/src/node/atomic-write.ts` exporting `atomicWriteText`, `atomicWriteJson`, and `createLedgerWriteQueue(path)`. Migrate the 14 P0/P1 callsites. Effort: ~2 days. Evidence: stability-deepdive.json atomic_write_inventory.
 
-> **R3** — `[1.8.0, P0]` Signal handlers SIGINT/SIGTERM/SIGHUP in `packages/server/src/index.ts`: drain via new `InFlightTracker` (5s deadline), then `fsyncSync(ledgerFd)` (Gemini G1), then `server.close()`, then exit. Double-signal hard-exits. ~150 LoC. Evidence: domain.json handshake_lifecycle_audit; Gemini G1 coupling. Acceptance: vitest spawn → SIGTERM → exit-code 0 within 5s; no zombie process; ledger has all in-flight events durable.
+> **R2** — `[1.8.0, P0]` Lift SSE reader's tail-tolerance pattern into `readEventLedger`; introduce `LedgerWarning[]`; add fixable check `event_ledger_partial_write` with `truncateLedgerToLastNewline`. ~120 LoC. Evidence: `packages/server/src/api/events.ts:363-401`.
 
-> **R4** — `[1.8.0, P0]` `.fabric/.serve.lock` PID file with `process.kill(pid, 0)` liveness check (Gemini G2); doctor preflight detects stale lock and recovers; `--force` flag override; `init --reapply` and `doctor --fix` both gate destructive ops on the lock. ~70 LoC. Evidence: stability-deepdive.json concurrency_scenarios; Gemini G2. Acceptance: kill -9 of serve leaves stale lock; next `doctor --fix` runs after stale-lock report (not blocked).
+> **R3** — `[1.8.0, P0]` Signal handlers SIGINT/SIGTERM/SIGHUP: drain via `InFlightTracker` (5s deadline), `fsyncSync(ledgerFd)` (Gemini G1), `server.close()`, exit. Double-signal hard-exits. ~150 LoC. Acceptance: vitest spawn → SIGTERM → exit-code 0 within 5s; no zombie; ledger durable.
 
-> **R5** — `[1.8.0, P0]` Fix Claude MCP config path: split `ClaudeCodeCLIWriter` into `ClaudeCodeMcpWriter` (writes project-scope `.mcp.json`) + keep `.claude/settings.json` strictly for hooks/permissions. Doctor warns if user's `~/.claude.json` already has a `fabric` entry (avoids tool-shadowing per Gemini G3). User-scope `~/.claude.json` support deferred to next minor. Evidence: domain.json client_config_audit. Acceptance: snapshot `__fixtures__/claude-mcp.json.snap` matches Claude Code spec; old `settings.json` writes are migrated by doctor.
+> **R4** — `[1.8.0, P0]` `.fabric/.serve.lock` PID file with `process.kill(pid, 0)` liveness check (Gemini G2); doctor preflight detects stale lock; `--force` override. ~70 LoC.
 
-> **R6** — `[1.8.0, P0, paired with R10]` Export tool input/output Zod schemas to `packages/shared/src/schemas/api-contracts.ts`; add per-tool golden-file snapshot tests. Snapshots include MCP tool annotations from R10. Effort: ~2 days. Evidence: domain.json schema_drift_surface (38% MCP failure category). Acceptance: any handler-vs-schema drift fails CI; `__snapshots__/tool-schemas.snap` is the source of truth.
+> **R5** — `[1.8.0, P0]` Fix Claude MCP config path: write project-scope `.mcp.json` via `--scope project|user` flag + interactive prompt (default: project). Deep-merge if `.mcp.json` exists. Doctor `--fix` auto-removes stale `settings.json` mcpServers.fabric entry; writes `mcp_config_migrated` ledger event. Acceptance: snapshot test matches Claude Code MCP spec. (D11-D13)
 
-> **R10** — `[1.8.0, P0, paired with R6]` Add MCP tool annotations to all registered tools: `readOnlyHint:true`, `idempotentHint:true`, `destructiveHint:false`, `openWorldHint:false`, `title`. Ship in the SAME PR as R6 to avoid snapshot churn (Gemini G6). Evidence: domain.json tool_annotation_audit.
+> **R6+R10** — `[1.8.0, P0, paired]` Export tool input/output Zod schemas to `packages/shared/src/schemas/api-contracts.ts`; add per-tool golden-file snapshot tests. Ship with tool annotations (`readOnlyHint`, `idempotentHint`, `destructiveHint`, `openWorldHint`, `title`) in same PR to avoid snapshot churn (Gemini G6). ~2 days.
 
-> **R12** — `[1.8.0, P1, NEW from Gemini G8]` Add `packages/shared/src/node/mcp-payload-guard.ts` with token-budget enforcement before JSON-RPC response. Particularly relevant for `fab_get_rule_sections` if a section is large. Threshold proposal: ~16KB warn, ~64KB hard limit (revisit during implementation). ~80 LoC. Acceptance: `fab_get_rule_sections` over budget returns truncated payload with explicit `truncated:true` flag.
+> **R17** — `[1.8.0, P0]` Fix `--reapply` data-loss: preserve events.jsonl; skip agents.meta.json regen if rules already exist. No new `--reset` command. (D14)
 
-> **R8** — `[1.8.0, P1]` Delete the 7 dead helper functions at `packages/cli/src/commands/init.ts:1383-1554`. Independent verification: zero callers across packages; superseded by plan/apply pattern at L842-1008. Effort: ~30 min. Evidence: technical.json key_findings.
+> **R28** — `[1.8.0, P0, NEW]` Rule-change observability: unified sync pattern. Serve startup full scan → auto-repair meta. MCP calls: mtime detect → incremental sync → granular ledger events (`rule_content_changed`, `rule_added`, `rule_removed`) → machine-actionable structured warnings (typed error codes + file:line + action_hint). Doctor: consistency repairer role; `meta_reconciled` replaces `baseline_synced`. Watcher downgraded to cache-invalidation-only. Event dedup: one file × one effective change × 500ms debounce = one event. ~200 LoC. Coupled with R2/R4/R11/R24. (D18-D27)
 
-> **R9** — `[1.8.0, P1]` Route `writeDefaultBootstrap` (`packages/server/src/services/doctor.ts:665-669`) to call `buildFabricBootstrapGuide` so `doctor --fix` produces the same framework-aware bootstrap as `init`. Effort: ~1-2 hours. Evidence: technical.json key_findings (Layering issue).
+**P1 (12 items):**
 
-> **R11** — `[1.8.0, P1]` Replace `_error.ts:93-115` string-prefix HTTP-status matching with typed error classes (e.g., `NotFoundError`, `ValidationError`, `ConflictError`). Map errors at the boundary, not by message text. Effort: ~1 day. Evidence: domain.json error_mapping_audit.
+> **R8** — `[1.8.0, P1]` Delete 7 dead helpers at `packages/cli/src/commands/init.ts:1383-1554` + `fab_get_rules` orphan tool (never registered). Effort: ~1 hour. (D17, D32)
 
-> **R13** — `[1.8.0, P1]` Adopt Knip with a `pnpm dlx knip` baseline + CI gate; rerun after each client removal to guarantee no orphan code. Surfaces `fab_get_rules` orphan immediately. Effort: ~half day for baseline + config. Evidence: research.json best_practices; technical.json (Knip would have caught the 7 dead helpers).
+> **R9** — `[1.8.0, P1]` Route `writeDefaultBootstrap` to call `buildFabricBootstrapGuide`. Effort: ~1-2 hours.
 
-**DEFERRED (this cycle)**
-- **D1** — Lift dashboard's `DoctorReport`/`DoctorCheck` from `packages/shared` (Gemini G9 accept; not stability-critical; revisit when contract changes).
-- **D2** — JsonClientConfigWriter format-split refactor (Architectural defer; only 2 JSON writers survive narrowing; saves ~25 LoC for added indirection).
-- **D3** — `init.ts` 6-module decomposition (Tech proposed, Business deferred; high blast radius / no user payoff in stability cycle).
-- **D4** — `tsconfig.base.json` `noUncheckedIndexedAccess` + `exactOptionalPropertyTypes` (1-2 days noise; warrants its own focused minor).
+> **R11** — `[1.8.0, P1]` Replace `_error.ts:93-115` string-prefix matching with typed error class hierarchy: `FabricError` base → `ConfigError` / `RuleError` / `IOFabricError` / `MCPError` / `InitError` sub-trees. Each carries `code` + `actionHint` + `fixable`. ~1 day. (D31)
 
-### Open Questions
+> **R12** — `[1.8.0, P1]` MCP Payload Guard: 16KB warn / 64KB hard limit, user-configurable via `fabric.config.json`. ~80 LoC. (D28)
 
-- MCP Payload Guard token threshold: 16KB / 64KB / client-negotiated? Defer to implementation PR.
-- 1.7.1 → 1.8.0 interval: 2 weeks (matches Fabric's 17-day-7-minor cadence) recommended.
-- After 1.8.0 lands: do we backport any of the I/O hardening to a hypothetical 1.7.x patch line? Recommend NO — 1.7 stays frozen; users upgrade.
+> **R13** — `[1.8.0, P1]` Knip: `knip.config.ts`, zero clean (no baseline), integrated into lint step with ESLint. ~half day. (D35)
+
+> **R14** — `[1.8.0, P1]` Reclassify `content_ref_missing` from manual_error → fixable. Route to existing `writeRuleMeta` auto-recovery path.
+
+> **R15** — `[1.8.0, P1]` `rules_dir_unindexed` doctor check: detect orphan `.md` files in rules/ not in meta. `--fix` indexes them. (R28 MCP sync does this proactively; doctor is fallback.)
+
+> **R16** — `[1.8.0, P1]` `stable_id_collision` detection: two files declaring same `<!-- fab:rule-id -->` → structured warning with both file paths.
+
+> **R19** — `[1.8.0, P1]` Action hints on ALL doctor checks. Every check message includes actionable next step.
+
+> **R20** — `[1.8.0, P1]` Single canonical SKILL source → derive both Claude SKILL + Codex SKILL. Same "one truth, per-client artifacts" philosophy as rules. (D29)
+
+> **R23** — `[1.8.0, P1]` (subsumed into R28) Extend watcher glob to `.fabric/rules/**/*.md` + serve startup full consistency scan.
+
+> **R25** — `[1.8.0, P1]` (was P2, elevated) Pre-existing CLAUDE.md/AGENTS.md detection: serve startup info-level check. Prevents user confusion between Fabric bootstrap and existing rule files. (D30)
+
+**DEFERRED (this cycle):**
+- **D1** — Dashboard `DoctorReport`/`DoctorCheck` type lift (Gemini G9; not stability-critical).
+- **D2** — JsonClientConfigWriter format-split refactor (only 2 JSON writers survive narrowing).
+- **D3** — `init.ts` 6-module decomposition (high blast radius / no user payoff).
+- **D4** — tsconfig `noUncheckedIndexedAccess` + `exactOptionalPropertyTypes` (1-2 days noise).
+- **R21** — Orphan annotations warning → 1.9.0 (D30).
+- **R22** — Invalid stable_id warning → 1.9.0 (D30).
+- **D5/R26** — Full server-side i18n (package boundary complexity; revisit when i18n strategy matures).
+- **R27** — `--reapply` wizard warning: DELETED, obsoleted by R17 fix (D34).
+
+### Open Questions (Resolved)
+
+- MCP Payload Guard token threshold: **16KB warn / 64KB hard limit, user-configurable in fabric.config.json** (D28).
+- `fab_get_rules` orphan tool: **DELETED, merged into R8** (D17, D32).
+- MCP config scope on init: **`--scope project|user` flag + interactive prompt, default project; deep-merge** (D11-D12).
+- `--reapply` fix: **preserve ledger + skip meta regen if rules exist; no `--reset`** (D14).
+- R28 rule-change observability: **all 6 sub-questions resolved** (D18-D27).
+- R11 error class hierarchy: **FabricError base → 5 sub-trees** (D31).
+- Knip config: **`knip.config.ts`, zero clean, lint step** (D35).
+- Test strategy: **implementation + tests in same commit, all items** (D33).
+- SKILL strategy: **single canonical source → derive Claude + Codex** (D29).
 
 ### Follow-up Suggestions
-- A separate analysis-with-file session for: (a) tsconfig hardening rollout (D4), (b) init.ts decomposition (D3) — both deferred-then-revisit candidates.
-- After R6 + R10 ship, a one-page "MCP contract" doc inside `docs/` showing the tool schemas + annotations as the public surface.
+- A separate analysis-with-file session for: (a) tsconfig hardening rollout (D4), (b) init.ts decomposition (D3).
+- After R6 + R10 ship, a one-page "MCP contract" doc inside `docs/` showing tool schemas + annotations as public surface.
+- Consider a third release line at 1.8.x for any stability hot-fixes from wider rollout.
+- R21+R22 follow 1.9.0 alongside any new feature work.
 - Consider a third release line at 1.8.x for any stability hot-fixes that emerge from the wider rollout.
 
 ## Decision Trail
@@ -782,16 +890,119 @@ The 6→3 client narrowing is mechanical (15 files, ClientKind is a typed pivot)
 | D8 | R3 | Defer dashboard type lift to next minor | Gemini G9 partial: not stability-critical | Deferred |
 | D9 | R4 | Pair R6 (schema snapshots) with R10 (annotations) in same PR | Gemini G6: snapshot-vs-annotation churn coupling | Adopted |
 | D10 | R4 | Claude config: project-scope `.mcp.json` only; defer user-scope | Gemini G3: Claude discovery non-determinism | Adopted with deferral |
+| D11 | R6 | `fab init` MCP scope: `--scope project\|user` flag + interactive prompt, default project | User: team-sharing = primary use case | Adopted |
+| D12 | R6 | `.mcp.json` deep-merge on init (preserve existing entries) | User: don't destroy user's existing MCP config | Adopted |
+| D13 | R6 | Doctor `--fix` auto-removes stale settings.json mcpServers.fabric | Derived from D11/D12: cleanup the old path | Adopted |
+| D14 | R6 | `--reapply` fix: preserve ledger + skip meta regen if rules exist; no `--reset` for now | User: fix the data-loss bug, keep it simple | Adopted |
+| D15 | R6 | R20 scoped down: Cursor auto-loads Claude/Codex SKILL dirs; only maintain Claude + Codex SKILL | User: Cursor compatibility confirmed; no Cursor-specific SKILL needed | Adopted |
+| D16 | R6 | Execution: 1.7.1 first → 1.8.0, same branch, separate commits; P0 per-item commits, P1 grouped by theme; small calls self-decided + logged | User: follow recommended approach | Adopted |
+| D17 | R6 | `fab_get_rules` orphan tool: DELETE (never registered, no compat burden, keep tool surface small) | User: delete | Adopted |
+| D18 | R6 | R23/R28 two-layer: 1.8.0 does cache invalidation + coalesced ledger event + doctor info check; deep observability deferred | User: safety-first incremental approach | Adopted |
+| D19 | R6 | Rule quality: watcher incremental validation + read-time tolerance with machine-actionable warnings (Hybrid B+C) | User: AI must be able to understand and self-repair from warnings | Adopted |
+| D20 | R6 | Warning structure: typed error codes + file:line + action_hint + machine-actionable; feeds into R11+R24 | Derived from D19: AI is the consumer, not just humans | Adopted |
+| D21 | R7 | R28: one-step to full observability. File system = truth; meta.json = auto-derived cache; drop explicit baseline | User: explicit baseline too burdensome; file system maps to current spec; ledger events = sufficient traceability | Adopted |
+| D22 | R7 | Doctor role change: "baseline promoter" → "consistency repairer". `baseline_synced` → `meta_reconciled` | Derived from D21: with auto-sync, doctor's job is full consistency repair, not approval | Adopted |
+| D23 | R7 | Event dedup: one file × one effective change × one debounce window (500ms) = one event; hash-identical saves = no event | User: reasonable | Adopted |
+| D24 | R7 | Serve startup: full scan rules/ → hash vs meta → auto-repair + `meta_reconciled_on_startup` event. Doctor: detect manual meta divergence | User: reasonable | Adopted |
+| D25 | R7 | R28 unified sync: watcher auto-sync REMOVED. Sync happens at serve startup (full) + MCP calls (incremental via mtime). Watcher downgraded to cache invalidation only. | User: watcher too frequent; sync only when truth is needed | Adopted |
+| D26 | R7 | Unified rule-access pattern: every MCP entry that touches Fabric rules runs the same path — mtime detect → incremental sync → ledger event → response with status summary | Derived from D25: consistency at access points, no background writes | Adopted |
+| D27 | R7 | MCP notifications: passive only (cache invalidate). No push. Web UI would be the right place if ever needed. | User: passive is sufficient; push adds complexity with no clear payoff | Adopted |
+| D28 | R7 | MCP Payload Guard: 16KB warn / 64KB hard limit + user-configurable via `fabric.config.json` | User: reasonable defaults, let power users customize | Adopted |
+| D29 | R7 | Single canonical SKILL source -> derive Claude SKILL + Codex SKILL. Same philosophy as rules: one truth, per-client artifacts. | User: better than asymmetric Claude-primary approach | Adopted |
+| D30 | R7 | P2 reclassified: R25 -> P1 (pre-existing CLAUDE.md/AGENTS.md detection); R21+R22 -> 1.9.0 | User: reasonable | Adopted |
+| D31 | R7 | R11 error class hierarchy: FabricError base -> Config/Rule/IO/MCP/Init sub-trees. Each carries code + actionHint + fixable. | User: reasonable | Adopted |
+| D32 | R7 | `fab_get_rules` orphan deletion merged into R8 (dead code removal) | User: same category, same commit | Adopted |
+| D33 | R7 | Test strategy: implementation + tests in SAME commit for ALL items (P0 and P1), TDD-style | User: cleaner, no exception needed for P1 | Adopted |
+| D34 | R7 | R27 (--reapply wizard warning): DELETED. Obsoleted by R17 fix; help text covers it | User: non-destructive behavior doesn't warrant wizard intervention | Adopted |
+| D35 | R7 | Knip: `knip.config.ts`, zero-clean baseline (no baseline to maintain), integrated into lint step with ESLint | User: agreed | Adopted |
+| D36 | R7 | R14-R19+R25: all 5 interaction P1 items confirmed as-designed | User: all confirmed | Adopted |
+
+### Round 7 - Rule Change Observability Design (2026-05-06 22:45 UTC+8)
+
+#### User Input
+> User requested: revisit parked R28 together with R23. Discuss the optimal strategy for rule loading and human interaction.
+
+#### Core Principle
+
+> **Do not block modifications, but make every change fully traceable.**
+
+With sufficient ledger events, users and team leads can see a clear timeline in the dashboard or `fab doctor`: who changed what rule, when, and with what effect. This is superior to both "lock it down" and "silently ignore changes."
+
+#### Two-Layer Design
+
+**Layer 1 — 1.8.0 (Enhanced R23, ~40 LoC):**
+
+- Extend chokidar glob to `.fabric/rules/**/*.md` (was: only `agents.meta.json` + bootstrap README)
+- On change, debounce 500ms → invalidate `contextCache` (AI reads fresh on next `fab_plan_context`)
+- Write **one** coalesced ledger event: `cache_invalidated { trigger: "rule_file_change", files: ["a.md", "b.md"], timestamp }`
+- **Do NOT auto-update `agents.meta.json`** — preserves explicit baseline semantics; avoids race with concurrent `doctor --fix`
+- New doctor info-level check `rule_drift_pending`: summarizes file changes since last `baseline_synced`
+
+**Layer 2 — Future Version (R28 full, ~150 LoC, DEFERRED):**
+
+- Compute hash diff against stored meta → granular ledger events (`rule_content_changed` / `rule_added` / `rule_removed` / `rule_id_changed`)
+- Optional `fab serve --auto-sync` mode
+- `fab doctor --baseline` as explicit approval command
+- MCP `notifications/resources/updated` push to connected clients
+
+**Why cache-only, not meta auto-sync:**
+1. **Preserves human approval node** — `agents.meta.json` update = "I confirm current rules are correct." Auto-overwriting loses this.
+2. **Avoids background-write races** — serve watcher writing meta + user running `doctor --fix` = no lock protection yet.
+3. **Safe increment** — cache invalidation is pure benefit (changes are visible); no destructive side effects.
+
+#### Rule Quality Gate (Hybrid B+C)
+
+> **Decision**: Adopt watcher-side incremental validation + read-side tolerance with machine-actionable warnings.
+
+**Watcher-side (change detection):**
+- Lightweight validation: frontmatter parsable, `<!-- fab:rule-id -->` format correct, required fields present
+- On failure → write `rule_validation_error` ledger event; **keep cache stale** (don't feed bad rules to AI)
+- On pass → invalidate cache for next read
+
+**Read-side (MCP call tolerance):**
+- Rule parser skips corrupted entries individually; includes structured warnings in response metadata
+- Warning format (machine-actionable for AI consumers):
+
+```json
+{
+  "warnings": [
+    {
+      "code": "RULE_FRONTMATTER_PARSE_ERROR",
+      "rule_path": ".fabric/rules/auth-strategy.md",
+      "line": 3,
+      "detail": "missing required field 'description'",
+      "action_hint": "Edit the file to add a description field, or run `fab doctor --fix` to auto-repair"
+    },
+    {
+      "code": "RULE_ID_COLLISION",
+      "rule_path": ".fabric/rules/payment-flow.md",
+      "conflict_with": ".fabric/rules/checkout.md",
+      "stable_id": "rule-abc123",
+      "action_hint": "Both files declare the same rule-id. Remove the duplicate from one file."
+    }
+  ]
+}
+```
+
+- AI can: (a) precisely cite which file + line has the problem, (b) execute the action_hint CLI command, (c) self-assess whether to continue with partial context
+
+**Doctor keeps deep audit role:**
+- Cross-reference consistency, hash-chain integrity, rule-test linkage verification
+- Daily flow relies on watcher + tolerance; doctor is the periodic full physical
+
+> This feeds directly into R11 (typed errors replacing string-prefix matching) and R24 (action hints on all checks) — both serve the same goal: **make AI consumers able to understand and handle errors autonomously.**
+
+
 
 ## Session Statistics
 
-- **Rounds**: 3 (Round 1 exploration, Round 2 stability deep-dive, Round 3 Gemini cross-verification)
+- **Rounds**: 6 (Round 1 exploration, Round 2 stability deep-dive, Round 3 Gemini cross-verification, Round 4 interaction layer audit, Round 5 rule-change observability parked, Round 6 implementation confirmation)
 - **Key findings**: 16 (8 Round 1 + 4 Round 2 + 4 Round 3 from Gemini)
-- **Recommendations**: 13 (R0/R1/R2/R3/R4/R5/R6/R7/R8/R9/R10/R11/R12/R13) + 4 deferrals
-- **Dimensions**: 3 (architecture / implementation / performance)
+- **Recommendations**: 27 (R0-R27) + 5 deferrals
+- **Dimensions**: 4 (architecture / implementation / performance / interaction)
 - **Perspectives**: 4 (Technical / Architectural / Domain Expert / Business) + Gemini cross-verification
 - **External research**: 1 workflow-research-agent run (9 findings, 9 best practices, 9 codebase gaps)
-- **Decisions logged**: 10 (D1-D10)
+- **Decisions logged**: 36 (D1-D36)
 - **Final confidence**: 0.896 (architecture 0.879 / implementation 0.890 / performance 0.918)
 - **Quality signals**: pressure pass executed (Round 2), 2 challenge modes fired (devils_advocate + cross_verification_gemini), readiness gate PASSED, no residual risks blocking
 - **Total estimated work**: 1.7.1 ≈ 1-2 days (deprecation/docs only); 1.8.0 ≈ 10-14 days, ~600 LoC across 13 recommendations

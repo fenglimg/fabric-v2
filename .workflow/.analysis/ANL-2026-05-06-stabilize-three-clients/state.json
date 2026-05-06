@@ -14,22 +14,16 @@
     "Domain Expert",
     "Business"
   ],
-  "focus_areas": [
-    "客户端范围收敛",
-    "代码质量与一致性",
-    "稳定性与回归防护",
-    "运行时健壮性"
-  ],
-  "current_round": 4,
+  "current_round": 7,
   "current_phase": "phase-4",
   "confidence": {
     "dimensions": {
-      "architecture": 0.901,
-      "implementation": 0.918,
-      "performance": 0.921,
-      "interaction": 0.875
+      "architecture": 0.93,
+      "implementation": 0.94,
+      "performance": 0.93,
+      "interaction": 0.92
     },
-    "overall": 0.904,
+    "overall": 0.93,
     "weakest": "interaction",
     "history": [
       {
@@ -47,6 +41,10 @@
       {
         "round": 4,
         "overall": 0.904
+      },
+      {
+        "round": 7,
+        "overall": 0.93
       }
     ]
   },
@@ -60,18 +58,6 @@
     "last_findings_count": 25,
     "readiness_gate_passed": true,
     "residual_risks": [],
-    "parked_topics": [
-      {
-        "id": "R28-rule-change-observability",
-        "round": 5,
-        "reason": "6 cross-cutting open questions; needs dedicated session",
-        "interacts_with": [
-          "R2",
-          "R4",
-          "R23",
-          "F23"
-        ]
-      }
-    ]
+    "parked_topics": []
   }
 }
