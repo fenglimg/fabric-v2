@@ -23,7 +23,7 @@ import { appendEventLedgerEvent, readEventLedger, truncateLedgerToLastNewline } 
 import { reconcileRules } from "./rule-sync.js";
 
 export type DoctorStatus = "ok" | "warn" | "error";
-export type DoctorIssueKind = "fixable_error" | "manual_error" | "warning";
+export type DoctorIssueKind = "fixable_error" | "manual_error" | "warning" | "info";
 
 export type DoctorCheck = {
   name: string;
@@ -60,6 +60,7 @@ export type DoctorSummary = {
   fixableErrorCount: number;
   manualErrorCount: number;
   warningCount: number;
+  infoCount: number;
   targetFiles: Record<string, boolean>;
 };
 
@@ -69,6 +70,7 @@ export type DoctorReport = {
   fixable_errors: DoctorIssue[];
   manual_errors: DoctorIssue[];
   warnings: DoctorIssue[];
+  infos: DoctorIssue[];
   summary: DoctorSummary;
 };
 
@@ -203,6 +205,10 @@ type ClaudeSkillLegacyPathInspection = {
   newPath: string;
 };
 
+type PreexistingRootFilesInspection = {
+  detected: string[];
+};
+
 const SCRIPT_EXTENSIONS = new Set([".js", ".jsx", ".ts", ".tsx"]);
 const IGNORED_DIRECTORIES = new Set([
   ".fabric",
@@ -250,6 +256,7 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
   const rulesDirUnindexed = inspectRulesDirUnindexed(projectRoot, meta);
   const stableIdCollision = await inspectStableIdCollisions(projectRoot);
   const claudeSkillLegacyPath = inspectClaudeSkillLegacyPath(projectRoot);
+  const preexistingRootFiles = inspectPreexistingRootFiles(projectRoot);
   const taxonomyExists = existsSync(join(projectRoot, ".fabric", "INITIAL_TAXONOMY.md"));
   const bootstrapExists = existsSync(join(projectRoot, ".fabric", "bootstrap", "README.md"));
   const checks: DoctorCheck[] = [
@@ -268,10 +275,12 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     createRulesDirUnindexedCheck(rulesDirUnindexed),
     createStableIdCollisionCheck(stableIdCollision),
     createClaudeSkillLegacyPathCheck(claudeSkillLegacyPath),
+    createPreexistingRootFilesCheck(preexistingRootFiles),
   ];
   const fixableErrors = collectIssues(checks, "fixable_error");
   const manualErrors = collectIssues(checks, "manual_error");
   const warnings = collectIssues(checks, "warning");
+  const infos = collectIssues(checks, "info");
 
   return {
     status: reduceStatus(checks.map((check) => check.status)),
@@ -279,6 +288,7 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     fixable_errors: fixableErrors,
     manual_errors: manualErrors,
     warnings,
+    infos,
     summary: {
       target: projectRoot,
       framework: {
@@ -294,6 +304,7 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
       fixableErrorCount: fixableErrors.length,
       manualErrorCount: manualErrors.length,
       warningCount: warnings.length,
+      infoCount: infos.length,
       targetFiles: Object.fromEntries(
         TARGET_FILE_PATHS.map((path) => [path, existsSync(join(projectRoot, path))]),
       ),
@@ -1028,6 +1039,27 @@ function createMetaManuallyDivergedCheck(inspection: MetaManuallyDivergedInspect
   }
 
   return okCheck("Meta manual divergence", "agents.meta.json is consistent with rule files on disk.");
+}
+
+function inspectPreexistingRootFiles(projectRoot: string): PreexistingRootFilesInspection {
+  const candidates = ["CLAUDE.md", "AGENTS.md"];
+  const detected = candidates.filter((name) => existsSync(join(projectRoot, name)));
+  return { detected };
+}
+
+function createPreexistingRootFilesCheck(inspection: PreexistingRootFilesInspection): DoctorCheck {
+  if (inspection.detected.length === 0) {
+    return okCheck("Preexisting root markdown", "No CLAUDE.md or AGENTS.md detected at project root.");
+  }
+  return {
+    name: "Preexisting root markdown",
+    status: "ok",
+    kind: "info",
+    code: "preexisting_root_claude_md",
+    fixable: false,
+    message: `${inspection.detected.join(", ")} detected at project root. These root files are not auto-loaded by Fabric MCP.`,
+    actionHint: "Move rule content to `.fabric/rules/` if you want it available in MCP responses.",
+  };
 }
 
 function inspectClaudeSkillLegacyPath(projectRoot: string): ClaudeSkillLegacyPathInspection {

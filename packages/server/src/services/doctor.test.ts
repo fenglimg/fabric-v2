@@ -72,6 +72,7 @@ describe("runDoctorReport", () => {
       "Rules dir unindexed",
       "Stable ID collision",
       "Claude skill path",
+      "Preexisting root markdown",
     ]);
   });
 

@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import type { Server as HttpServer } from "node:http";
 import { join, resolve } from "node:path";
@@ -55,6 +56,21 @@ function formatError(error: unknown): string {
   }
 
   return `Unknown error: ${String(error)}`;
+}
+
+/**
+ * Returns an info-level startup message when CLAUDE.md or AGENTS.md exist at
+ * the project root, or null when neither is present.
+ *
+ * Extracted as a pure helper so unit tests can exercise it without spawning
+ * a full server (TASK-034).
+ */
+export function formatPreexistingRootMessage(projectRoot: string): string | null {
+  const preexisting: string[] = [];
+  if (existsSync(join(projectRoot, "CLAUDE.md"))) preexisting.push("CLAUDE.md");
+  if (existsSync(join(projectRoot, "AGENTS.md"))) preexisting.push("AGENTS.md");
+  if (preexisting.length === 0) return null;
+  return `[startup] info: detected ${preexisting.join(", ")} at project root. Note: Fabric serves rules from .fabric/rules/ via MCP — root markdown files are not auto-loaded into the AI context.`;
 }
 
 export { AGENTS_MD_RESOURCE_URI } from "./constants.js";
@@ -128,6 +144,12 @@ export async function startStdioServer(): Promise<void> {
   process.stderr.write(
     `[startup] rule sync: status=${reconcileResult.status}, events=${reconcileResult.events.length}, ${syncDurationMs}ms\n`,
   );
+
+  // TASK-034: info-level detection of pre-existing root markdown files.
+  const rootMsg = formatPreexistingRootMessage(projectRoot);
+  if (rootMsg !== null) {
+    process.stderr.write(`${rootMsg}\n`);
+  }
 
   const server = createFabricServer(tracker);
   const transport = new StdioServerTransport();
