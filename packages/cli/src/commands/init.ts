@@ -247,7 +247,7 @@ type ClaudeCommandHook = {
   [key: string]: unknown;
 };
 
-const CLAUDE_INIT_SKILL_TEMPLATE = "templates/claude-skills/agents-md-init/SKILL.md";
+const CLAUDE_INIT_SKILL_TEMPLATE = "templates/claude-skills/fabric-init/SKILL.md";
 const CLAUDE_INIT_REMINDER_HOOK_TEMPLATE = "templates/claude-hooks/agents-md-init-reminder.cjs";
 const CLAUDE_INIT_REMINDER_COMMAND = ".claude/hooks/agents-md-init-reminder.cjs";
 const CODEX_INIT_SKILL_TEMPLATE = "templates/codex-skills/fabric-init/SKILL.md";
@@ -527,7 +527,7 @@ export async function buildInitFabricPlan(target: string, options?: InitOptions)
   const taxonomyPath = join(fabricDir, "INITIAL_TAXONOMY.md");
   const rulesDir = join(fabricDir, "rules");
   const eventsPath = join(fabricDir, "events.jsonl");
-  const claudeSkillPath = join(target, ".claude", "skills", "agents-md-init", "SKILL.md");
+  const claudeSkillPath = join(target, ".claude", "skills", "fabric-init", "SKILL.md");
   const codexSkillPath = join(target, ".agents", "skills", "fabric-init", "SKILL.md");
   const codexSessionStartHookPath = join(target, ".codex", "hooks", "fabric-session-start.cjs");
   const codexStopHookPath = join(target, ".codex", "hooks", "fabric-stop-reminder.cjs");

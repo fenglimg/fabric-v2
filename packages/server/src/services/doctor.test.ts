@@ -71,6 +71,7 @@ describe("runDoctorReport", () => {
       "Meta manual divergence",
       "Rules dir unindexed",
       "Stable ID collision",
+      "Claude skill path",
     ]);
   });
 
@@ -493,6 +494,87 @@ describe("runDoctorReport", () => {
 
     expect(fix.fixed.map((e) => e.code)).toContain("content_ref_missing");
     expect(after.fixable_errors.map((e) => e.code)).not.toContain("content_ref_missing");
+  });
+
+  it("TASK-033: claude_skill_legacy_path: detects legacy path and not new path", async () => {
+    const target = createInitializedProject("doctor-skill-legacy-detect");
+    await writeRuleMeta(target, { source: "doctor_fix" });
+    writeFile(".fabric/events.jsonl", "", target);
+
+    // Write SKILL.md at legacy location only
+    writeFile(".claude/skills/agents-md-init/SKILL.md", "# SKILL\n[USER EDIT]\n", target);
+
+    const report = await runDoctorReport(target);
+
+    expect(report.fixable_errors.map((e) => e.code)).toContain("claude_skill_legacy_path");
+    expect(report.checks.find((c) => c.name === "Claude skill path")?.status).toBe("error");
+  });
+
+  it("TASK-033: claude_skill_legacy_path: --fix renames file preserving user content", async () => {
+    const target = createInitializedProject("doctor-skill-legacy-fix");
+    await writeRuleMeta(target, { source: "doctor_fix" });
+    writeFile(".fabric/events.jsonl", "", target);
+
+    const userContent = "# SKILL\n[USER EDIT] custom content\n";
+    writeFile(".claude/skills/agents-md-init/SKILL.md", userContent, target);
+
+    const fix = await runDoctorFix(target);
+    const after = await runDoctorReport(target);
+
+    expect(fix.fixed.map((e) => e.code)).toContain("claude_skill_legacy_path");
+    expect(after.fixable_errors.map((e) => e.code)).not.toContain("claude_skill_legacy_path");
+    expect(after.checks.find((c) => c.name === "Claude skill path")?.status).toBe("ok");
+
+    // New path should have the user's content preserved (mv, not overwrite)
+    const migratedContent = readFileSync(join(target, ".claude", "skills", "fabric-init", "SKILL.md"), "utf8");
+    expect(migratedContent).toContain("[USER EDIT] custom content");
+    // Legacy path should no longer exist
+    const { existsSync: fsExists } = await import("node:fs");
+    expect(fsExists(join(target, ".claude", "skills", "agents-md-init", "SKILL.md"))).toBe(false);
+  });
+
+  it("TASK-033: claude_skill_legacy_path: no detection when both paths absent", async () => {
+    const target = createInitializedProject("doctor-skill-legacy-absent");
+    await writeRuleMeta(target, { source: "doctor_fix" });
+    writeFile(".fabric/events.jsonl", "", target);
+
+    const report = await runDoctorReport(target);
+
+    expect(report.fixable_errors.map((e) => e.code)).not.toContain("claude_skill_legacy_path");
+    expect(report.checks.find((c) => c.name === "Claude skill path")?.status).toBe("ok");
+  });
+
+  it("TASK-033: claude_skill_legacy_path: no detection when new path already exists (new wins)", async () => {
+    const target = createInitializedProject("doctor-skill-legacy-new-wins");
+    await writeRuleMeta(target, { source: "doctor_fix" });
+    writeFile(".fabric/events.jsonl", "", target);
+
+    // Both legacy and new present — new wins; check should NOT fire
+    writeFile(".claude/skills/agents-md-init/SKILL.md", "# SKILL old\n", target);
+    writeFile(".claude/skills/fabric-init/SKILL.md", "# SKILL new\n", target);
+
+    const report = await runDoctorReport(target);
+
+    expect(report.fixable_errors.map((e) => e.code)).not.toContain("claude_skill_legacy_path");
+    expect(report.checks.find((c) => c.name === "Claude skill path")?.status).toBe("ok");
+  });
+
+  it("TASK-033: claude_skill_legacy_path: --fix writes claude_skill_path_migrated ledger event with from/to", async () => {
+    const target = createInitializedProject("doctor-skill-legacy-ledger");
+    await writeRuleMeta(target, { source: "doctor_fix" });
+    writeFile(".fabric/events.jsonl", "", target);
+
+    writeFile(".claude/skills/agents-md-init/SKILL.md", "# SKILL\n", target);
+
+    await runDoctorFix(target);
+
+    const { events } = await readEventLedger(target);
+    const migrationEvent = events.find((e) => e.event_type === "claude_skill_path_migrated");
+    expect(migrationEvent).toBeDefined();
+    if (migrationEvent?.event_type === "claude_skill_path_migrated") {
+      expect(migrationEvent.from).toContain("agents-md-init");
+      expect(migrationEvent.to).toContain("fabric-init");
+    }
   });
 
   it("TASK-026: doctor --fix bootstrap uses same builder as fab init (structurally equivalent)", async () => {

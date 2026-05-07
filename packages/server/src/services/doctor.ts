@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmdirSync, renameSync, statSync } from "node:fs";
 import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import { constants } from "node:fs";
 import { isAbsolute, join, posix, resolve } from "node:path";
@@ -197,6 +197,12 @@ type StableIdCollisionInspection = {
   collisions: StableIdCollision[];
 };
 
+type ClaudeSkillLegacyPathInspection = {
+  hasLegacy: boolean;
+  legacyPath: string;
+  newPath: string;
+};
+
 const SCRIPT_EXTENSIONS = new Set([".js", ".jsx", ".ts", ".tsx"]);
 const IGNORED_DIRECTORIES = new Set([
   ".fabric",
@@ -243,6 +249,7 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
   const metaManuallyDiverged = await inspectMetaManuallyDiverged(projectRoot);
   const rulesDirUnindexed = inspectRulesDirUnindexed(projectRoot, meta);
   const stableIdCollision = await inspectStableIdCollisions(projectRoot);
+  const claudeSkillLegacyPath = inspectClaudeSkillLegacyPath(projectRoot);
   const taxonomyExists = existsSync(join(projectRoot, ".fabric", "INITIAL_TAXONOMY.md"));
   const bootstrapExists = existsSync(join(projectRoot, ".fabric", "bootstrap", "README.md"));
   const checks: DoctorCheck[] = [
@@ -260,6 +267,7 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     createMetaManuallyDivergedCheck(metaManuallyDiverged),
     createRulesDirUnindexedCheck(rulesDirUnindexed),
     createStableIdCollisionCheck(stableIdCollision),
+    createClaudeSkillLegacyPathCheck(claudeSkillLegacyPath),
   ];
   const fixableErrors = collectIssues(checks, "fixable_error");
   const manualErrors = collectIssues(checks, "manual_error");
@@ -356,6 +364,11 @@ export async function runDoctorFix(target: string): Promise<DoctorFixReport> {
   if (before.fixable_errors.some((issue) => issue.code === "mcp_config_in_wrong_file")) {
     await fixMcpConfigInWrongFile(projectRoot);
     fixed.push(findIssue(before.fixable_errors, "mcp_config_in_wrong_file"));
+  }
+
+  if (before.fixable_errors.some((issue) => issue.code === "claude_skill_legacy_path")) {
+    await fixClaudeSkillLegacyPath(projectRoot);
+    fixed.push(findIssue(before.fixable_errors, "claude_skill_legacy_path"));
   }
 
   const report = await runDoctorReport(projectRoot);
@@ -1015,6 +1028,53 @@ function createMetaManuallyDivergedCheck(inspection: MetaManuallyDivergedInspect
   }
 
   return okCheck("Meta manual divergence", "agents.meta.json is consistent with rule files on disk.");
+}
+
+function inspectClaudeSkillLegacyPath(projectRoot: string): ClaudeSkillLegacyPathInspection {
+  const legacyPath = join(projectRoot, ".claude", "skills", "agents-md-init", "SKILL.md");
+  const newPath = join(projectRoot, ".claude", "skills", "fabric-init", "SKILL.md");
+  const hasLegacy = existsSync(legacyPath) && !existsSync(newPath);
+  return { hasLegacy, legacyPath, newPath };
+}
+
+function createClaudeSkillLegacyPathCheck(inspection: ClaudeSkillLegacyPathInspection): DoctorCheck {
+  if (inspection.hasLegacy) {
+    return issueCheck(
+      "Claude skill path",
+      "error",
+      "fixable_error",
+      "claude_skill_legacy_path",
+      `.claude/skills/agents-md-init/SKILL.md exists at the legacy path. Run --fix to migrate it to .claude/skills/fabric-init/SKILL.md (user edits preserved).`,
+      "Run `fab doctor --fix` to rename agents-md-init/ to fabric-init/, preserving any user edits to SKILL.md.",
+    );
+  }
+  return okCheck("Claude skill path", ".claude/skills/fabric-init/SKILL.md is at the canonical path (or not present).");
+}
+
+async function fixClaudeSkillLegacyPath(projectRoot: string): Promise<void> {
+  const legacyPath = join(projectRoot, ".claude", "skills", "agents-md-init", "SKILL.md");
+  const newPath = join(projectRoot, ".claude", "skills", "fabric-init", "SKILL.md");
+
+  if (!existsSync(legacyPath)) {
+    return;
+  }
+
+  mkdirSync(join(newPath, ".."), { recursive: true });
+  renameSync(legacyPath, newPath);
+
+  // Remove the now-empty legacy directory if it is empty
+  const legacyDir = join(legacyPath, "..");
+  try {
+    rmdirSync(legacyDir);
+  } catch {
+    // Directory not empty or already removed — ignore
+  }
+
+  await appendEventLedgerEvent(projectRoot, {
+    event_type: "claude_skill_path_migrated",
+    from: legacyPath,
+    to: newPath,
+  });
 }
 
 async function fixMcpConfigInWrongFile(projectRoot: string): Promise<void> {
