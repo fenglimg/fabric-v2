@@ -113,6 +113,22 @@ export const mcpEventLedgerEventSchema = z.object({
   message: z.unknown(),
 });
 
+export const reapplyCompletedEventSchema = z.object({
+  ...eventLedgerEnvelopeSchema,
+  event_type: z.literal("reapply_completed"),
+  preserved_ledger: z.boolean(),
+  preserved_meta: z.boolean(),
+  rules_count: z.number().int().nonnegative(),
+});
+
+export const eventLedgerTruncatedEventSchema = z.object({
+  ...eventLedgerEnvelopeSchema,
+  event_type: z.literal("event_ledger_truncated"),
+  byte_offset: z.number().int().nonnegative(),
+  byte_length: z.number().int().nonnegative(),
+  corrupted_path: z.string(),
+});
+
 export const eventLedgerEventSchema = z.discriminatedUnion("event_type", [
   ruleContextPlannedEventSchema,
   ruleSelectionEventSchema,
@@ -122,6 +138,8 @@ export const eventLedgerEventSchema = z.discriminatedUnion("event_type", [
   ruleBaselineAcceptedEventSchema,
   baselineSyncedEventSchema,
   mcpEventLedgerEventSchema,
+  reapplyCompletedEventSchema,
+  eventLedgerTruncatedEventSchema,
 ]);
 
 export type RuleContextPlannedEvent = z.infer<typeof ruleContextPlannedEventSchema>;
@@ -132,6 +150,8 @@ export type RuleDriftDetectedEvent = z.infer<typeof ruleDriftDetectedEventSchema
 export type RuleBaselineAcceptedEvent = z.infer<typeof ruleBaselineAcceptedEventSchema>;
 export type BaselineSyncedEvent = z.infer<typeof baselineSyncedEventSchema>;
 export type McpEventLedgerEvent = z.infer<typeof mcpEventLedgerEventSchema>;
+export type ReapplyCompletedEvent = z.infer<typeof reapplyCompletedEventSchema>;
+export type EventLedgerTruncatedEvent = z.infer<typeof eventLedgerTruncatedEventSchema>;
 export type EventLedgerEvent =
   | RuleContextPlannedEvent
   | RuleSelectionEvent
@@ -140,7 +160,9 @@ export type EventLedgerEvent =
   | RuleDriftDetectedEvent
   | RuleBaselineAcceptedEvent
   | BaselineSyncedEvent
-  | McpEventLedgerEvent;
+  | McpEventLedgerEvent
+  | ReapplyCompletedEvent
+  | EventLedgerTruncatedEvent;
 export type EventLedgerEventType = EventLedgerEvent["event_type"];
 type EventLedgerEventInputFor<T extends EventLedgerEvent> = T extends EventLedgerEvent
   ? Omit<T, "kind" | "id" | "ts" | "schema_version" | "correlation_id" | "session_id"> &

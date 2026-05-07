@@ -1,6 +1,6 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import * as childProcess from "node:child_process";
-import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { appendFileSync, chmodSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, parse, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -560,6 +560,14 @@ export async function buildInitFabricPlan(target: string, options?: InitOptions)
 }
 
 export async function executeInitFabricPlan(plan: InitScaffoldPlan): Promise<InitScaffoldResult> {
+  const isReapply = plan.options?.reapply === true;
+
+  // Determine rules presence before any writes (needed for Change B and ledger event).
+  const existingRules = isReapply && existsSync(plan.rulesDir)
+    ? readdirSync(plan.rulesDir).filter((f) => f.endsWith(".md"))
+    : [];
+  const preserveMeta = isReapply && existingRules.length > 0;
+
   if (plan.replaceFabricDir) {
     rmSync(plan.fabricDir, { force: true });
   }
@@ -570,15 +578,28 @@ export async function executeInitFabricPlan(plan: InitScaffoldPlan): Promise<Ini
   preparePlannedPath(plan.bootstrapPath, plan.bootstrapAction);
   writeFileSync(plan.bootstrapPath, plan.bootstrapContent, "utf8");
 
-  preparePlannedPath(plan.metaPath, plan.metaAction);
-  writeFileSync(plan.metaPath, `${JSON.stringify(plan.meta, null, 2)}\n`, "utf8");
+  // Change B: skip agents.meta.json regen when --reapply and rules/*.md already exist.
+  if (!preserveMeta) {
+    preparePlannedPath(plan.metaPath, plan.metaAction);
+    writeFileSync(plan.metaPath, `${JSON.stringify(plan.meta, null, 2)}\n`, "utf8");
+  }
 
   preparePlannedPath(plan.taxonomyPath, plan.taxonomyAction);
   writeFileSync(plan.taxonomyPath, ensureTrailingNewline(plan.taxonomyContent), "utf8");
 
   mkdirSync(plan.rulesDir, { recursive: true });
-  preparePlannedPath(plan.eventsPath, plan.eventsAction);
-  writeFileSync(plan.eventsPath, "", "utf8");
+
+  // Change A: on --reapply, preserve events.jsonl byte-identically; only create it if missing.
+  if (isReapply) {
+    if (!existsSync(plan.eventsPath)) {
+      mkdirSync(dirname(plan.eventsPath), { recursive: true });
+      writeFileSync(plan.eventsPath, "", "utf8");
+    }
+    // Existing file content is intentionally left untouched — no truncation.
+  } else {
+    preparePlannedPath(plan.eventsPath, plan.eventsAction);
+    writeFileSync(plan.eventsPath, "", "utf8");
+  }
 
   preparePlannedPath(plan.forensicPath, plan.forensicAction);
   writeFileSync(plan.forensicPath, `${JSON.stringify(plan.forensicReport, null, 2)}\n`, "utf8");
@@ -590,6 +611,15 @@ export async function executeInitFabricPlan(plan: InitScaffoldPlan): Promise<Ini
   await applyJsonWritePlan(plan.codexHooksConfig);
   applyOptionalTemplateWritePlan(plan.claudeHook);
   await applyClaudeSettingsWritePlan(plan.claudeSettings);
+
+  // Change C: append reapply_completed ledger event after successful --reapply.
+  if (isReapply) {
+    appendReapplyLedgerEvent(plan.eventsPath, {
+      preserved_ledger: true,
+      preserved_meta: preserveMeta,
+      rules_count: existingRules.length,
+    });
+  }
 
   return {
     bootstrapPath: plan.bootstrapPath,
@@ -1269,6 +1299,24 @@ function createInitialMeta(agentsHash: string): AgentsMeta {
       },
     },
   };
+}
+
+function appendReapplyLedgerEvent(
+  eventsPath: string,
+  payload: { preserved_ledger: boolean; preserved_meta: boolean; rules_count: number },
+): void {
+  const event = {
+    kind: "fabric-event",
+    id: `event:${randomUUID()}`,
+    ts: Date.now(),
+    schema_version: 1,
+    event_type: "reapply_completed",
+    preserved_ledger: payload.preserved_ledger,
+    preserved_meta: payload.preserved_meta,
+    rules_count: payload.rules_count,
+  };
+  const line = `${JSON.stringify(event)}\n`;
+  appendFileSync(eventsPath, line, "utf8");
 }
 
 function buildInitialTaxonomyMarkdown(
