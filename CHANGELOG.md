@@ -14,7 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - TBD
 
 ### Deprecated
-- TBD
+- Client `windsurf` support — removed in 1.8.0
+- Client `rooCode` support — removed in 1.8.0
+- Client `geminiCLI` support — removed in 1.8.0
 
 ### Removed
 - TBD

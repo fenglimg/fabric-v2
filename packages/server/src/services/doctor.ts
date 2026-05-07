@@ -205,6 +205,12 @@ type ClaudeSkillLegacyPathInspection = {
   newPath: string;
 };
 
+type LegacyClientPathInspection = {
+  presentKeys: string[];
+};
+
+const LEGACY_CLIENT_PATH_KEYS = ["windsurf", "rooCode", "geminiCLI"] as const;
+
 type PreexistingRootFilesInspection = {
   detected: string[];
 };
@@ -257,6 +263,7 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
   const stableIdCollision = await inspectStableIdCollisions(projectRoot);
   const claudeSkillLegacyPath = inspectClaudeSkillLegacyPath(projectRoot);
   const preexistingRootFiles = inspectPreexistingRootFiles(projectRoot);
+  const legacyClientPaths = inspectLegacyClientPaths(projectRoot);
   const taxonomyExists = existsSync(join(projectRoot, ".fabric", "INITIAL_TAXONOMY.md"));
   const bootstrapExists = existsSync(join(projectRoot, ".fabric", "bootstrap", "README.md"));
   const checks: DoctorCheck[] = [
@@ -276,6 +283,7 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     createStableIdCollisionCheck(stableIdCollision),
     createClaudeSkillLegacyPathCheck(claudeSkillLegacyPath),
     createPreexistingRootFilesCheck(preexistingRootFiles),
+    createLegacyClientPathCheck(legacyClientPaths),
   ];
   const fixableErrors = collectIssues(checks, "fixable_error");
   const manualErrors = collectIssues(checks, "manual_error");
@@ -380,6 +388,11 @@ export async function runDoctorFix(target: string): Promise<DoctorFixReport> {
   if (before.fixable_errors.some((issue) => issue.code === "claude_skill_legacy_path")) {
     await fixClaudeSkillLegacyPath(projectRoot);
     fixed.push(findIssue(before.fixable_errors, "claude_skill_legacy_path"));
+  }
+
+  if (before.warnings.some((issue) => issue.code === "legacy_client_path_present")) {
+    await fixLegacyClientPaths(projectRoot);
+    fixed.push(findIssue(before.warnings, "legacy_client_path_present"));
   }
 
   const report = await runDoctorReport(projectRoot);
@@ -1106,6 +1119,88 @@ async function fixClaudeSkillLegacyPath(projectRoot: string): Promise<void> {
     event_type: "claude_skill_path_migrated",
     from: legacyPath,
     to: newPath,
+  });
+}
+
+function inspectLegacyClientPaths(projectRoot: string): LegacyClientPathInspection {
+  const configPath = join(projectRoot, "fabric.config.json");
+  if (!existsSync(configPath)) {
+    return { presentKeys: [] };
+  }
+
+  try {
+    const parsed = JSON.parse(readFileSync(configPath, "utf8")) as unknown;
+    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return { presentKeys: [] };
+    }
+    const config = parsed as Record<string, unknown>;
+    const clientPaths = config.clientPaths;
+    if (clientPaths === null || typeof clientPaths !== "object" || Array.isArray(clientPaths)) {
+      return { presentKeys: [] };
+    }
+    const cp = clientPaths as Record<string, unknown>;
+    const presentKeys = LEGACY_CLIENT_PATH_KEYS.filter((key) => key in cp);
+    return { presentKeys };
+  } catch {
+    return { presentKeys: [] };
+  }
+}
+
+function createLegacyClientPathCheck(inspection: LegacyClientPathInspection): DoctorCheck {
+  if (inspection.presentKeys.length > 0) {
+    return issueCheck(
+      "Legacy client paths",
+      "warn",
+      "warning",
+      "legacy_client_path_present",
+      `fabric.config.json contains deprecated clientPaths keys: ${inspection.presentKeys.join(", ")}. These clients are removed in 1.8.0; run --fix to clean now or accept the upcoming removal.`,
+      "Run `fab doctor --fix` to remove deprecated clientPaths keys (windsurf, rooCode, geminiCLI) from fabric.config.json.",
+    );
+  }
+  return okCheck("Legacy client paths", "No deprecated clientPaths keys found in fabric.config.json.");
+}
+
+async function fixLegacyClientPaths(projectRoot: string): Promise<void> {
+  const configPath = join(projectRoot, "fabric.config.json");
+  if (!existsSync(configPath)) {
+    return;
+  }
+
+  let config: Record<string, unknown>;
+  try {
+    const parsed = JSON.parse(readFileSync(configPath, "utf8")) as unknown;
+    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return;
+    }
+    config = parsed as Record<string, unknown>;
+  } catch {
+    return;
+  }
+
+  const clientPaths = config.clientPaths;
+  if (clientPaths === null || typeof clientPaths !== "object" || Array.isArray(clientPaths)) {
+    return;
+  }
+
+  const cp = clientPaths as Record<string, unknown>;
+  const removed: string[] = [];
+
+  for (const key of LEGACY_CLIENT_PATH_KEYS) {
+    if (key in cp) {
+      delete cp[key];
+      removed.push(key);
+    }
+  }
+
+  if (removed.length === 0) {
+    return;
+  }
+
+  const updatedConfig = { ...config, clientPaths: cp };
+  await atomicWriteJson(configPath, updatedConfig, { indent: 2 });
+  await appendEventLedgerEvent(projectRoot, {
+    event_type: "legacy_client_path_present",
+    removed,
   });
 }
 

@@ -73,6 +73,7 @@ describe("runDoctorReport", () => {
       "Stable ID collision",
       "Claude skill path",
       "Preexisting root markdown",
+      "Legacy client paths",
     ]);
   });
 
@@ -575,6 +576,90 @@ describe("runDoctorReport", () => {
     if (migrationEvent?.event_type === "claude_skill_path_migrated") {
       expect(migrationEvent.from).toContain("agents-md-init");
       expect(migrationEvent.to).toContain("fabric-init");
+    }
+  });
+
+  it("TASK-037: legacy_client_path_present: detects deprecated clientPaths keys in fabric.config.json", async () => {
+    const target = createInitializedProject("doctor-legacy-client-detect");
+    await writeRuleMeta(target, { source: "doctor_fix" });
+    writeFile(".fabric/events.jsonl", "", target);
+
+    writeFile(
+      "fabric.config.json",
+      JSON.stringify({ clientPaths: { windsurf: "/path/to/windsurf", claudeCodeCLI: "/path/claude" } }, null, 2),
+      target,
+    );
+
+    const report = await runDoctorReport(target);
+
+    expect(report.warnings.map((w) => w.code)).toContain("legacy_client_path_present");
+    const check = report.checks.find((c) => c.name === "Legacy client paths");
+    expect(check?.status).toBe("warn");
+    expect(check?.message).toContain("windsurf");
+    expect(check?.actionHint).toBeTruthy();
+  });
+
+  it("TASK-037: legacy_client_path_present: no detection when only valid clientPaths keys present", async () => {
+    const target = createInitializedProject("doctor-legacy-client-absent");
+    await writeRuleMeta(target, { source: "doctor_fix" });
+    writeFile(".fabric/events.jsonl", "", target);
+
+    writeFile(
+      "fabric.config.json",
+      JSON.stringify({ clientPaths: { claudeCodeCLI: "/path/claude", codexCLI: "/path/codex" } }, null, 2),
+      target,
+    );
+
+    const report = await runDoctorReport(target);
+
+    expect(report.warnings.map((w) => w.code)).not.toContain("legacy_client_path_present");
+    expect(report.checks.find((c) => c.name === "Legacy client paths")?.status).toBe("ok");
+  });
+
+  it("TASK-037: legacy_client_path_present: --fix removes deprecated keys and writes ledger event", async () => {
+    const target = createInitializedProject("doctor-legacy-client-fix");
+    await writeRuleMeta(target, { source: "doctor_fix" });
+    writeFile(".fabric/events.jsonl", "", target);
+
+    writeFile(
+      "fabric.config.json",
+      JSON.stringify({
+        clientPaths: {
+          windsurf: "/path/windsurf",
+          rooCode: "/path/roocode",
+          geminiCLI: "/path/gemini",
+          claudeCodeCLI: "/path/claude",
+        },
+      }, null, 2),
+      target,
+    );
+
+    const before = await runDoctorReport(target);
+    expect(before.warnings.map((w) => w.code)).toContain("legacy_client_path_present");
+
+    const fix = await runDoctorFix(target);
+    const after = await runDoctorReport(target);
+
+    expect(fix.fixed.map((e) => e.code)).toContain("legacy_client_path_present");
+    expect(after.warnings.map((w) => w.code)).not.toContain("legacy_client_path_present");
+    expect(after.checks.find((c) => c.name === "Legacy client paths")?.status).toBe("ok");
+
+    // Verify deprecated keys removed, valid key preserved
+    const configJson = JSON.parse(readFileSync(join(target, "fabric.config.json"), "utf8")) as Record<string, unknown>;
+    const clientPaths = configJson.clientPaths as Record<string, unknown>;
+    expect(clientPaths).not.toHaveProperty("windsurf");
+    expect(clientPaths).not.toHaveProperty("rooCode");
+    expect(clientPaths).not.toHaveProperty("geminiCLI");
+    expect(clientPaths).toHaveProperty("claudeCodeCLI");
+
+    // Ledger event should record the removal
+    const { events } = await readEventLedger(target);
+    const legacyEvent = events.find((e) => e.event_type === "legacy_client_path_present");
+    expect(legacyEvent).toBeDefined();
+    if (legacyEvent?.event_type === "legacy_client_path_present") {
+      expect((legacyEvent as Record<string, unknown>).removed).toEqual(
+        expect.arrayContaining(["windsurf", "rooCode", "geminiCLI"]),
+      );
     }
   });
 
