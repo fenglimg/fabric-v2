@@ -147,7 +147,7 @@ describe("rehydrateAgentsMetaAt", () => {
     await expect(rehydrateAgentsMetaAt(projectRoot, { timestamp: 50 })).rejects.toBeInstanceOf(HistoryStateNotFoundError);
   });
 
-  it("throws LedgerEntryNotFoundError (422) for a missing ledger entry ID", async () => {
+  it("throws LedgerEntryNotFoundError (404) for a missing ledger entry ID", async () => {
     const projectRoot = await createTempProject();
     await mkdir(join(projectRoot, ".fabric"), { recursive: true });
     await writeFile(join(projectRoot, ".fabric", ".intent-ledger.jsonl"), `${JSON.stringify({
@@ -162,7 +162,7 @@ describe("rehydrateAgentsMetaAt", () => {
     await expect(rehydrateAgentsMetaAt(projectRoot, { ledgerEntryId: "ledger:missing" })).rejects.toBeInstanceOf(LedgerEntryNotFoundError);
     await expect(rehydrateAgentsMetaAt(projectRoot, { ledgerEntryId: "ledger:missing" })).rejects.toMatchObject({
       code: "LEDGER_ENTRY_NOT_FOUND",
-      httpStatus: 422,
+      httpStatus: 404,
     });
   });
 
@@ -174,10 +174,10 @@ describe("rehydrateAgentsMetaAt", () => {
     expect(err).toBeInstanceOf(HistoryStateNotFoundError);
   });
 
-  it("LedgerEntryNotFoundError requires actionHint and has correct shape", () => {
+  it("LedgerEntryNotFoundError has HTTP 404 to match old API contract", () => {
     const err = new LedgerEntryNotFoundError("test message");
     expect(err.code).toBe("LEDGER_ENTRY_NOT_FOUND");
-    expect(err.httpStatus).toBe(422);
+    expect(err.httpStatus).toBe(404);
     expect(err.actionHint).toBeTruthy();
     expect(err).toBeInstanceOf(LedgerEntryNotFoundError);
   });

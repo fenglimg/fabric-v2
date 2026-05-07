@@ -73,9 +73,9 @@ describe('FabricError', () => {
       expect(err.httpStatus).toBe(403)
     })
 
-    it('has code path_escape', () => {
+    it('has code PATH_OUTSIDE_PROJECT_ROOT to match old API contract', () => {
       const err = new PathEscapeError('path escaped', { actionHint: 'use relative path' })
-      expect(err.code).toBe('path_escape')
+      expect(err.code).toBe('PATH_OUTSIDE_PROJECT_ROOT')
     })
   })
 

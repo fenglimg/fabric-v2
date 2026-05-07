@@ -22,6 +22,7 @@ export class HistoryStateNotFoundError extends IOFabricError {
 
 export class LedgerEntryNotFoundError extends RuleError {
   readonly code = "LEDGER_ENTRY_NOT_FOUND";
+  readonly httpStatus = 404;
 
   constructor(message: string, opts?: { actionHint?: string }) {
     super(message, {

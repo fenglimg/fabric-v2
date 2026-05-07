@@ -69,6 +69,16 @@ export function createLedgerWriteQueue(): LedgerWriteQueue {
       const prev = chains.get(path) ?? Promise.resolve();
       const next = prev.catch(() => undefined).then(() => doAppend(path, line));
       chains.set(path, next);
+      // When this append settles, remove it from the map if it is still the
+      // latest entry for this path.  Attach a no-op catch before the finally
+      // so that deleting the reference does not surface a spurious unhandled
+      // rejection in environments that track promise reachability.
+      const guarded = next.catch(() => undefined);
+      guarded.finally(() => {
+        if (chains.get(path) === next) {
+          chains.delete(path);
+        }
+      });
       return next;
     },
   };

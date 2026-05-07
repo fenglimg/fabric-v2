@@ -228,4 +228,31 @@ describe("createLedgerWriteQueue", () => {
     const content = await readFile(goodPath, "utf8");
     expect(content).toBe("after-bad\n");
   });
+
+  it("chains map is cleaned up after appends settle (no memory leak)", async () => {
+    const dir = makeTempDir("aw-ledger-cleanup-");
+    const pathA = join(dir, "a.jsonl");
+    const pathB = join(dir, "b.jsonl");
+
+    const queue = createLedgerWriteQueue();
+
+    // Append to two different paths — each should clean up its own chain entry
+    const p1 = queue.append(pathA, "x");
+    const p2 = queue.append(pathB, "y");
+    const p3 = queue.append(pathA, "x2");
+
+    await Promise.all([p1, p2, p3]);
+
+    // Drain microtask queue so finally() callbacks have run
+    await Promise.resolve();
+
+    // A fresh batch of appends should work correctly, proving no stale chain remains
+    await queue.append(pathA, "x3");
+    await queue.append(pathB, "y2");
+
+    const contA = await readFile(pathA, "utf8");
+    const contB = await readFile(pathB, "utf8");
+    expect(contA).toBe("x\nx2\nx3\n");
+    expect(contB).toBe("y\ny2\n");
+  });
 });

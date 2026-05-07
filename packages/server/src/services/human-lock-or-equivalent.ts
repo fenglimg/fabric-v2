@@ -2,6 +2,7 @@ import { RuleError } from "@fenglimg/fabric-shared/errors";
 
 export class HumanLockEntryNotFoundError extends RuleError {
   readonly code = "HUMAN_LOCK_ENTRY_NOT_FOUND";
+  readonly httpStatus = 404;
 
   constructor(id: string, opts?: { actionHint?: string }) {
     super(`Cannot find human lock entry: ${id}`, {

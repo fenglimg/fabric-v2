@@ -5,7 +5,7 @@ export abstract class IOFabricError extends FabricError {
 }
 
 export class PathEscapeError extends IOFabricError {
-  readonly code = 'path_escape'
+  readonly code = 'PATH_OUTSIDE_PROJECT_ROOT'
   readonly httpStatus = 403
 }
 
