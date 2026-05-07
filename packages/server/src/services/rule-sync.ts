@@ -4,6 +4,14 @@
  * Public surface: ensureRulesFresh, reconcileRules + exported types.
  * Internal helpers are co-located in this file.
  * Does NOT wire any consumers (MCP tools, doctor, watchers).
+ *
+ * Distinction between the two public entry points:
+ *
+ * - `ensureRulesFresh`: detects drift, emits ledger events, invalidates cache.
+ *   Does NOT rewrite agents.meta.json. Optimised for hot-path consumers (MCP tools).
+ *
+ * - `reconcileRules`: full scan + rewrites agents.meta.json (via rule-meta-builder)
+ *   + emits ledger events. Used by startup (TASK-022) and doctor repair (TASK-023).
  */
 
 import { readdir, readFile, stat } from "node:fs/promises";
@@ -15,6 +23,7 @@ import { RuleValidationError } from "@fenglimg/fabric-shared/errors";
 import { contextCache } from "../cache.js";
 import { appendEventLedgerEvent } from "./event-ledger.js";
 import { sha256 } from "./_shared.js";
+import { writeRuleMeta } from "./rule-meta-builder.js";
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -22,6 +31,8 @@ import { sha256 } from "./_shared.js";
 
 export interface RuleSyncOptions {
   mode?: "incremental" | "full";
+  /** When true, invalid frontmatter throws RuleValidationError (default: false — collect as warning). */
+  throwOnInvalidFrontmatter?: boolean;
 }
 
 export interface StructuredWarning {
@@ -148,115 +159,154 @@ function toPosixPath(p: string): string {
   return p.split(sep).join("/");
 }
 
-function validateFrontmatter(source: string, filePath: string): void {
-  // If the file starts with frontmatter delimiter, attempt basic YAML parse
+/**
+ * Validate frontmatter in a rule file.
+ * Returns a StructuredWarning when frontmatter is invalid, or null when valid.
+ * When `throwOnInvalid` is true, throws RuleValidationError instead.
+ */
+function validateFrontmatter(
+  source: string,
+  filePath: string,
+  throwOnInvalid: boolean,
+): StructuredWarning | null {
   if (!source.startsWith("---")) {
-    return;
+    return null;
   }
 
   const endIdx = source.indexOf("\n---", 3);
   if (endIdx === -1) {
-    throw new RuleValidationError(
-      `Unterminated YAML frontmatter in ${filePath}`,
-      {
+    const msg = `Unterminated YAML frontmatter in ${filePath}`;
+    if (throwOnInvalid) {
+      throw new RuleValidationError(msg, {
         actionHint: "Run `fab doctor --fix` to repair frontmatter",
         fixable: true,
         details: { file: filePath },
-      },
-    );
+      });
+    }
+
+    return {
+      code: "rule_frontmatter_invalid",
+      file: filePath,
+      action_hint: "Run `fab doctor --fix` to repair frontmatter",
+    };
   }
 
   const frontmatter = source.slice(3, endIdx).trim();
 
-  // Detect obviously broken YAML: unbalanced braces / colons in wrong positions
   for (const line of frontmatter.split("\n")) {
     const trimmed = line.trim();
     if (trimmed.length === 0 || trimmed.startsWith("#")) {
       continue;
     }
 
-    // A valid YAML scalar line must have key: value or be a list item
     if (!trimmed.includes(":") && !trimmed.startsWith("-")) {
-      throw new RuleValidationError(
-        `Invalid YAML frontmatter line "${trimmed}" in ${filePath}`,
-        {
+      const msg = `Invalid YAML frontmatter line "${trimmed}" in ${filePath}`;
+      if (throwOnInvalid) {
+        throw new RuleValidationError(msg, {
           actionHint: "Run `fab doctor --fix` to repair frontmatter",
           fixable: true,
           details: { file: filePath, line: trimmed },
-        },
-      );
+        });
+      }
+
+      return {
+        code: "rule_frontmatter_invalid",
+        file: filePath,
+        action_hint: "Run `fab doctor --fix` to repair frontmatter",
+      };
     }
   }
+
+  return null;
 }
 
+/**
+ * Process a single rule file and return a ledger event if drift is detected.
+ *
+ * High 1 fix: ALWAYS reads the current disk hash first.
+ * Debounce skips ONLY when hash-equal AND within 500ms window.
+ */
 async function processSingleFile(
   projectRoot: string,
   relPath: string,
   metaEntry: MetaEntry | undefined,
   source: "ensureRulesFresh" | "reconcileRules",
-): Promise<RuleSyncLedgerEvent | null> {
+  throwOnInvalidFrontmatter: boolean,
+): Promise<{ event: RuleSyncLedgerEvent | null; warning: StructuredWarning | null }> {
   const absPath = join(projectRoot, relPath);
 
-  let diskMtime: number;
   try {
-    const s = await stat(absPath);
-    diskMtime = s.mtimeMs;
+    await stat(absPath);
   } catch {
     // File was removed
     if (metaEntry !== undefined) {
       return {
-        type: "rule_removed",
-        stable_id: metaEntry.stable_id,
-        path: relPath,
-        prev_hash: metaEntry.content_hash,
-        new_hash: null,
-        changed_fields: ["content"],
-        source,
+        event: {
+          type: "rule_removed",
+          stable_id: metaEntry.stable_id,
+          path: relPath,
+          prev_hash: metaEntry.content_hash,
+          new_hash: null,
+          changed_fields: ["content"],
+          source,
+        },
+        warning: null,
       };
     }
 
-    return null;
+    return { event: null, warning: null };
   }
 
   let content: string;
   try {
     content = await readFile(absPath, "utf8");
   } catch {
-    return null;
+    return { event: null, warning: null };
   }
 
   const newHash = sha256(content);
   const now = Date.now();
-  const debounce = lastSyncState.get(relPath);
+  // Key by absolute path so different project roots with identical relative paths
+  // do not share debounce state (important for multi-project and test isolation).
+  const debounce = lastSyncState.get(absPath);
 
-  // Debounce: if last sync was < 500ms ago AND hash is the same as we last saw, skip
-  if (debounce !== undefined && now - debounce.ts < 500 && newHash === debounce.hash) {
-    return null;
+  // High 1: Debounce only when hash-equal AND within 500ms window.
+  // We always read the file first — never skip pre-read on time alone.
+  if (debounce !== undefined && newHash === debounce.hash && now - debounce.ts < 500) {
+    return { event: null, warning: null };
   }
 
   // Hash-identical save: content matches meta on disk -> no event (but record check)
   if (metaEntry !== undefined && newHash === metaEntry.content_hash) {
-    lastSyncState.set(relPath, { ts: now, hash: newHash });
-    return null;
+    lastSyncState.set(absPath, { ts: now, hash: newHash });
+    return { event: null, warning: null };
   }
 
-  // Content changed — validate frontmatter before emitting (throws on invalid)
-  validateFrontmatter(content, relPath);
+  // Content changed — validate frontmatter before emitting
+  const warning = validateFrontmatter(content, relPath, throwOnInvalidFrontmatter);
+  if (warning !== null) {
+    // Invalid frontmatter in warning mode: record state but do not emit content event
+    lastSyncState.set(absPath, { ts: now, hash: newHash });
+    return { event: null, warning };
+  }
 
   const prevHash = metaEntry?.content_hash ?? debounce?.hash ?? null;
   const stableId = metaEntry?.stable_id ?? relPath;
   const eventType: RuleSyncLedgerEvent["type"] = metaEntry === undefined ? "rule_added" : "rule_content_changed";
 
-  lastSyncState.set(relPath, { ts: now, hash: newHash });
+  lastSyncState.set(absPath, { ts: now, hash: newHash });
 
   return {
-    type: eventType,
-    stable_id: stableId,
-    path: relPath,
-    prev_hash: prevHash,
-    new_hash: newHash,
-    changed_fields: ["content"],
-    source,
+    event: {
+      type: eventType,
+      stable_id: stableId,
+      path: relPath,
+      prev_hash: prevHash,
+      new_hash: newHash,
+      changed_fields: ["content"],
+      source,
+    },
+    warning: null,
   };
 }
 
@@ -283,31 +333,43 @@ async function appendRuleSyncEvents(projectRoot: string, events: RuleSyncLedgerE
 // Public API
 // ---------------------------------------------------------------------------
 
+/**
+ * Detects drift between disk and agents.meta.json, emits ledger events, and
+ * invalidates the cache. Does NOT rewrite agents.meta.json. Optimised for
+ * hot-path consumers (MCP tools).
+ */
 export async function ensureRulesFresh(
   projectRoot: string,
   opts?: RuleSyncOptions,
 ): Promise<RuleSyncReport> {
   const mode = opts?.mode ?? "incremental";
-  const source = "ensureRulesFresh";
+  const throwOnInvalidFrontmatter = opts?.throwOnInvalidFrontmatter ?? false;
+  const source = "ensureRulesFresh" as const;
   const events: RuleSyncLedgerEvent[] = [];
   const warnings: StructuredWarning[] = [];
 
   const metaEntries = await readMetaEntries(projectRoot);
   const ruleFiles = await findRuleFiles(projectRoot);
 
-  const filesToCheck = mode === "full"
-    ? ruleFiles
-    : ruleFiles.filter((f) => {
-        // In incremental mode include: new files (no meta) + files we haven't checked recently
-        const debounce = lastSyncState.get(f);
-        return debounce === undefined || Date.now() - debounce.ts >= 500;
-      });
+  // High 1 fix: Never pre-skip files based on time alone. The debounce check
+  // inside processSingleFile deduplicates correctly: it reads the disk hash first
+  // and only skips when hash-equal AND within the 500ms window.
+  // Incremental and full modes both process all files; the difference is purely
+  // about whether we re-read files we haven't seen before (incremental includes
+  // all, full also includes all — the modes are now equivalent here, kept for
+  // future use by callers that may add per-mode behaviour).
+  const filesToCheck = ruleFiles;
 
   for (const relPath of filesToCheck) {
     const metaEntry = metaEntries.get(relPath);
-    const event = await processSingleFile(projectRoot, relPath, metaEntry, source);
-    if (event !== null) {
-      events.push(event);
+    const result = await processSingleFile(projectRoot, relPath, metaEntry, source, throwOnInvalidFrontmatter);
+
+    if (result.event !== null) {
+      events.push(result.event);
+    }
+
+    if (result.warning !== null) {
+      warnings.push(result.warning);
     }
   }
 
@@ -338,14 +400,79 @@ export async function ensureRulesFresh(
     contextCache.invalidate("file_watch", projectRoot);
   }
 
+  const status = warnings.length > 0 ? "errors" : "reconciled";
+
   return {
-    status: warnings.length > 0 ? "errors" : "reconciled",
+    status,
     events,
     warnings,
     reconciled_files: events.map((e) => e.path),
   };
 }
 
+/**
+ * Full scan + rewrites agents.meta.json with ground-truth disk state + emits
+ * ledger events. Used by startup (TASK-022) and doctor repair (TASK-023).
+ * Returns reconciled_files listing all paths whose meta was updated.
+ */
 export async function reconcileRules(projectRoot: string): Promise<RuleSyncReport> {
-  return ensureRulesFresh(projectRoot, { mode: "full" });
+  const source = "reconcileRules" as const;
+  const events: RuleSyncLedgerEvent[] = [];
+  const warnings: StructuredWarning[] = [];
+
+  const metaEntries = await readMetaEntries(projectRoot);
+  const ruleFiles = await findRuleFiles(projectRoot);
+
+  // Full scan — process every rule file
+  for (const relPath of ruleFiles) {
+    const metaEntry = metaEntries.get(relPath);
+    const result = await processSingleFile(projectRoot, relPath, metaEntry, source, false);
+
+    if (result.event !== null) {
+      events.push(result.event);
+    }
+
+    if (result.warning !== null) {
+      warnings.push(result.warning);
+    }
+  }
+
+  // Check for removals
+  for (const [relPath, entry] of metaEntries) {
+    if (!ruleFiles.includes(relPath)) {
+      const absPath = join(projectRoot, relPath);
+      if (!existsSync(absPath)) {
+        events.push({
+          type: "rule_removed",
+          stable_id: entry.stable_id,
+          path: relPath,
+          prev_hash: entry.content_hash,
+          new_hash: null,
+          changed_fields: ["content"],
+          source,
+        });
+      }
+    }
+  }
+
+  // High 2: Rewrite agents.meta.json with ground-truth disk state when drift detected.
+  // writeRuleMeta rebuilds from disk (hashes, stable_ids, paths) and writes atomically.
+  if (events.length > 0) {
+    await writeRuleMeta(projectRoot, { source: "sync_meta" });
+    await appendRuleSyncEvents(projectRoot, events);
+    contextCache.invalidate("file_watch", projectRoot);
+  }
+
+  if (events.length === 0 && warnings.length === 0) {
+    return { status: "fresh", events: [], warnings: [] };
+  }
+
+  const status = warnings.length > 0 ? "errors" : "reconciled";
+
+  return {
+    status,
+    events,
+    warnings,
+    reconciled_files: events.map((e) => e.path),
+  };
 }

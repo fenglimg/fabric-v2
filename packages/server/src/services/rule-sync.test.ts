@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -128,46 +128,59 @@ describe("rule-sync", () => {
     expect(event.source).toBe("ensureRulesFresh");
   });
 
-  // Test 3: Full scan / reconcileRules
-  it("reconcileRules walks all files and is idempotent after first reconcile", async () => {
-    const projectRoot = await createProject("reconcile");
+  // Test 3a: reconcileRules real idempotency (Medium 3 fix)
+  // Two consecutive reconcileRules calls without any external meta writes.
+  // First call detects drift and writes meta; second call sees no drift -> fresh.
+  it("reconcileRules is idempotent: second call returns fresh without external meta writes", async () => {
+    const projectRoot = await createProject("reconcile-idempotent");
 
     const content = makeRuleMd("Reconcile rule");
     await writeProjectFile(projectRoot, ".fabric/rules/pkg/rule.md", content);
 
-    // No meta at all — first reconcile should detect rule_added
+    // No meta at all — first reconcile should detect rule_added and write meta
     const report1 = await reconcileRules(projectRoot);
     expect(report1.status).toBe("reconciled");
     expect(report1.events.length).toBeGreaterThan(0);
     expect(report1.events[0].type).toBe("rule_added");
+    expect(report1.reconciled_files).toBeDefined();
+    expect(report1.reconciled_files!.length).toBeGreaterThan(0);
 
-    // Write up-to-date meta so second call sees no drift
-    const { createHash } = await import("node:crypto");
-    const hash = `sha256:${createHash("sha256").update(content).digest("hex")}`;
-    await writeProjectFile(
-      projectRoot,
-      ".fabric/agents.meta.json",
-      makeMetaJson([
-        {
-          nodeId: "L1/pkg/rule",
-          relPath: ".fabric/rules/pkg/rule.md",
-          stableId: "pkg/rule",
-          hash,
-        },
-      ]),
-    );
-
-    // Force debounce window to pass by backdating
-    // (We re-import module-scope map via re-run — clear via waiting or calling again after window)
-    // Wait 510ms so the debounce window expires
+    // Wait for debounce window to expire so the second call is not suppressed by time
     await new Promise((r) => setTimeout(r, 510));
 
+    // Second call: reconcileRules wrote meta after first call, so disk == meta -> fresh
     const report2 = await reconcileRules(projectRoot);
     expect(report2.status).toBe("fresh");
     expect(report2.events).toHaveLength(0);
+    expect(report2.warnings).toHaveLength(0);
   });
 
-  // Test 4: Debounce dedup — 3 hash-identical writes within 500ms -> at most 1 event
+  // Test 3b: reconcileRules writes agents.meta.json (High 2)
+  it("reconcileRules writes agents.meta.json reflecting ground-truth disk state", async () => {
+    const projectRoot = await createProject("reconcile-writes-meta");
+
+    const content = makeRuleMd("Meta writer rule");
+    await writeProjectFile(projectRoot, ".fabric/rules/meta/rule.md", content);
+
+    // No meta file initially
+    const report = await reconcileRules(projectRoot);
+    expect(report.status).toBe("reconciled");
+
+    // agents.meta.json must now exist and contain the rule's hash
+    const { createHash } = await import("node:crypto");
+    const expectedHash = `sha256:${createHash("sha256").update(content).digest("hex")}`;
+
+    const metaRaw = await readFile(join(projectRoot, ".fabric", "agents.meta.json"), "utf8");
+    const meta = JSON.parse(metaRaw) as { nodes: Record<string, { hash?: string; content_ref?: string }> };
+
+    const foundNode = Object.values(meta.nodes).find(
+      (n) => n.content_ref === ".fabric/rules/meta/rule.md",
+    );
+    expect(foundNode).toBeDefined();
+    expect(foundNode!.hash).toBe(expectedHash);
+  });
+
+  // Test 4: Debounce dedup — hash-identical writes within 500ms -> at most 1 event
   it("deduplicates hash-identical writes within 500ms debounce window", async () => {
     const projectRoot = await createProject("debounce");
 
@@ -190,17 +203,64 @@ describe("rule-sync", () => {
     expect(r2.events.length + r3.events.length).toBe(0);
   });
 
-  // Test 5: Invalid frontmatter throws RuleError
-  it("throws RuleValidationError with fab doctor --fix hint on broken frontmatter", async () => {
-    const projectRoot = await createProject("invalid-fm");
+  // Test 4b: High 1 — hash changed within 500ms debounce window -> NOT skipped
+  it("does NOT skip a file that changed hash within the 500ms debounce window", async () => {
+    const projectRoot = await createProject("hash-changed-within-window");
+
+    const contentV1 = makeRuleMd("Version one");
+    await writeProjectFile(projectRoot, ".fabric/rules/chg/rule.md", contentV1);
+
+    // First call: rule_added with v1 hash
+    const r1 = await ensureRulesFresh(projectRoot);
+    expect(r1.events.length).toBe(1);
+    expect(r1.events[0].type).toBe("rule_added");
+    const firstHash = r1.events[0].new_hash;
+
+    // Immediately write different content (within debounce window)
+    const contentV2 = makeRuleMd("Version two — different content");
+    await writeProjectFile(projectRoot, ".fabric/rules/chg/rule.md", contentV2);
+
+    // Second call must detect the changed hash — must NOT be suppressed
+    const r2 = await ensureRulesFresh(projectRoot);
+    expect(r2.events.length).toBe(1);
+    expect(r2.events[0].new_hash).not.toBe(firstHash);
+  });
+
+  // Test 5: Invalid frontmatter — throw mode (throwOnInvalidFrontmatter: true)
+  it("throws RuleValidationError with fab doctor --fix hint on broken frontmatter when throwOnInvalidFrontmatter: true", async () => {
+    const projectRoot = await createProject("invalid-fm-throw");
 
     // Unterminated frontmatter (missing closing ---)
     const brokenContent = "---\nsummary: broken\nno-closing-delimiter\n";
     await writeProjectFile(projectRoot, ".fabric/rules/broken/rule.md", brokenContent);
 
-    await expect(ensureRulesFresh(projectRoot)).rejects.toMatchObject({
+    await expect(
+      ensureRulesFresh(projectRoot, { throwOnInvalidFrontmatter: true }),
+    ).rejects.toMatchObject({
       actionHint: expect.stringContaining("fab doctor --fix"),
     });
+  });
+
+  // Test 5b: Invalid frontmatter — default warning-collection mode (Medium 2)
+  it("collects warning instead of throwing on invalid frontmatter in default mode", async () => {
+    const projectRoot = await createProject("invalid-fm-warn");
+
+    // Frontmatter with invalid YAML line (no colon, not a list item)
+    const badContent = "---\nbadline\n---\n# Title\n";
+    await writeProjectFile(projectRoot, ".fabric/rules/bad/rule.md", badContent);
+
+    // Default mode: should NOT throw
+    const report = await ensureRulesFresh(projectRoot);
+
+    expect(report.warnings.length).toBeGreaterThan(0);
+    const warning = report.warnings[0];
+    expect(warning).toHaveProperty("code", "rule_frontmatter_invalid");
+    expect(warning).toHaveProperty("file");
+    expect(warning).toHaveProperty("action_hint");
+    expect(warning.action_hint).toContain("fab doctor --fix");
+    expect(typeof warning.code).toBe("string");
+    expect(typeof warning.file).toBe("string");
+    expect(typeof warning.action_hint).toBe("string");
   });
 
   // Test 6: Hash-identical save (mtime changes, content unchanged) -> no event
@@ -250,7 +310,7 @@ describe("rule-sync", () => {
     spy.mockRestore();
   });
 
-  // Test 8: Structured warning shape
+  // Test 8: Structured warning shape (existing test preserved)
   it("returns structured warning with code, file, and action_hint fields", async () => {
     const projectRoot = await createProject("warn-shape");
 
@@ -258,32 +318,31 @@ describe("rule-sync", () => {
     const badContent = "---\nbadline\n---\n# Title\n";
     await writeProjectFile(projectRoot, ".fabric/rules/bad/rule.md", badContent);
 
-    let caught: unknown;
-    let report: Awaited<ReturnType<typeof ensureRulesFresh>> | undefined;
+    // Default mode: collects as warning
+    const report = await ensureRulesFresh(projectRoot);
 
-    try {
-      report = await ensureRulesFresh(projectRoot);
-    } catch (err) {
-      caught = err;
-    }
+    expect(report.warnings.length).toBeGreaterThan(0);
+    const warning = report.warnings[0];
+    expect(warning).toHaveProperty("code");
+    expect(warning).toHaveProperty("file");
+    expect(warning).toHaveProperty("action_hint");
+    expect(typeof warning.code).toBe("string");
+    expect(typeof warning.file).toBe("string");
+    expect(typeof warning.action_hint).toBe("string");
+  });
 
-    // Either the error is thrown (RuleValidationError), or collected as warning
-    if (caught !== undefined) {
-      // Thrown — verify it has the right shape
-      expect(caught).toMatchObject({
-        actionHint: expect.stringContaining("fab doctor --fix"),
-      });
-    } else {
-      // Collected as warning
-      expect(report).toBeDefined();
-      expect(report!.warnings.length).toBeGreaterThan(0);
-      const warning = report!.warnings[0];
-      expect(warning).toHaveProperty("code");
-      expect(warning).toHaveProperty("file");
-      expect(warning).toHaveProperty("action_hint");
-      expect(typeof warning.code).toBe("string");
-      expect(typeof warning.file).toBe("string");
-      expect(typeof warning.action_hint).toBe("string");
+  // Test 9: Source field correct — reconcileRules emits events with source "reconcileRules" (Medium 1)
+  it("reconcileRules emits events with source field set to reconcileRules", async () => {
+    const projectRoot = await createProject("source-field");
+
+    await writeProjectFile(projectRoot, ".fabric/rules/src/rule.md", makeRuleMd("Source test rule"));
+
+    // No meta -> rule_added event
+    const report = await reconcileRules(projectRoot);
+
+    expect(report.events.length).toBeGreaterThan(0);
+    for (const event of report.events) {
+      expect(event.source).toBe("reconcileRules");
     }
   });
 });
