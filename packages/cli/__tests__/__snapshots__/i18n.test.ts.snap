@@ -6,7 +6,7 @@ exports[`cli i18n > renders en command descriptions and output snapshots 1`] = `
     "description": "Initialize Fabric in the target project.",
     "errors": [],
     "stderr": [
-      "Created <fixture-2>/.claude/skills/agents-md-init/SKILL.md",
+      "Created <fixture-2>/.claude/skills/fabric-init/SKILL.md",
       "Created <fixture-2>/.agents/skills/fabric-init/SKILL.md",
       "Created <fixture-2>/.codex/hooks/fabric-session-start.cjs",
       "Created <fixture-2>/.codex/hooks/fabric-stop-reminder.cjs",
@@ -77,7 +77,7 @@ exports[`cli i18n > renders zh-CN command descriptions and output snapshots 1`] 
     "description": "在目标项目中初始化 Fabric。",
     "errors": [],
     "stderr": [
-      "已创建 <fixture-2>/.claude/skills/agents-md-init/SKILL.md",
+      "已创建 <fixture-2>/.claude/skills/fabric-init/SKILL.md",
       "已创建 <fixture-2>/.agents/skills/fabric-init/SKILL.md",
       "已创建 <fixture-2>/.codex/hooks/fabric-session-start.cjs",
       "已创建 <fixture-2>/.codex/hooks/fabric-stop-reminder.cjs",

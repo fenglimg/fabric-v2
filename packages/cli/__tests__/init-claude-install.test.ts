@@ -9,7 +9,7 @@ import { initFabric } from "../src/commands/init.ts";
 import { cleanupFixtureRoot, createWerewolfFixtureRoot } from "./helpers/init-test-utils.ts";
 
 const tempRoots: string[] = [];
-const skillTemplatePath = resolve(process.cwd(), "../../templates/claude-skills/agents-md-init/SKILL.md");
+const skillTemplatePath = resolve(process.cwd(), "../../templates/claude-skills/fabric-init/SKILL.md");
 const codexSkillTemplatePath = resolve(process.cwd(), "../../templates/codex-skills/fabric-init/SKILL.md");
 
 afterEach(() => {

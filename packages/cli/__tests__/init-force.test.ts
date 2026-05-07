@@ -40,14 +40,14 @@ describe("initFabric force behavior", () => {
     const control = createWerewolfFixtureRoot("fab-init-force-skill-control");
     tempRoots.push(target, control);
 
-    writeFixtureFile(target, ".claude/skills/agents-md-init/SKILL.md", "# custom skill\n");
+    writeFixtureFile(target, ".claude/skills/fabric-init/SKILL.md", "# custom skill\n");
 
     const result = await initFabric(target, { force: true });
     await initFabric(control);
 
     expect(result.claudeSkillAction).toBe("overwritten");
-    expect(readFixtureFile(target, ".claude/skills/agents-md-init/SKILL.md")).toBe(
-      readFixtureFile(control, ".claude/skills/agents-md-init/SKILL.md"),
+    expect(readFixtureFile(target, ".claude/skills/fabric-init/SKILL.md")).toBe(
+      readFixtureFile(control, ".claude/skills/fabric-init/SKILL.md"),
     );
   });
 

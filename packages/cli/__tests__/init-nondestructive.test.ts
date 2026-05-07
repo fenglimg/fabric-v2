@@ -156,12 +156,12 @@ describe("initFabric non-destructive behavior", () => {
     tempRoots.push(target);
     const original = "# custom skill\n";
 
-    writeFixtureFile(target, ".claude/skills/agents-md-init/SKILL.md", original);
+    writeFixtureFile(target, ".claude/skills/fabric-init/SKILL.md", original);
 
     const result = await initFabric(target);
 
     expect(result.claudeSkillAction).toBe("skipped");
-    expect(readFixtureFile(target, ".claude/skills/agents-md-init/SKILL.md")).toBe(original);
+    expect(readFixtureFile(target, ".claude/skills/fabric-init/SKILL.md")).toBe(original);
     expect(existsSync(result.forensicPath)).toBe(true);
   });
 
