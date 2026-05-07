@@ -410,12 +410,23 @@ export async function ensureRulesFresh(
   };
 }
 
+export interface ReconcileRulesOptions {
+  /** Identifies who triggered the reconcile; controls which summary ledger event is written. */
+  trigger?: "startup" | "doctor" | "manual";
+}
+
 /**
  * Full scan + rewrites agents.meta.json with ground-truth disk state + emits
  * ledger events. Used by startup (TASK-022) and doctor repair (TASK-023).
  * Returns reconciled_files listing all paths whose meta was updated.
+ *
+ * When `opts.trigger` is `'startup'`, a `meta_reconciled_on_startup` summary
+ * ledger event is appended after per-file drift events. Other trigger values
+ * append a `meta_reconciled` event. Omitting the trigger skips the summary.
  */
-export async function reconcileRules(projectRoot: string): Promise<RuleSyncReport> {
+export async function reconcileRules(projectRoot: string, opts?: ReconcileRulesOptions): Promise<RuleSyncReport> {
+  const trigger = opts?.trigger;
+  const startTime = Date.now();
   const source = "reconcileRules" as const;
   const events: RuleSyncLedgerEvent[] = [];
   const warnings: StructuredWarning[] = [];
@@ -463,6 +474,29 @@ export async function reconcileRules(projectRoot: string): Promise<RuleSyncRepor
     contextCache.invalidate("file_watch", projectRoot);
   }
 
+  const duration_ms = Date.now() - startTime;
+  const reconciledFiles = events.map((e) => e.path);
+
+  // Emit summary ledger event when a trigger is specified and drift was found.
+  if (trigger !== undefined && events.length > 0) {
+    if (trigger === "startup") {
+      await appendEventLedgerEvent(projectRoot, {
+        event_type: "meta_reconciled_on_startup",
+        reconciled_files: reconciledFiles,
+        duration_ms,
+        source: "reconcileRules",
+      });
+    } else {
+      await appendEventLedgerEvent(projectRoot, {
+        event_type: "meta_reconciled",
+        reconciled_files: reconciledFiles,
+        duration_ms,
+        trigger,
+        source: "reconcileRules",
+      });
+    }
+  }
+
   if (events.length === 0 && warnings.length === 0) {
     return { status: "fresh", events: [], warnings: [] };
   }
@@ -473,6 +507,6 @@ export async function reconcileRules(projectRoot: string): Promise<RuleSyncRepor
     status,
     events,
     warnings,
-    reconciled_files: events.map((e) => e.path),
+    reconciled_files: reconciledFiles,
   };
 }

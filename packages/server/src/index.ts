@@ -10,6 +10,7 @@ import { AGENTS_MD_RESOURCE_URI } from "./constants.js";
 import { resolveProjectRoot } from "./meta-reader.js";
 import { flushAndSyncEventLedger } from "./services/event-ledger.js";
 import { createInFlightTracker, type InFlightTracker } from "./services/in-flight-tracker.js";
+import { reconcileRules } from "./services/rule-sync.js";
 import { registerPlanContext } from "./tools/plan-context.js";
 import { registerRuleSections } from "./tools/rule-sections.js";
 
@@ -61,6 +62,16 @@ export { AGENTS_MD_RESOURCE_URI } from "./constants.js";
 export { flushAndSyncEventLedger } from "./services/event-ledger.js";
 export { createInFlightTracker, type InFlightTracker } from "./services/in-flight-tracker.js";
 export {
+  ensureRulesFresh,
+  reconcileRules,
+  type LedgerEvent,
+  type ReconcileRulesOptions,
+  type RuleSyncLedgerEvent,
+  type RuleSyncOptions,
+  type RuleSyncReport,
+  type StructuredWarning,
+} from "./services/rule-sync.js";
+export {
   acquireLock,
   checkLockOrThrow,
   readLockState,
@@ -107,6 +118,17 @@ export function createFabricServer(tracker?: InFlightTracker): McpServer {
 export async function startStdioServer(): Promise<void> {
   const tracker = createInFlightTracker();
   const projectRoot = resolveProjectRoot();
+
+  // TASK-022 (R28): run full rule consistency scan BEFORE accepting MCP requests.
+  // Rules added while the server was offline become visible immediately; callers
+  // no longer need to run `fab doctor --fix` after an offline rule change.
+  const syncStart = Date.now();
+  const reconcileResult = await reconcileRules(projectRoot, { trigger: "startup" });
+  const syncDurationMs = Date.now() - syncStart;
+  process.stderr.write(
+    `[startup] rule sync: status=${reconcileResult.status}, events=${reconcileResult.events.length}, ${syncDurationMs}ms\n`,
+  );
+
   const server = createFabricServer(tracker);
   const transport = new StdioServerTransport();
 

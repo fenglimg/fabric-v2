@@ -136,6 +136,23 @@ export const mcpConfigMigratedEventSchema = z.object({
   removed_from: z.string(),
 });
 
+export const metaReconciledOnStartupEventSchema = z.object({
+  ...eventLedgerEnvelopeSchema,
+  event_type: z.literal("meta_reconciled_on_startup"),
+  reconciled_files: z.array(z.string()),
+  duration_ms: z.number().int().nonnegative(),
+  source: z.literal("reconcileRules"),
+});
+
+export const metaReconciledEventSchema = z.object({
+  ...eventLedgerEnvelopeSchema,
+  event_type: z.literal("meta_reconciled"),
+  reconciled_files: z.array(z.string()),
+  duration_ms: z.number().int().nonnegative(),
+  trigger: z.enum(["doctor", "manual"]),
+  source: z.literal("reconcileRules"),
+});
+
 export const eventLedgerEventSchema = z.discriminatedUnion("event_type", [
   ruleContextPlannedEventSchema,
   ruleSelectionEventSchema,
@@ -148,6 +165,8 @@ export const eventLedgerEventSchema = z.discriminatedUnion("event_type", [
   reapplyCompletedEventSchema,
   eventLedgerTruncatedEventSchema,
   mcpConfigMigratedEventSchema,
+  metaReconciledOnStartupEventSchema,
+  metaReconciledEventSchema,
 ]);
 
 export type RuleContextPlannedEvent = z.infer<typeof ruleContextPlannedEventSchema>;
@@ -161,6 +180,8 @@ export type McpEventLedgerEvent = z.infer<typeof mcpEventLedgerEventSchema>;
 export type ReapplyCompletedEvent = z.infer<typeof reapplyCompletedEventSchema>;
 export type EventLedgerTruncatedEvent = z.infer<typeof eventLedgerTruncatedEventSchema>;
 export type McpConfigMigratedEvent = z.infer<typeof mcpConfigMigratedEventSchema>;
+export type MetaReconciledOnStartupEvent = z.infer<typeof metaReconciledOnStartupEventSchema>;
+export type MetaReconciledEvent = z.infer<typeof metaReconciledEventSchema>;
 export type EventLedgerEvent =
   | RuleContextPlannedEvent
   | RuleSelectionEvent
@@ -172,7 +193,9 @@ export type EventLedgerEvent =
   | McpEventLedgerEvent
   | ReapplyCompletedEvent
   | EventLedgerTruncatedEvent
-  | McpConfigMigratedEvent;
+  | McpConfigMigratedEvent
+  | MetaReconciledOnStartupEvent
+  | MetaReconciledEvent;
 export type EventLedgerEventType = EventLedgerEvent["event_type"];
 type EventLedgerEventInputFor<T extends EventLedgerEvent> = T extends EventLedgerEvent
   ? Omit<T, "kind" | "id" | "ts" | "schema_version" | "correlation_id" | "session_id"> &
