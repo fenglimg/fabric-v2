@@ -290,6 +290,71 @@ describe("tool rule freshness — ensureRulesFresh wired into MCP tool handlers"
   });
 
   // -------------------------------------------------------------------------
+  // 4b. Rapid-fire MCP calls: only the first call does real I/O (cooldown)
+  //
+  // ESM native modules cannot be spied on directly (non-configurable namespace).
+  // Instead we verify the cooldown via observable behavior: the second call
+  // returns 'fresh' even after we mutate the file on disk (proving the cooldown
+  // prevented a re-read).
+  // -------------------------------------------------------------------------
+
+  it("rapid-fire MCP calls: second consecutive call hits cooldown and returns fresh even after disk mutation", async () => {
+    const root = makeTmp();
+
+    // Write a consistent project: rule file + matching meta hash
+    const { createHash } = await import("node:crypto");
+    const ruleContent = [
+      "---",
+      "summary: Cooldown MCP test rule",
+      "intent_clues: [general]",
+      "tech_stack: [TypeScript]",
+      "impact: [Runtime]",
+      "must_read_if: Cooldown MCP test rule",
+      "---",
+      "# Cooldown MCP test rule",
+      "Content.",
+      "",
+    ].join("\n");
+
+    const hash = `sha256:${createHash("sha256").update(ruleContent).digest("hex")}`;
+    writeFileSync(join(root, ".fabric", "rules", "mcp-test.md"), ruleContent, "utf8");
+    writeAgentsMeta(root, {
+      revision: "test-rev",
+      nodes: {
+        "mcp-test-node": {
+          stable_id: "mcp-test",
+          file: ".fabric/rules/mcp-test.md",
+          content_ref: ".fabric/rules/mcp-test.md",
+          hash,
+          scope_glob: "**",
+          deps: ["L0"],
+          priority: "medium",
+          layer: "L1",
+          topology_type: "mirror",
+        },
+      },
+    });
+
+    // Restore spy so the real implementation runs (cooldown machinery must be active)
+    vi.restoreAllMocks();
+
+    // First call: real I/O, sets cooldown
+    const r1 = await ruleSyncModule.ensureRulesFresh(root);
+    expect(r1.status).toBe("fresh");
+
+    // Mutate the rule file on disk — if cooldown is bypassed, second call detects drift.
+    // If cooldown works, second call returns fresh without reading the file.
+    const mutated = ruleContent + "\nExtra line to change hash.\n";
+    writeFileSync(join(root, ".fabric", "rules", "mcp-test.md"), mutated, "utf8");
+
+    // Second call immediately: cooldown active -> fresh (disk mutation invisible)
+    const r2 = await ruleSyncModule.ensureRulesFresh(root);
+    expect(r2.status).toBe("fresh");
+    expect(r2.events).toHaveLength(0);
+    expect(r2.warnings).toHaveLength(0);
+  });
+
+  // -------------------------------------------------------------------------
   // 5. All 3 handlers wire ensureRulesFresh (spy call count verification)
   // -------------------------------------------------------------------------
 

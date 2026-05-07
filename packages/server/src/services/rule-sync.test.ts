@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { contextCache } from "../cache.js";
-import { ensureRulesFresh, reconcileRules } from "./rule-sync.js";
+import { ensureRulesFresh, invalidateRuleSyncCooldown, reconcileRules } from "./rule-sync.js";
 
 const tempDirs: string[] = [];
 
@@ -344,5 +344,139 @@ describe("rule-sync", () => {
     for (const event of report.events) {
       expect(event.source).toBe("reconcileRules");
     }
+  });
+
+  // ---------------------------------------------------------------------------
+  // Cooldown tests (Layer 2 P0 review)
+  // ---------------------------------------------------------------------------
+
+  // Test C1: Two consecutive fresh calls within 500ms -> second returns fresh instantly
+  // Verified via observable behavior: overwrite the rule file between calls and
+  // confirm the second call still returns fresh (proving it never re-read the file).
+  it("global cooldown: second ensureRulesFresh call within 500ms returns fresh even after disk mutation", async () => {
+    const projectRoot = await createProject("cooldown-hit");
+
+    const ruleContent = makeRuleMd("Cooldown rule");
+    await writeProjectFile(projectRoot, ".fabric/rules/cd/rule.md", ruleContent);
+
+    const { createHash } = await import("node:crypto");
+    const hash = `sha256:${createHash("sha256").update(ruleContent).digest("hex")}`;
+    await writeProjectFile(
+      projectRoot,
+      ".fabric/agents.meta.json",
+      makeMetaJson([{ nodeId: "L1/cd/rule", relPath: ".fabric/rules/cd/rule.md", stableId: "cd/rule", hash }]),
+    );
+
+    // First call: does real I/O, result is fresh, cooldown is set
+    const r1 = await ensureRulesFresh(projectRoot);
+    expect(r1.status).toBe("fresh");
+
+    // Mutate the file on disk — if the second call does I/O it would detect drift
+    // and return 'reconciled'. If cooldown works it returns 'fresh' (skipped I/O).
+    await writeProjectFile(projectRoot, ".fabric/rules/cd/rule.md", makeRuleMd("Mutated after cooldown"));
+
+    // Second call within 500ms: cooldown should skip I/O and return fresh
+    const r2 = await ensureRulesFresh(projectRoot);
+    expect(r2.status).toBe("fresh");
+    expect(r2.events).toHaveLength(0);
+    expect(r2.warnings).toHaveLength(0);
+  });
+
+  // Test C2: mode 'full' bypasses the cooldown
+  // Verified via observable behavior: after priming cooldown, mode:'full' with
+  // a mutated file DOES detect drift (would not if still using cached result).
+  it("global cooldown: mode 'full' bypasses the cooldown and performs real I/O", async () => {
+    const projectRoot = await createProject("cooldown-full-bypass");
+
+    const ruleContent = makeRuleMd("Full bypass rule");
+    await writeProjectFile(projectRoot, ".fabric/rules/fb/rule.md", ruleContent);
+
+    const { createHash } = await import("node:crypto");
+    const hash = `sha256:${createHash("sha256").update(ruleContent).digest("hex")}`;
+    await writeProjectFile(
+      projectRoot,
+      ".fabric/agents.meta.json",
+      makeMetaJson([{ nodeId: "L1/fb/rule", relPath: ".fabric/rules/fb/rule.md", stableId: "fb/rule", hash }]),
+    );
+
+    // Prime the cooldown
+    const r1 = await ensureRulesFresh(projectRoot);
+    expect(r1.status).toBe("fresh");
+
+    // Mutate file on disk — cooldown-bypassed call must detect drift
+    await writeProjectFile(projectRoot, ".fabric/rules/fb/rule.md", makeRuleMd("Mutated for full-bypass"));
+
+    // mode:'full' bypasses cooldown -> picks up the mutation
+    const r2 = await ensureRulesFresh(projectRoot, { mode: "full" });
+    // Must detect drift (not short-circuit from cooldown)
+    expect(r2.status).toBe("reconciled");
+    expect(r2.events.length).toBeGreaterThan(0);
+  });
+
+  // Test C3: invalidateRuleSyncCooldown clears cooldown so next call does I/O
+  // Verified via observable behavior: after prime + invalidate, a disk mutation
+  // IS detected by the next call.
+  it("invalidateRuleSyncCooldown clears the cooldown so the next call detects disk changes", async () => {
+    const projectRoot = await createProject("cooldown-invalidate");
+
+    const ruleContent = makeRuleMd("Invalidate rule");
+    await writeProjectFile(projectRoot, ".fabric/rules/inv/rule.md", ruleContent);
+
+    const { createHash } = await import("node:crypto");
+    const hash = `sha256:${createHash("sha256").update(ruleContent).digest("hex")}`;
+    await writeProjectFile(
+      projectRoot,
+      ".fabric/agents.meta.json",
+      makeMetaJson([{ nodeId: "L1/inv/rule", relPath: ".fabric/rules/inv/rule.md", stableId: "inv/rule", hash }]),
+    );
+
+    // Prime the cooldown
+    const r1 = await ensureRulesFresh(projectRoot);
+    expect(r1.status).toBe("fresh");
+
+    // Mutate the file before invalidating: without invalidate the cooldown would
+    // mask this change; after invalidate the next call must detect it.
+    await writeProjectFile(projectRoot, ".fabric/rules/inv/rule.md", makeRuleMd("Changed after invalidate"));
+
+    // Simulate watcher event: clear the cooldown
+    invalidateRuleSyncCooldown(projectRoot);
+
+    // Next call must perform real I/O and detect the mutation
+    const r2 = await ensureRulesFresh(projectRoot);
+    expect(r2.status).toBe("reconciled");
+    expect(r2.events.length).toBeGreaterThan(0);
+  });
+
+  // Test C4: 'reconciled' status does NOT set cooldown; next call re-checks
+  // A second immediate call after 'reconciled' must detect further changes.
+  it("global cooldown: reconciled status does not cache result, next call re-checks disk", async () => {
+    const projectRoot = await createProject("cooldown-reconciled-no-cache");
+
+    // Write a rule with stale hash so first call returns 'reconciled'
+    await writeProjectFile(projectRoot, ".fabric/rules/rc/rule.md", makeRuleMd("Reconcile no-cache rule"));
+    await writeProjectFile(
+      projectRoot,
+      ".fabric/agents.meta.json",
+      makeMetaJson([
+        {
+          nodeId: "L1/rc/rule",
+          relPath: ".fabric/rules/rc/rule.md",
+          stableId: "rc/rule",
+          hash: "sha256:stale000000000000000000000000000000000000000000000000000000000000",
+        },
+      ]),
+    );
+
+    const r1 = await ensureRulesFresh(projectRoot);
+    expect(r1.status).toBe("reconciled");
+
+    // Write another rule immediately (no sleep); reconciled status must NOT have
+    // set a cooldown, so the second call will pick up the new file.
+    await writeProjectFile(projectRoot, ".fabric/rules/rc/second.md", makeRuleMd("Second rule"));
+
+    const r2 = await ensureRulesFresh(projectRoot);
+    // The new file is not in meta -> rule_added event -> status 'reconciled'
+    const addedPaths = r2.events.map((e) => e.path);
+    expect(addedPaths.some((p) => p.includes("second.md"))).toBe(true);
   });
 });

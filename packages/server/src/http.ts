@@ -27,6 +27,7 @@ import { registerDashboardStatic } from "./api/static.js";
 import { createBearerAuthMiddleware } from "./middleware/bearer-auth.js";
 import { getLedgerPath, getLegacyLedgerPath } from "./services/_shared.js";
 import { appendEventLedgerEvent, readEventLedger } from "./services/event-ledger.js";
+import { invalidateRuleSyncCooldown } from "./services/rule-sync.js";
 
 const DEFAULT_HOST = "127.0.0.1";
 const NOTIFY_DEBOUNCE_MS = 200;
@@ -201,6 +202,9 @@ export function handleCacheWatcherEvent(
   // .fabric/rules/**/*.md — cache invalidation only (D25).
   if (normalized.startsWith(".fabric/rules/") && normalized.endsWith(".md")) {
     contextCache.invalidate("file_watch", projectRoot);
+    // Also clear the rule-sync cooldown so the next MCP call performs a real
+    // I/O scan and picks up the changed file immediately.
+    invalidateRuleSyncCooldown(projectRoot);
     // No ledger writes. No direct sync. Lazy resync via ensureRulesFresh.
   }
 }

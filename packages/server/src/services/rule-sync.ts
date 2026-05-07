@@ -80,6 +80,24 @@ interface DebounceEntry {
 const lastSyncState = new Map<string, DebounceEntry>();
 
 // ---------------------------------------------------------------------------
+// Module-scope cooldown registry: projectRoot -> expiry timestamp
+// Optimistic skip: if a previous successful sync returned 'fresh' within
+// SYNC_COOLDOWN_MS, return a cached empty report without any I/O.
+// ---------------------------------------------------------------------------
+
+const freshSyncCooldown = new Map<string, number>();
+const SYNC_COOLDOWN_MS = 500;
+
+/**
+ * Clear the rule-sync cooldown for a projectRoot so the next ensureRulesFresh
+ * call performs a real I/O scan. Called by the chokidar watcher when a rule
+ * file changes (see http.ts handleCacheWatcherEvent).
+ */
+export function invalidateRuleSyncCooldown(projectRoot: string): void {
+  freshSyncCooldown.delete(projectRoot);
+}
+
+// ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
 
@@ -343,6 +361,15 @@ export async function ensureRulesFresh(
   opts?: RuleSyncOptions,
 ): Promise<RuleSyncReport> {
   const mode = opts?.mode ?? "incremental";
+
+  // Global optimistic skip: if the last sync for this projectRoot returned
+  // 'fresh' within SYNC_COOLDOWN_MS and mode is not 'full', return the cached
+  // empty report without touching the filesystem at all.
+  const cooldownExpiry = freshSyncCooldown.get(projectRoot);
+  if (cooldownExpiry !== undefined && Date.now() < cooldownExpiry && mode !== "full") {
+    return { status: "fresh", events: [], warnings: [] };
+  }
+
   const throwOnInvalidFrontmatter = opts?.throwOnInvalidFrontmatter ?? false;
   const source = "ensureRulesFresh" as const;
   const events: RuleSyncLedgerEvent[] = [];
@@ -392,6 +419,8 @@ export async function ensureRulesFresh(
   }
 
   if (events.length === 0 && warnings.length === 0) {
+    // Fresh: set cooldown so rapid follow-up calls skip I/O entirely.
+    freshSyncCooldown.set(projectRoot, Date.now() + SYNC_COOLDOWN_MS);
     return { status: "fresh", events: [], warnings: [] };
   }
 
@@ -399,6 +428,10 @@ export async function ensureRulesFresh(
     await appendRuleSyncEvents(projectRoot, events);
     contextCache.invalidate("file_watch", projectRoot);
   }
+
+  // Status is 'reconciled' or 'errors' — something changed; clear cooldown so
+  // the next call re-verifies quickly instead of returning stale cached fresh.
+  freshSyncCooldown.delete(projectRoot);
 
   const status = warnings.length > 0 ? "errors" : "reconciled";
 
@@ -425,6 +458,10 @@ export interface ReconcileRulesOptions {
  * append a `meta_reconciled` event. Omitting the trigger skips the summary.
  */
 export async function reconcileRules(projectRoot: string, opts?: ReconcileRulesOptions): Promise<RuleSyncReport> {
+  // Full scan — always clears the cooldown so ensureRulesFresh re-checks on
+  // the next MCP call after reconcile completes (avoids stale-fresh after write).
+  freshSyncCooldown.delete(projectRoot);
+
   const trigger = opts?.trigger;
   const startTime = Date.now();
   const source = "reconcileRules" as const;
