@@ -1,7 +1,9 @@
 import { existsSync } from "node:fs";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { homedir } from "node:os";
+
+import { atomicWriteJson } from "@fenglimg/fabric-shared/node/atomic-write";
 
 import type { ClientConfigWriter, ClientKind, ServerEntry } from "./writer.js";
 import { createServerEntry } from "./writer.js";
@@ -56,7 +58,7 @@ export async function writeJsonClientConfig(configPath: string, serverEntry: Ser
       : { fabric: serverEntry };
 
   await mkdir(dirname(configPath), { recursive: true });
-  await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
+  await atomicWriteJson(configPath, config, { indent: 2 });
 }
 
 abstract class JsonClientConfigWriter implements ClientConfigWriter {

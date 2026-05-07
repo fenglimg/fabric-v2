@@ -1,7 +1,9 @@
 import { existsSync } from "node:fs";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { homedir } from "node:os";
+
+import { atomicWriteText } from "@fenglimg/fabric-shared/node/atomic-write";
 
 import type { ClientConfigWriter, ServerEntry } from "./writer.js";
 import { createServerEntry } from "./writer.js";
@@ -112,7 +114,7 @@ export class CodexTOMLConfigWriter implements ClientConfigWriter {
     const nextConfig = upsertCodexServerBlock(rawConfig, "fabric", createServerEntry(serverPath));
 
     await mkdir(dirname(configPath), { recursive: true });
-    await writeFile(configPath, nextConfig, "utf8");
+    await atomicWriteText(configPath, nextConfig);
   }
 }
 
