@@ -80,7 +80,7 @@ describe("audit-log", () => {
       matched_get_rules_ts: new Date(1_000).toISOString(),
       window_ms: 5_000,
     });
-    expect(await readEventLedger(target)).toEqual([
+    expect((await readEventLedger(target)).events).toEqual([
       expect.objectContaining({
         event_type: "rule_context_planned",
         target_paths: ["src/example.ts"],
@@ -218,7 +218,7 @@ describe("audit-log", () => {
         ignored_stable_ids: [],
       },
     ]);
-    expect(await readEventLedger(target)).toEqual([
+    expect((await readEventLedger(target)).events).toEqual([
       expect.objectContaining({
         event_type: "rule_selection",
         selection_token: "selection:rev:abc",

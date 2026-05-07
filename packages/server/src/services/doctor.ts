@@ -18,7 +18,7 @@ import { parseRuleSections } from "./rule-sections.js";
 import { atomicWriteText } from "@fenglimg/fabric-shared/node/atomic-write";
 import { ensureParentDirectory, getEventLedgerPath, sha256 } from "./_shared.js";
 import { buildRuleMeta, isSameRuleTestIndex, writeRuleMeta } from "./rule-meta-builder.js";
-import { readEventLedger } from "./event-ledger.js";
+import { appendEventLedgerEvent, readEventLedger, truncateLedgerToLastNewline } from "./event-ledger.js";
 
 export type DoctorStatus = "ok" | "warn" | "error";
 export type DoctorIssueKind = "fixable_error" | "manual_error" | "warning";
@@ -125,6 +125,9 @@ type EventLedgerInspection = {
   exists: boolean;
   writable: boolean;
   parseable: boolean;
+  hasPartialWrite: boolean;
+  partialWriteByteOffset: number;
+  partialWriteByteLength: number;
   path: string;
   error?: string;
 };
@@ -220,6 +223,7 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     createRuleSectionsCheck(ruleSections),
     createRuleTestIndexCheck(ruleTestIndex),
     createEventLedgerCheck(eventLedger),
+    createEventLedgerPartialWriteCheck(eventLedger),
   ];
   const fixableErrors = collectIssues(checks, "fixable_error");
   const manualErrors = collectIssues(checks, "manual_error");
@@ -280,6 +284,18 @@ export async function runDoctorFix(target: string): Promise<DoctorFixReport> {
       fixed.push(issue);
     }
     contextCache.invalidate("meta_write", projectRoot);
+  }
+
+  if (before.fixable_errors.some((issue) => issue.code === "event_ledger_partial_write")) {
+    const ledgerPath = getEventLedgerPath(projectRoot);
+    const truncResult = await truncateLedgerToLastNewline(ledgerPath);
+    await appendEventLedgerEvent(projectRoot, {
+      event_type: "event_ledger_truncated",
+      byte_offset: truncResult.truncated_bytes,
+      byte_length: truncResult.truncated_bytes,
+      corrupted_path: truncResult.corrupted_path,
+    });
+    fixed.push(findIssue(before.fixable_errors, "event_ledger_partial_write"));
   }
 
   const report = await runDoctorReport(projectRoot);
@@ -413,12 +429,12 @@ async function inspectEventLedger(projectRoot: string): Promise<EventLedgerInspe
   const exists = existsSync(path);
 
   if (!exists) {
-    return { exists: false, writable: false, parseable: false, path };
+    return { exists: false, writable: false, parseable: false, hasPartialWrite: false, partialWriteByteOffset: 0, partialWriteByteLength: 0, path };
   }
 
   try {
     await access(path, constants.W_OK);
-    await readEventLedger(projectRoot);
+    const { warnings } = await readEventLedger(projectRoot);
     const raw = await readFile(path, "utf8");
     const invalidLine = raw
       .split(/\r?\n/u)
@@ -426,10 +442,15 @@ async function inspectEventLedger(projectRoot: string): Promise<EventLedgerInspe
       .filter(Boolean)
       .find((line) => !isValidJsonLine(line));
 
+    const partialWarning = warnings.find((w) => w.kind === "partial_write_at_tail");
+
     return {
       exists: true,
       writable: true,
       parseable: invalidLine === undefined,
+      hasPartialWrite: partialWarning !== undefined,
+      partialWriteByteOffset: partialWarning?.byte_offset ?? 0,
+      partialWriteByteLength: partialWarning?.byte_length ?? 0,
       path,
       error: invalidLine === undefined ? undefined : "events.jsonl contains an invalid JSON line.",
     };
@@ -438,6 +459,9 @@ async function inspectEventLedger(projectRoot: string): Promise<EventLedgerInspe
       exists: true,
       writable: false,
       parseable: false,
+      hasPartialWrite: false,
+      partialWriteByteOffset: 0,
+      partialWriteByteLength: 0,
       path,
       error: error instanceof Error ? error.message : String(error),
     };
@@ -622,6 +646,22 @@ function createEventLedgerCheck(ledger: EventLedgerInspection): DoctorCheck {
     return issueCheck("Event ledger", "error", "manual_error", "event_ledger_invalid", ledger.error ?? ".fabric/events.jsonl is invalid.");
   }
   return okCheck("Event ledger", ".fabric/events.jsonl exists, is writable, and is parseable.");
+}
+
+function createEventLedgerPartialWriteCheck(ledger: EventLedgerInspection): DoctorCheck {
+  if (!ledger.exists || !ledger.writable) {
+    return okCheck("Event ledger partial write", "No partial-write check needed (ledger missing or not writable).");
+  }
+  if (ledger.hasPartialWrite) {
+    return issueCheck(
+      "Event ledger partial write",
+      "error",
+      "fixable_error",
+      "event_ledger_partial_write",
+      `events.jsonl has a partial write at byte offset ${ledger.partialWriteByteOffset} (${ledger.partialWriteByteLength} corrupted bytes). Run --fix to truncate and preserve corrupted bytes.`,
+    );
+  }
+  return okCheck("Event ledger partial write", "events.jsonl has no partial trailing write.");
 }
 
 function okCheck(name: string, message: string): DoctorCheck {

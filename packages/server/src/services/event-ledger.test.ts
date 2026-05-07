@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -5,7 +6,7 @@ import { join } from "node:path";
 import { describe, expect, it, afterEach } from "vitest";
 
 import { EVENT_LEDGER_PATH } from "./_shared.js";
-import { appendEventLedgerEvent, readEventLedger } from "./event-ledger.js";
+import { appendEventLedgerEvent, readEventLedger, truncateLedgerToLastNewline } from "./event-ledger.js";
 
 const tempDirs: string[] = [];
 
@@ -38,7 +39,7 @@ describe("event-ledger", () => {
       correlation_id: "corr-1",
       session_id: "session-1",
     });
-    const entries = await readEventLedger(projectRoot);
+    const { events: entries, warnings } = await readEventLedger(projectRoot);
 
     expect(event).toMatchObject({
       kind: "fabric-event",
@@ -50,6 +51,7 @@ describe("event-ledger", () => {
       session_id: "session-1",
     });
     expect(entries).toEqual([event]);
+    expect(warnings).toEqual([]);
     expect(await readFile(join(projectRoot, ".fabric", "events.jsonl"), "utf8")).toContain("\"event_type\":\"rule_selection\"");
     await expect(readFile(join(projectRoot, ".fabric", ".intent-ledger.jsonl"), "utf8")).rejects.toMatchObject({
       code: "ENOENT",
@@ -148,7 +150,7 @@ describe("event-ledger", () => {
       mcp_event_id: "mcp-after-recovery",
     });
 
-    const entries = await readEventLedger(projectRoot);
+    const { events: entries } = await readEventLedger(projectRoot);
     expect(entries).toHaveLength(1);
     expect(entries[0]).toMatchObject({ mcp_event_id: "mcp-after-recovery" });
   });
@@ -190,7 +192,7 @@ describe("event-ledger", () => {
       }),
     ].join("\n"));
 
-    const entries = await readEventLedger(projectRoot, {
+    const { events: entries } = await readEventLedger(projectRoot, {
       event_type: "rule_context_planned",
       since: 1_500,
       correlation_id: "corr-1",
@@ -211,10 +213,159 @@ describe("event-ledger", () => {
       },
     ]);
   });
+
+  describe("partial-write tail tolerance", () => {
+    it("returns parsed events and a partial_write_at_tail warning when file lacks trailing newline", async () => {
+      const projectRoot = await createTempProject();
+      await mkdir(join(projectRoot, ".fabric"), { recursive: true });
+
+      const goodLine = JSON.stringify({
+        kind: "fabric-event",
+        id: "event:good",
+        ts: 1_000,
+        schema_version: 1,
+        event_type: "mcp_event",
+        mcp_event_id: "mcp-good",
+        stream_id: "stream-1",
+        message: { jsonrpc: "2.0", method: "ping" },
+        correlation_id: "corr-1",
+      });
+      const partialLine = '{"kind":"fabric-event","ts":2000,"event_type":"mcp_event","partial';
+
+      // No trailing newline — simulates a partial write
+      await writeFile(
+        join(projectRoot, ".fabric", "events.jsonl"),
+        `${goodLine}\n${partialLine}`,
+        "utf8",
+      );
+
+      const { events, warnings } = await readEventLedger(projectRoot);
+
+      expect(events).toHaveLength(1);
+      expect(events[0]).toMatchObject({ id: "event:good", event_type: "mcp_event" });
+
+      expect(warnings).toHaveLength(1);
+      expect(warnings[0].kind).toBe("partial_write_at_tail");
+      expect(warnings[0].byte_offset).toBe(Buffer.byteLength(`${goodLine}\n`, "utf8"));
+      expect(warnings[0].byte_length).toBe(Buffer.byteLength(partialLine, "utf8"));
+      expect(warnings[0].snippet_first_120).toBe(partialLine.slice(0, 120));
+    });
+
+    it("returns no warnings when file ends with a newline", async () => {
+      const projectRoot = await createTempProject();
+      await mkdir(join(projectRoot, ".fabric"), { recursive: true });
+
+      const goodLine = JSON.stringify({
+        kind: "fabric-event",
+        id: "event:clean",
+        ts: 1_000,
+        schema_version: 1,
+        event_type: "mcp_event",
+        mcp_event_id: "mcp-clean",
+        stream_id: "stream-1",
+        message: { jsonrpc: "2.0", method: "ping" },
+        correlation_id: "corr-1",
+      });
+
+      await writeFile(
+        join(projectRoot, ".fabric", "events.jsonl"),
+        `${goodLine}\n`,
+        "utf8",
+      );
+
+      const { events, warnings } = await readEventLedger(projectRoot);
+
+      expect(events).toHaveLength(1);
+      expect(warnings).toEqual([]);
+    });
+
+    it("returns empty events and no warnings for an empty file", async () => {
+      const projectRoot = await createTempProject();
+      await mkdir(join(projectRoot, ".fabric"), { recursive: true });
+      await writeFile(join(projectRoot, ".fabric", "events.jsonl"), "", "utf8");
+
+      const { events, warnings } = await readEventLedger(projectRoot);
+
+      expect(events).toEqual([]);
+      expect(warnings).toEqual([]);
+    });
+  });
+
+  describe("truncateLedgerToLastNewline", () => {
+    it("truncates partial trailing bytes and saves them to a .corrupted file", async () => {
+      const dir = await createTempDir();
+      const ledgerPath = join(dir, "events.jsonl");
+      const goodLine = '{"kind":"fabric-event","id":"e1","ts":1,"schema_version":1,"event_type":"reapply_completed","preserved_ledger":true,"preserved_meta":true,"rules_count":0}';
+      const partialLine = '{"kind":"fabric-event","partial';
+
+      await writeFile(ledgerPath, `${goodLine}\n${partialLine}`, "utf8");
+
+      const result = await truncateLedgerToLastNewline(ledgerPath);
+
+      expect(result.truncated_bytes).toBe(Buffer.byteLength(partialLine, "utf8"));
+      expect(result.corrupted_path).toMatch(/\.corrupted\.\d+$/);
+      expect(existsSync(result.corrupted_path)).toBe(true);
+
+      const corruptedContent = await readFile(result.corrupted_path, "utf8");
+      expect(corruptedContent).toBe(partialLine);
+
+      const remaining = await readFile(ledgerPath, "utf8");
+      expect(remaining).toBe(`${goodLine}\n`);
+    });
+
+    it("is a no-op and returns zero when file already ends with a newline", async () => {
+      const dir = await createTempDir();
+      const ledgerPath = join(dir, "events.jsonl");
+      const content = '{"kind":"fabric-event","id":"e1","ts":1,"schema_version":1,"event_type":"reapply_completed","preserved_ledger":true,"preserved_meta":true,"rules_count":0}\n';
+
+      await writeFile(ledgerPath, content, "utf8");
+
+      const result = await truncateLedgerToLastNewline(ledgerPath);
+
+      expect(result.truncated_bytes).toBe(0);
+      expect(result.corrupted_path).toBe("");
+
+      // File unchanged
+      const remaining = await readFile(ledgerPath, "utf8");
+      expect(remaining).toBe(content);
+    });
+
+    it("is a no-op for an empty file", async () => {
+      const dir = await createTempDir();
+      const ledgerPath = join(dir, "events.jsonl");
+      await writeFile(ledgerPath, "", "utf8");
+
+      const result = await truncateLedgerToLastNewline(ledgerPath);
+
+      expect(result.truncated_bytes).toBe(0);
+      expect(result.corrupted_path).toBe("");
+    });
+
+    it("saves entire content to .corrupted when file has no newline at all", async () => {
+      const dir = await createTempDir();
+      const ledgerPath = join(dir, "events.jsonl");
+      const content = '{"partial":true';
+      await writeFile(ledgerPath, content, "utf8");
+
+      const result = await truncateLedgerToLastNewline(ledgerPath);
+
+      expect(result.truncated_bytes).toBe(Buffer.byteLength(content, "utf8"));
+      expect(existsSync(result.corrupted_path)).toBe(true);
+
+      const remaining = await readFile(ledgerPath, "utf8");
+      expect(remaining).toBe("");
+    });
+  });
 });
 
 async function createTempProject(): Promise<string> {
   const projectRoot = await mkdtemp(join(tmpdir(), "fabric-event-ledger-"));
   tempDirs.push(projectRoot);
   return projectRoot;
+}
+
+async function createTempDir(): Promise<string> {
+  const dir = await mkdtemp(join(tmpdir(), "fabric-truncate-"));
+  tempDirs.push(dir);
+  return dir;
 }

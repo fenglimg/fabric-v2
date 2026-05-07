@@ -179,7 +179,7 @@ describe("getRuleSections", () => {
         ignored_stable_ids: [],
       }),
     ]);
-    expect(await readEventLedger(projectRoot)).toEqual([
+    expect((await readEventLedger(projectRoot)).events).toEqual([
       expect.objectContaining({
         event_type: "rule_context_planned",
         target_paths: ["assets/scripts/ui/BattleView.ts"],

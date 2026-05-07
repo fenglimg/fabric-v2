@@ -63,6 +63,7 @@ describe("runDoctorReport", () => {
       "Rule sections",
       "Rule-test index",
       "Event ledger",
+      "Event ledger partial write",
     ]);
   });
 
@@ -114,13 +115,49 @@ describe("runDoctorReport", () => {
     const before = await runDoctorReport(target);
     const fix = await runDoctorFix(target);
     const after = await runDoctorReport(target);
-    const events = await readEventLedger(target);
+    const { events } = await readEventLedger(target);
 
     expect(before.fixable_errors.map((issue) => issue.code)).toContain("agents_meta_stale");
     expect(fix.fixed.map((issue) => issue.code)).toContain("agents_meta_stale");
     expect(after.fixable_errors).toEqual([]);
     expect(events.map((event) => event.event_type)).toContain("rule_drift_detected");
     expect(events.map((event) => event.event_type)).toContain("baseline_synced");
+  });
+
+  it("doctor fixable check fires when partial write detected and --fix truncates + writes ledger event", async () => {
+    const target = createInitializedProject("doctor-partial-write");
+    await writeRuleMeta(target, { source: "doctor_fix" });
+
+    // Write a ledger file that ends without a newline (partial write simulation)
+    const goodLine = JSON.stringify({
+      kind: "fabric-event",
+      id: "event:good",
+      ts: 1_000,
+      schema_version: 1,
+      event_type: "reapply_completed",
+      preserved_ledger: true,
+      preserved_meta: true,
+      rules_count: 0,
+    });
+    const partialLine = '{"kind":"fabric-event","ts":2000,"partial';
+    const ledgerPath = join(target, ".fabric", "events.jsonl");
+    writeFileSync(ledgerPath, `${goodLine}\n${partialLine}`, "utf8");
+
+    const before = await runDoctorReport(target);
+
+    expect(before.fixable_errors.map((issue) => issue.code)).toContain("event_ledger_partial_write");
+    expect(before.checks.find((c) => c.name === "Event ledger partial write")?.status).toBe("error");
+
+    const fix = await runDoctorFix(target);
+    const after = await runDoctorReport(target);
+
+    expect(fix.fixed.map((issue) => issue.code)).toContain("event_ledger_partial_write");
+    expect(after.fixable_errors.map((issue) => issue.code)).not.toContain("event_ledger_partial_write");
+    expect(after.checks.find((c) => c.name === "Event ledger partial write")?.status).toBe("ok");
+
+    // The ledger should contain the truncation event
+    const { events } = await readEventLedger(target);
+    expect(events.map((event) => event.event_type)).toContain("event_ledger_truncated");
   });
 });
 

@@ -176,7 +176,7 @@ function parseLedgerLine(line: string, index: number): StoredLedgerEntry | null 
 }
 
 async function readLedgerFromEventLedger(projectRoot: string): Promise<StoredLedgerEntry[]> {
-  const events = await readEventLedger(projectRoot);
+  const { events } = await readEventLedger(projectRoot);
   const grouped = new Map<string, StoredLedgerEntry>();
 
   for (const event of events) {

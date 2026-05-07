@@ -454,7 +454,7 @@ async function appendAuditLogEventLedgerEvents(
 }
 
 async function readAuditLogFromEventLedger(projectRoot: string): Promise<AuditLogEntry[]> {
-  const events = await readEventLedger(projectRoot);
+  const { events } = await readEventLedger(projectRoot);
   return events
     .map((event) => projectAuditEvent(projectRoot, event))
     .filter((entry): entry is AuditLogEntry => entry !== null);
