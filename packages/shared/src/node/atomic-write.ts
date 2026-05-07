@@ -22,22 +22,22 @@ export async function atomicWriteText(
 ): Promise<void> {
   const tmpPath = path + makeTmpSuffix();
 
-  if (opts?.fsync) {
-    const fd = await open(tmpPath, "w");
-    try {
-      await fd.writeFile(content, "utf8");
-      await fd.datasync();
-    } finally {
-      await fd.close();
-    }
-  } else {
-    await writeFile(tmpPath, content, "utf8");
-  }
-
   try {
+    if (opts?.fsync) {
+      const fd = await open(tmpPath, "w");
+      try {
+        await fd.writeFile(content, "utf8");
+        await fd.datasync();
+      } finally {
+        await fd.close();
+      }
+    } else {
+      await writeFile(tmpPath, content, "utf8");
+    }
     await rename(tmpPath, path);
   } catch (err) {
-    await unlink(tmpPath).catch(() => undefined);
+    // best-effort cleanup — tmp may not exist if writeFile itself failed
+    try { await unlink(tmpPath); } catch { /* ignore */ }
     throw err;
   }
 }

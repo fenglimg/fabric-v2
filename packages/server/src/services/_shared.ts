@@ -2,7 +2,7 @@ import { dirname, join, resolve, sep } from "node:path";
 import { createHash } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 
-export { atomicWriteText } from "@fenglimg/fabric-shared/node/atomic-write";
+export { atomicWriteText, atomicWriteJson } from "@fenglimg/fabric-shared/node/atomic-write";
 
 export const FABRIC_DIR = ".fabric";
 export const LEDGER_FILE = ".intent-ledger.jsonl";

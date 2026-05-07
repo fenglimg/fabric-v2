@@ -15,11 +15,6 @@ const SOURCE_DIR = path.join(ROOT, "packages", "cli", "templates", "skill-source
 const SOURCE_MD = path.join(SOURCE_DIR, "SOURCE.md");
 const CLIENTS_JSON = path.join(SOURCE_DIR, "clients.json");
 
-const CLIENT_OUTPUT_DIRS: Record<string, string> = {
-  claude: path.join(ROOT, "packages", "cli", "templates", "claude-skills"),
-  codex: path.join(ROOT, "packages", "cli", "templates", "codex-skills"),
-};
-
 function serializeFrontmatter(fm: Record<string, unknown>): string {
   const lines: string[] = ["---"];
 
@@ -37,16 +32,34 @@ function serializeFrontmatter(fm: Record<string, unknown>): string {
   return lines.join("\n");
 }
 
-async function main(): Promise<void> {
+export interface BuildSkillsOptions {
+  /** Base directory for client output folders. Defaults to repo root. */
+  outputBase?: string;
+}
+
+export interface BuildSkillsResult {
+  /** Map of clientName -> { outputPath, content } */
+  outputs: Map<string, { outputPath: string; content: string }>;
+}
+
+export async function buildSkills(opts?: BuildSkillsOptions): Promise<BuildSkillsResult> {
+  const outputBase = opts?.outputBase ?? ROOT;
+
+  const clientOutputDirs: Record<string, string> = {
+    claude: path.join(outputBase, "packages", "cli", "templates", "claude-skills"),
+    codex: path.join(outputBase, "packages", "cli", "templates", "codex-skills"),
+  };
+
   const [sourceBody, clientsRaw] = await Promise.all([
     readFile(SOURCE_MD, "utf8"),
     readFile(CLIENTS_JSON, "utf8"),
   ]);
 
   const clients = JSON.parse(clientsRaw) as ClientsJson;
+  const outputs = new Map<string, { outputPath: string; content: string }>();
 
   for (const [clientName, spec] of Object.entries(clients)) {
-    const baseDir = CLIENT_OUTPUT_DIRS[clientName];
+    const baseDir = clientOutputDirs[clientName];
 
     if (baseDir === undefined) {
       process.stderr.write(`[skills] unknown client "${clientName}" — skipping\n`);
@@ -63,8 +76,13 @@ async function main(): Promise<void> {
     await writeFile(outputPath, content, "utf8");
 
     const bytes = Buffer.byteLength(content, "utf8");
-    process.stdout.write(`[skills] wrote ${path.relative(ROOT, outputPath)} (${bytes} bytes)\n`);
+    process.stdout.write(`[skills] wrote ${path.relative(outputBase, outputPath)} (${bytes} bytes)\n`);
+
+    outputs.set(clientName, { outputPath, content });
   }
+
+  return { outputs };
 }
 
-await main();
+// Run as CLI when invoked directly
+await buildSkills();

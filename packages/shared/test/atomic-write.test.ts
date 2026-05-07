@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -49,6 +49,39 @@ describe("atomicWriteText", () => {
 
     const content = readFileSync(target, "utf8");
     expect(content).toBe("synced content");
+  });
+
+  it("cleans up tmp file when write fails (parent dir missing)", async () => {
+    const dir = makeTempDir("aw-cleanup-");
+    // Target inside a non-existent subdirectory — both tmp creation and rename fail
+    // with ENOENT; no stray .tmp file should remain in dir
+    const target = join(dir, "nonexistent-subdir", "output.txt");
+
+    await expect(atomicWriteText(target, "content")).rejects.toThrow();
+
+    // No .tmp file should linger in dir
+    const files = readdirSync(dir);
+    const tmpFiles = files.filter((f) => f.endsWith(".tmp"));
+    expect(tmpFiles).toHaveLength(0);
+  });
+
+  it("cleans up tmp file when rename fails after successful write", async () => {
+    // Make rename fail by placing a directory at the target path — writeFile(tmp)
+    // succeeds (tmp is a sibling in the same dir), but rename(tmp, target) fails
+    // because target exists as a directory (EISDIR on Linux/macOS).
+    const dir = makeTempDir("aw-cleanup-rename-");
+    const target = join(dir, "output");
+
+    // Create a directory at the target path to cause rename to fail
+    const { mkdirSync } = await import("node:fs");
+    mkdirSync(target);
+
+    await expect(atomicWriteText(target, "data")).rejects.toThrow();
+
+    // tmp file must have been cleaned up; only "output" dir should remain
+    const files = readdirSync(dir);
+    const tmpFiles = files.filter((f) => f.endsWith(".tmp"));
+    expect(tmpFiles).toHaveLength(0);
   });
 
   it("tmp suffix matches .<pid>.<ts>.<rand4>.tmp pattern", async () => {

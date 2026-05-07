@@ -7,7 +7,7 @@
     { "path": "packages/shared/src/node/atomic-write.ts", "change": "NEW: export atomicWriteText(path, content, { fsync? }), atomicWriteJson(path, value, { fsync?, indent? }), createLedgerWriteQueue() returning { append(path, line) } via path-keyed Promise chain. Tmp suffix = .<pid>.<ts>.<rand4>.tmp for crash-resume safety." },
     { "path": "packages/shared/package.json", "change": "Add ./node/atomic-write to exports map alongside existing detector path" },
     { "path": "packages/server/src/services/_shared.ts", "change": "Re-export atomicWriteText from @fenglimg/fabric-shared/node/atomic-write to preserve backward compat for existing imports" },
-    { "path": "packages/shared/__tests__/atomic-write.test.ts", "change": "NEW: unit tests covering happy path / fsync flag / queue serialization / queue rejection-recovery / tmp cleanup on rename success" }
+    { "path": "packages/shared/test/atomic-write.test.ts", "change": "NEW: unit tests covering happy path / fsync flag / queue serialization / queue rejection-recovery / tmp cleanup on rename success" }
   ],
   "convergence": {
     "criteria": [

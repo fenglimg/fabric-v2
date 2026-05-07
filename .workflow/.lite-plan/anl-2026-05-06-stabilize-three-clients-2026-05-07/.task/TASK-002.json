@@ -12,7 +12,7 @@
     { "path": "packages/shared/src/errors/init-error.ts", "change": "NEW: class InitError extends FabricError { httpStatus = 500 }" },
     { "path": "packages/shared/src/errors/index.ts", "change": "NEW: barrel re-export of all error classes" },
     { "path": "packages/shared/package.json", "change": "Add ./errors to exports map" },
-    { "path": "packages/shared/__tests__/errors.test.ts", "change": "NEW: tests for actionHint required / httpStatus default / sub-tree inheritance / instanceof checks" }
+    { "path": "packages/shared/test/errors.test.ts", "change": "NEW: tests for actionHint required / httpStatus default / sub-tree inheritance / instanceof checks" }
   ],
   "convergence": {
     "criteria": [

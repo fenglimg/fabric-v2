@@ -1,22 +1,24 @@
 /**
  * SKILL drift contract test (TASK-005)
  *
- * Re-runs scripts/build-skills.ts and compares the output against the
- * committed SKILL.md artifacts in templates/{claude,codex}-skills/.
+ * Calls buildSkills() with a tmpdir as outputBase, then compares the generated
+ * SKILL.md files against the committed artifacts in templates/{claude,codex}-skills/.
  *
- * The build script is deterministic: re-running it with an unchanged
- * SOURCE.md/clients.json produces byte-for-byte identical files, so the
- * working tree stays clean after this test.
+ * The build is deterministic: re-running with an unchanged SOURCE.md/clients.json
+ * produces byte-for-byte identical files.
  *
- * If the test fails it means someone edited SOURCE.md (or clients.json)
- * without regenerating the artifacts.  Fix: run `pnpm build:skills`.
+ * If the test fails it means someone edited SOURCE.md (or clients.json) without
+ * regenerating the artifacts.  Fix: run `pnpm build:skills`.
  */
 
-import { execSync } from "node:child_process";
 import fs from "node:fs";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 
-import { it } from "vitest";
+import { afterAll, it } from "vitest";
+
+import { buildSkills } from "../../../scripts/build-skills";
 
 const REPO_ROOT = path.resolve(__dirname, "../../..");
 
@@ -37,26 +39,37 @@ const COMMITTED_ARTIFACTS: Array<{ label: string; filePath: string }> = [
   },
 ];
 
-it("SKILL artifacts match canonical source (no drift)", () => {
-  // Snapshot committed artifacts BEFORE re-running the build.
-  const committed = new Map<string, string>();
-  for (const { label, filePath } of COMMITTED_ARTIFACTS) {
-    committed.set(label, fs.readFileSync(filePath, "utf8"));
+let tmpOutputBase: string | undefined;
+
+afterAll(async () => {
+  if (tmpOutputBase) {
+    await rm(tmpOutputBase, { recursive: true, force: true });
   }
+});
 
-  // Re-run the build script.  Output is written to the same fixed paths, so
-  // if there is no drift the files are overwritten with identical content and
-  // the working tree remains clean.
-  execSync("node --experimental-strip-types scripts/build-skills.ts", {
-    cwd: REPO_ROOT,
-    stdio: "pipe",
-  });
+it("SKILL artifacts match canonical source (no drift)", async () => {
+  // Create isolated output directory so we never mutate the working tree
+  tmpOutputBase = await mkdtemp(path.join(tmpdir(), "skill-drift-"));
 
-  // Compare regenerated content against the snapshot taken before the run.
+  // Mirror the directory structure buildSkills expects under outputBase
+  await fs.promises.mkdir(
+    path.join(tmpOutputBase, "packages", "cli", "templates"),
+    { recursive: true },
+  );
+
+  const { outputs } = await buildSkills({ outputBase: tmpOutputBase });
+
   const driftedLabels: string[] = [];
+
   for (const { label, filePath } of COMMITTED_ARTIFACTS) {
-    const regenerated = fs.readFileSync(filePath, "utf8");
-    if (regenerated !== committed.get(label)) {
+    const generated = outputs.get(label);
+    if (!generated) {
+      driftedLabels.push(`${label} (not generated)`);
+      continue;
+    }
+
+    const committed = fs.readFileSync(filePath, "utf8");
+    if (generated.content !== committed) {
       driftedLabels.push(label);
     }
   }
