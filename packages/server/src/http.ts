@@ -105,7 +105,7 @@ class JsonlEventStore implements EventStore {
   }
 
   private async readEvents(): Promise<StoredMcpEvent[]> {
-    const eventLedgerEvents = await readEventLedger(this.projectRoot);
+    const { events: eventLedgerEvents } = await readEventLedger(this.projectRoot);
     const projectedEvents = eventLedgerEvents
       .flatMap((event): StoredMcpEvent[] => {
         if (event.event_type !== "mcp_event") {
@@ -153,6 +153,58 @@ class JsonlEventStore implements EventStore {
   }
 }
 
+/**
+ * Exported for unit-testing: the core logic executed on every chokidar event
+ * (change / add / unlink) from the cache watcher.
+ *
+ * Rules (D25): for .fabric/rules/**\/*.md paths we ONLY invalidate the cache.
+ * No ledger writes. No direct sync. The next MCP call will pick up the
+ * staleness via ensureRulesFresh (wired in TASK-021).
+ */
+export function handleCacheWatcherEvent(
+  relativePath: string,
+  projectRoot: string,
+  sessions: Map<string, FabricHttpSession>,
+  timers: {
+    getAgentsMdTimer: () => ReturnType<typeof setTimeout> | undefined;
+    getToolListTimer: () => ReturnType<typeof setTimeout> | undefined;
+    setAgentsMdTimer: (t: ReturnType<typeof setTimeout> | undefined) => void;
+    setToolListTimer: (t: ReturnType<typeof setTimeout> | undefined) => void;
+  },
+): void {
+  const normalized = relativePath.replaceAll("\\", "/");
+
+  if (normalized === ".fabric/agents.meta.json") {
+    contextCache.invalidate("file_watch", projectRoot);
+    // Debounced: notify all sessions that the tool list may have changed
+    clearTimeout(timers.getToolListTimer());
+    timers.setToolListTimer(
+      setTimeout(() => {
+        notifyAllSessions(sessions, "tools/list_changed");
+      }, NOTIFY_DEBOUNCE_MS),
+    );
+    return;
+  }
+
+  if (normalized === ".fabric/bootstrap/README.md") {
+    contextCache.invalidate("file_watch", projectRoot);
+    // Debounced: notify all sessions that the bootstrap README resource was updated
+    clearTimeout(timers.getAgentsMdTimer());
+    timers.setAgentsMdTimer(
+      setTimeout(() => {
+        notifyAllSessions(sessions, "resource_updated", AGENTS_MD_RESOURCE_URI);
+      }, NOTIFY_DEBOUNCE_MS),
+    );
+    return;
+  }
+
+  // .fabric/rules/**/*.md — cache invalidation only (D25).
+  if (normalized.startsWith(".fabric/rules/") && normalized.endsWith(".md")) {
+    contextCache.invalidate("file_watch", projectRoot);
+    // No ledger writes. No direct sync. Lazy resync via ensureRulesFresh.
+  }
+}
+
 export function createFabricHttpApp(options: CreateFabricHttpAppOptions) {
   const { projectRoot, host = DEFAULT_HOST, authToken, dashboardDistPath, dev } = options;
   const app = createMcpExpressApp({ host }) as FabricHttpApp;
@@ -161,11 +213,18 @@ export function createFabricHttpApp(options: CreateFabricHttpAppOptions) {
 
   process.env.FABRIC_PROJECT_ROOT = projectRoot;
 
-  // Watch agents.meta.json and bootstrap README to invalidate the hot-path cache.
-  // This is a persistent, lightweight watcher separate from the SSE watcher
-  // in api/events.ts (which is client-lifecycle-based).
+  // Watch agents.meta.json, bootstrap README, and rules/ to invalidate the
+  // hot-path cache.  This is a persistent, lightweight watcher separate from
+  // the SSE watcher in api/events.ts (which is client-lifecycle-based).
+  //
+  // D25: the rules glob ONLY invalidates cache — no ledger writes, no direct
+  // sync.  The next MCP call detects staleness via ensureRulesFresh (TASK-021).
   const cacheWatcher = chokidar.watch(
-    [".fabric/agents.meta.json", ".fabric/bootstrap/README.md"],
+    [
+      ".fabric/agents.meta.json",
+      ".fabric/bootstrap/README.md",
+      ".fabric/rules/**/*.md",
+    ],
     {
       cwd: projectRoot,
       ignoreInitial: true,
@@ -179,24 +238,18 @@ export function createFabricHttpApp(options: CreateFabricHttpAppOptions) {
   let agentsMdNotifyTimer: ReturnType<typeof setTimeout> | undefined;
   let toolListNotifyTimer: ReturnType<typeof setTimeout> | undefined;
 
-  cacheWatcher.on("change", (relativePath: string) => {
-    const normalized = relativePath.replaceAll("\\", "/");
-    if (normalized === ".fabric/agents.meta.json") {
-      contextCache.invalidate("file_watch", projectRoot);
-      // Debounced: notify all sessions that the tool list may have changed
-      clearTimeout(toolListNotifyTimer);
-      toolListNotifyTimer = setTimeout(() => {
-        notifyAllSessions(sessions, "tools/list_changed");
-      }, NOTIFY_DEBOUNCE_MS);
-    } else if (normalized === ".fabric/bootstrap/README.md") {
-      contextCache.invalidate("file_watch", projectRoot);
-      // Debounced: notify all sessions that the bootstrap README resource was updated
-      clearTimeout(agentsMdNotifyTimer);
-      agentsMdNotifyTimer = setTimeout(() => {
-        notifyAllSessions(sessions, "resource_updated", AGENTS_MD_RESOURCE_URI);
-      }, NOTIFY_DEBOUNCE_MS);
-    }
-  });
+  const onCacheWatcherEvent = (relativePath: string) => {
+    handleCacheWatcherEvent(relativePath, projectRoot, sessions, {
+      getAgentsMdTimer: () => agentsMdNotifyTimer,
+      getToolListTimer: () => toolListNotifyTimer,
+      setAgentsMdTimer: (t) => { agentsMdNotifyTimer = t; },
+      setToolListTimer: (t) => { toolListNotifyTimer = t; },
+    });
+  };
+
+  cacheWatcher.on("change", onCacheWatcherEvent);
+  cacheWatcher.on("add", onCacheWatcherEvent);
+  cacheWatcher.on("unlink", onCacheWatcherEvent);
 
   let disposed = false;
   app.dispose = async () => {
