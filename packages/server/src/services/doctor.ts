@@ -15,7 +15,7 @@ import { detectFramework } from "@fenglimg/fabric-shared/node";
 
 import { contextCache } from "../cache.js";
 import { parseRuleSections } from "./rule-sections.js";
-import { atomicWriteText } from "@fenglimg/fabric-shared/node/atomic-write";
+import { atomicWriteJson, atomicWriteText } from "@fenglimg/fabric-shared/node/atomic-write";
 import { ensureParentDirectory, getEventLedgerPath, sha256 } from "./_shared.js";
 import { buildRuleMeta, isSameRuleTestIndex, writeRuleMeta } from "./rule-meta-builder.js";
 import { appendEventLedgerEvent, readEventLedger, truncateLedgerToLastNewline } from "./event-ledger.js";
@@ -169,6 +169,11 @@ type InitContextInspection = {
   error?: string;
 };
 
+type McpConfigInWrongFileInspection = {
+  hasWrongEntry: boolean;
+  settingsPath: string;
+};
+
 const SCRIPT_EXTENSIONS = new Set([".js", ".jsx", ".ts", ".tsx"]);
 const IGNORED_DIRECTORIES = new Set([
   ".fabric",
@@ -211,6 +216,7 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     inspectRuleSections(projectRoot),
     inspectRuleTestIndex(projectRoot),
   ]);
+  const mcpConfigInWrongFile = inspectMcpConfigInWrongFile(projectRoot);
   const taxonomyExists = existsSync(join(projectRoot, ".fabric", "INITIAL_TAXONOMY.md"));
   const bootstrapExists = existsSync(join(projectRoot, ".fabric", "bootstrap", "README.md"));
   const checks: DoctorCheck[] = [
@@ -224,6 +230,7 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     createRuleTestIndexCheck(ruleTestIndex),
     createEventLedgerCheck(eventLedger),
     createEventLedgerPartialWriteCheck(eventLedger),
+    createMcpConfigInWrongFileCheck(mcpConfigInWrongFile),
   ];
   const fixableErrors = collectIssues(checks, "fixable_error");
   const manualErrors = collectIssues(checks, "manual_error");
@@ -298,6 +305,11 @@ export async function runDoctorFix(target: string): Promise<DoctorFixReport> {
     fixed.push(findIssue(before.fixable_errors, "event_ledger_partial_write"));
   }
 
+  if (before.fixable_errors.some((issue) => issue.code === "mcp_config_in_wrong_file")) {
+    await fixMcpConfigInWrongFile(projectRoot);
+    fixed.push(findIssue(before.fixable_errors, "mcp_config_in_wrong_file"));
+  }
+
   const report = await runDoctorReport(projectRoot);
 
   return {
@@ -333,6 +345,31 @@ async function inspectInitContext(projectRoot: string): Promise<InitContextInspe
       return { exists: false, validJson: false, error: ".fabric/init-context.json is missing." };
     }
     return { exists: true, validJson: false, error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+function inspectMcpConfigInWrongFile(projectRoot: string): McpConfigInWrongFileInspection {
+  const settingsPath = join(projectRoot, ".claude", "settings.json");
+  if (!existsSync(settingsPath)) {
+    return { hasWrongEntry: false, settingsPath };
+  }
+
+  try {
+    const parsed = JSON.parse(readFileSync(settingsPath, "utf8")) as unknown;
+    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return { hasWrongEntry: false, settingsPath };
+    }
+
+    const settings = parsed as Record<string, unknown>;
+    const mcpServers = settings.mcpServers;
+    if (mcpServers === null || typeof mcpServers !== "object" || Array.isArray(mcpServers)) {
+      return { hasWrongEntry: false, settingsPath };
+    }
+
+    const hasWrongEntry = "fabric" in (mcpServers as Record<string, unknown>);
+    return { hasWrongEntry, settingsPath };
+  } catch {
+    return { hasWrongEntry: false, settingsPath };
   }
 }
 
@@ -648,6 +685,20 @@ function createEventLedgerCheck(ledger: EventLedgerInspection): DoctorCheck {
   return okCheck("Event ledger", ".fabric/events.jsonl exists, is writable, and is parseable.");
 }
 
+function createMcpConfigInWrongFileCheck(inspection: McpConfigInWrongFileInspection): DoctorCheck {
+  if (inspection.hasWrongEntry) {
+    return issueCheck(
+      "Claude MCP config location",
+      "error",
+      "fixable_error",
+      "mcp_config_in_wrong_file",
+      `.claude/settings.json contains mcpServers.fabric — this file is for hooks/permissions only. Run --fix to remove it, then re-run fab init to write .mcp.json.`,
+    );
+  }
+
+  return okCheck("Claude MCP config location", "mcpServers.fabric is not in .claude/settings.json.");
+}
+
 function createEventLedgerPartialWriteCheck(ledger: EventLedgerInspection): DoctorCheck {
   if (!ledger.exists || !ledger.writable) {
     return okCheck("Event ledger partial write", "No partial-write check needed (ledger missing or not writable).");
@@ -701,6 +752,48 @@ function findIssue(issues: DoctorIssue[], code: string): DoctorIssue {
     name: code,
     message: code,
   };
+}
+
+async function fixMcpConfigInWrongFile(projectRoot: string): Promise<void> {
+  const settingsPath = join(projectRoot, ".claude", "settings.json");
+  if (!existsSync(settingsPath)) {
+    return;
+  }
+
+  let settings: Record<string, unknown>;
+  try {
+    const parsed = JSON.parse(readFileSync(settingsPath, "utf8")) as unknown;
+    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return;
+    }
+    settings = parsed as Record<string, unknown>;
+  } catch {
+    return;
+  }
+
+  const mcpServers = settings.mcpServers;
+  if (mcpServers === null || typeof mcpServers !== "object" || Array.isArray(mcpServers)) {
+    return;
+  }
+
+  // Remove the fabric entry from mcpServers
+  const { fabric: _removed, ...remainingServers } = mcpServers as Record<string, unknown>;
+  const cleaned: Record<string, unknown> = { ...settings };
+
+  if (Object.keys(remainingServers).length === 0) {
+    delete cleaned.mcpServers;
+  } else {
+    cleaned.mcpServers = remainingServers;
+  }
+
+  await atomicWriteJson(settingsPath, cleaned, { indent: 2 });
+
+  // Append a ledger event documenting the migration
+  await appendEventLedgerEvent(projectRoot, {
+    event_type: "mcp_config_migrated",
+    source: "doctor_fix",
+    removed_from: ".claude/settings.json",
+  });
 }
 
 async function writeDefaultBootstrap(projectRoot: string): Promise<void> {

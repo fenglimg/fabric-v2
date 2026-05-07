@@ -64,6 +64,7 @@ describe("runDoctorReport", () => {
       "Rule-test index",
       "Event ledger",
       "Event ledger partial write",
+      "Claude MCP config location",
     ]);
   });
 
@@ -122,6 +123,132 @@ describe("runDoctorReport", () => {
     expect(after.fixable_errors).toEqual([]);
     expect(events.map((event) => event.event_type)).toContain("rule_drift_detected");
     expect(events.map((event) => event.event_type)).toContain("baseline_synced");
+  });
+
+  it("mcp_config_in_wrong_file: detects mcpServers.fabric in .claude/settings.json", async () => {
+    const target = createInitializedProject("doctor-mcp-wrong-file-detect");
+    await writeRuleMeta(target, { source: "doctor_fix" });
+    writeFile(".fabric/events.jsonl", "", target);
+
+    // Write the wrong config: mcpServers.fabric inside settings.json
+    writeFile(
+      ".claude/settings.json",
+      JSON.stringify(
+        {
+          hooks: { Stop: [{ matcher: "*", hooks: [{ type: "command", command: ".claude/hooks/reminder.cjs" }] }] },
+          mcpServers: { fabric: { command: process.execPath, args: ["/srv.js"] } },
+        },
+        null,
+        2,
+      ),
+      target,
+    );
+
+    const report = await runDoctorReport(target);
+
+    expect(report.fixable_errors.map((issue) => issue.code)).toContain("mcp_config_in_wrong_file");
+    expect(report.checks.find((c) => c.name === "Claude MCP config location")?.status).toBe("error");
+  });
+
+  it("mcp_config_in_wrong_file: --fix removes mcpServers.fabric from settings.json and writes ledger event", async () => {
+    const target = createInitializedProject("doctor-mcp-wrong-file-fix");
+    await writeRuleMeta(target, { source: "doctor_fix" });
+    writeFile(".fabric/events.jsonl", "", target);
+
+    const settingsContent = {
+      hooks: { Stop: [{ matcher: "*", hooks: [{ type: "command", command: ".claude/hooks/reminder.cjs" }] }] },
+      mcpServers: { fabric: { command: process.execPath, args: ["/srv.js"] } },
+    };
+    writeFile(".claude/settings.json", JSON.stringify(settingsContent, null, 2), target);
+
+    const fix = await runDoctorFix(target);
+    const after = await runDoctorReport(target);
+
+    expect(fix.fixed.map((issue) => issue.code)).toContain("mcp_config_in_wrong_file");
+    expect(after.fixable_errors.map((issue) => issue.code)).not.toContain("mcp_config_in_wrong_file");
+    expect(after.checks.find((c) => c.name === "Claude MCP config location")?.status).toBe("ok");
+
+    // settings.json should not have mcpServers anymore
+    const settingsJson = JSON.parse(
+      readFileSync(join(target, ".claude", "settings.json"), "utf8"),
+    ) as Record<string, unknown>;
+    expect(settingsJson).not.toHaveProperty("mcpServers");
+    // hooks should be preserved
+    expect(settingsJson).toHaveProperty("hooks");
+
+    // Ledger event should record the migration
+    const { events } = await readEventLedger(target);
+    expect(events.map((event) => event.event_type)).toContain("mcp_config_migrated");
+  });
+
+  it("mcp_config_in_wrong_file: --fix removes whole mcpServers when only fabric remains", async () => {
+    const target = createInitializedProject("doctor-mcp-wrong-file-fix-solo");
+    await writeRuleMeta(target, { source: "doctor_fix" });
+    writeFile(".fabric/events.jsonl", "", target);
+
+    // Only fabric, no other servers
+    writeFile(
+      ".claude/settings.json",
+      JSON.stringify({ mcpServers: { fabric: { command: process.execPath, args: ["/srv.js"] } } }, null, 2),
+      target,
+    );
+
+    await runDoctorFix(target);
+
+    const settingsJson = JSON.parse(
+      readFileSync(join(target, ".claude", "settings.json"), "utf8"),
+    ) as Record<string, unknown>;
+    // The entire mcpServers key must be absent
+    expect(settingsJson).not.toHaveProperty("mcpServers");
+  });
+
+  it("mcp_config_in_wrong_file: --fix preserves OTHER mcpServers entries in settings.json", async () => {
+    const target = createInitializedProject("doctor-mcp-wrong-file-fix-other");
+    await writeRuleMeta(target, { source: "doctor_fix" });
+    writeFile(".fabric/events.jsonl", "", target);
+
+    writeFile(
+      ".claude/settings.json",
+      JSON.stringify(
+        {
+          mcpServers: {
+            fabric: { command: process.execPath, args: ["/srv.js"] },
+            other: { command: "/other/node", args: ["/other.js"] },
+          },
+        },
+        null,
+        2,
+      ),
+      target,
+    );
+
+    await runDoctorFix(target);
+
+    const settingsJson = JSON.parse(
+      readFileSync(join(target, ".claude", "settings.json"), "utf8"),
+    ) as Record<string, unknown>;
+    // fabric removed, other preserved
+    const servers = settingsJson.mcpServers as Record<string, unknown> | undefined;
+    expect(servers).toBeDefined();
+    expect(servers).not.toHaveProperty("fabric");
+    expect(servers).toHaveProperty("other");
+  });
+
+  it("mcp_config_in_wrong_file: no detection when settings.json has no mcpServers", async () => {
+    const target = createInitializedProject("doctor-mcp-wrong-file-absent");
+    await writeRuleMeta(target, { source: "doctor_fix" });
+    writeFile(".fabric/events.jsonl", "", target);
+
+    writeFile(
+      ".claude/settings.json",
+      JSON.stringify({ hooks: { Stop: [] } }, null, 2),
+      target,
+    );
+
+    const report = await runDoctorReport(target);
+
+    expect(report.fixable_errors.map((issue) => issue.code)).not.toContain("mcp_config_in_wrong_file");
+    expect(report.checks.find((c) => c.name === "Claude MCP config location")?.status).toBe("ok");
   });
 
   it("doctor fixable check fires when partial write detected and --fix truncates + writes ledger event", async () => {

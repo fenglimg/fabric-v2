@@ -7,6 +7,7 @@ import type { FabricConfig } from "@fenglimg/fabric-shared";
 import { defineCommand } from "citty";
 
 import { resolveClients } from "../config/resolver.js";
+import type { ClaudeMcpScope } from "../config/json.js";
 import type { ClientKind } from "../config/writer.js";
 import { t } from "../i18n.js";
 import { hooksCommand } from "./hooks.js";
@@ -35,6 +36,7 @@ type InstallMcpClientsOptions = {
   force?: boolean;
   dryRun?: boolean;
   localServerPath?: string;
+  claudeMcpScope?: ClaudeMcpScope;
 };
 
 type McpInstallAction = "wrote" | "dry-run" | "skipped";
@@ -159,7 +161,7 @@ export async function installMcpClients(
   const fabricConfig = await loadFabricConfig(workspaceRoot);
   const selectedClients = options.clients === undefined ? null : new Set(options.clients);
   const serverPath = resolveServerPath(options.localServerPath);
-  const writers = resolveClients(workspaceRoot, fabricConfig).filter((writer) =>
+  const writers = resolveClients(workspaceRoot, fabricConfig, { claudeMcpScope: options.claudeMcpScope }).filter((writer) =>
     selectedClients === null ? true : selectedClients.has(writer.clientKind),
   );
   const installed: ClientKind[] = [];

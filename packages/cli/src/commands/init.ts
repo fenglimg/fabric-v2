@@ -13,6 +13,7 @@ import { checkLockOrThrow } from "@fenglimg/fabric-server";
 import { buildFabricBootstrapGuide } from "../bootstrap-guide.js";
 import { displayWidth, paint, padEnd } from "../colors.js";
 import { createDebugLogger, resolveDevMode } from "../dev-mode.js";
+import type { ClaudeMcpScope } from "../config/json.js";
 import { t } from "../i18n.js";
 import { installBootstrap } from "./bootstrap.js";
 import * as configCommand from "./config.js";
@@ -32,6 +33,7 @@ type InitArgs = {
   hooks?: boolean;
   interactive?: boolean;
   "mcp-install"?: string;
+  scope?: string;
   skipBootstrap?: boolean;
   skipMcp?: boolean;
   skipHooks?: boolean;
@@ -127,7 +129,7 @@ type InitExecutionStep =
 
 type InitStagePlan =
   | { name: "bootstrap"; skipped: boolean }
-  | { name: "mcp"; skipped: boolean; installMode: McpInstallMode; localServerPath?: string; packageManager?: "pnpm" | "npm" | "yarn" }
+  | { name: "mcp"; skipped: boolean; installMode: McpInstallMode; claudeMcpScope: ClaudeMcpScope; localServerPath?: string; packageManager?: "pnpm" | "npm" | "yarn" }
   | { name: "hooks"; skipped: boolean };
 
 type InitWizardSelection = {
@@ -135,6 +137,7 @@ type InitWizardSelection = {
   mcp: boolean;
   hooks: boolean;
   mcpInstallMode: McpInstallMode;
+  claudeMcpScope: ClaudeMcpScope;
 };
 
 type InitWizardContext = {
@@ -142,6 +145,7 @@ type InitWizardContext = {
   options: InitOptions;
   supports: DetectedClientSupport[];
   mcpInstallMode: McpInstallMode;
+  claudeMcpScope: ClaudeMcpScope;
   lockedStages: InitStageName[];
 };
 
@@ -153,6 +157,7 @@ type InitCliIntent = {
   target: string;
   options: InitOptions;
   mcpInstallMode: McpInstallMode;
+  claudeMcpScope: ClaudeMcpScope;
   interactiveSummary: boolean;
   wizardEnabled: boolean;
 };
@@ -215,6 +220,7 @@ export type InitExecutionPlan = {
   target: string;
   options: InitOptions;
   mcpInstallMode: McpInstallMode;
+  claudeMcpScope: ClaudeMcpScope;
   interactive: boolean;
   supports: DetectedClientSupport[];
   scaffold: InitScaffoldPlan;
@@ -313,6 +319,10 @@ export const initCommand = defineCommand({
       default: "global",
       description: t("cli.init.mcp.install.prompt"),
     },
+    scope: {
+      type: "string",
+      description: t("cli.init.mcp.scope.description"),
+    },
   },
   async run({ args }: { args: InitArgs }) {
     await runInitCommand(args);
@@ -354,6 +364,7 @@ async function runInitCommand(args: InitArgs): Promise<InitExecutionResult> {
     target: intent.target,
     options: intent.options,
     mcpInstallMode: intent.mcpInstallMode,
+    claudeMcpScope: intent.claudeMcpScope,
     interactive: intent.interactiveSummary && !intent.wizardEnabled,
     supports,
   });
@@ -372,6 +383,7 @@ async function runInitCommand(args: InitArgs): Promise<InitExecutionResult> {
 function resolveInitCliIntent(args: InitArgs, targetInput: string): InitCliIntent {
   const target = normalizeTarget(targetInput);
   const mcpInstallMode = resolveMcpInstallMode(args["mcp-install"]);
+  const claudeMcpScope = resolveClaudeMcpScope(args.scope);
   const terminalInteractive = isInteractiveInit();
   const planOnly = args.plan === true;
   const reapply = args.reapply === true;
@@ -388,15 +400,28 @@ function resolveInitCliIntent(args: InitArgs, targetInput: string): InitCliInten
     target,
     options,
     mcpInstallMode,
+    claudeMcpScope,
     interactiveSummary: args.interactive !== false && terminalInteractive,
     wizardEnabled: shouldUseInitWizard(args, terminalInteractive) && !planOnly,
   };
+}
+
+function resolveClaudeMcpScope(raw: string | undefined): ClaudeMcpScope {
+  if (raw === undefined || raw === "project") {
+    return "project";
+  }
+  if (raw === "user") {
+    return "user";
+  }
+  writeStderr(t("cli.init.mcp.scope.invalid", { value: raw }));
+  return "project";
 }
 
 export async function buildInitExecutionPlan(input: {
   target: string;
   options?: InitOptions;
   mcpInstallMode?: McpInstallMode;
+  claudeMcpScope?: ClaudeMcpScope;
   interactive?: boolean;
   supports?: DetectedClientSupport[];
 }): Promise<InitExecutionPlan> {
@@ -404,12 +429,14 @@ export async function buildInitExecutionPlan(input: {
   const scaffold = await buildInitFabricPlan(input.target, options);
   const supports = input.supports ?? detectClientSupports(input.target);
   const mcpInstallMode = input.mcpInstallMode ?? "global";
+  const claudeMcpScope: ClaudeMcpScope = input.claudeMcpScope ?? "project";
   const stages: InitStagePlan[] = [
     { name: "bootstrap", skipped: Boolean(options.skipBootstrap) },
     {
       name: "mcp",
       skipped: Boolean(options.skipMcp),
       installMode: mcpInstallMode,
+      claudeMcpScope,
       localServerPath: mcpInstallMode === "local" ? LOCAL_FABRIC_SERVER_PATH : undefined,
       packageManager: mcpInstallMode === "local" ? detectPackageManager(input.target) : undefined,
     },
@@ -420,6 +447,7 @@ export async function buildInitExecutionPlan(input: {
     target: input.target,
     options,
     mcpInstallMode,
+    claudeMcpScope,
     interactive: input.interactive ?? false,
     supports,
     scaffold,
@@ -677,6 +705,7 @@ export async function resolveInitExecutionPlanWithWizard(
     options: basePlan.options,
     supports: basePlan.supports,
     mcpInstallMode: basePlan.mcpInstallMode,
+    claudeMcpScope: basePlan.claudeMcpScope,
     lockedStages: collectLockedWizardStages(args),
   });
 
@@ -693,6 +722,7 @@ export async function resolveInitExecutionPlanWithWizard(
       skipHooks: !selection.hooks,
     },
     mcpInstallMode: selection.mcp ? selection.mcpInstallMode : basePlan.mcpInstallMode,
+    claudeMcpScope: selection.claudeMcpScope,
     interactive: false,
     supports: basePlan.supports,
   });
@@ -838,6 +868,7 @@ async function executeInitStagePlan(
         const result = await configCommand.installMcpClients(plan.target, {
           force: plan.options.force,
           localServerPath: stage.localServerPath,
+          claudeMcpScope: stage.claudeMcpScope,
         });
         if (result.details.length === 0) {
           console.log(formatInitStageResult("mcp", "skipped", 0, 0, t("cli.config.install.no-configs")));
@@ -1102,6 +1133,17 @@ export function createDefaultInitWizardAdapter(): InitWizardAdapter {
                   ],
                 })
                 : context.mcpInstallMode,
+            claudeMcpScope: async ({ results }) =>
+              results.mcp
+                ? selectClaudeMcpScopeInGroup({
+                  message: t("cli.init.wizard.mcp-scope", { defaultValue: context.claudeMcpScope }),
+                  initialValue: context.claudeMcpScope,
+                  options: [
+                    { value: "project" as ClaudeMcpScope, label: "project", hint: t("cli.init.mcp.scope.project") },
+                    { value: "user" as ClaudeMcpScope, label: "user", hint: t("cli.init.mcp.scope.user") },
+                  ],
+                })
+                : context.claudeMcpScope,
             hooks: async () =>
               context.lockedStages.includes("hooks")
                 ? false
@@ -1175,6 +1217,24 @@ async function selectMcpInstallModeInGroup(options: {
   initialValue: McpInstallMode;
   options: Array<{ value: McpInstallMode; label?: string; hint?: string; disabled?: boolean }>;
 }): Promise<McpInstallMode> {
+  const result = await select({
+    message: options.message,
+    initialValue: options.initialValue,
+    options: options.options,
+  });
+
+  if (isCancel(result)) {
+    throw INIT_WIZARD_GROUP_CANCELLED;
+  }
+
+  return result;
+}
+
+async function selectClaudeMcpScopeInGroup(options: {
+  message: string;
+  initialValue: ClaudeMcpScope;
+  options: Array<{ value: ClaudeMcpScope; label?: string; hint?: string; disabled?: boolean }>;
+}): Promise<ClaudeMcpScope> {
   const result = await select({
     message: options.message,
     initialValue: options.initialValue,

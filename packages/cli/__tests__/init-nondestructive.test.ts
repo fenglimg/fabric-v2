@@ -81,6 +81,7 @@ describe("initFabric non-destructive behavior", () => {
         name: "mcp",
         skipped: false,
         installMode: "local",
+        claudeMcpScope: "project",
         localServerPath: "node_modules/@fenglimg/fabric-server/dist/index.js",
         packageManager: "npm",
       },

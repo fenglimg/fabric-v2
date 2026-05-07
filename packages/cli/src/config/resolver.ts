@@ -5,6 +5,7 @@ import { homedir } from "node:os";
 import type { ClientPaths, FabricConfig } from "@fenglimg/fabric-shared";
 import { ClaudeCodeDesktopWriter, getClaudeDesktopConfigPath } from "./claude-code.js";
 import { ClaudeCodeCLIWriter, CursorWriter } from "./json.js";
+import type { ClaudeMcpScope } from "./json.js";
 import { CodexTOMLConfigWriter } from "./toml.js";
 import type { ClientConfigWriter } from "./writer.js";
 
@@ -42,14 +43,23 @@ function addIfDetected(
   }
 }
 
-export function resolveClients(workspaceRoot: string, fabricConfig: FabricConfig = {}): ClientConfigWriter[] {
+type ResolveClientsOptions = {
+  claudeMcpScope?: ClaudeMcpScope;
+};
+
+export function resolveClients(
+  workspaceRoot: string,
+  fabricConfig: FabricConfig = {},
+  opts: ResolveClientsOptions = {},
+): ClientConfigWriter[] {
   const clientPaths = fabricConfig.clientPaths;
   const writers: ClientConfigWriter[] = [];
+  const claudeMcpScope = opts.claudeMcpScope ?? "project";
 
   addIfDetected(
     writers,
     existsSync(join(homedir(), ".claude")) || existsSync(join(workspaceRoot, ".claude")),
-    (configuredPath) => new ClaudeCodeCLIWriter(configuredPath),
+    (configuredPath) => new ClaudeCodeCLIWriter(configuredPath, claudeMcpScope),
     hasExplicitPath(clientPaths, "claudeCodeCLI") ? clientPaths!.claudeCodeCLI : undefined,
   );
 

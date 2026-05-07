@@ -129,6 +129,13 @@ export const eventLedgerTruncatedEventSchema = z.object({
   corrupted_path: z.string(),
 });
 
+export const mcpConfigMigratedEventSchema = z.object({
+  ...eventLedgerEnvelopeSchema,
+  event_type: z.literal("mcp_config_migrated"),
+  source: z.literal("doctor_fix"),
+  removed_from: z.string(),
+});
+
 export const eventLedgerEventSchema = z.discriminatedUnion("event_type", [
   ruleContextPlannedEventSchema,
   ruleSelectionEventSchema,
@@ -140,6 +147,7 @@ export const eventLedgerEventSchema = z.discriminatedUnion("event_type", [
   mcpEventLedgerEventSchema,
   reapplyCompletedEventSchema,
   eventLedgerTruncatedEventSchema,
+  mcpConfigMigratedEventSchema,
 ]);
 
 export type RuleContextPlannedEvent = z.infer<typeof ruleContextPlannedEventSchema>;
@@ -152,6 +160,7 @@ export type BaselineSyncedEvent = z.infer<typeof baselineSyncedEventSchema>;
 export type McpEventLedgerEvent = z.infer<typeof mcpEventLedgerEventSchema>;
 export type ReapplyCompletedEvent = z.infer<typeof reapplyCompletedEventSchema>;
 export type EventLedgerTruncatedEvent = z.infer<typeof eventLedgerTruncatedEventSchema>;
+export type McpConfigMigratedEvent = z.infer<typeof mcpConfigMigratedEventSchema>;
 export type EventLedgerEvent =
   | RuleContextPlannedEvent
   | RuleSelectionEvent
@@ -162,7 +171,8 @@ export type EventLedgerEvent =
   | BaselineSyncedEvent
   | McpEventLedgerEvent
   | ReapplyCompletedEvent
-  | EventLedgerTruncatedEvent;
+  | EventLedgerTruncatedEvent
+  | McpConfigMigratedEvent;
 export type EventLedgerEventType = EventLedgerEvent["event_type"];
 type EventLedgerEventInputFor<T extends EventLedgerEvent> = T extends EventLedgerEvent
   ? Omit<T, "kind" | "id" | "ts" | "schema_version" | "correlation_id" | "session_id"> &

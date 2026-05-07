@@ -1,0 +1,15 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`writeClaudeMcpConfig — snapshot: Claude Code MCP spec format > output matches Claude Code .mcp.json spec (mcpServers top-level key) 1`] = `
+"{
+  "mcpServers": {
+    "fabric": {
+      "command": "/Users/wepie/.nvm/versions/node/v22.19.0/bin/node",
+      "args": [
+        "/path/to/fabric-server.js"
+      ]
+    }
+  }
+}
+"
+`;
