@@ -292,15 +292,17 @@ export async function runDoctorFix(target: string): Promise<DoctorFixReport> {
 
   if (
     before.fixable_errors.some((issue) =>
-      ["agents_meta_missing", "agents_meta_stale", "rule_test_index_missing", "rule_test_index_stale"].includes(issue.code),
+      ["agents_meta_missing", "agents_meta_stale", "rule_test_index_missing", "rule_test_index_stale", "content_ref_missing"].includes(issue.code),
     )
   ) {
     // D22: doctor's role is now consistency repairer, not baseline promoter.
     // reconcileRules rewrites agents.meta.json from disk ground-truth and emits
     // a 'meta_reconciled' ledger event (trigger='doctor').
+    // content_ref_missing is included: reconcile drops stale refs that no longer
+    // have a backing file in .fabric/rules/, resolving the finding.
     await reconcileRules(projectRoot, { trigger: "doctor" });
     for (const issue of before.fixable_errors.filter((candidate) =>
-      ["agents_meta_missing", "agents_meta_stale", "rule_test_index_missing", "rule_test_index_stale"].includes(candidate.code),
+      ["agents_meta_missing", "agents_meta_stale", "rule_test_index_missing", "rule_test_index_stale", "content_ref_missing"].includes(candidate.code),
     )) {
       fixed.push(issue);
     }
@@ -648,12 +650,14 @@ function createRuleContentRefCheck(meta: MetaInspection): DoctorCheck {
   }
 
   if (meta.missingContentRefs.length > 0) {
+    // content_ref_missing is fixable: reconcileRules rebuilds agents.meta.json from
+    // the physical .fabric/rules/**/*.md files, dropping any stale refs automatically.
     return issueCheck(
       "Rule content refs",
       "error",
-      "manual_error",
+      "fixable_error",
       "content_ref_missing",
-      `${meta.missingContentRefs.length} content_ref target${meta.missingContentRefs.length === 1 ? "" : "s"} are missing.`,
+      `${meta.missingContentRefs.length} content_ref target${meta.missingContentRefs.length === 1 ? "" : "s"} are missing. Run \`fab doctor --fix\` to reconcile.`,
     );
   }
 

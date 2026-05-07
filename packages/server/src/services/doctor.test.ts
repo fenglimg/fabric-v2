@@ -386,6 +386,25 @@ describe("runDoctorReport", () => {
     expect(report.checks.find((c) => c.name === "Meta manual divergence")?.status).toBe("ok");
   });
 
+  it("TASK-029: content_ref_missing is fixable — --fix via reconcileRules drops stale refs", async () => {
+    const target = createInitializedProject("doctor-content-ref-fix");
+    await writeRuleMeta(target, { source: "doctor_fix" });
+    writeFile(".fabric/events.jsonl", "", target);
+
+    // Remove the rule file so its content_ref becomes missing in meta
+    const { rmSync: nodeRmSync } = await import("node:fs");
+    nodeRmSync(join(target, ".fabric", "rules", "packages", "server", "rules.md"), { force: true });
+
+    const before = await runDoctorReport(target);
+    expect(before.fixable_errors.map((e) => e.code)).toContain("content_ref_missing");
+
+    const fix = await runDoctorFix(target);
+    const after = await runDoctorReport(target);
+
+    expect(fix.fixed.map((e) => e.code)).toContain("content_ref_missing");
+    expect(after.fixable_errors.map((e) => e.code)).not.toContain("content_ref_missing");
+  });
+
   it("TASK-026: doctor --fix bootstrap uses same builder as fab init (structurally equivalent)", async () => {
     const target = createProject("doctor-bootstrap-builder");
     writeFile("package.json", JSON.stringify({ name: "test-proj", dependencies: { vite: "^7.0.0" } }, null, 2), target);
