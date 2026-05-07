@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 
 import { cancel, confirm, group, intro, isCancel, log, note, outro, select } from "@clack/prompts";
 import type { AgentsMeta } from "@fenglimg/fabric-shared";
-import { atomicWriteJson } from "@fenglimg/fabric-shared/node/atomic-write";
+import { atomicWriteJson, atomicWriteText } from "@fenglimg/fabric-shared/node/atomic-write";
 import { defineCommand } from "citty";
 import { checkLockOrThrow } from "@fenglimg/fabric-server";
 
@@ -611,20 +611,21 @@ export async function executeInitFabricPlan(plan: InitScaffoldPlan): Promise<Ini
   mkdirSync(dirname(plan.bootstrapPath), { recursive: true });
 
   preparePlannedPath(plan.bootstrapPath, plan.bootstrapAction);
-  writeFileSync(plan.bootstrapPath, plan.bootstrapContent, "utf8");
+  await atomicWriteText(plan.bootstrapPath, plan.bootstrapContent);
 
   // Change B: skip agents.meta.json regen when --reapply and rules/*.md already exist.
   if (!preserveMeta) {
     preparePlannedPath(plan.metaPath, plan.metaAction);
-    writeFileSync(plan.metaPath, `${JSON.stringify(plan.meta, null, 2)}\n`, "utf8");
+    await atomicWriteJson(plan.metaPath, plan.meta);
   }
 
   preparePlannedPath(plan.taxonomyPath, plan.taxonomyAction);
-  writeFileSync(plan.taxonomyPath, ensureTrailingNewline(plan.taxonomyContent), "utf8");
+  await atomicWriteText(plan.taxonomyPath, ensureTrailingNewline(plan.taxonomyContent));
 
   mkdirSync(plan.rulesDir, { recursive: true });
 
   // Change A: on --reapply, preserve events.jsonl byte-identically; only create it if missing.
+  // 0-byte create stays raw — writeFileSync("", "") is atomic by definition.
   if (isReapply) {
     if (!existsSync(plan.eventsPath)) {
       mkdirSync(dirname(plan.eventsPath), { recursive: true });
@@ -637,7 +638,7 @@ export async function executeInitFabricPlan(plan: InitScaffoldPlan): Promise<Ini
   }
 
   preparePlannedPath(plan.forensicPath, plan.forensicAction);
-  writeFileSync(plan.forensicPath, `${JSON.stringify(plan.forensicReport, null, 2)}\n`, "utf8");
+  await atomicWriteJson(plan.forensicPath, plan.forensicReport);
 
   applyOptionalTemplateWritePlan(plan.claudeSkill);
   applyOptionalTemplateWritePlan(plan.codexSkill);
