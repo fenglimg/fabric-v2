@@ -4,6 +4,8 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
+import { buildBootstrapContent } from "@fenglimg/fabric-shared/node/bootstrap-guide";
+
 import { runDoctorFix, runDoctorReport } from "./doctor.js";
 import { readEventLedger } from "./event-ledger.js";
 import { writeRuleMeta } from "./rule-meta-builder.js";
@@ -382,6 +384,24 @@ describe("runDoctorReport", () => {
 
     expect(report.warnings.map((w) => w.code)).not.toContain("meta_manually_diverged");
     expect(report.checks.find((c) => c.name === "Meta manual divergence")?.status).toBe("ok");
+  });
+
+  it("TASK-026: doctor --fix bootstrap uses same builder as fab init (structurally equivalent)", async () => {
+    const target = createProject("doctor-bootstrap-builder");
+    writeFile("package.json", JSON.stringify({ name: "test-proj", dependencies: { vite: "^7.0.0" } }, null, 2), target);
+    writeFile("src/main.ts", "export const boot = true;\n", target);
+
+    const before = await runDoctorReport(target);
+    expect(before.fixable_errors.map((e) => e.code)).toContain("bootstrap_missing");
+
+    await runDoctorFix(target);
+
+    const written = readFileSync(join(target, ".fabric", "bootstrap", "README.md"), "utf8");
+    const expected = buildBootstrapContent(target);
+
+    expect(written).toBe(expected);
+    expect(written).toContain("Fabric Bootstrap Protocol");
+    expect(written).toContain("test-proj");
   });
 });
 

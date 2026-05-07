@@ -16,6 +16,7 @@ import { detectFramework } from "@fenglimg/fabric-shared/node";
 import { contextCache } from "../cache.js";
 import { parseRuleSections } from "./rule-sections.js";
 import { atomicWriteJson, atomicWriteText } from "@fenglimg/fabric-shared/node/atomic-write";
+import { buildBootstrapContent, FABRIC_BOOTSTRAP_PATH } from "@fenglimg/fabric-shared/node/bootstrap-guide";
 import { ensureParentDirectory, getEventLedgerPath, sha256 } from "./_shared.js";
 import { buildRuleMeta, isSameRuleTestIndex, writeRuleMeta } from "./rule-meta-builder.js";
 import { appendEventLedgerEvent, readEventLedger, truncateLedgerToLastNewline } from "./event-ledger.js";
@@ -885,9 +886,9 @@ async function fixMcpConfigInWrongFile(projectRoot: string): Promise<void> {
 }
 
 async function writeDefaultBootstrap(projectRoot: string): Promise<void> {
-  const path = join(projectRoot, ".fabric", "bootstrap", "README.md");
+  const path = join(projectRoot, FABRIC_BOOTSTRAP_PATH);
   await ensureParentDirectory(path);
-  await atomicWriteText(path, "# Fabric Bootstrap\n\nProject-specific Fabric bootstrap notes.\n");
+  await atomicWriteText(path, buildBootstrapContent(projectRoot));
 }
 
 async function ensureEventLedger(projectRoot: string): Promise<void> {

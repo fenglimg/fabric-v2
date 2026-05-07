@@ -10,6 +10,7 @@ export default defineConfig({
     alias: {
       "@fenglimg/fabric-server": resolve(packageRoot, "../server/src/index.ts"),
       "@fenglimg/fabric-shared/node/atomic-write": resolve(packageRoot, "../shared/src/node/atomic-write.ts"),
+      "@fenglimg/fabric-shared/node/bootstrap-guide": resolve(packageRoot, "../shared/src/node/bootstrap-guide.ts"),
       "@fenglimg/fabric-shared/node/mcp-payload-guard": resolve(packageRoot, "../shared/src/node/mcp-payload-guard.ts"),
       "@fenglimg/fabric-shared/node": resolve(packageRoot, "../shared/src/node.ts"),
       "@fenglimg/fabric-shared/i18n": resolve(packageRoot, "../shared/src/i18n/index.ts"),
