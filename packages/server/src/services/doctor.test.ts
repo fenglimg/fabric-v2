@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { runDoctorFix, runDoctorReport } from "./doctor.js";
 import { readEventLedger } from "./event-ledger.js";
 import { writeRuleMeta } from "./rule-meta-builder.js";
+import { sha256 } from "./_shared.js";
 
 const tempRoots: string[] = [];
 
@@ -65,6 +66,7 @@ describe("runDoctorReport", () => {
       "Event ledger",
       "Event ledger partial write",
       "Claude MCP config location",
+      "Meta manual divergence",
     ]);
   });
 
@@ -285,6 +287,101 @@ describe("runDoctorReport", () => {
     // The ledger should contain the truncation event
     const { events } = await readEventLedger(target);
     expect(events.map((event) => event.event_type)).toContain("event_ledger_truncated");
+  });
+
+  it("--fix calls reconcileRules and emits meta_reconciled event", async () => {
+    const target = createProject("doctor-reconcile-fix");
+    writeFile(".fabric/rules/packages/server/rules.md", "<!-- fab:rule-id rules/server -->\n# Server\n\n## [MANDATORY_INJECTION]\nUse services.\n", target);
+    writeFile(".fabric/events.jsonl", "", target);
+
+    const before = await runDoctorReport(target);
+    expect(before.fixable_errors.map((issue) => issue.code)).toContain("agents_meta_missing");
+
+    await runDoctorFix(target);
+
+    const { events } = await readEventLedger(target);
+    expect(events.map((event) => event.event_type)).toContain("meta_reconciled");
+
+    const metaReconciled = events.find((e) => e.event_type === "meta_reconciled");
+    expect(metaReconciled).toMatchObject({ event_type: "meta_reconciled", trigger: "doctor" });
+  });
+
+  it("backward-compat: old baseline_synced events parse without error from ledger replay", async () => {
+    const target = createProject("doctor-baseline-synced-replay");
+    mkdirSync(join(target, ".fabric"), { recursive: true });
+
+    const legacyEvent = JSON.stringify({
+      kind: "fabric-event",
+      id: "event:legacy-001",
+      ts: 1_000_000,
+      schema_version: 1,
+      event_type: "baseline_synced",
+      revision: "abc123",
+      previous_revision: "def456",
+      synced_files: [".fabric/rules/server.md"],
+      accepted_stable_ids: ["rules/server"],
+      source: "doctor_fix",
+    });
+
+    const ledgerPath = join(target, ".fabric", "events.jsonl");
+    writeFileSync(ledgerPath, `${legacyEvent}\n`, "utf8");
+
+    const { events, warnings } = await readEventLedger(target);
+
+    expect(warnings).toHaveLength(0);
+    expect(events).toHaveLength(1);
+    expect(events[0].event_type).toBe("baseline_synced");
+    if (events[0].event_type === "baseline_synced") {
+      expect(events[0].revision).toBe("abc123");
+      expect(events[0].synced_files).toEqual([".fabric/rules/server.md"]);
+    }
+  });
+
+  it("meta_manually_diverged: detects meta entries with no backing file on disk", async () => {
+    const target = createInitializedProject("doctor-meta-diverged-missing");
+    await writeRuleMeta(target, { source: "doctor_fix" });
+    writeFile(".fabric/events.jsonl", "", target);
+
+    // Remove the rule file but leave the meta entry intact
+    rmSync(join(target, ".fabric", "rules", "packages", "server", "rules.md"), { force: true });
+
+    const report = await runDoctorReport(target);
+
+    expect(report.warnings.map((w) => w.code)).toContain("meta_manually_diverged");
+    expect(report.checks.find((c) => c.name === "Meta manual divergence")?.status).toBe("warn");
+    const warningMsg = report.checks.find((c) => c.name === "Meta manual divergence")?.message ?? "";
+    expect(warningMsg).toContain("no backing file");
+  });
+
+  it("meta_manually_diverged: detects hash mismatch between meta and disk", async () => {
+    const target = createInitializedProject("doctor-meta-diverged-hash");
+    await writeRuleMeta(target, { source: "doctor_fix" });
+    writeFile(".fabric/events.jsonl", "", target);
+
+    // Overwrite rule file content so hash no longer matches what's in meta
+    writeFileSync(
+      join(target, ".fabric", "rules", "packages", "server", "rules.md"),
+      "<!-- fab:rule-id rules/server -->\n# Server\n\n## [MANDATORY_INJECTION]\nHand-edited content.\n",
+      "utf8",
+    );
+
+    const report = await runDoctorReport(target);
+
+    expect(report.warnings.map((w) => w.code)).toContain("meta_manually_diverged");
+    expect(report.checks.find((c) => c.name === "Meta manual divergence")?.status).toBe("warn");
+    const warningMsg = report.checks.find((c) => c.name === "Meta manual divergence")?.message ?? "";
+    expect(warningMsg).toContain("hash does not match");
+  });
+
+  it("meta_manually_diverged: passes when meta and filesystem are consistent", async () => {
+    const target = createInitializedProject("doctor-meta-consistent");
+    await writeRuleMeta(target, { source: "doctor_fix" });
+    writeFile(".fabric/events.jsonl", "", target);
+
+    const report = await runDoctorReport(target);
+
+    expect(report.warnings.map((w) => w.code)).not.toContain("meta_manually_diverged");
+    expect(report.checks.find((c) => c.name === "Meta manual divergence")?.status).toBe("ok");
   });
 });
 

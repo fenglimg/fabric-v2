@@ -95,6 +95,7 @@ export const ruleBaselineAcceptedEventSchema = z.object({
   source: z.enum(["doctor_fix", "sync_meta"]).optional(),
 });
 
+// Legacy: emitted by 1.7.x doctor; replaced by 'meta_reconciled' in 1.8.0. Kept for backward-compat ledger replay.
 export const baselineSyncedEventSchema = z.object({
   ...eventLedgerEnvelopeSchema,
   event_type: z.literal("baseline_synced"),

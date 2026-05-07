@@ -19,6 +19,7 @@ import { atomicWriteJson, atomicWriteText } from "@fenglimg/fabric-shared/node/a
 import { ensureParentDirectory, getEventLedgerPath, sha256 } from "./_shared.js";
 import { buildRuleMeta, isSameRuleTestIndex, writeRuleMeta } from "./rule-meta-builder.js";
 import { appendEventLedgerEvent, readEventLedger, truncateLedgerToLastNewline } from "./event-ledger.js";
+import { reconcileRules } from "./rule-sync.js";
 
 export type DoctorStatus = "ok" | "warn" | "error";
 export type DoctorIssueKind = "fixable_error" | "manual_error" | "warning";
@@ -174,6 +175,13 @@ type McpConfigInWrongFileInspection = {
   settingsPath: string;
 };
 
+type MetaManuallyDivergedInspection = {
+  extraMetaEntries: string[];
+  hashMismatchEntries: string[];
+  readable: boolean;
+  error?: string;
+};
+
 const SCRIPT_EXTENSIONS = new Set([".js", ".jsx", ".ts", ".tsx"]);
 const IGNORED_DIRECTORIES = new Set([
   ".fabric",
@@ -217,6 +225,7 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     inspectRuleTestIndex(projectRoot),
   ]);
   const mcpConfigInWrongFile = inspectMcpConfigInWrongFile(projectRoot);
+  const metaManuallyDiverged = await inspectMetaManuallyDiverged(projectRoot);
   const taxonomyExists = existsSync(join(projectRoot, ".fabric", "INITIAL_TAXONOMY.md"));
   const bootstrapExists = existsSync(join(projectRoot, ".fabric", "bootstrap", "README.md"));
   const checks: DoctorCheck[] = [
@@ -231,6 +240,7 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     createEventLedgerCheck(eventLedger),
     createEventLedgerPartialWriteCheck(eventLedger),
     createMcpConfigInWrongFileCheck(mcpConfigInWrongFile),
+    createMetaManuallyDivergedCheck(metaManuallyDiverged),
   ];
   const fixableErrors = collectIssues(checks, "fixable_error");
   const manualErrors = collectIssues(checks, "manual_error");
@@ -284,7 +294,10 @@ export async function runDoctorFix(target: string): Promise<DoctorFixReport> {
       ["agents_meta_missing", "agents_meta_stale", "rule_test_index_missing", "rule_test_index_stale"].includes(issue.code),
     )
   ) {
-    await writeRuleMeta(projectRoot, { source: "doctor_fix" });
+    // D22: doctor's role is now consistency repairer, not baseline promoter.
+    // reconcileRules rewrites agents.meta.json from disk ground-truth and emits
+    // a 'meta_reconciled' ledger event (trigger='doctor').
+    await reconcileRules(projectRoot, { trigger: "doctor" });
     for (const issue of before.fixable_errors.filter((candidate) =>
       ["agents_meta_missing", "agents_meta_stale", "rule_test_index_missing", "rule_test_index_stale"].includes(candidate.code),
     )) {
@@ -752,6 +765,81 @@ function findIssue(issues: DoctorIssue[], code: string): DoctorIssue {
     name: code,
     message: code,
   };
+}
+
+async function inspectMetaManuallyDiverged(projectRoot: string): Promise<MetaManuallyDivergedInspection> {
+  const metaPath = join(projectRoot, ".fabric", "agents.meta.json");
+
+  if (!existsSync(metaPath)) {
+    return { extraMetaEntries: [], hashMismatchEntries: [], readable: false };
+  }
+
+  let meta: AgentsMeta;
+  try {
+    const raw = await readFile(metaPath, "utf8");
+    meta = agentsMetaSchema.parse(JSON.parse(raw));
+  } catch (error) {
+    return {
+      extraMetaEntries: [],
+      hashMismatchEntries: [],
+      readable: false,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+
+  const extraMetaEntries: string[] = [];
+  const hashMismatchEntries: string[] = [];
+
+  for (const node of Object.values(meta.nodes)) {
+    const contentRef = node.content_ref ?? node.file;
+    const absPath = join(projectRoot, contentRef);
+
+    if (!existsSync(absPath)) {
+      extraMetaEntries.push(contentRef);
+      continue;
+    }
+
+    try {
+      const content = readFileSync(absPath, "utf8");
+      const diskHash = sha256(content);
+      if (node.hash !== "" && node.hash !== diskHash) {
+        hashMismatchEntries.push(contentRef);
+      }
+    } catch {
+      extraMetaEntries.push(contentRef);
+    }
+  }
+
+  return { extraMetaEntries, hashMismatchEntries, readable: true };
+}
+
+function createMetaManuallyDivergedCheck(inspection: MetaManuallyDivergedInspection): DoctorCheck {
+  if (!inspection.readable) {
+    // meta unreadable is already surfaced by createMetaCheck; skip here
+    return okCheck("Meta manual divergence", "agents.meta.json not readable; skipping divergence check.");
+  }
+
+  if (inspection.extraMetaEntries.length > 0) {
+    return issueCheck(
+      "Meta manual divergence",
+      "warn",
+      "warning",
+      "meta_manually_diverged",
+      `agents.meta.json has ${inspection.extraMetaEntries.length} entr${inspection.extraMetaEntries.length === 1 ? "y" : "ies"} with no backing file on disk. Run --fix to reconcile.`,
+    );
+  }
+
+  if (inspection.hashMismatchEntries.length > 0) {
+    return issueCheck(
+      "Meta manual divergence",
+      "warn",
+      "warning",
+      "meta_manually_diverged",
+      `agents.meta.json has ${inspection.hashMismatchEntries.length} entr${inspection.hashMismatchEntries.length === 1 ? "y" : "ies"} whose hash does not match the file on disk. Run --fix to reconcile.`,
+    );
+  }
+
+  return okCheck("Meta manual divergence", "agents.meta.json is consistent with rule files on disk.");
 }
 
 async function fixMcpConfigInWrongFile(projectRoot: string): Promise<void> {
