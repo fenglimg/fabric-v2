@@ -5,27 +5,62 @@ All notable changes to Fabric will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.8.0] - 2026-05-07
 
 ### Added
-- TBD
+
+- Atomic write helper (`@fenglimg/fabric-shared/node/atomic-write`) — tmp+rename pattern with optional fsync; used by all config and scaffold writers.
+- FabricError taxonomy with 5 sub-trees: `ConfigError` / `RuleError` / `IOFabricError` / `MCPError` / `InitError`; replaces ad-hoc string-prefix error matching throughout server.
+- Per-path ledger write queue (poison-resistant, in-process serialization) — concurrent `fab_append_intent` calls for the same path are serialized without data loss.
+- SIGINT / SIGTERM / SIGHUP handlers with in-flight request drain (up to 5 s) + `fsync` on the event ledger before process exit (closes Claude Code #15945 zombie pattern).
+- Cross-process serve lockfile (`.fabric/.serve.lock`) with PID liveness check — stale locks auto-recover, live locks block with `--force` override.
+- rule-sync orchestrator (`ensureRulesFresh` / `reconcileRules`) — single source of truth for rule freshness; wired into all three MCP tool handlers with warnings surfaced in `response.warnings`.
+- Startup full rule consistency scan — rules added to `rules/` while the server was offline are visible immediately on next start.
+- Chokidar watcher extended to `.fabric/rules/` for cache invalidation (no writes, invalidate-only).
+- MCP payload guard: 16 KB warn threshold / 64 KB hard limit (`MCP_PAYLOAD_TOO_LARGE`); both thresholds configurable via `fabric.config.json mcpPayloadLimits`.
+- Tool schemas exported to `@fenglimg/fabric-shared/schemas/api-contracts` with per-tool annotations and golden contract snapshots (drift detection on CI).
+- Doctor checks (v1.8.0): `mcp_config_in_wrong_file`, `event_ledger_partial_write`, `meta_manually_diverged`, `rules_dir_unindexed`, `stable_id_collision`, `claude_skill_legacy_path`, `preexisting_root_claude_md` (info-level).
+- Doctor check (v1.7.1 backport): `legacy_client_path_present` — detects and removes retired `windsurf` / `rooCode` / `geminiCLI` keys from `clientPaths`.
+- Knip dead-code detector with zero baseline integrated into `pnpm lint`.
+- Per-client config golden snapshots (drift detection guards against unintended init output changes).
+- `fab init --scope project|user` flag — controls whether Claude MCP config is written to `.mcp.json` (project, default) or `~/.claude.json` (user).
 
 ### Changed
-- TBD
+
+- Claude MCP config now written to `.mcp.json` (project scope) or `~/.claude.json` (user scope) — no longer `.claude/settings.json`, which per Claude Code spec is reserved for hooks and permissions only.
+- MCP config writer uses hand-rolled deep-merge to preserve other `mcpServers` entries (no new runtime dependencies).
+- Client SKILL files unified under `fabric-init/SKILL.md` (previously `agents-md-init/SKILL.md`).
+- Doctor's conceptual role reframed from "baseline promoter" to "consistency repairer" — `--fix` calls `reconcileRules` to bring disk state in sync rather than purely promoting state.
+- All user-facing config writes (JSON configs, TOML configs, Husky hooks, init scaffold files) use atomic tmp+rename primitives.
+- `ensureRulesFresh` wired into all three MCP tool handlers (`fab_get_rules`, `fab_append_intent`, `fab_plan_context`); rule freshness warnings flow through to `response.warnings`.
+- `--reapply` no longer truncates `events.jsonl`; existing byte content is fully preserved.
+- `--reapply` preserves `agents.meta.json` when `.fabric/rules/` contains at least one `.md` file (protects AI-built rule trees); regenerates only when `rules/` is empty.
+- `readEventLedger` no longer silently drops trailing partial lines — emits a `LedgerWarning` entry instead; doctor `event_ledger_partial_write --fix` truncates the partial line cleanly.
+- HTTP error codes preserved across FabricError migration: PathEscape errors stay 403, ledger/lock errors stay 404.
+- `ensureRulesFresh` I/O storm under high-frequency MCP polling mitigated by 500 ms global cooldown combined with watcher-based cache invalidation.
 
 ### Deprecated
-- Client `windsurf` support — removed in 1.8.0
-- Client `rooCode` support — removed in 1.8.0
-- Client `geminiCLI` support — removed in 1.8.0
+
+- (Deprecations already announced in 1.7.1; all three deprecated clients are removed in this release — see Removed.)
 
 ### Removed
-- TBD
+
+- Client support: `windsurf`, `rooCode`, `geminiCLI` — Fabric now targets exactly three clients: Claude Code (CLI + Desktop), Codex CLI, and Cursor.
+- Dead code: 5 unused init helper functions and the orphan `fab_get_rules` tool registration removed by Knip audit.
+- Old SKILL path: `.claude/skills/agents-md-init/` — doctor check `claude_skill_legacy_path --fix` migrates to `.agents/skills/fabric-init/`.
 
 ### Fixed
-- TBD
+
+- `--reapply` no longer truncates `events.jsonl` — byte-level ledger preservation on every reapply.
+- `--reapply` preserves AI-built `agents.meta.json` when `rules/` directory has content.
+- HTTP error codes (403, 404) preserved correctly after FabricError taxonomy migration.
+- `readEventLedger` emits a `LedgerWarning` instead of silently dropping trailing partial lines caused by interrupted writes.
+- `ensureRulesFresh` I/O storm under high-frequency MCP polling (500 ms global cooldown + watcher invalidate).
 
 ### Security
-- TBD
+
+- Hand-rolled deep-merge in MCP config writer — no new third-party dependency introduced for config patching.
+- Tmp file cleanup on atomic write failure — no orphan `.tmp` files left on disk if the rename step errors.
 
 ## [1.6.0] - 2026-04-25
 
