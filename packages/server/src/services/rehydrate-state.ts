@@ -2,20 +2,43 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
 import { agentsMetaSchema, type AgentsMeta, type AgentsMetaNode } from "@fenglimg/fabric-shared";
+import { IOFabricError, RuleError } from "@fenglimg/fabric-shared/errors";
 
 import { readLedger, type StoredLedgerEntry } from "./read-ledger.js";
 
 const execFileAsync = promisify(execFile);
 const AGENTS_META_GIT_PATH = ".fabric/agents.meta.json";
 
-export class HistoryReplayError extends Error {
-  constructor(
-    message: string,
-    readonly code: string,
-    readonly status: number,
-  ) {
-    super(message);
-    this.name = "HistoryReplayError";
+export class HistoryStateNotFoundError extends IOFabricError {
+  readonly code = "HISTORY_STATE_NOT_FOUND";
+  readonly httpStatus = 404;
+
+  constructor(message: string, opts?: { actionHint?: string }) {
+    super(message, {
+      actionHint: opts?.actionHint ?? "Ensure the ledger exists and the requested timestamp or entry ID is within its range",
+    });
+  }
+}
+
+export class LedgerEntryNotFoundError extends RuleError {
+  readonly code = "LEDGER_ENTRY_NOT_FOUND";
+
+  constructor(message: string, opts?: { actionHint?: string }) {
+    super(message, {
+      actionHint: opts?.actionHint ?? "Verify the ledger entry ID exists in the current ledger",
+    });
+  }
+}
+
+/** @deprecated Use HistoryStateNotFoundError or LedgerEntryNotFoundError */
+export class HistoryReplayError extends IOFabricError {
+  readonly code = "HISTORY_STATE_NOT_FOUND";
+  readonly httpStatus = 404;
+
+  constructor(message: string, opts?: { actionHint?: string }) {
+    super(message, {
+      actionHint: opts?.actionHint ?? "Ensure the ledger exists and the requested timestamp or entry ID is within its range",
+    });
   }
 }
 
@@ -44,10 +67,8 @@ export async function rehydrateAgentsMetaAt(
   const selectedEntry = replayedEntries.at(-1);
 
   if (selectedEntry === undefined) {
-    throw new HistoryReplayError(
+    throw new HistoryStateNotFoundError(
       "Cannot rehydrate history state because the ledger is empty.",
-      "HISTORY_STATE_NOT_FOUND",
-      404,
     );
   }
 
@@ -88,10 +109,8 @@ function resolveTargetIndex(ledger: StoredLedgerEntry[], target: RehydrateTarget
     const index = ledger.findIndex((entry) => entry.id === target.ledgerEntryId);
 
     if (index === -1) {
-      throw new HistoryReplayError(
+      throw new LedgerEntryNotFoundError(
         `Cannot find ledger entry: ${target.ledgerEntryId}`,
-        "LEDGER_ENTRY_NOT_FOUND",
-        404,
       );
     }
 
@@ -104,10 +123,8 @@ function resolveTargetIndex(ledger: StoredLedgerEntry[], target: RehydrateTarget
     }
   }
 
-  throw new HistoryReplayError(
+  throw new HistoryStateNotFoundError(
     `Cannot find ledger entry at or before timestamp: ${new Date(target.timestamp).toISOString()}`,
-    "HISTORY_STATE_NOT_FOUND",
-    404,
   );
 }
 

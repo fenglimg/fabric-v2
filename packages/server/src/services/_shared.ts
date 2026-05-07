@@ -2,6 +2,8 @@ import { dirname, join, resolve, sep } from "node:path";
 import { createHash } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 
+import { PathEscapeError } from "@fenglimg/fabric-shared/errors";
+
 export { atomicWriteText, atomicWriteJson } from "@fenglimg/fabric-shared/node/atomic-write";
 
 export const FABRIC_DIR = ".fabric";
@@ -43,7 +45,9 @@ export function assertPathWithinProjectRoot(projectRoot: string, file: string): 
     : `${normalizedProjectRoot}${sep}`;
 
   if (!absolutePath.startsWith(rootPrefix)) {
-    throw new Error(`Path escapes project root: ${file}`);
+    throw new PathEscapeError(`Path escapes project root: ${file}`, {
+      actionHint: "Ensure the file path is within the project root directory",
+    });
   }
 
   return absolutePath;

@@ -1,6 +1,7 @@
 import type { HumanLedgerEntry } from "@fenglimg/fabric-shared";
 
 import { appendLedgerEntry, readLedger, type StoredLedgerEntry } from "./read-ledger.js";
+import { LedgerEntryNotFoundError } from "./rehydrate-state.js";
 
 export type AnnotateIntentInput = {
   ledger_entry_id: string;
@@ -20,7 +21,7 @@ export async function annotateIntent(
   const parentEntry = entries.find((entry) => entry.id === input.ledger_entry_id);
 
   if (parentEntry === undefined) {
-    throw new Error(`Cannot find ledger entry: ${input.ledger_entry_id}`);
+    throw new LedgerEntryNotFoundError(`Cannot find ledger entry: ${input.ledger_entry_id}`);
   }
 
   const lastEntry = entries[entries.length - 1];

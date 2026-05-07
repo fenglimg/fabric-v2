@@ -2,29 +2,34 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { agentsMetaSchema, type AgentsMeta } from "@fenglimg/fabric-shared";
+import { IOFabricError } from "@fenglimg/fabric-shared/errors";
 
 import { contextCache } from "./cache.js";
 
 export type { AgentsMeta } from "@fenglimg/fabric-shared";
 export { agentsMetaNodeSchema, agentsMetaSchema } from "@fenglimg/fabric-shared";
 
-export class AgentsMetaFileMissingError extends Error {
+export class AgentsMetaFileMissingError extends IOFabricError {
   readonly code = "FABRIC_META_MISSING";
+  readonly httpStatus = 404;
 
-  constructor(readonly metaPath: string) {
-    super(`Fabric agents metadata file is missing: ${metaPath}`);
-    this.name = "AgentsMetaFileMissingError";
+  constructor(readonly metaPath: string, opts?: { actionHint?: string }) {
+    super(`Fabric agents metadata file is missing: ${metaPath}`, {
+      actionHint: opts?.actionHint ?? "Run `fab init` to scaffold the .fabric/agents.meta.json file",
+    });
   }
 }
 
-export class AgentsMetaInvalidError extends Error {
+export class AgentsMetaInvalidError extends IOFabricError {
   readonly code = "FABRIC_META_INVALID";
+  readonly httpStatus = 500;
 
-  constructor(readonly metaPath: string, cause: unknown) {
+  constructor(readonly metaPath: string, cause: unknown, opts?: { actionHint?: string }) {
     const detail = cause instanceof Error ? cause.message : String(cause);
 
-    super(`Fabric agents metadata file is invalid: ${metaPath}. ${detail}`);
-    this.name = "AgentsMetaInvalidError";
+    super(`Fabric agents metadata file is invalid: ${metaPath}. ${detail}`, {
+      actionHint: opts?.actionHint ?? "Check the agents.meta.json file for schema errors and regenerate if needed",
+    });
   }
 }
 

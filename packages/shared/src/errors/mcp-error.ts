@@ -1,4 +1,4 @@
-import { FabricError } from './fabric-error'
+import { FabricError } from './fabric-error.js'
 
 export abstract class MCPError extends FabricError {
   readonly httpStatus = 500

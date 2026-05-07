@@ -1,7 +1,7 @@
-import { FabricError } from './fabric-error'
+import { FabricError } from './fabric-error.js'
 
 export abstract class IOFabricError extends FabricError {
-  readonly httpStatus = 500
+  readonly httpStatus: number = 500
 }
 
 export class PathEscapeError extends IOFabricError {

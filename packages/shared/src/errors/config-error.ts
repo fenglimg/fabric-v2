@@ -1,4 +1,4 @@
-import { FabricError } from './fabric-error'
+import { FabricError } from './fabric-error.js'
 
 export abstract class ConfigError extends FabricError {
   readonly httpStatus = 400

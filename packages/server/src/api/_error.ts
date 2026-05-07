@@ -1,6 +1,6 @@
 import { createMcpExpressApp } from "@modelcontextprotocol/sdk/server/express.js";
 
-import { AgentsMetaFileMissingError, AgentsMetaInvalidError } from "../meta-reader.js";
+import { FabricError } from "@fenglimg/fabric-shared/errors";
 
 export type FabricHttpApp = ReturnType<typeof createMcpExpressApp>;
 
@@ -59,61 +59,16 @@ export function sendUnknownError(res: JsonResponse, error: unknown): void {
 }
 
 function normalizeApiError(error: unknown): KnownApiError {
-  if (
-    error instanceof Error &&
-    "status" in error &&
-    "code" in error &&
-    typeof (error as { status?: unknown }).status === "number" &&
-    typeof (error as { code?: unknown }).code === "string"
-  ) {
+  if (error instanceof FabricError) {
     return {
-      status: (error as { status: number }).status,
-      code: (error as { code: string }).code,
-      message: error.message,
-    };
-  }
-
-  if (error instanceof AgentsMetaFileMissingError) {
-    return {
-      status: 404,
+      status: error.httpStatus,
       code: error.code,
       message: error.message,
-    };
-  }
-
-  if (error instanceof AgentsMetaInvalidError) {
-    return {
-      status: 500,
-      code: error.code,
-      message: error.message,
+      details: error.details,
     };
   }
 
   if (error instanceof Error) {
-    if (error.message.startsWith("Path escapes project root:")) {
-      return {
-        status: 403,
-        code: "PATH_OUTSIDE_PROJECT_ROOT",
-        message: error.message,
-      };
-    }
-
-    if (error.message.startsWith("Cannot find human lock entry:")) {
-      return {
-        status: 404,
-        code: "HUMAN_LOCK_ENTRY_NOT_FOUND",
-        message: error.message,
-      };
-    }
-
-    if (error.message.startsWith("Cannot find ledger entry:")) {
-      return {
-        status: 404,
-        code: "LEDGER_ENTRY_NOT_FOUND",
-        message: error.message,
-      };
-    }
-
     return {
       status: 500,
       code: "INTERNAL_ERROR",

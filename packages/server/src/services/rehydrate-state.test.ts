@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { HistoryReplayError, rehydrateAgentsMetaAt } from "./rehydrate-state.js";
+import { HistoryStateNotFoundError, LedgerEntryNotFoundError, rehydrateAgentsMetaAt } from "./rehydrate-state.js";
 
 const tempDirs: string[] = [];
 
@@ -142,8 +142,44 @@ describe("rehydrateAgentsMetaAt", () => {
 
     await expect(rehydrateAgentsMetaAt(projectRoot, { timestamp: 50 })).rejects.toMatchObject({
       code: "HISTORY_STATE_NOT_FOUND",
-      status: 404,
+      httpStatus: 404,
     });
+    await expect(rehydrateAgentsMetaAt(projectRoot, { timestamp: 50 })).rejects.toBeInstanceOf(HistoryStateNotFoundError);
+  });
+
+  it("throws LedgerEntryNotFoundError (422) for a missing ledger entry ID", async () => {
+    const projectRoot = await createTempProject();
+    await mkdir(join(projectRoot, ".fabric"), { recursive: true });
+    await writeFile(join(projectRoot, ".fabric", ".intent-ledger.jsonl"), `${JSON.stringify({
+      id: "ledger:exists",
+      ts: 10,
+      source: "ai",
+      commit_sha: "abc123",
+      intent: "create",
+      affected_paths: ["src/a.ts"],
+    })}\n`);
+
+    await expect(rehydrateAgentsMetaAt(projectRoot, { ledgerEntryId: "ledger:missing" })).rejects.toBeInstanceOf(LedgerEntryNotFoundError);
+    await expect(rehydrateAgentsMetaAt(projectRoot, { ledgerEntryId: "ledger:missing" })).rejects.toMatchObject({
+      code: "LEDGER_ENTRY_NOT_FOUND",
+      httpStatus: 422,
+    });
+  });
+
+  it("HistoryStateNotFoundError requires actionHint and has correct shape", () => {
+    const err = new HistoryStateNotFoundError("test message");
+    expect(err.code).toBe("HISTORY_STATE_NOT_FOUND");
+    expect(err.httpStatus).toBe(404);
+    expect(err.actionHint).toBeTruthy();
+    expect(err).toBeInstanceOf(HistoryStateNotFoundError);
+  });
+
+  it("LedgerEntryNotFoundError requires actionHint and has correct shape", () => {
+    const err = new LedgerEntryNotFoundError("test message");
+    expect(err.code).toBe("LEDGER_ENTRY_NOT_FOUND");
+    expect(err.httpStatus).toBe(422);
+    expect(err.actionHint).toBeTruthy();
+    expect(err).toBeInstanceOf(LedgerEntryNotFoundError);
   });
 });
 
