@@ -1,6 +1,8 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, isAbsolute, join, parse, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+
+import { atomicWriteText } from "@fenglimg/fabric-shared/node/atomic-write";
 
 import type { FrameworkInfo } from "./scanner/detector.js";
 import { createScanReport } from "./commands/scan.js";
@@ -38,7 +40,7 @@ export async function ensureFabricBootstrapGuide(workspaceRoot: string, force?: 
   }
 
   mkdirSync(dirname(guidePath), { recursive: true });
-  writeFileSync(guidePath, await buildFabricBootstrapGuide(workspaceRoot), "utf8");
+  await atomicWriteText(guidePath, await buildFabricBootstrapGuide(workspaceRoot));
 }
 
 function findBootstrapTemplatePath(frameworkKind: FrameworkInfo["kind"]): string {

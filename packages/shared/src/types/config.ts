@@ -7,10 +7,16 @@ export interface ClientPaths {
 
 export type AuditMode = "strict" | "warn" | "off";
 
+export interface McpPayloadLimits {
+  warnBytes?: number;
+  hardBytes?: number;
+}
+
 export interface FabricConfig {
   clientPaths?: ClientPaths;
   externalFixturePath?: string;
   scanIgnores?: string[];
   auditMode?: AuditMode;
   audit_mode?: AuditMode;
+  mcpPayloadLimits?: McpPayloadLimits;
 }

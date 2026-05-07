@@ -1496,62 +1496,6 @@ function templateCandidatesFrom(start: string, relativePath: string): string[] {
   return candidates.reverse();
 }
 
-function prepareFreshPath(path: string, options?: InitOptions): InitWriteAction {
-  if (!existsSync(path)) {
-    return "created";
-  }
-
-  if (!options?.force) {
-    throw new Error(t("cli.init.errors.abort-existing", { path }));
-  }
-
-  rmSync(path, { recursive: true, force: true });
-  return "overwritten";
-}
-
-function prepareWritableDirectory(path: string, options?: InitOptions): void {
-  if (!existsSync(path) || statSync(path).isDirectory()) {
-    return;
-  }
-
-  if (!options?.force) {
-    throw new Error(t("cli.init.errors.abort-existing", { path }));
-  }
-
-  rmSync(path, { force: true });
-}
-
-function writeNewFile(path: string, content: string, options?: InitOptions): InitWriteAction {
-  const existed = existsSync(path);
-  if (existed && !options?.force) {
-    throw new Error(t("cli.init.errors.abort-existing", { path }));
-  }
-
-  writeFileSync(path, content, "utf8");
-  return existed ? "overwritten" : "created";
-}
-
-function copyTemplateIfMissing(templatePath: string, targetPath: string, options?: InitOptions): ClaudeHookAction {
-  mkdirSync(dirname(targetPath), { recursive: true });
-
-  const existed = existsSync(targetPath);
-  if (existed && !options?.force) {
-    return "skipped";
-  }
-
-  copyFileSync(templatePath, targetPath);
-  return existed ? "overwritten" : "created";
-}
-
-function copyExecutableTemplateIfMissing(templatePath: string, targetPath: string, options?: InitOptions): ClaudeHookAction {
-  const action = copyTemplateIfMissing(templatePath, targetPath, options);
-  if (action !== "skipped") {
-    chmodSync(targetPath, 0o755);
-  }
-
-  return action;
-}
-
 function hasClaudeInitReminderHook(stopHooks: unknown[]): boolean {
   return stopHooks.some((entry) => isClaudeInitReminderStopEntry(entry));
 }

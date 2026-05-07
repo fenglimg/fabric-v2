@@ -7,7 +7,9 @@ import {
   planContextInputSchema,
   planContextOutputSchema,
 } from "@fenglimg/fabric-shared/schemas/api-contracts";
+import { enforcePayloadLimit } from "@fenglimg/fabric-shared/node/mcp-payload-guard";
 import { resolveProjectRoot } from "../meta-reader.js";
+import { readPayloadLimits } from "../config-loader.js";
 import { type InFlightTracker } from "../services/in-flight-tracker.js";
 import { planContext, type PlanContextInput } from "../services/plan-context.js";
 import { ensureRulesFresh } from "../services/rule-sync.js";
@@ -42,6 +44,20 @@ export function registerPlanContext(server: McpServer, tracker?: InFlightTracker
           ...result,
           warnings: [...(result.warnings ?? []), ...syncReport.warnings],
         };
+
+        const payloadLimits = readPayloadLimits(projectRoot);
+        const serialized = JSON.stringify(response);
+        const guardResult = enforcePayloadLimit(serialized, payloadLimits);
+        if (guardResult.warning) {
+          response.warnings = [
+            ...response.warnings,
+            {
+              code: guardResult.warning.code,
+              file: '<response>',
+              action_hint: 'Consider narrowing the request scope to reduce response size',
+            },
+          ];
+        }
 
         return {
           content: [{ type: "text" as const, text: JSON.stringify(response) }],

@@ -14,10 +14,16 @@ export const clientPathsSchema = z
   })
   .passthrough();
 
+export const mcpPayloadLimitsSchema = z.object({
+  warnBytes: z.number().int().positive().optional(),
+  hardBytes: z.number().int().positive().optional(),
+}).optional();
+
 export const fabricConfigSchema = z.object({
   clientPaths: clientPathsSchema.optional(),
   externalFixturePath: z.string().optional(),
   scanIgnores: z.array(z.string()).optional(),
   auditMode: auditModeSchema.optional(),
   audit_mode: auditModeSchema.optional(),
+  mcpPayloadLimits: mcpPayloadLimitsSchema,
 });
