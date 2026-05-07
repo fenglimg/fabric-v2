@@ -388,6 +388,27 @@ describe("runDoctorReport", () => {
     expect(report.checks.find((c) => c.name === "Meta manual divergence")?.status).toBe("ok");
   });
 
+  it("TASK-032: all doctor checks with issues have a non-empty actionHint", async () => {
+    // Minimal project that triggers most issue checks
+    const target = createProject("doctor-action-hints");
+    writeFile("package.json", JSON.stringify({ name: "test", dependencies: { vite: "^7.0.0" } }, null, 2), target);
+    writeFile("src/main.ts", "export const boot = true;\n", target);
+    // A rule file with duplicate stable_id to trigger stable_id_collision warning
+    writeFile(".fabric/rules/a.md", "<!-- fab:rule-id dup -->\n# A\n\n## [MANDATORY_INJECTION]\nUse A.\n", target);
+    writeFile(".fabric/rules/b.md", "<!-- fab:rule-id dup -->\n# B\n\n## [MANDATORY_INJECTION]\nUse B.\n", target);
+
+    const report = await runDoctorReport(target);
+    const issueChecks = report.checks.filter((c) => c.kind !== undefined);
+
+    expect(issueChecks.length).toBeGreaterThan(0);
+    for (const check of issueChecks) {
+      expect(
+        check.actionHint,
+        `check "${check.name}" (code: ${check.code ?? "none"}) is missing actionHint`,
+      ).toBeTruthy();
+    }
+  });
+
   it("TASK-031: stable_id_collision detected when two rule files declare the same stable_id", async () => {
     const target = createInitializedProject("doctor-stable-id-collision");
     await writeRuleMeta(target, { source: "doctor_fix" });

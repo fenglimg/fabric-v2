@@ -32,6 +32,7 @@ export type DoctorCheck = {
   kind?: DoctorIssueKind;
   code?: string;
   fixable?: boolean;
+  actionHint?: string;
 };
 
 export type DoctorIssue = {
@@ -604,14 +605,14 @@ async function inspectRuleTestIndex(projectRoot: string): Promise<RuleTestIndexI
 
 function createBootstrapCheck(exists: boolean): DoctorCheck {
   if (!exists) {
-    return issueCheck("Bootstrap README", "error", "fixable_error", "bootstrap_missing", ".fabric/bootstrap/README.md is missing.");
+    return issueCheck("Bootstrap README", "error", "fixable_error", "bootstrap_missing", ".fabric/bootstrap/README.md is missing.", "Run `fab doctor --fix` to generate the bootstrap guide.");
   }
   return okCheck("Bootstrap README", ".fabric/bootstrap/README.md exists.");
 }
 
 function createTaxonomyCheck(exists: boolean): DoctorCheck {
   if (!exists) {
-    return issueCheck("Initial taxonomy", "error", "manual_error", "taxonomy_missing", ".fabric/INITIAL_TAXONOMY.md is missing.");
+    return issueCheck("Initial taxonomy", "error", "manual_error", "taxonomy_missing", ".fabric/INITIAL_TAXONOMY.md is missing.", "Run `fab init` to regenerate project scaffolding including INITIAL_TAXONOMY.md.");
   }
   return okCheck("Initial taxonomy", ".fabric/INITIAL_TAXONOMY.md exists.");
 }
@@ -628,30 +629,31 @@ function createForensicCheck(
       "manual_error",
       "forensic_missing",
       `${forensic.error ?? ".fabric/forensic.json is missing."} Live scan detects ${frameworkKind} with ${entryPointCount} entry point${entryPointCount === 1 ? "" : "s"}.`,
+      "Run `fab init` to regenerate .fabric/forensic.json.",
     );
   }
   if (!forensic.valid) {
-    return issueCheck("Scan evidence", "error", "manual_error", "forensic_invalid", forensic.error ?? ".fabric/forensic.json is invalid.");
+    return issueCheck("Scan evidence", "error", "manual_error", "forensic_invalid", forensic.error ?? ".fabric/forensic.json is invalid.", "Run `fab init` to regenerate .fabric/forensic.json.");
   }
   return okCheck("Scan evidence", `.fabric/forensic.json is valid for ${forensic.report?.framework.kind ?? "unknown"}.`);
 }
 
 function createInitContextCheck(initContext: InitContextInspection): DoctorCheck {
   if (!initContext.exists) {
-    return issueCheck("Init context", "error", "manual_error", "init_context_missing", initContext.error ?? ".fabric/init-context.json is missing.");
+    return issueCheck("Init context", "error", "manual_error", "init_context_missing", initContext.error ?? ".fabric/init-context.json is missing.", "Run `fab init` to regenerate .fabric/init-context.json.");
   }
   if (!initContext.validJson) {
-    return issueCheck("Init context", "error", "manual_error", "init_context_invalid", initContext.error ?? ".fabric/init-context.json is invalid.");
+    return issueCheck("Init context", "error", "manual_error", "init_context_invalid", initContext.error ?? ".fabric/init-context.json is invalid.", "Delete .fabric/init-context.json and run `fab init` to regenerate it.");
   }
   return okCheck("Init context", ".fabric/init-context.json is valid JSON.");
 }
 
 function createMetaCheck(meta: MetaInspection): DoctorCheck {
   if (!meta.present) {
-    return issueCheck("Agents metadata", "error", "fixable_error", "agents_meta_missing", ".fabric/agents.meta.json is missing.");
+    return issueCheck("Agents metadata", "error", "fixable_error", "agents_meta_missing", ".fabric/agents.meta.json is missing.", "Run `fab doctor --fix` to rebuild agents.meta.json from .fabric/rules/.");
   }
   if (!meta.valid) {
-    return issueCheck("Agents metadata", "error", "manual_error", "agents_meta_invalid", meta.readError ?? ".fabric/agents.meta.json is invalid.");
+    return issueCheck("Agents metadata", "error", "manual_error", "agents_meta_invalid", meta.readError ?? ".fabric/agents.meta.json is invalid.", "Delete .fabric/agents.meta.json and run `fab doctor --fix` to regenerate it.");
   }
   if (meta.stale) {
     return issueCheck(
@@ -660,6 +662,7 @@ function createMetaCheck(meta: MetaInspection): DoctorCheck {
       "fixable_error",
       "agents_meta_stale",
       `.fabric/agents.meta.json revision ${meta.revision} does not match .fabric/rules derived revision ${meta.computedRevision ?? "<unknown>"}.`,
+      "Run `fab doctor --fix` to reconcile agents.meta.json with the current rule files.",
     );
   }
   return okCheck("Agents metadata", `.fabric/agents.meta.json revision ${meta.revision} is aligned with .fabric/rules.`);
@@ -667,7 +670,7 @@ function createMetaCheck(meta: MetaInspection): DoctorCheck {
 
 function createRuleContentRefCheck(meta: MetaInspection): DoctorCheck {
   if (!meta.valid) {
-    return issueCheck("Rule content refs", "error", "manual_error", "content_refs_unavailable", "Cannot inspect content_ref entries until agents.meta.json is valid.");
+    return issueCheck("Rule content refs", "error", "manual_error", "content_refs_unavailable", "Cannot inspect content_ref entries until agents.meta.json is valid.", "Fix agents.meta.json first: run `fab doctor --fix`.");
   }
 
   if (meta.invalidContentRefs.length > 0) {
@@ -677,6 +680,7 @@ function createRuleContentRefCheck(meta: MetaInspection): DoctorCheck {
       "manual_error",
       "content_ref_outside_rules",
       `${meta.invalidContentRefs.length} content_ref entr${meta.invalidContentRefs.length === 1 ? "y is" : "ies are"} outside .fabric/rules.`,
+      "Edit agents.meta.json to ensure all content_ref values point inside .fabric/rules/.",
     );
   }
 
@@ -689,6 +693,7 @@ function createRuleContentRefCheck(meta: MetaInspection): DoctorCheck {
       "fixable_error",
       "content_ref_missing",
       `${meta.missingContentRefs.length} content_ref target${meta.missingContentRefs.length === 1 ? "" : "s"} are missing. Run \`fab doctor --fix\` to reconcile.`,
+      "Run `fab doctor --fix` to reconcile agents.meta.json with the files present in .fabric/rules/.",
     );
   }
 
@@ -703,6 +708,7 @@ function createRuleSectionsCheck(snapshot: RuleSectionsInspection): DoctorCheck 
       "manual_error",
       "rule_sections_invalid",
       `${snapshot.invalidFiles.length} rule file${snapshot.invalidFiles.length === 1 ? "" : "s"} could not be parsed.`,
+      "Edit the rule file(s) to fix the section structure, then re-run `fab doctor`.",
     );
   }
   return okCheck("Rule sections", `${snapshot.checkedCount} .fabric/rules file${snapshot.checkedCount === 1 ? "" : "s"} parsed.`);
@@ -710,26 +716,26 @@ function createRuleSectionsCheck(snapshot: RuleSectionsInspection): DoctorCheck 
 
 function createRuleTestIndexCheck(index: RuleTestIndexInspection): DoctorCheck {
   if (!index.present) {
-    return issueCheck("Rule-test index", "error", "fixable_error", "rule_test_index_missing", index.error);
+    return issueCheck("Rule-test index", "error", "fixable_error", "rule_test_index_missing", index.error, "Run `fab doctor --fix` to rebuild .fabric/rule-test.index.json.");
   }
   if (!index.valid) {
-    return issueCheck("Rule-test index", "error", "manual_error", "rule_test_index_invalid", index.error);
+    return issueCheck("Rule-test index", "error", "manual_error", "rule_test_index_invalid", index.error, "Delete .fabric/rule-test.index.json and run `fab doctor --fix` to regenerate it.");
   }
   if (index.stale) {
-    return issueCheck("Rule-test index", "error", "fixable_error", "rule_test_index_stale", ".fabric/rule-test.index.json is stale.");
+    return issueCheck("Rule-test index", "error", "fixable_error", "rule_test_index_stale", ".fabric/rule-test.index.json is stale.", "Run `fab doctor --fix` to rebuild the rule-test index.");
   }
   return okCheck("Rule-test index", `${index.linkCount} link${index.linkCount === 1 ? "" : "s"} and ${index.orphanCount} orphan annotation${index.orphanCount === 1 ? "" : "s"} indexed.`);
 }
 
 function createEventLedgerCheck(ledger: EventLedgerInspection): DoctorCheck {
   if (!ledger.exists) {
-    return issueCheck("Event ledger", "error", "fixable_error", "event_ledger_missing", ".fabric/events.jsonl is missing.");
+    return issueCheck("Event ledger", "error", "fixable_error", "event_ledger_missing", ".fabric/events.jsonl is missing.", "Run `fab doctor --fix` to create .fabric/events.jsonl.");
   }
   if (!ledger.writable) {
-    return issueCheck("Event ledger", "error", "manual_error", "event_ledger_not_writable", ledger.error ?? ".fabric/events.jsonl is not writable.");
+    return issueCheck("Event ledger", "error", "manual_error", "event_ledger_not_writable", ledger.error ?? ".fabric/events.jsonl is not writable.", "Check file permissions on .fabric/events.jsonl and ensure no other process holds a write lock.");
   }
   if (!ledger.parseable) {
-    return issueCheck("Event ledger", "error", "manual_error", "event_ledger_invalid", ledger.error ?? ".fabric/events.jsonl is invalid.");
+    return issueCheck("Event ledger", "error", "manual_error", "event_ledger_invalid", ledger.error ?? ".fabric/events.jsonl is invalid.", "Delete .fabric/events.jsonl and run `fab doctor --fix` to recreate it.");
   }
   return okCheck("Event ledger", ".fabric/events.jsonl exists, is writable, and is parseable.");
 }
@@ -742,6 +748,7 @@ function createMcpConfigInWrongFileCheck(inspection: McpConfigInWrongFileInspect
       "fixable_error",
       "mcp_config_in_wrong_file",
       `.claude/settings.json contains mcpServers.fabric — this file is for hooks/permissions only. Run --fix to remove it, then re-run fab init to write .mcp.json.`,
+      "Run `fab doctor --fix` to remove mcpServers.fabric from .claude/settings.json, then run `fab init` to write .mcp.json.",
     );
   }
 
@@ -759,6 +766,7 @@ function createEventLedgerPartialWriteCheck(ledger: EventLedgerInspection): Doct
       "fixable_error",
       "event_ledger_partial_write",
       `events.jsonl has a partial write at byte offset ${ledger.partialWriteByteOffset} (${ledger.partialWriteByteLength} corrupted bytes). Run --fix to truncate and preserve corrupted bytes.`,
+      "Run `fab doctor --fix` to truncate the partial write and restore events.jsonl to a valid state.",
     );
   }
   return okCheck("Event ledger partial write", "events.jsonl has no partial trailing write.");
@@ -774,6 +782,7 @@ function issueCheck(
   kind: DoctorIssueKind,
   code: string,
   message: string,
+  actionHint?: string,
 ): DoctorCheck {
   return {
     name,
@@ -782,6 +791,7 @@ function issueCheck(
     code,
     fixable: kind === "fixable_error",
     message,
+    actionHint,
   };
 }
 
@@ -895,6 +905,7 @@ function createRulesDirUnindexedCheck(inspection: RulesDirUnindexedInspection): 
       "fixable_error",
       "rules_dir_unindexed",
       `${inspection.unindexedFiles.length} .md file${inspection.unindexedFiles.length === 1 ? "" : "s"} in .fabric/rules/ not indexed in agents.meta.json. Run \`fab doctor --fix\` to index the missing rule files.`,
+      "Run `fab doctor --fix` to index the missing rule files.",
     );
   }
   return okCheck("Rules dir unindexed", "All .fabric/rules/ .md files are indexed in agents.meta.json.");
@@ -969,6 +980,7 @@ function createStableIdCollisionCheck(inspection: StableIdCollisionInspection): 
       "warning",
       "stable_id_collision",
       `${detail} Edit one of the rule files to use a unique stable_id.`,
+      "Edit one of the colliding rule files to declare a different `<!-- fab:rule-id X -->` value.",
     );
   }
   return okCheck("Stable ID collision", "No declared stable_id collisions found in .fabric/rules/.");
@@ -987,6 +999,7 @@ function createMetaManuallyDivergedCheck(inspection: MetaManuallyDivergedInspect
       "warning",
       "meta_manually_diverged",
       `agents.meta.json has ${inspection.extraMetaEntries.length} entr${inspection.extraMetaEntries.length === 1 ? "y" : "ies"} with no backing file on disk. Run --fix to reconcile.`,
+      "Run `fab doctor --fix` to reconcile agents.meta.json with the rule files currently on disk.",
     );
   }
 
@@ -997,6 +1010,7 @@ function createMetaManuallyDivergedCheck(inspection: MetaManuallyDivergedInspect
       "warning",
       "meta_manually_diverged",
       `agents.meta.json has ${inspection.hashMismatchEntries.length} entr${inspection.hashMismatchEntries.length === 1 ? "y" : "ies"} whose hash does not match the file on disk. Run --fix to reconcile.`,
+      "Run `fab doctor --fix` to reconcile agents.meta.json with the current rule file contents.",
     );
   }
 
