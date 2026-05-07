@@ -1,0 +1,50 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`client config emission — golden snapshots > Claude project-scope .mcp.json matches snapshot 1`] = `
+"{
+  "mcpServers": {
+    "fabric": {
+      "command": "/usr/local/bin/node",
+      "args": [
+        "/opt/fabric/server.js"
+      ]
+    }
+  }
+}
+"
+`;
+
+exports[`client config emission — golden snapshots > Claude user-scope ~/.claude.json matches snapshot 1`] = `
+"{
+  "mcpServers": {
+    "fabric": {
+      "command": "/usr/local/bin/node",
+      "args": [
+        "/opt/fabric/server.js"
+      ]
+    }
+  }
+}
+"
+`;
+
+exports[`client config emission — golden snapshots > Codex codex.toml mcp_servers block matches snapshot 1`] = `
+"[mcp_servers.fabric]
+command = "/usr/local/bin/node"
+args = ["/opt/fabric/server.js"]
+"
+`;
+
+exports[`client config emission — golden snapshots > Cursor .cursor/mcp.json matches snapshot 1`] = `
+"{
+  "mcpServers": {
+    "fabric": {
+      "command": "/usr/local/bin/node",
+      "args": [
+        "/opt/fabric/server.js"
+      ]
+    }
+  }
+}
+"
+`;
