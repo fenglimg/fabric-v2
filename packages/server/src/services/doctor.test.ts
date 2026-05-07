@@ -70,6 +70,7 @@ describe("runDoctorReport", () => {
       "Claude MCP config location",
       "Meta manual divergence",
       "Rules dir unindexed",
+      "Stable ID collision",
     ]);
   });
 
@@ -385,6 +386,40 @@ describe("runDoctorReport", () => {
 
     expect(report.warnings.map((w) => w.code)).not.toContain("meta_manually_diverged");
     expect(report.checks.find((c) => c.name === "Meta manual divergence")?.status).toBe("ok");
+  });
+
+  it("TASK-031: stable_id_collision detected when two rule files declare the same stable_id", async () => {
+    const target = createInitializedProject("doctor-stable-id-collision");
+    await writeRuleMeta(target, { source: "doctor_fix" });
+    writeFile(".fabric/events.jsonl", "", target);
+
+    // Create a second file with same stable_id as the existing rules/server rule
+    writeFile(
+      ".fabric/rules/packages/ui/rules.md",
+      "<!-- fab:rule-id rules/server -->\n# UI (duplicate id)\n\n## [MANDATORY_INJECTION]\nUse components.\n",
+      target,
+    );
+
+    const report = await runDoctorReport(target);
+
+    expect(report.warnings.map((w) => w.code)).toContain("stable_id_collision");
+    const check = report.checks.find((c) => c.name === "Stable ID collision");
+    expect(check?.status).toBe("warn");
+    expect(check?.message).toContain("rules/server");
+    // Both file paths should be named
+    expect(check?.message).toContain("packages/server/rules.md");
+    expect(check?.message).toContain("packages/ui/rules.md");
+  });
+
+  it("TASK-031: stable_id_collision not reported when all stable_ids are unique", async () => {
+    const target = createInitializedProject("doctor-stable-id-ok");
+    await writeRuleMeta(target, { source: "doctor_fix" });
+    writeFile(".fabric/events.jsonl", "", target);
+
+    const report = await runDoctorReport(target);
+
+    expect(report.warnings.map((w) => w.code)).not.toContain("stable_id_collision");
+    expect(report.checks.find((c) => c.name === "Stable ID collision")?.status).toBe("ok");
   });
 
   it("TASK-030: rules_dir_unindexed detected when .md exists in rules dir but not in meta", async () => {

@@ -187,6 +187,15 @@ type RulesDirUnindexedInspection = {
   unindexedFiles: string[];
 };
 
+type StableIdCollision = {
+  stable_id: string;
+  files: string[];
+};
+
+type StableIdCollisionInspection = {
+  collisions: StableIdCollision[];
+};
+
 const SCRIPT_EXTENSIONS = new Set([".js", ".jsx", ".ts", ".tsx"]);
 const IGNORED_DIRECTORIES = new Set([
   ".fabric",
@@ -232,6 +241,7 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
   const mcpConfigInWrongFile = inspectMcpConfigInWrongFile(projectRoot);
   const metaManuallyDiverged = await inspectMetaManuallyDiverged(projectRoot);
   const rulesDirUnindexed = inspectRulesDirUnindexed(projectRoot, meta);
+  const stableIdCollision = await inspectStableIdCollisions(projectRoot);
   const taxonomyExists = existsSync(join(projectRoot, ".fabric", "INITIAL_TAXONOMY.md"));
   const bootstrapExists = existsSync(join(projectRoot, ".fabric", "bootstrap", "README.md"));
   const checks: DoctorCheck[] = [
@@ -248,6 +258,7 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     createMcpConfigInWrongFileCheck(mcpConfigInWrongFile),
     createMetaManuallyDivergedCheck(metaManuallyDiverged),
     createRulesDirUnindexedCheck(rulesDirUnindexed),
+    createStableIdCollisionCheck(stableIdCollision),
   ];
   const fixableErrors = collectIssues(checks, "fixable_error");
   const manualErrors = collectIssues(checks, "manual_error");
@@ -887,6 +898,80 @@ function createRulesDirUnindexedCheck(inspection: RulesDirUnindexedInspection): 
     );
   }
   return okCheck("Rules dir unindexed", "All .fabric/rules/ .md files are indexed in agents.meta.json.");
+}
+
+async function inspectStableIdCollisions(projectRoot: string): Promise<StableIdCollisionInspection> {
+  const rulesDir = join(projectRoot, ".fabric", "rules");
+  if (!existsSync(rulesDir)) {
+    return { collisions: [] };
+  }
+
+  // Collect all .md files
+  const mdFiles: string[] = [];
+  const stack: string[] = [rulesDir];
+  while (stack.length > 0) {
+    const dir = stack.pop();
+    if (dir === undefined) {
+      continue;
+    }
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const abs = join(dir, entry.name);
+      if (entry.isDirectory()) {
+        stack.push(abs);
+      } else if (entry.isFile() && entry.name.endsWith(".md")) {
+        mdFiles.push(abs);
+      }
+    }
+  }
+
+  // Extract declared stable_ids and detect collisions
+  const stableIdToFiles = new Map<string, string[]>();
+  const DECLARED_ID_PATTERN =
+    /^(?:\uFEFF)?(?:---\r?\n[\s\S]*?\r?\n---\s*(?:\r?\n|$))?<!--\s*fab:rule-id\s+([A-Za-z0-9][A-Za-z0-9/_-]*)\s*-->\s*(?:\r?\n|$)/u;
+
+  for (const absPath of mdFiles) {
+    let source: string;
+    try {
+      source = await readFile(absPath, "utf8");
+    } catch {
+      continue;
+    }
+    const match = DECLARED_ID_PATTERN.exec(source);
+    if (match === null) {
+      continue;
+    }
+    const stableId = match[1];
+    const relPath = posix.join(".fabric/rules", absPath.slice(rulesDir.length + 1).replace(/\\/gu, "/"));
+    const existing = stableIdToFiles.get(stableId) ?? [];
+    existing.push(relPath);
+    stableIdToFiles.set(stableId, existing);
+  }
+
+  const collisions: StableIdCollision[] = [];
+  for (const [stable_id, files] of stableIdToFiles) {
+    if (files.length > 1) {
+      collisions.push({ stable_id, files: files.sort() });
+    }
+  }
+
+  return { collisions: collisions.sort((a, b) => a.stable_id.localeCompare(b.stable_id)) };
+}
+
+function createStableIdCollisionCheck(inspection: StableIdCollisionInspection): DoctorCheck {
+  if (inspection.collisions.length > 0) {
+    const first = inspection.collisions[0];
+    const detail = inspection.collisions.length === 1
+      ? `stable_id "${first.stable_id}" is declared in ${first.files.length} files: ${first.files.join(", ")}.`
+      : `${inspection.collisions.length} stable_id collision${inspection.collisions.length === 1 ? "" : "s"} detected. First: "${first.stable_id}" in ${first.files.join(", ")}.`;
+    return issueCheck(
+      "Stable ID collision",
+      "warn",
+      "warning",
+      "stable_id_collision",
+      `${detail} Edit one of the rule files to use a unique stable_id.`,
+    );
+  }
+  return okCheck("Stable ID collision", "No declared stable_id collisions found in .fabric/rules/.");
 }
 
 function createMetaManuallyDivergedCheck(inspection: MetaManuallyDivergedInspection): DoctorCheck {
