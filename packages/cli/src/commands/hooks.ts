@@ -1,8 +1,10 @@
-import { chmodSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, isAbsolute, join, parse, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { defineCommand } from "citty";
+
+import { atomicWriteJson, atomicWriteText } from "@fenglimg/fabric-shared/node/atomic-write";
 
 import { t } from "../i18n.js";
 
@@ -88,7 +90,7 @@ export async function installHooks(
 
   mkdirSync(huskyDir, { recursive: true });
   const templateContent = readFileSync(findTemplatePath("templates/husky/pre-commit"), "utf8");
-  const hookAction = installHookFile(hookPath, templateContent, options.force);
+  const hookAction = await installHookFile(hookPath, templateContent, options.force);
   chmodSync(hookPath, 0o755);
 
   const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf8")) as PackageJson;
@@ -102,7 +104,7 @@ export async function installHooks(
   if (!hadPrepare) {
     scripts.prepare = "husky install";
     packageJson.scripts = scripts;
-    writeFileSync(packageJsonPath, `${JSON.stringify(packageJson, null, 2)}\n`, "utf8");
+    await atomicWriteJson(packageJsonPath, packageJson);
     prepareAction = "added";
   }
 
@@ -141,10 +143,10 @@ function assertExistingDirectory(target: string): void {
   }
 }
 
-function installHookFile(hookPath: string, templateContent: string, force?: boolean): HookAction {
+async function installHookFile(hookPath: string, templateContent: string, force?: boolean): Promise<HookAction> {
   if (existsSync(hookPath)) {
     if (force) {
-      writeFileSync(hookPath, templateContent, "utf8");
+      await atomicWriteText(hookPath, templateContent);
       return "overwritten";
     }
 
@@ -155,11 +157,11 @@ function installHookFile(hookPath: string, templateContent: string, force?: bool
 
     const fabricBlock = templateContent.replace(/^#!\/bin\/sh\n/, "");
     const separator = existing.endsWith("\n") ? "\n" : "\n\n";
-    writeFileSync(hookPath, `${existing}${separator}# --- Fabric ---\n${fabricBlock}`, "utf8");
+    await atomicWriteText(hookPath, `${existing}${separator}# --- Fabric ---\n${fabricBlock}`);
     return "appended";
   }
 
-  writeFileSync(hookPath, templateContent, "utf8");
+  await atomicWriteText(hookPath, templateContent);
   return "created";
 }
 
