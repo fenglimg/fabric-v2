@@ -87,9 +87,6 @@ describe("seer script contract", () => {
 | `bootstrap/claude` | `templates/bootstrap/CLAUDE.md` | Bootstrap template | 已声明 `fab:rule-id`。 |
 | `bootstrap/codex` | `templates/bootstrap/codex-AGENTS-header.md` | Bootstrap template | 已声明 `fab:rule-id`。 |
 | `bootstrap/cursor` | `templates/bootstrap/cursor-fabric-bootstrap.mdc` | Bootstrap template | 已声明 `fab:rule-id`。 |
-| `bootstrap/gemini` | `templates/bootstrap/GEMINI.md` | Bootstrap template | 已声明 `fab:rule-id`。 |
-| `bootstrap/roo` | `templates/bootstrap/roo-fabric.md` | Bootstrap template | 已声明 `fab:rule-id`。 |
-| `bootstrap/windsurf` | `templates/bootstrap/windsurf-fabric.md` | Bootstrap template | 已声明 `fab:rule-id`。 |
 
 重复的 package templates：
 

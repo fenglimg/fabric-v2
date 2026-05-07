@@ -4,7 +4,7 @@ import { homedir } from "node:os";
 
 import type { ClientPaths, FabricConfig } from "@fenglimg/fabric-shared";
 import { ClaudeCodeDesktopWriter, getClaudeDesktopConfigPath } from "./claude-code.js";
-import { ClaudeCodeCLIWriter, CursorWriter, GeminiCLIWriter, RooCodeWriter, WindsurfWriter } from "./json.js";
+import { ClaudeCodeCLIWriter, CursorWriter } from "./json.js";
 import { CodexTOMLConfigWriter } from "./toml.js";
 import type { ClientConfigWriter } from "./writer.js";
 
@@ -69,27 +69,6 @@ export function resolveClients(workspaceRoot: string, fabricConfig: FabricConfig
 
   addIfDetected(
     writers,
-    existsSync(join(workspaceRoot, ".windsurf")),
-    (configuredPath) => new WindsurfWriter(configuredPath),
-    hasExplicitPath(clientPaths, "windsurf") ? clientPaths!.windsurf : undefined,
-  );
-
-  addIfDetected(
-    writers,
-    existsSync(join(workspaceRoot, ".roo")),
-    (configuredPath) => new RooCodeWriter(configuredPath),
-    hasExplicitPath(clientPaths, "rooCode") ? clientPaths!.rooCode : undefined,
-  );
-
-  addIfDetected(
-    writers,
-    existsSync(join(homedir(), ".gemini")) || existsSync(join(workspaceRoot, "GEMINI.md")),
-    (configuredPath) => new GeminiCLIWriter(configuredPath),
-    hasExplicitPath(clientPaths, "geminiCLI") ? clientPaths!.geminiCLI : undefined,
-  );
-
-  addIfDetected(
-    writers,
     existsSync(join(homedir(), ".codex")),
     (configuredPath) => new CodexTOMLConfigWriter(configuredPath),
     hasExplicitPath(clientPaths, "codexCLI") ? clientPaths!.codexCLI : undefined,
@@ -106,9 +85,6 @@ export function detectClientSupports(
   const claudeDetected = existsSync(join(homedir(), ".claude")) || existsSync(join(workspaceRoot, ".claude"));
   const claudeDesktopDetected = existsSync(getClaudeDesktopConfigPath());
   const cursorDetected = existsSync(join(workspaceRoot, ".cursor"));
-  const windsurfDetected = existsSync(join(workspaceRoot, ".windsurf"));
-  const rooDetected = existsSync(join(workspaceRoot, ".roo"));
-  const geminiDetected = existsSync(join(homedir(), ".gemini")) || existsSync(join(workspaceRoot, "GEMINI.md"));
   const codexDetected = existsSync(join(homedir(), ".codex"));
 
   return [
@@ -148,45 +124,6 @@ export function detectClientSupports(
       detected: cursorDetected || hasExplicitPath(clientPaths, "cursor"),
       bootstrapTargetPath: ".fabric/bootstrap/README.md",
       configPath: ".cursor/mcp.json",
-      capabilities: {
-        bootstrap: true,
-        mcp: true,
-        hook: false,
-        skill: false,
-      },
-    },
-    {
-      clientKind: "Windsurf",
-      label: "Windsurf",
-      detected: windsurfDetected || hasExplicitPath(clientPaths, "windsurf"),
-      bootstrapTargetPath: ".fabric/bootstrap/README.md",
-      configPath: ".windsurf/mcp.json",
-      capabilities: {
-        bootstrap: true,
-        mcp: true,
-        hook: false,
-        skill: false,
-      },
-    },
-    {
-      clientKind: "RooCode",
-      label: "Roo Code",
-      detected: rooDetected || hasExplicitPath(clientPaths, "rooCode"),
-      bootstrapTargetPath: ".fabric/bootstrap/README.md",
-      configPath: ".roo/mcp.json",
-      capabilities: {
-        bootstrap: true,
-        mcp: true,
-        hook: false,
-        skill: false,
-      },
-    },
-    {
-      clientKind: "GeminiCLI",
-      label: "Gemini CLI",
-      detected: geminiDetected || hasExplicitPath(clientPaths, "geminiCLI"),
-      bootstrapTargetPath: ".fabric/bootstrap/README.md",
-      configPath: "~/.gemini/settings.json",
       capabilities: {
         bootstrap: true,
         mcp: true,

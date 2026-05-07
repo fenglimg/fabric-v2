@@ -37,7 +37,7 @@ export const enMessages: Messages = {
   "cli.bootstrap.install.args.clients.description":
     "Optional comma-separated client filter, for example claude,cursor,codex.",
   "cli.bootstrap.install.no-targets":
-    "No bootstrap targets detected. Pass --clients claude,cursor,windsurf,roo,gemini,codex to install explicitly.",
+    "No bootstrap targets detected. Pass --clients claude,cursor,codex to install explicitly.",
   "cli.bootstrap.install.installed": "Installed {path}",
   "cli.bootstrap.install.skipped-header": "Skipped {path}: Fabric Bootstrap header already present.",
   "cli.bootstrap.install.prepended": "Prepended {path}",
@@ -48,10 +48,10 @@ export const enMessages: Messages = {
   "cli.config.clients.claude": "Claude Code CLI",
   "cli.config.install.description": "Install Fabric MCP server entries into detected client configs.",
   "cli.config.install.args.clients.description":
-    "Optional comma-separated client filter, for example cursor,codex,gemini.",
+    "Optional comma-separated client filter, for example cursor,codex.",
   "cli.config.install.args.dry-run.description": "Preview detected write operations without modifying files.",
   "cli.config.errors.unknown-client":
-    "Unknown client \"{client}\". Use a comma-separated list such as cursor,codex,gemini.",
+    "Unknown client \"{client}\". Use a comma-separated list such as cursor,codex.",
   "cli.config.errors.expected-object": "Expected object in {path}",
   "cli.config.install.no-configs":
     "No Fabric MCP client config detected. Create the client directory or set clientPaths in fabric.config.json.",

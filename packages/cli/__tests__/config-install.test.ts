@@ -20,8 +20,8 @@ describe("config install client aliases", () => {
     expect(parseClientFilter("claude")).toEqual(new Set(["ClaudeCodeCLI"]));
   });
 
-  it("keeps existing cursor, codex, and gemini aliases working", () => {
-    expect(parseClientFilter("cursor,codex,gemini")).toEqual(new Set(["Cursor", "CodexCLI", "GeminiCLI"]));
+  it("keeps existing cursor and codex aliases working", () => {
+    expect(parseClientFilter("cursor,codex")).toEqual(new Set(["Cursor", "CodexCLI"]));
   });
 });
 

@@ -36,20 +36,20 @@ export const zhCNMessages: Messages = {
   "cli.bootstrap.install.description": "将 Fabric 引导模板复制到各客户端的原生位置。",
   "cli.bootstrap.install.args.clients.description": "可选的逗号分隔客户端过滤器，例如 claude,cursor,codex。",
   "cli.bootstrap.install.no-targets":
-    "未检测到可安装的 bootstrap 目标。可显式传入 --clients claude,cursor,windsurf,roo,gemini,codex。",
+    "未检测到可安装的 bootstrap 目标。可显式传入 --clients claude,cursor,codex。",
   "cli.bootstrap.install.installed": "已安装 {path}",
   "cli.bootstrap.install.skipped-header": "已跳过 {path}：Fabric Bootstrap 头部已存在。",
   "cli.bootstrap.install.prepended": "已前置写入 {path}",
   "cli.bootstrap.errors.unknown-client":
-    "未知客户端“{client}”。请使用逗号分隔列表，例如 claude,cursor,codex。",
+    "未知客户端\u201c{client}\u201d。请使用逗号分隔列表，例如 claude,cursor,codex。",
 
   "cli.config.description": "管理 Fabric MCP 客户端配置。",
   "cli.config.clients.claude": "Claude Code CLI",
   "cli.config.install.description": "将 Fabric MCP 服务端条目安装到检测到的客户端配置中。",
-  "cli.config.install.args.clients.description": "可选的逗号分隔客户端过滤器，例如 cursor,codex,gemini。",
+  "cli.config.install.args.clients.description": "可选的逗号分隔客户端过滤器，例如 cursor,codex。",
   "cli.config.install.args.dry-run.description": "仅预览将要发生的写入操作，不修改文件。",
   "cli.config.errors.unknown-client":
-    "未知客户端“{client}”。请使用逗号分隔列表，例如 cursor,codex,gemini。",
+    "未知客户端\u201c{client}\u201d。请使用逗号分隔列表，例如 cursor,codex。",
   "cli.config.errors.expected-object": "{path} 中应为对象。",
   "cli.config.install.no-configs":
     "未检测到 Fabric MCP 客户端配置。请创建客户端目录，或在 fabric.config.json 中设置 clientPaths。",
@@ -96,7 +96,7 @@ export const zhCNMessages: Messages = {
   "cli.init.mcp.install.global": "使用全局安装的 @fenglimg/fabric-server",
   "cli.init.mcp.install.local": "将 @fenglimg/fabric-server 安装到项目 devDependencies",
   "cli.init.mcp.install.prompt": "MCP 服务端安装范围（global|local）",
-  "cli.init.mcp.install.invalid": "无效的 --mcp-install 值“{value}”，将回退到 global",
+  "cli.init.mcp.install.invalid": "无效的 --mcp-install 值\u201c{value}\u201d，将回退到 global",
   "cli.init.mcp.local.installing": "正在运行 {manager} add -D @fenglimg/fabric-server...",
   "cli.init.mcp.local.installed": "已安装到 devDependencies",
   "cli.init.created-path": "{label} {path}",

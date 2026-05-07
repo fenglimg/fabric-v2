@@ -7,7 +7,7 @@
 - Node.js 20 或更高版本
 - pnpm 9 或更高版本
 - Git
-- 至少一种 MCP client 用于本地验证：Claude Code、Cursor、Windsurf、Roo Code、Gemini CLI 或 Codex CLI
+- 至少一种 MCP client 用于本地验证：Claude Code、Cursor 或 Codex CLI
 
 在仓库根目录安装 workspace 依赖：
 

@@ -9,7 +9,7 @@ import type { ClientKind } from "../config/writer.js";
 import { readFabricConfig } from "../dev-mode.js";
 import { t } from "../i18n.js";
 
-type BootstrapClient = "claude" | "cursor" | "windsurf" | "roo" | "gemini" | "codex";
+type BootstrapClient = "claude" | "cursor" | "codex";
 
 type InstallArgs = {
   clients?: string;
@@ -48,13 +48,6 @@ const CLIENT_ALIASES: Record<string, BootstrapClient> = {
   claudedesktop: "claude",
   claudecodedesktop: "claude",
   cursor: "cursor",
-  windsurf: "windsurf",
-  roo: "roo",
-  "roo-code": "roo",
-  roocode: "roo",
-  gemini: "gemini",
-  "gemini-cli": "gemini",
-  geminicli: "gemini",
   codex: "codex",
   "codex-cli": "codex",
   codexcli: "codex",
@@ -185,12 +178,6 @@ function mapClientKind(clientKind: ClientKind): BootstrapClient | null {
       return "claude";
     case "Cursor":
       return "cursor";
-    case "Windsurf":
-      return "windsurf";
-    case "RooCode":
-      return "roo";
-    case "GeminiCLI":
-      return "gemini";
     case "CodexCLI":
       return "codex";
     default:
@@ -204,12 +191,6 @@ function mapBootstrapClientToClientKind(client: BootstrapClient): ClientKind {
       return "ClaudeCodeCLI";
     case "cursor":
       return "Cursor";
-    case "windsurf":
-      return "Windsurf";
-    case "roo":
-      return "RooCode";
-    case "gemini":
-      return "GeminiCLI";
     case "codex":
       return "CodexCLI";
   }
