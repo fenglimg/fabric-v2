@@ -1,11 +1,12 @@
 import { createHash } from "node:crypto";
 import * as childProcess from "node:child_process";
-import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, parse, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { cancel, confirm, group, intro, isCancel, log, note, outro, select } from "@clack/prompts";
 import type { AgentsMeta } from "@fenglimg/fabric-shared";
+import { atomicWriteJson } from "@fenglimg/fabric-shared/node/atomic-write";
 import { defineCommand } from "citty";
 
 import { buildFabricBootstrapGuide } from "../bootstrap-guide.js";
@@ -457,7 +458,7 @@ export async function executeInitExecutionPlan(plan: InitExecutionPlan): Promise
       case "preflight":
         break;
       case "scaffold":
-        created = executeInitFabricPlan(plan.scaffold);
+        created = await executeInitFabricPlan(plan.scaffold);
         printInitScaffoldResult(created);
         break;
       case "bootstrap":
@@ -558,7 +559,7 @@ export async function buildInitFabricPlan(target: string, options?: InitOptions)
   };
 }
 
-export function executeInitFabricPlan(plan: InitScaffoldPlan): InitScaffoldResult {
+export async function executeInitFabricPlan(plan: InitScaffoldPlan): Promise<InitScaffoldResult> {
   if (plan.replaceFabricDir) {
     rmSync(plan.fabricDir, { force: true });
   }
@@ -586,9 +587,9 @@ export function executeInitFabricPlan(plan: InitScaffoldPlan): InitScaffoldResul
   applyOptionalTemplateWritePlan(plan.codexSkill);
   applyOptionalTemplateWritePlan(plan.codexSessionStartHook);
   applyOptionalTemplateWritePlan(plan.codexStopHook);
-  applyJsonWritePlan(plan.codexHooksConfig);
+  await applyJsonWritePlan(plan.codexHooksConfig);
   applyOptionalTemplateWritePlan(plan.claudeHook);
-  applyClaudeSettingsWritePlan(plan.claudeSettings);
+  await applyClaudeSettingsWritePlan(plan.claudeSettings);
 
   return {
     bootstrapPath: plan.bootstrapPath,
@@ -619,7 +620,7 @@ export function executeInitFabricPlan(plan: InitScaffoldPlan): InitScaffoldResul
 }
 
 export async function initFabric(target: string, options?: InitOptions): Promise<InitScaffoldResult> {
-  return executeInitFabricPlan(await buildInitFabricPlan(target, options));
+  return await executeInitFabricPlan(await buildInitFabricPlan(target, options));
 }
 
 export function shouldUseInitWizard(
@@ -922,13 +923,13 @@ function buildCodexHooksConfigPlan(configPath: string, options?: InitOptions): I
   };
 }
 
-function applyJsonWritePlan(plan: InitJsonWritePlan): void {
+async function applyJsonWritePlan(plan: InitJsonWritePlan): Promise<void> {
   if (plan.action === "skipped") {
     return;
   }
 
   mkdirSync(dirname(plan.path), { recursive: true });
-  writeJsonAtomically(plan.path, plan.value);
+  await atomicWriteJson(plan.path, plan.value);
 }
 
 function buildClaudeSettingsWritePlan(settingsPath: string, options?: InitOptions): InitClaudeSettingsWritePlan {
@@ -998,13 +999,13 @@ function buildClaudeSettingsWritePlan(settingsPath: string, options?: InitOption
   };
 }
 
-function applyClaudeSettingsWritePlan(plan: InitClaudeSettingsWritePlan): void {
+async function applyClaudeSettingsWritePlan(plan: InitClaudeSettingsWritePlan): Promise<void> {
   if (plan.value === null) {
     return;
   }
 
   mkdirSync(dirname(plan.path), { recursive: true });
-  writeJsonAtomically(plan.path, plan.value);
+  await atomicWriteJson(plan.path, plan.value);
 }
 
 export function createDefaultInitWizardAdapter(): InitWizardAdapter {
@@ -1436,101 +1437,6 @@ function copyExecutableTemplateIfMissing(templatePath: string, targetPath: strin
   return action;
 }
 
-function writeCodexHooksConfig(configPath: string, options?: InitOptions): CodexHooksAction {
-  mkdirSync(dirname(configPath), { recursive: true });
-
-  const nextConfig: CodexHooksConfig = {
-    hooks: {
-      SessionStart: [
-        {
-          matcher: "*",
-          hooks: [{ type: "command", command: CODEX_SESSION_START_COMMAND }],
-        },
-      ],
-      Stop: [
-        {
-          matcher: "*",
-          hooks: [{ type: "command", command: CODEX_STOP_COMMAND }],
-        },
-      ],
-    },
-  };
-
-  if (!existsSync(configPath)) {
-    writeJsonAtomically(configPath, nextConfig);
-    return "created";
-  }
-
-  if (!options?.force) {
-    return "skipped";
-  }
-
-  writeJsonAtomically(configPath, nextConfig);
-  return "overwritten";
-}
-
-function mergeClaudeStopHook(settingsPath: string, options?: InitOptions): ClaudeSettingsAction {
-  mkdirSync(dirname(settingsPath), { recursive: true });
-
-  let settings: ClaudeSettings;
-  let action: ClaudeSettingsAction = "updated";
-
-  if (!existsSync(settingsPath)) {
-    settings = {};
-    action = "created";
-  } else {
-    try {
-      const parsed = JSON.parse(readFileSync(settingsPath, "utf8")) as unknown;
-      if (!isRecord(parsed)) {
-        writeStderr(t("cli.init.claude-settings.invalid-object", { label: skippedLabel(), path: settingsPath }));
-        return "skipped-invalid";
-      }
-
-      settings = parsed as ClaudeSettings;
-    } catch (error) {
-      const reason = error instanceof Error ? error.message : "unknown parse error";
-      writeStderr(t("cli.init.claude-settings.invalid-json", { label: skippedLabel(), path: settingsPath, reason }));
-      return "skipped-invalid";
-    }
-  }
-
-  if (settings.hooks !== undefined && !isRecord(settings.hooks)) {
-    writeStderr(t("cli.init.claude-settings.invalid-hooks", { label: skippedLabel(), path: settingsPath }));
-    return "skipped-invalid";
-  }
-
-  const hooks = (settings.hooks ?? {}) as Record<string, unknown>;
-  const stopHooksValue = hooks.Stop;
-  if (stopHooksValue !== undefined && !Array.isArray(stopHooksValue)) {
-    writeStderr(t("cli.init.claude-settings.invalid-stop-array", { label: skippedLabel(), path: settingsPath }));
-    return "skipped-invalid";
-  }
-
-  const stopHooks = Array.isArray(stopHooksValue) ? stopHooksValue : [];
-  const hasExistingFabricHook = hasClaudeInitReminderHook(stopHooks);
-  if (hasExistingFabricHook && !options?.force) {
-    return "skipped";
-  }
-
-  const nextStopHooks = hasExistingFabricHook && options?.force ? removeClaudeInitReminderHook(stopHooks) : [...stopHooks];
-  nextStopHooks.push({
-    matcher: "*",
-    hooks: [
-      {
-        type: "command",
-        command: CLAUDE_INIT_REMINDER_COMMAND,
-      },
-    ],
-  } satisfies ClaudeStopHookEntry);
-
-  settings.hooks = {
-    ...hooks,
-    Stop: nextStopHooks as ClaudeStopHookEntry[],
-  };
-  writeJsonAtomically(settingsPath, settings);
-  return hasExistingFabricHook && options?.force ? "overwritten" : action;
-}
-
 function hasClaudeInitReminderHook(stopHooks: unknown[]): boolean {
   return stopHooks.some((entry) => isClaudeInitReminderStopEntry(entry));
 }
@@ -1551,12 +1457,6 @@ function isClaudeInitReminderStopEntry(entry: unknown): boolean {
       typeof hook.command === "string" &&
       hook.command.includes("agents-md-init-reminder.cjs"),
   );
-}
-
-function writeJsonAtomically(path: string, value: unknown): void {
-  const tempPath = `${path}.${process.pid}.tmp`;
-  writeFileSync(tempPath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
-  renameSync(tempPath, path);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
