@@ -1,6 +1,8 @@
 import { dirname, join, resolve, sep } from "node:path";
 import { createHash } from "node:crypto";
-import { mkdir, rename, writeFile } from "node:fs/promises";
+import { mkdir } from "node:fs/promises";
+
+export { atomicWriteText } from "@fenglimg/fabric-shared/node/atomic-write";
 
 export const FABRIC_DIR = ".fabric";
 export const LEDGER_FILE = ".intent-ledger.jsonl";
@@ -8,13 +10,6 @@ export const LEDGER_PATH = `${FABRIC_DIR}/${LEDGER_FILE}`;
 export const LEGACY_LEDGER_PATH = LEDGER_FILE;
 export const EVENT_LEDGER_FILE = "events.jsonl";
 export const EVENT_LEDGER_PATH = `${FABRIC_DIR}/${EVENT_LEDGER_FILE}`;
-
-export async function atomicWriteText(path: string, content: string): Promise<void> {
-  const tempPath = `${path}.${process.pid}.${Date.now()}.tmp`;
-
-  await writeFile(tempPath, content, "utf8");
-  await rename(tempPath, path);
-}
 
 export function getLedgerPath(projectRoot: string): string {
   return join(projectRoot, LEDGER_PATH);
