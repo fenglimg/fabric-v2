@@ -1,0 +1,686 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`tool contracts > get-rules contract matches snapshot 1`] = `
+{
+  "annotations": {
+    "destructiveHint": false,
+    "idempotentHint": true,
+    "openWorldHint": false,
+    "readOnlyHint": true,
+    "title": "Get rule content",
+  },
+  "inputSchema": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "additionalProperties": false,
+    "properties": {
+      "client_hash": {
+        "description": "Revision hash from prior fab_get_rules response; enables stale detection",
+        "type": "string",
+      },
+      "correlation_id": {
+        "description": "Optional caller-provided correlation id for Event Ledger records",
+        "type": "string",
+      },
+      "path": {
+        "description": "Target file path to query rules for",
+        "type": "string",
+      },
+      "session_id": {
+        "description": "Optional caller-provided session id for Event Ledger records",
+        "type": "string",
+      },
+    },
+    "required": [
+      "path",
+    ],
+    "type": "object",
+  },
+  "outputSchema": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "additionalProperties": false,
+    "properties": {
+      "revision_hash": {
+        "type": "string",
+      },
+      "rules": {
+        "additionalProperties": false,
+        "properties": {
+          "L0": {
+            "type": "string",
+          },
+          "L1": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "content": {
+                  "type": "string",
+                },
+                "path": {
+                  "type": "string",
+                },
+              },
+              "required": [
+                "path",
+                "content",
+              ],
+              "type": "object",
+            },
+            "type": "array",
+          },
+          "L2": {
+            "items": {
+              "$ref": "#/properties/rules/properties/L1/items",
+            },
+            "type": "array",
+          },
+          "description_stubs": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "description": {
+                  "type": "string",
+                },
+                "path": {
+                  "type": "string",
+                },
+              },
+              "required": [
+                "path",
+                "description",
+              ],
+              "type": "object",
+            },
+            "type": "array",
+          },
+          "human_locked_nearby": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "excerpt": {
+                  "type": "string",
+                },
+                "file": {
+                  "type": "string",
+                },
+              },
+              "required": [
+                "file",
+                "excerpt",
+              ],
+              "type": "object",
+            },
+            "type": "array",
+          },
+        },
+        "required": [
+          "L0",
+          "L1",
+          "L2",
+          "human_locked_nearby",
+        ],
+        "type": "object",
+      },
+      "stale": {
+        "type": "boolean",
+      },
+    },
+    "required": [
+      "revision_hash",
+      "stale",
+      "rules",
+    ],
+    "type": "object",
+  },
+}
+`;
+
+exports[`tool contracts > plan-context contract matches snapshot 1`] = `
+{
+  "annotations": {
+    "destructiveHint": false,
+    "idempotentHint": true,
+    "openWorldHint": false,
+    "readOnlyHint": true,
+    "title": "Plan rule context",
+  },
+  "inputSchema": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "additionalProperties": false,
+    "properties": {
+      "client_hash": {
+        "description": "Revision hash from a prior fab_plan_context response; enables stale detection",
+        "type": "string",
+      },
+      "correlation_id": {
+        "description": "Optional caller-provided correlation id for Event Ledger records",
+        "type": "string",
+      },
+      "detected_entities": {
+        "additionalProperties": {
+          "items": {
+            "type": "string",
+          },
+          "type": "array",
+        },
+        "description": "Optional path-keyed detected entities for the requirement profile",
+        "type": "object",
+      },
+      "intent": {
+        "description": "User-stated requirement or implementation intent; used only to build a neutral requirement profile",
+        "type": "string",
+      },
+      "known_tech": {
+        "description": "Known technologies involved in the requirement profile",
+        "items": {
+          "type": "string",
+        },
+        "type": "array",
+      },
+      "paths": {
+        "description": "Candidate file paths to build neutral rule selection context for",
+        "items": {
+          "type": "string",
+        },
+        "minItems": 1,
+        "type": "array",
+      },
+      "session_id": {
+        "description": "Optional caller-provided session id for Event Ledger records",
+        "type": "string",
+      },
+    },
+    "required": [
+      "paths",
+    ],
+    "type": "object",
+  },
+  "outputSchema": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "additionalProperties": false,
+    "properties": {
+      "entries": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "ai_selectable_stable_ids": {
+              "items": {
+                "type": "string",
+              },
+              "type": "array",
+            },
+            "description_index": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "description": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "entities": {
+                        "items": {
+                          "type": "string",
+                        },
+                        "type": "array",
+                      },
+                      "impact": {
+                        "items": {
+                          "type": "string",
+                        },
+                        "type": "array",
+                      },
+                      "intent_clues": {
+                        "items": {
+                          "type": "string",
+                        },
+                        "type": "array",
+                      },
+                      "must_read_if": {
+                        "type": "string",
+                      },
+                      "summary": {
+                        "type": "string",
+                      },
+                      "tech_stack": {
+                        "items": {
+                          "type": "string",
+                        },
+                        "type": "array",
+                      },
+                    },
+                    "required": [
+                      "summary",
+                      "intent_clues",
+                      "tech_stack",
+                      "impact",
+                      "must_read_if",
+                    ],
+                    "type": "object",
+                  },
+                  "level": {
+                    "enum": [
+                      "L0",
+                      "L1",
+                      "L2",
+                    ],
+                    "type": "string",
+                  },
+                  "required": {
+                    "type": "boolean",
+                  },
+                  "selectable": {
+                    "type": "boolean",
+                  },
+                  "stable_id": {
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "stable_id",
+                  "level",
+                  "required",
+                  "selectable",
+                  "description",
+                ],
+                "type": "object",
+              },
+              "type": "array",
+            },
+            "initial_selected_stable_ids": {
+              "items": {
+                "type": "string",
+              },
+              "type": "array",
+            },
+            "path": {
+              "type": "string",
+            },
+            "required_stable_ids": {
+              "items": {
+                "type": "string",
+              },
+              "type": "array",
+            },
+            "requirement_profile": {
+              "additionalProperties": false,
+              "properties": {
+                "detected_entities": {
+                  "items": {
+                    "type": "string",
+                  },
+                  "type": "array",
+                },
+                "extension": {
+                  "type": "string",
+                },
+                "impact_hints": {
+                  "items": {
+                    "type": "string",
+                  },
+                  "type": "array",
+                },
+                "inferred_domain": {
+                  "items": {
+                    "type": "string",
+                  },
+                  "type": "array",
+                },
+                "intent_tokens": {
+                  "items": {
+                    "type": "string",
+                  },
+                  "type": "array",
+                },
+                "known_tech": {
+                  "items": {
+                    "type": "string",
+                  },
+                  "type": "array",
+                },
+                "path_segments": {
+                  "items": {
+                    "type": "string",
+                  },
+                  "type": "array",
+                },
+                "target_path": {
+                  "type": "string",
+                },
+                "user_intent": {
+                  "type": "string",
+                },
+              },
+              "required": [
+                "target_path",
+                "path_segments",
+                "extension",
+                "inferred_domain",
+                "known_tech",
+                "user_intent",
+                "intent_tokens",
+                "impact_hints",
+                "detected_entities",
+              ],
+              "type": "object",
+            },
+            "selection_policy": {
+              "additionalProperties": false,
+              "properties": {
+                "ai_selectable_levels": {
+                  "items": [
+                    {
+                      "const": "L1",
+                      "type": "string",
+                    },
+                  ],
+                  "maxItems": 1,
+                  "minItems": 1,
+                  "type": "array",
+                },
+                "final_fetch_rule": {
+                  "const": "required_stable_ids + ai_selected_l1_stable_ids",
+                  "type": "string",
+                },
+                "required_levels": {
+                  "items": [
+                    {
+                      "const": "L0",
+                      "type": "string",
+                    },
+                    {
+                      "const": "L2",
+                      "type": "string",
+                    },
+                  ],
+                  "maxItems": 2,
+                  "minItems": 2,
+                  "type": "array",
+                },
+              },
+              "required": [
+                "required_levels",
+                "ai_selectable_levels",
+                "final_fetch_rule",
+              ],
+              "type": "object",
+            },
+          },
+          "required": [
+            "path",
+            "requirement_profile",
+            "description_index",
+            "required_stable_ids",
+            "ai_selectable_stable_ids",
+            "initial_selected_stable_ids",
+            "selection_policy",
+          ],
+          "type": "object",
+        },
+        "type": "array",
+      },
+      "revision_hash": {
+        "type": "string",
+      },
+      "selection_token": {
+        "type": "string",
+      },
+      "shared": {
+        "additionalProperties": false,
+        "properties": {
+          "ai_selectable_stable_ids": {
+            "items": {
+              "type": "string",
+            },
+            "type": "array",
+          },
+          "description_index": {
+            "items": {
+              "$ref": "#/properties/entries/items/properties/description_index/items",
+            },
+            "type": "array",
+          },
+          "preflight_diagnostics": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "code": {
+                  "const": "missing_description",
+                  "type": "string",
+                },
+                "message": {
+                  "type": "string",
+                },
+                "path": {
+                  "type": "string",
+                },
+                "severity": {
+                  "const": "warn",
+                  "type": "string",
+                },
+                "stable_ids": {
+                  "items": {
+                    "type": "string",
+                  },
+                  "type": "array",
+                },
+              },
+              "required": [
+                "code",
+                "severity",
+                "message",
+              ],
+              "type": "object",
+            },
+            "type": "array",
+          },
+          "required_stable_ids": {
+            "items": {
+              "type": "string",
+            },
+            "type": "array",
+          },
+        },
+        "required": [
+          "required_stable_ids",
+          "ai_selectable_stable_ids",
+          "description_index",
+          "preflight_diagnostics",
+        ],
+        "type": "object",
+      },
+      "stale": {
+        "type": "boolean",
+      },
+    },
+    "required": [
+      "revision_hash",
+      "stale",
+      "selection_token",
+      "entries",
+      "shared",
+    ],
+    "type": "object",
+  },
+}
+`;
+
+exports[`tool contracts > rule-sections contract matches snapshot 1`] = `
+{
+  "annotations": {
+    "destructiveHint": false,
+    "idempotentHint": true,
+    "openWorldHint": false,
+    "readOnlyHint": true,
+    "title": "Filter rule sections",
+  },
+  "inputSchema": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "additionalProperties": false,
+    "properties": {
+      "ai_selected_stable_ids": {
+        "description": "AI-selected L1 stable_ids chosen from fab_plan_context ai_selectable_stable_ids",
+        "items": {
+          "type": "string",
+        },
+        "type": "array",
+      },
+      "ai_selection_reasons": {
+        "additionalProperties": {
+          "minLength": 1,
+          "type": "string",
+        },
+        "description": "Reason for each AI-selected L1 stable_id",
+        "type": "object",
+      },
+      "correlation_id": {
+        "description": "Optional caller-provided correlation id for Event Ledger records",
+        "type": "string",
+      },
+      "sections": {
+        "description": "Structured rule sections to fetch",
+        "items": {
+          "enum": [
+            "MISSION_STATEMENT",
+            "MANDATORY_INJECTION",
+            "BUSINESS_LOGIC_CHUNKS",
+            "CONTEXT_INFO",
+          ],
+          "type": "string",
+        },
+        "minItems": 1,
+        "type": "array",
+      },
+      "selection_token": {
+        "description": "Selection token returned by fab_plan_context",
+        "minLength": 1,
+        "type": "string",
+      },
+      "session_id": {
+        "description": "Optional caller-provided session id for Event Ledger records",
+        "type": "string",
+      },
+    },
+    "required": [
+      "selection_token",
+      "sections",
+      "ai_selected_stable_ids",
+      "ai_selection_reasons",
+    ],
+    "type": "object",
+  },
+  "outputSchema": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "additionalProperties": false,
+    "properties": {
+      "diagnostics": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "code": {
+              "const": "missing_section",
+              "type": "string",
+            },
+            "message": {
+              "type": "string",
+            },
+            "section": {
+              "enum": [
+                "MISSION_STATEMENT",
+                "MANDATORY_INJECTION",
+                "BUSINESS_LOGIC_CHUNKS",
+                "CONTEXT_INFO",
+              ],
+              "type": "string",
+            },
+            "severity": {
+              "const": "warn",
+              "type": "string",
+            },
+            "stable_id": {
+              "type": "string",
+            },
+          },
+          "required": [
+            "code",
+            "severity",
+            "stable_id",
+            "section",
+            "message",
+          ],
+          "type": "object",
+        },
+        "type": "array",
+      },
+      "precedence": {
+        "items": [
+          {
+            "const": "L2",
+            "type": "string",
+          },
+          {
+            "const": "L1",
+            "type": "string",
+          },
+          {
+            "const": "L0",
+            "type": "string",
+          },
+        ],
+        "maxItems": 3,
+        "minItems": 3,
+        "type": "array",
+      },
+      "revision_hash": {
+        "type": "string",
+      },
+      "rules": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "level": {
+              "enum": [
+                "L0",
+                "L1",
+                "L2",
+              ],
+              "type": "string",
+            },
+            "path": {
+              "type": "string",
+            },
+            "sections": {
+              "additionalProperties": {
+                "type": "string",
+              },
+              "type": "object",
+            },
+            "stable_id": {
+              "type": "string",
+            },
+          },
+          "required": [
+            "stable_id",
+            "level",
+            "path",
+            "sections",
+          ],
+          "type": "object",
+        },
+        "type": "array",
+      },
+      "selected_stable_ids": {
+        "items": {
+          "type": "string",
+        },
+        "type": "array",
+      },
+    },
+    "required": [
+      "revision_hash",
+      "precedence",
+      "selected_stable_ids",
+      "rules",
+      "diagnostics",
+    ],
+    "type": "object",
+  },
+}
+`;

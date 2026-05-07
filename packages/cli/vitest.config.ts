@@ -13,6 +13,7 @@ export default defineConfig({
       "@fenglimg/fabric-shared/node": resolve(packageRoot, "../shared/src/node.ts"),
       "@fenglimg/fabric-shared/i18n": resolve(packageRoot, "../shared/src/i18n/index.ts"),
       "@fenglimg/fabric-shared/errors": resolve(packageRoot, "../shared/src/errors/index.ts"),
+      "@fenglimg/fabric-shared/schemas/api-contracts": resolve(packageRoot, "../shared/src/schemas/api-contracts.ts"),
       "@fenglimg/fabric-shared": resolve(packageRoot, "../shared/src/index.ts"),
     },
   },

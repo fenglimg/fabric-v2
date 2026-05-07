@@ -1,5 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 
 import { registerRuleSections } from "./rule-sections.js";
 
@@ -11,25 +12,28 @@ describe("registerRuleSections", () => {
       registerTool,
     } as unknown as McpServer);
 
+    // inputSchema is now a full z.object — access fields via .shape
     const definition = registerTool.mock.calls[0]?.[1] as {
-      inputSchema: {
-        selection_token: { safeParse: (value: unknown) => { success: boolean } };
-        sections: { safeParse: (value: unknown) => { success: boolean } };
-        ai_selected_stable_ids: { safeParse: (value: unknown) => { success: boolean } };
-        ai_selection_reasons: { safeParse: (value: unknown) => { success: boolean } };
-      };
+      inputSchema: z.ZodObject<{
+        selection_token: z.ZodString;
+        sections: z.ZodArray<z.ZodEnum<[string, ...string[]]>>;
+        ai_selected_stable_ids: z.ZodArray<z.ZodString>;
+        ai_selection_reasons: z.ZodRecord<z.ZodString>;
+      }>;
     };
 
-    expect(definition.inputSchema.selection_token.safeParse("selection:rev:abc").success).toBe(true);
-    expect(definition.inputSchema.sections.safeParse([
+    const shape = definition.inputSchema.shape;
+
+    expect(shape.selection_token.safeParse("selection:rev:abc").success).toBe(true);
+    expect(shape.sections.safeParse([
       "MISSION_STATEMENT",
       "MANDATORY_INJECTION",
       "BUSINESS_LOGIC_CHUNKS",
       "CONTEXT_INFO",
     ]).success).toBe(true);
-    expect(definition.inputSchema.sections.safeParse(["UNKNOWN"]).success).toBe(false);
-    expect(definition.inputSchema.ai_selected_stable_ids.safeParse(["ui-batch-rendering"]).success).toBe(true);
-    expect(definition.inputSchema.ai_selection_reasons.safeParse({
+    expect(shape.sections.safeParse(["UNKNOWN"]).success).toBe(false);
+    expect(shape.ai_selected_stable_ids.safeParse(["ui-batch-rendering"]).success).toBe(true);
+    expect(shape.ai_selection_reasons.safeParse({
       "ui-batch-rendering": "Selected because target touches UI rendering.",
     }).success).toBe(true);
   });

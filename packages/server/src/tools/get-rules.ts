@@ -1,40 +1,12 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { z } from "zod";
 
+import {
+  getRulesAnnotations,
+  getRulesInputSchema,
+  getRulesOutputSchema,
+} from "@fenglimg/fabric-shared/schemas/api-contracts";
 import { resolveProjectRoot } from "../meta-reader.js";
 import { getRules, type GetRulesInput } from "../services/get-rules.js";
-
-const inputSchema = {
-  path: z.string().describe("Target file path to query rules for"),
-  client_hash: z
-    .string()
-    .optional()
-    .describe("Revision hash from prior fab_get_rules response; enables stale detection"),
-  correlation_id: z
-    .string()
-    .optional()
-    .describe("Optional caller-provided correlation id for Event Ledger records"),
-  session_id: z
-    .string()
-    .optional()
-    .describe("Optional caller-provided session id for Event Ledger records"),
-};
-
-const rulesEntrySchema = z.object({ path: z.string(), content: z.string() });
-const humanLockedSchema = z.object({ file: z.string(), excerpt: z.string() });
-const descriptionStubSchema = z.object({ path: z.string(), description: z.string() });
-
-const outputSchema = z.object({
-  revision_hash: z.string(),
-  stale: z.boolean(),
-  rules: z.object({
-    L0: z.string(),
-    L1: z.array(rulesEntrySchema),
-    L2: z.array(rulesEntrySchema),
-    human_locked_nearby: z.array(humanLockedSchema),
-    description_stubs: z.array(descriptionStubSchema).optional(),
-  }),
-});
 
 export function registerGetRules(server: McpServer): void {
   server.registerTool(
@@ -42,9 +14,9 @@ export function registerGetRules(server: McpServer): void {
     {
       description:
         "Call before modifying any file to retrieve Fabric rules for a target path.",
-      inputSchema,
-      outputSchema,
-      annotations: { readOnlyHint: true },
+      inputSchema: getRulesInputSchema,
+      outputSchema: getRulesOutputSchema,
+      annotations: getRulesAnnotations,
     },
     async ({ path, client_hash, correlation_id, session_id }: GetRulesInput) => {
       const projectRoot = resolveProjectRoot();
