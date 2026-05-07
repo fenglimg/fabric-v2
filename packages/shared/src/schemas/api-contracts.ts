@@ -1,6 +1,17 @@
 import { z } from "zod";
 
 // ---------------------------------------------------------------------------
+// Shared warning schema (R24 contract)
+// ---------------------------------------------------------------------------
+
+export const structuredWarningSchema = z.object({
+  code: z.string(),
+  file: z.string(),
+  line: z.number().optional(),
+  action_hint: z.string(),
+});
+
+// ---------------------------------------------------------------------------
 // MCP tool contracts — plan-context
 // ---------------------------------------------------------------------------
 
@@ -99,6 +110,7 @@ export const planContextOutputSchema = z.object({
       }),
     ),
   }),
+  warnings: z.array(structuredWarningSchema).optional(),
 });
 
 export const planContextAnnotations = {
@@ -143,6 +155,7 @@ export const getRulesOutputSchema = z.object({
     human_locked_nearby: z.array(_humanLockedSchema),
     description_stubs: z.array(_descriptionStubSchema).optional(),
   }),
+  warnings: z.array(structuredWarningSchema).optional(),
 });
 
 export const getRulesAnnotations = {
@@ -199,6 +212,7 @@ export const ruleSectionsOutputSchema = z.object({
       message: z.string(),
     }),
   ),
+  warnings: z.array(structuredWarningSchema).optional(),
 });
 
 export const ruleSectionsAnnotations = {

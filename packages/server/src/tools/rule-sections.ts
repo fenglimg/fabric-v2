@@ -13,6 +13,7 @@ import {
   getRuleSections,
   type GetRuleSectionsInput,
 } from "../services/rule-sections.js";
+import { ensureRulesFresh } from "../services/rule-sync.js";
 
 export function registerRuleSections(server: McpServer, tracker?: InFlightTracker): void {
   server.registerTool(
@@ -29,11 +30,17 @@ export function registerRuleSections(server: McpServer, tracker?: InFlightTracke
       tracker?.enter(requestId);
       try {
         const projectRoot = resolveProjectRoot();
+        const syncReport = await ensureRulesFresh(projectRoot);
         const result = await getRuleSections(projectRoot, input);
 
+        const response = {
+          ...result,
+          warnings: [...(result.warnings ?? []), ...syncReport.warnings],
+        };
+
         return {
-          content: [{ type: "text" as const, text: JSON.stringify(result) }],
-          structuredContent: result,
+          content: [{ type: "text" as const, text: JSON.stringify(response) }],
+          structuredContent: response,
         };
       } finally {
         tracker?.exit(requestId);

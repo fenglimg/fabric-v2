@@ -7,6 +7,7 @@ import {
 } from "@fenglimg/fabric-shared/schemas/api-contracts";
 import { resolveProjectRoot } from "../meta-reader.js";
 import { getRules, type GetRulesInput } from "../services/get-rules.js";
+import { ensureRulesFresh } from "../services/rule-sync.js";
 
 export function registerGetRules(server: McpServer): void {
   server.registerTool(
@@ -20,11 +21,17 @@ export function registerGetRules(server: McpServer): void {
     },
     async ({ path, client_hash, correlation_id, session_id }: GetRulesInput) => {
       const projectRoot = resolveProjectRoot();
+      const syncReport = await ensureRulesFresh(projectRoot);
       const result = await getRules(projectRoot, { path, client_hash, correlation_id, session_id });
 
+      const response = {
+        ...result,
+        warnings: [...(result.warnings ?? []), ...syncReport.warnings],
+      };
+
       return {
-        content: [{ type: "text" as const, text: JSON.stringify(result) }],
-        structuredContent: result,
+        content: [{ type: "text" as const, text: JSON.stringify(response) }],
+        structuredContent: response,
       };
     },
   );

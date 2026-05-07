@@ -123,6 +123,32 @@ exports[`tool contracts > get-rules contract matches snapshot 1`] = `
       "stale": {
         "type": "boolean",
       },
+      "warnings": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "action_hint": {
+              "type": "string",
+            },
+            "code": {
+              "type": "string",
+            },
+            "file": {
+              "type": "string",
+            },
+            "line": {
+              "type": "number",
+            },
+          },
+          "required": [
+            "code",
+            "file",
+            "action_hint",
+          ],
+          "type": "object",
+        },
+        "type": "array",
+      },
     },
     "required": [
       "revision_hash",
@@ -489,6 +515,32 @@ exports[`tool contracts > plan-context contract matches snapshot 1`] = `
       "stale": {
         "type": "boolean",
       },
+      "warnings": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "action_hint": {
+              "type": "string",
+            },
+            "code": {
+              "type": "string",
+            },
+            "file": {
+              "type": "string",
+            },
+            "line": {
+              "type": "number",
+            },
+          },
+          "required": [
+            "code",
+            "file",
+            "action_hint",
+          ],
+          "type": "object",
+        },
+        "type": "array",
+      },
     },
     "required": [
       "revision_hash",
@@ -669,6 +721,32 @@ exports[`tool contracts > rule-sections contract matches snapshot 1`] = `
       "selected_stable_ids": {
         "items": {
           "type": "string",
+        },
+        "type": "array",
+      },
+      "warnings": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "action_hint": {
+              "type": "string",
+            },
+            "code": {
+              "type": "string",
+            },
+            "file": {
+              "type": "string",
+            },
+            "line": {
+              "type": "number",
+            },
+          },
+          "required": [
+            "code",
+            "file",
+            "action_hint",
+          ],
+          "type": "object",
         },
         "type": "array",
       },

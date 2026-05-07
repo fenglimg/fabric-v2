@@ -10,6 +10,7 @@ import {
 import { resolveProjectRoot } from "../meta-reader.js";
 import { type InFlightTracker } from "../services/in-flight-tracker.js";
 import { planContext, type PlanContextInput } from "../services/plan-context.js";
+import { ensureRulesFresh } from "../services/rule-sync.js";
 
 export function registerPlanContext(server: McpServer, tracker?: InFlightTracker): void {
   server.registerTool(
@@ -26,6 +27,7 @@ export function registerPlanContext(server: McpServer, tracker?: InFlightTracker
       tracker?.enter(requestId);
       try {
         const projectRoot = resolveProjectRoot();
+        const syncReport = await ensureRulesFresh(projectRoot);
         const result = await planContext(projectRoot, {
           paths,
           intent,
@@ -36,9 +38,14 @@ export function registerPlanContext(server: McpServer, tracker?: InFlightTracker
           session_id,
         });
 
+        const response = {
+          ...result,
+          warnings: [...(result.warnings ?? []), ...syncReport.warnings],
+        };
+
         return {
-          content: [{ type: "text" as const, text: JSON.stringify(result) }],
-          structuredContent: result,
+          content: [{ type: "text" as const, text: JSON.stringify(response) }],
+          structuredContent: response,
         };
       } finally {
         tracker?.exit(requestId);
