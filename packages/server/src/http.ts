@@ -317,7 +317,7 @@ export function createFabricHttpApp(options: CreateFabricHttpAppOptions) {
  * @param kind      "tools/list_changed" | "resource_updated" | "resources/list_changed"
  * @param uri       Resource URI — required when kind is "resource_updated".
  */
-export function notifyAllSessions(
+function notifyAllSessions(
   sessions: Map<string, FabricHttpSession>,
   kind: "tools/list_changed" | "resource_updated" | "resources/list_changed",
   uri?: string,

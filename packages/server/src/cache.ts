@@ -24,7 +24,7 @@ export type AuditCursor = {
   windowEntries: Array<{ ts: number }>;
 };
 
-export class ContextCache {
+class ContextCache {
   // Slot 1: raw AgentsMeta keyed by projectRoot
   private readonly metaSlot = new Map<string, CacheEntry<unknown>>();
 

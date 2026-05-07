@@ -8,7 +8,7 @@ import type { FabricConfig, McpPayloadLimits } from "@fenglimg/fabric-shared";
  * Returns an empty config object when the file is absent.
  * Throws if the file content is not a JSON object.
  */
-export function readFabricConfig(projectRoot: string): FabricConfig {
+function readFabricConfig(projectRoot: string): FabricConfig {
   const configPath = join(projectRoot, "fabric.config.json");
   if (!existsSync(configPath)) {
     return {};

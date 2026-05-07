@@ -21,9 +21,7 @@
     "@clack/prompts": "^1.2.0",
     "@fenglimg/fabric-server": "workspace:*",
     "@fenglimg/fabric-shared": "workspace:*",
-    "@iarna/toml": "^2.2.5",
     "citty": "^0.2.2",
-    "minimatch": "^10.0.1",
     "picocolors": "^1.1.1",
     "string-width": "^7.2.0",
     "tree-sitter-javascript": "^0.25.0",
@@ -31,7 +29,6 @@
     "web-tree-sitter": "^0.26.8"
   },
   "devDependencies": {
-    "@types/iarna__toml": "^2.0.5",
     "@types/node": "^22.15.0",
     "tsup": "^8.5.0",
     "typescript": "^5.8.3"
