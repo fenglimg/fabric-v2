@@ -183,6 +183,10 @@ type MetaManuallyDivergedInspection = {
   error?: string;
 };
 
+type RulesDirUnindexedInspection = {
+  unindexedFiles: string[];
+};
+
 const SCRIPT_EXTENSIONS = new Set([".js", ".jsx", ".ts", ".tsx"]);
 const IGNORED_DIRECTORIES = new Set([
   ".fabric",
@@ -227,6 +231,7 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
   ]);
   const mcpConfigInWrongFile = inspectMcpConfigInWrongFile(projectRoot);
   const metaManuallyDiverged = await inspectMetaManuallyDiverged(projectRoot);
+  const rulesDirUnindexed = inspectRulesDirUnindexed(projectRoot, meta);
   const taxonomyExists = existsSync(join(projectRoot, ".fabric", "INITIAL_TAXONOMY.md"));
   const bootstrapExists = existsSync(join(projectRoot, ".fabric", "bootstrap", "README.md"));
   const checks: DoctorCheck[] = [
@@ -242,6 +247,7 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     createEventLedgerPartialWriteCheck(eventLedger),
     createMcpConfigInWrongFileCheck(mcpConfigInWrongFile),
     createMetaManuallyDivergedCheck(metaManuallyDiverged),
+    createRulesDirUnindexedCheck(rulesDirUnindexed),
   ];
   const fixableErrors = collectIssues(checks, "fixable_error");
   const manualErrors = collectIssues(checks, "manual_error");
@@ -292,17 +298,31 @@ export async function runDoctorFix(target: string): Promise<DoctorFixReport> {
 
   if (
     before.fixable_errors.some((issue) =>
-      ["agents_meta_missing", "agents_meta_stale", "rule_test_index_missing", "rule_test_index_stale", "content_ref_missing"].includes(issue.code),
+      [
+        "agents_meta_missing",
+        "agents_meta_stale",
+        "rule_test_index_missing",
+        "rule_test_index_stale",
+        "content_ref_missing",
+        "rules_dir_unindexed",
+      ].includes(issue.code),
     )
   ) {
     // D22: doctor's role is now consistency repairer, not baseline promoter.
     // reconcileRules rewrites agents.meta.json from disk ground-truth and emits
     // a 'meta_reconciled' ledger event (trigger='doctor').
-    // content_ref_missing is included: reconcile drops stale refs that no longer
-    // have a backing file in .fabric/rules/, resolving the finding.
+    // content_ref_missing: reconcile drops stale refs that no longer have a backing file.
+    // rules_dir_unindexed: reconcile incorporates any .md files not yet in the index.
     await reconcileRules(projectRoot, { trigger: "doctor" });
     for (const issue of before.fixable_errors.filter((candidate) =>
-      ["agents_meta_missing", "agents_meta_stale", "rule_test_index_missing", "rule_test_index_stale", "content_ref_missing"].includes(candidate.code),
+      [
+        "agents_meta_missing",
+        "agents_meta_stale",
+        "rule_test_index_missing",
+        "rule_test_index_stale",
+        "content_ref_missing",
+        "rules_dir_unindexed",
+      ].includes(candidate.code),
     )) {
       fixed.push(issue);
     }
@@ -816,6 +836,57 @@ async function inspectMetaManuallyDiverged(projectRoot: string): Promise<MetaMan
   }
 
   return { extraMetaEntries, hashMismatchEntries, readable: true };
+}
+
+function inspectRulesDirUnindexed(projectRoot: string, meta: MetaInspection): RulesDirUnindexedInspection {
+  const rulesDir = join(projectRoot, ".fabric", "rules");
+  if (!existsSync(rulesDir)) {
+    return { unindexedFiles: [] };
+  }
+
+  // Collect all .md files physically present in .fabric/rules/
+  const physicalMdFiles = new Set<string>();
+  const stack: string[] = [rulesDir];
+  while (stack.length > 0) {
+    const dir = stack.pop();
+    if (dir === undefined) {
+      continue;
+    }
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const abs = join(dir, entry.name);
+      if (entry.isDirectory()) {
+        stack.push(abs);
+      } else if (entry.isFile() && entry.name.endsWith(".md")) {
+        const rel = posix.join(".fabric/rules", abs.slice(rulesDir.length + 1).replace(/\\/gu, "/"));
+        physicalMdFiles.add(rel);
+      }
+    }
+  }
+
+  // Collect all content_refs/file paths tracked in meta
+  const indexedRefs = new Set<string>();
+  if (meta.valid && meta.meta !== null) {
+    for (const node of Object.values(meta.meta.nodes)) {
+      const ref = normalizePath(node.content_ref ?? node.file);
+      indexedRefs.add(ref);
+    }
+  }
+
+  const unindexedFiles = [...physicalMdFiles].filter((f) => !indexedRefs.has(f)).sort();
+  return { unindexedFiles };
+}
+
+function createRulesDirUnindexedCheck(inspection: RulesDirUnindexedInspection): DoctorCheck {
+  if (inspection.unindexedFiles.length > 0) {
+    return issueCheck(
+      "Rules dir unindexed",
+      "error",
+      "fixable_error",
+      "rules_dir_unindexed",
+      `${inspection.unindexedFiles.length} .md file${inspection.unindexedFiles.length === 1 ? "" : "s"} in .fabric/rules/ not indexed in agents.meta.json. Run \`fab doctor --fix\` to index the missing rule files.`,
+    );
+  }
+  return okCheck("Rules dir unindexed", "All .fabric/rules/ .md files are indexed in agents.meta.json.");
 }
 
 function createMetaManuallyDivergedCheck(inspection: MetaManuallyDivergedInspection): DoctorCheck {

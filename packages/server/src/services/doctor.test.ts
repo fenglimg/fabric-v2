@@ -69,6 +69,7 @@ describe("runDoctorReport", () => {
       "Event ledger partial write",
       "Claude MCP config location",
       "Meta manual divergence",
+      "Rules dir unindexed",
     ]);
   });
 
@@ -384,6 +385,39 @@ describe("runDoctorReport", () => {
 
     expect(report.warnings.map((w) => w.code)).not.toContain("meta_manually_diverged");
     expect(report.checks.find((c) => c.name === "Meta manual divergence")?.status).toBe("ok");
+  });
+
+  it("TASK-030: rules_dir_unindexed detected when .md exists in rules dir but not in meta", async () => {
+    const target = createInitializedProject("doctor-unindexed-detect");
+    await writeRuleMeta(target, { source: "doctor_fix" });
+    writeFile(".fabric/events.jsonl", "", target);
+
+    // Drop an unindexed rule file (not reconciled into meta)
+    writeFile(".fabric/rules/packages/ui/rules.md", "<!-- fab:rule-id rules/ui -->\n# UI\n\n## [MANDATORY_INJECTION]\nUse components.\n", target);
+
+    const report = await runDoctorReport(target);
+
+    expect(report.fixable_errors.map((e) => e.code)).toContain("rules_dir_unindexed");
+    expect(report.checks.find((c) => c.name === "Rules dir unindexed")?.status).toBe("error");
+  });
+
+  it("TASK-030: --fix incorporates unindexed rule files via reconcileRules", async () => {
+    const target = createInitializedProject("doctor-unindexed-fix");
+    await writeRuleMeta(target, { source: "doctor_fix" });
+    writeFile(".fabric/events.jsonl", "", target);
+
+    // Drop a new rule file that reconcile will pick up
+    writeFile(".fabric/rules/packages/ui/rules.md", "<!-- fab:rule-id rules/ui -->\n# UI\n\n## [MANDATORY_INJECTION]\nUse components.\n", target);
+
+    const before = await runDoctorReport(target);
+    expect(before.fixable_errors.map((e) => e.code)).toContain("rules_dir_unindexed");
+
+    const fix = await runDoctorFix(target);
+    const after = await runDoctorReport(target);
+
+    expect(fix.fixed.map((e) => e.code)).toContain("rules_dir_unindexed");
+    expect(after.fixable_errors.map((e) => e.code)).not.toContain("rules_dir_unindexed");
+    expect(after.checks.find((c) => c.name === "Rules dir unindexed")?.status).toBe("ok");
   });
 
   it("TASK-029: content_ref_missing is fixable — --fix via reconcileRules drops stale refs", async () => {
