@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { createTranslator, detectNodeLocale } from "@fenglimg/fabric-shared";
+
+const t = createTranslator(detectNodeLocale());
+
 const originalExitCode = process.exitCode;
 
 afterEach(() => {
@@ -60,7 +64,7 @@ describe("doctor command", () => {
       stdout.restore();
     }
 
-    expect(stdout.lines.some((line) => line.includes("Warnings:"))).toBe(true);
+    expect(stdout.lines.some((line) => line.includes(t("doctor.section.warnings")))).toBe(true);
     expect(process.exitCode).toBe(1);
   });
 

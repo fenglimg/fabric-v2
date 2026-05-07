@@ -79,9 +79,9 @@ function renderHumanReport(report: DoctorReport): void {
   for (const check of report.checks) {
     writeStdout(`${renderStatus(check.status)} ${check.name}: ${check.message}`);
   }
-  writeIssueSection("Fixable errors", report.fixable_errors);
-  writeIssueSection("Manual errors", report.manual_errors);
-  writeIssueSection("Warnings", report.warnings);
+  writeIssueSection(t("doctor.section.fixable"), report.fixable_errors);
+  writeIssueSection(t("doctor.section.manual"), report.manual_errors);
+  writeIssueSection(t("doctor.section.warnings"), report.warnings);
 }
 
 function writeIssueSection(title: string, issues: DoctorIssue[]): void {
@@ -90,7 +90,7 @@ function writeIssueSection(title: string, issues: DoctorIssue[]): void {
   }
 
   writeStdout("");
-  writeStdout(`${title}:`);
+  writeStdout(title);
   for (const issue of issues) {
     writeStdout(`- ${issue.code}: ${issue.message}`);
   }

@@ -58,6 +58,9 @@ export const zhCNMessages: Messages = {
   "cli.config.install.wrote": "{client}：已写入 {path}",
 
   "cli.doctor.description": "运行 Fabric 目标态诊断。",
+  "doctor.section.fixable": "可修复错误：",
+  "doctor.section.manual": "需手动修复：",
+  "doctor.section.warnings": "警告：",
   "cli.doctor.args.target.description":
     "目标项目路径。默认依次使用 CLI 参数、EXTERNAL_FIXTURE_PATH、fabric.config.json、当前目录。",
   "cli.doctor.args.fix.description": "修复确定性派生的 Fabric 状态，包括 meta、rule-test index、bootstrap 和 events ledger。",

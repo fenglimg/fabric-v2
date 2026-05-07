@@ -60,6 +60,9 @@ export const enMessages: Messages = {
   "cli.config.install.wrote": "{client}: wrote {path}",
 
   "cli.doctor.description": "Run Fabric target-state diagnostics.",
+  "doctor.section.fixable": "Fixable errors:",
+  "doctor.section.manual": "Manual errors:",
+  "doctor.section.warnings": "Warnings:",
   "cli.doctor.args.target.description":
     "Target project path. Defaults to CLI arg, EXTERNAL_FIXTURE_PATH, fabric.config.json, then cwd.",
   "cli.doctor.args.fix.description": "Repair deterministic derived Fabric state, including meta, rule-test index, bootstrap, and events ledger.",
