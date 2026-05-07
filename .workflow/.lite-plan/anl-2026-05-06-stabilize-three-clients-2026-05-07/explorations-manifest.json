@@ -1,0 +1,67 @@
+{
+  "session_id": "anl-2026-05-06-stabilize-three-clients-2026-05-07",
+  "task_description": "Stabilize Fabric v1.7.0 + narrow AI client scope from 6 to 3 (Claude/Codex/Cursor) — combined 1.7.1 deprecation + 1.8.0 stabilization release",
+  "timestamp": "2026-05-07T13:15:00+08:00",
+  "complexity": "High",
+  "exploration_count": 8,
+  "source": "analyze-with-file",
+  "source_session": "ANL-2026-05-06-stabilize-three-clients",
+  "explorations": [
+    {
+      "angle": "codebase-discovery",
+      "file": "exploration-codebase.json",
+      "path": ".workflow/.analysis/ANL-2026-05-06-stabilize-three-clients/exploration-codebase.json",
+      "source_schema": "analyze",
+      "index": 1
+    },
+    {
+      "angle": "external-research",
+      "file": "research.json",
+      "path": ".workflow/.analysis/ANL-2026-05-06-stabilize-three-clients/research.json",
+      "source_schema": "analyze",
+      "index": 2
+    },
+    {
+      "angle": "technical",
+      "file": "technical.json",
+      "path": ".workflow/.analysis/ANL-2026-05-06-stabilize-three-clients/explorations/technical.json",
+      "source_schema": "analyze",
+      "index": 3
+    },
+    {
+      "angle": "architectural",
+      "file": "architectural.json",
+      "path": ".workflow/.analysis/ANL-2026-05-06-stabilize-three-clients/explorations/architectural.json",
+      "source_schema": "analyze",
+      "index": 4
+    },
+    {
+      "angle": "domain",
+      "file": "domain.json",
+      "path": ".workflow/.analysis/ANL-2026-05-06-stabilize-three-clients/explorations/domain.json",
+      "source_schema": "analyze",
+      "index": 5
+    },
+    {
+      "angle": "business",
+      "file": "business.json",
+      "path": ".workflow/.analysis/ANL-2026-05-06-stabilize-three-clients/explorations/business.json",
+      "source_schema": "analyze",
+      "index": 6
+    },
+    {
+      "angle": "interaction",
+      "file": "interaction.json",
+      "path": ".workflow/.analysis/ANL-2026-05-06-stabilize-three-clients/explorations/interaction.json",
+      "source_schema": "analyze",
+      "index": 7
+    },
+    {
+      "angle": "stability-deepdive",
+      "file": "stability-deepdive.json",
+      "path": ".workflow/.analysis/ANL-2026-05-06-stabilize-three-clients/explorations/stability-deepdive.json",
+      "source_schema": "analyze",
+      "index": 8
+    }
+  ]
+}

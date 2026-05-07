@@ -1,0 +1,27 @@
+{
+  "id": "TASK-040",
+  "title": "[Release] 1.7.1 cherry-pick branch + PR + tag",
+  "description": "Once TASK-037/038/039 land on release/v1.8.0-stabilization, cherry-pick those 3 commits to a new release/v1.7.1 branch from main, push, open PR to main, tag v1.7.1, npm publish (or relevant publish flow). 1.7.1 is deprecation-only — no code removal.",
+  "scope": "Layer 3 release — 1.7.1 ship",
+  "files": [
+    { "path": "(git operations)", "change": "git checkout main && git checkout -b release/v1.7.1; git cherry-pick <TASK-037 commit> <TASK-038 commit> <TASK-039 commit>; git push -u origin release/v1.7.1; gh pr create --base main; bump packages/*/package.json + root package.json to 1.7.1; tag v1.7.1; publish" },
+    { "path": "CHANGELOG.md", "change": "Move 1.7.1 unreleased section to released; date stamp" }
+  ],
+  "convergence": {
+    "criteria": [
+      "release/v1.7.1 branch contains exactly the 3 deprecation commits",
+      "PR opened to main with clear description",
+      "After PR merge: tag v1.7.1; package versions bumped; published",
+      "CHANGELOG 1.7.1 entry final and dated"
+    ]
+  },
+  "depends_on": ["TASK-037", "TASK-038", "TASK-039"],
+  "metadata": {
+    "layer": 3,
+    "release_tag": "1.7.1",
+    "recommendation_id": "R-RELEASE-1.7.1",
+    "branch": "release/v1.7.1",
+    "priority": "P0",
+    "estimated_loc": 0
+  }
+}

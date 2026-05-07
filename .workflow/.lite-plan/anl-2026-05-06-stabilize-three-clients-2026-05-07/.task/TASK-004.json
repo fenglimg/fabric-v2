@@ -1,0 +1,32 @@
+{
+  "id": "TASK-004",
+  "title": "Build SKILL derivation script + prebuild hook",
+  "description": "scripts/build-skills.ts reads templates/skill-source/fabric-init/SOURCE.md + clients.json → emits two committed SKILL.md files at templates/claude-skills/fabric-init/SKILL.md and templates/codex-skills/fabric-init/SKILL.md (note: outputName unified to fabric-init for BOTH clients). Hooked into pnpm prebuild script. Runtime init.ts continues to copyFile from templates/ — does NOT need to know about derivation.",
+  "scope": "Layer 0 infrastructure — build pipeline that produces per-client SKILL artifacts",
+  "files": [
+    { "path": "scripts/build-skills.ts", "change": "NEW: read SOURCE.md, parse clients.json, for each client emit `${outputDir}/${outputName}/SKILL.md` with rendered frontmatter + body" },
+    { "path": "package.json", "change": "Add `build:skills`: 'tsx scripts/build-skills.ts'; add `prebuild`: 'pnpm build:skills' to chain before existing build" },
+    { "path": "packages/cli/templates/claude-skills/fabric-init/SKILL.md", "change": "NEW (generated artifact, committed): Claude-targeted SKILL with frontmatter from clients.json + body from SOURCE.md" },
+    { "path": "packages/cli/templates/codex-skills/fabric-init/SKILL.md", "change": "REGENERATE (was 27 lines, replaced with full parity content from SOURCE.md)" },
+    { "path": "packages/cli/templates/claude-skills/agents-md-init/SKILL.md", "change": "DELETE: replaced by templates/claude-skills/fabric-init/SKILL.md (legacy path migrated by TASK-033 doctor check)" }
+  ],
+  "convergence": {
+    "criteria": [
+      "pnpm build:skills produces two SKILL.md files matching frontmatter spec",
+      "Generated Claude SKILL.md contains allowed-tools frontmatter; Codex SKILL.md does not",
+      "Both generated files have body parity (same content from SOURCE.md)",
+      "pnpm prebuild runs build:skills before existing build steps",
+      "Old templates/claude-skills/agents-md-init/ removed",
+      "Generated artifacts checked into repo so PR diffs show user-visible output"
+    ]
+  },
+  "depends_on": ["TASK-003"],
+  "metadata": {
+    "layer": 0,
+    "release_tag": "1.8.0",
+    "recommendation_id": "R20.3+R20.4",
+    "branch": "release/v1.8.0-stabilization",
+    "priority": "P1",
+    "estimated_loc": 80
+  }
+}

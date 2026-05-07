@@ -1,0 +1,26 @@
+{
+  "id": "TASK-029",
+  "title": "Reclassify content_ref_missing: manual_error → fixable",
+  "description": "F21: content_ref_missing is misclassified as manual_error even though doctor --fix's existing writeRuleMeta path can auto-recover. Routing miss at doctor.ts:271. Reclassify to fixable.",
+  "scope": "Layer 2 P1 — doctor accuracy",
+  "files": [
+    { "path": "packages/server/src/services/doctor.ts", "change": "Line 271 area: change content_ref_missing classification from manual_error to fixable; route --fix to writeRuleMeta auto-recovery path" },
+    { "path": "packages/server/src/services/doctor.test.ts", "change": "Add test: content_ref_missing reported as fixable; --fix invokes writeRuleMeta path" }
+  ],
+  "convergence": {
+    "criteria": [
+      "content_ref_missing classified as fixable",
+      "doctor --fix auto-recovers",
+      "Tests pass in same commit"
+    ]
+  },
+  "depends_on": [],
+  "metadata": {
+    "layer": 2,
+    "release_tag": "1.8.0",
+    "recommendation_id": "R14",
+    "branch": "release/v1.8.0-stabilization",
+    "priority": "P1",
+    "estimated_loc": 15
+  }
+}

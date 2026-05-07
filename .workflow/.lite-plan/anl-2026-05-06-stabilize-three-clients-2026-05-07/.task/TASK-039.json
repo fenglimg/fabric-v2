@@ -1,0 +1,27 @@
+{
+  "id": "TASK-039",
+  "title": "[1.7.1] init_context_missing action_hint",
+  "description": "F24: init_context_missing error message has no action hint. The fix is 'run an AI skill in your client' — NOT something doctor --fix can do. Add action_hint pointing to Claude SKILL or Codex SKILL invocation.",
+  "scope": "Layer 2 (1.7.1 batch) — UX hint for #1 confusing post-init error",
+  "files": [
+    { "path": "packages/server/src/services/doctor.ts", "change": "init_context_missing check: add action_hint = 'Run the fabric-init skill in Claude Code or Codex CLI to complete initialization. See docs/migration-1.8.md FAQ.'" },
+    { "path": "docs/migration-1.8.md", "change": "Section 5 FAQ: add Q&A entry for init_context_missing remediation" },
+    { "path": "packages/server/src/services/doctor.test.ts", "change": "Test: init_context_missing emits action_hint" }
+  ],
+  "convergence": {
+    "criteria": [
+      "init_context_missing has actionable action_hint",
+      "FAQ documents remediation",
+      "Tests pass"
+    ]
+  },
+  "depends_on": [],
+  "metadata": {
+    "layer": 2,
+    "release_tag": "1.7.1",
+    "recommendation_id": "R24",
+    "branch": "release/v1.8.0-stabilization (cherry-pick to release/v1.7.1)",
+    "priority": "P0",
+    "estimated_loc": 10
+  }
+}

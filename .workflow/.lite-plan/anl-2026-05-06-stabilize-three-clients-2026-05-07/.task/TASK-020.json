@@ -1,0 +1,30 @@
+{
+  "id": "TASK-020",
+  "title": "Fix --reapply data-loss: preserve ledger + skip meta regen when rules exist",
+  "description": "F17: init --reapply silently truncates events.jsonl (init.ts:579-580 writeFileSync('')) AND regenerates agents.meta.json as L0-only stub (init.ts:572-573 + createInitialMeta L1256-1271), wiping AI-built rule node tree. Per D14: preserve events.jsonl byte-identically; skip agents.meta.json regen if rules already exist (detect via .fabric/rules/*.md presence). No new --reset command (D14, D34).",
+  "scope": "Layer 2 P0 — silent data loss bug fix",
+  "files": [
+    { "path": "packages/cli/src/commands/init.ts", "change": "Lines 579-580: remove unconditional events.jsonl truncation; preserve existing file. Lines 572-573 + createInitialMeta call site: detect existing .fabric/rules/*.md; if present, SKIP agents.meta.json regen (preserve AI-built tree); only regen if rules dir empty/missing." },
+    { "path": "packages/cli/src/commands/init.ts", "change": "Add ledger event reapply_completed { preserved_ledger: bool, preserved_meta: bool, rules_count }" },
+    { "path": "packages/cli/__tests__/init-reapply.test.ts", "change": "NEW: tests asserting (a) events.jsonl byte-identical after --reapply; (b) agents.meta.json untouched when rules/ has content; (c) agents.meta.json regenerated when rules/ empty" }
+  ],
+  "convergence": {
+    "criteria": [
+      "events.jsonl bytes preserved after --reapply",
+      "agents.meta.json preserved when rules/ has .md files",
+      "agents.meta.json regenerated when rules/ is empty",
+      "reapply_completed ledger event written with preservation flags",
+      "Tests pass in same commit",
+      "Existing init flow tests still pass"
+    ]
+  },
+  "depends_on": [],
+  "metadata": {
+    "layer": 2,
+    "release_tag": "1.8.0",
+    "recommendation_id": "R17",
+    "branch": "release/v1.8.0-stabilization",
+    "priority": "P0",
+    "estimated_loc": 60
+  }
+}

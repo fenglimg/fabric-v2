@@ -1,0 +1,27 @@
+{
+  "id": "TASK-008",
+  "title": "Migrate server-side atomic keepers to shared helper",
+  "description": "Pure import swap. Three atomic write callsites already use the local atomicWriteText (server/services/_shared.ts) — switch to importing from @fenglimg/fabric-shared/node/atomic-write directly. _shared.ts re-export already preserved by TASK-001 for files not migrated yet. No behavioral change.",
+  "scope": "Layer 1 foundation — atomic helper migration (server side)",
+  "files": [
+    { "path": "packages/server/src/services/rule-meta-builder.ts", "change": "Lines 93, 94: swap atomicWriteText import from ./relative ./_shared to @fenglimg/fabric-shared/node/atomic-write" },
+    { "path": "packages/server/src/services/doctor.ts", "change": "Line 668 (writeDefaultBootstrap): same import swap" }
+  ],
+  "convergence": {
+    "criteria": [
+      "All 3 callsites import directly from @fenglimg/fabric-shared/node/atomic-write",
+      "_shared.ts re-export still works for any not-yet-migrated callers",
+      "No behavioral change in writes (same tmp+rename pattern)",
+      "Existing pnpm test green"
+    ]
+  },
+  "depends_on": ["TASK-001"],
+  "metadata": {
+    "layer": 1,
+    "release_tag": "1.8.0",
+    "recommendation_id": "R7.3",
+    "branch": "release/v1.8.0-stabilization",
+    "priority": "P0",
+    "estimated_loc": 5
+  }
+}

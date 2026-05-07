@@ -1,0 +1,29 @@
+{
+  "id": "TASK-016",
+  "title": "Lift json.ts/toml.ts user-facing config writes to atomic",
+  "description": "Per Q2 grill-me decision: T-R7.6 must complete BEFORE T-MCP-CONFIG-PATH (R5) — Claude config rewrite (TASK-017) builds on atomic writes. config/json.ts:59 writes user-facing client MCP configs (currently raw fs.writeFile); corruption bricks the user's AI client. config/toml.ts:115 same for Codex TOML. Lift both to atomicWriteText/atomicWriteJson from shared. HIGHEST-priority P1 atomic migration. After this lands, TASK-017 only needs to focus on path logic.",
+  "scope": "Layer 2 P0 (priority-elevated from P1) — must precede TASK-017",
+  "files": [
+    { "path": "packages/cli/src/config/json.ts", "change": "Line 59: replace raw fs.writeFile with atomicWriteJson from shared. Add tests to ensure existing config writers still emit identical content." },
+    { "path": "packages/cli/src/config/toml.ts", "change": "Line 115: replace raw fs.writeFile with atomicWriteText (TOML serialized first) from shared." },
+    { "path": "packages/cli/__tests__/config-atomic.test.ts", "change": "NEW: tests asserting (a) no .tmp file leftover after success, (b) target file not present until rename completes, (c) crash mid-write leaves .tmp not target" }
+  ],
+  "convergence": {
+    "criteria": [
+      "json.ts and toml.ts writes go through shared atomicWriteText/atomicWriteJson",
+      "Existing client config writers produce byte-identical output (no formatting drift)",
+      "Atomic guarantee tests pass (tmp + rename verified)",
+      "Existing pnpm test green"
+    ]
+  },
+  "depends_on": ["TASK-001"],
+  "metadata": {
+    "layer": 2,
+    "release_tag": "1.8.0",
+    "recommendation_id": "R7.6",
+    "branch": "release/v1.8.0-stabilization",
+    "priority": "P0",
+    "estimated_loc": 30,
+    "sequencing_note": "MUST precede TASK-017 (Q2 grill-me decision)"
+  }
+}

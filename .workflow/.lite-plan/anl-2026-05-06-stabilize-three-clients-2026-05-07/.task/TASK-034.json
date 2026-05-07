@@ -1,0 +1,27 @@
+{
+  "id": "TASK-034",
+  "title": "Pre-existing CLAUDE.md / AGENTS.md detection (info-level)",
+  "description": "Per R25 (D30 reclassified to P1): serve startup info-level check for pre-existing CLAUDE.md or AGENTS.md root files. Prevents user confusion between Fabric's MCP-resource bootstrap and any existing rule files they may have.",
+  "scope": "Layer 2 P1 — startup awareness check",
+  "files": [
+    { "path": "packages/server/src/index.ts", "change": "On startStdioServer: check for project root CLAUDE.md and AGENTS.md; if present, log info to stderr (non-blocking) explaining the relationship to .fabric/bootstrap/README.md" },
+    { "path": "packages/server/src/services/doctor.ts", "change": "Add complementary doctor info-level check `preexisting_root_claude_md` for visibility outside startup" },
+    { "path": "packages/server/__tests__/preexisting-root.test.ts", "change": "NEW: test that startup logs info message when root files present; doctor surfaces same" }
+  ],
+  "convergence": {
+    "criteria": [
+      "Startup detects and logs root CLAUDE.md / AGENTS.md if present",
+      "Doctor surfaces same info-level check",
+      "Tests pass"
+    ]
+  },
+  "depends_on": [],
+  "metadata": {
+    "layer": 2,
+    "release_tag": "1.8.0",
+    "recommendation_id": "R25",
+    "branch": "release/v1.8.0-stabilization",
+    "priority": "P1",
+    "estimated_loc": 30
+  }
+}

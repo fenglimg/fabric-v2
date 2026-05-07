@@ -1,0 +1,28 @@
+{
+  "id": "TASK-042",
+  "title": "[Release] 1.8.0 mega-PR + tag",
+  "description": "After ALL 1.8.0 tasks (TASK-001 through TASK-036, plus TASK-041 docs) land on release/v1.8.0-stabilization with commit-per-task history, open mega-PR to main with comprehensive description summarizing per-Layer changes. After merge: tag v1.8.0; bump packages/*/package.json + root to 1.8.0; publish.",
+  "scope": "Layer 3 release — 1.8.0 ship",
+  "files": [
+    { "path": "(git operations)", "change": "git push origin release/v1.8.0-stabilization; gh pr create --base main --title '1.8.0 stabilization release' --body (summary of all Layer 0/1/2 changes + ~950 LoC + 2 release model)" },
+    { "path": "package.json + packages/*/package.json", "change": "Bump versions to 1.8.0" },
+    { "path": "CHANGELOG.md", "change": "Move unreleased to 1.8.0 with date stamp" }
+  ],
+  "convergence": {
+    "criteria": [
+      "Mega-PR opened with clear by-Layer description",
+      "All 36 1.8.0 task commits visible in commit history",
+      "After PR merge: tag v1.8.0; packages published",
+      "CHANGELOG 1.8.0 dated"
+    ]
+  },
+  "depends_on": ["TASK-013", "TASK-014", "TASK-015", "TASK-018", "TASK-019", "TASK-021", "TASK-022", "TASK-023", "TASK-026", "TASK-027", "TASK-028", "TASK-029", "TASK-030", "TASK-032", "TASK-034", "TASK-035", "TASK-036", "TASK-041"],
+  "metadata": {
+    "layer": 3,
+    "release_tag": "1.8.0",
+    "recommendation_id": "R-RELEASE-1.8.0",
+    "branch": "release/v1.8.0-stabilization",
+    "priority": "P0",
+    "estimated_loc": 0
+  }
+}

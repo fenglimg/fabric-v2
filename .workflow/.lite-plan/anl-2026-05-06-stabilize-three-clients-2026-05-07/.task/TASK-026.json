@@ -1,0 +1,26 @@
+{
+  "id": "TASK-026",
+  "title": "Route writeDefaultBootstrap → buildFabricBootstrapGuide",
+  "description": "doctor.ts:665-669 writeDefaultBootstrap is a 70-byte stub; doctor --fix produces an inferior bootstrap vs fab init's buildFabricBootstrapGuide. One-line fix: route to the same builder.",
+  "scope": "Layer 2 P1 — UX consistency between init and doctor --fix",
+  "files": [
+    { "path": "packages/server/src/services/doctor.ts", "change": "Lines 665-669: writeDefaultBootstrap calls buildFabricBootstrapGuide(projectRoot) instead of inline 70-byte template" },
+    { "path": "packages/server/src/services/doctor.test.ts", "change": "Add test: doctor --fix bootstrap output equals fab init bootstrap output" }
+  ],
+  "convergence": {
+    "criteria": [
+      "writeDefaultBootstrap routes to buildFabricBootstrapGuide",
+      "Bootstrap byte-equality test passes (doctor --fix == fab init)",
+      "Existing tests pass"
+    ]
+  },
+  "depends_on": [],
+  "metadata": {
+    "layer": 2,
+    "release_tag": "1.8.0",
+    "recommendation_id": "R9",
+    "branch": "release/v1.8.0-stabilization",
+    "priority": "P1",
+    "estimated_loc": 5
+  }
+}

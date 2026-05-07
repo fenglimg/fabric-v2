@@ -1,0 +1,31 @@
+{
+  "id": "TASK-027",
+  "title": "MCP Payload Guard with typed errors (R12 + R11.4)",
+  "description": "Per Gemini G8 + D28: MCP-first stabilization needs payload size enforcement. New shared/node/mcp-payload-guard.ts with 16KB warn / 64KB hard limit thresholds, configurable via fabric.config.json.mcpPayloadLimits. Hard limit triggers MCPError (from FabricError taxonomy, R11.4). Particularly relevant for fab_get_rule_sections if a section is large.",
+  "scope": "Layer 2 P1 — closes 'tool blows up client context' failure mode + uses MCPError",
+  "files": [
+    { "path": "packages/shared/src/node/mcp-payload-guard.ts", "change": "NEW: enforcePayloadLimit(payload, { warnAt, hardAt }); on warn → emit ledger event + add response.warnings; on hard → throw MCPError" },
+    { "path": "packages/server/src/tools/*.ts", "change": "Wrap response build with enforcePayloadLimit (via middleware or explicit call site at handler tail)" },
+    { "path": "schemas/fabric-config.json", "change": "Add mcpPayloadLimits: { warnBytes: 16384 (default), hardBytes: 65536 (default) }" },
+    { "path": "packages/server/src/config-loader.ts", "change": "Pass config.mcpPayloadLimits to tool handlers" },
+    { "path": "packages/shared/__tests__/mcp-payload-guard.test.ts", "change": "NEW: warn at 16KB / hard error at 64KB / config override / MCPError shape" }
+  ],
+  "convergence": {
+    "criteria": [
+      "Payload <16KB passes silently",
+      "Payload 16-64KB returns response with warning (no failure)",
+      "Payload >64KB throws MCPError with actionHint",
+      "fabric.config.json.mcpPayloadLimits override works",
+      "Tests pass in same commit"
+    ]
+  },
+  "depends_on": ["TASK-002"],
+  "metadata": {
+    "layer": 2,
+    "release_tag": "1.8.0",
+    "recommendation_id": "R12+R11.4",
+    "branch": "release/v1.8.0-stabilization",
+    "priority": "P1",
+    "estimated_loc": 90
+  }
+}

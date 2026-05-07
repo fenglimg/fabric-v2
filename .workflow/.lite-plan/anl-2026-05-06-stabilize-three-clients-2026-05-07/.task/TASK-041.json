@@ -1,0 +1,26 @@
+{
+  "id": "TASK-041",
+  "title": "[Release] Fill migration-1.8.md remaining sections",
+  "description": "Final content for docs/migration-1.8.md after all 1.8.0 P0 + P1 tasks complete. Section 1 was filled by TASK-037; this task fills Sections 2 (配置迁移 from R5/R7), 3 (--reapply 行为 from R17), 4 (doctor 新检查 from R5/R28/R20/R15/R16/R25), 5 FAQ. CHANGELOG 1.8.0 entry comprehensive.",
+  "scope": "Layer 3 release — 1.8.0 documentation",
+  "files": [
+    { "path": "docs/migration-1.8.md", "change": "Fill Section 2 (Claude .mcp.json migration + clientPaths removal); Section 3 (--reapply preservation behavior change); Section 4 (list ALL new doctor checks: mcp_config_in_wrong_file, event_ledger_partial_write, meta_manually_diverged, meta_reconciled, rules_dir_unindexed, stable_id_collision, claude_skill_legacy_path, preexisting_root_claude_md); Section 5 FAQ (init_context_missing, signal handler behavior, MCP payload limits)" },
+    { "path": "CHANGELOG.md", "change": "1.8.0 entry: comprehensive Added/Changed/Deprecated/Removed/Fixed/Security per keep-a-changelog" }
+  ],
+  "convergence": {
+    "criteria": [
+      "All 5 migration-1.8.md sections complete",
+      "CHANGELOG 1.8.0 entry covers every PR landed",
+      "Migration doc verified by reading + cross-checking with task list"
+    ]
+  },
+  "depends_on": ["TASK-017", "TASK-020", "TASK-024", "TASK-031", "TASK-033"],
+  "metadata": {
+    "layer": 3,
+    "release_tag": "1.8.0",
+    "recommendation_id": "R-DOCS-FINAL",
+    "branch": "release/v1.8.0-stabilization",
+    "priority": "P0",
+    "estimated_loc": 200
+  }
+}

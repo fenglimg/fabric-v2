@@ -1,0 +1,28 @@
+{
+  "id": "TASK-028",
+  "title": "Knip dead-code detector (zero-baseline, lint-step)",
+  "description": "Per D35: knip.config.ts with zero baseline (no exceptions); integrated into pnpm lint script alongside ESLint. After TASK-025 dead code removal, knip should report zero issues; this task adds the gate to prevent future drift.",
+  "scope": "Layer 2 P1 — CI gate against dead code reintroduction",
+  "files": [
+    { "path": "knip.config.ts", "change": "NEW: monorepo workspaces config; entry points = packages/cli/src/index.ts + packages/server/src/index.ts; ignored deps minimal; exclude __tests__/ from unused detection" },
+    { "path": "package.json", "change": "Add knip to devDependencies; lint script: 'eslint . && knip --strict'" },
+    { "path": "packages/*/package.json", "change": "Per-workspace exports map verified (knip uses these)" }
+  ],
+  "convergence": {
+    "criteria": [
+      "knip --strict exits 0 against current codebase (after TASK-025)",
+      "pnpm lint runs both eslint and knip",
+      "Adding a deliberate unused export fails knip in CI",
+      "No false positives from test fixtures"
+    ]
+  },
+  "depends_on": ["TASK-025"],
+  "metadata": {
+    "layer": 2,
+    "release_tag": "1.8.0",
+    "recommendation_id": "R13",
+    "branch": "release/v1.8.0-stabilization",
+    "priority": "P1",
+    "estimated_loc": 30
+  }
+}

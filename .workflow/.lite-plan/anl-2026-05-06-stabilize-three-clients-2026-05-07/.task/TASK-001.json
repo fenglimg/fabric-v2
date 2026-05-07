@@ -1,0 +1,31 @@
+{
+  "id": "TASK-001",
+  "title": "Build shared atomic-write helper module",
+  "description": "Foundational primitive — create packages/shared/src/node/atomic-write.ts exporting atomicWriteText, atomicWriteJson, createLedgerWriteQueue. Hand-rolled (no `atomically` npm dep). atomicWriteText uses tmp + rename pattern with optional fdatasync flag (default false, R3 signal handler will set true on shutdown). createLedgerWriteQueue returns path-keyed in-process Promise chain serializer. CLI re-exports retain backward compat by re-exporting from server/services/_shared.ts.",
+  "scope": "Layer 0 infrastructure — atomic-write primitive consumed by all subsequent durability work",
+  "files": [
+    { "path": "packages/shared/src/node/atomic-write.ts", "change": "NEW: export atomicWriteText(path, content, { fsync? }), atomicWriteJson(path, value, { fsync?, indent? }), createLedgerWriteQueue() returning { append(path, line) } via path-keyed Promise chain. Tmp suffix = .<pid>.<ts>.<rand4>.tmp for crash-resume safety." },
+    { "path": "packages/shared/package.json", "change": "Add ./node/atomic-write to exports map alongside existing detector path" },
+    { "path": "packages/server/src/services/_shared.ts", "change": "Re-export atomicWriteText from @fenglimg/fabric-shared/node/atomic-write to preserve backward compat for existing imports" },
+    { "path": "packages/shared/__tests__/atomic-write.test.ts", "change": "NEW: unit tests covering happy path / fsync flag / queue serialization / queue rejection-recovery / tmp cleanup on rename success" }
+  ],
+  "convergence": {
+    "criteria": [
+      "atomicWriteText creates tmp file with .<pid>.<ts>.<rand4>.tmp suffix and atomically renames to target",
+      "atomicWriteText with fsync:true calls fdatasync before rename; default fsync:false skips it",
+      "createLedgerWriteQueue serializes appends per-path; rejection of one append does not poison subsequent appends to same path",
+      "atomicWriteJson is a thin wrapper with configurable indent (default 2)",
+      "All new tests pass via vitest in same commit",
+      "Existing pnpm test green (no regression in current atomicWriteText callers)"
+    ]
+  },
+  "depends_on": [],
+  "metadata": {
+    "layer": 0,
+    "release_tag": "1.8.0",
+    "recommendation_id": "R7.1",
+    "branch": "release/v1.8.0-stabilization",
+    "priority": "P0",
+    "estimated_loc": 80
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "id": "TASK-033",
+  "title": "SKILL derivation regen + Claude legacy path migration (R20.4 + R20.6)",
+  "description": "After TASK-003/004/005 land the canonical SKILL pipeline: (1) regenerate the two SKILL.md files via pnpm build:skills (committed artifacts); (2) update init.ts:494 to write to .claude/skills/fabric-init/SKILL.md (was agents-md-init/); (3) NEW doctor check `claude_skill_legacy_path` detects existing .claude/skills/agents-md-init/SKILL.md without new fabric-init/ → --fix renames (preserves user-edited content), writes claude_skill_path_migrated ledger event.",
+  "scope": "Layer 2 P1 — SKILL parity + legacy path migration",
+  "files": [
+    { "path": "packages/cli/templates/claude-skills/fabric-init/SKILL.md", "change": "Regenerated via pnpm build:skills (already created in TASK-004)" },
+    { "path": "packages/cli/templates/codex-skills/fabric-init/SKILL.md", "change": "Regenerated full parity content (already in TASK-004)" },
+    { "path": "packages/cli/src/commands/init.ts", "change": "Lines 242, 245, 494-495: update CLAUDE_INIT_SKILL_TEMPLATE path constant + claudeSkillPath computation to fabric-init (was agents-md-init)" },
+    { "path": "packages/server/src/services/doctor.ts", "change": "NEW fixable check `claude_skill_legacy_path`: detects .claude/skills/agents-md-init/SKILL.md exists AND .claude/skills/fabric-init/SKILL.md does NOT; --fix mv preserves content + writes claude_skill_path_migrated ledger event" },
+    { "path": "packages/server/src/services/doctor.test.ts", "change": "Tests: legacy path with edits preserved; new path supersedes; ledger event written" }
+  ],
+  "convergence": {
+    "criteria": [
+      "init.ts writes Claude SKILL to fabric-init/ path",
+      "Doctor detects legacy path correctly",
+      "--fix renames preserving user content",
+      "claude_skill_path_migrated ledger event written",
+      "Tests pass in same commit"
+    ]
+  },
+  "depends_on": ["TASK-004"],
+  "metadata": {
+    "layer": 2,
+    "release_tag": "1.8.0",
+    "recommendation_id": "R20.4+R20.6",
+    "branch": "release/v1.8.0-stabilization",
+    "priority": "P1",
+    "estimated_loc": 70
+  }
+}

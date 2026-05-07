@@ -1,0 +1,31 @@
+{
+  "id": "TASK-013",
+  "title": "Lift SSE tail-tolerance to readEventLedger; doctor partial-write fixable",
+  "description": "events.ts:363-401 SSE incremental reader already handles trailing partial line via state.eventLedgerRemainder. Lift this pattern into the full readEventLedger path (currently silently drops bad lines). Introduce LedgerWarning[] consumed by doctor. New fixable doctor check `event_ledger_partial_write` calls truncateLedgerToLastNewline helper to recover. Per pressure-pass refinement (Round 2): no hard fsync per append — that's R3 signal handler's job.",
+  "scope": "Layer 2 P0 — ledger durability consumer task",
+  "files": [
+    { "path": "packages/server/src/services/event-ledger.ts", "change": "Refactor readEventLedger to mirror events.ts:363-401 tail-tolerance: track remainder via streaming line buffer; if final partial line exists, surface as LedgerWarning instead of silent drop" },
+    { "path": "packages/server/src/services/event-ledger.ts", "change": "Add export type LedgerWarning = { kind: 'partial_write_at_tail', byte_offset, byte_length, snippet_first_120 }" },
+    { "path": "packages/server/src/services/doctor.ts", "change": "Add fixable check `event_ledger_partial_write` consuming LedgerWarning[]; --fix calls truncateLedgerToLastNewline (renames truncated bytes to .corrupted file before truncate for forensics)" },
+    { "path": "packages/server/src/services/event-ledger.ts", "change": "Add export truncateLedgerToLastNewline(path) helper" },
+    { "path": "packages/server/src/services/event-ledger.test.ts", "change": "Add tests: trailing partial line surfaces warning; truncate helper preserves bytes to .corrupted; doctor check fires" }
+  ],
+  "convergence": {
+    "criteria": [
+      "readEventLedger never silently drops trailing partial lines",
+      "LedgerWarning[] returned alongside parsed events",
+      "doctor `event_ledger_partial_write` check is fixable; --fix truncates and writes event_ledger_truncated ledger event with byte range",
+      "Truncated bytes preserved as <ledger>.corrupted.<ts> for forensics",
+      "Tests pass in same commit"
+    ]
+  },
+  "depends_on": ["TASK-007"],
+  "metadata": {
+    "layer": 2,
+    "release_tag": "1.8.0",
+    "recommendation_id": "R2",
+    "branch": "release/v1.8.0-stabilization",
+    "priority": "P0",
+    "estimated_loc": 120
+  }
+}

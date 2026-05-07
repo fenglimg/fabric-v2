@@ -1,0 +1,26 @@
+{
+  "id": "TASK-031",
+  "title": "Doctor check: stable_id_collision",
+  "description": "F20: rule-meta-builder.ts:372-382 silently overwrites duplicate stable_ids via Map.set last-wins. Add doctor check that detects two .md files declaring same `<!-- fab:rule-id X -->` and emits structured warning naming both file paths.",
+  "scope": "Layer 2 P1 — doctor extension for non-deterministic rule-id collision",
+  "files": [
+    { "path": "packages/server/src/services/doctor.ts", "change": "NEW non-fixable check `stable_id_collision`: scan rules dir; find duplicate stable_ids; warning includes ALL file paths declaring same id + action_hint 'Remove the duplicate from one file'" },
+    { "path": "packages/server/src/services/doctor.test.ts", "change": "Test: 2 .md files with same fab:rule-id → check fires with both paths" }
+  ],
+  "convergence": {
+    "criteria": [
+      "Duplicate stable_ids detected and reported with file paths",
+      "Action hint clear about manual resolution",
+      "Tests pass"
+    ]
+  },
+  "depends_on": [],
+  "metadata": {
+    "layer": 2,
+    "release_tag": "1.8.0",
+    "recommendation_id": "R16",
+    "branch": "release/v1.8.0-stabilization",
+    "priority": "P1",
+    "estimated_loc": 25
+  }
+}

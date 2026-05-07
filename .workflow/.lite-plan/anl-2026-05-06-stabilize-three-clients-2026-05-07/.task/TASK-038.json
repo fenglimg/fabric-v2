@@ -1,0 +1,27 @@
+{
+  "id": "TASK-038",
+  "title": "[1.7.1] Doctor section headers translated via t()",
+  "description": "F23: cli/doctor.ts:72-74 hardcoded English section headers ('Fixable errors:', 'Manual errors:', 'Warnings:') break zh-CN output. Wrap in t() via existing i18n helper.",
+  "scope": "Layer 2 (1.7.1 batch) — i18n consistency",
+  "files": [
+    { "path": "packages/cli/src/commands/doctor.ts", "change": "Lines 72-74: wrap section headers with t() from existing i18n module; add 3 keys to en + zh-CN translations" },
+    { "path": "packages/cli/src/i18n/en.ts", "change": "Add doctor.section.fixable / doctor.section.manual / doctor.section.warnings keys" },
+    { "path": "packages/cli/src/i18n/zh-CN.ts", "change": "Add Chinese translations for the 3 new keys" }
+  ],
+  "convergence": {
+    "criteria": [
+      "Doctor section headers go through t()",
+      "zh-CN run shows fully Chinese output (no jarring English)",
+      "Existing i18n tests pass"
+    ]
+  },
+  "depends_on": [],
+  "metadata": {
+    "layer": 2,
+    "release_tag": "1.7.1",
+    "recommendation_id": "R18",
+    "branch": "release/v1.8.0-stabilization (cherry-pick to release/v1.7.1)",
+    "priority": "P0",
+    "estimated_loc": 15
+  }
+}

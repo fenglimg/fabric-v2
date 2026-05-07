@@ -1,0 +1,31 @@
+{
+  "id": "TASK-037",
+  "title": "[1.7.1] Deprecation warnings for retired clientPaths",
+  "description": "1.7.1 release task. Doctor warns when fabric.config.json has clientPaths.{windsurf,rooCode,geminiCLI} keys present; --fix auto-strips them; writes legacy_client_path_present ledger event. Zod schema preserves passthrough() so users don't see hard validation errors. CHANGELOG 1.7.1 entry. docs/migration-1.8.md Section 1 (客户端范围变更) filled. NO code removal yet — that's TASK-012 in 1.8.0.",
+  "scope": "Layer 2 (1.7.1 batch) — deprecation announcement",
+  "files": [
+    { "path": "packages/server/src/services/doctor.ts", "change": "NEW fixable check `legacy_client_path_present`: detect clientPaths.{windsurf,rooCode,geminiCLI}; --fix removes keys; writes legacy_client_path_present ledger event" },
+    { "path": "schemas/fabric-config.json", "change": "Verify zod passthrough() in place (no validation errors on legacy keys)" },
+    { "path": "CHANGELOG.md", "change": "1.7.1 unreleased section: Deprecated entries for windsurf, rooCode, geminiCLI" },
+    { "path": "docs/migration-1.8.md", "change": "Fill Section 1 (客户端范围变更): list deprecated clients + migration commands + timeline (1.7.1 deprecation → 1.8.0 removal)" },
+    { "path": "packages/server/src/services/doctor.test.ts", "change": "Test: doctor warns on legacy clientPaths; --fix removes them; ledger event written" }
+  ],
+  "convergence": {
+    "criteria": [
+      "Legacy clientPaths trigger doctor warning",
+      "--fix removes them and writes ledger event",
+      "User configs with legacy keys still parse (passthrough verified)",
+      "CHANGELOG and migration doc updated",
+      "Tests pass in same commit"
+    ]
+  },
+  "depends_on": ["TASK-006"],
+  "metadata": {
+    "layer": 2,
+    "release_tag": "1.7.1",
+    "recommendation_id": "R0",
+    "branch": "release/v1.8.0-stabilization (cherry-pick to release/v1.7.1)",
+    "priority": "P0",
+    "estimated_loc": 40
+  }
+}

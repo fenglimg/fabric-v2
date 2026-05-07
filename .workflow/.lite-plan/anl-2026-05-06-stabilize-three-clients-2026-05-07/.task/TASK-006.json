@@ -1,0 +1,26 @@
+{
+  "id": "TASK-006",
+  "title": "Migration document skeleton (docs/migration-1.8.md)",
+  "description": "Create skeleton with 5 fixed sections to be filled progressively as 1.7.1 + 1.8.0 work lands. Section names match Q11 resolution exactly. R0 (1.7.1 deprecation task) fills Section 1; R5 fills Section 2; R17 fills Section 3; R28+R20+R5 doctor checks fill Section 4; team triage fills Section 5.",
+  "scope": "Layer 0 infrastructure — documentation pipeline",
+  "files": [
+    { "path": "docs/migration-1.8.md", "change": "NEW: skeleton with H1 + 5 H2 sections (客户端范围变更 / 配置迁移 / --reapply 行为 / doctor 新检查 / FAQ) + 'TBD' placeholders + frontmatter (version 1.8.0, audience: existing 1.7.x users)" },
+    { "path": "CHANGELOG.md", "change": "Add unreleased section per keep-a-changelog format with subsections Added / Changed / Deprecated / Removed / Fixed / Security" }
+  ],
+  "convergence": {
+    "criteria": [
+      "docs/migration-1.8.md exists with all 5 fixed section headers",
+      "CHANGELOG.md has unreleased section in keep-a-changelog format",
+      "Skeleton placeholders clearly marked TBD for each section"
+    ]
+  },
+  "depends_on": [],
+  "metadata": {
+    "layer": 0,
+    "release_tag": "1.8.0",
+    "recommendation_id": "R-DOCS",
+    "branch": "release/v1.8.0-stabilization",
+    "priority": "P0",
+    "estimated_loc": 60
+  }
+}

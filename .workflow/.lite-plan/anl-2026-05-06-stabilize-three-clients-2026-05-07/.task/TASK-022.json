@@ -1,0 +1,28 @@
+{
+  "id": "TASK-022",
+  "title": "Startup full rule consistency scan (R28 consumer)",
+  "description": "Per D24: serve startup runs full scan of .fabric/rules/ → hash vs meta → auto-repair all diffs → write meta_reconciled_on_startup ledger event. This makes rules added while serve was offline visible immediately on startup; doctor no longer required for first-use freshness.",
+  "scope": "Layer 2 P0 — R28 consumer at startup",
+  "files": [
+    { "path": "packages/server/src/index.ts", "change": "After startStdioServer initialization (around lines 92-97 area, before signal handler install): await ensureRulesFresh(projectRoot, { mode: 'full' })" },
+    { "path": "packages/server/src/services/rule-sync.ts", "change": "On full scan, write ledger event meta_reconciled_on_startup { reconciled_files: [], duration_ms }" },
+    { "path": "packages/server/__tests__/startup-rule-sync.test.ts", "change": "NEW: spawn server with rule files added since last meta build; assert meta_reconciled_on_startup event written; assert meta reflects new rules" }
+  ],
+  "convergence": {
+    "criteria": [
+      "Server startup awaits full rule sync before accepting requests",
+      "meta_reconciled_on_startup ledger event written with reconciled file list",
+      "Test verifies offline-added rules visible after server restart",
+      "Startup time impact <500ms for 100-rule project (acceptance threshold)"
+    ]
+  },
+  "depends_on": ["TASK-011"],
+  "metadata": {
+    "layer": 2,
+    "release_tag": "1.8.0",
+    "recommendation_id": "R28.3",
+    "branch": "release/v1.8.0-stabilization",
+    "priority": "P0",
+    "estimated_loc": 30
+  }
+}

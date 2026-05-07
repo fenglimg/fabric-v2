@@ -1,0 +1,36 @@
+{
+  "id": "TASK-018",
+  "title": "Export tool schemas + per-tool annotations (PAIRED COMMIT per Gemini G6)",
+  "description": "Per Gemini G6: schema golden snapshots before annotations = 100% test failure on annotation add. MUST ship snapshot tests + annotations in SAME commit. Two paired sub-tasks combined: (1) Lift inline Zod input/output schemas from tools/{plan-context,get-rules,rule-sections}.ts to packages/shared/src/schemas/api-contracts.ts; per-tool golden snapshot at __snapshots__/tool-contracts/. (2) Add tool annotations: readOnlyHint / idempotentHint / destructiveHint / openWorldHint / title.",
+  "scope": "Layer 2 P0 — closes #1 MCP failure category (38% schema drift) + spec compliance for annotations",
+  "files": [
+    { "path": "packages/shared/src/schemas/api-contracts.ts", "change": "NEW: barrel export of plan-context input/output schema, get-rules input/output schema, rule-sections input/output schema (lifted from inline)" },
+    { "path": "packages/server/src/tools/plan-context.ts", "change": "Import from shared/schemas/api-contracts (no inline z.object). Add server.registerTool annotations: readOnlyHint:true, idempotentHint:true, destructiveHint:false, openWorldHint:false, title:'Plan rule context'" },
+    { "path": "packages/server/src/tools/get-rules.ts", "change": "Same pattern: shared schema + annotations" },
+    { "path": "packages/server/src/tools/rule-sections.ts", "change": "Same pattern: shared schema + annotations" },
+    { "path": "packages/server/__tests__/__snapshots__/tool-contracts/plan-context.snap", "change": "NEW: golden snapshot of input/output schema (JSON Schema form) + annotations" },
+    { "path": "packages/server/__tests__/__snapshots__/tool-contracts/get-rules.snap", "change": "NEW: golden snapshot" },
+    { "path": "packages/server/__tests__/__snapshots__/tool-contracts/rule-sections.snap", "change": "NEW: golden snapshot" },
+    { "path": "packages/server/__tests__/tool-contracts.test.ts", "change": "NEW: per-tool snapshot tests using vitest toMatchSnapshot; failure message includes 'pnpm test -u' hint" }
+  ],
+  "convergence": {
+    "criteria": [
+      "All 3 tool schemas exported from packages/shared/src/schemas/api-contracts.ts",
+      "All 3 tools register with full annotation set (readOnlyHint, idempotentHint, destructiveHint, openWorldHint, title)",
+      "All 3 golden snapshots committed; toMatchSnapshot test passes",
+      "Snapshot test failure message includes pnpm test -u hint",
+      "Tests + annotations land in SAME commit (Gemini G6)",
+      "Existing tool registration tests pass"
+    ]
+  },
+  "depends_on": ["TASK-012"],
+  "metadata": {
+    "layer": 2,
+    "release_tag": "1.8.0",
+    "recommendation_id": "R6+R10",
+    "branch": "release/v1.8.0-stabilization",
+    "priority": "P0",
+    "estimated_loc": 250,
+    "commit_pairing": "MUST ship same commit (Gemini G6 — avoid 100% snapshot churn)"
+  }
+}
