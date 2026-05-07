@@ -50,4 +50,6 @@ TBD — 待 TASK-031（stable_id_collision）/ TASK-024（rules consistency）/ 
 
 ## 5. FAQ
 
-TBD — 待团队 triage 完成。
+**Q: Doctor reports `init_context_missing`. How do I fix this?**
+
+A: Initialization context is created by running the `fabric-init` SKILL in your AI client (Claude Code or Codex CLI). The skill creates `.fabric/agents.meta.json` and the rule node tree. After running it once, doctor will pass.

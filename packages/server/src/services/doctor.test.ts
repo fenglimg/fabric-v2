@@ -579,6 +579,20 @@ describe("runDoctorReport", () => {
     }
   });
 
+  it("TASK-039: init_context_missing has actionHint pointing to fabric-init skill", async () => {
+    const target = createProject("doctor-init-context-hint");
+    writeFile("package.json", JSON.stringify({ name: "doctor-init-context-hint", dependencies: { vite: "^7.0.0" } }, null, 2), target);
+    writeFile("src/main.ts", "export const boot = true;\n", target);
+
+    const report = await runDoctorReport(target);
+
+    const initCheck = report.checks.find((c) => c.code === "init_context_missing");
+    expect(initCheck).toBeDefined();
+    expect(initCheck?.actionHint).toBeTruthy();
+    expect(initCheck?.actionHint).toContain("fabric-init");
+    expect(initCheck?.actionHint).toContain("Claude Code");
+  });
+
   it("TASK-037: legacy_client_path_present: detects deprecated clientPaths keys in fabric.config.json", async () => {
     const target = createInitializedProject("doctor-legacy-client-detect");
     await writeRuleMeta(target, { source: "doctor_fix" });

@@ -677,7 +677,7 @@ function createForensicCheck(
 
 function createInitContextCheck(initContext: InitContextInspection): DoctorCheck {
   if (!initContext.exists) {
-    return issueCheck("Init context", "error", "manual_error", "init_context_missing", initContext.error ?? ".fabric/init-context.json is missing.", "Run `fab init` to regenerate .fabric/init-context.json.");
+    return issueCheck("Init context", "error", "manual_error", "init_context_missing", initContext.error ?? ".fabric/init-context.json is missing.", "Run the fabric-init skill in Claude Code or Codex CLI to complete initialization. See docs/migration-1.8.md FAQ.");
   }
   if (!initContext.validJson) {
     return issueCheck("Init context", "error", "manual_error", "init_context_invalid", initContext.error ?? ".fabric/init-context.json is invalid.", "Delete .fabric/init-context.json and run `fab init` to regenerate it.");
