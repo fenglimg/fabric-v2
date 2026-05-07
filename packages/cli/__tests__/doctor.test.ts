@@ -12,6 +12,7 @@ afterEach(() => {
 describe("doctor command", () => {
   it("prints JSON reports and exits non-zero on errors", async () => {
     vi.doMock("@fenglimg/fabric-server", () => ({
+      checkLockOrThrow: vi.fn(),
       runDoctorReport: vi.fn().mockResolvedValue(createReport("error")),
       runDoctorFix: vi.fn(),
     }));
@@ -38,6 +39,7 @@ describe("doctor command", () => {
 
   it("treats warnings as failures in strict mode", async () => {
     vi.doMock("@fenglimg/fabric-server", () => ({
+      checkLockOrThrow: vi.fn(),
       runDoctorReport: vi.fn().mockResolvedValue(createReport("warn")),
       runDoctorFix: vi.fn(),
     }));
@@ -64,6 +66,7 @@ describe("doctor command", () => {
 
   it("runs doctor --fix and prints deterministic fix summary", async () => {
     vi.doMock("@fenglimg/fabric-server", () => ({
+      checkLockOrThrow: vi.fn(),
       runDoctorReport: vi.fn(),
       runDoctorFix: vi.fn().mockResolvedValue({
         changed: true,

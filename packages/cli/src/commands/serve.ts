@@ -1,6 +1,6 @@
 import { defineCommand } from "citty";
 
-import { startHttpServer } from "@fenglimg/fabric-server";
+import { acquireLock, releaseLock, startHttpServer } from "@fenglimg/fabric-server";
 
 import { paint, symbol } from "../colors.js";
 import { createDebugLogger, resolveDevMode } from "../dev-mode.js";
@@ -13,6 +13,7 @@ type ServeArgs = {
   target?: string;
   host?: string;
   debug?: boolean;
+  force?: boolean;
 };
 
 export const serveCommand = defineCommand({
@@ -40,6 +41,11 @@ export const serveCommand = defineCommand({
       description: t("cli.serve.args.debug.description"),
       default: false,
     },
+    force: {
+      type: "boolean",
+      description: t("cli.serve.args.force.description"),
+      default: false,
+    },
   },
   async run({ args }: { args: ServeArgs }) {
     const workspaceRoot = process.cwd();
@@ -49,6 +55,12 @@ export const serveCommand = defineCommand({
     const requestedHost = parseHost(args.host);
     const authToken = readAuthTokenFromEnv();
     const host = validateHost(requestedHost, authToken);
+    const projectRoot = resolution.target;
+
+    // Acquire serve lock — throws ServeLockHeldError if another live serve is running
+    acquireLock(projectRoot, { force: args.force });
+    // Backstop: release lock on process exit (handles normal + SIGTERM/SIGINT cleanup)
+    process.on("exit", () => { releaseLock(projectRoot); });
 
     logger(`serve target source: ${resolution.source}`);
     for (const step of resolution.chain) {
@@ -58,15 +70,17 @@ export const serveCommand = defineCommand({
     try {
       await startHttpServer({
         port,
-        projectRoot: resolution.target,
+        projectRoot,
         host,
         authToken,
       });
     } catch (error) {
       if (isNodeError(error) && error.code === "EADDRINUSE") {
+        releaseLock(projectRoot);
         throw new Error(t("cli.serve.error.port-in-use", { port: String(port), nextPort: String(port + 1) }));
       }
 
+      releaseLock(projectRoot);
       throw error;
     }
 

@@ -73,6 +73,9 @@ async function collectSnapshots(locale: "en" | "zh-CN") {
   const serveTarget = trackFixture(`fab-i18n-serve-${locale}`);
   vi.resetModules();
   vi.doMock("@fenglimg/fabric-server", () => ({
+    acquireLock: vi.fn(),
+    releaseLock: vi.fn(),
+    checkLockOrThrow: vi.fn(),
     startHttpServer: vi.fn().mockResolvedValue(undefined),
   }));
   const { serveCommand } = await import("../src/commands/serve.ts");

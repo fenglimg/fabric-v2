@@ -63,6 +63,7 @@ export const zhCNMessages: Messages = {
   "cli.doctor.args.fix.description": "修复确定性派生的 Fabric 状态，包括 meta、rule-test index、bootstrap 和 events ledger。",
   "cli.doctor.args.json.description": "以 JSON 输出 doctor 报告。",
   "cli.doctor.args.strict.description": "将 warning 也视为失败。",
+  "cli.doctor.args.force.description": "即使 serve 进程持有锁，也强制运行。",
 
   "cli.hooks.description": "管理 Fabric Git 钩子模板。",
   "cli.hooks.install.description": "安装 Fabric Husky pre-commit 钩子模板。",
@@ -231,6 +232,7 @@ export const zhCNMessages: Messages = {
   "cli.serve.args.target.description":
     "目标项目路径。默认依次使用 CLI 参数、EXTERNAL_FIXTURE_PATH、fabric.config.json、当前目录。",
   "cli.serve.args.debug.description": "将目标解析细节输出到 stderr。",
+  "cli.serve.args.force.description": "即使另一个 serve 进程正在运行，也强制获取 serve 锁。",
   "cli.serve.ready.title": "Fabric 仪表盘",
   "cli.serve.warning.host-fallback": "--host {host} 需要 FABRIC_AUTH_TOKEN；为安全起见已回退到 127.0.0.1",
   "cli.serve.error.port-in-use": "端口 {port} 已被占用，可尝试 --port {nextPort}",

@@ -65,6 +65,7 @@ export const enMessages: Messages = {
   "cli.doctor.args.fix.description": "Repair deterministic derived Fabric state, including meta, rule-test index, bootstrap, and events ledger.",
   "cli.doctor.args.json.description": "Print the doctor report as JSON.",
   "cli.doctor.args.strict.description": "Treat warnings as failures.",
+  "cli.doctor.args.force.description": "Run even if a serve process appears to hold the lock.",
 
   "cli.hooks.description": "Manage Fabric Git hook templates.",
   "cli.hooks.install.description": "Install the Fabric Husky pre-commit hook template.",
@@ -242,6 +243,7 @@ export const enMessages: Messages = {
   "cli.serve.args.target.description":
     "Target project path. Defaults to CLI arg, EXTERNAL_FIXTURE_PATH, fabric.config.json, then cwd.",
   "cli.serve.args.debug.description": "Print target resolution details to stderr.",
+  "cli.serve.args.force.description": "Force-acquire the serve lock even if another serve process appears to be running.",
   "cli.serve.ready.title": "Fabric Dashboard",
   "cli.serve.warning.host-fallback":
     "--host {host} requires FABRIC_AUTH_TOKEN; falling back to 127.0.0.1 for safety",

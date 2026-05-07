@@ -60,6 +60,15 @@ export { AGENTS_MD_RESOURCE_URI } from "./constants.js";
 
 export { flushAndSyncEventLedger } from "./services/event-ledger.js";
 export { createInFlightTracker, type InFlightTracker } from "./services/in-flight-tracker.js";
+export {
+  acquireLock,
+  checkLockOrThrow,
+  readLockState,
+  releaseLock,
+  ServeLockHeldError,
+  type AcquireOptions,
+  type LockState,
+} from "./services/serve-lock.js";
 
 export function createFabricServer(tracker?: InFlightTracker): McpServer {
   const server = new McpServer({

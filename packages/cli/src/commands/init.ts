@@ -8,6 +8,7 @@ import { cancel, confirm, group, intro, isCancel, log, note, outro, select } fro
 import type { AgentsMeta } from "@fenglimg/fabric-shared";
 import { atomicWriteJson } from "@fenglimg/fabric-shared/node/atomic-write";
 import { defineCommand } from "citty";
+import { checkLockOrThrow } from "@fenglimg/fabric-server";
 
 import { buildFabricBootstrapGuide } from "../bootstrap-guide.js";
 import { displayWidth, paint, padEnd } from "../colors.js";
@@ -324,6 +325,12 @@ async function runInitCommand(args: InitArgs): Promise<InitExecutionResult> {
   const logger = createDebugLogger(args.debug);
   const resolution = resolveDevMode(args.target, process.cwd());
   const intent = resolveInitCliIntent(args, resolution.target);
+
+  // Preflight: when --reapply is used, refuse if a serve process is actively holding the lock
+  // unless --force is explicitly passed. Check-only (no lock acquisition) is sufficient here.
+  if (args.reapply === true) {
+    checkLockOrThrow(intent.target, { force: args.force });
+  }
 
   logger(`init target source: ${resolution.source}`);
   for (const step of resolution.chain) {

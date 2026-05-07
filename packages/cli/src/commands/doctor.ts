@@ -1,6 +1,6 @@
 import { defineCommand } from "citty";
 
-import { runDoctorFix, runDoctorReport, type DoctorReport } from "@fenglimg/fabric-server";
+import { checkLockOrThrow, runDoctorFix, runDoctorReport, type DoctorReport } from "@fenglimg/fabric-server";
 
 import { paint, symbol } from "../colors.js";
 import { resolveDevMode } from "../dev-mode.js";
@@ -11,6 +11,7 @@ type DoctorArgs = {
   fix?: boolean;
   json?: boolean;
   strict?: boolean;
+  force?: boolean;
 };
 
 type DoctorIssue = DoctorReport["fixable_errors"][number];
@@ -40,10 +41,19 @@ export const doctorCommand = defineCommand({
       description: t("cli.doctor.args.strict.description"),
       default: false,
     },
+    force: {
+      type: "boolean",
+      description: t("cli.doctor.args.force.description"),
+      default: false,
+    },
   },
   async run({ args }: { args: DoctorArgs }) {
     const workspaceRoot = process.cwd();
     const resolution = resolveDevMode(args.target, workspaceRoot);
+
+    // Preflight: refuse to run when serve is actively holding the lock, unless --force
+    checkLockOrThrow(resolution.target, { force: args.force });
+
     const fixReport = args.fix === true ? await runDoctorFix(resolution.target) : null;
     const report = fixReport?.report ?? await runDoctorReport(resolution.target);
 
