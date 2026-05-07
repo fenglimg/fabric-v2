@@ -1,6 +1,7 @@
 ---
 name: fabric-init
-description: Use this skill when .fabric/forensic.json exists and this repository still needs the remaining Fabric initialization steps.
+description: Use this skill when fab init just completed, when forensic.json was generated, or when the user is asking to initialize AGENTS.md. This skill runs a 3-phase initialization interview, writes .fabric/init-context.json, generates layered AGENTS.md, and updates .fabric/agents.meta.json.
+allowed-tools: ["Read", "Write", "Glob", "Grep", "Bash"]
 ---
 
 # fabric-init — Canonical Skill Source

@@ -6,6 +6,8 @@
     "packages/*"
   ],
   "scripts": {
+    "build:skills": "node --experimental-strip-types scripts/build-skills.ts",
+    "prebuild": "pnpm build:skills",
     "build": "pnpm -r build",
     "dev": "pnpm -r dev",
     "test": "pnpm -r --if-present test",
