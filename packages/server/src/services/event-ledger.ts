@@ -1,13 +1,16 @@
 import { randomUUID } from "node:crypto";
-import { appendFile, readFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 
 import {
   eventLedgerEventSchema,
   type EventLedgerEvent,
   type EventLedgerEventInput,
 } from "@fenglimg/fabric-shared";
+import { createLedgerWriteQueue } from "@fenglimg/fabric-shared/node/atomic-write";
 
 import { ensureParentDirectory, getEventLedgerPath, sha256 } from "./_shared.js";
+
+const ledgerQueue = createLedgerWriteQueue();
 
 export type StoredEventLedgerEvent = EventLedgerEvent;
 
@@ -32,7 +35,7 @@ export async function appendEventLedgerEvent(
   });
 
   await ensureParentDirectory(eventPath);
-  await appendFile(eventPath, `${JSON.stringify(nextEvent)}\n`, "utf8");
+  await ledgerQueue.append(eventPath, JSON.stringify(nextEvent));
 
   return nextEvent;
 }
