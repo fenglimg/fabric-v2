@@ -7,6 +7,9 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 
 import { AGENTS_MD_RESOURCE_URI } from "./constants.js";
+import { resolveProjectRoot } from "./meta-reader.js";
+import { flushAndSyncEventLedger } from "./services/event-ledger.js";
+import { createInFlightTracker, type InFlightTracker } from "./services/in-flight-tracker.js";
 import { registerPlanContext } from "./tools/plan-context.js";
 import { registerRuleSections } from "./tools/rule-sections.js";
 
@@ -55,14 +58,17 @@ function formatError(error: unknown): string {
 
 export { AGENTS_MD_RESOURCE_URI } from "./constants.js";
 
-export function createFabricServer(): McpServer {
+export { flushAndSyncEventLedger } from "./services/event-ledger.js";
+export { createInFlightTracker, type InFlightTracker } from "./services/in-flight-tracker.js";
+
+export function createFabricServer(tracker?: InFlightTracker): McpServer {
   const server = new McpServer({
     name: "fabric-context-server",
     version: __SERVER_VERSION__,
   });
 
-  registerPlanContext(server);
-  registerRuleSections(server);
+  registerPlanContext(server, tracker);
+  registerRuleSections(server, tracker);
 
   server.registerResource(
     "bootstrap README",
@@ -90,10 +96,45 @@ export function createFabricServer(): McpServer {
 }
 
 export async function startStdioServer(): Promise<void> {
-  const server = createFabricServer();
+  const tracker = createInFlightTracker();
+  const projectRoot = resolveProjectRoot();
+  const server = createFabricServer(tracker);
   const transport = new StdioServerTransport();
 
   await server.connect(transport);
+
+  const handledSignals = new Set<NodeJS.Signals>();
+
+  function installShutdownHandler(signal: NodeJS.Signals): void {
+    process.on(signal, () => {
+      void (async () => {
+        if (handledSignals.has(signal)) {
+          // Double-signal of same type: hard exit
+          process.stderr.write(`\n[shutdown] ${signal} repeated — forcing exit(1)\n`);
+          process.exit(1);
+        }
+        handledSignals.add(signal);
+        process.stderr.write(
+          `\n[shutdown] ${signal} received — draining ${tracker.size()} requests (5s deadline)\n`,
+        );
+        const result = await tracker.drain(5000);
+        process.stderr.write(`[shutdown] drained ${result.drained}, timed_out ${result.timed_out}\n`);
+        // fsyncSync AFTER drain, BEFORE close — Gemini G1 ordering requirement
+        flushAndSyncEventLedger(projectRoot);
+        process.stderr.write("[shutdown] ledger fsynced; closing server\n");
+        try {
+          await server.close();
+        } catch {
+          // ignore close errors during shutdown
+        }
+        process.exit(0);
+      })();
+    });
+  }
+
+  installShutdownHandler("SIGINT");
+  installShutdownHandler("SIGTERM");
+  installShutdownHandler("SIGHUP");
 }
 
 export async function startHttpServer(options: {

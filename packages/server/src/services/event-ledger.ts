@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { existsSync, fsyncSync, openSync, closeSync } from "node:fs";
 import { readFile, truncate, writeFile } from "node:fs/promises";
 
 import {
@@ -164,4 +165,23 @@ function createDerivedId(index: number, line: string): string {
 
 function isNodeError(error: unknown): error is NodeJS.ErrnoException {
   return error instanceof Error;
+}
+
+/**
+ * Synchronously fsync the event ledger file to ensure OS page-cache buffers are
+ * flushed to durable storage. Must be called AFTER in-flight drain but BEFORE
+ * server.close() — Gemini G1 ordering requirement.
+ *
+ * Uses sync APIs intentionally: we are inside a signal handler and need
+ * guaranteed completion before process.exit().
+ */
+export function flushAndSyncEventLedger(projectRoot: string): void {
+  const ledgerPath = getEventLedgerPath(projectRoot);
+  if (!existsSync(ledgerPath)) return;
+  const fd = openSync(ledgerPath, "r+");
+  try {
+    fsyncSync(fd);
+  } finally {
+    closeSync(fd);
+  }
 }

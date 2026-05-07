@@ -1,7 +1,10 @@
+import { randomUUID } from "node:crypto";
+
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
 import { resolveProjectRoot } from "../meta-reader.js";
+import { type InFlightTracker } from "../services/in-flight-tracker.js";
 import { planContext, type PlanContextInput } from "../services/plan-context.js";
 
 const inputSchema = {
@@ -101,7 +104,7 @@ const outputSchema = z.object({
   }),
 });
 
-export function registerPlanContext(server: McpServer): void {
+export function registerPlanContext(server: McpServer, tracker?: InFlightTracker): void {
   server.registerTool(
     "fab_plan_context",
     {
@@ -112,21 +115,27 @@ export function registerPlanContext(server: McpServer): void {
       annotations: { readOnlyHint: true },
     },
     async ({ paths, intent, known_tech, detected_entities, client_hash, correlation_id, session_id }: PlanContextInput) => {
-      const projectRoot = resolveProjectRoot();
-      const result = await planContext(projectRoot, {
-        paths,
-        intent,
-        known_tech,
-        detected_entities,
-        client_hash,
-        correlation_id,
-        session_id,
-      });
+      const requestId = randomUUID();
+      tracker?.enter(requestId);
+      try {
+        const projectRoot = resolveProjectRoot();
+        const result = await planContext(projectRoot, {
+          paths,
+          intent,
+          known_tech,
+          detected_entities,
+          client_hash,
+          correlation_id,
+          session_id,
+        });
 
-      return {
-        content: [{ type: "text" as const, text: JSON.stringify(result) }],
-        structuredContent: result,
-      };
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify(result) }],
+          structuredContent: result,
+        };
+      } finally {
+        tracker?.exit(requestId);
+      }
     },
   );
 }

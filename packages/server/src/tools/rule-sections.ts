@@ -1,7 +1,10 @@
+import { randomUUID } from "node:crypto";
+
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
 import { resolveProjectRoot } from "../meta-reader.js";
+import { type InFlightTracker } from "../services/in-flight-tracker.js";
 import {
   getRuleSections,
   RULE_SECTION_NAMES,
@@ -50,7 +53,7 @@ const outputSchema = z.object({
   ),
 });
 
-export function registerRuleSections(server: McpServer): void {
+export function registerRuleSections(server: McpServer, tracker?: InFlightTracker): void {
   server.registerTool(
     "fab_get_rule_sections",
     {
@@ -61,13 +64,19 @@ export function registerRuleSections(server: McpServer): void {
       annotations: { readOnlyHint: true },
     },
     async (input: GetRuleSectionsInput) => {
-      const projectRoot = resolveProjectRoot();
-      const result = await getRuleSections(projectRoot, input);
+      const requestId = randomUUID();
+      tracker?.enter(requestId);
+      try {
+        const projectRoot = resolveProjectRoot();
+        const result = await getRuleSections(projectRoot, input);
 
-      return {
-        content: [{ type: "text" as const, text: JSON.stringify(result) }],
-        structuredContent: result,
-      };
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify(result) }],
+          structuredContent: result,
+        };
+      } finally {
+        tracker?.exit(requestId);
+      }
     },
   );
 }
