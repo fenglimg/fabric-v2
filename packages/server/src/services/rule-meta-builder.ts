@@ -18,7 +18,8 @@ import {
 } from "@fenglimg/fabric-shared";
 
 import { appendEventLedgerEvent } from "./event-ledger.js";
-import { atomicWriteText, ensureParentDirectory, sha256 } from "./_shared.js";
+import { atomicWriteText } from "@fenglimg/fabric-shared/node/atomic-write";
+import { ensureParentDirectory, sha256 } from "./_shared.js";
 
 type NodeMeta = AgentsMeta["nodes"][string];
 

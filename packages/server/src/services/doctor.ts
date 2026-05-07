@@ -15,7 +15,8 @@ import { detectFramework } from "@fenglimg/fabric-shared/node";
 
 import { contextCache } from "../cache.js";
 import { parseRuleSections } from "./rule-sections.js";
-import { atomicWriteText, ensureParentDirectory, getEventLedgerPath, sha256 } from "./_shared.js";
+import { atomicWriteText } from "@fenglimg/fabric-shared/node/atomic-write";
+import { ensureParentDirectory, getEventLedgerPath, sha256 } from "./_shared.js";
 import { buildRuleMeta, isSameRuleTestIndex, writeRuleMeta } from "./rule-meta-builder.js";
 import { readEventLedger } from "./event-ledger.js";
 
