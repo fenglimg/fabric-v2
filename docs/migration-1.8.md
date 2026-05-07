@@ -12,9 +12,9 @@ status: draft
 
 从 v1.8.0 起，以下三个客户端配置键将被彻底移除：
 
-- `windsurf` — 从 1.7.1 起废弃，1.8.0 正式移除
-- `rooCode` — 从 1.7.1 起废弃，1.8.0 正式移除
-- `geminiCLI` — 从 1.7.1 起废弃，1.8.0 正式移除
+- `windsurf` — v1.8.0 移除
+- `rooCode` — v1.8.0 移除
+- `geminiCLI` — v1.8.0 移除
 
 保留的受支持客户端为：`claudeCodeCLI`、`claudeCodeDesktop`、`cursor`、`codexCLI`。
 
@@ -29,12 +29,13 @@ fab doctor --fix
 执行后，doctor 会从 `clientPaths` 中删除 `windsurf`、`rooCode`、`geminiCLI`，
 并向事件账本写入一条 `legacy_client_path_present` 记录。
 
-### 时间线
+### 升级流程
 
-| 版本   | 状态               |
-|--------|--------------------|
-| 1.7.1  | 废弃警告（doctor warning） |
-| 1.8.0  | 正式移除，配置文件中的对应键将被忽略 |
+1. 升级到 v1.8.0
+2. 运行 `fab doctor`：若 `fabric.config.json` 中存在已废弃的客户端键，会显示 `legacy_client_path_present` 检查项
+3. 运行 `fab doctor --fix`：自动从 `clientPaths` 中删除废弃键并写入 `legacy_client_path_present` 账本事件
+
+> 注：原计划经由 v1.7.1 提供废弃警告作为预告，但相关检查在实现上深度依赖 v1.8.0 的 FabricError 与新事件账本类型，无法干净地反向移植到 v1.7.0 主干。因此废弃 + 移除合并在 v1.8.0 一并发布；用户首次升级时仍可通过 `fab doctor` 看到清理建议再决定是否执行。
 
 ## 2. 配置迁移
 
@@ -127,17 +128,17 @@ fab init --scope user       # 写入 ~/.claude.json
 
 ## 4. doctor 新检查
 
-v1.8.0 新增以下 doctor 检查项（含 1.7.1 回传的检查项）：
+v1.8.0 新增以下 doctor 检查项：
 
 | 检查项 | 说明 | 可修复 |
 |--------|------|--------|
 | `mcp_config_in_wrong_file` | `.claude/settings.json` 中存在 `mcpServers.fabric` 条目（应在 `.mcp.json` 或 `~/.claude.json`）。`--fix` 从错误文件中删除该条目，之后需重新运行 `fab init` 写入正确位置。 | 是 |
 | `event_ledger_partial_write` | `.fabric/events.jsonl` 末尾存在不完整的 JSON 行（写入被中断）。`--fix` 截断尾部残行并写入 `LedgerWarning` 事件。 | 是 |
 | `meta_manually_diverged` | `agents.meta.json` 中的规则哈希与磁盘上 `rules/` 文件内容不一致，说明 meta 被手动修改或规则文件在 Fabric 外部变更。`--fix` 调用 `reconcileRules` 重建 meta。 | 是 |
-| `legacy_client_path_present` | `fabric.config.json` 中存在已废弃的客户端键（`windsurf`、`rooCode`、`geminiCLI`）。`--fix` 从 `clientPaths` 中删除这些键。（v1.7.1 回传） | 是 |
+| `legacy_client_path_present` | `fabric.config.json` 中存在已废弃的客户端键（`windsurf`、`rooCode`、`geminiCLI`）。`--fix` 从 `clientPaths` 中删除这些键。 | 是 |
 | `rules_dir_unindexed` | `.fabric/rules/` 中存在 `.md` 文件，但 `agents.meta.json` 中没有对应条目。离线添加的规则文件尚未被索引。`--fix` 调用 `reconcileRules` 同步索引。 | 是 |
 | `stable_id_collision` | 两个或多个规则节点具有相同的 `stable_id`，会导致客户端引用歧义。`--fix` 为冲突节点重新生成唯一 stable_id 并更新 meta。 | 是 |
-| `claude_skill_legacy_path` | Claude Code SKILL 文件仍位于旧路径 `.claude/skills/agents-md-init/`，应迁移至 `.agents/skills/fabric-init/`。`--fix` 移动文件并删除旧目录。（v1.7.1 回传） | 是 |
+| `claude_skill_legacy_path` | Claude Code SKILL 文件仍位于旧路径 `.claude/skills/agents-md-init/`，应迁移至 `.claude/skills/fabric-init/`。`--fix` 移动文件并删除旧目录。 | 是 |
 | `preexisting_root_claude_md` | 项目根目录存在 `CLAUDE.md` 或 `AGENTS.md`，该文件早于 Fabric 初始化存在，可能与 Fabric 管理的规则树产生冲突。此项为**信息级别**（info），仅提示用户手动审查，不自动修复。 | 否（info） |
 
 ### 使用方式

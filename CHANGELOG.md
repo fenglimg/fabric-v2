@@ -19,8 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Chokidar watcher extended to `.fabric/rules/` for cache invalidation (no writes, invalidate-only).
 - MCP payload guard: 16 KB warn threshold / 64 KB hard limit (`MCP_PAYLOAD_TOO_LARGE`); both thresholds configurable via `fabric.config.json mcpPayloadLimits`.
 - Tool schemas exported to `@fenglimg/fabric-shared/schemas/api-contracts` with per-tool annotations and golden contract snapshots (drift detection on CI).
-- Doctor checks (v1.8.0): `mcp_config_in_wrong_file`, `event_ledger_partial_write`, `meta_manually_diverged`, `rules_dir_unindexed`, `stable_id_collision`, `claude_skill_legacy_path`, `preexisting_root_claude_md` (info-level).
-- Doctor check (v1.7.1 backport): `legacy_client_path_present` — detects and removes retired `windsurf` / `rooCode` / `geminiCLI` keys from `clientPaths`.
+- Doctor checks: `mcp_config_in_wrong_file`, `event_ledger_partial_write`, `meta_manually_diverged`, `rules_dir_unindexed`, `stable_id_collision`, `claude_skill_legacy_path`, `preexisting_root_claude_md` (info-level), `legacy_client_path_present`.
 - Knip dead-code detector with zero baseline integrated into `pnpm lint`.
 - Per-client config golden snapshots (drift detection guards against unintended init output changes).
 - `fab init --scope project|user` flag — controls whether Claude MCP config is written to `.mcp.json` (project, default) or `~/.claude.json` (user).
@@ -41,7 +40,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Deprecated
 
-- (Deprecations already announced in 1.7.1; all three deprecated clients are removed in this release — see Removed.)
+- Clients `windsurf`, `rooCode`, `geminiCLI` are deprecated and removed in the same release. The doctor `legacy_client_path_present` check fires on first run after upgrade so users can clean their `fabric.config.json` via `fab doctor --fix` before the legacy keys become inert.
 
 ### Removed
 
