@@ -1,0 +1,25 @@
+{
+  "id": "TASK-001",
+  "title": "搭建 docs/test-seed 基础结构 + 模块口径声明",
+  "description": "创建 docs/test-seed/README.md 作为种子总览。固化 11 项决策共识中的关键约定：模块单位定义（Rec #7）、种子使用约定、与 integration-test-cycle 的关系、维护节奏、反模式列表。是后续三份种子文档的 source of truth。",
+  "scope": "docs/test-seed/",
+  "files": [
+    {
+      "path": "docs/test-seed/README.md",
+      "change": "新建。结构：(1) 模块单位定义 - cli=命令级 / server=endpoint+service+MCP tool 级 / shared=export 子路径级；(2) 种子使用约定 - 双受众/路径引用方式/code as SoT/release gate/冲突标记 ⚠️；(3) 索引到 cli.md / server.md / shared.md；(4) 反模式列表（不写 Gherkin / 不枚举用例 / 不描述实现 / 文件 ≤200 行）；(5) 维护节奏（intent 变更 / 重大事件后追加 §3）。"
+    }
+  ],
+  "convergence": {
+    "criteria": [
+      "docs/test-seed/README.md 创建",
+      "明确写出三个包的模块单位定义（cli/server/shared 各一行）",
+      "种子使用约定包含至少 5 项：双受众、prompt 路径引用、code 是 SoT、release gate 而非每 PR、cycle 冲突标记 ⚠️ 人工裁定",
+      "包含反模式列表至少 4 项",
+      "包含索引指向 cli.md / server.md / shared.md（即使后两者尚未创建）",
+      "文件长度 ≤200 行"
+    ],
+    "verification": "Read 文件并核对 11 项决策中映射到 README 的条目（Q2/Q3/Q4/Q7/Q8/Q10）是否都被表述"
+  },
+  "depends_on": [],
+  "estimated_minutes": 25
+}

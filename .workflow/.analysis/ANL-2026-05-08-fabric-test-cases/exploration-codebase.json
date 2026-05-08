@@ -1,0 +1,347 @@
+{
+  "session_id": "ANL-2026-05-08-fabric-test-cases",
+  "timestamp": "2026-05-08T03:30:00Z",
+  "topic": "在使用 integration-test-cycle 自动测试-修复闭环之前，是否应先输出 fabric 系统每个功能模块的测试用例文档，或有更好的功能点记录与全面验证方式",
+  "dimensions": ["decision", "implementation", "concept"],
+  "relevant_files": [
+    {
+      "path": "package.json",
+      "annotation": "Monorepo root: pnpm workspaces packages/*, vitest 3.2.4 hoisted as devDependency, knip lint, lefthook hooks. Confirms test runner stack and 4-package layout.",
+      "dimensions": ["concept", "implementation"]
+    },
+    {
+      "path": "pnpm-workspace.yaml",
+      "annotation": "Workspace declaration: only `packages/*`. The 4 packages are the only modules to scope functional inventory against.",
+      "dimensions": ["concept"]
+    },
+    {
+      "path": "README.md",
+      "annotation": "Public functional surface declared: 4 CLI commands (init/scan/doctor/serve), MCP tools (fab_plan_context, fab_get_rule_sections), `.fabric/*` artifacts, doctor modes (--json/--strict/--fix). This is the closest existing 'feature inventory' for the fabric product.",
+      "dimensions": ["decision", "concept"]
+    },
+    {
+      "path": "CHANGELOG.md",
+      "annotation": "v1.8.0 entry enumerates ~30 atomic feature additions/changes — atomic-write helper, FabricError taxonomy, ledger queue, signal handlers, serve-lockfile, rule-sync orchestrator, payload guard, doctor checks, knip baseline, --scope flag. Each bullet maps to one or more test files. Effectively functions as a per-release feature ledger.",
+      "dimensions": ["decision", "implementation"]
+    },
+    {
+      "path": "docs/CODEBASE_LANDSCAPE.md",
+      "annotation": "Per-package file-level responsibility table with file:line evidence anchors. The closest thing the project has to a 'module inventory' document. Each row is a candidate test-case grouping.",
+      "dimensions": ["concept", "implementation"]
+    },
+    {
+      "path": "docs/SPEC_INTERNAL.md",
+      "annotation": "Authoritative protocol description for the cognitive L0/L1/L2 flow, fab_plan_context / fab_get_rule_sections schemas, registry shape, and the runtime closed loop. This IS a contract spec — high-value seed for behavioral test cases (init → plan → sections → ledger).",
+      "dimensions": ["decision", "concept"]
+    },
+    {
+      "path": "docs/ARCHITECTURE_DECISIONS.md",
+      "annotation": "ADR list (ADR-001 layering, ADR-002 MCP-first distribution, ADR-003 scope_glob+priority+layer selection, …). Each ADR encodes an invariant that should map to at least one verification (e.g. 'Dashboard MUST NOT read .fabric/* directly').",
+      "dimensions": ["decision", "concept"]
+    },
+    {
+      "path": "docs/CONVENTIONS.md",
+      "annotation": "Naming, doc-boundary, protected-tokens, zh-CN wording rules. Already enforced by `lint-protected-tokens.test.ts`. Demonstrates 'spec-as-test' pattern already in use.",
+      "dimensions": ["concept", "implementation"]
+    },
+    {
+      "path": "docs/RULE_REGISTRY.md",
+      "annotation": "Stable-id contract document. Source of truth for stable_id / derived-id / collision rules. Rule-id behavior is verified by server doctor and shared schema tests.",
+      "dimensions": ["concept", "decision"]
+    },
+    {
+      "path": "docs/getting-started.md",
+      "annotation": "User-facing 7-stage on-ramp: install → init → serve → MCP verification. Each stage is a candidate end-to-end / integration test scenario.",
+      "dimensions": ["concept", "implementation"]
+    },
+    {
+      "path": "docs/initialization.md",
+      "annotation": "Detailed init state-machine, command flags, bootstrap protocol, agents-md-init / fabric-init handoff. Highly granular feature spec for the most complex CLI command (init).",
+      "dimensions": ["concept", "decision"]
+    },
+    {
+      "path": "docs/tooling-manifest.md",
+      "annotation": "Existing 'parallel knowledge layer' for build/lint scripts with input/output/side-effect contracts and review anchors. Establishes a precedent for machine-readable functional manifests in this repo (could be extended to package functions, but maintainers explicitly kept it separate from .fabric/agents.meta.json).",
+      "dimensions": ["decision", "implementation"]
+    },
+    {
+      "path": "docs/tooling-manifest.json",
+      "annotation": "Machine-readable companion to tooling-manifest.md. Pattern reference if user wants similar JSON inventory for packages.",
+      "dimensions": ["implementation"]
+    },
+    {
+      "path": "docs/migration-1.8.md",
+      "annotation": "1.8.0 migration guide — captures behavioral-contract changes (MCP config path, --scope, FabricError, atomic writes). Doubles as a behavior-change spec.",
+      "dimensions": ["decision", "concept"]
+    },
+    {
+      "path": "schemas/fabric-config.json",
+      "annotation": "JSON-Schema for fabric.config.json — the only 'public schema' file at root. Defines the user-facing config contract and is a natural seed for config-related test cases.",
+      "dimensions": ["concept", "implementation"]
+    },
+    {
+      "path": "packages/cli/package.json",
+      "annotation": "CLI publishes binaries `fab` / `fabric`, depends on @clack/prompts (wizard), citty (CLI framework), tree-sitter (scanner). Test script: `vitest run`.",
+      "dimensions": ["implementation"]
+    },
+    {
+      "path": "packages/cli/README.md",
+      "annotation": "Per-package README. Only the CLI package has its own README. Confirms public command list (init/scan/doctor/serve) and doctor modes.",
+      "dimensions": ["concept"]
+    },
+    {
+      "path": "packages/cli/vitest.config.ts",
+      "annotation": "CLI test config: include `__tests__/**/*.test.ts`, environment node, with workspace aliases mapping @fenglimg/* to source — so CLI tests run against live source, not built artifacts.",
+      "dimensions": ["implementation"]
+    },
+    {
+      "path": "packages/cli/src/commands/index.ts",
+      "annotation": "Lazy command registry — confirms exactly 4 public commands are registered: init, scan, serve, doctor. Authoritative functional surface for CLI package.",
+      "dimensions": ["concept", "implementation"]
+    },
+    {
+      "path": "packages/cli/src/commands",
+      "annotation": "Command implementations: bootstrap.ts, config.ts, doctor.ts, hooks.ts, index.ts, init.ts, scan.ts, serve.ts. Note bootstrap/config/hooks are private subroutines; only 4 surface as public commands.",
+      "dimensions": ["implementation"]
+    },
+    {
+      "path": "packages/cli/__tests__",
+      "annotation": "25 test files covering: client-configs, colors, config-atomic, config-install, doctor, forensic, forensic-shadow-mirroring, hooks-atomic, i18n, init-atomic, init-claude-install, init-cli-surface, init-context-shadow-mirroring, init-force, init-forensic, init-mcp-scope, init-nondestructive, init-reapply, init-wizard, init-wizard-adapter, lint-protected-tokens, mcp-config-merge, skill-drift, tree-sitter-probe. Init alone has 11 test files — proves init is the highest-complexity surface.",
+      "dimensions": ["implementation"]
+    },
+    {
+      "path": "packages/server/package.json",
+      "annotation": "Server depends on @modelcontextprotocol/sdk, express, chokidar, zod. Build copies dashboard dist. Test: `vitest run`.",
+      "dimensions": ["implementation"]
+    },
+    {
+      "path": "packages/server/src/index.ts",
+      "annotation": "Server entry — registers MCP tools (plan-context, rule-sections), exports doctor, rule-meta-builder, event-ledger, rule-sync, serve-lock services. The set of named exports IS the public server API surface.",
+      "dimensions": ["concept", "implementation"]
+    },
+    {
+      "path": "packages/server/src/api",
+      "annotation": "12 REST/SSE endpoints: rules, rules-context, events, intent, ledger, history, scan, doctor, static. Each is a test-case grouping (request/response contract).",
+      "dimensions": ["concept", "implementation"]
+    },
+    {
+      "path": "packages/server/src/services",
+      "annotation": "28 service files: 14 .ts implementations + 14 colocated .test.ts files. Test colocation pattern (vs CLI's __tests__/) — heavy unit coverage. Services include audit-log, doctor, event-ledger, get-rules, human-lock-or-equivalent, in-flight-tracker, plan-context, read-ledger, rehydrate-state, rule-meta-builder, rule-sections, rule-sync, serve-lock.",
+      "dimensions": ["implementation"]
+    },
+    {
+      "path": "packages/server/src/tools",
+      "annotation": "MCP tool wrappers: plan-context.ts, rule-sections.ts (+ rule-sections.test.ts). The two MCP tools delivered to clients.",
+      "dimensions": ["concept", "implementation"]
+    },
+    {
+      "path": "packages/server/__tests__",
+      "annotation": "6 server-level integration tests: preexisting-root, signal-handler, startup-rule-sync, tool-contracts, tool-rule-freshness, watcher. tool-contracts uses zod-to-json-schema golden snapshots — strong example of contract-as-test.",
+      "dimensions": ["implementation"]
+    },
+    {
+      "path": "packages/server/__tests__/tool-contracts.test.ts",
+      "annotation": "Golden-snapshot contract tests for MCP tool input/output schemas + annotations. Demonstrates schema-driven 'live spec' style — the snapshot IS the contract spec.",
+      "dimensions": ["implementation", "decision"]
+    },
+    {
+      "path": "packages/dashboard/package.json",
+      "annotation": "Preact + Vite SPA, no `test` script declared at package level (tests live colocated and run from root via `pnpm -r --if-present test`). Effectively under-tested compared to cli/server/shared.",
+      "dimensions": ["implementation"]
+    },
+    {
+      "path": "packages/dashboard/src",
+      "annotation": "4 views (health, readiness, rules-explain, timeline) + 8 components + api/client.ts + hooks/use-events.ts + i18n. Views map 1:1 to user-facing dashboard pages — natural test-case grouping.",
+      "dimensions": ["concept", "implementation"]
+    },
+    {
+      "path": "packages/dashboard/src/components/coverage-heatmap.test.ts",
+      "annotation": "Component-level tests exist but are sparse (only 3 test files: client.test.ts, coverage-heatmap.test.ts, hit-reason-panel.test.ts). Dashboard has the largest gap between feature surface and test density.",
+      "dimensions": ["implementation"]
+    },
+    {
+      "path": "packages/shared/package.json",
+      "annotation": "Defines fine-grained subpath exports: ./i18n, ./types, ./node, ./node/atomic-write, ./node/mcp-payload-guard, ./node/bootstrap-guide, ./errors, ./schemas/api-contracts. Each export is a contract surface.",
+      "dimensions": ["concept", "implementation"]
+    },
+    {
+      "path": "packages/shared/vitest.config.ts",
+      "annotation": "shared tests: include `test/**/*.test.ts` (note: directory `test/` not `__tests__/`). 8 test files matching schema/contract files 1:1.",
+      "dimensions": ["implementation"]
+    },
+    {
+      "path": "packages/shared/src/schemas",
+      "annotation": "11 zod schema files: agents-meta, api-contracts, event-ledger (+ test), events, fabric-config, forensic-report, human-lock, init-context, ledger-entry, rule-test-index. These ARE the data contracts. Schema files are themselves a form of executable specification.",
+      "dimensions": ["concept", "decision"]
+    },
+    {
+      "path": "packages/shared/src/schemas/api-contracts.ts",
+      "annotation": "Zod schemas for plan-context / get-rules / rule-sections. Already exported under @fenglimg/fabric-shared/schemas/api-contracts and consumed by golden snapshot test. Pinned, drift-detected MCP contract.",
+      "dimensions": ["decision", "implementation"]
+    },
+    {
+      "path": "packages/shared/src/errors",
+      "annotation": "FabricError taxonomy (5 sub-trees per CHANGELOG: ConfigError, RuleError, IOFabricError, MCPError, InitError). Tests: shared/test/errors.test.ts (27 it() blocks). Strong contract coverage.",
+      "dimensions": ["concept", "implementation"]
+    },
+    {
+      "path": "packages/shared/src/i18n/locales",
+      "annotation": "i18n locale TS files. `lint-protected-tokens.test.ts` enforces protected-token contract — pattern reference for 'doc rule → automated test'.",
+      "dimensions": ["implementation"]
+    },
+    {
+      "path": "packages/shared/test",
+      "annotation": "8 test files mapping near-1:1 to public exports: agents-meta, atomic-write, detector, errors, forensic-report, init-context, mcp-payload-guard, rule-test-index. Highest coverage density of any package.",
+      "dimensions": ["implementation"]
+    },
+    {
+      "path": "examples/werewolf-minigame-stub",
+      "annotation": "Sample target project (Cocos-style minigame stub) used as a fixture for init/scan dry-runs. Not a feature spec, but exercises the consumer side of fabric init end-to-end. Useful as integration-test scaffold.",
+      "dimensions": ["implementation"]
+    },
+    {
+      "path": "templates/agents-md/AGENTS.md.template",
+      "annotation": "AGENTS.md template seed. Init writes from this. Behavior covered by init-atomic / init-nondestructive tests.",
+      "dimensions": ["implementation"]
+    },
+    {
+      "path": "templates/bootstrap",
+      "annotation": "Per-client bootstrap files: CLAUDE.md, codex-AGENTS-header.md, cursor-fabric-bootstrap.mdc, GEMINI.md, roo-fabric.md, windsurf-fabric.md. Note: 1.8.0 deprecated windsurf/roo/gemini per CHANGELOG — template files persist for backward compatibility. Each surviving client × init is a test scenario.",
+      "dimensions": ["concept", "implementation"]
+    },
+    {
+      "path": "templates/claude-skills/fabric-init/SKILL.md",
+      "annotation": "Claude skill seed for follow-up init protocol. Drift covered by `skill-drift.test.ts`.",
+      "dimensions": ["implementation"]
+    },
+    {
+      "path": "templates/codex-skills/fabric-init/SKILL.md",
+      "annotation": "Codex skill seed (mirror of Claude SKILL.md). Drift covered by `skill-drift.test.ts`.",
+      "dimensions": ["implementation"]
+    },
+    {
+      "path": ".github/workflows",
+      "annotation": "CI: 2 yml workflows. Test execution gates land here — confirms what 'CI green' means as the de-facto verification surface today.",
+      "dimensions": ["implementation"]
+    },
+    {
+      "path": "lefthook.yml",
+      "annotation": "Pre-commit / pre-push hook config. Local quality gate. Verification surface complement to CI.",
+      "dimensions": ["implementation"]
+    },
+    {
+      "path": "knip.config.ts",
+      "annotation": "Dead-code detector with zero baseline (per 1.8.0 CHANGELOG). Treats orphaned exports as a verification failure — a structural 'all surface is referenced' contract.",
+      "dimensions": ["concept", "implementation"]
+    },
+    {
+      "path": "RELEASING.md",
+      "annotation": "Release checklist — implicit acceptance criteria for a release. Items here may serve as integration-cycle pass conditions.",
+      "dimensions": ["decision"]
+    },
+    {
+      "path": "思路.md",
+      "annotation": "Project-intent document (Chinese). Defines AGENTS.md + docs two-layer documentation architecture, hard-rule-always-loaded principle, and the AI hook that forces AGENTS.md updates after /src/ edits. NOT a fabric feature spec — it is the meta-philosophy that fabric implements. Important for understanding why fabric exists, but not directly a source for fabric's own test cases.",
+      "dimensions": ["concept", "decision"]
+    }
+  ],
+  "patterns": [
+    "Test runner unified: vitest 3.2.4 across cli/server/shared (devDependency hoisted at root). Dashboard has no test script declared at package level.",
+    "Test layout differs per package: cli uses `__tests__/` (Jest convention) at package root; server uses BOTH colocated `*.test.ts` next to source AND a top-level `__tests__/` for integration; shared uses `test/` directory; dashboard uses colocated `*.test.ts` next to components/api files.",
+    "Test density (61 test files, 439 it/describe/test calls): shared ~8 files / 89 calls (high), server ~26 files / ~210 calls (high), cli ~25 files / ~140 calls (high), dashboard ~3 files / 8 calls (sparse).",
+    "Test names are highly descriptive (BDD-leaning): e.g. \"global cooldown: second ensureRulesFresh call within 500ms returns fresh even after disk mutation\", \"throws RuleValidationError with fab doctor --fix hint on broken frontmatter\". Tests already serve as living specs.",
+    "Golden-snapshot contract tests already exist: server/__tests__/tool-contracts.test.ts pins MCP tool input/output schemas via zod-to-json-schema. CHANGELOG also mentions 'per-client config golden snapshots' for init drift detection.",
+    "Schema-as-contract pattern: `packages/shared/src/schemas/*` (11 zod files) defines all data contracts; consumed by server services, CLI scanner, and dashboard API client. Each schema is effectively an executable specification.",
+    "No dedicated functional spec or user-stories directory. Closest equivalents are: README + per-package READMEs (only CLI has one), CHANGELOG (per-release feature ledger), docs/CODEBASE_LANDSCAPE.md (file-level responsibility map), docs/SPEC_INTERNAL.md (protocol spec), docs/ARCHITECTURE_DECISIONS.md (ADRs), schemas/ + packages/shared/src/schemas/ (data contracts).",
+    "Functional-module granularity in this repo is multi-layered: package (4) → command/view/service (4 cli commands, 4 dashboard views, ~14 server services, ~12 REST endpoints, 2 MCP tools) → unit/contract (per zod schema, per error class). Test files generally bind to the middle layer.",
+    "Tooling-manifest precedent: docs/tooling-manifest.json shows the maintainers explicitly chose a 'parallel knowledge layer' (machine-readable JSON + human-readable MD) for scripts, but kept it separate from .fabric/agents.meta.json. This precedent means a similar 'package-functions manifest' would be aligned with project conventions.",
+    "AGENTS.md / .fabric/rules/ are the in-product documentation system (the consensus plane fabric itself sells), but they are not a feature inventory of the fabric monorepo — they are user-target deliverables.",
+    "CHANGELOG is unusually detailed and granular (1.8.0 lists ~30 atomic changes). It is currently the closest thing to a chronological feature ledger.",
+    "Doctor checks are themselves a self-describing inventory: each check name (e.g. mcp_config_in_wrong_file, event_ledger_partial_write, stable_id_collision) encodes one verification scenario. The doctor check list is a high-density seed for test cases.",
+    "Knip + lefthook + tool-contracts golden snapshots together form a 'no silent drift' verification fence — but it covers shape/dead-code drift, not behavior drift."
+  ],
+  "module_map": {
+    "cli": {
+      "purpose": "Command surface and local-write orchestration. Drives init state machine, forensic scanner, doctor diagnosis/fix, and serve bootstrap (which then hands off to @fenglimg/fabric-server).",
+      "functional_surface": [
+        "Public commands: fabric init | fabric scan | fabric doctor | fabric serve (only these 4 registered in src/commands/index.ts)",
+        "fabric init flags: --yes, --plan, --reapply, --force, --scope project|user (1.8.0)",
+        "fabric doctor flags: --json, --strict, --fix",
+        "Internal phases (not public commands): bootstrap, config, hooks (each has its own command file but is invoked via init)",
+        "Forensic scanner: produces .fabric/forensic.json with topology / entrypoints / code samples / assertions",
+        "Tree-sitter probe: capability detection for TS/JS parsing",
+        "Init wizard: TTY @clack/prompts flow + non-interactive plan",
+        "Client config writers: Claude Code, Codex CLI, Cursor (1.8.0 dropped windsurf/rooCode/geminiCLI)",
+        "MCP config writer with deep-merge and --scope project|user routing",
+        "Atomic writes for all user-visible config + scaffold files"
+      ],
+      "test_infra": "vitest 3.2.4, config: packages/cli/vitest.config.ts (include __tests__/**/*.test.ts, env node, source-aliased to live shared/server). 25 test files, ~140 it() calls. Dominant focus: init flow (11 init-* test files: init-atomic, init-claude-install, init-cli-surface, init-context-shadow-mirroring, init-force, init-forensic, init-mcp-scope, init-nondestructive, init-reapply, init-wizard, init-wizard-adapter). Notable contract tests: skill-drift, lint-protected-tokens, mcp-config-merge, client-configs, tree-sitter-probe.",
+      "existing_docs": "packages/cli/README.md (only per-package README); commands documented in root README + docs/getting-started.md + docs/initialization.md; CODEBASE_LANDSCAPE.md table for file-level responsibility."
+    },
+    "server": {
+      "purpose": "MCP stdio + Streamable HTTP server. Hosts MCP tools, REST/SSE APIs, dashboard static. Reads/writes .fabric/* state. Owns rule-sync orchestrator, event-ledger, doctor service, serve-lock, in-flight tracker.",
+      "functional_surface": [
+        "MCP tools: fab_plan_context, fab_get_rule_sections (the active editing-loop surface)",
+        "MCP resource: AGENTS_MD_RESOURCE_URI (bootstrap README served as resource)",
+        "REST endpoints (12): /api/rules, /api/rules/context, /api/events (SSE), /api/intent/annotate, /api/ledger, /api/history, /api/scan, /api/doctor, /api/_error helpers, plus dashboard static and SPA fallback",
+        "Auth: Bearer token middleware on /api, /events, /mcp",
+        "Services (14): get-rules, plan-context, rule-sections, rule-sync (ensureRulesFresh + reconcileRules), event-ledger, audit-log, doctor, annotate-intent, rehydrate-state, rule-meta-builder, human-lock-or-equivalent, in-flight-tracker, serve-lock, read-ledger",
+        "Doctor checks (1.8.0 added 8): mcp_config_in_wrong_file, event_ledger_partial_write, meta_manually_diverged, rules_dir_unindexed, stable_id_collision, claude_skill_legacy_path, preexisting_root_claude_md, legacy_client_path_present (each is a discrete verification)",
+        "Signal handling: SIGINT/SIGTERM/SIGHUP drain ≤5s + fsync ledger",
+        "Cross-process serve-lock with PID liveness + --force override",
+        "Chokidar watcher for cache invalidation on .fabric/rules/ changes",
+        "MCP payload guard: 16KB warn / 64KB hard, configurable via fabric.config.json mcpPayloadLimits",
+        "Per-path ledger write queue (poison-resistant in-process serialization)"
+      ],
+      "test_infra": "vitest. No package-root vitest.config.ts (uses defaults). Test layout: dual — colocated *.test.ts in src/services/ and src/api/ (~17 files) AND top-level __tests__/ for integration (6 files: preexisting-root, signal-handler, startup-rule-sync, tool-contracts, tool-rule-freshness, watcher). ~26 test files, ~210 it() calls — densest behavioral coverage. tool-contracts.test.ts uses golden snapshots over zod-to-json-schema (drift detection on CI).",
+      "existing_docs": "No per-package README. Behavior described in docs/SPEC_INTERNAL.md (protocol), docs/ARCHITECTURE_DECISIONS.md (ADR-001/002/003 layering + MCP-first + scope_glob), docs/CODEBASE_LANDSCAPE.md (file table). 1.8.0 CHANGELOG enumerates server-level features."
+    },
+    "dashboard": {
+      "purpose": "Browser SPA (Preact + Vite + Tailwind) consuming server REST + SSE. Read-only observation surface — never reads .fabric/* directly (ADR-001 invariant).",
+      "functional_surface": [
+        "Views (4): health (doctor + runtime), readiness, rules-explain (rule hit + tree), timeline (ledger + history replay)",
+        "Components (8): coverage-heatmap, hit-reason-panel, drift-indicator, tree-node, source-badge, timeline-entry, approve-button, index re-export",
+        "API client (src/api/client.ts): REST helpers + openSseConnection",
+        "Hooks: use-events.ts (SSE)",
+        "i18n runtime + provider + hook (src/i18n/*)",
+        "Style tokens (src/styles/tokens.css) + app.css"
+      ],
+      "test_infra": "No package-level test script declared (root `pnpm -r --if-present test` skips it because dashboard has none). Only 3 colocated test files: src/api/client.test.ts, src/components/coverage-heatmap.test.ts, src/components/hit-reason-panel.test.ts (~8 it() calls total). LARGEST coverage gap relative to functional surface — 4 views + 8 components have only 2 component tests + 1 API client test.",
+      "existing_docs": "docs/dashboard-tour.md (UI walkthrough). No per-package README. View → user-action mapping not formalized."
+    },
+    "shared": {
+      "purpose": "Cross-package contract layer: zod schemas, TS types, i18n, framework detector, atomic-write & MCP-payload-guard node helpers, FabricError taxonomy. Consumed by cli + server + dashboard.",
+      "functional_surface": [
+        "Public exports (subpath): ./ (index), ./i18n, ./types, ./node, ./node/atomic-write, ./node/mcp-payload-guard, ./node/bootstrap-guide, ./errors, ./schemas/api-contracts",
+        "Schemas (11): agents-meta, api-contracts, event-ledger, events, fabric-config, forensic-report, human-lock, init-context, ledger-entry, rule-test-index — these ARE the data contracts",
+        "Errors: FabricError 5 sub-trees (ConfigError, RuleError, IOFabricError, MCPError, InitError)",
+        "i18n: createTranslator, detectNodeLocale, locale files, protected-tokens lint contract",
+        "detector: framework / tech-stack detection (used by cli scanner)",
+        "node helpers: atomic-write (tmp+rename, optional fsync), mcp-payload-guard (16KB/64KB), bootstrap-guide builder",
+        "Types: agents.ts, config.ts, ledger.ts"
+      ],
+      "test_infra": "vitest. Config: packages/shared/vitest.config.ts (include test/**/*.test.ts, env node). 8 tests in test/ (agents-meta, atomic-write, detector, errors [27 it()], forensic-report, init-context, mcp-payload-guard [21 it()], rule-test-index) + 1 colocated (src/schemas/event-ledger.test.ts). ~89 it() calls. Highest test-to-surface ratio.",
+      "existing_docs": "No per-package README. Contracts encoded in zod schemas (self-documenting via .describe()/.refine()). Stable-id contract documented in docs/RULE_REGISTRY.md."
+    },
+    "_root_artifacts": {
+      "docs": "13 files in docs/: ARCHITECTURE_DECISIONS.md, CODEBASE_LANDSCAPE.md, contributing.md, CONVENTIONS.md, dashboard-tour.md, getting-started.md, initialization.md, migration-1.8.md, RULE_REGISTRY.md, SPEC_INTERNAL.md, tooling-manifest.json, tooling-manifest.md, roadmap.md, release/v1.8.0-pr.md. NO directory for user-stories, feature-specs, or per-module test plans. SPEC_INTERNAL is the closest behavioral spec.",
+      "examples": "Single fixture: examples/werewolf-minigame-stub (Cocos-style minigame stub with .fabric/agents/ + assets/scripts). Used as integration target for init/scan, not as a feature catalog.",
+      "schemas": "Single root schema: schemas/fabric-config.json (JSON-Schema for user-facing fabric.config.json). The package-level zod schemas in packages/shared/src/schemas/ are the richer set; only fabric.config.json is exposed as top-level JSON-Schema for IDE/editor integration.",
+      "思路.md_summary": "Project-philosophy doc (Chinese). Defines the AGENTS.md + docs two-layer architecture that fabric productizes: hard rules always loaded (≤300 lines), detailed references on-demand, per-module AGENTS.md trees ≤4 levels deep, files ≤200-500 lines. Mandates a Claude/Cursor PostToolUse+Stop hook that forces AI to invoke an `agents-md` skill after /src/ edits. This is the META-spec fabric implements — NOT a fabric-feature inventory. Important context for why some choices exist (e.g. SKILL files, hooks templates), but for the present task it does NOT replace a per-module functional list."
+    }
+  },
+  "questions_for_user": [
+    "测试用例文档的目标受众是谁？(a) AI agent 在 integration-test-cycle 中读取作为修复输入；(b) 维护者用于 review；(c) 新贡献者作为入门。不同受众决定文档形态（结构化 JSON / Gherkin / 自由 Markdown）。",
+    "integration-test-cycle 期望的输入格式是什么？是已有可执行测试（vitest）扩充覆盖，还是需要先有'用例描述'（自然语言/Gherkin）再让它生成测试？这决定是否真的需要一个独立的'测试用例文档'层。",
+    "是否接受'测试名 + CHANGELOG + zod schema + ADR + doctor check 列表'已经构成一个分布式的功能清单？还是必须把它们汇总到一份集中文档？(从证据看：tests 已 BDD-leaning, 439 个 it() 块都是描述性命名；docs/CODEBASE_LANDSCAPE.md 已是文件级清单；docs/SPEC_INTERNAL.md 已是协议级 spec。)",
+    "Dashboard 包的测试稀疏度（4 views + 8 组件，只有 3 个 test 文件，~8 it() 调用）是否本身就是要先解决的目标？这是当前最显著的覆盖缺口。",
+    "若要补足，是否倾向 docs/tooling-manifest.json 那种 '机器可读 + 人类可读' 双产物模式（已有先例），还是采用更轻量的'扩充 BDD 风格 it() 名 + 在 CODEBASE_LANDSCAPE 增加 functional surface 列'？",
+    "1.8.0 已有的 golden-snapshot 契约测试模式（tool-contracts.test.ts、per-client config snapshots、knip 零基线）是否已经满足'防止行为静默漂移'的需求？还是仍需要场景级（end-to-end user journey）的 test plan？",
+    "examples/werewolf-minigame-stub 是否要扩展成多场景固件库（多客户端、多语言项目、单仓 vs monorepo），用作 integration-test-cycle 的真实输入数据集？",
+    "对'功能模块'的口径建议明确：是按 package（4 个）/ 按命令-视图-服务（中层 ~30 个）/ 按 it() 单测（~439 个）作为'测试用例'的最小单元？建议在用例文档投入前先冻结这一口径。"
+  ],
+  "_metadata": {
+    "layer": "1-breadth-only",
+    "files_scanned": 48
+  }
+}

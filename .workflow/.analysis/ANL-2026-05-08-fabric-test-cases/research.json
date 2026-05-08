@@ -1,0 +1,50 @@
+{
+  "topic": "Module-level test case docs vs minimal seed for AI test-gen cycle in TS monorepo",
+  "mode": "detail-verification",
+  "timestamp": "2026-05-08T03:18:00Z",
+  "findings": [
+    {"finding": "Modern AI test generation works best with structured but MINIMAL seeds (feature list + acceptance criteria + invariants), not exhaustive scenario specs", "detail": "Agent elaborates; humans steer. Pattern is 'spec-as-seed' rather than 'spec-as-spec'", "confidence": "HIGH", "source_url": "https://www.oreilly.com/radar/how-to-write-a-good-spec-for-ai-agents/"},
+    {"finding": "Best INPUT formats ranked: (1) bulleted feature list + acceptance criteria, (2) example tables / I-O pairs, (3) Gherkin (only if humans already write it), (4) freeform markdown", "detail": "Structured JSON best when machine-consumed", "confidence": "MEDIUM", "source_url": "https://www.tricentis.com/learn/ai-test-case-generation"},
+    {"finding": "AI-generated tests reach equivalent or better branch coverage than manual on standard scenarios, but systematically MISS unusual workflows / business-rule edge cases", "detail": "Agent tests 'what is', not 'what should be'", "confidence": "HIGH", "source_url": "https://codoid.com/ai-testing/ai-generated-test-cases-how-good-are-they/"},
+    {"finding": "Pure 'skip docs' failure mode: tests cluster on happy paths the agent infers from code, leaving cross-module integration and CLI exit-code semantics under-tested", "confidence": "HIGH", "source_url": "https://codoid.com/ai-testing/ai-generated-test-cases-how-good-are-they/"},
+    {"finding": "When specs and tests are separate artifacts maintained by different roles, delivery effectiveness is significantly reduced by constant coordination", "confidence": "HIGH", "source_url": "https://en.wikipedia.org/wiki/Specification_by_example"},
+    {"finding": "BDD/Gherkin first approach widely judged to have lost its way — step-definition explosion, no real stakeholder reading them", "confidence": "HIGH", "source_url": "https://qualitykiosk.com/blog/how-behavior-driven-development-lost-its-way-and-how-we-can-restore-it/"},
+    {"finding": "Real-world pnpm/vitest monorepos use per-package test strategy with unified runner (vitest projects). Different test TYPES per package (CLI = spawn-and-assert, server = handler+contract, shared = unit + property-based, dashboard = component+route) — NOT different methodologies", "confidence": "HIGH", "source_url": "https://vitest.dev/guide/projects"},
+    {"finding": "Property-based testing (fast-check) gives high ROI for pure functions, parsers, serializers, idempotent ops in shared lib", "confidence": "HIGH", "source_url": "https://fast-check.dev/"}
+  ],
+  "best_practices": [
+    {"practice": "Produce a single short test seed (≤1 page per package) with three sections: feature surface (bullet list), invariants (5-10 must-hold statements), known-tricky cases (3-5)", "rationale": "Captures intent without per-scenario duplication. Survives churn because it lives at intent level, not implementation level", "source": "synthesis"},
+    {"practice": "Use coverage threshold + invariants represented as exit criterion, NOT 'every bullet has a test'", "rationale": "Avoids the trap of test-case enumeration that decays into stale doc", "source": "synthesis + Lucid coverage gap guide"},
+    {"practice": "Generate CLI feature surface from --help programmatically, snapshot it; CI fails if drifts from seed", "rationale": "Cheap consistency gate; prevents seed becoming stale", "source": "https://dev.to/florianrappl/how-we-wrote-our-cli-integration-tests-53i3"},
+    {"practice": "Add fast-check property-based tests for shared lib invariants", "rationale": "Covers comprehensive correctness goal far more cheaply than enumerated cases", "source": "https://www.npmjs.com/package/@fast-check/vitest"},
+    {"practice": "Refresh seed only when INTENT changes, not when implementation changes", "rationale": "Decouples seed from churn; keeps maintenance cost low", "source": "synthesis"}
+  ],
+  "alternatives": [
+    {"option": "Module-by-module test case docs (the user's initial idea)", "pros": "Audit trail; comprehensive enumeration", "cons": "Double-maintenance; goes stale within 2 release cycles; high writing cost", "verdict": "Avoid — overkill for internal monorepo"},
+    {"option": "User stories / BDD catalog", "pros": "Good for stakeholder alignment", "cons": "Needs collaborative ritual; ceremony for solo/internal projects", "verdict": "Avoid — fabric has no such stakeholders surfaced"},
+    {"option": "API contract (OpenAPI / TS types as source of truth)", "pros": "Types already exist — zero authoring cost", "cons": "Doesn't capture invariants beyond shape", "verdict": "USE for server + shared"},
+    {"option": "CLI --help surface enumeration", "pros": "Very low cost; automatable", "cons": "Misses semantics of what each flag should do", "verdict": "USE for cli — combine with invariants"},
+    {"option": "Living documentation (auto from passing tests)", "pros": "Always in sync", "cons": "Needs tooling (Cucumber reports etc.); only useful if external readers exist", "verdict": "Skip initially — revisit if external readership appears"},
+    {"option": "Coverage-driven gap-fill", "pros": "Free with vitest --coverage", "cons": "Doesn't surface intent gaps, only line gaps", "verdict": "USE as the loop's exit criterion"},
+    {"option": "Property-based testing (fast-check)", "pros": "Tests invariants not examples; finds edge cases", "cons": "Medium upfront learning curve", "verdict": "USE for shared lib"}
+  ],
+  "pitfalls": [
+    {"issue": "Docs go stale when no one outside QA reads them", "mitigation": "Keep seed ≤1 page; co-locate with package; CI gate on --help drift", "source": "QualityKiosk BDD"},
+    {"issue": "Trusting integration-test-cycle alone produces tests that pass but don't validate intent", "mitigation": "Always provide invariants seed; agent will optimize for 'tests pass' otherwise", "source": "Codoid"},
+    {"issue": "Treating dashboard and CLI with identical strategies", "mitigation": "Per-package test type (component vs spawn-and-assert)", "source": "Florian Rappl CLI tests"},
+    {"issue": "Letting seed grow into per-test-case enumeration", "mitigation": "Hard cap ≤1 page; if grows, indicates 'missing invariant' not 'need more bullets'", "source": "synthesis"}
+  ],
+  "codebase_gaps": [
+    {"gap": "Recent commits (TASK-038 doctor i18n, TASK-039 init_context_missing) suggest evolving CLI/server behaviour — exactly the 'known-tricky cases' that belong in the seed and would be missed by a no-seed cycle", "current_approach": "git log shows churn", "recommended_approach": "Capture in known-tricky cases section of seed before running cycle"},
+    {"gap": "release/v1.8.0-stabilization branch suggests stabilization phase — right time for seed-driven cycle, not docs-first cycle that delays the loop", "current_approach": "stabilization in progress", "recommended_approach": "Run integration-test-cycle with minimal seed, defer any heavier doc work"}
+  ],
+  "sources": [
+    {"title": "How to Write a Good Spec for AI Agents — Addy Osmani / O'Reilly", "url": "https://www.oreilly.com/radar/how-to-write-a-good-spec-for-ai-agents/", "key_takeaway": "Minimal seed > detailed spec for AI agents"},
+    {"title": "How BDD Lost Its Way — QualityKiosk", "url": "https://qualitykiosk.com/blog/how-behavior-driven-development-lost-its-way-and-how-we-can-restore-it/", "key_takeaway": "Strongest evidence against full Gherkin specs as input"},
+    {"title": "Specification by Example — Wikipedia", "url": "https://en.wikipedia.org/wiki/Specification_by_example", "key_takeaway": "Combined-artifact rationale; separated artifacts hurt delivery"},
+    {"title": "Codoid — How Good Are AI Generated Test Cases", "url": "https://codoid.com/ai-testing/ai-generated-test-cases-how-good-are-they/", "key_takeaway": "Failure modes of skip-docs cycles: misses business-rule edge cases"},
+    {"title": "Vitest Projects guide", "url": "https://vitest.dev/guide/projects", "key_takeaway": "Real monorepos use unified runner with per-package strategy"},
+    {"title": "fast-check + vitest", "url": "https://www.npmjs.com/package/@fast-check/vitest", "key_takeaway": "Property-based testing for shared lib invariants"},
+    {"title": "CLI Integration Tests — Florian Rappl", "url": "https://dev.to/florianrappl/how-we-wrote-our-cli-integration-tests-53i3", "key_takeaway": "Spawn-and-assert pattern; --help snapshot for surface drift"}
+  ]
+}

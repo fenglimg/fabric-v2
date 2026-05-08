@@ -1,0 +1,36 @@
+{
+  "id": "TASK-004",
+  "title": "shared 包引入 fast-check（property-based 测试）",
+  "description": "Rec #3 落地。在 packages/shared 引入 @fast-check/vitest，针对 shared.md §2 Invariants 中的纯函数不变量（zod parse round-trip / atomic-write 幂等 / mcp-payload-guard 边界 / FabricError 序列化）写 3-5 条 property-based 测试。每条测试用 fc.assert(fc.property(...)) 形式，覆盖随机输入数千次。文件落到 packages/shared/test/property-based/ 子目录。",
+  "scope": "packages/shared/",
+  "files": [
+    {
+      "path": "packages/shared/package.json",
+      "change": "在 devDependencies 中加入 @fast-check/vitest（最新稳定版）。运行 pnpm install 后 lockfile 更新。"
+    },
+    {
+      "path": "packages/shared/test/property-based/zod-roundtrip.test.ts",
+      "change": "新建。对 shared.md §2 列出的 11 个 zod schemas 中至少 3 个（建议 fabric-config / event-ledger / api-contracts）做 round-trip 测试：fc.property(arbitraryInput → schema.parse(JSON.parse(JSON.stringify(schema.parse(input)))) deep-equals schema.parse(input))。用 fast-check arbitraries 生成符合 zod schema 的随机输入。"
+    },
+    {
+      "path": "packages/shared/test/property-based/atomic-write.test.ts",
+      "change": "新建。对 atomic-write 做幂等测试：fc.property(任意路径 + 任意内容 → atomicWrite(p, c) 调用两次后文件内容应等价）；以及 tmp-cleanup 测试：fc.property(写入失败场景 → 不应留下 .tmp 残留）。"
+    },
+    {
+      "path": "packages/shared/test/property-based/payload-guard.test.ts",
+      "change": "新建。对 mcp-payload-guard 边界测试：fc.property(任意大小 ≤ 16KB → 不警告; 16KB-64KB → 警告但通过; > 64KB → 抛 MCPError）。包含恰好 16KB 与 64KB 的边界 case。"
+    }
+  ],
+  "convergence": {
+    "criteria": [
+      "@fast-check/vitest 已加入 devDependencies 且 pnpm install 成功（lockfile 更新）",
+      "至少 3 个 property-based 测试文件创建",
+      "运行 pnpm --filter @fenglimg/fabric-shared test 全部通过",
+      "每个 property-based 测试至少跑 100 次随机迭代（默认即可，无需调）",
+      "shared.md §2 中至少 3 条 invariant 在 property-based 测试中明确对应"
+    ],
+    "verification": "Bash: cd packages/shared && pnpm test 应全部通过；grep -c 'fc.assert' test/property-based/*.test.ts 应 ≥ 3"
+  },
+  "depends_on": ["TASK-002"],
+  "estimated_minutes": 60
+}

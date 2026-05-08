@@ -1,0 +1,16 @@
+{
+  "session_id": "test-seed-foundation-2026-05-08",
+  "summary": "落地 fabric 测试框架补足：种子（test-seed）+ CLI drift gate + shared property-based + 测试架构文档",
+  "approach": "5 任务一次性补足测试框架的'非 cycle 部分'。分两层：基础层（TASK-001 种子总览 + TASK-005 架构文档），实现层（TASK-002 三份种子草案 + TASK-003 CLI surface drift gate + TASK-004 shared 引入 fast-check）。所有任务均不触发 integration-test-cycle —— cycle 由维护者 review 种子后单独按包调用（在 TASK-005 文档中提供启动指引）。",
+  "complexity": "Medium",
+  "estimated_time": "235 min（25 + 75 + 30 + 60 + 45）",
+  "recommended_execution": "Agent",
+  "task_ids": ["TASK-001", "TASK-002", "TASK-003", "TASK-004", "TASK-005"],
+  "_metadata": {
+    "exploration_angles": ["codebase-discovery", "external-research"],
+    "source": "analyze-with-file ANL-2026-05-08-fabric-test-cases",
+    "decisions_locked": 11,
+    "recommendations_in_scope": ["#1 (seeds)", "#3 (fast-check)", "#4 (--help drift)", "#7 (granularity)", "+ architecture doc"],
+    "out_of_scope": ["#2/#2a dashboard", "#5 启动 cycle (维护者 review 后单独调用)", "#6 vitest projects"]
+  }
+}
