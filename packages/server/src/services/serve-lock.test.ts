@@ -51,7 +51,7 @@ describe("serve-lock", () => {
     fs.writeFileSync(lockFile, JSON.stringify(staleState));
 
     // Mock process.kill so that stalePid throws ESRCH (no such process)
-    vi.spyOn(process, "kill").mockImplementation((pid: number | NodeJS.Signals, signal?: number | NodeJS.Signals) => {
+    vi.spyOn(process, "kill").mockImplementation((pid: number, _signal?: string | number) => {
       if (pid === stalePid) {
         const err = Object.assign(new Error("ESRCH"), { code: "ESRCH" });
         throw err;

@@ -39,8 +39,11 @@ jobs:
       - name: Typecheck workspace
         run: pnpm -r exec tsc --noEmit
 
-      - name: Run package tests
-        run: pnpm -r --if-present test
+      - name: Lint (knip zero-baseline)
+        run: pnpm lint
+
+      - name: Run package tests with coverage
+        run: pnpm -r --if-present test:coverage
 
       - name: Lint protected tokens
         run: node --experimental-strip-types scripts/lint-protected-tokens.ts

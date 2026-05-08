@@ -37,7 +37,7 @@ export function registerRuleSections(server: McpServer, tracker?: InFlightTracke
 
         const response = {
           ...result,
-          warnings: [...(result.warnings ?? []), ...syncReport.warnings],
+          warnings: [...syncReport.warnings],
         };
 
         const payloadLimits = readPayloadLimits(projectRoot);

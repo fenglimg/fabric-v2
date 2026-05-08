@@ -42,7 +42,7 @@ export function registerPlanContext(server: McpServer, tracker?: InFlightTracker
 
         const response = {
           ...result,
-          warnings: [...(result.warnings ?? []), ...syncReport.warnings],
+          warnings: [...syncReport.warnings],
         };
 
         const payloadLimits = readPayloadLimits(projectRoot);
