@@ -156,38 +156,78 @@ export async function startStdioServer(): Promise<void> {
 
   await server.connect(transport);
 
-  const handledSignals = new Set<NodeJS.Signals>();
+  const closeServer = async (): Promise<void> => {
+    await server.close();
+  };
 
-  function installShutdownHandler(signal: NodeJS.Signals): void {
-    process.on(signal, () => {
-      void (async () => {
-        if (handledSignals.has(signal)) {
-          // Double-signal of same type: hard exit
-          process.stderr.write(`\n[shutdown] ${signal} repeated — forcing exit(1)\n`);
-          process.exit(1);
-        }
-        handledSignals.add(signal);
-        process.stderr.write(
-          `\n[shutdown] ${signal} received — draining ${tracker.size()} requests (5s deadline)\n`,
-        );
-        const result = await tracker.drain(5000);
-        process.stderr.write(`[shutdown] drained ${result.drained}, timed_out ${result.timed_out}\n`);
-        // fsyncSync AFTER drain, BEFORE close — Gemini G1 ordering requirement
-        flushAndSyncEventLedger(projectRoot);
-        process.stderr.write("[shutdown] ledger fsynced; closing server\n");
-        try {
-          await server.close();
-        } catch {
-          // ignore close errors during shutdown
-        }
-        process.exit(0);
-      })();
-    });
-  }
+  process.on(
+    "SIGINT",
+    createShutdownHandler({ signal: "SIGINT", tracker, projectRoot, closeServer }),
+  );
+  process.on(
+    "SIGTERM",
+    createShutdownHandler({ signal: "SIGTERM", tracker, projectRoot, closeServer }),
+  );
+  process.on(
+    "SIGHUP",
+    createShutdownHandler({ signal: "SIGHUP", tracker, projectRoot, closeServer }),
+  );
+}
 
-  installShutdownHandler("SIGINT");
-  installShutdownHandler("SIGTERM");
-  installShutdownHandler("SIGHUP");
+/**
+ * Dependencies for the shutdown handler factory. Tests inject `exit` to assert
+ * exit-code behavior without terminating the test process.
+ */
+export interface ShutdownHandlerDeps {
+  signal: NodeJS.Signals;
+  tracker: InFlightTracker;
+  projectRoot: string;
+  closeServer: () => Promise<void>;
+  /** Override for tests; defaults to `process.exit`. */
+  exit?: (code: number) => never;
+  /** Override for tests; defaults to 5000ms (Gemini G1). */
+  drainDeadlineMs?: number;
+}
+
+/**
+ * Builds a same-signal shutdown handler implementing server.md I1:
+ *   - First invocation: drain in-flight (5s) → fsync ledger → close server → exit(0)
+ *   - Second invocation of the same signal (while first is in flight): exit(1)
+ *
+ * Each call to this factory returns an independent handler with its own
+ * `invoked` flag, so per-signal dedup is isolated.
+ */
+export function createShutdownHandler(deps: ShutdownHandlerDeps): () => void {
+  const exit = deps.exit ?? ((code: number) => process.exit(code));
+  const deadlineMs = deps.drainDeadlineMs ?? 5000;
+  let invoked = false;
+
+  return () => {
+    void (async () => {
+      if (invoked) {
+        process.stderr.write(`\n[shutdown] ${deps.signal} repeated — forcing exit(1)\n`);
+        exit(1);
+        return;
+      }
+      invoked = true;
+      process.stderr.write(
+        `\n[shutdown] ${deps.signal} received — draining ${deps.tracker.size()} requests (${
+          deadlineMs / 1000
+        }s deadline)\n`,
+      );
+      const result = await deps.tracker.drain(deadlineMs);
+      process.stderr.write(`[shutdown] drained ${result.drained}, timed_out ${result.timed_out}\n`);
+      // fsyncSync AFTER drain, BEFORE close — Gemini G1 ordering requirement
+      flushAndSyncEventLedger(deps.projectRoot);
+      process.stderr.write("[shutdown] ledger fsynced; closing server\n");
+      try {
+        await deps.closeServer();
+      } catch {
+        // ignore close errors during shutdown
+      }
+      exit(0);
+    })();
+  };
 }
 
 export async function startHttpServer(options: {

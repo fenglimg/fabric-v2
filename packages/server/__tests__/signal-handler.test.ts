@@ -20,6 +20,7 @@ import { join } from "node:path";
 
 import { createInFlightTracker } from "../src/services/in-flight-tracker.js";
 import { flushAndSyncEventLedger } from "../src/services/event-ledger.js";
+import { createShutdownHandler } from "../src/index.js";
 
 describe.skipIf(process.platform === "win32")("signal handler — in-process", () => {
   const tempDirs: string[] = [];
@@ -104,30 +105,121 @@ describe.skipIf(process.platform === "win32")("signal handler — in-process", (
     expect(existsSync(join(fabricDir, "events.jsonl"))).toBe(true);
   });
 
-  it("double-signal guard: second identical signal should trigger force-exit path", () => {
-    // Simulate the guard logic without actually calling process.exit
-    const handledSignals = new Set<NodeJS.Signals>();
-    const signal: NodeJS.Signals = "SIGTERM";
-
-    // First signal — not yet in set
-    expect(handledSignals.has(signal)).toBe(false);
-    handledSignals.add(signal);
-
-    // Second signal — already in set, would trigger exit(1)
-    expect(handledSignals.has(signal)).toBe(true);
-  });
-
-  it("all three signals (SIGINT, SIGTERM, SIGHUP) are independently tracked in guard set", () => {
-    const handledSignals = new Set<NodeJS.Signals>();
-    const signals: NodeJS.Signals[] = ["SIGINT", "SIGTERM", "SIGHUP"];
-
-    for (const sig of signals) {
-      expect(handledSignals.has(sig)).toBe(false);
-      handledSignals.add(sig);
-      expect(handledSignals.has(sig)).toBe(true);
+  // -------------------------------------------------------------------------
+  // I1: createShutdownHandler factory — real handler behavior
+  //   - First call: drain → fsync → close → exit(0)
+  //   - Second call of same signal (while first pending): exit(1)
+  // -------------------------------------------------------------------------
+  describe("createShutdownHandler factory (server.md I1)", () => {
+    function makeReadyProjectRoot(): string {
+      const dir = makeTempRoot();
+      const fabricDir = join(dir, ".fabric");
+      mkdirSync(fabricDir, { recursive: true });
+      writeFileSync(join(fabricDir, "events.jsonl"), "");
+      return dir;
     }
 
-    // Each signal is independently tracked — no cross-contamination
-    expect(handledSignals.size).toBe(3);
+    it("first invocation: drain → fsync → close → exit(0)", async () => {
+      const projectRoot = makeReadyProjectRoot();
+      const tracker = createInFlightTracker();
+      const exitMock = vi.fn() as unknown as (code: number) => never;
+      const closeServer = vi.fn(async () => {});
+
+      // Silence stderr noise during this test.
+      const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+
+      const handler = createShutdownHandler({
+        signal: "SIGTERM",
+        tracker,
+        projectRoot,
+        closeServer,
+        exit: exitMock,
+        drainDeadlineMs: 50,
+      });
+
+      handler();
+      // Let the IIFE (drain → fsync → close → exit) finish
+      await new Promise((r) => setTimeout(r, 100));
+
+      expect(closeServer).toHaveBeenCalledTimes(1);
+      expect(exitMock).toHaveBeenCalledWith(0);
+      stderrSpy.mockRestore();
+    });
+
+    it("I1: same-signal repeat — second invocation forces exit(1)", async () => {
+      const projectRoot = makeReadyProjectRoot();
+      const tracker = createInFlightTracker();
+      // Make drain hang so the first handler stays in flight when the second arrives.
+      const drainSpy = vi
+        .spyOn(tracker, "drain")
+        .mockImplementation(() => new Promise(() => {}));
+      const exitMock = vi.fn() as unknown as (code: number) => never;
+      const closeServer = vi.fn(async () => {});
+      const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+
+      const handler = createShutdownHandler({
+        signal: "SIGINT",
+        tracker,
+        projectRoot,
+        closeServer,
+        exit: exitMock,
+      });
+
+      handler(); // first call — sets `invoked = true`, then awaits forever on drain
+      // Yield so the IIFE microtask runs to the await
+      await new Promise((r) => setImmediate(r));
+
+      handler(); // second call — must hit `invoked` guard
+      // Yield so the second IIFE runs through to exit(1)
+      await new Promise((r) => setImmediate(r));
+
+      expect(exitMock).toHaveBeenCalledWith(1);
+      // First handler is stuck in drain → never reached fsync/close/exit(0)
+      expect(closeServer).not.toHaveBeenCalled();
+
+      drainSpy.mockRestore();
+      stderrSpy.mockRestore();
+    });
+
+    it("I1: distinct signals get independent dedup state", async () => {
+      // SIGINT and SIGTERM each get their own handler instance — invoking SIGTERM
+      // does NOT poison SIGINT's `invoked` flag.
+      const projectRoot = makeReadyProjectRoot();
+      const tracker = createInFlightTracker();
+      const drainSpy = vi
+        .spyOn(tracker, "drain")
+        .mockImplementation(() => new Promise(() => {}));
+      const exitMock = vi.fn() as unknown as (code: number) => never;
+      const closeServer = vi.fn(async () => {});
+      const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+
+      const intHandler = createShutdownHandler({
+        signal: "SIGINT",
+        tracker,
+        projectRoot,
+        closeServer,
+        exit: exitMock,
+      });
+      const termHandler = createShutdownHandler({
+        signal: "SIGTERM",
+        tracker,
+        projectRoot,
+        closeServer,
+        exit: exitMock,
+      });
+
+      termHandler();
+      await new Promise((r) => setImmediate(r));
+      // SIGTERM is now in-flight. SIGINT (different handler) should still take
+      // the first-call path, NOT the exit(1) guard.
+      intHandler();
+      await new Promise((r) => setImmediate(r));
+
+      // No exit(1) yet — both handlers are on first-call path (stuck in drain)
+      expect(exitMock).not.toHaveBeenCalledWith(1);
+
+      drainSpy.mockRestore();
+      stderrSpy.mockRestore();
+    });
   });
 });
