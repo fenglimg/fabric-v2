@@ -4,7 +4,7 @@ exports[`writeClaudeMcpConfig — snapshot: Claude Code MCP spec format > output
 "{
   "mcpServers": {
     "fabric": {
-      "command": "/Users/wepie/.nvm/versions/node/v22.19.0/bin/node",
+      "command": "<NODE_BIN>",
       "args": [
         "/path/to/fabric-server.js"
       ]

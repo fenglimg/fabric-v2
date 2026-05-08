@@ -131,8 +131,9 @@ describe("writeClaudeMcpConfig — snapshot: Claude Code MCP spec format", () =>
     await writeClaudeMcpConfig(root, FABRIC_ENTRY, "project");
 
     const content = readFileSync(join(root, ".mcp.json"), "utf8");
+    const normalized = content.replaceAll(process.execPath, "<NODE_BIN>");
 
-    expect(content).toMatchSnapshot();
+    expect(normalized).toMatchSnapshot();
 
     // Also verify structural compliance with Claude Code MCP spec
     const parsed = JSON.parse(content) as unknown;

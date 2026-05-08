@@ -84,4 +84,12 @@ jobs:
         run: pnpm -r build
 
       - name: Publish packages
-        run: pnpm -r publish --access public --no-git-checks
+        run: |
+          tag="${GITHUB_REF#refs/tags/}"
+          if [[ "$tag" == *-* ]]; then
+            echo "Prerelease tag detected ($tag) — publishing under dist-tag 'next'"
+            pnpm -r publish --access public --no-git-checks --tag next
+          else
+            echo "Stable tag detected ($tag) — publishing under dist-tag 'latest'"
+            pnpm -r publish --access public --no-git-checks
+          fi
