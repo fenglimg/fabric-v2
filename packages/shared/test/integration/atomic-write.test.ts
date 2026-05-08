@@ -6,11 +6,22 @@
  * T5: EXDEV (cross-device rename) → error bubbles, .tmp cleaned, NO fallback copy
  */
 import { mkdtempSync, readFileSync, readdirSync, rmSync, mkdirSync } from 'node:fs'
-import { readFile } from 'node:fs/promises'
+import { readFile, rename } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+// vi.mock is hoisted — wraps node:fs/promises so we can override `rename` per-test.
+// All other exports pass through to the real implementation (writeFile, unlink, etc.),
+// so I2/I3/atomicWriteJson tests are unaffected. Only T5 swaps in EXDEV behavior.
+vi.mock('node:fs/promises', async () => {
+  const actual = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises')
+  return {
+    ...actual,
+    rename: vi.fn(actual.rename),
+  }
+})
 
 import { atomicWriteText, atomicWriteJson } from '../../src/node/atomic-write.js'
 
@@ -128,81 +139,88 @@ describe('I3 atomic-write: idempotent writes are byte-identical', () => {
 // ---------------------------------------------------------------------------
 // T5 — EXDEV (cross-device rename): error bubbles, .tmp cleaned, no fallback
 //
-// ESM constraint: vi.spyOn cannot intercept native `node:fs/promises` exports
-// because ESM module namespaces are not configurable.
-//
-// Strategy: We simulate the EXDEV scenario by testing the error-path behavior
-// that is observable without mocking. The rename failure in atomic-write is
-// triggered by making the target path a directory (EISDIR), which exercises
-// the same cleanup path as EXDEV. We additionally document the EXDEV contract
-// as a behavioral note since the actual OS-level EXDEV requires different
-// mount points.
+// We swap in a mocked `rename` (via vi.mock factory at top of file) that throws
+// a real EXDEV error. The rest of fs/promises passes through. This actually
+// exercises the EXDEV branch — guarding against any future fallback-copy logic.
 // ---------------------------------------------------------------------------
-describe('T5 atomic-write: EXDEV cross-device rename simulation', () => {
-  it('T5/documented: EXDEV contract — rename throws, error propagates, no fallback copy (behavioral assertion)', () => {
-    // The atomic-write implementation (atomic-write.ts lines 38-42):
-    //   try { await rename(tmpPath, path) }
-    //   catch (err) { try { await unlink(tmpPath) } catch {} throw err }
-    //
-    // This means: any rename error (including EXDEV) causes:
-    //   1. tmp file cleanup attempt (no fallback copy)
-    //   2. original error re-thrown
-    //
-    // ESM spy limitation: vi.spyOn on node:fs/promises exports is not possible
-    // in strict ESM (module namespace not configurable). The EXDEV behavior
-    // is structurally identical to EISDIR rename failure tested below.
-    // We document this as a known ESM mock limitation — EXDEV is covered
-    // at the source-code level by code inspection.
-    expect(true).toBe(true)  // structural documentation test
+describe('T5 atomic-write: EXDEV cross-device rename', () => {
+  const renameMock = vi.mocked(rename)
+
+  // The factory at file top initialized rename = vi.fn(actual.rename), so the
+  // default impl already passes through. Per-test overrides via
+  // mockImplementationOnce — never call mockReset (would wipe the pass-through).
+  beforeEach(() => {
+    renameMock.mockClear()
   })
 
-  it('rename failure (EISDIR) exercises same cleanup path as EXDEV: no .tmp residue', async () => {
-    // EISDIR and EXDEV both hit the same catch block in atomicWriteText.
-    // This test directly validates the cleanup behavior for any rename failure.
-    const dir = makeTempDir('aw-t5-eisdir-')
-    const target = join(dir, 'output')
+  function exdevError(): NodeJS.ErrnoException {
+    const err: NodeJS.ErrnoException = new Error('EXDEV: cross-device link not permitted')
+    err.code = 'EXDEV'
+    err.errno = -18
+    err.syscall = 'rename'
+    return err
+  }
 
-    // Place a directory at target to cause rename to throw EISDIR
-    mkdirSync(target)
+  it('EXDEV: error propagates with code preserved (no fallback copy)', async () => {
+    const dir = makeTempDir('aw-t5-exdev-prop-')
+    const target = join(dir, 'out.txt')
 
-    await expect(atomicWriteText(target, 'new content')).rejects.toThrow()
+    renameMock.mockImplementationOnce(async () => {
+      throw exdevError()
+    })
 
-    // Cleanup must have run — no .tmp files
-    const files = readdirSync(dir)
-    const tmpFiles = files.filter((f) => f.endsWith('.tmp'))
-    expect(tmpFiles).toHaveLength(0)
+    await expect(atomicWriteText(target, 'content')).rejects.toMatchObject({
+      code: 'EXDEV',
+    })
   })
 
-  it('rename failure with pre-existing file: original content preserved (no fallback copy)', async () => {
-    // Same cleanup path: pre-existing target content must survive rename failure.
-    const dir = makeTempDir('aw-t5-preserve-')
-    const targetFile = join(dir, 'data.txt')
-    const targetDir = join(dir, 'output-dir')
+  it('EXDEV: .tmp file cleaned up after rename throws', async () => {
+    const dir = makeTempDir('aw-t5-exdev-cleanup-')
+    const target = join(dir, 'out.txt')
 
-    // Write original content to a different file — demonstrates no cross-contamination
-    await atomicWriteText(targetFile, 'original content')
+    renameMock.mockImplementationOnce(async () => {
+      throw exdevError()
+    })
 
-    // Trigger rename failure via missing subdirectory
-    const badTarget = join(dir, 'no-such-dir', 'file.txt')
-    await expect(atomicWriteText(badTarget, 'new content')).rejects.toThrow()
+    await expect(atomicWriteText(target, 'content')).rejects.toThrow()
 
-    // Original file untouched
-    expect(readFileSync(targetFile, 'utf8')).toBe('original content')
-
-    // No .tmp residue
+    // No .tmp residue — atomic-write must unlink on failure, not retry/copy
     const files = readdirSync(dir)
     expect(files.filter((f) => f.endsWith('.tmp'))).toHaveLength(0)
   })
 
-  it('rename failure: no .tmp file can be observed (atomic cleanup confirmed)', async () => {
-    // Multiple rapid sequential failures should all clean up their .tmp files
-    const dir = makeTempDir('aw-t5-multi-')
-    const badTarget = join(dir, 'missing-dir', 'file.txt')
+  it('EXDEV: target file does NOT receive content (no fallback copy)', async () => {
+    const dir = makeTempDir('aw-t5-exdev-nocopy-')
+    const target = join(dir, 'out.txt')
 
-    // Three rapid failures
-    await expect(atomicWriteText(badTarget, 'content 1')).rejects.toThrow()
-    await expect(atomicWriteText(badTarget, 'content 2')).rejects.toThrow()
-    await expect(atomicWriteText(badTarget, 'content 3')).rejects.toThrow()
+    // Pre-existing file — must remain untouched
+    await atomicWriteText(target, 'original')
+    expect(readFileSync(target, 'utf8')).toBe('original')
+
+    renameMock.mockImplementationOnce(async () => {
+      throw exdevError()
+    })
+
+    await expect(atomicWriteText(target, 'replacement')).rejects.toThrow()
+
+    // Critical assertion: no fallback copy means original survives intact
+    expect(readFileSync(target, 'utf8')).toBe('original')
+
+    const files = readdirSync(dir)
+    expect(files.filter((f) => f.endsWith('.tmp'))).toHaveLength(0)
+  })
+
+  it('EXDEV via atomicWriteJson: same contract holds for JSON wrapper', async () => {
+    const dir = makeTempDir('aw-t5-exdev-json-')
+    const target = join(dir, 'data.json')
+
+    renameMock.mockImplementationOnce(async () => {
+      throw exdevError()
+    })
+
+    await expect(atomicWriteJson(target, { k: 'v' })).rejects.toMatchObject({
+      code: 'EXDEV',
+    })
 
     const files = readdirSync(dir)
     expect(files.filter((f) => f.endsWith('.tmp'))).toHaveLength(0)
