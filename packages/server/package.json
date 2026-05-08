@@ -10,7 +10,8 @@
   "scripts": {
     "build": "tsup src/index.ts --format esm --dts --clean && node scripts/copy-dashboard.mjs",
     "dev": "tsup src/index.ts --format esm --dts --watch",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
     "@fenglimg/fabric-shared": "workspace:*",
@@ -24,6 +25,8 @@
     "@fenglimg/fabric-dashboard": "workspace:*",
     "@types/express": "^5.0.6",
     "@types/node": "^22.15.0",
+    "@types/supertest": "^7.2.0",
+    "supertest": "^7.2.2",
     "tsup": "^8.5.0",
     "typescript": "^5.8.3",
     "vitest": "^3.2.4",
