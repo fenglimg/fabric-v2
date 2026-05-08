@@ -8,7 +8,7 @@ import {
   resolveInitExecutionPlanWithWizard,
   shouldUseInitWizard,
 } from "../src/commands/init.ts";
-import { cleanupFixtureRoot, createWerewolfFixtureRoot } from "./helpers/init-test-utils.ts";
+import { cleanupFixtureRoot, createWerewolfFixtureRoot, setProcessTty } from "./helpers/init-test-utils.ts";
 
 const tempRoots: string[] = [];
 
@@ -156,5 +156,60 @@ describe("init wizard planning", () => {
     ]);
     expect(stdout.length).toBeGreaterThan(0);
     expect(existsSync(`${target}/.fabric/bootstrap/README.md`)).toBe(false);
+  });
+});
+
+describe("runInitCommand cancellation", () => {
+  afterEach(() => {
+    process.exitCode = 0;
+    vi.doUnmock("@clack/prompts");
+    vi.resetModules();
+    delete process.env.FAB_LANG;
+  });
+
+  it("sets exitCode 130 and does not throw or duplicate stderr when wizard cancels", async () => {
+    process.env.FAB_LANG = "en";
+    const target = createWerewolfFixtureRoot("fab-init-runinit-cancel");
+    tempRoots.push(target);
+
+    const restoreTty = setProcessTty(true);
+    const stderrWrites: string[] = [];
+    const cancelMock = vi.fn();
+
+    vi.spyOn(process.stderr, "write").mockImplementation(((chunk: string | Uint8Array) => {
+      stderrWrites.push(typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8"));
+      return true;
+    }) as typeof process.stderr.write);
+    vi.spyOn(console, "log").mockImplementation(() => {});
+
+    vi.doMock("@clack/prompts", () => ({
+      intro: vi.fn(),
+      note: vi.fn(),
+      outro: vi.fn(),
+      cancel: cancelMock,
+      confirm: vi.fn().mockResolvedValue(false),
+      group: vi.fn(),
+      select: vi.fn(),
+      log: { step: vi.fn() },
+      isCancel: vi.fn().mockReturnValue(false),
+    }));
+
+    vi.resetModules();
+    const { runInitCommand } = await import("../src/commands/init.ts");
+
+    let thrown: unknown;
+    try {
+      await runInitCommand({ target });
+    } catch (error) {
+      thrown = error;
+    } finally {
+      restoreTty();
+    }
+
+    expect(thrown).toBeUndefined();
+    expect(process.exitCode).toBe(130);
+    expect(cancelMock).toHaveBeenCalledWith("Fabric init cancelled before execution.");
+    const stderrText = stderrWrites.join("");
+    expect(stderrText).not.toContain("Fabric init cancelled before execution.");
   });
 });

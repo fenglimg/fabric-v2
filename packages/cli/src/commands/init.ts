@@ -331,7 +331,7 @@ export const initCommand = defineCommand({
 
 export default initCommand;
 
-async function runInitCommand(args: InitArgs): Promise<InitExecutionResult> {
+export async function runInitCommand(args: InitArgs): Promise<InitExecutionResult | void> {
   const logger = createDebugLogger(args.debug);
   const resolution = resolveDevMode(args.target, process.cwd());
   const intent = resolveInitCliIntent(args, resolution.target);
@@ -373,8 +373,8 @@ async function runInitCommand(args: InitArgs): Promise<InitExecutionResult> {
     : basePlan;
 
   if (plan === null) {
-    writeStderr(t("cli.init.wizard.cancelled"));
-    throw new Error(t("cli.init.wizard.cancelled"));
+    process.exitCode = 130;
+    return;
   }
 
   return executeInitExecutionPlan(plan);
