@@ -142,6 +142,14 @@ describe("getRuleSections", () => {
         section: "CONTEXT_INFO",
         message: "Rule global-protocol does not define section CONTEXT_INFO.",
       },
+      // v2.0: warn-level signal that this rule lacks knowledge metadata
+      // (no type/layer in frontmatter). Does not block delivery.
+      {
+        code: "missing_knowledge_metadata",
+        severity: "warn",
+        stable_id: "global-protocol",
+        message: "Rule global-protocol has no knowledge metadata (type/layer) — likely an un-migrated v1.x entry.",
+      },
       {
         code: "missing_section",
         severity: "warn",
@@ -155,6 +163,18 @@ describe("getRuleSections", () => {
         stable_id: "ui-batch-rendering",
         section: "BUSINESS_LOGIC_CHUNKS",
         message: "Rule ui-batch-rendering does not define section BUSINESS_LOGIC_CHUNKS.",
+      },
+      {
+        code: "missing_knowledge_metadata",
+        severity: "warn",
+        stable_id: "ui-batch-rendering",
+        message: "Rule ui-batch-rendering has no knowledge metadata (type/layer) — likely an un-migrated v1.x entry.",
+      },
+      {
+        code: "missing_knowledge_metadata",
+        severity: "warn",
+        stable_id: "battle-view-local",
+        message: "Rule battle-view-local has no knowledge metadata (type/layer) — likely an un-migrated v1.x entry.",
       },
     ]);
     expect(await readAuditLog(projectRoot)).toEqual([
@@ -271,6 +291,113 @@ describe("getRuleSections", () => {
       "ui-batch-rendering",
       "ui-low-priority",
       "battle-view-local",
+    ]);
+  });
+
+  // ---------------------------------------------------------------------------
+  // v2.0 diagnostic: missing_knowledge_metadata (TASK-005)
+  // ---------------------------------------------------------------------------
+
+  it("emits_missing_knowledge_metadata_diagnostic — flags un-migrated v1.x entries (warn, not error)", async () => {
+    // Build a project where the global rule HAS v2.0 knowledge fields and the
+    // UI rule does NOT — verify the diagnostic only fires for the un-migrated
+    // entry while selection still completes successfully.
+    const projectRoot = await mkdtemp(join(tmpdir(), "fabric-rule-sections-v2-"));
+    tempDirs.push(projectRoot);
+
+    await mkdir(join(projectRoot, ".fabric"), { recursive: true });
+    await writeFile(
+      join(projectRoot, ".fabric", "human-lock.json"),
+      `${JSON.stringify({ locked: [] }, null, 2)}\n`,
+    );
+    await mkdir(join(projectRoot, ".fabric", "knowledge", "decisions"), { recursive: true });
+    await mkdir(join(projectRoot, ".fabric", "knowledge", "guidelines"), { recursive: true });
+    await writeFile(
+      join(projectRoot, ".fabric", "knowledge", "decisions", "global.md"),
+      "# Global\n\n## [MANDATORY_INJECTION]\nGlobal mandatory.\n",
+    );
+    await writeFile(
+      join(projectRoot, ".fabric", "knowledge", "guidelines", "ui.md"),
+      "# UI\n\n## [MANDATORY_INJECTION]\nUI mandatory.\n",
+    );
+
+    await writeFile(
+      join(projectRoot, ".fabric", "agents.meta.json"),
+      `${JSON.stringify({
+        revision: "rev-knowledge-diag",
+        nodes: {
+          "L0/global": {
+            stable_id: "global-protocol",
+            file: ".fabric/knowledge/decisions/global.md",
+            content_ref: ".fabric/knowledge/decisions/global.md",
+            scope_glob: "**",
+            deps: [],
+            priority: "high",
+            level: "L0",
+            layer: "L0",
+            topology_type: "global",
+            hash: "sha256:global",
+            description: {
+              summary: "Global protocol",
+              intent_clues: [],
+              tech_stack: [],
+              impact: [],
+              must_read_if: "any edit",
+              // v2.0 frontmatter present — should NOT trigger diagnostic.
+              id: "KT-DEC-0001",
+              knowledge_type: "decision",
+              maturity: "verified",
+              knowledge_layer: "team",
+            },
+          },
+          "L1/ui": {
+            stable_id: "ui-rule",
+            file: ".fabric/knowledge/guidelines/ui.md",
+            content_ref: ".fabric/knowledge/guidelines/ui.md",
+            scope_glob: "**",
+            deps: [],
+            priority: "medium",
+            level: "L1",
+            layer: "L1",
+            topology_type: "domain",
+            hash: "sha256:ui",
+            description: {
+              summary: "UI rule",
+              intent_clues: [],
+              tech_stack: [],
+              impact: [],
+              must_read_if: "UI rule",
+              // No knowledge_type / knowledge_layer — should trigger diagnostic.
+            },
+          },
+        },
+      }, null, 2)}\n`,
+    );
+
+    const plan = await planContext(projectRoot, { paths: ["src/index.ts"] });
+    const result = await getRuleSections(projectRoot, {
+      selection_token: plan.selection_token,
+      sections: ["MANDATORY_INJECTION"],
+      ai_selected_stable_ids: ["ui-rule"],
+      ai_selection_reasons: { "ui-rule": "ui touch" },
+    });
+
+    // Selection still completes — both rules surface.
+    expect(result.selected_stable_ids).toEqual(["global-protocol", "ui-rule"]);
+
+    const knowledgeDiagnostics = result.diagnostics.filter(
+      (d): d is Extract<typeof d, { code: "missing_knowledge_metadata" }> =>
+        d.code === "missing_knowledge_metadata",
+    );
+    // Diagnostic fires ONLY for the un-migrated entry, at warn severity.
+    expect(knowledgeDiagnostics).toEqual([
+      {
+        code: "missing_knowledge_metadata",
+        severity: "warn",
+        stable_id: "ui-rule",
+        message:
+          "Rule ui-rule has no knowledge metadata (type/layer) — likely an un-migrated v1.x entry.",
+      },
     ]);
   });
 });

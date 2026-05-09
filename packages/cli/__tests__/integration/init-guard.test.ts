@@ -39,11 +39,12 @@ describe("I2: init guard — no-overwrite behavior", () => {
     await expect(initFabric(target)).rejects.toThrow();
   });
 
-  it("error thrown on existing fabric file mentions the conflicting file path", async () => {
+  it("error thrown on existing v2.0 fabric meta file mentions the conflicting file path", async () => {
     const target = createWerewolfFixtureRoot("itg-init-guard-hint");
     tempRoots.push(target);
 
-    writeFixtureFile(target, ".fabric/bootstrap/README.md", "# existing\n");
+    // v2.0: agents.meta.json is the canonical guard target (replaces v1.x bootstrap/README.md).
+    writeFixtureFile(target, ".fabric/agents.meta.json", "{}\n");
 
     let thrownError: Error | null = null;
     try {
@@ -53,22 +54,19 @@ describe("I2: init guard — no-overwrite behavior", () => {
     }
 
     expect(thrownError).not.toBeNull();
-    // The thrown error message must mention the conflicting path (action_hint contract, I2)
-    expect(thrownError!.message).toMatch(/\.fabric\/bootstrap\/README\.md|--force/i);
+    // The thrown error message must mention the conflicting path (action_hint contract, I2).
+    expect(thrownError!.message).toMatch(/agents\.meta\.json|--force/i);
   });
 
-  it("existing files are untouched after a guard rejection", async () => {
+  it("existing legacy v1.x bootstrap files are untouched by v2.0 init (no guard, no overwrite)", async () => {
     const target = createWerewolfFixtureRoot("itg-init-guard-unchanged");
     tempRoots.push(target);
 
     const original = "# do not overwrite\n";
     writeFixtureFile(target, ".fabric/bootstrap/README.md", original);
 
-    try {
-      await initFabric(target);
-    } catch {
-      // expected
-    }
+    // v2.0 init writes its own layout but does not touch the legacy file.
+    await initFabric(target);
 
     expect(readFileSync(join(target, ".fabric/bootstrap/README.md"), "utf8")).toBe(original);
   });

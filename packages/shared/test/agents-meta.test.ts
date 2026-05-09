@@ -2,6 +2,10 @@ import { describe, expect, it } from "vitest";
 
 import {
   agentsMetaNodeSchema,
+  agentsMetaSchema,
+  allocateKnowledgeId,
+  defaultAgentsMetaCounters,
+  isKnowledgeStableId,
   ruleDescriptionIndexItemSchema,
   ruleDescriptionSchema,
   deriveAgentsMetaIdentitySource,
@@ -31,17 +35,21 @@ describe("ruleDescriptionSchema", () => {
     expect("id" in parsed).toBe(false);
   });
 
-  it("rejects Description.id so stable_id remains the only rule identity", () => {
-    expect(() =>
-      ruleDescriptionSchema.parse({
-        id: "ui-batch-rendering",
-        summary: "UI batch rendering rules",
-        intent_clues: ["优化 drawcall"],
-        tech_stack: ["Cocos", "UI"],
-        impact: ["Performance"],
-        must_read_if: "修改多个 UI 节点的层级或混合模式时",
-      }),
-    ).toThrow();
+  it("accepts v2.0 knowledge id alongside summary so frontmatter ids round-trip", () => {
+    // v2.0 (TASK-002/004): RuleDescription carries an optional knowledge id
+    // (KP-/KT-{TYPE}-{NNNN}) declared in YAML frontmatter. The id is
+    // path-decoupled and travels with the file content; here we just verify
+    // the schema accepts it. Identity itself is still anchored by the
+    // sibling `stable_id` on the meta node — Description.id only mirrors it.
+    const parsed = ruleDescriptionSchema.parse({
+      id: "KT-DEC-0042",
+      summary: "UI batch rendering rules",
+      intent_clues: ["优化 drawcall"],
+      tech_stack: ["Cocos", "UI"],
+      impact: ["Performance"],
+      must_read_if: "修改多个 UI 节点的层级或混合模式时",
+    });
+    expect(parsed.id).toBe("KT-DEC-0042");
   });
 });
 
@@ -176,5 +184,110 @@ describe("agentsMetaNodeSchema", () => {
     expect(parsed.stable_id).toBe("rules/server-core");
     expect(parsed.identity_source).toBe("declared");
     expect(deriveAgentsMetaIdentitySource(parsed)).toBe("declared");
+  });
+});
+
+describe("v2.0 knowledge stable_id (path-decoupled)", () => {
+  it("isKnowledgeStableId recognises KP-/KT-{TYPE}-{NNNN} ids", () => {
+    expect(isKnowledgeStableId("KP-MOD-0001")).toBe(true);
+    expect(isKnowledgeStableId("KT-DEC-0042")).toBe(true);
+    expect(isKnowledgeStableId("KT-GLD-99999")).toBe(true);
+    expect(isKnowledgeStableId("KP-PIT-0007")).toBe(true);
+    expect(isKnowledgeStableId("KT-PRO-1234")).toBe(true);
+
+    // Non-knowledge ids must NOT match.
+    expect(isKnowledgeStableId("rules/server-core")).toBe(false);
+    expect(isKnowledgeStableId("packages/server/rules")).toBe(false);
+    expect(isKnowledgeStableId("KT-XYZ-0001")).toBe(false); // bad type code
+    expect(isKnowledgeStableId("KX-DEC-0001")).toBe(false); // bad layer code
+    expect(isKnowledgeStableId("KT-DEC-1")).toBe(false); // counter < 4 digits
+    expect(isKnowledgeStableId(undefined)).toBe(false);
+  });
+
+  it("allocateKnowledgeId returns sequential ids and advances counters", () => {
+    const seed = {
+      KP: { MOD: 0, DEC: 0, GLD: 0, PIT: 0, PRO: 0 },
+      KT: { MOD: 0, DEC: 5, GLD: 0, PIT: 0, PRO: 0 },
+    };
+    const { id, nextCounters } = allocateKnowledgeId("team", "decision", seed);
+    expect(id).toBe("KT-DEC-0006");
+    expect(nextCounters.KT.DEC).toBe(6);
+    // Other slots untouched.
+    expect(nextCounters.KT.MOD).toBe(0);
+    expect(nextCounters.KP).toEqual(seed.KP);
+  });
+
+  it("allocateKnowledgeId is pure (does not mutate input)", () => {
+    const seed = defaultAgentsMetaCounters();
+    const before = JSON.stringify(seed);
+    allocateKnowledgeId("personal", "model", seed);
+    expect(JSON.stringify(seed)).toBe(before);
+  });
+
+  it("withDerivedAgentsMetaNodeDefaults preserves declared knowledge id verbatim across path moves", () => {
+    // First location.
+    const original = withDerivedAgentsMetaNodeDefaults({
+      file: ".fabric/knowledge/team/decisions/oauth-strategy.md",
+      scope_glob: "**",
+      deps: [],
+      priority: "medium",
+      hash: "sha256:test",
+      stable_id: "KP-GLD-0003",
+    });
+    expect(original.stable_id).toBe("KP-GLD-0003");
+    expect(original.identity_source).toBe("declared");
+
+    // After git mv: same id, different path. Identity must NOT regenerate.
+    const moved = withDerivedAgentsMetaNodeDefaults({
+      file: ".fabric/knowledge/team/guidelines/oauth-strategy.md",
+      scope_glob: "**",
+      deps: [],
+      priority: "medium",
+      hash: "sha256:test",
+      stable_id: "KP-GLD-0003",
+    });
+    expect(moved.stable_id).toBe("KP-GLD-0003");
+    expect(moved.identity_source).toBe("declared");
+  });
+
+  it("agentsMetaNodeSchema accepts knowledge stable_id and marks it declared", () => {
+    const parsed = agentsMetaNodeSchema.parse({
+      file: ".fabric/knowledge/team/decisions/oauth.md",
+      scope_glob: "**",
+      deps: [],
+      priority: "medium",
+      hash: "sha256:k",
+      stable_id: "KT-DEC-0042",
+    });
+    expect(parsed.stable_id).toBe("KT-DEC-0042");
+    expect(parsed.identity_source).toBe("declared");
+  });
+
+  it("agentsMetaSchema accepts the optional counters envelope", () => {
+    const parsed = agentsMetaSchema.parse({
+      revision: "abc",
+      nodes: {},
+      counters: {
+        KP: { MOD: 0, DEC: 0, GLD: 0, PIT: 0, PRO: 0 },
+        KT: { MOD: 0, DEC: 5, GLD: 0, PIT: 0, PRO: 0 },
+      },
+    });
+    expect(parsed.counters?.KT.DEC).toBe(5);
+  });
+
+  it("agentsMetaSchema loads pre-v2.0 meta (no counters) without errors", () => {
+    const parsed = agentsMetaSchema.parse({
+      revision: "abc",
+      nodes: {},
+    });
+    expect(parsed.counters).toBeUndefined();
+  });
+
+  it("deriveAgentsMetaIdentitySource flags any KP-/KT- stable_id as declared", () => {
+    const source = deriveAgentsMetaIdentitySource({
+      file: ".fabric/knowledge/team/anywhere.md",
+      stable_id: "KT-MOD-0007",
+    });
+    expect(source).toBe("declared");
   });
 });

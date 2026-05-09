@@ -19,20 +19,19 @@ afterEach(() => {
 });
 
 describe("initFabric force behavior", () => {
-  it("overwrites an existing internal bootstrap guide when force is enabled", async () => {
+  it("preserves a pre-existing legacy bootstrap/README.md even with --force (v2.0 no longer manages this file)", async () => {
     const target = createWerewolfFixtureRoot("fab-init-force-agents");
-    const control = createWerewolfFixtureRoot("fab-init-force-agents-control");
-    tempRoots.push(target, control);
+    tempRoots.push(target);
+    const original = "# custom bootstrap\n";
 
-    writeFixtureFile(target, ".fabric/bootstrap/README.md", "# custom bootstrap\n");
+    writeFixtureFile(target, ".fabric/bootstrap/README.md", original);
 
-    const result = await initFabric(target, { force: true });
-    await initFabric(control);
-
-    expect(result.bootstrapAction).toBe("overwritten");
-    expect(readFixtureFile(target, ".fabric/bootstrap/README.md")).toBe(
-      readFixtureFile(control, ".fabric/bootstrap/README.md"),
-    );
+    // v2.0: --force does not touch the legacy v1.x file; the doctor's
+    // legacy_v1_artifacts_present warning is the canonical migration signal.
+    await initFabric(target, { force: true });
+    expect(readFixtureFile(target, ".fabric/bootstrap/README.md")).toBe(original);
+    // But v2.0 layout was created.
+    expect(readFixtureFile(target, ".fabric/agents.meta.json")).toContain("counters");
   });
 
   it("overwrites a pre-existing Claude skill file when force is enabled", async () => {
@@ -148,15 +147,15 @@ describe("initFabric force behavior", () => {
     expect(stopCommands).toContain(".claude/hooks/user-stop-hook.cjs");
   });
 
-  it("still aborts on a pre-existing guard file when force is not enabled", async () => {
+  it("still aborts on a pre-existing v2.0 guard file (agents.meta.json) when force is not enabled", async () => {
     const target = createWerewolfFixtureRoot("fab-init-force-guard");
     tempRoots.push(target);
-    const original = "# custom bootstrap\n";
+    const original = '{\n  "revision": "sha256:custom"\n}\n';
 
-    writeFixtureFile(target, ".fabric/bootstrap/README.md", original);
+    writeFixtureFile(target, ".fabric/agents.meta.json", original);
 
-    await expect(initFabric(target)).rejects.toThrowError(`${target}/.fabric/bootstrap/README.md`);
-    expect(readFixtureFile(target, ".fabric/bootstrap/README.md")).toBe(original);
+    await expect(initFabric(target)).rejects.toThrowError(`${target}/.fabric/agents.meta.json`);
+    expect(readFixtureFile(target, ".fabric/agents.meta.json")).toBe(original);
   });
 
   it("remains non-destructive for an already initialized project without options", async () => {
@@ -166,7 +165,7 @@ describe("initFabric force behavior", () => {
     await initFabric(target);
 
     await expect(initFabric(target)).rejects.toThrowError(
-      `${target}/.fabric/bootstrap/README.md`,
+      `${target}/.fabric/agents.meta.json`,
     );
   });
 });

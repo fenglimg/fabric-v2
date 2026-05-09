@@ -25,35 +25,33 @@ describe("initFabric non-destructive behavior", () => {
 
     const plan = await buildInitFabricPlan(target);
 
-    expect(plan.bootstrapAction).toBe("created");
+    // v2.0: scaffold plans target the knowledge layout + agents.meta + ledger.
+    expect(plan.knowledgeDirAction).toBe("created");
     expect(plan.metaAction).toBe("created");
-    expect((plan as { taxonomyAction?: string }).taxonomyAction).toBe("created");
-    expect((plan as { taxonomyContent?: string }).taxonomyContent).toContain("Fabric Initial Taxonomy");
-    expect((plan as { taxonomyContent?: string }).taxonomyContent).toContain("L0");
-    expect((plan as { taxonomyContent?: string }).taxonomyContent).toContain("L1");
-    expect((plan as { taxonomyContent?: string }).taxonomyContent).toContain("L2");
+    // Legacy v1.x bootstrap/taxonomy fields no longer exist on the plan.
+    expect((plan as { bootstrapAction?: string }).bootstrapAction).toBeUndefined();
+    expect((plan as { taxonomyAction?: string }).taxonomyAction).toBeUndefined();
     expect(existsSync(`${target}/.fabric/bootstrap/README.md`)).toBe(false);
+    expect(existsSync(`${target}/.fabric/knowledge`)).toBe(false);
     expect(existsSync(`${target}/.fabric/agents.meta.json`)).toBe(false);
     expect(existsSync(`${target}/.fabric/INITIAL_TAXONOMY.md`)).toBe(false);
     expect(plan.codexHooksConfig.action).toBe("created");
   });
 
-  it("writes a Markdown-only initial taxonomy artifact during init", async () => {
-    const target = createWerewolfFixtureRoot("fab-init-taxonomy");
+  it("does NOT generate the legacy INITIAL_TAXONOMY.md artifact during init", async () => {
+    const target = createWerewolfFixtureRoot("fab-init-no-taxonomy");
     tempRoots.push(target);
 
-    const result = await initFabric(target);
-    const taxonomyPath = `${target}/.fabric/INITIAL_TAXONOMY.md`;
-    const taxonomy = readFixtureFile(target, ".fabric/INITIAL_TAXONOMY.md");
+    await initFabric(target);
 
-    expect((result as { taxonomyPath?: string }).taxonomyPath).toBe(taxonomyPath);
-    expect((result as { taxonomyAction?: string }).taxonomyAction).toBe("created");
-    expect(taxonomy).toContain("# Fabric Initial Taxonomy");
-    expect(taxonomy).toContain("L0");
-    expect(taxonomy).toContain("L1");
-    expect(taxonomy).toContain("L2");
-    expect(taxonomy).toContain("Evolution Guide");
+    // v2.0: knowledge entries (frontmatter `layer:`/`type:`) replace the
+    // monolithic INITIAL_TAXONOMY.md. The legacy file must not be created.
+    expect(existsSync(`${target}/.fabric/INITIAL_TAXONOMY.md`)).toBe(false);
     expect(existsSync(`${target}/.fabric/INITIAL_TAXONOMY.json`)).toBe(false);
+    // Knowledge subdirs are present instead.
+    for (const sub of ["decisions", "pitfalls", "guidelines", "models", "processes", "pending"]) {
+      expect(existsSync(`${target}/.fabric/knowledge/${sub}`)).toBe(true);
+    }
   });
 
   it("builds an execution plan that preserves staged init order without writing files", async () => {
@@ -90,16 +88,20 @@ describe("initFabric non-destructive behavior", () => {
     expect(existsSync(`${target}/.fabric/bootstrap/README.md`)).toBe(false);
   });
 
-  it("aborts when the internal bootstrap guide already exists and keeps the file intact", async () => {
-    const target = createWerewolfFixtureRoot("fab-init-agents-guard");
+  it("does NOT overwrite a pre-existing legacy `.fabric/bootstrap/README.md` (v2.0 leaves it untouched)", async () => {
+    const target = createWerewolfFixtureRoot("fab-init-legacy-bootstrap-untouched");
     tempRoots.push(target);
-    const original = "# custom bootstrap\n";
+    const original = "# legacy bootstrap\n";
 
     writeFixtureFile(target, ".fabric/bootstrap/README.md", original);
 
-    await expect(initFabric(target)).rejects.toThrowError(`${target}/.fabric/bootstrap/README.md`);
+    // v2.0 init does not produce or touch the legacy bootstrap file. doctor's
+    // legacy_v1_artifacts_present check (warn-only) handles surface visibility.
+    await initFabric(target);
     expect(readFixtureFile(target, ".fabric/bootstrap/README.md")).toBe(original);
-    expect(existsSync(`${target}/.fabric/agents.meta.json`)).toBe(false);
+    // The v2.0 layout is created alongside the untouched legacy file.
+    expect(existsSync(`${target}/.fabric/agents.meta.json`)).toBe(true);
+    expect(existsSync(`${target}/.fabric/knowledge/decisions`)).toBe(true);
   });
 
   it("aborts when forensic.json already exists and does not overwrite it", async () => {

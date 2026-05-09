@@ -74,13 +74,13 @@ describe("initFabric --reapply preservation", () => {
 
     const metaPath = join(target, ".fabric", "agents.meta.json");
 
-    // Write a populated meta (simulating AI-built rule tree).
+    // Write a populated meta (simulating AI-built rule tree). v2.0 shape:
+    // no L0 bootstrap node; legacy `.fabric/rules/` entries remain valid.
     const customMeta = JSON.stringify(
       {
         revision: "sha256:custom-revision",
         nodes: {
-          L0: { file: ".fabric/bootstrap/README.md", scope_glob: "**", deps: [], priority: "high", layer: "L0", topology_type: "mirror", hash: "sha256:aaa" },
-          "rules/my-rule": { file: ".fabric/rules/my-rule.md", scope_glob: "src/**", deps: ["L0"], priority: "medium", layer: "L1", topology_type: "cluster", hash: "sha256:bbb" },
+          "rules/my-rule": { file: ".fabric/rules/my-rule.md", scope_glob: "src/**", deps: [], priority: "medium", layer: "L1", topology_type: "cluster", hash: "sha256:bbb" },
         },
       },
       null,
@@ -109,12 +109,11 @@ describe("initFabric --reapply preservation", () => {
 
     const metaPath = join(target, ".fabric", "agents.meta.json");
 
-    // Write a custom meta.
+    // Write a custom meta (v2.0 shape: no L0 bootstrap node).
     const customMeta = JSON.stringify(
       {
         revision: "sha256:custom-revision",
         nodes: {
-          L0: { file: ".fabric/bootstrap/README.md", scope_glob: "**", deps: [], priority: "high", layer: "L0", topology_type: "mirror", hash: "sha256:aaa" },
           "rules/extra": { file: ".fabric/rules/extra.md", scope_glob: "src/**", deps: [], priority: "medium", layer: "L1", topology_type: "cluster", hash: "sha256:ccc" },
         },
       },
@@ -135,13 +134,17 @@ describe("initFabric --reapply preservation", () => {
     // Meta should have been rewritten (different from our custom content).
     expect(afterMetaHash).not.toBe(originalMetaHash);
 
-    // The rewritten meta should be the L0-only stub shape.
+    // v2.0: rewritten meta is the empty stub shape — no L0 bootstrap node,
+    // counters envelope present.
     const afterMeta = JSON.parse(readFileSync(metaPath, "utf8")) as {
       revision?: string;
       nodes?: Record<string, unknown>;
+      counters?: { KP?: Record<string, number>; KT?: Record<string, number> };
     };
     expect(afterMeta.nodes).toBeDefined();
-    expect(Object.keys(afterMeta.nodes ?? {})).toEqual(["L0"]);
+    expect(Object.keys(afterMeta.nodes ?? {})).toEqual([]);
+    expect(afterMeta.counters?.KP).toBeDefined();
+    expect(afterMeta.counters?.KT).toBeDefined();
   });
 
   it("appends a reapply_completed ledger event with correct preservation flags", async () => {

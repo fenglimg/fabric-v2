@@ -1,10 +1,8 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
-
-import { buildBootstrapContent } from "@fenglimg/fabric-shared/node/bootstrap-guide";
 
 import { runDoctorFix, runDoctorReport } from "./doctor.js";
 import { readEventLedger } from "./event-ledger.js";
@@ -30,35 +28,47 @@ describe("runDoctorReport", () => {
     expect(report.status).toBe("error");
     expect(report.summary.framework.kind).toBe("vite");
     expect(report.summary.entryPoints.map((entry) => entry.path)).toContain("src/main.ts");
+    // v2.0: bootstrap_anchor_missing replaces bootstrap_missing; knowledge_dir_missing
+    // replaces taxonomy_missing.
     expect(report.fixable_errors.map((issue) => issue.code)).toEqual([
-      "bootstrap_missing",
+      "bootstrap_anchor_missing",
+      "knowledge_dir_missing",
       "agents_meta_missing",
       "rule_test_index_missing",
       "event_ledger_missing",
     ]);
     expect(report.manual_errors.map((issue) => issue.code)).toContain("content_refs_unavailable");
     expect(report.manual_errors.map((issue) => issue.code)).toEqual([
-      "taxonomy_missing",
       "forensic_missing",
       "init_context_missing",
       "content_refs_unavailable",
     ]);
   });
 
-  it("returns ok when target-state fabric artifacts are aligned", async () => {
+  it("returns ok when target-state fabric artifacts are aligned (v2.0 bridged fixture)", async () => {
+    // The existing initialized fixture seeds both the v2.0 layout (AGENTS.md +
+    // .fabric/knowledge/* subdirs) and a legacy .fabric/rules/ tree so the
+    // rule-meta-builder pipeline (still v1-coupled until TASK-003/TASK-004)
+    // has something to index. As a result this fixture deliberately retains
+    // the `.fabric/rules/` tree, which v2.0's `legacy_v1_artifacts_present`
+    // visibility check will surface as a warning. That is expected here.
     const target = createInitializedProject("doctor-ok");
     await writeRuleMeta(target, { source: "doctor_fix" });
     writeFile(".fabric/events.jsonl", "", target);
 
     const report = await runDoctorReport(target);
 
-    expect(report.status).toBe("ok");
     expect(report.fixable_errors).toEqual([]);
     expect(report.manual_errors).toEqual([]);
-    expect(report.warnings).toEqual([]);
+    // Bridge fixture carries `.fabric/rules/`, which fires legacy_v1_artifacts_present.
+    expect(report.warnings.map((w) => w.code)).toEqual(["legacy_v1_artifacts_present"]);
+    // v2.0: 4 renames (net-zero) + counter_desync + legacy_v1_artifacts_present.
+    // counter_desync is separated from stable_id_collision so that fixable_error
+    // and warning signals can coexist cleanly (a single DoctorCheck entry has a
+    // single status). Count: 19 v1.x → 21 v2.0.
     expect(report.checks.map((check) => check.name)).toEqual([
-      "Bootstrap README",
-      "Initial taxonomy",
+      "Bootstrap anchor",
+      "Knowledge layout",
       "Scan evidence",
       "Init context",
       "Agents metadata",
@@ -69,14 +79,30 @@ describe("runDoctorReport", () => {
       "Event ledger partial write",
       "Claude MCP config location",
       "Meta manual divergence",
-      "Rules dir unindexed",
+      "Knowledge dir unindexed",
       "Stable ID collision",
+      "Knowledge counter desync",
       "Claude skill path",
       "Claude hook path",
       "Codex skill path",
       "Preexisting root markdown",
       "Legacy client paths",
+      "Legacy v1 artifacts",
     ]);
+    expect(report.checks).toHaveLength(21);
+  });
+
+  it("v2.0: clean post-init repo (mocked layout) reports zero errors AND zero warnings", async () => {
+    // Done-when: fresh post-init v2.0 repo with mocked layout — no errors, no warnings.
+    const target = createV2KnowledgeProject("doctor-v2-clean");
+    await writeRuleMeta(target, { source: "doctor_fix" });
+
+    const report = await runDoctorReport(target);
+
+    expect(report.fixable_errors.map((e) => e.code)).toEqual([]);
+    expect(report.manual_errors.map((e) => e.code)).toEqual([]);
+    expect(report.warnings.map((w) => w.code)).toEqual([]);
+    expect(report.status).toBe("ok");
   });
 
   it("treats malformed rule sections as manual errors", async () => {
@@ -100,9 +126,13 @@ describe("runDoctorReport", () => {
 
     expect(before.fixable_errors.map((issue) => issue.code)).toContain("agents_meta_missing");
     expect(fix.changed).toBe(true);
-    expect(after.fixable_errors).toEqual([]);
+    // bootstrap_anchor_missing remains because doctor --fix does NOT auto-create
+    // AGENTS.md/CLAUDE.md (the canonical remediation is `fabric init`).
+    // knowledge_dir_missing is fixable, so it should be cleared by --fix.
+    expect(after.fixable_errors.map((issue) => issue.code)).toEqual([
+      "bootstrap_anchor_missing",
+    ]);
     expect(after.manual_errors.map((issue) => issue.code)).toEqual([
-      "taxonomy_missing",
       "forensic_missing",
       "init_context_missing",
     ]);
@@ -448,7 +478,7 @@ describe("runDoctorReport", () => {
     expect(report.checks.find((c) => c.name === "Stable ID collision")?.status).toBe("ok");
   });
 
-  it("TASK-030: rules_dir_unindexed detected when .md exists in rules dir but not in meta", async () => {
+  it("TASK-030 / v2.0: knowledge_dir_unindexed detected when .md exists in rules tree but not in meta", async () => {
     const target = createInitializedProject("doctor-unindexed-detect");
     await writeRuleMeta(target, { source: "doctor_fix" });
     writeFile(".fabric/events.jsonl", "", target);
@@ -458,11 +488,11 @@ describe("runDoctorReport", () => {
 
     const report = await runDoctorReport(target);
 
-    expect(report.fixable_errors.map((e) => e.code)).toContain("rules_dir_unindexed");
-    expect(report.checks.find((c) => c.name === "Rules dir unindexed")?.status).toBe("error");
+    expect(report.fixable_errors.map((e) => e.code)).toContain("knowledge_dir_unindexed");
+    expect(report.checks.find((c) => c.name === "Knowledge dir unindexed")?.status).toBe("error");
   });
 
-  it("TASK-030: --fix incorporates unindexed rule files via reconcileRules", async () => {
+  it("TASK-030 / v2.0: --fix incorporates unindexed rule files via reconcileRules", async () => {
     const target = createInitializedProject("doctor-unindexed-fix");
     await writeRuleMeta(target, { source: "doctor_fix" });
     writeFile(".fabric/events.jsonl", "", target);
@@ -471,14 +501,14 @@ describe("runDoctorReport", () => {
     writeFile(".fabric/rules/packages/ui/rules.md", "<!-- fab:rule-id rules/ui -->\n# UI\n\n## [MANDATORY_INJECTION]\nUse components.\n", target);
 
     const before = await runDoctorReport(target);
-    expect(before.fixable_errors.map((e) => e.code)).toContain("rules_dir_unindexed");
+    expect(before.fixable_errors.map((e) => e.code)).toContain("knowledge_dir_unindexed");
 
     const fix = await runDoctorFix(target);
     const after = await runDoctorReport(target);
 
-    expect(fix.fixed.map((e) => e.code)).toContain("rules_dir_unindexed");
-    expect(after.fixable_errors.map((e) => e.code)).not.toContain("rules_dir_unindexed");
-    expect(after.checks.find((c) => c.name === "Rules dir unindexed")?.status).toBe("ok");
+    expect(fix.fixed.map((e) => e.code)).toContain("knowledge_dir_unindexed");
+    expect(after.fixable_errors.map((e) => e.code)).not.toContain("knowledge_dir_unindexed");
+    expect(after.checks.find((c) => c.name === "Knowledge dir unindexed")?.status).toBe("ok");
   });
 
   it("TASK-029: content_ref_missing is fixable — --fix via reconcileRules drops stale refs", async () => {
@@ -679,22 +709,213 @@ describe("runDoctorReport", () => {
     }
   });
 
-  it("TASK-026: doctor --fix bootstrap uses same builder as fab init (structurally equivalent)", async () => {
-    const target = createProject("doctor-bootstrap-builder");
-    writeFile("package.json", JSON.stringify({ name: "test-proj", dependencies: { vite: "^7.0.0" } }, null, 2), target);
-    writeFile("src/main.ts", "export const boot = true;\n", target);
+  // -------------------------------------------------------------------------
+  // v2.0 — TASK-006: 4 v1.x-coupled checks renamed + 1 new visibility check
+  // -------------------------------------------------------------------------
 
-    const before = await runDoctorReport(target);
-    expect(before.fixable_errors.map((e) => e.code)).toContain("bootstrap_missing");
+  it("v2.0 / knowledge_dir_missing: fixable_error when any required subdir is absent", async () => {
+    const target = createInitializedProject("doctor-knowledge-missing-detect");
+    await writeRuleMeta(target, { source: "doctor_fix" });
+    writeFile(".fabric/events.jsonl", "", target);
+
+    // Remove a single required subdir to trigger the check.
+    rmSync(join(target, ".fabric", "knowledge", "pending"), { recursive: true, force: true });
+
+    const report = await runDoctorReport(target);
+    const codes = report.fixable_errors.map((e) => e.code);
+    expect(codes).toContain("knowledge_dir_missing");
+    const issue = report.fixable_errors.find((e) => e.code === "knowledge_dir_missing");
+    expect(issue?.message).toContain(".fabric/knowledge/pending");
+  });
+
+  it("v2.0 / knowledge_dir_missing: --fix creates the missing subdirs (mkdir recursive)", async () => {
+    const target = createInitializedProject("doctor-knowledge-missing-fix");
+    await writeRuleMeta(target, { source: "doctor_fix" });
+    writeFile(".fabric/events.jsonl", "", target);
+
+    rmSync(join(target, ".fabric", "knowledge", "pending"), { recursive: true, force: true });
+    rmSync(join(target, ".fabric", "knowledge", "guidelines"), { recursive: true, force: true });
+
+    const fix = await runDoctorFix(target);
+    const after = await runDoctorReport(target);
+
+    expect(fix.fixed.map((e) => e.code)).toContain("knowledge_dir_missing");
+    expect(after.fixable_errors.map((e) => e.code)).not.toContain("knowledge_dir_missing");
+    for (const sub of ["pending", "guidelines"]) {
+      expect(existsSync(join(target, ".fabric", "knowledge", sub))).toBe(true);
+    }
+  });
+
+  it("v2.0 / counter_desync: detected when stable_id counter exceeds counters envelope", async () => {
+    // Use a minimal v2.0 fixture (no .fabric/rules/) so reconcileRules is not
+    // triggered by stale-meta during --fix; this test focuses purely on the
+    // counter_desync emission and downstream fix path.
+    const target = createV2KnowledgeProject("doctor-counter-desync-detect");
+    await writeRuleMeta(target, { source: "doctor_fix" });
+
+    const metaPath = join(target, ".fabric", "agents.meta.json");
+    const meta = JSON.parse(readFileSync(metaPath, "utf8")) as Record<string, unknown>;
+    const nodes = meta.nodes as Record<string, Record<string, unknown>>;
+    nodes["L0/manual-knowledge"] = {
+      file: ".fabric/knowledge/decisions/example.md",
+      content_ref: ".fabric/knowledge/decisions/example.md",
+      scope_glob: "**",
+      deps: [],
+      priority: "medium",
+      level: "L0",
+      layer: "L0",
+      topology_type: "mirror",
+      hash: "deadbeef",
+      stable_id: "KP-DEC-0007",
+      identity_source: "declared",
+    };
+    meta.counters = { KP: { MOD: 0, DEC: 5, GLD: 0, PIT: 0, PRO: 0 }, KT: { MOD: 0, DEC: 0, GLD: 0, PIT: 0, PRO: 0 } };
+    writeFileSync(metaPath, JSON.stringify(meta, null, 2), "utf8");
+
+    const report = await runDoctorReport(target);
+    expect(report.fixable_errors.map((e) => e.code)).toContain("counter_desync");
+    const check = report.checks.find((c) => c.name === "Knowledge counter desync");
+    expect(check?.status).toBe("error");
+    expect(check?.message).toContain("KP.DEC");
+  });
+
+  it("v2.0 / counter_desync: --fix bumps counters.KP.DEC to max(observed, current)", async () => {
+    const target = createV2KnowledgeProject("doctor-counter-desync-fix");
+    await writeRuleMeta(target, { source: "doctor_fix" });
+
+    const metaPath = join(target, ".fabric", "agents.meta.json");
+    const meta = JSON.parse(readFileSync(metaPath, "utf8")) as Record<string, unknown>;
+    const nodes = meta.nodes as Record<string, Record<string, unknown>>;
+    nodes["L0/manual-knowledge"] = {
+      file: ".fabric/knowledge/decisions/example.md",
+      content_ref: ".fabric/knowledge/decisions/example.md",
+      scope_glob: "**",
+      deps: [],
+      priority: "medium",
+      level: "L0",
+      layer: "L0",
+      topology_type: "mirror",
+      hash: "deadbeef",
+      stable_id: "KP-DEC-0007",
+      identity_source: "declared",
+    };
+    meta.counters = { KP: { MOD: 0, DEC: 5, GLD: 0, PIT: 0, PRO: 0 }, KT: { MOD: 0, DEC: 0, GLD: 0, PIT: 0, PRO: 0 } };
+    writeFileSync(metaPath, JSON.stringify(meta, null, 2), "utf8");
+
+    const fix = await runDoctorFix(target);
+    expect(fix.fixed.map((e) => e.code)).toContain("counter_desync");
+
+    const updated = JSON.parse(readFileSync(metaPath, "utf8")) as { counters: { KP: { DEC: number } } };
+    expect(updated.counters.KP.DEC).toBe(7);
+  });
+
+  it("v2.0 / bootstrap_anchor_missing: passes when AGENTS.md or CLAUDE.md exists at repo root", async () => {
+    const target = createInitializedProject("doctor-anchor-agents");
+    await writeRuleMeta(target, { source: "doctor_fix" });
+    writeFile(".fabric/events.jsonl", "", target);
+
+    const report = await runDoctorReport(target);
+    expect(report.fixable_errors.map((e) => e.code)).not.toContain("bootstrap_anchor_missing");
+    expect(report.checks.find((c) => c.name === "Bootstrap anchor")?.status).toBe("ok");
+  });
+
+  it("v2.0 / bootstrap_anchor_missing: passes when CLAUDE.md alone exists (no AGENTS.md)", async () => {
+    const target = createInitializedProject("doctor-anchor-claude-only");
+    rmSync(join(target, "AGENTS.md"), { force: true });
+    writeFile("CLAUDE.md", "# CLAUDE\n", target);
+    await writeRuleMeta(target, { source: "doctor_fix" });
+    writeFile(".fabric/events.jsonl", "", target);
+
+    const report = await runDoctorReport(target);
+    expect(report.fixable_errors.map((e) => e.code)).not.toContain("bootstrap_anchor_missing");
+    expect(report.checks.find((c) => c.name === "Bootstrap anchor")?.status).toBe("ok");
+  });
+
+  it("v2.0 / bootstrap_anchor_missing: fixable_error when neither AGENTS.md nor CLAUDE.md exists", async () => {
+    const target = createInitializedProject("doctor-anchor-missing");
+    rmSync(join(target, "AGENTS.md"), { force: true });
+    await writeRuleMeta(target, { source: "doctor_fix" });
+    writeFile(".fabric/events.jsonl", "", target);
+
+    const report = await runDoctorReport(target);
+    const issue = report.fixable_errors.find((e) => e.code === "bootstrap_anchor_missing");
+    expect(issue).toBeDefined();
+    expect(issue?.message).toContain("AGENTS.md");
+    expect(issue?.message).toContain("CLAUDE.md");
+  });
+
+  it("v2.0 / legacy_v1_artifacts_present: warn (not error) when .fabric/rules/ exists post-upgrade", async () => {
+    // Manually re-create a v1 artifact after init to simulate a half-migrated repo.
+    const target = createInitializedProject("doctor-legacy-v1-rules");
+    await writeRuleMeta(target, { source: "doctor_fix" });
+    writeFile(".fabric/events.jsonl", "", target);
+    // .fabric/rules/ is already seeded by createInitializedProject, so the
+    // legacy artifacts check should already fire in the bridged fixture.
+
+    const report = await runDoctorReport(target);
+    const issue = report.warnings.find((w) => w.code === "legacy_v1_artifacts_present");
+    expect(issue).toBeDefined();
+    expect(issue?.message).toContain(".fabric/rules");
+    // Must remain a warning (visibility-only, not an error).
+    expect(report.checks.find((c) => c.name === "Legacy v1 artifacts")?.status).toBe("warn");
+  });
+
+  it("v2.0 / legacy_v1_artifacts_present: NOT auto-fixable (no --fix codepath)", async () => {
+    const target = createInitializedProject("doctor-legacy-v1-not-fixable");
+    await writeRuleMeta(target, { source: "doctor_fix" });
+    writeFile(".fabric/events.jsonl", "", target);
+
+    const fix = await runDoctorFix(target);
+    expect(fix.fixed.map((e) => e.code)).not.toContain("legacy_v1_artifacts_present");
+    // Artifact should still be present after --fix run (we never delete user data).
+    expect(existsSync(join(target, ".fabric", "rules"))).toBe(true);
+  });
+
+  it("v2.0 / fix_does_not_regenerate_v1_taxonomy_or_bootstrap: --fix on a fresh v2.0 project does NOT recreate v1 paths", async () => {
+    const target = createProject("doctor-fix-no-regen-v1");
+    writeFile("package.json", JSON.stringify({ name: "doctor-fix-no-regen-v1", dependencies: { vite: "^7.0.0" } }, null, 2), target);
+    writeFile("src/main.ts", "export const boot = true;\n", target);
+    writeFile("AGENTS.md", "# AGENTS\n", target);
 
     await runDoctorFix(target);
 
-    const written = readFileSync(join(target, ".fabric", "bootstrap", "README.md"), "utf8");
-    const expected = buildBootstrapContent(target);
+    // After --fix, NONE of these v1.x paths should exist (TASK-001 deleted them).
+    expect(existsSync(join(target, ".fabric", "INITIAL_TAXONOMY.md"))).toBe(false);
+    expect(existsSync(join(target, ".fabric", "bootstrap"))).toBe(false);
+    expect(existsSync(join(target, ".fabric", "bootstrap", "README.md"))).toBe(false);
+  });
 
-    expect(written).toBe(expected);
-    expect(written).toContain("Fabric Bootstrap Protocol");
-    expect(written).toContain("test-proj");
+  it("v2.0 / TASK-031 regression: stable_id_collision still detected for legacy fab:rule-id markers", async () => {
+    const target = createInitializedProject("doctor-stable-id-collision-regression");
+    await writeRuleMeta(target, { source: "doctor_fix" });
+    writeFile(".fabric/events.jsonl", "", target);
+
+    writeFile(
+      ".fabric/rules/packages/ui/rules.md",
+      "<!-- fab:rule-id rules/server -->\n# UI (duplicate)\n\n## [MANDATORY_INJECTION]\nUse components.\n",
+      target,
+    );
+
+    const report = await runDoctorReport(target);
+    expect(report.warnings.map((w) => w.code)).toContain("stable_id_collision");
+  });
+
+  it("v2.0 / stable_id_collision: detects collisions across knowledge frontmatter ids", async () => {
+    const target = createInitializedProject("doctor-stable-id-collision-knowledge");
+    await writeRuleMeta(target, { source: "doctor_fix" });
+    writeFile(".fabric/events.jsonl", "", target);
+
+    const fmA = "---\nid: KT-DEC-0001\ntype: decision\nmaturity: draft\nlayer: team\ncreated_at: 2026-05-09T00:00:00Z\n---\n# A\n";
+    const fmB = "---\nid: KT-DEC-0001\ntype: decision\nmaturity: draft\nlayer: team\ncreated_at: 2026-05-09T00:00:00Z\n---\n# B\n";
+    writeFile(".fabric/knowledge/decisions/a.md", fmA, target);
+    writeFile(".fabric/knowledge/decisions/b.md", fmB, target);
+
+    const report = await runDoctorReport(target);
+    expect(report.warnings.map((w) => w.code)).toContain("stable_id_collision");
+    const check = report.checks.find((c) => c.name === "Stable ID collision");
+    expect(check?.message).toContain("KT-DEC-0001");
+    expect(check?.message).toContain(".fabric/knowledge/decisions/a.md");
+    expect(check?.message).toContain(".fabric/knowledge/decisions/b.md");
   });
 });
 
@@ -702,10 +923,21 @@ function createInitializedProject(name: string): string {
   const target = createProject(name);
   writeFile("package.json", JSON.stringify({ name, dependencies: { vite: "^7.0.0" } }, null, 2), target);
   writeFile("src/main.ts", "export const boot = true;\n", target);
-  writeFile(".fabric/bootstrap/README.md", "# Bootstrap\n", target);
-  writeFile(".fabric/INITIAL_TAXONOMY.md", "# Initial Taxonomy\n", target);
+
+  // v2.0 bootstrap anchor at the repo root (AGENTS.md or CLAUDE.md is sufficient).
+  writeFile("AGENTS.md", "# AGENTS\nFabric v2.0 bootstrap anchor.\n", target);
+
+  // v2.0 knowledge layout — six required subdirectories.
+  for (const sub of ["decisions", "pitfalls", "guidelines", "models", "processes", "pending"]) {
+    mkdirSync(join(target, ".fabric", "knowledge", sub), { recursive: true });
+  }
+
   writeFile(".fabric/init-context.json", JSON.stringify({ confirmed: true }, null, 2), target);
   writeFile(".fabric/forensic.json", JSON.stringify(createForensic(target, name), null, 2), target);
+  // Continue to seed a legacy .fabric/rules/ entry so that rule-meta-builder
+  // (still v1-coupled until TASK-003/TASK-004 land) has something to index.
+  // This lets the wider test suite verify reconcile/meta machinery while the
+  // v2.0 doctor checks observe the new repo-root + knowledge layout.
   writeFile(".fabric/rules/packages/server/rules.md", "<!-- fab:rule-id rules/server -->\n# Server\n\n## [MANDATORY_INJECTION]\nUse services.\n", target);
   writeFile("packages/server/rules.contract.test.ts", "// @fabric-verify rules/server\nexpect(true).toBe(true);\n", target);
   return target;
@@ -715,6 +947,32 @@ function createProject(name: string): string {
   const root = mkdtempSync(join(tmpdir(), `${name}-`));
   tempRoots.push(root);
   return root;
+}
+
+// Minimal v2.0 knowledge fixture: AGENTS.md anchor + all knowledge subdirs +
+// init/forensic/events seeded + a hand-crafted, internally-consistent
+// agents.meta.json (empty nodes, default counters envelope) + a matching
+// rule-test.index.json. Does NOT seed any .fabric/rules/ tree, so
+// rule-meta-builder rebuilds an identical empty meta and reconcile is
+// not triggered by --fix.
+function createV2KnowledgeProject(name: string): string {
+  const target = createProject(name);
+  writeFile("package.json", JSON.stringify({ name, dependencies: { vite: "^7.0.0" } }, null, 2), target);
+  writeFile("src/main.ts", "export const boot = true;\n", target);
+  writeFile("AGENTS.md", "# AGENTS\n", target);
+
+  for (const sub of ["decisions", "pitfalls", "guidelines", "models", "processes", "pending"]) {
+    mkdirSync(join(target, ".fabric", "knowledge", sub), { recursive: true });
+  }
+
+  writeFile(".fabric/init-context.json", JSON.stringify({ confirmed: true }, null, 2), target);
+  writeFile(".fabric/forensic.json", JSON.stringify(createForensic(target, name), null, 2), target);
+  writeFile(".fabric/events.jsonl", "", target);
+  // Defer to writeRuleMeta() at the test site after this returns; that gives us a
+  // canonical empty agents.meta.json + rule-test.index.json that match what
+  // rule-meta-builder produces, so neither agents_meta_stale nor
+  // rule_test_index_stale fires.
+  return target;
 }
 
 function writeFile(path: string, content: string, root: string): void {

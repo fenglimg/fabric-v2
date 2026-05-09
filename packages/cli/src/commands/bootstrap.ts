@@ -1,13 +1,15 @@
-import { resolve } from "node:path";
-
 import type { FabricConfig } from "@fenglimg/fabric-shared";
 import { defineCommand } from "citty";
 
-import { ensureFabricBootstrapGuide, FABRIC_GUIDE_PATH } from "../bootstrap-guide.js";
 import { resolveClients } from "../config/resolver.js";
 import type { ClientKind } from "../config/writer.js";
 import { readFabricConfig } from "../dev-mode.js";
 import { t } from "../i18n.js";
+
+// v2.0: `fab bootstrap install` no longer writes a `.fabric/bootstrap/README.md`
+// guide — knowledge entries under `.fabric/knowledge/` are the content of
+// record. The command surface is preserved as a deprecated no-op so existing
+// callers (init.ts stage runner, scripts) keep working without surprises.
 
 type BootstrapClient = "claude" | "cursor" | "codex";
 
@@ -104,29 +106,20 @@ export const bootstrapCommand = defineCommand({
 
 export default bootstrapCommand;
 
+/**
+ * v2.0 deprecated no-op. Returns an empty install result so the bootstrap
+ * stage in `fabric init` records "no targets" cleanly. Kept exported for the
+ * init pipeline orchestrator and for backward-compatible tests.
+ */
 export async function installBootstrap(
   target: string,
-  options: InstallBootstrapOptions = {},
+  _options: InstallBootstrapOptions = {},
 ): Promise<BootstrapInstallResult> {
-  const workspaceRoot = resolve(target);
-  const fabricConfig = readFabricConfig(workspaceRoot);
-  const targets = resolveBootstrapTargets(workspaceRoot, fabricConfig, options.clients);
-  const installed: ClientKind[] = [];
-  const skipped: ClientKind[] = [];
-  const details: BootstrapInstallDetail[] = [];
-
-  await ensureFabricBootstrapGuide(workspaceRoot, options.force);
-
-  for (const bootstrapTarget of targets) {
-    details.push({
-      client: bootstrapTarget.client,
-      path: resolve(workspaceRoot, FABRIC_GUIDE_PATH),
-      action: "skipped",
-    });
-    skipped.push(bootstrapTarget.client);
-  }
-
-  return { installed, skipped, details };
+  // Read fabric config + resolve clients to preserve the prior CLI side-effect
+  // surface (e.g. early validation errors for malformed configs). Result is
+  // unused — v2.0 has no per-client bootstrap files to install.
+  void resolveBootstrapTargets(target, readFabricConfig(target), _options.clients);
+  return { installed: [], skipped: [], details: [] };
 }
 
 function parseClientFilter(value: string | undefined): Set<BootstrapClient> | null {

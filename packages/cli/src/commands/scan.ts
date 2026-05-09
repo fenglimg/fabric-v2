@@ -1,13 +1,40 @@
+import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
-import { isAbsolute, join, relative, resolve, sep } from "node:path";
+import { mkdir, readFile } from "node:fs/promises";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 import { defineCommand } from "citty";
+
+import {
+  KnowledgeIdAllocator,
+  appendEventLedgerEvent,
+  writeRuleMeta,
+} from "@fenglimg/fabric-server";
+import {
+  formatKnowledgeId,
+  type ForensicReport,
+  type KnowledgeType,
+  type Layer,
+  type Maturity,
+  type StableId,
+} from "@fenglimg/fabric-shared";
+import { atomicWriteJson, atomicWriteText } from "@fenglimg/fabric-shared/node/atomic-write";
 
 import { displayWidth, padEnd, paint, symbol } from "../colors.js";
 import { createDebugLogger, readFabricConfig, resolveDevMode } from "../dev-mode.js";
 import { t } from "../i18n.js";
 import { detectFramework, type FrameworkInfo } from "../scanner/detector.js";
 import { resolveIgnores } from "../scanner/ignores.js";
+
+// ---------------------------------------------------------------------------
+// Public legacy API — kept because callers depend on it:
+//   * packages/cli/__tests__/integration/scan-edge-cases.test.ts
+//   * packages/cli/__tests__/init-mcp-scope.test.ts (mocked)
+//
+// The new init-scan behavior lives in `runInitScan` below and is exposed via
+// `scanCommand.run()`. v2.0: the prior `bootstrap-guide.ts` consumer was
+// retired alongside `.fabric/bootstrap/README.md`.
+// ---------------------------------------------------------------------------
 
 export type ReadmeQuality = "stub" | "ok";
 
@@ -41,7 +68,8 @@ export async function createScanReport(
   const framework = detectFramework(target);
   const readmeQuality = getReadmeQuality(target);
   const hasContributing = existsSync(join(target, "CONTRIBUTING.md"));
-  const hasExistingFabric = existsSync(join(target, ".fabric", "bootstrap", "README.md")) || existsSync(join(target, ".fabric"));
+  const hasExistingFabric =
+    existsSync(join(target, ".fabric", "bootstrap", "README.md")) || existsSync(join(target, ".fabric"));
   const walkResult = walkFiles(target, resolveIgnores(fabricConfig));
 
   return {
@@ -60,6 +88,154 @@ export async function createScanReport(
     }),
   };
 }
+
+// ---------------------------------------------------------------------------
+// v2.0 rc.1 init-scan: deterministic baseline knowledge entries
+//
+// `fab scan` reads the forensic.json snapshot produced by `fabric init`
+// (TASK-008) and emits 4-7 markdown knowledge entries under
+// `.fabric/knowledge/{models,guidelines,processes}/`. Each entry has v2.0
+// frontmatter (id KP-/KT-, type, layer, maturity, layer_reason, created_at)
+// and uses MISSION_STATEMENT / CONTEXT_INFO sections (plus type-specific
+// sections per rule-sections.ts contract).
+//
+// Idempotency: a sidecar at `.fabric/knowledge/.scan-state.json` records the
+// content-hash for each stable_id; on re-run unchanged entries are skipped.
+// Counters in agents.meta.json are monotonic — deleted files do NOT free
+// their counter slot.
+// ---------------------------------------------------------------------------
+
+const KNOWLEDGE_DIR = ".fabric/knowledge";
+const SCAN_STATE_FILE = ".scan-state.json";
+const FORENSIC_FILE = ".fabric/forensic.json";
+const AGENTS_META_FILE = ".fabric/agents.meta.json";
+const LAYER_REASON = "project artifact (deterministic init scan)";
+
+type TargetSubdir = "models" | "guidelines" | "processes";
+
+interface MarkdownEntry {
+  type: KnowledgeType;
+  layer: Layer; // always 'team' for this scan
+  maturity: Maturity;
+  layer_reason: string;
+  created_at: string;
+  title: string;
+  body: string;
+  target_subdir: TargetSubdir;
+  slug: string;
+}
+
+interface BuiltEntry extends MarkdownEntry {
+  id: StableId;
+}
+
+type ScanState = Record<string, string>;
+
+export interface InitScanResult {
+  written_stable_ids: string[];
+  skipped_stable_ids: string[];
+  total_entries: number;
+  duration_ms: number;
+}
+
+/**
+ * Run the deterministic init-scan against `target`. Throws if forensic.json
+ * is missing. Atomic per-file writes; idempotent across re-runs.
+ *
+ * Exposed for tests and (eventually) the init pipeline orchestrator.
+ */
+export async function runInitScan(
+  targetInput: string,
+  options: { now?: Date; source?: "init" | "scan" | "doctor_fix" } = {},
+): Promise<InitScanResult> {
+  const startTs = Date.now();
+  const target = normalizeTarget(targetInput);
+  const forensicPath = join(target, FORENSIC_FILE);
+
+  if (!existsSync(forensicPath)) {
+    throw new Error(t("cli.scan.error.missing-forensic", { path: forensicPath }));
+  }
+
+  const forensic = await readForensic(forensicPath);
+  const nowIso = (options.now ?? new Date()).toISOString();
+
+  // Build candidate entries (some may be null when source data is missing).
+  const candidates: Array<MarkdownEntry | null> = [
+    buildTechStackEntry(forensic, nowIso),
+    buildModuleStructureEntry(forensic, nowIso),
+    buildBuildConfigEntry(forensic, nowIso),
+    buildCodeStyleEntry(forensic, nowIso),
+    buildCIConfigEntry(forensic, nowIso),
+    buildReadmeFirstParaEntry(target, forensic, nowIso),
+    buildProjectBriefEntry(target, forensic, nowIso),
+  ];
+  const entries = candidates.filter((e): e is MarkdownEntry => e !== null);
+
+  const sidecarPath = join(target, KNOWLEDGE_DIR, SCAN_STATE_FILE);
+  const sidecar = await readScanState(sidecarPath);
+
+  const allocator = new KnowledgeIdAllocator(join(target, AGENTS_META_FILE));
+  const written: StableId[] = [];
+  const skipped: StableId[] = [];
+  // Tracked for the agents.meta.json patch step below — order mirrors the
+  // entries[] iteration order so the id at index i maps to entries[i].
+  const placedEntries: BuiltEntry[] = [];
+
+  for (const entry of entries) {
+    const targetPath = join(target, KNOWLEDGE_DIR, entry.target_subdir, `${entry.slug}.md`);
+    const existingId = findExistingIdForFile(sidecar, targetPath, target);
+    const id = existingId ?? (await allocator.allocate(entry.layer, entry.type));
+    const built: BuiltEntry = { ...entry, id };
+    placedEntries.push(built);
+
+    const fullContent = renderMarkdown(built);
+    const bodyHash = sha256(stripFrontmatter(fullContent));
+    const sidecarKey = id;
+
+    if (sidecar[sidecarKey] === bodyHash && existsSync(targetPath)) {
+      skipped.push(id);
+      continue;
+    }
+
+    await ensureParentDirectory(targetPath);
+    await atomicWriteText(targetPath, fullContent);
+    sidecar[sidecarKey] = bodyHash;
+    written.push(id);
+  }
+
+  await ensureParentDirectory(sidecarPath);
+  await atomicWriteJson(sidecarPath, sidecar);
+
+  // Refresh agents.meta.json. As of v2.0 (TASK-005) writeRuleMeta walks BOTH
+  // .fabric/rules/ (legacy) and .fabric/knowledge/ (current), so knowledge
+  // entries are picked up automatically and keyed by their declared
+  // KP-/KT-... id. We still call registerKnowledgeNodesInMeta below to (a)
+  // persist a deterministic node shape (cross-cutting topology, scope_glob
+  // '**') for entries init-scan just placed and (b) keep the KP/KT counters
+  // in agents.meta.json synced — the canonical patch wins over the
+  // path-derived defaults computed by writeRuleMeta.
+  await writeRuleMeta(target, { source: "doctor_fix" });
+  await registerKnowledgeNodesInMeta(target, placedEntries);
+
+  const durationMs = Date.now() - startTs;
+  await appendEventLedgerEvent(target, {
+    event_type: "init_scan_completed",
+    written_stable_ids: written,
+    duration_ms: durationMs,
+    source: options.source ?? "scan",
+  });
+
+  return {
+    written_stable_ids: written,
+    skipped_stable_ids: skipped,
+    total_entries: entries.length,
+    duration_ms: durationMs,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// citty command
+// ---------------------------------------------------------------------------
 
 export const scanCommand = defineCommand({
   meta: {
@@ -86,25 +262,608 @@ export const scanCommand = defineCommand({
     const workspaceRoot = process.cwd();
     const logger = createDebugLogger(args.debug);
     const resolution = resolveDevMode(args.target, workspaceRoot);
-    const fabricConfig = readFabricConfig(workspaceRoot);
 
     logger(`scan target source: ${resolution.source}`);
     for (const step of resolution.chain) {
       logger(step);
     }
 
-    const report = await createScanReport(resolution.target, fabricConfig);
+    try {
+      const result = await runInitScan(resolution.target, { source: "scan" });
 
-    if (args.json) {
-      console.log(JSON.stringify(report, null, 2));
-      return;
+      if (args.json) {
+        console.log(JSON.stringify(result, null, 2));
+        return;
+      }
+
+      printPrettyResult(result);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      // Exit code 1 with a clean message for missing forensic.json (or any
+      // other deterministic precondition failure).
+      console.error(`${symbol.warn} ${paint.warn(message)}`);
+      process.exitCode = 1;
     }
-
-    printPrettyReport(report, Boolean(args.debug));
   },
 });
 
 export default scanCommand;
+
+// ---------------------------------------------------------------------------
+// Builder helpers — each takes the parsed forensic data + ISO timestamp and
+// returns a MarkdownEntry (or null when source data is absent).
+//
+// Section conventions (rule-sections.ts SECTION_NAMES contract):
+//   - Always include MISSION_STATEMENT + CONTEXT_INFO
+//   - Add MANDATORY_INJECTION when type === 'guideline'
+//   - Add BUSINESS_LOGIC_CHUNKS when type === 'process'
+// ---------------------------------------------------------------------------
+
+function buildTechStackEntry(forensic: ForensicReport, nowIso: string): MarkdownEntry {
+  const framework = forensic.framework;
+  const byExt = forensic.topology.by_ext ?? {};
+  const topExtensions = Object.entries(byExt)
+    .sort(([, a], [, b]) => b - a)
+    .slice(0, 5)
+    .map(([ext, count]) => `${ext} (${count})`);
+
+  const evidenceLines = framework.evidence.length > 0 ? framework.evidence.slice(0, 6) : ["(no explicit framework evidence)"];
+
+  const body = renderSections({
+    mission: `Track the primary tech stack and runtime surface used by ${forensic.project_name}.`,
+    context: [
+      `Framework: ${framework.kind}${framework.version ? ` ${framework.version}` : ""}${framework.subkind ? ` / ${framework.subkind}` : ""}`,
+      `Top file extensions: ${topExtensions.length > 0 ? topExtensions.join(", ") : "(none)"}`,
+      `Evidence:`,
+      ...evidenceLines.map((line) => `- ${line}`),
+    ].join("\n"),
+  });
+
+  return {
+    type: "model",
+    layer: "team",
+    maturity: "verified",
+    layer_reason: LAYER_REASON,
+    created_at: nowIso,
+    title: `Tech stack: ${framework.kind}`,
+    body,
+    target_subdir: "models",
+    slug: "tech-stack",
+  };
+}
+
+function buildModuleStructureEntry(forensic: ForensicReport, nowIso: string): MarkdownEntry {
+  const keyDirs = forensic.topology.key_dirs ?? [];
+  const entryPoints = forensic.entry_points ?? [];
+  const totalFiles = forensic.topology.total_files ?? 0;
+
+  const dirsBlock = keyDirs.length > 0
+    ? keyDirs.slice(0, 12).map((dir) => `- ${dir}`).join("\n")
+    : "- (no key directories detected)";
+  const entriesBlock = entryPoints.length > 0
+    ? entryPoints.slice(0, 8).map((ep) => `- ${ep.path} — ${ep.reason}`).join("\n")
+    : "- (no entry points detected)";
+
+  const body = renderSections({
+    mission: `Map the high-level module layout and primary entry points of ${forensic.project_name}.`,
+    context: [
+      `Total files: ${totalFiles}`,
+      `Max directory depth: ${forensic.topology.max_depth ?? 0}`,
+      "",
+      "Key directories:",
+      dirsBlock,
+      "",
+      "Entry points:",
+      entriesBlock,
+    ].join("\n"),
+  });
+
+  return {
+    type: "model",
+    layer: "team",
+    maturity: "verified",
+    layer_reason: LAYER_REASON,
+    created_at: nowIso,
+    title: "Module structure",
+    body,
+    target_subdir: "models",
+    slug: "module-structure",
+  };
+}
+
+function buildBuildConfigEntry(forensic: ForensicReport, nowIso: string): MarkdownEntry {
+  const configFiles = (forensic.candidate_files ?? [])
+    .filter((entry) => entry.family === "config")
+    .map((entry) => entry.path);
+  const framework = forensic.framework.kind;
+
+  const configBlock = configFiles.length > 0
+    ? configFiles.map((file) => `- ${file}`).join("\n")
+    : "- (no config files detected)";
+
+  const body = renderSections({
+    mission: `Document the deterministic build/bootstrap configuration anchoring ${forensic.project_name}.`,
+    businessLogic: [
+      `1. Detect framework: \`${framework}\`.`,
+      `2. Read configuration files in declared order.`,
+      `3. Honor compiler/bundler boundaries before generating new code.`,
+      `4. Treat config drift as a fact-check signal — re-run \`fab scan\` after edits.`,
+    ].join("\n"),
+    context: [
+      `Framework: ${framework}`,
+      "",
+      "Configuration files:",
+      configBlock,
+    ].join("\n"),
+  });
+
+  return {
+    type: "process",
+    layer: "team",
+    maturity: "verified",
+    layer_reason: LAYER_REASON,
+    created_at: nowIso,
+    title: "Build configuration",
+    body,
+    target_subdir: "processes",
+    slug: "build-config",
+  };
+}
+
+function buildCodeStyleEntry(forensic: ForensicReport, nowIso: string): MarkdownEntry {
+  const dominantPatterns = (forensic.assertions ?? [])
+    .filter((a) => a.type === "pattern" || a.type === "domain")
+    .slice(0, 4)
+    .map((a) => `- ${a.statement}`);
+
+  const proposedRules = (forensic.assertions ?? [])
+    .map((a) => a.proposed_rule)
+    .filter((rule): rule is string => typeof rule === "string" && rule.length > 0)
+    .slice(0, 4);
+
+  const patternsBlock = dominantPatterns.length > 0 ? dominantPatterns.join("\n") : "- (no dominant patterns detected)";
+  const rulesBlock = proposedRules.length > 0
+    ? proposedRules.map((rule) => `- ${rule}`).join("\n")
+    : "- Follow existing module/file patterns; do not introduce new conventions without team agreement.";
+
+  const body = renderSections({
+    mission: `Codify the recurring authoring conventions observed in ${forensic.project_name}.`,
+    mandatoryInjection: [
+      "When generating or modifying source files in this repo, AI agents MUST:",
+      rulesBlock,
+    ].join("\n"),
+    context: [
+      "Detected patterns:",
+      patternsBlock,
+    ].join("\n"),
+  });
+
+  return {
+    type: "guideline",
+    layer: "team",
+    maturity: "verified",
+    layer_reason: LAYER_REASON,
+    created_at: nowIso,
+    title: "Code style guidelines",
+    body,
+    target_subdir: "guidelines",
+    slug: "code-style",
+  };
+}
+
+function buildCIConfigEntry(forensic: ForensicReport, nowIso: string): MarkdownEntry | null {
+  const ciFiles = (forensic.candidate_files ?? [])
+    .map((entry) => entry.path)
+    .filter((path) => isCIConfigPath(path));
+
+  // Also scan topology evidence for CI hints (assertions may not surface them).
+  const ciExtensions = forensic.topology.by_ext ?? {};
+  const hasCISignal =
+    ciFiles.length > 0 ||
+    Object.keys(ciExtensions).some((ext) => ext === ".yml" || ext === ".yaml") &&
+      (forensic.assertions ?? []).some((a) => /ci|workflow|pipeline/i.test(a.statement));
+
+  if (!hasCISignal) {
+    return null;
+  }
+
+  const filesBlock = ciFiles.length > 0
+    ? ciFiles.map((file) => `- ${file}`).join("\n")
+    : "- (CI configuration inferred from repository topology)";
+
+  const body = renderSections({
+    mission: `Document the CI / continuous-verification pipeline guarding ${forensic.project_name}.`,
+    businessLogic: [
+      "1. Pull request opens → CI workflow triggers.",
+      "2. Lint + typecheck + unit tests must pass before review.",
+      "3. Failing checks block merge until resolved.",
+      "4. Updates to CI configuration should accompany the change they enable.",
+    ].join("\n"),
+    context: [
+      "CI configuration sources:",
+      filesBlock,
+    ].join("\n"),
+  });
+
+  return {
+    type: "process",
+    layer: "team",
+    maturity: "verified",
+    layer_reason: LAYER_REASON,
+    created_at: nowIso,
+    title: "CI configuration",
+    body,
+    target_subdir: "processes",
+    slug: "ci-config",
+  };
+}
+
+function buildReadmeFirstParaEntry(
+  target: string,
+  forensic: ForensicReport,
+  nowIso: string,
+): MarkdownEntry | null {
+  if (forensic.readme.quality === "missing") {
+    return null;
+  }
+
+  const readmePath = join(target, "README.md");
+  if (!existsSync(readmePath)) {
+    return null;
+  }
+
+  const readme = readFileSync(readmePath, "utf8");
+  const firstPara = extractFirstParagraph(readme);
+  if (firstPara === null) {
+    return null;
+  }
+
+  const body = renderSections({
+    mission: `Preserve the README headline and first paragraph as the canonical project elevator pitch.`,
+    context: [
+      `Source: README.md (${forensic.readme.line_count} lines, quality=${forensic.readme.quality})`,
+      "",
+      "Excerpt:",
+      "> " + firstPara.split("\n").join("\n> "),
+    ].join("\n"),
+  });
+
+  return {
+    type: "model",
+    layer: "team",
+    maturity: "verified",
+    layer_reason: LAYER_REASON,
+    created_at: nowIso,
+    title: "README first paragraph",
+    body,
+    target_subdir: "models",
+    slug: "readme-first-paragraph",
+  };
+}
+
+function buildProjectBriefEntry(
+  target: string,
+  forensic: ForensicReport,
+  nowIso: string,
+): MarkdownEntry | null {
+  if (forensic.readme.quality === "missing") {
+    return null;
+  }
+
+  const readmePath = join(target, "README.md");
+  if (!existsSync(readmePath)) {
+    return null;
+  }
+
+  const readme = readFileSync(readmePath, "utf8");
+  const description = extractExplicitDescription(readme);
+  if (description === null) {
+    return null;
+  }
+
+  const body = renderSections({
+    mission: `Capture the explicit project description declared by README.md.`,
+    context: [
+      `Project: ${forensic.project_name}`,
+      "",
+      "Declared description:",
+      "> " + description.split("\n").join("\n> "),
+    ].join("\n"),
+  });
+
+  return {
+    type: "model",
+    layer: "team",
+    maturity: "verified",
+    layer_reason: LAYER_REASON,
+    created_at: nowIso,
+    title: "Project brief",
+    body,
+    target_subdir: "models",
+    slug: "project-brief",
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Markdown / frontmatter rendering
+// ---------------------------------------------------------------------------
+
+function renderMarkdown(entry: BuiltEntry): string {
+  const frontmatter = renderFrontmatter(entry);
+  return `${frontmatter}\n\n# ${entry.title}\n\n${entry.body}\n`;
+}
+
+function renderFrontmatter(entry: BuiltEntry): string {
+  const lines = [
+    "---",
+    `id: ${entry.id}`,
+    `type: ${entry.type}`,
+    `layer: ${entry.layer}`,
+    `maturity: ${entry.maturity}`,
+    `layer_reason: ${quoteIfNeeded(entry.layer_reason)}`,
+    `created_at: ${entry.created_at}`,
+    "---",
+  ];
+  return lines.join("\n");
+}
+
+function renderSections(input: {
+  mission: string;
+  context: string;
+  mandatoryInjection?: string;
+  businessLogic?: string;
+}): string {
+  const parts: string[] = [];
+  parts.push(`## [MISSION_STATEMENT]\n\n${input.mission}`);
+  if (input.mandatoryInjection !== undefined) {
+    parts.push(`## [MANDATORY_INJECTION]\n\n${input.mandatoryInjection}`);
+  }
+  if (input.businessLogic !== undefined) {
+    parts.push(`## [BUSINESS_LOGIC_CHUNKS]\n\n${input.businessLogic}`);
+  }
+  parts.push(`## [CONTEXT_INFO]\n\n${input.context}`);
+  return parts.join("\n\n");
+}
+
+function quoteIfNeeded(value: string): string {
+  // YAML scalar safety: quote when the value contains any of YAML's reserved
+  // chars or starts with a reserved indicator. We always quote here for
+  // simplicity and because the deterministic layer_reason text contains '('.
+  return `"${value.replace(/"/g, '\\"')}"`;
+}
+
+function stripFrontmatter(content: string): string {
+  return content.replace(/^---[\s\S]*?\r?\n---\s*\r?\n?/u, "");
+}
+
+// ---------------------------------------------------------------------------
+// Forensic reading + helpers
+// ---------------------------------------------------------------------------
+
+async function readForensic(forensicPath: string): Promise<ForensicReport> {
+  const raw = await readFile(forensicPath, "utf8");
+  // We don't re-validate via zod here; forensic.json is produced by `fabric
+  // init` and is validated at write time. If the file is corrupt, JSON.parse
+  // will throw — surfaced as an error in the CLI run() handler.
+  return JSON.parse(raw) as ForensicReport;
+}
+
+async function readScanState(sidecarPath: string): Promise<ScanState> {
+  if (!existsSync(sidecarPath)) {
+    return {};
+  }
+  try {
+    const raw = await readFile(sidecarPath, "utf8");
+    const parsed = JSON.parse(raw) as unknown;
+    if (parsed === null || typeof parsed !== "object") {
+      return {};
+    }
+    const result: ScanState = {};
+    for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
+      if (typeof value === "string") {
+        result[key] = value;
+      }
+    }
+    return result;
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * If the sidecar contains a key whose entry was previously written for the
+ * given target file path (matched by file existence), return that id so we do
+ * NOT allocate a fresh counter on re-run for an unchanged-but-renamed slot.
+ *
+ * For the deterministic builders the slug is stable, so the file path stays
+ * the same; the simpler "look for any sidecar entry whose path matches" logic
+ * suffices and avoids burning counter slots when content drifts.
+ */
+function findExistingIdForFile(sidecar: ScanState, targetPath: string, target: string): StableId | null {
+  if (!existsSync(targetPath)) {
+    return null;
+  }
+  // Read the on-disk file to extract its declared id from frontmatter.
+  try {
+    const raw = readFileSync(targetPath, "utf8");
+    const match = /^---\r?\n([\s\S]*?)\r?\n---/u.exec(raw);
+    if (match === null) {
+      return null;
+    }
+    const idLine = /^id:\s*(.+)$/mu.exec(match[1]);
+    if (idLine === null) {
+      return null;
+    }
+    const candidate = idLine[1].replace(/^["'](.*)["']$/u, "$1").trim();
+    if (/^K[PT]-(MOD|DEC|GLD|PIT|PRO)-\d{4,}$/.test(candidate) && sidecar[candidate] !== undefined) {
+      return candidate as StableId;
+    }
+    return null;
+  } catch {
+    void target;
+    return null;
+  }
+}
+
+function isCIConfigPath(path: string): boolean {
+  return (
+    path.startsWith(".github/workflows/") ||
+    path.startsWith(".gitlab-ci") ||
+    path === "azure-pipelines.yml" ||
+    path === ".circleci/config.yml" ||
+    path === "Jenkinsfile" ||
+    path === ".travis.yml"
+  );
+}
+
+function extractFirstParagraph(readme: string): string | null {
+  // Skip leading blank lines and an optional title heading.
+  const lines = readme.split(/\r?\n/);
+  let i = 0;
+
+  // Skip BOM-only / blank lines.
+  while (i < lines.length && lines[i].trim().length === 0) i += 1;
+
+  // Skip h1 heading line(s) immediately following.
+  while (i < lines.length && /^#{1,2}\s/.test(lines[i].trim())) {
+    i += 1;
+    while (i < lines.length && lines[i].trim().length === 0) i += 1;
+  }
+
+  if (i >= lines.length) {
+    return null;
+  }
+
+  const collected: string[] = [];
+  while (i < lines.length && lines[i].trim().length > 0) {
+    // Stop on subsequent headings.
+    if (/^#{1,6}\s/.test(lines[i].trim())) break;
+    collected.push(lines[i]);
+    i += 1;
+  }
+
+  const paragraph = collected.join("\n").trim();
+  return paragraph.length > 0 ? paragraph : null;
+}
+
+/**
+ * Pull an explicit project description from README — looks for a "Description"
+ * heading or the value following an italic/bold label like "**About**:".
+ * Returns null when no explicit description marker is present (so the
+ * project-brief entry is optional, per task spec).
+ */
+function extractExplicitDescription(readme: string): string | null {
+  // Pattern 1: a heading literally named Description / About / Overview followed by a paragraph.
+  const headingMatch =
+    /^#{1,6}\s+(?:Description|About|Overview|Summary)\s*\r?\n+([^#][\s\S]*?)(?:\r?\n\r?\n|\r?\n#{1,6}\s|$)/imu.exec(readme);
+  if (headingMatch !== null) {
+    const text = headingMatch[1].trim();
+    if (text.length > 0) return text;
+  }
+
+  // Pattern 2: a bold label like "**Description:**" or "**About**:".
+  const labelMatch =
+    /^\*\*(?:Description|About|Overview|Summary)\*\*\s*:?\s*(.+?)(?:\r?\n\r?\n|$)/imu.exec(readme);
+  if (labelMatch !== null) {
+    const text = labelMatch[1].trim();
+    if (text.length > 0) return text;
+  }
+
+  return null;
+}
+
+function sha256(content: string): string {
+  return `sha256:${createHash("sha256").update(content).digest("hex")}`;
+}
+
+/**
+ * Patch agents.meta.json so each knowledge file is recorded as a node with
+ * identity_source='declared' and stable_id matching its frontmatter id.
+ *
+ * Why patch instead of relying on writeRuleMeta? rule-meta-builder.ts only
+ * walks .fabric/rules/. Knowledge entries live in .fabric/knowledge/ — a
+ * deliberately separate tree (per the v2.0 split). The init-scan owns the
+ * meta-registration step for these files; subsequent rule sync continues to
+ * own .fabric/rules/.
+ */
+async function registerKnowledgeNodesInMeta(target: string, entries: BuiltEntry[]): Promise<void> {
+  if (entries.length === 0) {
+    return;
+  }
+  const metaPath = join(target, AGENTS_META_FILE);
+  let meta: Record<string, unknown>;
+  try {
+    const raw = await readFile(metaPath, "utf8");
+    meta = JSON.parse(raw) as Record<string, unknown>;
+  } catch {
+    meta = {};
+  }
+
+  const nodes = (typeof meta.nodes === "object" && meta.nodes !== null
+    ? (meta.nodes as Record<string, unknown>)
+    : {}) as Record<string, unknown>;
+
+  for (const entry of entries) {
+    const contentRef = `${KNOWLEDGE_DIR}/${entry.target_subdir}/${entry.slug}.md`;
+    const absPath = join(target, contentRef);
+    let hash = "";
+    try {
+      const raw = readFileSync(absPath, "utf8");
+      hash = sha256(raw);
+    } catch {
+      // file may have been removed concurrently — leave hash empty
+    }
+
+    nodes[entry.id] = {
+      file: contentRef,
+      content_ref: contentRef,
+      scope_glob: "**",
+      deps: [],
+      priority: "medium",
+      level: "L1",
+      layer: "L1",
+      topology_type: "cross-cutting",
+      hash,
+      stable_id: entry.id,
+      identity_source: "declared",
+    };
+  }
+
+  meta.nodes = nodes;
+  // Preserve revision if present; consumers compute a stable revision but for
+  // the patched-knowledge case we update it to a content-derived hash so
+  // later doctor-runs detect drift correctly.
+  meta.revision = sha256(JSON.stringify(nodes));
+
+  await ensureParentDirectory(metaPath);
+  await atomicWriteJson(metaPath, meta);
+}
+
+async function ensureParentDirectory(filePath: string): Promise<void> {
+  await mkdir(dirname(filePath), { recursive: true });
+}
+
+function printPrettyResult(result: InitScanResult): void {
+  const writtenCount = result.written_stable_ids.length;
+  const skippedCount = result.skipped_stable_ids.length;
+
+  if (writtenCount === 0) {
+    console.log(`${symbol.ok} ${paint.success(t("cli.scan.summary.skipped", { count: String(skippedCount) }))}`);
+    return;
+  }
+
+  console.log(`${symbol.ok} ${paint.success(t("cli.scan.summary.created", { count: String(writtenCount) }))}`);
+  for (const id of result.written_stable_ids) {
+    console.log(`  - ${paint.ai(id)}`);
+  }
+  if (skippedCount > 0) {
+    console.log(paint.muted(`(${skippedCount} unchanged, skipped)`));
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Legacy walk/recommendation helpers — supporting createScanReport()
+// ---------------------------------------------------------------------------
 
 function normalizeTarget(targetInput: string): string {
   return isAbsolute(targetInput) ? targetInput : resolve(process.cwd(), targetInput);
@@ -116,10 +875,7 @@ function getReadmeQuality(target: string): ReadmeQuality {
     return "stub";
   }
 
-  const wordCount = readFileSync(readmePath, "utf8")
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean).length;
+  const wordCount = readFileSync(readmePath, "utf8").trim().split(/\s+/).filter(Boolean).length;
 
   return wordCount >= 200 ? "ok" : "stub";
 }
@@ -215,44 +971,22 @@ function buildRecommendations(input: {
   return recommendations;
 }
 
-function printPrettyReport(report: ScanReport, debug: boolean): void {
-  console.log(paint.ai(t("cli.scan.report.title")));
+// Allow formatKnowledgeId to be referenced downstream tests via re-export.
+export { formatKnowledgeId };
 
-  const rows: Array<[string, string]> = [
-    [t("cli.scan.report.target"), paint.human(report.target)],
-    [t("cli.scan.report.framework"), paint.ai(report.framework.kind)],
-    [
-      t("cli.scan.report.readme-quality"),
-      report.readmeQuality === "ok"
-        ? paint.success(t("cli.scan.readme-quality.ok"))
-        : paint.warn(t("cli.scan.readme-quality.stub")),
-    ],
-    [
-      t("cli.scan.report.contributing"),
-      report.hasContributing ? paint.success(t("cli.shared.present")) : paint.warn(t("cli.shared.absent")),
-    ],
-    [t("cli.scan.report.files-counted"), String(report.fileCount)],
-    [t("cli.scan.report.ignored-entries"), report.ignoredCount > 0 ? paint.muted(String(report.ignoredCount)) : "0"],
-    [
-      t("cli.scan.report.existing-fabric"),
-      report.hasExistingFabric ? paint.warn(t("cli.shared.yes")) : paint.success(t("cli.shared.no")),
-    ],
-  ];
-
-  if (debug) {
-    rows.splice(2, 0, [
-      t("cli.scan.report.evidence"),
-      report.framework.evidence.length > 0 ? paint.muted(report.framework.evidence.join(", ")) : paint.muted(t("cli.shared.none")),
-    ]);
-  }
-
-  const labelWidth = Math.max(...rows.map(([key]) => displayWidth(key)));
-  for (const [key, value] of rows) {
-    console.log(`${paint.muted(padEnd(key, labelWidth))} ${value}`);
-  }
-
-  console.log(paint.muted(t("cli.scan.report.recommendations")));
-  for (const recommendation of report.recommendations) {
-    console.log(`${symbol.warn} ${paint.drift(recommendation)}`);
-  }
-}
+// Test-only exports — used by unit tests in __tests__/scan-builders.test.ts
+// to exercise individual deterministic builders without invoking runInitScan.
+export const __testing__ = {
+  buildTechStackEntry,
+  buildModuleStructureEntry,
+  buildBuildConfigEntry,
+  buildCodeStyleEntry,
+  buildCIConfigEntry,
+  buildReadmeFirstParaEntry,
+  buildProjectBriefEntry,
+  renderMarkdown,
+  stripFrontmatter,
+  isCIConfigPath,
+  extractFirstParagraph,
+  extractExplicitDescription,
+};

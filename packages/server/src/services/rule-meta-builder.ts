@@ -1,18 +1,29 @@
-import { readdir, readFile } from "node:fs/promises";
+import { mkdir, readdir, readFile } from "node:fs/promises";
 import { existsSync, statSync } from "node:fs";
+import { homedir } from "node:os";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 
 import {
   RULE_TEST_INDEX_SCHEMA_VERSION,
   agentsMetaSchema,
+  defaultAgentsMetaCounters,
   deriveAgentsMetaLayer,
   deriveAgentsMetaStableId,
   deriveAgentsMetaTopologyType,
+  isKnowledgeStableId,
   ruleTestIndexSchema,
+  KnowledgeTypeSchema,
+  MaturitySchema,
+  LayerSchema,
+  StableIdSchema,
+  parseKnowledgeId,
   type AgentsIdentitySource,
   type AgentsLayer,
   type AgentsMeta,
   type AgentsTopologyType,
+  type KnowledgeType,
+  type Layer as KnowledgeLayer,
+  type Maturity,
   type RuleDescription,
   type RuleTestIndex,
 } from "@fenglimg/fabric-shared";
@@ -120,19 +131,24 @@ export async function computeRulesBasedAgentsMeta(
   const ruleFiles = await findFabricRuleFiles(projectRoot);
   const nodes: Record<string, NodeMeta> = {};
 
-  const bootstrapNode = await createBootstrapNode(projectRoot, existingByContentRef.get(".fabric/bootstrap/README.md")?.node);
-
-  if (bootstrapNode !== undefined) {
-    nodes.L0 = bootstrapNode;
-  }
+  // v2.0: there is no longer a single L0 anchor file. Knowledge entries
+  // under `.fabric/knowledge/{decisions,pitfalls,guidelines,models,processes,pending}/`
+  // are the content of record. The L0/L1/L2 layer protocol still drives rule
+  // precedence (priority/scope_glob), but no bootstrap/README.md is required
+  // as a "default L0 node" — empty repos persist as `nodes: {}`.
 
   for (const contentRef of ruleFiles) {
-    const source = await readFile(join(projectRoot, contentRef), "utf8");
+    const source = await readFile(resolveContentRefPath(projectRoot, contentRef), "utf8");
     const existing = existingByContentRef.get(contentRef);
-    const id = deriveNodeId(contentRef);
     const hash = sha256(source);
     const defaults = createDefaultNodeMeta(contentRef);
     const identity = deriveRuleIdentity(contentRef, source, existing?.node);
+    // v2.0: knowledge entries are keyed by their declared id (KP-/KT-...) so
+    // the persisted node key matches what init-scan's
+    // `registerKnowledgeNodesInMeta` writes — avoiding duplicate nodes when
+    // both pipelines see the same file. Path-keyed ids stay as fallback for
+    // legacy `.fabric/rules/` entries that lack a knowledge id.
+    const id = isKnowledgeStableId(identity.stableId) ? identity.stableId : deriveNodeId(contentRef);
 
     nodes[id] = {
       ...defaults,
@@ -147,10 +163,16 @@ export async function computeRulesBasedAgentsMeta(
     };
   }
 
+  // v2.0: Always serialize the counters envelope (default-zero when v1.x meta
+  // had no `counters` key) so the persisted file is forward-compatible with
+  // the KnowledgeIdAllocator.
+  const counters = previousMeta?.counters ?? defaultAgentsMetaCounters();
+
   return {
     ...(previousMeta ?? {}),
     revision: computeRevision(nodes),
     nodes: sortNodes(nodes),
+    counters,
   };
 }
 
@@ -275,30 +297,103 @@ async function readExistingRuleTestIndex(indexPath: string): Promise<RuleTestInd
   }
 }
 
-async function findFabricRuleFiles(projectRoot: string): Promise<string[]> {
-  const rulesRoot = join(projectRoot, ".fabric", "rules");
+// v2.0 dual-root layout — knowledge entries live under either the team root
+// (`.fabric/knowledge/<subdir>/`) or the personal root (`~/.fabric/knowledge/<subdir>/`).
+// pending/ is included so unreviewed entries surface in description_index for
+// future review flows; their maturity comes from frontmatter, not the subdir.
+const KNOWLEDGE_SUBDIRS = ["decisions", "pitfalls", "guidelines", "models", "processes", "pending"] as const;
 
-  if (!existsSync(rulesRoot) || !statSync(rulesRoot).isDirectory()) {
-    return [];
+const PERSONAL_CONTENT_REF_PREFIX = "~/.fabric/knowledge/";
+const TEAM_CONTENT_REF_PREFIX = ".fabric/knowledge/";
+
+/**
+ * v2.0: Resolve a personal-root content_ref (`~/.fabric/knowledge/...`) back
+ * to an absolute filesystem path. Test-friendly via the FABRIC_HOME env var
+ * (falls back to os.homedir()).
+ */
+function resolvePersonalRoot(): string {
+  return process.env.FABRIC_HOME ?? homedir();
+}
+
+/**
+ * v2.0: Resolve a content_ref (relative to its respective root) to an
+ * absolute filesystem path. Handles both team (project-relative) and personal
+ * (`~/...`) entries.
+ */
+function resolveContentRefPath(projectRoot: string, contentRef: string): string {
+  if (contentRef.startsWith(PERSONAL_CONTENT_REF_PREFIX)) {
+    return join(resolvePersonalRoot(), ".fabric", "knowledge", contentRef.slice(PERSONAL_CONTENT_REF_PREFIX.length));
+  }
+  return join(projectRoot, contentRef);
+}
+
+async function findFabricRuleFiles(projectRoot: string): Promise<string[]> {
+  const teamRoot = join(projectRoot, ".fabric", "knowledge");
+  const personalRoot = join(resolvePersonalRoot(), ".fabric", "knowledge");
+
+  // Auto-mkdir the personal root tree on first scan (idempotent). Mirrors the
+  // doctor.ts pattern for missing knowledge subdirs — keeps the scan
+  // side-effect-free for callers but materializes the canonical layout.
+  try {
+    await mkdir(personalRoot, { recursive: true });
+    for (const sub of KNOWLEDGE_SUBDIRS) {
+      await mkdir(join(personalRoot, sub), { recursive: true });
+    }
+  } catch {
+    // Personal-root creation is best-effort: a read-only home dir or unusual
+    // FABRIC_HOME override must not block team-only repos from indexing.
   }
 
   const files: string[] = [];
-  const stack = [rulesRoot];
 
-  while (stack.length > 0) {
-    const current = stack.pop();
-    if (current === undefined) {
+  // v2.0 dual-root scan — knowledge subdirs under team and personal roots.
+  for (const [root, prefix] of [
+    [teamRoot, TEAM_CONTENT_REF_PREFIX] as const,
+    [personalRoot, PERSONAL_CONTENT_REF_PREFIX] as const,
+  ]) {
+    if (!existsSync(root) || !statSync(root).isDirectory()) {
       continue;
     }
 
-    for (const entry of await readdir(current, { withFileTypes: true })) {
-      const absolutePath = join(current, entry.name);
-      const relativePath = toPosixPath(relative(projectRoot, absolutePath));
+    for (const subdir of KNOWLEDGE_SUBDIRS) {
+      const dir = join(root, subdir);
+      let entries;
+      try {
+        entries = await readdir(dir, { withFileTypes: true });
+      } catch (error) {
+        if (isNodeError(error) && error.code === "ENOENT") {
+          continue;
+        }
+        throw error;
+      }
 
-      if (entry.isDirectory()) {
-        stack.push(absolutePath);
-      } else if (entry.isFile() && entry.name.endsWith(".md")) {
-        files.push(relativePath);
+      for (const entry of entries) {
+        if (entry.isFile() && entry.name.endsWith(".md")) {
+          files.push(`${prefix}${subdir}/${entry.name}`);
+        }
+      }
+    }
+  }
+
+  // v1.x transitional fallback — scan legacy `.fabric/rules/` so doctor and
+  // rule-sync flows continue to surface pre-v2.0 entries during the migration
+  // window. Mirrors doctor.ts:1039 which collects from both layouts.
+  const legacyRoot = join(projectRoot, ".fabric", "rules");
+  if (existsSync(legacyRoot) && statSync(legacyRoot).isDirectory()) {
+    const stack = [legacyRoot];
+    while (stack.length > 0) {
+      const current = stack.pop();
+      if (current === undefined) {
+        continue;
+      }
+      for (const entry of await readdir(current, { withFileTypes: true })) {
+        const absolutePath = join(current, entry.name);
+        const relativePath = toPosixPath(relative(projectRoot, absolutePath));
+        if (entry.isDirectory()) {
+          stack.push(absolutePath);
+        } else if (entry.isFile() && entry.name.endsWith(".md")) {
+          files.push(relativePath);
+        }
       }
     }
   }
@@ -475,12 +570,21 @@ function indexExistingNodesByContentRef(existingMeta: AgentsMeta | undefined): M
 }
 
 function deriveNodeId(file: string): string {
-  if (file === ".fabric/bootstrap/README.md") {
-    return "L0";
-  }
+  // v2.0: no special-cased "L0" node for `.fabric/bootstrap/README.md` —
+  // knowledge entries (KP-/KT-...) and legacy rules use their derived ids.
 
   const layer = deriveRuleMetaLayer(file);
   const relativeStem = getRuleRelativeStem(file);
+
+  // v2.0: distinguish personal vs team knowledge entries that share the same
+  // subdir/filename (e.g. team decisions/auth.md and personal decisions/auth.md
+  // both stem to "decisions/auth") so the node-id remains unique per root.
+  if (file.startsWith(PERSONAL_CONTENT_REF_PREFIX)) {
+    return `${layer}/personal/${relativeStem}`;
+  }
+  if (file.startsWith(TEAM_CONTENT_REF_PREFIX)) {
+    return `${layer}/team/${relativeStem}`;
+  }
 
   return `${layer}/${relativeStem}`;
 }
@@ -502,35 +606,9 @@ function createDefaultNodeMeta(contentRef: string): NodeMeta {
   };
 }
 
-async function createBootstrapNode(projectRoot: string, existing: NodeMeta | undefined): Promise<NodeMeta | undefined> {
-  const contentRef = ".fabric/bootstrap/README.md";
-  const bootstrapPath = join(projectRoot, contentRef);
-
-  if (!existsSync(bootstrapPath)) {
-    return undefined;
-  }
-
-  const hash = sha256(await readFile(bootstrapPath, "utf8"));
-  const identity = {
-    stableId: existing?.stable_id ?? deriveAgentsMetaStableId(contentRef),
-    identitySource: existing?.identity_source ?? "derived",
-  } satisfies RuleIdentity;
-
-  return {
-    ...createDefaultNodeMeta(contentRef),
-    ...existing,
-    file: contentRef,
-    content_ref: contentRef,
-    hash,
-    stable_id: identity.stableId,
-    identity_source: identity.identitySource,
-  };
-}
-
 function deriveScopeGlob(contentRef: string): string {
-  if (contentRef === ".fabric/bootstrap/README.md") {
-    return "**";
-  }
+  // v2.0: .fabric/bootstrap/README.md is no longer recognized; the helper
+  // falls through to the stem-based derivation below for any input.
 
   const stem = getRuleRelativeStem(contentRef);
   const segments = stem.split("/").filter(Boolean);
@@ -553,11 +631,26 @@ function deriveScopeGlob(contentRef: string): string {
 }
 
 function getRuleRelativeStem(contentRef: string): string {
-  return contentRef.replace(/^\.fabric\/rules\//u, "").replace(/\.md$/u, "");
+  return contentRef
+    .replace(/^~\/\.fabric\/knowledge\//u, "")
+    .replace(/^\.fabric\/knowledge\//u, "")
+    .replace(/^\.fabric\/rules\//u, "")
+    .replace(/\.md$/u, "");
 }
 
+/**
+ * v2.0: Map a content_ref onto a path that legacy `deriveAgentsMeta*` helpers
+ * can consume. Both team (`.fabric/knowledge/...`) and personal
+ * (`~/.fabric/knowledge/...`) entries collapse to `.fabric/agents/...` so the
+ * shared layer/topology helpers can derive a stable answer regardless of
+ * which root the file came from. agents.meta.json itself records the
+ * original content_ref so consumers can still disambiguate the layer.
+ */
 function toAgentsCompatiblePath(contentRef: string): string {
-  return contentRef.replace(/^\.fabric\/rules\//u, ".fabric/agents/");
+  return contentRef
+    .replace(/^~\/\.fabric\/knowledge\//u, ".fabric/agents/")
+    .replace(/^\.fabric\/knowledge\//u, ".fabric/agents/")
+    .replace(/^\.fabric\/rules\//u, ".fabric/agents/");
 }
 
 function sortNodes(nodes: Record<string, NodeMeta>): Record<string, NodeMeta> {
@@ -679,6 +772,30 @@ function toPosixPath(path: string): string {
 }
 
 function deriveRuleIdentity(file: string, source: string, existing: NodeMeta | undefined): RuleIdentity {
+  // v2.0: Knowledge entries declare a path-decoupled id (KP-/KT-) in their
+  // YAML frontmatter `id:` field. When present we use it verbatim and never
+  // regenerate from the path — moving a knowledge file between directories
+  // must NOT change its stable_id.
+  const declaredKnowledgeId = extractDeclaredKnowledgeId(source);
+  if (declaredKnowledgeId !== undefined) {
+    return {
+      stableId: declaredKnowledgeId,
+      identitySource: "declared",
+    };
+  }
+
+  // v2.0: An existing node already carrying a knowledge id (e.g. a prior
+  // build before frontmatter was parsable) is also preserved verbatim.
+  if (
+    existing?.stable_id !== undefined &&
+    isKnowledgeStableId(existing.stable_id)
+  ) {
+    return {
+      stableId: existing.stable_id,
+      identitySource: "declared",
+    };
+  }
+
   const declaredStableId = extractDeclaredStableId(source);
   const derivedStableId = deriveAgentsMetaStableId(toAgentsCompatiblePath(file));
 
@@ -712,6 +829,28 @@ function extractDeclaredStableId(source: string): string | undefined {
   return match?.[1];
 }
 
+/**
+ * v2.0: Extract a path-decoupled knowledge id (KP-/KT-{TYPE}-{NNNN}) from
+ * the YAML frontmatter `id:` field. Returns undefined when no frontmatter is
+ * present, when `id:` is missing, or when the value does not match the
+ * knowledge stable_id pattern.
+ *
+ * Lightweight regex parser (mirrors the rest of the file's intentionally
+ * dependency-free frontmatter handling — see extractDescriptionFromFrontmatter).
+ */
+function extractDeclaredKnowledgeId(source: string): string | undefined {
+  const frontmatter = /^(?:\uFEFF)?---\r?\n([\s\S]*?)\r?\n---\s*(?:\r?\n|$)/u.exec(source);
+  if (frontmatter === null) {
+    return undefined;
+  }
+  const idMatch = /^id:\s*(.+?)\s*$/mu.exec(frontmatter[1]);
+  if (idMatch === null) {
+    return undefined;
+  }
+  const candidate = idMatch[1].replace(/^["'](.*)["']$/u, "$1").trim();
+  return isKnowledgeStableId(candidate) ? candidate : undefined;
+}
+
 function extractRuleDescription(source: string): RuleDescription | undefined {
   const frontmatter = /^---\r?\n([\s\S]*?)\r?\n---\s*(?:\r?\n|$)/u.exec(source);
   const description = frontmatter === null
@@ -734,6 +873,13 @@ function extractRuleDescription(source: string): RuleDescription | undefined {
     tech_stack: [],
     impact: [],
     must_read_if: summary,
+    // v2.0 knowledge fields are absent in heading-only fallback.
+    id: undefined,
+    knowledge_type: undefined,
+    maturity: undefined,
+    knowledge_layer: undefined,
+    layer_reason: undefined,
+    created_at: undefined,
   };
 }
 
@@ -751,6 +897,8 @@ function extractDescriptionFromFrontmatter(frontmatter: string): RuleDescription
     return undefined;
   }
 
+  const knowledge = extractKnowledgeFieldsFromFrontmatter(frontmatter);
+
   return {
     summary,
     intent_clues: extractInlineArray(frontmatter, "intent_clues"),
@@ -758,6 +906,110 @@ function extractDescriptionFromFrontmatter(frontmatter: string): RuleDescription
     impact: extractInlineArray(frontmatter, "impact"),
     must_read_if: extractScalar(frontmatter, "must_read_if") ?? summary,
     entities: extractInlineArray(frontmatter, "entities"),
+    id: knowledge.id,
+    knowledge_type: knowledge.knowledge_type,
+    maturity: knowledge.maturity,
+    knowledge_layer: knowledge.knowledge_layer,
+    layer_reason: knowledge.layer_reason,
+    created_at: knowledge.created_at,
+  };
+}
+
+/**
+ * v2.0 knowledge frontmatter parser. All fields optional + best-effort —
+ * invalid values log a warning and remain undefined; parsing never throws,
+ * so v1.x frontmatter (lacking these fields) flows through unchanged.
+ *
+ * Cross-validation: declared id implies a layer (KP→personal, KT→team).
+ * If id and layer disagree, we drop both to avoid a corrupt half-state.
+ */
+type KnowledgeFrontmatterFields = {
+  id?: string;
+  knowledge_type?: KnowledgeType;
+  maturity?: Maturity;
+  knowledge_layer?: KnowledgeLayer;
+  layer_reason?: string;
+  created_at?: string;
+};
+
+function extractKnowledgeFieldsFromFrontmatter(frontmatter: string): KnowledgeFrontmatterFields {
+  const rawId = extractScalar(frontmatter, "id");
+  const rawType = extractScalar(frontmatter, "type");
+  const rawMaturity = extractScalar(frontmatter, "maturity");
+  const rawLayer = extractScalar(frontmatter, "layer");
+  const rawLayerReason = extractScalar(frontmatter, "layer_reason");
+  const rawCreatedAt = extractScalar(frontmatter, "created_at");
+
+  let id: string | undefined;
+  if (rawId !== undefined) {
+    const parsed = StableIdSchema.safeParse(rawId);
+    if (parsed.success) {
+      id = parsed.data;
+    } else {
+      process.stderr.write(`[fabric] frontmatter: invalid knowledge id format ${JSON.stringify(rawId)}; skipping\n`);
+    }
+  }
+
+  let knowledge_type: KnowledgeType | undefined;
+  if (rawType !== undefined) {
+    const parsed = KnowledgeTypeSchema.safeParse(rawType);
+    if (parsed.success) {
+      knowledge_type = parsed.data;
+    } else {
+      process.stderr.write(`[fabric] frontmatter: unknown knowledge type ${JSON.stringify(rawType)}; skipping\n`);
+    }
+  }
+
+  let maturity: Maturity | undefined;
+  if (rawMaturity !== undefined) {
+    const parsed = MaturitySchema.safeParse(rawMaturity);
+    if (parsed.success) {
+      maturity = parsed.data;
+    } else {
+      process.stderr.write(`[fabric] frontmatter: unknown maturity ${JSON.stringify(rawMaturity)}; skipping\n`);
+    }
+  }
+
+  let knowledge_layer: KnowledgeLayer | undefined;
+  if (rawLayer !== undefined) {
+    const parsed = LayerSchema.safeParse(rawLayer);
+    if (parsed.success) {
+      knowledge_layer = parsed.data;
+    } else {
+      process.stderr.write(`[fabric] frontmatter: unknown layer ${JSON.stringify(rawLayer)}; skipping\n`);
+    }
+  }
+
+  let created_at: string | undefined;
+  if (rawCreatedAt !== undefined) {
+    if (!Number.isNaN(Date.parse(rawCreatedAt))) {
+      created_at = rawCreatedAt;
+    } else {
+      process.stderr.write(`[fabric] frontmatter: malformed created_at ${JSON.stringify(rawCreatedAt)}; skipping\n`);
+    }
+  }
+
+  // Cross-validation: id encodes layer (KP→personal, KT→team).
+  // If both are present and disagree, drop both fields so consumers see a
+  // clean "missing" state instead of inconsistent metadata.
+  if (id !== undefined && knowledge_layer !== undefined) {
+    const decoded = parseKnowledgeId(id);
+    if (decoded !== null && decoded.layer !== knowledge_layer) {
+      process.stderr.write(
+        `[fabric] frontmatter: id ${id} encodes layer ${decoded.layer} but layer field says ${knowledge_layer}; dropping both\n`,
+      );
+      id = undefined;
+      knowledge_layer = undefined;
+    }
+  }
+
+  return {
+    id,
+    knowledge_type,
+    maturity,
+    knowledge_layer,
+    layer_reason: rawLayerReason,
+    created_at,
   };
 }
 

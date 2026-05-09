@@ -205,6 +205,182 @@ describe("planContext", () => {
     });
     expect(result.selection_token).toEqual(expect.any(String));
   });
+
+  // ---------------------------------------------------------------------------
+  // v2.0 dual-root knowledge-field passthrough (TASK-005)
+  // ---------------------------------------------------------------------------
+
+  it("passes_through_knowledge_fields_to_description_index — type/maturity/layer + inferred layer fallback", async () => {
+    const projectRoot = await createTempProject();
+    await mkdir(join(projectRoot, ".fabric"), { recursive: true });
+    await writeFile(join(projectRoot, ".fabric", "human-lock.json"), `${JSON.stringify({ locked: [] }, null, 2)}\n`);
+    await writeFile(
+      join(projectRoot, ".fabric", "agents.meta.json"),
+      `${JSON.stringify({
+        revision: "rev-v2-passthrough",
+        nodes: {
+          // Team entry with full v2.0 frontmatter.
+          "L1/team/decisions/team-auth": {
+            stable_id: "KT-DEC-0001",
+            file: ".fabric/knowledge/decisions/team-auth.md",
+            content_ref: ".fabric/knowledge/decisions/team-auth.md",
+            scope_glob: "**",
+            deps: [],
+            priority: "medium",
+            level: "L1",
+            layer: "L1",
+            topology_type: "domain",
+            hash: "sha256:team-auth",
+            identity_source: "declared",
+            description: {
+              summary: "Team JWT decision",
+              intent_clues: [],
+              tech_stack: [],
+              impact: [],
+              must_read_if: "Team JWT decision",
+              id: "KT-DEC-0001",
+              knowledge_type: "decision",
+              maturity: "verified",
+              knowledge_layer: "team",
+              layer_reason: "shared across services",
+              created_at: "2026-05-10T08:00:00Z",
+            },
+          },
+          // Personal entry — exercise the personal `~/.fabric/knowledge/`
+          // content_ref + frontmatter-set layer.
+          "L1/personal/guidelines/personal-style": {
+            stable_id: "KP-GLD-0001",
+            file: "~/.fabric/knowledge/guidelines/personal-style.md",
+            content_ref: "~/.fabric/knowledge/guidelines/personal-style.md",
+            scope_glob: "**",
+            deps: [],
+            priority: "medium",
+            level: "L1",
+            layer: "L1",
+            topology_type: "domain",
+            hash: "sha256:personal-style",
+            identity_source: "declared",
+            description: {
+              summary: "Personal coding style",
+              intent_clues: [],
+              tech_stack: [],
+              impact: [],
+              must_read_if: "Personal coding style",
+              id: "KP-GLD-0001",
+              knowledge_type: "guideline",
+              maturity: "draft",
+              knowledge_layer: "personal",
+              created_at: "2026-05-10T08:00:00Z",
+            },
+          },
+          // v1.x legacy entry — no knowledge frontmatter at all. Layer should
+          // be inferred from the team-root content_ref.
+          "L1/team/legacy": {
+            stable_id: "legacy-v1",
+            file: ".fabric/knowledge/pending/legacy.md",
+            content_ref: ".fabric/knowledge/pending/legacy.md",
+            scope_glob: "**",
+            deps: [],
+            priority: "medium",
+            level: "L1",
+            layer: "L1",
+            topology_type: "domain",
+            hash: "sha256:legacy",
+            description: {
+              summary: "Legacy v1.x entry",
+              intent_clues: [],
+              tech_stack: [],
+              impact: [],
+              must_read_if: "Legacy v1.x entry",
+            },
+          },
+        },
+      }, null, 2)}\n`,
+    );
+
+    const result = await planContext(projectRoot, { paths: ["src/index.ts"] });
+    const indexById = new Map(result.shared.description_index.map((item) => [item.stable_id, item] as const));
+
+    // v2.0 team entry: frontmatter fields surface at top level + inside description.
+    expect(indexById.get("KT-DEC-0001")).toMatchObject({
+      type: "decision",
+      maturity: "verified",
+      layer: "team",
+      layer_reason: "shared across services",
+      description: expect.objectContaining({
+        knowledge_type: "decision",
+        knowledge_layer: "team",
+      }),
+    });
+
+    // v2.0 personal entry — same shape, layer=personal.
+    expect(indexById.get("KP-GLD-0001")).toMatchObject({
+      type: "guideline",
+      maturity: "draft",
+      layer: "personal",
+      description: expect.objectContaining({
+        knowledge_type: "guideline",
+        knowledge_layer: "personal",
+      }),
+    });
+
+    // v1.x legacy: no top-level type/maturity, but layer is inferred from the
+    // team-root content_ref so MCP clients still see SOMETHING.
+    expect(indexById.get("legacy-v1")).toMatchObject({
+      type: undefined,
+      maturity: undefined,
+      layer: "team",
+    });
+  });
+
+  it("accepts include_deprecated input flag — wiring is in place for future MaturitySchema expansion", async () => {
+    // include_deprecated is a no-op placeholder today: TASK-002 MaturitySchema
+    // is draft|verified|proven only, so no entry can carry a 'deprecated'
+    // value through the strict meta parse. We exercise the input wiring here
+    // so future expansion does not need a protocol break — the planContext
+    // call must accept the flag (default false / true) without error and
+    // return a stable index either way.
+    const projectRoot = await createTempProject();
+    await mkdir(join(projectRoot, ".fabric"), { recursive: true });
+    await writeFile(join(projectRoot, ".fabric", "human-lock.json"), `${JSON.stringify({ locked: [] }, null, 2)}\n`);
+    await writeFile(
+      join(projectRoot, ".fabric", "agents.meta.json"),
+      `${JSON.stringify({
+        revision: "rev-deprecated-wiring",
+        nodes: {
+          "L1/team/active": {
+            stable_id: "active-rule",
+            file: ".fabric/knowledge/decisions/active.md",
+            content_ref: ".fabric/knowledge/decisions/active.md",
+            scope_glob: "**",
+            deps: [],
+            priority: "medium",
+            level: "L1",
+            layer: "L1",
+            topology_type: "domain",
+            hash: "sha256:active",
+            description: {
+              summary: "Active rule",
+              intent_clues: [],
+              tech_stack: [],
+              impact: [],
+              must_read_if: "Active rule",
+              maturity: "verified",
+            },
+          },
+        },
+      }, null, 2)}\n`,
+    );
+
+    const defaultResult = await planContext(projectRoot, { paths: ["src/index.ts"] });
+    expect(defaultResult.shared.description_index.map((item) => item.stable_id)).toEqual(["active-rule"]);
+
+    const allResult = await planContext(projectRoot, {
+      paths: ["src/index.ts"],
+      include_deprecated: true,
+    });
+    expect(allResult.shared.description_index.map((item) => item.stable_id)).toEqual(["active-rule"]);
+  });
 });
 
 async function createTempProject(): Promise<string> {

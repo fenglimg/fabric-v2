@@ -42,7 +42,9 @@ describe("initFabric Claude install", () => {
     expect(existsSync(installedCodexStopHookPath)).toBe(true);
     expect(existsSync(hookPath)).toBe(true);
     expect(existsSync(settingsPath)).toBe(true);
-    expect(existsSync(join(target, ".fabric", "bootstrap", "README.md"))).toBe(true);
+    // v2.0: knowledge layout replaces the legacy bootstrap README.
+    expect(existsSync(join(target, ".fabric", "knowledge", "decisions"))).toBe(true);
+    expect(existsSync(join(target, ".fabric", "agents.meta.json"))).toBe(true);
     expect(hashFile(installedSkillPath)).toBe(hashFile(skillTemplatePath));
     expect(hashFile(installedCodexSkillPath)).toBe(hashFile(codexSkillTemplatePath));
     expect(statSync(installedCodexSessionStartHookPath).mode & 0o111).not.toBe(0);
@@ -56,22 +58,24 @@ describe("initFabric Claude install", () => {
     expect(stopCommands).toContain(".claude/hooks/fabric-init-reminder.cjs");
     expect(readFileSync(installedCodexHooksPath, "utf8")).toContain(".codex/hooks/fabric-session-start.cjs");
     expect(readFileSync(installedCodexHooksPath, "utf8")).toContain(".codex/hooks/fabric-stop-reminder.cjs");
-    expect(readFileSync(join(target, ".fabric", "bootstrap", "README.md"), "utf8")).toContain("Fabric Bootstrap Protocol");
   });
 
-  it("keeps bootstrap content internal instead of writing a root Claude file", async () => {
+  it("v2.0 `bootstrap install` is a no-op (no legacy bootstrap README, no root markdown)", async () => {
     const target = createWerewolfFixtureRoot("fab-init-claude-bootstrap-thin");
     tempRoots.push(target);
 
     const { installBootstrap } = await import("../src/commands/bootstrap.ts");
-    await installBootstrap(target, { clients: ["ClaudeCodeCLI"] });
+    const result = await installBootstrap(target, { clients: ["ClaudeCodeCLI"] });
 
-    const guidePath = join(target, ".fabric", "bootstrap", "README.md");
-    expect(existsSync(guidePath)).toBe(true);
+    // No-op: empty install/skipped/details lists.
+    expect(result.installed).toEqual([]);
+    expect(result.skipped).toEqual([]);
+    expect(result.details).toEqual([]);
+    // No legacy bootstrap README, no root markdown anchors are written.
+    expect(existsSync(join(target, ".fabric", "bootstrap", "README.md"))).toBe(false);
     expect(existsSync(join(target, "CLAUDE.md"))).toBe(false);
     expect(existsSync(join(target, "GEMINI.md"))).toBe(false);
     expect(existsSync(join(target, "AGENTS.md"))).toBe(false);
-    expect(readFileSync(guidePath, "utf8")).toContain("Fabric Bootstrap Protocol");
   });
 
   it("executes the reminder hook only while init-context is missing", async () => {

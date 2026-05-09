@@ -63,8 +63,10 @@ describe("init CLI surface", () => {
       },
     } as never);
 
-    expect(existsSync(`${target}/.fabric/bootstrap/README.md`)).toBe(false);
+    // v2.0: --plan does not write any scaffold artifacts.
+    expect(existsSync(`${target}/.fabric/agents.meta.json`)).toBe(false);
     expect(existsSync(`${target}/.fabric/forensic.json`)).toBe(false);
+    expect(existsSync(`${target}/.fabric/knowledge`)).toBe(false);
   });
 
   it("reapplies managed scaffold files over an existing init when --reapply is used", async () => {
@@ -89,6 +91,9 @@ describe("init CLI surface", () => {
       },
     } as never);
 
+    // v2.0: re-running init with --reapply re-creates the v2.0 layout (knowledge
+    // subdirs, agents.meta.json, events.jsonl) but does NOT touch any pre-existing
+    // legacy bootstrap/README.md.
     writeFixtureFile(target, ".fabric/bootstrap/README.md", "# reapply me\n");
 
     await initCommand.run?.({
@@ -102,8 +107,11 @@ describe("init CLI surface", () => {
       },
     } as never);
 
-    expect(readFixtureFile(target, ".fabric/bootstrap/README.md")).not.toBe("# reapply me\n");
-    expect(readFileSync(`${target}/.fabric/bootstrap/README.md`, "utf8")).toContain("Fabric Bootstrap Protocol");
+    // Legacy bootstrap file is preserved verbatim.
+    expect(readFixtureFile(target, ".fabric/bootstrap/README.md")).toBe("# reapply me\n");
+    // v2.0 layout exists alongside it.
+    expect(existsSync(`${target}/.fabric/agents.meta.json`)).toBe(true);
+    expect(readFileSync(`${target}/.fabric/agents.meta.json`, "utf8")).toContain("counters");
   });
 
   it("prints compatibility notices for legacy flags and skips wizard when --plan is used", async () => {

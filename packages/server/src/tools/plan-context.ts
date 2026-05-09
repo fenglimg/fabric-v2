@@ -24,7 +24,7 @@ export function registerPlanContext(server: McpServer, tracker?: InFlightTracker
       outputSchema: planContextOutputSchema,
       annotations: planContextAnnotations,
     },
-    async ({ paths, intent, known_tech, detected_entities, client_hash, correlation_id, session_id }: PlanContextInput) => {
+    async ({ paths, intent, known_tech, detected_entities, client_hash, correlation_id, session_id, include_deprecated }: PlanContextInput) => {
       const requestId = randomUUID();
       tracker?.enter(requestId);
       try {
@@ -38,6 +38,7 @@ export function registerPlanContext(server: McpServer, tracker?: InFlightTracker
           client_hash,
           correlation_id,
           session_id,
+          include_deprecated,
         });
 
         const response = {

@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -61,8 +61,8 @@ describe("init-atomic: no .tmp files remain after fresh init", () => {
   });
 });
 
-describe("init-atomic: events.jsonl created as raw 0-byte file", () => {
-  it("events.jsonl exists and is empty (0 bytes) after fresh init", async () => {
+describe("init-atomic: events.jsonl created as raw file (0-byte after scaffold, populated by init-scan)", () => {
+  it("events.jsonl exists and contains init_scan_completed after fresh init", async () => {
     const target = createWerewolfFixtureRoot("fab-atomic-events");
     tempRoots.push(target);
 
@@ -70,8 +70,15 @@ describe("init-atomic: events.jsonl created as raw 0-byte file", () => {
 
     const eventsPath = join(target, ".fabric", "events.jsonl");
     expect(existsSync(eventsPath)).toBe(true);
-    const size = statSync(eventsPath).size;
-    expect(size).toBe(0);
+
+    // v2.0: scaffold writes a 0-byte events.jsonl, then the init-scan stage
+    // appends `init_scan_completed` (and supporting baseline_synced /
+    // rule_baseline_accepted entries from rule-meta sync). Asserting that the
+    // ledger is non-empty AND contains init_scan_completed verifies both the
+    // raw-create contract and the scan invocation.
+    const raw = readFileSync(eventsPath, "utf8");
+    expect(raw.length).toBeGreaterThan(0);
+    expect(raw).toContain("init_scan_completed");
   });
 
   it("atomicWriteText is NOT called for events.jsonl", async () => {
@@ -100,29 +107,10 @@ describe("init-atomic: events.jsonl created as raw 0-byte file", () => {
 });
 
 describe("init-atomic: P1 scaffold artifacts use atomic writes", () => {
-  it("atomicWriteText is called for bootstrap README", async () => {
-    const target = createWerewolfFixtureRoot("fab-atomic-readme");
-    tempRoots.push(target);
-
-    const spy = vi.spyOn(atomicWriteModule, "atomicWriteText");
-
-    await initFabric(target);
-
-    const calls = spy.mock.calls.filter(([p]) => p.endsWith("README.md"));
-    expect(calls.length).toBeGreaterThanOrEqual(1);
-  });
-
-  it("atomicWriteText is called for INITIAL_TAXONOMY.md", async () => {
-    const target = createWerewolfFixtureRoot("fab-atomic-taxonomy");
-    tempRoots.push(target);
-
-    const spy = vi.spyOn(atomicWriteModule, "atomicWriteText");
-
-    await initFabric(target);
-
-    const calls = spy.mock.calls.filter(([p]) => p.endsWith("INITIAL_TAXONOMY.md"));
-    expect(calls).toHaveLength(1);
-  });
+  // v2.0: legacy `.fabric/bootstrap/README.md` and `.fabric/INITIAL_TAXONOMY.md`
+  // are no longer produced. The remaining atomic writes target
+  // `agents.meta.json`, `forensic.json`, and the knowledge entries placed by
+  // the init-scan stage (which use atomicWriteText for each markdown file).
 
   it("atomicWriteJson is called for agents.meta.json", async () => {
     const target = createWerewolfFixtureRoot("fab-atomic-meta");
@@ -133,7 +121,8 @@ describe("init-atomic: P1 scaffold artifacts use atomic writes", () => {
     await initFabric(target);
 
     const calls = spy.mock.calls.filter(([p]) => p.endsWith("agents.meta.json"));
-    expect(calls).toHaveLength(1);
+    // Two writes: scaffold-stage (empty meta) + post-scan (registerKnowledgeNodesInMeta).
+    expect(calls.length).toBeGreaterThanOrEqual(1);
   });
 
   it("atomicWriteJson is called for forensic.json", async () => {
@@ -148,56 +137,25 @@ describe("init-atomic: P1 scaffold artifacts use atomic writes", () => {
     expect(calls).toHaveLength(1);
   });
 
-  it("all 4 P1 callsites use atomic: 2 atomicWriteText + 2 atomicWriteJson (from scaffold)", async () => {
-    const target = createWerewolfFixtureRoot("fab-atomic-all-p1");
+  it("scan stage emits knowledge entries via atomicWriteText (markdown)", async () => {
+    const target = createWerewolfFixtureRoot("fab-atomic-knowledge-entries");
     tempRoots.push(target);
 
-    const textSpy = vi.spyOn(atomicWriteModule, "atomicWriteText");
-    const jsonSpy = vi.spyOn(atomicWriteModule, "atomicWriteJson");
+    const spy = vi.spyOn(atomicWriteModule, "atomicWriteText");
 
     await initFabric(target);
 
-    // atomicWriteText: bootstrap README + INITIAL_TAXONOMY.md
-    const textScaffold = textSpy.mock.calls.filter(
-      ([p]) => p.endsWith("README.md") || p.endsWith("INITIAL_TAXONOMY.md"),
+    // Each scan-placed knowledge entry (.fabric/knowledge/<sub>/<slug>.md) is
+    // written via atomicWriteText. The deterministic builders produce 4-7
+    // entries; assert at least one .md write under .fabric/knowledge/.
+    const knowledgeMarkdownCalls = spy.mock.calls.filter(
+      ([p]) => typeof p === "string" && p.includes(".fabric/knowledge/") && p.endsWith(".md"),
     );
-    expect(textScaffold).toHaveLength(2);
-
-    // atomicWriteJson: agents.meta.json + forensic.json (at minimum)
-    const jsonScaffold = jsonSpy.mock.calls.filter(
-      ([p]) => p.endsWith("agents.meta.json") || p.endsWith("forensic.json"),
-    );
-    expect(jsonScaffold).toHaveLength(2);
+    expect(knowledgeMarkdownCalls.length).toBeGreaterThanOrEqual(1);
   });
 });
 
 describe("init-atomic: artifact content correctness after atomic lift", () => {
-  it("bootstrap README has expected content after atomic write", async () => {
-    const target = createWerewolfFixtureRoot("fab-atomic-readme-content");
-    tempRoots.push(target);
-
-    await initFabric(target);
-
-    const readmePath = join(target, ".fabric", "bootstrap", "README.md");
-    expect(existsSync(readmePath)).toBe(true);
-    const content = readFileSync(readmePath, "utf8");
-    expect(content.length).toBeGreaterThan(0);
-    expect(content.endsWith("\n")).toBe(true);
-  });
-
-  it("INITIAL_TAXONOMY.md has expected content after atomic write", async () => {
-    const target = createWerewolfFixtureRoot("fab-atomic-taxonomy-content");
-    tempRoots.push(target);
-
-    await initFabric(target);
-
-    const taxonomyPath = join(target, ".fabric", "INITIAL_TAXONOMY.md");
-    expect(existsSync(taxonomyPath)).toBe(true);
-    const content = readFileSync(taxonomyPath, "utf8");
-    expect(content).toContain("Fabric Initial Taxonomy");
-    expect(content.endsWith("\n")).toBe(true);
-  });
-
   it("agents.meta.json is valid JSON with trailing newline after atomic write", async () => {
     const target = createWerewolfFixtureRoot("fab-atomic-meta-content");
     tempRoots.push(target);
@@ -222,5 +180,30 @@ describe("init-atomic: artifact content correctness after atomic lift", () => {
     const raw = readFileSync(forensicPath, "utf8");
     expect(raw.endsWith("\n")).toBe(true);
     expect(() => JSON.parse(raw)).not.toThrow();
+  });
+
+  it("legacy v1.x scaffold artifacts are NOT created", async () => {
+    const target = createWerewolfFixtureRoot("fab-atomic-no-legacy-v1");
+    tempRoots.push(target);
+
+    await initFabric(target);
+
+    // v2.0: bootstrap/README.md and INITIAL_TAXONOMY.md must not be written.
+    expect(existsSync(join(target, ".fabric", "bootstrap", "README.md"))).toBe(false);
+    expect(existsSync(join(target, ".fabric", "INITIAL_TAXONOMY.md"))).toBe(false);
+  });
+
+  it("knowledge subdirs contain .gitkeep markers after init", async () => {
+    const target = createWerewolfFixtureRoot("fab-atomic-gitkeep");
+    tempRoots.push(target);
+
+    await initFabric(target);
+
+    for (const sub of ["decisions", "pitfalls", "guidelines", "models", "processes", "pending"]) {
+      const dir = join(target, ".fabric", "knowledge", sub);
+      expect(existsSync(dir)).toBe(true);
+      // .gitkeep is the canonical empty-directory marker.
+      expect(existsSync(join(dir, ".gitkeep"))).toBe(true);
+    }
   });
 });

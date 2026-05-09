@@ -12,6 +12,12 @@ export type PlanContextInput = {
   client_hash?: string;
   correlation_id?: string;
   session_id?: string;
+  // v2.0: by default we hide entries with `maturity = 'deprecated'`. Setting
+  // this flag to true returns them. Note: TASK-002 MaturitySchema enumerates
+  // draft|verified|proven only — `deprecated` is reserved future state, so
+  // today this filter is a no-op placeholder. Wired now so we don't need a
+  // protocol break when the enum widens. TODO(rc.3): expand MaturitySchema.
+  include_deprecated?: boolean;
 };
 
 export type RequirementProfile = {
@@ -77,7 +83,10 @@ export async function planContext(
   const meta = await readAgentsMeta(projectRoot);
   const stale = input.client_hash !== undefined && input.client_hash !== meta.revision;
   const uniquePaths = dedupePaths(input.paths);
-  const allDescriptions = buildDescriptionIndex(meta);
+  const includeDeprecated = input.include_deprecated === true;
+  const allDescriptions = buildDescriptionIndex(meta).filter((item) =>
+    includeDeprecated ? true : !isDeprecatedMaturity(item),
+  );
 
   const entries = uniquePaths.map((path) => {
     const profile = buildRequirementProfile(path, input);
@@ -223,15 +232,48 @@ function buildDescriptionIndex(meta: AgentsMeta): RuleDescriptionIndexItem[] {
         return [];
       }
 
+      // v2.0: prefer fields that flowed in via frontmatter (description.*).
+      // Fall back to the inferred knowledge layer derived from the
+      // content_ref/file root (team vs personal) so MCP clients always see
+      // SOMETHING for the layer surface — even on un-migrated entries.
+      const inferredLayer = inferKnowledgeLayerFromContentRef(node.content_ref ?? node.file);
+
       return [{
         stable_id: node.stable_id ?? nodeId,
         level,
         required: level === "L0" || level === "L2",
         selectable: level === "L1",
         description,
+        type: description.knowledge_type,
+        maturity: description.maturity,
+        layer: description.knowledge_layer ?? inferredLayer,
+        layer_reason: description.layer_reason,
       }];
     })
     .sort(compareDescriptionIndexItems);
+}
+
+function inferKnowledgeLayerFromContentRef(contentRef: string | undefined): "team" | "personal" | undefined {
+  if (contentRef === undefined) {
+    return undefined;
+  }
+  if (contentRef.startsWith("~/.fabric/knowledge/")) {
+    return "personal";
+  }
+  if (contentRef.startsWith(".fabric/knowledge/")) {
+    return "team";
+  }
+  return undefined;
+}
+
+function isDeprecatedMaturity(item: RuleDescriptionIndexItem): boolean {
+  // v2.0 placeholder: TASK-002 enum is draft|verified|proven only. We check
+  // both surfaces (top-level + nested) so that if either ever resolves to
+  // "deprecated" via a future schema expansion, the filter activates without
+  // a code change. Today this is a no-op for all conformant entries.
+  const a = item.maturity as string | undefined;
+  const b = item.description.maturity as string | undefined;
+  return a === "deprecated" || b === "deprecated";
 }
 
 function descriptionFromLegacyActivation(summary: string | undefined): RuleDescription | undefined {

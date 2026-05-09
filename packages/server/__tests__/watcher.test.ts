@@ -77,11 +77,14 @@ describe("handleCacheWatcherEvent — watcher bridge to rule-sync cooldown", () 
     expect(spy).not.toHaveBeenCalled();
   });
 
-  it("does NOT call invalidateRuleSyncCooldown for bootstrap README events", () => {
+  it("does NOT call invalidateRuleSyncCooldown for legacy bootstrap README events (v2.0: ignored entirely)", () => {
     const projectRoot = "/fake/project";
     const sessions = new Map<string, never>();
     const spy = vi.spyOn(ruleSyncModule, "invalidateRuleSyncCooldown");
 
+    // v2.0: the legacy bootstrap path is no longer watched, but
+    // handleCacheWatcherEvent must still be a safe no-op when called with it
+    // (e.g. via stale watch glob in older deployments).
     handleCacheWatcherEvent(
       ".fabric/bootstrap/README.md",
       projectRoot,

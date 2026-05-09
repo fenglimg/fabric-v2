@@ -37,6 +37,8 @@ export {
   type RuleMetaBuildSource,
   type WriteRuleMetaOptions,
 } from "./services/rule-meta-builder.js";
+export { KnowledgeIdAllocator } from "./services/knowledge-id-allocator.js";
+export { appendEventLedgerEvent } from "./services/event-ledger.js";
 export {
   EVENT_LEDGER_PATH,
   LEGACY_LEDGER_PATH,
@@ -106,22 +108,31 @@ export function createFabricServer(tracker?: InFlightTracker): McpServer {
   registerPlanContext(server, tracker);
   registerRuleSections(server, tracker);
 
+  // v2.0: the legacy bootstrap README MCP resource is preserved as a contract
+  // shim — the file no longer exists by default in v2.0 (knowledge entries
+  // under .fabric/knowledge/ are the content of record), so the handler
+  // returns an empty/synthetic response instead of throwing. Existing MCP
+  // clients that probe this URI continue to receive a well-formed reply.
   server.registerResource(
     "bootstrap README",
     AGENTS_MD_RESOURCE_URI,
     {
-      description: "L0 fabric bootstrap file — global agent instructions for this project",
+      description: "Legacy v1.x bootstrap anchor (deprecated in v2.0; kept as MCP contract shim)",
       mimeType: "text/markdown",
     },
     async (_uri: URL) => {
       const projectRoot = process.env.FABRIC_PROJECT_ROOT ?? process.cwd();
-      const content = await readFile(join(projectRoot, ".fabric", "bootstrap", "README.md"), "utf8");
+      const path = join(projectRoot, ".fabric", "bootstrap", "README.md");
+      let text = "";
+      if (existsSync(path)) {
+        text = await readFile(path, "utf8");
+      }
       return {
         contents: [
           {
             uri: AGENTS_MD_RESOURCE_URI,
             mimeType: "text/markdown",
-            text: content,
+            text,
           },
         ],
       };

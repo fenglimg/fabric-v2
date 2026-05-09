@@ -191,6 +191,10 @@ exports[`tool contracts > plan-context contract matches snapshot 1`] = `
         "description": "Optional path-keyed detected entities for the requirement profile",
         "type": "object",
       },
+      "include_deprecated": {
+        "description": "When true, include description_index entries with maturity='deprecated'. Defaults to false (deprecated entries hidden). Note: 'deprecated' is reserved future state — today this filter is a no-op until MaturitySchema is widened.",
+        "type": "boolean",
+      },
       "intent": {
         "description": "User-stated requirement or implementation intent; used only to build a neutral requirement profile",
         "type": "string",
@@ -241,11 +245,17 @@ exports[`tool contracts > plan-context contract matches snapshot 1`] = `
                   "description": {
                     "additionalProperties": false,
                     "properties": {
+                      "created_at": {
+                        "type": "string",
+                      },
                       "entities": {
                         "items": {
                           "type": "string",
                         },
                         "type": "array",
+                      },
+                      "id": {
+                        "type": "string",
                       },
                       "impact": {
                         "items": {
@@ -258,6 +268,34 @@ exports[`tool contracts > plan-context contract matches snapshot 1`] = `
                           "type": "string",
                         },
                         "type": "array",
+                      },
+                      "knowledge_layer": {
+                        "enum": [
+                          "personal",
+                          "team",
+                        ],
+                        "type": "string",
+                      },
+                      "knowledge_type": {
+                        "enum": [
+                          "model",
+                          "decision",
+                          "guideline",
+                          "pitfall",
+                          "process",
+                        ],
+                        "type": "string",
+                      },
+                      "layer_reason": {
+                        "type": "string",
+                      },
+                      "maturity": {
+                        "enum": [
+                          "draft",
+                          "verified",
+                          "proven",
+                        ],
+                        "type": "string",
                       },
                       "must_read_if": {
                         "type": "string",
@@ -281,6 +319,12 @@ exports[`tool contracts > plan-context contract matches snapshot 1`] = `
                     ],
                     "type": "object",
                   },
+                  "layer": {
+                    "$ref": "#/properties/entries/items/properties/description_index/items/properties/description/properties/knowledge_layer",
+                  },
+                  "layer_reason": {
+                    "type": "string",
+                  },
                   "level": {
                     "enum": [
                       "L0",
@@ -288,6 +332,9 @@ exports[`tool contracts > plan-context contract matches snapshot 1`] = `
                       "L2",
                     ],
                     "type": "string",
+                  },
+                  "maturity": {
+                    "$ref": "#/properties/entries/items/properties/description_index/items/properties/description/properties/maturity",
                   },
                   "required": {
                     "type": "boolean",
@@ -297,6 +344,9 @@ exports[`tool contracts > plan-context contract matches snapshot 1`] = `
                   },
                   "stable_id": {
                     "type": "string",
+                  },
+                  "type": {
+                    "$ref": "#/properties/entries/items/properties/description_index/items/properties/description/properties/knowledge_type",
                   },
                 },
                 "required": [
@@ -624,40 +674,70 @@ exports[`tool contracts > rule-sections contract matches snapshot 1`] = `
     "properties": {
       "diagnostics": {
         "items": {
-          "additionalProperties": false,
-          "properties": {
-            "code": {
-              "const": "missing_section",
-              "type": "string",
-            },
-            "message": {
-              "type": "string",
-            },
-            "section": {
-              "enum": [
-                "MISSION_STATEMENT",
-                "MANDATORY_INJECTION",
-                "BUSINESS_LOGIC_CHUNKS",
-                "CONTEXT_INFO",
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "code": {
+                  "const": "missing_section",
+                  "type": "string",
+                },
+                "message": {
+                  "type": "string",
+                },
+                "section": {
+                  "enum": [
+                    "MISSION_STATEMENT",
+                    "MANDATORY_INJECTION",
+                    "BUSINESS_LOGIC_CHUNKS",
+                    "CONTEXT_INFO",
+                  ],
+                  "type": "string",
+                },
+                "severity": {
+                  "const": "warn",
+                  "type": "string",
+                },
+                "stable_id": {
+                  "type": "string",
+                },
+              },
+              "required": [
+                "code",
+                "severity",
+                "stable_id",
+                "section",
+                "message",
               ],
-              "type": "string",
+              "type": "object",
             },
-            "severity": {
-              "const": "warn",
-              "type": "string",
+            {
+              "additionalProperties": false,
+              "properties": {
+                "code": {
+                  "const": "missing_knowledge_metadata",
+                  "type": "string",
+                },
+                "message": {
+                  "type": "string",
+                },
+                "severity": {
+                  "const": "warn",
+                  "type": "string",
+                },
+                "stable_id": {
+                  "type": "string",
+                },
+              },
+              "required": [
+                "code",
+                "severity",
+                "stable_id",
+                "message",
+              ],
+              "type": "object",
             },
-            "stable_id": {
-              "type": "string",
-            },
-          },
-          "required": [
-            "code",
-            "severity",
-            "stable_id",
-            "section",
-            "message",
           ],
-          "type": "object",
         },
         "type": "array",
       },

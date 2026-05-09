@@ -222,6 +222,10 @@ export const enMessages: Messages = {
     "Target absolute path. Defaults to CLI arg, EXTERNAL_FIXTURE_PATH, fabric.config.json, then cwd.",
   "cli.scan.args.debug.description": "Print detection evidence in formatted output.",
   "cli.scan.args.json.description": "Print the diagnostic report as JSON.",
+  "cli.scan.error.missing-forensic":
+    "forensic.json not found at {path}; run `fabric init` first to produce the deterministic project snapshot.",
+  "cli.scan.summary.created": "Wrote {count} knowledge entries to .fabric/knowledge/.",
+  "cli.scan.summary.skipped": "No changes detected; {count} entries already up-to-date.",
   "cli.scan.report.title": "Fabric scan report",
   "cli.scan.report.target": "Target",
   "cli.scan.report.framework": "Framework",

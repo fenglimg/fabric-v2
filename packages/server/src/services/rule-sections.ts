@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import { homedir } from "node:os";
 import { join } from "node:path";
 
 import type { AgentsLayer } from "@fenglimg/fabric-shared";
@@ -27,13 +28,23 @@ export type GetRuleSectionsInput = {
   session_id?: string;
 };
 
-export type RuleSectionDiagnostic = {
-  code: "missing_section";
-  severity: "warn";
-  stable_id: string;
-  section: RuleSectionName;
-  message: string;
-};
+export type RuleSectionDiagnostic =
+  | {
+      code: "missing_section";
+      severity: "warn";
+      stable_id: string;
+      section: RuleSectionName;
+      message: string;
+    }
+  | {
+      // v2.0: warn-level signal that a fetched rule lacks knowledge metadata
+      // (no `type` AND no `layer` in frontmatter). Surfaces un-migrated v1.x
+      // files without breaking selection — the rule is still returned.
+      code: "missing_knowledge_metadata";
+      severity: "warn";
+      stable_id: string;
+      message: string;
+    };
 
 export type RuleSectionResult = {
   revision_hash: string;
@@ -137,7 +148,7 @@ export async function getRuleSections(
   const rules = [];
 
   for (const rule of selectedRules) {
-    const content = await readFile(join(projectRoot, rule.path), "utf8");
+    const content = await readFile(resolveRuleSourcePath(projectRoot, rule.path), "utf8");
     const parsedSections = parseRuleSections(content);
     const sections = {} as Record<RuleSectionName, string>;
 
@@ -154,6 +165,23 @@ export async function getRuleSections(
           message: `Rule ${rule.stable_id} does not define section ${section}.`,
         });
       }
+    }
+
+    // v2.0: emit a warn-level diagnostic when a fetched rule has neither
+    // `knowledge_type` nor `knowledge_layer` in its description — these are
+    // un-migrated v1.x entries surviving in the index. Does not block delivery.
+    const description = rule.node.description;
+    if (
+      description !== undefined &&
+      description.knowledge_type === undefined &&
+      description.knowledge_layer === undefined
+    ) {
+      diagnostics.push({
+        code: "missing_knowledge_metadata",
+        severity: "warn",
+        stable_id: rule.stable_id,
+        message: `Rule ${rule.stable_id} has no knowledge metadata (type/layer) — likely an un-migrated v1.x entry.`,
+      });
     }
 
     rules.push({
@@ -278,6 +306,20 @@ function outputLevelOrder(level: AgentsLayer): number {
 
 function isRuleSectionName(value: string): value is RuleSectionName {
   return RULE_SECTION_NAMES.includes(value as RuleSectionName);
+}
+
+/**
+ * v2.0: Resolve a content_ref/path captured in agents.meta.json to an absolute
+ * filesystem path. Personal-layer entries are persisted as `~/.fabric/...`
+ * and live outside the project root; team-layer entries stay project-relative.
+ * Mirrors `resolveContentRefPath` in rule-meta-builder.ts.
+ */
+function resolveRuleSourcePath(projectRoot: string, contentRef: string): string {
+  if (contentRef.startsWith("~/.fabric/knowledge/")) {
+    const home = process.env.FABRIC_HOME ?? homedir();
+    return join(home, ".fabric", "knowledge", contentRef.slice("~/.fabric/knowledge/".length));
+  }
+  return join(projectRoot, contentRef);
 }
 
 function pickSelectionReasons(

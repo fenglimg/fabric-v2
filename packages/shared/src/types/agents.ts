@@ -12,6 +12,13 @@ export interface RuleDescription {
   impact: string[];
   must_read_if: string;
   entities?: string[];
+  // v2.0 knowledge entry fields (TASK-002 schemas). All optional for backward compat.
+  id?: string;
+  knowledge_type?: "model" | "decision" | "guideline" | "pitfall" | "process";
+  maturity?: "draft" | "verified" | "proven";
+  knowledge_layer?: "personal" | "team";
+  layer_reason?: string;
+  created_at?: string;
 }
 
 export interface RuleDescriptionIndexItem {
@@ -20,6 +27,13 @@ export interface RuleDescriptionIndexItem {
   required: boolean;
   selectable: boolean;
   description: RuleDescription;
+  // v2.0: knowledge-layer surface for client-side filtering. Mirrors the
+  // homonymous fields on `description` so callers don't have to reach into
+  // the nested payload. Optional because v1.x entries lack frontmatter.
+  type?: "model" | "decision" | "guideline" | "pitfall" | "process";
+  maturity?: "draft" | "verified" | "proven";
+  layer?: "personal" | "team";
+  layer_reason?: string;
 }
 
 export interface AgentsMetaNodeActivation {
@@ -44,7 +58,23 @@ export interface AgentsMetaNode {
   sections?: string[];
 }
 
+// v2.0: Knowledge-entry stable_id counters. Optional for backward compat —
+// pre-v2.0 meta files lack the `counters` key and load with implicit zeros.
+export interface AgentsMetaKnowledgeTypeCounters {
+  MOD: number;
+  DEC: number;
+  GLD: number;
+  PIT: number;
+  PRO: number;
+}
+
+export interface AgentsMetaCountersEnvelope {
+  KP: AgentsMetaKnowledgeTypeCounters;
+  KT: AgentsMetaKnowledgeTypeCounters;
+}
+
 export interface AgentsMeta {
   revision: string;
   nodes: Record<string, AgentsMetaNode>;
+  counters?: AgentsMetaCountersEnvelope;
 }

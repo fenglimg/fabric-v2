@@ -214,6 +214,10 @@ export const zhCNMessages: Messages = {
     "目标绝对路径。默认依次使用 CLI 参数、EXTERNAL_FIXTURE_PATH、fabric.config.json、当前目录。",
   "cli.scan.args.debug.description": "以格式化输出打印检测证据。",
   "cli.scan.args.json.description": "以 JSON 格式输出诊断报告。",
+  "cli.scan.error.missing-forensic":
+    "未找到 forensic.json（路径 {path}）；请先运行 `fabric init` 生成项目快照。",
+  "cli.scan.summary.created": "已写入 {count} 条知识条目至 .fabric/knowledge/。",
+  "cli.scan.summary.skipped": "无差异；{count} 条已存在的条目保持不变。",
   "cli.scan.report.title": "Fabric 扫描报告",
   "cli.scan.report.target": "目标",
   "cli.scan.report.framework": "框架",

@@ -1,16 +1,16 @@
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
+import { homedir } from "node:os";
 import * as childProcess from "node:child_process";
 import { appendFileSync, chmodSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, parse, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { cancel, confirm, group, intro, isCancel, log, note, outro, select } from "@clack/prompts";
-import type { AgentsMeta } from "@fenglimg/fabric-shared";
-import { atomicWriteJson, atomicWriteText } from "@fenglimg/fabric-shared/node/atomic-write";
+import { defaultAgentsMetaCounters, type AgentsMeta } from "@fenglimg/fabric-shared";
+import { atomicWriteJson } from "@fenglimg/fabric-shared/node/atomic-write";
 import { defineCommand } from "citty";
 import { checkLockOrThrow } from "@fenglimg/fabric-server";
 
-import { buildFabricBootstrapGuide } from "../bootstrap-guide.js";
 import { displayWidth, paint, padEnd } from "../colors.js";
 import { createDebugLogger, resolveDevMode } from "../dev-mode.js";
 import type { ClaudeMcpScope } from "../config/json.js";
@@ -18,6 +18,7 @@ import { t } from "../i18n.js";
 import { installBootstrap } from "./bootstrap.js";
 import * as configCommand from "./config.js";
 import { installHooks } from "./hooks.js";
+import { runInitScan } from "./scan.js";
 import { buildForensicReport } from "../scanner/forensic.js";
 import { detectClientSupports, type DetectedClientSupport } from "../config/resolver.js";
 
@@ -65,12 +66,15 @@ type InitStageRecord = {
 };
 
 export type InitScaffoldResult = {
-  bootstrapPath: string;
-  bootstrapAction: InitWriteAction;
+  // v2.0 layout: knowledge subdirs (.gitkeep markers) + agents.meta.json
+  // (counters envelope) + events.jsonl + forensic.json. The legacy
+  // .fabric/bootstrap/README.md and .fabric/INITIAL_TAXONOMY.md scaffold
+  // outputs are gone — knowledge entries are created by the scan stage.
+  knowledgeDir: string;
+  knowledgeDirAction: InitWriteAction;
+  personalKnowledgeDir: string;
   metaPath: string;
   metaAction: InitWriteAction;
-  taxonomyPath: string;
-  taxonomyAction: InitWriteAction;
   eventsPath: string;
   eventsAction: InitWriteAction;
   forensicPath: string;
@@ -192,15 +196,15 @@ export type InitScaffoldPlan = {
   options?: InitOptions;
   fabricDir: string;
   replaceFabricDir: boolean;
-  bootstrapPath: string;
-  bootstrapAction: InitWriteAction;
-  bootstrapContent: string;
+  // v2.0 knowledge layout (team root): .fabric/knowledge/{decisions,pitfalls,
+  // guidelines,models,processes,pending}/. The personal root mirrors the same
+  // subdirs under ~/.fabric/knowledge/ (overridable via FABRIC_HOME).
+  knowledgeDir: string;
+  knowledgeDirAction: InitWriteAction;
+  personalKnowledgeDir: string;
   metaPath: string;
   metaAction: InitWriteAction;
   meta: AgentsMeta;
-  taxonomyPath: string;
-  taxonomyAction: InitWriteAction;
-  taxonomyContent: string;
   rulesDir: string;
   eventsPath: string;
   eventsAction: InitWriteAction;
@@ -518,13 +522,21 @@ export async function executeInitExecutionPlan(plan: InitExecutionPlan): Promise
   };
 }
 
+// v2.0 knowledge subdirs (team + personal). The list is shared with rule-meta
+// and doctor; mirrored here to keep init dependency-free.
+const KNOWLEDGE_SUBDIRS = ["decisions", "pitfalls", "guidelines", "models", "processes", "pending"] as const;
+
+function resolvePersonalFabricRoot(): string {
+  return process.env.FABRIC_HOME ?? homedir();
+}
+
 export async function buildInitFabricPlan(target: string, options?: InitOptions): Promise<InitScaffoldPlan> {
   assertExistingDirectory(target);
 
   const fabricDir = join(target, ".fabric");
-  const bootstrapPath = join(fabricDir, "bootstrap", "README.md");
+  const knowledgeDir = join(fabricDir, "knowledge");
+  const personalKnowledgeDir = join(resolvePersonalFabricRoot(), ".fabric", "knowledge");
   const forensicPath = join(fabricDir, "forensic.json");
-  const taxonomyPath = join(fabricDir, "INITIAL_TAXONOMY.md");
   const rulesDir = join(fabricDir, "rules");
   const eventsPath = join(fabricDir, "events.jsonl");
   const claudeSkillPath = join(target, ".claude", "skills", "fabric-init", "SKILL.md");
@@ -537,32 +549,25 @@ export async function buildInitFabricPlan(target: string, options?: InitOptions)
   const metaPath = join(fabricDir, "agents.meta.json");
 
   const replaceFabricDir = shouldReplaceWritableDirectory(fabricDir, options);
-  const bootstrapAction = planFreshPath(bootstrapPath, options);
+  const knowledgeDirAction: InitWriteAction = existsSync(knowledgeDir) ? "overwritten" : "created";
   const metaAction = planFreshPath(metaPath, options);
-  const taxonomyAction = planFreshPath(taxonomyPath, options);
   const eventsAction = planFreshPath(eventsPath, options);
   const forensicAction = planFreshPath(forensicPath, options);
 
   const forensicReport = await buildForensicReport(target);
-  const bootstrapContent = await buildFabricBootstrapGuide(target);
-  const taxonomyContent = buildInitialTaxonomyMarkdown(forensicReport);
-  const bootstrapHash = sha256(bootstrapContent);
-  const meta = createInitialMeta(bootstrapHash);
+  const meta = createInitialMeta();
 
   return {
     target,
     options,
     fabricDir,
     replaceFabricDir,
-    bootstrapPath,
-    bootstrapAction,
-    bootstrapContent,
+    knowledgeDir,
+    knowledgeDirAction,
+    personalKnowledgeDir,
     metaPath,
     metaAction,
     meta,
-    taxonomyPath,
-    taxonomyAction,
-    taxonomyContent,
     rulesDir,
     eventsPath,
     eventsAction,
@@ -608,10 +613,31 @@ export async function executeInitFabricPlan(plan: InitScaffoldPlan): Promise<Ini
   }
 
   mkdirSync(plan.fabricDir, { recursive: true });
-  mkdirSync(dirname(plan.bootstrapPath), { recursive: true });
 
-  preparePlannedPath(plan.bootstrapPath, plan.bootstrapAction);
-  await atomicWriteText(plan.bootstrapPath, plan.bootstrapContent);
+  // v2.0 stage (a) bootstrap: materialize knowledge subdirs (team + personal)
+  // with .gitkeep markers so a fresh repo carries the canonical layout even
+  // before the first knowledge entry is added.
+  mkdirSync(plan.knowledgeDir, { recursive: true });
+  for (const sub of KNOWLEDGE_SUBDIRS) {
+    const teamSubDir = join(plan.knowledgeDir, sub);
+    mkdirSync(teamSubDir, { recursive: true });
+    const teamGitkeep = join(teamSubDir, ".gitkeep");
+    if (!existsSync(teamGitkeep)) {
+      writeFileSync(teamGitkeep, "", "utf8");
+    }
+  }
+
+  // Personal-root mirror — best-effort. A read-only home / unusual FABRIC_HOME
+  // override must not block init; rule-meta-builder will retry the mkdir on
+  // its first scan.
+  try {
+    mkdirSync(plan.personalKnowledgeDir, { recursive: true });
+    for (const sub of KNOWLEDGE_SUBDIRS) {
+      mkdirSync(join(plan.personalKnowledgeDir, sub), { recursive: true });
+    }
+  } catch {
+    // Non-fatal — see comment above.
+  }
 
   // Change B: skip agents.meta.json regen when --reapply and rules/*.md already exist.
   if (!preserveMeta) {
@@ -619,10 +645,10 @@ export async function executeInitFabricPlan(plan: InitScaffoldPlan): Promise<Ini
     await atomicWriteJson(plan.metaPath, plan.meta);
   }
 
-  preparePlannedPath(plan.taxonomyPath, plan.taxonomyAction);
-  await atomicWriteText(plan.taxonomyPath, ensureTrailingNewline(plan.taxonomyContent));
-
-  mkdirSync(plan.rulesDir, { recursive: true });
+  // v2.0: legacy `.fabric/rules/` directory is no longer pre-created; entries
+  // accumulate under `.fabric/knowledge/` instead. The `rulesDir` is still
+  // referenced by the --reapply preservation path above for back-compat with
+  // repos that still carry v1.x rule files.
 
   // Change A: on --reapply, preserve events.jsonl byte-identically; only create it if missing.
   // 0-byte create stays raw — writeFileSync("", "") is atomic by definition.
@@ -648,6 +674,20 @@ export async function executeInitFabricPlan(plan: InitScaffoldPlan): Promise<Ini
   applyOptionalTemplateWritePlan(plan.claudeHook);
   await applyClaudeSettingsWritePlan(plan.claudeSettings);
 
+  // v2.0 stage (b) scan: invoke runInitScan programmatically so a fresh init
+  // produces 4-7 baseline knowledge entries + an init_scan_completed ledger
+  // event. Failure is best-effort (e.g. a read-only home) — the layout above
+  // is already complete and `fab scan` can be re-run to populate entries.
+  if (!plan.options?.reapply) {
+    try {
+      await runInitScan(plan.target, { source: "init" });
+    } catch (error: unknown) {
+      writeStderr(
+        `[warn] init-scan failed: ${error instanceof Error ? error.message : String(error)} — re-run \`fab scan\` to populate baseline knowledge entries.`,
+      );
+    }
+  }
+
   // Change C: append reapply_completed ledger event after successful --reapply.
   if (isReapply) {
     appendReapplyLedgerEvent(plan.eventsPath, {
@@ -658,12 +698,11 @@ export async function executeInitFabricPlan(plan: InitScaffoldPlan): Promise<Ini
   }
 
   return {
-    bootstrapPath: plan.bootstrapPath,
-    bootstrapAction: plan.bootstrapAction,
+    knowledgeDir: plan.knowledgeDir,
+    knowledgeDirAction: plan.knowledgeDirAction,
+    personalKnowledgeDir: plan.personalKnowledgeDir,
     metaPath: plan.metaPath,
     metaAction: plan.metaAction,
-    taxonomyPath: plan.taxonomyPath,
-    taxonomyAction: plan.taxonomyAction,
     eventsPath: plan.eventsPath,
     eventsAction: plan.eventsAction,
     forensicPath: plan.forensicPath,
@@ -742,9 +781,8 @@ function exhaustiveInitStagePlan(value: never): never {
 }
 
 function printInitScaffoldResult(created: InitScaffoldResult): void {
-  console.log(formatInitPathAction(created.bootstrapPath, created.bootstrapAction));
+  console.log(formatInitPathAction(created.knowledgeDir, created.knowledgeDirAction));
   console.log(formatInitPathAction(created.metaPath, created.metaAction));
-  console.log(formatInitPathAction(created.taxonomyPath, created.taxonomyAction));
   console.log(formatInitPathAction(created.eventsPath, created.eventsAction));
   console.log(formatInitPathAction(created.forensicPath, created.forensicAction));
   writeStderr(formatOptionalInitPathAction(created.claudeSkillPath, created.claudeSkillAction));
@@ -799,12 +837,11 @@ function printInitPlanPreview(plan: InitExecutionPlan): void {
 
 function buildPlanOnlyScaffoldResult(plan: InitScaffoldPlan): InitScaffoldResult {
   return {
-    bootstrapPath: plan.bootstrapPath,
-    bootstrapAction: plan.bootstrapAction,
+    knowledgeDir: plan.knowledgeDir,
+    knowledgeDirAction: plan.knowledgeDirAction,
+    personalKnowledgeDir: plan.personalKnowledgeDir,
     metaPath: plan.metaPath,
     metaAction: plan.metaAction,
-    taxonomyPath: plan.taxonomyPath,
-    taxonomyAction: plan.taxonomyAction,
     eventsPath: plan.eventsPath,
     eventsAction: plan.eventsAction,
     forensicPath: plan.forensicPath,
@@ -1352,20 +1389,15 @@ function installLocalFabricServer(target: string, manager: "pnpm" | "npm" | "yar
   });
 }
 
-function createInitialMeta(agentsHash: string): AgentsMeta {
+function createInitialMeta(): AgentsMeta {
+  // v2.0: agents.meta.json starts empty (`nodes: {}`) with a zeroed counters
+  // envelope. The init-scan stage adds nodes/counters as it places the
+  // baseline knowledge entries; subsequent `fab scan` runs and rule-meta
+  // synchronization keep the file in sync.
   return {
-    revision: sha256(agentsHash),
-    nodes: {
-      L0: {
-        file: ".fabric/bootstrap/README.md",
-        scope_glob: "**",
-        deps: [],
-        priority: "high",
-        layer: "L0",
-        topology_type: "mirror",
-        hash: agentsHash,
-      },
-    },
+    revision: "sha256:initial",
+    nodes: {},
+    counters: defaultAgentsMetaCounters(),
   };
 }
 
@@ -1387,81 +1419,10 @@ function appendReapplyLedgerEvent(
   appendFileSync(eventsPath, line, "utf8");
 }
 
-function buildInitialTaxonomyMarkdown(
-  forensicReport: Awaited<ReturnType<typeof buildForensicReport>>,
-): string {
-  const frameworkInfo = forensicReport.framework;
-  const framework = [frameworkInfo?.kind ?? "unknown", frameworkInfo?.subkind ?? ""]
-    .filter((value) => value.trim() !== "")
-    .join(" / ") || "unknown";
-  const keyDirs = forensicReport.topology?.key_dirs?.slice(0, 8) ?? [];
-  const candidateFiles = forensicReport.candidate_files?.slice(0, 8) ?? [];
-  const generatedAt = forensicReport.generated_at ?? new Date().toISOString();
-
-  return `# Fabric Initial Taxonomy
-
-**Date**: ${generatedAt}
-**Base Architecture**: L0/L1/L2 Tiered System
-**Detected Framework**: ${framework}
-
-## Origin Logic
-
-- **L0 判定**: 全局协作稳定性规则。典型来源包括仓库根配置、package metadata、Fabric 内部协议和不可随局部业务漂移的约束。
-- **L1 判定**: 领域/模块级规则。依据技术栈、目录职责、框架特征和功能模块划分，而不是路径深度。
-- **L2 判定**: 具体脚本、资源或局部业务状态规则。用于承载特定文件、资源、历史补丁和局部处理细则。
-
-## Initial L1 Buckets
-
-${formatInitialL1Buckets(keyDirs)}
-
-## L2 Candidate Signals
-
-${formatInitialL2Signals(candidateFiles)}
-
-## Evolution Guide
-
-- 涉及全仓协作稳定性的规则进入 L0。
-- 涉及技术领域、框架模块或功能模块的规则进入 L1。
-- 涉及具体文件、具体资源或局部业务状态的规则进入 L2。
-- 冲突时执行解释固定为 L2 > L1 > L0；同层内才使用 priority 排序。
-`;
-}
-
-function formatInitialL1Buckets(keyDirs: string[]): string {
-  if (keyDirs.length === 0) {
-    return "- **L1-General**: 初始化时未检测到稳定目录轴线，后续依据技术栈和模块职责演进。";
-  }
-
-  return keyDirs
-    .map((dir) => `- **L1-${sanitizeTaxonomyLabel(dir)}**: 挂载依据——forensic topology detected \`${dir}\`.`)
-    .join("\n");
-}
-
-function formatInitialL2Signals(candidateFiles: Awaited<ReturnType<typeof buildForensicReport>>["candidate_files"]): string {
-  if (candidateFiles.length === 0) {
-    return "- 暂未识别明确 L2 候选文件。";
-  }
-
-  return candidateFiles
-    .map((entry) => `- \`${entry.path}\`: ${entry.family} — ${entry.rationale}`)
-    .join("\n");
-}
-
-function sanitizeTaxonomyLabel(value: string): string {
-  const sanitized = value
-    .replaceAll("\\", "/")
-    .split("/")
-    .filter(Boolean)
-    .join("-")
-    .replace(/[^A-Za-z0-9_-]+/gu, "-")
-    .replace(/^-+|-+$/gu, "");
-
-  return sanitized === "" ? "General" : sanitized;
-}
-
-function ensureTrailingNewline(value: string): string {
-  return value.endsWith("\n") ? value : `${value}\n`;
-}
+// v2.0: `buildInitialTaxonomyMarkdown` and the L1/L2 bucket / signal
+// formatters were removed alongside `.fabric/INITIAL_TAXONOMY.md`. Knowledge
+// entries (decisions/pitfalls/guidelines/models/processes/pending) carry
+// their own taxonomy via the YAML frontmatter `layer:` + `type:` fields.
 
 function findTemplatePath(relativePath: string): string {
   const currentModuleDir = dirname(fileURLToPath(import.meta.url));
@@ -1620,9 +1581,8 @@ function printInitPlanSummary(
     }),
   );
   console.log(t("cli.init.plan.writes"));
-  console.log(`  - ${target}/.fabric/bootstrap/README.md`);
+  console.log(`  - ${target}/.fabric/knowledge/{decisions,pitfalls,guidelines,models,processes,pending}/`);
   console.log(`  - ${target}/.fabric/agents.meta.json`);
-  console.log(`  - ${target}/.fabric/INITIAL_TAXONOMY.md`);
   console.log(`  - ${target}/.fabric/events.jsonl`);
   console.log(`  - ${target}/.fabric/forensic.json`);
 }
@@ -1853,6 +1813,3 @@ function writeStderr(message: string): void {
   process.stderr.write(`${message}\n`);
 }
 
-function sha256(content: string): string {
-  return `sha256:${createHash("sha256").update(content).digest("hex")}`;
-}

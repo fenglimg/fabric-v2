@@ -14,7 +14,6 @@ import type { JSONRPCMessage } from "@modelcontextprotocol/sdk/types.js";
 import chokidar from "chokidar";
 
 import { contextCache } from "./cache.js";
-import { AGENTS_MD_RESOURCE_URI } from "./constants.js";
 import { registerDoctorApi } from "./api/doctor.js";
 import { createEventsHandler } from "./api/events.js";
 import { registerHistoryApi } from "./api/history.js";
@@ -187,17 +186,9 @@ export function handleCacheWatcherEvent(
     return;
   }
 
-  if (normalized === ".fabric/bootstrap/README.md") {
-    contextCache.invalidate("file_watch", projectRoot);
-    // Debounced: notify all sessions that the bootstrap README resource was updated
-    clearTimeout(timers.getAgentsMdTimer());
-    timers.setAgentsMdTimer(
-      setTimeout(() => {
-        notifyAllSessions(sessions, "resource_updated", AGENTS_MD_RESOURCE_URI);
-      }, NOTIFY_DEBOUNCE_MS),
-    );
-    return;
-  }
+  // v2.0: bootstrap/README.md is no longer the L0 anchor — knowledge entries
+  // under .fabric/knowledge/ ARE the content. The legacy watch path is dropped
+  // here. .fabric/rules/**/*.md remains for migration-window legacy entries.
 
   // .fabric/rules/**/*.md — cache invalidation only (D25).
   if (normalized.startsWith(".fabric/rules/") && normalized.endsWith(".md")) {
@@ -217,16 +208,17 @@ export function createFabricHttpApp(options: CreateFabricHttpAppOptions) {
 
   process.env.FABRIC_PROJECT_ROOT = projectRoot;
 
-  // Watch agents.meta.json, bootstrap README, and rules/ to invalidate the
-  // hot-path cache.  This is a persistent, lightweight watcher separate from
-  // the SSE watcher in api/events.ts (which is client-lifecycle-based).
+  // Watch agents.meta.json and rules/ to invalidate the hot-path cache.
+  // This is a persistent, lightweight watcher separate from the SSE watcher
+  // in api/events.ts (which is client-lifecycle-based).
   //
+  // v2.0: legacy `.fabric/bootstrap/README.md` is no longer watched — the
+  // knowledge entries under `.fabric/knowledge/` are the content of record.
   // D25: the rules glob ONLY invalidates cache — no ledger writes, no direct
   // sync.  The next MCP call detects staleness via ensureRulesFresh (TASK-021).
   const cacheWatcher = chokidar.watch(
     [
       ".fabric/agents.meta.json",
-      ".fabric/bootstrap/README.md",
       ".fabric/rules/**/*.md",
     ],
     {

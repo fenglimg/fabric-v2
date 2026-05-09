@@ -46,7 +46,9 @@ async function createScanReport(targetInput: string = process.cwd()): Promise<Sc
   const framework = detectFramework(target);
   const readmeQuality = getReadmeQuality(target);
   const hasContributing = existsSync(join(target, "CONTRIBUTING.md"));
-  const hasExistingFabric = existsSync(join(target, ".fabric", "bootstrap", "README.md")) || existsSync(join(target, ".fabric"));
+  // v2.0: presence of `.fabric/` is the canonical "Fabric initialized" signal —
+  // the legacy `.fabric/bootstrap/README.md` is no longer authoritative.
+  const hasExistingFabric = existsSync(join(target, ".fabric"));
   const walkResult = walkFiles(target, DEFAULT_IGNORES);
 
   return {
@@ -155,15 +157,15 @@ function buildRecommendations(input: {
   const recommendations: string[] = [];
 
   if (!input.hasExistingFabric) {
-    recommendations.push("L0: Run fab init to scaffold .fabric/bootstrap/README.md with TODO markers.");
+    recommendations.push("L0: Run `fab init` to scaffold the .fabric/ knowledge layout (decisions, pitfalls, guidelines, models, processes).");
   }
 
   if (input.readmeQuality === "stub") {
-    recommendations.push("L0: Expand README.md before promoting project facts into Fabric references.");
+    recommendations.push("L0: Expand README.md before promoting project facts into Fabric knowledge entries.");
   }
 
   if (!input.hasContributing) {
-    recommendations.push("L0: Add CONTRIBUTING.md or leave a bootstrap TODO reference for contribution flow.");
+    recommendations.push("L0: Add CONTRIBUTING.md or capture contribution-flow guidance under .fabric/knowledge/processes/.");
   }
 
   if (input.framework.kind === "unknown") {

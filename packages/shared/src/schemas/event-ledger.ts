@@ -181,6 +181,15 @@ export const legacyClientPathPresentEventSchema = z.object({
   removed: z.array(z.string()),
 });
 
+// v2.0 rc.1: emitted by the init scan when baseline knowledge entries are written.
+export const initScanCompletedEventSchema = z.object({
+  ...eventLedgerEnvelopeSchema,
+  event_type: z.literal("init_scan_completed"),
+  written_stable_ids: z.array(z.string()),
+  duration_ms: z.number().int().nonnegative(),
+  source: z.enum(["init", "scan", "doctor_fix"]).optional(),
+});
+
 export const eventLedgerEventSchema = z.discriminatedUnion("event_type", [
   ruleContextPlannedEventSchema,
   ruleSelectionEventSchema,
@@ -199,6 +208,7 @@ export const eventLedgerEventSchema = z.discriminatedUnion("event_type", [
   claudeHookPathMigratedEventSchema,
   codexSkillPathMigratedEventSchema,
   legacyClientPathPresentEventSchema,
+  initScanCompletedEventSchema,
 ]);
 
 export type RuleContextPlannedEvent = z.infer<typeof ruleContextPlannedEventSchema>;
@@ -218,6 +228,7 @@ export type ClaudeSkillPathMigratedEvent = z.infer<typeof claudeSkillPathMigrate
 export type ClaudeHookPathMigratedEvent = z.infer<typeof claudeHookPathMigratedEventSchema>;
 export type CodexSkillPathMigratedEvent = z.infer<typeof codexSkillPathMigratedEventSchema>;
 export type LegacyClientPathPresentEvent = z.infer<typeof legacyClientPathPresentEventSchema>;
+export type InitScanCompletedEvent = z.infer<typeof initScanCompletedEventSchema>;
 export type EventLedgerEvent =
   | RuleContextPlannedEvent
   | RuleSelectionEvent
@@ -235,7 +246,8 @@ export type EventLedgerEvent =
   | ClaudeSkillPathMigratedEvent
   | ClaudeHookPathMigratedEvent
   | CodexSkillPathMigratedEvent
-  | LegacyClientPathPresentEvent;
+  | LegacyClientPathPresentEvent
+  | InitScanCompletedEvent;
 export type EventLedgerEventType = EventLedgerEvent["event_type"];
 type EventLedgerEventInputFor<T extends EventLedgerEvent> = T extends EventLedgerEvent
   ? Omit<T, "kind" | "id" | "ts" | "schema_version" | "correlation_id" | "session_id"> &

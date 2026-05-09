@@ -15,6 +15,13 @@ export const structuredWarningSchema = z.object({
 // MCP tool contracts — plan-context
 // ---------------------------------------------------------------------------
 
+// v2.0 knowledge enums — declared here as schemas (not just types) so they can
+// flow through plan-context output validation. Mirrors the canonical enums
+// further down in this file (KnowledgeTypeSchema/MaturitySchema/LayerSchema).
+const _knowledgeTypeEnum = z.enum(["model", "decision", "guideline", "pitfall", "process"]);
+const _maturityEnum = z.enum(["draft", "verified", "proven"]);
+const _layerEnum = z.enum(["personal", "team"]);
+
 const _ruleDescriptionSchema = z.object({
   summary: z.string(),
   intent_clues: z.array(z.string()),
@@ -22,6 +29,14 @@ const _ruleDescriptionSchema = z.object({
   impact: z.array(z.string()),
   must_read_if: z.string(),
   entities: z.array(z.string()).optional(),
+  // v2.0: optional knowledge-entry fields. Absent for v1.x rules; present for
+  // entries that declare frontmatter `id/type/maturity/layer`.
+  id: z.string().optional(),
+  knowledge_type: _knowledgeTypeEnum.optional(),
+  maturity: _maturityEnum.optional(),
+  knowledge_layer: _layerEnum.optional(),
+  layer_reason: z.string().optional(),
+  created_at: z.string().optional(),
 });
 
 const _descriptionIndexItemSchema = z.object({
@@ -30,6 +45,13 @@ const _descriptionIndexItemSchema = z.object({
   required: z.boolean(),
   selectable: z.boolean(),
   description: _ruleDescriptionSchema,
+  // v2.0: top-level knowledge surface for client-side filtering. Mirrors
+  // description.* — exposed here so MCP clients can filter without reaching
+  // into the nested payload.
+  type: _knowledgeTypeEnum.optional(),
+  maturity: _maturityEnum.optional(),
+  layer: _layerEnum.optional(),
+  layer_reason: z.string().optional(),
 });
 
 const _requirementProfileSchema = z.object({
@@ -79,6 +101,12 @@ export const planContextInputSchema = z.object({
     .string()
     .optional()
     .describe("Optional caller-provided session id for Event Ledger records"),
+  include_deprecated: z
+    .boolean()
+    .optional()
+    .describe(
+      "When true, include description_index entries with maturity='deprecated'. Defaults to false (deprecated entries hidden). Note: 'deprecated' is reserved future state — today this filter is a no-op until MaturitySchema is widened.",
+    ),
 });
 
 export const planContextOutputSchema = z.object({
@@ -204,13 +232,23 @@ export const ruleSectionsOutputSchema = z.object({
     }),
   ),
   diagnostics: z.array(
-    z.object({
-      code: z.literal("missing_section"),
-      severity: z.literal("warn"),
-      stable_id: z.string(),
-      section: z.enum(RULE_SECTION_NAMES_TUPLE),
-      message: z.string(),
-    }),
+    z.discriminatedUnion("code", [
+      z.object({
+        code: z.literal("missing_section"),
+        severity: z.literal("warn"),
+        stable_id: z.string(),
+        section: z.enum(RULE_SECTION_NAMES_TUPLE),
+        message: z.string(),
+      }),
+      // v2.0: warn-level diagnostic for un-migrated v1.x entries (no
+      // knowledge_type and no knowledge_layer). Does NOT block selection.
+      z.object({
+        code: z.literal("missing_knowledge_metadata"),
+        severity: z.literal("warn"),
+        stable_id: z.string(),
+        message: z.string(),
+      }),
+    ]),
   ),
   warnings: z.array(structuredWarningSchema).optional(),
 });
@@ -291,3 +329,78 @@ export const annotateIntentRequestSchema = z.object({
   ledger_entry_id: z.string().min(1),
   annotation: z.string().trim().min(1),
 });
+
+// ---------------------------------------------------------------------------
+// v2.0 Knowledge entry schema
+//
+// Frontmatter for knowledge entries written into .fabric/knowledge/ (team layer)
+// or ~/.fabric/knowledge/ (personal layer). Fields MUST stay flat scalars to
+// remain compatible with the hand-rolled regex parser at
+// packages/server/src/services/rule-meta-builder.ts:748-785.
+// ---------------------------------------------------------------------------
+
+// 5 knowledge types (MECE)
+export const KnowledgeTypeSchema = z.enum([
+  "model", // entities, data structures, relationships
+  "decision", // architectural/technical choices with rationale
+  "guideline", // recommended practices (recommend) or anti-patterns (avoid)
+  "pitfall", // known risks, failure modes, troubleshooting
+  "process", // workflows, state machines, operational steps
+]);
+export type KnowledgeType = z.infer<typeof KnowledgeTypeSchema>;
+
+// 3 maturity levels
+export const MaturitySchema = z.enum(["draft", "verified", "proven"]);
+export type Maturity = z.infer<typeof MaturitySchema>;
+
+// 2 layers (personal at home dir, team at repo)
+export const LayerSchema = z.enum(["personal", "team"]);
+export type Layer = z.infer<typeof LayerSchema>;
+
+// stable_id format: KP-{type-code}-{counter} (personal) | KT-{type-code}-{counter} (team)
+// type-code map: model=MOD, decision=DEC, guideline=GLD, pitfall=PIT, process=PRO
+export const StableIdSchema = z.string().regex(/^K[PT]-(MOD|DEC|GLD|PIT|PRO)-\d{4,}$/);
+export type StableId = z.infer<typeof StableIdSchema>;
+
+// v2.0 frontmatter — ALL flat scalars, no nested objects
+export const KnowledgeEntryFrontmatterSchema = z.object({
+  id: StableIdSchema, // e.g., "KT-DEC-0042"
+  type: KnowledgeTypeSchema, // one of 5 types
+  maturity: MaturitySchema, // draft | verified | proven
+  layer: LayerSchema, // personal | team
+  layer_reason: z.string().optional(), // why this layer (for ambiguous cases)
+  created_at: z.string(), // ISO 8601 timestamp
+  // Note: 'tags' and other fields can be added later but core schema is these 6
+});
+export type KnowledgeEntryFrontmatter = z.infer<typeof KnowledgeEntryFrontmatterSchema>;
+
+// Helper: type-code mapping
+export const KNOWLEDGE_TYPE_CODES = {
+  model: "MOD",
+  decision: "DEC",
+  guideline: "GLD",
+  pitfall: "PIT",
+  process: "PRO",
+} as const;
+
+export type KnowledgeTypeCode = (typeof KNOWLEDGE_TYPE_CODES)[KnowledgeType];
+
+// Helper: format/parse stable_id
+export function formatKnowledgeId(layer: Layer, type: KnowledgeType, counter: number): StableId {
+  const layerPrefix = layer === "personal" ? "KP" : "KT";
+  const typeCode = KNOWLEDGE_TYPE_CODES[type];
+  return `${layerPrefix}-${typeCode}-${String(counter).padStart(4, "0")}`;
+}
+
+export function parseKnowledgeId(
+  id: string,
+): { layer: Layer; type: KnowledgeType; counter: number } | null {
+  const match = id.match(/^(KP|KT)-(MOD|DEC|GLD|PIT|PRO)-(\d+)$/);
+  if (!match) return null;
+  const layer: Layer = match[1] === "KP" ? "personal" : "team";
+  const typeCode = match[2];
+  const entry = Object.entries(KNOWLEDGE_TYPE_CODES).find(([, code]) => code === typeCode);
+  if (!entry) return null;
+  const type = entry[0] as KnowledgeType;
+  return { layer, type, counter: parseInt(match[3], 10) };
+}

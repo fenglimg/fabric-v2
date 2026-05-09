@@ -5,9 +5,12 @@ import { isAbsolute, join, posix, resolve } from "node:path";
 
 import {
   agentsMetaSchema,
+  AgentsMetaCountersSchema,
   forensicReportSchema,
+  parseKnowledgeId,
   ruleTestIndexSchema,
   type AgentsMeta,
+  type AgentsMetaCounters,
   type ForensicReport,
   type RuleTestIndex,
 } from "@fenglimg/fabric-shared";
@@ -15,8 +18,7 @@ import { detectFramework } from "@fenglimg/fabric-shared/node";
 
 import { contextCache } from "../cache.js";
 import { parseRuleSections } from "./rule-sections.js";
-import { atomicWriteJson, atomicWriteText } from "@fenglimg/fabric-shared/node/atomic-write";
-import { buildBootstrapContent, FABRIC_BOOTSTRAP_PATH } from "@fenglimg/fabric-shared/node/bootstrap-guide";
+import { atomicWriteJson } from "@fenglimg/fabric-shared/node/atomic-write";
 import { ensureParentDirectory, getEventLedgerPath, sha256 } from "./_shared.js";
 import { buildRuleMeta, isSameRuleTestIndex, writeRuleMeta } from "./rule-meta-builder.js";
 import { appendEventLedgerEvent, readEventLedger, truncateLedgerToLastNewline } from "./event-ledger.js";
@@ -190,6 +192,10 @@ type RulesDirUnindexedInspection = {
   unindexedFiles: string[];
 };
 
+type KnowledgeDirMissingInspection = {
+  missingSubdirs: string[];
+};
+
 type StableIdCollision = {
   stable_id: string;
   files: string[];
@@ -197,6 +203,28 @@ type StableIdCollision = {
 
 type StableIdCollisionInspection = {
   collisions: StableIdCollision[];
+};
+
+type CounterDesyncEntry = {
+  layer: "KP" | "KT";
+  type: "MOD" | "DEC" | "GLD" | "PIT" | "PRO";
+  observed: number;
+  current: number;
+};
+
+type CounterDesyncInspection = {
+  desyncs: CounterDesyncEntry[];
+  // Snapshot of the corrected counters (post-fix view) used by --fix to rewrite agents.meta.json.
+  correctedCounters: AgentsMetaCounters | null;
+};
+
+type LegacyV1ArtifactsInspection = {
+  detected: string[];
+};
+
+type BootstrapAnchorInspection = {
+  hasAgentsMd: boolean;
+  hasClaudeMd: boolean;
 };
 
 type ClaudeSkillLegacyPathInspection = {
@@ -229,6 +257,20 @@ type PreexistingRootFilesInspection = {
   detected: string[];
 };
 
+const KNOWLEDGE_SUBDIRS = ["decisions", "pitfalls", "guidelines", "models", "processes", "pending"] as const;
+
+// v2.0 layout: legacy v1.x artifacts that should NOT exist in a clean v2.0 repo.
+// Surfaced as a warn-only visibility check (legacy_v1_artifacts_present).
+const LEGACY_V1_ARTIFACT_PATHS = [
+  ".fabric/rules",
+  ".fabric/INITIAL_TAXONOMY.md",
+  ".fabric/bootstrap",
+  ".fabric-v1-archive",
+] as const;
+
+// Knowledge counter type-codes. Mirrors KNOWLEDGE_TYPE_CODES values in shared/api-contracts.
+const COUNTER_TYPE_CODES = ["MOD", "DEC", "GLD", "PIT", "PRO"] as const;
+
 const SCRIPT_EXTENSIONS = new Set([".js", ".jsx", ".ts", ".tsx"]);
 const IGNORED_DIRECTORIES = new Set([
   ".fabric",
@@ -242,14 +284,17 @@ const IGNORED_DIRECTORIES = new Set([
   "dist",
   "node_modules",
 ]);
+// v2.0: bootstrap is anchored at the repo root (AGENTS.md / CLAUDE.md), and
+// the v1 INITIAL_TAXONOMY.md / .fabric/bootstrap/ artifacts are no longer
+// authoritative. The summary.targetFiles map is intentionally additive — we
+// keep it focused on top-level Fabric state files.
 const TARGET_FILE_PATHS = [
-  ".fabric/bootstrap/README.md",
-  ".fabric/INITIAL_TAXONOMY.md",
   ".fabric/forensic.json",
   ".fabric/init-context.json",
   ".fabric/agents.meta.json",
   ".fabric/rule-test.index.json",
   ".fabric/events.jsonl",
+  ".fabric/knowledge",
 ] as const;
 
 export async function runDoctorReport(target: string): Promise<DoctorReport> {
@@ -273,18 +318,20 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
   ]);
   const mcpConfigInWrongFile = inspectMcpConfigInWrongFile(projectRoot);
   const metaManuallyDiverged = await inspectMetaManuallyDiverged(projectRoot);
-  const rulesDirUnindexed = inspectRulesDirUnindexed(projectRoot, meta);
+  const knowledgeDirUnindexed = inspectKnowledgeDirUnindexed(projectRoot, meta);
+  const knowledgeDirMissing = inspectKnowledgeDirMissing(projectRoot);
   const stableIdCollision = await inspectStableIdCollisions(projectRoot);
+  const counterDesync = inspectCounterDesync(meta);
   const claudeSkillLegacyPath = inspectClaudeSkillLegacyPath(projectRoot);
   const claudeHookLegacyPath = inspectClaudeHookLegacyPath(projectRoot);
   const codexSkillLegacyPath = inspectCodexSkillLegacyPath(projectRoot);
   const preexistingRootFiles = inspectPreexistingRootFiles(projectRoot);
   const legacyClientPaths = inspectLegacyClientPaths(projectRoot);
-  const taxonomyExists = existsSync(join(projectRoot, ".fabric", "INITIAL_TAXONOMY.md"));
-  const bootstrapExists = existsSync(join(projectRoot, ".fabric", "bootstrap", "README.md"));
+  const legacyV1Artifacts = inspectLegacyV1Artifacts(projectRoot);
+  const bootstrapAnchor = inspectBootstrapAnchor(projectRoot);
   const checks: DoctorCheck[] = [
-    createBootstrapCheck(bootstrapExists),
-    createTaxonomyCheck(taxonomyExists),
+    createBootstrapAnchorCheck(bootstrapAnchor),
+    createKnowledgeDirMissingCheck(knowledgeDirMissing),
     createForensicCheck(forensic, framework.kind, entryPoints.length),
     createInitContextCheck(initContext),
     createMetaCheck(meta),
@@ -295,13 +342,15 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     createEventLedgerPartialWriteCheck(eventLedger),
     createMcpConfigInWrongFileCheck(mcpConfigInWrongFile),
     createMetaManuallyDivergedCheck(metaManuallyDiverged),
-    createRulesDirUnindexedCheck(rulesDirUnindexed),
+    createKnowledgeDirUnindexedCheck(knowledgeDirUnindexed),
     createStableIdCollisionCheck(stableIdCollision),
+    createCounterDesyncCheck(counterDesync),
     createClaudeSkillLegacyPathCheck(claudeSkillLegacyPath),
     createClaudeHookLegacyPathCheck(claudeHookLegacyPath),
     createCodexSkillLegacyPathCheck(codexSkillLegacyPath),
     createPreexistingRootFilesCheck(preexistingRootFiles),
     createLegacyClientPathCheck(legacyClientPaths),
+    createLegacyV1ArtifactsCheck(legacyV1Artifacts),
   ];
   const fixableErrors = collectIssues(checks, "fixable_error");
   const manualErrors = collectIssues(checks, "manual_error");
@@ -343,14 +392,24 @@ export async function runDoctorFix(target: string): Promise<DoctorFixReport> {
   const before = await runDoctorReport(projectRoot);
   const fixed: DoctorIssue[] = [];
 
-  if (before.fixable_errors.some((issue) => issue.code === "bootstrap_missing")) {
-    await writeDefaultBootstrap(projectRoot);
-    fixed.push(findIssue(before.fixable_errors, "bootstrap_missing"));
+  if (before.fixable_errors.some((issue) => issue.code === "knowledge_dir_missing")) {
+    await ensureKnowledgeSubdirs(projectRoot);
+    fixed.push(findIssue(before.fixable_errors, "knowledge_dir_missing"));
   }
 
   if (before.fixable_errors.some((issue) => issue.code === "event_ledger_missing")) {
     await ensureEventLedger(projectRoot);
     fixed.push(findIssue(before.fixable_errors, "event_ledger_missing"));
+  }
+
+  // counter_desync MUST run before reconcileRules: the counters envelope is
+  // preserved verbatim across a reconcile rebuild (rule-meta-builder copies
+  // `previousMeta.counters` through), so bumping first means the correction
+  // survives even when reconcile rewrites the nodes graph.
+  if (before.fixable_errors.some((issue) => issue.code === "counter_desync")) {
+    await fixCounterDesync(projectRoot);
+    fixed.push(findIssue(before.fixable_errors, "counter_desync"));
+    contextCache.invalidate("meta_write", projectRoot);
   }
 
   if (
@@ -361,7 +420,7 @@ export async function runDoctorFix(target: string): Promise<DoctorFixReport> {
         "rule_test_index_missing",
         "rule_test_index_stale",
         "content_ref_missing",
-        "rules_dir_unindexed",
+        "knowledge_dir_unindexed",
       ].includes(issue.code),
     )
   ) {
@@ -369,7 +428,7 @@ export async function runDoctorFix(target: string): Promise<DoctorFixReport> {
     // reconcileRules rewrites agents.meta.json from disk ground-truth and emits
     // a 'meta_reconciled' ledger event (trigger='doctor').
     // content_ref_missing: reconcile drops stale refs that no longer have a backing file.
-    // rules_dir_unindexed: reconcile incorporates any .md files not yet in the index.
+    // knowledge_dir_unindexed: reconcile incorporates any .md files not yet in the index.
     await reconcileRules(projectRoot, { trigger: "doctor" });
     for (const issue of before.fixable_errors.filter((candidate) =>
       [
@@ -378,7 +437,7 @@ export async function runDoctorFix(target: string): Promise<DoctorFixReport> {
         "rule_test_index_missing",
         "rule_test_index_stale",
         "content_ref_missing",
-        "rules_dir_unindexed",
+        "knowledge_dir_unindexed",
       ].includes(candidate.code),
     )) {
       fixed.push(issue);
@@ -554,15 +613,24 @@ function inspectContentRefs(projectRoot: string, meta: AgentsMeta): { missing: s
   for (const node of Object.values(meta.nodes)) {
     const contentRef = normalizePath(node.content_ref ?? node.file);
 
-    if (contentRef === ".fabric/bootstrap/README.md") {
-      if (!existsSync(join(projectRoot, contentRef))) {
-        missing.push(contentRef);
-      }
+    // v2.0: legacy `.fabric/bootstrap/README.md` is no longer a recognized
+    // content_ref; the legacy_v1_artifacts_present check surfaces it instead
+    // of being special-cased here. Valid v2.0 content_refs live under
+    // .fabric/knowledge/ (team) or ~/.fabric/knowledge/ (personal); legacy
+    // .fabric/rules/ entries remain valid during the migration window.
+    const isPersonalKnowledge = contentRef.startsWith("~/.fabric/knowledge/");
+    const isTeamKnowledge = contentRef.startsWith(".fabric/knowledge/");
+    const isLegacyRule = contentRef.startsWith(".fabric/rules/");
+
+    if (!isPersonalKnowledge && !isTeamKnowledge && !isLegacyRule) {
+      invalid.push(contentRef);
       continue;
     }
 
-    if (!contentRef.startsWith(".fabric/rules/")) {
-      invalid.push(contentRef);
+    // Personal-root entries are not directly validated against the project
+    // tree — their existence is verified by the personal-root scan in
+    // rule-meta-builder.ts. We only check team-root and legacy entries here.
+    if (isPersonalKnowledge) {
       continue;
     }
 
@@ -668,18 +736,65 @@ async function inspectRuleTestIndex(projectRoot: string): Promise<RuleTestIndexI
   }
 }
 
-function createBootstrapCheck(exists: boolean): DoctorCheck {
-  if (!exists) {
-    return issueCheck("Bootstrap README", "error", "fixable_error", "bootstrap_missing", ".fabric/bootstrap/README.md is missing.", "Run `fab doctor --fix` to generate the bootstrap guide.");
-  }
-  return okCheck("Bootstrap README", ".fabric/bootstrap/README.md exists.");
+function inspectBootstrapAnchor(projectRoot: string): BootstrapAnchorInspection {
+  return {
+    hasAgentsMd: existsSync(join(projectRoot, "AGENTS.md")),
+    hasClaudeMd: existsSync(join(projectRoot, "CLAUDE.md")),
+  };
 }
 
-function createTaxonomyCheck(exists: boolean): DoctorCheck {
-  if (!exists) {
-    return issueCheck("Initial taxonomy", "error", "manual_error", "taxonomy_missing", ".fabric/INITIAL_TAXONOMY.md is missing.", "Run `fab init` to regenerate project scaffolding including INITIAL_TAXONOMY.md.");
+function createBootstrapAnchorCheck(inspection: BootstrapAnchorInspection): DoctorCheck {
+  // v2.0: bootstrap is anchored at the repo root via AGENTS.md or CLAUDE.md.
+  // Either one (or both) is sufficient; missing both is a fixable_error in
+  // the sense that `fabric init` is the canonical remediation (we do not
+  // auto-write the anchor file from doctor --fix).
+  if (!inspection.hasAgentsMd && !inspection.hasClaudeMd) {
+    return issueCheck(
+      "Bootstrap anchor",
+      "error",
+      "fixable_error",
+      "bootstrap_anchor_missing",
+      "Neither AGENTS.md nor CLAUDE.md exists at the repo root. Fabric requires a bootstrap anchor file at the project root.",
+      "Run `fabric init` to generate the AGENTS.md / CLAUDE.md bootstrap anchor at the repo root.",
+    );
   }
-  return okCheck("Initial taxonomy", ".fabric/INITIAL_TAXONOMY.md exists.");
+  const present = [
+    inspection.hasAgentsMd ? "AGENTS.md" : null,
+    inspection.hasClaudeMd ? "CLAUDE.md" : null,
+  ]
+    .filter((entry): entry is string => entry !== null)
+    .join(", ");
+  return okCheck("Bootstrap anchor", `Bootstrap anchor present at repo root: ${present}.`);
+}
+
+function inspectKnowledgeDirMissing(projectRoot: string): KnowledgeDirMissingInspection {
+  const knowledgeRoot = join(projectRoot, ".fabric", "knowledge");
+  const missingSubdirs: string[] = [];
+  for (const sub of KNOWLEDGE_SUBDIRS) {
+    const path = join(knowledgeRoot, sub);
+    if (!existsSync(path)) {
+      missingSubdirs.push(`.fabric/knowledge/${sub}`);
+    }
+  }
+  return { missingSubdirs };
+}
+
+function createKnowledgeDirMissingCheck(inspection: KnowledgeDirMissingInspection): DoctorCheck {
+  if (inspection.missingSubdirs.length > 0) {
+    const list = inspection.missingSubdirs.join(", ");
+    return issueCheck(
+      "Knowledge layout",
+      "error",
+      "fixable_error",
+      "knowledge_dir_missing",
+      `${inspection.missingSubdirs.length} required knowledge subdir${inspection.missingSubdirs.length === 1 ? " is" : "s are"} missing: ${list}.`,
+      "Run `fab doctor --fix` to create the missing .fabric/knowledge/* subdirectories.",
+    );
+  }
+  return okCheck(
+    "Knowledge layout",
+    `All ${KNOWLEDGE_SUBDIRS.length} required .fabric/knowledge/* subdirectories exist.`,
+  );
 }
 
 function createForensicCheck(
@@ -924,32 +1039,19 @@ async function inspectMetaManuallyDiverged(projectRoot: string): Promise<MetaMan
   return { extraMetaEntries, hashMismatchEntries, readable: true };
 }
 
-function inspectRulesDirUnindexed(projectRoot: string, meta: MetaInspection): RulesDirUnindexedInspection {
-  const rulesDir = join(projectRoot, ".fabric", "rules");
-  if (!existsSync(rulesDir)) {
+function inspectKnowledgeDirUnindexed(projectRoot: string, meta: MetaInspection): RulesDirUnindexedInspection {
+  // v2.0 layout: iterate .fabric/knowledge/{type}/ and (for now, during the
+  // v1→v2 transition) also legacy .fabric/rules/ so doctor stays useful while
+  // rule-meta-builder learns the new layout in TASK-003/TASK-004.
+  const physicalMdFiles = new Set<string>();
+  collectMdFilesUnder(physicalMdFiles, projectRoot, join(projectRoot, ".fabric", "knowledge"), ".fabric/knowledge");
+  collectMdFilesUnder(physicalMdFiles, projectRoot, join(projectRoot, ".fabric", "rules"), ".fabric/rules");
+
+  if (physicalMdFiles.size === 0) {
     return { unindexedFiles: [] };
   }
 
-  // Collect all .md files physically present in .fabric/rules/
-  const physicalMdFiles = new Set<string>();
-  const stack: string[] = [rulesDir];
-  while (stack.length > 0) {
-    const dir = stack.pop();
-    if (dir === undefined) {
-      continue;
-    }
-    for (const entry of readdirSync(dir, { withFileTypes: true })) {
-      const abs = join(dir, entry.name);
-      if (entry.isDirectory()) {
-        stack.push(abs);
-      } else if (entry.isFile() && entry.name.endsWith(".md")) {
-        const rel = posix.join(".fabric/rules", abs.slice(rulesDir.length + 1).replace(/\\/gu, "/"));
-        physicalMdFiles.add(rel);
-      }
-    }
-  }
-
-  // Collect all content_refs/file paths tracked in meta
+  // Collect all content_refs/file paths tracked in meta.
   const indexedRefs = new Set<string>();
   if (meta.valid && meta.meta !== null) {
     for (const node of Object.values(meta.meta.nodes)) {
@@ -962,29 +1064,16 @@ function inspectRulesDirUnindexed(projectRoot: string, meta: MetaInspection): Ru
   return { unindexedFiles };
 }
 
-function createRulesDirUnindexedCheck(inspection: RulesDirUnindexedInspection): DoctorCheck {
-  if (inspection.unindexedFiles.length > 0) {
-    return issueCheck(
-      "Rules dir unindexed",
-      "error",
-      "fixable_error",
-      "rules_dir_unindexed",
-      `${inspection.unindexedFiles.length} .md file${inspection.unindexedFiles.length === 1 ? "" : "s"} in .fabric/rules/ not indexed in agents.meta.json. Run \`fab doctor --fix\` to index the missing rule files.`,
-      "Run `fab doctor --fix` to index the missing rule files.",
-    );
+function collectMdFilesUnder(
+  out: Set<string>,
+  projectRoot: string,
+  rootDir: string,
+  relPrefix: string,
+): void {
+  if (!existsSync(rootDir)) {
+    return;
   }
-  return okCheck("Rules dir unindexed", "All .fabric/rules/ .md files are indexed in agents.meta.json.");
-}
-
-async function inspectStableIdCollisions(projectRoot: string): Promise<StableIdCollisionInspection> {
-  const rulesDir = join(projectRoot, ".fabric", "rules");
-  if (!existsSync(rulesDir)) {
-    return { collisions: [] };
-  }
-
-  // Collect all .md files
-  const mdFiles: string[] = [];
-  const stack: string[] = [rulesDir];
+  const stack: string[] = [rootDir];
   while (stack.length > 0) {
     const dir = stack.pop();
     if (dir === undefined) {
@@ -995,17 +1084,61 @@ async function inspectStableIdCollisions(projectRoot: string): Promise<StableIdC
       if (entry.isDirectory()) {
         stack.push(abs);
       } else if (entry.isFile() && entry.name.endsWith(".md")) {
-        mdFiles.push(abs);
+        const rel = posix.join(relPrefix, abs.slice(rootDir.length + 1).replace(/\\/gu, "/"));
+        out.add(rel);
+      }
+    }
+  }
+}
+
+function createKnowledgeDirUnindexedCheck(inspection: RulesDirUnindexedInspection): DoctorCheck {
+  if (inspection.unindexedFiles.length > 0) {
+    return issueCheck(
+      "Knowledge dir unindexed",
+      "error",
+      "fixable_error",
+      "knowledge_dir_unindexed",
+      `${inspection.unindexedFiles.length} .md file${inspection.unindexedFiles.length === 1 ? "" : "s"} in .fabric/knowledge/ not indexed in agents.meta.json. Run \`fab doctor --fix\` to index the missing knowledge files.`,
+      "Run `fab doctor --fix` to index the missing knowledge files.",
+    );
+  }
+  return okCheck("Knowledge dir unindexed", "All .fabric/knowledge/ .md files are indexed in agents.meta.json.");
+}
+
+async function inspectStableIdCollisions(projectRoot: string): Promise<StableIdCollisionInspection> {
+  // v2.0: stable_ids are declared in two flavours:
+  //   - rule files in .fabric/rules/ via `<!-- fab:rule-id X -->`
+  //     (legacy format; still supported during v1→v2 transition)
+  //   - knowledge files in .fabric/knowledge/{type}/ via frontmatter `id: K[PT]-XXX-NNNN`
+  // We scan both; the file path component is recorded relative to the project
+  // root using POSIX separators so messages are stable across OSes.
+  type Found = { stableId: string; relPath: string };
+  const found: Found[] = [];
+
+  // Legacy `.fabric/rules/` files (HTML-comment id marker).
+  const rulesDir = join(projectRoot, ".fabric", "rules");
+  const ruleFiles: string[] = [];
+  if (existsSync(rulesDir)) {
+    const stack: string[] = [rulesDir];
+    while (stack.length > 0) {
+      const dir = stack.pop();
+      if (dir === undefined) {
+        continue;
+      }
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const abs = join(dir, entry.name);
+        if (entry.isDirectory()) {
+          stack.push(abs);
+        } else if (entry.isFile() && entry.name.endsWith(".md")) {
+          ruleFiles.push(abs);
+        }
       }
     }
   }
 
-  // Extract declared stable_ids and detect collisions
-  const stableIdToFiles = new Map<string, string[]>();
   const DECLARED_ID_PATTERN =
     /^(?:\uFEFF)?(?:---\r?\n[\s\S]*?\r?\n---\s*(?:\r?\n|$))?<!--\s*fab:rule-id\s+([A-Za-z0-9][A-Za-z0-9/_-]*)\s*-->\s*(?:\r?\n|$)/u;
-
-  for (const absPath of mdFiles) {
+  for (const absPath of ruleFiles) {
     let source: string;
     try {
       source = await readFile(absPath, "utf8");
@@ -1016,8 +1149,43 @@ async function inspectStableIdCollisions(projectRoot: string): Promise<StableIdC
     if (match === null) {
       continue;
     }
-    const stableId = match[1];
     const relPath = posix.join(".fabric/rules", absPath.slice(rulesDir.length + 1).replace(/\\/gu, "/"));
+    found.push({ stableId: match[1], relPath });
+  }
+
+  // v2.0 knowledge files (frontmatter `id: ...`).
+  const knowledgeDir = join(projectRoot, ".fabric", "knowledge");
+  if (existsSync(knowledgeDir)) {
+    const stack: string[] = [knowledgeDir];
+    while (stack.length > 0) {
+      const dir = stack.pop();
+      if (dir === undefined) {
+        continue;
+      }
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const abs = join(dir, entry.name);
+        if (entry.isDirectory()) {
+          stack.push(abs);
+        } else if (entry.isFile() && entry.name.endsWith(".md")) {
+          let source: string;
+          try {
+            source = await readFile(abs, "utf8");
+          } catch {
+            continue;
+          }
+          const id = extractKnowledgeFrontmatterId(source);
+          if (id === null) {
+            continue;
+          }
+          const relPath = posix.join(".fabric/knowledge", abs.slice(knowledgeDir.length + 1).replace(/\\/gu, "/"));
+          found.push({ stableId: id, relPath });
+        }
+      }
+    }
+  }
+
+  const stableIdToFiles = new Map<string, string[]>();
+  for (const { stableId, relPath } of found) {
     const existing = stableIdToFiles.get(stableId) ?? [];
     existing.push(relPath);
     stableIdToFiles.set(stableId, existing);
@@ -1031,6 +1199,121 @@ async function inspectStableIdCollisions(projectRoot: string): Promise<StableIdC
   }
 
   return { collisions: collisions.sort((a, b) => a.stable_id.localeCompare(b.stable_id)) };
+}
+
+// Match a YAML frontmatter `id:` field whose value matches the v2.0 stable_id
+// shape K[PT]-{TYPE}-{COUNTER}. Returns null when no match (e.g. no frontmatter,
+// no `id` key, or non-knowledge id format).
+function extractKnowledgeFrontmatterId(source: string): string | null {
+  const FM_PATTERN = /^(?:\uFEFF)?---\r?\n([\s\S]*?)\r?\n---/u;
+  const fm = FM_PATTERN.exec(source);
+  if (fm === null) {
+    return null;
+  }
+  const block = fm[1];
+  const ID_LINE = /^id:\s*("?)(K[PT]-(?:MOD|DEC|GLD|PIT|PRO)-\d{4,})\1\s*$/mu;
+  const idMatch = ID_LINE.exec(block);
+  return idMatch === null ? null : idMatch[2];
+}
+
+function inspectCounterDesync(meta: MetaInspection): CounterDesyncInspection {
+  // counter_desync: a node has stable_id KP-DEC-0007 but agents.meta.json's
+  // counters.KP.DEC says 5 (i.e. less than the observed counter). The fix is
+  // to bump counters[layer][type] to max(observed, current) for every (layer,
+  // type) pair where a desync is detected. We only report when:
+  //   - meta is valid AND
+  //   - at least one observed counter exceeds its current value.
+  if (!meta.valid || meta.meta === null) {
+    return { desyncs: [], correctedCounters: null };
+  }
+
+  // Establish the current counters envelope (use schema defaults when omitted).
+  const current = AgentsMetaCountersSchema.parse(meta.meta.counters ?? undefined);
+  const observed: Record<"KP" | "KT", Record<"MOD" | "DEC" | "GLD" | "PIT" | "PRO", number>> = {
+    KP: { MOD: 0, DEC: 0, GLD: 0, PIT: 0, PRO: 0 },
+    KT: { MOD: 0, DEC: 0, GLD: 0, PIT: 0, PRO: 0 },
+  };
+
+  for (const node of Object.values(meta.meta.nodes)) {
+    const id = node.stable_id;
+    if (id === undefined) {
+      continue;
+    }
+    const parsed = parseKnowledgeId(id);
+    if (parsed === null) {
+      continue;
+    }
+    const layer = parsed.layer === "personal" ? "KP" : "KT";
+    const typeCode = ([
+      ["model", "MOD"],
+      ["decision", "DEC"],
+      ["guideline", "GLD"],
+      ["pitfall", "PIT"],
+      ["process", "PRO"],
+    ] as const).find(([t]) => t === parsed.type)?.[1];
+    if (typeCode === undefined) {
+      continue;
+    }
+    if (parsed.counter > observed[layer][typeCode]) {
+      observed[layer][typeCode] = parsed.counter;
+    }
+  }
+
+  const desyncs: CounterDesyncEntry[] = [];
+  const corrected: AgentsMetaCounters = {
+    KP: { ...current.KP },
+    KT: { ...current.KT },
+  };
+  for (const layer of ["KP", "KT"] as const) {
+    for (const code of COUNTER_TYPE_CODES) {
+      const obs = observed[layer][code];
+      const cur = current[layer][code];
+      if (obs > cur) {
+        desyncs.push({ layer, type: code, observed: obs, current: cur });
+        corrected[layer][code] = obs;
+      }
+    }
+  }
+
+  return {
+    desyncs,
+    correctedCounters: desyncs.length === 0 ? null : corrected,
+  };
+}
+
+function createCounterDesyncCheck(inspection: CounterDesyncInspection): DoctorCheck {
+  if (inspection.desyncs.length > 0) {
+    const first = inspection.desyncs[0];
+    const detail = `counters.${first.layer}.${first.type} = ${first.current} but observed K${first.layer === "KP" ? "P" : "T"}-${first.type}-${String(first.observed).padStart(4, "0")}`;
+    return issueCheck(
+      "Knowledge counter desync",
+      "error",
+      "fixable_error",
+      "counter_desync",
+      `${inspection.desyncs.length} knowledge counter${inspection.desyncs.length === 1 ? "" : "s"} desynced from observed stable_ids. ${detail}. Run \`fab doctor --fix\` to bump counters.`,
+      "Run `fab doctor --fix` to bump agents.meta.json counters to the maximum observed counter value.",
+    );
+  }
+  return okCheck("Knowledge counter desync", "agents.meta.json counters envelope is consistent with observed stable_ids.");
+}
+
+function inspectLegacyV1Artifacts(projectRoot: string): LegacyV1ArtifactsInspection {
+  const detected = LEGACY_V1_ARTIFACT_PATHS.filter((rel) => existsSync(join(projectRoot, rel)));
+  return { detected: [...detected] };
+}
+
+function createLegacyV1ArtifactsCheck(inspection: LegacyV1ArtifactsInspection): DoctorCheck {
+  if (inspection.detected.length > 0) {
+    return issueCheck(
+      "Legacy v1 artifacts",
+      "warn",
+      "warning",
+      "legacy_v1_artifacts_present",
+      `Detected ${inspection.detected.length} legacy v1.x artifact${inspection.detected.length === 1 ? "" : "s"}: ${inspection.detected.join(", ")}. These are not used by Fabric v2.0 and can be removed manually.`,
+      "Review and manually delete the listed paths if you have already migrated to v2.0; see docs/migration-2.0.md for details.",
+    );
+  }
+  return okCheck("Legacy v1 artifacts", "No legacy v1.x artifacts detected (.fabric/rules/, INITIAL_TAXONOMY.md, .fabric/bootstrap/, .fabric-v1-archive/).");
 }
 
 function createStableIdCollisionCheck(inspection: StableIdCollisionInspection): DoctorCheck {
@@ -1402,10 +1685,50 @@ async function fixMcpConfigInWrongFile(projectRoot: string): Promise<void> {
   });
 }
 
-async function writeDefaultBootstrap(projectRoot: string): Promise<void> {
-  const path = join(projectRoot, FABRIC_BOOTSTRAP_PATH);
-  await ensureParentDirectory(path);
-  await atomicWriteText(path, buildBootstrapContent(projectRoot));
+async function ensureKnowledgeSubdirs(projectRoot: string): Promise<void> {
+  // v2.0 layout: ensure all required .fabric/knowledge/{type}/ subdirectories
+  // exist. Idempotent — `mkdir({recursive: true})` succeeds when the dir is
+  // already present. Does NOT touch any user content.
+  for (const sub of KNOWLEDGE_SUBDIRS) {
+    await mkdir(join(projectRoot, ".fabric", "knowledge", sub), { recursive: true });
+  }
+}
+
+async function fixCounterDesync(projectRoot: string): Promise<void> {
+  // Read current agents.meta.json, recompute the corrected counters envelope
+  // from observed stable_ids, and write the meta back atomically. Stops if
+  // meta is missing or unparseable (other doctor checks will surface those).
+  const metaPath = join(projectRoot, ".fabric", "agents.meta.json");
+  if (!existsSync(metaPath)) {
+    return;
+  }
+  let meta: AgentsMeta;
+  try {
+    meta = agentsMetaSchema.parse(JSON.parse(await readFile(metaPath, "utf8")));
+  } catch {
+    return;
+  }
+
+  // Re-derive corrected counters using the same algorithm as inspectCounterDesync.
+  const synthetic: MetaInspection = {
+    present: true,
+    valid: true,
+    meta,
+    revision: meta.revision,
+    computedRevision: null,
+    ruleCount: 0,
+    missingContentRefs: [],
+    invalidContentRefs: [],
+    stale: false,
+    changed: false,
+  };
+  const desync = inspectCounterDesync(synthetic);
+  if (desync.desyncs.length === 0 || desync.correctedCounters === null) {
+    return;
+  }
+
+  const updated: AgentsMeta = { ...meta, counters: desync.correctedCounters };
+  await atomicWriteJson(metaPath, updated, { indent: 2 });
 }
 
 async function ensureEventLedger(projectRoot: string): Promise<void> {

@@ -155,7 +155,9 @@ describe("init wizard planning", () => {
       { name: "hooks", disposition: "skipped" },
     ]);
     expect(stdout.length).toBeGreaterThan(0);
-    expect(existsSync(`${target}/.fabric/bootstrap/README.md`)).toBe(false);
+    // v2.0: --plan does not write any scaffold artifacts.
+    expect(existsSync(`${target}/.fabric/agents.meta.json`)).toBe(false);
+    expect(existsSync(`${target}/.fabric/knowledge`)).toBe(false);
   });
 });
 
