@@ -62,7 +62,7 @@ Fabric exposes four public CLI commands:
 
 ## 初始化说明
 
-`fabric init` 不只是生成脚手架。它会先构建安装计划，让 TTY 用户通过向导确认或调整计划，把初始化依据写进 `.fabric/`，安装 Claude/Codex 的后续资产，并把内部初始化说明保留在 `.fabric/bootstrap/README.md`，而不是再生成根目录的 bootstrap 文档。建议先看 [docs/getting-started.md](./docs/getting-started.md)，再用 [docs/initialization.md](./docs/initialization.md) 深入了解状态机、命令参数、bootstrap 协议以及 `agents-md-init` / `fabric-init` 的接力流程。
+`fabric init` 不只是生成脚手架。它会先构建安装计划，让 TTY 用户通过向导确认或调整计划，把初始化依据写进 `.fabric/`，安装 Claude/Codex 的后续资产，并把内部初始化说明保留在 `.fabric/bootstrap/README.md`，而不是再生成根目录的 bootstrap 文档。建议先看 [docs/getting-started.md](./docs/getting-started.md)，再用 [docs/initialization.md](./docs/initialization.md) 深入了解状态机、命令参数、bootstrap 协议以及 `fabric-init` 的接力流程。
 
 ## Doctor
 

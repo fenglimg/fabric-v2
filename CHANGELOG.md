@@ -5,6 +5,17 @@ All notable changes to Fabric will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.0-rc.2] - 2026-05-09
+
+### Changed
+
+- Claude reminder hook fully renamed to match the unified skill name: `agents-md-init-reminder.cjs` → `fabric-init-reminder.cjs`. The Stop-hook reason text now says "调用 fabric-init skill" (and the equivalent English copy in `cli.init.reason-message`). Skill frontmatter `name:` and i18n strings are aligned to `fabric-init`.
+- `init.ts` Stop-hook filter recognizes both old (`agents-md-init-reminder.cjs`) and new (`fabric-init-reminder.cjs`) names, so re-running `fab init` on an existing project cleanly replaces the legacy entry.
+
+### Added
+
+- Doctor check `claude_hook_legacy_path` (fixable): detects `.claude/hooks/agents-md-init-reminder.cjs` left over from prior installs (file or `.claude/settings.json` reference). `--fix` renames the file to `fabric-init-reminder.cjs`, rewrites the settings command path, and emits a `claude_hook_path_migrated` ledger event.
+
 ## [1.8.0] - 2026-05-07
 
 ### Added

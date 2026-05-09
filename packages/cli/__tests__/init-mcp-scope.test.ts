@@ -209,7 +209,7 @@ describe("init MCP install scope", () => {
     expect(
       stdout.some((line) =>
         line.includes(
-          "Claude can use agents-md-init, and Codex can use .agents/skills/fabric-init/SKILL.md with features.codex_hooks = true.",
+          "Claude can use fabric-init, and Codex can use .agents/skills/fabric-init/SKILL.md with features.codex_hooks = true.",
         )
       ),
     ).toBe(true);

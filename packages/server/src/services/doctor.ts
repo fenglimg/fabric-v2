@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmdirSync, renameSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmdirSync, renameSync, statSync, unlinkSync } from "node:fs";
 import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import { constants } from "node:fs";
 import { isAbsolute, join, posix, resolve } from "node:path";
@@ -205,6 +205,14 @@ type ClaudeSkillLegacyPathInspection = {
   newPath: string;
 };
 
+type ClaudeHookLegacyPathInspection = {
+  hasLegacyFile: boolean;
+  hasLegacySettingsCommand: boolean;
+  legacyHookPath: string;
+  newHookPath: string;
+  settingsPath: string;
+};
+
 type LegacyClientPathInspection = {
   presentKeys: string[];
 };
@@ -262,6 +270,7 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
   const rulesDirUnindexed = inspectRulesDirUnindexed(projectRoot, meta);
   const stableIdCollision = await inspectStableIdCollisions(projectRoot);
   const claudeSkillLegacyPath = inspectClaudeSkillLegacyPath(projectRoot);
+  const claudeHookLegacyPath = inspectClaudeHookLegacyPath(projectRoot);
   const preexistingRootFiles = inspectPreexistingRootFiles(projectRoot);
   const legacyClientPaths = inspectLegacyClientPaths(projectRoot);
   const taxonomyExists = existsSync(join(projectRoot, ".fabric", "INITIAL_TAXONOMY.md"));
@@ -282,6 +291,7 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     createRulesDirUnindexedCheck(rulesDirUnindexed),
     createStableIdCollisionCheck(stableIdCollision),
     createClaudeSkillLegacyPathCheck(claudeSkillLegacyPath),
+    createClaudeHookLegacyPathCheck(claudeHookLegacyPath),
     createPreexistingRootFilesCheck(preexistingRootFiles),
     createLegacyClientPathCheck(legacyClientPaths),
   ];
@@ -388,6 +398,11 @@ export async function runDoctorFix(target: string): Promise<DoctorFixReport> {
   if (before.fixable_errors.some((issue) => issue.code === "claude_skill_legacy_path")) {
     await fixClaudeSkillLegacyPath(projectRoot);
     fixed.push(findIssue(before.fixable_errors, "claude_skill_legacy_path"));
+  }
+
+  if (before.fixable_errors.some((issue) => issue.code === "claude_hook_legacy_path")) {
+    await fixClaudeHookLegacyPath(projectRoot);
+    fixed.push(findIssue(before.fixable_errors, "claude_hook_legacy_path"));
   }
 
   if (before.warnings.some((issue) => issue.code === "legacy_client_path_present")) {
@@ -1120,6 +1135,78 @@ async function fixClaudeSkillLegacyPath(projectRoot: string): Promise<void> {
     from: legacyPath,
     to: newPath,
   });
+}
+
+const LEGACY_HOOK_FILENAME = "agents-md-init-reminder.cjs";
+const NEW_HOOK_FILENAME = "fabric-init-reminder.cjs";
+
+function inspectClaudeHookLegacyPath(projectRoot: string): ClaudeHookLegacyPathInspection {
+  const legacyHookPath = join(projectRoot, ".claude", "hooks", LEGACY_HOOK_FILENAME);
+  const newHookPath = join(projectRoot, ".claude", "hooks", NEW_HOOK_FILENAME);
+  const settingsPath = join(projectRoot, ".claude", "settings.json");
+
+  const hasLegacyFile = existsSync(legacyHookPath);
+
+  let hasLegacySettingsCommand = false;
+  if (existsSync(settingsPath)) {
+    try {
+      const raw = readFileSync(settingsPath, "utf8");
+      hasLegacySettingsCommand = raw.includes(LEGACY_HOOK_FILENAME);
+    } catch {
+      // Ignore unreadable settings file — nothing to migrate.
+    }
+  }
+
+  return { hasLegacyFile, hasLegacySettingsCommand, legacyHookPath, newHookPath, settingsPath };
+}
+
+function createClaudeHookLegacyPathCheck(inspection: ClaudeHookLegacyPathInspection): DoctorCheck {
+  if (inspection.hasLegacyFile || inspection.hasLegacySettingsCommand) {
+    return issueCheck(
+      "Claude hook path",
+      "error",
+      "fixable_error",
+      "claude_hook_legacy_path",
+      `.claude/hooks/${LEGACY_HOOK_FILENAME} (or its reference in .claude/settings.json) exists at the legacy path. Run --fix to migrate to ${NEW_HOOK_FILENAME}.`,
+      `Run \`fab doctor --fix\` to rename ${LEGACY_HOOK_FILENAME} to ${NEW_HOOK_FILENAME} and update .claude/settings.json hook commands.`,
+    );
+  }
+  return okCheck("Claude hook path", `.claude/hooks/${NEW_HOOK_FILENAME} is at the canonical path (or not present).`);
+}
+
+async function fixClaudeHookLegacyPath(projectRoot: string): Promise<void> {
+  const { hasLegacyFile, hasLegacySettingsCommand, legacyHookPath, newHookPath, settingsPath } =
+    inspectClaudeHookLegacyPath(projectRoot);
+
+  if (hasLegacyFile) {
+    if (existsSync(newHookPath)) {
+      unlinkSync(legacyHookPath);
+    } else {
+      mkdirSync(join(newHookPath, ".."), { recursive: true });
+      renameSync(legacyHookPath, newHookPath);
+    }
+  }
+
+  if (hasLegacySettingsCommand) {
+    try {
+      const raw = readFileSync(settingsPath, "utf8");
+      const updated = raw.split(LEGACY_HOOK_FILENAME).join(NEW_HOOK_FILENAME);
+      if (updated !== raw) {
+        const parsed = JSON.parse(updated) as unknown;
+        await atomicWriteJson(settingsPath, parsed);
+      }
+    } catch {
+      // If settings.json is malformed, leave it alone — user will see other doctor warnings.
+    }
+  }
+
+  if (hasLegacyFile || hasLegacySettingsCommand) {
+    await appendEventLedgerEvent(projectRoot, {
+      event_type: "claude_hook_path_migrated",
+      from: legacyHookPath,
+      to: newHookPath,
+    });
+  }
 }
 
 function inspectLegacyClientPaths(projectRoot: string): LegacyClientPathInspection {

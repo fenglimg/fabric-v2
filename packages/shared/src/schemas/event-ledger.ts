@@ -161,6 +161,13 @@ export const claudeSkillPathMigratedEventSchema = z.object({
   to: z.string(),
 });
 
+export const claudeHookPathMigratedEventSchema = z.object({
+  ...eventLedgerEnvelopeSchema,
+  event_type: z.literal("claude_hook_path_migrated"),
+  from: z.string(),
+  to: z.string(),
+});
+
 export const legacyClientPathPresentEventSchema = z.object({
   ...eventLedgerEnvelopeSchema,
   event_type: z.literal("legacy_client_path_present"),
@@ -182,6 +189,7 @@ export const eventLedgerEventSchema = z.discriminatedUnion("event_type", [
   metaReconciledOnStartupEventSchema,
   metaReconciledEventSchema,
   claudeSkillPathMigratedEventSchema,
+  claudeHookPathMigratedEventSchema,
   legacyClientPathPresentEventSchema,
 ]);
 
@@ -199,6 +207,7 @@ export type McpConfigMigratedEvent = z.infer<typeof mcpConfigMigratedEventSchema
 export type MetaReconciledOnStartupEvent = z.infer<typeof metaReconciledOnStartupEventSchema>;
 export type MetaReconciledEvent = z.infer<typeof metaReconciledEventSchema>;
 export type ClaudeSkillPathMigratedEvent = z.infer<typeof claudeSkillPathMigratedEventSchema>;
+export type ClaudeHookPathMigratedEvent = z.infer<typeof claudeHookPathMigratedEventSchema>;
 export type LegacyClientPathPresentEvent = z.infer<typeof legacyClientPathPresentEventSchema>;
 export type EventLedgerEvent =
   | RuleContextPlannedEvent
@@ -215,6 +224,7 @@ export type EventLedgerEvent =
   | MetaReconciledOnStartupEvent
   | MetaReconciledEvent
   | ClaudeSkillPathMigratedEvent
+  | ClaudeHookPathMigratedEvent
   | LegacyClientPathPresentEvent;
 export type EventLedgerEventType = EventLedgerEvent["event_type"];
 type EventLedgerEventInputFor<T extends EventLedgerEvent> = T extends EventLedgerEvent

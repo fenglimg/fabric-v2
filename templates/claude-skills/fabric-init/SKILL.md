@@ -1,6 +1,6 @@
 ---
-name: agents-md-init
-description: Use this skill when `fab init` just completed, `.fabric/forensic.json` exists, and rule source initialization initialization still needs to be finalized. This skill performs active reconnaissance, runs a single-round Architecture Review batch check, writes confirmed rule nodes only under `.fabric/rules/`, updates `.fabric/init-context.json`, and refreshes `.fabric/agents.meta.json`.
+name: fabric-init
+description: Use this skill when `fab init` just completed, `.fabric/forensic.json` exists, and rule source initialization still needs to be finalized. This skill performs active reconnaissance, runs a single-round Architecture Review batch check, writes confirmed rule nodes only under `.fabric/rules/`, updates `.fabric/init-context.json`, and refreshes `.fabric/agents.meta.json`.
 allowed-tools: Read, Glob, Grep, Bash
 ---
 

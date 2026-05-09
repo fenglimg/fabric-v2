@@ -53,7 +53,7 @@ describe("initFabric Claude install", () => {
       (entry.hooks ?? []).map((hook) => hook.command).filter((command): command is string => typeof command === "string"),
     );
 
-    expect(stopCommands).toContain(".claude/hooks/agents-md-init-reminder.cjs");
+    expect(stopCommands).toContain(".claude/hooks/fabric-init-reminder.cjs");
     expect(readFileSync(installedCodexHooksPath, "utf8")).toContain(".codex/hooks/fabric-session-start.cjs");
     expect(readFileSync(installedCodexHooksPath, "utf8")).toContain(".codex/hooks/fabric-stop-reminder.cjs");
     expect(readFileSync(join(target, ".fabric", "bootstrap", "README.md"), "utf8")).toContain("Fabric Bootstrap Protocol");

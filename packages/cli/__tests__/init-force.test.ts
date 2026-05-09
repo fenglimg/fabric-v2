@@ -56,14 +56,14 @@ describe("initFabric force behavior", () => {
     const control = createWerewolfFixtureRoot("fab-init-force-hook-control");
     tempRoots.push(target, control);
 
-    writeFixtureFile(target, ".claude/hooks/agents-md-init-reminder.cjs", "console.log('custom');\n");
+    writeFixtureFile(target, ".claude/hooks/fabric-init-reminder.cjs", "console.log('custom');\n");
 
     const result = await initFabric(target, { force: true });
     await initFabric(control);
 
     expect(result.claudeHookAction).toBe("overwritten");
-    expect(readFixtureFile(target, ".claude/hooks/agents-md-init-reminder.cjs")).toBe(
-      readFixtureFile(control, ".claude/hooks/agents-md-init-reminder.cjs"),
+    expect(readFixtureFile(target, ".claude/hooks/fabric-init-reminder.cjs")).toBe(
+      readFixtureFile(control, ".claude/hooks/fabric-init-reminder.cjs"),
     );
   });
 
@@ -115,7 +115,7 @@ describe("initFabric force behavior", () => {
             Stop: [
               {
                 matcher: "*",
-                hooks: [{ type: "command", command: ".claude/hooks/agents-md-init-reminder.cjs --old" }],
+                hooks: [{ type: "command", command: ".claude/hooks/fabric-init-reminder.cjs --old" }],
               },
               {
                 matcher: "manual",
@@ -142,8 +142,8 @@ describe("initFabric force behavior", () => {
     expect(settings.permissions).toEqual({
       allow: ["Bash(git status)"],
     });
-    expect(stopCommands.filter((command) => command.includes("agents-md-init-reminder.cjs"))).toEqual([
-      ".claude/hooks/agents-md-init-reminder.cjs",
+    expect(stopCommands.filter((command) => command.includes("fabric-init-reminder.cjs"))).toEqual([
+      ".claude/hooks/fabric-init-reminder.cjs",
     ]);
     expect(stopCommands).toContain(".claude/hooks/user-stop-hook.cjs");
   });

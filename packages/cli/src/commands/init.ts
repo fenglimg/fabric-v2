@@ -248,8 +248,8 @@ type ClaudeCommandHook = {
 };
 
 const CLAUDE_INIT_SKILL_TEMPLATE = "templates/claude-skills/fabric-init/SKILL.md";
-const CLAUDE_INIT_REMINDER_HOOK_TEMPLATE = "templates/claude-hooks/agents-md-init-reminder.cjs";
-const CLAUDE_INIT_REMINDER_COMMAND = ".claude/hooks/agents-md-init-reminder.cjs";
+const CLAUDE_INIT_REMINDER_HOOK_TEMPLATE = "templates/claude-hooks/fabric-init-reminder.cjs";
+const CLAUDE_INIT_REMINDER_COMMAND = ".claude/hooks/fabric-init-reminder.cjs";
 const CODEX_INIT_SKILL_TEMPLATE = "templates/codex-skills/fabric-init/SKILL.md";
 const CODEX_SESSION_START_HOOK_TEMPLATE = "templates/codex-hooks/fabric-session-start.cjs";
 const CODEX_STOP_HOOK_TEMPLATE = "templates/codex-hooks/fabric-stop-reminder.cjs";
@@ -532,7 +532,7 @@ export async function buildInitFabricPlan(target: string, options?: InitOptions)
   const codexSessionStartHookPath = join(target, ".codex", "hooks", "fabric-session-start.cjs");
   const codexStopHookPath = join(target, ".codex", "hooks", "fabric-stop-reminder.cjs");
   const codexHooksConfigPath = join(target, ".codex", "hooks.json");
-  const claudeHookPath = join(target, ".claude", "hooks", "agents-md-init-reminder.cjs");
+  const claudeHookPath = join(target, ".claude", "hooks", "fabric-init-reminder.cjs");
   const claudeSettingsPath = join(target, ".claude", "settings.json");
   const metaPath = join(fabricDir, "agents.meta.json");
 
@@ -1515,7 +1515,8 @@ function isClaudeInitReminderStopEntry(entry: unknown): boolean {
       isRecord(hook) &&
       hook.type === "command" &&
       typeof hook.command === "string" &&
-      hook.command.includes("agents-md-init-reminder.cjs"),
+      (hook.command.includes("fabric-init-reminder.cjs") ||
+        hook.command.includes("agents-md-init-reminder.cjs")),
   );
 }
 

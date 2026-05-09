@@ -147,7 +147,7 @@ describe("initFabric non-destructive behavior", () => {
     );
 
     expect(stopCommands).toContain(".claude/hooks/existing-stop-hook.cjs");
-    expect(stopCommands).toContain(".claude/hooks/agents-md-init-reminder.cjs");
+    expect(stopCommands).toContain(".claude/hooks/fabric-init-reminder.cjs");
     expect(stopCommands).toHaveLength(2);
   });
 
