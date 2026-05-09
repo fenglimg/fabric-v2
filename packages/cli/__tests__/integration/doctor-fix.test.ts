@@ -1,6 +1,8 @@
 /**
  * Integration tests: doctor --fix behavior
- * Covers: I6 (fixed errors don't reappear), I7 (legacy client warning), T1 (init_context_missing action_hint), T5 (legacy client path cleanup)
+ * Covers: I6 (fixed errors don't reappear), I7 (legacy client warning),
+ *         T1-removed (v2.0 follow-up: init_context_missing check removed),
+ *         T5 (legacy client path cleanup)
  */
 
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -109,15 +111,21 @@ describe("I7: legacy client paths produce warning, not error", () => {
   });
 });
 
-// T1 — init_context_missing: action_hint points to fabric-init skill, NOT --fix
-describe("T1: init_context_missing action_hint — fabric-init skill reference", () => {
-  it("missing .fabric/init-context.json produces manual_error with fabric-init skill action_hint", async () => {
-    const target = createWerewolfFixtureRoot("itg-doctor-t1-hint");
+// T1 (v2.0 follow-up): init_context_missing check has been removed from
+// doctor entirely. `.fabric/init-context.json` is owned by the AI-side
+// fabric-init skill flow, not by `fabric init` CLI. Doctor must not flag
+// its absence — that is a legitimate post-init state when the skill has
+// not yet run. The runtime hooks under packages/cli/templates/{claude,codex}-
+// hooks/ still consume the file as a runtime "skill ran" signal, but that
+// is a hook concern, not a state concern.
+describe("T1 follow-up: init_context_missing check removed from doctor", () => {
+  it("post-init repo without init-context.json: doctor does NOT report init_context_missing", async () => {
+    const target = createWerewolfFixtureRoot("itg-doctor-t1-removed");
     tempRoots.push(target);
 
     await initFabric(target, { force: true });
 
-    // Remove init-context.json to trigger the missing check
+    // Make sure init-context.json is absent (init CLI does not write it).
     const initContextPath = join(target, ".fabric", "init-context.json");
     if (existsSync(initContextPath)) {
       rmSync(initContextPath);
@@ -125,15 +133,10 @@ describe("T1: init_context_missing action_hint — fabric-init skill reference",
 
     const report = await runDoctorReport(target);
 
-    const missing = report.manual_errors.find((e) => e.code === "init_context_missing");
-    expect(missing).toBeDefined();
-
-    // action_hint must point to the fabric-init skill (not --fix)
-    // The hint should NOT say "fab doctor --fix" for this specific error
-    const hint = (missing as { action_hint?: string })?.action_hint ?? missing?.message ?? "";
-    expect(hint).toMatch(/fabric-init|fabric.init/i);
-    // Confirm it does NOT suggest --fix as the resolution
-    expect(hint).not.toMatch(/fab doctor --fix/i);
+    expect(report.manual_errors.map((e) => e.code)).not.toContain("init_context_missing");
+    expect(report.fixable_errors.map((e) => e.code)).not.toContain("init_context_missing");
+    expect(report.checks.find((c) => c.code === "init_context_missing")).toBeUndefined();
+    expect(report.checks.find((c) => c.code === "init_context_invalid")).toBeUndefined();
   });
 });
 

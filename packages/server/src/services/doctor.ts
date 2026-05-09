@@ -170,12 +170,6 @@ type RuleTestIndexInspection =
       error: string;
     };
 
-type InitContextInspection = {
-  exists: boolean;
-  validJson: boolean;
-  error?: string;
-};
-
 type McpConfigInWrongFileInspection = {
   hasWrongEntry: boolean;
   settingsPath: string;
@@ -288,9 +282,14 @@ const IGNORED_DIRECTORIES = new Set([
 // the v1 INITIAL_TAXONOMY.md / .fabric/bootstrap/ artifacts are no longer
 // authoritative. The summary.targetFiles map is intentionally additive — we
 // keep it focused on top-level Fabric state files.
+//
+// Note: `.fabric/init-context.json` is intentionally NOT listed here. v2.0
+// init-context is owned by the AI-side `fabric-init` skill flow (Claude Code
+// / Codex CLI), not by `fabric init` CLI. The skill writes it during a
+// 3-phase initialization interview; if the skill never ran the file is
+// legitimately absent and doctor must not flag it as a state issue.
 const TARGET_FILE_PATHS = [
   ".fabric/forensic.json",
-  ".fabric/init-context.json",
   ".fabric/agents.meta.json",
   ".fabric/rule-test.index.json",
   ".fabric/events.jsonl",
@@ -303,14 +302,12 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
   const entryPoints = collectEntryPoints(projectRoot);
   const [
     forensic,
-    initContext,
     meta,
     eventLedger,
     ruleSections,
     ruleTestIndex,
   ] = await Promise.all([
     inspectForensic(projectRoot),
-    inspectInitContext(projectRoot),
     inspectMeta(projectRoot),
     inspectEventLedger(projectRoot),
     inspectRuleSections(projectRoot),
@@ -333,7 +330,11 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     createBootstrapAnchorCheck(bootstrapAnchor),
     createKnowledgeDirMissingCheck(knowledgeDirMissing),
     createForensicCheck(forensic, framework.kind, entryPoints.length),
-    createInitContextCheck(initContext),
+    // v2.0: removed `createInitContextCheck` — `.fabric/init-context.json`
+    // is owned by the AI-side `fabric-init` skill, not by `fabric init` CLI.
+    // The file's absence is a legitimate post-init state when the skill has
+    // not yet run, so flagging it as a doctor manual_error misrepresents
+    // ownership.
     createMetaCheck(meta),
     createRuleContentRefCheck(meta),
     createRuleSectionsCheck(ruleSections),
@@ -507,18 +508,11 @@ async function inspectForensic(projectRoot: string): Promise<{ present: boolean;
   }
 }
 
-async function inspectInitContext(projectRoot: string): Promise<InitContextInspection> {
-  const path = join(projectRoot, ".fabric", "init-context.json");
-  try {
-    JSON.parse(await readFile(path, "utf8")) as unknown;
-    return { exists: true, validJson: true };
-  } catch (error) {
-    if (isMissingFileError(error)) {
-      return { exists: false, validJson: false, error: ".fabric/init-context.json is missing." };
-    }
-    return { exists: true, validJson: false, error: error instanceof Error ? error.message : String(error) };
-  }
-}
+// v2.0: `inspectInitContext` removed. `.fabric/init-context.json` is owned
+// by the AI-side `fabric-init` skill, not by `fabric init` CLI. The hooks
+// under packages/cli/templates/{claude,codex}-hooks/ still consume the file
+// as a "init done" signal at runtime, but that is a hook concern, not a
+// doctor state concern.
 
 function inspectMcpConfigInWrongFile(projectRoot: string): McpConfigInWrongFileInspection {
   const settingsPath = join(projectRoot, ".claude", "settings.json");
@@ -818,15 +812,8 @@ function createForensicCheck(
   return okCheck("Scan evidence", `.fabric/forensic.json is valid for ${forensic.report?.framework.kind ?? "unknown"}.`);
 }
 
-function createInitContextCheck(initContext: InitContextInspection): DoctorCheck {
-  if (!initContext.exists) {
-    return issueCheck("Init context", "error", "manual_error", "init_context_missing", initContext.error ?? ".fabric/init-context.json is missing.", "Run the fabric-init skill in Claude Code or Codex CLI to complete initialization. See docs/migration-1.8.md FAQ.");
-  }
-  if (!initContext.validJson) {
-    return issueCheck("Init context", "error", "manual_error", "init_context_invalid", initContext.error ?? ".fabric/init-context.json is invalid.", "Delete .fabric/init-context.json and run `fab init` to regenerate it.");
-  }
-  return okCheck("Init context", ".fabric/init-context.json is valid JSON.");
-}
+// v2.0: `createInitContextCheck` removed alongside `inspectInitContext` —
+// see comment at the call site in `runDoctorReport`.
 
 function createMetaCheck(meta: MetaInspection): DoctorCheck {
   if (!meta.present) {

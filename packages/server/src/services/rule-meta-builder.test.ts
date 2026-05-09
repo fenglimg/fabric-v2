@@ -205,7 +205,10 @@ describe("rule-meta-builder", () => {
 
   it("parses_v1_minimal_frontmatter — knowledge fields stay undefined and no warnings emitted", async () => {
     const projectRoot = await createProject("rules-builder-v1");
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    // v2.0 (TASK-004): the parser emits warnings via process.stderr.write
+    // (no console.* allowed in server package). Spy on stderr.write rather
+    // than console.warn to capture them.
+    const warnSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
     try {
       await writeProjectFile(
         projectRoot,
@@ -241,7 +244,10 @@ describe("rule-meta-builder", () => {
 
   it("warns_on_invalid_id_format — id stays undefined, parsing does not throw", async () => {
     const projectRoot = await createProject("rules-builder-v2-bad-id");
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    // v2.0 (TASK-004): the parser emits warnings via process.stderr.write
+    // (no console.* allowed in server package). Spy on stderr.write rather
+    // than console.warn to capture them.
+    const warnSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
     try {
       await writeProjectFile(
         projectRoot,
@@ -274,7 +280,10 @@ describe("rule-meta-builder", () => {
 
   it("warns_on_unknown_type — type stays undefined", async () => {
     const projectRoot = await createProject("rules-builder-v2-bad-type");
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    // v2.0 (TASK-004): the parser emits warnings via process.stderr.write
+    // (no console.* allowed in server package). Spy on stderr.write rather
+    // than console.warn to capture them.
+    const warnSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
     try {
       await writeProjectFile(
         projectRoot,
@@ -303,7 +312,10 @@ describe("rule-meta-builder", () => {
 
   it("warns_on_id_layer_mismatch — both fields drop to avoid corrupt state", async () => {
     const projectRoot = await createProject("rules-builder-v2-mismatch");
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    // v2.0 (TASK-004): the parser emits warnings via process.stderr.write
+    // (no console.* allowed in server package). Spy on stderr.write rather
+    // than console.warn to capture them.
+    const warnSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
     try {
       await writeProjectFile(
         projectRoot,
@@ -337,7 +349,10 @@ describe("rule-meta-builder", () => {
 
   it("warns_on_malformed_created_at — created_at stays undefined", async () => {
     const projectRoot = await createProject("rules-builder-v2-bad-date");
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    // v2.0 (TASK-004): the parser emits warnings via process.stderr.write
+    // (no console.* allowed in server package). Spy on stderr.write rather
+    // than console.warn to capture them.
+    const warnSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
     try {
       await writeProjectFile(
         projectRoot,

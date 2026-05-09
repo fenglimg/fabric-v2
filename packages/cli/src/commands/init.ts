@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 
 import { cancel, confirm, group, intro, isCancel, log, note, outro, select } from "@clack/prompts";
 import { defaultAgentsMetaCounters, type AgentsMeta } from "@fenglimg/fabric-shared";
-import { atomicWriteJson } from "@fenglimg/fabric-shared/node/atomic-write";
+import { atomicWriteJson, atomicWriteText } from "@fenglimg/fabric-shared/node/atomic-write";
 import { defineCommand } from "citty";
 import { checkLockOrThrow } from "@fenglimg/fabric-server";
 
@@ -51,6 +51,16 @@ type InitOptions = {
 
 type InitWriteAction = "created" | "overwritten";
 
+// v2.0 follow-up (rc.1 fix #1): AGENTS.md at the repo root is the universal
+// MCP-agnostic bootstrap anchor. Cursor, Codex CLI, and Claude Code all read
+// it; doctor's `bootstrap_anchor_missing` check requires either AGENTS.md or
+// CLAUDE.md to be present. We write a minimal default on a fresh init and
+// PRESERVE any pre-existing file verbatim — even with --force. The intent
+// is "anchor exists" rather than "anchor is canonical"; once the user has
+// customized the file (typically by running the fabric-init skill, which
+// expands sections via the AI flow), init must never clobber that work.
+type AgentsMdAction = "created" | "preserved";
+
 type ClaudeHookAction = InitWriteAction | "skipped";
 
 type ClaudeSettingsAction = "created" | "overwritten" | "skipped" | "skipped-invalid" | "updated";
@@ -70,6 +80,10 @@ export type InitScaffoldResult = {
   // (counters envelope) + events.jsonl + forensic.json. The legacy
   // .fabric/bootstrap/README.md and .fabric/INITIAL_TAXONOMY.md scaffold
   // outputs are gone — knowledge entries are created by the scan stage.
+  // v2.0 follow-up (rc.1 fix #1): AGENTS.md is also written at the repo
+  // root as the universal bootstrap anchor (idempotent on re-run).
+  agentsMdPath: string;
+  agentsMdAction: AgentsMdAction;
   knowledgeDir: string;
   knowledgeDirAction: InitWriteAction;
   personalKnowledgeDir: string;
@@ -196,6 +210,11 @@ export type InitScaffoldPlan = {
   options?: InitOptions;
   fabricDir: string;
   replaceFabricDir: boolean;
+  // v2.0 follow-up (rc.1 fix #1): repo-root AGENTS.md anchor. Written
+  // idempotently — pre-existing content is always preserved. See
+  // AgentsMdAction comment above for rationale.
+  agentsMdPath: string;
+  agentsMdAction: AgentsMdAction;
   // v2.0 knowledge layout (team root): .fabric/knowledge/{decisions,pitfalls,
   // guidelines,models,processes,pending}/. The personal root mirrors the same
   // subdirs under ~/.fabric/knowledge/ (overridable via FABRIC_HOME).
@@ -250,6 +269,26 @@ type ClaudeCommandHook = {
   command: string;
   [key: string]: unknown;
 };
+
+// v2.0 follow-up (rc.1 fix #1): minimal default contents for the repo-root
+// AGENTS.md anchor. Kept deliberately short — the AI-side fabric-init skill
+// expands the file with project-specific sections during its 3-phase
+// initialization interview. The CLI's job is only to ensure SOME anchor
+// exists post-init so doctor's bootstrap_anchor_missing check is clean.
+//
+// AGENTS.md (rather than CLAUDE.md) was chosen because it is the universal
+// MCP-agnostic format: Cursor, Codex CLI, and Claude Code all read it.
+// Claude Code in particular treats AGENTS.md as a fallback when CLAUDE.md
+// is absent, so this single file unblocks all three supported clients.
+const AGENTS_MD_DEFAULT_CONTENT = `# Project Knowledge
+
+This project uses [Fabric](https://github.com/fenglimg/fabric) for cross-client AI knowledge management.
+
+Knowledge entries live in \`.fabric/knowledge/\` (team) and \`~/.fabric/knowledge/\` (personal).
+Run \`fabric doctor\` to verify state.
+
+See \`.fabric/knowledge/\` for project decisions, pitfalls, guidelines, models, and processes.
+`;
 
 const CLAUDE_INIT_SKILL_TEMPLATE = "templates/claude-skills/fabric-init/SKILL.md";
 const CLAUDE_INIT_REMINDER_HOOK_TEMPLATE = "templates/claude-hooks/fabric-init-reminder.cjs";
@@ -534,6 +573,12 @@ export async function buildInitFabricPlan(target: string, options?: InitOptions)
   assertExistingDirectory(target);
 
   const fabricDir = join(target, ".fabric");
+  const agentsMdPath = join(target, "AGENTS.md");
+  // v2.0 follow-up (rc.1 fix #1): AGENTS.md write is always idempotent —
+  // we write the default only when the file is absent and never overwrite
+  // existing content (even with --force). Capturing the action up front
+  // keeps the result schema deterministic for callers/tests.
+  const agentsMdAction: AgentsMdAction = existsSync(agentsMdPath) ? "preserved" : "created";
   const knowledgeDir = join(fabricDir, "knowledge");
   const personalKnowledgeDir = join(resolvePersonalFabricRoot(), ".fabric", "knowledge");
   const forensicPath = join(fabricDir, "forensic.json");
@@ -562,6 +607,8 @@ export async function buildInitFabricPlan(target: string, options?: InitOptions)
     options,
     fabricDir,
     replaceFabricDir,
+    agentsMdPath,
+    agentsMdAction,
     knowledgeDir,
     knowledgeDirAction,
     personalKnowledgeDir,
@@ -613,6 +660,16 @@ export async function executeInitFabricPlan(plan: InitScaffoldPlan): Promise<Ini
   }
 
   mkdirSync(plan.fabricDir, { recursive: true });
+
+  // v2.0 follow-up (rc.1 fix #1): write the repo-root AGENTS.md anchor when
+  // it does not already exist. This satisfies doctor's bootstrap_anchor_missing
+  // check on a fresh init while remaining strictly idempotent — pre-existing
+  // content is never overwritten, so user customizations survive `fab init
+  // --reapply` and re-runs of `fab init`. Writing via atomicWriteText keeps
+  // the half-written-file failure mode out of scope.
+  if (plan.agentsMdAction === "created" && !existsSync(plan.agentsMdPath)) {
+    await atomicWriteText(plan.agentsMdPath, AGENTS_MD_DEFAULT_CONTENT);
+  }
 
   // v2.0 stage (a) bootstrap: materialize knowledge subdirs (team + personal)
   // with .gitkeep markers so a fresh repo carries the canonical layout even
@@ -698,6 +755,8 @@ export async function executeInitFabricPlan(plan: InitScaffoldPlan): Promise<Ini
   }
 
   return {
+    agentsMdPath: plan.agentsMdPath,
+    agentsMdAction: plan.agentsMdAction,
     knowledgeDir: plan.knowledgeDir,
     knowledgeDirAction: plan.knowledgeDirAction,
     personalKnowledgeDir: plan.personalKnowledgeDir,
@@ -781,6 +840,7 @@ function exhaustiveInitStagePlan(value: never): never {
 }
 
 function printInitScaffoldResult(created: InitScaffoldResult): void {
+  console.log(formatAgentsMdAction(created.agentsMdPath, created.agentsMdAction));
   console.log(formatInitPathAction(created.knowledgeDir, created.knowledgeDirAction));
   console.log(formatInitPathAction(created.metaPath, created.metaAction));
   console.log(formatInitPathAction(created.eventsPath, created.eventsAction));
@@ -837,6 +897,8 @@ function printInitPlanPreview(plan: InitExecutionPlan): void {
 
 function buildPlanOnlyScaffoldResult(plan: InitScaffoldPlan): InitScaffoldResult {
   return {
+    agentsMdPath: plan.agentsMdPath,
+    agentsMdAction: plan.agentsMdAction,
     knowledgeDir: plan.knowledgeDir,
     knowledgeDirAction: plan.knowledgeDirAction,
     personalKnowledgeDir: plan.personalKnowledgeDir,
@@ -1759,6 +1821,16 @@ function yesNoLabel(value: boolean): string {
 
 function formatInitPathAction(path: string, action: InitWriteAction): string {
   return t("cli.init.created-path", { label: labelForInitWriteAction(action), path });
+}
+
+// v2.0 follow-up (rc.1 fix #1): AGENTS.md uses a `preserved` action variant
+// that no other plan path needs. We render it through the same created-path
+// i18n shell with a localized "preserved" label so output stays uniform.
+function formatAgentsMdAction(path: string, action: AgentsMdAction): string {
+  if (action === "preserved") {
+    return t("cli.init.skipped-existing-path", { label: skippedLabel(), path });
+  }
+  return t("cli.init.created-path", { label: createdLabel(), path });
 }
 
 function formatOptionalInitPathAction(path: string, action: ClaudeHookAction): string {

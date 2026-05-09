@@ -38,9 +38,10 @@ describe("runDoctorReport", () => {
       "event_ledger_missing",
     ]);
     expect(report.manual_errors.map((issue) => issue.code)).toContain("content_refs_unavailable");
+    // v2.0 follow-up: `init_context_missing` removed from doctor — that
+    // artifact is owned by the AI-side fabric-init skill, not by init CLI.
     expect(report.manual_errors.map((issue) => issue.code)).toEqual([
       "forensic_missing",
-      "init_context_missing",
       "content_refs_unavailable",
     ]);
   });
@@ -65,12 +66,12 @@ describe("runDoctorReport", () => {
     // v2.0: 4 renames (net-zero) + counter_desync + legacy_v1_artifacts_present.
     // counter_desync is separated from stable_id_collision so that fixable_error
     // and warning signals can coexist cleanly (a single DoctorCheck entry has a
-    // single status). Count: 19 v1.x → 21 v2.0.
+    // single status). Count history: 19 v1.x → 21 rc.1 → 20 rc.1-followup
+    // (Init context check removed — owned by AI-side skill, not init CLI).
     expect(report.checks.map((check) => check.name)).toEqual([
       "Bootstrap anchor",
       "Knowledge layout",
       "Scan evidence",
-      "Init context",
       "Agents metadata",
       "Rule content refs",
       "Rule sections",
@@ -89,7 +90,7 @@ describe("runDoctorReport", () => {
       "Legacy client paths",
       "Legacy v1 artifacts",
     ]);
-    expect(report.checks).toHaveLength(21);
+    expect(report.checks).toHaveLength(20);
   });
 
   it("v2.0: clean post-init repo (mocked layout) reports zero errors AND zero warnings", async () => {
@@ -132,9 +133,10 @@ describe("runDoctorReport", () => {
     expect(after.fixable_errors.map((issue) => issue.code)).toEqual([
       "bootstrap_anchor_missing",
     ]);
+    // v2.0 follow-up: init_context_missing removed; only forensic_missing
+    // remains as a manual_error here (no forensic.json was seeded).
     expect(after.manual_errors.map((issue) => issue.code)).toEqual([
       "forensic_missing",
-      "init_context_missing",
     ]);
     expect(JSON.parse(readFileSync(join(target, ".fabric", "agents.meta.json"), "utf8")).nodes["L1/packages/server/rules"]).toMatchObject({
       content_ref: ".fabric/rules/packages/server/rules.md",
@@ -611,18 +613,26 @@ describe("runDoctorReport", () => {
     }
   });
 
-  it("TASK-039: init_context_missing has actionHint pointing to fabric-init skill", async () => {
-    const target = createProject("doctor-init-context-hint");
-    writeFile("package.json", JSON.stringify({ name: "doctor-init-context-hint", dependencies: { vite: "^7.0.0" } }, null, 2), target);
+  // v2.0 follow-up: TASK-039 (init_context_missing actionHint) removed.
+  // The init_context_missing doctor check has been deleted — `.fabric/init-
+  // context.json` is owned by the AI-side fabric-init skill, so its absence
+  // is no longer a doctor concern. The runtime hooks under
+  // packages/cli/templates/{claude,codex}-hooks/ still consume the file as
+  // a "skill ran" signal, but that consumption is independent of doctor.
+  it("v2.0 follow-up: init_context_missing check is removed (no doctor check references init-context.json)", async () => {
+    const target = createProject("doctor-init-context-removed");
+    writeFile("package.json", JSON.stringify({ name: "doctor-init-context-removed", dependencies: { vite: "^7.0.0" } }, null, 2), target);
     writeFile("src/main.ts", "export const boot = true;\n", target);
 
     const report = await runDoctorReport(target);
 
-    const initCheck = report.checks.find((c) => c.code === "init_context_missing");
-    expect(initCheck).toBeDefined();
-    expect(initCheck?.actionHint).toBeTruthy();
-    expect(initCheck?.actionHint).toContain("fabric-init");
-    expect(initCheck?.actionHint).toContain("Claude Code");
+    expect(report.checks.find((c) => c.code === "init_context_missing")).toBeUndefined();
+    expect(report.checks.find((c) => c.code === "init_context_invalid")).toBeUndefined();
+    expect(report.checks.find((c) => c.name === "Init context")).toBeUndefined();
+    expect(report.manual_errors.map((e) => e.code)).not.toContain("init_context_missing");
+    expect(report.manual_errors.map((e) => e.code)).not.toContain("init_context_invalid");
+    // summary.targetFiles must NOT include init-context.json
+    expect(Object.keys(report.summary.targetFiles)).not.toContain(".fabric/init-context.json");
   });
 
   it("TASK-037: legacy_client_path_present: detects deprecated clientPaths keys in fabric.config.json", async () => {

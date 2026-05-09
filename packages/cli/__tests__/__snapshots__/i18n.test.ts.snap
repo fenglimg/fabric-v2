@@ -17,6 +17,7 @@ exports[`cli i18n > renders en command descriptions and output snapshots 1`] = `
       "failed mcp: __vite_ssr_import_meta__.resolve is not a function",
     ],
     "stdout": [
+      "Created <fixture-2>/AGENTS.md",
       "Created <fixture-2>/.fabric/knowledge",
       "Created <fixture-2>/.fabric/agents.meta.json",
       "Created <fixture-2>/.fabric/events.jsonl",
@@ -75,6 +76,7 @@ exports[`cli i18n > renders zh-CN command descriptions and output snapshots 1`] 
       "失败 mcp: __vite_ssr_import_meta__.resolve is not a function",
     ],
     "stdout": [
+      "已创建 <fixture-2>/AGENTS.md",
       "已创建 <fixture-2>/.fabric/knowledge",
       "已创建 <fixture-2>/.fabric/agents.meta.json",
       "已创建 <fixture-2>/.fabric/events.jsonl",

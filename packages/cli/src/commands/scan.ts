@@ -209,13 +209,20 @@ export async function runInitScan(
   // Refresh agents.meta.json. As of v2.0 (TASK-005) writeRuleMeta walks BOTH
   // .fabric/rules/ (legacy) and .fabric/knowledge/ (current), so knowledge
   // entries are picked up automatically and keyed by their declared
-  // KP-/KT-... id. We still call registerKnowledgeNodesInMeta below to (a)
-  // persist a deterministic node shape (cross-cutting topology, scope_glob
-  // '**') for entries init-scan just placed and (b) keep the KP/KT counters
-  // in agents.meta.json synced — the canonical patch wins over the
-  // path-derived defaults computed by writeRuleMeta.
-  await writeRuleMeta(target, { source: "doctor_fix" });
+  // KP-/KT-... id. We still call registerKnowledgeNodesInMeta to persist a
+  // deterministic node shape (cross-cutting topology, scope_glob '**') for
+  // entries init-scan just placed.
+  //
+  // v2.0 follow-up (rc.1 fix #2): order is REGISTER → WRITE. Previously the
+  // calls ran WRITE → REGISTER, which left agents.meta.json with a revision
+  // hash computed by registerKnowledgeNodesInMeta's (different) algorithm.
+  // Doctor's recomputation via buildRuleMeta uses computeRevision() and
+  // therefore always disagreed, surfacing as agents_meta_stale post-init.
+  // Reversing the order lets writeRuleMeta own the canonical revision write
+  // while still preserving the patched node shape via spread-merge in
+  // computeRulesBasedAgentsMeta (existing nodes override defaults).
   await registerKnowledgeNodesInMeta(target, placedEntries);
+  await writeRuleMeta(target, { source: "doctor_fix" });
 
   const durationMs = Date.now() - startTs;
   await appendEventLedgerEvent(target, {
@@ -830,10 +837,16 @@ async function registerKnowledgeNodesInMeta(target: string, entries: BuiltEntry[
   }
 
   meta.nodes = nodes;
-  // Preserve revision if present; consumers compute a stable revision but for
-  // the patched-knowledge case we update it to a content-derived hash so
-  // later doctor-runs detect drift correctly.
-  meta.revision = sha256(JSON.stringify(nodes));
+  // v2.0 follow-up (rc.1 fix #2): do NOT touch revision here. The canonical
+  // revision is owned by writeRuleMeta() / computeRevision() in the
+  // rule-meta-builder module — its algorithm is the one doctor recomputes
+  // for staleness detection. Earlier this function wrote
+  // `sha256(JSON.stringify(nodes))`, which used a different keying and
+  // therefore always disagreed with doctor's recomputation. The single
+  // owner of the revision field is now writeRuleMeta(), invoked AFTER this
+  // function in runInitScan. We deliberately leave any pre-existing
+  // revision in place (or drop it on first write); writeRuleMeta will
+  // overwrite it with the canonical value.
 
   await ensureParentDirectory(metaPath);
   await atomicWriteJson(metaPath, meta);
