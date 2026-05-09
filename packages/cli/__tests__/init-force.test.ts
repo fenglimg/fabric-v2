@@ -72,14 +72,14 @@ describe("initFabric force behavior", () => {
     const control = createWerewolfFixtureRoot("fab-init-force-codex-skill-control");
     tempRoots.push(target, control);
 
-    writeFixtureFile(target, ".agents/skills/fabric-init/SKILL.md", "# custom codex skill\n");
+    writeFixtureFile(target, ".codex/skills/fabric-init/SKILL.md", "# custom codex skill\n");
 
     const result = await initFabric(target, { force: true });
     await initFabric(control);
 
     expect(result.codexSkillAction).toBe("overwritten");
-    expect(readFixtureFile(target, ".agents/skills/fabric-init/SKILL.md")).toBe(
-      readFixtureFile(control, ".agents/skills/fabric-init/SKILL.md"),
+    expect(readFixtureFile(target, ".codex/skills/fabric-init/SKILL.md")).toBe(
+      readFixtureFile(control, ".codex/skills/fabric-init/SKILL.md"),
     );
   });
 

@@ -7,7 +7,7 @@ exports[`cli i18n > renders en command descriptions and output snapshots 1`] = `
     "errors": [],
     "stderr": [
       "Created <fixture-2>/.claude/skills/fabric-init/SKILL.md",
-      "Created <fixture-2>/.agents/skills/fabric-init/SKILL.md",
+      "Created <fixture-2>/.codex/skills/fabric-init/SKILL.md",
       "Created <fixture-2>/.codex/hooks/fabric-session-start.cjs",
       "Created <fixture-2>/.codex/hooks/fabric-stop-reminder.cjs",
       "Created <fixture-2>/.codex/hooks.json with Codex hooks config (requires features.codex_hooks = true).",
@@ -78,7 +78,7 @@ exports[`cli i18n > renders zh-CN command descriptions and output snapshots 1`] 
     "errors": [],
     "stderr": [
       "已创建 <fixture-2>/.claude/skills/fabric-init/SKILL.md",
-      "已创建 <fixture-2>/.agents/skills/fabric-init/SKILL.md",
+      "已创建 <fixture-2>/.codex/skills/fabric-init/SKILL.md",
       "已创建 <fixture-2>/.codex/hooks/fabric-session-start.cjs",
       "已创建 <fixture-2>/.codex/hooks/fabric-stop-reminder.cjs",
       "已创建 <fixture-2>/.codex/hooks.json，并写入 Codex hooks 配置（需启用 features.codex_hooks = true）。",

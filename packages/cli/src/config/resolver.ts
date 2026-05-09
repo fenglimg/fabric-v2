@@ -155,7 +155,7 @@ export function detectClientSupports(
       },
       installedCapabilities: {
         hook: existsSync(join(workspaceRoot, ".codex", "hooks.json")),
-        skill: existsSync(join(workspaceRoot, ".agents", "skills", "fabric-init", "SKILL.md")),
+        skill: existsSync(join(workspaceRoot, ".codex", "skills", "fabric-init", "SKILL.md")),
       },
     },
   ];

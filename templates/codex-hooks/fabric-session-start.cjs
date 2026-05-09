@@ -13,7 +13,7 @@ process.stdout.write(
   JSON.stringify({
     hookSpecificOutput: {
       additionalContext:
-        "Fabric initialization is still pending in this repository. Read .fabric/forensic.json, .fabric/bootstrap/README.md, and use the repo skill at .agents/skills/fabric-init/SKILL.md before proceeding. If Codex hooks are not firing, ensure features.codex_hooks = true is enabled in your Codex config.",
+        "Fabric initialization is still pending in this repository. Read .fabric/forensic.json, .fabric/bootstrap/README.md, and use the repo skill at .codex/skills/fabric-init/SKILL.md before proceeding. If Codex hooks are not firing, ensure features.codex_hooks = true is enabled in your Codex config.",
     },
   }),
 );

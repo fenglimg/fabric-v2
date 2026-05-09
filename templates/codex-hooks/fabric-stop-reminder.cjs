@@ -13,6 +13,6 @@ process.stdout.write(
   JSON.stringify({
     decision: "block",
     reason:
-      "fab init has collected Fabric evidence, but initialization follow-up is still pending. Ensure features.codex_hooks = true is enabled, then use the repo skill at .agents/skills/fabric-init/SKILL.md and review .fabric/forensic.json plus .fabric/bootstrap/README.md before continuing.",
+      "fab init has collected Fabric evidence, but initialization follow-up is still pending. Ensure features.codex_hooks = true is enabled, then use the repo skill at .codex/skills/fabric-init/SKILL.md and review .fabric/forensic.json plus .fabric/bootstrap/README.md before continuing.",
   }),
 );

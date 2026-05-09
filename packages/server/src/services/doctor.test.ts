@@ -73,6 +73,7 @@ describe("runDoctorReport", () => {
       "Stable ID collision",
       "Claude skill path",
       "Claude hook path",
+      "Codex skill path",
       "Preexisting root markdown",
       "Legacy client paths",
     ]);

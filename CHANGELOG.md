@@ -5,6 +5,16 @@ All notable changes to Fabric will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.0-rc.3] - 2026-05-09
+
+### Fixed
+
+- Codex CLI repo skill installed to the wrong path. Prior releases wrote `.agents/skills/fabric-init/SKILL.md`, but Codex CLI discovers repo skills under `.codex/skills/<name>/SKILL.md` (mirroring its `~/.codex/skills/` global layout). Result: every existing Fabric init since the Codex follow-up was added shipped a Codex skill that Codex never read, silently breaking the Codex follow-up flow. `init` now writes to `.codex/skills/fabric-init/SKILL.md`; both Codex hook reason texts (zh + en) and the `cli.init.reason-message.codex-body` / `multi-body` i18n strings point at the new path.
+
+### Added
+
+- Doctor check `codex_skill_legacy_path` (fixable): detects `.agents/skills/fabric-init/SKILL.md` left over from prior installs. `--fix` moves it to `.codex/skills/fabric-init/SKILL.md` (preserving user edits), removes empty parent dirs, and emits a `codex_skill_path_migrated` ledger event.
+
 ## [1.8.0-rc.2] - 2026-05-09
 
 ### Changed

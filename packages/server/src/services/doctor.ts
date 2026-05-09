@@ -213,6 +213,12 @@ type ClaudeHookLegacyPathInspection = {
   settingsPath: string;
 };
 
+type CodexSkillLegacyPathInspection = {
+  hasLegacy: boolean;
+  legacyPath: string;
+  newPath: string;
+};
+
 type LegacyClientPathInspection = {
   presentKeys: string[];
 };
@@ -271,6 +277,7 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
   const stableIdCollision = await inspectStableIdCollisions(projectRoot);
   const claudeSkillLegacyPath = inspectClaudeSkillLegacyPath(projectRoot);
   const claudeHookLegacyPath = inspectClaudeHookLegacyPath(projectRoot);
+  const codexSkillLegacyPath = inspectCodexSkillLegacyPath(projectRoot);
   const preexistingRootFiles = inspectPreexistingRootFiles(projectRoot);
   const legacyClientPaths = inspectLegacyClientPaths(projectRoot);
   const taxonomyExists = existsSync(join(projectRoot, ".fabric", "INITIAL_TAXONOMY.md"));
@@ -292,6 +299,7 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     createStableIdCollisionCheck(stableIdCollision),
     createClaudeSkillLegacyPathCheck(claudeSkillLegacyPath),
     createClaudeHookLegacyPathCheck(claudeHookLegacyPath),
+    createCodexSkillLegacyPathCheck(codexSkillLegacyPath),
     createPreexistingRootFilesCheck(preexistingRootFiles),
     createLegacyClientPathCheck(legacyClientPaths),
   ];
@@ -403,6 +411,11 @@ export async function runDoctorFix(target: string): Promise<DoctorFixReport> {
   if (before.fixable_errors.some((issue) => issue.code === "claude_hook_legacy_path")) {
     await fixClaudeHookLegacyPath(projectRoot);
     fixed.push(findIssue(before.fixable_errors, "claude_hook_legacy_path"));
+  }
+
+  if (before.fixable_errors.some((issue) => issue.code === "codex_skill_legacy_path")) {
+    await fixCodexSkillLegacyPath(projectRoot);
+    fixed.push(findIssue(before.fixable_errors, "codex_skill_legacy_path"));
   }
 
   if (before.warnings.some((issue) => issue.code === "legacy_client_path_present")) {
@@ -1207,6 +1220,62 @@ async function fixClaudeHookLegacyPath(projectRoot: string): Promise<void> {
       to: newHookPath,
     });
   }
+}
+
+function inspectCodexSkillLegacyPath(projectRoot: string): CodexSkillLegacyPathInspection {
+  const legacyPath = join(projectRoot, ".agents", "skills", "fabric-init", "SKILL.md");
+  const newPath = join(projectRoot, ".codex", "skills", "fabric-init", "SKILL.md");
+  const hasLegacy = existsSync(legacyPath) && !existsSync(newPath);
+  return { hasLegacy, legacyPath, newPath };
+}
+
+function createCodexSkillLegacyPathCheck(inspection: CodexSkillLegacyPathInspection): DoctorCheck {
+  if (inspection.hasLegacy) {
+    return issueCheck(
+      "Codex skill path",
+      "error",
+      "fixable_error",
+      "codex_skill_legacy_path",
+      `.agents/skills/fabric-init/SKILL.md exists at the legacy path. Codex CLI reads repo skills from .codex/skills/, not .agents/skills/. Run --fix to migrate it to .codex/skills/fabric-init/SKILL.md (user edits preserved).`,
+      "Run `fab doctor --fix` to move .agents/skills/fabric-init/ to .codex/skills/fabric-init/, preserving any user edits to SKILL.md.",
+    );
+  }
+  return okCheck("Codex skill path", ".codex/skills/fabric-init/SKILL.md is at the canonical path (or not present).");
+}
+
+async function fixCodexSkillLegacyPath(projectRoot: string): Promise<void> {
+  const { hasLegacy, legacyPath, newPath } = inspectCodexSkillLegacyPath(projectRoot);
+  if (!hasLegacy) {
+    return;
+  }
+
+  mkdirSync(join(newPath, ".."), { recursive: true });
+  renameSync(legacyPath, newPath);
+
+  const legacyDir = join(legacyPath, "..");
+  try {
+    rmdirSync(legacyDir);
+  } catch {
+    // Directory not empty or already removed — ignore
+  }
+  // Also try to remove the .agents/skills/ parent if now empty.
+  try {
+    rmdirSync(join(legacyDir, ".."));
+  } catch {
+    // ignore
+  }
+  // And .agents/ itself if empty.
+  try {
+    rmdirSync(join(legacyDir, "..", ".."));
+  } catch {
+    // ignore
+  }
+
+  await appendEventLedgerEvent(projectRoot, {
+    event_type: "codex_skill_path_migrated",
+    from: legacyPath,
+    to: newPath,
+  });
 }
 
 function inspectLegacyClientPaths(projectRoot: string): LegacyClientPathInspection {

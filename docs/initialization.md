@@ -35,10 +35,10 @@
 - 可见 bootstrap 入口固定为 `.fabric/bootstrap/README.md`。
 - bootstrap 阶段不再生成根级 `AGENTS.md`、`CLAUDE.md` 或 `GEMINI.md`。
 - Claude Code 的接力仍通过 `.claude/skills/fabric-init/SKILL.md`、Stop hook 与 `.claude/settings.json` 完成。
-- Codex 的接力通过 repo skill `.agents/skills/fabric-init/SKILL.md` 与 repo hooks `.codex/hooks.json` 完成。
+- Codex 的接力通过 repo skill `.codex/skills/fabric-init/SKILL.md` 与 repo hooks `.codex/hooks.json` 完成。
 - 其他 MCP-capable 客户端通过各自的 MCP config 发现 Fabric server，并在运行期调用 `fab_plan_context` 与 `fab_get_rule_sections`。
 
-> Codex hooks 依赖 `features.codex_hooks = true`。若该 feature 未启用，Codex 仍可手动使用 repo skill `.agents/skills/fabric-init/SKILL.md`，但 `.codex/hooks.json` 中的 `SessionStart` / `Stop` hooks 不会触发。
+> Codex hooks 依赖 `features.codex_hooks = true`。若该 feature 未启用，Codex 仍可手动使用 repo skill `.codex/skills/fabric-init/SKILL.md`，但 `.codex/hooks.json` 中的 `SessionStart` / `Stop` hooks 不会触发。
 
 当前 bootstrap hard rules 仍保持同一组核心约束：
 
@@ -94,7 +94,7 @@ fabric init
 
 - Fabric 扫描仓库并写入 `.fabric/forensic.json`。
 - Fabric 写入 `.fabric/bootstrap/README.md` 与 metadata 文件。
-- Fabric 安装 `.claude/skills/fabric-init/SKILL.md`、`.claude/hooks/fabric-init-reminder.cjs`、`.claude/settings.json`，并安装 Codex 的 `.agents/skills/fabric-init/SKILL.md`、`.codex/hooks.json` 与 `.codex/hooks/*.cjs`。
+- Fabric 安装 `.claude/skills/fabric-init/SKILL.md`、`.claude/hooks/fabric-init-reminder.cjs`、`.claude/settings.json`，并安装 Codex 的 `.codex/skills/fabric-init/SKILL.md`、`.codex/hooks.json` 与 `.codex/hooks/*.cjs`。
 - Fabric 自动运行 bootstrap install、MCP config install 与 git hooks install。
 
 来自 disposable `werewolf-minigame` 示例运行的真实输出：
@@ -243,7 +243,7 @@ fabric doctor --fix
 | 在外部终端运行 `fabric init` | Claude Code Stop hook 或 Codex Stop hook 发现存在 `forensic.json` 但无 `init-context.json` | 下一次客户端 session 会收到后续初始化提醒 |
 | 在 CI 或其他非 TTY 环境运行 `fabric init --yes` | 无 wizard takeover；命令直接写文件并记录 reason 行 | `.fabric/bootstrap/README.md` 与 `.fabric/` artifact 仍有效，但 `.fabric/init-context.json` 不会自动创建 |
 | 在任意环境运行 `fabric init --plan` | 只打印计划与核心写入摘要 | 不落盘，适合在 CI/脚本里先做审批或预览 |
-| Codex（已启用 `features.codex_hooks = true`） | repo `.codex/hooks.json` 的 `SessionStart` / `Stop` hooks + `.agents/skills/fabric-init/SKILL.md` | 可在仓库内得到初始化提醒与后续上下文 |
+| Codex（已启用 `features.codex_hooks = true`） | repo `.codex/hooks.json` 的 `SessionStart` / `Stop` hooks + `.codex/skills/fabric-init/SKILL.md` | 可在仓库内得到初始化提醒与后续上下文 |
 | 其他非 Claude client | `.claude/` 与 `.codex/` 文件在无关客户端中为无害 no-op | `.fabric/bootstrap/README.md` 可作为稳定 bootstrap 入口 |
 
 ## 故障排除

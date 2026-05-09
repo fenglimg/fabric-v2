@@ -528,7 +528,7 @@ export async function buildInitFabricPlan(target: string, options?: InitOptions)
   const rulesDir = join(fabricDir, "rules");
   const eventsPath = join(fabricDir, "events.jsonl");
   const claudeSkillPath = join(target, ".claude", "skills", "fabric-init", "SKILL.md");
-  const codexSkillPath = join(target, ".agents", "skills", "fabric-init", "SKILL.md");
+  const codexSkillPath = join(target, ".codex", "skills", "fabric-init", "SKILL.md");
   const codexSessionStartHookPath = join(target, ".codex", "hooks", "fabric-session-start.cjs");
   const codexStopHookPath = join(target, ".codex", "hooks", "fabric-stop-reminder.cjs");
   const codexHooksConfigPath = join(target, ".codex", "hooks.json");
