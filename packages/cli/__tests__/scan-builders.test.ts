@@ -240,7 +240,7 @@ describe("scan builders — deterministic baseline knowledge", () => {
     expect(__testing__.extractExplicitDescription(sample)).toBeNull();
   });
 
-  it("renderMarkdown emits frontmatter with all 6 v2.0 fields", () => {
+  it("renderMarkdown emits frontmatter with all 7 v2.0 fields (including tags)", () => {
     const built = {
       type: "model" as const,
       layer: "team" as const,
@@ -252,6 +252,7 @@ describe("scan builders — deterministic baseline knowledge", () => {
       target_subdir: "models" as const,
       slug: "hello",
       id: "KT-MOD-0001" as const,
+      tags: ["typescript", "vite"],
     };
     const md = __testing__.renderMarkdown(built);
     expect(md).toMatch(/^---\n/);
@@ -261,7 +262,26 @@ describe("scan builders — deterministic baseline knowledge", () => {
     expect(md).toContain("maturity: verified");
     expect(md).toContain('layer_reason: "test reason"');
     expect(md).toContain(`created_at: ${NOW}`);
+    expect(md).toContain("tags: [typescript, vite]");
     expect(md).toContain("# Hello");
+  });
+
+  it("renderMarkdown emits tags: [] when tags is empty", () => {
+    const built = {
+      type: "model" as const,
+      layer: "team" as const,
+      maturity: "verified" as const,
+      layer_reason: "test reason",
+      created_at: NOW,
+      title: "Empty tags",
+      body: "## [MISSION_STATEMENT]\n\nbody\n\n## [CONTEXT_INFO]\n\nctx",
+      target_subdir: "models" as const,
+      slug: "empty-tags",
+      id: "KT-MOD-0002" as const,
+      tags: [],
+    };
+    const md = __testing__.renderMarkdown(built);
+    expect(md).toContain("tags: []");
   });
 
   it("stripFrontmatter removes leading YAML block", () => {

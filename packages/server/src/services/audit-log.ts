@@ -28,8 +28,8 @@ export type EditIntentAuditEntry = AuditLogBaseEntry & {
   window_ms: number;
 };
 
-export type RuleSelectionAuditEntry = AuditLogBaseEntry & {
-  event: "rule_selection";
+export type KnowledgeSelectionAuditEntry = AuditLogBaseEntry & {
+  event: "knowledge_selection";
   selection_token: string;
   target_paths: string[];
   required_stable_ids: string[];
@@ -41,7 +41,7 @@ export type RuleSelectionAuditEntry = AuditLogBaseEntry & {
   ignored_stable_ids: string[];
 };
 
-export type AuditLogEntry = GetRulesAuditEntry | EditIntentAuditEntry | RuleSelectionAuditEntry;
+export type AuditLogEntry = GetRulesAuditEntry | EditIntentAuditEntry | KnowledgeSelectionAuditEntry;
 
 export async function appendGetRulesAuditEvent(
   projectRoot: string,
@@ -94,10 +94,10 @@ export async function appendRuleSelectionAuditEvent(
     correlation_id?: string;
     session_id?: string;
   },
-): Promise<RuleSelectionAuditEntry> {
-  const entry: RuleSelectionAuditEntry = {
+): Promise<KnowledgeSelectionAuditEntry> {
+  const entry: KnowledgeSelectionAuditEntry = {
     kind: "audit-event",
-    event: "rule_selection",
+    event: "knowledge_selection",
     ts: input.ts ?? Date.now(),
     path: normalizeAuditPath(projectRoot, input.path),
     selection_token: input.selection_token,
@@ -405,7 +405,7 @@ async function appendAuditLogEventLedgerEvents(
   for (const entry of entries) {
     if (entry.event === "get_rules") {
       await appendEventLedgerEvent(projectRoot, {
-        event_type: "rule_context_planned",
+        event_type: "knowledge_context_planned",
         ts: entry.ts,
         target_paths: [entry.path],
         required_stable_ids: metadata.rule_context?.required_stable_ids ?? [],
@@ -418,9 +418,9 @@ async function appendAuditLogEventLedgerEvents(
       continue;
     }
 
-    if (entry.event === "rule_selection") {
+    if (entry.event === "knowledge_selection") {
       await appendEventLedgerEvent(projectRoot, {
-        event_type: "rule_selection",
+        event_type: "knowledge_selection",
         ts: entry.ts,
         selection_token: entry.selection_token,
         target_paths: entry.target_paths,
@@ -461,7 +461,7 @@ async function readAuditLogFromEventLedger(projectRoot: string): Promise<AuditLo
 }
 
 function projectAuditEvent(projectRoot: string, event: StoredEventLedgerEvent): AuditLogEntry | null {
-  if (event.event_type === "rule_context_planned") {
+  if (event.event_type === "knowledge_context_planned") {
     const [path] = event.target_paths;
     if (path === undefined) {
       return null;
@@ -476,7 +476,7 @@ function projectAuditEvent(projectRoot: string, event: StoredEventLedgerEvent): 
     };
   }
 
-  if (event.event_type === "rule_selection") {
+  if (event.event_type === "knowledge_selection") {
     const [path] = event.target_paths;
     if (path === undefined) {
       return null;
@@ -484,7 +484,7 @@ function projectAuditEvent(projectRoot: string, event: StoredEventLedgerEvent): 
 
     return {
       kind: "audit-event",
-      event: "rule_selection",
+      event: "knowledge_selection",
       ts: event.ts,
       path: normalizeAuditPath(projectRoot, path),
       selection_token: event.selection_token,
@@ -534,7 +534,7 @@ function getAuditEntryIdentity(entry: AuditLogEntry): string {
     return `${entry.event}:${entry.ts}:${entry.path}:${entry.client_hash ?? ""}`;
   }
 
-  if (entry.event === "rule_selection") {
+  if (entry.event === "knowledge_selection") {
     return `${entry.event}:${entry.ts}:${entry.selection_token}:${entry.target_paths.join("\0")}`;
   }
 
@@ -585,7 +585,7 @@ function parseAuditLogLine(line: string): AuditLogEntry | null {
     }
 
     if (
-      parsed.event === "rule_selection" &&
+      parsed.event === "knowledge_selection" &&
       typeof parsed.selection_token === "string" &&
       Array.isArray(parsed.target_paths) &&
       Array.isArray(parsed.required_stable_ids) &&
@@ -598,7 +598,7 @@ function parseAuditLogLine(line: string): AuditLogEntry | null {
     ) {
       return {
         kind: "audit-event",
-        event: "rule_selection",
+        event: "knowledge_selection",
         ts: parsed.ts,
         path: parsed.path,
         selection_token: parsed.selection_token,

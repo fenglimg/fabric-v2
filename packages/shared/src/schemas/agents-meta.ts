@@ -42,6 +42,8 @@ export const ruleDescriptionSchema = z
     knowledge_layer: z.enum(["personal", "team"]).optional(),
     layer_reason: z.string().optional(),
     created_at: z.string().optional(),
+    // v2/rc.2: flat flow-style YAML array; populated by init-scan from forensic tech stack and editable by user. Used by rc.3 review skill for tag-filter search.
+    tags: z.array(z.string()).default([]).optional(),
   })
   .strict();
 

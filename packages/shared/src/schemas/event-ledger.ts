@@ -11,9 +11,9 @@ const eventLedgerEnvelopeSchema = {
 
 const stringRecordSchema = z.record(z.string());
 
-export const ruleContextPlannedEventSchema = z.object({
+export const knowledgeContextPlannedEventSchema = z.object({
   ...eventLedgerEnvelopeSchema,
-  event_type: z.literal("rule_context_planned"),
+  event_type: z.literal("knowledge_context_planned"),
   target_paths: z.array(z.string()),
   required_stable_ids: z.array(z.string()),
   ai_selectable_stable_ids: z.array(z.string()),
@@ -25,9 +25,9 @@ export const ruleContextPlannedEventSchema = z.object({
   diagnostics: z.array(z.unknown()).optional(),
 });
 
-export const ruleSelectionEventSchema = z.object({
+export const knowledgeSelectionEventSchema = z.object({
   ...eventLedgerEnvelopeSchema,
-  event_type: z.literal("rule_selection"),
+  event_type: z.literal("knowledge_selection"),
   selection_token: z.string(),
   target_paths: z.array(z.string()),
   required_stable_ids: z.array(z.string()),
@@ -39,9 +39,9 @@ export const ruleSelectionEventSchema = z.object({
   ignored_stable_ids: z.array(z.string()),
 });
 
-export const ruleSectionsFetchedEventSchema = z.object({
+export const knowledgeSectionsFetchedEventSchema = z.object({
   ...eventLedgerEnvelopeSchema,
-  event_type: z.literal("rule_sections_fetched"),
+  event_type: z.literal("knowledge_sections_fetched"),
   selection_token: z.string(),
   target_paths: z.array(z.string()).optional(),
   requested_sections: z.array(z.string()),
@@ -67,9 +67,9 @@ export const editIntentCheckedEventSchema = z.object({
   window_ms: z.number().int().nonnegative(),
 });
 
-export const ruleDriftDetectedEventSchema = z.object({
+export const knowledgeDriftDetectedEventSchema = z.object({
   ...eventLedgerEnvelopeSchema,
-  event_type: z.literal("rule_drift_detected"),
+  event_type: z.literal("knowledge_drift_detected"),
   revision: z.string().optional(),
   drifted_stable_ids: z.array(z.string()),
   missing_files: z.array(z.string()),
@@ -84,26 +84,6 @@ export const ruleDriftDetectedEventSchema = z.object({
       }),
     )
     .optional(),
-});
-
-export const ruleBaselineAcceptedEventSchema = z.object({
-  ...eventLedgerEnvelopeSchema,
-  event_type: z.literal("rule_baseline_accepted"),
-  revision: z.string(),
-  previous_revision: z.string().optional(),
-  accepted_stable_ids: z.array(z.string()),
-  source: z.enum(["doctor_fix", "sync_meta"]).optional(),
-});
-
-// Legacy: emitted by 1.7.x doctor; replaced by 'meta_reconciled' in 1.8.0. Kept for backward-compat ledger replay.
-export const baselineSyncedEventSchema = z.object({
-  ...eventLedgerEnvelopeSchema,
-  event_type: z.literal("baseline_synced"),
-  revision: z.string(),
-  previous_revision: z.string().optional(),
-  synced_files: z.array(z.string()),
-  accepted_stable_ids: z.array(z.string()),
-  source: z.enum(["doctor_fix", "sync_meta"]),
 });
 
 export const mcpEventLedgerEventSchema = z.object({
@@ -175,12 +155,6 @@ export const codexSkillPathMigratedEventSchema = z.object({
   to: z.string(),
 });
 
-export const legacyClientPathPresentEventSchema = z.object({
-  ...eventLedgerEnvelopeSchema,
-  event_type: z.literal("legacy_client_path_present"),
-  removed: z.array(z.string()),
-});
-
 // v2.0 rc.1: emitted by the init scan when baseline knowledge entries are written.
 export const initScanCompletedEventSchema = z.object({
   ...eventLedgerEnvelopeSchema,
@@ -191,13 +165,11 @@ export const initScanCompletedEventSchema = z.object({
 });
 
 export const eventLedgerEventSchema = z.discriminatedUnion("event_type", [
-  ruleContextPlannedEventSchema,
-  ruleSelectionEventSchema,
-  ruleSectionsFetchedEventSchema,
+  knowledgeContextPlannedEventSchema,
+  knowledgeSelectionEventSchema,
+  knowledgeSectionsFetchedEventSchema,
   editIntentCheckedEventSchema,
-  ruleDriftDetectedEventSchema,
-  ruleBaselineAcceptedEventSchema,
-  baselineSyncedEventSchema,
+  knowledgeDriftDetectedEventSchema,
   mcpEventLedgerEventSchema,
   reapplyCompletedEventSchema,
   eventLedgerTruncatedEventSchema,
@@ -207,17 +179,14 @@ export const eventLedgerEventSchema = z.discriminatedUnion("event_type", [
   claudeSkillPathMigratedEventSchema,
   claudeHookPathMigratedEventSchema,
   codexSkillPathMigratedEventSchema,
-  legacyClientPathPresentEventSchema,
   initScanCompletedEventSchema,
 ]);
 
-export type RuleContextPlannedEvent = z.infer<typeof ruleContextPlannedEventSchema>;
-export type RuleSelectionEvent = z.infer<typeof ruleSelectionEventSchema>;
-export type RuleSectionsFetchedEvent = z.infer<typeof ruleSectionsFetchedEventSchema>;
+export type KnowledgeContextPlannedEvent = z.infer<typeof knowledgeContextPlannedEventSchema>;
+export type KnowledgeSelectionEvent = z.infer<typeof knowledgeSelectionEventSchema>;
+export type KnowledgeSectionsFetchedEvent = z.infer<typeof knowledgeSectionsFetchedEventSchema>;
 export type EditIntentCheckedEvent = z.infer<typeof editIntentCheckedEventSchema>;
-export type RuleDriftDetectedEvent = z.infer<typeof ruleDriftDetectedEventSchema>;
-export type RuleBaselineAcceptedEvent = z.infer<typeof ruleBaselineAcceptedEventSchema>;
-export type BaselineSyncedEvent = z.infer<typeof baselineSyncedEventSchema>;
+export type KnowledgeDriftDetectedEvent = z.infer<typeof knowledgeDriftDetectedEventSchema>;
 export type McpEventLedgerEvent = z.infer<typeof mcpEventLedgerEventSchema>;
 export type ReapplyCompletedEvent = z.infer<typeof reapplyCompletedEventSchema>;
 export type EventLedgerTruncatedEvent = z.infer<typeof eventLedgerTruncatedEventSchema>;
@@ -227,16 +196,13 @@ export type MetaReconciledEvent = z.infer<typeof metaReconciledEventSchema>;
 export type ClaudeSkillPathMigratedEvent = z.infer<typeof claudeSkillPathMigratedEventSchema>;
 export type ClaudeHookPathMigratedEvent = z.infer<typeof claudeHookPathMigratedEventSchema>;
 export type CodexSkillPathMigratedEvent = z.infer<typeof codexSkillPathMigratedEventSchema>;
-export type LegacyClientPathPresentEvent = z.infer<typeof legacyClientPathPresentEventSchema>;
 export type InitScanCompletedEvent = z.infer<typeof initScanCompletedEventSchema>;
 export type EventLedgerEvent =
-  | RuleContextPlannedEvent
-  | RuleSelectionEvent
-  | RuleSectionsFetchedEvent
+  | KnowledgeContextPlannedEvent
+  | KnowledgeSelectionEvent
+  | KnowledgeSectionsFetchedEvent
   | EditIntentCheckedEvent
-  | RuleDriftDetectedEvent
-  | RuleBaselineAcceptedEvent
-  | BaselineSyncedEvent
+  | KnowledgeDriftDetectedEvent
   | McpEventLedgerEvent
   | ReapplyCompletedEvent
   | EventLedgerTruncatedEvent
@@ -246,7 +212,6 @@ export type EventLedgerEvent =
   | ClaudeSkillPathMigratedEvent
   | ClaudeHookPathMigratedEvent
   | CodexSkillPathMigratedEvent
-  | LegacyClientPathPresentEvent
   | InitScanCompletedEvent;
 export type EventLedgerEventType = EventLedgerEvent["event_type"];
 type EventLedgerEventInputFor<T extends EventLedgerEvent> = T extends EventLedgerEvent

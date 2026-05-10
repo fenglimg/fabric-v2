@@ -11,7 +11,7 @@
 import { test, fc } from '@fast-check/vitest'
 import { describe, expect, it } from 'vitest'
 
-import { agentsMetaNodeSchema, agentsMetaSchema } from '../../src/schemas/agents-meta.js'
+import { agentsMetaNodeSchema, agentsMetaSchema, ruleDescriptionSchema } from '../../src/schemas/agents-meta.js'
 import {
   structuredWarningSchema,
   ledgerQuerySchema,
@@ -264,14 +264,40 @@ describe('I1.8 eventLedgerEventSchema round-trip', () => {
     schema_version: 1 as const,
   }
 
-  it('rule_context_planned event', () => {
+  it('knowledge_context_planned event', () => {
     roundTrip(eventLedgerEventSchema, {
       ...envelope,
-      event_type: 'rule_context_planned',
+      event_type: 'knowledge_context_planned',
       target_paths: ['src/app.ts'],
       required_stable_ids: ['bootstrap'],
       ai_selectable_stable_ids: [],
       final_stable_ids: ['bootstrap'],
+    })
+  })
+
+  it('knowledge_selection event', () => {
+    roundTrip(eventLedgerEventSchema, {
+      ...envelope,
+      event_type: 'knowledge_selection',
+      selection_token: 'selection:rev:abc',
+      target_paths: ['src/app.ts'],
+      required_stable_ids: ['bootstrap'],
+      ai_selectable_stable_ids: ['ui-rules'],
+      ai_selected_stable_ids: ['ui-rules'],
+      final_stable_ids: ['bootstrap', 'ui-rules'],
+      ai_selection_reasons: { 'ui-rules': 'Touches UI.' },
+      rejected_stable_ids: [],
+      ignored_stable_ids: [],
+    })
+  })
+
+  it('knowledge_drift_detected event', () => {
+    roundTrip(eventLedgerEventSchema, {
+      ...envelope,
+      event_type: 'knowledge_drift_detected',
+      drifted_stable_ids: ['ui-rules'],
+      missing_files: [],
+      stale_files: ['src/app.ts'],
     })
   })
 
@@ -286,16 +312,24 @@ describe('I1.8 eventLedgerEventSchema round-trip', () => {
     })
   })
 
-  it('legacy_client_path_present event', () => {
-    // v2.0 / rc.2: TASK-005 dropped the live emitter (fixLegacyClientPaths was
-    // removed alongside the warn-and-fix doctor check). The event-type schema
-    // literal is retained until TASK-006 finalises the event-vocabulary
-    // rename — this round-trip simply pins the on-disk shape against the
-    // existing literal.
-    roundTrip(eventLedgerEventSchema, {
-      ...envelope,
-      event_type: 'legacy_client_path_present',
-      removed: ['placeholder-key'],
+  it('tags field roundtrip on ruleDescriptionSchema', () => {
+    // v2/rc.2: tags is a flat flow-style YAML array in frontmatter; schema
+    // stores it as string[]. Verify default=[] and explicit values survive
+    // JSON parse/stringify.
+    roundTrip(ruleDescriptionSchema, {
+      summary: 'Track the primary tech stack.',
+      intent_clues: ['typescript', 'react'],
+      tech_stack: ['typescript'],
+      impact: ['all files'],
+      must_read_if: 'touching tech stack',
+      tags: ['typescript', 'react', 'vite'],
+    })
+    roundTrip(ruleDescriptionSchema, {
+      summary: 'No tags field — default [] applies.',
+      intent_clues: [],
+      tech_stack: [],
+      impact: [],
+      must_read_if: 'always',
     })
   })
 })

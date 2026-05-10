@@ -706,7 +706,7 @@ async function recordBaselineSynced(
 ): Promise<void> {
   if (input.driftDetails.length > 0) {
     await appendEventLedgerEvent(projectRoot, {
-      event_type: "rule_drift_detected",
+      event_type: "knowledge_drift_detected",
       revision: input.previousRevision ?? input.revision,
       drifted_stable_ids: input.driftDetails.map((detail) => detail.stable_id),
       missing_files: input.driftDetails.filter((detail) => detail.actual_hash === null).map((detail) => detail.file),
@@ -714,22 +714,6 @@ async function recordBaselineSynced(
       details: input.driftDetails,
     });
   }
-
-  await appendEventLedgerEvent(projectRoot, {
-    event_type: "rule_baseline_accepted",
-    revision: input.revision,
-    previous_revision: input.previousRevision,
-    accepted_stable_ids: input.acceptedStableIds,
-    source: input.source,
-  });
-  await appendEventLedgerEvent(projectRoot, {
-    event_type: "baseline_synced",
-    revision: input.revision,
-    previous_revision: input.previousRevision,
-    synced_files: input.syncedFiles,
-    accepted_stable_ids: input.acceptedStableIds,
-    source: input.source,
-  });
 }
 
 function flattenKeys(value: unknown, keys: Record<string, true> = {}): Record<string, true> {
@@ -856,6 +840,7 @@ function extractRuleDescription(source: string): RuleDescription | undefined {
     knowledge_layer: undefined,
     layer_reason: undefined,
     created_at: undefined,
+    tags: undefined,
   };
 }
 
@@ -888,6 +873,7 @@ function extractDescriptionFromFrontmatter(frontmatter: string): RuleDescription
     knowledge_layer: knowledge.knowledge_layer,
     layer_reason: knowledge.layer_reason,
     created_at: knowledge.created_at,
+    tags: knowledge.tags,
   };
 }
 
@@ -906,6 +892,9 @@ type KnowledgeFrontmatterFields = {
   knowledge_layer?: KnowledgeLayer;
   layer_reason?: string;
   created_at?: string;
+  // v2/rc.2: flat flow-style YAML array; populated by init-scan from forensic
+  // tech-stack keywords and editable by user.
+  tags?: string[];
 };
 
 function extractKnowledgeFieldsFromFrontmatter(frontmatter: string): KnowledgeFrontmatterFields {
@@ -979,6 +968,9 @@ function extractKnowledgeFieldsFromFrontmatter(frontmatter: string): KnowledgeFr
     }
   }
 
+  // v2/rc.2: tags — flat flow-style YAML inline array e.g. `tags: [ts, react]`
+  const tags = extractInlineArray(frontmatter, "tags");
+
   return {
     id,
     knowledge_type,
@@ -986,6 +978,7 @@ function extractKnowledgeFieldsFromFrontmatter(frontmatter: string): KnowledgeFr
     knowledge_layer,
     layer_reason: rawLayerReason,
     created_at,
+    tags: tags.length > 0 ? tags : undefined,
   };
 }
 

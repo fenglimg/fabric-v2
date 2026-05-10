@@ -151,9 +151,9 @@ describe("planContext", () => {
     }
     expect(result.shared.required_stable_ids).toEqual(["global-protocol", "battle-view-local"]);
     expect(result.shared.ai_selectable_stable_ids).toEqual(["ui-batch-rendering"]);
-    expect((await readEventLedger(projectRoot, { event_type: "rule_context_planned" })).events).toEqual([
+    expect((await readEventLedger(projectRoot, { event_type: "knowledge_context_planned" })).events).toEqual([
       expect.objectContaining({
-        event_type: "rule_context_planned",
+        event_type: "knowledge_context_planned",
         target_paths: ["assets/scripts/ui/BattleView.ts"],
         required_stable_ids: ["global-protocol", "battle-view-local"],
         ai_selectable_stable_ids: ["ui-batch-rendering"],

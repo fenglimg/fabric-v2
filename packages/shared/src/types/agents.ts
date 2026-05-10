@@ -19,6 +19,8 @@ export interface RuleDescription {
   knowledge_layer?: "personal" | "team";
   layer_reason?: string;
   created_at?: string;
+  // v2/rc.2: flat flow-style YAML array; auto-filled by init-scan from forensic tech-stack.
+  tags?: string[];
 }
 
 export interface RuleDescriptionIndexItem {

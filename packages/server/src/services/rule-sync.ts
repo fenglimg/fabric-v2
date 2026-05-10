@@ -45,8 +45,8 @@ export interface StructuredWarning {
 /**
  * Granular ledger event shape for rule-sync operations.
  * These are returned in RuleSyncReport and also appended to the event ledger
- * using the nearest available ledger event type (rule_drift_detected /
- * baseline_synced). The shape below is what callers receive in `.events`.
+ * using the nearest available ledger event type (knowledge_drift_detected).
+ * The shape below is what callers receive in `.events`.
  */
 export interface RuleSyncLedgerEvent {
   type: "rule_content_changed" | "rule_added" | "rule_removed";
@@ -339,7 +339,7 @@ async function appendRuleSyncEvents(projectRoot: string, events: RuleSyncLedgerE
 
   if (missingFiles.length > 0 || staleFiles.length > 0) {
     await appendEventLedgerEvent(projectRoot, {
-      event_type: "rule_drift_detected",
+      event_type: "knowledge_drift_detected",
       drifted_stable_ids: driftedIds,
       missing_files: missingFiles,
       stale_files: staleFiles,

@@ -18,7 +18,7 @@ describe("eventLedgerEventSchema", () => {
     const events = [
       {
         ...base,
-        event_type: "rule_context_planned",
+        event_type: "knowledge_context_planned",
         target_paths: ["src/app.ts"],
         required_stable_ids: ["bootstrap"],
         ai_selectable_stable_ids: ["ui-rules"],
@@ -31,7 +31,7 @@ describe("eventLedgerEventSchema", () => {
       },
       {
         ...base,
-        event_type: "rule_selection",
+        event_type: "knowledge_selection",
         selection_token: "selection:rev:abc",
         target_paths: ["src/app.ts"],
         required_stable_ids: ["bootstrap"],
@@ -44,7 +44,7 @@ describe("eventLedgerEventSchema", () => {
       },
       {
         ...base,
-        event_type: "rule_sections_fetched",
+        event_type: "knowledge_sections_fetched",
         selection_token: "selection:rev:abc",
         target_paths: ["src/app.ts"],
         requested_sections: ["MISSION_STATEMENT", "CONTEXT_INFO"],
@@ -64,7 +64,7 @@ describe("eventLedgerEventSchema", () => {
       },
       {
         ...base,
-        event_type: "rule_drift_detected",
+        event_type: "knowledge_drift_detected",
         revision: "rev-a",
         drifted_stable_ids: ["ui-rules"],
         missing_files: [],
@@ -80,23 +80,6 @@ describe("eventLedgerEventSchema", () => {
       },
       {
         ...base,
-        event_type: "rule_baseline_accepted",
-        revision: "rev-b",
-        previous_revision: "rev-a",
-        accepted_stable_ids: ["bootstrap", "ui-rules"],
-        source: "sync_meta",
-      },
-      {
-        ...base,
-        event_type: "baseline_synced",
-        revision: "rev-b",
-        previous_revision: "rev-a",
-        synced_files: ["src/app.ts"],
-        accepted_stable_ids: ["bootstrap", "ui-rules"],
-        source: "sync_meta",
-      },
-      {
-        ...base,
         event_type: "mcp_event",
         mcp_event_id: "mcp-1",
         stream_id: "stream-1",
@@ -107,13 +90,11 @@ describe("eventLedgerEventSchema", () => {
     const parsedTypes = events.map((event) => eventLedgerEventSchema.parse(event).event_type);
 
     expect(parsedTypes).toEqual<EventLedgerEventType[]>([
-      "rule_context_planned",
-      "rule_selection",
-      "rule_sections_fetched",
+      "knowledge_context_planned",
+      "knowledge_selection",
+      "knowledge_sections_fetched",
       "edit_intent_checked",
-      "rule_drift_detected",
-      "rule_baseline_accepted",
-      "baseline_synced",
+      "knowledge_drift_detected",
       "mcp_event",
     ]);
   });
@@ -126,6 +107,40 @@ describe("eventLedgerEventSchema", () => {
         ts: 1,
         schema_version: 1,
         event_type: "unknown",
+      }),
+    ).toThrow();
+  });
+
+  it("rejects deleted v1 event types (rule_baseline_accepted, baseline_synced, legacy_client_path_present)", () => {
+    const base = {
+      kind: "fabric-event",
+      id: "event:test",
+      ts: 1_000,
+      schema_version: 1,
+    };
+    expect(() =>
+      eventLedgerEventSchema.parse({
+        ...base,
+        event_type: "rule_baseline_accepted",
+        revision: "rev-a",
+        accepted_stable_ids: [],
+      }),
+    ).toThrow();
+    expect(() =>
+      eventLedgerEventSchema.parse({
+        ...base,
+        event_type: "baseline_synced",
+        revision: "rev-a",
+        synced_files: [],
+        accepted_stable_ids: [],
+        source: "sync_meta",
+      }),
+    ).toThrow();
+    expect(() =>
+      eventLedgerEventSchema.parse({
+        ...base,
+        event_type: "legacy_client_path_present",
+        removed: [],
       }),
     ).toThrow();
   });

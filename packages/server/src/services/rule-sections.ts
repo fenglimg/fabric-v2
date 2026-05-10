@@ -217,7 +217,7 @@ export async function getRuleSections(
 
   try {
     await appendEventLedgerEvent(projectRoot, {
-      event_type: "rule_sections_fetched",
+      event_type: "knowledge_sections_fetched",
       selection_token: input.selection_token,
       target_paths: token.target_paths,
       requested_sections: input.sections,

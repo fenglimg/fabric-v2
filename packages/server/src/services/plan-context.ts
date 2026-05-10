@@ -133,7 +133,7 @@ export async function planContext(
 
   try {
     await appendEventLedgerEvent(projectRoot, {
-      event_type: "rule_context_planned",
+      event_type: "knowledge_context_planned",
       target_paths: uniquePaths,
       required_stable_ids: requiredStableIds,
       ai_selectable_stable_ids: aiSelectableStableIds,

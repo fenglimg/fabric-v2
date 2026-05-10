@@ -185,7 +185,7 @@ describe("getRuleSections", () => {
       }),
       expect.objectContaining({
         kind: "audit-event",
-        event: "rule_selection",
+        event: "knowledge_selection",
         path: "assets/scripts/ui/BattleView.ts",
         target_paths: ["assets/scripts/ui/BattleView.ts"],
         required_stable_ids: ["global-protocol", "battle-view-local"],
@@ -201,11 +201,11 @@ describe("getRuleSections", () => {
     ]);
     expect((await readEventLedger(projectRoot)).events).toEqual([
       expect.objectContaining({
-        event_type: "rule_context_planned",
+        event_type: "knowledge_context_planned",
         target_paths: ["assets/scripts/ui/BattleView.ts"],
       }),
       expect.objectContaining({
-        event_type: "rule_selection",
+        event_type: "knowledge_selection",
         selection_token: plan.selection_token,
         target_paths: ["assets/scripts/ui/BattleView.ts"],
         required_stable_ids: ["global-protocol", "battle-view-local"],
@@ -219,7 +219,7 @@ describe("getRuleSections", () => {
         session_id: "session-sections",
       }),
       expect.objectContaining({
-        event_type: "rule_sections_fetched",
+        event_type: "knowledge_sections_fetched",
         selection_token: plan.selection_token,
         target_paths: ["assets/scripts/ui/BattleView.ts"],
         requested_sections: ["MISSION_STATEMENT", "MANDATORY_INJECTION", "BUSINESS_LOGIC_CHUNKS", "CONTEXT_INFO"],

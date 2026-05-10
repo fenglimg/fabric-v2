@@ -123,6 +123,8 @@ interface MarkdownEntry {
   body: string;
   target_subdir: TargetSubdir;
   slug: string;
+  // v2/rc.2: derived from forensic tech-stack; used by rc.3 review skill tag-filter.
+  tags: string[];
 }
 
 interface BuiltEntry extends MarkdownEntry {
@@ -158,16 +160,17 @@ export async function runInitScan(
 
   const forensic = await readForensic(forensicPath);
   const nowIso = (options.now ?? new Date()).toISOString();
+  const tags = deriveTagsFromForensic(forensic);
 
   // Build candidate entries (some may be null when source data is missing).
   const candidates: Array<MarkdownEntry | null> = [
-    buildTechStackEntry(forensic, nowIso),
-    buildModuleStructureEntry(forensic, nowIso),
-    buildBuildConfigEntry(forensic, nowIso),
-    buildCodeStyleEntry(forensic, nowIso),
-    buildCIConfigEntry(forensic, nowIso),
-    buildReadmeFirstParaEntry(target, forensic, nowIso),
-    buildProjectBriefEntry(target, forensic, nowIso),
+    buildTechStackEntry(forensic, nowIso, tags),
+    buildModuleStructureEntry(forensic, nowIso, tags),
+    buildBuildConfigEntry(forensic, nowIso, tags),
+    buildCodeStyleEntry(forensic, nowIso, tags),
+    buildCIConfigEntry(forensic, nowIso, tags),
+    buildReadmeFirstParaEntry(target, forensic, nowIso, tags),
+    buildProjectBriefEntry(target, forensic, nowIso, tags),
   ];
   const entries = candidates.filter((e): e is MarkdownEntry => e !== null);
 
@@ -305,7 +308,7 @@ export default scanCommand;
 //   - Add BUSINESS_LOGIC_CHUNKS when type === 'process'
 // ---------------------------------------------------------------------------
 
-function buildTechStackEntry(forensic: ForensicReport, nowIso: string): MarkdownEntry {
+function buildTechStackEntry(forensic: ForensicReport, nowIso: string, tags: string[]): MarkdownEntry {
   const framework = forensic.framework;
   const byExt = forensic.topology.by_ext ?? {};
   const topExtensions = Object.entries(byExt)
@@ -335,10 +338,11 @@ function buildTechStackEntry(forensic: ForensicReport, nowIso: string): Markdown
     body,
     target_subdir: "models",
     slug: "tech-stack",
+    tags,
   };
 }
 
-function buildModuleStructureEntry(forensic: ForensicReport, nowIso: string): MarkdownEntry {
+function buildModuleStructureEntry(forensic: ForensicReport, nowIso: string, tags: string[]): MarkdownEntry {
   const keyDirs = forensic.topology.key_dirs ?? [];
   const entryPoints = forensic.entry_points ?? [];
   const totalFiles = forensic.topology.total_files ?? 0;
@@ -374,10 +378,11 @@ function buildModuleStructureEntry(forensic: ForensicReport, nowIso: string): Ma
     body,
     target_subdir: "models",
     slug: "module-structure",
+    tags,
   };
 }
 
-function buildBuildConfigEntry(forensic: ForensicReport, nowIso: string): MarkdownEntry {
+function buildBuildConfigEntry(forensic: ForensicReport, nowIso: string, tags: string[]): MarkdownEntry {
   const configFiles = (forensic.candidate_files ?? [])
     .filter((entry) => entry.family === "config")
     .map((entry) => entry.path);
@@ -413,10 +418,11 @@ function buildBuildConfigEntry(forensic: ForensicReport, nowIso: string): Markdo
     body,
     target_subdir: "processes",
     slug: "build-config",
+    tags,
   };
 }
 
-function buildCodeStyleEntry(forensic: ForensicReport, nowIso: string): MarkdownEntry {
+function buildCodeStyleEntry(forensic: ForensicReport, nowIso: string, tags: string[]): MarkdownEntry {
   const dominantPatterns = (forensic.assertions ?? [])
     .filter((a) => a.type === "pattern" || a.type === "domain")
     .slice(0, 4)
@@ -454,10 +460,11 @@ function buildCodeStyleEntry(forensic: ForensicReport, nowIso: string): Markdown
     body,
     target_subdir: "guidelines",
     slug: "code-style",
+    tags,
   };
 }
 
-function buildCIConfigEntry(forensic: ForensicReport, nowIso: string): MarkdownEntry | null {
+function buildCIConfigEntry(forensic: ForensicReport, nowIso: string, tags: string[]): MarkdownEntry | null {
   const ciFiles = (forensic.candidate_files ?? [])
     .map((entry) => entry.path)
     .filter((path) => isCIConfigPath(path));
@@ -501,6 +508,7 @@ function buildCIConfigEntry(forensic: ForensicReport, nowIso: string): MarkdownE
     body,
     target_subdir: "processes",
     slug: "ci-config",
+    tags,
   };
 }
 
@@ -508,6 +516,7 @@ function buildReadmeFirstParaEntry(
   target: string,
   forensic: ForensicReport,
   nowIso: string,
+  tags: string[],
 ): MarkdownEntry | null {
   if (forensic.readme.quality === "missing") {
     return null;
@@ -544,6 +553,7 @@ function buildReadmeFirstParaEntry(
     body,
     target_subdir: "models",
     slug: "readme-first-paragraph",
+    tags,
   };
 }
 
@@ -551,6 +561,7 @@ function buildProjectBriefEntry(
   target: string,
   forensic: ForensicReport,
   nowIso: string,
+  tags: string[],
 ): MarkdownEntry | null {
   if (forensic.readme.quality === "missing") {
     return null;
@@ -587,6 +598,7 @@ function buildProjectBriefEntry(
     body,
     target_subdir: "models",
     slug: "project-brief",
+    tags,
   };
 }
 
@@ -600,6 +612,9 @@ function renderMarkdown(entry: BuiltEntry): string {
 }
 
 function renderFrontmatter(entry: BuiltEntry): string {
+  const tagsLine = entry.tags.length > 0
+    ? `tags: [${entry.tags.join(", ")}]`
+    : "tags: []";
   const lines = [
     "---",
     `id: ${entry.id}`,
@@ -608,6 +623,7 @@ function renderFrontmatter(entry: BuiltEntry): string {
     `maturity: ${entry.maturity}`,
     `layer_reason: ${quoteIfNeeded(entry.layer_reason)}`,
     `created_at: ${entry.created_at}`,
+    tagsLine,
     "---",
   ];
   return lines.join("\n");
@@ -645,6 +661,66 @@ function stripFrontmatter(content: string): string {
 // ---------------------------------------------------------------------------
 // Forensic reading + helpers
 // ---------------------------------------------------------------------------
+
+/**
+ * Derive up to 5 tag keywords from a forensic report.
+ *
+ * Priority: framework.kind first, then top file-extension languages derived
+ * from by_ext (strip dot, skip 'json'/'md'/'lock'). Tags are lowercased and
+ * deduplicated. Used to populate the `tags` frontmatter field on init-scan
+ * baseline entries so the rc.3 review skill can filter by tech stack.
+ */
+export function deriveTagsFromForensic(forensic: ForensicReport): string[] {
+  const MAX_TAGS = 5;
+  const seen = new Set<string>();
+  const tags: string[] = [];
+
+  function add(raw: string): void {
+    const normalized = raw.toLowerCase().trim().replace(/\s+/gu, "-");
+    if (normalized.length > 0 && !seen.has(normalized)) {
+      seen.add(normalized);
+      tags.push(normalized);
+    }
+  }
+
+  // Framework kind takes highest priority (e.g. 'vite', 'next', 'node').
+  if (forensic.framework.kind) {
+    add(forensic.framework.kind);
+  }
+
+  // Map file extensions to language/tool names; skip noise extensions.
+  const SKIP_EXTS = new Set([".json", ".md", ".lock", ".yaml", ".yml", ".txt", ".env"]);
+  const EXT_MAP: Record<string, string> = {
+    ".ts": "typescript",
+    ".tsx": "typescript",
+    ".js": "javascript",
+    ".jsx": "javascript",
+    ".mjs": "javascript",
+    ".cjs": "javascript",
+    ".py": "python",
+    ".go": "go",
+    ".rs": "rust",
+    ".java": "java",
+    ".cs": "csharp",
+    ".rb": "ruby",
+    ".php": "php",
+    ".swift": "swift",
+    ".kt": "kotlin",
+  };
+
+  const byExt = forensic.topology.by_ext ?? {};
+  const sorted = Object.entries(byExt)
+    .filter(([ext]) => !SKIP_EXTS.has(ext))
+    .sort(([, a], [, b]) => b - a);
+
+  for (const [ext] of sorted) {
+    if (tags.length >= MAX_TAGS) break;
+    const mapped = EXT_MAP[ext] ?? ext.replace(/^\./u, "");
+    add(mapped);
+  }
+
+  return tags.slice(0, MAX_TAGS);
+}
 
 async function readForensic(forensicPath: string): Promise<ForensicReport> {
   const raw = await readFile(forensicPath, "utf8");

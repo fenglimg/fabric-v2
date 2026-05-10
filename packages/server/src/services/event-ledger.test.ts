@@ -25,7 +25,7 @@ describe("event-ledger", () => {
     const projectRoot = await createTempProject();
 
     const event = await appendEventLedgerEvent(projectRoot, {
-      event_type: "rule_selection",
+      event_type: "knowledge_selection",
       selection_token: "selection:rev:abc",
       target_paths: ["src/app.ts"],
       required_stable_ids: ["bootstrap"],
@@ -44,7 +44,7 @@ describe("event-ledger", () => {
     expect(event).toMatchObject({
       kind: "fabric-event",
       schema_version: 1,
-      event_type: "rule_selection",
+      event_type: "knowledge_selection",
       id: expect.stringMatching(/^event:/),
       ts: 2_000,
       correlation_id: "corr-1",
@@ -52,7 +52,7 @@ describe("event-ledger", () => {
     });
     expect(entries).toEqual([event]);
     expect(warnings).toEqual([]);
-    expect(await readFile(join(projectRoot, ".fabric", "events.jsonl"), "utf8")).toContain("\"event_type\":\"rule_selection\"");
+    expect(await readFile(join(projectRoot, ".fabric", "events.jsonl"), "utf8")).toContain("\"event_type\":\"knowledge_selection\"");
     await expect(readFile(join(projectRoot, ".fabric", ".intent-ledger.jsonl"), "utf8")).rejects.toMatchObject({
       code: "ENOENT",
     });
@@ -162,7 +162,7 @@ describe("event-ledger", () => {
       "{not json",
       JSON.stringify({
         kind: "audit-event",
-        event_type: "rule_selection",
+        event_type: "knowledge_selection",
         id: "wrong-kind",
         ts: 1,
         schema_version: 1,
@@ -172,7 +172,7 @@ describe("event-ledger", () => {
         id: "event:context",
         ts: 2_000,
         schema_version: 1,
-        event_type: "rule_context_planned",
+        event_type: "knowledge_context_planned",
         target_paths: ["src/app.ts"],
         required_stable_ids: ["bootstrap"],
         ai_selectable_stable_ids: [],
@@ -193,7 +193,7 @@ describe("event-ledger", () => {
     ].join("\n"));
 
     const { events: entries } = await readEventLedger(projectRoot, {
-      event_type: "rule_context_planned",
+      event_type: "knowledge_context_planned",
       since: 1_500,
       correlation_id: "corr-1",
     });
@@ -204,7 +204,7 @@ describe("event-ledger", () => {
         id: "event:context",
         ts: 2_000,
         schema_version: 1,
-        event_type: "rule_context_planned",
+        event_type: "knowledge_context_planned",
         target_paths: ["src/app.ts"],
         required_stable_ids: ["bootstrap"],
         ai_selectable_stable_ids: [],

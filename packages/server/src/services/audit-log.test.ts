@@ -82,7 +82,7 @@ describe("audit-log", () => {
     });
     expect((await readEventLedger(target)).events).toEqual([
       expect.objectContaining({
-        event_type: "rule_context_planned",
+        event_type: "knowledge_context_planned",
         target_paths: ["src/example.ts"],
         client_hash: "rev-1",
         correlation_id: "corr-audit",
@@ -178,7 +178,7 @@ describe("audit-log", () => {
     ]);
   });
 
-  it("appends and reads rule_selection telemetry entries", async () => {
+  it("appends and reads knowledge_selection telemetry entries", async () => {
     const target = createFixtureRoot("audit-log-rule-selection");
 
     await appendRuleSelectionAuditEvent(target, {
@@ -202,7 +202,7 @@ describe("audit-log", () => {
     expect(await readAuditLog(target)).toEqual([
       {
         kind: "audit-event",
-        event: "rule_selection",
+        event: "knowledge_selection",
         ts: 5_000,
         path: "assets/scripts/ui/BattleView.ts",
         selection_token: "selection:rev:abc",
@@ -220,7 +220,7 @@ describe("audit-log", () => {
     ]);
     expect((await readEventLedger(target)).events).toEqual([
       expect.objectContaining({
-        event_type: "rule_selection",
+        event_type: "knowledge_selection",
         selection_token: "selection:rev:abc",
         target_paths: ["assets/scripts/ui/BattleView.ts"],
         ai_selection_reasons: {
@@ -239,7 +239,7 @@ describe("audit-log", () => {
     const target = createFixtureRoot("audit-log-event-projection");
 
     await appendEventLedgerEvent(target, {
-      event_type: "rule_context_planned",
+      event_type: "knowledge_context_planned",
       id: "event:get-rules",
       ts: 1_000,
       target_paths: ["src/example.ts"],
@@ -249,7 +249,7 @@ describe("audit-log", () => {
       client_hash: "rev-1",
     });
     await appendEventLedgerEvent(target, {
-      event_type: "rule_selection",
+      event_type: "knowledge_selection",
       id: "event:selection",
       ts: 1_500,
       selection_token: "selection:rev:event",
@@ -284,7 +284,7 @@ describe("audit-log", () => {
       },
       {
         kind: "audit-event",
-        event: "rule_selection",
+        event: "knowledge_selection",
         ts: 1_500,
         path: "src/example.ts",
         selection_token: "selection:rev:event",

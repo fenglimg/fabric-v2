@@ -35,7 +35,7 @@ function makeReport(status: "ok" | "warn" | "error") {
     ],
     fixable_errors: status === "error" ? [{ code: "agents_meta_stale", name: "Agents metadata", message: "stale" }] : [],
     manual_errors: [],
-    warnings: status === "warn" ? [{ code: "legacy_client_path_present", name: "Legacy paths", message: "warn msg" }] : [],
+    warnings: status === "warn" ? [{ code: "knowledge_drift_detected", name: "Knowledge drift", message: "warn msg" }] : [],
     summary: {
       target: "/tmp/itg-doctor",
       framework: { kind: "vite", version: "1", subkind: "app" },
