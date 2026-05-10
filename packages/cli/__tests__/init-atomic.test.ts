@@ -72,10 +72,9 @@ describe("init-atomic: events.jsonl created as raw file (0-byte after scaffold, 
     expect(existsSync(eventsPath)).toBe(true);
 
     // v2.0: scaffold writes a 0-byte events.jsonl, then the init-scan stage
-    // appends `init_scan_completed` (and supporting baseline_synced /
-    // rule_baseline_accepted entries from rule-meta sync). Asserting that the
-    // ledger is non-empty AND contains init_scan_completed verifies both the
-    // raw-create contract and the scan invocation.
+    // appends `init_scan_completed` and supporting reconcile entries. Asserting
+    // that the ledger is non-empty AND contains init_scan_completed verifies
+    // both the raw-create contract and the scan invocation.
     const raw = readFileSync(eventsPath, "utf8");
     expect(raw.length).toBeGreaterThan(0);
     expect(raw).toContain("init_scan_completed");

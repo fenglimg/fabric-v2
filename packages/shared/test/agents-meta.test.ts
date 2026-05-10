@@ -81,8 +81,8 @@ describe("agentsMetaNodeSchema", () => {
   it("accepts registry-first nodes with content_ref, explicit level, and structured description", () => {
     const parsed = agentsMetaNodeSchema.parse({
       stable_id: "ui-batch-rendering",
-      file: ".fabric/rules/ui-batch-rendering.md",
-      content_ref: ".fabric/rules/ui-batch-rendering.md",
+      file: ".fabric/knowledge/guidelines/ui-batch-rendering.md",
+      content_ref: ".fabric/knowledge/guidelines/ui-batch-rendering.md",
       scope_glob: "assets/scripts/ui/**",
       deps: [],
       priority: "medium",
@@ -100,7 +100,7 @@ describe("agentsMetaNodeSchema", () => {
     });
 
     expect(parsed.stable_id).toBe("ui-batch-rendering");
-    expect(parsed.content_ref).toBe(".fabric/rules/ui-batch-rendering.md");
+    expect(parsed.content_ref).toBe(".fabric/knowledge/guidelines/ui-batch-rendering.md");
     expect(parsed.level).toBe("L1");
     expect(parsed.layer).toBe("L1");
     expect(parsed.topology_type).toBe("domain");

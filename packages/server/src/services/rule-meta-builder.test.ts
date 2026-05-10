@@ -500,7 +500,7 @@ describe("rule-meta-builder", () => {
     );
 
     // Personal-layer entry (under fake home). Pre-create the subdir since
-    // findFabricRuleFiles auto-mkdir runs on its own scan invocation, but
+    // findKnowledgeFiles auto-mkdir runs on its own scan invocation, but
     // here we're writing the fixture *before* the scan.
     await mkdir(join(fakeHome, ".fabric/knowledge/guidelines"), { recursive: true });
     await writeFile(
@@ -547,7 +547,7 @@ describe("rule-meta-builder", () => {
     ).then(() => true).catch(() => false);
     expect(existsBefore).toBe(false);
 
-    // Run the scan — auto-mkdir is a side-effect of findFabricRuleFiles.
+    // Run the scan — auto-mkdir is a side-effect of findKnowledgeFiles.
     await computeRulesBasedAgentsMeta(projectRoot);
 
     // Each canonical knowledge subdir should now exist under fake home.

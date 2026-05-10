@@ -1,9 +1,12 @@
 /**
  * watcher.test.ts — TASK-024 chokidar watcher / Layer 2 P0 review
  *
- * Verifies that handleCacheWatcherEvent calls invalidateRuleSyncCooldown when
- * a .fabric/rules/*.md file changes, so the next MCP call performs a real
- * I/O scan rather than returning a stale cached-fresh response.
+ * v2/rc.2: tests retargeted from `.fabric/rules/**\/*.md` to
+ * `.fabric/knowledge/**\/*.md` to match the v2 cache-watcher glob.
+ *
+ * Verifies that handleCacheWatcherEvent calls invalidateRuleSyncCooldown
+ * when a .fabric/knowledge/*.md file changes, so the next MCP call performs
+ * a real I/O scan rather than returning a stale cached-fresh response.
  */
 
 import { describe, it, expect, vi, afterEach } from "vitest";
@@ -11,7 +14,7 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 import * as ruleSyncModule from "../src/services/rule-sync.js";
 import { handleCacheWatcherEvent } from "../src/http.js";
 
-describe("handleCacheWatcherEvent — watcher bridge to rule-sync cooldown", () => {
+describe("handleCacheWatcherEvent — watcher bridge to rule-sync cooldown (v2)", () => {
   afterEach(() => {
     vi.restoreAllMocks();
   });
@@ -30,13 +33,13 @@ describe("handleCacheWatcherEvent — watcher bridge to rule-sync cooldown", () 
     };
   }
 
-  it("calls invalidateRuleSyncCooldown when a .fabric/rules/*.md file changes", () => {
+  it("calls invalidateRuleSyncCooldown when a .fabric/knowledge/*.md file changes", () => {
     const projectRoot = "/fake/project";
     const sessions = new Map<string, never>();
     const spy = vi.spyOn(ruleSyncModule, "invalidateRuleSyncCooldown");
 
     handleCacheWatcherEvent(
-      ".fabric/rules/core/rule.md",
+      ".fabric/knowledge/decisions/rule.md",
       projectRoot,
       sessions as Parameters<typeof handleCacheWatcherEvent>[2],
       makeTimers(),
@@ -46,13 +49,13 @@ describe("handleCacheWatcherEvent — watcher bridge to rule-sync cooldown", () 
     expect(spy).toHaveBeenCalledWith(projectRoot);
   });
 
-  it("calls invalidateRuleSyncCooldown for nested rule paths", () => {
+  it("calls invalidateRuleSyncCooldown for nested knowledge paths", () => {
     const projectRoot = "/fake/project";
     const sessions = new Map<string, never>();
     const spy = vi.spyOn(ruleSyncModule, "invalidateRuleSyncCooldown");
 
     handleCacheWatcherEvent(
-      ".fabric/rules/deep/nested/dir/rule.md",
+      ".fabric/knowledge/guidelines/deep/nested/dir/rule.md",
       projectRoot,
       sessions as Parameters<typeof handleCacheWatcherEvent>[2],
       makeTimers(),
@@ -62,7 +65,7 @@ describe("handleCacheWatcherEvent — watcher bridge to rule-sync cooldown", () 
     expect(spy).toHaveBeenCalledWith(projectRoot);
   });
 
-  it("does NOT call invalidateRuleSyncCooldown for non-rule-file events (agents.meta.json)", () => {
+  it("does NOT call invalidateRuleSyncCooldown for non-knowledge-file events (agents.meta.json)", () => {
     const projectRoot = "/fake/project";
     const sessions = new Map<string, never>();
     const spy = vi.spyOn(ruleSyncModule, "invalidateRuleSyncCooldown");

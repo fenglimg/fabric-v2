@@ -74,15 +74,15 @@ describe("I2: init guard — no-overwrite behavior", () => {
 
 // I3 — reapply idempotency: consecutive reapply produces byte-identical agents.meta.json and events.jsonl prefix
 describe("I3: init --reapply idempotency", () => {
-  it("produces byte-identical agents.meta.json on second --reapply (rules/ non-empty)", async () => {
+  it("produces byte-identical agents.meta.json on second --reapply (knowledge/ non-empty)", async () => {
     const target = createWerewolfFixtureRoot("itg-reapply-meta-idem");
     tempRoots.push(target);
 
     await initFabric(target);
 
-    // Put a rule file so meta is preserved
-    mkdirSync(join(target, ".fabric", "rules"), { recursive: true });
-    writeFixtureFile(target, ".fabric/rules/my-rule.md", "# My Rule\n");
+    // Put a knowledge file so meta is preserved
+    mkdirSync(join(target, ".fabric", "knowledge", "decisions"), { recursive: true });
+    writeFixtureFile(target, ".fabric/knowledge/decisions/my-rule.md", "# My Rule\n");
 
     await initFabric(target, { reapply: true, force: true });
     const hash1 = sha256(readFileSync(join(target, ".fabric", "agents.meta.json")));

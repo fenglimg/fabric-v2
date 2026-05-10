@@ -18,11 +18,12 @@ afterEach(async () => {
 describe("planContext", () => {
   it("returns a neutral requirement profile, description index, and selection token", async () => {
     const projectRoot = await createTempProject();
-    await mkdir(join(projectRoot, ".fabric", "rules"), { recursive: true });
+    await mkdir(join(projectRoot, ".fabric", "knowledge", "decisions"), { recursive: true });
+    await mkdir(join(projectRoot, ".fabric", "knowledge", "guidelines"), { recursive: true });
     await writeFile(join(projectRoot, ".fabric", "human-lock.json"), `${JSON.stringify({ locked: [] }, null, 2)}\n`);
-    await writeFile(join(projectRoot, ".fabric", "rules", "global.md"), "# Global\n");
-    await writeFile(join(projectRoot, ".fabric", "rules", "ui.md"), "# UI\n");
-    await writeFile(join(projectRoot, ".fabric", "rules", "battle-view.md"), "# Battle View\n");
+    await writeFile(join(projectRoot, ".fabric", "knowledge", "decisions", "global.md"), "# Global\n");
+    await writeFile(join(projectRoot, ".fabric", "knowledge", "guidelines", "ui.md"), "# UI\n");
+    await writeFile(join(projectRoot, ".fabric", "knowledge", "guidelines", "battle-view.md"), "# Battle View\n");
     await writeFile(
       join(projectRoot, ".fabric", "agents.meta.json"),
       `${JSON.stringify({
@@ -30,8 +31,8 @@ describe("planContext", () => {
         nodes: {
           "L0/global": {
             stable_id: "global-protocol",
-            file: ".fabric/rules/global.md",
-            content_ref: ".fabric/rules/global.md",
+            file: ".fabric/knowledge/decisions/global.md",
+            content_ref: ".fabric/knowledge/decisions/global.md",
             scope_glob: "**",
             deps: [],
             priority: "high",
@@ -49,8 +50,8 @@ describe("planContext", () => {
           },
           "L1/ui": {
             stable_id: "ui-batch-rendering",
-            file: ".fabric/rules/ui.md",
-            content_ref: ".fabric/rules/ui.md",
+            file: ".fabric/knowledge/guidelines/ui.md",
+            content_ref: ".fabric/knowledge/guidelines/ui.md",
             scope_glob: "**",
             deps: ["L0/global"],
             priority: "medium",
@@ -68,8 +69,8 @@ describe("planContext", () => {
           },
           "L2/battle-view": {
             stable_id: "battle-view-local",
-            file: ".fabric/rules/battle-view.md",
-            content_ref: ".fabric/rules/battle-view.md",
+            file: ".fabric/knowledge/guidelines/battle-view.md",
+            content_ref: ".fabric/knowledge/guidelines/battle-view.md",
             scope_glob: "assets/scripts/ui/BattleView.ts",
             deps: ["L0/global"],
             priority: "medium",

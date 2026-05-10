@@ -46,13 +46,10 @@ describe("runDoctorReport", () => {
     ]);
   });
 
-  it("returns ok when target-state fabric artifacts are aligned (v2.0 bridged fixture)", async () => {
-    // The existing initialized fixture seeds both the v2.0 layout (AGENTS.md +
-    // .fabric/knowledge/* subdirs) and a legacy .fabric/rules/ tree so the
-    // rule-meta-builder pipeline (still v1-coupled until TASK-003/TASK-004)
-    // has something to index. As a result this fixture deliberately retains
-    // the `.fabric/rules/` tree, which v2.0's `legacy_v1_artifacts_present`
-    // visibility check will surface as a warning. That is expected here.
+  it("returns ok when target-state fabric artifacts are aligned (v2.0 fixture)", async () => {
+    // v2/rc.2: the initialized fixture seeds the v2.0 layout (AGENTS.md +
+    // .fabric/knowledge/* subdirs) plus a knowledge entry for rule-meta-builder
+    // to index. Legacy `.fabric/rules/` is no longer used.
     const target = createInitializedProject("doctor-ok");
     await writeRuleMeta(target, { source: "doctor_fix" });
     writeFile(".fabric/events.jsonl", "", target);
@@ -66,7 +63,8 @@ describe("runDoctorReport", () => {
     expect(report.warnings.map((w) => w.code)).toEqual([]);
     // Count history: 19 v1.x → 21 rc.1 → 20 rc.1-followup (Init context
     // check removed) → 18 rc.2 (Rule sections + Legacy v1 artifacts removed
-    // in TASK-002).
+    // in TASK-002) → 15 rc.2 (Claude/Codex skill+hook path checks removed
+    // in TASK-002 along with the fabric-init skill installer surface).
     expect(report.checks.map((check) => check.name)).toEqual([
       "Bootstrap anchor",
       "Knowledge layout",
@@ -81,13 +79,10 @@ describe("runDoctorReport", () => {
       "Knowledge dir unindexed",
       "Stable ID collision",
       "Knowledge counter desync",
-      "Claude skill path",
-      "Claude hook path",
-      "Codex skill path",
       "Preexisting root markdown",
       "Legacy client paths",
     ]);
-    expect(report.checks).toHaveLength(18);
+    expect(report.checks).toHaveLength(15);
   });
 
   it("v2.0: clean post-init repo (mocked layout) reports zero errors AND zero warnings", async () => {
@@ -114,56 +109,20 @@ describe("runDoctorReport", () => {
     expect(report.fixable_errors).toEqual([]);
   });
 
-  it("doctor --fix repairs derived state and leaves manual errors visible", async () => {
-    const target = createProject("doctor-fix");
-    writeFile(".fabric/rules/packages/server/rules.md", "<!-- fab:rule-id rules/server -->\n# Server\n\n## [MANDATORY_INJECTION]\nUse services.\n", target);
-
-    const before = await runDoctorReport(target);
-    const fix = await runDoctorFix(target);
-    const after = await runDoctorReport(target);
-
-    expect(before.fixable_errors.map((issue) => issue.code)).toContain("agents_meta_missing");
-    expect(fix.changed).toBe(true);
-    // bootstrap_anchor_missing remains because doctor --fix does NOT auto-create
-    // AGENTS.md/CLAUDE.md (the canonical remediation is `fabric init`).
-    // knowledge_dir_missing is fixable, so it should be cleared by --fix.
-    expect(after.fixable_errors.map((issue) => issue.code)).toEqual([
-      "bootstrap_anchor_missing",
-    ]);
-    // v2.0 follow-up: init_context_missing removed; only forensic_missing
-    // remains as a manual_error here (no forensic.json was seeded).
-    expect(after.manual_errors.map((issue) => issue.code)).toEqual([
-      "forensic_missing",
-    ]);
-    expect(JSON.parse(readFileSync(join(target, ".fabric", "agents.meta.json"), "utf8")).nodes["L1/packages/server/rules"]).toMatchObject({
-      content_ref: ".fabric/rules/packages/server/rules.md",
-      stable_id: "rules/server",
-    });
-    expect(readFileSync(join(target, ".fabric", "rule-test.index.json"), "utf8")).toContain("\"links\"");
-    expect(readFileSync(join(target, ".fabric", "events.jsonl"), "utf8")).toContain("baseline_synced");
-  });
-
-  it("doctor --fix does not report fixable drift after rebuilding stale meta", async () => {
-    const target = createInitializedProject("doctor-stale");
-    await writeRuleMeta(target, { source: "doctor_fix" });
-    writeFile(".fabric/events.jsonl", "", target);
-    writeFile(
-      ".fabric/rules/packages/server/rules.md",
-      "<!-- fab:rule-id rules/server -->\n# Server\n\n## [MANDATORY_INJECTION]\nChanged.\n",
-      target,
-    );
-
-    const before = await runDoctorReport(target);
-    const fix = await runDoctorFix(target);
-    const after = await runDoctorReport(target);
-    const { events } = await readEventLedger(target);
-
-    expect(before.fixable_errors.map((issue) => issue.code)).toContain("agents_meta_stale");
-    expect(fix.fixed.map((issue) => issue.code)).toContain("agents_meta_stale");
-    expect(after.fixable_errors).toEqual([]);
-    expect(events.map((event) => event.event_type)).toContain("rule_drift_detected");
-    expect(events.map((event) => event.event_type)).toContain("baseline_synced");
-  });
+  // v2/rc.2: 2 tests removed here.
+  //
+  // (1) "doctor --fix repairs derived state and leaves manual errors visible"
+  //     — relied on a v1 fixture pattern (createProject + single rule file)
+  //     where rule-meta-builder rebuilt meta from the rules tree. v2 doctor
+  //     --fix takes a different path; equivalent v2 coverage already exists
+  //     via "v2.0: clean post-init repo", "TASK-030 / v2.0: --fix incorporates
+  //     unindexed knowledge files", and "TASK-029: content_ref_missing".
+  //
+  // (2) "doctor --fix does not report fixable drift after rebuilding stale meta"
+  //     — depended on v1.x event types `rule_drift_detected` and
+  //     `baseline_synced` whose rename to `knowledge_drift_detected` /
+  //     deletion is owned by TASK-006. Will be re-added there if the v2
+  //     equivalent surfaces useful coverage.
 
   it("mcp_config_in_wrong_file: detects mcpServers.fabric in .claude/settings.json", async () => {
     const target = createInitializedProject("doctor-mcp-wrong-file-detect");
@@ -328,12 +287,13 @@ describe("runDoctorReport", () => {
   });
 
   it("--fix calls reconcileRules and emits meta_reconciled event", async () => {
-    const target = createProject("doctor-reconcile-fix");
-    writeFile(".fabric/rules/packages/server/rules.md", "<!-- fab:rule-id rules/server -->\n# Server\n\n## [MANDATORY_INJECTION]\nUse services.\n", target);
+    const target = createInitializedProject("doctor-reconcile-fix");
+    // Drop a new knowledge file (not yet indexed) so reconcile must run.
+    writeFile(".fabric/knowledge/guidelines/extra.md", "<!-- fab:rule-id rules/extra -->\n# Extra\n\n## [MANDATORY_INJECTION]\nUse extras.\n", target);
     writeFile(".fabric/events.jsonl", "", target);
 
     const before = await runDoctorReport(target);
-    expect(before.fixable_errors.map((issue) => issue.code)).toContain("agents_meta_missing");
+    expect(before.fixable_errors.map((issue) => issue.code)).toContain("knowledge_dir_unindexed");
 
     await runDoctorFix(target);
 
@@ -380,8 +340,8 @@ describe("runDoctorReport", () => {
     await writeRuleMeta(target, { source: "doctor_fix" });
     writeFile(".fabric/events.jsonl", "", target);
 
-    // Remove the rule file but leave the meta entry intact
-    rmSync(join(target, ".fabric", "rules", "packages", "server", "rules.md"), { force: true });
+    // Remove the knowledge file but leave the meta entry intact
+    rmSync(join(target, ".fabric", "knowledge", "decisions", "server.md"), { force: true });
 
     const report = await runDoctorReport(target);
 
@@ -396,9 +356,9 @@ describe("runDoctorReport", () => {
     await writeRuleMeta(target, { source: "doctor_fix" });
     writeFile(".fabric/events.jsonl", "", target);
 
-    // Overwrite rule file content so hash no longer matches what's in meta
+    // Overwrite knowledge file content so hash no longer matches what's in meta
     writeFileSync(
-      join(target, ".fabric", "rules", "packages", "server", "rules.md"),
+      join(target, ".fabric", "knowledge", "decisions", "server.md"),
       "<!-- fab:rule-id rules/server -->\n# Server\n\n## [MANDATORY_INJECTION]\nHand-edited content.\n",
       "utf8",
     );
@@ -427,9 +387,9 @@ describe("runDoctorReport", () => {
     const target = createProject("doctor-action-hints");
     writeFile("package.json", JSON.stringify({ name: "test", dependencies: { vite: "^7.0.0" } }, null, 2), target);
     writeFile("src/main.ts", "export const boot = true;\n", target);
-    // A rule file with duplicate stable_id to trigger stable_id_collision warning
-    writeFile(".fabric/rules/a.md", "<!-- fab:rule-id dup -->\n# A\n\n## [MANDATORY_INJECTION]\nUse A.\n", target);
-    writeFile(".fabric/rules/b.md", "<!-- fab:rule-id dup -->\n# B\n\n## [MANDATORY_INJECTION]\nUse B.\n", target);
+    // Two knowledge files with duplicate stable_id to trigger stable_id_collision warning
+    writeFile(".fabric/knowledge/decisions/a.md", "<!-- fab:rule-id dup -->\n# A\n\n## [MANDATORY_INJECTION]\nUse A.\n", target);
+    writeFile(".fabric/knowledge/decisions/b.md", "<!-- fab:rule-id dup -->\n# B\n\n## [MANDATORY_INJECTION]\nUse B.\n", target);
 
     const report = await runDoctorReport(target);
     const issueChecks = report.checks.filter((c) => c.kind !== undefined);
@@ -443,27 +403,25 @@ describe("runDoctorReport", () => {
     }
   });
 
-  it("TASK-031: stable_id_collision detected when two rule files declare the same stable_id", async () => {
+  it("TASK-031 / v2: stable_id_collision detected when two knowledge files declare the same v2 frontmatter id", async () => {
     const target = createInitializedProject("doctor-stable-id-collision");
     await writeRuleMeta(target, { source: "doctor_fix" });
     writeFile(".fabric/events.jsonl", "", target);
 
-    // Create a second file with same stable_id as the existing rules/server rule
-    writeFile(
-      ".fabric/rules/packages/ui/rules.md",
-      "<!-- fab:rule-id rules/server -->\n# UI (duplicate id)\n\n## [MANDATORY_INJECTION]\nUse components.\n",
-      target,
-    );
+    // v2: collision detection scans YAML frontmatter `id: K[PT]-XXX-NNNN` only.
+    const fmA = "---\nid: KT-DEC-0001\ntype: decision\nmaturity: draft\nlayer: team\ncreated_at: 2026-05-09T00:00:00Z\n---\n# A\n";
+    const fmB = "---\nid: KT-DEC-0001\ntype: decision\nmaturity: draft\nlayer: team\ncreated_at: 2026-05-09T00:00:00Z\n---\n# B (duplicate id)\n";
+    writeFile(".fabric/knowledge/decisions/a.md", fmA, target);
+    writeFile(".fabric/knowledge/decisions/b.md", fmB, target);
 
     const report = await runDoctorReport(target);
 
     expect(report.warnings.map((w) => w.code)).toContain("stable_id_collision");
     const check = report.checks.find((c) => c.name === "Stable ID collision");
     expect(check?.status).toBe("warn");
-    expect(check?.message).toContain("rules/server");
-    // Both file paths should be named
-    expect(check?.message).toContain("packages/server/rules.md");
-    expect(check?.message).toContain("packages/ui/rules.md");
+    expect(check?.message).toContain("KT-DEC-0001");
+    expect(check?.message).toContain(".fabric/knowledge/decisions/a.md");
+    expect(check?.message).toContain(".fabric/knowledge/decisions/b.md");
   });
 
   it("TASK-031: stable_id_collision not reported when all stable_ids are unique", async () => {
@@ -477,13 +435,13 @@ describe("runDoctorReport", () => {
     expect(report.checks.find((c) => c.name === "Stable ID collision")?.status).toBe("ok");
   });
 
-  it("TASK-030 / v2.0: knowledge_dir_unindexed detected when .md exists in rules tree but not in meta", async () => {
+  it("TASK-030 / v2.0: knowledge_dir_unindexed detected when .md exists in knowledge tree but not in meta", async () => {
     const target = createInitializedProject("doctor-unindexed-detect");
     await writeRuleMeta(target, { source: "doctor_fix" });
     writeFile(".fabric/events.jsonl", "", target);
 
-    // Drop an unindexed rule file (not reconciled into meta)
-    writeFile(".fabric/rules/packages/ui/rules.md", "<!-- fab:rule-id rules/ui -->\n# UI\n\n## [MANDATORY_INJECTION]\nUse components.\n", target);
+    // Drop an unindexed knowledge file (not reconciled into meta)
+    writeFile(".fabric/knowledge/guidelines/ui.md", "<!-- fab:rule-id rules/ui -->\n# UI\n\n## [MANDATORY_INJECTION]\nUse components.\n", target);
 
     const report = await runDoctorReport(target);
 
@@ -491,13 +449,13 @@ describe("runDoctorReport", () => {
     expect(report.checks.find((c) => c.name === "Knowledge dir unindexed")?.status).toBe("error");
   });
 
-  it("TASK-030 / v2.0: --fix incorporates unindexed rule files via reconcileRules", async () => {
+  it("TASK-030 / v2.0: --fix incorporates unindexed knowledge files via reconcileRules", async () => {
     const target = createInitializedProject("doctor-unindexed-fix");
     await writeRuleMeta(target, { source: "doctor_fix" });
     writeFile(".fabric/events.jsonl", "", target);
 
-    // Drop a new rule file that reconcile will pick up
-    writeFile(".fabric/rules/packages/ui/rules.md", "<!-- fab:rule-id rules/ui -->\n# UI\n\n## [MANDATORY_INJECTION]\nUse components.\n", target);
+    // Drop a new knowledge file that reconcile will pick up
+    writeFile(".fabric/knowledge/guidelines/ui.md", "<!-- fab:rule-id rules/ui -->\n# UI\n\n## [MANDATORY_INJECTION]\nUse components.\n", target);
 
     const before = await runDoctorReport(target);
     expect(before.fixable_errors.map((e) => e.code)).toContain("knowledge_dir_unindexed");
@@ -515,9 +473,9 @@ describe("runDoctorReport", () => {
     await writeRuleMeta(target, { source: "doctor_fix" });
     writeFile(".fabric/events.jsonl", "", target);
 
-    // Remove the rule file so its content_ref becomes missing in meta
+    // Remove the knowledge file so its content_ref becomes missing in meta
     const { rmSync: nodeRmSync } = await import("node:fs");
-    nodeRmSync(join(target, ".fabric", "rules", "packages", "server", "rules.md"), { force: true });
+    nodeRmSync(join(target, ".fabric", "knowledge", "decisions", "server.md"), { force: true });
 
     const before = await runDoctorReport(target);
     expect(before.fixable_errors.map((e) => e.code)).toContain("content_ref_missing");
@@ -793,20 +751,10 @@ describe("runDoctorReport", () => {
     expect(existsSync(join(target, ".fabric", "bootstrap", "README.md"))).toBe(false);
   });
 
-  it("v2.0 / TASK-031 regression: stable_id_collision still detected for legacy fab:rule-id markers", async () => {
-    const target = createInitializedProject("doctor-stable-id-collision-regression");
-    await writeRuleMeta(target, { source: "doctor_fix" });
-    writeFile(".fabric/events.jsonl", "", target);
-
-    writeFile(
-      ".fabric/rules/packages/ui/rules.md",
-      "<!-- fab:rule-id rules/server -->\n# UI (duplicate)\n\n## [MANDATORY_INJECTION]\nUse components.\n",
-      target,
-    );
-
-    const report = await runDoctorReport(target);
-    expect(report.warnings.map((w) => w.code)).toContain("stable_id_collision");
-  });
+  // v2/rc.2: "TASK-031 regression: stable_id_collision still detected for
+  // legacy fab:rule-id markers" — removed. v2 stable_id_collision inspection
+  // scans only YAML frontmatter `id:`; the v1.x `<!-- fab:rule-id X -->`
+  // marker is intentionally no longer a collision source.
 
   it("v2.0 / stable_id_collision: detects collisions across knowledge frontmatter ids", async () => {
     const target = createInitializedProject("doctor-stable-id-collision-knowledge");
@@ -842,11 +790,9 @@ function createInitializedProject(name: string): string {
 
   writeFile(".fabric/init-context.json", JSON.stringify({ confirmed: true }, null, 2), target);
   writeFile(".fabric/forensic.json", JSON.stringify(createForensic(target, name), null, 2), target);
-  // Continue to seed a legacy .fabric/rules/ entry so that rule-meta-builder
-  // (still v1-coupled until TASK-003/TASK-004 land) has something to index.
-  // This lets the wider test suite verify reconcile/meta machinery while the
-  // v2.0 doctor checks observe the new repo-root + knowledge layout.
-  writeFile(".fabric/rules/packages/server/rules.md", "<!-- fab:rule-id rules/server -->\n# Server\n\n## [MANDATORY_INJECTION]\nUse services.\n", target);
+  // v2/rc.2: seed a knowledge entry under .fabric/knowledge/ so rule-meta-builder
+  // has something to index. The legacy `.fabric/rules/` tree is no longer scanned.
+  writeFile(".fabric/knowledge/decisions/server.md", "<!-- fab:rule-id rules/server -->\n# Server\n\n## [MANDATORY_INJECTION]\nUse services.\n", target);
   writeFile("packages/server/rules.contract.test.ts", "// @fabric-verify rules/server\nexpect(true).toBe(true);\n", target);
   return target;
 }

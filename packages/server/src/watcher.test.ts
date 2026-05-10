@@ -1,9 +1,12 @@
 /**
- * TASK-024: Tests for the chokidar cache-watcher event handler.
+ * watcher.test.ts — TASK-024 chokidar watcher / Layer 2 P0 review
  *
- * Strategy: test handleCacheWatcherEvent() directly — no real chokidar
- * instance required.  This covers change / add / unlink semantics because
- * createFabricHttpApp() registers the same callback for all three events.
+ * v2/rc.2: tests retargeted from `.fabric/rules/**\/*.md` to
+ * `.fabric/knowledge/**\/*.md` to match the v2 cache-watcher glob.
+ *
+ * Verifies that handleCacheWatcherEvent calls contextCache.invalidate when
+ * a .fabric/knowledge/*.md file changes, so the next MCP call performs a
+ * real I/O scan rather than returning a stale cached-fresh response.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -54,7 +57,7 @@ function emptySessions() {
 // Tests
 // ---------------------------------------------------------------------------
 
-describe("handleCacheWatcherEvent — rules/ paths (TASK-024)", () => {
+describe("handleCacheWatcherEvent — knowledge/ paths (TASK-024, v2)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.useFakeTimers();
@@ -64,9 +67,9 @@ describe("handleCacheWatcherEvent — rules/ paths (TASK-024)", () => {
     vi.useRealTimers();
   });
 
-  it("invalidates cache when a new rule file is added (.add event path)", () => {
+  it("invalidates cache when a new knowledge file is added (.add event path)", () => {
     handleCacheWatcherEvent(
-      ".fabric/rules/foo.md",
+      ".fabric/knowledge/decisions/foo.md",
       PROJECT_ROOT,
       emptySessions() as unknown as Map<string, never>,
       makeTimers(),
@@ -76,9 +79,9 @@ describe("handleCacheWatcherEvent — rules/ paths (TASK-024)", () => {
     expect(contextCache.invalidate).toHaveBeenCalledWith("file_watch", PROJECT_ROOT);
   });
 
-  it("invalidates cache when an existing rule file is edited (.change event path)", () => {
+  it("invalidates cache when an existing knowledge file is edited (.change event path)", () => {
     handleCacheWatcherEvent(
-      ".fabric/rules/nested/bar.md",
+      ".fabric/knowledge/guidelines/nested/bar.md",
       PROJECT_ROOT,
       emptySessions() as unknown as Map<string, never>,
       makeTimers(),
@@ -88,9 +91,9 @@ describe("handleCacheWatcherEvent — rules/ paths (TASK-024)", () => {
     expect(contextCache.invalidate).toHaveBeenCalledWith("file_watch", PROJECT_ROOT);
   });
 
-  it("invalidates cache when a rule file is deleted (.unlink event path)", () => {
+  it("invalidates cache when a knowledge file is deleted (.unlink event path)", () => {
     handleCacheWatcherEvent(
-      ".fabric/rules/deep/nested/baz.md",
+      ".fabric/knowledge/pending/deep/nested/baz.md",
       PROJECT_ROOT,
       emptySessions() as unknown as Map<string, never>,
       makeTimers(),
@@ -100,11 +103,11 @@ describe("handleCacheWatcherEvent — rules/ paths (TASK-024)", () => {
     expect(contextCache.invalidate).toHaveBeenCalledWith("file_watch", PROJECT_ROOT);
   });
 
-  it("does NOT call appendEventLedgerEvent for any rule file event (no ledger writes)", () => {
+  it("does NOT call appendEventLedgerEvent for any knowledge file event (no ledger writes)", () => {
     for (const path of [
-      ".fabric/rules/foo.md",
-      ".fabric/rules/sub/bar.md",
-      ".fabric/rules/deep/nested/baz.md",
+      ".fabric/knowledge/decisions/foo.md",
+      ".fabric/knowledge/guidelines/sub/bar.md",
+      ".fabric/knowledge/pending/deep/nested/baz.md",
     ]) {
       handleCacheWatcherEvent(
         path,
@@ -117,9 +120,9 @@ describe("handleCacheWatcherEvent — rules/ paths (TASK-024)", () => {
     expect(appendEventLedgerEvent).not.toHaveBeenCalled();
   });
 
-  it("also handles Windows-style backslash paths in rules/ correctly", () => {
+  it("also handles Windows-style backslash paths in knowledge/ correctly", () => {
     handleCacheWatcherEvent(
-      ".fabric\\rules\\windows-rule.md",
+      ".fabric\\knowledge\\decisions\\windows-rule.md",
       PROJECT_ROOT,
       emptySessions() as unknown as Map<string, never>,
       makeTimers(),
@@ -128,9 +131,9 @@ describe("handleCacheWatcherEvent — rules/ paths (TASK-024)", () => {
     expect(contextCache.invalidate).toHaveBeenCalledWith("file_watch", PROJECT_ROOT);
   });
 
-  it("does NOT invalidate cache for non-md files in rules/ (path does not match glob)", () => {
+  it("does NOT invalidate cache for non-md files in knowledge/ (path does not match glob)", () => {
     handleCacheWatcherEvent(
-      ".fabric/rules/README.txt",
+      ".fabric/knowledge/decisions/README.txt",
       PROJECT_ROOT,
       emptySessions() as unknown as Map<string, never>,
       makeTimers(),

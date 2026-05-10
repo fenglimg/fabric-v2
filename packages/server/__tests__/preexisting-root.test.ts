@@ -57,7 +57,7 @@ describe("formatPreexistingRootMessage — startup helper (TASK-034)", () => {
     expect(msg).not.toBeNull();
     expect(msg).toContain("CLAUDE.md");
     expect(msg).toContain("[startup] info:");
-    expect(msg).toContain(".fabric/rules/");
+    expect(msg).toContain(".fabric/knowledge/");
   });
 
   it("returns info message when AGENTS.md is present", () => {

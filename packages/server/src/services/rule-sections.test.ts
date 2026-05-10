@@ -406,14 +406,15 @@ async function createSectionProject(options: { extraL1?: boolean } = {}): Promis
   const projectRoot = await mkdtemp(join(tmpdir(), "fabric-rule-sections-"));
   tempDirs.push(projectRoot);
 
-  await mkdir(join(projectRoot, ".fabric", "rules"), { recursive: true });
+  await mkdir(join(projectRoot, ".fabric", "knowledge", "decisions"), { recursive: true });
+  await mkdir(join(projectRoot, ".fabric", "knowledge", "guidelines"), { recursive: true });
   await writeFile(join(projectRoot, ".fabric", "human-lock.json"), `${JSON.stringify({ locked: [] }, null, 2)}\n`);
-  await writeFile(join(projectRoot, ".fabric", "rules", "global.md"), `# Global
+  await writeFile(join(projectRoot, ".fabric", "knowledge", "decisions", "global.md"), `# Global
 
 ## [MANDATORY_INJECTION]
 Global mandatory.
 `);
-  await writeFile(join(projectRoot, ".fabric", "rules", "ui.md"), `# UI
+  await writeFile(join(projectRoot, ".fabric", "knowledge", "guidelines", "ui.md"), `# UI
 
 ## [MANDATORY_INJECTION]
 UI mandatory.
@@ -421,7 +422,7 @@ UI mandatory.
 ## [CONTEXT_INFO]
 UI context.
 `);
-  await writeFile(join(projectRoot, ".fabric", "rules", "battle-view.md"), `# Battle
+  await writeFile(join(projectRoot, ".fabric", "knowledge", "guidelines", "battle-view.md"), `# Battle
 
 ## [MISSION_STATEMENT]
 BattleView owns combat UI lifecycle boundaries.
@@ -440,7 +441,7 @@ BattleView mandatory.
 BattleView context.
 `);
   if (options.extraL1 === true) {
-    await writeFile(join(projectRoot, ".fabric", "rules", "ui-low.md"), `# UI Low
+    await writeFile(join(projectRoot, ".fabric", "knowledge", "guidelines", "ui-low.md"), `# UI Low
 
 ## [MANDATORY_INJECTION]
 UI low mandatory.
@@ -451,12 +452,12 @@ UI low mandatory.
     `${JSON.stringify({
       revision: "rev-sections",
       nodes: {
-        "L0/global": ruleNode("global-protocol", "L0", ".fabric/rules/global.md", "**"),
-        "L1/ui": ruleNode("ui-batch-rendering", "L1", ".fabric/rules/ui.md", "**"),
+        "L0/global": ruleNode("global-protocol", "L0", ".fabric/knowledge/decisions/global.md", "**"),
+        "L1/ui": ruleNode("ui-batch-rendering", "L1", ".fabric/knowledge/guidelines/ui.md", "**"),
         ...(options.extraL1 === true
           ? {
               "L1/ui-low": {
-                ...ruleNode("ui-low-priority", "L1", ".fabric/rules/ui-low.md", "**"),
+                ...ruleNode("ui-low-priority", "L1", ".fabric/knowledge/guidelines/ui-low.md", "**"),
                 priority: "low",
               },
             }
@@ -464,7 +465,7 @@ UI low mandatory.
         "L2/battle-view": ruleNode(
           "battle-view-local",
           "L2",
-          ".fabric/rules/battle-view.md",
+          ".fabric/knowledge/guidelines/battle-view.md",
           "assets/scripts/ui/BattleView.ts",
         ),
       },

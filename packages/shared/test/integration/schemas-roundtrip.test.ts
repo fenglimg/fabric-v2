@@ -116,7 +116,7 @@ describe('I1.3 ledgerEntrySchema round-trip', () => {
 describe('I1.4 ruleTestIndexSchema round-trip', () => {
   const link = {
     rule_stable_id: 'bootstrap',
-    rule_file: '.fabric/rules/root.md',
+    rule_file: '.fabric/knowledge/decisions/root.md',
     rule_hash: 'sha256:rule1',
     test_file: 'test/bootstrap.test.ts',
     test_hash: 'sha256:test1',
@@ -276,7 +276,7 @@ describe('I1.8 eventLedgerEventSchema round-trip', () => {
     roundTrip(eventLedgerEventSchema, {
       ...envelope,
       event_type: 'meta_reconciled',
-      reconciled_files: ['.fabric/rules/root.md'],
+      reconciled_files: ['.fabric/knowledge/decisions/root.md'],
       duration_ms: 50,
       trigger: 'doctor',
       source: 'reconcileRules',
