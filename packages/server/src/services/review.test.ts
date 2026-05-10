@@ -573,4 +573,398 @@ describe("reviewKnowledge", () => {
     expect(ev.until).toBeUndefined();
     expect(ev.reason).toBeUndefined();
   });
+
+  // -------------------------------------------------------------------------
+  // TASK-009: focused branch coverage for rc.3 gate (>=90% lines, >=80% branch)
+  // -------------------------------------------------------------------------
+
+  it("list_applies_layer_maturity_and_tags_filters", async () => {
+    const projectRoot = await createTempProject();
+    // team / draft / [auth]
+    await seedPendingFile(projectRoot, "decisions", "team-auth", {
+      layer: "team",
+      tags: ["auth", "rbac"],
+    });
+    // personal / draft / [routing]
+    await seedPendingFile(projectRoot, "decisions", "personal-route", {
+      layer: "personal",
+      tags: ["routing"],
+    });
+
+    // layer filter narrows to team only
+    const teamOnly = await reviewKnowledge(projectRoot, {
+      action: "list",
+      filters: { layer: "team" },
+    });
+    if (teamOnly.action !== "list") throw new Error("unreachable");
+    expect(teamOnly.items).toHaveLength(1);
+    expect(teamOnly.items[0].layer).toBe("team");
+
+    // tags subset filter — only entries containing both 'auth' and 'rbac'
+    const tagged = await reviewKnowledge(projectRoot, {
+      action: "list",
+      filters: { tags: ["auth", "rbac"] },
+    });
+    if (tagged.action !== "list") throw new Error("unreachable");
+    expect(tagged.items).toHaveLength(1);
+    expect(tagged.items[0].pending_path).toContain("team-auth");
+
+    // maturity filter — none of the seeded files are 'verified'
+    const verified = await reviewKnowledge(projectRoot, {
+      action: "list",
+      filters: { maturity: "verified" },
+    });
+    if (verified.action !== "list") throw new Error("unreachable");
+    expect(verified.items).toHaveLength(0);
+
+    // layer 'both' (string-equal match-all branch)
+    const both = await reviewKnowledge(projectRoot, {
+      action: "list",
+      filters: { layer: "both" },
+    });
+    if (both.action !== "list") throw new Error("unreachable");
+    expect(both.items.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("list_skips_directories_that_do_not_exist", async () => {
+    const projectRoot = await createTempProject();
+    // No pending dir at all → list returns empty.
+    const result = await reviewKnowledge(projectRoot, { action: "list", filters: undefined });
+    if (result.action !== "list") throw new Error("unreachable");
+    expect(result.items).toHaveLength(0);
+  });
+
+  it("approve_emits_promote_failed_when_pending_file_lacks_type_frontmatter", async () => {
+    const projectRoot = await createTempProject();
+    // Write a pending file with no/invalid frontmatter type so approveOne
+    // throws immediately and emits knowledge_promote_failed.
+    const dir = join(projectRoot, ".fabric", "knowledge", "pending", "decisions");
+    await mkdir(dir, { recursive: true });
+    const relativePath = ".fabric/knowledge/pending/decisions/no-type.md";
+    await writeFile(
+      join(projectRoot, relativePath),
+      "---\nmaturity: draft\nlayer: team\n---\n\nbody\n",
+      "utf8",
+    );
+    execFileSync("git", ["add", relativePath], { cwd: projectRoot, stdio: "pipe" });
+    execFileSync("git", ["commit", "--quiet", "-m", "seed: no-type"], {
+      cwd: projectRoot,
+      stdio: "pipe",
+    });
+
+    const result = await reviewKnowledge(projectRoot, {
+      action: "approve",
+      pending_paths: [relativePath],
+    });
+    if (result.action !== "approve") throw new Error("unreachable");
+    expect(result.approved).toHaveLength(0);
+
+    const failedEvents = await readEventLedger(projectRoot, {
+      event_type: "knowledge_promote_failed",
+    });
+    expect(failedEvents.events).toHaveLength(1);
+    expect((failedEvents.events[0] as { reason: string }).reason).toMatch(/invalid 'type'/u);
+  });
+
+  it("approve_personal_layer_uses_fs_unlink_and_writes_under_FABRIC_HOME", async () => {
+    const projectRoot = await createTempProject();
+    const pendingPath = await seedPendingFile(projectRoot, "decisions", "personal-flow", {
+      layer: "personal",
+    });
+
+    const result = await reviewKnowledge(projectRoot, {
+      action: "approve",
+      pending_paths: [pendingPath],
+    });
+    if (result.action !== "approve") throw new Error("unreachable");
+    expect(result.approved).toHaveLength(1);
+    expect(result.approved[0].stable_id).toMatch(/^KP-DEC-\d{4}$/u);
+    expect(existsSync(join(projectRoot, pendingPath))).toBe(false);
+
+    const fakeHome = process.env.FABRIC_HOME!;
+    const personalAbs = join(
+      fakeHome,
+      ".fabric",
+      "knowledge",
+      "decisions",
+      `${result.approved[0].stable_id}--personal-flow.md`,
+    );
+    expect(existsSync(personalAbs)).toBe(true);
+  });
+
+  it("approve_falls_back_to_unlink_when_pending_path_is_not_in_git_index", async () => {
+    // Seed a pending file but DO NOT git-add/commit it. The approve path
+    // should swallow the git rm failure and fall back to fs.unlink.
+    const projectRoot = await createTempProject();
+    const dir = join(projectRoot, ".fabric", "knowledge", "pending", "decisions");
+    await mkdir(dir, { recursive: true });
+    const relativePath = ".fabric/knowledge/pending/decisions/untracked.md";
+    const fm = [
+      "---",
+      "type: decisions",
+      "maturity: draft",
+      "layer: team",
+      `created_at: ${new Date().toISOString()}`,
+      "source_session: sess-untracked",
+      "tags: []",
+      "---",
+      "",
+      "Body.",
+      "",
+    ].join("\n");
+    await writeFile(join(projectRoot, relativePath), fm, "utf8");
+
+    const result = await reviewKnowledge(projectRoot, {
+      action: "approve",
+      pending_paths: [relativePath],
+    });
+    if (result.action !== "approve") throw new Error("unreachable");
+    expect(result.approved).toHaveLength(1);
+    // Source removed via fs.unlink fallback.
+    expect(existsSync(join(projectRoot, relativePath))).toBe(false);
+  });
+
+  it("modify_throws_when_target_does_not_exist", async () => {
+    const projectRoot = await createTempProject();
+    await expect(
+      reviewKnowledge(projectRoot, {
+        action: "modify",
+        pending_path: ".fabric/knowledge/pending/decisions/missing.md",
+        changes: { maturity: "verified" },
+      }),
+    ).rejects.toThrow(/modify target not found/u);
+  });
+
+  it("modify_layer_flip_throws_when_type_cannot_be_inferred", async () => {
+    // Place a file under .fabric/knowledge/ but in a directory whose name is
+    // NOT a known plural type, AND whose frontmatter omits 'type'. The flip
+    // path then has no way to infer pluralType and must throw. The file lives
+    // inside the sandboxed root so resolveSandboxedPath accepts it; the type
+    // inference is what fails.
+    const projectRoot = await createTempProject();
+    const dir = join(projectRoot, ".fabric", "knowledge", "experiments");
+    await mkdir(dir, { recursive: true });
+    const relativePath = ".fabric/knowledge/experiments/no-type-inferable.md";
+    await writeFile(
+      join(projectRoot, relativePath),
+      "---\nmaturity: draft\nlayer: team\n---\n\nbody\n",
+      "utf8",
+    );
+
+    await expect(
+      reviewKnowledge(projectRoot, {
+        action: "modify",
+        pending_path: relativePath,
+        changes: { layer: "personal" },
+      }),
+    ).rejects.toThrow(/layer-flip requires a known type/u);
+  });
+
+  it("modify_inplace_handles_title_summary_quoting_and_preserves_unrelated_keys", async () => {
+    // Title contains a colon → quoteIfNeeded must wrap in double-quotes.
+    const projectRoot = await createTempProject();
+    const pendingPath = await seedPendingFile(projectRoot, "decisions", "quotable");
+
+    await reviewKnowledge(projectRoot, {
+      action: "modify",
+      pending_path: pendingPath,
+      changes: {
+        title: "title with: colon",
+        summary: "plain summary",
+      },
+    });
+
+    const updated = await readFile(join(projectRoot, pendingPath), "utf8");
+    expect(updated).toMatch(/^title: "title with: colon"$/mu);
+    expect(updated).toMatch(/^summary: plain summary$/mu);
+    // unrelated frontmatter (source_session) preserved.
+    expect(updated).toMatch(/^source_session: sess-test$/mu);
+  });
+
+  it("search_includes_personal_canonical_entries_with_home_relative_path", async () => {
+    const projectRoot = await createTempProject();
+    const pendingPath = await seedPendingFile(projectRoot, "decisions", "personal-search", {
+      layer: "personal",
+      tags: ["personal-topic"],
+    });
+    const approve = await reviewKnowledge(projectRoot, {
+      action: "approve",
+      pending_paths: [pendingPath],
+    });
+    if (approve.action !== "approve") throw new Error("unreachable");
+
+    const result = await reviewKnowledge(projectRoot, {
+      action: "search",
+      query: "personal-search",
+      filters: undefined,
+    });
+    if (result.action !== "search") throw new Error("unreachable");
+    const personal = result.items.find((i) => i.pending_path.startsWith("~/"));
+    expect(personal).toBeDefined();
+    expect(personal!.layer).toBe("personal");
+  });
+
+  it("search_filters_by_maturity_excludes_non_matching", async () => {
+    const projectRoot = await createTempProject();
+    await seedPendingFile(projectRoot, "decisions", "draft-only");
+    const result = await reviewKnowledge(projectRoot, {
+      action: "search",
+      query: "draft",
+      filters: { maturity: "verified" },
+    });
+    if (result.action !== "search") throw new Error("unreachable");
+    expect(result.items).toHaveLength(0);
+  });
+
+  // -------------------------------------------------------------------------
+  // TASK-009: Critical path-traversal sandboxing (Gemini review fix)
+  // -------------------------------------------------------------------------
+
+  it("approve_rejects_path_traversal_via_dot_dot", async () => {
+    const projectRoot = await createTempProject();
+    // Plant a real file outside the knowledge tree; approve must NOT touch it.
+    const outsideRel = "secret-outside-knowledge.md";
+    await writeFile(
+      join(projectRoot, outsideRel),
+      "---\ntype: decisions\nlayer: team\n---\nsecret\n",
+      "utf8",
+    );
+
+    // Use a path that resolves outside .fabric/knowledge/pending via ../
+    const evil = ".fabric/knowledge/pending/decisions/../../../" + outsideRel;
+    const result = await reviewKnowledge(projectRoot, {
+      action: "approve",
+      pending_paths: [evil],
+    });
+    if (result.action !== "approve") throw new Error("unreachable");
+    expect(result.approved).toHaveLength(0);
+
+    // The outside file is untouched.
+    expect(existsSync(join(projectRoot, outsideRel))).toBe(true);
+
+    // A failure event captures the rejection.
+    const failedEvents = await readEventLedger(projectRoot, {
+      event_type: "knowledge_promote_failed",
+    });
+    expect(failedEvents.events).toHaveLength(1);
+    expect((failedEvents.events[0] as { reason: string }).reason).toMatch(
+      /escapes knowledge root|outside .fabric\/knowledge\/pending/u,
+    );
+  });
+
+  it("modify_rejects_path_traversal_via_dot_dot", async () => {
+    const projectRoot = await createTempProject();
+    // resolveModifyTarget should return null for traversal paths → modify
+    // throws "modify target not found".
+    await expect(
+      reviewKnowledge(projectRoot, {
+        action: "modify",
+        pending_path: "../../../etc/passwd",
+        changes: { maturity: "verified" },
+      }),
+    ).rejects.toThrow(/modify target not found/u);
+  });
+
+  it("approve_rejects_empty_path", async () => {
+    const projectRoot = await createTempProject();
+    const result = await reviewKnowledge(projectRoot, {
+      action: "approve",
+      pending_paths: [""],
+    });
+    if (result.action !== "approve") throw new Error("unreachable");
+    expect(result.approved).toHaveLength(0);
+    const failedEvents = await readEventLedger(projectRoot, {
+      event_type: "knowledge_promote_failed",
+    });
+    expect(failedEvents.events).toHaveLength(1);
+    expect((failedEvents.events[0] as { reason: string }).reason).toMatch(
+      /path is empty/u,
+    );
+  });
+
+  it("approve_rejects_path_outside_pending_but_inside_knowledge", async () => {
+    // .fabric/knowledge/decisions/foo.md is inside the sandbox but not under
+    // .fabric/knowledge/pending/. approve must reject it.
+    const projectRoot = await createTempProject();
+    const result = await reviewKnowledge(projectRoot, {
+      action: "approve",
+      pending_paths: [".fabric/knowledge/decisions/foo.md"],
+    });
+    if (result.action !== "approve") throw new Error("unreachable");
+    expect(result.approved).toHaveLength(0);
+    const failedEvents = await readEventLedger(projectRoot, {
+      event_type: "knowledge_promote_failed",
+    });
+    expect(failedEvents.events).toHaveLength(1);
+    expect((failedEvents.events[0] as { reason: string }).reason).toMatch(
+      /outside .fabric\/knowledge\/pending\//u,
+    );
+  });
+
+  it("modify_rejects_personal_root_traversal_via_tilde_dot_dot", async () => {
+    // `~/../../etc/passwd` resolves above FABRIC_HOME → sandbox rejects → modify
+    // returns null target → throws "modify target not found".
+    const projectRoot = await createTempProject();
+    await expect(
+      reviewKnowledge(projectRoot, {
+        action: "modify",
+        pending_path: "~/../../etc/passwd",
+        changes: { maturity: "verified" },
+      }),
+    ).rejects.toThrow(/modify target not found/u);
+  });
+
+  it("approve_rejects_personal_root_path", async () => {
+    // approve only operates on project pending paths; a `~/...` path is
+    // rejected explicitly.
+    const projectRoot = await createTempProject();
+    const result = await reviewKnowledge(projectRoot, {
+      action: "approve",
+      pending_paths: ["~/.fabric/knowledge/pending/decisions/never.md"],
+    });
+    if (result.action !== "approve") throw new Error("unreachable");
+    expect(result.approved).toHaveLength(0);
+    const failedEvents = await readEventLedger(projectRoot, {
+      event_type: "knowledge_promote_failed",
+    });
+    expect(failedEvents.events).toHaveLength(1);
+    expect((failedEvents.events[0] as { reason: string }).reason).toMatch(
+      /personal-root path not allowed/u,
+    );
+  });
+
+  it("frontmatter_parser_round_trips_title_and_summary_via_search", async () => {
+    // Emit a title + summary via raw-write so the parser exercises the
+    // case "title" / case "summary" / case "tags" branches that aren't hit by
+    // seedPendingFile (which omits title/summary).
+    const projectRoot = await createTempProject();
+    const dir = join(projectRoot, ".fabric", "knowledge", "pending", "decisions");
+    await mkdir(dir, { recursive: true });
+    const relativePath = ".fabric/knowledge/pending/decisions/with-title.md";
+    const fm = [
+      "---",
+      "type: decisions",
+      "maturity: draft",
+      "layer: team",
+      "title: Hello Title",
+      "summary: A short summary of this entry.",
+      "tags: [coverage, parser]",
+      "---",
+      "",
+      "Body.",
+      "",
+    ].join("\n");
+    await writeFile(join(projectRoot, relativePath), fm, "utf8");
+
+    const result = await reviewKnowledge(projectRoot, {
+      action: "search",
+      query: "hello title",
+      filters: undefined,
+    });
+    if (result.action !== "search") throw new Error("unreachable");
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0].title).toBe("Hello Title");
+    expect(result.items[0].summary).toBe("A short summary of this entry.");
+    expect(result.items[0].tags).toEqual(["coverage", "parser"]);
+  });
 });

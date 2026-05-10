@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { readFile, readdir, unlink } from "node:fs/promises";
 import { homedir } from "node:os";
-import { basename, join, relative } from "node:path";
+import { basename, join, relative, resolve } from "node:path";
 
 import type {
   FabReviewInput,
@@ -116,6 +116,67 @@ export async function reviewKnowledge(
 }
 
 // ---------------------------------------------------------------------------
+// path-sandboxing helpers
+//
+// All caller-supplied `pending_path` / `pending_paths` values are constrained
+// to the knowledge directories under the project root (.fabric/knowledge) or
+// the personal root ($FABRIC_HOME/.fabric/knowledge). This is defense-in-depth
+// against accidental traversal — fab_review is invoked by an MCP-trusted
+// agent, but a stray `../` from a buggy skill prompt should not allow
+// reading/deleting outside the knowledge tree.
+//
+// Returns the resolved absolute path on success; throws on traversal attempts
+// or when the path resolves outside the allowed roots.
+// ---------------------------------------------------------------------------
+
+function resolveSandboxedPath(
+  projectRoot: string,
+  candidate: string,
+  options: { allowPersonal?: boolean } = {},
+): { abs: string; isInProjectTree: boolean } {
+  if (candidate.length === 0) {
+    throw new Error("path is empty");
+  }
+
+  const projectKnowledgeRoot = resolve(projectRoot, ".fabric", "knowledge");
+  const personalKnowledgeRoot = resolve(resolvePersonalRoot(), ".fabric", "knowledge");
+
+  // `~/...` form maps to FABRIC_HOME (only meaningful for modify on canonical
+  // personal entries; approve always operates on pending which is project-local).
+  if (candidate.startsWith("~/")) {
+    if (options.allowPersonal !== true) {
+      throw new Error(`personal-root path not allowed for this action: ${candidate}`);
+    }
+    const abs = resolve(resolvePersonalRoot(), candidate.slice(2));
+    if (abs !== personalKnowledgeRoot && !abs.startsWith(personalKnowledgeRoot + "/")) {
+      throw new Error(`path escapes personal knowledge root: ${candidate}`);
+    }
+    return { abs, isInProjectTree: false };
+  }
+
+  // Project-relative — must resolve under .fabric/knowledge.
+  const projectAbs = resolve(projectRoot, candidate);
+  if (projectAbs === projectKnowledgeRoot || projectAbs.startsWith(projectKnowledgeRoot + "/")) {
+    return { abs: projectAbs, isInProjectTree: true };
+  }
+
+  // Modify allows resolution against personal root for raw paths too (caller
+  // may pass an absolute-looking-but-relative path like `.fabric/knowledge/...`
+  // intended for personal). Try the personal root as a fallback.
+  if (options.allowPersonal === true) {
+    const personalAbs = resolve(resolvePersonalRoot(), candidate);
+    if (
+      personalAbs === personalKnowledgeRoot ||
+      personalAbs.startsWith(personalKnowledgeRoot + "/")
+    ) {
+      return { abs: personalAbs, isInProjectTree: false };
+    }
+  }
+
+  throw new Error(`path escapes knowledge root: ${candidate}`);
+}
+
+// ---------------------------------------------------------------------------
 // list action
 // ---------------------------------------------------------------------------
 
@@ -223,7 +284,27 @@ async function approveOne(
   pendingPath: string,
   allocator: KnowledgeIdAllocator,
 ): Promise<{ pending_path: string; stable_id: string } | null> {
-  const sourceAbs = join(projectRoot, pendingPath);
+  // Defense-in-depth: confine the caller-supplied pending path to the project
+  // pending tree. Approve only operates on .fabric/knowledge/pending/<type>/.
+  // resolveSandboxedPath without allowPersonal rejects `~/...` paths, so any
+  // accepted result here is in the project tree by construction.
+  let sourceAbs: string;
+  try {
+    const sandboxed = resolveSandboxedPath(projectRoot, pendingPath);
+    const pendingRootAbs = resolve(projectRoot, PENDING_BASE);
+    if (sandboxed.abs !== pendingRootAbs && !sandboxed.abs.startsWith(pendingRootAbs + "/")) {
+      throw new Error(`approve path is outside .fabric/knowledge/pending/: ${pendingPath}`);
+    }
+    sourceAbs = sandboxed.abs;
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    await emitEventBestEffort(projectRoot, {
+      event_type: "knowledge_promote_failed",
+      timestamp: new Date().toISOString(),
+      reason: `approve:${pendingPath}: ${reason}`,
+    });
+    return null;
+  }
   const slug = basename(pendingPath).replace(/\.md$/u, "");
 
   // Phase 1: signal we're starting. Emitted before any allocator/IO mutation
@@ -423,26 +504,21 @@ function resolveModifyTarget(
   projectRoot: string,
   pendingPath: string,
 ): ResolvedTarget | null {
-  // Try project-relative first (handles pending and team-canonical paths).
-  const projectAbs = join(projectRoot, pendingPath);
-  if (existsSync(projectAbs)) {
-    return {
-      absPath: projectAbs,
-      isInProjectTree: true,
-      inferredType: inferTypeFromPath(pendingPath),
-      slug: extractSlug(pendingPath),
-    };
+  // Defense-in-depth: constrain caller-supplied path to the knowledge roots
+  // (project's .fabric/knowledge/ or personal root .fabric/knowledge/). Reject
+  // traversal attempts. modify accepts both project-tree and personal-canonical
+  // entries, so allowPersonal=true.
+  let sandboxed: { abs: string; isInProjectTree: boolean };
+  try {
+    sandboxed = resolveSandboxedPath(projectRoot, pendingPath, { allowPersonal: true });
+  } catch {
+    return null;
   }
 
-  // Personal canonical — caller may pass a `~/.fabric/...`-style path or a
-  // raw path under FABRIC_HOME. Try resolving against the personal root.
-  const personalAbs = pendingPath.startsWith("~/")
-    ? join(resolvePersonalRoot(), pendingPath.slice(2))
-    : join(resolvePersonalRoot(), pendingPath);
-  if (existsSync(personalAbs)) {
+  if (existsSync(sandboxed.abs)) {
     return {
-      absPath: personalAbs,
-      isInProjectTree: false,
+      absPath: sandboxed.abs,
+      isInProjectTree: sandboxed.isInProjectTree,
       inferredType: inferTypeFromPath(pendingPath),
       slug: extractSlug(pendingPath),
     };

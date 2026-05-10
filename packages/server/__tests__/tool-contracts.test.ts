@@ -13,6 +13,12 @@ import { describe, expect, it } from "vitest";
 import { zodToJsonSchema } from "zod-to-json-schema";
 
 import {
+  FabExtractKnowledgeInputSchema,
+  FabExtractKnowledgeOutputSchema,
+  FabReviewInputSchema,
+  FabReviewOutputSchema,
+  fabExtractKnowledgeAnnotations,
+  fabReviewAnnotations,
   getRulesAnnotations,
   getRulesInputSchema,
   getRulesOutputSchema,
@@ -51,6 +57,16 @@ const contracts: Record<string, ToolContract> = {
     inputSchema: zodToJsonSchema(ruleSectionsInputSchema),
     outputSchema: zodToJsonSchema(ruleSectionsOutputSchema),
     annotations: ruleSectionsAnnotations,
+  },
+  "fab-extract-knowledge": {
+    inputSchema: zodToJsonSchema(FabExtractKnowledgeInputSchema),
+    outputSchema: zodToJsonSchema(FabExtractKnowledgeOutputSchema),
+    annotations: fabExtractKnowledgeAnnotations,
+  },
+  "fab-review": {
+    inputSchema: zodToJsonSchema(FabReviewInputSchema),
+    outputSchema: zodToJsonSchema(FabReviewOutputSchema),
+    annotations: fabReviewAnnotations,
   },
 };
 
