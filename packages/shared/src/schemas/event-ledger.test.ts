@@ -111,6 +111,103 @@ describe("eventLedgerEventSchema", () => {
     ).toThrow();
   });
 
+  it("parses every pre-registered knowledge.* lifecycle event (TASK-004 grill-followup)", () => {
+    const base = {
+      kind: "fabric-event" as const,
+      id: "event:test",
+      ts: 1_000,
+      schema_version: 1 as const,
+    };
+    const ts = "2026-05-10T12:00:00.000Z";
+    const events = [
+      { ...base, event_type: "knowledge_proposed", stable_id: "KT-D-0001", timestamp: ts },
+      { ...base, event_type: "knowledge_promote_started", stable_id: "KT-D-0001", timestamp: ts },
+      { ...base, event_type: "knowledge_promoted", stable_id: "KT-D-0001", timestamp: ts },
+      {
+        ...base,
+        event_type: "knowledge_promote_failed",
+        stable_id: "KT-D-0001",
+        timestamp: ts,
+        reason: "fsync_failed",
+      },
+      {
+        ...base,
+        event_type: "knowledge_layer_changed",
+        stable_id: "KT-D-0001",
+        timestamp: ts,
+        from_layer: "team",
+        to_layer: "personal",
+      },
+      {
+        ...base,
+        event_type: "knowledge_slug_renamed",
+        stable_id: "KT-D-0001",
+        timestamp: ts,
+        from_slug: "old-slug",
+        to_slug: "new-slug",
+      },
+      { ...base, event_type: "knowledge_demoted", stable_id: "KT-D-0001", timestamp: ts },
+      { ...base, event_type: "knowledge_archived", stable_id: "KT-D-0001", timestamp: ts },
+      { ...base, event_type: "knowledge_archive_attempted", stable_id: "KT-D-0001", timestamp: ts },
+      {
+        ...base,
+        event_type: "knowledge_deferred",
+        stable_id: "KT-D-0001",
+        timestamp: ts,
+        until: "2026-06-01T00:00:00.000Z",
+      },
+      {
+        ...base,
+        event_type: "knowledge_rejected",
+        stable_id: "KT-D-0001",
+        timestamp: ts,
+        reason: "duplicate",
+      },
+    ];
+
+    const parsedTypes = events.map((event) => eventLedgerEventSchema.parse(event).event_type);
+
+    expect(parsedTypes).toEqual<EventLedgerEventType[]>([
+      "knowledge_proposed",
+      "knowledge_promote_started",
+      "knowledge_promoted",
+      "knowledge_promote_failed",
+      "knowledge_layer_changed",
+      "knowledge_slug_renamed",
+      "knowledge_demoted",
+      "knowledge_archived",
+      "knowledge_archive_attempted",
+      "knowledge_deferred",
+      "knowledge_rejected",
+    ]);
+  });
+
+  it("requires reason on knowledge_promote_failed and knowledge_rejected (mandatory field)", () => {
+    const base = {
+      kind: "fabric-event" as const,
+      id: "event:test",
+      ts: 1_000,
+      schema_version: 1 as const,
+    };
+    const ts = "2026-05-10T12:00:00.000Z";
+    expect(() =>
+      eventLedgerEventSchema.parse({
+        ...base,
+        event_type: "knowledge_promote_failed",
+        stable_id: "KT-D-0001",
+        timestamp: ts,
+      }),
+    ).toThrow();
+    expect(() =>
+      eventLedgerEventSchema.parse({
+        ...base,
+        event_type: "knowledge_rejected",
+        stable_id: "KT-D-0001",
+        timestamp: ts,
+      }),
+    ).toThrow();
+  });
+
   it("rejects deleted v1 event types (rule_baseline_accepted, baseline_synced, legacy_client_path_present)", () => {
     const base = {
       kind: "fabric-event",

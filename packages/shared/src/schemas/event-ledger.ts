@@ -164,6 +164,108 @@ export const initScanCompletedEventSchema = z.object({
   source: z.enum(["init", "scan", "doctor_fix"]).optional(),
 });
 
+// v2.0 rc.2 grill-followup TASK-004: pre-register 11 knowledge.* lifecycle event
+// variants. Each is a minimal payload skeleton that locks vocabulary BEFORE rc.2/3/4
+// emit-site implementation. Payload details (beyond stable_id/timestamp/reason and the
+// few field constraints below) will be filled when each emit site lands.
+//
+// Lifecycle group: proposed → promote_started → promoted | promote_failed
+// Layer/slug group: layer_changed, slug_renamed
+// Maturity/archive group: demoted, archived, archive_attempted
+// Review group: deferred, rejected
+export const knowledgeProposedEventSchema = z.object({
+  ...eventLedgerEnvelopeSchema,
+  event_type: z.literal("knowledge_proposed"),
+  stable_id: z.string().optional(),
+  timestamp: z.string().datetime(),
+  reason: z.string().optional(),
+});
+
+export const knowledgePromoteStartedEventSchema = z.object({
+  ...eventLedgerEnvelopeSchema,
+  event_type: z.literal("knowledge_promote_started"),
+  stable_id: z.string().optional(),
+  timestamp: z.string().datetime(),
+  reason: z.string().optional(),
+});
+
+export const knowledgePromotedEventSchema = z.object({
+  ...eventLedgerEnvelopeSchema,
+  event_type: z.literal("knowledge_promoted"),
+  stable_id: z.string().optional(),
+  timestamp: z.string().datetime(),
+  reason: z.string().optional(),
+});
+
+export const knowledgePromoteFailedEventSchema = z.object({
+  ...eventLedgerEnvelopeSchema,
+  event_type: z.literal("knowledge_promote_failed"),
+  stable_id: z.string().optional(),
+  timestamp: z.string().datetime(),
+  reason: z.string(),
+});
+
+export const knowledgeLayerChangedEventSchema = z.object({
+  ...eventLedgerEnvelopeSchema,
+  event_type: z.literal("knowledge_layer_changed"),
+  stable_id: z.string().optional(),
+  timestamp: z.string().datetime(),
+  reason: z.string().optional(),
+  from_layer: z.enum(["team", "personal"]),
+  to_layer: z.enum(["team", "personal"]),
+});
+
+export const knowledgeSlugRenamedEventSchema = z.object({
+  ...eventLedgerEnvelopeSchema,
+  event_type: z.literal("knowledge_slug_renamed"),
+  stable_id: z.string().optional(),
+  timestamp: z.string().datetime(),
+  reason: z.string().optional(),
+  from_slug: z.string(),
+  to_slug: z.string(),
+});
+
+export const knowledgeDemotedEventSchema = z.object({
+  ...eventLedgerEnvelopeSchema,
+  event_type: z.literal("knowledge_demoted"),
+  stable_id: z.string().optional(),
+  timestamp: z.string().datetime(),
+  reason: z.string().optional(),
+});
+
+export const knowledgeArchivedEventSchema = z.object({
+  ...eventLedgerEnvelopeSchema,
+  event_type: z.literal("knowledge_archived"),
+  stable_id: z.string().optional(),
+  timestamp: z.string().datetime(),
+  reason: z.string().optional(),
+});
+
+export const knowledgeArchiveAttemptedEventSchema = z.object({
+  ...eventLedgerEnvelopeSchema,
+  event_type: z.literal("knowledge_archive_attempted"),
+  stable_id: z.string().optional(),
+  timestamp: z.string().datetime(),
+  reason: z.string().optional(),
+});
+
+export const knowledgeDeferredEventSchema = z.object({
+  ...eventLedgerEnvelopeSchema,
+  event_type: z.literal("knowledge_deferred"),
+  stable_id: z.string().optional(),
+  timestamp: z.string().datetime(),
+  reason: z.string().optional(),
+  until: z.string().datetime().optional(),
+});
+
+export const knowledgeRejectedEventSchema = z.object({
+  ...eventLedgerEnvelopeSchema,
+  event_type: z.literal("knowledge_rejected"),
+  stable_id: z.string().optional(),
+  timestamp: z.string().datetime(),
+  reason: z.string(),
+});
+
 export const eventLedgerEventSchema = z.discriminatedUnion("event_type", [
   knowledgeContextPlannedEventSchema,
   knowledgeSelectionEventSchema,
@@ -180,6 +282,18 @@ export const eventLedgerEventSchema = z.discriminatedUnion("event_type", [
   claudeHookPathMigratedEventSchema,
   codexSkillPathMigratedEventSchema,
   initScanCompletedEventSchema,
+  // v2.0 rc.2 grill-followup TASK-004: knowledge.* lifecycle pre-registration
+  knowledgeProposedEventSchema,
+  knowledgePromoteStartedEventSchema,
+  knowledgePromotedEventSchema,
+  knowledgePromoteFailedEventSchema,
+  knowledgeLayerChangedEventSchema,
+  knowledgeSlugRenamedEventSchema,
+  knowledgeDemotedEventSchema,
+  knowledgeArchivedEventSchema,
+  knowledgeArchiveAttemptedEventSchema,
+  knowledgeDeferredEventSchema,
+  knowledgeRejectedEventSchema,
 ]);
 
 export type KnowledgeContextPlannedEvent = z.infer<typeof knowledgeContextPlannedEventSchema>;
@@ -197,6 +311,17 @@ export type ClaudeSkillPathMigratedEvent = z.infer<typeof claudeSkillPathMigrate
 export type ClaudeHookPathMigratedEvent = z.infer<typeof claudeHookPathMigratedEventSchema>;
 export type CodexSkillPathMigratedEvent = z.infer<typeof codexSkillPathMigratedEventSchema>;
 export type InitScanCompletedEvent = z.infer<typeof initScanCompletedEventSchema>;
+export type KnowledgeProposedEvent = z.infer<typeof knowledgeProposedEventSchema>;
+export type KnowledgePromoteStartedEvent = z.infer<typeof knowledgePromoteStartedEventSchema>;
+export type KnowledgePromotedEvent = z.infer<typeof knowledgePromotedEventSchema>;
+export type KnowledgePromoteFailedEvent = z.infer<typeof knowledgePromoteFailedEventSchema>;
+export type KnowledgeLayerChangedEvent = z.infer<typeof knowledgeLayerChangedEventSchema>;
+export type KnowledgeSlugRenamedEvent = z.infer<typeof knowledgeSlugRenamedEventSchema>;
+export type KnowledgeDemotedEvent = z.infer<typeof knowledgeDemotedEventSchema>;
+export type KnowledgeArchivedEvent = z.infer<typeof knowledgeArchivedEventSchema>;
+export type KnowledgeArchiveAttemptedEvent = z.infer<typeof knowledgeArchiveAttemptedEventSchema>;
+export type KnowledgeDeferredEvent = z.infer<typeof knowledgeDeferredEventSchema>;
+export type KnowledgeRejectedEvent = z.infer<typeof knowledgeRejectedEventSchema>;
 export type EventLedgerEvent =
   | KnowledgeContextPlannedEvent
   | KnowledgeSelectionEvent
@@ -212,7 +337,18 @@ export type EventLedgerEvent =
   | ClaudeSkillPathMigratedEvent
   | ClaudeHookPathMigratedEvent
   | CodexSkillPathMigratedEvent
-  | InitScanCompletedEvent;
+  | InitScanCompletedEvent
+  | KnowledgeProposedEvent
+  | KnowledgePromoteStartedEvent
+  | KnowledgePromotedEvent
+  | KnowledgePromoteFailedEvent
+  | KnowledgeLayerChangedEvent
+  | KnowledgeSlugRenamedEvent
+  | KnowledgeDemotedEvent
+  | KnowledgeArchivedEvent
+  | KnowledgeArchiveAttemptedEvent
+  | KnowledgeDeferredEvent
+  | KnowledgeRejectedEvent;
 export type EventLedgerEventType = EventLedgerEvent["event_type"];
 type EventLedgerEventInputFor<T extends EventLedgerEvent> = T extends EventLedgerEvent
   ? Omit<T, "kind" | "id" | "ts" | "schema_version" | "correlation_id" | "session_id"> &
