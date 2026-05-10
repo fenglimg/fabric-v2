@@ -5,10 +5,97 @@ All notable changes to Fabric will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.0.0] — 2026-05-10
 
-Pending v2.0.0 final release after TASK-010 final gate. The v2.0.0 entry is
-finalized in TASK-010 (stable signal + upgrade-from-v1.x guidance).
+**Major release.** Knowledge sustainment protocol — a clean break from the
+v1.x AGENTS.md/rules sync paradigm. Cross-client (Claude Code / Cursor /
+Codex CLI) MCP-first protocol for capturing, reviewing, and sustaining
+project knowledge as living artifacts under `.fabric/knowledge/`.
+
+### Headline deliverables (aggregated rc.1 → rc.4)
+
+- **MCP tools (4)**: `fab_plan_context`, `fab_get_rule_sections`,
+  `fab_extract_knowledge` (rc.2), `fab_review` (rc.3 — 6 actions: list,
+  approve, reject, modify, search, defer).
+- **Skills (3)**: `fabric-archive` (rc.2 — 5-type extraction), `fabric-review`
+  (rc.3 — mode inference), `fabric-import` (rc.4 — 3-phase pipeline with
+  `.import-state.json` checkpoint for resumable cold-start enrichment).
+- **Stop hooks**: Claude Code + Codex CLI (`archive-hint.cjs`, single .cjs
+  serves both clients via identical `{decision:"block",reason:"..."}` JSON
+  contract). Cursor: skills only (no Stop-hook surface as of 2026-05;
+  tracked in v2.1 roadmap).
+- **`fabric doctor`**: 21 deterministic checks (rc.4 added 6: `orphan_demote`,
+  `stale_archive`, `pending_overdue`, `stable_id_duplicate`, `layer_mismatch`,
+  `index_drift`) plus `--apply-lint` mutations (orphan-demote rewrite,
+  stale-archive `fs.rename`, index-drift counter sync). All apply-lint
+  mutations now roll back the filesystem change if the audit-trail event
+  ledger append fails (TASK-010 Gemini-review HIGH fix).
+- **Schema**: 5 knowledge types (decisions / pitfalls / guidelines / models /
+  processes) × 3 maturity tiers (draft / endorsed / stable) × 2 layers
+  (personal / team). Path-decoupled `stable_id`: `K[PT]-(MOD|DEC|GLD|PIT|PRO)-NNNN`
+  with monotonic counter envelope in `agents.meta.json`.
+- **Storage**: dual-root layout — personal at `~/.fabric/`, team at
+  `<repo>/.fabric/`. v2 frontmatter is 7 flat scalar fields
+  (`id`, `type`, `maturity`, `layer`, `layer_reason`, `created_at`, `tags`).
+- **Lifecycle**: `propose → review → promote → demote → archive` with full
+  audit trail in `events.jsonl` (15 typed event shapes). Server-side
+  primitives ensure atomic 5-step approve flow with rollback at each step.
+- **Hardening**: path-traversal sandbox in `fab_review.{approve,modify}`
+  (rc.3 Critical fix); multiline-safe YAML frontmatter writer (rc.4);
+  slug-prefix collision detection in `fab_extract_knowledge` (rc.4);
+  rollback-on-ledger-failure in apply-lint mutations (rc.4 Gemini fix).
+
+### Migration from v1.x
+
+**Clean break — no migration path provided.** Fabric had zero users at the
+v2.0.0 release point (per planning decision in MEMORY.md
+`feedback_clean_slate`). v1.x repositories should be re-initialized; the
+v1 `.fabric/rules/` layout is incompatible with the v2 `knowledge/`
+schema. v1.x users should:
+
+1. Back up any handcrafted `.fabric/rules/*.md` content.
+2. Delete the v1 `.fabric/` directory.
+3. Run `fabric init` (v2.0.0) — produces a v2 `.fabric/knowledge/` skeleton.
+4. Use the new `fabric-import` Skill (rc.4) to mine prior project artifacts
+   (`git log`, `docs/*.md`) into v2 pending knowledge entries.
+5. Use `fabric-review` Skill to triage pending entries into the canonical
+   knowledge tree.
+
+### Fixed (rc.4 final-gate Gemini review)
+
+- **Audit-trail rollback in apply-lint mutations.** When
+  `appendEventLedgerEvent` fails after a successful filesystem mutation
+  (`atomicWriteText` for orphan-demote, `fs.rename` for stale-archive),
+  the mutation is now rolled back to keep canonical disk state in sync
+  with the (absent) ledger entry. Best-effort rollback: if the rollback
+  itself fails (extremely rare double-failure), the resulting error
+  message names both faults so the user can recover manually. Surfaces as
+  `applied: false` with descriptive `error` field on the mutation report.
+
+### Acknowledged tradeoffs
+
+- `filesystem-edit-fallback` (rc.3 doctor check #15) synthesizes a fresh
+  `knowledge_promoted` event for canonical files lacking provenance in the
+  ledger. This zeros out lint age on first observation, so manually
+  written canonical files do not register as orphan-demote candidates
+  until they accumulate inactivity from the synthesis point. Documented
+  in `docs/initialization.md`. Workaround: emit a backdated
+  `knowledge_promoted` event before manual writes (rc.4 dogfood pattern).
+- `fabric doctor --apply-lint` and `--fix` share a single CLI exit code.
+  When `--apply-lint` finishes successfully but `agents_meta_stale` /
+  `knowledge_dir_unindexed` (owned by `--fix`) still register as fixable
+  errors, the resulting non-zero exit can read as "apply-lint failed".
+  Distinct exit codes deferred to v2.0.x per Q5 release-scope decision.
+
+### Out of scope for v2.0.0 (deferred to v2.1)
+
+- Cursor Stop-hook surface (Cursor adds Stop hooks in a future release).
+- API rename `fab_review.modify.pending_path` → `target_path` (current name
+  leaks `pending/` implementation detail; stable for v2.0).
+- `knowledge_layer_change_started` paired event (crash-recovery tracking
+  for layer flips; current `knowledge_layer_changed` is point-in-time only).
+- Schema unlocks (current `api-contracts.ts` / `event-ledger.ts` are
+  pre-locked at the rc.1 freeze point).
 
 ## [2.0.0-rc.4] — 2026-05-10
 

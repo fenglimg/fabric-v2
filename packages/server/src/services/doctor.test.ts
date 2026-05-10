@@ -1961,6 +1961,134 @@ describe("runDoctorReport", () => {
       expect(archived).toHaveLength(0);
     });
   });
+
+  // rc.4 TASK-010 (Gemini-review HIGH fix): rollback when ledger append fails
+  // after a filesystem mutation. We simulate ledger-append failure by replacing
+  // .fabric/events.jsonl with a directory at the same path (ledgerQueue.append
+  // attempts a writeFile against this path which fails with EISDIR).
+  describe("rc.4 TASK-010: apply-lint rollback on ledger-append failure", () => {
+    const NOW_MS = Date.now();
+    const dayMs = 24 * 60 * 60 * 1000;
+    const ageDaysAgoIso = (days: number): string =>
+      new Date(NOW_MS - days * dayMs).toISOString();
+
+    function appendRawEvent(target: string, event: Record<string, unknown>): void {
+      const path = join(target, ".fabric", "events.jsonl");
+      const existing = existsSync(path) ? readFileSync(path, "utf8") : "";
+      const line = JSON.stringify(event);
+      writeFileSync(
+        path,
+        existing.length === 0 || existing.endsWith("\n")
+          ? `${existing}${line}\n`
+          : `${existing}\n${line}\n`,
+        "utf8",
+      );
+    }
+
+    function seedCanonical(
+      target: string,
+      relPath: string,
+      stableId: string,
+      maturity: "stable" | "endorsed" | "draft",
+      createdDaysAgo: number,
+    ): void {
+      const fm = `---\nid: ${stableId}\ntype: decision\nmaturity: ${maturity}\nlayer: team\ncreated_at: ${ageDaysAgoIso(createdDaysAgo)}\n---\n# ${stableId}\nBody.\n`;
+      writeFile(relPath, fm, target);
+      appendRawEvent(target, {
+        kind: "fabric-event",
+        id: `event:seed-${stableId}-promoted`,
+        ts: NOW_MS - createdDaysAgo * dayMs,
+        schema_version: 1,
+        event_type: "knowledge_promoted",
+        stable_id: stableId,
+        timestamp: ageDaysAgoIso(createdDaysAgo),
+        reason: "test:seed",
+      });
+    }
+
+    /**
+     * Replaces the events.jsonl file with a directory of the same name, then
+     * runs apply-lint. Any code path that calls appendEventLedgerEvent will
+     * fail (writeFile against a directory throws EISDIR). After the test, the
+     * tearDown restores the path so subsequent reads do not pollute.
+     */
+    function poisonLedger(target: string): void {
+      const ledgerPath = join(target, ".fabric", "events.jsonl");
+      // Save existing contents to a sibling, replace with directory.
+      const saved = existsSync(ledgerPath) ? readFileSync(ledgerPath, "utf8") : "";
+      writeFileSync(join(target, ".fabric", ".events.saved"), saved, "utf8");
+      rmSync(ledgerPath, { force: true });
+      mkdirSync(ledgerPath, { recursive: false });
+    }
+
+    async function runApplyLint(target: string) {
+      const { runDoctorApplyLint } = await import("./doctor.js");
+      return runDoctorApplyLint(target);
+    }
+
+    it("orphan_demote: rolls back frontmatter rewrite when ledger append fails", async () => {
+      const target = createInitializedProject("doctor-rc4-rollback-orphan");
+      await writeRuleMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+
+      const filePath = ".fabric/knowledge/decisions/KT-DEC-1500--ancient-stable.md";
+      seedCanonical(target, filePath, "KT-DEC-1500", "stable", 100);
+
+      const beforeSource = readFileSync(join(target, filePath), "utf8");
+      expect(beforeSource).toContain("maturity: stable");
+
+      // Replace events.jsonl with a directory to trigger append failure.
+      poisonLedger(target);
+
+      const result = await runApplyLint(target);
+
+      // The orphan-demote mutation should report applied=false with a
+      // ledger-append error, AND the file content should be byte-identical
+      // to the pre-mutation state (rolled back).
+      const orphanMutation = result.mutations.find(
+        (m) => m.kind === "knowledge_orphan_demote_required",
+      );
+      expect(orphanMutation).toBeDefined();
+      expect(orphanMutation?.applied).toBe(false);
+      expect(orphanMutation?.error).toMatch(/ledger append failed/);
+      expect(orphanMutation?.error).toMatch(/rolled back/);
+
+      const afterSource = readFileSync(join(target, filePath), "utf8");
+      expect(afterSource).toBe(beforeSource);
+      expect(afterSource).toContain("maturity: stable");
+      expect(afterSource).not.toContain("maturity: endorsed");
+    });
+
+    it("stale_archive: rolls back rename when ledger append fails", async () => {
+      const target = createInitializedProject("doctor-rc4-rollback-stale");
+      await writeRuleMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+
+      const filePath = ".fabric/knowledge/decisions/KT-DEC-1501--ancient-draft.md";
+      const archivePath = ".fabric/.archive/decisions/KT-DEC-1501--ancient-draft.md";
+      seedCanonical(target, filePath, "KT-DEC-1501", "draft", 110);
+
+      expect(existsSync(join(target, filePath))).toBe(true);
+      expect(existsSync(join(target, archivePath))).toBe(false);
+
+      poisonLedger(target);
+
+      const result = await runApplyLint(target);
+
+      const archiveMutation = result.mutations.find(
+        (m) => m.kind === "knowledge_stale_archive_required",
+      );
+      expect(archiveMutation).toBeDefined();
+      expect(archiveMutation?.applied).toBe(false);
+      expect(archiveMutation?.error).toMatch(/ledger append failed/);
+      expect(archiveMutation?.error).toMatch(/rolled back/);
+
+      // The canonical file should still be at its original location AND not
+      // stranded at the archive path.
+      expect(existsSync(join(target, filePath))).toBe(true);
+      expect(existsSync(join(target, archivePath))).toBe(false);
+    });
+  });
 });
 
 function createInitializedProject(name: string): string {

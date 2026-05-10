@@ -882,12 +882,39 @@ async function applyOrphanDemote(
       };
     }
     await atomicWriteText(absPath, rewritten);
-    await appendEventLedgerEvent(projectRoot, {
-      event_type: "knowledge_demoted",
-      stable_id: candidate.stable_id,
-      timestamp: new Date(now).toISOString(),
-      reason: `lint:orphan_demote ${candidate.maturity}->${next} after ${candidate.age_days}d inactive`,
-    });
+    // Audit-trail invariant: if the event-ledger append fails AFTER the
+    // frontmatter rewrite has hit disk, roll the file back to its pre-mutation
+    // contents so the canonical state matches the (absent) event entry. This
+    // is best-effort — if the rollback ALSO fails we surface both errors but
+    // disk state may genuinely be inconsistent (extremely rare; would require
+    // disk failure between two sequential atomic writes).
+    try {
+      await appendEventLedgerEvent(projectRoot, {
+        event_type: "knowledge_demoted",
+        stable_id: candidate.stable_id,
+        timestamp: new Date(now).toISOString(),
+        reason: `lint:orphan_demote ${candidate.maturity}->${next} after ${candidate.age_days}d inactive`,
+      });
+    } catch (ledgerError) {
+      try {
+        await atomicWriteText(absPath, source);
+      } catch (rollbackError) {
+        return {
+          kind: "knowledge_orphan_demote_required",
+          path: candidate.path,
+          detail,
+          applied: false,
+          error: `ledger append failed (${truncateErrorMessage(ledgerError)}); rollback also failed (${truncateErrorMessage(rollbackError)}); disk may be in inconsistent state`,
+        };
+      }
+      return {
+        kind: "knowledge_orphan_demote_required",
+        path: candidate.path,
+        detail,
+        applied: false,
+        error: `ledger append failed (${truncateErrorMessage(ledgerError)}); frontmatter rolled back`,
+      };
+    }
     return {
       kind: "knowledge_orphan_demote_required",
       path: candidate.path,
@@ -935,12 +962,36 @@ async function applyStaleArchive(
         throw renameError;
       }
     }
-    await appendEventLedgerEvent(projectRoot, {
-      event_type: "knowledge_archived",
-      stable_id: candidate.stable_id,
-      timestamp: new Date(now).toISOString(),
-      reason: `lint:stale_archive ${candidate.path} -> ${candidate.archive_path} after ${candidate.age_days}d inactive`,
-    });
+    // Audit-trail invariant: if the event-ledger append fails AFTER the
+    // archive rename, roll the file back to its canonical location so disk
+    // state matches the (absent) event. Best-effort rollback.
+    try {
+      await appendEventLedgerEvent(projectRoot, {
+        event_type: "knowledge_archived",
+        stable_id: candidate.stable_id,
+        timestamp: new Date(now).toISOString(),
+        reason: `lint:stale_archive ${candidate.path} -> ${candidate.archive_path} after ${candidate.age_days}d inactive`,
+      });
+    } catch (ledgerError) {
+      try {
+        await rename(destAbs, sourceAbs);
+      } catch (rollbackError) {
+        return {
+          kind: "knowledge_stale_archive_required",
+          path: candidate.path,
+          detail,
+          applied: false,
+          error: `ledger append failed (${truncateErrorMessage(ledgerError)}); rollback also failed (${truncateErrorMessage(rollbackError)}); file may be stranded at ${candidate.archive_path}`,
+        };
+      }
+      return {
+        kind: "knowledge_stale_archive_required",
+        path: candidate.path,
+        detail,
+        applied: false,
+        error: `ledger append failed (${truncateErrorMessage(ledgerError)}); archive rolled back`,
+      };
+    }
     return {
       kind: "knowledge_stale_archive_required",
       path: candidate.path,
