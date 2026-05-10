@@ -206,12 +206,11 @@ export async function runInitScan(
   await ensureParentDirectory(sidecarPath);
   await atomicWriteJson(sidecarPath, sidecar);
 
-  // Refresh agents.meta.json. As of v2.0 (TASK-005) writeRuleMeta walks BOTH
-  // .fabric/rules/ (legacy) and .fabric/knowledge/ (current), so knowledge
-  // entries are picked up automatically and keyed by their declared
-  // KP-/KT-... id. We still call registerKnowledgeNodesInMeta to persist a
-  // deterministic node shape (cross-cutting topology, scope_glob '**') for
-  // entries init-scan just placed.
+  // Refresh agents.meta.json. writeRuleMeta walks `.fabric/knowledge/`, so
+  // knowledge entries are picked up automatically and keyed by their
+  // declared KP-/KT-... id. We still call registerKnowledgeNodesInMeta to
+  // persist a deterministic node shape (cross-cutting topology, scope_glob
+  // '**') for entries init-scan just placed.
   //
   // v2.0 follow-up (rc.1 fix #2): order is REGISTER → WRITE. Previously the
   // calls ran WRITE → REGISTER, which left agents.meta.json with a revision
@@ -787,11 +786,9 @@ function sha256(content: string): string {
  * Patch agents.meta.json so each knowledge file is recorded as a node with
  * identity_source='declared' and stable_id matching its frontmatter id.
  *
- * Why patch instead of relying on writeRuleMeta? rule-meta-builder.ts only
- * walks .fabric/rules/. Knowledge entries live in .fabric/knowledge/ — a
- * deliberately separate tree (per the v2.0 split). The init-scan owns the
- * meta-registration step for these files; subsequent rule sync continues to
- * own .fabric/rules/.
+ * The init-scan owns the meta-registration step for newly-placed knowledge
+ * files, ensuring nodes carry the canonical cross-cutting topology
+ * (scope_glob '**') even before the next rule-meta refresh.
  */
 async function registerKnowledgeNodesInMeta(target: string, entries: BuiltEntry[]): Promise<void> {
   if (entries.length === 0) {

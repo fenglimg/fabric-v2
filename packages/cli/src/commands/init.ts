@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
 import * as childProcess from "node:child_process";
-import { appendFileSync, chmodSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { appendFileSync, chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, parse, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -15,7 +15,6 @@ import { displayWidth, paint, padEnd } from "../colors.js";
 import { createDebugLogger, resolveDevMode } from "../dev-mode.js";
 import type { ClaudeMcpScope } from "../config/json.js";
 import { t } from "../i18n.js";
-import { installBootstrap } from "./bootstrap.js";
 import * as configCommand from "./config.js";
 import { installHooks } from "./hooks.js";
 import { runInitScan } from "./scan.js";
@@ -77,11 +76,9 @@ type InitStageRecord = {
 
 export type InitScaffoldResult = {
   // v2.0 layout: knowledge subdirs (.gitkeep markers) + agents.meta.json
-  // (counters envelope) + events.jsonl + forensic.json. The legacy
-  // .fabric/bootstrap/README.md and .fabric/INITIAL_TAXONOMY.md scaffold
-  // outputs are gone — knowledge entries are created by the scan stage.
-  // v2.0 follow-up (rc.1 fix #1): AGENTS.md is also written at the repo
-  // root as the universal bootstrap anchor (idempotent on re-run).
+  // (counters envelope) + events.jsonl + forensic.json. Knowledge entries
+  // are created by the scan stage. AGENTS.md is also written at the repo
+  // root as the universal anchor (idempotent on re-run).
   agentsMdPath: string;
   agentsMdAction: AgentsMdAction;
   knowledgeDir: string;
@@ -224,7 +221,6 @@ export type InitScaffoldPlan = {
   metaPath: string;
   metaAction: InitWriteAction;
   meta: AgentsMeta;
-  rulesDir: string;
   eventsPath: string;
   eventsAction: InitWriteAction;
   forensicPath: string;
@@ -582,7 +578,6 @@ export async function buildInitFabricPlan(target: string, options?: InitOptions)
   const knowledgeDir = join(fabricDir, "knowledge");
   const personalKnowledgeDir = join(resolvePersonalFabricRoot(), ".fabric", "knowledge");
   const forensicPath = join(fabricDir, "forensic.json");
-  const rulesDir = join(fabricDir, "rules");
   const eventsPath = join(fabricDir, "events.jsonl");
   const claudeSkillPath = join(target, ".claude", "skills", "fabric-init", "SKILL.md");
   const codexSkillPath = join(target, ".codex", "skills", "fabric-init", "SKILL.md");
@@ -615,7 +610,6 @@ export async function buildInitFabricPlan(target: string, options?: InitOptions)
     metaPath,
     metaAction,
     meta,
-    rulesDir,
     eventsPath,
     eventsAction,
     forensicPath,
@@ -648,12 +642,6 @@ export async function buildInitFabricPlan(target: string, options?: InitOptions)
 
 export async function executeInitFabricPlan(plan: InitScaffoldPlan): Promise<InitScaffoldResult> {
   const isReapply = plan.options?.reapply === true;
-
-  // Determine rules presence before any writes (needed for Change B and ledger event).
-  const existingRules = isReapply && existsSync(plan.rulesDir)
-    ? readdirSync(plan.rulesDir).filter((f) => f.endsWith(".md"))
-    : [];
-  const preserveMeta = isReapply && existingRules.length > 0;
 
   if (plan.replaceFabricDir) {
     rmSync(plan.fabricDir, { force: true });
@@ -696,16 +684,8 @@ export async function executeInitFabricPlan(plan: InitScaffoldPlan): Promise<Ini
     // Non-fatal — see comment above.
   }
 
-  // Change B: skip agents.meta.json regen when --reapply and rules/*.md already exist.
-  if (!preserveMeta) {
-    preparePlannedPath(plan.metaPath, plan.metaAction);
-    await atomicWriteJson(plan.metaPath, plan.meta);
-  }
-
-  // v2.0: legacy `.fabric/rules/` directory is no longer pre-created; entries
-  // accumulate under `.fabric/knowledge/` instead. The `rulesDir` is still
-  // referenced by the --reapply preservation path above for back-compat with
-  // repos that still carry v1.x rule files.
+  preparePlannedPath(plan.metaPath, plan.metaAction);
+  await atomicWriteJson(plan.metaPath, plan.meta);
 
   // Change A: on --reapply, preserve events.jsonl byte-identically; only create it if missing.
   // 0-byte create stays raw — writeFileSync("", "") is atomic by definition.
@@ -749,8 +729,6 @@ export async function executeInitFabricPlan(plan: InitScaffoldPlan): Promise<Ini
   if (isReapply) {
     appendReapplyLedgerEvent(plan.eventsPath, {
       preserved_ledger: true,
-      preserved_meta: preserveMeta,
-      rules_count: existingRules.length,
     });
   }
 
@@ -943,16 +921,13 @@ async function executeInitStagePlan(
   try {
     switch (stage.name) {
       case "bootstrap": {
-        const result = await installBootstrap(plan.target, { force: plan.options.force });
-        if (result.details.length === 0) {
-          console.log(formatInitStageResult("bootstrap", "skipped", 0, 0, t("cli.bootstrap.install.no-targets")));
-          return { name: "bootstrap", disposition: "skipped" };
-        }
-
-        console.log(
-          formatInitStageResult("bootstrap", "completed", result.installed.length, result.skipped.length),
-        );
-        return { name: "bootstrap", disposition: "ran" };
+        // v2.0: the bootstrap stage no longer materializes per-client
+        // bootstrap files (knowledge entries under `.fabric/knowledge/` are
+        // the content of record). The stage surface is preserved as a no-op
+        // for the wizard / capability table; scaffold stage handles the
+        // real `.fabric/` layout creation.
+        console.log(formatInitStageResult("bootstrap", "skipped", 0, 0, t("cli.bootstrap.install.no-targets")));
+        return { name: "bootstrap", disposition: "skipped" };
       }
       case "mcp": {
         if (stage.installMode === "local") {
@@ -1465,7 +1440,7 @@ function createInitialMeta(): AgentsMeta {
 
 function appendReapplyLedgerEvent(
   eventsPath: string,
-  payload: { preserved_ledger: boolean; preserved_meta: boolean; rules_count: number },
+  payload: { preserved_ledger: boolean },
 ): void {
   const event = {
     kind: "fabric-event",
@@ -1474,17 +1449,10 @@ function appendReapplyLedgerEvent(
     schema_version: 1,
     event_type: "reapply_completed",
     preserved_ledger: payload.preserved_ledger,
-    preserved_meta: payload.preserved_meta,
-    rules_count: payload.rules_count,
   };
   const line = `${JSON.stringify(event)}\n`;
   appendFileSync(eventsPath, line, "utf8");
 }
-
-// v2.0: `buildInitialTaxonomyMarkdown` and the L1/L2 bucket / signal
-// formatters were removed alongside `.fabric/INITIAL_TAXONOMY.md`. Knowledge
-// entries (decisions/pitfalls/guidelines/models/processes/pending) carry
-// their own taxonomy via the YAML frontmatter `layer:` + `type:` fields.
 
 function findTemplatePath(relativePath: string): string {
   const currentModuleDir = dirname(fileURLToPath(import.meta.url));
