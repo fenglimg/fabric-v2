@@ -1,3 +1,9 @@
+> **v2.0.0-rc.1 — clean rebrand to knowledge layer** (prerelease, RC stage)
+> Supported clients: Claude Code · Cursor · Codex CLI
+> v2 highlights: 5-type / 3-maturity / 2-layer knowledge schema; dual-root (`~/.fabric` + `<repo>/.fabric`); async-review via `pending/`
+> Coming next: rc.2 (extract+archive), rc.3 (review), rc.4 (lint+import)
+> v1.8.x is the stable line — this README will be fully rewritten in rc.4
+
 <p align="center">
   <img src="./assets/brand/fabric-wordmark.svg" alt="fabric wordmark" width="220">
 </p>

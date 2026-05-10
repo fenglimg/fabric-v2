@@ -5,6 +5,48 @@ All notable changes to Fabric will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 2.0.0-rc.1 (2026-05-10)
+
+**BREAKING — Knowledge sustainment protocol pivot.** Fabric repositioned from
+"MCP-first AGENTS.md sync" to "MCP-first knowledge sustainment". This is a
+clean break from v1.x; no migration path — existing v1.x repos must re-init.
+
+### BREAKING
+- Removed v1.x `.fabric/rules/` directory layout — replaced by `.fabric/knowledge/{decisions,pitfalls,guidelines,models,processes,pending}/`
+- Removed support for Windsurf, Roo Code, Gemini CLI clients (Fabric scope: Claude Code, Cursor, Codex CLI only)
+- `fabric-config.ts` now uses `.strict()` Zod schema — unknown client keys hard-fail with ZodError (was silently preserved via `.passthrough()`)
+- Renamed event types in event ledger: `rule_*` → `knowledge_*` (4 renames); deleted 3 obsolete: `rule_baseline_accepted`, `baseline_synced`, `legacy_client_path_present`
+- Deleted `INITIAL_TAXONOMY.md` (v1 structural topology — replaced by `docs/schema.md` + AGENTS.md guidance)
+- Deleted `fab bootstrap` standalone command (folded into `fab init` 4-stage pipeline)
+- Deleted `fabric-init` skill three-piece (claude-skills, codex-skills, skill-source) — v2 init pipeline is turnkey, LLM enrichment moved to `fabric-import` skill in rc.4
+- Deleted `husky/pre-commit` template (v1 sync gate; v2 model is async-review via `pending/` + `fabric-review` skill in rc.3)
+
+### Removed (v1.x dead code)
+- `packages/cli/src/commands/bootstrap.ts`
+- `packages/shared/src/node/bootstrap-guide.ts`
+- `packages/cli/templates/agents-md/variants/{vite,next,cocos}.md` (v1 framework presets — v2 init-scan auto-detects from forensic.json)
+- 13 v1-coupled test files (rule-sync, tool-rule-freshness, init-nondestructive, etc.)
+- 3 v1 doctor lint checks (`legacy_v1_artifacts_present`, `rule_sections_invalid`, fabric-init skill checks)
+
+### Added
+- `.fabric/knowledge/{decisions,pitfalls,guidelines,models,processes,pending}/` 6-subdir layout
+- Dual-root: personal at `~/.fabric/`, team at `<repo>/.fabric/`
+- Path-decoupled `stable_id` format: `K[PT]-(MOD|DEC|GLD|PIT|PRO)-NNNN` with monotonic counter envelope in `agents.meta.json`
+- v2 frontmatter schema (7 fields, flat scalars): `id`, `type`, `maturity`, `layer`, `layer_reason`, `created_at`, `tags`
+- `tags` field on knowledge entries — flat YAML flow-style array; populated by init-scan from forensic tech stack; consumed by rc.3 review skill's tag-filter search
+- Init-time deterministic scan producing baseline knowledge entries (KT-MOD, KT-GLD, KT-PRO from forensic.json)
+- `docs/schema.md` — 1-page contract for frontmatter + 15 event types + stable_id format + counters envelope
+- Self-repo dogfood: `.fabric/knowledge/decisions/` seeded with 8 KT-DEC entries capturing v2.0 architectural decisions
+
+### Fixed
+- `doctor --fix` `counter_desync` now actually persists counters to `agents.meta.json` after `reconcileRules` (was silently skipped — surfaced during dogfood)
+
+### Coming next
+- **rc.2**: `fab_extract_knowledge` MCP tool + `fabric-archive` skill + Stop hooks for 3 clients (Claude Code/Cursor/Codex)
+- **rc.3**: `fab_review` MCP tool + `fabric-review` skill (mode-inferred review loop)
+- **rc.4**: `doctor --lint` (6 deterministic checks) + `fabric-import` skill (LLM-driven enrichment) + full README rewrite + `docs/{knowledge-types,initialization,roadmap}.md`
+- **2.0.0 stable**: npm publish to `latest` dist-tag (rc.x stays GitHub-only)
+
 ## [1.8.0-rc.3] - 2026-05-09
 
 ### Fixed
