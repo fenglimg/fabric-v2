@@ -12,6 +12,7 @@ import { resolveProjectRoot } from "./meta-reader.js";
 import { flushAndSyncEventLedger } from "./services/event-ledger.js";
 import { createInFlightTracker, type InFlightTracker } from "./services/in-flight-tracker.js";
 import { reconcileRules } from "./services/rule-sync.js";
+import { registerExtractKnowledge } from "./tools/extract-knowledge.js";
 import { registerPlanContext } from "./tools/plan-context.js";
 import { registerRuleSections } from "./tools/rule-sections.js";
 
@@ -38,6 +39,7 @@ export {
   type WriteRuleMetaOptions,
 } from "./services/rule-meta-builder.js";
 export { KnowledgeIdAllocator } from "./services/knowledge-id-allocator.js";
+export { extractKnowledge } from "./services/extract-knowledge.js";
 export { appendEventLedgerEvent } from "./services/event-ledger.js";
 export {
   EVENT_LEDGER_PATH,
@@ -107,6 +109,7 @@ export function createFabricServer(tracker?: InFlightTracker): McpServer {
 
   registerPlanContext(server, tracker);
   registerRuleSections(server, tracker);
+  registerExtractKnowledge(server, tracker);
 
   // v2.0: the legacy bootstrap README MCP resource is preserved as a contract
   // shim — the file no longer exists by default in v2.0 (knowledge entries

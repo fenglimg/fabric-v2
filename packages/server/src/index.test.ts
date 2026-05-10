@@ -70,6 +70,10 @@ describe("createFabricServer", () => {
     createFabricServer();
 
     const toolNames = registerTool.mock.calls.map((call) => call[0]);
-    expect(toolNames.sort()).toEqual(["fab_get_rule_sections", "fab_plan_context"]);
+    expect(toolNames.sort()).toEqual([
+      "fab_extract_knowledge",
+      "fab_get_rule_sections",
+      "fab_plan_context",
+    ]);
   });
 });
