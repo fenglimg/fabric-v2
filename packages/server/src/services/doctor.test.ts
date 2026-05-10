@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ZodError } from "zod";
 
 import { fabricConfigSchema } from "@fenglimg/fabric-shared";
@@ -14,7 +14,26 @@ import { sha256 } from "./_shared.js";
 
 const tempRoots: string[] = [];
 
+// rc.4 TASK-002: doctor's read-side integrity inspections walk the personal
+// knowledge root resolved via FABRIC_HOME (or homedir fallback). To prevent
+// the developer's real `~/.fabric/knowledge` from polluting test output, we
+// isolate FABRIC_HOME to a per-test tmpdir for every doctor test. The
+// originating env var is restored in afterEach.
+let originalFabricHome: string | undefined;
+
+beforeEach(() => {
+  originalFabricHome = process.env.FABRIC_HOME;
+  const fakeHome = mkdtempSync(join(tmpdir(), "doctor-fabric-home-"));
+  tempRoots.push(fakeHome);
+  process.env.FABRIC_HOME = fakeHome;
+});
+
 afterEach(() => {
+  if (originalFabricHome === undefined) {
+    delete process.env.FABRIC_HOME;
+  } else {
+    process.env.FABRIC_HOME = originalFabricHome;
+  }
   while (tempRoots.length > 0) {
     rmSync(tempRoots.pop() as string, { recursive: true, force: true });
   }
@@ -71,7 +90,8 @@ describe("runDoctorReport", () => {
     // rc.2 (Legacy client paths check removed in TASK-005 — strict schema
     // rejects retired clientPaths keys at parse time) → 18 rc.4 TASK-001
     // (orphan demote / stale archive / pending overdue read-side lint
-    // checks added).
+    // checks added) → 21 rc.4 TASK-002 (stable_id duplicate / layer
+    // mismatch / index drift integrity lint checks added).
     expect(report.checks.map((check) => check.name)).toEqual([
       "Bootstrap anchor",
       "Knowledge layout",
@@ -90,9 +110,12 @@ describe("runDoctorReport", () => {
       "Knowledge orphan demote",
       "Knowledge stale archive",
       "Knowledge pending overdue",
+      "Knowledge stable_id duplicate",
+      "Knowledge layer mismatch",
+      "Knowledge index drift",
       "Preexisting root markdown",
     ]);
-    expect(report.checks).toHaveLength(18);
+    expect(report.checks).toHaveLength(21);
   });
 
   it("v2.0: clean post-init repo (mocked layout) reports zero errors AND zero warnings", async () => {
@@ -1305,6 +1328,247 @@ describe("runDoctorReport", () => {
           "utf8",
         ),
       ).toBe(beforePending);
+    });
+  });
+
+  // rc.4 TASK-002: read-side integrity lint checks #19-21. Each test seeds
+  // canonical knowledge files (and where relevant a corresponding
+  // agents.meta.json counters envelope) so the inspection walks the
+  // expected (layer, type) tree. FABRIC_HOME is already isolated to a
+  // per-test tmpdir by the file-level beforeEach hook, so the personal
+  // tree starts empty and tests can drop fixtures under it without
+  // polluting from the developer's real home directory.
+  describe("rc.4 TASK-002: read-side integrity checks", () => {
+    function seedCanonicalNoBody(target: string, relPath: string): void {
+      // Body content is irrelevant for filename-keyed integrity checks; an
+      // empty file with the right name is sufficient. We still write the
+      // YAML frontmatter envelope so other doctor checks (knowledge_dir_unindexed)
+      // do not cascade and obscure the lint findings under inspection.
+      const slug = relPath.split("--")[1]?.replace(/\.md$/u, "") ?? "untitled";
+      writeFile(
+        relPath,
+        `---\nid: ${relPath.split("/").pop()?.split("--")[0]}\nslug: ${slug}\nmaturity: stable\nlayer: team\n---\n# stub\n`,
+        target,
+      );
+    }
+
+    function seedPersonalCanonical(filename: string, type: string): void {
+      // Drop a canonical file into the FABRIC_HOME-rooted personal tree.
+      const personalRoot = join(process.env.FABRIC_HOME!, ".fabric", "knowledge", type);
+      mkdirSync(personalRoot, { recursive: true });
+      const stableId = filename.split("--")[0];
+      const slug = filename.split("--")[1]?.replace(/\.md$/u, "") ?? "untitled";
+      writeFileSync(
+        join(personalRoot, filename),
+        `---\nid: ${stableId}\nslug: ${slug}\nmaturity: stable\nlayer: personal\n---\n# stub\n`,
+        "utf8",
+      );
+    }
+
+    // ---- Check #19: stable_id duplicate ---------------------------------
+
+    it("stable_id_duplicate: ok when no canonical files share an id", async () => {
+      const target = createInitializedProject("doctor-rc4-stableid-clean");
+      await writeRuleMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+
+      seedCanonicalNoBody(target, ".fabric/knowledge/decisions/KT-DEC-0001--alpha.md");
+      seedCanonicalNoBody(target, ".fabric/knowledge/decisions/KT-DEC-0002--beta.md");
+
+      const report = await runDoctorReport(target);
+      const check = report.checks.find((c) => c.name === "Knowledge stable_id duplicate");
+      expect(check?.status).toBe("ok");
+      expect(check?.kind).toBeUndefined();
+      expect(report.manual_errors.map((e) => e.code)).not.toContain("knowledge_stable_id_duplicate");
+    });
+
+    it("stable_id_duplicate: emits error when two canonical files share a stable_id", async () => {
+      const target = createInitializedProject("doctor-rc4-stableid-collide");
+      await writeRuleMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+
+      // Same stable_id KT-DEC-0007 declared in two different type directories.
+      seedCanonicalNoBody(target, ".fabric/knowledge/decisions/KT-DEC-0007--alpha.md");
+      seedCanonicalNoBody(target, ".fabric/knowledge/pitfalls/KT-DEC-0007--beta.md");
+
+      const report = await runDoctorReport(target);
+      const check = report.checks.find((c) => c.name === "Knowledge stable_id duplicate");
+      expect(check?.status).toBe("error");
+      expect(check?.kind).toBe("manual_error");
+      expect(check?.code).toBe("knowledge_stable_id_duplicate");
+      expect(check?.message).toContain("KT-DEC-0007");
+      expect(check?.message).toContain(".fabric/knowledge/decisions/KT-DEC-0007--alpha.md");
+      expect(check?.message).toContain(".fabric/knowledge/pitfalls/KT-DEC-0007--beta.md");
+      expect(report.manual_errors.map((e) => e.code)).toContain("knowledge_stable_id_duplicate");
+    });
+
+    it("stable_id_duplicate: surfaces multiple distinct duplicates in the same report", async () => {
+      const target = createInitializedProject("doctor-rc4-stableid-multi");
+      await writeRuleMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+
+      seedCanonicalNoBody(target, ".fabric/knowledge/decisions/KT-DEC-0007--alpha.md");
+      seedCanonicalNoBody(target, ".fabric/knowledge/pitfalls/KT-DEC-0007--beta.md");
+      seedCanonicalNoBody(target, ".fabric/knowledge/guidelines/KT-GLD-0009--gamma.md");
+      seedCanonicalNoBody(target, ".fabric/knowledge/models/KT-GLD-0009--delta.md");
+
+      const report = await runDoctorReport(target);
+      const check = report.checks.find((c) => c.name === "Knowledge stable_id duplicate");
+      expect(check?.status).toBe("error");
+      // Message summary includes the duplicate count (2) and the FIRST
+      // duplicate (alphabetically: KT-DEC-0007 < KT-GLD-0009).
+      expect(check?.message).toContain("2 stable_ids duplicated");
+      expect(check?.message).toContain("KT-DEC-0007");
+    });
+
+    // ---- Check #20: layer mismatch --------------------------------------
+
+    it("layer_mismatch: ok when every canonical file is aligned with its prefix layer", async () => {
+      const target = createInitializedProject("doctor-rc4-layer-clean");
+      await writeRuleMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+
+      seedCanonicalNoBody(target, ".fabric/knowledge/decisions/KT-DEC-0001--team-aligned.md");
+      seedPersonalCanonical("KP-DEC-0001--personal-aligned.md", "decisions");
+
+      const report = await runDoctorReport(target);
+      const check = report.checks.find((c) => c.name === "Knowledge layer mismatch");
+      expect(check?.status).toBe("ok");
+      expect(check?.kind).toBeUndefined();
+    });
+
+    it("layer_mismatch: detects KT-prefixed file located under personal tree", async () => {
+      const target = createInitializedProject("doctor-rc4-layer-kt-in-personal");
+      await writeRuleMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+
+      seedPersonalCanonical("KT-DEC-0042--wrongly-personal.md", "decisions");
+
+      const report = await runDoctorReport(target);
+      const check = report.checks.find((c) => c.name === "Knowledge layer mismatch");
+      expect(check?.status).toBe("error");
+      expect(check?.kind).toBe("manual_error");
+      expect(check?.code).toBe("knowledge_layer_mismatch");
+      expect(check?.message).toContain("KT-DEC-0042");
+      expect(check?.message).toContain("located in personal");
+      expect(check?.message).toContain("expected team");
+    });
+
+    it("layer_mismatch: detects KP-prefixed file located under team tree", async () => {
+      const target = createInitializedProject("doctor-rc4-layer-kp-in-team");
+      await writeRuleMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+
+      seedCanonicalNoBody(target, ".fabric/knowledge/decisions/KP-DEC-0042--wrongly-team.md");
+
+      const report = await runDoctorReport(target);
+      const check = report.checks.find((c) => c.name === "Knowledge layer mismatch");
+      expect(check?.status).toBe("error");
+      expect(check?.code).toBe("knowledge_layer_mismatch");
+      expect(check?.message).toContain("KP-DEC-0042");
+      expect(check?.message).toContain("located in team");
+      expect(check?.message).toContain("expected personal");
+    });
+
+    it("layer_mismatch: surfaces both kinds simultaneously when present", async () => {
+      const target = createInitializedProject("doctor-rc4-layer-both");
+      await writeRuleMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+
+      seedCanonicalNoBody(target, ".fabric/knowledge/decisions/KP-DEC-0010--kp-in-team.md");
+      seedPersonalCanonical("KT-DEC-0011--kt-in-personal.md", "decisions");
+
+      const report = await runDoctorReport(target);
+      const check = report.checks.find((c) => c.name === "Knowledge layer mismatch");
+      expect(check?.status).toBe("error");
+      // Two mismatches reported on the count summary.
+      expect(check?.message).toMatch(/^2 canonical knowledge files/u);
+    });
+
+    // ---- Check #21: index drift -----------------------------------------
+
+    function readMeta(target: string): Record<string, unknown> {
+      return JSON.parse(
+        readFileSync(join(target, ".fabric", "agents.meta.json"), "utf8"),
+      ) as Record<string, unknown>;
+    }
+
+    function setMetaCounter(
+      target: string,
+      counters: { KP?: Record<string, number>; KT?: Record<string, number> },
+    ): void {
+      const meta = readMeta(target);
+      const existing = (meta.counters as Record<string, Record<string, number>> | undefined) ?? {
+        KP: { MOD: 0, DEC: 0, GLD: 0, PIT: 0, PRO: 0 },
+        KT: { MOD: 0, DEC: 0, GLD: 0, PIT: 0, PRO: 0 },
+      };
+      const merged = {
+        KP: { ...existing.KP, ...(counters.KP ?? {}) },
+        KT: { ...existing.KT, ...(counters.KT ?? {}) },
+      };
+      meta.counters = merged;
+      writeFileSync(
+        join(target, ".fabric", "agents.meta.json"),
+        JSON.stringify(meta, null, 2),
+        "utf8",
+      );
+    }
+
+    it("index_drift: ok when meta counter equals the highest existing canonical counter", async () => {
+      const target = createInitializedProject("doctor-rc4-drift-synced");
+      await writeRuleMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+
+      seedCanonicalNoBody(target, ".fabric/knowledge/decisions/KT-DEC-0005--five.md");
+      setMetaCounter(target, { KT: { DEC: 5 } });
+
+      const report = await runDoctorReport(target);
+      const check = report.checks.find((c) => c.name === "Knowledge index drift");
+      expect(check?.status).toBe("ok");
+      expect(check?.kind).toBeUndefined();
+      expect(report.fixable_errors.map((e) => e.code)).not.toContain("knowledge_index_drift");
+    });
+
+    it("index_drift: emits fixable_error when meta counter trails the observed maximum", async () => {
+      const target = createInitializedProject("doctor-rc4-drift-lagging");
+      await writeRuleMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+
+      // Seed counter=5 + canonical file KT-DEC-0007 → drift, proposed_after=8.
+      seedCanonicalNoBody(target, ".fabric/knowledge/decisions/KT-DEC-0007--seven.md");
+      setMetaCounter(target, { KT: { DEC: 5 } });
+
+      const report = await runDoctorReport(target);
+      const check = report.checks.find((c) => c.name === "Knowledge index drift");
+      expect(check?.status).toBe("error");
+      expect(check?.kind).toBe("fixable_error");
+      expect(check?.code).toBe("knowledge_index_drift");
+      expect(check?.fixable).toBe(true);
+      expect(check?.message).toContain("KT.DEC counter=5");
+      expect(check?.message).toContain("max_observed=7");
+      expect(check?.message).toContain("counters.KT.DEC=8");
+      expect(report.fixable_errors.map((e) => e.code)).toContain("knowledge_index_drift");
+    });
+
+    it("index_drift: ignores (layer, type) pairs with no canonical files even when meta counter is non-zero", async () => {
+      const target = createInitializedProject("doctor-rc4-drift-absent");
+      await writeRuleMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+
+      // Set a non-zero counter for KT.PIT but never seed any pitfall file.
+      // Per task spec: "missing counter (no entries of that type) → ok".
+      // Equivalently here: max_observed=0 means no drift detected even with
+      // a populated meta counter (the counter is in front of, not behind,
+      // observed reality).
+      setMetaCounter(target, { KT: { PIT: 4 } });
+      // Seed an unrelated (KT, DEC) entry with synced counter so the report
+      // does not fire on a different slot.
+      seedCanonicalNoBody(target, ".fabric/knowledge/decisions/KT-DEC-0001--one.md");
+      setMetaCounter(target, { KT: { DEC: 1 } });
+
+      const report = await runDoctorReport(target);
+      const check = report.checks.find((c) => c.name === "Knowledge index drift");
+      expect(check?.status).toBe("ok");
     });
   });
 });

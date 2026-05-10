@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import { constants } from "node:fs";
+import { homedir } from "node:os";
 import { isAbsolute, join, posix, resolve } from "node:path";
 
 import {
@@ -273,6 +274,66 @@ type PendingOverdueInspection = {
   candidates: PendingOverdueCandidate[];
 };
 
+// rc.4 TASK-002: read-side integrity lint inspections (#19-21). Each
+// inspection walks both the team-rooted (`<projectRoot>/.fabric/knowledge/`)
+// and personal-rooted (`<FABRIC_HOME>/.fabric/knowledge/`) canonical trees
+// and emits findings keyed off the path-decoupled stable_id parsed out of
+// the canonical filename. Mutation half (counter bump for index-drift)
+// lands in TASK-003 (--apply-lint). Stable-id-duplicate and layer-mismatch
+// remain loud `error` kinds with no auto-fix — the right resolution is
+// manual triage, not a deterministic doctor mutation.
+
+type CanonicalLayer = "team" | "personal";
+
+type StableIdDuplicateGroup = {
+  stable_id: string;
+  // Project-relative POSIX path for team entries; `~/.fabric/knowledge/...`
+  // form for personal entries (mirrors rule-meta-builder content_ref shape).
+  paths: string[];
+};
+
+type StableIdDuplicateInspection = {
+  duplicates: StableIdDuplicateGroup[];
+};
+
+type LayerMismatchEntry = {
+  // Display path: project-relative for team layer; `~/.fabric/...` for
+  // personal layer. Stable across OSes.
+  path: string;
+  // The layer the file is physically located under.
+  located_in: CanonicalLayer;
+  // The layer encoded in the stable_id prefix (KT → team, KP → personal).
+  expected_layer: CanonicalLayer;
+  stable_id: string;
+};
+
+type LayerMismatchInspection = {
+  mismatches: LayerMismatchEntry[];
+};
+
+type IndexDriftEntry = {
+  // KP/KT prefix codes mirror agents.meta.json counters envelope keys.
+  layer: "KP" | "KT";
+  type: "MOD" | "DEC" | "GLD" | "PIT" | "PRO";
+  // Counter currently recorded in agents.meta.json.counters[layer][type].
+  // Treated as "highest already-allocated counter" — next allocate yields
+  // counter+1 (see allocateKnowledgeId in shared/agents-meta.ts).
+  counter: number;
+  // Highest counter observed in canonical filenames for this (layer, type)
+  // across both physical trees. The drift condition is `counter < max+1`,
+  // i.e. there exists at least one canonical file whose counter exceeds the
+  // meta envelope's record.
+  max_observed: number;
+  // Proposed `counters[layer][type]` value after the TASK-003 --apply-lint
+  // mutation: `max_observed + 1`. Encoded explicitly so the proposal text is
+  // machine-parseable without reapplying the +1 rule downstream.
+  proposed_after: number;
+};
+
+type IndexDriftInspection = {
+  drifts: IndexDriftEntry[];
+};
+
 // Inactivity thresholds (in days) keyed by maturity tier. Beyond this age with
 // no fetch / promote / proposal event the entry is a demote candidate.
 const ORPHAN_DEMOTE_THRESHOLD_DAYS: Record<LintMaturity, number> = {
@@ -402,6 +463,12 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
   const orphanDemote = await inspectOrphanDemote(projectRoot, lintNow);
   const staleArchive = await inspectStaleArchive(projectRoot, lintNow);
   const pendingOverdue = inspectPendingOverdue(projectRoot, lintNow);
+  // rc.4 TASK-002: read-side integrity inspections (#19-21). Independent of
+  // lintNow — these inspect filesystem layout / id allocation invariants
+  // rather than time-based maturity thresholds.
+  const stableIdDuplicate = inspectStableIdDuplicate(projectRoot);
+  const layerMismatch = inspectLayerMismatch(projectRoot);
+  const indexDrift = inspectIndexDrift(projectRoot, meta);
   const checks: DoctorCheck[] = [
     createBootstrapAnchorCheck(bootstrapAnchor),
     createKnowledgeDirMissingCheck(knowledgeDirMissing),
@@ -431,6 +498,15 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     createOrphanDemoteCheck(orphanDemote),
     createStaleArchiveCheck(staleArchive),
     createPendingOverdueCheck(pendingOverdue),
+    // rc.4 TASK-002: read-side integrity checks #19-21. Stable_id duplicate
+    // runs first in this trio — it is the most critical integrity break and
+    // surfaces ahead of layer-mismatch / index-drift in the report so a
+    // human operator triages the collision before reasoning about counter
+    // state. Index drift is the only fixable_error of the three; stable_id
+    // duplicate and layer mismatch require manual triage (rename / move).
+    createStableIdDuplicateCheck(stableIdDuplicate),
+    createLayerMismatchCheck(layerMismatch),
+    createIndexDriftCheck(indexDrift),
     createPreexistingRootFilesCheck(preexistingRootFiles),
     // v2.0 / rc.2: `createLegacyClientPathCheck` removed. The schema now
     // rejects retired clientPaths keys (windsurf/rooCode/geminiCLI) at Zod
@@ -1859,6 +1935,286 @@ function createPendingOverdueCheck(inspection: PendingOverdueInspection): Doctor
     "knowledge_pending_overdue",
     `${inspection.candidates.length} pending knowledge entr${inspection.candidates.length === 1 ? "y has" : "ies have"} been awaiting review for more than ${PENDING_OVERDUE_THRESHOLD_DAYS} days. First: ${detail}.`,
     "Review pending entries via the fabric-review Skill (`/fabric-review`) and approve, reject, defer, or modify.",
+  );
+}
+
+// ---------------------------------------------------------------------------
+// rc.4 TASK-002: read-side integrity lint inspections (#19-21).
+//
+// All three inspections walk the same dual-root canonical knowledge tree
+// (team at `<projectRoot>/.fabric/knowledge/<type>/`, personal at
+// `<FABRIC_HOME>/.fabric/knowledge/<type>/`) parsing stable_ids out of the
+// canonical filename `<id>--<slug>.md` rather than YAML frontmatter — the
+// id is the path-decoupled identity, and filename-level scanning keeps the
+// inspections cheap (no file body read) for the integrity surface.
+// ---------------------------------------------------------------------------
+
+// Resolve the personal-layer knowledge root. Mirrors rule-meta-builder.ts's
+// resolvePersonalRoot but inlined to avoid pulling that module into doctor's
+// dependency graph (doctor has historically stayed self-contained on shared/
+// utilities only). Test-friendly via FABRIC_HOME override.
+function resolvePersonalKnowledgeRoot(): string {
+  const home = process.env.FABRIC_HOME ?? homedir();
+  return join(home, ".fabric", "knowledge");
+}
+
+type ParsedCanonicalFilename = {
+  // Layer code parsed from the stable_id prefix.
+  prefix: "KP" | "KT";
+  // 3-letter knowledge type code.
+  typeCode: "MOD" | "DEC" | "GLD" | "PIT" | "PRO";
+  // Zero-padded counter parsed as a number (e.g. "0007" → 7).
+  counter: number;
+  // The full stable_id token (e.g. "KT-DEC-0007").
+  stable_id: string;
+};
+
+// Pure parser. Returns null when the filename does not match the canonical
+// `<id>--<slug>.md` shape. Files that don't match are silently skipped — the
+// `stable_id_collision` and `filesystem_edit_fallback` checks already cover
+// the orthogonal "unparseable canonical entry" surface.
+function parseStableIdFromCanonicalFilename(filename: string): ParsedCanonicalFilename | null {
+  const match = CANONICAL_KNOWLEDGE_FILENAME_PATTERN.exec(filename);
+  if (match === null) {
+    return null;
+  }
+  const stableId = match[1];
+  // Re-parse the id token to extract structured fields. The outer pattern
+  // already validated the shape, so this inner regex is a safe destructure.
+  const inner = /^(K[PT])-(MOD|DEC|GLD|PIT|PRO)-(\d{4,})$/u.exec(stableId);
+  if (inner === null) {
+    return null;
+  }
+  return {
+    prefix: inner[1] as "KP" | "KT",
+    typeCode: inner[2] as ParsedCanonicalFilename["typeCode"],
+    counter: Number.parseInt(inner[3], 10),
+    stable_id: stableId,
+  };
+}
+
+type CanonicalFilenameVisit = {
+  layer: CanonicalLayer;
+  type: typeof KNOWLEDGE_CANONICAL_TYPE_DIRS[number];
+  filename: string;
+  // Display path — project-relative POSIX for team layer; `~/.fabric/...`
+  // form for personal layer (matches PERSONAL_CONTENT_REF_PREFIX in
+  // rule-meta-builder.ts so messages render consistently with the rest of
+  // the v2.0 surface).
+  displayPath: string;
+  parsed: ParsedCanonicalFilename;
+};
+
+// Generator over all canonical knowledge filenames across both physical
+// trees. Yields only entries whose filename parses to a stable_id token —
+// other files (legacy-named, README, etc.) are silently skipped.
+function* iterateCanonicalFilenames(projectRoot: string): Generator<CanonicalFilenameVisit> {
+  const teamRoot = join(projectRoot, ".fabric", "knowledge");
+  const personalRoot = resolvePersonalKnowledgeRoot();
+
+  for (const [layer, root, displayPrefix] of [
+    ["team", teamRoot, ".fabric/knowledge"] as const,
+    ["personal", personalRoot, "~/.fabric/knowledge"] as const,
+  ]) {
+    if (!existsSync(root)) {
+      continue;
+    }
+    for (const typeDir of KNOWLEDGE_CANONICAL_TYPE_DIRS) {
+      const dir = join(root, typeDir);
+      if (!existsSync(dir)) {
+        continue;
+      }
+      let entries;
+      try {
+        entries = readdirSync(dir, { withFileTypes: true });
+      } catch {
+        continue;
+      }
+      for (const entry of entries) {
+        if (!entry.isFile()) {
+          continue;
+        }
+        const parsed = parseStableIdFromCanonicalFilename(entry.name);
+        if (parsed === null) {
+          continue;
+        }
+        const displayPath = posix.join(displayPrefix, typeDir, entry.name);
+        yield {
+          layer,
+          type: typeDir,
+          filename: entry.name,
+          displayPath,
+          parsed,
+        };
+      }
+    }
+  }
+}
+
+// Inspection #19: stable_id duplicate. Two canonical files (across either
+// layer) declaring the same stable_id is a hard integrity break — the
+// path-decoupled identity model assumes each id is globally unique. Loud
+// error, no auto-fix (manual triage to rename one of the colliders).
+function inspectStableIdDuplicate(projectRoot: string): StableIdDuplicateInspection {
+  const idToPaths = new Map<string, string[]>();
+  for (const visit of iterateCanonicalFilenames(projectRoot)) {
+    const existing = idToPaths.get(visit.parsed.stable_id) ?? [];
+    existing.push(visit.displayPath);
+    idToPaths.set(visit.parsed.stable_id, existing);
+  }
+  const duplicates: StableIdDuplicateGroup[] = [];
+  for (const [stable_id, paths] of idToPaths) {
+    if (paths.length > 1) {
+      duplicates.push({ stable_id, paths: paths.slice().sort() });
+    }
+  }
+  duplicates.sort((a, b) => a.stable_id.localeCompare(b.stable_id));
+  return { duplicates };
+}
+
+// Inspection #20: layer mismatch. KP-* files under the team tree (or KT-*
+// files under the personal tree) violate the layer-prefix invariant — a
+// KP-prefixed entry should physically live under personal/ and vice versa.
+// Loud error, no auto-fix (the right resolution is rename + move, which is
+// review-flow territory).
+function inspectLayerMismatch(projectRoot: string): LayerMismatchInspection {
+  const mismatches: LayerMismatchEntry[] = [];
+  for (const visit of iterateCanonicalFilenames(projectRoot)) {
+    const expected_layer: CanonicalLayer = visit.parsed.prefix === "KT" ? "team" : "personal";
+    if (expected_layer === visit.layer) {
+      continue;
+    }
+    mismatches.push({
+      path: visit.displayPath,
+      located_in: visit.layer,
+      expected_layer,
+      stable_id: visit.parsed.stable_id,
+    });
+  }
+  mismatches.sort((a, b) => a.path.localeCompare(b.path));
+  return { mismatches };
+}
+
+// Inspection #21: index drift. agents.meta.json carries a `counters` envelope
+// per (layer, type) recording the highest already-allocated counter (next
+// allocateKnowledgeId() returns counter + 1; see shared/agents-meta.ts).
+// If a canonical file on disk has a counter strictly exceeding that
+// envelope, the next allocate would collide. Drift condition: meta counter
+// `< max_observed`. When equal, the slot is synced and the next allocate
+// is collision-free. The TASK-003 mutation bumps the slot to
+// `max_observed + 1` so post-fix the next allocate yields a fresh id one
+// past every observed counter.
+//
+// NOTE: this is intentionally distinct from inspectCounterDesync (the
+// pre-existing rc.1 check). counter_desync reads from `meta.nodes[*].stable_id`
+// — i.e. it requires the indexed envelope to know about the file. index_drift
+// reads directly from the filesystem, so it catches drift even when the file
+// is not yet indexed in agents.meta.json.nodes (e.g. a hand-dropped file
+// before reconcileRules has run).
+function inspectIndexDrift(
+  projectRoot: string,
+  meta: MetaInspection,
+): IndexDriftInspection {
+  if (!meta.valid || meta.meta === null) {
+    return { drifts: [] };
+  }
+  const counters = AgentsMetaCountersSchema.parse(meta.meta.counters ?? undefined);
+
+  // Walk filesystem, track max counter per (layer-prefix, type-code).
+  const observed: Record<"KP" | "KT", Record<ParsedCanonicalFilename["typeCode"], number>> = {
+    KP: { MOD: 0, DEC: 0, GLD: 0, PIT: 0, PRO: 0 },
+    KT: { MOD: 0, DEC: 0, GLD: 0, PIT: 0, PRO: 0 },
+  };
+  for (const visit of iterateCanonicalFilenames(projectRoot)) {
+    const { prefix, typeCode, counter } = visit.parsed;
+    if (counter > observed[prefix][typeCode]) {
+      observed[prefix][typeCode] = counter;
+    }
+  }
+
+  const drifts: IndexDriftEntry[] = [];
+  for (const layer of ["KP", "KT"] as const) {
+    for (const code of COUNTER_TYPE_CODES) {
+      const max = observed[layer][code];
+      if (max === 0) {
+        // No canonical files of this (layer,type) on disk — drift cannot be
+        // observed against a meta counter even if it's non-zero. Per task
+        // spec: "missing counter (no entries of that type) → ok (no drift
+        // on absent counter)". Equivalently: skip when max_observed is 0.
+        continue;
+      }
+      const current = counters[layer][code];
+      if (current < max) {
+        drifts.push({
+          layer,
+          type: code,
+          counter: current,
+          max_observed: max,
+          proposed_after: max + 1,
+        });
+      }
+    }
+  }
+  drifts.sort((a, b) =>
+    a.layer === b.layer ? a.type.localeCompare(b.type) : a.layer.localeCompare(b.layer),
+  );
+  return { drifts };
+}
+
+function createStableIdDuplicateCheck(inspection: StableIdDuplicateInspection): DoctorCheck {
+  if (inspection.duplicates.length === 0) {
+    return okCheck(
+      "Knowledge stable_id duplicate",
+      "No canonical knowledge files share a stable_id across team / personal trees.",
+    );
+  }
+  const first = inspection.duplicates[0];
+  const detail = `${first.stable_id} appears in ${first.paths.length} files: ${first.paths.join(", ")}`;
+  return issueCheck(
+    "Knowledge stable_id duplicate",
+    "error",
+    "manual_error",
+    "knowledge_stable_id_duplicate",
+    `${inspection.duplicates.length} stable_id${inspection.duplicates.length === 1 ? "" : "s"} duplicated across canonical knowledge files (path-decoupled identity invariant). First: ${detail}.`,
+    "Manually rename one of the colliding files to a fresh `<prefix>-<type>-<counter>--<slug>.md` allocated via the canonical id allocator; do not edit by hand.",
+  );
+}
+
+function createLayerMismatchCheck(inspection: LayerMismatchInspection): DoctorCheck {
+  if (inspection.mismatches.length === 0) {
+    return okCheck(
+      "Knowledge layer mismatch",
+      "All canonical knowledge files are physically located under the layer their stable_id prefix declares.",
+    );
+  }
+  const first = inspection.mismatches[0];
+  const detail = `${first.stable_id} at ${first.path} (located in ${first.located_in}, expected ${first.expected_layer})`;
+  return issueCheck(
+    "Knowledge layer mismatch",
+    "error",
+    "manual_error",
+    "knowledge_layer_mismatch",
+    `${inspection.mismatches.length} canonical knowledge file${inspection.mismatches.length === 1 ? "" : "s"} are physically misaligned with their stable_id layer prefix (KT-* must live under team/, KP-* under personal/). First: ${detail}.`,
+    "Move the file to the correct layer root, or use the fabric-review modify flow to flip its layer (which renames the stable_id prefix accordingly).",
+  );
+}
+
+function createIndexDriftCheck(inspection: IndexDriftInspection): DoctorCheck {
+  if (inspection.drifts.length === 0) {
+    return okCheck(
+      "Knowledge index drift",
+      "agents.meta.json counters envelope is at or above the highest existing canonical counter for every (layer, type) pair.",
+    );
+  }
+  const first = inspection.drifts[0];
+  const detail = `${first.layer}.${first.type} counter=${first.counter} but max_observed=${first.max_observed} (would propose counters.${first.layer}.${first.type}=${first.proposed_after})`;
+  return issueCheck(
+    "Knowledge index drift",
+    "error",
+    "fixable_error",
+    "knowledge_index_drift",
+    `${inspection.drifts.length} (layer, type) counter slot${inspection.drifts.length === 1 ? "" : "s"} have drifted below the observed canonical maximum (next allocate would collide). First: ${detail}.`,
+    "Run `fab doctor --apply-lint` (rc.4 TASK-003) to bump agents.meta.json counters to max_observed + 1.",
   );
 }
 
