@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmdirSync, renameSync, statSync, unlinkSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import { constants } from "node:fs";
 import { isAbsolute, join, posix, resolve } from "node:path";
@@ -211,26 +211,6 @@ type BootstrapAnchorInspection = {
   hasClaudeMd: boolean;
 };
 
-type ClaudeSkillLegacyPathInspection = {
-  hasLegacy: boolean;
-  legacyPath: string;
-  newPath: string;
-};
-
-type ClaudeHookLegacyPathInspection = {
-  hasLegacyFile: boolean;
-  hasLegacySettingsCommand: boolean;
-  legacyHookPath: string;
-  newHookPath: string;
-  settingsPath: string;
-};
-
-type CodexSkillLegacyPathInspection = {
-  hasLegacy: boolean;
-  legacyPath: string;
-  newPath: string;
-};
-
 type LegacyClientPathInspection = {
   presentKeys: string[];
 };
@@ -265,9 +245,8 @@ const IGNORED_DIRECTORIES = new Set([
 // state files.
 //
 // Note: `.fabric/init-context.json` is intentionally NOT listed here. v2.0
-// init-context is owned by the AI-side `fabric-init` skill flow (Claude Code
-// / Codex CLI), not by `fabric init` CLI. The skill writes it during a
-// 3-phase initialization interview; if the skill never ran the file is
+// init-context is owned by the AI-side client init skill (Claude Code / Codex
+// CLI), not by `fabric init` CLI. If the skill never ran the file is
 // legitimately absent and doctor must not flag it as a state issue.
 const TARGET_FILE_PATHS = [
   ".fabric/forensic.json",
@@ -298,9 +277,6 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
   const knowledgeDirMissing = inspectKnowledgeDirMissing(projectRoot);
   const stableIdCollision = await inspectStableIdCollisions(projectRoot);
   const counterDesync = inspectCounterDesync(meta);
-  const claudeSkillLegacyPath = inspectClaudeSkillLegacyPath(projectRoot);
-  const claudeHookLegacyPath = inspectClaudeHookLegacyPath(projectRoot);
-  const codexSkillLegacyPath = inspectCodexSkillLegacyPath(projectRoot);
   const preexistingRootFiles = inspectPreexistingRootFiles(projectRoot);
   const legacyClientPaths = inspectLegacyClientPaths(projectRoot);
   const bootstrapAnchor = inspectBootstrapAnchor(projectRoot);
@@ -309,7 +285,7 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     createKnowledgeDirMissingCheck(knowledgeDirMissing),
     createForensicCheck(forensic, framework.kind, entryPoints.length),
     // v2.0: removed `createInitContextCheck` — `.fabric/init-context.json`
-    // is owned by the AI-side `fabric-init` skill, not by `fabric init` CLI.
+    // is owned by the AI-side client init skill, not by `fabric init` CLI.
     // The file's absence is a legitimate post-init state when the skill has
     // not yet run, so flagging it as a doctor manual_error misrepresents
     // ownership.
@@ -327,9 +303,6 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     createKnowledgeDirUnindexedCheck(knowledgeDirUnindexed),
     createStableIdCollisionCheck(stableIdCollision),
     createCounterDesyncCheck(counterDesync),
-    createClaudeSkillLegacyPathCheck(claudeSkillLegacyPath),
-    createClaudeHookLegacyPathCheck(claudeHookLegacyPath),
-    createCodexSkillLegacyPathCheck(codexSkillLegacyPath),
     createPreexistingRootFilesCheck(preexistingRootFiles),
     createLegacyClientPathCheck(legacyClientPaths),
     // v2.0 / rc.2: `createLegacyV1ArtifactsCheck` removed alongside its
@@ -448,21 +421,6 @@ export async function runDoctorFix(target: string): Promise<DoctorFixReport> {
     fixed.push(findIssue(before.fixable_errors, "mcp_config_in_wrong_file"));
   }
 
-  if (before.fixable_errors.some((issue) => issue.code === "claude_skill_legacy_path")) {
-    await fixClaudeSkillLegacyPath(projectRoot);
-    fixed.push(findIssue(before.fixable_errors, "claude_skill_legacy_path"));
-  }
-
-  if (before.fixable_errors.some((issue) => issue.code === "claude_hook_legacy_path")) {
-    await fixClaudeHookLegacyPath(projectRoot);
-    fixed.push(findIssue(before.fixable_errors, "claude_hook_legacy_path"));
-  }
-
-  if (before.fixable_errors.some((issue) => issue.code === "codex_skill_legacy_path")) {
-    await fixCodexSkillLegacyPath(projectRoot);
-    fixed.push(findIssue(before.fixable_errors, "codex_skill_legacy_path"));
-  }
-
   if (before.warnings.some((issue) => issue.code === "legacy_client_path_present")) {
     await fixLegacyClientPaths(projectRoot);
     fixed.push(findIssue(before.warnings, "legacy_client_path_present"));
@@ -494,10 +452,9 @@ async function inspectForensic(projectRoot: string): Promise<{ present: boolean;
 }
 
 // v2.0: `inspectInitContext` removed. `.fabric/init-context.json` is owned
-// by the AI-side `fabric-init` skill, not by `fabric init` CLI. The hooks
-// under packages/cli/templates/{claude,codex}-hooks/ still consume the file
-// as a "init done" signal at runtime, but that is a hook concern, not a
-// doctor state concern.
+// by the AI-side client init skill, not by `fabric init` CLI. Its absence
+// after `fab init` is a legitimate "skill has not run yet" state, not a
+// doctor concern.
 
 function inspectMcpConfigInWrongFile(projectRoot: string): McpConfigInWrongFileInspection {
   const settingsPath = join(projectRoot, ".claude", "settings.json");
@@ -1264,180 +1221,11 @@ function createPreexistingRootFilesCheck(inspection: PreexistingRootFilesInspect
   };
 }
 
-function inspectClaudeSkillLegacyPath(projectRoot: string): ClaudeSkillLegacyPathInspection {
-  const legacyPath = join(projectRoot, ".claude", "skills", "agents-md-init", "SKILL.md");
-  const newPath = join(projectRoot, ".claude", "skills", "fabric-init", "SKILL.md");
-  const hasLegacy = existsSync(legacyPath) && !existsSync(newPath);
-  return { hasLegacy, legacyPath, newPath };
-}
-
-function createClaudeSkillLegacyPathCheck(inspection: ClaudeSkillLegacyPathInspection): DoctorCheck {
-  if (inspection.hasLegacy) {
-    return issueCheck(
-      "Claude skill path",
-      "error",
-      "fixable_error",
-      "claude_skill_legacy_path",
-      `.claude/skills/agents-md-init/SKILL.md exists at the legacy path. Run --fix to migrate it to .claude/skills/fabric-init/SKILL.md (user edits preserved).`,
-      "Run `fab doctor --fix` to rename agents-md-init/ to fabric-init/, preserving any user edits to SKILL.md.",
-    );
-  }
-  return okCheck("Claude skill path", ".claude/skills/fabric-init/SKILL.md is at the canonical path (or not present).");
-}
-
-async function fixClaudeSkillLegacyPath(projectRoot: string): Promise<void> {
-  const legacyPath = join(projectRoot, ".claude", "skills", "agents-md-init", "SKILL.md");
-  const newPath = join(projectRoot, ".claude", "skills", "fabric-init", "SKILL.md");
-
-  if (!existsSync(legacyPath)) {
-    return;
-  }
-
-  mkdirSync(join(newPath, ".."), { recursive: true });
-  renameSync(legacyPath, newPath);
-
-  // Remove the now-empty legacy directory if it is empty
-  const legacyDir = join(legacyPath, "..");
-  try {
-    rmdirSync(legacyDir);
-  } catch {
-    // Directory not empty or already removed — ignore
-  }
-
-  await appendEventLedgerEvent(projectRoot, {
-    event_type: "claude_skill_path_migrated",
-    from: legacyPath,
-    to: newPath,
-  });
-}
-
-const LEGACY_HOOK_FILENAME = "agents-md-init-reminder.cjs";
-const NEW_HOOK_FILENAME = "fabric-init-reminder.cjs";
-
-function inspectClaudeHookLegacyPath(projectRoot: string): ClaudeHookLegacyPathInspection {
-  const legacyHookPath = join(projectRoot, ".claude", "hooks", LEGACY_HOOK_FILENAME);
-  const newHookPath = join(projectRoot, ".claude", "hooks", NEW_HOOK_FILENAME);
-  const settingsPath = join(projectRoot, ".claude", "settings.json");
-
-  const hasLegacyFile = existsSync(legacyHookPath);
-
-  let hasLegacySettingsCommand = false;
-  if (existsSync(settingsPath)) {
-    try {
-      const raw = readFileSync(settingsPath, "utf8");
-      hasLegacySettingsCommand = raw.includes(LEGACY_HOOK_FILENAME);
-    } catch {
-      // Ignore unreadable settings file — nothing to migrate.
-    }
-  }
-
-  return { hasLegacyFile, hasLegacySettingsCommand, legacyHookPath, newHookPath, settingsPath };
-}
-
-function createClaudeHookLegacyPathCheck(inspection: ClaudeHookLegacyPathInspection): DoctorCheck {
-  if (inspection.hasLegacyFile || inspection.hasLegacySettingsCommand) {
-    return issueCheck(
-      "Claude hook path",
-      "error",
-      "fixable_error",
-      "claude_hook_legacy_path",
-      `.claude/hooks/${LEGACY_HOOK_FILENAME} (or its reference in .claude/settings.json) exists at the legacy path. Run --fix to migrate to ${NEW_HOOK_FILENAME}.`,
-      `Run \`fab doctor --fix\` to rename ${LEGACY_HOOK_FILENAME} to ${NEW_HOOK_FILENAME} and update .claude/settings.json hook commands.`,
-    );
-  }
-  return okCheck("Claude hook path", `.claude/hooks/${NEW_HOOK_FILENAME} is at the canonical path (or not present).`);
-}
-
-async function fixClaudeHookLegacyPath(projectRoot: string): Promise<void> {
-  const { hasLegacyFile, hasLegacySettingsCommand, legacyHookPath, newHookPath, settingsPath } =
-    inspectClaudeHookLegacyPath(projectRoot);
-
-  if (hasLegacyFile) {
-    if (existsSync(newHookPath)) {
-      unlinkSync(legacyHookPath);
-    } else {
-      mkdirSync(join(newHookPath, ".."), { recursive: true });
-      renameSync(legacyHookPath, newHookPath);
-    }
-  }
-
-  if (hasLegacySettingsCommand) {
-    try {
-      const raw = readFileSync(settingsPath, "utf8");
-      const updated = raw.split(LEGACY_HOOK_FILENAME).join(NEW_HOOK_FILENAME);
-      if (updated !== raw) {
-        const parsed = JSON.parse(updated) as unknown;
-        await atomicWriteJson(settingsPath, parsed);
-      }
-    } catch {
-      // If settings.json is malformed, leave it alone — user will see other doctor warnings.
-    }
-  }
-
-  if (hasLegacyFile || hasLegacySettingsCommand) {
-    await appendEventLedgerEvent(projectRoot, {
-      event_type: "claude_hook_path_migrated",
-      from: legacyHookPath,
-      to: newHookPath,
-    });
-  }
-}
-
-function inspectCodexSkillLegacyPath(projectRoot: string): CodexSkillLegacyPathInspection {
-  const legacyPath = join(projectRoot, ".agents", "skills", "fabric-init", "SKILL.md");
-  const newPath = join(projectRoot, ".codex", "skills", "fabric-init", "SKILL.md");
-  const hasLegacy = existsSync(legacyPath) && !existsSync(newPath);
-  return { hasLegacy, legacyPath, newPath };
-}
-
-function createCodexSkillLegacyPathCheck(inspection: CodexSkillLegacyPathInspection): DoctorCheck {
-  if (inspection.hasLegacy) {
-    return issueCheck(
-      "Codex skill path",
-      "error",
-      "fixable_error",
-      "codex_skill_legacy_path",
-      `.agents/skills/fabric-init/SKILL.md exists at the legacy path. Codex CLI reads repo skills from .codex/skills/, not .agents/skills/. Run --fix to migrate it to .codex/skills/fabric-init/SKILL.md (user edits preserved).`,
-      "Run `fab doctor --fix` to move .agents/skills/fabric-init/ to .codex/skills/fabric-init/, preserving any user edits to SKILL.md.",
-    );
-  }
-  return okCheck("Codex skill path", ".codex/skills/fabric-init/SKILL.md is at the canonical path (or not present).");
-}
-
-async function fixCodexSkillLegacyPath(projectRoot: string): Promise<void> {
-  const { hasLegacy, legacyPath, newPath } = inspectCodexSkillLegacyPath(projectRoot);
-  if (!hasLegacy) {
-    return;
-  }
-
-  mkdirSync(join(newPath, ".."), { recursive: true });
-  renameSync(legacyPath, newPath);
-
-  const legacyDir = join(legacyPath, "..");
-  try {
-    rmdirSync(legacyDir);
-  } catch {
-    // Directory not empty or already removed — ignore
-  }
-  // Also try to remove the .agents/skills/ parent if now empty.
-  try {
-    rmdirSync(join(legacyDir, ".."));
-  } catch {
-    // ignore
-  }
-  // And .agents/ itself if empty.
-  try {
-    rmdirSync(join(legacyDir, "..", ".."));
-  } catch {
-    // ignore
-  }
-
-  await appendEventLedgerEvent(projectRoot, {
-    event_type: "codex_skill_path_migrated",
-    from: legacyPath,
-    to: newPath,
-  });
-}
+// v2/rc.2: Removed `inspectClaudeSkillLegacyPath`, `inspectClaudeHookLegacyPath`,
+// `inspectCodexSkillLegacyPath` and their `create*Check` / `fix*` siblings.
+// They migrated v1.x agents-md-init-reminder/skill paths into the v1 client-
+// side init reminder/skill paths, both of which are now archaeology — rc.4
+// owns v2 lint coverage for whatever skill/hook paths v2 introduces.
 
 function inspectLegacyClientPaths(projectRoot: string): LegacyClientPathInspection {
   const configPath = join(projectRoot, "fabric.config.json");

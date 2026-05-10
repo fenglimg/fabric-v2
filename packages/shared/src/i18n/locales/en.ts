@@ -182,12 +182,6 @@ export const enMessages: Messages = {
   "cli.init.capabilities.follow-up.install": "install client assets",
   "cli.init.capabilities.follow-up.manual": "manual step required",
   "cli.init.next-step.message": "run fab hooks install to add the Day 4 pre-commit pipeline.",
-  "cli.init.reason-message.claude-body":
-    ".fabric/forensic.json is ready; use the fabric-init skill to finish internal Fabric initialization.",
-  "cli.init.reason-message.codex-body":
-    ".fabric/forensic.json is ready; continue with the repo skill at .codex/skills/fabric-init/SKILL.md and enable features.codex_hooks = true for Codex hooks.",
-  "cli.init.reason-message.multi-body":
-    ".fabric/forensic.json is ready; continue in your installed client flow: Claude can use fabric-init, and Codex can use .codex/skills/fabric-init/SKILL.md with features.codex_hooks = true.",
   "cli.init.reason-message.installable-body":
     ".fabric/forensic.json is ready; some detected clients support Fabric follow-up but still need client assets installed.",
   "cli.init.reason-message.manual-body":

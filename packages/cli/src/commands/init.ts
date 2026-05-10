@@ -1,9 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
 import * as childProcess from "node:child_process";
-import { appendFileSync, chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { dirname, isAbsolute, join, parse, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { appendFileSync, existsSync, mkdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 
 import { cancel, confirm, group, intro, isCancel, log, note, outro, select } from "@clack/prompts";
 import { defaultAgentsMetaCounters, type AgentsMeta } from "@fenglimg/fabric-shared";
@@ -56,14 +55,11 @@ type InitWriteAction = "created" | "overwritten";
 // CLAUDE.md to be present. We write a minimal default on a fresh init and
 // PRESERVE any pre-existing file verbatim — even with --force. The intent
 // is "anchor exists" rather than "anchor is canonical"; once the user has
-// customized the file (typically by running the fabric-init skill, which
-// expands sections via the AI flow), init must never clobber that work.
+// customized the file (typically through their AI client flow), init must
+// never clobber that work.
 type AgentsMdAction = "created" | "preserved";
 
 type ClaudeHookAction = InitWriteAction | "skipped";
-
-type ClaudeSettingsAction = "created" | "overwritten" | "skipped" | "skipped-invalid" | "updated";
-type CodexHooksAction = "created" | "overwritten" | "skipped";
 
 type InitStageName = "bootstrap" | "mcp" | "hooks";
 
@@ -90,20 +86,6 @@ export type InitScaffoldResult = {
   eventsAction: InitWriteAction;
   forensicPath: string;
   forensicAction: InitWriteAction;
-  claudeSkillPath: string;
-  claudeSkillAction: ClaudeHookAction;
-  codexSkillPath: string;
-  codexSkillAction: ClaudeHookAction;
-  codexSessionStartHookPath: string;
-  codexSessionStartHookAction: ClaudeHookAction;
-  codexStopHookPath: string;
-  codexStopHookAction: ClaudeHookAction;
-  codexHooksConfigPath: string;
-  codexHooksConfigAction: CodexHooksAction;
-  claudeHookPath: string;
-  claudeHookAction: ClaudeHookAction;
-  claudeSettingsPath: string;
-  claudeSettingsAction: ClaudeSettingsAction;
 };
 
 type InitCapabilityRow = {
@@ -116,21 +98,6 @@ type InitCapabilityRow = {
 };
 
 type McpInstallMode = "global" | "local";
-
-type ClaudeSettings = {
-  hooks?: {
-    Stop?: ClaudeStopHookEntry[];
-    [key: string]: unknown;
-  };
-  [key: string]: unknown;
-};
-
-type CodexHooksConfig = {
-  hooks: {
-    SessionStart: Array<{ matcher: string; hooks: Array<{ type: "command"; command: string }> }>;
-    Stop: Array<{ matcher: string; hooks: Array<{ type: "command"; command: string }> }>;
-  };
-};
 
 type InitExecutionPhaseName = "preflight" | "scaffold" | InitStageName | "post-setup";
 
@@ -177,31 +144,6 @@ type InitCliIntent = {
   wizardEnabled: boolean;
 };
 
-type InitOptionalTemplateWritePlan = {
-  path: string;
-  action: ClaudeHookAction;
-  templatePath: string;
-  executable?: boolean;
-};
-
-type InitJsonWritePlan = {
-  path: string;
-  action: CodexHooksAction;
-  value: unknown;
-};
-
-type InitClaudeSettingsWritePlan =
-  | {
-      path: string;
-      action: Extract<ClaudeSettingsAction, "created" | "updated" | "overwritten">;
-      value: ClaudeSettings;
-    }
-  | {
-      path: string;
-      action: Extract<ClaudeSettingsAction, "skipped" | "skipped-invalid">;
-      value: null;
-    };
-
 export type InitScaffoldPlan = {
   target: string;
   options?: InitOptions;
@@ -226,13 +168,6 @@ export type InitScaffoldPlan = {
   forensicPath: string;
   forensicAction: InitWriteAction;
   forensicReport: Awaited<ReturnType<typeof buildForensicReport>>;
-  claudeSkill: InitOptionalTemplateWritePlan;
-  codexSkill: InitOptionalTemplateWritePlan;
-  codexSessionStartHook: InitOptionalTemplateWritePlan;
-  codexStopHook: InitOptionalTemplateWritePlan;
-  codexHooksConfig: InitJsonWritePlan;
-  claudeHook: InitOptionalTemplateWritePlan;
-  claudeSettings: InitClaudeSettingsWritePlan;
 };
 
 export type InitExecutionPlan = {
@@ -254,23 +189,11 @@ export type InitExecutionResult = {
   finalSupports: DetectedClientSupport[];
 };
 
-type ClaudeStopHookEntry = {
-  matcher: string;
-  hooks: ClaudeCommandHook[];
-  [key: string]: unknown;
-};
-
-type ClaudeCommandHook = {
-  type: string;
-  command: string;
-  [key: string]: unknown;
-};
-
 // v2.0 follow-up (rc.1 fix #1): minimal default contents for the repo-root
-// AGENTS.md anchor. Kept deliberately short — the AI-side fabric-init skill
-// expands the file with project-specific sections during its 3-phase
-// initialization interview. The CLI's job is only to ensure SOME anchor
-// exists post-init so doctor's bootstrap_anchor_missing check is clean.
+// AGENTS.md anchor. Kept deliberately short — the user (or their AI client)
+// expands the file with project-specific sections post-init. The CLI's job
+// is only to ensure SOME anchor exists post-init so doctor's
+// bootstrap_anchor_missing check is clean.
 //
 // AGENTS.md (rather than CLAUDE.md) was chosen because it is the universal
 // MCP-agnostic format: Cursor, Codex CLI, and Claude Code all read it.
@@ -286,14 +209,11 @@ Run \`fabric doctor\` to verify state.
 See \`.fabric/knowledge/\` for project decisions, pitfalls, guidelines, models, and processes.
 `;
 
-const CLAUDE_INIT_SKILL_TEMPLATE = "templates/claude-skills/fabric-init/SKILL.md";
-const CLAUDE_INIT_REMINDER_HOOK_TEMPLATE = "templates/claude-hooks/fabric-init-reminder.cjs";
-const CLAUDE_INIT_REMINDER_COMMAND = ".claude/hooks/fabric-init-reminder.cjs";
-const CODEX_INIT_SKILL_TEMPLATE = "templates/codex-skills/fabric-init/SKILL.md";
-const CODEX_SESSION_START_HOOK_TEMPLATE = "templates/codex-hooks/fabric-session-start.cjs";
-const CODEX_STOP_HOOK_TEMPLATE = "templates/codex-hooks/fabric-stop-reminder.cjs";
-const CODEX_SESSION_START_COMMAND = ".codex/hooks/fabric-session-start.cjs";
-const CODEX_STOP_COMMAND = ".codex/hooks/fabric-stop-reminder.cjs";
+// v2/rc.2: The v1 client-side init skill (and its reminder hooks for Claude
+// / Codex) was removed. rc.2/3/4 will introduce v2 skills (fabric-archive,
+// fabric-review, fabric-import) with their own templates and wiring; until
+// then `fab init` only emits MCP-agnostic state (knowledge dirs, AGENTS.md,
+// forensic.json, events.jsonl).
 const LOCAL_FABRIC_SERVER_PATH = join("node_modules", "@fenglimg", "fabric-server", "dist", "index.js");
 const FABRIC_SERVER_PACKAGE = "@fenglimg/fabric-server";
 const INIT_WIZARD_GROUP_CANCELLED = Symbol("init-wizard-group-cancelled");
@@ -579,13 +499,6 @@ export async function buildInitFabricPlan(target: string, options?: InitOptions)
   const personalKnowledgeDir = join(resolvePersonalFabricRoot(), ".fabric", "knowledge");
   const forensicPath = join(fabricDir, "forensic.json");
   const eventsPath = join(fabricDir, "events.jsonl");
-  const claudeSkillPath = join(target, ".claude", "skills", "fabric-init", "SKILL.md");
-  const codexSkillPath = join(target, ".codex", "skills", "fabric-init", "SKILL.md");
-  const codexSessionStartHookPath = join(target, ".codex", "hooks", "fabric-session-start.cjs");
-  const codexStopHookPath = join(target, ".codex", "hooks", "fabric-stop-reminder.cjs");
-  const codexHooksConfigPath = join(target, ".codex", "hooks.json");
-  const claudeHookPath = join(target, ".claude", "hooks", "fabric-init-reminder.cjs");
-  const claudeSettingsPath = join(target, ".claude", "settings.json");
   const metaPath = join(fabricDir, "agents.meta.json");
 
   const replaceFabricDir = shouldReplaceWritableDirectory(fabricDir, options);
@@ -615,28 +528,6 @@ export async function buildInitFabricPlan(target: string, options?: InitOptions)
     forensicPath,
     forensicAction,
     forensicReport,
-    claudeSkill: buildOptionalTemplateWritePlan(claudeSkillPath, findTemplatePath(CLAUDE_INIT_SKILL_TEMPLATE), options),
-    codexSkill: buildOptionalTemplateWritePlan(codexSkillPath, findTemplatePath(CODEX_INIT_SKILL_TEMPLATE), options),
-    codexSessionStartHook: buildOptionalTemplateWritePlan(
-      codexSessionStartHookPath,
-      findTemplatePath(CODEX_SESSION_START_HOOK_TEMPLATE),
-      options,
-      true,
-    ),
-    codexStopHook: buildOptionalTemplateWritePlan(
-      codexStopHookPath,
-      findTemplatePath(CODEX_STOP_HOOK_TEMPLATE),
-      options,
-      true,
-    ),
-    codexHooksConfig: buildCodexHooksConfigPlan(codexHooksConfigPath, options),
-    claudeHook: buildOptionalTemplateWritePlan(
-      claudeHookPath,
-      findTemplatePath(CLAUDE_INIT_REMINDER_HOOK_TEMPLATE),
-      options,
-      true,
-    ),
-    claudeSettings: buildClaudeSettingsWritePlan(claudeSettingsPath, options),
   };
 }
 
@@ -703,14 +594,6 @@ export async function executeInitFabricPlan(plan: InitScaffoldPlan): Promise<Ini
   preparePlannedPath(plan.forensicPath, plan.forensicAction);
   await atomicWriteJson(plan.forensicPath, plan.forensicReport);
 
-  applyOptionalTemplateWritePlan(plan.claudeSkill);
-  applyOptionalTemplateWritePlan(plan.codexSkill);
-  applyOptionalTemplateWritePlan(plan.codexSessionStartHook);
-  applyOptionalTemplateWritePlan(plan.codexStopHook);
-  await applyJsonWritePlan(plan.codexHooksConfig);
-  applyOptionalTemplateWritePlan(plan.claudeHook);
-  await applyClaudeSettingsWritePlan(plan.claudeSettings);
-
   // v2.0 stage (b) scan: invoke runInitScan programmatically so a fresh init
   // produces 4-7 baseline knowledge entries + an init_scan_completed ledger
   // event. Failure is best-effort (e.g. a read-only home) — the layout above
@@ -744,20 +627,6 @@ export async function executeInitFabricPlan(plan: InitScaffoldPlan): Promise<Ini
     eventsAction: plan.eventsAction,
     forensicPath: plan.forensicPath,
     forensicAction: plan.forensicAction,
-    claudeSkillPath: plan.claudeSkill.path,
-    claudeSkillAction: plan.claudeSkill.action,
-    codexSkillPath: plan.codexSkill.path,
-    codexSkillAction: plan.codexSkill.action,
-    codexSessionStartHookPath: plan.codexSessionStartHook.path,
-    codexSessionStartHookAction: plan.codexSessionStartHook.action,
-    codexStopHookPath: plan.codexStopHook.path,
-    codexStopHookAction: plan.codexStopHook.action,
-    codexHooksConfigPath: plan.codexHooksConfig.path,
-    codexHooksConfigAction: plan.codexHooksConfig.action,
-    claudeHookPath: plan.claudeHook.path,
-    claudeHookAction: plan.claudeHook.action,
-    claudeSettingsPath: plan.claudeSettings.path,
-    claudeSettingsAction: plan.claudeSettings.action,
   };
 }
 
@@ -823,17 +692,6 @@ function printInitScaffoldResult(created: InitScaffoldResult): void {
   console.log(formatInitPathAction(created.metaPath, created.metaAction));
   console.log(formatInitPathAction(created.eventsPath, created.eventsAction));
   console.log(formatInitPathAction(created.forensicPath, created.forensicAction));
-  writeStderr(formatOptionalInitPathAction(created.claudeSkillPath, created.claudeSkillAction));
-  writeStderr(formatOptionalInitPathAction(created.codexSkillPath, created.codexSkillAction));
-  writeStderr(
-    formatOptionalInitPathAction(created.codexSessionStartHookPath, created.codexSessionStartHookAction),
-  );
-  writeStderr(
-    formatOptionalInitPathAction(created.codexStopHookPath, created.codexStopHookAction),
-  );
-  writeStderr(formatCodexHooksAction(created.codexHooksConfigPath, created.codexHooksConfigAction));
-  writeStderr(formatOptionalInitPathAction(created.claudeHookPath, created.claudeHookAction));
-  writeStderr(formatClaudeSettingsAction(created.claudeSettingsPath, created.claudeSettingsAction));
 }
 
 function printInitPostSetup(
@@ -886,20 +744,6 @@ function buildPlanOnlyScaffoldResult(plan: InitScaffoldPlan): InitScaffoldResult
     eventsAction: plan.eventsAction,
     forensicPath: plan.forensicPath,
     forensicAction: plan.forensicAction,
-    claudeSkillPath: plan.claudeSkill.path,
-    claudeSkillAction: plan.claudeSkill.action,
-    codexSkillPath: plan.codexSkill.path,
-    codexSkillAction: plan.codexSkill.action,
-    codexSessionStartHookPath: plan.codexSessionStartHook.path,
-    codexSessionStartHookAction: plan.codexSessionStartHook.action,
-    codexStopHookPath: plan.codexStopHook.path,
-    codexStopHookAction: plan.codexStopHook.action,
-    codexHooksConfigPath: plan.codexHooksConfig.path,
-    codexHooksConfigAction: plan.codexHooksConfig.action,
-    claudeHookPath: plan.claudeHook.path,
-    claudeHookAction: plan.claudeHook.action,
-    claudeSettingsPath: plan.claudeSettings.path,
-    claudeSettingsAction: plan.claudeSettings.action,
   };
 }
 
@@ -1000,155 +844,6 @@ function preparePlannedPath(path: string, action: InitWriteAction): void {
   if (action === "overwritten" && existsSync(path)) {
     rmSync(path, { recursive: true, force: true });
   }
-}
-
-function buildOptionalTemplateWritePlan(
-  path: string,
-  templatePath: string,
-  options?: InitOptions,
-  executable = false,
-): InitOptionalTemplateWritePlan {
-  const existed = existsSync(path);
-  if (existed && !options?.force) {
-    return { path, action: "skipped", templatePath, executable };
-  }
-
-  return {
-    path,
-    action: existed ? "overwritten" : "created",
-    templatePath,
-    executable,
-  };
-}
-
-function applyOptionalTemplateWritePlan(plan: InitOptionalTemplateWritePlan): void {
-  if (plan.action === "skipped") {
-    return;
-  }
-
-  mkdirSync(dirname(plan.path), { recursive: true });
-  copyFileSync(plan.templatePath, plan.path);
-  if (plan.executable) {
-    chmodSync(plan.path, 0o755);
-  }
-}
-
-function buildCodexHooksConfigValue(): CodexHooksConfig {
-  return {
-    hooks: {
-      SessionStart: [
-        {
-          matcher: "*",
-          hooks: [{ type: "command", command: CODEX_SESSION_START_COMMAND }],
-        },
-      ],
-      Stop: [
-        {
-          matcher: "*",
-          hooks: [{ type: "command", command: CODEX_STOP_COMMAND }],
-        },
-      ],
-    },
-  };
-}
-
-function buildCodexHooksConfigPlan(configPath: string, options?: InitOptions): InitJsonWritePlan {
-  const action = !existsSync(configPath)
-    ? "created"
-    : options?.force
-      ? "overwritten"
-      : "skipped";
-
-  return {
-    path: configPath,
-    action,
-    value: buildCodexHooksConfigValue(),
-  };
-}
-
-async function applyJsonWritePlan(plan: InitJsonWritePlan): Promise<void> {
-  if (plan.action === "skipped") {
-    return;
-  }
-
-  mkdirSync(dirname(plan.path), { recursive: true });
-  await atomicWriteJson(plan.path, plan.value);
-}
-
-function buildClaudeSettingsWritePlan(settingsPath: string, options?: InitOptions): InitClaudeSettingsWritePlan {
-  let settings: ClaudeSettings;
-  let action: Extract<ClaudeSettingsAction, "created" | "updated" | "overwritten"> = "updated";
-
-  if (!existsSync(settingsPath)) {
-    settings = {};
-    action = "created";
-  } else {
-    try {
-      const parsed = JSON.parse(readFileSync(settingsPath, "utf8")) as unknown;
-      if (!isRecord(parsed)) {
-        writeStderr(t("cli.init.claude-settings.invalid-object", { label: skippedLabel(), path: settingsPath }));
-        return { path: settingsPath, action: "skipped-invalid", value: null };
-      }
-
-      settings = parsed as ClaudeSettings;
-    } catch (error) {
-      const reason = error instanceof Error ? error.message : "unknown parse error";
-      writeStderr(t("cli.init.claude-settings.invalid-json", { label: skippedLabel(), path: settingsPath, reason }));
-      return { path: settingsPath, action: "skipped-invalid", value: null };
-    }
-  }
-
-  if (settings.hooks !== undefined && !isRecord(settings.hooks)) {
-    writeStderr(t("cli.init.claude-settings.invalid-hooks", { label: skippedLabel(), path: settingsPath }));
-    return { path: settingsPath, action: "skipped-invalid", value: null };
-  }
-
-  const hooks = (settings.hooks ?? {}) as Record<string, unknown>;
-  const stopHooksValue = hooks.Stop;
-  if (stopHooksValue !== undefined && !Array.isArray(stopHooksValue)) {
-    writeStderr(t("cli.init.claude-settings.invalid-stop-array", { label: skippedLabel(), path: settingsPath }));
-    return { path: settingsPath, action: "skipped-invalid", value: null };
-  }
-
-  const stopHooks = Array.isArray(stopHooksValue) ? stopHooksValue : [];
-  const hasExistingFabricHook = hasClaudeInitReminderHook(stopHooks);
-  if (hasExistingFabricHook && !options?.force) {
-    return { path: settingsPath, action: "skipped", value: null };
-  }
-
-  const nextStopHooks = hasExistingFabricHook && options?.force ? removeClaudeInitReminderHook(stopHooks) : [...stopHooks];
-  nextStopHooks.push({
-    matcher: "*",
-    hooks: [
-      {
-        type: "command",
-        command: CLAUDE_INIT_REMINDER_COMMAND,
-      },
-    ],
-  } satisfies ClaudeStopHookEntry);
-
-  const nextSettings: ClaudeSettings = {
-    ...settings,
-    hooks: {
-      ...hooks,
-      Stop: nextStopHooks as ClaudeStopHookEntry[],
-    },
-  };
-
-  return {
-    path: settingsPath,
-    action: hasExistingFabricHook && options?.force ? "overwritten" : action,
-    value: nextSettings,
-  };
-}
-
-async function applyClaudeSettingsWritePlan(plan: InitClaudeSettingsWritePlan): Promise<void> {
-  if (plan.value === null) {
-    return;
-  }
-
-  mkdirSync(dirname(plan.path), { recursive: true });
-  await atomicWriteJson(plan.path, plan.value);
 }
 
 export function createDefaultInitWizardAdapter(): InitWizardAdapter {
@@ -1454,84 +1149,6 @@ function appendReapplyLedgerEvent(
   appendFileSync(eventsPath, line, "utf8");
 }
 
-function findTemplatePath(relativePath: string): string {
-  const currentModuleDir = dirname(fileURLToPath(import.meta.url));
-  const candidates = [
-    ...templateCandidatesFrom(process.cwd(), relativePath),
-    ...templateCandidatesFrom(currentModuleDir, relativePath),
-  ];
-
-  for (const candidate of candidates) {
-    if (existsSync(candidate)) {
-      return candidate;
-    }
-  }
-
-  throw new Error(t("cli.shared.template-not-found", { path: relativePath }));
-}
-
-function templateCandidatesFrom(start: string, relativePath: string): string[] {
-  const candidates: string[] = [];
-  let current = resolve(start);
-
-  while (true) {
-    candidates.push(join(current, ...relativePath.split("/")));
-
-    const parent = dirname(current);
-    if (parent === current || parse(current).root === current) {
-      break;
-    }
-
-    current = parent;
-  }
-
-  return candidates.reverse();
-}
-
-function hasClaudeInitReminderHook(stopHooks: unknown[]): boolean {
-  return stopHooks.some((entry) => isClaudeInitReminderStopEntry(entry));
-}
-
-function removeClaudeInitReminderHook(stopHooks: unknown[]): unknown[] {
-  return stopHooks.filter((entry) => !isClaudeInitReminderStopEntry(entry));
-}
-
-function isClaudeInitReminderStopEntry(entry: unknown): boolean {
-  if (!isRecord(entry) || !Array.isArray(entry.hooks)) {
-    return false;
-  }
-
-  return entry.hooks.some(
-    (hook) =>
-      isRecord(hook) &&
-      hook.type === "command" &&
-      typeof hook.command === "string" &&
-      (hook.command.includes("fabric-init-reminder.cjs") ||
-        hook.command.includes("agents-md-init-reminder.cjs")),
-  );
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function formatClaudeSettingsAction(settingsPath: string, action: ClaudeSettingsAction): string {
-  switch (action) {
-    case "created":
-      return t("cli.init.claude-settings.created", { label: createdLabel(), path: settingsPath });
-    case "updated":
-      return t("cli.init.claude-settings.updated", { label: updatedLabel(), path: settingsPath });
-    case "overwritten":
-      return t("cli.init.claude-settings.updated", { label: overwrittenLabel(), path: settingsPath });
-    case "skipped":
-      return t("cli.init.claude-settings.skipped", { label: skippedLabel(), path: settingsPath });
-    case "skipped-invalid":
-      return t("cli.init.claude-settings.skipped-invalid", { label: skippedLabel(), path: settingsPath });
-    default:
-      return t("cli.init.claude-settings.updated", { label: updatedLabel(), path: settingsPath });
-  }
-}
-
 function formatInitStageHeader(message: string): string {
   return `${nextLabel()} ${paint.muted(message)}`;
 }
@@ -1655,19 +1272,6 @@ function printInitCapabilitySummary(
   }
 }
 
-function formatCodexHooksAction(configPath: string, action: CodexHooksAction): string {
-  switch (action) {
-    case "created":
-      return t("cli.init.codex-hooks.created", { label: createdLabel(), path: configPath });
-    case "overwritten":
-      return t("cli.init.codex-hooks.updated", { label: overwrittenLabel(), path: configPath });
-    case "skipped":
-      return t("cli.init.codex-hooks.skipped", { label: skippedLabel(), path: configPath });
-    default:
-      return t("cli.init.codex-hooks.updated", { label: updatedLabel(), path: configPath });
-  }
-}
-
 function toCapabilityRow(
   support: DetectedClientSupport,
   stageResults: InitStageRecord[],
@@ -1759,22 +1363,11 @@ function formatCapabilityDivider(widths: Record<keyof InitCapabilityRow, number>
 }
 
 function formatInitReasonMessage(supports: DetectedClientSupport[]): string {
+  // v2/rc.2: the v1 client-side init skill is gone, so the "installed-skill"
+  // branches no longer fire. rc.2/3/4 will reintroduce v2 skill wiring; until
+  // then we route to installable-body when a client supports skills, otherwise
+  // manual-body.
   const detected = supports.filter((support) => support.detected);
-  const installedSkillClients = detected.filter((support) => hasInstalledCapability(support, "skill"));
-  const hasClaudeSkill = installedSkillClients.some((support) => support.clientKind === "ClaudeCodeCLI");
-  const hasCodexSkill = installedSkillClients.some((support) => support.clientKind === "CodexCLI");
-
-  if (hasClaudeSkill && hasCodexSkill) {
-    return t("cli.init.reason-message.multi-body");
-  }
-
-  if (hasClaudeSkill) {
-    return t("cli.init.reason-message.claude-body");
-  }
-
-  if (hasCodexSkill) {
-    return t("cli.init.reason-message.codex-body");
-  }
 
   if (detected.some((support) => support.capabilities.skill)) {
     return t("cli.init.reason-message.installable-body");
@@ -1799,14 +1392,6 @@ function formatAgentsMdAction(path: string, action: AgentsMdAction): string {
     return t("cli.init.skipped-existing-path", { label: skippedLabel(), path });
   }
   return t("cli.init.created-path", { label: createdLabel(), path });
-}
-
-function formatOptionalInitPathAction(path: string, action: ClaudeHookAction): string {
-  if (action === "skipped") {
-    return t("cli.init.skipped-existing-path", { label: skippedLabel(), path });
-  }
-
-  return formatInitPathAction(path, action);
 }
 
 function labelForInitWriteAction(action: InitWriteAction): string {

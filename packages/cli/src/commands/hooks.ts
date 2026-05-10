@@ -1,10 +1,7 @@
-import { chmodSync, existsSync, mkdirSync, readFileSync, statSync } from "node:fs";
-import { dirname, isAbsolute, join, parse, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { existsSync, statSync } from "node:fs";
+import { isAbsolute, resolve } from "node:path";
 
 import { defineCommand } from "citty";
-
-import { atomicWriteJson, atomicWriteText } from "@fenglimg/fabric-shared/node/atomic-write";
 
 import { t } from "../i18n.js";
 
@@ -14,11 +11,6 @@ type HooksInstallArgs = {
 
 type InstallHooksOptions = {
   force?: boolean;
-};
-
-type PackageJson = {
-  scripts?: Record<string, string>;
-  [key: string]: unknown;
 };
 
 type HookAction = "created" | "appended" | "skipped" | "overwritten";
@@ -52,20 +44,7 @@ export const hooksCommand = defineCommand({
         },
       },
       async run({ args }: { args: HooksInstallArgs }) {
-        const result = await installHooks(args.target);
-
-        if (result.hookAction === "skipped") {
-          writeStderr(t("cli.hooks.install.hook-skipped", { path: result.hookPath }));
-        } else if (result.hookAction === "appended") {
-          writeStderr(t("cli.hooks.install.hook-appended", { path: result.hookPath }));
-        } else {
-          writeStderr(t("cli.hooks.install.hook-created", { path: result.hookPath }));
-        }
-        if (result.prepareAction === "left") {
-          writeStderr(t("cli.hooks.install.prepare-left", { path: result.packageJsonPath }));
-        } else {
-          writeStderr(t("cli.hooks.install.prepare-added", { path: result.packageJsonPath }));
-        }
+        await installHooks(args.target);
       },
     }),
   },
@@ -73,64 +52,24 @@ export const hooksCommand = defineCommand({
 
 export default hooksCommand;
 
+// v2/rc.2: husky pre-commit installer is removed. The `templates/husky/`
+// directory was deleted in TASK-003 because the v2 hook story is owned by
+// per-client mechanisms (Claude Code Stop/SessionStart hooks, Codex CLI
+// hooks.json), not by a husky pre-commit shim. The function is kept as a
+// throwing stub so existing callers (init.ts hooks stage, config command
+// surface) get a clear error instead of a templating crash. rc.4 will
+// revisit whether `fab hooks install` is restored under a v2 design or
+// removed entirely.
 export async function installHooks(
   target: string,
-  options: InstallHooksOptions = {},
+  _options: InstallHooksOptions = {},
 ): Promise<InstallHooksResult> {
   const normalizedTarget = normalizeTarget(target);
   assertExistingDirectory(normalizedTarget);
-
-  const huskyDir = join(normalizedTarget, ".husky");
-  const hookPath = join(huskyDir, "pre-commit");
-  const packageJsonPath = join(normalizedTarget, "package.json");
-
-  if (!existsSync(packageJsonPath)) {
-    throw new Error(t("cli.hooks.errors.package-json-required", { path: packageJsonPath }));
-  }
-
-  mkdirSync(huskyDir, { recursive: true });
-  const templateContent = readFileSync(findTemplatePath("templates/husky/pre-commit"), "utf8");
-  const hookAction = await installHookFile(hookPath, templateContent, options.force);
-  chmodSync(hookPath, 0o755);
-
-  const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf8")) as PackageJson;
-  const scripts =
-    packageJson.scripts && typeof packageJson.scripts === "object" && !Array.isArray(packageJson.scripts)
-      ? packageJson.scripts
-      : {};
-  const hadPrepare = typeof scripts.prepare === "string" && scripts.prepare.trim().length > 0;
-
-  let prepareAction: PrepareAction = "left";
-  if (!hadPrepare) {
-    scripts.prepare = "husky install";
-    packageJson.scripts = scripts;
-    await atomicWriteJson(packageJsonPath, packageJson);
-    prepareAction = "added";
-  }
-
-  const installed: string[] = [];
-  const skipped: string[] = [];
-
-  if (hookAction === "skipped") {
-    skipped.push(hookPath);
-  } else {
-    installed.push(hookPath);
-  }
-
-  if (prepareAction === "left") {
-    skipped.push(packageJsonPath);
-  } else {
-    installed.push(packageJsonPath);
-  }
-
-  return {
-    installed,
-    skipped,
-    hookPath,
-    packageJsonPath,
-    hookAction,
-    prepareAction,
-  };
+  throw new Error(
+    `fab hooks install is not available in v2 (husky pre-commit template removed). ` +
+      `Use per-client hooks under .claude/ and .codex/ instead. Target: ${normalizedTarget}`,
+  );
 }
 
 function normalizeTarget(targetInput: string): string {
@@ -141,64 +80,4 @@ function assertExistingDirectory(target: string): void {
   if (!existsSync(target) || !statSync(target).isDirectory()) {
     throw new Error(t("cli.shared.target-invalid", { target }));
   }
-}
-
-async function installHookFile(hookPath: string, templateContent: string, force?: boolean): Promise<HookAction> {
-  if (existsSync(hookPath)) {
-    if (force) {
-      await atomicWriteText(hookPath, templateContent);
-      return "overwritten";
-    }
-
-    const existing = readFileSync(hookPath, "utf8");
-    if (existing.includes("FAB_BIN=")) {
-      return "skipped";
-    }
-
-    const fabricBlock = templateContent.replace(/^#!\/bin\/sh\n/, "");
-    const separator = existing.endsWith("\n") ? "\n" : "\n\n";
-    await atomicWriteText(hookPath, `${existing}${separator}# --- Fabric ---\n${fabricBlock}`);
-    return "appended";
-  }
-
-  await atomicWriteText(hookPath, templateContent);
-  return "created";
-}
-
-function findTemplatePath(relativePath: string): string {
-  const currentModuleDir = dirname(fileURLToPath(import.meta.url));
-  const candidates = [
-    ...templateCandidatesFrom(process.cwd(), relativePath),
-    ...templateCandidatesFrom(currentModuleDir, relativePath),
-  ];
-
-  for (const candidate of candidates) {
-    if (existsSync(candidate)) {
-      return candidate;
-    }
-  }
-
-  throw new Error(t("cli.shared.template-not-found", { path: relativePath }));
-}
-
-function templateCandidatesFrom(start: string, relativePath: string): string[] {
-  const candidates: string[] = [];
-  let current = resolve(start);
-
-  while (true) {
-    candidates.push(join(current, ...relativePath.split("/")));
-
-    const parent = dirname(current);
-    if (parent === current || parse(current).root === current) {
-      break;
-    }
-
-    current = parent;
-  }
-
-  return candidates.reverse();
-}
-
-function writeStderr(message: string): void {
-  process.stderr.write(`${message}\n`);
 }
