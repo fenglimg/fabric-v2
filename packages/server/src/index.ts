@@ -20,8 +20,12 @@ import { registerRuleSections } from "./tools/rule-sections.js";
 declare const __SERVER_VERSION__: string;
 
 export {
+  runDoctorApplyLint,
   runDoctorFix,
   runDoctorReport,
+  type DoctorApplyLintMutation,
+  type DoctorApplyLintMutationKind,
+  type DoctorApplyLintReport,
   type DoctorFixReport,
   type DoctorIssue,
   type DoctorReport,

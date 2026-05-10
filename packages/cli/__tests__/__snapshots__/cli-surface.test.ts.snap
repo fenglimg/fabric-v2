@@ -9,6 +9,15 @@ exports[`CLI surface drift gate (docs/test-seed/cli.md §1) > command 'doctor' s
     {
       "alias": undefined,
       "default": false,
+      "description": "Apply lint mutations: demote orphaned canonical entries, archive stale drafts, and bump drifted index counters. Emits knowledge_demoted / knowledge_archived events. Default doctor invocation remains report-only.",
+      "name": "apply-lint",
+      "negativeDescription": undefined,
+      "required": undefined,
+      "type": "boolean",
+    },
+    {
+      "alias": undefined,
+      "default": false,
       "description": "Repair deterministic derived Fabric state, including meta, knowledge-test index, bootstrap, and events ledger.",
       "name": "fix",
       "negativeDescription": undefined,

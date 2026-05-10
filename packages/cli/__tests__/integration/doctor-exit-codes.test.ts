@@ -59,6 +59,7 @@ describe("I1: doctor exit codes", () => {
       checkLockOrThrow: vi.fn(),
       runDoctorReport: vi.fn().mockResolvedValue(makeReport("ok")),
       runDoctorFix: vi.fn(),
+      runDoctorApplyLint: vi.fn(),
     }));
 
     const { doctorCommand } = await import("../../src/commands/doctor.ts");
@@ -77,6 +78,7 @@ describe("I1: doctor exit codes", () => {
       checkLockOrThrow: vi.fn(),
       runDoctorReport: vi.fn().mockResolvedValue(makeReport("error")),
       runDoctorFix: vi.fn(),
+      runDoctorApplyLint: vi.fn(),
     }));
 
     const { doctorCommand } = await import("../../src/commands/doctor.ts");
@@ -95,6 +97,7 @@ describe("I1: doctor exit codes", () => {
       checkLockOrThrow: vi.fn(),
       runDoctorReport: vi.fn().mockResolvedValue(makeReport("warn")),
       runDoctorFix: vi.fn(),
+      runDoctorApplyLint: vi.fn(),
     }));
 
     const { doctorCommand } = await import("../../src/commands/doctor.ts");
@@ -115,6 +118,7 @@ describe("I1: doctor exit codes", () => {
       checkLockOrThrow: vi.fn(),
       runDoctorReport: vi.fn().mockResolvedValue(makeReport("warn")),
       runDoctorFix: vi.fn(),
+      runDoctorApplyLint: vi.fn(),
     }));
 
     const { doctorCommand } = await import("../../src/commands/doctor.ts");
@@ -136,6 +140,7 @@ describe("T2: doctor section header i18n", () => {
       checkLockOrThrow: vi.fn(),
       runDoctorReport: vi.fn().mockResolvedValue(makeReport("error")),
       runDoctorFix: vi.fn(),
+      runDoctorApplyLint: vi.fn(),
     }));
 
     const { doctorCommand } = await import("../../src/commands/doctor.ts");
@@ -155,6 +160,7 @@ describe("T2: doctor section header i18n", () => {
       checkLockOrThrow: vi.fn(),
       runDoctorReport: vi.fn().mockResolvedValue(makeReport("warn")),
       runDoctorFix: vi.fn(),
+      runDoctorApplyLint: vi.fn(),
     }));
 
     const { doctorCommand } = await import("../../src/commands/doctor.ts");

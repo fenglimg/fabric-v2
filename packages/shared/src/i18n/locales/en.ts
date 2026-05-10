@@ -63,12 +63,17 @@ export const enMessages: Messages = {
   "doctor.section.fixable": "Fixable errors:",
   "doctor.section.manual": "Manual errors:",
   "doctor.section.warnings": "Warnings:",
+  "doctor.section.apply-lint-mutations": "Apply-lint mutations:",
   "cli.doctor.args.target.description":
     "Target project path. Defaults to CLI arg, EXTERNAL_FIXTURE_PATH, fabric.config.json, then cwd.",
   "cli.doctor.args.fix.description": "Repair deterministic derived Fabric state, including meta, knowledge-test index, bootstrap, and events ledger.",
   "cli.doctor.args.json.description": "Print the doctor report as JSON.",
   "cli.doctor.args.strict.description": "Treat warnings as failures.",
   "cli.doctor.args.force.description": "Run even if a serve process appears to hold the lock.",
+  "cli.doctor.args.apply-lint.description":
+    "Apply lint mutations: demote orphaned canonical entries, archive stale drafts, and bump drifted index counters. Emits knowledge_demoted / knowledge_archived events. Default doctor invocation remains report-only.",
+  "cli.doctor.errors.apply-lint-fix-mutually-exclusive":
+    "--apply-lint and --fix cannot be combined. --apply-lint mutates user knowledge state (demote/archive); --fix repairs derived state (meta/index). Run them separately.",
 
   "cli.hooks.description": "Manage Fabric Git hook templates.",
   "cli.hooks.install.description": "Install the Fabric Husky pre-commit hook template.",

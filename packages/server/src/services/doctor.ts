@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync } from "node:fs";
-import { access, mkdir, readFile, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { constants } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, join, posix, resolve } from "node:path";
@@ -18,7 +18,7 @@ import {
 import { detectFramework } from "@fenglimg/fabric-shared/node";
 
 import { contextCache } from "../cache.js";
-import { atomicWriteJson } from "@fenglimg/fabric-shared/node/atomic-write";
+import { atomicWriteJson, atomicWriteText } from "@fenglimg/fabric-shared/node/atomic-write";
 import { ensureParentDirectory, getEventLedgerPath, sha256 } from "./_shared.js";
 import { buildRuleMeta, isSameKnowledgeTestIndex, writeRuleMeta } from "./rule-meta-builder.js";
 import { appendEventLedgerEvent, readEventLedger, truncateLedgerToLastNewline } from "./event-ledger.js";
@@ -81,6 +81,46 @@ export type DoctorFixReport = {
   fixed: DoctorIssue[];
   remaining_manual_errors: DoctorIssue[];
   warnings: DoctorIssue[];
+  message: string;
+  report: DoctorReport;
+};
+
+// rc.4 TASK-003: report shape returned by `runDoctorApplyLint`. Mirrors
+// `DoctorFixReport` but the `mutations` payload itemizes each per-finding
+// repair (demote / archive / counter bump) so the CLI surface can render a
+// machine-parseable summary in addition to human prose.
+export type DoctorApplyLintMutationKind =
+  | "knowledge_orphan_demote_required"
+  | "knowledge_stale_archive_required"
+  | "knowledge_index_drift";
+
+export type DoctorApplyLintMutation = {
+  kind: DoctorApplyLintMutationKind;
+  // For demote / archive: project-relative POSIX path of the affected file
+  // (pre-mutation). For index_drift: synthetic path string
+  // `agents.meta.json#counters.<layer>.<type>`.
+  path: string;
+  // Detail of the mutation (e.g. "stable -> endorsed", ".fabric/.archive/...",
+  // "5 -> 8"). Free-form prose for human consumption.
+  detail: string;
+  // True when the mutation succeeded; false when the per-finding repair
+  // threw and was caught (the rest of the apply-lint run continues; see
+  // task spec idempotency / partial-failure rationale).
+  applied: boolean;
+  // Populated when applied=false. Truncated to 240 chars to prevent log noise.
+  error?: string;
+};
+
+export type DoctorApplyLintReport = {
+  changed: boolean;
+  mutations: DoctorApplyLintMutation[];
+  // Non-fixable manual errors that surfaced in the lint pass. When non-empty
+  // and the corresponding code is in MANUAL_LINT_ERROR_CODES, runDoctorApplyLint
+  // sets `aborted: true` and returns BEFORE applying any mutations — these
+  // findings indicate corruption that auto-fix could destroy.
+  manual_errors: DoctorIssue[];
+  aborted: boolean;
+  abort_reason?: string;
   message: string;
   report: DoctorReport;
 };
@@ -648,6 +688,316 @@ export async function runDoctorFix(target: string): Promise<DoctorFixReport> {
     message: createFixMessage(fixed, report),
     report,
   };
+}
+
+// rc.4 TASK-003: lint mutation entry point. Behavior summary:
+//   * `lint:orphan_demote` (warning kind code=knowledge_orphan_demote_required):
+//     rewrite frontmatter `maturity:` one tier down (stable -> endorsed,
+//     endorsed -> draft) via atomicWriteText; emit knowledge_demoted event.
+//   * `lint:stale_archive` (code=knowledge_stale_archive_required):
+//     rename file to .fabric/.archive/<type>/<filename>; emit knowledge_archived
+//     event. Per task design the archive subtree is a tombstone (not git-tracked
+//     active history) so we use `fs.rename` rather than `git mv`. The events.jsonl
+//     entry IS the audit trail.
+//   * `lint:index_drift` (fixable_error code=knowledge_index_drift):
+//     bump agents.meta.json counters[layer][type] to max_observed + 1 via
+//     atomicWriteJson. NO event emission — the schema does not (yet) carry
+//     an agents_meta_repaired event type and v2.0 git diff of agents.meta.json
+//     is sufficient audit (decision documented in TASK-003 rationale step 4).
+//   * `lint:stable_id_duplicate` / `lint:layer_mismatch` (manual_error kinds):
+//     auto-fix is unsafe (data loss potential). runDoctorApplyLint aborts
+//     BEFORE applying any mutations and surfaces a clear "manual repair
+//     required" message via abort_reason.
+//   * `lint:pending_overdue` (warning kind): informational only — humans
+//     triage via the fabric-review Skill; no mutation path.
+//
+// Idempotency: each mutation refreshes lastActiveAt indirectly (demoted /
+// archived events register the entry's stable_id with a fresh ts in the
+// next run's buildLastActiveIndex) and the inspections re-evaluate against
+// the new on-disk state, so a 2nd `--apply-lint` run on a dir with no new
+// findings produces 0 mutations and 0 events.
+const MANUAL_LINT_ERROR_CODES = new Set([
+  "knowledge_stable_id_duplicate",
+  "knowledge_layer_mismatch",
+]);
+
+export async function runDoctorApplyLint(target: string): Promise<DoctorApplyLintReport> {
+  const projectRoot = normalizeTarget(target);
+  const before = await runDoctorReport(projectRoot);
+  const mutations: DoctorApplyLintMutation[] = [];
+
+  // Loud-error gate: stable_id_duplicate / layer_mismatch are corruption.
+  // Auto-fix could delete data. Abort before any mutation.
+  const blockingManual = before.manual_errors.find((issue) =>
+    MANUAL_LINT_ERROR_CODES.has(issue.code),
+  );
+  if (blockingManual !== undefined) {
+    return {
+      changed: false,
+      mutations: [],
+      manual_errors: before.manual_errors,
+      aborted: true,
+      abort_reason: `Manual repair required for ${blockingManual.code}: ${blockingManual.message} - apply-lint cannot resolve this safely; triage by hand.`,
+      message: `apply-lint aborted: ${blockingManual.code} requires manual repair.`,
+      report: before,
+    };
+  }
+
+  const now = Date.now();
+
+  // Re-run the inspection generators directly (rather than parsing back out
+  // of the report.checks summary) — we need the structured candidate lists
+  // to drive per-entry mutations.
+  const orphanDemote = await inspectOrphanDemote(projectRoot, now);
+  for (const candidate of orphanDemote.candidates) {
+    if (candidate.next_maturity === null) {
+      // Terminal (already draft) — orphan-demote does not apply, stale-archive
+      // owns the next transition. Defensive: createOrphanDemoteCheck filters
+      // these out conceptually (next_maturity stays null only for draft) but
+      // we never want to write `maturity: null`.
+      continue;
+    }
+    mutations.push(await applyOrphanDemote(projectRoot, candidate, now));
+  }
+
+  const staleArchive = await inspectStaleArchive(projectRoot, now);
+  for (const candidate of staleArchive.candidates) {
+    mutations.push(await applyStaleArchive(projectRoot, candidate, now));
+  }
+
+  // Index drift: re-read meta after any prior mutations (none touch
+  // agents.meta.json, but readability over assumption).
+  const meta = await inspectMeta(projectRoot);
+  const indexDrift = inspectIndexDrift(projectRoot, meta);
+  if (indexDrift.drifts.length > 0) {
+    mutations.push(await applyIndexDriftFix(projectRoot, indexDrift));
+  }
+
+  contextCache.invalidate("meta_write", projectRoot);
+
+  const after = await runDoctorReport(projectRoot);
+  const successCount = mutations.filter((m) => m.applied).length;
+  const failureCount = mutations.length - successCount;
+
+  return {
+    changed: successCount > 0,
+    mutations,
+    manual_errors: after.manual_errors,
+    aborted: false,
+    message: createApplyLintMessage(successCount, failureCount, after.manual_errors.length),
+    report: after,
+  };
+}
+
+function createApplyLintMessage(
+  succeeded: number,
+  failed: number,
+  manualErrorCount: number,
+): string {
+  const parts: string[] = [];
+  if (succeeded === 0 && failed === 0) {
+    parts.push("No apply-lint mutations were needed.");
+  } else {
+    parts.push(`Applied ${succeeded} apply-lint mutation${succeeded === 1 ? "" : "s"}.`);
+    if (failed > 0) {
+      parts.push(`${failed} mutation${failed === 1 ? "" : "s"} failed.`);
+    }
+  }
+  parts.push(
+    manualErrorCount === 0
+      ? "No manual errors remain."
+      : `${manualErrorCount} manual error${manualErrorCount === 1 ? "" : "s"} remain.`,
+  );
+  return parts.join(" ");
+}
+
+// Pure helper: rewrite the `maturity:` line in a YAML frontmatter block.
+// Returns null if the source does not contain a parseable frontmatter with a
+// `maturity:` field — caller must handle that defensively. Surgical replace:
+// only the maturity line is touched; all other fields preserve their exact
+// bytes (per risk note: round-trip preservation matters).
+function rewriteFrontmatterMaturity(
+  source: string,
+  newMaturity: "endorsed" | "draft",
+): string | null {
+  const FM_PATTERN = /^(?:\uFEFF)?---\r?\n([\s\S]*?)\r?\n---/u;
+  const fm = FM_PATTERN.exec(source);
+  if (fm === null) {
+    return null;
+  }
+  const block = fm[1];
+  if (!MATURITY_LINE_PATTERN.test(block)) {
+    return null;
+  }
+  const replacedBlock = block.replace(
+    MATURITY_LINE_PATTERN,
+    (line) => line.replace(/(stable|endorsed|draft)/u, newMaturity),
+  );
+  // Splice replacement back into the original. Use string slicing to preserve
+  // BOM / line endings outside the captured block exactly.
+  const blockStart = source.indexOf(block);
+  if (blockStart < 0) {
+    return null;
+  }
+  return source.slice(0, blockStart) + replacedBlock + source.slice(blockStart + block.length);
+}
+
+async function applyOrphanDemote(
+  projectRoot: string,
+  candidate: OrphanDemoteCandidate,
+  now: number,
+): Promise<DoctorApplyLintMutation> {
+  const next = candidate.next_maturity;
+  if (next === null) {
+    return {
+      kind: "knowledge_orphan_demote_required",
+      path: candidate.path,
+      detail: `${candidate.maturity} -> (none, already at terminal tier)`,
+      applied: false,
+      error: "next_maturity is null; orphan-demote not applicable",
+    };
+  }
+  const detail = `${candidate.maturity} -> ${next}`;
+  const absPath = join(projectRoot, candidate.path);
+  try {
+    const source = await readFile(absPath, "utf8");
+    const rewritten = rewriteFrontmatterMaturity(source, next);
+    if (rewritten === null) {
+      return {
+        kind: "knowledge_orphan_demote_required",
+        path: candidate.path,
+        detail,
+        applied: false,
+        error: "frontmatter missing maturity field; cannot rewrite",
+      };
+    }
+    if (rewritten === source) {
+      // Defensive: rewrite produced no diff. Treat as no-op.
+      return {
+        kind: "knowledge_orphan_demote_required",
+        path: candidate.path,
+        detail,
+        applied: false,
+        error: "rewrite produced byte-identical output",
+      };
+    }
+    await atomicWriteText(absPath, rewritten);
+    await appendEventLedgerEvent(projectRoot, {
+      event_type: "knowledge_demoted",
+      stable_id: candidate.stable_id,
+      timestamp: new Date(now).toISOString(),
+      reason: `lint:orphan_demote ${candidate.maturity}->${next} after ${candidate.age_days}d inactive`,
+    });
+    return {
+      kind: "knowledge_orphan_demote_required",
+      path: candidate.path,
+      detail,
+      applied: true,
+    };
+  } catch (error) {
+    return {
+      kind: "knowledge_orphan_demote_required",
+      path: candidate.path,
+      detail,
+      applied: false,
+      error: truncateErrorMessage(error),
+    };
+  }
+}
+
+async function applyStaleArchive(
+  projectRoot: string,
+  candidate: StaleArchiveCandidate,
+  now: number,
+): Promise<DoctorApplyLintMutation> {
+  const sourceAbs = join(projectRoot, candidate.path);
+  const destAbs = join(projectRoot, candidate.archive_path);
+  const detail = `${candidate.path} -> ${candidate.archive_path}`;
+  try {
+    await mkdir(join(destAbs, ".."), { recursive: true });
+    try {
+      await rename(sourceAbs, destAbs);
+    } catch (renameError) {
+      // EXDEV fallback: cross-filesystem rename failure. Copy + unlink.
+      // Both source and dest live under projectRoot in normal use; this
+      // fallback only fires in unusual setups (e.g. .archive on a separate
+      // mount). See risk note 2 in TASK-003.json.
+      if (
+        renameError instanceof Error &&
+        "code" in renameError &&
+        (renameError as NodeJS.ErrnoException).code === "EXDEV"
+      ) {
+        const data = await readFile(sourceAbs);
+        await writeFile(destAbs, data);
+        const { unlink } = await import("node:fs/promises");
+        await unlink(sourceAbs);
+      } else {
+        throw renameError;
+      }
+    }
+    await appendEventLedgerEvent(projectRoot, {
+      event_type: "knowledge_archived",
+      stable_id: candidate.stable_id,
+      timestamp: new Date(now).toISOString(),
+      reason: `lint:stale_archive ${candidate.path} -> ${candidate.archive_path} after ${candidate.age_days}d inactive`,
+    });
+    return {
+      kind: "knowledge_stale_archive_required",
+      path: candidate.path,
+      detail,
+      applied: true,
+    };
+  } catch (error) {
+    return {
+      kind: "knowledge_stale_archive_required",
+      path: candidate.path,
+      detail,
+      applied: false,
+      error: truncateErrorMessage(error),
+    };
+  }
+}
+
+async function applyIndexDriftFix(
+  projectRoot: string,
+  inspection: IndexDriftInspection,
+): Promise<DoctorApplyLintMutation> {
+  const metaPath = join(projectRoot, ".fabric", "agents.meta.json");
+  const detailParts: string[] = [];
+  try {
+    const meta = agentsMetaSchema.parse(JSON.parse(await readFile(metaPath, "utf8")));
+    const baseCounters = AgentsMetaCountersSchema.parse(meta.counters ?? undefined);
+    // Defensive deep clone so we do not mutate the parsed object in place.
+    const updatedCounters: AgentsMetaCounters = {
+      KP: { ...baseCounters.KP },
+      KT: { ...baseCounters.KT },
+    };
+    for (const drift of inspection.drifts) {
+      updatedCounters[drift.layer][drift.type] = drift.proposed_after;
+      detailParts.push(`${drift.layer}.${drift.type}: ${drift.counter} -> ${drift.proposed_after}`);
+    }
+    const updated: AgentsMeta = { ...meta, counters: updatedCounters };
+    await atomicWriteJson(metaPath, updated, { indent: 2 });
+    return {
+      kind: "knowledge_index_drift",
+      path: "agents.meta.json#counters",
+      detail: detailParts.join("; "),
+      applied: true,
+    };
+  } catch (error) {
+    return {
+      kind: "knowledge_index_drift",
+      path: "agents.meta.json#counters",
+      detail: detailParts.join("; ") || "(no counters processed)",
+      applied: false,
+      error: truncateErrorMessage(error),
+    };
+  }
+}
+
+function truncateErrorMessage(error: unknown): string {
+  const raw = error instanceof Error ? error.message : String(error);
+  return raw.length > 240 ? `${raw.slice(0, 237)}...` : raw;
 }
 
 async function inspectForensic(projectRoot: string): Promise<{ present: boolean; valid: boolean; report: ForensicReport | null; error?: string }> {

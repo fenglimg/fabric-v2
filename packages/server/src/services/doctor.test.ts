@@ -1571,6 +1571,396 @@ describe("runDoctorReport", () => {
       expect(check?.status).toBe("ok");
     });
   });
+
+  // rc.4 TASK-003: apply-lint mutations. Each test seeds the same fixture
+  // shape used by TASK-001 / TASK-002 inspections, then invokes
+  // runDoctorApplyLint and asserts (a) on-disk mutations occurred, (b) the
+  // expected events.jsonl entries were appended, and (c) the inspection
+  // report after the mutation no longer surfaces the corresponding finding.
+  describe("rc.4 TASK-003: apply-lint mutations", () => {
+    const NOW_MS = Date.now();
+    const dayMs = 24 * 60 * 60 * 1000;
+    const ageDaysAgoIso = (days: number): string =>
+      new Date(NOW_MS - days * dayMs).toISOString();
+
+    function appendRawEvent(target: string, event: Record<string, unknown>): void {
+      const path = join(target, ".fabric", "events.jsonl");
+      const existing = existsSync(path) ? readFileSync(path, "utf8") : "";
+      const line = JSON.stringify(event);
+      writeFileSync(
+        path,
+        existing.length === 0 || existing.endsWith("\n")
+          ? `${existing}${line}\n`
+          : `${existing}\n${line}\n`,
+        "utf8",
+      );
+    }
+
+    function seedCanonical(
+      target: string,
+      relPath: string,
+      stableId: string,
+      maturity: "stable" | "endorsed" | "draft",
+      createdDaysAgo: number,
+    ): void {
+      const fm = `---\nid: ${stableId}\ntype: decision\nmaturity: ${maturity}\nlayer: team\ncreated_at: ${ageDaysAgoIso(createdDaysAgo)}\n---\n# ${stableId}\nBody.\n`;
+      writeFile(relPath, fm, target);
+      // Pre-seed knowledge_promoted so filesystem-edit-fallback does not
+      // synthesize a fresh promotion event during the run (which would refresh
+      // lastActiveAt and hide the orphan from the inspection).
+      appendRawEvent(target, {
+        kind: "fabric-event",
+        id: `event:seed-${stableId}-promoted`,
+        ts: NOW_MS - createdDaysAgo * dayMs,
+        schema_version: 1,
+        event_type: "knowledge_promoted",
+        stable_id: stableId,
+        timestamp: ageDaysAgoIso(createdDaysAgo),
+        reason: "test:seed",
+      });
+    }
+
+    async function runApplyLint(target: string) {
+      const { runDoctorApplyLint } = await import("./doctor.js");
+      return runDoctorApplyLint(target);
+    }
+
+    it("orphan_demote: rewrites maturity stable -> endorsed in frontmatter", async () => {
+      const target = createInitializedProject("doctor-rc4-applylint-orphan-stable");
+      await writeRuleMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+
+      const filePath = ".fabric/knowledge/decisions/KT-DEC-1101--ancient-stable.md";
+      seedCanonical(target, filePath, "KT-DEC-1101", "stable", 95);
+
+      const beforeSource = readFileSync(join(target, filePath), "utf8");
+      expect(beforeSource).toContain("maturity: stable");
+
+      const result = await runApplyLint(target);
+      expect(result.aborted).toBe(false);
+      const orphanMutation = result.mutations.find(
+        (m) => m.kind === "knowledge_orphan_demote_required",
+      );
+      expect(orphanMutation?.applied).toBe(true);
+      expect(orphanMutation?.detail).toBe("stable -> endorsed");
+
+      const afterSource = readFileSync(join(target, filePath), "utf8");
+      expect(afterSource).toContain("maturity: endorsed");
+      expect(afterSource).not.toContain("maturity: stable");
+      // Round-trip preservation: id / created_at / type / layer fields are
+      // byte-identical (only the maturity line changed).
+      expect(afterSource).toContain("id: KT-DEC-1101");
+      expect(afterSource).toContain("type: decision");
+      expect(afterSource).toContain("layer: team");
+    });
+
+    it("orphan_demote: rewrites maturity endorsed -> draft", async () => {
+      const target = createInitializedProject("doctor-rc4-applylint-orphan-endorsed");
+      await writeRuleMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+
+      const filePath = ".fabric/knowledge/decisions/KT-DEC-1102--ancient-endorsed.md";
+      seedCanonical(target, filePath, "KT-DEC-1102", "endorsed", 35);
+
+      const result = await runApplyLint(target);
+      expect(result.aborted).toBe(false);
+      expect(result.mutations.find((m) => m.kind === "knowledge_orphan_demote_required")?.applied).toBe(true);
+
+      const afterSource = readFileSync(join(target, filePath), "utf8");
+      expect(afterSource).toContain("maturity: draft");
+    });
+
+    it("orphan_demote: emits knowledge_demoted event with stable_id + reason", async () => {
+      const target = createInitializedProject("doctor-rc4-applylint-orphan-event");
+      await writeRuleMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+
+      seedCanonical(
+        target,
+        ".fabric/knowledge/decisions/KT-DEC-1103--ancient-stable-event.md",
+        "KT-DEC-1103",
+        "stable",
+        100,
+      );
+
+      await runApplyLint(target);
+
+      const { events } = await readEventLedger(target, { event_type: "knowledge_demoted" });
+      expect(events).toHaveLength(1);
+      const demotedEvent = events[0];
+      expect(demotedEvent.event_type).toBe("knowledge_demoted");
+      // Type narrowing for discriminated union access.
+      if (demotedEvent.event_type !== "knowledge_demoted") {
+        throw new Error("type narrowing failed");
+      }
+      expect(demotedEvent.stable_id).toBe("KT-DEC-1103");
+      expect(demotedEvent.reason).toContain("lint:orphan_demote");
+      expect(demotedEvent.reason).toContain("stable->endorsed");
+      expect(demotedEvent.timestamp).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    });
+
+    it("stale_archive: moves file to .fabric/.archive/<type>/<filename>", async () => {
+      const target = createInitializedProject("doctor-rc4-applylint-archive");
+      await writeRuleMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+
+      const filePath = ".fabric/knowledge/decisions/KT-DEC-1110--very-stale-draft.md";
+      const archivePath = ".fabric/.archive/decisions/KT-DEC-1110--very-stale-draft.md";
+      seedCanonical(target, filePath, "KT-DEC-1110", "draft", 110);
+
+      expect(existsSync(join(target, filePath))).toBe(true);
+      expect(existsSync(join(target, archivePath))).toBe(false);
+
+      const result = await runApplyLint(target);
+      expect(result.aborted).toBe(false);
+      const archiveMutation = result.mutations.find(
+        (m) => m.kind === "knowledge_stale_archive_required",
+      );
+      expect(archiveMutation?.applied).toBe(true);
+
+      expect(existsSync(join(target, filePath))).toBe(false);
+      expect(existsSync(join(target, archivePath))).toBe(true);
+      const archived = readFileSync(join(target, archivePath), "utf8");
+      expect(archived).toContain("id: KT-DEC-1110");
+    });
+
+    it("stale_archive: emits knowledge_archived event with stable_id + path detail in reason", async () => {
+      const target = createInitializedProject("doctor-rc4-applylint-archive-event");
+      await writeRuleMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+
+      seedCanonical(
+        target,
+        ".fabric/knowledge/decisions/KT-DEC-1111--very-stale-draft-event.md",
+        "KT-DEC-1111",
+        "draft",
+        120,
+      );
+
+      await runApplyLint(target);
+
+      const { events } = await readEventLedger(target, { event_type: "knowledge_archived" });
+      expect(events).toHaveLength(1);
+      const archivedEvent = events[0];
+      if (archivedEvent.event_type !== "knowledge_archived") {
+        throw new Error("type narrowing failed");
+      }
+      expect(archivedEvent.stable_id).toBe("KT-DEC-1111");
+      expect(archivedEvent.reason).toContain("lint:stale_archive");
+      expect(archivedEvent.reason).toContain(".fabric/.archive/decisions/");
+    });
+
+    it("index_drift: bumps agents.meta.json counters[layer][type] to max_observed + 1", async () => {
+      const target = createInitializedProject("doctor-rc4-applylint-drift");
+      await writeRuleMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+
+      // Seed counter=5 + canonical KT-DEC-0007 → drift detected, bump to 8.
+      writeFile(
+        ".fabric/knowledge/decisions/KT-DEC-0007--seven.md",
+        `---\nid: KT-DEC-0007\nslug: seven\nmaturity: stable\nlayer: team\n---\n# stub\n`,
+        target,
+      );
+      const metaPath = join(target, ".fabric", "agents.meta.json");
+      const metaBefore = JSON.parse(readFileSync(metaPath, "utf8"));
+      const existingCounters = metaBefore.counters ?? {
+        KP: { MOD: 0, DEC: 0, GLD: 0, PIT: 0, PRO: 0 },
+        KT: { MOD: 0, DEC: 0, GLD: 0, PIT: 0, PRO: 0 },
+      };
+      metaBefore.counters = {
+        KP: { ...existingCounters.KP },
+        KT: { ...existingCounters.KT, DEC: 5 },
+      };
+      writeFileSync(metaPath, JSON.stringify(metaBefore, null, 2), "utf8");
+
+      const result = await runApplyLint(target);
+      expect(result.aborted).toBe(false);
+      const driftMutation = result.mutations.find((m) => m.kind === "knowledge_index_drift");
+      expect(driftMutation?.applied).toBe(true);
+      expect(driftMutation?.detail).toContain("KT.DEC: 5 -> 8");
+
+      const metaAfter = JSON.parse(readFileSync(metaPath, "utf8"));
+      expect(metaAfter.counters.KT.DEC).toBe(8);
+    });
+
+    it("index_drift: does NOT emit any knowledge_demoted or knowledge_archived event (counter fix is meta-mutation only)", async () => {
+      const target = createInitializedProject("doctor-rc4-applylint-drift-no-event");
+      await writeRuleMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+
+      writeFile(
+        ".fabric/knowledge/decisions/KT-DEC-0009--nine.md",
+        `---\nid: KT-DEC-0009\nslug: nine\nmaturity: stable\nlayer: team\n---\n# stub\n`,
+        target,
+      );
+      const metaPath = join(target, ".fabric", "agents.meta.json");
+      const metaBefore = JSON.parse(readFileSync(metaPath, "utf8"));
+      metaBefore.counters = {
+        KP: { MOD: 0, DEC: 0, GLD: 0, PIT: 0, PRO: 0 },
+        KT: { MOD: 0, DEC: 0, GLD: 0, PIT: 0, PRO: 0 },
+      };
+      metaBefore.counters.KT.DEC = 3;
+      writeFileSync(metaPath, JSON.stringify(metaBefore, null, 2), "utf8");
+
+      await runApplyLint(target);
+
+      const { events: demoted } = await readEventLedger(target, { event_type: "knowledge_demoted" });
+      const { events: archived } = await readEventLedger(target, { event_type: "knowledge_archived" });
+      expect(demoted).toHaveLength(0);
+      expect(archived).toHaveLength(0);
+    });
+
+    it("aborts and skips ALL mutations when manual_error finding (stable_id_duplicate) is present", async () => {
+      const target = createInitializedProject("doctor-rc4-applylint-dup-blocks");
+      await writeRuleMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+
+      // Seed two canonical entries with the SAME stable_id (duplicate
+      // collision). Inspection #19 surfaces this as a manual_error.
+      writeFile(
+        ".fabric/knowledge/decisions/KT-DEC-0001--alpha.md",
+        `---\nid: KT-DEC-0001\nmaturity: stable\nlayer: team\n---\n# alpha\n`,
+        target,
+      );
+      writeFile(
+        ".fabric/knowledge/decisions/KT-DEC-0001--beta.md",
+        `---\nid: KT-DEC-0001\nmaturity: stable\nlayer: team\n---\n# beta\n`,
+        target,
+      );
+
+      // Also seed an orphan-demote candidate that WOULD otherwise mutate.
+      seedCanonical(
+        target,
+        ".fabric/knowledge/decisions/KT-DEC-1200--ancient-stable.md",
+        "KT-DEC-1200",
+        "stable",
+        100,
+      );
+
+      const beforeSource = readFileSync(
+        join(target, ".fabric/knowledge/decisions/KT-DEC-1200--ancient-stable.md"),
+        "utf8",
+      );
+
+      const result = await runApplyLint(target);
+      expect(result.aborted).toBe(true);
+      expect(result.abort_reason).toContain("knowledge_stable_id_duplicate");
+      expect(result.abort_reason?.toLowerCase()).toContain("manual repair");
+      expect(result.mutations).toHaveLength(0);
+      expect(result.changed).toBe(false);
+
+      // Orphan-demote candidate must remain UNTOUCHED — apply-lint refuses to
+      // mutate when integrity is in question.
+      const afterSource = readFileSync(
+        join(target, ".fabric/knowledge/decisions/KT-DEC-1200--ancient-stable.md"),
+        "utf8",
+      );
+      expect(afterSource).toBe(beforeSource);
+    });
+
+    it("aborts when layer_mismatch (KP-* under team/) is present and emits no events", async () => {
+      const target = createInitializedProject("doctor-rc4-applylint-layer-blocks");
+      await writeRuleMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+
+      // KP-* file under team/ → layer_mismatch manual_error.
+      writeFile(
+        ".fabric/knowledge/decisions/KP-DEC-0001--mislaid.md",
+        `---\nid: KP-DEC-0001\nmaturity: stable\nlayer: team\n---\n# stub\n`,
+        target,
+      );
+
+      const result = await runApplyLint(target);
+      expect(result.aborted).toBe(true);
+      expect(result.abort_reason).toContain("knowledge_layer_mismatch");
+      expect(result.mutations).toHaveLength(0);
+
+      const { events: demoted } = await readEventLedger(target, { event_type: "knowledge_demoted" });
+      const { events: archived } = await readEventLedger(target, { event_type: "knowledge_archived" });
+      expect(demoted).toHaveLength(0);
+      expect(archived).toHaveLength(0);
+    });
+
+    it("does NOT mutate or emit events for pending_overdue findings (informational only)", async () => {
+      const target = createInitializedProject("doctor-rc4-applylint-pending-noop");
+      await writeRuleMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+
+      const fmPending = `---\ntype: decision\nlayer: team\ncreated_at: ${ageDaysAgoIso(30)}\n---\n# Pending\n`;
+      const pendingRel = ".fabric/knowledge/pending/decisions/old-proposal.md";
+      writeFile(pendingRel, fmPending, target);
+
+      const beforeSource = readFileSync(join(target, pendingRel), "utf8");
+
+      const result = await runApplyLint(target);
+      expect(result.aborted).toBe(false);
+      // No mutation kind for pending_overdue (it's not in the dispatcher).
+      expect(
+        result.mutations.find((m) => m.path.includes("pending/")),
+      ).toBeUndefined();
+
+      // File unchanged, still in pending/.
+      expect(existsSync(join(target, pendingRel))).toBe(true);
+      expect(readFileSync(join(target, pendingRel), "utf8")).toBe(beforeSource);
+    });
+
+    it("idempotent: 2nd apply-lint run on resolved tree produces 0 mutations", async () => {
+      const target = createInitializedProject("doctor-rc4-applylint-idempotent");
+      await writeRuleMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+
+      seedCanonical(
+        target,
+        ".fabric/knowledge/decisions/KT-DEC-1300--ancient-stable.md",
+        "KT-DEC-1300",
+        "stable",
+        100,
+      );
+
+      const first = await runApplyLint(target);
+      expect(first.changed).toBe(true);
+      // First run produces at least one orphan-demote mutation. (An
+      // index_drift mutation may also fire here because the seeded canonical
+      // counter exceeds the empty agents.meta.json envelope produced by
+      // writeRuleMeta — both are legitimate first-run repairs and are
+      // covered individually by the per-mutation tests above.)
+      const firstOrphan = first.mutations.find(
+        (m) => m.kind === "knowledge_orphan_demote_required",
+      );
+      expect(firstOrphan?.applied).toBe(true);
+      expect(first.mutations.every((m) => m.applied)).toBe(true);
+
+      const second = await runApplyLint(target);
+      expect(second.changed).toBe(false);
+      expect(second.mutations).toHaveLength(0);
+      // After the first run, the entry was demoted stable -> endorsed AND a
+      // knowledge_demoted event was emitted (refreshing lastActiveAt). The
+      // 30d endorsed threshold means the (now-endorsed, just-active) entry is
+      // not re-flagged. Index drift is also resolved by the first run.
+    });
+
+    it("default report (no apply-lint) performs 0 mutations and 0 lint events even with findings present", async () => {
+      const target = createInitializedProject("doctor-rc4-readside-zero-mutation");
+      await writeRuleMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+
+      const orphanRel = ".fabric/knowledge/decisions/KT-DEC-1400--ancient-stable.md";
+      seedCanonical(target, orphanRel, "KT-DEC-1400", "stable", 100);
+      const beforeSource = readFileSync(join(target, orphanRel), "utf8");
+
+      // Default doctor invocation (read-only).
+      await runDoctorReport(target);
+
+      // File contents unchanged.
+      expect(readFileSync(join(target, orphanRel), "utf8")).toBe(beforeSource);
+      // No knowledge_demoted / knowledge_archived events emitted by the
+      // read-only path.
+      const { events: demoted } = await readEventLedger(target, { event_type: "knowledge_demoted" });
+      const { events: archived } = await readEventLedger(target, { event_type: "knowledge_archived" });
+      expect(demoted).toHaveLength(0);
+      expect(archived).toHaveLength(0);
+    });
+  });
 });
 
 function createInitializedProject(name: string): string {
