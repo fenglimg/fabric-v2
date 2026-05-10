@@ -343,6 +343,10 @@ const _fabReviewFiltersSchema = z
     layer: z.enum(["team", "personal", "both"]).optional(),
     maturity: z.enum(["draft", "verified", "proven"]).optional(),
     tags: z.array(z.string()).optional(),
+    // rc.4 TASK-006 fix (c): ISO-8601 lower bound on entry created_at; entries
+    // strictly older than this threshold are excluded from list / search
+    // results. Additive optional field — existing callers unaffected.
+    created_after: z.string().datetime().optional(),
   })
   .optional();
 

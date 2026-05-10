@@ -97,6 +97,10 @@ exports[`tool contracts > fab-review contract matches snapshot 1`] = `
           "filters": {
             "additionalProperties": false,
             "properties": {
+              "created_after": {
+                "format": "date-time",
+                "type": "string",
+              },
               "layer": {
                 "enum": [
                   "team",

@@ -179,41 +179,39 @@ describe("extractKnowledge", () => {
     expect(archive.events[0]?.reason).toBe("extract_knowledge:!!!@@@###");
   });
 
-  it("extractKnowledge_overwrites_on_collision_with_different_idempotency_key", async () => {
+  it("extractKnowledge_throws_on_collision_with_different_idempotency_key", async () => {
+    // rc.4 TASK-006 fix (b): contract changed — collision now throws loudly
+    // rather than silently overwriting. This test pins the new contract on
+    // the L88-92 branch (existing pending file with mismatched idempotency
+    // key from any source: stale seed, prior session, manual edit).
     const projectRoot = await createTempProject();
 
-    // Pre-seed a pending file at the destination path with a *different*
-    // idempotency key — exercises the L88-91 fallthrough (overwrite path).
     const dir = join(projectRoot, ".fabric/knowledge/pending/decisions");
     await mkdir(dir, { recursive: true });
     const target = join(dir, "collision.md");
-    await writeFile(
-      target,
-      [
-        "---",
-        "type: decisions",
-        "x-fabric-idempotency-key: sha256:0000000000000000000000000000000000000000000000000000000000000000",
-        "---",
-        "",
-        "Stale body should be replaced.",
-      ].join("\n"),
-      "utf8",
-    );
+    const stale = [
+      "---",
+      "type: decisions",
+      "x-fabric-idempotency-key: sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "---",
+      "",
+      "Stale body must be preserved (no silent overwrite).",
+    ].join("\n");
+    await writeFile(target, stale, "utf8");
 
-    const result = await extractKnowledge(projectRoot, {
-      source_session: "sess-collision",
-      recent_paths: [],
-      user_messages_summary: "Fresh body wins.",
-      type: "decisions",
-      slug: "collision",
-    });
+    await expect(
+      extractKnowledge(projectRoot, {
+        source_session: "sess-collision",
+        recent_paths: [],
+        user_messages_summary: "Fresh body must NOT win.",
+        type: "decisions",
+        slug: "collision",
+      }),
+    ).rejects.toThrow(/slug collision/u);
 
-    expect(result.pending_path).toBe(".fabric/knowledge/pending/decisions/collision.md");
-    const body = await readFile(join(projectRoot, result.pending_path), "utf8");
-    expect(body).toMatch(/Fresh body wins\./u);
-    expect(body).not.toMatch(/Stale body should be replaced\./u);
-    // The new file's idempotency key differs from the pre-seeded one.
-    expect(body).toMatch(new RegExp(`x-fabric-idempotency-key: ${result.idempotency_key}`, "u"));
+    // Stale file untouched (no data loss).
+    const after = await readFile(target, "utf8");
+    expect(after).toBe(stale);
   });
 
   it("extractKnowledge_renders_no_recent_paths_marker_when_recent_paths_empty", async () => {
@@ -265,28 +263,31 @@ describe("extractKnowledge", () => {
     expect(body).toMatch(/^## Evidence \(call 2\)$/mu);
   });
 
-  it("extractKnowledge_treats_existing_file_without_frontmatter_as_collision_overwrite", async () => {
+  it("extractKnowledge_throws_on_existing_file_without_frontmatter", async () => {
+    // rc.4 TASK-006 fix (b): file at destination with no parseable
+    // idempotency key is still a collision — the missing key reads as
+    // undefined, never matches the incoming key, so the throw branch fires.
+    // This is conservative: a manual / non-Fabric file at the pending path
+    // should NOT be silently clobbered.
     const projectRoot = await createTempProject();
-
-    // Pre-seed a pending file with NO frontmatter — readFrontmatterKey
-    // returns undefined (L212 match===null branch), so the existingKey
-    // !== idempotencyKey check falls through to the overwrite path.
     const dir = join(projectRoot, ".fabric/knowledge/pending/decisions");
     await mkdir(dir, { recursive: true });
     const target = join(dir, "no-frontmatter.md");
-    await writeFile(target, "Body without any frontmatter at all.\n", "utf8");
+    const original = "Body without any frontmatter at all.\n";
+    await writeFile(target, original, "utf8");
 
-    const result = await extractKnowledge(projectRoot, {
-      source_session: "sess-no-fm",
-      recent_paths: [],
-      user_messages_summary: "Replacement body.",
-      type: "decisions",
-      slug: "no-frontmatter",
-    });
-    expect(result.pending_path).toBe(".fabric/knowledge/pending/decisions/no-frontmatter.md");
-    const body = await readFile(join(projectRoot, result.pending_path), "utf8");
-    expect(body).toMatch(/^---$/mu);
-    expect(body).toMatch(/Replacement body\./u);
+    await expect(
+      extractKnowledge(projectRoot, {
+        source_session: "sess-no-fm",
+        recent_paths: [],
+        user_messages_summary: "Replacement body.",
+        type: "decisions",
+        slug: "no-frontmatter",
+      }),
+    ).rejects.toThrow(/slug collision/u);
+
+    const after = await readFile(target, "utf8");
+    expect(after).toBe(original);
   });
 
   it("extractKnowledge_swallows_event_emission_failure_silently", async () => {
@@ -348,6 +349,65 @@ describe("extractKnowledge", () => {
     expect(slugFromPath.length).toBeGreaterThan(0);
     // Trailing dash (if slice landed on one) must be stripped.
     expect(slugFromPath).not.toMatch(/-$/u);
+  });
+
+  // --------------------------------------------------------------------
+  // rc.4 TASK-006 fix (b): slug-collision throws loudly instead of
+  // silently overwriting a pre-existing pending file with a different
+  // idempotency_key (different source_session and/or summary). Two distinct
+  // triples that sanitize to the same slug must NOT clobber each other.
+  // --------------------------------------------------------------------
+  it("extractKnowledge_throws_loudly_on_slug_collision_across_sessions", async () => {
+    const projectRoot = await createTempProject();
+
+    // First call — establishes the pending file under a sanitized slug.
+    const first = await extractKnowledge(projectRoot, {
+      source_session: "sess-A",
+      recent_paths: ["a.ts"],
+      user_messages_summary: "Original entry from session A.",
+      type: "decisions",
+      slug: "shared-slug",
+    });
+    expect(first.pending_path).toBe(
+      ".fabric/knowledge/pending/decisions/shared-slug.md",
+    );
+    const originalBody = await readFile(
+      join(projectRoot, first.pending_path),
+      "utf8",
+    );
+
+    // Second call with a DIFFERENT source_session under the same sanitized
+    // slug → different idempotency_key → must throw, not overwrite.
+    await expect(
+      extractKnowledge(projectRoot, {
+        source_session: "sess-B",
+        recent_paths: ["b.ts"],
+        user_messages_summary: "Conflicting entry from session B.",
+        type: "decisions",
+        slug: "shared-slug",
+      }),
+    ).rejects.toThrow(/slug collision/u);
+
+    // Verify the original file is untouched (no silent data loss).
+    const after = await readFile(
+      join(projectRoot, first.pending_path),
+      "utf8",
+    );
+    expect(after).toBe(originalBody);
+    expect(after).toMatch(/Original entry from session A\./u);
+    expect(after).not.toMatch(/Conflicting entry from session B\./u);
+
+    // Observability: a knowledge_archive_attempted event with the
+    // slug-collision reason should be emitted before throw.
+    const ledger = await readEventLedger(projectRoot, {
+      event_type: "knowledge_archive_attempted",
+    });
+    expect(ledger.events.length).toBeGreaterThanOrEqual(1);
+    expect(
+      ledger.events.some((e) =>
+        ((e as { reason?: string }).reason ?? "").includes("slug-collision"),
+      ),
+    ).toBe(true);
   });
 });
 

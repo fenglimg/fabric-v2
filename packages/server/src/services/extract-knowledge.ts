@@ -85,9 +85,23 @@ export async function extractKnowledge(
         idempotency_key: idempotencyKey,
       };
     }
-    // Different key on existing file: rare slug collision across sessions.
-    // Treat as fresh write — overwrite is acceptable because the file is
-    // pending (not yet promoted) and the new triple wins observability.
+    // rc.4 TASK-006 fix (b): different idempotency_key on existing pending
+    // file = slug collision (typically two distinct triples whose slugs
+    // sanitize/truncate to the same canonical form). Previously this branch
+    // silently overwrote, causing data loss for the prior triple. Now we
+    // throw loudly so the caller can disambiguate (rename slug or merge
+    // upstream). Emit a knowledge_archive_attempted observability event
+    // before throwing so forensics can correlate.
+    await emitEventBestEffort(projectRoot, {
+      event_type: "knowledge_archive_attempted",
+      timestamp: new Date().toISOString(),
+      correlation_id: input.source_session,
+      session_id: input.source_session,
+      reason: `extract_knowledge:${sanitizedSlug}: slug-collision (existing key ${existingKey ?? "<none>"} != incoming ${idempotencyKey})`,
+    });
+    throw new Error(
+      `slug collision: pending file ${relativePath} already exists with a different idempotency_key (existing=${existingKey ?? "<missing>"}, incoming=${idempotencyKey}); rename slug or resolve upstream`,
+    );
   }
 
   const fresh = renderFreshEntry({

@@ -967,4 +967,168 @@ describe("reviewKnowledge", () => {
     expect(result.items[0].summary).toBe("A short summary of this entry.");
     expect(result.items[0].tags).toEqual(["coverage", "parser"]);
   });
+
+  // -------------------------------------------------------------------------
+  // rc.4 TASK-006 fix (a): multiline-safe quoteIfNeeded
+  //
+  // The helper is internal so tests exercise it through the modify action
+  // which is the only public surface that pipes user-supplied scalars into
+  // frontmatter via quoteIfNeeded.
+  // -------------------------------------------------------------------------
+
+  it("modify_with_multiline_title_writes_single_line_yaml_frontmatter", async () => {
+    const projectRoot = await createTempProject();
+    const relPath = await seedPendingFile(projectRoot, "decisions", "multiline-title");
+
+    const result = await reviewKnowledge(projectRoot, {
+      action: "modify",
+      pending_path: relPath,
+      changes: { title: "line one\nline two\nline three" },
+    });
+    expect(result.action).toBe("modify");
+
+    const written = await readFile(join(projectRoot, relPath), "utf8");
+    // Frontmatter block must remain a clean ---...--- envelope; the embedded
+    // newline must be JSON-escaped to \n inside a quoted scalar (no raw
+    // newline leaking out of the title line).
+    const fmMatch = /^---\n([\s\S]*?)\n---/u.exec(written);
+    expect(fmMatch).not.toBeNull();
+    const block = fmMatch![1]!;
+    const titleLine = block.split("\n").find((l) => l.startsWith("title:"));
+    expect(titleLine).toBeDefined();
+    // Single line: must contain the JSON-escaped representation, not a raw \n.
+    expect(titleLine).toContain("\\n");
+    expect(titleLine).not.toMatch(/\n/u);
+    // Round-trip: searching by the first segment of the title must find the
+    // entry (proves the body+frontmatter remain parseable post-rewrite).
+    const search = await reviewKnowledge(projectRoot, {
+      action: "search",
+      query: "line one",
+      filters: undefined,
+    });
+    if (search.action !== "search") throw new Error("unreachable");
+    expect(search.items.length).toBeGreaterThan(0);
+  });
+
+  it("modify_with_carriage_return_in_summary_escapes_safely", async () => {
+    const projectRoot = await createTempProject();
+    const relPath = await seedPendingFile(projectRoot, "decisions", "cr-summary");
+
+    const result = await reviewKnowledge(projectRoot, {
+      action: "modify",
+      pending_path: relPath,
+      changes: { summary: "alpha\r\nbeta" },
+    });
+    expect(result.action).toBe("modify");
+
+    const written = await readFile(join(projectRoot, relPath), "utf8");
+    const fmMatch = /^---\n([\s\S]*?)\n---/u.exec(written);
+    expect(fmMatch).not.toBeNull();
+    const block = fmMatch![1]!;
+    const summaryLine = block.split("\n").find((l) => l.startsWith("summary:"));
+    expect(summaryLine).toBeDefined();
+    // No raw CR or LF inside the value — JSON.stringify escapes both.
+    expect(summaryLine).not.toMatch(/\r/u);
+    expect(summaryLine).toContain("\\r");
+    expect(summaryLine).toContain("\\n");
+  });
+
+  // -------------------------------------------------------------------------
+  // rc.4 TASK-006 fix (c): created_after filter for list / search
+  // -------------------------------------------------------------------------
+
+  it("list_with_created_after_excludes_older_entries", async () => {
+    const projectRoot = await createTempProject();
+
+    // Seed two entries with explicit created_at — older + newer relative to
+    // a fixed threshold. seedPendingFile uses Date.now() so we hand-roll
+    // these to control timestamps.
+    const dir = join(projectRoot, ".fabric", "knowledge", "pending", "decisions");
+    await mkdir(dir, { recursive: true });
+    const oldEntry = [
+      "---",
+      "type: decisions",
+      "maturity: draft",
+      "layer: team",
+      "created_at: 2026-01-01T00:00:00.000Z",
+      "source_session: sess-old",
+      "tags: []",
+      "x-fabric-idempotency-key: sha256:000",
+      "---",
+      "",
+      "Body.",
+    ].join("\n");
+    const newEntry = [
+      "---",
+      "type: decisions",
+      "maturity: draft",
+      "layer: team",
+      "created_at: 2026-06-01T00:00:00.000Z",
+      "source_session: sess-new",
+      "tags: []",
+      "x-fabric-idempotency-key: sha256:111",
+      "---",
+      "",
+      "Body.",
+    ].join("\n");
+    await writeFile(join(dir, "old.md"), oldEntry, "utf8");
+    await writeFile(join(dir, "new.md"), newEntry, "utf8");
+
+    // Threshold between the two timestamps.
+    const result = await reviewKnowledge(projectRoot, {
+      action: "list",
+      filters: { created_after: "2026-03-01T00:00:00.000Z" },
+    });
+    if (result.action !== "list") throw new Error("unreachable");
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0].pending_path).toBe(
+      ".fabric/knowledge/pending/decisions/new.md",
+    );
+  });
+
+  it("search_with_created_after_filters_older_entries", async () => {
+    const projectRoot = await createTempProject();
+    const dir = join(projectRoot, ".fabric", "knowledge", "pending", "decisions");
+    await mkdir(dir, { recursive: true });
+    for (const [name, ts] of [
+      ["before.md", "2026-01-15T12:00:00.000Z"],
+      ["after.md", "2026-04-15T12:00:00.000Z"],
+    ] as const) {
+      const fm = [
+        "---",
+        "type: decisions",
+        "maturity: draft",
+        "layer: team",
+        `created_at: ${ts}`,
+        "source_session: sess-x",
+        "tags: []",
+        "title: shared keyword",
+        "---",
+        "",
+        "Body.",
+      ].join("\n");
+      await writeFile(join(dir, name), fm, "utf8");
+    }
+
+    // Without filter: both visible.
+    const all = await reviewKnowledge(projectRoot, {
+      action: "search",
+      query: "shared keyword",
+      filters: undefined,
+    });
+    if (all.action !== "search") throw new Error("unreachable");
+    expect(all.items).toHaveLength(2);
+
+    // With threshold: only newer entry visible.
+    const filtered = await reviewKnowledge(projectRoot, {
+      action: "search",
+      query: "shared keyword",
+      filters: { created_after: "2026-03-01T00:00:00.000Z" },
+    });
+    if (filtered.action !== "search") throw new Error("unreachable");
+    expect(filtered.items).toHaveLength(1);
+    expect(filtered.items[0].pending_path).toBe(
+      ".fabric/knowledge/pending/decisions/after.md",
+    );
+  });
 });

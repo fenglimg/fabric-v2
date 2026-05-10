@@ -185,6 +185,12 @@ type ListFilters = {
   layer?: "team" | "personal" | "both";
   maturity?: Maturity;
   tags?: string[];
+  // rc.4 TASK-006 fix (c): ISO-8601 lower bound on entry created_at. Entries
+  // strictly older than this threshold are excluded. Applied to both list and
+  // search actions for symmetry. Comparison is lexicographic on the ISO-8601
+  // string, which is correct for fully-qualified UTC timestamps with
+  // identical zone suffix (Z) — the contract layer enforces datetime() format.
+  created_after?: string;
 };
 
 type ListItem = {
@@ -240,6 +246,16 @@ async function listPending(
         const itemTags = fm.tags ?? [];
         const hasAll = filters.tags.every((t) => itemTags.includes(t));
         if (!hasAll) continue;
+      }
+      // rc.4 TASK-006 fix (c): created_after threshold. Entries lacking
+      // created_at frontmatter are conservatively excluded when the filter
+      // is set (caller asked for a date window — undated entries cannot be
+      // proven to fall inside it).
+      if (filters?.created_after !== undefined) {
+        const createdAt = fm.created_at;
+        if (createdAt === undefined || createdAt < filters.created_after) {
+          continue;
+        }
       }
 
       items.push({
@@ -693,6 +709,13 @@ async function searchEntries(
           const hasAll = filters.tags.every((t) => itemTags.includes(t));
           if (!hasAll) continue;
         }
+        // rc.4 TASK-006 fix (c): created_after threshold (mirrors listPending).
+        if (filters?.created_after !== undefined) {
+          const createdAt = fm.created_at;
+          if (createdAt === undefined || createdAt < filters.created_after) {
+            continue;
+          }
+        }
 
         // Query match: title || summary || tags || filename
         const haystacks = [
@@ -936,6 +959,19 @@ function appendPatchLines(lines: string[], patch: ModifyChanges): void {
 }
 
 function quoteIfNeeded(value: string): string {
+  // rc.4 TASK-006 fix (a): multiline-safe emit. Newlines or carriage returns
+  // would split a YAML scalar across lines and break the `---` frontmatter
+  // block. Detect them BEFORE the bare-vs-quoted decision and emit a
+  // JSON-escaped quoted form (\\n, \\r preserved as backslash-letter literals
+  // inside double quotes, which is valid YAML 1.2 double-quoted scalar
+  // syntax). Round-trip through stripQuotes is lossless because consumers
+  // read the literal value (downstream parsers like rule-meta-builder.ts
+  // strip surrounding quotes only — they don't unescape \\n; this is
+  // acceptable since the rc.3 contract restricts title/summary to
+  // single-line at the schema layer).
+  if (/[\n\r]/u.test(value)) {
+    return JSON.stringify(value);
+  }
   // Quote values that contain colons, leading/trailing whitespace, or special
   // YAML chars. Otherwise emit bare so the file stays diff-friendly.
   if (/[:#\[\]{}&*!|>'"%@`,]|^\s|\s$/u.test(value)) {
