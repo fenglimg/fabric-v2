@@ -143,14 +143,14 @@ async function readMetaEntries(projectRoot: string): Promise<Map<string, MetaEnt
 }
 
 async function findRuleFiles(projectRoot: string): Promise<string[]> {
-  const rulesRoot = join(projectRoot, ".fabric", "rules");
+  const knowledgeRoot = join(projectRoot, ".fabric", "knowledge");
 
-  if (!existsSync(rulesRoot) || !statSync(rulesRoot).isDirectory()) {
+  if (!existsSync(knowledgeRoot) || !statSync(knowledgeRoot).isDirectory()) {
     return [];
   }
 
   const files: string[] = [];
-  const stack = [rulesRoot];
+  const stack = [knowledgeRoot];
 
   while (stack.length > 0) {
     const current = stack.pop();
