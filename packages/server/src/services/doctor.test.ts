@@ -648,6 +648,46 @@ describe("runDoctorReport", () => {
     expect(updated.counters.KP.DEC).toBe(7);
   });
 
+  it("counter_desync regression: single --fix run reconciles counters when manually-authored files are unindexed", async () => {
+    // Reproduce the TASK-007 dogfood bug: knowledge files authored outside
+    // init-scan are on disk but NOT in agents.meta.json. The first --fix
+    // indexes them via reconcileRules (knowledge_dir_unindexed), but
+    // reconcileRules carries over previousMeta.counters verbatim. A second
+    // --fix was previously required to sync counters. This test asserts that
+    // a single --fix call is sufficient.
+    const target = createV2KnowledgeProject("doctor-counter-desync-unindexed-regression");
+    await writeRuleMeta(target, { source: "doctor_fix" });
+
+    // Seed 5 decision files with v2 frontmatter stable_ids — not yet indexed.
+    const frontmatterTemplate = (n: number) =>
+      `---\nid: KT-DEC-${String(n).padStart(4, "0")}\ntype: decision\nmaturity: draft\nlayer: team\ncreated_at: 2026-05-10T00:00:00Z\n---\n# Decision ${n}\n`;
+    for (let i = 1; i <= 5; i++) {
+      writeFile(`.fabric/knowledge/decisions/KT-DEC-${String(i).padStart(4, "0")}.md`, frontmatterTemplate(i), target);
+    }
+
+    // Before fix: counters.KT.DEC is 0 (default); files are unindexed.
+    const before = await runDoctorReport(target);
+    expect(before.fixable_errors.map((e) => e.code)).toContain("knowledge_dir_unindexed");
+    // counter_desync is NOT visible yet — files are not in nodes, so no stable_ids
+    // to compare against. The desync emerges only after reconciliation indexes them.
+    expect(before.fixable_errors.map((e) => e.code)).not.toContain("counter_desync");
+
+    // Single --fix run: must both index the files AND reconcile counters.
+    const fix = await runDoctorFix(target);
+    expect(fix.fixed.map((e) => e.code)).toContain("knowledge_dir_unindexed");
+
+    // Counters MUST be updated on disk after a single --fix (regression assertion).
+    const metaPath = join(target, ".fabric", "agents.meta.json");
+    const updated = JSON.parse(readFileSync(metaPath, "utf8")) as { counters: { KT: { DEC: number } } };
+    expect(updated.counters.KT.DEC).toBe(5);
+
+    // Doctor must report clean after a single --fix — no second run needed.
+    const after = await runDoctorReport(target);
+    expect(after.fixable_errors.map((e) => e.code)).not.toContain("counter_desync");
+    expect(after.fixable_errors.map((e) => e.code)).not.toContain("knowledge_dir_unindexed");
+    expect(after.status).toBe("ok");
+  });
+
   it("v2.0 / bootstrap_anchor_missing: passes when AGENTS.md or CLAUDE.md exists at repo root", async () => {
     const target = createInitializedProject("doctor-anchor-agents");
     await writeRuleMeta(target, { source: "doctor_fix" });

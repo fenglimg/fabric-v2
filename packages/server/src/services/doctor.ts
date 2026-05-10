@@ -399,6 +399,15 @@ export async function runDoctorFix(target: string): Promise<DoctorFixReport> {
       fixed.push(issue);
     }
     contextCache.invalidate("meta_write", projectRoot);
+
+    // Post-reconcile counter sync: reconcileRules carries over previousMeta.counters
+    // verbatim (rule-meta-builder never bumps counters during indexing). If any
+    // newly-indexed knowledge file declared a stable_id whose counter exceeds the
+    // preserved envelope, the counters are now desynced. Fix that here so a single
+    // `doctor --fix` invocation is sufficient — the caller does not need to run
+    // --fix twice to get consistent state.
+    await fixCounterDesync(projectRoot);
+    contextCache.invalidate("meta_write", projectRoot);
   }
 
   if (before.fixable_errors.some((issue) => issue.code === "event_ledger_partial_write")) {
