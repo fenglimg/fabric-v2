@@ -223,6 +223,86 @@ type FilesystemEditFallbackInspection = {
   synthesizedStableIds: string[];
 };
 
+// rc.4 TASK-001: read-side lint inspections (#16-18). Each inspection walks
+// the .fabric/knowledge/ tree and emits a `candidates` list of entries that
+// fail the maturity-keyed inactivity threshold. Mutation + event emission for
+// the proposed actions land in TASK-003 (--apply-lint).
+
+type LintMaturity = "stable" | "endorsed" | "draft";
+
+type OrphanDemoteCandidate = {
+  // Stable id parsed out of YAML frontmatter (e.g. KT-DEC-0001).
+  stable_id: string;
+  // Project-relative POSIX path of the canonical entry.
+  path: string;
+  // Inactivity in days at the time of the check (max of frontmatter.created_at,
+  // file mtime, and last matching event in events.jsonl).
+  age_days: number;
+  // Current maturity tier from frontmatter.
+  maturity: LintMaturity;
+  // The maturity tier the entry would demote to if a mutation were applied.
+  // `null` means terminal (draft → archive territory in TASK-002 stale-archive).
+  next_maturity: "endorsed" | "draft" | null;
+};
+
+type OrphanDemoteInspection = {
+  candidates: OrphanDemoteCandidate[];
+};
+
+type StaleArchiveCandidate = {
+  stable_id: string;
+  path: string;
+  age_days: number;
+  // Proposed archive destination, project-relative POSIX.
+  archive_path: string;
+};
+
+type StaleArchiveInspection = {
+  candidates: StaleArchiveCandidate[];
+};
+
+type PendingOverdueCandidate = {
+  // pending entries may have no frontmatter id yet (proposals are pre-allocate),
+  // so stable_id is optional.
+  stable_id?: string;
+  path: string;
+  age_days: number;
+};
+
+type PendingOverdueInspection = {
+  candidates: PendingOverdueCandidate[];
+};
+
+// Inactivity thresholds (in days) keyed by maturity tier. Beyond this age with
+// no fetch / promote / proposal event the entry is a demote candidate.
+const ORPHAN_DEMOTE_THRESHOLD_DAYS: Record<LintMaturity, number> = {
+  stable: 90,
+  endorsed: 30,
+  draft: 14,
+};
+
+// Additional inactivity (beyond the demote threshold) before a draft entry is
+// a stale-archive candidate. Total quiet window for a born-draft entry is
+// 14 + 90 = 104 days; for a previously-stable demoted entry the total is
+// 90 + 90 + 90 = 270 days (stable → endorsed → draft → archive). The check
+// only requires the *additional* 90d after entering draft, since orphan-demote
+// is responsible for the prior tier transitions.
+const STALE_ARCHIVE_ADDITIONAL_DAYS = 90;
+
+// Pending entries older than this threshold (based on frontmatter.created_at
+// when present, otherwise file mtime) are flagged for human triage.
+const PENDING_OVERDUE_THRESHOLD_DAYS = 14;
+
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+// Regex extracting the `maturity:` value from YAML frontmatter. Mirrors
+// extractKnowledgeFrontmatterId; we keep parsing line-based to avoid pulling
+// in a YAML dependency for a handful of fields.
+const MATURITY_LINE_PATTERN = /^maturity:\s*("?)(stable|endorsed|draft)\1\s*$/mu;
+
+// Regex extracting `created_at:` (ISO 8601 datetime) from YAML frontmatter.
+const CREATED_AT_LINE_PATTERN = /^created_at:\s*("?)([^"\n]+)\1\s*$/mu;
+
 // Reason prefix for synthesized knowledge_promoted events emitted by the
 // filesystem-edit fallback check. The `[synthesized]` prefix makes these
 // events grep-able in events.jsonl so consumers can distinguish them from
@@ -313,6 +393,15 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
   const filesystemEditFallback = eventLedger.exists && eventLedger.writable && eventLedger.parseable
     ? await inspectFilesystemEditFallback(projectRoot)
     : { synthesized: 0, synthesizedStableIds: [] };
+  // rc.4 TASK-001: read-side lint inspections (#16-18). These run after the
+  // filesystem-edit fallback (which can append synthesized knowledge_promoted
+  // events) so that the lastActiveAt index built by orphan-demote and
+  // stale-archive sees the synthesized timestamps and does not double-count
+  // a freshly-synthesized canonical entry as orphan.
+  const lintNow = Date.now();
+  const orphanDemote = await inspectOrphanDemote(projectRoot, lintNow);
+  const staleArchive = await inspectStaleArchive(projectRoot, lintNow);
+  const pendingOverdue = inspectPendingOverdue(projectRoot, lintNow);
   const checks: DoctorCheck[] = [
     createBootstrapAnchorCheck(bootstrapAnchor),
     createKnowledgeDirMissingCheck(knowledgeDirMissing),
@@ -337,6 +426,11 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     createStableIdCollisionCheck(stableIdCollision),
     createCounterDesyncCheck(counterDesync),
     createFilesystemEditFallbackCheck(filesystemEditFallback),
+    // rc.4 TASK-001: read-side lint checks #16-18. Findings only — mutation
+    // + event emission lands in TASK-003 behind --apply-lint.
+    createOrphanDemoteCheck(orphanDemote),
+    createStaleArchiveCheck(staleArchive),
+    createPendingOverdueCheck(pendingOverdue),
     createPreexistingRootFilesCheck(preexistingRootFiles),
     // v2.0 / rc.2: `createLegacyClientPathCheck` removed. The schema now
     // rejects retired clientPaths keys (windsurf/rooCode/geminiCLI) at Zod
@@ -1366,6 +1460,406 @@ function createPreexistingRootFilesCheck(inspection: PreexistingRootFilesInspect
     message: `${inspection.detected.join(", ")} detected at project root. These root files are not auto-loaded by Fabric MCP.`,
     actionHint: "Move knowledge content to `.fabric/knowledge/{type}/` if you want it available in MCP responses.",
   };
+}
+
+// rc.4 TASK-001: read-side lint inspections (#16-18). Walks the canonical
+// .fabric/knowledge/{type}/ tree (orphan-demote, stale-archive) and the
+// pending/<type>/ staging area (pending-overdue), parses YAML frontmatter
+// for maturity + stable_id + created_at, and computes per-entry inactivity
+// against an in-memory lastActiveAt index built in a single pass over
+// events.jsonl. None of these inspections mutate the filesystem or emit
+// events — TASK-003 wires those mutation paths behind --apply-lint.
+
+// Build a Map<stable_id, lastActiveAtEpochMs> in a single pass over events.jsonl.
+// "Activity" is the union of events that reference a knowledge entry by its
+// stable_id: knowledge_proposed, knowledge_promoted, knowledge_promote_started,
+// knowledge_demoted, knowledge_archived, knowledge_layer_changed, knowledge_slug_renamed,
+// AND read-side fetch events knowledge_sections_fetched (final_stable_ids[]) and
+// knowledge_selection (final_stable_ids[] union ai_selected_stable_ids[] union
+// required_stable_ids[]). knowledge_context_planned is also included.
+//
+// Complexity: O(N events). Per-file lookup is O(1). Documented per the risk
+// note in TASK-001.json — sufficient for v2.0 ledgers (<10k events typical).
+async function buildLastActiveIndex(
+  projectRoot: string,
+): Promise<Map<string, number>> {
+  const map = new Map<string, number>();
+  let events;
+  try {
+    ({ events } = await readEventLedger(projectRoot));
+  } catch {
+    return map;
+  }
+
+  for (const event of events) {
+    const ts = event.ts;
+    if (typeof ts !== "number" || !Number.isFinite(ts)) {
+      continue;
+    }
+    // Collect every stable_id this event references.
+    const ids: string[] = [];
+    switch (event.event_type) {
+      case "knowledge_proposed":
+      case "knowledge_promote_started":
+      case "knowledge_promoted":
+      case "knowledge_promote_failed":
+      case "knowledge_layer_changed":
+      case "knowledge_slug_renamed":
+      case "knowledge_demoted":
+      case "knowledge_archived":
+      case "knowledge_archive_attempted":
+      case "knowledge_deferred":
+      case "knowledge_rejected": {
+        if (typeof event.stable_id === "string" && event.stable_id.length > 0) {
+          ids.push(event.stable_id);
+        }
+        break;
+      }
+      case "knowledge_context_planned": {
+        ids.push(...event.required_stable_ids, ...event.ai_selectable_stable_ids, ...event.final_stable_ids);
+        break;
+      }
+      case "knowledge_selection": {
+        ids.push(
+          ...event.required_stable_ids,
+          ...event.ai_selectable_stable_ids,
+          ...event.ai_selected_stable_ids,
+          ...event.final_stable_ids,
+        );
+        break;
+      }
+      case "knowledge_sections_fetched": {
+        ids.push(...event.final_stable_ids, ...event.ai_selected_stable_ids);
+        break;
+      }
+      default:
+        break;
+    }
+
+    for (const id of ids) {
+      const prev = map.get(id);
+      if (prev === undefined || ts > prev) {
+        map.set(id, ts);
+      }
+    }
+  }
+
+  return map;
+}
+
+// Pure helper: maturity → inactivity threshold in days.
+function maturityThresholdDays(maturity: LintMaturity): number {
+  return ORPHAN_DEMOTE_THRESHOLD_DAYS[maturity];
+}
+
+// Pure helper: maturity → next-lower tier (or null when terminal).
+function nextLowerMaturity(current: LintMaturity): "endorsed" | "draft" | null {
+  if (current === "stable") return "endorsed";
+  if (current === "endorsed") return "draft";
+  return null;
+}
+
+function extractKnowledgeFrontmatterMaturity(source: string): LintMaturity | null {
+  const FM_PATTERN = /^(?:\uFEFF)?---\r?\n([\s\S]*?)\r?\n---/u;
+  const fm = FM_PATTERN.exec(source);
+  if (fm === null) {
+    return null;
+  }
+  const match = MATURITY_LINE_PATTERN.exec(fm[1]);
+  return match === null ? null : (match[2] as LintMaturity);
+}
+
+function extractKnowledgeFrontmatterCreatedAt(source: string): number | null {
+  const FM_PATTERN = /^(?:\uFEFF)?---\r?\n([\s\S]*?)\r?\n---/u;
+  const fm = FM_PATTERN.exec(source);
+  if (fm === null) {
+    return null;
+  }
+  const match = CREATED_AT_LINE_PATTERN.exec(fm[1]);
+  if (match === null) {
+    return null;
+  }
+  const parsed = Date.parse(match[2]);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+// Iterate canonical knowledge files: yields {stableId, maturity, abs path,
+// rel path, type, lastReferenceMs}. lastReferenceMs is the max of frontmatter
+// created_at, file mtime, and last-active event ts. Files that don't match
+// the canonical filename pattern OR are missing frontmatter id+maturity are
+// skipped silently — they are out of scope for the lint check (covered by
+// other doctor checks like stable_id_collision / filesystem_edit_fallback).
+type CanonicalEntry = {
+  stable_id: string;
+  maturity: LintMaturity;
+  type: typeof KNOWLEDGE_CANONICAL_TYPE_DIRS[number];
+  absPath: string;
+  relPath: string;
+  lastReferenceMs: number;
+};
+
+function* iterateCanonicalEntries(
+  projectRoot: string,
+  lastActiveIndex: Map<string, number>,
+): Generator<CanonicalEntry> {
+  const knowledgeRoot = join(projectRoot, ".fabric", "knowledge");
+  if (!existsSync(knowledgeRoot)) {
+    return;
+  }
+  for (const typeDir of KNOWLEDGE_CANONICAL_TYPE_DIRS) {
+    const dir = join(knowledgeRoot, typeDir);
+    if (!existsSync(dir)) {
+      continue;
+    }
+    let entries;
+    try {
+      entries = readdirSync(dir, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      if (!entry.isFile()) {
+        continue;
+      }
+      const match = CANONICAL_KNOWLEDGE_FILENAME_PATTERN.exec(entry.name);
+      if (match === null) {
+        continue;
+      }
+      const stableId = match[1];
+      const absPath = join(dir, entry.name);
+      let source: string;
+      try {
+        source = readFileSync(absPath, "utf8");
+      } catch {
+        continue;
+      }
+      const maturity = extractKnowledgeFrontmatterMaturity(source);
+      if (maturity === null) {
+        continue;
+      }
+      const createdAt = extractKnowledgeFrontmatterCreatedAt(source);
+      const eventTs = lastActiveIndex.get(stableId) ?? 0;
+      // Activity is event-driven; mtime is only a fallback for entries that
+      // have neither frontmatter.created_at nor any event reference (which is
+      // an unusual state — most canonical entries are promoted via fab_review
+      // and therefore have at least one knowledge_promoted event). Including
+      // mtime in the max would refresh the reference every time doctor runs
+      // (file rewrites are rare but happen during tests/dogfood).
+      let lastReferenceMs = Math.max(createdAt ?? 0, eventTs);
+      if (lastReferenceMs === 0) {
+        try {
+          lastReferenceMs = statSync(absPath).mtimeMs;
+        } catch {
+          lastReferenceMs = 0;
+        }
+      }
+      const relPath = posix.join(
+        ".fabric/knowledge",
+        typeDir,
+        entry.name,
+      );
+      yield { stable_id: stableId, maturity, type: typeDir, absPath, relPath, lastReferenceMs };
+    }
+  }
+}
+
+async function inspectOrphanDemote(
+  projectRoot: string,
+  now: number,
+): Promise<OrphanDemoteInspection> {
+  const lastActiveIndex = await buildLastActiveIndex(projectRoot);
+  const candidates: OrphanDemoteCandidate[] = [];
+
+  for (const entry of iterateCanonicalEntries(projectRoot, lastActiveIndex)) {
+    const ageMs = entry.lastReferenceMs > 0 ? now - entry.lastReferenceMs : now;
+    const ageDays = Math.floor(ageMs / MS_PER_DAY);
+    const threshold = maturityThresholdDays(entry.maturity);
+    if (ageDays <= threshold) {
+      continue;
+    }
+    candidates.push({
+      stable_id: entry.stable_id,
+      path: entry.relPath,
+      age_days: ageDays,
+      maturity: entry.maturity,
+      next_maturity: nextLowerMaturity(entry.maturity),
+    });
+  }
+
+  candidates.sort((a, b) => a.path.localeCompare(b.path));
+  return { candidates };
+}
+
+async function inspectStaleArchive(
+  projectRoot: string,
+  now: number,
+): Promise<StaleArchiveInspection> {
+  const lastActiveIndex = await buildLastActiveIndex(projectRoot);
+  const candidates: StaleArchiveCandidate[] = [];
+
+  for (const entry of iterateCanonicalEntries(projectRoot, lastActiveIndex)) {
+    if (entry.maturity !== "draft") {
+      continue;
+    }
+    const ageMs = entry.lastReferenceMs > 0 ? now - entry.lastReferenceMs : now;
+    const ageDays = Math.floor(ageMs / MS_PER_DAY);
+    // Stale-archive applies the demote threshold (14 for born-draft) PLUS the
+    // additional 90d quiet window. We do not require knowing the prior maturity
+    // — the additional-quiet semantics is a function of "this entry has been
+    // draft AND quiet for at least 90d", expressed here as draftDemoteThreshold
+    // + STALE_ARCHIVE_ADDITIONAL_DAYS total inactivity.
+    const requiredQuiet =
+      ORPHAN_DEMOTE_THRESHOLD_DAYS.draft + STALE_ARCHIVE_ADDITIONAL_DAYS;
+    if (ageDays <= requiredQuiet) {
+      continue;
+    }
+    const filename = posix.basename(entry.relPath);
+    candidates.push({
+      stable_id: entry.stable_id,
+      path: entry.relPath,
+      age_days: ageDays,
+      archive_path: posix.join(".fabric/.archive", entry.type, filename),
+    });
+  }
+
+  candidates.sort((a, b) => a.path.localeCompare(b.path));
+  return { candidates };
+}
+
+function inspectPendingOverdue(
+  projectRoot: string,
+  now: number,
+): PendingOverdueInspection {
+  const pendingRoot = join(projectRoot, ".fabric", "knowledge", "pending");
+  const candidates: PendingOverdueCandidate[] = [];
+  if (!existsSync(pendingRoot)) {
+    return { candidates };
+  }
+  let typeDirs: string[] = [];
+  try {
+    typeDirs = readdirSync(pendingRoot, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name);
+  } catch {
+    return { candidates };
+  }
+
+  for (const typeDir of typeDirs) {
+    const dir = join(pendingRoot, typeDir);
+    let entries;
+    try {
+      entries = readdirSync(dir, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      if (!entry.isFile() || !entry.name.endsWith(".md")) {
+        continue;
+      }
+      const absPath = join(dir, entry.name);
+      let source = "";
+      try {
+        source = readFileSync(absPath, "utf8");
+      } catch {
+        // Unreadable: continue (other checks surface IO errors).
+        continue;
+      }
+      const createdAt = extractKnowledgeFrontmatterCreatedAt(source);
+      let mtimeMs = 0;
+      try {
+        mtimeMs = statSync(absPath).mtimeMs;
+      } catch {
+        mtimeMs = 0;
+      }
+      // Precedence: frontmatter.created_at when present, else mtime.
+      const referenceMs = createdAt ?? mtimeMs;
+      if (referenceMs === 0) {
+        // Both missing → flag for human triage per risk note.
+        const relPath = posix.join(
+          ".fabric/knowledge/pending",
+          typeDir,
+          entry.name,
+        );
+        candidates.push({ path: relPath, age_days: PENDING_OVERDUE_THRESHOLD_DAYS + 1 });
+        continue;
+      }
+      const ageDays = Math.floor((now - referenceMs) / MS_PER_DAY);
+      if (ageDays <= PENDING_OVERDUE_THRESHOLD_DAYS) {
+        continue;
+      }
+      const stableId = extractKnowledgeFrontmatterId(source) ?? undefined;
+      const relPath = posix.join(
+        ".fabric/knowledge/pending",
+        typeDir,
+        entry.name,
+      );
+      candidates.push({
+        stable_id: stableId,
+        path: relPath,
+        age_days: ageDays,
+      });
+    }
+  }
+
+  candidates.sort((a, b) => a.path.localeCompare(b.path));
+  return { candidates };
+}
+
+function createOrphanDemoteCheck(inspection: OrphanDemoteInspection): DoctorCheck {
+  if (inspection.candidates.length === 0) {
+    return okCheck(
+      "Knowledge orphan demote",
+      "No canonical knowledge entries exceed their maturity-keyed inactivity threshold.",
+    );
+  }
+  const first = inspection.candidates[0];
+  const detail = `${first.stable_id} (${first.maturity}, ${first.age_days}d inactive at ${first.path})`;
+  return issueCheck(
+    "Knowledge orphan demote",
+    "warn",
+    "warning",
+    "knowledge_orphan_demote_required",
+    `${inspection.candidates.length} canonical knowledge entr${inspection.candidates.length === 1 ? "y exceeds" : "ies exceed"} their maturity-keyed inactivity threshold (stable=${ORPHAN_DEMOTE_THRESHOLD_DAYS.stable}d / endorsed=${ORPHAN_DEMOTE_THRESHOLD_DAYS.endorsed}d / draft=${ORPHAN_DEMOTE_THRESHOLD_DAYS.draft}d). First: ${detail}.`,
+    "Run `fab doctor --apply-lint` (rc.4 TASK-003) to demote orphan entries one maturity tier.",
+  );
+}
+
+function createStaleArchiveCheck(inspection: StaleArchiveInspection): DoctorCheck {
+  if (inspection.candidates.length === 0) {
+    return okCheck(
+      "Knowledge stale archive",
+      "No draft knowledge entries exceed the additional stale-archive quiet window.",
+    );
+  }
+  const first = inspection.candidates[0];
+  const detail = `${first.stable_id} (${first.age_days}d inactive at ${first.path}) → ${first.archive_path}`;
+  return issueCheck(
+    "Knowledge stale archive",
+    "warn",
+    "warning",
+    "knowledge_stale_archive_required",
+    `${inspection.candidates.length} draft knowledge entr${inspection.candidates.length === 1 ? "y is" : "ies are"} stale beyond the demote+${STALE_ARCHIVE_ADDITIONAL_DAYS}d additional quiet window. First: ${detail}.`,
+    "Run `fab doctor --apply-lint` (rc.4 TASK-003) to move stale entries into `.fabric/.archive/<type>/`.",
+  );
+}
+
+function createPendingOverdueCheck(inspection: PendingOverdueInspection): DoctorCheck {
+  if (inspection.candidates.length === 0) {
+    return okCheck(
+      "Knowledge pending overdue",
+      "No pending knowledge entries exceed the 14-day review threshold.",
+    );
+  }
+  const first = inspection.candidates[0];
+  const detail = `${first.path} (${first.age_days}d old)`;
+  return issueCheck(
+    "Knowledge pending overdue",
+    "warn",
+    "warning",
+    "knowledge_pending_overdue",
+    `${inspection.candidates.length} pending knowledge entr${inspection.candidates.length === 1 ? "y has" : "ies have"} been awaiting review for more than ${PENDING_OVERDUE_THRESHOLD_DAYS} days. First: ${detail}.`,
+    "Review pending entries via the fabric-review Skill (`/fabric-review`) and approve, reject, defer, or modify.",
+  );
 }
 
 // v2/rc.2: Removed `inspectClaudeSkillLegacyPath`, `inspectClaudeHookLegacyPath`,

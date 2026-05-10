@@ -69,7 +69,9 @@ describe("runDoctorReport", () => {
     // in TASK-002) → 15 rc.2 (Claude/Codex skill+hook path checks removed
     // in TASK-002 along with the fabric-init skill installer surface) → 14
     // rc.2 (Legacy client paths check removed in TASK-005 — strict schema
-    // rejects retired clientPaths keys at parse time).
+    // rejects retired clientPaths keys at parse time) → 18 rc.4 TASK-001
+    // (orphan demote / stale archive / pending overdue read-side lint
+    // checks added).
     expect(report.checks.map((check) => check.name)).toEqual([
       "Bootstrap anchor",
       "Knowledge layout",
@@ -85,9 +87,12 @@ describe("runDoctorReport", () => {
       "Stable ID collision",
       "Knowledge counter desync",
       "Filesystem-edit fallback",
+      "Knowledge orphan demote",
+      "Knowledge stale archive",
+      "Knowledge pending overdue",
       "Preexisting root markdown",
     ]);
-    expect(report.checks).toHaveLength(15);
+    expect(report.checks).toHaveLength(18);
   });
 
   it("v2.0: clean post-init repo (mocked layout) reports zero errors AND zero warnings", async () => {
@@ -922,6 +927,385 @@ describe("runDoctorReport", () => {
       (e) => e.event_type === "knowledge_promoted" && e.reason === "[synthesized] filesystem-edit-fallback",
     );
     expect(synthesized).toHaveLength(0);
+  });
+
+  // rc.4 TASK-001: read-side lint checks #16-18.
+  //
+  // Test strategy: each test seeds an initialized project with a canonical
+  // (or pending) knowledge entry whose YAML frontmatter `created_at` is set
+  // far enough in the past to cross (or not) the threshold. Because the
+  // inspect functions use max(created_at, mtime, lastEvent.ts), seeding a
+  // very-old `created_at` is sufficient to make the entry orphan/stale only
+  // when no recent event references its stable_id. We append synthesized
+  // events directly to events.jsonl with a stale `ts` to test the threshold
+  // boundary (and a fresh `ts` to verify the recent-activity skip path).
+  describe("rc.4 TASK-001: read-side lint checks", () => {
+    const NOW_MS = Date.now();
+    const dayMs = 24 * 60 * 60 * 1000;
+    const ageDaysAgoIso = (days: number): string =>
+      new Date(NOW_MS - days * dayMs).toISOString();
+
+    function appendRawEvent(target: string, event: Record<string, unknown>): void {
+      const path = join(target, ".fabric", "events.jsonl");
+      const existing = existsSync(path) ? readFileSync(path, "utf8") : "";
+      const line = JSON.stringify(event);
+      writeFileSync(
+        path,
+        existing.length === 0 || existing.endsWith("\n")
+          ? `${existing}${line}\n`
+          : `${existing}\n${line}\n`,
+        "utf8",
+      );
+    }
+
+    function seedCanonical(
+      target: string,
+      relPath: string,
+      stableId: string,
+      maturity: "stable" | "endorsed" | "draft",
+      createdDaysAgo: number,
+    ): void {
+      const fm = `---\nid: ${stableId}\ntype: decision\nmaturity: ${maturity}\nlayer: team\ncreated_at: ${ageDaysAgoIso(createdDaysAgo)}\n---\n# ${stableId}\n`;
+      writeFile(relPath, fm, target);
+      // Pre-seed a knowledge_promoted event with a stale timestamp matching
+      // created_at. Without this, the rc.3 filesystem-edit-fallback check
+      // synthesizes a knowledge_promoted event with `ts: Date.now()` to
+      // back-fill the audit trail — which would refresh lastActiveAt and
+      // hide the orphan from the rc.4 inspect functions. Real-world state
+      // includes a promote event whose ts matches the original promotion;
+      // the test seeds the same shape directly.
+      appendRawEvent(target, {
+        kind: "fabric-event",
+        id: `event:seed-${stableId}-promoted`,
+        ts: NOW_MS - createdDaysAgo * dayMs,
+        schema_version: 1,
+        event_type: "knowledge_promoted",
+        stable_id: stableId,
+        timestamp: ageDaysAgoIso(createdDaysAgo),
+        reason: "test:seed",
+      });
+    }
+
+    it("orphan_demote: emits warning when stable canonical entry is inactive >90d", async () => {
+      const target = createInitializedProject("doctor-rc4-orphan-stable");
+      await writeRuleMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+
+      seedCanonical(
+        target,
+        ".fabric/knowledge/decisions/KT-DEC-1001--ancient-stable.md",
+        "KT-DEC-1001",
+        "stable",
+        91,
+      );
+      // No recent event referencing this stable_id → orphan.
+
+      const report = await runDoctorReport(target);
+      const check = report.checks.find((c) => c.name === "Knowledge orphan demote");
+      expect(check?.kind).toBe("warning");
+      expect(check?.code).toBe("knowledge_orphan_demote_required");
+      expect(check?.status).toBe("warn");
+      expect(report.warnings.map((w) => w.code)).toContain("knowledge_orphan_demote_required");
+      expect(check?.message).toContain("KT-DEC-1001");
+      expect(check?.message).toContain("stable");
+    });
+
+    it("orphan_demote: emits warning when endorsed canonical entry is inactive >30d", async () => {
+      const target = createInitializedProject("doctor-rc4-orphan-endorsed");
+      await writeRuleMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+
+      seedCanonical(
+        target,
+        ".fabric/knowledge/decisions/KT-DEC-1002--ancient-endorsed.md",
+        "KT-DEC-1002",
+        "endorsed",
+        31,
+      );
+
+      const report = await runDoctorReport(target);
+      const check = report.checks.find((c) => c.name === "Knowledge orphan demote");
+      expect(check?.code).toBe("knowledge_orphan_demote_required");
+      expect(check?.message).toContain("KT-DEC-1002");
+      expect(check?.message).toContain("endorsed");
+    });
+
+    it("orphan_demote: emits warning when draft canonical entry is inactive >14d", async () => {
+      const target = createInitializedProject("doctor-rc4-orphan-draft");
+      await writeRuleMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+
+      seedCanonical(
+        target,
+        ".fabric/knowledge/decisions/KT-DEC-1003--ancient-draft.md",
+        "KT-DEC-1003",
+        "draft",
+        15,
+      );
+
+      const report = await runDoctorReport(target);
+      const check = report.checks.find((c) => c.name === "Knowledge orphan demote");
+      expect(check?.code).toBe("knowledge_orphan_demote_required");
+      expect(check?.message).toContain("KT-DEC-1003");
+      expect(check?.message).toContain("draft");
+    });
+
+    it("orphan_demote: skips entry that has a recent fetch event within threshold", async () => {
+      const target = createInitializedProject("doctor-rc4-orphan-recent-fetch");
+      await writeRuleMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+
+      seedCanonical(
+        target,
+        ".fabric/knowledge/decisions/KT-DEC-1004--touched-stable.md",
+        "KT-DEC-1004",
+        "stable",
+        200,
+      );
+      // Append a knowledge_sections_fetched 5 days ago referencing this id —
+      // recent activity should keep the entry out of the candidates list.
+      appendRawEvent(target, {
+        kind: "fabric-event",
+        id: "event:rc4-recent-fetch",
+        ts: NOW_MS - 5 * dayMs,
+        schema_version: 1,
+        event_type: "knowledge_sections_fetched",
+        selection_token: "tok",
+        requested_sections: [],
+        final_stable_ids: ["KT-DEC-1004"],
+        ai_selected_stable_ids: [],
+      });
+
+      const report = await runDoctorReport(target);
+      const check = report.checks.find((c) => c.name === "Knowledge orphan demote");
+      expect(check?.status).toBe("ok");
+      expect(check?.kind).toBeUndefined();
+      expect(report.warnings.map((w) => w.code)).not.toContain("knowledge_orphan_demote_required");
+    });
+
+    it("orphan_demote: ok status when no canonical entries exist", async () => {
+      const target = createInitializedProject("doctor-rc4-orphan-empty");
+      await writeRuleMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+      // Remove the seeded server.md so there are no canonical entries with frontmatter.
+      const { rmSync: nodeRmSync } = await import("node:fs");
+      nodeRmSync(join(target, ".fabric", "knowledge", "decisions", "server.md"), { force: true });
+
+      const report = await runDoctorReport(target);
+      const check = report.checks.find((c) => c.name === "Knowledge orphan demote");
+      expect(check?.status).toBe("ok");
+      expect(check?.message).toContain("No canonical knowledge entries");
+    });
+
+    it("orphan_demote: respects the per-maturity boundary (stable at 89d is NOT a candidate)", async () => {
+      const target = createInitializedProject("doctor-rc4-orphan-boundary");
+      await writeRuleMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+
+      seedCanonical(
+        target,
+        ".fabric/knowledge/decisions/KT-DEC-1005--just-fresh-stable.md",
+        "KT-DEC-1005",
+        "stable",
+        89,
+      );
+
+      const report = await runDoctorReport(target);
+      const check = report.checks.find((c) => c.name === "Knowledge orphan demote");
+      expect(check?.status).toBe("ok");
+    });
+
+    it("stale_archive: emits warning when draft entry is inactive beyond demote+90d additional quiet", async () => {
+      const target = createInitializedProject("doctor-rc4-stale-archive");
+      await writeRuleMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+
+      // Total inactivity: draft demote threshold (14d) + additional (90d) = 104d.
+      // Seed a draft entry inactive for 105d.
+      seedCanonical(
+        target,
+        ".fabric/knowledge/decisions/KT-DEC-1010--very-stale-draft.md",
+        "KT-DEC-1010",
+        "draft",
+        105,
+      );
+
+      const report = await runDoctorReport(target);
+      const check = report.checks.find((c) => c.name === "Knowledge stale archive");
+      expect(check?.kind).toBe("warning");
+      expect(check?.code).toBe("knowledge_stale_archive_required");
+      expect(check?.status).toBe("warn");
+      expect(check?.message).toContain("KT-DEC-1010");
+      expect(check?.message).toContain(".fabric/.archive/decisions/KT-DEC-1010--very-stale-draft.md");
+    });
+
+    it("stale_archive: skips draft entry that is only barely past demote threshold", async () => {
+      const target = createInitializedProject("doctor-rc4-stale-recent-draft");
+      await writeRuleMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+
+      // Inactive 30d: past 14d demote threshold (so orphan_demote DOES flag it),
+      // but well below 104d stale-archive threshold.
+      seedCanonical(
+        target,
+        ".fabric/knowledge/decisions/KT-DEC-1011--recent-draft.md",
+        "KT-DEC-1011",
+        "draft",
+        30,
+      );
+
+      const report = await runDoctorReport(target);
+      const stale = report.checks.find((c) => c.name === "Knowledge stale archive");
+      expect(stale?.status).toBe("ok");
+      // Cross-check: orphan_demote DOES flag it.
+      const orphan = report.checks.find((c) => c.name === "Knowledge orphan demote");
+      expect(orphan?.kind).toBe("warning");
+    });
+
+    it("stale_archive: skips stable entry even when very old (only draft entries are archive candidates)", async () => {
+      const target = createInitializedProject("doctor-rc4-stale-stable-not-archive");
+      await writeRuleMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+
+      seedCanonical(
+        target,
+        ".fabric/knowledge/decisions/KT-DEC-1012--ancient-stable.md",
+        "KT-DEC-1012",
+        "stable",
+        500,
+      );
+
+      const report = await runDoctorReport(target);
+      const stale = report.checks.find((c) => c.name === "Knowledge stale archive");
+      expect(stale?.status).toBe("ok");
+    });
+
+    it("pending_overdue: emits warning when pending entry is older than 14d via frontmatter created_at", async () => {
+      const target = createInitializedProject("doctor-rc4-pending-overdue");
+      await writeRuleMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+
+      const fm = `---\ntype: decision\nlayer: team\ncreated_at: ${ageDaysAgoIso(20)}\n---\n# Pending\nProposal body.\n`;
+      writeFile(".fabric/knowledge/pending/decisions/proposal.md", fm, target);
+
+      const report = await runDoctorReport(target);
+      const check = report.checks.find((c) => c.name === "Knowledge pending overdue");
+      expect(check?.kind).toBe("warning");
+      expect(check?.code).toBe("knowledge_pending_overdue");
+      expect(check?.status).toBe("warn");
+      expect(check?.message).toContain(".fabric/knowledge/pending/decisions/proposal.md");
+    });
+
+    it("pending_overdue: skips recent pending entry (<14d)", async () => {
+      const target = createInitializedProject("doctor-rc4-pending-recent");
+      await writeRuleMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+
+      const fm = `---\ntype: decision\nlayer: team\ncreated_at: ${ageDaysAgoIso(7)}\n---\n# Pending\nProposal body.\n`;
+      writeFile(".fabric/knowledge/pending/decisions/fresh-proposal.md", fm, target);
+
+      const report = await runDoctorReport(target);
+      const check = report.checks.find((c) => c.name === "Knowledge pending overdue");
+      expect(check?.status).toBe("ok");
+    });
+
+    it("pending_overdue: ok status when pending dir is empty", async () => {
+      const target = createInitializedProject("doctor-rc4-pending-empty");
+      await writeRuleMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+
+      const report = await runDoctorReport(target);
+      const check = report.checks.find((c) => c.name === "Knowledge pending overdue");
+      expect(check?.status).toBe("ok");
+      expect(check?.message).toContain("No pending knowledge entries");
+    });
+
+    it("read-side: 0 file mutations + 0 events emitted by the 3 new checks", async () => {
+      const target = createInitializedProject("doctor-rc4-readside-noop");
+      await writeRuleMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+
+      // Seed all 3 trigger conditions.
+      seedCanonical(
+        target,
+        ".fabric/knowledge/decisions/KT-DEC-2001--orphan-stable.md",
+        "KT-DEC-2001",
+        "stable",
+        100,
+      );
+      seedCanonical(
+        target,
+        ".fabric/knowledge/decisions/KT-DEC-2002--very-stale-draft.md",
+        "KT-DEC-2002",
+        "draft",
+        200,
+      );
+      const fmPending = `---\ntype: decision\nlayer: team\ncreated_at: ${ageDaysAgoIso(30)}\n---\n# Pending\n`;
+      writeFile(".fabric/knowledge/pending/decisions/old-proposal.md", fmPending, target);
+
+      // Snapshot ledger size and canonical-tree paths before the run. The
+      // before snapshot already includes the fixture-seeded knowledge_promoted
+      // events (one per canonical seedCanonical call) — those are not emitted
+      // by the lint checks; they exist purely so filesystem-edit-fallback
+      // does not synthesize a fresh promotion event during the test.
+      const ledgerPath = join(target, ".fabric", "events.jsonl");
+      const beforeLedger = readFileSync(ledgerPath, "utf8");
+      const beforeEventCount = beforeLedger
+        .split("\n")
+        .filter((line) => line.trim().length > 0).length;
+      const beforeOrphan = readFileSync(
+        join(target, ".fabric", "knowledge", "decisions", "KT-DEC-2001--orphan-stable.md"),
+        "utf8",
+      );
+      const beforeStale = readFileSync(
+        join(target, ".fabric", "knowledge", "decisions", "KT-DEC-2002--very-stale-draft.md"),
+        "utf8",
+      );
+      const beforePending = readFileSync(
+        join(target, ".fabric", "knowledge", "pending", "decisions", "old-proposal.md"),
+        "utf8",
+      );
+
+      const report = await runDoctorReport(target);
+
+      // All 3 checks fired.
+      expect(report.warnings.map((w) => w.code)).toContain("knowledge_orphan_demote_required");
+      expect(report.warnings.map((w) => w.code)).toContain("knowledge_stale_archive_required");
+      expect(report.warnings.map((w) => w.code)).toContain("knowledge_pending_overdue");
+
+      // Filesystem-edit fallback (rc.3 #15) synthesizes knowledge_promoted
+      // events for canonical files without a matching event — but here every
+      // canonical entry has a fixture-seeded knowledge_promoted event already,
+      // so synthesis should be a no-op. The rc.4 lint checks (#16-18) are
+      // strictly read-only: ledger byte-count must be exactly equal to the
+      // pre-run snapshot.
+      const afterLedger = readFileSync(ledgerPath, "utf8");
+      const afterEventCount = afterLedger
+        .split("\n")
+        .filter((line) => line.trim().length > 0).length;
+      expect(afterEventCount).toBe(beforeEventCount);
+      expect(afterLedger).toBe(beforeLedger);
+
+      // Canonical + pending file contents are byte-identical to the pre-run snapshot.
+      expect(
+        readFileSync(
+          join(target, ".fabric", "knowledge", "decisions", "KT-DEC-2001--orphan-stable.md"),
+          "utf8",
+        ),
+      ).toBe(beforeOrphan);
+      expect(
+        readFileSync(
+          join(target, ".fabric", "knowledge", "decisions", "KT-DEC-2002--very-stale-draft.md"),
+          "utf8",
+        ),
+      ).toBe(beforeStale);
+      expect(
+        readFileSync(
+          join(target, ".fabric", "knowledge", "pending", "decisions", "old-proposal.md"),
+          "utf8",
+        ),
+      ).toBe(beforePending);
+    });
   });
 });
 
