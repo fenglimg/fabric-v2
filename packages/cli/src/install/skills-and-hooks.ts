@@ -42,15 +42,19 @@ export type InstallOptions = {
 };
 
 const SKILL_TEMPLATE_REL = "skills/fabric-archive/SKILL.md";
+const SKILL_REVIEW_TEMPLATE_REL = "skills/fabric-review/SKILL.md";
 const HOOK_SCRIPT_TEMPLATE_REL = "hooks/archive-hint.cjs";
 const CLAUDE_HOOK_CONFIG_TEMPLATE_REL = "hooks/configs/claude-code.json";
 const CODEX_HOOK_CONFIG_TEMPLATE_REL = "hooks/configs/codex-hooks.json";
 
 const SKILL_DEST_REL = join("skills", "fabric-archive", "SKILL.md");
+const SKILL_REVIEW_DEST_REL = join("skills", "fabric-review", "SKILL.md");
 const HOOK_SCRIPT_DEST_REL = join("hooks", "archive-hint.cjs");
 
 const POINTER_LINE =
   "> Use the fabric-archive Skill when archiving knowledge entries (see .claude/skills/fabric-archive/SKILL.md).";
+const REVIEW_POINTER_LINE =
+  "> Use the fabric-review Skill to review pending knowledge entries (see .claude/skills/fabric-review/SKILL.md).";
 
 const POINTER_TARGETS = ["CLAUDE.md", "AGENTS.md", join(".cursor", "rules")];
 
@@ -71,6 +75,32 @@ export async function installFabricArchiveSkill(
   const results: InstallStepResult[] = [];
   for (const target of targets) {
     results.push(await copyTextIdempotent("skill", source, target));
+  }
+  return results;
+}
+
+/**
+ * Copy templates/skills/fabric-review/SKILL.md into both .claude/skills/
+ * and .codex/skills/ subtrees under the project root. Idempotent: if the
+ * destination already contains an identical copy, no write occurs.
+ *
+ * Sibling installer to {@link installFabricArchiveSkill}; the v2/rc.3
+ * fabric-review Skill is deployed alongside fabric-archive so the user's
+ * AI client surfaces both archive (write-side) and review (read-side)
+ * knowledge flows.
+ */
+export async function installFabricReviewSkill(
+  projectRoot: string,
+  _options: InstallOptions = {},
+): Promise<InstallStepResult[]> {
+  const source = await readTemplate(SKILL_REVIEW_TEMPLATE_REL);
+  const targets = [
+    join(projectRoot, ".claude", SKILL_REVIEW_DEST_REL),
+    join(projectRoot, ".codex", SKILL_REVIEW_DEST_REL),
+  ];
+  const results: InstallStepResult[] = [];
+  for (const target of targets) {
+    results.push(await copyTextIdempotent("skill-review", source, target));
   }
   return results;
 }
@@ -134,10 +164,17 @@ export async function mergeCodexHookConfig(
 }
 
 /**
- * Append a one-line pointer to CLAUDE.md / AGENTS.md / .cursor/rules
- * referencing the fabric-archive Skill. Idempotent: skips files that are
- * absent (does not create) and skips files where the pointer line is
- * already present (substring match on the static literal).
+ * Append one-line pointers to CLAUDE.md / AGENTS.md / .cursor/rules
+ * referencing the fabric-archive AND fabric-review Skills. Idempotent:
+ * skips files that are absent (does not create) and skips appending a
+ * given pointer when its exact literal is already present (substring
+ * match). Each pointer is dedup-checked independently so a user who
+ * deletes one manually still gets the other re-added on `fab init`.
+ *
+ * v2/rc.3 (TASK-006): extended from rc.2's archive-only pointer to cover
+ * both fabric-archive and fabric-review. The function name is preserved
+ * for call-site compatibility; callers do not need to invoke a separate
+ * review-pointer helper.
  */
 export async function addArchiveSkillPointer(
   projectRoot: string,
@@ -162,14 +199,33 @@ export async function addArchiveSkillPointer(
       });
       continue;
     }
-    if (existing.includes(POINTER_LINE)) {
+
+    let next = existing;
+    let wrote = false;
+
+    // Append fabric-archive pointer if not present
+    if (next.includes(POINTER_LINE)) {
       results.push({ step: "pointer", path: target, status: "skipped", message: "already-present" });
-      continue;
+    } else {
+      const trailingNewline = next.length === 0 || next.endsWith("\n") ? "" : "\n";
+      next = `${next}${trailingNewline}\n${POINTER_LINE}\n`;
+      wrote = true;
+      results.push({ step: "pointer", path: target, status: "written" });
     }
-    const trailingNewline = existing.length === 0 || existing.endsWith("\n") ? "" : "\n";
-    const next = `${existing}${trailingNewline}\n${POINTER_LINE}\n`;
-    await atomicWriteText(target, next);
-    results.push({ step: "pointer", path: target, status: "written" });
+
+    // Append fabric-review pointer if not present (independent dedup)
+    if (next.includes(REVIEW_POINTER_LINE)) {
+      results.push({ step: "pointer-review", path: target, status: "skipped", message: "already-present" });
+    } else {
+      const trailingNewline = next.length === 0 || next.endsWith("\n") ? "" : "\n";
+      next = `${next}${trailingNewline}\n${REVIEW_POINTER_LINE}\n`;
+      wrote = true;
+      results.push({ step: "pointer-review", path: target, status: "written" });
+    }
+
+    if (wrote) {
+      await atomicWriteText(target, next);
+    }
   }
   return results;
 }

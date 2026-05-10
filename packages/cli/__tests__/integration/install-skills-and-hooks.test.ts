@@ -1,18 +1,21 @@
 /**
- * Integration tests: TASK-006 — fabric-archive Skill + archive-hint hook install
+ * Integration tests: TASK-006 (rc.2) + TASK-006 (rc.3) — fabric-archive
+ * AND fabric-review Skills + archive-hint hook install
  *
- * Verifies the TASK-005 wiring at packages/cli/src/install/skills-and-hooks.ts
+ * Verifies the wiring at packages/cli/src/install/skills-and-hooks.ts
  * (called from init bootstrap stage and the fabric hooks command). Eight
  * cases exercise:
  *
- *   1. fresh init writes all 6 artifacts (skills + hook scripts + 2 configs)
+ *   1. fresh init writes all 8 artifacts (2 archive skills + 2 review skills
+ *      + 2 hook scripts + 2 per-client configs)
  *   2. idempotent re-init produces zero diff
  *   3. preserves user customizations in .claude/settings.json
  *   4. dedupe on re-install (hooks.Stop count unchanged)
  *   5. POSIX hook script is executable (0o100 bit set)
- *   6. fabric hooks command is idempotent post-init
+ *   6. fabric hooks command is idempotent post-init (covers both skills)
  *   7. partial install resilience (.claude/ as a file, .codex/ side still merged)
- *   8. AGENTS.md / CLAUDE.md pointer line appended only once on re-run
+ *   8. AGENTS.md / CLAUDE.md pointer lines (archive + review) appended only
+ *      once on re-run
  */
 
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
@@ -98,24 +101,34 @@ function snapshotTree(root: string, rel: string): FsSnapshot {
 }
 
 // ---------------------------------------------------------------------------
-// Test 1 — fresh init writes all 6 artifacts byte-identical to templates
+// Test 1 — fresh init writes all 8 artifacts byte-identical to templates
+//
+// rc.3 update: 2 added artifacts vs rc.2's 6 — fabric-review SKILL.md to both
+// .claude/skills/fabric-review/ and .codex/skills/fabric-review/.
 // ---------------------------------------------------------------------------
 
 describe("TASK-006 install-skills-and-hooks: fresh init", () => {
-  it("writes 6 artifacts (skills + hooks + per-client configs)", async () => {
+  it("writes 8 artifacts (archive+review skills + hooks + per-client configs)", async () => {
     const target = createWerewolfFixtureRoot("itg-install-fresh");
     tempRoots.push(target);
 
     await runInit(target);
 
-    const skillTemplate = readTemplate("skills/fabric-archive/SKILL.md");
+    const archiveSkillTemplate = readTemplate("skills/fabric-archive/SKILL.md");
+    const reviewSkillTemplate = readTemplate("skills/fabric-review/SKILL.md");
     const hookTemplate = readTemplate("hooks/archive-hint.cjs");
 
-    // Skill copies — byte-identical
-    const claudeSkill = readFileSync(join(target, ".claude/skills/fabric-archive/SKILL.md"), "utf8");
-    const codexSkill = readFileSync(join(target, ".codex/skills/fabric-archive/SKILL.md"), "utf8");
-    expect(claudeSkill).toBe(skillTemplate);
-    expect(codexSkill).toBe(skillTemplate);
+    // Archive skill copies — byte-identical
+    const claudeArchiveSkill = readFileSync(join(target, ".claude/skills/fabric-archive/SKILL.md"), "utf8");
+    const codexArchiveSkill = readFileSync(join(target, ".codex/skills/fabric-archive/SKILL.md"), "utf8");
+    expect(claudeArchiveSkill).toBe(archiveSkillTemplate);
+    expect(codexArchiveSkill).toBe(archiveSkillTemplate);
+
+    // Review skill copies (rc.3) — byte-identical
+    const claudeReviewSkill = readFileSync(join(target, ".claude/skills/fabric-review/SKILL.md"), "utf8");
+    const codexReviewSkill = readFileSync(join(target, ".codex/skills/fabric-review/SKILL.md"), "utf8");
+    expect(claudeReviewSkill).toBe(reviewSkillTemplate);
+    expect(codexReviewSkill).toBe(reviewSkillTemplate);
 
     // Hook script copies — byte-identical
     const claudeHook = readFileSync(join(target, ".claude/hooks/archive-hint.cjs"), "utf8");
@@ -265,18 +278,27 @@ describe.skipIf(process.platform === "win32")("TASK-006 install-skills-and-hooks
 // ---------------------------------------------------------------------------
 
 describe("TASK-006 install-skills-and-hooks: fabric hooks idempotent", () => {
-  it("running installHooks after init reports zero installed and no errors", async () => {
+  it("running installHooks after init reports zero installed and no errors (covers archive+review)", async () => {
     const target = createWerewolfFixtureRoot("itg-install-hooks-cmd");
     tempRoots.push(target);
 
     await runInit(target);
+
+    // After init, both skills must be on disk (proof installHooks would
+    // see them as up-to-date on the next call).
+    expect(existsSync(join(target, ".claude/skills/fabric-archive/SKILL.md"))).toBe(true);
+    expect(existsSync(join(target, ".codex/skills/fabric-archive/SKILL.md"))).toBe(true);
+    expect(existsSync(join(target, ".claude/skills/fabric-review/SKILL.md"))).toBe(true);
+    expect(existsSync(join(target, ".codex/skills/fabric-review/SKILL.md"))).toBe(true);
 
     const result = await installHooks(target);
 
     expect(result.errors).toEqual([]);
     // After a clean init, every hook step should be skipped (already up-to-date).
     expect(result.installed).toEqual([]);
-    expect(result.skipped.length).toBeGreaterThanOrEqual(3);
+    // rc.3: skipped now covers 2 archive skills + 2 review skills + 2 hook
+    // scripts + 2 configs = 8 minimum.
+    expect(result.skipped.length).toBeGreaterThanOrEqual(8);
   });
 });
 
@@ -322,7 +344,7 @@ describe("TASK-006 install-skills-and-hooks: partial install resilience", () => 
 // ---------------------------------------------------------------------------
 
 describe("TASK-006 install-skills-and-hooks: AGENTS.md pointer", () => {
-  it("appends fabric-archive pointer line once and does not duplicate on re-init", async () => {
+  it("appends fabric-archive AND fabric-review pointer lines once and does not duplicate on re-init", async () => {
     const target = createWerewolfFixtureRoot("itg-install-pointer");
     tempRoots.push(target);
 
@@ -334,15 +356,19 @@ describe("TASK-006 install-skills-and-hooks: AGENTS.md pointer", () => {
 
     await runInit(target);
     const afterFirst = readFileSync(join(target, "AGENTS.md"), "utf8");
-    const pointerOccurrences1 = (afterFirst.match(/fabric-archive Skill when archiving/g) ?? []).length;
-    expect(pointerOccurrences1).toBe(1);
+    const archiveOccurrences1 = (afterFirst.match(/fabric-archive Skill when archiving/g) ?? []).length;
+    const reviewOccurrences1 = (afterFirst.match(/fabric-review Skill to review pending/g) ?? []).length;
+    expect(archiveOccurrences1).toBe(1);
+    expect(reviewOccurrences1).toBe(1);
     // Original user content preserved verbatim.
     expect(afterFirst.startsWith(seedContent)).toBe(true);
 
     await runInit(target, { reapply: true, force: true });
     const afterSecond = readFileSync(join(target, "AGENTS.md"), "utf8");
-    const pointerOccurrences2 = (afterSecond.match(/fabric-archive Skill when archiving/g) ?? []).length;
-    expect(pointerOccurrences2).toBe(1);
+    const archiveOccurrences2 = (afterSecond.match(/fabric-archive Skill when archiving/g) ?? []).length;
+    const reviewOccurrences2 = (afterSecond.match(/fabric-review Skill to review pending/g) ?? []).length;
+    expect(archiveOccurrences2).toBe(1);
+    expect(reviewOccurrences2).toBe(1);
     expect(afterSecond).toBe(afterFirst);
   });
 });

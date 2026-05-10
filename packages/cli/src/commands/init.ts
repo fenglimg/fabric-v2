@@ -23,6 +23,7 @@ import {
   addArchiveSkillPointer,
   installArchiveHintHook,
   installFabricArchiveSkill,
+  installFabricReviewSkill,
   mergeClaudeCodeHookConfig,
   mergeCodexHookConfig,
   type InstallStepResult,
@@ -781,6 +782,7 @@ async function executeInitStagePlan(
         // and downstream stages continue.
         const installResults: InstallStepResult[] = [];
         installResults.push(...await runBestEffort("skill-install", () => installFabricArchiveSkill(plan.target)));
+        installResults.push(...await runBestEffort("skill-review-install", () => installFabricReviewSkill(plan.target)));
         installResults.push(...await runBestEffort("hook-script", () => installArchiveHintHook(plan.target)));
         installResults.push(await runBestEffortSingle("claude-hook-config", () => mergeClaudeCodeHookConfig(plan.target)));
         installResults.push(await runBestEffortSingle("codex-hook-config", () => mergeCodexHookConfig(plan.target)));
