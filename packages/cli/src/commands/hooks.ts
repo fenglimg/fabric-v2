@@ -8,6 +8,7 @@ import {
   addArchiveSkillPointer,
   installArchiveHintHook,
   installFabricArchiveSkill,
+  installFabricImportSkill,
   installFabricReviewSkill,
   mergeClaudeCodeHookConfig,
   mergeCodexHookConfig,
@@ -65,20 +66,22 @@ export const hooksCommand = defineCommand({
 export default hooksCommand;
 
 /**
- * v2/rc.2+rc.3 hook installer. Re-installable from `fabric hooks install`
- * and also invoked from `fabric init` via the bootstrap stage helpers.
- * Performs the full archive+review-feature install in sequence (each
- * idempotent):
+ * v2/rc.2+rc.3+rc.4 hook installer. Re-installable from `fabric hooks
+ * install` and also invoked from `fabric init` via the bootstrap stage
+ * helpers. Performs the full archive+review+import-feature install in
+ * sequence (each idempotent):
  *   1. Copy templates/skills/fabric-archive/SKILL.md into .claude/skills/ + .codex/skills/
  *   2. Copy templates/skills/fabric-review/SKILL.md into .claude/skills/ + .codex/skills/  (rc.3)
- *   3. Copy templates/hooks/archive-hint.cjs into .claude/hooks/ + .codex/hooks/
- *   4. Deep-merge templates/hooks/configs/claude-code.json into .claude/settings.json
+ *   3. Copy templates/skills/fabric-import/SKILL.md into .claude/skills/ + .codex/skills/  (rc.4)
+ *   4. Copy templates/hooks/archive-hint.cjs into .claude/hooks/ + .codex/hooks/
+ *   5. Deep-merge templates/hooks/configs/claude-code.json into .claude/settings.json
  *      (hooks.Stop[] array-append-with-dedupe — preserves user entries)
- *   5. Deep-merge templates/hooks/configs/codex-hooks.json into .codex/hooks.json
+ *   6. Deep-merge templates/hooks/configs/codex-hooks.json into .codex/hooks.json
  *      (events.Stop[] array-append-with-dedupe)
- *   6. Append fabric-archive AND fabric-review Skill pointers to
- *      CLAUDE.md/AGENTS.md/.cursor/rules when those files already exist
- *      (does not create them; each pointer is dedup-checked independently).
+ *   7. Append fabric-archive, fabric-review AND fabric-import Skill
+ *      pointers to CLAUDE.md/AGENTS.md/.cursor/rules when those files
+ *      already exist (does not create them; each pointer is dedup-checked
+ *      independently).
  *
  * Returns the union of paths written, skipped, and any errors. Best-effort:
  * a single client's failure (missing directory, unreadable settings.json)
@@ -100,6 +103,7 @@ export async function installHooks(
   const results: InstallStepResult[] = [];
   results.push(...await runStep(() => installFabricArchiveSkill(normalizedTarget)));
   results.push(...await runStep(() => installFabricReviewSkill(normalizedTarget)));
+  results.push(...await runStep(() => installFabricImportSkill(normalizedTarget)));
   results.push(...await runStep(() => installArchiveHintHook(normalizedTarget)));
   results.push(await runSingleStep("claude-hook-config", () => mergeClaudeCodeHookConfig(normalizedTarget)));
   results.push(await runSingleStep("codex-hook-config", () => mergeCodexHookConfig(normalizedTarget)));

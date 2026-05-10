@@ -43,18 +43,22 @@ export type InstallOptions = {
 
 const SKILL_TEMPLATE_REL = "skills/fabric-archive/SKILL.md";
 const SKILL_REVIEW_TEMPLATE_REL = "skills/fabric-review/SKILL.md";
+const SKILL_IMPORT_TEMPLATE_REL = "skills/fabric-import/SKILL.md";
 const HOOK_SCRIPT_TEMPLATE_REL = "hooks/archive-hint.cjs";
 const CLAUDE_HOOK_CONFIG_TEMPLATE_REL = "hooks/configs/claude-code.json";
 const CODEX_HOOK_CONFIG_TEMPLATE_REL = "hooks/configs/codex-hooks.json";
 
 const SKILL_DEST_REL = join("skills", "fabric-archive", "SKILL.md");
 const SKILL_REVIEW_DEST_REL = join("skills", "fabric-review", "SKILL.md");
+const SKILL_IMPORT_DEST_REL = join("skills", "fabric-import", "SKILL.md");
 const HOOK_SCRIPT_DEST_REL = join("hooks", "archive-hint.cjs");
 
 const POINTER_LINE =
   "> Use the fabric-archive Skill when archiving knowledge entries (see .claude/skills/fabric-archive/SKILL.md).";
 const REVIEW_POINTER_LINE =
   "> Use the fabric-review Skill to review pending knowledge entries (see .claude/skills/fabric-review/SKILL.md).";
+const IMPORT_POINTER_LINE =
+  "> Use the fabric-import Skill for cold-start enrichment from git history and docs (see .claude/skills/fabric-import/SKILL.md).";
 
 const POINTER_TARGETS = ["CLAUDE.md", "AGENTS.md", join(".cursor", "rules")];
 
@@ -101,6 +105,33 @@ export async function installFabricReviewSkill(
   const results: InstallStepResult[] = [];
   for (const target of targets) {
     results.push(await copyTextIdempotent("skill-review", source, target));
+  }
+  return results;
+}
+
+/**
+ * Copy templates/skills/fabric-import/SKILL.md into both .claude/skills/
+ * and .codex/skills/ subtrees under the project root. Idempotent: if the
+ * destination already contains an identical copy, no write occurs.
+ *
+ * Sibling installer to {@link installFabricArchiveSkill} and
+ * {@link installFabricReviewSkill}; the v2/rc.4 fabric-import Skill is
+ * deployed alongside archive (write-side) and review (read-side) so the
+ * user's AI client surfaces the cold-start enrichment flow that backfills
+ * knowledge entries from git history and existing docs.
+ */
+export async function installFabricImportSkill(
+  projectRoot: string,
+  _options: InstallOptions = {},
+): Promise<InstallStepResult[]> {
+  const source = await readTemplate(SKILL_IMPORT_TEMPLATE_REL);
+  const targets = [
+    join(projectRoot, ".claude", SKILL_IMPORT_DEST_REL),
+    join(projectRoot, ".codex", SKILL_IMPORT_DEST_REL),
+  ];
+  const results: InstallStepResult[] = [];
+  for (const target of targets) {
+    results.push(await copyTextIdempotent("skill-import", source, target));
   }
   return results;
 }
@@ -165,16 +196,18 @@ export async function mergeCodexHookConfig(
 
 /**
  * Append one-line pointers to CLAUDE.md / AGENTS.md / .cursor/rules
- * referencing the fabric-archive AND fabric-review Skills. Idempotent:
- * skips files that are absent (does not create) and skips appending a
- * given pointer when its exact literal is already present (substring
- * match). Each pointer is dedup-checked independently so a user who
- * deletes one manually still gets the other re-added on `fab init`.
+ * referencing the fabric-archive, fabric-review AND fabric-import Skills.
+ * Idempotent: skips files that are absent (does not create) and skips
+ * appending a given pointer when its exact literal is already present
+ * (substring match). Each pointer is dedup-checked independently so a
+ * user who deletes one manually still gets the other re-added on
+ * `fab init`.
  *
  * v2/rc.3 (TASK-006): extended from rc.2's archive-only pointer to cover
- * both fabric-archive and fabric-review. The function name is preserved
- * for call-site compatibility; callers do not need to invoke a separate
- * review-pointer helper.
+ * both fabric-archive and fabric-review.
+ * v2/rc.4 (TASK-005): further extended to include fabric-import. The
+ * function name is preserved for call-site compatibility; callers do not
+ * need to invoke separate review/import-pointer helpers.
  */
 export async function addArchiveSkillPointer(
   projectRoot: string,
@@ -221,6 +254,16 @@ export async function addArchiveSkillPointer(
       next = `${next}${trailingNewline}\n${REVIEW_POINTER_LINE}\n`;
       wrote = true;
       results.push({ step: "pointer-review", path: target, status: "written" });
+    }
+
+    // Append fabric-import pointer if not present (independent dedup)
+    if (next.includes(IMPORT_POINTER_LINE)) {
+      results.push({ step: "pointer-import", path: target, status: "skipped", message: "already-present" });
+    } else {
+      const trailingNewline = next.length === 0 || next.endsWith("\n") ? "" : "\n";
+      next = `${next}${trailingNewline}\n${IMPORT_POINTER_LINE}\n`;
+      wrote = true;
+      results.push({ step: "pointer-import", path: target, status: "written" });
     }
 
     if (wrote) {
