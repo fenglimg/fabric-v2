@@ -111,6 +111,18 @@ const FORENSIC_FILE = ".fabric/forensic.json";
 const AGENTS_META_FILE = ".fabric/agents.meta.json";
 const LAYER_REASON = "project artifact (deterministic init scan)";
 
+// v2.0 (grill-followup TASK-008): bilingual init-scan templates. Resolved at
+// scan start from `fabric.config.json#knowledge_language`. `'match-existing'`
+// is resolved against the repo's README / docs prose; an empty repo defaults
+// to `'en'`. Only en + zh-CN are supported (Q3 scope decision).
+type ResolvedLanguage = "en" | "zh-CN";
+type BaselineSlug =
+  | "tech-stack"
+  | "module-structure"
+  | "build-config"
+  | "code-style"
+  | "readme-first-paragraph";
+
 type TargetSubdir = "models" | "guidelines" | "processes";
 
 interface MarkdownEntry {
@@ -162,14 +174,22 @@ export async function runInitScan(
   const nowIso = (options.now ?? new Date()).toISOString();
   const tags = deriveTagsFromForensic(forensic);
 
+  // v2.0 grill-followup TASK-008: read knowledge_language once at scan start
+  // and dispatch every baseline emission through the resolved language. CI
+  // config + project brief stay EN-only for now (out of the 5 explicit slugs
+  // covered by Q3); they are non-baseline / optional entries.
+  const fabricConfig = readFabricConfig(target);
+  const knowledgeLanguage = fabricConfig.knowledge_language ?? "match-existing";
+  const resolvedLanguage = resolveKnowledgeLanguage(knowledgeLanguage, target);
+
   // Build candidate entries (some may be null when source data is missing).
   const candidates: Array<MarkdownEntry | null> = [
-    buildTechStackEntry(forensic, nowIso, tags),
-    buildModuleStructureEntry(forensic, nowIso, tags),
-    buildBuildConfigEntry(forensic, nowIso, tags),
-    buildCodeStyleEntry(forensic, nowIso, tags),
+    buildTechStackEntry(forensic, nowIso, tags, resolvedLanguage),
+    buildModuleStructureEntry(forensic, nowIso, tags, resolvedLanguage),
+    buildBuildConfigEntry(forensic, nowIso, tags, resolvedLanguage),
+    buildCodeStyleEntry(forensic, nowIso, tags, resolvedLanguage),
     buildCIConfigEntry(forensic, nowIso, tags),
-    buildReadmeFirstParaEntry(target, forensic, nowIso, tags),
+    buildReadmeFirstParaEntry(target, forensic, nowIso, tags, resolvedLanguage),
     buildProjectBriefEntry(target, forensic, nowIso, tags),
   ];
   const entries = candidates.filter((e): e is MarkdownEntry => e !== null);
@@ -299,6 +319,322 @@ export const scanCommand = defineCommand({
 export default scanCommand;
 
 // ---------------------------------------------------------------------------
+// Bilingual baseline templates (TASK-008)
+//
+// Each of the 5 baseline slugs has parallel EN + zh-CN bodies. Section
+// headings (e.g. `[MISSION_STATEMENT]`, `[CONTEXT_INFO]`) and inline tech
+// terms (Node.js, TypeScript, pnpm, framework names, etc.) are preserved
+// verbatim in both languages — only narrative prose is localized. This keeps
+// the rule-sections contract uniform across languages and lets downstream
+// review skills tag-filter without language-specific regex.
+//
+// Resolution order at scan time:
+//   1. `fabric.config.json#knowledge_language` is read once.
+//   2. `'en'` / `'zh-CN'` lock the templates regardless of repo content.
+//   3. `'match-existing'` (default) calls `detectExistingLanguage(target)`,
+//      which scans the repo's README.md (top-level) and docs/ prose for
+//      zh-CN characters (Unicode U+4E00..U+9FFF). When zh-CN ratio > 30%
+//      of letter-equivalents the result is `'zh-CN'`; otherwise (including
+//      empty repo with no README and no docs/) the result is `'en'`.
+// ---------------------------------------------------------------------------
+
+interface TechStackInputs {
+  projectName: string;
+  frameworkSummary: string;
+  topExtensionsLine: string;
+  evidenceLines: string[];
+}
+
+interface ModuleStructureInputs {
+  projectName: string;
+  totalFiles: number;
+  maxDepth: number;
+  dirsBlock: string;
+  entriesBlock: string;
+}
+
+interface BuildConfigInputs {
+  projectName: string;
+  framework: string;
+  configBlock: string;
+}
+
+interface CodeStyleInputs {
+  projectName: string;
+  rulesBlock: string;
+  patternsBlock: string;
+}
+
+interface ReadmeFirstParaInputs {
+  lineCount: number;
+  quality: string;
+  excerpt: string;
+}
+
+interface BaselineTemplate<I> {
+  title: string | ((inputs: I) => string);
+  build(inputs: I): {
+    mission: string;
+    context: string;
+    mandatoryInjection?: string;
+    businessLogic?: string;
+  };
+}
+
+interface BaselineTemplateRegistry {
+  "tech-stack": BaselineTemplate<TechStackInputs>;
+  "module-structure": BaselineTemplate<ModuleStructureInputs>;
+  "build-config": BaselineTemplate<BuildConfigInputs>;
+  "code-style": BaselineTemplate<CodeStyleInputs>;
+  "readme-first-paragraph": BaselineTemplate<ReadmeFirstParaInputs>;
+}
+
+const BASELINE_TEMPLATES: Record<ResolvedLanguage, BaselineTemplateRegistry> = {
+  en: {
+    "tech-stack": {
+      title: ({ frameworkSummary }) => `Tech stack: ${frameworkSummary}`,
+      build: ({ projectName, frameworkSummary, topExtensionsLine, evidenceLines }) => ({
+        mission: `Track the primary tech stack and runtime surface used by ${projectName}.`,
+        context: [
+          `Framework: ${frameworkSummary}`,
+          `Top file extensions: ${topExtensionsLine}`,
+          `Evidence:`,
+          ...evidenceLines.map((line) => `- ${line}`),
+        ].join("\n"),
+      }),
+    },
+    "module-structure": {
+      title: "Module structure",
+      build: ({ projectName, totalFiles, maxDepth, dirsBlock, entriesBlock }) => ({
+        mission: `Map the high-level module layout and primary entry points of ${projectName}.`,
+        context: [
+          `Total files: ${totalFiles}`,
+          `Max directory depth: ${maxDepth}`,
+          "",
+          "Key directories:",
+          dirsBlock,
+          "",
+          "Entry points:",
+          entriesBlock,
+        ].join("\n"),
+      }),
+    },
+    "build-config": {
+      title: "Build configuration",
+      build: ({ projectName, framework, configBlock }) => ({
+        mission: `Document the deterministic build/bootstrap configuration anchoring ${projectName}.`,
+        businessLogic: [
+          `1. Detect framework: \`${framework}\`.`,
+          `2. Read configuration files in declared order.`,
+          `3. Honor compiler/bundler boundaries before generating new code.`,
+          `4. Treat config drift as a fact-check signal — re-run \`fab scan\` after edits.`,
+        ].join("\n"),
+        context: [
+          `Framework: ${framework}`,
+          "",
+          "Configuration files:",
+          configBlock,
+        ].join("\n"),
+      }),
+    },
+    "code-style": {
+      title: "Code style guidelines",
+      build: ({ projectName, rulesBlock, patternsBlock }) => ({
+        mission: `Codify the recurring authoring conventions observed in ${projectName}.`,
+        mandatoryInjection: [
+          "When generating or modifying source files in this repo, AI agents MUST:",
+          rulesBlock,
+        ].join("\n"),
+        context: [
+          "Detected patterns:",
+          patternsBlock,
+        ].join("\n"),
+      }),
+    },
+    "readme-first-paragraph": {
+      title: "README first paragraph",
+      build: ({ lineCount, quality, excerpt }) => ({
+        mission: `Preserve the README headline and first paragraph as the canonical project elevator pitch.`,
+        context: [
+          `Source: README.md (${lineCount} lines, quality=${quality})`,
+          "",
+          "Excerpt:",
+          "> " + excerpt.split("\n").join("\n> "),
+        ].join("\n"),
+      }),
+    },
+  },
+  "zh-CN": {
+    "tech-stack": {
+      title: ({ frameworkSummary }) => `Tech stack: ${frameworkSummary}`,
+      build: ({ projectName, frameworkSummary, topExtensionsLine, evidenceLines }) => ({
+        mission: `记录 ${projectName} 所使用的主要 tech stack 与运行时面。`,
+        context: [
+          `Framework：${frameworkSummary}`,
+          `主要文件后缀：${topExtensionsLine}`,
+          `证据：`,
+          ...evidenceLines.map((line) => `- ${line}`),
+        ].join("\n"),
+      }),
+    },
+    "module-structure": {
+      title: "Module structure",
+      build: ({ projectName, totalFiles, maxDepth, dirsBlock, entriesBlock }) => ({
+        mission: `梳理 ${projectName} 的高层 module 布局与主要 entry point。`,
+        context: [
+          `文件总数：${totalFiles}`,
+          `最大目录深度：${maxDepth}`,
+          "",
+          "关键目录：",
+          dirsBlock,
+          "",
+          "Entry points：",
+          entriesBlock,
+        ].join("\n"),
+      }),
+    },
+    "build-config": {
+      title: "Build configuration",
+      build: ({ projectName, framework, configBlock }) => ({
+        mission: `记录 ${projectName} 所依赖的、确定性的 build / bootstrap 配置。`,
+        businessLogic: [
+          `1. 探测 framework：\`${framework}\`。`,
+          `2. 按声明顺序读取 configuration files。`,
+          `3. 在生成新代码之前，尊重 compiler / bundler 的边界。`,
+          `4. 把 config 漂移视为 fact-check 信号 —— 修改后重新运行 \`fab scan\`。`,
+        ].join("\n"),
+        context: [
+          `Framework：${framework}`,
+          "",
+          "Configuration files：",
+          configBlock,
+        ].join("\n"),
+      }),
+    },
+    "code-style": {
+      title: "Code style guidelines",
+      build: ({ projectName, rulesBlock, patternsBlock }) => ({
+        mission: `固化 ${projectName} 中反复出现的写码约定。`,
+        mandatoryInjection: [
+          "在本仓库内生成或修改源码文件时，AI agent 必须：",
+          rulesBlock,
+        ].join("\n"),
+        context: [
+          "观察到的模式：",
+          patternsBlock,
+        ].join("\n"),
+      }),
+    },
+    "readme-first-paragraph": {
+      title: "README first paragraph",
+      build: ({ lineCount, quality, excerpt }) => ({
+        mission: `把 README 的标题与首段保留为项目对外的 canonical elevator pitch。`,
+        context: [
+          `来源：README.md（${lineCount} 行，quality=${quality}）`,
+          "",
+          "摘录：",
+          "> " + excerpt.split("\n").join("\n> "),
+        ].join("\n"),
+      }),
+    },
+  },
+};
+
+function resolveTemplateTitle<I>(template: BaselineTemplate<I>, inputs: I): string {
+  return typeof template.title === "function" ? template.title(inputs) : template.title;
+}
+
+/**
+ * Resolve the configured `knowledge_language` value to a concrete `'en'` or
+ * `'zh-CN'`. Pure dispatch for explicit values; delegates to
+ * `detectExistingLanguage` for `'match-existing'`.
+ */
+function resolveKnowledgeLanguage(
+  configured: "match-existing" | "en" | "zh-CN",
+  target: string,
+): ResolvedLanguage {
+  if (configured === "en" || configured === "zh-CN") {
+    return configured;
+  }
+  return detectExistingLanguage(target);
+}
+
+/**
+ * Heuristic language detection used when `knowledge_language` is set to
+ * `'match-existing'` (the default).
+ *
+ * Reads README.md (top-level) and the `docs/` directory (one level deep) and
+ * counts characters in the CJK Unified Ideographs range U+4E00..U+9FFF
+ * (zh-CN, ja, ko share this block; we treat any CJK-heavy prose as zh-CN
+ * for v2.0 since Q3 scope explicitly limits us to en + zh-CN).
+ *
+ * Returns `'zh-CN'` when CJK characters account for more than 30 % of the
+ * combined CJK + ASCII letter count; otherwise returns `'en'`. An empty
+ * repo (no README, no docs/) defaults to `'en'`. The 30 % threshold is
+ * deliberately liberal so a short bilingual README with a sizeable zh-CN
+ * section still resolves to zh-CN; pure-EN docs sit well below it.
+ */
+function detectExistingLanguage(target: string): ResolvedLanguage {
+  const ZH_CN_RATIO_THRESHOLD = 0.3;
+  const samples: string[] = [];
+
+  const readmePath = join(target, "README.md");
+  if (existsSync(readmePath)) {
+    try {
+      samples.push(readFileSync(readmePath, "utf8"));
+    } catch {
+      // unreadable README — treat as missing
+    }
+  }
+
+  const docsDir = join(target, "docs");
+  if (existsSync(docsDir)) {
+    try {
+      const stat = statSync(docsDir);
+      if (stat.isDirectory()) {
+        for (const entry of readdirSync(docsDir, { withFileTypes: true })) {
+          if (!entry.isFile()) continue;
+          if (!/\.(md|mdx|txt)$/iu.test(entry.name)) continue;
+          try {
+            samples.push(readFileSync(join(docsDir, entry.name), "utf8"));
+          } catch {
+            // skip unreadable doc files
+          }
+        }
+      }
+    } catch {
+      // unreadable docs/ — treat as absent
+    }
+  }
+
+  if (samples.length === 0) {
+    // Empty-repo default. Documented contract: no README + no docs/ → 'en'.
+    return "en";
+  }
+
+  let cjkCount = 0;
+  let asciiLetterCount = 0;
+  for (const sample of samples) {
+    for (const ch of sample) {
+      const code = ch.codePointAt(0) ?? 0;
+      if (code >= 0x4e00 && code <= 0x9fff) {
+        cjkCount += 1;
+      } else if ((code >= 0x41 && code <= 0x5a) || (code >= 0x61 && code <= 0x7a)) {
+        asciiLetterCount += 1;
+      }
+    }
+  }
+
+  const denominator = cjkCount + asciiLetterCount;
+  if (denominator === 0) {
+    return "en";
+  }
+
+  const ratio = cjkCount / denominator;
+  return ratio > ZH_CN_RATIO_THRESHOLD ? "zh-CN" : "en";
+}
+
+// ---------------------------------------------------------------------------
 // Builder helpers — each takes the parsed forensic data + ISO timestamp and
 // returns a MarkdownEntry (or null when source data is absent).
 //
@@ -306,9 +642,18 @@ export default scanCommand;
 //   - Always include MISSION_STATEMENT + CONTEXT_INFO
 //   - Add MANDATORY_INJECTION when type === 'guideline'
 //   - Add BUSINESS_LOGIC_CHUNKS when type === 'process'
+//
+// TASK-008: the 5 baseline builders dispatch through `BASELINE_TEMPLATES`
+// using the resolved knowledge_language. Section headings + tech terms are
+// preserved verbatim across languages; only narrative prose is localized.
 // ---------------------------------------------------------------------------
 
-function buildTechStackEntry(forensic: ForensicReport, nowIso: string, tags: string[]): MarkdownEntry {
+function buildTechStackEntry(
+  forensic: ForensicReport,
+  nowIso: string,
+  tags: string[],
+  language: ResolvedLanguage = "en",
+): MarkdownEntry {
   const framework = forensic.framework;
   const byExt = forensic.topology.by_ext ?? {};
   const topExtensions = Object.entries(byExt)
@@ -316,17 +661,20 @@ function buildTechStackEntry(forensic: ForensicReport, nowIso: string, tags: str
     .slice(0, 5)
     .map(([ext, count]) => `${ext} (${count})`);
 
-  const evidenceLines = framework.evidence.length > 0 ? framework.evidence.slice(0, 6) : ["(no explicit framework evidence)"];
+  const frameworkSummary = `${framework.kind}${framework.version ? ` ${framework.version}` : ""}${framework.subkind ? ` / ${framework.subkind}` : ""}`;
+  const topExtensionsLine = topExtensions.length > 0 ? topExtensions.join(", ") : "(none)";
+  const evidenceLines =
+    framework.evidence.length > 0 ? framework.evidence.slice(0, 6) : ["(no explicit framework evidence)"];
 
-  const body = renderSections({
-    mission: `Track the primary tech stack and runtime surface used by ${forensic.project_name}.`,
-    context: [
-      `Framework: ${framework.kind}${framework.version ? ` ${framework.version}` : ""}${framework.subkind ? ` / ${framework.subkind}` : ""}`,
-      `Top file extensions: ${topExtensions.length > 0 ? topExtensions.join(", ") : "(none)"}`,
-      `Evidence:`,
-      ...evidenceLines.map((line) => `- ${line}`),
-    ].join("\n"),
-  });
+  const inputs: TechStackInputs = {
+    projectName: forensic.project_name,
+    frameworkSummary,
+    topExtensionsLine,
+    evidenceLines,
+  };
+  const template = BASELINE_TEMPLATES[language]["tech-stack"];
+  const sections = template.build(inputs);
+  const body = renderSections(sections);
 
   return {
     type: "model",
@@ -334,7 +682,7 @@ function buildTechStackEntry(forensic: ForensicReport, nowIso: string, tags: str
     maturity: "verified",
     layer_reason: LAYER_REASON,
     created_at: nowIso,
-    title: `Tech stack: ${framework.kind}`,
+    title: resolveTemplateTitle(template, inputs),
     body,
     target_subdir: "models",
     slug: "tech-stack",
@@ -342,7 +690,12 @@ function buildTechStackEntry(forensic: ForensicReport, nowIso: string, tags: str
   };
 }
 
-function buildModuleStructureEntry(forensic: ForensicReport, nowIso: string, tags: string[]): MarkdownEntry {
+function buildModuleStructureEntry(
+  forensic: ForensicReport,
+  nowIso: string,
+  tags: string[],
+  language: ResolvedLanguage = "en",
+): MarkdownEntry {
   const keyDirs = forensic.topology.key_dirs ?? [];
   const entryPoints = forensic.entry_points ?? [];
   const totalFiles = forensic.topology.total_files ?? 0;
@@ -354,19 +707,15 @@ function buildModuleStructureEntry(forensic: ForensicReport, nowIso: string, tag
     ? entryPoints.slice(0, 8).map((ep) => `- ${ep.path} — ${ep.reason}`).join("\n")
     : "- (no entry points detected)";
 
-  const body = renderSections({
-    mission: `Map the high-level module layout and primary entry points of ${forensic.project_name}.`,
-    context: [
-      `Total files: ${totalFiles}`,
-      `Max directory depth: ${forensic.topology.max_depth ?? 0}`,
-      "",
-      "Key directories:",
-      dirsBlock,
-      "",
-      "Entry points:",
-      entriesBlock,
-    ].join("\n"),
-  });
+  const inputs: ModuleStructureInputs = {
+    projectName: forensic.project_name,
+    totalFiles,
+    maxDepth: forensic.topology.max_depth ?? 0,
+    dirsBlock,
+    entriesBlock,
+  };
+  const template = BASELINE_TEMPLATES[language]["module-structure"];
+  const body = renderSections(template.build(inputs));
 
   return {
     type: "model",
@@ -374,7 +723,7 @@ function buildModuleStructureEntry(forensic: ForensicReport, nowIso: string, tag
     maturity: "verified",
     layer_reason: LAYER_REASON,
     created_at: nowIso,
-    title: "Module structure",
+    title: resolveTemplateTitle(template, inputs),
     body,
     target_subdir: "models",
     slug: "module-structure",
@@ -382,7 +731,12 @@ function buildModuleStructureEntry(forensic: ForensicReport, nowIso: string, tag
   };
 }
 
-function buildBuildConfigEntry(forensic: ForensicReport, nowIso: string, tags: string[]): MarkdownEntry {
+function buildBuildConfigEntry(
+  forensic: ForensicReport,
+  nowIso: string,
+  tags: string[],
+  language: ResolvedLanguage = "en",
+): MarkdownEntry {
   const configFiles = (forensic.candidate_files ?? [])
     .filter((entry) => entry.family === "config")
     .map((entry) => entry.path);
@@ -392,21 +746,13 @@ function buildBuildConfigEntry(forensic: ForensicReport, nowIso: string, tags: s
     ? configFiles.map((file) => `- ${file}`).join("\n")
     : "- (no config files detected)";
 
-  const body = renderSections({
-    mission: `Document the deterministic build/bootstrap configuration anchoring ${forensic.project_name}.`,
-    businessLogic: [
-      `1. Detect framework: \`${framework}\`.`,
-      `2. Read configuration files in declared order.`,
-      `3. Honor compiler/bundler boundaries before generating new code.`,
-      `4. Treat config drift as a fact-check signal — re-run \`fab scan\` after edits.`,
-    ].join("\n"),
-    context: [
-      `Framework: ${framework}`,
-      "",
-      "Configuration files:",
-      configBlock,
-    ].join("\n"),
-  });
+  const inputs: BuildConfigInputs = {
+    projectName: forensic.project_name,
+    framework,
+    configBlock,
+  };
+  const template = BASELINE_TEMPLATES[language]["build-config"];
+  const body = renderSections(template.build(inputs));
 
   return {
     type: "process",
@@ -414,7 +760,7 @@ function buildBuildConfigEntry(forensic: ForensicReport, nowIso: string, tags: s
     maturity: "verified",
     layer_reason: LAYER_REASON,
     created_at: nowIso,
-    title: "Build configuration",
+    title: resolveTemplateTitle(template, inputs),
     body,
     target_subdir: "processes",
     slug: "build-config",
@@ -422,7 +768,12 @@ function buildBuildConfigEntry(forensic: ForensicReport, nowIso: string, tags: s
   };
 }
 
-function buildCodeStyleEntry(forensic: ForensicReport, nowIso: string, tags: string[]): MarkdownEntry {
+function buildCodeStyleEntry(
+  forensic: ForensicReport,
+  nowIso: string,
+  tags: string[],
+  language: ResolvedLanguage = "en",
+): MarkdownEntry {
   const dominantPatterns = (forensic.assertions ?? [])
     .filter((a) => a.type === "pattern" || a.type === "domain")
     .slice(0, 4)
@@ -438,17 +789,13 @@ function buildCodeStyleEntry(forensic: ForensicReport, nowIso: string, tags: str
     ? proposedRules.map((rule) => `- ${rule}`).join("\n")
     : "- Follow existing module/file patterns; do not introduce new conventions without team agreement.";
 
-  const body = renderSections({
-    mission: `Codify the recurring authoring conventions observed in ${forensic.project_name}.`,
-    mandatoryInjection: [
-      "When generating or modifying source files in this repo, AI agents MUST:",
-      rulesBlock,
-    ].join("\n"),
-    context: [
-      "Detected patterns:",
-      patternsBlock,
-    ].join("\n"),
-  });
+  const inputs: CodeStyleInputs = {
+    projectName: forensic.project_name,
+    rulesBlock,
+    patternsBlock,
+  };
+  const template = BASELINE_TEMPLATES[language]["code-style"];
+  const body = renderSections(template.build(inputs));
 
   return {
     type: "guideline",
@@ -456,7 +803,7 @@ function buildCodeStyleEntry(forensic: ForensicReport, nowIso: string, tags: str
     maturity: "verified",
     layer_reason: LAYER_REASON,
     created_at: nowIso,
-    title: "Code style guidelines",
+    title: resolveTemplateTitle(template, inputs),
     body,
     target_subdir: "guidelines",
     slug: "code-style",
@@ -517,6 +864,7 @@ function buildReadmeFirstParaEntry(
   forensic: ForensicReport,
   nowIso: string,
   tags: string[],
+  language: ResolvedLanguage = "en",
 ): MarkdownEntry | null {
   if (forensic.readme.quality === "missing") {
     return null;
@@ -533,15 +881,13 @@ function buildReadmeFirstParaEntry(
     return null;
   }
 
-  const body = renderSections({
-    mission: `Preserve the README headline and first paragraph as the canonical project elevator pitch.`,
-    context: [
-      `Source: README.md (${forensic.readme.line_count} lines, quality=${forensic.readme.quality})`,
-      "",
-      "Excerpt:",
-      "> " + firstPara.split("\n").join("\n> "),
-    ].join("\n"),
-  });
+  const inputs: ReadmeFirstParaInputs = {
+    lineCount: forensic.readme.line_count,
+    quality: forensic.readme.quality,
+    excerpt: firstPara,
+  };
+  const template = BASELINE_TEMPLATES[language]["readme-first-paragraph"];
+  const body = renderSections(template.build(inputs));
 
   return {
     type: "model",
@@ -549,7 +895,7 @@ function buildReadmeFirstParaEntry(
     maturity: "verified",
     layer_reason: LAYER_REASON,
     created_at: nowIso,
-    title: "README first paragraph",
+    title: resolveTemplateTitle(template, inputs),
     body,
     target_subdir: "models",
     slug: "readme-first-paragraph",
@@ -1075,4 +1421,8 @@ export const __testing__ = {
   isCIConfigPath,
   extractFirstParagraph,
   extractExplicitDescription,
+  // TASK-008: bilingual template registry + language detection
+  detectExistingLanguage,
+  resolveKnowledgeLanguage,
+  BASELINE_TEMPLATES,
 };

@@ -273,4 +273,102 @@ describe("init-scan: end-to-end", () => {
     // Generous bound — task asks <2s for a 100-file repo; our fixture is tiny.
     expect(duration).toBeLessThan(5000);
   });
+
+  // -------------------------------------------------------------------------
+  // TASK-008: bilingual init-scan templates dispatched on knowledge_language
+  // -------------------------------------------------------------------------
+
+  /**
+   * Read every baseline markdown body produced by init-scan and concatenate
+   * them. Used by the bilingual tests to assert language-specific content
+   * appears in the rendered output without coupling to slug paths.
+   */
+  function readAllBaselineBodies(target: string): string {
+    const knowledgeRoot = join(target, ".fabric", "knowledge");
+    const subdirs = ["models", "guidelines", "processes"];
+    const collected: string[] = [];
+    for (const sub of subdirs) {
+      const dir = join(knowledgeRoot, sub);
+      if (!existsSync(dir)) continue;
+      for (const file of readdirSync(dir)) {
+        if (!file.endsWith(".md")) continue;
+        collected.push(readFileSync(join(dir, file), "utf8"));
+      }
+    }
+    return collected.join("\n\n");
+  }
+
+  it("knowledge_language_en_produces_english_baselines", async () => {
+    const target = await setupFixture("lang-en");
+    await writeFile(
+      join(target, "fabric.config.json"),
+      JSON.stringify({ knowledge_language: "en" }, null, 2),
+    );
+
+    const result = await runInitScan(target);
+    expect(result.written_stable_ids.length).toBeGreaterThanOrEqual(4);
+
+    const all = readAllBaselineBodies(target);
+    // EN-specific narrative phrasing.
+    expect(all).toMatch(/Track the primary tech stack/u);
+    expect(all).toMatch(/Map the high-level module layout/u);
+    expect(all).toMatch(/Document the deterministic build\/bootstrap/u);
+    expect(all).toMatch(/Codify the recurring authoring conventions/u);
+
+    // Section headings preserved.
+    expect(all).toContain("[MISSION_STATEMENT]");
+    expect(all).toContain("[CONTEXT_INFO]");
+
+    // No CJK characters in body for explicit EN.
+    expect(/[\u4e00-\u9fff]/u.test(all)).toBe(false);
+  });
+
+  it("knowledge_language_zh_cn_produces_chinese_baselines_with_en_headings", async () => {
+    const target = await setupFixture("lang-zh");
+    await writeFile(
+      join(target, "fabric.config.json"),
+      JSON.stringify({ knowledge_language: "zh-CN" }, null, 2),
+    );
+
+    const result = await runInitScan(target);
+    expect(result.written_stable_ids.length).toBeGreaterThanOrEqual(4);
+
+    const all = readAllBaselineBodies(target);
+
+    // zh-CN body present (CJK characters).
+    expect(/[\u4e00-\u9fff]/u.test(all)).toBe(true);
+    // Sample literal zh-CN phrases from BASELINE_TEMPLATES.zh-CN.
+    expect(all).toContain("记录");
+    expect(all).toContain("梳理");
+    expect(all).toContain("固化");
+
+    // EN section headings preserved verbatim.
+    expect(all).toContain("[MISSION_STATEMENT]");
+    expect(all).toContain("[CONTEXT_INFO]");
+    expect(all).toContain("[MANDATORY_INJECTION]");
+    expect(all).toContain("[BUSINESS_LOGIC_CHUNKS]");
+
+    // EN tech terms preserved inline (Q3: bilingual style M3).
+    expect(all).toContain("framework");
+  });
+
+  it("knowledge_language_match_existing_defaults_to_en_on_empty_repo", async () => {
+    const target = makeTempDir("lang-match-empty");
+    // Forensic only — no README, no docs/. Empty-repo defaults to 'en'.
+    await writeFile(join(target, ".fabric", "forensic.json"), JSON.stringify(makeForensic(target, {
+      readme: { quality: "missing", line_count: 0, has_contributing: false },
+    }), null, 2));
+    await writeFile(
+      join(target, "fabric.config.json"),
+      JSON.stringify({ knowledge_language: "match-existing" }, null, 2),
+    );
+
+    const result = await runInitScan(target);
+    expect(result.written_stable_ids.length).toBeGreaterThanOrEqual(3);
+
+    const all = readAllBaselineBodies(target);
+    // Empty-repo match-existing → 'en' fallback. Confirm EN narrative + no CJK.
+    expect(all).toMatch(/Track the primary tech stack/u);
+    expect(/[\u4e00-\u9fff]/u.test(all)).toBe(false);
+  });
 });

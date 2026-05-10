@@ -296,4 +296,63 @@ describe("scan builders — deterministic baseline knowledge", () => {
     mkdirSync(join(dir, "nested"), { recursive: true });
     expect(tempDirs.length).toBeGreaterThan(0);
   });
+
+  // -------------------------------------------------------------------------
+  // TASK-008: detectExistingLanguage helper
+  // -------------------------------------------------------------------------
+
+  it("detectExistingLanguage returns 'en' for an empty repo", () => {
+    const target = makeTempDir("detect-empty");
+    expect(__testing__.detectExistingLanguage(target)).toBe("en");
+  });
+
+  it("detectExistingLanguage returns 'en' for an EN-only README", () => {
+    const target = makeTempDir("detect-en");
+    writeFileSync(
+      join(target, "README.md"),
+      "# Hello\n\nThis project ships a deterministic scan pipeline that emits baseline knowledge entries.\n",
+      "utf8",
+    );
+    expect(__testing__.detectExistingLanguage(target)).toBe("en");
+  });
+
+  it("detectExistingLanguage returns 'zh-CN' when README is CJK-heavy", () => {
+    const target = makeTempDir("detect-zh");
+    writeFileSync(
+      join(target, "README.md"),
+      // Heavy zh-CN body with EN tech terms inline (M3 style — what fabric repos
+      // typically look like once TASK-007 dogfood rewrites are applied).
+      "# 项目简介\n\n这是一个用于演示 fabric 扫描管线的最小仓库。它会输出确定性的 knowledge entries，并保留 EN tech terms。\n",
+      "utf8",
+    );
+    expect(__testing__.detectExistingLanguage(target)).toBe("zh-CN");
+  });
+
+  it("detectExistingLanguage scans docs/ in addition to README", () => {
+    const target = makeTempDir("detect-docs");
+    // No README, but docs/ has zh-CN prose.
+    mkdirSync(join(target, "docs"), { recursive: true });
+    writeFileSync(
+      join(target, "docs", "overview.md"),
+      "# 概览\n\n本目录记录了项目的核心设计与实现细节，包含若干模块说明。\n",
+      "utf8",
+    );
+    expect(__testing__.detectExistingLanguage(target)).toBe("zh-CN");
+  });
+
+  it("resolveKnowledgeLanguage passes through explicit values", () => {
+    const target = makeTempDir("resolve-explicit");
+    expect(__testing__.resolveKnowledgeLanguage("en", target)).toBe("en");
+    expect(__testing__.resolveKnowledgeLanguage("zh-CN", target)).toBe("zh-CN");
+  });
+
+  it("BASELINE_TEMPLATES has en + zh-CN entries for all 5 baseline slugs", () => {
+    const slugs = ["tech-stack", "module-structure", "build-config", "code-style", "readme-first-paragraph"] as const;
+    for (const lang of ["en", "zh-CN"] as const) {
+      for (const slug of slugs) {
+        expect(__testing__.BASELINE_TEMPLATES[lang][slug]).toBeDefined();
+        expect(typeof __testing__.BASELINE_TEMPLATES[lang][slug].build).toBe("function");
+      }
+    }
+  });
 });
