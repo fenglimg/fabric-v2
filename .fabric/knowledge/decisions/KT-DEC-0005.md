@@ -12,33 +12,33 @@ tags: [schema-design, frontmatter]
 
 ## Decision
 
-Frontmatter is constrained to flat scalars and flow-style arrays only.
-No nested YAML objects. The schema is:
+Frontmatter 限定为扁平 scalar 与 flow-style 数组，禁止嵌套 YAML 对象。
+schema 为：
 
-- 5 knowledge types: `model`, `decision`, `guideline`, `pitfall`, `process`
-- 3 maturity levels: `draft`, `verified`, `proven`
-- 2 layers: `personal`, `team`
+- 5 种 knowledge type：`model`、`decision`、`guideline`、`pitfall`、`process`。
+- 3 个 maturity 级别：`draft`、`verified`、`proven`。
+- 2 个 layer：`personal`、`team`。
 
-Mandatory fields: `id`, `type`, `layer`, `maturity`, `layer_reason`, `created_at`.
-Optional field: `tags` (flow-style array).
+必填字段：`id`、`type`、`layer`、`maturity`、`layer_reason`、`created_at`。
+可选字段：`tags`（flow-style 数组）。
 
 ## Alternatives considered
 
-- **Nested YAML objects** (e.g., `meta: { reviewer: alice, session: S01 }`):
-  Rejected — the hand-rolled regex parser in `rule-meta-builder.ts` only
-  supports flat scalars and flow-style arrays. Adding nested objects requires
-  a full YAML library, which adds size and parse-error surface.
-- **7+ types**: Considered splitting `guideline` into `recommend` and `avoid`.
-  Rejected — a single `guideline` type with body-level convention is
-  sufficient; MECE is better than granularity for a 5-type taxonomy.
+- **Nested YAML objects**（例如 `meta: { reviewer: alice, session: S01 }`）：
+  否决——`rule-meta-builder.ts` 里的手写 regex parser 只支持 flat scalar
+  与 flow-style 数组。引入嵌套对象意味着必须接入完整的 YAML 库，体积和
+  parse-error 面都会随之膨胀。
+- **7+ types**：曾考虑把 `guideline` 拆成 `recommend` 与 `avoid`。否决——
+  单一 `guideline` type 加上 body 层面的写作约定已经够用；对一个 5-type
+  taxonomy 来说，MECE 比颗粒度更值得守。
 
 ## Rationale
 
-Flat scalars are the maximum complexity the existing parser can handle
-without a library dependency. The 5-type/3-maturity/2-layer combination
-is MECE and covers all expected knowledge shapes for a software project.
+Flat scalar 是现有 parser 在不引入额外库依赖的前提下能承受的最大复杂度。
+5-type / 3-maturity / 2-layer 的组合本身就是 MECE，足以覆盖一个软件项目
+里所有预期会出现的 knowledge 形态。
 
 ## Reference
 
-grill-me session ANL-2026-05-10-fabric-knowledge-pivot, Q6 (schema
-forward-compat: add `tags`, freeze nested-object expansion).
+grill-me session ANL-2026-05-10-fabric-knowledge-pivot，Q6（schema
+forward-compat：增加 `tags`，冻结 nested-object 的扩张空间）。

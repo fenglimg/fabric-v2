@@ -12,25 +12,23 @@ tags: [v2-architecture, migration-strategy]
 
 ## Decision
 
-Adopt a clean-slate v2.0 rebrand with no migration path from v1.x artifacts.
-All v1.x concepts (`.fabric/rules/`, `INITIAL_TAXONOMY`, `bootstrap-guide`,
-dropped clients) are hard-deleted, not deprecated with fallback shims.
+采用 clean-slate 的 v2.0 rebrand，不为 v1.x artifacts 提供任何迁移路径。
+所有 v1.x 概念（`.fabric/rules/`、`INITIAL_TAXONOMY`、`bootstrap-guide`、
+被砍掉的 clients）一律硬删除，不保留 deprecated fallback shims。
 
 ## Alternatives considered
 
-- **Staged migration**: Write adapters that read both v1 and v2 layouts in parallel
-  for 1-2 release cycles. Adds ~3 weeks of dual-path complexity with zero
-  user benefit.
-- **In-place rename**: Rename v1.x paths inside the existing layout. Preserves
-  history but leaves dead code paths in production.
+- **Staged migration**：写 adapter 让 v1 和 v2 layout 在 1-2 个 release
+  周期内并行读取。代价是引入约三周的双路径复杂度，对用户没有任何收益。
+- **In-place rename**：在现有 layout 内重命名 v1.x 路径。能保留历史，
+  但会把死代码路径留在生产中。
 
 ## Rationale
 
-Fabric has zero production users at v1.x. Migration tax equals zero. A clean
-cut removes all v1.x dead weight in a single commit batch and produces a
-codebase that is internally consistent from day one of v2.0.
+Fabric 在 v1.x 阶段没有任何生产用户，迁移税为零。一刀切能在一批 commit
+内清掉所有 v1.x 的历史包袱，让 codebase 从 v2.0 第一天起就保持内部一致。
 
 ## Reference
 
-grill-me session ANL-2026-05-10-fabric-knowledge-pivot, Q1 (version strategy,
-clean-slate preference confirmed).
+grill-me session ANL-2026-05-10-fabric-knowledge-pivot，Q1（version
+strategy，clean-slate 偏好已确认）。

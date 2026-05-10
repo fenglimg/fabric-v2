@@ -12,14 +12,14 @@ tags: [unknown, typescript, csv, ndjson, [none]]
 
 ## [MISSION_STATEMENT]
 
-Map the high-level module layout and primary entry points of fabric-monorepo.
+梳理 fabric-monorepo 的高层 module 布局与主要 entry point。
 
 ## [CONTEXT_INFO]
 
-Total files: 778
-Max directory depth: 7
+文件总数：778
+最大目录深度：7
 
-Key directories:
+关键目录：
 - .agents/skills/ui-ux-pro-max/scripts
 - .claude/skills/ui-ux-pro-max/scripts
 - examples/werewolf-minigame-stub/assets/scripts
@@ -31,5 +31,5 @@ Key directories:
 - packages/shared/src
 - scripts
 
-Entry points:
-- scripts/lint-protected-tokens.ts — top-level script
+Entry points：
+- scripts/lint-protected-tokens.ts —— 顶层脚本

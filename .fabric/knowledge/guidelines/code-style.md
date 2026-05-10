@@ -12,17 +12,17 @@ tags: [unknown, typescript, csv, ndjson, [none]]
 
 ## [MISSION_STATEMENT]
 
-Codify the recurring authoring conventions observed in fabric-monorepo.
+固化 fabric-monorepo 中反复出现的写码约定。
 
 ## [MANDATORY_INJECTION]
 
-When generating or modifying source files in this repo, AI agents MUST:
-- Treat scripts as the main execution boundary during initialization.
-- Do not edit or delete .meta sidecars without explicit user confirmation.
-- Read bootstrap and compiler config before generating new rules or project structure.
+在本仓库内生成或修改源码文件时，AI agent 必须：
+- 把 scripts 目录视为 initialization 阶段的主执行边界。
+- 未经用户明确确认，不要修改或删除 .meta sidecar 文件。
+- 在生成新规则或新项目结构之前，先读 bootstrap 与 compiler config。
 
 ## [CONTEXT_INFO]
 
-Detected patterns:
-- Sampled entry file appears to be a generic source entry.
-- Entry samples are concentrated in scripts, indicating a stable primary source boundary.
+观察到的模式：
+- 抽样到的 entry 文件看起来是通用的源码 entry。
+- Entry 样本集中在 scripts 目录，说明这里是稳定的主源码边界。

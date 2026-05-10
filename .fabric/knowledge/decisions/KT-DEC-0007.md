@@ -12,33 +12,32 @@ tags: [hooks-design, ux-design]
 
 ## Decision
 
-Fabric hooks (pre-commit, post-tool-call) signal via `exit 2` + stderr and/or
-a `followup_message`. They are a reminder layer only. They must never
-permanently block the agent from completing a task.
+Fabric 的 hooks（pre-commit、post-tool-call）通过 `exit 2` + stderr
+和 / 或 `followup_message` 来传递信号。它们只是一层 reminder，绝不允许
+永久阻塞 agent 完成任务。
 
-Specifically:
-- Exit code 2 = soft signal (reminder); agent may proceed.
-- Exit code 1 = hard error (reserved for configuration faults, not knowledge reminders).
-- Hooks must never hold a lock, write gate, or require user confirmation to
-  unblock the main agent flow.
+具体来说：
+- Exit code 2 = 软信号（reminder）；agent 可继续。
+- Exit code 1 = 硬错误（保留给配置故障，而不是 knowledge 提醒）。
+- Hook 不得持锁、写门禁，也不得通过用户确认才放行 agent 主流程。
 
 ## Alternatives considered
 
-- **Hard block on exit 1**: Hook returns exit 1, causing the agent or CI to
-  halt until the issue is resolved. Rejected — knowledge reminders do not
-  justify halting the work stream; an agent that cannot commit because it has
-  pending reviews is broken, not helpful.
-- **No hooks at all**: Rely entirely on the review skill being invoked
-  voluntarily. Rejected — hooks provide the ambient reminder layer that
-  prompts review at natural checkpoints (commit, session start).
+- **Hard block on exit 1**：hook 返回 exit 1，让 agent 或 CI 在问题解决
+  之前停摆。否决——knowledge 提醒不足以构成阻断主工作流的理由；一个
+  「因为还有 pending review 就不能 commit」的 agent 是坏掉了，而不是更
+  贴心。
+- **No hooks at all**：完全依赖用户主动触发 review skill。否决——hooks
+  提供的是 ambient reminder 层，会在 commit、session start 这样的自然
+  checkpoint 提示 review，缺了它整体节奏会松。
 
 ## Rationale
 
-Agent autonomy must be preserved. Hooks are nudges, not gates. A hook that
-blocks the agent permanently defeats the purpose of async-review: the whole
-point is to decouple review from the primary task flow.
+Agent 自治必须被守住。Hooks 是 nudges，不是 gates。一个会永久阻塞 agent
+的 hook 实际上违背了 async-review 的初衷——后者的全部意义就是把 review
+从主任务流上解耦下来。
 
 ## Reference
 
-grill-me session ANL-2026-05-10-fabric-knowledge-pivot, Q7 (hook design,
-reminder-only semantic confirmed).
+grill-me session ANL-2026-05-10-fabric-knowledge-pivot，Q7（hook 设计，
+reminder-only 语义已确认）。

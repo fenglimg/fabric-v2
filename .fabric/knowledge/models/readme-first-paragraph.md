@@ -12,13 +12,13 @@ tags: [unknown, typescript, csv, ndjson, [none]]
 
 ## [MISSION_STATEMENT]
 
-Preserve the README headline and first paragraph as the canonical project elevator pitch.
+把 README 的标题与首段保留为项目对外的 canonical elevator pitch。
 
 ## [CONTEXT_INFO]
 
-Source: README.md (115 lines, quality=ok)
+来源：README.md（115 行，quality=ok）
 
-Excerpt:
+摘录：
 > <p align="center">
 >   <img src="./assets/brand/fabric-wordmark.svg" alt="fabric wordmark" width="220">
 > </p>

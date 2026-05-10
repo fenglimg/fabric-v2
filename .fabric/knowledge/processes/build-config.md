@@ -12,20 +12,20 @@ tags: [unknown, typescript, csv, ndjson, [none]]
 
 ## [MISSION_STATEMENT]
 
-Document the deterministic build/bootstrap configuration anchoring fabric-monorepo.
+记录 fabric-monorepo 所依赖的、确定性的 build / bootstrap 配置。
 
 ## [BUSINESS_LOGIC_CHUNKS]
 
-1. Detect framework: `unknown`.
-2. Read configuration files in declared order.
-3. Honor compiler/bundler boundaries before generating new code.
-4. Treat config drift as a fact-check signal — re-run `fab scan` after edits.
+1. 探测 framework：`unknown`。
+2. 按声明顺序读取 configuration files。
+3. 在生成新代码之前，尊重 compiler / bundler 的边界。
+4. 把 config 漂移视为 fact-check 信号 —— 修改后重新运行 `fab scan`。
 
 ## [CONTEXT_INFO]
 
-Framework: unknown
+Framework：unknown
 
-Configuration files:
+Configuration files：
 - package.json
 - examples/werewolf-minigame-stub/package.json
 - examples/werewolf-minigame-stub/project.config.json

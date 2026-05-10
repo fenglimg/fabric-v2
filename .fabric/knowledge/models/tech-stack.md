@@ -12,11 +12,11 @@ tags: [unknown, typescript, csv, ndjson, [none]]
 
 ## [MISSION_STATEMENT]
 
-Track the primary tech stack and runtime surface used by fabric-monorepo.
+记录 fabric-monorepo 所使用的主要 tech stack 与运行时面。
 
 ## [CONTEXT_INFO]
 
-Framework: unknown unknown / unknown
-Top file extensions: .json (310), .ts (186), .md (137), .csv (75), .tsx (14)
-Evidence:
+Framework：unknown unknown / unknown
+主要文件后缀：.json (310)、.ts (186)、.md (137)、.csv (75)、.tsx (14)
+证据：
 - package.json

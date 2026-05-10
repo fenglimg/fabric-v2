@@ -12,23 +12,22 @@ tags: [v2-architecture, scope-boundary]
 
 ## Decision
 
-Adopt boundary B (data layer + lifecycle hooks + async-review primitive) as
-the v2.0 architectural boundary, refusing both narrower and wider scopes.
+将 boundary B（data layer + lifecycle hooks + async-review primitive）确立为
+v2.0 的架构边界，同时拒绝更窄和更宽的两种边界划法。
 
 ## Alternatives considered
 
-- **Boundary A** (data only): Too thin — no value over a generic vector store.
-- **Boundary C** (full platform with built-in UI): Wrong fit — competes with
-  existing tools (Obsidian, Notion) on terms we cannot win.
+- **Boundary A**（仅 data 层）：太薄，相对通用 vector store 没有任何增量价值。
+- **Boundary C**（带内置 UI 的完整平台）：定位错位，会与 Obsidian、Notion
+  这类既有工具在我们注定打不赢的 UX 战场上正面竞争。
 
 ## Rationale
 
-B captures the unique combination Fabric can defend: typed knowledge with
-maturity lifecycle + async-review skill loop. Both A and C lose this
-differentiation. A offers no routing intelligence; C overreaches and fights
-incumbent tools at UX.
+B 抓住了 Fabric 真正能守住的独特组合：带 maturity lifecycle 的 typed
+knowledge，加上 async-review 的 skill 闭环。A 和 C 都会失去这层差异——A
+没有路由智能可言，C 又过度扩张，硬碰硬地与既有工具在 UX 上较劲。
 
 ## Reference
 
-grill-me session ANL-2026-05-10-fabric-knowledge-pivot, Q1/Q7 design
-decisions (option B accepted).
+grill-me session ANL-2026-05-10-fabric-knowledge-pivot，Q1/Q7 设计决策
+（option B accepted）。
