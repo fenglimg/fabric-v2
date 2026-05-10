@@ -6,3 +6,5 @@ Knowledge entries live in `.fabric/knowledge/` (team) and `~/.fabric/knowledge/`
 Run `fabric doctor` to verify state.
 
 See `.fabric/knowledge/` for project decisions, pitfalls, guidelines, models, and processes.
+
+> Use the fabric-archive Skill when archiving knowledge entries (see .claude/skills/fabric-archive/SKILL.md).

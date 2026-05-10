@@ -22,3 +22,11 @@ Recent paths:
 Notes:
 
 陷阱：Codex CLI 的 project-level hook 配置文件是 .codex/hooks.json，不是 .codex/hooks.toml。用户级别的 MCP 配置 (~/.codex/config.toml) 才是 TOML；项目级 hooks 使用 JSON。排查锚点：packages/cli/src/config/resolver.ts:157 显式探测 existsSync(workspaceRoot, '.codex', 'hooks.json')。rc.2 原始 handoff.json 误标为 .toml，已在 schema-deviations 表里更正。
+
+## Evidence (call 2)
+
+陷阱：Codex CLI 的 project-level hook 配置文件是 .codex/hooks.json，不是 .codex/hooks.toml。用户级别的 MCP 配置 (~/.codex/config.toml) 才是 TOML；项目级 hooks 使用 JSON。排查锚点：packages/cli/src/config/resolver.ts:157 显式探测 existsSync(workspaceRoot, '.codex', 'hooks.json')。rc.2 原始 handoff.json 误标为 .toml，已在 schema-deviations 表里更正。
+
+## Evidence (call 3)
+
+陷阱：Codex CLI 的 project-level hook 配置文件是 .codex/hooks.json，不是 .codex/hooks.toml。用户级别的 MCP 配置 (~/.codex/config.toml) 才是 TOML；项目级 hooks 使用 JSON。排查锚点：packages/cli/src/config/resolver.ts:157 显式探测 existsSync(workspaceRoot, '.codex', 'hooks.json')。rc.2 原始 handoff.json 误标为 .toml，已在 schema-deviations 表里更正。
