@@ -2,15 +2,15 @@ import { describe, expect, it } from "vitest";
 
 import { agentsMetaNodeSchema } from "../src/schemas/agents-meta";
 import {
-  RULE_TEST_INDEX_SCHEMA_VERSION,
-  ruleTestIndexSchema,
-  type RuleTestIndex,
-} from "../src/schemas/rule-test-index";
+  KNOWLEDGE_TEST_INDEX_SCHEMA_VERSION,
+  knowledgeTestIndexSchema,
+  type KnowledgeTestIndex,
+} from "../src/schemas/knowledge-test-index";
 
-describe("ruleTestIndexSchema", () => {
+describe("knowledgeTestIndexSchema", () => {
   it("parses a V1 static traceability index with previous hashes and orphan annotations", () => {
-    const parsed = ruleTestIndexSchema.parse({
-      schema_version: RULE_TEST_INDEX_SCHEMA_VERSION,
+    const parsed = knowledgeTestIndexSchema.parse({
+      schema_version: KNOWLEDGE_TEST_INDEX_SCHEMA_VERSION,
       generated_at: "2026-04-26T00:00:00.000Z",
       revision: "rev-current",
       previous_revision: "rev-previous",
@@ -20,7 +20,7 @@ describe("ruleTestIndexSchema", () => {
           rule_file: ".fabric/agents/packages/shared/AGENTS.md",
           rule_hash: "sha256:rule-current",
           previous_rule_hash: "sha256:rule-previous",
-          test_file: "packages/shared/test/rule-test-index.test.ts",
+          test_file: "packages/shared/test/knowledge-test-index.test.ts",
           test_hash: "sha256:test-current",
           previous_test_hash: "sha256:test-previous",
           annotation_line: 12,
@@ -37,7 +37,7 @@ describe("ruleTestIndexSchema", () => {
       ],
     });
 
-    expect(parsed).toEqual<RuleTestIndex>({
+    expect(parsed).toEqual<KnowledgeTestIndex>({
       schema_version: 1,
       generated_at: "2026-04-26T00:00:00.000Z",
       revision: "rev-current",
@@ -48,7 +48,7 @@ describe("ruleTestIndexSchema", () => {
           rule_file: ".fabric/agents/packages/shared/AGENTS.md",
           rule_hash: "sha256:rule-current",
           previous_rule_hash: "sha256:rule-previous",
-          test_file: "packages/shared/test/rule-test-index.test.ts",
+          test_file: "packages/shared/test/knowledge-test-index.test.ts",
           test_hash: "sha256:test-current",
           previous_test_hash: "sha256:test-previous",
           annotation_line: 12,
@@ -68,7 +68,7 @@ describe("ruleTestIndexSchema", () => {
 
   it("rejects malformed entries and non-V1 fields", () => {
     expect(() =>
-      ruleTestIndexSchema.parse({
+      knowledgeTestIndexSchema.parse({
         schema_version: 1,
         generated_at: "2026-04-26T00:00:00.000Z",
         links: [
@@ -76,7 +76,7 @@ describe("ruleTestIndexSchema", () => {
             rule_stable_id: "rules/shared-schema",
             rule_file: ".fabric/agents/packages/shared/AGENTS.md",
             rule_hash: "sha256:rule-current",
-            test_file: "packages/shared/test/rule-test-index.test.ts",
+            test_file: "packages/shared/test/knowledge-test-index.test.ts",
             test_hash: "sha256:test-current",
             annotation_line: 0,
           },
@@ -86,7 +86,7 @@ describe("ruleTestIndexSchema", () => {
     ).toThrow();
 
     expect(() =>
-      ruleTestIndexSchema.parse({
+      knowledgeTestIndexSchema.parse({
         schema_version: 1,
         generated_at: "2026-04-26T00:00:00.000Z",
         links: [],
@@ -103,7 +103,7 @@ describe("ruleTestIndexSchema", () => {
       deps: [],
       priority: "medium",
       hash: "sha256:rule-current",
-      test_file: "packages/shared/test/rule-test-index.test.ts",
+      test_file: "packages/shared/test/knowledge-test-index.test.ts",
     });
 
     expect(parsed).not.toHaveProperty("test_file");

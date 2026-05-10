@@ -5,7 +5,7 @@
  *
  * Covers all 11 zod schemas listed in §1:
  *   agents-meta, api-contracts, event-ledger, events, fabric-config,
- *   forensic-report, human-lock, init-context, ledger-entry, rule-test-index
+ *   forensic-report, human-lock, init-context, ledger-entry, knowledge-test-index
  *   (structuredWarningSchema is in api-contracts — counts as the 11th)
  */
 import { test, fc } from '@fast-check/vitest'
@@ -26,7 +26,7 @@ import { forensicReportSchema } from '../../src/schemas/forensic-report.js'
 import { humanLockEntrySchema, humanLockFileSchema } from '../../src/schemas/human-lock.js'
 import { initContextSchema } from '../../src/schemas/init-context.js'
 import { aiLedgerEntrySchema, humanLedgerEntrySchema, ledgerEntrySchema } from '../../src/schemas/ledger-entry.js'
-import { ruleTestIndexSchema, ruleTestLinkSchema } from '../../src/schemas/rule-test-index.js'
+import { knowledgeTestIndexSchema, knowledgeTestLinkSchema } from '../../src/schemas/knowledge-test-index.js'
 
 // ---------------------------------------------------------------------------
 // Helper: round-trip assertion
@@ -114,9 +114,9 @@ describe('I1.3 ledgerEntrySchema round-trip', () => {
 })
 
 // ---------------------------------------------------------------------------
-// I1.4 — ruleTestIndexSchema
+// I1.4 — knowledgeTestIndexSchema
 // ---------------------------------------------------------------------------
-describe('I1.4 ruleTestIndexSchema round-trip', () => {
+describe('I1.4 knowledgeTestIndexSchema round-trip', () => {
   const link = {
     rule_stable_id: 'bootstrap',
     rule_file: '.fabric/knowledge/decisions/root.md',
@@ -126,7 +126,7 @@ describe('I1.4 ruleTestIndexSchema round-trip', () => {
     annotation_line: 3,
   }
   it('minimal index', () => {
-    roundTrip(ruleTestIndexSchema, {
+    roundTrip(knowledgeTestIndexSchema, {
       schema_version: 1,
       generated_at: '2026-05-08T00:00:00+08:00',
       revision: 'rev-abc',
@@ -134,8 +134,8 @@ describe('I1.4 ruleTestIndexSchema round-trip', () => {
       orphan_annotations: [],
     })
   })
-  it('ruleTestLinkSchema with optional previous hashes', () => {
-    roundTrip(ruleTestLinkSchema, {
+  it('knowledgeTestLinkSchema with optional previous hashes', () => {
+    roundTrip(knowledgeTestLinkSchema, {
       ...link,
       previous_rule_hash: 'sha256:old-rule',
       previous_test_hash: 'sha256:old-test',

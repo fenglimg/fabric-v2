@@ -4,14 +4,14 @@ import { homedir } from "node:os";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 
 import {
-  RULE_TEST_INDEX_SCHEMA_VERSION,
+  KNOWLEDGE_TEST_INDEX_SCHEMA_VERSION,
   agentsMetaSchema,
   defaultAgentsMetaCounters,
   deriveAgentsMetaLayer,
   deriveAgentsMetaStableId,
   deriveAgentsMetaTopologyType,
   isKnowledgeStableId,
-  ruleTestIndexSchema,
+  knowledgeTestIndexSchema,
   KnowledgeTypeSchema,
   MaturitySchema,
   LayerSchema,
@@ -25,7 +25,7 @@ import {
   type Layer as KnowledgeLayer,
   type Maturity,
   type RuleDescription,
-  type RuleTestIndex,
+  type KnowledgeTestIndex,
 } from "@fenglimg/fabric-shared";
 
 import { appendEventLedgerEvent } from "./event-ledger.js";
@@ -57,7 +57,7 @@ export type RuleMetaBuildSource = "doctor_fix" | "sync_meta";
 
 export type RuleMetaBuildResult = {
   meta: AgentsMeta;
-  ruleTestIndex: RuleTestIndex;
+  knowledgeTestIndex: KnowledgeTestIndex;
   changed: boolean;
 };
 
@@ -70,20 +70,20 @@ export async function buildRuleMeta(projectRootInput: string): Promise<RuleMetaB
   assertExistingDirectory(projectRoot);
 
   const metaPath = join(projectRoot, ".fabric", "agents.meta.json");
-  const ruleTestIndexPath = join(projectRoot, ".fabric", "rule-test.index.json");
+  const knowledgeTestIndexPath = join(projectRoot, ".fabric", ".cache", "knowledge-test.index.json");
   const existingMeta = await readExistingMeta(metaPath);
-  const existingRuleTestIndex = await readExistingRuleTestIndex(ruleTestIndexPath);
+  const existingKnowledgeTestIndex = await readExistingKnowledgeTestIndex(knowledgeTestIndexPath);
   const meta = await computeRulesBasedAgentsMeta(projectRoot, existingMeta);
-  const ruleTestIndex = await computeRuleTestIndex(projectRoot, meta, existingRuleTestIndex);
+  const knowledgeTestIndex = await computeKnowledgeTestIndex(projectRoot, meta, existingKnowledgeTestIndex);
 
   return {
     meta,
-    ruleTestIndex,
+    knowledgeTestIndex,
     changed:
       existingMeta === undefined ||
       stableStringify(existingMeta) !== stableStringify(meta) ||
-      existingRuleTestIndex === undefined ||
-      !isSameRuleTestIndex(existingRuleTestIndex, ruleTestIndex),
+      existingKnowledgeTestIndex === undefined ||
+      !isSameKnowledgeTestIndex(existingKnowledgeTestIndex, knowledgeTestIndex),
   };
 }
 
@@ -93,7 +93,7 @@ export async function writeRuleMeta(
 ): Promise<RuleMetaBuildResult> {
   const projectRoot = normalizeProjectRoot(projectRootInput);
   const metaPath = join(projectRoot, ".fabric", "agents.meta.json");
-  const ruleTestIndexPath = join(projectRoot, ".fabric", "rule-test.index.json");
+  const knowledgeTestIndexPath = join(projectRoot, ".fabric", ".cache", "knowledge-test.index.json");
   const existingMeta = await readExistingMeta(metaPath);
   const result = await buildRuleMeta(projectRoot);
 
@@ -103,7 +103,11 @@ export async function writeRuleMeta(
 
   await ensureParentDirectory(metaPath);
   await atomicWriteText(metaPath, `${JSON.stringify(result.meta, null, 2)}\n`);
-  await atomicWriteText(ruleTestIndexPath, `${JSON.stringify(result.ruleTestIndex, null, 2)}\n`);
+  // v2/rc.2: cache lives under `.fabric/.cache/` (gitignored). Ensure the
+  // subdirectory exists before atomicWriteText — first scan in a fresh repo
+  // would otherwise ENOENT on the missing parent.
+  await ensureParentDirectory(knowledgeTestIndexPath);
+  await atomicWriteText(knowledgeTestIndexPath, `${JSON.stringify(result.knowledgeTestIndex, null, 2)}\n`);
 
   if (existingMeta === undefined || stableStringify(existingMeta) !== stableStringify(result.meta)) {
     await recordBaselineSynced(projectRoot, {
@@ -177,19 +181,19 @@ export async function computeRulesBasedAgentsMeta(
   };
 }
 
-export async function computeRuleTestIndex(
+export async function computeKnowledgeTestIndex(
   projectRootInput: string,
   computedMeta: AgentsMeta,
-  previousIndex?: RuleTestIndex,
-): Promise<RuleTestIndex> {
+  previousIndex?: KnowledgeTestIndex,
+): Promise<KnowledgeTestIndex> {
   const projectRoot = normalizeProjectRoot(projectRootInput);
   assertExistingDirectory(projectRoot);
 
   const previousLinks = indexPreviousRuleTestEntries(previousIndex?.links ?? []);
   const previousOrphans = indexPreviousRuleTestEntries(previousIndex?.orphan_annotations ?? []);
   const rulesByStableId = indexRulesByStableId(computedMeta);
-  const links: RuleTestIndex["links"] = [];
-  const orphanAnnotations: RuleTestIndex["orphan_annotations"] = [];
+  const links: KnowledgeTestIndex["links"] = [];
+  const orphanAnnotations: KnowledgeTestIndex["orphan_annotations"] = [];
 
   for (const annotation of await findFabricVerifyAnnotations(projectRoot)) {
     const rule = rulesByStableId.get(annotation.stableId);
@@ -222,7 +226,7 @@ export async function computeRuleTestIndex(
   }
 
   return {
-    schema_version: RULE_TEST_INDEX_SCHEMA_VERSION,
+    schema_version: KNOWLEDGE_TEST_INDEX_SCHEMA_VERSION,
     generated_at: new Date().toISOString(),
     revision: computedMeta.revision,
     previous_revision:
@@ -242,8 +246,8 @@ export function deriveRuleMetaTopologyType(relativePath: string): AgentsTopology
   return deriveAgentsMetaTopologyType(toAgentsCompatiblePath(relativePath));
 }
 
-export function isSameRuleTestIndex(left: RuleTestIndex, right: RuleTestIndex): boolean {
-  return stableStringify(toComparableRuleTestIndex(left)) === stableStringify(toComparableRuleTestIndex(right));
+export function isSameKnowledgeTestIndex(left: KnowledgeTestIndex, right: KnowledgeTestIndex): boolean {
+  return stableStringify(toComparableKnowledgeTestIndex(left)) === stableStringify(toComparableKnowledgeTestIndex(right));
 }
 
 export function stableStringify(value: unknown): string {
@@ -279,7 +283,7 @@ async function readExistingMeta(metaPath: string): Promise<AgentsMeta | undefine
   }
 }
 
-async function readExistingRuleTestIndex(indexPath: string): Promise<RuleTestIndex | undefined> {
+async function readExistingKnowledgeTestIndex(indexPath: string): Promise<KnowledgeTestIndex | undefined> {
   let raw: string;
   try {
     raw = await readFile(indexPath, "utf8");
@@ -292,7 +296,7 @@ async function readExistingRuleTestIndex(indexPath: string): Promise<RuleTestInd
   }
 
   try {
-    return ruleTestIndexSchema.parse(JSON.parse(raw));
+    return knowledgeTestIndexSchema.parse(JSON.parse(raw));
   } catch {
     return undefined;
   }
@@ -457,8 +461,8 @@ function indexRulesByStableId(meta: AgentsMeta): Map<string, NodeMeta> {
 
 function indexPreviousRuleTestEntries(
   entries: Array<
-    Pick<RuleTestIndex["links"][number], "rule_stable_id" | "test_file" | "test_hash" | "annotation_line"> &
-      Partial<Pick<RuleTestIndex["links"][number], "rule_hash" | "previous_rule_hash" | "previous_test_hash">>
+    Pick<KnowledgeTestIndex["links"][number], "rule_stable_id" | "test_file" | "test_hash" | "annotation_line"> &
+      Partial<Pick<KnowledgeTestIndex["links"][number], "rule_hash" | "previous_rule_hash" | "previous_test_hash">>
   >,
 ): Map<string, { rule_hash?: string; previous_rule_hash?: string; test_hash: string; previous_test_hash?: string }> {
   const previous = new Map<
@@ -514,8 +518,8 @@ function getPreviousTestHash(
 }
 
 function compareRuleTestEntries(
-  left: Pick<RuleTestIndex["links"][number], "rule_stable_id" | "test_file" | "annotation_line">,
-  right: Pick<RuleTestIndex["links"][number], "rule_stable_id" | "test_file" | "annotation_line">,
+  left: Pick<KnowledgeTestIndex["links"][number], "rule_stable_id" | "test_file" | "annotation_line">,
+  right: Pick<KnowledgeTestIndex["links"][number], "rule_stable_id" | "test_file" | "annotation_line">,
 ): number {
   return (
     left.rule_stable_id.localeCompare(right.rule_stable_id) ||
@@ -532,7 +536,7 @@ function compareAnnotationEntries(left: FabricVerifyAnnotation, right: FabricVer
   );
 }
 
-function toComparableRuleTestIndex(index: RuleTestIndex): Omit<RuleTestIndex, "generated_at"> {
+function toComparableKnowledgeTestIndex(index: KnowledgeTestIndex): Omit<KnowledgeTestIndex, "generated_at"> {
   const { generated_at: _generatedAt, ...comparable } = index;
   return comparable;
 }

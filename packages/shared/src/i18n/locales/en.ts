@@ -65,7 +65,7 @@ export const enMessages: Messages = {
   "doctor.section.warnings": "Warnings:",
   "cli.doctor.args.target.description":
     "Target project path. Defaults to CLI arg, EXTERNAL_FIXTURE_PATH, fabric.config.json, then cwd.",
-  "cli.doctor.args.fix.description": "Repair deterministic derived Fabric state, including meta, rule-test index, bootstrap, and events ledger.",
+  "cli.doctor.args.fix.description": "Repair deterministic derived Fabric state, including meta, knowledge-test index, bootstrap, and events ledger.",
   "cli.doctor.args.json.description": "Print the doctor report as JSON.",
   "cli.doctor.args.strict.description": "Treat warnings as failures.",
   "cli.doctor.args.force.description": "Run even if a serve process appears to hold the lock.",

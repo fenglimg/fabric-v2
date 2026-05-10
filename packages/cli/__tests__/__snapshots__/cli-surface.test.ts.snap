@@ -9,7 +9,7 @@ exports[`CLI surface drift gate (docs/test-seed/cli.md §1) > command 'doctor' s
     {
       "alias": undefined,
       "default": false,
-      "description": "Repair deterministic derived Fabric state, including meta, rule-test index, bootstrap, and events ledger.",
+      "description": "Repair deterministic derived Fabric state, including meta, knowledge-test index, bootstrap, and events ledger.",
       "name": "fix",
       "negativeDescription": undefined,
       "required": undefined,

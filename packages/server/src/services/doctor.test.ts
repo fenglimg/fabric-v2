@@ -37,7 +37,7 @@ describe("runDoctorReport", () => {
       "bootstrap_anchor_missing",
       "knowledge_dir_missing",
       "agents_meta_missing",
-      "rule_test_index_missing",
+      "knowledge_test_index_missing",
       "event_ledger_missing",
     ]);
     expect(report.manual_errors.map((issue) => issue.code)).toContain("content_refs_unavailable");
@@ -76,7 +76,7 @@ describe("runDoctorReport", () => {
       "Scan evidence",
       "Agents metadata",
       "Rule content refs",
-      "Rule-test index",
+      "Knowledge-test index",
       "Event ledger",
       "Event ledger partial write",
       "Claude MCP config location",
@@ -797,7 +797,7 @@ function createProject(name: string): string {
 // Minimal v2.0 knowledge fixture: AGENTS.md anchor + all knowledge subdirs +
 // init/forensic/events seeded + a hand-crafted, internally-consistent
 // agents.meta.json (empty nodes, default counters envelope) + a matching
-// rule-test.index.json. Does NOT seed any .fabric/rules/ tree, so
+// knowledge-test.index.json. Does NOT seed any .fabric/rules/ tree, so
 // rule-meta-builder rebuilds an identical empty meta and reconcile is
 // not triggered by --fix.
 function createV2KnowledgeProject(name: string): string {
@@ -814,9 +814,9 @@ function createV2KnowledgeProject(name: string): string {
   writeFile(".fabric/forensic.json", JSON.stringify(createForensic(target, name), null, 2), target);
   writeFile(".fabric/events.jsonl", "", target);
   // Defer to writeRuleMeta() at the test site after this returns; that gives us a
-  // canonical empty agents.meta.json + rule-test.index.json that match what
+  // canonical empty agents.meta.json + knowledge-test.index.json that match what
   // rule-meta-builder produces, so neither agents_meta_stale nor
-  // rule_test_index_stale fires.
+  // knowledge_test_index_stale fires.
   return target;
 }
 

@@ -8,18 +8,18 @@ import {
   AgentsMetaCountersSchema,
   forensicReportSchema,
   parseKnowledgeId,
-  ruleTestIndexSchema,
+  knowledgeTestIndexSchema,
   type AgentsMeta,
   type AgentsMetaCounters,
   type ForensicReport,
-  type RuleTestIndex,
+  type KnowledgeTestIndex,
 } from "@fenglimg/fabric-shared";
 import { detectFramework } from "@fenglimg/fabric-shared/node";
 
 import { contextCache } from "../cache.js";
 import { atomicWriteJson } from "@fenglimg/fabric-shared/node/atomic-write";
 import { ensureParentDirectory, getEventLedgerPath, sha256 } from "./_shared.js";
-import { buildRuleMeta, isSameRuleTestIndex, writeRuleMeta } from "./rule-meta-builder.js";
+import { buildRuleMeta, isSameKnowledgeTestIndex, writeRuleMeta } from "./rule-meta-builder.js";
 import { appendEventLedgerEvent, readEventLedger, truncateLedgerToLastNewline } from "./event-ledger.js";
 import { reconcileRules } from "./rule-sync.js";
 
@@ -138,7 +138,7 @@ type EventLedgerInspection = {
   error?: string;
 };
 
-type RuleTestIndexInspection =
+type KnowledgeTestIndexInspection =
   | {
       present: true;
       valid: true;
@@ -245,7 +245,7 @@ const IGNORED_DIRECTORIES = new Set([
 const TARGET_FILE_PATHS = [
   ".fabric/forensic.json",
   ".fabric/agents.meta.json",
-  ".fabric/rule-test.index.json",
+  ".fabric/.cache/knowledge-test.index.json",
   ".fabric/events.jsonl",
   ".fabric/knowledge",
 ] as const;
@@ -258,12 +258,12 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     forensic,
     meta,
     eventLedger,
-    ruleTestIndex,
+    knowledgeTestIndex,
   ] = await Promise.all([
     inspectForensic(projectRoot),
     inspectMeta(projectRoot),
     inspectEventLedger(projectRoot),
-    inspectRuleTestIndex(projectRoot),
+    inspectKnowledgeTestIndex(projectRoot),
   ]);
   const mcpConfigInWrongFile = inspectMcpConfigInWrongFile(projectRoot);
   const metaManuallyDiverged = await inspectMetaManuallyDiverged(projectRoot);
@@ -288,7 +288,7 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     // [MANDATORY_INJECTION] sections out of legacy rule files, a structural
     // concept that has no v2 equivalent. rc.4 will introduce a dedicated v2
     // lint suite for the new knowledge frontmatter contract.
-    createRuleTestIndexCheck(ruleTestIndex),
+    createKnowledgeTestIndexCheck(knowledgeTestIndex),
     createEventLedgerCheck(eventLedger),
     createEventLedgerPartialWriteCheck(eventLedger),
     createMcpConfigInWrongFileCheck(mcpConfigInWrongFile),
@@ -373,8 +373,8 @@ export async function runDoctorFix(target: string): Promise<DoctorFixReport> {
       [
         "agents_meta_missing",
         "agents_meta_stale",
-        "rule_test_index_missing",
-        "rule_test_index_stale",
+        "knowledge_test_index_missing",
+        "knowledge_test_index_stale",
         "content_ref_missing",
         "knowledge_dir_unindexed",
       ].includes(issue.code),
@@ -390,8 +390,8 @@ export async function runDoctorFix(target: string): Promise<DoctorFixReport> {
       [
         "agents_meta_missing",
         "agents_meta_stale",
-        "rule_test_index_missing",
-        "rule_test_index_stale",
+        "knowledge_test_index_missing",
+        "knowledge_test_index_stale",
         "content_ref_missing",
         "knowledge_dir_unindexed",
       ].includes(candidate.code),
@@ -623,16 +623,16 @@ async function inspectEventLedger(projectRoot: string): Promise<EventLedgerInspe
   }
 }
 
-async function inspectRuleTestIndex(projectRoot: string): Promise<RuleTestIndexInspection> {
-  const path = join(projectRoot, ".fabric", "rule-test.index.json");
+async function inspectKnowledgeTestIndex(projectRoot: string): Promise<KnowledgeTestIndexInspection> {
+  const path = join(projectRoot, ".fabric", ".cache", "knowledge-test.index.json");
   const built = await tryBuildRuleMeta(projectRoot);
 
   try {
-    const index = ruleTestIndexSchema.parse(JSON.parse(await readFile(path, "utf8")));
+    const index = knowledgeTestIndexSchema.parse(JSON.parse(await readFile(path, "utf8")));
     return {
       present: true,
       valid: true,
-      stale: built === null ? false : !isSameRuleTestIndex(index, built.ruleTestIndex),
+      stale: built === null ? false : !isSameKnowledgeTestIndex(index, built.knowledgeTestIndex),
       linkCount: index.links.length,
       orphanCount: index.orphan_annotations.length,
     };
@@ -644,7 +644,7 @@ async function inspectRuleTestIndex(projectRoot: string): Promise<RuleTestIndexI
       linkCount: 0,
       orphanCount: 0,
       error: isMissingFileError(error)
-        ? ".fabric/rule-test.index.json is missing."
+        ? ".fabric/.cache/knowledge-test.index.json is missing."
         : error instanceof Error
           ? error.message
           : String(error),
@@ -789,17 +789,17 @@ function createRuleContentRefCheck(meta: MetaInspection): DoctorCheck {
   return okCheck("Rule content refs", "All content_ref entries resolve to .fabric/knowledge files.");
 }
 
-function createRuleTestIndexCheck(index: RuleTestIndexInspection): DoctorCheck {
+function createKnowledgeTestIndexCheck(index: KnowledgeTestIndexInspection): DoctorCheck {
   if (!index.present) {
-    return issueCheck("Rule-test index", "error", "fixable_error", "rule_test_index_missing", index.error, "Run `fab doctor --fix` to rebuild .fabric/rule-test.index.json.");
+    return issueCheck("Knowledge-test index", "error", "fixable_error", "knowledge_test_index_missing", index.error, "Run `fab doctor --fix` to rebuild .fabric/.cache/knowledge-test.index.json.");
   }
   if (!index.valid) {
-    return issueCheck("Rule-test index", "error", "manual_error", "rule_test_index_invalid", index.error, "Delete .fabric/rule-test.index.json and run `fab doctor --fix` to regenerate it.");
+    return issueCheck("Knowledge-test index", "error", "manual_error", "knowledge_test_index_invalid", index.error, "Delete .fabric/.cache/knowledge-test.index.json and run `fab doctor --fix` to regenerate it.");
   }
   if (index.stale) {
-    return issueCheck("Rule-test index", "error", "fixable_error", "rule_test_index_stale", ".fabric/rule-test.index.json is stale.", "Run `fab doctor --fix` to rebuild the rule-test index.");
+    return issueCheck("Knowledge-test index", "error", "fixable_error", "knowledge_test_index_stale", ".fabric/.cache/knowledge-test.index.json is stale.", "Run `fab doctor --fix` to rebuild the knowledge-test index.");
   }
-  return okCheck("Rule-test index", `${index.linkCount} link${index.linkCount === 1 ? "" : "s"} and ${index.orphanCount} orphan annotation${index.orphanCount === 1 ? "" : "s"} indexed.`);
+  return okCheck("Knowledge-test index", `${index.linkCount} link${index.linkCount === 1 ? "" : "s"} and ${index.orphanCount} orphan annotation${index.orphanCount === 1 ? "" : "s"} indexed.`);
 }
 
 function createEventLedgerCheck(ledger: EventLedgerInspection): DoctorCheck {

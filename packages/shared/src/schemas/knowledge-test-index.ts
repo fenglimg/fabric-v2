@@ -1,10 +1,10 @@
 import { z } from "zod";
 
-export const RULE_TEST_INDEX_SCHEMA_VERSION = 1;
+export const KNOWLEDGE_TEST_INDEX_SCHEMA_VERSION = 1;
 
 const hashSchema = z.string().min(1);
 
-export const ruleTestLinkSchema = z
+export const knowledgeTestLinkSchema = z
   .object({
     rule_stable_id: z.string().min(1),
     rule_file: z.string().min(1),
@@ -17,7 +17,7 @@ export const ruleTestLinkSchema = z
   })
   .strict();
 
-export const ruleTestOrphanAnnotationSchema = z
+export const knowledgeTestOrphanAnnotationSchema = z
   .object({
     rule_stable_id: z.string().min(1),
     test_file: z.string().min(1),
@@ -27,17 +27,17 @@ export const ruleTestOrphanAnnotationSchema = z
   })
   .strict();
 
-export const ruleTestIndexSchema = z
+export const knowledgeTestIndexSchema = z
   .object({
-    schema_version: z.literal(RULE_TEST_INDEX_SCHEMA_VERSION),
+    schema_version: z.literal(KNOWLEDGE_TEST_INDEX_SCHEMA_VERSION),
     generated_at: z.string().datetime({ offset: true }),
     revision: z.string().min(1).optional(),
     previous_revision: z.string().min(1).optional(),
-    links: z.array(ruleTestLinkSchema),
-    orphan_annotations: z.array(ruleTestOrphanAnnotationSchema),
+    links: z.array(knowledgeTestLinkSchema),
+    orphan_annotations: z.array(knowledgeTestOrphanAnnotationSchema),
   })
   .strict();
 
-export type RuleTestLink = z.infer<typeof ruleTestLinkSchema>;
-export type RuleTestOrphanAnnotation = z.infer<typeof ruleTestOrphanAnnotationSchema>;
-export type RuleTestIndex = z.infer<typeof ruleTestIndexSchema>;
+export type KnowledgeTestLink = z.infer<typeof knowledgeTestLinkSchema>;
+export type KnowledgeTestOrphanAnnotation = z.infer<typeof knowledgeTestOrphanAnnotationSchema>;
+export type KnowledgeTestIndex = z.infer<typeof knowledgeTestIndexSchema>;

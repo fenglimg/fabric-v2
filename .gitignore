@@ -6,3 +6,4 @@ coverage/
 **/coverage/
 *.js.map
 .DS_Store
+.fabric/.cache/

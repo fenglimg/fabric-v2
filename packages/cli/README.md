@@ -21,4 +21,4 @@
 - `fabric doctor --fix`
 - `fabric serve`
 
-`fabric doctor --fix` 只修复确定性的派生状态，例如 `.fabric/agents.meta.json`、`.fabric/rule-test.index.json`、缺失的 `.fabric/events.jsonl` 和 stale hashes；语义冲突、缺失 rule section、未完成的初始化确认仍需要人工处理。
+`fabric doctor --fix` 只修复确定性的派生状态，例如 `.fabric/agents.meta.json`、`.fabric/.cache/knowledge-test.index.json`、缺失的 `.fabric/events.jsonl` 和 stale hashes；语义冲突、缺失 rule section、未完成的初始化确认仍需要人工处理。

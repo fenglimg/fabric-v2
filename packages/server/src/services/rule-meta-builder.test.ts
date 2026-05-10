@@ -2,12 +2,12 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { agentsMetaSchema, ruleTestIndexSchema } from "@fenglimg/fabric-shared";
+import { agentsMetaSchema, knowledgeTestIndexSchema } from "@fenglimg/fabric-shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   buildRuleMeta,
-  computeRuleTestIndex,
+  computeKnowledgeTestIndex,
   computeRulesBasedAgentsMeta,
   writeRuleMeta,
 } from "./rule-meta-builder.js";
@@ -37,7 +37,7 @@ afterEach(async () => {
 });
 
 describe("rule-meta-builder", () => {
-  it("builds agents.meta and rule-test.index from .fabric/knowledge only", async () => {
+  it("builds agents.meta and knowledge-test.index from .fabric/knowledge only", async () => {
     const projectRoot = await createProject("rules-builder-basic");
     await writeProjectFile(
       projectRoot,
@@ -74,8 +74,8 @@ describe("rule-meta-builder", () => {
 
     const result = await writeRuleMeta(projectRoot, { source: "doctor_fix" });
     const meta = agentsMetaSchema.parse(JSON.parse(await readFile(join(projectRoot, ".fabric/agents.meta.json"), "utf8")));
-    const index = ruleTestIndexSchema.parse(
-      JSON.parse(await readFile(join(projectRoot, ".fabric/rule-test.index.json"), "utf8")),
+    const index = knowledgeTestIndexSchema.parse(
+      JSON.parse(await readFile(join(projectRoot, ".fabric/.cache/knowledge-test.index.json"), "utf8")),
     );
 
     expect(result.changed).toBe(true);
@@ -128,7 +128,7 @@ describe("rule-meta-builder", () => {
     );
 
     const firstMeta = await computeRulesBasedAgentsMeta(projectRoot);
-    const firstIndex = await computeRuleTestIndex(projectRoot, firstMeta);
+    const firstIndex = await computeKnowledgeTestIndex(projectRoot, firstMeta);
     const firstLink = firstIndex.links[0];
 
     await writeProjectFile(
@@ -143,7 +143,7 @@ describe("rule-meta-builder", () => {
     );
 
     const nextMeta = await computeRulesBasedAgentsMeta(projectRoot);
-    const nextIndex = await computeRuleTestIndex(projectRoot, nextMeta, firstIndex);
+    const nextIndex = await computeKnowledgeTestIndex(projectRoot, nextMeta, firstIndex);
 
     expect(nextIndex.previous_revision).toBe(firstMeta.revision);
     expect(nextIndex.links[0]).toMatchObject({
@@ -161,8 +161,8 @@ describe("rule-meta-builder", () => {
     // v2.0: no L0 bootstrap node — `.fabric/agents/` is correctly ignored,
     // and an otherwise empty knowledge tree yields an empty meta.nodes map.
     expect(Object.values(result.meta.nodes)).toEqual([]);
-    expect(result.ruleTestIndex.links).toEqual([]);
-    expect(result.ruleTestIndex.orphan_annotations).toEqual([]);
+    expect(result.knowledgeTestIndex.links).toEqual([]);
+    expect(result.knowledgeTestIndex.orphan_annotations).toEqual([]);
   });
 
   // ---------------------------------------------------------------------------

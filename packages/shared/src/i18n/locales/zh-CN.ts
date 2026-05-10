@@ -63,7 +63,7 @@ export const zhCNMessages: Messages = {
   "doctor.section.warnings": "警告：",
   "cli.doctor.args.target.description":
     "目标项目路径。默认依次使用 CLI 参数、EXTERNAL_FIXTURE_PATH、fabric.config.json、当前目录。",
-  "cli.doctor.args.fix.description": "修复确定性派生的 Fabric 状态，包括 meta、rule-test index、bootstrap 和 events ledger。",
+  "cli.doctor.args.fix.description": "修复确定性派生的 Fabric 状态，包括 meta、knowledge-test 索引、bootstrap 和 events ledger。",
   "cli.doctor.args.json.description": "以 JSON 输出 doctor 报告。",
   "cli.doctor.args.strict.description": "将 warning 也视为失败。",
   "cli.doctor.args.force.description": "即使 serve 进程持有锁，也强制运行。",

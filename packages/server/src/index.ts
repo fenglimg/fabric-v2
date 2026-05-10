@@ -26,11 +26,11 @@ export {
 } from "./services/doctor.js";
 export {
   buildRuleMeta,
-  computeRuleTestIndex,
+  computeKnowledgeTestIndex,
   computeRulesBasedAgentsMeta,
   deriveRuleMetaLayer,
   deriveRuleMetaTopologyType,
-  isSameRuleTestIndex,
+  isSameKnowledgeTestIndex,
   stableStringify,
   writeRuleMeta,
   type RuleMetaBuildResult,

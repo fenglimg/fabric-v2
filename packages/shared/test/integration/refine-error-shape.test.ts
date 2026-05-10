@@ -6,7 +6,7 @@
  *     - A `path` that locates the problematic field
  *
  * Schemas with refine/superRefine: historyStateQuerySchema, ruleDescriptionSchema (strict),
- * forensicSamplingBudgetSchema (literal constraints), ruleTestIndexSchema (datetime),
+ * forensicSamplingBudgetSchema (literal constraints), knowledgeTestIndexSchema (datetime),
  * forensicAssertionCoverageSchema (min/max).
  */
 import { describe, expect, it } from 'vitest'
@@ -14,7 +14,7 @@ import { describe, expect, it } from 'vitest'
 import { historyStateQuerySchema, annotateIntentRequestSchema } from '../../src/schemas/api-contracts.js'
 import { ruleDescriptionSchema } from '../../src/schemas/agents-meta.js'
 import { forensicReportSchema } from '../../src/schemas/forensic-report.js'
-import { ruleTestIndexSchema } from '../../src/schemas/rule-test-index.js'
+import { knowledgeTestIndexSchema } from '../../src/schemas/knowledge-test-index.js'
 import { fabricConfigSchema } from '../../src/schemas/fabric-config.js'
 
 // ---------------------------------------------------------------------------
@@ -123,11 +123,11 @@ describe('T4 forensicSamplingBudgetSchema literal field error shape', () => {
 })
 
 // ---------------------------------------------------------------------------
-// T4.4 — ruleTestIndexSchema: datetime format error
+// T4.4 — knowledgeTestIndexSchema: datetime format error
 // ---------------------------------------------------------------------------
-describe('T4 ruleTestIndexSchema datetime format error shape', () => {
+describe('T4 knowledgeTestIndexSchema datetime format error shape', () => {
   it('invalid datetime format in generated_at produces error with path', () => {
-    const issues = parseAndGetIssues(ruleTestIndexSchema, {
+    const issues = parseAndGetIssues(knowledgeTestIndexSchema, {
       schema_version: 1,
       generated_at: 'not-a-datetime',  // must be ISO datetime with offset
       links: [],
@@ -144,7 +144,7 @@ describe('T4 ruleTestIndexSchema datetime format error shape', () => {
 
   it('valid datetime with offset succeeds', () => {
     expect(() =>
-      ruleTestIndexSchema.parse({
+      knowledgeTestIndexSchema.parse({
         schema_version: 1,
         generated_at: '2026-05-08T00:00:00+08:00',
         links: [],
