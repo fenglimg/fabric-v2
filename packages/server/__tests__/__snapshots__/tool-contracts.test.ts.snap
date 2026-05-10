@@ -206,6 +206,15 @@ exports[`tool contracts > plan-context contract matches snapshot 1`] = `
         },
         "type": "array",
       },
+      "layer_filter": {
+        "description": "Restrict description_index to the named layer. Default: fabric-config.default_layer_filter (TASK-002).",
+        "enum": [
+          "team",
+          "personal",
+          "both",
+        ],
+        "type": "string",
+      },
       "paths": {
         "description": "Candidate file paths to build neutral rule selection context for",
         "items": {
@@ -344,6 +353,12 @@ exports[`tool contracts > plan-context contract matches snapshot 1`] = `
                   },
                   "stable_id": {
                     "type": "string",
+                  },
+                  "tags": {
+                    "items": {
+                      "type": "string",
+                    },
+                    "type": "array",
                   },
                   "type": {
                     "$ref": "#/properties/entries/items/properties/description_index/items/properties/description/properties/knowledge_type",
@@ -759,6 +774,19 @@ exports[`tool contracts > rule-sections contract matches snapshot 1`] = `
         "maxItems": 3,
         "minItems": 3,
         "type": "array",
+      },
+      "redirect_to": {
+        "additionalProperties": false,
+        "description": "Post-layer-flip redirect. Populated when stable_id changed after token mint (rc.3 fab_review/modify).",
+        "properties": {
+          "stable_id": {
+            "type": "string",
+          },
+        },
+        "required": [
+          "stable_id",
+        ],
+        "type": "object",
       },
       "revision_hash": {
         "type": "string",

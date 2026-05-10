@@ -1,5 +1,5 @@
 {
-  "revision": "sha256:32230018de86e72554bfeb3984972392471aceaf304be55d27c7e7bd06e7aa97",
+  "revision": "sha256:703c50e84b2e17c8016a7bf99ccbe34f22fbb956e8b84523330ad61f5dee3466",
   "nodes": {
     "KT-DEC-0001": {
       "file": ".fabric/knowledge/decisions/KT-DEC-0001.md",
@@ -12,7 +12,7 @@
       "level": "L1",
       "layer": "L1",
       "topology_type": "mirror",
-      "hash": "sha256:2bba9ff994340236c0912c2168f02c3a8fa89a81954db3b4a118a3e5e904108e",
+      "hash": "sha256:a632197470a264aebf4a4df622c6a9869272b19ef4207f92a543341370e6fa87",
       "stable_id": "KT-DEC-0001",
       "identity_source": "declared",
       "description": {
@@ -34,7 +34,7 @@
       "level": "L1",
       "layer": "L1",
       "topology_type": "mirror",
-      "hash": "sha256:7a2f51a378471fe2fda68affc7416e82680b10ad54be7539aa9aca121229a7ea",
+      "hash": "sha256:b704567ab43bd713fb3e1a1014d56d30f8c217dacec6010ab02a0fdfdd2eddb4",
       "stable_id": "KT-DEC-0002",
       "identity_source": "declared",
       "description": {
@@ -56,7 +56,7 @@
       "level": "L1",
       "layer": "L1",
       "topology_type": "mirror",
-      "hash": "sha256:59c99dcc36e7aada8dd79bc1d48bc3f024a1e43def513a339f0585150e29c77f",
+      "hash": "sha256:dc642c30594642556d62e61bf87f4956d014576aba35e45c23621d5b74856076",
       "stable_id": "KT-DEC-0003",
       "identity_source": "declared",
       "description": {
@@ -78,7 +78,7 @@
       "level": "L1",
       "layer": "L1",
       "topology_type": "mirror",
-      "hash": "sha256:c35148f21d76866f244e3847093532a7bcde776958bcf04f22277d3a0ffae755",
+      "hash": "sha256:2ce2adf4bf15301ba59aa8cfc19dd0d97ee656e6ff867c6514dc626a43b99458",
       "stable_id": "KT-DEC-0004",
       "identity_source": "declared",
       "description": {
@@ -100,7 +100,7 @@
       "level": "L1",
       "layer": "L1",
       "topology_type": "mirror",
-      "hash": "sha256:e9d127604939dd3d2f3c4a9b2cae9cca245f67c3cc6a0464ab6a9e8847babba4",
+      "hash": "sha256:2efcb6919b48663c6c29d4f0c046d8cfe0211279a78ca41e37f278445bea54e7",
       "stable_id": "KT-DEC-0005",
       "identity_source": "declared",
       "description": {
@@ -122,7 +122,7 @@
       "level": "L1",
       "layer": "L1",
       "topology_type": "mirror",
-      "hash": "sha256:f04ee5ccac7ddd66349130240570bf26e6719cf4afb88cb0ec840817907eab55",
+      "hash": "sha256:00b9f770283988cea25328e41317aa9d4804225b7cdd86725235a4fb5ea41109",
       "stable_id": "KT-DEC-0006",
       "identity_source": "declared",
       "description": {
@@ -144,7 +144,7 @@
       "level": "L1",
       "layer": "L1",
       "topology_type": "mirror",
-      "hash": "sha256:1f4b54b769973377438c1a92251a13b12187399a3a85c6886676510a42926586",
+      "hash": "sha256:736eb5a83fed3005b97a7be1a0936f64ab41111fce8ebf7117fc2ccca77b911a",
       "stable_id": "KT-DEC-0007",
       "identity_source": "declared",
       "description": {
@@ -166,7 +166,7 @@
       "level": "L1",
       "layer": "L1",
       "topology_type": "mirror",
-      "hash": "sha256:3da0f493410be138f0fd595e6eba581077e30cb054187d922e860430f55766ad",
+      "hash": "sha256:eb5ec81143e00201168587c80ed9783ac85ca9ee42fde49bb9d68870c6e4492f",
       "stable_id": "KT-DEC-0008",
       "identity_source": "declared",
       "description": {
@@ -186,7 +186,7 @@
       "level": "L1",
       "layer": "L1",
       "topology_type": "cross-cutting",
-      "hash": "sha256:dd9fea8bfb4693a1596ee94dbe7492d794b372601db3c3d0353a560719407fe1",
+      "hash": "sha256:838b90333970c3f330c22a5579a68749be4718a9c984aa0480ab5cfb3eade414",
       "stable_id": "KT-GLD-0001",
       "identity_source": "declared",
       "description": {
@@ -211,7 +211,7 @@
       "level": "L1",
       "layer": "L1",
       "topology_type": "cross-cutting",
-      "hash": "sha256:164aa493bbaffbacfcb3c1a9219eb68fad3f557c37a9696bcc5d2249ee3d2d20",
+      "hash": "sha256:f9abcdec207dadd5123bc74cf98cdf29dd3276a7ffe554bc87dc30f96560d13b",
       "stable_id": "KT-MOD-0001",
       "identity_source": "declared",
       "description": {
@@ -235,7 +235,7 @@
       "level": "L1",
       "layer": "L1",
       "topology_type": "cross-cutting",
-      "hash": "sha256:1dd5152fb9696f996706943e41ce9fad2c4135366ae7050793923aaf785a16c0",
+      "hash": "sha256:75bb9507c9db7beedf73588f9b93ff1a2cebf33a5fe5bf7bc3322c01e57eb713",
       "stable_id": "KT-MOD-0002",
       "identity_source": "declared",
       "description": {
@@ -259,7 +259,7 @@
       "level": "L1",
       "layer": "L1",
       "topology_type": "cross-cutting",
-      "hash": "sha256:81044292c43b0e51b4ac766fd17bb6e538327dcfec1af7225d46cf84c27b86e7",
+      "hash": "sha256:68a7670d183d2c66d495f87435304493cb43b8ed1af9d0655539eeb28010be88",
       "stable_id": "KT-MOD-0003",
       "identity_source": "declared",
       "description": {
@@ -283,7 +283,7 @@
       "level": "L1",
       "layer": "L1",
       "topology_type": "cross-cutting",
-      "hash": "sha256:f2631d15be2a648ce5ef88c00eb29f65350635ad4cc7682a97266cabf88dd1f4",
+      "hash": "sha256:5f3a20fc0af25ed3731bfe8f01cf023da855c7894275b18a8c89ac9040b81ee4",
       "stable_id": "KT-PRO-0001",
       "identity_source": "declared",
       "description": {
