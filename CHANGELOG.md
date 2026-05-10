@@ -5,6 +5,137 @@ All notable changes to Fabric will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+Pending v2.0.0 final release after TASK-010 final gate. The v2.0.0 entry is
+finalized in TASK-010 (stable signal + upgrade-from-v1.x guidance).
+
+## [2.0.0-rc.4] — 2026-05-10
+
+**Theme:** *Lint moat + import enrichment + documentation surface*
+
+rc.4 closes the v2.0 RC cycle: deterministic lint with a filesystem-edit
+fallback, the LLM-driven `fabric-import` Skill for baseline enrichment, a
+full README rewrite, and the public docs surface
+(`docs/knowledge-types.md`, `docs/initialization.md`, `docs/roadmap.md`).
+
+### Added
+
+- `fabric doctor --lint` — 6 deterministic checks covering knowledge tree
+  health: `orphan_demote`, `stale_archive`, `stable_id_duplicate`,
+  `layer_mismatch`, `index_drift`, `pending_overdue`.
+- `fabric doctor --apply-lint` — applies fixes and emits
+  `knowledge_demoted` and `knowledge_archived` events to the ledger.
+- `fabric-import` Skill template — 3-phase pipeline (extract → classify
+  → batch-write) with `.import-state.json` checkpoint for resumable runs.
+  Installs into `.claude/skills/` and `.codex/skills/` alongside
+  `fabric-archive` and `fabric-review`.
+- `docs/knowledge-types.md` — canonical 5-type semantic reference with
+  worth-archive / skip-it signals, concrete examples, and a decision tree.
+- `docs/initialization.md` — full v2.0 init flow rewrite (replaces v1.x
+  narrative): scan → install Skills → install Stop hooks → scaffold.
+- `docs/roadmap.md` — three-tier structure: v2.0 (Released), v2.1
+  (Planned), v2.x (Exploration), with explicit Out-of-Scope list.
+- README rewrite — v2.0 narrative aligned with knowledge-sustainment
+  positioning; cross-links to the new docs surface.
+
+### Fixed
+
+- Multiline-safe `quoteIfNeeded` in YAML frontmatter writer (rc.3
+  deferred). Previously, multi-line `layer_reason` fields could break
+  the regex frontmatter parser; now wrapped in YAML block-scalar style
+  when newlines are present.
+- Slug-prefix collision detection in `fab_extract_knowledge` (rc.3
+  deferred). Two slugs sharing a 5-character prefix are flagged in the
+  proposal step rather than silently colliding at filesystem write.
+
+## [2.0.0-rc.3] — 2026-05-10
+
+**Theme:** *Review loop end-to-end*
+
+rc.3 lands the second half of the archive→review cycle: the
+`fab_review` MCP tool with all 6 actions, the `fabric-review` Skill
+with mode inference, a filesystem-edit fallback for orphan canonical
+files, and a path-traversal sandbox.
+
+### Added
+
+- `fab_review` MCP tool — 6 actions: `list`, `approve`, `reject`,
+  `modify`, `search`, `defer`. All actions emit typed events to
+  `events.jsonl`; `approve` runs the 5-step atomic flow
+  (counter++ → frontmatter inject → `git mv` → meta rebuild →
+  event append) with rollback at each step.
+- `fabric-review` Skill template — mode inference (single-entry edit
+  vs batch review based on backlog size); per-mode flow with
+  semantic-consistency check before approve; tag-filtered search.
+- Stop-hook second signal — `archive-hint.cjs` now also fires when
+  `.fabric/knowledge/pending/` accumulates ≥10 entries, recommending
+  `fabric-review` Skill instead of (or in addition to) archive prompt.
+- `fabric doctor` filesystem-edit fallback — synthesizes a
+  `knowledge_promoted` event for canonical knowledge files lacking
+  provenance in the event ledger (e.g. files moved by hand). Surfaces
+  the synthesis as a `doctor` warning so users know what was inferred.
+- Per-file ≥90% coverage gate — wired into the pre-release check; rc.3
+  is the first RC to enforce it across `packages/server/`,
+  `packages/cli/`, `packages/shared/`.
+
+### Fixed
+
+- **Critical: path-traversal sandbox in `fab_review.approve` and
+  `fab_review.modify`.** Without sandboxing, a malicious or
+  malformed `pending_path` argument could escape `.fabric/knowledge/`
+  and write anywhere on the filesystem. Now: every path is resolved
+  with `path.resolve` and verified to live under
+  `<repo>/.fabric/knowledge/` before any I/O.
+
+### Deferred to rc.4
+
+- Multiline-safe `quoteIfNeeded` (frontmatter writer edge case).
+- Slug-prefix collision detection (UX improvement, not a correctness
+  bug).
+- API rename `pending_path` → `target_path` in `fab_review.modify`
+  (deferred to v2.1; current name leaks pending/ implementation
+  detail).
+- `knowledge_layer_change_started` event (paired with existing
+  `knowledge_layer_changed` for crash recovery; deferred to v2.1).
+
+## [2.0.0-rc.2] — 2026-05-10
+
+**Theme:** *Archive loop foundation*
+
+rc.2 lands the first half of the cycle: the `fab_extract_knowledge`
+MCP tool, the `fabric-archive` Skill, the Stop-hook trigger, and the
+hook-config install pipeline.
+
+### Added
+
+- `fab_extract_knowledge` MCP tool — writes proposed knowledge entries
+  to `.fabric/knowledge/pending/<type>/`. Idempotency key is
+  `sha256(source_session, type, slug)`; on duplicate, evidence is
+  appended to the existing entry as `## Evidence (call N)` rather
+  than creating a duplicate file. Emits `knowledge_proposed` event.
+- `fabric-archive` Skill template — 5-type extraction prompt with
+  layer classification heuristic (strong-team / strong-personal /
+  default-team) and 5-rule slug naming. Single batch review
+  presented to user; one MCP call per confirmed candidate.
+- `archive-hint.cjs` Stop hook — fires when `events.jsonl` shows ≥5
+  `plan_context` entries since last `knowledge_proposed`, OR ≥24h
+  elapsed since last archive. Stdout JSON shape
+  `{"decision":"block","reason":"..."}` is identical across Claude
+  Code and Codex CLI, so a single `.cjs` script serves both clients.
+- Hook config templates — `claude-code.json` (`hooks.Stop[]` array)
+  and `codex-hooks.json` (`events.Stop[]` array). Cursor: no
+  Stop-hook surface as of 2026-05; tracked in v2.1 roadmap.
+- Install pipeline — `fabric init` bootstrap stage now wires hook
+  install; new `fabric hooks` command re-applies hook install only
+  (e.g. after upgrading the package). Hook config merge preserves
+  user customizations: indexes `hooks.Stop[]` by command path, no-ops
+  if Fabric's entry is already present, appends if absent.
+
+### Fixed
+
+- (none — first release of these features)
+
 ## 2.0.0-rc.1 (2026-05-10)
 
 **BREAKING — Knowledge sustainment protocol pivot.** Fabric repositioned from
@@ -329,3 +460,9 @@ clean break from v1.x; no migration path — existing v1.x repos must re-init.
 
 - Removed legacy package scope references that would block npm publication under the `@fenglimg/fabric-*` namespace.
 - Closed release-path gaps where version mismatches or undocumented manual steps could have produced an incomplete or non-reproducible v1.0 launch.
+
+[Unreleased]: https://github.com/fenglimg/fabric-v2/compare/v2.0.0-rc.4...HEAD
+[2.0.0-rc.4]: https://github.com/fenglimg/fabric-v2/compare/v2.0.0-rc.3...v2.0.0-rc.4
+[2.0.0-rc.3]: https://github.com/fenglimg/fabric-v2/compare/v2.0.0-rc.2...v2.0.0-rc.3
+[2.0.0-rc.2]: https://github.com/fenglimg/fabric-v2/compare/v2.0.0-rc.1...v2.0.0-rc.2
+[2.0.0-rc.1]: https://github.com/fenglimg/fabric-v2/releases/tag/v2.0.0-rc.1

@@ -1,466 +1,259 @@
-# 初始化指南
+# Initialization
 
-> 请先从标准上手路径开始：[Fabric 上手](./getting-started.md)。本文是 `fabric init` 状态机、Claude 接力流程与初始化内部机制的深度参考。
+`fabric init` is the standard entry point. In v2.0 it does **three things** in
+a single idempotent run: scan the repo, install Skills, install Stop hooks.
+Every step is safe to re-run; existing user customizations are preserved.
 
-`fabric init` 是 Fabric 的标准初始化入口。它会先构建初始化计划，再根据运行环境进入以下路径之一：
+> Cross-references: [README.md](../README.md) · [docs/knowledge-types.md](./knowledge-types.md) · [docs/roadmap.md](./roadmap.md) · [docs/data-schema.md](./data-schema.md)
 
-- `fabric init`
-  在 TTY 中打开 wizard，确认计划后执行。
-- `fabric init --yes`
-  直接接受当前计划并执行，不进入 wizard。
-- `fabric init --plan`
-  仅打印初始化计划，不写文件。
-- `fabric init --reapply --yes`
-  对已有 Fabric setup 重新应用 Fabric 管理的 scaffold 与阶段安装器。
+## Overview
 
-执行路径一旦确认，`fabric init` 会为项目准备初始化依据和协议文件，自动完成 bootstrap、MCP config 与 git hooks 安装，并让 Claude Code 或 Codex 在安装对应后续资产后继续完成项目专属的规则初始化。
-
-> `fabric` 是主命令，`fab` 是永久别名。下文统一使用 `fabric`。
-
-## 概览
-
-`fabric init` 在一条命令里做四件事：
-
-1. Plan：收集 target、阶段选择和 MCP 安装范围，必要时通过 TTY wizard 让用户确认。
-2. Evidence：扫描仓库并写入 `.fabric/forensic.json`。
-3. 协议安装：写入 `.fabric/bootstrap/README.md`、`.fabric/INITIAL_TAXONOMY.md`、`.fabric/forensic.json`、初始 `.fabric/events.jsonl`，以及 Claude/Codex 后续资产。
-4. 后续接力：自动执行 bootstrap install、MCP config install、git hooks install，并打印同 session 的下一步说明。
-
-这种拆分是故意的：Fabric 先让 CLI 步骤保持快速、确定，再由 AI client 完成后续初始化。
-
-## Bootstrap 协议与客户端适配
-
-从 `v1.3.1` 开始，bootstrap 阶段已经收敛为“内部 bootstrap 说明 + 客户端配置”模型：
-
-- 可见 bootstrap 入口固定为 `.fabric/bootstrap/README.md`。
-- bootstrap 阶段不再生成根级 `AGENTS.md`、`CLAUDE.md` 或 `GEMINI.md`。
-- Claude Code 的接力仍通过 `.claude/skills/fabric-init/SKILL.md`、Stop hook 与 `.claude/settings.json` 完成。
-- Codex 的接力通过 repo skill `.codex/skills/fabric-init/SKILL.md` 与 repo hooks `.codex/hooks.json` 完成。
-- 其他 MCP-capable 客户端通过各自的 MCP config 发现 Fabric server，并在运行期调用 `fab_plan_context` 与 `fab_get_rule_sections`。
-
-> Codex hooks 依赖 `features.codex_hooks = true`。若该 feature 未启用，Codex 仍可手动使用 repo skill `.codex/skills/fabric-init/SKILL.md`，但 `.codex/hooks.json` 中的 `SessionStart` / `Stop` hooks 不会触发。
-
-当前 bootstrap hard rules 仍保持同一组核心约束：
-
-1. 把 Fabric Protocol 明确为规则来源。
-2. 在任何代码读取、架构规划或逻辑修改前先调用 `fab_plan_context`，编辑前再用 `fab_get_rule_sections` 获取结构化规则段落。
-3. 把 `.fabric/rules/` 视为规则正文真源。
-4. 把 `.fabric/agents.meta.json` 与 `.fabric/rule-test.index.json` 视为可由 `fabric doctor --fix` 重建的派生索引。
-5. 让 MCP 和 doctor 自动把 typed events 写入 `.fabric/events.jsonl`。
-
-## 前置条件
-
-- 全局安装 CLI 一次：
-
-  ```bash
-  npm install -g @fenglimg/fabric-cli
-  ```
-
-- 在目标项目根目录运行 `fabric init`。
-- 从干净的初始化项目状态开始：
-  - 尚不存在 `.fabric/`。
-- 完整 Stage 3 到 Stage 6 流程需要 Claude Code。
-- 下文运行示例使用 `werewolf-minigame`，一个 Cocos Creator 3.8 TypeScript 项目。
-
-## 7 阶段旅程
-
-### 阶段 1：安装
-
-在机器上安装 Fabric 一次：
-
-```bash
-npm install -g @fenglimg/fabric-cli
-```
-
-此时项目本身尚未改变。仍无 `.fabric/` 目录、无 `.claude/` 初始化资产、也没有生成内部 bootstrap 说明。
-
----
-
-### Stage 2：运行 `fabric init`
-
-在项目根目录：
-
-```bash
-cd ~/projects/werewolf-minigame
+```text
 fabric init
+  │
+  ├─ Phase 1: pre-flight checks
+  │     project root · package manager · existing .fabric/
+  │
+  ├─ Phase 2: deterministic scan
+  │     package.json · README first paragraph · build config · lint config · CI yaml
+  │     → 4–7 baseline knowledge entries written to .fabric/knowledge/<type>/
+  │
+  ├─ Phase 3: Skill install
+  │     fabric-archive · fabric-review · fabric-import
+  │     → .claude/skills/  +  .codex/skills/   (Cursor reads either tree)
+  │
+  ├─ Phase 4: Stop-hook install
+  │     archive-hint.cjs → .claude/hooks/  +  .codex/hooks/
+  │     hook config → .claude/settings.json (hooks.Stop[]) + .codex/hooks.json (events.Stop[])
+  │     (Cursor: no Stop-hook surface as of 2026-05; tracked in roadmap v2.1)
+  │
+  ├─ Phase 5: pointer install
+  │     one-line skill references appended to AGENTS.md / CLAUDE.md / .cursor/rules
+  │
+  └─ Phase 6: scaffold
+        .fabric/{knowledge/{5 type dirs}, pending/{5 type dirs}, agents.meta.json, events.jsonl}
 ```
 
-本步会发生：
+`fabric` is the primary command; `fab` is a permanent alias.
 
-- 若当前终端为 TTY，先显示 wizard 并让你确认 plan。
-- 若使用 `--plan`，本步只输出计划摘要，不写任何文件。
-- 若使用 `--yes`，跳过 wizard，直接按当前 flags 执行。
-- 若使用 `--reapply --yes`，会以“重应用”模式覆盖 Fabric 管理的 scaffold 文件。
+## Phase 1 — Pre-flight checks
 
-- Fabric 扫描仓库并写入 `.fabric/forensic.json`。
-- Fabric 写入 `.fabric/bootstrap/README.md` 与 metadata 文件。
-- Fabric 安装 `.claude/skills/fabric-init/SKILL.md`、`.claude/hooks/fabric-init-reminder.cjs`、`.claude/settings.json`，并安装 Codex 的 `.codex/skills/fabric-init/SKILL.md`、`.codex/hooks.json` 与 `.codex/hooks/*.cjs`。
-- Fabric 自动运行 bootstrap install、MCP config install 与 git hooks install。
+Before any file is written, `fabric init`:
 
-来自 disposable `werewolf-minigame` 示例运行的真实输出：
+1. Detects the project root (walks up to find the nearest `package.json` or
+   `.git/`). Aborts if neither is found.
+2. Detects the package manager (`pnpm-lock.yaml` > `yarn.lock` > `package-lock.json`).
+3. Checks for an existing `.fabric/` directory.
+   - If absent: full install proceeds.
+   - If present: re-init mode — diff against current scaffold, skip
+     up-to-date files, preserve user customizations (especially
+     `hooks.Stop[]` extensions in `settings.json`).
+4. Validates supported clients: Claude Code, Cursor, Codex CLI. Other clients
+   are dropped (see [docs/roadmap.md](./roadmap.md) for scope rationale).
+
+## Phase 2 — Deterministic scan
+
+The scan reads exactly six sources and emits 4–7 baseline entries:
+
+| Source | Produces | Type |
+|--------|----------|------|
+| `package.json` (deps + scripts) | "Tech stack: …" | `models` |
+| `README.md` first paragraph (or first 200 chars) | "Project mission: …" | `models` |
+| Build config (`vite.config.*`, `tsconfig.json`, `next.config.*`, `webpack.config.*`) | "Build pipeline: …" | `models` |
+| Code style indicators (`.eslintrc*`, `.prettierrc*`, `tsconfig.json#strict`) | "Code style: …" | `guidelines` |
+| CI yaml (`.github/workflows/*.yml`, `.gitlab-ci.yml`) | "CI pipeline: …" | `processes` |
+| Existing folder structure (heuristic) | "Module layout: …" | `models` |
+
+Entries land in `<repo>/.fabric/knowledge/<type>/` with `maturity: draft` and
+`layer: team`. They are baseline candidates intended to be reviewed (and
+likely refined) by `fabric-review` Skill on first use.
+
+The scan is **deterministic**: same repo state in → same entries out. No LLM
+involved at this phase. LLM-driven enrichment is a separate, opt-in step
+provided by the `fabric-import` Skill (see Phase 3).
+
+## Phase 3 — Skill install
+
+Three Skills land in both `.claude/skills/` and `.codex/skills/`:
+
+1. **`fabric-archive`** — invoked by Stop hook or user. 5-type extraction
+   prompt + layer classification heuristic + slug naming rules. Writes
+   confirmed candidates to `.fabric/knowledge/pending/<type>/` via
+   `fab_extract_knowledge` MCP tool.
+2. **`fabric-review`** — invoked when `pending/` accumulates. 6-action
+   review loop: list / approve / reject / modify / search / defer. Mode
+   inference: detects whether to enter batch-review or single-entry-edit
+   mode based on backlog size.
+3. **`fabric-import`** — invoked manually for LLM-driven enrichment of the
+   baseline scan. 3-phase pipeline (extract → classify → batch-write) with
+   `.import-state.json` checkpoint for resumable runs.
+
+Cursor reads from `.claude/skills/` (or `.codex/skills/` — whichever the
+user has configured); no separate install path is needed.
+
+## Phase 4 — Stop-hook install
+
+The Stop hook fires at the end of every agent turn and decides whether to
+prompt the user to archive. Two signals trigger:
+
+1. **Archive opportunity**: `events.jsonl` shows ≥5 `plan_context` entries
+   since the last `knowledge_proposed` event, OR ≥24h elapsed since last
+   archive.
+2. **Pending overflow**: `.fabric/knowledge/pending/` has ≥10 entries
+   awaiting review (added in rc.3) — recommends `fabric-review` Skill.
+
+Install layout:
 
 ```text
-Created /tmp/werewolf-minigame-init-guide-example/werewolf-minigame/.fabric/bootstrap/README.md
-Created /tmp/werewolf-minigame-init-guide-example/werewolf-minigame/.fabric/INITIAL_TAXONOMY.md
-Created /tmp/werewolf-minigame-init-guide-example/werewolf-minigame/.fabric/events.jsonl
-Created /tmp/werewolf-minigame-init-guide-example/werewolf-minigame/.fabric/forensic.json
-Installed /tmp/werewolf-minigame-init-guide-example/werewolf-minigame/.claude/skills/fabric-init/SKILL.md
-Installed /tmp/werewolf-minigame-init-guide-example/werewolf-minigame/.claude/hooks/fabric-init-reminder.cjs
-Created /tmp/werewolf-minigame-init-guide-example/werewolf-minigame/.claude/settings.json with Claude Stop hook.
---- Installing bootstrap templates... ---
-completed bootstrap: ...
---- Configuring MCP clients... ---
-...
---- Installing git hooks... ---
-...
-Reason: .fabric/forensic.json is ready; some detected clients still need manual follow-up because no Fabric skill is installed for them yet.
+.claude/hooks/archive-hint.cjs        # the hook script (single source)
+.claude/settings.json                  # hooks.Stop[] += [{ command: "node .claude/hooks/archive-hint.cjs" }]
+.codex/hooks/archive-hint.cjs         # same script, copied (Codex repo skill convention)
+.codex/hooks.json                      # events.Stop[] += [{ command: "node .codex/hooks/archive-hint.cjs" }]
 ```
 
-Stage 2 之后，项目已准备好交给 AI 接手，但在 `.fabric/init-context.json` 出现之前，初始化仍处于未完成状态。若你只运行了 `fabric init --plan`，则 Stage 2 实际上还没有开始，因为没有任何文件被写入。
+The same `.cjs` script serves both clients because Claude Code and Codex CLI
+accept the same stdout JSON shape: `{"decision":"block","reason":"..."}`.
+This is documented as `KT-DEC-0009` in the self-repo.
 
----
+**Cursor** is supported for Skills but has no Stop-hook surface as of
+2026-05; tracked in [docs/roadmap.md](./roadmap.md) v2.1.
 
-### 阶段 3：AI 接手
+### Hook config merge — preserve user customizations
 
-在 Claude Code 中打开同一仓库并发送普通消息。支持两种触发路径：
+`hooks.Stop[]` is an *array*; users may have appended their own commands.
+The merge logic (in `packages/cli/src/install/hooks.ts`):
 
-- 同一会话路径：若在 Claude Code 的 Bash tool 中运行 `fabric init`，模型会看到 Stage 2 的说明行，并触发 `fabric-init`。
-- 跨会话路径：若在外部终端运行 `fabric init`，Claude Stop hook 或 Codex Stop hook 会检测到 `.fabric/forensic.json` 已存在但 `.fabric/init-context.json` 缺失，并继续提醒完成后续初始化。
+1. Read existing `hooks.Stop[]`.
+2. Index by hook command path (e.g. `node .claude/hooks/archive-hint.cjs`).
+3. If Fabric's hook is already present → no-op.
+4. If absent → append Fabric's entry; preserve all other user entries.
 
-示例 prompt：
+A naive `deepMerge` would *replace* the array and silently drop user
+customizations — that pitfall is captured in the project's own knowledge
+base (search `pending/pitfalls/` for `deepmerge-array-replace`).
+
+## Phase 5 — Pointer install
+
+A one-line reference is appended to client-specific entrypoints:
+
+- `AGENTS.md` (Codex CLI convention)
+- `CLAUDE.md` (Claude Code convention)
+- `.cursor/rules/fabric.mdc` (Cursor convention)
+
+Each pointer reads, e.g.:
 
 ```text
-我刚运行了 fabric init，请继续完成这个仓库的 Fabric 初始化。
+Fabric: see .claude/skills/fabric-archive/SKILL.md and
+.claude/skills/fabric-review/SKILL.md for archiving and review.
 ```
 
-关键心智模型：Stage 2 先把仓库准备好，Stage 3 再把仓库交给 skill。
+If the file exists with user content, the pointer is appended (not
+replacing). If the pointer line is already present, no-op.
 
----
+## Phase 6 — Scaffold
 
-### 阶段 4：确认框架
-
-`fabric-init` 先读取 `.fabric/forensic.json`，并确认检测到的 framework 假设。
-
-`werewolf-minigame` 示例对话：
-
-```text
-AI: I detected a Cocos Creator 3.8 project with scripts under assets/scripts.
-    It looks like a TypeScript Component-based codebase using @ccclass.
-    Please confirm:
-    1. Is this TypeScript rather than JavaScript?
-    2. Do node references usually come from @property(Node) injection?
-
-Developer: Yes. It is TypeScript, and we mainly use @property(Node).
-```
-
-本阶段刻意保持简短：在 Fabric 询问硬约束之前，先验证 framework model。
-
----
-
-### 阶段 5：确认不变式
-
-接下来 skill 收集必须成为项目 rule nodes 与 init context 的硬规则。
-
-`werewolf-minigame` 示例对话：
-
-```text
-AI: I need to lock the project invariants:
-    1. Ban async/await inside update() and lateUpdate()?
-    2. Require every Component class to use @ccclass(name)?
-    3. Protect assets/prefabs/** and assets/scenes/** from AI edits?
-    4. Protect all **/*.meta files?
-    5. Must network traffic go through NetworkManager?
-
-Developer: Yes to all five.
-```
-
-本阶段应产出硬规则，而非偏好。若某条规则不确定，先省略，留待日常维护再补。
-
----
-
-### 阶段 6：写入初始化产物
-
-确认过程结束后，skill 会写入后续初始化产物：
-
-- `.fabric/init-context.json`
-- `.fabric/rules/` 下确认后的项目专属 rule nodes
-- 可由 `fabric doctor --fix` 重建的 `.fabric/agents.meta.json` 与 `.fabric/rule-test.index.json`
-
-对 `werewolf-minigame`，生成结果应编码例如：
-
-- Cocos Creator 3.8 与 `@ccclass + extends Component`
-- 在 `update()` 或 `lateUpdate()` 中不使用 `async/await`
-- 保护路径 `assets/prefabs/**`、`assets/scenes/**` 与 `**/*.meta`
-- `NetworkManager` 作为必需的 network boundary
-
-当本阶段成功时，initialization 即完成，因为两份 state artifact 均已存在：
-
-- `.fabric/forensic.json`
-- `.fabric/init-context.json`
-
----
-
-### 阶段 7：日常开发
-
-从此将 `.fabric/bootstrap/README.md`、`.fabric/INITIAL_TAXONOMY.md`、`.fabric/init-context.json`、`.fabric/rules/` 与 `.fabric/events.jsonl` 视为持续维护的项目 contract，而非一次性 scaffold。`.fabric/agents.meta.json` 与 `.fabric/rule-test.index.json` 是由 doctor 修复流程维护的派生索引。
-
-典型后续命令：
-
-```bash
-fabric doctor
-fabric doctor --fix
-```
-
-当项目架构、invariants 或 protected paths 变化时，使用持续的 Fabric initialization workflow。Initialization skill 为一次性 setup；日常开发是保持 `.fabric/rules/`、`.fabric/init-context.json` 与 codebase 对齐，并用 `fabric doctor --fix` 重建派生索引。
-
-如果需要理解 repo 内部脚本的作用、输入输出边界和维护约束，优先查看 [`docs/tooling-manifest.json`](./tooling-manifest.json) 与 [`docs/tooling-manifest.md`](./tooling-manifest.md)。这层 tooling knowledge 与规则树分离维护，manifest 是真源，未来的 JSDoc 提取只能作为同步增强。
-
-## 状态机
-
-```text
-[empty project]
-    |
-    | fabric init (scaffold + bootstrap + MCP + hooks)
-    v
-[forensic.json exists] + [init-context.json missing]
-    |   ^
-    |   | Stop hook blocks here until initialization is finished
-    |
-    | Claude Code / Codex + Fabric initialization skill
-    v
-[forensic.json exists] + [init-context.json exists] + [rule nodes completed]
-    |
-    | ongoing edits + agents-md maintenance
-    v
-[rule graph stays in sync with code]
-```
-
-## 兼容性矩阵
-
-| Scenario | Trigger mechanism | Result |
-| --- | --- | --- |
-| 自 Claude Code Bash tool 运行 `fabric init` | 模型从 tool 结果读取 Stage 2 reason 行 | 可在同 session 立即触发 `fabric-init` |
-| 在外部终端运行 `fabric init` | Claude Code Stop hook 或 Codex Stop hook 发现存在 `forensic.json` 但无 `init-context.json` | 下一次客户端 session 会收到后续初始化提醒 |
-| 在 CI 或其他非 TTY 环境运行 `fabric init --yes` | 无 wizard takeover；命令直接写文件并记录 reason 行 | `.fabric/bootstrap/README.md` 与 `.fabric/` artifact 仍有效，但 `.fabric/init-context.json` 不会自动创建 |
-| 在任意环境运行 `fabric init --plan` | 只打印计划与核心写入摘要 | 不落盘，适合在 CI/脚本里先做审批或预览 |
-| Codex（已启用 `features.codex_hooks = true`） | repo `.codex/hooks.json` 的 `SessionStart` / `Stop` hooks + `.codex/skills/fabric-init/SKILL.md` | 可在仓库内得到初始化提醒与后续上下文 |
-| 其他非 Claude client | `.claude/` 与 `.codex/` 文件在无关客户端中为无害 no-op | `.fabric/bootstrap/README.md` 可作为稳定 bootstrap 入口 |
-
-## 故障排除
-
-### Hook 未触发
-
-先检查 sentinel state：
-
-```bash
-test -f .fabric/forensic.json && echo "forensic: ok"
-test ! -f .fabric/init-context.json && echo "init-context: missing"
-test -f .claude/hooks/fabric-init-reminder.cjs && echo "hook: ok"
-test -f .codex/hooks.json && echo "codex hooks: ok"
-```
-
-然后确认 `.claude/settings.json` 包含指向 `.claude/hooks/fabric-init-reminder.cjs` 的 Stop hook entry，或 `.codex/hooks.json` 已存在且 Codex 侧启用了 `features.codex_hooks = true`。若条件满足，在对应客户端中打开仓库并继续初始化。
-
-```text
-Use the fabric-init skill to finish this project's initialization.
-```
-
-### 缺少 `.fabric/forensic.json`
-
-Initialization 未完成 Stage 2。回到项目根目录运行：
-
-```bash
-fabric init
-```
-
-若因已存在 `.fabric/bootstrap/README.md`、`.fabric/forensic.json` 或其他 `.fabric/` 文件而中止，先检查这些文件，不要覆盖。`fabric init` 刻意设计为非破坏性（除非使用 `--force`）。
-若你确认要重新应用 Fabric 管理的 scaffold，请优先使用：
-
-```bash
-fabric init --reapply --yes
-```
-
-`--force` 仍是底层执行选项，但从用户心智模型上，`--reapply` 才是当前推荐的重应用入口。
-
-### 未生成 `.fabric/bootstrap/README.md`，或仍为通用 bootstrap
-
-`fabric init` 在 Stage 2 总会写入 `.fabric/bootstrap/README.md`。更丰富的项目规则稍后由初始化 skill 写入 `.fabric/rules/`。
-
-若 `.fabric/bootstrap/README.md` 完全缺失，Stage 2 未完成。若存在但 `.fabric/init-context.json` 仍缺失，说明 Stage 3 到 Stage 6 尚未完成。在仓库中打开 Claude Code 并继续 initialization review。
-
-### `init-context.json` 无效或不完整
-
-Stop hook 仅在缺少 `.fabric/init-context.json` 时阻塞。若文件存在但 malformed，将其移开并重新跑 initialization interview：
-
-```bash
-mv .fabric/init-context.json .fabric/init-context.invalid.json
-```
-
-然后重新在项目中打开 Claude Code，并要求再次使用 `fabric-init`。保留 `.fabric/forensic.json`，以便 skill 复用原始初始化依据。
-
-## Matcha 交互 / Matcha Interaction
-
-Matcha 模式是 `Check-not-Ask`：先由 CLI 准备 evidence，再由 client 用一屏 Architecture Review 让用户只做纠错或确认，而不是串行回答 5 到 7 个问题。
-
-Phase 0 到 Phase 2 的流转可以用 `werewolf-minigame-stub` 理解：
-
-1. Phase 0：读取 `.fabric/forensic.json` 的 `framework`、`assertions[]`、`candidate_files[]`，并在 `15 files x 100 lines` 的预算内补读关键样本。
-2. Phase 1：把候选结论整理成一屏 `Architecture Review`，按 `framework`、`architecture_pattern`、`proposed_rule`、`domain_boundary` 四个分区展示，每项都附 `file:line` 锚点。
-3. Phase 2：只把确认后的集合写入 `.fabric/init-context.json` 和 `.fabric/rules/`，不在业务目录落任何 rule file。
-
-单屏 Review 的具体示例如下：
-
-```md
-# Architecture Review
-
-## framework
-- [HIGH] 这是一个 Cocos Creator TypeScript Component 项目，核心类通过 `@ccclass(...)` 暴露给引擎。
-  evidence: examples/werewolf-minigame-stub/assets/scripts/Game.ts:5, examples/werewolf-minigame-stub/assets/scripts/Network.ts:5, examples/werewolf-minigame-stub/assets/scripts/Player.ts:5
-  write status: implicit accept unless corrected
-
-## architecture_pattern
-- [HIGH] 主要游戏脚本集中在 `assets/scripts/`，适合映射到 `.fabric/rules/assets/scripts/*.md` 的规则节点。
-  evidence: examples/werewolf-minigame-stub/assets/scripts/Game.ts:1, examples/werewolf-minigame-stub/assets/scripts/Network.ts:1, examples/werewolf-minigame-stub/assets/scripts/Player.ts:1
-  write status: implicit accept unless corrected
-
-## proposed_rule
-- [HIGH] 初始化输出必须保留 Cocos component decorators、lifecycle methods 与配对的 `.meta` sidecar。
-  evidence: examples/werewolf-minigame-stub/assets/scripts/Game.ts:5, examples/werewolf-minigame-stub/assets/scripts/Game.ts.meta:1
-  write status: implicit accept unless corrected
-
-## domain_boundary
-- [MEDIUM] 网络相关约束应汇总到独立边界，再映射到 mirror 节点或 `_cross` 节点。
-  evidence: examples/werewolf-minigame-stub/assets/scripts/Network.ts:5
-  write status: explicit accept required
-```
-
-用户在这个屏幕里只需要做两类动作：
-
-- 纠正某个 `HIGH` 项，例如“framework 不是泛化的 cocos，而是 Cocos Creator 3.8 TypeScript”。
-- 显式接受某个 `MEDIUM` 或 `LOW` 项，例如“接受 `domain_boundary`：网络边界统一落到 `.fabric/rules/_cross/security.md`”。
-
-Phase 2 的输出也是具体可见的：`HIGH` 且未被纠正的项会直接进入 `.fabric/init-context.json`；被显式接受的 `MEDIUM` 项会补充生成对应的 `.fabric/rules/root.md`、`.fabric/rules/assets/scripts/*.md` 或 `.fabric/rules/_cross/*.md` 节点。
-
-## 置信度分档 / Confidence Tiers
-
-`HIGH`、`MEDIUM`、`LOW` 不是文案语气，而是可写入决策的定量门槛。当前实现使用量化规则决定每个 assertion 能否默认进入 Phase 2。
-
-| Tier | 定量定义 | 写入语义 | 用户动作 |
-| --- | --- | --- | --- |
-| `HIGH` | `astLevel = true`，或 `coverage.ratio >= 0.8` 且 `co_occurring_patterns.length >= 2` | 默认可写 | 不反对即接受；若错误则直接纠正 |
-| `MEDIUM` | 不满足 `HIGH`，且无冲突，通常是 `0.5 <= coverage.ratio < 0.8` 或只有单一模式证据 | 不可默认写入 | 必须显式回复“接受” |
-| `LOW` | `coverage.ratio < 0.5`，或存在冲突信号 `hasConflict = true` | 不可默认写入 | 只有显式接受后才能写，否则丢弃 |
-
-用户纠错流程应保持固定：
-
-1. 看 Phase 1 的整屏输出，而不是被逐题追问。
-2. 对错误的 `HIGH` 项直接给出修正版，修正后版本替换原项进入 Phase 2。
-3. 对 `MEDIUM` 或 `LOW` 项明确回复“接受”或“不接受”；未明确接受的内容不得写入 `.fabric/init-context.json` 或 `.fabric/rules/`。
-
-一个最小化回复示例：
-
-```text
-修正 framework：这是 Cocos Creator 3.8 TypeScript。
-接受 domain_boundary：网络相关约束写入 .fabric/rules/_cross/security.md。
-不接受 proposed_rule：当前项目没有强制单一 NetworkManager。
-```
-
-这意味着：
-
-- 第一行会覆盖原先的 `HIGH` framework 结论。
-- 第二行会让一个原本 `MEDIUM` 的边界项变成可写集合。
-- 第三行会阻止该规则进入任何输出文件。
-
-## 规则真源架构 / Rule Source Architecture
-
-规则真源架构的核心是把语义规则树完整收敛到 `.fabric/rules/`，并让物理文件路径与业务路径脱钩。
-
-一个典型目录结构如下：
+Final filesystem state after a fresh init:
 
 ```text
 .fabric/
-  rules/
-    root.md
-    packages/
-      cli/
-        index.md
-        src/
-          commands/
-            index.md
-      server/
-        index.md
-    _cross/
-      security.md
+├── knowledge/
+│   ├── decisions/
+│   ├── pitfalls/
+│   ├── guidelines/
+│   ├── models/
+│   ├── processes/
+│   └── pending/
+│       ├── decisions/
+│       ├── pitfalls/
+│       ├── guidelines/
+│       ├── models/
+│       └── processes/
+├── agents.meta.json    # counter envelope: { KT-DEC: N, KT-PIT: N, ... }
+└── events.jsonl        # append-only event ledger (15 typed events)
 ```
 
-这里有三个关键约束：
+`agents.meta.json` and `events.jsonl` are **derived** — `fabric doctor --fix`
+can rebuild them from the knowledge tree if corrupted. The knowledge tree
+itself is the source of truth.
 
-- `.fabric/rules/root.md` 是全局入口，承载 bootstrap 之后仍需长期生效的全局规则。
-- `.fabric/rules/{path}/index.md` 是 mirror 节点，按源码目录 1:1 镜像。例如 `packages/cli/` 的语义规则放在 `.fabric/rules/packages/cli/index.md`，而不是放在 `packages/cli/AGENTS.md`。
-- `.fabric/rules/_cross/security.md` 这类文件承载跨切面规则，例如安全、发布、审计等，不归属于单一业务目录。
+## Idempotent re-run
 
-`agents.meta.json` 中的 `topology_type` 只允许两种值：
+`fabric init` is safe to run repeatedly. On re-run:
 
-| 节点文件 | `topology_type` | 典型 `scope_glob` |
-| --- | --- | --- |
-| `AGENTS.md` | `mirror` | `**` |
-| `.fabric/rules/root.md` | `mirror` | `**` |
-| `.fabric/rules/packages/cli/index.md` | `mirror` | `packages/cli/**` |
-| `.fabric/rules/packages/server/src/commands/index.md` | `mirror` | `packages/server/src/commands/**` |
-| `.fabric/rules/_cross/security.md` | `cross-cutting` | `**` |
+- Phase 1 detects the existing scaffold and switches to re-apply mode.
+- Phase 2 skips re-scanning if `.fabric/forensic.json` is fresh (<24h);
+  `--force` overrides.
+- Phase 3 diffs Skill template hashes; updates only changed files.
+- Phase 4 merges hook config (preserves user `hooks.Stop[]` extensions).
+- Phase 5 checks for existing pointer line; no-op if present.
+- Phase 6 creates only missing directories; never deletes existing entries.
 
-`scope_glob` 决定“这条规则管谁”，而不是“这条规则放在哪”。例如客户端请求 `packages/server/src/index.ts` 时，`fab_plan_context` 会用 `scope_glob` 匹配 `packages/server/**` 与 `**`，再返回 required L0/L2 ids 和 AI-selectable L1 ids。
+Use `fabric init --force` to override the freshness check on Phase 2.
 
-从 `v1.5.0` 开始，规则节点还可以声明 `activation`，用于表达加载时机：
+## `fabric hooks` — re-apply hook install only
 
-| `activation.tier` | 加载语义 | 典型用途 |
-| --- | --- | --- |
-| `always` | 无论请求路径是什么都加载完整规则 | 全局安全、发布、审计约束 |
-| `path` | 按 `scope_glob` 命中后加载完整规则 | 默认 mirror 节点与目录规则 |
-| `description` | 不加载完整内容，只返回 `description_stubs` | 大型规则包、可选领域知识、需要客户端二次判断的规则 |
+After upgrading the package, you may want to refresh just the Stop-hook
+script without re-running the full init:
 
-Dashboard 的“规则命中”页面会用同一套解析结果展示当前样本路径命中了哪些 L1/L2 规则，以及哪些节点只以 description stub 的形式出现。
-
-最重要的一条是业务目录零规则文件：
-
-- `packages/cli/AGENTS.md` 不应继续存在。
-- `packages/server/AGENTS.md` 不应继续存在。
-- `src/AGENTS.md` 或任何同类 colocated rule file 都不应继续存在。
-
-规则只应存在于 `.fabric/rules/`，不需要桥接文件，也不需要 `@import` 聚合层。
-
-## 客户端能力 / Client Capability
-
-Fabric requires MCP-capable client。更直接地说：如果 client 不能稳定调用 `fab_plan_context` 和 `fab_get_rule_sections`，并读取 `.fabric/events.jsonl` typed Event Ledger，它就无法完整执行 Fabric Protocol。
-
-| Client | MCP 能力 | 是否兼容 Fabric | 说明 |
-| --- | --- | --- | --- |
-| Claude Code | 有 | ✅ | 可直接消费 `.claude/` bootstrap 与 Fabric MCP tools |
-| Cursor w/ MCP | 有 | ✅ | 需要把 Fabric server 配进 MCP 列表 |
-| Codex | 有 | ✅ | 能调用同一组 MCP tools，适合作为并行实现 client |
-| 纯 IDE | 无 | ❌ | 只能看文件，不能执行 Fabric runtime protocol |
-
-初始化完成后，用 `fabric doctor --fix` 让 `.fabric/agents.meta.json` 与 `.fabric/rule-test.index.json` 从 `.fabric/rules/` 收敛，再用 `fab_plan_context` 和 `fab_get_rule_sections` 验证结果。例如请求 `packages/server/src/index.ts`，预期 L0/L2 自动进入 required ids，相关 L1 进入 AI selectable ids。
-
-## 规则命中页与 Rules Context API
-
-`fabric serve` 在 `v1.5.0` 新增只读 rules context API：
-
-```text
-GET /api/rules/context?path=packages/server/src/index.ts
+```bash
+fabric hooks
 ```
 
-该 API 保留为 Dashboard 只读观察面。MCP 编辑闭环以 `fab_plan_context` + `fab_get_rule_sections` 为准。API 返回：
+This re-runs Phase 4 (script copy + config merge) without touching scan
+output, Skills, or pointers. Safe to run anytime.
 
-- `L0`
-- `L1[]`
-- `L2[]`
-- `description_stubs[]`
+## Manual customization
 
-Dashboard 默认进入“规则命中”页面。维护者可以输入一个样本路径，查看目录覆盖热力图和命中原因；这适合验证 `scope_glob`、`activation.tier` 与 Shadow Mirroring 元数据是否按预期协同，而不是作为编辑规则的入口。
+You may freely edit:
 
-## 参考链接
+- `hooks.Stop[]` in `.claude/settings.json` and `events.Stop[]` in
+  `.codex/hooks.json` — additional commands are preserved on re-init.
+- Skill content in `.claude/skills/*/SKILL.md` and `.codex/skills/*/SKILL.md`
+  — Fabric's re-init detects local edits via content hash and prompts before
+  overwriting (use `--force` to skip the prompt).
+- Pointers in `AGENTS.md` / `CLAUDE.md` / `.cursor/rules/fabric.mdc` — the
+  pointer line is identified by a deterministic anchor; surrounding user
+  content is preserved.
 
-- [`fabric-init` skill template](../templates/claude-skills/fabric-init/SKILL.md)
-- [`fabric-init` Stop hook template](../templates/claude-hooks/fabric-init-reminder.cjs)
-- [`fab init` implementation](../packages/cli/src/commands/init.ts)
+## Cursor support note
+
+Cursor reads Skills from `.claude/skills/` or `.codex/skills/` (whichever it
+finds first per its configured search paths). However, **Cursor has no
+Stop-hook surface as of 2026-05** — Phase 4 silently skips Cursor. When
+Cursor exposes a Stop-hook API, Fabric will add a `.cursor/hooks/` install
+path; tracked in [docs/roadmap.md](./roadmap.md) v2.1.
+
+## Verification
+
+After init, run:
+
+```bash
+fabric doctor
+```
+
+Expected output: 0 errors, 0 fixable findings. The Stop hook is installed
+but won't fire until the agent has produced ≥5 `plan_context` events; this
+is normal.
+
+To confirm the scan output:
+
+```bash
+ls .fabric/knowledge/models/        # 1–3 baseline models
+ls .fabric/knowledge/guidelines/    # 0–2 baseline guidelines (if lint configs present)
+ls .fabric/knowledge/processes/     # 0–1 baseline processes (if CI yaml present)
+```
+
+Total baseline count is 4–7 entries depending on what the repo exposes.
+
+## Troubleshooting
+
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| `fabric init` reports "no project root" | run from outside a repo | `cd` into a repo with `package.json` or `.git/` |
+| Re-init wiped my custom Stop hook | should not happen — please file an issue | meanwhile: re-add manually in `settings.json` |
+| Cursor doesn't trigger archive prompt | expected — Cursor lacks Stop-hook surface | use Skill manually: invoke `fabric-archive` |
+| `fabric doctor` reports `counter_desync` | `agents.meta.json` drifted from filesystem | `fabric doctor --fix` rebuilds counters |
+| `pending/` has >10 entries and growing | review backlog | invoke `fabric-review` Skill (Stop hook now prompts) |
+
+For deeper schema and event reference, see [docs/data-schema.md](./data-schema.md)
+and [docs/mcp-contracts.md](./mcp-contracts.md).
