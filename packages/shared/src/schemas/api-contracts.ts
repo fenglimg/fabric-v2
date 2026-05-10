@@ -52,6 +52,11 @@ const _descriptionIndexItemSchema = z.object({
   maturity: _maturityEnum.optional(),
   layer: _layerEnum.optional(),
   layer_reason: z.string().optional(),
+  // v2/rc.2: tag list shipped via frontmatter (commit a85121a). Exposed at
+  // the API surface so MCP clients can filter without re-parsing the
+  // description payload. Absent on legacy entries; consumers should treat
+  // missing as [].
+  tags: z.array(z.string()).optional(),
 });
 
 const _requirementProfileSchema = z.object({
@@ -106,6 +111,15 @@ export const planContextInputSchema = z.object({
     .optional()
     .describe(
       "When true, include description_index entries with maturity='deprecated'. Defaults to false (deprecated entries hidden). Note: 'deprecated' is reserved future state — today this filter is a no-op until MaturitySchema is widened.",
+    ),
+  // v2/rc.2 (Q6): client-supplied layer scope. When omitted, the server
+  // falls back to fabric-config.default_layer_filter (TASK-002) so a single
+  // workspace policy controls the default. Explicit values override.
+  layer_filter: z
+    .enum(["team", "personal", "both"])
+    .optional()
+    .describe(
+      "Restrict description_index to the named layer. Default: fabric-config.default_layer_filter (TASK-002).",
     ),
 });
 
@@ -250,6 +264,15 @@ export const ruleSectionsOutputSchema = z.object({
       }),
     ]),
   ),
+  // v2/rc.3 (Q6): present iff a layer-flip in fab_review/modify changed the
+  // canonical stable_id since the caller's selection_token was minted.
+  // Clients should retry against `redirect_to.stable_id`.
+  redirect_to: z
+    .object({ stable_id: z.string() })
+    .optional()
+    .describe(
+      "Post-layer-flip redirect. Populated when stable_id changed after token mint (rc.3 fab_review/modify).",
+    ),
   warnings: z.array(structuredWarningSchema).optional(),
 });
 
@@ -259,6 +282,162 @@ export const ruleSectionsAnnotations = {
   destructiveHint: false,
   openWorldHint: false,
   title: "Filter rule sections",
+} as const;
+
+// ---------------------------------------------------------------------------
+// MCP tool contracts — fab_extract_knowledge (rc.2 protocol pre-lock)
+//
+// Semi-thick design: the Skill summarizes the user/session context, the MCP
+// server persists a pending knowledge entry under .fabric/knowledge/pending/.
+// Schema lands now so consumers can target it; implementation arrives in rc.2.
+// ---------------------------------------------------------------------------
+
+export const FabExtractKnowledgeInputSchema = z.object({
+  source_session: z
+    .string()
+    .describe("Originating session id; correlates with Event Ledger records"),
+  recent_paths: z
+    .array(z.string())
+    .describe("Workspace paths recently touched in the source session — used as scope hints"),
+  user_messages_summary: z
+    .string()
+    .describe("Skill-side summary of the user's intent/messages, kept compact"),
+  type: z
+    .enum(["decisions", "pitfalls", "guidelines", "models", "processes"])
+    .describe("Knowledge type bucket (plural form, mirrors directory layout)"),
+  slug: z
+    .string()
+    .describe("URL-safe short identifier proposed by the Skill; server may sanitize"),
+});
+export type FabExtractKnowledgeInput = z.infer<typeof FabExtractKnowledgeInputSchema>;
+
+export const FabExtractKnowledgeOutputSchema = z.object({
+  pending_path: z
+    .string()
+    .describe("Workspace-relative path to the persisted pending entry"),
+  idempotency_key: z
+    .string()
+    .describe("Stable key derived from inputs; identical inputs yield identical key"),
+});
+export type FabExtractKnowledgeOutput = z.infer<typeof FabExtractKnowledgeOutputSchema>;
+
+export const fabExtractKnowledgeAnnotations = {
+  readOnlyHint: false,
+  idempotentHint: true,
+  destructiveHint: false,
+  openWorldHint: false,
+  title: "Extract pending knowledge entry",
+} as const;
+
+// ---------------------------------------------------------------------------
+// MCP tool contracts — fab_review (rc.3 protocol pre-lock)
+//
+// Discriminated union over a fixed `action` field. 6 actions exhaustively
+// cover the human review loop: list, approve, reject, modify, search, defer.
+// Consumers should `switch (input.action)` for type-narrowed handling.
+// ---------------------------------------------------------------------------
+
+const _fabReviewFiltersSchema = z
+  .object({
+    type: z.enum(["decisions", "pitfalls", "guidelines", "models", "processes"]).optional(),
+    layer: z.enum(["team", "personal", "both"]).optional(),
+    maturity: z.enum(["draft", "verified", "proven"]).optional(),
+    tags: z.array(z.string()).optional(),
+  })
+  .optional();
+
+const _fabReviewModifyChangesSchema = z.object({
+  title: z.string().optional(),
+  summary: z.string().optional(),
+  // Q7: writing `layer` here triggers a layer-flip; downstream callers may
+  // observe a redirect_to in fab_get_rule_sections if stable_id changes.
+  layer: z.enum(["team", "personal"]).optional(),
+  maturity: z.enum(["draft", "verified", "proven"]).optional(),
+  tags: z.array(z.string()).optional(),
+});
+
+export const FabReviewInputSchema = z.discriminatedUnion("action", [
+  z.object({
+    action: z.literal("list"),
+    filters: _fabReviewFiltersSchema,
+  }),
+  z.object({
+    action: z.literal("approve"),
+    pending_paths: z.array(z.string()).min(1),
+  }),
+  z.object({
+    action: z.literal("reject"),
+    pending_paths: z.array(z.string()).min(1),
+    reason: z.string().min(1),
+  }),
+  z.object({
+    action: z.literal("modify"),
+    pending_path: z.string().min(1),
+    changes: _fabReviewModifyChangesSchema,
+  }),
+  z.object({
+    action: z.literal("search"),
+    query: z.string().min(1),
+    filters: _fabReviewFiltersSchema,
+  }),
+  z.object({
+    action: z.literal("defer"),
+    pending_paths: z.array(z.string()).min(1),
+    until: z.string().datetime().optional(),
+    reason: z.string().optional(),
+  }),
+]);
+export type FabReviewInput = z.infer<typeof FabReviewInputSchema>;
+
+// Per-action result shapes. Each variant mirrors its input action so the
+// consumer can pair `(input.action, output.action)` without extra plumbing.
+const _fabReviewListItemSchema = z.object({
+  pending_path: z.string(),
+  type: z.enum(["decisions", "pitfalls", "guidelines", "models", "processes"]),
+  layer: z.enum(["team", "personal"]),
+  maturity: z.enum(["draft", "verified", "proven"]),
+  tags: z.array(z.string()).optional(),
+  title: z.string().optional(),
+  summary: z.string().optional(),
+});
+
+export const FabReviewOutputSchema = z.discriminatedUnion("action", [
+  z.object({
+    action: z.literal("list"),
+    items: z.array(_fabReviewListItemSchema),
+  }),
+  z.object({
+    action: z.literal("approve"),
+    approved: z.array(z.object({ pending_path: z.string(), stable_id: z.string() })),
+  }),
+  z.object({
+    action: z.literal("reject"),
+    rejected: z.array(z.string()),
+  }),
+  z.object({
+    action: z.literal("modify"),
+    pending_path: z.string(),
+    // When a layer-flip occurred, prior_stable_id and new_stable_id differ.
+    prior_stable_id: z.string().optional(),
+    new_stable_id: z.string().optional(),
+  }),
+  z.object({
+    action: z.literal("search"),
+    items: z.array(_fabReviewListItemSchema),
+  }),
+  z.object({
+    action: z.literal("defer"),
+    deferred: z.array(z.string()),
+  }),
+]);
+export type FabReviewOutput = z.infer<typeof FabReviewOutputSchema>;
+
+export const fabReviewAnnotations = {
+  readOnlyHint: false,
+  idempotentHint: false,
+  destructiveHint: false,
+  openWorldHint: false,
+  title: "Review pending knowledge entries",
 } as const;
 
 // ---------------------------------------------------------------------------
