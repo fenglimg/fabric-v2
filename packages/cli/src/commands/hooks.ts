@@ -5,7 +5,9 @@ import { defineCommand } from "citty";
 
 import { t } from "../i18n.js";
 import {
+  addArchiveSkillPointer,
   installArchiveHintHook,
+  installFabricArchiveSkill,
   mergeClaudeCodeHookConfig,
   mergeCodexHookConfig,
   type InstallStepResult,
@@ -64,17 +66,25 @@ export default hooksCommand;
 /**
  * v2/rc.2 hook installer. Re-installable from `fabric hooks install` and
  * also invoked from `fabric init` via the bootstrap stage helpers. Performs
- * three steps in sequence (each idempotent):
- *   1. Copy templates/hooks/archive-hint.cjs into .claude/hooks/ + .codex/hooks/
- *   2. Deep-merge templates/hooks/configs/claude-code.json into .claude/settings.json
+ * the full archive-feature install in sequence (each idempotent):
+ *   1. Copy templates/skills/fabric-archive/SKILL.md into .claude/skills/ + .codex/skills/
+ *   2. Copy templates/hooks/archive-hint.cjs into .claude/hooks/ + .codex/hooks/
+ *   3. Deep-merge templates/hooks/configs/claude-code.json into .claude/settings.json
  *      (hooks.Stop[] array-append-with-dedupe — preserves user entries)
- *   3. Deep-merge templates/hooks/configs/codex-hooks.json into .codex/hooks.json
+ *   4. Deep-merge templates/hooks/configs/codex-hooks.json into .codex/hooks.json
  *      (events.Stop[] array-append-with-dedupe)
+ *   5. Append fabric-archive Skill pointer to CLAUDE.md/AGENTS.md/.cursor/rules
+ *      when those files already exist (does not create them).
  *
  * Returns the union of paths written, skipped, and any errors. Best-effort:
  * a single client's failure (missing directory, unreadable settings.json)
  * surfaces in `errors` but does not throw — the other client install still
  * runs.
+ *
+ * Why all 5 steps (not just hooks): rc.2 wires the Skill, hook script, and
+ * config-merge as one feature. `fabric hooks install` is the user's
+ * re-apply entry point — installing only the hook script would leave the
+ * Stop hook firing without a Skill to invoke.
  */
 export async function installHooks(
   target: string,
@@ -84,9 +94,11 @@ export async function installHooks(
   assertExistingDirectory(normalizedTarget);
 
   const results: InstallStepResult[] = [];
+  results.push(...await runStep(() => installFabricArchiveSkill(normalizedTarget)));
   results.push(...await runStep(() => installArchiveHintHook(normalizedTarget)));
   results.push(await runSingleStep("claude-hook-config", () => mergeClaudeCodeHookConfig(normalizedTarget)));
   results.push(await runSingleStep("codex-hook-config", () => mergeCodexHookConfig(normalizedTarget)));
+  results.push(...await runStep(() => addArchiveSkillPointer(normalizedTarget)));
 
   return summarizeResults(results);
 }

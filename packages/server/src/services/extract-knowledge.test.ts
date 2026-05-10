@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile, mkdir, chmod } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -137,6 +137,217 @@ describe("extractKnowledge", () => {
     expect(result.pending_path).toBe(
       ".fabric/knowledge/pending/models/multi-word-slug-with-punctuation.md",
     );
+  });
+
+  // ---- branch-coverage tests (rc.2 gate) ----
+
+  it("extractKnowledge_handles_undefined_summary_via_nullish_coalesce", async () => {
+    const projectRoot = await createTempProject();
+
+    // user_messages_summary undefined exercises L46 nullish-coalesce branch.
+    const result = await extractKnowledge(projectRoot, {
+      source_session: "sess-undef",
+      recent_paths: [],
+      // intentionally omit user_messages_summary (typed as optional in schema)
+      type: "decisions",
+      slug: "missing-summary",
+    } as Parameters<typeof extractKnowledge>[1]);
+
+    // Empty summary path → no pending file written, archive_attempted emitted.
+    expect(result.pending_path).toBe("");
+    const archive = await readEventLedger(projectRoot, { event_type: "knowledge_archive_attempted" });
+    expect(archive.events).toHaveLength(1);
+  });
+
+  it("extractKnowledge_treats_fully_punctuated_slug_as_empty", async () => {
+    const projectRoot = await createTempProject();
+
+    // Slug like "!!!" sanitizes to "" — exercises slugIsEmpty branch (L48)
+    // AND the "sanitizedSlug || input.slug" fallback in the reason field.
+    const result = await extractKnowledge(projectRoot, {
+      source_session: "sess-punct",
+      recent_paths: [],
+      user_messages_summary: "Some non-empty body.",
+      type: "decisions",
+      slug: "!!!@@@###",
+    });
+
+    expect(result.pending_path).toBe("");
+    const archive = await readEventLedger(projectRoot, { event_type: "knowledge_archive_attempted" });
+    expect(archive.events).toHaveLength(1);
+    // Reason falls back to input.slug when sanitizedSlug is empty.
+    expect(archive.events[0]?.reason).toBe("extract_knowledge:!!!@@@###");
+  });
+
+  it("extractKnowledge_overwrites_on_collision_with_different_idempotency_key", async () => {
+    const projectRoot = await createTempProject();
+
+    // Pre-seed a pending file at the destination path with a *different*
+    // idempotency key — exercises the L88-91 fallthrough (overwrite path).
+    const dir = join(projectRoot, ".fabric/knowledge/pending/decisions");
+    await mkdir(dir, { recursive: true });
+    const target = join(dir, "collision.md");
+    await writeFile(
+      target,
+      [
+        "---",
+        "type: decisions",
+        "x-fabric-idempotency-key: sha256:0000000000000000000000000000000000000000000000000000000000000000",
+        "---",
+        "",
+        "Stale body should be replaced.",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = await extractKnowledge(projectRoot, {
+      source_session: "sess-collision",
+      recent_paths: [],
+      user_messages_summary: "Fresh body wins.",
+      type: "decisions",
+      slug: "collision",
+    });
+
+    expect(result.pending_path).toBe(".fabric/knowledge/pending/decisions/collision.md");
+    const body = await readFile(join(projectRoot, result.pending_path), "utf8");
+    expect(body).toMatch(/Fresh body wins\./u);
+    expect(body).not.toMatch(/Stale body should be replaced\./u);
+    // The new file's idempotency key differs from the pre-seeded one.
+    expect(body).toMatch(new RegExp(`x-fabric-idempotency-key: ${result.idempotency_key}`, "u"));
+  });
+
+  it("extractKnowledge_renders_no_recent_paths_marker_when_recent_paths_empty", async () => {
+    const projectRoot = await createTempProject();
+
+    // recent_paths=[] exercises the empty-array branch in renderEvidenceBlock.
+    const result = await extractKnowledge(projectRoot, {
+      source_session: "sess-empty-paths",
+      recent_paths: [],
+      user_messages_summary: "Body without recent paths.",
+      type: "guidelines",
+      slug: "no-paths",
+    });
+
+    const body = await readFile(join(projectRoot, result.pending_path), "utf8");
+    expect(body).toMatch(/_\(no recent paths reported\)_/u);
+  });
+
+  it("extractKnowledge_handles_existing_file_without_trailing_newline", async () => {
+    const projectRoot = await createTempProject();
+
+    // First write to establish an entry.
+    const first = await extractKnowledge(projectRoot, {
+      source_session: "sess-no-nl",
+      recent_paths: ["a.ts"],
+      user_messages_summary: "First body.",
+      type: "guidelines",
+      slug: "no-newline",
+    });
+
+    // Mutate the file in-place to remove the trailing newline — exercises
+    // the L194 false branch (existing.endsWith("\n") === false).
+    const path = join(projectRoot, first.pending_path);
+    const original = await readFile(path, "utf8");
+    const stripped = original.replace(/\n+$/u, "");
+    await writeFile(path, stripped, "utf8");
+
+    const second = await extractKnowledge(projectRoot, {
+      source_session: "sess-no-nl",
+      recent_paths: ["b.ts"],
+      user_messages_summary: "Second body, appended.",
+      type: "guidelines",
+      slug: "no-newline",
+    });
+    expect(second.pending_path).toBe(first.pending_path);
+
+    const body = await readFile(path, "utf8");
+    expect(body).toMatch(/^## Evidence \(call 1\)$/mu);
+    expect(body).toMatch(/^## Evidence \(call 2\)$/mu);
+  });
+
+  it("extractKnowledge_treats_existing_file_without_frontmatter_as_collision_overwrite", async () => {
+    const projectRoot = await createTempProject();
+
+    // Pre-seed a pending file with NO frontmatter — readFrontmatterKey
+    // returns undefined (L212 match===null branch), so the existingKey
+    // !== idempotencyKey check falls through to the overwrite path.
+    const dir = join(projectRoot, ".fabric/knowledge/pending/decisions");
+    await mkdir(dir, { recursive: true });
+    const target = join(dir, "no-frontmatter.md");
+    await writeFile(target, "Body without any frontmatter at all.\n", "utf8");
+
+    const result = await extractKnowledge(projectRoot, {
+      source_session: "sess-no-fm",
+      recent_paths: [],
+      user_messages_summary: "Replacement body.",
+      type: "decisions",
+      slug: "no-frontmatter",
+    });
+    expect(result.pending_path).toBe(".fabric/knowledge/pending/decisions/no-frontmatter.md");
+    const body = await readFile(join(projectRoot, result.pending_path), "utf8");
+    expect(body).toMatch(/^---$/mu);
+    expect(body).toMatch(/Replacement body\./u);
+  });
+
+  it("extractKnowledge_swallows_event_emission_failure_silently", async () => {
+    const projectRoot = await createTempProject();
+
+    // Make the .fabric directory unwriteable so appendEventLedgerEvent
+    // cannot persist — extractKnowledge must still succeed (best-effort).
+    const fabricDir = join(projectRoot, ".fabric");
+    await mkdir(fabricDir, { recursive: true });
+    // Pre-create the events dir as a regular file so ledger write fails.
+    await writeFile(join(fabricDir, "events.jsonl"), "", "utf8");
+    // Then chmod the file read-only-ish (no write) — best-effort across
+    // platforms; on macOS/Linux this prevents append.
+    try {
+      await chmod(join(fabricDir, "events.jsonl"), 0o400);
+    } catch {
+      // some filesystems ignore chmod; skip the assertion below if so.
+    }
+
+    const result = await extractKnowledge(projectRoot, {
+      source_session: "sess-evt-fail",
+      recent_paths: ["a.ts"],
+      user_messages_summary: "Body that succeeds writing the pending file.",
+      type: "decisions",
+      slug: "evt-fail",
+    });
+
+    // The pending file write is the source of truth — that succeeds.
+    expect(result.pending_path).toBe(".fabric/knowledge/pending/decisions/evt-fail.md");
+    const body = await readFile(join(projectRoot, result.pending_path), "utf8");
+    expect(body).toMatch(/Body that succeeds writing the pending file\./u);
+
+    // Restore perms so afterEach cleanup can rm-rf.
+    try {
+      await chmod(join(fabricDir, "events.jsonl"), 0o644);
+    } catch {
+      // ignore
+    }
+  });
+
+  it("extractKnowledge_truncates_long_slug_to_max_40_chars", async () => {
+    const projectRoot = await createTempProject();
+
+    // 60-char slug — exercises L132 slice + replace path.
+    const longSlug = "a-very-long-slug-name-with-many-words-going-far-beyond-forty";
+    const result = await extractKnowledge(projectRoot, {
+      source_session: "sess-long",
+      recent_paths: [],
+      user_messages_summary: "Body.",
+      type: "decisions",
+      slug: longSlug,
+    });
+
+    // Pending path's slug component is at most 40 chars.
+    const slugFromPath = result.pending_path
+      .replace(".fabric/knowledge/pending/decisions/", "")
+      .replace(/\.md$/, "");
+    expect(slugFromPath.length).toBeLessThanOrEqual(40);
+    expect(slugFromPath.length).toBeGreaterThan(0);
+    // Trailing dash (if slice landed on one) must be stripped.
+    expect(slugFromPath).not.toMatch(/-$/u);
   });
 });
 
