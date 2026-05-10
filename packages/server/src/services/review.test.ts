@@ -4,14 +4,29 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { readEventLedger } from "./event-ledger.js";
 import { reviewKnowledge } from "./review.js";
 
 const tempDirs: string[] = [];
+let originalFabricHome: string | undefined;
+
+// v2.0: redirect personal-root resolution into a tempdir so tests never touch
+// the developer's real ~/.fabric/. Mirrors rule-meta-builder.test.ts setup.
+beforeEach(async () => {
+  originalFabricHome = process.env.FABRIC_HOME;
+  const fakeHome = await mkdtemp(join(tmpdir(), "fabric-review-home-"));
+  tempDirs.push(fakeHome);
+  process.env.FABRIC_HOME = fakeHome;
+});
 
 afterEach(async () => {
+  if (originalFabricHome === undefined) {
+    delete process.env.FABRIC_HOME;
+  } else {
+    process.env.FABRIC_HOME = originalFabricHome;
+  }
   await Promise.all(
     tempDirs.splice(0).map(async (path) => {
       await rm(path, { recursive: true, force: true });
@@ -216,38 +231,346 @@ describe("reviewKnowledge", () => {
     }
   });
 
-  it("not_yet_implemented_actions_throw_with_task_002_marker", async () => {
+  // -------------------------------------------------------------------------
+  // TASK-002: reject action
+  // -------------------------------------------------------------------------
+
+  it("reject_emits_rejected_event_and_returns_paths", async () => {
     const projectRoot = await createTempProject();
+    const pendingPath = await seedPendingFile(projectRoot, "decisions", "stale-idea");
 
-    await expect(
-      reviewKnowledge(projectRoot, {
-        action: "reject",
-        pending_paths: [".fabric/knowledge/pending/decisions/x.md"],
-        reason: "stale",
-      }),
-    ).rejects.toThrow(/TASK-002/u);
+    const result = await reviewKnowledge(projectRoot, {
+      action: "reject",
+      pending_paths: [pendingPath],
+      reason: "duplicate of KT-DEC-0001",
+    });
+    expect(result.action).toBe("reject");
+    if (result.action !== "reject") throw new Error("unreachable");
+    expect(result.rejected).toEqual([pendingPath]);
 
-    await expect(
-      reviewKnowledge(projectRoot, {
-        action: "modify",
-        pending_path: ".fabric/knowledge/pending/decisions/x.md",
-        changes: { layer: "personal" },
-      }),
-    ).rejects.toThrow(/TASK-002/u);
+    const rejectedEvents = await readEventLedger(projectRoot, {
+      event_type: "knowledge_rejected",
+    });
+    expect(rejectedEvents.events).toHaveLength(1);
+    const rejectedEv = rejectedEvents.events[0] as { reason: string };
+    expect(rejectedEv.reason).toMatch(/duplicate of KT-DEC-0001/u);
+  });
 
-    await expect(
-      reviewKnowledge(projectRoot, {
-        action: "search",
-        query: "anything",
-        filters: undefined,
-      }),
-    ).rejects.toThrow(/TASK-002/u);
+  it("reject_does_not_delete_file_in_rc3_scope", async () => {
+    const projectRoot = await createTempProject();
+    const pendingPath = await seedPendingFile(projectRoot, "guidelines", "tentative");
 
-    await expect(
-      reviewKnowledge(projectRoot, {
-        action: "defer",
-        pending_paths: [".fabric/knowledge/pending/decisions/x.md"],
-      }),
-    ).rejects.toThrow(/TASK-002/u);
+    await reviewKnowledge(projectRoot, {
+      action: "reject",
+      pending_paths: [pendingPath],
+      reason: "needs more evidence",
+    });
+
+    // rc.3 contract: reject is observability-only. doctor (rc.4) owns vacuum.
+    expect(existsSync(join(projectRoot, pendingPath))).toBe(true);
+  });
+
+  it("reject_batch_emits_one_event_per_path", async () => {
+    const projectRoot = await createTempProject();
+    const a = await seedPendingFile(projectRoot, "decisions", "alpha");
+    const b = await seedPendingFile(projectRoot, "guidelines", "bravo");
+    const c = await seedPendingFile(projectRoot, "pitfalls", "charlie");
+
+    const result = await reviewKnowledge(projectRoot, {
+      action: "reject",
+      pending_paths: [a, b, c],
+      reason: "out-of-scope",
+    });
+    expect(result.action).toBe("reject");
+    if (result.action !== "reject") throw new Error("unreachable");
+    expect(result.rejected).toHaveLength(3);
+
+    const rejectedEvents = await readEventLedger(projectRoot, {
+      event_type: "knowledge_rejected",
+    });
+    expect(rejectedEvents.events).toHaveLength(3);
+  });
+
+  // -------------------------------------------------------------------------
+  // TASK-002: modify action — in-place
+  // -------------------------------------------------------------------------
+
+  it("modify_inplace_rewrites_frontmatter_only", async () => {
+    const projectRoot = await createTempProject();
+    const pendingPath = await seedPendingFile(projectRoot, "decisions", "tweakable", {
+      tags: ["initial"],
+    });
+
+    const result = await reviewKnowledge(projectRoot, {
+      action: "modify",
+      pending_path: pendingPath,
+      changes: { tags: ["updated", "v2"], maturity: "verified" },
+    });
+    expect(result.action).toBe("modify");
+    if (result.action !== "modify") throw new Error("unreachable");
+    expect(result.prior_stable_id).toBeUndefined();
+    expect(result.new_stable_id).toBeUndefined();
+
+    const updated = await readFile(join(projectRoot, pendingPath), "utf8");
+    expect(updated).toMatch(/^maturity: verified$/mu);
+    expect(updated).toMatch(/^tags: \[updated, v2\]$/mu);
+    // No layer-changed event since this was an in-place rewrite.
+    const layerEvents = await readEventLedger(projectRoot, {
+      event_type: "knowledge_layer_changed",
+    });
+    expect(layerEvents.events).toHaveLength(0);
+  });
+
+  // -------------------------------------------------------------------------
+  // TASK-002: modify action — layer flip
+  // -------------------------------------------------------------------------
+
+  it("modify_layer_flip_team_to_personal_allocates_kp_id", async () => {
+    const projectRoot = await createTempProject();
+    const pendingPath = await seedPendingFile(projectRoot, "decisions", "flip-me", {
+      layer: "team",
+    });
+
+    // First approve so the entry has a canonical KT- id under team.
+    const approve = await reviewKnowledge(projectRoot, {
+      action: "approve",
+      pending_paths: [pendingPath],
+    });
+    if (approve.action !== "approve") throw new Error("unreachable");
+    const priorId = approve.approved[0].stable_id;
+    expect(priorId).toMatch(/^KT-DEC-\d{4}$/u);
+
+    // Canonical team path lives under .fabric/knowledge/decisions/.
+    const canonicalRel = `.fabric/knowledge/decisions/${priorId}--flip-me.md`;
+
+    // Now flip to personal.
+    const result = await reviewKnowledge(projectRoot, {
+      action: "modify",
+      pending_path: canonicalRel,
+      changes: { layer: "personal" },
+    });
+    expect(result.action).toBe("modify");
+    if (result.action !== "modify") throw new Error("unreachable");
+
+    expect(result.prior_stable_id).toBe(priorId);
+    expect(result.new_stable_id).toMatch(/^KP-DEC-\d{4}$/u);
+
+    // Old team file is gone, new personal file lives under FABRIC_HOME.
+    expect(existsSync(join(projectRoot, canonicalRel))).toBe(false);
+    const fakeHome = process.env.FABRIC_HOME!;
+    const newAbs = join(
+      fakeHome,
+      ".fabric",
+      "knowledge",
+      "decisions",
+      `${result.new_stable_id}--flip-me.md`,
+    );
+    expect(existsSync(newAbs)).toBe(true);
+
+    // New file's frontmatter carries the new id and new layer.
+    const movedContent = await readFile(newAbs, "utf8");
+    expect(movedContent).toMatch(new RegExp(`^id: ${result.new_stable_id}$`, "mu"));
+    expect(movedContent).toMatch(/^layer: personal$/mu);
+  });
+
+  it("modify_layer_flip_personal_to_team_allocates_kt_id", async () => {
+    const projectRoot = await createTempProject();
+    const pendingPath = await seedPendingFile(projectRoot, "guidelines", "personal-tip", {
+      layer: "personal",
+    });
+
+    // Approve into personal canonical.
+    const approve = await reviewKnowledge(projectRoot, {
+      action: "approve",
+      pending_paths: [pendingPath],
+    });
+    if (approve.action !== "approve") throw new Error("unreachable");
+    const priorId = approve.approved[0].stable_id;
+    expect(priorId).toMatch(/^KP-GLD-\d{4}$/u);
+
+    const fakeHome = process.env.FABRIC_HOME!;
+    const personalAbs = join(
+      fakeHome,
+      ".fabric",
+      "knowledge",
+      "guidelines",
+      `${priorId}--personal-tip.md`,
+    );
+    expect(existsSync(personalAbs)).toBe(true);
+
+    // Pass the home-relative form so resolveModifyTarget walks the personal
+    // root.
+    const result = await reviewKnowledge(projectRoot, {
+      action: "modify",
+      pending_path: `~/.fabric/knowledge/guidelines/${priorId}--personal-tip.md`,
+      changes: { layer: "team" },
+    });
+    if (result.action !== "modify") throw new Error("unreachable");
+
+    expect(result.prior_stable_id).toBe(priorId);
+    expect(result.new_stable_id).toMatch(/^KT-GLD-\d{4}$/u);
+    expect(existsSync(personalAbs)).toBe(false);
+    const newTeamAbs = join(
+      projectRoot,
+      ".fabric",
+      "knowledge",
+      "guidelines",
+      `${result.new_stable_id}--personal-tip.md`,
+    );
+    expect(existsSync(newTeamAbs)).toBe(true);
+  });
+
+  it("modify_layer_flip_emits_layer_changed_with_from_to", async () => {
+    const projectRoot = await createTempProject();
+    const pendingPath = await seedPendingFile(projectRoot, "pitfalls", "watch-out");
+    const approve = await reviewKnowledge(projectRoot, {
+      action: "approve",
+      pending_paths: [pendingPath],
+    });
+    if (approve.action !== "approve") throw new Error("unreachable");
+    const priorId = approve.approved[0].stable_id;
+    const canonicalRel = `.fabric/knowledge/pitfalls/${priorId}--watch-out.md`;
+
+    await reviewKnowledge(projectRoot, {
+      action: "modify",
+      pending_path: canonicalRel,
+      changes: { layer: "personal" },
+    });
+
+    const layerEvents = await readEventLedger(projectRoot, {
+      event_type: "knowledge_layer_changed",
+    });
+    expect(layerEvents.events).toHaveLength(1);
+    const ev = layerEvents.events[0] as {
+      from_layer: string;
+      to_layer: string;
+      stable_id?: string;
+    };
+    expect(ev.from_layer).toBe("team");
+    expect(ev.to_layer).toBe("personal");
+    expect(ev.stable_id).toMatch(/^KP-PIT-\d{4}$/u);
+  });
+
+  // -------------------------------------------------------------------------
+  // TASK-002: search action
+  // -------------------------------------------------------------------------
+
+  it("search_filters_by_type_and_returns_matches_in_pending", async () => {
+    const projectRoot = await createTempProject();
+    await seedPendingFile(projectRoot, "decisions", "auth-flow", { tags: ["auth", "core"] });
+    await seedPendingFile(projectRoot, "guidelines", "naming-rule", { tags: ["style"] });
+    await seedPendingFile(projectRoot, "pitfalls", "auth-bypass", { tags: ["auth"] });
+
+    const result = await reviewKnowledge(projectRoot, {
+      action: "search",
+      query: "auth",
+      filters: { type: "decisions" },
+    });
+    if (result.action !== "search") throw new Error("unreachable");
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0].type).toBe("decisions");
+    expect(result.items[0].pending_path).toContain("auth-flow");
+  });
+
+  it("search_filters_by_tags_subset", async () => {
+    const projectRoot = await createTempProject();
+    await seedPendingFile(projectRoot, "decisions", "alpha", { tags: ["auth", "rbac"] });
+    await seedPendingFile(projectRoot, "decisions", "beta", { tags: ["auth"] });
+    await seedPendingFile(projectRoot, "decisions", "gamma", { tags: ["routing"] });
+
+    const result = await reviewKnowledge(projectRoot, {
+      action: "search",
+      query: "a",
+      filters: { tags: ["auth", "rbac"] },
+    });
+    if (result.action !== "search") throw new Error("unreachable");
+    // Only `alpha` has both auth AND rbac tags.
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0].pending_path).toContain("alpha");
+  });
+
+  it("search_query_case_insensitive_substring_on_filename", async () => {
+    const projectRoot = await createTempProject();
+    await seedPendingFile(projectRoot, "decisions", "MyImportantDecision");
+
+    const result = await reviewKnowledge(projectRoot, {
+      action: "search",
+      query: "important",
+      filters: undefined,
+    });
+    if (result.action !== "search") throw new Error("unreachable");
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0].pending_path).toContain("MyImportantDecision");
+  });
+
+  it("search_includes_pending_and_canonical_entries", async () => {
+    const projectRoot = await createTempProject();
+    // Pending entry.
+    await seedPendingFile(projectRoot, "decisions", "pending-x", { tags: ["topic"] });
+    // Canonical entry — approve a second pending entry to materialize one.
+    const otherPending = await seedPendingFile(projectRoot, "decisions", "topic-canonical", {
+      tags: ["topic"],
+    });
+    await reviewKnowledge(projectRoot, {
+      action: "approve",
+      pending_paths: [otherPending],
+    });
+
+    const result = await reviewKnowledge(projectRoot, {
+      action: "search",
+      query: "topic",
+      filters: undefined,
+    });
+    if (result.action !== "search") throw new Error("unreachable");
+    // Both the still-pending entry and the canonical post-approve entry match.
+    expect(result.items.length).toBeGreaterThanOrEqual(2);
+    const paths = result.items.map((i) => i.pending_path);
+    expect(paths.some((p) => p.includes("pending-x"))).toBe(true);
+    expect(paths.some((p) => p.includes("topic-canonical"))).toBe(true);
+  });
+
+  // -------------------------------------------------------------------------
+  // TASK-002: defer action
+  // -------------------------------------------------------------------------
+
+  it("defer_emits_deferred_event_with_until_timestamp", async () => {
+    const projectRoot = await createTempProject();
+    const pendingPath = await seedPendingFile(projectRoot, "decisions", "later");
+    const until = "2027-01-01T00:00:00.000Z";
+
+    const result = await reviewKnowledge(projectRoot, {
+      action: "defer",
+      pending_paths: [pendingPath],
+      until,
+      reason: "waiting on upstream",
+    });
+    if (result.action !== "defer") throw new Error("unreachable");
+    expect(result.deferred).toEqual([pendingPath]);
+
+    const deferredEvents = await readEventLedger(projectRoot, {
+      event_type: "knowledge_deferred",
+    });
+    expect(deferredEvents.events).toHaveLength(1);
+    const ev = deferredEvents.events[0] as { until?: string; reason?: string };
+    expect(ev.until).toBe(until);
+    expect(ev.reason).toBe("waiting on upstream");
+  });
+
+  it("defer_emits_deferred_event_without_until_when_omitted", async () => {
+    const projectRoot = await createTempProject();
+    const pendingPath = await seedPendingFile(projectRoot, "decisions", "indefinite");
+
+    await reviewKnowledge(projectRoot, {
+      action: "defer",
+      pending_paths: [pendingPath],
+    });
+
+    const deferredEvents = await readEventLedger(projectRoot, {
+      event_type: "knowledge_deferred",
+    });
+    expect(deferredEvents.events).toHaveLength(1);
+    const ev = deferredEvents.events[0] as { until?: string; reason?: string };
+    expect(ev.until).toBeUndefined();
+    expect(ev.reason).toBeUndefined();
   });
 });
