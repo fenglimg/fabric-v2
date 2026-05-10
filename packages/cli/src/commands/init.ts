@@ -19,6 +19,14 @@ import { installHooks } from "./hooks.js";
 import { runInitScan } from "./scan.js";
 import { buildForensicReport } from "../scanner/forensic.js";
 import { detectClientSupports, type DetectedClientSupport } from "../config/resolver.js";
+import {
+  addArchiveSkillPointer,
+  installArchiveHintHook,
+  installFabricArchiveSkill,
+  mergeClaudeCodeHookConfig,
+  mergeCodexHookConfig,
+  type InstallStepResult,
+} from "../install/skills-and-hooks.js";
 
 type InitArgs = {
   target?: string;
@@ -765,13 +773,29 @@ async function executeInitStagePlan(
   try {
     switch (stage.name) {
       case "bootstrap": {
-        // v2.0: the bootstrap stage no longer materializes per-client
-        // bootstrap files (knowledge entries under `.fabric/knowledge/` are
-        // the content of record). The stage surface is preserved as a no-op
-        // for the wizard / capability table; scaffold stage handles the
-        // real `.fabric/` layout creation.
-        console.log(formatInitStageResult("bootstrap", "skipped", 0, 0, t("cli.bootstrap.install.no-targets")));
-        return { name: "bootstrap", disposition: "skipped" };
+        // v2/rc.2: bootstrap installs the fabric-archive Skill template +
+        // archive-hint Stop hook script + per-client hook configs + the
+        // pointer line in CLAUDE.md / AGENTS.md / .cursor/rules. Each step
+        // is best-effort: a single failure (e.g. one client's directory is
+        // unreadable) is logged but does not abort init — other clients
+        // and downstream stages continue.
+        const installResults: InstallStepResult[] = [];
+        installResults.push(...await runBestEffort("skill-install", () => installFabricArchiveSkill(plan.target)));
+        installResults.push(...await runBestEffort("hook-script", () => installArchiveHintHook(plan.target)));
+        installResults.push(await runBestEffortSingle("claude-hook-config", () => mergeClaudeCodeHookConfig(plan.target)));
+        installResults.push(await runBestEffortSingle("codex-hook-config", () => mergeCodexHookConfig(plan.target)));
+        installResults.push(...await runBestEffort("pointer", () => addArchiveSkillPointer(plan.target)));
+        const installedCount = installResults.filter((r) => r.status === "written").length;
+        const skippedCount = installResults.filter((r) => r.status === "skipped").length;
+        const errorCount = installResults.filter((r) => r.status === "error").length;
+        for (const result of installResults) {
+          if (result.status === "error") {
+            writeStderr(`bootstrap ${result.step} ${result.path}: ${result.message ?? "unknown error"}`);
+          }
+        }
+        const note = errorCount > 0 ? `errors=${errorCount}` : undefined;
+        console.log(formatInitStageResult("bootstrap", "completed", installedCount, skippedCount, note));
+        return { name: "bootstrap", disposition: "ran" };
       }
       case "mcp": {
         if (stage.installMode === "local") {
@@ -1147,6 +1171,40 @@ function appendReapplyLedgerEvent(
   };
   const line = `${JSON.stringify(event)}\n`;
   appendFileSync(eventsPath, line, "utf8");
+}
+
+async function runBestEffort(
+  step: string,
+  fn: () => Promise<InstallStepResult[]>,
+): Promise<InstallStepResult[]> {
+  try {
+    return await fn();
+  } catch (error: unknown) {
+    return [
+      {
+        step,
+        path: "",
+        status: "error",
+        message: error instanceof Error ? error.message : String(error),
+      },
+    ];
+  }
+}
+
+async function runBestEffortSingle(
+  step: string,
+  fn: () => Promise<InstallStepResult>,
+): Promise<InstallStepResult> {
+  try {
+    return await fn();
+  } catch (error: unknown) {
+    return {
+      step,
+      path: "",
+      status: "error",
+      message: error instanceof Error ? error.message : String(error),
+    };
+  }
 }
 
 function formatInitStageHeader(message: string): string {

@@ -10,12 +10,51 @@ import { createServerEntry } from "./writer.js";
 
 type JsonObject = Record<string, unknown>;
 
+export type DeepMergeOptions = {
+  /**
+   * Dotted-path keys (e.g. `"hooks.Stop"` or `"events.Stop"`) at which the
+   * default array-REPLACE behaviour is replaced by array-APPEND-WITH-DEDUPE.
+   * Two array items are considered duplicates when either:
+   *   - both expose a top-level string `.command` field that matches, or
+   *   - both expose a `hooks` array whose first element's `.command` matches,
+   *   - or the items are deeply equal.
+   * Omitting `arrayAppendPaths` (or passing an empty array) preserves the
+   * historical REPLACE semantics — every existing call site is unchanged.
+   */
+  arrayAppendPaths?: string[];
+};
+
 /**
  * Minimal hand-rolled deep merge. Merges `source` into `target` recursively
- * for plain objects; all other values (arrays, primitives, null) are replaced
- * by the source value. Avoids the lodash dependency.
+ * for plain objects. By default arrays, primitives, and `null` are replaced
+ * by the source value (matches the v1 contract). When `arrayAppendPaths` is
+ * supplied, arrays at those dotted paths are merged via append-with-dedupe
+ * instead of replaced — used by the rc.2 hook config writers to preserve
+ * user-authored Stop entries while idempotently inserting fabric-archive.
  */
-function deepMerge<T>(target: T, source: unknown): T {
+export function deepMerge<T>(target: T, source: unknown, options: DeepMergeOptions = {}): T {
+  return deepMergeAtPath(target, source, "", options) as T;
+}
+
+function deepMergeAtPath(
+  target: unknown,
+  source: unknown,
+  path: string,
+  options: DeepMergeOptions,
+): unknown {
+  // Array-append special case: both sides must be arrays AND the current
+  // path must be listed. Falls through to REPLACE if either side is not an
+  // array (e.g. user wrote an object where we expected an array — defer to
+  // source rather than crash).
+  if (
+    options.arrayAppendPaths &&
+    options.arrayAppendPaths.includes(path) &&
+    Array.isArray(target) &&
+    Array.isArray(source)
+  ) {
+    return appendArrayWithDedupe(target, source);
+  }
+
   if (
     target === null ||
     typeof target !== "object" ||
@@ -24,18 +63,88 @@ function deepMerge<T>(target: T, source: unknown): T {
     typeof source !== "object" ||
     Array.isArray(source)
   ) {
-    return source as T;
+    return source;
   }
 
   const out: Record<string, unknown> = { ...(target as Record<string, unknown>) };
   for (const key of Object.keys(source as Record<string, unknown>)) {
-    out[key] = deepMerge(
+    const childPath = path === "" ? key : `${path}.${key}`;
+    out[key] = deepMergeAtPath(
       (target as Record<string, unknown>)[key],
       (source as Record<string, unknown>)[key],
+      childPath,
+      options,
     );
   }
 
-  return out as T;
+  return out;
+}
+
+function appendArrayWithDedupe(target: unknown[], source: unknown[]): unknown[] {
+  const out = [...target];
+  for (const candidate of source) {
+    if (out.some((existing) => isSameHookEntry(existing, candidate))) {
+      continue;
+    }
+    out.push(candidate);
+  }
+  return out;
+}
+
+function isSameHookEntry(a: unknown, b: unknown): boolean {
+  const cmdA = extractHookCommand(a);
+  const cmdB = extractHookCommand(b);
+  if (cmdA !== null && cmdB !== null) {
+    return cmdA === cmdB;
+  }
+  return deepEqual(a, b);
+}
+
+function extractHookCommand(item: unknown): string | null {
+  if (item === null || typeof item !== "object") {
+    return null;
+  }
+  const obj = item as Record<string, unknown>;
+  if (typeof obj.command === "string") {
+    return obj.command;
+  }
+  if (Array.isArray(obj.hooks)) {
+    for (const inner of obj.hooks) {
+      if (inner !== null && typeof inner === "object") {
+        const innerObj = inner as Record<string, unknown>;
+        if (typeof innerObj.command === "string") {
+          return innerObj.command;
+        }
+      }
+    }
+  }
+  return null;
+}
+
+function deepEqual(a: unknown, b: unknown): boolean {
+  if (a === b) {
+    return true;
+  }
+  if (a === null || b === null || typeof a !== "object" || typeof b !== "object") {
+    return false;
+  }
+  if (Array.isArray(a) !== Array.isArray(b)) {
+    return false;
+  }
+  if (Array.isArray(a) && Array.isArray(b)) {
+    if (a.length !== b.length) {
+      return false;
+    }
+    return a.every((value, index) => deepEqual(value, b[index]));
+  }
+  const aObj = a as Record<string, unknown>;
+  const bObj = b as Record<string, unknown>;
+  const aKeys = Object.keys(aObj);
+  const bKeys = Object.keys(bObj);
+  if (aKeys.length !== bKeys.length) {
+    return false;
+  }
+  return aKeys.every((key) => deepEqual(aObj[key], bObj[key]));
 }
 
 export type ClaudeMcpScope = "project" | "user";
