@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-const { existsSync, readFileSync } = require("node:fs");
+const { existsSync, readFileSync, readdirSync, statSync } = require("node:fs");
 const { join } = require("node:path");
 
 // CONSTANTS — duplicated from packages/server/src/services/_shared.ts.
@@ -12,6 +12,13 @@ const EVENT_TYPE_PLAN_CONTEXT = "knowledge_context_planned";
 const THRESHOLD_PLAN_CONTEXTS = 5;
 const THRESHOLD_HOURS = 24;
 const MS_PER_HOUR = 60 * 60 * 1000;
+
+// rc.3 TASK-004: second signal — pending-overflow → review skill recommendation.
+const PENDING_DIR = "knowledge/pending";
+const PENDING_TYPES = ["decisions", "pitfalls", "guidelines", "models", "processes"];
+const THRESHOLD_PENDING_COUNT = 10;
+const THRESHOLD_PENDING_AGE_DAYS = 7;
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 /**
  * Read the events.jsonl ledger from <projectRoot>/.fabric/events.jsonl.
@@ -57,20 +64,85 @@ function readLedger(projectRoot) {
 }
 
 /**
- * Decide whether to emit an archive-reminder.
+ * Walk <projectRoot>/.fabric/knowledge/pending/<type>/*.md across all
+ * PENDING_TYPES subdirs, collecting count and oldest mtime.
  *
- * Threshold logic (per discussion.md L355-L362):
+ * Returns { count, oldestAgeMs } where:
+ *   - count: total .md file count across all type subdirs
+ *   - oldestAgeMs: (nowMs - oldestMtimeMs) when count>0, else null
+ *
+ * ENOENT / unreadable subdir / unstat-able file → silently skipped
+ * (preserves the hook's never-block-on-failure invariant).
+ */
+function readPendingStats(projectRoot, now) {
+  const nowMs = now instanceof Date ? now.getTime() : Number(now) || Date.now();
+  const baseDir = join(projectRoot, FABRIC_DIR, PENDING_DIR);
+
+  let count = 0;
+  let oldestMtime = null;
+
+  if (!existsSync(baseDir)) {
+    return { count: 0, oldestAgeMs: null };
+  }
+
+  for (const type of PENDING_TYPES) {
+    const typeDir = join(baseDir, type);
+    if (!existsSync(typeDir)) continue;
+
+    let entries;
+    try {
+      entries = readdirSync(typeDir);
+    } catch {
+      continue;
+    }
+
+    for (const entry of entries) {
+      if (!entry.endsWith(".md")) continue;
+      const filePath = join(typeDir, entry);
+      let mtime;
+      try {
+        mtime = statSync(filePath).mtimeMs;
+      } catch {
+        continue;
+      }
+      count += 1;
+      if (oldestMtime === null || mtime < oldestMtime) {
+        oldestMtime = mtime;
+      }
+    }
+  }
+
+  return {
+    count,
+    oldestAgeMs: count > 0 && oldestMtime !== null ? nowMs - oldestMtime : null,
+  };
+}
+
+/**
+ * Decide whether to emit a hook reminder.
+ *
+ * rc.2 archive signal (per discussion.md L355-L362):
  *   - Trigger when (plan_context count since last knowledge_proposed >= 5)
  *     OR (hours since last knowledge_proposed >= 24).
  *   - If no knowledge_proposed event has ever been recorded, count ALL
  *     plan_context events and treat hours-elapsed as Infinity.
  *
- * Returns the hook decision object on trigger, or null on no-trigger.
+ * rc.3 review signal (TASK-004):
+ *   - Trigger when (pending count >= 10) OR (oldest pending mtime age >= 7 days).
+ *
+ * Precedence: archive > review. When BOTH fire, archive wins — returning to
+ * recent in-session work is more urgent than long-tail review.
+ *
+ * Returns one of:
+ *   - { decision: 'block', reason, signal: 'archive' } on archive trigger
+ *   - { decision: 'block', reason, signal: 'review' } on review-only trigger
+ *   - null on no trigger
  */
-function decide(events, now) {
+function decide(events, now, pendingStats) {
   const nowMs = now instanceof Date ? now.getTime() : Number(now) || Date.now();
+  const stats = pendingStats || { count: 0, oldestAgeMs: null };
 
-  // Walk events from tail to find the most-recent knowledge_proposed.
+  // ---- Archive signal (rc.2 logic, unchanged) -------------------------------
   let lastProposedTs = null;
   for (let i = events.length - 1; i >= 0; i -= 1) {
     const ev = events[i];
@@ -80,7 +152,6 @@ function decide(events, now) {
     }
   }
 
-  // Count plan_context events AFTER lastProposedTs (or all if never proposed).
   let planContextCount = 0;
   for (const ev of events) {
     if (!ev || ev.event_type !== EVENT_TYPE_PLAN_CONTEXT) continue;
@@ -100,16 +171,34 @@ function decide(events, now) {
   const triggerByHours =
     hoursElapsed !== null && hoursElapsed >= THRESHOLD_HOURS && planContextCount > 0;
 
-  if (!triggerByCount && !triggerByHours) {
-    return null;
+  // PRECEDENCE: archive wins if either archive trigger fires, regardless of
+  // review state. The user gets the archive reminder first; review reminder
+  // waits until after archive happens.
+  if (triggerByCount || triggerByHours) {
+    const hoursDisplay = hoursElapsed === null ? "尚未归档" : `${hoursElapsed.toFixed(1)}h`;
+    const reason =
+      `已积累 ${planContextCount} 次 plan_context 调用且距上次 knowledge_proposed ${hoursDisplay}` +
+      " — 建议调用 fabric-archive skill 抽取本次会话的知识。";
+    return { decision: "block", reason, signal: "archive" };
   }
 
-  const hoursDisplay = hoursElapsed === null ? "尚未归档" : `${hoursElapsed.toFixed(1)}h`;
-  const reason =
-    `已积累 ${planContextCount} 次 plan_context 调用且距上次 knowledge_proposed ${hoursDisplay}` +
-    " — 建议调用 fabric-archive skill 抽取本次会话的知识。";
+  // ---- Review signal (rc.3 TASK-004) ---------------------------------------
+  const triggerByPendingCount = stats.count >= THRESHOLD_PENDING_COUNT;
+  const triggerByPendingAge =
+    stats.oldestAgeMs !== null && stats.oldestAgeMs / MS_PER_DAY >= THRESHOLD_PENDING_AGE_DAYS;
 
-  return { decision: "block", reason };
+  if (triggerByPendingCount || triggerByPendingAge) {
+    const ageSuffix =
+      stats.oldestAgeMs !== null
+        ? `，最早一条距今 ${(stats.oldestAgeMs / MS_PER_DAY).toFixed(1)} 天`
+        : "";
+    const reason =
+      `已积累 ${stats.count} 条待审核知识${ageSuffix}` +
+      " — 建议调用 fabric-review skill 审核 pending/ 条目。";
+    return { decision: "block", reason, signal: "review" };
+  }
+
+  return null;
 }
 
 /**
@@ -125,7 +214,15 @@ function main(env, stdio) {
     const out = (stdio && stdio.stdout) || process.stdout;
 
     const events = readLedger(cwd);
-    const result = decide(events, now);
+    let pendingStats;
+    try {
+      pendingStats = readPendingStats(cwd, now);
+    } catch {
+      // Defensive — readPendingStats already silences ENOENT/stat errors,
+      // but a defense-in-depth try/catch keeps the never-block invariant.
+      pendingStats = { count: 0, oldestAgeMs: null };
+    }
+    const result = decide(events, now, pendingStats);
     if (result !== null) {
       out.write(JSON.stringify(result));
     }
@@ -137,6 +234,7 @@ function main(env, stdio) {
 module.exports = {
   main,
   readLedger,
+  readPendingStats,
   decide,
   CONSTANTS: {
     FABRIC_DIR,
@@ -145,6 +243,10 @@ module.exports = {
     EVENT_TYPE_PLAN_CONTEXT,
     THRESHOLD_PLAN_CONTEXTS,
     THRESHOLD_HOURS,
+    PENDING_DIR,
+    PENDING_TYPES,
+    THRESHOLD_PENDING_COUNT,
+    THRESHOLD_PENDING_AGE_DAYS,
   },
 };
 
