@@ -215,6 +215,39 @@ type PreexistingRootFilesInspection = {
   detected: string[];
 };
 
+type FilesystemEditFallbackInspection = {
+  // Number of orphan canonical entries for which a synthesized
+  // knowledge_promoted event was appended on this run.
+  synthesized: number;
+  // The stable_ids that were synthesized this run (sorted).
+  synthesizedStableIds: string[];
+};
+
+// Reason prefix for synthesized knowledge_promoted events emitted by the
+// filesystem-edit fallback check. The `[synthesized]` prefix makes these
+// events grep-able in events.jsonl so consumers can distinguish them from
+// real promotions emitted by fab_review.approve.
+const SYNTHESIZED_PROMOTED_REASON = "[synthesized] filesystem-edit-fallback";
+
+// Knowledge subdirectories scanned by the filesystem-edit fallback check.
+// Mirrors KNOWLEDGE_SUBDIRS minus `pending` (the staging area for proposals
+// that have not yet been approved).
+const KNOWLEDGE_CANONICAL_TYPE_DIRS = [
+  "decisions",
+  "pitfalls",
+  "guidelines",
+  "models",
+  "processes",
+] as const;
+
+// Filename pattern for canonical knowledge entries: `<id>--<slug>.md`. The id
+// half mirrors KNOWLEDGE_STABLE_ID_PATTERN in shared/agents-meta.ts. Files
+// without the `--<slug>` suffix (e.g. `KT-DEC-0001.md`) are silently skipped
+// — they predate the canonical convention and are not the manual-mv signal
+// this check is targeting.
+const CANONICAL_KNOWLEDGE_FILENAME_PATTERN =
+  /^(K[PT]-(?:MOD|DEC|GLD|PIT|PRO)-\d{4,})--[a-z0-9][a-z0-9-]*\.md$/u;
+
 const KNOWLEDGE_SUBDIRS = ["decisions", "pitfalls", "guidelines", "models", "processes", "pending"] as const;
 
 // Knowledge counter type-codes. Mirrors KNOWLEDGE_TYPE_CODES values in shared/api-contracts.
@@ -273,6 +306,13 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
   const counterDesync = inspectCounterDesync(meta);
   const preexistingRootFiles = inspectPreexistingRootFiles(projectRoot);
   const bootstrapAnchor = inspectBootstrapAnchor(projectRoot);
+  // rc.3 TASK-005: filesystem-edit fallback. Synthesizes knowledge_promoted
+  // for canonical entries with no matching event. Runs AFTER ledger
+  // partial-write detection so we never append to a corrupt tail; it relies
+  // on the existing read/append machinery to be in a consistent state.
+  const filesystemEditFallback = eventLedger.exists && eventLedger.writable && eventLedger.parseable
+    ? await inspectFilesystemEditFallback(projectRoot)
+    : { synthesized: 0, synthesizedStableIds: [] };
   const checks: DoctorCheck[] = [
     createBootstrapAnchorCheck(bootstrapAnchor),
     createKnowledgeDirMissingCheck(knowledgeDirMissing),
@@ -296,6 +336,7 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     createKnowledgeDirUnindexedCheck(knowledgeDirUnindexed),
     createStableIdCollisionCheck(stableIdCollision),
     createCounterDesyncCheck(counterDesync),
+    createFilesystemEditFallbackCheck(filesystemEditFallback),
     createPreexistingRootFilesCheck(preexistingRootFiles),
     // v2.0 / rc.2: `createLegacyClientPathCheck` removed. The schema now
     // rejects retired clientPaths keys (windsurf/rooCode/geminiCLI) at Zod
@@ -1205,6 +1246,111 @@ function inspectPreexistingRootFiles(projectRoot: string): PreexistingRootFilesI
   const candidates = ["CLAUDE.md", "AGENTS.md"];
   const detected = candidates.filter((name) => existsSync(join(projectRoot, name)));
   return { detected };
+}
+
+async function inspectFilesystemEditFallback(projectRoot: string): Promise<FilesystemEditFallbackInspection> {
+  // Detect orphan canonical knowledge entries — files at
+  // .fabric/knowledge/<type>/<id>--<slug>.md that have no matching
+  // knowledge_promoted event in events.jsonl. This happens when a user
+  // manually `git mv` a pending proposal into its canonical location
+  // instead of using fab_review.approve. To keep the audit trail
+  // complete, doctor synthesizes a knowledge_promoted event for each
+  // orphan with reason='[synthesized] filesystem-edit-fallback'.
+  //
+  // Side-effect by design: the synthesis happens during inspect so that
+  // a subsequent `runDoctorReport` (or any other consumer reading
+  // events.jsonl) sees the synthesized event and the orphan is no
+  // longer reported. This preserves idempotence: the second run is a
+  // no-op.
+  const knowledgeRoot = join(projectRoot, ".fabric", "knowledge");
+  if (!existsSync(knowledgeRoot)) {
+    return { synthesized: 0, synthesizedStableIds: [] };
+  }
+
+  // Collect all stable_ids that have a canonical file on disk.
+  const canonicalIds = new Set<string>();
+  for (const typeDir of KNOWLEDGE_CANONICAL_TYPE_DIRS) {
+    const dir = join(knowledgeRoot, typeDir);
+    if (!existsSync(dir)) {
+      continue;
+    }
+    let entries;
+    try {
+      entries = readdirSync(dir, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      if (!entry.isFile()) {
+        continue;
+      }
+      const match = CANONICAL_KNOWLEDGE_FILENAME_PATTERN.exec(entry.name);
+      if (match === null) {
+        continue;
+      }
+      canonicalIds.add(match[1]);
+    }
+  }
+
+  if (canonicalIds.size === 0) {
+    return { synthesized: 0, synthesizedStableIds: [] };
+  }
+
+  // Read existing knowledge_promoted events from events.jsonl. Use the
+  // existing read API so partial-write tails are filtered consistently.
+  let promotedIds = new Set<string>();
+  try {
+    const { events } = await readEventLedger(projectRoot, { event_type: "knowledge_promoted" });
+    promotedIds = new Set(
+      events
+        .map((event) => (event.event_type === "knowledge_promoted" ? event.stable_id : undefined))
+        .filter((id): id is string => typeof id === "string"),
+    );
+  } catch {
+    // Treat read failure as "no promoted events known" — appendEventLedgerEvent
+    // will surface the underlying ledger problem via its own error path.
+    promotedIds = new Set();
+  }
+
+  const orphanIds: string[] = [];
+  for (const id of canonicalIds) {
+    if (!promotedIds.has(id)) {
+      orphanIds.push(id);
+    }
+  }
+  orphanIds.sort();
+
+  for (const stable_id of orphanIds) {
+    await appendEventLedgerEvent(projectRoot, {
+      event_type: "knowledge_promoted",
+      stable_id,
+      timestamp: new Date().toISOString(),
+      reason: SYNTHESIZED_PROMOTED_REASON,
+      correlation_id: "doctor-synthesized",
+      session_id: "doctor-synthesized",
+    });
+  }
+
+  return { synthesized: orphanIds.length, synthesizedStableIds: orphanIds };
+}
+
+function createFilesystemEditFallbackCheck(inspection: FilesystemEditFallbackInspection): DoctorCheck {
+  if (inspection.synthesized === 0) {
+    return okCheck(
+      "Filesystem-edit fallback",
+      "No orphan canonical knowledge entries detected; events.jsonl promotion trail is complete.",
+    );
+  }
+  const sample = inspection.synthesizedStableIds.slice(0, 3).join(", ");
+  return {
+    name: "Filesystem-edit fallback",
+    status: "ok",
+    kind: "info",
+    code: "knowledge_promoted_synthesized",
+    fixable: false,
+    message: `Synthesized ${inspection.synthesized} knowledge_promoted event${inspection.synthesized === 1 ? "" : "s"} for orphan canonical entries (${sample}${inspection.synthesizedStableIds.length > 3 ? ", ..." : ""}). Reason='${SYNTHESIZED_PROMOTED_REASON}'.`,
+    actionHint: "These entries were moved into .fabric/knowledge/<type>/ outside fab_review.approve. The synthesized events restore audit-trail completeness.",
+  };
 }
 
 function createPreexistingRootFilesCheck(inspection: PreexistingRootFilesInspection): DoctorCheck {

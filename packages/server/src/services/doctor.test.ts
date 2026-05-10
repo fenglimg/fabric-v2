@@ -84,9 +84,10 @@ describe("runDoctorReport", () => {
       "Knowledge dir unindexed",
       "Stable ID collision",
       "Knowledge counter desync",
+      "Filesystem-edit fallback",
       "Preexisting root markdown",
     ]);
-    expect(report.checks).toHaveLength(14);
+    expect(report.checks).toHaveLength(15);
   });
 
   it("v2.0: clean post-init repo (mocked layout) reports zero errors AND zero warnings", async () => {
@@ -763,6 +764,164 @@ describe("runDoctorReport", () => {
     expect(check?.message).toContain("KT-DEC-0001");
     expect(check?.message).toContain(".fabric/knowledge/decisions/a.md");
     expect(check?.message).toContain(".fabric/knowledge/decisions/b.md");
+  });
+
+  // rc.3 TASK-005: filesystem-edit fallback — synthesize knowledge_promoted
+  // for canonical entries that have no matching event in events.jsonl.
+  it("filesystem_edit_fallback: no orphans when canonical entry has matching knowledge_promoted event", async () => {
+    const target = createInitializedProject("doctor-fef-no-orphan");
+    await writeRuleMeta(target, { source: "doctor_fix" });
+
+    // Seed a canonical entry AND its matching knowledge_promoted event.
+    const fm = "---\nid: KT-DEC-0042\ntype: decision\nmaturity: draft\nlayer: team\ncreated_at: 2026-05-10T00:00:00Z\n---\n# D\n";
+    writeFile(".fabric/knowledge/decisions/KT-DEC-0042--demo.md", fm, target);
+    const promoted = JSON.stringify({
+      kind: "fabric-event",
+      id: "event:promoted-existing",
+      ts: 1_000,
+      schema_version: 1,
+      event_type: "knowledge_promoted",
+      stable_id: "KT-DEC-0042",
+      timestamp: "2026-05-10T00:00:00.000Z",
+      reason: "fab_review.approve",
+    });
+    writeFile(".fabric/events.jsonl", `${promoted}\n`, target);
+
+    const report = await runDoctorReport(target);
+    const check = report.checks.find((c) => c.name === "Filesystem-edit fallback");
+    expect(check?.status).toBe("ok");
+    expect(check?.kind).toBeUndefined();
+    expect(check?.message).toContain("No orphan canonical knowledge entries");
+
+    // Ledger must contain exactly one knowledge_promoted event (the seeded one).
+    const { events } = await readEventLedger(target);
+    const promotedEvents = events.filter((e) => e.event_type === "knowledge_promoted");
+    expect(promotedEvents).toHaveLength(1);
+    expect(promotedEvents[0]?.reason).toBe("fab_review.approve");
+  });
+
+  it("filesystem_edit_fallback: synthesizes knowledge_promoted for one orphan canonical entry", async () => {
+    const target = createInitializedProject("doctor-fef-one-orphan");
+    await writeRuleMeta(target, { source: "doctor_fix" });
+    writeFile(".fabric/events.jsonl", "", target);
+
+    // Canonical file present, no matching event — should be synthesized.
+    const fm = "---\nid: KT-DEC-0099\ntype: decision\nmaturity: draft\nlayer: team\ncreated_at: 2026-05-10T00:00:00Z\n---\n# Orphan\n";
+    writeFile(".fabric/knowledge/decisions/KT-DEC-0099--orphan.md", fm, target);
+
+    const report = await runDoctorReport(target);
+    const check = report.checks.find((c) => c.name === "Filesystem-edit fallback");
+    expect(check?.status).toBe("ok");
+    expect(check?.kind).toBe("info");
+    expect(check?.code).toBe("knowledge_promoted_synthesized");
+    expect(check?.message).toContain("Synthesized 1 knowledge_promoted event");
+    expect(check?.message).toContain("KT-DEC-0099");
+    expect(check?.message).toContain("[synthesized] filesystem-edit-fallback");
+
+    // Ledger tail must contain the synthesized event.
+    const { events } = await readEventLedger(target);
+    const synthesized = events.find(
+      (e) => e.event_type === "knowledge_promoted" && e.reason === "[synthesized] filesystem-edit-fallback",
+    );
+    expect(synthesized).toBeDefined();
+    expect(synthesized).toMatchObject({
+      event_type: "knowledge_promoted",
+      stable_id: "KT-DEC-0099",
+      reason: "[synthesized] filesystem-edit-fallback",
+      correlation_id: "doctor-synthesized",
+      session_id: "doctor-synthesized",
+    });
+  });
+
+  it("filesystem_edit_fallback: synthesizes events for multiple orphans across types", async () => {
+    const target = createInitializedProject("doctor-fef-multi-orphan");
+    await writeRuleMeta(target, { source: "doctor_fix" });
+    writeFile(".fabric/events.jsonl", "", target);
+
+    // Three orphan canonical files in three different type subdirs.
+    writeFile(
+      ".fabric/knowledge/decisions/KT-DEC-0010--alpha.md",
+      "---\nid: KT-DEC-0010\ntype: decision\nmaturity: draft\nlayer: team\ncreated_at: 2026-05-10T00:00:00Z\n---\n# Alpha\n",
+      target,
+    );
+    writeFile(
+      ".fabric/knowledge/pitfalls/KT-PIT-0011--beta.md",
+      "---\nid: KT-PIT-0011\ntype: pitfall\nmaturity: draft\nlayer: team\ncreated_at: 2026-05-10T00:00:00Z\n---\n# Beta\n",
+      target,
+    );
+    writeFile(
+      ".fabric/knowledge/guidelines/KP-GLD-0012--gamma.md",
+      "---\nid: KP-GLD-0012\ntype: guideline\nmaturity: draft\nlayer: personal\ncreated_at: 2026-05-10T00:00:00Z\n---\n# Gamma\n",
+      target,
+    );
+
+    const report = await runDoctorReport(target);
+    const check = report.checks.find((c) => c.name === "Filesystem-edit fallback");
+    expect(check?.message).toContain("Synthesized 3 knowledge_promoted events");
+
+    const { events } = await readEventLedger(target);
+    const synthesizedIds = events
+      .filter((e) => e.event_type === "knowledge_promoted" && e.reason === "[synthesized] filesystem-edit-fallback")
+      .map((e) => (e.event_type === "knowledge_promoted" ? e.stable_id : undefined))
+      .filter((id): id is string => typeof id === "string");
+    expect(synthesizedIds.sort()).toEqual(["KP-GLD-0012", "KT-DEC-0010", "KT-PIT-0011"]);
+  });
+
+  it("filesystem_edit_fallback: idempotent — second run sees synthesized event and skips", async () => {
+    const target = createInitializedProject("doctor-fef-idempotent");
+    await writeRuleMeta(target, { source: "doctor_fix" });
+    writeFile(".fabric/events.jsonl", "", target);
+
+    const fm = "---\nid: KT-DEC-0050\ntype: decision\nmaturity: draft\nlayer: team\ncreated_at: 2026-05-10T00:00:00Z\n---\n# Once\n";
+    writeFile(".fabric/knowledge/decisions/KT-DEC-0050--once.md", fm, target);
+
+    // First run: synthesizes one event.
+    const first = await runDoctorReport(target);
+    expect(
+      first.checks.find((c) => c.name === "Filesystem-edit fallback")?.message,
+    ).toContain("Synthesized 1 knowledge_promoted event");
+
+    const after1 = await readEventLedger(target);
+    const synth1 = after1.events.filter(
+      (e) => e.event_type === "knowledge_promoted" && e.reason === "[synthesized] filesystem-edit-fallback",
+    );
+    expect(synth1).toHaveLength(1);
+
+    // Second run: idempotent — no additional synthesis.
+    const second = await runDoctorReport(target);
+    expect(
+      second.checks.find((c) => c.name === "Filesystem-edit fallback")?.message,
+    ).toContain("No orphan canonical knowledge entries");
+
+    const after2 = await readEventLedger(target);
+    const synth2 = after2.events.filter(
+      (e) => e.event_type === "knowledge_promoted" && e.reason === "[synthesized] filesystem-edit-fallback",
+    );
+    expect(synth2).toHaveLength(1);
+  });
+
+  it("filesystem_edit_fallback: silently ignores files without <id>--<slug> filename pattern", async () => {
+    const target = createInitializedProject("doctor-fef-malformed");
+    await writeRuleMeta(target, { source: "doctor_fix" });
+    writeFile(".fabric/events.jsonl", "", target);
+
+    // None of these match `<id>--<slug>.md`:
+    //  - missing id prefix
+    //  - id-only without --slug
+    //  - non-knowledge filename
+    writeFile(".fabric/knowledge/decisions/no-id-prefix.md", "# Plain\n", target);
+    writeFile(".fabric/knowledge/decisions/KT-DEC-0001.md", "# Bare id\n", target);
+    writeFile(".fabric/knowledge/decisions/README.md", "# Readme\n", target);
+
+    const report = await runDoctorReport(target);
+    const check = report.checks.find((c) => c.name === "Filesystem-edit fallback");
+    expect(check?.message).toContain("No orphan canonical knowledge entries");
+
+    const { events } = await readEventLedger(target);
+    const synthesized = events.filter(
+      (e) => e.event_type === "knowledge_promoted" && e.reason === "[synthesized] filesystem-edit-fallback",
+    );
+    expect(synthesized).toHaveLength(0);
   });
 });
 
