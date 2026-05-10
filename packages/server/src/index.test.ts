@@ -74,6 +74,7 @@ describe("createFabricServer", () => {
       "fab_extract_knowledge",
       "fab_get_rule_sections",
       "fab_plan_context",
+      "fab_review",
     ]);
   });
 });

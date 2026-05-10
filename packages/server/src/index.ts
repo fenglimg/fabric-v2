@@ -14,6 +14,7 @@ import { createInFlightTracker, type InFlightTracker } from "./services/in-fligh
 import { reconcileRules } from "./services/rule-sync.js";
 import { registerExtractKnowledge } from "./tools/extract-knowledge.js";
 import { registerPlanContext } from "./tools/plan-context.js";
+import { registerReview } from "./tools/review.js";
 import { registerRuleSections } from "./tools/rule-sections.js";
 
 declare const __SERVER_VERSION__: string;
@@ -40,6 +41,7 @@ export {
 } from "./services/rule-meta-builder.js";
 export { KnowledgeIdAllocator } from "./services/knowledge-id-allocator.js";
 export { extractKnowledge } from "./services/extract-knowledge.js";
+export { reviewKnowledge } from "./services/review.js";
 export { appendEventLedgerEvent } from "./services/event-ledger.js";
 export {
   EVENT_LEDGER_PATH,
@@ -110,6 +112,7 @@ export function createFabricServer(tracker?: InFlightTracker): McpServer {
   registerPlanContext(server, tracker);
   registerRuleSections(server, tracker);
   registerExtractKnowledge(server, tracker);
+  registerReview(server, tracker);
 
   // v2.0: the legacy bootstrap README MCP resource is preserved as a contract
   // shim — the file no longer exists by default in v2.0 (knowledge entries
