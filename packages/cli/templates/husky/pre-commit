@@ -1,9 +1,0 @@
-#!/bin/sh
-# Fabric pre-commit hook: block manual edits to generated metadata.
-
-if git diff --cached --name-only | grep -q '^\.fabric/agents\.meta\.json$'; then
-  if [ "$FAB_ALLOW_META_EDIT" != '1' ]; then
-    echo '.fabric/agents.meta.json cannot be manually edited; update .fabric/rules and run fabric doctor --fix, or set FAB_ALLOW_META_EDIT=1' >&2
-    exit 1
-  fi
-fi

@@ -3,19 +3,57 @@
 ## CORE RULES (DO NOT TRANSLATE)
 
 MUST: Treat this file as the Fabric Protocol bootstrap for this repository.
-MUST: Treat `.fabric/rules/` as the source of truth for all Fabric rule bodies.
-MUST: Before ANY code reading, architecture planning, or logic modification, call `fab_plan_context(paths=[<target file>])`, then call `fab_get_rule_sections`.
-MUST: When creating or changing an L1/L2 rule node, keep `.fabric/agents.meta.json` synchronized through Fabric tooling.
-MUST: Preserve protected tokens exactly: `AGENTS.md`, `.fabric/rules/`, `.fabric/agents.meta.json`, `fab_plan_context`, `fab_get_rule_sections`, `rule sources`, `rule source mirroring`, `MUST`, `NEVER`.
+MUST: Treat `.fabric/knowledge/` as the source of truth for all Fabric knowledge entries.
+MUST: Before ANY code reading, architecture planning, or logic modification, call `fab_plan_context(paths=[<target file>])`, then call `fab_get_knowledge_sections`.
+MUST: When creating or changing a knowledge entry, keep `.fabric/agents.meta.json` synchronized through Fabric tooling (never hand-edit).
+MUST: Preserve protected tokens exactly: `AGENTS.md`, `.fabric/knowledge/`, `.fabric/agents.meta.json`, `fab_plan_context`, `fab_get_knowledge_sections`, `knowledge sources`, `MUST`, `NEVER`.
 NEVER: Add import-style directive lines to this bootstrap file.
-NEVER: Put framework, domain, repository rule bodies, or submodule rules in this file.
-NEVER: Create colocated `AGENTS.md` rule files under source directories.
+NEVER: Put domain knowledge bodies, framework rules, or repository specifics in this file.
+NEVER: Create colocated `AGENTS.md` knowledge files under source directories.
+NEVER: Hand-edit anything under `.fabric/knowledge/pending/` outside of the proposal/review workflow.
 
 ## 使用说明 / Explanation
 
-- 本文件只负责启动 Fabric Bootstrap Protocol，不承载项目业务规则。
+- 本文件只负责启动 Fabric Bootstrap Protocol，不承载项目业务知识。
 - 详细 bootstrap 说明位于 `.fabric/bootstrap/README.md`。
 - Detected framework kind: `{ frameworkKind }`.
-- This repository uses `rule source mirroring`: source directories contain ZERO rule files, while `.fabric/rules/` mirrors source paths for AI constraints.
-- 根级规则应放在 `.fabric/rules/root.md`；跨领域规则应放在 `.fabric/rules/_cross/`。
-- If `.fabric/rules/root.md` is missing, continue with the Fabric initialization flow before normal coding.
+- This repository uses `knowledge mirroring`: source directories contain ZERO knowledge files, while `.fabric/knowledge/` holds all AI-facing constraints, organized by knowledge type.
+- 跨领域、根级知识应放在对应的 `.fabric/knowledge/{type}/` 子目录下。
+- If `.fabric/knowledge/` is empty after init, continue with the Fabric initialization flow before normal coding.
+
+## Knowledge layer (v2)
+
+Fabric v2 organises every AI-facing knowledge entry along three orthogonal axes: **type**, **maturity**, and **layer**. All entries live as flat markdown files with YAML frontmatter — no nesting, no implicit hierarchies.
+
+### 5 knowledge types
+
+Each entry lives in exactly one of these subdirectories of `.fabric/knowledge/`:
+
+- `decisions/` — architectural / design decisions (the "why" behind a choice, with rejected alternatives)
+- `pitfalls/` — known traps, footguns, and "do-not-do-X" lessons learned the hard way
+- `guidelines/` — actionable rules and conventions the AI should follow when generating or modifying code
+- `models/` — domain models, data shapes, and conceptual abstractions (entities, invariants)
+- `processes/` — multi-step workflows, runbooks, and operational sequences
+
+### 3 maturity levels
+
+The `maturity` frontmatter field expresses how trusted an entry is:
+
+- `draft` — newly captured, not yet reviewed; the AI may consult it but should treat it as provisional
+- `verified` — reviewed and confirmed correct in the current codebase; safe to rely on
+- `proven` — verified and battle-tested across multiple changes; treat as authoritative
+
+Promotion is one-way (`draft` → `verified` → `proven`); demotion happens only via the review workflow.
+
+### 2 layers (dual-root)
+
+Knowledge lives in two physical roots that share the same schema:
+
+- `~/.fabric/knowledge/` — **personal layer** (per-user, NOT committed). Entries here use the `KP-` stable_id prefix. Use this layer for individual preferences, scratch notes, and cross-project habits.
+- `<repo>/.fabric/knowledge/` — **team layer** (committed to the repo). Entries here use the `KT-` stable_id prefix. Use this layer for anything every contributor (human or AI) should respect.
+
+A given entry belongs to exactly one layer; layer-flip (KP ↔ KT) is the only legal mutation of stable_id.
+
+### Proposal staging: `pending/`
+
+`.fabric/knowledge/pending/` is the staging area for proposed entries awaiting review. The async-review workflow (`fabric-review` skill, rc.3) promotes pending entries into one of the 5 type subdirectories once accepted, or archives them on rejection. **Never** hand-edit files under `pending/` directly — use the proposal tooling.
