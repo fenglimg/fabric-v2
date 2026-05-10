@@ -17,7 +17,6 @@ import {
 import { detectFramework } from "@fenglimg/fabric-shared/node";
 
 import { contextCache } from "../cache.js";
-import { parseRuleSections } from "./rule-sections.js";
 import { atomicWriteJson } from "@fenglimg/fabric-shared/node/atomic-write";
 import { ensureParentDirectory, getEventLedgerPath, sha256 } from "./_shared.js";
 import { buildRuleMeta, isSameRuleTestIndex, writeRuleMeta } from "./rule-meta-builder.js";
@@ -139,11 +138,6 @@ type EventLedgerInspection = {
   error?: string;
 };
 
-type RuleSectionsInspection = {
-  checkedCount: number;
-  invalidFiles: Array<{ file: string; reason: string }>;
-};
-
 type RuleTestIndexInspection =
   | {
       present: true;
@@ -212,10 +206,6 @@ type CounterDesyncInspection = {
   correctedCounters: AgentsMetaCounters | null;
 };
 
-type LegacyV1ArtifactsInspection = {
-  detected: string[];
-};
-
 type BootstrapAnchorInspection = {
   hasAgentsMd: boolean;
   hasClaudeMd: boolean;
@@ -253,15 +243,6 @@ type PreexistingRootFilesInspection = {
 
 const KNOWLEDGE_SUBDIRS = ["decisions", "pitfalls", "guidelines", "models", "processes", "pending"] as const;
 
-// v2.0 layout: legacy v1.x artifacts that should NOT exist in a clean v2.0 repo.
-// Surfaced as a warn-only visibility check (legacy_v1_artifacts_present).
-const LEGACY_V1_ARTIFACT_PATHS = [
-  ".fabric/rules",
-  ".fabric/INITIAL_TAXONOMY.md",
-  ".fabric/bootstrap",
-  ".fabric-v1-archive",
-] as const;
-
 // Knowledge counter type-codes. Mirrors KNOWLEDGE_TYPE_CODES values in shared/api-contracts.
 const COUNTER_TYPE_CODES = ["MOD", "DEC", "GLD", "PIT", "PRO"] as const;
 
@@ -279,9 +260,9 @@ const IGNORED_DIRECTORIES = new Set([
   "node_modules",
 ]);
 // v2.0: bootstrap is anchored at the repo root (AGENTS.md / CLAUDE.md), and
-// the v1 INITIAL_TAXONOMY.md / .fabric/bootstrap/ artifacts are no longer
-// authoritative. The summary.targetFiles map is intentionally additive — we
-// keep it focused on top-level Fabric state files.
+// v1.x bootstrap artifacts are no longer authoritative. The summary.targetFiles
+// map is intentionally additive — we keep it focused on top-level Fabric
+// state files.
 //
 // Note: `.fabric/init-context.json` is intentionally NOT listed here. v2.0
 // init-context is owned by the AI-side `fabric-init` skill flow (Claude Code
@@ -304,13 +285,11 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     forensic,
     meta,
     eventLedger,
-    ruleSections,
     ruleTestIndex,
   ] = await Promise.all([
     inspectForensic(projectRoot),
     inspectMeta(projectRoot),
     inspectEventLedger(projectRoot),
-    inspectRuleSections(projectRoot),
     inspectRuleTestIndex(projectRoot),
   ]);
   const mcpConfigInWrongFile = inspectMcpConfigInWrongFile(projectRoot);
@@ -324,7 +303,6 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
   const codexSkillLegacyPath = inspectCodexSkillLegacyPath(projectRoot);
   const preexistingRootFiles = inspectPreexistingRootFiles(projectRoot);
   const legacyClientPaths = inspectLegacyClientPaths(projectRoot);
-  const legacyV1Artifacts = inspectLegacyV1Artifacts(projectRoot);
   const bootstrapAnchor = inspectBootstrapAnchor(projectRoot);
   const checks: DoctorCheck[] = [
     createBootstrapAnchorCheck(bootstrapAnchor),
@@ -337,7 +315,10 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     // ownership.
     createMetaCheck(meta),
     createRuleContentRefCheck(meta),
-    createRuleSectionsCheck(ruleSections),
+    // v2.0 / rc.2: `createRuleSectionsCheck` removed — it parsed v1.x
+    // [MANDATORY_INJECTION] sections out of legacy rule files, a structural
+    // concept that has no v2 equivalent. rc.4 will introduce a dedicated v2
+    // lint suite for the new knowledge frontmatter contract.
     createRuleTestIndexCheck(ruleTestIndex),
     createEventLedgerCheck(eventLedger),
     createEventLedgerPartialWriteCheck(eventLedger),
@@ -351,7 +332,11 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     createCodexSkillLegacyPathCheck(codexSkillLegacyPath),
     createPreexistingRootFilesCheck(preexistingRootFiles),
     createLegacyClientPathCheck(legacyClientPaths),
-    createLegacyV1ArtifactsCheck(legacyV1Artifacts),
+    // v2.0 / rc.2: `createLegacyV1ArtifactsCheck` removed alongside its
+    // path-list constant. The visibility-only warning referenced v1.x
+    // artifacts that are now archaeology. rc.4 owns v2 lint coverage; on a
+    // clean v2 install nothing is lost since the check fired only when v1
+    // artifacts remained.
   ];
   const fixableErrors = collectIssues(checks, "fixable_error");
   const manualErrors = collectIssues(checks, "manual_error");
@@ -555,7 +540,10 @@ async function inspectMeta(projectRoot: string): Promise<MetaInspection> {
       meta,
       revision: meta.revision,
       computedRevision: built?.meta.revision ?? null,
-      ruleCount: Object.values(meta.nodes).filter((node) => (node.content_ref ?? node.file).startsWith(".fabric/rules/")).length,
+      ruleCount: Object.values(meta.nodes).filter((node) => {
+        const ref = node.content_ref ?? node.file;
+        return ref.startsWith(".fabric/knowledge/") || ref.startsWith("~/.fabric/knowledge/");
+      }).length,
       missingContentRefs: contentRefIssues.missing,
       invalidContentRefs: contentRefIssues.invalid,
       stale: changed || (built !== null && meta.revision !== built.meta.revision),
@@ -607,16 +595,13 @@ function inspectContentRefs(projectRoot: string, meta: AgentsMeta): { missing: s
   for (const node of Object.values(meta.nodes)) {
     const contentRef = normalizePath(node.content_ref ?? node.file);
 
-    // v2.0: legacy `.fabric/bootstrap/README.md` is no longer a recognized
-    // content_ref; the legacy_v1_artifacts_present check surfaces it instead
-    // of being special-cased here. Valid v2.0 content_refs live under
-    // .fabric/knowledge/ (team) or ~/.fabric/knowledge/ (personal); legacy
-    // .fabric/rules/ entries remain valid during the migration window.
+    // v2.0: valid content_refs live under .fabric/knowledge/ (team) or
+    // ~/.fabric/knowledge/ (personal). v1.x legacy paths are no longer
+    // recognized.
     const isPersonalKnowledge = contentRef.startsWith("~/.fabric/knowledge/");
     const isTeamKnowledge = contentRef.startsWith(".fabric/knowledge/");
-    const isLegacyRule = contentRef.startsWith(".fabric/rules/");
 
-    if (!isPersonalKnowledge && !isTeamKnowledge && !isLegacyRule) {
+    if (!isPersonalKnowledge && !isTeamKnowledge) {
       invalid.push(contentRef);
       continue;
     }
@@ -678,27 +663,6 @@ async function inspectEventLedger(projectRoot: string): Promise<EventLedgerInspe
       error: error instanceof Error ? error.message : String(error),
     };
   }
-}
-
-async function inspectRuleSections(projectRoot: string): Promise<RuleSectionsInspection> {
-  const invalidFiles: Array<{ file: string; reason: string }> = [];
-  const files = findRuleFiles(projectRoot);
-
-  for (const file of files) {
-    try {
-      parseRuleSections(await readFile(join(projectRoot, file), "utf8"));
-    } catch (error) {
-      invalidFiles.push({
-        file,
-        reason: error instanceof Error ? error.message : String(error),
-      });
-    }
-  }
-
-  return {
-    checkedCount: files.length,
-    invalidFiles,
-  };
 }
 
 async function inspectRuleTestIndex(projectRoot: string): Promise<RuleTestIndexInspection> {
@@ -817,7 +781,7 @@ function createForensicCheck(
 
 function createMetaCheck(meta: MetaInspection): DoctorCheck {
   if (!meta.present) {
-    return issueCheck("Agents metadata", "error", "fixable_error", "agents_meta_missing", ".fabric/agents.meta.json is missing.", "Run `fab doctor --fix` to rebuild agents.meta.json from .fabric/rules/.");
+    return issueCheck("Agents metadata", "error", "fixable_error", "agents_meta_missing", ".fabric/agents.meta.json is missing.", "Run `fab doctor --fix` to rebuild agents.meta.json from .fabric/knowledge/.");
   }
   if (!meta.valid) {
     return issueCheck("Agents metadata", "error", "manual_error", "agents_meta_invalid", meta.readError ?? ".fabric/agents.meta.json is invalid.", "Delete .fabric/agents.meta.json and run `fab doctor --fix` to regenerate it.");
@@ -828,11 +792,11 @@ function createMetaCheck(meta: MetaInspection): DoctorCheck {
       "error",
       "fixable_error",
       "agents_meta_stale",
-      `.fabric/agents.meta.json revision ${meta.revision} does not match .fabric/rules derived revision ${meta.computedRevision ?? "<unknown>"}.`,
-      "Run `fab doctor --fix` to reconcile agents.meta.json with the current rule files.",
+      `.fabric/agents.meta.json revision ${meta.revision} does not match .fabric/knowledge derived revision ${meta.computedRevision ?? "<unknown>"}.`,
+      "Run `fab doctor --fix` to reconcile agents.meta.json with the current knowledge files.",
     );
   }
-  return okCheck("Agents metadata", `.fabric/agents.meta.json revision ${meta.revision} is aligned with .fabric/rules.`);
+  return okCheck("Agents metadata", `.fabric/agents.meta.json revision ${meta.revision} is aligned with .fabric/knowledge.`);
 }
 
 function createRuleContentRefCheck(meta: MetaInspection): DoctorCheck {
@@ -846,39 +810,25 @@ function createRuleContentRefCheck(meta: MetaInspection): DoctorCheck {
       "error",
       "manual_error",
       "content_ref_outside_rules",
-      `${meta.invalidContentRefs.length} content_ref entr${meta.invalidContentRefs.length === 1 ? "y is" : "ies are"} outside .fabric/rules.`,
-      "Edit agents.meta.json to ensure all content_ref values point inside .fabric/rules/.",
+      `${meta.invalidContentRefs.length} content_ref entr${meta.invalidContentRefs.length === 1 ? "y is" : "ies are"} outside .fabric/knowledge.`,
+      "Edit agents.meta.json to ensure all content_ref values point inside .fabric/knowledge/{type}/ (team) or ~/.fabric/knowledge/{type}/ (personal).",
     );
   }
 
   if (meta.missingContentRefs.length > 0) {
     // content_ref_missing is fixable: reconcileRules rebuilds agents.meta.json from
-    // the physical .fabric/rules/**/*.md files, dropping any stale refs automatically.
+    // the physical .fabric/knowledge/**/*.md files, dropping any stale refs automatically.
     return issueCheck(
       "Rule content refs",
       "error",
       "fixable_error",
       "content_ref_missing",
       `${meta.missingContentRefs.length} content_ref target${meta.missingContentRefs.length === 1 ? "" : "s"} are missing. Run \`fab doctor --fix\` to reconcile.`,
-      "Run `fab doctor --fix` to reconcile agents.meta.json with the files present in .fabric/rules/.",
+      "Run `fab doctor --fix` to reconcile agents.meta.json with the files present in .fabric/knowledge/.",
     );
   }
 
-  return okCheck("Rule content refs", "All content_ref entries resolve to .fabric/rules files or bootstrap README.");
-}
-
-function createRuleSectionsCheck(snapshot: RuleSectionsInspection): DoctorCheck {
-  if (snapshot.invalidFiles.length > 0) {
-    return issueCheck(
-      "Rule sections",
-      "error",
-      "manual_error",
-      "rule_sections_invalid",
-      `${snapshot.invalidFiles.length} rule file${snapshot.invalidFiles.length === 1 ? "" : "s"} could not be parsed.`,
-      "Edit the rule file(s) to fix the section structure, then re-run `fab doctor`.",
-    );
-  }
-  return okCheck("Rule sections", `${snapshot.checkedCount} .fabric/rules file${snapshot.checkedCount === 1 ? "" : "s"} parsed.`);
+  return okCheck("Rule content refs", "All content_ref entries resolve to .fabric/knowledge files.");
 }
 
 function createRuleTestIndexCheck(index: RuleTestIndexInspection): DoctorCheck {
@@ -1027,12 +977,11 @@ async function inspectMetaManuallyDiverged(projectRoot: string): Promise<MetaMan
 }
 
 function inspectKnowledgeDirUnindexed(projectRoot: string, meta: MetaInspection): RulesDirUnindexedInspection {
-  // v2.0 layout: iterate .fabric/knowledge/{type}/ and (for now, during the
-  // v1→v2 transition) also legacy .fabric/rules/ so doctor stays useful while
-  // rule-meta-builder learns the new layout in TASK-003/TASK-004.
+  // v2.0 layout: iterate .fabric/knowledge/{type}/ and surface any .md file
+  // not yet present in agents.meta.json so reconcileRules can rebuild the
+  // index. The legacy v1.x rules collection was dropped in rc.2.
   const physicalMdFiles = new Set<string>();
   collectMdFilesUnder(physicalMdFiles, projectRoot, join(projectRoot, ".fabric", "knowledge"), ".fabric/knowledge");
-  collectMdFilesUnder(physicalMdFiles, projectRoot, join(projectRoot, ".fabric", "rules"), ".fabric/rules");
 
   if (physicalMdFiles.size === 0) {
     return { unindexedFiles: [] };
@@ -1093,52 +1042,13 @@ function createKnowledgeDirUnindexedCheck(inspection: RulesDirUnindexedInspectio
 }
 
 async function inspectStableIdCollisions(projectRoot: string): Promise<StableIdCollisionInspection> {
-  // v2.0: stable_ids are declared in two flavours:
-  //   - rule files in .fabric/rules/ via `<!-- fab:rule-id X -->`
-  //     (legacy format; still supported during v1→v2 transition)
-  //   - knowledge files in .fabric/knowledge/{type}/ via frontmatter `id: K[PT]-XXX-NNNN`
-  // We scan both; the file path component is recorded relative to the project
-  // root using POSIX separators so messages are stable across OSes.
+  // v2.0: stable_ids are declared in YAML frontmatter `id: K[PT]-XXX-NNNN`
+  // inside .fabric/knowledge/{type}/*.md. The v1.x HTML-comment marker
+  // (`<!-- fab:rule-id X -->`) is no longer scanned. The file path component
+  // is recorded relative to the project root using POSIX separators so
+  // messages are stable across OSes.
   type Found = { stableId: string; relPath: string };
   const found: Found[] = [];
-
-  // Legacy `.fabric/rules/` files (HTML-comment id marker).
-  const rulesDir = join(projectRoot, ".fabric", "rules");
-  const ruleFiles: string[] = [];
-  if (existsSync(rulesDir)) {
-    const stack: string[] = [rulesDir];
-    while (stack.length > 0) {
-      const dir = stack.pop();
-      if (dir === undefined) {
-        continue;
-      }
-      for (const entry of readdirSync(dir, { withFileTypes: true })) {
-        const abs = join(dir, entry.name);
-        if (entry.isDirectory()) {
-          stack.push(abs);
-        } else if (entry.isFile() && entry.name.endsWith(".md")) {
-          ruleFiles.push(abs);
-        }
-      }
-    }
-  }
-
-  const DECLARED_ID_PATTERN =
-    /^(?:\uFEFF)?(?:---\r?\n[\s\S]*?\r?\n---\s*(?:\r?\n|$))?<!--\s*fab:rule-id\s+([A-Za-z0-9][A-Za-z0-9/_-]*)\s*-->\s*(?:\r?\n|$)/u;
-  for (const absPath of ruleFiles) {
-    let source: string;
-    try {
-      source = await readFile(absPath, "utf8");
-    } catch {
-      continue;
-    }
-    const match = DECLARED_ID_PATTERN.exec(source);
-    if (match === null) {
-      continue;
-    }
-    const relPath = posix.join(".fabric/rules", absPath.slice(rulesDir.length + 1).replace(/\\/gu, "/"));
-    found.push({ stableId: match[1], relPath });
-  }
 
   // v2.0 knowledge files (frontmatter `id: ...`).
   const knowledgeDir = join(projectRoot, ".fabric", "knowledge");
@@ -1284,25 +1194,6 @@ function createCounterDesyncCheck(inspection: CounterDesyncInspection): DoctorCh
   return okCheck("Knowledge counter desync", "agents.meta.json counters envelope is consistent with observed stable_ids.");
 }
 
-function inspectLegacyV1Artifacts(projectRoot: string): LegacyV1ArtifactsInspection {
-  const detected = LEGACY_V1_ARTIFACT_PATHS.filter((rel) => existsSync(join(projectRoot, rel)));
-  return { detected: [...detected] };
-}
-
-function createLegacyV1ArtifactsCheck(inspection: LegacyV1ArtifactsInspection): DoctorCheck {
-  if (inspection.detected.length > 0) {
-    return issueCheck(
-      "Legacy v1 artifacts",
-      "warn",
-      "warning",
-      "legacy_v1_artifacts_present",
-      `Detected ${inspection.detected.length} legacy v1.x artifact${inspection.detected.length === 1 ? "" : "s"}: ${inspection.detected.join(", ")}. These are not used by Fabric v2.0 and can be removed manually.`,
-      "Review and manually delete the listed paths if you have already migrated to v2.0; see docs/migration-2.0.md for details.",
-    );
-  }
-  return okCheck("Legacy v1 artifacts", "No legacy v1.x artifacts detected (.fabric/rules/, INITIAL_TAXONOMY.md, .fabric/bootstrap/, .fabric-v1-archive/).");
-}
-
 function createStableIdCollisionCheck(inspection: StableIdCollisionInspection): DoctorCheck {
   if (inspection.collisions.length > 0) {
     const first = inspection.collisions[0];
@@ -1314,11 +1205,11 @@ function createStableIdCollisionCheck(inspection: StableIdCollisionInspection): 
       "warn",
       "warning",
       "stable_id_collision",
-      `${detail} Edit one of the rule files to use a unique stable_id.`,
-      "Edit one of the colliding rule files to declare a different `<!-- fab:rule-id X -->` value.",
+      `${detail} Edit one of the knowledge files to use a unique stable_id.`,
+      "Edit one of the colliding knowledge files to declare a different `id: K[PT]-XXX-NNNN` frontmatter value.",
     );
   }
-  return okCheck("Stable ID collision", "No declared stable_id collisions found in .fabric/rules/.");
+  return okCheck("Stable ID collision", "No declared stable_id collisions found in .fabric/knowledge/.");
 }
 
 function createMetaManuallyDivergedCheck(inspection: MetaManuallyDivergedInspection): DoctorCheck {
@@ -1369,7 +1260,7 @@ function createPreexistingRootFilesCheck(inspection: PreexistingRootFilesInspect
     code: "preexisting_root_claude_md",
     fixable: false,
     message: `${inspection.detected.join(", ")} detected at project root. These root files are not auto-loaded by Fabric MCP.`,
-    actionHint: "Move rule content to `.fabric/rules/` if you want it available in MCP responses.",
+    actionHint: "Move knowledge content to `.fabric/knowledge/{type}/` if you want it available in MCP responses.",
   };
 }
 
@@ -1733,36 +1624,6 @@ function createFixMessage(fixed: DoctorIssue[], report: DoctorReport): string {
     : `${report.manual_errors.length} manual error${report.manual_errors.length === 1 ? "" : "s"} remain.`;
 
   return `${fixedText} ${manualText}`;
-}
-
-function findRuleFiles(projectRoot: string): string[] {
-  const rulesRoot = join(projectRoot, ".fabric", "rules");
-  if (!existsSync(rulesRoot) || !statSync(rulesRoot).isDirectory()) {
-    return [];
-  }
-
-  const files: string[] = [];
-  const stack = [rulesRoot];
-
-  while (stack.length > 0) {
-    const current = stack.pop();
-    if (current === undefined) {
-      continue;
-    }
-
-    for (const entry of readdirSync(current, { withFileTypes: true })) {
-      const absolutePath = join(current, entry.name);
-      const relativePath = normalizePath(absolutePath.slice(projectRoot.length + 1));
-
-      if (entry.isDirectory()) {
-        stack.push(absolutePath);
-      } else if (entry.isFile() && entry.name.endsWith(".md")) {
-        files.push(relativePath);
-      }
-    }
-  }
-
-  return files.sort();
 }
 
 function isValidJsonLine(line: string): boolean {

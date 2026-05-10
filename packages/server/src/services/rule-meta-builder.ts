@@ -128,7 +128,7 @@ export async function computeRulesBasedAgentsMeta(
 
   const previousMeta = existingMeta ?? await readExistingMeta(join(projectRoot, ".fabric", "agents.meta.json"));
   const existingByContentRef = indexExistingNodesByContentRef(previousMeta);
-  const ruleFiles = await findFabricRuleFiles(projectRoot);
+  const ruleFiles = await findKnowledgeFiles(projectRoot);
   const nodes: Record<string, NodeMeta> = {};
 
   // v2.0: there is no longer a single L0 anchor file. Knowledge entries
@@ -146,8 +146,9 @@ export async function computeRulesBasedAgentsMeta(
     // v2.0: knowledge entries are keyed by their declared id (KP-/KT-...) so
     // the persisted node key matches what init-scan's
     // `registerKnowledgeNodesInMeta` writes — avoiding duplicate nodes when
-    // both pipelines see the same file. Path-keyed ids stay as fallback for
-    // legacy `.fabric/rules/` entries that lack a knowledge id.
+    // both pipelines see the same file. Path-keyed ids remain as a fallback
+    // for hand-authored knowledge files that have not yet been allocated a
+    // declared id (e.g. drafts).
     const id = isKnowledgeStableId(identity.stableId) ? identity.stableId : deriveNodeId(contentRef);
 
     nodes[id] = {
@@ -327,7 +328,7 @@ function resolveContentRefPath(projectRoot: string, contentRef: string): string 
   return join(projectRoot, contentRef);
 }
 
-async function findFabricRuleFiles(projectRoot: string): Promise<string[]> {
+async function findKnowledgeFiles(projectRoot: string): Promise<string[]> {
   const teamRoot = join(projectRoot, ".fabric", "knowledge");
   const personalRoot = join(resolvePersonalRoot(), ".fabric", "knowledge");
 
@@ -370,29 +371,6 @@ async function findFabricRuleFiles(projectRoot: string): Promise<string[]> {
       for (const entry of entries) {
         if (entry.isFile() && entry.name.endsWith(".md")) {
           files.push(`${prefix}${subdir}/${entry.name}`);
-        }
-      }
-    }
-  }
-
-  // v1.x transitional fallback — scan legacy `.fabric/rules/` so doctor and
-  // rule-sync flows continue to surface pre-v2.0 entries during the migration
-  // window. Mirrors doctor.ts:1039 which collects from both layouts.
-  const legacyRoot = join(projectRoot, ".fabric", "rules");
-  if (existsSync(legacyRoot) && statSync(legacyRoot).isDirectory()) {
-    const stack = [legacyRoot];
-    while (stack.length > 0) {
-      const current = stack.pop();
-      if (current === undefined) {
-        continue;
-      }
-      for (const entry of await readdir(current, { withFileTypes: true })) {
-        const absolutePath = join(current, entry.name);
-        const relativePath = toPosixPath(relative(projectRoot, absolutePath));
-        if (entry.isDirectory()) {
-          stack.push(absolutePath);
-        } else if (entry.isFile() && entry.name.endsWith(".md")) {
-          files.push(relativePath);
         }
       }
     }
@@ -634,7 +612,6 @@ function getRuleRelativeStem(contentRef: string): string {
   return contentRef
     .replace(/^~\/\.fabric\/knowledge\//u, "")
     .replace(/^\.fabric\/knowledge\//u, "")
-    .replace(/^\.fabric\/rules\//u, "")
     .replace(/\.md$/u, "");
 }
 
@@ -649,8 +626,7 @@ function getRuleRelativeStem(contentRef: string): string {
 function toAgentsCompatiblePath(contentRef: string): string {
   return contentRef
     .replace(/^~\/\.fabric\/knowledge\//u, ".fabric/agents/")
-    .replace(/^\.fabric\/knowledge\//u, ".fabric/agents/")
-    .replace(/^\.fabric\/rules\//u, ".fabric/agents/");
+    .replace(/^\.fabric\/knowledge\//u, ".fabric/agents/");
 }
 
 function sortNodes(nodes: Record<string, NodeMeta>): Record<string, NodeMeta> {

@@ -72,7 +72,7 @@ export function formatPreexistingRootMessage(projectRoot: string): string | null
   if (existsSync(join(projectRoot, "CLAUDE.md"))) preexisting.push("CLAUDE.md");
   if (existsSync(join(projectRoot, "AGENTS.md"))) preexisting.push("AGENTS.md");
   if (preexisting.length === 0) return null;
-  return `[startup] info: detected ${preexisting.join(", ")} at project root. Note: Fabric serves rules from .fabric/rules/ via MCP — root markdown files are not auto-loaded into the AI context.`;
+  return `[startup] info: detected ${preexisting.join(", ")} at project root. Note: Fabric serves knowledge from .fabric/knowledge/ via MCP — root markdown files are not auto-loaded into the AI context.`;
 }
 
 export { AGENTS_MD_RESOURCE_URI } from "./constants.js";

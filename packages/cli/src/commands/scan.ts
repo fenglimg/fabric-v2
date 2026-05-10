@@ -32,8 +32,8 @@ import { resolveIgnores } from "../scanner/ignores.js";
 //   * packages/cli/__tests__/init-mcp-scope.test.ts (mocked)
 //
 // The new init-scan behavior lives in `runInitScan` below and is exposed via
-// `scanCommand.run()`. v2.0: the prior `bootstrap-guide.ts` consumer was
-// retired alongside `.fabric/bootstrap/README.md`.
+// `scanCommand.run()`. v2.0: the prior bootstrap guide consumer was retired
+// alongside `.fabric/bootstrap/README.md`.
 // ---------------------------------------------------------------------------
 
 export type ReadmeQuality = "stub" | "ok";

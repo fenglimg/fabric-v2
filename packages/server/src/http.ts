@@ -157,9 +157,10 @@ class JsonlEventStore implements EventStore {
  * Exported for unit-testing: the core logic executed on every chokidar event
  * (change / add / unlink) from the cache watcher.
  *
- * Rules (D25): for .fabric/rules/**\/*.md paths we ONLY invalidate the cache.
- * No ledger writes. No direct sync. The next MCP call will pick up the
- * staleness via ensureRulesFresh (wired in TASK-021).
+ * Knowledge (D25): for .fabric/knowledge/**\/*.md paths we ONLY invalidate the
+ * cache. No ledger writes. No direct sync. The next MCP call will pick up the
+ * staleness via ensureRulesFresh (wired in TASK-021). The pending/ subtree is
+ * watched explicitly so unreviewed entries surface in cache invalidation too.
  */
 export function handleCacheWatcherEvent(
   relativePath: string,
@@ -187,11 +188,11 @@ export function handleCacheWatcherEvent(
   }
 
   // v2.0: bootstrap/README.md is no longer the L0 anchor — knowledge entries
-  // under .fabric/knowledge/ ARE the content. The legacy watch path is dropped
-  // here. .fabric/rules/**/*.md remains for migration-window legacy entries.
+  // under .fabric/knowledge/ ARE the content. The pending/ subtree is included
+  // so unreviewed entries also trigger cache invalidation.
 
-  // .fabric/rules/**/*.md — cache invalidation only (D25).
-  if (normalized.startsWith(".fabric/rules/") && normalized.endsWith(".md")) {
+  // .fabric/knowledge/**/*.md (including pending/) — cache invalidation only (D25).
+  if (normalized.startsWith(".fabric/knowledge/") && normalized.endsWith(".md")) {
     contextCache.invalidate("file_watch", projectRoot);
     // Also clear the rule-sync cooldown so the next MCP call performs a real
     // I/O scan and picks up the changed file immediately.
@@ -208,18 +209,23 @@ export function createFabricHttpApp(options: CreateFabricHttpAppOptions) {
 
   process.env.FABRIC_PROJECT_ROOT = projectRoot;
 
-  // Watch agents.meta.json and rules/ to invalidate the hot-path cache.
-  // This is a persistent, lightweight watcher separate from the SSE watcher
-  // in api/events.ts (which is client-lifecycle-based).
+  // Watch agents.meta.json and the knowledge tree to invalidate the hot-path
+  // cache. This is a persistent, lightweight watcher separate from the SSE
+  // watcher in api/events.ts (which is client-lifecycle-based).
   //
   // v2.0: legacy `.fabric/bootstrap/README.md` is no longer watched — the
   // knowledge entries under `.fabric/knowledge/` are the content of record.
-  // D25: the rules glob ONLY invalidates cache — no ledger writes, no direct
-  // sync.  The next MCP call detects staleness via ensureRulesFresh (TASK-021).
+  // The `.fabric/knowledge/pending/**/*.md` glob is listed explicitly so
+  // unreviewed entries also fire cache invalidation; the broader
+  // `.fabric/knowledge/**/*.md` covers decisions/pitfalls/guidelines/models/
+  // processes. D25: the knowledge globs ONLY invalidate cache — no ledger
+  // writes, no direct sync. The next MCP call detects staleness via
+  // ensureRulesFresh (TASK-021).
   const cacheWatcher = chokidar.watch(
     [
       ".fabric/agents.meta.json",
-      ".fabric/rules/**/*.md",
+      ".fabric/knowledge/**/*.md",
+      ".fabric/knowledge/pending/**/*.md",
     ],
     {
       cwd: projectRoot,

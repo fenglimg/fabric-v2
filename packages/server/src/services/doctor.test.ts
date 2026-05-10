@@ -61,20 +61,18 @@ describe("runDoctorReport", () => {
 
     expect(report.fixable_errors).toEqual([]);
     expect(report.manual_errors).toEqual([]);
-    // Bridge fixture carries `.fabric/rules/`, which fires legacy_v1_artifacts_present.
-    expect(report.warnings.map((w) => w.code)).toEqual(["legacy_v1_artifacts_present"]);
-    // v2.0: 4 renames (net-zero) + counter_desync + legacy_v1_artifacts_present.
-    // counter_desync is separated from stable_id_collision so that fixable_error
-    // and warning signals can coexist cleanly (a single DoctorCheck entry has a
-    // single status). Count history: 19 v1.x → 21 rc.1 → 20 rc.1-followup
-    // (Init context check removed — owned by AI-side skill, not init CLI).
+    // v2.0 / rc.2: legacy_v1_artifacts_present was removed; the bridged
+    // fixture no longer fires any warning by default.
+    expect(report.warnings.map((w) => w.code)).toEqual([]);
+    // Count history: 19 v1.x → 21 rc.1 → 20 rc.1-followup (Init context
+    // check removed) → 18 rc.2 (Rule sections + Legacy v1 artifacts removed
+    // in TASK-002).
     expect(report.checks.map((check) => check.name)).toEqual([
       "Bootstrap anchor",
       "Knowledge layout",
       "Scan evidence",
       "Agents metadata",
       "Rule content refs",
-      "Rule sections",
       "Rule-test index",
       "Event ledger",
       "Event ledger partial write",
@@ -88,9 +86,8 @@ describe("runDoctorReport", () => {
       "Codex skill path",
       "Preexisting root markdown",
       "Legacy client paths",
-      "Legacy v1 artifacts",
     ]);
-    expect(report.checks).toHaveLength(20);
+    expect(report.checks).toHaveLength(18);
   });
 
   it("v2.0: clean post-init repo (mocked layout) reports zero errors AND zero warnings", async () => {
@@ -854,32 +851,10 @@ describe("runDoctorReport", () => {
     expect(issue?.message).toContain("CLAUDE.md");
   });
 
-  it("v2.0 / legacy_v1_artifacts_present: warn (not error) when .fabric/rules/ exists post-upgrade", async () => {
-    // Manually re-create a v1 artifact after init to simulate a half-migrated repo.
-    const target = createInitializedProject("doctor-legacy-v1-rules");
-    await writeRuleMeta(target, { source: "doctor_fix" });
-    writeFile(".fabric/events.jsonl", "", target);
-    // .fabric/rules/ is already seeded by createInitializedProject, so the
-    // legacy artifacts check should already fire in the bridged fixture.
-
-    const report = await runDoctorReport(target);
-    const issue = report.warnings.find((w) => w.code === "legacy_v1_artifacts_present");
-    expect(issue).toBeDefined();
-    expect(issue?.message).toContain(".fabric/rules");
-    // Must remain a warning (visibility-only, not an error).
-    expect(report.checks.find((c) => c.name === "Legacy v1 artifacts")?.status).toBe("warn");
-  });
-
-  it("v2.0 / legacy_v1_artifacts_present: NOT auto-fixable (no --fix codepath)", async () => {
-    const target = createInitializedProject("doctor-legacy-v1-not-fixable");
-    await writeRuleMeta(target, { source: "doctor_fix" });
-    writeFile(".fabric/events.jsonl", "", target);
-
-    const fix = await runDoctorFix(target);
-    expect(fix.fixed.map((e) => e.code)).not.toContain("legacy_v1_artifacts_present");
-    // Artifact should still be present after --fix run (we never delete user data).
-    expect(existsSync(join(target, ".fabric", "rules"))).toBe(true);
-  });
+  // v2.0 / rc.2: tests for `legacy_v1_artifacts_present` removed alongside
+  // the check itself. The visibility-only warning was removed because rc.4
+  // owns v2 lint coverage and v1.x artifacts are clean-slate archaeology in
+  // the rebrand. TASK-004 / rc.4 may re-introduce a similar lint if needed.
 
   it("v2.0 / fix_does_not_regenerate_v1_taxonomy_or_bootstrap: --fix on a fresh v2.0 project does NOT recreate v1 paths", async () => {
     const target = createProject("doctor-fix-no-regen-v1");

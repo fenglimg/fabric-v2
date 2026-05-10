@@ -29,10 +29,6 @@
       "types": "./dist/node/mcp-payload-guard.d.ts",
       "import": "./dist/node/mcp-payload-guard.js"
     },
-    "./node/bootstrap-guide": {
-      "types": "./dist/node/bootstrap-guide.d.ts",
-      "import": "./dist/node/bootstrap-guide.js"
-    },
     "./errors": {
       "types": "./dist/errors/index.d.ts",
       "import": "./dist/errors/index.js"
@@ -46,8 +42,8 @@
     "dist"
   ],
   "scripts": {
-    "build": "tsup src/index.ts src/i18n/index.ts src/types/index.ts src/node.ts src/node/atomic-write.ts src/node/mcp-payload-guard.ts src/node/bootstrap-guide.ts src/errors/index.ts src/schemas/api-contracts.ts --format esm --dts --clean",
-    "dev": "tsup src/index.ts src/i18n/index.ts src/types/index.ts src/node.ts src/node/atomic-write.ts src/node/mcp-payload-guard.ts src/node/bootstrap-guide.ts src/errors/index.ts src/schemas/api-contracts.ts --format esm --dts --watch",
+    "build": "tsup src/index.ts src/i18n/index.ts src/types/index.ts src/node.ts src/node/atomic-write.ts src/node/mcp-payload-guard.ts src/errors/index.ts src/schemas/api-contracts.ts --format esm --dts --clean",
+    "dev": "tsup src/index.ts src/i18n/index.ts src/types/index.ts src/node.ts src/node/atomic-write.ts src/node/mcp-payload-guard.ts src/errors/index.ts src/schemas/api-contracts.ts --format esm --dts --watch",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage"
   },
