@@ -211,12 +211,6 @@ type BootstrapAnchorInspection = {
   hasClaudeMd: boolean;
 };
 
-type LegacyClientPathInspection = {
-  presentKeys: string[];
-};
-
-const LEGACY_CLIENT_PATH_KEYS = ["windsurf", "rooCode", "geminiCLI"] as const;
-
 type PreexistingRootFilesInspection = {
   detected: string[];
 };
@@ -278,7 +272,6 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
   const stableIdCollision = await inspectStableIdCollisions(projectRoot);
   const counterDesync = inspectCounterDesync(meta);
   const preexistingRootFiles = inspectPreexistingRootFiles(projectRoot);
-  const legacyClientPaths = inspectLegacyClientPaths(projectRoot);
   const bootstrapAnchor = inspectBootstrapAnchor(projectRoot);
   const checks: DoctorCheck[] = [
     createBootstrapAnchorCheck(bootstrapAnchor),
@@ -304,7 +297,11 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     createStableIdCollisionCheck(stableIdCollision),
     createCounterDesyncCheck(counterDesync),
     createPreexistingRootFilesCheck(preexistingRootFiles),
-    createLegacyClientPathCheck(legacyClientPaths),
+    // v2.0 / rc.2: `createLegacyClientPathCheck` removed. The schema now
+    // rejects retired clientPaths keys (windsurf/rooCode/geminiCLI) at Zod
+    // parse time, so the soft-deprecation warn-and-fix path no longer has a
+    // reachable input — fabric.config.json with a retired key fails before
+    // doctor ever inspects it.
     // v2.0 / rc.2: `createLegacyV1ArtifactsCheck` removed alongside its
     // path-list constant. The visibility-only warning referenced v1.x
     // artifacts that are now archaeology. rc.4 owns v2 lint coverage; on a
@@ -419,11 +416,6 @@ export async function runDoctorFix(target: string): Promise<DoctorFixReport> {
   if (before.fixable_errors.some((issue) => issue.code === "mcp_config_in_wrong_file")) {
     await fixMcpConfigInWrongFile(projectRoot);
     fixed.push(findIssue(before.fixable_errors, "mcp_config_in_wrong_file"));
-  }
-
-  if (before.warnings.some((issue) => issue.code === "legacy_client_path_present")) {
-    await fixLegacyClientPaths(projectRoot);
-    fixed.push(findIssue(before.warnings, "legacy_client_path_present"));
   }
 
   const report = await runDoctorReport(projectRoot);
@@ -1227,87 +1219,13 @@ function createPreexistingRootFilesCheck(inspection: PreexistingRootFilesInspect
 // side init reminder/skill paths, both of which are now archaeology — rc.4
 // owns v2 lint coverage for whatever skill/hook paths v2 introduces.
 
-function inspectLegacyClientPaths(projectRoot: string): LegacyClientPathInspection {
-  const configPath = join(projectRoot, "fabric.config.json");
-  if (!existsSync(configPath)) {
-    return { presentKeys: [] };
-  }
-
-  try {
-    const parsed = JSON.parse(readFileSync(configPath, "utf8")) as unknown;
-    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
-      return { presentKeys: [] };
-    }
-    const config = parsed as Record<string, unknown>;
-    const clientPaths = config.clientPaths;
-    if (clientPaths === null || typeof clientPaths !== "object" || Array.isArray(clientPaths)) {
-      return { presentKeys: [] };
-    }
-    const cp = clientPaths as Record<string, unknown>;
-    const presentKeys = LEGACY_CLIENT_PATH_KEYS.filter((key) => key in cp);
-    return { presentKeys };
-  } catch {
-    return { presentKeys: [] };
-  }
-}
-
-function createLegacyClientPathCheck(inspection: LegacyClientPathInspection): DoctorCheck {
-  if (inspection.presentKeys.length > 0) {
-    return issueCheck(
-      "Legacy client paths",
-      "warn",
-      "warning",
-      "legacy_client_path_present",
-      `fabric.config.json contains deprecated clientPaths keys: ${inspection.presentKeys.join(", ")}. These clients are removed in 1.8.0; run --fix to clean now or accept the upcoming removal.`,
-      "Run `fab doctor --fix` to remove deprecated clientPaths keys (windsurf, rooCode, geminiCLI) from fabric.config.json.",
-    );
-  }
-  return okCheck("Legacy client paths", "No deprecated clientPaths keys found in fabric.config.json.");
-}
-
-async function fixLegacyClientPaths(projectRoot: string): Promise<void> {
-  const configPath = join(projectRoot, "fabric.config.json");
-  if (!existsSync(configPath)) {
-    return;
-  }
-
-  let config: Record<string, unknown>;
-  try {
-    const parsed = JSON.parse(readFileSync(configPath, "utf8")) as unknown;
-    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
-      return;
-    }
-    config = parsed as Record<string, unknown>;
-  } catch {
-    return;
-  }
-
-  const clientPaths = config.clientPaths;
-  if (clientPaths === null || typeof clientPaths !== "object" || Array.isArray(clientPaths)) {
-    return;
-  }
-
-  const cp = clientPaths as Record<string, unknown>;
-  const removed: string[] = [];
-
-  for (const key of LEGACY_CLIENT_PATH_KEYS) {
-    if (key in cp) {
-      delete cp[key];
-      removed.push(key);
-    }
-  }
-
-  if (removed.length === 0) {
-    return;
-  }
-
-  const updatedConfig = { ...config, clientPaths: cp };
-  await atomicWriteJson(configPath, updatedConfig, { indent: 2 });
-  await appendEventLedgerEvent(projectRoot, {
-    event_type: "legacy_client_path_present",
-    removed,
-  });
-}
+// v2.0 / rc.2: `inspectLegacyClientPaths`, `createLegacyClientPathCheck`,
+// and `fixLegacyClientPaths` removed. Retired clientPaths keys
+// (windsurf/rooCode/geminiCLI) are now rejected at Zod parse time on the
+// strict clientPathsSchema — there is no soft-deprecation path to detect or
+// fix. The corresponding `legacy_client_path_present` event-type literal
+// remains in event-ledger.ts and will be removed in TASK-006 alongside the
+// broader event-vocabulary rename.
 
 async function fixMcpConfigInWrongFile(projectRoot: string): Promise<void> {
   const settingsPath = join(projectRoot, ".claude", "settings.json");

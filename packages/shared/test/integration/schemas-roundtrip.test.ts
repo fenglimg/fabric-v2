@@ -53,15 +53,18 @@ describe('I1.1 fabricConfigSchema round-trip', () => {
       mcpPayloadLimits: { warnBytes: 8192, hardBytes: 32768 },
     })
   })
-  it('clientPathsSchema legacy passthrough keys preserved via .passthrough()', () => {
-    // The .passthrough() is on clientPathsSchema (nested under clientPaths), not fabricConfigSchema itself.
-    // windsurf is a legacy key inside clientPaths, preserved by clientPathsSchema.passthrough().
-    const result = fabricConfigSchema.parse({
-      clientPaths: { claudeCodeCLI: '/usr/bin/claude', windsurf: '/tmp/ws' },
-    })
-    // passthrough: unknown legacy key preserved inside clientPaths
-    expect((result.clientPaths as Record<string, unknown>)?.windsurf).toBe('/tmp/ws')
-    expect((result.clientPaths as Record<string, unknown>)?.claudeCodeCLI).toBe('/usr/bin/claude')
+  it('clientPathsSchema rejects unknown clientPaths keys (strict, no passthrough)', () => {
+    // v2.0 / rc.2: Fabric scope is locked to claudeCodeCLI / claudeCodeDesktop /
+    // cursor / codexCLI. Retired v1.x keys (windsurf, rooCode, geminiCLI) and
+    // any other unknown key fail at Zod parse time on the strict
+    // clientPathsSchema — there is no soft-deprecation path.
+    for (const retired of ['windsurf', 'rooCode', 'geminiCLI', 'unknownClient']) {
+      expect(() =>
+        fabricConfigSchema.parse({
+          clientPaths: { claudeCodeCLI: '/usr/bin/claude', [retired]: '/tmp/example' },
+        }),
+      ).toThrow()
+    }
   })
 })
 
@@ -284,10 +287,15 @@ describe('I1.8 eventLedgerEventSchema round-trip', () => {
   })
 
   it('legacy_client_path_present event', () => {
+    // v2.0 / rc.2: TASK-005 dropped the live emitter (fixLegacyClientPaths was
+    // removed alongside the warn-and-fix doctor check). The event-type schema
+    // literal is retained until TASK-006 finalises the event-vocabulary
+    // rename — this round-trip simply pins the on-disk shape against the
+    // existing literal.
     roundTrip(eventLedgerEventSchema, {
       ...envelope,
       event_type: 'legacy_client_path_present',
-      removed: ['windsurf'],
+      removed: ['placeholder-key'],
     })
   })
 })

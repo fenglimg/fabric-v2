@@ -2,9 +2,10 @@ import { z } from "zod";
 
 export const auditModeSchema = z.enum(["strict", "warn", "off"]);
 
-// Legacy keys (windsurf, rooCode, geminiCLI) are preserved via .passthrough()
-// so existing fabric.config.json files do not fail validation (TASK-012).
-// Deprecation warnings for those keys are scheduled for TASK-037 (v1.7.1).
+// v2.0: Fabric scope is locked to Claude Code, Cursor, and Codex CLI.
+// Unknown clientPaths keys (e.g. windsurf, rooCode, geminiCLI from v1.x) are
+// rejected at parse time via .strict() — there is no soft-deprecation path.
+// Adding a new client requires extending this schema explicitly.
 export const clientPathsSchema = z
   .object({
     claudeCodeCLI: z.string().optional(),
@@ -12,7 +13,7 @@ export const clientPathsSchema = z
     cursor: z.string().optional(),
     codexCLI: z.string().optional(),
   })
-  .passthrough();
+  .strict();
 
 export const mcpPayloadLimitsSchema = z.object({
   warnBytes: z.number().int().positive().optional(),

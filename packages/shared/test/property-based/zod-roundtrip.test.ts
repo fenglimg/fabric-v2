@@ -21,7 +21,8 @@ import { structuredWarningSchema } from "../../src/schemas/api-contracts";
 
 // Arbitrary that produces inputs accepted by fabricConfigSchema. All fields
 // are optional in the schema; the arbitrary samples present-or-absent for
-// each key, including the legacy-passthrough clientPaths block.
+// each key. v2.0 / rc.2: clientPathsSchema is strict (no passthrough), so the
+// arbitrary only generates the four supported keys.
 const clientPathsArbitrary = fc.record(
   {
     claudeCodeCLI: fc.string(),
