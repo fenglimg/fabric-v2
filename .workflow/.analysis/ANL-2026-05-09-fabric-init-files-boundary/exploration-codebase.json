@@ -1,0 +1,100 @@
+{
+  "session_id": "ANL-2026-05-09-fabric-init-files-boundary",
+  "timestamp": "2026-05-09T00:00:00+08:00",
+  "topic": "fabric-init 三件产物的关系与边界",
+  "dimensions": ["architecture", "implementation", "decision"],
+  "relevant_files": [
+    {
+      "path": "packages/cli/src/bootstrap-guide.ts",
+      "annotation": "CLI 端 bootstrap/README.md 生成器：基于 templates/agents-md/{variants,AGENTS.md.template} 渲染，按 framework.kind 选模板",
+      "dimensions": ["architecture", "implementation"]
+    },
+    {
+      "path": "packages/shared/src/node/bootstrap-guide.ts",
+      "annotation": "Shared 端 bootstrap/README.md 生成器（buildBootstrapContent）：硬编码字符串拼装，doctor --fix 路径会用它。与 CLI 版本不同源",
+      "dimensions": ["architecture", "implementation", "decision"]
+    },
+    {
+      "path": "packages/cli/src/commands/init.ts",
+      "annotation": "fab init 主流程：buildInitialTaxonomyMarkdown 在 1390-1428 行；同时声明 bootstrap/INITIAL_TAXONOMY/forensic/events 写入路径",
+      "dimensions": ["architecture", "implementation"]
+    },
+    {
+      "path": "templates/agents-md/AGENTS.md.template",
+      "annotation": "bootstrap/README.md 的默认模板。文件名仍带 AGENTS.md 历史，但已不再生成根级 AGENTS.md，文件改写到 .fabric/bootstrap/README.md",
+      "dimensions": ["architecture", "decision"]
+    },
+    {
+      "path": "templates/agents-md/variants/cocos.md",
+      "annotation": "framework=cocos-creator 时的 bootstrap 变体；与 AGENTS.md.template 内容近似，仅调整说明文字",
+      "dimensions": ["architecture"]
+    },
+    {
+      "path": "templates/claude-skills/fabric-init/SKILL.md",
+      "annotation": "当前生效 SKILL.md：Matcha/Check-not-Ask/Architecture Review 批量审阅模型；3 Phase / 1 User Review Round；分区 framework/architecture_pattern/proposed_rule/domain_boundary；写入 .fabric/init-context.json + .fabric/rules/",
+      "dimensions": ["architecture", "implementation", "decision"]
+    },
+    {
+      "path": "packages/cli/templates/claude-skills/fabric-init/SKILL.md",
+      "annotation": "与 templates/claude-skills/ 镜像。两份 SKILL.md 通过 derive-skills.ts 生成（按 SOURCE.md 描述）",
+      "dimensions": ["implementation"]
+    },
+    {
+      "path": "packages/cli/templates/skill-source/fabric-init/SOURCE.md",
+      "annotation": "声明自己是 fabric-init skill 的 canonical source，描述旧版 3 Phases / 3 Rounds 模型（Framework Confirmation + Invariant Extraction ban/require/protect + Construction）。但实际派生出来的 SKILL.md 走的是新版 Matcha 模型，二者不一致 — 源真相裂变",
+      "dimensions": ["implementation", "decision"]
+    },
+    {
+      "path": "templates/codex-skills/fabric-init/SKILL.md",
+      "annotation": "Codex 端 SKILL.md：极简版本，只描述读取 forensic.json + bootstrap/README.md 后给出 next step 的指引；与 Claude 版差异显著",
+      "dimensions": ["architecture"]
+    },
+    {
+      "path": "docs/initialization.md",
+      "annotation": "权威文档：阐明 7 阶段 → bootstrap/README.md 是 Stage 2 写入的协议入口；INITIAL_TAXONOMY.md 也在 Stage 2 落盘；SKILL.md 在 Stage 3-6 接力。Matcha Phase 0 直接读 forensic.json，不读 INITIAL_TAXONOMY.md",
+      "dimensions": ["architecture"]
+    }
+  ],
+  "patterns": [
+    "三件产物均由 fab init 在 Stage 2 同步落盘（bootstrap/README.md、INITIAL_TAXONOMY.md、forensic.json、events.jsonl，及客户端 skill/hook）",
+    "bootstrap/README.md = 协议契约（runtime 锚点）；INITIAL_TAXONOMY.md = forensic 衍生的 L0/L1/L2 静态快照；SKILL.md = AI 接力工作流",
+    "SKILL.md (Matcha) 实际只从 forensic.json 取证据 (assertions[]/candidate_files[])，跳过 INITIAL_TAXONOMY.md",
+    "bootstrap/README.md 存在双源实现：CLI 端走模板渲染、shared 端硬编码（doctor --fix 链路）",
+    "skill-source/SOURCE.md 与派生出的 templates/claude-skills/fabric-init/SKILL.md 内容版本不一致（旧 interview 模型 vs 新 Matcha 模型）"
+  ],
+  "module_map": {
+    "fabric_init_pipeline": {
+      "stage_2_writers": [
+        "packages/cli/src/commands/init.ts (orchestrator)",
+        "packages/cli/src/bootstrap-guide.ts (bootstrap renderer)",
+        "buildInitialTaxonomyMarkdown @ init.ts:1390"
+      ],
+      "stage_3_to_6_consumer": [
+        "templates/claude-skills/fabric-init/SKILL.md (Matcha)",
+        "templates/codex-skills/fabric-init/SKILL.md (lightweight)"
+      ],
+      "doctor_fix_writer": [
+        "packages/shared/src/node/bootstrap-guide.ts (buildBootstrapContent — 独立硬编码)"
+      ],
+      "canonical_source_claim": [
+        "packages/cli/templates/skill-source/fabric-init/SOURCE.md（自称源真相，但内容已与 SKILL.md 不同步）"
+      ]
+    },
+    "artifact_consumption_graph": {
+      "forensic.json": ["bootstrap/README.md (no)", "INITIAL_TAXONOMY.md (yes — buildInitialTaxonomyMarkdown 取 framework/topology.key_dirs/candidate_files)", "SKILL.md (yes — Matcha Phase 0)"],
+      "INITIAL_TAXONOMY.md": ["SKILL.md (NOT consumed)", "doctor (referenced 仅作 ensure-existence)", "human reader (主要读者)"],
+      "bootstrap/README.md": ["SKILL.md (MUST 读取作为 contract)", "doctor (existence check)", "all clients (协议入口)"]
+    }
+  },
+  "questions_for_user": [
+    "INITIAL_TAXONOMY.md 是否仍承担 AI 流程中的输入角色？现状是仅作人工快照",
+    "skill-source/SOURCE.md 是要更新为 Matcha 模型，还是该删除（因实际派生器已分两套客户端模板自行维护）？",
+    "bootstrap/README.md 模板里仍残留 'AGENTS.md.template' 的命名/语义，是否应正式与 AGENTS.md 解耦？",
+    "shared 端 buildBootstrapContent 与 CLI 端模板渲染应否合一，避免 doctor --fix 与 init 内容漂移？"
+  ],
+  "_metadata": {
+    "phase": 2,
+    "files_inspected": 11,
+    "budget_used": "well within 15x100 limit"
+  }
+}
