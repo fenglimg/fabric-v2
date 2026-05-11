@@ -1,5 +1,5 @@
 {
-  "revision": "sha256:703c50e84b2e17c8016a7bf99ccbe34f22fbb956e8b84523330ad61f5dee3466",
+  "revision": "sha256:9a1e8936559bc115cfac27426e6ec3d3d206a7e1a0ec29af4bc9b796d525d41e",
   "nodes": {
     "KT-DEC-0001": {
       "file": ".fabric/knowledge/decisions/KT-DEC-0001.md",
@@ -177,6 +177,36 @@
         "must_read_if": "Decay thresholds: 90 / 30 / 14 days (1/4 of Tencent article baselines)"
       }
     },
+    "KT-DEC-0009": {
+      "file": ".fabric/knowledge/decisions/KT-DEC-0009--rc2-single-cjs-hook-across-clients.md",
+      "content_ref": ".fabric/knowledge/decisions/KT-DEC-0009--rc2-single-cjs-hook-across-clients.md",
+      "scope_glob": "decisions/KT-DEC-0009--rc2-single-cjs-hook-across-clients/**",
+      "deps": [
+        "L0"
+      ],
+      "priority": "medium",
+      "level": "L1",
+      "layer": "L1",
+      "topology_type": "mirror",
+      "hash": "sha256:f05d50a42b238ba27aba9acad93efb5530a4245da6b55e6e3b8fcbe09a1baa9d",
+      "stable_id": "KT-DEC-0009",
+      "identity_source": "declared"
+    },
+    "KT-DEC-9001": {
+      "file": ".fabric/knowledge/decisions/KT-DEC-9001--manual-rc3-fallback-test.md",
+      "content_ref": ".fabric/knowledge/decisions/KT-DEC-9001--manual-rc3-fallback-test.md",
+      "scope_glob": "decisions/KT-DEC-9001--manual-rc3-fallback-test/**",
+      "deps": [
+        "L0"
+      ],
+      "priority": "medium",
+      "level": "L1",
+      "layer": "L1",
+      "topology_type": "mirror",
+      "hash": "sha256:2a82468e986a3787df85c060fbfed84e2ab63035eeb801d4b0588017da4c387f",
+      "stable_id": "KT-DEC-9001",
+      "identity_source": "declared"
+    },
     "KT-GLD-0001": {
       "file": ".fabric/knowledge/guidelines/code-style.md",
       "content_ref": ".fabric/knowledge/guidelines/code-style.md",
@@ -273,6 +303,21 @@
         "MISSION_STATEMENT",
         "CONTEXT_INFO"
       ]
+    },
+    "KT-PIT-9101": {
+      "file": ".fabric/knowledge/pitfalls/KT-PIT-9101--rc4-dogfood-orphan-demote-fixture.md",
+      "content_ref": ".fabric/knowledge/pitfalls/KT-PIT-9101--rc4-dogfood-orphan-demote-fixture.md",
+      "scope_glob": "pitfalls/KT-PIT-9101--rc4-dogfood-orphan-demote-fixture/**",
+      "deps": [
+        "L0"
+      ],
+      "priority": "medium",
+      "level": "L1",
+      "layer": "L1",
+      "topology_type": "mirror",
+      "hash": "sha256:311cee17be60b346ca151e4c4c64dbb84770dc498849eb73a4e301f47fba7d13",
+      "stable_id": "KT-PIT-9101",
+      "identity_source": "declared"
     },
     "KT-PRO-0001": {
       "file": ".fabric/knowledge/processes/build-config.md",
