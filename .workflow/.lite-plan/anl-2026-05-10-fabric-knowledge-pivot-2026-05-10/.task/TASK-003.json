@@ -1,0 +1,83 @@
+{
+  "id": "TASK-003",
+  "title": "Implement path-decoupled stable_id counter mechanism (KP-/KT- monotonic allocator)",
+  "description": "Replace v1.x path-derived stable_id (agents-meta.ts:93-101) with a path-decoupled monotonic counter. Counter state lives in agents.meta.json under `counters.{KP|KT}`. Allocator function increments the appropriate counter when a NEW knowledge entry is created; existing entries keep their id across `git mv` (the only legal mutation is layer flip in rc.3, which regenerates id with knowledge.layer_changed event — out of scope here, just structurally supported). Provides `allocateKnowledgeId(layer, type, meta)` and `loadCountersFromMeta(meta)` / `persistCountersToMeta(meta, counters)` helpers used by TASK-007 scan and (later) rc.2 fab_extract_knowledge. Path-derived deriveAgentsMetaStableId remains as fallback for AGENTS.md/bootstrap-only edge cases.",
+  "scope": "packages/shared/src/schemas/agents-meta.ts + packages/server/src/services/",
+  "action": "Implement",
+  "files": [
+    {
+      "path": "packages/shared/src/schemas/agents-meta.ts",
+      "action": "modify",
+      "target": "stable_id derivation logic + new allocator",
+      "change": "Add `allocateKnowledgeId(layer: KnowledgeLayer, type: KnowledgeType, currentCounters: Counters): { id: string, nextCounters: Counters }` — pure function that increments the appropriate counter (KP for personal, KT for team) and returns formatted id + new counters object. Keep `deriveAgentsMetaStableId` for non-knowledge files (AGENTS.md/bootstrap) but mark it explicitly as fallback path. Update `withDerivedAgentsMetaNodeDefaults` to NOT auto-derive stable_id when a node has explicit knowledge metadata (type/layer present) — declared id wins."
+    },
+    {
+      "path": "packages/server/src/services/knowledge-id-allocator.ts",
+      "action": "create",
+      "target": "new service file",
+      "change": "New service that wraps allocateKnowledgeId with persistence. Exposes: `class KnowledgeIdAllocator { constructor(metaPath); async allocate(layer, type): Promise<string>; async getCounters(): Promise<Counters>; }`. Reads agents.meta.json, allocates, persists atomically (write to .tmp then rename). Handles concurrency via single-writer assumption (fabric is CLI-driven, no concurrent processes). Used by TASK-007 scan to mint baseline ids."
+    },
+    {
+      "path": "packages/server/src/services/rule-meta-builder.ts",
+      "action": "modify",
+      "target": "buildRuleMeta + writeRuleMeta",
+      "change": "When buildRuleMeta encounters a node with frontmatter id field (set by TASK-004 parser change), use that id as stable_id verbatim — DO NOT regenerate from path. When writeRuleMeta serializes agents.meta.json, include `counters` field (initialized to {KP:0, KT:0} if absent). Never decrement counter on file delete (monotonic property)."
+    }
+  ],
+  "implementation": [
+    "Read agents-meta.ts:79-112 (withDerivedAgentsMetaNodeDefaults + deriveAgentsMetaStableId + deriveAgentsMetaIdentitySource) to understand current derivation flow",
+    "Add allocateKnowledgeId pure function in agents-meta.ts (no I/O)",
+    "Create packages/server/src/services/knowledge-id-allocator.ts with persistence wrapper class",
+    "Modify withDerivedAgentsMetaNodeDefaults: if node.stable_id is /^K[PT]-/ regex match → identity_source='declared'; skip path derivation",
+    "Modify rule-meta-builder.ts buildRuleMeta to honor declared knowledge ids",
+    "Modify rule-meta-builder.ts writeRuleMeta to persist counters envelope",
+    "Test: simulate `git mv .fabric/knowledge/decisions/foo.md .fabric/knowledge/guidelines/foo.md` (which would change v1.x derived id) — verify stable_id stays the same in regenerated meta",
+    "Test: counter monotonicity — allocate 3 KP-D ids, delete file with KP-D-2, allocate again → new id is KP-D-4 (NOT KP-D-2 reused)"
+  ],
+  "reference": {
+    "pattern": "Existing identity_source 'declared' vs 'derived' bifurcation at agents-meta.ts:103-112; atomic file write pattern from doctor.ts (write .tmp then rename)",
+    "files": ["packages/shared/src/schemas/agents-meta.ts:79-112", "packages/server/src/services/rule-meta-builder.ts:559 (toAgentsCompatiblePath)", "packages/server/src/services/doctor.ts (atomic writes)"],
+    "examples": "Reuse the 'declared identity_source' branch — knowledge entries are 'declared' just like rules with explicit <!-- fab:rule-id --> markers. Counter persistence pattern mirrors agents.meta.json revision sha256 pattern."
+  },
+  "convergence": {
+    "criteria": [
+      "allocateKnowledgeId({layer:'team', type:'decision'}, {KP:0,KT:5}) returns id='KT-D-6' and nextCounters={KP:0,KT:6}",
+      "Two sequential allocations of same (layer,type) produce monotonically increasing counters (KT-D-6 then KT-D-7)",
+      "git mv test: file with frontmatter id='KP-G-3' moved between subdirs → buildRuleMeta produces stable_id='KP-G-3' (NOT regenerated from new path)",
+      "Counter never resets or decrements across delete-then-allocate sequence (KP-D-2 deleted → next allocation produces KP-D-4 if counter was at 3)",
+      "agents.meta.json after rc.1 init contains `counters: {KP: 0, KT: N}` where N = number of team baseline entries from scan",
+      "withDerivedAgentsMetaNodeDefaults returns identity_source='declared' for any stable_id matching /^K[PT]-/",
+      "Existing v1.x test fixtures (without counters field) still load via agentsMetaSchema with default counters {KP:0, KT:0}"
+    ]
+  },
+  "depends_on": ["TASK-002"],
+  "cli_execution_id": "anl-2026-05-10-fabric-knowledge-pivot-2026-05-10-TASK-003",
+  "cli_execution": { "strategy": "resume", "resume_from": "anl-2026-05-10-fabric-knowledge-pivot-2026-05-10-TASK-002" },
+  "rationale": {
+    "chosen_approach": "Pure allocator function + thin persistence wrapper; counters in existing agents.meta.json envelope",
+    "alternatives_considered": ["Separate counters.json file (rejected — adds another durable artifact + sync risk)", "UUID-based ids (rejected — not human-readable per handoff key_findings)", "Hash-based ids (rejected — not monotonic; collisions possible)"],
+    "decision_factors": ["Human-readable per discussion decision_context line 8", "Monotonic for audit replay", "Reuses existing meta-file durability"],
+    "tradeoffs": "Counter envelope means agents.meta.json is the single point of truth; corruption/concurrency risk exists but acceptable per single-writer CLI assumption"
+  },
+  "test": {
+    "manual_checks": [
+      "Inspect agents.meta.json after multiple init runs — counters strictly increasing",
+      "Move file between knowledge type subdirs — meta stable_id unchanged"
+    ],
+    "success_metrics": [
+      "100% of git mv scenarios preserve stable_id",
+      "0 counter regressions across 50-iteration allocation stress test",
+      "Allocator latency <5ms per call (p99)"
+    ],
+    "unit": [
+      "knowledge-id-allocator.test.ts: monotonic_allocation",
+      "knowledge-id-allocator.test.ts: layer_type_independence",
+      "knowledge-id-allocator.test.ts: persistence_roundtrip",
+      "agents-meta.test.ts: declared_id_preserved_across_mv"
+    ],
+    "integration": [
+      "rule-meta-builder.test.ts: build_meta_honors_declared_knowledge_id"
+    ]
+  },
+  "estimated_minutes": 75
+}

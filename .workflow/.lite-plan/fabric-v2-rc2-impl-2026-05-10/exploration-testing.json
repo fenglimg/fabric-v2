@@ -1,0 +1,298 @@
+{
+  "project_structure": "pnpm monorepo with three workspaces under packages/ — server (MCP tools + services), cli (fab/fabric command + scaffolding + scan), shared (schemas, atomic-write, i18n). Each package owns its own vitest.config.ts and its own coverage thresholds. Server tests live next to source as services/<name>.test.ts plus a top-level __tests__/ for integration/snapshot tests; CLI tests live in __tests__/ with an integration/ subfolder; shared uses test/ with integration/ and property-based/ subfolders. Root package.json fans out via `pnpm -r --if-present test` and `test:coverage`. Vitest 3.2.4 is the only test runner in the repo (no jest, no mocha).",
+  "relevant_files": [
+    {
+      "path": "packages/server/vitest.config.ts",
+      "relevance": 0.95,
+      "rationale": "Defines the server-package coverage gate (lines/statements ≥75) and reporter set used by every new server service — extract-knowledge.ts will be measured against this exact config.",
+      "role": "config",
+      "discovery_source": "bash-scan",
+      "key_code": [
+        {
+          "symbol": "defineConfig.test.coverage",
+          "location": "L6-L17",
+          "description": "v8 provider, reporters ['text','html','json-summary'], include 'src/**/*.ts', excludes test/types files, thresholds {lines:75, statements:75}. New rc.2 code must lift the per-file branch above this floor; the grill-followup ≥90% target is stricter than the package floor so it must be enforced in the rc.2 gate command, not by editing this file."
+        }
+      ],
+      "topic_relation": "Testing exploration: this is the source of truth for the server-side coverage command/report shape extract-knowledge.ts will be judged by; reporter 'json-summary' is what enables claude-code to grep coverage from CLI output."
+    },
+    {
+      "path": "packages/cli/vitest.config.ts",
+      "relevance": 0.9,
+      "rationale": "Governs CLI-package tests where archive-hint.js scaffolding + fabric-archive skill emission will land; threshold is lower (70) than server's, and includes a `__tests__/**/*.test.ts` glob plus alias remaps that allow tests to import server/shared via source.",
+      "role": "config",
+      "discovery_source": "bash-scan",
+      "key_code": [
+        {
+          "symbol": "defineConfig.resolve.alias + test",
+          "location": "L8-L36",
+          "description": "Alias remaps @fenglimg/fabric-server and @fenglimg/fabric-shared to source TS so CLI tests run without prebuild. include='__tests__/**/*.test.ts'. Coverage threshold {lines:70, statements:70}, same v8/json-summary reporter set."
+        }
+      ],
+      "topic_relation": "Testing exploration: archive-hint.js (a hook script shipped via templates/) and any new init-time skill emission will be exercised here; the alias block is the precedent for cross-package test imports."
+    },
+    {
+      "path": "packages/shared/vitest.config.ts",
+      "relevance": 0.6,
+      "rationale": "Third coverage profile (lines/statements ≥85) — relevant only if any rc.2 schema additions land in shared; reference for the highest threshold in the repo.",
+      "role": "config",
+      "discovery_source": "bash-scan",
+      "topic_relation": "Testing exploration: shows that thresholds are tuned per-package (75/70/85), so the rc.2 ≥90% target must be applied at task gate level, not by overwriting this config."
+    },
+    {
+      "path": "packages/server/src/services/plan-context.test.ts",
+      "relevance": 0.95,
+      "rationale": "Direct precedent for an MCP-tool-backing service test — extract-knowledge.ts will mirror this file's shape (collocated *.test.ts, vitest, tmp project fixture, event-ledger assertion).",
+      "role": "pattern_reference",
+      "discovery_source": "bash-scan",
+      "key_code": [
+        {
+          "symbol": "afterEach + createTempProject",
+          "location": "L10-L16, L387-L391",
+          "description": "Canonical fixture pattern: per-suite tempDirs[] array, mkdtemp(join(tmpdir(),'fabric-<service>-')) helper, afterEach drains and rm({recursive:true,force:true}) every dir. Every service test in the repo uses this exact shape. extract-knowledge.ts test should copy verbatim."
+        },
+        {
+          "symbol": "Event-emission assertion",
+          "location": "L154-L168",
+          "description": "After invoking the service, the test calls readEventLedger(projectRoot,{event_type:'<name>'}) and asserts events array contains expect.objectContaining({event_type, ...payload, correlation_id, session_id}). This is the repo-wide pattern for verifying MCP services emit the right ledger entry; extract-knowledge MUST emit a 'knowledge_extracted' (or rc.2-named) event and assert idempotently."
+        },
+        {
+          "symbol": "include_deprecated wiring test",
+          "location": "L337-L384",
+          "description": "Pattern for asserting that calling the service twice with different input flags yields stable output — calls planContext twice with default and include_deprecated:true, asserts the description_index is identical. This is the closest existing precedent for an idempotency contract test in the services layer."
+        }
+      ],
+      "topic_relation": "Testing exploration: this is the single best template for the new fab_extract_knowledge service test — same package, same runner, same fixture/mocking/event-assertion idioms; rc.2 idempotency check on (source_session,type,slug) should follow the include_deprecated dual-call shape."
+    },
+    {
+      "path": "packages/server/src/services/event-ledger.test.ts",
+      "relevance": 0.85,
+      "rationale": "Authoritative pattern for asserting Event-Ledger entries — appendEventLedgerEvent + readEventLedger contract that extract-knowledge will exercise to record idempotent runs.",
+      "role": "pattern_reference",
+      "discovery_source": "bash-scan",
+      "key_code": [
+        {
+          "symbol": "append-and-read assertion",
+          "location": "L24-L62",
+          "description": "Calls appendEventLedgerEvent(projectRoot,{event_type, payload..., correlation_id, session_id}), then readEventLedger(projectRoot) and asserts entries equals [event] + warnings empty + raw events.jsonl contains the JSON-stringified event_type. Demonstrates the exact (kind:'fabric-event', schema_version:1, event_type, id:/^event:/, ts) envelope to assert against."
+        },
+        {
+          "symbol": "Concurrent-append serialization",
+          "location": "L64-L100",
+          "description": "5 parallel appendEventLedgerEvent calls, then asserts the ledger is line-correct. Pattern useful if rc.2 idempotency relies on a single-writer guarantee — extract-knowledge re-runs will append a 'knowledge_extracted_skipped' (or similar) event and must not corrupt the ledger."
+        }
+      ],
+      "topic_relation": "Testing exploration: rc.2 idempotency proof rests on the Event Ledger being authoritative and append-correct; this test pins the contract extract-knowledge will rely on."
+    },
+    {
+      "path": "packages/server/src/services/rule-meta-builder.test.ts",
+      "relevance": 0.7,
+      "rationale": "Contains an explicit idempotency assertion comment (L559-561) and the canonical pattern for second-invocation no-op verification.",
+      "role": "pattern_reference",
+      "discovery_source": "bash-scan",
+      "key_code": [
+        {
+          "symbol": "auto-mkdir idempotency check",
+          "location": "L540-L563",
+          "description": "Runs computeRulesBasedAgentsMeta(projectRoot), then for each subdir does `expect(await mkdir(dirPath,{recursive:true})).toBeUndefined()` — leveraging Node's mkdir-recursive returning undefined when the directory already exists as the idempotency oracle. Useful but not directly applicable to (source_session,type,slug) idempotency, which is logical not filesystem-level."
+        }
+      ],
+      "topic_relation": "Testing exploration: shows the repo's vocabulary for idempotency is filesystem-side (already-exists no-op). For rc.2 fab_extract_knowledge, idempotency is keyed on a logical tuple — closest precedent is scan-init.test.ts L202 'reruns_are_no_op_with_zero_diff'."
+    },
+    {
+      "path": "packages/cli/__tests__/integration/scan-init.test.ts",
+      "relevance": 0.95,
+      "rationale": "Single best precedent for a logical-key idempotency test (rerun produces zero diff, second written_stable_ids is empty, second skipped equals first written) — this is the exact shape the rc.2 fab_extract_knowledge idempotency test should adopt.",
+      "role": "pattern_reference",
+      "discovery_source": "bash-scan",
+      "key_code": [
+        {
+          "symbol": "reruns_are_no_op_with_zero_diff",
+          "location": "L202-L221",
+          "description": "Calls runInitScan twice on the same fixture; asserts first.written_stable_ids.length≥4, second.written_stable_ids=[], second.skipped_stable_ids.sort() equals first.written_stable_ids.sort(); then re-reads events.jsonl and asserts there are exactly 2 init_scan_completed events with the second carrying empty written_stable_ids. THIS is the template for fab_extract_knowledge idempotency on (source_session,type,slug) — first call writes a knowledge file with allocated id; second call returns skipped=[that id], written=[], emits a second 'knowledge_extracted' event with written=[]."
+        },
+        {
+          "symbol": "modifying_forensic_keeps_ids_but_updates_files",
+          "location": "L223-L254",
+          "description": "Tests partial-rerun semantics: mutate input, rerun, assert second.written_stable_ids ⊆ first.written_stable_ids (no counter regression, no new id allocation for unchanged slots). Directly applicable if rc.2 extract-knowledge re-extracting the same (source_session,type,slug) but with updated body should overwrite without re-allocating."
+        },
+        {
+          "symbol": "missing_forensic_exits_with_error",
+          "location": "L256-L264",
+          "description": "Negative-path pattern: rejects with /forensic\\.json/ regex, then asserts no partial writes occurred (existsSync(.fabric/knowledge)=false, agents.meta.json absent). Shows error tests must verify no side effects, not just that an error was thrown."
+        }
+      ],
+      "topic_relation": "Testing exploration: the rc.2 idempotency-on-(source_session,type,slug) requirement maps 1-to-1 to this file's reruns_are_no_op_with_zero_diff structure; copy this shape verbatim."
+    },
+    {
+      "path": "packages/cli/__tests__/init-atomic.test.ts",
+      "relevance": 0.85,
+      "rationale": "Demonstrates the fixture-driven side-effect test pattern (call init, walk created tree, assert files) which a CLI test for archive-hint.js scaffolding emission will replicate.",
+      "role": "pattern_reference",
+      "discovery_source": "bash-scan",
+      "key_code": [
+        {
+          "symbol": "init+walk-tmpdir+assert",
+          "location": "L40-L62",
+          "description": "Pattern: createWerewolfFixtureRoot(prefix) → tempRoots.push → await initFabric(target) → recursive readdirSync to collect created files → expect specific contents. Used for asserting both presence and absence of files (.tmp cleanup). archive-hint.js scaffolding test: init, then assertExists(.claude/hooks/archive-hint.js), readFileSync to assert shebang/cross-platform shape."
+        },
+        {
+          "symbol": "atomicWrite spy pattern",
+          "location": "L83-L100",
+          "description": "vi.spyOn(atomicWriteModule,'atomicWriteText'/'atomicWriteJson') then filter spy.mock.calls for path-suffix matches to assert which files were/weren't written atomically. Useful for archive-hint.js: hook scripts SHOULD be atomic-written same as other config; this pattern verifies that contract."
+        }
+      ],
+      "topic_relation": "Testing exploration: archive-hint.js installation will be exercised exactly like events.jsonl scaffolding here — fixture-root, init, post-condition tree assertions."
+    },
+    {
+      "path": "packages/cli/__tests__/integration/init-guard.test.ts",
+      "relevance": 0.85,
+      "rationale": "Byte-identical idempotency pattern using sha256 of agents.meta.json across two reapply runs — the textbook 'second run produces identical artifact' test, applicable to rc.2 fabric-archive skill template emission.",
+      "role": "pattern_reference",
+      "discovery_source": "bash-scan",
+      "key_code": [
+        {
+          "symbol": "byte-identical reapply",
+          "location": "L77-L94",
+          "description": "Two await initFabric(target,{reapply:true,force:true}) calls, sha256 of the resulting agents.meta.json captured between calls, expect(hash1).toBe(hash2). This is the gold standard for 'idempotent on disk' — a fabric-archive skill scaffold test should hash the skill file contents after two init runs and assert equality."
+        },
+        {
+          "symbol": "events.jsonl prefix preservation",
+          "location": "L96-L115",
+          "description": "Pre-seeds events.jsonl with a sentinel event, runs init twice with reapply:true, asserts both readFileSync results startsWith(sentinel+'\\n'). Pattern for rc.2: extract-knowledge must NOT truncate events.jsonl — its idempotency check must be sentinel-preserving."
+        }
+      ],
+      "topic_relation": "Testing exploration: combines the two rc.2 needs — idempotency proof + Event Ledger preservation — in a single existing pattern."
+    },
+    {
+      "path": "packages/cli/__tests__/helpers/init-test-utils.ts",
+      "relevance": 0.8,
+      "rationale": "Shared CLI test helpers — createWerewolfFixtureRoot/cleanupFixtureRoot/writeFixtureFile — every new init-side test (archive-hint.js, fabric-archive skill scaffold) will reuse these.",
+      "role": "pattern_reference",
+      "discovery_source": "bash-scan",
+      "key_code": [
+        {
+          "symbol": "createWerewolfFixtureRoot",
+          "location": "L7-L16",
+          "description": "cpSync the examples/werewolf-minigame-stub fixture to a tmpdir-randomized path, strip AGENTS.md + .fabric + .claude so init sees a pristine target. Returns the root path. Adds prefix-${pid}-${Date.now()}-${random} for parallelism safety."
+        },
+        {
+          "symbol": "writeFixtureFile / setProcessTty",
+          "location": "L22-L60",
+          "description": "writeFixtureFile mkdirSync-recursive + writeFileSync utf8 — used to seed pre-existing files for legacy/precondition tests. setProcessTty toggles isTTY descriptors and returns a restore-fn — relevant if archive-hint.js prompts or detects interactive mode."
+        }
+      ],
+      "topic_relation": "Testing exploration: the rc.2 hook-script + skill scaffold tests live in packages/cli/__tests__/, so they inherit this helper module."
+    },
+    {
+      "path": "packages/server/__tests__/signal-handler.test.ts",
+      "relevance": 0.5,
+      "rationale": "Documents the repo's policy on testing scripts/binaries: in-process invocation is preferred over child_process spawn — directly informs how archive-hint.js (a Node hook script) should be tested.",
+      "role": "pattern_reference",
+      "discovery_source": "bash-scan",
+      "key_code": [
+        {
+          "symbol": "in-process vs spawn rationale",
+          "location": "L1-L14",
+          "description": "Top-of-file comment: 'spawn-based test is closer to production reality but is unreliable… The in-process spy approach exercises the same code paths… A separate smoke test (not run in CI) can cover the full spawn lifecycle.' This is the repo's established stance — archive-hint.js should be tested by importing/invoking its main function in-process, not by child_process.spawn."
+        },
+        {
+          "symbol": "describe.skipIf(process.platform==='win32')",
+          "location": "L25",
+          "description": "Pattern for platform-skipped suites — relevant because archive-hint.js is explicitly cross-platform and any spawn-based test would need win32 skip, while an in-process test would work on all platforms."
+        }
+      ],
+      "topic_relation": "Testing exploration — hook-script angle: this is the only test in the repo that confronts 'how do we test a process-level Node script' and explicitly chose in-process. archive-hint.js should follow."
+    },
+    {
+      "path": "packages/server/package.json",
+      "relevance": 0.85,
+      "rationale": "Declares the test commands (test, test:coverage) and supertest/vitest deps that are the entry points for measuring extract-knowledge coverage.",
+      "role": "config",
+      "discovery_source": "bash-scan",
+      "key_code": [
+        {
+          "symbol": "scripts.test / scripts.test:coverage",
+          "location": "L10-L13",
+          "description": "test='vitest run', test:coverage='vitest run --coverage'. Combined with vitest.config.ts reporter ['text','html','json-summary'], the json-summary is the parseable channel for claude-code coverage detection (coverage/coverage-summary.json)."
+        }
+      ],
+      "topic_relation": "Testing exploration: locks the coverage command shape — `pnpm --filter @fenglimg/fabric-server test:coverage` is the rc.2 gate command for the new service."
+    },
+    {
+      "path": "package.json",
+      "relevance": 0.75,
+      "rationale": "Root monorepo runner — defines the all-packages coverage entry point that the rc.2 gate will most likely invoke once across all three workspaces.",
+      "role": "config",
+      "discovery_source": "bash-scan",
+      "key_code": [
+        {
+          "symbol": "scripts.test:coverage",
+          "location": "L8",
+          "description": "test:coverage='pnpm -r --if-present test:coverage' fans out to every package's own test:coverage script. Each workspace then writes its own coverage/coverage-summary.json that claude-code can parse."
+        }
+      ],
+      "topic_relation": "Testing exploration: this is the single command rc.2 day-N gate should invoke; per-workspace summaries are then aggregated for the ≥90% per-file check."
+    },
+    {
+      "path": "packages/cli/templates/bootstrap",
+      "relevance": 0.6,
+      "rationale": "Existing template directory layout — fabric-archive skill template + archive-hint.js will be added as siblings to bootstrap; current contents establish the precedent for what counts as a tracked template asset.",
+      "role": "context_only",
+      "discovery_source": "bash-scan",
+      "topic_relation": "Testing exploration: only `bootstrap/` and `agents-md/` exist today. There is NO templates/skills/ or templates/hooks/ directory and NO test that asserts skill/hook template contents — rc.2 must establish both the directory and a contract test that validates the emitted files."
+    }
+  ],
+  "patterns": "test_runner: vitest 3.2.4 (only runner — no jest/mocha/ava). test_file_naming: collocated `<service>.test.ts` in packages/server/src/services/ for unit tests; packages/cli/__tests__/ and packages/cli/__tests__/integration/ for CLI tests; packages/shared/test/ for shared tests. fixture_loading: tempDirs[] + mkdtemp(join(tmpdir(),'fabric-<scope>-')) at suite top, afterEach drains+rmSync({recursive:true,force:true}); CLI tests additionally use createWerewolfFixtureRoot which cpSync-copies examples/werewolf-minigame-stub. mocking_style: vi.spyOn(<module>, '<fn>') with afterEach vi.restoreAllMocks(); module-level imports (no jest.mock-style auto-mock); supertest for HTTP integration. event_emission_assertion: const {events}=await readEventLedger(projectRoot,{event_type:'<x>'}); expect(events).toEqual([expect.objectContaining({event_type, ...payload, correlation_id, session_id})]); — universal across plan-context, doctor, rule-sections, audit-log, read-ledger, event-ledger tests. idempotency_pattern: dual-call → assert second result is the empty/no-op variant (e.g. written_stable_ids=[], skipped_stable_ids=first.written, sha256 byte-equal). Three concrete forms: (1) reruns_are_no_op_with_zero_diff (scan-init.test.ts L202) — return-value zero-diff; (2) byte-identical reapply (init-guard.test.ts L77) — sha256 equality on output artifact; (3) mkdir-undefined oracle (rule-meta-builder.test.ts L559) — filesystem-level. coverage_command: per-package `pnpm test:coverage` = `vitest run --coverage`; root fan-out `pnpm test:coverage` = `pnpm -r --if-present test:coverage`. coverage_threshold: server lines/statements ≥75, cli ≥70, shared ≥85 — rc.2 ≥90% target is HIGHER than every existing package floor and must be enforced at gate level (e.g. parsing per-file lines in coverage-summary.json), not by editing vitest configs. coverage_format: v8 provider, reporters ['text','html','json-summary'] → coverage/coverage-summary.json (per-file lines/statements/branches/functions pct) is the CLI-parseable channel; coverage/index.html is for humans only.",
+  "dependencies": "Test-time deps (declared in packages/server/package.json devDependencies): vitest ^3.2.4, supertest ^7.2.2, @types/supertest ^7.2.0, zod-to-json-schema (used by tool-contracts.test.ts for schema snapshot tests). CLI test-time: vitest only (aliased imports of fabric-server/fabric-shared from source — no build needed). Shared test-time: vitest only. Root devDependencies: @vitest/coverage-v8 ^3.2.4 — this is what supplies the v8 coverage provider referenced in every workspace vitest.config. Internal: tests import readEventLedger / appendEventLedgerEvent from `./event-ledger.js` for assertion (every service test uses this), atomicWriteText/atomicWriteJson from @fenglimg/fabric-shared/node/atomic-write for spy-based atomicity tests.",
+  "integration_points": "extract-knowledge.ts service test integrates at three points: (1) Event Ledger — must call readEventLedger to assert a 'knowledge_extracted'-shaped event with correlation_id/session_id (mirror plan-context.test.ts L154-168); (2) MCP tool contract — if extract-knowledge surfaces as fab_extract_knowledge MCP tool, packages/server/__tests__/tool-contracts.test.ts already golden-snapshots input/output schemas via zodToJsonSchema; rc.2 must add the new tool to that contracts map and run `pnpm test -u` to baseline; (3) HTTP endpoint integration — packages/server/__tests__/integration/http-endpoints.test.ts is the precedent for end-to-end MCP-over-HTTP tests if extract-knowledge is exposed there. fabric-archive skill + archive-hint.js integrate at the CLI scaffolding boundary — initFabric(target) flow in packages/cli/src/commands/init.ts; tests live in packages/cli/__tests__/init-atomic.test.ts (file-creation assertions) and packages/cli/__tests__/integration/init-guard.test.ts (idempotent reapply). Hook-script invocation contract: precedent is signal-handler.test.ts in-process pattern — import the script's exported main and call programmatically; spawn-based smoke tests are explicitly off-CI per repo policy.",
+  "constraints": "Per-package coverage thresholds (server 75, cli 70, shared 85) are LOWER than the rc.2 ≥90% per-file target — gate enforcement must happen outside vitest.config.ts (a separate parsing step over coverage-summary.json) or the test:coverage command itself will pass at 75%. claude-code coverage parsing requires the json-summary reporter which is already configured; do NOT remove 'json-summary' from any vitest.config.ts. Vitest 3.2.4 is pinned at root and per-package — major-version bumps would break property-based-test patterns in shared/test/property-based/atomic-write.test.ts. The repo has NO existing pattern for testing standalone shell-invokable Node scripts (archive-hint.js); the closest precedent (signal-handler.test.ts) explicitly rejects child_process.spawn in CI and recommends in-process invocation. tempDirs[] cleanup in afterEach is universal — any new test that creates filesystem state must follow this, otherwise CI parallelism leaks tmpdir entries. Cross-platform: signal-handler.test.ts uses describe.skipIf(process.platform==='win32') — if archive-hint.js needs platform-specific test branches, follow this skip-style.",
+  "clarification_needs": [
+    {
+      "question": "How should archive-hint.js (a Node hook script invoked by host CLIs out-of-process) be tested?",
+      "context": "There is NO precedent in the repo for testing a Node script via child_process.spawn. signal-handler.test.ts (the closest analog) explicitly rejects spawn for CI and uses in-process invocation. archive-hint.js will be invoked by Claude Code/Cursor/Codex CLI hook runners, not by Fabric itself — so an in-process test asserts the script's contract (input → side effects + exit code) without proving the wrapper actually invokes it.",
+      "options": [
+        "In-process: export a default `main(argv,env,stdio)` from archive-hint.js, import it in the test, assert side effects and return value (mirrors signal-handler.test.ts).",
+        "Subprocess smoke test: spawn `node archive-hint.js` with mocked argv/env, assert stdout + exit code; mark as describe.skipIf(process.env.CI) so flakiness stays out of CI gate.",
+        "Both: in-process for unit coverage (counts toward ≥90%) + a single off-CI smoke test for end-to-end realism."
+      ],
+      "recommended": 2
+    },
+    {
+      "question": "Where does the rc.2 ≥90% per-file coverage gate get enforced — vitest config thresholds, or a separate post-coverage script?",
+      "context": "Today the per-package vitest.config.ts thresholds are 75/70/85 (lines/statements). Bumping any of them to 90 would make ALL existing files under 90% fail the gate, blocking rc.2 unrelated work. A separate gate script can parse coverage-summary.json and assert ≥90% only for the rc.2 new files (extract-knowledge.ts, archive-hint.js, anything emitted by fabric-archive skill scaffolder).",
+      "options": [
+        "Edit vitest.config.ts thresholds to 90 in each package — simplest, but breaks existing files immediately.",
+        "Add a per-file gate script (e.g. packages/server/scripts/check-rc2-coverage.mjs) that reads coverage/coverage-summary.json, filters the rc.2-touched paths, and asserts each ≥90 — narrowly scoped to new code per the grill-followup convergence.",
+        "Hybrid: keep vitest.config.ts thresholds as-is for the package floor, add a coverage-gate task into the lite-plan day-N gate that calls a small parser."
+      ],
+      "recommended": 1
+    },
+    {
+      "question": "What identifies an idempotent fab_extract_knowledge call — exact tuple match (source_session,type,slug) or content-addressed hash of (source_session,type,slug,body)?",
+      "context": "Two existing precedents diverge: scan-init.test.ts treats unchanged input as zero-diff (skipped=first.written), but modifying_forensic_keeps_ids_but_updates_files re-writes the SAME stable_id with new body when input changes. rc.2's stated key is (source_session,type,slug) but the test assertion shape depends on whether re-extracting the same triple with different body content overwrites or skips.",
+      "options": [
+        "Strict tuple idempotency: same (source_session,type,slug) → always skip second time, regardless of body change. Mirrors scan-init reruns_are_no_op_with_zero_diff exactly.",
+        "Tuple-keyed upsert: same triple → reuse the stable_id but rewrite body if it diverges (mirrors modifying_forensic_keeps_ids_but_updates_files). Test asserts second.written ⊆ first.written, no counter regression.",
+        "Content-addressed: hash (triple+body) → skip iff hash matches; emit knowledge_extracted_skipped event with content_hash field for the gate to verify."
+      ],
+      "recommended": 1
+    },
+    {
+      "question": "Should fabric-archive skill template emission be tested via a contract test (templates/skills/* file existence + frontmatter parse) or via an integration test through initFabric(target)?",
+      "context": "Today there is NO templates/skills/ directory and NO test asserting skill scaffold output. init-atomic.test.ts proves files-after-init contracts; init-guard.test.ts proves byte-identical reapply. A contract test on the template source itself (without running init) would catch frontmatter regressions cheaply; an integration test catches scaffolding-pipeline regressions but is slower.",
+      "options": [
+        "Contract-only: read templates/skills/fabric-archive.md, parse frontmatter, assert required fields — fast, no fixture cost, but doesn't prove init writes it correctly.",
+        "Integration-only: run initFabric on a fixture, assert .claude/skills/fabric-archive.md exists with correct content — proves end-to-end but slower.",
+        "Both: contract test next to template (cheap), integration test in __tests__/integration/init-skills.test.ts (cross-cutting). This matches how scan-init is covered today."
+      ],
+      "recommended": 2
+    }
+  ],
+  "_metadata": {
+    "timestamp": "2026-05-10T00:00:00Z",
+    "task_description": "Execute testing exploration for Fabric v2.0 rc.2 — focused on existing test conventions for new MCP tool (extract-knowledge.ts), Skill (fabric-archive), and hook script (archive-hint.js). Coverage target ≥90% for new code per grill-followup convergence.",
+    "source": "cli-explore-agent",
+    "exploration_angle": "testing"
+  }
+}

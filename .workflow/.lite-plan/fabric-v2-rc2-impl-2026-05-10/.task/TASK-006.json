@@ -1,0 +1,101 @@
+{
+  "id": "TASK-006",
+  "title": "Author integration tests for init wiring (skill install + hook install + idempotent re-init)",
+  "scope": "packages/cli/__tests__/integration (new test files)",
+  "action": "Test",
+  "description": "Author vitest integration tests covering the full TASK-005 init+hooks pipeline. Three test files: (1) packages/cli/__tests__/integration/init-skills.test.ts — fabric init copies SKILL.md to .claude/skills/ and .codex/skills/; pointer line appended to AGENTS.md/CLAUDE.md/.cursor/rules; idempotent re-init produces byte-identical SKILL.md (sha256 equality). (2) packages/cli/__tests__/integration/init-hooks.test.ts — fabric init copies archive-hint.cjs to .claude/hooks/ and .codex/hooks/ (POSIX chmod +x verified); .claude/settings.json gets hooks.Stop[] entry merged without clobbering pre-seeded content; .codex/hooks.json populated; re-init does NOT duplicate Stop entry (dedupe by command). (3) packages/cli/__tests__/contract/hook-config-templates.test.ts — read templates/hooks/configs/*.json files and assert Claude config matches doctor.test.ts:141 schema verbatim, Codex config is valid JSON parsing.",
+  "files": [
+    {
+      "path": "packages/cli/__tests__/integration/init-skills.test.ts",
+      "action": "create",
+      "target": "vitest skill-install integration suite",
+      "change": "Use createWerewolfFixtureRoot helper. Tests: (1) `init writes SKILL.md to .claude/skills/fabric-archive/`. (2) `init writes SKILL.md to .codex/skills/fabric-archive/` (assuming Codex detection true in fixture). (3) `init appends pointer line to AGENTS.md exactly once on re-init`. (4) `re-init produces byte-identical SKILL.md` — capture sha256 between runs (mirror init-guard.test.ts:77-94). (5) `Cursor project (hook:false but detected) gets skill but NOT hook config`. (6) `unsupported clients get neither skill nor hook`."
+    },
+    {
+      "path": "packages/cli/__tests__/integration/init-hooks.test.ts",
+      "action": "create",
+      "target": "vitest hook-install integration suite",
+      "change": "Use createWerewolfFixtureRoot helper. Tests: (1) `init copies archive-hint.cjs to .claude/hooks/` — readFileSync content equality with template source. (2) `init copies archive-hint.cjs to .codex/hooks/`. (3) `POSIX: archive-hint.cjs has +x bit` — describe.skipIf(process.platform==='win32'); use stat to assert mode & 0o111. (4) `init merges hooks.Stop[] entry into pre-seeded .claude/settings.json without clobbering` — pre-seed settings.json with mcpServers + custom hooks.Stop[] entry; run init; assert original entries preserved AND fabric entry added. (5) `re-init does NOT duplicate Stop entry` — run init twice; assert hooks.Stop[].length unchanged after second run. (6) `init writes .codex/hooks.json with Stop entry`. (7) `events.jsonl preservation` — pre-seed events.jsonl with sentinel; run init; assert sentinel still at top (mirror init-guard.test.ts:96-115)."
+    },
+    {
+      "path": "packages/cli/__tests__/contract/hook-config-templates.test.ts",
+      "action": "create",
+      "target": "vitest contract test for static config templates",
+      "change": "Tests: (1) `templates/hooks/configs/claude-code.json parses as JSON`. (2) `claude-code.json deep-equals doctor.test.ts:141 schema fixture` — copy that fixture inline as expected, assert structural deep-equal. (3) `templates/hooks/configs/codex-hooks.json parses as JSON`. (4) `claude-code.json command path is .claude/hooks/archive-hint.cjs`. (5) `codex-hooks.json command path is .codex/hooks/archive-hint.cjs`. (6) `templates/skills/fabric-archive/SKILL.md frontmatter parses as YAML with required keys` (parsed via gray-matter or simple regex)."
+    }
+  ],
+  "implementation": [
+    "Read packages/cli/__tests__/init-atomic.test.ts and packages/cli/__tests__/integration/init-guard.test.ts for fixture pattern",
+    "Read packages/cli/__tests__/helpers/init-test-utils.ts to confirm createWerewolfFixtureRoot signature",
+    "Read packages/server/src/services/doctor.test.ts:141-162 to copy Claude settings.json fixture inline as expected value for contract test",
+    "Author init-skills.test.ts (6 cases) using mkdtemp + cleanup pattern",
+    "Author init-hooks.test.ts (7 cases) including POSIX-only chmod assertion with describe.skipIf",
+    "Author contract test verifying static template files parse and match expected schemas",
+    "Run `pnpm --filter @fenglimg/fabric-cli test integration/init-skills integration/init-hooks contract/hook-config-templates` and iterate",
+    "Commit: `test(cli): integration coverage for skill+hook install pipeline`"
+  ],
+  "reference": {
+    "pattern": "Vitest integration test with tmpdir fixture + post-state filesystem assertion + idempotent re-run via sha256",
+    "files": [
+      "packages/cli/__tests__/integration/init-guard.test.ts",
+      "packages/cli/__tests__/integration/scan-init.test.ts",
+      "packages/cli/__tests__/init-atomic.test.ts",
+      "packages/cli/__tests__/helpers/init-test-utils.ts",
+      "packages/server/src/services/doctor.test.ts"
+    ],
+    "examples": "init-guard.test.ts:77-94 byte-identical reapply pattern is the verbatim model for SKILL.md re-init idempotency test. init-atomic.test.ts atomicWrite spy pattern at L83-100 is reusable for asserting hooks-writer uses atomic writes. signal-handler.test.ts describe.skipIf pattern for win32 chmod assertion."
+  },
+  "convergence": {
+    "criteria": [
+      "init-skills.test.ts: all 6 cases green",
+      "init-hooks.test.ts: all 7 cases green; chmod assertion correctly skipped on win32",
+      "hook-config-templates.test.ts: all 6 cases green",
+      "Test suite covers the full TASK-005 surface: skill copy, hook copy, settings.json merge, hooks.json merge, idempotent re-init, dedupe by command, pointer line append, events.jsonl preservation",
+      "Total coverage from these tests pushes new files (hooks-writer.ts, modified portions of init.ts/hooks.ts) to ≥90% per-file"
+    ]
+  },
+  "depends_on": ["TASK-005"],
+  "rationale": {
+    "chosen_approach": "Three focused test files following existing repo conventions (integration/ for filesystem-touching tests, contract/ for static template assertions)",
+    "alternatives_considered": [
+      "Single mega-test file — rejected: poor failure-localization, harder to read",
+      "Snapshot tests for settings.json merged result — rejected: snapshots brittle when fabric injects timestamps; explicit deep-equal preferred",
+      "Skip POSIX chmod test — rejected: hook executability is critical for cross-platform Stop-hook firing"
+    ],
+    "decision_factors": [
+      "init-guard.test.ts already establishes byte-identical reapply pattern — reuse",
+      "Contract tests catch template regressions cheaply (no fixture cost)",
+      "Test files map 1:1 to TASK-005 deliverables for traceability"
+    ],
+    "tradeoffs": "Three test files = three separate vitest startup costs — accepted because each scope is logically distinct and parallel execution amortizes startup"
+  },
+  "test": {
+    "manual_checks": [
+      "Run `pnpm --filter @fenglimg/fabric-cli test integration/init-skills` and confirm all green",
+      "Run `pnpm --filter @fenglimg/fabric-cli test integration/init-hooks` and confirm all green; on Linux confirm chmod test runs, on macOS likewise, on Windows confirm describe.skipIf takes effect",
+      "Run `pnpm --filter @fenglimg/fabric-cli test contract/hook-config-templates` and confirm all green"
+    ],
+    "success_metrics": [
+      "All 19 test cases (6+7+6) green on Linux + macOS",
+      "win32 skip path verified by reading test output (chmod case shown as skipped, others run)",
+      "Coverage delta on hooks-writer.ts and TASK-005 files exceeds 90% per-file"
+    ],
+    "unit": [],
+    "integration": [
+      "init_skills_writes_skill_md_to_claude_and_codex",
+      "init_skills_appends_pointer_line_idempotently",
+      "init_skills_byte_identical_reapply",
+      "init_hooks_copies_archive_hint_cjs_to_both_clients",
+      "init_hooks_chmod_plus_x_on_posix",
+      "init_hooks_merges_settings_json_without_clobber",
+      "init_hooks_dedupe_on_reinit",
+      "init_hooks_preserves_events_jsonl_sentinel",
+      "hook_config_templates_match_canonical_schemas"
+    ]
+  },
+  "cli_execution_id": "fabric-v2-rc2-impl-2026-05-10-TASK-006",
+  "cli_execution": {
+    "strategy": "fork",
+    "resume_from": "fabric-v2-rc2-impl-2026-05-10-TASK-005"
+  }
+}

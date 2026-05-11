@@ -1,0 +1,69 @@
+{
+  "id": "TASK-002",
+  "title": "Phase A · Commit B: Server services layer v1.x cleanup + delete bootstrap-guide.ts",
+  "scope": "packages/server/src/ + packages/shared/src/node/bootstrap-guide.ts",
+  "action": "Refactor",
+  "description": "Remove all v1.x `.fabric/rules/` and INITIAL_TAXONOMY references from the server services layer. Specifically: (1) `packages/server/src/services/rule-meta-builder.ts`: rename misleading functions like `findFabricRuleFiles`; switch path constants `.fabric/rules/` → `.fabric/knowledge/{type}/`. (2) `packages/server/src/services/doctor.ts` + `doctor.test.ts`: remove all checks targeting `.fabric/rules/` or `INITIAL_TAXONOMY` (false-positive forever in v2; rc.4 will add 6 new lint checks separately). (3) `packages/server/src/watcher.ts` (and test): watch path `.fabric/rules/**` → `.fabric/knowledge/**` + `.fabric/knowledge/pending/**`. (4) `packages/server/src/index.ts` + `packages/server/src/http.ts`: path constants synced. (5) **Delete entire file** `packages/shared/src/node/bootstrap-guide.ts` (v1 manual setup guidance, v2 init is turnkey).",
+  "complexity": "Medium",
+  "estimated_time": "1.5-2h (portion of Phase A 4-6h budget)",
+  "files": [
+    {"path": "packages/server/src/services/rule-meta-builder.ts", "action": "modify", "target": "function names + path constants", "change": "Rename findFabricRuleFiles and similar misleading function names to knowledge-aware names; switch .fabric/rules/ path constants to .fabric/knowledge/{type}/"},
+    {"path": "packages/server/src/services/doctor.ts", "action": "modify", "target": "v1.x lint checks", "change": "Remove all doctor checks targeting .fabric/rules/ or INITIAL_TAXONOMY (these would false-positive forever in v2; rc.4 will introduce 6 new v2 lint checks separately)"},
+    {"path": "packages/server/src/watcher.ts", "action": "modify", "target": "watch glob patterns", "change": "Change watch path .fabric/rules/** to .fabric/knowledge/** plus an explicit .fabric/knowledge/pending/** glob (pending lifecycle layer)"},
+    {"path": "packages/server/src/index.ts", "action": "modify", "target": "path constants", "change": "Sync any remaining .fabric/rules/ path constants to .fabric/knowledge/{type}/"},
+    {"path": "packages/server/src/http.ts", "action": "modify", "target": "path constants", "change": "Sync any remaining .fabric/rules/ path constants to .fabric/knowledge/{type}/"},
+    {"path": "packages/shared/src/node/bootstrap-guide.ts", "action": "delete", "target": "entire file", "change": "Delete entire file — v1 manual setup guidance is obsolete in v2 (init pipeline is turnkey, no human-readable bootstrap doc needed)"}
+  ],
+  "implementation": [
+    "Run `grep -rn '\\.fabric/rules\\|INITIAL_TAXONOMY\\|findFabricRuleFiles\\|bootstrap-guide' packages/server/src/ packages/shared/src/` to enumerate all hits",
+    "In rule-meta-builder.ts: rename functions (e.g. findFabricRuleFiles → findKnowledgeFiles) — update all call sites in same package; switch path constants to .fabric/knowledge/{type}/ structure",
+    "In services/doctor.ts: identify lint checks that probe .fabric/rules/ existence or INITIAL_TAXONOMY content; delete those check functions AND their registration in the doctor pipeline (do NOT replace with stubs — rc.4 owns v2 lint design)",
+    "In watcher.ts: update chokidar/fs.watch glob patterns to .fabric/knowledge/** + .fabric/knowledge/pending/**; verify event handlers route by knowledge type (decisions/pitfalls/etc.) correctly",
+    "In server/src/index.ts and http.ts: locate any KNOWLEDGE_DIR / RULES_DIR / similar path constants and switch to .fabric/knowledge/{type}/",
+    "Delete packages/shared/src/node/bootstrap-guide.ts AND remove any imports of it (likely from CLI init or doctor command)",
+    "Run `pnpm --filter @fabric/server build && pnpm --filter @fabric/shared build` to confirm",
+    "Re-run grep gate — must be empty"
+  ],
+  "reference": {
+    "pattern": "v1.x dead code removal — server-side mirror of TASK-001",
+    "files": ["packages/server/src/services/rule-meta-builder.ts", "packages/server/src/services/doctor.ts", "packages/server/src/watcher.ts"],
+    "examples": "Follow rc.1 commit aaf9c2c — hard delete bootstrap-guide.ts as a sibling of the broader cleanup"
+  },
+  "convergence": {
+    "criteria": [
+      "File `packages/shared/src/node/bootstrap-guide.ts` does not exist",
+      "No matches for `\\.fabric/rules` in `packages/server/src/` (grep returns empty)",
+      "No matches for `INITIAL_TAXONOMY` in `packages/server/src/` (grep returns empty)",
+      "No matches for `findFabricRuleFiles` in repo (grep returns empty — function renamed)",
+      "No matches for `bootstrap-guide` import strings in `packages/` (grep returns empty)",
+      "`pnpm --filter @fabric/server build` and `pnpm --filter @fabric/shared build` exit 0",
+      "Watcher glob now includes both `.fabric/knowledge/**` and `.fabric/knowledge/pending/**`"
+    ]
+  },
+  "depends_on": [],
+  "dependency_type": "none",
+  "parallel_safe": true,
+  "scope_boundary": "OUT OF SCOPE: CLI command layer (TASK-001 owns bootstrap.ts, init.ts, scan.ts, forensic.ts), templates (TASK-003), tests (TASK-004 — doctor.test.ts is touched here for the lint-check removal but new v2 lint tests are NOT added; rc.4 owns v2 lint suite). Do NOT add new doctor v2 lint checks here — that is rc.4 scope.",
+  "cli_execution_id": "fabric-v2-rc2-prep-2026-05-10-TASK-002",
+  "cli_execution": {"strategy": "new"},
+  "rationale": {
+    "chosen_approach": "Atomic server-layer cleanup commit, parallel-safe with TASK-001 (no file overlap)",
+    "alternatives_considered": ["Bundle with CLI cleanup (TASK-001)", "Defer doctor.ts changes to rc.4 with v2 lint suite"],
+    "decision_factors": ["Layer isolation enables clean revert if regression found", "doctor false-positives must die NOW (any v1 check would alarm on every v2 install)", "rc.4 lint suite design is independent — can land later"],
+    "tradeoffs": "doctor temporarily has fewer checks until rc.4 — acceptable because v1 checks were actively wrong in v2 layout"
+  },
+  "test": {
+    "manual_checks": [
+      "Run `pnpm --filter @fabric/server build` — exit 0",
+      "Run `node packages/cli/dist/index.js doctor` on a fresh v2 init — must NOT report .fabric/rules/ as missing",
+      "Spot-check watcher.ts diff: glob includes both .fabric/knowledge/** and .fabric/knowledge/pending/**"
+    ],
+    "success_metrics": [
+      "All grep gates pass",
+      "Server + shared package builds exit 0",
+      "Doctor command runs without false-positive on v2 layout"
+    ],
+    "unit": [],
+    "integration": []
+  }
+}

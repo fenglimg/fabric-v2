@@ -1,0 +1,92 @@
+{
+  "id": "TASK-003",
+  "title": "api-contracts schema additions — rc.2/rc.3 MCP protocol pre-lock",
+  "scope": "packages/shared/src/schemas/api-contracts.ts + colocated tests",
+  "action": "Implement",
+  "description": "Pre-register MCP tool input/output Zod schemas for rc.2 (`fab_extract_knowledge`) and rc.3 (`fab_review`), plus extend existing `fab_plan_context` / `fab_get_rule_sections` schemas with grill-locked Q6 fields (tags index, layer_filter, redirect_to error). This is the protocol-lock task: schemas land NOW so consumers can target them; implementations land in rc.2/rc.3. (1) Add `tags?: string[]` to `RuleDescriptionIndexItem` (rc.2-prep already added the frontmatter `tags` field; this exposes it in the index API). (2) Add `layer_filter?: z.enum(['team','personal','both'])` to `PlanContextInputSchema`. (3) Add `redirect_to?: z.object({ stable_id: z.string() })` to `GetRuleSectionsResultSchema` error union — fired post-layer-flip when stable_id changed. (4) Add `FabExtractKnowledgeInputSchema` (semi-thick: `{ source_session, recent_paths[], user_messages_summary, type, slug }`) + `FabExtractKnowledgeOutputSchema` (`{ pending_path, idempotency_key }`). (5) Add `FabReviewInputSchema` as `z.discriminatedUnion('action', [...6 actions: list / approve / reject / modify / search / defer])` + `FabReviewOutputSchema`.",
+  "complexity": "High",
+  "estimated_time": "60-90 min",
+  "files": [
+    {"path": "packages/shared/src/schemas/api-contracts.ts", "action": "modify", "target": "RuleDescriptionIndexItem + PlanContextInputSchema + GetRuleSectionsResultSchema + new FabExtractKnowledge + new FabReview schemas", "change": "(1) Add `tags: z.array(z.string()).optional()` to RuleDescriptionIndexItem; (2) Add `layer_filter: z.enum(['team','personal','both']).optional()` to PlanContextInputSchema; (3) Add `redirect_to: z.object({ stable_id: z.string() }).optional()` to GetRuleSectionsResultSchema error shape; (4) Add FabExtractKnowledgeInputSchema z.object({ source_session, recent_paths, user_messages_summary, type, slug }) + FabExtractKnowledgeOutputSchema z.object({ pending_path, idempotency_key }); (5) Add FabReviewInputSchema as discriminated union over action enum (list/approve/reject/modify/search/defer) — approve uses pending_paths[], modify allows layer field for layer-flip, defer accepts reason+until — plus FabReviewOutputSchema with corresponding result shapes"},
+    {"path": "packages/shared/__tests__/api-contracts.test.ts", "action": "modify", "target": "new test cases for added/extended schemas", "change": "Add (a) RuleDescriptionIndexItem with/without tags roundtrip; (b) PlanContextInput with layer_filter='team'/'personal'/'both' and missing (default behavior assertion); (c) GetRuleSectionsResult with redirect_to populated; (d) FabExtractKnowledgeInput valid + invalid (missing required field) cases; (e) FabReviewInput discriminated-union — 1 valid case per action (6 cases) + 1 invalid (unknown action); (f) FabReviewOutput shape matches each action's result"}
+  ],
+  "implementation": [
+    "Locate api-contracts schema: `find packages/shared/src/schemas -name 'api-contracts.ts'`",
+    "Locate api-contracts tests: `find packages/shared -name 'api-contracts.test.ts' -o -name 'schemas-roundtrip.test.ts'`",
+    "Step 1 — Index extension: open RuleDescriptionIndexItem definition, add `tags: z.array(z.string()).optional()` field; ensure consumers reading the index handle missing tags as []",
+    "Step 2 — PlanContextInput extension: add `layer_filter: z.enum(['team','personal','both']).optional()` field with inline comment explaining default behavior comes from fabric-config.default_layer_filter",
+    "Step 3 — GetRuleSectionsResult extension: locate error/discriminated branch (likely GetRuleSectionsResultSchema or its NotFoundResult variant), add `redirect_to: z.object({ stable_id: z.string() }).optional()` field; document semantic: present iff post-layer-flip stable_id changed",
+    "Step 4 — New FabExtractKnowledge schemas: define FabExtractKnowledgeInputSchema = z.object({ source_session: z.string(), recent_paths: z.array(z.string()), user_messages_summary: z.string(), type: z.enum([5 types]), slug: z.string() }); FabExtractKnowledgeOutputSchema = z.object({ pending_path: z.string(), idempotency_key: z.string() }); export both via index.ts barrel",
+    "Step 5 — New FabReview schemas: define FabReviewInputSchema = z.discriminatedUnion('action', [ z.object({action:z.literal('list'), filters:...}), z.object({action:z.literal('approve'), pending_paths:z.array(z.string())}), z.object({action:z.literal('reject'), pending_paths:..., reason:z.string()}), z.object({action:z.literal('modify'), pending_path:..., changes:z.object({title?,summary?,layer?,maturity?,tags?})}), z.object({action:z.literal('search'), query:z.string(), filters?}), z.object({action:z.literal('defer'), pending_paths:..., until:z.string().datetime().optional(), reason?}) ]); FabReviewOutputSchema corresponds with 1 result shape per action; export both",
+    "Step 6 — Tests: write ≥ 1 valid + 1 invalid case per new schema; for FabReviewInput, write 6 valid (one per action) + 1 invalid (unknown action) cases; for FabExtractKnowledgeInput, write 1 valid + 1 invalid (missing source_session)",
+    "Step 7 — Backward-compat regression: load existing api-contracts fixtures (if present) or hand-craft minimal valid PlanContextInput / GetRuleSectionsResult and confirm they still parse with new optional fields absent",
+    "Step 8 — Run `pnpm --filter @fabric/shared build && pnpm --filter @fabric/shared test` — confirm all green; eyeball coverage ≥ 90% on added schemas"
+  ],
+  "reference": {
+    "pattern": "Pre-lock MCP API protocol via Zod schemas before implementation lands; discriminated union for multi-action input",
+    "files": ["packages/shared/src/schemas/api-contracts.ts", "packages/shared/src/schemas/event-ledger.ts (sibling discriminated-union pattern)"],
+    "examples": "Follow rc.2-prep schema-additions pattern (commit a85121a) for atomic schema-only commits with full test coverage"
+  },
+  "convergence": {
+    "criteria": [
+      "`grep -q 'tags' packages/shared/src/schemas/api-contracts.ts` returns hit (in RuleDescriptionIndexItem context)",
+      "`grep -q 'layer_filter' packages/shared/src/schemas/api-contracts.ts` succeeds",
+      "`grep -q 'redirect_to' packages/shared/src/schemas/api-contracts.ts` succeeds",
+      "`grep -q 'FabExtractKnowledgeInput' packages/shared/src/schemas/api-contracts.ts` succeeds",
+      "`grep -q 'FabReviewInput' packages/shared/src/schemas/api-contracts.ts` succeeds",
+      "`grep -c 'z.literal(\\'list\\')\\|z.literal(\\'approve\\')\\|z.literal(\\'reject\\')\\|z.literal(\\'modify\\')\\|z.literal(\\'search\\')\\|z.literal(\\'defer\\')' packages/shared/src/schemas/api-contracts.ts` returns 6",
+      "`pnpm --filter @fabric/shared test` exits 0",
+      "Each new schema has ≥ 1 valid + 1 invalid test case; FabReviewInput has 6 valid (one per action) + 1 invalid",
+      "Existing api-contracts tests still pass (regression-safe)",
+      "New code coverage ≥ 90%"
+    ]
+  },
+  "depends_on": [],
+  "dependency_type": "none",
+  "parallel_safe": true,
+  "scope_boundary": "OUT OF SCOPE: implementing the MCP tools themselves (rc.2 fab_extract_knowledge, rc.3 fab_review) — this task lands ONLY the Zod schemas; modifying fabric-config (TASK-002); modifying event-ledger (TASK-004); docs (TASK-006). Strictly: schema definition + test coverage.",
+  "cli_execution_id": "fabric-v2-grill-followup-2026-05-10-TASK-003",
+  "cli_execution": {"strategy": "new"},
+  "recommended_execution": "Agent",
+  "rationale": {
+    "chosen_approach": "Pre-lock the rc.2/rc.3 MCP protocol via Zod schemas before implementation, so future TASK can develop against typed contracts; use discriminated union for fab_review's 6 actions to enable exhaustive narrowing",
+    "alternatives_considered": ["Defer schema definition to rc.2/rc.3 (loses pre-lock benefit, risks last-minute API churn)", "Single z.union (loses discriminator-based narrowing)", "Separate schemas per action (verbose, hard to maintain consumer code)"],
+    "decision_factors": ["Pre-lock prevents rc.2/3 protocol churn", "Discriminated union enables consumer-side type narrowing on `action` field", "Single shared package = single source of truth for MCP server + Skill consumers"],
+    "tradeoffs": "Some schemas land before consumers exist (TS check ensures they're well-formed but no runtime validation until rc.2/3) — accepted because schemas are easier to refine pre-implementation than post-"
+  },
+  "test": {
+    "manual_checks": [
+      "Run `pnpm --filter @fabric/shared build` — confirm no TS inference errors on the new discriminated union",
+      "Manually call FabReviewInputSchema.parse({action:'modify', pending_path:'x', changes:{layer:'personal'}}) — confirm OK",
+      "Manually call FabReviewInputSchema.parse({action:'unknown'}) — confirm Zod error",
+      "Manually parse legacy PlanContextInput JSON without layer_filter — confirm parses cleanly"
+    ],
+    "success_metrics": [
+      "All convergence grep gates pass",
+      "All new test cases pass; existing tests still pass",
+      "Discriminated union narrowing works in TS consumer code (manually verify by writing a small switch on action)",
+      "Coverage ≥ 90% on added schemas"
+    ],
+    "unit": [
+      "RuleDescriptionIndexItem with/without tags roundtrip",
+      "PlanContextInput layer_filter all 3 enum values + missing",
+      "GetRuleSectionsResult with redirect_to populated",
+      "FabExtractKnowledgeInput valid + invalid",
+      "FabReviewInput 6 valid (one per action) + 1 invalid (unknown action)",
+      "FabReviewOutput shape matches each action's result"
+    ],
+    "integration": []
+  },
+  "risks": [
+    {"description": "Discriminated union for fab_review introduces complex generic narrowing that confuses downstream TS consumers", "probability": "Medium", "impact": "Medium", "mitigation": "Provide a small narrowing helper or example in JSDoc on FabReviewInputSchema; ensure tests exercise narrowing via a switch", "fallback": "If narrowing pain manifests in rc.3 implementation, refactor to per-action explicit schemas with a shared base"},
+    {"description": "Schema lands before MCP implementation, risking divergence if rc.2/3 implementation needs different shape", "probability": "Low", "impact": "Medium", "mitigation": "Document in docs/mcp-contracts.md (TASK-006) that schemas may evolve in rc.2/3 if implementation reveals gaps; treat as known risk", "fallback": "Schema breaking changes in rc.2/3 are acceptable pre-2.0 stable (per clean-slate memory)"}
+  ],
+  "code_skeleton": {
+    "interfaces": [
+      {"name": "FabExtractKnowledgeInputSchema", "definition": "z.object({ source_session: z.string(), recent_paths: z.array(z.string()), user_messages_summary: z.string(), type: z.enum(['decisions','pitfalls','guidelines','models','processes']), slug: z.string() })", "purpose": "rc.2 MCP tool input — semi-thick (Skill summarizes, MCP persists)"},
+      {"name": "FabReviewInputSchema", "definition": "z.discriminatedUnion('action', [list, approve, reject, modify, search, defer])", "purpose": "rc.3 MCP tool input — 6 actions exhaustively narrowed by discriminator"}
+    ],
+    "key_functions": [],
+    "classes": []
+  }
+}

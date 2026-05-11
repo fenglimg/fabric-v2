@@ -1,0 +1,173 @@
+{
+  "id": "TASK-008",
+  "title": "Documentation files: docs/knowledge-types.md (NEW) + docs/initialization.md (UPDATE) + docs/roadmap.md (UPDATE) + CHANGELOG.md (UPDATE)",
+  "scope": "docs/knowledge-types.md (NEW); docs/initialization.md (UPDATE 466 lines → v2.0 flow); docs/roadmap.md (UPDATE 50 lines → v2.0 + v2.1 + v2.x); CHANGELOG.md (UPDATE 331 lines → add rc.1/rc.2/rc.3/rc.4 + v2.0.0 entries)",
+  "action": "Update",
+  "description": "Author/update 4 documentation files comprising the v2.0 documentation surface. (a) docs/knowledge-types.md NEW: 5-type semantic definitions (decisions, pitfalls, guidelines, models, processes) with examples + decision criteria + maturity tier ref + layer classification ref. (b) docs/initialization.md UPDATE: replace v1.x init flow narrative with v2.0 flow (scan → install skills + hooks). (c) docs/roadmap.md UPDATE: add v2.0 (released) section + v2.1 (team-knowledge.git + 3-role permissions) + v2.x (semantic search, federated teams). (d) CHANGELOG.md UPDATE: add detailed entries for rc.1 (clean rebrand foundation) + rc.2 (archive loop) + rc.3 (review loop + path-traversal fix) + rc.4 (lint + import + README + docs) + v2.0.0 final release notes (stable signal + upgrade-from-v1.x guidance).",
+  "files": [
+    {
+      "path": "docs/knowledge-types.md",
+      "action": "create",
+      "target": "module body (NEW; ~150-250 lines)",
+      "change": "Sections: (1) Purpose paragraph — 'Fabric organizes knowledge into 5 types each with distinct purpose and lifecycle.'; (2) The 5 Types overview table (type | purpose | example | typical layer | typical maturity); (3) Per-type detailed sections (Decisions: ADRs and architectural choices; Pitfalls: known gotchas and anti-patterns; Guidelines: conventions and best practices; Models: domain models and core abstractions; Processes: how-to and operational runbooks); each with 2-3 concrete examples drawn from Fabric self-repo or generic dev examples; (4) Decision Criteria section — 'Which type should I use?' decision tree (3-5 questions narrowing to a type); (5) Maturity tiers reference — draft (newly proposed), endorsed (validated by team), stable (entrenched in practice); (6) Layer classification reference — team (project artifacts, .fabric/), personal ($FABRIC_HOME/.fabric/); (7) Cross-references to README.md + docs/initialization.md."
+    },
+    {
+      "path": "docs/initialization.md",
+      "action": "modify",
+      "target": "full file rewrite (466 lines v1.x → ~300-400 lines v2.0)",
+      "change": "Replace v1.x narrative with v2.0 flow: (1) Overview — `fabric init` does 3 things: scan, install skills, install hooks; (2) Pre-flight checks (project root detection, package manager detection, existing .fabric/ check); (3) Init-time scan (Phase 1 of fabric-import) — produces 4-7 baseline entries from tech stack, module structure, build config, code style, CI, README first paragraph; lands in .fabric/knowledge/team/; (4) Skill installation — 3 skills (fabric-archive, fabric-review, fabric-import) copied to .claude/skills/ + .codex/skills/; (5) Pointer installation — one-line skill references added to CLAUDE.md / AGENTS.md / .cursor/rules; (6) Hook installation — archive-hint.cjs Stop hook copied + 3 client config files (claude-code.json / cursor-hooks.json / codex-hooks.toml); (7) Post-init verification — `fabric doctor` should report 0 fixable findings; (8) Cross-references to docs/knowledge-types.md + README.md + docs/roadmap.md."
+    },
+    {
+      "path": "docs/roadmap.md",
+      "action": "modify",
+      "target": "full file rewrite (50 lines pre-v2 → ~150-200 lines)",
+      "change": "Sections: (1) v2.0 (Released — 2026-Q2): summary of what shipped per RC (rc.1 clean rebrand + init scan; rc.2 archive loop + extract knowledge + Stop hooks; rc.3 review loop + skill mode inference + filesystem-edit fallback; rc.4 lint + import skill + README + docs); link to CHANGELOG.md for detail; (2) v2.1 (Planned): team-knowledge.git remote sync (centralized team knowledge in a git repo with pull/push primitives); 3-role permission model (admin / contributor / reader); event-ledger schema unlock (knowledge_layer_change_started + agents_meta_repaired); pending_path → target_path API rename; (3) v2.x (Exploration): semantic search (embeddings + vector index in .fabric/.embeddings/); federated teams (multiple teams sharing subsets via signed knowledge bundles); doctor --apply-lint configurability of decay thresholds; (4) Out-of-Scope explicit list: no SaaS hosting in roadmap; no LLM hosting in roadmap; no UI dashboard rebuild (existing dashboard stays MVP)."
+    },
+    {
+      "path": "CHANGELOG.md",
+      "action": "modify",
+      "target": "extend existing 331 lines with detailed rc.1/rc.2/rc.3/rc.4 + v2.0.0 entries",
+      "change": "Add new sections at top (descending chronological): (1) `## [v2.0.0] — 2026-05-11` Final v2.0 stable release; what's new since v1.x (knowledge cycle: archive → review → promote → lint → archive; 4 MCP tools; 3 Skills; Stop hooks across 3 clients; dual-root layout; lifecycle/lint moat); upgrade guide v1.x → v2.0 (delete .fabric/rules/, run `fabric init`); breaking changes (.fabric tree restructured, stable_id format changed, schemas updated); (2) `## [v2.0.0-rc.4] — 2026-05-11` rc.4 milestone; doctor --lint with 6 deterministic checks; doctor --apply-lint mutations + events; fabric-import skill template; README rewrite; docs/{knowledge-types,initialization,roadmap}.md authored/updated; rc.3 deferred fixes batch; (3) `## [v2.0.0-rc.3] — 2026-05-10` rc.3 milestone; fab_review MCP tool (6 actions); fabric-review skill mode inference; archive-hint second signal pending overflow; doctor filesystem-edit fallback; path-traversal sandboxing fix (Critical); per-file >=90% coverage gate; (4) `## [v2.0.0-rc.2] — 2026-05-10` rc.2 milestone; fab_extract_knowledge MCP tool; fabric-archive skill template; archive-hint Stop hook + 3 client config files; (5) `## [v2.0.0-rc.1] — 2026-05-XX` rc.1 milestone; clean rebrand foundation; .fabric/rules deleted; .fabric/knowledge structure created; init-time scan; new schemas (api-contracts.ts, agents-meta.ts, event-ledger.ts); KnowledgeIdAllocator. Preserve all existing pre-v2 entries below."
+    }
+  ],
+  "implementation": [
+    "Read current docs/initialization.md (466 lines) and docs/roadmap.md (50 lines) to identify content to preserve, replace, or rewrite",
+    "Read current CHANGELOG.md (331 lines) to identify last entry header and confirm chronological pattern (Keep-a-Changelog or custom format)",
+    "Author docs/knowledge-types.md from scratch using planning-context.md + handoff.json + key_findings as source material; concrete examples drawn from .fabric/knowledge/team/ if entries exist (likely 3 rc.2 + rc.3 dogfood entries available; cite them as live examples)",
+    "Rewrite docs/initialization.md: keep any pre-flight detection logic that's still accurate; replace `fabric init` flow description with v2.0 (scan + install skills + install hooks); cross-link to knowledge-types.md and roadmap.md",
+    "Rewrite docs/roadmap.md: explicit v2.0 (Released) / v2.1 (Planned) / v2.x (Exploration) tiered structure; out-of-scope explicit; mention .workflow/.lite-plan sessions as evidence of execution discipline",
+    "Update CHANGELOG.md: add 5 new section blocks at top in reverse-chronological order; preserve format (likely Keep-a-Changelog with Added/Changed/Deprecated/Removed/Fixed/Security subsections per release); for each RC, list 5-8 bulleted highlights; for v2.0.0 final release, include upgrade guide",
+    "Verify consistency: README.md links (TASK-007) point to these files; section anchors match; no broken cross-references",
+    "Verify no contradictions vs README, planning-context.md, handoff.json (decay thresholds, schema versions, etc.)",
+    "Run markdown lint on all 4 files (markdownlint or equivalent) — 0 errors",
+    "Verify total docs/ tree length post-update fits 'comprehensive but not bloated' (knowledge-types ~200 lines, initialization ~350 lines, roadmap ~150 lines, CHANGELOG +200 lines)",
+    "Commit as 'docs: knowledge-types + initialization + roadmap + CHANGELOG for v2.0 (rc.4 TASK-008)'"
+  ],
+  "reference": {
+    "pattern": "Existing docs/* files for style; Keep-a-Changelog format for CHANGELOG; planning-context.md for content sourcing",
+    "files": [
+      "docs/knowledge-types.md",
+      "docs/initialization.md",
+      "docs/roadmap.md",
+      "CHANGELOG.md",
+      ".workflow/.analysis/ANL-2026-05-10-fabric-knowledge-pivot/handoff.json",
+      ".workflow/.lite-plan/fabric-v2-rc4-impl-2026-05-10/planning-context.md",
+      "README.md"
+    ],
+    "examples": "Karpathy gist for terse style; existing CHANGELOG.md format; rc.2/rc.3 plan.json + dogfood-evidence.md for milestone bullets"
+  },
+  "convergence": {
+    "criteria": [
+      "docs/knowledge-types.md exists with all 5 types defined: decisions, pitfalls, guidelines, models, processes",
+      "Each of the 5 types has at least 2 concrete examples in docs/knowledge-types.md",
+      "docs/knowledge-types.md has decision-criteria section with 3-5 questions",
+      "docs/knowledge-types.md references maturity tiers (draft/endorsed/stable) and layer classification (team/personal)",
+      "docs/initialization.md describes v2.0 flow (scan → install skills + hooks) — verified by grep for 'fabric init' steps narrative",
+      "docs/initialization.md does NOT reference deleted .fabric/rules/ or v1.x INITIAL_TAXONOMY.md — verified by absence of these strings",
+      "docs/roadmap.md has explicit v2.0 (Released) section with 4 RC milestone summaries",
+      "docs/roadmap.md has v2.1 (Planned) section listing team-knowledge.git + 3-role permissions + schema unlocks",
+      "docs/roadmap.md has v2.x (Exploration) section listing semantic search + federated teams",
+      "docs/roadmap.md has Out-of-Scope explicit list",
+      "CHANGELOG.md has 5 new section blocks (rc.1, rc.2, rc.3, rc.4, v2.0.0) in reverse-chronological order at top",
+      "CHANGELOG.md v2.0.0 entry has upgrade-from-v1.x guide",
+      "All 4 files pass markdown lint with 0 errors",
+      "Cross-references verified: README links → docs/* files; docs/* internal links resolve"
+    ]
+  },
+  "depends_on": [],
+  "rationale": {
+    "chosen_approach": "Single-task batch covering 4 doc files; rationale: docs are interconnected (cross-references between them), atomic landing keeps them consistent; alternative of separate tasks per doc creates merge churn for cross-link updates",
+    "alternatives_considered": [
+      "Split into 4 separate tasks (one per doc) — rejected: cross-references would require merge serialization; atomic batch keeps docs consistent",
+      "Skip CHANGELOG.md update in TASK-008, defer to TASK-010 — rejected: TASK-010 final entry needs CHANGELOG already containing rc.1-rc.4 entries to add v2.0.0 release notes; landing CHANGELOG bulk in TASK-008 leaves only the v2.0.0 final entry for TASK-010",
+      "Auto-generate roadmap.md from issue tracker — rejected: no issue tracker integration; manual roadmap is fine for v2.0",
+      "Skip docs/knowledge-types.md, embed in skill prose only — rejected: handoff explicitly requires NEW file; users authoring entries need a reference outside skill context"
+    ],
+    "decision_factors": [
+      "Cross-reference consistency requires atomic landing",
+      "CHANGELOG bulk landing in TASK-008 leaves v2.0.0 final entry as TASK-10's clean concluding act",
+      "knowledge-types.md is reference doc consumed by skills + users",
+      "Roadmap signals direction without overcommitting"
+    ],
+    "tradeoffs": "Single large commit; mitigated by 4 logically-distinct sections in one PR; reviewer can read each section independently"
+  },
+  "test": {
+    "manual_checks": [
+      "Render all 4 files in a markdown viewer; verify sections + tables + cross-links",
+      "Verify README.md TASK-007 links resolve (open each link, confirm target exists)",
+      "Read knowledge-types.md as a new user authoring a first entry; verify decision criteria are actionable",
+      "Read initialization.md as a new user running fabric init; verify steps match actual init.ts behavior"
+    ],
+    "success_metrics": [
+      "All 14 convergence criteria pass",
+      "0 markdown lint errors across 4 files",
+      "0 broken internal/external links"
+    ],
+    "unit": [
+      "no_unit_tests_pure_documentation"
+    ],
+    "integration": [
+      "verified_in_TASK_010_gemini_review_acceptance_check_for_docs"
+    ]
+  },
+  "risks": [
+    {
+      "description": "knowledge-types.md examples may drift from real usage as users author entries",
+      "probability": "High (long-term)",
+      "impact": "Low",
+      "mitigation": "Use generic dev examples (login service decision, N+1 query pitfall, snake-case naming guideline) that age slowly; supplement with Fabric self-repo entries cited by stable_id (will need re-citation if those entries are demoted/archived)",
+      "fallback": "Periodic refresh in v2.x"
+    },
+    {
+      "description": "CHANGELOG entries may differ in style/depth across the 5 sections, looking inconsistent",
+      "probability": "Medium",
+      "impact": "Low",
+      "mitigation": "Use uniform Keep-a-Changelog subsection structure (Added/Changed/Fixed) per section; extract bullets from rc.2/rc.3 plan.json + dogfood-evidence.md for consistent depth; v2.0.0 final entry follows same structure",
+      "fallback": "Style cleanup pass in dogfood TASK-009"
+    },
+    {
+      "description": "Roadmap v2.1 + v2.x bullets may overcommit to features we don't ship",
+      "probability": "Medium",
+      "impact": "Medium",
+      "mitigation": "Frame v2.1 as 'Planned' (intent + design discussion) and v2.x as 'Exploration' (open question); use language like 'we are exploring' / 'under consideration'; explicit Out-of-Scope list disclaims SaaS / LLM hosting / UI rebuild",
+      "fallback": "Roadmap is updated each release; correct course in v2.0.x patches if needed"
+    }
+  ],
+  "code_skeleton": {
+    "key_functions": [
+      {
+        "signature": "docs/knowledge-types.md (NEW)",
+        "purpose": "5-type semantic ref + examples + decision criteria + maturity + layer cross-ref",
+        "returns": "Markdown"
+      },
+      {
+        "signature": "docs/initialization.md (UPDATE)",
+        "purpose": "v2.0 init flow: scan → install skills → install hooks",
+        "returns": "Markdown"
+      },
+      {
+        "signature": "docs/roadmap.md (UPDATE)",
+        "purpose": "v2.0 / v2.1 / v2.x tiered direction",
+        "returns": "Markdown"
+      },
+      {
+        "signature": "CHANGELOG.md (UPDATE)",
+        "purpose": "rc.1 / rc.2 / rc.3 / rc.4 / v2.0.0 entries (Keep-a-Changelog format)",
+        "returns": "Markdown"
+      }
+    ]
+  },
+  "status": "completed",
+  "status_history": [
+    {
+      "from": "in_progress",
+      "to": "in_progress",
+      "changed_at": "2026-05-11T00:18:43+08:00"
+    },
+    {
+      "from": "in_progress",
+      "to": "completed",
+      "changed_at": "2026-05-11T00:24:23+08:00"
+    }
+  ]
+}

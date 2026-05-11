@@ -1,0 +1,92 @@
+{
+  "id": "TASK-006",
+  "title": "Adapt existing doctor checks to v2.0 layout (no new lint checks)",
+  "description": "Update the 4 v1.x-aware doctor checks (taxonomy_missing, rules_dir_unindexed, stable_id_collision, bootstrap_missing) so they no longer false-positive on the v2.0 layout. taxonomy_missing → renamed/replaced with knowledge_dir_missing (checks .fabric/knowledge/{5 subdirs} + pending/ existence). rules_dir_unindexed → knowledge_dir_unindexed (checks each knowledge subdir for files referenced in agents.meta.json nodes). stable_id_collision → extended to validate counter monotonicity in addition to uniqueness. bootstrap_missing → either deleted (no v2.0 bootstrap dir) or repointed to AGENTS.md/CLAUDE.md root pointers. Does NOT add the 6 new lint checks (orphan demote / stale archive / id duplicate / layer mismatch / index drift / pending overdue) — those are explicitly rc.4 scope. The goal is keep doctor green on a fresh `fabric init` v2.0 repo.",
+  "scope": "packages/server/src/services/doctor.ts",
+  "action": "Adapt",
+  "files": [
+    {
+      "path": "packages/server/src/services/doctor.ts",
+      "action": "modify",
+      "target": "doctor checks at lines 285-305 (the additive list of 19 checks)",
+      "change": "Replace `taxonomy_missing` with `knowledge_dir_missing` — checks .fabric/knowledge/ exists and contains all 5 type subdirs + pending/. Replace `rules_dir_unindexed` with `knowledge_dir_unindexed` — iterates new layout. Extend `stable_id_collision` (line 277): in addition to uniqueness, verify all KP-/KT- ids in agents.meta.json have counter ≤ counters.{KP|KT} envelope value (catches manually edited meta files). Delete or rename `bootstrap_missing`: if AGENTS.md exists at repo root, mark check passed; else fixable_error with hint to run fabric init. Add inspection for `legacy_v1_artifacts_present` (warn-level): scans for residual `.fabric/rules/`, `.fabric/INITIAL_TAXONOMY.md`, `.fabric/bootstrap/` and reports stale leftovers (helpful for manual upgrades, even though TASK-001 handles fresh delete in self-repo)."
+    },
+    {
+      "path": "packages/server/src/services/doctor.ts",
+      "action": "modify",
+      "target": "doctor --fix paths for derived state",
+      "change": "When --fix runs, ensure recreation logic uses TASK-008's v2.0 layout: missing knowledge subdirs are recreated via fs.mkdir; missing agents.meta.json is rebuilt with empty counters {KP:0, KT:0}; events.jsonl creation unchanged. Do NOT regenerate INITIAL_TAXONOMY.md (deleted in TASK-001). Do NOT recreate .fabric/bootstrap/ (gone in v2.0)."
+    },
+    {
+      "path": "packages/server/src/services/doctor.ts",
+      "action": "modify",
+      "target": "stable_id_collision check expansion",
+      "change": "Extend to detect counter desync: if any node in agents.meta.json has stable_id 'KP-D-7' but counters.KP is 5, flag as fixable_error 'counter_desync' — fix path: bump counters.KP to max(observed_id_for_KP, current). This catches manual edits to meta or interrupted scan runs."
+    }
+  ],
+  "implementation": [
+    "Read packages/server/src/services/doctor.ts:285-305 to inventory the 19 checks",
+    "Identify the 4 v1.x-coupled checks: taxonomy_missing (~line 680), rules_dir_unindexed, stable_id_collision (~line 277), bootstrap_missing",
+    "Rename taxonomy_missing → knowledge_dir_missing; rewrite inspection to glob .fabric/knowledge/{decisions,pitfalls,guidelines,models,processes,pending}/",
+    "Rename rules_dir_unindexed → knowledge_dir_unindexed; iterate new layout",
+    "Extend stable_id_collision to also check counter_desync invariant",
+    "Decide bootstrap_missing fate: rename → bootstrap_anchor_missing (checks repo-root AGENTS.md or CLAUDE.md exists) per v2.0 dual-anchor model",
+    "Add new check legacy_v1_artifacts_present (warn-only, not fixable in this rc — just visibility)",
+    "Update --fix paths to honor new layout (mkdir new subdirs instead of recreating .fabric/rules/)",
+    "Run existing doctor.test.ts — adapt fixtures from .fabric/rules/ → .fabric/knowledge/decisions/",
+    "Add 4+ new test fixtures: clean v2.0 repo (all checks pass), partial knowledge layout (missing pending/), stable_id collision, counter desync"
+  ],
+  "reference": {
+    "pattern": "doctor.ts additive check list pattern + fixable/manual classification at lines 285-305",
+    "files": ["packages/server/src/services/doctor.ts:277,285-305,680", "packages/shared/src/schemas/agents-meta.ts (TASK-002 counters envelope)"],
+    "examples": "Each check follows: `function inspectFoo(ctx): DoctorIssue[]` + `function createFooCheck(): DoctorCheck { return { id: 'foo', inspect: inspectFoo, ... } }`. Add to checks array. Per code_anchors line: '19 checks in additive list pattern' — purely additive surgery, not refactor."
+  },
+  "convergence": {
+    "criteria": [
+      "Running `fabric doctor` on a fresh post-init v2.0 repo (output of TASK-008) reports zero errors and zero warnings",
+      "Running `fabric doctor` on a repo with .fabric/knowledge/decisions/ missing flags fixable_error 'knowledge_dir_missing' with clear remediation",
+      "Running `fabric doctor --fix` on the above creates the missing subdir + rewrites agents.meta.json appropriately",
+      "stable_id_collision detects two nodes with the same id (regression test still passes)",
+      "counter_desync detected: meta has KP-D-7 but counters.KP=5 → fixable_error; --fix bumps counters.KP to 7",
+      "legacy_v1_artifacts_present fires (warn) on a repo where someone manually re-created .fabric/rules/ post-upgrade",
+      "bootstrap_anchor_missing passes when AGENTS.md or CLAUDE.md exists at repo root, fails otherwise",
+      "doctor --fix does NOT regenerate INITIAL_TAXONOMY.md or .fabric/bootstrap/ (verified by snapshot test)",
+      "All existing doctor tests pass after fixture path updates",
+      "doctor count increases from 19 → 20 (rename net-zero + 1 new legacy_v1_artifacts_present check)"
+    ]
+  },
+  "depends_on": ["TASK-002"],
+  "cli_execution_id": "anl-2026-05-10-fabric-knowledge-pivot-2026-05-10-TASK-006",
+  "cli_execution": { "strategy": "fork", "resume_from": "anl-2026-05-10-fabric-knowledge-pivot-2026-05-10-TASK-002" },
+  "rationale": {
+    "chosen_approach": "Rename + extend existing checks, add 1 visibility-only legacy detector; defer all 6 lint checks to rc.4",
+    "alternatives_considered": ["Add the 6 lint checks now (rejected — explicit rc.4 scope per handoff)", "Delete bootstrap_missing entirely (rejected — repo-root AGENTS.md anchor still has invariants worth checking)"],
+    "decision_factors": ["rc.1 boundary is 'adapt existing', not 'extend'", "Counter desync is a real risk introduced by TASK-003's writable counter, must be guarded NOW", "legacy_v1_artifacts_present is warn-only — no behavioral cost, useful diagnostic"],
+    "tradeoffs": "Doctor stays at v1.x check coverage levels (19→20); no new safety nets for layer/maturity correctness until rc.4 — acceptable per scope boundary"
+  },
+  "test": {
+    "manual_checks": [
+      "Run doctor on fresh post-init repo — green",
+      "Manually delete one knowledge subdir, run doctor — flagged",
+      "Manually edit agents.meta.json to introduce counter desync — flagged + fixable"
+    ],
+    "success_metrics": [
+      "100% pass rate on fresh-init v2.0 fixture",
+      "All 4 renamed checks have parity coverage with v1.x equivalents",
+      "Counter desync detected in 100% of injected fault scenarios"
+    ],
+    "unit": [
+      "doctor.test.ts: knowledge_dir_missing_detected_and_fixed",
+      "doctor.test.ts: knowledge_dir_unindexed_detected",
+      "doctor.test.ts: stable_id_collision_still_detected",
+      "doctor.test.ts: counter_desync_detected_and_fixed",
+      "doctor.test.ts: bootstrap_anchor_missing_when_no_AGENTS_md",
+      "doctor.test.ts: legacy_v1_artifacts_warn_when_present",
+      "doctor.test.ts: fix_does_not_regenerate_v1_taxonomy"
+    ],
+    "integration": [
+      "doctor.test.ts: full_doctor_run_on_fresh_v2_init_is_green"
+    ]
+  },
+  "estimated_minutes": 75
+}

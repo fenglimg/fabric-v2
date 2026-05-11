@@ -1,0 +1,158 @@
+{
+  "summary": "Fabric v2.0 rc.4 — FINAL RC. Five deliverables culminating in v2.0.0 stable release: (1) doctor --lint with 6 deterministic checks (orphan-demote 90/30/14d, stale-archive, pending-overdue, stable_id-duplicate, layer-mismatch, index-drift) + --apply-lint mutations + knowledge_demoted/knowledge_archived events (event-ledger schema already pre-locked); (2) fabric-import Skill template (3-phase pipeline P1 init-scan ref / P2 git+docs mining / P3 dedup via fab_review search; .fabric/.import-state.json checkpoint; default layer team) + install pipeline wiring; (3) README rewrite with B' tagline + pain-point opening + ASCII architecture diagram + Why Fabric metaphor evolution; (4) docs batch (knowledge-types.md NEW, initialization.md UPDATE, roadmap.md UPDATE, CHANGELOG.md UPDATE); (5) v2.0.0 stable release: version bump 2.0.0-rc.1 → 2.0.0, final CHANGELOG, annotated tag local-only. 10 atomic tasks. Per-file >=90% coverage gate scoped to NEW source. Batched Gemini review at end (per user MEMORY.md). 3 of 5 rc.3 deferred items IN SCOPE (multiline-safe quoteIfNeeded, slug-prefix resumption, conditional date filter); 2 DEFER to v2.1 (schema-breaking changes).",
+  "approach": "Three parallel-safe roots land first (TASK-001 doctor lint core, TASK-004 fabric-import skill, TASK-007 README rewrite, TASK-008 docs batch — all independent files). TASK-002 sequential after TASK-001 (same file doctor.ts). TASK-003 sequential after TASK-001+002 (extends both with --apply-lint mutation). TASK-005 sequential after TASK-004 (depends on skill template). TASK-006 (rc.3 deferred fixes) independent — touches services/review.ts not doctor.ts so no conflict with lint task chain. TASK-009 dogfood depends on TASK-001+002+003+005 (needs full doctor lint + import installed). TASK-010 final gate depends on all 9 prior tasks — batched Gemini review + coverage gate + version bump + tag. Each task = 1 atomic conventional commit. Service uses existing patterns: appendEventLedgerEvent for events, atomicWriteText/Json for file mutations, fs.rename for archive (NOT git-tracked archive subtree — design decision documented in TASK-003). Coverage gate ALLOWLIST scoped to rc.4 NEW source files only (matches rc2/rc3 precedent). v2.0.0 tag is annotated local-only, no push, no NPM publish (per Q5 decision; user publishes manually if desired).",
+  "task_ids": ["TASK-001", "TASK-002", "TASK-003", "TASK-004", "TASK-005", "TASK-006", "TASK-007", "TASK-008", "TASK-009", "TASK-010"],
+  "task_count": 10,
+  "estimated_time": "16-22 hours total: TASK-001 (2h doctor lint #16-18 + tests), TASK-002 (1.5h doctor lint #19-21 + tests), TASK-003 (2.5h --apply-lint mutations + events + CLI flag + tests), TASK-004 (2h fabric-import SKILL.md prose), TASK-005 (1.5h install wiring + tests), TASK-006 (1.5h rc.3 deferred fixes + tests), TASK-007 (1.5h README rewrite), TASK-008 (3h docs batch — 4 files), TASK-009 (1.5h dogfood + evidence), TASK-010 (2-3h batched gate + version bump + tag)",
+  "recommended_execution": "Codex",
+  "complexity": "High",
+  "design_decisions": [
+    {
+      "decision": "Split lint authoring across TASK-001 (#16-18 lifecycle: orphan-demote, stale-archive, pending-overdue) + TASK-002 (#19-21 integrity: stable_id-duplicate, layer-mismatch, index-drift) + TASK-003 (--apply-lint mutations + events)",
+      "rationale": "doctor.ts already 1593 LOC; 6-check + mutation PR would exceed 800 LOC unreviewable; 3-task split keeps each PR focused (~300-500 LOC); TASK-003 mutation logic needs both check groups present",
+      "tradeoff": "doctor.ts gets 3 sequential commits to same file; final ~2400 LOC; mitigated by atomic-commit-per-task git bisect"
+    },
+    {
+      "decision": "doctor --lint default = report only; --apply-lint required for mutations",
+      "rationale": "Audit safety > convenience; explicit handoff acceptance #3; matches doctor --fix convention; lint-mode short-circuit at top of each new check.run() preserves backward compat for existing doctor + doctor --fix callers",
+      "tradeoff": "Two-flag UX (--lint vs --apply-lint); user must explicitly opt-in to mutation; documented in --help"
+    },
+    {
+      "decision": "Decay thresholds 90/30/14 days hardcoded (NOT configurable in rc.4)",
+      "rationale": "Article 1/4 ratio appropriate for single-repo low-frequency use; configurability adds complexity without v2.0 user evidence; v2.x ships configurability if user demand emerges",
+      "tradeoff": "Some users may want different thresholds; mitigated by clear documentation + roadmap.md commitment to v2.x configurability"
+    },
+    {
+      "decision": "Stale archive uses fs.rename (NOT git mv) to .fabric/.archive/<type>/",
+      "rationale": "Archive is a graveyard not active history; events.jsonl knowledge_archived event IS the audit trail; git history of .fabric/knowledge/ remains pristine; .fabric/.archive/ optionally gitignored or preserved at user choice",
+      "tradeoff": "Archive subtree git-untracked = no git blame on archived entries; accepted because archived entries are tombstones not active reference"
+    },
+    {
+      "decision": "Index-drift fix emits NO event (only mutates agents.meta.json)",
+      "rationale": "agents_meta_repaired event type NOT in schema; would require shared-schema unlock (deferred to v2.1); git diff of agents.meta.json is sufficient audit for counter fix",
+      "tradeoff": "No forensic event entry for counter fix; user reading events.jsonl alone won't see the fix; mitigated by doctor --lint pre/post output capturing the change; documented in inline code comment"
+    },
+    {
+      "decision": "fabric-import 3 phases: P1 references init-scan output (NOT re-implemented in skill); P2 LLM-driven git+docs mining; P3 LLM-driven dedup via fab_review search",
+      "rationale": "Init-scan already lands in rc.1 init.ts as deterministic CLI step; skill should reference, not duplicate; LLM-driven enrichment uses existing fab_extract_knowledge + fab_review primitives — no new MCP tool needed",
+      "tradeoff": "Skill prose must describe contract surface accurately (parameter names, schemas); risk of drift mitigated by cross-checking against api-contracts.ts during authoring"
+    },
+    {
+      "decision": "Default layer for fabric-import = team (project artifacts are team-level)",
+      "rationale": "Handoff acceptance #5 explicit; project-scoped knowledge mined from git history + docs is team-shared by default; user can later promote to personal via fab_review modify with layer flip",
+      "tradeoff": "Knowledge mined from a personal-fork git log might be team-marked incorrectly; mitigated by P3 review step where user can re-classify"
+    },
+    {
+      "decision": "rc.3 deferred items: 3 IN SCOPE rc.4 (multiline-safe quoteIfNeeded, slug-prefix resumption, conditional date filter); 2 DEFER to v2.1 (knowledge_layer_change_started event, pending_path → target_path rename)",
+      "rationale": "Rc.4 scope = cheap fixes that don't unlock api-contracts.ts or event-ledger.ts; schema-breaking changes batched for v2.1 alongside team-knowledge.git + 3-role permissions migration; preserves v2.0.0 schema stability commitment",
+      "tradeoff": "v2.0.0 ships with known cosmetic event-type imprecision (rc.3 modifyLayerFlip emits knowledge_promote_started instead of layer-change-specific event); accepted with rc.3 disposition rationale"
+    },
+    {
+      "decision": "Date filter (created_after) for search action: CONDITIONAL — IN SCOPE if FabReviewSearchInput schema permits non-breaking optional addition; DEFER otherwise",
+      "rationale": "Optional zod field addition is non-breaking IF the discriminated branch accepts it without surgery; verified at TASK-006 implementation step 6; if surgery required → defer (matches v2.1 schema-unlock batching)",
+      "tradeoff": "Slight TASK-006 scope ambiguity; resolved at implementation start with single read of api-contracts.ts; commit message documents which path was taken"
+    },
+    {
+      "decision": "Dogfood (TASK-009) commits mutations to self-repo (events.jsonl + .archive/ entries)",
+      "rationale": "Rc.2 + rc.3 precedent; real artifacts are stronger evidence than mocks; events.jsonl trail demonstrates pipeline correctness; self-repo IS the natural rc.4 corpus (3 rc.2 dogfood entries + rc.3 review trail already on disk)",
+      "tradeoff": "Self-repo state mutates each rc; mitigated by clean evidence trail in dogfood-evidence.md and forensic events.jsonl"
+    },
+    {
+      "decision": "v2.0.0 tag is annotated, LOCAL ONLY (no push, no NPM publish)",
+      "rationale": "Convergence requirement explicit; matches rc.2 + rc.3 local-tag convention; user publishes manually via pnpm publish if desired (Q5 decision)",
+      "tradeoff": "v2.0.0 not immediately discoverable via npm view; mitigated by user-explicit publish path; reduces accidental release risk"
+    },
+    {
+      "decision": "Batched Gemini review at end (TASK-010) — NOT per-task",
+      "rationale": "Explicit user MEMORY.md preference (feedback_review_batching.md): for multi-task lite-plan chains, run Gemini review + coverage ONCE at end; rc.2 + rc.3 precedent",
+      "tradeoff": "End-of-cycle gate cannot catch per-task drift early; mitigated by per-task vitest test runs (per-task convergence) + TASK-001/002/003/005/006 each enforce >=90% local coverage as task-level gate"
+    },
+    {
+      "decision": "Per-file >=90% coverage gate ALLOWLIST scoped to rc.4 NEW source code only (not re-gating rc.1/rc.2/rc.3 baseline)",
+      "rationale": "Rc2/rc3 gate precedent; doctor.ts new lint check region computed via diff-scope; review.ts TASK-006 patches; install/skills-and-hooks.ts TASK-005 region; cli/commands/doctor.ts TASK-003 --apply-lint flag; fabric-import SKILL.md is markdown (not gated)",
+      "tradeoff": "Pre-existing baseline files (rc.1/rc.2/rc.3 coverage gaps if any) not re-enforced; accepted because rc.3 gate already validated those slices"
+    }
+  ],
+  "data_flow": {
+    "diagram": "User invokes `fabric doctor --lint` → CLI commands/doctor.ts parses flags → runDoctor(projectRoot, {mode:'lint', applyLint?}) → services/doctor.ts iterates 21 checks (15 baseline + 6 new lint-mode-gated factories) → each check.run() reads .fabric/ tree + events.jsonl tail → emits Finding[] (lint:orphan_demote / lint:stale_archive / lint:pending_overdue / lint:stable_id_duplicate / lint:layer_mismatch / lint:index_drift) → if applyLint:true: post-checks dispatcher iterates findings → applyOrphanDemote (atomicWriteText maturity field rewrite + appendEventLedgerEvent knowledge_demoted) | applyStaleArchive (fs.rename to .fabric/.archive/ + appendEventLedgerEvent knowledge_archived) | applyIndexDriftFix (atomicWriteJson agents.meta.json — no event) | else skip (loud-error or report-only) → returns DoctorReport with findings + applied_mutations[]. Parallel pipeline: User invokes `fabric import` → fabric-import skill → P1 references .fabric/agents.meta.json + .fabric/knowledge/team/ → P2 git log + docs/*.md mining → fab_extract_knowledge MCP calls → pending entries → P3 fab_review action:search → marginal-dup AskUserQuestion → modify-or-reject → final pending state ready for fabric-review skill flow.",
+    "stages": [
+      {"stage": "lint-cli-dispatch", "input": "fabric doctor --lint [--apply-lint] CLI flags", "output": "runDoctor invocation with mode + applyLint", "component": "packages/cli/src/commands/doctor.ts", "transformations": ["flag parsing", "ctx construction"]},
+      {"stage": "lint-checks-execution", "input": "DoctorCtx{mode:'lint', applyLint?}", "output": "Finding[] (per-check)", "component": "packages/server/src/services/doctor.ts checks[] array (21 entries; 6 lint-mode-gated)", "transformations": ["filesystem walk per layer/type", "events.jsonl tail scan for last-active index", "per-maturity threshold computation", "stable_id parsing + duplicate detection", "agents.meta.json counter vs filesystem max comparison"]},
+      {"stage": "lint-mutation-dispatch", "input": "Finding[] + ctx{applyLint:true}", "output": "MutationResult[] (events emitted + files mutated)", "component": "doctor.ts post-checks dispatcher", "transformations": ["per-finding-kind switch", "applyOrphanDemote", "applyStaleArchive", "applyIndexDriftFix"]},
+      {"stage": "event-emission", "input": "knowledge_demoted | knowledge_archived event payloads", "output": "events.jsonl appended lines", "component": "services/event-ledger.ts appendEventLedgerEvent", "transformations": ["zod schema validation", "atomic append"]},
+      {"stage": "import-skill-pipeline", "input": "user invocation + project state", "output": "pending entries + dedup reports", "component": "packages/cli/templates/skills/fabric-import/SKILL.md", "transformations": ["P1 init-scan reference", "P2 git log + docs/*.md mining via fab_extract_knowledge", "P3 fab_review action:search dedup", "checkpoint atomic-write to .fabric/.import-state.json"]},
+      {"stage": "install-pipeline", "input": "fabric init invocation", "output": ".claude/skills + .codex/skills tree + pointer-line additions in CLAUDE.md/AGENTS.md/.cursor/rules", "component": "packages/cli/src/install/skills-and-hooks.ts (extended with installFabricImportSkill + addImportSkillPointer)", "transformations": ["template read + atomicWrite to dual paths", "pointer line idempotent insert"]}
+    ],
+    "dependencies": [
+      "@fenglimg/fabric-shared (knowledge_demoted + knowledge_archived event schemas — pre-locked at event-ledger.ts:230,238; no shared schema work)",
+      "@fenglimg/fabric-shared/node/atomic-write (atomicWriteText, atomicWriteJson)",
+      "node:fs/promises (readFile, mkdir, rename, unlink, readdir)",
+      "node:fs (existsSync, statSync — for hook+install)",
+      "node:child_process (execFileSync — for git operations in TASK-006 slug-prefix resumption if pending file exists under git tracking)",
+      "node:path (join, relative, dirname)",
+      "vitest (test runner)",
+      "Gemini 2.5 Pro (TASK-010 batched code review)"
+    ]
+  },
+  "estimated_time_per_task": "1.5-3h each",
+  "_metadata": {
+    "timestamp": "2026-05-11T00:00:00.000Z",
+    "source": "cli-lite-planning-agent",
+    "plan_type": "feature",
+    "schema_version": "2.0",
+    "planning_mode": "agent-based",
+    "exploration_angles": ["bridged-from-rc2-rc3", "doctor-lint-architecture", "fabric-import-pipeline", "release-readiness"],
+    "duration_seconds": 0,
+    "execution_mode": {
+      "coding_executor": "Agent (Claude Code)",
+      "code_review_tool": "Gemini Review (batched at end per user MEMORY.md)",
+      "convergence_review_tool": "Agent (Claude Code writes tests + per-file >=90% gate via scripts/rc4-coverage-gate.mjs)",
+      "coverage_detection": "Claude Code via scripts/rc4-coverage-gate.mjs (mirrors rc2/rc3 gate scripts)",
+      "commit_style": "conventional commits, 1 atomic commit per task"
+    },
+    "batched_review_at_end": true,
+    "rc3_deferred_disposition": {
+      "in_scope_rc4": [
+        "Multiline-safe quoteIfNeeded (services/review.ts:923-929) — TASK-006",
+        "Orphan-on-partial-failure hardening / slug-prefix collision check (services/review.ts approveOne) — TASK-006",
+        "Date filter (created_after) for search action — TASK-006 CONDITIONAL (IN SCOPE if schema permits non-breaking optional addition)"
+      ],
+      "deferred_v2_1": [
+        "knowledge_layer_change_started event type (event-ledger.ts schema unlock — breaking)",
+        "pending_path → target_path rename in modify (api-contracts.ts schema unlock — breaking)"
+      ]
+    },
+    "session_folder": ".workflow/.lite-plan/fabric-v2-rc4-impl-2026-05-10",
+    "handoff_source": ".workflow/.analysis/ANL-2026-05-10-fabric-knowledge-pivot/handoff.json",
+    "handoff_implementation_scope_index": 3,
+    "task_dag": {
+      "roots": ["TASK-001", "TASK-004", "TASK-006", "TASK-007", "TASK-008"],
+      "edges": [
+        {"from": "TASK-001", "to": "TASK-002"},
+        {"from": "TASK-001", "to": "TASK-003"},
+        {"from": "TASK-002", "to": "TASK-003"},
+        {"from": "TASK-004", "to": "TASK-005"},
+        {"from": "TASK-001", "to": "TASK-009"},
+        {"from": "TASK-002", "to": "TASK-009"},
+        {"from": "TASK-003", "to": "TASK-009"},
+        {"from": "TASK-005", "to": "TASK-009"},
+        {"from": "TASK-001", "to": "TASK-010"},
+        {"from": "TASK-002", "to": "TASK-010"},
+        {"from": "TASK-003", "to": "TASK-010"},
+        {"from": "TASK-004", "to": "TASK-010"},
+        {"from": "TASK-005", "to": "TASK-010"},
+        {"from": "TASK-006", "to": "TASK-010"},
+        {"from": "TASK-007", "to": "TASK-010"},
+        {"from": "TASK-008", "to": "TASK-010"},
+        {"from": "TASK-009", "to": "TASK-010"}
+      ],
+      "parallel_safe_groups": [
+        ["TASK-001", "TASK-004", "TASK-006", "TASK-007", "TASK-008"],
+        ["TASK-002"],
+        ["TASK-003", "TASK-005"],
+        ["TASK-009"],
+        ["TASK-010"]
+      ]
+    }
+  }
+}

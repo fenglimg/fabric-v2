@@ -1,0 +1,105 @@
+{
+  "id": "TASK-006",
+  "title": "Install wiring: extend skills-and-hooks.ts + init.ts + hooks.ts to install fabric-review skill",
+  "scope": "packages/cli/src/install/skills-and-hooks.ts, packages/cli/src/commands/init.ts, packages/cli/src/commands/hooks.ts",
+  "action": "Update",
+  "description": "Wire the fabric-review skill template (TASK-003) into the existing install pipeline alongside fabric-archive. Reuses existing helpers (copyTextIdempotent, addPointer pattern) and follows the same dual-destination pattern (.claude/skills/ AND .codex/skills/). No hook script change is required (TASK-004 extended archive-hint.cjs in place — same .claude/hooks/ + .codex/hooks/ install). Add fabric-review pointer line to CLAUDE.md/AGENTS.md/.cursor/rules.",
+  "files": [
+    {
+      "path": "packages/cli/src/install/skills-and-hooks.ts",
+      "action": "modify",
+      "target": "exports + new installer + pointer constants",
+      "change": "Add SKILL_REVIEW_TEMPLATE_REL='skills/fabric-review/SKILL.md', SKILL_REVIEW_DEST_REL=join('skills','fabric-review','SKILL.md'). Export new function `installFabricReviewSkill(projectRoot, options)` mirroring installFabricArchiveSkill: read SKILL_REVIEW_TEMPLATE_REL, write to `.claude/skills/fabric-review/SKILL.md` AND `.codex/skills/fabric-review/SKILL.md`, return InstallStepResult[]. Add REVIEW_POINTER_LINE='> Use the fabric-review Skill to review pending knowledge entries (see .claude/skills/fabric-review/SKILL.md).'. Export `addReviewSkillPointer(projectRoot, options)` mirroring addArchiveSkillPointer with REVIEW_POINTER_LINE."
+    },
+    {
+      "path": "packages/cli/src/commands/init.ts",
+      "action": "modify",
+      "target": "executeInitStagePlan bootstrap branch (currently calls installFabricArchiveSkill / installArchiveHintHook / mergeClaudeCodeHookConfig / mergeCodexHookConfig / addArchiveSkillPointer)",
+      "change": "Add `installFabricReviewSkill` and `addReviewSkillPointer` imports next to existing fabric-archive imports. In bootstrap stage executor (or wherever fabric-archive installers are called), add `await installFabricReviewSkill(plan.target, {force})` after `installFabricArchiveSkill` and `await addReviewSkillPointer(plan.target, {force})` after `addArchiveSkillPointer`. Aggregate results into the existing InstallStepResult[] return."
+    },
+    {
+      "path": "packages/cli/src/commands/hooks.ts",
+      "action": "modify",
+      "target": "installHooks function",
+      "change": "If installHooks (the post-rc.2 implementation) already routes through skills-and-hooks installers, add installFabricReviewSkill + addReviewSkillPointer calls alongside the archive variants. If hooks.ts is a thin wrapper that only calls installArchiveHintHook + mergeClaudeCodeHookConfig + mergeCodexHookConfig (no skill installs from this entry point), document that re-running `fab init` is the canonical path for skill (re)install."
+    }
+  ],
+  "implementation": [
+    "Read packages/cli/src/install/skills-and-hooks.ts:1-100 to confirm export shapes and helper reuse pattern (already done in planning context)",
+    "In skills-and-hooks.ts: declare 2 new const literals (SKILL_REVIEW_TEMPLATE_REL, SKILL_REVIEW_DEST_REL); add REVIEW_POINTER_LINE; extend POINTER_TARGETS NOT touched (same 3 targets receive both pointer lines)",
+    "Implement installFabricReviewSkill: clone installFabricArchiveSkill body, swap SKILL_TEMPLATE_REL → SKILL_REVIEW_TEMPLATE_REL, swap SKILL_DEST_REL → SKILL_REVIEW_DEST_REL. Return InstallStepResult[] with step='skill-review'",
+    "Implement addReviewSkillPointer: clone addArchiveSkillPointer body, swap POINTER_LINE → REVIEW_POINTER_LINE, step name 'pointer-review'. Skips if review pointer already present (independent dedup from archive pointer)",
+    "Read packages/cli/src/commands/init.ts; locate the call site of installFabricArchiveSkill (likely in executeInitStagePlan bootstrap branch); add installFabricReviewSkill call directly after, with same options/error handling",
+    "Locate addArchiveSkillPointer call site; add addReviewSkillPointer call directly after",
+    "Read packages/cli/src/commands/hooks.ts; if it imports from skills-and-hooks.ts, add the 2 new imports + 2 new calls; if it's just hook-script-only, leave hooks.ts untouched (init.ts is sole canonical install path for skills)",
+    "Add unit tests packages/cli/__tests__/integration/install-fabric-review.test.ts: test_install_fabric_review_skill_writes_to_claude_and_codex, test_install_fabric_review_skill_idempotent_second_run_no_diff, test_add_review_skill_pointer_appends_unique_line, test_add_review_skill_pointer_skips_when_already_present, test_init_installs_both_archive_and_review_skills",
+    "Update existing init-atomic.test.ts assertions if they enumerate exact written-files (add fabric-review SKILL.md to expected set)",
+    "Run `pnpm --filter @fenglimg/fabric-cli test`; verify integration tests pass; commit as 'feat(cli): wire fabric-review skill installer into init pipeline (rc.3 TASK-006)'"
+  ],
+  "reference": {
+    "pattern": "Sibling installer pattern (clone fabric-archive helpers and swap template paths)",
+    "files": [
+      "packages/cli/src/install/skills-and-hooks.ts",
+      "packages/cli/src/commands/init.ts",
+      "packages/cli/src/commands/hooks.ts",
+      "packages/cli/__tests__/integration/install-fabric-archive.test.ts (if exists; else init-atomic.test.ts)"
+    ],
+    "examples": "All helpers already exist for fabric-archive; clone+swap template constants; reuse copyTextIdempotent, mkdir, atomicWriteText, deepMerge"
+  },
+  "convergence": {
+    "criteria": [
+      "installFabricReviewSkill exported from skills-and-hooks.ts",
+      "After fab init, .claude/skills/fabric-review/SKILL.md AND .codex/skills/fabric-review/SKILL.md both exist with content matching template (verified by integration test)",
+      "Re-running fab init produces zero diff for fabric-review files (sha256 byte-identical, mirroring init-guard.test.ts pattern)",
+      "CLAUDE.md / AGENTS.md / .cursor/rules contain BOTH archive pointer line AND review pointer line after init (when those files exist)",
+      "Installing with no-op skip path: when SKILL.md already up-to-date, returns InstallStepResult{status:'skipped', message:'up-to-date'}",
+      "fabric-archive installation regression-free (existing tests pass)",
+      "All integration tests pass; install-fabric-review.test.ts achieves >=90% coverage on new exports"
+    ]
+  },
+  "depends_on": ["TASK-003"],
+  "rationale": {
+    "chosen_approach": "Sibling installer with clone-and-swap; pointer line independent dedup; no hook re-install change required (TASK-004 modified hook in place)",
+    "alternatives_considered": [
+      "Generalize installFabricSkill(name, templatePath, destPath) — rejected: only 2 skills today, premature abstraction; rc.4 fabric-import will revisit",
+      "Single combined POINTER_LINE for both skills — rejected: independent dedup means re-running can re-add review pointer if user manually deletes it without disturbing archive pointer"
+    ],
+    "decision_factors": [
+      "Existing helpers compose; minimal new code",
+      "Idempotency contract preserved (sha256 reapply test)",
+      "init.ts is single integration site"
+    ],
+    "tradeoffs": "Code duplication of the 5-line installer body across 2 skills — accepted for clarity; rc.4 may refactor"
+  },
+  "test": {
+    "manual_checks": [
+      "Run `pnpm --filter @fenglimg/fabric-cli build && node dist/index.js init` against a tmp project; verify both SKILL.md files appear in .claude/skills/ and .codex/skills/",
+      "Re-run init; verify zero file diff (idempotent)"
+    ],
+    "success_metrics": [
+      "Integration test install-fabric-review.test.ts passes 100%",
+      "skills-and-hooks.ts coverage delta: new exports >=90% lines",
+      "init.ts regression tests pass"
+    ],
+    "unit": [
+      "test_installFabricReviewSkill_writes_both_destinations",
+      "test_installFabricReviewSkill_skipped_when_up_to_date",
+      "test_addReviewSkillPointer_appends_to_existing_md_files",
+      "test_addReviewSkillPointer_independent_dedup_from_archive_pointer"
+    ],
+    "integration": [
+      "test_init_installs_archive_AND_review_skills",
+      "test_init_idempotent_for_review_skill_files",
+      "test_init_pointer_lines_both_present_in_claude_md"
+    ]
+  },
+  "risks": [
+    {
+      "description": "init.ts call site for fabric-archive may not exist in current main (only base scaffolding committed) — locating fabric-archive install call site may require searching across init.ts",
+      "probability": "Medium",
+      "impact": "Low",
+      "mitigation": "grep packages/cli/src/commands/init.ts for installFabricArchiveSkill; if absent, the planning agent's code anchor is stale — TASK-001 of rc.2 must have wired it; recent commit f0a33a8 'feat(cli): wire fabric-archive skill + hook install' confirms presence",
+      "fallback": "If somehow not present, add both archive and review installer calls in the same edit"
+    }
+  ]
+}

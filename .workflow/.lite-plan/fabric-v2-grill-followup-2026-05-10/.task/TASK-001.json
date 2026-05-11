@@ -1,0 +1,66 @@
+{
+  "id": "TASK-001",
+  "title": "discussion-followup.md — archive Q1-Q7 grill-me decision tree",
+  "scope": ".workflow/.analysis/ANL-2026-05-10-fabric-knowledge-pivot/",
+  "action": "Create",
+  "description": "Create `discussion-followup.md` in the same folder as the existing `discussion.md` for the fabric-knowledge-pivot analysis session. Document the full Q1-Q7 grill-me decision tree: each question gets options enumerated, recommendation with rationale, and a 'LOCKED' marker indicating user confirmation. Style and structure must follow the existing `discussion.md` in the same folder (read first for tone reference). This is a doc-only task — no code changes.",
+  "complexity": "Low",
+  "estimated_time": "30-45 min",
+  "files": [
+    {"path": ".workflow/.analysis/ANL-2026-05-10-fabric-knowledge-pivot/discussion-followup.md", "action": "create", "target": "new file", "change": "New markdown file documenting Q1-Q7 grill-me decision tree: each Q has Options Considered / Recommendation / Rationale / LOCKED Decision sections; follow tone and structure of sibling discussion.md"}
+  ],
+  "implementation": [
+    "Read `.workflow/.analysis/ANL-2026-05-10-fabric-knowledge-pivot/discussion.md` to absorb tone, heading hierarchy, and section conventions",
+    "Draft 7 sections (Q1 Filename / Q2 Pending / Q3 Language / Q4 Topology / Q5 Sync / Q6 Existing-MCP / Q7 New-MCP), each with `### Options Considered`, `### Recommendation`, `### Rationale`, `### LOCKED Decision`",
+    "Q1: filename `<id>--<slug>.md`; layer-flip via git mv KT→KP; alternatives = id-only / slug-only / nested dirs",
+    "Q2: pending `pending/<type>/<slug>.md`; late-bind id (counter++ on approve); alternatives = eager-bind / temp-id / uuid",
+    "Q3: M3 style (EN headings + zh-CN body + EN tech terms); fabric-config `knowledge_language` field; alternatives = full-EN / full-zh / per-entry frontmatter override",
+    "Q4: per-type flat; KP mirrors KT; independent counters + meta files; cache rename rule-test.index → .cache/knowledge-test.index; alternatives = nested-by-tag / shared-counter / lazy-meta",
+    "Q5: .md authoritative; meta derived; revision = sha256(sorted(stable_id+frontmatter_hash)); 2-phase events; alternatives = meta-authoritative / no-revision / single-phase",
+    "Q6: tags into description_index; layer_filter input + default_layer_filter config; redirect_to error shape; near_duplicate diagnostic; ENOENT 1 retry; alternatives = no-filter / hard-error / no-retry",
+    "Q7: thin MCP / thick Skill; fab_extract_knowledge semi-thick input; idempotency key (source_session,type,slug); approve via pending_paths[]; layer-flip = modify.layer; defer expiry detected by doctor; docs split data-schema.md + mcp-contracts.md; alternatives = thick-MCP / per-call uuid / separate flip action / single docs file",
+    "Word target: ≥ 1500 chars total; verify via `wc -m` on completed file; ensure all 7 'LOCKED' markers present via `grep -c '^LOCKED:' file | awk '$1 == 7'` or similar",
+    "Cross-link from sibling `handoff.json` if appropriate (optional — not blocking)"
+  ],
+  "reference": {
+    "pattern": "Decision-archive doc following sibling discussion.md style",
+    "files": [".workflow/.analysis/ANL-2026-05-10-fabric-knowledge-pivot/discussion.md", ".workflow/.analysis/ANL-2026-05-10-fabric-knowledge-pivot/handoff.json"],
+    "examples": "Match heading hierarchy, prose voice, and decision-log tone of sibling discussion.md"
+  },
+  "convergence": {
+    "criteria": [
+      "File `.workflow/.analysis/ANL-2026-05-10-fabric-knowledge-pivot/discussion-followup.md` exists",
+      "File contains all 7 question headers (`grep -c '^## Q[1-7]' file` returns 7)",
+      "File contains 7 'LOCKED' markers (`grep -ic 'LOCKED' file` ≥ 7)",
+      "File size ≥ 1500 chars (`wc -m file` ≥ 1500)",
+      "No code changes — `git status packages/ docs/` shows no modifications"
+    ]
+  },
+  "depends_on": [],
+  "dependency_type": "none",
+  "parallel_safe": true,
+  "scope_boundary": "OUT OF SCOPE: any code changes (this is doc-only); modifying sibling discussion.md (this task creates a NEW file); generating handoff.json updates",
+  "cli_execution_id": "fabric-v2-grill-followup-2026-05-10-TASK-001",
+  "cli_execution": {"strategy": "new"},
+  "recommended_execution": "Agent",
+  "rationale": {
+    "chosen_approach": "Doc-only archive of grill-me decision tree as a separate sibling file (discussion-followup.md), not amendment to existing discussion.md, to preserve the original session as immutable record",
+    "alternatives_considered": ["Append to discussion.md", "Embed in handoff.json", "Skip — decisions are already in plan files"],
+    "decision_factors": ["Auditability — separate file = clear before/after grill", "Discoverability — anyone reading the analysis folder finds both", "Plan files don't capture rationale narratively"],
+    "tradeoffs": "Two files instead of one; grill-followup is a child concept (acceptable — discussion.md is the main session, follow-up is grilled refinement)"
+  },
+  "test": {
+    "manual_checks": [
+      "Eyeball the file — 7 sections, LOCKED markers prominent, prose tone matches sibling discussion.md",
+      "Run `wc -m` to confirm ≥ 1500 chars",
+      "Run `grep -c '^## Q[1-7]' file` to confirm exactly 7 question headers"
+    ],
+    "success_metrics": [
+      "All convergence grep checks pass",
+      "File size ≥ 1500 chars",
+      "Reads cleanly to a human reviewer (Gemini diff review)"
+    ],
+    "unit": [],
+    "integration": []
+  }
+}

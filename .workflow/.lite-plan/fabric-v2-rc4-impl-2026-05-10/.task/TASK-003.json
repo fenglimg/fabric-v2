@@ -1,0 +1,173 @@
+{
+  "id": "TASK-003",
+  "title": "Doctor --apply-lint flag: mutations + knowledge_demoted/knowledge_archived event emission",
+  "scope": "packages/server/src/services/doctor.ts (--apply-lint behavior wiring); packages/cli/src/commands/doctor.ts (CLI flag); packages/server/src/services/doctor.test.ts (mutation tests)",
+  "action": "Implement",
+  "description": "Wire the --apply-lint mode that activates mutations from the 6 lint findings produced by TASK-001+002. Default --lint mode is read-only (TASK-001+002 already enforce); --apply-lint activates the proposed_actions: orphan-demote rewrites maturity field via atomicWriteText + emits knowledge_demoted event; stale-archive moves file to .fabric/.archive/<type>/<filename> + emits knowledge_archived event; index-drift writes corrected agents.meta.json via atomicWriteJson; pending-overdue/stable-id-duplicate/layer-mismatch never auto-fix (loud-error or report-only). The CLI flag --apply-lint plumbs through cli/src/commands/doctor.ts to runDoctor({mode:'lint', applyLint:true}). Both event types (knowledge_demoted, knowledge_archived) ALREADY exist in packages/shared/src/schemas/event-ledger.ts:230,238 — zero shared-schema work.",
+  "files": [
+    {
+      "path": "packages/server/src/services/doctor.ts",
+      "action": "modify",
+      "target": "DoctorCtx type + runDoctor signature + 3 new mutation handlers (applyOrphanDemote, applyStaleArchive, applyIndexDriftFix)",
+      "change": "Extend DoctorCtx with `applyLint?: boolean` field. After all 21 checks run and findings array is collected, if ctx.applyLint && ctx.mode === 'lint': iterate findings, dispatch by kind to mutation handlers. applyOrphanDemote(finding, ctx): read target file, parse frontmatter, rewrite maturity field to finding.proposed_action.to via atomicWriteText, emit appendEventLedgerEvent({event_type:'knowledge_demoted', stable_id:findingId, from_maturity, to_maturity, reason:'lint:orphan_demote'}). applyStaleArchive(finding, ctx): ensure dir .fabric/.archive/<type>/, rename file from canonical to archive path (fs.rename — git history not preserved in archive subtree per design; alternatively execFileSync git mv if archive is tracked — verify per archive design decision in TASK-003 step 1), emit appendEventLedgerEvent({event_type:'knowledge_archived', stable_id, from_path, to_path, reason:'lint:stale_archive'}). applyIndexDriftFix(finding, ctx): read agents.meta.json, set counters[layer][type] = finding.proposed_action.after, atomicWriteJson — NO event emission (counter fix is meta-mutation; or emit a synthetic event; verify semantic at step 1). Loud-error findings (lint:stable_id_duplicate, lint:layer_mismatch) skip mutation; pending-overdue is report-only (no mutation)."
+    },
+    {
+      "path": "packages/cli/src/commands/doctor.ts",
+      "action": "modify",
+      "target": "CLI option parsing + runDoctor invocation",
+      "change": "Add `--apply-lint` boolean option to the doctor command (alongside existing --fix). When --apply-lint is set, pass {mode:'lint', applyLint:true} to runDoctor. When only --lint (or --apply-lint) is set without --fix, mode is 'lint'. Document the precedence: --apply-lint implies --lint; --apply-lint + --fix is invalid (error out with clear message). Update --help text to document --lint (report-only) and --apply-lint (apply mutations + emit events)."
+    },
+    {
+      "path": "packages/server/src/services/doctor.test.ts",
+      "action": "modify",
+      "target": "extend lint describe with new sub-describe 'apply-lint mutations'",
+      "change": "Add unit tests covering mutation paths: apply_lint_orphan_demote_rewrites_maturity_field, apply_lint_orphan_demote_emits_knowledge_demoted_event, apply_lint_stale_archive_moves_file_to_dot_archive, apply_lint_stale_archive_emits_knowledge_archived_event, apply_lint_index_drift_updates_agents_meta_counter, apply_lint_index_drift_does_not_emit_event_OR_emits_meta_event, apply_lint_skips_loud_errors_without_mutation, apply_lint_skips_pending_overdue_without_mutation, apply_lint_idempotent_when_run_twice (second run has no findings). Each test seeds tmpdir, runs runDoctor with applyLint:true, asserts file mutations + events.jsonl content."
+    },
+    {
+      "path": "packages/cli/__tests__/commands/doctor.test.ts",
+      "action": "modify",
+      "target": "extend with --apply-lint flag tests (or create if file does not exist)",
+      "change": "Add tests: doctor_apply_lint_flag_passes_applyLint_true_to_runDoctor, doctor_apply_lint_with_fix_errors_out_with_clear_message, doctor_lint_default_does_not_set_applyLint. If commands/doctor.test.ts does not exist, create following packages/cli/__tests__/ test pattern (vitest, mock runDoctor, assert call args)."
+    }
+  ],
+  "implementation": [
+    "Read packages/shared/src/schemas/event-ledger.ts L228-250 to confirm knowledge_demoted + knowledge_archived event shapes; lock the required fields to populate (stable_id, from_maturity, to_maturity, reason for demoted; stable_id, from_path, to_path, reason for archived)",
+    "Read packages/server/src/services/event-ledger.ts to confirm appendEventLedgerEvent signature and atomic-write semantics (precedent from rc.2/rc.3 events)",
+    "Decide archive design: option A: fs.rename to .fabric/.archive/ (no git tracking — archive is tombstone) vs option B: execFileSync git mv to .fabric/.archive/ (preserves git history). Choose option A: archive is a graveyard, not active history; doctor archive event in events.jsonl IS the audit trail. Document choice in inline code comment.",
+    "Decide index-drift event semantic: option A: no event (meta-mutation only, audit trail is git diff of agents.meta.json) vs option B: emit synthetic 'agents_meta_repaired' event. event-ledger.ts schema does NOT have agents_meta_repaired; option B requires schema unlock (DEFER per planning constraint). Choose option A: NO event emission for index-drift fix; document in inline comment + test asserts no new events emitted by this specific mutation.",
+    "Extend DoctorCtx type with applyLint?: boolean; runDoctor signature accepts ctx parameter (or named-options object); plumb through to checks-loop + post-checks mutation phase",
+    "Add post-checks mutation phase to runDoctor: if (ctx.applyLint && ctx.mode === 'lint') for each finding in findings: switch on finding.kind: 'lint:orphan_demote' → applyOrphanDemote, 'lint:stale_archive' → applyStaleArchive, 'lint:index_drift' → applyIndexDriftFix, 'lint:stable_id_duplicate' OR 'lint:layer_mismatch' → skip + log warning, 'lint:pending_overdue' → skip (report only), default → skip",
+    "Implement applyOrphanDemote(finding, ctx): read file at finding.target_path, parse frontmatter (use existing parseFrontmatter helper from rc.3 review.ts OR rule-meta-builder.ts pattern), rewrite maturity to finding.proposed_action.to, atomicWriteText back, await appendEventLedgerEvent with knowledge_demoted shape",
+    "Implement applyStaleArchive(finding, ctx): ensureDir .fabric/.archive/<type>/, fs.rename(target_path, archivePath), await appendEventLedgerEvent with knowledge_archived shape (stable_id, from_path, to_path, reason)",
+    "Implement applyIndexDriftFix(finding, ctx): read .fabric/agents.meta.json via readFileSync+JSON.parse, set counters[layer][type] = finding.proposed_action.after, atomicWriteJson back; NO event emission (decision step 4)",
+    "Wire CLI flag in packages/cli/src/commands/doctor.ts: add option('--apply-lint') alongside option('--fix'); compute mode + applyLint from flags; error if --apply-lint && --fix both present; update --help string to document semantics; pass to runDoctor",
+    "Add doctor.test.ts new sub-describe 'apply-lint mutations' with the 9 unit tests; mirror TASK-001/TASK-002 tmpdir-seed pattern; add events.jsonl read assertions",
+    "Add cli/__tests__/commands/doctor.test.ts (or extend existing) with 3 CLI flag tests",
+    "Run `pnpm --filter @fenglimg/fabric-server typecheck && pnpm --filter @fenglimg/fabric-server test && pnpm --filter @fenglimg/fabric-cli typecheck && pnpm --filter @fenglimg/fabric-cli test`; verify all green; commit as 'feat(doctor): --apply-lint mutations + knowledge_demoted/archived events (rc.4 TASK-003)'"
+  ],
+  "reference": {
+    "pattern": "rc.2 fab_extract_knowledge appendEventLedgerEvent + atomicWriteText pattern; rc.3 review.ts approveOne 2-phase event emission + atomicWriteJson for agents.meta.json updates",
+    "files": [
+      "packages/server/src/services/doctor.ts",
+      "packages/server/src/services/event-ledger.ts",
+      "packages/server/src/services/extract-knowledge.ts",
+      "packages/server/src/services/review.ts",
+      "packages/shared/src/schemas/event-ledger.ts",
+      "packages/cli/src/commands/doctor.ts"
+    ],
+    "examples": "rc.2 8dfa018 appendEventLedgerEvent invocations; rc.3 review.ts:339-393 approveOne event sequence; existing doctor --fix mutation handlers (createKnowledgeProposedCheck applyFix path)"
+  },
+  "convergence": {
+    "criteria": [
+      "doctor --apply-lint with seeded orphan-demote-eligible entry rewrites file maturity from stable to endorsed (or endorsed to draft, or draft to draft+archive) — verified by reading file before/after",
+      "doctor --apply-lint emits knowledge_demoted event with stable_id + from_maturity + to_maturity + reason fields populated — verified by readEventLedger filter",
+      "doctor --apply-lint with seeded stale-archive-eligible entry moves file from .fabric/knowledge/<layer>/<type>/<file> to .fabric/.archive/<type>/<file> — verified by fs.existsSync before/after",
+      "doctor --apply-lint emits knowledge_archived event with stable_id + from_path + to_path + reason — verified",
+      "doctor --apply-lint with seeded index-drift fixture writes corrected agents.meta.json counter — verified by reading meta before/after",
+      "doctor --apply-lint does NOT mutate or emit events for findings of kinds: lint:stable_id_duplicate, lint:layer_mismatch, lint:pending_overdue — verified by snapshot",
+      "doctor --apply-lint is idempotent: 2nd run on same tmpdir produces 0 mutations + 0 new events (because findings list is empty after 1st run resolved them) — verified by 2-pass test",
+      "doctor without --apply-lint flag (mode='lint' only) performs 0 file mutations and 0 event emissions — verified by snapshot (TASK-001+002 baseline)",
+      "doctor --apply-lint + --fix flag combination errors with clear message (CLI surface)",
+      "All event shapes pass schema validation against event-ledger.ts knowledge_demoted/knowledge_archived schemas — verified by zod parse round-trip in test",
+      "Coverage of new mutation handlers + CLI flag plumbing >= 90% lines"
+    ]
+  },
+  "depends_on": ["TASK-001", "TASK-002"],
+  "rationale": {
+    "chosen_approach": "Post-checks dispatcher pattern: collect all findings in checks-loop (TASK-001+002 unchanged), then if applyLint flag set, iterate findings and route to per-kind mutation handler. Event types pre-locked in schema (zero shared-schema work).",
+    "alternatives_considered": [
+      "Inline mutations within each check.run() — rejected: violates read/write separation; harder to test; harder to reason about idempotency",
+      "Separate --apply-lint as a wholly separate sub-command (e.g., `doctor lint apply`) — rejected: handoff explicitly specifies --apply-lint flag on existing doctor command",
+      "Auto-fix loud-error findings (e.g., auto-rename one duplicate to KT-D-0001-dup-1) — rejected: data loss risk; correct UX is loud error + manual triage",
+      "Emit synthetic 'agents_meta_repaired' event for index-drift — rejected: requires event-ledger schema unlock (deferred to v2.1); git diff of agents.meta.json is sufficient audit"
+    ],
+    "decision_factors": [
+      "Schema constraints (knowledge_demoted/archived already pre-locked; agents_meta_repaired NOT in schema)",
+      "Idempotency: 2nd run has no findings → 0 mutations (read/write separation guarantees)",
+      "Audit safety: --apply-lint required for any mutation; default report-only",
+      "Loud-error semantics: stable_id_duplicate + layer_mismatch are corruption; auto-fix could destroy data"
+    ],
+    "tradeoffs": "Index-drift fix has no event audit trail (only git diff of agents.meta.json); accepted because counter fix is administrative, not a knowledge lifecycle event. If user reports needing audit, v2.1 can add agents_meta_repaired event type."
+  },
+  "test": {
+    "manual_checks": [
+      "After TASK-003, run `fabric doctor --lint` on Fabric self-repo — verify lint findings reported",
+      "Run `fabric doctor --apply-lint` on a deliberately-aged tmpdir copy — verify mutations applied, events emitted",
+      "Run `fabric doctor --apply-lint --fix` — verify clear error message",
+      "Verify `fabric doctor` (no flags) and `fabric doctor --fix` still work unchanged"
+    ],
+    "success_metrics": [
+      "9 new mutation tests pass 100%",
+      "3 new CLI flag tests pass 100%",
+      "doctor.ts TASK-003 region lines coverage >= 90%",
+      "0 type errors",
+      "0 regression in existing doctor tests"
+    ],
+    "unit": [
+      "test_apply_lint_orphan_demote_rewrites_maturity_stable_to_endorsed",
+      "test_apply_lint_orphan_demote_rewrites_maturity_endorsed_to_draft",
+      "test_apply_lint_orphan_demote_emits_knowledge_demoted_event_with_correct_shape",
+      "test_apply_lint_stale_archive_moves_file_to_dot_archive_subtree",
+      "test_apply_lint_stale_archive_emits_knowledge_archived_event_with_correct_shape",
+      "test_apply_lint_index_drift_updates_agents_meta_counter_in_place",
+      "test_apply_lint_index_drift_does_not_emit_event_inline_comment_documents_choice",
+      "test_apply_lint_skips_lint_stable_id_duplicate_findings",
+      "test_apply_lint_skips_lint_layer_mismatch_findings",
+      "test_apply_lint_skips_lint_pending_overdue_findings",
+      "test_apply_lint_idempotent_second_run_no_mutations",
+      "test_lint_without_apply_lint_flag_zero_mutations_zero_events"
+    ],
+    "integration": [
+      "test_cli_doctor_apply_lint_flag_passes_applyLint_true",
+      "test_cli_doctor_apply_lint_plus_fix_errors_with_clear_message",
+      "test_cli_doctor_lint_only_does_not_set_applyLint"
+    ]
+  },
+  "risks": [
+    {
+      "description": "Frontmatter rewrite (changing maturity field) may corrupt other fields if regex parser is fragile",
+      "probability": "Medium",
+      "impact": "High",
+      "mitigation": "Reuse parseFrontmatter helper from rc.3 review.ts (already battle-tested); use surgical replace: split on '---' delimiters, line-replace `maturity: <X>` → `maturity: <Y>`, re-join; add round-trip test (parse → mutate → parse → assert all other fields preserved)",
+      "fallback": "If regex proves brittle on edge cases, parse YAML via simple kv writer (single-line scalars only — schema constraint)"
+    },
+    {
+      "description": "Stale archive fs.rename across filesystem boundaries (e.g., .fabric on tmpfs, .archive on ext4) could throw EXDEV",
+      "probability": "Low",
+      "impact": "Low",
+      "mitigation": "Both source + dest live under same projectRoot — same filesystem guaranteed in normal use; if EXDEV thrown, fallback to readFile + writeFile + unlink",
+      "fallback": "Catch EXDEV, do copy + delete; emit a debug log noting cross-fs operation"
+    },
+    {
+      "description": "Idempotency violation: rerunning --apply-lint after partial failure could double-emit events",
+      "probability": "Low",
+      "impact": "Medium",
+      "mitigation": "Each mutation is per-finding; if mutation throws, the finding remains uncommitted (event NOT emitted before mutation); reverse order is safer: do mutation first, emit event on success only; document in code; partial-failure path leaves file mutated but no event (next --lint run sees no finding for that file → no event emitted → silent recovery acceptable for forensic-minimum rc.4)",
+      "fallback": "Add transactional 2-phase pattern (started → succeeded/failed) in v2.1 if user reports forensic gap"
+    }
+  ],
+  "code_skeleton": {
+    "key_functions": [
+      {
+        "signature": "async function applyOrphanDemote(finding: Finding, ctx: DoctorCtx): Promise<void>",
+        "purpose": "Rewrite maturity field via atomicWriteText; emit knowledge_demoted event",
+        "returns": "Promise<void>"
+      },
+      {
+        "signature": "async function applyStaleArchive(finding: Finding, ctx: DoctorCtx): Promise<void>",
+        "purpose": "Move file to .fabric/.archive/<type>/; emit knowledge_archived event",
+        "returns": "Promise<void>"
+      },
+      {
+        "signature": "async function applyIndexDriftFix(finding: Finding, ctx: DoctorCtx): Promise<void>",
+        "purpose": "Update agents.meta.json counter; no event emission",
+        "returns": "Promise<void>"
+      },
+      {
+        "signature": "function shouldApplyMutation(findingKind: string): boolean",
+        "purpose": "Pure helper; returns true for lint:orphan_demote/stale_archive/index_drift; false for loud-error and report-only kinds",
+        "returns": "boolean"
+      }
+    ]
+  }
+}

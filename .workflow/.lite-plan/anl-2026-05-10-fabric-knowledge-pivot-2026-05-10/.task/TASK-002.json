@@ -1,0 +1,86 @@
+{
+  "id": "TASK-002",
+  "title": "Define v2.0 knowledge schema in packages/shared (frontmatter + agents.meta + event-ledger types)",
+  "description": "Establish the v2.0 type/maturity/layer schema as the contract surface. Adds new fields to ruleDescriptionSchema (id, type, maturity, layer, layer_reason, created_at) — all FLAT scalars per existing parser constraint at rule-meta-builder.ts:748-785 (no nested objects). Extends agentsMetaSchema with `counters: {KP: number, KT: number}` envelope for stable_id allocator. Defines new TypeScript enums for the 5 knowledge types and 3 maturity levels. Does NOT yet add new event types — those are introduced in rc.2/rc.3 alongside the tools that emit them. This task is purely contract-level; no behavior changes.",
+  "scope": "packages/shared/src/schemas/",
+  "action": "Update",
+  "files": [
+    {
+      "path": "packages/shared/src/schemas/agents-meta.ts",
+      "action": "modify",
+      "target": "agentsMetaSchema + ruleDescriptionSchema + new enums",
+      "change": "Add KNOWLEDGE_TYPES = ['decision','pitfall','guideline','model','process'] enum + type code map ('decision'→'D', 'pitfall'→'P', 'guideline'→'G', 'model'→'M', 'process'→'PR'). Add KNOWLEDGE_MATURITIES = ['proposed','validated','deprecated']. Add KNOWLEDGE_LAYERS = ['team','personal'] (distinct from existing AGENTS_META_LAYERS L0/L1/L2 — these are storage layers, not protocol tiers). Extend ruleDescriptionSchema with optional fields: id (regex /^K[PT]-(D|P|G|M|PR)-\\d+$/), type (KNOWLEDGE_TYPES enum), maturity (KNOWLEDGE_MATURITIES), layer (KNOWLEDGE_LAYERS), layer_reason (string), created_at (ISO 8601). Extend agentsMetaSchema with `counters: z.object({ KP: z.number().int().nonneg().default(0), KT: z.number().int().nonneg().default(0) }).optional()`. Add zod transformer that validates id-prefix-matches-layer (KP-* requires layer='personal', KT-* requires layer='team')."
+    },
+    {
+      "path": "packages/shared/src/schemas/api-contracts.ts",
+      "action": "modify",
+      "target": "ruleDescriptionIndexItemSchema",
+      "change": "Re-export type/maturity/layer from agents-meta.ts in description payload of plan_context response so MCP clients can filter by these fields. Add ruleDescriptionSchema strict() to allow excess properties without rejecting legacy frontmatter (during transition). No breaking change to existing fields."
+    },
+    {
+      "path": "packages/shared/src/schemas/event-ledger.ts",
+      "action": "modify",
+      "target": "discriminated union (additive only)",
+      "change": "Add ONE new event type for rc.1: `init_scan_completed` (payload: { entries_created: number, types: KnowledgeType[], scan_duration_ms: number }) — emitted by TASK-007 scan command. Do NOT add knowledge.proposed/promoted/layer_changed (those belong to rc.2/rc.3). Existing 17 event types stay unchanged."
+    },
+    {
+      "path": "packages/shared/src/types/agents.ts",
+      "action": "modify",
+      "target": "Type exports",
+      "change": "Export KnowledgeType, KnowledgeMaturity, KnowledgeLayer types alongside existing AgentsLayer/AgentsTopologyType for downstream consumers. Add KnowledgeIdComponents type { layer: KnowledgeLayer, type: KnowledgeType, counter: number } and serialize/parse helpers (formatKnowledgeId / parseKnowledgeId)."
+    }
+  ],
+  "implementation": [
+    "Read packages/shared/src/schemas/agents-meta.ts to understand existing AGENTS_META_LAYERS/topology_type pattern; mimic structure for new enums",
+    "Add KNOWLEDGE_TYPES, KNOWLEDGE_MATURITIES, KNOWLEDGE_LAYERS as `as const` tuples + corresponding z.enum() schemas at top of file (next to AGENTS_META_LAYERS)",
+    "Add KNOWLEDGE_TYPE_CODE_MAP record so id-builder/parser share single source",
+    "Extend ruleDescriptionSchema as `.extend({ id: z.string().regex(...).optional(), type: ..., maturity: ..., layer: ..., layer_reason: z.string().optional(), created_at: z.string().datetime().optional() }).strict(false)` — strict(false) lets unknown keys flow through during transition",
+    "Extend agentsMetaSchema with `counters` field (optional with defaults so existing meta files load without migration error)",
+    "Add formatKnowledgeId(components) → 'KP-D-1' / parseKnowledgeId(id) → components in types/agents.ts",
+    "In event-ledger.ts add init_scan_completed to discriminated union following existing pattern (e.g. meta_reconciled at relevant section)",
+    "Run `pnpm --filter @fabric/shared build` and `pnpm typecheck` to verify schema compiles",
+    "Add minimal unit tests for parseKnowledgeId / formatKnowledgeId roundtrip"
+  ],
+  "reference": {
+    "pattern": "Existing agents-meta.ts schema extension pattern; flat-scalar frontmatter constraint from rule-meta-builder.ts:748-785",
+    "files": ["packages/shared/src/schemas/agents-meta.ts", "packages/shared/src/types/agents.ts", "packages/server/src/services/rule-meta-builder.ts"],
+    "examples": "Mirror the AGENTS_META_LAYERS/agentsLayerSchema pair pattern for each new enum. Keep all frontmatter fields flat per regex parser constraint — DO NOT introduce nested objects like maturity:{level:'validated', last_review:'2026-05-10'}; use flat layer_reason / created_at instead."
+  },
+  "convergence": {
+    "criteria": [
+      "`pnpm --filter @fabric/shared build` exits 0 with new types exported",
+      "ruleDescriptionSchema accepts a fixture object containing all 6 new fields (id='KP-D-1', type='decision', maturity='proposed', layer='personal', layer_reason='solo-dev preference', created_at='2026-05-10T00:00:00Z') without error",
+      "ruleDescriptionSchema rejects mismatched id+layer (e.g. id='KP-D-1' with layer='team') with descriptive error",
+      "agentsMetaSchema accepts existing v1.x meta files without `counters` field (backward compatible via optional) and applies default {KP:0,KT:0} when absent",
+      "formatKnowledgeId({layer:'team', type:'process', counter:7}) === 'KT-PR-7' and parseKnowledgeId roundtrips",
+      "event-ledger.ts discriminated union accepts init_scan_completed event with required payload fields",
+      "All shared package tests still pass (`pnpm --filter @fabric/shared test`)"
+    ]
+  },
+  "depends_on": [],
+  "cli_execution_id": "anl-2026-05-10-fabric-knowledge-pivot-2026-05-10-TASK-002",
+  "cli_execution": { "strategy": "new" },
+  "rationale": {
+    "chosen_approach": "Additive schema extension with backward-compatible optional fields; flat scalars to fit existing parser",
+    "alternatives_considered": ["Replace ruleDescriptionSchema entirely (rejected — breaks v1.x meta files in flight, blocks parallel TASK-001 delete)", "Upgrade frontmatter parser to gray-matter for nested support (rejected — out-of-scope refactor; flat works per discussion Q4 decision)"],
+    "decision_factors": ["Parser regex constraint is fixed", "Counter envelope additive avoids meta migration", "Type code map enables stable id format KP-D-N"],
+    "tradeoffs": "All knowledge fields optional during transition means runtime code in TASK-004/005 must handle missing fields; mitigated by TASK-007 scan ensuring all new entries have full schema"
+  },
+  "test": {
+    "manual_checks": [
+      "Validate fixture JSON against ruleDescriptionSchema",
+      "Verify type-check across packages still passes after schema change"
+    ],
+    "success_metrics": [
+      "Schema validates 4+ positive fixtures (each knowledge type)",
+      "Schema rejects 3+ negative fixtures (mismatched id/layer, invalid type, malformed counter)"
+    ],
+    "unit": [
+      "agents-meta.test.ts: knowledge_id_layer_match",
+      "agents-meta.test.ts: counters_default_zero",
+      "agents.test.ts: format_parse_roundtrip"
+    ],
+    "integration": []
+  },
+  "estimated_minutes": 60
+}

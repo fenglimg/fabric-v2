@@ -1,0 +1,102 @@
+{
+  "id": "TASK-004",
+  "title": "Author client hook config templates (Claude Code settings.json + Codex hooks.json)",
+  "scope": "packages/cli/templates/hooks/configs (NEW)",
+  "action": "Create",
+  "description": "Author the two static client-config templates that fabric init merges into the user's project: (1) packages/cli/templates/hooks/configs/claude-code.json — fragment template for hooks.Stop[] entry registering archive-hint.cjs; (2) packages/cli/templates/hooks/configs/codex-hooks.json — full hooks file (NOT toml) for Codex CLI Stop event registering archive-hint.cjs. Both reference the script via project-relative path .claude/hooks/archive-hint.cjs (Claude) or .codex/hooks/archive-hint.cjs (Codex). Cursor explicitly excluded — documented in planning-context.md as schema deviation.",
+  "files": [
+    {
+      "path": "packages/cli/templates/hooks/configs/claude-code.json",
+      "action": "create",
+      "target": "Claude Code Stop-hook fragment for merge-insertion",
+      "change": "JSON fragment matching schema verified in doctor.test.ts:141 — `{\"hooks\":{\"Stop\":[{\"matcher\":\"*\",\"hooks\":[{\"type\":\"command\",\"command\":\".claude/hooks/archive-hint.cjs\"}]}]}}`. Top-level `hooks` key, per-event `Stop` array, entry with matcher='*' (match all), hooks sub-array with single {type:'command', command:'<project-relative path>'}. Template is a partial — TASK-005 init wiring deepMerges this into existing .claude/settings.json without clobbering mcpServers/permissions/other hooks."
+    },
+    {
+      "path": "packages/cli/templates/hooks/configs/codex-hooks.json",
+      "action": "create",
+      "target": "Codex CLI hooks.json full file template",
+      "change": "Full Codex hooks.json file shape — {events:{Stop:[{command:'.codex/hooks/archive-hint.cjs'}]}} (or whichever exact shape Codex 0.x uses; lock at task execution time by reading developers.openai.com/codex/hooks IF reachable, else fall back to the {events:{Stop:[{command}]}} pattern matching the existing templates/codex-hooks/fabric-stop-reminder.cjs reference comments). Note path uses .codex/hooks/ subdir — TASK-005 init wiring copies archive-hint.cjs into both .claude/hooks/ AND .codex/hooks/ destinations."
+    }
+  ],
+  "implementation": [
+    "Read packages/server/src/services/doctor.test.ts:141-162 to confirm Claude settings.json hooks.Stop[] schema verbatim",
+    "Read packages/cli/src/config/resolver.ts:157 to confirm Codex hooks file path is .codex/hooks.json (NOT .toml)",
+    "Read existing templates/codex-hooks/fabric-stop-reminder.cjs to infer Codex hooks.json registration shape from script comments OR fetch developers.openai.com/codex/hooks if WebFetch available at execution time",
+    "Author claude-code.json fragment matching doctor.test.ts:141 schema exactly",
+    "Author codex-hooks.json with {events:{Stop:[{command:'.codex/hooks/archive-hint.cjs'}]}} shape; if execution-time research reveals different shape, correct on the fly (this template is a v2 starter — easy to iterate)",
+    "Add file-level comment header in each (JSON5-style if needed; OR README.md sibling) explaining 'this is a fragment merged by fabric init, not a standalone file'",
+    "Commit: `feat(cli): add hook config templates for Claude Code and Codex CLI`"
+  ],
+  "reference": {
+    "pattern": "Static JSON template fragments for client config merge",
+    "files": [
+      "packages/server/src/services/doctor.test.ts",
+      "packages/cli/src/config/resolver.ts",
+      "templates/claude-hooks/fabric-init-reminder.cjs",
+      "templates/codex-hooks/fabric-stop-reminder.cjs"
+    ],
+    "examples": "Claude schema is fully pinned by doctor.test.ts:141 fixture — copy it. Codex schema is partially documented; rely on resolver.ts:157 for file location and existing templates/codex-hooks/ for registration shape; if any ambiguity surfaces at execution, lock via execution-time WebFetch and document in commit message."
+  },
+  "convergence": {
+    "criteria": [
+      "claude-code.json parses as valid JSON",
+      "claude-code.json structure matches doctor.test.ts:141 schema verbatim — verifiable by deep-equal in TASK-006 test",
+      "claude-code.json command path is `.claude/hooks/archive-hint.cjs` (project-relative, matches TASK-005 install destination)",
+      "codex-hooks.json parses as valid JSON",
+      "codex-hooks.json command path is `.codex/hooks/archive-hint.cjs`",
+      "Both files include a header comment explaining merge-fragment semantics OR sibling README.md documents it",
+      "No Cursor config file exists in templates/hooks/configs/ (Cursor explicitly out of scope, documented in planning-context.md)"
+    ]
+  },
+  "depends_on": [
+    "TASK-003"
+  ],
+  "rationale": {
+    "chosen_approach": "Two static JSON template files in templates/hooks/configs/ — Claude Code fragment for merge, Codex full file for write-or-merge",
+    "alternatives_considered": [
+      "Generate configs programmatically in init.ts — rejected: harder to review, harder for users to copy-paste manually for non-init flows",
+      "Single combined config — rejected: shapes differ between clients (Claude top-level hooks key, Codex top-level events key)",
+      "Include Cursor template — rejected: no documented Cursor Stop-hook surface; planning-context.md documents this as schema deviation"
+    ],
+    "decision_factors": [
+      "doctor.test.ts:141 already pins Claude schema",
+      "resolver.ts:157 confirms Codex file is JSON not TOML",
+      "Static templates are reviewable in PR diff as plain JSON"
+    ],
+    "tradeoffs": "Codex schema may evolve (Codex CLI v1.x is moving target) — accepted: rc.2 ships with documented assumption + easy follow-up patch"
+  },
+  "test": {
+    "manual_checks": [
+      "Open both JSON files; confirm they parse via `node -e 'JSON.parse(fs.readFileSync(...))'`",
+      "Diff claude-code.json against doctor.test.ts:141 fixture verbatim",
+      "Verify command paths use forward-slashes (cross-platform safe in JSON config; tools normalize at runtime)"
+    ],
+    "success_metrics": [
+      "Both configs parse as valid JSON",
+      "TASK-006 contract test deep-equals templates against fixtures"
+    ],
+    "unit": [
+      "claude_code_hook_config_matches_doctor_test_schema",
+      "codex_hooks_config_is_valid_json"
+    ],
+    "integration": []
+  },
+  "cli_execution_id": "fabric-v2-rc2-impl-2026-05-10-TASK-004",
+  "cli_execution": {
+    "strategy": "resume",
+    "resume_from": "fabric-v2-rc2-impl-2026-05-10-TASK-003"
+  },
+  "status": "completed",
+  "status_history": [
+    {
+      "from": "in_progress",
+      "to": "in_progress",
+      "changed_at": "2026-05-10T19:04:03+08:00"
+    },
+    {
+      "from": "in_progress",
+      "to": "completed",
+      "changed_at": "2026-05-10T19:05:22+08:00"
+    }
+  ]
+}

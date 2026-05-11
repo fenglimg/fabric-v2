@@ -1,0 +1,144 @@
+{
+  "id": "TASK-005",
+  "title": "Install wiring: extend skills-and-hooks.ts with installFabricImportSkill + addImportSkillPointer",
+  "scope": "packages/cli/src/install/skills-and-hooks.ts; packages/cli/src/commands/init.ts; packages/cli/src/commands/hooks.ts; packages/cli/__tests__/integration/install-skills-and-hooks.test.ts",
+  "action": "Update",
+  "description": "Extend the existing install pipeline (rc.2 fabric-archive + rc.3 fabric-review installer pattern) with `installFabricImportSkill` and `addImportSkillPointer` functions. The skill template authored in TASK-004 must be copied to `<repo>/.claude/skills/fabric-import/` AND `<repo>/.codex/skills/fabric-import/` (Cursor reads either path). The pointer adds a one-line reference to fabric-import skill in CLAUDE.md / AGENTS.md / .cursor/rules. init.ts and hooks.ts call sites updated. Integration tests extended to cover the third skill install.",
+  "files": [
+    {
+      "path": "packages/cli/src/install/skills-and-hooks.ts",
+      "action": "modify",
+      "target": "Add 2 new exports: installFabricImportSkill + addImportSkillPointer; mirror installFabricReviewSkill (rc.3 8ad3ac3) shape exactly",
+      "change": "Add `export async function installFabricImportSkill(repoRoot: string): Promise<void>` mirroring installFabricReviewSkill: read packages/cli/templates/skills/fabric-import/SKILL.md template body, write to <repoRoot>/.claude/skills/fabric-import/SKILL.md AND <repoRoot>/.codex/skills/fabric-import/SKILL.md (mkdir -p both); idempotent (no-op if file content identical). Add `export function addImportSkillPointer(content: string): string` that inserts a one-line reference to fabric-import skill in target file content (CLAUDE.md / AGENTS.md / .cursor/rules); idempotent — checks if pointer line already present and returns content unchanged if so. Pointer text: `- Import knowledge from git history + docs: invoke `fabric-import` skill (when starting on a project with existing artifacts)`."
+    },
+    {
+      "path": "packages/cli/src/commands/init.ts",
+      "action": "modify",
+      "target": "init bootstrap stage that calls installFabricArchiveSkill + installFabricReviewSkill",
+      "change": "Add `await installFabricImportSkill(repoRoot)` call alongside existing installFabricArchiveSkill and installFabricReviewSkill (sequential ok; idempotent). Update pointer-merge step to call addImportSkillPointer alongside addArchiveSkillPointer + addReviewSkillPointer for CLAUDE.md / AGENTS.md / .cursor/rules content."
+    },
+    {
+      "path": "packages/cli/src/commands/hooks.ts",
+      "action": "modify",
+      "target": "hooks reinstall path that calls installFabricArchiveSkill + installFabricReviewSkill",
+      "change": "Add `await installFabricImportSkill(repoRoot)` call alongside existing skill installers in the reinstall flow."
+    },
+    {
+      "path": "packages/cli/__tests__/integration/install-skills-and-hooks.test.ts",
+      "action": "modify",
+      "target": "extend test cases that cover archive + review skill install with import skill assertions",
+      "change": "Extend existing test cases (e.g., `installs_skills_and_hooks_idempotently`) with assertions for fabric-import: file exists at <repoRoot>/.claude/skills/fabric-import/SKILL.md AND <repoRoot>/.codex/skills/fabric-import/SKILL.md; content matches template body; idempotent (2nd call no-op); pointer added to CLAUDE.md / AGENTS.md / .cursor/rules. Add 3 new test cases: install_fabric_import_skill_writes_to_both_paths, install_fabric_import_skill_idempotent, add_import_skill_pointer_does_not_duplicate."
+    }
+  ],
+  "implementation": [
+    "Read packages/cli/src/install/skills-and-hooks.ts to locate installFabricArchiveSkill + installFabricReviewSkill (rc.3 commit 8ad3ac3) and addArchiveSkillPointer + addReviewSkillPointer; mirror their exact shape for the import variants",
+    "Read packages/cli/__tests__/integration/install-skills-and-hooks.test.ts to lock existing test seed pattern (tmpdir, fixture, expectations)",
+    "Implement installFabricImportSkill: cwd-relative resolve template path (`new URL('../../templates/skills/fabric-import/SKILL.md', import.meta.url)` or equivalent module-path pattern matching review variant); read template; ensure dest dirs exist (mkdir -p <repoRoot>/.claude/skills/fabric-import/ + <repoRoot>/.codex/skills/fabric-import/); compare existing file content (if exists) to template; if identical, no-op; else atomicWriteText",
+    "Implement addImportSkillPointer: pure string transform on file content; check for existing pointer marker (constant line); if absent, append + return; if present, return unchanged; idempotent",
+    "Wire init.ts: locate existing rc.3 installFabricReviewSkill call; add installFabricImportSkill call immediately after; locate addReviewSkillPointer call; add addImportSkillPointer call immediately after for each pointer-target file",
+    "Wire hooks.ts: same pattern as init.ts",
+    "Extend integration test: add 3 new test cases in install-skills-and-hooks.test.ts covering the new install + pointer; run all integration tests, verify green",
+    "Run typecheck on cli package: `pnpm --filter @fenglimg/fabric-cli typecheck`; run full test: `pnpm --filter @fenglimg/fabric-cli test`",
+    "Verify on Fabric self-repo: `pnpm --filter @fenglimg/fabric-cli build && node packages/cli/dist/index.js init --reinstall-skills` in a tmpdir copy → confirm fabric-import/SKILL.md appears in both .claude/skills/ and .codex/skills/",
+    "Commit as 'feat(cli): install fabric-import Skill alongside archive+review (rc.4 TASK-005)'"
+  ],
+  "reference": {
+    "pattern": "rc.3 8ad3ac3 installFabricReviewSkill + addReviewSkillPointer pattern; rc.2 8dfa018 installFabricArchiveSkill + addArchiveSkillPointer (originating pattern)",
+    "files": [
+      "packages/cli/src/install/skills-and-hooks.ts",
+      "packages/cli/src/commands/init.ts",
+      "packages/cli/src/commands/hooks.ts",
+      "packages/cli/__tests__/integration/install-skills-and-hooks.test.ts",
+      "packages/cli/templates/skills/fabric-import/SKILL.md"
+    ],
+    "examples": "rc.3 commit 8ad3ac3 entire diff; rc.2 commit 8dfa018 originating installer pattern"
+  },
+  "convergence": {
+    "criteria": [
+      "installFabricImportSkill exported from skills-and-hooks.ts",
+      "addImportSkillPointer exported from skills-and-hooks.ts",
+      "init.ts calls installFabricImportSkill alongside archive + review",
+      "init.ts calls addImportSkillPointer for CLAUDE.md / AGENTS.md / .cursor/rules",
+      "hooks.ts (reinstall path) calls installFabricImportSkill",
+      "After init on tmpdir fixture, file <repoRoot>/.claude/skills/fabric-import/SKILL.md exists with template body content",
+      "After init on tmpdir fixture, file <repoRoot>/.codex/skills/fabric-import/SKILL.md exists with template body content",
+      "After init on tmpdir fixture, CLAUDE.md / AGENTS.md / .cursor/rules each contain the import-skill pointer line",
+      "2nd init invocation is idempotent: no file mutations (verified by mtime snapshot)",
+      "addImportSkillPointer applied to a file already containing the pointer is a no-op (verified by string equality)",
+      "Integration test passes 3+ new test cases",
+      "0 type errors; 0 regression in existing install tests"
+    ]
+  },
+  "depends_on": ["TASK-004"],
+  "rationale": {
+    "chosen_approach": "Mirror rc.3 installFabricReviewSkill exactly; minimal divergence; same dest paths (.claude/skills + .codex/skills); same idempotency semantics",
+    "alternatives_considered": [
+      "Single installAllSkills function that loops over [archive, review, import] — rejected: rc.3 already established per-skill installer; symmetric-with-existing is lower-risk than refactor",
+      "Skill-as-package (npm install fabric-import) — rejected: skills are local to user repo; npm package is overkill for prose template",
+      "Different dest paths for import (e.g., .fabric/skills/) — rejected: convention is .claude+.codex per rc.2/rc.3"
+    ],
+    "decision_factors": [
+      "Minimal divergence from rc.3 reduces review burden",
+      "Symmetric design = symmetric tests = symmetric maintenance",
+      "Dest paths must match Cursor's read paths (.claude or .codex; not .fabric)"
+    ],
+    "tradeoffs": "Three near-identical installer functions invite future refactor (DRY); accepted for v2.0 since each may diverge in v2.1 (e.g., import-specific config); refactor when pattern crystalizes"
+  },
+  "test": {
+    "manual_checks": [
+      "After TASK-005, run `node packages/cli/dist/index.js init` in a fresh tmpdir; verify .claude/skills/fabric-import/SKILL.md + .codex/skills/fabric-import/SKILL.md exist",
+      "Run init twice; verify mtime unchanged on 2nd run (idempotent)",
+      "Cat .cursor/rules; verify pointer line present once"
+    ],
+    "success_metrics": [
+      "3 new integration tests pass",
+      "Existing 2 (archive+review) integration tests still pass",
+      "skills-and-hooks.ts coverage >= 90% (for rc.4 added region)",
+      "0 type errors"
+    ],
+    "unit": [
+      "test_install_fabric_import_skill_writes_to_claude_path",
+      "test_install_fabric_import_skill_writes_to_codex_path",
+      "test_install_fabric_import_skill_idempotent_second_call_noop",
+      "test_add_import_skill_pointer_appends_when_absent",
+      "test_add_import_skill_pointer_noop_when_present"
+    ],
+    "integration": [
+      "test_init_command_installs_all_three_skills_archive_review_import",
+      "test_init_command_adds_all_three_skill_pointers_to_claude_md",
+      "test_init_command_adds_all_three_skill_pointers_to_agents_md",
+      "test_init_command_adds_all_three_skill_pointers_to_cursor_rules",
+      "test_hooks_command_reinstall_path_includes_fabric_import"
+    ]
+  },
+  "risks": [
+    {
+      "description": "Template path resolution differs between dev (source) and prod (npm-installed dist) — installFabricImportSkill might look in wrong dir",
+      "probability": "Medium",
+      "impact": "High",
+      "mitigation": "Mirror rc.3 installFabricReviewSkill template-path resolution exactly (likely uses `new URL('../templates/skills/fabric-review/SKILL.md', import.meta.url)` or fileURLToPath pattern); test from compiled dist (not just source); verify in dogfood (TASK-009)",
+      "fallback": "If path resolution fails in prod, embed template content as string export from a generated TS file (build-time inlined)"
+    },
+    {
+      "description": "Pointer-line uniqueness check could match too loosely (e.g., similar substring in unrelated content) and skip valid append",
+      "probability": "Low",
+      "impact": "Low",
+      "mitigation": "Use exact-line match (split content by '\\n', check Array.includes on full pointer line); document the exact pointer text as a constant",
+      "fallback": "If false-positive idempotency reported, tighten match logic in patch release"
+    }
+  ],
+  "code_skeleton": {
+    "key_functions": [
+      {
+        "signature": "export async function installFabricImportSkill(repoRoot: string): Promise<void>",
+        "purpose": "Copy SKILL.md template to .claude/skills + .codex/skills paths; idempotent",
+        "returns": "Promise<void>"
+      },
+      {
+        "signature": "export function addImportSkillPointer(content: string): string",
+        "purpose": "Pure string transform; insert pointer line if absent; idempotent",
+        "returns": "string"
+      }
+    ]
+  }
+}

@@ -1,0 +1,107 @@
+{
+  "summary": "Fabric v2.0 rc.2 preparation work locked through grill-me session: 8 tasks across 5 phases (A→B→C→D→E) covering rc.1 dead-code archaeology, dropped-client removal, schema forward-compat, self-repo dogfood + 8-decision capture, and release artifacts (tag + GitHub prerelease, NOT npm). Total budget ~10-15h (~2-3 work days). Output is a tagged v2.0.0-rc.1 GitHub prerelease with v2 baseline knowledge entries committed to repo.",
+  "approach": "Phase A (commits A/B/C/D — code archaeology in 4 atomic layer-isolated commits: CLI commands, server services, templates, tests) → Phase B (drop Windsurf/RooCode/GeminiCLI clients with strict-union enforcement) → Phase C (last-cheap-window schema additions: tags field + 4 event-type renames + 3 deletions + docs/schema.md) → Phase D (self-repo dogfood — fabric runs init on itself, plus author 8 KT-D decision baseline entries) → Phase E (version bump 2.0.0-rc.1, CHANGELOG, README 5-line banner, annotated tag, GitHub prerelease — no npm publish). Phase ordering is forced by dependencies: A blocks B (B's strict-reject test relies on A's removal of legacy paths); C blocks D (schema must be locked before dogfood produces baseline); D blocks E (release tag should include dogfood baseline as part of rc.1). Within Phase A, TASK-001/002/003 are parallel-safe (no file overlap: cli-commands / server-services / templates) and TASK-004 (tests) merges all three. TASK-005..008 are strictly sequential.",
+  "complexity": "High",
+  "estimated_time": "10-15 hours (~2-3 work days)",
+  "recommended_execution": "Codex",
+  "task_ids": ["TASK-001", "TASK-002", "TASK-003", "TASK-004", "TASK-005", "TASK-006", "TASK-007", "TASK-008"],
+  "task_count": 8,
+  "design_decisions": [
+    {
+      "decision": "Q1 — Version strategy: bump package.json to 2.0.0-rc.1 (single commit, retroactive on rc.1 commit aaf9c2c); annotated git tag `v2.0.0-rc.1`; old `1.8.0-rc.3` stays in npm history (deprecate as needed); NOT publish to npm during entire rc.x cycle",
+      "rationale": "Keep npm `latest` dist-tag clean for stable users (no `next` pollution); GitHub-only RC release provides public download for testers without disrupting npm consumers; `2.0.0` stable will publish to npm `latest` after rc cycle ends",
+      "tradeoff": "RC adopters must install via git ref instead of `pnpm add fabric@next` — slight friction acceptable for prerelease cohort"
+    },
+    {
+      "decision": "Q2 — Dropped client cleanup: independent commit removing Windsurf / Roo Code / Gemini CLI from supported clients; drop `.passthrough()` from fabric-config Zod schema; tighten ClientKind to strict union `claudeCode | cursor | codex`; unknown keys reject and exit (no warn-and-continue)",
+      "rationale": "Memory: Fabric scope locked to Claude Code / Cursor / Codex CLI only; loud failure prevents silent mis-config in customer projects; clean-slate preference (zero users → no migration tax)",
+      "tradeoff": "Any customer with windsurf|rooCode|geminiCLI entry in fabric-config gets hard error on next `fab` run instead of warning — accepted per zero-user clean-slate decision"
+    },
+    {
+      "decision": "Q3 — Self-repo dogfood: two-step (init pipeline + 8 KT-D decision authoring) combined into single commit `chore(dogfood): v2.0 baseline + key decisions`; bug-handling protocol: hotfixes go on `2.0.0-rc.1` tag as `2.0.0-rc.1.fix.N`, NOT rolled into rc.2 scope",
+      "rationale": "Atomic commit shows 'fabric works on itself' as one shippable unit; pre-release dogfood validates init pipeline on a real-world non-trivial repo (not just test fixtures); bug-isolation protocol keeps rc.2 scope clean",
+      "tradeoff": "Combined commit is larger (~10 new files) but reverting is also atomic"
+    },
+    {
+      "decision": "Q4 — rc.1 真正完工 in 4 atomic commits (A/B/C/D): A=CLI command layer (delete bootstrap.ts, kill buildInitialTaxonomyMarkdown + .fabric/rules paths in init/scan/forensic); B=server services layer (rename rule-meta-builder, kill v1 doctor checks, retarget watcher to .fabric/knowledge/**, delete bootstrap-guide.ts); C=templates (rewrite AGENTS.md.template, delete variants/+husky/+fabric-init three-piece); D=tests (delete 4 v1-concept test files, adapt fixtures)",
+      "rationale": "Code review missed v1.x dead code paths — concrete grep findings showed buildInitialTaxonomyMarkdown still in init.ts, INITIAL_TAXONOMY in 5 files, .fabric/rules/ in 26 files including user-facing templates; layer-isolated commits enable parallel work (A1/A2/A3 parallel-safe) and clean revertability",
+      "tradeoff": "4 commits instead of 1 — slight ceremony cost for much cleaner history and parallel execution"
+    },
+    {
+      "decision": "Q5 — Release hygiene: CHANGELOG entry with 4 subsections (BREAKING + Removed + Added + Coming next); annotated git tag `v2.0.0-rc.1`; GitHub release `prerelease: true`; NOT publish to npm during rc.x phase; README.md gets 5-line v2 banner injected at top (NOT wait for rc.4 full rewrite)",
+      "rationale": "5-line banner is cheap and prevents misorientation for anyone landing on README during RC cycle; full README rewrite stays rc.4 scope but landing page deserves immediate truth-in-advertising",
+      "tradeoff": "README will be re-rewritten in rc.4 — banner gets replaced/integrated but cost is negligible"
+    },
+    {
+      "decision": "Q6 — Schema forward-compat (last cheap window, single commit): add 1 frontmatter field `tags: [tag1, tag2]` (flat flow-style array); rename 4 event types (rule_*→knowledge_*); delete 3 event types (rule_baseline_accepted, baseline_synced, legacy_client_path_present); keep 12 unchanged; net 19→13 event types; write `docs/schema.md` 1-page contract doc. NOT add: last_review_at, source_session, confidence_score, review_count, parent_id (let events.jsonl be single source of truth)",
+      "rationale": "Window cost: rc.1 baseline doesn't exist yet → no fixture migration cost; after rc.2 dogfood emits real entries, rename gets expensive; events.jsonl as single source of truth avoids double-write consistency bugs; rc.3 review skill needs tags field for filter search — must land before dogfood populates baseline",
+      "tradeoff": "NOT adding parent_id/source_session means rc.3 review skill must derive lineage from events.jsonl (more complex query, but consistent)"
+    },
+    {
+      "decision": "Q7 — Execution sequence: A→B→C→D→E forced by dependencies; Phase D decision capture uses option B (8 entries, full grill-me decision tree coverage) instead of option A (5 entries); Day-1 gate before opening rc.2 includes 5 categories of bash checks (code archaeology / build+test+lint / schema additions / dogfood / release artifacts) — ALL must pass",
+      "rationale": "A blocks B (B's strict-reject test relies on A's removal of legacy paths); C blocks D (schema must be locked before dogfood produces baseline); D blocks E (release tag should include dogfood baseline as part of rc.1); option B captures complete grill-me decision tree (no orphan rationale); Day-1 gate prevents premature rc.2 opening on unstable foundation",
+      "tradeoff": "Option B (8 entries) takes slightly more authoring effort than option A (5) — accepted for completeness"
+    }
+  ],
+  "_metadata": {
+    "timestamp": "2026-05-10T00:00:00.000Z",
+    "source": "cli-lite-planning-agent",
+    "plan_type": "feature",
+    "schema_version": "2.0",
+    "planning_mode": "agent-based",
+    "exploration_angles": ["grill-me-locked-decisions"],
+    "duration_seconds": 0,
+    "session_id": "fabric-v2-rc2-prep-2026-05-10",
+    "scope_boundary": "rc.2 PREPARATION ONLY — does NOT include rc.2 implementation (fab_extract_knowledge MCP / fabric-archive skill / Stop hooks)",
+    "out_of_scope": [
+      "fab_extract_knowledge MCP tool (rc.2)",
+      "fabric-archive skill template (rc.2)",
+      "Stop hook scripts + 3-client configs (rc.2)",
+      "fab_review MCP tool (rc.3)",
+      "fabric-review skill template (rc.3)",
+      "doctor --lint 6 deterministic checks (rc.4)",
+      "fabric-import skill template (rc.4)",
+      "Full README rewrite + docs/knowledge-types.md + docs/initialization.md + docs/roadmap.md (rc.4)",
+      "New event types knowledge.{proposed,promoted,layer_changed,demoted,archived,archive_attempted} — rc.2/3/4 will add as z.literal() discriminated union variants",
+      "npm publish for any rc.x version (deferred to 2.0.0 stable)"
+    ],
+    "phases": {
+      "A": {"label": "rc.1 真正完工 (code archaeology, 4 atomic commits)", "tasks": ["TASK-001", "TASK-002", "TASK-003", "TASK-004"], "estimated_time": "4-6h"},
+      "B": {"label": "Drop clients (Windsurf/RooCode/GeminiCLI)", "tasks": ["TASK-005"], "estimated_time": "1-2h"},
+      "C": {"label": "Schema forward-compat (tags + event rename + docs/schema.md)", "tasks": ["TASK-006"], "estimated_time": "2-3h"},
+      "D": {"label": "Self-repo dogfood + 8-decision capture", "tasks": ["TASK-007"], "estimated_time": "2-3h"},
+      "E": {"label": "Release artifacts (version + CHANGELOG + tag + GitHub prerelease + README banner)", "tasks": ["TASK-008"], "estimated_time": "1h"}
+    },
+    "dependency_graph": {
+      "TASK-001": [],
+      "TASK-002": [],
+      "TASK-003": [],
+      "TASK-004": ["TASK-001", "TASK-002", "TASK-003"],
+      "TASK-005": ["TASK-004"],
+      "TASK-006": ["TASK-005"],
+      "TASK-007": ["TASK-006"],
+      "TASK-008": ["TASK-007"]
+    },
+    "parallel_safe_groups": [["TASK-001", "TASK-002", "TASK-003"]],
+    "day_1_gate_source": "planning-context.md §Q7 — code archaeology grep + build/test/lint + schema additions + dogfood + release artifacts (all must pass before opening rc.2)",
+    "primary_input": ".workflow/.lite-plan/fabric-v2-rc2-prep-2026-05-10/planning-context.md",
+    "supporting_references": [
+      ".workflow/.analysis/ANL-2026-05-10-fabric-knowledge-pivot/handoff.json",
+      ".workflow/.lite-plan/anl-2026-05-10-fabric-knowledge-pivot-2026-05-10/plan.json",
+      "rc.1 commit aaf9c2c"
+    ],
+    "quality_check": {
+      "executed": true,
+      "method": "self-review against planning-context.md and required structure",
+      "result": "PASS",
+      "validated_dimensions": {
+        "completeness": "8 tasks map exactly to 9 commits (TASK-007 combines 2 commits per Q3); all grill-me Q1-Q7 decisions captured",
+        "granularity": "Each task is an atomic commit boundary; estimated 1-3h each (within 15-60 min × parallel-thread or per-developer day budget)",
+        "dependencies": "DAG validated: 3-way fan-out (001/002/003) → join (004) → linear (005→006→007→008); no circular deps",
+        "convergence_criteria": "All 8 tasks have quantified, grep/test-verifiable convergence criteria sourced from Day-1 gate",
+        "implementation_steps": "All tasks have ≥4 implementation steps with specific commands or actions",
+        "constraint_compliance": "Aligns with memory constraints (Fabric supported clients = Claude Code/Cursor/Codex CLI; clean-slate preference); no specs/*.md found in `ccw spec load --category planning` so no further spec gate"
+      }
+    }
+  }
+}

@@ -1,0 +1,103 @@
+{
+  "id": "TASK-007",
+  "title": "Implement init-time deterministic scan producing 4-7 baseline knowledge entries",
+  "description": "Build the deterministic baseline-content generator at packages/cli/src/commands/scan.ts. Reads the existing forensic.json (already produced by init flow stage 1), maps deterministic facts to 4-7 knowledge entries: tech_stack (1 model entry), module_structure (1 model entry), build_config (1 process entry), code_style (1 guideline entry), CI_config (1 process entry, optional if no CI), README_first_paragraph (1 model entry, optional if no README). Each entry is a markdown file with full v2.0 frontmatter (id allocated via TASK-003 KnowledgeIdAllocator, all 6 new fields populated). Default layer is 'team' (project artifacts are team-level per rc.4 fabric-import default decision). Writes to .fabric/knowledge/{models|guidelines|processes}/ (chooses subdir by type). Emits init_scan_completed event (defined in TASK-002). Idempotent: re-running scan does not duplicate; checks frontmatter id presence + content hash before writing.",
+  "scope": "packages/cli/src/commands/scan.ts",
+  "action": "Implement",
+  "files": [
+    {
+      "path": "packages/cli/src/commands/scan.ts",
+      "action": "rewrite",
+      "target": "main scan command",
+      "change": "Currently this file is a CLI subcommand stub (per CLI commands index). Rewrite to: (1) read .fabric/forensic.json (produced by init); (2) for each baseline category present, build a knowledge entry via mapping function; (3) for each entry: allocate id via KnowledgeIdAllocator (TASK-003), build frontmatter with all 6 v2.0 fields, choose target file path .fabric/knowledge/{type-subdir}/{slugified-title}.md, check idempotency (skip if file with same id exists with same content hash), write markdown file. (4) Update agents.meta.json with new counters + node entries via writeRuleMeta (TASK-003 changes). (5) Emit init_scan_completed event to events.jsonl. Total entries: 4 minimum (tech_stack, module_structure, build_config, code_style), up to 7 (+ CI_config, + README_first_paragraph, + a 7th 'project_brief' if README has explicit project description)."
+    },
+    {
+      "path": "packages/cli/src/commands/scan.ts",
+      "action": "create",
+      "target": "Six baseline-builder helper functions",
+      "change": "Helpers: `buildTechStackEntry(forensic) → MarkdownEntry`, `buildModuleStructureEntry(forensic)`, `buildBuildConfigEntry(forensic)`, `buildCodeStyleEntry(forensic)`, `buildCIConfigEntry(forensic) | null`, `buildReadmeFirstParaEntry(forensic) | null`. Each returns null if data unavailable (so 4-7 range emerges naturally). Each builds: { type, layer:'team', maturity:'validated' (deterministic facts are validated), layer_reason: 'project artifact', created_at: now, body: structured markdown with the relevant facts }. Uses 4 hard-coded sections from rule-sections.ts: MISSION_STATEMENT (always), CONTEXT_INFO (always), MANDATORY_INJECTION (only for guideline-type), BUSINESS_LOGIC_CHUNKS (only for process-type)."
+    },
+    {
+      "path": "packages/cli/src/commands/scan.ts",
+      "action": "create",
+      "target": "idempotency + atomic-write helpers",
+      "change": "`isExistingEntryUpToDate(targetPath, newContentHash) → boolean`: opens existing file if any, reads frontmatter id + content hash from sidecar, returns true if hash matches. `writeEntryAtomic(targetPath, content)`: writes to .tmp + rename. Both reuse existing file-write patterns from rule-meta-builder writeRuleMeta + doctor atomic-write."
+    },
+    {
+      "path": "packages/cli/src/commands/index.ts",
+      "action": "modify",
+      "target": "command registration",
+      "change": "Confirm `scan` is registered as public CLI subcommand (per existing 4 public commands: init/scan/serve/doctor). If currently aliased differently, ensure `fab scan` invokes the rewritten command. No new commands added."
+    }
+  ],
+  "implementation": [
+    "Read existing scan.ts (currently stub or partial implementation)",
+    "Read .fabric/forensic.json shape from init.ts:521-550 area",
+    "Define MarkdownEntry interface: { type, layer, maturity, layer_reason, created_at, title, body, target_subdir, slug }",
+    "Implement 6 builder helpers; each returns MarkdownEntry | null based on forensic data availability",
+    "Wire up in main scan(): collect non-null entries → for each: allocate id → format frontmatter (TASK-002 helpers) → compose markdown (frontmatter block + sections) → write atomically",
+    "After all writes: invoke writeRuleMeta to refresh agents.meta.json with new nodes + persisted counters",
+    "Append init_scan_completed event to events.jsonl with payload { entries_created: N, types: [...], scan_duration_ms }",
+    "Add idempotency check: hash content_minus_frontmatter; compare to last_seen_hash stored as sidecar in .fabric/knowledge/.scan-state.json",
+    "Add unit tests for each builder helper (positive + null fallback)",
+    "Add integration test: run scan against examples/werewolf-minigame-stub/.fabric/forensic.json equivalent fixture, expect 4-7 files in .fabric/knowledge/, expect agents.meta.json populated, expect 1 init_scan_completed event",
+    "Add re-run idempotency test: run scan twice, verify second run modifies zero files and emits scan event with entries_created=0"
+  ],
+  "reference": {
+    "pattern": "Existing init.ts buildInitFabricPlan composition pattern; existing writeRuleMeta atomic write pattern",
+    "files": ["packages/cli/src/commands/init.ts:521-1390", "packages/server/src/services/rule-meta-builder.ts (writeRuleMeta)", "packages/cli/src/commands/scan.ts (current stub)"],
+    "examples": "Per discussion 'Init-time deterministic scan: tech stack / module structure / build / style / CI / README first paragraph' (line 437/719). Per handoff key_findings line 18: 'fabric-import deterministic init-scan (rc.1) + LLM-driven enrichment skill (rc.4) split is correct architectural decomposition' — rc.1 scan is purely deterministic, no LLM call. Per code_anchors decision_context: 'fabric-import in v2.0 (not v2.1): split deterministic part to rc.1 init-scan'."
+  },
+  "convergence": {
+    "criteria": [
+      "Running `fab scan` on a fresh repo with .fabric/forensic.json produces between 4 and 7 markdown files under .fabric/knowledge/{models,guidelines,processes}/",
+      "Each generated file has v2.0 frontmatter with all 6 new fields populated (id KP-/KT- format, type from {model|guideline|process}, layer='team', maturity='validated', layer_reason set, created_at ISO8601)",
+      "Each generated file has at least MISSION_STATEMENT and CONTEXT_INFO sections per rule-sections.ts SECTION_NAMES contract",
+      "All ids are KT-* (team layer); zero KP-* in this scan output",
+      "agents.meta.json after scan contains: counters.KT = N (where N = entries created); counters.KP = 0; one node entry per file with stable_id matching frontmatter id and identity_source='declared'",
+      "events.jsonl contains exactly one init_scan_completed event with entries_created matching count",
+      "Re-running `fab scan` produces zero new files (idempotent) and emits a second init_scan_completed event with entries_created=0",
+      "Modifying .fabric/forensic.json then re-running scan updates affected entries (regenerates content + bumps revision) but does NOT change ids (counter monotonic, ids stable)",
+      "Scan completes in under 2 seconds for a 100-file repo (deterministic, no I/O fan-out)",
+      "If forensic.json is missing, scan exits with clear error 'forensic.json not found; run fabric init first' (no partial writes)"
+    ]
+  },
+  "depends_on": ["TASK-002", "TASK-003"],
+  "cli_execution_id": "anl-2026-05-10-fabric-knowledge-pivot-2026-05-10-TASK-007",
+  "cli_execution": { "strategy": "merge_fork", "merge_from": ["anl-2026-05-10-fabric-knowledge-pivot-2026-05-10-TASK-002", "anl-2026-05-10-fabric-knowledge-pivot-2026-05-10-TASK-003"] },
+  "rationale": {
+    "chosen_approach": "Six independent builder helpers feeding common atomic write + meta refresh pipeline; idempotent via content hash sidecar",
+    "alternatives_considered": ["Read source files directly instead of forensic.json (rejected — forensic.json is already the canonical project model produced by init)", "Single monolithic builder (rejected — testing six paths separately is cleaner)", "LLM-call to generate richer content (rejected — rc.1 is deterministic-only per handoff)"],
+    "decision_factors": ["forensic.json reuse avoids duplicating discovery logic", "4-7 range matches handoff acceptance_criteria #6 exactly", "Idempotency required for safe re-runs across init / doctor --fix scenarios"],
+    "tradeoffs": "Deterministic content is shallow (factual not semantic); rc.4 fabric-import skill enriches via LLM. Acceptable because rc.1 goal is non-empty knowledge base, not deep insight."
+  },
+  "test": {
+    "manual_checks": [
+      "Run scan against test fixture, ls .fabric/knowledge/, expect 4-7 files",
+      "Open one generated file, verify frontmatter conforms to v2.0 schema",
+      "Run scan twice, verify second run is no-op",
+      "Delete a generated file, run scan again, verify file recreated with same id (counter monotonic)"
+    ],
+    "success_metrics": [
+      "Scan output entries between 4 and 7 inclusive on canonical fixture (mean 5.5)",
+      "100% of generated files pass ruleDescriptionSchema validation",
+      "Idempotency confirmed across 10 re-runs (zero file diffs)",
+      "Scan latency p95 < 500ms"
+    ],
+    "unit": [
+      "scan.test.ts: build_tech_stack_entry_returns_model",
+      "scan.test.ts: build_module_structure_entry_returns_model",
+      "scan.test.ts: build_build_config_entry_returns_process",
+      "scan.test.ts: build_code_style_entry_returns_guideline",
+      "scan.test.ts: build_ci_config_returns_null_when_absent",
+      "scan.test.ts: build_readme_para_returns_null_when_absent",
+      "scan.test.ts: idempotency_skips_unchanged_entries"
+    ],
+    "integration": [
+      "scan.test.ts: end_to_end_produces_4_to_7_files_on_fixture",
+      "scan.test.ts: reruns_are_no_op_with_zero_diff",
+      "scan.test.ts: emits_init_scan_completed_event"
+    ]
+  },
+  "estimated_minutes": 90
+}

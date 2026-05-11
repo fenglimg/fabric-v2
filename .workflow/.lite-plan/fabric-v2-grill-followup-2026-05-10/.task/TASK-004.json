@@ -1,0 +1,82 @@
+{
+  "id": "TASK-004",
+  "title": "event-ledger schema — pre-register 11 knowledge.* event types",
+  "scope": "packages/shared/src/schemas/event-ledger.ts + colocated fixtures",
+  "action": "Implement",
+  "description": "Pre-register 11 new event types in the event-ledger discriminated union as `z.literal()` variants, locking the v2 event vocabulary for rc.2/3/4 work. Each variant only specifies the literal type string + minimal payload skeleton (`{ stable_id, ... }`); rc.2/3/4 implementation tasks will fill payload details. Variants to add: `knowledge_proposed`, `knowledge_promote_started`, `knowledge_promoted`, `knowledge_promote_failed`, `knowledge_layer_changed`, `knowledge_slug_renamed`, `knowledge_demoted`, `knowledge_archived`, `knowledge_archive_attempted`, `knowledge_deferred`, `knowledge_rejected` (11 total). Existing 13 event types from rc.2-prep (commit a85121a) remain unchanged and continue to parse.",
+  "complexity": "Medium",
+  "estimated_time": "45-60 min",
+  "files": [
+    {"path": "packages/shared/src/schemas/event-ledger.ts", "action": "modify", "target": "EventLedger discriminated union", "change": "Add 11 z.object variants (one per new event type) to the existing z.discriminatedUnion('event_type', [...]) — each variant: z.object({ event_type: z.literal('knowledge_X'), stable_id: z.string().optional(), timestamp: z.string().datetime(), ...minimal payload skeleton }). Preserve all existing 13 variants. Net: 13 → 24 event types."},
+    {"path": "packages/shared/__tests__/event-ledger.test.ts (or schemas-roundtrip.test.ts — locate)", "action": "modify", "target": "test fixtures and parser cases", "change": "Add 11 fixture+parse cases (one per new event type), each demonstrating: (a) minimal valid payload parses; (b) wrong event_type literal rejects. Confirm existing 13 event-type fixtures still parse (regression)."}
+  ],
+  "implementation": [
+    "Locate event-ledger schema: `find packages/shared/src/schemas -name 'event-ledger.ts'`",
+    "Locate event-ledger tests: `find packages/shared -name 'event-ledger.test.ts' -o -name 'schemas-roundtrip.test.ts'`",
+    "Read existing schema to absorb the discriminated-union pattern (rc.2-prep already established knowledge_* naming for 4 renamed events)",
+    "Define 11 new variants — each as: `z.object({ event_type: z.literal('knowledge_<name>'), stable_id: z.string().optional(), timestamp: z.string().datetime(), reason: z.string().optional(), ...optional context fields })`",
+    "Specifically: knowledge_proposed (creates pending), knowledge_promote_started/promoted/promote_failed (2-phase Q5 transactional), knowledge_layer_changed (KT↔KP), knowledge_slug_renamed (id stable, slug changed), knowledge_demoted (maturity ↓), knowledge_archived/archive_attempted (archive + retry), knowledge_deferred (defer with until?), knowledge_rejected (reject with reason)",
+    "Insert all 11 into the existing z.discriminatedUnion array preserving alphabetical or grouped ordering convention from existing variants",
+    "Update test file: write 11 fixture+parse test cases covering valid payloads + 1 reject case (wrong event_type literal)",
+    "Run `pnpm --filter @fabric/shared build` — confirm Zod inference compiles cleanly (no overly broad union type)",
+    "Run `pnpm --filter @fabric/shared test` — confirm new tests pass and old ones still pass",
+    "Verify new code coverage ≥ 90%"
+  ],
+  "reference": {
+    "pattern": "Forward-compat event schema pre-registration via z.literal variants in discriminated union",
+    "files": ["packages/shared/src/schemas/event-ledger.ts", "packages/shared/src/schemas/agents-meta.ts"],
+    "examples": "Follow rc.2-prep TASK-006 pattern (commit a85121a) — same discriminated-union variant addition, same minimal payload skeleton convention"
+  },
+  "convergence": {
+    "criteria": [
+      "`grep -cE 'knowledge_(proposed|promoted|promote_started|promote_failed|layer_changed|slug_renamed|demoted|archived|archive_attempted|deferred|rejected)' packages/shared/src/schemas/event-ledger.ts | awk '$1 >= 11'` succeeds",
+      "All 11 new event types are z.literal variants in the discriminated union (verify via test exercising each)",
+      "Existing 13 event-type fixtures still parse (regression check)",
+      "`pnpm --filter @fabric/shared build` exits 0 — Zod inference compiles, no type errors",
+      "`pnpm --filter @fabric/shared test` exits 0 — all 11 new test cases pass + all old tests pass",
+      "Total event types in union = 24 (13 existing + 11 new) — verified by counting z.literal occurrences",
+      "New code coverage ≥ 90%"
+    ]
+  },
+  "depends_on": [],
+  "dependency_type": "none",
+  "parallel_safe": true,
+  "scope_boundary": "OUT OF SCOPE: emitting these events from runtime code (rc.2/3/4 implementation will wire emitters); event-payload field details beyond the minimal skeleton (deferred to rc.2/3/4 when each event's emit-site context is concrete); api-contracts schema (TASK-003); fabric-config (TASK-002).",
+  "cli_execution_id": "fabric-v2-grill-followup-2026-05-10-TASK-004",
+  "cli_execution": {"strategy": "new"},
+  "recommended_execution": "Agent",
+  "rationale": {
+    "chosen_approach": "Pre-register 11 event types as z.literal variants with minimal payload skeleton; defer payload details to rc.2/3/4 when emit-site context is concrete",
+    "alternatives_considered": ["Land full payload schemas now (premature — emit-site context unknown)", "Defer all 11 to rc.2/3/4 as needed (loses pre-lock benefit, fragments schema commits)", "Single super-event with type field as data (loses discriminator narrowing)"],
+    "decision_factors": ["Pre-lock locks vocabulary BEFORE rc.2 dogfood emits real events", "Minimal skeleton avoids speculative payload design", "z.literal preserves discriminated-union narrowing for consumers"],
+    "tradeoffs": "Each event-type variant gets touched twice (once here for skeleton, once in rc.2/3/4 for full payload) — accepted because the alternative is fragmented schema commits across 3 RC cycles"
+  },
+  "test": {
+    "manual_checks": [
+      "Run `pnpm --filter @fabric/shared build` — confirm Zod discriminated-union inference compiles",
+      "Manually call EventLedgerSchema.parse({event_type:'knowledge_promote_started', stable_id:'KT-D-0001', timestamp:'2026-05-10T...'}) — confirm OK",
+      "Manually call EventLedgerSchema.parse({event_type:'unknown'}) — confirm Zod rejection",
+      "Eyeball discriminated-union ordering — grouped logically (lifecycle / archive / review)"
+    ],
+    "success_metrics": [
+      "All 11 new event-type test cases pass",
+      "All existing 13 event-type tests still pass",
+      "Coverage ≥ 90% on added variants",
+      "Discriminated-union narrowing works in TS consumer code"
+    ],
+    "unit": [
+      "knowledge_proposed parses with minimal payload",
+      "knowledge_promote_started parses",
+      "knowledge_promoted parses",
+      "knowledge_promote_failed parses with reason field",
+      "knowledge_layer_changed parses",
+      "knowledge_slug_renamed parses",
+      "knowledge_demoted parses",
+      "knowledge_archived parses",
+      "knowledge_archive_attempted parses",
+      "knowledge_deferred parses with until field optional",
+      "knowledge_rejected parses with reason field"
+    ],
+    "integration": []
+  }
+}

@@ -1,0 +1,167 @@
+{
+  "id": "TASK-001",
+  "title": "Server core: services/review.ts (list+approve) + tools/review.ts + index.ts registration",
+  "scope": "packages/server/src/services/review.ts (NEW), packages/server/src/tools/review.ts (NEW), packages/server/src/index.ts",
+  "action": "Create",
+  "description": "Land the foundational fab_review MCP tool with list and approve actions only. Establish the dispatcher shape (switch on input.action), wire KnowledgeIdAllocator for late-bind id during approve, perform git mv from pending/ to canonical <layer>/<type>/<id>--<slug>.md, emit 2-phase events (knowledge_promote_started → knowledge_promoted | knowledge_promote_failed), register the tool in createFabricServer alongside the rc.2 trio.",
+  "files": [
+    {
+      "path": "packages/server/src/services/review.ts",
+      "action": "create",
+      "target": "module body",
+      "change": "Export `reviewKnowledge(projectRoot, input): Promise<FabReviewOutput>` pure async function as a switch over input.action. Implement two action branches: 'list' (read all .fabric/knowledge/pending/<type>/*.md, parse frontmatter via existing rule-meta-builder hand-rolled regex parser pattern, return items[] matching _fabReviewListItemSchema) and 'approve' (for each pending_path: parse frontmatter to extract type/layer/slug; instantiate KnowledgeIdAllocator(metaPath); allocate stable_id; build canonical filename `<id>--<slug>.md`; emit knowledge_promote_started event; execFileSync('git',['mv',from,to],{cwd:projectRoot}); update frontmatter to add id field; emit knowledge_promoted on success or knowledge_promote_failed on error). Imports: appendEventLedgerEvent from ./event-ledger.js, KnowledgeIdAllocator from ./knowledge-id-allocator.js, execFileSync from node:child_process, atomicWriteText + ensureParentDirectory from ./_shared.js, FabReviewInput/FabReviewOutput types from @fenglimg/fabric-shared/schemas/api-contracts."
+    },
+    {
+      "path": "packages/server/src/tools/review.ts",
+      "action": "create",
+      "target": "module body",
+      "change": "Export `registerReview(server: McpServer, tracker?: InFlightTracker): void`. Mirror packages/server/src/tools/extract-knowledge.ts shape: server.registerTool('fab_review', {description, inputSchema:FabReviewInputSchema, outputSchema:FabReviewOutputSchema, annotations:fabReviewAnnotations}, async handler). Handler: randomUUID requestId; tracker.enter; resolveProjectRoot; call reviewKnowledge(projectRoot, input); enforcePayloadLimit; return {content:[{type:'text',text:JSON.stringify(response)}], structuredContent:response}; tracker.exit in finally."
+    },
+    {
+      "path": "packages/server/src/index.ts",
+      "action": "modify",
+      "target": "createFabricServer + import block + re-exports",
+      "change": "Add import `import { registerReview } from './tools/review.js';` next to existing tool imports (after line 17). Add `registerReview(server, tracker);` inside createFabricServer after registerExtractKnowledge call (after line 112). Add re-export `export { reviewKnowledge } from './services/review.js';` next to existing extractKnowledge export (line 42)."
+    }
+  ],
+  "implementation": [
+    "Create packages/server/src/services/review.ts skeleton: type-import FabReviewInput/Output, export `reviewKnowledge(projectRoot,input)`, switch(input.action), throw on default with 'unsupported action — TASK-002'",
+    "Implement 'list' branch: walk PENDING_BASE/<type>/ for type in [decisions,pitfalls,guidelines,models,processes]; for each .md read first 50 lines, parse YAML-ish frontmatter (--- delimited block, flat scalars + flow arrays, mirror rule-meta-builder.ts:748-785 regex shape), build _fabReviewListItemSchema-compatible objects (pending_path relative-to-projectRoot, type, layer, maturity, tags?, title?, summary?), return {action:'list', items}",
+    "Implement 'approve' branch: for each pending_path in input.pending_paths: read+parse frontmatter (extract type, layer, slug from filename); validate path is under .fabric/knowledge/pending/; instantiate `new KnowledgeIdAllocator(join(projectRoot,'.fabric','agents.meta.json'))`; emit knowledge_promote_started event with reason=`approve:${slug}`",
+    "Approve continues: stableId = await allocator.allocate(layer, mapTypeToTypeCode(type)) — type code derived from KnowledgeType (D/P/G/M/Pr); build new filename `${stableId}--${slug}.md`; build dest = `${projectRoot}/.fabric/knowledge/${layer}/${type}/${newFilename}`; ensureParentDirectory(dest); execFileSync('git',['mv',sourceAbs,dest],{cwd:projectRoot,stdio:'pipe'}); rewrite the moved file's frontmatter with id field via atomicWriteText",
+    "Approve error path: wrap each pending_path in try/catch; on catch, emit knowledge_promote_failed with reason=err.message; on success, emit knowledge_promoted with stable_id; collect approved[] = {pending_path, stable_id} and return {action:'approve', approved}",
+    "Create packages/server/src/tools/review.ts: copy packages/server/src/tools/extract-knowledge.ts verbatim, swap imports (FabReview*Schema, fabReviewAnnotations, reviewKnowledge), swap tool name 'fab_review', remove ensureRulesFresh (review does not depend on rule index)",
+    "Edit packages/server/src/index.ts: add import line after L17; add registerReview call after L112; add reviewKnowledge re-export after L42 — verify lint passes (alphabetized imports, no unused)",
+    "Add per-action unit test packages/server/src/services/review.test.ts: list returns empty on empty pending/; list parses frontmatter from a seeded fixture; approve allocates stable_id, performs git mv (mock execFileSync OR run in real git tmpdir), emits 2-phase events, writes id into frontmatter; approve error path emits promote_failed",
+    "Run `pnpm --filter @fenglimg/fabric-server build` and `pnpm --filter @fenglimg/fabric-server test` to verify; commit as 'feat(server): add fab_review MCP tool with list+approve actions (rc.3 TASK-001)'"
+  ],
+  "reference": {
+    "pattern": "MCP tool registration pattern (packages/server/src/tools/extract-knowledge.ts) + service-pure-function pattern (packages/server/src/services/extract-knowledge.ts)",
+    "files": [
+      "packages/server/src/tools/extract-knowledge.ts",
+      "packages/server/src/services/extract-knowledge.ts",
+      "packages/server/src/services/knowledge-id-allocator.ts",
+      "packages/server/src/services/event-ledger.ts",
+      "packages/server/src/services/rule-meta-builder.ts",
+      "packages/server/src/services/_shared.ts"
+    ],
+    "examples": "Clone extract-knowledge.ts shape; switch over action; emit events via appendEventLedgerEvent; use execFileSync from node:child_process (precedent: packages/cli/src/scanner/forensic.ts:414, packages/server/src/services/rehydrate-state.ts:1)"
+  },
+  "convergence": {
+    "criteria": [
+      "fab_review tool is registered (server.registerTool called in createFabricServer; visible in mcp-server tool list)",
+      "list action returns FabReviewOutput.list with items[] reflecting all .md files under .fabric/knowledge/pending/<type>/ — verified by integration test seeding 3 fixtures and asserting items.length === 3",
+      "approve action allocates stable_id matching /^K[TP]-[DPGMR]-\\d{4}$/ via KnowledgeIdAllocator (verified by reading agents.meta.json counters before/after)",
+      "approve performs git mv (verified: pending file no longer exists, canonical file exists at <layer>/<type>/<id>--<slug>.md, `git status` shows R rename — exec real git in tmpdir test)",
+      "Each successful approve emits exactly 2 events: 1 knowledge_promote_started + 1 knowledge_promoted (asserted via readEventLedger filter)",
+      "Approve failure path emits knowledge_promote_failed with reason field populated (asserted by mocking execFileSync to throw)",
+      "Frontmatter of moved file contains id: <stable_id> (verified by re-reading file after approve)",
+      "All new code in services/review.ts + tools/review.ts achieves >=90% lines coverage in vitest run --coverage (verified manually before commit; rc3-coverage-gate.mjs in TASK-009)"
+    ]
+  },
+  "depends_on": [],
+  "rationale": {
+    "chosen_approach": "Pure async function service mirroring extract-knowledge.ts; switch over discriminated input.action; KnowledgeIdAllocator for late-bind; execFileSync for git mv; 2-phase event emission",
+    "alternatives_considered": [
+      "One-action-per-file (services/review-list.ts, services/review-approve.ts) — rejected: discriminated union has tighter type narrowing in single switch",
+      "Class-based ReviewService — rejected: codebase convention is pure functions (no DI container)",
+      "simple-git library — rejected: no existing dep; execFileSync precedent is fully sufficient",
+      "1-phase event (only knowledge_promoted) — rejected: Q5 locked 2-phase for forensic recovery"
+    ],
+    "decision_factors": [
+      "Schemas pre-locked — zero degrees of freedom on input/output shape",
+      "Codebase convention enforces pure-function service shape",
+      "KnowledgeIdAllocator already exists and persists counters atomically",
+      "execFileSync is the established cross-platform git invocation pattern"
+    ],
+    "tradeoffs": "Splitting list+approve into TASK-001 vs reject+modify+search+defer in TASK-002 means review.ts grows incrementally; PR reviews stay focused; final file is 200-300 LOC instead of single 400+ LOC commit"
+  },
+  "test": {
+    "manual_checks": [
+      "After TASK-001, manually call fab_review list via MCP inspector — confirm items[] returned for the 3 rc.2 pending entries",
+      "Manually call fab_review approve on a single pending_path — confirm git status shows R rename, agents.meta.json counter incremented, events.jsonl has 2 new events"
+    ],
+    "success_metrics": [
+      "review.test.ts passes 100%",
+      "review.ts lines coverage >= 90%",
+      "tools/review.ts lines coverage >= 90%",
+      "0 type errors in `pnpm -r typecheck`"
+    ],
+    "unit": [
+      "test_review_list_returns_items_for_pending_fixtures",
+      "test_review_list_returns_empty_when_pending_dirs_absent",
+      "test_review_list_parses_layer_type_maturity_tags_from_frontmatter",
+      "test_review_approve_allocates_stable_id_via_allocator",
+      "test_review_approve_writes_id_into_frontmatter",
+      "test_review_approve_performs_git_mv_to_canonical_path",
+      "test_review_approve_emits_promote_started_then_promoted",
+      "test_review_approve_emits_promote_failed_on_git_mv_error",
+      "test_review_approve_handles_batch_pending_paths"
+    ],
+    "integration": [
+      "test_register_review_tool_appears_in_mcp_server_listing"
+    ]
+  },
+  "risks": [
+    {
+      "description": "execFileSync('git','mv',...) fails when target tmpdir is not a git repo (test isolation issue)",
+      "probability": "Medium",
+      "impact": "Medium",
+      "mitigation": "Test fixture initializes a git repo in tmpdir via execFileSync('git','init') in beforeEach; mirrors rehydrate-state.test.ts:193 pattern",
+      "fallback": "If git-init-in-test proves flaky on CI Windows, fall back to mocking execFileSync via vi.spyOn and asserting the call args"
+    },
+    {
+      "description": "KnowledgeIdAllocator counter race when approve is called with batch pending_paths sequentially — counters file rewritten N times",
+      "probability": "Low",
+      "impact": "Low",
+      "mitigation": "Allocator already uses atomicWriteJson (rename = atomic); sequential awaits in approve loop are safe; document N writes per batch as expected",
+      "fallback": "If perf becomes issue, batch-allocate counters inside one read-modify-write cycle in a future rc"
+    },
+    {
+      "description": "Frontmatter rewrite (adding id field) corrupts existing fields if regex doesn't preserve trailing newline / array flow style",
+      "probability": "Medium",
+      "impact": "High",
+      "mitigation": "Use surgical insert: split on '---\\n', insert `id: ${stableId}\\n` before second '---', re-join. Add round-trip test (parse → mutate → parse → assert original fields preserved)",
+      "fallback": "If regex proves brittle, parse YAML via existing handler and re-serialize via simple kv writer"
+    }
+  ],
+  "code_skeleton": {
+    "key_functions": [
+      {
+        "signature": "export async function reviewKnowledge(projectRoot: string, input: FabReviewInput): Promise<FabReviewOutput>",
+        "purpose": "Top-level dispatcher; switch on input.action",
+        "returns": "FabReviewOutput (discriminated by action)"
+      },
+      {
+        "signature": "async function listPending(projectRoot: string, filters?: FabReviewFilters): Promise<FabReviewListItem[]>",
+        "purpose": "Walk pending tree, parse frontmatter, return items",
+        "returns": "FabReviewListItem[]"
+      },
+      {
+        "signature": "async function approveOne(projectRoot: string, pendingPath: string, allocator: KnowledgeIdAllocator): Promise<{pending_path: string, stable_id: string}>",
+        "purpose": "Allocate id, git mv, write frontmatter id, emit 2-phase events",
+        "returns": "{pending_path, stable_id}"
+      },
+      {
+        "signature": "function mapTypeToTypeCode(type: KnowledgeType): TypeCode",
+        "purpose": "decisions->D, pitfalls->P, guidelines->G, models->M, processes->Pr (or matching shared util)",
+        "returns": "TypeCode"
+      },
+      {
+        "signature": "function parseFrontmatter(content: string): {type, layer, maturity, slug, tags?, title?, summary?, body}",
+        "purpose": "Hand-rolled regex parser mirroring rule-meta-builder.ts pattern",
+        "returns": "frontmatter fields + body"
+      },
+      {
+        "signature": "function rewriteFrontmatterWithId(content: string, stableId: string): string",
+        "purpose": "Insert `id: <stableId>` line preserving formatting",
+        "returns": "rewritten content string"
+      },
+      {
+        "signature": "export function registerReview(server: McpServer, tracker?: InFlightTracker): void",
+        "purpose": "MCP tool registration mirroring registerExtractKnowledge",
+        "returns": "void"
+      }
+    ]
+  }
+}

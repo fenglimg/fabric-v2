@@ -1,0 +1,305 @@
+{
+  "project_structure": "Fabric is a pnpm monorepo with three packages: packages/server (MCP server, services, tools), packages/cli (init/scan/doctor/serve/config/hooks commands), packages/shared (Zod schemas, types, atomic-write helpers, errors, i18n). MCP tools are registered in packages/server/src/index.ts via registerXxx(server, tracker) helpers under packages/server/src/tools/. Each tool delegates to a service in packages/server/src/services/ that owns business logic, persistence (atomic write), and event-ledger emission. CLI init pipeline is plan→execute (buildInitExecutionPlan → executeInitExecutionPlan) staged into bootstrap/mcp/hooks. v1.x client-side init artefacts (fabric-init skill, agents-md-init Stop hook, husky pre-commit) were deleted in rc.1; templates/{claude,codex}-{hooks,skills}/ still hold orphan v1 files but are no longer copied by init. rc.2 must add: (1) registerExtractKnowledge tool that wraps a new services/extract-knowledge.ts; (2) skill-template install logic for fabric-archive (Claude .claude/skills/, Codex .codex/skills/); (3) Stop-hook config writers for the 3 supported clients (Claude .claude/settings.json hooks.Stop, Cursor .cursor/hooks.json — does not yet exist, Codex .codex/hooks.json — partial probe exists in resolver.ts:157).",
+  "relevant_files": [
+    {
+      "path": "packages/server/src/index.ts",
+      "relevance": 1.0,
+      "rationale": "createFabricServer at L102-143 is the exact site where rc.2 must add `registerExtractKnowledge(server, tracker)` next to the existing two registerPlanContext / registerRuleSections calls. Also re-exports public API (KnowledgeIdAllocator, appendEventLedgerEvent) — rc.2 will likely also re-export the new service.",
+      "role": "modify_target",
+      "discovery_source": "bash-scan",
+      "key_symbols": ["createFabricServer", "registerPlanContext", "registerRuleSections"],
+      "key_code": [
+        {"symbol": "createFabricServer()", "location": "L102-L143", "description": "Single source of truth for MCP tool registration. Currently calls registerPlanContext + registerRuleSections at L108-L109; rc.2 must add `registerExtractKnowledge(server, tracker)` here. Also constructs the McpServer instance and wires the legacy AGENTS_MD_RESOURCE_URI shim."},
+        {"symbol": "tool import block", "location": "L15-L16", "description": "Existing imports `./tools/plan-context.js` and `./tools/rule-sections.js`. rc.2 must add `./tools/extract-knowledge.js` import next to these."}
+      ],
+      "topic_relation": "Integration-points exploration: this file is THE wiring hub where every new MCP tool plugs into the server. Adding fab_extract_knowledge requires exactly one new import + one new registerXxx call, mirroring the pattern at L15-L16/L108-L109."
+    },
+    {
+      "path": "packages/server/src/tools/plan-context.ts",
+      "relevance": 1.0,
+      "rationale": "Canonical reference pattern for MCP tool registration. The new tools/extract-knowledge.ts must follow this exact shape: import schemas from @fenglimg/fabric-shared/schemas/api-contracts, call server.registerTool(name, {description, inputSchema, outputSchema, annotations}, async handler), wrap handler with tracker.enter/exit, call resolveProjectRoot, optionally ensureRulesFresh, delegate to service, apply enforcePayloadLimit, return {content, structuredContent}.",
+      "role": "pattern_reference",
+      "discovery_source": "bash-scan",
+      "key_symbols": ["registerPlanContext", "planContextInputSchema", "planContextOutputSchema", "planContextAnnotations"],
+      "key_code": [
+        {"symbol": "registerPlanContext()", "location": "L17-L72", "description": "Full registration pattern: takes (server, tracker?). Calls server.registerTool('fab_plan_context', {description, inputSchema, outputSchema, annotations}, handler). Handler obtains requestId via randomUUID(), enters tracker, resolves projectRoot, runs ensureRulesFresh, calls service, attaches sync warnings, applies enforcePayloadLimit, returns {content:[{type:'text',text:JSON}], structuredContent:response}, exits tracker in finally."},
+        {"symbol": "schema import line", "location": "L5-L9", "description": "Imports planContextInputSchema/OutputSchema/Annotations from '@fenglimg/fabric-shared/schemas/api-contracts'. rc.2 mirror: import FabExtractKnowledgeInputSchema/OutputSchema/fabExtractKnowledgeAnnotations."},
+        {"symbol": "payload-limit guard", "location": "L49-L61", "description": "enforcePayloadLimit + warnings injection — rc.2 should reuse the same guard pattern; fab_extract_knowledge response is small (pending_path + idempotency_key) so guard rarely fires but consistency matters."}
+      ],
+      "topic_relation": "Integration-points exploration: this is the template tool registration to clone. Every aspect of how a new MCP tool integrates with the server runtime (registration, auth-free since fabric is local-only, payload guard, ledger access via service) is encoded in this 72-line file."
+    },
+    {
+      "path": "packages/server/src/tools/rule-sections.ts",
+      "relevance": 0.85,
+      "rationale": "Second example of the registerXxx pattern, confirms it is consistent across tools. Same import-schemas + registerTool + tracker + ensureRulesFresh + payload-guard structure as plan-context.ts. rc.2's tools/extract-knowledge.ts should look near-identical to these two files.",
+      "role": "pattern_reference",
+      "discovery_source": "bash-scan",
+      "key_symbols": ["registerRuleSections"],
+      "key_code": [
+        {"symbol": "registerRuleSections()", "location": "L20-L66", "description": "Same skeleton as plan-context: tracker.enter, resolveProjectRoot, ensureRulesFresh, service call, payload guard, structuredContent return. Confirms the pattern is deliberate (not coincidental) and rc.2 should not invent a third shape."}
+      ],
+      "topic_relation": "Integration-points exploration: corroborates the registration pattern as fixed convention — rc.2's fab_extract_knowledge must follow it without deviation, otherwise mcp-server.test.ts integration suite would assume a registration shape that does not exist for the new tool."
+    },
+    {
+      "path": "packages/shared/src/schemas/api-contracts.ts",
+      "relevance": 1.0,
+      "rationale": "Pre-locked Zod schemas for fab_extract_knowledge already exist at L287-L330 (commit a0612a9). Confirmed input fields: source_session, recent_paths[], user_messages_summary, type (5-enum), slug. Output: pending_path, idempotency_key. Annotations: readOnlyHint:false, idempotentHint:true. rc.2 service must obey exactly these field names. Note: NO stable_id field in input or output — rc.2 pending entries are id-less (Q2 late-bind decision confirmed).",
+      "role": "type_definition",
+      "discovery_source": "bash-scan",
+      "key_symbols": ["FabExtractKnowledgeInputSchema", "FabExtractKnowledgeOutputSchema", "fabExtractKnowledgeAnnotations"],
+      "key_code": [
+        {"symbol": "FabExtractKnowledgeInputSchema", "location": "L295-L312", "description": "Input contract: source_session (string, ledger correlation), recent_paths (string[]), user_messages_summary (string), type (z.enum(['decisions','pitfalls','guidelines','models','processes']) — note PLURAL form mirroring directory layout), slug (string, server may sanitize). Type alias FabExtractKnowledgeInput exported via z.infer."},
+        {"symbol": "FabExtractKnowledgeOutputSchema", "location": "L314-L322", "description": "Output contract: pending_path (workspace-relative string), idempotency_key (stable hash from inputs — identical inputs yield identical key). Type alias FabExtractKnowledgeOutput exported via z.infer."},
+        {"symbol": "fabExtractKnowledgeAnnotations", "location": "L324-L330", "description": "MCP annotations: readOnlyHint:false (writes to .fabric/knowledge/pending/), idempotentHint:true (idempotency_key invariant), destructiveHint:false, openWorldHint:false, title:'Extract pending knowledge entry'."}
+      ],
+      "topic_relation": "Integration-points exploration: this file is the contract boundary between MCP client (Skill) and server. Field names are FROZEN — rc.2 implementation has zero degrees of freedom on input/output shape. Particularly note the type enum uses PLURAL bucket names (decisions/pitfalls/guidelines/models/processes) which match the directory subdirs created by init.ts:482, so the service can build pending_path = `.fabric/knowledge/pending/${input.type}/${sanitizedSlug}.md` directly."
+    },
+    {
+      "path": "packages/server/src/services/plan-context.ts",
+      "relevance": 0.95,
+      "rationale": "Reference service-implementation pattern: pure function `planContext(projectRoot, input): Promise<Result>`, no class, no DI container. Calls appendEventLedgerEvent for telemetry inside try/catch (L134-L151) so ledger failures don't fail the request. rc.2's services/extract-knowledge.ts should mirror this signature: `extractKnowledge(projectRoot, input): Promise<{pending_path, idempotency_key}>` and emit knowledge_proposed event (and knowledge_archive_attempted on conflict).",
+      "role": "pattern_reference",
+      "discovery_source": "bash-scan",
+      "key_symbols": ["planContext", "appendEventLedgerEvent"],
+      "key_code": [
+        {"symbol": "planContext()", "location": "L79-L154", "description": "Service-method signature: `async function planContext(projectRoot: string, input: PlanContextInput): Promise<PlanContextResult>`. Pure function exported from module — no class, no constructor, no DI. Receives projectRoot from the tool layer (resolveProjectRoot) and reads/writes via service-local helpers."},
+        {"symbol": "appendEventLedgerEvent emission", "location": "L134-L151", "description": "Pattern for ledger emission: wrapped in try/catch with empty catch body and comment 'Planning telemetry is best-effort and must not block rule discovery.' rc.2 must decide whether knowledge_proposed is best-effort (mirror this) or REQUIRED (caller observes failure). Recommendation: required — pending entry without ledger event creates orphan."},
+        {"symbol": "atomic-write usage anchor", "location": "n/a — see knowledge-id-allocator.ts and atomic-write.ts", "description": "plan-context does not write files; rc.2's extract-knowledge MUST use atomicWriteText from @fenglimg/fabric-shared/node/atomic-write to write the pending markdown (matches init.ts:9 and knowledge-id-allocator.ts:111 conventions)."}
+      ],
+      "topic_relation": "Integration-points exploration: defines the service contract surface every MCP tool integrates with. fab_extract_knowledge service integrates with the same projectRoot-as-parameter pattern, the same ledger-via-appendEventLedgerEvent contract, and the same atomic-write convention — but adds a new responsibility (file write to pending/) that is absent from plan-context."
+    },
+    {
+      "path": "packages/server/src/services/event-ledger.ts",
+      "relevance": 1.0,
+      "rationale": "Single function `appendEventLedgerEvent(projectRoot, event)` at L33-L50 is the only public ledger write API. rc.2 emits knowledge_proposed (on successful pending write) and knowledge_archive_attempted (on validation failure or duplicate). The function auto-injects id/ts/schema_version and validates through eventLedgerEventSchema discriminated union — rc.2 events MUST be members of that union (they ARE: pre-registered in event-ledger.ts:178/246).",
+      "role": "integration_point",
+      "discovery_source": "bash-scan",
+      "key_symbols": ["appendEventLedgerEvent", "ledgerQueue"],
+      "key_code": [
+        {"symbol": "appendEventLedgerEvent()", "location": "L33-L50", "description": "Takes (projectRoot, EventLedgerEventInput) — the input is parsed through eventLedgerEventSchema (discriminated union over event_type), id/ts/schema_version auto-filled. Writes via createLedgerWriteQueue serialized append. Returns the parsed event. rc.2 callers do: await appendEventLedgerEvent(projectRoot, {event_type:'knowledge_proposed', stable_id:undefined, timestamp:new Date().toISOString(), reason:'extract_knowledge tool invocation', correlation_id:input.source_session})."},
+        {"symbol": "flushAndSyncEventLedger()", "location": "L178-L187", "description": "Sync fsync helper called from shutdown handler (index.ts:232). rc.2 doesn't invoke directly; ledgerQueue + shutdown flow already cover durability."}
+      ],
+      "topic_relation": "Integration-points exploration: this is the integration seam between MCP tool services and persistent state. Every new event type added to the schema (e3975b5 pre-registered 11 of them) becomes callable through this single function — no per-event-type dispatcher to update."
+    },
+    {
+      "path": "packages/shared/src/schemas/event-ledger.ts",
+      "relevance": 0.9,
+      "rationale": "Pre-registered knowledge_proposed (L176-L182) and knowledge_archive_attempted (L244-L250) schemas exist (commit e3975b5) and are wired into the eventLedgerEventSchema discriminated union at L269-L297. Both have stable_id as OPTIONAL string — confirms Q2 late-bind decision (pending entries have NO stable_id; layer/type allocation happens later at rc.3 fab_review approve).",
+      "role": "type_definition",
+      "discovery_source": "bash-scan",
+      "key_symbols": ["knowledgeProposedEventSchema", "knowledgeArchiveAttemptedEventSchema", "eventLedgerEventSchema"],
+      "key_code": [
+        {"symbol": "knowledgeProposedEventSchema", "location": "L176-L182", "description": "Fields: event_type (literal), stable_id OPTIONAL string (because pending has no id yet), timestamp (datetime string), reason OPTIONAL. Plus envelope (id, ts, schema_version, kind, correlation_id, session_id) inherited from eventLedgerEnvelopeSchema."},
+        {"symbol": "knowledgeArchiveAttemptedEventSchema", "location": "L244-L250", "description": "Same shape as proposed — stable_id optional, reason optional. rc.2 emits this when extract_knowledge fails idempotency check or input validation, to track abandoned attempts."},
+        {"symbol": "eventLedgerEventSchema discriminated union registration", "location": "L269-L297", "description": "Both knowledge_proposed and knowledge_archive_attempted are members of the union (L286, L294). appendEventLedgerEvent will accept them WITHOUT any code change to the ledger service."}
+      ],
+      "topic_relation": "Integration-points exploration: confirms the schema-side integration is already complete. rc.2 emit-site adds zero new schema lines — only the call sites need to land."
+    },
+    {
+      "path": "packages/server/src/services/knowledge-id-allocator.ts",
+      "relevance": 0.7,
+      "rationale": "Confirms Q2 late-bind decision: pending/ entries do NOT call this allocator. Allocator is only invoked when an entry transitions into a layer-bucket (decisions/, pitfalls/, etc) — that happens at rc.3 fab_review action='approve', NOT at rc.2 extract_knowledge. rc.2's extract_knowledge writes to .fabric/knowledge/pending/{type}/${slug}.md WITHOUT a stable_id; the markdown frontmatter has no `id:` field. This is critical context — getting it wrong creates dangling KT-/KP- ids before review.",
+      "role": "context_only",
+      "discovery_source": "bash-scan",
+      "key_symbols": ["KnowledgeIdAllocator", "allocate"],
+      "key_code": [
+        {"symbol": "KnowledgeIdAllocator.allocate()", "location": "L42-L56", "description": "async allocate(layer, type) — reads agents.meta.json, advances counter atomically, returns StableId. NOT called from rc.2 extract-knowledge service. rc.3 fab_review approve handler is the rightful caller."},
+        {"symbol": "atomic counter persistence", "location": "L107-L112", "description": "Uses atomicWriteJson pattern. rc.2 extract-knowledge uses atomicWriteText for the .md content — same atomic-write module, different writer."}
+      ],
+      "topic_relation": "Integration-points exploration: marks a NEGATIVE integration point — fab_extract_knowledge does NOT integrate with KnowledgeIdAllocator. Documenting the no-call boundary is as important as documenting calls, because the schema allows id but rc.2 must omit it."
+    },
+    {
+      "path": "packages/cli/src/commands/init.ts",
+      "relevance": 1.0,
+      "rationale": "init pipeline is the only existing site for materializing per-client artefacts. rc.2 must extend executeInitStagePlan (L750-L812) to install the fabric-archive skill into .claude/skills/fabric-archive/ and .codex/skills/fabric-archive/, AND wire the Stop hook config into .claude/settings.json + .cursor/hooks.json + .codex/hooks.json. Currently the bootstrap stage at L767-L775 is a no-op (writes nothing) and the hooks stage at L800-L803 calls installHooks() which throws (hooks.ts:69 — husky template removed in v2). BOTH must be redesigned for rc.2.",
+      "role": "modify_target",
+      "discovery_source": "bash-scan",
+      "key_symbols": ["executeInitStagePlan", "installHooks", "buildInitFabricPlan", "executeInitFabricPlan", "KNOWLEDGE_SUBDIRS"],
+      "key_code": [
+        {"symbol": "executeInitStagePlan() bootstrap branch", "location": "L767-L775", "description": "Currently a NO-OP for bootstrap stage with comment 'v2.0: the bootstrap stage no longer materializes per-client bootstrap files'. rc.2 should repurpose this stage (or add a new 'skills' stage) to install fabric-archive skill template into per-client directories. Decision needed: extend bootstrap or introduce skills stage — see clarification_needs."},
+        {"symbol": "executeInitStagePlan() hooks branch", "location": "L800-L803", "description": "Calls `await installHooks(plan.target, {force})` which currently THROWS in v2 (hooks.ts:67-72). rc.2 must reimplement installHooks to: 1) write fabric-stop-reminder.cjs into .claude/hooks/ and .codex/hooks/, 2) merge-insert hooks.Stop[] into .claude/settings.json, 3) write/merge .codex/hooks.json, 4) decide Cursor strategy (no documented hooks API)."},
+        {"symbol": "KNOWLEDGE_SUBDIRS constant", "location": "L482", "description": "Includes 'pending' subdir. .fabric/knowledge/pending/ is created at scaffold time (L557-L564) but pending/{type}/ subdirs (decisions/, pitfalls/, ...) are NOT created — rc.2 must decide: create pending/{type}/ at init time, or lazy-mkdir in extract-knowledge service. Recommend service-side mkdir-recursive (matches event-ledger.ts ensureParentDirectory pattern)."},
+        {"symbol": "configCommand.installMcpClients reuse", "location": "L787-L791", "description": "Existing mcp stage calls installMcpClients which writes .mcp.json / .cursor/mcp.json / ~/.codex/config.toml (resolver.ts pattern). rc.2 hooks/skills stage should follow the same writer-per-client pattern — likely a new file like packages/cli/src/config/hooks.ts with ClaudeStopHookWriter / CodexHookWriter / CursorHookWriter classes."}
+      ],
+      "topic_relation": "Integration-points exploration: init.ts is the rc.2 install-side integration hub. Every per-client artefact (skill template + Stop hook config) lands through this pipeline. The bootstrap-stage no-op and the throwing installHooks() are vacated slots waiting for rc.2 to fill."
+    },
+    {
+      "path": "packages/cli/src/commands/hooks.ts",
+      "relevance": 0.9,
+      "rationale": "Explicit STUB at L63-L72 throws 'fab hooks install is not available in v2' — this is the exact function rc.2 must reimplement. The error message hints at the new contract: 'Use per-client hooks under .claude/ and .codex/ instead.' rc.2 needs to redesign InstallHooksResult to track per-client (hookPath, settingsJsonPath, hooksJsonPath) instead of v1's single husky path.",
+      "role": "modify_target",
+      "discovery_source": "bash-scan",
+      "key_symbols": ["installHooks", "InstallHooksResult", "hooksCommand"],
+      "key_code": [
+        {"symbol": "installHooks() throwing stub", "location": "L63-L73", "description": "v2 stub: validates target then throws Error('fab hooks install is not available in v2 (husky pre-commit template removed). Use per-client hooks under .claude/ and .codex/ instead.'). rc.2 replaces the throw with: copy fabric-stop-reminder.cjs to .claude/hooks/ and .codex/hooks/, write hooks.Stop entry to .claude/settings.json, write .codex/hooks.json, return per-client install record."},
+        {"symbol": "InstallHooksResult type", "location": "L19-L26", "description": "Currently has hookPath/packageJsonPath (husky-shaped). rc.2 needs to broaden to claudeHookPath/claudeSettingsPath/codexHookPath/codexHooksJsonPath/cursorHookPath. Existing call site init.ts:801 uses .installed.length — keep that field (string array of installed hook destinations)."}
+      ],
+      "topic_relation": "Integration-points exploration: this file IS the v2 hook install integration point. rc.2 lifts the stub by writing the real per-client install logic — no new file required if scope stays small."
+    },
+    {
+      "path": "packages/cli/src/config/resolver.ts",
+      "relevance": 0.9,
+      "rationale": "detectClientSupports() at L90-L165 is the truth source for which clients exist on the user's machine. rc.2 hook install logic must consult this same detection so a non-Claude project doesn't get .claude/settings.json created. CRITICAL FINDING: L157 already probes `existsSync(.codex/hooks.json)` for hook capability — this is the exact write target for Codex Stop hook. Cursor capability has hook:false (L139) — no Cursor Stop hook today. Q: does Cursor support Stop-equivalent hooks? See clarification_needs.",
+      "role": "integration_point",
+      "discovery_source": "bash-scan",
+      "key_symbols": ["detectClientSupports", "DetectedClientSupport"],
+      "key_code": [
+        {"symbol": "ClaudeCodeCLI capability row", "location": "L100-L117", "description": "hook:true, skill:true. configPath: 'project .claude/settings.json'. installedCapabilities both default true (legacy from v1). rc.2 should reset installedCapabilities to dynamic existsSync probes (.claude/settings.json hooks.Stop entry present? .claude/skills/fabric-archive/SKILL.md present?)."},
+        {"symbol": "CodexCLI capability row", "location": "L144-L163", "description": "hook:true, skill:true. configPath: '~/.codex/config.toml' (note: that's the MCP server config, NOT the hook config). installedCapabilities.hook = existsSync(.codex/hooks.json) — hook config sits at WORKSPACE-relative .codex/hooks.json, not user-home. installedCapabilities.skill = false (comment says 'rc.2/3/4 will introduce v2 skills')."},
+        {"symbol": "Cursor capability row", "location": "L131-L143", "description": "hook:false, skill:false. configPath: '.cursor/mcp.json'. rc.2 must decide: leave Cursor without Stop hook (current state), OR research Cursor's hook surface and add it. Cursor as of 2025 has agent rules (.cursor/rules/) but no public Stop-hook API documented; likely scope decision: SKIP Cursor for rc.2 stop-hook, only ship Claude Code + Codex CLI hooks."}
+      ],
+      "topic_relation": "Integration-points exploration: this is THE per-client capability oracle. rc.2 hook/skill install must query it to decide which client gets which artefact. The existing field shape (capabilities + installedCapabilities) is rc.2-ready — only the installedCapabilities probes need updating once new artefacts land."
+    },
+    {
+      "path": "packages/cli/src/config/json.ts",
+      "relevance": 0.85,
+      "rationale": "Provides the deepMerge + atomicWriteJson recipe for writing client config files. The same pattern is needed for .claude/settings.json (insert hooks.Stop[] entry, preserve other entries) and .codex/hooks.json. writeJsonClientConfig at L81-L87 is exactly the merge-insert helper rc.2 needs — generalize it from {mcpServers:{fabric:...}} to arbitrary patch payloads, OR write a sibling writeClaudeSettings / writeCodexHooks pair.",
+      "role": "pattern_reference",
+      "discovery_source": "bash-scan",
+      "key_symbols": ["deepMerge", "writeJsonClientConfig", "ClaudeCodeCLIWriter", "CursorWriter"],
+      "key_code": [
+        {"symbol": "deepMerge()", "location": "L18-L39", "description": "Hand-rolled object merge — recursive on plain objects, arrays/primitives REPLACE. PROBLEM for hooks: settings.json hooks.Stop is an ARRAY of {matcher, hooks}. deepMerge would replace the array, not append. rc.2 needs a special-case append-with-dedupe-by-matcher merger for hooks paths."},
+        {"symbol": "writeClaudeMcpConfig()", "location": "L99-L122", "description": "Reference implementation: target picks based on scope (project .mcp.json vs user ~/.claude.json), reads existing JSON, deepMerges patch, atomicWriteJson with indent:2, returns {path, merged}. rc.2's writeClaudeStopHookConfig should mirror this shape but target .claude/settings.json (project scope only — Stop hooks are workspace-scoped per Anthropic docs)."}
+      ],
+      "topic_relation": "Integration-points exploration: this is the JSON-merge integration toolkit. rc.2 can either reuse deepMerge directly (with a custom array-append helper for hooks.Stop) or build a thin parallel writer module."
+    },
+    {
+      "path": "packages/cli/src/config/claude-code.ts",
+      "relevance": 0.7,
+      "rationale": "ClaudeCodeDesktopWriter writes claude_desktop_config.json (different OS-specific paths at L8-L21). For rc.2 Stop hooks, the WORKSPACE-level .claude/settings.json is the target (per Claude Code docs hooks live in workspace settings, not desktop config). The desktop config writer is NOT the integration point for hooks — confirms rc.2 only needs project-scope .claude/settings.json access.",
+      "role": "context_only",
+      "discovery_source": "bash-scan",
+      "key_symbols": ["ClaudeCodeDesktopWriter", "getClaudeDesktopConfigPath"]
+    },
+    {
+      "path": "templates/claude-hooks/fabric-init-reminder.cjs",
+      "relevance": 0.6,
+      "rationale": "Orphan v1 Stop-hook script template. Pattern is correct (writes JSON {decision:'block', reason:...} to stdout) but the BUSINESS LOGIC is wrong for rc.2 (checks for forensic.json + init-context.json which are init-flow concerns, not knowledge-archive concerns). rc.2 must AUTHOR a new fabric-archive-reminder.cjs that detects: 'session ended, has the AI archived recent decisions?' — likely by checking pending/ recency or events.jsonl tail for knowledge_proposed in last N minutes.",
+      "role": "context_only",
+      "discovery_source": "bash-scan",
+      "key_symbols": ["forensicPath", "initContextPath"]
+    },
+    {
+      "path": "templates/codex-hooks/fabric-stop-reminder.cjs",
+      "relevance": 0.6,
+      "rationale": "Same as Claude variant — orphan v1 script with init-flow logic. Stub is structurally close to what rc.2 needs (Codex Stop hook script) but contents must be rewritten for the archive-reminder use case. Note Codex hooks read project-relative paths via process.cwd().",
+      "role": "context_only",
+      "discovery_source": "bash-scan",
+      "key_symbols": ["forensicPath", "initContextPath"]
+    },
+    {
+      "path": "templates/claude-skills/fabric-init/SKILL.md",
+      "relevance": 0.6,
+      "rationale": "Orphan v1 Skill template. rc.2 must AUTHOR a fresh templates/claude-skills/fabric-archive/SKILL.md that calls fab_extract_knowledge MCP tool. Path convention .claude/skills/{name}/SKILL.md is the install destination. rc.1 prep deleted this directory's siblings (per planning-context.md Phase A Commit C) — it's pending re-deletion or repurposing.",
+      "role": "context_only",
+      "discovery_source": "bash-scan"
+    },
+    {
+      "path": "packages/server/src/tools/mcp-server.test.ts",
+      "relevance": 0.7,
+      "rationale": "Existing MCP-tool integration test pattern: createV2Project tempdir setup, plus exercise of planContext + getRuleSections through the public service surface. rc.2 must add an analogous extract-knowledge integration test that creates a tempdir, calls extractKnowledge service, asserts the .fabric/knowledge/pending/{type}/${slug}.md file appears with frontmatter (no id), AND that knowledge_proposed appears in events.jsonl.",
+      "role": "test_target",
+      "discovery_source": "bash-scan",
+      "key_symbols": ["createV2Project"],
+      "key_code": [
+        {"symbol": "createV2Project()", "location": "L93-L213", "description": "Reusable test helper: mkdtemp under tmpdir, mkdir .fabric/knowledge/{type}/, write fixture .md files, write agents.meta.json. rc.2 test can call this to seed a project then invoke extractKnowledge — the resulting pending file write is observable via fs.readFile."}
+      ],
+      "topic_relation": "Integration-points exploration: this file is the integration-test harness for new MCP tools. rc.2's test belongs HERE (or a new file under same dir) to validate the full chain: input schema → service → atomic write → ledger emit."
+    },
+    {
+      "path": "packages/cli/src/config/toml.ts",
+      "relevance": 0.4,
+      "rationale": "CodexTOMLConfigWriter writes ~/.codex/config.toml (Codex MCP config). Confirms Codex's MCP config is TOML at user-home, but Codex hooks config is JSON at workspace-relative .codex/hooks.json (resolver.ts:157). Two different formats — rc.2 hooks integration must NOT reuse this TOML writer.",
+      "role": "context_only",
+      "discovery_source": "bash-scan"
+    },
+    {
+      "path": "packages/server/src/services/_shared.ts",
+      "relevance": 0.5,
+      "rationale": "Provides ensureParentDirectory(path) helper used by event-ledger.ts and knowledge-id-allocator.ts to mkdir-recursive before atomic writes. rc.2's extract-knowledge service needs the same helper before writing pending/{type}/${slug}.md (the {type}/ subdir under pending/ may not exist yet — KNOWLEDGE_SUBDIRS at init.ts:482 creates pending/ but not pending/decisions/).",
+      "role": "dependency",
+      "discovery_source": "bash-scan",
+      "key_symbols": ["ensureParentDirectory", "getEventLedgerPath", "sha256"]
+    },
+    {
+      "path": "packages/shared/src/node/atomic-write.ts",
+      "relevance": 0.6,
+      "rationale": "atomicWriteText / atomicWriteJson / createLedgerWriteQueue — the durability primitives. rc.2 extract-knowledge writes the pending markdown via atomicWriteText (matches scan.ts:224 and init.ts:9 import shape). NO new primitive needed — the existing toolkit is complete.",
+      "role": "dependency",
+      "discovery_source": "bash-scan",
+      "key_symbols": ["atomicWriteText", "atomicWriteJson", "createLedgerWriteQueue"]
+    },
+    {
+      "path": ".workflow/.lite-plan/fabric-v2-rc2-prep-2026-05-10/planning-context.md",
+      "relevance": 0.7,
+      "rationale": "rc.2-prep planning context. Confirms rc.2 scope explicitly excludes itself from rc.1 prep (lines 154-164 'Out of Scope'). Lists exactly the 3 items rc.2 owns: fab_extract_knowledge MCP tool, fabric-archive skill template, Stop hook scripts + 3-client configs. Q2 late-bind decision for stable_id is implicit (counters bumped only at promotion, not at proposal).",
+      "role": "context_only",
+      "discovery_source": "manual"
+    }
+  ],
+  "patterns": "(1) MCP TOOL REGISTRATION PATTERN: tools/{name}.ts exports register{Name}(server, tracker?) which wraps server.registerTool(name, {description, inputSchema, outputSchema, annotations}, asyncHandler). Handler: randomUUID requestId, tracker.enter, resolveProjectRoot, optionally ensureRulesFresh, call service, attach syncReport.warnings, enforcePayloadLimit guard, return {content:[{type:'text',text:JSON.stringify(response)}], structuredContent:response}, tracker.exit in finally. rc.2 MUST follow this shape. (2) SERVICE IMPLEMENTATION PATTERN: services/{name}.ts exports pure async function `serviceName(projectRoot: string, input: ServiceInput): Promise<ServiceOutput>`. No class, no DI. Reads via meta-reader / fs.promises, writes via atomicWriteText/atomicWriteJson from @fenglimg/fabric-shared/node/atomic-write. Telemetry via appendEventLedgerEvent wrapped in try/catch (best-effort) — rc.2 should consider whether knowledge_proposed is best-effort or REQUIRED. (3) PER-CLIENT CONFIG WRITER PATTERN: classes implementing ClientConfigWriter interface (clientKind, detect(), write()) under packages/cli/src/config/. Detection via existsSync probe of canonical client dir; write via deepMerge + atomicWriteJson. ClaudeCodeCLIWriter / CursorWriter / CodexTOMLConfigWriter / ClaudeCodeDesktopWriter exemplify this. rc.2 hooks integration likely needs ClaudeStopHookWriter (writes .claude/settings.json) + CodexHookWriter (writes .codex/hooks.json) following same pattern. (4) INIT STAGE PIPELINE: buildInitExecutionPlan → executeInitExecutionPlan with stages [bootstrap, mcp, hooks]. Each stage's executeInitStagePlan branch dispatches to its installer. Currently bootstrap is no-op and hooks throws — both are rc.2 fill-in slots. (5) IDEMPOTENCY KEY GENERATION: api-contracts schema mandates idempotency_key but no existing implementation — rc.2 should derive via sha256(stable subset of input fields) using the sha256 helper at services/_shared.ts. Identical inputs → identical key → service can early-return existing pending_path without re-writing.",
+  "dependencies": "EXISTING (rc.2 reuses): @fenglimg/fabric-shared (FabExtractKnowledgeInputSchema, FabExtractKnowledgeOutputSchema, fabExtractKnowledgeAnnotations, knowledgeProposedEventSchema, knowledgeArchiveAttemptedEventSchema — all pre-locked, zero new shared schema work); @fenglimg/fabric-shared/node/atomic-write (atomicWriteText, atomicWriteJson, createLedgerWriteQueue); @fenglimg/fabric-shared/node/mcp-payload-guard (enforcePayloadLimit); @modelcontextprotocol/sdk (McpServer.registerTool); node:crypto (randomUUID for requestId, createHash for idempotency_key); node:fs/promises (mkdir, writeFile via atomic helpers); citty (defineCommand for any new CLI subcommand). NEW (rc.2 creates): packages/server/src/services/extract-knowledge.ts (service); packages/server/src/tools/extract-knowledge.ts (tool wiring); templates/claude-skills/fabric-archive/SKILL.md + templates/codex-skills/fabric-archive/SKILL.md (skill templates); templates/claude-hooks/fabric-archive-reminder.cjs + templates/codex-hooks/fabric-archive-reminder.cjs (Stop hook scripts); likely packages/cli/src/config/hooks-writer.ts (per-client hook installers); rewrite packages/cli/src/commands/hooks.ts installHooks(). INTERNAL DEPENDENCY GRAPH: tools/extract-knowledge.ts → services/extract-knowledge.ts → {event-ledger.appendEventLedgerEvent, _shared.ensureParentDirectory + sha256, atomic-write.atomicWriteText, api-contracts.FabExtractKnowledge*Schema}. cli/init.ts hooks stage → cli/commands/hooks.ts.installHooks() → cli/config/hooks-writer.ts (NEW) → cli/config/json.ts.deepMerge + atomicWriteJson. NO circular dependencies. NO calls into KnowledgeIdAllocator from rc.2 service (Q2 late-bind boundary).",
+  "integration_points": "PRIMARY INTEGRATION SITES (exact file:line locations rc.2 must touch): (1) packages/server/src/index.ts:15-16 — add `import { registerExtractKnowledge } from './tools/extract-knowledge.js';` next to existing tool imports. (2) packages/server/src/index.ts:108-109 — add `registerExtractKnowledge(server, tracker);` line after the two existing registrations inside createFabricServer (L102-L143). (3) packages/server/src/index.ts:40-49 — optionally add `export { extractKnowledge } from './services/extract-knowledge.js';` next to KnowledgeIdAllocator export so CLI can call the service directly if needed. (4) packages/server/src/tools/extract-knowledge.ts (NEW FILE) — clone packages/server/src/tools/plan-context.ts:1-72 verbatim, swap schema imports + service import + tool name 'fab_extract_knowledge' + remove ensureRulesFresh call (extract-knowledge does not depend on rule index freshness). (5) packages/server/src/services/extract-knowledge.ts (NEW FILE) — async function extractKnowledge(projectRoot, input): build pending_path = `${projectRoot}/.fabric/knowledge/pending/${input.type}/${sanitizeSlug(input.slug)}.md`, derive idempotency_key = sha256 of {source_session, type, slug, user_messages_summary first 200 chars}, ensureParentDirectory, check existing path (idempotency: if same idempotency_key was already used for this path return early), atomicWriteText markdown body with frontmatter {summary, type:input.type singular, maturity:'draft', layer:'team' (or default_layer_filter from fabric-config?), tags:[]} (NO id field — Q2 late-bind), call appendEventLedgerEvent({event_type:'knowledge_proposed', timestamp, reason:`extract_knowledge:${input.slug}`, correlation_id:input.source_session, session_id:input.source_session}), on validation error or write failure call knowledge_archive_attempted instead, return {pending_path:relative-to-projectRoot, idempotency_key}. (6) packages/cli/src/commands/hooks.ts:63-72 — replace throwing stub with real per-client install. (7) packages/cli/src/commands/init.ts:767-775 — bootstrap stage: insert skill-template install logic OR add new 'skills' stage between bootstrap and mcp. Recommend repurposing bootstrap stage since it's already a stage no-op slot; copy templates/claude-skills/fabric-archive/SKILL.md → .claude/skills/fabric-archive/SKILL.md (workspace-relative) and templates/codex-skills/fabric-archive/SKILL.md → .codex/skills/fabric-archive/SKILL.md. (8) packages/cli/src/commands/init.ts:800-803 — hooks stage already calls installHooks; reimplementation lands in hooks.ts and is invoked here unchanged. (9) packages/cli/src/config/resolver.ts:113-116 + L156-L162 — update installedCapabilities probes to dynamic existsSync(.claude/skills/fabric-archive/SKILL.md) and existsSync(.claude/settings.json hooks.Stop fabric-archive entry). EVENT EMISSION PATTERN (knowledge_proposed traced through code): extract-knowledge service builds event payload → calls appendEventLedgerEvent (services/event-ledger.ts:33-50) → eventLedgerEventSchema.parse validates against discriminated union → ledgerQueue.append serializes JSON line with newline → events.jsonl gets the entry → flushAndSyncEventLedger fsync only happens at server shutdown (services/event-ledger.ts:178). DURABILITY NOTE: ledgerQueue is in-memory ordering only; immediate fsync per-write is NOT guaranteed (only on shutdown via SIGTERM handler at index.ts:174-185). For rc.2 this is acceptable because pending file write itself uses atomicWriteText (rename = durable). HOOK INSTALL PATHS CONFIRMED: Claude .claude/settings.json (project, NOT desktop config — confirmed via resolver.ts:106), Codex .codex/hooks.json workspace-relative (confirmed via resolver.ts:157 existsSync probe — this is the canonical Codex CLI hook config path), Cursor — NO documented Stop-hook surface (capability hook:false at resolver.ts:139); recommend SKIP Cursor for rc.2 hooks scope.",
+  "constraints": "(1) Schemas FROZEN: FabExtractKnowledgeInputSchema/OutputSchema (api-contracts.ts:295-322) and knowledge_proposed/knowledge_archive_attempted (event-ledger.ts:176-250) are pre-locked from commits a0612a9 + e3975b5. rc.2 has zero degrees of freedom on field names/types. (2) Q2 LATE-BIND: pending entries have NO stable_id. Frontmatter MUST omit `id:`. KnowledgeIdAllocator is NOT called from rc.2 service. (3) READ-ONLY HINT FALSE: fab_extract_knowledge writes filesystem state (annotation already locked: readOnlyHint:false at api-contracts.ts:325). MCP clients should display this as a write tool. (4) IDEMPOTENT HINT TRUE: same input must yield same idempotency_key and reuse pending_path. Two consecutive calls with identical input must NOT create duplicate ledger events — service must check before emit. (5) DUAL-ROOT ABSENCE: pending entries always live under PROJECT root .fabric/knowledge/pending/ (team layer). Personal layer ~/.fabric/knowledge/pending/ is NOT a target — review/promotion at rc.3 may transition entries cross-layer, but proposal lands team-side. (6) ATOMIC WRITES MANDATORY: all .md content writes via atomicWriteText (mirrors scan.ts:224, init.ts:9). Direct fs.writeFile is forbidden. (7) PAYLOAD LIMIT: enforcePayloadLimit must wrap structuredContent (mirrors plan-context.ts:49-61) even though extract-knowledge response is tiny. (8) HOOK SCRIPTS MUST BE SIDE-EFFECT-FREE on first run: a Stop hook firing on a project that has never used fab_extract_knowledge must exit 0 silently (no false-positive prompts). Pattern from existing v1 fabric-init-reminder.cjs at L8-L10 (early-exit when condition not met) is correct. (9) CURSOR HOOKS SCOPE: as of 2026-05 there is no documented Cursor Stop-hook API; rc.2 should explicitly document Cursor as 'no Stop hook' in capability table and ship reminder via .cursorrules or .cursor/rules/ instead — see clarification_needs. (10) CODEX HOOKS GATING: per docs/getting-started.md line 79, Codex hooks require user-side `features.codex_hooks = true` flag. rc.2 hook install should still write .codex/hooks.json (it's a no-op without the feature flag) but post-install message should mention enabling the flag. (11) LEDGER EVENT STABLE_ID OPTIONAL: knowledge_proposed schema (event-ledger.ts:179) declares stable_id as optional — but timestamp is REQUIRED ISO datetime string (`z.string().datetime()`), so service must `new Date().toISOString()` not `Date.now()` (the latter shape is for envelope.ts which is the ledger header).",
+  "clarification_needs": [
+    {
+      "question": "Skill template install destination — should rc.2 install fabric-archive skill into BOTH .claude/skills/ AND .codex/skills/ unconditionally (when init's skills/bootstrap stage runs), OR conditionally based on detectClientSupports detection (only install for clients whose detected:true)?",
+      "context": "Existing v1 install pattern (resolver.ts:113-116 installedCapabilities) was UNCONDITIONALLY default-true regardless of detection. v2 init mcp stage IS conditional via resolveClients detection. Choosing conditional honors the supported-clients-only memory note; choosing unconditional simplifies template-copy code path.",
+      "options": [
+        "Conditional install — only write skill template into client dir when resolver.detectClientSupports reports detected:true for that client",
+        "Unconditional install — always write to .claude/skills/fabric-archive/ and .codex/skills/fabric-archive/ regardless of detection (skill files are inert without the client)",
+        "Conditional with override flag — default conditional but support `fab init --force-install-skills` for testing/CI"
+      ],
+      "recommended": 0
+    },
+    {
+      "question": "Cursor Stop-hook strategy — Cursor has no documented Stop-hook API. Should rc.2 ship Cursor support via a different mechanism (e.g., .cursor/rules/fabric-archive-reminder.mdc that documents the manual archive workflow), or explicitly mark Cursor as unsupported for rc.2 archive-reminder hooks?",
+      "context": "resolver.ts:139 already declares Cursor capability hook:false. Memory says Fabric supports only Claude Code / Cursor / Codex CLI — Cursor is in-scope for the product, but its hook surface is missing. Cursor users would lose the proactive archive-reminder UX without a substitute.",
+      "options": [
+        "Skip Cursor for rc.2 hooks — document it explicitly in capability table; users invoke fabric-archive skill manually",
+        "Ship .cursor/rules/fabric-archive.mdc as a Cursor-flavor reminder (Rules are auto-loaded into context, partial substitute for Stop hooks)",
+        "Defer Cursor decision to rc.3 — leave capability hook:false; revisit when Cursor publishes hook API"
+      ],
+      "recommended": 1
+    },
+    {
+      "question": "Init pipeline stage layout — should the skill-template install live inside the existing 'bootstrap' stage (currently a no-op at init.ts:767-775), inside a NEW 'skills' stage between bootstrap and mcp, or merged into the 'hooks' stage?",
+      "context": "Bootstrap stage is currently a vacated v1 slot (no-op with comment 'v2.0: the bootstrap stage no longer materializes per-client bootstrap files'). Adding a new stage requires updating InitStageName enum + InitStagePlan union + the wizard flow + capability table headers. Repurposing bootstrap is leaner but conflates two semantically different concerns.",
+      "options": [
+        "Repurpose bootstrap stage for skill installs — minimal code churn, reuses existing wizard slot",
+        "Add new 'skills' stage between bootstrap and mcp — semantically clean, more refactor work (InitStageName + wizard + capability table)",
+        "Merge skill installs into hooks stage — both are per-client artefact installs, single code path; downside: 'hooks' name no longer accurate"
+      ],
+      "recommended": 0
+    },
+    {
+      "question": "Idempotency-key derivation algorithm — which input fields participate in the hash, and how are user_messages_summary differences handled (since the Skill may regenerate slightly different summaries from the same session)?",
+      "context": "api-contracts.ts:319 declares idempotency_key 'derived from inputs; identical inputs yield identical key' but does not specify the algorithm. Including user_messages_summary verbatim makes the key brittle (any LLM-generated summary tweak triggers a duplicate write); excluding it makes the key collision-prone (different content, same key).",
+      "options": [
+        "Hash {source_session, type, slug} only — coarse but deterministic; collisions if user re-extracts different topic in same session under same slug",
+        "Hash {source_session, type, slug, sha256(user_messages_summary first 500 chars)} — balances stability and content awareness",
+        "Hash {type, slug} only and rely on slug uniqueness — simplest; downside: cross-session dedup may be undesirable"
+      ],
+      "recommended": 1
+    },
+    {
+      "question": "Frontmatter `layer` value for pending entries — should pending/.md entries declare `layer: team` (since they live under project .fabric/), or omit `layer` entirely (let rc.3 review.approve decide), or read default_layer_filter from fabric-config?",
+      "context": "All knowledge entries in v2 schema require layer ∈ {team, personal}. Pending entries are pre-promotion — Q2 late-bind says id is unbound until promotion, but layer ambiguity is separate. mcp-server.test.ts fixtures show team entries declare `layer: team` in frontmatter. fabric-config schema (commit 6f029f1) added default_layer_filter — could drive default. rc.3 fab_review modify supports layer-flip explicitly (api-contracts.ts:354), so initial value can change later.",
+      "options": [
+        "Always `layer: team` for pending — pending lives under project .fabric/knowledge/pending/, team is the natural default",
+        "Read default_layer_filter from fabric-config knowledge_language section, fall back to 'team' if absent",
+        "Omit layer field in pending; rc.3 promote handler MUST set it before move into typed bucket"
+      ],
+      "recommended": 0
+    }
+  ],
+  "_metadata": {
+    "timestamp": "2026-05-10T18:35:00.000Z",
+    "task_description": "Execute integration-points exploration for Fabric v2.0 rc.2 implementation planning — identify exact wiring sites for fab_extract_knowledge MCP tool, fabric-archive Skill template install, and Stop hooks across 3 clients (Claude Code / Cursor / Codex CLI). Schemas already pre-locked in commits a0612a9 (api-contracts), e3975b5 (event-ledger knowledge.* events), 6f029f1 (fabric-config).",
+    "source": "cli-explore-agent",
+    "exploration_angle": "integration-points",
+    "exploration_index": 1,
+    "total_explorations": 1,
+    "duration_seconds": 240
+  }
+}

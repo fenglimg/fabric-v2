@@ -1,0 +1,148 @@
+{
+  "id": "TASK-006",
+  "title": "rc.3 deferred fixes: multiline-safe quoteIfNeeded + orphan-on-partial-failure hardening + (conditional) date filter for search",
+  "scope": "packages/server/src/services/review.ts; packages/server/src/services/review.test.ts; (conditional) packages/shared/src/schemas/api-contracts.ts",
+  "action": "Fix",
+  "description": "Address 3 of the 5 rc.3 deferred items per planning context. (a) Multiline-safe quoteIfNeeded: services/review.ts:923-929 helper currently does NOT escape \\n in title/summary values, producing malformed YAML frontmatter when a modify call passes multiline strings — patch to escape \\n + \\r → emit single-line scalar. (b) Orphan-on-partial-failure hardening: services/review.ts approveOne (L339-393) has a window between canonical write and pending unlink — patch to scan target canonical dir for files starting with `<slug>--` BEFORE allocate; if found (resumption case from prior failure), re-attach existing canonical (no new id allocation) and emit knowledge_promoted with reason='[resumed]' prefix; mitigates slug-prefix collision. (c) Date filter for search (CONDITIONAL): if api-contracts.ts FabReviewSearchInput permits adding optional `created_after` field non-breaking → IN SCOPE; else DEFER and document in test plan.",
+  "files": [
+    {
+      "path": "packages/server/src/services/review.ts",
+      "action": "modify",
+      "target": "quoteIfNeeded helper at L923-929 + approveOne at L339-393 + (conditional) listPending/searchPending at L173-178",
+      "change": "(a) quoteIfNeeded: add newline check at top — if value.includes('\\n') || value.includes('\\r'), replace with literal backslash-n / backslash-r in output AND ensure surrounding quotes (return JSON.stringify(value) for single-line preservation, or hand-rolled `\"${value.replaceAll('\\n', '\\\\n').replaceAll('\\r', '\\\\r')}\"` if JSON.stringify side effects undesired). (b) approveOne pre-allocate guard: before calling allocator.allocate(layer, type), scan dest dir <projectRoot>/.fabric/knowledge/<layer>/<type>/ for files matching pattern `^K[TP]-${typeCode}-\\d+--${slug}\\.md$`; if exactly 1 match: parse stable_id from existing filename, treat as resumption — emit knowledge_promote_started + knowledge_promoted with reason='[resumed]:slug-prefix-collision' + return that stable_id (skip allocate, skip git mv since canonical already exists; just unlink pending if still present); if 0 match: proceed with allocate as today; if >1 match: throw (ambiguous — operator triage). (c) created_after filter: read api-contracts.ts FabReviewSearchInput schema; if `created_after?: z.string().optional()` can be added without breaking discriminated union → patch schema + extend listPending filter logic with `if (filters.created_after && entry.created_at < filters.created_after) skip`; if schema requires tighter discriminated-union surgery → log decision to TASK-006 commit msg and DEFER."
+    },
+    {
+      "path": "packages/server/src/services/review.test.ts",
+      "action": "modify",
+      "target": "extend with 3 new sub-describes: 'quoteIfNeeded multiline', 'approveOne resumption', '(conditional) search created_after'",
+      "change": "Add tests: quoteIfNeeded_escapes_newline_to_backslash_n_literal, quoteIfNeeded_escapes_carriage_return, quoteIfNeeded_round_trip_yaml_parses_back_correctly, approve_resumes_when_canonical_already_exists_with_matching_slug, approve_emits_resumed_reason_prefix, approve_throws_on_ambiguous_multiple_canonical_matches, (conditional) search_filters_by_created_after_after_threshold, search_filters_by_created_after_skips_older_entries."
+    },
+    {
+      "path": "packages/shared/src/schemas/api-contracts.ts",
+      "action": "modify (CONDITIONAL — only if non-breaking)",
+      "target": "FabReviewSearchInput schema (if extension non-breaking)",
+      "change": "If schema permits (verify by reading current shape and running zod parse with extra field): add optional `created_after: z.string().datetime().optional()` to search action's discriminated branch. If extension breaks: DO NOT modify; document in commit msg + planning-context update."
+    }
+  ],
+  "implementation": [
+    "Read services/review.ts L923-929 (quoteIfNeeded) to confirm current logic; identify minimal diff for newline escape",
+    "Patch quoteIfNeeded: add early check at top: `if (typeof v === 'string' && /[\\n\\r]/.test(v)) return JSON.stringify(v);` — JSON.stringify escapes \\n → \\\\n and quotes the value, producing valid single-line YAML scalar; preserves backward compat for non-multiline values (existing logic unchanged)",
+    "Read services/review.ts L339-393 (approveOne) to lock the current sequence (parse → allocate → git mv → write id → emit events)",
+    "Implement pre-allocate slug-prefix guard: BEFORE allocator.allocate, compute destDir = `<projectRoot>/.fabric/knowledge/<layer>/<type>/`; readdirSync(destDir) (catch ENOENT → 0 match), filter by regex `/^(K[TP]-${typeCode}-\\d+)--<slug>\\.md$/` (escape slug); if exactly 1 match → parse stable_id from filename, set isResumption=true, prior_stable_id=parsedId, skip allocate, skip git mv (canonical exists); after this branch, if isResumption: still emit knowledge_promote_started + knowledge_promoted with reason field set to `[resumed]:slug-prefix-collision`; on 0 match → existing allocate-and-mv flow; on >1 match → throw 'ambiguous canonical matches for slug — operator triage required'",
+    "If pending file still exists after resumption check: fs.unlink it (or git rm if under git) — completes the partial-failure recovery; emit a debug log",
+    "Read packages/shared/src/schemas/api-contracts.ts FabReviewSearchInput shape; verify if it's a discriminated union branch; identify whether `created_after?: z.string().datetime().optional()` is non-breaking (additive optional field on existing discriminated branch is non-breaking in zod)",
+    "If non-breaking: add `created_after: z.string().datetime().optional()` to FabReviewSearchInput discriminated branch in api-contracts.ts; update FabReviewSearchInput exported type",
+    "If non-breaking: extend services/review.ts listPending/searchPending filter logic — for each entry, if filters.created_after && entry.created_at < filters.created_after: skip; ensure filter applies to both pending and canonical search modes",
+    "If breaking (rare for additive optional): DEFER created_after; commit msg explicitly notes 'created_after deferred to v2.1 — schema unlock required'",
+    "Add 6-8 unit tests in review.test.ts new sub-describes",
+    "Run `pnpm --filter @fenglimg/fabric-server typecheck && pnpm --filter @fenglimg/fabric-server test`; verify all green",
+    "Commit as 'fix(review): rc.3 deferred items — multiline-safe quoteIfNeeded + slug-prefix resumption + (date filter if applicable) (rc.4 TASK-006)'"
+  ],
+  "reference": {
+    "pattern": "rc.3 review.ts approveOne; quoteIfNeeded helper; FabReviewSearchInput discriminated union",
+    "files": [
+      "packages/server/src/services/review.ts",
+      "packages/server/src/services/review.test.ts",
+      "packages/shared/src/schemas/api-contracts.ts",
+      ".workflow/.lite-plan/fabric-v2-rc3-impl-2026-05-10/code-review.md"
+    ],
+    "examples": "rc.3 final code review section 'Critical 1 path-traversal' (defense-in-depth pattern); rc.3 'Medium 2 multiline quoteIfNeeded' (deferred item rationale)"
+  },
+  "convergence": {
+    "criteria": [
+      "quoteIfNeeded handles strings with \\n: returns single-line escaped form; round-trip YAML.parse on output preserves the original string (verified by round-trip test)",
+      "quoteIfNeeded handles strings with \\r: returns escaped form (verified)",
+      "quoteIfNeeded backward compat: non-multiline strings unchanged in output (verified by snapshot of existing behavior)",
+      "approveOne with pre-existing canonical at slug-prefix match resumes: returns matching stable_id, emits knowledge_promoted with reason starting '[resumed]:', no new id allocated (verified by allocator counter unchanged before/after)",
+      "approveOne with 0 canonical match: existing allocate-and-mv flow (verified — regression test on rc.3 happy path)",
+      "approveOne with >1 canonical match: throws clear error 'ambiguous canonical matches' (verified)",
+      "If date filter IN SCOPE: search action with created_after filter excludes entries older than threshold (verified)",
+      "If date filter IN SCOPE: search action without created_after filter returns all entries as before (regression test)",
+      "If date filter DEFER: commit msg + planning-context.md updated to note deferral",
+      "review.ts coverage maintains >= 90% lines after patches (rc.3 baseline 93.97%)",
+      "0 type errors; 0 regression in existing 30+ review.test.ts tests"
+    ]
+  },
+  "depends_on": [],
+  "rationale": {
+    "chosen_approach": "Surgical 3-fix patch on review.ts; conditional date-filter based on schema unlock cost; preserves rc.3 architecture while addressing deferred items the rc.3 review.md explicitly listed as cheap fixes for rc.4",
+    "alternatives_considered": [
+      "Add created_after to discriminated union as a separate action variant — rejected: adds complexity for minimal value; optional field is cleaner if non-breaking",
+      "Skip multiline-safe fix (low likelihood real users hit it) — rejected: rc.3 review explicitly recommended this as cheap; takes 5 LOC",
+      "Use simple-git library for slug-prefix scan — rejected: existing fs.readdirSync precedent",
+      "Add knowledge_promote_resumed event type — rejected: schema unlock; reason-prefix '[resumed]:' is rc.3 convention precedent"
+    ],
+    "decision_factors": [
+      "All 3 items explicitly cheap per rc.3 review.md disposition",
+      "No schema breaking changes (date filter conditional on additive-optional verification)",
+      "Slug-prefix recovery aligns with rc.3 filesystem-edit fallback philosophy",
+      "Multiline fix mitigates real malformed-YAML risk if upstream contract relaxes"
+    ],
+    "tradeoffs": "Date filter may DEFER if schema unlock required — accepted; planning context already documents conditional disposition; slug-prefix scan adds O(M files in dest dir) work to approveOne hot path (mitigated: typical dirs have <100 files)"
+  },
+  "test": {
+    "manual_checks": [
+      "Manually craft a modify call with title containing \\n; verify resulting frontmatter is single-line valid YAML",
+      "Manually delete a pending file mid-approve (simulate partial failure), retry approve with same slug → confirm resumption with [resumed] reason",
+      "If date filter shipped: search with created_after threshold returns expected subset"
+    ],
+    "success_metrics": [
+      "6-8 new tests pass",
+      "review.ts coverage stays >= 90% lines",
+      "0 type errors; 0 regression"
+    ],
+    "unit": [
+      "test_quote_if_needed_escapes_newline",
+      "test_quote_if_needed_escapes_carriage_return",
+      "test_quote_if_needed_round_trip_yaml_parses_back",
+      "test_quote_if_needed_passthrough_for_simple_string",
+      "test_approve_resumes_when_canonical_exists_with_matching_slug",
+      "test_approve_resumed_event_reason_starts_with_resumed_prefix",
+      "test_approve_throws_on_ambiguous_multiple_canonical_matches",
+      "test_approve_zero_canonical_match_uses_allocate_normally",
+      "test_search_filters_by_created_after_when_implemented",
+      "test_search_no_created_after_filter_returns_all_entries"
+    ],
+    "integration": [
+      "test_modify_with_multiline_title_writes_valid_yaml",
+      "test_partial_approve_failure_then_retry_recovers_via_slug_prefix"
+    ]
+  },
+  "risks": [
+    {
+      "description": "Slug-prefix scan regex incorrectly matches unrelated files (e.g., slug='foo' matches 'foobar')",
+      "probability": "Medium",
+      "impact": "Medium",
+      "mitigation": "Anchor regex with `--` separator after slug: `/^(K[TP]-${typeCode}-\\d+)--${escapeRegex(slug)}\\.md$/` (no greedy match); add test for slug='foo' vs file 'KT-D-0001--foobar.md' → 0 match",
+      "fallback": "If regex still over-matches in dogfood, switch to startsWith + endsWith check"
+    },
+    {
+      "description": "Date filter schema extension may break existing FabReviewSearchInput consumers in unforeseen ways",
+      "probability": "Low",
+      "impact": "Medium",
+      "mitigation": "Verify additive-optional non-breaking by running existing review.test.ts after schema patch; if any test breaks, revert + DEFER",
+      "fallback": "DEFER and document"
+    },
+    {
+      "description": "JSON.stringify-based quoteIfNeeded may double-quote already-quoted strings",
+      "probability": "Low",
+      "impact": "Low",
+      "mitigation": "Existing quoteIfNeeded already checks for need-to-quote conditions; multiline check happens BEFORE other checks; round-trip test catches double-quote",
+      "fallback": "Hand-rolled escape if JSON.stringify proves too coarse"
+    }
+  ],
+  "code_skeleton": {
+    "key_functions": [
+      {
+        "signature": "function quoteIfNeeded(v: unknown): string",
+        "purpose": "Single-line YAML scalar emit; multiline-safe via JSON.stringify on \\n/\\r presence",
+        "returns": "string"
+      },
+      {
+        "signature": "async function findExistingCanonicalBySlugPrefix(destDir: string, typeCode: string, slug: string): Promise<{stableId: string, filename: string} | null>",
+        "purpose": "Pre-allocate guard scanning dest dir for slug-prefix matches",
+        "returns": "Promise<{stableId, filename} | null>"
+      }
+    ]
+  }
+}

@@ -1,0 +1,77 @@
+{
+  "id": "TASK-005",
+  "title": "Cache rename — rule-test.index.json → .fabric/.cache/knowledge-test.index.json",
+  "scope": "Path constants across packages/cli/, packages/server/, tests + .gitignore",
+  "action": "Refactor",
+  "description": "Rename the legacy v1-vocabulary cache file `.fabric/rule-test.index.json` to v2-aligned location `.fabric/.cache/knowledge-test.index.json`. This is the last v1-vocabulary leak from rc.1 (`rule-test` references). Steps: (1) grep all literal `rule-test.index` occurrences across packages/, (2) update path constants to new location, (3) ensure `.fabric/.cache/` directory is created if missing during write, (4) add `.fabric/.cache/` to `.gitignore` (it's regenerable cache, should not be tracked), (5) update test fixtures asserting old path, (6) delete the old file from this repo's `.fabric/` (it's currently present per `ls .fabric/` output) — regen on next scan.",
+  "complexity": "Low",
+  "estimated_time": "30-45 min",
+  "files": [
+    {"path": "packages/cli/src/commands/scan.ts", "action": "modify", "target": "rule-test.index path constant", "change": "Locate path-constant for old `.fabric/rule-test.index.json`; update to `.fabric/.cache/knowledge-test.index.json`; ensure parent dir `.fabric/.cache/` is mkdir-recursive before write"},
+    {"path": "packages/server/src/services/rule-meta-builder.ts", "action": "modify", "target": "rule-test.index path constant + read logic", "change": "Update any reads of `.fabric/rule-test.index.json` to new path; rename internal symbols if appropriate (e.g. `RULE_TEST_INDEX_PATH` → `KNOWLEDGE_TEST_INDEX_PATH`)"},
+    {"path": "packages/server/src/watcher.ts (and watcher.test.ts)", "action": "modify", "target": "watch-path patterns", "change": "If watcher monitors the index file, update path; ensure `.fabric/.cache/**` watch pattern is correct"},
+    {"path": ".gitignore", "action": "modify", "target": "ignore patterns", "change": "Add `.fabric/.cache/` ignore rule (regenerable cache should not be tracked); preserve existing entries"},
+    {"path": ".fabric/rule-test.index.json", "action": "delete", "target": "entire file", "change": "Delete the obsolete file from current working tree — next `fab scan` will regenerate at new location"},
+    {"path": "packages/cli/__tests__ + packages/server/__tests__ (locate via grep)", "action": "modify", "target": "test fixtures asserting old path", "change": "Update any assertion of `.fabric/rule-test.index.json` to new path; update setup/teardown if old path was being created"}
+  ],
+  "implementation": [
+    "Run `grep -rn 'rule-test\\.index\\|rule_test_index\\|ruleTestIndex' packages/ tests/ scripts/ 2>/dev/null` to enumerate ALL call sites (literal + camelCase + snake_case)",
+    "Run `grep -rln 'rule-test' packages/cli/src/ packages/server/src/` to find all source files needing edits",
+    "Update each source file: path constant `'.fabric/rule-test.index.json'` → `'.fabric/.cache/knowledge-test.index.json'`; rename associated symbols (`RULE_TEST_INDEX_PATH` → `KNOWLEDGE_TEST_INDEX_PATH`, etc.)",
+    "Add `await mkdir('.fabric/.cache/', { recursive: true })` (or equivalent) before writing the index file",
+    "Update `.gitignore` — add `.fabric/.cache/` line; verify with `cat .gitignore | grep -q '.fabric/.cache/'`",
+    "Delete the existing `.fabric/rule-test.index.json` file: `git rm .fabric/rule-test.index.json` (committed deletion)",
+    "Update test fixtures: `grep -rln 'rule-test\\.index' packages/cli/__tests__ packages/server/__tests__` and update each",
+    "Run `pnpm build && pnpm test` — confirm all green; tests should regenerate cache at new path during execution",
+    "Final grep gate: `grep -rE 'rule-test\\.index' packages/` returns empty (all sites updated)"
+  ],
+  "reference": {
+    "pattern": "v1-vocabulary cache rename — last leak from rc.1 cleanup",
+    "files": ["packages/cli/src/commands/scan.ts", "packages/server/src/services/rule-meta-builder.ts"],
+    "examples": "Follow rc.2-prep cleanup pattern (commits da80d5e..97103ab) — hard rename, no aliases/symlinks; .gitignore for cache directories"
+  },
+  "convergence": {
+    "criteria": [
+      "`grep -rE 'rule-test\\.index' packages/` returns empty (all source sites updated)",
+      "`grep -rE 'rule_test_index\\|ruleTestIndex' packages/` returns empty (camelCase/snake_case symbols updated)",
+      "`test ! -f .fabric/rule-test.index.json` succeeds (old file deleted)",
+      "After `pnpm test` regenerates cache: `test -f .fabric/.cache/knowledge-test.index.json` succeeds",
+      "`grep -q '\\.fabric/\\.cache/' .gitignore` succeeds (gitignore updated)",
+      "`pnpm build && pnpm test && pnpm lint` exits 0",
+      "`git status .fabric/.cache/` shows directory ignored (not staged for commit)"
+    ]
+  },
+  "depends_on": [],
+  "dependency_type": "none",
+  "parallel_safe": true,
+  "scope_boundary": "OUT OF SCOPE: any other v1-vocabulary leaks beyond rule-test.index (rc.2-prep already handled INITIAL_TAXONOMY, .fabric/rules, etc.); schema changes (TASK-002/003/004); docs (TASK-006). Strictly: rename one cache file + update path constants + .gitignore + test fixtures.",
+  "cli_execution_id": "fabric-v2-grill-followup-2026-05-10-TASK-005",
+  "cli_execution": {"strategy": "new"},
+  "recommended_execution": "Agent",
+  "rationale": {
+    "chosen_approach": "Hard rename with explicit cache subdirectory (.fabric/.cache/) and gitignore — establishes a convention for future regenerable artifacts",
+    "alternatives_considered": ["Keep old name (preserves v1 vocabulary leak)", "Rename in place without subdirectory (loses convention for future cache files)", "Symlink old → new (legacy alias — rejected per clean-slate memory)"],
+    "decision_factors": [".fabric/.cache/ subdirectory provides clear opt-in path for future regenerable artifacts (forensic-cache, mcp-call-cache, etc.)", "Gitignored cache prevents repo bloat", "Hard rename matches clean-slate preference (zero-user migration tax)"],
+    "tradeoffs": "Existing checkouts will see deletion of old file and creation of new directory — accepted because zero users and the old file is regenerable on next scan"
+  },
+  "test": {
+    "manual_checks": [
+      "Run `pnpm scan` (or equivalent CLI command that triggers cache write) on a tmp project — confirm new file appears at `.fabric/.cache/knowledge-test.index.json`",
+      "Run `git status` after a fresh scan — confirm `.fabric/.cache/` is NOT shown as untracked (gitignored correctly)",
+      "Manually invoke server watcher — confirm watch path updated and old path is no longer monitored"
+    ],
+    "success_metrics": [
+      "All convergence grep gates pass",
+      "Build + test + lint exit 0",
+      "Cache regenerates correctly at new location after fresh scan"
+    ],
+    "unit": [
+      "Path constant references match new location",
+      "mkdir-recursive on .fabric/.cache/ succeeds when parent missing"
+    ],
+    "integration": [
+      "End-to-end scan command writes index to new path",
+      "Watcher monitors new path correctly"
+    ]
+  }
+}

@@ -1,0 +1,65 @@
+{
+  "id": "TASK-001",
+  "title": "Phase A · Commit A: CLI command layer v1.x cleanup",
+  "scope": "packages/cli/src/commands/ + packages/cli/src/scanner/",
+  "action": "Refactor",
+  "description": "Remove all v1.x dead code paths from the CLI command layer. Specifically: (1) Delete `packages/cli/src/commands/bootstrap.ts` (standalone command obviated by 4-stage init pipeline). (2) In `packages/cli/src/commands/init.ts`: delete `buildInitialTaxonomyMarkdown` function + ALL callers; remove all `.fabric/rules/` path constants and dir creation/check. (3) In `packages/cli/src/commands/scan.ts`: confirm writes go to `.fabric/knowledge/`; remove any residual `.fabric/rules/` writes. (4) In `packages/cli/src/scanner/forensic.ts`: remove `.fabric/rules/` scanning (forensic should only know source-code facts, not fabric self-state). This is the user-facing entry-point cleanup — must be airtight before tests adapt.",
+  "complexity": "Medium",
+  "estimated_time": "1.5-2h (portion of Phase A 4-6h budget)",
+  "files": [
+    {"path": "packages/cli/src/commands/bootstrap.ts", "action": "delete", "target": "entire file", "change": "Delete entire file — standalone v1 command obviated by 4-stage init pipeline in v2"},
+    {"path": "packages/cli/src/commands/init.ts", "action": "modify", "target": "buildInitialTaxonomyMarkdown function + .fabric/rules paths", "change": "Delete buildInitialTaxonomyMarkdown function and all callers; remove all .fabric/rules/ path constants, dir creation calls, and existence checks"},
+    {"path": "packages/cli/src/commands/scan.ts", "action": "modify", "target": "write paths", "change": "Confirm scan writes target .fabric/knowledge/; remove any residual .fabric/rules/ writes"},
+    {"path": "packages/cli/src/scanner/forensic.ts", "action": "modify", "target": ".fabric/rules scanning logic", "change": "Remove .fabric/rules/ scanning — forensic must only inspect source-code facts, not fabric self-state"}
+  ],
+  "implementation": [
+    "Run `grep -rn '\\.fabric/rules\\|INITIAL_TAXONOMY\\|buildInitialTaxonomyMarkdown' packages/cli/src/commands/ packages/cli/src/scanner/` to enumerate all mention sites",
+    "Delete packages/cli/src/commands/bootstrap.ts and remove its registration from CLI command dispatcher (likely packages/cli/src/index.ts)",
+    "In init.ts: locate buildInitialTaxonomyMarkdown definition + each call site, delete function and inline call expressions; remove .fabric/rules/ path constants (e.g. RULES_DIR), and corresponding mkdir/exists calls",
+    "In scan.ts: verify outputDir / target paths point to .fabric/knowledge/{type}/; delete any leftover .fabric/rules/ branch",
+    "In scanner/forensic.ts: remove any forensic scan branch that reads .fabric/rules/ — forensic input is source code only, not fabric self-state",
+    "Run `pnpm build` (CLI package) to confirm no broken imports / dead references",
+    "Run `grep -rn '\\.fabric/rules\\|INITIAL_TAXONOMY\\|buildInitialTaxonomyMarkdown\\|bootstrap' packages/cli/src/commands/ packages/cli/src/scanner/` and confirm output is empty"
+  ],
+  "reference": {
+    "pattern": "v1.x dead code removal — clean-slate refactor (zero users, no migration tax)",
+    "files": ["packages/cli/src/commands/init.ts", "packages/cli/src/commands/bootstrap.ts", "packages/cli/src/scanner/forensic.ts"],
+    "examples": "Follow rc.1 commit aaf9c2c clean rebrand pattern — hard delete, no shims/legacy aliases"
+  },
+  "convergence": {
+    "criteria": [
+      "File `packages/cli/src/commands/bootstrap.ts` does not exist (verified by `test ! -f packages/cli/src/commands/bootstrap.ts`)",
+      "No matches for `buildInitialTaxonomyMarkdown` in `packages/cli/src/` (grep returns empty)",
+      "No matches for `\\.fabric/rules` in `packages/cli/src/commands/` or `packages/cli/src/scanner/` (grep returns empty)",
+      "No matches for `INITIAL_TAXONOMY` in `packages/cli/src/commands/` (grep returns empty)",
+      "`pnpm --filter @fabric/cli build` exits 0 with no broken-import errors",
+      "Bootstrap command is unregistered from CLI dispatcher (running `fab bootstrap` errors as unknown command)"
+    ]
+  },
+  "depends_on": [],
+  "dependency_type": "none",
+  "parallel_safe": true,
+  "scope_boundary": "OUT OF SCOPE: server-side service layer changes (handled by TASK-002), template changes (handled by TASK-003), test updates (handled by TASK-004). Do NOT touch packages/server/, packages/cli/templates/, or any *.test.ts files in this task.",
+  "cli_execution_id": "fabric-v2-rc2-prep-2026-05-10-TASK-001",
+  "cli_execution": {"strategy": "new"},
+  "rationale": {
+    "chosen_approach": "Hard delete v1 dead code in CLI command layer as an isolated commit, with zero shims or legacy aliases",
+    "alternatives_considered": ["Soft-deprecate with warnings", "Bundle CLI + server cleanup into one commit"],
+    "decision_factors": ["Zero users (clean-slate preference)", "Atomic commit scope (1 layer = 1 commit) for revertability", "Isolation enables parallel work on TASK-002/003"],
+    "tradeoffs": "Three separate commits (A/B/C) instead of one — slight ceremony cost for much cleaner history and parallel-safe execution"
+  },
+  "test": {
+    "manual_checks": [
+      "Run `pnpm --filter @fabric/cli build` — must exit 0",
+      "Manually invoke `node packages/cli/dist/index.js bootstrap` — must error 'unknown command'",
+      "Manually invoke `node packages/cli/dist/index.js init --help` — must NOT mention .fabric/rules/"
+    ],
+    "success_metrics": [
+      "All grep gates from convergence pass",
+      "CLI package build exits 0",
+      "No new TypeScript errors introduced"
+    ],
+    "unit": [],
+    "integration": []
+  }
+}

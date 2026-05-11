@@ -1,0 +1,106 @@
+{
+  "id": "TASK-004",
+  "title": "Hook extension: archive-hint.cjs second signal (pending overflow → review skill)",
+  "scope": "packages/cli/templates/hooks/archive-hint.cjs (extend)",
+  "action": "Update",
+  "description": "Single-script approach (per planning agent decision; aligns with rc.2 KT-D entry on disk). Extend the existing archive-hint.cjs decide() function with a second signal: pending overflow. Trigger when (count of .fabric/knowledge/pending/<type>/*.md across all types >= 10) OR (oldest pending file mtime >= 7 days ago). When second signal fires AND archive signal does NOT fire, recommend the fabric-review skill via stdout JSON {decision:'block', reason:..., signal:'review'}. When BOTH fire, archive signal takes precedence (returning to recent work is more urgent than long-tail review). When neither fires, exit silently.",
+  "files": [
+    {
+      "path": "packages/cli/templates/hooks/archive-hint.cjs",
+      "action": "modify",
+      "target": "decide() function + CONSTANTS block + readPendingStats helper",
+      "change": "Add CONSTANTS: PENDING_DIR='knowledge/pending', PENDING_TYPES=['decisions','pitfalls','guidelines','models','processes'], THRESHOLD_PENDING_COUNT=10, THRESHOLD_PENDING_AGE_DAYS=7, MS_PER_DAY=24*60*60*1000. Add helper readPendingStats(projectRoot) returning {count, oldestAgeMs|null} by walking PENDING_DIR/<type>/*.md and stat()-ing each. Extend decide(events, now, pendingStats) with branch: const triggerByPendingCount = pendingStats.count>=THRESHOLD_PENDING_COUNT; const triggerByPendingAge = pendingStats.oldestAgeMs!==null && pendingStats.oldestAgeMs/MS_PER_DAY>=THRESHOLD_PENDING_AGE_DAYS; on archive trigger return {decision,reason,signal:'archive'}; on review-only trigger return {decision,reason,signal:'review'}; precedence: archive > review. main() reads pendingStats before calling decide."
+    }
+  ],
+  "implementation": [
+    "Read packages/cli/templates/hooks/archive-hint.cjs to confirm current structure (decide returns {decision,reason} or null; main wraps in try/catch with silent-fail)",
+    "Add CONSTANTS lines after line 14: PENDING_DIR='knowledge/pending', PENDING_TYPES=['decisions','pitfalls','guidelines','models','processes'], THRESHOLD_PENDING_COUNT=10, THRESHOLD_PENDING_AGE_DAYS=7, MS_PER_DAY=24*60*60*1000",
+    "Add helper function readPendingStats(projectRoot, now): walks PENDING_DIR for each type via existsSync+readdirSync (sync for hook simplicity); for each .md file run statSync().mtimeMs; track oldest = min(mtimeMs); count = total; return {count, oldestAgeMs: count>0 ? nowMs-oldest : null}. ENOENT → return {count:0, oldestAgeMs:null} (silent like readLedger)",
+    "Extend decide(events, now, pendingStats) signature — pendingStats becomes 3rd arg. Compute triggerByPendingCount = pendingStats.count >= THRESHOLD_PENDING_COUNT. Compute triggerByPendingAge = pendingStats.oldestAgeMs !== null && (pendingStats.oldestAgeMs / MS_PER_DAY) >= THRESHOLD_PENDING_AGE_DAYS. Set triggerReview = triggerByPendingCount || triggerByPendingAge",
+    "Decision logic: if (triggerByCount || triggerByHours) → archive signal (existing path) → return {decision:'block', reason: <existing message + signal-tag>, signal:'archive'}; else if (triggerReview) → return {decision:'block', reason:`已积累 ${pendingStats.count} 条待审核知识${pendingStats.oldestAgeMs!==null ? `，最早一条距今 ${(pendingStats.oldestAgeMs/MS_PER_DAY).toFixed(1)} 天`:''} — 建议调用 fabric-review skill 审核 pending/ 条目。`, signal:'review'}; else return null",
+    "Update main(env, stdio): call readPendingStats(cwd, now) and pass as 3rd arg to decide",
+    "Update module.exports.CONSTANTS to include the new threshold constants",
+    "Update __tests__/archive-hint.test.ts: add tests test_decide_returns_review_signal_on_pending_count_overflow, test_decide_returns_review_signal_on_pending_age_overflow, test_decide_archive_signal_takes_precedence_over_review, test_decide_returns_null_when_no_signals_fire, test_readPendingStats_handles_missing_pending_dir, test_readPendingStats_returns_correct_count_and_oldest_age",
+    "Confirm vitest still excludes .cjs from coverage glob (per rc2-coverage-gate.mjs:163 note); coverage measured via in-process test imports",
+    "Commit as 'feat(hooks): extend archive-hint with pending-overflow second signal (rc.3 TASK-004)'"
+  ],
+  "reference": {
+    "pattern": "Single hook script with pure decide() function + main() wrapper + module.exports surface for in-process tests",
+    "files": [
+      "packages/cli/templates/hooks/archive-hint.cjs (current rc.2 implementation)",
+      "packages/cli/__tests__/archive-hint.test.ts (test pattern)",
+      ".fabric/knowledge/pending/decisions/rc2-single-cjs-hook-across-clients.md (decision rationale)"
+    ],
+    "examples": "Extend not fork — keep single readLedger + single decide; add second signal as parallel branch in decide; precedence rule documented inline"
+  },
+  "convergence": {
+    "criteria": [
+      "decide() returns {signal:'review'} when pendingStats.count >= 10 and no archive trigger",
+      "decide() returns {signal:'review'} when pendingStats.oldestAgeMs / MS_PER_DAY >= 7 and no archive trigger",
+      "decide() returns {signal:'archive'} when both archive and review triggers fire (precedence)",
+      "decide() returns null when no triggers fire (existing behavior preserved)",
+      "main() invocation includes pendingStats — verified by integration test stubbing process.cwd()",
+      "All existing archive-hint.test.ts tests still pass (regression-free)",
+      "New tests achieve >=90% line coverage on the hook script (per in-process test setup)",
+      "stdout JSON includes signal field on every block decision (downstream skill router reads it)"
+    ]
+  },
+  "depends_on": [],
+  "rationale": {
+    "chosen_approach": "Single-script extension — adds second signal as parallel branch in decide() with precedence rule",
+    "alternatives_considered": [
+      "Fork to review-hint.cjs as separate Stop hook entry — rejected: duplicates readLedger, requires second template install, requires second hooks.Stop entry merge in skills-and-hooks.ts. KT-D entry on disk argues against this",
+      "Drop archive signal entirely and ship only review hint — rejected: archive signal still has value for active sessions (prompts archival mid-session before context fades)",
+      "Separate threshold per type (e.g. 10 pitfalls but 5 decisions) — rejected: complexity not justified at rc.3"
+    ],
+    "decision_factors": [
+      "DRY threshold/IO logic",
+      "Single template install (TASK-006 unchanged for hook)",
+      "Existing fabric-archive Stop hook entry already merged into .claude/settings.json — adding signal field needs no config change",
+      "Aligns with stated rc.2 lesson"
+    ],
+    "tradeoffs": "decide() now has 4 branches instead of 2; mitigated by inline precedence comments and test coverage of all 4 outcomes"
+  },
+  "test": {
+    "manual_checks": [
+      "Run archive-hint.cjs with this very repo as cwd (3 pending entries currently exist, count<10, age<7d so neither review trigger fires) — verify silent exit",
+      "Seed 10+ dummy pending files in tmpdir; run hook; verify stdout contains signal:review JSON"
+    ],
+    "success_metrics": [
+      "archive-hint.test.ts passes 100% with new tests added",
+      "Hook script remains <200 LOC (currently ~155)",
+      "No new dependencies"
+    ],
+    "unit": [
+      "test_readPendingStats_returns_zero_count_and_null_age_for_missing_dir",
+      "test_readPendingStats_walks_all_five_type_subdirs",
+      "test_readPendingStats_returns_oldest_mtime_correctly",
+      "test_decide_returns_review_signal_on_count_overflow",
+      "test_decide_returns_review_signal_on_age_overflow",
+      "test_decide_archive_signal_takes_precedence_over_review",
+      "test_decide_returns_null_when_neither_archive_nor_review_fires",
+      "test_decide_existing_archive_path_unchanged_regression",
+      "test_main_passes_pending_stats_to_decide"
+    ],
+    "integration": [
+      "test_hook_run_against_repo_with_zero_pending_exits_silent",
+      "test_hook_run_against_repo_with_eleven_pending_emits_review_json"
+    ]
+  },
+  "risks": [
+    {
+      "description": "readdirSync on missing dir throws; statSync on non-existent file throws — must wrap in try/catch to preserve silent-fail invariant",
+      "probability": "High",
+      "impact": "Low",
+      "mitigation": "Use existsSync guards before readdir/stat; surrounding try/catch in main already silences any escape",
+      "fallback": "If a non-fatal error escapes try/catch, ledger contains a one-line warning — acceptable degraded mode"
+    },
+    {
+      "description": "MS_PER_DAY drift if hook tested on long-running clock — flaky tests around 7-day boundary",
+      "probability": "Low",
+      "impact": "Low",
+      "mitigation": "Tests inject fixed `now` value via main(env,stdio) signature (already supported)",
+      "fallback": "n/a"
+    }
+  ]
+}

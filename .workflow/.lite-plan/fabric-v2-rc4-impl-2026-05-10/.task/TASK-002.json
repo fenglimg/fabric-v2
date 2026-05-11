@@ -1,0 +1,141 @@
+{
+  "id": "TASK-002",
+  "title": "Doctor lint integrity: checks #19-21 (stable_id duplicate, layer mismatch, index drift) — read-side, no mutation",
+  "scope": "packages/server/src/services/doctor.ts (extend with 3 more createCheck factories; integrity checks alongside lifecycle checks from TASK-001)",
+  "action": "Update",
+  "description": "Add the remaining 3 doctor lint checks (integrity-focused) following the same factory pattern established in TASK-001. All checks are READ-SIDE in this task: stable_id duplicate detection (loud error, abort doctor run), layer mismatch detection (KT prefix in personal/ tree or KP in team/ — loud error), and index drift detection (agents.meta.json counter < highest existing id → propose fix to max+1). Mutation half (index drift counter fix) lands in TASK-003 alongside orphan-demote/stale-archive mutations. After this task, doctor.ts has 21 checks total (15 pre-rc.4 + 6 new lint checks).",
+  "files": [
+    {
+      "path": "packages/server/src/services/doctor.ts",
+      "action": "modify",
+      "target": "checks[] array (extend with 3 more factories from TASK-001 baseline of 18 → 21)",
+      "change": "Add 3 new lint-mode check factories: `createStableIdDuplicateCheck` (walks all canonical .md across team/personal × 5 types; builds Map<stable_id, paths[]>; emits ABORT-severity Finding if any id maps to 2+ paths), `createLayerMismatchCheck` (walks team/ and personal/ subtrees; flags any file whose stable_id prefix mismatches its physical location: KT-* under personal/ → error; KP-* under team/ → error), `createIndexDriftCheck` (reads agents.meta.json counters; for each (layer,type) pair, scans existing canonical files to find highest existing counter value; if meta counter < max+1, emit Finding with proposed_action={type:'fix_counter', layer, type, before, after:max+1}). All 3 factories short-circuit when ctx.mode !== 'lint'. Push into checks[] at TASK-001 insertion point + 3."
+    },
+    {
+      "path": "packages/server/src/services/doctor.test.ts",
+      "action": "modify",
+      "target": "extend describe('lint mode checks') from TASK-001 with 3 more sub-describes",
+      "change": "Add 3 sub-describes: 'stable_id duplicate', 'layer mismatch', 'index drift'. At least 8 unit tests total: stable_id_duplicate_aborts_when_two_canonical_files_share_id, stable_id_duplicate_skips_when_all_unique, layer_mismatch_detects_kt_under_personal, layer_mismatch_detects_kp_under_team, layer_mismatch_skips_correct_alignment, index_drift_proposes_counter_fix_when_meta_lags, index_drift_skips_when_counter_synced_to_max, index_drift_uses_per_layer_per_type_counter. Each test seeds tmpdir .fabric/ tree with deliberate edge case, invokes runDoctor mode:'lint', asserts finding."
+    }
+  ],
+  "implementation": [
+    "Read TASK-001 patches (commit landed) to confirm DoctorCtx shape, lint-mode gating, and Finding type; mirror that structure",
+    "Define createStableIdDuplicateCheck.run: walk projectRoot/.fabric/knowledge/{team,personal}/<type>/*.md for type in [decisions, pitfalls, guidelines, models, processes]; parse stable_id from each filename (regex /^(K[TP]-[DPGMR]-\\d+)--/); build Map<stableId, paths[]>; for each entry where paths.length > 1, emit Finding{kind:'lint:stable_id_duplicate', severity:'error', target_paths: paths, message: 'duplicate stable_id ${id} found at ${paths.join(\", \")}', proposed_action:null} — note: severity='error' triggers loud ABORT in TASK-003 --apply-lint behavior (no auto-fix)",
+    "Define createLayerMismatchCheck.run: walk team/ subtree, parse stable_id from filename, regex match KP-*; if KP prefix found under team/, emit Finding{kind:'lint:layer_mismatch', severity:'error', target_path, message:'KP-prefixed entry under team/ tree (expected KT-)', proposed_action:null}; symmetric scan: walk personal/ subtree, flag any KT-* prefix",
+    "Define createIndexDriftCheck.run: read projectRoot/.fabric/agents.meta.json; for each (layer in [team, personal], type in 5 types) pair, get current counter value; walk filesystem for that (layer, type) matching files; parse counter from each filename; track max counter; if metaCounter < maxFound + 1, emit Finding{kind:'lint:index_drift', severity:'warn', target_path:'.fabric/agents.meta.json', message:'counter for ${layer}/${type} is ${metaCounter}, max existing is ${maxFound}', proposed_action:{type:'fix_counter', layer, type, before:metaCounter, after:maxFound+1}}",
+    "All 3 factories short-circuit at top of run(): `if (ctx.mode !== 'lint') return [];`",
+    "Insert factories into checks[] array after TASK-001 trio (or alphabetized if convention found in existing checks); doctor.ts checks[] length goes 18 → 21",
+    "Add 8 unit tests in doctor.test.ts under existing 'lint mode checks (rc.4)' describe block (extend, not duplicate); each test seeds .fabric/ tree fixture, invokes runDoctor mode:'lint', asserts on findings array",
+    "Run `pnpm --filter @fenglimg/fabric-server typecheck && pnpm --filter @fenglimg/fabric-server test`; verify 0 errors, all new tests green, no regression on TASK-001 tests; commit as 'feat(doctor): lint checks #19-21 stable-id-duplicate/layer-mismatch/index-drift (rc.4 TASK-002)'"
+  ],
+  "reference": {
+    "pattern": "TASK-001 lint-mode-gated factory pattern; KnowledgeIdAllocator counter convention (knowledge-id-allocator.ts:42-56); filename regex /^(K[TP]-[DPGMR]-\\d+)--<slug>\\.md$/ established in rc.3 (review.ts approveOne)",
+    "files": [
+      "packages/server/src/services/doctor.ts",
+      "packages/server/src/services/doctor.test.ts",
+      "packages/server/src/services/knowledge-id-allocator.ts",
+      "packages/shared/src/schemas/agents-meta.ts"
+    ],
+    "examples": "TASK-001 trio of factories (commit landed); rc.1 KnowledgeIdAllocator atomic counter advance; rc.3 stable_id parsing from canonical filenames in review.ts approveOne"
+  },
+  "convergence": {
+    "criteria": [
+      "doctor.ts has 21 checks total (15 + TASK-001 trio + this task trio); verified by checks[] length test or counting createCheck factories via grep",
+      "createStableIdDuplicateCheck emits Finding with severity='error' when 2 canonical files share stable_id (asserted by seeding two files with id KT-D-0001 in different types and asserting severity)",
+      "createLayerMismatchCheck flags KP-* file in team/ subtree (asserted by seeding team/decisions/KP-D-0001--foo.md fixture and asserting lint:layer_mismatch finding)",
+      "createLayerMismatchCheck flags KT-* file in personal/ subtree (symmetric test)",
+      "createIndexDriftCheck flags when agents.meta.json counter < max+1 (asserted by seeding meta.counters.team.decisions=5 + canonical file KT-D-0007--foo.md and asserting drift finding with proposed_action.after=8)",
+      "createIndexDriftCheck handles per-(layer,type) granularity: drift in one (layer,type) pair does not falsely flag others (asserted by seeding mixed correct + drifted state and asserting only drifted (layer,type) emits finding)",
+      "All 3 new checks short-circuit when ctx.mode !== 'lint' (asserted by runDoctor without mode parameter — 0 lint:* findings of these new kinds)",
+      "0 file mutations or events in this task (verified by pre/post snapshot)",
+      "doctor.test.ts new tests >=8; all green; pre-existing tests (TASK-001 + 15-check baseline) still green"
+    ]
+  },
+  "depends_on": ["TASK-001"],
+  "rationale": {
+    "chosen_approach": "Mirror TASK-001 factory pattern; integrity-focused checks (id collision, layer corruption, counter drift) split from lifecycle-focused checks (orphan, stale, overdue) for review clarity; TASK-001 lifecycle + TASK-002 integrity = full 6 deterministic check surface",
+    "alternatives_considered": [
+      "Land all 6 checks in TASK-001 (single 600+ LOC commit) — rejected: review burden, atomic-commit-per-task convention",
+      "Make stable_id_duplicate auto-fix (rename one to KT-D-0001-dup) — rejected: data loss risk; loud error + manual triage is correct semantic",
+      "Auto-fix index drift in TASK-002 (instead of TASK-003) — rejected: keeps mutation logic in single dedicated task for audit clarity"
+    ],
+    "decision_factors": [
+      "TASK-001 + TASK-002 split = symmetric ~3-check PRs",
+      "Integrity checks share filesystem-walk infra (could be DRY'd later if pattern repeats)",
+      "Layer-mismatch + stable-id-duplicate are loud errors (no auto-fix); index-drift is auto-fixable (TASK-003)"
+    ],
+    "tradeoffs": "Two sequential PRs to same file (doctor.ts) creates trivial merge cost if working in parallel; mitigated by sequential dependency declaration and atomic commits; final doctor.ts ~2400 LOC after rc.4 (acceptable)"
+  },
+  "test": {
+    "manual_checks": [
+      "Run `pnpm --filter @fenglimg/fabric-server build` — 0 type errors",
+      "Manually invoke runDoctor(projectRoot, {mode:'lint'}) on a deliberately-corrupted tmpdir fixture (KP under team/) — confirm lint:layer_mismatch finding emitted",
+      "Verify existing doctor + doctor --fix invocations on Fabric self-repo unchanged"
+    ],
+    "success_metrics": [
+      "doctor.test.ts new tests pass 100% (>=8 tests in TASK-002 sub-describes)",
+      "doctor.ts TASK-002 region lines coverage >= 90%",
+      "0 type errors; 0 regression"
+    ],
+    "unit": [
+      "test_stable_id_duplicate_aborts_when_two_canonical_share_id",
+      "test_stable_id_duplicate_skips_all_unique_corpus",
+      "test_stable_id_duplicate_severity_is_error",
+      "test_layer_mismatch_detects_kt_under_personal",
+      "test_layer_mismatch_detects_kp_under_team",
+      "test_layer_mismatch_skips_correct_alignment",
+      "test_index_drift_proposes_counter_fix_when_meta_lags",
+      "test_index_drift_skips_when_counter_already_synced",
+      "test_index_drift_per_layer_per_type_isolated",
+      "test_index_drift_proposed_action_has_correct_after_value"
+    ],
+    "integration": [
+      "test_runDoctor_lint_mode_includes_all_6_lint_check_kinds_when_corpus_has_findings"
+    ]
+  },
+  "risks": [
+    {
+      "description": "stable_id parsing regex /^(K[TP]-[DPGMR]-\\d+)--/ may fail on legacy v1.x files (already deleted in rc.1, but stale fixtures or hand-renamed files possible)",
+      "probability": "Low",
+      "impact": "Low",
+      "mitigation": "If regex fails to extract, skip the file with a debug log (do NOT emit a finding for unparseable filenames; that's a different problem); add test for legacy-named file silently skipped",
+      "fallback": "If user reports unparseable canonical files, doctor adds a separate 'unparseable filename' check in v2.1"
+    },
+    {
+      "description": "Index-drift check may double-count if a file was deleted but not committed (workdir state)",
+      "probability": "Low",
+      "impact": "Low",
+      "mitigation": "Index drift uses fs.readdir (not git ls-files) — sees workdir truth; aligns with KnowledgeIdAllocator behavior of treating workdir as canonical; test covers tmpdir non-git scenario",
+      "fallback": "If git-aware drift detection is needed, add separate flag in v2.x"
+    }
+  ],
+  "code_skeleton": {
+    "key_functions": [
+      {
+        "signature": "function createStableIdDuplicateCheck(ctx: DoctorCtx): DoctorCheck",
+        "purpose": "Build Map<stableId, paths[]>; emit error-severity finding for duplicates",
+        "returns": "DoctorCheck"
+      },
+      {
+        "signature": "function createLayerMismatchCheck(ctx: DoctorCtx): DoctorCheck",
+        "purpose": "Detect KT prefix in personal/ tree or KP in team/ tree; loud error",
+        "returns": "DoctorCheck"
+      },
+      {
+        "signature": "function createIndexDriftCheck(ctx: DoctorCtx): DoctorCheck",
+        "purpose": "Compare agents.meta.json counter to max existing id per (layer,type); propose counter fix",
+        "returns": "DoctorCheck"
+      },
+      {
+        "signature": "function parseStableIdFromFilename(filename: string): {prefix:'KT'|'KP', typeCode:string, counter:number}|null",
+        "purpose": "Pure regex parser /^(K[TP])-([DPGMR][r]?)-(\\d+)--/; returns null on no-match",
+        "returns": "{prefix, typeCode, counter} | null"
+      },
+      {
+        "signature": "function findMaxCounterPerLayerType(projectRoot: string): Promise<Map<string, number>>",
+        "purpose": "Walk both layer/type subtrees, parse counters from filenames, return Map keyed by '<layer>/<type>'",
+        "returns": "Promise<Map<string, number>>"
+      }
+    ]
+  }
+}

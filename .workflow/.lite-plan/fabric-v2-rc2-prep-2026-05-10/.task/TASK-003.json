@@ -1,0 +1,72 @@
+{
+  "id": "TASK-003",
+  "title": "Phase A · Commit C: Templates cleanup (AGENTS.md rewrite + delete variants/husky/fabric-init three-piece)",
+  "scope": "packages/cli/templates/",
+  "action": "Refactor",
+  "description": "User-facing template cleanup — most critical commit because these files are emitted into customer projects on `fab init`. (1) `packages/cli/templates/agents-md/AGENTS.md.template`: rewrite all `.fabric/rules/` → `.fabric/knowledge/{type}/`; introduce v2 vocabulary (5 type / 3 maturity / 2 layer). (2) **Delete entire dir** `packages/cli/templates/agents-md/variants/` (`vite.md`, `next.md`, `cocos.md` — v1 framework presets, v2 init-scan auto-detects from forensic.json). (3) **Delete file** `packages/cli/templates/husky/pre-commit` (v1 sync pre-commit gate, v2 model is async-review via `pending/` + fabric-review skill). (4) **Delete entire dirs** for fabric-init three-piece (no v2 successor): `packages/cli/templates/claude-skills/fabric-init/`, `packages/cli/templates/codex-skills/fabric-init/`, `packages/cli/templates/skill-source/fabric-init/`.",
+  "complexity": "Medium",
+  "estimated_time": "1.5-2h (portion of Phase A 4-6h budget)",
+  "files": [
+    {"path": "packages/cli/templates/agents-md/AGENTS.md.template", "action": "rewrite", "target": "all .fabric/rules/ references + v2 vocabulary", "change": "Replace .fabric/rules/ with .fabric/knowledge/{type}/ throughout; introduce v2 vocabulary (5 knowledge types: decisions/pitfalls/guidelines/models/processes; 3 maturity levels; 2 layers: ~/.fabric vs <repo>/.fabric)"},
+    {"path": "packages/cli/templates/agents-md/variants/", "action": "delete", "target": "entire directory (vite.md, next.md, cocos.md)", "change": "Delete entire directory — v1 framework presets are obsolete; v2 init-scan auto-detects framework from forensic.json"},
+    {"path": "packages/cli/templates/husky/pre-commit", "action": "delete", "target": "entire file", "change": "Delete entire file — v1 sync pre-commit gate is replaced by v2 async-review model (pending/ + fabric-review skill in rc.3)"},
+    {"path": "packages/cli/templates/claude-skills/fabric-init/", "action": "delete", "target": "entire directory", "change": "Delete entire directory — v1 fabric-init claude-skill has no v2 successor (init pipeline is turnkey, no skill needed)"},
+    {"path": "packages/cli/templates/codex-skills/fabric-init/", "action": "delete", "target": "entire directory", "change": "Delete entire directory — v1 fabric-init codex-skill has no v2 successor"},
+    {"path": "packages/cli/templates/skill-source/fabric-init/", "action": "delete", "target": "entire directory", "change": "Delete entire directory — source-of-truth dir for the deleted skill assets"}
+  ],
+  "implementation": [
+    "Run `grep -rln '\\.fabric/rules\\|fabric-init' packages/cli/templates/` to enumerate every template touch point",
+    "Rewrite AGENTS.md.template: scan top to bottom, replace .fabric/rules/ → .fabric/knowledge/{type}/; add v2 vocabulary section explaining 5 types (decisions/pitfalls/guidelines/models/processes), 3 maturity levels, 2 layers (~/.fabric global + <repo>/.fabric repo-local)",
+    "Delete packages/cli/templates/agents-md/variants/ (recursive — `rm -rf`); update CLI init code if it explicitly references variant filenames (consult TASK-001 init.ts changes — likely already removed)",
+    "Delete packages/cli/templates/husky/pre-commit; check if husky/ dir becomes empty and delete dir if so",
+    "Delete the three fabric-init template dirs: claude-skills/fabric-init/, codex-skills/fabric-init/, skill-source/fabric-init/ (rm -rf each)",
+    "Run `grep -rn '\\.fabric/rules\\|fabric-init' packages/cli/templates/` — must be empty",
+    "Run `pnpm --filter @fabric/cli build` and confirm template-loader resolution still works (CLI bundles templates at build time)",
+    "Eyeball-render AGENTS.md.template through the init pipeline (dry-run init in a tmp dir) to confirm output is well-formed v2 doc"
+  ],
+  "reference": {
+    "pattern": "User-facing artifact rewrite — must be airtight (every customer project sees this)",
+    "files": ["packages/cli/templates/agents-md/AGENTS.md.template"],
+    "examples": "Follow rc.1 spec for v2 vocabulary; cross-check terminology with planning-context.md Q6"
+  },
+  "convergence": {
+    "criteria": [
+      "Directory `packages/cli/templates/agents-md/variants/` does not exist",
+      "File `packages/cli/templates/husky/pre-commit` does not exist",
+      "Directory `packages/cli/templates/claude-skills/fabric-init/` does not exist",
+      "Directory `packages/cli/templates/codex-skills/fabric-init/` does not exist",
+      "Directory `packages/cli/templates/skill-source/fabric-init/` does not exist",
+      "No matches for `\\.fabric/rules` in `packages/cli/templates/` (grep returns empty)",
+      "No matches for `fabric-init.*skill` in `packages/cli/templates/` (grep returns empty)",
+      "AGENTS.md.template contains v2 vocabulary terms: `decisions`, `pitfalls`, `guidelines`, `models`, `processes`, `pending` (grep all 6 hit at least once)",
+      "`pnpm --filter @fabric/cli build` exits 0 with template bundling intact"
+    ]
+  },
+  "depends_on": [],
+  "dependency_type": "none",
+  "parallel_safe": true,
+  "scope_boundary": "OUT OF SCOPE: source-code changes (TASK-001 owns CLI command layer, TASK-002 owns server layer), test updates (TASK-004), schema changes (TASK-006). Template content changes only — do NOT modify CLI init.ts logic that consumes these templates here.",
+  "cli_execution_id": "fabric-v2-rc2-prep-2026-05-10-TASK-003",
+  "cli_execution": {"strategy": "new"},
+  "rationale": {
+    "chosen_approach": "Atomic templates-only commit, parallel-safe with TASK-001/002, isolating user-facing artifact rewrite for clean review",
+    "alternatives_considered": ["Bundle template rewrite into CLI commit (TASK-001)", "Stage variants/husky deletion separately from AGENTS.md rewrite"],
+    "decision_factors": ["Templates are highest-blast-radius (every customer project sees them) — separate commit gives cleanest review surface", "fabric-init three-piece deletion is structurally simple (rm -rf), fits cleanly in same commit", "Parallel-safety with TASK-001/002 enables real concurrency"],
+    "tradeoffs": "AGENTS.md.template rewrite is content-heavy (~50-100 lines) and risks divergence from runtime code paths if init.ts (TASK-001) and template (this task) drift — mitigated by TASK-004 integration test gate"
+  },
+  "test": {
+    "manual_checks": [
+      "Dry-run `node packages/cli/dist/index.js init` in /tmp/test-fabric-init/, eyeball generated AGENTS.md",
+      "Confirm generated AGENTS.md has no `.fabric/rules` strings",
+      "Confirm generated AGENTS.md has all 5 knowledge types listed",
+      "Run `pnpm --filter @fabric/cli build` — exit 0"
+    ],
+    "success_metrics": [
+      "All file/dir existence checks pass",
+      "All grep gates pass",
+      "Generated AGENTS.md is human-readable v2 doc"
+    ],
+    "unit": [],
+    "integration": []
+  }
+}

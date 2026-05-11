@@ -1,0 +1,116 @@
+{
+  "id": "TASK-008",
+  "title": "Update fabric init flow end-to-end (v2.0 layout creation, no taxonomy gen, invokes scan, dual-root ensure)",
+  "description": "Rewrite buildInitFabricPlan at packages/cli/src/commands/init.ts:521 to produce v2.0 .fabric/ layout instead of v1.x. Concretely: (1) create .fabric/knowledge/{decisions,pitfalls,guidelines,models,processes}/ + pending/ subdirs (with .gitkeep markers); (2) DO NOT generate INITIAL_TAXONOMY.md (delete buildInitialTaxonomyMarkdown function at line 1390 and all its call sites); (3) DO NOT create .fabric/bootstrap/ directory (gone in v2.0 — repo-root AGENTS.md is the anchor); (4) initialize agents.meta.json with empty counters {KP:0, KT:0} and empty nodes (will be filled by scan); (5) ensure ~/.fabric/knowledge/ dual-root home with same subdir structure (idempotent mkdir); (6) invoke `fab scan` (TASK-007) as a new 4th stage between mcp + hooks stages, populating baseline 4-7 entries; (7) ensure init runs cleanly on an empty repo. This is the convergence task — depends on 1, 2, 3, 7 — and is what `fabric init` users actually experience.",
+  "scope": "packages/cli/src/commands/init.ts",
+  "action": "Update",
+  "files": [
+    {
+      "path": "packages/cli/src/commands/init.ts",
+      "action": "modify",
+      "target": "buildInitFabricPlan (line 521) — main composition function",
+      "change": "Restructure stage list from current 3 (bootstrap, mcp, hooks) → 4 stages: (a) bootstrap: create v2.0 .fabric/ tree (knowledge/{5 subdirs}/.gitkeep + pending/.gitkeep + agents.meta.json with empty counters + events.jsonl + forensic.json from existing forensic-builder); (b) scan: invoke runScanCommand (from TASK-007) to produce baseline entries; (c) mcp: existing MCP config write (unchanged); (d) hooks: existing hooks config write (unchanged). Total = 4 stages. Write home-root mkdir of ~/.fabric/knowledge/{5 subdirs}/ + pending/ in stage (a) — idempotent via fs.mkdir { recursive: true }."
+    },
+    {
+      "path": "packages/cli/src/commands/init.ts",
+      "action": "delete",
+      "target": "buildInitialTaxonomyMarkdown function (line 1390) + its call sites",
+      "change": "Delete function entirely. Remove the call site in stage 1 of buildInitFabricPlan (around line 548 per exploration codebase map). Remove import of any helpers used only by buildInitialTaxonomyMarkdown. Per code_anchors significance: 'rc.1 deletes this function entirely; INITIAL_TAXONOMY.md is replaced by docs/knowledge-types.md as human reference' (docs/knowledge-types.md is rc.4 scope, not rc.1 — so during rc.1, simply no taxonomy markdown is generated). Doctor's renamed knowledge_dir_missing check (TASK-006) replaces its purpose."
+    },
+    {
+      "path": "packages/cli/src/commands/init.ts",
+      "action": "modify",
+      "target": "wizard prompts (currently at top of init.ts)",
+      "change": "Remove any wizard prompts that reference v1.x taxonomy concepts (e.g. 'select rule template'). Keep client-selection wizard (Claude Code/Cursor/Codex). Add no new prompts in rc.1 — type/layer choices are made at content-generation time (rc.2 archive skill, rc.4 import skill), not at init time."
+    },
+    {
+      "path": "packages/cli/src/commands/init.ts",
+      "action": "modify",
+      "target": "skills/hooks install paths (existing logic)",
+      "change": "Skills/hooks install logic stays unchanged in rc.1 (fabric-init skill at .claude/skills/fabric-init/ + .codex/skills/fabric-init/ — recently fixed per recent commit '2b3692d fix(init): install Codex skill at .codex/skills'). DO NOT install fabric-archive or fabric-review skill templates (rc.2/3 scope). DO NOT install Stop hook configs (rc.2 scope)."
+    }
+  ],
+  "implementation": [
+    "Read packages/cli/src/commands/init.ts:521-548 to understand buildInitFabricPlan + the buildInitialTaxonomyMarkdown call site",
+    "Read line 1390+ for the full buildInitialTaxonomyMarkdown function body",
+    "Delete buildInitialTaxonomyMarkdown function and any helpers used only by it (e.g. taxonomy-specific builders); update imports",
+    "Modify the bootstrap stage: replace .fabric/INITIAL_TAXONOMY.md write + .fabric/bootstrap/README.md write with .fabric/knowledge/{5 subdirs + pending}/.gitkeep writes + agents.meta.json bootstrap (empty counters + nodes)",
+    "Add ~/.fabric/knowledge/{5 subdirs + pending}/ idempotent mkdir using os.homedir() + fs.mkdir recursive",
+    "Insert new scan stage between bootstrap and mcp: call runScanCommand from TASK-007 (programmatic invocation, not shell exec). Pass current repo root + forensic.json path. Stage shows progress 'Scanning project for baseline knowledge entries (4-7 expected)...'",
+    "Verify mcp + hooks stages still work without modification (they read agents.meta.json + write .claude/settings.json + .codex/...)",
+    "Run `pnpm --filter @fabric/cli build` to ensure clean compile after deletions",
+    "Run `pnpm --filter @fabric/cli test` for existing init.test.ts; update fixtures from .fabric/INITIAL_TAXONOMY.md → no-such-file",
+    "Add new e2e test: spin up empty fixture repo, run `fab init --no-wizard`, verify .fabric/knowledge/ structure + 4-7 entries + ~/.fabric/knowledge/ subdirs + clean exit code 0",
+    "Manual smoke test in self-repo: rm .fabric/agents.meta.json (preserve events.jsonl + forensic.json from TASK-001 cleanup), run `fab init`, verify v2.0 layout regenerated"
+  ],
+  "reference": {
+    "pattern": "Existing 3-stage init pipeline pattern in buildInitFabricPlan; programmatic CLI invocation pattern for cross-command calls",
+    "files": ["packages/cli/src/commands/init.ts:521,548,1390", "packages/cli/src/commands/scan.ts (TASK-007 output)", "packages/cli/src/commands/index.ts"],
+    "examples": "Per discussion line 722: 'Update fabric init flow (no old taxonomy generation; install scaffolding for new layout)'. Per handoff acceptance_criteria #2 + #6 + #9: init creates new structure, runs scan, exits clean. Per code_anchors line 5 significance: 'rc.1 deletes this function entirely [buildInitialTaxonomyMarkdown]'."
+  },
+  "convergence": {
+    "criteria": [
+      "Running `fab init` on a fresh empty repo (no .fabric/ exists) completes successfully with exit code 0",
+      "Post-init filesystem state: .fabric/knowledge/{decisions,pitfalls,guidelines,models,processes}/ + pending/ subdirs all exist with .gitkeep markers",
+      "Post-init: .fabric/agents.meta.json contains counters={KP:0, KT:N} where N matches scan output, plus N node entries with declared knowledge ids",
+      ".fabric/INITIAL_TAXONOMY.md does NOT exist after init (verified by `test ! -f`)",
+      ".fabric/bootstrap/ does NOT exist after init (verified by `test ! -d`)",
+      "Post-init: ~/.fabric/knowledge/{decisions,pitfalls,guidelines,models,processes,pending}/ all exist (idempotent — does not overwrite existing personal entries)",
+      "Post-init: .fabric/events.jsonl contains init_started + init_scan_completed (with entries_created=4-7) + init_completed events",
+      "buildInitialTaxonomyMarkdown function does NOT exist anywhere in init.ts (`grep buildInitialTaxonomy` returns no matches in source)",
+      "Init wizard does not prompt about taxonomy templates (only the existing client-selection prompt remains)",
+      "Running `fab init` twice in a row is idempotent: second run does not duplicate entries (TASK-007 idempotency) and does not regenerate counters",
+      "Running `fab doctor` post-init reports zero issues (per TASK-006 acceptance)",
+      "Running fab serve (MCP) post-init: fab_plan_context returns the 4-7 baseline entries in description_index (per TASK-005 acceptance)",
+      "Skills installed at .claude/skills/fabric-init/ + .codex/skills/fabric-init/ (existing behavior preserved); NO fabric-archive/fabric-review/fabric-import skills installed (rc.2/3/4 scope)",
+      "End-to-end init time on empty repo < 5 seconds"
+    ]
+  },
+  "depends_on": ["TASK-001", "TASK-002", "TASK-003", "TASK-007"],
+  "cli_execution_id": "anl-2026-05-10-fabric-knowledge-pivot-2026-05-10-TASK-008",
+  "cli_execution": {
+    "strategy": "merge_fork",
+    "merge_from": [
+      "anl-2026-05-10-fabric-knowledge-pivot-2026-05-10-TASK-001",
+      "anl-2026-05-10-fabric-knowledge-pivot-2026-05-10-TASK-002",
+      "anl-2026-05-10-fabric-knowledge-pivot-2026-05-10-TASK-003",
+      "anl-2026-05-10-fabric-knowledge-pivot-2026-05-10-TASK-007"
+    ]
+  },
+  "rationale": {
+    "chosen_approach": "Restructure 3-stage to 4-stage pipeline with new bootstrap content; delete v1.x taxonomy gen; programmatic scan invocation",
+    "alternatives_considered": ["Keep buildInitialTaxonomyMarkdown but rewrite its output (rejected — content has zero overlap with v2.0; rewriting is identical-cost to deleting and starting fresh)", "Run scan as a post-init hook user invokes manually (rejected — handoff acceptance #6 says 'Init-time deterministic scan'; manual step defeats non-empty-base goal)", "Skip ~/.fabric/ creation, defer to first personal write (rejected — handoff acceptance #3: 'auto-created on first personal write' OK to interpret as 'created at init or first write, whichever first'; init-time keeps it predictable)"],
+    "decision_factors": ["This is the user-facing entry point — must be coherent end-to-end", "Convergence task: integrates outputs of 4 prior tasks", "Init failure modes are user-visible; idempotency + clean error handling are critical"],
+    "tradeoffs": "Init becomes longer (added scan stage adds ~500ms); user gets non-empty knowledge base in exchange. Per handoff: explicit goal, accepted cost."
+  },
+  "test": {
+    "manual_checks": [
+      "Run fab init on empty fixture repo, inspect .fabric/ tree",
+      "Inspect ~/.fabric/knowledge/ tree (first run creates, second run preserves)",
+      "Run fab doctor immediately post-init, expect zero issues",
+      "Run fab serve, call fab_plan_context, verify 4-7 entries returned"
+    ],
+    "success_metrics": [
+      "Init completes in <5s on 100-file fixture repo",
+      "100% of acceptance criteria checks pass on canonical fixture",
+      "Zero residual v1.x artifacts (INITIAL_TAXONOMY.md, .fabric/bootstrap/, etc.)",
+      "Idempotent re-run produces zero file diffs"
+    ],
+    "unit": [
+      "init.test.ts: build_init_plan_has_4_stages",
+      "init.test.ts: bootstrap_stage_creates_v2_knowledge_subdirs",
+      "init.test.ts: bootstrap_stage_does_not_create_INITIAL_TAXONOMY",
+      "init.test.ts: bootstrap_stage_initializes_empty_counters",
+      "init.test.ts: home_root_mkdir_idempotent",
+      "init.test.ts: build_initial_taxonomy_markdown_function_removed"
+    ],
+    "integration": [
+      "init.test.ts: end_to_end_init_on_empty_repo_succeeds",
+      "init.test.ts: post_init_doctor_runs_clean",
+      "init.test.ts: post_init_mcp_plan_context_returns_baseline_entries",
+      "init.test.ts: rerun_init_is_idempotent",
+      "init.test.ts: events_jsonl_contains_init_scan_completed_event"
+    ]
+  },
+  "estimated_minutes": 90
+}

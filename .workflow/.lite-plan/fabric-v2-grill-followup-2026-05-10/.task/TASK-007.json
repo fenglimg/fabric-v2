@@ -1,0 +1,85 @@
+{
+  "id": "TASK-007",
+  "title": "zh-CN rewrite — 13 dogfood entries (M3 style)",
+  "scope": ".fabric/knowledge/decisions/ + .fabric/knowledge/{models,guidelines,processes}/",
+  "action": "Refactor",
+  "description": "Rewrite the 13 dogfood knowledge entries shipped in rc.2-prep from EN-only narrative to M3 style: EN section headings preserved, body paragraphs in zh-CN, EN technical terms (TypeScript, MCP, stable_id, layer-flip, etc.) preserved inline. Files: 8 KT-DEC decision entries (`.fabric/knowledge/decisions/KT-DEC-0001..0008.md`) + 5 init-scan baselines (tech-stack.md, module-structure.md, readme-first-paragraph.md, code-style.md, build-config.md). Frontmatter (id/type/maturity/layer) MUST remain unchanged — only body content is rewritten. doctor must still report clean after rewrite.",
+  "complexity": "Medium",
+  "estimated_time": "90-120 min",
+  "files": [
+    {"path": ".fabric/knowledge/decisions/KT-DEC-0001.md", "action": "modify", "target": "body content (preserve frontmatter)", "change": "Rewrite body in zh-CN narrative, preserve EN section headings (## Decision, ## Alternatives considered, ## Rationale) and EN technical terms inline"},
+    {"path": ".fabric/knowledge/decisions/KT-DEC-0002.md", "action": "modify", "target": "body content (preserve frontmatter)", "change": "Rewrite body in zh-CN, preserve EN headings + tech terms"},
+    {"path": ".fabric/knowledge/decisions/KT-DEC-0003.md", "action": "modify", "target": "body content (preserve frontmatter)", "change": "Rewrite body in zh-CN, preserve EN headings + tech terms"},
+    {"path": ".fabric/knowledge/decisions/KT-DEC-0004.md", "action": "modify", "target": "body content (preserve frontmatter)", "change": "Rewrite body in zh-CN, preserve EN headings + tech terms"},
+    {"path": ".fabric/knowledge/decisions/KT-DEC-0005.md", "action": "modify", "target": "body content (preserve frontmatter)", "change": "Rewrite body in zh-CN, preserve EN headings + tech terms"},
+    {"path": ".fabric/knowledge/decisions/KT-DEC-0006.md", "action": "modify", "target": "body content (preserve frontmatter)", "change": "Rewrite body in zh-CN, preserve EN headings + tech terms"},
+    {"path": ".fabric/knowledge/decisions/KT-DEC-0007.md", "action": "modify", "target": "body content (preserve frontmatter)", "change": "Rewrite body in zh-CN, preserve EN headings + tech terms"},
+    {"path": ".fabric/knowledge/decisions/KT-DEC-0008.md", "action": "modify", "target": "body content (preserve frontmatter)", "change": "Rewrite body in zh-CN, preserve EN headings + tech terms"},
+    {"path": ".fabric/knowledge/models/tech-stack.md", "action": "modify", "target": "body content (preserve frontmatter)", "change": "Rewrite body in zh-CN narrative; preserve EN section headings (## [MISSION_STATEMENT], ## [CONTEXT_INFO], etc) and EN technical terms (Node.js, TypeScript, pnpm, etc.)"},
+    {"path": ".fabric/knowledge/models/module-structure.md", "action": "modify", "target": "body content (preserve frontmatter)", "change": "Rewrite body in zh-CN, preserve EN headings + tech terms (monorepo, packages/, etc.)"},
+    {"path": ".fabric/knowledge/models/readme-first-paragraph.md", "action": "modify", "target": "body content (preserve frontmatter)", "change": "Rewrite body in zh-CN, preserve EN headings; quoted README content stays in original language"},
+    {"path": ".fabric/knowledge/guidelines/code-style.md", "action": "modify", "target": "body content (preserve frontmatter)", "change": "Rewrite body in zh-CN, preserve EN headings + tech terms (ESLint, Prettier, TypeScript)"},
+    {"path": ".fabric/knowledge/processes/build-config.md", "action": "modify", "target": "body content (preserve frontmatter)", "change": "Rewrite body in zh-CN, preserve EN headings + tech terms (vite, tsconfig.json, pnpm-workspace.yaml)"}
+  ],
+  "implementation": [
+    "Read all 13 files first to absorb current EN content — identify section headings (preserve), tech terms (preserve), narrative prose (rewrite)",
+    "For each KT-DEC-*.md: split file at frontmatter delimiter (`---`); preserve frontmatter byte-exact; rewrite body section-by-section",
+    "Per-section rewrite rule: keep EN heading verbatim (e.g. `## Decision`, `## Alternatives considered`, `## Rationale`); body becomes zh-CN narrative; preserve EN tech terms (TypeScript, MCP, stable_id, layer-flip, monotonic counter, async-review, etc.) inline; preserve code blocks unchanged",
+    "Style guidance: zh-CN body should be natural translation, not literal — match the conviction/density of EN original; keep paragraph boundaries; bullet points stay as bullets",
+    "After each file: verify frontmatter unchanged via `git diff` or `head -10` comparison",
+    "After all 13: run `node packages/cli/dist/index.js doctor` and confirm exit 0 (frontmatter still parses, schema still valid)",
+    "Run `pnpm test` — confirm any tests reading these files still pass (likely none directly, but watcher tests may touch)",
+    "Sanity check the `id`, `type`, `maturity`, `layer` frontmatter fields across all 13 files — must be unchanged from prior commit",
+    "Final convergence: each file's body contains zh-CN characters AND preserves at least 2 EN headings"
+  ],
+  "reference": {
+    "pattern": "M3 language style — EN headings + zh-CN body + EN tech terms; per Q3 grill-locked decision",
+    "files": [".fabric/knowledge/decisions/KT-DEC-0001.md (current EN — read for tone)", "docs/data-schema.md (TASK-006 — section on language policy)"],
+    "examples": "Section (g) of docs/data-schema.md (TASK-006) is the canonical reference for M3 style"
+  },
+  "convergence": {
+    "criteria": [
+      "All 13 files have zh-CN body — verify via `for f in $files; do file -b $f | grep -q UTF-8; done` AND grep for at least 5 zh-CN characters per file",
+      "EN section headings preserved — `for f in $files; do grep -E '^## [A-Z]' $f; done` returns ≥ 1 hit per file",
+      "Frontmatter unchanged — `git diff --stat $files | grep -E 'frontmatter|^---'` shows only body changes; or compare frontmatter blocks before/after via `awk '/^---$/{p=!p; if(!p)exit} p' file` round-trip",
+      "All 13 files still parse — `node packages/cli/dist/index.js doctor` exits 0",
+      "EN tech terms preserved — spot-check files contain at least 2 inline EN terms each (TypeScript, MCP, stable_id, etc.)",
+      "`pnpm test` exits 0 (no test regressions from file content change)",
+      "frontmatter id field across all 13 files matches stable_id pattern `K[PT]-(D|P|G|M|PR)-NNNN`"
+    ]
+  },
+  "depends_on": ["TASK-006"],
+  "dependency_type": "ordering",
+  "parallel_safe": false,
+  "scope_boundary": "OUT OF SCOPE: changing frontmatter fields (id/type/maturity/layer/created_at must stay byte-exact); creating new entries (TASK-009 only adds fabric-config); editing files outside the 13 listed; changing init.ts template (TASK-008); modifying docs (TASK-006). Strictly: body content rewrite of 13 specific files.",
+  "cli_execution_id": "fabric-v2-grill-followup-2026-05-10-TASK-007",
+  "cli_execution": {"strategy": "resume", "resume_from": "fabric-v2-grill-followup-2026-05-10-TASK-006"},
+  "recommended_execution": "Agent",
+  "rationale": {
+    "chosen_approach": "M3 language style (EN headings + zh-CN body + EN tech terms) for monorepo dogfood entries to demonstrate the style locked in Q3 — fabric-monorepo eats its own zh-CN-default dogfood",
+    "alternatives_considered": ["Keep all EN (loses dogfood demonstration of language policy)", "Full zh-CN including headings (rejected per Q3 — headings stay EN for searchability)", "Per-file frontmatter override of language (rejected — config-level is the single source of truth)"],
+    "decision_factors": ["Dogfood credibility — fabric-monorepo's own knowledge entries demonstrate the M3 style end-users will see", "Q3 grill decision locked M3 style", "Searchability preserved (EN headings + EN tech terms remain greppable)"],
+    "tradeoffs": "13 files touched in one commit (~10-15 min per file translation) — accepted because all 13 share same style transition; alternative (per-file commits) would be ceremony-heavy"
+  },
+  "test": {
+    "manual_checks": [
+      "Eyeball KT-DEC-0001.md — confirm body reads naturally in zh-CN, EN headings intact, tech terms inline",
+      "Eyeball tech-stack.md — confirm same M3 pattern applied",
+      "Run `node packages/cli/dist/index.js doctor` — confirm exit 0",
+      "Run `git diff --stat .fabric/knowledge/` — confirm 13 files changed, line counts roughly preserved (no major deletion)",
+      "Spot-check frontmatter on 3-4 files — confirm id/type/maturity/layer byte-exact unchanged"
+    ],
+    "success_metrics": [
+      "All 13 files have zh-CN body content",
+      "All 13 frontmatter blocks unchanged",
+      "doctor reports clean (exit 0)",
+      "EN headings + EN tech terms preserved across all files",
+      "Reads naturally to a zh-CN reviewer"
+    ],
+    "unit": [],
+    "integration": [
+      "doctor parses all 13 entries",
+      "frontmatter schema validation passes for all 13"
+    ]
+  }
+}

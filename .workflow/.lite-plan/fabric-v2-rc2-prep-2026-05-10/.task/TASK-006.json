@@ -1,0 +1,89 @@
+{
+  "id": "TASK-006",
+  "title": "Phase C: Schema forward-compat (add tags field + event type v2 rename + docs/schema.md)",
+  "scope": "packages/shared/src/schemas/agents-meta.ts + packages/shared/src/schemas/event-ledger.ts + docs/schema.md",
+  "action": "Implement",
+  "description": "Last-cheap-window schema additions for rc.3 review skill compat, single commit. (1) **Add 1 frontmatter field**: `tags: [tag1, tag2]` (flat flow-style array, parser already supports). init-scan should auto-fill from forensic tech stack keywords. Required for rc.3 review skill's tag-filter search. NOT add: last_review_at, source_session, confidence_score, review_count, parent_id — events.jsonl is single source of truth (avoid double-write consistency issues). (2) **Event type rename for v2 vocabulary**: rule_context_planned→knowledge_context_planned; rule_selection→knowledge_selection; rule_sections_fetched→knowledge_sections_fetched; rule_drift_detected→knowledge_drift_detected; DELETE rule_baseline_accepted, baseline_synced, legacy_client_path_present; KEEP claude_skill_path_migrated, claude_hook_path_migrated, codex_skill_path_migrated, mcp_config_migrated, meta_reconciled_on_startup, meta_reconciled, reapply_completed, event_ledger_truncated, mcp_event, edit_intent_checked, init_scan_completed. Net: 19 → 13 event types (4 renames + 3 deletions + 12 unchanged). (3) **Write `docs/schema.md`**: 1-page contract document covering frontmatter (7 fields), 13 event types, stable_id `K[PT]-(D|P|G|M|PR)-NNNN`, counters envelope. NOT marketing/README rewrite (rc.4 scope).",
+  "complexity": "High",
+  "estimated_time": "2-3h (Phase C budget)",
+  "files": [
+    {"path": "packages/shared/src/schemas/agents-meta.ts", "action": "modify", "target": "frontmatter schema — add tags field", "change": "Add `tags: z.array(z.string()).default([])` field to the entry frontmatter schema; document that init-scan auto-fills from forensic tech-stack keywords; flat flow-style YAML array (parser already supports)"},
+    {"path": "packages/shared/src/schemas/event-ledger.ts", "action": "modify", "target": "event-type discriminated union", "change": "Rename 4 event types: rule_context_planned→knowledge_context_planned, rule_selection→knowledge_selection, rule_sections_fetched→knowledge_sections_fetched, rule_drift_detected→knowledge_drift_detected. DELETE 3 event types: rule_baseline_accepted, baseline_synced, legacy_client_path_present. KEEP 12 event types unchanged (claude_skill_path_migrated, claude_hook_path_migrated, codex_skill_path_migrated, mcp_config_migrated, meta_reconciled_on_startup, meta_reconciled, reapply_completed, event_ledger_truncated, mcp_event, edit_intent_checked, init_scan_completed; plus 4 renamed = 13 total). Update z.discriminatedUnion variants accordingly. Net: 19→13."},
+    {"path": "packages/cli/src/scanner/init-scan.ts", "action": "modify", "target": "init-scan tag emission", "change": "When emitting baseline knowledge entries during init-scan, populate tags field from forensic tech-stack keywords (e.g. ['typescript', 'react', 'vite'] from forensic.json languages + frameworks)"},
+    {"path": "packages/server/src/services/event-emitter.ts", "action": "modify", "target": "callers of renamed event types", "change": "Update all event-ledger emit call sites to use new event-type names (knowledge_*); remove emit calls for the 3 deleted event types"},
+    {"path": "docs/schema.md", "action": "create", "target": "new file", "change": "1-page contract doc: (a) frontmatter — 7 fields (id, type, maturity, layer, title, tags, summary); (b) 13 event types — name + payload shape; (c) stable_id format `K[PT]-(D|P|G|M|PR)-NNNN` decomposition; (d) counters envelope (agents.meta.json.counters monotonic structure). Strictly contract — no marketing copy."},
+    {"path": "packages/server/__tests__/schemas-roundtrip.test.ts", "action": "modify", "target": "event-type fixtures", "change": "Update fixtures to use renamed event types (knowledge_*); remove fixtures for the 3 deleted event types; add fixture exercising tags field roundtrip"}
+  ],
+  "implementation": [
+    "Run `grep -n 'rule_context_planned\\|rule_selection\\|rule_sections_fetched\\|rule_drift_detected\\|rule_baseline_accepted\\|baseline_synced\\|legacy_client_path_present' packages/` to enumerate all call sites",
+    "In packages/shared/src/schemas/agents-meta.ts: add tags field to frontmatter Zod schema with default []; document inline as flat flow-style YAML array",
+    "In packages/shared/src/schemas/event-ledger.ts: locate the discriminated-union event schema; rename 4 variants (search-replace rule_X→knowledge_X); delete 3 variants entirely; update union literal list",
+    "In packages/cli/src/scanner/init-scan.ts: identify entry-emission code path; add a small helper that derives tags from forensic.json languages+frameworks (top 3-5 keywords); inject into emitted entries",
+    "In packages/server/src/services/event-emitter.ts and any other emit-call sites (grep): update event-type string literals to match renamed schema; delete emit calls for deleted event types",
+    "Write docs/schema.md (~1 page): structure as 4 sections (Frontmatter / Event Types / stable_id / Counters), each with a small table or code block; no narrative — pure contract",
+    "Update schemas-roundtrip.test.ts: rename event-type fixtures, remove deleted-type fixtures, add tags roundtrip fixture",
+    "Run `pnpm build && pnpm test && pnpm lint` across packages — must exit 0",
+    "Verify grep gates: `grep -E 'tags:' packages/shared/src/schemas/agents-meta.ts` hits; `grep -c 'knowledge_' packages/shared/src/schemas/event-ledger.ts` ≥ 4; `test -f docs/schema.md`"
+  ],
+  "reference": {
+    "pattern": "Last-cheap-window schema migration with single discriminator-union refactor",
+    "files": ["packages/shared/src/schemas/agents-meta.ts", "packages/shared/src/schemas/event-ledger.ts"],
+    "examples": "Zod discriminatedUnion variant rename pattern; flat flow-style YAML array in frontmatter (existing parser support)"
+  },
+  "convergence": {
+    "criteria": [
+      "`grep -E 'tags:' packages/shared/src/schemas/agents-meta.ts` returns at least 1 hit",
+      "`grep -c 'knowledge_' packages/shared/src/schemas/event-ledger.ts` returns ≥ 4",
+      "No matches for `rule_context_planned\\|rule_selection\\|rule_sections_fetched\\|rule_drift_detected` in `packages/` (all 4 renamed)",
+      "No matches for `rule_baseline_accepted\\|baseline_synced\\|legacy_client_path_present` in `packages/` (all 3 deleted)",
+      "File `docs/schema.md` exists and contains: 'frontmatter', 'event', 'stable_id', 'counters' (4 grep hits)",
+      "init-scan emits at least 1 baseline entry with non-empty tags array (verified by integration test or dogfood)",
+      "`pnpm test` exits 0 (schemas-roundtrip.test.ts updated and passing)",
+      "Event-type count in event-ledger.ts is exactly 13 (4 renamed + 12 unchanged - 3 deleted from 19 = 13)"
+    ]
+  },
+  "depends_on": ["TASK-005"],
+  "dependency_type": "ordering",
+  "parallel_safe": false,
+  "scope_boundary": "OUT OF SCOPE: new event types `knowledge.{proposed,promoted,layer_changed,demoted,archived,archive_attempted}` (rc.2/3/4 will add as z.literal() variants — NOT this task), additional frontmatter fields (last_review_at/source_session/confidence_score/review_count/parent_id rejected per Q6), README/marketing copy (rc.4), 6 new doctor lint checks (rc.4). Strictly: 1 new frontmatter field + 4 renames + 3 deletes + docs/schema.md.",
+  "cli_execution_id": "fabric-v2-rc2-prep-2026-05-10-TASK-006",
+  "cli_execution": {"strategy": "resume", "resume_from": "fabric-v2-rc2-prep-2026-05-10-TASK-005"},
+  "rationale": {
+    "chosen_approach": "Last-cheap-window schema migration: 1 frontmatter add + 4 renames + 3 deletes + 1 contract doc, single atomic commit",
+    "alternatives_considered": ["Add all rc.2/3/4 forward-compat fields now (last_review_at, confidence_score, etc.)", "Defer schema rename to rc.2"],
+    "decision_factors": ["Window cost: rc.1 baseline doesn't exist yet → no fixture migration cost; after rc.2 dogfood emits real entries, rename gets expensive", "events.jsonl as single source of truth avoids double-write consistency bugs (rejected fields)", "rc.3 review skill needs tags field for filter search — must land before dogfood populates baseline"],
+    "tradeoffs": "schemas-roundtrip.test.ts gets touched twice (once in TASK-004 fixture cleanup, once here for rename) — accepted because TASK-006 lands AFTER TASK-004, so TASK-004 only needs to handle deletions, TASK-006 handles renames. NOT adding parent_id/source_session means rc.3 review skill must derive lineage from events.jsonl (more complex query, but consistent)"
+  },
+  "test": {
+    "manual_checks": [
+      "Eyeball docs/schema.md — is it ≤1 page, pure contract, no marketing tone?",
+      "Run `pnpm build` — confirm Zod schema rebuild produces no type errors",
+      "Run init-scan dry-run on a tmp project — confirm emitted entries include tags array",
+      "Run `pnpm test` — confirm schemas-roundtrip.test.ts passes with renamed/deleted event types"
+    ],
+    "success_metrics": [
+      "All grep gates pass",
+      "Event-type count is exactly 13",
+      "tags field present in agents-meta schema",
+      "docs/schema.md exists with 4 required sections",
+      "init-scan integration test confirms tag auto-fill from forensic"
+    ],
+    "unit": ["fabric-meta schema with tags field roundtrip", "event-ledger schema with renamed types parsing", "stable_id format validation"],
+    "integration": ["init-scan auto-fills tags from forensic.json", "Renamed events emit and parse correctly end-to-end"]
+  },
+  "risks": [
+    {"description": "Discriminated-union rename breaks downstream type narrowing across packages", "probability": "Medium", "impact": "High", "mitigation": "Run `pnpm tsc --noEmit` across all packages BEFORE committing; chase every type error to its consumer", "fallback": "If too many narrowing breakages, do rename in 2 sub-commits: (a) shared schema rename + (b) consumer migration"},
+    {"description": "Tags auto-fill from forensic.json may produce noisy/low-quality keywords on small repos", "probability": "Medium", "impact": "Low", "mitigation": "Cap to top 3-5 keywords; filter out generic terms (e.g. 'javascript' if 'typescript' already present); rc.3 review skill can refine via human edit", "fallback": "Default tags=[] if forensic produces nothing meaningful — review skill still works (filter just shows all)"},
+    {"description": "docs/schema.md may diverge from code reality if schema evolves in rc.2/3/4", "probability": "High", "impact": "Medium", "mitigation": "Add a schema.md update note to each of rc.2/3/4 task lists; consider auto-generating schema.md from Zod in rc.4", "fallback": "If divergence found, treat as a rc.x.fix.N hotfix or update inline during the relevant rc"}
+  ],
+  "code_skeleton": {
+    "interfaces": [
+      {"name": "FrontmatterSchema (extended)", "definition": "z.object({ id, type, maturity, layer, title, summary, tags: z.array(z.string()).default([]) })", "purpose": "v2 frontmatter contract with 7 fields; tags field added in rc.2 prep"},
+      {"name": "EventLedgerSchema (renamed)", "definition": "z.discriminatedUnion('type', [knowledge_context_planned, knowledge_selection, knowledge_sections_fetched, knowledge_drift_detected, ...12 unchanged])", "purpose": "13 event types after rename + deletion"}
+    ],
+    "key_functions": [
+      {"signature": "deriveTagsFromForensic(forensic: ForensicReport): string[]", "purpose": "Map forensic.json languages+frameworks to top 3-5 tag keywords", "returns": "string[] (tag list, max 5)"}
+    ],
+    "classes": []
+  }
+}

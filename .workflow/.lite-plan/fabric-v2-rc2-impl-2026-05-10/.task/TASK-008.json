@@ -1,0 +1,125 @@
+{
+  "id": "TASK-008",
+  "title": "Batched-end Gemini code review + per-file ≥90% coverage gate enforcement",
+  "scope": "Repo-wide gate (review + coverage) for rc.2 changes",
+  "action": "Test",
+  "description": "Final convergence gate. Run Gemini Review on the full rc.2 diff (all commits TASK-001..TASK-007) ONCE — per user MEMORY (batch review at end of multi-task lite-plan chains, NOT per-task). Run `pnpm test:coverage` across all workspaces to produce coverage-summary.json per package. Author/run packages/cli/scripts/check-rc2-coverage.mjs (or root scripts/) — a per-file parser that walks each coverage-summary.json, filters paths matching the rc.2 file allowlist (extract-knowledge.ts service+tool, archive-hint.cjs, hooks-writer.ts, hooks.ts modified portions, init.ts modified portions), and asserts each file's lines+statements ≥90%. Iterate fixes for any review findings or coverage gaps via additional commits. Final commit closes rc.2.",
+  "files": [
+    {
+      "path": "scripts/check-rc2-coverage.mjs",
+      "action": "create",
+      "target": "Per-file ≥90% coverage gate parser",
+      "change": "Node ESM script. const ALLOWLIST = ['packages/server/src/services/extract-knowledge.ts','packages/server/src/tools/extract-knowledge.ts','packages/cli/templates/hooks/archive-hint.cjs','packages/cli/src/config/hooks-writer.ts','packages/cli/src/commands/hooks.ts','packages/cli/src/commands/init.ts','packages/cli/src/config/json.ts','packages/cli/src/config/resolver.ts']. For each package's coverage/coverage-summary.json: load JSON, for each entry whose key matches an allowlist path, assert summary.lines.pct >= 90 AND summary.statements.pct >= 90. Exit 1 with table report on any failure. Print pass-table on success."
+    },
+    {
+      "path": "scripts/run-rc2-gemini-review.sh",
+      "action": "create",
+      "target": "Gemini batched review trigger script",
+      "change": "Bash script invoking `ccw cli -p \"Review the rc.2 diff across TASK-001..TASK-007 commits. Focus: idempotency correctness, schema-compliance with pre-locked api-contracts.ts, atomic-write usage, per-client install correctness, no regression on existing fabric init/hooks behavior, conventional commit hygiene\" --tool gemini --mode review --context \"@$(git diff main~7..HEAD --name-only | tr '\\n' ' @')\"`. Output to .workflow/.lite-plan/fabric-v2-rc2-impl-2026-05-10/gemini-review-report.md. Exit non-zero if review surfaces critical issues."
+    },
+    {
+      "path": ".workflow/.lite-plan/fabric-v2-rc2-impl-2026-05-10/coverage-gate-report.md",
+      "action": "create",
+      "target": "Coverage gate final report",
+      "change": "Markdown summary of per-file coverage table for rc.2 allowlist files: filename | lines.pct | statements.pct | branches.pct | pass/fail. Append uncovered-line analysis for any near-miss files (≥85% but <90%) — author additional unit tests OR document tradeoff in this report."
+    },
+    {
+      "path": ".workflow/.lite-plan/fabric-v2-rc2-impl-2026-05-10/gemini-review-report.md",
+      "action": "create",
+      "target": "Gemini review findings + resolution log",
+      "change": "Output of run-rc2-gemini-review.sh — categorize findings as Critical / Major / Minor. For each Critical+Major: author a fix commit and link the commit SHA next to the finding. Minor findings logged as follow-up issues for rc.2.1. Final section: 'All Critical+Major resolved' confirmation."
+    }
+  ],
+  "implementation": [
+    "Verify TASK-001..TASK-007 all committed on main: `git log --oneline | head -10`",
+    "Run `pnpm test:coverage` from repo root — fans out to all 3 workspaces; produces packages/{server,cli,shared}/coverage/coverage-summary.json",
+    "Author scripts/check-rc2-coverage.mjs with per-file allowlist parser",
+    "Run `node scripts/check-rc2-coverage.mjs`; on failure: identify uncovered files, author additional unit tests, commit `test(<package>): boost coverage on <file> for rc.2 gate`, re-run; loop until pass",
+    "Generate coverage-gate-report.md with final table",
+    "Author scripts/run-rc2-gemini-review.sh wrapping ccw cli gemini review on the diff",
+    "Run `bash scripts/run-rc2-gemini-review.sh`; capture findings in gemini-review-report.md",
+    "For each Critical/Major finding: author fix commit (`fix(<scope>): <issue> from gemini review`) and resolve in-place; re-run review only if fix scope is ambiguous (else trust resolution)",
+    "Final commit: `chore(rc.2): close out coverage gate and review batch`"
+  ],
+  "reference": {
+    "pattern": "Batched-end review + per-file coverage parser pattern (NOT vitest.config global threshold bumps)",
+    "files": [
+      "packages/server/vitest.config.ts",
+      "packages/cli/vitest.config.ts",
+      "packages/shared/vitest.config.ts",
+      "package.json"
+    ],
+    "examples": "Each package's vitest.config exposes coverage/coverage-summary.json via 'json-summary' reporter (verified in testing exploration). Root package.json scripts.test:coverage fans out via pnpm -r --if-present. Allowlist-based parser is the recommended pattern from testing exploration clarification_needs item 2 option 1."
+  },
+  "convergence": {
+    "criteria": [
+      "scripts/check-rc2-coverage.mjs exits 0 — every file in rc.2 allowlist has lines.pct ≥ 90 AND statements.pct ≥ 90",
+      "coverage-gate-report.md table shows all rc.2 allowlist files green (pass column = ✓)",
+      "Gemini Review run completes; gemini-review-report.md categorizes all findings",
+      "All Critical findings have a linked fix commit SHA in gemini-review-report.md",
+      "All Major findings have a linked fix commit SHA OR explicit deferral rationale (must be approved in commit message)",
+      "Minor findings logged as rc.2.1 follow-up issues (not blocking)",
+      "vitest.config.ts files in all 3 packages remain UNTOUCHED (existing thresholds 75/70/85 preserved — gate enforced externally only)",
+      "All commits TASK-001..TASK-008 land on main with conventional commit messages (feat/fix/test/chore/docs prefixes verified)",
+      "Final state: rc.2 archive write-half loop is end-to-end functional (verified by TASK-007 dogfood AND this gate)"
+    ]
+  },
+  "depends_on": [
+    "TASK-006",
+    "TASK-007"
+  ],
+  "rationale": {
+    "chosen_approach": "External per-file parser + batched-end Gemini review (batched per user MEMORY; per-file gate per testing exploration)",
+    "alternatives_considered": [
+      "Bump vitest.config.ts thresholds to 90 — rejected: would fail existing files (server has 75 floor) and block rc.2 unrelated work",
+      "Per-task Gemini review — rejected per user MEMORY (feedback_review_batching: batch at end of multi-task chains)",
+      "Skip review entirely (trust unit tests) — rejected: rc.2 has cross-package wiring (server+cli) that benefits from second-pass review"
+    ],
+    "decision_factors": [
+      "User MEMORY locks batched-end review",
+      "Testing exploration constraint forbids vitest.config bumps",
+      "Per-file allowlist parser is precise — only judges new code"
+    ],
+    "tradeoffs": "Allowlist drift risk (rc.3 must update allowlist for new files) — accepted: explicit allowlist is more readable than glob-based heuristics"
+  },
+  "test": {
+    "manual_checks": [
+      "Inspect coverage-gate-report.md — confirm every allowlist file row is green",
+      "Inspect gemini-review-report.md — confirm Critical section is empty OR all entries have fix-commit links",
+      "Run `git log --oneline TASK-001..HEAD` — confirm 8+ commits with conventional prefixes (feat/test/chore/fix/docs)",
+      "Confirm vitest.config files unchanged: `git diff main~8..HEAD packages/*/vitest.config.ts` returns empty"
+    ],
+    "success_metrics": [
+      "100% of allowlist files ≥ 90% per-file coverage",
+      "Zero unresolved Critical Gemini findings",
+      "Zero unresolved Major findings (or all explicitly deferred with rationale)",
+      "rc.2 ships dogfooded + reviewed + coverage-gated"
+    ],
+    "unit": [],
+    "integration": [
+      "rc2_per_file_coverage_gate_passes",
+      "rc2_gemini_review_critical_findings_resolved"
+    ]
+  },
+  "cli_execution_id": "fabric-v2-rc2-impl-2026-05-10-TASK-008",
+  "cli_execution": {
+    "strategy": "merge_fork",
+    "merge_from": [
+      "fabric-v2-rc2-impl-2026-05-10-TASK-006",
+      "fabric-v2-rc2-impl-2026-05-10-TASK-007"
+    ]
+  },
+  "status": "completed",
+  "status_history": [
+    {
+      "from": "in_progress",
+      "to": "in_progress",
+      "changed_at": "2026-05-10T22:29:18+08:00"
+    },
+    {
+      "from": "in_progress",
+      "to": "completed",
+      "changed_at": "2026-05-10T22:43:57+08:00"
+    }
+  ]
+}

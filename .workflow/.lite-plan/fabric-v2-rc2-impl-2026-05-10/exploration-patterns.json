@@ -1,0 +1,234 @@
+{
+  "project_structure": "Fabric v2 is a pnpm monorepo (packages/cli, packages/server, packages/shared, packages/dashboard). The CLI ships templates under two trees: (a) packages/cli/templates/ which currently holds only agents-md/ and bootstrap/ (skills/ and hooks/ DO NOT exist yet — they will be created in rc.2), and (b) a legacy root-level templates/ tree at /templates/{claude-skills,codex-skills,claude-hooks,codex-hooks,bootstrap,agents-md,husky}/ which is the v1 location and contains the only pre-existing SKILL.md and hook script patterns in the repo. Server-side ledger services (packages/server/src/services/{event-ledger,read-ledger,_shared}.ts) own .fabric/events.jsonl read/write — the rc.2 Stop hook script must reimplement an out-of-process JSONL reader following these conventions but cannot import them (it runs from .claude/hooks or .codex/hooks outside the server process and must remain a single-file CJS script with zero external deps).",
+  "relevant_files": [
+    {
+      "path": "templates/claude-skills/fabric-init/SKILL.md",
+      "relevance": 0.95,
+      "rationale": "The single most representative SKILL.md in the repo — 180 lines, fully decision-tree-shaped Phase 0/1/2 workflow with embedded prompt template, frontmatter (name, description, allowed-tools), and Hard Rules DO-NOT-TRANSLATE block. This is the format fabric-archive SKILL.md should mirror (frontmatter shape, body section ordering, Hard Rules / DISPLAY-WRITE split, embedded review template structure).",
+      "role": "pattern_reference",
+      "discovery_source": "bash-scan",
+      "key_symbols": ["frontmatter", "Phase 0/1/2", "Hard Rules", "DISPLAY Rules", "WRITE Rules", "protected tokens"],
+      "key_code": [
+        {"symbol": "frontmatter block", "location": "L1-L5", "description": "YAML frontmatter with name (string), description (one paragraph stating WHEN to use), allowed-tools (Read, Glob, Grep, Bash). No tags/version field. fabric-archive should use the same three keys."},
+        {"symbol": "Precondition section", "location": "L7-L23", "description": "Stop-condition gating: declares pre-state (forensic.json exists, init-context.json absent) before workflow runs. fabric-archive Hook script will gate similarly on plan_context-since-last-knowledge.proposed counter ≥5 OR ≥24h."},
+        {"symbol": "执行流程 (3 Phase)", "location": "L24-L155", "description": "Three numbered phases with bilingual headers (zh + en mix). Phase 0 = active recon with file:line evidence, Phase 1 = single user-review batch, Phase 2 = automatic write with confirmed set only. fabric-archive should use the same Phase 0/1/2 shape: Phase 0 read events.jsonl + classify, Phase 1 LLM extracts 5-type candidates with classification, Phase 2 write to pending/."},
+        {"symbol": "Hard Rules DISPLAY/WRITE split", "location": "L156-L180", "description": "Hard rules section split into DISPLAY rules (what must be shown) and WRITE rules (what must / must never be written). Each line opens with MUST/NEVER. Protected tokens enumerated. fabric-archive must adopt the same MUST/NEVER syntax with protected tokens including stable_id, knowledge.proposed event, .fabric/knowledge/pending/."}
+      ],
+      "topic_relation": "Patterns exploration anchors on this SKILL.md as the canonical local SKILL.md format because no other SKILL.md exists in the repo at parity quality; rc.2's fabric-archive SKILL.md MUST match its frontmatter keys, body section ordering, and Hard Rules MUST/NEVER style."
+    },
+    {
+      "path": "templates/codex-skills/fabric-init/SKILL.md",
+      "relevance": 0.65,
+      "rationale": "Shorter Codex-flavored variant of the same fabric-init skill (28 lines). Demonstrates Codex SKILL.md is a much lighter document — frontmatter has only name + description (no allowed-tools), body is Hard Rules + Purpose + Workflow numbered list. This is the parallel format fabric-archive will need for the Codex skill copy if rc.2 ships Codex-side too.",
+      "role": "pattern_reference",
+      "discovery_source": "bash-scan",
+      "key_symbols": ["Hard Rules (DO NOT TRANSLATE)", "Workflow numbered list"],
+      "key_code": [
+        {"symbol": "minimal frontmatter", "location": "L1-L4", "description": "Only `name` and `description` — Codex doesn't honor allowed-tools the same way Claude does. fabric-archive Codex variant should drop allowed-tools."},
+        {"symbol": "linear workflow list", "location": "L22-L27", "description": "Five-step numbered list with no Phase headers, no Architecture Review batch. Codex skills lean on linearity vs Claude skill's decision-tree structure."}
+      ],
+      "topic_relation": "Documents the Codex-vs-Claude SKILL.md asymmetry that rc.2 must decide — does fabric-archive ship one canonical SKILL.md or two flavors? The plan currently calls for one (Q3 decision: Skill internalizes prompt template), but cross-client deployment may need two."
+    },
+    {
+      "path": "templates/claude-hooks/fabric-init-reminder.cjs",
+      "relevance": 0.95,
+      "rationale": "The exact representative pattern for archive-hint.js: same shebang (#!/usr/bin/env node), CommonJS require (node:fs, node:path), reads project-relative file via process.cwd() + join, makes a binary skip-or-emit decision, emits JSON object via process.stdout.write — NOT stderr. Important: existing Claude Code hooks emit JSON {decision: 'block', reason: '...'} on stdout, not exit-2-with-stderr as the rc.2 plan currently states. This is a key clarification for rc.2 implementation.",
+      "role": "pattern_reference",
+      "discovery_source": "bash-scan",
+      "key_symbols": ["shebang", "decision: 'block'", "process.stdout.write JSON", "process.exit(0)"],
+      "key_code": [
+        {"symbol": "shebang + require pattern", "location": "L1-L3", "description": "Line 1: `#!/usr/bin/env node`. Lines 2-3: CommonJS `const { existsSync } = require('node:fs')` and `const { join } = require('node:path')`. .cjs extension is canonical. Cross-platform path joining via node:path. Zero external deps — bundling-friendly."},
+        {"symbol": "guard-then-emit shape", "location": "L5-L18", "description": "Pattern: resolve target paths from process.cwd(), early-exit-zero on non-applicable state, otherwise emit a single JSON object on stdout. Claude Code parses stdout JSON to act on `decision: 'block'` with `reason` shown to user. archive-hint.js will follow the SAME shape but its guard reads .fabric/events.jsonl and counts plan_contexts since the last knowledge.proposed event."},
+        {"symbol": "stdout JSON for Claude Code", "location": "L12-L18", "description": "process.stdout.write(JSON.stringify({decision: 'block', reason: '...'})). NOT stderr + exit 2. The rc.2 task description says 'exit 2 + stderr' — this is INCORRECT for Claude Code; Claude Code uses stdout JSON. The exit-2-stderr pattern is for Cursor (followup_message field) and Codex CLI (different schema). Each client needs the right output shape."}
+      ],
+      "topic_relation": "Patterns exploration must flag that the existing Claude hook uses stdout-JSON, not stderr+exit-2 as the rc.2 task brief assumes — archive-hint.js needs three output modes (or three scripts) not one universal stderr emitter."
+    },
+    {
+      "path": "templates/codex-hooks/fabric-stop-reminder.cjs",
+      "relevance": 0.92,
+      "rationale": "Codex Stop-equivalent hook. Same shebang/require shape as Claude hook but emits a DIFFERENT JSON shape on stdout: {decision: 'block', reason: '...'} — note that Codex actually accepts the same {decision, reason} format as Claude here. This is the pattern archive-hint.js Codex variant follows.",
+      "role": "pattern_reference",
+      "discovery_source": "bash-scan",
+      "key_symbols": ["fabric-stop-reminder", "decision: 'block'", "Codex hooks JSON"],
+      "key_code": [
+        {"symbol": "Codex stop-hook output", "location": "L12-L18", "description": "Same JSON shape as Claude — {decision: 'block', reason: '...'}. Code is essentially identical to fabric-init-reminder.cjs. This means archive-hint.js can be ONE script for both clients with .cjs extension; only the config-side wiring differs."}
+      ],
+      "topic_relation": "Confirms cross-client hook script can be one Node file (not three) — only the per-client config registration differs. Aligns with Round 5 decision in discussion.md L451: 'hook 脚本本身可以是单份 Node 实现，三客户端配置指向同一脚本'."
+    },
+    {
+      "path": "templates/codex-hooks/fabric-session-start.cjs",
+      "relevance": 0.78,
+      "rationale": "Codex session-start hook showing the OTHER Codex JSON output shape: {hookSpecificOutput: {additionalContext: '...'}} for SessionStart-style events. Demonstrates that Codex hooks have event-specific output schemas — Stop uses {decision, reason} (same as Claude), SessionStart uses {hookSpecificOutput.additionalContext}. archive-hint.js is bound to Stop only, so the simpler shape applies.",
+      "role": "pattern_reference",
+      "discovery_source": "bash-scan",
+      "key_symbols": ["hookSpecificOutput", "additionalContext"],
+      "key_code": [
+        {"symbol": "Codex SessionStart shape", "location": "L12-L19", "description": "process.stdout.write(JSON.stringify({hookSpecificOutput: {additionalContext: '...'}})) — used for non-blocking context injection. Different from Stop which uses decision/reason. Documented because it shows Codex schema is event-specific."}
+      ],
+      "topic_relation": "Useful for clarification_needs — confirms there are at least two Codex hook output schemas; rc.2 archive-hint.js targets Stop-event so uses the {decision, reason} shape, but the doc must avoid copying the SessionStart shape by mistake."
+    },
+    {
+      "path": "packages/server/src/services/event-ledger.ts",
+      "relevance": 0.88,
+      "rationale": "Authoritative reader implementation for .fabric/events.jsonl inside the server process. Documents the exact JSONL parsing semantics archive-hint.js must REPLICATE (not import — the hook runs out-of-process): split on /\\r?\\n/, trim, filter empty, JSON.parse per-line, detect partial-write-at-tail (no trailing newline), filter by event_type and ts. The archive-hint.js script needs the same partial-tail tolerance.",
+      "role": "pattern_reference",
+      "discovery_source": "bash-scan",
+      "key_symbols": ["readEventLedger", "EVENT_LEDGER_PATH", "lines.split(/\\r?\\n/)", "hasTrailingNewline", "partialLine", "options.event_type", "options.since"],
+      "key_code": [
+        {"symbol": "readEventLedger()", "location": "L52-L100+", "description": "Reads getEventLedgerPath(projectRoot) (which is `<projectRoot>/.fabric/events.jsonl`). Returns ENOENT → empty events list, NOT throw. Splits on /\\r?\\n/, detects non-trailing-newline as partial_write_at_tail warning. Filters: event_type filter, since (ts >=) filter. archive-hint.js must apply the same patterns: ENOENT-tolerant, regex line-split, ts-based filtering."},
+        {"symbol": "EVENT_LEDGER_PATH constant", "location": "L13-L14 in _shared.ts", "description": "EVENT_LEDGER_FILE = 'events.jsonl'; EVENT_LEDGER_PATH = '.fabric/events.jsonl'. Hardcoded relative path. Hook script must hardcode the same string."}
+      ],
+      "topic_relation": "The hook script is an out-of-process consumer of this exact file; matching the partial-write tolerance is required for correctness because the server may be appending while the hook reads."
+    },
+    {
+      "path": "packages/server/src/services/_shared.ts",
+      "relevance": 0.75,
+      "rationale": "Source of the .fabric/events.jsonl path constants and projectRoot resolution function. archive-hint.js must duplicate the path string ('.fabric/events.jsonl') because it cannot import from @fenglimg/fabric-shared (no node_modules access from a hook in user repos).",
+      "role": "type_definition",
+      "discovery_source": "bash-scan",
+      "key_symbols": ["FABRIC_DIR", "EVENT_LEDGER_FILE", "EVENT_LEDGER_PATH", "getEventLedgerPath"],
+      "key_code": [
+        {"symbol": "path constants", "location": "L9-L14", "description": "FABRIC_DIR = '.fabric'; EVENT_LEDGER_FILE = 'events.jsonl'; EVENT_LEDGER_PATH = '.fabric/events.jsonl'. Hook script must hardcode these (cannot import) — keep as a top-of-file CONSTANTS block."},
+        {"symbol": "getEventLedgerPath()", "location": "L24-L26", "description": "join(projectRoot, EVENT_LEDGER_PATH). Hook resolves projectRoot via process.cwd() — the existing fabric-init-reminder.cjs L5 does exactly this."}
+      ],
+      "topic_relation": "Path-constant DRY violation between hook script and server package is unavoidable here (hook runs without node_modules); patterns exploration must flag it explicitly so reviewer doesn't ask 'why hardcoded'."
+    },
+    {
+      "path": "packages/server/src/services/doctor.test.ts",
+      "relevance": 0.85,
+      "rationale": "Contains the EXACT Claude Code Stop hook config schema as a test fixture (L141, L162) — this is the only place in the codebase that documents the .claude/settings.json hooks shape. Schema: hooks.Stop[] = [{matcher: '*', hooks: [{type: 'command', command: '<path>'}]}]. This is what the Claude config writer for archive-hint.js must produce.",
+      "role": "pattern_reference",
+      "discovery_source": "bash-scan",
+      "key_symbols": ["hooks.Stop", "matcher", "type: 'command'"],
+      "key_code": [
+        {"symbol": "Claude settings.json hooks schema", "location": "L141, L162", "description": "{hooks: {Stop: [{matcher: '*', hooks: [{type: 'command', command: '.claude/hooks/reminder.cjs'}]}]}} — top-level `hooks` key, then per-event ('Stop') array, each entry has `matcher` (string glob, '*' = match all) and a `hooks` sub-array of {type, command} pairs. Command is a project-relative string path. rc.2 must merge this entry into existing settings.json without clobbering other keys (mcpServers, etc.)."}
+      ],
+      "topic_relation": "This is the only authoritative Claude Code hook schema reference in the repo; rc.2 will use this exact shape for the archive-hint.js registration entry."
+    },
+    {
+      "path": "packages/cli/src/config/resolver.ts",
+      "relevance": 0.8,
+      "rationale": "Reveals the Codex hook config path: .codex/hooks.json (NOT hooks.toml). The task brief says 'Codex hooks.toml' — this is INCORRECT for Codex CLI which uses hooks.json per developers.openai.com/codex/hooks. resolver.ts L157 probes existsSync(join(workspaceRoot, '.codex', 'hooks.json')) as the v2 capability detection.",
+      "role": "config",
+      "discovery_source": "bash-scan",
+      "key_symbols": [".codex/hooks.json", "configPath: '~/.codex/config.toml'", "installedCapabilities.hook"],
+      "key_code": [
+        {"symbol": "Codex hook detection", "location": "L156-L157", "description": "installedCapabilities.hook = existsSync(join(workspaceRoot, '.codex', 'hooks.json')). Confirms Codex hook config file is hooks.JSON, not hooks.TOML. Codex's user-level config (~/.codex/config.toml) is TOML, but the project-level hooks file is JSON."},
+        {"symbol": "Codex CLI capabilities block", "location": "L144-L163", "description": "Codex CLI has bootstrap/mcp/hook/skill all true; hook is detected by existence of .codex/hooks.json at workspaceRoot."}
+      ],
+      "topic_relation": "Patterns exploration MUST flag this as a clarification_need — task brief says 'hooks.toml' but actual file is 'hooks.json'. This is a name correction not a semantic blocker."
+    },
+    {
+      "path": ".workflow/.analysis/ANL-2026-05-10-fabric-knowledge-pivot/discussion.md",
+      "relevance": 0.92,
+      "rationale": "Source of the layer classification heuristic and 5-type extraction rules locked at Round 3. L344-L347 contains the exact decision tree text that fabric-archive SKILL.md must embed; L355-L362 contains the exact Hook trigger thresholds (5 plan_contexts since last knowledge.proposed OR 24h fallback); L344-L391 enumerates all locked design constraints for the SKILL prompt template.",
+      "role": "context_only",
+      "discovery_source": "manual",
+      "key_symbols": ["Layer 分类启发式", "强 team 信号", "强 personal 信号", "默认 team", "Hook 设计（最终版）"],
+      "key_code": [
+        {"symbol": "Layer classification heuristic (verbatim)", "location": "L344-L347", "description": "强 team: 引用本项目代码、团队共识用语（'we decided'）、fabric-import 路径产物、业务领域、绑定本项目代码的 pitfall. 强 personal: 第一人称偏好、跨项目通用、工具/编辑器偏好、个人工作流. 默认 team: 安全偏置——错标 team 在 PR review 中会被发现，错标 personal 静默丢失. This is the EXACT text that goes into fabric-archive SKILL.md decision tree section."},
+        {"symbol": "Hook trigger thresholds (verbatim)", "location": "L355-L362", "description": "Stop hook 监控 events.jsonl. 距上次 knowledge.proposed 超 N 次 plan_context（推荐 N=5）→ 推 archive skill. pending/ 条目数 ≥ M（推荐 M=10）→ 推 review skill. 绝对时间兜底: ≥ 24h / ≥ 7 天分别为两类信号. 机制: exit 2 + stderr 输出'建议调用 fabric-{archive|review} skill'. 指标用 plan_context 计数而非 rule 引用."},
+        {"symbol": "5 knowledge types", "location": "L33", "description": "Adopt the 5 types (model/decision/guideline/pitfall/process) and lifecycle (draft→verified→proven). These are the 5 enum values that the extraction prompt in fabric-archive SKILL.md asks the LLM to classify each candidate against."},
+        {"symbol": "Skill internalizes prompt — no MCP fab_get_extraction_prompt", "location": "L327, L386", "description": "拒绝 fab_get_extraction_prompt MCP 工具: prompt 模板属于 Skill 内容. Skill 是数据 + 教学 + 流程的统一容器. Confirms Q3 decision: SKILL.md must contain the FULL prompt template embedded inline."}
+      ],
+      "topic_relation": "Patterns exploration's whole reason-to-exist for fabric-archive SKILL.md content is to copy the verbatim decision text from this file into the skill — heuristic, thresholds, 5-type list, and skill-internalizes-prompt rule all originate here."
+    },
+    {
+      "path": ".workflow/.analysis/ANL-2026-05-10-fabric-knowledge-pivot/discussion-followup.md",
+      "relevance": 0.7,
+      "rationale": "Locks the schema tags field, file naming convention (id--slug.md), pending/ subtree exclusion from MCP plan_context, and the 7 contracts that bound the rc.2 SKILL.md prompt. Notably L60 confirms fabric-archive SKILL.md carries the 5-rule slug naming guideline (kebab-case, 2-5 words, 20-40 chars, semantic core only, unique within type+layer).",
+      "role": "context_only",
+      "discovery_source": "manual",
+      "key_symbols": ["fabric-archive SKILL.md", "slug naming guideline", "pending frontmatter"],
+      "key_code": [
+        {"symbol": "filename convention", "location": "L60", "description": "filename = `<id>--<slug>.md`. LLM proposes slug, fabric-archive SKILL.md carries naming guideline (5 rules). Layer-flip = git mv updating prefix; slug-rename = git mv keeping id stable."},
+        {"symbol": "pending frontmatter (no id field)", "location": "L72", "description": "pending frontmatter has only `type / maturity:draft / layer / created_at / source_session / tags` — no stable_id yet (assigned at promote). fabric-archive SKILL.md prompt MUST instruct the LLM to omit id field for pending entries."}
+      ],
+      "topic_relation": "Patterns exploration uses this to verify the SKILL.md prompt template covers slug naming + pending frontmatter contract — both are non-negotiable for the LLM to output correctly."
+    },
+    {
+      "path": "packages/cli/templates/agents-md/AGENTS.md.template",
+      "relevance": 0.3,
+      "rationale": "Existing template-under-packages/cli/templates pattern. Confirms that the canonical packaging path for v2 templates IS packages/cli/templates/{kind}/<name>/<file> — fabric-archive SKILL.md should land at packages/cli/templates/skills/fabric-archive/SKILL.md per task brief, NOT under root /templates/.",
+      "role": "context_only",
+      "discovery_source": "bash-scan",
+      "topic_relation": "Confirms the rc.2 file location decision (packages/cli/templates/skills/...) is consistent with how AGENTS.md.template is packaged today."
+    },
+    {
+      "path": "packages/cli/src/commands/hooks.ts",
+      "relevance": 0.4,
+      "rationale": "Documents the explicit decision to deprecate v1 husky pre-commit and route all hook installation to per-client mechanisms (Claude Code Stop/SessionStart, Codex CLI hooks.json). Comment at L55-L62 is the architectural rationale rc.2 must respect: there is NO unified `fab hooks install` command in v2 — installation is per-client and lives inside `fab init`'s hook stage.",
+      "role": "context_only",
+      "discovery_source": "bash-scan",
+      "key_code": [
+        {"symbol": "v2 hook installation policy comment", "location": "L55-L62", "description": "v2/rc.2 husky pre-commit installer removed. v2 hook story owned by per-client mechanisms (Claude Code Stop/SessionStart hooks, Codex CLI hooks.json). installHooks() throws clearly. rc.2 archive-hint.js installation must therefore go through fab init's per-client wiring, not via a fab hooks install command."}
+      ],
+      "topic_relation": "Sets the architectural boundary: archive-hint.js is installed during fab init via per-client config writers, not via a unified hooks command."
+    }
+  ],
+  "patterns": "PATTERN 1 — SKILL.md format (template ref: templates/claude-skills/fabric-init/SKILL.md): YAML frontmatter with three keys (name, description as one-paragraph WHEN-to-use, allowed-tools). Body order: Precondition (state-gating) → numbered Phase workflow (Phase 0 active recon, Phase 1 user review batch, Phase 2 automatic write) → Hard Rules (DO NOT TRANSLATE) split into DISPLAY Rules and WRITE Rules with MUST/NEVER opening every line, ending with explicit `protected tokens` enumeration. Length norm: ~180 lines. Bilingual zh+en headers acceptable. Decision trees expressed as bulleted sub-decisions under HIGH/MEDIUM/LOW or 强/默认 confidence tiers. Embedded review templates use ```md fenced blocks with placeholder syntax `<statement>` / `[HIGH|MEDIUM|LOW]`. PATTERN 2 — cross-platform Node hook script (template ref: templates/{claude,codex}-hooks/fabric-*-reminder.cjs): single CJS file (.cjs extension), shebang `#!/usr/bin/env node`, `require('node:fs')` and `require('node:path')` only, zero external deps, paths joined via path.join(process.cwd(), '.fabric', 'events.jsonl'). Output shape varies by event: Claude Stop and Codex Stop both accept `{decision: 'block', reason: '<text>'}` JSON on stdout; Codex SessionStart uses `{hookSpecificOutput: {additionalContext: '<text>'}}`. Skip-state path: process.exit(0) before any output. Single Node file can serve all three clients — only the config-side registration differs. NOTE: rc.2 task brief says `exit 2 + stderr` but actual existing pattern is `stdout JSON + exit 0` — this is a critical correction. PATTERN 3 — events.jsonl reader (server-side authoritative ref: packages/server/src/services/event-ledger.ts readEventLedger): resolve path via projectRoot + '.fabric/events.jsonl'; readFile utf8; ENOENT → empty list (do not throw); split on /\\r?\\n/; detect partial-tail line (no trailing newline) and surface as warning, drop from event list; trim+filter empty; JSON.parse per-line, swallow per-line parse errors and drop the line; filter by event_type and ts (since). archive-hint.js must replicate this WITHOUT importing — it runs from a user repo's .claude/hooks dir with no node_modules access. PATTERN 4 — three-client hook config schemas: Claude Code → .claude/settings.json `{hooks: {Stop: [{matcher: '*', hooks: [{type: 'command', command: '.claude/hooks/archive-hint.cjs'}]}]}}` (verified via doctor.test.ts L141). Cursor → .cursor/hooks.json with stop event + followup_message field (per discussion.md L449, schema unverified locally — Web research needed at planning time, defer). Codex CLI → .codex/hooks.json (NOT hooks.toml as task brief states; verified via packages/cli/src/config/resolver.ts L157). Top-level shape for Codex hooks.json is unverified locally — schema lookup at developers.openai.com/codex/hooks deferred. PATTERN 5 — layer classification heuristic (verbatim from discussion.md L344-L347): 强 team signals = references to this repo's code, team-consensus phrasing ('we decided'), fabric-import path artifacts, business domain, project-bound pitfall. 强 personal signals = first-person preferences, cross-project generic, tool/editor preferences, personal workflow. Default = team (safety bias: mislabeling team gets caught in PR review; mislabeling personal silently lost). The 5 knowledge types are model | decision | guideline | pitfall | process; maturity is draft→verified→proven; layer is personal | team. PATTERN 6 — hook threshold logic: count plan_context_returned events since the last knowledge.proposed event in events.jsonl; if count >= 5 OR (now - last_knowledge_proposed_ts) > 24h, emit the archive prompt. Use plan_context counts NOT rule references — entry-point signal is most stable.",
+  "dependencies": "Hook script runtime deps: ZERO npm packages. Only node:fs (existsSync, readFileSync), node:path (join). Must be vendor-free because it executes from a user repo's .claude/hooks/ or .codex/hooks/ directory at the user's process.cwd(), with no node_modules guarantee. Cannot import @fenglimg/fabric-shared, cannot import packages/server services. Path constants ('.fabric/events.jsonl', event_type literal 'knowledge.proposed', event_type literal 'plan_context_returned' or whichever final name) MUST be hardcoded as top-of-file CONSTANTS — accept the DRY violation. SKILL.md has no runtime deps (it's a markdown file consumed by the LLM via the Skill tool). Compile-time/packaging deps: rc.2 must publish the SKILL.md and archive-hint.cjs as bundled assets shipped with @fenglimg/fabric-cli — see how packages/cli/templates/agents-md/AGENTS.md.template is currently packaged for the existing pattern. Implicit dependency on event vocabulary: the hook reads event_type values (knowledge.proposed, plan_context_returned or equivalent) that are owned by event-ledger.ts schema; if names are renamed in TASK-006 (event-vocabulary rename mentioned in doctor.ts L1237 comment) the hook breaks silently — call this out in handoff.",
+  "integration_points": "INT-1 (fab init hook stage): rc.2 must extend fab init to write the three per-client hook configs after the existing skill/bootstrap stages. Wire location TBD by rc.2 implementer — likely a new `installHooksV2()` step in init.ts, with per-client writers analogous to the existing claude-code.ts / codex-cli config writers. Existing helpers atomicWriteJson() in packages/cli/src/config/* are the right primitives. INT-2 (events.jsonl reader): archive-hint.cjs reads the ledger that event-ledger.ts writes. Both processes touch the same file; the reader's partial-tail tolerance (see Pattern 3) is the de-facto integration contract. INT-3 (Skill discovery): Claude Code finds SKILL.md by path matching .claude/skills/<name>/SKILL.md — fab init must copy packages/cli/templates/skills/fabric-archive/SKILL.md to <repo>/.claude/skills/fabric-archive/SKILL.md. Codex equivalent: .codex/skills/fabric-archive/SKILL.md. The hook's reason text references the skill location ('调用 fabric-archive skill') and assumes the skill is already installed — install order: skill first, hook second. INT-4 (knowledge.proposed event): the hook's threshold check counts plan_context_returned events since last knowledge.proposed event. Both events must exist in event-ledger.ts schema before rc.2 hook can run; gate on TASK-004 (event pre-registration) per discussion-followup.md L216. INT-5 (settings.json merge semantics): Claude config writer must merge into an existing settings.json without clobbering mcpServers, permissions, or other hooks (e.g. UserPromptSubmit). doctor.ts L1239-L1278 demonstrates the read-modify-write pattern with atomicWriteJson — reuse that.",
+  "constraints": "C-1 (hook runtime): zero npm deps; CommonJS only (.cjs); shebang required; must work on Windows, macOS, Linux — use node:path.join always, never string concatenation with '/'. C-2 (output shape per client): Claude Stop and Codex Stop both expect stdout JSON {decision, reason}; do NOT use stderr+exit2 even though task brief says so — this would be a regression from existing fabric-init-reminder.cjs pattern. Cursor expects stdout JSON with followup_message (schema details deferred). C-3 (events.jsonl partial-tail): the file may be mid-append when the hook reads; last line may be incomplete. Drop incomplete tail line silently — DO NOT crash. C-4 (path resolution): hook runs at user's process.cwd() which is the repo root in 99% of cases but not guaranteed — if .fabric/events.jsonl is missing, exit 0 silently (do not block). C-5 (no MCP fab_get_extraction_prompt): the prompt template MUST be embedded in SKILL.md (Q3 decision, discussion.md L386). The MCP tool surface stays at 4 (fab_plan_context, fab_get_rule_sections, fab_extract_knowledge, fab_review). C-6 (Codex hooks file is .codex/hooks.json, not hooks.toml): the task brief misnames it. Correct on rc.2 implementation start. C-7 (single Node script across 3 clients): per discussion.md L451 the same .cjs script is referenced from all three configs — only the config registration differs. Do not author three scripts. C-8 (skill copy install order): fab init must copy SKILL.md before writing the hook config, otherwise the hook's reason text points to a nonexistent skill path. C-9 (5-type list locked): model | decision | guideline | pitfall | process. Locked at R3. SKILL.md prompt must request exactly these enum values from the LLM. C-10 (default-team bias): the heuristic resolves ambiguity to layer=team. SKILL.md decision tree must encode this fallback explicitly. C-11 (filename convention): pending entries land at .fabric/knowledge/pending/<type>/<slug>.md; promoted entries land at .fabric/knowledge/<type>/<id>--<slug>.md. SKILL.md prompt instructs LLM to propose slug only; id assignment is deferred to fab_review.",
+  "clarification_needs": [
+    {
+      "question": "Should archive-hint script use stdout-JSON {decision: 'block', reason: '...'} (matching the existing fabric-init-reminder.cjs pattern in this repo) OR stderr + exit 2 (as the rc.2 task brief states)?",
+      "context": "Task brief Step 2 in the prompt says archive-hint.js emits 'advisory output (stderr + exit code)' but every existing Claude/Codex hook script in templates/{claude,codex}-hooks/ uses stdout JSON with exit 0 and decision='block'. Discussion.md L361 mentions 'exit 2 + stderr' for the conceptual mechanism but Round 5 cross-client validation locked the actual implementation to a single Node script that already follows stdout-JSON. The two are inconsistent. Stdout-JSON is the established Claude Code hook contract; exit-2-stderr is an older spec.",
+      "options": [
+        "Use stdout JSON {decision: 'block', reason: '...'} for all three clients (matches existing repo pattern, Claude+Codex Stop both accept this shape)",
+        "Use stderr + exit 2 (matches discussion.md L361 conceptual text, but inconsistent with existing fabric-*-reminder.cjs scripts)",
+        "Per-client output: stdout JSON for Claude/Codex; exit 2 + stderr for Cursor's hook spec (mixed approach)"
+      ],
+      "recommended": 0
+    },
+    {
+      "question": "Is Codex's project-level hook config file `.codex/hooks.json` or `.codex/hooks.toml`?",
+      "context": "Task brief explicitly says 'Codex hooks.toml' but packages/cli/src/config/resolver.ts L157 probes existsSync('.codex/hooks.json') and the existing codex-hooks template ships .cjs scripts that imply JSON config. Codex's user-level config (~/.codex/config.toml) IS TOML, but per-project hooks file is JSON. Web verification of developers.openai.com/codex/hooks needed at rc.2 implementation start.",
+      "options": [
+        ".codex/hooks.json (matches resolver.ts probe; assume task brief is incorrect)",
+        ".codex/hooks.toml (trust task brief; resolver.ts is wrong and needs fixing)",
+        "Web-verify before rc.2 implementation by fetching developers.openai.com/codex/hooks and lock at planning time"
+      ],
+      "recommended": 2
+    },
+    {
+      "question": "Should fabric-archive ship one SKILL.md (canonical claude-style with allowed-tools and full Phase 0/1/2 + Hard Rules) or two flavors (Claude-rich + Codex-light, mirroring the existing templates/claude-skills vs templates/codex-skills asymmetry)?",
+      "context": "Existing fabric-init has TWO SKILL.md variants — Claude version is 180 lines with allowed-tools and Phase structure, Codex version is 28 lines with linear workflow. rc.2 task brief says 'Skill internalizes prompt template' (singular) but doesn't specify single-vs-dual. Cursor doesn't have Skills (per discussion.md L96) so at most TWO are needed. The single-source approach is cheaper to maintain but Codex skill conventions historically prefer leaner format.",
+      "options": [
+        "One canonical SKILL.md, claude-style (full Phase + Hard Rules), copy verbatim to both .claude/skills/ and .codex/skills/",
+        "Two flavors: claude-rich + codex-light, maintained as separate templates",
+        "One canonical SKILL.md, but with a Codex-compat preamble that strips allowed-tools at install time"
+      ],
+      "recommended": 0
+    },
+    {
+      "question": "Cursor's `.cursor/hooks.json` schema (stop event + followup_message field) is referenced in discussion.md L449 but no local code or fixture documents the exact JSON shape — fetch the spec at rc.2 planning time, or block exploration now?",
+      "context": "Patterns exploration cannot verify Cursor hook config shape without web access. discussion.md L623 says 'cursor.com/cn/docs/hooks' is the reference. Claude config and Codex config can both be derived from local code; only Cursor needs web research.",
+      "options": [
+        "Defer Cursor schema to rc.2 planning (web fetch at that time); patterns exploration documents Claude+Codex now and lists Cursor as research-needed",
+        "Block exploration until web research possible (would require WebFetch tool availability)",
+        "Skip Cursor in rc.2; ship Claude + Codex first, add Cursor in rc.2.1"
+      ],
+      "recommended": 0
+    },
+    {
+      "question": "Hook threshold counter — should the 'plan_context count since last knowledge.proposed' logic require a NEW event_type (e.g. plan_context_returned) in events.jsonl, or can it derive from existing event vocabulary?",
+      "context": "discussion.md L362 says 'use plan_context counts'. event-ledger.ts has edit_intent_checked, knowledge_selection events today. discussion-followup.md mentions TASK-006 broader event-vocabulary rename. The hook's threshold logic depends on which events are emitted — if plan_context_returned doesn't exist yet, the hook always reads count=0 and never fires. This must be checked at TASK-004 / rc.2 boundary.",
+      "options": [
+        "Pre-register plan_context_returned + knowledge.proposed events in TASK-004 (Day-1 gate task) before rc.2 hook implementation starts",
+        "Derive count from existing edit_intent_checked events (less precise but ships now)",
+        "Block rc.2 hook implementation until event vocabulary is locked"
+      ],
+      "recommended": 0
+    }
+  ],
+  "_metadata": {
+    "timestamp": "2026-05-10T00:00:00Z",
+    "task_description": "Patterns exploration for Fabric v2.0 rc.2 — focused on existing Skill templates and hook script conventions. Capture SKILL.md format, cross-platform Node hook script pattern, three-client hook config schemas (Claude Code Stop / Cursor stop / Codex hooks.json), events.jsonl reader pattern, and verbatim layer classification heuristic.",
+    "source": "cli-explore-agent",
+    "exploration_angle": "patterns",
+    "exploration_index": 1,
+    "total_explorations": 1,
+    "duration_seconds": 240
+  }
+}

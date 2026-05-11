@@ -1,0 +1,107 @@
+{
+  "summary": "Fabric v2.0 rc.3: review/promote half of the knowledge cycle — fab_review MCP tool (6 actions: list/approve/reject/modify/search/defer with late-bind id allocation, layer-flip via id reallocation, 2-phase events), fabric-review Skill template with mode inference, archive-hint.cjs second signal (pending overflow → review skill), doctor filesystem-edit fallback, install pipeline + integration tests + dogfood + batched-end gate. Schemas pre-locked at api-contracts.ts:332-440 (zero degrees of freedom). 9 atomic tasks, single-script hook (extends not forks), batched Gemini review at end per user MEMORY.md. Final deliverable: local annotated tag v2.0.0-rc.3 (no push).",
+  "approach": "Two parallel-safe groups land first (TASK-001 server core + TASK-003 skill template + TASK-004 hook extension + TASK-005 doctor extension are independent; can be authored concurrently). TASK-002 layers reject/modify/search/defer onto TASK-001 (sequential dep). TASK-006 wires installer for TASK-003 skill (depends on TASK-003). TASK-007 integration tests need TASK-001+002+005 service surfaces. TASK-008 dogfood needs TASK-001+002+005+006 deployed (real install + service flow). TASK-009 final gate batches Gemini review + coverage gate + tag (depends on all 8). Each task = 1 atomic conventional commit on main. Service uses execFileSync git mv (existing precedent at packages/cli/src/scanner/forensic.ts:414, packages/server/src/services/rehydrate-state.ts:1) — no new dep. Layer-flip is the only legal stable_id mutation (allocates new id under target layer, git mvs across layer roots, emits knowledge_layer_changed). Filesystem-edit fallback uses reason-prefix '[synthesized]' to avoid envelope schema bump.",
+  "task_ids": ["TASK-001", "TASK-002", "TASK-003", "TASK-004", "TASK-005", "TASK-006", "TASK-007", "TASK-008", "TASK-009"],
+  "task_count": 9,
+  "estimated_time": "12-16 hours total: TASK-001 (2.5h, server core+tests), TASK-002 (2h, 4 actions+tests), TASK-003 (1.5h, prose), TASK-004 (1h, hook ext+tests), TASK-005 (1h, doctor check+tests), TASK-006 (1h, install wiring), TASK-007 (1.5h, integration tests), TASK-008 (1h, dogfood execution), TASK-009 (1.5-2h, batched gate)",
+  "recommended_execution": "Codex",
+  "complexity": "High",
+  "design_decisions": [
+    {
+      "decision": "Single fab_review MCP tool with discriminated-union switch over 6 actions",
+      "rationale": "Cursor 40-tool cap forces consolidation; schemas already pre-locked as discriminated union",
+      "tradeoff": "review.ts grows to 300-400 LOC; mitigated by TASK-001/002 split keeping each PR reviewable"
+    },
+    {
+      "decision": "execFileSync('git', ['mv', from, to]) for approve+layer-flip (no simple-git dep)",
+      "rationale": "Existing repo precedent (forensic.ts:414, rehydrate-state.ts:1); no new dep; sync fits service flow; failures throw → emit promote_failed",
+      "tradeoff": "Tests need real git init in tmpdir (~30-60ms per test) instead of mocking — accepted for higher fidelity"
+    },
+    {
+      "decision": "Layer-flip = drop old id + allocate NEW id under new layer + git mv across layer roots (counter-monotonic)",
+      "rationale": "Q-review locked decision; KnowledgeIdAllocator counters are per-(layer,type) so id-prefix-swap would break counter independence; layer_changed event has from_layer/to_layer for forensic replay",
+      "tradeoff": "Old stable_id is permanently retired (counters monotonic); existing references in events.jsonl still resolve via prior_stable_id link in modify response"
+    },
+    {
+      "decision": "Single archive-hint.cjs handles both archive and review signals via signal field in stdout JSON (not forking review-hint.cjs)",
+      "rationale": "User KT-D entry on disk argues for single-script DRY; one template install; one threshold-config block; precedence: archive > review",
+      "tradeoff": "decide() now has 4 branch outcomes (archive-only, review-only, both→archive-wins, none→null); mitigated by inline comments + 4-outcome test coverage"
+    },
+    {
+      "decision": "Filesystem-edit fallback uses reason='[synthesized] filesystem-edit-fallback' (string prefix) instead of adding boolean field to schema",
+      "rationale": "Avoids shared-schema bump and migration; reason field is free-text; grep-able for forensic queries; constant SYNTHESIZED_PROMOTED_REASON imported from shared",
+      "tradeoff": "String-prefix conventions risk drift over rc cycles; mitigated by exporting the constant from a single shared module"
+    },
+    {
+      "decision": "Mode inference inside SKILL.md prose (not server-side); AskUserQuestion locked to genuine choices only",
+      "rationale": "Q-review locked decision; per Boundary B, semantic checks delegate to LLM; system DOES NOT ask user for mode (algorithm: scan recent user message → events.jsonl tail → pending count → infer)",
+      "tradeoff": "Prose-as-program limits machine-checkability; mitigated by grep-verifiable section headers in TASK-003 convergence criteria"
+    },
+    {
+      "decision": "Batched Gemini review at end (TASK-009), not per-task",
+      "rationale": "Explicit user MEMORY.md preference (feedback_review_batching.md): for multi-task lite-plan chains, run Gemini review + coverage ONCE at end",
+      "tradeoff": "End-of-cycle gate cannot catch per-task drift early; mitigated by per-task vitest test runs (per-task convergence) and coverage gate ALLOWLIST scoped to net-new files"
+    },
+    {
+      "decision": "rc.3 reject preserves file on disk (no auto-deletion)",
+      "rationale": "Audit history preservation; rc.4 doctor will own retention/cleanup policy",
+      "tradeoff": "Pending tree slowly accumulates rejected entries; rc.4 ships vacuum"
+    }
+  ],
+  "data_flow": {
+    "diagram": "Skill (fabric-review SKILL.md) → mode inference → fab_review MCP tool (action) → tools/review.ts handler → services/review.ts dispatcher → [list reads pending + canonical | approve allocates id + git mv + 2-phase events | reject emits event | modify in-place OR layer-flip with id reallocation + git mv + layer_changed event | search filters in-memory | defer emits event] → events.jsonl ledger → (downstream) archive-hint.cjs reads ledger + scans pending → emits review/archive signal on Stop hook → doctor synthesizes promoted event for filesystem-edit orphans",
+    "stages": [
+      {"stage": "skill-invocation", "input": "user message + project state (pending count + recent events)", "output": "inferred mode + per-mode flow execution", "component": "packages/cli/templates/skills/fabric-review/SKILL.md", "transformations": ["mode inference algorithm", "per-item AskUserQuestion routing"]},
+      {"stage": "mcp-tool-dispatch", "input": "FabReviewInput (discriminated union)", "output": "FabReviewOutput", "component": "packages/server/src/tools/review.ts → packages/server/src/services/review.ts", "transformations": ["switch on action", "delegate to action handlers"]},
+      {"stage": "approve-action", "input": "pending_paths[]", "output": "approved[{pending_path, stable_id}]", "component": "approveOne helper", "transformations": ["frontmatter parse", "KnowledgeIdAllocator.allocate(layer,type)", "execFileSync git mv", "atomicWriteText id-rewrite", "appendEventLedgerEvent x2 (started+promoted) or +1 (failed)"]},
+      {"stage": "modify-layer-flip", "input": "{pending_path, changes:{layer:'X'}}", "output": "{pending_path, prior_stable_id, new_stable_id}", "component": "modify branch", "transformations": ["allocate new id under new layer", "git mv across layer roots", "rewrite frontmatter id+layer", "emit knowledge_promote_started + knowledge_layer_changed{from_layer,to_layer}"]},
+      {"stage": "filesystem-edit-fallback", "input": "canonical .md files + events.jsonl", "output": "synthesized knowledge_promoted events", "component": "packages/server/src/services/doctor.ts createKnowledgePromotedSynthesizedCheck", "transformations": ["scan canonical/, parse stable_id from filename", "diff vs ledger promoted-set", "synthesize event with reason='[synthesized] filesystem-edit-fallback' on doctor --fix"]},
+      {"stage": "stop-hook-signal", "input": "events.jsonl + pending tree stats", "output": "stdout JSON {decision, reason, signal:'archive'|'review'} or null", "component": "packages/cli/templates/hooks/archive-hint.cjs decide()", "transformations": ["readLedger", "readPendingStats", "trigger evaluation (count>=10 OR oldest>=7d for review; count>=5 OR 24h for archive)", "precedence archive>review"]}
+    ],
+    "dependencies": [
+      "@fenglimg/fabric-shared (FabReviewInputSchema, FabReviewOutputSchema, fabReviewAnnotations, knowledge_* event schemas — all pre-locked, zero new schema work)",
+      "@fenglimg/fabric-shared/node/atomic-write (atomicWriteText, atomicWriteJson)",
+      "node:child_process (execFileSync for git mv)",
+      "node:crypto (randomUUID for requestId)",
+      "node:fs (readdirSync, statSync, existsSync for hook)",
+      "node:fs/promises (readFile, mkdir for service)"
+    ]
+  },
+  "estimated_time_per_task": "1-2.5h each",
+  "_metadata": {
+    "timestamp": "2026-05-10T20:00:00.000Z",
+    "source": "cli-lite-planning-agent",
+    "plan_type": "feature",
+    "schema_version": "2.0",
+    "planning_mode": "agent-based",
+    "exploration_angles": ["integration-points-bridged", "patterns-bridged", "testing-bridged", "git-ops", "id-allocator"],
+    "duration_seconds": 0,
+    "execution_mode": {
+      "coding_executor": "Agent (Claude Code)",
+      "code_review_tool": "Gemini Review (batched at end per user MEMORY.md feedback_review_batching)",
+      "convergence_review_tool": "Agent (Claude Code writes tests + per-file >=90% gate)",
+      "coverage_detection": "Claude Code via scripts/rc3-coverage-gate.mjs",
+      "commit_style": "conventional commits, 1 atomic commit per task"
+    },
+    "batched_review_at_end": true,
+    "source_session": "ANL-2026-05-10-fabric-knowledge-pivot",
+    "bridge_session": "fabric-v2-rc2-impl-2026-05-10",
+    "handoff_acceptance_criteria_count": 12,
+    "handoff_target_files_count": 9,
+    "quality_check": {
+      "executed": true,
+      "method": "internal-analysis",
+      "dimensions": {
+        "completeness": "PASS — all 12 handoff acceptance criteria mapped to tasks; 9 target_files covered",
+        "granularity": "PASS — 9 tasks, 1-2.5h each; T1+T2 split keeps single review.ts file's PRs reviewable",
+        "dependencies": "PASS — DAG validated (no cycles); parallel groups: {T1,T3,T4,T5}→{T2,T6}→T7→T8→T9",
+        "convergence_criteria": "PASS — all quantified (coverage %, event counts, stable_id regex, exit codes)",
+        "implementation_steps": "PASS — 7-12 actionable steps per task",
+        "constraint_compliance": "PASS — pre-locked schemas honored, atomic writes used, single-script hook matches user KT-D, batched review at end per MEMORY, no push, conventional commits"
+      },
+      "issues_found": [],
+      "fixes_applied": [],
+      "recommendation": "PASS"
+    }
+  }
+}

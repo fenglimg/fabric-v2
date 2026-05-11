@@ -1,0 +1,144 @@
+{
+  "session_id": "anl-2026-05-10-fabric-knowledge-pivot-2026-05-10",
+  "summary": "Fabric v2.0 rc.1 — Clean rebrand foundation. Establish v2.0 directory layout (.fabric/knowledge/{5 type subdirs}/ + pending/), dual-root home (~/.fabric/), v2.0 frontmatter schema (id/type/maturity/layer/layer_reason/created_at, all flat scalars), path-decoupled stable_id mechanism (KP-/KT- prefix + monotonic counter persisted in agents.meta.json), and init-time deterministic scan producing 4-7 baseline entries (tech stack/module structure/build/style/CI/README). Adapt existing 2 MCP tools and existing doctor checks to new schema. NO new MCP tools, NO archive/review/import skills, NO Stop hooks, NO doctor --lint, NO README/docs rewrite — those are rc.2/3/4 scope.",
+  "approach": "8-task breakdown grouped by deliverable: (1) delete legacy data, independent. (2) define v2.0 schema in shared/, foundation for rest. (3) implement stable_id counter + allocator on top of schema. (4) update frontmatter parser to extract new fields. (5) adapt existing MCP services (plan-context + rule-sections) to dual-root scan + new schema. (6) adapt existing doctor checks (rename + extend, no new lint checks). (7) implement deterministic init-scan command producing 4-7 baseline entries from forensic.json. (8) rewrite fabric init flow as 4-stage pipeline (bootstrap → scan → mcp → hooks) that creates v2.0 layout + invokes scan + ensures dual-root home. True dependency graph: 1 independent; 2 blocks 3,4,6,7,8; 3 blocks 7,8; 4 blocks 5; 7 blocks 8. Tasks 1,2 can start in parallel; 4,6 can run in parallel after 2; 5 follows 4; 7 follows 2+3; 8 is the convergence (depends on 1,2,3,7).",
+  "complexity": "High",
+  "estimated_time": "550 minutes (~9 hours focused) ≈ 1.5 weeks calendar with reviews/integration",
+  "recommended_execution": "Codex",
+  "task_ids": ["TASK-001", "TASK-002", "TASK-003", "TASK-004", "TASK-005", "TASK-006", "TASK-007", "TASK-008"],
+  "task_count": 8,
+  "design_decisions": [
+    {
+      "decision": "Schema (TASK-002) is foundation; parser/counter/MCP/doctor/scan all consume it",
+      "rationale": "Schema defines the contract; behavior layers (parser, persistence, MCP, doctor, scan) cannot encode/decode fields they don't know about. Establishing the schema first prevents schema-drift across implementation tasks.",
+      "tradeoff": "TASK-002 becomes a critical path bottleneck; mitigated by keeping it pure type/schema work (no behavior) so it lands quickly and unblocks 4-way parallelism downstream."
+    },
+    {
+      "decision": "Frontmatter stays flat scalars; no upgrade to gray-matter / YAML parser",
+      "rationale": "Existing regex parser at rule-meta-builder.ts:748-785 is constrained to flat scalars + flow arrays. v2.0 fields (id/type/maturity/layer/layer_reason/created_at) all fit this constraint. Parser upgrade is out-of-scope refactor.",
+      "tradeoff": "Cannot represent nested metadata like `maturity: {level, last_review}`; mitigated by using flat sibling fields (created_at, layer_reason) instead."
+    },
+    {
+      "decision": "stable_id counter lives in agents.meta.json `counters: {KP, KT}` envelope",
+      "rationale": "Reuses existing durable single-source-of-truth artifact; no new files/sync points. Counter envelope is additive (optional in schema) so v1.x meta files load without migration error.",
+      "tradeoff": "Single point of failure if meta corrupts; mitigated by counter_desync detection added to doctor stable_id_collision check (TASK-006)."
+    },
+    {
+      "decision": "Dual-root scanning: repo .fabric/knowledge/ AND ~/.fabric/knowledge/ merged at request time",
+      "rationale": "gitignore cannot filter by frontmatter; personal entries must be physically separate from team entries to avoid accidental git commits. Single root with frontmatter-based filter was rejected for this reason.",
+      "tradeoff": "Adds I/O per request (two trees scanned); mitigated by 5-minute selection_token cache that reuses parsed nodes within request lifecycle."
+    },
+    {
+      "decision": "Default layer for init-scan baseline entries is 'team' (KT-)",
+      "rationale": "Project artifacts (tech stack, module structure, build config, CI) are inherently team-level — they describe the repo, not personal preferences. Matches rc.4 fabric-import skill default-layer decision.",
+      "tradeoff": "Counter KT advances during init; counter KP stays at 0 until first personal write (rc.2 archive flow). Acceptable — counters are independent."
+    },
+    {
+      "decision": "Doctor adapts existing 4 v1.x-coupled checks but does NOT add new lint checks",
+      "rationale": "rc.4 introduces the 6 new lint checks (orphan demote / stale archive / id duplicate / layer mismatch / index drift / pending overdue) which depend on event types defined by rc.2/3. rc.1 just keeps doctor green on the new layout.",
+      "tradeoff": "No safety net for type/maturity/layer correctness until rc.4; mitigated by parser-level validation in TASK-004 that warns on malformed frontmatter."
+    },
+    {
+      "decision": "Init flow becomes 4-stage pipeline with scan inserted between bootstrap and mcp",
+      "rationale": "Scan needs the v2.0 directory layout and agents.meta.json envelope (created in bootstrap stage); MCP and hooks stages need agents.meta.json populated (output of scan). This ordering is forced by data dependencies.",
+      "tradeoff": "Init takes ~500ms longer; user gets non-empty knowledge base in exchange. Per handoff acceptance #6, non-empty post-init base is an explicit goal."
+    },
+    {
+      "decision": "Delete legacy artifacts immediately (TASK-001) instead of moving to .fabric-v1-archive/",
+      "rationale": "User explicit clean-slate preference (recorded in long-term memory and handoff decision_context). No current users → migration tax is zero → archival is dead weight.",
+      "tradeoff": "Deletion is irrecoverable outside git; mitigated by single-commit batching that makes revert trivial."
+    }
+  ],
+  "data_flow": {
+    "diagram": "user → fab init → [stage 1: bootstrap creates v2.0 layout + agents.meta.json with empty counters] → [stage 2: fab scan reads forensic.json → builds 4-7 entries → KnowledgeIdAllocator → writes .fabric/knowledge/{models|guidelines|processes}/*.md + updates agents.meta.json counters/nodes + emits init_scan_completed event] → [stage 3: mcp config write] → [stage 4: hooks config write] → repo ready. Runtime: client → MCP → fab_plan_context (dual-root scan {.fabric/knowledge/, ~/.fabric/knowledge/} → merge → filter deprecated → return description_index with layer tags + selection_token) → fab_get_rule_sections (consume token, return 4 sections per rule).",
+    "stages": [
+      {
+        "stage": "Schema layer",
+        "input": "v1.x agents-meta.ts schema",
+        "output": "v2.0 ruleDescriptionSchema + agentsMetaSchema with counters envelope + KnowledgeType/Maturity/Layer enums",
+        "component": "packages/shared/src/schemas/",
+        "transformations": ["add 6 frontmatter fields (flat scalars)", "add counters: {KP, KT} envelope", "add 3 new enums", "add formatKnowledgeId/parseKnowledgeId helpers"]
+      },
+      {
+        "stage": "Persistence layer",
+        "input": "Schema + new node with knowledge metadata",
+        "output": "agents.meta.json with declared stable_id (KP-/KT- format) + counter monotonicity invariant",
+        "component": "packages/shared/src/schemas/agents-meta.ts + packages/server/src/services/knowledge-id-allocator.ts + rule-meta-builder.ts",
+        "transformations": ["allocateKnowledgeId pure function", "atomic write of meta with counters", "git mv preserves declared id"]
+      },
+      {
+        "stage": "Read layer",
+        "input": "Markdown files with v2.0 frontmatter",
+        "output": "Parsed RuleDescription with all 6 new fields populated",
+        "component": "packages/server/src/services/rule-meta-builder.ts (extractDescriptionFromFrontmatter)",
+        "transformations": ["regex extractScalar per new field", "warn-and-skip on invalid input", "validate id format + enum membership"]
+      },
+      {
+        "stage": "Discovery layer",
+        "input": "Repo + home filesystem state",
+        "output": "Merged description_index with team + personal entries",
+        "component": "packages/server/src/services/rule-meta-builder.ts (findFabricRuleFiles) + plan-context.ts",
+        "transformations": ["dual-root scan", "auto-mkdir personal root", "filter deprecated", "tag layer", "build selection_token"]
+      },
+      {
+        "stage": "Generation layer",
+        "input": "forensic.json (project facts)",
+        "output": "4-7 baseline markdown entries in .fabric/knowledge/",
+        "component": "packages/cli/src/commands/scan.ts",
+        "transformations": ["6 builder helpers (5 mandatory + 2 optional)", "frontmatter composition", "id allocation", "atomic write", "idempotency via content hash sidecar"]
+      },
+      {
+        "stage": "Init orchestration layer",
+        "input": "Empty repo (or partially-initialized)",
+        "output": "Fully scaffolded v2.0 .fabric/ + ~/.fabric/ + 4-7 baseline entries + clean doctor + working MCP",
+        "component": "packages/cli/src/commands/init.ts (buildInitFabricPlan)",
+        "transformations": ["bootstrap layout", "invoke scan", "wire mcp", "wire hooks", "ensure dual-root home"]
+      }
+    ],
+    "dependencies": ["packages/shared schemas exported to packages/server and packages/cli", "fab_plan_context selection_token TTL machinery (existing 5-min in-memory map)", "events.jsonl append-only ledger (existing infrastructure)", "forensic.json from existing forensic-builder (init stage 1 output)"]
+  },
+  "_metadata": {
+    "timestamp": "2026-05-10T05:50:00+08:00",
+    "source": "cli-lite-planning-agent",
+    "plan_type": "feature",
+    "schema_version": "2.0",
+    "planning_mode": "agent-based",
+    "exploration_angles": ["codebase-discovery"],
+    "duration_seconds": 0,
+    "source_session": "ANL-2026-05-10-fabric-knowledge-pivot",
+    "source_workflow": "analyze-with-file",
+    "scope_boundary": "rc.1 only — clean rebrand foundation",
+    "out_of_scope": [
+      "fab_extract_knowledge MCP tool (rc.2)",
+      "fabric-archive skill template (rc.2)",
+      "Stop hook scripts and configs (rc.2)",
+      "fab_review MCP tool (rc.3)",
+      "fabric-review skill template (rc.3)",
+      "doctor --lint with 6 deterministic checks (rc.4)",
+      "fabric-import skill template (rc.4)",
+      "README rewrite, docs/knowledge-types.md, docs/initialization.md, docs/roadmap.md (rc.4)",
+      "New event types knowledge.proposed/promoted/layer_changed (rc.2/3 scope)",
+      "Any LLM-driven extraction or review logic (rc.2/3/4)"
+    ],
+    "acceptance_criteria_mapping": {
+      "Old .fabric/rules/ + INITIAL_TAXONOMY.md + bootstrap/ deleted": ["TASK-001"],
+      "New .fabric/knowledge/{5 subdirs}/ + pending/ structure created by fabric init": ["TASK-008"],
+      "~/.fabric/knowledge/ auto-created on first personal write": ["TASK-005", "TASK-008"],
+      "Frontmatter schema includes id/type/maturity/layer/layer_reason/created_at": ["TASK-002"],
+      "stable_id counter persisted in agents.meta.json; file git mv does NOT regenerate id": ["TASK-003"],
+      "Init-time deterministic scan produces 4-7 baseline entries": ["TASK-007"],
+      "Existing fab_plan_context + fab_get_rule_sections work against new schema": ["TASK-004", "TASK-005"],
+      "doctor existing checks adapted to new schema (no false positives on new layout)": ["TASK-006"],
+      "fabric init runs clean on empty repo and creates v2.0 layout": ["TASK-008"]
+    },
+    "decisions_locked": 11,
+    "confidence_inherited_from_analysis": 0.93,
+    "quality_check": {
+      "executed": true,
+      "method": "manual self-review against task validation checklist + acceptance_criteria_mapping coverage",
+      "issues": [],
+      "result": "PASS",
+      "fixes_applied": []
+    }
+  }
+}
