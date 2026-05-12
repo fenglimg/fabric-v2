@@ -352,6 +352,19 @@ describe('I1.8 eventLedgerEventSchema round-trip', () => {
     })
   })
 
+  // v2.0 rc.5 TASK-013 (C4): knowledge_path_dangled event — emitted (in
+  // future rc.7+ apply-lint behavior) when doctor lint #24 prunes a glob
+  // from a canonical entry's relevance_paths because the glob resolves to
+  // zero matches in the workspace. Mandatory: stable_id, removed_glob.
+  it('knowledge_path_dangled event (dangling glob pruned)', () => {
+    roundTrip(eventLedgerEventSchema, {
+      ...envelope,
+      event_type: 'knowledge_path_dangled',
+      stable_id: 'KT-DEC-0042',
+      removed_glob: 'src/deleted-feature/**',
+    })
+  })
+
   it('tags field roundtrip on ruleDescriptionSchema', () => {
     // v2/rc.2: tags is a flat flow-style YAML array in frontmatter; schema
     // stores it as string[]. Verify default=[] and explicit values survive

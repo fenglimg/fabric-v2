@@ -179,6 +179,15 @@ describe("eventLedgerEventSchema", () => {
         archived_to: ".fabric/.archive/pending/decisions/stale.md",
         reason: "auto_archive_30d",
       },
+      // v2.0 rc.5 TASK-013 (C4): knowledge_path_dangled event — emitted (in
+      // future rc.7+ apply-lint behavior) when doctor lint #24 prunes a
+      // relevance_paths glob that resolves to zero filesystem matches.
+      {
+        ...base,
+        event_type: "knowledge_path_dangled",
+        stable_id: "KT-DEC-0042",
+        removed_glob: "src/deleted-feature/**",
+      },
     ];
 
     const parsedTypes = events.map((event) => eventLedgerEventSchema.parse(event).event_type);
@@ -197,6 +206,7 @@ describe("eventLedgerEventSchema", () => {
       "knowledge_rejected",
       "knowledge_consumed",
       "pending_auto_archived",
+      "knowledge_path_dangled",
     ]);
   });
 

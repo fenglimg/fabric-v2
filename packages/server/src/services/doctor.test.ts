@@ -92,7 +92,9 @@ describe("runDoctorReport", () => {
     // (orphan demote / stale archive / pending overdue read-side lint
     // checks added) → 21 rc.4 TASK-002 (stable_id duplicate / layer
     // mismatch / index drift integrity lint checks added) → 22 rc.5
-    // TASK-010 (knowledge_underseeded lint added).
+    // TASK-010 (knowledge_underseeded lint added) → 25 rc.5 TASK-013
+    // (narrow_no_paths + relevance_paths_dangling + relevance_paths_drift
+    // lints added).
     expect(report.checks.map((check) => check.name)).toEqual([
       "Bootstrap anchor",
       "Knowledge layout",
@@ -115,9 +117,12 @@ describe("runDoctorReport", () => {
       "Knowledge layer mismatch",
       "Knowledge index drift",
       "Knowledge underseeded",
+      "Knowledge narrow without paths",
+      "Knowledge relevance_paths dangling",
+      "Knowledge relevance_paths drift",
       "Preexisting root markdown",
     ]);
-    expect(report.checks).toHaveLength(22);
+    expect(report.checks).toHaveLength(25);
   });
 
   it("v2.0: clean post-init repo (mocked layout) reports zero errors AND zero warnings", async () => {
@@ -2480,6 +2485,174 @@ describe("runDoctorReport", () => {
       // stranded at the archive path.
       expect(existsSync(join(target, filePath))).toBe(true);
       expect(existsSync(join(target, archivePath))).toBe(false);
+    });
+  });
+
+  // rc.5 TASK-013 (C4): lint #23 narrow_no_paths + #24 relevance_paths_dangling
+  // + #25 relevance_paths_drift. All three are flag-only in rc.5 — no
+  // apply-lint mutations. Each test seeds a canonical entry with explicit
+  // relevance_scope / relevance_paths frontmatter and asserts the resulting
+  // check's kind/code without invoking runDoctorApplyLint.
+  describe("rc.5 TASK-013 (C4): relevance_paths hygiene lints", () => {
+    function seedRelevanceEntry(
+      target: string,
+      relPath: string,
+      stableId: string,
+      scope: "narrow" | "broad",
+      paths: string[],
+    ): void {
+      const pathsField = `[${paths.join(", ")}]`;
+      const fm =
+        `---\nid: ${stableId}\ntype: decision\nmaturity: stable\nlayer: team\n` +
+        `relevance_scope: ${scope}\nrelevance_paths: ${pathsField}\n---\n# ${stableId}\nBody.\n`;
+      writeFile(relPath, fm, target);
+    }
+
+    // ---- #23 narrow_no_paths ----------------------------------------------
+    it("#23 narrow_no_paths flags narrow entry with empty paths", async () => {
+      const target = createInitializedProject("doctor-rc5-c4-narrow-no-paths");
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+      seedRelevanceEntry(
+        target,
+        ".fabric/knowledge/decisions/KT-DEC-7001--narrow-empty.md",
+        "KT-DEC-7001",
+        "narrow",
+        [],
+      );
+
+      const report = await runDoctorReport(target);
+      const check = report.checks.find((c) => c.name === "Knowledge narrow without paths");
+      expect(check?.code).toBe("knowledge_narrow_no_paths");
+      expect(check?.kind).toBe("warning");
+      expect(check?.status).toBe("warn");
+      expect(check?.message).toContain("KT-DEC-7001");
+      expect(report.warnings.map((w) => w.code)).toContain("knowledge_narrow_no_paths");
+    });
+
+    it("#23 does NOT flag broad entry with empty paths (broad+[] is the schema default)", async () => {
+      const target = createInitializedProject("doctor-rc5-c4-broad-no-paths");
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+      seedRelevanceEntry(
+        target,
+        ".fabric/knowledge/decisions/KT-DEC-7002--broad-empty.md",
+        "KT-DEC-7002",
+        "broad",
+        [],
+      );
+
+      const report = await runDoctorReport(target);
+      const check = report.checks.find((c) => c.name === "Knowledge narrow without paths");
+      expect(check?.status).toBe("ok");
+      expect(report.warnings.map((w) => w.code)).not.toContain("knowledge_narrow_no_paths");
+    });
+
+    // ---- #24 relevance_paths_dangling -------------------------------------
+    it("#24 dangling flags a glob that resolves to zero matches in the workspace", async () => {
+      const target = createInitializedProject("doctor-rc5-c4-dangling-zero");
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+      // The glob `src/deleted-feature/**` resolves to zero matches under the
+      // freshly-seeded createInitializedProject layout (which has src/main.ts
+      // but no src/deleted-feature/ directory).
+      seedRelevanceEntry(
+        target,
+        ".fabric/knowledge/decisions/KT-DEC-7010--dangling.md",
+        "KT-DEC-7010",
+        "narrow",
+        ["src/deleted-feature/**"],
+      );
+
+      const report = await runDoctorReport(target);
+      const check = report.checks.find((c) => c.name === "Knowledge relevance_paths dangling");
+      expect(check?.code).toBe("knowledge_relevance_paths_dangling");
+      expect(check?.kind).toBe("warning");
+      expect(check?.status).toBe("warn");
+      expect(check?.message).toContain("KT-DEC-7010");
+      expect(check?.message).toContain("src/deleted-feature/**");
+      expect(report.warnings.map((w) => w.code)).toContain(
+        "knowledge_relevance_paths_dangling",
+      );
+    });
+
+    it("#24 does NOT flag a glob that has at least one match", async () => {
+      const target = createInitializedProject("doctor-rc5-c4-dangling-match");
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+      // `src/main.ts` exists under createInitializedProject; the glob
+      // `src/**` matches it (and src/ itself).
+      seedRelevanceEntry(
+        target,
+        ".fabric/knowledge/decisions/KT-DEC-7011--matched.md",
+        "KT-DEC-7011",
+        "narrow",
+        ["src/**"],
+      );
+
+      const report = await runDoctorReport(target);
+      const check = report.checks.find((c) => c.name === "Knowledge relevance_paths dangling");
+      expect(check?.status).toBe("ok");
+      expect(report.warnings.map((w) => w.code)).not.toContain(
+        "knowledge_relevance_paths_dangling",
+      );
+    });
+
+    // ---- #25 relevance_paths_drift ----------------------------------------
+    // The drift check shells out to `git log`. In the test fixture the tmpdir
+    // is NOT a git repo, so the inspection downgrades to git_available=false
+    // and emits an informational ok message. We assert the downgrade path
+    // here — it is the only case reachable in the unit test sandbox.
+    it("#25 drift downgrades to ok when git history is unavailable (no candidates)", async () => {
+      const target = createInitializedProject("doctor-rc5-c4-drift-no-git");
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+      // Seed a narrow entry with a non-empty relevance_paths; without git
+      // history the drift check cannot evaluate so it MUST NOT emit a
+      // false-positive candidate.
+      seedRelevanceEntry(
+        target,
+        ".fabric/knowledge/decisions/KT-DEC-7020--drift-candidate.md",
+        "KT-DEC-7020",
+        "narrow",
+        ["src/**"],
+      );
+
+      const report = await runDoctorReport(target);
+      const check = report.checks.find((c) => c.name === "Knowledge relevance_paths drift");
+      expect(check?.status).toBe("ok");
+      // info findings live on report.infos when the kind is info; the
+      // git-unavailable branch is an okCheck (kind undefined) so it must
+      // NOT surface in the infos array.
+      expect(report.infos.map((i) => i.code)).not.toContain(
+        "knowledge_relevance_paths_drift",
+      );
+    });
+
+    it("#25 drift does NOT flag broad entries even when git history is available", async () => {
+      // Even if we were inside a git repo, broad entries are out of scope
+      // for #25 — only narrow entries are evaluated. Mirrors the
+      // narrow_no_paths exclusion logic (#23 also skips broad entries).
+      const target = createInitializedProject("doctor-rc5-c4-drift-broad");
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+      seedRelevanceEntry(
+        target,
+        ".fabric/knowledge/decisions/KT-DEC-7021--broad-with-paths.md",
+        "KT-DEC-7021",
+        "broad",
+        ["src/**"],
+      );
+
+      const report = await runDoctorReport(target);
+      const check = report.checks.find((c) => c.name === "Knowledge relevance_paths drift");
+      // Either the git-unavailable ok branch fires, or the "no narrow
+      // candidates" ok branch fires. Both produce status=ok with no info
+      // candidate keyed off this stable_id.
+      expect(check?.status).toBe("ok");
+      expect(report.infos.map((i) => i.code)).not.toContain(
+        "knowledge_relevance_paths_drift",
+      );
     });
   });
 });

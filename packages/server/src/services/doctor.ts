@@ -5,6 +5,8 @@ import { constants } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, join, posix, relative as nodeRelative, resolve, sep } from "node:path";
 
+import { minimatch } from "minimatch";
+
 import {
   agentsMetaSchema,
   AgentsMetaCountersSchema,
@@ -371,6 +373,59 @@ type UnderseededInspection = {
   underseeded: boolean;
 };
 
+// rc.5 TASK-013 (C4): read-side lint inspections #23/#24/#25 for relevance_paths
+// hygiene. All three walk canonical entries (team + personal) and inspect the
+// `relevance_scope` / `relevance_paths` frontmatter fields introduced by the
+// TASK-012 narrow-scope model:
+//
+// #23 narrow_no_paths        — narrow entry with empty relevance_paths
+//                              (silent recall risk: narrow + no anchors means
+//                              the entry can never match a target_path).
+// #24 relevance_paths_dangling — relevance_paths glob resolves to zero
+//                              filesystem matches under the workspace root.
+//                              Flag-only in rc.5; auto-prune deferred to rc.7+.
+// #25 relevance_paths_drift  — narrow entry whose relevance_paths have not
+//                              been touched in the recent git history window
+//                              (90d). Heuristic; report-only.
+
+type NarrowNoPathsCandidate = {
+  stable_id: string;
+  // Display path: project-relative POSIX for team layer; `~/.fabric/...`
+  // for personal layer (matches PERSONAL_CONTENT_REF_PREFIX convention).
+  path: string;
+};
+
+type NarrowNoPathsInspection = {
+  candidates: NarrowNoPathsCandidate[];
+};
+
+type DanglingGlobEntry = {
+  stable_id: string;
+  path: string;
+  // The exact glob string from the entry's relevance_paths array that
+  // resolved to zero filesystem matches.
+  dangling_glob: string;
+};
+
+type RelevancePathsDanglingInspection = {
+  entries: DanglingGlobEntry[];
+};
+
+type RelevancePathsDriftCandidate = {
+  stable_id: string;
+  path: string;
+  // All relevance_paths globs declared by the entry (preserved for the
+  // message so operators can see which anchors are stale).
+  globs: string[];
+};
+
+type RelevancePathsDriftInspection = {
+  candidates: RelevancePathsDriftCandidate[];
+  // True when git was unavailable / the call failed. The check downgrades to
+  // an ok+info message in that case (rather than firing on every entry).
+  git_available: boolean;
+};
+
 // rc.4 TASK-002: read-side integrity lint inspections (#19-21). Each
 // inspection walks both the team-rooted (`<projectRoot>/.fabric/knowledge/`)
 // and personal-rooted (`<FABRIC_HOME>/.fabric/knowledge/`) canonical trees
@@ -474,6 +529,22 @@ const MATURITY_LINE_PATTERN = /^maturity:\s*("?)(stable|endorsed|draft)\1\s*$/mu
 
 // Regex extracting `created_at:` (ISO 8601 datetime) from YAML frontmatter.
 const CREATED_AT_LINE_PATTERN = /^created_at:\s*("?)([^"\n]+)\1\s*$/mu;
+
+// rc.5 TASK-013 (C4): regexes extracting `relevance_scope` and
+// `relevance_paths` from YAML frontmatter. Mirrors the line-based parsing
+// style used elsewhere in this module (we avoid a YAML dependency for a
+// handful of well-known fields). `relevance_paths` is a flow-style array
+// (`[a, b, c]`) per the rc.5 contract; we tolerate empty arrays and
+// whitespace around commas. Bare-strings are unquoted by convention but the
+// parser accepts both quoted and unquoted forms.
+const RELEVANCE_SCOPE_LINE_PATTERN = /^relevance_scope:\s*("?)(narrow|broad)\1\s*$/mu;
+const RELEVANCE_PATHS_LINE_PATTERN = /^relevance_paths:\s*\[([^\]]*)\]\s*$/mu;
+
+// rc.5 TASK-013 (C4): drift window for lint #25 (relevance_paths_drift).
+// 90 days of git history. Hardcoded for rc.5 — a future
+// .fabric/fabric-config.json override may land if dogfooding suggests a
+// different cadence.
+const RELEVANCE_PATHS_DRIFT_WINDOW_DAYS = 90;
 
 // Reason prefix for synthesized knowledge_promoted events emitted by the
 // filesystem-edit fallback check. The `[synthesized]` prefix makes these
@@ -585,6 +656,15 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
   // time-decayed signal. Runs alongside the rc.4 integrity inspections so the
   // report surfaces all corpus-level findings adjacent to one another.
   const underseeded = inspectUnderseeded(projectRoot);
+  // rc.5 TASK-013 (C4): relevance_paths hygiene inspections #23/#24/#25. All
+  // three walk canonical entries (team + personal) and inspect frontmatter
+  // relevance fields. #24 expands globs against the live filesystem; #25
+  // shells out to `git log` for the drift heuristic (degrades to ok+info
+  // when git is unavailable). Flag-only in rc.5 — apply-lint auto-prune
+  // deferred to rc.7+.
+  const narrowNoPaths = inspectNarrowNoPaths(projectRoot);
+  const relevancePathsDangling = inspectRelevancePathsDangling(projectRoot);
+  const relevancePathsDrift = inspectRelevancePathsDrift(projectRoot);
   const checks: DoctorCheck[] = [
     createBootstrapAnchorCheck(bootstrapAnchor),
     createKnowledgeDirMissingCheck(knowledgeDirMissing),
@@ -627,6 +707,14 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     // does not bump report status. Recommends running the fabric-import skill
     // to backfill knowledge when the corpus is below the threshold floor.
     createUnderseededCheck(underseeded),
+    // rc.5 TASK-013 (C4): relevance_paths hygiene checks #23/#24/#25.
+    // All three are flag-only in rc.5 (no apply-lint mutations).
+    //   #23 narrow_no_paths        — warning kind (silent recall risk)
+    //   #24 relevance_paths_dangling — warning kind (glob → zero matches)
+    //   #25 relevance_paths_drift  — info kind (git-log heuristic; noisy)
+    createNarrowNoPathsCheck(narrowNoPaths),
+    createRelevancePathsDanglingCheck(relevancePathsDangling),
+    createRelevancePathsDriftCheck(relevancePathsDrift),
     createPreexistingRootFilesCheck(preexistingRootFiles),
     // v2.0 / rc.2: `createLegacyClientPathCheck` removed. The schema now
     // rejects retired clientPaths keys (windsurf/rooCode/geminiCLI) at Zod
@@ -2803,6 +2891,376 @@ function createUnderseededCheck(inspection: UnderseededInspection): DoctorCheck 
     "knowledge_underseeded",
     `Knowledge corpus has only ${inspection.node_count} canonical entr${inspection.node_count === 1 ? "y" : "ies"} (< ${inspection.threshold} threshold). The plan_context retrieval surface is below its useful floor.`,
     "Run the fabric-import Skill (`/fabric-import`) to backfill knowledge from git history and existing docs.",
+  );
+}
+
+// ---------------------------------------------------------------------------
+// rc.5 TASK-013 (C4): relevance_paths hygiene lints #23/#24/#25.
+//
+// All three inspections walk the canonical knowledge trees (team + personal)
+// via iterateCanonicalFilenames, parse YAML frontmatter for the
+// `relevance_scope` / `relevance_paths` fields introduced by TASK-012, and
+// emit findings without mutating disk (rc.5 ships flag-only — apply-lint
+// auto-prune for #24 is deferred to rc.7+).
+//
+// Filesystem-walk for #24 reuses minimatch (already a server dep used by
+// plan-context.ts / get-knowledge.ts). We walk the workspace once,
+// collecting all candidate paths under projectRoot (skipping IGNORED_DIRECTORIES
+// + dotfiles other than .fabric children — `.fabric` itself is in the ignore
+// list because relevance_paths anchor user source, not Fabric internals), then
+// each glob is tested against the cached path list. This keeps the
+// inspection O(N+M) rather than O(N*M) re-walks per glob.
+//
+// #25's git heuristic shells out to `git log` via execFileSync — the same
+// pattern TASK-009 (B2) uses for apply-lint's git-mv. When the command fails
+// (not a repo, git unavailable) the inspection downgrades to ok+info with no
+// candidates rather than firing across every narrow entry.
+// ---------------------------------------------------------------------------
+
+// Pure parser: extract relevance_scope from a frontmatter block. Returns
+// "broad" as the schema-level default when the field is absent (mirrors
+// agentsMetaSchema's `.default("broad")` on the relevance_scope column).
+function extractKnowledgeFrontmatterRelevanceScope(source: string): "narrow" | "broad" {
+  const FM_PATTERN = /^(?:\uFEFF)?---\r?\n([\s\S]*?)\r?\n---/u;
+  const fm = FM_PATTERN.exec(source);
+  if (fm === null) {
+    return "broad";
+  }
+  const match = RELEVANCE_SCOPE_LINE_PATTERN.exec(fm[1]);
+  if (match === null) {
+    return "broad";
+  }
+  return match[2] as "narrow" | "broad";
+}
+
+// Pure parser: extract relevance_paths from a frontmatter block. Accepts the
+// flow-style array shape `[a, b, c]` (with or without quoted entries). Empty
+// arrays / missing field both yield []. The parser intentionally tolerates
+// whitespace + optional double-quotes; bare-strings are the convention but
+// the schema accepts both.
+function extractKnowledgeFrontmatterRelevancePaths(source: string): string[] {
+  const FM_PATTERN = /^(?:\uFEFF)?---\r?\n([\s\S]*?)\r?\n---/u;
+  const fm = FM_PATTERN.exec(source);
+  if (fm === null) {
+    return [];
+  }
+  const match = RELEVANCE_PATHS_LINE_PATTERN.exec(fm[1]);
+  if (match === null) {
+    return [];
+  }
+  const inner = match[1].trim();
+  if (inner.length === 0) {
+    return [];
+  }
+  return inner
+    .split(",")
+    .map((token) => token.trim().replace(/^"(.*)"$/u, "$1"))
+    .filter((token) => token.length > 0);
+}
+
+// Shared helper: yields {visit, scope, paths} for every canonical entry whose
+// frontmatter parses cleanly. Files without frontmatter — or with no
+// relevance_scope/relevance_paths fields — are normalized to the schema
+// defaults (scope=broad, paths=[]). Read-side only; never writes back to disk.
+type RelevanceFrontmatterVisit = {
+  visit: CanonicalFilenameVisit;
+  scope: "narrow" | "broad";
+  paths: string[];
+  absPath: string;
+};
+
+function* iterateRelevanceFrontmatter(
+  projectRoot: string,
+): Generator<RelevanceFrontmatterVisit> {
+  for (const visit of iterateCanonicalFilenames(projectRoot)) {
+    const layerRoot = visit.layer === "team"
+      ? join(projectRoot, ".fabric", "knowledge")
+      : resolvePersonalKnowledgeRoot();
+    const absPath = join(layerRoot, visit.type, visit.filename);
+    let source: string;
+    try {
+      source = readFileSync(absPath, "utf8");
+    } catch {
+      continue;
+    }
+    const scope = extractKnowledgeFrontmatterRelevanceScope(source);
+    const paths = extractKnowledgeFrontmatterRelevancePaths(source);
+    yield { visit, scope, paths, absPath };
+  }
+}
+
+// Inspection #23: narrow_no_paths. Narrow entries with empty relevance_paths
+// can never match a target_paths set (matchesAnyPath in plan-context.ts
+// short-circuits on `globs.length === 0`), so they're effectively a silent
+// recall risk. Pre-Phase-1.5 the broad default kept this case from arising;
+// post-TASK-012 a narrow-then-clear sequence can leave the entry in this
+// state. Warning kind (no auto-fix — the user must decide whether to add
+// paths or widen the scope).
+function inspectNarrowNoPaths(projectRoot: string): NarrowNoPathsInspection {
+  const candidates: NarrowNoPathsCandidate[] = [];
+  for (const { visit, scope, paths } of iterateRelevanceFrontmatter(projectRoot)) {
+    if (scope !== "narrow") {
+      continue;
+    }
+    if (paths.length > 0) {
+      continue;
+    }
+    candidates.push({
+      stable_id: visit.parsed.stable_id,
+      path: visit.displayPath,
+    });
+  }
+  candidates.sort((a, b) => a.path.localeCompare(b.path));
+  return { candidates };
+}
+
+// Inspection #24: relevance_paths_dangling. For each canonical entry with a
+// non-empty relevance_paths, test every glob against the workspace's file
+// listing. Globs that match zero paths are dangling — the entry references
+// files/dirs that no longer exist in the repo. Flag-only in rc.5 (auto-prune
+// + knowledge_path_dangled event emission deferred to rc.7+); the event
+// schema is pre-registered so future apply-lint behavior can ship without
+// schema churn.
+function inspectRelevancePathsDangling(
+  projectRoot: string,
+): RelevancePathsDanglingInspection {
+  const entries: DanglingGlobEntry[] = [];
+  // Build the candidate path list ONCE per doctor run. We collect both files
+  // and directories so directory-anchor globs (`src/foo/**`) resolve through
+  // the existing directory entry. The list is project-rooted POSIX paths,
+  // matching the convention used elsewhere in this module.
+  const workspacePaths = collectWorkspacePathsForGlobMatch(projectRoot);
+  if (workspacePaths.length === 0) {
+    return { entries };
+  }
+  for (const { visit, paths } of iterateRelevanceFrontmatter(projectRoot)) {
+    if (paths.length === 0) {
+      continue;
+    }
+    for (const rawGlob of paths) {
+      const glob = rawGlob.endsWith("/") ? `${rawGlob}**` : rawGlob;
+      let matched = false;
+      for (const target of workspacePaths) {
+        if (minimatch(target, glob, { dot: true, matchBase: false })) {
+          matched = true;
+          break;
+        }
+      }
+      if (matched) {
+        continue;
+      }
+      entries.push({
+        stable_id: visit.parsed.stable_id,
+        path: visit.displayPath,
+        dangling_glob: rawGlob,
+      });
+    }
+  }
+  entries.sort((a, b) => {
+    const byPath = a.path.localeCompare(b.path);
+    return byPath !== 0 ? byPath : a.dangling_glob.localeCompare(b.dangling_glob);
+  });
+  return { entries };
+}
+
+// Walk the workspace once to collect a flat list of POSIX-style relative
+// paths suitable for minimatch testing. We skip IGNORED_DIRECTORIES (the
+// same ignore list used by collectEntryPoints) so the candidate list stays
+// bounded. Both files and directories are yielded — relevance_paths globs
+// may target either (e.g. `src/foo/**` matches the directory `src/foo` plus
+// every descendant; `src/foo.ts` matches a single file).
+function collectWorkspacePathsForGlobMatch(projectRoot: string): string[] {
+  if (!existsSync(projectRoot)) {
+    return [];
+  }
+  let rootStat;
+  try {
+    rootStat = statSync(projectRoot);
+  } catch {
+    return [];
+  }
+  if (!rootStat.isDirectory()) {
+    return [];
+  }
+  const paths: string[] = [];
+  const stack: string[] = [projectRoot];
+  while (stack.length > 0) {
+    const current = stack.pop();
+    if (current === undefined) continue;
+    let entries;
+    try {
+      entries = readdirSync(current, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      const abs = join(current, entry.name);
+      const rel = normalizePath(abs.slice(projectRoot.length + 1));
+      if (rel.length === 0) continue;
+      if (entry.isDirectory()) {
+        if (IGNORED_DIRECTORIES.has(entry.name)) {
+          continue;
+        }
+        paths.push(rel);
+        stack.push(abs);
+      } else if (entry.isFile()) {
+        paths.push(rel);
+      }
+    }
+  }
+  return paths;
+}
+
+// Inspection #25: relevance_paths_drift. For each canonical entry with
+// relevance_scope=narrow AND non-empty relevance_paths, check whether ANY of
+// the globs has been touched in the last RELEVANCE_PATHS_DRIFT_WINDOW_DAYS
+// (90d) of git history. We use `git log --since=<date> --name-only --pretty=format:`
+// to get the union of touched paths, then minimatch each glob against that
+// list. Entries whose globs touch zero recently-changed paths are flagged as
+// drift candidates (the relevance anchors may have gone stale because the
+// referenced code is no longer being modified).
+//
+// When `git` is unavailable / the workspace is not a repo, the inspection
+// downgrades to ok+info with `git_available: false`. The check renderer
+// surfaces this as an informational ok message rather than emitting false
+// positives across every narrow entry.
+function inspectRelevancePathsDrift(
+  projectRoot: string,
+): RelevancePathsDriftInspection {
+  let recentPaths: string[] | null = null;
+  try {
+    recentPaths = readRecentGitTouchedPaths(projectRoot, RELEVANCE_PATHS_DRIFT_WINDOW_DAYS);
+  } catch {
+    recentPaths = null;
+  }
+  if (recentPaths === null) {
+    return { candidates: [], git_available: false };
+  }
+  const candidates: RelevancePathsDriftCandidate[] = [];
+  for (const { visit, scope, paths } of iterateRelevanceFrontmatter(projectRoot)) {
+    if (scope !== "narrow") {
+      continue;
+    }
+    if (paths.length === 0) {
+      // narrow_no_paths owns this case (#23). Drift only applies when there
+      // ARE globs to evaluate.
+      continue;
+    }
+    let anyMatch = false;
+    for (const rawGlob of paths) {
+      const glob = rawGlob.endsWith("/") ? `${rawGlob}**` : rawGlob;
+      for (const target of recentPaths) {
+        if (minimatch(target, glob, { dot: true, matchBase: false })) {
+          anyMatch = true;
+          break;
+        }
+      }
+      if (anyMatch) break;
+    }
+    if (anyMatch) {
+      continue;
+    }
+    candidates.push({
+      stable_id: visit.parsed.stable_id,
+      path: visit.displayPath,
+      globs: paths.slice(),
+    });
+  }
+  candidates.sort((a, b) => a.path.localeCompare(b.path));
+  return { candidates, git_available: true };
+}
+
+// Shell out to `git log` and return the union of paths touched in the
+// requested window. Throws when the command fails or git is unavailable
+// (caller catches and downgrades to git_available=false). The since-date
+// is computed in JavaScript to avoid locale-dependent parsing on git's side.
+function readRecentGitTouchedPaths(
+  projectRoot: string,
+  windowDays: number,
+): string[] {
+  const since = new Date(Date.now() - windowDays * MS_PER_DAY).toISOString();
+  const stdout = execFileSync(
+    "git",
+    ["log", `--since=${since}`, "--name-only", "--pretty=format:"],
+    {
+      cwd: projectRoot,
+      stdio: ["ignore", "pipe", "pipe"],
+      encoding: "utf8",
+    },
+  );
+  const set = new Set<string>();
+  for (const line of stdout.split(/\r?\n/u)) {
+    const trimmed = line.trim();
+    if (trimmed.length === 0) continue;
+    set.add(normalizePath(trimmed));
+  }
+  return Array.from(set);
+}
+
+function createNarrowNoPathsCheck(inspection: NarrowNoPathsInspection): DoctorCheck {
+  if (inspection.candidates.length === 0) {
+    return okCheck(
+      "Knowledge narrow without paths",
+      "No narrow-scope canonical entries have an empty relevance_paths array.",
+    );
+  }
+  const first = inspection.candidates[0];
+  const detail = `${first.stable_id} (${first.path})`;
+  return issueCheck(
+    "Knowledge narrow without paths",
+    "warn",
+    "warning",
+    "knowledge_narrow_no_paths",
+    `${inspection.candidates.length} narrow-scope canonical entr${inspection.candidates.length === 1 ? "y has" : "ies have"} an empty relevance_paths array (silent recall risk — narrow without anchors can never match a target path). First: ${detail}.`,
+    "Either add path anchors to relevance_paths or widen the entry's relevance_scope to broad.",
+  );
+}
+
+function createRelevancePathsDanglingCheck(
+  inspection: RelevancePathsDanglingInspection,
+): DoctorCheck {
+  if (inspection.entries.length === 0) {
+    return okCheck(
+      "Knowledge relevance_paths dangling",
+      "All relevance_paths globs resolve to at least one file under the workspace root.",
+    );
+  }
+  const first = inspection.entries[0];
+  const detail = `${first.stable_id} at ${first.path} → \`${first.dangling_glob}\` (0 matches)`;
+  return issueCheck(
+    "Knowledge relevance_paths dangling",
+    "warn",
+    "warning",
+    "knowledge_relevance_paths_dangling",
+    `${inspection.entries.length} relevance_paths glob${inspection.entries.length === 1 ? " resolves" : "s resolve"} to zero files in the current workspace. First: ${detail}.`,
+    "Update the entry's relevance_paths to remove globs that no longer match any files, or use `fab_review.modify` to rewrite the anchor set.",
+  );
+}
+
+function createRelevancePathsDriftCheck(
+  inspection: RelevancePathsDriftInspection,
+): DoctorCheck {
+  if (!inspection.git_available) {
+    return okCheck(
+      "Knowledge relevance_paths drift",
+      `Skipped (git history unavailable; cannot evaluate ${RELEVANCE_PATHS_DRIFT_WINDOW_DAYS}d drift window).`,
+    );
+  }
+  if (inspection.candidates.length === 0) {
+    return okCheck(
+      "Knowledge relevance_paths drift",
+      `All narrow-scope canonical entries have at least one relevance_path touched in the last ${RELEVANCE_PATHS_DRIFT_WINDOW_DAYS}d.`,
+    );
+  }
+  const first = inspection.candidates[0];
+  const detail = `${first.stable_id} at ${first.path} (globs: ${first.globs.join(", ")})`;
+  return issueCheck(
+    "Knowledge relevance_paths drift",
+    "ok",
+    "info",
+    "knowledge_relevance_paths_drift",
+    `${inspection.candidates.length} narrow-scope canonical entr${inspection.candidates.length === 1 ? "y has" : "ies have"} relevance_paths whose globs match no file touched in the last ${RELEVANCE_PATHS_DRIFT_WINDOW_DAYS}d of git history. First: ${detail}.`,
+    "Review whether the entry is still relevant — use `fab_review.modify` to refresh the anchors or `fab_review.reject` to archive.",
   );
 }
 

@@ -295,6 +295,22 @@ export const knowledgeScopeDegradedEventSchema = z.object({
   reason: z.string(),
 });
 
+// v2.0 rc.5 TASK-013 (C4): emitted by doctor lint #24 (relevance_paths_dangling)
+// when `--apply-lint` (future rc.7+ behavior) prunes a glob from a canonical
+// entry's `relevance_paths` because the glob resolves to zero matches in the
+// current workspace. One event per pruned glob. In rc.5 the lint stays
+// flag-only (no auto-prune mutation), but the schema pre-registers the event
+// so future apply-lint behavior can ship without an additional schema bump.
+// `removed_glob` records the exact glob string that was removed from the
+// entry's frontmatter so the audit trail can be replayed to reconstruct the
+// pre-prune `relevance_paths` array.
+export const knowledgePathDangledEventSchema = z.object({
+  ...eventLedgerEnvelopeSchema,
+  event_type: z.literal("knowledge_path_dangled"),
+  stable_id: z.string(),
+  removed_glob: z.string(),
+});
+
 // v2.0 rc.5 TASK-009 (B2): emitted by `doctor --apply-lint` when a pending
 // knowledge entry exceeds the 30-day auto-archive threshold and gets moved
 // from the staging area (`.fabric/knowledge/pending/<type>/` or
@@ -348,6 +364,9 @@ export const eventLedgerEventSchema = z.discriminatedUnion("event_type", [
   // v2.0 rc.5 TASK-009 (B2): pending_auto_archived — doctor --apply-lint moves
   // pending entries >30d old into the .archive/pending/ subtree.
   pendingAutoArchivedEventSchema,
+  // v2.0 rc.5 TASK-013 (C4): knowledge_path_dangled — emitted by doctor lint
+  // #24 when a glob in relevance_paths resolves to zero filesystem matches.
+  knowledgePathDangledEventSchema,
 ]);
 
 export type KnowledgeContextPlannedEvent = z.infer<typeof knowledgeContextPlannedEventSchema>;
@@ -379,6 +398,7 @@ export type KnowledgeRejectedEvent = z.infer<typeof knowledgeRejectedEventSchema
 export type KnowledgeConsumedEvent = z.infer<typeof knowledgeConsumedEventSchema>;
 export type KnowledgeScopeDegradedEvent = z.infer<typeof knowledgeScopeDegradedEventSchema>;
 export type PendingAutoArchivedEvent = z.infer<typeof pendingAutoArchivedEventSchema>;
+export type KnowledgePathDangledEvent = z.infer<typeof knowledgePathDangledEventSchema>;
 export type EventLedgerEvent =
   | KnowledgeContextPlannedEvent
   | KnowledgeSelectionEvent
@@ -408,7 +428,8 @@ export type EventLedgerEvent =
   | KnowledgeRejectedEvent
   | KnowledgeConsumedEvent
   | KnowledgeScopeDegradedEvent
-  | PendingAutoArchivedEvent;
+  | PendingAutoArchivedEvent
+  | KnowledgePathDangledEvent;
 export type EventLedgerEventType = EventLedgerEvent["event_type"];
 type EventLedgerEventInputFor<T extends EventLedgerEvent> = T extends EventLedgerEvent
   ? Omit<T, "kind" | "id" | "ts" | "schema_version" | "correlation_id" | "session_id"> &
