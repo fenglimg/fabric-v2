@@ -2,7 +2,7 @@
   "events": {
     "Stop": [
       {
-        "command": ".codex/hooks/fabric-hint.cjs"
+        "command": ".cursor/hooks/fabric-hint.cjs"
       }
     ]
   }

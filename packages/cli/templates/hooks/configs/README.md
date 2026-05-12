@@ -1,45 +1,70 @@
 # Client hook config templates
 
-These JSON files are **fragment templates** consumed by `fabric init` (TASK-005
-wires the install). They are not standalone client config files.
+These JSON files are **fragment templates** consumed by `fabric init` and
+`fabric hooks install`. They are not standalone client config files.
+
+The supported clients are pinned by `packages/shared/src/schemas/fabric-config.ts`
+to Claude Code, Cursor, and Codex CLI. Adding a new client requires extending
+that schema first.
 
 ## claude-code.json
 
 Deep-merged into the user repo's `.claude/settings.json` by the init pipeline.
-Registers `archive-hint.cjs` under `hooks.Stop[]` with `matcher: "*"`. The
+Registers `fabric-hint.cjs` under `hooks.Stop[]` with `matcher: "*"`. The
 existing `mcpServers`, `permissions`, and any other top-level keys in the user's
 settings.json are preserved.
 
-Schema is pinned by `packages/server/src/services/doctor.test.ts:141` (Claude
-Code Stop-hook fixture).
-
 The `hooks.Stop[]` array merge needs special-case handling (array-append with
 dedupe by `command` string) because `packages/cli/src/config/json.ts:18` default
-`deepMerge` REPLACES arrays. TASK-005 owns that wiring.
+`deepMerge` REPLACES arrays. The mergeClaudeCodeHookConfig helper owns that
+wiring.
 
 ## codex-hooks.json
 
 Written to (or merged into) the user repo's `.codex/hooks.json`. NOTE: Codex
 project-level hooks file is JSON, **not** TOML — only the user-level Codex MCP
-config (`~/.codex/config.toml`) is TOML. Verified at
-`packages/cli/src/config/resolver.ts:157` (`existsSync(workspaceRoot, ".codex",
-"hooks.json")`).
+config (`~/.codex/config.toml`) is TOML.
 
-## archive-hint.cjs script paths
+## cursor-hooks.json
 
-- Claude: `.claude/hooks/archive-hint.cjs` (project-relative)
-- Codex:  `.codex/hooks/archive-hint.cjs` (project-relative)
+Written to (or merged into) the user repo's `.cursor/hooks.json`. Mirrors the
+Codex `events.Stop[]` envelope shape — Cursor's hook event vocabulary is
+not stable across releases, so the canonical Stop-on-tool-finish lifecycle hook
+is the only entry we register today. SessionStart / PreToolUse slots are left
+unfilled for rc.6 to add when their semantics stabilise.
 
-The single shared script (TASK-003, commit `50367b5`) lives at
-`packages/cli/templates/hooks/archive-hint.cjs` in this repo and is copied into
-both `.claude/hooks/` and `.codex/hooks/` destinations by TASK-005's init
-wiring. The script emits stdout JSON `{decision:"block", reason}` with exit 0
-when the threshold (5 plan_contexts since last archive OR 24h) trips, and is
-silent + exit 0 otherwise.
+## fabric-hint.cjs script paths
 
-## Cursor
+- Claude: `.claude/hooks/fabric-hint.cjs` (project-relative)
+- Codex:  `.codex/hooks/fabric-hint.cjs`  (project-relative)
+- Cursor: `.cursor/hooks/fabric-hint.cjs` (project-relative)
 
-Deliberately omitted. Cursor has no documented Stop-hook surface as of
-2026-05; `packages/cli/src/config/resolver.ts:139` declares `hook: false` for
-Cursor. Documented as a schema deviation from the original v2 handoff in
-`.workflow/.lite-plan/fabric-v2-rc2-impl-2026-05-10/planning-context.md`.
+The single shared script lives at `packages/cli/templates/hooks/fabric-hint.cjs`
+in this repo and is copied into all three `<client>/hooks/` destinations by the
+install wiring. The script emits stdout JSON
+`{decision:"block", reason, signal, recommended_skill}` with exit 0 when one of
+three signals trips:
+
+- **archive** (rc.2): 5 plan_contexts since last knowledge_proposed, OR 24h
+  since last knowledge_proposed with at least one plan_context since.
+  Recommends the `fabric-archive` skill.
+- **review** (rc.3): pending knowledge count >= 10, OR oldest pending entry >= 7
+  days old. Recommends the `fabric-review` skill.
+- **import** (rc.5): canonical knowledge node count < `underseed_node_threshold`
+  (default 10) AND `init_scan_completed` event >= 24h ago AND no
+  `knowledge_proposed` event in last 24h. Recommends the `fabric-import` skill.
+
+Precedence: archive > review > import. After firing, the hook stays silent for
+`archive_hint_cooldown_hours` (default 12h, keyed by `signal` so the three
+signals share a cache file but throttle independently).
+
+The script is silent + exit 0 when no signal trips. It NEVER blocks tool
+execution on its own failure — any read/parse error is swallowed.
+
+## Historical note: archive-hint.cjs rename
+
+Pre-rc.5, this script was named `archive-hint.cjs` (only the archive signal
+existed). rc.5 TASK-010 renamed it to `fabric-hint.cjs` to reflect its expanded
+three-signal scope. The cooldown cache file is intentionally still named
+`archive-hint-shown.json` so an in-place upgrade does not flush the user's
+existing throttle state.

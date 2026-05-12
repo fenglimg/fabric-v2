@@ -91,7 +91,8 @@ describe("runDoctorReport", () => {
     // rejects retired clientPaths keys at parse time) → 18 rc.4 TASK-001
     // (orphan demote / stale archive / pending overdue read-side lint
     // checks added) → 21 rc.4 TASK-002 (stable_id duplicate / layer
-    // mismatch / index drift integrity lint checks added).
+    // mismatch / index drift integrity lint checks added) → 22 rc.5
+    // TASK-010 (knowledge_underseeded lint added).
     expect(report.checks.map((check) => check.name)).toEqual([
       "Bootstrap anchor",
       "Knowledge layout",
@@ -113,9 +114,10 @@ describe("runDoctorReport", () => {
       "Knowledge stable_id duplicate",
       "Knowledge layer mismatch",
       "Knowledge index drift",
+      "Knowledge underseeded",
       "Preexisting root markdown",
     ]);
-    expect(report.checks).toHaveLength(21);
+    expect(report.checks).toHaveLength(22);
   });
 
   it("v2.0: clean post-init repo (mocked layout) reports zero errors AND zero warnings", async () => {
@@ -1605,6 +1607,93 @@ describe("runDoctorReport", () => {
       const report = await runDoctorReport(target);
       const check = report.checks.find((c) => c.name === "Knowledge index drift");
       expect(check?.status).toBe("ok");
+    });
+  });
+
+  // rc.5 TASK-010: read-side underseeded-corpus lint check (#22). Counts
+  // canonical entries across the five canonical type subdirs and compares
+  // against the underseed threshold (configurable via
+  // .fabric/fabric-config.json#underseed_node_threshold, default 10).
+  describe("rc.5 TASK-010: read-side underseeded-corpus check (#22)", () => {
+    function seedCanonicalStub(target: string, relPath: string): void {
+      const slug = relPath.split("--")[1]?.replace(/\.md$/u, "") ?? "untitled";
+      const stableId = relPath.split("/").pop()?.split("--")[0] ?? "KT-DEC-9999";
+      writeFile(
+        relPath,
+        `---\nid: ${stableId}\nslug: ${slug}\nmaturity: stable\nlayer: team\n---\n# stub\n`,
+        target,
+      );
+    }
+
+    it("emits info kind when canonical node count is strictly less than threshold (default 10)", async () => {
+      const target = createInitializedProject("doctor-rc5-underseeded-default");
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+
+      // createInitializedProject already seeds 1 baseline entry under
+      // .fabric/knowledge/decisions/. Add 3 more for a total of 4 — well
+      // below the default threshold of 10.
+      seedCanonicalStub(target, ".fabric/knowledge/decisions/KT-DEC-1001--alpha.md");
+      seedCanonicalStub(target, ".fabric/knowledge/decisions/KT-DEC-1002--beta.md");
+      seedCanonicalStub(target, ".fabric/knowledge/pitfalls/KT-PIT-1001--gamma.md");
+
+      const report = await runDoctorReport(target);
+      const check = report.checks.find((c) => c.name === "Knowledge underseeded");
+      expect(check?.kind).toBe("info");
+      expect(check?.code).toBe("knowledge_underseeded");
+      expect(check?.status).toBe("ok"); // info kind keeps report status from bumping
+      expect(check?.message).toMatch(/\b[1-9]\b/); // node count digit present
+      expect(check?.message).toContain("10");
+      expect(report.infos.map((i) => i.code)).toContain("knowledge_underseeded");
+    });
+
+    it("does NOT fire when canonical node count >= threshold", async () => {
+      const target = createInitializedProject("doctor-rc5-underseeded-above");
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+
+      for (let i = 0; i < 12; i += 1) {
+        seedCanonicalStub(
+          target,
+          `.fabric/knowledge/decisions/KT-DEC-${2001 + i}--entry-${i}.md`,
+        );
+      }
+
+      const report = await runDoctorReport(target);
+      const check = report.checks.find((c) => c.name === "Knowledge underseeded");
+      expect(check?.status).toBe("ok");
+      expect(report.infos.map((i) => i.code)).not.toContain("knowledge_underseeded");
+    });
+
+    it("honours the underseed_node_threshold override in .fabric/fabric-config.json", async () => {
+      const target = createInitializedProject("doctor-rc5-underseeded-override");
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+      // Override threshold to 100 so the baseline seed (1 entry from
+      // createInitializedProject) is well below — fires regardless of any
+      // additional seeding.
+      writeFile(
+        ".fabric/fabric-config.json",
+        JSON.stringify({ underseed_node_threshold: 100 }),
+        target,
+      );
+
+      const report = await runDoctorReport(target);
+      const check = report.checks.find((c) => c.name === "Knowledge underseeded");
+      expect(check?.kind).toBe("info");
+      expect(check?.code).toBe("knowledge_underseeded");
+      expect(check?.message).toContain("100");
+    });
+
+    it("uses fabric-import skill as the actionHint", async () => {
+      const target = createInitializedProject("doctor-rc5-underseeded-action");
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+      seedCanonicalStub(target, ".fabric/knowledge/decisions/KT-DEC-4001--single.md");
+
+      const report = await runDoctorReport(target);
+      const check = report.checks.find((c) => c.name === "Knowledge underseeded");
+      expect(check?.actionHint).toContain("fabric-import");
     });
   });
 

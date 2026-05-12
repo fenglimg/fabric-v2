@@ -8,19 +8,23 @@ import { atomicWriteJson, atomicWriteText } from "@fenglimg/fabric-shared/node/a
 import { deepMerge } from "../config/json.js";
 
 /**
- * Install helpers for the v2/rc.2 fabric-archive Skill + archive-hint Stop
- * hook. Each helper is idempotent — re-running `fabric init` (or `fabric
- * hooks install`) after the first successful run produces no diff.
+ * Install helpers for the v2 fabric-archive / fabric-review / fabric-import
+ * Skills + the cross-client fabric-hint Stop hook (renamed from archive-hint
+ * in rc.5 TASK-010). Each helper is idempotent — re-running `fabric init` (or
+ * `fabric hooks install`) after the first successful run produces no diff.
  *
  * Wiring sites:
  *   - packages/cli/src/commands/init.ts  bootstrap stage (skill + hook + pointer)
  *   - packages/cli/src/commands/hooks.ts hooks command (re-install only)
  *
  * Templates resolved:
- *   - packages/cli/templates/skills/fabric-archive/SKILL.md         (TASK-002)
- *   - packages/cli/templates/hooks/archive-hint.cjs                  (TASK-003)
+ *   - packages/cli/templates/skills/fabric-archive/SKILL.md          (TASK-002)
+ *   - packages/cli/templates/skills/fabric-review/SKILL.md           (TASK-006)
+ *   - packages/cli/templates/skills/fabric-import/SKILL.md           (rc.4 TASK-005)
+ *   - packages/cli/templates/hooks/fabric-hint.cjs                   (rc.5 TASK-010)
  *   - packages/cli/templates/hooks/configs/claude-code.json          (TASK-004)
  *   - packages/cli/templates/hooks/configs/codex-hooks.json          (TASK-004)
+ *   - packages/cli/templates/hooks/configs/cursor-hooks.json         (rc.5 TASK-010)
  */
 
 export type InstallStepStatus = "written" | "skipped" | "error";
@@ -44,14 +48,15 @@ export type InstallOptions = {
 const SKILL_TEMPLATE_REL = "skills/fabric-archive/SKILL.md";
 const SKILL_REVIEW_TEMPLATE_REL = "skills/fabric-review/SKILL.md";
 const SKILL_IMPORT_TEMPLATE_REL = "skills/fabric-import/SKILL.md";
-const HOOK_SCRIPT_TEMPLATE_REL = "hooks/archive-hint.cjs";
+const HOOK_SCRIPT_TEMPLATE_REL = "hooks/fabric-hint.cjs";
 const CLAUDE_HOOK_CONFIG_TEMPLATE_REL = "hooks/configs/claude-code.json";
 const CODEX_HOOK_CONFIG_TEMPLATE_REL = "hooks/configs/codex-hooks.json";
+const CURSOR_HOOK_CONFIG_TEMPLATE_REL = "hooks/configs/cursor-hooks.json";
 
 const SKILL_DEST_REL = join("skills", "fabric-archive", "SKILL.md");
 const SKILL_REVIEW_DEST_REL = join("skills", "fabric-review", "SKILL.md");
 const SKILL_IMPORT_DEST_REL = join("skills", "fabric-import", "SKILL.md");
-const HOOK_SCRIPT_DEST_REL = join("hooks", "archive-hint.cjs");
+const HOOK_SCRIPT_DEST_REL = join("hooks", "fabric-hint.cjs");
 
 const POINTER_LINE =
   "> Use the fabric-archive Skill when archiving knowledge entries (see .claude/skills/fabric-archive/SKILL.md).";
@@ -137,9 +142,14 @@ export async function installFabricImportSkill(
 }
 
 /**
- * Copy templates/hooks/archive-hint.cjs into both .claude/hooks/ and
- * .codex/hooks/. Marked executable on POSIX (chmod 0o755). Skipped on
- * Windows where the platform ignores the bit.
+ * Copy templates/hooks/fabric-hint.cjs into all three supported clients'
+ * hooks directories: .claude/hooks/, .codex/hooks/, and .cursor/hooks/.
+ * Marked executable on POSIX (chmod 0o755). Skipped on Windows where the
+ * platform ignores the bit.
+ *
+ * Renamed from archive-hint in rc.5 TASK-010 to reflect the script's
+ * expanded three-signal scope (archive / review / import). The function
+ * name `installArchiveHintHook` is preserved for call-site compatibility.
  */
 export async function installArchiveHintHook(
   projectRoot: string,
@@ -149,6 +159,7 @@ export async function installArchiveHintHook(
   const targets = [
     join(projectRoot, ".claude", HOOK_SCRIPT_DEST_REL),
     join(projectRoot, ".codex", HOOK_SCRIPT_DEST_REL),
+    join(projectRoot, ".cursor", HOOK_SCRIPT_DEST_REL),
   ];
   const results: InstallStepResult[] = [];
   for (const target of targets) {
@@ -192,6 +203,26 @@ export async function mergeCodexHookConfig(
   const fragment = await readJsonTemplate(CODEX_HOOK_CONFIG_TEMPLATE_REL);
   const targetPath = join(projectRoot, ".codex", "hooks.json");
   return mergeJsonIdempotent("codex-hook-config", targetPath, fragment, ["events.Stop"]);
+}
+
+/**
+ * Deep-merge templates/hooks/configs/cursor-hooks.json into the user's
+ * `.cursor/hooks.json`. The `events.Stop` array is array-append-with-
+ * dedupe.
+ *
+ * Added in rc.5 TASK-010 to bring Cursor to parity with Claude Code and
+ * Codex CLI for the cross-client hook surface. Cursor's hook event vocabulary
+ * is still in flux upstream, so today we register only the Stop hook (which
+ * has stable semantics across all three clients). SessionStart / PreToolUse
+ * slots are deferred to rc.6.
+ */
+export async function mergeCursorHookConfig(
+  projectRoot: string,
+  _options: InstallOptions = {},
+): Promise<InstallStepResult> {
+  const fragment = await readJsonTemplate(CURSOR_HOOK_CONFIG_TEMPLATE_REL);
+  const targetPath = join(projectRoot, ".cursor", "hooks.json");
+  return mergeJsonIdempotent("cursor-hook-config", targetPath, fragment, ["events.Stop"]);
 }
 
 /**

@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": ".claude/hooks/archive-hint.cjs"
+            "command": ".claude/hooks/fabric-hint.cjs"
           }
         ]
       }

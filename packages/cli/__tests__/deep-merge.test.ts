@@ -37,14 +37,14 @@ describe("deepMerge — arrayAppendPaths option", () => {
   it("appends at the configured path instead of replacing", () => {
     const target = { hooks: { Stop: [{ matcher: "*", hooks: [{ command: "user-hook.sh" }] }] } };
     const source = {
-      hooks: { Stop: [{ matcher: "*", hooks: [{ command: ".claude/hooks/archive-hint.cjs" }] }] },
+      hooks: { Stop: [{ matcher: "*", hooks: [{ command: ".claude/hooks/fabric-hint.cjs" }] }] },
     };
     const result = deepMerge(target, source, { arrayAppendPaths: ["hooks.Stop"] });
     expect(result).toEqual({
       hooks: {
         Stop: [
           { matcher: "*", hooks: [{ command: "user-hook.sh" }] },
-          { matcher: "*", hooks: [{ command: ".claude/hooks/archive-hint.cjs" }] },
+          { matcher: "*", hooks: [{ command: ".claude/hooks/fabric-hint.cjs" }] },
         ],
       },
     });
@@ -53,7 +53,7 @@ describe("deepMerge — arrayAppendPaths option", () => {
   it("dedupes by inner hooks[0].command (Claude Stop shape) — re-merge is no-op", () => {
     const initial = { hooks: { Stop: [] as unknown[] } };
     const fragment = {
-      hooks: { Stop: [{ matcher: "*", hooks: [{ command: ".claude/hooks/archive-hint.cjs" }] }] },
+      hooks: { Stop: [{ matcher: "*", hooks: [{ command: ".claude/hooks/fabric-hint.cjs" }] }] },
     };
     const once = deepMerge(initial, fragment, { arrayAppendPaths: ["hooks.Stop"] });
     const twice = deepMerge(once, fragment, { arrayAppendPaths: ["hooks.Stop"] });
@@ -63,7 +63,7 @@ describe("deepMerge — arrayAppendPaths option", () => {
 
   it("dedupes by top-level .command (Codex Stop shape) — re-merge is no-op", () => {
     const initial: Record<string, unknown> = { events: { Stop: [] as unknown[] } };
-    const fragment = { events: { Stop: [{ command: ".codex/hooks/archive-hint.cjs" }] } };
+    const fragment = { events: { Stop: [{ command: ".codex/hooks/fabric-hint.cjs" }] } };
     const once = deepMerge(initial, fragment, { arrayAppendPaths: ["events.Stop"] });
     const twice = deepMerge(once, fragment, { arrayAppendPaths: ["events.Stop"] });
     expect(twice).toEqual(once);
@@ -81,14 +81,14 @@ describe("deepMerge — arrayAppendPaths option", () => {
       },
     };
     const fabricFragment = {
-      hooks: { Stop: [{ matcher: "*", hooks: [{ command: ".claude/hooks/archive-hint.cjs" }] }] },
+      hooks: { Stop: [{ matcher: "*", hooks: [{ command: ".claude/hooks/fabric-hint.cjs" }] }] },
     };
     const merged = deepMerge(userSettings, fabricFragment, { arrayAppendPaths: ["hooks.Stop"] });
     expect((merged.hooks.Stop as unknown[]).length).toBe(3);
     expect(merged.hooks.Stop).toEqual([
       { matcher: "src/**", hooks: [{ command: "format.sh" }] },
       { matcher: "*", hooks: [{ command: "lint.sh" }] },
-      { matcher: "*", hooks: [{ command: ".claude/hooks/archive-hint.cjs" }] },
+      { matcher: "*", hooks: [{ command: ".claude/hooks/fabric-hint.cjs" }] },
     ]);
   });
 

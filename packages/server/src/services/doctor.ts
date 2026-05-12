@@ -314,6 +314,24 @@ type PendingOverdueInspection = {
   candidates: PendingOverdueCandidate[];
 };
 
+// rc.5 TASK-010: read-side underseeded-corpus lint inspection (#22).
+// Reports when the workspace's canonical knowledge node count is strictly
+// less than `underseed_node_threshold` (default 10, override via
+// .fabric/fabric-config.json#underseed_node_threshold). Mirrors the
+// fabric-hint Stop hook's import-signal threshold so the two surfaces stay
+// in lockstep — but the doctor lint is unconditional (no init-quiet /
+// proposal-cooldown guards), since `doctor` is the user's deliberate check
+// rather than an ambient nag.
+type UnderseededInspection = {
+  // Total canonical entry count across the five canonical type subdirs.
+  node_count: number;
+  // Effective threshold (config override or default).
+  threshold: number;
+  // True iff node_count < threshold. Pre-computed so createUnderseededCheck
+  // does not have to re-derive the trigger predicate.
+  underseeded: boolean;
+};
+
 // rc.4 TASK-002: read-side integrity lint inspections (#19-21). Each
 // inspection walks both the team-rooted (`<projectRoot>/.fabric/knowledge/`)
 // and personal-rooted (`<FABRIC_HOME>/.fabric/knowledge/`) canonical trees
@@ -393,6 +411,12 @@ const STALE_ARCHIVE_ADDITIONAL_DAYS = 90;
 // Pending entries older than this threshold (based on frontmatter.created_at
 // when present, otherwise file mtime) are flagged for human triage.
 const PENDING_OVERDUE_THRESHOLD_DAYS = 14;
+
+// rc.5 TASK-010: default underseed threshold for lint #22 (knowledge_underseeded).
+// Mirrors the fabric-hint hook's DEFAULT_UNDERSEED_NODE_THRESHOLD so the lint
+// and the hook agree on the same floor unless the user overrides
+// underseed_node_threshold in .fabric/fabric-config.json.
+const DEFAULT_UNDERSEED_NODE_THRESHOLD = 10;
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
@@ -509,6 +533,11 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
   const stableIdDuplicate = inspectStableIdDuplicate(projectRoot);
   const layerMismatch = inspectLayerMismatch(projectRoot);
   const indexDrift = inspectIndexDrift(projectRoot, meta);
+  // rc.5 TASK-010: read-side underseeded-corpus inspection (#22). Independent
+  // of lintNow — corpus size is a synchronous filesystem count, not a
+  // time-decayed signal. Runs alongside the rc.4 integrity inspections so the
+  // report surfaces all corpus-level findings adjacent to one another.
+  const underseeded = inspectUnderseeded(projectRoot);
   const checks: DoctorCheck[] = [
     createBootstrapAnchorCheck(bootstrapAnchor),
     createKnowledgeDirMissingCheck(knowledgeDirMissing),
@@ -547,6 +576,10 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     createStableIdDuplicateCheck(stableIdDuplicate),
     createLayerMismatchCheck(layerMismatch),
     createIndexDriftCheck(indexDrift),
+    // rc.5 TASK-010: read-side underseeded-corpus check (#22). Info kind —
+    // does not bump report status. Recommends running the fabric-import skill
+    // to backfill knowledge when the corpus is below the threshold floor.
+    createUnderseededCheck(underseeded),
     createPreexistingRootFilesCheck(preexistingRootFiles),
     // v2.0 / rc.2: `createLegacyClientPathCheck` removed. The schema now
     // rejects retired clientPaths keys (windsurf/rooCode/geminiCLI) at Zod
@@ -2340,6 +2373,70 @@ function inspectPendingOverdue(
   return { candidates };
 }
 
+// rc.5 TASK-010: inspect lint #22 (knowledge_underseeded).
+//
+// Counts canonical entries across the five canonical type subdirs (excluding
+// pending/) and compares against the underseed threshold. The threshold is
+// read defensively from `.fabric/fabric-config.json#underseed_node_threshold`
+// — the same key the fabric-hint Stop hook reads — falling back to
+// DEFAULT_UNDERSEED_NODE_THRESHOLD on missing-file / parse-failure / bad-type.
+//
+// We deliberately do NOT use the strict CANONICAL_KNOWLEDGE_FILENAME_PATTERN
+// here: entries without the `--<slug>` suffix or with non-canonical filenames
+// still represent knowledge content and should count toward the floor. The
+// stricter pattern is owned by inspectStableIdDuplicate / inspectLayerMismatch
+// (#19/#20), which deal with integrity rather than corpus size.
+function inspectUnderseeded(projectRoot: string): UnderseededInspection {
+  const threshold = readUnderseedThresholdFromConfig(projectRoot);
+  const knowledgeRoot = join(projectRoot, ".fabric", "knowledge");
+  let nodeCount = 0;
+  if (existsSync(knowledgeRoot)) {
+    for (const typeDir of KNOWLEDGE_CANONICAL_TYPE_DIRS) {
+      const dir = join(knowledgeRoot, typeDir);
+      if (!existsSync(dir)) continue;
+      let entries;
+      try {
+        entries = readdirSync(dir, { withFileTypes: true });
+      } catch {
+        continue;
+      }
+      for (const entry of entries) {
+        if (entry.isFile() && entry.name.endsWith(".md")) {
+          nodeCount += 1;
+        }
+      }
+    }
+  }
+  return {
+    node_count: nodeCount,
+    threshold,
+    underseeded: nodeCount < threshold,
+  };
+}
+
+// Best-effort reader for the underseed-threshold override stored in the
+// workspace-local `.fabric/fabric-config.json`. Any failure (missing file,
+// parse error, non-positive value) returns the default. Mirrors the
+// fabric-hint hook's readUnderseedThreshold semantics one-for-one — the two
+// surfaces MUST agree on the same threshold for a given workspace.
+function readUnderseedThresholdFromConfig(projectRoot: string): number {
+  const configPath = join(projectRoot, ".fabric", "fabric-config.json");
+  if (!existsSync(configPath)) return DEFAULT_UNDERSEED_NODE_THRESHOLD;
+  try {
+    const raw = readFileSync(configPath, "utf8");
+    const parsed = JSON.parse(raw) as unknown;
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      const v = (parsed as Record<string, unknown>).underseed_node_threshold;
+      if (typeof v === "number" && Number.isFinite(v) && v > 0) {
+        return v;
+      }
+    }
+  } catch {
+    // fall through to default
+  }
+  return DEFAULT_UNDERSEED_NODE_THRESHOLD;
+}
+
 function createOrphanDemoteCheck(inspection: OrphanDemoteInspection): DoctorCheck {
   if (inspection.candidates.length === 0) {
     return okCheck(
@@ -2394,6 +2491,28 @@ function createPendingOverdueCheck(inspection: PendingOverdueInspection): Doctor
     "knowledge_pending_overdue",
     `${inspection.candidates.length} pending knowledge entr${inspection.candidates.length === 1 ? "y has" : "ies have"} been awaiting review for more than ${PENDING_OVERDUE_THRESHOLD_DAYS} days. First: ${detail}.`,
     "Review pending entries via the fabric-review Skill (`/fabric-review`) and approve, reject, defer, or modify.",
+  );
+}
+
+// rc.5 TASK-010: surface the underseeded lint (#22) as an `info` kind so it
+// shows in the report without bumping doctor's status to warn/error — a small
+// corpus is a legitimate state during early adoption, not a defect. The
+// actionHint points the user at the fabric-import Skill, mirroring the
+// fabric-hint hook's import-signal recommendation.
+function createUnderseededCheck(inspection: UnderseededInspection): DoctorCheck {
+  if (!inspection.underseeded) {
+    return okCheck(
+      "Knowledge underseeded",
+      `Knowledge corpus has ${inspection.node_count} canonical entries (>= ${inspection.threshold}).`,
+    );
+  }
+  return issueCheck(
+    "Knowledge underseeded",
+    "ok",
+    "info",
+    "knowledge_underseeded",
+    `Knowledge corpus has only ${inspection.node_count} canonical entr${inspection.node_count === 1 ? "y" : "ies"} (< ${inspection.threshold} threshold). The plan_context retrieval surface is below its useful floor.`,
+    "Run the fabric-import Skill (`/fabric-import`) to backfill knowledge from git history and existing docs.",
   );
 }
 

@@ -1,7 +1,8 @@
 /**
  * Integration tests: TASK-006 (rc.2) + TASK-006 (rc.3) + TASK-005 (rc.4)
- *   fabric-archive, fabric-review AND fabric-import Skills + archive-hint
- *   hook install
+ *   + TASK-010 (rc.5: archive-hint → fabric-hint rename + cursor parity)
+ *   fabric-archive, fabric-review AND fabric-import Skills + fabric-hint
+ *   Stop hook install across Claude Code / Codex CLI / Cursor
  *
  * Verifies the wiring at packages/cli/src/install/skills-and-hooks.ts
  * (called from init bootstrap stage and the fabric hooks command). Eight
@@ -118,7 +119,7 @@ describe("TASK-006 install-skills-and-hooks: fresh init", () => {
     const archiveSkillTemplate = readTemplate("skills/fabric-archive/SKILL.md");
     const reviewSkillTemplate = readTemplate("skills/fabric-review/SKILL.md");
     const importSkillTemplate = readTemplate("skills/fabric-import/SKILL.md");
-    const hookTemplate = readTemplate("hooks/archive-hint.cjs");
+    const hookTemplate = readTemplate("hooks/fabric-hint.cjs");
 
     // Archive skill copies — byte-identical
     const claudeArchiveSkill = readFileSync(join(target, ".claude/skills/fabric-archive/SKILL.md"), "utf8");
@@ -138,25 +139,35 @@ describe("TASK-006 install-skills-and-hooks: fresh init", () => {
     expect(claudeImportSkill).toBe(importSkillTemplate);
     expect(codexImportSkill).toBe(importSkillTemplate);
 
-    // Hook script copies — byte-identical
-    const claudeHook = readFileSync(join(target, ".claude/hooks/archive-hint.cjs"), "utf8");
-    const codexHook = readFileSync(join(target, ".codex/hooks/archive-hint.cjs"), "utf8");
+    // Hook script copies — byte-identical (rc.5 TASK-010: Cursor added)
+    const claudeHook = readFileSync(join(target, ".claude/hooks/fabric-hint.cjs"), "utf8");
+    const codexHook = readFileSync(join(target, ".codex/hooks/fabric-hint.cjs"), "utf8");
+    const cursorHook = readFileSync(join(target, ".cursor/hooks/fabric-hint.cjs"), "utf8");
     expect(claudeHook).toBe(hookTemplate);
     expect(codexHook).toBe(hookTemplate);
+    expect(cursorHook).toBe(hookTemplate);
 
     // Claude settings.json contains hooks.Stop[] entry pointing at the hook
     const claudeSettings = JSON.parse(
       readFileSync(join(target, ".claude/settings.json"), "utf8"),
     ) as { hooks?: { Stop?: unknown[] } };
     expect(Array.isArray(claudeSettings.hooks?.Stop)).toBe(true);
-    expect(JSON.stringify(claudeSettings.hooks?.Stop)).toContain(".claude/hooks/archive-hint.cjs");
+    expect(JSON.stringify(claudeSettings.hooks?.Stop)).toContain(".claude/hooks/fabric-hint.cjs");
 
     // Codex hooks.json contains events.Stop[] entry pointing at the hook
     const codexHooks = JSON.parse(
       readFileSync(join(target, ".codex/hooks.json"), "utf8"),
     ) as { events?: { Stop?: unknown[] } };
     expect(Array.isArray(codexHooks.events?.Stop)).toBe(true);
-    expect(JSON.stringify(codexHooks.events?.Stop)).toContain(".codex/hooks/archive-hint.cjs");
+    expect(JSON.stringify(codexHooks.events?.Stop)).toContain(".codex/hooks/fabric-hint.cjs");
+
+    // Cursor hooks.json contains events.Stop[] entry pointing at the hook
+    // (rc.5 TASK-010 — Cursor brought to parity with Claude Code + Codex CLI)
+    const cursorHooks = JSON.parse(
+      readFileSync(join(target, ".cursor/hooks.json"), "utf8"),
+    ) as { events?: { Stop?: unknown[] } };
+    expect(Array.isArray(cursorHooks.events?.Stop)).toBe(true);
+    expect(JSON.stringify(cursorHooks.events?.Stop)).toContain(".cursor/hooks/fabric-hint.cjs");
   });
 });
 
@@ -222,7 +233,7 @@ describe("TASK-006 install-skills-and-hooks: settings preservation", () => {
       .flatMap((entry) => entry.hooks ?? [])
       .map((h) => h.command);
     expect(stopCommands).toContain(".claude/hooks/my-custom-hook.cjs");
-    expect(stopCommands).toContain(".claude/hooks/archive-hint.cjs");
+    expect(stopCommands).toContain(".claude/hooks/fabric-hint.cjs");
   });
 });
 
@@ -266,14 +277,14 @@ describe("TASK-006 install-skills-and-hooks: dedup", () => {
 // ---------------------------------------------------------------------------
 
 describe.skipIf(process.platform === "win32")("TASK-006 install-skills-and-hooks: POSIX exec bit", () => {
-  it("archive-hint.cjs has owner-execute bit set", async () => {
+  it("fabric-hint.cjs has owner-execute bit set", async () => {
     const target = createWerewolfFixtureRoot("itg-install-execbit");
     tempRoots.push(target);
 
     await runInit(target);
 
-    const claudeStat = statSync(join(target, ".claude/hooks/archive-hint.cjs"));
-    const codexStat = statSync(join(target, ".codex/hooks/archive-hint.cjs"));
+    const claudeStat = statSync(join(target, ".claude/hooks/fabric-hint.cjs"));
+    const codexStat = statSync(join(target, ".codex/hooks/fabric-hint.cjs"));
 
     // Owner-execute bit (0o100) must be set; install helper chmods to 0o755.
     expect(claudeStat.mode & 0o100).toBe(0o100);

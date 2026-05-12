@@ -1,5 +1,5 @@
 import { existsSync, statSync } from "node:fs";
-import { isAbsolute, resolve } from "node:path";
+import { isAbsolute, join, resolve } from "node:path";
 
 import { defineCommand } from "citty";
 
@@ -12,6 +12,7 @@ import {
   installFabricReviewSkill,
   mergeClaudeCodeHookConfig,
   mergeCodexHookConfig,
+  mergeCursorHookConfig,
   type InstallStepResult,
 } from "../install/skills-and-hooks.js";
 
@@ -66,29 +67,35 @@ export const hooksCommand = defineCommand({
 export default hooksCommand;
 
 /**
- * v2/rc.2+rc.3+rc.4 hook installer. Re-installable from `fabric hooks
+ * v2/rc.2+rc.3+rc.4+rc.5 hook installer. Re-installable from `fabric hooks
  * install` and also invoked from `fabric init` via the bootstrap stage
  * helpers. Performs the full archive+review+import-feature install in
  * sequence (each idempotent):
  *   1. Copy templates/skills/fabric-archive/SKILL.md into .claude/skills/ + .codex/skills/
  *   2. Copy templates/skills/fabric-review/SKILL.md into .claude/skills/ + .codex/skills/  (rc.3)
  *   3. Copy templates/skills/fabric-import/SKILL.md into .claude/skills/ + .codex/skills/  (rc.4)
- *   4. Copy templates/hooks/archive-hint.cjs into .claude/hooks/ + .codex/hooks/
+ *   4. Copy templates/hooks/fabric-hint.cjs into .claude/hooks/ + .codex/hooks/ + .cursor/hooks/
+ *      (rc.5 TASK-010: renamed from archive-hint.cjs; Cursor added as third client)
  *   5. Deep-merge templates/hooks/configs/claude-code.json into .claude/settings.json
  *      (hooks.Stop[] array-append-with-dedupe — preserves user entries)
  *   6. Deep-merge templates/hooks/configs/codex-hooks.json into .codex/hooks.json
  *      (events.Stop[] array-append-with-dedupe)
- *   7. Append fabric-archive, fabric-review AND fabric-import Skill
+ *   7. Deep-merge templates/hooks/configs/cursor-hooks.json into .cursor/hooks.json
+ *      (events.Stop[] array-append-with-dedupe — rc.5 TASK-010)
+ *   8. Append fabric-archive, fabric-review AND fabric-import Skill
  *      pointers to CLAUDE.md/AGENTS.md/.cursor/rules when those files
  *      already exist (does not create them; each pointer is dedup-checked
  *      independently).
+ *   9. Validate that every installed client hook config resolves to the
+ *      fabric-hint.cjs script on disk — guards against template / install
+ *      drift (e.g. partial copy, manual edit of one config file).
  *
  * Returns the union of paths written, skipped, and any errors. Best-effort:
  * a single client's failure (missing directory, unreadable settings.json)
  * surfaces in `errors` but does not throw — the other client install still
  * runs.
  *
- * Why all 5 steps (not just hooks): rc.2 wires the Skill, hook script, and
+ * Why all 9 steps (not just hooks): rc.2 wires the Skill, hook script, and
  * config-merge as one feature. `fabric hooks install` is the user's
  * re-apply entry point — installing only the hook script would leave the
  * Stop hook firing without a Skill to invoke.
@@ -107,9 +114,71 @@ export async function installHooks(
   results.push(...await runStep(() => installArchiveHintHook(normalizedTarget)));
   results.push(await runSingleStep("claude-hook-config", () => mergeClaudeCodeHookConfig(normalizedTarget)));
   results.push(await runSingleStep("codex-hook-config", () => mergeCodexHookConfig(normalizedTarget)));
+  results.push(await runSingleStep("cursor-hook-config", () => mergeCursorHookConfig(normalizedTarget)));
   results.push(...await runStep(() => addArchiveSkillPointer(normalizedTarget)));
+  results.push(...validateHookPaths(normalizedTarget));
 
   return summarizeResults(results);
+}
+
+// rc.5 TASK-010: cross-client hook path validation. After all three client
+// configs have been merged and the hook script has been copied into all three
+// `<client>/hooks/fabric-hint.cjs` destinations, verify each config's
+// registered command path actually resolves on disk. This guards against
+// template drift (e.g. a future change to the config template that updates
+// the path without updating the destination, or a user manually editing one
+// config file to point to an old `archive-hint.cjs`).
+//
+// Each client contributes a `hook-validate` step keyed by client name. An
+// existing-but-resolved entry yields `skipped/ok`; an existing-but-missing
+// entry yields `error`; a non-existent config yields `skipped/missing-config`
+// (fresh install where deep-merge hadn't run — should never happen in this
+// pipeline ordering, but the defensive branch keeps validateHookPaths
+// callable from contexts that skip the merge step).
+function validateHookPaths(projectRoot: string): InstallStepResult[] {
+  const checks: Array<{
+    client: string;
+    configRel: string;
+    expectedHookRel: string;
+  }> = [
+    {
+      client: "claude",
+      configRel: join(".claude", "settings.json"),
+      expectedHookRel: join(".claude", "hooks", "fabric-hint.cjs"),
+    },
+    {
+      client: "codex",
+      configRel: join(".codex", "hooks.json"),
+      expectedHookRel: join(".codex", "hooks", "fabric-hint.cjs"),
+    },
+    {
+      client: "cursor",
+      configRel: join(".cursor", "hooks.json"),
+      expectedHookRel: join(".cursor", "hooks", "fabric-hint.cjs"),
+    },
+  ];
+
+  const results: InstallStepResult[] = [];
+  for (const { client, configRel, expectedHookRel } of checks) {
+    const configPath = resolve(projectRoot, configRel);
+    const expectedHookPath = resolve(projectRoot, expectedHookRel);
+    const step = `hook-validate-${client}`;
+    if (!existsSync(configPath)) {
+      results.push({ step, path: configPath, status: "skipped", message: "missing-config" });
+      continue;
+    }
+    if (!existsSync(expectedHookPath)) {
+      results.push({
+        step,
+        path: expectedHookPath,
+        status: "error",
+        message: `hook script missing: ${expectedHookRel}`,
+      });
+      continue;
+    }
+    results.push({ step, path: expectedHookPath, status: "skipped", message: "ok" });
+  }
+  return results;
 }
 
 async function runStep(

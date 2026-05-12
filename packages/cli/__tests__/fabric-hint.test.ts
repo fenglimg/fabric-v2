@@ -1,5 +1,7 @@
 /**
- * Contract tests for templates/hooks/archive-hint.cjs.
+ * Contract tests for templates/hooks/fabric-hint.cjs (formerly
+ * archive-hint.cjs — renamed in rc.5 TASK-010 to reflect its expanded
+ * three-signal scope: archive / review / import).
  *
  * Per signal-handler.test.ts:1-14 policy: in-process invocation only,
  * NO child_process.spawn in CI. We load the .cjs via createRequire so
@@ -21,13 +23,20 @@ import { fileURLToPath } from "node:url";
 
 const require = createRequire(import.meta.url);
 const hookPath = fileURLToPath(
-  new URL("../templates/hooks/archive-hint.cjs", import.meta.url),
+  new URL("../templates/hooks/fabric-hint.cjs", import.meta.url),
 );
 
 type PendingStats = { count: number; oldestAgeMs: number | null };
 
+type UnderseedStats = { nodeCount: number; threshold: number };
+
 type HookDecision =
-  | { decision: "block"; reason: string; signal: "archive" | "review" }
+  | {
+      decision: "block";
+      reason: string;
+      signal: "archive" | "review" | "import";
+      recommended_skill: "fabric-archive" | "fabric-review" | "fabric-import";
+    }
   | null;
 
 type HookModule = {
@@ -37,22 +46,30 @@ type HookModule = {
   ) => void;
   readLedger: (projectRoot: string) => Array<Record<string, unknown>>;
   readPendingStats: (projectRoot: string, now: Date) => PendingStats;
+  countCanonicalNodes: (projectRoot: string) => number;
   decide: (
     events: Array<Record<string, unknown>>,
     now: Date,
     pendingStats?: PendingStats,
+    underseedStats?: UnderseedStats,
   ) => HookDecision;
+  readUnderseedThreshold: (projectRoot: string) => number;
   CONSTANTS: {
     FABRIC_DIR: string;
     EVENT_LEDGER_FILE: string;
     EVENT_TYPE_PROPOSED: string;
     EVENT_TYPE_PLAN_CONTEXT: string;
+    EVENT_TYPE_INIT_SCAN_COMPLETED: string;
     THRESHOLD_PLAN_CONTEXTS: number;
     THRESHOLD_HOURS: number;
     PENDING_DIR: string;
     PENDING_TYPES: string[];
     THRESHOLD_PENDING_COUNT: number;
     THRESHOLD_PENDING_AGE_DAYS: number;
+    KNOWLEDGE_CANONICAL_TYPES: string[];
+    DEFAULT_UNDERSEED_NODE_THRESHOLD: number;
+    UNDERSEED_POST_INIT_QUIET_HOURS: number;
+    UNDERSEED_NO_PROPOSED_HOURS: number;
   };
 };
 
@@ -77,7 +94,7 @@ function makeEvent(
   };
 }
 
-describe("archive-hint.cjs — readLedger", () => {
+describe("fabric-hint.cjs — readLedger", () => {
   let tempRoot: string;
 
   beforeEach(() => {
@@ -133,7 +150,7 @@ describe("archive-hint.cjs — readLedger", () => {
   });
 });
 
-describe("archive-hint.cjs — decide", () => {
+describe("fabric-hint.cjs — decide", () => {
   it("returns null on empty ledger (no-trigger silence)", () => {
     expect(hook.decide([], FIXED_NOW)).toBeNull();
   });
@@ -206,7 +223,7 @@ describe("archive-hint.cjs — decide", () => {
   });
 });
 
-describe("archive-hint.cjs — main", () => {
+describe("fabric-hint.cjs — main", () => {
   let tempRoot: string;
 
   beforeEach(() => {
@@ -287,7 +304,7 @@ function seedPendingFile(
   return filePath;
 }
 
-describe("archive-hint.cjs — readPendingStats", () => {
+describe("fabric-hint.cjs — readPendingStats", () => {
   let tempRoot: string;
 
   beforeEach(() => {
@@ -345,7 +362,7 @@ describe("archive-hint.cjs — readPendingStats", () => {
   });
 });
 
-describe("archive-hint.cjs — decide (review signal)", () => {
+describe("fabric-hint.cjs — decide (review signal)", () => {
   it("returns null when no archive trigger and no pending entries (NEW-1)", () => {
     const result = hook.decide([], FIXED_NOW, { count: 0, oldestAgeMs: null });
     expect(result).toBeNull();
@@ -411,7 +428,7 @@ describe("archive-hint.cjs — decide (review signal)", () => {
   });
 });
 
-describe("archive-hint.cjs — main (review signal integration)", () => {
+describe("fabric-hint.cjs — main (review signal integration)", () => {
   let tempRoot: string;
 
   beforeEach(() => {
@@ -456,3 +473,305 @@ describe("archive-hint.cjs — main (review signal integration)", () => {
     expect(writes).toEqual([]);
   });
 });
+
+// rc.5 TASK-010 — third-signal (underseeded-corpus → fabric-import skill).
+
+function seedCanonicalFile(
+  root: string,
+  type: string,
+  slug: string,
+): string {
+  const dir = join(root, ".fabric", "knowledge", type);
+  mkdirSync(dir, { recursive: true });
+  const filePath = join(dir, `${slug}.md`);
+  writeFileSync(filePath, `# ${slug}\n`, "utf8");
+  return filePath;
+}
+
+describe("fabric-hint.cjs — countCanonicalNodes", () => {
+  let tempRoot: string;
+
+  beforeEach(() => {
+    tempRoot = mkdtempSync(join(tmpdir(), "fabric-hint-count-"));
+  });
+
+  afterEach(() => {
+    try {
+      rmSync(tempRoot, { recursive: true, force: true });
+    } catch {
+      // best-effort
+    }
+  });
+
+  it("returns 0 when .fabric/knowledge does not exist", () => {
+    expect(hook.countCanonicalNodes(tempRoot)).toBe(0);
+  });
+
+  it("counts .md files across all five canonical type subdirs (excludes pending)", () => {
+    seedCanonicalFile(tempRoot, "decisions", "KT-DEC-0001--a");
+    seedCanonicalFile(tempRoot, "pitfalls", "KT-PIT-0001--b");
+    seedCanonicalFile(tempRoot, "guidelines", "KT-GLD-0001--c");
+    seedCanonicalFile(tempRoot, "models", "KT-MOD-0001--d");
+    seedCanonicalFile(tempRoot, "processes", "KT-PRO-0001--e");
+    // pending/ entries MUST NOT count.
+    seedCanonicalFile(tempRoot, "pending/decisions", "pending-proposal");
+    // Non-.md noise MUST be ignored.
+    writeFileSync(
+      join(tempRoot, ".fabric", "knowledge", "decisions", "README.txt"),
+      "ignore me",
+      "utf8",
+    );
+
+    expect(hook.countCanonicalNodes(tempRoot)).toBe(5);
+  });
+});
+
+describe("fabric-hint.cjs — decide (import signal)", () => {
+  const initTs = NOW_MS - 48 * HOUR_MS; // 48h before NOW — past the 24h post-init quiet window
+  const initEvent = makeEvent("init_scan_completed", initTs);
+
+  it("returns null when node count >= threshold even with quiet init", () => {
+    const result = hook.decide([initEvent], FIXED_NOW, undefined, {
+      nodeCount: 10,
+      threshold: 10,
+    });
+    expect(result).toBeNull();
+  });
+
+  it("returns null when no init_scan_completed event recorded", () => {
+    const result = hook.decide([], FIXED_NOW, undefined, {
+      nodeCount: 3,
+      threshold: 10,
+    });
+    expect(result).toBeNull();
+  });
+
+  it("returns null when init_scan_completed <24h ago", () => {
+    const recentInit = makeEvent("init_scan_completed", NOW_MS - 5 * HOUR_MS);
+    const result = hook.decide([recentInit], FIXED_NOW, undefined, {
+      nodeCount: 2,
+      threshold: 10,
+    });
+    expect(result).toBeNull();
+  });
+
+  it("returns import signal when node count < threshold AND init >=24h AND no recent knowledge_proposed", () => {
+    const result = hook.decide([initEvent], FIXED_NOW, undefined, {
+      nodeCount: 4,
+      threshold: 10,
+    });
+    expect(result).not.toBeNull();
+    expect(result?.decision).toBe("block");
+    expect(result?.signal).toBe("import");
+    expect(result?.recommended_skill).toBe("fabric-import");
+    expect(result?.reason).toMatch(/fabric-import/);
+    expect(result?.reason).toMatch(/4/);
+  });
+
+  it("returns null when knowledge_proposed <24h ago even with sparse corpus", () => {
+    const recentProposed = makeEvent("knowledge_proposed", NOW_MS - 2 * HOUR_MS, {
+      timestamp: new Date(NOW_MS - 2 * HOUR_MS).toISOString(),
+    });
+    // No archive trigger (only 1 plan_context, <5 threshold). But the
+    // knowledge_proposed-within-24h guard MUST suppress the import signal.
+    const result = hook.decide([initEvent, recentProposed], FIXED_NOW, undefined, {
+      nodeCount: 4,
+      threshold: 10,
+    });
+    expect(result).toBeNull();
+  });
+
+  it("archive precedence: archive wins when both archive AND import triggers fire", () => {
+    // 5 plan_contexts, no previous knowledge_proposed → archive triggers.
+    const events: Array<Record<string, unknown>> = [initEvent];
+    for (let i = 0; i < 5; i += 1) {
+      events.push(
+        makeEvent("knowledge_context_planned", NOW_MS - (5 - i) * HOUR_MS),
+      );
+    }
+    const result = hook.decide(events, FIXED_NOW, undefined, {
+      nodeCount: 1,
+      threshold: 10,
+    });
+    expect(result).not.toBeNull();
+    expect(result?.signal).toBe("archive");
+    expect(result?.recommended_skill).toBe("fabric-archive");
+  });
+
+  it("review precedence: review wins when both review AND import triggers fire", () => {
+    // No archive trigger. Pending count 10 → review fires. Sparse corpus.
+    const result = hook.decide([initEvent], FIXED_NOW, {
+      count: 10,
+      oldestAgeMs: 1 * 24 * 60 * 60 * 1000,
+    }, {
+      nodeCount: 1,
+      threshold: 10,
+    });
+    expect(result).not.toBeNull();
+    expect(result?.signal).toBe("review");
+    expect(result?.recommended_skill).toBe("fabric-review");
+  });
+
+  it("includes recommended_skill='fabric-archive' on archive trigger", () => {
+    const events: Array<Record<string, unknown>> = [];
+    for (let i = 0; i < 5; i += 1) {
+      events.push(
+        makeEvent("knowledge_context_planned", NOW_MS - (5 - i) * HOUR_MS),
+      );
+    }
+    const result = hook.decide(events, FIXED_NOW);
+    expect(result?.recommended_skill).toBe("fabric-archive");
+  });
+
+  it("includes recommended_skill='fabric-review' on review trigger", () => {
+    const result = hook.decide([], FIXED_NOW, { count: 10, oldestAgeMs: null });
+    expect(result?.recommended_skill).toBe("fabric-review");
+  });
+});
+
+describe("fabric-hint.cjs — readUnderseedThreshold", () => {
+  let tempRoot: string;
+
+  beforeEach(() => {
+    tempRoot = mkdtempSync(join(tmpdir(), "fabric-hint-config-"));
+  });
+
+  afterEach(() => {
+    try {
+      rmSync(tempRoot, { recursive: true, force: true });
+    } catch {
+      // best-effort
+    }
+  });
+
+  it("returns default 10 when config file is missing", () => {
+    expect(hook.readUnderseedThreshold(tempRoot)).toBe(10);
+    expect(hook.readUnderseedThreshold(tempRoot)).toBe(
+      hook.CONSTANTS.DEFAULT_UNDERSEED_NODE_THRESHOLD,
+    );
+  });
+
+  it("returns config override when present and positive", () => {
+    mkdirSync(join(tempRoot, ".fabric"), { recursive: true });
+    writeFileSync(
+      join(tempRoot, ".fabric", "fabric-config.json"),
+      JSON.stringify({ underseed_node_threshold: 25 }),
+      "utf8",
+    );
+    expect(hook.readUnderseedThreshold(tempRoot)).toBe(25);
+  });
+
+  it("falls back to default when override is non-positive", () => {
+    mkdirSync(join(tempRoot, ".fabric"), { recursive: true });
+    writeFileSync(
+      join(tempRoot, ".fabric", "fabric-config.json"),
+      JSON.stringify({ underseed_node_threshold: 0 }),
+      "utf8",
+    );
+    expect(hook.readUnderseedThreshold(tempRoot)).toBe(10);
+  });
+
+  it("falls back to default on parse failure", () => {
+    mkdirSync(join(tempRoot, ".fabric"), { recursive: true });
+    writeFileSync(
+      join(tempRoot, ".fabric", "fabric-config.json"),
+      "{{not valid json",
+      "utf8",
+    );
+    expect(hook.readUnderseedThreshold(tempRoot)).toBe(10);
+  });
+});
+
+describe("fabric-hint.cjs — main (import signal integration)", () => {
+  let tempRoot: string;
+
+  beforeEach(() => {
+    tempRoot = mkdtempSync(join(tmpdir(), "fabric-hint-import-"));
+  });
+
+  afterEach(() => {
+    try {
+      rmSync(tempRoot, { recursive: true, force: true });
+    } catch {
+      // best-effort
+    }
+  });
+
+  it("emits import JSON with signal:'import' + recommended_skill:'fabric-import' on underseeded corpus", () => {
+    mkdirSync(join(tempRoot, ".fabric"), { recursive: true });
+    // Seed an init_scan_completed event 48h before NOW.
+    const initEvent = makeEvent("init_scan_completed", NOW_MS - 48 * HOUR_MS);
+    writeFileSync(
+      join(tempRoot, ".fabric", "events.jsonl"),
+      `${JSON.stringify(initEvent)}\n`,
+      "utf8",
+    );
+    // Seed 3 canonical entries (< default threshold 10).
+    seedCanonicalFile(tempRoot, "decisions", "KT-DEC-0001--a");
+    seedCanonicalFile(tempRoot, "decisions", "KT-DEC-0002--b");
+    seedCanonicalFile(tempRoot, "pitfalls", "KT-PIT-0001--c");
+
+    const writes: string[] = [];
+    const stdout = { write: (chunk: string) => writes.push(chunk) };
+    hook.main({ cwd: tempRoot, now: FIXED_NOW }, { stdout });
+
+    expect(writes).toHaveLength(1);
+    const payload = JSON.parse(writes[0] as string) as {
+      decision: string;
+      reason: string;
+      signal: string;
+      recommended_skill: string;
+    };
+    expect(payload.decision).toBe("block");
+    expect(payload.signal).toBe("import");
+    expect(payload.recommended_skill).toBe("fabric-import");
+    expect(payload.reason).toMatch(/fabric-import/);
+    expect(payload.reason).toMatch(/3\/10/);
+  });
+
+  it("silent exit 0 when corpus is well-seeded (>= threshold)", () => {
+    mkdirSync(join(tempRoot, ".fabric"), { recursive: true });
+    const initEvent = makeEvent("init_scan_completed", NOW_MS - 48 * HOUR_MS);
+    writeFileSync(
+      join(tempRoot, ".fabric", "events.jsonl"),
+      `${JSON.stringify(initEvent)}\n`,
+      "utf8",
+    );
+    for (let i = 0; i < 12; i += 1) {
+      seedCanonicalFile(tempRoot, "decisions", `KT-DEC-${1000 + i}--entry-${i}`);
+    }
+
+    const writes: string[] = [];
+    const stdout = { write: (chunk: string) => writes.push(chunk) };
+    hook.main({ cwd: tempRoot, now: FIXED_NOW }, { stdout });
+
+    expect(writes).toEqual([]);
+  });
+
+  it("honours custom underseed_node_threshold from fabric-config.json", () => {
+    mkdirSync(join(tempRoot, ".fabric"), { recursive: true });
+    writeFileSync(
+      join(tempRoot, ".fabric", "fabric-config.json"),
+      JSON.stringify({ underseed_node_threshold: 3 }),
+      "utf8",
+    );
+    const initEvent = makeEvent("init_scan_completed", NOW_MS - 48 * HOUR_MS);
+    writeFileSync(
+      join(tempRoot, ".fabric", "events.jsonl"),
+      `${JSON.stringify(initEvent)}\n`,
+      "utf8",
+    );
+    // 2 canonical entries: < threshold(3) so import fires.
+    seedCanonicalFile(tempRoot, "decisions", "KT-DEC-0001--a");
+    seedCanonicalFile(tempRoot, "decisions", "KT-DEC-0002--b");
+
+    const writes: string[] = [];
+    const stdout = { write: (chunk: string) => writes.push(chunk) };
+    hook.main({ cwd: tempRoot, now: FIXED_NOW }, { stdout });
+
+    expect(writes).toHaveLength(1);
+    const payload = JSON.parse(writes[0] as string) as { signal: string };
+    expect(payload.signal).toBe("import");
+  });
+});
+

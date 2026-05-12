@@ -775,9 +775,12 @@ async function executeInitStagePlan(
   try {
     switch (stage.name) {
       case "bootstrap": {
-        // v2/rc.2: bootstrap installs the fabric-archive Skill template +
-        // archive-hint Stop hook script + per-client hook configs + the
-        // pointer line in CLAUDE.md / AGENTS.md / .cursor/rules. Each step
+        // v2/rc.2+rc.3+rc.4+rc.5: bootstrap installs the fabric-archive /
+        // fabric-review / fabric-import Skill templates + fabric-hint Stop
+        // hook script (rc.5 TASK-010 rename from archive-hint) + per-client
+        // hook configs across all three supported clients (claude / codex /
+        // cursor) + the pointer line in CLAUDE.md / AGENTS.md / .cursor/rules.
+        // Each step
         // is best-effort: a single failure (e.g. one client's directory is
         // unreadable) is logged but does not abort init — other clients
         // and downstream stages continue.

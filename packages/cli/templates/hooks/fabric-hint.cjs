@@ -9,6 +9,7 @@ const FABRIC_DIR = ".fabric";
 const EVENT_LEDGER_FILE = "events.jsonl";
 const EVENT_TYPE_PROPOSED = "knowledge_proposed";
 const EVENT_TYPE_PLAN_CONTEXT = "knowledge_context_planned";
+const EVENT_TYPE_INIT_SCAN_COMPLETED = "init_scan_completed";
 const THRESHOLD_PLAN_CONTEXTS = 5;
 const THRESHOLD_HOURS = 24;
 const MS_PER_HOUR = 60 * 60 * 1000;
@@ -20,11 +21,26 @@ const THRESHOLD_PENDING_COUNT = 10;
 const THRESHOLD_PENDING_AGE_DAYS = 7;
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
+// rc.5 TASK-010: third signal — underseeded knowledge corpus → fabric-import skill.
+// Triggers when (a) canonical node count is below the underseed threshold AND
+// (b) the workspace has had a successful init_scan_completed event at least 24h
+// ago (so we don't nag during the immediate post-init window) AND (c) no
+// knowledge_proposed event has fired in the last 24h (so we don't nag while
+// the user is actively archiving).
+const KNOWLEDGE_CANONICAL_TYPES = PENDING_TYPES; // same five canonical type dirs
+const DEFAULT_UNDERSEED_NODE_THRESHOLD = 10;
+const UNDERSEED_POST_INIT_QUIET_HOURS = 24;
+const UNDERSEED_NO_PROPOSED_HOURS = 24;
+
 // Cooldown throttle. After the hook surfaces a reminder, it stays silent for
 // this many hours — purely a reminder-noise throttle, not a state machine.
 // Override via .fabric/fabric-config.json#archive_hint_cooldown_hours.
 const CONFIG_FILE = "fabric-config.json";
 const DEFAULT_COOLDOWN_HOURS = 12;
+// Cache file path retains the historical `archive-hint-shown.json` name so an
+// in-place rename does not flush a user's existing cooldown state on first run
+// post-upgrade. The schema is signal-keyed (archive/review/import) so the new
+// import signal slot lives alongside the existing two.
 const SHOWN_CACHE_FILE = ".fabric/.cache/archive-hint-shown.json";
 
 /**
@@ -126,6 +142,40 @@ function readPendingStats(projectRoot, now) {
 }
 
 /**
+ * Count canonical knowledge entries across the five canonical type subdirs
+ * (decisions / pitfalls / guidelines / models / processes). Pending entries
+ * are NOT counted — they are proposals, not seeded knowledge.
+ *
+ * Returns the integer count. ENOENT / unreadable subdir → silently treated as
+ * zero (preserves never-block-on-failure invariant). Filters on `.md` suffix
+ * only; the more-precise canonical filename pattern check is owned by
+ * doctor.ts (the hook is a coarse signal, not a lint).
+ */
+function countCanonicalNodes(projectRoot) {
+  const knowledgeRoot = join(projectRoot, FABRIC_DIR, "knowledge");
+  if (!existsSync(knowledgeRoot)) {
+    return 0;
+  }
+  let count = 0;
+  for (const type of KNOWLEDGE_CANONICAL_TYPES) {
+    const typeDir = join(knowledgeRoot, type);
+    if (!existsSync(typeDir)) continue;
+    let entries;
+    try {
+      entries = readdirSync(typeDir);
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      if (entry.endsWith(".md")) {
+        count += 1;
+      }
+    }
+  }
+  return count;
+}
+
+/**
  * Decide whether to emit a hook reminder.
  *
  * rc.2 archive signal (per discussion.md L355-L362):
@@ -137,17 +187,27 @@ function readPendingStats(projectRoot, now) {
  * rc.3 review signal (TASK-004):
  *   - Trigger when (pending count >= 10) OR (oldest pending mtime age >= 7 days).
  *
- * Precedence: archive > review. When BOTH fire, archive wins — returning to
- * recent in-session work is more urgent than long-tail review.
+ * rc.5 import signal (TASK-010):
+ *   - Trigger when canonical node count < underseed threshold AND a
+ *     init_scan_completed event has fired at least 24h ago AND no
+ *     knowledge_proposed event has fired in the last 24h.
+ *
+ * Precedence: archive > review > import. Archive wins when both archive AND
+ * any other signal fire — recent in-session work is the most urgent reminder.
+ * Review wins over import because pending overflow is a sharper backlog signal
+ * than a sparse corpus.
  *
  * Returns one of:
- *   - { decision: 'block', reason, signal: 'archive' } on archive trigger
- *   - { decision: 'block', reason, signal: 'review' } on review-only trigger
+ *   - { decision: 'block', reason, signal: 'archive', recommended_skill: 'fabric-archive' }
+ *   - { decision: 'block', reason, signal: 'review', recommended_skill: 'fabric-review' }
+ *   - { decision: 'block', reason, signal: 'import', recommended_skill: 'fabric-import' }
  *   - null on no trigger
  */
-function decide(events, now, pendingStats) {
+function decide(events, now, pendingStats, underseedStats) {
   const nowMs = now instanceof Date ? now.getTime() : Number(now) || Date.now();
   const stats = pendingStats || { count: 0, oldestAgeMs: null };
+  const underseed =
+    underseedStats || { nodeCount: 0, threshold: DEFAULT_UNDERSEED_NODE_THRESHOLD };
 
   // ---- Archive signal (rc.2 logic, unchanged) -------------------------------
   let lastProposedTs = null;
@@ -179,14 +239,19 @@ function decide(events, now, pendingStats) {
     hoursElapsed !== null && hoursElapsed >= THRESHOLD_HOURS && planContextCount > 0;
 
   // PRECEDENCE: archive wins if either archive trigger fires, regardless of
-  // review state. The user gets the archive reminder first; review reminder
-  // waits until after archive happens.
+  // review/import state. The user gets the archive reminder first; other
+  // reminders wait until after archive happens.
   if (triggerByCount || triggerByHours) {
     const hoursDisplay = hoursElapsed === null ? "尚未归档" : `${hoursElapsed.toFixed(1)}h`;
     const reason =
       `已积累 ${planContextCount} 次 plan_context 调用且距上次 knowledge_proposed ${hoursDisplay}` +
       " — 建议调用 fabric-archive skill 抽取本次会话的知识。";
-    return { decision: "block", reason, signal: "archive" };
+    return {
+      decision: "block",
+      reason,
+      signal: "archive",
+      recommended_skill: "fabric-archive",
+    };
   }
 
   // ---- Review signal (rc.3 TASK-004) ---------------------------------------
@@ -202,7 +267,54 @@ function decide(events, now, pendingStats) {
     const reason =
       `已积累 ${stats.count} 条待审核知识${ageSuffix}` +
       " — 建议调用 fabric-review skill 审核 pending/ 条目。";
-    return { decision: "block", reason, signal: "review" };
+    return {
+      decision: "block",
+      reason,
+      signal: "review",
+      recommended_skill: "fabric-review",
+    };
+  }
+
+  // ---- Import signal (rc.5 TASK-010) — underseeded corpus -------------------
+  // All three conditions must hold (logical AND):
+  //  1. node count < threshold (sparse corpus)
+  //  2. init_scan_completed event >= 24h ago (workspace has been initialized
+  //     for at least a day — we don't nag during the immediate post-init
+  //     window when the user is still authoring baseline knowledge)
+  //  3. no knowledge_proposed event in last 24h (user isn't actively
+  //     archiving — if they were, the archive signal would have fired anyway,
+  //     but we keep this guard explicit per spec)
+  let lastInitScanTs = null;
+  for (let i = events.length - 1; i >= 0; i -= 1) {
+    const ev = events[i];
+    if (
+      ev &&
+      ev.event_type === EVENT_TYPE_INIT_SCAN_COMPLETED &&
+      typeof ev.ts === "number"
+    ) {
+      lastInitScanTs = ev.ts;
+      break;
+    }
+  }
+  const hoursSinceInit =
+    lastInitScanTs === null ? null : (nowMs - lastInitScanTs) / MS_PER_HOUR;
+  const hoursSinceProposed = hoursElapsed; // reuse archive-signal calc above
+  const triggerUnderseed =
+    underseed.nodeCount < underseed.threshold &&
+    hoursSinceInit !== null &&
+    hoursSinceInit >= UNDERSEED_POST_INIT_QUIET_HOURS &&
+    (hoursSinceProposed === null || hoursSinceProposed >= UNDERSEED_NO_PROPOSED_HOURS);
+
+  if (triggerUnderseed) {
+    const reason =
+      `知识库节点数 ${underseed.nodeCount}/${underseed.threshold}，距 init_scan_completed ${hoursSinceInit.toFixed(1)}h` +
+      " — 建议调用 fabric-import skill 从 git 历史与现有文档回灌知识。";
+    return {
+      decision: "block",
+      reason,
+      signal: "import",
+      recommended_skill: "fabric-import",
+    };
   }
 
   return null;
@@ -224,6 +336,24 @@ function readCooldownHours(projectRoot) {
     // fall through to default
   }
   return DEFAULT_COOLDOWN_HOURS;
+}
+
+/**
+ * Resolve the underseed-node threshold from .fabric/fabric-config.json
+ * (underseed_node_threshold), falling back to DEFAULT_UNDERSEED_NODE_THRESHOLD.
+ * Any read/parse failure → default (never block on config errors).
+ */
+function readUnderseedThreshold(projectRoot) {
+  const configPath = join(projectRoot, FABRIC_DIR, CONFIG_FILE);
+  if (!existsSync(configPath)) return DEFAULT_UNDERSEED_NODE_THRESHOLD;
+  try {
+    const parsed = JSON.parse(readFileSync(configPath, "utf8"));
+    const v = parsed && parsed.underseed_node_threshold;
+    if (typeof v === "number" && Number.isFinite(v) && v > 0) return v;
+  } catch {
+    // fall through to default
+  }
+  return DEFAULT_UNDERSEED_NODE_THRESHOLD;
 }
 
 function readShownCache(projectRoot) {
@@ -269,7 +399,16 @@ function main(env, stdio) {
       // but a defense-in-depth try/catch keeps the never-block invariant.
       pendingStats = { count: 0, oldestAgeMs: null };
     }
-    const result = decide(events, now, pendingStats);
+    let underseedStats;
+    try {
+      underseedStats = {
+        nodeCount: countCanonicalNodes(cwd),
+        threshold: readUnderseedThreshold(cwd),
+      };
+    } catch {
+      underseedStats = { nodeCount: 0, threshold: DEFAULT_UNDERSEED_NODE_THRESHOLD };
+    }
+    const result = decide(events, now, pendingStats, underseedStats);
     if (result === null) return;
 
     // Cooldown throttle: once a signal fires, stay silent for
@@ -294,8 +433,10 @@ module.exports = {
   main,
   readLedger,
   readPendingStats,
+  countCanonicalNodes,
   decide,
   readCooldownHours,
+  readUnderseedThreshold,
   readShownCache,
   writeShownCache,
   CONSTANTS: {
@@ -303,12 +444,17 @@ module.exports = {
     EVENT_LEDGER_FILE,
     EVENT_TYPE_PROPOSED,
     EVENT_TYPE_PLAN_CONTEXT,
+    EVENT_TYPE_INIT_SCAN_COMPLETED,
     THRESHOLD_PLAN_CONTEXTS,
     THRESHOLD_HOURS,
     PENDING_DIR,
     PENDING_TYPES,
     THRESHOLD_PENDING_COUNT,
     THRESHOLD_PENDING_AGE_DAYS,
+    KNOWLEDGE_CANONICAL_TYPES,
+    DEFAULT_UNDERSEED_NODE_THRESHOLD,
+    UNDERSEED_POST_INIT_QUIET_HOURS,
+    UNDERSEED_NO_PROPOSED_HOURS,
     CONFIG_FILE,
     DEFAULT_COOLDOWN_HOURS,
     SHOWN_CACHE_FILE,
