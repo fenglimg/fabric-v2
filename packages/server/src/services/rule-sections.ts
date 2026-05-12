@@ -5,7 +5,6 @@ import { join } from "node:path";
 import type { AgentsLayer } from "@fenglimg/fabric-shared";
 
 import { readAgentsMeta, type AgentsMeta } from "../meta-reader.js";
-import { appendRuleSelectionAuditEvent } from "./audit-log.js";
 import { appendEventLedgerEvent } from "./event-ledger.js";
 import { normalizeRulesPath } from "./get-rules.js";
 import { readSelectionToken } from "./plan-context.js";
@@ -200,20 +199,24 @@ export async function getRuleSections(
     diagnostics,
   };
 
-  await appendRuleSelectionAuditEvent(projectRoot, {
-    path: token.target_paths[0] ?? "",
-    selection_token: input.selection_token,
-    target_paths: token.target_paths,
-    required_stable_ids: token.required_stable_ids,
-    ai_selectable_stable_ids: token.ai_selectable_stable_ids,
-    ai_selected_stable_ids: input.ai_selected_stable_ids,
-    final_stable_ids: result.selected_stable_ids,
-    ai_selection_reasons: pickSelectionReasons(input.ai_selected_stable_ids, input.ai_selection_reasons),
-    rejected_stable_ids: [],
-    ignored_stable_ids: [],
-    correlation_id: input.correlation_id,
-    session_id: input.session_id,
-  });
+  try {
+    await appendEventLedgerEvent(projectRoot, {
+      event_type: "knowledge_selection",
+      selection_token: input.selection_token,
+      target_paths: token.target_paths,
+      required_stable_ids: token.required_stable_ids,
+      ai_selectable_stable_ids: token.ai_selectable_stable_ids,
+      ai_selected_stable_ids: input.ai_selected_stable_ids,
+      final_stable_ids: result.selected_stable_ids,
+      ai_selection_reasons: pickSelectionReasons(input.ai_selected_stable_ids, input.ai_selection_reasons),
+      rejected_stable_ids: [],
+      ignored_stable_ids: [],
+      correlation_id: input.correlation_id,
+      session_id: input.session_id,
+    });
+  } catch {
+    // Selection telemetry is best-effort and must not block rule delivery.
+  }
 
   try {
     await appendEventLedgerEvent(projectRoot, {

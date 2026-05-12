@@ -5,7 +5,6 @@ import { join } from "node:path";
 import {
   agentsMetaSchema,
   fabricEventSchema,
-  forensicReportSchema,
   ledgerEntrySchema,
   type FabricEvent,
 } from "@fenglimg/fabric-shared";
@@ -21,10 +20,8 @@ import {
 } from "../services/_shared.js";
 
 const AGENTS_META_PATH = ".fabric/agents.meta.json";
-const FORENSIC_PATH = ".fabric/forensic.json";
 const WATCHED_PATHS = [
   AGENTS_META_PATH,
-  FORENSIC_PATH,
   EVENT_LEDGER_PATH,
   LEDGER_PATH,
   LEGACY_LEDGER_PATH,
@@ -267,11 +264,6 @@ async function readEventsForFile(
     return event === null ? [] : [event];
   }
 
-  if (relativePath === FORENSIC_PATH) {
-    const event = await readDriftDetectedEvent(projectRoot);
-    return event === null ? [] : [event];
-  }
-
   if (relativePath === EVENT_LEDGER_PATH) {
     return await readEventLedgerAppendedEvents(state, projectRoot);
   }
@@ -294,21 +286,6 @@ async function readMetaUpdatedEvent(projectRoot: string): Promise<FabricEvent | 
 
   return {
     type: "meta:updated",
-    payload: parsed,
-  };
-}
-
-async function readDriftDetectedEvent(projectRoot: string): Promise<FabricEvent | null> {
-  const filePath = join(projectRoot, FORENSIC_PATH);
-  const raw = await readUtf8File(filePath);
-  if (raw === null) {
-    return null;
-  }
-
-  const parsed = forensicReportSchema.parse(JSON.parse(raw));
-
-  return {
-    type: "drift:detected",
     payload: parsed,
   };
 }

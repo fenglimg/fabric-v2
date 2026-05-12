@@ -17,7 +17,6 @@ import { contextCache } from "./cache.js";
 import { registerDoctorApi } from "./api/doctor.js";
 import { createEventsHandler } from "./api/events.js";
 import { registerHistoryApi } from "./api/history.js";
-import { registerIntentApi } from "./api/intent.js";
 import { registerLedgerApi } from "./api/ledger.js";
 import { registerRulesApi } from "./api/rules.js";
 import { registerRulesContextApi } from "./api/rules-context.js";
@@ -279,7 +278,6 @@ export function createFabricHttpApp(options: CreateFabricHttpAppOptions) {
   registerHistoryApi(app, projectRoot);
   registerScanApi(app, projectRoot);
   registerDoctorApi(app, projectRoot);
-  registerIntentApi(app, projectRoot);
   app.get("/events", createEventsHandler({ projectRoot }));
   app.all("/mcp", async (req, res) => {
     const sessionId = readHeader(req.headers["mcp-session-id"]);

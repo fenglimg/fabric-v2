@@ -5,7 +5,7 @@ import { minimatch } from "minimatch";
 
 import { contextCache } from "../cache.js";
 import { readAgentsMeta, type AgentsMeta } from "../meta-reader.js";
-import { appendGetRulesAuditEvent } from "./audit-log.js";
+import { appendEventLedgerEvent } from "./event-ledger.js";
 
 export type RulesEntry = {
   path: string;
@@ -99,17 +99,18 @@ export async function getRules(projectRoot: string, input: GetRulesInput): Promi
   };
 
   try {
-    await appendGetRulesAuditEvent(projectRoot, {
-      path: input.path,
-      client_hash: input.client_hash,
+    await appendEventLedgerEvent(projectRoot, {
+      event_type: "knowledge_context_planned",
+      target_paths: [input.path],
       required_stable_ids: requiredStableIds,
       ai_selectable_stable_ids: aiSelectableStableIds,
       final_stable_ids: [...requiredStableIds, ...aiSelectableStableIds],
+      client_hash: input.client_hash,
       correlation_id: input.correlation_id,
       session_id: input.session_id,
     });
   } catch {
-    // Compliance telemetry is best-effort and must not block rule delivery.
+    // Telemetry is best-effort and must not block rule delivery.
   }
 
   return result;
