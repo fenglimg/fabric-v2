@@ -110,7 +110,7 @@ function snapshotTree(root: string, rel: string): FsSnapshot {
 // ---------------------------------------------------------------------------
 
 describe("TASK-006 install-skills-and-hooks: fresh init", () => {
-  it("writes all 10 artifacts (archive+review+import skills + hooks + per-client configs)", async () => {
+  it("writes all 13 artifacts (archive+review+import skills + Stop + SessionStart hooks + per-client configs)", async () => {
     const target = createWerewolfFixtureRoot("itg-install-fresh");
     tempRoots.push(target);
 
@@ -120,6 +120,8 @@ describe("TASK-006 install-skills-and-hooks: fresh init", () => {
     const reviewSkillTemplate = readTemplate("skills/fabric-review/SKILL.md");
     const importSkillTemplate = readTemplate("skills/fabric-import/SKILL.md");
     const hookTemplate = readTemplate("hooks/fabric-hint.cjs");
+    // rc.6 TASK-019 (E1): SessionStart broad-injection hook script template.
+    const broadHookTemplate = readTemplate("hooks/knowledge-hint-broad.cjs");
 
     // Archive skill copies — byte-identical
     const claudeArchiveSkill = readFileSync(join(target, ".claude/skills/fabric-archive/SKILL.md"), "utf8");
@@ -147,27 +149,48 @@ describe("TASK-006 install-skills-and-hooks: fresh init", () => {
     expect(codexHook).toBe(hookTemplate);
     expect(cursorHook).toBe(hookTemplate);
 
-    // Claude settings.json contains hooks.Stop[] entry pointing at the hook
+    // rc.6 TASK-019: knowledge-hint-broad.cjs copies (SessionStart sibling)
+    const claudeBroad = readFileSync(join(target, ".claude/hooks/knowledge-hint-broad.cjs"), "utf8");
+    const codexBroad = readFileSync(join(target, ".codex/hooks/knowledge-hint-broad.cjs"), "utf8");
+    const cursorBroad = readFileSync(join(target, ".cursor/hooks/knowledge-hint-broad.cjs"), "utf8");
+    expect(claudeBroad).toBe(broadHookTemplate);
+    expect(codexBroad).toBe(broadHookTemplate);
+    expect(cursorBroad).toBe(broadHookTemplate);
+
+    // Claude settings.json contains hooks.Stop[] entry pointing at the Stop
+    // hook AND hooks.SessionStart[] entry pointing at the broad-injection hook.
     const claudeSettings = JSON.parse(
       readFileSync(join(target, ".claude/settings.json"), "utf8"),
-    ) as { hooks?: { Stop?: unknown[] } };
+    ) as { hooks?: { Stop?: unknown[]; SessionStart?: unknown[] } };
     expect(Array.isArray(claudeSettings.hooks?.Stop)).toBe(true);
     expect(JSON.stringify(claudeSettings.hooks?.Stop)).toContain(".claude/hooks/fabric-hint.cjs");
+    expect(Array.isArray(claudeSettings.hooks?.SessionStart)).toBe(true);
+    expect(JSON.stringify(claudeSettings.hooks?.SessionStart)).toContain(
+      ".claude/hooks/knowledge-hint-broad.cjs",
+    );
 
-    // Codex hooks.json contains events.Stop[] entry pointing at the hook
+    // Codex hooks.json contains events.Stop[] + events.SessionStart[]
     const codexHooks = JSON.parse(
       readFileSync(join(target, ".codex/hooks.json"), "utf8"),
-    ) as { events?: { Stop?: unknown[] } };
+    ) as { events?: { Stop?: unknown[]; SessionStart?: unknown[] } };
     expect(Array.isArray(codexHooks.events?.Stop)).toBe(true);
     expect(JSON.stringify(codexHooks.events?.Stop)).toContain(".codex/hooks/fabric-hint.cjs");
+    expect(Array.isArray(codexHooks.events?.SessionStart)).toBe(true);
+    expect(JSON.stringify(codexHooks.events?.SessionStart)).toContain(
+      ".codex/hooks/knowledge-hint-broad.cjs",
+    );
 
-    // Cursor hooks.json contains events.Stop[] entry pointing at the hook
-    // (rc.5 TASK-010 — Cursor brought to parity with Claude Code + Codex CLI)
+    // Cursor hooks.json contains events.Stop[] + events.SessionStart[]
+    // (rc.5 TASK-010 — Cursor parity; rc.6 TASK-019 — SessionStart slot filled)
     const cursorHooks = JSON.parse(
       readFileSync(join(target, ".cursor/hooks.json"), "utf8"),
-    ) as { events?: { Stop?: unknown[] } };
+    ) as { events?: { Stop?: unknown[]; SessionStart?: unknown[] } };
     expect(Array.isArray(cursorHooks.events?.Stop)).toBe(true);
     expect(JSON.stringify(cursorHooks.events?.Stop)).toContain(".cursor/hooks/fabric-hint.cjs");
+    expect(Array.isArray(cursorHooks.events?.SessionStart)).toBe(true);
+    expect(JSON.stringify(cursorHooks.events?.SessionStart)).toContain(
+      ".cursor/hooks/knowledge-hint-broad.cjs",
+    );
   });
 });
 
@@ -277,7 +300,7 @@ describe("TASK-006 install-skills-and-hooks: dedup", () => {
 // ---------------------------------------------------------------------------
 
 describe.skipIf(process.platform === "win32")("TASK-006 install-skills-and-hooks: POSIX exec bit", () => {
-  it("fabric-hint.cjs has owner-execute bit set", async () => {
+  it("fabric-hint.cjs AND knowledge-hint-broad.cjs have owner-execute bit set", async () => {
     const target = createWerewolfFixtureRoot("itg-install-execbit");
     tempRoots.push(target);
 
@@ -289,6 +312,16 @@ describe.skipIf(process.platform === "win32")("TASK-006 install-skills-and-hooks
     // Owner-execute bit (0o100) must be set; install helper chmods to 0o755.
     expect(claudeStat.mode & 0o100).toBe(0o100);
     expect(codexStat.mode & 0o100).toBe(0o100);
+
+    // rc.6 TASK-019: broad-injection sibling hook script
+    const claudeBroadStat = statSync(
+      join(target, ".claude/hooks/knowledge-hint-broad.cjs"),
+    );
+    const codexBroadStat = statSync(
+      join(target, ".codex/hooks/knowledge-hint-broad.cjs"),
+    );
+    expect(claudeBroadStat.mode & 0o100).toBe(0o100);
+    expect(codexBroadStat.mode & 0o100).toBe(0o100);
   });
 });
 
@@ -317,9 +350,10 @@ describe("TASK-006 install-skills-and-hooks: fabric hooks idempotent", () => {
     expect(result.errors).toEqual([]);
     // After a clean init, every hook step should be skipped (already up-to-date).
     expect(result.installed).toEqual([]);
-    // rc.4: skipped now covers 2 archive skills + 2 review skills + 2 import
-    // skills + 2 hook scripts + 2 configs = 10 minimum.
-    expect(result.skipped.length).toBeGreaterThanOrEqual(10);
+    // rc.6: skipped now covers 2 archive skills + 2 review skills + 2 import
+    // skills + 3 Stop hook scripts (claude/codex/cursor) + 3 SessionStart hook
+    // scripts (rc.6 TASK-019) + 3 client configs = 15 minimum.
+    expect(result.skipped.length).toBeGreaterThanOrEqual(15);
   });
 });
 

@@ -51,11 +51,15 @@ describe("installHooks — rc.5 TASK-010 cross-client hook path validation", () 
     expect(result.errors).toEqual([]);
 
     // Each validate step is a `skipped` entry with the hook script path. We
-    // look for the hook-validate-{client} step keys via their paths.
+    // look for the hook-validate-{client}[-broad] step keys via their paths.
     const skippedJoined = result.skipped.join("\n");
     expect(skippedJoined).toContain(join(target, ".claude", "hooks", "fabric-hint.cjs"));
     expect(skippedJoined).toContain(join(target, ".codex", "hooks", "fabric-hint.cjs"));
     expect(skippedJoined).toContain(join(target, ".cursor", "hooks", "fabric-hint.cjs"));
+    // rc.6 TASK-019 (E1): SessionStart broad-injection hook validates per client.
+    expect(skippedJoined).toContain(join(target, ".claude", "hooks", "knowledge-hint-broad.cjs"));
+    expect(skippedJoined).toContain(join(target, ".codex", "hooks", "knowledge-hint-broad.cjs"));
+    expect(skippedJoined).toContain(join(target, ".cursor", "hooks", "knowledge-hint-broad.cjs"));
   });
 
   it("surfaces a hook-validate error when the hook script is missing after merge", async () => {
@@ -98,18 +102,23 @@ describe("installHooks — rc.5 TASK-010 cross-client hook path validation", () 
     expect(skippedJoined).toContain(join(target, ".codex", "hooks", "fabric-hint.cjs"));
   });
 
-  it("happy-path skipped count is exactly 3 hook-validate entries (one per client)", async () => {
+  it("happy-path skipped count is exactly 3 fabric-hint + 3 broad-hint validate entries (one pair per client)", async () => {
     const target = mkRoot("hooks-install-validate-count");
     const result = await installHooks(target);
 
     // Count entries where the path ends with `<client>/hooks/fabric-hint.cjs`.
-    const validateEntries = result.skipped.filter((p) =>
+    const stopValidate = result.skipped.filter((p) =>
       p.endsWith(join("hooks", "fabric-hint.cjs")),
+    );
+    // rc.6 TASK-019: SessionStart sibling — same one-row-per-client shape.
+    const broadValidate = result.skipped.filter((p) =>
+      p.endsWith(join("hooks", "knowledge-hint-broad.cjs")),
     );
     // Note: each client also produces a copy `skipped` if the file existed.
     // On a fresh target the copy produces `written` not `skipped`, so the
-    // skipped entries ending in fabric-hint.cjs come exclusively from the
+    // skipped entries ending in the hook filenames come exclusively from the
     // validate step.
-    expect(validateEntries.length).toBe(3);
+    expect(stopValidate.length).toBe(3);
+    expect(broadValidate.length).toBe(3);
   });
 });

@@ -10,6 +10,7 @@ import {
   installFabricArchiveSkill,
   installFabricImportSkill,
   installFabricReviewSkill,
+  installKnowledgeHintBroadHook,
   mergeClaudeCodeHookConfig,
   mergeCodexHookConfig,
   mergeCursorHookConfig,
@@ -112,6 +113,11 @@ export async function installHooks(
   results.push(...await runStep(() => installFabricReviewSkill(normalizedTarget)));
   results.push(...await runStep(() => installFabricImportSkill(normalizedTarget)));
   results.push(...await runStep(() => installArchiveHintHook(normalizedTarget)));
+  // rc.6 TASK-019 (E1): SessionStart broad-injection hook script. Mirrors
+  // the fabric-hint.cjs copy step — same three client dest dirs, same
+  // chmod 0o755 on POSIX. Order vs config-merge matters: copy first so the
+  // validateHookPaths post-step finds the script on disk.
+  results.push(...await runStep(() => installKnowledgeHintBroadHook(normalizedTarget)));
   results.push(await runSingleStep("claude-hook-config", () => mergeClaudeCodeHookConfig(normalizedTarget)));
   results.push(await runSingleStep("codex-hook-config", () => mergeCodexHookConfig(normalizedTarget)));
   results.push(await runSingleStep("cursor-hook-config", () => mergeCursorHookConfig(normalizedTarget)));
@@ -136,47 +142,61 @@ export async function installHooks(
 // pipeline ordering, but the defensive branch keeps validateHookPaths
 // callable from contexts that skip the merge step).
 function validateHookPaths(projectRoot: string): InstallStepResult[] {
-  const checks: Array<{
-    client: string;
-    configRel: string;
-    expectedHookRel: string;
-  }> = [
+  // Each client contributes one validate row per registered hook script. rc.5
+  // shipped the Stop-hook (fabric-hint.cjs) only; rc.6 TASK-019 adds the
+  // SessionStart broad-injection hook (knowledge-hint-broad.cjs). Both scripts
+  // share the same `<client>/hooks/` destination tree, so the check shape is
+  // identical — we just iterate over the script names.
+  const scripts: Array<{ stepSuffix: string; hookFile: string }> = [
+    { stepSuffix: "", hookFile: "fabric-hint.cjs" },
+    { stepSuffix: "-broad", hookFile: "knowledge-hint-broad.cjs" },
+  ];
+  const clients: Array<{ client: string; configRel: string; hookDir: string }> = [
     {
       client: "claude",
       configRel: join(".claude", "settings.json"),
-      expectedHookRel: join(".claude", "hooks", "fabric-hint.cjs"),
+      hookDir: join(".claude", "hooks"),
     },
     {
       client: "codex",
       configRel: join(".codex", "hooks.json"),
-      expectedHookRel: join(".codex", "hooks", "fabric-hint.cjs"),
+      hookDir: join(".codex", "hooks"),
     },
     {
       client: "cursor",
       configRel: join(".cursor", "hooks.json"),
-      expectedHookRel: join(".cursor", "hooks", "fabric-hint.cjs"),
+      hookDir: join(".cursor", "hooks"),
     },
   ];
 
   const results: InstallStepResult[] = [];
-  for (const { client, configRel, expectedHookRel } of checks) {
+  for (const { client, configRel, hookDir } of clients) {
     const configPath = resolve(projectRoot, configRel);
-    const expectedHookPath = resolve(projectRoot, expectedHookRel);
-    const step = `hook-validate-${client}`;
     if (!existsSync(configPath)) {
-      results.push({ step, path: configPath, status: "skipped", message: "missing-config" });
-      continue;
-    }
-    if (!existsSync(expectedHookPath)) {
+      // Single missing-config row per client — same as rc.5 behaviour.
       results.push({
-        step,
-        path: expectedHookPath,
-        status: "error",
-        message: `hook script missing: ${expectedHookRel}`,
+        step: `hook-validate-${client}`,
+        path: configPath,
+        status: "skipped",
+        message: "missing-config",
       });
       continue;
     }
-    results.push({ step, path: expectedHookPath, status: "skipped", message: "ok" });
+    for (const { stepSuffix, hookFile } of scripts) {
+      const expectedHookPath = resolve(projectRoot, hookDir, hookFile);
+      const expectedHookRel = join(hookDir, hookFile);
+      const step = `hook-validate-${client}${stepSuffix}`;
+      if (!existsSync(expectedHookPath)) {
+        results.push({
+          step,
+          path: expectedHookPath,
+          status: "error",
+          message: `hook script missing: ${expectedHookRel}`,
+        });
+        continue;
+      }
+      results.push({ step, path: expectedHookPath, status: "skipped", message: "ok" });
+    }
   }
   return results;
 }

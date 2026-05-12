@@ -25,8 +25,10 @@ import {
   installFabricArchiveSkill,
   installFabricImportSkill,
   installFabricReviewSkill,
+  installKnowledgeHintBroadHook,
   mergeClaudeCodeHookConfig,
   mergeCodexHookConfig,
+  mergeCursorHookConfig,
   type InstallStepResult,
 } from "../install/skills-and-hooks.js";
 
@@ -789,8 +791,16 @@ async function executeInitStagePlan(
         installResults.push(...await runBestEffort("skill-review-install", () => installFabricReviewSkill(plan.target)));
         installResults.push(...await runBestEffort("skill-import-install", () => installFabricImportSkill(plan.target)));
         installResults.push(...await runBestEffort("hook-script", () => installArchiveHintHook(plan.target)));
+        // rc.6 TASK-019 (E1): SessionStart broad-injection hook script.
+        installResults.push(...await runBestEffort("hook-broad-script", () => installKnowledgeHintBroadHook(plan.target)));
         installResults.push(await runBestEffortSingle("claude-hook-config", () => mergeClaudeCodeHookConfig(plan.target)));
         installResults.push(await runBestEffortSingle("codex-hook-config", () => mergeCodexHookConfig(plan.target)));
+        // rc.5 TASK-010 cursor parity (rc.6 also writes the SessionStart slot
+        // via the same merged template). Missing from the rc.5 bootstrap-stage
+        // wiring — the `hooks` stage downstream calls installHooks() which
+        // covered it, but bootstrap-only invocations (e.g. partial-resilience
+        // tests) need it inlined here too.
+        installResults.push(await runBestEffortSingle("cursor-hook-config", () => mergeCursorHookConfig(plan.target)));
         installResults.push(...await runBestEffort("pointer", () => addArchiveSkillPointer(plan.target)));
         const installedCount = installResults.filter((r) => r.status === "written").length;
         const skippedCount = installResults.filter((r) => r.status === "skipped").length;

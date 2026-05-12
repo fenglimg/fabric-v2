@@ -4,6 +4,11 @@
       {
         "command": ".codex/hooks/fabric-hint.cjs"
       }
+    ],
+    "SessionStart": [
+      {
+        "command": ".codex/hooks/knowledge-hint-broad.cjs"
+      }
     ]
   }
 }

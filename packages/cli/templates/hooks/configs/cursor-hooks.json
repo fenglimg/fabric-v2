@@ -4,6 +4,11 @@
       {
         "command": ".cursor/hooks/fabric-hint.cjs"
       }
+    ],
+    "SessionStart": [
+      {
+        "command": ".cursor/hooks/knowledge-hint-broad.cjs"
+      }
     ]
   }
 }

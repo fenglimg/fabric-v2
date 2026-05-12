@@ -49,6 +49,10 @@ const SKILL_TEMPLATE_REL = "skills/fabric-archive/SKILL.md";
 const SKILL_REVIEW_TEMPLATE_REL = "skills/fabric-review/SKILL.md";
 const SKILL_IMPORT_TEMPLATE_REL = "skills/fabric-import/SKILL.md";
 const HOOK_SCRIPT_TEMPLATE_REL = "hooks/fabric-hint.cjs";
+// rc.6 TASK-019 (E1): SessionStart broad-injection hook script. Sibling to
+// fabric-hint.cjs — shares install/copy plumbing but is registered against a
+// different hook event (SessionStart instead of Stop) in each client config.
+const HOOK_BROAD_SCRIPT_TEMPLATE_REL = "hooks/knowledge-hint-broad.cjs";
 const CLAUDE_HOOK_CONFIG_TEMPLATE_REL = "hooks/configs/claude-code.json";
 const CODEX_HOOK_CONFIG_TEMPLATE_REL = "hooks/configs/codex-hooks.json";
 const CURSOR_HOOK_CONFIG_TEMPLATE_REL = "hooks/configs/cursor-hooks.json";
@@ -57,6 +61,7 @@ const SKILL_DEST_REL = join("skills", "fabric-archive", "SKILL.md");
 const SKILL_REVIEW_DEST_REL = join("skills", "fabric-review", "SKILL.md");
 const SKILL_IMPORT_DEST_REL = join("skills", "fabric-import", "SKILL.md");
 const HOOK_SCRIPT_DEST_REL = join("hooks", "fabric-hint.cjs");
+const HOOK_BROAD_SCRIPT_DEST_REL = join("hooks", "knowledge-hint-broad.cjs");
 
 const POINTER_LINE =
   "> Use the fabric-archive Skill when archiving knowledge entries (see .claude/skills/fabric-archive/SKILL.md).";
@@ -177,10 +182,50 @@ export async function installArchiveHintHook(
 }
 
 /**
+ * Copy templates/hooks/knowledge-hint-broad.cjs into all three supported
+ * clients' hooks directories: .claude/hooks/, .codex/hooks/, .cursor/hooks/.
+ * Marked executable on POSIX (chmod 0o755). Skipped on Windows where the
+ * platform ignores the bit.
+ *
+ * rc.6 TASK-019 (E1) — SessionStart broad-injection hook. Sibling to
+ * {@link installArchiveHintHook}; both helpers share the copy plumbing but
+ * each script is wired to a different hook event (Stop vs SessionStart) in
+ * the per-client config templates.
+ */
+export async function installKnowledgeHintBroadHook(
+  projectRoot: string,
+  _options: InstallOptions = {},
+): Promise<InstallStepResult[]> {
+  const source = await readTemplate(HOOK_BROAD_SCRIPT_TEMPLATE_REL);
+  const targets = [
+    join(projectRoot, ".claude", HOOK_BROAD_SCRIPT_DEST_REL),
+    join(projectRoot, ".codex", HOOK_BROAD_SCRIPT_DEST_REL),
+    join(projectRoot, ".cursor", HOOK_BROAD_SCRIPT_DEST_REL),
+  ];
+  const results: InstallStepResult[] = [];
+  for (const target of targets) {
+    const result = await copyTextIdempotent("hook-broad-script", source, target);
+    if (result.status === "written" && process.platform !== "win32") {
+      try {
+        chmodSync(target, 0o755);
+      } catch {
+        // best-effort — hook still functions when invoked via `node script.cjs`
+      }
+    }
+    results.push(result);
+  }
+  return results;
+}
+
+/**
  * Deep-merge templates/hooks/configs/claude-code.json into the user's
- * `.claude/settings.json`. The `hooks.Stop` array is array-append-with-
- * dedupe (preserves user-authored Stop entries; never duplicates the
- * fabric-archive entry on re-run).
+ * `.claude/settings.json`. Both `hooks.Stop` and `hooks.SessionStart`
+ * arrays are array-append-with-dedupe (preserves user-authored entries;
+ * never duplicates the fabric entries on re-run).
+ *
+ * rc.6 TASK-019: SessionStart array added alongside Stop. Each event slot
+ * has its own dedupe key per the deepMerge contract — Stop and SessionStart
+ * never interleave.
  */
 export async function mergeClaudeCodeHookConfig(
   projectRoot: string,
@@ -188,13 +233,18 @@ export async function mergeClaudeCodeHookConfig(
 ): Promise<InstallStepResult> {
   const fragment = await readJsonTemplate(CLAUDE_HOOK_CONFIG_TEMPLATE_REL);
   const targetPath = join(projectRoot, ".claude", "settings.json");
-  return mergeJsonIdempotent("claude-hook-config", targetPath, fragment, ["hooks.Stop"]);
+  return mergeJsonIdempotent("claude-hook-config", targetPath, fragment, [
+    "hooks.Stop",
+    "hooks.SessionStart",
+  ]);
 }
 
 /**
  * Deep-merge templates/hooks/configs/codex-hooks.json into the user's
- * `.codex/hooks.json`. The `events.Stop` array is array-append-with-
- * dedupe.
+ * `.codex/hooks.json`. Both `events.Stop` and `events.SessionStart` arrays
+ * are array-append-with-dedupe.
+ *
+ * rc.6 TASK-019: SessionStart added.
  */
 export async function mergeCodexHookConfig(
   projectRoot: string,
@@ -202,19 +252,20 @@ export async function mergeCodexHookConfig(
 ): Promise<InstallStepResult> {
   const fragment = await readJsonTemplate(CODEX_HOOK_CONFIG_TEMPLATE_REL);
   const targetPath = join(projectRoot, ".codex", "hooks.json");
-  return mergeJsonIdempotent("codex-hook-config", targetPath, fragment, ["events.Stop"]);
+  return mergeJsonIdempotent("codex-hook-config", targetPath, fragment, [
+    "events.Stop",
+    "events.SessionStart",
+  ]);
 }
 
 /**
  * Deep-merge templates/hooks/configs/cursor-hooks.json into the user's
- * `.cursor/hooks.json`. The `events.Stop` array is array-append-with-
- * dedupe.
+ * `.cursor/hooks.json`. Both `events.Stop` and `events.SessionStart` arrays
+ * are array-append-with-dedupe.
  *
  * Added in rc.5 TASK-010 to bring Cursor to parity with Claude Code and
- * Codex CLI for the cross-client hook surface. Cursor's hook event vocabulary
- * is still in flux upstream, so today we register only the Stop hook (which
- * has stable semantics across all three clients). SessionStart / PreToolUse
- * slots are deferred to rc.6.
+ * Codex CLI for the cross-client hook surface. rc.6 TASK-019 fills the
+ * previously-deferred SessionStart slot.
  */
 export async function mergeCursorHookConfig(
   projectRoot: string,
@@ -222,7 +273,10 @@ export async function mergeCursorHookConfig(
 ): Promise<InstallStepResult> {
   const fragment = await readJsonTemplate(CURSOR_HOOK_CONFIG_TEMPLATE_REL);
   const targetPath = join(projectRoot, ".cursor", "hooks.json");
-  return mergeJsonIdempotent("cursor-hook-config", targetPath, fragment, ["events.Stop"]);
+  return mergeJsonIdempotent("cursor-hook-config", targetPath, fragment, [
+    "events.Stop",
+    "events.SessionStart",
+  ]);
 }
 
 /**
