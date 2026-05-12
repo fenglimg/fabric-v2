@@ -21,7 +21,6 @@ import { registerLedgerApi } from "./api/ledger.js";
 import { registerRulesApi } from "./api/rules.js";
 import { registerRulesContextApi } from "./api/rules-context.js";
 import { registerScanApi } from "./api/scan.js";
-import { registerDashboardStatic } from "./api/static.js";
 import { createBearerAuthMiddleware } from "./middleware/bearer-auth.js";
 import { getLedgerPath, getLegacyLedgerPath } from "./services/_shared.js";
 import { appendEventLedgerEvent, readEventLedger } from "./services/event-ledger.js";
@@ -46,8 +45,6 @@ export type CreateFabricHttpAppOptions = {
   projectRoot: string;
   host?: string;
   authToken?: string;
-  dashboardDistPath?: string;
-  dev?: boolean;
 };
 
 export type FabricHttpApp = ReturnType<typeof createMcpExpressApp> & {
@@ -201,7 +198,7 @@ export function handleCacheWatcherEvent(
 }
 
 export function createFabricHttpApp(options: CreateFabricHttpAppOptions) {
-  const { projectRoot, host = DEFAULT_HOST, authToken, dashboardDistPath, dev } = options;
+  const { projectRoot, host = DEFAULT_HOST, authToken } = options;
   const app = createMcpExpressApp({ host }) as FabricHttpApp;
   const eventStore = new JsonlEventStore(projectRoot);
   const sessions = new Map<string, FabricHttpSession>();
@@ -301,7 +298,6 @@ export function createFabricHttpApp(options: CreateFabricHttpAppOptions) {
     const session = await createSession(eventStore, sessions);
     await session.transport.handleRequest(req, res, req.body);
   });
-  registerDashboardStatic(app, { dashboardDistPath, dev });
 
   return app;
 }

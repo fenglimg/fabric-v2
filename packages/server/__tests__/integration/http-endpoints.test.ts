@@ -2,7 +2,7 @@
  * http-endpoints.test.ts — HTTP-layer integration tests
  *
  * Boots createFabricHttpApp() in-process via supertest (no real port binding)
- * and exercises all 12 REST endpoints:
+ * and exercises the REST endpoints:
  *
  *   1. GET /api/rules
  *   2. GET /api/rules/context
@@ -14,8 +14,6 @@
  *   8. POST /api/intent/annotate
  *   9. GET /events (SSE — connection + header check)
  *  10. ALL /mcp (MCP HTTP transport — initialize handshake)
- *  11. GET / (dashboard root — DASHBOARD_DIST_MISSING when no dashboardDistPath)
- *  12. GET /<spa-fallback> — non-api/mcp/events route
  *
  * Plus: 401 on each protected route when authToken is set and token is missing.
  */
@@ -66,7 +64,7 @@ function makeLedgerEntry(root: string, id: string): void {
 // Suite setup
 // ---------------------------------------------------------------------------
 
-describe("HTTP integration — all 12 REST endpoints", () => {
+describe("HTTP integration — REST endpoints", () => {
   let tempDir: string;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let app: any;
@@ -381,29 +379,6 @@ describe("HTTP integration — all 12 REST endpoints", () => {
     });
   });
 
-  // -------------------------------------------------------------------------
-  // 11. GET / — dashboard root (DASHBOARD_DIST_MISSING when no dist path)
-  // -------------------------------------------------------------------------
-  describe("11. GET / (dashboard root)", () => {
-    it("returns 404 DASHBOARD_DIST_MISSING when no dashboardDistPath is provided", async () => {
-      const res = await supertest(app).get("/");
-      expect(res.status).toBe(404);
-      const body = res.body as { error: { code: string; message: string } };
-      expect(body.error.code).toBe("DASHBOARD_DIST_MISSING");
-    });
-  });
-
-  // -------------------------------------------------------------------------
-  // 12. GET /<spa-fallback> — non-api/mcp/events routes
-  // -------------------------------------------------------------------------
-  describe("12. GET /<spa-fallback>", () => {
-    it("returns 404 DASHBOARD_DIST_MISSING for unknown non-api paths when no dashboardDistPath", async () => {
-      const res = await supertest(app).get("/some-random-page");
-      // With no dashboardDistPath, the static middleware never registers the SPA fallback
-      // so Express returns 404
-      expect(res.status).toBe(404);
-    });
-  });
 });
 
 // ---------------------------------------------------------------------------

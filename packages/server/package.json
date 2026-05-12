@@ -8,7 +8,7 @@
     "dist"
   ],
   "scripts": {
-    "build": "tsup src/index.ts --format esm --dts --clean && node scripts/copy-dashboard.mjs",
+    "build": "tsup src/index.ts --format esm --dts --clean",
     "dev": "tsup src/index.ts --format esm --dts --watch",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage"
@@ -22,7 +22,6 @@
     "zod": "^3.25.0"
   },
   "devDependencies": {
-    "@fenglimg/fabric-dashboard": "workspace:*",
     "@types/express": "^5.0.6",
     "@types/node": "^22.15.0",
     "@types/supertest": "^7.2.0",

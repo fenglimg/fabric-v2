@@ -256,12 +256,10 @@ export async function startHttpServer(options: {
   projectRoot: string;
   host?: string;
   authToken?: string;
-  dashboardDistPath?: string;
-  dev?: boolean;
 }): Promise<HttpServer> {
   const { createFabricHttpApp } = await import("./http.js");
-  const { port, projectRoot, host = "127.0.0.1", authToken, dashboardDistPath, dev } = options;
-  const app = createFabricHttpApp({ projectRoot, host, authToken, dashboardDistPath, dev });
+  const { port, projectRoot, host = "127.0.0.1", authToken } = options;
+  const app = createFabricHttpApp({ projectRoot, host, authToken });
 
   return await new Promise<HttpServer>((resolveServer, rejectServer) => {
     const server = app.listen(port, host);

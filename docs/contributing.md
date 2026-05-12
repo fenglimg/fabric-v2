@@ -34,7 +34,6 @@ pnpm dev
 ```bash
 pnpm --filter @fenglimg/fabric-cli test
 pnpm --filter @fenglimg/fabric-server build
-pnpm --filter @fenglimg/fabric-dashboard build
 ```
 
 ## FAB_SERVER_PATH
