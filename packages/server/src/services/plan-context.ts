@@ -2,6 +2,8 @@ import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
+import { minimatch } from "minimatch";
+
 import { deriveAgentsMetaLayer, type RuleDescription, type RuleDescriptionIndexItem } from "@fenglimg/fabric-shared";
 
 import { readAgentsMeta, type AgentsMeta } from "../meta-reader.js";
@@ -16,6 +18,12 @@ export type PlanContextInput = {
   client_hash?: string;
   correlation_id?: string;
   session_id?: string;
+  // v2.0-rc.5 C3 (TASK-012): caller-supplied path context for relevance_paths
+  // filtering. `narrow` description_index entries are only surfaced when at
+  // least one of their `relevance_paths` globs matches at least one entry in
+  // `target_paths`. When omitted or empty, the filter fails open and every
+  // narrow entry is included (matches the rc.5 D1 hint CLI behavior).
+  target_paths?: string[];
 };
 
 // v2.0-rc.5 A3 (TASK-007): Cocos-era profile inference retired. The profile
@@ -94,9 +102,18 @@ export async function planContext(
   const uniquePaths = dedupePaths(input.paths);
   const allDescriptions = buildDescriptionIndex(meta);
 
+  // v2.0-rc.5 C3 (TASK-012): caller-supplied path context for relevance
+  // filtering. When omitted, fall back to `paths` so direct callers (without
+  // a separate target_paths surface) still benefit from narrowing on
+  // narrow-scoped entries whose globs anchor against the requested paths.
+  // Empty resolved set → fail-open at the matcher layer (narrow always passes).
+  const relevanceTargetPaths = input.target_paths ?? uniquePaths;
+
   const entries: PlanContextEntry[] = uniquePaths.map((path) => {
     const profile = buildRequirementProfile(path, input);
-    const descriptionIndex = allDescriptions.filter((item) => shouldIncludeIndexItemForPath(item, meta, path));
+    const descriptionIndex = allDescriptions
+      .filter((item) => shouldIncludeIndexItemForPath(item, meta, path))
+      .filter((item) => shouldIncludeByRelevance(item, relevanceTargetPaths));
 
     return {
       path,
@@ -264,9 +281,61 @@ function buildDescriptionIndex(meta: AgentsMeta): RuleDescriptionIndexItem[] {
         maturity: description.maturity,
         layer: description.knowledge_layer ?? inferredLayer,
         layer_reason: description.layer_reason,
+        // v2.0-rc.5 C3 (TASK-012): surface relevance fields at the top level
+        // so the per-entry filter + downstream MCP clients can read them
+        // without reaching into description.*. Defaults (broad + []) are
+        // applied at the meta-builder layer; we just pass them through here.
+        relevance_scope: description.relevance_scope,
+        relevance_paths: description.relevance_paths,
       }];
     })
     .sort(compareDescriptionIndexItems);
+}
+
+// v2.0-rc.5 C3 (TASK-012): relevance-paths filter. Returns true when an entry
+// should be surfaced for a given request path-context:
+//   * `broad` (or missing scope) entries always pass — they're cross-cutting.
+//   * `narrow` entries pass only when at least one of their `relevance_paths`
+//     globs matches at least one path in `targetPaths`.
+//   * Empty `targetPaths` is fail-open: every narrow entry passes. This matches
+//     the rc.5 D1 hint CLI semantics (no path context → no filter).
+//   * Empty `relevance_paths` on a narrow entry means "narrow but un-anchored"
+//     — there's no glob to match, so the entry is excluded under a non-empty
+//     target_paths set. The frontmatter parser defaults to broad+[] precisely
+//     to avoid this case slipping through silently.
+//
+// Glob matching delegates to `minimatch` (already a server dep). We accept
+// path-prefix anchors too: a `relevance_paths` entry ending with `/` is
+// treated as a directory anchor and matched as `<dir>/**`.
+function matchesAnyPath(globs: string[], targetPaths: string[]): boolean {
+  if (globs.length === 0) {
+    return false;
+  }
+  for (const rawGlob of globs) {
+    const glob = rawGlob.endsWith("/") ? `${rawGlob}**` : rawGlob;
+    for (const target of targetPaths) {
+      if (minimatch(target, glob, { dot: true, matchBase: false })) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+function shouldIncludeByRelevance(
+  item: RuleDescriptionIndexItem,
+  targetPaths: string[],
+): boolean {
+  // Default scope is broad: missing field → always pass.
+  const scope = item.relevance_scope ?? "broad";
+  if (scope === "broad") {
+    return true;
+  }
+  // Narrow scope. Fail-open when no target_paths supplied.
+  if (targetPaths.length === 0) {
+    return true;
+  }
+  return matchesAnyPath(item.relevance_paths ?? [], targetPaths);
 }
 
 function inferKnowledgeLayerFromContentRef(contentRef: string | undefined): "team" | "personal" | undefined {
@@ -298,9 +367,10 @@ function descriptionFromLegacyActivation(summary: string | undefined): RuleDescr
 
 // v2.0-rc.5 A3 (TASK-007): the L0/L1/L2 short-circuit + scope_glob match was
 // the legacy per-path filter. With the L0/L1/L2 selection ceremony retired
-// every candidate flows through to the per-entry index; TASK-006 (C1) layers
-// a `relevance_paths` filter on top of this in the next slice. Function body
-// kept as a single-return for symmetry with TASK-006's incoming patch.
+// every candidate flows through. The relevance-paths filter (TASK-012, C3)
+// lives in `shouldIncludeByRelevance` and is applied as a separate stage by
+// `planContext()`; this hook is kept for any future per-path constraint that
+// is NOT covered by the relevance pipeline.
 function shouldIncludeIndexItemForPath(
   _item: RuleDescriptionIndexItem,
   _meta: AgentsMeta,

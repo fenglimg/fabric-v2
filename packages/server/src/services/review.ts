@@ -54,6 +54,8 @@ type Layer = "team" | "personal";
 
 type Maturity = "draft" | "verified" | "proven";
 
+type RelevanceScope = "narrow" | "broad";
+
 type ParsedFrontmatter = {
   id?: string;
   type?: PluralType;
@@ -64,6 +66,10 @@ type ParsedFrontmatter = {
   tags?: string[];
   title?: string;
   summary?: string;
+  // v2.0-rc.5 C1/C3: relevance hints. Missing fields are treated as broad+[]
+  // at consumption time (matches knowledge-meta-builder defaults).
+  relevance_scope?: RelevanceScope;
+  relevance_paths?: string[];
 };
 
 /**
@@ -527,6 +533,12 @@ type ModifyChanges = {
   layer?: Layer;
   maturity?: Maturity;
   tags?: string[];
+  // v2.0-rc.5 C3 (TASK-012): relevance fields editable via modify. Apply to
+  // pending AND canonical entries. A narrow team → personal layer flip
+  // triggers an auto-degrade override (broad + []) regardless of caller-sent
+  // values — see `modifyEntry`.
+  relevance_scope?: RelevanceScope;
+  relevance_paths?: string[];
 };
 
 async function modifyEntry(
@@ -549,6 +561,10 @@ async function modifyEntry(
   }
 
   // ------ In-place path ------
+  // v2.0-rc.5 C3 (TASK-012): relevance fields apply to canonical entries too —
+  // the modify branch accepts both pending and canonical paths (resolved by
+  // `resolveModifyTarget`), so a narrow→broad rescope on a post-approve entry
+  // flows through the same in-place rewrite as a scalar tag/maturity edit.
   const merged = rewriteFrontmatterMerge(content, changes);
   await atomicWriteText(target.absPath, merged);
 
@@ -630,6 +646,19 @@ async function modifyLayerFlip(
   const slug = target.slug;
   const priorStableId = fm.id;
 
+  // v2.0-rc.5 C3 (TASK-012): narrow team→personal flip triggers auto-degrade.
+  // Personal knowledge is cross-project so workspace-relative `relevance_paths`
+  // anchors have no anchor in the new context — we force scope=broad+[] and
+  // record the degrade in the event ledger. The override takes precedence
+  // over any caller-supplied `relevance_scope` / `relevance_paths` patch
+  // because preserving the narrow anchors after the flip would silently lie
+  // about applicability (the anchors no longer mean what they meant).
+  // Also handles pending entries (pending is pre-canonical; layer flip is
+  // unusual there but still mechanically valid).
+  const fromScope: RelevanceScope = fm.relevance_scope ?? "broad";
+  const shouldAutoDegrade =
+    fromScope === "narrow" && fromLayer === "team" && toLayer === "personal";
+
   const allocator = new KnowledgeIdAllocator(
     join(projectRoot, ".fabric", "agents.meta.json"),
   );
@@ -650,11 +679,19 @@ async function modifyLayerFlip(
     reason: `layer_flip:${priorStableId ?? "<unassigned>"}->${newStableId}`,
   });
 
+  // Build the effective patch. Auto-degrade overrides caller-supplied relevance
+  // fields; otherwise pass them through unchanged.
+  const effectivePatch: ModifyChanges = shouldAutoDegrade
+    ? {
+        ...changes,
+        layer: toLayer,
+        relevance_scope: "broad",
+        relevance_paths: [],
+      }
+    : { ...changes, layer: toLayer };
+
   // Rewrite frontmatter with new id + new layer + any other merged changes.
-  const rewritten = rewriteFrontmatterMerge(content, {
-    ...changes,
-    layer: toLayer,
-  }, { id: newStableId });
+  const rewritten = rewriteFrontmatterMerge(content, effectivePatch, { id: newStableId });
 
   await atomicWriteText(toAbs, rewritten);
 
@@ -684,6 +721,22 @@ async function modifyLayerFlip(
     to_layer: toLayer,
     reason: `layer_flip:${priorStableId ?? "<unassigned>"}->${newStableId}`,
   });
+
+  // v2.0-rc.5 C3 (TASK-012): emit knowledge_scope_degraded when the flip
+  // auto-degraded the relevance scope. The event records the original scope
+  // (narrow) and the new one (broad) so the audit trail explains *why* the
+  // entry's relevance_paths array is now empty post-flip. Reason is a fixed
+  // tag so doctor lints / observability filters can key off it.
+  if (shouldAutoDegrade) {
+    await emitEventBestEffort(projectRoot, {
+      event_type: "knowledge_scope_degraded",
+      stable_id: newStableId,
+      timestamp: new Date().toISOString(),
+      from_scope: "narrow",
+      to_scope: "broad",
+      reason: "personal-implies-broad",
+    });
+  }
 
   // Compute the response path. For team destinations report project-relative;
   // for personal use the `~/.fabric/...` form (matches knowledge-meta-builder
@@ -892,6 +945,17 @@ function parseFrontmatter(content: string): ParsedFrontmatter {
       case "summary":
         out.summary = stripQuotes(value);
         break;
+      case "relevance_scope":
+        // v2.0-rc.5 C3: strict allow-list; anything else → leave field absent
+        // so consumers fall back to broad default (matches knowledge-meta-builder).
+        if (value === "narrow" || value === "broad") {
+          out.relevance_scope = value;
+        }
+        break;
+      case "relevance_paths":
+        // v2.0-rc.5 C3: flow-style inline YAML array, same parser as `tags`.
+        out.relevance_paths = parseFlowArray(value);
+        break;
       default:
         break;
     }
@@ -982,6 +1046,9 @@ function rewriteFrontmatterMerge(
   if (patch.layer !== undefined) updates.layer = `layer: ${patch.layer}`;
   if (patch.maturity !== undefined) updates.maturity = `maturity: ${patch.maturity}`;
   if (patch.tags !== undefined) updates.tags = `tags: [${patch.tags.join(", ")}]`;
+  // v2.0-rc.5 C3 (TASK-012): relevance hints — same flow-array shape as tags.
+  if (patch.relevance_scope !== undefined) updates.relevance_scope = `relevance_scope: ${patch.relevance_scope}`;
+  if (patch.relevance_paths !== undefined) updates.relevance_paths = `relevance_paths: [${patch.relevance_paths.join(", ")}]`;
 
   const lines = block.split(/\r?\n/u);
   const seen = new Set<string>();
@@ -1017,6 +1084,8 @@ function appendPatchLines(lines: string[], patch: ModifyChanges): void {
   if (patch.layer !== undefined) lines.push(`layer: ${patch.layer}`);
   if (patch.maturity !== undefined) lines.push(`maturity: ${patch.maturity}`);
   if (patch.tags !== undefined) lines.push(`tags: [${patch.tags.join(", ")}]`);
+  if (patch.relevance_scope !== undefined) lines.push(`relevance_scope: ${patch.relevance_scope}`);
+  if (patch.relevance_paths !== undefined) lines.push(`relevance_paths: [${patch.relevance_paths.join(", ")}]`);
 }
 
 function quoteIfNeeded(value: string): string {

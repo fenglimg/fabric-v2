@@ -452,6 +452,204 @@ describe("reviewKnowledge", () => {
   });
 
   // -------------------------------------------------------------------------
+  // v2.0-rc.5 C3 (TASK-012): modify-canonical + relevance fields + auto-degrade
+  //
+  // 1. modify accepts relevance_scope/relevance_paths in the patch on both
+  //    pending and canonical entries.
+  // 2. team→personal flip on a narrow entry auto-degrades to broad+[] and
+  //    emits a knowledge_scope_degraded event with reason="personal-implies-broad".
+  // 3. The pre-existing pending in-place rewrite path still works.
+  // -------------------------------------------------------------------------
+
+  it("test_review_modify_canonical_entry — accepts relevance_scope/paths on a canonical entry", async () => {
+    const projectRoot = await createTempProject();
+    const pendingPath = await seedPendingFile(projectRoot, "decisions", "canonical-target");
+    const approve = await reviewKnowledge(projectRoot, {
+      action: "approve",
+      pending_paths: [pendingPath],
+    });
+    if (approve.action !== "approve") throw new Error("unreachable");
+    const stableId = approve.approved[0].stable_id;
+    const canonicalRel = `.fabric/knowledge/decisions/${stableId}--canonical-target.md`;
+
+    // Same-layer modify with relevance fields — exercises the in-place path
+    // against a canonical (post-approve) entry.
+    const result = await reviewKnowledge(projectRoot, {
+      action: "modify",
+      pending_path: canonicalRel,
+      changes: {
+        relevance_scope: "narrow",
+        relevance_paths: ["src/auth/**", "packages/auth/"],
+      },
+    });
+    if (result.action !== "modify") throw new Error("unreachable");
+    // In-place modify does not return prior/new stable_id.
+    expect(result.prior_stable_id).toBeUndefined();
+    expect(result.new_stable_id).toBeUndefined();
+
+    const updated = await readFile(join(projectRoot, canonicalRel), "utf8");
+    expect(updated).toMatch(/^relevance_scope: narrow$/mu);
+    expect(updated).toMatch(/^relevance_paths: \[src\/auth\/\*\*, packages\/auth\/\]$/mu);
+
+    // No degrade event for a same-layer rescope.
+    const degraded = await readEventLedger(projectRoot, {
+      event_type: "knowledge_scope_degraded",
+    });
+    expect(degraded.events).toHaveLength(0);
+  });
+
+  it("test_review_modify_pending_accepts_relevance_fields — pending in-place path still works", async () => {
+    // Pending modify (pre-canonical) accepting relevance fields. Confirms the
+    // existing pending flow isn't broken by the canonical extension.
+    const projectRoot = await createTempProject();
+    const pendingPath = await seedPendingFile(projectRoot, "guidelines", "pending-rescope");
+
+    const result = await reviewKnowledge(projectRoot, {
+      action: "modify",
+      pending_path: pendingPath,
+      changes: { relevance_scope: "narrow", relevance_paths: ["src/ui/**"] },
+    });
+    if (result.action !== "modify") throw new Error("unreachable");
+
+    const updated = await readFile(join(projectRoot, pendingPath), "utf8");
+    expect(updated).toMatch(/^relevance_scope: narrow$/mu);
+    expect(updated).toMatch(/^relevance_paths: \[src\/ui\/\*\*\]$/mu);
+  });
+
+  it("test_review_modify_layer_flip_auto_degrade — narrow team→personal flips degrade scope to broad+[]", async () => {
+    const projectRoot = await createTempProject();
+    // Seed pending with narrow scope + a paths array.
+    const pendingPath = await seedPendingFile(projectRoot, "decisions", "narrow-team");
+    // Inject narrow + relevance_paths into frontmatter via a separate modify
+    // call so the seed helper doesn't need to know about C3 yet.
+    await reviewKnowledge(projectRoot, {
+      action: "modify",
+      pending_path: pendingPath,
+      changes: { relevance_scope: "narrow", relevance_paths: ["src/team/**"] },
+    });
+    // Approve into canonical (team).
+    const approve = await reviewKnowledge(projectRoot, {
+      action: "approve",
+      pending_paths: [pendingPath],
+    });
+    if (approve.action !== "approve") throw new Error("unreachable");
+    const priorId = approve.approved[0].stable_id;
+    expect(priorId).toMatch(/^KT-DEC-\d{4}$/u);
+    const canonicalRel = `.fabric/knowledge/decisions/${priorId}--narrow-team.md`;
+
+    // Flip team → personal. Narrow + team→personal → auto-degrade.
+    const result = await reviewKnowledge(projectRoot, {
+      action: "modify",
+      pending_path: canonicalRel,
+      changes: { layer: "personal" },
+    });
+    if (result.action !== "modify") throw new Error("unreachable");
+    expect(result.prior_stable_id).toBe(priorId);
+    expect(result.new_stable_id).toMatch(/^KP-DEC-\d{4}$/u);
+
+    // New personal file frontmatter: scope=broad, paths=[].
+    const fakeHome = process.env.FABRIC_HOME!;
+    const newAbs = join(
+      fakeHome,
+      ".fabric",
+      "knowledge",
+      "decisions",
+      `${result.new_stable_id}--narrow-team.md`,
+    );
+    const newContent = await readFile(newAbs, "utf8");
+    expect(newContent).toMatch(/^relevance_scope: broad$/mu);
+    expect(newContent).toMatch(/^relevance_paths: \[\]$/mu);
+
+    // knowledge_scope_degraded event emitted with the expected payload.
+    const degraded = await readEventLedger(projectRoot, {
+      event_type: "knowledge_scope_degraded",
+    });
+    expect(degraded.events).toHaveLength(1);
+    const ev = degraded.events[0] as {
+      stable_id: string;
+      from_scope: string;
+      to_scope: string;
+      reason: string;
+    };
+    expect(ev.stable_id).toBe(result.new_stable_id);
+    expect(ev.from_scope).toBe("narrow");
+    expect(ev.to_scope).toBe("broad");
+    expect(ev.reason).toBe("personal-implies-broad");
+  });
+
+  it("test_review_modify_layer_flip_broad_no_degrade — broad team→personal does NOT degrade or emit event", async () => {
+    const projectRoot = await createTempProject();
+    // Default seed: no relevance_scope frontmatter → treated as broad.
+    const pendingPath = await seedPendingFile(projectRoot, "decisions", "broad-team");
+    const approve = await reviewKnowledge(projectRoot, {
+      action: "approve",
+      pending_paths: [pendingPath],
+    });
+    if (approve.action !== "approve") throw new Error("unreachable");
+    const priorId = approve.approved[0].stable_id;
+    const canonicalRel = `.fabric/knowledge/decisions/${priorId}--broad-team.md`;
+
+    await reviewKnowledge(projectRoot, {
+      action: "modify",
+      pending_path: canonicalRel,
+      changes: { layer: "personal" },
+    });
+
+    const degraded = await readEventLedger(projectRoot, {
+      event_type: "knowledge_scope_degraded",
+    });
+    expect(degraded.events).toHaveLength(0);
+  });
+
+  it("test_review_modify_layer_flip_personal_to_team_narrow_no_degrade — auto-degrade only on team→personal", async () => {
+    // Narrow personal→team should NOT auto-degrade — personal-implies-broad
+    // is one-way; the inverse direction can keep narrow paths because team
+    // knowledge is workspace-local.
+    const projectRoot = await createTempProject();
+    const pendingPath = await seedPendingFile(projectRoot, "guidelines", "narrow-personal", {
+      layer: "personal",
+    });
+    await reviewKnowledge(projectRoot, {
+      action: "modify",
+      pending_path: pendingPath,
+      changes: { relevance_scope: "narrow", relevance_paths: ["src/ui/**"] },
+    });
+    const approve = await reviewKnowledge(projectRoot, {
+      action: "approve",
+      pending_paths: [pendingPath],
+    });
+    if (approve.action !== "approve") throw new Error("unreachable");
+    const priorId = approve.approved[0].stable_id;
+    expect(priorId).toMatch(/^KP-GLD-\d{4}$/u);
+    const personalRel = `~/.fabric/knowledge/guidelines/${priorId}--narrow-personal.md`;
+
+    const result = await reviewKnowledge(projectRoot, {
+      action: "modify",
+      pending_path: personalRel,
+      changes: { layer: "team" },
+    });
+    if (result.action !== "modify") throw new Error("unreachable");
+
+    // No degrade emitted.
+    const degraded = await readEventLedger(projectRoot, {
+      event_type: "knowledge_scope_degraded",
+    });
+    expect(degraded.events).toHaveLength(0);
+
+    // New team file should preserve the original narrow paths verbatim.
+    const newAbs = join(
+      projectRoot,
+      ".fabric",
+      "knowledge",
+      "guidelines",
+      `${result.new_stable_id}--narrow-personal.md`,
+    );
+    const newContent = await readFile(newAbs, "utf8");
+    expect(newContent).toMatch(/^relevance_scope: narrow$/mu);
+    expect(newContent).toMatch(/^relevance_paths: \[src\/ui\/\*\*\]$/mu);
+  });
+
+  // -------------------------------------------------------------------------
   // TASK-002: search action
   // -------------------------------------------------------------------------
 

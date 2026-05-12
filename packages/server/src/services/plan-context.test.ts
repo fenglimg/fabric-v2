@@ -343,6 +343,167 @@ describe("planContext", () => {
     expect(result.shared.description_index).toHaveLength(31);
   });
 
+  // ---------------------------------------------------------------------------
+  // v2.0-rc.5 C3 (TASK-012): relevance_paths filter
+  //
+  // Build a mixed registry with broad + narrow entries and assert filter
+  // semantics against various target_paths inputs:
+  //   * broad always passes (filter is a no-op for cross-cutting entries)
+  //   * narrow passes ONLY when its relevance_paths globs match a target
+  //   * narrow fails when no glob matches any target_paths
+  //   * empty target_paths → narrow fails open (every narrow passes too)
+  // ---------------------------------------------------------------------------
+
+  async function seedRelevanceRegistry(projectRoot: string): Promise<void> {
+    await mkdir(join(projectRoot, ".fabric", "knowledge", "guidelines"), { recursive: true });
+    await mkdir(join(projectRoot, ".fabric", "knowledge", "decisions"), { recursive: true });
+    await writeFile(join(projectRoot, ".fabric", "human-lock.json"), `${JSON.stringify({ locked: [] }, null, 2)}\n`);
+    await writeFile(join(projectRoot, ".fabric", "knowledge", "guidelines", "broad.md"), "# Broad\n");
+    await writeFile(join(projectRoot, ".fabric", "knowledge", "guidelines", "ui-narrow.md"), "# UI Narrow\n");
+    await writeFile(join(projectRoot, ".fabric", "knowledge", "decisions", "auth-narrow.md"), "# Auth Narrow\n");
+    await writeFile(
+      join(projectRoot, ".fabric", "agents.meta.json"),
+      `${JSON.stringify({
+        revision: "rev-relevance",
+        nodes: {
+          "KT-GLD-0001": {
+            stable_id: "KT-GLD-0001",
+            file: ".fabric/knowledge/guidelines/broad.md",
+            content_ref: ".fabric/knowledge/guidelines/broad.md",
+            scope_glob: "**",
+            hash: "sha256:broad",
+            identity_source: "declared",
+            description: {
+              summary: "Broad cross-cutting guideline",
+              intent_clues: [],
+              tech_stack: [],
+              impact: [],
+              must_read_if: "",
+              id: "KT-GLD-0001",
+              knowledge_type: "guideline",
+              maturity: "verified",
+              knowledge_layer: "team",
+              created_at: "2026-05-10T00:00:00Z",
+              relevance_scope: "broad",
+              relevance_paths: [],
+            },
+          },
+          "KT-GLD-0002": {
+            stable_id: "KT-GLD-0002",
+            file: ".fabric/knowledge/guidelines/ui-narrow.md",
+            content_ref: ".fabric/knowledge/guidelines/ui-narrow.md",
+            scope_glob: "**",
+            hash: "sha256:ui-narrow",
+            identity_source: "declared",
+            description: {
+              summary: "Narrow UI guideline",
+              intent_clues: [],
+              tech_stack: [],
+              impact: [],
+              must_read_if: "",
+              id: "KT-GLD-0002",
+              knowledge_type: "guideline",
+              maturity: "verified",
+              knowledge_layer: "team",
+              created_at: "2026-05-10T00:00:00Z",
+              relevance_scope: "narrow",
+              relevance_paths: ["src/ui/**", "packages/ui/"],
+            },
+          },
+          "KT-DEC-0001": {
+            stable_id: "KT-DEC-0001",
+            file: ".fabric/knowledge/decisions/auth-narrow.md",
+            content_ref: ".fabric/knowledge/decisions/auth-narrow.md",
+            scope_glob: "**",
+            hash: "sha256:auth-narrow",
+            identity_source: "declared",
+            description: {
+              summary: "Narrow auth decision",
+              intent_clues: [],
+              tech_stack: [],
+              impact: [],
+              must_read_if: "",
+              id: "KT-DEC-0001",
+              knowledge_type: "decision",
+              maturity: "verified",
+              knowledge_layer: "team",
+              created_at: "2026-05-10T00:00:00Z",
+              relevance_scope: "narrow",
+              relevance_paths: ["src/auth/**"],
+            },
+          },
+        },
+      }, null, 2)}\n`,
+    );
+  }
+
+  it("test_plan_context_filter_broad_always_included — broad entries pass any target_paths", async () => {
+    const projectRoot = await createTempProject();
+    await seedRelevanceRegistry(projectRoot);
+
+    // No glob matches any of the narrow entries.
+    const result = await planContext(projectRoot, {
+      paths: ["src/unrelated/index.ts"],
+      target_paths: ["src/unrelated/index.ts"],
+    });
+    const ids = result.shared.description_index.map((item) => item.stable_id);
+    expect(ids).toContain("KT-GLD-0001"); // broad always
+    expect(ids).not.toContain("KT-GLD-0002"); // narrow filtered out
+    expect(ids).not.toContain("KT-DEC-0001"); // narrow filtered out
+  });
+
+  it("test_plan_context_filter_narrow_matched_path — narrow entries pass when relevance_paths matches", async () => {
+    const projectRoot = await createTempProject();
+    await seedRelevanceRegistry(projectRoot);
+
+    const result = await planContext(projectRoot, {
+      paths: ["src/ui/Button.tsx"],
+      target_paths: ["src/ui/Button.tsx"],
+    });
+    const ids = result.shared.description_index.map((item) => item.stable_id).sort();
+    // Broad + ui-narrow match; auth-narrow does not.
+    expect(ids).toEqual(["KT-GLD-0001", "KT-GLD-0002"]);
+  });
+
+  it("test_plan_context_filter_narrow_unmatched_excluded — non-matching narrow entries excluded", async () => {
+    const projectRoot = await createTempProject();
+    await seedRelevanceRegistry(projectRoot);
+
+    const result = await planContext(projectRoot, {
+      paths: ["src/auth/login.ts"],
+      target_paths: ["src/auth/login.ts"],
+    });
+    const ids = result.shared.description_index.map((item) => item.stable_id).sort();
+    // Broad + auth-narrow match; ui-narrow does not.
+    expect(ids).toEqual(["KT-DEC-0001", "KT-GLD-0001"]);
+  });
+
+  it("test_plan_context_no_paths_returns_all — empty target_paths fails open (narrow included)", async () => {
+    const projectRoot = await createTempProject();
+    await seedRelevanceRegistry(projectRoot);
+
+    // Explicit empty target_paths → fail-open: include broad AND every narrow.
+    const result = await planContext(projectRoot, {
+      paths: ["**"],
+      target_paths: [],
+    });
+    const ids = result.shared.description_index.map((item) => item.stable_id).sort();
+    expect(ids).toEqual(["KT-DEC-0001", "KT-GLD-0001", "KT-GLD-0002"]);
+  });
+
+  it("test_plan_context_filter_dir_anchor_match — relevance_paths ending in / matches via /** expansion", async () => {
+    const projectRoot = await createTempProject();
+    await seedRelevanceRegistry(projectRoot);
+
+    // packages/ui/ in registry → packages/ui/** under the hood.
+    const result = await planContext(projectRoot, {
+      paths: ["packages/ui/Card.tsx"],
+      target_paths: ["packages/ui/Card.tsx"],
+    });
+    const ids = result.shared.description_index.map((item) => item.stable_id).sort();
+    expect(ids).toEqual(["KT-GLD-0001", "KT-GLD-0002"]);
+  });
+
   it("test_plan_context_drops_cocos_fields — output schema lacks Cocos + L0/L1/L2 ceremony fields", async () => {
     const projectRoot = await createTempProject();
     await mkdir(join(projectRoot, ".fabric", "knowledge", "decisions"), { recursive: true });

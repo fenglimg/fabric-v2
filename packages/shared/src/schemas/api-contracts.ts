@@ -136,6 +136,16 @@ export const planContextInputSchema = z.object({
     .describe(
       "Restrict description_index to the named layer. Default: fabric-config.default_layer_filter (TASK-002).",
     ),
+  // v2.0-rc.5 C3 (TASK-012): explicit path context for `narrow` relevance
+  // filtering. When omitted, the server falls back to `paths` so existing
+  // callers see narrowing against the requested paths. When the resolved
+  // list is empty, the narrow filter fails open (every narrow entry passes).
+  target_paths: z
+    .array(z.string())
+    .optional()
+    .describe(
+      "Path context for narrow-scope relevance filtering. Defaults to `paths`; empty = no filter.",
+    ),
 });
 
 // v2.0-rc.5 A3 (TASK-007): the L0/L1/L2 selection ceremony is fully retired.
@@ -422,6 +432,13 @@ const _fabReviewModifyChangesSchema = z.object({
   layer: z.enum(["team", "personal"]).optional(),
   maturity: z.enum(["draft", "verified", "proven"]).optional(),
   tags: z.array(z.string()).optional(),
+  // v2.0-rc.5 C3 (TASK-012): relevance scope/paths patches. Applied to
+  // pending AND canonical entries. When an explicit team→personal layer flip
+  // arrives on a narrow entry, the server auto-degrades to broad + [] and
+  // emits a `knowledge_scope_degraded` event regardless of what the caller
+  // sent in these fields (personal-implies-broad).
+  relevance_scope: z.enum(["narrow", "broad"]).optional(),
+  relevance_paths: z.array(z.string()).optional(),
 });
 
 export const FabReviewInputSchema = z.discriminatedUnion("action", [

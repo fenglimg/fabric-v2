@@ -222,6 +222,19 @@ exports[`tool contracts > fab-review contract matches snapshot 1`] = `
                 ],
                 "type": "string",
               },
+              "relevance_paths": {
+                "items": {
+                  "type": "string",
+                },
+                "type": "array",
+              },
+              "relevance_scope": {
+                "enum": [
+                  "narrow",
+                  "broad",
+                ],
+                "type": "string",
+              },
               "summary": {
                 "type": "string",
               },
@@ -688,6 +701,10 @@ exports[`tool contracts > knowledge-sections contract matches snapshot 1`] = `
         "description": "Reason for each AI-selected L1 stable_id",
         "type": "object",
       },
+      "client_hash": {
+        "description": "Optional caller-provided client hash propagated into knowledge_consumed events",
+        "type": "string",
+      },
       "correlation_id": {
         "description": "Optional caller-provided correlation id for Event Ledger records",
         "type": "string",
@@ -974,6 +991,13 @@ exports[`tool contracts > plan-context contract matches snapshot 1`] = `
       "session_id": {
         "description": "Optional caller-provided session id for Event Ledger records",
         "type": "string",
+      },
+      "target_paths": {
+        "description": "Path context for narrow-scope relevance filtering. Defaults to \`paths\`; empty = no filter.",
+        "items": {
+          "type": "string",
+        },
+        "type": "array",
       },
     },
     "required": [

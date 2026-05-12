@@ -43,6 +43,12 @@ export interface RuleDescriptionIndexItem {
   maturity?: "draft" | "verified" | "proven";
   layer?: "personal" | "team";
   layer_reason?: string;
+  // v2.0-rc.5 (C1/C3): top-level relevance surface. Mirrors `description.*`
+  // and the Zod schema in api-contracts.ts so MCP clients (and the C3
+  // plan-context relevance-paths filter) can read these without reaching
+  // into the nested payload. Defaults at the parse layer: broad + [].
+  relevance_scope?: "narrow" | "broad";
+  relevance_paths?: string[];
 }
 
 export interface AgentsMetaNodeActivation {
