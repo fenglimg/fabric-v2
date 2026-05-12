@@ -44,4 +44,9 @@ export const fabricConfigSchema = z.object({
   // values themselves are load-bearing — see docs/data-schema.md.
   knowledge_language: knowledgeLanguageSchema.optional().default("match-existing"),
   default_layer_filter: defaultLayerFilterSchema.optional().default("both"),
+  // Cooldown for the archive-hint Stop hook. After it fires, the hook stays
+  // silent for this many hours regardless of state drift — purely a reminder
+  // throttle. Default 12 means "at most twice per day if the user keeps
+  // ignoring it." Set to 24 to align with the archive trigger threshold.
+  archive_hint_cooldown_hours: z.number().int().positive().optional().default(12),
 });

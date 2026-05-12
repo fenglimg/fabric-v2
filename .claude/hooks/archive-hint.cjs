@@ -13,19 +13,19 @@ const THRESHOLD_PLAN_CONTEXTS = 5;
 const THRESHOLD_HOURS = 24;
 const MS_PER_HOUR = 60 * 60 * 1000;
 
-// Dedup cache: re-firing the same hint on every Stop is noise. The hint should
-// surface once per unique signal-state. State changes when a new
-// knowledge_proposed event is recorded (lastProposedTs advances) OR when the
-// review-pending fingerprint changes (count or oldestAgeMs bucket shifts).
-// Stored under .fabric/.cache/ which is gitignored / per-checkout.
-const SHOWN_CACHE_FILE = ".fabric/.cache/archive-hint-shown.json";
-
 // rc.3 TASK-004: second signal — pending-overflow → review skill recommendation.
 const PENDING_DIR = "knowledge/pending";
 const PENDING_TYPES = ["decisions", "pitfalls", "guidelines", "models", "processes"];
 const THRESHOLD_PENDING_COUNT = 10;
 const THRESHOLD_PENDING_AGE_DAYS = 7;
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+// Cooldown throttle. After the hook surfaces a reminder, it stays silent for
+// this many hours — purely a reminder-noise throttle, not a state machine.
+// Override via .fabric/fabric-config.json#archive_hint_cooldown_hours.
+const CONFIG_FILE = "fabric-config.json";
+const DEFAULT_COOLDOWN_HOURS = 12;
+const SHOWN_CACHE_FILE = ".fabric/.cache/archive-hint-shown.json";
 
 /**
  * Read the events.jsonl ledger from <projectRoot>/.fabric/events.jsonl.
@@ -209,36 +209,21 @@ function decide(events, now, pendingStats) {
 }
 
 /**
- * Build a fingerprint that uniquely identifies the signal-state the hook would
- * fire on. Two invocations with the same fingerprint produce the same reason
- * string, so showing the reminder twice in a row is pure noise. The cache
- * compares fingerprints to decide whether to suppress a repeat emit.
- *
- * Archive: lastProposedTs (or "never") — advances when knowledge_proposed fires
- * Review:  pending count + day-bucket of oldestAgeMs — coarse-grained so daily
- *          drift doesn't re-trigger but a genuinely new pending batch does
+ * Resolve the cooldown setting from .fabric/fabric-config.json
+ * (archive_hint_cooldown_hours), falling back to DEFAULT_COOLDOWN_HOURS.
+ * Any read/parse failure → default (never block on config errors).
  */
-function fingerprint(result, events, pendingStats) {
-  if (result === null) return null;
-  if (result.signal === "archive") {
-    let lastProposedTs = "never";
-    for (let i = events.length - 1; i >= 0; i -= 1) {
-      const ev = events[i];
-      if (ev && ev.event_type === EVENT_TYPE_PROPOSED && typeof ev.ts === "number") {
-        lastProposedTs = String(ev.ts);
-        break;
-      }
-    }
-    return `archive:${lastProposedTs}`;
+function readCooldownHours(projectRoot) {
+  const configPath = join(projectRoot, FABRIC_DIR, CONFIG_FILE);
+  if (!existsSync(configPath)) return DEFAULT_COOLDOWN_HOURS;
+  try {
+    const parsed = JSON.parse(readFileSync(configPath, "utf8"));
+    const v = parsed && parsed.archive_hint_cooldown_hours;
+    if (typeof v === "number" && Number.isFinite(v) && v > 0) return v;
+  } catch {
+    // fall through to default
   }
-  if (result.signal === "review") {
-    const ageBucket =
-      pendingStats.oldestAgeMs === null
-        ? "none"
-        : String(Math.floor(pendingStats.oldestAgeMs / MS_PER_DAY));
-    return `review:${pendingStats.count}:${ageBucket}`;
-  }
-  return null;
+  return DEFAULT_COOLDOWN_HOURS;
 }
 
 function readShownCache(projectRoot) {
@@ -272,6 +257,7 @@ function main(env, stdio) {
   try {
     const cwd = (env && env.cwd) || process.cwd();
     const now = (env && env.now) || new Date();
+    const nowMs = now instanceof Date ? now.getTime() : Number(now) || Date.now();
     const out = (stdio && stdio.stdout) || process.stdout;
 
     const events = readLedger(cwd);
@@ -286,17 +272,19 @@ function main(env, stdio) {
     const result = decide(events, now, pendingStats);
     if (result === null) return;
 
-    // Dedup: skip emit if this exact signal-state was already shown.
-    const fp = fingerprint(result, events, pendingStats);
+    // Cooldown throttle: once a signal fires, stay silent for
+    // archive_hint_cooldown_hours (default 12h) regardless of state drift.
+    // Pure reminder-noise reduction; the underlying trigger logic is unchanged.
+    const cooldownMs = readCooldownHours(cwd) * MS_PER_HOUR;
     const cache = readShownCache(cwd);
-    if (fp !== null && cache[result.signal] === fp) {
-      return; // Already surfaced for this state — wait for state to change.
+    const lastShown = cache[result.signal];
+    if (typeof lastShown === "number" && nowMs - lastShown < cooldownMs) {
+      return; // Still in cooldown — silent.
     }
+
     out.write(JSON.stringify(result));
-    if (fp !== null) {
-      cache[result.signal] = fp;
-      writeShownCache(cwd, cache);
-    }
+    cache[result.signal] = nowMs;
+    writeShownCache(cwd, cache);
   } catch {
     // Silent — never block on hook failure.
   }
@@ -307,7 +295,7 @@ module.exports = {
   readLedger,
   readPendingStats,
   decide,
-  fingerprint,
+  readCooldownHours,
   readShownCache,
   writeShownCache,
   CONSTANTS: {
@@ -321,6 +309,8 @@ module.exports = {
     PENDING_TYPES,
     THRESHOLD_PENDING_COUNT,
     THRESHOLD_PENDING_AGE_DAYS,
+    CONFIG_FILE,
+    DEFAULT_COOLDOWN_HOURS,
     SHOWN_CACHE_FILE,
   },
 };
