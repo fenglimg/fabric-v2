@@ -15,7 +15,19 @@ import { appendEventLedgerEvent } from "./event-ledger.js";
 import { KnowledgeIdAllocator } from "./knowledge-id-allocator.js";
 import { atomicWriteText, ensureParentDirectory } from "./_shared.js";
 
-const PENDING_BASE = ".fabric/knowledge/pending";
+// rc.5 B1: dual pending root. Team layer writes/reads via the workspace
+// .fabric/knowledge/pending/; personal layer via ~/.fabric/knowledge/pending/.
+// PENDING_BASE_TEAM_REL kept as a workspace-relative literal so existing tests
+// that assert pending_path strings (".fabric/knowledge/pending/<type>/<slug>.md")
+// continue to pass for team entries.
+const PENDING_BASE_TEAM_REL = ".fabric/knowledge/pending";
+
+function pendingBaseAbs(layer: "team" | "personal", projectRoot: string): string {
+  if (layer === "personal") {
+    return join(resolvePersonalRoot(), ".fabric", "knowledge", "pending");
+  }
+  return join(projectRoot, PENDING_BASE_TEAM_REL);
+}
 
 // Plural directory names mirror FabExtractKnowledge type enum + on-disk layout
 // (.fabric/knowledge/pending/decisions/, etc.). KnowledgeType (singular) is
@@ -201,6 +213,10 @@ type ListItem = {
   tags?: string[];
   title?: string;
   summary?: string;
+  // rc.5 B1: origin indicates which on-disk pending root the entry came from.
+  // team   → workspace .fabric/knowledge/pending  (path is workspace-relative)
+  // personal → ~/.fabric/knowledge/pending        (path uses `~/...` form)
+  origin?: "team" | "personal";
 };
 
 async function listPending(
@@ -211,60 +227,80 @@ async function listPending(
 
   const typesToScan = filters?.type !== undefined ? [filters.type] : PLURAL_TYPES;
 
-  for (const type of typesToScan) {
-    const dir = join(projectRoot, PENDING_BASE, type);
-    if (!existsSync(dir)) {
-      continue;
-    }
-    let entries: string[];
-    try {
-      entries = await readdir(dir);
-    } catch {
-      continue;
-    }
-    for (const name of entries) {
-      if (!name.endsWith(".md")) continue;
-      const absolutePath = join(dir, name);
-      let content: string;
+  // rc.5 B1: enumerate BOTH pending roots. Each entry is tagged with its
+  // origin so callers can distinguish workspace-rooted from home-rooted
+  // pending entries. Missing roots are silently skipped (personal root may
+  // not exist yet on a fresh install — that's not an error).
+  const sources: ReadonlyArray<{ origin: "team" | "personal"; root: string }> = [
+    { origin: "team", root: pendingBaseAbs("team", projectRoot) },
+    { origin: "personal", root: pendingBaseAbs("personal", projectRoot) },
+  ];
+
+  for (const source of sources) {
+    for (const type of typesToScan) {
+      const dir = join(source.root, type);
+      if (!existsSync(dir)) {
+        continue;
+      }
+      let entries: string[];
       try {
-        content = await readFile(absolutePath, "utf8");
+        entries = await readdir(dir);
       } catch {
         continue;
       }
-      const fm = parseFrontmatter(content);
-      const layer = fm.layer ?? "team";
-      const maturity = fm.maturity ?? "draft";
-
-      // Apply filters (best-effort — missing frontmatter values fall back to defaults)
-      if (filters?.layer !== undefined && filters.layer !== "both" && filters.layer !== layer) {
-        continue;
-      }
-      if (filters?.maturity !== undefined && filters.maturity !== maturity) {
-        continue;
-      }
-      if (filters?.tags !== undefined && filters.tags.length > 0) {
-        const itemTags = fm.tags ?? [];
-        const hasAll = filters.tags.every((t) => itemTags.includes(t));
-        if (!hasAll) continue;
-      }
-      // rc.4 TASK-006 fix (c): created_after threshold. Entries lacking
-      // created_at frontmatter are conservatively excluded when the filter
-      // is set (caller asked for a date window — undated entries cannot be
-      // proven to fall inside it).
-      if (filters?.created_after !== undefined) {
-        const createdAt = fm.created_at;
-        if (createdAt === undefined || createdAt < filters.created_after) {
+      for (const name of entries) {
+        if (!name.endsWith(".md")) continue;
+        const absolutePath = join(dir, name);
+        let content: string;
+        try {
+          content = await readFile(absolutePath, "utf8");
+        } catch {
           continue;
         }
-      }
+        const fm = parseFrontmatter(content);
+        // Frontmatter `layer` declares the *destination* classification. For
+        // entries living under the personal pending root, default to
+        // "personal" when frontmatter omits the field; otherwise default to
+        // "team" (mirrors pre-B1 behavior).
+        const layer = fm.layer ?? (source.origin === "personal" ? "personal" : "team");
+        const maturity = fm.maturity ?? "draft";
 
-      items.push({
-        pending_path: relative(projectRoot, absolutePath),
-        type,
-        layer,
-        maturity,
-        ...(fm.tags !== undefined && fm.tags.length > 0 ? { tags: fm.tags } : {}),
-      });
+        // Apply filters (best-effort — missing frontmatter values fall back to defaults)
+        if (filters?.layer !== undefined && filters.layer !== "both" && filters.layer !== layer) {
+          continue;
+        }
+        if (filters?.maturity !== undefined && filters.maturity !== maturity) {
+          continue;
+        }
+        if (filters?.tags !== undefined && filters.tags.length > 0) {
+          const itemTags = fm.tags ?? [];
+          const hasAll = filters.tags.every((t) => itemTags.includes(t));
+          if (!hasAll) continue;
+        }
+        // rc.4 TASK-006 fix (c): created_after threshold. Entries lacking
+        // created_at frontmatter are conservatively excluded when the filter
+        // is set (caller asked for a date window — undated entries cannot be
+        // proven to fall inside it).
+        if (filters?.created_after !== undefined) {
+          const createdAt = fm.created_at;
+          if (createdAt === undefined || createdAt < filters.created_after) {
+            continue;
+          }
+        }
+
+        const reportedPath = source.origin === "personal"
+          ? `~/${relative(resolvePersonalRoot(), absolutePath)}`
+          : relative(projectRoot, absolutePath);
+
+        items.push({
+          pending_path: reportedPath,
+          type,
+          layer,
+          maturity,
+          origin: source.origin,
+          ...(fm.tags !== undefined && fm.tags.length > 0 ? { tags: fm.tags } : {}),
+        });
+      }
     }
   }
 
@@ -300,18 +336,30 @@ async function approveOne(
   pendingPath: string,
   allocator: KnowledgeIdAllocator,
 ): Promise<{ pending_path: string; stable_id: string } | null> {
-  // Defense-in-depth: confine the caller-supplied pending path to the project
-  // pending tree. Approve only operates on .fabric/knowledge/pending/<type>/.
-  // resolveSandboxedPath without allowPersonal rejects `~/...` paths, so any
-  // accepted result here is in the project tree by construction.
+  // Defense-in-depth: confine the caller-supplied pending path to the pending
+  // tree of EITHER root.
+  //   team     → <project>/.fabric/knowledge/pending/<type>/
+  //   personal → <FABRIC_HOME>/.fabric/knowledge/pending/<type>/  (rc.5 B1)
+  // resolveSandboxedPath with allowPersonal=true accepts both `~/...` and
+  // project-relative forms, then we narrow to pending/ specifically.
   let sourceAbs: string;
+  let sourceOrigin: "team" | "personal";
   try {
-    const sandboxed = resolveSandboxedPath(projectRoot, pendingPath);
-    const pendingRootAbs = resolve(projectRoot, PENDING_BASE);
-    if (sandboxed.abs !== pendingRootAbs && !sandboxed.abs.startsWith(pendingRootAbs + "/")) {
+    const sandboxed = resolveSandboxedPath(projectRoot, pendingPath, { allowPersonal: true });
+    const teamPendingAbs = pendingBaseAbs("team", projectRoot);
+    const personalPendingAbs = pendingBaseAbs("personal", projectRoot);
+
+    const inTeamPending =
+      sandboxed.abs === teamPendingAbs || sandboxed.abs.startsWith(teamPendingAbs + "/");
+    const inPersonalPending =
+      sandboxed.abs === personalPendingAbs ||
+      sandboxed.abs.startsWith(personalPendingAbs + "/");
+
+    if (!inTeamPending && !inPersonalPending) {
       throw new Error(`approve path is outside .fabric/knowledge/pending/: ${pendingPath}`);
     }
     sourceAbs = sandboxed.abs;
+    sourceOrigin = inPersonalPending ? "personal" : "team";
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err);
     await emitEventBestEffort(projectRoot, {
@@ -362,12 +410,18 @@ async function approveOne(
     await atomicWriteText(targetAbs, rewritten);
     writtenTarget = true;
 
-    // Remove pending file. For team layer prefer git mv semantics (rename via
-    // git so history is preserved); the new file is already on disk so we
-    // emulate git mv with a follow-up `git rm` of the source. For personal
-    // layer (different repo root, possibly outside any git tree) use plain
-    // fs.unlink.
-    if (layer === "team") {
+    // Remove pending file. The decision tree keys off the SOURCE origin
+    // (where the pending file lives), not the destination layer:
+    //   source in workspace pending → try `git rm` (preserves rename detection
+    //     when the entry was tracked) with fs.unlink fallback for untracked
+    //     or non-repo cases.
+    //   source in personal pending  → plain unlink (the path lives outside
+    //     the project's git tree, so `git rm` is meaningless).
+    // rc.5 B1: a personal-classified entry can originate from either root
+    // (the Skill may have written to workspace pending if the layer field
+    // wasn't classified upstream), so use sourceOrigin to choose the removal
+    // strategy independent of fm.layer.
+    if (sourceOrigin === "team") {
       try {
         execFileSync("git", ["rm", "--quiet", "-f", pendingPath], {
           cwd: projectRoot,
@@ -384,9 +438,9 @@ async function approveOne(
         }
       }
     } else {
-      // Personal layer: target lives outside the project's git tree. Plain
-      // unlink — the new file at ~/.fabric/knowledge/<type>/ is already on
-      // disk; removing the pending file completes the move.
+      // Personal pending source: target may be either team or personal, but
+      // the source file lives outside the project's git tree so we always
+      // use fs.unlink.
       if (existsSync(sourceAbs)) {
         await unlink(sourceAbs);
       }
@@ -663,11 +717,15 @@ async function searchEntries(
   const lowerQuery = query.toLowerCase();
   const items: ListItem[] = [];
 
-  // Sources: pending + team canonical + personal canonical.
-  const sources: Array<{ root: string; isPending: boolean; pathPrefix: string }> = [
-    { root: join(projectRoot, ".fabric", "knowledge", "pending"), isPending: true, pathPrefix: ".fabric/knowledge/pending" },
-    { root: join(projectRoot, ".fabric", "knowledge"), isPending: false, pathPrefix: ".fabric/knowledge" },
-    { root: join(resolvePersonalRoot(), ".fabric", "knowledge"), isPending: false, pathPrefix: "~/.fabric/knowledge" },
+  // Sources: pending (team + personal, rc.5 B1) + team canonical + personal
+  // canonical. `isPersonal` flags the home-rooted sources so the path-reporting
+  // logic can emit the `~/...` form (matches list and knowledge-meta-builder
+  // content_ref conventions).
+  const sources: Array<{ root: string; isPending: boolean; isPersonal: boolean }> = [
+    { root: pendingBaseAbs("team", projectRoot), isPending: true, isPersonal: false },
+    { root: pendingBaseAbs("personal", projectRoot), isPending: true, isPersonal: true },
+    { root: join(projectRoot, ".fabric", "knowledge"), isPending: false, isPersonal: false },
+    { root: join(resolvePersonalRoot(), ".fabric", "knowledge"), isPending: false, isPersonal: true },
   ];
 
   const typesToScan = filters?.type !== undefined ? [filters.type] : PLURAL_TYPES;
@@ -692,7 +750,7 @@ async function searchEntries(
           continue;
         }
         const fm = parseFrontmatter(content);
-        const layer: Layer = fm.layer ?? (source.pathPrefix.startsWith("~/") ? "personal" : "team");
+        const layer: Layer = fm.layer ?? (source.isPersonal ? "personal" : "team");
         const maturity: Maturity = fm.maturity ?? "draft";
 
         // Filter: layer
@@ -727,17 +785,20 @@ async function searchEntries(
         const matches = haystacks.some((h) => h.includes(lowerQuery));
         if (!matches) continue;
 
-        const reportedPath = source.isPending
-          ? relative(projectRoot, absolutePath)
-          : layer === "personal"
-            ? `~/${relative(resolvePersonalRoot(), absolutePath)}`
-            : relative(projectRoot, absolutePath);
+        // rc.5 B1: personal sources (both pending and canonical) report
+        // via the `~/...` form; workspace sources report workspace-relative.
+        const reportedPath = source.isPersonal
+          ? `~/${relative(resolvePersonalRoot(), absolutePath)}`
+          : relative(projectRoot, absolutePath);
 
         items.push({
           pending_path: reportedPath,
           type,
           layer,
           maturity,
+          // Only pending entries carry an origin tag (search results that are
+          // canonical entries don't have a pending root to point back to).
+          ...(source.isPending ? { origin: source.isPersonal ? ("personal" as const) : ("team" as const) } : {}),
           ...(fm.tags !== undefined && fm.tags.length > 0 ? { tags: fm.tags } : {}),
           ...(fm.title !== undefined ? { title: fm.title } : {}),
           ...(fm.summary !== undefined ? { summary: fm.summary } : {}),

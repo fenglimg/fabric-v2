@@ -356,6 +356,15 @@ export const FabExtractKnowledgeInputSchema = z.object({
   slug: z
     .string()
     .describe("URL-safe short identifier proposed by the Skill; server may sanitize"),
+  // rc.5 B1: dual pending root. When 'personal', the server writes to
+  // ~/.fabric/knowledge/pending/<type>/; otherwise to .fabric/knowledge/pending/<type>/.
+  // Defaults to 'team' to preserve existing call sites (Skill bumps as needed).
+  layer: z
+    .enum(["team", "personal"])
+    .optional()
+    .describe(
+      "Storage layer for the pending entry. 'team' writes under the workspace; 'personal' writes under the user's home. Defaults to 'team'.",
+    ),
 });
 export type FabExtractKnowledgeInput = z.infer<typeof FabExtractKnowledgeInputSchema>;
 
@@ -451,6 +460,11 @@ const _fabReviewListItemSchema = z.object({
   tags: z.array(z.string()).optional(),
   title: z.string().optional(),
   summary: z.string().optional(),
+  // rc.5 B1: dual pending root. 'team' = workspace .fabric/knowledge/pending,
+  // 'personal' = ~/.fabric/knowledge/pending. Distinct from `layer` (frontmatter):
+  // origin reflects where the pending file actually lives on disk; layer reflects
+  // the declared classification that will drive the approve destination.
+  origin: z.enum(["team", "personal"]).optional(),
 });
 
 export const FabReviewOutputSchema = z.discriminatedUnion("action", [

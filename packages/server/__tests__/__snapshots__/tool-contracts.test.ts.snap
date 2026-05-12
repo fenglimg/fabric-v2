@@ -13,6 +13,14 @@ exports[`tool contracts > fab-extract-knowledge contract matches snapshot 1`] = 
     "$schema": "http://json-schema.org/draft-07/schema#",
     "additionalProperties": false,
     "properties": {
+      "layer": {
+        "description": "Storage layer for the pending entry. 'team' writes under the workspace; 'personal' writes under the user's home. Defaults to 'team'.",
+        "enum": [
+          "team",
+          "personal",
+        ],
+        "type": "string",
+      },
       "recent_paths": {
         "description": "Workspace paths recently touched in the source session — used as scope hints",
         "items": {
@@ -318,6 +326,13 @@ exports[`tool contracts > fab-review contract matches snapshot 1`] = `
                     "draft",
                     "verified",
                     "proven",
+                  ],
+                  "type": "string",
+                },
+                "origin": {
+                  "enum": [
+                    "team",
+                    "personal",
                   ],
                   "type": "string",
                 },

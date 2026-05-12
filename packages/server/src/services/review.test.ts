@@ -914,13 +914,14 @@ describe("reviewKnowledge", () => {
     ).rejects.toThrow(/modify target not found/u);
   });
 
-  it("approve_rejects_personal_root_path", async () => {
-    // approve only operates on project pending paths; a `~/...` path is
-    // rejected explicitly.
+  it("approve_rejects_personal_root_traversal_above_pending", async () => {
+    // rc.5 B1: approve now accepts personal pending paths (~/.fabric/knowledge/
+    // pending/<type>/...) as legitimate sources for dual-root flow. Path
+    // traversal via `~/../...` must still be rejected by the sandbox.
     const projectRoot = await createTempProject();
     const result = await reviewKnowledge(projectRoot, {
       action: "approve",
-      pending_paths: ["~/.fabric/knowledge/pending/decisions/never.md"],
+      pending_paths: ["~/../../etc/passwd"],
     });
     if (result.action !== "approve") throw new Error("unreachable");
     expect(result.approved).toHaveLength(0);
@@ -929,7 +930,7 @@ describe("reviewKnowledge", () => {
     });
     expect(failedEvents.events).toHaveLength(1);
     expect((failedEvents.events[0] as { reason: string }).reason).toMatch(
-      /personal-root path not allowed/u,
+      /escapes personal knowledge root|outside .fabric\/knowledge\/pending/u,
     );
   });
 
@@ -1130,5 +1131,174 @@ describe("reviewKnowledge", () => {
     expect(filtered.items[0].pending_path).toBe(
       ".fabric/knowledge/pending/decisions/after.md",
     );
+  });
+
+  // -------------------------------------------------------------------------
+  // rc.5 TASK-008 (B1): dual pending root — team vs personal
+  //
+  // list enumerates BOTH workspace pending and home pending, tagging each
+  // entry with its origin. approve accepts personal pending paths and
+  // routes the canonical write to the correct layer root.
+  // -------------------------------------------------------------------------
+
+  async function seedPersonalPendingFile(
+    type: "decisions" | "guidelines" | "pitfalls" | "models" | "processes",
+    slug: string,
+    options: { layer?: "team" | "personal"; tags?: string[] } = {},
+  ): Promise<{ relPath: string; absPath: string }> {
+    const fakeHome = process.env.FABRIC_HOME!;
+    const dir = join(fakeHome, ".fabric", "knowledge", "pending", type);
+    await mkdir(dir, { recursive: true });
+    const layer = options.layer ?? "personal";
+    const tags = options.tags ?? [];
+    const tagFlow = tags.length === 0 ? "[]" : `[${tags.join(", ")}]`;
+    const fm = [
+      "---",
+      `type: ${type}`,
+      "maturity: draft",
+      `layer: ${layer}`,
+      `created_at: ${new Date().toISOString()}`,
+      "source_session: sess-personal-seed",
+      `tags: ${tagFlow}`,
+      "x-fabric-idempotency-key: sha256:1111111111111111111111111111111111111111111111111111111111111111",
+      "---",
+      "",
+      "## Summary",
+      "",
+      "Personal pending body.",
+      "",
+    ].join("\n");
+    const absPath = join(dir, `${slug}.md`);
+    await writeFile(absPath, fm, "utf8");
+    const relPath = `~/.fabric/knowledge/pending/${type}/${slug}.md`;
+    return { relPath, absPath };
+  }
+
+  it("test_review_list_dual_root_merge", async () => {
+    // Seed one entry in workspace pending and one in home pending.
+    const projectRoot = await createTempProject();
+    await seedPendingFile(projectRoot, "decisions", "team-side", { layer: "team" });
+    const personal = await seedPersonalPendingFile("decisions", "personal-side", {
+      layer: "personal",
+    });
+
+    const result = await reviewKnowledge(projectRoot, { action: "list", filters: undefined });
+    if (result.action !== "list") throw new Error("unreachable");
+    expect(result.items).toHaveLength(2);
+
+    const byOrigin = new Map(result.items.map((item) => [item.origin, item]));
+    const teamItem = byOrigin.get("team");
+    const personalItem = byOrigin.get("personal");
+    expect(teamItem).toBeDefined();
+    expect(personalItem).toBeDefined();
+
+    expect(teamItem!.pending_path).toBe(".fabric/knowledge/pending/decisions/team-side.md");
+    expect(teamItem!.layer).toBe("team");
+    expect(teamItem!.origin).toBe("team");
+
+    expect(personalItem!.pending_path).toBe(personal.relPath);
+    expect(personalItem!.layer).toBe("personal");
+    expect(personalItem!.origin).toBe("personal");
+  });
+
+  it("list_with_layer_filter_personal_returns_only_personal_origin", async () => {
+    const projectRoot = await createTempProject();
+    await seedPendingFile(projectRoot, "decisions", "team-only", { layer: "team" });
+    await seedPersonalPendingFile("decisions", "personal-only", { layer: "personal" });
+
+    const result = await reviewKnowledge(projectRoot, {
+      action: "list",
+      filters: { layer: "personal" },
+    });
+    if (result.action !== "list") throw new Error("unreachable");
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0].origin).toBe("personal");
+    expect(result.items[0].pending_path).toMatch(/^~\//u);
+  });
+
+  it("list_skips_missing_personal_pending_root_silently", async () => {
+    // Default beforeEach creates an empty FABRIC_HOME tempdir; with no
+    // ~/.fabric/knowledge/pending tree, listPending should not throw and
+    // simply skip that source. Only the team entry remains.
+    const projectRoot = await createTempProject();
+    await seedPendingFile(projectRoot, "decisions", "only-team");
+    const result = await reviewKnowledge(projectRoot, { action: "list", filters: undefined });
+    if (result.action !== "list") throw new Error("unreachable");
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0].origin).toBe("team");
+  });
+
+  it("test_extract_approve_personal_path_roundtrip", async () => {
+    // End-to-end: a personal pending entry can be approved via its `~/...`
+    // path and the canonical file lands in ~/.fabric/knowledge/<type>/.
+    const projectRoot = await createTempProject();
+    const personal = await seedPersonalPendingFile("decisions", "personal-approve", {
+      layer: "personal",
+    });
+
+    const result = await reviewKnowledge(projectRoot, {
+      action: "approve",
+      pending_paths: [personal.relPath],
+    });
+    if (result.action !== "approve") throw new Error("unreachable");
+    expect(result.approved).toHaveLength(1);
+    expect(result.approved[0].stable_id).toMatch(/^KP-DEC-\d{4}$/u);
+
+    // Pending file removed from the personal root.
+    expect(existsSync(personal.absPath)).toBe(false);
+
+    // Canonical file lives under ~/.fabric/knowledge/decisions/, NOT in workspace.
+    const fakeHome = process.env.FABRIC_HOME!;
+    const canonicalAbs = join(
+      fakeHome,
+      ".fabric",
+      "knowledge",
+      "decisions",
+      `${result.approved[0].stable_id}--personal-approve.md`,
+    );
+    expect(existsSync(canonicalAbs)).toBe(true);
+
+    // Workspace canonical decisions dir untouched.
+    const workspaceCanonical = join(
+      projectRoot,
+      ".fabric",
+      "knowledge",
+      "decisions",
+      `${result.approved[0].stable_id}--personal-approve.md`,
+    );
+    expect(existsSync(workspaceCanonical)).toBe(false);
+  });
+
+  it("approve_team_pending_with_personal_frontmatter_routes_to_personal_canonical", async () => {
+    // Source lives in workspace pending root but frontmatter declares
+    // layer=personal. approve should write the canonical entry into
+    // ~/.fabric/knowledge/<type>/ (per fm.layer) while the source removal
+    // still goes through `git rm` (source origin = team).
+    const projectRoot = await createTempProject();
+    const pendingPath = await seedPendingFile(projectRoot, "guidelines", "boundary-flip", {
+      layer: "personal",
+    });
+
+    const result = await reviewKnowledge(projectRoot, {
+      action: "approve",
+      pending_paths: [pendingPath],
+    });
+    if (result.action !== "approve") throw new Error("unreachable");
+    expect(result.approved).toHaveLength(1);
+    expect(result.approved[0].stable_id).toMatch(/^KP-GLD-\d{4}$/u);
+
+    // Pending file in workspace is gone.
+    expect(existsSync(join(projectRoot, pendingPath))).toBe(false);
+
+    // Canonical destination is under FABRIC_HOME (personal root).
+    const fakeHome = process.env.FABRIC_HOME!;
+    const canonicalAbs = join(
+      fakeHome,
+      ".fabric",
+      "knowledge",
+      "guidelines",
+      `${result.approved[0].stable_id}--boundary-flip.md`,
+    );
+    expect(existsSync(canonicalAbs)).toBe(true);
   });
 });

@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { homedir } from "node:os";
+import { join, relative } from "node:path";
 
 import type {
   FabExtractKnowledgeInput,
@@ -15,8 +16,30 @@ import {
   sha256,
 } from "./_shared.js";
 
-const PENDING_BASE = ".fabric/knowledge/pending";
+const TEAM_PENDING_REL = ".fabric/knowledge/pending";
 const SLUG_MAX_LENGTH = 40;
+
+// ---------------------------------------------------------------------------
+// rc.5 B1: dual pending root. Layer-dependent pending base.
+//
+//   team     → <projectRoot>/.fabric/knowledge/pending          (workspace)
+//   personal → <FABRIC_HOME or homedir>/.fabric/knowledge/pending (home)
+//
+// The personal root mirrors knowledge-meta-builder / review.ts personal-root
+// resolution (FABRIC_HOME env override → os.homedir()) so tests can redirect
+// without polluting the developer's real home directory.
+// ---------------------------------------------------------------------------
+
+export function pendingBase(layer: "team" | "personal", projectRoot: string): string {
+  if (layer === "personal") {
+    return join(resolvePersonalRoot(), ".fabric", "knowledge", "pending");
+  }
+  return join(projectRoot, TEAM_PENDING_REL);
+}
+
+function resolvePersonalRoot(): string {
+  return process.env.FABRIC_HOME ?? homedir();
+}
 
 /**
  * Append-evidence-on-collision service for fab_extract_knowledge.
@@ -61,8 +84,18 @@ export async function extractKnowledge(
     };
   }
 
-  const relativePath = `${PENDING_BASE}/${input.type}/${sanitizedSlug}.md`;
-  const absolutePath = join(projectRoot, relativePath);
+  // rc.5 B1: route to layer-specific pending root.
+  //   team     → workspace .fabric/knowledge/pending  (reported workspace-relative)
+  //   personal → ~/.fabric/knowledge/pending          (reported as `~/...` form,
+  //                                                    mirrors review.ts search
+  //                                                    convention for personal
+  //                                                    canonical entries)
+  const layer = input.layer ?? "team";
+  const baseDir = pendingBase(layer, projectRoot);
+  const absolutePath = join(baseDir, input.type, `${sanitizedSlug}.md`);
+  const reportedPath = layer === "personal"
+    ? `~/${relative(resolvePersonalRoot(), absolutePath)}`
+    : relative(projectRoot, absolutePath);
 
   await ensureParentDirectory(absolutePath);
 
@@ -81,7 +114,7 @@ export async function extractKnowledge(
         reason: `extract_knowledge:${sanitizedSlug}`,
       });
       return {
-        pending_path: relativePath,
+        pending_path: reportedPath,
         idempotency_key: idempotencyKey,
       };
     }
@@ -100,7 +133,7 @@ export async function extractKnowledge(
       reason: `extract_knowledge:${sanitizedSlug}: slug-collision (existing key ${existingKey ?? "<none>"} != incoming ${idempotencyKey})`,
     });
     throw new Error(
-      `slug collision: pending file ${relativePath} already exists with a different idempotency_key (existing=${existingKey ?? "<missing>"}, incoming=${idempotencyKey}); rename slug or resolve upstream`,
+      `slug collision: pending file ${reportedPath} already exists with a different idempotency_key (existing=${existingKey ?? "<missing>"}, incoming=${idempotencyKey}); rename slug or resolve upstream`,
     );
   }
 
@@ -110,6 +143,7 @@ export async function extractKnowledge(
     idempotencyKey,
     summary,
     recentPaths: input.recent_paths,
+    layer,
   });
   await atomicWriteText(absolutePath, fresh);
 
@@ -122,7 +156,7 @@ export async function extractKnowledge(
   });
 
   return {
-    pending_path: relativePath,
+    pending_path: reportedPath,
     idempotency_key: idempotencyKey,
   };
 }
@@ -152,6 +186,7 @@ type FreshEntryArgs = {
   idempotencyKey: string;
   summary: string;
   recentPaths: string[];
+  layer: "team" | "personal";
 };
 
 function renderFreshEntry(args: FreshEntryArgs): string {
@@ -162,7 +197,7 @@ function renderFreshEntry(args: FreshEntryArgs): string {
     "---",
     `type: ${args.type}`,
     "maturity: draft",
-    "layer: team",
+    `layer: ${args.layer}`,
     `created_at: ${createdAt}`,
     `source_session: ${args.sourceSession}`,
     "tags: []",

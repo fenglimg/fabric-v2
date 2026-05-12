@@ -1,15 +1,32 @@
+import { existsSync } from "node:fs";
 import { mkdtemp, readFile, rm, writeFile, mkdir, chmod } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { readEventLedger } from "./event-ledger.js";
-import { extractKnowledge } from "./extract-knowledge.js";
+import { extractKnowledge, pendingBase } from "./extract-knowledge.js";
 
 const tempDirs: string[] = [];
+let originalFabricHome: string | undefined;
+
+// rc.5 B1: redirect personal-root resolution into a tempdir so tests writing
+// to the personal pending root never touch the developer's real ~/.fabric/.
+// Mirrors review.test.ts:18-22 setup.
+beforeEach(async () => {
+  originalFabricHome = process.env.FABRIC_HOME;
+  const fakeHome = await mkdtemp(join(tmpdir(), "fabric-extract-home-"));
+  tempDirs.push(fakeHome);
+  process.env.FABRIC_HOME = fakeHome;
+});
 
 afterEach(async () => {
+  if (originalFabricHome === undefined) {
+    delete process.env.FABRIC_HOME;
+  } else {
+    process.env.FABRIC_HOME = originalFabricHome;
+  }
   await Promise.all(tempDirs.splice(0).map(async (path) => {
     await rm(path, { recursive: true, force: true });
   }));
@@ -408,6 +425,125 @@ describe("extractKnowledge", () => {
         ((e as { reason?: string }).reason ?? "").includes("slug-collision"),
       ),
     ).toBe(true);
+  });
+
+  // -------------------------------------------------------------------------
+  // rc.5 TASK-008 (B1): dual pending root — team vs personal
+  //
+  // Team layer writes to <projectRoot>/.fabric/knowledge/pending/<type>/;
+  // personal layer writes to <FABRIC_HOME>/.fabric/knowledge/pending/<type>/.
+  // pendingBase(layer, projectRoot) is the function-form replacement for the
+  // legacy PENDING_BASE constant.
+  // -------------------------------------------------------------------------
+
+  it("test_pending_base_team_repo", () => {
+    // Team root is workspace-rooted: <projectRoot>/.fabric/knowledge/pending.
+    const fakeProjectRoot = "/tmp/fake-project";
+    const teamBase = pendingBase("team", fakeProjectRoot);
+    expect(teamBase).toBe("/tmp/fake-project/.fabric/knowledge/pending");
+  });
+
+  it("test_pending_base_personal_homedir", () => {
+    // Personal root is home-rooted: <FABRIC_HOME>/.fabric/knowledge/pending.
+    // beforeEach already pointed FABRIC_HOME at a tempdir so this assertion
+    // is deterministic across machines.
+    const fakeHome = process.env.FABRIC_HOME!;
+    const fakeProjectRoot = "/tmp/fake-project";
+    const personalBase = pendingBase("personal", fakeProjectRoot);
+    expect(personalBase).toBe(join(fakeHome, ".fabric", "knowledge", "pending"));
+    // Must not be workspace-rooted.
+    expect(personalBase).not.toContain(fakeProjectRoot);
+  });
+
+  it("extractKnowledge_routes_team_layer_write_to_workspace_pending", async () => {
+    const projectRoot = await createTempProject();
+    const result = await extractKnowledge(projectRoot, {
+      source_session: "sess-team",
+      recent_paths: ["x.ts"],
+      user_messages_summary: "Team-layer body.",
+      type: "decisions",
+      slug: "team-write",
+      layer: "team",
+    });
+
+    // Workspace-relative pending_path (legacy shape, backward compatible).
+    expect(result.pending_path).toBe(".fabric/knowledge/pending/decisions/team-write.md");
+    // File lives under projectRoot, not FABRIC_HOME.
+    const absoluteOnDisk = join(projectRoot, result.pending_path);
+    expect(existsSync(absoluteOnDisk)).toBe(true);
+    const body = await readFile(absoluteOnDisk, "utf8");
+    expect(body).toMatch(/^layer: team$/mu);
+
+    // Verify nothing leaked into the personal root.
+    const fakeHome = process.env.FABRIC_HOME!;
+    const personalPath = join(
+      fakeHome,
+      ".fabric",
+      "knowledge",
+      "pending",
+      "decisions",
+      "team-write.md",
+    );
+    expect(existsSync(personalPath)).toBe(false);
+  });
+
+  it("extractKnowledge_routes_personal_layer_write_to_home_pending", async () => {
+    const projectRoot = await createTempProject();
+    const fakeHome = process.env.FABRIC_HOME!;
+
+    const result = await extractKnowledge(projectRoot, {
+      source_session: "sess-personal",
+      recent_paths: ["y.ts"],
+      user_messages_summary: "Personal-layer body.",
+      type: "guidelines",
+      slug: "personal-write",
+      layer: "personal",
+    });
+
+    // Personal entries report via `~/...` form (mirrors review.ts search convention).
+    expect(result.pending_path).toBe("~/.fabric/knowledge/pending/guidelines/personal-write.md");
+
+    // File lives under FABRIC_HOME, NOT under projectRoot.
+    const personalAbs = join(
+      fakeHome,
+      ".fabric",
+      "knowledge",
+      "pending",
+      "guidelines",
+      "personal-write.md",
+    );
+    expect(existsSync(personalAbs)).toBe(true);
+    const body = await readFile(personalAbs, "utf8");
+    expect(body).toMatch(/^layer: personal$/mu);
+
+    // Verify the workspace pending root was NOT created/touched.
+    const workspacePath = join(
+      projectRoot,
+      ".fabric",
+      "knowledge",
+      "pending",
+      "guidelines",
+      "personal-write.md",
+    );
+    expect(existsSync(workspacePath)).toBe(false);
+  });
+
+  it("extractKnowledge_defaults_layer_to_team_when_omitted", async () => {
+    // Backward-compat: callers that pre-date B1 don't pass `layer` and must
+    // continue writing to the workspace pending root.
+    const projectRoot = await createTempProject();
+    const result = await extractKnowledge(projectRoot, {
+      source_session: "sess-default",
+      recent_paths: [],
+      user_messages_summary: "Body without layer field.",
+      type: "models",
+      slug: "default-layer",
+    });
+    expect(result.pending_path).toBe(".fabric/knowledge/pending/models/default-layer.md");
+    expect(existsSync(join(projectRoot, result.pending_path))).toBe(true);
+
+    const body = await readFile(join(projectRoot, result.pending_path), "utf8");
+    expect(body).toMatch(/^layer: team$/mu);
   });
 });
 
