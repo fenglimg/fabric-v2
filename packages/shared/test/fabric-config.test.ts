@@ -122,3 +122,40 @@ describe("fabricConfigSchema — defaults and backward compatibility", () => {
     expect(parsed.clientPaths).toEqual({ claudeCodeCLI: "/usr/bin/claude" });
   });
 });
+
+// ---------------------------------------------------------------------------
+// archive_edit_threshold — rc.6 TASK-022 (E5)
+//
+// Drives fabric-hint Signal A's new edit-count branch. Default 20 reflects
+// the rule-of-thumb "after ~20 Edit/Write operations there's probably
+// something worth archiving." Must be positive integer; non-positive or
+// non-integer values are rejected by the zod schema (hook itself also
+// defends in depth at read time).
+// ---------------------------------------------------------------------------
+
+describe("fabricConfigSchema — archive_edit_threshold (rc.6 TASK-022)", () => {
+  it("applies default 20 when absent", () => {
+    const parsed = fabricConfigSchema.parse({});
+    expect(parsed.archive_edit_threshold).toBe(20);
+  });
+
+  it("accepts explicit positive integer override", () => {
+    const parsed = fabricConfigSchema.parse({ archive_edit_threshold: 50 });
+    expect(parsed.archive_edit_threshold).toBe(50);
+  });
+
+  it("rejects zero / negative / non-integer / non-number", () => {
+    expect(() =>
+      fabricConfigSchema.parse({ archive_edit_threshold: 0 }),
+    ).toThrow();
+    expect(() =>
+      fabricConfigSchema.parse({ archive_edit_threshold: -3 }),
+    ).toThrow();
+    expect(() =>
+      fabricConfigSchema.parse({ archive_edit_threshold: 1.5 }),
+    ).toThrow();
+    expect(() =>
+      fabricConfigSchema.parse({ archive_edit_threshold: "20" }),
+    ).toThrow();
+  });
+});

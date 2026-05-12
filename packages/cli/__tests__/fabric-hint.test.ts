@@ -39,6 +39,8 @@ type HookDecision =
     }
   | null;
 
+type EditCounterStats = { editsSinceLastProposed: number; threshold: number };
+
 type HookModule = {
   main: (
     env: { cwd: string; now: Date },
@@ -47,13 +49,16 @@ type HookModule = {
   readLedger: (projectRoot: string) => Array<Record<string, unknown>>;
   readPendingStats: (projectRoot: string, now: Date) => PendingStats;
   countCanonicalNodes: (projectRoot: string) => number;
+  countEditsSince: (projectRoot: string, anchorTs: number | null) => number;
   decide: (
     events: Array<Record<string, unknown>>,
     now: Date,
     pendingStats?: PendingStats,
     underseedStats?: UnderseedStats,
+    editCounterStats?: EditCounterStats,
   ) => HookDecision;
   readUnderseedThreshold: (projectRoot: string) => number;
+  readArchiveEditThreshold: (projectRoot: string) => number;
   CONSTANTS: {
     FABRIC_DIR: string;
     EVENT_LEDGER_FILE: string;
@@ -68,6 +73,8 @@ type HookModule = {
     DEFAULT_UNDERSEED_NODE_THRESHOLD: number;
     UNDERSEED_POST_INIT_QUIET_HOURS: number;
     UNDERSEED_NO_PROPOSED_HOURS: number;
+    EDIT_COUNTER_FILE_REL: string;
+    DEFAULT_ARCHIVE_EDIT_THRESHOLD: number;
   };
 };
 
@@ -148,11 +155,12 @@ describe("fabric-hint.cjs — readLedger", () => {
   });
 });
 
-// rc.5 TASK-015 (C6): Signal A is pure 24h-since-last-knowledge_proposed.
-// The previous plan_context-count branch was dropped — rc.5+ hooks auto-fire
-// plan_context events, making the count unreliable. plan_context events
-// present in the ledger MUST NOT influence Signal A.
-describe("fabric-hint.cjs — decide (Signal A: 24h-only)", () => {
+// rc.5 TASK-015 (C6): Signal A pure-24h baseline tests. rc.6 TASK-022 (E5)
+// adds an OR-branch on edit count from the PreToolUse sidecar; these tests
+// pass `editCounterStats` undefined so they exercise the time-only branch.
+// plan_context events present in the ledger MUST NOT influence Signal A
+// (auto-fire-resistant — see TASK-015 rationale).
+describe("fabric-hint.cjs — decide (Signal A: 24h-only path)", () => {
   it("returns null on empty ledger (no-trigger silence)", () => {
     expect(hook.decide([], FIXED_NOW)).toBeNull();
   });
@@ -216,6 +224,355 @@ describe("fabric-hint.cjs — decide (Signal A: 24h-only)", () => {
       );
     }
     expect(hook.decide(events, FIXED_NOW)).toBeNull();
+  });
+});
+
+// rc.6 TASK-022 (E5): Signal A upgrade to 24h-OR-N-edits.
+// New OR-branch fires when edit-counter line count since last
+// knowledge_proposed ts >= archive_edit_threshold (default 20). Time-only
+// behaviour preserved when edit count < threshold. Missing/malformed
+// edit-counter → editsSinceLastProposed=0 → degrades to 24h-only.
+describe("fabric-hint.cjs — decide (Signal A: edit-count OR branch)", () => {
+  it("silent when edits<threshold AND <24h elapsed (both branches below)", () => {
+    const proposedTs = NOW_MS - 5 * HOUR_MS;
+    const events = [makeEvent("knowledge_proposed", proposedTs)];
+    const result = hook.decide(events, FIXED_NOW, undefined, undefined, {
+      editsSinceLastProposed: 5,
+      threshold: 20,
+    });
+    expect(result).toBeNull();
+  });
+
+  it("fires (24h branch) when edits<threshold AND >=24h elapsed", () => {
+    const proposedTs = NOW_MS - 25 * HOUR_MS;
+    const events = [makeEvent("knowledge_proposed", proposedTs)];
+    const result = hook.decide(events, FIXED_NOW, undefined, undefined, {
+      editsSinceLastProposed: 3,
+      threshold: 20,
+    });
+    expect(result).not.toBeNull();
+    expect(result?.signal).toBe("archive");
+    expect(result?.recommended_skill).toBe("fabric-archive");
+    expect(result?.reason).toMatch(/25\.0h/);
+  });
+
+  it("fires (edit-count branch) when edits>=threshold AND <24h elapsed", () => {
+    const proposedTs = NOW_MS - 3 * HOUR_MS;
+    const events = [makeEvent("knowledge_proposed", proposedTs)];
+    const result = hook.decide(events, FIXED_NOW, undefined, undefined, {
+      editsSinceLastProposed: 20,
+      threshold: 20,
+    });
+    expect(result).not.toBeNull();
+    expect(result?.signal).toBe("archive");
+    expect(result?.recommended_skill).toBe("fabric-archive");
+    // Reason should mention edit count, NOT hours (since 24h branch silent).
+    expect(result?.reason).toMatch(/20 次编辑/);
+    expect(result?.reason).not.toMatch(/\bh（阈值/);
+  });
+
+  it("fires (both branches) when edits>=threshold AND >=24h elapsed — reason mentions both", () => {
+    const proposedTs = NOW_MS - 30 * HOUR_MS;
+    const events = [makeEvent("knowledge_proposed", proposedTs)];
+    const result = hook.decide(events, FIXED_NOW, undefined, undefined, {
+      editsSinceLastProposed: 25,
+      threshold: 20,
+    });
+    expect(result).not.toBeNull();
+    expect(result?.signal).toBe("archive");
+    expect(result?.reason).toMatch(/30\.0h/);
+    expect(result?.reason).toMatch(/25 次编辑/);
+  });
+
+  it("silent when no knowledge_proposed event recorded, even with huge edit count", () => {
+    // Anchor-less workspace: edit count is meaningless without an anchor
+    // because we can't say "edits since archive" if there's never been one.
+    // Signal A stays silent; Signal C (import) is the right reminder.
+    const result = hook.decide([], FIXED_NOW, undefined, undefined, {
+      editsSinceLastProposed: 100,
+      threshold: 20,
+    });
+    expect(result).toBeNull();
+  });
+
+  it("honours custom threshold (50) — fires only when edits>=50", () => {
+    const proposedTs = NOW_MS - 3 * HOUR_MS;
+    const events = [makeEvent("knowledge_proposed", proposedTs)];
+
+    // 30 edits, threshold 50 → silent
+    expect(
+      hook.decide(events, FIXED_NOW, undefined, undefined, {
+        editsSinceLastProposed: 30,
+        threshold: 50,
+      }),
+    ).toBeNull();
+
+    // 50 edits, threshold 50 → fires
+    const fired = hook.decide(events, FIXED_NOW, undefined, undefined, {
+      editsSinceLastProposed: 50,
+      threshold: 50,
+    });
+    expect(fired).not.toBeNull();
+    expect(fired?.signal).toBe("archive");
+    expect(fired?.reason).toMatch(/50 次编辑/);
+    expect(fired?.reason).toMatch(/阈值 50/);
+  });
+});
+
+// rc.6 TASK-022 (E5): countEditsSince — edit-counter sidecar parser.
+describe("fabric-hint.cjs — countEditsSince", () => {
+  let tempRoot: string;
+
+  beforeEach(() => {
+    tempRoot = mkdtempSync(join(tmpdir(), "fabric-hint-edit-counter-"));
+  });
+
+  afterEach(() => {
+    try {
+      rmSync(tempRoot, { recursive: true, force: true });
+    } catch {
+      // best-effort
+    }
+  });
+
+  function seedEditCounter(root: string, isoLines: string[]): void {
+    const dir = join(root, ".fabric", ".cache");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(
+      join(dir, "edit-counter"),
+      isoLines.map((l) => `${l}\n`).join(""),
+      "utf8",
+    );
+  }
+
+  it("returns 0 when edit-counter file does not exist", () => {
+    expect(hook.countEditsSince(tempRoot, NOW_MS)).toBe(0);
+  });
+
+  it("counts only lines with ts > anchor (strict inequality)", () => {
+    const anchor = NOW_MS - 10 * HOUR_MS;
+    seedEditCounter(tempRoot, [
+      new Date(anchor - 1 * HOUR_MS).toISOString(), // before anchor → excluded
+      new Date(anchor).toISOString(), // equal to anchor → excluded (strict >)
+      new Date(anchor + 1 * HOUR_MS).toISOString(), // after → counted
+      new Date(anchor + 2 * HOUR_MS).toISOString(), // after → counted
+    ]);
+    expect(hook.countEditsSince(tempRoot, anchor)).toBe(2);
+  });
+
+  it("skips malformed lines but keeps surrounding valid ones", () => {
+    const anchor = NOW_MS - 10 * HOUR_MS;
+    seedEditCounter(tempRoot, [
+      new Date(anchor + 1 * HOUR_MS).toISOString(),
+      "not-an-iso-timestamp",
+      "{{garbage",
+      new Date(anchor + 2 * HOUR_MS).toISOString(),
+      "", // blank line — also skipped silently
+      new Date(anchor + 3 * HOUR_MS).toISOString(),
+    ]);
+    expect(hook.countEditsSince(tempRoot, anchor)).toBe(3);
+  });
+
+  it("counts all parseable lines when anchorTs is null (no anchor event)", () => {
+    seedEditCounter(tempRoot, [
+      new Date(NOW_MS - 5 * HOUR_MS).toISOString(),
+      new Date(NOW_MS - 3 * HOUR_MS).toISOString(),
+      new Date(NOW_MS - 1 * HOUR_MS).toISOString(),
+    ]);
+    expect(hook.countEditsSince(tempRoot, null)).toBe(3);
+  });
+});
+
+// rc.6 TASK-022 (E5): readArchiveEditThreshold — fabric-config.json reader.
+describe("fabric-hint.cjs — readArchiveEditThreshold", () => {
+  let tempRoot: string;
+
+  beforeEach(() => {
+    tempRoot = mkdtempSync(join(tmpdir(), "fabric-hint-edit-thresh-"));
+  });
+
+  afterEach(() => {
+    try {
+      rmSync(tempRoot, { recursive: true, force: true });
+    } catch {
+      // best-effort
+    }
+  });
+
+  it("returns default 20 when config file is missing", () => {
+    expect(hook.readArchiveEditThreshold(tempRoot)).toBe(20);
+    expect(hook.readArchiveEditThreshold(tempRoot)).toBe(
+      hook.CONSTANTS.DEFAULT_ARCHIVE_EDIT_THRESHOLD,
+    );
+  });
+
+  it("returns config override when present and positive", () => {
+    mkdirSync(join(tempRoot, ".fabric"), { recursive: true });
+    writeFileSync(
+      join(tempRoot, ".fabric", "fabric-config.json"),
+      JSON.stringify({ archive_edit_threshold: 50 }),
+      "utf8",
+    );
+    expect(hook.readArchiveEditThreshold(tempRoot)).toBe(50);
+  });
+
+  it("falls back to default on non-positive override", () => {
+    mkdirSync(join(tempRoot, ".fabric"), { recursive: true });
+    writeFileSync(
+      join(tempRoot, ".fabric", "fabric-config.json"),
+      JSON.stringify({ archive_edit_threshold: -5 }),
+      "utf8",
+    );
+    expect(hook.readArchiveEditThreshold(tempRoot)).toBe(20);
+  });
+
+  it("falls back to default on parse failure", () => {
+    mkdirSync(join(tempRoot, ".fabric"), { recursive: true });
+    writeFileSync(
+      join(tempRoot, ".fabric", "fabric-config.json"),
+      "{not valid json",
+      "utf8",
+    );
+    expect(hook.readArchiveEditThreshold(tempRoot)).toBe(20);
+  });
+});
+
+// rc.6 TASK-022 (E5): end-to-end main() integration with edit-counter sidecar.
+describe("fabric-hint.cjs — main (Signal A edit-count integration)", () => {
+  let tempRoot: string;
+
+  beforeEach(() => {
+    tempRoot = mkdtempSync(join(tmpdir(), "fabric-hint-main-edits-"));
+  });
+
+  afterEach(() => {
+    try {
+      rmSync(tempRoot, { recursive: true, force: true });
+    } catch {
+      // best-effort
+    }
+  });
+
+  function seedEditCounter(root: string, isoLines: string[]): void {
+    const dir = join(root, ".fabric", ".cache");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(
+      join(dir, "edit-counter"),
+      isoLines.map((l) => `${l}\n`).join(""),
+      "utf8",
+    );
+  }
+
+  it("fires archive signal when 20 edits accumulated since knowledge_proposed (within 24h)", () => {
+    mkdirSync(join(tempRoot, ".fabric"), { recursive: true });
+    const proposedTs = NOW_MS - 5 * HOUR_MS;
+    const line = JSON.stringify(makeEvent("knowledge_proposed", proposedTs));
+    writeFileSync(join(tempRoot, ".fabric", "events.jsonl"), `${line}\n`, "utf8");
+
+    // 20 edits all AFTER proposedTs.
+    const editLines: string[] = [];
+    for (let i = 1; i <= 20; i += 1) {
+      editLines.push(new Date(proposedTs + i * 60 * 1000).toISOString());
+    }
+    seedEditCounter(tempRoot, editLines);
+
+    const writes: string[] = [];
+    const stdout = { write: (chunk: string) => writes.push(chunk) };
+    hook.main({ cwd: tempRoot, now: FIXED_NOW }, { stdout });
+
+    expect(writes).toHaveLength(1);
+    const payload = JSON.parse(writes[0] as string) as {
+      signal: string;
+      reason: string;
+    };
+    expect(payload.signal).toBe("archive");
+    expect(payload.reason).toMatch(/20 次编辑/);
+  });
+
+  it("stays silent when 19 edits accumulated (just below default threshold 20) and <24h", () => {
+    mkdirSync(join(tempRoot, ".fabric"), { recursive: true });
+    const proposedTs = NOW_MS - 5 * HOUR_MS;
+    const line = JSON.stringify(makeEvent("knowledge_proposed", proposedTs));
+    writeFileSync(join(tempRoot, ".fabric", "events.jsonl"), `${line}\n`, "utf8");
+
+    const editLines: string[] = [];
+    for (let i = 1; i <= 19; i += 1) {
+      editLines.push(new Date(proposedTs + i * 60 * 1000).toISOString());
+    }
+    seedEditCounter(tempRoot, editLines);
+
+    const writes: string[] = [];
+    const stdout = { write: (chunk: string) => writes.push(chunk) };
+    hook.main({ cwd: tempRoot, now: FIXED_NOW }, { stdout });
+
+    expect(writes).toEqual([]);
+  });
+
+  it("missing edit-counter degrades to 24h-only (existing rc.5 behaviour preserved)", () => {
+    // No edit-counter file. knowledge_proposed 5h ago → no time trigger.
+    // Hook MUST be silent — verifies safe-degrade contract.
+    mkdirSync(join(tempRoot, ".fabric"), { recursive: true });
+    const proposedTs = NOW_MS - 5 * HOUR_MS;
+    const line = JSON.stringify(makeEvent("knowledge_proposed", proposedTs));
+    writeFileSync(join(tempRoot, ".fabric", "events.jsonl"), `${line}\n`, "utf8");
+
+    const writes: string[] = [];
+    const stdout = { write: (chunk: string) => writes.push(chunk) };
+    hook.main({ cwd: tempRoot, now: FIXED_NOW }, { stdout });
+
+    expect(writes).toEqual([]);
+  });
+
+  it("honours custom archive_edit_threshold=10 from fabric-config.json", () => {
+    mkdirSync(join(tempRoot, ".fabric"), { recursive: true });
+    writeFileSync(
+      join(tempRoot, ".fabric", "fabric-config.json"),
+      JSON.stringify({ archive_edit_threshold: 10 }),
+      "utf8",
+    );
+    const proposedTs = NOW_MS - 2 * HOUR_MS;
+    const line = JSON.stringify(makeEvent("knowledge_proposed", proposedTs));
+    writeFileSync(join(tempRoot, ".fabric", "events.jsonl"), `${line}\n`, "utf8");
+
+    // 10 edits — exactly at custom threshold, well within 24h.
+    const editLines: string[] = [];
+    for (let i = 1; i <= 10; i += 1) {
+      editLines.push(new Date(proposedTs + i * 60 * 1000).toISOString());
+    }
+    seedEditCounter(tempRoot, editLines);
+
+    const writes: string[] = [];
+    const stdout = { write: (chunk: string) => writes.push(chunk) };
+    hook.main({ cwd: tempRoot, now: FIXED_NOW }, { stdout });
+
+    expect(writes).toHaveLength(1);
+    const payload = JSON.parse(writes[0] as string) as { signal: string };
+    expect(payload.signal).toBe("archive");
+  });
+
+  it("malformed lines in edit-counter are skipped; valid count still drives trigger", () => {
+    mkdirSync(join(tempRoot, ".fabric"), { recursive: true });
+    const proposedTs = NOW_MS - 4 * HOUR_MS;
+    const line = JSON.stringify(makeEvent("knowledge_proposed", proposedTs));
+    writeFileSync(join(tempRoot, ".fabric", "events.jsonl"), `${line}\n`, "utf8");
+
+    const editLines: string[] = [];
+    // 20 valid lines.
+    for (let i = 1; i <= 20; i += 1) {
+      editLines.push(new Date(proposedTs + i * 60 * 1000).toISOString());
+    }
+    // Mix in 5 malformed lines that MUST be skipped (not count toward trigger).
+    editLines.push("bogus", "not-a-date", "{{{", "", "2026/05/12 broken");
+
+    seedEditCounter(tempRoot, editLines);
+
+    const writes: string[] = [];
+    const stdout = { write: (chunk: string) => writes.push(chunk) };
+    hook.main({ cwd: tempRoot, now: FIXED_NOW }, { stdout });
+
+    expect(writes).toHaveLength(1);
+    const payload = JSON.parse(writes[0] as string) as { signal: string };
+    expect(payload.signal).toBe("archive");
   });
 });
 

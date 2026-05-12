@@ -9,13 +9,28 @@ const FABRIC_DIR = ".fabric";
 const EVENT_LEDGER_FILE = "events.jsonl";
 const EVENT_TYPE_PROPOSED = "knowledge_proposed";
 const EVENT_TYPE_INIT_SCAN_COMPLETED = "init_scan_completed";
-// rc.5 TASK-015 (C6): Signal A is now pure 24h-since-last-knowledge_proposed.
-// The previous `5 plan_contexts` count branch was dropped because rc.5+ hooks
-// auto-fire knowledge_context_planned events, which makes the count unreliable
-// (inflated by tooling, not user intent). The replacement edit-count signal
-// will materialize in rc.6 via the PreToolUse sidecar (TASK-022 / E4).
+// rc.6 TASK-022 (E5): Signal A is now `24h OR N-edits since last
+// knowledge_proposed`. The edit-count branch reads
+// `.fabric/.cache/edit-counter` (one ISO-8601 line per PreToolUse fire,
+// populated by rc.6 TASK-020 / E4). Filters lines with ts > last
+// knowledge_proposed event ts; fires when the count reaches
+// archive_edit_threshold (default 20, configurable via fabric-config.json).
+//
+// rc.5 TASK-015 (C6) had reduced Signal A to pure 24h-only because the prior
+// `5 plan_contexts since last archive` branch was unreliable (rc.5+ hooks
+// auto-fire plan_context events, inflating the count). The edit-counter
+// sidecar fixes that: PreToolUse fires correlate with real Edit/Write/MultiEdit
+// activity, not tooling chatter.
+//
+// Safe-degrade contract: if `.fabric/.cache/edit-counter` is missing or every
+// line malformed, the edit branch contributes 0 and Signal A reverts to
+// 24h-only — matching the rc.5 contract. If no knowledge_proposed event has
+// ever fired, Signal A stays silent regardless of edit count (an
+// "anchor"-less workspace is Signal C's domain).
 const THRESHOLD_HOURS = 24;
 const MS_PER_HOUR = 60 * 60 * 1000;
+const EDIT_COUNTER_FILE_REL = join(".fabric", ".cache", "edit-counter");
+const DEFAULT_ARCHIVE_EDIT_THRESHOLD = 20;
 
 // rc.3 TASK-004: second signal — pending-overflow → review skill recommendation.
 const PENDING_DIR = "knowledge/pending";
@@ -179,16 +194,79 @@ function countCanonicalNodes(projectRoot) {
 }
 
 /**
+ * Count edit-counter lines (timestamps) with ts strictly greater than the
+ * given anchor ts. Each line in `.fabric/.cache/edit-counter` is one
+ * ISO-8601 timestamp written by the rc.6 PreToolUse hook
+ * (TASK-020 / E4) per Edit/Write/MultiEdit fire.
+ *
+ * Safe-degrade contract:
+ *   - File missing → return 0 (Signal A reverts to 24h-only behaviour)
+ *   - Line malformed (non-parseable as Date) → skip; other lines still count
+ *   - Read failure (permission, race) → return 0
+ *   - anchorTs is null → caller has no anchor event; we still parse but the
+ *     caller will already short-circuit before invoking us. Returning the
+ *     full count here is documented behaviour and used by the never-anchor
+ *     edge case test.
+ *
+ * NEVER throws — the hook's overarching never-block invariant requires every
+ * helper to return a sane value on any I/O or parse error.
+ */
+function countEditsSince(projectRoot, anchorTs) {
+  const filePath = join(projectRoot, EDIT_COUNTER_FILE_REL);
+  if (!existsSync(filePath)) return 0;
+  let raw;
+  try {
+    raw = readFileSync(filePath, "utf8");
+  } catch {
+    return 0;
+  }
+  const lines = raw.split(/\r?\n/);
+  let count = 0;
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (trimmed.length === 0) continue;
+    const ms = Date.parse(trimmed);
+    if (!Number.isFinite(ms)) continue; // malformed → skip
+    if (anchorTs === null || ms > anchorTs) {
+      count += 1;
+    }
+  }
+  return count;
+}
+
+/**
+ * Resolve the archive_edit_threshold from .fabric/fabric-config.json,
+ * falling back to DEFAULT_ARCHIVE_EDIT_THRESHOLD (20). Any read/parse failure
+ * or non-positive value → default. Mirrors readUnderseedThreshold's contract.
+ */
+function readArchiveEditThreshold(projectRoot) {
+  const configPath = join(projectRoot, FABRIC_DIR, CONFIG_FILE);
+  if (!existsSync(configPath)) return DEFAULT_ARCHIVE_EDIT_THRESHOLD;
+  try {
+    const parsed = JSON.parse(readFileSync(configPath, "utf8"));
+    const v = parsed && parsed.archive_edit_threshold;
+    if (typeof v === "number" && Number.isFinite(v) && v > 0) return v;
+  } catch {
+    // fall through to default
+  }
+  return DEFAULT_ARCHIVE_EDIT_THRESHOLD;
+}
+
+/**
  * Decide whether to emit a hook reminder.
  *
- * rc.5 archive signal (TASK-015 / C6 — Signal A):
- *   - Trigger ONLY when hours since last knowledge_proposed >= 24.
+ * rc.6 archive signal (TASK-022 / E5 — Signal A, 24h-OR-N-edits):
+ *   - Trigger when EITHER (a) hours since last knowledge_proposed >= 24,
+ *     OR (b) edit-counter lines with ts > last-knowledge_proposed >= threshold
+ *     (default 20).
  *   - If no knowledge_proposed event has ever been recorded, Signal A stays
- *     silent (a never-archived workspace is handled by Signal C / import).
- *   - The previous `5 plan_contexts since last knowledge_proposed` count branch
- *     was dropped in rc.5 because rc.5+ hooks auto-fire plan_context events,
- *     making the count unreliable. rc.6 will reintroduce an Edit-count signal
- *     via a PreToolUse sidecar (TASK-022 / E4).
+ *     silent regardless of edit count (a never-archived workspace is handled
+ *     by Signal C / import; Signal A needs an anchor event to count from).
+ *   - The edit-count branch was dropped in rc.5 (TASK-015) because the prior
+ *     `5 plan_contexts` proxy was inflated by hook auto-fires. rc.6 (TASK-022)
+ *     reintroduces it on a reliable substrate: the PreToolUse sidecar
+ *     written by TASK-020 / E4. Missing/malformed edit-counter degrades
+ *     safely to the 24h-only path.
  *
  * rc.3 review signal (TASK-004 — Signal B):
  *   - Trigger when (pending count >= 10) OR (oldest pending mtime age >= 7 days).
@@ -203,21 +281,33 @@ function countCanonicalNodes(projectRoot) {
  * Review wins over import because pending overflow is a sharper backlog signal
  * than a sparse corpus.
  *
+ * The `editCounterStats` parameter is the parsed edit-counter view used by
+ * the new Signal A edit branch:
+ *   { editsSinceLastProposed: number, threshold: number }
+ * Defaults to { editsSinceLastProposed: 0, threshold: DEFAULT_ARCHIVE_EDIT_THRESHOLD }
+ * when omitted — preserves existing tests that don't populate it.
+ *
  * Returns one of:
  *   - { decision: 'block', reason, signal: 'archive', recommended_skill: 'fabric-archive' }
  *   - { decision: 'block', reason, signal: 'review', recommended_skill: 'fabric-review' }
  *   - { decision: 'block', reason, signal: 'import', recommended_skill: 'fabric-import' }
  *   - null on no trigger
  */
-function decide(events, now, pendingStats, underseedStats) {
+function decide(events, now, pendingStats, underseedStats, editCounterStats) {
   const nowMs = now instanceof Date ? now.getTime() : Number(now) || Date.now();
   const stats = pendingStats || { count: 0, oldestAgeMs: null };
   const underseed =
     underseedStats || { nodeCount: 0, threshold: DEFAULT_UNDERSEED_NODE_THRESHOLD };
+  const editStats =
+    editCounterStats || {
+      editsSinceLastProposed: 0,
+      threshold: DEFAULT_ARCHIVE_EDIT_THRESHOLD,
+    };
 
-  // ---- Archive signal (rc.5 TASK-015 — Signal A, 24h-only) ------------------
+  // ---- Archive signal (rc.6 TASK-022 — Signal A, 24h-OR-N-edits) -----------
   // Locate the most-recent knowledge_proposed event. If none exists, Signal A
   // stays silent — a never-archived workspace is the import signal's domain.
+  // Edit count without an anchor is meaningless and intentionally ignored.
   let lastProposedTs = null;
   for (let i = events.length - 1; i >= 0; i -= 1) {
     const ev = events[i];
@@ -232,14 +322,25 @@ function decide(events, now, pendingStats, underseedStats) {
 
   const triggerByHours =
     hoursElapsed !== null && hoursElapsed >= THRESHOLD_HOURS;
+  const triggerByEdits =
+    lastProposedTs !== null &&
+    editStats.editsSinceLastProposed >= editStats.threshold;
 
   // PRECEDENCE: archive wins when Signal A fires, regardless of review/import
   // state. The user gets the archive reminder first; other reminders wait
   // until after archive happens.
-  if (triggerByHours) {
+  if (triggerByHours || triggerByEdits) {
+    // Build a reason string that names which branch fired. When both fire,
+    // mention both so the user understands the urgency.
+    const parts = [];
+    if (triggerByHours) {
+      parts.push(`距上次 knowledge_proposed ${hoursElapsed.toFixed(1)}h（阈值 ${THRESHOLD_HOURS}h）`);
+    }
+    if (triggerByEdits) {
+      parts.push(`自上次归档已发生 ${editStats.editsSinceLastProposed} 次编辑（阈值 ${editStats.threshold}）`);
+    }
     const reason =
-      `距上次 knowledge_proposed ${hoursElapsed.toFixed(1)}h（阈值 ${THRESHOLD_HOURS}h）` +
-      " — 建议调用 fabric-archive skill 抽取近期会话的知识。";
+      `${parts.join("；")} — 建议调用 fabric-archive skill 抽取近期会话的知识。`;
     return {
       decision: "block",
       reason,
@@ -402,7 +503,33 @@ function main(env, stdio) {
     } catch {
       underseedStats = { nodeCount: 0, threshold: DEFAULT_UNDERSEED_NODE_THRESHOLD };
     }
-    const result = decide(events, now, pendingStats, underseedStats);
+
+    // Edit-counter view (rc.6 TASK-022 / E5). We need the last knowledge_proposed
+    // ts to anchor the count; rather than rescanning events here, we mirror
+    // decide()'s scan locally to keep the helper pure. The threshold comes
+    // from fabric-config.json (archive_edit_threshold, default 20).
+    let editCounterStats;
+    try {
+      let anchorTs = null;
+      for (let i = events.length - 1; i >= 0; i -= 1) {
+        const ev = events[i];
+        if (ev && ev.event_type === EVENT_TYPE_PROPOSED && typeof ev.ts === "number") {
+          anchorTs = ev.ts;
+          break;
+        }
+      }
+      editCounterStats = {
+        editsSinceLastProposed: countEditsSince(cwd, anchorTs),
+        threshold: readArchiveEditThreshold(cwd),
+      };
+    } catch {
+      editCounterStats = {
+        editsSinceLastProposed: 0,
+        threshold: DEFAULT_ARCHIVE_EDIT_THRESHOLD,
+      };
+    }
+
+    const result = decide(events, now, pendingStats, underseedStats, editCounterStats);
     if (result === null) return;
 
     // Cooldown throttle: once a signal fires, stay silent for
@@ -428,9 +555,11 @@ module.exports = {
   readLedger,
   readPendingStats,
   countCanonicalNodes,
+  countEditsSince,
   decide,
   readCooldownHours,
   readUnderseedThreshold,
+  readArchiveEditThreshold,
   readShownCache,
   writeShownCache,
   CONSTANTS: {
@@ -450,6 +579,8 @@ module.exports = {
     CONFIG_FILE,
     DEFAULT_COOLDOWN_HOURS,
     SHOWN_CACHE_FILE,
+    EDIT_COUNTER_FILE_REL,
+    DEFAULT_ARCHIVE_EDIT_THRESHOLD,
   },
 };
 

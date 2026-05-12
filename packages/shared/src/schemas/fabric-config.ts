@@ -61,4 +61,15 @@ export const fabricConfigSchema = z.object({
   // is below the floor for plan_context retrieval to be meaningful. Also
   // consumed by `doctor` lint #22 (knowledge_underseeded).
   underseed_node_threshold: z.number().int().positive().optional().default(10),
+  // Edit-count threshold for the fabric-hint Stop hook's Signal A
+  // (rc.6 TASK-022 / E5). Signal A fires when EITHER (a) >=24h have elapsed
+  // since the last `knowledge_proposed` event, OR (b) >=archive_edit_threshold
+  // PreToolUse fires have been recorded in `.fabric/.cache/edit-counter` since
+  // the last `knowledge_proposed` event. The edit-counter sidecar is populated
+  // by the rc.6 PreToolUse hook (TASK-020 / E4) — one ISO-8601 line per fire.
+  // Default 20 reflects the rule-of-thumb "after ~20 Edit/Write operations
+  // there is probably something worth archiving"; lowered values nag more
+  // aggressively, higher values rely on the 24h fallback. Missing or absent
+  // edit-counter file degrades safely to the 24h-only path.
+  archive_edit_threshold: z.number().int().positive().optional().default(20),
 });
