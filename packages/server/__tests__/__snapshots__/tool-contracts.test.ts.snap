@@ -1076,6 +1076,19 @@ exports[`tool contracts > plan-context contract matches snapshot 1`] = `
                   "maturity": {
                     "$ref": "#/properties/entries/items/properties/description_index/items/properties/description/properties/maturity",
                   },
+                  "relevance_paths": {
+                    "items": {
+                      "type": "string",
+                    },
+                    "type": "array",
+                  },
+                  "relevance_scope": {
+                    "enum": [
+                      "narrow",
+                      "broad",
+                    ],
+                    "type": "string",
+                  },
                   "required": {
                     "type": "boolean",
                   },

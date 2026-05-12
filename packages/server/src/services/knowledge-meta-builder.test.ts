@@ -661,6 +661,109 @@ describe("knowledge-meta-builder", () => {
     // PreToolUse session-hints cache invalidates correctly.
     expect(metaAfter.revision).not.toBe(metaBefore.revision);
   });
+
+  // ---------------------------------------------------------------------------
+  // v2.0-rc.5 (C1): relevance_scope + relevance_paths frontmatter fixtures
+  //
+  // The parser must recognize two new flat fields and default to safe values
+  // (broad + []) whenever they are absent or malformed, so the existing 16
+  // canonical entries continue to parse cleanly with no migration required.
+  // ---------------------------------------------------------------------------
+
+  it("test_parse_relevance_scope_narrow — explicit narrow scope + paths array are read", async () => {
+    const projectRoot = await createProject("rules-builder-rc5-c1-narrow");
+    await writeProjectFile(
+      projectRoot,
+      ".fabric/knowledge/decisions/scoped.md",
+      [
+        "---",
+        "summary: Narrow rule",
+        "relevance_scope: narrow",
+        "relevance_paths: [src/foo.ts, src/bar/]",
+        "---",
+        "# Narrow rule",
+        "",
+      ].join("\n"),
+    );
+
+    const meta = await computeKnowledgeBasedAgentsMeta(projectRoot);
+    const node = Object.values(meta.nodes).find((n) => n.file === ".fabric/knowledge/decisions/scoped.md");
+
+    expect(node?.description?.relevance_scope).toBe("narrow");
+    expect(node?.description?.relevance_paths).toEqual(["src/foo.ts", "src/bar/"]);
+  });
+
+  it("test_parse_relevance_paths_array — explicit broad scope with empty paths array", async () => {
+    const projectRoot = await createProject("rules-builder-rc5-c1-broad-explicit");
+    await writeProjectFile(
+      projectRoot,
+      ".fabric/knowledge/decisions/broad.md",
+      [
+        "---",
+        "summary: Broad rule",
+        "relevance_scope: broad",
+        "relevance_paths: []",
+        "---",
+        "# Broad rule",
+        "",
+      ].join("\n"),
+    );
+
+    const meta = await computeKnowledgeBasedAgentsMeta(projectRoot);
+    const node = Object.values(meta.nodes).find((n) => n.file === ".fabric/knowledge/decisions/broad.md");
+
+    expect(node?.description?.relevance_scope).toBe("broad");
+    expect(node?.description?.relevance_paths).toEqual([]);
+  });
+
+  it("test_default_when_absent — both fields omitted default to broad + []", async () => {
+    const projectRoot = await createProject("rules-builder-rc5-c1-absent");
+    await writeProjectFile(
+      projectRoot,
+      ".fabric/knowledge/decisions/no-relevance.md",
+      [
+        "---",
+        "summary: Rule without relevance fields",
+        "---",
+        "# Rule without relevance fields",
+        "",
+      ].join("\n"),
+    );
+
+    const meta = await computeKnowledgeBasedAgentsMeta(projectRoot);
+    const node = Object.values(meta.nodes).find(
+      (n) => n.file === ".fabric/knowledge/decisions/no-relevance.md",
+    );
+
+    expect(node?.description?.relevance_scope).toBe("broad");
+    expect(node?.description?.relevance_paths).toEqual([]);
+  });
+
+  it("test_malformed_value_falls_back_to_default — bogus relevance_scope falls back to broad", async () => {
+    const projectRoot = await createProject("rules-builder-rc5-c1-malformed");
+    await writeProjectFile(
+      projectRoot,
+      ".fabric/knowledge/decisions/malformed.md",
+      [
+        "---",
+        "summary: Malformed relevance scope",
+        "relevance_scope: bogus",
+        "---",
+        "# Malformed",
+        "",
+      ].join("\n"),
+    );
+
+    const meta = await computeKnowledgeBasedAgentsMeta(projectRoot);
+    const node = Object.values(meta.nodes).find(
+      (n) => n.file === ".fabric/knowledge/decisions/malformed.md",
+    );
+
+    // Forgiving default: malformed value parses as 'broad' so the entry stays
+    // surfaced rather than dropping out of the registry.
+    expect(node?.description?.relevance_scope).toBe("broad");
+    expect(node?.description?.relevance_paths).toEqual([]);
+  });
 });
 
 async function createProject(prefix: string): Promise<string> {

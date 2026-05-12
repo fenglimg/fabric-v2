@@ -21,6 +21,13 @@ export interface RuleDescription {
   created_at?: string;
   // v2/rc.2: flat flow-style YAML array; auto-filled by init-scan from forensic tech-stack.
   tags?: string[];
+  // v2.0-rc.5 (C1): relevance scope/paths drive plan-context-hint narrowing.
+  // `relevance_scope='narrow'` opts an entry into path-filtered hints; `broad`
+  // (default) always surfaces. `relevance_paths` are workspace-relative glob
+  // anchors used to match against caller-supplied target paths. Both fields
+  // default to safe values when absent from frontmatter (broad + []).
+  relevance_scope?: "narrow" | "broad";
+  relevance_paths?: string[];
 }
 
 export interface RuleDescriptionIndexItem {

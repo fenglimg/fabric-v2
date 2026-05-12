@@ -57,6 +57,17 @@ const _descriptionIndexItemSchema = z.object({
   // description payload. Absent on legacy entries; consumers should treat
   // missing as [].
   tags: z.array(z.string()).optional(),
+  // v2.0-rc.5 (C1): relevance scope/paths drive plan-context-hint narrowing.
+  // Exposed at the API surface so MCP clients (and the `fabric
+  // plan-context-hint` CLI from D1) can filter without re-parsing the
+  // description payload. Defaults applied at the parse layer
+  // (knowledge-meta-builder + agentsMetaNodeBaseSchema):
+  //   relevance_scope → 'broad'  (always-surface, safe default)
+  //   relevance_paths → []       (no path anchors)
+  // Consumers should treat missing fields as broad/[]. Optional on the wire
+  // so older servers without rc.5 schemas remain wire-compatible.
+  relevance_scope: z.enum(["narrow", "broad"]).optional(),
+  relevance_paths: z.array(z.string()).optional(),
 });
 
 const _requirementProfileSchema = z.object({

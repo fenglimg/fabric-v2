@@ -46,6 +46,12 @@ export const ruleDescriptionSchema = z
     created_at: z.string().optional(),
     // v2/rc.2: flat flow-style YAML array; populated by init-scan from forensic tech stack and editable by user. Used by rc.3 review skill for tag-filter search.
     tags: z.array(z.string()).default([]).optional(),
+    // v2.0-rc.5 (C1): relevance scope/paths drive plan-context-hint narrowing.
+    // Defaults applied so existing entries lacking these fields parse cleanly:
+    //   relevance_scope → 'broad'   (always-surface, safe default)
+    //   relevance_paths → []        (no path anchors)
+    relevance_scope: z.enum(["narrow", "broad"]).default("broad"),
+    relevance_paths: z.array(z.string()).default([]),
   })
   .strict();
 
@@ -79,7 +85,7 @@ const agentsMetaNodeBaseSchema = z.object({
     .optional(),
   description: ruleDescriptionSchema.optional(),
   sections: z.array(z.string()).optional(),
-}).passthrough(); // v2.0-rc.5 A1: L0/L1/L2 protocol fields (level/layer/deps/topology_type/priority) removed from the declared schema but preserved through parse() via .passthrough() so transitional consumers (knowledge-sections, plan-context) continue to function. TASK-007 (A3) drops passthrough once consumers stop reading these fields.
+}).passthrough(); // v2.0-rc.5: L0/L1/L2 protocol fields (level/layer/deps/topology_type/priority) removed from the declared schema but preserved through parse() via .passthrough(). After TASK-007 (A3): plan-context.ts no longer reads these fields, BUT knowledge-sections.ts (`node.level`/`node.priority`/`node.layer` at services/knowledge-sections.ts:270-291) and get-knowledge.ts (`node.level`/`node.priority`/`node.layer` at services/get-knowledge.ts:89-245) still consume them. Passthrough + `withDerivedAgentsMetaNodeDefaults` shim retained until those services are migrated (follow-up task — knowledge-sections.ts uses level/priority for output ordering, get-knowledge.ts for the same precedence walk).
 
 export const agentsMetaNodeSchema = z.preprocess((value) => {
   if (!isRecord(value) || typeof value.file !== "string") {
@@ -141,11 +147,12 @@ export function withDerivedAgentsMetaNodeDefaults(node: AgentsMetaNodeInput): Ag
   const stableId = node.stable_id ?? deriveAgentsMetaStableId(node.file);
   const identitySource = isKnowledgeEntry ? "declared" : deriveAgentsMetaIdentitySource(node);
 
-  // v2.0-rc.5 A1: legacy L0/L1/L2 protocol fields (layer/level/topology_type)
+  // v2.0-rc.5: legacy L0/L1/L2 protocol fields (layer/level/topology_type)
   // are no longer declared in the Zod schema. They remain populated as
-  // transitional defaults via .passthrough() so plan-context.ts and
-  // knowledge-sections.ts keep functioning until TASK-007 (A3) finishes the
-  // refactor. New code should call `deriveAgentsMetaLayer(file)` directly.
+  // transitional defaults via .passthrough() so knowledge-sections.ts and
+  // get-knowledge.ts (which still order rules by level/priority) keep
+  // functioning. After TASK-007 (A3) plan-context.ts no longer needs them.
+  // New code should call `deriveAgentsMetaLayer(file)` directly.
   return {
     ...node,
     layer: node.layer ?? node.level ?? deriveAgentsMetaLayer(node.file),

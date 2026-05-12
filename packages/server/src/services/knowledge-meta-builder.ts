@@ -861,6 +861,9 @@ function extractRuleDescription(source: string): RuleDescription | undefined {
     layer_reason: undefined,
     created_at: undefined,
     tags: undefined,
+    // v2.0-rc.5 (C1): default-safe values when there is no frontmatter at all.
+    relevance_scope: "broad",
+    relevance_paths: [],
   };
 }
 
@@ -894,6 +897,8 @@ function extractDescriptionFromFrontmatter(frontmatter: string): RuleDescription
     layer_reason: knowledge.layer_reason,
     created_at: knowledge.created_at,
     tags: knowledge.tags,
+    relevance_scope: knowledge.relevance_scope,
+    relevance_paths: knowledge.relevance_paths,
   };
 }
 
@@ -915,6 +920,14 @@ type KnowledgeFrontmatterFields = {
   // v2/rc.2: flat flow-style YAML array; populated by init-scan from forensic
   // tech-stack keywords and editable by user.
   tags?: string[];
+  // v2.0-rc.5 (C1): relevance scope/paths drive plan-context-hint narrowing.
+  // Defaults applied at the parse layer when fields are absent or malformed:
+  //   relevance_scope → 'broad'   (always-surface, the safe default)
+  //   relevance_paths → []        (no path anchors; broad scope ignores them)
+  // Default-safe semantics keep the existing 16 canonical entries valid
+  // without requiring frontmatter migration.
+  relevance_scope: "narrow" | "broad";
+  relevance_paths: string[];
 };
 
 function extractKnowledgeFieldsFromFrontmatter(frontmatter: string): KnowledgeFrontmatterFields {
@@ -991,6 +1004,22 @@ function extractKnowledgeFieldsFromFrontmatter(frontmatter: string): KnowledgeFr
   // v2/rc.2: tags — flat flow-style YAML inline array e.g. `tags: [ts, react]`
   const tags = extractInlineArray(frontmatter, "tags");
 
+  // v2.0-rc.5 (C1): relevance_scope — case-sensitive scalar (narrow|broad).
+  // Anything else (missing key, mistyped value, leading whitespace within a
+  // quoted form) falls back to 'broad'. Defaults are forgiving so the 16
+  // canonical entries that pre-date the field still parse cleanly.
+  const rawRelevanceScope = extractScalar(frontmatter, "relevance_scope");
+  const relevance_scope: "narrow" | "broad" =
+    rawRelevanceScope === "narrow" || rawRelevanceScope === "broad"
+      ? rawRelevanceScope
+      : "broad";
+
+  // v2.0-rc.5 (C1): relevance_paths — flow-style inline YAML array e.g.
+  // `relevance_paths: [src/foo.ts, src/bar/]`. Absent or malformed → [].
+  // Reuses extractInlineArray (the same helper used for tags / tech_stack /
+  // intent_clues), so a missing key returns [] without warning.
+  const relevance_paths = extractInlineArray(frontmatter, "relevance_paths");
+
   return {
     id,
     knowledge_type,
@@ -999,6 +1028,8 @@ function extractKnowledgeFieldsFromFrontmatter(frontmatter: string): KnowledgeFr
     layer_reason: rawLayerReason,
     created_at,
     tags: tags.length > 0 ? tags : undefined,
+    relevance_scope,
+    relevance_paths,
   };
 }
 

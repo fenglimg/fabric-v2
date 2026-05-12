@@ -31,6 +31,10 @@ describe("ruleDescriptionSchema", () => {
       impact: ["Performance"],
       must_read_if: "修改多个 UI 节点的层级或混合模式时",
       entities: ["cc.Label", "SpriteAtlas"],
+      // v2.0-rc.5 (C1): Zod defaults fill these when absent so consumers
+      // always see concrete values (broad scope, no path anchors).
+      relevance_scope: "broad",
+      relevance_paths: [],
     });
     expect("id" in parsed).toBe(false);
   });
