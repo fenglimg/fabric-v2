@@ -164,6 +164,35 @@ export const planContextAnnotations = {
 } as const;
 
 // ---------------------------------------------------------------------------
+// CLI contract — `fabric plan-context-hint`
+//
+// Versioned, machine-readable output emitted by the rc.5 D1 CLI subcommand
+// (TASK-004) and consumed by:
+//   * rc.6 hooks (E1: SessionStart, E2: PreToolUse) which render a
+//     human-readable summary from this payload, and
+//   * the `fabric-import` Skill which uses it to default-broad pending
+//     creation when no explicit `relevance_paths` are declared.
+//
+// `version` is bumped on any breaking shape change. Adding fields with a
+// default-safe value is backward compatible and does NOT require a bump.
+// ---------------------------------------------------------------------------
+
+export const planContextHintNarrowEntrySchema = z.object({
+  id: z.string(),
+  type: z.string(),
+  maturity: z.string(),
+  summary: z.string(),
+});
+
+export const planContextHintOutputSchema = z.object({
+  version: z.literal(1),
+  revision_hash: z.string(),
+  target_paths: z.array(z.string()),
+  narrow: z.array(planContextHintNarrowEntrySchema),
+  broad_count: z.number().int().nonnegative(),
+});
+
+// ---------------------------------------------------------------------------
 // MCP tool contracts — get-rules
 // ---------------------------------------------------------------------------
 

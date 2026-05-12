@@ -48,6 +48,14 @@ export { extractKnowledge } from "./services/extract-knowledge.js";
 export { reviewKnowledge } from "./services/review.js";
 export { appendEventLedgerEvent } from "./services/event-ledger.js";
 export {
+  planContext,
+  readSelectionToken,
+  type PlanContextInput,
+  type PlanContextResult,
+  type RequirementProfile,
+  type SelectionTokenState,
+} from "./services/plan-context.js";
+export {
   EVENT_LEDGER_PATH,
   LEGACY_LEDGER_PATH,
   LEDGER_PATH,

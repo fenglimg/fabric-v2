@@ -4,4 +4,6 @@ export const allCommands = {
   serve: () => import("./serve.js").then((module) => module.default),
   doctor: () => import("./doctor.js").then((module) => module.default),
   hooks: () => import("./hooks.js").then((module) => module.default),
+  "plan-context-hint": () =>
+    import("./plan-context-hint.js").then((module) => module.default),
 };
