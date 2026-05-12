@@ -2006,7 +2006,10 @@ describe("runDoctorReport", () => {
       expect(archived).toHaveLength(0);
     });
 
-    it("does NOT mutate or emit events for pending_overdue findings (informational only)", async () => {
+    it("does NOT mutate or emit events for pending_overdue (14<age<=30d) findings", async () => {
+      // rc.5 TASK-009 (B2): auto-archive only triggers strictly above 30d.
+      // A 30-day-old pending entry remains in pending/ (overdue lint fires
+      // as a warning, but --apply-lint takes no action until age > 30d).
       const target = createInitializedProject("doctor-rc4-applylint-pending-noop");
       await writeKnowledgeMeta(target, { source: "doctor_fix" });
       writeFile(".fabric/events.jsonl", "", target);
@@ -2019,14 +2022,279 @@ describe("runDoctorReport", () => {
 
       const result = await runApplyLint(target);
       expect(result.aborted).toBe(false);
-      // No mutation kind for pending_overdue (it's not in the dispatcher).
+      // No auto-archive mutation: 30d is the exact threshold, not exceeded.
       expect(
-        result.mutations.find((m) => m.path.includes("pending/")),
+        result.mutations.find((m) => m.kind === "knowledge_pending_auto_archive"),
       ).toBeUndefined();
 
       // File unchanged, still in pending/.
       expect(existsSync(join(target, pendingRel))).toBe(true);
       expect(readFileSync(join(target, pendingRel), "utf8")).toBe(beforeSource);
+    });
+
+    // rc.5 TASK-009 (B2): pending auto-archive (>30d). Covers stale-pending
+    // detection (mtime / created_at filter), the apply-lint move into the
+    // archive subtree, single pending_auto_archived event emission, and the
+    // dual-root (team + personal) walk.
+    describe("rc.5 TASK-009 (B2): pending auto-archive", () => {
+      it("inspects team pending and identifies >30d entries (via created_at)", async () => {
+        const target = createInitializedProject("doctor-rc5-pending-archive-detect-team");
+        await writeKnowledgeMeta(target, { source: "doctor_fix" });
+        writeFile(".fabric/events.jsonl", "", target);
+
+        // Two pending entries: 31d (stale → candidate) + 5d (fresh → not).
+        const fmStale = `---\ntype: decision\nlayer: team\ncreated_at: ${ageDaysAgoIso(31)}\n---\n# Stale Pending\n`;
+        const fmFresh = `---\ntype: decision\nlayer: team\ncreated_at: ${ageDaysAgoIso(5)}\n---\n# Fresh Pending\n`;
+        writeFile(".fabric/knowledge/pending/decisions/stale.md", fmStale, target);
+        writeFile(".fabric/knowledge/pending/decisions/fresh.md", fmFresh, target);
+
+        const result = await runApplyLint(target);
+        expect(result.aborted).toBe(false);
+        const autoArchiveMutations = result.mutations.filter(
+          (m) => m.kind === "knowledge_pending_auto_archive",
+        );
+        expect(autoArchiveMutations).toHaveLength(1);
+        expect(autoArchiveMutations[0].applied).toBe(true);
+        expect(autoArchiveMutations[0].path).toBe(
+          ".fabric/knowledge/pending/decisions/stale.md",
+        );
+        expect(autoArchiveMutations[0].detail).toContain(
+          ".fabric/.archive/pending/decisions/stale.md",
+        );
+      });
+
+      it("team layer: moves stale pending into .fabric/.archive/pending/<type>/", async () => {
+        const target = createInitializedProject("doctor-rc5-pending-archive-move-team");
+        await writeKnowledgeMeta(target, { source: "doctor_fix" });
+        writeFile(".fabric/events.jsonl", "", target);
+
+        const pendingRel = ".fabric/knowledge/pending/pitfalls/very-old.md";
+        const archiveRel = ".fabric/.archive/pending/pitfalls/very-old.md";
+        const fmStale = `---\ntype: pitfall\nlayer: team\ncreated_at: ${ageDaysAgoIso(45)}\n---\n# Very Old\nBody.\n`;
+        writeFile(pendingRel, fmStale, target);
+
+        expect(existsSync(join(target, pendingRel))).toBe(true);
+        expect(existsSync(join(target, archiveRel))).toBe(false);
+
+        const result = await runApplyLint(target);
+        expect(result.aborted).toBe(false);
+        const mutation = result.mutations.find(
+          (m) => m.kind === "knowledge_pending_auto_archive",
+        );
+        expect(mutation?.applied).toBe(true);
+
+        // Source removed; archive destination contains the file with body intact.
+        expect(existsSync(join(target, pendingRel))).toBe(false);
+        expect(existsSync(join(target, archiveRel))).toBe(true);
+        const archived = readFileSync(join(target, archiveRel), "utf8");
+        expect(archived).toContain("# Very Old");
+      });
+
+      it("emits pending_auto_archived event with pending_path / archived_to / reason", async () => {
+        const target = createInitializedProject("doctor-rc5-pending-archive-event");
+        await writeKnowledgeMeta(target, { source: "doctor_fix" });
+        writeFile(".fabric/events.jsonl", "", target);
+
+        const fmStale = `---\ntype: guideline\nlayer: team\ncreated_at: ${ageDaysAgoIso(60)}\n---\n# Guideline pending\n`;
+        writeFile(".fabric/knowledge/pending/guidelines/stale-gl.md", fmStale, target);
+
+        await runApplyLint(target);
+
+        const { events } = await readEventLedger(target, {
+          event_type: "pending_auto_archived",
+        });
+        expect(events).toHaveLength(1);
+        const evt = events[0];
+        if (evt.event_type !== "pending_auto_archived") {
+          throw new Error("type narrowing failed");
+        }
+        expect(evt.pending_path).toBe(
+          ".fabric/knowledge/pending/guidelines/stale-gl.md",
+        );
+        expect(evt.archived_to).toBe(
+          ".fabric/.archive/pending/guidelines/stale-gl.md",
+        );
+        expect(evt.reason).toBe("auto_archive_30d");
+      });
+
+      it("personal layer: moves stale pending into ~/.fabric/.archive/pending/<type>/ via fs.rename", async () => {
+        const target = createInitializedProject("doctor-rc5-pending-archive-personal");
+        await writeKnowledgeMeta(target, { source: "doctor_fix" });
+        writeFile(".fabric/events.jsonl", "", target);
+
+        // Personal pending lives under FABRIC_HOME (isolated per-test).
+        const fakeHome = process.env.FABRIC_HOME!;
+        const personalPendingDir = join(
+          fakeHome,
+          ".fabric",
+          "knowledge",
+          "pending",
+          "models",
+        );
+        mkdirSync(personalPendingDir, { recursive: true });
+        const personalPendingAbs = join(personalPendingDir, "personal-stale.md");
+        const fmStale = `---\ntype: model\nlayer: personal\ncreated_at: ${ageDaysAgoIso(50)}\n---\n# Personal Stale\n`;
+        writeFileSync(personalPendingAbs, fmStale, "utf8");
+
+        const personalArchiveAbs = join(
+          fakeHome,
+          ".fabric",
+          ".archive",
+          "pending",
+          "models",
+          "personal-stale.md",
+        );
+
+        expect(existsSync(personalPendingAbs)).toBe(true);
+        expect(existsSync(personalArchiveAbs)).toBe(false);
+
+        const result = await runApplyLint(target);
+        expect(result.aborted).toBe(false);
+        const mutation = result.mutations.find(
+          (m) =>
+            m.kind === "knowledge_pending_auto_archive" &&
+            m.path.startsWith("~/.fabric/knowledge/pending"),
+        );
+        expect(mutation?.applied).toBe(true);
+        expect(mutation?.path).toBe(
+          "~/.fabric/knowledge/pending/models/personal-stale.md",
+        );
+        expect(mutation?.detail).toContain(
+          "~/.fabric/.archive/pending/models/personal-stale.md",
+        );
+
+        // File physically moved on the personal root.
+        expect(existsSync(personalPendingAbs)).toBe(false);
+        expect(existsSync(personalArchiveAbs)).toBe(true);
+
+        // Event emitted with personal-root display paths.
+        const { events } = await readEventLedger(target, {
+          event_type: "pending_auto_archived",
+        });
+        expect(events).toHaveLength(1);
+        const evt = events[0];
+        if (evt.event_type !== "pending_auto_archived") {
+          throw new Error("type narrowing failed");
+        }
+        expect(evt.pending_path).toBe(
+          "~/.fabric/knowledge/pending/models/personal-stale.md",
+        );
+        expect(evt.archived_to).toBe(
+          "~/.fabric/.archive/pending/models/personal-stale.md",
+        );
+        expect(evt.reason).toBe("auto_archive_30d");
+      });
+
+      it("dual-root: archives stale entries in BOTH team and personal layers in a single run", async () => {
+        const target = createInitializedProject("doctor-rc5-pending-archive-both");
+        await writeKnowledgeMeta(target, { source: "doctor_fix" });
+        writeFile(".fabric/events.jsonl", "", target);
+
+        // Team-layer stale.
+        const teamStale = `---\ntype: process\nlayer: team\ncreated_at: ${ageDaysAgoIso(40)}\n---\n# Team Stale\n`;
+        writeFile(
+          ".fabric/knowledge/pending/processes/team-stale.md",
+          teamStale,
+          target,
+        );
+
+        // Personal-layer stale.
+        const fakeHome = process.env.FABRIC_HOME!;
+        const personalDir = join(
+          fakeHome,
+          ".fabric",
+          "knowledge",
+          "pending",
+          "processes",
+        );
+        mkdirSync(personalDir, { recursive: true });
+        const personalStale = `---\ntype: process\nlayer: personal\ncreated_at: ${ageDaysAgoIso(45)}\n---\n# Personal Stale\n`;
+        writeFileSync(
+          join(personalDir, "personal-stale.md"),
+          personalStale,
+          "utf8",
+        );
+
+        const result = await runApplyLint(target);
+        expect(result.aborted).toBe(false);
+        const autoArchives = result.mutations.filter(
+          (m) => m.kind === "knowledge_pending_auto_archive",
+        );
+        expect(autoArchives).toHaveLength(2);
+        expect(autoArchives.every((m) => m.applied)).toBe(true);
+        // Both layers represented.
+        expect(
+          autoArchives.some((m) =>
+            m.path.startsWith(".fabric/knowledge/pending/"),
+          ),
+        ).toBe(true);
+        expect(
+          autoArchives.some((m) =>
+            m.path.startsWith("~/.fabric/knowledge/pending/"),
+          ),
+        ).toBe(true);
+
+        // Two events written (one per archived entry).
+        const { events } = await readEventLedger(target, {
+          event_type: "pending_auto_archived",
+        });
+        expect(events).toHaveLength(2);
+      });
+
+      it("dry-run (runDoctorReport, no --apply-lint) does NOT move pending files or emit events", async () => {
+        const target = createInitializedProject("doctor-rc5-pending-archive-dryrun");
+        await writeKnowledgeMeta(target, { source: "doctor_fix" });
+        writeFile(".fabric/events.jsonl", "", target);
+
+        const pendingRel = ".fabric/knowledge/pending/decisions/old.md";
+        const fmStale = `---\ntype: decision\nlayer: team\ncreated_at: ${ageDaysAgoIso(35)}\n---\n# Old\n`;
+        writeFile(pendingRel, fmStale, target);
+
+        const beforeSource = readFileSync(join(target, pendingRel), "utf8");
+
+        // Read-only report path.
+        await runDoctorReport(target);
+
+        // File unchanged, no archive directory created.
+        expect(existsSync(join(target, pendingRel))).toBe(true);
+        expect(readFileSync(join(target, pendingRel), "utf8")).toBe(beforeSource);
+        expect(
+          existsSync(join(target, ".fabric/.archive/pending/decisions/old.md")),
+        ).toBe(false);
+
+        // No pending_auto_archived events emitted by the read-only path.
+        const { events } = await readEventLedger(target, {
+          event_type: "pending_auto_archived",
+        });
+        expect(events).toHaveLength(0);
+      });
+
+      it("idempotent: 2nd apply-lint run after archive produces 0 pending_auto_archive mutations", async () => {
+        const target = createInitializedProject("doctor-rc5-pending-archive-idempotent");
+        await writeKnowledgeMeta(target, { source: "doctor_fix" });
+        writeFile(".fabric/events.jsonl", "", target);
+
+        const fmStale = `---\ntype: decision\nlayer: team\ncreated_at: ${ageDaysAgoIso(40)}\n---\n# Stale\n`;
+        writeFile(
+          ".fabric/knowledge/pending/decisions/stale-once.md",
+          fmStale,
+          target,
+        );
+
+        const first = await runApplyLint(target);
+        expect(
+          first.mutations.filter(
+            (m) => m.kind === "knowledge_pending_auto_archive",
+          ),
+        ).toHaveLength(1);
+
+        const second = await runApplyLint(target);
+        expect(
+          second.mutations.filter(
+            (m) => m.kind === "knowledge_pending_auto_archive",
+          ),
+        ).toHaveLength(0);
+      });
     });
 
     it("idempotent: 2nd apply-lint run on resolved tree produces 0 mutations", async () => {

@@ -312,6 +312,46 @@ describe('I1.8 eventLedgerEventSchema round-trip', () => {
     })
   })
 
+  // v2.0 rc.5 TASK-009 (B2): pending_auto_archived event — emitted by
+  // `doctor --apply-lint` when a stale pending entry is moved into the
+  // .archive/pending/ subtree. Mandatory fields: pending_path (source),
+  // archived_to (destination), reason (currently always "auto_archive_30d").
+  it('pending_auto_archived event (team layer)', () => {
+    roundTrip(eventLedgerEventSchema, {
+      ...envelope,
+      event_type: 'pending_auto_archived',
+      pending_path: '.fabric/knowledge/pending/decisions/stale-proposal.md',
+      archived_to: '.fabric/.archive/pending/decisions/stale-proposal.md',
+      reason: 'auto_archive_30d',
+    })
+  })
+
+  it('pending_auto_archived event (personal layer)', () => {
+    roundTrip(eventLedgerEventSchema, {
+      ...envelope,
+      event_type: 'pending_auto_archived',
+      pending_path: '~/.fabric/knowledge/pending/pitfalls/personal-stale.md',
+      archived_to: '~/.fabric/.archive/pending/pitfalls/personal-stale.md',
+      reason: 'auto_archive_30d',
+    })
+  })
+
+  // v2.0 rc.5 TASK-012 (C3): knowledge_scope_degraded event — emitted by
+  // fab_review.modify when a narrow team→personal layer flip auto-degrades
+  // relevance_scope to broad. Mandatory: stable_id, timestamp, from/to scope,
+  // reason (free string; today always "personal-implies-broad").
+  it('knowledge_scope_degraded event (narrow→broad)', () => {
+    roundTrip(eventLedgerEventSchema, {
+      ...envelope,
+      event_type: 'knowledge_scope_degraded',
+      stable_id: 'KP-DEC-0042',
+      timestamp: '2026-05-12T08:00:00.000Z',
+      from_scope: 'narrow',
+      to_scope: 'broad',
+      reason: 'personal-implies-broad',
+    })
+  })
+
   it('tags field roundtrip on ruleDescriptionSchema', () => {
     // v2/rc.2: tags is a flat flow-style YAML array in frontmatter; schema
     // stores it as string[]. Verify default=[] and explicit values survive

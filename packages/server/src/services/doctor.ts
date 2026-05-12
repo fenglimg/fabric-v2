@@ -1,8 +1,9 @@
+import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { access, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { constants } from "node:fs";
 import { homedir } from "node:os";
-import { isAbsolute, join, posix, resolve } from "node:path";
+import { isAbsolute, join, posix, relative as nodeRelative, resolve, sep } from "node:path";
 
 import {
   agentsMetaSchema,
@@ -92,7 +93,11 @@ export type DoctorFixReport = {
 export type DoctorApplyLintMutationKind =
   | "knowledge_orphan_demote_required"
   | "knowledge_stale_archive_required"
-  | "knowledge_index_drift";
+  | "knowledge_index_drift"
+  // rc.5 TASK-009 (B2): pending entries >30d are auto-archived under
+  // `.fabric/.archive/pending/<type>/` (team) or `~/.fabric/.archive/pending/<type>/`
+  // (personal). One mutation per pending file moved.
+  | "knowledge_pending_auto_archive";
 
 export type DoctorApplyLintMutation = {
   kind: DoctorApplyLintMutationKind;
@@ -314,6 +319,40 @@ type PendingOverdueInspection = {
   candidates: PendingOverdueCandidate[];
 };
 
+// rc.5 TASK-009 (B2): pending auto-archive candidate. Identifies a pending
+// proposal whose age (frontmatter.created_at when present, else mtime) exceeds
+// PENDING_AUTO_ARCHIVE_THRESHOLD_DAYS. Covers BOTH the team-rooted pending
+// tree (`<projectRoot>/.fabric/knowledge/pending/<type>/`) and the
+// personal-rooted tree (`<FABRIC_HOME>/.fabric/knowledge/pending/<type>/`)
+// introduced by TASK-008 (B1). The mutation arm (--apply-lint) moves the
+// file into `.fabric/.archive/pending/<type>/` under the appropriate root
+// (git mv for team, fs.rename for personal) and emits a single
+// pending_auto_archived event per move.
+type PendingAutoArchiveCandidate = {
+  layer: "team" | "personal";
+  // Pending entry's knowledge type subdir (e.g. "decisions"). Mirrors
+  // KNOWLEDGE_CANONICAL_TYPE_DIRS slice (pending uses the same vocabulary).
+  type: string;
+  // Display path: project-relative POSIX for team; `~/.fabric/...` for personal.
+  // Used in lint messages, mutation `path`, and the emitted event's
+  // `pending_path` field so observers can grep events.jsonl without
+  // resolving absolute paths.
+  pending_path: string;
+  // Absolute filesystem path of the source (used by the apply step).
+  pending_path_abs: string;
+  // Display destination after archive. Mirrors `pending_path` shape:
+  // `.fabric/.archive/pending/<type>/<filename>` for team,
+  // `~/.fabric/.archive/pending/<type>/<filename>` for personal.
+  archived_to: string;
+  // Absolute filesystem path of the destination (used by the apply step).
+  archived_to_abs: string;
+  age_days: number;
+};
+
+type PendingAutoArchiveInspection = {
+  candidates: PendingAutoArchiveCandidate[];
+};
+
 // rc.5 TASK-010: read-side underseeded-corpus lint inspection (#22).
 // Reports when the workspace's canonical knowledge node count is strictly
 // less than `underseed_node_threshold` (default 10, override via
@@ -411,6 +450,14 @@ const STALE_ARCHIVE_ADDITIONAL_DAYS = 90;
 // Pending entries older than this threshold (based on frontmatter.created_at
 // when present, otherwise file mtime) are flagged for human triage.
 const PENDING_OVERDUE_THRESHOLD_DAYS = 14;
+
+// rc.5 TASK-009 (B2): pending entries past this (deliberately higher) threshold
+// are auto-archived by `doctor --apply-lint`. The overdue lint (#18) still
+// fires at 14d; the auto-archive action only triggers after a further grace
+// period, giving humans a 16-day review window from the first overdue ping.
+// Threshold is currently a const — fabric-config.json override can land later
+// if dogfood signals a different cadence.
+const PENDING_AUTO_ARCHIVE_THRESHOLD_DAYS = 30;
 
 // rc.5 TASK-010: default underseed threshold for lint #22 (knowledge_underseeded).
 // Mirrors the fabric-hint hook's DEFAULT_UNDERSEED_NODE_THRESHOLD so the lint
@@ -741,8 +788,12 @@ export async function runDoctorFix(target: string): Promise<DoctorFixReport> {
 //     auto-fix is unsafe (data loss potential). runDoctorApplyLint aborts
 //     BEFORE applying any mutations and surfaces a clear "manual repair
 //     required" message via abort_reason.
-//   * `lint:pending_overdue` (warning kind): informational only — humans
-//     triage via the fabric-review Skill; no mutation path.
+//   * `lint:pending_overdue` (warning kind): informational at 14d — humans
+//     triage via the fabric-review Skill. At 30d the entry crosses the
+//     PENDING_AUTO_ARCHIVE_THRESHOLD_DAYS gate and `--apply-lint` git-mv's
+//     it to `.fabric/.archive/pending/<type>/` (team) or
+//     `~/.fabric/.archive/pending/<type>/` (personal), emitting one
+//     `pending_auto_archived` event per move (rc.5 TASK-009 B2).
 //
 // Idempotency: each mutation refreshes lastActiveAt indirectly (demoted /
 // archived events register the entry's stable_id with a fresh ts in the
@@ -796,6 +847,17 @@ export async function runDoctorApplyLint(target: string): Promise<DoctorApplyLin
   const staleArchive = await inspectStaleArchive(projectRoot, now);
   for (const candidate of staleArchive.candidates) {
     mutations.push(await applyStaleArchive(projectRoot, candidate, now));
+  }
+
+  // rc.5 TASK-009 (B2): pending auto-archive (>30d). Runs after the canonical
+  // demote/archive trio because (a) it has no interaction with lastActiveAt
+  // (pending files are not yet in the canonical event stream) and (b) walking
+  // pending after the canonical mutation pass keeps the dual-root pending
+  // walker independent of any concurrent .fabric/knowledge/<type>/ writes
+  // triggered above. One mutation per stale-pending entry, per layer.
+  const pendingAutoArchive = inspectPendingAutoArchive(projectRoot, now);
+  for (const candidate of pendingAutoArchive.candidates) {
+    mutations.push(await applyPendingAutoArchive(projectRoot, candidate, now));
   }
 
   // Index drift: re-read meta after any prior mutations (none touch
@@ -1040,6 +1102,123 @@ async function applyStaleArchive(
       error: truncateErrorMessage(error),
     };
   }
+}
+
+// rc.5 TASK-009 (B2): auto-archive a stale pending entry. Team-layer source
+// uses `git mv` (preserves rename detection inside the workspace git tree)
+// with an `fs.rename` fallback for non-repo / untracked cases. Personal-layer
+// source uses plain `fs.rename` (lives outside the project's git tree).
+// Emits exactly one `pending_auto_archived` event per successful move with
+// `pending_path`, `archived_to`, `reason` ("auto_archive_30d").
+//
+// Audit-trail invariant mirrors applyStaleArchive: if the event-ledger
+// append fails AFTER the move, roll the file back to its pending location
+// so disk state matches the (absent) event. Best-effort — a rollback failure
+// is surfaced in `error` but is extremely rare (would require two sequential
+// rename failures across the same call).
+async function applyPendingAutoArchive(
+  projectRoot: string,
+  candidate: PendingAutoArchiveCandidate,
+  now: number,
+): Promise<DoctorApplyLintMutation> {
+  const detail = `${candidate.pending_path} -> ${candidate.archived_to}`;
+  try {
+    await mkdir(join(candidate.archived_to_abs, ".."), { recursive: true });
+
+    let moved = false;
+    if (candidate.layer === "team") {
+      // Prefer `git mv` so the workspace history threads through the rename.
+      // Falls back to plain rename when (a) not in a git repo, (b) the file
+      // is untracked, or (c) git is unavailable. Mirrors the dual-strategy
+      // pattern in review.ts approve flow.
+      try {
+        const relSource = relativePosix(projectRoot, candidate.pending_path_abs);
+        const relDest = relativePosix(projectRoot, candidate.archived_to_abs);
+        execFileSync("git", ["mv", "-f", relSource, relDest], {
+          cwd: projectRoot,
+          stdio: ["ignore", "pipe", "pipe"],
+        });
+        moved = true;
+      } catch {
+        // Fall through to plain rename below.
+      }
+    }
+    if (!moved) {
+      try {
+        await rename(candidate.pending_path_abs, candidate.archived_to_abs);
+      } catch (renameError) {
+        // EXDEV fallback (cross-filesystem). Same shape as applyStaleArchive.
+        if (
+          renameError instanceof Error &&
+          "code" in renameError &&
+          (renameError as NodeJS.ErrnoException).code === "EXDEV"
+        ) {
+          const data = await readFile(candidate.pending_path_abs);
+          await writeFile(candidate.archived_to_abs, data);
+          const { unlink } = await import("node:fs/promises");
+          await unlink(candidate.pending_path_abs);
+        } else {
+          throw renameError;
+        }
+      }
+    }
+
+    try {
+      await appendEventLedgerEvent(projectRoot, {
+        event_type: "pending_auto_archived",
+        pending_path: candidate.pending_path,
+        archived_to: candidate.archived_to,
+        reason: "auto_archive_30d",
+      });
+    } catch (ledgerError) {
+      // Best-effort rollback to keep disk state consistent with the (absent)
+      // event. We cannot easily reverse `git mv` cleanly post-failure, so a
+      // plain rename back to the original location is sufficient — the next
+      // run's git status will surface the move as a regular working-tree
+      // change rather than a tracked rename.
+      try {
+        await rename(candidate.archived_to_abs, candidate.pending_path_abs);
+      } catch (rollbackError) {
+        return {
+          kind: "knowledge_pending_auto_archive",
+          path: candidate.pending_path,
+          detail,
+          applied: false,
+          error: `ledger append failed (${truncateErrorMessage(ledgerError)}); rollback also failed (${truncateErrorMessage(rollbackError)}); file may be stranded at ${candidate.archived_to}`,
+        };
+      }
+      return {
+        kind: "knowledge_pending_auto_archive",
+        path: candidate.pending_path,
+        detail,
+        applied: false,
+        error: `ledger append failed (${truncateErrorMessage(ledgerError)}); archive rolled back`,
+      };
+    }
+    return {
+      kind: "knowledge_pending_auto_archive",
+      path: candidate.pending_path,
+      detail,
+      applied: true,
+    };
+  } catch (error) {
+    return {
+      kind: "knowledge_pending_auto_archive",
+      path: candidate.pending_path,
+      detail,
+      applied: false,
+      error: truncateErrorMessage(error),
+    };
+  }
+}
+
+// Helper: convert an absolute path to a workspace-relative POSIX path
+// suitable for `git mv` invocation. Falls back to the absolute path when
+// the absolute is already outside projectRoot (defensive — callers only
+// pass team-layer paths here, but keep the contract clear).
+function relativePosix(projectRoot: string, absolutePath: string): string {
+  const rel = nodeRelative(projectRoot, absolutePath);
+  return rel.split(sep).join("/");
 }
 
 async function applyIndexDriftFix(
@@ -2294,82 +2473,193 @@ async function inspectStaleArchive(
   return { candidates };
 }
 
+// rc.5 TASK-009 (B2): per-pending-file visit row produced by the shared dual-root
+// pending walker. Carries enough state (age + display + absolute paths) for
+// both inspectPendingOverdue (14d warning) and inspectPendingAutoArchive
+// (>30d mutation) to filter purely on age without re-walking the disk.
+type PendingFileVisit = {
+  layer: "team" | "personal";
+  type: string; // subdir name (decisions/pitfalls/...)
+  filename: string;
+  pending_path: string; // display: project-relative or `~/...`
+  pending_path_abs: string;
+  stable_id: string | undefined;
+  age_days: number;
+};
+
+// Walks BOTH the team-rooted (`<projectRoot>/.fabric/knowledge/pending/`)
+// and personal-rooted (`<FABRIC_HOME>/.fabric/knowledge/pending/`) staging
+// trees and yields one visit per `.md` file. Mirrors the dual-root pattern
+// used by iterateCanonicalFilenames for the canonical knowledge trees, but
+// over the pending staging area introduced by TASK-008 (B1).
+//
+// Files with no parseable created_at AND no readable mtime yield an
+// "unknown-age" visit synthesized at PENDING_OVERDUE_THRESHOLD_DAYS+1 days
+// (mirrors the prior single-root behavior in inspectPendingOverdue — humans
+// triage these manually rather than auto-archive without an age signal).
+function* iteratePendingFiles(
+  projectRoot: string,
+  now: number,
+): Generator<PendingFileVisit> {
+  const teamRoot = join(projectRoot, ".fabric", "knowledge", "pending");
+  const personalRoot = join(resolvePersonalRootForPending(), ".fabric", "knowledge", "pending");
+
+  for (const [layer, root, displayPrefix] of [
+    ["team", teamRoot, ".fabric/knowledge/pending"] as const,
+    ["personal", personalRoot, "~/.fabric/knowledge/pending"] as const,
+  ]) {
+    if (!existsSync(root)) {
+      continue;
+    }
+    let typeDirs: string[] = [];
+    try {
+      typeDirs = readdirSync(root, { withFileTypes: true })
+        .filter((entry) => entry.isDirectory())
+        .map((entry) => entry.name);
+    } catch {
+      continue;
+    }
+    for (const typeDir of typeDirs) {
+      const dir = join(root, typeDir);
+      let entries;
+      try {
+        entries = readdirSync(dir, { withFileTypes: true });
+      } catch {
+        continue;
+      }
+      for (const entry of entries) {
+        if (!entry.isFile() || !entry.name.endsWith(".md")) {
+          continue;
+        }
+        const absPath = join(dir, entry.name);
+        let source = "";
+        try {
+          source = readFileSync(absPath, "utf8");
+        } catch {
+          continue;
+        }
+        const createdAt = extractKnowledgeFrontmatterCreatedAt(source);
+        let mtimeMs = 0;
+        try {
+          mtimeMs = statSync(absPath).mtimeMs;
+        } catch {
+          mtimeMs = 0;
+        }
+        const referenceMs = createdAt ?? mtimeMs;
+        const displayPath = posix.join(displayPrefix, typeDir, entry.name);
+        if (referenceMs === 0) {
+          // Both missing → synthesize an overdue-but-not-auto-archive age so
+          // the overdue lint surfaces it for human triage; the auto-archive
+          // gate (>30d) is deliberately NOT triggered without an age signal.
+          yield {
+            layer,
+            type: typeDir,
+            filename: entry.name,
+            pending_path: displayPath,
+            pending_path_abs: absPath,
+            stable_id: undefined,
+            age_days: PENDING_OVERDUE_THRESHOLD_DAYS + 1,
+          };
+          continue;
+        }
+        const ageDays = Math.floor((now - referenceMs) / MS_PER_DAY);
+        const stableId = extractKnowledgeFrontmatterId(source) ?? undefined;
+        yield {
+          layer,
+          type: typeDir,
+          filename: entry.name,
+          pending_path: displayPath,
+          pending_path_abs: absPath,
+          stable_id: stableId,
+          age_days: ageDays,
+        };
+      }
+    }
+  }
+}
+
+// rc.5 TASK-009 (B2): inlined personal-root resolver mirroring
+// resolvePersonalKnowledgeRoot but anchored at `<home>` rather than
+// `<home>/.fabric/knowledge` — pending lives at `<home>/.fabric/knowledge/pending`
+// so callers want the homedir root and append the suffix themselves.
+function resolvePersonalRootForPending(): string {
+  return process.env.FABRIC_HOME ?? homedir();
+}
+
 function inspectPendingOverdue(
   projectRoot: string,
   now: number,
 ): PendingOverdueInspection {
-  const pendingRoot = join(projectRoot, ".fabric", "knowledge", "pending");
   const candidates: PendingOverdueCandidate[] = [];
-  if (!existsSync(pendingRoot)) {
-    return { candidates };
-  }
-  let typeDirs: string[] = [];
-  try {
-    typeDirs = readdirSync(pendingRoot, { withFileTypes: true })
-      .filter((entry) => entry.isDirectory())
-      .map((entry) => entry.name);
-  } catch {
-    return { candidates };
-  }
-
-  for (const typeDir of typeDirs) {
-    const dir = join(pendingRoot, typeDir);
-    let entries;
-    try {
-      entries = readdirSync(dir, { withFileTypes: true });
-    } catch {
+  for (const visit of iteratePendingFiles(projectRoot, now)) {
+    if (visit.age_days <= PENDING_OVERDUE_THRESHOLD_DAYS) {
       continue;
     }
-    for (const entry of entries) {
-      if (!entry.isFile() || !entry.name.endsWith(".md")) {
-        continue;
-      }
-      const absPath = join(dir, entry.name);
-      let source = "";
-      try {
-        source = readFileSync(absPath, "utf8");
-      } catch {
-        // Unreadable: continue (other checks surface IO errors).
-        continue;
-      }
-      const createdAt = extractKnowledgeFrontmatterCreatedAt(source);
-      let mtimeMs = 0;
-      try {
-        mtimeMs = statSync(absPath).mtimeMs;
-      } catch {
-        mtimeMs = 0;
-      }
-      // Precedence: frontmatter.created_at when present, else mtime.
-      const referenceMs = createdAt ?? mtimeMs;
-      if (referenceMs === 0) {
-        // Both missing → flag for human triage per risk note.
-        const relPath = posix.join(
-          ".fabric/knowledge/pending",
-          typeDir,
-          entry.name,
-        );
-        candidates.push({ path: relPath, age_days: PENDING_OVERDUE_THRESHOLD_DAYS + 1 });
-        continue;
-      }
-      const ageDays = Math.floor((now - referenceMs) / MS_PER_DAY);
-      if (ageDays <= PENDING_OVERDUE_THRESHOLD_DAYS) {
-        continue;
-      }
-      const stableId = extractKnowledgeFrontmatterId(source) ?? undefined;
-      const relPath = posix.join(
-        ".fabric/knowledge/pending",
-        typeDir,
-        entry.name,
+    candidates.push({
+      stable_id: visit.stable_id,
+      path: visit.pending_path,
+      age_days: visit.age_days,
+    });
+  }
+  candidates.sort((a, b) => a.path.localeCompare(b.path));
+  return { candidates };
+}
+
+// rc.5 TASK-009 (B2): identifies pending entries whose age (frontmatter
+// created_at or mtime fallback) exceeds PENDING_AUTO_ARCHIVE_THRESHOLD_DAYS.
+// Walks both team + personal pending roots. Auto-archive destinations mirror
+// the source layer:
+//   team:     .fabric/.archive/pending/<type>/<filename>
+//   personal: ~/.fabric/.archive/pending/<type>/<filename>
+// The mutation arm (applyPendingAutoArchive) git-mvs team files (preserving
+// rename detection inside the workspace git tree) and fs.renames personal
+// files (which live outside the project repo).
+function inspectPendingAutoArchive(
+  projectRoot: string,
+  now: number,
+): PendingAutoArchiveInspection {
+  const candidates: PendingAutoArchiveCandidate[] = [];
+  for (const visit of iteratePendingFiles(projectRoot, now)) {
+    if (visit.age_days <= PENDING_AUTO_ARCHIVE_THRESHOLD_DAYS) {
+      continue;
+    }
+    if (visit.layer === "team") {
+      const archivedToRel = posix.join(".fabric/.archive/pending", visit.type, visit.filename);
+      candidates.push({
+        layer: "team",
+        type: visit.type,
+        pending_path: visit.pending_path,
+        pending_path_abs: visit.pending_path_abs,
+        archived_to: archivedToRel,
+        archived_to_abs: join(projectRoot, archivedToRel),
+        age_days: visit.age_days,
+      });
+    } else {
+      const archivedToDisplay = posix.join(
+        "~/.fabric/.archive/pending",
+        visit.type,
+        visit.filename,
+      );
+      const archivedToAbs = join(
+        resolvePersonalRootForPending(),
+        ".fabric",
+        ".archive",
+        "pending",
+        visit.type,
+        visit.filename,
       );
       candidates.push({
-        stable_id: stableId,
-        path: relPath,
-        age_days: ageDays,
+        layer: "personal",
+        type: visit.type,
+        pending_path: visit.pending_path,
+        pending_path_abs: visit.pending_path_abs,
+        archived_to: archivedToDisplay,
+        archived_to_abs: archivedToAbs,
+        age_days: visit.age_days,
       });
     }
   }
-
-  candidates.sort((a, b) => a.path.localeCompare(b.path));
+  candidates.sort((a, b) => a.pending_path.localeCompare(b.pending_path));
   return { candidates };
 }
 

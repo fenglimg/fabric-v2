@@ -171,6 +171,14 @@ describe("eventLedgerEventSchema", () => {
         consumed_at: ts,
         client_hash: "",
       },
+      // v2.0 rc.5 TASK-009 (B2): pending_auto_archived event
+      {
+        ...base,
+        event_type: "pending_auto_archived",
+        pending_path: ".fabric/knowledge/pending/decisions/stale.md",
+        archived_to: ".fabric/.archive/pending/decisions/stale.md",
+        reason: "auto_archive_30d",
+      },
     ];
 
     const parsedTypes = events.map((event) => eventLedgerEventSchema.parse(event).event_type);
@@ -188,6 +196,7 @@ describe("eventLedgerEventSchema", () => {
       "knowledge_deferred",
       "knowledge_rejected",
       "knowledge_consumed",
+      "pending_auto_archived",
     ]);
   });
 

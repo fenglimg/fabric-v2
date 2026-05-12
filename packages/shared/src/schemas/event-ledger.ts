@@ -278,6 +278,41 @@ export const knowledgeConsumedEventSchema = z.object({
   client_hash: z.string(),
 });
 
+// v2.0 rc.5 TASK-012 (C3): emitted by fab_review.modify when a narrow-scope
+// entry is layer-flipped from team → personal. Personal knowledge crosses
+// projects so workspace-relative `relevance_paths` lose meaning; the modify
+// branch auto-degrades the scope to `broad` + clears the paths array and
+// records this event so the audit trail preserves the original intent.
+// `from_scope`/`to_scope` mirror the relevance enum so future degrade reasons
+// (e.g. broad → narrow rollbacks) can reuse the same vocabulary.
+export const knowledgeScopeDegradedEventSchema = z.object({
+  ...eventLedgerEnvelopeSchema,
+  event_type: z.literal("knowledge_scope_degraded"),
+  stable_id: z.string(),
+  timestamp: z.string().datetime(),
+  from_scope: z.enum(["narrow", "broad"]),
+  to_scope: z.enum(["narrow", "broad"]),
+  reason: z.string(),
+});
+
+// v2.0 rc.5 TASK-009 (B2): emitted by `doctor --apply-lint` when a pending
+// knowledge entry exceeds the 30-day auto-archive threshold and gets moved
+// from the staging area (`.fabric/knowledge/pending/<type>/` or
+// `~/.fabric/knowledge/pending/<type>/`) into the archive subtree
+// (`.fabric/.archive/pending/<type>/` or `~/.fabric/.archive/pending/<type>/`).
+// `reason` is currently always "auto_archive_30d" but is left a free string
+// so future doctor passes (e.g. a stale-pending-after-rejection variant) can
+// reuse the same event vocabulary without schema churn. One event is appended
+// per archived file — callers iterate the event stream to reconstruct the
+// archive timeline.
+export const pendingAutoArchivedEventSchema = z.object({
+  ...eventLedgerEnvelopeSchema,
+  event_type: z.literal("pending_auto_archived"),
+  pending_path: z.string(),
+  archived_to: z.string(),
+  reason: z.string(),
+});
+
 export const eventLedgerEventSchema = z.discriminatedUnion("event_type", [
   knowledgeContextPlannedEventSchema,
   knowledgeSelectionEventSchema,
@@ -308,6 +343,11 @@ export const eventLedgerEventSchema = z.discriminatedUnion("event_type", [
   knowledgeRejectedEventSchema,
   // v2.0 rc.5 TASK-014: knowledge_consumed (consumption tracking)
   knowledgeConsumedEventSchema,
+  // v2.0 rc.5 TASK-012 (C3): knowledge_scope_degraded — narrow→broad auto-degrade
+  knowledgeScopeDegradedEventSchema,
+  // v2.0 rc.5 TASK-009 (B2): pending_auto_archived — doctor --apply-lint moves
+  // pending entries >30d old into the .archive/pending/ subtree.
+  pendingAutoArchivedEventSchema,
 ]);
 
 export type KnowledgeContextPlannedEvent = z.infer<typeof knowledgeContextPlannedEventSchema>;
@@ -337,6 +377,8 @@ export type KnowledgeArchiveAttemptedEvent = z.infer<typeof knowledgeArchiveAtte
 export type KnowledgeDeferredEvent = z.infer<typeof knowledgeDeferredEventSchema>;
 export type KnowledgeRejectedEvent = z.infer<typeof knowledgeRejectedEventSchema>;
 export type KnowledgeConsumedEvent = z.infer<typeof knowledgeConsumedEventSchema>;
+export type KnowledgeScopeDegradedEvent = z.infer<typeof knowledgeScopeDegradedEventSchema>;
+export type PendingAutoArchivedEvent = z.infer<typeof pendingAutoArchivedEventSchema>;
 export type EventLedgerEvent =
   | KnowledgeContextPlannedEvent
   | KnowledgeSelectionEvent
@@ -364,7 +406,9 @@ export type EventLedgerEvent =
   | KnowledgeArchiveAttemptedEvent
   | KnowledgeDeferredEvent
   | KnowledgeRejectedEvent
-  | KnowledgeConsumedEvent;
+  | KnowledgeConsumedEvent
+  | KnowledgeScopeDegradedEvent
+  | PendingAutoArchivedEvent;
 export type EventLedgerEventType = EventLedgerEvent["event_type"];
 type EventLedgerEventInputFor<T extends EventLedgerEvent> = T extends EventLedgerEvent
   ? Omit<T, "kind" | "id" | "ts" | "schema_version" | "correlation_id" | "session_id"> &
