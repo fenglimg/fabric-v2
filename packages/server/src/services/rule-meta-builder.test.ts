@@ -561,6 +561,106 @@ describe("rule-meta-builder", () => {
       expect(entries).toBeUndefined();
     }
   });
+
+  // ---------------------------------------------------------------------------
+  // v2.0-rc.5 TASK-003 (C7): computeRevision excludes pending/ from hash input
+  // ---------------------------------------------------------------------------
+
+  it("test_compute_revision_excludes_pending_add — adding a pending entry does not change revision_hash", async () => {
+    // Baseline project: one canonical decision, no pending entries.
+    const projectRoot = await createProject("rules-builder-rc5-pending-add");
+    await writeProjectFile(
+      projectRoot,
+      ".fabric/knowledge/decisions/baseline.md",
+      [
+        "---",
+        "description: Baseline canonical rule",
+        "intent_clues: [server]",
+        "tech_stack: [TypeScript]",
+        "impact: [Runtime]",
+        "must_read_if: Editing baseline",
+        "---",
+        "<!-- fab:rule-id rules/baseline -->",
+        "# Baseline",
+        "## [MANDATORY_INJECTION]",
+        "Keep baseline stable.",
+        "",
+      ].join("\n"),
+    );
+
+    const metaBefore = await computeRulesBasedAgentsMeta(projectRoot);
+
+    // Now add a pending draft — this MUST NOT change revision_hash.
+    await writeProjectFile(
+      projectRoot,
+      ".fabric/knowledge/pending/draft-one.md",
+      [
+        "---",
+        "summary: Pending draft",
+        "---",
+        "# Pending draft",
+        "",
+      ].join("\n"),
+    );
+
+    const metaAfter = await computeRulesBasedAgentsMeta(projectRoot);
+
+    // Pending node IS present in the nodes record (for fab_review.list).
+    const pendingNode = Object.values(metaAfter.nodes).find(
+      (n) => n.file === ".fabric/knowledge/pending/draft-one.md",
+    );
+    expect(pendingNode).toBeDefined();
+
+    // But revision_hash must NOT have changed.
+    expect(metaAfter.revision).toBe(metaBefore.revision);
+  });
+
+  it("test_compute_revision_changes_on_approve_to_canonical — moving pending → canonical changes revision_hash", async () => {
+    const projectRoot = await createProject("rules-builder-rc5-pending-approve");
+
+    // Start with the entry living under pending/.
+    await writeProjectFile(
+      projectRoot,
+      ".fabric/knowledge/pending/to-approve.md",
+      [
+        "---",
+        "summary: Awaiting approval",
+        "---",
+        "# Awaiting approval",
+        "",
+      ].join("\n"),
+    );
+
+    const metaBefore = await computeRulesBasedAgentsMeta(projectRoot);
+
+    // Simulate `fab_review.approve` by moving the file to a canonical subdir.
+    // Delete the pending copy and write the same content under decisions/.
+    await rm(join(projectRoot, ".fabric/knowledge/pending/to-approve.md"));
+    await writeProjectFile(
+      projectRoot,
+      ".fabric/knowledge/decisions/to-approve.md",
+      [
+        "---",
+        "description: Approved canonical rule",
+        "intent_clues: [server]",
+        "tech_stack: [TypeScript]",
+        "impact: [Runtime]",
+        "must_read_if: After approval",
+        "---",
+        "<!-- fab:rule-id rules/to-approve -->",
+        "# Approved",
+        "## [MANDATORY_INJECTION]",
+        "Honor the approved rule.",
+        "",
+      ].join("\n"),
+    );
+
+    const metaAfter = await computeRulesBasedAgentsMeta(projectRoot);
+
+    // Approval (pending → canonical) MUST change revision_hash so the
+    // PreToolUse session-hints cache invalidates correctly.
+    expect(metaAfter.revision).not.toBe(metaBefore.revision);
+  });
 });
 
 async function createProject(prefix: string): Promise<string> {

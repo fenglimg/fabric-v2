@@ -637,8 +637,24 @@ function sortNodes(nodes: Record<string, NodeMeta>): Record<string, NodeMeta> {
   return Object.fromEntries(Object.entries(nodes).sort(([left], [right]) => left.localeCompare(right)));
 }
 
+// v2.0-rc.5 (C7): pending/ entries must NOT contribute to revision_hash so
+// PreToolUse session-hints cache does not thrash whenever a fab_review pending
+// draft is added/modified/rejected. Pending nodes remain in `meta.nodes` (for
+// fab_review.list enumeration); they are only excluded from the hash input.
+// Detect both team-root (`.fabric/knowledge/pending/`) and personal-root
+// (`~/.fabric/knowledge/pending/`) refs. Approval moves the entry to a
+// canonical subdir (decisions/, pitfalls/, ...), which DOES change the hash.
+function isPendingNode(node: NodeMeta): boolean {
+  const ref = node.content_ref ?? node.file ?? "";
+  return (
+    ref.startsWith(".fabric/knowledge/pending/") ||
+    ref.startsWith("~/.fabric/knowledge/pending/")
+  );
+}
+
 function computeRevision(nodes: Record<string, NodeMeta>): string {
   const revisionSource = Object.entries(sortNodes(nodes))
+    .filter(([, node]) => !isPendingNode(node))
     .map(([id, node]) => [id, node.hash, node.stable_id ?? "", node.identity_source ?? ""].join("|"))
     .join("\n");
   return sha256(revisionSource);
