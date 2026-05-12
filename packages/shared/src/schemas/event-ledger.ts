@@ -266,6 +266,18 @@ export const knowledgeRejectedEventSchema = z.object({
   reason: z.string(),
 });
 
+// v2.0 rc.5 TASK-014 (C5): emitted by fab_get_knowledge_sections per stable_id
+// resolved in a successful fetch. Deduped within a single request by the
+// service layer. Drives doctor lint #16 (orphan_demote) via replay-derived
+// last_consumed_at index — replaces the pre-rc.5 last_referenced heuristic.
+export const knowledgeConsumedEventSchema = z.object({
+  ...eventLedgerEnvelopeSchema,
+  event_type: z.literal("knowledge_consumed"),
+  stable_id: z.string(),
+  consumed_at: z.string().datetime(),
+  client_hash: z.string(),
+});
+
 export const eventLedgerEventSchema = z.discriminatedUnion("event_type", [
   knowledgeContextPlannedEventSchema,
   knowledgeSelectionEventSchema,
@@ -294,6 +306,8 @@ export const eventLedgerEventSchema = z.discriminatedUnion("event_type", [
   knowledgeArchiveAttemptedEventSchema,
   knowledgeDeferredEventSchema,
   knowledgeRejectedEventSchema,
+  // v2.0 rc.5 TASK-014: knowledge_consumed (consumption tracking)
+  knowledgeConsumedEventSchema,
 ]);
 
 export type KnowledgeContextPlannedEvent = z.infer<typeof knowledgeContextPlannedEventSchema>;
@@ -322,6 +336,7 @@ export type KnowledgeArchivedEvent = z.infer<typeof knowledgeArchivedEventSchema
 export type KnowledgeArchiveAttemptedEvent = z.infer<typeof knowledgeArchiveAttemptedEventSchema>;
 export type KnowledgeDeferredEvent = z.infer<typeof knowledgeDeferredEventSchema>;
 export type KnowledgeRejectedEvent = z.infer<typeof knowledgeRejectedEventSchema>;
+export type KnowledgeConsumedEvent = z.infer<typeof knowledgeConsumedEventSchema>;
 export type EventLedgerEvent =
   | KnowledgeContextPlannedEvent
   | KnowledgeSelectionEvent
@@ -348,7 +363,8 @@ export type EventLedgerEvent =
   | KnowledgeArchivedEvent
   | KnowledgeArchiveAttemptedEvent
   | KnowledgeDeferredEvent
-  | KnowledgeRejectedEvent;
+  | KnowledgeRejectedEvent
+  | KnowledgeConsumedEvent;
 export type EventLedgerEventType = EventLedgerEvent["event_type"];
 type EventLedgerEventInputFor<T extends EventLedgerEvent> = T extends EventLedgerEvent
   ? Omit<T, "kind" | "id" | "ts" | "schema_version" | "correlation_id" | "session_id"> &

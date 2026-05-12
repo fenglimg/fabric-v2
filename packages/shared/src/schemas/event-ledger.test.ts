@@ -163,6 +163,14 @@ describe("eventLedgerEventSchema", () => {
         timestamp: ts,
         reason: "duplicate",
       },
+      // v2.0 rc.5 TASK-014 (C5): knowledge_consumed event
+      {
+        ...base,
+        event_type: "knowledge_consumed",
+        stable_id: "KT-D-0001",
+        consumed_at: ts,
+        client_hash: "",
+      },
     ];
 
     const parsedTypes = events.map((event) => eventLedgerEventSchema.parse(event).event_type);
@@ -179,6 +187,7 @@ describe("eventLedgerEventSchema", () => {
       "knowledge_archive_attempted",
       "knowledge_deferred",
       "knowledge_rejected",
+      "knowledge_consumed",
     ]);
   });
 

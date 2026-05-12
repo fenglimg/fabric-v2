@@ -25,6 +25,10 @@ export type GetKnowledgeSectionsInput = {
   ai_selection_reasons: Record<string, string>;
   correlation_id?: string;
   session_id?: string;
+  // v2.0 rc.5 TASK-014 (C5): client identity propagated into knowledge_consumed
+  // events. Falls back to empty string when unset (full client-identity
+  // propagation pattern deferred to rc.6 per TASK-014 note).
+  client_hash?: string;
 };
 
 export type KnowledgeSectionDiagnostic =
@@ -232,6 +236,33 @@ export async function getKnowledgeSections(
     });
   } catch {
     // Fetch telemetry is best-effort and must not block rule delivery.
+  }
+
+  // v2.0 rc.5 TASK-014 (C5): emit one knowledge_consumed event per unique
+  // stable_id resolved by this fetch. Dedupe within a single request via a
+  // Set so a stable_id appearing more than once in the resolved rule list
+  // produces exactly one event. Drives doctor lint #16 (orphan_demote) via
+  // replay-derived last_consumed_at.
+  const consumedAt = new Date().toISOString();
+  const consumedClientHash = input.client_hash ?? "";
+  const emittedConsumed = new Set<string>();
+  for (const stableId of result.selected_stable_ids) {
+    if (emittedConsumed.has(stableId)) {
+      continue;
+    }
+    emittedConsumed.add(stableId);
+    try {
+      await appendEventLedgerEvent(projectRoot, {
+        event_type: "knowledge_consumed",
+        stable_id: stableId,
+        consumed_at: consumedAt,
+        client_hash: consumedClientHash,
+        correlation_id: input.correlation_id,
+        session_id: input.session_id,
+      });
+    } catch {
+      // Consumption telemetry is best-effort and must not block rule delivery.
+    }
   }
 
   return result;

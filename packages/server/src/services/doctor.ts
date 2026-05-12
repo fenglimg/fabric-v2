@@ -1947,6 +1947,60 @@ function createPreexistingRootFilesCheck(inspection: PreexistingRootFilesInspect
 // events.jsonl. None of these inspections mutate the filesystem or emit
 // events — TASK-003 wires those mutation paths behind --apply-lint.
 
+// v2.0 rc.5 TASK-014 (C5): build a Map<stable_id, lastConsumedAtEpochMs> in a
+// single pass over events.jsonl. Primary signal is knowledge_consumed (emitted
+// by fab_get_knowledge_sections per resolved stable_id). Drives the pivoted
+// lint #16 (orphan_demote) — replaces the legacy heuristic which mixed every
+// lifecycle + selection + fetch event into a generic "last_referenced".
+//
+// Idempotency carve-out: knowledge_demoted and knowledge_archived events are
+// ALSO recognized as "consumption touches" so that applying a lint mutation
+// (which emits one of these) refreshes the entry's last-consumed timestamp on
+// the next read. Without this, a freshly-demoted but never-consumed entry
+// would be re-flagged on the very next apply-lint run (same created_at, same
+// threshold), breaking the rc.4 idempotency contract documented at
+// runDoctorApplyLint. Selection / fetch / proposed / promoted events are NOT
+// included — those are the legacy-heuristic signals being retired in C5.
+//
+// The legacy buildLastActiveIndex (below) is kept for stale_archive (#17)
+// which still relies on the union-of-lifecycle-events signal until rc.6 audits
+// every read-side check.
+async function buildLastConsumedIndex(
+  projectRoot: string,
+): Promise<Map<string, number>> {
+  const map = new Map<string, number>();
+  let events;
+  try {
+    ({ events } = await readEventLedger(projectRoot));
+  } catch {
+    return map;
+  }
+
+  for (const event of events) {
+    if (
+      event.event_type !== "knowledge_consumed" &&
+      event.event_type !== "knowledge_demoted" &&
+      event.event_type !== "knowledge_archived"
+    ) {
+      continue;
+    }
+    const ts = event.ts;
+    if (typeof ts !== "number" || !Number.isFinite(ts)) {
+      continue;
+    }
+    const stableId = event.stable_id;
+    if (typeof stableId !== "string" || stableId.length === 0) {
+      continue;
+    }
+    const prev = map.get(stableId);
+    if (prev === undefined || ts > prev) {
+      map.set(stableId, ts);
+    }
+  }
+
+  return map;
+}
+
 // Build a Map<stable_id, lastActiveAtEpochMs> in a single pass over events.jsonl.
 // "Activity" is the union of events that reference a knowledge entry by its
 // stable_id: knowledge_proposed, knowledge_promoted, knowledge_promote_started,
@@ -2144,10 +2198,14 @@ async function inspectOrphanDemote(
   projectRoot: string,
   now: number,
 ): Promise<OrphanDemoteInspection> {
-  const lastActiveIndex = await buildLastActiveIndex(projectRoot);
+  // v2.0 rc.5 TASK-014 (C5): pivot to last_consumed_at derived from
+  // knowledge_consumed events only. Frontmatter created_at remains a fallback
+  // inside iterateCanonicalEntries so fresh-but-never-consumed entries are
+  // not immediately flagged.
+  const lastConsumedIndex = await buildLastConsumedIndex(projectRoot);
   const candidates: OrphanDemoteCandidate[] = [];
 
-  for (const entry of iterateCanonicalEntries(projectRoot, lastActiveIndex)) {
+  for (const entry of iterateCanonicalEntries(projectRoot, lastConsumedIndex)) {
     const ageMs = entry.lastReferenceMs > 0 ? now - entry.lastReferenceMs : now;
     const ageDays = Math.floor(ageMs / MS_PER_DAY);
     const threshold = maturityThresholdDays(entry.maturity);

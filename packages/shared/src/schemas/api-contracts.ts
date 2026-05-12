@@ -279,6 +279,13 @@ export const knowledgeSectionsInputSchema = z.object({
     .string()
     .optional()
     .describe("Optional caller-provided session id for Event Ledger records"),
+  // v2.0 rc.5 TASK-014 (C5): optional client identity hash propagated into
+  // knowledge_consumed events. Falls back to empty string when unset — full
+  // client-identity propagation deferred to rc.6.
+  client_hash: z
+    .string()
+    .optional()
+    .describe("Optional caller-provided client hash propagated into knowledge_consumed events"),
 });
 
 export const knowledgeSectionsOutputSchema = z.object({

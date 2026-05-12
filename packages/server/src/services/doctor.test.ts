@@ -1073,7 +1073,7 @@ describe("runDoctorReport", () => {
       expect(check?.message).toContain("draft");
     });
 
-    it("orphan_demote: skips entry that has a recent fetch event within threshold", async () => {
+    it("orphan_demote: skips entry that has a recent knowledge_consumed event within threshold", async () => {
       const target = createInitializedProject("doctor-rc4-orphan-recent-fetch");
       await writeKnowledgeMeta(target, { source: "doctor_fix" });
       writeFile(".fabric/events.jsonl", "", target);
@@ -1085,18 +1085,19 @@ describe("runDoctorReport", () => {
         "stable",
         200,
       );
-      // Append a knowledge_sections_fetched 5 days ago referencing this id —
-      // recent activity should keep the entry out of the candidates list.
+      // v2.0 rc.5 TASK-014 (C5): pivot — orphan_demote now keys off
+      // knowledge_consumed events (not knowledge_sections_fetched). Append a
+      // consumption event 5 days ago for this id; recent consumption keeps the
+      // entry out of the candidates list.
       appendRawEvent(target, {
         kind: "fabric-event",
-        id: "event:rc4-recent-fetch",
+        id: "event:rc4-recent-consumed",
         ts: NOW_MS - 5 * dayMs,
         schema_version: 1,
-        event_type: "knowledge_sections_fetched",
-        selection_token: "tok",
-        requested_sections: [],
-        final_stable_ids: ["KT-DEC-1004"],
-        ai_selected_stable_ids: [],
+        event_type: "knowledge_consumed",
+        stable_id: "KT-DEC-1004",
+        consumed_at: ageDaysAgoIso(5),
+        client_hash: "",
       });
 
       const report = await runDoctorReport(target);
@@ -1104,6 +1105,41 @@ describe("runDoctorReport", () => {
       expect(check?.status).toBe("ok");
       expect(check?.kind).toBeUndefined();
       expect(report.warnings.map((w) => w.code)).not.toContain("knowledge_orphan_demote_required");
+    });
+
+    // v2.0 rc.5 TASK-014 (C5): confirm a knowledge_sections_fetched (the
+    // legacy activity signal) alone is NO LONGER enough to keep an old entry
+    // off the orphan_demote list — only knowledge_consumed counts now.
+    it("orphan_demote: knowledge_sections_fetched alone does NOT suppress orphan (post-C5 pivot)", async () => {
+      const target = createInitializedProject("doctor-rc5-orphan-fetched-only");
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+
+      seedCanonical(
+        target,
+        ".fabric/knowledge/decisions/KT-DEC-1099--fetched-not-consumed.md",
+        "KT-DEC-1099",
+        "stable",
+        200,
+      );
+      // Only a legacy fetched event, no knowledge_consumed.
+      appendRawEvent(target, {
+        kind: "fabric-event",
+        id: "event:rc5-fetched-only",
+        ts: NOW_MS - 5 * dayMs,
+        schema_version: 1,
+        event_type: "knowledge_sections_fetched",
+        selection_token: "tok",
+        requested_sections: [],
+        final_stable_ids: ["KT-DEC-1099"],
+        ai_selected_stable_ids: [],
+      });
+
+      const report = await runDoctorReport(target);
+      const check = report.checks.find((c) => c.name === "Knowledge orphan demote");
+      expect(check?.kind).toBe("warning");
+      expect(check?.code).toBe("knowledge_orphan_demote_required");
+      expect(report.warnings.map((w) => w.code)).toContain("knowledge_orphan_demote_required");
     });
 
     it("orphan_demote: ok status when no canonical entries exist", async () => {
