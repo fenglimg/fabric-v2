@@ -45,9 +45,12 @@ install wiring. The script emits stdout JSON
 `{decision:"block", reason, signal, recommended_skill}` with exit 0 when one of
 three signals trips:
 
-- **archive** (rc.2): 5 plan_contexts since last knowledge_proposed, OR 24h
-  since last knowledge_proposed with at least one plan_context since.
-  Recommends the `fabric-archive` skill.
+- **archive** (rc.5 TASK-015): 24h elapsed since last `knowledge_proposed`
+  event. Silent on a never-archived workspace (that case is the **import**
+  signal's domain). Recommends the `fabric-archive` skill. The previous
+  `5 plan_contexts` count branch (rc.2) was dropped because rc.5+ hooks
+  auto-fire plan_context events; rc.6 will reintroduce an Edit-count signal
+  via a PreToolUse sidecar.
 - **review** (rc.3): pending knowledge count >= 10, OR oldest pending entry >= 7
   days old. Recommends the `fabric-review` skill.
 - **import** (rc.5): canonical knowledge node count < `underseed_node_threshold`

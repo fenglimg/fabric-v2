@@ -8,9 +8,12 @@ const { dirname, join } = require("node:path");
 const FABRIC_DIR = ".fabric";
 const EVENT_LEDGER_FILE = "events.jsonl";
 const EVENT_TYPE_PROPOSED = "knowledge_proposed";
-const EVENT_TYPE_PLAN_CONTEXT = "knowledge_context_planned";
 const EVENT_TYPE_INIT_SCAN_COMPLETED = "init_scan_completed";
-const THRESHOLD_PLAN_CONTEXTS = 5;
+// rc.5 TASK-015 (C6): Signal A is now pure 24h-since-last-knowledge_proposed.
+// The previous `5 plan_contexts` count branch was dropped because rc.5+ hooks
+// auto-fire knowledge_context_planned events, which makes the count unreliable
+// (inflated by tooling, not user intent). The replacement edit-count signal
+// will materialize in rc.6 via the PreToolUse sidecar (TASK-022 / E4).
 const THRESHOLD_HOURS = 24;
 const MS_PER_HOUR = 60 * 60 * 1000;
 
@@ -178,17 +181,20 @@ function countCanonicalNodes(projectRoot) {
 /**
  * Decide whether to emit a hook reminder.
  *
- * rc.2 archive signal (per discussion.md L355-L362):
- *   - Trigger when (plan_context count since last knowledge_proposed >= 5)
- *     OR (hours since last knowledge_proposed >= 24).
- *   - If no knowledge_proposed event has ever been recorded, count ALL
- *     plan_context events and treat hours-elapsed as Infinity.
+ * rc.5 archive signal (TASK-015 / C6 — Signal A):
+ *   - Trigger ONLY when hours since last knowledge_proposed >= 24.
+ *   - If no knowledge_proposed event has ever been recorded, Signal A stays
+ *     silent (a never-archived workspace is handled by Signal C / import).
+ *   - The previous `5 plan_contexts since last knowledge_proposed` count branch
+ *     was dropped in rc.5 because rc.5+ hooks auto-fire plan_context events,
+ *     making the count unreliable. rc.6 will reintroduce an Edit-count signal
+ *     via a PreToolUse sidecar (TASK-022 / E4).
  *
- * rc.3 review signal (TASK-004):
+ * rc.3 review signal (TASK-004 — Signal B):
  *   - Trigger when (pending count >= 10) OR (oldest pending mtime age >= 7 days).
  *
- * rc.5 import signal (TASK-010):
- *   - Trigger when canonical node count < underseed threshold AND a
+ * rc.5 import signal (TASK-010 — Signal C):
+ *   - Trigger when canonical node count < underseed threshold AND an
  *     init_scan_completed event has fired at least 24h ago AND no
  *     knowledge_proposed event has fired in the last 24h.
  *
@@ -209,7 +215,9 @@ function decide(events, now, pendingStats, underseedStats) {
   const underseed =
     underseedStats || { nodeCount: 0, threshold: DEFAULT_UNDERSEED_NODE_THRESHOLD };
 
-  // ---- Archive signal (rc.2 logic, unchanged) -------------------------------
+  // ---- Archive signal (rc.5 TASK-015 — Signal A, 24h-only) ------------------
+  // Locate the most-recent knowledge_proposed event. If none exists, Signal A
+  // stays silent — a never-archived workspace is the import signal's domain.
   let lastProposedTs = null;
   for (let i = events.length - 1; i >= 0; i -= 1) {
     const ev = events[i];
@@ -219,33 +227,19 @@ function decide(events, now, pendingStats, underseedStats) {
     }
   }
 
-  let planContextCount = 0;
-  for (const ev of events) {
-    if (!ev || ev.event_type !== EVENT_TYPE_PLAN_CONTEXT) continue;
-    if (typeof ev.ts !== "number") continue;
-    if (lastProposedTs === null || ev.ts > lastProposedTs) {
-      planContextCount += 1;
-    }
-  }
-
   const hoursElapsed =
     lastProposedTs === null ? null : (nowMs - lastProposedTs) / MS_PER_HOUR;
 
-  const triggerByCount = planContextCount >= THRESHOLD_PLAN_CONTEXTS;
-  // Hours threshold only applies when a previous knowledge_proposed exists AND
-  // at least one plan_context has happened since (otherwise the user has been
-  // idle, no knowledge to archive).
   const triggerByHours =
-    hoursElapsed !== null && hoursElapsed >= THRESHOLD_HOURS && planContextCount > 0;
+    hoursElapsed !== null && hoursElapsed >= THRESHOLD_HOURS;
 
-  // PRECEDENCE: archive wins if either archive trigger fires, regardless of
-  // review/import state. The user gets the archive reminder first; other
-  // reminders wait until after archive happens.
-  if (triggerByCount || triggerByHours) {
-    const hoursDisplay = hoursElapsed === null ? "尚未归档" : `${hoursElapsed.toFixed(1)}h`;
+  // PRECEDENCE: archive wins when Signal A fires, regardless of review/import
+  // state. The user gets the archive reminder first; other reminders wait
+  // until after archive happens.
+  if (triggerByHours) {
     const reason =
-      `已积累 ${planContextCount} 次 plan_context 调用且距上次 knowledge_proposed ${hoursDisplay}` +
-      " — 建议调用 fabric-archive skill 抽取本次会话的知识。";
+      `距上次 knowledge_proposed ${hoursElapsed.toFixed(1)}h（阈值 ${THRESHOLD_HOURS}h）` +
+      " — 建议调用 fabric-archive skill 抽取近期会话的知识。";
     return {
       decision: "block",
       reason,
@@ -443,9 +437,7 @@ module.exports = {
     FABRIC_DIR,
     EVENT_LEDGER_FILE,
     EVENT_TYPE_PROPOSED,
-    EVENT_TYPE_PLAN_CONTEXT,
     EVENT_TYPE_INIT_SCAN_COMPLETED,
-    THRESHOLD_PLAN_CONTEXTS,
     THRESHOLD_HOURS,
     PENDING_DIR,
     PENDING_TYPES,

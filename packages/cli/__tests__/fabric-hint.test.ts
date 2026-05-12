@@ -58,9 +58,7 @@ type HookModule = {
     FABRIC_DIR: string;
     EVENT_LEDGER_FILE: string;
     EVENT_TYPE_PROPOSED: string;
-    EVENT_TYPE_PLAN_CONTEXT: string;
     EVENT_TYPE_INIT_SCAN_COMPLETED: string;
-    THRESHOLD_PLAN_CONTEXTS: number;
     THRESHOLD_HOURS: number;
     PENDING_DIR: string;
     PENDING_TYPES: string[];
@@ -150,76 +148,74 @@ describe("fabric-hint.cjs — readLedger", () => {
   });
 });
 
-describe("fabric-hint.cjs — decide", () => {
+// rc.5 TASK-015 (C6): Signal A is pure 24h-since-last-knowledge_proposed.
+// The previous plan_context-count branch was dropped — rc.5+ hooks auto-fire
+// plan_context events, making the count unreliable. plan_context events
+// present in the ledger MUST NOT influence Signal A.
+describe("fabric-hint.cjs — decide (Signal A: 24h-only)", () => {
   it("returns null on empty ledger (no-trigger silence)", () => {
     expect(hook.decide([], FIXED_NOW)).toBeNull();
   });
 
-  it("returns null when 4 plan_contexts and 0 knowledge_proposed (under count threshold)", () => {
-    const events = [
-      makeEvent("knowledge_context_planned", NOW_MS - 4 * HOUR_MS),
-      makeEvent("knowledge_context_planned", NOW_MS - 3 * HOUR_MS),
-      makeEvent("knowledge_context_planned", NOW_MS - 2 * HOUR_MS),
-      makeEvent("knowledge_context_planned", NOW_MS - 1 * HOUR_MS),
-    ];
+  it("returns null when no knowledge_proposed event has ever been recorded (never-archived workspace is Signal C's domain)", () => {
+    // Ten plan_contexts and zero knowledge_proposed → Signal A stays silent.
+    const events: Array<Record<string, unknown>> = [];
+    for (let i = 0; i < 10; i += 1) {
+      events.push(
+        makeEvent("knowledge_context_planned", NOW_MS - (10 - i) * HOUR_MS),
+      );
+    }
     expect(hook.decide(events, FIXED_NOW)).toBeNull();
   });
 
-  it("triggers on count threshold: 6 plan_contexts after last knowledge_proposed", () => {
-    const baseTs = NOW_MS - 5 * HOUR_MS;
-    const events: Array<Record<string, unknown>> = [
-      makeEvent("knowledge_proposed", baseTs - HOUR_MS, {
-        timestamp: new Date(baseTs - HOUR_MS).toISOString(),
-      }),
-    ];
-    for (let i = 0; i < 6; i += 1) {
-      events.push(
-        makeEvent("knowledge_context_planned", baseTs + i * 60 * 1000),
-      );
-    }
-    const result = hook.decide(events, FIXED_NOW);
-    expect(result).not.toBeNull();
-    expect(result?.decision).toBe("block");
-    expect(result?.reason).toMatch(/fabric-archive/);
-    expect(result?.reason).toMatch(/6/);
-  });
-
-  it("triggers on hours threshold: knowledge_proposed >25h ago, 1 plan_context since", () => {
+  it("triggers when knowledge_proposed >=24h ago", () => {
     const proposedTs = NOW_MS - 25 * HOUR_MS;
     const events = [
       makeEvent("knowledge_proposed", proposedTs, {
         timestamp: new Date(proposedTs).toISOString(),
       }),
-      makeEvent("knowledge_context_planned", proposedTs + HOUR_MS),
     ];
     const result = hook.decide(events, FIXED_NOW);
     expect(result).not.toBeNull();
     expect(result?.decision).toBe("block");
+    expect(result?.signal).toBe("archive");
+    expect(result?.recommended_skill).toBe("fabric-archive");
     expect(result?.reason).toMatch(/fabric-archive/);
+    expect(result?.reason).toMatch(/25\.0h/);
   });
 
-  it("returns null when knowledge_proposed <24h ago and only 2 plan_contexts since", () => {
-    const proposedTs = NOW_MS - 2 * HOUR_MS;
-    const events = [
+  it("returns null when knowledge_proposed <24h ago (regardless of plan_context count since)", () => {
+    const proposedTs = NOW_MS - 23 * HOUR_MS;
+    const events: Array<Record<string, unknown>> = [
       makeEvent("knowledge_proposed", proposedTs, {
         timestamp: new Date(proposedTs).toISOString(),
       }),
-      makeEvent("knowledge_context_planned", proposedTs + 30 * 60 * 1000),
-      makeEvent("knowledge_context_planned", proposedTs + 60 * 60 * 1000),
     ];
+    // Sprinkle in 20 plan_contexts since the last archive — MUST NOT trigger.
+    for (let i = 0; i < 20; i += 1) {
+      events.push(
+        makeEvent(
+          "knowledge_context_planned",
+          proposedTs + (i + 1) * 30 * 60 * 1000,
+        ),
+      );
+    }
     expect(hook.decide(events, FIXED_NOW)).toBeNull();
   });
 
-  it("triggers when never archived AND plan_context count >= 5", () => {
-    const events: Array<Record<string, unknown>> = [];
-    for (let i = 0; i < 5; i += 1) {
+  it("plan_context count does NOT influence Signal A (auto-fire-resistant)", () => {
+    // knowledge_proposed exactly 12h ago (within 24h window). 50 auto-fired
+    // plan_contexts after it MUST NOT trigger Signal A in rc.5.
+    const proposedTs = NOW_MS - 12 * HOUR_MS;
+    const events: Array<Record<string, unknown>> = [
+      makeEvent("knowledge_proposed", proposedTs),
+    ];
+    for (let i = 0; i < 50; i += 1) {
       events.push(
-        makeEvent("knowledge_context_planned", NOW_MS - (5 - i) * HOUR_MS),
+        makeEvent("knowledge_context_planned", proposedTs + i * 60 * 1000),
       );
     }
-    const result = hook.decide(events, FIXED_NOW);
-    expect(result).not.toBeNull();
-    expect(result?.decision).toBe("block");
+    expect(hook.decide(events, FIXED_NOW)).toBeNull();
   });
 });
 
@@ -238,26 +234,17 @@ describe("fabric-hint.cjs — main", () => {
     }
   });
 
-  it("writes JSON {decision:'block', reason} to stdout on trigger", () => {
+  it("writes JSON {decision:'block', reason} to stdout when last knowledge_proposed >=24h ago", () => {
     mkdirSync(join(tempRoot, ".fabric"), { recursive: true });
-    const baseTs = NOW_MS - 5 * HOUR_MS;
-    const lines: string[] = [
-      JSON.stringify(
-        makeEvent("knowledge_proposed", baseTs - HOUR_MS, {
-          timestamp: new Date(baseTs - HOUR_MS).toISOString(),
-        }),
-      ),
-    ];
-    for (let i = 0; i < 6; i += 1) {
-      lines.push(
-        JSON.stringify(
-          makeEvent("knowledge_context_planned", baseTs + i * 60 * 1000),
-        ),
-      );
-    }
+    const proposedTs = NOW_MS - 26 * HOUR_MS;
+    const line = JSON.stringify(
+      makeEvent("knowledge_proposed", proposedTs, {
+        timestamp: new Date(proposedTs).toISOString(),
+      }),
+    );
     writeFileSync(
       join(tempRoot, ".fabric", "events.jsonl"),
-      `${lines.join("\n")}\n`,
+      `${line}\n`,
       "utf8",
     );
 
@@ -269,8 +256,10 @@ describe("fabric-hint.cjs — main", () => {
     const payload = JSON.parse(writes[0] as string) as {
       decision: string;
       reason: string;
+      signal: string;
     };
     expect(payload.decision).toBe("block");
+    expect(payload.signal).toBe("archive");
     expect(typeof payload.reason).toBe("string");
     expect(payload.reason).toMatch(/fabric-archive/);
   });
@@ -408,13 +397,13 @@ describe("fabric-hint.cjs — decide (review signal)", () => {
   });
 
   it("archive precedence: archive wins when both archive AND review triggers fire (NEW-6)", () => {
-    // Build events that trigger archive (>=5 plan_contexts, never archived).
-    const events: Array<Record<string, unknown>> = [];
-    for (let i = 0; i < 5; i += 1) {
-      events.push(
-        makeEvent("knowledge_context_planned", NOW_MS - (5 - i) * HOUR_MS),
-      );
-    }
+    // Build events that trigger archive under rc.5 Signal A (24h-only):
+    // knowledge_proposed 25h ago.
+    const events: Array<Record<string, unknown>> = [
+      makeEvent("knowledge_proposed", NOW_MS - 25 * HOUR_MS, {
+        timestamp: new Date(NOW_MS - 25 * HOUR_MS).toISOString(),
+      }),
+    ];
     // Pending stats also trigger review.
     const result = hook.decide(events, FIXED_NOW, {
       count: 12,
@@ -582,13 +571,17 @@ describe("fabric-hint.cjs — decide (import signal)", () => {
   });
 
   it("archive precedence: archive wins when both archive AND import triggers fire", () => {
-    // 5 plan_contexts, no previous knowledge_proposed → archive triggers.
-    const events: Array<Record<string, unknown>> = [initEvent];
-    for (let i = 0; i < 5; i += 1) {
-      events.push(
-        makeEvent("knowledge_context_planned", NOW_MS - (5 - i) * HOUR_MS),
-      );
-    }
+    // knowledge_proposed 25h ago → Signal A (archive) triggers under rc.5.
+    // Sparse corpus + init >=24h ago would also trigger import, but archive wins.
+    const events: Array<Record<string, unknown>> = [
+      initEvent,
+      makeEvent("knowledge_proposed", NOW_MS - 25 * HOUR_MS, {
+        timestamp: new Date(NOW_MS - 25 * HOUR_MS).toISOString(),
+      }),
+    ];
+    // NOTE: knowledge_proposed 25h ago > 24h NO_PROPOSED window, so the import
+    // signal's "no recent knowledge_proposed" guard still allows import to fire
+    // — but archive precedence supersedes it.
     const result = hook.decide(events, FIXED_NOW, undefined, {
       nodeCount: 1,
       threshold: 10,
@@ -613,12 +606,11 @@ describe("fabric-hint.cjs — decide (import signal)", () => {
   });
 
   it("includes recommended_skill='fabric-archive' on archive trigger", () => {
-    const events: Array<Record<string, unknown>> = [];
-    for (let i = 0; i < 5; i += 1) {
-      events.push(
-        makeEvent("knowledge_context_planned", NOW_MS - (5 - i) * HOUR_MS),
-      );
-    }
+    const events: Array<Record<string, unknown>> = [
+      makeEvent("knowledge_proposed", NOW_MS - 25 * HOUR_MS, {
+        timestamp: new Date(NOW_MS - 25 * HOUR_MS).toISOString(),
+      }),
+    ];
     const result = hook.decide(events, FIXED_NOW);
     expect(result?.recommended_skill).toBe("fabric-archive");
   });
