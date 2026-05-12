@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-const { existsSync, readFileSync, readdirSync, statSync } = require("node:fs");
-const { join } = require("node:path");
+const { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } = require("node:fs");
+const { dirname, join } = require("node:path");
 
 // CONSTANTS — duplicated from packages/server/src/services/_shared.ts.
 // DRY violation accepted: this hook script runs in user repos WITHOUT
@@ -12,6 +12,13 @@ const EVENT_TYPE_PLAN_CONTEXT = "knowledge_context_planned";
 const THRESHOLD_PLAN_CONTEXTS = 5;
 const THRESHOLD_HOURS = 24;
 const MS_PER_HOUR = 60 * 60 * 1000;
+
+// Dedup cache: re-firing the same hint on every Stop is noise. The hint should
+// surface once per unique signal-state. State changes when a new
+// knowledge_proposed event is recorded (lastProposedTs advances) OR when the
+// review-pending fingerprint changes (count or oldestAgeMs bucket shifts).
+// Stored under .fabric/.cache/ which is gitignored / per-checkout.
+const SHOWN_CACHE_FILE = ".fabric/.cache/archive-hint-shown.json";
 
 // rc.3 TASK-004: second signal — pending-overflow → review skill recommendation.
 const PENDING_DIR = "knowledge/pending";
@@ -202,6 +209,60 @@ function decide(events, now, pendingStats) {
 }
 
 /**
+ * Build a fingerprint that uniquely identifies the signal-state the hook would
+ * fire on. Two invocations with the same fingerprint produce the same reason
+ * string, so showing the reminder twice in a row is pure noise. The cache
+ * compares fingerprints to decide whether to suppress a repeat emit.
+ *
+ * Archive: lastProposedTs (or "never") — advances when knowledge_proposed fires
+ * Review:  pending count + day-bucket of oldestAgeMs — coarse-grained so daily
+ *          drift doesn't re-trigger but a genuinely new pending batch does
+ */
+function fingerprint(result, events, pendingStats) {
+  if (result === null) return null;
+  if (result.signal === "archive") {
+    let lastProposedTs = "never";
+    for (let i = events.length - 1; i >= 0; i -= 1) {
+      const ev = events[i];
+      if (ev && ev.event_type === EVENT_TYPE_PROPOSED && typeof ev.ts === "number") {
+        lastProposedTs = String(ev.ts);
+        break;
+      }
+    }
+    return `archive:${lastProposedTs}`;
+  }
+  if (result.signal === "review") {
+    const ageBucket =
+      pendingStats.oldestAgeMs === null
+        ? "none"
+        : String(Math.floor(pendingStats.oldestAgeMs / MS_PER_DAY));
+    return `review:${pendingStats.count}:${ageBucket}`;
+  }
+  return null;
+}
+
+function readShownCache(projectRoot) {
+  const cachePath = join(projectRoot, SHOWN_CACHE_FILE);
+  if (!existsSync(cachePath)) return {};
+  try {
+    const parsed = JSON.parse(readFileSync(cachePath, "utf8"));
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeShownCache(projectRoot, cache) {
+  const cachePath = join(projectRoot, SHOWN_CACHE_FILE);
+  try {
+    mkdirSync(dirname(cachePath), { recursive: true });
+    writeFileSync(cachePath, JSON.stringify(cache));
+  } catch {
+    // Silent — cache failure must never block the hook.
+  }
+}
+
+/**
  * Main entry — invoked both as a CLI (require.main === module) and in-process by tests.
  *
  * Wraps the entire flow in try/catch: ANY error → silent exit 0. The hook MUST NEVER
@@ -223,8 +284,18 @@ function main(env, stdio) {
       pendingStats = { count: 0, oldestAgeMs: null };
     }
     const result = decide(events, now, pendingStats);
-    if (result !== null) {
-      out.write(JSON.stringify(result));
+    if (result === null) return;
+
+    // Dedup: skip emit if this exact signal-state was already shown.
+    const fp = fingerprint(result, events, pendingStats);
+    const cache = readShownCache(cwd);
+    if (fp !== null && cache[result.signal] === fp) {
+      return; // Already surfaced for this state — wait for state to change.
+    }
+    out.write(JSON.stringify(result));
+    if (fp !== null) {
+      cache[result.signal] = fp;
+      writeShownCache(cwd, cache);
     }
   } catch {
     // Silent — never block on hook failure.
@@ -236,6 +307,9 @@ module.exports = {
   readLedger,
   readPendingStats,
   decide,
+  fingerprint,
+  readShownCache,
+  writeShownCache,
   CONSTANTS: {
     FABRIC_DIR,
     EVENT_LEDGER_FILE,
@@ -247,6 +321,7 @@ module.exports = {
     PENDING_TYPES,
     THRESHOLD_PENDING_COUNT,
     THRESHOLD_PENDING_AGE_DAYS,
+    SHOWN_CACHE_FILE,
   },
 };
 
