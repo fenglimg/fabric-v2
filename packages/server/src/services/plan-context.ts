@@ -1,3 +1,7 @@
+import { readFile } from "node:fs/promises";
+import { homedir } from "node:os";
+import { join } from "node:path";
+
 import { deriveAgentsMetaLayer, type RuleDescription, type RuleDescriptionIndexItem } from "@fenglimg/fabric-shared";
 
 import { readAgentsMeta, type AgentsMeta } from "../meta-reader.js";
@@ -12,46 +16,46 @@ export type PlanContextInput = {
   client_hash?: string;
   correlation_id?: string;
   session_id?: string;
-  // v2.0: by default we hide entries with `maturity = 'deprecated'`. Setting
-  // this flag to true returns them. Note: TASK-002 MaturitySchema enumerates
-  // draft|verified|proven only — `deprecated` is reserved future state, so
-  // today this filter is a no-op placeholder. Wired now so we don't need a
-  // protocol break when the enum widens. TODO(rc.3): expand MaturitySchema.
-  include_deprecated?: boolean;
 };
 
+// v2.0-rc.5 A3 (TASK-007): Cocos-era profile inference retired. The profile
+// is now a neutral path/intent echo — no UI/Gameplay/Asset hardcoded domains,
+// no Chinese game-perf token list, no Performance regex.
 export type RequirementProfile = {
   target_path: string;
   path_segments: string[];
   extension: string;
-  inferred_domain: string[];
   known_tech: string[];
   user_intent: string;
-  intent_tokens: string[];
-  impact_hints: string[];
   detected_entities: string[];
+};
+
+// v2.0-rc.5 A3 (TASK-007): per-entry shape drops the legacy L0/L1/L2 selection
+// ceremony (required_stable_ids / ai_selectable_stable_ids /
+// initial_selected_stable_ids / selection_policy). When the description_index
+// has ≤ DEGENERATE_THRESHOLD entries the result enters single-stage degenerate
+// mode: `candidates_full_content` carries the full markdown body of every
+// candidate and `selection_token` is omitted. Above the threshold the legacy
+// two-stage flow is retained (selection_token → fab_get_knowledge_sections).
+export type PlanContextEntry = {
+  path: string;
+  requirement_profile: RequirementProfile;
+  description_index: RuleDescriptionIndexItem[];
+};
+
+export type PlanContextCandidateContent = {
+  stable_id: string;
+  path: string;
+  content: string;
 };
 
 export type PlanContextResult = {
   revision_hash: string;
   stale: boolean;
-  selection_token: string;
-  entries: Array<{
-    path: string;
-    requirement_profile: RequirementProfile;
-    description_index: RuleDescriptionIndexItem[];
-    required_stable_ids: string[];
-    ai_selectable_stable_ids: string[];
-    initial_selected_stable_ids: string[];
-    selection_policy: {
-      required_levels: ["L0", "L2"];
-      ai_selectable_levels: ["L1"];
-      final_fetch_rule: "required_stable_ids + ai_selected_l1_stable_ids";
-    };
-  }>;
+  selection_token?: string;
+  candidates_full_content?: PlanContextCandidateContent[];
+  entries: PlanContextEntry[];
   shared: {
-    required_stable_ids: string[];
-    ai_selectable_stable_ids: string[];
     description_index: RuleDescriptionIndexItem[];
     preflight_diagnostics: Array<{
       code: "missing_description";
@@ -74,6 +78,11 @@ export type SelectionTokenState = {
 };
 
 const SELECTION_TOKEN_TTL_MS = 5 * 60 * 1000;
+// v2.0-rc.5 A3: when the candidate set is small enough we ship every entry's
+// full markdown body up-front and skip the selection_token round-trip. 30 is
+// the working budget; if 30 entries exceed ~50KB payload during dogfood we
+// lower this in rc.7 (see TASK-007 risk note).
+const DEGENERATE_CANDIDATE_THRESHOLD = 30;
 const selectionTokenCache = new Map<string, SelectionTokenState>();
 
 export async function planContext(
@@ -83,61 +92,58 @@ export async function planContext(
   const meta = await readAgentsMeta(projectRoot);
   const stale = input.client_hash !== undefined && input.client_hash !== meta.revision;
   const uniquePaths = dedupePaths(input.paths);
-  const includeDeprecated = input.include_deprecated === true;
-  const allDescriptions = buildDescriptionIndex(meta).filter((item) =>
-    includeDeprecated ? true : !isDeprecatedMaturity(item),
-  );
+  const allDescriptions = buildDescriptionIndex(meta);
 
-  const entries = uniquePaths.map((path) => {
+  const entries: PlanContextEntry[] = uniquePaths.map((path) => {
     const profile = buildRequirementProfile(path, input);
     const descriptionIndex = allDescriptions.filter((item) => shouldIncludeIndexItemForPath(item, meta, path));
-    const requiredStableIds = descriptionIndex
-      .filter((item) => item.required)
-      .map((item) => item.stable_id);
-    const aiSelectableStableIds = descriptionIndex
-      .filter((item) => item.selectable)
-      .map((item) => item.stable_id);
 
     return {
       path,
       requirement_profile: profile,
       description_index: descriptionIndex,
-      required_stable_ids: requiredStableIds,
-      ai_selectable_stable_ids: aiSelectableStableIds,
-      initial_selected_stable_ids: requiredStableIds,
-      selection_policy: {
-        required_levels: ["L0", "L2"] as ["L0", "L2"],
-        ai_selectable_levels: ["L1"] as ["L1"],
-        final_fetch_rule: "required_stable_ids + ai_selected_l1_stable_ids" as const,
-      },
     };
   });
 
-  const requiredStableIds = dedupeStableIds(entries.flatMap((entry) => entry.required_stable_ids));
-  const aiSelectableStableIds = dedupeStableIds(entries.flatMap((entry) => entry.ai_selectable_stable_ids));
   const sharedDescriptionIndex = dedupeDescriptionIndex(entries.flatMap((entry) => entry.description_index));
-  const selectionToken = createSelectionToken(meta.revision, uniquePaths, requiredStableIds, aiSelectableStableIds);
+
+  // Degenerate single-stage mode: dump every candidate body inline, skip the
+  // selection_token ceremony. Threshold is empirical (see comment above).
+  const isDegenerate = sharedDescriptionIndex.length <= DEGENERATE_CANDIDATE_THRESHOLD;
+  let selectionToken: string | undefined;
+  let candidatesFullContent: PlanContextCandidateContent[] | undefined;
+
+  if (isDegenerate) {
+    candidatesFullContent = await loadCandidatesFullContent(projectRoot, meta, sharedDescriptionIndex);
+  } else {
+    const sharedStableIds = sharedDescriptionIndex.map((item) => item.stable_id);
+    selectionToken = createSelectionToken(meta.revision, uniquePaths, [], sharedStableIds);
+  }
 
   const result: PlanContextResult = {
     revision_hash: meta.revision,
     stale,
-    selection_token: selectionToken,
     entries,
     shared: {
-      required_stable_ids: requiredStableIds,
-      ai_selectable_stable_ids: aiSelectableStableIds,
       description_index: sharedDescriptionIndex,
       preflight_diagnostics: buildPreflightDiagnostics(meta),
     },
   };
 
+  if (selectionToken !== undefined) {
+    result.selection_token = selectionToken;
+  }
+  if (candidatesFullContent !== undefined) {
+    result.candidates_full_content = candidatesFullContent;
+  }
+
   try {
     await appendEventLedgerEvent(projectRoot, {
       event_type: "knowledge_context_planned",
       target_paths: uniquePaths,
-      required_stable_ids: requiredStableIds,
-      ai_selectable_stable_ids: aiSelectableStableIds,
-      final_stable_ids: requiredStableIds,
+      required_stable_ids: [],
+      ai_selectable_stable_ids: sharedDescriptionIndex.map((item) => item.stable_id),
+      final_stable_ids: [],
       selection_token: selectionToken,
       client_hash: input.client_hash,
       intent: input.intent,
@@ -167,7 +173,11 @@ export function readSelectionToken(token: string, now = Date.now()): SelectionTo
   return state;
 }
 
-function createSelectionToken(
+// Exported for test scaffolds that need a selection_token without going
+// through the public planContext() entry point (e.g. two-stage flow tests
+// where the seeded corpus would otherwise drop into degenerate mode and
+// omit the token entirely). Internal API; not part of the MCP contract.
+export function createSelectionToken(
   revisionHash: string,
   targetPaths: string[],
   requiredStableIds: string[],
@@ -214,11 +224,8 @@ function buildRequirementProfile(path: string, input: PlanContextInput): Require
     target_path: normalizedPath,
     path_segments: normalizedPath.split("/").filter(Boolean),
     extension: extensionMatch?.[1] ?? "",
-    inferred_domain: inferDomains(normalizedPath),
     known_tech: knownTech,
     user_intent: input.intent ?? "",
-    intent_tokens: tokenizeIntent(input.intent ?? ""),
-    impact_hints: inferImpactHints(input.intent ?? ""),
     detected_entities: input.detected_entities?.[normalizedPath] ?? input.detected_entities?.[path] ?? [],
   };
 }
@@ -226,10 +233,12 @@ function buildRequirementProfile(path: string, input: PlanContextInput): Require
 function buildDescriptionIndex(meta: AgentsMeta): RuleDescriptionIndexItem[] {
   return Object.entries(meta.nodes)
     .flatMap(([nodeId, node]) => {
-      // v2.0-rc.5 A1: legacy `level`/`layer` schema fields retired; derive
-      // from file path. TASK-007 (A3) refactors plan-context to retire the
-      // L0/L1/L2 surface entirely.
-      const level = node.level ?? node.layer ?? deriveAgentsMetaLayer(node.file);
+      // v2.0-rc.5 A3 (TASK-007): legacy `node.level` / `node.layer` reads
+      // retired. Layer is derived from the file path so plan-context no
+      // longer depends on the (deprecated) on-disk level field. Path-derived
+      // layer stays L0/L1/L2-shaped for back-compat with consumers that still
+      // surface a level value, but it carries no selection semantics here.
+      const level = deriveAgentsMetaLayer(node.file);
       const description = node.description ?? descriptionFromLegacyActivation(node.activation?.description);
       if (description === undefined) {
         return [];
@@ -241,11 +250,15 @@ function buildDescriptionIndex(meta: AgentsMeta): RuleDescriptionIndexItem[] {
       // SOMETHING for the layer surface — even on un-migrated entries.
       const inferredLayer = inferKnowledgeLayerFromContentRef(node.content_ref ?? node.file);
 
+      // v2.0-rc.5 A3: `required`/`selectable` no longer carry meaning — they
+      // were the L0/L1/L2 selection ceremony. We emit them as `false` so the
+      // shared schema (which still types them as booleans) remains valid;
+      // consumers should not branch on these fields any more.
       return [{
         stable_id: node.stable_id ?? nodeId,
         level,
-        required: level === "L0" || level === "L2",
-        selectable: level === "L1",
+        required: false,
+        selectable: false,
         description,
         type: description.knowledge_type,
         maturity: description.maturity,
@@ -269,16 +282,6 @@ function inferKnowledgeLayerFromContentRef(contentRef: string | undefined): "tea
   return undefined;
 }
 
-function isDeprecatedMaturity(item: RuleDescriptionIndexItem): boolean {
-  // v2.0 placeholder: TASK-002 enum is draft|verified|proven only. We check
-  // both surfaces (top-level + nested) so that if either ever resolves to
-  // "deprecated" via a future schema expansion, the filter activates without
-  // a code change. Today this is a no-op for all conformant entries.
-  const a = item.maturity as string | undefined;
-  const b = item.description.maturity as string | undefined;
-  return a === "deprecated" || b === "deprecated";
-}
-
 function descriptionFromLegacyActivation(summary: string | undefined): RuleDescription | undefined {
   if (summary === undefined) {
     return undefined;
@@ -293,31 +296,17 @@ function descriptionFromLegacyActivation(summary: string | undefined): RuleDescr
   };
 }
 
+// v2.0-rc.5 A3 (TASK-007): the L0/L1/L2 short-circuit + scope_glob match was
+// the legacy per-path filter. With the L0/L1/L2 selection ceremony retired
+// every candidate flows through to the per-entry index; TASK-006 (C1) layers
+// a `relevance_paths` filter on top of this in the next slice. Function body
+// kept as a single-return for symmetry with TASK-006's incoming patch.
 function shouldIncludeIndexItemForPath(
-  item: RuleDescriptionIndexItem,
-  meta: AgentsMeta,
-  path: string,
+  _item: RuleDescriptionIndexItem,
+  _meta: AgentsMeta,
+  _path: string,
 ): boolean {
-  if (item.level === "L0" || item.level === "L1") {
-    return true;
-  }
-
-  const node = Object.values(meta.nodes).find((candidate) => candidate.stable_id === item.stable_id);
-  if (node === undefined) {
-    return false;
-  }
-
-  return node.scope_glob === path || minimatchSimple(path, node.scope_glob);
-}
-
-function minimatchSimple(path: string, glob: string): boolean {
-  if (glob === "**") {
-    return true;
-  }
-  if (glob.endsWith("/**")) {
-    return path.startsWith(glob.slice(0, -3));
-  }
-  return path === glob;
+  return true;
 }
 
 function buildPreflightDiagnostics(meta: AgentsMeta): PlanContextResult["shared"]["preflight_diagnostics"] {
@@ -338,28 +327,47 @@ function buildPreflightDiagnostics(meta: AgentsMeta): PlanContextResult["shared"
   }];
 }
 
-function inferDomains(path: string): string[] {
-  const domains: string[] = [];
-  if (path.includes("/ui/") || path.toLowerCase().includes("ui")) {
-    domains.push("UI");
+async function loadCandidatesFullContent(
+  projectRoot: string,
+  meta: AgentsMeta,
+  index: RuleDescriptionIndexItem[],
+): Promise<PlanContextCandidateContent[]> {
+  const nodesByStableId = new Map<string, AgentsMeta["nodes"][string]>();
+  for (const [nodeId, node] of Object.entries(meta.nodes)) {
+    nodesByStableId.set(node.stable_id ?? nodeId, node);
   }
-  if (path.includes("assets/scripts")) {
-    domains.push("Gameplay");
+
+  const out: PlanContextCandidateContent[] = [];
+  for (const item of index) {
+    const node = nodesByStableId.get(item.stable_id);
+    if (node === undefined) {
+      continue;
+    }
+
+    const contentRef = node.content_ref ?? node.file;
+    const sourcePath = resolveCandidateSourcePath(projectRoot, contentRef);
+    try {
+      const content = await readFile(sourcePath, "utf8");
+      out.push({
+        stable_id: item.stable_id,
+        path: normalizeKnowledgePath(contentRef),
+        content,
+      });
+    } catch {
+      // Missing file is reported via preflight_diagnostics elsewhere; here we
+      // simply omit the entry from the inline payload so degenerate mode never
+      // becomes a hard failure point.
+    }
   }
-  if (path.includes("resources") || path.includes("assets/resources")) {
-    domains.push("Asset");
-  }
-  return domains;
+  return out;
 }
 
-function tokenizeIntent(intent: string): string[] {
-  const tokens = ["性能", "优化", "drawcall", "渲染", "卡顿", "闪烁", "界面", "UI", "资源", "图集"]
-    .filter((token) => intent.toLowerCase().includes(token.toLowerCase()));
-  return dedupeStableIds(tokens);
-}
-
-function inferImpactHints(intent: string): string[] {
-  return /性能|优化|drawcall|渲染|卡顿|闪烁/iu.test(intent) ? ["Performance"] : [];
+function resolveCandidateSourcePath(projectRoot: string, contentRef: string): string {
+  if (contentRef.startsWith("~/.fabric/knowledge/")) {
+    const home = process.env.FABRIC_HOME ?? homedir();
+    return join(home, ".fabric", "knowledge", contentRef.slice("~/.fabric/knowledge/".length));
+  }
+  return join(projectRoot, contentRef);
 }
 
 function dedupeStableIds(stableIds: string[]): string[] {
@@ -378,18 +386,8 @@ function dedupeDescriptionIndex(items: RuleDescriptionIndexItem[]): RuleDescript
   });
 }
 
+// v2.0-rc.5 A3 (TASK-007): sort by stable_id only — the legacy levelOrder
+// switch keyed off L0/L1/L2 selection ceremony which no longer drives output.
 function compareDescriptionIndexItems(left: RuleDescriptionIndexItem, right: RuleDescriptionIndexItem): number {
-  const levelDelta = levelOrder(left.level) - levelOrder(right.level);
-  return levelDelta !== 0 ? levelDelta : left.stable_id.localeCompare(right.stable_id);
-}
-
-function levelOrder(level: "L0" | "L1" | "L2"): number {
-  switch (level) {
-    case "L0":
-      return 0;
-    case "L1":
-      return 1;
-    case "L2":
-      return 2;
-  }
+  return left.stable_id.localeCompare(right.stable_id);
 }

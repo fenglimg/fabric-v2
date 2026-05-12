@@ -4,9 +4,29 @@ import { tmpdir } from "node:os";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { planContext } from "./plan-context.js";
+import { createSelectionToken, planContext } from "./plan-context.js";
 import { readEventLedger } from "./event-ledger.js";
 import { getKnowledgeSections, parseKnowledgeSections } from "./knowledge-sections.js";
+
+// v2.0-rc.5 A3 (TASK-007): planContext() emits selection_token only when the
+// description_index has > 30 entries (degenerate mode skips the token). The
+// two-stage selection tests below construct corpora well below that threshold
+// for fixture clarity, so we mint the token directly from the plan output.
+function mintTokenFromPlan(
+  plan: Awaited<ReturnType<typeof planContext>>,
+  requiredStableIds: string[],
+  aiSelectableStableIds: string[],
+): string {
+  if (plan.selection_token !== undefined) {
+    return plan.selection_token;
+  }
+  return createSelectionToken(
+    plan.revision_hash,
+    plan.entries.map((entry) => entry.path),
+    requiredStableIds,
+    aiSelectableStableIds,
+  );
+}
 
 const tempDirs: string[] = [];
 
@@ -66,9 +86,14 @@ describe("getKnowledgeSections", () => {
   it("merges required L0/L2 with AI-selected L1 and returns requested sections", async () => {
     const projectRoot = await createSectionProject();
     const plan = await planContext(projectRoot, { paths: ["assets/scripts/ui/BattleView.ts"] });
+    const selectionToken = mintTokenFromPlan(
+      plan,
+      ["global-protocol", "battle-view-local"],
+      ["ui-batch-rendering"],
+    );
 
     const result = await getKnowledgeSections(projectRoot, {
-      selection_token: plan.selection_token,
+      selection_token: selectionToken,
       sections: ["MISSION_STATEMENT", "MANDATORY_INJECTION", "BUSINESS_LOGIC_CHUNKS", "CONTEXT_INFO"],
       ai_selected_stable_ids: ["ui-batch-rendering"],
       ai_selection_reasons: {
@@ -183,7 +208,7 @@ describe("getKnowledgeSections", () => {
       }),
       expect.objectContaining({
         event_type: "knowledge_selection",
-        selection_token: plan.selection_token,
+        selection_token: selectionToken,
         target_paths: ["assets/scripts/ui/BattleView.ts"],
         required_stable_ids: ["global-protocol", "battle-view-local"],
         ai_selectable_stable_ids: ["ui-batch-rendering"],
@@ -197,7 +222,7 @@ describe("getKnowledgeSections", () => {
       }),
       expect.objectContaining({
         event_type: "knowledge_sections_fetched",
-        selection_token: plan.selection_token,
+        selection_token: selectionToken,
         target_paths: ["assets/scripts/ui/BattleView.ts"],
         requested_sections: ["MISSION_STATEMENT", "MANDATORY_INJECTION", "BUSINESS_LOGIC_CHUNKS", "CONTEXT_INFO"],
         final_stable_ids: ["global-protocol", "ui-batch-rendering", "battle-view-local"],
@@ -212,23 +237,28 @@ describe("getKnowledgeSections", () => {
   it("hard-errors invalid L1 selections and missing AI selection reasons", async () => {
     const projectRoot = await createSectionProject();
     const plan = await planContext(projectRoot, { paths: ["assets/scripts/ui/BattleView.ts"] });
+    const selectionToken = mintTokenFromPlan(
+      plan,
+      ["global-protocol", "battle-view-local"],
+      ["ui-batch-rendering"],
+    );
 
     await expect(getKnowledgeSections(projectRoot, {
-      selection_token: plan.selection_token,
+      selection_token: selectionToken,
       sections: ["MANDATORY_INJECTION"],
       ai_selected_stable_ids: ["unknown-l1"],
       ai_selection_reasons: { "unknown-l1": "not selectable" },
     })).rejects.toThrow(/Invalid L1 rule selection/u);
 
     await expect(getKnowledgeSections(projectRoot, {
-      selection_token: plan.selection_token,
+      selection_token: selectionToken,
       sections: ["MANDATORY_INJECTION"],
       ai_selected_stable_ids: ["ui-batch-rendering"],
       ai_selection_reasons: {},
     })).rejects.toThrow(/Missing AI selection reason/u);
 
     await expect(getKnowledgeSections(projectRoot, {
-      selection_token: plan.selection_token,
+      selection_token: selectionToken,
       sections: ["MANDATORY_INJECTION"],
       ai_selected_stable_ids: ["global-protocol"],
       ai_selection_reasons: { "global-protocol": "L0 cannot be selected by AI." },
@@ -251,9 +281,14 @@ describe("getKnowledgeSections", () => {
       extraL1: true,
     });
     const plan = await planContext(projectRoot, { paths: ["assets/scripts/ui/BattleView.ts"] });
+    const selectionToken = mintTokenFromPlan(
+      plan,
+      ["global-protocol", "battle-view-local"],
+      ["ui-batch-rendering", "ui-low-priority"],
+    );
 
     const result = await getKnowledgeSections(projectRoot, {
-      selection_token: plan.selection_token,
+      selection_token: selectionToken,
       sections: ["MANDATORY_INJECTION"],
       ai_selected_stable_ids: ["ui-low-priority", "ui-batch-rendering"],
       ai_selection_reasons: {
@@ -352,8 +387,9 @@ describe("getKnowledgeSections", () => {
     );
 
     const plan = await planContext(projectRoot, { paths: ["src/index.ts"] });
+    const selectionToken = mintTokenFromPlan(plan, ["global-protocol"], ["ui-rule"]);
     const result = await getKnowledgeSections(projectRoot, {
-      selection_token: plan.selection_token,
+      selection_token: selectionToken,
       sections: ["MANDATORY_INJECTION"],
       ai_selected_stable_ids: ["ui-rule"],
       ai_selection_reasons: { "ui-rule": "ui touch" },

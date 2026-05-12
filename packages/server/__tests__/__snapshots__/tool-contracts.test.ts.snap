@@ -928,10 +928,6 @@ exports[`tool contracts > plan-context contract matches snapshot 1`] = `
         "description": "Optional path-keyed detected entities for the requirement profile",
         "type": "object",
       },
-      "include_deprecated": {
-        "description": "When true, include description_index entries with maturity='deprecated'. Defaults to false (deprecated entries hidden). Note: 'deprecated' is reserved future state — today this filter is a no-op until MaturitySchema is widened.",
-        "type": "boolean",
-      },
       "intent": {
         "description": "User-stated requirement or implementation intent; used only to build a neutral requirement profile",
         "type": "string",
@@ -974,9 +970,32 @@ exports[`tool contracts > plan-context contract matches snapshot 1`] = `
     "$schema": "http://json-schema.org/draft-07/schema#",
     "additionalProperties": false,
     "properties": {
+      "candidates_full_content": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "content": {
+              "type": "string",
+            },
+            "path": {
+              "type": "string",
+            },
+            "stable_id": {
+              "type": "string",
+            },
+          },
+          "required": [
+            "stable_id",
+            "path",
+            "content",
+          ],
+          "type": "object",
+        },
+        "type": "array",
+      },
       "entries": {
         "items": {
-          "additionalProperties": true,
+          "additionalProperties": false,
           "properties": {
             "description_index": {
               "items": {
@@ -1134,24 +1153,6 @@ exports[`tool contracts > plan-context contract matches snapshot 1`] = `
                 "extension": {
                   "type": "string",
                 },
-                "impact_hints": {
-                  "items": {
-                    "type": "string",
-                  },
-                  "type": "array",
-                },
-                "inferred_domain": {
-                  "items": {
-                    "type": "string",
-                  },
-                  "type": "array",
-                },
-                "intent_tokens": {
-                  "items": {
-                    "type": "string",
-                  },
-                  "type": "array",
-                },
                 "known_tech": {
                   "items": {
                     "type": "string",
@@ -1175,11 +1176,8 @@ exports[`tool contracts > plan-context contract matches snapshot 1`] = `
                 "target_path",
                 "path_segments",
                 "extension",
-                "inferred_domain",
                 "known_tech",
                 "user_intent",
-                "intent_tokens",
-                "impact_hints",
                 "detected_entities",
               ],
               "type": "object",
@@ -1203,12 +1201,6 @@ exports[`tool contracts > plan-context contract matches snapshot 1`] = `
       "shared": {
         "additionalProperties": false,
         "properties": {
-          "ai_selectable_stable_ids": {
-            "items": {
-              "type": "string",
-            },
-            "type": "array",
-          },
           "description_index": {
             "items": {
               "$ref": "#/properties/entries/items/properties/description_index/items",
@@ -1249,16 +1241,8 @@ exports[`tool contracts > plan-context contract matches snapshot 1`] = `
             },
             "type": "array",
           },
-          "required_stable_ids": {
-            "items": {
-              "type": "string",
-            },
-            "type": "array",
-          },
         },
         "required": [
-          "required_stable_ids",
-          "ai_selectable_stable_ids",
           "description_index",
           "preflight_diagnostics",
         ],
@@ -1297,7 +1281,6 @@ exports[`tool contracts > plan-context contract matches snapshot 1`] = `
     "required": [
       "revision_hash",
       "stale",
-      "selection_token",
       "entries",
       "shared",
     ],

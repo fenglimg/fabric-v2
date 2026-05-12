@@ -12,7 +12,6 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { contextCache } from "../cache.js";
 import { planContext } from "../services/plan-context.js";
-import { getKnowledgeSections } from "../services/knowledge-sections.js";
 
 const tempDirs: string[] = [];
 let originalFabricHome: string | undefined;
@@ -63,30 +62,21 @@ describe("mcp-server integration (v2.0 dual-root)", () => {
     expect(layers).toEqual(new Set(["team", "personal"]));
   });
 
-  it("get_rule_sections_works_against_v2_layout — fetches sections from both roots", async () => {
+  it("plan_context_inlines_full_bodies_v2_layout — degenerate mode reads from both roots", async () => {
+    // v2.0-rc.5 A3 (TASK-007): with 2 entries the result is in single-stage
+    // degenerate mode — full markdown body for every candidate ships in
+    // `candidates_full_content`. This still proves the file read crossed
+    // both team/project root and personal/home root, which was the original
+    // signal exercised through the (now retired) selection_token round-trip.
     const projectRoot = await createV2Project();
     const plan = await planContext(projectRoot, { paths: ["src/index.ts"] });
 
-    // Both knowledge entries are L1 in the v2.0 layout (depth 1 under
-    // .fabric/agents/<subdir>/) so they're AI-selectable. Pick both.
-    const result = await getKnowledgeSections(projectRoot, {
-      selection_token: plan.selection_token,
-      sections: ["MANDATORY_INJECTION"],
-      ai_selected_stable_ids: plan.shared.ai_selectable_stable_ids,
-      ai_selection_reasons: Object.fromEntries(
-        plan.shared.ai_selectable_stable_ids.map((id) => [id, "exercised in test"]),
-      ),
-    });
+    expect(plan.selection_token).toBeUndefined();
+    expect(plan.candidates_full_content).toBeDefined();
 
-    const ids = result.rules.map((r) => r.stable_id).sort();
-    expect(ids).toContain("KT-DEC-0001");
-    expect(ids).toContain("KP-GLD-0001");
-
-    // Each fetched rule resolved to its declared section content (proves the
-    // file read crossed both team/project root and personal/home root).
-    const byId = new Map(result.rules.map((r) => [r.stable_id, r] as const));
-    expect(byId.get("KT-DEC-0001")?.sections.MANDATORY_INJECTION).toContain("Team mandatory.");
-    expect(byId.get("KP-GLD-0001")?.sections.MANDATORY_INJECTION).toContain("Personal mandatory.");
+    const byId = new Map((plan.candidates_full_content ?? []).map((c) => [c.stable_id, c] as const));
+    expect(byId.get("KT-DEC-0001")?.content).toContain("Team mandatory.");
+    expect(byId.get("KP-GLD-0001")?.content).toContain("Personal mandatory.");
   });
 });
 

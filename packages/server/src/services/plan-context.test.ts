@@ -16,7 +16,7 @@ afterEach(async () => {
 });
 
 describe("planContext", () => {
-  it("returns a neutral requirement profile, description index, and selection token", async () => {
+  it("returns a neutral requirement profile and a description index sorted by stable_id", async () => {
     const projectRoot = await createTempProject();
     await mkdir(join(projectRoot, ".fabric", "knowledge", "decisions"), { recursive: true });
     await mkdir(join(projectRoot, ".fabric", "knowledge", "guidelines"), { recursive: true });
@@ -29,61 +29,32 @@ describe("planContext", () => {
       `${JSON.stringify({
         revision: "rev-neutral",
         nodes: {
-          "L0/global": {
+          "global-protocol": {
             stable_id: "global-protocol",
             file: ".fabric/knowledge/decisions/global.md",
             content_ref: ".fabric/knowledge/decisions/global.md",
             scope_glob: "**",
-            deps: [],
-            priority: "high",
-            level: "L0",
-            layer: "L0",
-            topology_type: "global",
             hash: "sha256:global",
             description: {
               summary: "Global protocol",
-              intent_clues: ["协作稳定"],
+              intent_clues: [],
               tech_stack: ["Fabric"],
-              impact: ["Governance"],
-              must_read_if: "任何编辑前",
+              impact: [],
+              must_read_if: "before any edit",
             },
           },
-          "L1/ui": {
+          "ui-batch-rendering": {
             stable_id: "ui-batch-rendering",
             file: ".fabric/knowledge/guidelines/ui.md",
             content_ref: ".fabric/knowledge/guidelines/ui.md",
             scope_glob: "**",
-            deps: ["L0/global"],
-            priority: "medium",
-            level: "L1",
-            layer: "L1",
-            topology_type: "domain",
             hash: "sha256:ui",
             description: {
               summary: "UI batch rendering",
-              intent_clues: ["优化 drawcall", "Label 闪烁"],
-              tech_stack: ["Cocos", "UI"],
-              impact: ["Performance"],
-              must_read_if: "修改多个 UI 节点的层级或混合模式时",
-            },
-          },
-          "L2/battle-view": {
-            stable_id: "battle-view-local",
-            file: ".fabric/knowledge/guidelines/battle-view.md",
-            content_ref: ".fabric/knowledge/guidelines/battle-view.md",
-            scope_glob: "assets/scripts/ui/BattleView.ts",
-            deps: ["L0/global"],
-            priority: "medium",
-            level: "L2",
-            layer: "L2",
-            topology_type: "local",
-            hash: "sha256:battle",
-            description: {
-              summary: "BattleView local lifecycle",
-              intent_clues: ["BattleView"],
-              tech_stack: ["Cocos", "UI"],
-              impact: ["Correctness"],
-              must_read_if: "修改 BattleView.ts 时",
+              intent_clues: [],
+              tech_stack: [],
+              impact: [],
+              must_read_if: "when editing UI",
             },
           },
         },
@@ -91,77 +62,57 @@ describe("planContext", () => {
     );
 
     const result = await planContext(projectRoot, {
-      paths: ["assets/scripts/ui/BattleView.ts"],
-      intent: "我想优化战斗界面的渲染性能",
-      known_tech: ["Cocos Creator", "TypeScript"],
+      paths: ["src/index.ts"],
+      intent: "rendering tweak",
+      known_tech: ["TypeScript"],
       detected_entities: {
-        "assets/scripts/ui/BattleView.ts": ["cc.Label", "SpriteAtlas", "Layout"],
+        "src/index.ts": ["Renderer"],
       },
       correlation_id: "corr-plan",
       session_id: "session-plan",
     });
 
     expect(result.revision_hash).toBe("rev-neutral");
-    expect(result.selection_token).toEqual(expect.any(String));
     expect(result.entries).toHaveLength(1);
-    expect(result.entries[0]).toMatchObject({
-      path: "assets/scripts/ui/BattleView.ts",
-      required_stable_ids: ["global-protocol", "battle-view-local"],
-      ai_selectable_stable_ids: ["ui-batch-rendering"],
-      initial_selected_stable_ids: ["global-protocol", "battle-view-local"],
-    });
+    expect(result.entries[0]?.path).toBe("src/index.ts");
     expect(result.entries[0]?.requirement_profile).toMatchObject({
-      target_path: "assets/scripts/ui/BattleView.ts",
+      target_path: "src/index.ts",
       extension: ".ts",
-      user_intent: "我想优化战斗界面的渲染性能",
-      known_tech: ["Cocos Creator", "TypeScript"],
-      detected_entities: ["cc.Label", "SpriteAtlas", "Layout"],
+      user_intent: "rendering tweak",
+      known_tech: ["TypeScript"],
+      detected_entities: ["Renderer"],
     });
-    expect(result.entries[0]?.requirement_profile).not.toHaveProperty("score");
-    expect(result.entries[0]?.requirement_profile).not.toHaveProperty("match_reasons");
+
+    // v2.0-rc.5 A3 (TASK-007): Cocos-era fields removed from the profile.
+    expect(result.entries[0]?.requirement_profile).not.toHaveProperty("inferred_domain");
+    expect(result.entries[0]?.requirement_profile).not.toHaveProperty("intent_tokens");
+    expect(result.entries[0]?.requirement_profile).not.toHaveProperty("impact_hints");
+
+    // L0/L1/L2 selection ceremony fields removed from the per-entry shape.
+    expect(result.entries[0]).not.toHaveProperty("required_stable_ids");
+    expect(result.entries[0]).not.toHaveProperty("ai_selectable_stable_ids");
+    expect(result.entries[0]).not.toHaveProperty("initial_selected_stable_ids");
+    expect(result.entries[0]).not.toHaveProperty("selection_policy");
+
+    // Same fields gone from `shared` too.
+    expect(result.shared).not.toHaveProperty("required_stable_ids");
+    expect(result.shared).not.toHaveProperty("ai_selectable_stable_ids");
 
     const index = result.entries[0]?.description_index ?? [];
-    expect(index).toEqual([
-      expect.objectContaining({
-        stable_id: "global-protocol",
-        level: "L0",
-        required: true,
-        selectable: false,
-      }),
-      expect.objectContaining({
-        stable_id: "ui-batch-rendering",
-        level: "L1",
-        required: false,
-        selectable: true,
-      }),
-      expect.objectContaining({
-        stable_id: "battle-view-local",
-        level: "L2",
-        required: true,
-        selectable: false,
-      }),
-    ]);
-    for (const item of index) {
-      expect(item).not.toHaveProperty("score");
-      expect(item).not.toHaveProperty("confidence");
-      expect(item).not.toHaveProperty("match_reasons");
-      expect(item).not.toHaveProperty("negative_reasons");
-      expect(item).not.toHaveProperty("matched_profile_fields");
-      expect(item.description).not.toHaveProperty("id");
-    }
-    expect(result.shared.required_stable_ids).toEqual(["global-protocol", "battle-view-local"]);
-    expect(result.shared.ai_selectable_stable_ids).toEqual(["ui-batch-rendering"]);
+    expect(index.map((item) => item.stable_id)).toEqual(["global-protocol", "ui-batch-rendering"]);
+
+    // Degenerate single-stage mode: 2 entries ≤ 30 ⇒ candidates_full_content
+    // populated, selection_token omitted.
+    expect(result.candidates_full_content).toBeDefined();
+    expect(result.candidates_full_content?.map((c) => c.stable_id).sort()).toEqual(
+      ["global-protocol", "ui-batch-rendering"],
+    );
+    expect(result.selection_token).toBeUndefined();
+
     expect((await readEventLedger(projectRoot, { event_type: "knowledge_context_planned" })).events).toEqual([
       expect.objectContaining({
         event_type: "knowledge_context_planned",
-        target_paths: ["assets/scripts/ui/BattleView.ts"],
-        required_stable_ids: ["global-protocol", "battle-view-local"],
-        ai_selectable_stable_ids: ["ui-batch-rendering"],
-        final_stable_ids: ["global-protocol", "battle-view-local"],
-        selection_token: result.selection_token,
-        intent: "我想优化战斗界面的渲染性能",
-        known_tech: ["Cocos Creator", "TypeScript"],
-        diagnostics: [],
+        target_paths: ["src/index.ts"],
         correlation_id: "corr-plan",
         session_id: "session-plan",
       }),
@@ -185,30 +136,24 @@ describe("planContext", () => {
       client_hash: "rev-old",
     });
 
-    expect(result).toMatchObject({
-      revision_hash: "rev-current",
-      stale: true,
-      entries: [
-        {
-          path: "src/index.ts",
-          required_stable_ids: [],
-          ai_selectable_stable_ids: [],
-          initial_selected_stable_ids: [],
-          description_index: [],
-        },
-      ],
-      shared: {
-        required_stable_ids: [],
-        ai_selectable_stable_ids: [],
+    expect(result.revision_hash).toBe("rev-current");
+    expect(result.stale).toBe(true);
+    expect(result.entries).toEqual([
+      {
+        path: "src/index.ts",
         description_index: [],
-        preflight_diagnostics: [],
+        requirement_profile: expect.objectContaining({ target_path: "src/index.ts" }),
       },
-    });
-    expect(result.selection_token).toEqual(expect.any(String));
+    ]);
+    expect(result.shared.description_index).toEqual([]);
+    expect(result.shared.preflight_diagnostics).toEqual([]);
+    // Empty index ≤ 30 ⇒ degenerate mode (token omitted, empty inline payload).
+    expect(result.selection_token).toBeUndefined();
+    expect(result.candidates_full_content).toEqual([]);
   });
 
   // ---------------------------------------------------------------------------
-  // v2.0 dual-root knowledge-field passthrough (TASK-005)
+  // v2.0 dual-root knowledge-field passthrough (TASK-005 / TASK-007)
   // ---------------------------------------------------------------------------
 
   it("passes_through_knowledge_fields_to_description_index — type/maturity/layer + inferred layer fallback", async () => {
@@ -220,17 +165,11 @@ describe("planContext", () => {
       `${JSON.stringify({
         revision: "rev-v2-passthrough",
         nodes: {
-          // Team entry with full v2.0 frontmatter.
-          "L1/team/decisions/team-auth": {
+          "KT-DEC-0001": {
             stable_id: "KT-DEC-0001",
             file: ".fabric/knowledge/decisions/team-auth.md",
             content_ref: ".fabric/knowledge/decisions/team-auth.md",
             scope_glob: "**",
-            deps: [],
-            priority: "medium",
-            level: "L1",
-            layer: "L1",
-            topology_type: "domain",
             hash: "sha256:team-auth",
             identity_source: "declared",
             description: {
@@ -247,18 +186,11 @@ describe("planContext", () => {
               created_at: "2026-05-10T08:00:00Z",
             },
           },
-          // Personal entry — exercise the personal `~/.fabric/knowledge/`
-          // content_ref + frontmatter-set layer.
-          "L1/personal/guidelines/personal-style": {
+          "KP-GLD-0001": {
             stable_id: "KP-GLD-0001",
             file: "~/.fabric/knowledge/guidelines/personal-style.md",
             content_ref: "~/.fabric/knowledge/guidelines/personal-style.md",
             scope_glob: "**",
-            deps: [],
-            priority: "medium",
-            level: "L1",
-            layer: "L1",
-            topology_type: "domain",
             hash: "sha256:personal-style",
             identity_source: "declared",
             description: {
@@ -274,18 +206,11 @@ describe("planContext", () => {
               created_at: "2026-05-10T08:00:00Z",
             },
           },
-          // v1.x legacy entry — no knowledge frontmatter at all. Layer should
-          // be inferred from the team-root content_ref.
-          "L1/team/legacy": {
+          "legacy-v1": {
             stable_id: "legacy-v1",
             file: ".fabric/knowledge/pending/legacy.md",
             content_ref: ".fabric/knowledge/pending/legacy.md",
             scope_glob: "**",
-            deps: [],
-            priority: "medium",
-            level: "L1",
-            layer: "L1",
-            topology_type: "domain",
             hash: "sha256:legacy",
             description: {
               summary: "Legacy v1.x entry",
@@ -302,31 +227,19 @@ describe("planContext", () => {
     const result = await planContext(projectRoot, { paths: ["src/index.ts"] });
     const indexById = new Map(result.shared.description_index.map((item) => [item.stable_id, item] as const));
 
-    // v2.0 team entry: frontmatter fields surface at top level + inside description.
     expect(indexById.get("KT-DEC-0001")).toMatchObject({
       type: "decision",
       maturity: "verified",
       layer: "team",
       layer_reason: "shared across services",
-      description: expect.objectContaining({
-        knowledge_type: "decision",
-        knowledge_layer: "team",
-      }),
     });
 
-    // v2.0 personal entry — same shape, layer=personal.
     expect(indexById.get("KP-GLD-0001")).toMatchObject({
       type: "guideline",
       maturity: "draft",
       layer: "personal",
-      description: expect.objectContaining({
-        knowledge_type: "guideline",
-        knowledge_layer: "personal",
-      }),
     });
 
-    // v1.x legacy: no top-level type/maturity, but layer is inferred from the
-    // team-root content_ref so MCP clients still see SOMETHING.
     expect(indexById.get("legacy-v1")).toMatchObject({
       type: undefined,
       maturity: undefined,
@@ -334,53 +247,153 @@ describe("planContext", () => {
     });
   });
 
-  it("accepts include_deprecated input flag — wiring is in place for future MaturitySchema expansion", async () => {
-    // include_deprecated is a no-op placeholder today: TASK-002 MaturitySchema
-    // is draft|verified|proven only, so no entry can carry a 'deprecated'
-    // value through the strict meta parse. We exercise the input wiring here
-    // so future expansion does not need a protocol break — the planContext
-    // call must accept the flag (default false / true) without error and
-    // return a stable index either way.
+  // ---------------------------------------------------------------------------
+  // v2.0-rc.5 A3 (TASK-007): degenerate vs two-stage mode + Cocos field removal
+  // ---------------------------------------------------------------------------
+
+  it("test_plan_context_degenerate_mode_le30 — ≤30 entries returns candidates_full_content and omits selection_token", async () => {
     const projectRoot = await createTempProject();
-    await mkdir(join(projectRoot, ".fabric"), { recursive: true });
+    await mkdir(join(projectRoot, ".fabric", "knowledge", "decisions"), { recursive: true });
     await writeFile(join(projectRoot, ".fabric", "human-lock.json"), `${JSON.stringify({ locked: [] }, null, 2)}\n`);
+
+    const nodes: Record<string, unknown> = {};
+    for (let i = 0; i < 5; i += 1) {
+      const id = `KT-DEC-${String(i + 1).padStart(4, "0")}`;
+      const file = `.fabric/knowledge/decisions/d${i + 1}.md`;
+      await writeFile(join(projectRoot, file), `# Decision ${i + 1}\n\nBody for ${id}.\n`);
+      nodes[id] = {
+        stable_id: id,
+        file,
+        content_ref: file,
+        scope_glob: "**",
+        hash: `sha256:d${i + 1}`,
+        identity_source: "declared",
+        description: {
+          summary: `Decision ${i + 1}`,
+          intent_clues: [],
+          tech_stack: [],
+          impact: [],
+          must_read_if: "",
+          id,
+          knowledge_type: "decision",
+          maturity: "verified",
+          knowledge_layer: "team",
+          created_at: "2026-05-10T00:00:00Z",
+        },
+      };
+    }
+    await writeFile(
+      join(projectRoot, ".fabric", "agents.meta.json"),
+      `${JSON.stringify({ revision: "rev-degenerate", nodes }, null, 2)}\n`,
+    );
+
+    const result = await planContext(projectRoot, { paths: ["src/index.ts"] });
+
+    expect(result.selection_token).toBeUndefined();
+    expect(result.candidates_full_content).toBeDefined();
+    expect(result.candidates_full_content).toHaveLength(5);
+    expect(result.candidates_full_content?.[0]?.content).toContain("Body for KT-DEC-0001");
+    // Every candidate carries a non-empty body.
+    for (const candidate of result.candidates_full_content ?? []) {
+      expect(candidate.content.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("test_plan_context_two_stage_gt30 — >30 entries retains selection_token and omits candidates_full_content", async () => {
+    const projectRoot = await createTempProject();
+    await mkdir(join(projectRoot, ".fabric", "knowledge", "decisions"), { recursive: true });
+    await writeFile(join(projectRoot, ".fabric", "human-lock.json"), `${JSON.stringify({ locked: [] }, null, 2)}\n`);
+
+    const nodes: Record<string, unknown> = {};
+    // 31 stub entries → just above the degenerate threshold (30). No file
+    // bodies needed because two-stage mode does not pre-read content.
+    for (let i = 0; i < 31; i += 1) {
+      const id = `KT-DEC-${String(i + 1).padStart(4, "0")}`;
+      const file = `.fabric/knowledge/decisions/d${i + 1}.md`;
+      nodes[id] = {
+        stable_id: id,
+        file,
+        content_ref: file,
+        scope_glob: "**",
+        hash: `sha256:d${i + 1}`,
+        identity_source: "declared",
+        description: {
+          summary: `Decision ${i + 1}`,
+          intent_clues: [],
+          tech_stack: [],
+          impact: [],
+          must_read_if: "",
+          id,
+          knowledge_type: "decision",
+          maturity: "verified",
+          knowledge_layer: "team",
+          created_at: "2026-05-10T00:00:00Z",
+        },
+      };
+    }
+    await writeFile(
+      join(projectRoot, ".fabric", "agents.meta.json"),
+      `${JSON.stringify({ revision: "rev-two-stage", nodes }, null, 2)}\n`,
+    );
+
+    const result = await planContext(projectRoot, { paths: ["src/index.ts"] });
+
+    expect(result.selection_token).toEqual(expect.any(String));
+    expect(result.candidates_full_content).toBeUndefined();
+    expect(result.shared.description_index).toHaveLength(31);
+  });
+
+  it("test_plan_context_drops_cocos_fields — output schema lacks Cocos + L0/L1/L2 ceremony fields", async () => {
+    const projectRoot = await createTempProject();
+    await mkdir(join(projectRoot, ".fabric", "knowledge", "decisions"), { recursive: true });
+    await writeFile(join(projectRoot, ".fabric", "human-lock.json"), `${JSON.stringify({ locked: [] }, null, 2)}\n`);
+    await writeFile(join(projectRoot, ".fabric", "knowledge", "decisions", "g.md"), "# G\n");
     await writeFile(
       join(projectRoot, ".fabric", "agents.meta.json"),
       `${JSON.stringify({
-        revision: "rev-deprecated-wiring",
+        revision: "rev-cocos-drop",
         nodes: {
-          "L1/team/active": {
-            stable_id: "active-rule",
-            file: ".fabric/knowledge/decisions/active.md",
-            content_ref: ".fabric/knowledge/decisions/active.md",
+          "KT-DEC-0001": {
+            stable_id: "KT-DEC-0001",
+            file: ".fabric/knowledge/decisions/g.md",
+            content_ref: ".fabric/knowledge/decisions/g.md",
             scope_glob: "**",
-            deps: [],
-            priority: "medium",
-            level: "L1",
-            layer: "L1",
-            topology_type: "domain",
-            hash: "sha256:active",
+            hash: "sha256:g",
+            identity_source: "declared",
             description: {
-              summary: "Active rule",
+              summary: "G",
               intent_clues: [],
               tech_stack: [],
               impact: [],
-              must_read_if: "Active rule",
+              must_read_if: "",
+              id: "KT-DEC-0001",
+              knowledge_type: "decision",
               maturity: "verified",
+              knowledge_layer: "team",
+              created_at: "2026-05-10T00:00:00Z",
             },
           },
         },
       }, null, 2)}\n`,
     );
 
-    const defaultResult = await planContext(projectRoot, { paths: ["src/index.ts"] });
-    expect(defaultResult.shared.description_index.map((item) => item.stable_id)).toEqual(["active-rule"]);
-
-    const allResult = await planContext(projectRoot, {
-      paths: ["src/index.ts"],
-      include_deprecated: true,
+    // Use a Cocos-flavored path + Chinese performance intent to confirm
+    // neither triggers the (removed) hardcoded inference.
+    const result = await planContext(projectRoot, {
+      paths: ["assets/scripts/ui/BattleView.ts"],
+      intent: "性能 drawcall 优化",
     });
-    expect(allResult.shared.description_index.map((item) => item.stable_id)).toEqual(["active-rule"]);
+
+    const entry = result.entries[0];
+    expect(entry?.requirement_profile).not.toHaveProperty("inferred_domain");
+    expect(entry?.requirement_profile).not.toHaveProperty("intent_tokens");
+    expect(entry?.requirement_profile).not.toHaveProperty("impact_hints");
+    expect(entry).not.toHaveProperty("selection_policy");
+    expect(entry).not.toHaveProperty("required_stable_ids");
+    expect(entry).not.toHaveProperty("ai_selectable_stable_ids");
+    expect(entry).not.toHaveProperty("initial_selected_stable_ids");
+    expect(result.shared).not.toHaveProperty("required_stable_ids");
+    expect(result.shared).not.toHaveProperty("ai_selectable_stable_ids");
   });
 });
 

@@ -70,16 +70,28 @@ const _descriptionIndexItemSchema = z.object({
   relevance_paths: z.array(z.string()).optional(),
 });
 
+// v2.0-rc.5 A3 (TASK-007): Cocos-era profile inference retired.
+// `inferred_domain` (UI/Gameplay/Asset hardcoded), `intent_tokens`
+// (Chinese game-perf token list), and `impact_hints` (Performance regex)
+// dropped from the requirement profile — they had zero applicability beyond
+// the werewolf-stub-era game project.
 const _requirementProfileSchema = z.object({
   target_path: z.string(),
   path_segments: z.array(z.string()),
   extension: z.string(),
-  inferred_domain: z.array(z.string()),
   known_tech: z.array(z.string()),
   user_intent: z.string(),
-  intent_tokens: z.array(z.string()),
-  impact_hints: z.array(z.string()),
   detected_entities: z.array(z.string()),
+});
+
+// v2.0-rc.5 A3 (TASK-007): inline candidate body shipped in single-stage
+// degenerate mode (description_index ≤ 30 entries). Each entry carries the
+// full markdown body so the caller can skip the selection_token round-trip
+// and feed knowledge straight into context.
+const _candidateFullContentSchema = z.object({
+  stable_id: z.string(),
+  path: z.string(),
+  content: z.string(),
 });
 
 // v2.0-rc.5 A1: `_selectionPolicySchema` retired with the L0/L1/L2 protocol.
@@ -112,12 +124,9 @@ export const planContextInputSchema = z.object({
     .string()
     .optional()
     .describe("Optional caller-provided session id for Event Ledger records"),
-  include_deprecated: z
-    .boolean()
-    .optional()
-    .describe(
-      "When true, include description_index entries with maturity='deprecated'. Defaults to false (deprecated entries hidden). Note: 'deprecated' is reserved future state — today this filter is a no-op until MaturitySchema is widened.",
-    ),
+  // v2.0-rc.5 A3 (TASK-007): `include_deprecated` removed — it was a no-op
+  // placeholder (MaturitySchema has no `deprecated` value). When the maturity
+  // enum widens we re-introduce the flag as part of that protocol bump.
   // v2/rc.2 (Q6): client-supplied layer scope. When omitted, the server
   // falls back to fabric-config.default_layer_filter (TASK-002) so a single
   // workspace policy controls the default. Explicit values override.
@@ -129,27 +138,28 @@ export const planContextInputSchema = z.object({
     ),
 });
 
-// v2.0-rc.5 A1: per-entry `selection_policy`, `required_stable_ids`,
-// `ai_selectable_stable_ids`, `initial_selected_stable_ids` removed from the
-// plan-context output contract (legacy L0/L1/L2 selection ceremony retired).
-// `shared` retains the aggregate `required_stable_ids` and
-// `ai_selectable_stable_ids` until TASK-007 (A3) finishes the refactor. The
-// per-entry shape uses `.passthrough()` so plan-context.ts implementations
-// that still emit the legacy fields validate cleanly until A3 strips them.
+// v2.0-rc.5 A3 (TASK-007): the L0/L1/L2 selection ceremony is fully retired.
+// Per-entry `selection_policy / required_stable_ids / ai_selectable_stable_ids
+// / initial_selected_stable_ids` are gone; the aggregate `required_stable_ids
+// / ai_selectable_stable_ids` on `shared` are gone too (token state still
+// tracks selectable ids internally for the two-stage path). `selection_token`
+// is optional: present only when description_index > 30 (two-stage protocol);
+// in degenerate mode (≤ 30) the response ships `candidates_full_content`
+// inline instead. The per-entry `.passthrough()` escape from TASK-005 is
+// removed — entries now have a fixed shape.
 export const planContextOutputSchema = z.object({
   revision_hash: z.string(),
   stale: z.boolean(),
-  selection_token: z.string(),
+  selection_token: z.string().optional(),
+  candidates_full_content: z.array(_candidateFullContentSchema).optional(),
   entries: z.array(
     z.object({
       path: z.string(),
       requirement_profile: _requirementProfileSchema,
       description_index: z.array(_descriptionIndexItemSchema),
-    }).passthrough(),
+    }),
   ),
   shared: z.object({
-    required_stable_ids: z.array(z.string()),
-    ai_selectable_stable_ids: z.array(z.string()),
     description_index: z.array(_descriptionIndexItemSchema),
     preflight_diagnostics: z.array(
       z.object({
