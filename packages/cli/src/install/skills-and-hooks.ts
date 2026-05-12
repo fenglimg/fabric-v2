@@ -53,6 +53,11 @@ const HOOK_SCRIPT_TEMPLATE_REL = "hooks/fabric-hint.cjs";
 // fabric-hint.cjs — shares install/copy plumbing but is registered against a
 // different hook event (SessionStart instead of Stop) in each client config.
 const HOOK_BROAD_SCRIPT_TEMPLATE_REL = "hooks/knowledge-hint-broad.cjs";
+// rc.6 TASK-020 (E2 + E4): PreToolUse narrow-injection hook script + edit-
+// counter sidecar. Sibling to knowledge-hint-broad.cjs — same install/copy
+// plumbing but registered against PreToolUse with Edit|Write|MultiEdit
+// matchers in each client config.
+const HOOK_NARROW_SCRIPT_TEMPLATE_REL = "hooks/knowledge-hint-narrow.cjs";
 const CLAUDE_HOOK_CONFIG_TEMPLATE_REL = "hooks/configs/claude-code.json";
 const CODEX_HOOK_CONFIG_TEMPLATE_REL = "hooks/configs/codex-hooks.json";
 const CURSOR_HOOK_CONFIG_TEMPLATE_REL = "hooks/configs/cursor-hooks.json";
@@ -62,6 +67,7 @@ const SKILL_REVIEW_DEST_REL = join("skills", "fabric-review", "SKILL.md");
 const SKILL_IMPORT_DEST_REL = join("skills", "fabric-import", "SKILL.md");
 const HOOK_SCRIPT_DEST_REL = join("hooks", "fabric-hint.cjs");
 const HOOK_BROAD_SCRIPT_DEST_REL = join("hooks", "knowledge-hint-broad.cjs");
+const HOOK_NARROW_SCRIPT_DEST_REL = join("hooks", "knowledge-hint-narrow.cjs");
 
 const POINTER_LINE =
   "> Use the fabric-archive Skill when archiving knowledge entries (see .claude/skills/fabric-archive/SKILL.md).";
@@ -218,14 +224,54 @@ export async function installKnowledgeHintBroadHook(
 }
 
 /**
- * Deep-merge templates/hooks/configs/claude-code.json into the user's
- * `.claude/settings.json`. Both `hooks.Stop` and `hooks.SessionStart`
- * arrays are array-append-with-dedupe (preserves user-authored entries;
- * never duplicates the fabric entries on re-run).
+ * Copy templates/hooks/knowledge-hint-narrow.cjs into all three supported
+ * clients' hooks directories: .claude/hooks/, .codex/hooks/, .cursor/hooks/.
+ * Marked executable on POSIX (chmod 0o755). Skipped on Windows where the
+ * platform ignores the bit.
  *
- * rc.6 TASK-019: SessionStart array added alongside Stop. Each event slot
- * has its own dedupe key per the deepMerge contract — Stop and SessionStart
- * never interleave.
+ * rc.6 TASK-020 (E2 + E4) — PreToolUse narrow-injection hook + edit-counter
+ * sidecar. Sibling to {@link installKnowledgeHintBroadHook}; all three
+ * cross-client hook scripts share the same copy plumbing and only differ in
+ * the hook event their per-client config templates wire them to:
+ *   - fabric-hint.cjs           → Stop          (rc.5 TASK-010)
+ *   - knowledge-hint-broad.cjs  → SessionStart  (rc.6 TASK-019)
+ *   - knowledge-hint-narrow.cjs → PreToolUse    (rc.6 TASK-020)
+ */
+export async function installKnowledgeHintNarrowHook(
+  projectRoot: string,
+  _options: InstallOptions = {},
+): Promise<InstallStepResult[]> {
+  const source = await readTemplate(HOOK_NARROW_SCRIPT_TEMPLATE_REL);
+  const targets = [
+    join(projectRoot, ".claude", HOOK_NARROW_SCRIPT_DEST_REL),
+    join(projectRoot, ".codex", HOOK_NARROW_SCRIPT_DEST_REL),
+    join(projectRoot, ".cursor", HOOK_NARROW_SCRIPT_DEST_REL),
+  ];
+  const results: InstallStepResult[] = [];
+  for (const target of targets) {
+    const result = await copyTextIdempotent("hook-narrow-script", source, target);
+    if (result.status === "written" && process.platform !== "win32") {
+      try {
+        chmodSync(target, 0o755);
+      } catch {
+        // best-effort — hook still functions when invoked via `node script.cjs`
+      }
+    }
+    results.push(result);
+  }
+  return results;
+}
+
+/**
+ * Deep-merge templates/hooks/configs/claude-code.json into the user's
+ * `.claude/settings.json`. `hooks.Stop`, `hooks.SessionStart`, and
+ * `hooks.PreToolUse` arrays are array-append-with-dedupe (preserves
+ * user-authored entries; never duplicates the fabric entries on re-run).
+ *
+ * rc.6 TASK-019: SessionStart array added alongside Stop.
+ * rc.6 TASK-020: PreToolUse array added alongside SessionStart. Each event
+ * slot has its own dedupe key per the deepMerge contract — the three event
+ * arrays never interleave.
  */
 export async function mergeClaudeCodeHookConfig(
   projectRoot: string,
@@ -236,15 +282,17 @@ export async function mergeClaudeCodeHookConfig(
   return mergeJsonIdempotent("claude-hook-config", targetPath, fragment, [
     "hooks.Stop",
     "hooks.SessionStart",
+    "hooks.PreToolUse",
   ]);
 }
 
 /**
  * Deep-merge templates/hooks/configs/codex-hooks.json into the user's
- * `.codex/hooks.json`. Both `events.Stop` and `events.SessionStart` arrays
- * are array-append-with-dedupe.
+ * `.codex/hooks.json`. `events.Stop`, `events.SessionStart`, and
+ * `events.PreToolUse` arrays are array-append-with-dedupe.
  *
  * rc.6 TASK-019: SessionStart added.
+ * rc.6 TASK-020: PreToolUse added.
  */
 export async function mergeCodexHookConfig(
   projectRoot: string,
@@ -255,17 +303,18 @@ export async function mergeCodexHookConfig(
   return mergeJsonIdempotent("codex-hook-config", targetPath, fragment, [
     "events.Stop",
     "events.SessionStart",
+    "events.PreToolUse",
   ]);
 }
 
 /**
  * Deep-merge templates/hooks/configs/cursor-hooks.json into the user's
- * `.cursor/hooks.json`. Both `events.Stop` and `events.SessionStart` arrays
- * are array-append-with-dedupe.
+ * `.cursor/hooks.json`. `events.Stop`, `events.SessionStart`, and
+ * `events.PreToolUse` arrays are array-append-with-dedupe.
  *
  * Added in rc.5 TASK-010 to bring Cursor to parity with Claude Code and
- * Codex CLI for the cross-client hook surface. rc.6 TASK-019 fills the
- * previously-deferred SessionStart slot.
+ * Codex CLI for the cross-client hook surface. rc.6 TASK-019 filled the
+ * SessionStart slot; rc.6 TASK-020 fills the PreToolUse slot.
  */
 export async function mergeCursorHookConfig(
   projectRoot: string,
@@ -276,6 +325,7 @@ export async function mergeCursorHookConfig(
   return mergeJsonIdempotent("cursor-hook-config", targetPath, fragment, [
     "events.Stop",
     "events.SessionStart",
+    "events.PreToolUse",
   ]);
 }
 

@@ -60,6 +60,10 @@ describe("installHooks — rc.5 TASK-010 cross-client hook path validation", () 
     expect(skippedJoined).toContain(join(target, ".claude", "hooks", "knowledge-hint-broad.cjs"));
     expect(skippedJoined).toContain(join(target, ".codex", "hooks", "knowledge-hint-broad.cjs"));
     expect(skippedJoined).toContain(join(target, ".cursor", "hooks", "knowledge-hint-broad.cjs"));
+    // rc.6 TASK-020 (E2 + E4): PreToolUse narrow-injection hook validates per client.
+    expect(skippedJoined).toContain(join(target, ".claude", "hooks", "knowledge-hint-narrow.cjs"));
+    expect(skippedJoined).toContain(join(target, ".codex", "hooks", "knowledge-hint-narrow.cjs"));
+    expect(skippedJoined).toContain(join(target, ".cursor", "hooks", "knowledge-hint-narrow.cjs"));
   });
 
   it("surfaces a hook-validate error when the hook script is missing after merge", async () => {
@@ -102,7 +106,7 @@ describe("installHooks — rc.5 TASK-010 cross-client hook path validation", () 
     expect(skippedJoined).toContain(join(target, ".codex", "hooks", "fabric-hint.cjs"));
   });
 
-  it("happy-path skipped count is exactly 3 fabric-hint + 3 broad-hint validate entries (one pair per client)", async () => {
+  it("happy-path skipped count is exactly 3 fabric-hint + 3 broad-hint + 3 narrow-hint validate entries (one triple per client)", async () => {
     const target = mkRoot("hooks-install-validate-count");
     const result = await installHooks(target);
 
@@ -114,11 +118,16 @@ describe("installHooks — rc.5 TASK-010 cross-client hook path validation", () 
     const broadValidate = result.skipped.filter((p) =>
       p.endsWith(join("hooks", "knowledge-hint-broad.cjs")),
     );
+    // rc.6 TASK-020: PreToolUse sibling — same one-row-per-client shape.
+    const narrowValidate = result.skipped.filter((p) =>
+      p.endsWith(join("hooks", "knowledge-hint-narrow.cjs")),
+    );
     // Note: each client also produces a copy `skipped` if the file existed.
     // On a fresh target the copy produces `written` not `skipped`, so the
     // skipped entries ending in the hook filenames come exclusively from the
     // validate step.
     expect(stopValidate.length).toBe(3);
     expect(broadValidate.length).toBe(3);
+    expect(narrowValidate.length).toBe(3);
   });
 });

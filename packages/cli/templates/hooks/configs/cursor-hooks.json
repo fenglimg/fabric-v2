@@ -9,6 +9,12 @@
       {
         "command": ".cursor/hooks/knowledge-hint-broad.cjs"
       }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "command": ".cursor/hooks/knowledge-hint-narrow.cjs"
+      }
     ]
   }
 }

@@ -26,6 +26,7 @@ import {
   installFabricImportSkill,
   installFabricReviewSkill,
   installKnowledgeHintBroadHook,
+  installKnowledgeHintNarrowHook,
   mergeClaudeCodeHookConfig,
   mergeCodexHookConfig,
   mergeCursorHookConfig,
@@ -793,6 +794,8 @@ async function executeInitStagePlan(
         installResults.push(...await runBestEffort("hook-script", () => installArchiveHintHook(plan.target)));
         // rc.6 TASK-019 (E1): SessionStart broad-injection hook script.
         installResults.push(...await runBestEffort("hook-broad-script", () => installKnowledgeHintBroadHook(plan.target)));
+        // rc.6 TASK-020 (E2 + E4): PreToolUse narrow-injection hook + edit-counter sidecar.
+        installResults.push(...await runBestEffort("hook-narrow-script", () => installKnowledgeHintNarrowHook(plan.target)));
         installResults.push(await runBestEffortSingle("claude-hook-config", () => mergeClaudeCodeHookConfig(plan.target)));
         installResults.push(await runBestEffortSingle("codex-hook-config", () => mergeCodexHookConfig(plan.target)));
         // rc.5 TASK-010 cursor parity (rc.6 also writes the SessionStart slot

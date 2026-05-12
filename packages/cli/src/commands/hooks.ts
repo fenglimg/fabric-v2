@@ -11,6 +11,7 @@ import {
   installFabricImportSkill,
   installFabricReviewSkill,
   installKnowledgeHintBroadHook,
+  installKnowledgeHintNarrowHook,
   mergeClaudeCodeHookConfig,
   mergeCodexHookConfig,
   mergeCursorHookConfig,
@@ -118,6 +119,10 @@ export async function installHooks(
   // chmod 0o755 on POSIX. Order vs config-merge matters: copy first so the
   // validateHookPaths post-step finds the script on disk.
   results.push(...await runStep(() => installKnowledgeHintBroadHook(normalizedTarget)));
+  // rc.6 TASK-020 (E2 + E4): PreToolUse narrow-injection hook script +
+  // edit-counter sidecar. Same copy plumbing as the broad sibling — three
+  // dest dirs, chmod 0o755 on POSIX, copy before merge so validate finds it.
+  results.push(...await runStep(() => installKnowledgeHintNarrowHook(normalizedTarget)));
   results.push(await runSingleStep("claude-hook-config", () => mergeClaudeCodeHookConfig(normalizedTarget)));
   results.push(await runSingleStep("codex-hook-config", () => mergeCodexHookConfig(normalizedTarget)));
   results.push(await runSingleStep("cursor-hook-config", () => mergeCursorHookConfig(normalizedTarget)));
@@ -144,12 +149,15 @@ export async function installHooks(
 function validateHookPaths(projectRoot: string): InstallStepResult[] {
   // Each client contributes one validate row per registered hook script. rc.5
   // shipped the Stop-hook (fabric-hint.cjs) only; rc.6 TASK-019 adds the
-  // SessionStart broad-injection hook (knowledge-hint-broad.cjs). Both scripts
-  // share the same `<client>/hooks/` destination tree, so the check shape is
-  // identical — we just iterate over the script names.
+  // SessionStart broad-injection hook (knowledge-hint-broad.cjs); rc.6
+  // TASK-020 adds the PreToolUse narrow-injection hook
+  // (knowledge-hint-narrow.cjs). All three scripts share the same
+  // `<client>/hooks/` destination tree, so the check shape is identical —
+  // we just iterate over the script names.
   const scripts: Array<{ stepSuffix: string; hookFile: string }> = [
     { stepSuffix: "", hookFile: "fabric-hint.cjs" },
     { stepSuffix: "-broad", hookFile: "knowledge-hint-broad.cjs" },
+    { stepSuffix: "-narrow", hookFile: "knowledge-hint-narrow.cjs" },
   ];
   const clients: Array<{ client: string; configRel: string; hookDir: string }> = [
     {
