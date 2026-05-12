@@ -1,6 +1,6 @@
 export const PROTECTED_TOKENS = [
   "fab_plan_context",
-  "fab_get_rule_sections",
+  "fab_get_knowledge_sections",
   "fabric_rules",
   "ledger_entry",
   "ledger_entry_id",

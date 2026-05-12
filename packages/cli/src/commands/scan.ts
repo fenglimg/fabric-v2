@@ -8,7 +8,7 @@ import { defineCommand } from "citty";
 import {
   KnowledgeIdAllocator,
   appendEventLedgerEvent,
-  writeRuleMeta,
+  writeKnowledgeMeta,
 } from "@fenglimg/fabric-server";
 import {
   formatKnowledgeId,
@@ -97,7 +97,7 @@ export async function createScanReport(
 // `.fabric/knowledge/{models,guidelines,processes}/`. Each entry has v2.0
 // frontmatter (id KP-/KT-, type, layer, maturity, layer_reason, created_at)
 // and uses MISSION_STATEMENT / CONTEXT_INFO sections (plus type-specific
-// sections per rule-sections.ts contract).
+// sections per knowledge-sections.ts contract).
 //
 // Idempotency: a sidecar at `.fabric/knowledge/.scan-state.json` records the
 // content-hash for each stable_id; on re-run unchanged entries are skipped.
@@ -229,7 +229,7 @@ export async function runInitScan(
   await ensureParentDirectory(sidecarPath);
   await atomicWriteJson(sidecarPath, sidecar);
 
-  // Refresh agents.meta.json. writeRuleMeta walks `.fabric/knowledge/`, so
+  // Refresh agents.meta.json. writeKnowledgeMeta walks `.fabric/knowledge/`, so
   // knowledge entries are picked up automatically and keyed by their
   // declared KP-/KT-... id. We still call registerKnowledgeNodesInMeta to
   // persist a deterministic node shape (cross-cutting topology, scope_glob
@@ -238,13 +238,13 @@ export async function runInitScan(
   // v2.0 follow-up (rc.1 fix #2): order is REGISTER → WRITE. Previously the
   // calls ran WRITE → REGISTER, which left agents.meta.json with a revision
   // hash computed by registerKnowledgeNodesInMeta's (different) algorithm.
-  // Doctor's recomputation via buildRuleMeta uses computeRevision() and
+  // Doctor's recomputation via buildKnowledgeMeta uses computeRevision() and
   // therefore always disagreed, surfacing as agents_meta_stale post-init.
-  // Reversing the order lets writeRuleMeta own the canonical revision write
+  // Reversing the order lets writeKnowledgeMeta own the canonical revision write
   // while still preserving the patched node shape via spread-merge in
-  // computeRulesBasedAgentsMeta (existing nodes override defaults).
+  // computeKnowledgeBasedAgentsMeta (existing nodes override defaults).
   await registerKnowledgeNodesInMeta(target, placedEntries);
-  await writeRuleMeta(target, { source: "doctor_fix" });
+  await writeKnowledgeMeta(target, { source: "doctor_fix" });
 
   const durationMs = Date.now() - startTs;
   await appendEventLedgerEvent(target, {
@@ -325,7 +325,7 @@ export default scanCommand;
 // headings (e.g. `[MISSION_STATEMENT]`, `[CONTEXT_INFO]`) and inline tech
 // terms (Node.js, TypeScript, pnpm, framework names, etc.) are preserved
 // verbatim in both languages — only narrative prose is localized. This keeps
-// the rule-sections contract uniform across languages and lets downstream
+// the knowledge-sections contract uniform across languages and lets downstream
 // review skills tag-filter without language-specific regex.
 //
 // Resolution order at scan time:
@@ -638,7 +638,7 @@ function detectExistingLanguage(target: string): ResolvedLanguage {
 // Builder helpers — each takes the parsed forensic data + ISO timestamp and
 // returns a MarkdownEntry (or null when source data is absent).
 //
-// Section conventions (rule-sections.ts SECTION_NAMES contract):
+// Section conventions (knowledge-sections.ts SECTION_NAMES contract):
 //   - Always include MISSION_STATEMENT + CONTEXT_INFO
 //   - Add MANDATORY_INJECTION when type === 'guideline'
 //   - Add BUSINESS_LOGIC_CHUNKS when type === 'process'
@@ -1257,14 +1257,14 @@ async function registerKnowledgeNodesInMeta(target: string, entries: BuiltEntry[
 
   meta.nodes = nodes;
   // v2.0 follow-up (rc.1 fix #2): do NOT touch revision here. The canonical
-  // revision is owned by writeRuleMeta() / computeRevision() in the
-  // rule-meta-builder module — its algorithm is the one doctor recomputes
+  // revision is owned by writeKnowledgeMeta() / computeRevision() in the
+  // knowledge-meta-builder module — its algorithm is the one doctor recomputes
   // for staleness detection. Earlier this function wrote
   // `sha256(JSON.stringify(nodes))`, which used a different keying and
   // therefore always disagreed with doctor's recomputation. The single
-  // owner of the revision field is now writeRuleMeta(), invoked AFTER this
+  // owner of the revision field is now writeKnowledgeMeta(), invoked AFTER this
   // function in runInitScan. We deliberately leave any pre-existing
-  // revision in place (or drop it on first write); writeRuleMeta will
+  // revision in place (or drop it on first write); writeKnowledgeMeta will
   // overwrite it with the canonical value.
 
   await ensureParentDirectory(metaPath);

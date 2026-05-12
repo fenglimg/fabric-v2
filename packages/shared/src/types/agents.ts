@@ -47,17 +47,21 @@ export interface AgentsMetaNode {
   file: string;
   content_ref?: string;
   scope_glob: string;
-  deps: string[];
-  priority: "high" | "medium" | "low";
-  level?: AgentsLayer;
-  layer: AgentsLayer;
-  topology_type: AgentsTopologyType;
   hash: string;
   stable_id?: string;
   identity_source?: AgentsIdentitySource;
   activation?: AgentsMetaNodeActivation;
   description?: RuleDescription;
   sections?: string[];
+  // v2.0-rc.5 A1: legacy L0/L1/L2 protocol fields retired from the Zod
+  // schema but kept here as optionals for TASK-007 transitional consumers.
+  // Consumers should derive these via `deriveAgentsMetaLayer` /
+  // `deriveAgentsMetaTopologyType` rather than reading them off the node.
+  deps?: string[];
+  priority?: "high" | "medium" | "low";
+  level?: AgentsLayer;
+  layer?: AgentsLayer;
+  topology_type?: AgentsTopologyType;
 }
 
 // v2.0: Knowledge-entry stable_id counters. Optional for backward compat —

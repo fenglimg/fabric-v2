@@ -485,7 +485,7 @@ exports[`tool contracts > fab-review contract matches snapshot 1`] = `
 }
 `;
 
-exports[`tool contracts > get-rules contract matches snapshot 1`] = `
+exports[`tool contracts > get-knowledge contract matches snapshot 1`] = `
 {
   "annotations": {
     "destructiveHint": false,
@@ -645,466 +645,7 @@ exports[`tool contracts > get-rules contract matches snapshot 1`] = `
 }
 `;
 
-exports[`tool contracts > plan-context contract matches snapshot 1`] = `
-{
-  "annotations": {
-    "destructiveHint": false,
-    "idempotentHint": true,
-    "openWorldHint": false,
-    "readOnlyHint": true,
-    "title": "Plan rule context",
-  },
-  "inputSchema": {
-    "$schema": "http://json-schema.org/draft-07/schema#",
-    "additionalProperties": false,
-    "properties": {
-      "client_hash": {
-        "description": "Revision hash from a prior fab_plan_context response; enables stale detection",
-        "type": "string",
-      },
-      "correlation_id": {
-        "description": "Optional caller-provided correlation id for Event Ledger records",
-        "type": "string",
-      },
-      "detected_entities": {
-        "additionalProperties": {
-          "items": {
-            "type": "string",
-          },
-          "type": "array",
-        },
-        "description": "Optional path-keyed detected entities for the requirement profile",
-        "type": "object",
-      },
-      "include_deprecated": {
-        "description": "When true, include description_index entries with maturity='deprecated'. Defaults to false (deprecated entries hidden). Note: 'deprecated' is reserved future state — today this filter is a no-op until MaturitySchema is widened.",
-        "type": "boolean",
-      },
-      "intent": {
-        "description": "User-stated requirement or implementation intent; used only to build a neutral requirement profile",
-        "type": "string",
-      },
-      "known_tech": {
-        "description": "Known technologies involved in the requirement profile",
-        "items": {
-          "type": "string",
-        },
-        "type": "array",
-      },
-      "layer_filter": {
-        "description": "Restrict description_index to the named layer. Default: fabric-config.default_layer_filter (TASK-002).",
-        "enum": [
-          "team",
-          "personal",
-          "both",
-        ],
-        "type": "string",
-      },
-      "paths": {
-        "description": "Candidate file paths to build neutral rule selection context for",
-        "items": {
-          "type": "string",
-        },
-        "minItems": 1,
-        "type": "array",
-      },
-      "session_id": {
-        "description": "Optional caller-provided session id for Event Ledger records",
-        "type": "string",
-      },
-    },
-    "required": [
-      "paths",
-    ],
-    "type": "object",
-  },
-  "outputSchema": {
-    "$schema": "http://json-schema.org/draft-07/schema#",
-    "additionalProperties": false,
-    "properties": {
-      "entries": {
-        "items": {
-          "additionalProperties": false,
-          "properties": {
-            "ai_selectable_stable_ids": {
-              "items": {
-                "type": "string",
-              },
-              "type": "array",
-            },
-            "description_index": {
-              "items": {
-                "additionalProperties": false,
-                "properties": {
-                  "description": {
-                    "additionalProperties": false,
-                    "properties": {
-                      "created_at": {
-                        "type": "string",
-                      },
-                      "entities": {
-                        "items": {
-                          "type": "string",
-                        },
-                        "type": "array",
-                      },
-                      "id": {
-                        "type": "string",
-                      },
-                      "impact": {
-                        "items": {
-                          "type": "string",
-                        },
-                        "type": "array",
-                      },
-                      "intent_clues": {
-                        "items": {
-                          "type": "string",
-                        },
-                        "type": "array",
-                      },
-                      "knowledge_layer": {
-                        "enum": [
-                          "personal",
-                          "team",
-                        ],
-                        "type": "string",
-                      },
-                      "knowledge_type": {
-                        "enum": [
-                          "model",
-                          "decision",
-                          "guideline",
-                          "pitfall",
-                          "process",
-                        ],
-                        "type": "string",
-                      },
-                      "layer_reason": {
-                        "type": "string",
-                      },
-                      "maturity": {
-                        "enum": [
-                          "draft",
-                          "verified",
-                          "proven",
-                        ],
-                        "type": "string",
-                      },
-                      "must_read_if": {
-                        "type": "string",
-                      },
-                      "summary": {
-                        "type": "string",
-                      },
-                      "tech_stack": {
-                        "items": {
-                          "type": "string",
-                        },
-                        "type": "array",
-                      },
-                    },
-                    "required": [
-                      "summary",
-                      "intent_clues",
-                      "tech_stack",
-                      "impact",
-                      "must_read_if",
-                    ],
-                    "type": "object",
-                  },
-                  "layer": {
-                    "$ref": "#/properties/entries/items/properties/description_index/items/properties/description/properties/knowledge_layer",
-                  },
-                  "layer_reason": {
-                    "type": "string",
-                  },
-                  "level": {
-                    "enum": [
-                      "L0",
-                      "L1",
-                      "L2",
-                    ],
-                    "type": "string",
-                  },
-                  "maturity": {
-                    "$ref": "#/properties/entries/items/properties/description_index/items/properties/description/properties/maturity",
-                  },
-                  "required": {
-                    "type": "boolean",
-                  },
-                  "selectable": {
-                    "type": "boolean",
-                  },
-                  "stable_id": {
-                    "type": "string",
-                  },
-                  "tags": {
-                    "items": {
-                      "type": "string",
-                    },
-                    "type": "array",
-                  },
-                  "type": {
-                    "$ref": "#/properties/entries/items/properties/description_index/items/properties/description/properties/knowledge_type",
-                  },
-                },
-                "required": [
-                  "stable_id",
-                  "level",
-                  "required",
-                  "selectable",
-                  "description",
-                ],
-                "type": "object",
-              },
-              "type": "array",
-            },
-            "initial_selected_stable_ids": {
-              "items": {
-                "type": "string",
-              },
-              "type": "array",
-            },
-            "path": {
-              "type": "string",
-            },
-            "required_stable_ids": {
-              "items": {
-                "type": "string",
-              },
-              "type": "array",
-            },
-            "requirement_profile": {
-              "additionalProperties": false,
-              "properties": {
-                "detected_entities": {
-                  "items": {
-                    "type": "string",
-                  },
-                  "type": "array",
-                },
-                "extension": {
-                  "type": "string",
-                },
-                "impact_hints": {
-                  "items": {
-                    "type": "string",
-                  },
-                  "type": "array",
-                },
-                "inferred_domain": {
-                  "items": {
-                    "type": "string",
-                  },
-                  "type": "array",
-                },
-                "intent_tokens": {
-                  "items": {
-                    "type": "string",
-                  },
-                  "type": "array",
-                },
-                "known_tech": {
-                  "items": {
-                    "type": "string",
-                  },
-                  "type": "array",
-                },
-                "path_segments": {
-                  "items": {
-                    "type": "string",
-                  },
-                  "type": "array",
-                },
-                "target_path": {
-                  "type": "string",
-                },
-                "user_intent": {
-                  "type": "string",
-                },
-              },
-              "required": [
-                "target_path",
-                "path_segments",
-                "extension",
-                "inferred_domain",
-                "known_tech",
-                "user_intent",
-                "intent_tokens",
-                "impact_hints",
-                "detected_entities",
-              ],
-              "type": "object",
-            },
-            "selection_policy": {
-              "additionalProperties": false,
-              "properties": {
-                "ai_selectable_levels": {
-                  "items": [
-                    {
-                      "const": "L1",
-                      "type": "string",
-                    },
-                  ],
-                  "maxItems": 1,
-                  "minItems": 1,
-                  "type": "array",
-                },
-                "final_fetch_rule": {
-                  "const": "required_stable_ids + ai_selected_l1_stable_ids",
-                  "type": "string",
-                },
-                "required_levels": {
-                  "items": [
-                    {
-                      "const": "L0",
-                      "type": "string",
-                    },
-                    {
-                      "const": "L2",
-                      "type": "string",
-                    },
-                  ],
-                  "maxItems": 2,
-                  "minItems": 2,
-                  "type": "array",
-                },
-              },
-              "required": [
-                "required_levels",
-                "ai_selectable_levels",
-                "final_fetch_rule",
-              ],
-              "type": "object",
-            },
-          },
-          "required": [
-            "path",
-            "requirement_profile",
-            "description_index",
-            "required_stable_ids",
-            "ai_selectable_stable_ids",
-            "initial_selected_stable_ids",
-            "selection_policy",
-          ],
-          "type": "object",
-        },
-        "type": "array",
-      },
-      "revision_hash": {
-        "type": "string",
-      },
-      "selection_token": {
-        "type": "string",
-      },
-      "shared": {
-        "additionalProperties": false,
-        "properties": {
-          "ai_selectable_stable_ids": {
-            "items": {
-              "type": "string",
-            },
-            "type": "array",
-          },
-          "description_index": {
-            "items": {
-              "$ref": "#/properties/entries/items/properties/description_index/items",
-            },
-            "type": "array",
-          },
-          "preflight_diagnostics": {
-            "items": {
-              "additionalProperties": false,
-              "properties": {
-                "code": {
-                  "const": "missing_description",
-                  "type": "string",
-                },
-                "message": {
-                  "type": "string",
-                },
-                "path": {
-                  "type": "string",
-                },
-                "severity": {
-                  "const": "warn",
-                  "type": "string",
-                },
-                "stable_ids": {
-                  "items": {
-                    "type": "string",
-                  },
-                  "type": "array",
-                },
-              },
-              "required": [
-                "code",
-                "severity",
-                "message",
-              ],
-              "type": "object",
-            },
-            "type": "array",
-          },
-          "required_stable_ids": {
-            "items": {
-              "type": "string",
-            },
-            "type": "array",
-          },
-        },
-        "required": [
-          "required_stable_ids",
-          "ai_selectable_stable_ids",
-          "description_index",
-          "preflight_diagnostics",
-        ],
-        "type": "object",
-      },
-      "stale": {
-        "type": "boolean",
-      },
-      "warnings": {
-        "items": {
-          "additionalProperties": false,
-          "properties": {
-            "action_hint": {
-              "type": "string",
-            },
-            "code": {
-              "type": "string",
-            },
-            "file": {
-              "type": "string",
-            },
-            "line": {
-              "type": "number",
-            },
-          },
-          "required": [
-            "code",
-            "file",
-            "action_hint",
-          ],
-          "type": "object",
-        },
-        "type": "array",
-      },
-    },
-    "required": [
-      "revision_hash",
-      "stale",
-      "selection_token",
-      "entries",
-      "shared",
-    ],
-    "type": "object",
-  },
-}
-`;
-
-exports[`tool contracts > rule-sections contract matches snapshot 1`] = `
+exports[`tool contracts > knowledge-sections contract matches snapshot 1`] = `
 {
   "annotations": {
     "destructiveHint": false,
@@ -1350,6 +891,402 @@ exports[`tool contracts > rule-sections contract matches snapshot 1`] = `
       "selected_stable_ids",
       "rules",
       "diagnostics",
+    ],
+    "type": "object",
+  },
+}
+`;
+
+exports[`tool contracts > plan-context contract matches snapshot 1`] = `
+{
+  "annotations": {
+    "destructiveHint": false,
+    "idempotentHint": true,
+    "openWorldHint": false,
+    "readOnlyHint": true,
+    "title": "Plan rule context",
+  },
+  "inputSchema": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "additionalProperties": false,
+    "properties": {
+      "client_hash": {
+        "description": "Revision hash from a prior fab_plan_context response; enables stale detection",
+        "type": "string",
+      },
+      "correlation_id": {
+        "description": "Optional caller-provided correlation id for Event Ledger records",
+        "type": "string",
+      },
+      "detected_entities": {
+        "additionalProperties": {
+          "items": {
+            "type": "string",
+          },
+          "type": "array",
+        },
+        "description": "Optional path-keyed detected entities for the requirement profile",
+        "type": "object",
+      },
+      "include_deprecated": {
+        "description": "When true, include description_index entries with maturity='deprecated'. Defaults to false (deprecated entries hidden). Note: 'deprecated' is reserved future state — today this filter is a no-op until MaturitySchema is widened.",
+        "type": "boolean",
+      },
+      "intent": {
+        "description": "User-stated requirement or implementation intent; used only to build a neutral requirement profile",
+        "type": "string",
+      },
+      "known_tech": {
+        "description": "Known technologies involved in the requirement profile",
+        "items": {
+          "type": "string",
+        },
+        "type": "array",
+      },
+      "layer_filter": {
+        "description": "Restrict description_index to the named layer. Default: fabric-config.default_layer_filter (TASK-002).",
+        "enum": [
+          "team",
+          "personal",
+          "both",
+        ],
+        "type": "string",
+      },
+      "paths": {
+        "description": "Candidate file paths to build neutral rule selection context for",
+        "items": {
+          "type": "string",
+        },
+        "minItems": 1,
+        "type": "array",
+      },
+      "session_id": {
+        "description": "Optional caller-provided session id for Event Ledger records",
+        "type": "string",
+      },
+    },
+    "required": [
+      "paths",
+    ],
+    "type": "object",
+  },
+  "outputSchema": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "additionalProperties": false,
+    "properties": {
+      "entries": {
+        "items": {
+          "additionalProperties": true,
+          "properties": {
+            "description_index": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "description": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "created_at": {
+                        "type": "string",
+                      },
+                      "entities": {
+                        "items": {
+                          "type": "string",
+                        },
+                        "type": "array",
+                      },
+                      "id": {
+                        "type": "string",
+                      },
+                      "impact": {
+                        "items": {
+                          "type": "string",
+                        },
+                        "type": "array",
+                      },
+                      "intent_clues": {
+                        "items": {
+                          "type": "string",
+                        },
+                        "type": "array",
+                      },
+                      "knowledge_layer": {
+                        "enum": [
+                          "personal",
+                          "team",
+                        ],
+                        "type": "string",
+                      },
+                      "knowledge_type": {
+                        "enum": [
+                          "model",
+                          "decision",
+                          "guideline",
+                          "pitfall",
+                          "process",
+                        ],
+                        "type": "string",
+                      },
+                      "layer_reason": {
+                        "type": "string",
+                      },
+                      "maturity": {
+                        "enum": [
+                          "draft",
+                          "verified",
+                          "proven",
+                        ],
+                        "type": "string",
+                      },
+                      "must_read_if": {
+                        "type": "string",
+                      },
+                      "summary": {
+                        "type": "string",
+                      },
+                      "tech_stack": {
+                        "items": {
+                          "type": "string",
+                        },
+                        "type": "array",
+                      },
+                    },
+                    "required": [
+                      "summary",
+                      "intent_clues",
+                      "tech_stack",
+                      "impact",
+                      "must_read_if",
+                    ],
+                    "type": "object",
+                  },
+                  "layer": {
+                    "$ref": "#/properties/entries/items/properties/description_index/items/properties/description/properties/knowledge_layer",
+                  },
+                  "layer_reason": {
+                    "type": "string",
+                  },
+                  "level": {
+                    "enum": [
+                      "L0",
+                      "L1",
+                      "L2",
+                    ],
+                    "type": "string",
+                  },
+                  "maturity": {
+                    "$ref": "#/properties/entries/items/properties/description_index/items/properties/description/properties/maturity",
+                  },
+                  "required": {
+                    "type": "boolean",
+                  },
+                  "selectable": {
+                    "type": "boolean",
+                  },
+                  "stable_id": {
+                    "type": "string",
+                  },
+                  "tags": {
+                    "items": {
+                      "type": "string",
+                    },
+                    "type": "array",
+                  },
+                  "type": {
+                    "$ref": "#/properties/entries/items/properties/description_index/items/properties/description/properties/knowledge_type",
+                  },
+                },
+                "required": [
+                  "stable_id",
+                  "level",
+                  "required",
+                  "selectable",
+                  "description",
+                ],
+                "type": "object",
+              },
+              "type": "array",
+            },
+            "path": {
+              "type": "string",
+            },
+            "requirement_profile": {
+              "additionalProperties": false,
+              "properties": {
+                "detected_entities": {
+                  "items": {
+                    "type": "string",
+                  },
+                  "type": "array",
+                },
+                "extension": {
+                  "type": "string",
+                },
+                "impact_hints": {
+                  "items": {
+                    "type": "string",
+                  },
+                  "type": "array",
+                },
+                "inferred_domain": {
+                  "items": {
+                    "type": "string",
+                  },
+                  "type": "array",
+                },
+                "intent_tokens": {
+                  "items": {
+                    "type": "string",
+                  },
+                  "type": "array",
+                },
+                "known_tech": {
+                  "items": {
+                    "type": "string",
+                  },
+                  "type": "array",
+                },
+                "path_segments": {
+                  "items": {
+                    "type": "string",
+                  },
+                  "type": "array",
+                },
+                "target_path": {
+                  "type": "string",
+                },
+                "user_intent": {
+                  "type": "string",
+                },
+              },
+              "required": [
+                "target_path",
+                "path_segments",
+                "extension",
+                "inferred_domain",
+                "known_tech",
+                "user_intent",
+                "intent_tokens",
+                "impact_hints",
+                "detected_entities",
+              ],
+              "type": "object",
+            },
+          },
+          "required": [
+            "path",
+            "requirement_profile",
+            "description_index",
+          ],
+          "type": "object",
+        },
+        "type": "array",
+      },
+      "revision_hash": {
+        "type": "string",
+      },
+      "selection_token": {
+        "type": "string",
+      },
+      "shared": {
+        "additionalProperties": false,
+        "properties": {
+          "ai_selectable_stable_ids": {
+            "items": {
+              "type": "string",
+            },
+            "type": "array",
+          },
+          "description_index": {
+            "items": {
+              "$ref": "#/properties/entries/items/properties/description_index/items",
+            },
+            "type": "array",
+          },
+          "preflight_diagnostics": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "code": {
+                  "const": "missing_description",
+                  "type": "string",
+                },
+                "message": {
+                  "type": "string",
+                },
+                "path": {
+                  "type": "string",
+                },
+                "severity": {
+                  "const": "warn",
+                  "type": "string",
+                },
+                "stable_ids": {
+                  "items": {
+                    "type": "string",
+                  },
+                  "type": "array",
+                },
+              },
+              "required": [
+                "code",
+                "severity",
+                "message",
+              ],
+              "type": "object",
+            },
+            "type": "array",
+          },
+          "required_stable_ids": {
+            "items": {
+              "type": "string",
+            },
+            "type": "array",
+          },
+        },
+        "required": [
+          "required_stable_ids",
+          "ai_selectable_stable_ids",
+          "description_index",
+          "preflight_diagnostics",
+        ],
+        "type": "object",
+      },
+      "stale": {
+        "type": "boolean",
+      },
+      "warnings": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "action_hint": {
+              "type": "string",
+            },
+            "code": {
+              "type": "string",
+            },
+            "file": {
+              "type": "string",
+            },
+            "line": {
+              "type": "number",
+            },
+          },
+          "required": [
+            "code",
+            "file",
+            "action_hint",
+          ],
+          "type": "object",
+        },
+        "type": "array",
+      },
+    },
+    "required": [
+      "revision_hash",
+      "stale",
+      "selection_token",
+      "entries",
+      "shared",
     ],
     "type": "object",
   },

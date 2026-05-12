@@ -9,7 +9,7 @@ import { fabricConfigSchema } from "@fenglimg/fabric-shared";
 
 import { runDoctorFix, runDoctorReport } from "./doctor.js";
 import { readEventLedger } from "./event-ledger.js";
-import { writeRuleMeta } from "./rule-meta-builder.js";
+import { writeKnowledgeMeta } from "./knowledge-meta-builder.js";
 import { sha256 } from "./_shared.js";
 
 const tempRoots: string[] = [];
@@ -70,10 +70,10 @@ describe("runDoctorReport", () => {
 
   it("returns ok when target-state fabric artifacts are aligned (v2.0 fixture)", async () => {
     // v2/rc.2: the initialized fixture seeds the v2.0 layout (AGENTS.md +
-    // .fabric/knowledge/* subdirs) plus a knowledge entry for rule-meta-builder
+    // .fabric/knowledge/* subdirs) plus a knowledge entry for knowledge-meta-builder
     // to index. Legacy `.fabric/rules/` is no longer used.
     const target = createInitializedProject("doctor-ok");
-    await writeRuleMeta(target, { source: "doctor_fix" });
+    await writeKnowledgeMeta(target, { source: "doctor_fix" });
     writeFile(".fabric/events.jsonl", "", target);
 
     const report = await runDoctorReport(target);
@@ -121,7 +121,7 @@ describe("runDoctorReport", () => {
   it("v2.0: clean post-init repo (mocked layout) reports zero errors AND zero warnings", async () => {
     // Done-when: fresh post-init v2.0 repo with mocked layout — no errors, no warnings.
     const target = createV2KnowledgeProject("doctor-v2-clean");
-    await writeRuleMeta(target, { source: "doctor_fix" });
+    await writeKnowledgeMeta(target, { source: "doctor_fix" });
 
     const report = await runDoctorReport(target);
 
@@ -133,7 +133,7 @@ describe("runDoctorReport", () => {
 
   it("treats malformed rule sections as manual errors", async () => {
     const target = createInitializedProject("doctor-invalid-rule");
-    await writeRuleMeta(target, { source: "doctor_fix" });
+    await writeKnowledgeMeta(target, { source: "doctor_fix" });
     writeFile(".fabric/events.jsonl", "{not-json}\n", target);
 
     const report = await runDoctorReport(target);
@@ -146,7 +146,7 @@ describe("runDoctorReport", () => {
   //
   // (1) "doctor --fix repairs derived state and leaves manual errors visible"
   //     — relied on a v1 fixture pattern (createProject + single rule file)
-  //     where rule-meta-builder rebuilt meta from the rules tree. v2 doctor
+  //     where knowledge-meta-builder rebuilt meta from the rules tree. v2 doctor
   //     --fix takes a different path; equivalent v2 coverage already exists
   //     via "v2.0: clean post-init repo", "TASK-030 / v2.0: --fix incorporates
   //     unindexed knowledge files", and "TASK-029: content_ref_missing".
@@ -159,7 +159,7 @@ describe("runDoctorReport", () => {
 
   it("mcp_config_in_wrong_file: detects mcpServers.fabric in .claude/settings.json", async () => {
     const target = createInitializedProject("doctor-mcp-wrong-file-detect");
-    await writeRuleMeta(target, { source: "doctor_fix" });
+    await writeKnowledgeMeta(target, { source: "doctor_fix" });
     writeFile(".fabric/events.jsonl", "", target);
 
     // Write the wrong config: mcpServers.fabric inside settings.json
@@ -184,7 +184,7 @@ describe("runDoctorReport", () => {
 
   it("mcp_config_in_wrong_file: --fix removes mcpServers.fabric from settings.json and writes ledger event", async () => {
     const target = createInitializedProject("doctor-mcp-wrong-file-fix");
-    await writeRuleMeta(target, { source: "doctor_fix" });
+    await writeKnowledgeMeta(target, { source: "doctor_fix" });
     writeFile(".fabric/events.jsonl", "", target);
 
     const settingsContent = {
@@ -215,7 +215,7 @@ describe("runDoctorReport", () => {
 
   it("mcp_config_in_wrong_file: --fix removes whole mcpServers when only fabric remains", async () => {
     const target = createInitializedProject("doctor-mcp-wrong-file-fix-solo");
-    await writeRuleMeta(target, { source: "doctor_fix" });
+    await writeKnowledgeMeta(target, { source: "doctor_fix" });
     writeFile(".fabric/events.jsonl", "", target);
 
     // Only fabric, no other servers
@@ -236,7 +236,7 @@ describe("runDoctorReport", () => {
 
   it("mcp_config_in_wrong_file: --fix preserves OTHER mcpServers entries in settings.json", async () => {
     const target = createInitializedProject("doctor-mcp-wrong-file-fix-other");
-    await writeRuleMeta(target, { source: "doctor_fix" });
+    await writeKnowledgeMeta(target, { source: "doctor_fix" });
     writeFile(".fabric/events.jsonl", "", target);
 
     writeFile(
@@ -268,7 +268,7 @@ describe("runDoctorReport", () => {
 
   it("mcp_config_in_wrong_file: no detection when settings.json has no mcpServers", async () => {
     const target = createInitializedProject("doctor-mcp-wrong-file-absent");
-    await writeRuleMeta(target, { source: "doctor_fix" });
+    await writeKnowledgeMeta(target, { source: "doctor_fix" });
     writeFile(".fabric/events.jsonl", "", target);
 
     writeFile(
@@ -285,7 +285,7 @@ describe("runDoctorReport", () => {
 
   it("doctor fixable check fires when partial write detected and --fix truncates + writes ledger event", async () => {
     const target = createInitializedProject("doctor-partial-write");
-    await writeRuleMeta(target, { source: "doctor_fix" });
+    await writeKnowledgeMeta(target, { source: "doctor_fix" });
 
     // Write a ledger file that ends without a newline (partial write simulation)
     const goodLine = JSON.stringify({
@@ -319,7 +319,7 @@ describe("runDoctorReport", () => {
     expect(events.map((event) => event.event_type)).toContain("event_ledger_truncated");
   });
 
-  it("--fix calls reconcileRules and emits meta_reconciled event", async () => {
+  it("--fix calls reconcileKnowledge and emits meta_reconciled event", async () => {
     const target = createInitializedProject("doctor-reconcile-fix");
     // Drop a new knowledge file (not yet indexed) so reconcile must run.
     writeFile(".fabric/knowledge/guidelines/extra.md", "<!-- fab:rule-id rules/extra -->\n# Extra\n\n## [MANDATORY_INJECTION]\nUse extras.\n", target);
@@ -369,7 +369,7 @@ describe("runDoctorReport", () => {
 
   it("meta_manually_diverged: detects meta entries with no backing file on disk", async () => {
     const target = createInitializedProject("doctor-meta-diverged-missing");
-    await writeRuleMeta(target, { source: "doctor_fix" });
+    await writeKnowledgeMeta(target, { source: "doctor_fix" });
     writeFile(".fabric/events.jsonl", "", target);
 
     // Remove the knowledge file but leave the meta entry intact
@@ -385,7 +385,7 @@ describe("runDoctorReport", () => {
 
   it("meta_manually_diverged: detects hash mismatch between meta and disk", async () => {
     const target = createInitializedProject("doctor-meta-diverged-hash");
-    await writeRuleMeta(target, { source: "doctor_fix" });
+    await writeKnowledgeMeta(target, { source: "doctor_fix" });
     writeFile(".fabric/events.jsonl", "", target);
 
     // Overwrite knowledge file content so hash no longer matches what's in meta
@@ -405,7 +405,7 @@ describe("runDoctorReport", () => {
 
   it("meta_manually_diverged: passes when meta and filesystem are consistent", async () => {
     const target = createInitializedProject("doctor-meta-consistent");
-    await writeRuleMeta(target, { source: "doctor_fix" });
+    await writeKnowledgeMeta(target, { source: "doctor_fix" });
     writeFile(".fabric/events.jsonl", "", target);
 
     const report = await runDoctorReport(target);
@@ -437,7 +437,7 @@ describe("runDoctorReport", () => {
 
   it("TASK-031 / v2: stable_id_collision detected when two knowledge files declare the same v2 frontmatter id", async () => {
     const target = createInitializedProject("doctor-stable-id-collision");
-    await writeRuleMeta(target, { source: "doctor_fix" });
+    await writeKnowledgeMeta(target, { source: "doctor_fix" });
     writeFile(".fabric/events.jsonl", "", target);
 
     // v2: collision detection scans YAML frontmatter `id: K[PT]-XXX-NNNN` only.
@@ -458,7 +458,7 @@ describe("runDoctorReport", () => {
 
   it("TASK-031: stable_id_collision not reported when all stable_ids are unique", async () => {
     const target = createInitializedProject("doctor-stable-id-ok");
-    await writeRuleMeta(target, { source: "doctor_fix" });
+    await writeKnowledgeMeta(target, { source: "doctor_fix" });
     writeFile(".fabric/events.jsonl", "", target);
 
     const report = await runDoctorReport(target);
@@ -469,7 +469,7 @@ describe("runDoctorReport", () => {
 
   it("TASK-030 / v2.0: knowledge_dir_unindexed detected when .md exists in knowledge tree but not in meta", async () => {
     const target = createInitializedProject("doctor-unindexed-detect");
-    await writeRuleMeta(target, { source: "doctor_fix" });
+    await writeKnowledgeMeta(target, { source: "doctor_fix" });
     writeFile(".fabric/events.jsonl", "", target);
 
     // Drop an unindexed knowledge file (not reconciled into meta)
@@ -481,9 +481,9 @@ describe("runDoctorReport", () => {
     expect(report.checks.find((c) => c.name === "Knowledge dir unindexed")?.status).toBe("error");
   });
 
-  it("TASK-030 / v2.0: --fix incorporates unindexed knowledge files via reconcileRules", async () => {
+  it("TASK-030 / v2.0: --fix incorporates unindexed knowledge files via reconcileKnowledge", async () => {
     const target = createInitializedProject("doctor-unindexed-fix");
-    await writeRuleMeta(target, { source: "doctor_fix" });
+    await writeKnowledgeMeta(target, { source: "doctor_fix" });
     writeFile(".fabric/events.jsonl", "", target);
 
     // Drop a new knowledge file that reconcile will pick up
@@ -500,9 +500,9 @@ describe("runDoctorReport", () => {
     expect(after.checks.find((c) => c.name === "Knowledge dir unindexed")?.status).toBe("ok");
   });
 
-  it("TASK-029: content_ref_missing is fixable — --fix via reconcileRules drops stale refs", async () => {
+  it("TASK-029: content_ref_missing is fixable — --fix via reconcileKnowledge drops stale refs", async () => {
     const target = createInitializedProject("doctor-content-ref-fix");
-    await writeRuleMeta(target, { source: "doctor_fix" });
+    await writeKnowledgeMeta(target, { source: "doctor_fix" });
     writeFile(".fabric/events.jsonl", "", target);
 
     // Remove the knowledge file so its content_ref becomes missing in meta
@@ -561,7 +561,7 @@ describe("runDoctorReport", () => {
 
   it("v2.0 / rc.2: doctor exposes no `legacy_client_path_present` warning even when fabric.config.json contains only supported keys", async () => {
     const target = createInitializedProject("doctor-legacy-client-removed");
-    await writeRuleMeta(target, { source: "doctor_fix" });
+    await writeKnowledgeMeta(target, { source: "doctor_fix" });
     writeFile(".fabric/events.jsonl", "", target);
 
     writeFile(
@@ -583,7 +583,7 @@ describe("runDoctorReport", () => {
 
   it("v2.0 / knowledge_dir_missing: fixable_error when any required subdir is absent", async () => {
     const target = createInitializedProject("doctor-knowledge-missing-detect");
-    await writeRuleMeta(target, { source: "doctor_fix" });
+    await writeKnowledgeMeta(target, { source: "doctor_fix" });
     writeFile(".fabric/events.jsonl", "", target);
 
     // Remove a single required subdir to trigger the check.
@@ -598,7 +598,7 @@ describe("runDoctorReport", () => {
 
   it("v2.0 / knowledge_dir_missing: --fix creates the missing subdirs (mkdir recursive)", async () => {
     const target = createInitializedProject("doctor-knowledge-missing-fix");
-    await writeRuleMeta(target, { source: "doctor_fix" });
+    await writeKnowledgeMeta(target, { source: "doctor_fix" });
     writeFile(".fabric/events.jsonl", "", target);
 
     rmSync(join(target, ".fabric", "knowledge", "pending"), { recursive: true, force: true });
@@ -615,11 +615,11 @@ describe("runDoctorReport", () => {
   });
 
   it("v2.0 / counter_desync: detected when stable_id counter exceeds counters envelope", async () => {
-    // Use a minimal v2.0 fixture (no .fabric/rules/) so reconcileRules is not
+    // Use a minimal v2.0 fixture (no .fabric/rules/) so reconcileKnowledge is not
     // triggered by stale-meta during --fix; this test focuses purely on the
     // counter_desync emission and downstream fix path.
     const target = createV2KnowledgeProject("doctor-counter-desync-detect");
-    await writeRuleMeta(target, { source: "doctor_fix" });
+    await writeKnowledgeMeta(target, { source: "doctor_fix" });
 
     const metaPath = join(target, ".fabric", "agents.meta.json");
     const meta = JSON.parse(readFileSync(metaPath, "utf8")) as Record<string, unknown>;
@@ -649,7 +649,7 @@ describe("runDoctorReport", () => {
 
   it("v2.0 / counter_desync: --fix bumps counters.KP.DEC to max(observed, current)", async () => {
     const target = createV2KnowledgeProject("doctor-counter-desync-fix");
-    await writeRuleMeta(target, { source: "doctor_fix" });
+    await writeKnowledgeMeta(target, { source: "doctor_fix" });
 
     const metaPath = join(target, ".fabric", "agents.meta.json");
     const meta = JSON.parse(readFileSync(metaPath, "utf8")) as Record<string, unknown>;
@@ -680,12 +680,12 @@ describe("runDoctorReport", () => {
   it("counter_desync regression: single --fix run reconciles counters when manually-authored files are unindexed", async () => {
     // Reproduce the TASK-007 dogfood bug: knowledge files authored outside
     // init-scan are on disk but NOT in agents.meta.json. The first --fix
-    // indexes them via reconcileRules (knowledge_dir_unindexed), but
-    // reconcileRules carries over previousMeta.counters verbatim. A second
+    // indexes them via reconcileKnowledge (knowledge_dir_unindexed), but
+    // reconcileKnowledge carries over previousMeta.counters verbatim. A second
     // --fix was previously required to sync counters. This test asserts that
     // a single --fix call is sufficient.
     const target = createV2KnowledgeProject("doctor-counter-desync-unindexed-regression");
-    await writeRuleMeta(target, { source: "doctor_fix" });
+    await writeKnowledgeMeta(target, { source: "doctor_fix" });
 
     // Seed 5 decision files with v2 frontmatter stable_ids — not yet indexed.
     const frontmatterTemplate = (n: number) =>
@@ -719,7 +719,7 @@ describe("runDoctorReport", () => {
 
   it("v2.0 / bootstrap_anchor_missing: passes when AGENTS.md or CLAUDE.md exists at repo root", async () => {
     const target = createInitializedProject("doctor-anchor-agents");
-    await writeRuleMeta(target, { source: "doctor_fix" });
+    await writeKnowledgeMeta(target, { source: "doctor_fix" });
     writeFile(".fabric/events.jsonl", "", target);
 
     const report = await runDoctorReport(target);
@@ -731,7 +731,7 @@ describe("runDoctorReport", () => {
     const target = createInitializedProject("doctor-anchor-claude-only");
     rmSync(join(target, "AGENTS.md"), { force: true });
     writeFile("CLAUDE.md", "# CLAUDE\n", target);
-    await writeRuleMeta(target, { source: "doctor_fix" });
+    await writeKnowledgeMeta(target, { source: "doctor_fix" });
     writeFile(".fabric/events.jsonl", "", target);
 
     const report = await runDoctorReport(target);
@@ -742,7 +742,7 @@ describe("runDoctorReport", () => {
   it("v2.0 / bootstrap_anchor_missing: fixable_error when neither AGENTS.md nor CLAUDE.md exists", async () => {
     const target = createInitializedProject("doctor-anchor-missing");
     rmSync(join(target, "AGENTS.md"), { force: true });
-    await writeRuleMeta(target, { source: "doctor_fix" });
+    await writeKnowledgeMeta(target, { source: "doctor_fix" });
     writeFile(".fabric/events.jsonl", "", target);
 
     const report = await runDoctorReport(target);
@@ -778,7 +778,7 @@ describe("runDoctorReport", () => {
 
   it("v2.0 / stable_id_collision: detects collisions across knowledge frontmatter ids", async () => {
     const target = createInitializedProject("doctor-stable-id-collision-knowledge");
-    await writeRuleMeta(target, { source: "doctor_fix" });
+    await writeKnowledgeMeta(target, { source: "doctor_fix" });
     writeFile(".fabric/events.jsonl", "", target);
 
     const fmA = "---\nid: KT-DEC-0001\ntype: decision\nmaturity: draft\nlayer: team\ncreated_at: 2026-05-09T00:00:00Z\n---\n# A\n";
@@ -798,7 +798,7 @@ describe("runDoctorReport", () => {
   // for canonical entries that have no matching event in events.jsonl.
   it("filesystem_edit_fallback: no orphans when canonical entry has matching knowledge_promoted event", async () => {
     const target = createInitializedProject("doctor-fef-no-orphan");
-    await writeRuleMeta(target, { source: "doctor_fix" });
+    await writeKnowledgeMeta(target, { source: "doctor_fix" });
 
     // Seed a canonical entry AND its matching knowledge_promoted event.
     const fm = "---\nid: KT-DEC-0042\ntype: decision\nmaturity: draft\nlayer: team\ncreated_at: 2026-05-10T00:00:00Z\n---\n# D\n";
@@ -830,7 +830,7 @@ describe("runDoctorReport", () => {
 
   it("filesystem_edit_fallback: synthesizes knowledge_promoted for one orphan canonical entry", async () => {
     const target = createInitializedProject("doctor-fef-one-orphan");
-    await writeRuleMeta(target, { source: "doctor_fix" });
+    await writeKnowledgeMeta(target, { source: "doctor_fix" });
     writeFile(".fabric/events.jsonl", "", target);
 
     // Canonical file present, no matching event — should be synthesized.
@@ -863,7 +863,7 @@ describe("runDoctorReport", () => {
 
   it("filesystem_edit_fallback: synthesizes events for multiple orphans across types", async () => {
     const target = createInitializedProject("doctor-fef-multi-orphan");
-    await writeRuleMeta(target, { source: "doctor_fix" });
+    await writeKnowledgeMeta(target, { source: "doctor_fix" });
     writeFile(".fabric/events.jsonl", "", target);
 
     // Three orphan canonical files in three different type subdirs.
@@ -897,7 +897,7 @@ describe("runDoctorReport", () => {
 
   it("filesystem_edit_fallback: idempotent — second run sees synthesized event and skips", async () => {
     const target = createInitializedProject("doctor-fef-idempotent");
-    await writeRuleMeta(target, { source: "doctor_fix" });
+    await writeKnowledgeMeta(target, { source: "doctor_fix" });
     writeFile(".fabric/events.jsonl", "", target);
 
     const fm = "---\nid: KT-DEC-0050\ntype: decision\nmaturity: draft\nlayer: team\ncreated_at: 2026-05-10T00:00:00Z\n---\n# Once\n";
@@ -930,7 +930,7 @@ describe("runDoctorReport", () => {
 
   it("filesystem_edit_fallback: silently ignores files without <id>--<slug> filename pattern", async () => {
     const target = createInitializedProject("doctor-fef-malformed");
-    await writeRuleMeta(target, { source: "doctor_fix" });
+    await writeKnowledgeMeta(target, { source: "doctor_fix" });
     writeFile(".fabric/events.jsonl", "", target);
 
     // None of these match `<id>--<slug>.md`:
@@ -1011,7 +1011,7 @@ describe("runDoctorReport", () => {
 
     it("orphan_demote: emits warning when stable canonical entry is inactive >90d", async () => {
       const target = createInitializedProject("doctor-rc4-orphan-stable");
-      await writeRuleMeta(target, { source: "doctor_fix" });
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
       writeFile(".fabric/events.jsonl", "", target);
 
       seedCanonical(
@@ -1035,7 +1035,7 @@ describe("runDoctorReport", () => {
 
     it("orphan_demote: emits warning when endorsed canonical entry is inactive >30d", async () => {
       const target = createInitializedProject("doctor-rc4-orphan-endorsed");
-      await writeRuleMeta(target, { source: "doctor_fix" });
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
       writeFile(".fabric/events.jsonl", "", target);
 
       seedCanonical(
@@ -1055,7 +1055,7 @@ describe("runDoctorReport", () => {
 
     it("orphan_demote: emits warning when draft canonical entry is inactive >14d", async () => {
       const target = createInitializedProject("doctor-rc4-orphan-draft");
-      await writeRuleMeta(target, { source: "doctor_fix" });
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
       writeFile(".fabric/events.jsonl", "", target);
 
       seedCanonical(
@@ -1075,7 +1075,7 @@ describe("runDoctorReport", () => {
 
     it("orphan_demote: skips entry that has a recent fetch event within threshold", async () => {
       const target = createInitializedProject("doctor-rc4-orphan-recent-fetch");
-      await writeRuleMeta(target, { source: "doctor_fix" });
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
       writeFile(".fabric/events.jsonl", "", target);
 
       seedCanonical(
@@ -1108,7 +1108,7 @@ describe("runDoctorReport", () => {
 
     it("orphan_demote: ok status when no canonical entries exist", async () => {
       const target = createInitializedProject("doctor-rc4-orphan-empty");
-      await writeRuleMeta(target, { source: "doctor_fix" });
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
       writeFile(".fabric/events.jsonl", "", target);
       // Remove the seeded server.md so there are no canonical entries with frontmatter.
       const { rmSync: nodeRmSync } = await import("node:fs");
@@ -1122,7 +1122,7 @@ describe("runDoctorReport", () => {
 
     it("orphan_demote: respects the per-maturity boundary (stable at 89d is NOT a candidate)", async () => {
       const target = createInitializedProject("doctor-rc4-orphan-boundary");
-      await writeRuleMeta(target, { source: "doctor_fix" });
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
       writeFile(".fabric/events.jsonl", "", target);
 
       seedCanonical(
@@ -1140,7 +1140,7 @@ describe("runDoctorReport", () => {
 
     it("stale_archive: emits warning when draft entry is inactive beyond demote+90d additional quiet", async () => {
       const target = createInitializedProject("doctor-rc4-stale-archive");
-      await writeRuleMeta(target, { source: "doctor_fix" });
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
       writeFile(".fabric/events.jsonl", "", target);
 
       // Total inactivity: draft demote threshold (14d) + additional (90d) = 104d.
@@ -1164,7 +1164,7 @@ describe("runDoctorReport", () => {
 
     it("stale_archive: skips draft entry that is only barely past demote threshold", async () => {
       const target = createInitializedProject("doctor-rc4-stale-recent-draft");
-      await writeRuleMeta(target, { source: "doctor_fix" });
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
       writeFile(".fabric/events.jsonl", "", target);
 
       // Inactive 30d: past 14d demote threshold (so orphan_demote DOES flag it),
@@ -1187,7 +1187,7 @@ describe("runDoctorReport", () => {
 
     it("stale_archive: skips stable entry even when very old (only draft entries are archive candidates)", async () => {
       const target = createInitializedProject("doctor-rc4-stale-stable-not-archive");
-      await writeRuleMeta(target, { source: "doctor_fix" });
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
       writeFile(".fabric/events.jsonl", "", target);
 
       seedCanonical(
@@ -1205,7 +1205,7 @@ describe("runDoctorReport", () => {
 
     it("pending_overdue: emits warning when pending entry is older than 14d via frontmatter created_at", async () => {
       const target = createInitializedProject("doctor-rc4-pending-overdue");
-      await writeRuleMeta(target, { source: "doctor_fix" });
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
       writeFile(".fabric/events.jsonl", "", target);
 
       const fm = `---\ntype: decision\nlayer: team\ncreated_at: ${ageDaysAgoIso(20)}\n---\n# Pending\nProposal body.\n`;
@@ -1221,7 +1221,7 @@ describe("runDoctorReport", () => {
 
     it("pending_overdue: skips recent pending entry (<14d)", async () => {
       const target = createInitializedProject("doctor-rc4-pending-recent");
-      await writeRuleMeta(target, { source: "doctor_fix" });
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
       writeFile(".fabric/events.jsonl", "", target);
 
       const fm = `---\ntype: decision\nlayer: team\ncreated_at: ${ageDaysAgoIso(7)}\n---\n# Pending\nProposal body.\n`;
@@ -1234,7 +1234,7 @@ describe("runDoctorReport", () => {
 
     it("pending_overdue: ok status when pending dir is empty", async () => {
       const target = createInitializedProject("doctor-rc4-pending-empty");
-      await writeRuleMeta(target, { source: "doctor_fix" });
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
       writeFile(".fabric/events.jsonl", "", target);
 
       const report = await runDoctorReport(target);
@@ -1245,7 +1245,7 @@ describe("runDoctorReport", () => {
 
     it("read-side: 0 file mutations + 0 events emitted by the 3 new checks", async () => {
       const target = createInitializedProject("doctor-rc4-readside-noop");
-      await writeRuleMeta(target, { source: "doctor_fix" });
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
       writeFile(".fabric/events.jsonl", "", target);
 
       // Seed all 3 trigger conditions.
@@ -1369,7 +1369,7 @@ describe("runDoctorReport", () => {
 
     it("stable_id_duplicate: ok when no canonical files share an id", async () => {
       const target = createInitializedProject("doctor-rc4-stableid-clean");
-      await writeRuleMeta(target, { source: "doctor_fix" });
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
       writeFile(".fabric/events.jsonl", "", target);
 
       seedCanonicalNoBody(target, ".fabric/knowledge/decisions/KT-DEC-0001--alpha.md");
@@ -1384,7 +1384,7 @@ describe("runDoctorReport", () => {
 
     it("stable_id_duplicate: emits error when two canonical files share a stable_id", async () => {
       const target = createInitializedProject("doctor-rc4-stableid-collide");
-      await writeRuleMeta(target, { source: "doctor_fix" });
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
       writeFile(".fabric/events.jsonl", "", target);
 
       // Same stable_id KT-DEC-0007 declared in two different type directories.
@@ -1404,7 +1404,7 @@ describe("runDoctorReport", () => {
 
     it("stable_id_duplicate: surfaces multiple distinct duplicates in the same report", async () => {
       const target = createInitializedProject("doctor-rc4-stableid-multi");
-      await writeRuleMeta(target, { source: "doctor_fix" });
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
       writeFile(".fabric/events.jsonl", "", target);
 
       seedCanonicalNoBody(target, ".fabric/knowledge/decisions/KT-DEC-0007--alpha.md");
@@ -1425,7 +1425,7 @@ describe("runDoctorReport", () => {
 
     it("layer_mismatch: ok when every canonical file is aligned with its prefix layer", async () => {
       const target = createInitializedProject("doctor-rc4-layer-clean");
-      await writeRuleMeta(target, { source: "doctor_fix" });
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
       writeFile(".fabric/events.jsonl", "", target);
 
       seedCanonicalNoBody(target, ".fabric/knowledge/decisions/KT-DEC-0001--team-aligned.md");
@@ -1439,7 +1439,7 @@ describe("runDoctorReport", () => {
 
     it("layer_mismatch: detects KT-prefixed file located under personal tree", async () => {
       const target = createInitializedProject("doctor-rc4-layer-kt-in-personal");
-      await writeRuleMeta(target, { source: "doctor_fix" });
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
       writeFile(".fabric/events.jsonl", "", target);
 
       seedPersonalCanonical("KT-DEC-0042--wrongly-personal.md", "decisions");
@@ -1456,7 +1456,7 @@ describe("runDoctorReport", () => {
 
     it("layer_mismatch: detects KP-prefixed file located under team tree", async () => {
       const target = createInitializedProject("doctor-rc4-layer-kp-in-team");
-      await writeRuleMeta(target, { source: "doctor_fix" });
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
       writeFile(".fabric/events.jsonl", "", target);
 
       seedCanonicalNoBody(target, ".fabric/knowledge/decisions/KP-DEC-0042--wrongly-team.md");
@@ -1472,7 +1472,7 @@ describe("runDoctorReport", () => {
 
     it("layer_mismatch: surfaces both kinds simultaneously when present", async () => {
       const target = createInitializedProject("doctor-rc4-layer-both");
-      await writeRuleMeta(target, { source: "doctor_fix" });
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
       writeFile(".fabric/events.jsonl", "", target);
 
       seedCanonicalNoBody(target, ".fabric/knowledge/decisions/KP-DEC-0010--kp-in-team.md");
@@ -1516,7 +1516,7 @@ describe("runDoctorReport", () => {
 
     it("index_drift: ok when meta counter equals the highest existing canonical counter", async () => {
       const target = createInitializedProject("doctor-rc4-drift-synced");
-      await writeRuleMeta(target, { source: "doctor_fix" });
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
       writeFile(".fabric/events.jsonl", "", target);
 
       seedCanonicalNoBody(target, ".fabric/knowledge/decisions/KT-DEC-0005--five.md");
@@ -1531,7 +1531,7 @@ describe("runDoctorReport", () => {
 
     it("index_drift: emits fixable_error when meta counter trails the observed maximum", async () => {
       const target = createInitializedProject("doctor-rc4-drift-lagging");
-      await writeRuleMeta(target, { source: "doctor_fix" });
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
       writeFile(".fabric/events.jsonl", "", target);
 
       // Seed counter=5 + canonical file KT-DEC-0007 → drift, proposed_after=8.
@@ -1552,7 +1552,7 @@ describe("runDoctorReport", () => {
 
     it("index_drift: ignores (layer, type) pairs with no canonical files even when meta counter is non-zero", async () => {
       const target = createInitializedProject("doctor-rc4-drift-absent");
-      await writeRuleMeta(target, { source: "doctor_fix" });
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
       writeFile(".fabric/events.jsonl", "", target);
 
       // Set a non-zero counter for KT.PIT but never seed any pitfall file.
@@ -1627,7 +1627,7 @@ describe("runDoctorReport", () => {
 
     it("orphan_demote: rewrites maturity stable -> endorsed in frontmatter", async () => {
       const target = createInitializedProject("doctor-rc4-applylint-orphan-stable");
-      await writeRuleMeta(target, { source: "doctor_fix" });
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
       writeFile(".fabric/events.jsonl", "", target);
 
       const filePath = ".fabric/knowledge/decisions/KT-DEC-1101--ancient-stable.md";
@@ -1656,7 +1656,7 @@ describe("runDoctorReport", () => {
 
     it("orphan_demote: rewrites maturity endorsed -> draft", async () => {
       const target = createInitializedProject("doctor-rc4-applylint-orphan-endorsed");
-      await writeRuleMeta(target, { source: "doctor_fix" });
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
       writeFile(".fabric/events.jsonl", "", target);
 
       const filePath = ".fabric/knowledge/decisions/KT-DEC-1102--ancient-endorsed.md";
@@ -1672,7 +1672,7 @@ describe("runDoctorReport", () => {
 
     it("orphan_demote: emits knowledge_demoted event with stable_id + reason", async () => {
       const target = createInitializedProject("doctor-rc4-applylint-orphan-event");
-      await writeRuleMeta(target, { source: "doctor_fix" });
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
       writeFile(".fabric/events.jsonl", "", target);
 
       seedCanonical(
@@ -1701,7 +1701,7 @@ describe("runDoctorReport", () => {
 
     it("stale_archive: moves file to .fabric/.archive/<type>/<filename>", async () => {
       const target = createInitializedProject("doctor-rc4-applylint-archive");
-      await writeRuleMeta(target, { source: "doctor_fix" });
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
       writeFile(".fabric/events.jsonl", "", target);
 
       const filePath = ".fabric/knowledge/decisions/KT-DEC-1110--very-stale-draft.md";
@@ -1726,7 +1726,7 @@ describe("runDoctorReport", () => {
 
     it("stale_archive: emits knowledge_archived event with stable_id + path detail in reason", async () => {
       const target = createInitializedProject("doctor-rc4-applylint-archive-event");
-      await writeRuleMeta(target, { source: "doctor_fix" });
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
       writeFile(".fabric/events.jsonl", "", target);
 
       seedCanonical(
@@ -1752,7 +1752,7 @@ describe("runDoctorReport", () => {
 
     it("index_drift: bumps agents.meta.json counters[layer][type] to max_observed + 1", async () => {
       const target = createInitializedProject("doctor-rc4-applylint-drift");
-      await writeRuleMeta(target, { source: "doctor_fix" });
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
       writeFile(".fabric/events.jsonl", "", target);
 
       // Seed counter=5 + canonical KT-DEC-0007 → drift detected, bump to 8.
@@ -1785,7 +1785,7 @@ describe("runDoctorReport", () => {
 
     it("index_drift: does NOT emit any knowledge_demoted or knowledge_archived event (counter fix is meta-mutation only)", async () => {
       const target = createInitializedProject("doctor-rc4-applylint-drift-no-event");
-      await writeRuleMeta(target, { source: "doctor_fix" });
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
       writeFile(".fabric/events.jsonl", "", target);
 
       writeFile(
@@ -1812,7 +1812,7 @@ describe("runDoctorReport", () => {
 
     it("aborts and skips ALL mutations when manual_error finding (stable_id_duplicate) is present", async () => {
       const target = createInitializedProject("doctor-rc4-applylint-dup-blocks");
-      await writeRuleMeta(target, { source: "doctor_fix" });
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
       writeFile(".fabric/events.jsonl", "", target);
 
       // Seed two canonical entries with the SAME stable_id (duplicate
@@ -1860,7 +1860,7 @@ describe("runDoctorReport", () => {
 
     it("aborts when layer_mismatch (KP-* under team/) is present and emits no events", async () => {
       const target = createInitializedProject("doctor-rc4-applylint-layer-blocks");
-      await writeRuleMeta(target, { source: "doctor_fix" });
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
       writeFile(".fabric/events.jsonl", "", target);
 
       // KP-* file under team/ → layer_mismatch manual_error.
@@ -1883,7 +1883,7 @@ describe("runDoctorReport", () => {
 
     it("does NOT mutate or emit events for pending_overdue findings (informational only)", async () => {
       const target = createInitializedProject("doctor-rc4-applylint-pending-noop");
-      await writeRuleMeta(target, { source: "doctor_fix" });
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
       writeFile(".fabric/events.jsonl", "", target);
 
       const fmPending = `---\ntype: decision\nlayer: team\ncreated_at: ${ageDaysAgoIso(30)}\n---\n# Pending\n`;
@@ -1906,7 +1906,7 @@ describe("runDoctorReport", () => {
 
     it("idempotent: 2nd apply-lint run on resolved tree produces 0 mutations", async () => {
       const target = createInitializedProject("doctor-rc4-applylint-idempotent");
-      await writeRuleMeta(target, { source: "doctor_fix" });
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
       writeFile(".fabric/events.jsonl", "", target);
 
       seedCanonical(
@@ -1922,7 +1922,7 @@ describe("runDoctorReport", () => {
       // First run produces at least one orphan-demote mutation. (An
       // index_drift mutation may also fire here because the seeded canonical
       // counter exceeds the empty agents.meta.json envelope produced by
-      // writeRuleMeta — both are legitimate first-run repairs and are
+      // writeKnowledgeMeta — both are legitimate first-run repairs and are
       // covered individually by the per-mutation tests above.)
       const firstOrphan = first.mutations.find(
         (m) => m.kind === "knowledge_orphan_demote_required",
@@ -1941,7 +1941,7 @@ describe("runDoctorReport", () => {
 
     it("default report (no apply-lint) performs 0 mutations and 0 lint events even with findings present", async () => {
       const target = createInitializedProject("doctor-rc4-readside-zero-mutation");
-      await writeRuleMeta(target, { source: "doctor_fix" });
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
       writeFile(".fabric/events.jsonl", "", target);
 
       const orphanRel = ".fabric/knowledge/decisions/KT-DEC-1400--ancient-stable.md";
@@ -2028,7 +2028,7 @@ describe("runDoctorReport", () => {
 
     it("orphan_demote: rolls back frontmatter rewrite when ledger append fails", async () => {
       const target = createInitializedProject("doctor-rc4-rollback-orphan");
-      await writeRuleMeta(target, { source: "doctor_fix" });
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
       writeFile(".fabric/events.jsonl", "", target);
 
       const filePath = ".fabric/knowledge/decisions/KT-DEC-1500--ancient-stable.md";
@@ -2061,7 +2061,7 @@ describe("runDoctorReport", () => {
 
     it("stale_archive: rolls back rename when ledger append fails", async () => {
       const target = createInitializedProject("doctor-rc4-rollback-stale");
-      await writeRuleMeta(target, { source: "doctor_fix" });
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
       writeFile(".fabric/events.jsonl", "", target);
 
       const filePath = ".fabric/knowledge/decisions/KT-DEC-1501--ancient-draft.md";
@@ -2106,7 +2106,7 @@ function createInitializedProject(name: string): string {
 
   writeFile(".fabric/init-context.json", JSON.stringify({ confirmed: true }, null, 2), target);
   writeFile(".fabric/forensic.json", JSON.stringify(createForensic(target, name), null, 2), target);
-  // v2/rc.2: seed a knowledge entry under .fabric/knowledge/ so rule-meta-builder
+  // v2/rc.2: seed a knowledge entry under .fabric/knowledge/ so knowledge-meta-builder
   // has something to index. The legacy `.fabric/rules/` tree is no longer scanned.
   writeFile(".fabric/knowledge/decisions/server.md", "<!-- fab:rule-id rules/server -->\n# Server\n\n## [MANDATORY_INJECTION]\nUse services.\n", target);
   writeFile("packages/server/rules.contract.test.ts", "// @fabric-verify rules/server\nexpect(true).toBe(true);\n", target);
@@ -2123,7 +2123,7 @@ function createProject(name: string): string {
 // init/forensic/events seeded + a hand-crafted, internally-consistent
 // agents.meta.json (empty nodes, default counters envelope) + a matching
 // knowledge-test.index.json. Does NOT seed any .fabric/rules/ tree, so
-// rule-meta-builder rebuilds an identical empty meta and reconcile is
+// knowledge-meta-builder rebuilds an identical empty meta and reconcile is
 // not triggered by --fix.
 function createV2KnowledgeProject(name: string): string {
   const target = createProject(name);
@@ -2138,9 +2138,9 @@ function createV2KnowledgeProject(name: string): string {
   writeFile(".fabric/init-context.json", JSON.stringify({ confirmed: true }, null, 2), target);
   writeFile(".fabric/forensic.json", JSON.stringify(createForensic(target, name), null, 2), target);
   writeFile(".fabric/events.jsonl", "", target);
-  // Defer to writeRuleMeta() at the test site after this returns; that gives us a
+  // Defer to writeKnowledgeMeta() at the test site after this returns; that gives us a
   // canonical empty agents.meta.json + knowledge-test.index.json that match what
-  // rule-meta-builder produces, so neither agents_meta_stale nor
+  // knowledge-meta-builder produces, so neither agents_meta_stale nor
   // knowledge_test_index_stale fires.
   return target;
 }

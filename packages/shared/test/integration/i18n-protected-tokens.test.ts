@@ -57,8 +57,8 @@ describe('I7 protected tokens: tokens preserved across locales', () => {
     expect(protectedTokensList).toContain('fab_plan_context')
   })
 
-  it('PROTECTED_TOKENS includes fab_get_rule_sections', () => {
-    expect(protectedTokensList).toContain('fab_get_rule_sections')
+  it('PROTECTED_TOKENS includes fab_get_knowledge_sections', () => {
+    expect(protectedTokensList).toContain('fab_get_knowledge_sections')
   })
 
   it('PROTECTED_TOKENS includes MUST', () => {

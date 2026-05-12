@@ -632,7 +632,7 @@ async function modifyLayerFlip(
   });
 
   // Compute the response path. For team destinations report project-relative;
-  // for personal use the `~/.fabric/...` form (matches rule-meta-builder
+  // for personal use the `~/.fabric/...` form (matches knowledge-meta-builder
   // content_ref convention).
   const responsePath = toLayer === "team"
     ? relative(projectRoot, toAbs)
@@ -773,7 +773,7 @@ async function deferAll(
 }
 
 // ---------------------------------------------------------------------------
-// frontmatter helpers (hand-rolled regex parser, mirrors rule-meta-builder.ts
+// frontmatter helpers (hand-rolled regex parser, mirrors knowledge-meta-builder.ts
 // pattern — flat scalars + flow arrays only, no nested objects)
 // ---------------------------------------------------------------------------
 
@@ -965,7 +965,7 @@ function quoteIfNeeded(value: string): string {
   // JSON-escaped quoted form (\\n, \\r preserved as backslash-letter literals
   // inside double quotes, which is valid YAML 1.2 double-quoted scalar
   // syntax). Round-trip through stripQuotes is lossless because consumers
-  // read the literal value (downstream parsers like rule-meta-builder.ts
+  // read the literal value (downstream parsers like knowledge-meta-builder.ts
   // strip surrounding quotes only — they don't unescape \\n; this is
   // acceptable since the rc.3 contract restricts title/summary to
   // single-line at the schema layer).
@@ -981,7 +981,7 @@ function quoteIfNeeded(value: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// home-dir resolver (FABRIC_HOME override mirrors rule-meta-builder.ts:319)
+// home-dir resolver (FABRIC_HOME override mirrors knowledge-meta-builder.ts:319)
 // ---------------------------------------------------------------------------
 
 function resolvePersonalRoot(): string {

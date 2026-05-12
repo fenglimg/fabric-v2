@@ -96,18 +96,20 @@ describe("knowledgeTestIndexSchema", () => {
     ).toThrow();
   });
 
-  it("keeps agents.meta node shape unchanged", () => {
+  it("preserves agents.meta node identity surface (file/stable_id/hash) on parse", () => {
+    // v2.0-rc.5 A1: agentsMetaNodeSchema uses .passthrough() during the
+    // L0/L1/L2 protocol retirement so transitional consumers keep working.
+    // Unknown keys (including knowledge-test-index fields like `test_file`)
+    // round-trip through parse(); strict isolation is restored by TASK-007.
     const parsed = agentsMetaNodeSchema.parse({
       file: ".fabric/agents/packages/shared/AGENTS.md",
       scope_glob: "packages/shared/**",
-      deps: [],
-      priority: "medium",
       hash: "sha256:rule-current",
       test_file: "packages/shared/test/knowledge-test-index.test.ts",
     });
 
-    expect(parsed).not.toHaveProperty("test_file");
-    expect(parsed).not.toHaveProperty("test_hash");
-    expect(parsed).not.toHaveProperty("previous_test_hash");
+    expect(parsed.file).toBe(".fabric/agents/packages/shared/AGENTS.md");
+    expect(parsed.hash).toBe("sha256:rule-current");
+    expect(parsed.stable_id).toBeDefined();
   });
 });

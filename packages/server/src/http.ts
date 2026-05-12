@@ -18,13 +18,13 @@ import { registerDoctorApi } from "./api/doctor.js";
 import { createEventsHandler } from "./api/events.js";
 import { registerHistoryApi } from "./api/history.js";
 import { registerLedgerApi } from "./api/ledger.js";
-import { registerRulesApi } from "./api/rules.js";
-import { registerRulesContextApi } from "./api/rules-context.js";
+import { registerKnowledgeApi } from "./api/knowledge.js";
+import { registerKnowledgeContextApi } from "./api/knowledge-context.js";
 import { registerScanApi } from "./api/scan.js";
 import { createBearerAuthMiddleware } from "./middleware/bearer-auth.js";
 import { getLedgerPath, getLegacyLedgerPath } from "./services/_shared.js";
 import { appendEventLedgerEvent, readEventLedger } from "./services/event-ledger.js";
-import { invalidateRuleSyncCooldown } from "./services/rule-sync.js";
+import { invalidateKnowledgeSyncCooldown } from "./services/knowledge-sync.js";
 
 const DEFAULT_HOST = "127.0.0.1";
 const NOTIFY_DEBOUNCE_MS = 200;
@@ -155,7 +155,7 @@ class JsonlEventStore implements EventStore {
  *
  * Knowledge (D25): for .fabric/knowledge/**\/*.md paths we ONLY invalidate the
  * cache. No ledger writes. No direct sync. The next MCP call will pick up the
- * staleness via ensureRulesFresh (wired in TASK-021). The pending/ subtree is
+ * staleness via ensureKnowledgeFresh (wired in TASK-021). The pending/ subtree is
  * watched explicitly so unreviewed entries surface in cache invalidation too.
  */
 export function handleCacheWatcherEvent(
@@ -190,10 +190,10 @@ export function handleCacheWatcherEvent(
   // .fabric/knowledge/**/*.md (including pending/) — cache invalidation only (D25).
   if (normalized.startsWith(".fabric/knowledge/") && normalized.endsWith(".md")) {
     contextCache.invalidate("file_watch", projectRoot);
-    // Also clear the rule-sync cooldown so the next MCP call performs a real
+    // Also clear the knowledge-sync cooldown so the next MCP call performs a real
     // I/O scan and picks up the changed file immediately.
-    invalidateRuleSyncCooldown(projectRoot);
-    // No ledger writes. No direct sync. Lazy resync via ensureRulesFresh.
+    invalidateKnowledgeSyncCooldown(projectRoot);
+    // No ledger writes. No direct sync. Lazy resync via ensureKnowledgeFresh.
   }
 }
 
@@ -216,7 +216,7 @@ export function createFabricHttpApp(options: CreateFabricHttpAppOptions) {
   // `.fabric/knowledge/**/*.md` covers decisions/pitfalls/guidelines/models/
   // processes. D25: the knowledge globs ONLY invalidate cache — no ledger
   // writes, no direct sync. The next MCP call detects staleness via
-  // ensureRulesFresh (TASK-021).
+  // ensureKnowledgeFresh (TASK-021).
   const cacheWatcher = chokidar.watch(
     [
       ".fabric/agents.meta.json",
@@ -269,8 +269,8 @@ export function createFabricHttpApp(options: CreateFabricHttpAppOptions) {
     app.use("/mcp", bearerAuth);
   }
 
-  registerRulesApi(app, projectRoot);
-  registerRulesContextApi(app, projectRoot);
+  registerKnowledgeApi(app, projectRoot);
+  registerKnowledgeContextApi(app, projectRoot);
   registerLedgerApi(app, projectRoot);
   registerHistoryApi(app, projectRoot);
   registerScanApi(app, projectRoot);

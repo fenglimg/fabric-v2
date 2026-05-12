@@ -71,12 +71,7 @@ const _requirementProfileSchema = z.object({
   detected_entities: z.array(z.string()),
 });
 
-const _selectionPolicySchema = z.object({
-  required_levels: z.tuple([z.literal("L0"), z.literal("L2")]),
-  ai_selectable_levels: z.tuple([z.literal("L1")]),
-  final_fetch_rule: z.literal("required_stable_ids + ai_selected_l1_stable_ids"),
-});
-
+// v2.0-rc.5 A1: `_selectionPolicySchema` retired with the L0/L1/L2 protocol.
 export const planContextInputSchema = z.object({
   paths: z
     .array(z.string())
@@ -123,6 +118,13 @@ export const planContextInputSchema = z.object({
     ),
 });
 
+// v2.0-rc.5 A1: per-entry `selection_policy`, `required_stable_ids`,
+// `ai_selectable_stable_ids`, `initial_selected_stable_ids` removed from the
+// plan-context output contract (legacy L0/L1/L2 selection ceremony retired).
+// `shared` retains the aggregate `required_stable_ids` and
+// `ai_selectable_stable_ids` until TASK-007 (A3) finishes the refactor. The
+// per-entry shape uses `.passthrough()` so plan-context.ts implementations
+// that still emit the legacy fields validate cleanly until A3 strips them.
 export const planContextOutputSchema = z.object({
   revision_hash: z.string(),
   stale: z.boolean(),
@@ -132,11 +134,7 @@ export const planContextOutputSchema = z.object({
       path: z.string(),
       requirement_profile: _requirementProfileSchema,
       description_index: z.array(_descriptionIndexItemSchema),
-      required_stable_ids: z.array(z.string()),
-      ai_selectable_stable_ids: z.array(z.string()),
-      initial_selected_stable_ids: z.array(z.string()),
-      selection_policy: _selectionPolicySchema,
-    }),
+    }).passthrough(),
   ),
   shared: z.object({
     required_stable_ids: z.array(z.string()),
@@ -193,14 +191,14 @@ export const planContextHintOutputSchema = z.object({
 });
 
 // ---------------------------------------------------------------------------
-// MCP tool contracts — get-rules
+// MCP tool contracts — get-knowledge
 // ---------------------------------------------------------------------------
 
-const _rulesEntrySchema = z.object({ path: z.string(), content: z.string() });
+const _knowledgeEntrySchema = z.object({ path: z.string(), content: z.string() });
 const _humanLockedSchema = z.object({ file: z.string(), excerpt: z.string() });
 const _descriptionStubSchema = z.object({ path: z.string(), description: z.string() });
 
-export const getRulesInputSchema = z.object({
+export const getKnowledgeInputSchema = z.object({
   path: z.string().describe("Target file path to query rules for"),
   client_hash: z
     .string()
@@ -216,20 +214,20 @@ export const getRulesInputSchema = z.object({
     .describe("Optional caller-provided session id for Event Ledger records"),
 });
 
-export const getRulesOutputSchema = z.object({
+export const getKnowledgeOutputSchema = z.object({
   revision_hash: z.string(),
   stale: z.boolean(),
   rules: z.object({
     L0: z.string(),
-    L1: z.array(_rulesEntrySchema),
-    L2: z.array(_rulesEntrySchema),
+    L1: z.array(_knowledgeEntrySchema),
+    L2: z.array(_knowledgeEntrySchema),
     human_locked_nearby: z.array(_humanLockedSchema),
     description_stubs: z.array(_descriptionStubSchema).optional(),
   }),
   warnings: z.array(structuredWarningSchema).optional(),
 });
 
-export const getRulesAnnotations = {
+export const getKnowledgeAnnotations = {
   readOnlyHint: true,
   idempotentHint: true,
   destructiveHint: false,
@@ -238,14 +236,14 @@ export const getRulesAnnotations = {
 } as const;
 
 // ---------------------------------------------------------------------------
-// MCP tool contracts — rule-sections
+// MCP tool contracts — knowledge-sections
 // ---------------------------------------------------------------------------
 
-const RULE_SECTION_NAMES_TUPLE = ["MISSION_STATEMENT", "MANDATORY_INJECTION", "BUSINESS_LOGIC_CHUNKS", "CONTEXT_INFO"] as const;
+const KNOWLEDGE_SECTION_NAMES_TUPLE = ["MISSION_STATEMENT", "MANDATORY_INJECTION", "BUSINESS_LOGIC_CHUNKS", "CONTEXT_INFO"] as const;
 
-export const ruleSectionsInputSchema = z.object({
+export const knowledgeSectionsInputSchema = z.object({
   selection_token: z.string().min(1).describe("Selection token returned by fab_plan_context"),
-  sections: z.array(z.enum(RULE_SECTION_NAMES_TUPLE)).min(1).describe("Structured rule sections to fetch"),
+  sections: z.array(z.enum(KNOWLEDGE_SECTION_NAMES_TUPLE)).min(1).describe("Structured rule sections to fetch"),
   ai_selected_stable_ids: z
     .array(z.string())
     .describe("AI-selected L1 stable_ids chosen from fab_plan_context ai_selectable_stable_ids"),
@@ -262,7 +260,7 @@ export const ruleSectionsInputSchema = z.object({
     .describe("Optional caller-provided session id for Event Ledger records"),
 });
 
-export const ruleSectionsOutputSchema = z.object({
+export const knowledgeSectionsOutputSchema = z.object({
   revision_hash: z.string(),
   precedence: z.tuple([z.literal("L2"), z.literal("L1"), z.literal("L0")]),
   selected_stable_ids: z.array(z.string()),
@@ -280,7 +278,7 @@ export const ruleSectionsOutputSchema = z.object({
         code: z.literal("missing_section"),
         severity: z.literal("warn"),
         stable_id: z.string(),
-        section: z.enum(RULE_SECTION_NAMES_TUPLE),
+        section: z.enum(KNOWLEDGE_SECTION_NAMES_TUPLE),
         message: z.string(),
       }),
       // v2.0: warn-level diagnostic for un-migrated v1.x entries (no
@@ -305,7 +303,7 @@ export const ruleSectionsOutputSchema = z.object({
   warnings: z.array(structuredWarningSchema).optional(),
 });
 
-export const ruleSectionsAnnotations = {
+export const knowledgeSectionsAnnotations = {
   readOnlyHint: true,
   idempotentHint: true,
   destructiveHint: false,
@@ -383,7 +381,7 @@ const _fabReviewModifyChangesSchema = z.object({
   title: z.string().optional(),
   summary: z.string().optional(),
   // Q7: writing `layer` here triggers a layer-flip; downstream callers may
-  // observe a redirect_to in fab_get_rule_sections if stable_id changes.
+  // observe a redirect_to in fab_get_knowledge_sections if stable_id changes.
   layer: z.enum(["team", "personal"]).optional(),
   maturity: z.enum(["draft", "verified", "proven"]).optional(),
   tags: z.array(z.string()).optional(),
@@ -548,7 +546,7 @@ export const annotateIntentRequestSchema = z.object({
 // Frontmatter for knowledge entries written into .fabric/knowledge/ (team layer)
 // or ~/.fabric/knowledge/ (personal layer). Fields MUST stay flat scalars to
 // remain compatible with the hand-rolled regex parser at
-// packages/server/src/services/rule-meta-builder.ts:748-785.
+// packages/server/src/services/knowledge-meta-builder.ts:748-785.
 // ---------------------------------------------------------------------------
 
 // 5 knowledge types (MECE)

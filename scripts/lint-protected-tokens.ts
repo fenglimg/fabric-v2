@@ -30,7 +30,7 @@ const PROTECTED_TOKENS_PATH = path.join(
 
 const BOOTSTRAP_REQUIRED_TOKENS = [
   "fab_plan_context",
-  "fab_get_rule_sections",
+  "fab_get_knowledge_sections",
   "AGENTS.md",
   "FABRIC.md",
   ".fabric/agents/",

@@ -1,16 +1,16 @@
 /**
- * rule-sync.ts — Rule-sync orchestrator framework (R28, TASK-011)
+ * knowledge-sync.ts — Rule-sync orchestrator framework (R28, TASK-011)
  *
- * Public surface: ensureRulesFresh, reconcileRules + exported types.
+ * Public surface: ensureKnowledgeFresh, reconcileKnowledge + exported types.
  * Internal helpers are co-located in this file.
  * Does NOT wire any consumers (MCP tools, doctor, watchers).
  *
  * Distinction between the two public entry points:
  *
- * - `ensureRulesFresh`: detects drift, emits ledger events, invalidates cache.
+ * - `ensureKnowledgeFresh`: detects drift, emits ledger events, invalidates cache.
  *   Does NOT rewrite agents.meta.json. Optimised for hot-path consumers (MCP tools).
  *
- * - `reconcileRules`: full scan + rewrites agents.meta.json (via rule-meta-builder)
+ * - `reconcileKnowledge`: full scan + rewrites agents.meta.json (via knowledge-meta-builder)
  *   + emits ledger events. Used by startup (TASK-022) and doctor repair (TASK-023).
  */
 
@@ -23,13 +23,13 @@ import { RuleValidationError } from "@fenglimg/fabric-shared/errors";
 import { contextCache } from "../cache.js";
 import { appendEventLedgerEvent } from "./event-ledger.js";
 import { sha256 } from "./_shared.js";
-import { writeRuleMeta } from "./rule-meta-builder.js";
+import { writeKnowledgeMeta } from "./knowledge-meta-builder.js";
 
 // ---------------------------------------------------------------------------
 // Public types
 // ---------------------------------------------------------------------------
 
-export interface RuleSyncOptions {
+export interface KnowledgeSyncOptions {
   mode?: "incremental" | "full";
   /** When true, invalid frontmatter throws RuleValidationError (default: false — collect as warning). */
   throwOnInvalidFrontmatter?: boolean;
@@ -43,25 +43,25 @@ export interface StructuredWarning {
 }
 
 /**
- * Granular ledger event shape for rule-sync operations.
- * These are returned in RuleSyncReport and also appended to the event ledger
+ * Granular ledger event shape for knowledge-sync operations.
+ * These are returned in KnowledgeSyncReport and also appended to the event ledger
  * using the nearest available ledger event type (knowledge_drift_detected).
  * The shape below is what callers receive in `.events`.
  */
-export interface RuleSyncLedgerEvent {
+export interface KnowledgeSyncLedgerEvent {
   type: "rule_content_changed" | "rule_added" | "rule_removed";
   stable_id: string;
   path: string;
   prev_hash: string | null;
   new_hash: string | null;
   changed_fields: string[];
-  source: "ensureRulesFresh" | "reconcileRules";
+  source: "ensureKnowledgeFresh" | "reconcileKnowledge";
 }
 
 /** Alias so the public API says LedgerEvent (as documented). */
-export type LedgerEvent = RuleSyncLedgerEvent;
+export type LedgerEvent = KnowledgeSyncLedgerEvent;
 
-export interface RuleSyncReport {
+export interface KnowledgeSyncReport {
   status: "fresh" | "reconciled" | "errors";
   events: LedgerEvent[];
   warnings: StructuredWarning[];
@@ -89,11 +89,11 @@ const freshSyncCooldown = new Map<string, number>();
 const SYNC_COOLDOWN_MS = 500;
 
 /**
- * Clear the rule-sync cooldown for a projectRoot so the next ensureRulesFresh
+ * Clear the knowledge-sync cooldown for a projectRoot so the next ensureKnowledgeFresh
  * call performs a real I/O scan. Called by the chokidar watcher when a rule
  * file changes (see http.ts handleCacheWatcherEvent).
  */
-export function invalidateRuleSyncCooldown(projectRoot: string): void {
+export function invalidateKnowledgeSyncCooldown(projectRoot: string): void {
   freshSyncCooldown.delete(projectRoot);
 }
 
@@ -248,9 +248,9 @@ async function processSingleFile(
   projectRoot: string,
   relPath: string,
   metaEntry: MetaEntry | undefined,
-  source: "ensureRulesFresh" | "reconcileRules",
+  source: "ensureKnowledgeFresh" | "reconcileKnowledge",
   throwOnInvalidFrontmatter: boolean,
-): Promise<{ event: RuleSyncLedgerEvent | null; warning: StructuredWarning | null }> {
+): Promise<{ event: KnowledgeSyncLedgerEvent | null; warning: StructuredWarning | null }> {
   const absPath = join(projectRoot, relPath);
 
   try {
@@ -310,7 +310,7 @@ async function processSingleFile(
 
   const prevHash = metaEntry?.content_hash ?? debounce?.hash ?? null;
   const stableId = metaEntry?.stable_id ?? relPath;
-  const eventType: RuleSyncLedgerEvent["type"] = metaEntry === undefined ? "rule_added" : "rule_content_changed";
+  const eventType: KnowledgeSyncLedgerEvent["type"] = metaEntry === undefined ? "rule_added" : "rule_content_changed";
 
   lastSyncState.set(absPath, { ts: now, hash: newHash });
 
@@ -328,7 +328,7 @@ async function processSingleFile(
   };
 }
 
-async function appendRuleSyncEvents(projectRoot: string, events: RuleSyncLedgerEvent[]): Promise<void> {
+async function appendRuleSyncEvents(projectRoot: string, events: KnowledgeSyncLedgerEvent[]): Promise<void> {
   if (events.length === 0) {
     return;
   }
@@ -356,10 +356,10 @@ async function appendRuleSyncEvents(projectRoot: string, events: RuleSyncLedgerE
  * invalidates the cache. Does NOT rewrite agents.meta.json. Optimised for
  * hot-path consumers (MCP tools).
  */
-export async function ensureRulesFresh(
+export async function ensureKnowledgeFresh(
   projectRoot: string,
-  opts?: RuleSyncOptions,
-): Promise<RuleSyncReport> {
+  opts?: KnowledgeSyncOptions,
+): Promise<KnowledgeSyncReport> {
   const mode = opts?.mode ?? "incremental";
 
   // Global optimistic skip: if the last sync for this projectRoot returned
@@ -371,8 +371,8 @@ export async function ensureRulesFresh(
   }
 
   const throwOnInvalidFrontmatter = opts?.throwOnInvalidFrontmatter ?? false;
-  const source = "ensureRulesFresh" as const;
-  const events: RuleSyncLedgerEvent[] = [];
+  const source = "ensureKnowledgeFresh" as const;
+  const events: KnowledgeSyncLedgerEvent[] = [];
   const warnings: StructuredWarning[] = [];
 
   const metaEntries = await readMetaEntries(projectRoot);
@@ -443,7 +443,7 @@ export async function ensureRulesFresh(
   };
 }
 
-export interface ReconcileRulesOptions {
+export interface ReconcileKnowledgeOptions {
   /** Identifies who triggered the reconcile; controls which summary ledger event is written. */
   trigger?: "startup" | "doctor" | "manual";
 }
@@ -457,15 +457,15 @@ export interface ReconcileRulesOptions {
  * ledger event is appended after per-file drift events. Other trigger values
  * append a `meta_reconciled` event. Omitting the trigger skips the summary.
  */
-export async function reconcileRules(projectRoot: string, opts?: ReconcileRulesOptions): Promise<RuleSyncReport> {
-  // Full scan — always clears the cooldown so ensureRulesFresh re-checks on
+export async function reconcileKnowledge(projectRoot: string, opts?: ReconcileKnowledgeOptions): Promise<KnowledgeSyncReport> {
+  // Full scan — always clears the cooldown so ensureKnowledgeFresh re-checks on
   // the next MCP call after reconcile completes (avoids stale-fresh after write).
   freshSyncCooldown.delete(projectRoot);
 
   const trigger = opts?.trigger;
   const startTime = Date.now();
-  const source = "reconcileRules" as const;
-  const events: RuleSyncLedgerEvent[] = [];
+  const source = "reconcileKnowledge" as const;
+  const events: KnowledgeSyncLedgerEvent[] = [];
   const warnings: StructuredWarning[] = [];
 
   const metaEntries = await readMetaEntries(projectRoot);
@@ -504,9 +504,9 @@ export async function reconcileRules(projectRoot: string, opts?: ReconcileRulesO
   }
 
   // High 2: Rewrite agents.meta.json with ground-truth disk state when drift detected.
-  // writeRuleMeta rebuilds from disk (hashes, stable_ids, paths) and writes atomically.
+  // writeKnowledgeMeta rebuilds from disk (hashes, stable_ids, paths) and writes atomically.
   if (events.length > 0) {
-    await writeRuleMeta(projectRoot, { source: "sync_meta" });
+    await writeKnowledgeMeta(projectRoot, { source: "sync_meta" });
     await appendRuleSyncEvents(projectRoot, events);
     contextCache.invalidate("file_watch", projectRoot);
   }
@@ -521,7 +521,7 @@ export async function reconcileRules(projectRoot: string, opts?: ReconcileRulesO
         event_type: "meta_reconciled_on_startup",
         reconciled_files: reconciledFiles,
         duration_ms,
-        source: "reconcileRules",
+        source: "reconcileKnowledge",
       });
     } else {
       await appendEventLedgerEvent(projectRoot, {
@@ -529,7 +529,7 @@ export async function reconcileRules(projectRoot: string, opts?: ReconcileRulesO
         reconciled_files: reconciledFiles,
         duration_ms,
         trigger,
-        source: "reconcileRules",
+        source: "reconcileKnowledge",
       });
     }
   }

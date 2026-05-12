@@ -308,7 +308,7 @@ describe('I1.8 eventLedgerEventSchema round-trip', () => {
       reconciled_files: ['.fabric/knowledge/decisions/root.md'],
       duration_ms: 50,
       trigger: 'doctor',
-      source: 'reconcileRules',
+      source: 'reconcileKnowledge',
     })
   })
 

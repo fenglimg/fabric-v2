@@ -6,11 +6,11 @@ import { agentsMetaSchema, knowledgeTestIndexSchema } from "@fenglimg/fabric-sha
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
-  buildRuleMeta,
+  buildKnowledgeMeta,
   computeKnowledgeTestIndex,
-  computeRulesBasedAgentsMeta,
-  writeRuleMeta,
-} from "./rule-meta-builder.js";
+  computeKnowledgeBasedAgentsMeta,
+  writeKnowledgeMeta,
+} from "./knowledge-meta-builder.js";
 
 const tempDirs: string[] = [];
 let originalFabricHome: string | undefined;
@@ -36,7 +36,7 @@ afterEach(async () => {
   }));
 });
 
-describe("rule-meta-builder", () => {
+describe("knowledge-meta-builder", () => {
   it("builds agents.meta and knowledge-test.index from .fabric/knowledge only", async () => {
     const projectRoot = await createProject("rules-builder-basic");
     await writeProjectFile(
@@ -72,7 +72,7 @@ describe("rule-meta-builder", () => {
       ].join("\n"),
     );
 
-    const result = await writeRuleMeta(projectRoot, { source: "doctor_fix" });
+    const result = await writeKnowledgeMeta(projectRoot, { source: "doctor_fix" });
     const meta = agentsMetaSchema.parse(JSON.parse(await readFile(join(projectRoot, ".fabric/agents.meta.json"), "utf8")));
     const index = knowledgeTestIndexSchema.parse(
       JSON.parse(await readFile(join(projectRoot, ".fabric/.cache/knowledge-test.index.json"), "utf8")),
@@ -127,7 +127,7 @@ describe("rule-meta-builder", () => {
       "// @fabric-verify rules/server-core\nexpect(true).toBe(true);\n",
     );
 
-    const firstMeta = await computeRulesBasedAgentsMeta(projectRoot);
+    const firstMeta = await computeKnowledgeBasedAgentsMeta(projectRoot);
     const firstIndex = await computeKnowledgeTestIndex(projectRoot, firstMeta);
     const firstLink = firstIndex.links[0];
 
@@ -142,7 +142,7 @@ describe("rule-meta-builder", () => {
       "// @fabric-verify rules/server-core\nexpect(false).toBe(false);\n",
     );
 
-    const nextMeta = await computeRulesBasedAgentsMeta(projectRoot);
+    const nextMeta = await computeKnowledgeBasedAgentsMeta(projectRoot);
     const nextIndex = await computeKnowledgeTestIndex(projectRoot, nextMeta, firstIndex);
 
     expect(nextIndex.previous_revision).toBe(firstMeta.revision);
@@ -156,7 +156,7 @@ describe("rule-meta-builder", () => {
     const projectRoot = await createProject("rules-builder-no-agents");
     await writeProjectFile(projectRoot, ".fabric/agents/root.md", "<!-- fab:rule-id legacy/root -->\n# Legacy\n");
 
-    const result = await buildRuleMeta(projectRoot);
+    const result = await buildKnowledgeMeta(projectRoot);
 
     // v2.0: no L0 bootstrap node — `.fabric/agents/` is correctly ignored,
     // and an otherwise empty knowledge tree yields an empty meta.nodes map.
@@ -189,7 +189,7 @@ describe("rule-meta-builder", () => {
       ].join("\n"),
     );
 
-    const meta = await computeRulesBasedAgentsMeta(projectRoot);
+    const meta = await computeKnowledgeBasedAgentsMeta(projectRoot);
     const node = Object.values(meta.nodes).find((n) => n.file === ".fabric/knowledge/decisions/auth.md");
     expect(node).toBeDefined();
     expect(node?.description).toMatchObject({
@@ -226,7 +226,7 @@ describe("rule-meta-builder", () => {
         ].join("\n"),
       );
 
-      const meta = await computeRulesBasedAgentsMeta(projectRoot);
+      const meta = await computeKnowledgeBasedAgentsMeta(projectRoot);
       const node = Object.values(meta.nodes).find((n) => n.file === ".fabric/knowledge/pending/legacy.md");
 
       expect(node?.description?.summary).toBe("Legacy rule");
@@ -263,7 +263,7 @@ describe("rule-meta-builder", () => {
         ].join("\n"),
       );
 
-      const meta = await computeRulesBasedAgentsMeta(projectRoot);
+      const meta = await computeKnowledgeBasedAgentsMeta(projectRoot);
       const node = Object.values(meta.nodes).find((n) => n.file === ".fabric/knowledge/decisions/bad.md");
 
       expect(node?.description?.id).toBeUndefined();
@@ -298,7 +298,7 @@ describe("rule-meta-builder", () => {
         ].join("\n"),
       );
 
-      const meta = await computeRulesBasedAgentsMeta(projectRoot);
+      const meta = await computeKnowledgeBasedAgentsMeta(projectRoot);
       const node = Object.values(meta.nodes).find((n) => n.file === ".fabric/knowledge/pending/note.md");
 
       expect(node?.description?.knowledge_type).toBeUndefined();
@@ -332,7 +332,7 @@ describe("rule-meta-builder", () => {
         ].join("\n"),
       );
 
-      const meta = await computeRulesBasedAgentsMeta(projectRoot);
+      const meta = await computeKnowledgeBasedAgentsMeta(projectRoot);
       const node = Object.values(meta.nodes).find((n) => n.file === ".fabric/knowledge/decisions/mismatch.md");
 
       expect(node?.description?.id).toBeUndefined();
@@ -367,7 +367,7 @@ describe("rule-meta-builder", () => {
         ].join("\n"),
       );
 
-      const meta = await computeRulesBasedAgentsMeta(projectRoot);
+      const meta = await computeKnowledgeBasedAgentsMeta(projectRoot);
       const node = Object.values(meta.nodes).find((n) => n.file === ".fabric/knowledge/decisions/baddate.md");
 
       expect(node?.description?.created_at).toBeUndefined();
@@ -398,7 +398,7 @@ describe("rule-meta-builder", () => {
       ].join("\n"),
     );
 
-    const meta = await computeRulesBasedAgentsMeta(projectRoot);
+    const meta = await computeKnowledgeBasedAgentsMeta(projectRoot);
     const node = Object.values(meta.nodes).find((n) => n.file === ".fabric/knowledge/decisions/auth.md");
 
     expect(node?.stable_id).toBe("KT-DEC-0001");
@@ -430,7 +430,7 @@ describe("rule-meta-builder", () => {
       sharedFrontmatter,
     );
 
-    const firstMeta = await computeRulesBasedAgentsMeta(projectRoot);
+    const firstMeta = await computeKnowledgeBasedAgentsMeta(projectRoot);
     const firstNode = Object.values(firstMeta.nodes).find(
       (n) => n.file === ".fabric/knowledge/decisions/oauth.md",
     );
@@ -445,7 +445,7 @@ describe("rule-meta-builder", () => {
       sharedFrontmatter,
     );
 
-    const secondMeta = await computeRulesBasedAgentsMeta(projectRoot, firstMeta);
+    const secondMeta = await computeKnowledgeBasedAgentsMeta(projectRoot, firstMeta);
     const movedNode = Object.values(secondMeta.nodes).find(
       (n) => n.file === ".fabric/knowledge/guidelines/oauth.md",
     );
@@ -455,7 +455,7 @@ describe("rule-meta-builder", () => {
     expect(movedNode?.stable_id).not.toMatch(/guidelines/);
   });
 
-  it("writeRuleMeta serializes counters envelope (default zeros for v1.x meta)", async () => {
+  it("writeKnowledgeMeta serializes counters envelope (default zeros for v1.x meta)", async () => {
     const projectRoot = await createProject("rules-builder-v2-counters");
     await writeProjectFile(
       projectRoot,
@@ -463,7 +463,7 @@ describe("rule-meta-builder", () => {
       "<!-- fab:rule-id rules/legacy -->\n# Legacy\n",
     );
 
-    await writeRuleMeta(projectRoot, { source: "doctor_fix" });
+    await writeKnowledgeMeta(projectRoot, { source: "doctor_fix" });
     const written = JSON.parse(
       await readFile(join(projectRoot, ".fabric/agents.meta.json"), "utf8"),
     ) as { counters?: { KP?: unknown; KT?: unknown } };
@@ -519,7 +519,7 @@ describe("rule-meta-builder", () => {
       ].join("\n"),
     );
 
-    const meta = await computeRulesBasedAgentsMeta(projectRoot);
+    const meta = await computeKnowledgeBasedAgentsMeta(projectRoot);
 
     const teamNode = Object.values(meta.nodes).find(
       (n) => n.file === ".fabric/knowledge/decisions/team-auth.md",
@@ -548,7 +548,7 @@ describe("rule-meta-builder", () => {
     expect(existsBefore).toBe(false);
 
     // Run the scan — auto-mkdir is a side-effect of findKnowledgeFiles.
-    await computeRulesBasedAgentsMeta(projectRoot);
+    await computeKnowledgeBasedAgentsMeta(projectRoot);
 
     // Each canonical knowledge subdir should now exist under fake home.
     for (const subdir of ["decisions", "pitfalls", "guidelines", "models", "processes", "pending"]) {
@@ -588,7 +588,7 @@ describe("rule-meta-builder", () => {
       ].join("\n"),
     );
 
-    const metaBefore = await computeRulesBasedAgentsMeta(projectRoot);
+    const metaBefore = await computeKnowledgeBasedAgentsMeta(projectRoot);
 
     // Now add a pending draft — this MUST NOT change revision_hash.
     await writeProjectFile(
@@ -603,7 +603,7 @@ describe("rule-meta-builder", () => {
       ].join("\n"),
     );
 
-    const metaAfter = await computeRulesBasedAgentsMeta(projectRoot);
+    const metaAfter = await computeKnowledgeBasedAgentsMeta(projectRoot);
 
     // Pending node IS present in the nodes record (for fab_review.list).
     const pendingNode = Object.values(metaAfter.nodes).find(
@@ -631,7 +631,7 @@ describe("rule-meta-builder", () => {
       ].join("\n"),
     );
 
-    const metaBefore = await computeRulesBasedAgentsMeta(projectRoot);
+    const metaBefore = await computeKnowledgeBasedAgentsMeta(projectRoot);
 
     // Simulate `fab_review.approve` by moving the file to a canonical subdir.
     // Delete the pending copy and write the same content under decisions/.
@@ -655,7 +655,7 @@ describe("rule-meta-builder", () => {
       ].join("\n"),
     );
 
-    const metaAfter = await computeRulesBasedAgentsMeta(projectRoot);
+    const metaAfter = await computeKnowledgeBasedAgentsMeta(projectRoot);
 
     // Approval (pending → canonical) MUST change revision_hash so the
     // PreToolUse session-hints cache invalidates correctly.

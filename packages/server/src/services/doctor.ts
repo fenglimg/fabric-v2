@@ -20,9 +20,9 @@ import { detectFramework } from "@fenglimg/fabric-shared/node";
 import { contextCache } from "../cache.js";
 import { atomicWriteJson, atomicWriteText } from "@fenglimg/fabric-shared/node/atomic-write";
 import { ensureParentDirectory, getEventLedgerPath, sha256 } from "./_shared.js";
-import { buildRuleMeta, isSameKnowledgeTestIndex, writeRuleMeta } from "./rule-meta-builder.js";
+import { buildKnowledgeMeta, isSameKnowledgeTestIndex, writeKnowledgeMeta } from "./knowledge-meta-builder.js";
 import { appendEventLedgerEvent, readEventLedger, truncateLedgerToLastNewline } from "./event-ledger.js";
-import { reconcileRules } from "./rule-sync.js";
+import { reconcileKnowledge } from "./knowledge-sync.js";
 
 export type DoctorStatus = "ok" | "warn" | "error";
 export type DoctorIssueKind = "fixable_error" | "manual_error" | "warning" | "info";
@@ -328,7 +328,7 @@ type CanonicalLayer = "team" | "personal";
 type StableIdDuplicateGroup = {
   stable_id: string;
   // Project-relative POSIX path for team entries; `~/.fabric/knowledge/...`
-  // form for personal entries (mirrors rule-meta-builder content_ref shape).
+  // form for personal entries (mirrors knowledge-meta-builder content_ref shape).
   paths: string[];
 };
 
@@ -609,8 +609,8 @@ export async function runDoctorFix(target: string): Promise<DoctorFixReport> {
     fixed.push(findIssue(before.fixable_errors, "event_ledger_missing"));
   }
 
-  // counter_desync MUST run before reconcileRules: the counters envelope is
-  // preserved verbatim across a reconcile rebuild (rule-meta-builder copies
+  // counter_desync MUST run before reconcileKnowledge: the counters envelope is
+  // preserved verbatim across a reconcile rebuild (knowledge-meta-builder copies
   // `previousMeta.counters` through), so bumping first means the correction
   // survives even when reconcile rewrites the nodes graph.
   if (before.fixable_errors.some((issue) => issue.code === "counter_desync")) {
@@ -632,11 +632,11 @@ export async function runDoctorFix(target: string): Promise<DoctorFixReport> {
     )
   ) {
     // D22: doctor's role is now consistency repairer, not baseline promoter.
-    // reconcileRules rewrites agents.meta.json from disk ground-truth and emits
+    // reconcileKnowledge rewrites agents.meta.json from disk ground-truth and emits
     // a 'meta_reconciled' ledger event (trigger='doctor').
     // content_ref_missing: reconcile drops stale refs that no longer have a backing file.
     // knowledge_dir_unindexed: reconcile incorporates any .md files not yet in the index.
-    await reconcileRules(projectRoot, { trigger: "doctor" });
+    await reconcileKnowledge(projectRoot, { trigger: "doctor" });
     for (const issue of before.fixable_errors.filter((candidate) =>
       [
         "agents_meta_missing",
@@ -651,8 +651,8 @@ export async function runDoctorFix(target: string): Promise<DoctorFixReport> {
     }
     contextCache.invalidate("meta_write", projectRoot);
 
-    // Post-reconcile counter sync: reconcileRules carries over previousMeta.counters
-    // verbatim (rule-meta-builder never bumps counters during indexing). If any
+    // Post-reconcile counter sync: reconcileKnowledge carries over previousMeta.counters
+    // verbatim (knowledge-meta-builder never bumps counters during indexing). If any
     // newly-indexed knowledge file declared a stable_id whose counter exceeds the
     // preserved envelope, the counters are now desynced. Fix that here so a single
     // `doctor --fix` invocation is sufficient — the caller does not need to run
@@ -1150,9 +1150,9 @@ async function inspectMeta(projectRoot: string): Promise<MetaInspection> {
   }
 }
 
-async function tryBuildRuleMeta(projectRoot: string): Promise<Awaited<ReturnType<typeof buildRuleMeta>> | null> {
+async function tryBuildRuleMeta(projectRoot: string): Promise<Awaited<ReturnType<typeof buildKnowledgeMeta>> | null> {
   try {
-    return await buildRuleMeta(projectRoot);
+    return await buildKnowledgeMeta(projectRoot);
   } catch {
     return null;
   }
@@ -1178,7 +1178,7 @@ function inspectContentRefs(projectRoot: string, meta: AgentsMeta): { missing: s
 
     // Personal-root entries are not directly validated against the project
     // tree — their existence is verified by the personal-root scan in
-    // rule-meta-builder.ts. We only check team-root and legacy entries here.
+    // knowledge-meta-builder.ts. We only check team-root and legacy entries here.
     if (isPersonalKnowledge) {
       continue;
     }
@@ -1386,7 +1386,7 @@ function createRuleContentRefCheck(meta: MetaInspection): DoctorCheck {
   }
 
   if (meta.missingContentRefs.length > 0) {
-    // content_ref_missing is fixable: reconcileRules rebuilds agents.meta.json from
+    // content_ref_missing is fixable: reconcileKnowledge rebuilds agents.meta.json from
     // the physical .fabric/knowledge/**/*.md files, dropping any stale refs automatically.
     return issueCheck(
       "Rule content refs",
@@ -1548,7 +1548,7 @@ async function inspectMetaManuallyDiverged(projectRoot: string): Promise<MetaMan
 
 function inspectKnowledgeDirUnindexed(projectRoot: string, meta: MetaInspection): RulesDirUnindexedInspection {
   // v2.0 layout: iterate .fabric/knowledge/{type}/ and surface any .md file
-  // not yet present in agents.meta.json so reconcileRules can rebuild the
+  // not yet present in agents.meta.json so reconcileKnowledge can rebuild the
   // index. The legacy v1.x rules collection was dropped in rc.2.
   const physicalMdFiles = new Set<string>();
   collectMdFilesUnder(physicalMdFiles, projectRoot, join(projectRoot, ".fabric", "knowledge"), ".fabric/knowledge");
@@ -2350,7 +2350,7 @@ function createPendingOverdueCheck(inspection: PendingOverdueInspection): Doctor
 // inspections cheap (no file body read) for the integrity surface.
 // ---------------------------------------------------------------------------
 
-// Resolve the personal-layer knowledge root. Mirrors rule-meta-builder.ts's
+// Resolve the personal-layer knowledge root. Mirrors knowledge-meta-builder.ts's
 // resolvePersonalRoot but inlined to avoid pulling that module into doctor's
 // dependency graph (doctor has historically stayed self-contained on shared/
 // utilities only). Test-friendly via FABRIC_HOME override.
@@ -2400,7 +2400,7 @@ type CanonicalFilenameVisit = {
   filename: string;
   // Display path — project-relative POSIX for team layer; `~/.fabric/...`
   // form for personal layer (matches PERSONAL_CONTENT_REF_PREFIX in
-  // rule-meta-builder.ts so messages render consistently with the rest of
+  // knowledge-meta-builder.ts so messages render consistently with the rest of
   // the v2.0 surface).
   displayPath: string;
   parsed: ParsedCanonicalFilename;
@@ -2511,7 +2511,7 @@ function inspectLayerMismatch(projectRoot: string): LayerMismatchInspection {
 // — i.e. it requires the indexed envelope to know about the file. index_drift
 // reads directly from the filesystem, so it catches drift even when the file
 // is not yet indexed in agents.meta.json.nodes (e.g. a hand-dropped file
-// before reconcileRules has run).
+// before reconcileKnowledge has run).
 function inspectIndexDrift(
   projectRoot: string,
   meta: MetaInspection,

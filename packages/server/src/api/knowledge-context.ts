@@ -1,7 +1,7 @@
-import { getRules } from "../services/get-rules.js";
+import { getKnowledge } from "../services/get-knowledge.js";
 import { type FabricHttpApp, sendUnknownError, sendValidationError } from "./_error.js";
 
-export function registerRulesContextApi(app: FabricHttpApp, projectRoot: string): void {
+export function registerKnowledgeContextApi(app: FabricHttpApp, projectRoot: string): void {
   app.get("/api/rules/context", async (req, res) => {
     const path = typeof req.query.path === "string" ? req.query.path.trim() : "";
 
@@ -15,7 +15,7 @@ export function registerRulesContextApi(app: FabricHttpApp, projectRoot: string)
     }
 
     try {
-      const result = await getRules(projectRoot, { path });
+      const result = await getKnowledge(projectRoot, { path });
       res.json(result.rules);
     } catch (error) {
       sendUnknownError(res, error);

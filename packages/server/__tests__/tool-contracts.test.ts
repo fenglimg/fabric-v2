@@ -19,15 +19,15 @@ import {
   FabReviewOutputSchema,
   fabExtractKnowledgeAnnotations,
   fabReviewAnnotations,
-  getRulesAnnotations,
-  getRulesInputSchema,
-  getRulesOutputSchema,
+  getKnowledgeAnnotations,
+  getKnowledgeInputSchema,
+  getKnowledgeOutputSchema,
   planContextAnnotations,
   planContextInputSchema,
   planContextOutputSchema,
-  ruleSectionsAnnotations,
-  ruleSectionsInputSchema,
-  ruleSectionsOutputSchema,
+  knowledgeSectionsAnnotations,
+  knowledgeSectionsInputSchema,
+  knowledgeSectionsOutputSchema,
 } from "@fenglimg/fabric-shared/schemas/api-contracts";
 
 type ToolContract = {
@@ -48,15 +48,15 @@ const contracts: Record<string, ToolContract> = {
     outputSchema: zodToJsonSchema(planContextOutputSchema),
     annotations: planContextAnnotations,
   },
-  "get-rules": {
-    inputSchema: zodToJsonSchema(getRulesInputSchema),
-    outputSchema: zodToJsonSchema(getRulesOutputSchema),
-    annotations: getRulesAnnotations,
+  "get-knowledge": {
+    inputSchema: zodToJsonSchema(getKnowledgeInputSchema),
+    outputSchema: zodToJsonSchema(getKnowledgeOutputSchema),
+    annotations: getKnowledgeAnnotations,
   },
-  "rule-sections": {
-    inputSchema: zodToJsonSchema(ruleSectionsInputSchema),
-    outputSchema: zodToJsonSchema(ruleSectionsOutputSchema),
-    annotations: ruleSectionsAnnotations,
+  "knowledge-sections": {
+    inputSchema: zodToJsonSchema(knowledgeSectionsInputSchema),
+    outputSchema: zodToJsonSchema(knowledgeSectionsOutputSchema),
+    annotations: knowledgeSectionsAnnotations,
   },
   "fab-extract-knowledge": {
     inputSchema: zodToJsonSchema(FabExtractKnowledgeInputSchema),

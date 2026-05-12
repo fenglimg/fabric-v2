@@ -38,7 +38,7 @@ function makeTempRoot(): string {
   mkdirSync(join(dir, ".fabric", "rules"), { recursive: true });
   mkdirSync(join(dir, ".fabric", "bootstrap"), { recursive: true });
   writeFileSync(join(dir, ".fabric", "agents.meta.json"), MINIMAL_AGENTS_META, "utf8");
-  // bootstrap README required by getRules (L0 content)
+  // bootstrap README required by getKnowledge (L0 content)
   writeFileSync(
     join(dir, ".fabric", "bootstrap", "README.md"),
     "# Bootstrap\n\nTest bootstrap readme.\n",
@@ -124,7 +124,7 @@ describe("HTTP integration — REST endpoints", () => {
     it("returns 200 with a rules payload object when a valid path is provided", async () => {
       const res = await supertest(app).get("/api/rules/context?path=src/index.ts");
       expect(res.status).toBe(200);
-      // getRules returns result.rules which is a RulesPayload object { L0, L1, L2, human_locked_nearby }
+      // getKnowledge returns result.rules which is a KnowledgePayload object { L0, L1, L2, human_locked_nearby }
       const body = res.body as { L0?: string; L1?: unknown[]; L2?: unknown[] };
       expect(typeof body).toBe("object");
       expect(body).not.toBeNull();
@@ -232,45 +232,9 @@ describe("HTTP integration — REST endpoints", () => {
   });
 
   // -------------------------------------------------------------------------
-  // 8. POST /api/intent/annotate — validation + 404 on missing entry
+  // 8. POST /api/intent/annotate — REMOVED in rc.5 A2 (intent-ledger
+  // compliance regime retired); tests deleted as orphans.
   // -------------------------------------------------------------------------
-  describe("8. POST /api/intent/annotate", () => {
-    it("returns 400 when request body is empty", async () => {
-      const res = await supertest(app).post("/api/intent/annotate").send({});
-      expect(res.status).toBe(400);
-      const body = res.body as { error: { code: string } };
-      expect(body.error.code).toBe("BAD_REQUEST");
-    });
-
-    it("returns 400 when ledger_entry_id is missing", async () => {
-      const res = await supertest(app)
-        .post("/api/intent/annotate")
-        .send({ annotation: "test annotation" });
-      expect(res.status).toBe(400);
-    });
-
-    it("returns 404 LEDGER_ENTRY_NOT_FOUND when the ledger entry does not exist", async () => {
-      const res = await supertest(app)
-        .post("/api/intent/annotate")
-        .send({ ledger_entry_id: "nonexistent-ledger-entry", annotation: "test" });
-      expect(res.status).toBe(404);
-      const body = res.body as { error: { code: string } };
-      expect(body.error.code).toBe("LEDGER_ENTRY_NOT_FOUND");
-    });
-
-    it("returns 200/201 when annotation is successfully created", async () => {
-      const entryId = "ledger:test-annotate-entry";
-      makeLedgerEntry(tempDir, entryId);
-
-      const res = await supertest(app)
-        .post("/api/intent/annotate")
-        .send({ ledger_entry_id: entryId, annotation: "this is a test annotation" });
-
-      expect([200, 201]).toContain(res.status);
-      const body = res.body as { created: boolean; entry: { id: string } };
-      expect(typeof body.created).toBe("boolean");
-    });
-  });
 
   // -------------------------------------------------------------------------
   // 9. GET /events — SSE endpoint: connection headers + early close

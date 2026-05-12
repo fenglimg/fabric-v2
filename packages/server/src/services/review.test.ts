@@ -13,7 +13,7 @@ const tempDirs: string[] = [];
 let originalFabricHome: string | undefined;
 
 // v2.0: redirect personal-root resolution into a tempdir so tests never touch
-// the developer's real ~/.fabric/. Mirrors rule-meta-builder.test.ts setup.
+// the developer's real ~/.fabric/. Mirrors knowledge-meta-builder.test.ts setup.
 beforeEach(async () => {
   originalFabricHome = process.env.FABRIC_HOME;
   const fakeHome = await mkdtemp(join(tmpdir(), "fabric-review-home-"));

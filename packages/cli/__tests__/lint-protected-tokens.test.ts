@@ -7,7 +7,7 @@ const VALID_BOOTSTRAP_CORE = `# Fabric Bootstrap
 ## CORE RULES (DO NOT TRANSLATE)
 
 MUST: Treat this file as the Fabric Protocol bootstrap for this repository.
-MUST: Before ANY code reading, architecture planning, or logic modification, call the MCP tool \`fab_plan_context(paths=[<target file>])\`, then call \`fab_get_rule_sections\` with selected L1 stable_ids before editing.
+MUST: Before ANY code reading, architecture planning, or logic modification, call the MCP tool \`fab_plan_context(paths=[<target file>])\`, then call \`fab_get_knowledge_sections\` with selected L1 stable_ids before editing.
 MUST: Treat \`.fabric/events.jsonl\` as the automatic typed Event Ledger; MCP tools, \`fabric doctor --fix\`, and \`fabric sync-meta\` write records without manual \`ledger_entry\` calls.
 MUST: When creating or changing an L1/L2 rule node, update rule sources and run \`fabric sync-meta\` or \`fabric doctor --fix\`; keep \`.fabric/agents.meta.json\` as the generated \`agent_meta\` baseline.
 MUST: Stop and ask the human before editing any \`@HUMAN\` protected range listed in \`.fabric/human-lock.json\`.

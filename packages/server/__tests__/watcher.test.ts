@@ -4,17 +4,17 @@
  * v2/rc.2: tests retargeted from `.fabric/rules/**\/*.md` to
  * `.fabric/knowledge/**\/*.md` to match the v2 cache-watcher glob.
  *
- * Verifies that handleCacheWatcherEvent calls invalidateRuleSyncCooldown
+ * Verifies that handleCacheWatcherEvent calls invalidateKnowledgeSyncCooldown
  * when a .fabric/knowledge/*.md file changes, so the next MCP call performs
  * a real I/O scan rather than returning a stale cached-fresh response.
  */
 
 import { describe, it, expect, vi, afterEach } from "vitest";
 
-import * as ruleSyncModule from "../src/services/rule-sync.js";
+import * as knowledgeSyncModule from "../src/services/knowledge-sync.js";
 import { handleCacheWatcherEvent } from "../src/http.js";
 
-describe("handleCacheWatcherEvent — watcher bridge to rule-sync cooldown (v2)", () => {
+describe("handleCacheWatcherEvent — watcher bridge to knowledge-sync cooldown (v2)", () => {
   afterEach(() => {
     vi.restoreAllMocks();
   });
@@ -33,10 +33,10 @@ describe("handleCacheWatcherEvent — watcher bridge to rule-sync cooldown (v2)"
     };
   }
 
-  it("calls invalidateRuleSyncCooldown when a .fabric/knowledge/*.md file changes", () => {
+  it("calls invalidateKnowledgeSyncCooldown when a .fabric/knowledge/*.md file changes", () => {
     const projectRoot = "/fake/project";
     const sessions = new Map<string, never>();
-    const spy = vi.spyOn(ruleSyncModule, "invalidateRuleSyncCooldown");
+    const spy = vi.spyOn(knowledgeSyncModule, "invalidateKnowledgeSyncCooldown");
 
     handleCacheWatcherEvent(
       ".fabric/knowledge/decisions/rule.md",
@@ -49,10 +49,10 @@ describe("handleCacheWatcherEvent — watcher bridge to rule-sync cooldown (v2)"
     expect(spy).toHaveBeenCalledWith(projectRoot);
   });
 
-  it("calls invalidateRuleSyncCooldown for nested knowledge paths", () => {
+  it("calls invalidateKnowledgeSyncCooldown for nested knowledge paths", () => {
     const projectRoot = "/fake/project";
     const sessions = new Map<string, never>();
-    const spy = vi.spyOn(ruleSyncModule, "invalidateRuleSyncCooldown");
+    const spy = vi.spyOn(knowledgeSyncModule, "invalidateKnowledgeSyncCooldown");
 
     handleCacheWatcherEvent(
       ".fabric/knowledge/guidelines/deep/nested/dir/rule.md",
@@ -65,10 +65,10 @@ describe("handleCacheWatcherEvent — watcher bridge to rule-sync cooldown (v2)"
     expect(spy).toHaveBeenCalledWith(projectRoot);
   });
 
-  it("does NOT call invalidateRuleSyncCooldown for non-knowledge-file events (agents.meta.json)", () => {
+  it("does NOT call invalidateKnowledgeSyncCooldown for non-knowledge-file events (agents.meta.json)", () => {
     const projectRoot = "/fake/project";
     const sessions = new Map<string, never>();
-    const spy = vi.spyOn(ruleSyncModule, "invalidateRuleSyncCooldown");
+    const spy = vi.spyOn(knowledgeSyncModule, "invalidateKnowledgeSyncCooldown");
 
     handleCacheWatcherEvent(
       ".fabric/agents.meta.json",
@@ -80,10 +80,10 @@ describe("handleCacheWatcherEvent — watcher bridge to rule-sync cooldown (v2)"
     expect(spy).not.toHaveBeenCalled();
   });
 
-  it("does NOT call invalidateRuleSyncCooldown for legacy bootstrap README events (v2.0: ignored entirely)", () => {
+  it("does NOT call invalidateKnowledgeSyncCooldown for legacy bootstrap README events (v2.0: ignored entirely)", () => {
     const projectRoot = "/fake/project";
     const sessions = new Map<string, never>();
-    const spy = vi.spyOn(ruleSyncModule, "invalidateRuleSyncCooldown");
+    const spy = vi.spyOn(knowledgeSyncModule, "invalidateKnowledgeSyncCooldown");
 
     // v2.0: the legacy bootstrap path is no longer watched, but
     // handleCacheWatcherEvent must still be a safe no-op when called with it

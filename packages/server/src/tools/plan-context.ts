@@ -12,7 +12,7 @@ import { resolveProjectRoot } from "../meta-reader.js";
 import { readPayloadLimits } from "../config-loader.js";
 import { type InFlightTracker } from "../services/in-flight-tracker.js";
 import { planContext, type PlanContextInput } from "../services/plan-context.js";
-import { ensureRulesFresh } from "../services/rule-sync.js";
+import { ensureKnowledgeFresh } from "../services/knowledge-sync.js";
 
 export function registerPlanContext(server: McpServer, tracker?: InFlightTracker): void {
   server.registerTool(
@@ -29,7 +29,7 @@ export function registerPlanContext(server: McpServer, tracker?: InFlightTracker
       tracker?.enter(requestId);
       try {
         const projectRoot = resolveProjectRoot();
-        const syncReport = await ensureRulesFresh(projectRoot);
+        const syncReport = await ensureKnowledgeFresh(projectRoot);
         const result = await planContext(projectRoot, {
           paths,
           intent,

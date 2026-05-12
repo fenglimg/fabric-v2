@@ -11,11 +11,11 @@ import { AGENTS_MD_RESOURCE_URI } from "./constants.js";
 import { resolveProjectRoot } from "./meta-reader.js";
 import { flushAndSyncEventLedger } from "./services/event-ledger.js";
 import { createInFlightTracker, type InFlightTracker } from "./services/in-flight-tracker.js";
-import { reconcileRules } from "./services/rule-sync.js";
+import { reconcileKnowledge } from "./services/knowledge-sync.js";
 import { registerExtractKnowledge } from "./tools/extract-knowledge.js";
 import { registerPlanContext } from "./tools/plan-context.js";
 import { registerReview } from "./tools/review.js";
-import { registerRuleSections } from "./tools/rule-sections.js";
+import { registerKnowledgeSections } from "./tools/knowledge-sections.js";
 
 declare const __SERVER_VERSION__: string;
 
@@ -31,18 +31,18 @@ export {
   type DoctorReport,
 } from "./services/doctor.js";
 export {
-  buildRuleMeta,
+  buildKnowledgeMeta,
   computeKnowledgeTestIndex,
-  computeRulesBasedAgentsMeta,
-  deriveRuleMetaLayer,
-  deriveRuleMetaTopologyType,
+  computeKnowledgeBasedAgentsMeta,
+  deriveKnowledgeMetaLayer,
+  deriveKnowledgeMetaTopologyType,
   isSameKnowledgeTestIndex,
   stableStringify,
-  writeRuleMeta,
-  type RuleMetaBuildResult,
-  type RuleMetaBuildSource,
-  type WriteRuleMetaOptions,
-} from "./services/rule-meta-builder.js";
+  writeKnowledgeMeta,
+  type KnowledgeMetaBuildResult,
+  type KnowledgeMetaBuildSource,
+  type WriteKnowledgeMetaOptions,
+} from "./services/knowledge-meta-builder.js";
 export { KnowledgeIdAllocator } from "./services/knowledge-id-allocator.js";
 export { extractKnowledge } from "./services/extract-knowledge.js";
 export { reviewKnowledge } from "./services/review.js";
@@ -96,15 +96,15 @@ export { AGENTS_MD_RESOURCE_URI } from "./constants.js";
 export { flushAndSyncEventLedger } from "./services/event-ledger.js";
 export { createInFlightTracker, type InFlightTracker } from "./services/in-flight-tracker.js";
 export {
-  ensureRulesFresh,
-  reconcileRules,
+  ensureKnowledgeFresh,
+  reconcileKnowledge,
   type LedgerEvent,
-  type ReconcileRulesOptions,
-  type RuleSyncLedgerEvent,
-  type RuleSyncOptions,
-  type RuleSyncReport,
+  type ReconcileKnowledgeOptions,
+  type KnowledgeSyncLedgerEvent,
+  type KnowledgeSyncOptions,
+  type KnowledgeSyncReport,
   type StructuredWarning,
-} from "./services/rule-sync.js";
+} from "./services/knowledge-sync.js";
 export {
   acquireLock,
   checkLockOrThrow,
@@ -117,12 +117,12 @@ export {
 
 export function createFabricServer(tracker?: InFlightTracker): McpServer {
   const server = new McpServer({
-    name: "fabric-context-server",
+    name: "fabric-knowledge-server",
     version: __SERVER_VERSION__,
   });
 
   registerPlanContext(server, tracker);
-  registerRuleSections(server, tracker);
+  registerKnowledgeSections(server, tracker);
   registerExtractKnowledge(server, tracker);
   registerReview(server, tracker);
 
@@ -168,7 +168,7 @@ export async function startStdioServer(): Promise<void> {
   // Rules added while the server was offline become visible immediately; callers
   // no longer need to run `fab doctor --fix` after an offline rule change.
   const syncStart = Date.now();
-  const reconcileResult = await reconcileRules(projectRoot, { trigger: "startup" });
+  const reconcileResult = await reconcileKnowledge(projectRoot, { trigger: "startup" });
   const syncDurationMs = Date.now() - syncStart;
   process.stderr.write(
     `[startup] rule sync: status=${reconcileResult.status}, events=${reconcileResult.events.length}, ${syncDurationMs}ms\n`,

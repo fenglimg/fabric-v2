@@ -1,8 +1,8 @@
 // v2.0 integration tests (TASK-005) — exercise the public MCP service
-// surface (planContext + getRuleSections) end-to-end against a v2.0
+// surface (planContext + getKnowledgeSections) end-to-end against a v2.0
 // dual-root layout. These complement the unit tests under
 // `services/*.test.ts` by going through the full code path that
-// `fab_plan_context` and `fab_get_rule_sections` invoke at runtime.
+// `fab_plan_context` and `fab_get_knowledge_sections` invoke at runtime.
 
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -12,7 +12,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { contextCache } from "../cache.js";
 import { planContext } from "../services/plan-context.js";
-import { getRuleSections } from "../services/rule-sections.js";
+import { getKnowledgeSections } from "../services/knowledge-sections.js";
 
 const tempDirs: string[] = [];
 let originalFabricHome: string | undefined;
@@ -69,7 +69,7 @@ describe("mcp-server integration (v2.0 dual-root)", () => {
 
     // Both knowledge entries are L1 in the v2.0 layout (depth 1 under
     // .fabric/agents/<subdir>/) so they're AI-selectable. Pick both.
-    const result = await getRuleSections(projectRoot, {
+    const result = await getKnowledgeSections(projectRoot, {
       selection_token: plan.selection_token,
       sections: ["MANDATORY_INJECTION"],
       ai_selected_stable_ids: plan.shared.ai_selectable_stable_ids,
@@ -144,8 +144,8 @@ async function createV2Project(): Promise<string> {
     ].join("\n"),
   );
 
-  // Pre-seed agents.meta.json with both nodes (mirrors what computeRulesBasedAgentsMeta
-  // would emit) so planContext/getRuleSections see them via readAgentsMeta.
+  // Pre-seed agents.meta.json with both nodes (mirrors what computeKnowledgeBasedAgentsMeta
+  // would emit) so planContext/getKnowledgeSections see them via readAgentsMeta.
   await writeFile(
     join(projectRoot, ".fabric", "agents.meta.json"),
     `${JSON.stringify(

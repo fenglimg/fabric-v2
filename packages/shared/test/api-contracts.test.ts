@@ -7,7 +7,7 @@ import {
   FabReviewOutputSchema,
   planContextInputSchema,
   planContextOutputSchema,
-  ruleSectionsOutputSchema,
+  knowledgeSectionsOutputSchema,
 } from "../src/schemas/api-contracts";
 
 // Minimal valid description payload used by description_index roundtrip tests.
@@ -101,7 +101,7 @@ describe("PlanContextInput — layer_filter", () => {
 
 describe("GetRuleSectionsResult — redirect_to", () => {
   it("accepts redirect_to populated post-layer-flip", () => {
-    const parsed = ruleSectionsOutputSchema.parse({
+    const parsed = knowledgeSectionsOutputSchema.parse({
       revision_hash: "r",
       precedence: ["L2", "L1", "L0"],
       selected_stable_ids: [],
@@ -113,7 +113,7 @@ describe("GetRuleSectionsResult — redirect_to", () => {
   });
 
   it("parses cleanly when redirect_to is absent (regression)", () => {
-    const parsed = ruleSectionsOutputSchema.parse({
+    const parsed = knowledgeSectionsOutputSchema.parse({
       revision_hash: "r",
       precedence: ["L2", "L1", "L0"],
       selected_stable_ids: [],

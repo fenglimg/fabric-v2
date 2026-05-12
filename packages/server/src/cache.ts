@@ -3,7 +3,7 @@
  *
  * Three logical slots:
  *   1. "meta"    — agents.meta.json content (TTL-based, default 5 s)
- *   2. "context" — GetRulesContext per projectRoot (TTL-based, default 5 s)
+ *   2. "context" — GetKnowledgeContext per projectRoot (TTL-based, default 5 s)
  *   3. "audit"   — sliding-window byte-offset cursor for audit.jsonl reads
  *
  * Invalidation reasons:
@@ -28,7 +28,7 @@ class ContextCache {
   // Slot 1: raw AgentsMeta keyed by projectRoot
   private readonly metaSlot = new Map<string, CacheEntry<unknown>>();
 
-  // Slot 2: GetRulesContext keyed by projectRoot
+  // Slot 2: GetKnowledgeContext keyed by projectRoot
   private readonly contextSlot = new Map<string, CacheEntry<unknown>>();
 
   // Slot 3: audit sliding-window cursor keyed by projectRoot

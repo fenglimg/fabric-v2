@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { loadGetRulesContext, resolveRulesForPath } from "./get-rules.js";
+import { loadGetKnowledgeContext, resolveKnowledgeForPath } from "./get-knowledge.js";
 
 const tempDirs: string[] = [];
 
@@ -16,7 +16,7 @@ afterEach(async () => {
   );
 });
 
-describe("resolveRulesForPath", () => {
+describe("resolveKnowledgeForPath", () => {
   it("loads always/path tiers and returns description stubs without reading description content", async () => {
     const projectRoot = await createTempProject();
     await mkdir(join(projectRoot, ".fabric", "bootstrap"), { recursive: true });
@@ -69,8 +69,8 @@ describe("resolveRulesForPath", () => {
       }, null, 2)}\n`,
     );
 
-    const context = await loadGetRulesContext(projectRoot);
-    const result = await resolveRulesForPath(projectRoot, context, "docs/guide.md");
+    const context = await loadGetKnowledgeContext(projectRoot);
+    const result = await resolveKnowledgeForPath(projectRoot, context, "docs/guide.md");
 
     expect(result.L1).toEqual([
       {
@@ -116,9 +116,9 @@ describe("resolveRulesForPath", () => {
       }, null, 2)}\n`,
     );
 
-    const context = await loadGetRulesContext(projectRoot);
-    const matching = await resolveRulesForPath(projectRoot, context, "src/index.ts");
-    const nonMatching = await resolveRulesForPath(projectRoot, context, "docs/index.md");
+    const context = await loadGetKnowledgeContext(projectRoot);
+    const matching = await resolveKnowledgeForPath(projectRoot, context, "src/index.ts");
+    const nonMatching = await resolveKnowledgeForPath(projectRoot, context, "docs/index.md");
 
     expect(matching.L2).toEqual([
       {
@@ -134,7 +134,7 @@ describe("resolveRulesForPath", () => {
 });
 
 async function createTempProject(): Promise<string> {
-  const projectRoot = await mkdtemp(join(tmpdir(), "fabric-get-rules-"));
+  const projectRoot = await mkdtemp(join(tmpdir(), "fabric-get-knowledge-"));
   tempDirs.push(projectRoot);
   return projectRoot;
 }

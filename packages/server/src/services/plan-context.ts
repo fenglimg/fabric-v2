@@ -1,8 +1,8 @@
-import type { RuleDescription, RuleDescriptionIndexItem } from "@fenglimg/fabric-shared";
+import { deriveAgentsMetaLayer, type RuleDescription, type RuleDescriptionIndexItem } from "@fenglimg/fabric-shared";
 
 import { readAgentsMeta, type AgentsMeta } from "../meta-reader.js";
 import { appendEventLedgerEvent } from "./event-ledger.js";
-import { normalizeRulesPath } from "./get-rules.js";
+import { normalizeKnowledgePath } from "./get-knowledge.js";
 
 export type PlanContextInput = {
   paths: string[];
@@ -191,7 +191,7 @@ function dedupePaths(paths: string[]): string[] {
   const seenPaths = new Set<string>();
 
   return paths.flatMap((path) => {
-    const normalizedPath = normalizeRulesPath(path);
+    const normalizedPath = normalizeKnowledgePath(path);
 
     if (seenPaths.has(normalizedPath)) {
       return [];
@@ -203,7 +203,7 @@ function dedupePaths(paths: string[]): string[] {
 }
 
 function buildRequirementProfile(path: string, input: PlanContextInput): RequirementProfile {
-  const normalizedPath = normalizeRulesPath(path);
+  const normalizedPath = normalizeKnowledgePath(path);
   const extensionMatch = /(\.[^./\\]+)$/u.exec(normalizedPath);
   const knownTech = dedupeStableIds([
     ...(input.known_tech ?? []),
@@ -226,7 +226,10 @@ function buildRequirementProfile(path: string, input: PlanContextInput): Require
 function buildDescriptionIndex(meta: AgentsMeta): RuleDescriptionIndexItem[] {
   return Object.entries(meta.nodes)
     .flatMap(([nodeId, node]) => {
-      const level = node.level ?? node.layer;
+      // v2.0-rc.5 A1: legacy `level`/`layer` schema fields retired; derive
+      // from file path. TASK-007 (A3) refactors plan-context to retire the
+      // L0/L1/L2 surface entirely.
+      const level = node.level ?? node.layer ?? deriveAgentsMetaLayer(node.file);
       const description = node.description ?? descriptionFromLegacyActivation(node.activation?.description);
       if (description === undefined) {
         return [];

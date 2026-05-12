@@ -78,7 +78,12 @@ describe("ruleDescriptionIndexItemSchema", () => {
 });
 
 describe("agentsMetaNodeSchema", () => {
-  it("accepts registry-first nodes with content_ref, explicit level, and structured description", () => {
+  // v2.0-rc.5 A1: legacy `level`, `layer`, `deps`, `topology_type`, `priority`
+  // are no longer declared in the schema. `withDerivedAgentsMetaNodeDefaults`
+  // still populates `layer`/`level`/`topology_type` for transitional consumers
+  // (knowledge-sections / plan-context) via .passthrough(); TASK-007 drops
+  // those code paths.
+  it("accepts registry-first nodes with content_ref and structured description", () => {
     const parsed = agentsMetaNodeSchema.parse({
       stable_id: "ui-batch-rendering",
       file: ".fabric/knowledge/guidelines/ui-batch-rendering.md",
@@ -101,10 +106,11 @@ describe("agentsMetaNodeSchema", () => {
 
     expect(parsed.stable_id).toBe("ui-batch-rendering");
     expect(parsed.content_ref).toBe(".fabric/knowledge/guidelines/ui-batch-rendering.md");
+    expect(parsed.description?.summary).toBe("UI batch rendering rules");
+    // A1 transitional: legacy fields preserved via .passthrough() until A3.
     expect(parsed.level).toBe("L1");
     expect(parsed.layer).toBe("L1");
     expect(parsed.topology_type).toBe("domain");
-    expect(parsed.description?.summary).toBe("UI batch rendering rules");
   });
 
   it("accepts nodes without activation and preserves derived defaults", () => {

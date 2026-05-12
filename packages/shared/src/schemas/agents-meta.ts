@@ -24,8 +24,10 @@ export const agentsLayerSchema = z.enum(AGENTS_META_LAYERS);
 export const agentsTopologyTypeSchema = z.enum(AGENTS_META_TOPOLOGY_TYPES);
 export const agentsIdentitySourceSchema = z.enum(AGENTS_META_IDENTITY_SOURCES);
 
-type AgentsMetaNodeInput = Omit<AgentsMetaNode, "layer" | "topology_type"> &
-  Partial<Pick<AgentsMetaNode, "layer" | "topology_type">>;
+// v2.0-rc.5 A1: `layer`/`topology_type` are now optional on AgentsMetaNode
+// (legacy protocol retired); `AgentsMetaNodeInput` is the bare interface for
+// path-derived defaults.
+type AgentsMetaNodeInput = AgentsMetaNode;
 
 export const ruleDescriptionSchema = z
   .object({
@@ -57,15 +59,15 @@ export const ruleDescriptionIndexItemSchema = z
   })
   .strict();
 
+// v2.0-rc.5 A1: retire L0/L1/L2 protocol — `level`, `layer`, `deps`,
+// `topology_type`, `priority` removed from the schema. Surface remains
+// path-derivable via `deriveAgentsMetaLayer` / `deriveAgentsMetaTopologyType`
+// when consumers need it. Older on-disk meta files carrying these fields
+// continue to load (Zod strips unknown keys by default).
 const agentsMetaNodeBaseSchema = z.object({
   file: z.string(),
   content_ref: z.string().optional(),
   scope_glob: z.string(),
-  deps: z.array(z.string()),
-  priority: z.enum(["high", "medium", "low"]),
-  level: agentsLayerSchema.optional(),
-  layer: agentsLayerSchema,
-  topology_type: agentsTopologyTypeSchema,
   hash: z.string(),
   stable_id: z.string().optional(),
   identity_source: agentsIdentitySourceSchema.optional(),
@@ -77,14 +79,14 @@ const agentsMetaNodeBaseSchema = z.object({
     .optional(),
   description: ruleDescriptionSchema.optional(),
   sections: z.array(z.string()).optional(),
-});
+}).passthrough(); // v2.0-rc.5 A1: L0/L1/L2 protocol fields (level/layer/deps/topology_type/priority) removed from the declared schema but preserved through parse() via .passthrough() so transitional consumers (knowledge-sections, plan-context) continue to function. TASK-007 (A3) drops passthrough once consumers stop reading these fields.
 
 export const agentsMetaNodeSchema = z.preprocess((value) => {
   if (!isRecord(value) || typeof value.file !== "string") {
     return value;
   }
 
-  return withDerivedAgentsMetaNodeDefaults(value as AgentsMetaNodeInput);
+  return withDerivedAgentsMetaNodeDefaults(value as unknown as AgentsMetaNodeInput);
 }, agentsMetaNodeBaseSchema);
 
 // ---------------------------------------------------------------------------
@@ -139,6 +141,11 @@ export function withDerivedAgentsMetaNodeDefaults(node: AgentsMetaNodeInput): Ag
   const stableId = node.stable_id ?? deriveAgentsMetaStableId(node.file);
   const identitySource = isKnowledgeEntry ? "declared" : deriveAgentsMetaIdentitySource(node);
 
+  // v2.0-rc.5 A1: legacy L0/L1/L2 protocol fields (layer/level/topology_type)
+  // are no longer declared in the Zod schema. They remain populated as
+  // transitional defaults via .passthrough() so plan-context.ts and
+  // knowledge-sections.ts keep functioning until TASK-007 (A3) finishes the
+  // refactor. New code should call `deriveAgentsMetaLayer(file)` directly.
   return {
     ...node,
     layer: node.layer ?? node.level ?? deriveAgentsMetaLayer(node.file),

@@ -122,7 +122,7 @@ export const metaReconciledOnStartupEventSchema = z.object({
   event_type: z.literal("meta_reconciled_on_startup"),
   reconciled_files: z.array(z.string()),
   duration_ms: z.number().int().nonnegative(),
-  source: z.literal("reconcileRules"),
+  source: z.literal("reconcileKnowledge"),
 });
 
 export const metaReconciledEventSchema = z.object({
@@ -131,7 +131,7 @@ export const metaReconciledEventSchema = z.object({
   reconciled_files: z.array(z.string()),
   duration_ms: z.number().int().nonnegative(),
   trigger: z.enum(["doctor", "manual"]),
-  source: z.literal("reconcileRules"),
+  source: z.literal("reconcileKnowledge"),
 });
 
 export const claudeSkillPathMigratedEventSchema = z.object({

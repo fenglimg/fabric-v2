@@ -6,12 +6,12 @@
  * Thresholds can be overridden via fabric.config.json mcpPayloadLimits.
  *
  * Strategy: exercise enforcePayloadLimit directly (the same function wired into
- * registerPlanContext and registerRuleSections). Then verify the tool handler
+ * registerPlanContext and registerKnowledgeSections). Then verify the tool handler
  * warning-merge path by calling planContext service + enforcePayloadLimit with
  * controlled payload sizes.
  *
  * The tool handler code that calls enforcePayloadLimit lives in
- * src/tools/plan-context.ts and src/tools/rule-sections.ts — both use the same
+ * src/tools/plan-context.ts and src/tools/knowledge-sections.ts — both use the same
  * pattern, so we test the guard function plus the config-override path.
  */
 

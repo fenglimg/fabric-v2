@@ -574,7 +574,7 @@ export async function executeInitFabricPlan(plan: InitScaffoldPlan): Promise<Ini
   }
 
   // Personal-root mirror — best-effort. A read-only home / unusual FABRIC_HOME
-  // override must not block init; rule-meta-builder will retry the mkdir on
+  // override must not block init; knowledge-meta-builder will retry the mkdir on
   // its first scan.
   try {
     mkdirSync(plan.personalKnowledgeDir, { recursive: true });

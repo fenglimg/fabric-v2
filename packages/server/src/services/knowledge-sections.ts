@@ -6,33 +6,33 @@ import type { AgentsLayer } from "@fenglimg/fabric-shared";
 
 import { readAgentsMeta, type AgentsMeta } from "../meta-reader.js";
 import { appendEventLedgerEvent } from "./event-ledger.js";
-import { normalizeRulesPath } from "./get-rules.js";
+import { normalizeKnowledgePath } from "./get-knowledge.js";
 import { readSelectionToken } from "./plan-context.js";
 
-export const RULE_SECTION_NAMES = [
+export const KNOWLEDGE_SECTION_NAMES = [
   "MISSION_STATEMENT",
   "MANDATORY_INJECTION",
   "BUSINESS_LOGIC_CHUNKS",
   "CONTEXT_INFO",
 ] as const;
 
-export type RuleSectionName = typeof RULE_SECTION_NAMES[number];
+export type KnowledgeSectionName = typeof KNOWLEDGE_SECTION_NAMES[number];
 
-export type GetRuleSectionsInput = {
+export type GetKnowledgeSectionsInput = {
   selection_token: string;
-  sections: RuleSectionName[];
+  sections: KnowledgeSectionName[];
   ai_selected_stable_ids: string[];
   ai_selection_reasons: Record<string, string>;
   correlation_id?: string;
   session_id?: string;
 };
 
-export type RuleSectionDiagnostic =
+export type KnowledgeSectionDiagnostic =
   | {
       code: "missing_section";
       severity: "warn";
       stable_id: string;
-      section: RuleSectionName;
+      section: KnowledgeSectionName;
       message: string;
     }
   | {
@@ -45,7 +45,7 @@ export type RuleSectionDiagnostic =
       message: string;
     };
 
-export type RuleSectionResult = {
+export type KnowledgeSectionResult = {
   revision_hash: string;
   precedence: ["L2", "L1", "L0"];
   selected_stable_ids: string[];
@@ -53,9 +53,9 @@ export type RuleSectionResult = {
     stable_id: string;
     level: AgentsLayer;
     path: string;
-    sections: Record<RuleSectionName, string>;
+    sections: Record<KnowledgeSectionName, string>;
   }>;
-  diagnostics: RuleSectionDiagnostic[];
+  diagnostics: KnowledgeSectionDiagnostic[];
 };
 
 type RuleNodeEntry = {
@@ -72,10 +72,10 @@ const PRIORITY_ORDER: Record<AgentsMeta["nodes"][string]["priority"], number> = 
   low: 2,
 };
 
-export function parseRuleSections(content: string): Map<RuleSectionName, string> {
-  const sections = new Map<RuleSectionName, string[]>();
+export function parseKnowledgeSections(content: string): Map<KnowledgeSectionName, string> {
+  const sections = new Map<KnowledgeSectionName, string[]>();
   const lines = content.split(/\r?\n/u);
-  let activeSection: RuleSectionName | undefined;
+  let activeSection: KnowledgeSectionName | undefined;
   let activeSectionDepth = 0;
   let buffer: string[] = [];
 
@@ -99,7 +99,7 @@ export function parseRuleSections(content: string): Map<RuleSectionName, string>
 
     if (heading !== null) {
       flush();
-      activeSection = isRuleSectionName(heading[2]) ? heading[2] : undefined;
+      activeSection = isKnowledgeSectionName(heading[2]) ? heading[2] : undefined;
       activeSectionDepth = activeSection === undefined ? 0 : heading[1].length;
       continue;
     }
@@ -129,10 +129,10 @@ export function parseRuleSections(content: string): Map<RuleSectionName, string>
   );
 }
 
-export async function getRuleSections(
+export async function getKnowledgeSections(
   projectRoot: string,
-  input: GetRuleSectionsInput,
-): Promise<RuleSectionResult> {
+  input: GetKnowledgeSectionsInput,
+): Promise<KnowledgeSectionResult> {
   const token = readSelectionToken(input.selection_token);
   if (token === undefined) {
     throw new Error("selection_token is missing or expired");
@@ -143,13 +143,13 @@ export async function getRuleSections(
   const meta = await readAgentsMeta(projectRoot);
   const selectedStableIds = [...token.required_stable_ids, ...input.ai_selected_stable_ids];
   const selectedRules = sortRuleNodes(selectedStableIds.map((stableId) => findRuleNode(meta, stableId)));
-  const diagnostics: RuleSectionDiagnostic[] = [];
+  const diagnostics: KnowledgeSectionDiagnostic[] = [];
   const rules = [];
 
   for (const rule of selectedRules) {
     const content = await readFile(resolveRuleSourcePath(projectRoot, rule.path), "utf8");
-    const parsedSections = parseRuleSections(content);
-    const sections = {} as Record<RuleSectionName, string>;
+    const parsedSections = parseKnowledgeSections(content);
+    const sections = {} as Record<KnowledgeSectionName, string>;
 
     for (const section of input.sections) {
       const sectionContent = parsedSections.get(section);
@@ -191,7 +191,7 @@ export async function getRuleSections(
     });
   }
 
-  const result: RuleSectionResult = {
+  const result: KnowledgeSectionResult = {
     revision_hash: meta.revision,
     precedence: ["L2", "L1", "L0"],
     selected_stable_ids: rules.map((rule) => rule.stable_id),
@@ -271,7 +271,7 @@ function findRuleNode(meta: AgentsMeta, stableId: string): RuleNodeEntry {
     return {
       stable_id: nodeStableId,
       level,
-      path: normalizeRulesPath(node.content_ref ?? node.file),
+      path: normalizeKnowledgePath(node.content_ref ?? node.file),
       priority: node.priority,
       node,
     };
@@ -307,15 +307,15 @@ function outputLevelOrder(level: AgentsLayer): number {
   }
 }
 
-function isRuleSectionName(value: string): value is RuleSectionName {
-  return RULE_SECTION_NAMES.includes(value as RuleSectionName);
+function isKnowledgeSectionName(value: string): value is KnowledgeSectionName {
+  return KNOWLEDGE_SECTION_NAMES.includes(value as KnowledgeSectionName);
 }
 
 /**
  * v2.0: Resolve a content_ref/path captured in agents.meta.json to an absolute
  * filesystem path. Personal-layer entries are persisted as `~/.fabric/...`
  * and live outside the project root; team-layer entries stay project-relative.
- * Mirrors `resolveContentRefPath` in rule-meta-builder.ts.
+ * Mirrors `resolveContentRefPath` in knowledge-meta-builder.ts.
  */
 function resolveRuleSourcePath(projectRoot: string, contentRef: string): string {
   if (contentRef.startsWith("~/.fabric/knowledge/")) {

@@ -3,37 +3,37 @@ import { randomUUID } from "node:crypto";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import {
-  ruleSectionsAnnotations,
-  ruleSectionsInputSchema,
-  ruleSectionsOutputSchema,
+  knowledgeSectionsAnnotations,
+  knowledgeSectionsInputSchema,
+  knowledgeSectionsOutputSchema,
 } from "@fenglimg/fabric-shared/schemas/api-contracts";
 import { enforcePayloadLimit } from "@fenglimg/fabric-shared/node/mcp-payload-guard";
 import { resolveProjectRoot } from "../meta-reader.js";
 import { readPayloadLimits } from "../config-loader.js";
 import { type InFlightTracker } from "../services/in-flight-tracker.js";
 import {
-  getRuleSections,
-  type GetRuleSectionsInput,
-} from "../services/rule-sections.js";
-import { ensureRulesFresh } from "../services/rule-sync.js";
+  getKnowledgeSections,
+  type GetKnowledgeSectionsInput,
+} from "../services/knowledge-sections.js";
+import { ensureKnowledgeFresh } from "../services/knowledge-sync.js";
 
-export function registerRuleSections(server: McpServer, tracker?: InFlightTracker): void {
+export function registerKnowledgeSections(server: McpServer, tracker?: InFlightTracker): void {
   server.registerTool(
-    "fab_get_rule_sections",
+    "fab_get_knowledge_sections",
     {
       description:
         "Fetch structured Fabric rule sections after fab_plan_context. Required L0/L2 rules are merged with AI-selected L1 rules server-side.",
-      inputSchema: ruleSectionsInputSchema,
-      outputSchema: ruleSectionsOutputSchema,
-      annotations: ruleSectionsAnnotations,
+      inputSchema: knowledgeSectionsInputSchema,
+      outputSchema: knowledgeSectionsOutputSchema,
+      annotations: knowledgeSectionsAnnotations,
     },
-    async (input: GetRuleSectionsInput) => {
+    async (input: GetKnowledgeSectionsInput) => {
       const requestId = randomUUID();
       tracker?.enter(requestId);
       try {
         const projectRoot = resolveProjectRoot();
-        const syncReport = await ensureRulesFresh(projectRoot);
-        const result = await getRuleSections(projectRoot, input);
+        const syncReport = await ensureKnowledgeFresh(projectRoot);
+        const result = await getKnowledgeSections(projectRoot, input);
 
         const response = {
           ...result,

@@ -7,7 +7,7 @@ import { contextCache } from "../cache.js";
 import { readAgentsMeta, type AgentsMeta } from "../meta-reader.js";
 import { appendEventLedgerEvent } from "./event-ledger.js";
 
-export type RulesEntry = {
+export type KnowledgeEntryItem = {
   path: string;
   content: string;
 };
@@ -28,28 +28,28 @@ export type HumanLockedNearby = {
   excerpt: string;
 };
 
-export type RulesPayload = {
+export type KnowledgePayload = {
   L0: string;
-  L1: RulesEntry[];
-  L2: RulesEntry[];
+  L1: KnowledgeEntryItem[];
+  L2: KnowledgeEntryItem[];
   human_locked_nearby: HumanLockedNearby[];
   description_stubs?: DescriptionStub[];
 };
 
-export type GetRulesInput = {
+export type GetKnowledgeInput = {
   path: string;
   client_hash?: string;
   correlation_id?: string;
   session_id?: string;
 };
 
-export type GetRulesResult = {
+export type GetKnowledgeResult = {
   revision_hash: string;
   stale: boolean;
-  rules: RulesPayload;
+  rules: KnowledgePayload;
 };
 
-export type GetRulesContext = {
+export type GetKnowledgeContext = {
   meta: AgentsMeta;
   l0Content: string;
   humanLockedNearby: HumanLockedNearby[];
@@ -59,10 +59,10 @@ type LoadedRule = {
   level: "L1" | "L2";
   stable_id: string;
   identity_source: NonNullable<AgentsMeta["nodes"][string]["identity_source"]>;
-  entry: RulesEntry;
+  entry: KnowledgeEntryItem;
 };
 
-export type LoadedRulesResult = {
+export type LoadedKnowledgeResult = {
   rules: LoadedRule[];
   stubs: SharedDescriptionStub[];
 };
@@ -81,8 +81,8 @@ const PRIORITY_ORDER: Record<"high" | "medium" | "low", number> = {
   low: 2,
 };
 
-export async function getRules(projectRoot: string, input: GetRulesInput): Promise<GetRulesResult> {
-  const context = await loadGetRulesContext(projectRoot);
+export async function getKnowledge(projectRoot: string, input: GetKnowledgeInput): Promise<GetKnowledgeResult> {
+  const context = await loadGetKnowledgeContext(projectRoot);
   const stale = input.client_hash !== undefined && input.client_hash !== context.meta.revision;
   const matchedNodes = matchRuleNodes(context.meta, input.path);
   const requiredStableIds = matchedNodes
@@ -91,7 +91,7 @@ export async function getRules(projectRoot: string, input: GetRulesInput): Promi
   const aiSelectableStableIds = matchedNodes
     .filter((node) => node.level === "L1")
     .map((node) => node.stable_id);
-  const rules = await resolveRulesForPath(projectRoot, context, input.path);
+  const rules = await resolveKnowledgeForPath(projectRoot, context, input.path);
   const result = {
     revision_hash: context.meta.revision,
     stale,
@@ -116,8 +116,8 @@ export async function getRules(projectRoot: string, input: GetRulesInput): Promi
   return result;
 }
 
-export async function loadGetRulesContext(projectRoot: string): Promise<GetRulesContext> {
-  const cached = contextCache.get<GetRulesContext>("context", projectRoot);
+export async function loadGetKnowledgeContext(projectRoot: string): Promise<GetKnowledgeContext> {
+  const cached = contextCache.get<GetKnowledgeContext>("context", projectRoot);
   if (cached !== undefined) {
     return cached;
   }
@@ -125,7 +125,7 @@ export async function loadGetRulesContext(projectRoot: string): Promise<GetRules
   const meta = await readAgentsMeta(projectRoot);
   const l0Content = await readFile(join(projectRoot, ".fabric", "bootstrap", "README.md"), "utf8");
 
-  const context: GetRulesContext = {
+  const context: GetKnowledgeContext = {
     meta,
     l0Content,
     humanLockedNearby: [],
@@ -135,25 +135,25 @@ export async function loadGetRulesContext(projectRoot: string): Promise<GetRules
   return context;
 }
 
-export async function resolveRulesForPath(
+export async function resolveKnowledgeForPath(
   projectRoot: string,
-  context: GetRulesContext,
+  context: GetKnowledgeContext,
   path: string,
   options: {
     dedupeByPath?: boolean;
   } = {},
-): Promise<RulesPayload> {
+): Promise<KnowledgePayload> {
   const matchedNodes = matchRuleNodes(context.meta, path);
   const loaded = await loadMatchedRules(projectRoot, matchedNodes);
-  return buildRulesPayload(context, loaded, options);
+  return buildKnowledgePayload(context, loaded, options);
 }
 
-export function normalizeRulesPath(value: string): string {
+export function normalizeKnowledgePath(value: string): string {
   return value.replaceAll("\\", "/");
 }
 
 export function matchRuleNodes(meta: AgentsMeta, path: string): MatchedRuleNode[] {
-  const requestedPath = normalizeRulesPath(path);
+  const requestedPath = normalizeKnowledgePath(path);
 
   return Object.entries(meta.nodes)
     .filter(([, node]) => shouldLoadNodeForPath(requestedPath, node))
@@ -177,7 +177,7 @@ export async function loadMatchedRules(
   projectRoot: string,
   matchedNodes: MatchedRuleNode[],
   fileContentCache: Map<string, Promise<string>> = new Map(),
-): Promise<LoadedRulesResult> {
+): Promise<LoadedKnowledgeResult> {
   const rules: LoadedRule[] = [];
   const stubs: SharedDescriptionStub[] = [];
 
@@ -211,13 +211,13 @@ export async function loadMatchedRules(
   return { rules, stubs };
 }
 
-export function buildRulesPayload(
-  context: GetRulesContext,
-  loaded: LoadedRulesResult,
+export function buildKnowledgePayload(
+  context: GetKnowledgeContext,
+  loaded: LoadedKnowledgeResult,
   options: {
     dedupeByPath?: boolean;
   } = {},
-): RulesPayload {
+): KnowledgePayload {
   const { L1, L2 } = partitionRulesByLevel(loaded.rules, options.dedupeByPath ?? false);
 
   return {
@@ -248,9 +248,9 @@ function classifyNode(
 function partitionRulesByLevel(
   loadedRules: LoadedRule[],
   dedupeByPath: boolean,
-): Pick<RulesPayload, "L1" | "L2"> {
-  const l1: RulesEntry[] = [];
-  const l2: RulesEntry[] = [];
+): Pick<KnowledgePayload, "L1" | "L2"> {
+  const l1: KnowledgeEntryItem[] = [];
+  const l2: KnowledgeEntryItem[] = [];
 
   for (const rule of loadedRules) {
     if (rule.level === "L1") {
@@ -269,7 +269,7 @@ function partitionRulesByLevel(
   };
 }
 
-function dedupeEntriesByPath(entries: RulesEntry[]): RulesEntry[] {
+function dedupeEntriesByPath(entries: KnowledgeEntryItem[]): KnowledgeEntryItem[] {
   const seenPaths = new Set<string>();
 
   return entries.filter((entry) => {
@@ -293,7 +293,7 @@ function shouldLoadNodeForPath(
       return true;
     case "path":
     case undefined:
-      return minimatch(requestedPath, normalizeRulesPath(node.scope_glob), { dot: true });
+      return minimatch(requestedPath, normalizeKnowledgePath(node.scope_glob), { dot: true });
   }
 }
 

@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { planContext } from "./plan-context.js";
 import { readEventLedger } from "./event-ledger.js";
-import { getRuleSections, parseRuleSections } from "./rule-sections.js";
+import { getKnowledgeSections, parseKnowledgeSections } from "./knowledge-sections.js";
 
 const tempDirs: string[] = [];
 
@@ -16,9 +16,9 @@ afterEach(async () => {
   }));
 });
 
-describe("parseRuleSections", () => {
+describe("parseKnowledgeSections", () => {
   it("extracts structured sections without falling back to full content", () => {
-    const sections = parseRuleSections(`# 规则：对象池规范
+    const sections = parseKnowledgeSections(`# 规则：对象池规范
 
 ## [MISSION_STATEMENT]
 - 本脚本只负责资源池生命周期。
@@ -48,7 +48,7 @@ describe("parseRuleSections", () => {
   });
 
   it("merges duplicate structured headings in document order", () => {
-    const sections = parseRuleSections(`## [MANDATORY_INJECTION]
+    const sections = parseKnowledgeSections(`## [MANDATORY_INJECTION]
 first
 
 ## [CONTEXT_INFO]
@@ -62,12 +62,12 @@ second
   });
 });
 
-describe("getRuleSections", () => {
+describe("getKnowledgeSections", () => {
   it("merges required L0/L2 with AI-selected L1 and returns requested sections", async () => {
     const projectRoot = await createSectionProject();
     const plan = await planContext(projectRoot, { paths: ["assets/scripts/ui/BattleView.ts"] });
 
-    const result = await getRuleSections(projectRoot, {
+    const result = await getKnowledgeSections(projectRoot, {
       selection_token: plan.selection_token,
       sections: ["MISSION_STATEMENT", "MANDATORY_INJECTION", "BUSINESS_LOGIC_CHUNKS", "CONTEXT_INFO"],
       ai_selected_stable_ids: ["ui-batch-rendering"],
@@ -213,21 +213,21 @@ describe("getRuleSections", () => {
     const projectRoot = await createSectionProject();
     const plan = await planContext(projectRoot, { paths: ["assets/scripts/ui/BattleView.ts"] });
 
-    await expect(getRuleSections(projectRoot, {
+    await expect(getKnowledgeSections(projectRoot, {
       selection_token: plan.selection_token,
       sections: ["MANDATORY_INJECTION"],
       ai_selected_stable_ids: ["unknown-l1"],
       ai_selection_reasons: { "unknown-l1": "not selectable" },
     })).rejects.toThrow(/Invalid L1 rule selection/u);
 
-    await expect(getRuleSections(projectRoot, {
+    await expect(getKnowledgeSections(projectRoot, {
       selection_token: plan.selection_token,
       sections: ["MANDATORY_INJECTION"],
       ai_selected_stable_ids: ["ui-batch-rendering"],
       ai_selection_reasons: {},
     })).rejects.toThrow(/Missing AI selection reason/u);
 
-    await expect(getRuleSections(projectRoot, {
+    await expect(getKnowledgeSections(projectRoot, {
       selection_token: plan.selection_token,
       sections: ["MANDATORY_INJECTION"],
       ai_selected_stable_ids: ["global-protocol"],
@@ -238,7 +238,7 @@ describe("getRuleSections", () => {
   it("hard-errors missing or expired selection tokens", async () => {
     const projectRoot = await createSectionProject();
 
-    await expect(getRuleSections(projectRoot, {
+    await expect(getKnowledgeSections(projectRoot, {
       selection_token: "missing",
       sections: ["MANDATORY_INJECTION"],
       ai_selected_stable_ids: [],
@@ -252,7 +252,7 @@ describe("getRuleSections", () => {
     });
     const plan = await planContext(projectRoot, { paths: ["assets/scripts/ui/BattleView.ts"] });
 
-    const result = await getRuleSections(projectRoot, {
+    const result = await getKnowledgeSections(projectRoot, {
       selection_token: plan.selection_token,
       sections: ["MANDATORY_INJECTION"],
       ai_selected_stable_ids: ["ui-low-priority", "ui-batch-rendering"],
@@ -279,7 +279,7 @@ describe("getRuleSections", () => {
     // Build a project where the global rule HAS v2.0 knowledge fields and the
     // UI rule does NOT — verify the diagnostic only fires for the un-migrated
     // entry while selection still completes successfully.
-    const projectRoot = await mkdtemp(join(tmpdir(), "fabric-rule-sections-v2-"));
+    const projectRoot = await mkdtemp(join(tmpdir(), "fabric-knowledge-sections-v2-"));
     tempDirs.push(projectRoot);
 
     await mkdir(join(projectRoot, ".fabric"), { recursive: true });
@@ -352,7 +352,7 @@ describe("getRuleSections", () => {
     );
 
     const plan = await planContext(projectRoot, { paths: ["src/index.ts"] });
-    const result = await getRuleSections(projectRoot, {
+    const result = await getKnowledgeSections(projectRoot, {
       selection_token: plan.selection_token,
       sections: ["MANDATORY_INJECTION"],
       ai_selected_stable_ids: ["ui-rule"],
@@ -380,7 +380,7 @@ describe("getRuleSections", () => {
 });
 
 async function createSectionProject(options: { extraL1?: boolean } = {}): Promise<string> {
-  const projectRoot = await mkdtemp(join(tmpdir(), "fabric-rule-sections-"));
+  const projectRoot = await mkdtemp(join(tmpdir(), "fabric-knowledge-sections-"));
   tempDirs.push(projectRoot);
 
   await mkdir(join(projectRoot, ".fabric", "knowledge", "decisions"), { recursive: true });

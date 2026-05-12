@@ -53,19 +53,19 @@ type FabricVerifyAnnotation = {
   line: number;
 };
 
-export type RuleMetaBuildSource = "doctor_fix" | "sync_meta";
+export type KnowledgeMetaBuildSource = "doctor_fix" | "sync_meta";
 
-export type RuleMetaBuildResult = {
+export type KnowledgeMetaBuildResult = {
   meta: AgentsMeta;
   knowledgeTestIndex: KnowledgeTestIndex;
   changed: boolean;
 };
 
-export type WriteRuleMetaOptions = {
-  source: RuleMetaBuildSource;
+export type WriteKnowledgeMetaOptions = {
+  source: KnowledgeMetaBuildSource;
 };
 
-export async function buildRuleMeta(projectRootInput: string): Promise<RuleMetaBuildResult> {
+export async function buildKnowledgeMeta(projectRootInput: string): Promise<KnowledgeMetaBuildResult> {
   const projectRoot = normalizeProjectRoot(projectRootInput);
   assertExistingDirectory(projectRoot);
 
@@ -73,7 +73,7 @@ export async function buildRuleMeta(projectRootInput: string): Promise<RuleMetaB
   const knowledgeTestIndexPath = join(projectRoot, ".fabric", ".cache", "knowledge-test.index.json");
   const existingMeta = await readExistingMeta(metaPath);
   const existingKnowledgeTestIndex = await readExistingKnowledgeTestIndex(knowledgeTestIndexPath);
-  const meta = await computeRulesBasedAgentsMeta(projectRoot, existingMeta);
+  const meta = await computeKnowledgeBasedAgentsMeta(projectRoot, existingMeta);
   const knowledgeTestIndex = await computeKnowledgeTestIndex(projectRoot, meta, existingKnowledgeTestIndex);
 
   return {
@@ -87,15 +87,15 @@ export async function buildRuleMeta(projectRootInput: string): Promise<RuleMetaB
   };
 }
 
-export async function writeRuleMeta(
+export async function writeKnowledgeMeta(
   projectRootInput: string,
-  options: WriteRuleMetaOptions,
-): Promise<RuleMetaBuildResult> {
+  options: WriteKnowledgeMetaOptions,
+): Promise<KnowledgeMetaBuildResult> {
   const projectRoot = normalizeProjectRoot(projectRootInput);
   const metaPath = join(projectRoot, ".fabric", "agents.meta.json");
   const knowledgeTestIndexPath = join(projectRoot, ".fabric", ".cache", "knowledge-test.index.json");
   const existingMeta = await readExistingMeta(metaPath);
-  const result = await buildRuleMeta(projectRoot);
+  const result = await buildKnowledgeMeta(projectRoot);
 
   if (!result.changed) {
     return result;
@@ -123,7 +123,7 @@ export async function writeRuleMeta(
   return result;
 }
 
-export async function computeRulesBasedAgentsMeta(
+export async function computeKnowledgeBasedAgentsMeta(
   projectRootInput: string,
   existingMeta?: AgentsMeta,
 ): Promise<AgentsMeta> {
@@ -238,11 +238,11 @@ export async function computeKnowledgeTestIndex(
   };
 }
 
-export function deriveRuleMetaLayer(relativePath: string): AgentsLayer {
+export function deriveKnowledgeMetaLayer(relativePath: string): AgentsLayer {
   return deriveAgentsMetaLayer(toAgentsCompatiblePath(relativePath));
 }
 
-export function deriveRuleMetaTopologyType(relativePath: string): AgentsTopologyType {
+export function deriveKnowledgeMetaTopologyType(relativePath: string): AgentsTopologyType {
   return deriveAgentsMetaTopologyType(toAgentsCompatiblePath(relativePath));
 }
 
@@ -555,7 +555,7 @@ function deriveNodeId(file: string): string {
   // v2.0: no special-cased "L0" node for `.fabric/bootstrap/README.md` —
   // knowledge entries (KP-/KT-...) and legacy rules use their derived ids.
 
-  const layer = deriveRuleMetaLayer(file);
+  const layer = deriveKnowledgeMetaLayer(file);
   const relativeStem = getRuleRelativeStem(file);
 
   // v2.0: distinguish personal vs team knowledge entries that share the same
@@ -572,8 +572,8 @@ function deriveNodeId(file: string): string {
 }
 
 function createDefaultNodeMeta(contentRef: string): NodeMeta {
-  const layer = deriveRuleMetaLayer(contentRef);
-  const topologyType = deriveRuleMetaTopologyType(contentRef);
+  const layer = deriveKnowledgeMetaLayer(contentRef);
+  const topologyType = deriveKnowledgeMetaTopologyType(contentRef);
 
   return {
     file: contentRef,
@@ -721,7 +721,7 @@ async function recordBaselineSynced(
     syncedFiles: string[];
     acceptedStableIds: string[];
     driftDetails: MetaDriftDetail[];
-    source: RuleMetaBuildSource;
+    source: KnowledgeMetaBuildSource;
   },
 ): Promise<void> {
   if (input.driftDetails.length > 0) {

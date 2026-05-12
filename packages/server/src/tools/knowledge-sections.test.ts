@@ -2,13 +2,13 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
-import { registerRuleSections } from "./rule-sections.js";
+import { registerKnowledgeSections } from "./knowledge-sections.js";
 
-describe("registerRuleSections", () => {
+describe("registerKnowledgeSections", () => {
   it("validates selection token, AI-selected stable ids, selection reasons, and section names", () => {
     const registerTool = vi.fn();
 
-    registerRuleSections({
+    registerKnowledgeSections({
       registerTool,
     } as unknown as McpServer);
 
@@ -38,13 +38,13 @@ describe("registerRuleSections", () => {
     }).success).toBe(true);
   });
 
-  it("registers fab_get_rule_sections", () => {
+  it("registers fab_get_knowledge_sections", () => {
     const registerTool = vi.fn();
 
-    registerRuleSections({
+    registerKnowledgeSections({
       registerTool,
     } as unknown as McpServer);
 
-    expect(registerTool.mock.calls[0]?.[0]).toBe("fab_get_rule_sections");
+    expect(registerTool.mock.calls[0]?.[0]).toBe("fab_get_knowledge_sections");
   });
 });
