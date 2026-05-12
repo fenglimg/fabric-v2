@@ -99,7 +99,13 @@ export type DoctorApplyLintMutationKind =
   // rc.5 TASK-009 (B2): pending entries >30d are auto-archived under
   // `.fabric/.archive/pending/<type>/` (team) or `~/.fabric/.archive/pending/<type>/`
   // (personal). One mutation per pending file moved.
-  | "knowledge_pending_auto_archive";
+  | "knowledge_pending_auto_archive"
+  // rc.6 TASK-021 (E3): session-hints cache files older than 7d are deleted
+  // by the doctor cleanup pass (lint #27 knowledge_session_hints_stale).
+  // These are local cache files at `.fabric/.cache/session-hints-{id}.json`,
+  // not git-tracked, so the apply-lint arm uses plain fs.unlink with no
+  // ledger event (no audit trail required for local hot-cache hygiene).
+  | "knowledge_session_hints_stale_cleanup";
 
 export type DoctorApplyLintMutation = {
   kind: DoctorApplyLintMutationKind;
@@ -373,6 +379,25 @@ type UnderseededInspection = {
   underseeded: boolean;
 };
 
+// rc.6 TASK-021 (E3): session-hints cache hygiene. Lint #27 surfaces stale
+// per-session cache files (`.fabric/.cache/session-hints-{id}.json`) whose
+// mtime is older than the SESSION_HINTS_STALE_DAYS threshold (default 7d).
+// Info-kind: cache files are local hot-cache, not git-tracked — accumulation
+// is a hygiene concern, not a correctness break. The apply-lint arm deletes
+// matched files via fs.unlink (no ledger event — see mutation kind comment).
+type SessionHintsStaleCandidate = {
+  // Project-relative POSIX path of the stale cache file (display + apply-lint
+  // anchor). The apply-lint arm joins this back to projectRoot to unlink.
+  path: string;
+  // Age of the file (mtime delta) in whole days. Floor-rounded to keep the
+  // signal coarse; sub-day precision adds noise without informational value.
+  age_days: number;
+};
+
+type SessionHintsStaleInspection = {
+  candidates: SessionHintsStaleCandidate[];
+};
+
 // rc.5 TASK-013 (C4): read-side lint inspections #23/#24/#25 for relevance_paths
 // hygiene. All three walk canonical entries (team + personal) and inspect the
 // `relevance_scope` / `relevance_paths` frontmatter fields introduced by the
@@ -520,6 +545,21 @@ const PENDING_AUTO_ARCHIVE_THRESHOLD_DAYS = 30;
 // underseed_node_threshold in .fabric/fabric-config.json.
 const DEFAULT_UNDERSEED_NODE_THRESHOLD = 10;
 
+// rc.6 TASK-021 (E3): session-hints cache files older than this threshold
+// are flagged by lint #27 (`knowledge_session_hints_stale`) and deleted by
+// the apply-lint mutation arm. 7 days mirrors a typical work-week cadence —
+// long enough that a paused-then-resumed session keeps its dedupe state,
+// short enough that an abandoned session's cache file doesn't accrete.
+const SESSION_HINTS_STALE_DAYS = 7;
+
+// File-name prefix / suffix for session-hints cache files. The narrow hook
+// (knowledge-hint-narrow.cjs) writes these under `.fabric/.cache/`. Keep
+// the constants here aligned with the hook's SESSION_HINTS_FILE_PREFIX /
+// SESSION_HINTS_FILE_SUFFIX — both surfaces MUST agree on the naming
+// convention for the cleanup pass to identify the right files.
+const SESSION_HINTS_FILE_PREFIX = "session-hints-";
+const SESSION_HINTS_FILE_SUFFIX = ".json";
+
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 // Regex extracting the `maturity:` value from YAML frontmatter. Mirrors
@@ -665,6 +705,11 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
   const narrowNoPaths = inspectNarrowNoPaths(projectRoot);
   const relevancePathsDangling = inspectRelevancePathsDangling(projectRoot);
   const relevancePathsDrift = inspectRelevancePathsDrift(projectRoot);
+  // rc.6 TASK-021 (E3): session-hints cache hygiene (#27). Scans
+  // `.fabric/.cache/` for session-hints-*.json files older than 7 days
+  // (mtime-based). Info kind — does not bump report status. apply-lint
+  // reaps matched files via unlink (no ledger event; local hot-cache).
+  const sessionHintsStale = inspectSessionHintsStale(projectRoot, lintNow);
   const checks: DoctorCheck[] = [
     createBootstrapAnchorCheck(bootstrapAnchor),
     createKnowledgeDirMissingCheck(knowledgeDirMissing),
@@ -715,6 +760,8 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     createNarrowNoPathsCheck(narrowNoPaths),
     createRelevancePathsDanglingCheck(relevancePathsDangling),
     createRelevancePathsDriftCheck(relevancePathsDrift),
+    // rc.6 TASK-021 (E3): session-hints cache hygiene (lint #27). Info kind.
+    createSessionHintsStaleCheck(sessionHintsStale),
     createPreexistingRootFilesCheck(preexistingRootFiles),
     // v2.0 / rc.2: `createLegacyClientPathCheck` removed. The schema now
     // rejects retired clientPaths keys (windsurf/rooCode/geminiCLI) at Zod
@@ -946,6 +993,18 @@ export async function runDoctorApplyLint(target: string): Promise<DoctorApplyLin
   const pendingAutoArchive = inspectPendingAutoArchive(projectRoot, now);
   for (const candidate of pendingAutoArchive.candidates) {
     mutations.push(await applyPendingAutoArchive(projectRoot, candidate, now));
+  }
+
+  // rc.6 TASK-021 (E3): session-hints cache cleanup (#27). Independent of
+  // all canonical/pending mutation paths — operates strictly on local hot-
+  // cache files under `.fabric/.cache/session-hints-*.json`. Ordering: runs
+  // after pending_auto_archive because they share no state and the cache
+  // cleanup is the cheapest mutation (single unlink per file); deferring it
+  // to last would arbitrarily inflate the perceived apply-lint runtime if
+  // an upstream mutation hangs. One mutation per stale cache file.
+  const sessionHintsStale = inspectSessionHintsStale(projectRoot, now);
+  for (const candidate of sessionHintsStale.candidates) {
+    mutations.push(await applySessionHintsStaleCleanup(projectRoot, candidate));
   }
 
   // Index drift: re-read meta after any prior mutations (none touch
@@ -1307,6 +1366,42 @@ async function applyPendingAutoArchive(
 function relativePosix(projectRoot: string, absolutePath: string): string {
   const rel = nodeRelative(projectRoot, absolutePath);
   return rel.split(sep).join("/");
+}
+
+// rc.6 TASK-021 (E3): apply-lint mutation arm for the session-hints stale
+// cleanup. Plain fs.unlink — these are local cache files, not git-tracked,
+// so no `git mv` / ledger event / rollback dance. Mirrors the lightweight
+// pattern called out in the task spec (vs. applyPendingAutoArchive's full
+// rename-with-event-emission).
+//
+// Failure mode: a per-file unlink failure (ENOENT — file disappeared
+// between inspection and mutation, EPERM — fs permissions, etc) is captured
+// as `applied: false` with the error message truncated. The apply-lint run
+// continues; doctor's contract is best-effort hygiene, not transactional.
+async function applySessionHintsStaleCleanup(
+  projectRoot: string,
+  candidate: SessionHintsStaleCandidate,
+): Promise<DoctorApplyLintMutation> {
+  const detail = `deleted (${candidate.age_days}d old)`;
+  const absPath = join(projectRoot, candidate.path);
+  try {
+    const { unlink } = await import("node:fs/promises");
+    await unlink(absPath);
+    return {
+      kind: "knowledge_session_hints_stale_cleanup",
+      path: candidate.path,
+      detail,
+      applied: true,
+    };
+  } catch (error) {
+    return {
+      kind: "knowledge_session_hints_stale_cleanup",
+      path: candidate.path,
+      detail,
+      applied: false,
+      error: truncateErrorMessage(error),
+    };
+  }
 }
 
 async function applyIndexDriftFix(
@@ -2792,6 +2887,54 @@ function inspectUnderseeded(projectRoot: string): UnderseededInspection {
   };
 }
 
+// rc.6 TASK-021 (E3): inspect `.fabric/.cache/` for session-hints cache
+// files older than SESSION_HINTS_STALE_DAYS (7d default). Mirrors the
+// existing iteratePendingFiles age model — mtime-based, day-floor rounded.
+// Read-only: candidates are surfaced as info-kind findings; the apply-lint
+// arm (applySessionHintsStaleCleanup) does the unlink. Directory absence is
+// the common-case empty-result branch (no narrow hook ever fired in this
+// workspace) — return zero candidates without an error.
+function inspectSessionHintsStale(
+  projectRoot: string,
+  now: number,
+): SessionHintsStaleInspection {
+  const cacheDir = join(projectRoot, ".fabric", ".cache");
+  if (!existsSync(cacheDir)) {
+    return { candidates: [] };
+  }
+  let entries;
+  try {
+    entries = readdirSync(cacheDir, { withFileTypes: true });
+  } catch {
+    return { candidates: [] };
+  }
+  const candidates: SessionHintsStaleCandidate[] = [];
+  for (const entry of entries) {
+    if (!entry.isFile()) continue;
+    if (!entry.name.startsWith(SESSION_HINTS_FILE_PREFIX)) continue;
+    if (!entry.name.endsWith(SESSION_HINTS_FILE_SUFFIX)) continue;
+    const absPath = join(cacheDir, entry.name);
+    let mtimeMs = 0;
+    try {
+      mtimeMs = statSync(absPath).mtimeMs;
+    } catch {
+      // Unreadable stat → skip rather than guess at age. The next doctor
+      // run will retry (or the OS will reap a corrupted entry).
+      continue;
+    }
+    const ageDays = Math.floor((now - mtimeMs) / MS_PER_DAY);
+    if (ageDays < SESSION_HINTS_STALE_DAYS) continue;
+    candidates.push({
+      path: posix.join(".fabric", ".cache", entry.name),
+      age_days: ageDays,
+    });
+  }
+  // Stable display order — alphabetical by path so test assertions and
+  // human review aren't sensitive to readdir() ordering quirks.
+  candidates.sort((a, b) => a.path.localeCompare(b.path));
+  return { candidates };
+}
+
 // Best-effort reader for the underseed-threshold override stored in the
 // workspace-local `.fabric/fabric-config.json`. Any failure (missing file,
 // parse error, non-positive value) returns the default. Mirrors the
@@ -2891,6 +3034,31 @@ function createUnderseededCheck(inspection: UnderseededInspection): DoctorCheck 
     "knowledge_underseeded",
     `Knowledge corpus has only ${inspection.node_count} canonical entr${inspection.node_count === 1 ? "y" : "ies"} (< ${inspection.threshold} threshold). The plan_context retrieval surface is below its useful floor.`,
     "Run the fabric-import Skill (`/fabric-import`) to backfill knowledge from git history and existing docs.",
+  );
+}
+
+// rc.6 TASK-021 (E3): surface stale session-hints cache files as an info-
+// kind finding. Status remains "ok" — the cache is hot-cache hygiene, not
+// a correctness concern. The actionHint points at apply-lint so users can
+// reap accumulated cache files in a single pass.
+function createSessionHintsStaleCheck(
+  inspection: SessionHintsStaleInspection,
+): DoctorCheck {
+  if (inspection.candidates.length === 0) {
+    return okCheck(
+      "Knowledge session-hints stale",
+      `No session-hints cache files older than ${SESSION_HINTS_STALE_DAYS} days under .fabric/.cache/.`,
+    );
+  }
+  const first = inspection.candidates[0];
+  const detail = `${first.path} (${first.age_days}d old)`;
+  return issueCheck(
+    "Knowledge session-hints stale",
+    "ok",
+    "info",
+    "knowledge_session_hints_stale",
+    `${inspection.candidates.length} session-hints cache file${inspection.candidates.length === 1 ? "" : "s"} under .fabric/.cache/ ${inspection.candidates.length === 1 ? "is" : "are"} older than ${SESSION_HINTS_STALE_DAYS} days. First: ${detail}.`,
+    "Run `fab doctor --apply-lint` to delete stale session-hints cache files.",
   );
 }
 

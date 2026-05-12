@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -94,7 +94,8 @@ describe("runDoctorReport", () => {
     // mismatch / index drift integrity lint checks added) → 22 rc.5
     // TASK-010 (knowledge_underseeded lint added) → 25 rc.5 TASK-013
     // (narrow_no_paths + relevance_paths_dangling + relevance_paths_drift
-    // lints added).
+    // lints added) → 26 rc.6 TASK-021 (knowledge_session_hints_stale
+    // lint #27 added).
     expect(report.checks.map((check) => check.name)).toEqual([
       "Bootstrap anchor",
       "Knowledge layout",
@@ -120,9 +121,10 @@ describe("runDoctorReport", () => {
       "Knowledge narrow without paths",
       "Knowledge relevance_paths dangling",
       "Knowledge relevance_paths drift",
+      "Knowledge session-hints stale",
       "Preexisting root markdown",
     ]);
-    expect(report.checks).toHaveLength(25);
+    expect(report.checks).toHaveLength(26);
   });
 
   it("v2.0: clean post-init repo (mocked layout) reports zero errors AND zero warnings", async () => {
@@ -2653,6 +2655,179 @@ describe("runDoctorReport", () => {
       expect(report.infos.map((i) => i.code)).not.toContain(
         "knowledge_relevance_paths_drift",
       );
+    });
+  });
+
+  // rc.6 TASK-021 (E3): lint #27 knowledge_session_hints_stale. Info-kind
+  // finding plus an apply-lint cleanup arm that unlinks stale session-hints
+  // cache files under `.fabric/.cache/`. Tests seed files with explicit
+  // mtimes via utimesSync to exercise the 7-day threshold deterministically.
+  describe("rc.6 TASK-021 (E3): session-hints stale lint #27", () => {
+    const NOW_SECONDS = Math.floor(Date.now() / 1000);
+    const DAY_SECONDS = 24 * 60 * 60;
+
+    function seedSessionHintsFile(
+      target: string,
+      sessionId: string,
+      mtimeAgeDays: number,
+    ): string {
+      const cacheDir = join(target, ".fabric", ".cache");
+      mkdirSync(cacheDir, { recursive: true });
+      const file = join(cacheDir, `session-hints-${sessionId}.json`);
+      writeFileSync(
+        file,
+        JSON.stringify({
+          session_id: sessionId,
+          revision_hash: "rev-test",
+          hinted_paths: [],
+          hinted_stable_ids: [],
+          last_emitted_index_hash: "",
+        }),
+        "utf8",
+      );
+      // Reach back in time to age the mtime. utimesSync takes seconds.
+      const targetSeconds = NOW_SECONDS - mtimeAgeDays * DAY_SECONDS;
+      utimesSync(file, targetSeconds, targetSeconds);
+      return file;
+    }
+
+    async function runApplyLint(target: string) {
+      const { runDoctorApplyLint } = await import("./doctor.js");
+      return runDoctorApplyLint(target);
+    }
+
+    it("reports ok when .fabric/.cache/ is absent (no cache files ever written)", async () => {
+      const target = createInitializedProject("doctor-rc6-sessionhints-no-dir");
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+
+      const report = await runDoctorReport(target);
+      const check = report.checks.find(
+        (c) => c.name === "Knowledge session-hints stale",
+      );
+      expect(check?.status).toBe("ok");
+      expect(report.infos.map((i) => i.code)).not.toContain(
+        "knowledge_session_hints_stale",
+      );
+    });
+
+    it("reports ok when only fresh cache files exist (mtime < 7d)", async () => {
+      const target = createInitializedProject("doctor-rc6-sessionhints-fresh");
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+      seedSessionHintsFile(target, "sess-fresh-a", 0); // today
+      seedSessionHintsFile(target, "sess-fresh-b", 6); // just under threshold
+
+      const report = await runDoctorReport(target);
+      const check = report.checks.find(
+        (c) => c.name === "Knowledge session-hints stale",
+      );
+      expect(check?.status).toBe("ok");
+      expect(report.infos.map((i) => i.code)).not.toContain(
+        "knowledge_session_hints_stale",
+      );
+    });
+
+    it("flags stale cache files (mtime >= 7d) as info-kind finding", async () => {
+      const target = createInitializedProject("doctor-rc6-sessionhints-stale-flag");
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+      seedSessionHintsFile(target, "sess-stale-1", 8);
+      seedSessionHintsFile(target, "sess-stale-2", 30);
+
+      const report = await runDoctorReport(target);
+      const check = report.checks.find(
+        (c) => c.name === "Knowledge session-hints stale",
+      );
+      expect(check?.status).toBe("ok"); // info-kind, status not bumped
+      expect(check?.kind).toBe("info");
+      expect(report.infos.map((i) => i.code)).toContain(
+        "knowledge_session_hints_stale",
+      );
+    });
+
+    it("ignores non-session-hints files in .fabric/.cache/", async () => {
+      const target = createInitializedProject("doctor-rc6-sessionhints-ignores-others");
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+      // The edit-counter sidecar lives in the same directory; doctor must
+      // not flag it for cleanup. Age it to >7d to make the test sharp.
+      const cacheDir = join(target, ".fabric", ".cache");
+      mkdirSync(cacheDir, { recursive: true });
+      const counter = join(cacheDir, "edit-counter");
+      writeFileSync(counter, "2026-04-01T00:00:00.000Z\n", "utf8");
+      const old = NOW_SECONDS - 30 * DAY_SECONDS;
+      utimesSync(counter, old, old);
+
+      const report = await runDoctorReport(target);
+      const check = report.checks.find(
+        (c) => c.name === "Knowledge session-hints stale",
+      );
+      expect(check?.status).toBe("ok");
+      expect(report.infos.map((i) => i.code)).not.toContain(
+        "knowledge_session_hints_stale",
+      );
+    });
+
+    it("apply-lint deletes stale session-hints files (>7d)", async () => {
+      const target = createInitializedProject("doctor-rc6-sessionhints-apply-delete");
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+      const staleFileA = seedSessionHintsFile(target, "sess-old-a", 10);
+      const staleFileB = seedSessionHintsFile(target, "sess-old-b", 90);
+      expect(existsSync(staleFileA)).toBe(true);
+      expect(existsSync(staleFileB)).toBe(true);
+
+      const result = await runApplyLint(target);
+      expect(result.aborted).toBe(false);
+      const cleanupMutations = result.mutations.filter(
+        (m) => m.kind === "knowledge_session_hints_stale_cleanup",
+      );
+      expect(cleanupMutations).toHaveLength(2);
+      expect(cleanupMutations.every((m) => m.applied)).toBe(true);
+
+      // Both files should be gone.
+      expect(existsSync(staleFileA)).toBe(false);
+      expect(existsSync(staleFileB)).toBe(false);
+    });
+
+    it("apply-lint preserves fresh session-hints files (<7d)", async () => {
+      const target = createInitializedProject("doctor-rc6-sessionhints-preserve-fresh");
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+      const freshFile = seedSessionHintsFile(target, "sess-fresh", 1);
+      const staleFile = seedSessionHintsFile(target, "sess-old", 20);
+      expect(existsSync(freshFile)).toBe(true);
+      expect(existsSync(staleFile)).toBe(true);
+
+      const result = await runApplyLint(target);
+      expect(result.aborted).toBe(false);
+      const cleanupMutations = result.mutations.filter(
+        (m) => m.kind === "knowledge_session_hints_stale_cleanup",
+      );
+      expect(cleanupMutations).toHaveLength(1);
+      expect(cleanupMutations[0].applied).toBe(true);
+
+      // Fresh file preserved, stale file deleted.
+      expect(existsSync(freshFile)).toBe(true);
+      expect(existsSync(staleFile)).toBe(false);
+    });
+
+    it("apply-lint cleanup is idempotent (second run produces zero mutations)", async () => {
+      const target = createInitializedProject("doctor-rc6-sessionhints-idempotent");
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+      seedSessionHintsFile(target, "sess-old", 30);
+
+      const first = await runApplyLint(target);
+      expect(
+        first.mutations.filter((m) => m.kind === "knowledge_session_hints_stale_cleanup"),
+      ).toHaveLength(1);
+
+      const second = await runApplyLint(target);
+      expect(
+        second.mutations.filter((m) => m.kind === "knowledge_session_hints_stale_cleanup"),
+      ).toHaveLength(0);
     });
   });
 });
