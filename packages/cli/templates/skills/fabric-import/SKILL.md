@@ -62,6 +62,58 @@ Phase 1 actions performed by THIS skill:
 
 For each candidate signal mined from git or docs, the skill classifies into one of the 5 types (`decisions / pitfalls / guidelines / models / processes`), drafts a slug per the 5-rule naming guideline (see fabric-archive for the canonical rules), and proposes a pending entry via `fab_extract_knowledge`. Default layer for every Phase 2 proposal: `team`.
 
+#### Mandatory Scope Rule — Always Broad + Empty Paths (Q-1 Resolution)
+
+**EVERY `fab_extract_knowledge` call issued from this skill MUST set:**
+
+- `relevance_scope = "broad"`
+- `relevance_paths = []`
+
+This is non-negotiable and applies to BOTH Step 2.1 (git mining) AND Step 2.2 (docs mining). No exceptions, no per-candidate override, no Agent judgment.
+
+**Rationale — why fabric-import cannot bind paths from git history:**
+
+1. `fabric-import` is LLM-driven (mines git log + docs), not session-driven (no live `edit_paths` signal).
+2. `git diff --stat` lists files touched by a commit, but those files are the commit's **effect surface**, not the **applicability surface** of the underlying observation. A pitfall surfaced by a fix in `packages/server/src/retry.ts` may apply to every retry call-site in the repo, not just that one file.
+3. LLM-inferred `relevance_paths` from historical commit metadata produces false-narrow bindings — entries get filtered out for paths they actually govern. False-narrow is worse than broad because it silently hides knowledge during plan-context filtering.
+4. Doc-mined observations are usually architectural / cross-cutting (a `docs/architecture.md` "Why a monolith?" decision applies to the whole codebase, not just to `docs/`).
+
+**Strict prohibitions — DO NOT attempt any of the following:**
+
+- DO NOT derive `relevance_paths` from `git log --name-only` / `git show --stat` / `git diff` file lists.
+- DO NOT derive `relevance_paths` from the path of a mined Markdown file (e.g. do NOT bind a `docs/architecture.md` observation to `["docs/**"]`).
+- DO NOT extract path-shaped tokens from commit subjects / bodies / doc text and lift them into `relevance_paths`.
+- DO NOT classify a candidate as `relevance_scope = "narrow"` under ANY heuristic.
+- DO NOT copy the public-prefix-generalization logic from fabric-archive Phase 1.5 — that logic is valid only when bound to a real-time `edit_paths` signal from an active session, which fabric-import lacks.
+
+**Cross-reference — fabric-import vs fabric-archive scope handling:**
+
+| Skill            | Scope decision     | Why                                                                   |
+|------------------|--------------------|-----------------------------------------------------------------------|
+| `fabric-archive` | narrow OR broad, case-by-case per Phase 1.5 rules | Has live `edit_paths` from the active session — the actual applicability surface. |
+| `fabric-import`  | ALWAYS broad + `[]` (this skill) | LLM-only, no live session signal; git-history paths are effect-surface, not applicability-surface. |
+
+`fabric-archive`'s Phase 1.5 scope decision (narrow-vs-broad rules + public-prefix generalization + glob blacklist) is INTENTIONALLY MORE PERMISSIVE than fabric-import because archive has the data to bind safely. fabric-import is the STRICTER case.
+
+**Post-import narrowing path — deferred to user, via `fab_review.modify`:**
+
+After import completes, the user reviews each kept pending entry via `fabric-review`. When the user judges that an imported entry is actually narrow-scoped, they (or the reviewing Agent on their explicit instruction) issue:
+
+```ts
+mcp__fabric__fab_review({
+  action: "modify",
+  pending_path: "<the imported pending or its post-approval canonical path>",
+  changes: {
+    relevance_scope: "narrow",
+    relevance_paths: ["packages/server/src/retry/**", "packages/server/src/lib/retry.ts"]
+  }
+})
+```
+
+This is the ONLY legal path for an imported entry to acquire `relevance_paths`. The narrowing decision is the user's, informed by the actual `relevance_paths` candidates they propose — not the skill's, inferred from git metadata.
+
+**Lint backstop:** doctor lint #23 (`narrow_no_paths`) warns on any `relevance_scope=narrow` entry with empty `relevance_paths`. If this skill ever deviates from the broad+[] rule and writes narrow without paths, lint #23 catches the mistake post-hoc.
+
 #### Step 2.1 — Git Log Mining
 
 Bash command (executed via the `Bash` tool):
@@ -82,17 +134,21 @@ For each commit:
    - `chore(...)`, `test(...)`, `ci(...)` → almost always skip (mechanical; no reusable insight)
 2. Read the commit body. Extract the LLM-judged "core observation" — what would a future engineer want to know about this commit beyond the diff? Aim for 1–2 sentences in zh-CN (project knowledge_language; mirror fabric-archive M3 style).
 3. Apply the **Skip Decision Tree** below. If the commit is skip-worthy, record it in `p2_processed_commits[]` with `skipped: true` and move on.
-4. For non-skipped commits, classify type / propose slug / draft summary. Then call `fab_extract_knowledge`:
+4. For non-skipped commits, classify type / propose slug / draft summary. Then call `fab_extract_knowledge` with the **mandatory broad + [] scope** (see "Mandatory Scope Rule" above):
 
 ```ts
 mcp__fabric__fab_extract_knowledge({
   source_session: "fabric-import-<ISO8601-date>",   // stable per import run
-  recent_paths: ["<files touched by this commit, capped at 20>"],
+  recent_paths: ["<files touched by this commit, capped at 20>"],   // provenance only, NOT a path-binding signal
   user_messages_summary: "<zh-CN 1-2 sentence summary of the commit's core observation; cite the commit sha as 'src=<sha7>'>",
   type: "decisions" | "pitfalls" | "guidelines" | "models" | "processes",
-  slug: "<kebab-case 2-5 words derived from commit subject + body>"
+  slug: "<kebab-case 2-5 words derived from commit subject + body>",
+  relevance_scope: "broad",                                          // MANDATORY — never "narrow" from fabric-import
+  relevance_paths: []                                                // MANDATORY — never derived from git history
 })
 ```
+
+Note: `recent_paths` continues to carry the touched-file list for **provenance display** (so the user can audit which commit produced which entry). It is NOT lifted into `relevance_paths` — those two fields serve different purposes and the prohibition on path inference from git history applies.
 
 5. On success the server returns `{pending_path, idempotency_key}`. Append to `.fabric/.import-state.json`:
    - `p2_processed_commits[].push({sha: <full sha>, skipped: false, pending_path, type, slug})`
@@ -117,7 +173,7 @@ For each Markdown file:
    - `LICENSE.md`, `CODE_OF_CONDUCT.md`, `CONTRIBUTING.md` → skip (boilerplate)
    - Files <300 bytes → skip (too thin to extract meaningful observations)
 2. Read the file. Identify candidate observations: section headings that read like decisions ("we chose X over Y"), guidelines ("always do X"), pitfalls ("don't do Y because..."), or process steps ("the deploy procedure is..."). Architecture diagrams in fenced code blocks are strong **model** signals.
-3. For each observation, classify type / propose slug / draft summary. Call `fab_extract_knowledge` with the same shape as Step 2.1, replacing `recent_paths` with `[<this doc path>]` and citing `src=<doc-relative-path>` in the summary.
+3. For each observation, classify type / propose slug / draft summary. Call `fab_extract_knowledge` with the same shape as Step 2.1 (including the **mandatory `relevance_scope: "broad"` + `relevance_paths: []`**), replacing `recent_paths` with `[<this doc path>]` and citing `src=<doc-relative-path>` in the summary. The mined doc's own path goes into `recent_paths` for provenance display ONLY — it is NOT lifted into `relevance_paths`.
 4. Append to `.fabric/.import-state.json`:
    - `p2_processed_docs[].push({path: <doc path>, observations_proposed: <count>, pending_paths: [...]})`
 5. **Hard cap shared with Step 2.1**: total new pending entries across git + docs is capped at 10 per Phase 2 run.
@@ -146,16 +202,16 @@ After Step 2.2 completes (or hits the cap), update `.fabric/.import-state.json`:
 When the user invocation includes `dry-run` / `预览` / `--dry-run` keywords, Phase 2 runs WITHOUT calling `fab_extract_knowledge`. Instead it prints a table:
 
 ```md
-# Import Dry Run — would propose N pending entries
+# Import Dry Run — would propose N pending entries (all relevance_scope=broad, relevance_paths=[])
 
-| # | Source                | Type      | Slug                          | Summary (zh-CN)                                            |
-|---|-----------------------|-----------|-------------------------------|------------------------------------------------------------|
-| 1 | git c0a351d           | decisions | layer-flip-id-mutation        | layer 切换是唯一合法的 stable_id 变更途径，绑定原子事务。 |
-| 2 | docs/architecture.md  | decisions | monolith-over-microservices   | 决定保留单体架构，三人团队不值微服务运维成本。            |
-| 3 | git 50367b5           | pitfalls  | thundering-herd-no-backoff    | 重试无指数回退导致雪崩；必须 jittered exponential backoff。|
+| # | Source                | Type      | Slug                          | Scope | Summary (zh-CN)                                            |
+|---|-----------------------|-----------|-------------------------------|-------|------------------------------------------------------------|
+| 1 | git c0a351d           | decisions | layer-flip-id-mutation        | broad+[] | layer 切换是唯一合法的 stable_id 变更途径，绑定原子事务。 |
+| 2 | docs/architecture.md  | decisions | monolith-over-microservices   | broad+[] | 决定保留单体架构，三人团队不值微服务运维成本。            |
+| 3 | git 50367b5           | pitfalls  | thundering-herd-no-backoff    | broad+[] | 重试无指数回退导致雪崩；必须 jittered exponential backoff。|
 ```
 
-Dry-run output is informational only. The state file is NOT written to in dry-run mode (so a real run later starts clean). Phase 3 is also skipped in dry-run.
+Every dry-run row MUST show `broad+[]` in the Scope column (it is a constant for fabric-import). A row showing anything else is a skill bug — refuse to proceed and surface the violation. Dry-run output is informational only. The state file is NOT written to in dry-run mode (so a real run later starts clean). Phase 3 is also skipped in dry-run.
 
 ### Phase 3 — LLM-Driven Dedup vs Canonical
 
@@ -285,6 +341,8 @@ The contract: re-invoking fabric-import after ANY interruption (Ctrl-C, crash, n
 | Knob                                | Default     | Override                                                       |
 |-------------------------------------|-------------|----------------------------------------------------------------|
 | Layer for new entries               | `team`      | User explicit instruction ("import these as personal")         |
+| `relevance_scope` for new entries   | `broad`     | NONE — contract-locked; narrowing deferred to `fab_review.modify` post-import |
+| `relevance_paths` for new entries   | `[]`        | NONE — contract-locked; populating deferred to `fab_review.modify` post-import |
 | Max new pending entries per P2 run  | `10`        | User explicit ("import up to 25"); skill caps at 50 hard       |
 | Git log window                      | `2 months`  | User explicit ("import the full year")                         |
 | Docs scan depth                     | `3`         | User explicit ("scan docs/ recursively")                       |
@@ -295,7 +353,7 @@ The contract: re-invoking fabric-import after ANY interruption (Ctrl-C, crash, n
 
 ### DISPLAY Rules
 
-- MUST present every proposed pending entry with explicit `[type=...]`, `[layer=team]`, `slug=...`, AND `src=<commit-sha7 or doc-path>` so the user can audit the provenance.
+- MUST present every proposed pending entry with explicit `[type=...]`, `[layer=team]`, `[scope=broad]`, `slug=...`, AND `src=<commit-sha7 or doc-path>` so the user can audit the provenance and the (constant) scope.
 - MUST display zh-CN body for proposed summaries (M3 style consistent with fabric-archive / fabric-review).
 - MUST display EN section headings.
 - MUST surface the resolved `pending_path` returned by `fab_extract_knowledge` in the per-entry display block.
@@ -315,7 +373,11 @@ The contract: re-invoking fabric-import after ANY interruption (Ctrl-C, crash, n
 - NEVER infer a layer-flip target without explicit user instruction — fabric-import defaults `team`; if the user later wants `personal` for an entry, that's a `fabric-review` modify call, not an import-time decision.
 - NEVER overwrite `.fabric/.import-state.json` non-atomically — use `atomicWriteJson` (write-temp-then-rename).
 - NEVER exceed the 10-entry-per-run hard cap without explicit user override.
-- MUST preserve protected tokens exactly: `stable_id`, `pending_path`, `layer`, `team`, `personal`, `knowledge_proposed`, `fab_extract_knowledge`, `fab_review`, `MUST`, `NEVER`, `phase`, `.import-state.json`.
+- NEVER pass `relevance_scope = "narrow"` to `fab_extract_knowledge` — every call from this skill MUST use `relevance_scope: "broad"`. No heuristic, no Agent judgment, no per-candidate override (see "Mandatory Scope Rule" in Phase 2).
+- NEVER populate `relevance_paths` with a non-empty array on import — every call from this skill MUST pass `relevance_paths: []`. Do not derive paths from `git log --name-only`, `git show --stat`, commit subjects/bodies, or the path of a mined Markdown file.
+- NEVER copy fabric-archive's Phase 1.5 scope-decision logic (narrow-vs-broad rules, public-prefix generalization, glob blacklist) into this skill — that logic requires a live `edit_paths` signal from an active session, which fabric-import does not have.
+- Narrowing of imported entries happens out-of-band through `fab_review action="modify"` (issued by user via `fabric-review`), NOT inside this skill.
+- MUST preserve protected tokens exactly: `stable_id`, `pending_path`, `layer`, `team`, `personal`, `knowledge_proposed`, `fab_extract_knowledge`, `fab_review`, `MUST`, `NEVER`, `phase`, `.import-state.json`, `relevance_scope`, `relevance_paths`, `broad`, `narrow`.
 
 ## Output Contract
 
@@ -328,6 +390,7 @@ After Phase 3 completes (or on any phase exit due to cap / error / interrupt), t
 - Commits scanned: <N>     (skipped: <S> — cosmetic/metadata/baseline-overlap)
 - Docs scanned:    <D>     (skipped: <DS> — README/CHANGELOG/boilerplate)
 - Pending proposed: <P>     (cap_reached: <true|false>)
+- Scope: all <P> proposed entries use relevance_scope=broad, relevance_paths=[] (fabric-import contract).
 
 ## Phase 3 — Dedup
 - Kept (genuinely new):       <K>
@@ -343,6 +406,7 @@ After Phase 3 completes (or on any phase exit due to cap / error / interrupt), t
 ## Next Steps
 - Run `fabric-review` to approve the <K> kept pending entries.
 - Resolve <C> contradictions manually if any.
+- If any kept entry is actually narrow-scoped, narrow it via `fab_review action="modify"` with `changes.relevance_scope="narrow"` + `changes.relevance_paths=[...]` (this skill cannot narrow — see Mandatory Scope Rule in Phase 2).
 ```
 
 Also surface a one-line `git status` of `.fabric/knowledge/` so the user sees the new pending files appear (and any canonical files modified by dedup-merge).
@@ -355,17 +419,33 @@ Source signal: `git log` surfaces commit `50367b5` with subject `feat(server): a
 
 LLM analysis: this is a **pitfall** (a non-obvious trap that wasted time and is repeatable across services). The body itself documents the trap. Slug candidates: `retry-without-backoff-thundering-herd` (5 words, 38 chars — passes 5 rules).
 
-Skill output:
+Skill output (note `relevance_scope: "broad"` + `relevance_paths: []` — mandatory for fabric-import):
 
 ```ts
 mcp__fabric__fab_extract_knowledge({
   source_session: "fabric-import-2026-05-10",
-  recent_paths: ["packages/server/src/lib/retry.ts"],
+  recent_paths: ["packages/server/src/lib/retry.ts"],     // provenance only
   user_messages_summary: "重试无指数退避会在短暂上游故障下放大成雪崩。修正：jittered exponential backoff，30 秒上限。src=50367b5",
   type: "pitfalls",
-  slug: "retry-without-backoff-thundering-herd"
+  slug: "retry-without-backoff-thundering-herd",
+  relevance_scope: "broad",                                // MANDATORY
+  relevance_paths: []                                      // MANDATORY — do NOT infer ["packages/server/src/lib/retry.ts"]
 })
 ```
+
+Counter-example — DO NOT do this:
+
+```ts
+// WRONG — this skill must never produce narrow + paths from git metadata.
+// The retry pitfall applies to every retry site, not just the file touched by 50367b5.
+mcp__fabric__fab_extract_knowledge({
+  // ...
+  relevance_scope: "narrow",                                // VIOLATION
+  relevance_paths: ["packages/server/src/lib/retry.ts"]     // VIOLATION
+})
+```
+
+If the user later judges this pitfall to be narrow-scoped, they (via `fabric-review`) issue `fab_review action="modify"` with `changes.relevance_scope` + `changes.relevance_paths` — that is the legal narrowing path.
 
 State file delta:
 ```json
@@ -383,15 +463,17 @@ Source signal: `docs/architecture.md` contains a section heading "## Why a monol
 
 LLM analysis: this is a **decision** (≥2 alternatives weighed — monolith vs microservices — with explicit rationale). Slug candidates: `monolith-over-microservices-small-team` (5 words, 38 chars — passes 5 rules).
 
-Skill output:
+Skill output (broad+[] mandatory; the doc's own path stays in `recent_paths` for provenance, NOT in `relevance_paths`):
 
 ```ts
 mcp__fabric__fab_extract_knowledge({
   source_session: "fabric-import-2026-05-10",
-  recent_paths: ["docs/architecture.md"],
+  recent_paths: ["docs/architecture.md"],                  // provenance only
   user_messages_summary: "选择单体架构而非微服务：3 人团队无法承担多服务运维成本，且主要性能瓶颈在 DB 吞吐而非应用层水平扩展。src=docs/architecture.md",
   type: "decisions",
-  slug: "monolith-over-microservices-small-team"
+  slug: "monolith-over-microservices-small-team",
+  relevance_scope: "broad",                                // MANDATORY
+  relevance_paths: []                                      // MANDATORY — a monolith-vs-microservices decision applies repo-wide, not only to docs/
 })
 ```
 
@@ -429,6 +511,29 @@ State file delta:
 ```
 
 Final roll-up to user reflects: 1 proposed, 0 kept, 1 rejected_dup, 0 merged, 0 contradictions.
+
+### Example D — Post-import narrowing (out-of-band, NOT this skill)
+
+This example documents the legal narrowing path; it is NOT performed by `fabric-import` itself. After Example B's `monolith-over-microservices-small-team` decision is imported (with `relevance_scope=broad`, `relevance_paths=[]`) and later approved into canonical via `fabric-review`, the user decides the decision is actually narrow to the server package's deploy tooling.
+
+The user issues (via `fabric-review`, NOT via this skill):
+
+```ts
+mcp__fabric__fab_review({
+  action: "modify",
+  pending_path: "knowledge/team/decisions/monolith-over-microservices-small-team.md",
+  changes: {
+    relevance_scope: "narrow",
+    relevance_paths: ["packages/server/**", "scripts/deploy/**"]
+  }
+})
+```
+
+Key invariants of this flow:
+
+- The narrowing decision originates from the **user**, informed by the actual paths they propose — not from `fabric-import` inferring paths from git metadata.
+- The modify call goes through `fab_review`, not `fab_extract_knowledge`, because the entry already exists (post-import or post-approval).
+- If the user later flips the entry's layer from `team` to `personal`, server-side auto-degrades scope back to `broad` and clears `relevance_paths` (see rc.5 C3 acceptance criterion; personal knowledge crosses projects so paths don't generalize). This is the only legal way for `relevance_paths` to be re-cleared.
 
 ## Failure Recovery
 
