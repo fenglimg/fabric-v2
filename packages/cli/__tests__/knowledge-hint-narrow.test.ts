@@ -54,6 +54,8 @@ type HookEnv = {
   cacheSeed?: SessionHintsCache | null;
   skipCacheWrite?: boolean;
   processEnv?: Record<string, string | undefined>;
+  // rc.6 TASK-023 (E6) test seam — disable silence-counter append.
+  skipSilenceCounter?: boolean;
 };
 
 type SessionHintsCache = {
@@ -71,6 +73,7 @@ type HookModule = {
   extractToolInput: (payload: unknown) => Record<string, unknown> | null;
   extractPaths: (toolInput: unknown) => string[];
   appendEditCounter: (projectRoot: string, now: Date) => void;
+  appendHintSilenceCounter: (projectRoot: string, now: Date) => void;
   renderSummary: (payload: CliPayload) => string[];
   truncateSummary: (raw: string) => string;
   formatEntryLine: (entry: NarrowEntry) => string;
@@ -97,6 +100,8 @@ type HookModule = {
     SUMMARY_MAX_LEN: number;
     EDIT_COUNTER_DIR_REL: string;
     EDIT_COUNTER_FILE: string;
+    HINT_SILENCE_COUNTER_DIR_REL: string;
+    HINT_SILENCE_COUNTER_FILE: string;
     EDIT_TOOL_NAMES: Set<string>;
     SESSION_HINTS_DIR_REL: string;
     SESSION_HINTS_FILE_PREFIX: string;
@@ -154,6 +159,17 @@ function readCounterFile(projectRoot: string): string | null {
     projectRoot,
     hook.CONSTANTS.EDIT_COUNTER_DIR_REL,
     hook.CONSTANTS.EDIT_COUNTER_FILE,
+  );
+  if (!existsSync(file)) return null;
+  return readFileSync(file, "utf8");
+}
+
+// rc.6 TASK-023 (E6) — companion sidecar reader for the hint-silence-counter.
+function readSilenceCounterFile(projectRoot: string): string | null {
+  const file = join(
+    projectRoot,
+    hook.CONSTANTS.HINT_SILENCE_COUNTER_DIR_REL,
+    hook.CONSTANTS.HINT_SILENCE_COUNTER_FILE,
   );
   if (!existsSync(file)) return null;
   return readFileSync(file, "utf8");
@@ -1152,5 +1168,159 @@ describe("knowledge-hint-narrow.cjs — main (E3 emit gate end-to-end)", () => {
     });
     // Path is already in cache → silent.
     expect(writes).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// rc.6 TASK-023 (E6) — hint-silence-counter telemetry
+// ---------------------------------------------------------------------------
+
+describe("knowledge-hint-narrow.cjs — appendHintSilenceCounter (E6)", () => {
+  it("creates .fabric/.cache/ directory if missing and writes one ISO timestamp", () => {
+    const root = mkRoot("narrow-silence-counter-mkdir");
+    hook.appendHintSilenceCounter(root, new Date("2026-05-12T10:00:00.000Z"));
+    const contents = readSilenceCounterFile(root);
+    expect(contents).toBe("2026-05-12T10:00:00.000Z\n");
+  });
+
+  it("appends a second line on second call (counter grows monotonically)", () => {
+    const root = mkRoot("narrow-silence-counter-append");
+    hook.appendHintSilenceCounter(root, new Date("2026-05-12T10:00:00.000Z"));
+    hook.appendHintSilenceCounter(root, new Date("2026-05-12T10:00:01.000Z"));
+    const contents = readSilenceCounterFile(root) ?? "";
+    const lines = contents.split("\n").filter((l) => l.length > 0);
+    expect(lines).toEqual([
+      "2026-05-12T10:00:00.000Z",
+      "2026-05-12T10:00:01.000Z",
+    ]);
+  });
+
+  it("silently swallows failures (best-effort write)", () => {
+    expect(() =>
+      hook.appendHintSilenceCounter(
+        "/nonexistent/path/that/cannot/be/created/by/any/process",
+        new Date(),
+      ),
+    ).not.toThrow();
+  });
+});
+
+describe("knowledge-hint-narrow.cjs — main (E6 silence-counter sidecar)", () => {
+  it("silence path (matched-narrow == 0) appends to hint-silence-counter", () => {
+    const root = mkRoot("narrow-silence-empty-matches");
+    captureStderr({
+      cwd: root,
+      now: new Date("2026-05-12T10:00:00.000Z"),
+      payload: {
+        tool_name: "Edit",
+        tool_input: { file_path: "src/foo.ts" },
+      },
+      cliResult: makeCliPayload([]),
+    });
+    const contents = readSilenceCounterFile(root) ?? "";
+    const lines = contents.split("\n").filter((l) => l.length > 0);
+    expect(lines.length).toBe(1);
+    expect(lines[0]).toBe("2026-05-12T10:00:00.000Z");
+    // Edit-counter still fires too — symmetry with TASK-020 E4.
+    const editLines =
+      (readCounterFile(root) ?? "").split("\n").filter((l) => l.length > 0);
+    expect(editLines.length).toBe(1);
+  });
+
+  it("emit path (matched-narrow > 0, fresh cache) does NOT append silence-counter", () => {
+    const root = mkRoot("narrow-silence-emit-no-append");
+    captureStderr({
+      cwd: root,
+      now: new Date("2026-05-12T10:00:00.000Z"),
+      payload: {
+        session_id: "sess-e6-emit",
+        tool_name: "Edit",
+        tool_input: { file_path: "src/foo.ts" },
+      },
+      cliResult: makeCliPayload(
+        [makeEntry("KT-DEC-0001", "decision", "proven", "x")],
+        { revision_hash: "rev-emit" },
+      ),
+    });
+    // Edit-counter fires; silence-counter does NOT (this fire produced an
+    // emission, so it's not a silence).
+    expect(readCounterFile(root)).not.toBeNull();
+    expect(readSilenceCounterFile(root)).toBeNull();
+  });
+
+  it("emit-gate filtered-all path (matched but gate suppressed) appends to silence-counter", () => {
+    const root = mkRoot("narrow-silence-gate-filtered");
+    const payload = {
+      session_id: "sess-e6-filtered",
+      tool_name: "Edit",
+      tool_input: { file_path: "src/foo.ts" },
+    };
+    const cliPayload = makeCliPayload(
+      [makeEntry("KT-DEC-0001", "decision", "proven", "x")],
+      { revision_hash: "rev-filtered" },
+    );
+    // First fire emits + seeds cache.
+    captureStderr({ cwd: root, payload, cliResult: cliPayload });
+    // Second fire on same path: gate suppresses (allPathsKnown).
+    captureStderr({
+      cwd: root,
+      now: new Date("2026-05-12T10:00:01.000Z"),
+      payload,
+      cliResult: cliPayload,
+    });
+    const silenceLines =
+      (readSilenceCounterFile(root) ?? "").split("\n").filter((l) => l.length > 0);
+    // Only the SECOND fire (gate-suppressed) appended; the first fire was
+    // an emission so it must NOT have appended.
+    expect(silenceLines.length).toBe(1);
+    expect(silenceLines[0]).toBe("2026-05-12T10:00:01.000Z");
+  });
+
+  it("CLI returns null does NOT append silence-counter (pre-narrow short-circuit)", () => {
+    // The hook bails before the narrow-check branch when the CLI is
+    // unavailable. This is a "hook fired but cannot evaluate narrow" case,
+    // not a "narrow matched zero" case — we leave silence-counter quiet
+    // so the rate stays meaningful.
+    const root = mkRoot("narrow-silence-cli-null");
+    captureStderr({
+      cwd: root,
+      payload: {
+        tool_name: "Edit",
+        tool_input: { file_path: "src/foo.ts" },
+      },
+      cliResult: null,
+    });
+    expect(readSilenceCounterFile(root)).toBeNull();
+  });
+
+  it("silence path creates .fabric/.cache/ directory if absent", () => {
+    const root = mkRoot("narrow-silence-mkdir-on-fire");
+    expect(existsSync(join(root, ".fabric", ".cache"))).toBe(false);
+    captureStderr({
+      cwd: root,
+      payload: {
+        tool_name: "Edit",
+        tool_input: { file_path: "src/foo.ts" },
+      },
+      cliResult: makeCliPayload([]),
+    });
+    expect(existsSync(join(root, ".fabric", ".cache"))).toBe(true);
+    expect(readSilenceCounterFile(root)).not.toBeNull();
+  });
+
+  it("env.skipSilenceCounter=true bypasses the sidecar (test seam isolation)", () => {
+    const root = mkRoot("narrow-silence-skip-seam");
+    captureStderr({
+      cwd: root,
+      skipSilenceCounter: true,
+      payload: {
+        tool_name: "Edit",
+        tool_input: { file_path: "src/foo.ts" },
+      },
+      cliResult: makeCliPayload([]),
+    });
+    expect(readSilenceCounterFile(root)).toBeNull();
+    // But edit-counter still fires (its own seam is independent).
+    expect(readCounterFile(root)).not.toBeNull();
   });
 });

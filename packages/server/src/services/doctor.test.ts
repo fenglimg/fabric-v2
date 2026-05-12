@@ -95,7 +95,8 @@ describe("runDoctorReport", () => {
     // TASK-010 (knowledge_underseeded lint added) → 25 rc.5 TASK-013
     // (narrow_no_paths + relevance_paths_dangling + relevance_paths_drift
     // lints added) → 26 rc.6 TASK-021 (knowledge_session_hints_stale
-    // lint #27 added).
+    // lint #27 added) → 27 rc.6 TASK-023 (knowledge_narrow_too_few lint
+    // #26 added — structural + telemetry two-arm check).
     expect(report.checks.map((check) => check.name)).toEqual([
       "Bootstrap anchor",
       "Knowledge layout",
@@ -121,10 +122,11 @@ describe("runDoctorReport", () => {
       "Knowledge narrow without paths",
       "Knowledge relevance_paths dangling",
       "Knowledge relevance_paths drift",
+      "Knowledge narrow too few",
       "Knowledge session-hints stale",
       "Preexisting root markdown",
     ]);
-    expect(report.checks).toHaveLength(26);
+    expect(report.checks).toHaveLength(27);
   });
 
   it("v2.0: clean post-init repo (mocked layout) reports zero errors AND zero warnings", async () => {
@@ -2828,6 +2830,221 @@ describe("runDoctorReport", () => {
       expect(
         second.mutations.filter((m) => m.kind === "knowledge_session_hints_stale_cleanup"),
       ).toHaveLength(0);
+    });
+  });
+
+  // rc.6 TASK-023 (E6): lint #26 knowledge_narrow_too_few. Two-arm check —
+  // Part A (structural ratio < 0.20 AND total >= 10) and Part B (silence
+  // rate > 0.95 over 30d window). Either arm independently can flag; both
+  // point at the same fabric-import recommendation. Tests seed canonical
+  // entries via writeKnowledgeMeta + frontmatter helpers and seed the
+  // edit-counter / hint-silence-counter sidecars directly under
+  // .fabric/.cache/ to exercise the telemetry arm deterministically.
+  describe("rc.6 TASK-023 (E6): narrow_too_few lint #26", () => {
+    function seedRelevanceEntry(
+      target: string,
+      relPath: string,
+      stableId: string,
+      scope: "narrow" | "broad",
+      paths: string[],
+    ): void {
+      const pathsField = `[${paths.join(", ")}]`;
+      const fm =
+        `---\nid: ${stableId}\ntype: decision\nmaturity: stable\nlayer: team\n` +
+        `relevance_scope: ${scope}\nrelevance_paths: ${pathsField}\n---\n# ${stableId}\nBody.\n`;
+      writeFile(relPath, fm, target);
+    }
+
+    function seedCounter(
+      target: string,
+      filename: "edit-counter" | "hint-silence-counter",
+      timestamps: string[],
+    ): void {
+      const cacheDir = join(target, ".fabric", ".cache");
+      mkdirSync(cacheDir, { recursive: true });
+      const file = join(cacheDir, filename);
+      writeFileSync(file, timestamps.map((t) => `${t}\n`).join(""), "utf8");
+    }
+
+    // Generate N timestamps inside the SILENCE_WINDOW_DAYS=30d window. We
+    // space them across the recent past so all land safely inside the
+    // window regardless of test runner clock skew.
+    function recentTimestamps(n: number, dayOffset = 1): string[] {
+      const out: string[] = [];
+      for (let i = 0; i < n; i += 1) {
+        // Stagger by minutes so duplicate timestamps don't accidentally
+        // collide on the parser's millisecond resolution.
+        const ts = new Date(Date.now() - dayOffset * 24 * 60 * 60 * 1000 - i * 60_000);
+        out.push(ts.toISOString());
+      }
+      return out;
+    }
+
+    // Seed `count` distinct canonical entries with the requested scope/paths
+    // shape so we can drive total_canonical_entries to any value.
+    function seedBulkNarrowEntries(
+      target: string,
+      count: number,
+      scope: "narrow" | "broad",
+      paths: string[],
+      startCounter: number,
+    ): void {
+      for (let i = 0; i < count; i += 1) {
+        const counter = startCounter + i;
+        const stableId = `KT-DEC-${String(8000 + counter).padStart(4, "0")}`;
+        const slug = `bulk-${scope}-${counter}`;
+        seedRelevanceEntry(
+          target,
+          `.fabric/knowledge/decisions/${stableId}--${slug}.md`,
+          stableId,
+          scope,
+          paths,
+        );
+      }
+    }
+
+    // ---- Part A — structural ratio ----------------------------------------
+    it("#26 Part A — flags when narrow-with-paths ratio < 20% AND total >= 10", async () => {
+      const target = createInitializedProject("doctor-rc6-narrowtoofew-partA-flag");
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+      // Seed 11 entries; only 1 is narrow-with-paths → ratio ~9% < 20%.
+      seedBulkNarrowEntries(target, 1, "narrow", ["src/**"], 1);
+      seedBulkNarrowEntries(target, 10, "broad", [], 100);
+
+      const report = await runDoctorReport(target);
+      const check = report.checks.find((c) => c.name === "Knowledge narrow too few");
+      expect(check?.code).toBe("knowledge_narrow_too_few");
+      expect(check?.kind).toBe("info");
+      expect(check?.status).toBe("ok"); // info kind — status not bumped
+      expect(check?.message).toMatch(/narrow-with-paths share/);
+      expect(check?.actionHint).toMatch(/fabric-import/);
+      expect(report.infos.map((i) => i.code)).toContain("knowledge_narrow_too_few");
+    });
+
+    it("#26 Part A — does NOT flag when total < 10 (insufficient data)", async () => {
+      const target = createInitializedProject("doctor-rc6-narrowtoofew-partA-small");
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+      // 5 entries total — below NARROW_MIN_TOTAL=10. Even with 0%
+      // narrow-with-paths the structural arm MUST stay silent.
+      seedBulkNarrowEntries(target, 5, "broad", [], 200);
+
+      const report = await runDoctorReport(target);
+      const check = report.checks.find((c) => c.name === "Knowledge narrow too few");
+      expect(check?.status).toBe("ok");
+      expect(check?.kind).toBeUndefined(); // okCheck → no kind
+      expect(report.infos.map((i) => i.code)).not.toContain("knowledge_narrow_too_few");
+    });
+
+    it("#26 Part A — does NOT flag when narrow-with-paths ratio >= 20%", async () => {
+      const target = createInitializedProject("doctor-rc6-narrowtoofew-partA-healthy");
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+      // 10 entries; 3 narrow-with-paths → 30% > 20% threshold.
+      seedBulkNarrowEntries(target, 3, "narrow", ["src/**"], 300);
+      seedBulkNarrowEntries(target, 7, "broad", [], 310);
+
+      const report = await runDoctorReport(target);
+      const check = report.checks.find((c) => c.name === "Knowledge narrow too few");
+      expect(check?.status).toBe("ok");
+      expect(report.infos.map((i) => i.code)).not.toContain("knowledge_narrow_too_few");
+    });
+
+    // ---- Part B — telemetry silence rate ----------------------------------
+    it("#26 Part B — flags when silence rate > 95% over 30d window", async () => {
+      const target = createInitializedProject("doctor-rc6-narrowtoofew-partB-flag");
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+      // Healthy structural shape (so only Part B can fire).
+      seedBulkNarrowEntries(target, 3, "narrow", ["src/**"], 400);
+      seedBulkNarrowEntries(target, 7, "broad", [], 410);
+      // 100 edit fires, 96 silences → 96% > 95% threshold.
+      seedCounter(target, "edit-counter", recentTimestamps(100));
+      seedCounter(target, "hint-silence-counter", recentTimestamps(96, 2));
+
+      const report = await runDoctorReport(target);
+      const check = report.checks.find((c) => c.name === "Knowledge narrow too few");
+      expect(check?.code).toBe("knowledge_narrow_too_few");
+      expect(check?.kind).toBe("info");
+      expect(check?.message).toMatch(/silence rate/);
+      expect(check?.actionHint).toMatch(/fabric-import/);
+      expect(report.infos.map((i) => i.code)).toContain("knowledge_narrow_too_few");
+    });
+
+    it("#26 Part B — skips when no edit-counter fires in window (insufficient data)", async () => {
+      const target = createInitializedProject("doctor-rc6-narrowtoofew-partB-skip");
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+      // Healthy structural shape — Part A passes.
+      seedBulkNarrowEntries(target, 3, "narrow", ["src/**"], 500);
+      seedBulkNarrowEntries(target, 7, "broad", [], 510);
+      // No edit-counter and no hint-silence-counter at all. Part B MUST
+      // safe-degrade rather than flag (silence_rate is undefined here).
+
+      const report = await runDoctorReport(target);
+      const check = report.checks.find((c) => c.name === "Knowledge narrow too few");
+      expect(check?.status).toBe("ok");
+      expect(check?.message).toMatch(/telemetry skipped/);
+      expect(report.infos.map((i) => i.code)).not.toContain("knowledge_narrow_too_few");
+    });
+
+    it("#26 Part B — does NOT flag when silence rate <= 95%", async () => {
+      const target = createInitializedProject("doctor-rc6-narrowtoofew-partB-healthy");
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+      seedBulkNarrowEntries(target, 3, "narrow", ["src/**"], 600);
+      seedBulkNarrowEntries(target, 7, "broad", [], 610);
+      // 100 edits, 50 silences → 50% rate; well below threshold.
+      seedCounter(target, "edit-counter", recentTimestamps(100));
+      seedCounter(target, "hint-silence-counter", recentTimestamps(50, 2));
+
+      const report = await runDoctorReport(target);
+      const check = report.checks.find((c) => c.name === "Knowledge narrow too few");
+      expect(check?.status).toBe("ok");
+      expect(report.infos.map((i) => i.code)).not.toContain("knowledge_narrow_too_few");
+    });
+
+    // ---- Combined — either arm flags --------------------------------------
+    it("#26 combined — Part A passing but Part B flagging still flags overall", async () => {
+      const target = createInitializedProject("doctor-rc6-narrowtoofew-combined-B-only");
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+      // Structural arm passes: healthy 30% ratio.
+      seedBulkNarrowEntries(target, 3, "narrow", ["src/**"], 700);
+      seedBulkNarrowEntries(target, 7, "broad", [], 710);
+      // Telemetry arm flags: 96% silence rate.
+      seedCounter(target, "edit-counter", recentTimestamps(100));
+      seedCounter(target, "hint-silence-counter", recentTimestamps(96, 2));
+
+      const report = await runDoctorReport(target);
+      const check = report.checks.find((c) => c.name === "Knowledge narrow too few");
+      expect(check?.code).toBe("knowledge_narrow_too_few");
+      expect(check?.kind).toBe("info");
+      // The message describes only the telemetry arm (structural didn't fire).
+      expect(check?.message).toMatch(/silence rate/);
+      expect(check?.message).not.toMatch(/narrow-with-paths share/);
+      expect(report.infos.map((i) => i.code)).toContain("knowledge_narrow_too_few");
+    });
+
+    it("#26 combined — old timestamps outside 30d window are excluded", async () => {
+      const target = createInitializedProject("doctor-rc6-narrowtoofew-old-ts");
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+      seedBulkNarrowEntries(target, 3, "narrow", ["src/**"], 800);
+      seedBulkNarrowEntries(target, 7, "broad", [], 810);
+      // 100 silences ALL outside the 30d window → must not flag.
+      const farPast = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
+      seedCounter(target, "edit-counter", Array(100).fill(farPast));
+      seedCounter(target, "hint-silence-counter", Array(100).fill(farPast));
+
+      const report = await runDoctorReport(target);
+      const check = report.checks.find((c) => c.name === "Knowledge narrow too few");
+      // edit-counter has 0 fires in window → Part B safely skips. Part A
+      // is healthy → check stays ok.
+      expect(check?.status).toBe("ok");
+      expect(check?.message).toMatch(/telemetry skipped/);
+      expect(report.infos.map((i) => i.code)).not.toContain("knowledge_narrow_too_few");
     });
   });
 });

@@ -398,6 +398,29 @@ type SessionHintsStaleInspection = {
   candidates: SessionHintsStaleCandidate[];
 };
 
+// rc.6 TASK-023 (E6): narrow_too_few — two-part check on narrow-scope KB
+// hygiene. Inspection consolidates a structural ratio (how much of the
+// canonical corpus is narrow-with-paths) with a telemetry-derived silence
+// rate (how often the PreToolUse narrow hook fires with no match). Either
+// arm independently can flag; both arms point at the same fabric-import
+// recommendation (re-seed narrow anchors).
+type NarrowTooFewInspection = {
+  // Structural arm (Part A).
+  total_canonical_entries: number;
+  narrow_with_paths_count: number;
+  narrow_ratio: number; // narrow_with_paths_count / total_canonical_entries, 0 when total === 0
+  structural_flagged: boolean;
+  // Telemetry arm (Part B).
+  total_edit_fires_in_window: number;
+  silence_fires_in_window: number;
+  silence_rate: number; // silence/edit, 0 when edits === 0
+  // True when we have insufficient data to evaluate Part B (e.g. no
+  // edit-counter file or zero fires in window). UI surfaces this as
+  // "skipped" rather than "passing".
+  telemetry_skipped: boolean;
+  telemetry_flagged: boolean;
+};
+
 // rc.5 TASK-013 (C4): read-side lint inspections #23/#24/#25 for relevance_paths
 // hygiene. All three walk canonical entries (team + personal) and inspect the
 // `relevance_scope` / `relevance_paths` frontmatter fields introduced by the
@@ -560,6 +583,30 @@ const SESSION_HINTS_STALE_DAYS = 7;
 const SESSION_HINTS_FILE_PREFIX = "session-hints-";
 const SESSION_HINTS_FILE_SUFFIX = ".json";
 
+// rc.6 TASK-023 (E6): thresholds for lint #26 narrow_too_few. Hardcoded in
+// rc.6 — a fabric-config.json override may land in rc.7+ if dogfood
+// suggests a different cadence. The structural arm trips when the narrow-
+// with-paths share of the corpus falls below the ratio threshold AND the
+// corpus is large enough to expect targeting (total entries >= min). The
+// telemetry arm trips when the rolling silence rate exceeds the threshold
+// across a 30d window. Both arms point at the same fabric-import
+// recommendation.
+const NARROW_RATIO_THRESHOLD = 0.2;
+const NARROW_MIN_TOTAL = 10;
+const SILENCE_RATE_THRESHOLD = 0.95;
+const SILENCE_WINDOW_DAYS = 30;
+
+// File-name constants for the edit-counter and hint-silence-counter sidecars
+// written by the PreToolUse narrow-injection hook (rc.6 TASK-020 / E4 and
+// TASK-023 / E6). The hook keeps these as workspace-relative paths under
+// `.fabric/.cache/`; doctor reads them back for lint #26's telemetry arm.
+const EDIT_COUNTER_FILE_REL = posix.join(".fabric", ".cache", "edit-counter");
+const HINT_SILENCE_COUNTER_FILE_REL = posix.join(
+  ".fabric",
+  ".cache",
+  "hint-silence-counter",
+);
+
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 // Regex extracting the `maturity:` value from YAML frontmatter. Mirrors
@@ -705,6 +752,10 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
   const narrowNoPaths = inspectNarrowNoPaths(projectRoot);
   const relevancePathsDangling = inspectRelevancePathsDangling(projectRoot);
   const relevancePathsDrift = inspectRelevancePathsDrift(projectRoot);
+  // rc.6 TASK-023 (E6): narrow_too_few (#26). Two-arm check — structural
+  // ratio + telemetry silence rate. Info-kind; safe-degrades to "skipped"
+  // telemetry when the edit-counter has no fires in the 30d window.
+  const narrowTooFew = inspectNarrowTooFew(projectRoot, lintNow);
   // rc.6 TASK-021 (E3): session-hints cache hygiene (#27). Scans
   // `.fabric/.cache/` for session-hints-*.json files older than 7 days
   // (mtime-based). Info kind — does not bump report status. apply-lint
@@ -760,6 +811,9 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     createNarrowNoPathsCheck(narrowNoPaths),
     createRelevancePathsDanglingCheck(relevancePathsDangling),
     createRelevancePathsDriftCheck(relevancePathsDrift),
+    // rc.6 TASK-023 (E6): narrow_too_few (lint #26). Info kind; both arms
+    // (structural + telemetry) recommend the same fabric-import action.
+    createNarrowTooFewCheck(narrowTooFew),
     // rc.6 TASK-021 (E3): session-hints cache hygiene (lint #27). Info kind.
     createSessionHintsStaleCheck(sessionHintsStale),
     createPreexistingRootFilesCheck(preexistingRootFiles),
@@ -2935,6 +2989,98 @@ function inspectSessionHintsStale(
   return { candidates };
 }
 
+// rc.6 TASK-023 (E6): inspect narrow-scope KB hygiene via two independent
+// arms. Part A is a synchronous filesystem walk over canonical entries —
+// the same iterator used by lints #23/#24/#25 — that computes the ratio of
+// narrow-with-paths entries to the full corpus. Part B reads the two
+// counter sidecars (edit-counter from TASK-020 / E4 and hint-silence-counter
+// from TASK-023 / E6) and computes a silence rate over a rolling 30d window.
+//
+// Both arms are evaluated unconditionally; either firing flags the check.
+// Part B safely degrades to "telemetry_skipped" when the edit-counter is
+// absent or has zero in-window fires — an unused-hook workspace must not
+// produce a false-positive narrow_too_few finding.
+function inspectNarrowTooFew(
+  projectRoot: string,
+  now: number,
+): NarrowTooFewInspection {
+  // -------------------------------------------------------------------------
+  // Part A — structural: walk canonical entries (team + personal) and
+  // categorize each as narrow-with-paths vs other. Uses iterateRelevanceFrontmatter
+  // (already deployed by #23/#24/#25) so the parser surface is shared.
+  // -------------------------------------------------------------------------
+  let total = 0;
+  let narrowWithPaths = 0;
+  for (const { scope, paths } of iterateRelevanceFrontmatter(projectRoot)) {
+    total += 1;
+    if (scope === "narrow" && paths.length > 0) {
+      narrowWithPaths += 1;
+    }
+  }
+  const narrowRatio = total === 0 ? 0 : narrowWithPaths / total;
+  const structuralFlagged =
+    total >= NARROW_MIN_TOTAL && narrowRatio < NARROW_RATIO_THRESHOLD;
+
+  // -------------------------------------------------------------------------
+  // Part B — telemetry: read both counter sidecars, filter to the rolling
+  // window, and compute silence_rate = silence_count / edit_count. The
+  // edit-counter is the denominator (every PreToolUse fire). When the
+  // denominator is 0 we treat the arm as "skipped" — we cannot evaluate a
+  // ratio without a sample. The silence-counter is necessarily a subset
+  // (every silent fire also fires the edit-counter), so silence_rate <= 1.
+  // -------------------------------------------------------------------------
+  const windowStartMs = now - SILENCE_WINDOW_DAYS * MS_PER_DAY;
+  const editFires = readCounterTimestamps(
+    join(projectRoot, EDIT_COUNTER_FILE_REL),
+    windowStartMs,
+  );
+  const silenceFires = readCounterTimestamps(
+    join(projectRoot, HINT_SILENCE_COUNTER_FILE_REL),
+    windowStartMs,
+  );
+  const telemetrySkipped = editFires === 0;
+  const silenceRate = editFires === 0 ? 0 : silenceFires / editFires;
+  const telemetryFlagged =
+    !telemetrySkipped && silenceRate > SILENCE_RATE_THRESHOLD;
+
+  return {
+    total_canonical_entries: total,
+    narrow_with_paths_count: narrowWithPaths,
+    narrow_ratio: narrowRatio,
+    structural_flagged: structuralFlagged,
+    total_edit_fires_in_window: editFires,
+    silence_fires_in_window: silenceFires,
+    silence_rate: silenceRate,
+    telemetry_skipped: telemetrySkipped,
+    telemetry_flagged: telemetryFlagged,
+  };
+}
+
+// Helper: read a counter sidecar file (one ISO-8601 timestamp per line)
+// and return the count of lines whose timestamp is >= windowStartMs. Used
+// by lint #26 (E6 telemetry) to count fires inside the rolling 30d window.
+// Returns 0 for any failure (file absent, unreadable, every line malformed)
+// so the caller's safe-degrade contract is uniform.
+function readCounterTimestamps(absPath: string, windowStartMs: number): number {
+  if (!existsSync(absPath)) return 0;
+  let raw: string;
+  try {
+    raw = readFileSync(absPath, "utf8");
+  } catch {
+    return 0;
+  }
+  let count = 0;
+  for (const line of raw.split(/\r?\n/u)) {
+    const trimmed = line.trim();
+    if (trimmed.length === 0) continue;
+    const ts = Date.parse(trimmed);
+    if (!Number.isFinite(ts)) continue;
+    if (ts < windowStartMs) continue;
+    count += 1;
+  }
+  return count;
+}
+
 // Best-effort reader for the underseed-threshold override stored in the
 // workspace-local `.fabric/fabric-config.json`. Any failure (missing file,
 // parse error, non-positive value) returns the default. Mirrors the
@@ -3429,6 +3575,55 @@ function createRelevancePathsDriftCheck(
     "knowledge_relevance_paths_drift",
     `${inspection.candidates.length} narrow-scope canonical entr${inspection.candidates.length === 1 ? "y has" : "ies have"} relevance_paths whose globs match no file touched in the last ${RELEVANCE_PATHS_DRIFT_WINDOW_DAYS}d of git history. First: ${detail}.`,
     "Review whether the entry is still relevant — use `fab_review.modify` to refresh the anchors or `fab_review.reject` to archive.",
+  );
+}
+
+// rc.6 TASK-023 (E6): lint #26 narrow_too_few. Info-kind finding that
+// recommends running fabric-import to (re-)seed narrow anchors when EITHER
+// the structural ratio of narrow-with-paths entries is too low OR the
+// observed silence rate of the PreToolUse narrow hook is too high. The two
+// arms point at the same recommendation because both indicate the narrow
+// scope has drifted away from where edits actually land.
+//
+// Status remains "ok" (info kind) — narrow_too_few is an informational
+// usage-pattern signal, not a correctness break. Mirrors the
+// knowledge_underseeded (#22) precedent.
+function createNarrowTooFewCheck(inspection: NarrowTooFewInspection): DoctorCheck {
+  const { structural_flagged, telemetry_flagged } = inspection;
+  if (!structural_flagged && !telemetry_flagged) {
+    // Compose a passing message that includes whichever arm contributed
+    // data — keeps the surface informative even on the happy path.
+    const ratioPct = (inspection.narrow_ratio * 100).toFixed(0);
+    const teleNote = inspection.telemetry_skipped
+      ? "telemetry skipped (no edit-counter fires in window)"
+      : `silence rate ${(inspection.silence_rate * 100).toFixed(0)}% over ${SILENCE_WINDOW_DAYS}d`;
+    return okCheck(
+      "Knowledge narrow too few",
+      `Narrow-with-paths ratio ${ratioPct}% (${inspection.narrow_with_paths_count}/${inspection.total_canonical_entries}); ${teleNote}.`,
+    );
+  }
+  // Build a message that describes which arm(s) fired. Both arms point at
+  // the same fabric-import action, so the actionHint is unified.
+  const parts: string[] = [];
+  if (structural_flagged) {
+    const ratioPct = (inspection.narrow_ratio * 100).toFixed(0);
+    parts.push(
+      `narrow-with-paths share ${ratioPct}% (${inspection.narrow_with_paths_count}/${inspection.total_canonical_entries}) below ${(NARROW_RATIO_THRESHOLD * 100).toFixed(0)}% threshold`,
+    );
+  }
+  if (telemetry_flagged) {
+    const silencePct = (inspection.silence_rate * 100).toFixed(0);
+    parts.push(
+      `narrow-hook silence rate ${silencePct}% (${inspection.silence_fires_in_window}/${inspection.total_edit_fires_in_window}) over ${SILENCE_WINDOW_DAYS}d above ${(SILENCE_RATE_THRESHOLD * 100).toFixed(0)}% threshold`,
+    );
+  }
+  return issueCheck(
+    "Knowledge narrow too few",
+    "ok",
+    "info",
+    "knowledge_narrow_too_few",
+    `Narrow-scope KB coverage is below the useful floor: ${parts.join("; ")}.`,
+    "Run the fabric-import Skill (`/fabric-import`) to re-seed narrow anchors against the current codebase.",
   );
 }
 

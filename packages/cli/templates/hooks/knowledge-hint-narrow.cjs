@@ -2,6 +2,7 @@
 /**
  * rc.6 TASK-020 (E2 + E4) — PreToolUse narrow-injection hook + edit-counter sidecar.
  * rc.6 TASK-021 (E3) — Session-hints cache emit gate (extends TASK-020).
+ * rc.6 TASK-023 (E6) — Hint-silence-counter telemetry (companion to E4).
  *
  * Three coupled responsibilities behind a single PreToolUse trigger
  * (Edit / Write / MultiEdit):
@@ -91,6 +92,19 @@ const SUMMARY_MAX_LEN = 80;
 // network. TASK-022 will read this back to compute edits-since-archive.
 const EDIT_COUNTER_DIR_REL = join(".fabric", ".cache");
 const EDIT_COUNTER_FILE = "edit-counter";
+
+// rc.6 TASK-023 (E6): hint-silence-counter sidecar — companion to the
+// edit-counter above. Where edit-counter records every PreToolUse fire
+// (numerator-agnostic), the silence-counter records only those fires that
+// produced no narrow stderr emission (matched-narrow == 0 OR emit-gate
+// returned render=false). Doctor lint #26 reads both files to derive a
+// silence rate over a 30d window; a sustained >95% rate is a usage-pattern
+// signal that narrow scope has drifted from where edits actually happen.
+//
+// Lives in the same .fabric/.cache/ directory so a single doctor cleanup
+// pass can reason about both files together.
+const HINT_SILENCE_COUNTER_DIR_REL = join(".fabric", ".cache");
+const HINT_SILENCE_COUNTER_FILE = "hint-silence-counter";
 
 // rc.6 TASK-021 (E3): session-hints cache lives alongside the edit-counter
 // in .fabric/.cache/. One file per session, named session-hints-{id}.json.
@@ -233,6 +247,36 @@ function appendEditCounter(projectRoot, now) {
   try {
     const dir = join(projectRoot, EDIT_COUNTER_DIR_REL);
     const file = join(dir, EDIT_COUNTER_FILE);
+    if (!existsSync(dir)) {
+      mkdirSync(dir, { recursive: true });
+    }
+    const iso = now instanceof Date ? now.toISOString() : new Date(now).toISOString();
+    appendFileSync(file, `${iso}\n`, "utf8");
+  } catch {
+    // Silent — sidecar failure must never block the edit.
+  }
+}
+
+/**
+ * rc.6 TASK-023 (E6): append one ISO-8601 timestamp line to
+ * `.fabric/.cache/hint-silence-counter`. Called from main() on every silent
+ * fire path — i.e. when the hook completes without emitting any narrow
+ * stderr lines. This includes:
+ *
+ *   - matched-narrow == 0 (CLI returned an empty narrow set)
+ *   - emit-gate render === false (session-hints dedupe filtered everything
+ *     out)
+ *
+ * Together with appendEditCounter (E4), this lets doctor lint #26 compute a
+ * silence rate: silence_count / total_fires over a rolling window. The
+ * write semantics mirror appendEditCounter exactly — single timestamp line
+ * per silent fire, best-effort (failures swallowed), directory created if
+ * missing.
+ */
+function appendHintSilenceCounter(projectRoot, now) {
+  try {
+    const dir = join(projectRoot, HINT_SILENCE_COUNTER_DIR_REL);
+    const file = join(dir, HINT_SILENCE_COUNTER_FILE);
     if (!existsSync(dir)) {
       mkdirSync(dir, { recursive: true });
     }
@@ -617,7 +661,15 @@ function main(env, stdio) {
     if (cliPayload === null || cliPayload === undefined) return;
 
     const narrow = Array.isArray(cliPayload.narrow) ? cliPayload.narrow : [];
-    if (narrow.length === 0) return;
+    if (narrow.length === 0) {
+      // rc.6 TASK-023 (E6): silence-counter — matched-narrow == 0. The CLI
+      // had a chance to match against the extracted paths but came back
+      // empty. Test seam env.skipSilenceCounter mirrors env.skipCounter.
+      if (!(env && env.skipSilenceCounter === true)) {
+        appendHintSilenceCounter(cwd, now);
+      }
+      return;
+    }
 
     // -------------------------------------------------------------------------
     // E3 emit-gate (TASK-021) — session-hints cache.
@@ -645,7 +697,17 @@ function main(env, stdio) {
         ? env.cacheSeed
         : readSessionHintsCache(cwd, sessionId);
     const gateDecision = applyEmitGate(cache, narrow, paths, currentRevisionHash);
-    if (!gateDecision.render) return;
+    if (!gateDecision.render) {
+      // rc.6 TASK-023 (E6): silence-counter — emit-gate filtered everything
+      // out. From the user's perspective this is indistinguishable from
+      // matched-narrow == 0: the CLI had matches, but session-hints dedupe
+      // suppressed the render. Counted as silence so doctor lint #26 sees
+      // narrow-scope drift even when dedupe is masking the matches.
+      if (!(env && env.skipSilenceCounter === true)) {
+        appendHintSilenceCounter(cwd, now);
+      }
+      return;
+    }
 
     // Persist the cache BEFORE rendering. If the render itself throws (e.g.
     // stderr write errors), the cache update still reflects the intent —
@@ -680,6 +742,7 @@ module.exports = {
   extractToolInput,
   extractPaths,
   appendEditCounter,
+  appendHintSilenceCounter,
   invokePlanContextHint,
   renderSummary,
   truncateSummary,
@@ -699,6 +762,8 @@ module.exports = {
     SUMMARY_MAX_LEN,
     EDIT_COUNTER_DIR_REL,
     EDIT_COUNTER_FILE,
+    HINT_SILENCE_COUNTER_DIR_REL,
+    HINT_SILENCE_COUNTER_FILE,
     EDIT_TOOL_NAMES,
     SESSION_HINTS_DIR_REL,
     SESSION_HINTS_FILE_PREFIX,
