@@ -5,7 +5,7 @@ import { homedir } from "node:os";
 
 import { atomicWriteJson } from "@fenglimg/fabric-shared/node/atomic-write";
 
-import type { ClientConfigWriter, ClientKind, ServerEntry } from "./writer.js";
+import type { ClientConfigWriter, ClientKind, RemoveResult, ServerEntry } from "./writer.js";
 import { createServerEntry } from "./writer.js";
 
 type JsonObject = Record<string, unknown>;
@@ -196,6 +196,67 @@ export async function writeJsonClientConfig(configPath: string, serverEntry: Ser
 }
 
 /**
+ * Idempotently remove a named MCP server entry from a JSON client config file.
+ * Best-effort: returns `skipped` when the config file is absent or the named
+ * entry is not present. Preserves all other `mcpServers` entries byte-for-byte;
+ * the only structural change is the key deletion + rewrite via atomic JSON.
+ *
+ * Used by ClaudeCodeCLIWriter / ClaudeCodeDesktopWriter / CursorWriter — the
+ * three JSON-format clients. Codex (TOML) implements its own remove() via
+ * targeted regex stripping; see toml.ts.
+ */
+export async function removeJsonClientConfigEntry(
+  configPath: string,
+  serverName: string,
+): Promise<RemoveResult> {
+  if (!existsSync(configPath)) {
+    return { status: "skipped", path: configPath, message: "no-config-file" };
+  }
+
+  let existing: JsonObject;
+  try {
+    existing = await readJsonConfig(configPath);
+  } catch (error: unknown) {
+    return {
+      status: "error",
+      path: configPath,
+      message: error instanceof Error ? error.message : String(error),
+    };
+  }
+
+  const mcpServers = existing.mcpServers;
+  if (
+    mcpServers === undefined ||
+    mcpServers === null ||
+    typeof mcpServers !== "object" ||
+    Array.isArray(mcpServers)
+  ) {
+    return { status: "skipped", path: configPath, message: "no-mcp-servers-object" };
+  }
+
+  const servers = mcpServers as JsonObject;
+  if (!Object.prototype.hasOwnProperty.call(servers, serverName)) {
+    return { status: "skipped", path: configPath, message: "not-present" };
+  }
+
+  const nextServers: JsonObject = { ...servers };
+  delete nextServers[serverName];
+  const next: JsonObject = { ...existing, mcpServers: nextServers };
+
+  try {
+    await mkdir(dirname(configPath), { recursive: true });
+    await atomicWriteJson(configPath, next, { indent: 2 });
+    return { status: "removed", path: configPath };
+  } catch (error: unknown) {
+    return {
+      status: "error",
+      path: configPath,
+      message: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+/**
  * Writes the Fabric MCP server entry to the correct Claude Code config file.
  *
  * - project scope: `<projectRoot>/.mcp.json`  (per Claude Code spec)
@@ -257,6 +318,15 @@ abstract class JsonClientConfigWriter implements ClientConfigWriter {
     }
 
     await writeJsonClientConfig(configPath, createServerEntry(serverPath));
+  }
+
+  async remove(serverName: string, workspaceRoot: string, overridePath?: string): Promise<RemoveResult> {
+    const configPath = await this.detect(workspaceRoot, overridePath);
+    if (configPath === null) {
+      return { status: "skipped", message: "no-config-path" };
+    }
+
+    return removeJsonClientConfigEntry(configPath, serverName);
   }
 }
 

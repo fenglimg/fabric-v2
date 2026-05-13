@@ -290,3 +290,114 @@ exports[`CLI surface drift gate (docs/test-seed/cli.md §1) > command 'serve' su
   "name": "serve",
 }
 `;
+
+exports[`CLI surface drift gate (docs/test-seed/cli.md §1) > command 'uninstall' surface matches snapshot > fab uninstall surface — CLI surface drift detected. Either:
+  - Update snapshot if intentional: pnpm --filter @fenglimg/fabric-cli test -u
+  - Update docs/test-seed/cli.md §1 if seed is now outdated
+  - Revert command change if unintentional 1`] = `
+{
+  "args": [
+    {
+      "alias": undefined,
+      "default": true,
+      "description": undefined,
+      "name": "bootstrap",
+      "negativeDescription": "Skip the bootstrap stage (Skills, hook scripts, hook-config un-merge).",
+      "required": undefined,
+      "type": "boolean",
+    },
+    {
+      "alias": undefined,
+      "default": false,
+      "description": "Cascade-remove empty arrays/objects when un-merging hook configs.",
+      "name": "clean-empties",
+      "negativeDescription": undefined,
+      "required": undefined,
+      "type": "boolean",
+    },
+    {
+      "alias": undefined,
+      "default": false,
+      "description": "Print target resolution details to stderr.",
+      "name": "debug",
+      "negativeDescription": undefined,
+      "required": undefined,
+      "type": "boolean",
+    },
+    {
+      "alias": undefined,
+      "default": false,
+      "description": "Run even if a serve process appears to hold the lock.",
+      "name": "force",
+      "negativeDescription": undefined,
+      "required": undefined,
+      "type": "boolean",
+    },
+    {
+      "alias": undefined,
+      "default": true,
+      "description": "Run the interactive TTY wizard when available.",
+      "name": "interactive",
+      "negativeDescription": undefined,
+      "required": undefined,
+      "type": "boolean",
+    },
+    {
+      "alias": undefined,
+      "default": true,
+      "description": undefined,
+      "name": "mcp",
+      "negativeDescription": "Skip the MCP stage (per-client writer.remove for fabric).",
+      "required": undefined,
+      "type": "boolean",
+    },
+    {
+      "alias": undefined,
+      "default": false,
+      "description": "Print the uninstall plan without removing files or running follow-up stages.",
+      "name": "plan",
+      "negativeDescription": undefined,
+      "required": undefined,
+      "type": "boolean",
+    },
+    {
+      "alias": undefined,
+      "default": false,
+      "description": "Also remove .fabric/knowledge/ subdir contents and state files. Personal-root ~/.fabric/knowledge/ is never touched.",
+      "name": "purge",
+      "negativeDescription": undefined,
+      "required": undefined,
+      "type": "boolean",
+    },
+    {
+      "alias": undefined,
+      "default": true,
+      "description": undefined,
+      "name": "scaffold",
+      "negativeDescription": "Skip the scaffold stage (.fabric/ state files and .gitkeep markers).",
+      "required": undefined,
+      "type": "boolean",
+    },
+    {
+      "alias": undefined,
+      "default": undefined,
+      "description": "Target project path. Defaults to CLI arg, EXTERNAL_FIXTURE_PATH, fabric.config.json, then cwd.",
+      "name": "target",
+      "negativeDescription": undefined,
+      "required": undefined,
+      "type": "string",
+    },
+    {
+      "alias": undefined,
+      "default": false,
+      "description": "Accept the current uninstall plan and run without the TTY wizard.",
+      "name": "yes",
+      "negativeDescription": undefined,
+      "required": undefined,
+      "type": "boolean",
+    },
+  ],
+  "description": "Uninstall Fabric from the target project.",
+  "name": "uninstall",
+}
+`;

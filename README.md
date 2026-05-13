@@ -205,6 +205,7 @@ fabric doctor                     # run all 25 lints, report only
 fabric doctor --apply-lint        # apply auto-fixable lints
 fabric plan-context-hint --all    # JSON snapshot for hook scripts
 fabric hooks install              # re-install hooks for all clients
+fabric uninstall                  # remove Fabric-managed artifacts (knowledge stays unless --purge; ~/.fabric/knowledge/ is never touched)
 ```
 
 A healthy install reports zero fixable findings from `fabric doctor`.

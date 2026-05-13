@@ -51,6 +51,10 @@ exports[`cli i18n > renders en command descriptions and output snapshots 1`] = `
       "[ok] Fabric Dashboard http://127.0.0.1:7373",
     ],
   },
+  "uninstall": {
+    "description": "Uninstall Fabric from the target project.",
+    "usage": "fab uninstall - Uninstall Fabric from the target project.",
+  },
 }
 `;
 
@@ -104,6 +108,10 @@ exports[`cli i18n > renders zh-CN command descriptions and output snapshots 1`] 
     "stdout": [
       "[ok] Fabric 仪表盘 http://127.0.0.1:7373",
     ],
+  },
+  "uninstall": {
+    "description": "从目标项目中卸载 Fabric。",
+    "usage": "fab uninstall - 从目标项目中卸载 Fabric。",
   },
 }
 `;

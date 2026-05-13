@@ -5,6 +5,49 @@ All notable changes to Fabric will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0-rc.9] — 2026-05-13
+
+**`fab uninstall` command.** Symmetric inverse of `fab init` — removes
+Fabric-managed artifacts across the same three stages (scaffold → bootstrap
+→ MCP) without touching post-init user content. Defaults preserve
+`.fabric/knowledge/` and state files (`events.jsonl`, `agents.meta.json`,
+`forensic.json`); `~/.fabric/knowledge/` (personal root) is never touched
+under any flag. Idempotent: re-running on an already-uninstalled project
+exits 0 with all step statuses `skipped`.
+
+### Added
+
+- **`fab uninstall` command**: full inverse of `fab init`'s three-stage
+  pipeline with citty `defineCommand` orchestrator and per-stage opt-out.
+  Flags: `--plan`, `--force`, `--yes`, `--no-bootstrap`, `--no-mcp`,
+  `--no-scaffold`, `--target`, `--interactive`, `--purge`, `--clean-empties`.
+  `--purge` extends scaffold removal into `.fabric/knowledge/<subdir>/`
+  contents (team root only); `--clean-empties` cascade-removes empty
+  containers left behind by the conservative un-merge default. Implemented
+  in `packages/cli/src/commands/uninstall.ts` (orchestrator + scaffold +
+  MCP stages) and `packages/cli/src/install/uninstall-skills-and-hooks.ts`
+  (10 bootstrap helpers + `uninstallBootstrapStage` orchestrator for
+  Skills, hook scripts, deep-merged hook-config un-merge, and pointer-line
+  strip).
+- **Shared destination-path constants**: hard-coded install destinations
+  extracted into 5 exported const tables (`SKILL_DESTINATIONS`,
+  `HOOK_SCRIPT_DESTINATIONS`, `HOOK_CONFIG_TARGETS`,
+  `HOOK_CONFIG_ARRAY_PATHS`, `FABRIC_HOOK_COMMAND_PATHS`) plus
+  `POINTER_*` exports in `packages/cli/src/install/skills-and-hooks.ts`.
+  Foundation for symmetric install/uninstall — install paths and
+  uninstall removal paths now share a single source of truth at
+  compile time. Install behavior unchanged.
+- **Per-client MCP unregistration**: `ClientWriter.remove(serverName)`
+  added to the writer abstraction; preserves all non-fabric server
+  entries verbatim while detaching only the `fabric` key. Implemented
+  for Claude Code / Cursor (JSON) and Codex CLI (TOML) in
+  `packages/cli/src/config/writer.ts`,
+  `packages/cli/src/config/json.ts`,
+  `packages/cli/src/config/toml.ts`, and
+  `packages/cli/src/config/claude-code.ts`. Called from
+  `uninstallMcpClients()` in `packages/cli/src/commands/uninstall.ts`
+  in the same loop shape as `installMcpClients`.
+
 ## [2.0.0-rc.8] — 2026-05-13
 
 **Release-pipeline fix.** First RC actually published to npm since `2.0.0-rc.1`.

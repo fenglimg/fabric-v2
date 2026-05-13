@@ -5,7 +5,7 @@ import { homedir } from "node:os";
 
 import { atomicWriteText } from "@fenglimg/fabric-shared/node/atomic-write";
 
-import type { ClientConfigWriter, ServerEntry } from "./writer.js";
+import type { ClientConfigWriter, RemoveResult, ServerEntry } from "./writer.js";
 import { createServerEntry } from "./writer.js";
 
 function expandHome(filePath: string): string {
@@ -52,6 +52,40 @@ function serializeCodexServerBlock(serverName: string, serverEntry: ServerEntry)
 
 function trimTrailingBlankLines(value: string): string {
   return value.replace(/\s+$/u, "");
+}
+
+/**
+ * Strip any `[mcp_servers.<serverName>]` (and the legacy `[mcp.servers.<serverName>]`)
+ * blocks from a Codex TOML config string. Returns the resulting TOML text and
+ * whether a block was actually removed (used by callers to distinguish
+ * `removed` vs `skipped` results).
+ *
+ * Preserves all other content byte-for-byte aside from collapsing trailing
+ * whitespace. Idempotent: invoking on a config that no longer contains the
+ * block is a no-op (`changed=false`).
+ */
+function removeCodexServerBlock(
+  rawConfig: string,
+  serverName: string,
+): { text: string; changed: boolean } {
+  const normalized = rawConfig.replace(/\r\n/g, "\n");
+  const escaped = serverName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const legacyPattern = new RegExp(
+    String.raw`\n?\[mcp\.servers\.${escaped}\]\n[\s\S]*?(?=\n\[[^\n]+\]\n|$)`,
+    "g",
+  );
+  const currentPattern = new RegExp(
+    String.raw`\n?\[mcp_servers\.${escaped}\]\n[\s\S]*?(?=\n\[[^\n]+\]\n|$)`,
+    "g",
+  );
+
+  const withoutLegacy = normalized.replace(legacyPattern, "");
+  const withoutCurrent = withoutLegacy.replace(currentPattern, "");
+  const changed = withoutCurrent !== normalized;
+  // Trim trailing whitespace only when something was removed — otherwise the
+  // caller's check for "no change" stays byte-accurate against the original.
+  const text = changed ? `${trimTrailingBlankLines(withoutCurrent)}\n` : rawConfig;
+  return { text, changed };
 }
 
 function upsertCodexServerBlock(rawConfig: string, serverName: string, serverEntry: ServerEntry): string {
@@ -116,6 +150,45 @@ export class CodexTOMLConfigWriter implements ClientConfigWriter {
     await mkdir(dirname(configPath), { recursive: true });
     await atomicWriteText(configPath, nextConfig);
   }
+
+  async remove(serverName: string, workspaceRoot: string, overridePath?: string): Promise<RemoveResult> {
+    const configPath = await this.detect(workspaceRoot, overridePath);
+    if (configPath === null) {
+      return { status: "skipped", message: "no-config-path" };
+    }
+
+    if (!existsSync(configPath)) {
+      return { status: "skipped", path: configPath, message: "no-config-file" };
+    }
+
+    let rawConfig: string;
+    try {
+      rawConfig = await readTomlConfigText(configPath);
+    } catch (error: unknown) {
+      return {
+        status: "error",
+        path: configPath,
+        message: error instanceof Error ? error.message : String(error),
+      };
+    }
+
+    const { text, changed } = removeCodexServerBlock(rawConfig, serverName);
+    if (!changed) {
+      return { status: "skipped", path: configPath, message: "not-present" };
+    }
+
+    try {
+      await mkdir(dirname(configPath), { recursive: true });
+      await atomicWriteText(configPath, text);
+      return { status: "removed", path: configPath };
+    } catch (error: unknown) {
+      return {
+        status: "error",
+        path: configPath,
+        message: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
 }
 
-export { serializeCodexServerBlock, upsertCodexServerBlock };
+export { removeCodexServerBlock, serializeCodexServerBlock, upsertCodexServerBlock };

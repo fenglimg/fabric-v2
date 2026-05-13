@@ -1,16 +1,17 @@
 # Test Seed — cli
 
-> 模块单位: 命令级（4 个公共命令；内部子例程仅作 §2/§3 支撑出现）
+> 模块单位: 命令级（5 个公共命令；内部子例程仅作 §2/§3 支撑出现）
 > 维护原则: 仅在意图变更时更新（详见 ../README.md §5）
 > 最近更新: 2026-05-08 / v1.8.0
 
 ## §1 Feature Surface
 
-### Public commands (4)
+### Public commands (5)
 - `init` — 项目脚手架与客户端配置写入；flags: `--target`, `--debug`, `--force`, `--yes`, `--plan`, `--reapply`, `--bootstrap/--no-bootstrap`, `--mcp/--no-mcp`, `--hooks/--no-hooks`, `--interactive/--no-interactive`, `--mcp-install`, `--scope project|user`
 - `scan` — 静态项目扫描，产出 forensic report；flags: `--target`, `--debug`, `--json`
 - `doctor` — 一致性自检与修复；flags: `--target`, `--fix`, `--json`, `--strict`, `--force`
 - `serve` — 启动 HTTP MCP server；flags: `--port`(默认 7373), `--host`(默认 127.0.0.1), `--target`, `--debug`, `--force`
+- `uninstall` — Remove Fabric-managed artifacts symmetrically to `fab init`. Flags: `--plan`, `--force`, `--yes`, `--no-bootstrap`, `--no-mcp`, `--no-scaffold`, `--target`, `--interactive`, `--purge`, `--clean-empties`.
 
 ### Internal surface（命令支撑，不单列模块）
 - bootstrap / config / hooks 子例程
@@ -33,6 +34,9 @@ I7. v1.8.0 弃用客户端 (`windsurf` / `rooCode` / `geminiCLI`) 触发 `legacy
 I8. `scan` 在源码目录为空或不可读时不抛异常，产出有效 `forensic.json`（fileCount 可为 0，recommendations 数组存在）。
 I9. `serve` 在 `EADDRINUSE` 时释放已获取的 serve-lock 并抛带 next-port 提示的错误，不留持锁孤儿进程。
 I10. `init --reapply` / `doctor` / `serve` 在另一进程持锁时拒绝执行，除非显式 `--force`；锁条目带 PID 校验。
+I11. `fab uninstall` is idempotent — re-run on already-uninstalled project: exit code 0, all step statuses `skipped`.
+I12. `fab uninstall` never modifies `~/.fabric/knowledge/` (personal root) regardless of `--purge`.
+I13. `fab uninstall` un-merge preserves all non-fabric entries in deep-merged hook configs verbatim.
 
 ## §3 Known-Tricky Cases
 
@@ -49,6 +53,12 @@ T4. **既有 root markdown 下的 init 行为** — 项目根已有 `CLAUDE.md` 
     覆盖: `packages/server/src/index.ts:68-74`；CLI init 流需断言 root markdown 未被改写。
 
 T5. **legacy 客户端清理路径** — `fabric.config.json` 中残留 `windsurf` / `rooCode` / `geminiCLI` 的 clientPaths 时，`doctor --fix` 应移除这些 key 而不影响活跃客户端配置。
+
+T6. **`fab uninstall` round-trip equality (install → uninstall)** — bootstrap stage helpers preserve byte-for-byte equality of pre-install state on already-initialized fixtures; un-merge restores non-fabric hook entries verbatim and removes only fabric-owned ones (matched by command-path against `FABRIC_HOOK_COMMAND_PATHS`).
+    覆盖: `packages/cli/__tests__/integration/uninstall-skills-and-hooks.test.ts` 对 cocos-stub fixture 做 init → uninstall → diff 三步断言（pinned in advance; created by TASK-005）。
+
+T7. **`fab uninstall --plan` no-write contract** — `--plan` 模式必须列出 scaffold entries + per-stage actions + 检测到的客户端，但绝不触发任何 `rm` / `writer.remove`；stage results 全部 `skipped`。
+    覆盖: `packages/cli/__tests__/uninstall.test.ts`（断言 `--plan` 调用后 fixture 目录 mtime 不变且 `writer.remove` spy 调用 0 次）。
 
 ## §4 Out of Scope
 

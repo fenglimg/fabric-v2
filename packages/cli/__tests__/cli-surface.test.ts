@@ -13,6 +13,7 @@ import doctorCommand from "../src/commands/doctor.ts";
 import initCommand from "../src/commands/init.ts";
 import scanCommand from "../src/commands/scan.ts";
 import serveCommand from "../src/commands/serve.ts";
+import uninstallCommand from "../src/commands/uninstall.ts";
 
 // Drift gate guidance — surfaced via snapshot hint and assertion failure messages.
 // Keep in sync with docs/test-seed/cli.md §1 Feature Surface.
@@ -78,6 +79,7 @@ describe("CLI surface drift gate (docs/test-seed/cli.md \u00A71)", () => {
     ["scan", scanCommand as CittyCommand],
     ["doctor", doctorCommand as CittyCommand],
     ["serve", serveCommand as CittyCommand],
+    ["uninstall", uninstallCommand as CittyCommand],
   ])("command '%s' surface matches snapshot", (name, cmd) => {
     const surface = commandSurface(cmd);
     // toMatchSnapshot's hint argument is appended to the snapshot key, surfacing
@@ -89,14 +91,15 @@ describe("CLI surface drift gate (docs/test-seed/cli.md \u00A71)", () => {
   // (We import the registry indirectly through the commands themselves; the
   //  registry shape lives in packages/cli/src/commands/index.ts and is
   //  re-asserted here to fail loudly if a 5th public command appears.)
-  it("public command set is exactly { init, scan, doctor, serve }", () => {
+  it("public command set is exactly { init, scan, doctor, serve, uninstall }", () => {
     const names = [
       initCommand.meta?.name,
       scanCommand.meta?.name,
       doctorCommand.meta?.name,
       serveCommand.meta?.name,
+      uninstallCommand.meta?.name,
     ].sort();
-    expect(names).toEqual(["doctor", "init", "scan", "serve"]);
+    expect(names).toEqual(["doctor", "init", "scan", "serve", "uninstall"]);
   });
 
   // Critical-flag layer: even if a future refactor renames descriptions, these

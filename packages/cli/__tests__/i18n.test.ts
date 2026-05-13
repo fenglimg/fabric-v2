@@ -83,6 +83,19 @@ async function collectSnapshots(locale: "en" | "zh-CN") {
     await serveCommand.run?.({ args: { target: serveTarget, host: "0.0.0.0", port: "7373" } } as never);
   });
 
+  // MINIMAL uninstall snapshot — description + usage help-text first line only.
+  // Per plan clarification #8, uninstall stdout iterates across rc.9/10/etc.;
+  // capturing full stdout would create needless snapshot churn during the
+  // iteration period. Init/scan/serve continue to capture their full snapshot.
+  vi.resetModules();
+  const uninstallMod = await import("../src/commands/uninstall.ts");
+  const uninstallCmd = uninstallMod.default;
+  const usageFirstLine = `fab uninstall - ${uninstallCmd.meta?.description ?? ""}`;
+  const uninstallEntry = {
+    description: uninstallCmd.meta?.description ?? "",
+    usage: usageFirstLine,
+  };
+
   return sanitizeSnapshot({
     locale,
     init: {
@@ -97,6 +110,7 @@ async function collectSnapshots(locale: "en" | "zh-CN") {
       description: serveCommand.meta.description,
       ...serveOutput,
     },
+    uninstall: uninstallEntry,
   });
 }
 

@@ -2,8 +2,8 @@ import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { homedir, platform } from "node:os";
 
-import type { ClientConfigWriter, ServerEntry } from "./writer.js";
-import { ClaudeCodeCLIWriter, normalizeConfigPath, writeJsonClientConfig } from "./json.js";
+import type { ClientConfigWriter, RemoveResult, ServerEntry } from "./writer.js";
+import { ClaudeCodeCLIWriter, normalizeConfigPath, removeJsonClientConfigEntry, writeJsonClientConfig } from "./json.js";
 
 export function getClaudeDesktopConfigPath(): string {
   const os = platform();
@@ -47,6 +47,15 @@ export class ClaudeCodeDesktopWriter implements ClientConfigWriter {
       command: process.execPath,
       args: [serverPath],
     });
+  }
+
+  async remove(serverName: string, workspaceRoot: string, overridePath?: string): Promise<RemoveResult> {
+    const configPath = await this.detect(workspaceRoot, overridePath);
+    if (configPath === null) {
+      return { status: "skipped", message: "no-config-path" };
+    }
+
+    return removeJsonClientConfigEntry(configPath, serverName);
   }
 }
 

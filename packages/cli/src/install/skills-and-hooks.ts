@@ -62,21 +62,132 @@ const CLAUDE_HOOK_CONFIG_TEMPLATE_REL = "hooks/configs/claude-code.json";
 const CODEX_HOOK_CONFIG_TEMPLATE_REL = "hooks/configs/codex-hooks.json";
 const CURSOR_HOOK_CONFIG_TEMPLATE_REL = "hooks/configs/cursor-hooks.json";
 
-const SKILL_DEST_REL = join("skills", "fabric-archive", "SKILL.md");
-const SKILL_REVIEW_DEST_REL = join("skills", "fabric-review", "SKILL.md");
-const SKILL_IMPORT_DEST_REL = join("skills", "fabric-import", "SKILL.md");
-const HOOK_SCRIPT_DEST_REL = join("hooks", "fabric-hint.cjs");
-const HOOK_BROAD_SCRIPT_DEST_REL = join("hooks", "knowledge-hint-broad.cjs");
-const HOOK_NARROW_SCRIPT_DEST_REL = join("hooks", "knowledge-hint-narrow.cjs");
+/**
+ * Project-root-relative destination paths for the three v2 Skill markdown
+ * files, one entry per supported client. Source of truth shared by `fab init`
+ * (install) and `fab uninstall` (removal). Paths are stored with forward
+ * slashes; callers must run them through `join(projectRoot, ...)` to obtain
+ * absolute, OS-normalized targets.
+ *
+ * Client coverage: Skills are only meaningful for Claude Code and Codex CLI
+ * (the two clients that surface a Skills directory); Cursor is intentionally
+ * absent because it has no Skills concept.
+ */
+export const SKILL_DESTINATIONS = {
+  fabricArchive: [
+    ".claude/skills/fabric-archive/SKILL.md",
+    ".codex/skills/fabric-archive/SKILL.md",
+  ],
+  fabricReview: [
+    ".claude/skills/fabric-review/SKILL.md",
+    ".codex/skills/fabric-review/SKILL.md",
+  ],
+  fabricImport: [
+    ".claude/skills/fabric-import/SKILL.md",
+    ".codex/skills/fabric-import/SKILL.md",
+  ],
+} as const;
 
-const POINTER_LINE =
+/**
+ * Project-root-relative destination paths for the three cross-client hook
+ * scripts (Stop / SessionStart / PreToolUse). Source of truth shared by
+ * `fab init` (install) and `fab uninstall` (removal). All three clients —
+ * Claude Code, Codex CLI, and Cursor — receive every script.
+ */
+export const HOOK_SCRIPT_DESTINATIONS = {
+  fabricHint: [
+    ".claude/hooks/fabric-hint.cjs",
+    ".codex/hooks/fabric-hint.cjs",
+    ".cursor/hooks/fabric-hint.cjs",
+  ],
+  knowledgeHintBroad: [
+    ".claude/hooks/knowledge-hint-broad.cjs",
+    ".codex/hooks/knowledge-hint-broad.cjs",
+    ".cursor/hooks/knowledge-hint-broad.cjs",
+  ],
+  knowledgeHintNarrow: [
+    ".claude/hooks/knowledge-hint-narrow.cjs",
+    ".codex/hooks/knowledge-hint-narrow.cjs",
+    ".cursor/hooks/knowledge-hint-narrow.cjs",
+  ],
+} as const;
+
+/**
+ * Project-root-relative paths of each client's hook-config JSON file that
+ * `fab init` merges fabric entries into. Source of truth shared with
+ * `fab uninstall` (which must locate and prune those entries).
+ */
+export const HOOK_CONFIG_TARGETS = {
+  claudeCode: ".claude/settings.json",
+  codex: ".codex/hooks.json",
+  cursor: ".cursor/hooks.json",
+} as const;
+
+/**
+ * Dotted JSON-path locations of the array slots each client's hook-config
+ * uses for the three fabric events. Mirrors the `arrayAppendPaths` argument
+ * passed to {@link mergeJsonIdempotent}. Source of truth shared with
+ * `fab uninstall` (which must prune fabric entries from those same arrays).
+ *
+ * Note the client-specific shape: Claude Code groups under `hooks.*`, Codex
+ * and Cursor under `events.*` — preserve the upstream schemas exactly.
+ */
+export const HOOK_CONFIG_ARRAY_PATHS = {
+  claudeCode: ["hooks.Stop", "hooks.SessionStart", "hooks.PreToolUse"],
+  codex: ["events.Stop", "events.SessionStart", "events.PreToolUse"],
+  cursor: ["events.Stop", "events.SessionStart", "events.PreToolUse"],
+} as const;
+
+/**
+ * Per-client `command` field values that identify a fabric-owned hook entry
+ * inside a hook-config array. Source of truth shared with `fab uninstall`
+ * (which prunes entries whose `command` matches one of these literals).
+ * Values match the strings shipped in templates/hooks/configs/*.json.
+ */
+export const FABRIC_HOOK_COMMAND_PATHS = {
+  claudeCode: {
+    fabricHint: ".claude/hooks/fabric-hint.cjs",
+    knowledgeHintBroad: ".claude/hooks/knowledge-hint-broad.cjs",
+    knowledgeHintNarrow: ".claude/hooks/knowledge-hint-narrow.cjs",
+  },
+  codex: {
+    fabricHint: ".codex/hooks/fabric-hint.cjs",
+    knowledgeHintBroad: ".codex/hooks/knowledge-hint-broad.cjs",
+    knowledgeHintNarrow: ".codex/hooks/knowledge-hint-narrow.cjs",
+  },
+  cursor: {
+    fabricHint: ".cursor/hooks/fabric-hint.cjs",
+    knowledgeHintBroad: ".cursor/hooks/knowledge-hint-broad.cjs",
+    knowledgeHintNarrow: ".cursor/hooks/knowledge-hint-narrow.cjs",
+  },
+} as const;
+
+/**
+ * Literal markdown pointer line referencing the fabric-archive Skill. Source
+ * of truth shared with `fab uninstall` (which removes this exact line from
+ * each {@link POINTER_TARGETS} file).
+ */
+export const POINTER_LINE =
   "> Use the fabric-archive Skill when archiving knowledge entries (see .claude/skills/fabric-archive/SKILL.md).";
-const REVIEW_POINTER_LINE =
+/**
+ * Literal markdown pointer line referencing the fabric-review Skill. Source
+ * of truth shared with `fab uninstall`.
+ */
+export const REVIEW_POINTER_LINE =
   "> Use the fabric-review Skill to review pending knowledge entries (see .claude/skills/fabric-review/SKILL.md).";
-const IMPORT_POINTER_LINE =
+/**
+ * Literal markdown pointer line referencing the fabric-import Skill. Source
+ * of truth shared with `fab uninstall`.
+ */
+export const IMPORT_POINTER_LINE =
   "> Use the fabric-import Skill for cold-start enrichment from git history and docs (see .claude/skills/fabric-import/SKILL.md).";
 
-const POINTER_TARGETS = ["CLAUDE.md", "AGENTS.md", join(".cursor", "rules")];
+/**
+ * Project-root-relative paths of files that receive Skill pointer appends in
+ * {@link addArchiveSkillPointer}. Source of truth shared with `fab uninstall`
+ * (which strips the pointer lines from each present file).
+ */
+export const POINTER_TARGETS = ["CLAUDE.md", "AGENTS.md", join(".cursor", "rules")];
 
 /**
  * Copy templates/skills/fabric-archive/SKILL.md into both .claude/skills/
@@ -88,10 +199,7 @@ export async function installFabricArchiveSkill(
   _options: InstallOptions = {},
 ): Promise<InstallStepResult[]> {
   const source = await readTemplate(SKILL_TEMPLATE_REL);
-  const targets = [
-    join(projectRoot, ".claude", SKILL_DEST_REL),
-    join(projectRoot, ".codex", SKILL_DEST_REL),
-  ];
+  const targets = SKILL_DESTINATIONS.fabricArchive.map((rel) => join(projectRoot, rel));
   const results: InstallStepResult[] = [];
   for (const target of targets) {
     results.push(await copyTextIdempotent("skill", source, target));
@@ -114,10 +222,7 @@ export async function installFabricReviewSkill(
   _options: InstallOptions = {},
 ): Promise<InstallStepResult[]> {
   const source = await readTemplate(SKILL_REVIEW_TEMPLATE_REL);
-  const targets = [
-    join(projectRoot, ".claude", SKILL_REVIEW_DEST_REL),
-    join(projectRoot, ".codex", SKILL_REVIEW_DEST_REL),
-  ];
+  const targets = SKILL_DESTINATIONS.fabricReview.map((rel) => join(projectRoot, rel));
   const results: InstallStepResult[] = [];
   for (const target of targets) {
     results.push(await copyTextIdempotent("skill-review", source, target));
@@ -141,10 +246,7 @@ export async function installFabricImportSkill(
   _options: InstallOptions = {},
 ): Promise<InstallStepResult[]> {
   const source = await readTemplate(SKILL_IMPORT_TEMPLATE_REL);
-  const targets = [
-    join(projectRoot, ".claude", SKILL_IMPORT_DEST_REL),
-    join(projectRoot, ".codex", SKILL_IMPORT_DEST_REL),
-  ];
+  const targets = SKILL_DESTINATIONS.fabricImport.map((rel) => join(projectRoot, rel));
   const results: InstallStepResult[] = [];
   for (const target of targets) {
     results.push(await copyTextIdempotent("skill-import", source, target));
@@ -167,11 +269,7 @@ export async function installArchiveHintHook(
   _options: InstallOptions = {},
 ): Promise<InstallStepResult[]> {
   const source = await readTemplate(HOOK_SCRIPT_TEMPLATE_REL);
-  const targets = [
-    join(projectRoot, ".claude", HOOK_SCRIPT_DEST_REL),
-    join(projectRoot, ".codex", HOOK_SCRIPT_DEST_REL),
-    join(projectRoot, ".cursor", HOOK_SCRIPT_DEST_REL),
-  ];
+  const targets = HOOK_SCRIPT_DESTINATIONS.fabricHint.map((rel) => join(projectRoot, rel));
   const results: InstallStepResult[] = [];
   for (const target of targets) {
     const result = await copyTextIdempotent("hook-script", source, target);
@@ -203,11 +301,7 @@ export async function installKnowledgeHintBroadHook(
   _options: InstallOptions = {},
 ): Promise<InstallStepResult[]> {
   const source = await readTemplate(HOOK_BROAD_SCRIPT_TEMPLATE_REL);
-  const targets = [
-    join(projectRoot, ".claude", HOOK_BROAD_SCRIPT_DEST_REL),
-    join(projectRoot, ".codex", HOOK_BROAD_SCRIPT_DEST_REL),
-    join(projectRoot, ".cursor", HOOK_BROAD_SCRIPT_DEST_REL),
-  ];
+  const targets = HOOK_SCRIPT_DESTINATIONS.knowledgeHintBroad.map((rel) => join(projectRoot, rel));
   const results: InstallStepResult[] = [];
   for (const target of targets) {
     const result = await copyTextIdempotent("hook-broad-script", source, target);
@@ -242,11 +336,7 @@ export async function installKnowledgeHintNarrowHook(
   _options: InstallOptions = {},
 ): Promise<InstallStepResult[]> {
   const source = await readTemplate(HOOK_NARROW_SCRIPT_TEMPLATE_REL);
-  const targets = [
-    join(projectRoot, ".claude", HOOK_NARROW_SCRIPT_DEST_REL),
-    join(projectRoot, ".codex", HOOK_NARROW_SCRIPT_DEST_REL),
-    join(projectRoot, ".cursor", HOOK_NARROW_SCRIPT_DEST_REL),
-  ];
+  const targets = HOOK_SCRIPT_DESTINATIONS.knowledgeHintNarrow.map((rel) => join(projectRoot, rel));
   const results: InstallStepResult[] = [];
   for (const target of targets) {
     const result = await copyTextIdempotent("hook-narrow-script", source, target);
@@ -278,12 +368,13 @@ export async function mergeClaudeCodeHookConfig(
   _options: InstallOptions = {},
 ): Promise<InstallStepResult> {
   const fragment = await readJsonTemplate(CLAUDE_HOOK_CONFIG_TEMPLATE_REL);
-  const targetPath = join(projectRoot, ".claude", "settings.json");
-  return mergeJsonIdempotent("claude-hook-config", targetPath, fragment, [
-    "hooks.Stop",
-    "hooks.SessionStart",
-    "hooks.PreToolUse",
-  ]);
+  const targetPath = join(projectRoot, HOOK_CONFIG_TARGETS.claudeCode);
+  return mergeJsonIdempotent(
+    "claude-hook-config",
+    targetPath,
+    fragment,
+    [...HOOK_CONFIG_ARRAY_PATHS.claudeCode],
+  );
 }
 
 /**
@@ -299,12 +390,13 @@ export async function mergeCodexHookConfig(
   _options: InstallOptions = {},
 ): Promise<InstallStepResult> {
   const fragment = await readJsonTemplate(CODEX_HOOK_CONFIG_TEMPLATE_REL);
-  const targetPath = join(projectRoot, ".codex", "hooks.json");
-  return mergeJsonIdempotent("codex-hook-config", targetPath, fragment, [
-    "events.Stop",
-    "events.SessionStart",
-    "events.PreToolUse",
-  ]);
+  const targetPath = join(projectRoot, HOOK_CONFIG_TARGETS.codex);
+  return mergeJsonIdempotent(
+    "codex-hook-config",
+    targetPath,
+    fragment,
+    [...HOOK_CONFIG_ARRAY_PATHS.codex],
+  );
 }
 
 /**
@@ -321,12 +413,13 @@ export async function mergeCursorHookConfig(
   _options: InstallOptions = {},
 ): Promise<InstallStepResult> {
   const fragment = await readJsonTemplate(CURSOR_HOOK_CONFIG_TEMPLATE_REL);
-  const targetPath = join(projectRoot, ".cursor", "hooks.json");
-  return mergeJsonIdempotent("cursor-hook-config", targetPath, fragment, [
-    "events.Stop",
-    "events.SessionStart",
-    "events.PreToolUse",
-  ]);
+  const targetPath = join(projectRoot, HOOK_CONFIG_TARGETS.cursor);
+  return mergeJsonIdempotent(
+    "cursor-hook-config",
+    targetPath,
+    fragment,
+    [...HOOK_CONFIG_ARRAY_PATHS.cursor],
+  );
 }
 
 /**
