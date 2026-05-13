@@ -43,6 +43,21 @@ function fileExists(relPath) {
   return existsSync(resolve(REPO_ROOT, relPath));
 }
 
+// Strip `/* ... */` block comments and `// ...` line comments so we can
+// assert "no code reference to symbol X" without false-positiving on
+// rationale comments that document the symbol's removal. Quoted strings
+// are not preserved verbatim; the gate only needs comment elision for
+// invariant-assertion purposes, not for full parser fidelity.
+function stripJsComments(source) {
+  // Block comments first (greedy across newlines is fine: comments don't
+  // contain `*/` inside themselves).
+  const noBlocks = source.replace(/\/\*[\s\S]*?\*\//g, "");
+  // Line comments: trim `//` and everything after on the same line. This
+  // also clips trailing-comment hits ("foo(); // candidates_full_content")
+  // which is correct for our purpose — those are documentation, not calls.
+  return noBlocks.replace(/\/\/[^\n]*/g, "");
+}
+
 // ---------------------------------------------------------------------------
 // T09 — plan-context degenerate mode removed
 // ---------------------------------------------------------------------------
@@ -50,7 +65,12 @@ function fileExists(relPath) {
 async function checkT09PlanContextSymmetric() {
   const failures = [];
 
-  // (a) plan-context.ts must not reference candidates_full_content anymore.
+  // (a) plan-context.ts must not reference candidates_full_content as a
+  // functional symbol. Comments documenting the removal (rc.7 T9 rationale,
+  // ADR cross-refs) are explicitly allowed — they describe what the source
+  // used to do and why it's gone. We assert by stripping single-line and
+  // block comments before scanning, so any residual match is a code-level
+  // regression.
   const src = readText("packages/server/src/services/plan-context.ts");
   if (src === undefined) {
     return {
@@ -60,9 +80,10 @@ async function checkT09PlanContextSymmetric() {
       details: "packages/server/src/services/plan-context.ts not found",
     };
   }
-  if (/candidates_full_content/.test(src)) {
+  const srcCodeOnly = stripJsComments(src);
+  if (/candidates_full_content/.test(srcCodeOnly)) {
     failures.push(
-      "plan-context.ts still references candidates_full_content (degenerate mode must be fully removed)",
+      "plan-context.ts still references candidates_full_content as code (degenerate mode must be fully removed; comment references are allowed)",
     );
   }
 
@@ -81,8 +102,9 @@ async function checkT09PlanContextSymmetric() {
     failures.push(`${adrRelPath} missing`);
   } else {
     for (const heading of ["Status", "Context", "Decision", "Consequences"]) {
-      // Markdown headers can be `## Heading` or part of a metadata key.
-      const re = new RegExp(`(^|\\n)(##\\s*${heading}|\\*\\*${heading}\\*\\*)`, "i");
+      // Accept either an `## Heading` markdown header OR a `**Heading**`
+      // metadata-bold form, with an optional list-marker prefix (`- `, `* `).
+      const re = new RegExp(`(^|\\n)\\s*(?:[-*]\\s+)?(##\\s*${heading}|\\*\\*${heading}\\*\\*)`, "i");
       if (!re.test(adr)) {
         failures.push(`${adrRelPath} missing required section: ${heading}`);
       }
