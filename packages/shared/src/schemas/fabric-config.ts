@@ -72,4 +72,30 @@ export const fabricConfigSchema = z.object({
   // aggressively, higher values rely on the 24h fallback. Missing or absent
   // edit-counter file degrades safely to the 24h-only path.
   archive_edit_threshold: z.number().int().positive().optional().default(20),
+  // rc.7 T7: hours-since-last-knowledge_proposed cutoff for Signal A's
+  // time branch. Was hardcoded as 24 in fabric-hint.cjs's THRESHOLD_HOURS;
+  // externalized so chatty workspaces can lower the bar and quiet ones can
+  // raise it. Default 24 preserves rc.6 behavior. See docs/configuration.md.
+  archive_hint_hours: z.number().int().positive().optional().default(24),
+  // rc.7 T7: pending-count cutoff for Signal B (review skill). Was
+  // hardcoded as 10 in fabric-hint.cjs's THRESHOLD_PENDING_COUNT.
+  // Default 10 preserves rc.6 behavior. See docs/configuration.md for
+  // small/medium/large repo recommendations.
+  review_hint_pending_count: z.number().int().positive().optional().default(10),
+  // rc.7 T7: pending-age cutoff (in days) for Signal B (review skill).
+  // Was hardcoded as 7 in fabric-hint.cjs's THRESHOLD_PENDING_AGE_DAYS.
+  // Default 7 preserves rc.6 behavior. See docs/configuration.md.
+  review_hint_pending_age_days: z.number().int().positive().optional().default(7),
+  // rc.7 T7 + T10 pre-wiring: days-since-last-doctor cutoff for the future
+  // Signal D (maintenance hint). T10 will consume this to decide when the
+  // fabric-hint Stop hook surfaces a "run `fabric doctor`" reminder.
+  // Default 14 reflects a fortnightly cadence — long enough to avoid nag,
+  // short enough to catch index drift before it compounds.
+  maintenance_hint_days: z.number().int().positive().optional().default(14),
+  // rc.7 T7 + T10 pre-wiring: cooldown between Signal D reminders, in
+  // days. Once Signal D fires, it stays silent for this many days even if
+  // the user doesn't run doctor. Default 7 keeps the reminder weekly at
+  // worst — pairing 14d trigger + 7d cooldown means at most ~2 reminders
+  // per month for a workspace that ignores them.
+  maintenance_hint_cooldown_days: z.number().int().positive().optional().default(7),
 });

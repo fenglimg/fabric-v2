@@ -27,7 +27,13 @@ const EVENT_TYPE_INIT_SCAN_COMPLETED = "init_scan_completed";
 // 24h-only — matching the rc.5 contract. If no knowledge_proposed event has
 // ever fired, Signal A stays silent regardless of edit count (an
 // "anchor"-less workspace is Signal C's domain).
-const THRESHOLD_HOURS = 24;
+// rc.7 T7: archive_hint_hours, review_hint_pending_count, and
+// review_hint_pending_age_days are now read from .fabric/fabric-config.json.
+// The DEFAULT_ constants below carry the documented fallback when the config
+// file is missing, malformed, or the field is absent. Call sites use the
+// readArchiveHintHours / readReviewHintPendingCount /
+// readReviewHintPendingAgeDays helpers — see docs/configuration.md.
+const DEFAULT_ARCHIVE_HINT_HOURS = 24;
 const MS_PER_HOUR = 60 * 60 * 1000;
 const EDIT_COUNTER_FILE_REL = join(".fabric", ".cache", "edit-counter");
 const DEFAULT_ARCHIVE_EDIT_THRESHOLD = 20;
@@ -35,9 +41,17 @@ const DEFAULT_ARCHIVE_EDIT_THRESHOLD = 20;
 // rc.3 TASK-004: second signal — pending-overflow → review skill recommendation.
 const PENDING_DIR = "knowledge/pending";
 const PENDING_TYPES = ["decisions", "pitfalls", "guidelines", "models", "processes"];
-const THRESHOLD_PENDING_COUNT = 10;
-const THRESHOLD_PENDING_AGE_DAYS = 7;
+const DEFAULT_REVIEW_HINT_PENDING_COUNT = 10;
+const DEFAULT_REVIEW_HINT_PENDING_AGE_DAYS = 7;
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+// rc.7 T7 / T10 pre-wiring: Signal D (maintenance hint) thresholds. T10 will
+// consume these to decide when a "run fabric doctor" reminder fires; T7 only
+// surfaces them on the config-loader surface so T10 doesn't have to bump the
+// config schema in a second commit. Defaults: 14d since last doctor invoke
+// triggers; 7d cooldown between repeats.
+const DEFAULT_MAINTENANCE_HINT_DAYS = 14;
+const DEFAULT_MAINTENANCE_HINT_COOLDOWN_DAYS = 7;
 
 // rc.5 TASK-010: third signal — underseeded knowledge corpus → fabric-import skill.
 // Triggers when (a) canonical node count is below the underseed threshold AND
@@ -293,7 +307,12 @@ function readArchiveEditThreshold(projectRoot) {
  *   - { decision: 'block', reason, signal: 'import', recommended_skill: 'fabric-import' }
  *   - null on no trigger
  */
-function decide(events, now, pendingStats, underseedStats, editCounterStats) {
+// rc.7 T7: thresholds is the externalized-config view passed in by main().
+// The shape mirrors the DEFAULT_ constants 1:1 so tests can synthesize it
+// without touching the filesystem. Omitting the arg falls back to documented
+// defaults so existing in-process callers (tests that pre-date T7) still
+// pass without modification — they implicitly exercise the default path.
+function decide(events, now, pendingStats, underseedStats, editCounterStats, thresholds) {
   const nowMs = now instanceof Date ? now.getTime() : Number(now) || Date.now();
   const stats = pendingStats || { count: 0, oldestAgeMs: null };
   const underseed =
@@ -303,6 +322,19 @@ function decide(events, now, pendingStats, underseedStats, editCounterStats) {
       editsSinceLastProposed: 0,
       threshold: DEFAULT_ARCHIVE_EDIT_THRESHOLD,
     };
+  const cfg = thresholds || {};
+  const archiveHintHours =
+    typeof cfg.archiveHintHours === "number" && cfg.archiveHintHours > 0
+      ? cfg.archiveHintHours
+      : DEFAULT_ARCHIVE_HINT_HOURS;
+  const reviewHintPendingCount =
+    typeof cfg.reviewHintPendingCount === "number" && cfg.reviewHintPendingCount > 0
+      ? cfg.reviewHintPendingCount
+      : DEFAULT_REVIEW_HINT_PENDING_COUNT;
+  const reviewHintPendingAgeDays =
+    typeof cfg.reviewHintPendingAgeDays === "number" && cfg.reviewHintPendingAgeDays > 0
+      ? cfg.reviewHintPendingAgeDays
+      : DEFAULT_REVIEW_HINT_PENDING_AGE_DAYS;
 
   // ---- Archive signal (rc.6 TASK-022 — Signal A, 24h-OR-N-edits) -----------
   // Locate the most-recent knowledge_proposed event. If none exists, Signal A
@@ -321,7 +353,7 @@ function decide(events, now, pendingStats, underseedStats, editCounterStats) {
     lastProposedTs === null ? null : (nowMs - lastProposedTs) / MS_PER_HOUR;
 
   const triggerByHours =
-    hoursElapsed !== null && hoursElapsed >= THRESHOLD_HOURS;
+    hoursElapsed !== null && hoursElapsed >= archiveHintHours;
   const triggerByEdits =
     lastProposedTs !== null &&
     editStats.editsSinceLastProposed >= editStats.threshold;
@@ -334,7 +366,7 @@ function decide(events, now, pendingStats, underseedStats, editCounterStats) {
     // mention both so the user understands the urgency.
     const parts = [];
     if (triggerByHours) {
-      parts.push(`距上次 knowledge_proposed ${hoursElapsed.toFixed(1)}h（阈值 ${THRESHOLD_HOURS}h）`);
+      parts.push(`距上次 knowledge_proposed ${hoursElapsed.toFixed(1)}h（阈值 ${archiveHintHours}h）`);
     }
     if (triggerByEdits) {
       parts.push(`自上次归档已发生 ${editStats.editsSinceLastProposed} 次编辑（阈值 ${editStats.threshold}）`);
@@ -350,9 +382,9 @@ function decide(events, now, pendingStats, underseedStats, editCounterStats) {
   }
 
   // ---- Review signal (rc.3 TASK-004) ---------------------------------------
-  const triggerByPendingCount = stats.count >= THRESHOLD_PENDING_COUNT;
+  const triggerByPendingCount = stats.count >= reviewHintPendingCount;
   const triggerByPendingAge =
-    stats.oldestAgeMs !== null && stats.oldestAgeMs / MS_PER_DAY >= THRESHOLD_PENDING_AGE_DAYS;
+    stats.oldestAgeMs !== null && stats.oldestAgeMs / MS_PER_DAY >= reviewHintPendingAgeDays;
 
   if (triggerByPendingCount || triggerByPendingAge) {
     const ageSuffix =
@@ -413,6 +445,60 @@ function decide(events, now, pendingStats, underseedStats, editCounterStats) {
   }
 
   return null;
+}
+
+// ---------------------------------------------------------------------------
+// rc.7 T7: config readers for the three externalized thresholds + two new
+// maintenance_hint_* fields. All readers share the same contract as the
+// pre-existing readers in this file: synchronous fs read, missing file or
+// malformed JSON → return the documented default, never throw. Caching is
+// not done at the reader layer because each main() invocation reads at
+// most once per field and the file is <1KB.
+// ---------------------------------------------------------------------------
+
+function _readConfigNumber(projectRoot, fieldName, defaultValue) {
+  const configPath = join(projectRoot, FABRIC_DIR, CONFIG_FILE);
+  if (!existsSync(configPath)) return defaultValue;
+  try {
+    const parsed = JSON.parse(readFileSync(configPath, "utf8"));
+    const v = parsed && parsed[fieldName];
+    if (typeof v === "number" && Number.isFinite(v) && v > 0) return v;
+  } catch {
+    // fall through to default
+  }
+  return defaultValue;
+}
+
+function readArchiveHintHours(projectRoot) {
+  return _readConfigNumber(projectRoot, "archive_hint_hours", DEFAULT_ARCHIVE_HINT_HOURS);
+}
+
+function readReviewHintPendingCount(projectRoot) {
+  return _readConfigNumber(
+    projectRoot,
+    "review_hint_pending_count",
+    DEFAULT_REVIEW_HINT_PENDING_COUNT,
+  );
+}
+
+function readReviewHintPendingAgeDays(projectRoot) {
+  return _readConfigNumber(
+    projectRoot,
+    "review_hint_pending_age_days",
+    DEFAULT_REVIEW_HINT_PENDING_AGE_DAYS,
+  );
+}
+
+function readMaintenanceHintDays(projectRoot) {
+  return _readConfigNumber(projectRoot, "maintenance_hint_days", DEFAULT_MAINTENANCE_HINT_DAYS);
+}
+
+function readMaintenanceHintCooldownDays(projectRoot) {
+  return _readConfigNumber(
+    projectRoot,
+    "maintenance_hint_cooldown_days",
+    DEFAULT_MAINTENANCE_HINT_COOLDOWN_DAYS,
+  );
 }
 
 /**
@@ -529,7 +615,25 @@ function main(env, stdio) {
       };
     }
 
-    const result = decide(events, now, pendingStats, underseedStats, editCounterStats);
+    // rc.7 T7: read the externalized thresholds and pass them into decide.
+    // Reader failures degrade silently to documented defaults — fabric-hint
+    // must never block on config errors (see hook contract above).
+    let thresholds;
+    try {
+      thresholds = {
+        archiveHintHours: readArchiveHintHours(cwd),
+        reviewHintPendingCount: readReviewHintPendingCount(cwd),
+        reviewHintPendingAgeDays: readReviewHintPendingAgeDays(cwd),
+      };
+    } catch {
+      thresholds = {
+        archiveHintHours: DEFAULT_ARCHIVE_HINT_HOURS,
+        reviewHintPendingCount: DEFAULT_REVIEW_HINT_PENDING_COUNT,
+        reviewHintPendingAgeDays: DEFAULT_REVIEW_HINT_PENDING_AGE_DAYS,
+      };
+    }
+
+    const result = decide(events, now, pendingStats, underseedStats, editCounterStats, thresholds);
     if (result === null) return;
 
     // Cooldown throttle: once a signal fires, stay silent for
@@ -560,6 +664,12 @@ module.exports = {
   readCooldownHours,
   readUnderseedThreshold,
   readArchiveEditThreshold,
+  // rc.7 T7: externalized-threshold readers (3 moved + 2 new for T10).
+  readArchiveHintHours,
+  readReviewHintPendingCount,
+  readReviewHintPendingAgeDays,
+  readMaintenanceHintDays,
+  readMaintenanceHintCooldownDays,
   readShownCache,
   writeShownCache,
   CONSTANTS: {
@@ -567,11 +677,21 @@ module.exports = {
     EVENT_LEDGER_FILE,
     EVENT_TYPE_PROPOSED,
     EVENT_TYPE_INIT_SCAN_COMPLETED,
-    THRESHOLD_HOURS,
+    // rc.7 T7: legacy aliases kept for back-compat with the existing test
+    // CONSTANTS surface. They point at the same documented defaults the
+    // readers return when the config file is absent — never branch on these
+    // in production code, always go through the readers so a config
+    // override is honored.
+    THRESHOLD_HOURS: DEFAULT_ARCHIVE_HINT_HOURS,
+    THRESHOLD_PENDING_COUNT: DEFAULT_REVIEW_HINT_PENDING_COUNT,
+    THRESHOLD_PENDING_AGE_DAYS: DEFAULT_REVIEW_HINT_PENDING_AGE_DAYS,
+    DEFAULT_ARCHIVE_HINT_HOURS,
+    DEFAULT_REVIEW_HINT_PENDING_COUNT,
+    DEFAULT_REVIEW_HINT_PENDING_AGE_DAYS,
+    DEFAULT_MAINTENANCE_HINT_DAYS,
+    DEFAULT_MAINTENANCE_HINT_COOLDOWN_DAYS,
     PENDING_DIR,
     PENDING_TYPES,
-    THRESHOLD_PENDING_COUNT,
-    THRESHOLD_PENDING_AGE_DAYS,
     KNOWLEDGE_CANONICAL_TYPES,
     DEFAULT_UNDERSEED_NODE_THRESHOLD,
     UNDERSEED_POST_INIT_QUIET_HOURS,

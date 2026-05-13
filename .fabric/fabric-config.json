@@ -1,3 +1,8 @@
 {
-  "knowledge_language": "zh-CN"
+  "knowledge_language": "zh-CN",
+  "archive_hint_hours": 24,
+  "review_hint_pending_count": 10,
+  "review_hint_pending_age_days": 7,
+  "maintenance_hint_days": 14,
+  "maintenance_hint_cooldown_days": 7
 }

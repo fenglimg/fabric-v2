@@ -56,9 +56,20 @@ type HookModule = {
     pendingStats?: PendingStats,
     underseedStats?: UnderseedStats,
     editCounterStats?: EditCounterStats,
+    thresholds?: {
+      archiveHintHours?: number;
+      reviewHintPendingCount?: number;
+      reviewHintPendingAgeDays?: number;
+    },
   ) => HookDecision;
   readUnderseedThreshold: (projectRoot: string) => number;
   readArchiveEditThreshold: (projectRoot: string) => number;
+  // rc.7 T7: externalized-threshold readers.
+  readArchiveHintHours: (projectRoot: string) => number;
+  readReviewHintPendingCount: (projectRoot: string) => number;
+  readReviewHintPendingAgeDays: (projectRoot: string) => number;
+  readMaintenanceHintDays: (projectRoot: string) => number;
+  readMaintenanceHintCooldownDays: (projectRoot: string) => number;
   CONSTANTS: {
     FABRIC_DIR: string;
     EVENT_LEDGER_FILE: string;
@@ -69,6 +80,11 @@ type HookModule = {
     PENDING_TYPES: string[];
     THRESHOLD_PENDING_COUNT: number;
     THRESHOLD_PENDING_AGE_DAYS: number;
+    DEFAULT_ARCHIVE_HINT_HOURS: number;
+    DEFAULT_REVIEW_HINT_PENDING_COUNT: number;
+    DEFAULT_REVIEW_HINT_PENDING_AGE_DAYS: number;
+    DEFAULT_MAINTENANCE_HINT_DAYS: number;
+    DEFAULT_MAINTENANCE_HINT_COOLDOWN_DAYS: number;
     KNOWLEDGE_CANONICAL_TYPES: string[];
     DEFAULT_UNDERSEED_NODE_THRESHOLD: number;
     UNDERSEED_POST_INIT_QUIET_HOURS: number;
@@ -1121,6 +1137,142 @@ describe("fabric-hint.cjs — main (import signal integration)", () => {
     expect(writes).toHaveLength(1);
     const payload = JSON.parse(writes[0] as string) as { signal: string };
     expect(payload.signal).toBe("import");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// rc.7 T7: externalized hook-threshold readers
+// ---------------------------------------------------------------------------
+
+describe("fabric-hint.cjs — rc.7 T7 externalized threshold readers", () => {
+  let tempRoot: string;
+
+  beforeEach(() => {
+    tempRoot = mkdtempSync(join(tmpdir(), "fabric-hint-t7-"));
+  });
+
+  afterEach(() => {
+    try {
+      rmSync(tempRoot, { recursive: true, force: true });
+    } catch {
+      // best-effort
+    }
+  });
+
+  it("readArchiveHintHours returns default 24 when config file is missing", () => {
+    expect(hook.readArchiveHintHours(tempRoot)).toBe(24);
+    expect(hook.readArchiveHintHours(tempRoot)).toBe(hook.CONSTANTS.DEFAULT_ARCHIVE_HINT_HOURS);
+  });
+
+  it("readArchiveHintHours honors archive_hint_hours override", () => {
+    mkdirSync(join(tempRoot, ".fabric"), { recursive: true });
+    writeFileSync(
+      join(tempRoot, ".fabric", "fabric-config.json"),
+      JSON.stringify({ archive_hint_hours: 48 }),
+      "utf8",
+    );
+    expect(hook.readArchiveHintHours(tempRoot)).toBe(48);
+  });
+
+  it("readReviewHintPendingCount returns default 10 when config file is missing", () => {
+    expect(hook.readReviewHintPendingCount(tempRoot)).toBe(10);
+    expect(hook.readReviewHintPendingCount(tempRoot)).toBe(
+      hook.CONSTANTS.DEFAULT_REVIEW_HINT_PENDING_COUNT,
+    );
+  });
+
+  it("readReviewHintPendingAgeDays returns default 7 when config file is missing", () => {
+    expect(hook.readReviewHintPendingAgeDays(tempRoot)).toBe(7);
+  });
+
+  it("readMaintenanceHintDays returns default 14 when config file is missing", () => {
+    expect(hook.readMaintenanceHintDays(tempRoot)).toBe(14);
+    expect(hook.readMaintenanceHintDays(tempRoot)).toBe(
+      hook.CONSTANTS.DEFAULT_MAINTENANCE_HINT_DAYS,
+    );
+  });
+
+  it("readMaintenanceHintCooldownDays returns default 7 when config file is missing", () => {
+    expect(hook.readMaintenanceHintCooldownDays(tempRoot)).toBe(7);
+    expect(hook.readMaintenanceHintCooldownDays(tempRoot)).toBe(
+      hook.CONSTANTS.DEFAULT_MAINTENANCE_HINT_COOLDOWN_DAYS,
+    );
+  });
+
+  it("readers fall back to defaults when config file is malformed JSON", () => {
+    mkdirSync(join(tempRoot, ".fabric"), { recursive: true });
+    writeFileSync(join(tempRoot, ".fabric", "fabric-config.json"), "{{not json", "utf8");
+    expect(hook.readArchiveHintHours(tempRoot)).toBe(24);
+    expect(hook.readReviewHintPendingCount(tempRoot)).toBe(10);
+    expect(hook.readReviewHintPendingAgeDays(tempRoot)).toBe(7);
+    expect(hook.readMaintenanceHintDays(tempRoot)).toBe(14);
+    expect(hook.readMaintenanceHintCooldownDays(tempRoot)).toBe(7);
+  });
+
+  it("readers fall back to defaults when override is non-positive", () => {
+    mkdirSync(join(tempRoot, ".fabric"), { recursive: true });
+    writeFileSync(
+      join(tempRoot, ".fabric", "fabric-config.json"),
+      JSON.stringify({
+        archive_hint_hours: 0,
+        review_hint_pending_count: -1,
+        review_hint_pending_age_days: "seven",
+        maintenance_hint_days: 0,
+        maintenance_hint_cooldown_days: null,
+      }),
+      "utf8",
+    );
+    expect(hook.readArchiveHintHours(tempRoot)).toBe(24);
+    expect(hook.readReviewHintPendingCount(tempRoot)).toBe(10);
+    expect(hook.readReviewHintPendingAgeDays(tempRoot)).toBe(7);
+    expect(hook.readMaintenanceHintDays(tempRoot)).toBe(14);
+    expect(hook.readMaintenanceHintCooldownDays(tempRoot)).toBe(7);
+  });
+
+  it("decide threads externalized archiveHintHours through Signal A trigger", () => {
+    // 25h elapsed > default 24h would trigger; but raise threshold to 48h →
+    // signal stays silent.
+    const events = [
+      makeEvent("knowledge_proposed", NOW_MS - 25 * HOUR_MS),
+    ];
+    const result = hook.decide(
+      events,
+      FIXED_NOW,
+      { count: 0, oldestAgeMs: null },
+      { nodeCount: 50, threshold: 10 },
+      { editsSinceLastProposed: 0, threshold: 20 },
+      { archiveHintHours: 48 },
+    );
+    expect(result).toBeNull();
+  });
+
+  it("decide threads externalized reviewHintPendingCount through Signal B trigger", () => {
+    // 11 pending entries; default threshold 10 → fires. Raise threshold to
+    // 20 → signal stays silent (no other triggers).
+    const result = hook.decide(
+      [],
+      FIXED_NOW,
+      { count: 11, oldestAgeMs: 1000 },
+      { nodeCount: 50, threshold: 10 },
+      { editsSinceLastProposed: 0, threshold: 20 },
+      { reviewHintPendingCount: 20 },
+    );
+    expect(result).toBeNull();
+  });
+
+  it("decide uses defaults when thresholds arg is omitted (back-compat)", () => {
+    // Pre-T7 call shape: no thresholds arg. Must still trigger Signal A at
+    // 25h elapsed using the documented default of 24h.
+    const events = [makeEvent("knowledge_proposed", NOW_MS - 25 * HOUR_MS)];
+    const result = hook.decide(
+      events,
+      FIXED_NOW,
+      { count: 0, oldestAgeMs: null },
+      { nodeCount: 50, threshold: 10 },
+      { editsSinceLastProposed: 0, threshold: 20 },
+    );
+    expect(result).not.toBeNull();
+    expect(result?.signal).toBe("archive");
   });
 });
 
