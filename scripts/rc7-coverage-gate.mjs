@@ -418,6 +418,62 @@ async function checkT10MaintenanceSignal() {
 }
 
 // ---------------------------------------------------------------------------
+// T08 — SessionStart revision_hash gating + cross-client visibility doc
+// ---------------------------------------------------------------------------
+
+async function checkT08SessionStartGating() {
+  const failures = [];
+
+  const hook = readText("packages/cli/templates/hooks/knowledge-hint-broad.cjs");
+  if (hook === undefined) {
+    return {
+      id: "T08",
+      name: "SessionStart revision_hash gating (T8)",
+      passed: false,
+      details: "packages/cli/templates/hooks/knowledge-hint-broad.cjs not found",
+    };
+  }
+  if (!/sessionstart-last-hash/.test(hook)) {
+    failures.push("knowledge-hint-broad.cjs: missing sessionstart-last-hash sidecar wiring");
+  }
+  if (!/readSessionStartLastHash/.test(hook)) {
+    failures.push("knowledge-hint-broad.cjs: missing readSessionStartLastHash helper");
+  }
+  if (!/writeSessionStartLastHash/.test(hook)) {
+    failures.push("knowledge-hint-broad.cjs: missing writeSessionStartLastHash helper");
+  }
+  // Gate logic: must compare current vs last hash and short-circuit on equality.
+  if (!/lastHash\s*===\s*currentHash|currentHash\s*===\s*lastHash/.test(hook)) {
+    failures.push(
+      "knowledge-hint-broad.cjs: missing hash-equality short-circuit on the gate (unchanged graph silent path)",
+    );
+  }
+
+  // Cross-client visibility doc must exist with the three client sections.
+  const doc = readText("docs/cross-client-visibility.md");
+  if (doc === undefined) {
+    failures.push("docs/cross-client-visibility.md missing");
+  } else {
+    for (const heading of ["Claude Code", "Cursor", "Codex CLI"]) {
+      const re = new RegExp(`(^|\\n)##\\s+${heading}`, "i");
+      if (!re.test(doc)) {
+        failures.push(`docs/cross-client-visibility.md missing section: ${heading}`);
+      }
+    }
+  }
+
+  if (failures.length === 0) {
+    return { id: "T08", name: "SessionStart revision_hash gating (T8)", passed: true };
+  }
+  return {
+    id: "T08",
+    name: "SessionStart revision_hash gating (T8)",
+    passed: false,
+    details: failures.join("\n"),
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Driver
 // ---------------------------------------------------------------------------
 
@@ -427,6 +483,7 @@ async function main() {
   checks.push(await checkT06PendingSelfContained());
   checks.push(await checkT05CrossSessionDigest());
   checks.push(await checkT10MaintenanceSignal());
+  checks.push(await checkT08SessionStartGating());
 
   const passed = checks.every((c) => c.passed);
   const headerWidth = Math.max(...checks.map((c) => c.name.length)) + 4;

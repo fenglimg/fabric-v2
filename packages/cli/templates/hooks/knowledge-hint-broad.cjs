@@ -47,6 +47,90 @@
  */
 
 const { spawnSync } = require("node:child_process");
+const { existsSync, mkdirSync, readFileSync, writeFileSync } = require("node:fs");
+const { dirname, join } = require("node:path");
+
+// -----------------------------------------------------------------------------
+// rc.7 T8: SessionStart revision_hash gating.
+//
+// Q-14 problem: every SessionStart re-dumped the full broad knowledge list,
+// causing banner blindness. Solution: hash-of-canonical-graph gating — record
+// the last-emitted `payload.revision_hash` to a sidecar; on subsequent
+// SessionStart fires, compare. Match → silent exit 0 (no re-dump). Mismatch
+// (canonical/ corpus changed → planContext bumps revision_hash) → emit AND
+// update sidecar.
+//
+// The revision_hash is supplied by `fabric plan-context-hint --all`'s JSON
+// payload (carried in payload.revision_hash since rc.5). Reusing the existing
+// hash primitive keeps the gating predicate exactly aligned with the "is the
+// knowledge graph different from last time?" question — no second hashing
+// scheme to maintain. computeRevisionHash() is not needed at this layer; we
+// compare the strings the CLI hands us.
+//
+// rc.7 T1 (sentinel hand-off) overrides this gate: a `.fabric/.import-requested`
+// sentinel forces emission regardless of revision_hash, because the user has
+// asked (via `fabric init` Y-confirm) for the import recommendation to surface
+// on next SessionStart. That branch is layered on top in main() — see T1
+// implementation.
+// -----------------------------------------------------------------------------
+
+const FABRIC_DIR_REL = ".fabric";
+const SESSIONSTART_HASH_CACHE_FILE = join(".fabric", ".cache", "sessionstart-last-hash");
+
+/**
+ * Read the previously-emitted revision_hash from
+ * `.fabric/.cache/sessionstart-last-hash`. Missing file / read failure /
+ * empty file → null (treat as "no prior emit", forces re-emit).
+ *
+ * NEVER throws — best-effort read.
+ */
+function readSessionStartLastHash(projectRoot) {
+  try {
+    const p = join(projectRoot, SESSIONSTART_HASH_CACHE_FILE);
+    if (!existsSync(p)) return null;
+    const raw = readFileSync(p, "utf8").trim();
+    return raw.length > 0 ? raw : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Write `hash` to `.fabric/.cache/sessionstart-last-hash` so subsequent
+ * SessionStart fires can compare. Creates the directory if missing.
+ * Best-effort: any write failure is swallowed so a read-only .fabric/
+ * never blocks session start.
+ */
+function writeSessionStartLastHash(projectRoot, hash) {
+  try {
+    if (typeof hash !== "string" || hash.length === 0) return;
+    const p = join(projectRoot, SESSIONSTART_HASH_CACHE_FILE);
+    mkdirSync(dirname(p), { recursive: true });
+    writeFileSync(p, hash, "utf8");
+  } catch {
+    // Silent — sidecar failure must never block session start.
+  }
+}
+
+/**
+ * rc.7 T1 sentinel pickup: `.fabric/.import-requested` is an empty marker
+ * file written by `fabric init` (clack.confirm Y answer) signalling that
+ * the user wants the next SessionStart to recommend `fabric-import`.
+ *
+ * When the sentinel is present, the gate is overridden — the broad-injection
+ * banner is appended with the import recommendation line and the
+ * revision_hash gate is bypassed entirely (we always want to surface the
+ * recommendation until the import Skill clears the sentinel).
+ *
+ * Best-effort presence check. NEVER throws.
+ */
+function isImportRequestedSentinelPresent(projectRoot) {
+  try {
+    return existsSync(join(projectRoot, FABRIC_DIR_REL, ".import-requested"));
+  } catch {
+    return false;
+  }
+}
 
 // -----------------------------------------------------------------------------
 // CONSTANTS
@@ -295,11 +379,54 @@ function main(env, stdio) {
       env && env.payload !== undefined ? env.payload : invokePlanContextHint(cwd);
     if (payload === null || payload === undefined) return; // silent
 
+    // rc.7 T1: sentinel-override gate. When `.fabric/.import-requested` is
+    // present, the import-recommendation banner ALWAYS surfaces regardless
+    // of revision_hash equality — the user asked for it on init Y-confirm
+    // and the fabric-import Skill is responsible for clearing the sentinel
+    // when its Phase 3 completes. The override sits BEFORE the gate so the
+    // revision_hash cache is not updated either (we want the
+    // recommendation to keep surfacing on subsequent boots until the user
+    // actually runs import).
+    const sentinelPresent = isImportRequestedSentinelPresent(cwd);
+
+    // rc.7 T8: revision_hash gate. If the CLI payload carries a stable
+    // revision_hash and it matches the previously-emitted hash recorded in
+    // the sidecar, the knowledge graph is unchanged since last session →
+    // silent exit 0 (no re-dump). The sentinel override above takes
+    // precedence and bypasses this gate.
+    const currentHash =
+      typeof payload.revision_hash === "string" ? payload.revision_hash : "";
+    if (!sentinelPresent && currentHash.length > 0) {
+      const lastHash = readSessionStartLastHash(cwd);
+      if (lastHash !== null && lastHash === currentHash) {
+        // Same canonical graph as last session — banner blindness mitigation.
+        return;
+      }
+    }
+
     const lines = renderSummary(payload);
-    if (lines.length === 0) return; // empty narrow set — silent
+
+    // rc.7 T1: when the sentinel is present, append the import-recommendation
+    // banner. This line is appended whether or not the broad summary had
+    // entries — even an empty knowledge graph benefits from the prompt.
+    if (sentinelPresent) {
+      lines.push(
+        "  📋 Fabric: 检测到 fabric init 提示要回灌知识 — 是否调 /fabric-import 从 git 历史和现有文档抽取?",
+      );
+    }
+
+    if (lines.length === 0) return; // empty narrow set + no sentinel — silent
 
     for (const line of lines) {
       err.write(`${line}\n`);
+    }
+
+    // Update sidecar AFTER successful emit. We only persist the hash when
+    // the gate actually let the dump through (i.e. when not sentinel-only).
+    // Sentinel-only emits don't bump the cache so the next non-sentinel
+    // SessionStart still gets to compare the prior session's true hash.
+    if (!sentinelPresent && currentHash.length > 0) {
+      writeSessionStartLastHash(cwd, currentHash);
     }
   } catch {
     // Silent — never block session start on hook failure.
@@ -314,6 +441,11 @@ module.exports = {
   renderTruncated,
   renderSummary,
   truncateSummary,
+  // rc.7 T8: revision_hash gating sidecar helpers (exported for unit testing).
+  readSessionStartLastHash,
+  writeSessionStartLastHash,
+  // rc.7 T1: sentinel-override pickup (exported for unit testing).
+  isImportRequestedSentinelPresent,
   CONSTANTS: {
     TRUNCATION_THRESHOLD,
     CLI_TIMEOUT_MS,
@@ -322,6 +454,7 @@ module.exports = {
     MATURITY_PROVEN,
     MATURITY_VERIFIED,
     MATURITY_DRAFT,
+    SESSIONSTART_HASH_CACHE_FILE,
   },
 };
 
