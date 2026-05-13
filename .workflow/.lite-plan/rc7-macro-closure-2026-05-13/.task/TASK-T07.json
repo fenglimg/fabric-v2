@@ -1,0 +1,57 @@
+{
+  "id": "TASK-T07",
+  "title": "T7: Hook threshold configuration externalization",
+  "scope": ".fabric/fabric-config.json + packages/cli/src/hooks/{fabric-hint.cjs,lib/config-loader.cjs} + docs/configuration.md",
+  "wave": "Foundations",
+  "action": "Refactor",
+  "description": "Q-11 resolved: hook timing thresholds must be configurable. Move 3 hardcoded constants in `fabric-hint.cjs` to `.fabric/fabric-config.json`: `THRESHOLD_HOURS` (24) → `archive_hint_hours`, `THRESHOLD_PENDING_COUNT` (10) → `review_hint_pending_count`, `THRESHOLD_PENDING_AGE_DAYS` (7) → `review_hint_pending_age_days`. Add new `maintenance_hint_days` (default 14) + `maintenance_hint_cooldown_days` (default 7) — these are prerequisites for T10's Signal D. Create new `docs/configuration.md` enumerating all config fields with small/medium/large repo recommendations.",
+  "files": [
+    {"path": ".fabric/fabric-config.json", "change": "add fields: `archive_hint_hours: 24`, `review_hint_pending_count: 10`, `review_hint_pending_age_days: 7`, `maintenance_hint_days: 14`, `maintenance_hint_cooldown_days: 7`"},
+    {"path": "templates/fabric-config.json", "change": "(if exists as init template) mirror the new fields with defaults so `fabric init` produces a config with all hook tunables"},
+    {"path": "packages/cli/src/hooks/lib/config-loader.cjs", "change": "create new helper: `loadHookConfig()` returns merged-with-defaults config object; cached per-process; handles missing file by returning defaults"},
+    {"path": "packages/cli/src/hooks/fabric-hint.cjs", "change": "replace 3 hardcoded constants with `config.archive_hint_hours`/`config.review_hint_pending_count`/`config.review_hint_pending_age_days`; export the new maintenance_* fields for T10 to consume"},
+    {"path": "packages/shared/src/schemas/fabric-config.ts", "change": "extend Zod schema for fabric-config.json with the 5 new fields (each with default value)"},
+    {"path": "docs/configuration.md", "change": "create new doc: section per config field with default + small (<20 entries) / medium (20-100) / large (>100) repo recommendations; include T11 --apply-lint safety section pointing to FABRIC_NONINTERACTIVE env var"},
+    {"path": "packages/cli/src/hooks/__tests__/fabric-hint.test.cjs", "change": "test: hook reads config via loadHookConfig; missing config file → defaults applied; partial config → merged with defaults"},
+    {"path": "scripts/rc7-coverage-gate.mjs", "change": "verify all 5 new config fields are readable from fabric-config.json and consumed by fabric-hint.cjs"}
+  ],
+  "implementation": [
+    "Define Zod schema with .default() on each new field so missing fields use defaults",
+    "Implement config-loader.cjs: synchronous fs.readFileSync (this is a hook, must be fast); JSON.parse → Zod parse → cache in module-level variable; handle ENOENT by returning Zod-derived defaults",
+    "Refactor fabric-hint.cjs: replace each constant reference with `config.fieldName`; verify Signal A/B/C banners still trigger at the same defaults",
+    "Update .fabric/fabric-config.json with the new fields (preserving any existing fields)",
+    "Write docs/configuration.md with table + per-field section + repo-size recommendation matrix",
+    "Update init template (if applicable) so new repos get all fields by default",
+    "Coverage gate: programmatic check that fabric-hint.cjs branches on config-derived values"
+  ],
+  "reference": {
+    "pattern": "Existing fabric-config.json structure (rc.5 schema); .fabric/ directory layout",
+    "files": ["packages/cli/src/hooks/fabric-hint.cjs", "packages/shared/src/schemas/fabric-config.ts"],
+    "examples": "Config loader pattern: load once per process, fail open (use defaults) rather than crash"
+  },
+  "convergence": {
+    "criteria": [
+      "GIVEN .fabric/fabric-config.json has `archive_hint_hours: 48` WHEN fabric-hint.cjs runs THEN Signal A only fires after 48h elapsed (not the hardcoded 24h)",
+      "GIVEN .fabric/fabric-config.json is missing entirely WHEN fabric-hint.cjs runs THEN loadHookConfig returns all 5 fields with documented defaults (24, 10, 7, 14, 7) and no crash",
+      "GIVEN partial config (only `archive_hint_hours: 48` set) WHEN config loaded THEN all other fields fall back to their defaults",
+      "docs/configuration.md exists and documents all 5 new fields + small/medium/large repo recommendation table",
+      "scripts/rc7-coverage-gate.mjs assertion: all 5 fields readable from fabric-config.json + consumed by fabric-hint.cjs branches"
+    ]
+  },
+  "depends_on": [],
+  "estimated_minutes": 240,
+  "rationale": {
+    "chosen_approach": "Single config file + Zod schema with defaults + synchronous loader — config is small, hooks need synchronous load, defaults baked into schema means no parallel constants",
+    "alternatives_considered": ["Environment variables per threshold", "Separate config files per hook", "Keep hardcoded, document only"],
+    "decision_factors": ["Q-11 explicit user need for tunability", "Single file matches existing .fabric/fabric-config.json", "Defaults-in-schema avoids drift between schema and code"],
+    "tradeoffs": "Schema becomes source of truth — if defaults need to change, must update schema not just code; accepted (correctness)"
+  },
+  "test": {
+    "manual_checks": ["Edit .fabric/fabric-config.json to set archive_hint_hours=1 → trigger Stop hook after 70 minutes → verify Signal A fires", "Delete .fabric/fabric-config.json → trigger hook → verify defaults applied without error"],
+    "success_metrics": ["Hook load time <50ms even with config parse", "Config field count: 5 new fields visible in docs/configuration.md table"],
+    "unit": ["loadHookConfig returns defaults when file missing", "Zod schema validates partial config + merges defaults", "fabric-hint thresholds derive from config-loader output"],
+    "integration": ["End-to-end: edit config → run hook → verify behavior matches new threshold"]
+  },
+  "cli_execution_id": "rc7-macro-closure-2026-05-13-TASK-T07",
+  "cli_execution": {"strategy": "new"}
+}

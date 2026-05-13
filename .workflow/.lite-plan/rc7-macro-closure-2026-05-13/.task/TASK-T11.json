@@ -1,0 +1,54 @@
+{
+  "id": "TASK-T11",
+  "title": "T11: fabric doctor --apply-lint safety prompt",
+  "scope": "packages/cli/src/commands/doctor.ts + docs/configuration.md",
+  "wave": "Foundations",
+  "action": "Implement",
+  "description": "Q-17 resolved: `--apply-lint` mutates frontmatters + does `git mv` operations without safety prompt, so users won't run it confidently. Before any mutations: print mutation plan (N frontmatter mutations, M file moves with from→to mapping) then `clack.confirm`: 'About to mutate N frontmatters + git mv M files. Proceed? [y/N]'. Default N (safety-first). Skip via `--yes` flag OR `FABRIC_NONINTERACTIVE=1` env var. Document the env var + flag in `docs/configuration.md` (created/extended by T7).",
+  "files": [
+    {"path": "packages/cli/src/commands/doctor.ts", "change": "in --apply-lint code path: BEFORE any frontmatter write or git mv: (1) compute and print mutation plan (counts + per-file from→to for moves), (2) check `--yes` flag and `FABRIC_NONINTERACTIVE` env var — if either set, skip prompt; otherwise call clack.confirm with default false; (3) exit code 1 if user declines or stdin non-tty without --yes"},
+    {"path": "packages/cli/src/commands/doctor.ts", "change": "add --yes flag to doctor command parser (boolean, default false)"},
+    {"path": "docs/configuration.md", "change": "extend T7 doc with new section '--apply-lint safety': document --yes flag behavior + FABRIC_NONINTERACTIVE=1 env var + recommend CI usage with --yes"},
+    {"path": "packages/cli/src/commands/__tests__/doctor.test.ts", "change": "tests: (a) interactive tty + user N → exit 1 no mutations; (b) interactive tty + user Y → mutations proceed; (c) non-tty stdin without --yes → exit 1; (d) non-tty stdin with --yes → mutations proceed; (e) FABRIC_NONINTERACTIVE=1 without --yes → mutations proceed"},
+    {"path": "scripts/rc7-coverage-gate.mjs", "change": "add assertion: `fabric doctor --apply-lint` invoked with non-tty stdin and no --yes exits 1; with --yes exits 0 (or whatever the doctor exit is for clean run)"}
+  ],
+  "implementation": [
+    "Use existing clack import in doctor.ts (or add if missing) for confirm prompt",
+    "Compute mutation plan during lint scan phase (already produces the list of issues + intended fixes); render as human-readable preview: 'Frontmatter mutations: N\\n  - canonical/foo.md: maturity=draft → endorsed\\n  ...\\nFile moves: M\\n  - canonical/bar.md → canonical/baz.md\\n  ...'",
+    "Add --yes boolean flag to doctor command argument parser; check process.env.FABRIC_NONINTERACTIVE for === '1'",
+    "Branch: if (--yes || FABRIC_NONINTERACTIVE=1) skip prompt; else if (!stdin.isTTY) exit 1 with error 'stdin not interactive and --yes not set'; else clack.confirm(default false)",
+    "Update docs/configuration.md (from T7) with new section",
+    "Write unit tests covering all 5 branches",
+    "Coverage gate: shell out to doctor with non-tty stdin in both with/without --yes modes"
+  ],
+  "reference": {
+    "pattern": "clack.confirm pattern from other CLI commands; argparse pattern in doctor.ts",
+    "files": ["packages/cli/src/commands/doctor.ts", "packages/cli/src/commands/init.ts"],
+    "examples": "Default-N safety pattern: `clack.confirm({ message, initialValue: false })`"
+  },
+  "convergence": {
+    "criteria": [
+      "GIVEN `fabric doctor --apply-lint` invoked in interactive terminal WHEN lint identifies mutations THEN stdout shows mutation plan with explicit counts AND clack.confirm prompts with default N (no auto-proceed)",
+      "GIVEN `fabric doctor --apply-lint --yes` invoked with no tty WHEN lint identifies mutations THEN mutations proceed without prompt AND exit code 0 (on success)",
+      "GIVEN `fabric doctor --apply-lint` invoked with no tty AND no --yes flag AND no FABRIC_NONINTERACTIVE env var WHEN command runs THEN exit code 1 with stderr error message explaining requirement",
+      "GIVEN `FABRIC_NONINTERACTIVE=1 fabric doctor --apply-lint` (no --yes flag) WHEN command runs THEN mutations proceed without prompt",
+      "docs/configuration.md has a section documenting --yes flag and FABRIC_NONINTERACTIVE env var"
+    ]
+  },
+  "depends_on": [],
+  "estimated_minutes": 240,
+  "rationale": {
+    "chosen_approach": "Default-N clack.confirm + dual bypass mechanisms (flag + env var) — safety first, two escape hatches for automation (CI flag, env var for nested invocations)",
+    "alternatives_considered": ["Always require --yes (no prompt) — UX regression for interactive use", "Default-Y prompt — defeats safety purpose", "Dry-run flag only — doesn't solve the safety-prompt problem"],
+    "decision_factors": ["Q-17 resolution explicitly requires confirm + skip via flag OR env var", "FABRIC_NONINTERACTIVE follows POSIX convention (e.g., DEBIAN_FRONTEND=noninteractive)", "Non-tty without --yes exit-1 prevents accidental CI mutation"],
+    "tradeoffs": "Two bypass mechanisms — slight surface increase, but both are documented and orthogonal (flag for explicit CLI, env var for nested process)"
+  },
+  "test": {
+    "manual_checks": ["Run `fabric doctor --apply-lint` in terminal → see mutation plan and N-default prompt", "Run with --yes → mutations apply silently", "Run via `</dev/null` (non-tty) without --yes → verify exit 1", "Run `FABRIC_NONINTERACTIVE=1 fabric doctor --apply-lint </dev/null` → mutations apply"],
+    "success_metrics": ["Zero accidental mutations from non-tty invocations without --yes (covered by exit 1)", "Default-N prompt visible in 100% of interactive --apply-lint runs"],
+    "unit": ["5 branches covered: interactive Y/N, non-tty with/without --yes, env var bypass"],
+    "integration": ["Coverage gate shell-out test: non-tty + --apply-lint without --yes exits 1"]
+  },
+  "cli_execution_id": "rc7-macro-closure-2026-05-13-TASK-T11",
+  "cli_execution": {"strategy": "new"}
+}

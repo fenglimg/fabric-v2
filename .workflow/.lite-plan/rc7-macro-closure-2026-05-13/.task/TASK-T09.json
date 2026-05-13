@@ -1,0 +1,55 @@
+{
+  "id": "TASK-T09",
+  "title": "T9: Kill fab_plan_context degenerate mode",
+  "scope": "packages/server/src/tools/plan-context.ts + tool-contracts snapshot tests + docs/decisions/",
+  "wave": "Foundations",
+  "action": "Refactor",
+  "description": "Q-12 resolved: `fab_plan_context` degenerate mode (when candidates ≤ 30, return `candidates_full_content` directly) silently bypasses `knowledge_consumed` event emission and breaks rc.5 C5 closure. Remove the degenerate-mode branch in `plan-context.ts`: always return `description_index` + `selection_token` regardless of candidate count. Agent must follow up with `fab_get_knowledge_sections` (which DOES emit `knowledge_consumed`). Update tool-contracts snapshot tests to reflect symmetric output. Record rationale in `docs/decisions/rc5-a3-superseded.md`. Side effect: SessionStart hook footer 'Use `fab_get_knowledge_sections` to fetch full content' becomes accurate again (was misleading at ≤30 entries when full content was already inlined).",
+  "files": [
+    {"path": "packages/server/src/tools/plan-context.ts", "change": "remove the `if (candidates.length <= 30) { return candidates_full_content }` branch; always return { description_index, selection_token, total_candidates }; ensure selection_token TTL/storage path still works at all sizes"},
+    {"path": "packages/server/src/tools/__tests__/plan-context.contract.test.ts", "change": "update snapshot: small-candidate-set fixture now returns description_index shape (NOT candidates_full_content); add explicit negative test asserting candidates_full_content field does not appear in any response"},
+    {"path": "packages/server/src/tools/fab_get_knowledge_sections.ts", "change": "(verify no change needed) confirm knowledge_consumed event still emits per-section fetch — this becomes the sole consumption-signal path post-T9"},
+    {"path": "docs/decisions/rc5-a3-superseded.md", "change": "create new ADR: title 'rc.5 A3 fab_plan_context degenerate mode superseded by rc.7 T9'; body documents rationale: closes knowledge_consumed silent bypass + improves Agent context economy (don't pre-load content user might not need) + API symmetry (single response shape regardless of size)"},
+    {"path": "packages/cli/src/hooks/knowledge-hint-broad.cjs", "change": "ensure SessionStart footer 'Use `fab_get_knowledge_sections` to fetch full content' is unconditional (no special-case wording for small repos)"},
+    {"path": "scripts/rc7-coverage-gate.mjs", "change": "add assertion: invoke fab_plan_context with 5 candidates AND 100 candidates → both responses contain `description_index` + `selection_token` AND neither contains `candidates_full_content`"}
+  ],
+  "implementation": [
+    "Locate the degenerate-mode branch in plan-context.ts; verify it's clearly isolated (likely an early-return at top of handler)",
+    "Remove the branch; ensure description_index generation works for small N (no division-by-zero or similar)",
+    "Update unit tests: replace the small-N expectation with description_index shape; add explicit negative assertion `expect(response).not.toHaveProperty('candidates_full_content')`",
+    "Write the ADR: 1-page document explaining what was, what is, why; cross-reference rc.5 A3 ticket if it exists",
+    "Verify fab_get_knowledge_sections still emits knowledge_consumed event correctly (check existing tests; no code change expected)",
+    "Update SessionStart footer wording for symmetry",
+    "Coverage gate: programmatic check at both candidate-set sizes"
+  ],
+  "reference": {
+    "pattern": "rc.5 A3 design — degenerate mode was an early optimization; rc.7 reverts for closure correctness",
+    "files": ["packages/server/src/tools/plan-context.ts", "packages/server/src/tools/fab_get_knowledge_sections.ts"],
+    "examples": "ADR style: status / context / decision / consequences"
+  },
+  "convergence": {
+    "criteria": [
+      "GIVEN canonical/ contains 5 entries WHEN fab_plan_context is called THEN response contains `description_index` and `selection_token` AND does NOT contain `candidates_full_content`",
+      "GIVEN canonical/ contains 100 entries WHEN fab_plan_context is called THEN response has the same shape (description_index + selection_token)",
+      "GIVEN Agent calls fab_plan_context then fab_get_knowledge_sections with selection_token THEN events.jsonl contains a `knowledge_consumed` event for the second call",
+      "docs/decisions/rc5-a3-superseded.md exists with status/context/decision/consequences sections",
+      "All plan-context contract tests pass with the new symmetric snapshot"
+    ]
+  },
+  "depends_on": [],
+  "estimated_minutes": 240,
+  "rationale": {
+    "chosen_approach": "Hard removal of degenerate mode — symmetry over micro-optimization; consumption signal is the hill to die on",
+    "alternatives_considered": ["Keep degenerate mode but emit knowledge_consumed inline (breaks separation of concerns)", "Make degenerate mode opt-in via param", "Lower threshold to ≤5 instead of ≤30 (postpones problem)"],
+    "decision_factors": ["rc.5 C5 closure requires reliable knowledge_consumed signal", "Agent context economy (don't load N entries if Agent needs 2)", "API symmetry simplifies all downstream consumers"],
+    "tradeoffs": "Agent must do two MCP calls instead of one for small canonical sets — accepted, fab_get_knowledge_sections is cheap and selection_token amortizes"
+  },
+  "test": {
+    "manual_checks": ["Run fab_plan_context with small canonical (5 entries) → inspect response shape", "Run with large canonical (100 entries) → confirm identical shape", "Verify events.jsonl gets knowledge_consumed only via fab_get_knowledge_sections path"],
+    "success_metrics": ["Zero occurrences of candidates_full_content in any fab_plan_context response", "knowledge_consumed event emission rate ≥ 95% of fab_get_knowledge_sections calls"],
+    "unit": ["Contract test: response shape symmetric across candidate counts", "Negative test: candidates_full_content field absent"],
+    "integration": ["Two-call flow: plan_context → get_knowledge_sections → verify events.jsonl knowledge_consumed entry"]
+  },
+  "cli_execution_id": "rc7-macro-closure-2026-05-13-TASK-T09",
+  "cli_execution": {"strategy": "new"}
+}

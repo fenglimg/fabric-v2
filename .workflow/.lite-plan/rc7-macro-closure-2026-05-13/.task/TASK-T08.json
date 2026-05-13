@@ -1,0 +1,52 @@
+{
+  "id": "TASK-T08",
+  "title": "T8: SessionStart revision_hash gating + cross-client visibility verification",
+  "scope": "packages/cli/src/hooks/knowledge-hint-broad.cjs + docs/cross-client-visibility.md",
+  "wave": "Hook+UX",
+  "action": "Implement",
+  "description": "Q-14 resolved: SessionStart dumping full broad list every session causes banner blindness. Solution: gate the dump on revision_hash change. (1) `.fabric/.cache/sessionstart-last-hash` stores the last-emitted revision_hash. SessionStart hook reads it; if matches current revision_hash → silent exit 0 (no re-dump). Any knowledge change → revision_hash differs → emit banner + update sidecar. (2) Q-15 resolved: cross-client stderr visibility unverified. Run manual verification round in Claude Code / Cursor (with `followup_message` field) / Codex CLI; document where stderr renders in each UI with screenshots in new `docs/cross-client-visibility.md`.",
+  "files": [
+    {"path": "packages/cli/src/hooks/knowledge-hint-broad.cjs", "change": "add revision_hash gating: compute current hash from canonical/ directory contents (existing helper from rc.5), read `.fabric/.cache/sessionstart-last-hash`, compare; if equal → exit 0 silently; if differ → emit banner AND write current hash to sidecar"},
+    {"path": "packages/cli/src/hooks/lib/revision-hash.cjs", "change": "(may already exist from rc.5) ensure `computeRevisionHash()` is exported and stable across calls for unchanged canonical/"},
+    {"path": "packages/cli/src/hooks/__tests__/knowledge-hint-broad.test.cjs", "change": "test: first run writes sidecar + emits; immediate second run reads sidecar + silent exit; canonical change → new hash → emit + sidecar update"},
+    {"path": "docs/cross-client-visibility.md", "change": "create new doc: per-client (Claude Code, Cursor, Codex CLI) section documenting where stderr from SessionStart and Stop hooks renders; include screenshots of each; document `followup_message` JSON field behavior in Cursor; note any known divergence"},
+    {"path": "scripts/rc7-coverage-gate.mjs", "change": "add check: SessionStart hook with unchanged revision_hash emits no stderr; with changed revision_hash emits banner and updates sidecar"}
+  ],
+  "implementation": [
+    "Identify or implement computeRevisionHash() — hash canonical/ directory file list + mtimes (or content checksum); must be deterministic and fast (<100ms)",
+    "Wire revision_hash gating into knowledge-hint-broad.cjs: read sidecar (.fabric/.cache/sessionstart-last-hash); if equal to current hash → silent exit 0; otherwise emit banner + atomically write new hash to sidecar",
+    "Run manual verification round: in Claude Code, Cursor, Codex CLI — start a session, force SessionStart hook with revision change, capture screenshots of stderr rendering location",
+    "Write docs/cross-client-visibility.md: per-client section with screenshot + 1-paragraph description of UX (e.g., 'Cursor: stderr appears as an inline tool result block above the input'); document followup_message JSON behavior in Cursor",
+    "Update unit tests to cover gating logic",
+    "Add coverage gate check"
+  ],
+  "reference": {
+    "pattern": "rc.5 revision_hash mechanism (if exists); .fabric/.cache/ sidecar pattern",
+    "files": ["packages/cli/src/hooks/knowledge-hint-broad.cjs", "packages/cli/src/hooks/lib/revision-hash.cjs"],
+    "examples": "Sidecar single-line text file holding hex hash"
+  },
+  "convergence": {
+    "criteria": [
+      "GIVEN canonical/ unchanged across two sessions WHEN SessionStart hook fires the second session THEN hook exits 0 with empty stderr AND sidecar unchanged",
+      "GIVEN canonical/ changed (new entry added) since last session WHEN SessionStart hook fires THEN stderr contains the banner AND `.fabric/.cache/sessionstart-last-hash` is updated to the new hash",
+      "docs/cross-client-visibility.md exists with sections for Claude Code, Cursor, Codex CLI — each with a screenshot or rendered example showing where SessionStart stderr appears in the UI",
+      "scripts/rc7-coverage-gate.mjs assertion: simulate unchanged revision → no stderr; simulate changed revision → stderr present + sidecar updated"
+    ]
+  },
+  "depends_on": [],
+  "estimated_minutes": 336,
+  "rationale": {
+    "chosen_approach": "Hash-of-canonical-dir + sidecar gating — same primitive as rc.5 revision_hash for `fab_plan_context`, reused at hook level",
+    "alternatives_considered": ["Time-based gating (e.g., 'only re-dump every 24h')", "Per-entry mtime tracking", "Always dump but with diff-only output"],
+    "decision_factors": ["Q-14 problem is 'same content shown every session'; hash equivalence is the exact predicate", "Sidecar is single-write atomic", "Reuses existing rc.5 hash primitive"],
+    "tradeoffs": "If user wants to see canonical reminder without canonical change (e.g., 'remind me what I have'), gating hides it — accepted, `fab_get_knowledge_sections` is the on-demand surface"
+  },
+  "test": {
+    "manual_checks": ["Verify in Claude Code: open project, screenshot SessionStart stderr location", "Same in Cursor (with followup_message)", "Same in Codex CLI", "Add one canonical entry; reopen session; verify banner reappears"],
+    "success_metrics": ["First-session emit + sidecar write: 100% of cold-start runs", "Second-session (unchanged) silent: 100% of repeat runs", "Cross-client doc has visibility-verified screenshots for all 3 clients"],
+    "unit": ["Revision hash deterministic for identical canonical/ inputs", "Sidecar read/write round-trip works", "Gating branch covers equal/differ cases"],
+    "integration": ["Simulate 3 sessions: first emits, second silent, third (after canonical add) emits again"]
+  },
+  "cli_execution_id": "rc7-macro-closure-2026-05-13-TASK-T08",
+  "cli_execution": {"strategy": "new"}
+}

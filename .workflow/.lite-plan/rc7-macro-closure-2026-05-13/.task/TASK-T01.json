@@ -1,0 +1,51 @@
+{
+  "id": "TASK-T01",
+  "title": "T1: CLI→Skill sentinel hand-off (init→import bridge)",
+  "scope": "packages/cli (init command + SessionStart hook + Stop hook) + packages/server (fabric-import Skill)",
+  "wave": "Hook+UX",
+  "action": "Implement",
+  "description": "Decouple 'user installed fabric (terminal)' from 'Agent loads import skill (AI client)' across the surface boundary. `fabric init` ends with `clack.confirm` '下次开 AI 时让我从 git log 抽更多知识吗?' → on Y answer writes `.fabric/.import-requested` sentinel file. Both `knowledge-hint-broad.cjs` (SessionStart) AND `fabric-hint.cjs` (Stop) read the sentinel; when present, unconditionally recommend `fabric-import` skill regardless of cooldown / underseed-threshold. fabric-import Skill clears the sentinel on completion.",
+  "files": [
+    {"path": "packages/cli/src/commands/init.ts", "change": "add clack.confirm prompt at end of init flow; on Y response, write empty `.fabric/.import-requested` sentinel file and print '下次开 AI 会看到提示' confirmation"},
+    {"path": "packages/cli/src/hooks/knowledge-hint-broad.cjs", "change": "before existing underseed-threshold gate, check `.fabric/.import-requested` existence; if present → emit stderr banner recommending `/fabric-import` and exit; bypass all cooldown checks"},
+    {"path": "packages/cli/src/hooks/fabric-hint.cjs", "change": "before existing Signal C cooldown check, mirror sentinel-read logic from SessionStart hook; if present → output JSON signal=import with recommended_skill=fabric-import regardless of cooldown"},
+    {"path": "packages/server/src/skills/fabric-import/SKILL.md", "change": "add Phase 3.5 (post-completion) step: `rm -f .fabric/.import-requested` to clear sentinel; document sentinel contract in Phase 0"},
+    {"path": "scripts/rc7-coverage-gate.mjs", "change": "add sentinel lifecycle check: init Y-confirm writes file, SessionStart/Stop read file, import Skill completion removes file"}
+  ],
+  "implementation": [
+    "Read existing init.ts clack.confirm patterns to match style; add new prompt step after scan completion",
+    "Implement sentinel write helper (single line: ensure .fabric exists, write empty file, no error if already exists)",
+    "Update both hooks with identical sentinel-read priority gate (sentinel present → recommend import + early-return); place BEFORE existing cooldown/threshold checks",
+    "Update fabric-import SKILL.md Phase contract: read sentinel in Phase 0 (informational only — proceed regardless), remove sentinel as final step of Phase 3",
+    "Add coverage gate test: simulate init Y → assert sentinel exists; simulate SessionStart → assert stderr contains 'fabric-import'; simulate import Skill completion → assert sentinel removed"
+  ],
+  "reference": {
+    "pattern": "Existing sentinel-style files in `.fabric/.cache/` (e.g., sessionstart-last-hash from T8 surface); existing clack prompts in init.ts",
+    "files": ["packages/cli/src/commands/init.ts", "packages/cli/src/hooks/fabric-hint.cjs"],
+    "examples": "Sentinel files: empty content, presence-as-signal; cleanup is responsibility of the consumer"
+  },
+  "convergence": {
+    "criteria": [
+      "GIVEN fresh repo with no `.fabric/.import-requested` WHEN user runs `fabric init` and answers Y to the AI-import confirm THEN `.fabric/.import-requested` exists as an empty file",
+      "GIVEN sentinel file exists WHEN SessionStart hook runs (Claude Code / Cursor / Codex CLI) THEN stderr contains a banner recommending `/fabric-import` regardless of canonical-node-count or 24h cooldown",
+      "GIVEN sentinel file exists WHEN Stop hook (`fabric-hint.cjs`) runs THEN JSON output contains `signal: 'import'` and `recommended_skill: 'fabric-import'`",
+      "GIVEN fabric-import Skill ran to completion WHEN any subsequent SessionStart fires THEN `.fabric/.import-requested` no longer exists AND import is no longer unconditionally recommended"
+    ]
+  },
+  "depends_on": [],
+  "estimated_minutes": 240,
+  "rationale": {
+    "chosen_approach": "Empty sentinel file as cross-surface signal — presence-as-data, simplest possible IPC between CLI terminal session and AI-client session",
+    "alternatives_considered": ["Encode in fabric-config.json", "Use events.jsonl entry", "Skip — let underseed-threshold handle it"],
+    "decision_factors": ["Crosses surface boundary (terminal CLI vs AI Skill) so events.jsonl is wrong primitive", "Underseed threshold misses users with existing baseline knowledge who still want import", "Empty file is git-ignorable, atomic, zero-parse-cost"],
+    "tradeoffs": "Sentinel can become orphaned if user runs init then never opens AI client — accepted, no harm done"
+  },
+  "test": {
+    "manual_checks": ["Fresh repo: fabric init → Y → open Claude Code → verify banner appears", "Verify in Cursor and Codex CLI", "Run fabric-import Skill → verify sentinel cleared on next SessionStart"],
+    "success_metrics": ["Sentinel file created in ≤1 second after Y confirm", "Banner appears in 100% of SessionStart runs when sentinel present"],
+    "unit": ["init.ts: sentinel-write helper writes empty file at correct path", "knowledge-hint-broad.cjs: sentinel-priority branch emits expected banner"],
+    "integration": ["End-to-end: init Y → mock SessionStart → mock import Skill completion → assert lifecycle"]
+  },
+  "cli_execution_id": "rc7-macro-closure-2026-05-13-TASK-T01",
+  "cli_execution": {"strategy": "new"}
+}

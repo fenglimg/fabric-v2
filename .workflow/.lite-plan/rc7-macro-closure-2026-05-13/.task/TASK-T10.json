@@ -1,0 +1,57 @@
+{
+  "id": "TASK-T10",
+  "title": "T10: fabric-hint Signal D + doctor_run event",
+  "scope": "packages/cli/src/commands/doctor.ts + packages/cli/src/hooks/fabric-hint.cjs + packages/shared/src/schemas/events.ts",
+  "wave": "Schema+infra",
+  "action": "Implement",
+  "description": "Q-16 resolved: no hook signal recommends running `fabric doctor`, so maintenance chain is dormant. Add: (1) new event type `doctor_run` with fields `{mode: 'lint'|'apply-lint', issues: number, mutations?: number, ts}`; doctor command writes one at end of every run (both --lint and --apply-lint). (2) `fabric-hint.cjs` adds `evaluateMaintenanceSignal()`: trigger Signal D when (no `doctor_run` event in events.jsonl for ≥ `maintenance_hint_days` from T7 config OR no doctor_run ever) AND (canonical node count ≥ 5). Cooldown: `maintenance_hint_cooldown_days` (default 7 from T7). (3) Banner text: '📋 Fabric: 已 14 天未跑 lint 检查。调 `fabric doctor --lint` 看看知识库健康度。' (4) JSON output gains `signal: 'maintenance'` and `recommended_skill: null` (CLI recommendation, not Skill).",
+  "files": [
+    {"path": "packages/shared/src/schemas/events.ts", "change": "add `doctor_run` to event type union: `{type: 'doctor_run', mode: 'lint' | 'apply-lint', issues: number, mutations?: number, ts: string}`"},
+    {"path": "packages/cli/src/commands/doctor.ts", "change": "at end of doctor invocation (both lint and apply-lint code paths), append a doctor_run event to events.jsonl with the issue count and (for apply-lint) mutation count"},
+    {"path": "packages/cli/src/hooks/fabric-hint.cjs", "change": "implement `evaluateMaintenanceSignal()`: scan events.jsonl tail for most recent doctor_run; gate on (age ≥ maintenance_hint_days OR never seen) AND canonical_count ≥ 5; apply cooldown via Signal-D-specific sidecar `.fabric/.cache/maintenance-hint-last-emit`; integrate into existing signal evaluation chain (after A/B/C, before exit)"},
+    {"path": "packages/cli/src/hooks/lib/canonical-count.cjs", "change": "(if not exists) helper returning count of canonical/ entries; cached per-process"},
+    {"path": "packages/cli/src/hooks/__tests__/fabric-hint.test.cjs", "change": "test Signal D: gate on age + canonical count; cooldown sidecar prevents re-emit; banner text matches; JSON output has signal='maintenance' and recommended_skill=null"},
+    {"path": "scripts/rc7-coverage-gate.mjs", "change": "add assertion: doctor --lint emits doctor_run event; Signal D fires after 14d gap + ≥5 canonical entries; cooldown blocks re-fire within 7d"}
+  ],
+  "implementation": [
+    "Update events schema Zod union to include doctor_run; ensure existing events.jsonl readers tolerate new type",
+    "In doctor.ts, locate both --lint and --apply-lint completion points; append doctor_run event with appropriate mode/issues/mutations using existing events.jsonl append helper",
+    "Implement evaluateMaintenanceSignal() in fabric-hint.cjs: tail-scan events.jsonl for most recent doctor_run (stop after first match for efficiency); compute age in days; combine with canonical count from canonical-count helper",
+    "Add Signal-D cooldown sidecar at `.fabric/.cache/maintenance-hint-last-emit` (timestamp); skip if within cooldown window",
+    "Format banner per spec (emoji + 14d phrasing + CLI invocation)",
+    "Update JSON output schema to include signal='maintenance' + recommended_skill=null branch",
+    "Add coverage gate assertions"
+  ],
+  "reference": {
+    "pattern": "Existing Signal A/B/C evaluators in fabric-hint.cjs; events.jsonl append helper from rc.5",
+    "files": ["packages/cli/src/hooks/fabric-hint.cjs", "packages/cli/src/commands/doctor.ts", "packages/shared/src/schemas/events.ts"],
+    "examples": "Signal A pattern: gate on time + activity, cooldown sidecar"
+  },
+  "convergence": {
+    "criteria": [
+      "GIVEN `fabric doctor --lint` runs and finds 0 issues WHEN command exits THEN events.jsonl contains a new line with `type: 'doctor_run', mode: 'lint', issues: 0, ts: <ISO>`",
+      "GIVEN `fabric doctor --apply-lint --yes` runs and applies 3 mutations WHEN command exits THEN events.jsonl contains `{type: 'doctor_run', mode: 'apply-lint', issues: N, mutations: 3, ts: ...}`",
+      "GIVEN no doctor_run event has ever fired AND canonical/ has ≥5 entries WHEN fabric-hint.cjs runs THEN JSON output has `signal: 'maintenance'`, `recommended_skill: null`, stderr banner contains '已 14 天未跑 lint'",
+      "GIVEN Signal D fired 3 days ago (cooldown sidecar present) WHEN fabric-hint.cjs runs again THEN Signal D does NOT re-fire (cooldown gate)"
+    ]
+  },
+  "depends_on": ["TASK-T07"],
+  "estimated_minutes": 480,
+  "rationale": {
+    "chosen_approach": "Event-as-signal + cooldown sidecar — same pattern as existing signals, reuses events.jsonl as universal log",
+    "alternatives_considered": ["Sidecar-only (no event) — but then doctor_run is invisible to events.jsonl consumers", "Recommend as Skill (no — doctor is CLI, Q-13/T3 surface boundary)", "Per-canonical-mtime gating instead of count"],
+    "decision_factors": ["Events.jsonl is the unified observability layer", "5-entry threshold avoids nagging on fresh repos with no knowledge to lint", "Cooldown prevents nag spam after user dismisses"],
+    "tradeoffs": "events.jsonl gains another event type — accepted, union is open for new types"
+  },
+  "test": {
+    "manual_checks": ["Run fabric doctor --lint → tail events.jsonl → verify doctor_run line", "On a repo with ≥5 canonical entries and no doctor_run history, trigger Stop hook → verify Signal D banner", "Re-trigger within cooldown → verify silent"],
+    "success_metrics": ["100% of doctor invocations emit doctor_run event", "Signal D fires within ≤14d+1 of last doctor_run (or never)"],
+    "unit": ["evaluateMaintenanceSignal: age + count + cooldown branches", "doctor.ts events emission for both modes", "Schema accepts new event type"],
+    "integration": ["End-to-end: doctor --lint → events.jsonl entry → 14 days simulated → Stop hook → Signal D banner"]
+  },
+  "cli_execution_id": "rc7-macro-closure-2026-05-13-TASK-T10",
+  "cli_execution": {
+    "strategy": "fork",
+    "resume_from": "rc7-macro-closure-2026-05-13-TASK-T07"
+  }
+}

@@ -1,0 +1,53 @@
+{
+  "id": "TASK-T04",
+  "title": "T4: fabric-hint stderr 人-first banner reformat",
+  "scope": "packages/cli/src/hooks/fabric-hint.cjs",
+  "wave": "Hook+UX",
+  "action": "Refactor",
+  "description": "Replace the existing block-reason text in fabric-hint.cjs stderr with banner-style human-readable message designed for the AI client UI (not Agent jussive language). Q-13 resolved: the first reader is the human user, Agent reads incidentally. Q-6 resolved: drop the fabricated '3 candidates detected' framing — the hook has zero content awareness. Include real activity overview from `.fabric/.cache/edit-counter` sidecar: top 2-3 most-edited directories since last archive. Format example (Signal A): '📋 Fabric: 距上次归档已过 24h / 累计 22 次编辑。\\n   最近活动集中在: packages/server/services/ (12 edits), packages/cli/ (8 edits).\\n   是否调 /fabric-archive 检查值得归档的决策/踩坑/复用?'",
+  "files": [
+    {"path": "packages/cli/src/hooks/fabric-hint.cjs", "change": "replace `formatBannerForSignal()` implementations: Signal A archive banner uses 人-first format with edit-counter top-N aggregation; remove any 'N candidates detected' wording; reads new threshold names from T7 config"},
+    {"path": "packages/cli/src/hooks/lib/edit-counter.cjs", "change": "expose `getTopEditedDirectories(n)` helper that returns top-n by edit count since last knowledge_proposed event"},
+    {"path": "packages/cli/src/hooks/__tests__/fabric-hint.test.cjs", "change": "update snapshot tests: banner text matches new 人-first format; no occurrence of 'candidates detected' wording; top-directory aggregation appears when edit-counter has data"}
+  ],
+  "implementation": [
+    "Read T7 config-loader helper to fetch `archive_hint_hours` and edit-count threshold",
+    "Implement `getTopEditedDirectories(n)`: parse `.fabric/.cache/edit-counter` (existing sidecar from rc.6), group edits by 2-level directory prefix, sort by count desc, return top n",
+    "Refactor `formatBannerForSignal('archive', ctx)` to produce the new banner (use template literal; include emoji prefix; line 1 = elapsed + edit count; line 2 = top-N activity; line 3 = action prompt)",
+    "Remove any code path referencing 'candidates detected' or similar content-aware framing",
+    "Update Signal B (review) and Signal C (import) banners similarly to 人-first style for consistency",
+    "Update jest/vitest snapshots; verify no Agent-jussive wording remains"
+  ],
+  "reference": {
+    "pattern": "rc.6 edit-counter sidecar at `.fabric/.cache/edit-counter` (line-delimited JSON of {ts, file_path})",
+    "files": ["packages/cli/src/hooks/fabric-hint.cjs", "packages/cli/src/hooks/lib/edit-counter.cjs"],
+    "examples": "Banner example provided in scope Section 2 (B1)"
+  },
+  "convergence": {
+    "criteria": [
+      "GIVEN edit-counter has 22 entries (12 in packages/server/services/, 8 in packages/cli/) AND ≥24h since last knowledge_proposed WHEN fabric-hint.cjs runs THEN stderr contains the 3-line banner with '22 次编辑' AND 'packages/server/services/ (12 edits)' AND 'packages/cli/ (8 edits)'",
+      "stderr text contains NO occurrence of the string 'candidates detected' (case insensitive) or any other content-aware framing",
+      "Banner uses 人-first language (问句 '是否调 /fabric-archive') NOT Agent-jussive ('Invoke /fabric-archive')",
+      "Snapshot tests pass for Signal A, B, C banner formats"
+    ]
+  },
+  "depends_on": ["TASK-T07"],
+  "estimated_minutes": 240,
+  "rationale": {
+    "chosen_approach": "Activity-only signal (no content-awareness claim) + 人-first banner — honest about what the hook knows, polite-question framing matches first-reader (human)",
+    "alternatives_considered": ["Keep '3 candidates' framing", "Use Agent-jussive imperative", "Drop edit-counter aggregation, just show time elapsed"],
+    "decision_factors": ["Q-6 honesty (hook has no content awareness)", "Q-13 first-reader (human, not Agent)", "Activity overview gives user enough signal to decide whether to invoke archive Skill"],
+    "tradeoffs": "Banner is longer (3 lines vs 1) — accepted, line breaks aid scanning"
+  },
+  "test": {
+    "manual_checks": ["Trigger Stop hook in real session after 24h+ → visually confirm banner appears in Claude Code/Cursor/Codex stderr area", "Verify edit-counter aggregation matches actual file edits"],
+    "success_metrics": ["Banner rendering ≤3 lines + emoji prefix on all 3 clients", "No 'candidates detected' string in any test fixture or production stderr output"],
+    "unit": ["getTopEditedDirectories returns correct top-n for known counter input", "formatBannerForSignal('archive', ctx) snapshot matches expected template"],
+    "integration": ["End-to-end: simulated Stop hook with mocked edit-counter and time → assert stderr text shape"]
+  },
+  "cli_execution_id": "rc7-macro-closure-2026-05-13-TASK-T04",
+  "cli_execution": {
+    "strategy": "fork",
+    "resume_from": "rc7-macro-closure-2026-05-13-TASK-T07"
+  }
+}
