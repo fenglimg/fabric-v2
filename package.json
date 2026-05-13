@@ -11,6 +11,7 @@
     "test": "pnpm -r --if-present test",
     "test:coverage": "pnpm -r --if-present test:coverage",
     "rc5:gate": "node scripts/rc5-coverage-gate.mjs",
+    "rc6:gate": "node scripts/rc6-coverage-gate.mjs",
     "lint": "knip --strict",
     "prepare": "lefthook install"
   },
