@@ -6,6 +6,8 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import type { KnowledgePromoteFailedEvent } from "@fenglimg/fabric-shared";
+
 import { readEventLedger } from "./event-ledger.js";
 import { reviewKnowledge } from "./review.js";
 
@@ -216,7 +218,9 @@ describe("reviewKnowledge", () => {
     expect(startedEvents.events).toHaveLength(1);
     expect(failedEvents.events).toHaveLength(1);
     expect(promotedEvents.events).toHaveLength(0);
-    expect(failedEvents.events[0].reason).toMatch(/approve:does-not-exist/u);
+    expect((failedEvents.events[0] as KnowledgePromoteFailedEvent).reason).toMatch(
+      /approve:does-not-exist/u,
+    );
 
     // No canonical file written, no counter increment.
     const decisionsDir = join(projectRoot, ".fabric", "knowledge", "decisions");

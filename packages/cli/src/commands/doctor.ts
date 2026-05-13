@@ -56,8 +56,6 @@ type ApplyLintPlan = {
 
 const PLAN_PREVIEW_LIMIT = 12;
 
-type DoctorIssue = DoctorReport["fixable_errors"][number];
-
 export const doctorCommand = defineCommand({
   meta: {
     name: "doctor",

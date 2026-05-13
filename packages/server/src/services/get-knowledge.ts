@@ -160,7 +160,8 @@ export function matchRuleNodes(meta: AgentsMeta, path: string): MatchedRuleNode[
     .sort((left, right) => {
       const [leftId, leftNode] = left;
       const [rightId, rightNode] = right;
-      const priorityDelta = PRIORITY_ORDER[leftNode.priority] - PRIORITY_ORDER[rightNode.priority];
+      const priorityDelta =
+        PRIORITY_ORDER[leftNode.priority ?? "medium"] - PRIORITY_ORDER[rightNode.priority ?? "medium"];
 
       return priorityDelta !== 0 ? priorityDelta : leftId.localeCompare(rightId);
     })
@@ -242,7 +243,7 @@ function classifyNode(
     return "L2";
   }
 
-  return node.layer === "L0" ? null : node.layer;
+  return node.layer === "L0" ? null : (node.layer ?? null);
 }
 
 function partitionRulesByLevel(

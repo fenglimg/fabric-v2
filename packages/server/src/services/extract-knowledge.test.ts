@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { readEventLedger } from "./event-ledger.js";
 import { extractKnowledge, pendingBase } from "./extract-knowledge.js";
 import type { FabExtractKnowledgeInput } from "@fenglimg/fabric-shared/schemas/api-contracts";
+import type { KnowledgeArchiveAttemptedEvent } from "@fenglimg/fabric-shared";
 
 const tempDirs: string[] = [];
 let originalFabricHome: string | undefined;
@@ -287,7 +288,7 @@ describe("extractKnowledge", () => {
       slug: "missing-summary",
       proposed_reason: "diagnostic-then-fix",
       session_context: "Session goal: cover nullish-coalesce. No real content.",
-    } as Parameters<typeof extractKnowledge>[1]);
+    } as unknown as Parameters<typeof extractKnowledge>[1]);
 
     // Empty summary path → no pending file written, archive_attempted emitted.
     expect(result.pending_path).toBe("");
@@ -310,7 +311,9 @@ describe("extractKnowledge", () => {
     const archive = await readEventLedger(projectRoot, { event_type: "knowledge_archive_attempted" });
     expect(archive.events).toHaveLength(1);
     // Reason falls back to input.slug when sanitizedSlug is empty.
-    expect(archive.events[0]?.reason).toBe("extract_knowledge:!!!@@@###");
+    expect((archive.events[0] as KnowledgeArchiveAttemptedEvent | undefined)?.reason).toBe(
+      "extract_knowledge:!!!@@@###",
+    );
   });
 
   it("extractKnowledge_throws_on_collision_with_different_idempotency_key", async () => {

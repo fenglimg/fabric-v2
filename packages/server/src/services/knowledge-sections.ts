@@ -62,15 +62,17 @@ export type KnowledgeSectionResult = {
   diagnostics: KnowledgeSectionDiagnostic[];
 };
 
+type NodePriority = NonNullable<AgentsMeta["nodes"][string]["priority"]>;
+
 type RuleNodeEntry = {
   stable_id: string;
   level: AgentsLayer;
   path: string;
-  priority: AgentsMeta["nodes"][string]["priority"];
+  priority: NodePriority;
   node: AgentsMeta["nodes"][string];
 };
 
-const PRIORITY_ORDER: Record<AgentsMeta["nodes"][string]["priority"], number> = {
+const PRIORITY_ORDER: Record<NodePriority, number> = {
   high: 0,
   medium: 1,
   low: 2,
@@ -298,12 +300,12 @@ function findRuleNode(meta: AgentsMeta, stableId: string): RuleNodeEntry {
       continue;
     }
 
-    const level = node.level ?? node.layer;
+    const level: AgentsLayer = node.level ?? node.layer ?? "L2";
     return {
       stable_id: nodeStableId,
       level,
       path: normalizeKnowledgePath(node.content_ref ?? node.file),
-      priority: node.priority,
+      priority: node.priority ?? "medium",
       node,
     };
   }
