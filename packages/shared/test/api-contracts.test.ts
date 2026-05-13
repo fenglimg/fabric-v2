@@ -127,24 +127,85 @@ describe("GetRuleSectionsResult — redirect_to", () => {
 });
 
 describe("FabExtractKnowledgeInputSchema", () => {
-  it("accepts a fully populated valid payload", () => {
+  // v2.0.0-rc.7 T6: proposed_reason + session_context are now required.
+  // v2.0.0-rc.7 T5: source_sessions[] array form + single-string back-compat shim.
+  const requiredExtras = {
+    proposed_reason: "diagnostic-then-fix" as const,
+    session_context:
+      "Session goal: validate oauth strategy contract. Turning point: chose PKCE flow over implicit.",
+  };
+
+  it("accepts a fully populated valid payload (T5 array form + T6 reason+context)", () => {
     const parsed = FabExtractKnowledgeInputSchema.parse({
-      source_session: "sess-001",
+      source_sessions: ["sess-001"],
       recent_paths: ["packages/shared/src/index.ts"],
       user_messages_summary: "user wants to capture an oauth decision",
       type: "decisions",
       slug: "oauth-strategy",
+      ...requiredExtras,
     });
     expect(parsed.type).toBe("decisions");
     expect(parsed.slug).toBe("oauth-strategy");
+    expect(parsed.source_sessions).toEqual(["sess-001"]);
+    expect(parsed.proposed_reason).toBe("diagnostic-then-fix");
   });
 
-  it("rejects payload missing source_session", () => {
+  it("T5 back-compat: single source_session string is accepted", () => {
+    const parsed = FabExtractKnowledgeInputSchema.parse({
+      source_session: "sess-legacy",
+      recent_paths: [],
+      user_messages_summary: "x",
+      type: "decisions",
+      slug: "x",
+      ...requiredExtras,
+    });
+    expect(parsed.success !== false).toBe(true);
+  });
+
+  it("rejects payload missing both source_sessions and source_session", () => {
     const result = FabExtractKnowledgeInputSchema.safeParse({
       recent_paths: [],
       user_messages_summary: "x",
       type: "decisions",
       slug: "x",
+      ...requiredExtras,
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("T6: rejects payload missing proposed_reason", () => {
+    const result = FabExtractKnowledgeInputSchema.safeParse({
+      source_sessions: ["sess-x"],
+      recent_paths: [],
+      user_messages_summary: "x",
+      type: "decisions",
+      slug: "x",
+      session_context: requiredExtras.session_context,
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("T6: rejects payload missing session_context", () => {
+    const result = FabExtractKnowledgeInputSchema.safeParse({
+      source_sessions: ["sess-x"],
+      recent_paths: [],
+      user_messages_summary: "x",
+      type: "decisions",
+      slug: "x",
+      proposed_reason: "diagnostic-then-fix",
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("T6: rejects unknown proposed_reason enum value", () => {
+    const result = FabExtractKnowledgeInputSchema.safeParse({
+      source_sessions: ["sess-x"],
+      recent_paths: [],
+      user_messages_summary: "x",
+      type: "decisions",
+      slug: "x",
+      proposed_reason: "made-up-reason",
+      session_context: requiredExtras.session_context,
     });
     expect(result.success).toBe(false);
   });

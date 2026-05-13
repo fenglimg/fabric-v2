@@ -285,17 +285,53 @@ For each user-confirmed candidate, call `fab_extract_knowledge` ONCE. Do NOT bat
 
 ```ts
 mcp__fabric__fab_extract_knowledge({
-  source_session: "<session id from current invocation>",
+  source_sessions: ["<session id1>", "<session id2>", ...],  // T5: array form (Phase 0.0)
   recent_paths: ["<path1>", "<path2>", ...],   // capped at 20
   user_messages_summary: "<compact prose ≤500 chars>",
   type: "decisions" | "pitfalls" | "guidelines" | "models" | "processes",
   slug: "<kebab-case-2-to-5-words>",
   layer: "team" | "personal",
   scope: "narrow" | "broad",                   // from Phase 1.5
-  relevance_paths: ["<glob1>", "<literal2>", ...]  // narrow ⇒ derived; broad ⇒ []
+  relevance_paths: ["<glob1>", "<literal2>", ...],  // narrow ⇒ derived; broad ⇒ []
+  // v2.0.0-rc.7 T6: required fields for future-self reviewability.
+  proposed_reason:
+    "explicit-user-mark"      // user said "always / never / 下次注意" etc.
+    | "diagnostic-then-fix"   // long debug loop surfaced a new pattern/pitfall
+    | "decision-confirmation" // ≥2 options weighed AND rationale stated → decision/model
+    | "wrong-turn-revert"     // tried path X, reverted → pitfall
+    | "new-dependency-or-pattern" // new dep/lib/abstraction introduced
+    | "dismissal-with-reason",    // user rejected approach AND said why
+  session_context: "<3-5 line markdown: session goal + key turning point>",
   // tags? — NOT in current schema; reserved for future
 })
 ```
+
+The Skill infers `proposed_reason` from the classification + viability-gate
+signal that fired:
+
+| Signal fired (Phase 0.5)       | Classification | Default proposed_reason     |
+|--------------------------------|----------------|-----------------------------|
+| Explicit normative language    | guideline      | `explicit-user-mark`        |
+| Wrong-turn-and-revert          | pitfall        | `wrong-turn-revert`         |
+| Long diagnostic loop           | pitfall/model  | `diagnostic-then-fix`       |
+| New dependency adoption        | decision/model | `new-dependency-or-pattern` |
+| New pattern emergence          | model          | `new-dependency-or-pattern` |
+| Decision confirmation          | decision       | `decision-confirmation`     |
+| Explicit dismissal-with-reason | decision       | `dismissal-with-reason`     |
+| Process formalization          | process        | `new-dependency-or-pattern` |
+
+The `session_context` is a 3-5 line summary distilled from the Phase 0.0
+cross-session digest (see Phase 0.0 below for digest source). Format:
+
+```
+Session goal: <one-line of what the user was trying to accomplish>
+Turning point: <one-line of the key moment that produced the worth-archive observation>
+[optional 1-3 more lines of supporting context]
+```
+
+Future-self reviewing the pending entry MUST be able to understand WHY this
+entry was proposed without conversation transcript access — proposed_reason
+is the structured why, session_context is the narrative why.
 
 Note on type plurality: the MCP enum uses plural directory-form (decisions / pitfalls / guidelines / models / processes), while the conceptual classification above uses singular nouns (decision / pitfall / guideline / model / process) for natural English. They map 1:1.
 
@@ -345,7 +381,7 @@ Skill output:
 
 ```ts
 mcp__fabric__fab_extract_knowledge({
-  source_session: "WFS-2026-05-10-rc2",
+  source_sessions: ["WFS-2026-05-10-rc2"],
   recent_paths: ["templates/claude-hooks/", "packages/cli/src/commands/hooks.ts"],
   user_messages_summary: "User pushed back on three-script proposal; agreed single .cjs because stdout JSON shape is universal across Claude Code and Codex CLI.",
   type: "decisions",
@@ -355,7 +391,9 @@ mcp__fabric__fab_extract_knowledge({
   relevance_paths: [
     "templates/claude-hooks/**/*.cjs",
     "packages/cli/src/commands/hooks.ts"
-  ]
+  ],
+  proposed_reason: "decision-confirmation",
+  session_context: "Session goal: ship Stop-hook for v2 release.\nTurning point: user rejected 3-script proposal after seeing identical stdout JSON across Claude / Codex.\nResult: single .cjs path locked in."
 })
 ```
 
@@ -369,14 +407,16 @@ Skill output:
 
 ```ts
 mcp__fabric__fab_extract_knowledge({
-  source_session: "WFS-2026-05-10-rc2",
+  source_sessions: ["WFS-2026-05-10-rc2"],
   recent_paths: ["packages/cli/src/config/json.ts"],
   user_messages_summary: "deepMerge default behavior REPLACES arrays. hooks.Stop[] needs an array-append-with-dedupe special case keyed on .command string match.",
   type: "pitfalls",
   slug: "deepmerge-array-replace-trap",
   layer: "team",
   scope: "broad",
-  relevance_paths: []
+  relevance_paths: [],
+  proposed_reason: "diagnostic-then-fix",
+  session_context: "Session goal: wire hook installer for v2.\nTurning point: spent ~30 min chasing why prior Stop[] entries vanished — root cause was deepMerge replacing arrays silently.\nResult: array-append-with-dedupe special case added."
 })
 ```
 
@@ -390,14 +430,16 @@ Skill output:
 
 ```ts
 mcp__fabric__fab_extract_knowledge({
-  source_session: "WFS-2026-05-10-rc2",
+  source_sessions: ["WFS-2026-05-10-rc2"],
   recent_paths: [".editorconfig"],
   user_messages_summary: "Personal indent preference: 2-space TS / 4-space Py. Stable across multiple projects, not project-specific.",
   type: "guidelines",
   slug: "indent-style-by-language",
   layer: "personal",
   scope: "broad",
-  relevance_paths: []
+  relevance_paths: [],
+  proposed_reason: "explicit-user-mark",
+  session_context: "Session goal: align editor config.\nTurning point: user said '一直 prefer 2-space TS / 4-space Py，across projects'.\nResult: personal-layer guideline; not bound to this project."
 })
 ```
 

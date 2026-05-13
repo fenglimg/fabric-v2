@@ -21,6 +21,18 @@ exports[`tool contracts > fab-extract-knowledge contract matches snapshot 1`] = 
         ],
         "type": "string",
       },
+      "proposed_reason": {
+        "description": "Why this entry is being proposed. Drives \`## Why proposed\` rendering and enables future maturity-promotion scoring.",
+        "enum": [
+          "explicit-user-mark",
+          "diagnostic-then-fix",
+          "decision-confirmation",
+          "wrong-turn-revert",
+          "new-dependency-or-pattern",
+          "dismissal-with-reason",
+        ],
+        "type": "string",
+      },
       "recent_paths": {
         "description": "Workspace paths recently touched in the source session — used as scope hints",
         "items": {
@@ -28,13 +40,28 @@ exports[`tool contracts > fab-extract-knowledge contract matches snapshot 1`] = 
         },
         "type": "array",
       },
+      "session_context": {
+        "description": "3-5 line markdown blob — session goal + key turning point. Reviewed by future-self without transcript access.",
+        "minLength": 20,
+        "type": "string",
+      },
       "slug": {
         "description": "URL-safe short identifier proposed by the Skill; server may sanitize",
         "type": "string",
       },
       "source_session": {
-        "description": "Originating session id; correlates with Event Ledger records",
+        "description": "DEPRECATED — pre-T5 alias for source_sessions. Use source_sessions: string[]. Single string still accepted for back-compat.",
+        "minLength": 1,
         "type": "string",
+      },
+      "source_sessions": {
+        "description": "Originating session ids; correlates with Event Ledger records. Array form (T5). Single string accepted via back-compat shim.",
+        "items": {
+          "minLength": 1,
+          "type": "string",
+        },
+        "minItems": 1,
+        "type": "array",
       },
       "type": {
         "description": "Knowledge type bucket (plural form, mirrors directory layout)",
@@ -53,11 +80,12 @@ exports[`tool contracts > fab-extract-knowledge contract matches snapshot 1`] = 
       },
     },
     "required": [
-      "source_session",
       "recent_paths",
       "user_messages_summary",
       "type",
       "slug",
+      "proposed_reason",
+      "session_context",
     ],
     "type": "object",
   },

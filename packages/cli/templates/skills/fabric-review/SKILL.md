@@ -80,15 +80,27 @@ Each mode produces user-facing output, then routes per-item or per-batch decisio
 1. Call `fab_review` with `action: "list"`, no filters (or `filters.layer="both"` if user explicitly mentioned both layers).
 2. Server returns `items[]` (each = `{pending_path, type, layer, maturity, tags?, title?, summary?}`).
 3. Before presenting, perform **Semantic Check** (see below) by issuing one or more `action: "search"` calls scoped by `filters.type` to surface possible duplicates / contradictions among already-canonical entries.
-4. For each pending item, render a per-item block:
+4. For each pending item, render a per-item block. v2.0.0-rc.7 T6: render
+   `proposed_reason` (frontmatter) + `## Why proposed` line (body, 1-line enum
+   explanation) + first line of `## Session context` so future-self has full
+   context without re-reading the transcript:
 
    ```md
    ## [type=decisions] [layer=team] pending_path=knowledge/pending/decisions/single-cjs-hook.md
    Title: 单 .cjs hook 跨客户端
    Summary: 三客户端 stdout JSON 格式一致，单脚本即可。
    Maturity: draft   Tags: [hook, cli]
+   Proposed reason: decision-confirmation — ≥2 候选方案经权衡后确认选型。
+   Session context: Session goal: ship Stop-hook for v2 release.
    ⚠ Possible duplicate of KT-D-0007 (similarity 0.78 on title + summary)
    ```
+
+   The Skill MUST read `proposed_reason` from the pending file's frontmatter
+   (parse the YAML block, key `proposed_reason`) and the `## Why proposed`
+   line / first non-blank line of `## Session context` from the body. If
+   either is missing on a pre-rc.7 pending entry, render `Proposed reason:
+   <legacy entry, no reason recorded>` and `Session context: <not recorded>`
+   so the reviewer can still proceed.
 
 5. Surface a per-item AskUserQuestion:
 

@@ -3,9 +3,11 @@ import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, relative } from "node:path";
 
-import type {
-  FabExtractKnowledgeInput,
-  FabExtractKnowledgeOutput,
+import {
+  PROPOSED_REASON_DESCRIPTIONS,
+  type FabExtractKnowledgeInput,
+  type FabExtractKnowledgeOutput,
+  type ProposedReason,
 } from "@fenglimg/fabric-shared/schemas/api-contracts";
 import type { EventLedgerEventInput } from "@fenglimg/fabric-shared";
 
@@ -58,9 +60,24 @@ export async function extractKnowledge(
   input: FabExtractKnowledgeInput,
 ): Promise<FabExtractKnowledgeOutput> {
   const sanitizedSlug = sanitizeSlug(input.slug);
+
+  // v2.0.0-rc.7 T5: source_sessions[] is the array form. Pre-T5 callers may
+  // still pass a single `source_session` string; the schema's preprocess shim
+  // already coerces that to [string], and the superRefine guarantees at least
+  // one of the two fields is present. We normalize to the array form here
+  // and pick the first session for legacy-keyed structures (idempotency_key,
+  // event correlation_id) so existing on-disk pending files keep colliding
+  // correctly across the rc.5 → rc.7 transition.
+  const sourceSessions: string[] = Array.isArray(input.source_sessions) && input.source_sessions.length > 0
+    ? input.source_sessions
+    : input.source_session !== undefined && input.source_session.length > 0
+      ? [input.source_session]
+      : [];
+  const primarySession = sourceSessions[0] ?? "";
+
   const idempotencyKey = sha256(
     JSON.stringify({
-      source_session: input.source_session,
+      source_session: primarySession,
       type: input.type,
       slug: sanitizedSlug,
     }),
@@ -74,8 +91,8 @@ export async function extractKnowledge(
     await emitEventBestEffort(projectRoot, {
       event_type: "knowledge_archive_attempted",
       timestamp: new Date().toISOString(),
-      correlation_id: input.source_session,
-      session_id: input.source_session,
+      correlation_id: primarySession,
+      session_id: primarySession,
       reason: `extract_knowledge:${sanitizedSlug || input.slug}`,
     });
     return {
@@ -103,14 +120,18 @@ export async function extractKnowledge(
     const existing = await readFile(absolutePath, "utf8");
     const existingKey = readFrontmatterKey(existing, "x-fabric-idempotency-key");
     if (existingKey === idempotencyKey) {
-      const callIndex = countEvidenceSections(existing) + 1;
-      const augmented = appendEvidenceSection(existing, callIndex, summary);
+      // v2.0.0-rc.7 T6: Evidence-merge on idempotency_key collision.
+      // Previously, each repeated call appended `## Evidence (call N)` with
+      // the full summary verbatim — re-running extract three times produced
+      // three duplicated Notes blocks. The fix: merge new note text into a
+      // single `## Evidence` section, dedup by trimmed-text match.
+      const augmented = mergeEvidenceNotes(existing, summary, input.recent_paths);
       await atomicWriteText(absolutePath, augmented);
       await emitEventBestEffort(projectRoot, {
         event_type: "knowledge_proposed",
         timestamp: new Date().toISOString(),
-        correlation_id: input.source_session,
-        session_id: input.source_session,
+        correlation_id: primarySession,
+        session_id: primarySession,
         reason: `extract_knowledge:${sanitizedSlug}`,
       });
       return {
@@ -128,8 +149,8 @@ export async function extractKnowledge(
     await emitEventBestEffort(projectRoot, {
       event_type: "knowledge_archive_attempted",
       timestamp: new Date().toISOString(),
-      correlation_id: input.source_session,
-      session_id: input.source_session,
+      correlation_id: primarySession,
+      session_id: primarySession,
       reason: `extract_knowledge:${sanitizedSlug}: slug-collision (existing key ${existingKey ?? "<none>"} != incoming ${idempotencyKey})`,
     });
     throw new Error(
@@ -139,19 +160,21 @@ export async function extractKnowledge(
 
   const fresh = renderFreshEntry({
     type: input.type,
-    sourceSession: input.source_session,
+    sourceSessions,
     idempotencyKey,
     summary,
     recentPaths: input.recent_paths,
     layer,
+    proposedReason: input.proposed_reason,
+    sessionContext: input.session_context,
   });
   await atomicWriteText(absolutePath, fresh);
 
   await emitEventBestEffort(projectRoot, {
     event_type: "knowledge_proposed",
     timestamp: new Date().toISOString(),
-    correlation_id: input.source_session,
-    session_id: input.source_session,
+    correlation_id: primarySession,
+    session_id: primarySession,
     reason: `extract_knowledge:${sanitizedSlug}`,
   });
 
@@ -182,36 +205,55 @@ function sanitizeSlug(raw: string): string {
 
 type FreshEntryArgs = {
   type: FabExtractKnowledgeInput["type"];
-  sourceSession: string;
+  sourceSessions: string[];
   idempotencyKey: string;
   summary: string;
   recentPaths: string[];
   layer: "team" | "personal";
+  proposedReason: ProposedReason;
+  sessionContext: string;
 };
 
 function renderFreshEntry(args: FreshEntryArgs): string {
   const createdAt = new Date().toISOString();
   // Frontmatter intentionally omits `id` — Q2 late-bind allocator runs
   // at rc.3 fab_review approve. Order is stable to make tests assertive.
+  // v2.0.0-rc.7 T5: source_sessions is now an array (YAML flow form).
+  // v2.0.0-rc.7 T6: proposed_reason is a new required field.
   const frontmatter = [
     "---",
     `type: ${args.type}`,
     "maturity: draft",
     `layer: ${args.layer}`,
     `created_at: ${createdAt}`,
-    `source_session: ${args.sourceSession}`,
+    `source_sessions: [${args.sourceSessions.map((s) => JSON.stringify(s)).join(", ")}]`,
+    `proposed_reason: ${args.proposedReason}`,
     "tags: []",
     `x-fabric-idempotency-key: ${args.idempotencyKey}`,
     "---",
   ].join("\n");
 
+  // v2.0.0-rc.7 T6: body section order is fixed:
+  //   ## Summary
+  //   ## Why proposed       (1-line from PROPOSED_REASON_DESCRIPTIONS)
+  //   ## Session context    (3-5 line passthrough from input)
+  //   ## Evidence           (merged on idempotency collision — no per-call section)
+  const reasonExplanation = PROPOSED_REASON_DESCRIPTIONS[args.proposedReason];
   const body = [
     "",
     "## Summary",
     "",
     args.summary,
     "",
-    "## Evidence (call 1)",
+    "## Why proposed",
+    "",
+    `${args.proposedReason} — ${reasonExplanation}`,
+    "",
+    "## Session context",
+    "",
+    args.sessionContext,
+    "",
+    "## Evidence",
     "",
     renderEvidenceBlock(args.summary, args.recentPaths),
     "",
@@ -231,29 +273,121 @@ function renderEvidenceBlock(summary: string, recentPaths: string[]): string {
     "",
     "Notes:",
     "",
-    summary,
+    `- ${summary.trim()}`,
   ].join("\n");
 }
 
-function appendEvidenceSection(
+// v2.0.0-rc.7 T6: replace prior append-`## Evidence (call N)` semantics with a
+// merged `## Evidence` section. On idempotency collision we parse the existing
+// section, dedup notes by trimmed text, and rewrite — guaranteeing a single
+// section regardless of how many times extract is re-invoked.
+//
+// Bullet shape: each note becomes a leading-dash list item under `Notes:`.
+// Recent paths are union-merged (dedup by literal path string). The Summary
+// / Why proposed / Session context sections are preserved verbatim.
+function mergeEvidenceNotes(
   existing: string,
-  callIndex: number,
-  summary: string,
+  newSummary: string,
+  newRecentPaths: string[],
 ): string {
-  const trimmed = existing.endsWith("\n") ? existing : `${existing}\n`;
-  const block = [
-    "",
-    `## Evidence (call ${callIndex})`,
-    "",
-    summary,
-    "",
-  ].join("\n");
-  return `${trimmed}${block}`;
-}
+  // Parse existing Evidence section (best-effort; supports both rc.7 single
+  // `## Evidence` and any leftover rc.6 `## Evidence (call N)` blocks).
+  const beforeMatch = /^([\s\S]*?)(\n## Evidence(?:\s*\(call \d+\))?\s*\n)/u.exec(
+    existing.endsWith("\n") ? existing : `${existing}\n`,
+  );
+  if (beforeMatch === null) {
+    // No existing Evidence section — append a fresh one.
+    const trimmed = existing.endsWith("\n") ? existing : `${existing}\n`;
+    return `${trimmed}\n## Evidence\n\n${renderEvidenceBlock(newSummary, newRecentPaths)}\n`;
+  }
+  const head = beforeMatch[1] ?? "";
 
-function countEvidenceSections(content: string): number {
-  const matches = content.match(/^## Evidence \(call \d+\)/gmu);
-  return matches?.length ?? 0;
+  // Collect existing notes (lines starting with "- " under Notes:) and existing
+  // path bullets (lines starting with "- " under Recent paths:) by scanning
+  // every Evidence-* block in the file.
+  const existingNotes: string[] = [];
+  const existingPaths: string[] = [];
+  const evidenceBlockRe = /\n## Evidence(?:\s*\(call \d+\))?\s*\n([\s\S]*?)(?=\n## |$)/gu;
+  let m: RegExpExecArray | null;
+  while ((m = evidenceBlockRe.exec(`${existing}\n`)) !== null) {
+    const block = m[1] ?? "";
+    // Split into the two sub-sections by their labels. The rc.6 shape may
+    // have inline summary lines instead of a Notes: list; treat any leading
+    // dash line as a note bullet, paragraphs as a single note.
+    const pathSection = /Recent paths:\s*\n([\s\S]*?)(?:\n\s*Notes:|$)/u.exec(block);
+    if (pathSection !== null) {
+      for (const rawLine of (pathSection[1] ?? "").split(/\r?\n/u)) {
+        const t = rawLine.trim();
+        if (t.startsWith("- ")) {
+          existingPaths.push(t.slice(2).trim());
+        }
+      }
+    }
+    const notesSection = /Notes:\s*\n([\s\S]*?)$/u.exec(block);
+    const noteBody = (notesSection !== null ? notesSection[1] : block) ?? "";
+    // Extract dash-list items; if no dashes, treat the whole body as one note.
+    const bulletLines: string[] = [];
+    let prose: string[] = [];
+    for (const rawLine of noteBody.split(/\r?\n/u)) {
+      const t = rawLine.trim();
+      if (t.length === 0) continue;
+      if (t.startsWith("- ")) {
+        if (prose.length > 0) {
+          existingNotes.push(prose.join(" ").trim());
+          prose = [];
+        }
+        bulletLines.push(t.slice(2).trim());
+      } else {
+        prose.push(t);
+      }
+    }
+    if (prose.length > 0) existingNotes.push(prose.join(" ").trim());
+    for (const n of bulletLines) existingNotes.push(n);
+  }
+
+  // Dedup notes + paths.
+  const mergedNotes: string[] = [];
+  const seenNotes = new Set<string>();
+  const incomingNote = newSummary.trim();
+  const candidates = [...existingNotes, incomingNote];
+  for (const note of candidates) {
+    const key = note.replace(/\s+/gu, " ").trim();
+    if (key.length === 0) continue;
+    if (seenNotes.has(key)) continue;
+    seenNotes.add(key);
+    mergedNotes.push(note);
+  }
+
+  const mergedPaths: string[] = [];
+  const seenPaths = new Set<string>();
+  for (const p of [...existingPaths, ...newRecentPaths]) {
+    const key = p.trim();
+    if (key.length === 0) continue;
+    if (seenPaths.has(key)) continue;
+    seenPaths.add(key);
+    mergedPaths.push(key);
+  }
+
+  const pathLines = mergedPaths.length === 0
+    ? "_(no recent paths reported)_"
+    : mergedPaths.map((p) => `- ${p}`).join("\n");
+  const noteLines = mergedNotes.length === 0
+    ? "_(no notes recorded)_"
+    : mergedNotes.map((n) => `- ${n}`).join("\n");
+
+  const evidenceBody = [
+    "Recent paths:",
+    "",
+    pathLines,
+    "",
+    "Notes:",
+    "",
+    noteLines,
+  ].join("\n");
+
+  // Rebuild: head (frontmatter + Summary + Why proposed + Session context) +
+  // single merged Evidence section. Trailing newline preserved.
+  return `${head}\n## Evidence\n\n${evidenceBody}\n`;
 }
 
 function readFrontmatterKey(content: string, key: string): string | undefined {

@@ -138,13 +138,19 @@ For each commit:
 
 ```ts
 mcp__fabric__fab_extract_knowledge({
-  source_session: "fabric-import-<ISO8601-date>",   // stable per import run
+  source_sessions: ["fabric-import-<ISO8601-date>"],   // T5: array form; stable per import run
   recent_paths: ["<files touched by this commit, capped at 20>"],   // provenance only, NOT a path-binding signal
   user_messages_summary: "<zh-CN 1-2 sentence summary of the commit's core observation; cite the commit sha as 'src=<sha7>'>",
   type: "decisions" | "pitfalls" | "guidelines" | "models" | "processes",
   slug: "<kebab-case 2-5 words derived from commit subject + body>",
   relevance_scope: "broad",                                          // MANDATORY — never "narrow" from fabric-import
-  relevance_paths: []                                                // MANDATORY — never derived from git history
+  relevance_paths: [],                                               // MANDATORY — never derived from git history
+  // v2.0.0-rc.7 T6: fabric-import defaults to `new-dependency-or-pattern`
+  // because git-log mining surfaces newly-introduced abstractions/conventions.
+  // session_context cites the commit / doc origin so future-self reviewers
+  // know this is an LLM-mined entry rather than a live-session capture.
+  proposed_reason: "new-dependency-or-pattern",
+  session_context: "Imported from git log analysis. Origin: commit <sha7> (<subject 30 chars>). No live session — see commit body for full context."
 })
 ```
 
@@ -423,13 +429,15 @@ Skill output (note `relevance_scope: "broad"` + `relevance_paths: []` — mandat
 
 ```ts
 mcp__fabric__fab_extract_knowledge({
-  source_session: "fabric-import-2026-05-10",
+  source_sessions: ["fabric-import-2026-05-10"],
   recent_paths: ["packages/server/src/lib/retry.ts"],     // provenance only
   user_messages_summary: "重试无指数退避会在短暂上游故障下放大成雪崩。修正：jittered exponential backoff，30 秒上限。src=50367b5",
   type: "pitfalls",
   slug: "retry-without-backoff-thundering-herd",
   relevance_scope: "broad",                                // MANDATORY
-  relevance_paths: []                                      // MANDATORY — do NOT infer ["packages/server/src/lib/retry.ts"]
+  relevance_paths: [],                                     // MANDATORY — do NOT infer ["packages/server/src/lib/retry.ts"]
+  proposed_reason: "new-dependency-or-pattern",            // T6: import default
+  session_context: "Imported from git log analysis. Origin: commit 50367b5 (feat(server): add custom retry logic). No live session — see commit body for full context."
 })
 ```
 

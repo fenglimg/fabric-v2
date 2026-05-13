@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import {
-  FabExtractKnowledgeInputSchema,
+  FabExtractKnowledgeInputShape,
   FabExtractKnowledgeOutputSchema,
   fabExtractKnowledgeAnnotations,
   type FabExtractKnowledgeInput,
@@ -21,7 +21,7 @@ export function registerExtractKnowledge(server: McpServer, tracker?: InFlightTr
     {
       description:
         "Persist a proposed pending knowledge entry under .fabric/knowledge/pending/<type>/<slug>.md. Idempotent on (source_session, type, slug); repeat calls append evidence rather than overwrite. Skill-side tool — invoked at session-stop.",
-      inputSchema: FabExtractKnowledgeInputSchema.shape,
+      inputSchema: FabExtractKnowledgeInputShape,
       outputSchema: FabExtractKnowledgeOutputSchema.shape,
       annotations: fabExtractKnowledgeAnnotations,
     },

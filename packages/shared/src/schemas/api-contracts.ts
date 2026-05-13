@@ -352,10 +352,67 @@ export const knowledgeSectionsAnnotations = {
 // Schema lands now so consumers can target it; implementation arrives in rc.2.
 // ---------------------------------------------------------------------------
 
-export const FabExtractKnowledgeInputSchema = z.object({
+// v2.0.0-rc.7 T6: enum of allowed `proposed_reason` values. The skill side
+// MUST pick one — the value is greppable/lintable for future maturity-promotion
+// scoring (deferred). The 1-line human descriptions live in
+// PROPOSED_REASON_DESCRIPTIONS below and drive the `## Why proposed` body
+// section that fab_extract_knowledge writes.
+export const ProposedReasonSchema = z.enum([
+  "explicit-user-mark",
+  "diagnostic-then-fix",
+  "decision-confirmation",
+  "wrong-turn-revert",
+  "new-dependency-or-pattern",
+  "dismissal-with-reason",
+]);
+export type ProposedReason = z.infer<typeof ProposedReasonSchema>;
+
+// 1-line zh-CN descriptions used to render `## Why proposed` in pending body.
+// Keep stable: changing strings here changes every newly-written pending file.
+export const PROPOSED_REASON_DESCRIPTIONS: Record<ProposedReason, string> = {
+  "explicit-user-mark": "用户显式标记需归档（always / never / 下次注意 等规范性语言）。",
+  "diagnostic-then-fix": "诊断过程发现新模式或踩坑，修复后值得沉淀。",
+  "decision-confirmation": "≥2 候选方案经权衡后确认选型，需保留 rationale。",
+  "wrong-turn-revert": "尝试某路径后回退，错误路径本身是值得记录的 pitfall。",
+  "new-dependency-or-pattern": "引入新依赖 / 新模式 / 新命名约定。",
+  "dismissal-with-reason": "用户明确拒绝某方案并给出原因，原因即可归档知识。",
+};
+
+// v2.0.0-rc.7 T5: `source_session: string` → `source_sessions: string[]`.
+// Pre-T5 callers may still pass a single string; the preprocess shim below
+// transforms it transparently to `[s]` so the rest of the schema sees the
+// array form. The output frontmatter is always the array form.
+const _sourceSessionsField = z.preprocess(
+  (value) => {
+    if (typeof value === "string") return [value];
+    return value;
+  },
+  z.array(z.string().min(1)).min(1),
+);
+
+// Internal: base z.object schema. The exported FabExtractKnowledgeInputSchema
+// adds a superRefine on top to require at least one of source_sessions /
+// source_session. We keep the un-refined base around so the MCP tool
+// registration can still use `.shape` (registerTool's inputSchema contract).
+const _FabExtractKnowledgeInputBaseSchema = z.object({
+  // v2.0.0-rc.7 T5: array form. Legacy single-string callers are accepted
+  // via the preprocess shim above. The optional pre-T5 alias `source_session`
+  // is kept as an accepted alternative below for in-flight integrations
+  // (Zod parses one or the other — see refinement).
+  source_sessions: _sourceSessionsField
+    .optional()
+    .describe(
+      "Originating session ids; correlates with Event Ledger records. Array form (T5). Single string accepted via back-compat shim.",
+    ),
+  // Pre-T5 alias. When set and source_sessions is missing, the handler maps
+  // it to [source_session]. Marked optional so new callers can drop it.
   source_session: z
     .string()
-    .describe("Originating session id; correlates with Event Ledger records"),
+    .min(1)
+    .optional()
+    .describe(
+      "DEPRECATED — pre-T5 alias for source_sessions. Use source_sessions: string[]. Single string still accepted for back-compat.",
+    ),
   recent_paths: z
     .array(z.string())
     .describe("Workspace paths recently touched in the source session — used as scope hints"),
@@ -377,7 +434,46 @@ export const FabExtractKnowledgeInputSchema = z.object({
     .describe(
       "Storage layer for the pending entry. 'team' writes under the workspace; 'personal' writes under the user's home. Defaults to 'team'.",
     ),
+  // v2.0.0-rc.7 T6: proposed_reason — required enum that drives `## Why
+  // proposed` rendering. Skills (archive / import / review) infer the
+  // appropriate reason per their semantics (see each SKILL.md).
+  proposed_reason: ProposedReasonSchema.describe(
+    "Why this entry is being proposed. Drives `## Why proposed` rendering and enables future maturity-promotion scoring.",
+  ),
+  // v2.0.0-rc.7 T6: session_context — required 3-5 line markdown blob that
+  // captures the session goal + key turning point. Future-self review reads
+  // this without conversation transcript access. Min length guards against
+  // empty placeholders; cap is soft (no max), Skill caps at ~600 chars.
+  session_context: z
+    .string()
+    .min(20, { message: "session_context must be ≥20 chars (3-5 lines describing goal + turning point)" })
+    .describe(
+      "3-5 line markdown blob — session goal + key turning point. Reviewed by future-self without transcript access.",
+    ),
 });
+
+// Exported alias of the base shape — MCP tool registration uses `.shape` to
+// derive registerTool's per-field schema map. We attach the superRefine
+// downstream on the parse-facing schema.
+export const FabExtractKnowledgeInputSchema = _FabExtractKnowledgeInputBaseSchema.superRefine(
+  (value, ctx) => {
+    // Exactly one of source_sessions / source_session must produce a non-empty
+    // array. We accept both for migration ease but require at least one.
+    const hasArray = Array.isArray(value.source_sessions) && value.source_sessions.length > 0;
+    const hasString =
+      typeof value.source_session === "string" && value.source_session.length > 0;
+    if (!hasArray && !hasString) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          "either source_sessions (array, preferred) or source_session (legacy single string) must be provided",
+        path: ["source_sessions"],
+      });
+    }
+  },
+);
+// Sibling export so registerTool can pass `.shape` (ZodEffects has no .shape).
+export const FabExtractKnowledgeInputShape = _FabExtractKnowledgeInputBaseSchema.shape;
 export type FabExtractKnowledgeInput = z.infer<typeof FabExtractKnowledgeInputSchema>;
 
 export const FabExtractKnowledgeOutputSchema = z.object({

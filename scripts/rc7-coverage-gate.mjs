@@ -194,12 +194,85 @@ async function runPlanContextAtSize(mod, size) {
 }
 
 // ---------------------------------------------------------------------------
+// T06 — Pending entry self-containedness
+//   * Schema declares proposed_reason enum + session_context (required fields)
+//   * Renderer emits `## Why proposed` and `## Session context` body sections
+//   * Evidence-merge dedup: no `## Evidence (call N)` shape on idempotency hit
+// ---------------------------------------------------------------------------
+
+async function checkT06PendingSelfContained() {
+  const failures = [];
+
+  const schema = readText("packages/shared/src/schemas/api-contracts.ts");
+  if (schema === undefined) {
+    return {
+      id: "T06",
+      name: "pending entry self-containedness (T6)",
+      passed: false,
+      details: "packages/shared/src/schemas/api-contracts.ts not found",
+    };
+  }
+  if (!/ProposedReasonSchema\s*=\s*z\.enum\(/.test(schema)) {
+    failures.push("api-contracts.ts: missing ProposedReasonSchema enum declaration");
+  }
+  for (const reason of [
+    "explicit-user-mark",
+    "diagnostic-then-fix",
+    "decision-confirmation",
+    "wrong-turn-revert",
+    "new-dependency-or-pattern",
+    "dismissal-with-reason",
+  ]) {
+    if (!schema.includes(`"${reason}"`)) {
+      failures.push(`api-contracts.ts: proposed_reason enum missing value "${reason}"`);
+    }
+  }
+  if (!/proposed_reason:\s*ProposedReasonSchema/.test(schema)) {
+    failures.push("api-contracts.ts: FabExtractKnowledgeInputSchema missing required proposed_reason field");
+  }
+  if (!/session_context:\s*z\s*\.\s*string\(\)/.test(schema)) {
+    failures.push("api-contracts.ts: FabExtractKnowledgeInputSchema missing required session_context field");
+  }
+
+  const service = readText("packages/server/src/services/extract-knowledge.ts");
+  if (service === undefined) {
+    failures.push("extract-knowledge.ts: not found");
+  } else {
+    if (!/## Why proposed/.test(service)) {
+      failures.push("extract-knowledge.ts: body renderer missing `## Why proposed` section");
+    }
+    if (!/## Session context/.test(service)) {
+      failures.push("extract-knowledge.ts: body renderer missing `## Session context` section");
+    }
+    if (!/mergeEvidenceNotes/.test(service)) {
+      failures.push("extract-knowledge.ts: missing mergeEvidenceNotes helper (T6 Evidence-merge dedup)");
+    }
+    // Legacy append-on-collision shape MUST be gone — collisions now merge
+    // into a single `## Evidence` section.
+    if (/\(call \$\{callIndex\}\)/.test(service)) {
+      failures.push("extract-knowledge.ts: still emits `## Evidence (call N)` blocks (T6 must merge into single section)");
+    }
+  }
+
+  if (failures.length === 0) {
+    return { id: "T06", name: "pending entry self-containedness (T6)", passed: true };
+  }
+  return {
+    id: "T06",
+    name: "pending entry self-containedness (T6)",
+    passed: false,
+    details: failures.join("\n"),
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Driver
 // ---------------------------------------------------------------------------
 
 async function main() {
   const checks = [];
   checks.push(await checkT09PlanContextSymmetric());
+  checks.push(await checkT06PendingSelfContained());
 
   const passed = checks.every((c) => c.passed);
   const headerWidth = Math.max(...checks.map((c) => c.name.length)) + 4;
