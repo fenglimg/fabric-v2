@@ -47,7 +47,13 @@
  */
 
 const { spawnSync } = require("node:child_process");
-const { existsSync, mkdirSync, readFileSync, writeFileSync } = require("node:fs");
+const {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  writeFileSync,
+} = require("node:fs");
 const { dirname, join } = require("node:path");
 
 // -----------------------------------------------------------------------------
@@ -67,15 +73,34 @@ const { dirname, join } = require("node:path");
 // scheme to maintain. computeRevisionHash() is not needed at this layer; we
 // compare the strings the CLI hands us.
 //
-// rc.7 T1 (sentinel hand-off) overrides this gate: a `.fabric/.import-requested`
-// sentinel forces emission regardless of revision_hash, because the user has
-// asked (via `fabric init` Y-confirm) for the import recommendation to surface
-// on next SessionStart. That branch is layered on top in main() — see T1
-// implementation.
+// rc.8 underseed self-check: the retired `.fabric/.import-requested` sentinel
+// mechanism is replaced by a deterministic three-condition probe in
+// shouldRecommendImport(). When the probe says "recommend", a one-line
+// `/fabric-import` banner is appended to the broad-injection output and
+// the revision_hash gate is bypassed FOR THE BANNER ONLY (the broad-summary
+// body itself remains hash-gated). See shouldRecommendImport() below for
+// the full truth table.
 // -----------------------------------------------------------------------------
 
 const FABRIC_DIR_REL = ".fabric";
 const SESSIONSTART_HASH_CACHE_FILE = join(".fabric", ".cache", "sessionstart-last-hash");
+
+// rc.8 underseed self-check constants (mirror fabric-hint.cjs ~line 76 / 83).
+// Intentionally duplicated inline — hooks are independent .cjs files and
+// cannot `require` each other. If a third hook ever needs the same logic,
+// refactor into packages/cli/templates/hooks/lib/. Keep these values in sync
+// with packages/cli/templates/hooks/fabric-hint.cjs.
+const FABRIC_CONFIG_FILE = "fabric-config.json";
+const AGENTS_META_FILE = "agents.meta.json";
+const IMPORT_STATE_FILE = ".import-state.json";
+const KNOWLEDGE_CANONICAL_TYPES = [
+  "decisions",
+  "pitfalls",
+  "guidelines",
+  "models",
+  "processes",
+];
+const DEFAULT_UNDERSEED_NODE_THRESHOLD = 10;
 
 /**
  * Read the previously-emitted revision_hash from
@@ -112,21 +137,135 @@ function writeSessionStartLastHash(projectRoot, hash) {
   }
 }
 
+// -----------------------------------------------------------------------------
+// rc.8 underseed self-check helpers.
+//
+// These three helpers (countCanonicalNodes / readUnderseedThreshold /
+// isImportTouched) are inline copies of the equivalent logic in
+// packages/cli/templates/hooks/fabric-hint.cjs (~lines 218 / 749). Hooks
+// cannot `require` each other (each .cjs is rendered as a standalone template
+// at init time), so duplication is the documented convention. Cross-reference:
+// keep both copies in sync; if a third hook needs the same logic, extract to
+// packages/cli/templates/hooks/lib/.
+// -----------------------------------------------------------------------------
+
 /**
- * rc.7 T1 sentinel pickup: `.fabric/.import-requested` is an empty marker
- * file written by `fabric init` (clack.confirm Y answer) signalling that
- * the user wants the next SessionStart to recommend `fabric-import`.
+ * Count canonical knowledge entries across the five canonical type subdirs
+ * (decisions / pitfalls / guidelines / models / processes). Pending entries
+ * are NOT counted — they are proposals, not seeded knowledge.
  *
- * When the sentinel is present, the gate is overridden — the broad-injection
- * banner is appended with the import recommendation line and the
- * revision_hash gate is bypassed entirely (we always want to surface the
- * recommendation until the import Skill clears the sentinel).
- *
- * Best-effort presence check. NEVER throws.
+ * Returns the integer count. ENOENT / unreadable subdir → silently treated as
+ * zero (preserves never-block-on-failure invariant). Filters on `.md` suffix
+ * only; the more-precise canonical filename pattern check is owned by
+ * doctor.ts (the hook is a coarse signal, not a lint).
  */
-function isImportRequestedSentinelPresent(projectRoot) {
+function countCanonicalNodes(projectRoot) {
+  const knowledgeRoot = join(projectRoot, FABRIC_DIR_REL, "knowledge");
+  if (!existsSync(knowledgeRoot)) {
+    return 0;
+  }
+  let count = 0;
+  for (const type of KNOWLEDGE_CANONICAL_TYPES) {
+    const typeDir = join(knowledgeRoot, type);
+    if (!existsSync(typeDir)) continue;
+    let entries;
+    try {
+      entries = readdirSync(typeDir);
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      if (entry.endsWith(".md")) {
+        count += 1;
+      }
+    }
+  }
+  return count;
+}
+
+/**
+ * Resolve the underseed-node threshold from .fabric/fabric-config.json
+ * (underseed_node_threshold), falling back to DEFAULT_UNDERSEED_NODE_THRESHOLD.
+ * Any read/parse failure → default (never block on config errors).
+ */
+function readUnderseedThreshold(projectRoot) {
+  const configPath = join(projectRoot, FABRIC_DIR_REL, FABRIC_CONFIG_FILE);
+  if (!existsSync(configPath)) return DEFAULT_UNDERSEED_NODE_THRESHOLD;
   try {
-    return existsSync(join(projectRoot, FABRIC_DIR_REL, ".import-requested"));
+    const parsed = JSON.parse(readFileSync(configPath, "utf8"));
+    const v = parsed && parsed.underseed_node_threshold;
+    if (typeof v === "number" && Number.isFinite(v) && v > 0) return v;
+  } catch {
+    // fall through to default
+  }
+  return DEFAULT_UNDERSEED_NODE_THRESHOLD;
+}
+
+/**
+ * Classify the on-disk import lifecycle by reading
+ * `.fabric/.import-state.json`. Returns one of:
+ *   - 'absent'      — state file missing → user has NEVER started import
+ *   - 'in_progress' — file present, phase is anything that is not 'complete'
+ *                     (covers 'P1-done', 'P2-done', 'phase 1', 'in_progress',
+ *                     '1', and any other live-import marker)
+ *   - 'complete'    — file present and phase === 'complete'
+ *   - 'error'       — file present but unreadable / unparseable JSON
+ *
+ * Recommendation rule (see shouldRecommendImport): only 'absent' triggers a
+ * banner — both 'in_progress' (user is actively importing) and 'complete'
+ * (user already imported) suppress the banner. 'error' also suppresses
+ * (defensive: do not nag when state is unreadable, the user has clearly
+ * touched the file).
+ */
+function isImportTouched(projectRoot) {
+  const statePath = join(projectRoot, FABRIC_DIR_REL, IMPORT_STATE_FILE);
+  if (!existsSync(statePath)) return "absent";
+  let raw;
+  try {
+    raw = readFileSync(statePath, "utf8");
+  } catch {
+    return "error";
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return "error";
+  }
+  if (!parsed || typeof parsed !== "object") return "error";
+  return parsed.phase === "complete" ? "complete" : "in_progress";
+}
+
+/**
+ * rc.8 underseed self-check: determine whether the SessionStart hook should
+ * surface the one-line `/fabric-import` recommendation banner.
+ *
+ * Three-condition truth table (ALL must hold to return true):
+ *   1. `.fabric/agents.meta.json` exists
+ *      (workspace has been `fabric init`-ed; otherwise the recommendation
+ *       is meaningless — `fabric-import` requires init's baseline scan).
+ *   2. countCanonicalNodes(cwd) < readUnderseedThreshold(cwd)
+ *      (knowledge graph is sparse — import would meaningfully enrich it).
+ *   3. isImportTouched(cwd) === 'absent'
+ *      (.import-state.json is missing entirely; user has neither started
+ *       nor completed an import. ANY phase value — including 'in_progress'
+ *       and 'complete' — returns false because the user has either started
+ *       or finished.)
+ *
+ * Best-effort: any unexpected error → return false (do not nag on faults).
+ */
+function shouldRecommendImport(projectRoot) {
+  try {
+    const metaPath = join(projectRoot, FABRIC_DIR_REL, AGENTS_META_FILE);
+    if (!existsSync(metaPath)) return false;
+
+    const threshold = readUnderseedThreshold(projectRoot);
+    const nodeCount = countCanonicalNodes(projectRoot);
+    if (nodeCount >= threshold) return false;
+
+    if (isImportTouched(projectRoot) !== "absent") return false;
+
+    return true;
   } catch {
     return false;
   }
@@ -171,6 +310,11 @@ const CANONICAL_TYPE_ORDER = [
 const MATURITY_PROVEN = "proven";
 const MATURITY_VERIFIED = "verified";
 const MATURITY_DRAFT = "draft";
+
+// rc.8 underseed self-check banner text. Single line, mirrors the emoji-prefix
+// style of other Fabric banners (cf. fabric-hint.cjs Signal C `📋 Fabric:`).
+const IMPORT_RECOMMENDATION_BANNER =
+  "  📋 Fabric: 知识库稀疏，是否调 /fabric-import 从 git 历史与现有文档回灌知识?";
 
 // -----------------------------------------------------------------------------
 // CLI invocation
@@ -379,53 +523,51 @@ function main(env, stdio) {
       env && env.payload !== undefined ? env.payload : invokePlanContextHint(cwd);
     if (payload === null || payload === undefined) return; // silent
 
-    // rc.7 T1: sentinel-override gate. When `.fabric/.import-requested` is
-    // present, the import-recommendation banner ALWAYS surfaces regardless
-    // of revision_hash equality — the user asked for it on init Y-confirm
-    // and the fabric-import Skill is responsible for clearing the sentinel
-    // when its Phase 3 completes. The override sits BEFORE the gate so the
-    // revision_hash cache is not updated either (we want the
-    // recommendation to keep surfacing on subsequent boots until the user
-    // actually runs import).
-    const sentinelPresent = isImportRequestedSentinelPresent(cwd);
+    // rc.8 underseed self-check: decide whether to surface the one-line
+    // `/fabric-import` recommendation. The decision is taken BEFORE the
+    // revision_hash gate so the banner can bypass it (an unchanged
+    // knowledge graph would otherwise hide the recommendation forever).
+    // The broad-summary BODY itself remains hash-gated below — only the
+    // banner line is unconditionally emitted when the probe says so.
+    const recommendImport = shouldRecommendImport(cwd);
 
     // rc.7 T8: revision_hash gate. If the CLI payload carries a stable
     // revision_hash and it matches the previously-emitted hash recorded in
     // the sidecar, the knowledge graph is unchanged since last session →
-    // silent exit 0 (no re-dump). The sentinel override above takes
-    // precedence and bypasses this gate.
+    // suppress the broad-summary body. The import-recommendation banner
+    // (when applicable) is still emitted below regardless of this gate.
     const currentHash =
       typeof payload.revision_hash === "string" ? payload.revision_hash : "";
-    if (!sentinelPresent && currentHash.length > 0) {
+    let bodySuppressed = false;
+    if (currentHash.length > 0) {
       const lastHash = readSessionStartLastHash(cwd);
       if (lastHash !== null && lastHash === currentHash) {
-        // Same canonical graph as last session — banner blindness mitigation.
-        return;
+        bodySuppressed = true;
       }
     }
 
-    const lines = renderSummary(payload);
+    // Build emitted lines. When the body is hash-suppressed we skip the
+    // broad summary entirely; only the import banner (if applicable) goes
+    // to stderr in that case.
+    const lines = bodySuppressed ? [] : renderSummary(payload);
 
-    // rc.7 T1: when the sentinel is present, append the import-recommendation
-    // banner. This line is appended whether or not the broad summary had
-    // entries — even an empty knowledge graph benefits from the prompt.
-    if (sentinelPresent) {
-      lines.push(
-        "  📋 Fabric: 检测到 fabric init 提示要回灌知识 — 是否调 /fabric-import 从 git 历史和现有文档抽取?",
-      );
+    if (recommendImport) {
+      lines.push(IMPORT_RECOMMENDATION_BANNER);
     }
 
-    if (lines.length === 0) return; // empty narrow set + no sentinel — silent
+    if (lines.length === 0) return; // nothing to say — silent exit
 
     for (const line of lines) {
       err.write(`${line}\n`);
     }
 
     // Update sidecar AFTER successful emit. We only persist the hash when
-    // the gate actually let the dump through (i.e. when not sentinel-only).
-    // Sentinel-only emits don't bump the cache so the next non-sentinel
-    // SessionStart still gets to compare the prior session's true hash.
-    if (!sentinelPresent && currentHash.length > 0) {
+    // the broad-summary body actually went out (i.e. the gate let the body
+    // through). If the body was suppressed but the banner emitted on its
+    // own, we deliberately do NOT bump the sidecar — the next session
+    // should still get to compare against the prior canonical-graph hash
+    // and re-emit the body when the graph actually changes.
+    if (!bodySuppressed && currentHash.length > 0) {
       writeSessionStartLastHash(cwd, currentHash);
     }
   } catch {
@@ -444,8 +586,11 @@ module.exports = {
   // rc.7 T8: revision_hash gating sidecar helpers (exported for unit testing).
   readSessionStartLastHash,
   writeSessionStartLastHash,
-  // rc.7 T1: sentinel-override pickup (exported for unit testing).
-  isImportRequestedSentinelPresent,
+  // rc.8 underseed self-check helpers (exported for unit testing).
+  countCanonicalNodes,
+  readUnderseedThreshold,
+  isImportTouched,
+  shouldRecommendImport,
   CONSTANTS: {
     TRUNCATION_THRESHOLD,
     CLI_TIMEOUT_MS,
@@ -455,6 +600,9 @@ module.exports = {
     MATURITY_VERIFIED,
     MATURITY_DRAFT,
     SESSIONSTART_HASH_CACHE_FILE,
+    DEFAULT_UNDERSEED_NODE_THRESHOLD,
+    KNOWLEDGE_CANONICAL_TYPES,
+    IMPORT_RECOMMENDATION_BANNER,
   },
 };
 

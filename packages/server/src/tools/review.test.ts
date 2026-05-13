@@ -4,10 +4,17 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { z } from "zod";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { registerReview } from "./review.js";
 import type { InFlightTracker } from "../services/in-flight-tracker.js";
+import {
+  FabReviewInputSchema,
+  FabReviewInputShape,
+  FabReviewOutputSchema,
+  FabReviewOutputShape,
+} from "@fenglimg/fabric-shared/schemas/api-contracts";
 
 type RegisteredTool = {
   name: string;
@@ -190,5 +197,167 @@ describe("registerReview", () => {
 
     const result = await t.handler({ action: "list" });
     expect((result.structuredContent as { action: string }).action).toBe("list");
+  });
+
+  // -------------------------------------------------------------------------
+  // TASK-001: SDK-shape split — flat ZodRawShape for registration, internal
+  // discriminatedUnion for runtime narrowing. The five tests below match
+  // tests.unit[] in the task spec.
+  // -------------------------------------------------------------------------
+
+  it("test_fab_review_input_shape_exposes_action_enum_and_optional_fields", () => {
+    // (a) action is a required ZodEnum exposing all 6 literals.
+    const actionSchema = FabReviewInputShape.action;
+    expect(actionSchema).toBeInstanceOf(z.ZodEnum);
+    expect(actionSchema.options.sort()).toEqual(
+      ["approve", "defer", "list", "modify", "reject", "search"],
+    );
+
+    // (b) Every other declared field is optional (so the SDK-flattened shape
+    // never rejects valid per-action inputs at the top level).
+    const optionalFields = ["filters", "pending_paths", "pending_path", "reason", "changes", "query", "until"];
+    for (const field of optionalFields) {
+      const sub = (FabReviewInputShape as Record<string, z.ZodTypeAny>)[field];
+      expect(sub, `field=${field}`).toBeDefined();
+      expect(sub.isOptional(), `field=${field} should be .optional()`).toBe(true);
+    }
+
+    // (c) Drift-guard: keys of FabReviewInputShape MUST be a superset of every
+    // branch field in FabReviewInputSchema (the discriminatedUnion). Adding a
+    // new action without updating the flat shape fails this assertion loudly.
+    const branchKeys = new Set<string>();
+    for (const opt of FabReviewInputSchema.options) {
+      for (const k of Object.keys((opt as z.AnyZodObject).shape)) branchKeys.add(k);
+    }
+    const shapeKeys = new Set(Object.keys(FabReviewInputShape));
+    for (const k of branchKeys) {
+      expect(shapeKeys.has(k), `FabReviewInputShape missing branch field '${k}'`).toBe(true);
+    }
+  });
+
+  it("test_fab_review_register_tool_publishes_non_empty_properties", () => {
+    const { server, tool } = captureRegistration();
+    registerReview(server);
+    const t = tool();
+
+    // The MCP SDK derives JSON Schema from the ZodRawShape via its internal
+    // converter; the public assertion we care about is that the inputSchema
+    // we passed is a flat object whose keys map to the union of all branch
+    // fields (≥ 1 field beyond `action`). Empty {} would reproduce the original
+    // bug where ToolSearch sees `properties: {}`.
+    const inputSchema = t.definition.inputSchema as Record<string, unknown>;
+    expect(typeof inputSchema).toBe("object");
+    expect(inputSchema).not.toBeNull();
+    const keys = Object.keys(inputSchema);
+    expect(keys).toContain("action");
+    expect(keys.length).toBeGreaterThanOrEqual(2);
+    // Sanity: a representative subset of branch fields is published.
+    for (const k of ["pending_paths", "pending_path", "filters", "changes", "query"]) {
+      expect(keys, `inputSchema must publish '${k}'`).toContain(k);
+    }
+
+    const outputSchema = t.definition.outputSchema as Record<string, unknown>;
+    expect(typeof outputSchema).toBe("object");
+    expect(Object.keys(outputSchema)).toContain("action");
+  });
+
+  it("test_fab_review_handler_narrows_via_discriminated_union", async () => {
+    const projectRoot = await makeProject();
+    process.env.FABRIC_PROJECT_ROOT = projectRoot;
+
+    const { server, tool } = captureRegistration();
+    registerReview(server);
+    const t = tool();
+
+    // Pass an input that the FLAT shape would accept (every per-action field
+    // is optional there) but the discriminated union must REJECT
+    // (action=approve with no pending_paths). The handler's
+    // FabReviewInputSchema.parse must throw.
+    await expect(t.handler({ action: "approve" })).rejects.toBeInstanceOf(z.ZodError);
+  });
+
+  it("test_fab_review_approve_missing_id_throws_zod_error_naming_id", async () => {
+    // NOTE: The actual schema field is `pending_paths` (plural array), not
+    // `id` — the task spec's "naming id" wording was a placeholder. We assert
+    // the same semantic intent: the error path identifies the missing required
+    // field for action=approve.
+    const projectRoot = await makeProject();
+    process.env.FABRIC_PROJECT_ROOT = projectRoot;
+
+    const { server, tool } = captureRegistration();
+    registerReview(server);
+    const t = tool();
+
+    let caught: unknown;
+    try {
+      await t.handler({ action: "approve" });
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(z.ZodError);
+    const zerr = caught as z.ZodError;
+    const hasPendingPathsIssue = zerr.issues.some((i) => i.path.includes("pending_paths"));
+    expect(hasPendingPathsIssue, JSON.stringify(zerr.issues)).toBe(true);
+    // Error type is the canonical `invalid_type` (or required) discriminator
+    // missing — both indicate the union failed to select a branch.
+    const codes = new Set(zerr.issues.map((i) => i.code));
+    expect(
+      codes.has("invalid_type") || codes.has("invalid_union") || codes.has("invalid_literal"),
+    ).toBe(true);
+  });
+
+  it("test_fab_review_each_action_happy_path_validates_output_shape", async () => {
+    const projectRoot = await makeProject();
+    process.env.FABRIC_PROJECT_ROOT = projectRoot;
+    // Seed two pending entries we can exercise approve/reject/modify/defer/search against.
+    const a = await seedPendingFile(projectRoot, "decisions", "happy-a");
+    const b = await seedPendingFile(projectRoot, "decisions", "happy-b");
+
+    const { server, tool } = captureRegistration();
+    registerReview(server);
+    const t = tool();
+
+    // Output validator built from the flat shape (mirrors what the SDK would
+    // run). We additionally re-validate against the strict union for
+    // belt-and-braces.
+    const FlatOutput = z.object(FabReviewOutputShape);
+
+    // 1. list
+    const listOut = await t.handler({ action: "list" });
+    expect(FlatOutput.safeParse(listOut.structuredContent).success).toBe(true);
+    expect(FabReviewOutputSchema.safeParse(listOut.structuredContent).success).toBe(true);
+
+    // 2. search
+    const searchOut = await t.handler({ action: "search", query: "happy" });
+    expect(FlatOutput.safeParse(searchOut.structuredContent).success).toBe(true);
+    expect(FabReviewOutputSchema.safeParse(searchOut.structuredContent).success).toBe(true);
+
+    // 3. defer
+    const deferOut = await t.handler({ action: "defer", pending_paths: [b], reason: "later" });
+    expect(FlatOutput.safeParse(deferOut.structuredContent).success).toBe(true);
+    expect(FabReviewOutputSchema.safeParse(deferOut.structuredContent).success).toBe(true);
+
+    // 4. reject
+    const rejectOut = await t.handler({ action: "reject", pending_paths: [b], reason: "stale" });
+    expect(FlatOutput.safeParse(rejectOut.structuredContent).success).toBe(true);
+    expect(FabReviewOutputSchema.safeParse(rejectOut.structuredContent).success).toBe(true);
+
+    // 5. approve (consumes `a`).
+    const approveOut = await t.handler({ action: "approve", pending_paths: [a] });
+    expect(FlatOutput.safeParse(approveOut.structuredContent).success).toBe(true);
+    expect(FabReviewOutputSchema.safeParse(approveOut.structuredContent).success).toBe(true);
+    const approved = (approveOut.structuredContent as { approved: Array<{ stable_id: string }> }).approved;
+    expect(approved).toHaveLength(1);
+
+    // 6. modify (against the canonical entry just produced by approve).
+    const stableId = approved[0].stable_id;
+    const canonicalRel = `.fabric/knowledge/decisions/${stableId}--happy-a.md`;
+    const modifyOut = await t.handler({
+      action: "modify",
+      pending_path: canonicalRel,
+      changes: { maturity: "verified" },
+    });
+    expect(FlatOutput.safeParse(modifyOut.structuredContent).success).toBe(true);
+    expect(FabReviewOutputSchema.safeParse(modifyOut.structuredContent).success).toBe(true);
   });
 });

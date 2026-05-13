@@ -37,14 +37,20 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { z } from "zod";
+
 import {
   FabReviewInputSchema,
+  FabReviewInputShape,
   FabReviewOutputSchema,
+  FabReviewOutputShape,
 } from "@fenglimg/fabric-shared/schemas/api-contracts";
 
 import { runDoctorReport } from "../../src/services/doctor.js";
 import { readEventLedger } from "../../src/services/event-ledger.js";
 import { reviewKnowledge } from "../../src/services/review.js";
+import { registerReview } from "../../src/tools/review.js";
 
 // ---------------------------------------------------------------------------
 // Fixture helpers
@@ -52,6 +58,7 @@ import { reviewKnowledge } from "../../src/services/review.js";
 
 const tempDirs: string[] = [];
 let originalFabricHome: string | undefined;
+let originalProjectRoot: string | undefined;
 
 beforeEach(async () => {
   // Mirror review.test.ts:17-22: redirect personal-root resolution into a
@@ -59,6 +66,7 @@ beforeEach(async () => {
   // ~/.fabric/. We allocate one fakeHome per test so cross-test counter
   // bleed is impossible.
   originalFabricHome = process.env.FABRIC_HOME;
+  originalProjectRoot = process.env.FABRIC_PROJECT_ROOT;
   const fakeHome = await mkdtemp(join(tmpdir(), "fabric-review-int-home-"));
   tempDirs.push(fakeHome);
   process.env.FABRIC_HOME = fakeHome;
@@ -69,6 +77,11 @@ afterEach(async () => {
     delete process.env.FABRIC_HOME;
   } else {
     process.env.FABRIC_HOME = originalFabricHome;
+  }
+  if (originalProjectRoot === undefined) {
+    delete process.env.FABRIC_PROJECT_ROOT;
+  } else {
+    process.env.FABRIC_PROJECT_ROOT = originalProjectRoot;
   }
   await Promise.all(
     tempDirs.splice(0).map(async (path) => {
@@ -585,5 +598,119 @@ describe("fab_review integration (rc.3 TASK-007)", () => {
     if (parsedSearchOutput.action !== "search") throw new Error("unreachable");
     expect(parsedSearchOutput.items).toHaveLength(1);
     expect(parsedSearchOutput.items[0].type).toBe("decisions");
+  });
+
+  // ---------------------------------------------------------------------------
+  // (9) TASK-001 regression guard — the published tool descriptor exposes a
+  //     non-empty inputSchema with `action` plus all union-branch fields.
+  //     Reproduces the original `_zod undefined` / `properties: {}` symptom
+  //     class as a structural assertion.
+  // ---------------------------------------------------------------------------
+  it("test_published_tool_descriptor_input_schema_properties_non_empty", () => {
+    type CapturedDef = { inputSchema: unknown; outputSchema: unknown; annotations: unknown };
+    let captured: { name: string; def: CapturedDef } | undefined;
+    const fakeServer = {
+      registerTool: (name: string, def: CapturedDef) => {
+        captured = { name, def };
+      },
+    } as unknown as McpServer;
+
+    registerReview(fakeServer);
+    expect(captured).toBeDefined();
+    expect(captured!.name).toBe("fab_review");
+
+    const inputSchema = captured!.def.inputSchema as Record<string, unknown>;
+    // Regression guard against `properties: {}` (the SDK-misuse symptom).
+    expect(typeof inputSchema).toBe("object");
+    const inputKeys = Object.keys(inputSchema);
+    expect(inputKeys.length).toBeGreaterThan(0);
+    expect(inputKeys).toContain("action");
+
+    // Every branch field of the discriminated union must surface on the
+    // flat shape — drift here means ToolSearch loses fields.
+    const branchKeys = new Set<string>();
+    for (const opt of FabReviewInputSchema.options) {
+      for (const k of Object.keys((opt as z.AnyZodObject).shape)) branchKeys.add(k);
+    }
+    for (const k of branchKeys) {
+      expect(inputKeys, `published inputSchema missing branch field '${k}'`).toContain(k);
+    }
+
+    const outputSchema = captured!.def.outputSchema as Record<string, unknown>;
+    expect(typeof outputSchema).toBe("object");
+    expect(Object.keys(outputSchema)).toContain("action");
+  });
+
+  // ---------------------------------------------------------------------------
+  // (10) TASK-001 — every action exercised through the registered handler
+  //      against a real pending directory; structuredContent re-validates
+  //      against both the flat shape (SDK surface) and the discriminated
+  //      union (internal authoritative contract).
+  // ---------------------------------------------------------------------------
+  it("test_each_action_round_trip_against_real_pending_directory", async () => {
+    const projectRoot = await createTempProject();
+    process.env.FABRIC_PROJECT_ROOT = projectRoot;
+    const a = await seedPending(projectRoot, "decisions", "rt-action-a");
+    const b = await seedPending(projectRoot, "decisions", "rt-action-b");
+    const c = await seedPending(projectRoot, "guidelines", "rt-action-c");
+
+    type CapturedHandler = (input: Record<string, unknown>) => Promise<{
+      content: Array<{ type: string; text: string }>;
+      structuredContent: unknown;
+    }>;
+    let handler: CapturedHandler | undefined;
+    const fakeServer = {
+      registerTool: (_name: string, _def: unknown, h: CapturedHandler) => {
+        handler = h;
+      },
+    } as unknown as McpServer;
+    registerReview(fakeServer);
+    expect(handler).toBeDefined();
+
+    const FlatOutput = z.object(FabReviewOutputShape);
+
+    // 1. list
+    const listOut = await handler!({ action: "list" });
+    expect(FlatOutput.safeParse(listOut.structuredContent).success).toBe(true);
+    expect(FabReviewOutputSchema.safeParse(listOut.structuredContent).success).toBe(true);
+
+    // 2. search
+    const searchOut = await handler!({ action: "search", query: "rt-action" });
+    expect(FlatOutput.safeParse(searchOut.structuredContent).success).toBe(true);
+    expect(FabReviewOutputSchema.safeParse(searchOut.structuredContent).success).toBe(true);
+    expect(
+      (searchOut.structuredContent as { items: Array<unknown> }).items.length,
+    ).toBeGreaterThanOrEqual(3);
+
+    // 3. defer (b)
+    const deferOut = await handler!({ action: "defer", pending_paths: [b] });
+    expect(FlatOutput.safeParse(deferOut.structuredContent).success).toBe(true);
+    expect(FabReviewOutputSchema.safeParse(deferOut.structuredContent).success).toBe(true);
+
+    // 4. reject (b)
+    const rejectOut = await handler!({ action: "reject", pending_paths: [b], reason: "stale" });
+    expect(FlatOutput.safeParse(rejectOut.structuredContent).success).toBe(true);
+    expect(FabReviewOutputSchema.safeParse(rejectOut.structuredContent).success).toBe(true);
+
+    // 5. approve (a)
+    const approveOut = await handler!({ action: "approve", pending_paths: [a] });
+    expect(FlatOutput.safeParse(approveOut.structuredContent).success).toBe(true);
+    expect(FabReviewOutputSchema.safeParse(approveOut.structuredContent).success).toBe(true);
+    const approved = (approveOut.structuredContent as { approved: Array<{ stable_id: string }> }).approved;
+    expect(approved).toHaveLength(1);
+
+    // 6. modify (canonical from approved a)
+    const stableId = approved[0].stable_id;
+    const canonicalRel = `.fabric/knowledge/decisions/${stableId}--rt-action-a.md`;
+    const modifyOut = await handler!({
+      action: "modify",
+      pending_path: canonicalRel,
+      changes: { maturity: "verified" },
+    });
+    expect(FlatOutput.safeParse(modifyOut.structuredContent).success).toBe(true);
+    expect(FabReviewOutputSchema.safeParse(modifyOut.structuredContent).success).toBe(true);
+
+    // Sanity: c untouched.
+    expect(c).toContain("rt-action-c");
   });
 });

@@ -565,6 +565,67 @@ export const FabReviewInputSchema = z.discriminatedUnion("action", [
 ]);
 export type FabReviewInput = z.infer<typeof FabReviewInputSchema>;
 
+// MCP SDK 1.29.0 surface (TASK-001 fix): registerTool's `inputSchema` requires
+// a flat ZodRawShape (z.object-friendly) so its internal `validateToolOutput`
+// path can call `.safeParseAsync` on a per-field schema. Passing
+// FabReviewInputSchema (a discriminatedUnion) directly crashes the SDK with
+// `_zod undefined` AND publishes JSON Schema with empty `properties: {}`,
+// breaking ToolSearch discoverability.
+//
+// FabReviewInputShape mirrors the union of all branch fields with `action` as
+// the required discriminator and every other field `.optional()`. Cross-field
+// strictness (e.g. action=approve requires pending_paths) is preserved at
+// runtime by the handler narrowing through FabReviewInputSchema (the
+// authoritative internal contract). Drift between this shape and the union
+// branches is caught by a unit test in packages/server/src/tools/review.test.ts.
+export const FabReviewInputShape = {
+  action: z
+    .enum(["list", "approve", "reject", "modify", "search", "defer"])
+    .describe(
+      "Action selector. Discriminates the per-action fields below; required.",
+    ),
+  filters: _fabReviewFiltersSchema.describe(
+    "Optional filters (type/layer/maturity/tags/created_after). Used by action=list and action=search.",
+  ),
+  pending_paths: z
+    .array(z.string())
+    .min(1)
+    .optional()
+    .describe(
+      "Workspace-relative pending entry paths. Required when action=approve|reject|defer (non-empty array).",
+    ),
+  pending_path: z
+    .string()
+    .min(1)
+    .optional()
+    .describe(
+      "Workspace-relative pending OR canonical entry path. Required when action=modify.",
+    ),
+  reason: z
+    .string()
+    .optional()
+    .describe(
+      "Reason string. Required (non-empty) when action=reject; optional when action=defer.",
+    ),
+  changes: _fabReviewModifyChangesSchema.optional().describe(
+    "Frontmatter scalar patches (title/summary/layer/maturity/tags/relevance_*). Required when action=modify.",
+  ),
+  query: z
+    .string()
+    .min(1)
+    .optional()
+    .describe(
+      "Substring query against title/summary/tags/path. Required (non-empty) when action=search.",
+    ),
+  until: z
+    .string()
+    .datetime()
+    .optional()
+    .describe(
+      "ISO-8601 datetime upper bound for the deferral. Optional; used only when action=defer.",
+    ),
+} as const;
+
 // Per-action result shapes. Each variant mirrors its input action so the
 // consumer can pair `(input.action, output.action)` without extra plumbing.
 const _fabReviewListItemSchema = z.object({
@@ -612,6 +673,66 @@ export const FabReviewOutputSchema = z.discriminatedUnion("action", [
   }),
 ]);
 export type FabReviewOutput = z.infer<typeof FabReviewOutputSchema>;
+
+// MCP SDK 1.29.0 surface (TASK-001 fix): mirrors FabReviewInputShape rationale
+// for the output side. registerTool's `outputSchema` consumer
+// (validateToolOutput) requires a flat ZodRawShape; passing
+// FabReviewOutputSchema (discriminatedUnion) yields the same `_zod undefined`
+// crash + empty JSON Schema properties.
+//
+// FabReviewOutputShape unions all variant fields with `action` as the required
+// discriminator and every variant-specific field `.optional()`. Output
+// structuredContent is still validated against FabReviewOutputSchema in tests
+// (and may be at runtime by callers) for full per-action precision.
+export const FabReviewOutputShape = {
+  action: z
+    .enum(["list", "approve", "reject", "modify", "search", "defer"])
+    .describe(
+      "Echoes the input action; clients can switch on it for per-variant fields below.",
+    ),
+  items: z
+    .array(_fabReviewListItemSchema)
+    .optional()
+    .describe(
+      "Pending/canonical entries surfaced. Present when action=list or action=search.",
+    ),
+  approved: z
+    .array(z.object({ pending_path: z.string(), stable_id: z.string() }))
+    .optional()
+    .describe(
+      "Allocated stable ids paired with their original pending paths. Present when action=approve.",
+    ),
+  rejected: z
+    .array(z.string())
+    .optional()
+    .describe(
+      "Pending paths that were rejected (files retained on disk; doctor owns vacuum). Present when action=reject.",
+    ),
+  pending_path: z
+    .string()
+    .optional()
+    .describe(
+      "Echoed target path for the modification. Present when action=modify.",
+    ),
+  prior_stable_id: z
+    .string()
+    .optional()
+    .describe(
+      "Prior stable id. Present when action=modify AND a layer-flip reallocated the id.",
+    ),
+  new_stable_id: z
+    .string()
+    .optional()
+    .describe(
+      "New stable id after reallocation. Present when action=modify AND a layer-flip reallocated the id.",
+    ),
+  deferred: z
+    .array(z.string())
+    .optional()
+    .describe(
+      "Pending paths that were deferred (files retained on disk). Present when action=defer.",
+    ),
+} as const;
 
 export const fabReviewAnnotations = {
   readOnlyHint: false,

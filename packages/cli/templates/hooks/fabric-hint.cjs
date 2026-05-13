@@ -98,14 +98,20 @@ const MAINTENANCE_HINT_LAST_EMIT_FILE = ".fabric/.cache/maintenance-hint-last-em
 // there's barely anything TO lint.
 const MAINTENANCE_HINT_MIN_CANONICAL = 5;
 
-// rc.7 T1: cross-surface sentinel from `fabric init` Y-confirm. Empty file
-// at `.fabric/.import-requested`. Stop hook reads it to bypass the Signal C
-// cooldown and emit the import recommendation regardless of underseed or
-// 24h-since-last-emit gates. SessionStart hook (knowledge-hint-broad.cjs)
-// has its own mirror of this pickup logic. The fabric-import Skill's
-// Phase 3.4 clears the sentinel; until then it remains and continues to
-// surface the recommendation.
-const IMPORT_REQUESTED_SENTINEL_FILE = join(".fabric", ".import-requested");
+// v2.0.0-rc.8 (TASK-002): in-flight import gate for Signal B.
+// fabric-import skill writes `.fabric/.import-state.json` checkpoints after
+// every successful sub-step (P1/P2/P3 — see fabric-import/SKILL.md). The
+// Stop hook reads this file as a soft signal to know that an import is
+// mid-run, so we can silence Signal B (review hint at pending count >= 10)
+// to avoid interrupting the import while it accumulates pending entries.
+//
+// Gate is intentionally narrow: ONLY Signal B is suppressed. Signals A
+// (archive), C (import recommendation), D (maintenance) retain their
+// pre-existing behaviour byte-for-byte. The 24h TTL on `last_checkpoint_at`
+// guards against stale state files that would otherwise permanently
+// silence Signal B if a user abandoned an import without completing.
+const IMPORT_STATE_FILE_REL = join(".fabric", ".import-state.json");
+const IMPORT_IN_FLIGHT_MAX_AGE_HOURS = 24;
 
 /**
  * Read the events.jsonl ledger from <projectRoot>/.fabric/events.jsonl.
@@ -296,33 +302,60 @@ function countEditsSince(projectRoot, anchorTs) {
 }
 
 /**
- * rc.7 T1: detect the `.fabric/.import-requested` sentinel. Best-effort
- * presence check — returns false on any I/O error so a hostile filesystem
- * never blocks the Stop hook on this branch.
+ * v2.0.0-rc.8 (TASK-002): detect whether a fabric-import skill run is
+ * currently in flight, used to gate Signal B (review hint) so the Stop
+ * hook does not interrupt an active import when its pending pile crosses
+ * the review threshold.
+ *
+ * Truth table — returns false (i.e. NOT in flight, do not gate) on:
+ *   - `.fabric/.import-state.json` missing (no import has ever started or
+ *     state file was deleted)
+ *   - JSON.parse failure (malformed state file — never-block invariant
+ *     forbids permanently silencing Signal B due to corruption)
+ *   - `phase === "complete"` (import finished — see fabric-import SKILL.md
+ *     Phase 3.4)
+ *   - `last_checkpoint_at` missing OR older than IMPORT_IN_FLIGHT_MAX_AGE_HOURS
+ *     (stale state — user likely abandoned the import; do not let a forever
+ *     orphaned state file silence Signal B forever)
+ *   - any unexpected throw (defensive — never-block invariant)
+ *
+ * Returns true ONLY when state file exists, parses, has a non-"complete"
+ * phase, and a fresh `last_checkpoint_at` (< 24h ago). Field names
+ * (`phase`, `last_checkpoint_at`) verified against fabric-import SKILL.md
+ * § Checkpoint Logic.
+ *
+ * `now` is optional — defaults to `new Date()`. Tests can inject a fixed
+ * Date for determinism; production callers may omit it.
  */
-function isImportRequestedSentinelPresent(projectRoot) {
+function isImportInFlight(projectRoot, now) {
   try {
-    return existsSync(join(projectRoot, IMPORT_REQUESTED_SENTINEL_FILE));
+    const p = join(projectRoot, IMPORT_STATE_FILE_REL);
+    if (!existsSync(p)) return false;
+    let raw;
+    try {
+      raw = readFileSync(p, "utf8");
+    } catch {
+      return false;
+    }
+    let parsed;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      return false;
+    }
+    if (parsed === null || typeof parsed !== "object") return false;
+    if (parsed.phase === "complete") return false;
+    const ts = parsed.last_checkpoint_at;
+    if (typeof ts !== "string" || ts.length === 0) return false;
+    const ms = Date.parse(ts);
+    if (!Number.isFinite(ms)) return false;
+    const nowMs = now instanceof Date ? now.getTime() : Number(now) || Date.now();
+    const ageHours = (nowMs - ms) / MS_PER_HOUR;
+    if (ageHours > IMPORT_IN_FLIGHT_MAX_AGE_HOURS) return false;
+    return true;
   } catch {
     return false;
   }
-}
-
-/**
- * rc.7 T1: build the import-recommendation result that the Stop hook emits
- * when the sentinel is present. Reuses the existing Signal C shape so
- * downstream consumers (Cursor `followup_message`, etc.) need no schema
- * change. The reason text reuses the rc.7 T4 人-first banner style.
- */
-function makeImportSentinelResult() {
-  const line1 =
-    "📋 Fabric: 检测到 fabric init 提示要回灌知识 — 是否调 /fabric-import 从 git 历史和现有文档抽取?";
-  return {
-    decision: "block",
-    reason: line1,
-    signal: "import",
-    recommended_skill: "fabric-import",
-  };
 }
 
 /**
@@ -500,7 +533,7 @@ function readArchiveEditThreshold(projectRoot) {
 // without touching the filesystem. Omitting the arg falls back to documented
 // defaults so existing in-process callers (tests that pre-date T7) still
 // pass without modification — they implicitly exercise the default path.
-function decide(events, now, pendingStats, underseedStats, editCounterStats, thresholds, banner) {
+function decide(events, now, pendingStats, underseedStats, editCounterStats, thresholds, banner, importInFlight) {
   const nowMs = now instanceof Date ? now.getTime() : Number(now) || Date.now();
   const stats = pendingStats || { count: 0, oldestAgeMs: null };
   const underseed =
@@ -600,7 +633,13 @@ function decide(events, now, pendingStats, underseedStats, editCounterStats, thr
   const triggerByPendingAge =
     stats.oldestAgeMs !== null && stats.oldestAgeMs / MS_PER_DAY >= reviewHintPendingAgeDays;
 
-  if (triggerByPendingCount || triggerByPendingAge) {
+  // v2.0.0-rc.8 (TASK-002): suppress ONLY Signal B while a fabric-import
+  // skill run is in flight (read from .fabric/.import-state.json by main()
+  // and threaded in as `importInFlight`). Signals A, C, D are unaffected.
+  // We fall through to Signal C evaluation rather than returning null —
+  // review backlog should not pre-empt import-recommendation evaluation
+  // when import is mid-run.
+  if ((triggerByPendingCount || triggerByPendingAge) && importInFlight !== true) {
     // rc.7 T4: 人-first banner reformat for Signal B. Keeps the pending
     // count and age substrings (`${count} 条`, `${days} 天`) so existing
     // tests pass; drops the Agent-jussive "建议调用 ... skill ..." for a
@@ -1147,28 +1186,29 @@ function main(env, stdio) {
       activityOverview = "";
     }
 
-    // rc.7 T1: sentinel-priority pickup. The `.fabric/.import-requested`
-    // file is the cross-surface signal from `fabric init` Y-confirm. When
-    // present, the Stop hook emits a Signal C "import" result regardless of
-    // underseed thresholds, cooldown sidecar state, or precedence with
-    // other signals. This branch sits BEFORE decide() so the import
-    // recommendation always wins until the fabric-import Skill clears the
-    // sentinel in its Phase 3.4. Cooldown sidecar IS bypassed (the
-    // recommendation surface area is intentionally aggressive — the user
-    // explicitly asked for it at init time).
-    const sentinelPresent = isImportRequestedSentinelPresent(cwd);
+    // v2.0.0-rc.8 (TASK-002): probe `.fabric/.import-state.json` to
+    // determine whether a fabric-import skill run is currently in flight.
+    // Threaded into decide() so Signal B (review hint) is suppressed for
+    // the duration of an active import — preventing the Stop hook from
+    // interrupting the import when its pending pile crosses the review
+    // threshold. See isImportInFlight() docstring for the full truth table.
+    let importInFlight = false;
+    try {
+      importInFlight = isImportInFlight(cwd, now);
+    } catch {
+      importInFlight = false;
+    }
 
-    let result = sentinelPresent
-      ? makeImportSentinelResult()
-      : decide(
-          events,
-          now,
-          pendingStats,
-          underseedStats,
-          editCounterStats,
-          thresholds,
-          { activityOverview },
-        );
+    let result = decide(
+      events,
+      now,
+      pendingStats,
+      underseedStats,
+      editCounterStats,
+      thresholds,
+      { activityOverview },
+      importInFlight,
+    );
 
     // v2.0.0-rc.7 T10: Signal D — maintenance hint. Evaluated AFTER A/B/C
     // because the existing three signals carry higher urgency (in-flight
@@ -1202,17 +1242,6 @@ function main(env, stdio) {
       return;
     }
 
-    // rc.7 T1: sentinel-driven results bypass the cooldown sidecar entirely.
-    // The user explicitly asked at init time for the import recommendation
-    // to surface; the cooldown is a noise-throttle for organic signals,
-    // not for explicit user-driven hand-offs. We also do NOT bump the
-    // cooldown cache when the sentinel fires — that would silence the
-    // *next* organic Signal C unnecessarily.
-    if (sentinelPresent) {
-      out.write(JSON.stringify(result));
-      return;
-    }
-
     // Cooldown throttle: once a signal fires, stay silent for
     // archive_hint_cooldown_hours (default 12h) regardless of state drift.
     // Pure reminder-noise reduction; the underlying trigger logic is unchanged.
@@ -1240,9 +1269,9 @@ module.exports = {
   // rc.7 T4: top-edited-directories aggregator + banner overview formatter.
   getTopEditedDirectories,
   formatActivityOverview,
-  // rc.7 T1: cross-surface sentinel pickup helpers (exported for testing).
-  isImportRequestedSentinelPresent,
-  makeImportSentinelResult,
+  // v2.0.0-rc.8 (TASK-002): in-flight import gate for Signal B (exported
+  // for unit testing of the truth table).
+  isImportInFlight,
   decide,
   readCooldownHours,
   readUnderseedThreshold,
@@ -1296,8 +1325,9 @@ module.exports = {
     EVENT_TYPE_DOCTOR_RUN,
     MAINTENANCE_HINT_LAST_EMIT_FILE,
     MAINTENANCE_HINT_MIN_CANONICAL,
-    // rc.7 T1: cross-surface sentinel for `fabric init` → import-skill hand-off.
-    IMPORT_REQUESTED_SENTINEL_FILE,
+    // v2.0.0-rc.8 (TASK-002): in-flight import gate for Signal B.
+    IMPORT_STATE_FILE_REL,
+    IMPORT_IN_FLIGHT_MAX_AGE_HOURS,
   },
 };
 

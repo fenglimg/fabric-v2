@@ -4,9 +4,9 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import {
   FabReviewInputSchema,
-  FabReviewOutputSchema,
+  FabReviewInputShape,
+  FabReviewOutputShape,
   fabReviewAnnotations,
-  type FabReviewInput,
 } from "@fenglimg/fabric-shared/schemas/api-contracts";
 import { enforcePayloadLimit } from "@fenglimg/fabric-shared/node/mcp-payload-guard";
 
@@ -21,19 +21,23 @@ export function registerReview(server: McpServer, tracker?: InFlightTracker): vo
     {
       description:
         "Review pending knowledge entries under .fabric/knowledge/pending/. Discriminated by `action`: list (enumerate), approve (allocate stable_id and promote to canonical layer/type path), reject/modify/search/defer (TASK-002). Skill-side tool — invoked by fabric-review.",
-      // Discriminated union schemas — passed whole (registerTool accepts
-      // `AnySchema` in addition to `ZodRawShape`; see @modelcontextprotocol/sdk
-      // mcp.d.ts:150).
-      inputSchema: FabReviewInputSchema,
-      outputSchema: FabReviewOutputSchema,
+      // Flat ZodRawShape required by MCP SDK 1.29.0 registerTool. The
+      // authoritative cross-field contract still lives in FabReviewInputSchema
+      // (discriminatedUnion) and is enforced inside the handler via
+      // `FabReviewInputSchema.parse(input)`.
+      inputSchema: FabReviewInputShape,
+      outputSchema: FabReviewOutputShape,
       annotations: fabReviewAnnotations,
     },
-    async (input: FabReviewInput) => {
+    async (input: unknown) => {
       const requestId = randomUUID();
       tracker?.enter(requestId);
       try {
+        // Narrow via the discriminatedUnion to recover full per-action
+        // strictness (e.g. action=approve requires non-empty pending_paths).
+        const narrowed = FabReviewInputSchema.parse(input);
         const projectRoot = resolveProjectRoot();
-        const result = await reviewKnowledge(projectRoot, input);
+        const result = await reviewKnowledge(projectRoot, narrowed);
 
         const response = result;
 

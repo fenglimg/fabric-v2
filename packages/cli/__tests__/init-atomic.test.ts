@@ -192,6 +192,37 @@ describe("init-atomic: artifact content correctness after atomic lift", () => {
     expect(existsSync(join(target, ".fabric", "INITIAL_TAXONOMY.md"))).toBe(false);
   });
 
+  it("test_full_init_artifact_set_includes_fabric_config_json", async () => {
+    const target = createWerewolfFixtureRoot("fab-atomic-config-included");
+    tempRoots.push(target);
+
+    await initFabric(target);
+
+    const configPath = join(target, ".fabric", "fabric-config.json");
+    expect(existsSync(configPath)).toBe(true);
+    const raw = readFileSync(configPath, "utf8");
+    expect(raw.endsWith("\n")).toBe(true);
+    expect(() => JSON.parse(raw)).not.toThrow();
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    expect(Object.keys(parsed).length).toBeGreaterThanOrEqual(9);
+    // No .import-requested sentinel artifact is created.
+    expect(existsSync(join(target, ".fabric", ".import-requested"))).toBe(false);
+  });
+
+  it("test_init_atomic_rollback_includes_fabric_config_json", async () => {
+    const target = createWerewolfFixtureRoot("fab-atomic-config-no-tmp");
+    tempRoots.push(target);
+
+    await initFabric(target);
+
+    // No .tmp residue (the helper uses a plain idempotent writeFileSync,
+    // which is atomic enough for a 1KB JSON; collectTmpFiles must remain empty).
+    const fabricDir = join(target, ".fabric");
+    const tmpFiles = collectTmpFiles(fabricDir);
+    expect(tmpFiles).toHaveLength(0);
+    expect(existsSync(join(fabricDir, "fabric-config.json"))).toBe(true);
+  });
+
   it("knowledge subdirs contain .gitkeep markers after init", async () => {
     const target = createWerewolfFixtureRoot("fab-atomic-gitkeep");
     tempRoots.push(target);

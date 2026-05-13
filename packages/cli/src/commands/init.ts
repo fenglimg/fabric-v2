@@ -350,26 +350,6 @@ export async function runInitCommand(args: InitArgs): Promise<InitExecutionResul
   }
 
   const result = await executeInitExecutionPlan(plan);
-  // rc.7 T1: cross-surface hand-off prompt. After init completes, ask
-  // whether the user wants the next AI session to recommend fabric-import
-  // (Skill that mines git log + docs into pending knowledge). On Y, write
-  // an empty `.fabric/.import-requested` sentinel that both
-  // knowledge-hint-broad.cjs (SessionStart) and fabric-hint.cjs (Stop)
-  // read. The sentinel is cleared by fabric-import Skill's Phase 3.4.
-  //
-  // Skipped in non-interactive contexts (CI, --plan, FABRIC_NONINTERACTIVE=1,
-  // non-TTY stdin) so automation never trips on the prompt.
-  try {
-    await maybeWriteImportSentinel({
-      target: intent.target,
-      planOnly: intent.options.planOnly === true,
-      wizardEnabled: intent.wizardEnabled,
-      terminalInteractive: intent.interactiveSummary,
-    });
-  } catch {
-    // Sentinel is opt-in convenience — failure must never escalate from
-    // the init command's success path.
-  }
   // rc.7 T3: surfaces-doc cross-reference footer. Printed unconditionally
   // on the success path (plan-only excepted) so users discover the
   // CLI/Skill/MCP boundary doc the first time they install Fabric. The
@@ -382,46 +362,67 @@ export async function runInitCommand(args: InitArgs): Promise<InitExecutionResul
 }
 
 /**
- * rc.7 T1: emit the cross-surface `.fabric/.import-requested` sentinel based
- * on a clack confirm prompt. Honors `FABRIC_NONINTERACTIVE=1` and skips
- * silently in non-interactive contexts (no-TTY, --plan, wizard disabled).
+ * Scaffold a default `.fabric/fabric-config.json` containing every
+ * reader-consumed config field with its documented default value.
  *
- * Failure invariant: any error path (clack cancel, write failure) → silent
- * no-op. Init's exit code is unaffected.
+ * Source-of-truth for the field list:
+ *   - packages/shared/src/schemas/fabric-config.ts (Zod schema with defaults)
+ *   - packages/cli/templates/hooks/fabric-hint.cjs (the readers themselves —
+ *     `_readConfigNumber`, `readArchiveHintHours`, `readReviewHintPendingCount`,
+ *     `readReviewHintPendingAgeDays`, `readMaintenanceHintDays`,
+ *     `readMaintenanceHintCooldownDays`, `readCooldownHours`,
+ *     `readUnderseedThreshold`, plus `readArchiveEditThreshold`)
+ *
+ * MAINTENANCE NOTE: when adding a new reader for a new fabric-config.json
+ * field, add the field to FABRIC_CONFIG_DEFAULTS below too — otherwise it
+ * remains invisible to fresh-init users (silent default-on-missing).
+ *
+ * The `knowledge_language` default is intentionally written as
+ * `"match-existing"` (matches the schema's `.default("match-existing")`),
+ * letting init/scan resolve the effective language from project content at
+ * runtime instead of hard-locking the policy. Users who want a fixed
+ * language flip the field to `"zh-CN"` or `"en"` after a fresh init.
+ *
+ * Idempotent: writes ONLY when the file does not exist. NEVER merges
+ * missing fields into an existing file. NEVER overwrites user edits.
+ * Both the regular init path AND the `--reapply` path share this helper
+ * with identical semantics — re-runs preserve user customisations
+ * verbatim.
  */
-async function maybeWriteImportSentinel(opts: {
-  target: string;
-  planOnly: boolean;
-  wizardEnabled: boolean;
-  terminalInteractive: boolean;
-}): Promise<void> {
-  if (opts.planOnly) return;
-  if (process.env.FABRIC_NONINTERACTIVE === "1") return;
-  // The wizard-enabled flag captures "interactive terminal + interactive
-  // requested". If either failed, skip the prompt — we don't want the
-  // sentinel written from a piped or batch invocation.
-  if (!opts.wizardEnabled || !opts.terminalInteractive) return;
-  // Belt-and-braces TTY check — the wizard path may have been forced by an
-  // external flag.
-  if (!Boolean(process.stdin.isTTY)) return;
+function writeDefaultFabricConfig(fabricDir: string): void {
+  const target = join(fabricDir, "fabric-config.json");
+  if (existsSync(target)) return;
 
-  const answer = await confirm({
-    message: "下次开 AI 时让我从 git log 抽更多知识吗?",
-    initialValue: true,
-  });
-  if (isCancel(answer) || answer !== true) return;
+  const FABRIC_CONFIG_DEFAULTS = {
+    // Scan/import language policy. `match-existing` lets init resolve the
+    // effective language from project content; explicit `zh-CN` / `en`
+    // lock the policy. See packages/shared/src/schemas/fabric-config.ts.
+    knowledge_language: "match-existing",
+    // fabric-hint Stop hook Signal A (archive): time-branch threshold, hours
+    // since last knowledge_proposed event.
+    archive_hint_hours: 24,
+    // fabric-hint Stop hook cooldown after ANY signal fires, in hours.
+    archive_hint_cooldown_hours: 12,
+    // fabric-hint Stop hook Signal B (review): pending-count cutoff.
+    review_hint_pending_count: 10,
+    // fabric-hint Stop hook Signal B (review): pending-age cutoff in days.
+    review_hint_pending_age_days: 7,
+    // fabric-hint Stop hook Signal D (maintenance): days since last doctor.
+    maintenance_hint_days: 14,
+    // fabric-hint Stop hook Signal D (maintenance): cooldown between
+    // reminders, in days.
+    maintenance_hint_cooldown_days: 7,
+    // fabric-hint Stop hook Signal A (archive): edit-count branch threshold;
+    // PreToolUse fires recorded in .fabric/.cache/edit-counter since the
+    // last knowledge_proposed event.
+    archive_edit_threshold: 20,
+    // fabric-hint Stop hook Signal C (import) + doctor lint #22: canonical
+    // knowledge node count below this value flags an underseeded workspace.
+    underseed_node_threshold: 10,
+  };
 
-  const fabricDir = join(opts.target, ".fabric");
-  const sentinelPath = join(fabricDir, ".import-requested");
-  try {
-    if (!existsSync(fabricDir)) {
-      mkdirSync(fabricDir, { recursive: true });
-    }
-    writeFileSync(sentinelPath, "", "utf8");
-    log.success("下次开 AI 会看到提示");
-  } catch {
-    // Silent — sentinel is best-effort.
-  }
+  mkdirSync(fabricDir, { recursive: true });
+  writeFileSync(target, JSON.stringify(FABRIC_CONFIG_DEFAULTS, null, 2) + "\n", "utf8");
 }
 
 function resolveInitCliIntent(args: InitArgs, targetInput: string): InitCliIntent {
@@ -624,6 +625,12 @@ export async function executeInitFabricPlan(plan: InitScaffoldPlan): Promise<Ini
   }
 
   mkdirSync(plan.fabricDir, { recursive: true });
+
+  // Scaffold a discoverable default fabric-config.json listing every
+  // reader-consumed field at its documented default. Idempotent: never
+  // overwrites pre-existing user edits, even on --reapply. See the
+  // helper's JSDoc for the source-of-truth field list.
+  writeDefaultFabricConfig(plan.fabricDir);
 
   // v2.0 follow-up (rc.1 fix #1): write the repo-root AGENTS.md anchor when
   // it does not already exist. This satisfies doctor's bootstrap_anchor_missing
@@ -1382,6 +1389,7 @@ function printInitPlanSummary(
   console.log(`  - ${target}/.fabric/agents.meta.json`);
   console.log(`  - ${target}/.fabric/events.jsonl`);
   console.log(`  - ${target}/.fabric/forensic.json`);
+  console.log(`  - ${target}/.fabric/fabric-config.json`);
 }
 
 function printInitCapabilitySummary(

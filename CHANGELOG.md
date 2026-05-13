@@ -5,6 +5,86 @@ All notable changes to Fabric will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0-rc.10] — 2026-05-13
+
+**Fabric UX dogfood fixes.** Resolves three first-time-user pain points
+surfaced during dogfooding plus the upstream MCP SDK misuse bug they
+exposed. The `.fabric/.import-requested` sentinel mechanism is retired
+entirely (clean-slate per zero-user-period preference) in favour of a
+deterministic SessionStart self-check.
+
+### Fixed
+
+- **`fab_review` MCP tool fully broken on every action**
+  (`Cannot read properties of undefined (reading '_zod')`): both
+  `inputSchema` and `outputSchema` were passed to `registerTool` as
+  `z.discriminatedUnion(...)`, but `@modelcontextprotocol/sdk@1.29.0`'s
+  `validateToolOutput` path requires a `z.object()`-shaped raw shape and
+  crashes on `schema._zod` access otherwise; the published JSON Schema
+  also degraded to empty `properties: {}` so `tools/list` clients could
+  not introspect any field. Fixed by splitting the schema into a flat
+  `ZodRawShape` (`FabReviewInputShape` / `FabReviewOutputShape`) for SDK
+  registration while keeping the existing `discriminatedUnion`
+  (`FabReviewInputSchema` / `FabReviewOutputSchema`) as the internal
+  authoritative contract used inside the handler via
+  `FabReviewInputSchema.parse(input)` for runtime cross-field strictness.
+  Adds a drift-guard unit test asserting the flat shape keys cover the
+  union of branch keys. Implemented in
+  `packages/shared/src/schemas/api-contracts.ts` and
+  `packages/server/src/tools/review.ts`.
+
+### Changed
+
+- **`fabric-import` no longer interrupted at pending count ≥ 10**:
+  `packages/cli/templates/hooks/fabric-hint.cjs` Signal B (review-hint
+  on pending overflow) now consults `isImportInFlight(cwd)` before
+  emitting `decision: "block"`. The helper reads
+  `.fabric/.import-state.json` and treats the project as in-flight when
+  `phase !== "complete"` and `last_checkpoint_at` is within
+  `IMPORT_IN_FLIGHT_MAX_AGE_HOURS` (= 24, hard-coded). Stale states
+  beyond 24h fall back to the previous behaviour. Signals A, C, D are
+  unchanged.
+- **`fabric init` now scaffolds a discoverable `.fabric/fabric-config.json`**:
+  `packages/cli/src/commands/init.ts` adds `writeDefaultFabricConfig()`
+  which writes every reader-consumed field
+  (`knowledge_language`, `archive_hint_hours`,
+  `archive_hint_cooldown_hours`, `review_hint_pending_count`,
+  `review_hint_pending_age_days`, `maintenance_hint_days`,
+  `maintenance_hint_cooldown_days`, `archive_edit_threshold`,
+  `underseed_node_threshold`) with documented defaults — idempotent on
+  re-run and `--reapply` (never overwrites user edits). Users no
+  longer have to grep source to discover available config knobs.
+- **`/fabric-import` recommendation now deterministic on first
+  SessionStart of a sparse-knowledge fresh init**:
+  `packages/cli/templates/hooks/knowledge-hint-broad.cjs` adds a
+  `shouldRecommendImport()` self-check (agents.meta.json present +
+  canonical count < `underseed_node_threshold` + `.import-state.json`
+  absent). When true, the banner bypasses the existing `revision_hash`
+  gate per-line so unchanged knowledge graphs still surface the hint;
+  the broad-summary body remains hash-gated. Replaces the sentinel
+  mechanism whose write was bypassed by every non-interactive
+  `fabric init` path (CI, `-y`, piped input, `--plan`,
+  `FABRIC_NONINTERACTIVE=1`, TTY-detection failures).
+
+### Removed
+
+- **`.fabric/.import-requested` sentinel mechanism (full retirement)**:
+  removed `IMPORT_REQUESTED_SENTINEL_FILE`,
+  `isImportRequestedSentinelPresent()`, `makeImportSentinelResult()`,
+  the `sentinelPresent` short-circuit in `main()`, and all related
+  exports / `CONSTANTS` keys from
+  `packages/cli/templates/hooks/fabric-hint.cjs` and
+  `packages/cli/templates/hooks/knowledge-hint-broad.cjs`. Removed
+  `maybeWriteImportSentinel` + its clack confirm prompt from
+  `packages/cli/src/commands/init.ts`. Removed the Phase 0 "Sentinel
+  Contract (rc.7 T1)" block and the Phase 3.4 "rc.7 T1 sentinel clear"
+  step from `packages/cli/templates/skills/fabric-import/SKILL.md`
+  (replaced with a 2-line retirement note pointing at the new
+  SessionStart self-check).
+- **`scripts/rc7-coverage-gate.mjs`**: one-shot historic lint script
+  (not in CI / `npm test`) whose post-conditions referenced the now-
+  removed sentinel identifiers. Its rc.7 closure purpose is complete.
+
 ## [2.0.0-rc.9] — 2026-05-13
 
 **`fab uninstall` command.** Symmetric inverse of `fab init` — removes

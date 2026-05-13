@@ -63,7 +63,11 @@ type HookModule = {
       reviewHintPendingCount?: number;
       reviewHintPendingAgeDays?: number;
     },
+    banner?: { activityOverview?: string },
+    importInFlight?: boolean,
   ) => HookDecision;
+  // v2.0.0-rc.8 (TASK-002): in-flight import gate for Signal B.
+  isImportInFlight: (projectRoot: string, now?: Date) => boolean;
   readUnderseedThreshold: (projectRoot: string) => number;
   readArchiveEditThreshold: (projectRoot: string) => number;
   // rc.7 T7: externalized-threshold readers.
@@ -107,6 +111,9 @@ type HookModule = {
     UNDERSEED_NO_PROPOSED_HOURS: number;
     EDIT_COUNTER_FILE_REL: string;
     DEFAULT_ARCHIVE_EDIT_THRESHOLD: number;
+    // v2.0.0-rc.8 (TASK-002): in-flight import gate for Signal B.
+    IMPORT_STATE_FILE_REL: string;
+    IMPORT_IN_FLIGHT_MAX_AGE_HOURS: number;
   };
 };
 
@@ -1841,102 +1848,174 @@ describe("fabric-hint.cjs — rc.7 T4 banner reformat", () => {
     expect(hook.countEditsSince(tempRoot, anchor)).toBe(3);
   });
 
-  it("rc.7 T1 sentinel: main() emits import signal AND bypasses cooldown when .fabric/.import-requested present", () => {
-    // Seed: a workspace with a fresh canonical corpus + a recent
-    // doctor_run + zero pending entries. Under organic decide(), no signal
-    // would fire. The sentinel must force a Signal C emission anyway.
-    mkdirSync(join(tempRoot, ".fabric"), { recursive: true });
-    const recentDoctor = makeEvent("doctor_run", NOW_MS - 1 * HOUR_MS, {
-      mode: "lint",
-      issues: 0,
-    });
-    writeFileSync(
-      join(tempRoot, ".fabric", "events.jsonl"),
-      `${JSON.stringify(recentDoctor)}\n`,
-      "utf8",
-    );
-    // Plant the sentinel.
-    writeFileSync(join(tempRoot, ".fabric", ".import-requested"), "", "utf8");
+  // v2.0.0-rc.8 (TASK-002) — Signal B in-flight import gate. Truth table for
+  // isImportInFlight() (see helper docstring for the canonical version):
+  //   .import-state.json missing                 → false (B fires)
+  //   phase=in-progress + checkpoint <24h        → true  (B silent)
+  //   phase==="complete"                         → false (B fires)
+  //   last_checkpoint_at >24h ago                → false (B fires)
+  //   malformed JSON / read error                → false (B fires; never-block)
+  //
+  // Each test seeds the pending dir to satisfy Signal B's count threshold
+  // (>=10 entries) so the gate is the ONLY variable under test.
+  function seedTenPending(root: string): void {
+    for (let i = 0; i < 10; i += 1) {
+      seedPendingFile(root, "decisions", `b-${i}`, NOW_MS - 1 * DAY_MS);
+    }
+  }
 
-    const writes: string[] = [];
-    const stdout = { write: (chunk: string) => writes.push(chunk) };
-    hook.main({ cwd: tempRoot, now: FIXED_NOW }, { stdout });
-    expect(writes).toHaveLength(1);
-    const payload = JSON.parse(writes[0] as string) as {
-      signal: string;
-      recommended_skill: string;
-      reason: string;
-    };
-    expect(payload.signal).toBe("import");
-    expect(payload.recommended_skill).toBe("fabric-import");
-    expect(payload.reason).toMatch(/fabric-import/);
-  });
-
-  it("rc.7 T1 sentinel: bypasses the archive_hint cooldown sidecar", () => {
-    mkdirSync(join(tempRoot, ".fabric", ".cache"), { recursive: true });
-    writeFileSync(join(tempRoot, ".fabric", "events.jsonl"), "", "utf8");
-    // Seed cooldown sidecar with a "we just emitted Signal C" timestamp
-    // (1h ago). Under default 12h cooldown this would silence the next
-    // organic Signal C emit. Sentinel must override.
-    writeFileSync(
-      join(tempRoot, ".fabric", ".cache", "archive-hint-shown.json"),
-      JSON.stringify({ import: NOW_MS - 1 * HOUR_MS }),
-      "utf8",
-    );
-    writeFileSync(join(tempRoot, ".fabric", ".import-requested"), "", "utf8");
-
+  it("test_signal_b_baseline_fires_when_import_state_missing_and_pending_overflow", () => {
+    seedTenPending(tempRoot);
+    // No .import-state.json planted at all.
     const writes: string[] = [];
     const stdout = { write: (chunk: string) => writes.push(chunk) };
     hook.main({ cwd: tempRoot, now: FIXED_NOW }, { stdout });
     expect(writes).toHaveLength(1);
     const payload = JSON.parse(writes[0] as string) as { signal: string };
-    expect(payload.signal).toBe("import");
-
-    // Sentinel-driven emit must NOT bump the cooldown sidecar — otherwise
-    // the next organic Signal C would be silenced prematurely.
-    const cooldownAfter = JSON.parse(
-      readFileSync(
-        join(tempRoot, ".fabric", ".cache", "archive-hint-shown.json"),
-        "utf8",
-      ),
-    ) as Record<string, number>;
-    expect(cooldownAfter.import).toBe(NOW_MS - 1 * HOUR_MS);
+    expect(payload.signal).toBe("review");
   });
 
-  it("rc.7 T1 sentinel: stays silent when sentinel absent (no false positives)", () => {
-    mkdirSync(join(tempRoot, ".fabric"), { recursive: true });
-    const recentDoctor = makeEvent("doctor_run", NOW_MS - 1 * HOUR_MS);
+  it("test_signal_b_silenced_when_import_state_phase_in_progress_and_checkpoint_fresh", () => {
+    seedTenPending(tempRoot);
+    // Phase mid-run + recent checkpoint (1h ago) → gate fires, B silenced.
     writeFileSync(
-      join(tempRoot, ".fabric", "events.jsonl"),
-      `${JSON.stringify(recentDoctor)}\n`,
+      join(tempRoot, ".fabric", ".import-state.json"),
+      JSON.stringify({
+        phase: "P2-done",
+        started_at: new Date(NOW_MS - 4 * HOUR_MS).toISOString(),
+        last_checkpoint_at: new Date(NOW_MS - 1 * HOUR_MS).toISOString(),
+      }),
       "utf8",
     );
-    // No sentinel. Workspace has no triggers — expect silence.
     const writes: string[] = [];
     const stdout = { write: (chunk: string) => writes.push(chunk) };
     hook.main({ cwd: tempRoot, now: FIXED_NOW }, { stdout });
+    // Nothing else fires (no events, fresh init not present), so silence.
     expect(writes).toEqual([]);
   });
 
-  it("isImportRequestedSentinelPresent / makeImportSentinelResult unit contract", () => {
-    const t1Hook = hook as HookModule & {
-      isImportRequestedSentinelPresent: (projectRoot: string) => boolean;
-      makeImportSentinelResult: () => {
-        decision: string;
-        reason: string;
-        signal: string;
-        recommended_skill: string;
-      };
-    };
-    expect(t1Hook.isImportRequestedSentinelPresent(tempRoot)).toBe(false);
+  it("test_signal_b_fires_when_import_state_phase_complete", () => {
+    seedTenPending(tempRoot);
+    writeFileSync(
+      join(tempRoot, ".fabric", ".import-state.json"),
+      JSON.stringify({
+        phase: "complete",
+        started_at: new Date(NOW_MS - 4 * HOUR_MS).toISOString(),
+        last_checkpoint_at: new Date(NOW_MS - 1 * HOUR_MS).toISOString(),
+      }),
+      "utf8",
+    );
+    const writes: string[] = [];
+    const stdout = { write: (chunk: string) => writes.push(chunk) };
+    hook.main({ cwd: tempRoot, now: FIXED_NOW }, { stdout });
+    expect(writes).toHaveLength(1);
+    const payload = JSON.parse(writes[0] as string) as { signal: string };
+    expect(payload.signal).toBe("review");
+  });
+
+  it("test_signal_b_fires_when_import_state_checkpoint_older_than_24h", () => {
+    seedTenPending(tempRoot);
+    // Phase mid-run BUT checkpoint >24h ago → treated as stale, B fires.
+    writeFileSync(
+      join(tempRoot, ".fabric", ".import-state.json"),
+      JSON.stringify({
+        phase: "P2-done",
+        started_at: new Date(NOW_MS - 30 * HOUR_MS).toISOString(),
+        last_checkpoint_at: new Date(NOW_MS - 25 * HOUR_MS).toISOString(),
+      }),
+      "utf8",
+    );
+    const writes: string[] = [];
+    const stdout = { write: (chunk: string) => writes.push(chunk) };
+    hook.main({ cwd: tempRoot, now: FIXED_NOW }, { stdout });
+    expect(writes).toHaveLength(1);
+    const payload = JSON.parse(writes[0] as string) as { signal: string };
+    expect(payload.signal).toBe("review");
+  });
+
+  it("test_signal_b_fires_when_import_state_json_malformed_never_block", () => {
+    seedTenPending(tempRoot);
+    // Malformed JSON → helper returns false → B is NOT gated → B fires.
+    // This is the never-block invariant: corruption must not permanently
+    // silence Signal B.
+    writeFileSync(
+      join(tempRoot, ".fabric", ".import-state.json"),
+      "{not-valid-json{{{",
+      "utf8",
+    );
+    const writes: string[] = [];
+    const stdout = { write: (chunk: string) => writes.push(chunk) };
+    hook.main({ cwd: tempRoot, now: FIXED_NOW }, { stdout });
+    expect(writes).toHaveLength(1);
+    const payload = JSON.parse(writes[0] as string) as { signal: string };
+    expect(payload.signal).toBe("review");
+  });
+
+  it("test_signal_a_c_d_behaviour_unchanged_with_import_in_flight", () => {
+    // Plant a fresh in-flight import-state — gate is active.
     mkdirSync(join(tempRoot, ".fabric"), { recursive: true });
-    writeFileSync(join(tempRoot, ".fabric", ".import-requested"), "", "utf8");
-    expect(t1Hook.isImportRequestedSentinelPresent(tempRoot)).toBe(true);
-    const r = t1Hook.makeImportSentinelResult();
-    expect(r.signal).toBe("import");
-    expect(r.recommended_skill).toBe("fabric-import");
-    expect(r.decision).toBe("block");
-    expect(r.reason).toMatch(/fabric-import/);
+    writeFileSync(
+      join(tempRoot, ".fabric", ".import-state.json"),
+      JSON.stringify({
+        phase: "P2-done",
+        last_checkpoint_at: new Date(NOW_MS - 1 * HOUR_MS).toISOString(),
+      }),
+      "utf8",
+    );
+
+    // Signal A: knowledge_proposed 25h ago → must still fire.
+    const archiveEvents = [
+      makeEvent("knowledge_proposed", NOW_MS - 25 * HOUR_MS, {
+        timestamp: new Date(NOW_MS - 25 * HOUR_MS).toISOString(),
+      }),
+    ];
+    const a = hook.decide(archiveEvents, FIXED_NOW, undefined, undefined, undefined, undefined, undefined, true);
+    expect(a?.signal).toBe("archive");
+
+    // Signal C: underseeded + init_scan_completed >24h ago + no proposed
+    // → must still fire even with importInFlight=true.
+    const c = hook.decide(
+      [makeEvent("init_scan_completed", NOW_MS - 48 * HOUR_MS)],
+      FIXED_NOW,
+      undefined,
+      { nodeCount: 3, threshold: 10 },
+      undefined,
+      undefined,
+      undefined,
+      true,
+    );
+    expect(c?.signal).toBe("import");
+
+    // Signal D: helper is independent of decide(); verify it still fires.
+    const d = hook.evaluateMaintenanceSignal([], FIXED_NOW, 10, null);
+    expect(d?.signal).toBe("maintenance");
+  });
+
+  it("test_no_sentinel_constant_or_helper_exported", () => {
+    const exported = hook as unknown as Record<string, unknown>;
+    expect(exported.isImportRequestedSentinelPresent).toBeUndefined();
+    expect(exported.makeImportSentinelResult).toBeUndefined();
+    const consts = hook.CONSTANTS as unknown as Record<string, unknown>;
+    expect(consts.IMPORT_REQUESTED_SENTINEL_FILE).toBeUndefined();
+  });
+
+  it("test_module_exports_contain_no_sentinel_keys", () => {
+    const allKeys = Object.keys(hook as unknown as Record<string, unknown>);
+    for (const k of allKeys) {
+      expect(k.toLowerCase()).not.toMatch(/sentinel/);
+      expect(k).not.toMatch(/import.?requested/i);
+    }
+    const constKeys = Object.keys(hook.CONSTANTS as unknown as Record<string, unknown>);
+    for (const k of constKeys) {
+      expect(k.toLowerCase()).not.toMatch(/sentinel/);
+      expect(k).not.toMatch(/import.?requested/i);
+    }
+    // Positive: the new in-flight gate identifiers ARE exported.
+    expect(typeof (hook as unknown as Record<string, unknown>).isImportInFlight).toBe(
+      "function",
+    );
+    expect(hook.CONSTANTS.IMPORT_IN_FLIGHT_MAX_AGE_HOURS).toBe(24);
+    expect(typeof hook.CONSTANTS.IMPORT_STATE_FILE_REL).toBe("string");
   });
 
   it("none of the rendered reason strings mention 'candidates detected'", () => {
