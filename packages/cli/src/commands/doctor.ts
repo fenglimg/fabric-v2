@@ -2,6 +2,7 @@ import { confirm, isCancel } from "@clack/prompts";
 import { defineCommand } from "citty";
 
 import {
+  appendEventLedgerEvent,
   checkLockOrThrow,
   runDoctorApplyLint,
   runDoctorFix,
@@ -178,6 +179,23 @@ export const doctorCommand = defineCommand({
       renderHumanReport(report);
     }
 
+    // v2.0.0-rc.7 T10: emit doctor_run event so Signal D in fabric-hint can
+    // detect maintenance cadence (Q-16 closure). Best-effort — a write
+    // failure must NOT change doctor's exit semantics. We compute the total
+    // issue count from the final report (fixable + manual + warnings) so the
+    // event is meaningful for both --lint and --apply-lint modes.
+    await emitDoctorRunEventBestEffort(resolution.target, {
+      mode: applyLint ? "apply-lint" : "lint",
+      issues:
+        report.fixable_errors.length +
+        report.manual_errors.length +
+        report.warnings.length,
+      mutations:
+        applyLintReport !== null
+          ? applyLintReport.mutations.filter((m) => m.applied).length
+          : undefined,
+    });
+
     // Exit code rules:
     //   * --apply-lint aborted (manual_error blocker) → 1
     //   * --apply-lint with any failed mutation → 1
@@ -249,6 +267,26 @@ function renderStatus(status: "ok" | "warn" | "error"): string {
 
 function writeStdout(message: string): void {
   process.stdout.write(`${message}\n`);
+}
+
+// v2.0.0-rc.7 T10: emit doctor_run to events.jsonl. Mirrors the
+// best-effort policy used elsewhere (extract-knowledge, plan-context):
+// observability writes never propagate failures to the caller.
+async function emitDoctorRunEventBestEffort(
+  projectRoot: string,
+  payload: { mode: "lint" | "apply-lint"; issues: number; mutations?: number },
+): Promise<void> {
+  try {
+    await appendEventLedgerEvent(projectRoot, {
+      event_type: "doctor_run",
+      timestamp: new Date().toISOString(),
+      mode: payload.mode,
+      issues: payload.issues,
+      ...(payload.mutations !== undefined ? { mutations: payload.mutations } : {}),
+    });
+  } catch {
+    // Silent — observability only.
+  }
 }
 
 function writeStderr(message: string): void {

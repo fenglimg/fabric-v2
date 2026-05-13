@@ -295,6 +295,27 @@ export const knowledgeScopeDegradedEventSchema = z.object({
   reason: z.string(),
 });
 
+// v2.0.0-rc.7 T10: emitted by `fabric doctor` at the end of every invocation
+// (both --lint report-only and --apply-lint mutation modes). Drives Signal D
+// (maintenance hint) in the fabric-hint Stop hook: when no doctor_run event
+// has fired in `maintenance_hint_days` (default 14) AND canonical entries ≥5,
+// the hook surfaces a "run `fabric doctor --lint`" reminder. The maintenance
+// signal closes Q-16 — without an emit site the chain stayed dormant.
+//
+// `mode`: "lint" for read-only reports, "apply-lint" for mutation runs.
+// `issues`: total fixable+manual+warning count surfaced by the report. Drives
+//   future "did this run actually do anything?" telemetry.
+// `mutations`: count of applied mutations (apply-lint only — undefined for
+//   plain --lint runs). Keep optional to leave the --lint payload narrow.
+export const doctorRunEventSchema = z.object({
+  ...eventLedgerEnvelopeSchema,
+  event_type: z.literal("doctor_run"),
+  mode: z.enum(["lint", "apply-lint"]),
+  issues: z.number().int().nonnegative(),
+  mutations: z.number().int().nonnegative().optional(),
+  timestamp: z.string().datetime(),
+});
+
 // v2.0 rc.5 TASK-013 (C4): emitted by doctor lint #24 (relevance_paths_dangling)
 // when `--apply-lint` (future rc.7+ behavior) prunes a glob from a canonical
 // entry's `relevance_paths` because the glob resolves to zero matches in the
@@ -367,6 +388,8 @@ export const eventLedgerEventSchema = z.discriminatedUnion("event_type", [
   // v2.0 rc.5 TASK-013 (C4): knowledge_path_dangled — emitted by doctor lint
   // #24 when a glob in relevance_paths resolves to zero filesystem matches.
   knowledgePathDangledEventSchema,
+  // v2.0.0-rc.7 T10: doctor_run — emitted by `fabric doctor` to drive Signal D.
+  doctorRunEventSchema,
 ]);
 
 export type KnowledgeContextPlannedEvent = z.infer<typeof knowledgeContextPlannedEventSchema>;
@@ -399,6 +422,7 @@ export type KnowledgeConsumedEvent = z.infer<typeof knowledgeConsumedEventSchema
 export type KnowledgeScopeDegradedEvent = z.infer<typeof knowledgeScopeDegradedEventSchema>;
 export type PendingAutoArchivedEvent = z.infer<typeof pendingAutoArchivedEventSchema>;
 export type KnowledgePathDangledEvent = z.infer<typeof knowledgePathDangledEventSchema>;
+export type DoctorRunEvent = z.infer<typeof doctorRunEventSchema>;
 export type EventLedgerEvent =
   | KnowledgeContextPlannedEvent
   | KnowledgeSelectionEvent
@@ -429,7 +453,8 @@ export type EventLedgerEvent =
   | KnowledgeConsumedEvent
   | KnowledgeScopeDegradedEvent
   | PendingAutoArchivedEvent
-  | KnowledgePathDangledEvent;
+  | KnowledgePathDangledEvent
+  | DoctorRunEvent;
 export type EventLedgerEventType = EventLedgerEvent["event_type"];
 type EventLedgerEventInputFor<T extends EventLedgerEvent> = T extends EventLedgerEvent
   ? Omit<T, "kind" | "id" | "ts" | "schema_version" | "correlation_id" | "session_id"> &

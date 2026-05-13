@@ -341,6 +341,83 @@ async function checkT05CrossSessionDigest() {
 }
 
 // ---------------------------------------------------------------------------
+// T10 — fabric-hint Signal D + doctor_run event (Q-16 closure)
+//   * doctor_run event schema declared in shared/schemas/event-ledger.ts
+//   * doctor.ts emits doctor_run at end of run (both --lint and --apply-lint)
+//   * fabric-hint.cjs adds evaluateMaintenanceSignal + cooldown sidecar
+//   * Banner uses zh-CN T10 phrasing; recommended_skill = null (CLI rec)
+// ---------------------------------------------------------------------------
+
+async function checkT10MaintenanceSignal() {
+  const failures = [];
+
+  const eventSchema = readText("packages/shared/src/schemas/event-ledger.ts");
+  if (eventSchema === undefined) {
+    return {
+      id: "T10",
+      name: "fabric-hint Signal D + doctor_run event (T10)",
+      passed: false,
+      details: "packages/shared/src/schemas/event-ledger.ts not found",
+    };
+  }
+  if (!/doctorRunEventSchema\s*=\s*z\.object/.test(eventSchema)) {
+    failures.push("event-ledger.ts: missing doctorRunEventSchema declaration");
+  }
+  if (!/event_type:\s*z\.literal\("doctor_run"\)/.test(eventSchema)) {
+    failures.push("event-ledger.ts: doctorRunEventSchema does not declare event_type literal 'doctor_run'");
+  }
+  if (!/mode:\s*z\.enum\(\["lint",\s*"apply-lint"\]\)/.test(eventSchema)) {
+    failures.push("event-ledger.ts: doctorRunEventSchema mode enum missing ['lint','apply-lint']");
+  }
+  if (!/doctorRunEventSchema,/.test(eventSchema)) {
+    failures.push("event-ledger.ts: doctorRunEventSchema not added to discriminated union");
+  }
+
+  const doctor = readText("packages/cli/src/commands/doctor.ts");
+  if (doctor === undefined) {
+    failures.push("doctor.ts: not found");
+  } else {
+    if (!/emitDoctorRunEventBestEffort/.test(doctor)) {
+      failures.push("doctor.ts: missing emitDoctorRunEventBestEffort helper");
+    }
+    if (!/event_type:\s*"doctor_run"/.test(doctor)) {
+      failures.push("doctor.ts: does not emit event_type: 'doctor_run' on the events.jsonl append path");
+    }
+  }
+
+  const hook = readText("packages/cli/templates/hooks/fabric-hint.cjs");
+  if (hook === undefined) {
+    failures.push("fabric-hint.cjs: not found");
+  } else {
+    if (!/evaluateMaintenanceSignal/.test(hook)) {
+      failures.push("fabric-hint.cjs: missing evaluateMaintenanceSignal helper");
+    }
+    if (!/signal:\s*"maintenance"/.test(hook)) {
+      failures.push("fabric-hint.cjs: missing signal: 'maintenance' branch (T10 banner output shape)");
+    }
+    if (!/maintenance-hint-last-emit/.test(hook)) {
+      failures.push("fabric-hint.cjs: missing maintenance-hint-last-emit cooldown sidecar wiring");
+    }
+    if (!/fabric doctor --lint/.test(hook)) {
+      failures.push("fabric-hint.cjs: banner does not reference `fabric doctor --lint` CLI invocation");
+    }
+    if (!/recommended_skill:\s*null/.test(hook)) {
+      failures.push("fabric-hint.cjs: Signal D branch must set recommended_skill: null (CLI rec, not Skill)");
+    }
+  }
+
+  if (failures.length === 0) {
+    return { id: "T10", name: "fabric-hint Signal D + doctor_run event (T10)", passed: true };
+  }
+  return {
+    id: "T10",
+    name: "fabric-hint Signal D + doctor_run event (T10)",
+    passed: false,
+    details: failures.join("\n"),
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Driver
 // ---------------------------------------------------------------------------
 
@@ -349,6 +426,7 @@ async function main() {
   checks.push(await checkT09PlanContextSymmetric());
   checks.push(await checkT06PendingSelfContained());
   checks.push(await checkT05CrossSessionDigest());
+  checks.push(await checkT10MaintenanceSignal());
 
   const passed = checks.every((c) => c.passed);
   const headerWidth = Math.max(...checks.map((c) => c.name.length)) + 4;

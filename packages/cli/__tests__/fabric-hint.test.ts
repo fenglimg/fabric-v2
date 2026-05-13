@@ -10,6 +10,7 @@
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+  existsSync,
   mkdirSync,
   mkdtempSync,
   rmSync,
@@ -70,6 +71,20 @@ type HookModule = {
   readReviewHintPendingAgeDays: (projectRoot: string) => number;
   readMaintenanceHintDays: (projectRoot: string) => number;
   readMaintenanceHintCooldownDays: (projectRoot: string) => number;
+  // rc.7 T10: Signal D helpers.
+  evaluateMaintenanceSignal: (
+    events: Array<Record<string, unknown>>,
+    now: Date,
+    canonicalCount: number,
+    lastEmitMs: number | null,
+    thresholds?: {
+      maintenanceHintDays?: number;
+      maintenanceHintCooldownDays?: number;
+    },
+  ) => HookDecision | { decision: "block"; reason: string; signal: "maintenance"; recommended_skill: null } | null;
+  findLastDoctorRunTs: (events: Array<Record<string, unknown>>) => number | null;
+  readMaintenanceLastEmit: (projectRoot: string) => number | null;
+  writeMaintenanceLastEmit: (projectRoot: string, nowMs: number) => void;
   CONSTANTS: {
     FABRIC_DIR: string;
     EVENT_LEDGER_FILE: string;
@@ -1097,9 +1112,18 @@ describe("fabric-hint.cjs — main (import signal integration)", () => {
   it("silent exit 0 when corpus is well-seeded (>= threshold)", () => {
     mkdirSync(join(tempRoot, ".fabric"), { recursive: true });
     const initEvent = makeEvent("init_scan_completed", NOW_MS - 48 * HOUR_MS);
+    // rc.7 T10: also seed a recent doctor_run so Signal D stays silent;
+    // otherwise a well-seeded workspace with no doctor_run history would
+    // (correctly) trip the maintenance signal and this test would no longer
+    // assert silence.
+    const recentDoctor = makeEvent("doctor_run", NOW_MS - 1 * HOUR_MS, {
+      mode: "lint",
+      issues: 0,
+      timestamp: new Date(NOW_MS - 1 * HOUR_MS).toISOString(),
+    });
     writeFileSync(
       join(tempRoot, ".fabric", "events.jsonl"),
-      `${JSON.stringify(initEvent)}\n`,
+      `${JSON.stringify(initEvent)}\n${JSON.stringify(recentDoctor)}\n`,
       "utf8",
     );
     for (let i = 0; i < 12; i += 1) {
@@ -1273,6 +1297,262 @@ describe("fabric-hint.cjs — rc.7 T7 externalized threshold readers", () => {
     );
     expect(result).not.toBeNull();
     expect(result?.signal).toBe("archive");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// rc.7 T10 — Signal D (maintenance hint) + doctor_run event integration.
+// ---------------------------------------------------------------------------
+
+describe("fabric-hint.cjs — evaluateMaintenanceSignal (rc.7 T10)", () => {
+  it("returns null when canonical_count < 5 (fresh workspace has nothing to lint)", () => {
+    const result = hook.evaluateMaintenanceSignal([], FIXED_NOW, 3, null);
+    expect(result).toBeNull();
+  });
+
+  it("returns null when last doctor_run was within maintenance_hint_days", () => {
+    const recentDoctor = NOW_MS - 5 * DAY_MS; // 5d ago, threshold 14d → silent
+    const events = [makeEvent("doctor_run", recentDoctor)];
+    const result = hook.evaluateMaintenanceSignal(events, FIXED_NOW, 10, null);
+    expect(result).toBeNull();
+  });
+
+  it("fires when doctor_run >= maintenance_hint_days AND canonical_count >= 5", () => {
+    const staleDoctor = NOW_MS - 20 * DAY_MS; // 20d ago, threshold 14d → fires
+    const events = [makeEvent("doctor_run", staleDoctor)];
+    const result = hook.evaluateMaintenanceSignal(events, FIXED_NOW, 10, null);
+    expect(result).not.toBeNull();
+    expect(result?.signal).toBe("maintenance");
+    expect(result?.recommended_skill).toBeNull();
+    expect(result?.reason).toMatch(/已 14 天未跑 lint/);
+    expect(result?.reason).toMatch(/fabric doctor --lint/);
+  });
+
+  it("fires when no doctor_run event has ever been recorded AND canonical_count >= 5", () => {
+    const result = hook.evaluateMaintenanceSignal([], FIXED_NOW, 10, null);
+    expect(result).not.toBeNull();
+    expect(result?.signal).toBe("maintenance");
+    // Different message branch for the "never ran" case.
+    expect(result?.reason).toMatch(/从未运行 lint 检查/);
+  });
+
+  it("respects cooldown sidecar: silent within cooldown_days of last emit", () => {
+    // Doctor_run >14d ago triggers, but Signal D was emitted 3d ago — silent
+    // due to 7d default cooldown.
+    const staleDoctor = NOW_MS - 30 * DAY_MS;
+    const recentEmit = NOW_MS - 3 * DAY_MS;
+    const events = [makeEvent("doctor_run", staleDoctor)];
+    const result = hook.evaluateMaintenanceSignal(events, FIXED_NOW, 10, recentEmit);
+    expect(result).toBeNull();
+  });
+
+  it("re-fires after cooldown elapses (8d > 7d default cooldown)", () => {
+    const staleDoctor = NOW_MS - 30 * DAY_MS;
+    const oldEmit = NOW_MS - 8 * DAY_MS;
+    const events = [makeEvent("doctor_run", staleDoctor)];
+    const result = hook.evaluateMaintenanceSignal(events, FIXED_NOW, 10, oldEmit);
+    expect(result).not.toBeNull();
+    expect(result?.signal).toBe("maintenance");
+  });
+
+  it("honours custom maintenance_hint_days override", () => {
+    // 10d-old doctor_run; default 14d would be silent, but custom 7d fires.
+    const doctorTs = NOW_MS - 10 * DAY_MS;
+    const events = [makeEvent("doctor_run", doctorTs)];
+    const silent = hook.evaluateMaintenanceSignal(events, FIXED_NOW, 10, null, {
+      maintenanceHintDays: 14,
+    });
+    expect(silent).toBeNull();
+    const fired = hook.evaluateMaintenanceSignal(events, FIXED_NOW, 10, null, {
+      maintenanceHintDays: 7,
+    });
+    expect(fired).not.toBeNull();
+    expect(fired?.signal).toBe("maintenance");
+  });
+
+  it("honours custom maintenance_hint_cooldown_days override (1d cooldown re-fires faster)", () => {
+    const staleDoctor = NOW_MS - 30 * DAY_MS;
+    const recentEmit = NOW_MS - 2 * DAY_MS; // 2d ago
+    const events = [makeEvent("doctor_run", staleDoctor)];
+    // 7d default cooldown → silent
+    expect(
+      hook.evaluateMaintenanceSignal(events, FIXED_NOW, 10, recentEmit),
+    ).toBeNull();
+    // 1d override → fires
+    const r = hook.evaluateMaintenanceSignal(events, FIXED_NOW, 10, recentEmit, {
+      maintenanceHintCooldownDays: 1,
+    });
+    expect(r).not.toBeNull();
+    expect(r?.signal).toBe("maintenance");
+  });
+});
+
+describe("fabric-hint.cjs — findLastDoctorRunTs (rc.7 T10)", () => {
+  it("returns null on empty ledger", () => {
+    expect(hook.findLastDoctorRunTs([])).toBeNull();
+  });
+
+  it("returns null when no doctor_run event exists", () => {
+    const events = [
+      makeEvent("knowledge_proposed", 100),
+      makeEvent("knowledge_context_planned", 200),
+    ];
+    expect(hook.findLastDoctorRunTs(events)).toBeNull();
+  });
+
+  it("returns the most recent doctor_run ts (tail-first scan)", () => {
+    const events = [
+      makeEvent("doctor_run", 100),
+      makeEvent("knowledge_proposed", 200),
+      makeEvent("doctor_run", 300),
+      makeEvent("knowledge_proposed", 400),
+    ];
+    expect(hook.findLastDoctorRunTs(events)).toBe(300);
+  });
+});
+
+describe("fabric-hint.cjs — main (Signal D end-to-end, rc.7 T10)", () => {
+  let tempRoot: string;
+
+  beforeEach(() => {
+    tempRoot = mkdtempSync(join(tmpdir(), "fabric-hint-sigd-"));
+  });
+
+  afterEach(() => {
+    try {
+      rmSync(tempRoot, { recursive: true, force: true });
+    } catch {
+      // best-effort
+    }
+  });
+
+  function seedCanonical(root: string, count: number): void {
+    const dir = join(root, ".fabric", "knowledge", "decisions");
+    mkdirSync(dir, { recursive: true });
+    for (let i = 0; i < count; i += 1) {
+      writeFileSync(join(dir, `KT-DEC-${i}.md`), "# stub\n", "utf8");
+    }
+  }
+
+  it("emits Signal D when no doctor_run ever AND canonical >= 5", () => {
+    mkdirSync(join(tempRoot, ".fabric"), { recursive: true });
+    // Empty events.jsonl is fine — no doctor_run, no archive triggers.
+    writeFileSync(join(tempRoot, ".fabric", "events.jsonl"), "", "utf8");
+    seedCanonical(tempRoot, 5);
+
+    const writes: string[] = [];
+    const stdout = { write: (chunk: string) => writes.push(chunk) };
+    hook.main({ cwd: tempRoot, now: FIXED_NOW }, { stdout });
+
+    expect(writes).toHaveLength(1);
+    const payload = JSON.parse(writes[0] as string) as {
+      signal: string;
+      recommended_skill: unknown;
+      reason: string;
+    };
+    expect(payload.signal).toBe("maintenance");
+    expect(payload.recommended_skill).toBeNull();
+    expect(payload.reason).toMatch(/从未运行 lint 检查/);
+    // Cooldown sidecar written.
+    const sidecar = join(tempRoot, ".fabric", ".cache", "maintenance-hint-last-emit");
+    expect(existsSync(sidecar)).toBe(true);
+  });
+
+  it("does NOT fire Signal D when canonical < 5 (fresh-init guard)", () => {
+    mkdirSync(join(tempRoot, ".fabric"), { recursive: true });
+    writeFileSync(join(tempRoot, ".fabric", "events.jsonl"), "", "utf8");
+    seedCanonical(tempRoot, 3); // below threshold
+
+    const writes: string[] = [];
+    const stdout = { write: (chunk: string) => writes.push(chunk) };
+    hook.main({ cwd: tempRoot, now: FIXED_NOW }, { stdout });
+    expect(writes).toEqual([]);
+  });
+
+  it("does NOT fire Signal D when doctor_run < 14d ago", () => {
+    mkdirSync(join(tempRoot, ".fabric"), { recursive: true });
+    const recentDoctor = NOW_MS - 5 * DAY_MS;
+    const line = JSON.stringify(makeEvent("doctor_run", recentDoctor));
+    writeFileSync(join(tempRoot, ".fabric", "events.jsonl"), `${line}\n`, "utf8");
+    seedCanonical(tempRoot, 10);
+
+    const writes: string[] = [];
+    const stdout = { write: (chunk: string) => writes.push(chunk) };
+    hook.main({ cwd: tempRoot, now: FIXED_NOW }, { stdout });
+    expect(writes).toEqual([]);
+  });
+
+  it("does NOT re-fire Signal D within 7d cooldown (sidecar present)", () => {
+    mkdirSync(join(tempRoot, ".fabric"), { recursive: true });
+    writeFileSync(join(tempRoot, ".fabric", "events.jsonl"), "", "utf8");
+    seedCanonical(tempRoot, 10);
+
+    // Sidecar: emitted 3d ago.
+    const sidecarDir = join(tempRoot, ".fabric", ".cache");
+    mkdirSync(sidecarDir, { recursive: true });
+    writeFileSync(
+      join(sidecarDir, "maintenance-hint-last-emit"),
+      new Date(NOW_MS - 3 * DAY_MS).toISOString(),
+      "utf8",
+    );
+
+    const writes: string[] = [];
+    const stdout = { write: (chunk: string) => writes.push(chunk) };
+    hook.main({ cwd: tempRoot, now: FIXED_NOW }, { stdout });
+    expect(writes).toEqual([]);
+  });
+
+  it("emits Signal D AFTER A/B/C are silent (precedence: maintenance is last)", () => {
+    // Build a workspace where:
+    //   - knowledge_proposed fired 5h ago (Signal A silent)
+    //   - 0 pending entries (Signal B silent)
+    //   - init_scan_completed 2d ago, 50 canonical entries (Signal C silent)
+    //   - No doctor_run event (Signal D fires)
+    mkdirSync(join(tempRoot, ".fabric"), { recursive: true });
+    const proposedTs = NOW_MS - 5 * HOUR_MS;
+    const initTs = NOW_MS - 2 * DAY_MS;
+    const lines = [
+      JSON.stringify(makeEvent("init_scan_completed", initTs)),
+      JSON.stringify(makeEvent("knowledge_proposed", proposedTs)),
+    ];
+    writeFileSync(
+      join(tempRoot, ".fabric", "events.jsonl"),
+      lines.map((l) => `${l}\n`).join(""),
+      "utf8",
+    );
+    seedCanonical(tempRoot, 50);
+
+    const writes: string[] = [];
+    const stdout = { write: (chunk: string) => writes.push(chunk) };
+    hook.main({ cwd: tempRoot, now: FIXED_NOW }, { stdout });
+
+    expect(writes).toHaveLength(1);
+    const payload = JSON.parse(writes[0] as string) as { signal: string };
+    expect(payload.signal).toBe("maintenance");
+  });
+
+  it("honours fabric-config.json maintenance_hint_days override", () => {
+    mkdirSync(join(tempRoot, ".fabric"), { recursive: true });
+    // Doctor ran 10d ago; default 14d → silent. Override 7d → fires.
+    const doctorTs = NOW_MS - 10 * DAY_MS;
+    writeFileSync(
+      join(tempRoot, ".fabric", "events.jsonl"),
+      `${JSON.stringify(makeEvent("doctor_run", doctorTs))}\n`,
+      "utf8",
+    );
+    writeFileSync(
+      join(tempRoot, ".fabric", "fabric-config.json"),
+      JSON.stringify({ maintenance_hint_days: 7 }),
+      "utf8",
+    );
+    seedCanonical(tempRoot, 10);
+
+    const writes: string[] = [];
+    const stdout = { write: (chunk: string) => writes.push(chunk) };
+    hook.main({ cwd: tempRoot, now: FIXED_NOW }, { stdout });
+    expect(writes).toHaveLength(1);
+    const payload = JSON.parse(writes[0] as string) as { signal: string };
+    expect(payload.signal).toBe("maintenance");
   });
 });
 

@@ -20,6 +20,8 @@ const FABRIC_DIR = ".fabric";
 const EVENT_LEDGER_FILE = "events.jsonl";
 const EVENT_TYPE_PROPOSED = "knowledge_proposed";
 const EVENT_TYPE_INIT_SCAN_COMPLETED = "init_scan_completed";
+// v2.0.0-rc.7 T10: doctor_run event drives Signal D (maintenance hint).
+const EVENT_TYPE_DOCTOR_RUN = "doctor_run";
 // rc.6 TASK-022 (E5): Signal A is now `24h OR N-edits since last
 // knowledge_proposed`. The edit-count branch reads
 // `.fabric/.cache/edit-counter` (one ISO-8601 line per PreToolUse fire,
@@ -85,6 +87,16 @@ const DEFAULT_COOLDOWN_HOURS = 12;
 // post-upgrade. The schema is signal-keyed (archive/review/import) so the new
 // import signal slot lives alongside the existing two.
 const SHOWN_CACHE_FILE = ".fabric/.cache/archive-hint-shown.json";
+
+// v2.0.0-rc.7 T10: dedicated Signal-D cooldown sidecar. The shared
+// SHOWN_CACHE_FILE above is signal-keyed (archive/review/import) and uses
+// hours-based cooldown; the maintenance signal uses a day-based threshold
+// (default 7d) so we keep it in its own sidecar to avoid mixing semantics.
+const MAINTENANCE_HINT_LAST_EMIT_FILE = ".fabric/.cache/maintenance-hint-last-emit";
+// Signal-D gate: only nag when canonical corpus has at least this many
+// entries. A fresh-init workspace shouldn't be reminded to run lint when
+// there's barely anything TO lint.
+const MAINTENANCE_HINT_MIN_CANONICAL = 5;
 
 /**
  * Read the events.jsonl ledger from <projectRoot>/.fabric/events.jsonl.
@@ -570,6 +582,122 @@ function writeShownCache(projectRoot, cache) {
 }
 
 /**
+ * v2.0.0-rc.7 T10: find the most recent doctor_run event ts in the ledger.
+ * Returns the ts (epoch ms) of the newest doctor_run event, or null if none
+ * has ever fired. Walks the events array tail-first for efficiency (early-out
+ * on first match).
+ */
+function findLastDoctorRunTs(events) {
+  if (!Array.isArray(events)) return null;
+  for (let i = events.length - 1; i >= 0; i -= 1) {
+    const ev = events[i];
+    if (ev && ev.event_type === EVENT_TYPE_DOCTOR_RUN && typeof ev.ts === "number") {
+      return ev.ts;
+    }
+  }
+  return null;
+}
+
+/**
+ * v2.0.0-rc.7 T10: read the Signal-D cooldown sidecar timestamp (epoch ms).
+ * Missing file / parse failure → null (allow signal to fire).
+ */
+function readMaintenanceLastEmit(projectRoot) {
+  const p = join(projectRoot, MAINTENANCE_HINT_LAST_EMIT_FILE);
+  if (!existsSync(p)) return null;
+  try {
+    const raw = readFileSync(p, "utf8").trim();
+    if (raw.length === 0) return null;
+    const ms = Date.parse(raw);
+    if (Number.isFinite(ms)) return ms;
+    const asNum = Number(raw);
+    if (Number.isFinite(asNum) && asNum > 0) return asNum;
+  } catch {
+    // ignore
+  }
+  return null;
+}
+
+function writeMaintenanceLastEmit(projectRoot, nowMs) {
+  const p = join(projectRoot, MAINTENANCE_HINT_LAST_EMIT_FILE);
+  try {
+    mkdirSync(dirname(p), { recursive: true });
+    writeFileSync(p, new Date(nowMs).toISOString());
+  } catch {
+    // Silent — sidecar failure must never block the hook.
+  }
+}
+
+/**
+ * v2.0.0-rc.7 T10: Signal D — maintenance hint.
+ *
+ * Trigger when ALL of the following hold:
+ *   1. No doctor_run event has fired in the last `maintenance_hint_days`
+ *      (default 14), OR no doctor_run event has ever fired.
+ *   2. Canonical node count >= MAINTENANCE_HINT_MIN_CANONICAL (default 5).
+ *      A fresh workspace with no knowledge has nothing to lint.
+ *   3. Cooldown: not within `maintenance_hint_cooldown_days` (default 7) of
+ *      the previous Signal-D emit. Tracked via dedicated sidecar
+ *      `.fabric/.cache/maintenance-hint-last-emit`.
+ *
+ * Returns one of:
+ *   - { decision: 'block', reason, signal: 'maintenance', recommended_skill: null }
+ *   - null on no trigger
+ *
+ * `recommended_skill` is intentionally null — the maintenance prompt
+ * recommends a CLI invocation (`fabric doctor --lint`), not a Skill, because
+ * doctor is a CLI surface (Q-13 boundary). The hook payload still shapes the
+ * `recommended_skill` key so consumers can branch on it.
+ */
+function evaluateMaintenanceSignal(events, now, canonicalCount, lastEmitMs, thresholds) {
+  const nowMs = now instanceof Date ? now.getTime() : Number(now) || Date.now();
+  const cfg = thresholds || {};
+  const days =
+    typeof cfg.maintenanceHintDays === "number" && cfg.maintenanceHintDays > 0
+      ? cfg.maintenanceHintDays
+      : DEFAULT_MAINTENANCE_HINT_DAYS;
+  const cooldownDays =
+    typeof cfg.maintenanceHintCooldownDays === "number" && cfg.maintenanceHintCooldownDays > 0
+      ? cfg.maintenanceHintCooldownDays
+      : DEFAULT_MAINTENANCE_HINT_COOLDOWN_DAYS;
+
+  if (canonicalCount < MAINTENANCE_HINT_MIN_CANONICAL) {
+    return null;
+  }
+
+  // Cooldown gate — short-circuit when we just nagged.
+  if (
+    typeof lastEmitMs === "number" &&
+    Number.isFinite(lastEmitMs) &&
+    nowMs - lastEmitMs < cooldownDays * MS_PER_DAY
+  ) {
+    return null;
+  }
+
+  const lastDoctorTs = findLastDoctorRunTs(events);
+  // Build a reason line tailored to the "never" vs "stale" branch so the
+  // user sees an honest diagnosis. The Chinese phrasing is contract-locked
+  // (T10 spec) — keep it stable across rc.7 patches.
+  let ageDays = null;
+  if (lastDoctorTs !== null) {
+    ageDays = (nowMs - lastDoctorTs) / MS_PER_DAY;
+    if (ageDays < days) return null; // doctor ran recently, no nag.
+  }
+
+  const reason = lastDoctorTs === null
+    ? `📋 Fabric: 从未运行 lint 检查。调 \`fabric doctor --lint\` 看看知识库健康度。`
+    : `📋 Fabric: 已 ${days} 天未跑 lint 检查（实际 ${ageDays.toFixed(1)}d）。调 \`fabric doctor --lint\` 看看知识库健康度。`;
+
+  return {
+    decision: "block",
+    reason,
+    signal: "maintenance",
+    // CLI recommendation rather than Skill — doctor is a CLI surface.
+    recommended_skill: null,
+  };
+}
+
+/**
  * v2.0.0-rc.7 T5: best-effort sync stdin reader for the Stop hook.
  *
  * Claude Code passes a JSON payload via stdin on Stop hook fire (session_id,
@@ -782,17 +910,52 @@ function main(env, stdio) {
         archiveHintHours: readArchiveHintHours(cwd),
         reviewHintPendingCount: readReviewHintPendingCount(cwd),
         reviewHintPendingAgeDays: readReviewHintPendingAgeDays(cwd),
+        maintenanceHintDays: readMaintenanceHintDays(cwd),
+        maintenanceHintCooldownDays: readMaintenanceHintCooldownDays(cwd),
       };
     } catch {
       thresholds = {
         archiveHintHours: DEFAULT_ARCHIVE_HINT_HOURS,
         reviewHintPendingCount: DEFAULT_REVIEW_HINT_PENDING_COUNT,
         reviewHintPendingAgeDays: DEFAULT_REVIEW_HINT_PENDING_AGE_DAYS,
+        maintenanceHintDays: DEFAULT_MAINTENANCE_HINT_DAYS,
+        maintenanceHintCooldownDays: DEFAULT_MAINTENANCE_HINT_COOLDOWN_DAYS,
       };
     }
 
-    const result = decide(events, now, pendingStats, underseedStats, editCounterStats, thresholds);
+    let result = decide(events, now, pendingStats, underseedStats, editCounterStats, thresholds);
+
+    // v2.0.0-rc.7 T10: Signal D — maintenance hint. Evaluated AFTER A/B/C
+    // because the existing three signals carry higher urgency (in-flight
+    // archive backlog > review backlog > sparse corpus > stale lint). The
+    // maintenance prompt only surfaces when none of the in-flight signals
+    // fire and the corpus has had time to accumulate enough lint surface
+    // for the prompt to be actionable.
+    if (result === null) {
+      try {
+        const lastEmit = readMaintenanceLastEmit(cwd);
+        result = evaluateMaintenanceSignal(
+          events,
+          now,
+          underseedStats.nodeCount,
+          lastEmit,
+          thresholds,
+        );
+      } catch {
+        result = null;
+      }
+    }
+
     if (result === null) return;
+
+    // v2.0.0-rc.7 T10: Signal D uses its own cooldown sidecar (day-based,
+    // see MAINTENANCE_HINT_LAST_EMIT_FILE). The A/B/C shared cooldown cache
+    // uses hours, so we branch here to avoid mixing semantics.
+    if (result.signal === "maintenance") {
+      out.write(JSON.stringify(result));
+      writeMaintenanceLastEmit(cwd, nowMs);
+      return;
+    }
 
     // Cooldown throttle: once a signal fires, stay silent for
     // archive_hint_cooldown_hours (default 12h) regardless of state drift.
@@ -826,6 +989,11 @@ module.exports = {
   tryReadStdinJson,
   summarizeTranscript,
   writeSessionDigestBestEffort,
+  // v2.0.0-rc.7 T10: Signal D helpers (exported for unit testing).
+  evaluateMaintenanceSignal,
+  findLastDoctorRunTs,
+  readMaintenanceLastEmit,
+  writeMaintenanceLastEmit,
   // rc.7 T7: externalized-threshold readers (3 moved + 2 new for T10).
   readArchiveHintHours,
   readReviewHintPendingCount,
@@ -863,6 +1031,9 @@ module.exports = {
     SHOWN_CACHE_FILE,
     EDIT_COUNTER_FILE_REL,
     DEFAULT_ARCHIVE_EDIT_THRESHOLD,
+    EVENT_TYPE_DOCTOR_RUN,
+    MAINTENANCE_HINT_LAST_EMIT_FILE,
+    MAINTENANCE_HINT_MIN_CANONICAL,
   },
 };
 
