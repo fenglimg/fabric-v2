@@ -1,8 +1,9 @@
 import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const WEREWOLF_FIXTURE = resolve(process.cwd(), "../../examples/werewolf-minigame-stub");
+const WEREWOLF_FIXTURE = fileURLToPath(new URL("../fixtures/cocos-stub", import.meta.url));
 
 export function createWerewolfFixtureRoot(prefix: string): string {
   const root = join(tmpdir(), `${prefix}-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}`);

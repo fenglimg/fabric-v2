@@ -8,7 +8,7 @@ import { describe, expect, it } from "vitest";
 
 import { buildForensicReport } from "../src/scanner/forensic.ts";
 
-const WEREWOLF_FIXTURE = fileURLToPath(new URL("../../../examples/werewolf-minigame-stub", import.meta.url));
+const WEREWOLF_FIXTURE = fileURLToPath(new URL("./fixtures/cocos-stub", import.meta.url));
 
 describe("init-context shadow mirroring e2e", () => {
   it("simulates forensic to skill output with confidence snapshots and topology types", async () => {

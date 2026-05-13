@@ -11,7 +11,7 @@ import {
   type TopologyResult,
 } from "../src/scanner/forensic.ts";
 
-const WEREWOLF_FIXTURE = fileURLToPath(new URL("../../../examples/werewolf-minigame-stub", import.meta.url));
+const WEREWOLF_FIXTURE = fileURLToPath(new URL("./fixtures/cocos-stub", import.meta.url));
 
 describe("forensic shadow mirroring fixture", () => {
   it("buildAssertions emits high-confidence werewolf assertions with meaningful forensic summaries", () => {

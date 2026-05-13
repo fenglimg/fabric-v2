@@ -3,8 +3,6 @@ import type { KnipConfig } from 'knip'
 const config: KnipConfig = {
   ignore: [
     'scripts/**',
-    'examples/**',
-    'templates/**',
     // Dogfooded Fabric Stop-hook scripts installed by `fab init` into this
     // repo's own .claude / .codex client configs. They are runtime hooks
     // invoked externally by Claude Code / Codex CLI — never imported by TS
