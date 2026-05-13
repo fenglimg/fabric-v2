@@ -1,0 +1,54 @@
+{
+  "id": "TASK-009",
+  "title": "B2: Pending auto-archive (>30d via doctor --apply-lint)",
+  "scope": "packages/server/src/services/doctor.ts + event-ledger schema",
+  "action": "Add",
+  "description": "Doctor --apply-lint adds pending auto-archive. Pending entries (in either root) with mtime > 30 days → git mv to `.fabric/.archive/pending/<type>/` (team) or `~/.fabric/.archive/pending/<type>/` (personal). Emit new event `pending_auto_archived` with `pending_path`, `archived_to`, `reason`. Lint check counted as #21 (existing) but with auto-archive action gated to `--apply-lint`. Per scope.md §2.B2.",
+  "files": [
+    {"path": "packages/server/src/services/doctor.ts", "action": "modify", "target": "lint #21 inspection + apply-lint action branch", "change": "Add mtime>30d filter; on --apply-lint, git mv pending to .archive/pending/<type>/; emit pending_auto_archived event"},
+    {"path": "packages/shared/src/schemas/event-ledger.ts", "action": "modify", "target": "discriminated union", "change": "Add pending_auto_archived event type with fields pending_path, archived_to, reason"}
+  ],
+  "implementation": [
+    "Add pending_auto_archived event to event-ledger.ts discriminated union (additive — no breaking change)",
+    "In doctor.ts, locate lint #21 stale-pending check; extend with mtime filter (Date.now() - stat.mtimeMs > 30*86400_000)",
+    "On --apply-lint path: compute archive dest = (layer === 'personal' ? '~/.fabric' : '.fabric') + '/.archive/pending/<type>/'; mkdir -p; git mv (or fs.rename fallback)",
+    "Emit pending_auto_archived event with pending_path, archived_to, reason='mtime>30d'",
+    "Add unit tests: dry-run reports without moving; --apply-lint moves and emits event",
+    "Verify both pending roots covered (team and personal)"
+  ],
+  "reference": {
+    "pattern": "Doctor lint additive pattern (rc.4 inventory #1-#21)",
+    "files": ["packages/server/src/services/doctor.ts:285-305"],
+    "examples": "Mirror existing apply-lint action patterns; reuse git mv helper if present"
+  },
+  "convergence": {
+    "criteria": [
+      "doctor --apply-lint pending >30d auto-archives to .archive/pending/ (or ~/.fabric/.archive/pending/) and emits pending_auto_archived event",
+      "Event payload includes pending_path, archived_to, reason fields",
+      "Dry-run (no --apply-lint) reports but does not move",
+      "Both pending roots (team repo + ~/.fabric/) covered",
+      "Unit tests pass"
+    ]
+  },
+  "depends_on": ["TASK-008"],
+  "rationale": {
+    "chosen_approach": "Extend existing lint #21 with mtime gate + apply-lint action; reuse doctor.ts additive pattern",
+    "alternatives_considered": ["New separate lint check", "Cron-style separate daemon"],
+    "decision_factors": ["Reuses existing lint pipeline", "Doctor is the canonical lifecycle engine"],
+    "tradeoffs": "30d threshold is arbitrary; configurable via fabric-config.json later if needed"
+  },
+  "test": {
+    "manual_checks": ["pnpm -w test doctor green", "Touch a pending file mtime to 31d ago; run fabric doctor --apply-lint; observe move + event"],
+    "success_metrics": ["Move executed; event written to events.jsonl"],
+    "unit": ["test_pending_auto_archive_mtime_filter", "test_pending_auto_archive_dry_run_no_move", "test_pending_auto_archive_emits_event"],
+    "integration": []
+  },
+  "risks": [
+    {"description": "git mv fails if .fabric/.archive/ not initialized", "probability": "Medium", "impact": "Low", "mitigation": "mkdir -p before mv; fallback to fs.rename if git mv unavailable", "fallback": "Skip with warning, retry next run"}
+  ],
+  "code_skeleton": null,
+  "executor": "claude-code",
+  "cli_execution_id": "rc5-rc6-fabric-knowledge-2026-05-12-TASK-009",
+  "cli_execution": {"strategy": "resume", "resume_from": "rc5-rc6-fabric-knowledge-2026-05-12-TASK-008"},
+  "metadata": {"rc": "rc.5", "wave": 3, "scope_item": "B2"}
+}

@@ -1,0 +1,66 @@
+{
+  "id": "TASK-004",
+  "title": "D1: New CLI subcommand fabric plan-context-hint",
+  "scope": "packages/cli/src/commands + packages/server (planContext export)",
+  "action": "Create",
+  "description": "Add new CLI subcommand `fabric plan-context-hint --paths <p1,p2,...> | --all`. Thin wrapper that imports planContext() from server. Outputs versioned JSON to stdout: `{version: 1, revision_hash, target_paths, narrow: [{id, type, maturity, summary}], broad_count}`. Stderr empty (renderer is hook's job — rc.6 consumers). In rc.5 only the CLI subcommand ships; rc.6 hooks (E1/E2) consume it. fabric-import skill ALSO consumes the JSON for default-broad pending creation. Register in packages/cli/src/commands/index.ts. Anchor: rc5-rc6-handoff.json#acceptance_criteria for D1.",
+  "files": [
+    {"path": "packages/cli/src/commands/plan-context-hint.ts", "action": "create", "target": "new file", "change": "Define command with --paths and --all flags; import planContext from server; print versioned JSON to stdout"},
+    {"path": "packages/cli/src/commands/index.ts", "action": "modify", "target": "command registry", "change": "Register plan-context-hint command alongside init/scan/serve/doctor"},
+    {"path": "packages/shared/src/schemas/api-contracts.ts", "action": "modify", "target": "(if needed) export PlanContextHintOutput shape", "change": "Add zod schema for versioned hint output if not already covered by plan_context output schema"}
+  ],
+  "implementation": [
+    "Read packages/cli/src/commands/scan.ts as command template (simplest existing command)",
+    "Create packages/cli/src/commands/plan-context-hint.ts: parse --paths (comma-separated) and --all (boolean) flags",
+    "Import planContext from @fenglimg/fabric-server (or relative path)",
+    "Call planContext with target_paths derived from --paths; if --all, pass empty/special marker for unfiltered",
+    "Shape output to {version: 1, revision_hash, target_paths, narrow: [...], broad_count}",
+    "Print JSON.stringify(output) to stdout; nothing to stderr on success",
+    "Register command in commands/index.ts alongside existing 4 (init/scan/serve/doctor)",
+    "Add zod output schema in shared if helpful for hook consumers",
+    "Smoke test: run `fabric plan-context-hint --all` on this repo, verify JSON well-formed"
+  ],
+  "reference": {
+    "pattern": "Existing CLI command + planContext invocation",
+    "files": ["packages/cli/src/commands/scan.ts", "packages/server/src/services/plan-context.ts"],
+    "examples": "Mirror scan.ts argv parsing + serve.ts command export pattern"
+  },
+  "convergence": {
+    "criteria": [
+      "fabric plan-context-hint CLI subcommand registered in packages/cli/src/commands/index.ts",
+      "Outputs versioned JSON to stdout matching {version: 1, revision_hash, target_paths, narrow: [{id, type, maturity, summary}], broad_count}",
+      "fabric plan-context-hint --paths <p1,p2> reads relevance_paths filter and returns matched narrow set",
+      "fabric plan-context-hint --all returns full broad+narrow set (no path filter)",
+      "stderr remains empty on success; renderer is hook's job",
+      "Manual smoke test: command exits 0 and produces valid JSON on this repo"
+    ]
+  },
+  "depends_on": [],
+  "rationale": {
+    "chosen_approach": "Thin wrapper over planContext engine (same as fab_plan_context MCP adapter)",
+    "alternatives_considered": ["Embed full logic in CLI", "Spawn fabric serve and HTTP-call /api/plan-context"],
+    "decision_factors": ["MCP and CLI are adapters for same engine (Q9 resolution)", "Hook scripts run without node_modules; need self-contained CLI"],
+    "tradeoffs": "CLI process startup adds ~100ms overhead per hook invocation; acceptable for SessionStart/PreToolUse cadence"
+  },
+  "test": {
+    "manual_checks": ["fabric plan-context-hint --all exits 0 with JSON stdout", "fabric plan-context-hint --paths packages/server/src/services/plan-context.ts returns filtered narrow set"],
+    "success_metrics": ["JSON output validates against schema", "Exit code 0"],
+    "unit": ["test_plan_context_hint_all_flag", "test_plan_context_hint_paths_filter"],
+    "integration": ["test_plan_context_hint_cli_integration"]
+  },
+  "risks": [
+    {"description": "planContext relies on TypeScript build artifacts not available in CLI process", "probability": "Medium", "impact": "Medium", "mitigation": "Verify server is published as workspace dep; reuse import path from existing commands", "fallback": "Spawn fabric serve in-process if direct import fails"}
+  ],
+  "code_skeleton": {
+    "key_functions": [
+      {"signature": "export async function runPlanContextHint(opts: { paths?: string[]; all?: boolean }): Promise<void>", "purpose": "CLI handler: invoke planContext, print versioned JSON", "returns": "void"}
+    ],
+    "interfaces": [
+      {"name": "PlanContextHintOutput", "definition": "{ version: 1; revision_hash: string; target_paths: string[]; narrow: Array<{id: string; type: string; maturity: string; summary: string}>; broad_count: number }", "purpose": "Stable JSON contract for hook consumers"}
+    ]
+  },
+  "executor": "claude-code",
+  "cli_execution_id": "rc5-rc6-fabric-knowledge-2026-05-12-TASK-004",
+  "cli_execution": {"strategy": "new"},
+  "metadata": {"rc": "rc.5", "wave": 1, "scope_item": "D1"}
+}

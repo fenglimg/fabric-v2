@@ -1,0 +1,65 @@
+{
+  "id": "TASK-002",
+  "title": "A4: Delete physical dead weight (dashboard, root /templates, werewolf-stub, 思路.md)",
+  "scope": "packages/dashboard + templates/ + examples/werewolf-minigame-stub + 思路.md + docs",
+  "action": "Delete",
+  "description": "Delete v1.x dead weight. packages/dashboard/ entire package (rules-explain SPA, 31 hits of L0/L1/L2/topology, zero v2.0 knowledge awareness). packages/server/src/api/static.ts + http.ts registerDashboardStatic wiring + dashboardDistPath option. Root templates/ directory (CLI source has zero references; authoritative copy is packages/cli/templates/). Root 思路.md (AGENTS.md-era pre-pivot concept). examples/werewolf-minigame-stub/ (v1.x Cocos demo target). docs/contributing.md lines referencing dashboard build. Update pnpm-workspace.yaml or package.json to drop @fenglimg/fabric-dashboard reference. Evidence: exploration-codebase.json#module_map.dashboard.",
+  "files": [
+    {"path": "packages/dashboard/", "action": "delete", "target": "entire package directory", "change": "Delete dashboard package wholesale"},
+    {"path": "packages/server/src/api/static.ts", "action": "delete", "target": "entire file", "change": "Delete dashboard static route"},
+    {"path": "packages/server/src/http.ts", "action": "modify", "target": "registerDashboardStatic + dashboardDistPath", "change": "Remove dashboard wiring + option"},
+    {"path": "templates/", "action": "delete", "target": "root directory", "change": "Delete root templates directory (CLI source has authoritative copy)"},
+    {"path": "examples/werewolf-minigame-stub/", "action": "delete", "target": "entire directory", "change": "Delete v1.x Cocos demo stub"},
+    {"path": "思路.md", "action": "delete", "target": "file", "change": "Delete pre-pivot thinking doc"},
+    {"path": "docs/contributing.md", "action": "modify", "target": "dashboard build lines", "change": "Strip dashboard build instructions"},
+    {"path": "pnpm-workspace.yaml", "action": "modify", "target": "dashboard package entry", "change": "Drop dashboard package entry if listed"},
+    {"path": "package.json", "action": "modify", "target": "workspaces / scripts", "change": "Strip dashboard-related scripts and workspace entry if present"}
+  ],
+  "implementation": [
+    "Grep for @fenglimg/fabric-dashboard imports across packages/server and packages/cli",
+    "Delete packages/dashboard/ recursively",
+    "Delete packages/server/src/api/static.ts",
+    "Update http.ts: remove registerDashboardStatic call and dashboardDistPath option from FabricHttpOptions",
+    "Delete templates/ at repo root (preserve packages/cli/templates/)",
+    "Delete examples/werewolf-minigame-stub/ recursively",
+    "Delete 思路.md",
+    "Edit docs/contributing.md: remove dashboard build section",
+    "Update pnpm-workspace.yaml and root package.json to drop dashboard refs",
+    "pnpm install && pnpm -w build to verify"
+  ],
+  "reference": {
+    "pattern": "Package removal from monorepo",
+    "files": ["pnpm-workspace.yaml", "packages/server/src/http.ts"],
+    "examples": "Mirror dashboard removal cleanly; ensure no cross-package imports break"
+  },
+  "convergence": {
+    "criteria": [
+      "Deleted from disk: packages/dashboard/ entire package, templates/ root directory, examples/werewolf-minigame-stub/, 思路.md",
+      "pnpm-workspace.yaml or package.json no longer references @fenglimg/fabric-dashboard",
+      "packages/server/src/api/static.ts deleted and http.ts has no registerDashboardStatic / dashboardDistPath references",
+      "docs/contributing.md has no dashboard build instructions",
+      "pnpm install completes cleanly; pnpm -w build succeeds"
+    ]
+  },
+  "depends_on": [],
+  "rationale": {
+    "chosen_approach": "Wholesale delete; no users depend on dashboard or v1.x werewolf stub",
+    "alternatives_considered": ["Archive dashboard to legacy/ branch", "Keep templates/ for backwards compat"],
+    "decision_factors": ["Zero users", "exploration evidence: dashboard has 31 L0/L1/L2 hits and zero knowledge awareness"],
+    "tradeoffs": "Lose ability to demo v1.x rules SPA; acceptable given pivot direction"
+  },
+  "test": {
+    "manual_checks": ["pnpm install green", "pnpm -w build green", "fabric serve starts cleanly without dashboard"],
+    "success_metrics": ["Build passes with 0 missing-module errors", "Server boots without dashboard route"],
+    "unit": ["http server boot smoke test"],
+    "integration": []
+  },
+  "risks": [
+    {"description": "External docs/blog posts link to dashboard URL", "probability": "Low", "impact": "Low", "mitigation": "Pre-publish v2.0.0 means zero external exposure", "fallback": "Add 410 Gone redirect note in README"}
+  ],
+  "code_skeleton": null,
+  "executor": "claude-code",
+  "cli_execution_id": "rc5-rc6-fabric-knowledge-2026-05-12-TASK-002",
+  "cli_execution": {"strategy": "new"},
+  "metadata": {"rc": "rc.5", "wave": 1, "scope_item": "A4"}
+}

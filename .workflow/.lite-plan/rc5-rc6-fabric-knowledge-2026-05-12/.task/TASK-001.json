@@ -1,0 +1,61 @@
+{
+  "id": "TASK-001",
+  "title": "A2: Delete intent-ledger compliance regime",
+  "scope": "packages/server/src/services + packages/server/src/api + .fabric/",
+  "action": "Delete",
+  "description": "Remove intent-ledger compliance regime (zero adoption: 31/31 audit.jsonl entries have matched_get_rules_ts=null). Delete services/annotate-intent.ts, services/human-lock-or-equivalent.ts, services/audit-log.ts, api/intent.ts, api/events.ts forensic-loading code path, .fabric/audit.jsonl, .fabric/forensic.json. Keep serve-lock, in-flight-tracker, rehydrate-state, read-ledger (server lifecycle infra, not compliance). Audit read-ledger callers; if only consumed by deleted modules, delete it too. Anchors: handoff.json#code_anchors not specific to A2 but cross-reference exploration-codebase.json#module_map.events_ledger.",
+  "files": [
+    {"path": "packages/server/src/services/annotate-intent.ts", "action": "delete", "target": "entire file", "change": "Delete intent-ledger service"},
+    {"path": "packages/server/src/services/human-lock-or-equivalent.ts", "action": "delete", "target": "entire file", "change": "Delete compliance lock service"},
+    {"path": "packages/server/src/services/audit-log.ts", "action": "delete", "target": "entire file", "change": "Delete audit-log service"},
+    {"path": "packages/server/src/api/intent.ts", "action": "delete", "target": "entire file", "change": "Delete intent REST endpoint"},
+    {"path": "packages/server/src/api/events.ts", "action": "modify", "target": "forensic-loading path", "change": "Strip forensic.json loading code path; events.jsonl read-only stays"},
+    {"path": "packages/server/src/http.ts", "action": "modify", "target": "intent route registration", "change": "Remove intent.ts route mount"},
+    {"path": ".fabric/audit.jsonl", "action": "delete", "target": "file", "change": "Delete audit log file"},
+    {"path": ".fabric/forensic.json", "action": "delete", "target": "file", "change": "Delete forensic snapshot file"},
+    {"path": "packages/server/src/services/read-ledger.ts", "action": "audit", "target": "callers", "change": "grep call sites; if only deleted modules ref it, delete; otherwise keep"}
+  ],
+  "implementation": [
+    "Grep for imports of annotate-intent / human-lock-or-equivalent / audit-log / api/intent across packages/server/src",
+    "Delete the 4 service/API files",
+    "Update http.ts to drop intent route registration",
+    "Strip forensic-loading branch in api/events.ts (keep events.jsonl-only path)",
+    "Delete .fabric/audit.jsonl and .fabric/forensic.json from disk",
+    "Audit read-ledger.ts: grep usages; if 0 surviving callers, delete; else keep",
+    "Verify build (pnpm -w build) and existing tests still pass"
+  ],
+  "reference": {
+    "pattern": "Service deletion + http.ts route unmount",
+    "files": ["packages/server/src/http.ts", "packages/server/src/api/events.ts"],
+    "examples": "Follow existing route unmount pattern; preserve serve-lock/in-flight-tracker/rehydrate-state imports"
+  },
+  "convergence": {
+    "criteria": [
+      "Deleted from disk: services/annotate-intent.ts, services/human-lock-or-equivalent.ts, services/audit-log.ts, api/intent.ts, .fabric/audit.jsonl, .fabric/forensic.json",
+      "Kept on disk: services/serve-lock.ts, services/in-flight-tracker.ts, services/rehydrate-state.ts, services/read-ledger.ts (verified still used)",
+      "pnpm -w build succeeds with zero compile errors related to intent/audit/forensic",
+      "grep -r 'annotate-intent\\|human-lock-or-equivalent\\|audit-log\\|api/intent' packages/server/src returns 0 hits"
+    ]
+  },
+  "depends_on": [],
+  "rationale": {
+    "chosen_approach": "Wholesale delete; no migration path needed (zero adopters per audit.jsonl evidence)",
+    "alternatives_considered": ["Deprecate-then-delete in next RC", "Disable behind feature flag"],
+    "decision_factors": ["Zero users (clean-slate preference)", "31/31 zero-match evidence", "Wave-1 independence"],
+    "tradeoffs": "Lose ability to reactivate compliance regime without resurrecting code; acceptable given pivot direction"
+  },
+  "test": {
+    "manual_checks": ["pnpm -w build green", "Run existing server test suite", "Boot server, verify it still starts"],
+    "success_metrics": ["0 surviving references to deleted modules", "Build passes", "Test suite passes"],
+    "unit": ["server start-up smoke test"],
+    "integration": []
+  },
+  "risks": [
+    {"description": "read-ledger.ts has surviving callers we miss", "probability": "Low", "impact": "Medium", "mitigation": "grep cross-package before deletion; defer to keep if any non-deleted caller", "fallback": "Keep read-ledger.ts"}
+  ],
+  "code_skeleton": null,
+  "executor": "claude-code",
+  "cli_execution_id": "rc5-rc6-fabric-knowledge-2026-05-12-TASK-001",
+  "cli_execution": {"strategy": "new"},
+  "metadata": {"rc": "rc.5", "wave": 1, "scope_item": "A2"}
+}

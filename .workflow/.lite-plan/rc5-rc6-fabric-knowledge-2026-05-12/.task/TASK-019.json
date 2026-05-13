@@ -1,0 +1,122 @@
+{
+  "id": "TASK-019",
+  "title": "E1: SessionStart hook knowledge-hint-broad.cjs",
+  "scope": "packages/cli/templates/hooks/knowledge-hint-broad.cjs + 3 hook config files",
+  "action": "Create",
+  "description": "Implement SessionStart hook knowledge-hint-broad.cjs. Invokes `fabric plan-context-hint --all`, parses stdout JSON, renders human-readable summary to stderr. ≤30 entries → full listing (one line per entry, grouped by type). >30 entries → grouped truncation (per type: list proven headers + verified id list + draft count only). Renders for SessionStart event across Claude Code / Cursor / Codex configs. Anchor: handoff.json#acceptance_criteria for E1.",
+  "files": [
+    {
+      "path": "packages/cli/templates/hooks/knowledge-hint-broad.cjs",
+      "action": "create",
+      "target": "new file",
+      "change": "SessionStart hook script: invoke fabric plan-context-hint --all; parse stdout JSON; emit rendered summary to stderr"
+    },
+    {
+      "path": "packages/cli/templates/hooks/configs/claude-code.json",
+      "action": "modify",
+      "target": "SessionStart event registration",
+      "change": "Add knowledge-hint-broad.cjs to SessionStart hook list"
+    },
+    {
+      "path": "packages/cli/templates/hooks/configs/codex-hooks.json",
+      "action": "modify",
+      "target": "SessionStart event registration",
+      "change": "Add knowledge-hint-broad.cjs to SessionStart hook list (Codex-CLI naming)"
+    },
+    {
+      "path": "packages/cli/templates/hooks/configs/cursor-hooks.json",
+      "action": "modify",
+      "target": "SessionStart event registration",
+      "change": "Add knowledge-hint-broad.cjs to SessionStart hook list (Cursor naming)"
+    }
+  ],
+  "implementation": [
+    "Create knowledge-hint-broad.cjs with shebang + Node CommonJS",
+    "Spawn child process: `fabric plan-context-hint --all` (use cross-platform child_process.spawnSync)",
+    "Parse stdout as JSON (validate version field)",
+    "Render logic: if entries.length <= 30 → group by type; for each type, emit one line per entry: `[id] (type/maturity) summary` to stderr; if > 30 → for each type, emit proven full + verified id list (no body) + draft count only",
+    "Always emit at end of rendering: revision_hash for cache-correctness reference (used by E3)",
+    "Exit 0",
+    "Register hook in all three client configs (SessionStart event)",
+    "Smoke test: simulate SessionStart event; verify stderr output is well-formed and bounded by terminal width"
+  ],
+  "reference": {
+    "pattern": "Hook script invoking CLI subcommand + stderr rendering",
+    "files": [
+      "packages/cli/templates/hooks/fabric-hint.cjs",
+      "packages/cli/templates/hooks/configs/claude-code.json"
+    ],
+    "examples": "Mirror fabric-hint.cjs spawn pattern + stderr emit"
+  },
+  "convergence": {
+    "criteria": [
+      "knowledge-hint-broad.cjs registered as SessionStart hook in all three client configs",
+      "knowledge-hint-broad.cjs invokes `fabric plan-context-hint --all`, parses JSON stdout, renders stderr summary",
+      "Rendering rule: ≤30 entries → full per-type listing (one line each); >30 entries → grouped truncation (proven full / verified id-list / draft count-only)",
+      "Hook exits 0; no stdout pollution; stderr output bounded by terminal width"
+    ]
+  },
+  "depends_on": [
+    "TASK-018"
+  ],
+  "rationale": {
+    "chosen_approach": "Spawn CLI subcommand (decoupled from server runtime); stderr rendering keeps stdout clean for harness",
+    "alternatives_considered": [
+      "Direct HTTP call to fabric serve",
+      "Inline planContext invocation via require()"
+    ],
+    "decision_factors": [
+      "Hook runs without node_modules guarantee — CLI binary is the contract",
+      "stderr is harness-conventional for hint output"
+    ],
+    "tradeoffs": "~100ms process startup per session; acceptable for SessionStart cadence"
+  },
+  "test": {
+    "manual_checks": [
+      "Run knowledge-hint-broad.cjs manually with seeded KB (5 entries) → verify ≤30 full listing",
+      "Run with 50-entry KB → verify grouped truncation",
+      "Run in fresh repo with empty KB → verify graceful zero-output or minimal stderr"
+    ],
+    "success_metrics": [
+      "3 rendering modes verified (≤30 full, >30 truncated, empty)",
+      "stderr output well-formed and readable"
+    ],
+    "unit": [
+      "test_render_le30_full_listing",
+      "test_render_gt30_truncation",
+      "test_render_empty_kb"
+    ],
+    "integration": [
+      "test_session_start_hook_invocation_claude_code"
+    ]
+  },
+  "risks": [
+    {
+      "description": "CLI process unavailable in sandboxed harness",
+      "probability": "Low",
+      "impact": "Medium",
+      "mitigation": "Detect and emit one-line install hint if `fabric` not on PATH",
+      "fallback": "Skip silently if CLI absent"
+    }
+  ],
+  "code_skeleton": null,
+  "executor": "claude-code",
+  "cli_execution_id": "rc5-rc6-fabric-knowledge-2026-05-12-TASK-019",
+  "cli_execution": {
+    "strategy": "resume",
+    "resume_from": "rc5-rc6-fabric-knowledge-2026-05-12-TASK-018"
+  },
+  "metadata": {
+    "rc": "rc.6",
+    "wave": "rc6-only",
+    "scope_item": "E1"
+  },
+  "status": "completed",
+  "status_history": [
+    {
+      "from": "in_progress",
+      "to": "completed",
+      "changed_at": "2026-05-12T19:48:55+08:00"
+    }
+  ]
+}

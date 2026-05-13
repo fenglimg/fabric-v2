@@ -1,0 +1,55 @@
+{
+  "id": "TASK-011",
+  "title": "C2: archive Skill Phase 0.5 viability gate + Phase 1.5 scope decision + edit_paths generation",
+  "scope": "packages/cli/templates/skills/fabric-archive/SKILL.md",
+  "action": "Refactor",
+  "description": "Update archive Skill SKILL.md. Insert Phase 0.5 viability gate before Phase 1: scan user_messages_summary + recent_paths against archive-signal list (≥1 of: 'always/never' / '记一下' / '下次注意' / wrong-turn-and-revert / >15min diagnostic / new dependency-or-pattern / decision confirmation / explicit dismissal-with-reason). If none hit → Stop with message '本次会话为常规执行，无新知识可归档'. Anti-archive signals (typo-only / pure-refactor / narrow-rename-request / duplicate-of-existing). User-explicit invocation bypasses gate. Insert Phase 1.5 subjective scope decision: rule block telling Agent how to choose narrow vs broad (default broad, narrow requires explicit single-module evidence). Inline-edit [scope=...] during Phase 1 review supported. Add edit_paths single-signal relevance_paths generation: scan transcript for tool_use.name ∈ {Edit, Write, MultiEdit}, dedupe paths, public-prefix generalize depth ≤ 2 minGroupSize=2, glob blacklist (**/*.<ext>, repo-root single files like README.md/package.json). Read-only paths go to ## Evidence block, never relevance_paths. Anchor: handoff.json#code_anchors fabric-archive/SKILL.md current Phase 0/1/2.",
+  "files": [
+    {"path": "packages/cli/templates/skills/fabric-archive/SKILL.md", "action": "modify", "target": "Phase 0/1/2 structure", "change": "Insert Phase 0.5 viability gate + Phase 1.5 scope decision; update Phase 1 candidate format to include [scope=narrow|broad] tag; document edit_paths algorithm"}
+  ],
+  "implementation": [
+    "Read current SKILL.md to understand Phase 0/1/2 structure",
+    "Draft Phase 0.5 viability gate section: list 8 archive-signals + 4 anti-archive signals; explicit-invocation bypass clause; stop message",
+    "Draft Phase 1.5 scope decision: narrow-vs-broad rule block with examples; default broad; narrow requires single-module evidence; user inline-edit [scope=...] supported",
+    "Update Phase 1 candidate format: show [scope=narrow|broad] + relevance_paths inline in candidate display",
+    "Document edit_paths algorithm in SKILL.md (subsection of Phase 1.5):\n  1. Scan transcript for tool_use.name ∈ {Edit, Write, MultiEdit}\n  2. Dedupe paths\n  3. Public-prefix generalize: find common prefixes, generalize to glob with depth ≤ 2, minGroupSize=2\n  4. Apply blacklist: **/*.<ext>, repo-root single files (README.md, package.json)\n  5. Read-only paths → ## Evidence markdown block (not relevance_paths)",
+    "Pin examples in SKILL.md showing correct generalization (e.g., packages/server/src/services/{a.ts,b.ts} → packages/server/src/services/**/*.ts with minGroupSize=2)",
+    "Smoke test: dry-run skill on this repo's recent session; verify viability gate correctness"
+  ],
+  "reference": {
+    "pattern": "Skill template phase insertion",
+    "files": ["packages/cli/templates/skills/fabric-archive/SKILL.md"],
+    "examples": "Existing 3-phase flow as scaffold"
+  },
+  "convergence": {
+    "criteria": [
+      "fabric-archive Skill SKILL.md contains Phase 0.5 viability gate with archive-signal + anti-archive-signal lists",
+      "User-explicit invocation bypass documented",
+      "fabric-archive Skill SKILL.md contains Phase 1.5 scope decision rules; default broad",
+      "fabric-archive Skill generates relevance_paths from edit_paths only (no read_paths, no body regex)",
+      "fabric-archive Skill applies public-prefix generalization with depth ≤ 2 and minGroupSize=2",
+      "fabric-archive Skill applies glob blacklist: **/*.<ext>, repo-root single files"
+    ]
+  },
+  "depends_on": ["TASK-005", "TASK-006"],
+  "rationale": {
+    "chosen_approach": "Direct SKILL.md template edit; logic lives in Agent prompting, not server code",
+    "alternatives_considered": ["Server-side gate enforcement", "Static gate config file"],
+    "decision_factors": ["Skill is Agent-driven prompt logic per Fabric design", "Viability decision is inherently subjective + transcript-aware"],
+    "tradeoffs": "Gate quality depends on Agent's judgment; mitigated by explicit signal lists and anti-signals"
+  },
+  "test": {
+    "manual_checks": ["Trigger fabric-archive on a session with typo-only edits → verify gate stops with explanation", "Trigger on session with new dependency adoption → verify gate passes", "Trigger on session with edits to single module → verify Phase 1.5 produces narrow scope"],
+    "success_metrics": ["Gate correctly stops on 4/4 anti-archive cases", "Gate correctly passes on 8/8 archive cases", "edit_paths generalization produces sensible globs"],
+    "unit": [],
+    "integration": ["test_archive_skill_viability_gate_anti_cases", "test_archive_skill_scope_decision_examples"]
+  },
+  "risks": [
+    {"description": "Public-prefix generalization too aggressive (overshoots)", "probability": "Medium", "impact": "Low", "mitigation": "Depth ≤ 2 + minGroupSize=2 constrains scope; document expected outputs in SKILL.md examples", "fallback": "User can inline-edit relevance_paths during Phase 1 review"}
+  ],
+  "code_skeleton": null,
+  "executor": "claude-code",
+  "cli_execution_id": "rc5-rc6-fabric-knowledge-2026-05-12-TASK-011",
+  "cli_execution": {"strategy": "merge_fork", "merge_from": ["rc5-rc6-fabric-knowledge-2026-05-12-TASK-005", "rc5-rc6-fabric-knowledge-2026-05-12-TASK-006"]},
+  "metadata": {"rc": "rc.5", "wave": 3, "scope_item": "C2"}
+}

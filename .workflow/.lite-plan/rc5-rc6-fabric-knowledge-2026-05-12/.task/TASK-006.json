@@ -1,0 +1,61 @@
+{
+  "id": "TASK-006",
+  "title": "C1: Frontmatter schema additions (relevance_scope + relevance_paths)",
+  "scope": "packages/server/src/services/knowledge-meta-builder.ts + packages/shared/src/schemas/agents-meta.ts",
+  "action": "Add",
+  "description": "Add two new frontmatter fields: `relevance_scope: 'narrow' | 'broad'` and `relevance_paths: string[]`. agents.meta node schema mirrors. knowledge-meta-builder.ts (post-rename) frontmatter parser recognizes both fields. Default when absent = `broad` + `[]` (graceful for existing 16 entries). Reuse existing hand-rolled YAML-like parser at (post-rename) line ~709-792; relevance_paths is flow-style array supported by extractInlineArray. Anchor: rc5-rc6-handoff.json#acceptance_criteria for C1; exploration-codebase.json#patterns hand-rolled parser caveat.",
+  "files": [
+    {"path": "packages/server/src/services/knowledge-meta-builder.ts", "action": "modify", "target": "extractDescriptionFromFrontmatter (post-rename ~line 748)", "change": "Add scalar parse for relevance_scope (default broad); add flow-array parse for relevance_paths (default [])"},
+    {"path": "packages/shared/src/schemas/agents-meta.ts", "action": "modify", "target": "agentsMetaNodeBaseSchema", "change": "Add relevance_scope: z.enum(['narrow','broad']).default('broad'); relevance_paths: z.array(z.string()).default([])"},
+    {"path": "packages/shared/src/schemas/api-contracts.ts", "action": "modify", "target": "knowledge entry description shape", "change": "Mirror new fields in description_index entry contract"}
+  ],
+  "implementation": [
+    "Read knowledge-meta-builder.ts extractDescriptionFromFrontmatter to confirm parser surface",
+    "Add scalar parse: match `^relevance_scope:\\s*(narrow|broad)\\s*$` (case-sensitive)",
+    "Add flow-array parse: match `^relevance_paths:\\s*\\[(.*?)\\]\\s*$` via existing extractInlineArray helper",
+    "Default values: if field absent → scope='broad', paths=[]",
+    "Update agentsMetaNodeBaseSchema: add the two fields with defaults",
+    "Update api-contracts.ts description_index entry shape",
+    "Add unit tests: parse frontmatter with/without each field, assert defaults",
+    "Verify existing 16 canonical entries still parse correctly with defaults applied"
+  ],
+  "reference": {
+    "pattern": "Hand-rolled YAML scalar + flow-array parsing",
+    "files": ["packages/server/src/services/knowledge-meta-builder.ts (post-rename, ~line 748)"],
+    "examples": "Mirror existing tech_stack and entities flow-array parsing in extractInlineArray"
+  },
+  "convergence": {
+    "criteria": [
+      "Frontmatter parser recognizes relevance_scope and relevance_paths fields; defaults to broad + [] when absent",
+      "agentsMetaNodeBaseSchema includes both fields with proper defaults",
+      "Existing 16 entries parse successfully with default values applied (zero parse errors)",
+      "Unit tests cover: explicit narrow + paths, explicit broad + [], absent both fields, malformed values"
+    ]
+  },
+  "depends_on": ["TASK-005"],
+  "rationale": {
+    "chosen_approach": "Extend hand-rolled parser (no jump to gray-matter); fields are flat scalar + flow-array which existing parser handles",
+    "alternatives_considered": ["Migrate to gray-matter YAML parser", "Use external sidecar JSON for new fields"],
+    "decision_factors": ["Existing parser supports flat scalars + flow arrays per exploration#patterns", "Avoid scope-creep parser rewrite"],
+    "tradeoffs": "Future nested fields would still need parser upgrade; deferred to rc.7+ if needed"
+  },
+  "test": {
+    "manual_checks": ["pnpm -w test knowledge-meta-builder green", "Lint .fabric/knowledge/ existing entries — all default to broad+[]"],
+    "success_metrics": ["All 4 new unit tests pass", "Zero parse errors on existing knowledge corpus"],
+    "unit": ["test_parse_relevance_scope_narrow", "test_parse_relevance_paths_array", "test_default_when_absent", "test_malformed_value_falls_back_to_default"],
+    "integration": []
+  },
+  "risks": [
+    {"description": "Some knowledge entries have malformed YAML that previously parsed loosely", "probability": "Low", "impact": "Low", "mitigation": "Defaults are forgiving (broad + []) so even parse-miss is safe", "fallback": "N/A"}
+  ],
+  "code_skeleton": {
+    "interfaces": [
+      {"name": "RelevanceScope", "definition": "'narrow' | 'broad'", "purpose": "Scope enum"},
+      {"name": "KnowledgeFrontmatterRelevance", "definition": "{ relevance_scope: RelevanceScope; relevance_paths: string[] }", "purpose": "New fields appended to frontmatter description"}
+    ]
+  },
+  "executor": "claude-code",
+  "cli_execution_id": "rc5-rc6-fabric-knowledge-2026-05-12-TASK-006",
+  "cli_execution": {"strategy": "fork", "resume_from": "rc5-rc6-fabric-knowledge-2026-05-12-TASK-005"},
+  "metadata": {"rc": "rc.5", "wave": 2, "scope_item": "C1"}
+}

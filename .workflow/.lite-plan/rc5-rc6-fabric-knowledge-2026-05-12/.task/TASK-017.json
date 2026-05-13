@@ -1,0 +1,123 @@
+{
+  "id": "TASK-017",
+  "title": "D2: README rewrite (8 真特色 + 4 deliberately-not-done + MCP-vs-CLI + vs-Tencent-article)",
+  "scope": "README.md",
+  "action": "Refactor",
+  "description": "Rewrite README 'Why Fabric' section per scope.md §2.D2. Sections: (1) Pain point opening (cross-client knowledge sustainment). (2) 8 真特色 enumeration: cross-client MCP-first / harness-agnostic / two-stage cold-start / async-review primitive / path-decoupled stable_id + layer-flip audit / cross-client hook reminder layer / doctor unified lifecycle engine / filesystem-edit fallback. (3) 4 deliberately not done: 5-layer storage (we do 2) / independent team-knowledge.git repo (v2.1) / 16-stage workflow injection (we're harness-agnostic) / remote control (IDE infra problem). (4) MCP vs CLI adapter clarification: planContext() is the engine, MCP and CLI are adapters for different callers (Agent vs hook scripts) — not redundancy. (5) Position vs the Tencent article: shared genes (5 types, 3 maturity, lint discipline), distinct architecture (harness-agnostic, MCP-first, in-repo + personal dual root). Update supported-clients list to 3 (Claude Code / Cursor / Codex CLI).",
+  "files": [
+    {
+      "path": "README.md",
+      "action": "modify",
+      "target": "Why Fabric section + supported clients list + Architecture overview",
+      "change": "Rewrite per 5-section structure; update client list; remove stale dashboard/L0/L1/L2 references"
+    }
+  ],
+  "implementation": [
+    "Read current README.md to identify stale references (6-client list, dashboard mentions, L0/L1/L2 protocol references)",
+    "Draft new 'Pain point opening' paragraph: cross-client knowledge sustainment problem",
+    "Draft '8 真特色' section with one paragraph per feature (cite each from completed rc.5 items)",
+    "Draft '4 deliberately not done' section explaining each rejection with one-line rationale",
+    "Draft 'MCP vs CLI adapter' explainer (cite planContext() as shared engine)",
+    "Draft 'vs Tencent article' positioning paragraph",
+    "Update supported-clients list to Claude Code / Cursor / Codex CLI only",
+    "Remove dashboard install instructions (now deleted in TASK-002)",
+    "Cross-check that all 8 真特色 link to specific rc.5 implementation (file references in scope.md §1)",
+    "Run markdown linter if configured"
+  ],
+  "reference": {
+    "pattern": "Major README rewrite preserving install/usage commands",
+    "files": [
+      "README.md",
+      "scope.md §2.D2 outline"
+    ],
+    "examples": "Mirror Tencent article's narrative structure for positioning section"
+  },
+  "convergence": {
+    "criteria": [
+      "README rewritten with 8 真特色 enumeration + 4 deliberately-not-done + MCP-vs-CLI adapter clarification + vs-Tencent-article position",
+      "Supported clients list reduced to 3 (Claude Code, Cursor, Codex CLI)",
+      "No references to dashboard, L0/L1/L2 protocol, 6-client list",
+      "Each 真特色 cites specific implementation evidence",
+      "Markdown lints clean"
+    ]
+  },
+  "depends_on": [
+    "TASK-005",
+    "TASK-007",
+    "TASK-008",
+    "TASK-009",
+    "TASK-010",
+    "TASK-011",
+    "TASK-012",
+    "TASK-013",
+    "TASK-014",
+    "TASK-015",
+    "TASK-016"
+  ],
+  "rationale": {
+    "chosen_approach": "Full rewrite of Why Fabric section; preserve technical install/usage docs; D2 is last because it references all completed rc.5 items",
+    "alternatives_considered": [
+      "Incremental section-by-section edits",
+      "Move to separate WHY.md and keep README minimal"
+    ],
+    "decision_factors": [
+      "README is primary public surface",
+      "All 8 真特色 only stable after rc.5 implementation lands"
+    ],
+    "tradeoffs": "Large diff in single commit; mitigated by section-level review"
+  },
+  "test": {
+    "manual_checks": [
+      "Open rendered README on GitHub preview; verify section structure",
+      "Run markdown linter (markdownlint-cli if configured)",
+      "Cross-reference each 真特色 with source file evidence"
+    ],
+    "success_metrics": [
+      "All 5 narrative sections present",
+      "Zero stale references (dashboard, L0/L1/L2, 6 clients)"
+    ],
+    "unit": [],
+    "integration": []
+  },
+  "risks": [
+    {
+      "description": "Future rc.6 changes invalidate README claims",
+      "probability": "Medium",
+      "impact": "Low",
+      "mitigation": "rc.6 adds active-injection layer — supplement README again in TASK-024 if needed",
+      "fallback": "Patch README in rc.6 coverage gate task"
+    }
+  ],
+  "code_skeleton": null,
+  "executor": "claude-code",
+  "cli_execution_id": "rc5-rc6-fabric-knowledge-2026-05-12-TASK-017",
+  "cli_execution": {
+    "strategy": "merge_fork",
+    "merge_from": [
+      "rc5-rc6-fabric-knowledge-2026-05-12-TASK-005",
+      "rc5-rc6-fabric-knowledge-2026-05-12-TASK-007",
+      "rc5-rc6-fabric-knowledge-2026-05-12-TASK-008",
+      "rc5-rc6-fabric-knowledge-2026-05-12-TASK-009",
+      "rc5-rc6-fabric-knowledge-2026-05-12-TASK-010",
+      "rc5-rc6-fabric-knowledge-2026-05-12-TASK-011",
+      "rc5-rc6-fabric-knowledge-2026-05-12-TASK-012",
+      "rc5-rc6-fabric-knowledge-2026-05-12-TASK-013",
+      "rc5-rc6-fabric-knowledge-2026-05-12-TASK-014",
+      "rc5-rc6-fabric-knowledge-2026-05-12-TASK-015",
+      "rc5-rc6-fabric-knowledge-2026-05-12-TASK-016"
+    ]
+  },
+  "metadata": {
+    "rc": "rc.5",
+    "wave": 4,
+    "scope_item": "D2"
+  },
+  "status": "completed",
+  "status_history": [
+    {
+      "from": "in_progress",
+      "to": "completed",
+      "changed_at": "2026-05-12T19:35:22+08:00"
+    }
+  ]
+}

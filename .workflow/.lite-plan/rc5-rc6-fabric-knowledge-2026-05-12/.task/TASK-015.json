@@ -1,0 +1,51 @@
+{
+  "id": "TASK-015",
+  "title": "C6: fabric-hint Signal A 24h-only (drop plan_context count)",
+  "scope": "packages/cli/templates/hooks/fabric-hint.cjs",
+  "action": "Update",
+  "description": "Currently Signal A = '5 plan_context OR 24h'. rc.5 changes to pure 24h since last knowledge_proposed event (drop plan_context count entirely — auto-fired by future hooks makes count unreliable; Edit count requires transcript scan or sidecar, deferred to rc.6 when PreToolUse hook produces sidecar naturally in TASK-022). Anchor: archive-hint.cjs:1-20 (renamed to fabric-hint.cjs by TASK-010).",
+  "files": [
+    {"path": "packages/cli/templates/hooks/fabric-hint.cjs", "action": "modify", "target": "Signal A definition near top of file", "change": "Replace `5 plan_contexts OR 24h` with pure 24h since last knowledge_proposed event check; remove THRESHOLD_PLAN_CONTEXTS constant; keep THRESHOLD_HOURS"}
+  ],
+  "implementation": [
+    "Read fabric-hint.cjs (post-rename from TASK-010) Signal A implementation",
+    "Replace Signal A logic: drop plan_context count check; keep 24h-since-last-knowledge_proposed event check",
+    "Remove THRESHOLD_PLAN_CONTEXTS constant",
+    "Keep THRESHOLD_HOURS = 24 constant",
+    "Update output JSON: recommended_skill='fabric-archive' when Signal A fires (no longer mention plan_context count)",
+    "Smoke test: trigger fabric-hint.cjs after 25h with no knowledge_proposed → Signal A fires"
+  ],
+  "reference": {
+    "pattern": "Hook script threshold change",
+    "files": ["packages/cli/templates/hooks/fabric-hint.cjs (post-rename)"],
+    "examples": "Existing 24h threshold check pattern"
+  },
+  "convergence": {
+    "criteria": [
+      "fabric-hint Signal A = 24h since last knowledge_proposed event (no plan_context count, no edit count in rc.5)",
+      "THRESHOLD_PLAN_CONTEXTS constant removed from fabric-hint.cjs",
+      "Signal A still recommends fabric-archive skill when fired"
+    ]
+  },
+  "depends_on": ["TASK-010"],
+  "rationale": {
+    "chosen_approach": "Drop plan_context count; rely solely on time-based signal in rc.5",
+    "alternatives_considered": ["Keep plan_context count with higher threshold", "Use Edit count from transcript scan"],
+    "decision_factors": ["Auto-fire makes plan_context count unreliable (will inflate when rc.6 hooks land)", "Edit count requires sidecar deferred to rc.6"],
+    "tradeoffs": "Signal A may fire less often in rc.5 (only time-based); rc.6 restores Edit-count signal via sidecar"
+  },
+  "test": {
+    "manual_checks": ["Touch events.jsonl with synthetic knowledge_proposed event 25h ago; run fabric-hint.cjs; verify Signal A output", "Run fabric-hint.cjs immediately after a knowledge_proposed event; verify Signal A silent"],
+    "success_metrics": ["Signal A correctness on 2 boundary cases"],
+    "unit": ["test_signal_a_fires_after_24h", "test_signal_a_silent_within_24h"],
+    "integration": []
+  },
+  "risks": [
+    {"description": "Existing test depends on THRESHOLD_PLAN_CONTEXTS constant", "probability": "Low", "impact": "Low", "mitigation": "Grep for constant references; remove dependent assertions", "fallback": "N/A"}
+  ],
+  "code_skeleton": null,
+  "executor": "claude-code",
+  "cli_execution_id": "rc5-rc6-fabric-knowledge-2026-05-12-TASK-015",
+  "cli_execution": {"strategy": "resume", "resume_from": "rc5-rc6-fabric-knowledge-2026-05-12-TASK-010"},
+  "metadata": {"rc": "rc.5", "wave": 3, "scope_item": "C6"}
+}

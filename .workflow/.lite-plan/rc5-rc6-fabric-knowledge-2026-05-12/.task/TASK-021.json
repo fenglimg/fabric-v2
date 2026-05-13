@@ -1,0 +1,105 @@
+{
+  "id": "TASK-021",
+  "title": "E3: Session-hints cache (.fabric/.cache/session-hints-{session_id}.json)",
+  "scope": "packages/cli/templates/hooks/knowledge-hint-narrow.cjs + packages/server/src/services/doctor.ts",
+  "action": "Add",
+  "description": "Add session-hints cache `.fabric/.cache/session-hints-{session_id}.json`. Keyed by (revision_hash, path). Tracks: hinted_paths (set of paths already emitted in this session), last_emitted_index_hash (sha256 of last emitted description_index subset). PreToolUse skips if path already hinted OR if matched-narrow index hash matches last emission. Cache invalidated wholesale when revision_hash changes (rc.5 C7 ensures pending changes don't invalidate spuriously). Cleanup: session-hints files older than 7 days deleted by doctor on next run. Anchor: handoff.json#acceptance_criteria for E3.",
+  "files": [
+    {
+      "path": "packages/cli/templates/hooks/knowledge-hint-narrow.cjs",
+      "action": "modify",
+      "target": "narrow-match emit gate",
+      "change": "Read .fabric/.cache/session-hints-{session_id}.json before emit; skip if path in hinted_paths OR current index_hash == last_emitted_index_hash; on emit, update cache; on revision_hash change, drop cache wholesale"
+    },
+    {
+      "path": "packages/server/src/services/doctor.ts",
+      "action": "modify",
+      "target": "cleanup pass",
+      "change": "Add cleanup task that deletes session-hints-*.json files older than 7d (mtime check)"
+    }
+  ],
+  "implementation": [
+    "Define cache file shape: { session_id, revision_hash, hinted_paths: string[], last_emitted_index_hash: string }",
+    "In knowledge-hint-narrow.cjs: before emit, load session-hints-{session_id}.json if exists",
+    "If cache.revision_hash !== current revision_hash → treat as fresh (drop existing cache contents, will re-emit)",
+    "Otherwise check: if all input paths in cache.hinted_paths → skip emit (silent)",
+    "Compute current_index_hash = sha256(JSON.stringify(narrow.map(e => e.id))); if current_index_hash === cache.last_emitted_index_hash → skip emit",
+    "On emit: append paths to cache.hinted_paths; update cache.last_emitted_index_hash; write cache atomically (write to tmp + rename)",
+    "Add doctor cleanup pass: scan .fabric/.cache/session-hints-*.json; delete files with mtime older than 7 days",
+    "Unit tests: skip-when-already-hinted, skip-when-index-hash-matches, cache-invalidate-on-revision-change, cleanup-after-7d"
+  ],
+  "reference": {
+    "pattern": "Per-session JSON cache + doctor cleanup pass",
+    "files": [
+      "packages/cli/templates/hooks/knowledge-hint-narrow.cjs (TASK-020 baseline)"
+    ],
+    "examples": "Mirror existing .fabric/.cache shape conventions"
+  },
+  "convergence": {
+    "criteria": [
+      ".fabric/.cache/session-hints-{session_id}.json maintained: hinted_paths set + last_emitted_index_hash, keyed by revision_hash",
+      "PreToolUse skips emit when path already hinted in current session",
+      "PreToolUse skips emit when matched narrow's index hash equals last_emitted_index_hash",
+      "Session-hints cache invalidated wholesale on revision_hash change",
+      "doctor cleans session-hints files older than 7 days"
+    ]
+  },
+  "depends_on": [
+    "TASK-020"
+  ],
+  "rationale": {
+    "chosen_approach": "Per-session JSON cache keyed by revision_hash; wholesale invalidation on hash change",
+    "alternatives_considered": [
+      "LRU in-memory cache",
+      "Server-side cache shared across sessions"
+    ],
+    "decision_factors": [
+      "Hook process is short-lived (no in-memory persistence)",
+      "Per-session granularity matches user mental model"
+    ],
+    "tradeoffs": "Cache files accumulate per session; mitigated by 7d cleanup"
+  },
+  "test": {
+    "manual_checks": [
+      "Simulate two Edit invocations on same path within same session → second one silent",
+      "Simulate Edit, then revision_hash change (approve a pending), then Edit on same path → second emit fires (cache invalidated)",
+      "Touch a session-hints file to >7d old; run fabric doctor; verify file deleted"
+    ],
+    "success_metrics": [
+      "4 cache behavior cases verified"
+    ],
+    "unit": [
+      "test_cache_skip_on_path_hinted",
+      "test_cache_skip_on_index_hash_match",
+      "test_cache_invalidate_on_revision_change",
+      "test_doctor_cleans_old_session_hints"
+    ],
+    "integration": [
+      "test_e3_cache_full_lifecycle"
+    ]
+  },
+  "risks": [
+    {
+      "description": "Atomic write fails on Windows fs.rename across volumes",
+      "probability": "Low",
+      "impact": "Low",
+      "mitigation": "Same-directory tmp + rename pattern",
+      "fallback": "Best-effort fs.writeFileSync"
+    }
+  ],
+  "code_skeleton": null,
+  "executor": "claude-code",
+  "cli_execution_id": "rc5-rc6-fabric-knowledge-2026-05-12-TASK-021",
+  "cli_execution": {
+    "strategy": "fork",
+    "resume_from": "rc5-rc6-fabric-knowledge-2026-05-12-TASK-020"
+  },
+  "metadata": {
+    "rc": "rc.6",
+    "wave": "rc6-only",
+    "scope_item": "E3"
+  },
+  "status": "completed",
+  "completed_at": "2026-05-12T20:09:32+08:00",
+  "commit_sha": "1bbd332"
+}

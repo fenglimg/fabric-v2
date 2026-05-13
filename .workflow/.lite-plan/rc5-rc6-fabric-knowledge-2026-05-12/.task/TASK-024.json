@@ -1,0 +1,60 @@
+{
+  "id": "TASK-024",
+  "title": "rc.6 coverage gate + dogfood test",
+  "scope": "scripts/rc6-coverage-gate.mjs + dogfood test cycle",
+  "action": "Create",
+  "description": "Add scripts/rc6-coverage-gate.mjs mirroring rc.5 coverage gate pattern. Gate checks: (a) knowledge-hint-broad.cjs present + registered SessionStart in 3 client configs; (b) knowledge-hint-narrow.cjs present + registered PreToolUse with Edit|Write|MultiEdit matchers in 3 configs; (c) session-hints cache file shape correct; (d) edit-counter sidecar created on hook invocation; (e) fabric-hint Signal A reads edit-counter (E5); (f) fabric-config.json schema has archive_edit_threshold; (g) lint #26 narrow_too_few registered; (h) hint-silence-counter sidecar created on silent path. After gate passes, run rc.6 dogfood: open test session, observe SessionStart inject + Edit triggering narrow inject + same-file second Edit silent + revision change re-inject. Tag v2.0.0-rc.6 on green gate + green dogfood.",
+  "files": [
+    {"path": "scripts/rc6-coverage-gate.mjs", "action": "create", "target": "new file", "change": "Implement 8-check gate following rc.5 pattern"},
+    {"path": "package.json", "action": "modify", "target": "scripts section", "change": "Add 'rc6:gate' script invoking node scripts/rc6-coverage-gate.mjs"}
+  ],
+  "implementation": [
+    "Read rc5-coverage-gate.mjs as template",
+    "Check (a) knowledge-hint-broad.cjs file exists; parse 3 config files; assert SessionStart references the hook",
+    "Check (b) knowledge-hint-narrow.cjs file exists; parse 3 config files; assert PreToolUse + matchers correct",
+    "Check (c) write a fake session-hints-X.json with expected shape; assert hook reads/writes correct shape",
+    "Check (d) simulate hook invocation; assert .fabric/.cache/edit-counter line appended",
+    "Check (e) read fabric-hint.cjs source; assert it references edit-counter and archive_edit_threshold",
+    "Check (f) import fabric-config schema; assert archive_edit_threshold field present with default 20",
+    "Check (g) import doctor inspectors; assert inspectNarrowTooFew exported",
+    "Check (h) simulate narrow-hint silent path; assert hint-silence-counter line appended",
+    "Aggregate; exit 0/1 with summary",
+    "Add npm script alias",
+    "Run dogfood scenario: (1) fabric init in test repo (2) Open Claude Code session → expect SessionStart broad-injection in stderr (3) Edit a file matching a narrow entry → expect narrow titles in stderr (4) Edit same file again → expect silent (cache skip) (5) Approve a pending → revision_hash changes → next Edit on same file → expect re-emit (cache invalidated) (6) Verify .fabric/.cache/ contents (edit-counter, session-hints-X.json, hint-silence-counter when applicable)",
+    "Document dogfood results"
+  ],
+  "reference": {
+    "pattern": "Coverage gate script mirroring rc.5 pattern",
+    "files": ["scripts/rc5-coverage-gate.mjs (TASK-018 output)"],
+    "examples": "Mirror structural assertion + dogfood flow"
+  },
+  "convergence": {
+    "criteria": [
+      "scripts/rc6-coverage-gate.mjs passes",
+      "All 8 structural checks pass on rc.6 head commit",
+      "Dogfood test: open session, observe SessionStart inject + Edit triggering narrow inject + same-file silent + revision-change re-inject",
+      "rc.6 tag created on green gate + green dogfood"
+    ]
+  },
+  "depends_on": ["TASK-021", "TASK-022", "TASK-023"],
+  "rationale": {
+    "chosen_approach": "Mirror rc.5 gate pattern; structural script + manual dogfood verification",
+    "alternatives_considered": ["Full automated e2e hook test suite"],
+    "decision_factors": ["Consistency with rc.5 gate methodology", "Hook interactions inherently harness-dependent"],
+    "tradeoffs": "Dogfood non-reproducible; structural gate covers contract correctness"
+  },
+  "test": {
+    "manual_checks": ["pnpm rc6:gate exits 0", "Full dogfood scenario 1-6 completes as expected", "Cache files appear/disappear as expected"],
+    "success_metrics": ["Gate green", "Dogfood scenario 6 checkpoints all pass"],
+    "unit": [],
+    "integration": ["test_rc6_gate_all_checks", "test_rc6_dogfood_session_lifecycle"]
+  },
+  "risks": [
+    {"description": "Hook event format varies across Claude Code / Cursor / Codex during dogfood", "probability": "Medium", "impact": "Medium", "mitigation": "Test on Claude Code first; document per-client divergence in follow-up", "fallback": "Tag rc.6 with note about limited cross-client validation"}
+  ],
+  "code_skeleton": null,
+  "executor": "claude-code",
+  "cli_execution_id": "rc5-rc6-fabric-knowledge-2026-05-12-TASK-024",
+  "cli_execution": {"strategy": "merge_fork", "merge_from": ["rc5-rc6-fabric-knowledge-2026-05-12-TASK-021", "rc5-rc6-fabric-knowledge-2026-05-12-TASK-022", "rc5-rc6-fabric-knowledge-2026-05-12-TASK-023"]},
+  "metadata": {"rc": "rc.6", "wave": "rc6-only", "scope_item": "coverage-gate"}
+}

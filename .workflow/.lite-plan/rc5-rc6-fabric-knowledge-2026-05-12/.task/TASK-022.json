@@ -1,0 +1,52 @@
+{
+  "id": "TASK-022",
+  "title": "E5: fabric-hint Signal A upgrade (24h-OR-20-edits via edit-counter sidecar)",
+  "scope": "packages/cli/templates/hooks/fabric-hint.cjs + packages/shared/src/schemas/fabric-config.ts",
+  "action": "Update",
+  "description": "Upgrade fabric-hint Signal A. Reads .fabric/.cache/edit-counter (created by E4 in TASK-020), counts lines since last knowledge_proposed event ts. Trigger condition: 20 lines OR 24h elapsed since last knowledge_proposed event, whichever first. Threshold archive_edit_threshold (default 20) configurable in fabric-config.json. Anchor: handoff.json#acceptance_criteria for E5.",
+  "files": [
+    {"path": "packages/cli/templates/hooks/fabric-hint.cjs", "action": "modify", "target": "Signal A logic", "change": "Replace pure 24h check (TASK-015) with combined: read edit-counter line count since last knowledge_proposed ts; trigger on >=archive_edit_threshold lines OR >=24h elapsed"},
+    {"path": "packages/shared/src/schemas/fabric-config.ts", "action": "modify", "target": "fabric-config schema", "change": "Add archive_edit_threshold field (default 20)"}
+  ],
+  "implementation": [
+    "Locate last knowledge_proposed event ts from events.jsonl tail",
+    "Read .fabric/.cache/edit-counter; parse each line as timestamp; count lines with ts > last_knowledge_proposed_ts",
+    "Trigger Signal A if (line_count >= archive_edit_threshold) OR (Date.now() - last_knowledge_proposed_ts >= 24*60*60*1000)",
+    "Read archive_edit_threshold from fabric-config.json (default 20)",
+    "Update fabric-config schema in shared package: add archive_edit_threshold: z.number().int().positive().default(20)",
+    "Smoke test: synthesize edit-counter with 19 recent lines + recent knowledge_proposed (no trigger); add 1 more line → trigger; or wait 24h with no edits → trigger"
+  ],
+  "reference": {
+    "pattern": "Hook signal upgrade with config-driven threshold",
+    "files": ["packages/cli/templates/hooks/fabric-hint.cjs (post-TASK-015)"],
+    "examples": "Existing 24h-only check pattern"
+  },
+  "convergence": {
+    "criteria": [
+      "fabric-hint.cjs Signal A upgraded: reads edit-counter, counts lines since last knowledge_proposed event ts, triggers on 20 lines OR 24h elapsed (whichever first)",
+      "fabric-config.json adds archive_edit_threshold (default 20)",
+      "Threshold configurable per project via fabric-config.json"
+    ]
+  },
+  "depends_on": ["TASK-020"],
+  "rationale": {
+    "chosen_approach": "OR-combined edit-count + time signal; sidecar from E4 provides the edit count source",
+    "alternatives_considered": ["AND-combined (both required)", "Edit-count only (drop 24h)"],
+    "decision_factors": ["OR semantics catch both 'lots of activity, few hours' and 'few edits, long gap' patterns", "Time fallback ensures Signal A fires for low-activity users"],
+    "tradeoffs": "May fire more often than pure-time signal; acceptable given recommended_skill is suggestion not action"
+  },
+  "test": {
+    "manual_checks": ["Synthesize 20 lines in edit-counter post last knowledge_proposed → Signal A fires", "Synthesize 19 lines + 25h gap → Signal A fires (time path)", "Synthesize 5 lines + 5h gap → Signal A silent"],
+    "success_metrics": ["3 trigger conditions verified (count, time, combined-silent)"],
+    "unit": ["test_signal_a_edit_count_trigger", "test_signal_a_time_trigger", "test_signal_a_silent_below_thresholds", "test_archive_edit_threshold_config_override"],
+    "integration": []
+  },
+  "risks": [
+    {"description": "edit-counter file absent (TASK-020 not yet run on user repo)", "probability": "Medium", "impact": "Low", "mitigation": "Treat absent file as 0 lines; document in SKILL hint", "fallback": "Fall back to time-only check"}
+  ],
+  "code_skeleton": null,
+  "executor": "claude-code",
+  "cli_execution_id": "rc5-rc6-fabric-knowledge-2026-05-12-TASK-022",
+  "cli_execution": {"strategy": "fork", "resume_from": "rc5-rc6-fabric-knowledge-2026-05-12-TASK-020"},
+  "metadata": {"rc": "rc.6", "wave": "rc6-only", "scope_item": "E5"}
+}
