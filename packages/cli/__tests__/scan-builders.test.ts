@@ -102,6 +102,9 @@ describe("scan builders — deterministic baseline knowledge", () => {
     expect(entry.body).toContain("vite");
     expect(entry.body).not.toContain("[MANDATORY_INJECTION]");
     expect(entry.body).not.toContain("[BUSINESS_LOGIC_CHUNKS]");
+    // v2.0-rc.7 T2: tech-stack narrows onto root manifests.
+    expect(entry.relevance_scope).toBe("narrow");
+    expect(entry.relevance_paths).toEqual(["package.json", "pnpm-workspace.yaml"]);
   });
 
   it("build_module_structure_entry_returns_model", () => {
@@ -115,6 +118,9 @@ describe("scan builders — deterministic baseline knowledge", () => {
     expect(entry.body).toContain("src/main.ts");
     expect(entry.body).toContain("[MISSION_STATEMENT]");
     expect(entry.body).toContain("[CONTEXT_INFO]");
+    // v2.0-rc.7 T2: module structure narrows onto per-package manifests.
+    expect(entry.relevance_scope).toBe("narrow");
+    expect(entry.relevance_paths).toEqual(["packages/**/package.json"]);
   });
 
   it("build_build_config_entry_returns_process", () => {
@@ -129,6 +135,14 @@ describe("scan builders — deterministic baseline knowledge", () => {
     expect(entry.body).toContain("[CONTEXT_INFO]");
     expect(entry.body).toContain("package.json");
     expect(entry.body).toContain("tsconfig.json");
+    // v2.0-rc.7 T2: build-config uses forensic-discovered config files when
+    // available. Our fixture's candidate_files include package.json + tsconfig
+    // + vite.config — all build configs by isBuildConfigPath. Order follows
+    // forensic discovery order.
+    expect(entry.relevance_scope).toBe("narrow");
+    expect(entry.relevance_paths.length).toBeGreaterThan(0);
+    expect(entry.relevance_paths).toContain("package.json");
+    expect(entry.relevance_paths).toContain("tsconfig.json");
   });
 
   it("build_code_style_entry_returns_guideline", () => {
@@ -142,6 +156,10 @@ describe("scan builders — deterministic baseline knowledge", () => {
     expect(entry.body).toContain("[MANDATORY_INJECTION]");
     expect(entry.body).toContain("[CONTEXT_INFO]");
     expect(entry.body).not.toContain("[BUSINESS_LOGIC_CHUNKS]");
+    // v2.0-rc.7 T2: code-style narrows onto canonical lint/format configs.
+    expect(entry.relevance_scope).toBe("narrow");
+    expect(entry.relevance_paths).toContain(".editorconfig");
+    expect(entry.relevance_paths).toContain("eslint.config.*");
   });
 
   it("build_ci_config_returns_null_when_absent", () => {
@@ -167,6 +185,9 @@ describe("scan builders — deterministic baseline knowledge", () => {
     expect(entry!.type).toBe("process");
     expect(entry!.target_subdir).toBe("processes");
     expect(entry!.slug).toBe("ci-config");
+    // v2.0-rc.7 T2: CI config narrows onto common workflow surfaces.
+    expect(entry!.relevance_scope).toBe("narrow");
+    expect(entry!.relevance_paths).toContain(".github/workflows/**");
   });
 
   it("build_readme_para_returns_null_when_absent", () => {
@@ -195,6 +216,10 @@ describe("scan builders — deterministic baseline knowledge", () => {
     expect(entry!.target_subdir).toBe("models");
     expect(entry!.slug).toBe("readme-first-paragraph");
     expect(entry!.body).toContain("deterministic fixture");
+    // v2.0-rc.7 T2: README stays broad (single repo-root file, Phase 1.5
+    // PreToolUse blacklist already covers it).
+    expect(entry!.relevance_scope).toBe("broad");
+    expect(entry!.relevance_paths).toEqual([]);
   });
 
   it("build_project_brief_returns_null_when_no_explicit_description", () => {
@@ -220,6 +245,9 @@ describe("scan builders — deterministic baseline knowledge", () => {
     expect(entry!.type).toBe("model");
     expect(entry!.slug).toBe("project-brief");
     expect(entry!.body).toContain("fixture for the deterministic");
+    // v2.0-rc.7 T2: project-brief is cross-cutting, stays broad.
+    expect(entry!.relevance_scope).toBe("broad");
+    expect(entry!.relevance_paths).toEqual([]);
   });
 
   it("isCIConfigPath classifies common CI surfaces", () => {
@@ -240,7 +268,7 @@ describe("scan builders — deterministic baseline knowledge", () => {
     expect(__testing__.extractExplicitDescription(sample)).toBeNull();
   });
 
-  it("renderMarkdown emits frontmatter with all 7 v2.0 fields (including tags)", () => {
+  it("renderMarkdown emits frontmatter with all v2.0 + rc.7 fields (tags + relevance)", () => {
     const built = {
       type: "model" as const,
       layer: "team" as const,
@@ -253,6 +281,11 @@ describe("scan builders — deterministic baseline knowledge", () => {
       slug: "hello",
       id: "KT-MOD-0001" as const,
       tags: ["typescript", "vite"],
+      // v2.0-rc.7 T2: every BuiltEntry now carries relevance_scope +
+      // relevance_paths. Frontmatter must serialize them so the meta-
+      // builder and doctor lint parsers pick them up.
+      relevance_scope: "narrow" as const,
+      relevance_paths: ["package.json"],
     };
     const md = __testing__.renderMarkdown(built);
     expect(md).toMatch(/^---\n/);
@@ -263,10 +296,12 @@ describe("scan builders — deterministic baseline knowledge", () => {
     expect(md).toContain('layer_reason: "test reason"');
     expect(md).toContain(`created_at: ${NOW}`);
     expect(md).toContain("tags: [typescript, vite]");
+    expect(md).toContain("relevance_scope: narrow");
+    expect(md).toContain('relevance_paths: ["package.json"]');
     expect(md).toContain("# Hello");
   });
 
-  it("renderMarkdown emits tags: [] when tags is empty", () => {
+  it("renderMarkdown emits tags: [] + relevance_paths: [] when both are empty", () => {
     const built = {
       type: "model" as const,
       layer: "team" as const,
@@ -279,9 +314,13 @@ describe("scan builders — deterministic baseline knowledge", () => {
       slug: "empty-tags",
       id: "KT-MOD-0002" as const,
       tags: [],
+      relevance_scope: "broad" as const,
+      relevance_paths: [],
     };
     const md = __testing__.renderMarkdown(built);
     expect(md).toContain("tags: []");
+    expect(md).toContain("relevance_scope: broad");
+    expect(md).toContain("relevance_paths: []");
   });
 
   it("stripFrontmatter removes leading YAML block", () => {

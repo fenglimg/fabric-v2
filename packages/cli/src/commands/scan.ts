@@ -137,6 +137,15 @@ interface MarkdownEntry {
   slug: string;
   // v2/rc.2: derived from forensic tech-stack; used by rc.3 review skill tag-filter.
   tags: string[];
+  // v2.0-rc.7 T2: per-builder relevance scope. Five baseline builders
+  // (tech-stack, module-structure, build-config, code-style, ci-config) know
+  // their canonical paths mechanically and emit narrow + a concrete
+  // relevance_paths list so the PreToolUse hook fires on edits to those
+  // files. README/project-brief builders stay broad — README is a repo-root
+  // singleton that the Phase 1.5 blacklist already covers, and project
+  // brief is a cross-cutting description with no path-anchor.
+  relevance_scope: "narrow" | "broad";
+  relevance_paths: string[];
 }
 
 interface BuiltEntry extends MarkdownEntry {
@@ -676,6 +685,13 @@ function buildTechStackEntry(
   const sections = template.build(inputs);
   const body = renderSections(sections);
 
+  // v2.0-rc.7 T2: tech-stack is anchored on the manifests that describe it.
+  // package.json is the universal signal; pnpm-workspace.yaml widens it to
+  // monorepo roots. The glob `**/package.json` is intentionally NOT used —
+  // we want the narrow injection to fire on root-manifest edits, not on
+  // every dependency's vendored manifest under node_modules.
+  const relevancePaths = ["package.json", "pnpm-workspace.yaml"];
+
   return {
     type: "model",
     layer: "team",
@@ -687,6 +703,8 @@ function buildTechStackEntry(
     target_subdir: "models",
     slug: "tech-stack",
     tags,
+    relevance_scope: "narrow",
+    relevance_paths: relevancePaths,
   };
 }
 
@@ -717,6 +735,14 @@ function buildModuleStructureEntry(
   const template = BASELINE_TEMPLATES[language]["module-structure"];
   const body = renderSections(template.build(inputs));
 
+  // v2.0-rc.7 T2: module structure is anchored on the per-package manifests
+  // in a workspace. `packages/**/package.json` is the canonical monorepo
+  // signal; for single-package repos it just won't match, which is fine —
+  // narrow_paths is allowed to be a forecast as long as the entry stays
+  // useful in the workspaces where it does match. Single-package layouts
+  // get their tech-stack hint via the broader `package.json` glob above.
+  const relevancePaths = ["packages/**/package.json"];
+
   return {
     type: "model",
     layer: "team",
@@ -728,6 +754,8 @@ function buildModuleStructureEntry(
     target_subdir: "models",
     slug: "module-structure",
     tags,
+    relevance_scope: "narrow",
+    relevance_paths: relevancePaths,
   };
 }
 
@@ -754,6 +782,16 @@ function buildBuildConfigEntry(
   const template = BASELINE_TEMPLATES[language]["build-config"];
   const body = renderSections(template.build(inputs));
 
+  // v2.0-rc.7 T2: build-config narrows onto the build manifests the forensic
+  // scan already discovered. We use those as path anchors directly so the
+  // hook fires on edits to exactly the files this entry documents. Falls
+  // back to a small canonical list when forensic surfaced none — better to
+  // hint over-eagerly than to silently stay broad.
+  const discovered = configFiles.filter((path) => isBuildConfigPath(path));
+  const relevancePaths = discovered.length > 0
+    ? Array.from(new Set(discovered))
+    : ["tsconfig.json", "tsconfig.*.json", "vite.config.*", "rollup.config.*", "webpack.config.*"];
+
   return {
     type: "process",
     layer: "team",
@@ -765,6 +803,8 @@ function buildBuildConfigEntry(
     target_subdir: "processes",
     slug: "build-config",
     tags,
+    relevance_scope: "narrow",
+    relevance_paths: relevancePaths,
   };
 }
 
@@ -797,6 +837,19 @@ function buildCodeStyleEntry(
   const template = BASELINE_TEMPLATES[language]["code-style"];
   const body = renderSections(template.build(inputs));
 
+  // v2.0-rc.7 T2: code-style narrows onto the canonical lint/format config
+  // files. The list is deterministic — these paths are conventional for
+  // every Node/JS workspace, regardless of which tool is actually in use.
+  // Editing any of them is the natural moment to surface this entry.
+  const relevancePaths = [
+    ".prettierrc",
+    ".prettierrc.*",
+    ".editorconfig",
+    "eslint.config.*",
+    ".eslintrc",
+    ".eslintrc.*",
+  ];
+
   return {
     type: "guideline",
     layer: "team",
@@ -808,6 +861,8 @@ function buildCodeStyleEntry(
     target_subdir: "guidelines",
     slug: "code-style",
     tags,
+    relevance_scope: "narrow",
+    relevance_paths: relevancePaths,
   };
 }
 
@@ -845,6 +900,16 @@ function buildCIConfigEntry(forensic: ForensicReport, nowIso: string, tags: stri
     ].join("\n"),
   });
 
+  // v2.0-rc.7 T2: CI config narrows onto the workflow directories the major
+  // platforms use. GitHub Actions is the most common, but we cover GitLab,
+  // CircleCI, and Jenkins in case the repo migrates.
+  const relevancePaths = [
+    ".github/workflows/**",
+    ".gitlab-ci.yml",
+    ".circleci/**",
+    "Jenkinsfile",
+  ];
+
   return {
     type: "process",
     layer: "team",
@@ -856,6 +921,8 @@ function buildCIConfigEntry(forensic: ForensicReport, nowIso: string, tags: stri
     target_subdir: "processes",
     slug: "ci-config",
     tags,
+    relevance_scope: "narrow",
+    relevance_paths: relevancePaths,
   };
 }
 
@@ -900,6 +967,11 @@ function buildReadmeFirstParaEntry(
     target_subdir: "models",
     slug: "readme-first-paragraph",
     tags,
+    // v2.0-rc.7 T2: broad by design — single repo-root file, the Phase 1.5
+    // PreToolUse blacklist already covers README. Anchoring this entry to
+    // README.md would surface it on every README edit, which is noise.
+    relevance_scope: "broad",
+    relevance_paths: [],
   };
 }
 
@@ -945,6 +1017,12 @@ function buildProjectBriefEntry(
     target_subdir: "models",
     slug: "project-brief",
     tags,
+    // v2.0-rc.7 T2: broad — project brief is a cross-cutting description
+    // with no path anchor. Narrowing it to README.md would duplicate the
+    // readme-first-paragraph surface; keeping it broad lets the
+    // SessionStart broad hint do the right thing.
+    relevance_scope: "broad",
+    relevance_paths: [],
   };
 }
 
@@ -961,6 +1039,15 @@ function renderFrontmatter(entry: BuiltEntry): string {
   const tagsLine = entry.tags.length > 0
     ? `tags: [${entry.tags.join(", ")}]`
     : "tags: []";
+  // v2.0-rc.7 T2: emit relevance_scope + relevance_paths so the doctor
+  // line-based parser (RELEVANCE_SCOPE_LINE_PATTERN / RELEVANCE_PATHS_LINE_
+  // PATTERN in packages/server/src/services/doctor.ts) picks them up, and
+  // the meta-builder forwards them into description.relevance_paths for
+  // PreToolUse narrow-injection matching. Flow-style array matches the
+  // exact shape RELEVANCE_PATHS_LINE_PATTERN expects.
+  const relevancePathsLine = entry.relevance_paths.length > 0
+    ? `relevance_paths: [${entry.relevance_paths.map((p) => quoteIfNeeded(p)).join(", ")}]`
+    : "relevance_paths: []";
   const lines = [
     "---",
     `id: ${entry.id}`,
@@ -970,6 +1057,8 @@ function renderFrontmatter(entry: BuiltEntry): string {
     `layer_reason: ${quoteIfNeeded(entry.layer_reason)}`,
     `created_at: ${entry.created_at}`,
     tagsLine,
+    `relevance_scope: ${entry.relevance_scope}`,
+    relevancePathsLine,
     "---",
   ];
   return lines.join("\n");
@@ -1142,6 +1231,25 @@ function isCIConfigPath(path: string): boolean {
     path === "Jenkinsfile" ||
     path === ".travis.yml"
   );
+}
+
+// v2.0-rc.7 T2: tightly-scoped predicate for the build-config builder's
+// relevance_paths derivation. Mirrors isCIConfigPath in shape: matches the
+// file basenames + extension patterns we want the PreToolUse hook to fire
+// on, while excluding lint/style configs (those belong to code-style).
+function isBuildConfigPath(path: string): boolean {
+  const lower = path.toLowerCase();
+  // Strip directory prefix for basename checks.
+  const basename = lower.split("/").pop() ?? lower;
+  if (basename.startsWith("tsconfig") && basename.endsWith(".json")) return true;
+  if (basename === "package.json") return true;
+  if (basename === "pnpm-workspace.yaml" || basename === "pnpm-workspace.yml") return true;
+  if (basename.startsWith("vite.config.")) return true;
+  if (basename.startsWith("rollup.config.")) return true;
+  if (basename.startsWith("webpack.config.")) return true;
+  if (basename.startsWith("vitest.config.")) return true;
+  if (basename === "turbo.json" || basename === "nx.json") return true;
+  return false;
 }
 
 function extractFirstParagraph(readme: string): string | null {
@@ -1419,6 +1527,7 @@ export const __testing__ = {
   renderMarkdown,
   stripFrontmatter,
   isCIConfigPath,
+  isBuildConfigPath,
   extractFirstParagraph,
   extractExplicitDescription,
   // TASK-008: bilingual template registry + language detection
