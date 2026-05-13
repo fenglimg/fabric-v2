@@ -5,6 +5,36 @@ All notable changes to Fabric will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0-rc.8] — 2026-05-13
+
+**Release-pipeline fix.** First RC actually published to npm since `2.0.0-rc.1`.
+Bundles all rc.2 → rc.7 work that was tagged locally but never reached npm
+because the CI publish step did not bump `package.json` to match the git tag.
+
+### Fixed
+
+- **Tag/version drift in release workflow**: `.github/workflows/release.yml`
+  now derives the published version from `GITHUB_REF_NAME` via the new
+  `scripts/apply-tag-version.mjs`, applied in the `publish` job after
+  `pnpm install` and before `pnpm -r build`. Workspace `workspace:*`
+  references resolve against the rewritten manifests at publish time.
+- **Tag/version coherence guard**: `scripts/sync-versions.mjs` accepts an
+  optional `--tag` flag; the `ci` job now invokes it as
+  `node scripts/sync-versions.mjs --tag "${GITHUB_REF_NAME}"` so a mismatch
+  between the committed `package.json` and the pushed tag fails the build
+  before the publish job runs (defense in depth alongside `apply-tag-version.mjs`).
+
+### Included from rc.2 → rc.7
+
+All previously tagged but unpublished rc.2 → rc.7 work ships here. Notable
+items: `fab_extract_knowledge` + `fab_review` MCP tools, `fabric-archive` /
+`fabric-review` / `fabric-import` skills, `fabric doctor` 21-check surface
+with `--apply-lint`, `fabric-hint` Signal D + edit-counter overview, T01–T11
+rc.7 scope (CLI ↔ Skill init handover, scan-time path anchoring, threshold
+externalization, `fab_plan_context` degenerate-mode removal), workspace
+typecheck + lint + coverage stabilization. See git history `v2.0.0-rc.1..v2.0.0-rc.8`
+for the full set.
+
 ## [2.0.0] — 2026-05-10
 
 **Major release.** Knowledge sustainment protocol — a clean break from the

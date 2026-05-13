@@ -30,8 +30,8 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Verify synced versions
-        run: node scripts/sync-versions.mjs
+      - name: Verify synced versions (and tag/version coherence)
+        run: node scripts/sync-versions.mjs --tag "${GITHUB_REF_NAME}"
 
       - name: Build workspace
         run: pnpm -r build
@@ -79,6 +79,9 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Apply tag version to all package manifests
+        run: node scripts/apply-tag-version.mjs "${GITHUB_REF_NAME}"
 
       - name: Build packages
         run: pnpm -r build

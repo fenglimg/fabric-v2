@@ -41,6 +41,16 @@ async function collectWorkspacePackagePaths() {
   return packagePaths.sort();
 }
 
+function parseTagOption() {
+  const idx = process.argv.indexOf("--tag");
+  if (idx === -1) return null;
+  const value = process.argv[idx + 1];
+  if (!value) {
+    throw new Error("--tag flag requires a value, e.g. --tag v2.0.0-rc.8");
+  }
+  return value.startsWith("v") ? value.slice(1) : value;
+}
+
 async function main() {
   const rootManifest = await readPackageManifest(ROOT_PACKAGE_PATH);
   const workspacePackagePaths = await collectWorkspacePackagePaths();
@@ -73,8 +83,19 @@ async function main() {
     return;
   }
 
+  const expectedFromTag = parseTagOption();
+  if (expectedFromTag !== null && rootManifest.version !== expectedFromTag) {
+    process.stderr.write(
+      `Tag/version mismatch: tag declares ${expectedFromTag} but root package.json has ${rootManifest.version}.\n` +
+        `Bump package.json before tagging, or rely on apply-tag-version.mjs in the publish job.\n`,
+    );
+    process.exitCode = 1;
+    return;
+  }
+
   process.stdout.write(
-    `Version sync OK: ${workspacePackagePaths.length} workspace package(s) match root version ${rootManifest.version}.\n`,
+    `Version sync OK: ${workspacePackagePaths.length} workspace package(s) match root version ${rootManifest.version}` +
+      (expectedFromTag !== null ? ` (matches tag ${expectedFromTag}).\n` : `.\n`),
   );
 }
 
