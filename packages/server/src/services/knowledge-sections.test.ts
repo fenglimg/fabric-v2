@@ -8,18 +8,18 @@ import { createSelectionToken, planContext } from "./plan-context.js";
 import { readEventLedger } from "./event-ledger.js";
 import { getKnowledgeSections, parseKnowledgeSections } from "./knowledge-sections.js";
 
-// v2.0-rc.5 A3 (TASK-007): planContext() emits selection_token only when the
-// description_index has > 30 entries (degenerate mode skips the token). The
-// two-stage selection tests below construct corpora well below that threshold
-// for fixture clarity, so we mint the token directly from the plan output.
+// v2.0-rc.7 T9: planContext() always emits a selection_token, but the token
+// it mints carries `required_stable_ids = []` (the L0/L1/L2 selection
+// ceremony was retired in rc.5 A3 and the planning surface no longer
+// distinguishes required vs selectable). The two-stage selection tests below
+// still need a token that ENFORCES specific required ids (e.g. global-
+// protocol), so they mint a fresh token directly via createSelectionToken
+// with the test-supplied lists rather than reusing plan.selection_token.
 function mintTokenFromPlan(
   plan: Awaited<ReturnType<typeof planContext>>,
   requiredStableIds: string[],
   aiSelectableStableIds: string[],
 ): string {
-  if (plan.selection_token !== undefined) {
-    return plan.selection_token;
-  }
   return createSelectionToken(
     plan.revision_hash,
     plan.entries.map((entry) => entry.path),

@@ -53,9 +53,10 @@ const { spawnSync } = require("node:child_process");
 // -----------------------------------------------------------------------------
 
 // Per-type truncation triggers when total narrow entries > 30. The threshold
-// matches the rc.5 plan-context degenerate-mode cutoff (candidates_full_content
-// is shipped when candidates <= 30); reusing that number keeps the two
-// surfaces consistent.
+// was originally aligned with the rc.5 plan-context degenerate-mode cutoff,
+// which is now retired (rc.7 T9 — see docs/decisions/rc5-a3-superseded.md).
+// We keep 30 here as a stable rendering boundary independent of that protocol
+// change: it's a UI-density choice, not a wire-shape one.
 const TRUNCATION_THRESHOLD = 30;
 
 // `fabric plan-context-hint` is a thin wrapper over planContext(); on a

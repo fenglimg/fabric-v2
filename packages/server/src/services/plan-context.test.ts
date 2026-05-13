@@ -101,13 +101,10 @@ describe("planContext", () => {
     const index = result.entries[0]?.description_index ?? [];
     expect(index.map((item) => item.stable_id)).toEqual(["global-protocol", "ui-batch-rendering"]);
 
-    // Degenerate single-stage mode: 2 entries ≤ 30 ⇒ candidates_full_content
-    // populated, selection_token omitted.
-    expect(result.candidates_full_content).toBeDefined();
-    expect(result.candidates_full_content?.map((c) => c.stable_id).sort()).toEqual(
-      ["global-protocol", "ui-batch-rendering"],
-    );
-    expect(result.selection_token).toBeUndefined();
+    // v2.0-rc.7 T9: symmetric output — every response carries a
+    // selection_token and the `candidates_full_content` field is gone.
+    expect(result.selection_token).toEqual(expect.any(String));
+    expect(result).not.toHaveProperty("candidates_full_content");
 
     expect((await readEventLedger(projectRoot, { event_type: "knowledge_context_planned" })).events).toEqual([
       expect.objectContaining({
@@ -147,9 +144,10 @@ describe("planContext", () => {
     ]);
     expect(result.shared.description_index).toEqual([]);
     expect(result.shared.preflight_diagnostics).toEqual([]);
-    // Empty index ≤ 30 ⇒ degenerate mode (token omitted, empty inline payload).
-    expect(result.selection_token).toBeUndefined();
-    expect(result.candidates_full_content).toEqual([]);
+    // v2.0-rc.7 T9: symmetric output — selection_token issued even for an
+    // empty description_index; candidates_full_content field is gone.
+    expect(result.selection_token).toEqual(expect.any(String));
+    expect(result).not.toHaveProperty("candidates_full_content");
   });
 
   // ---------------------------------------------------------------------------
@@ -248,10 +246,12 @@ describe("planContext", () => {
   });
 
   // ---------------------------------------------------------------------------
-  // v2.0-rc.5 A3 (TASK-007): degenerate vs two-stage mode + Cocos field removal
+  // v2.0-rc.7 T9: degenerate single-stage mode removed. Output is now
+  // symmetric across all candidate counts — description_index + selection_token,
+  // no candidates_full_content. See docs/decisions/rc5-a3-superseded.md.
   // ---------------------------------------------------------------------------
 
-  it("test_plan_context_degenerate_mode_le30 — ≤30 entries returns candidates_full_content and omits selection_token", async () => {
+  it("test_plan_context_symmetric_small_set — 5 entries return description_index + selection_token (no inline bodies)", async () => {
     const projectRoot = await createTempProject();
     await mkdir(join(projectRoot, ".fabric", "knowledge", "decisions"), { recursive: true });
     await writeFile(join(projectRoot, ".fabric", "human-lock.json"), `${JSON.stringify({ locked: [] }, null, 2)}\n`);
@@ -284,30 +284,26 @@ describe("planContext", () => {
     }
     await writeFile(
       join(projectRoot, ".fabric", "agents.meta.json"),
-      `${JSON.stringify({ revision: "rev-degenerate", nodes }, null, 2)}\n`,
+      `${JSON.stringify({ revision: "rev-small", nodes }, null, 2)}\n`,
     );
 
     const result = await planContext(projectRoot, { paths: ["src/index.ts"] });
 
-    expect(result.selection_token).toBeUndefined();
-    expect(result.candidates_full_content).toBeDefined();
-    expect(result.candidates_full_content).toHaveLength(5);
-    expect(result.candidates_full_content?.[0]?.content).toContain("Body for KT-DEC-0001");
-    // Every candidate carries a non-empty body.
-    for (const candidate of result.candidates_full_content ?? []) {
-      expect(candidate.content.length).toBeGreaterThan(0);
-    }
+    expect(result.selection_token).toEqual(expect.any(String));
+    expect(result.shared.description_index).toHaveLength(5);
+    // Negative assertion: degenerate-mode field is gone from the response.
+    expect(result).not.toHaveProperty("candidates_full_content");
   });
 
-  it("test_plan_context_two_stage_gt30 — >30 entries retains selection_token and omits candidates_full_content", async () => {
+  it("test_plan_context_symmetric_large_set — 100 entries return same shape as small set", async () => {
     const projectRoot = await createTempProject();
     await mkdir(join(projectRoot, ".fabric", "knowledge", "decisions"), { recursive: true });
     await writeFile(join(projectRoot, ".fabric", "human-lock.json"), `${JSON.stringify({ locked: [] }, null, 2)}\n`);
 
     const nodes: Record<string, unknown> = {};
-    // 31 stub entries → just above the degenerate threshold (30). No file
-    // bodies needed because two-stage mode does not pre-read content.
-    for (let i = 0; i < 31; i += 1) {
+    // 100 stub entries — well above the legacy degenerate threshold. Shape
+    // must match the small-set response exactly.
+    for (let i = 0; i < 100; i += 1) {
       const id = `KT-DEC-${String(i + 1).padStart(4, "0")}`;
       const file = `.fabric/knowledge/decisions/d${i + 1}.md`;
       nodes[id] = {
@@ -333,14 +329,14 @@ describe("planContext", () => {
     }
     await writeFile(
       join(projectRoot, ".fabric", "agents.meta.json"),
-      `${JSON.stringify({ revision: "rev-two-stage", nodes }, null, 2)}\n`,
+      `${JSON.stringify({ revision: "rev-large", nodes }, null, 2)}\n`,
     );
 
     const result = await planContext(projectRoot, { paths: ["src/index.ts"] });
 
     expect(result.selection_token).toEqual(expect.any(String));
-    expect(result.candidates_full_content).toBeUndefined();
-    expect(result.shared.description_index).toHaveLength(31);
+    expect(result.shared.description_index).toHaveLength(100);
+    expect(result).not.toHaveProperty("candidates_full_content");
   });
 
   // ---------------------------------------------------------------------------

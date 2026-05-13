@@ -62,21 +62,21 @@ describe("mcp-server integration (v2.0 dual-root)", () => {
     expect(layers).toEqual(new Set(["team", "personal"]));
   });
 
-  it("plan_context_inlines_full_bodies_v2_layout — degenerate mode reads from both roots", async () => {
-    // v2.0-rc.5 A3 (TASK-007): with 2 entries the result is in single-stage
-    // degenerate mode — full markdown body for every candidate ships in
-    // `candidates_full_content`. This still proves the file read crossed
-    // both team/project root and personal/home root, which was the original
-    // signal exercised through the (now retired) selection_token round-trip.
+  it("plan_context_symmetric_shape_v2_layout — returns description_index + selection_token regardless of count", async () => {
+    // v2.0-rc.7 T9: degenerate single-stage mode removed. Every response
+    // returns a symmetric shape — `description_index` per entry + a
+    // `selection_token` — and the Agent fetches bodies via
+    // `fab_get_knowledge_sections` (which emits the `knowledge_consumed`
+    // event required for rc.5 C5 closure). The dual-root file read is now
+    // exercised exclusively through that follow-up call.
     const projectRoot = await createV2Project();
     const plan = await planContext(projectRoot, { paths: ["src/index.ts"] });
 
-    expect(plan.selection_token).toBeUndefined();
-    expect(plan.candidates_full_content).toBeDefined();
+    expect(plan.selection_token).toEqual(expect.any(String));
+    expect(plan).not.toHaveProperty("candidates_full_content");
 
-    const byId = new Map((plan.candidates_full_content ?? []).map((c) => [c.stable_id, c] as const));
-    expect(byId.get("KT-DEC-0001")?.content).toContain("Team mandatory.");
-    expect(byId.get("KP-GLD-0001")?.content).toContain("Personal mandatory.");
+    const ids = plan.shared.description_index.map((item) => item.stable_id).sort();
+    expect(ids).toEqual(["KP-GLD-0001", "KT-DEC-0001"]);
   });
 });
 

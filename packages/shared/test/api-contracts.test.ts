@@ -20,13 +20,15 @@ const validDescription = {
 };
 
 // Minimal valid plan-context output used to roundtrip an index item with/without tags.
-// v2.0-rc.5 A3 (TASK-007): `selection_token` is optional (omitted in
-// degenerate mode); `shared.required_stable_ids`/`shared.ai_selectable_stable_ids`
-// removed; per-entry selection ceremony fields gone.
+// v2.0-rc.7 T9: `selection_token` is required on every response (degenerate
+// single-stage mode removed — see docs/decisions/rc5-a3-superseded.md).
+// `shared.required_stable_ids`/`shared.ai_selectable_stable_ids` were removed
+// in rc.5 A3; per-entry selection ceremony fields gone.
 function buildPlanContextOutput(extraIndexFields: Record<string, unknown>) {
   return {
     revision_hash: "rev",
     stale: false,
+    selection_token: "selection:rev:test:fixture",
     entries: [],
     shared: {
       description_index: [

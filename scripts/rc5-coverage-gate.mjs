@@ -216,9 +216,12 @@ function checkA3PlanContext() {
     }
   }
 
-  // Must contain candidates_full_content as the new degenerate-mode payload.
-  if (!/candidates_full_content/.test(src)) {
-    failures.push("plan-context.ts is missing candidates_full_content (degenerate-mode payload)");
+  // v2.0-rc.7 T9: degenerate-mode payload was retired. plan-context.ts must
+  // no longer mention candidates_full_content anywhere — the response is now
+  // symmetric (description_index + selection_token at every size). See
+  // docs/decisions/rc5-a3-superseded.md.
+  if (/candidates_full_content/.test(src)) {
+    failures.push("plan-context.ts still references candidates_full_content (rc.7 T9 removed degenerate mode)");
   }
 
   if (failures.length === 0) {

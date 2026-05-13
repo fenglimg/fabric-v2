@@ -1,7 +1,3 @@
-import { readFile } from "node:fs/promises";
-import { homedir } from "node:os";
-import { join } from "node:path";
-
 import { minimatch } from "minimatch";
 
 import { deriveAgentsMetaLayer, type RuleDescription, type RuleDescriptionIndexItem } from "@fenglimg/fabric-shared";
@@ -40,28 +36,25 @@ export type RequirementProfile = {
 
 // v2.0-rc.5 A3 (TASK-007): per-entry shape drops the legacy L0/L1/L2 selection
 // ceremony (required_stable_ids / ai_selectable_stable_ids /
-// initial_selected_stable_ids / selection_policy). When the description_index
-// has ≤ DEGENERATE_THRESHOLD entries the result enters single-stage degenerate
-// mode: `candidates_full_content` carries the full markdown body of every
-// candidate and `selection_token` is omitted. Above the threshold the legacy
-// two-stage flow is retained (selection_token → fab_get_knowledge_sections).
+// initial_selected_stable_ids / selection_policy).
+//
+// v2.0-rc.7 T9: degenerate single-stage mode (≤30 entries inlined as
+// `candidates_full_content`) removed. The shape is now symmetric across all
+// candidate counts: every response returns `description_index` + a
+// `selection_token`, and the Agent follows up with `fab_get_knowledge_sections`
+// to fetch bodies. Rationale: the inline-body branch silently bypassed
+// `knowledge_consumed` event emission, breaking rc.5 C5 closure. See
+// docs/decisions/rc5-a3-superseded.md.
 export type PlanContextEntry = {
   path: string;
   requirement_profile: RequirementProfile;
   description_index: RuleDescriptionIndexItem[];
 };
 
-export type PlanContextCandidateContent = {
-  stable_id: string;
-  path: string;
-  content: string;
-};
-
 export type PlanContextResult = {
   revision_hash: string;
   stale: boolean;
-  selection_token?: string;
-  candidates_full_content?: PlanContextCandidateContent[];
+  selection_token: string;
   entries: PlanContextEntry[];
   shared: {
     description_index: RuleDescriptionIndexItem[];
@@ -86,11 +79,8 @@ export type SelectionTokenState = {
 };
 
 const SELECTION_TOKEN_TTL_MS = 5 * 60 * 1000;
-// v2.0-rc.5 A3: when the candidate set is small enough we ship every entry's
-// full markdown body up-front and skip the selection_token round-trip. 30 is
-// the working budget; if 30 entries exceed ~50KB payload during dogfood we
-// lower this in rc.7 (see TASK-007 risk note).
-const DEGENERATE_CANDIDATE_THRESHOLD = 30;
+// v2.0-rc.7 T9: degenerate-mode threshold removed — the API is now symmetric
+// across all candidate counts. See docs/decisions/rc5-a3-superseded.md.
 const selectionTokenCache = new Map<string, SelectionTokenState>();
 
 export async function planContext(
@@ -124,35 +114,23 @@ export async function planContext(
 
   const sharedDescriptionIndex = dedupeDescriptionIndex(entries.flatMap((entry) => entry.description_index));
 
-  // Degenerate single-stage mode: dump every candidate body inline, skip the
-  // selection_token ceremony. Threshold is empirical (see comment above).
-  const isDegenerate = sharedDescriptionIndex.length <= DEGENERATE_CANDIDATE_THRESHOLD;
-  let selectionToken: string | undefined;
-  let candidatesFullContent: PlanContextCandidateContent[] | undefined;
-
-  if (isDegenerate) {
-    candidatesFullContent = await loadCandidatesFullContent(projectRoot, meta, sharedDescriptionIndex);
-  } else {
-    const sharedStableIds = sharedDescriptionIndex.map((item) => item.stable_id);
-    selectionToken = createSelectionToken(meta.revision, uniquePaths, [], sharedStableIds);
-  }
+  // v2.0-rc.7 T9: always emit a selection_token. The Agent must follow up with
+  // `fab_get_knowledge_sections` (which DOES emit the `knowledge_consumed`
+  // event required for rc.5 C5 closure) to load bodies. The inline
+  // `candidates_full_content` short-circuit is gone.
+  const sharedStableIds = sharedDescriptionIndex.map((item) => item.stable_id);
+  const selectionToken = createSelectionToken(meta.revision, uniquePaths, [], sharedStableIds);
 
   const result: PlanContextResult = {
     revision_hash: meta.revision,
     stale,
+    selection_token: selectionToken,
     entries,
     shared: {
       description_index: sharedDescriptionIndex,
       preflight_diagnostics: buildPreflightDiagnostics(meta),
     },
   };
-
-  if (selectionToken !== undefined) {
-    result.selection_token = selectionToken;
-  }
-  if (candidatesFullContent !== undefined) {
-    result.candidates_full_content = candidatesFullContent;
-  }
 
   try {
     await appendEventLedgerEvent(projectRoot, {
@@ -395,49 +373,6 @@ function buildPreflightDiagnostics(meta: AgentsMeta): PlanContextResult["shared"
     stable_ids: missingDescriptionStableIds,
     message: `Resolved registry includes ${missingDescriptionStableIds.length} node(s) without structured descriptions.`,
   }];
-}
-
-async function loadCandidatesFullContent(
-  projectRoot: string,
-  meta: AgentsMeta,
-  index: RuleDescriptionIndexItem[],
-): Promise<PlanContextCandidateContent[]> {
-  const nodesByStableId = new Map<string, AgentsMeta["nodes"][string]>();
-  for (const [nodeId, node] of Object.entries(meta.nodes)) {
-    nodesByStableId.set(node.stable_id ?? nodeId, node);
-  }
-
-  const out: PlanContextCandidateContent[] = [];
-  for (const item of index) {
-    const node = nodesByStableId.get(item.stable_id);
-    if (node === undefined) {
-      continue;
-    }
-
-    const contentRef = node.content_ref ?? node.file;
-    const sourcePath = resolveCandidateSourcePath(projectRoot, contentRef);
-    try {
-      const content = await readFile(sourcePath, "utf8");
-      out.push({
-        stable_id: item.stable_id,
-        path: normalizeKnowledgePath(contentRef),
-        content,
-      });
-    } catch {
-      // Missing file is reported via preflight_diagnostics elsewhere; here we
-      // simply omit the entry from the inline payload so degenerate mode never
-      // becomes a hard failure point.
-    }
-  }
-  return out;
-}
-
-function resolveCandidateSourcePath(projectRoot: string, contentRef: string): string {
-  if (contentRef.startsWith("~/.fabric/knowledge/")) {
-    const home = process.env.FABRIC_HOME ?? homedir();
-    return join(home, ".fabric", "knowledge", contentRef.slice("~/.fabric/knowledge/".length));
-  }
-  return join(projectRoot, contentRef);
 }
 
 function dedupeStableIds(stableIds: string[]): string[] {

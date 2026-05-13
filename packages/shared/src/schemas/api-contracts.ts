@@ -84,17 +84,9 @@ const _requirementProfileSchema = z.object({
   detected_entities: z.array(z.string()),
 });
 
-// v2.0-rc.5 A3 (TASK-007): inline candidate body shipped in single-stage
-// degenerate mode (description_index ≤ 30 entries). Each entry carries the
-// full markdown body so the caller can skip the selection_token round-trip
-// and feed knowledge straight into context.
-const _candidateFullContentSchema = z.object({
-  stable_id: z.string(),
-  path: z.string(),
-  content: z.string(),
-});
-
 // v2.0-rc.5 A1: `_selectionPolicySchema` retired with the L0/L1/L2 protocol.
+// v2.0-rc.7 T9: `_candidateFullContentSchema` retired with the degenerate
+// single-stage mode. See docs/decisions/rc5-a3-superseded.md.
 export const planContextInputSchema = z.object({
   paths: z
     .array(z.string())
@@ -152,16 +144,19 @@ export const planContextInputSchema = z.object({
 // Per-entry `selection_policy / required_stable_ids / ai_selectable_stable_ids
 // / initial_selected_stable_ids` are gone; the aggregate `required_stable_ids
 // / ai_selectable_stable_ids` on `shared` are gone too (token state still
-// tracks selectable ids internally for the two-stage path). `selection_token`
-// is optional: present only when description_index > 30 (two-stage protocol);
-// in degenerate mode (≤ 30) the response ships `candidates_full_content`
-// inline instead. The per-entry `.passthrough()` escape from TASK-005 is
-// removed — entries now have a fixed shape.
+// tracks selectable ids internally for the two-stage path).
+//
+// v2.0-rc.7 T9: the response shape is now symmetric across all candidate
+// counts. `selection_token` is REQUIRED on every successful response and the
+// Agent must follow up with `fab_get_knowledge_sections` to load bodies (that
+// tool emits the `knowledge_consumed` event needed for rc.5 C5 closure). The
+// inline `candidates_full_content` degenerate-mode field is gone. See
+// docs/decisions/rc5-a3-superseded.md. The per-entry `.passthrough()` escape
+// from TASK-005 is removed — entries now have a fixed shape.
 export const planContextOutputSchema = z.object({
   revision_hash: z.string(),
   stale: z.boolean(),
-  selection_token: z.string().optional(),
-  candidates_full_content: z.array(_candidateFullContentSchema).optional(),
+  selection_token: z.string(),
   entries: z.array(
     z.object({
       path: z.string(),
