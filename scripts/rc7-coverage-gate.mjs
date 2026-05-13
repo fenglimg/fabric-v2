@@ -474,6 +474,83 @@ async function checkT08SessionStartGating() {
 }
 
 // ---------------------------------------------------------------------------
+// T01 — CLI init → Skill sentinel hand-off (.fabric/.import-requested)
+// ---------------------------------------------------------------------------
+
+async function checkT01ImportSentinel() {
+  const failures = [];
+
+  const init = readText("packages/cli/src/commands/init.ts");
+  if (init === undefined) {
+    return {
+      id: "T01",
+      name: "CLI init → Skill sentinel hand-off (T1)",
+      passed: false,
+      details: "packages/cli/src/commands/init.ts not found",
+    };
+  }
+  if (!/\.import-requested/.test(init)) {
+    failures.push("init.ts: missing .import-requested sentinel write path");
+  }
+  if (!/maybeWriteImportSentinel|import-requested.*confirm/.test(init)) {
+    failures.push("init.ts: missing clack.confirm prompt → sentinel write helper");
+  }
+  if (!/FABRIC_NONINTERACTIVE/.test(init)) {
+    failures.push("init.ts: sentinel prompt does not honor FABRIC_NONINTERACTIVE env guard");
+  }
+
+  const broadHook = readText("packages/cli/templates/hooks/knowledge-hint-broad.cjs");
+  if (broadHook === undefined) {
+    failures.push("knowledge-hint-broad.cjs: not found");
+  } else {
+    if (!/isImportRequestedSentinelPresent/.test(broadHook)) {
+      failures.push("knowledge-hint-broad.cjs: missing sentinel pickup helper");
+    }
+    if (!/\.import-requested/.test(broadHook)) {
+      failures.push("knowledge-hint-broad.cjs: does not read .import-requested sentinel");
+    }
+  }
+
+  const stopHook = readText("packages/cli/templates/hooks/fabric-hint.cjs");
+  if (stopHook === undefined) {
+    failures.push("fabric-hint.cjs: not found");
+  } else {
+    if (!/isImportRequestedSentinelPresent|IMPORT_REQUESTED_SENTINEL_FILE/.test(stopHook)) {
+      failures.push("fabric-hint.cjs: missing sentinel pickup helper / constant");
+    }
+    if (!/\.import-requested/.test(stopHook)) {
+      failures.push("fabric-hint.cjs: does not reference .import-requested sentinel");
+    }
+    if (!/makeImportSentinelResult/.test(stopHook)) {
+      failures.push("fabric-hint.cjs: missing makeImportSentinelResult builder");
+    }
+  }
+
+  const skill = readText("packages/cli/templates/skills/fabric-import/SKILL.md");
+  if (skill === undefined) {
+    failures.push("fabric-import/SKILL.md: not found");
+  } else {
+    if (!/Phase 0/.test(skill) || !/import-requested/.test(skill)) {
+      failures.push("fabric-import/SKILL.md: missing Phase 0 sentinel contract section");
+    }
+    // Step 3.4 must reference clearing the sentinel.
+    if (!/rm -f .fabric\/.import-requested|\.import-requested.*delete|sentinel.*clear/i.test(skill)) {
+      failures.push("fabric-import/SKILL.md: Step 3.4 does not document sentinel removal");
+    }
+  }
+
+  if (failures.length === 0) {
+    return { id: "T01", name: "CLI init → Skill sentinel hand-off (T1)", passed: true };
+  }
+  return {
+    id: "T01",
+    name: "CLI init → Skill sentinel hand-off (T1)",
+    passed: false,
+    details: failures.join("\n"),
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Driver
 // ---------------------------------------------------------------------------
 
@@ -484,6 +561,7 @@ async function main() {
   checks.push(await checkT05CrossSessionDigest());
   checks.push(await checkT10MaintenanceSignal());
   checks.push(await checkT08SessionStartGating());
+  checks.push(await checkT01ImportSentinel());
 
   const passed = checks.every((c) => c.passed);
   const headerWidth = Math.max(...checks.map((c) => c.name.length)) + 4;

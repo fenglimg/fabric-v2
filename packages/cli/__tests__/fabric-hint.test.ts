@@ -13,6 +13,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   rmSync,
   utimesSync,
   writeFileSync,
@@ -1838,6 +1839,104 @@ describe("fabric-hint.cjs — rc.7 T4 banner reformat", () => {
     ];
     writeFileSync(join(dir, "edit-counter"), `${lines.join("\n")}\n`, "utf8");
     expect(hook.countEditsSince(tempRoot, anchor)).toBe(3);
+  });
+
+  it("rc.7 T1 sentinel: main() emits import signal AND bypasses cooldown when .fabric/.import-requested present", () => {
+    // Seed: a workspace with a fresh canonical corpus + a recent
+    // doctor_run + zero pending entries. Under organic decide(), no signal
+    // would fire. The sentinel must force a Signal C emission anyway.
+    mkdirSync(join(tempRoot, ".fabric"), { recursive: true });
+    const recentDoctor = makeEvent("doctor_run", NOW_MS - 1 * HOUR_MS, {
+      mode: "lint",
+      issues: 0,
+    });
+    writeFileSync(
+      join(tempRoot, ".fabric", "events.jsonl"),
+      `${JSON.stringify(recentDoctor)}\n`,
+      "utf8",
+    );
+    // Plant the sentinel.
+    writeFileSync(join(tempRoot, ".fabric", ".import-requested"), "", "utf8");
+
+    const writes: string[] = [];
+    const stdout = { write: (chunk: string) => writes.push(chunk) };
+    hook.main({ cwd: tempRoot, now: FIXED_NOW }, { stdout });
+    expect(writes).toHaveLength(1);
+    const payload = JSON.parse(writes[0] as string) as {
+      signal: string;
+      recommended_skill: string;
+      reason: string;
+    };
+    expect(payload.signal).toBe("import");
+    expect(payload.recommended_skill).toBe("fabric-import");
+    expect(payload.reason).toMatch(/fabric-import/);
+  });
+
+  it("rc.7 T1 sentinel: bypasses the archive_hint cooldown sidecar", () => {
+    mkdirSync(join(tempRoot, ".fabric", ".cache"), { recursive: true });
+    writeFileSync(join(tempRoot, ".fabric", "events.jsonl"), "", "utf8");
+    // Seed cooldown sidecar with a "we just emitted Signal C" timestamp
+    // (1h ago). Under default 12h cooldown this would silence the next
+    // organic Signal C emit. Sentinel must override.
+    writeFileSync(
+      join(tempRoot, ".fabric", ".cache", "archive-hint-shown.json"),
+      JSON.stringify({ import: NOW_MS - 1 * HOUR_MS }),
+      "utf8",
+    );
+    writeFileSync(join(tempRoot, ".fabric", ".import-requested"), "", "utf8");
+
+    const writes: string[] = [];
+    const stdout = { write: (chunk: string) => writes.push(chunk) };
+    hook.main({ cwd: tempRoot, now: FIXED_NOW }, { stdout });
+    expect(writes).toHaveLength(1);
+    const payload = JSON.parse(writes[0] as string) as { signal: string };
+    expect(payload.signal).toBe("import");
+
+    // Sentinel-driven emit must NOT bump the cooldown sidecar — otherwise
+    // the next organic Signal C would be silenced prematurely.
+    const cooldownAfter = JSON.parse(
+      readFileSync(
+        join(tempRoot, ".fabric", ".cache", "archive-hint-shown.json"),
+        "utf8",
+      ),
+    ) as Record<string, number>;
+    expect(cooldownAfter.import).toBe(NOW_MS - 1 * HOUR_MS);
+  });
+
+  it("rc.7 T1 sentinel: stays silent when sentinel absent (no false positives)", () => {
+    mkdirSync(join(tempRoot, ".fabric"), { recursive: true });
+    const recentDoctor = makeEvent("doctor_run", NOW_MS - 1 * HOUR_MS);
+    writeFileSync(
+      join(tempRoot, ".fabric", "events.jsonl"),
+      `${JSON.stringify(recentDoctor)}\n`,
+      "utf8",
+    );
+    // No sentinel. Workspace has no triggers — expect silence.
+    const writes: string[] = [];
+    const stdout = { write: (chunk: string) => writes.push(chunk) };
+    hook.main({ cwd: tempRoot, now: FIXED_NOW }, { stdout });
+    expect(writes).toEqual([]);
+  });
+
+  it("isImportRequestedSentinelPresent / makeImportSentinelResult unit contract", () => {
+    const t1Hook = hook as HookModule & {
+      isImportRequestedSentinelPresent: (projectRoot: string) => boolean;
+      makeImportSentinelResult: () => {
+        decision: string;
+        reason: string;
+        signal: string;
+        recommended_skill: string;
+      };
+    };
+    expect(t1Hook.isImportRequestedSentinelPresent(tempRoot)).toBe(false);
+    mkdirSync(join(tempRoot, ".fabric"), { recursive: true });
+    writeFileSync(join(tempRoot, ".fabric", ".import-requested"), "", "utf8");
+    expect(t1Hook.isImportRequestedSentinelPresent(tempRoot)).toBe(true);
+    const r = t1Hook.makeImportSentinelResult();
+    expect(r.signal).toBe("import");
+    expect(r.recommended_skill).toBe("fabric-import");
+    expect(r.decision).toBe("block");
+    expect(r.reason).toMatch(/fabric-import/);
   });
 
   it("none of the rendered reason strings mention 'candidates detected'", () => {

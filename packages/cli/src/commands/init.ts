@@ -349,7 +349,71 @@ export async function runInitCommand(args: InitArgs): Promise<InitExecutionResul
     return;
   }
 
-  return executeInitExecutionPlan(plan);
+  const result = await executeInitExecutionPlan(plan);
+  // rc.7 T1: cross-surface hand-off prompt. After init completes, ask
+  // whether the user wants the next AI session to recommend fabric-import
+  // (Skill that mines git log + docs into pending knowledge). On Y, write
+  // an empty `.fabric/.import-requested` sentinel that both
+  // knowledge-hint-broad.cjs (SessionStart) and fabric-hint.cjs (Stop)
+  // read. The sentinel is cleared by fabric-import Skill's Phase 3.4.
+  //
+  // Skipped in non-interactive contexts (CI, --plan, FABRIC_NONINTERACTIVE=1,
+  // non-TTY stdin) so automation never trips on the prompt.
+  try {
+    await maybeWriteImportSentinel({
+      target: intent.target,
+      planOnly: intent.options.planOnly === true,
+      wizardEnabled: intent.wizardEnabled,
+      terminalInteractive: intent.interactiveSummary,
+    });
+  } catch {
+    // Sentinel is opt-in convenience — failure must never escalate from
+    // the init command's success path.
+  }
+  return result;
+}
+
+/**
+ * rc.7 T1: emit the cross-surface `.fabric/.import-requested` sentinel based
+ * on a clack confirm prompt. Honors `FABRIC_NONINTERACTIVE=1` and skips
+ * silently in non-interactive contexts (no-TTY, --plan, wizard disabled).
+ *
+ * Failure invariant: any error path (clack cancel, write failure) → silent
+ * no-op. Init's exit code is unaffected.
+ */
+async function maybeWriteImportSentinel(opts: {
+  target: string;
+  planOnly: boolean;
+  wizardEnabled: boolean;
+  terminalInteractive: boolean;
+}): Promise<void> {
+  if (opts.planOnly) return;
+  if (process.env.FABRIC_NONINTERACTIVE === "1") return;
+  // The wizard-enabled flag captures "interactive terminal + interactive
+  // requested". If either failed, skip the prompt — we don't want the
+  // sentinel written from a piped or batch invocation.
+  if (!opts.wizardEnabled || !opts.terminalInteractive) return;
+  // Belt-and-braces TTY check — the wizard path may have been forced by an
+  // external flag.
+  if (!Boolean(process.stdin.isTTY)) return;
+
+  const answer = await confirm({
+    message: "下次开 AI 时让我从 git log 抽更多知识吗?",
+    initialValue: true,
+  });
+  if (isCancel(answer) || answer !== true) return;
+
+  const fabricDir = join(opts.target, ".fabric");
+  const sentinelPath = join(fabricDir, ".import-requested");
+  try {
+    if (!existsSync(fabricDir)) {
+      mkdirSync(fabricDir, { recursive: true });
+    }
+    writeFileSync(sentinelPath, "", "utf8");
+    log.success("下次开 AI 会看到提示");
+  } catch {
+    // Silent — sentinel is best-effort.
+  }
 }
 
 function resolveInitCliIntent(args: InitArgs, targetInput: string): InitCliIntent {

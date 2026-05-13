@@ -18,6 +18,31 @@ This skill is invoked when one of the following holds:
 
 If none of the above hold, stop the skill immediately and tell the user `没有触发 import 信号；如需手动 import 请显式调用 fabric-import`.
 
+### Phase 0 — Sentinel Contract (rc.7 T1)
+
+**Sentinel file**: `.fabric/.import-requested` (empty content; presence-as-data).
+
+This file is the cross-surface signal between `fabric init` (run in the
+user's terminal) and the AI client session that picks up the import
+recommendation. When `fabric init` ends with the clack confirm prompt
+"下次开 AI 时让我从 git log 抽更多知识吗?" and the user answers Y, the
+CLI writes this empty sentinel file. Two hooks read it:
+
+- `templates/hooks/knowledge-hint-broad.cjs` (SessionStart) — appends an
+  import-recommendation banner to the broad-injection stderr regardless of
+  the rc.7 T8 `revision_hash` gate.
+- `templates/hooks/fabric-hint.cjs` (Stop) — bypasses the Signal C cooldown
+  and emits the `signal:'import'` recommendation even when the underseed
+  threshold or 24h cooldown would otherwise silence it.
+
+**Phase 0 action for this skill**: read the sentinel state at the start of
+this skill invocation (informational only — proceed regardless of presence).
+The sentinel is **cleared in Step 3.4** (Phase 3 Completion) so subsequent
+sessions stop receiving the unconditional recommendation. If the skill
+fails or the user aborts before Step 3.4, the sentinel remains and the next
+session will see the recommendation again — this is intentional, the
+import is incomplete.
+
 This skill SHOULD be skipped (warn the user, do not proceed) when:
 
 - `.fabric/` does not exist — direct the user to run `fabric init` first; `fabric-import` is NOT a substitute for the deterministic init-scan
@@ -288,6 +313,13 @@ After all Phase 2 outputs are dedup-reviewed:
 
 - Update `.fabric/.import-state.json`: `phase = "complete"`, `last_checkpoint_at = <ISO8601 now>`, `final_summary = {proposed: N, kept: K, rejected_dup: R, merged: M, contradictions_flagged: C}`.
 - Render the final roll-up to the user (see Output Contract below).
+- **rc.7 T1 sentinel clear**: if `.fabric/.import-requested` exists (the
+  cross-surface signal from `fabric init`'s Y-confirm hand-off — see Phase 0
+  contract below), delete it now via `Bash: rm -f .fabric/.import-requested`.
+  Failure to remove is non-fatal: log a warning but do not error out — the
+  user can manually delete the sentinel if needed. The sentinel's lifecycle
+  ends here so the SessionStart and Stop hooks stop unconditionally
+  recommending fabric-import.
 
 The user MAY manually delete `.fabric/.import-state.json` to reset, or the skill MAY offer a one-line "reset state and re-run from scratch?" prompt the next time it is invoked with `phase="complete"` already present.
 

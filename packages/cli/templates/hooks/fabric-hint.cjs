@@ -98,6 +98,15 @@ const MAINTENANCE_HINT_LAST_EMIT_FILE = ".fabric/.cache/maintenance-hint-last-em
 // there's barely anything TO lint.
 const MAINTENANCE_HINT_MIN_CANONICAL = 5;
 
+// rc.7 T1: cross-surface sentinel from `fabric init` Y-confirm. Empty file
+// at `.fabric/.import-requested`. Stop hook reads it to bypass the Signal C
+// cooldown and emit the import recommendation regardless of underseed or
+// 24h-since-last-emit gates. SessionStart hook (knowledge-hint-broad.cjs)
+// has its own mirror of this pickup logic. The fabric-import Skill's
+// Phase 3.4 clears the sentinel; until then it remains and continues to
+// surface the recommendation.
+const IMPORT_REQUESTED_SENTINEL_FILE = join(".fabric", ".import-requested");
+
 /**
  * Read the events.jsonl ledger from <projectRoot>/.fabric/events.jsonl.
  * Mirrors the semantics of readEventLedger in packages/server/src/services/event-ledger.ts:
@@ -284,6 +293,36 @@ function countEditsSince(projectRoot, anchorTs) {
     }
   }
   return count;
+}
+
+/**
+ * rc.7 T1: detect the `.fabric/.import-requested` sentinel. Best-effort
+ * presence check — returns false on any I/O error so a hostile filesystem
+ * never blocks the Stop hook on this branch.
+ */
+function isImportRequestedSentinelPresent(projectRoot) {
+  try {
+    return existsSync(join(projectRoot, IMPORT_REQUESTED_SENTINEL_FILE));
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * rc.7 T1: build the import-recommendation result that the Stop hook emits
+ * when the sentinel is present. Reuses the existing Signal C shape so
+ * downstream consumers (Cursor `followup_message`, etc.) need no schema
+ * change. The reason text reuses the rc.7 T4 人-first banner style.
+ */
+function makeImportSentinelResult() {
+  const line1 =
+    "📋 Fabric: 检测到 fabric init 提示要回灌知识 — 是否调 /fabric-import 从 git 历史和现有文档抽取?";
+  return {
+    decision: "block",
+    reason: line1,
+    signal: "import",
+    recommended_skill: "fabric-import",
+  };
 }
 
 /**
@@ -1108,15 +1147,28 @@ function main(env, stdio) {
       activityOverview = "";
     }
 
-    let result = decide(
-      events,
-      now,
-      pendingStats,
-      underseedStats,
-      editCounterStats,
-      thresholds,
-      { activityOverview },
-    );
+    // rc.7 T1: sentinel-priority pickup. The `.fabric/.import-requested`
+    // file is the cross-surface signal from `fabric init` Y-confirm. When
+    // present, the Stop hook emits a Signal C "import" result regardless of
+    // underseed thresholds, cooldown sidecar state, or precedence with
+    // other signals. This branch sits BEFORE decide() so the import
+    // recommendation always wins until the fabric-import Skill clears the
+    // sentinel in its Phase 3.4. Cooldown sidecar IS bypassed (the
+    // recommendation surface area is intentionally aggressive — the user
+    // explicitly asked for it at init time).
+    const sentinelPresent = isImportRequestedSentinelPresent(cwd);
+
+    let result = sentinelPresent
+      ? makeImportSentinelResult()
+      : decide(
+          events,
+          now,
+          pendingStats,
+          underseedStats,
+          editCounterStats,
+          thresholds,
+          { activityOverview },
+        );
 
     // v2.0.0-rc.7 T10: Signal D — maintenance hint. Evaluated AFTER A/B/C
     // because the existing three signals carry higher urgency (in-flight
@@ -1150,6 +1202,17 @@ function main(env, stdio) {
       return;
     }
 
+    // rc.7 T1: sentinel-driven results bypass the cooldown sidecar entirely.
+    // The user explicitly asked at init time for the import recommendation
+    // to surface; the cooldown is a noise-throttle for organic signals,
+    // not for explicit user-driven hand-offs. We also do NOT bump the
+    // cooldown cache when the sentinel fires — that would silence the
+    // *next* organic Signal C unnecessarily.
+    if (sentinelPresent) {
+      out.write(JSON.stringify(result));
+      return;
+    }
+
     // Cooldown throttle: once a signal fires, stay silent for
     // archive_hint_cooldown_hours (default 12h) regardless of state drift.
     // Pure reminder-noise reduction; the underlying trigger logic is unchanged.
@@ -1177,6 +1240,9 @@ module.exports = {
   // rc.7 T4: top-edited-directories aggregator + banner overview formatter.
   getTopEditedDirectories,
   formatActivityOverview,
+  // rc.7 T1: cross-surface sentinel pickup helpers (exported for testing).
+  isImportRequestedSentinelPresent,
+  makeImportSentinelResult,
   decide,
   readCooldownHours,
   readUnderseedThreshold,
@@ -1230,6 +1296,8 @@ module.exports = {
     EVENT_TYPE_DOCTOR_RUN,
     MAINTENANCE_HINT_LAST_EMIT_FILE,
     MAINTENANCE_HINT_MIN_CANONICAL,
+    // rc.7 T1: cross-surface sentinel for `fabric init` → import-skill hand-off.
+    IMPORT_REQUESTED_SENTINEL_FILE,
   },
 };
 
