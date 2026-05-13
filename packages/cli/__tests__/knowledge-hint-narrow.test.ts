@@ -72,7 +72,7 @@ type HookModule = {
   extractToolName: (payload: unknown) => string | null;
   extractToolInput: (payload: unknown) => Record<string, unknown> | null;
   extractPaths: (toolInput: unknown) => string[];
-  appendEditCounter: (projectRoot: string, now: Date) => void;
+  appendEditCounter: (projectRoot: string, now: Date, paths?: string[]) => void;
   appendHintSilenceCounter: (projectRoot: string, now: Date) => void;
   renderSummary: (payload: CliPayload) => string[];
   truncateSummary: (raw: string) => string;
@@ -299,12 +299,13 @@ describe("knowledge-hint-narrow.cjs — extractPaths", () => {
 // appendEditCounter / E4 sidecar
 // ---------------------------------------------------------------------------
 
-describe("knowledge-hint-narrow.cjs — appendEditCounter (E4)", () => {
-  it("creates .fabric/.cache/ directory if missing and writes one ISO timestamp", () => {
+describe("knowledge-hint-narrow.cjs — appendEditCounter (E4 + rc.7 T4)", () => {
+  it("creates .fabric/.cache/ directory if missing and writes one JSON-line", () => {
     const root = mkRoot("narrow-counter-mkdir");
     hook.appendEditCounter(root, new Date("2026-05-12T10:00:00.000Z"));
     const contents = readCounterFile(root);
-    expect(contents).toBe("2026-05-12T10:00:00.000Z\n");
+    // rc.7 T4: JSON-line shape replaces bare-ISO.
+    expect(contents).toBe('{"ts":"2026-05-12T10:00:00.000Z","paths":[]}\n');
   });
 
   it("appends a second line on second call (counter grows monotonically)", () => {
@@ -314,9 +315,38 @@ describe("knowledge-hint-narrow.cjs — appendEditCounter (E4)", () => {
     const contents = readCounterFile(root) ?? "";
     const lines = contents.split("\n").filter((l) => l.length > 0);
     expect(lines).toEqual([
-      "2026-05-12T10:00:00.000Z",
-      "2026-05-12T10:00:01.000Z",
+      '{"ts":"2026-05-12T10:00:00.000Z","paths":[]}',
+      '{"ts":"2026-05-12T10:00:01.000Z","paths":[]}',
     ]);
+  });
+
+  it("rc.7 T4: records paths array when supplied", () => {
+    const root = mkRoot("narrow-counter-paths");
+    hook.appendEditCounter(root, new Date("2026-05-12T10:00:00.000Z"), [
+      "packages/cli/a.ts",
+      "packages/cli/b.ts",
+    ]);
+    const contents = readCounterFile(root) ?? "";
+    expect(contents).toBe(
+      '{"ts":"2026-05-12T10:00:00.000Z","paths":["packages/cli/a.ts","packages/cli/b.ts"]}\n',
+    );
+  });
+
+  it("rc.7 T4: filters non-string entries from paths array", () => {
+    const root = mkRoot("narrow-counter-paths-filter");
+    hook.appendEditCounter(root, new Date("2026-05-12T10:00:00.000Z"), [
+      "packages/cli/a.ts",
+      // @ts-expect-error — defensive path filtering
+      null,
+      // @ts-expect-error
+      123,
+      "",
+      "packages/cli/b.ts",
+    ]);
+    const contents = readCounterFile(root) ?? "";
+    expect(contents).toBe(
+      '{"ts":"2026-05-12T10:00:00.000Z","paths":["packages/cli/a.ts","packages/cli/b.ts"]}\n',
+    );
   });
 
   it("silently swallows failures (best-effort write)", () => {
@@ -533,7 +563,11 @@ describe("knowledge-hint-narrow.cjs — main (E4 edit-counter sidecar)", () => {
     const contents = readCounterFile(root) ?? "";
     const lines = contents.split("\n").filter((l) => l.length > 0);
     expect(lines.length).toBe(1);
-    expect(lines[0]).toBe("2026-05-12T10:00:00.000Z");
+    // rc.7 T4: JSON-line shape — line carries ts AND the touched paths so
+    // the Stop hook can derive the activity overview for Signal A.
+    const parsed = JSON.parse(lines[0] as string);
+    expect(parsed.ts).toBe("2026-05-12T10:00:00.000Z");
+    expect(parsed.paths).toEqual(["src/foo.ts"]);
   });
 
   it("appends ONE timestamp line per fire even when MultiEdit touches 3 paths", () => {

@@ -262,13 +262,139 @@ function countEditsSince(projectRoot, anchorTs) {
   for (const line of lines) {
     const trimmed = line.trim();
     if (trimmed.length === 0) continue;
-    const ms = Date.parse(trimmed);
+    // rc.7 T4: support both line shapes —
+    //   legacy (rc.6): bare ISO-8601 timestamp per line
+    //   new (rc.7):    {"ts":"<iso>","paths":[...]} JSON per line
+    let ms = Number.NaN;
+    if (trimmed.charCodeAt(0) === 123 /* '{' */) {
+      try {
+        const obj = JSON.parse(trimmed);
+        if (obj && typeof obj === "object" && typeof obj.ts === "string") {
+          ms = Date.parse(obj.ts);
+        }
+      } catch {
+        // fall through — malformed JSON, skip line
+      }
+    } else {
+      ms = Date.parse(trimmed);
+    }
     if (!Number.isFinite(ms)) continue; // malformed → skip
     if (anchorTs === null || ms > anchorTs) {
       count += 1;
     }
   }
   return count;
+}
+
+/**
+ * rc.7 T4: read the edit-counter sidecar and return the top-N most-edited
+ * directories (grouped by the leading 2 path segments) since `anchorTs`.
+ *
+ * Output shape: an ordered array (desc by count) of
+ *   { dir: "packages/cli", count: 12 }
+ * objects, truncated to `topN`. Empty array when no aggregable lines are
+ * present (file missing, all lines bare-ISO legacy, all paths bare basenames,
+ * unreadable file, etc.). The Signal A banner uses this to render a
+ * 人-first "最近活动集中在: ..." overview honest to the hook's actual
+ * awareness (PreToolUse paths only — no content/diff peek).
+ *
+ * Safe-degrade contract:
+ *   - File missing / unreadable → return []
+ *   - Line malformed / non-JSON → skip; other lines still aggregate
+ *   - paths field missing or empty → skip (no signal to add)
+ *   - Single-segment paths (e.g. "README.md") → grouped under the literal
+ *     filename so the user still gets *some* signal; multi-segment paths
+ *     are bucketed by their leading two segments (".fabric/.cache" /
+ *     "packages/cli" etc.).
+ *   - anchorTs === null → aggregate over the entire file (matches the
+ *     fire-counter's "no anchor" branch behaviour).
+ *
+ * NEVER throws — best-effort.
+ */
+function getTopEditedDirectories(projectRoot, topN, anchorTs) {
+  const n = typeof topN === "number" && Number.isFinite(topN) && topN > 0
+    ? Math.floor(topN)
+    : 3;
+  const filePath = join(projectRoot, EDIT_COUNTER_FILE_REL);
+  if (!existsSync(filePath)) return [];
+  let raw;
+  try {
+    raw = readFileSync(filePath, "utf8");
+  } catch {
+    return [];
+  }
+  const lines = raw.split(/\r?\n/);
+  const counts = new Map();
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (trimmed.length === 0) continue;
+    // Only the JSON-line shape carries paths. Bare ISO lines (legacy rc.6
+    // sidecar) cannot contribute to the activity overview.
+    if (trimmed.charCodeAt(0) !== 123 /* '{' */) continue;
+    let obj;
+    try {
+      obj = JSON.parse(trimmed);
+    } catch {
+      continue;
+    }
+    if (!obj || typeof obj !== "object") continue;
+    // anchor gating mirrors countEditsSince() — strictly newer than anchor.
+    if (typeof obj.ts === "string") {
+      const ms = Date.parse(obj.ts);
+      if (anchorTs !== null && Number.isFinite(ms) && ms <= anchorTs) continue;
+      if (anchorTs !== null && !Number.isFinite(ms)) continue;
+    } else if (anchorTs !== null) {
+      // No parseable ts and an anchor was requested → can't decide, skip.
+      continue;
+    }
+    const paths = Array.isArray(obj.paths) ? obj.paths : [];
+    // Within one hook fire we dedupe the same directory bucket so a
+    // MultiEdit that touched 5 files under packages/cli/ contributes 1 to
+    // the bucket, not 5. The fire-cadence semantic stays consistent.
+    const fireBuckets = new Set();
+    for (const p of paths) {
+      if (typeof p !== "string" || p.length === 0) continue;
+      // Normalise to forward-slash for cross-platform stability and strip
+      // any leading "./". POSIX-style only — the hook ships under POSIX
+      // path conventions even on Windows (the project doesn't currently
+      // ship a CRLF/backslash test matrix for the sidecar).
+      const norm = p.replace(/\\/g, "/").replace(/^\.\//, "");
+      const segs = norm.split("/").filter((s) => s.length > 0);
+      let bucket;
+      if (segs.length >= 2) {
+        // Leading 2 segments: "packages/cli", "docs/decisions", etc. We
+        // trail with "/" so the banner reads "packages/cli/" — clearly a
+        // directory rather than a file basename.
+        bucket = `${segs[0]}/${segs[1]}/`;
+      } else if (segs.length === 1) {
+        // Single segment — treat the basename as its own bucket. Bare
+        // root-level files (README.md, package.json) get some signal too.
+        bucket = segs[0];
+      } else {
+        continue;
+      }
+      fireBuckets.add(bucket);
+    }
+    for (const b of fireBuckets) {
+      counts.set(b, (counts.get(b) || 0) + 1);
+    }
+  }
+  if (counts.size === 0) return [];
+  const sorted = Array.from(counts.entries()).map(([dir, count]) => ({ dir, count }));
+  // Sort desc by count; tie-break alphabetically so output is deterministic.
+  sorted.sort((a, b) => (b.count - a.count) || (a.dir < b.dir ? -1 : a.dir > b.dir ? 1 : 0));
+  return sorted.slice(0, n);
+}
+
+/**
+ * rc.7 T4: format the "最近活动集中在: <dir1> (N edits), <dir2> (M edits)"
+ * fragment used by the Signal A banner. Returns empty string when there is
+ * no aggregable activity (so the banner caller can skip the line entirely).
+ */
+function formatActivityOverview(projectRoot, anchorTs) {
+  const top = getTopEditedDirectories(projectRoot, 3, anchorTs);
+  if (top.length === 0) return "";
+  return top.map((e) => `${e.dir} (${e.count} edits)`).join(", ");
 }
 
 /**
@@ -335,7 +461,7 @@ function readArchiveEditThreshold(projectRoot) {
 // without touching the filesystem. Omitting the arg falls back to documented
 // defaults so existing in-process callers (tests that pre-date T7) still
 // pass without modification — they implicitly exercise the default path.
-function decide(events, now, pendingStats, underseedStats, editCounterStats, thresholds) {
+function decide(events, now, pendingStats, underseedStats, editCounterStats, thresholds, banner) {
   const nowMs = now instanceof Date ? now.getTime() : Number(now) || Date.now();
   const stats = pendingStats || { count: 0, oldestAgeMs: null };
   const underseed =
@@ -385,17 +511,43 @@ function decide(events, now, pendingStats, underseedStats, editCounterStats, thr
   // state. The user gets the archive reminder first; other reminders wait
   // until after archive happens.
   if (triggerByHours || triggerByEdits) {
-    // Build a reason string that names which branch fired. When both fire,
-    // mention both so the user understands the urgency.
+    // rc.7 T4: 人-first banner — the first reader is the human user in the
+    // AI client UI, Agent reads incidentally (Q-13). We DROP the prior
+    // Agent-jussive imperative ("建议调用 fabric-archive skill ...") in
+    // favour of a polite question framing and an honest activity overview
+    // from the edit-counter sidecar (Q-6: the hook has zero content
+    // awareness, only file-fire awareness — no fabricated "N candidates
+    // detected" framing).
+    //
+    // The activity overview is injected by the caller (main() supplies it
+    // via the `banner` arg) so decide() stays pure / filesystem-free for
+    // tests. When omitted (legacy callers / tests pre-T4) the overview
+    // line is skipped — the banner remains valid 3-or-2 lines depending
+    // on data availability.
+    //
+    // Substring contract preserved for existing tests:
+    //   - "<hoursElapsed.toFixed(1)>h" (e.g. "25.0h")
+    //   - "<editCount> 次编辑"
+    //   - "阈值 <N>"
+    //   - "fabric-archive"
     const parts = [];
     if (triggerByHours) {
-      parts.push(`距上次 knowledge_proposed ${hoursElapsed.toFixed(1)}h（阈值 ${archiveHintHours}h）`);
+      parts.push(`已过 ${hoursElapsed.toFixed(1)}h（阈值 ${archiveHintHours}h）`);
     }
     if (triggerByEdits) {
-      parts.push(`自上次归档已发生 ${editStats.editsSinceLastProposed} 次编辑（阈值 ${editStats.threshold}）`);
+      parts.push(
+        `累计 ${editStats.editsSinceLastProposed} 次编辑（阈值 ${editStats.threshold}）`,
+      );
     }
-    const reason =
-      `${parts.join("；")} — 建议调用 fabric-archive skill 抽取近期会话的知识。`;
+    const line1 = `📋 Fabric: 距上次归档 ${parts.join(" / ")}。`;
+    const activity = banner && typeof banner.activityOverview === "string"
+      ? banner.activityOverview
+      : "";
+    const line2 = activity.length > 0
+      ? `   最近活动集中在: ${activity}。`
+      : "";
+    const line3 = "   是否调 /fabric-archive 检查值得归档的决策/踩坑/复用?";
+    const reason = [line1, line2, line3].filter((l) => l.length > 0).join("\n");
     return {
       decision: "block",
       reason,
@@ -410,13 +562,17 @@ function decide(events, now, pendingStats, underseedStats, editCounterStats, thr
     stats.oldestAgeMs !== null && stats.oldestAgeMs / MS_PER_DAY >= reviewHintPendingAgeDays;
 
   if (triggerByPendingCount || triggerByPendingAge) {
+    // rc.7 T4: 人-first banner reformat for Signal B. Keeps the pending
+    // count and age substrings (`${count} 条`, `${days} 天`) so existing
+    // tests pass; drops the Agent-jussive "建议调用 ... skill ..." for a
+    // polite question framing aimed at the human reader.
     const ageSuffix =
       stats.oldestAgeMs !== null
-        ? `，最早一条距今 ${(stats.oldestAgeMs / MS_PER_DAY).toFixed(1)} 天`
+        ? ` / 最早一条 ${(stats.oldestAgeMs / MS_PER_DAY).toFixed(1)} 天前`
         : "";
-    const reason =
-      `已积累 ${stats.count} 条待审核知识${ageSuffix}` +
-      " — 建议调用 fabric-review skill 审核 pending/ 条目。";
+    const line1 = `📋 Fabric: 已积累 ${stats.count} 条待审核知识${ageSuffix}。`;
+    const line2 = "   是否调 /fabric-review 审核 pending/ 条目?";
+    const reason = `${line1}\n${line2}`;
     return {
       decision: "block",
       reason,
@@ -456,9 +612,13 @@ function decide(events, now, pendingStats, underseedStats, editCounterStats, thr
     (hoursSinceProposed === null || hoursSinceProposed >= UNDERSEED_NO_PROPOSED_HOURS);
 
   if (triggerUnderseed) {
-    const reason =
-      `知识库节点数 ${underseed.nodeCount}/${underseed.threshold}，距 init_scan_completed ${hoursSinceInit.toFixed(1)}h` +
-      " — 建议调用 fabric-import skill 从 git 历史与现有文档回灌知识。";
+    // rc.7 T4: 人-first banner reformat for Signal C. Preserves the
+    // `${nodeCount}/${threshold}` substring (e.g. "3/10") that existing
+    // tests assert against; drops Agent-jussive phrasing.
+    const line1 =
+      `📋 Fabric: 知识库节点数 ${underseed.nodeCount}/${underseed.threshold}，距 init_scan_completed ${hoursSinceInit.toFixed(1)}h。`;
+    const line2 = "   是否调 /fabric-import 从 git 历史与现有文档回灌知识?";
+    const reason = `${line1}\n${line2}`;
     return {
       decision: "block",
       reason,
@@ -684,9 +844,14 @@ function evaluateMaintenanceSignal(events, now, canonicalCount, lastEmitMs, thre
     if (ageDays < days) return null; // doctor ran recently, no nag.
   }
 
+  // rc.7 T4: keep the existing T10 banner shape (already 人-first with the
+  // 📋 prefix), but split the action-prompt onto its own line for visual
+  // consistency with Signals A/B/C. Substrings ("从未运行 lint 检查",
+  // "已 N 天未跑 lint", "fabric doctor --lint") preserved for the T10 tests.
+  const line2 = "   是否调 `fabric doctor --lint` 看看知识库健康度?";
   const reason = lastDoctorTs === null
-    ? `📋 Fabric: 从未运行 lint 检查。调 \`fabric doctor --lint\` 看看知识库健康度。`
-    : `📋 Fabric: 已 ${days} 天未跑 lint 检查（实际 ${ageDays.toFixed(1)}d）。调 \`fabric doctor --lint\` 看看知识库健康度。`;
+    ? `📋 Fabric: 从未运行 lint 检查。\n${line2}`
+    : `📋 Fabric: 已 ${days} 天未跑 lint 检查（实际 ${ageDays.toFixed(1)}d）。\n${line2}`;
 
   return {
     decision: "block",
@@ -923,7 +1088,35 @@ function main(env, stdio) {
       };
     }
 
-    let result = decide(events, now, pendingStats, underseedStats, editCounterStats, thresholds);
+    // rc.7 T4: build the 人-first banner activity overview from the
+    // edit-counter sidecar. Anchored at the last knowledge_proposed event
+    // so the overview matches Signal A's "since last archive" semantics.
+    // Failure (missing sidecar, malformed lines, etc.) degrades silently
+    // to an empty string — the banner just omits the activity line.
+    let activityOverview = "";
+    try {
+      let anchorTs = null;
+      for (let i = events.length - 1; i >= 0; i -= 1) {
+        const ev = events[i];
+        if (ev && ev.event_type === EVENT_TYPE_PROPOSED && typeof ev.ts === "number") {
+          anchorTs = ev.ts;
+          break;
+        }
+      }
+      activityOverview = formatActivityOverview(cwd, anchorTs);
+    } catch {
+      activityOverview = "";
+    }
+
+    let result = decide(
+      events,
+      now,
+      pendingStats,
+      underseedStats,
+      editCounterStats,
+      thresholds,
+      { activityOverview },
+    );
 
     // v2.0.0-rc.7 T10: Signal D — maintenance hint. Evaluated AFTER A/B/C
     // because the existing three signals carry higher urgency (in-flight
@@ -981,6 +1174,9 @@ module.exports = {
   readPendingStats,
   countCanonicalNodes,
   countEditsSince,
+  // rc.7 T4: top-edited-directories aggregator + banner overview formatter.
+  getTopEditedDirectories,
+  formatActivityOverview,
   decide,
   readCooldownHours,
   readUnderseedThreshold,

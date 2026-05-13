@@ -1556,3 +1556,308 @@ describe("fabric-hint.cjs — main (Signal D end-to-end, rc.7 T10)", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// rc.7 T4 — 人-first banner reformat + edit-counter activity overview.
+//
+// New contract: stderr reason text is human-first (banner-style), drops any
+// "candidates detected" framing, and includes a top-N most-edited-directory
+// overview derived from the JSON-line edit-counter sidecar.
+// ---------------------------------------------------------------------------
+
+describe("fabric-hint.cjs — rc.7 T4 banner reformat", () => {
+  const t4Hook = hook as HookModule & {
+    getTopEditedDirectories: (
+      projectRoot: string,
+      topN: number,
+      anchorTs: number | null,
+    ) => Array<{ dir: string; count: number }>;
+    formatActivityOverview: (projectRoot: string, anchorTs: number | null) => string;
+  };
+  let tempRoot: string;
+
+  beforeEach(() => {
+    tempRoot = mkdtempSync(join(tmpdir(), "fabric-hint-t4-"));
+  });
+
+  afterEach(() => {
+    try {
+      rmSync(tempRoot, { recursive: true, force: true });
+    } catch {
+      // best-effort
+    }
+  });
+
+  function seedEditCounterJson(
+    root: string,
+    entries: Array<{ ts: number; paths: string[] }>,
+  ): void {
+    const dir = join(root, ".fabric", ".cache");
+    mkdirSync(dir, { recursive: true });
+    const lines = entries
+      .map((e) => JSON.stringify({ ts: new Date(e.ts).toISOString(), paths: e.paths }))
+      .join("\n");
+    writeFileSync(join(dir, "edit-counter"), `${lines}\n`, "utf8");
+  }
+
+  it("getTopEditedDirectories aggregates JSON-line edits into top-N 2-level dir buckets", () => {
+    const anchor = NOW_MS - 24 * HOUR_MS;
+    seedEditCounterJson(tempRoot, [
+      // 12 fires under packages/server/services/
+      ...Array.from({ length: 12 }, (_, i) => ({
+        ts: anchor + (i + 1) * 60 * 1000,
+        paths: [`packages/server/services/file${i}.ts`],
+      })),
+      // 8 fires under packages/cli/
+      ...Array.from({ length: 8 }, (_, i) => ({
+        ts: anchor + (i + 13) * 60 * 1000,
+        paths: [`packages/cli/cmd${i}.ts`],
+      })),
+      // 2 fires under docs/
+      ...Array.from({ length: 2 }, (_, i) => ({
+        ts: anchor + (i + 21) * 60 * 1000,
+        paths: [`docs/notes/x${i}.md`],
+      })),
+    ]);
+
+    const top = t4Hook.getTopEditedDirectories(tempRoot, 3, anchor);
+    expect(top).toHaveLength(3);
+    expect(top[0]).toEqual({ dir: "packages/server/", count: 12 });
+    expect(top[1]).toEqual({ dir: "packages/cli/", count: 8 });
+    expect(top[2]).toEqual({ dir: "docs/notes/", count: 2 });
+  });
+
+  it("getTopEditedDirectories returns [] when sidecar absent", () => {
+    expect(t4Hook.getTopEditedDirectories(tempRoot, 3, NOW_MS)).toEqual([]);
+  });
+
+  it("getTopEditedDirectories ignores legacy bare-ISO lines (no aggregable paths)", () => {
+    const dir = join(tempRoot, ".fabric", ".cache");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(
+      join(dir, "edit-counter"),
+      [
+        new Date(NOW_MS - 1 * HOUR_MS).toISOString(),
+        new Date(NOW_MS - 2 * HOUR_MS).toISOString(),
+      ].join("\n") + "\n",
+      "utf8",
+    );
+    expect(t4Hook.getTopEditedDirectories(tempRoot, 3, null)).toEqual([]);
+  });
+
+  it("getTopEditedDirectories anchor-gates ts strictly greater than anchor", () => {
+    const anchor = NOW_MS - 10 * HOUR_MS;
+    seedEditCounterJson(tempRoot, [
+      { ts: anchor - 1 * HOUR_MS, paths: ["packages/server/a.ts"] }, // pre-anchor
+      { ts: anchor, paths: ["packages/server/b.ts"] }, // equal — excluded
+      { ts: anchor + 1 * HOUR_MS, paths: ["packages/cli/c.ts"] }, // counted
+    ]);
+    const top = t4Hook.getTopEditedDirectories(tempRoot, 3, anchor);
+    expect(top).toEqual([{ dir: "packages/cli/", count: 1 }]);
+  });
+
+  it("getTopEditedDirectories dedupes within a single fire (MultiEdit on same dir)", () => {
+    seedEditCounterJson(tempRoot, [
+      {
+        ts: NOW_MS - 1 * HOUR_MS,
+        // Five files under the same 2-level bucket — counts as ONE fire
+        // contribution, not five.
+        paths: [
+          "packages/cli/a.ts",
+          "packages/cli/b.ts",
+          "packages/cli/c.ts",
+          "packages/cli/d.ts",
+          "packages/cli/e.ts",
+        ],
+      },
+    ]);
+    const top = t4Hook.getTopEditedDirectories(tempRoot, 3, null);
+    expect(top).toEqual([{ dir: "packages/cli/", count: 1 }]);
+  });
+
+  it("formatActivityOverview emits the expected 'dir (N edits), ...' fragment", () => {
+    const anchor = NOW_MS - 24 * HOUR_MS;
+    seedEditCounterJson(tempRoot, [
+      ...Array.from({ length: 3 }, (_, i) => ({
+        ts: anchor + (i + 1) * 60 * 1000,
+        paths: [`packages/server/x${i}.ts`],
+      })),
+      ...Array.from({ length: 2 }, (_, i) => ({
+        ts: anchor + (i + 4) * 60 * 1000,
+        paths: [`packages/cli/y${i}.ts`],
+      })),
+    ]);
+    const overview = t4Hook.formatActivityOverview(tempRoot, anchor);
+    expect(overview).toBe("packages/server/ (3 edits), packages/cli/ (2 edits)");
+  });
+
+  it("formatActivityOverview returns empty string when sidecar absent", () => {
+    expect(t4Hook.formatActivityOverview(tempRoot, NOW_MS)).toBe("");
+  });
+
+  it("Signal A banner uses 人-first format with emoji prefix and question framing", () => {
+    const proposedTs = NOW_MS - 25 * HOUR_MS;
+    const events = [makeEvent("knowledge_proposed", proposedTs)];
+    const result = hook.decide(events, FIXED_NOW, undefined, undefined, undefined, undefined);
+    expect(result).not.toBeNull();
+    expect(result?.reason.startsWith("📋 Fabric:")).toBe(true);
+    // Question framing — uses 是否 not 建议调用.
+    expect(result?.reason).toMatch(/是否调 \/fabric-archive/);
+    expect(result?.reason).not.toMatch(/建议调用/);
+    // Substring contract preserved.
+    expect(result?.reason).toMatch(/25\.0h/);
+    // No fabricated content-aware framing.
+    expect(result?.reason.toLowerCase()).not.toMatch(/candidates detected/);
+  });
+
+  it("Signal A banner injects activity overview when supplied via banner arg", () => {
+    const proposedTs = NOW_MS - 25 * HOUR_MS;
+    const events = [makeEvent("knowledge_proposed", proposedTs)];
+    const result = hook.decide(
+      events,
+      FIXED_NOW,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      // 7th arg: banner overlay supplying the activity overview.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ({ activityOverview: "packages/server/ (12 edits), packages/cli/ (8 edits)" } as any),
+    );
+    expect(result).not.toBeNull();
+    expect(result?.reason).toMatch(/最近活动集中在:/);
+    expect(result?.reason).toMatch(/packages\/server\/ \(12 edits\)/);
+    expect(result?.reason).toMatch(/packages\/cli\/ \(8 edits\)/);
+  });
+
+  it("Signal A banner omits activity line when overview is empty (back-compat)", () => {
+    const proposedTs = NOW_MS - 25 * HOUR_MS;
+    const events = [makeEvent("knowledge_proposed", proposedTs)];
+    const result = hook.decide(events, FIXED_NOW, undefined, undefined, undefined, undefined);
+    expect(result).not.toBeNull();
+    expect(result?.reason).not.toMatch(/最近活动集中在/);
+    // Banner is still well-formed (line1 + line3 only).
+    const lineCount = (result?.reason.match(/\n/g) || []).length + 1;
+    expect(lineCount).toBe(2);
+  });
+
+  it("Signal B (review) banner uses 人-first format with question framing", () => {
+    const result = hook.decide([], FIXED_NOW, { count: 12, oldestAgeMs: 8 * 24 * HOUR_MS });
+    expect(result).not.toBeNull();
+    expect(result?.reason.startsWith("📋 Fabric:")).toBe(true);
+    expect(result?.reason).toMatch(/是否调 \/fabric-review/);
+    expect(result?.reason).not.toMatch(/建议调用/);
+    expect(result?.reason).toMatch(/12 条/);
+  });
+
+  it("Signal C (import) banner uses 人-first format with question framing", () => {
+    const initEvent = makeEvent("init_scan_completed", NOW_MS - 48 * HOUR_MS);
+    const result = hook.decide(
+      [initEvent],
+      FIXED_NOW,
+      undefined,
+      { nodeCount: 3, threshold: 10 },
+    );
+    expect(result).not.toBeNull();
+    expect(result?.reason.startsWith("📋 Fabric:")).toBe(true);
+    expect(result?.reason).toMatch(/是否调 \/fabric-import/);
+    expect(result?.reason).not.toMatch(/建议调用/);
+    expect(result?.reason).toMatch(/3\/10/);
+  });
+
+  it("main() injects activity overview end-to-end into Signal A banner", () => {
+    mkdirSync(join(tempRoot, ".fabric"), { recursive: true });
+    const proposedTs = NOW_MS - 5 * HOUR_MS;
+    writeFileSync(
+      join(tempRoot, ".fabric", "events.jsonl"),
+      `${JSON.stringify(makeEvent("knowledge_proposed", proposedTs))}\n`,
+      "utf8",
+    );
+    // Edit counter: 20 fires under packages/server/services/, 8 under packages/cli/
+    seedEditCounterJson(tempRoot, [
+      ...Array.from({ length: 20 }, (_, i) => ({
+        ts: proposedTs + (i + 1) * 60 * 1000,
+        paths: [`packages/server/services/file${i}.ts`],
+      })),
+      ...Array.from({ length: 8 }, (_, i) => ({
+        ts: proposedTs + (i + 21) * 60 * 1000,
+        paths: [`packages/cli/x${i}.ts`],
+      })),
+    ]);
+
+    const writes: string[] = [];
+    const stdout = { write: (chunk: string) => writes.push(chunk) };
+    hook.main({ cwd: tempRoot, now: FIXED_NOW }, { stdout });
+
+    expect(writes).toHaveLength(1);
+    const payload = JSON.parse(writes[0] as string) as {
+      signal: string;
+      reason: string;
+    };
+    expect(payload.signal).toBe("archive");
+    expect(payload.reason).toMatch(/📋 Fabric:/);
+    expect(payload.reason).toMatch(/最近活动集中在:/);
+    // 2-level dir bucketing: packages/server/* collapses to "packages/server/".
+    expect(payload.reason).toMatch(/packages\/server\/ \(20 edits\)/);
+    expect(payload.reason).toMatch(/packages\/cli\/ \(8 edits\)/);
+    expect(payload.reason).toMatch(/是否调 \/fabric-archive/);
+    // 20 + 8 = 28 fires post-anchor (each entry one fire).
+    expect(payload.reason).toMatch(/28 次编辑/);
+  });
+
+  it("Signal D banner reformat keeps required substrings + adds question line", () => {
+    const result = hook.evaluateMaintenanceSignal([], FIXED_NOW, 10, null);
+    expect(result).not.toBeNull();
+    expect(result?.reason).toMatch(/📋 Fabric:/);
+    expect(result?.reason).toMatch(/从未运行 lint 检查/);
+    expect(result?.reason).toMatch(/fabric doctor --lint/);
+    expect(result?.reason).toMatch(/是否调/);
+  });
+
+  it("countEditsSince also parses the new JSON-line shape", () => {
+    const anchor = NOW_MS - 10 * HOUR_MS;
+    seedEditCounterJson(tempRoot, [
+      { ts: anchor - 1 * HOUR_MS, paths: ["a/b.ts"] }, // pre-anchor
+      { ts: anchor + 1 * HOUR_MS, paths: ["a/b.ts"] }, // counted
+      { ts: anchor + 2 * HOUR_MS, paths: ["a/c.ts"] }, // counted
+    ]);
+    expect(hook.countEditsSince(tempRoot, anchor)).toBe(2);
+  });
+
+  it("countEditsSince still parses legacy bare-ISO lines mixed with new JSON lines", () => {
+    const anchor = NOW_MS - 10 * HOUR_MS;
+    const dir = join(tempRoot, ".fabric", ".cache");
+    mkdirSync(dir, { recursive: true });
+    const lines = [
+      new Date(anchor + 1 * HOUR_MS).toISOString(), // legacy ISO
+      JSON.stringify({
+        ts: new Date(anchor + 2 * HOUR_MS).toISOString(),
+        paths: ["x/y.ts"],
+      }),
+      "garbage{{{not-json",
+      new Date(anchor + 3 * HOUR_MS).toISOString(),
+    ];
+    writeFileSync(join(dir, "edit-counter"), `${lines.join("\n")}\n`, "utf8");
+    expect(hook.countEditsSince(tempRoot, anchor)).toBe(3);
+  });
+
+  it("none of the rendered reason strings mention 'candidates detected'", () => {
+    // Drive all 4 signals and assert. Signal A first.
+    const archive = hook.decide(
+      [makeEvent("knowledge_proposed", NOW_MS - 25 * HOUR_MS)],
+      FIXED_NOW,
+    );
+    const review = hook.decide([], FIXED_NOW, { count: 10, oldestAgeMs: 1 * 24 * HOUR_MS });
+    const importSig = hook.decide(
+      [makeEvent("init_scan_completed", NOW_MS - 48 * HOUR_MS)],
+      FIXED_NOW,
+      undefined,
+      { nodeCount: 3, threshold: 10 },
+    );
+    const maint = hook.evaluateMaintenanceSignal([], FIXED_NOW, 10, null);
+    for (const r of [archive, review, importSig, maint]) {
+      expect(r).not.toBeNull();
+      expect(r?.reason.toLowerCase()).not.toMatch(/candidates detected/);
+    }
+  });
+});
+

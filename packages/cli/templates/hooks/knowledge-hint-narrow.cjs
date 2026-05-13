@@ -235,15 +235,31 @@ function extractPaths(toolInput) {
 // -----------------------------------------------------------------------------
 
 /**
- * Append a single ISO-8601 timestamp line to .fabric/.cache/edit-counter.
- * Creates the directory if missing. Best-effort: any write failure is
+ * Append a single line to .fabric/.cache/edit-counter recording a PreToolUse
+ * fire. Creates the directory if missing. Best-effort: any write failure is
  * swallowed so a read-only .fabric/ never blocks the edit.
  *
- * Per spec (TASK-020 convergence): one line per PreToolUse fire, regardless
- * of path count. The downstream TASK-022 signal upgrade counts FIRES, not
- * paths.
+ * Per TASK-020 convergence: ONE LINE per PreToolUse fire, regardless of how
+ * many paths the request touched (the timestamp is per-invocation, not
+ * per-path). TASK-022 (rc.6 E5) counts fires, not paths.
+ *
+ * rc.7 T4 upgrade — the line is now a JSON object:
+ *   {"ts":"<ISO-8601>","paths":["a/b/c.ts","d/e.ts"]}
+ * so the Stop hook can derive a "top edited directories" activity overview
+ * for the 人-first reminder banner (Signal A).
+ *
+ * Back-compat:
+ *   - countEditsSince() reads each line by extracting the first ISO-8601
+ *     substring it sees (works on both JSON-line and legacy plain-ISO files).
+ *   - Existing sidecars from rc.6 (plain ISO per line) continue to count
+ *     correctly; the activity-overview helper simply skips lines with no
+ *     `paths` array.
+ *   - When the caller cannot supply paths (e.g. unrecognized tool, payload
+ *     parse failure) we still write the JSON line with an empty `paths`
+ *     array. The fire-count signal is preserved; the activity overview
+ *     just contributes nothing from those lines.
  */
-function appendEditCounter(projectRoot, now) {
+function appendEditCounter(projectRoot, now, paths) {
   try {
     const dir = join(projectRoot, EDIT_COUNTER_DIR_REL);
     const file = join(dir, EDIT_COUNTER_FILE);
@@ -251,7 +267,11 @@ function appendEditCounter(projectRoot, now) {
       mkdirSync(dir, { recursive: true });
     }
     const iso = now instanceof Date ? now.toISOString() : new Date(now).toISOString();
-    appendFileSync(file, `${iso}\n`, "utf8");
+    const pathList = Array.isArray(paths)
+      ? paths.filter((p) => typeof p === "string" && p.length > 0)
+      : [];
+    const line = JSON.stringify({ ts: iso, paths: pathList });
+    appendFileSync(file, `${line}\n`, "utf8");
   } catch {
     // Silent — sidecar failure must never block the edit.
   }
@@ -633,23 +653,42 @@ function main(env, stdio) {
     const payload =
       env && env.payload !== undefined ? env.payload : readPayload(env && env.stdin);
 
-    // E4 runs UNCONDITIONALLY — append timestamp even when payload is null
-    // or the tool is unrecognized. The counter signal measures hook fires,
-    // not successful renders. This is intentional: TASK-022 wants the raw
-    // edit-attempt cadence.
+    // E4 runs UNCONDITIONALLY — append a line even when payload is null or
+    // the tool is unrecognized. The counter signal measures hook fires, not
+    // successful renders (TASK-022 wants the raw edit-attempt cadence).
+    //
+    // rc.7 T4: best-effort path extraction is done BEFORE the counter write
+    // so the JSON line can carry the touched paths for the Stop hook's
+    // 人-first activity-overview banner. Failure to extract paths (null
+    // payload, unrecognized tool, etc.) yields an empty paths array — the
+    // fire-count signal is preserved.
     //
     // Test seam: env.skipCounter disables the side-effect for tests that
     // want to assert rendering behaviour without touching the filesystem.
+    let toolName = null;
+    let toolInput = null;
+    let paths = [];
+    if (payload !== null && payload !== undefined) {
+      try {
+        toolName = extractToolName(payload);
+        if (toolName && EDIT_TOOL_NAMES.has(toolName)) {
+          toolInput = extractToolInput(payload);
+          paths = extractPaths(toolInput);
+        }
+      } catch {
+        // Defensive — extractors already swallow most failures, but the
+        // counter write must not be lost if a future extractor throws.
+        toolName = null;
+        paths = [];
+      }
+    }
     if (!(env && env.skipCounter === true)) {
-      appendEditCounter(cwd, now);
+      appendEditCounter(cwd, now, paths);
     }
 
     // E2 path is conditional on a recognized tool + extractable paths.
     if (payload === null || payload === undefined) return;
-    const toolName = extractToolName(payload);
     if (!toolName || !EDIT_TOOL_NAMES.has(toolName)) return;
-    const toolInput = extractToolInput(payload);
-    const paths = extractPaths(toolInput);
     if (paths.length === 0) return;
 
     // Test seam: env.cliResult short-circuits the CLI spawn so unit tests
