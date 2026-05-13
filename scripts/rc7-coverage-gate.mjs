@@ -266,6 +266,81 @@ async function checkT06PendingSelfContained() {
 }
 
 // ---------------------------------------------------------------------------
+// T05 — Archive Skill cross-session digest layer
+//   * source_sessions[] array form on FabExtractKnowledgeInputSchema
+//   * Back-compat shim accepts single string source_session
+//   * Pending frontmatter renders `source_sessions: [...]` array
+//   * Digest writer module + Phase 0.0 reference in archive SKILL.md
+// ---------------------------------------------------------------------------
+
+async function checkT05CrossSessionDigest() {
+  const failures = [];
+
+  const schema = readText("packages/shared/src/schemas/api-contracts.ts");
+  if (schema === undefined) {
+    return {
+      id: "T05",
+      name: "archive Skill cross-session digest layer (T5)",
+      passed: false,
+      details: "packages/shared/src/schemas/api-contracts.ts not found",
+    };
+  }
+  if (!/source_sessions:\s*_sourceSessionsField/.test(schema)) {
+    failures.push("api-contracts.ts: missing source_sessions field on FabExtractKnowledgeInputSchema");
+  }
+  if (!/_sourceSessionsField\s*=\s*z\.preprocess/.test(schema)) {
+    failures.push("api-contracts.ts: missing single-string → array preprocess shim for source_sessions");
+  }
+
+  const service = readText("packages/server/src/services/extract-knowledge.ts");
+  if (service === undefined) {
+    failures.push("extract-knowledge.ts: not found");
+  } else if (!/source_sessions:\s*\[/.test(service) && !/`source_sessions: \[\$/.test(service)) {
+    failures.push("extract-knowledge.ts: pending frontmatter does not render source_sessions: [...] array");
+  }
+
+  if (!fileExists("packages/cli/templates/hooks/lib/session-digest-writer.cjs")) {
+    failures.push("templates/hooks/lib/session-digest-writer.cjs not found (digest writer module)");
+  }
+  const hook = readText("packages/cli/templates/hooks/fabric-hint.cjs");
+  if (hook === undefined) {
+    failures.push("fabric-hint.cjs not found");
+  } else {
+    if (!/session-digest-writer/.test(hook)) {
+      failures.push("fabric-hint.cjs: does not require/use session-digest-writer (digest write not wired)");
+    }
+    if (!/writeSessionDigestBestEffort/.test(hook)) {
+      failures.push("fabric-hint.cjs: missing writeSessionDigestBestEffort integration");
+    }
+  }
+
+  const skill = readText("packages/cli/templates/skills/fabric-archive/SKILL.md");
+  if (skill === undefined) {
+    failures.push("fabric-archive/SKILL.md not found");
+  } else {
+    if (!/Phase 0\.0/.test(skill)) {
+      failures.push("fabric-archive SKILL.md: missing Phase 0.0 cross-session digest block");
+    }
+    if (!/\.fabric\/\.cache\/session-digests/.test(skill)) {
+      failures.push("fabric-archive SKILL.md: Phase 0.0 does not reference .fabric/.cache/session-digests/");
+    }
+    if (!/source_sessions/.test(skill)) {
+      failures.push("fabric-archive SKILL.md: does not document source_sessions[] output contract");
+    }
+  }
+
+  if (failures.length === 0) {
+    return { id: "T05", name: "archive Skill cross-session digest layer (T5)", passed: true };
+  }
+  return {
+    id: "T05",
+    name: "archive Skill cross-session digest layer (T5)",
+    passed: false,
+    details: failures.join("\n"),
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Driver
 // ---------------------------------------------------------------------------
 
@@ -273,6 +348,7 @@ async function main() {
   const checks = [];
   checks.push(await checkT09PlanContextSymmetric());
   checks.push(await checkT06PendingSelfContained());
+  checks.push(await checkT05CrossSessionDigest());
 
   const passed = checks.every((c) => c.passed);
   const headerWidth = Math.max(...checks.map((c) => c.name.length)) + 4;

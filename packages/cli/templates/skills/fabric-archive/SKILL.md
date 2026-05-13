@@ -24,6 +24,44 @@ This skill is `Check-not-Ask`, not a preference interview:
 
 ## 执行流程 (5 Phase / 1 User Review Round)
 
+### Phase 0.0 — Collect Cross-Session Digests (v2.0.0-rc.7 T5)
+
+Before any single-session collection or viability gating, stitch together
+context from every session that has accumulated since the last
+`knowledge_proposed` event. The rc.7 Stop hook writes a per-session digest to
+`.fabric/.cache/session-digests/<session_id>.md` (≤5KB, contains top 10 user
+messages + edit_paths + 1-line title), so this phase is a tail-scan + read.
+
+1. **Read events.jsonl tail.** Use `Bash` with
+   `tail -n 200 .fabric/events.jsonl` (tolerate ENOENT — empty ledger is a
+   normal first-run state).
+2. **Find the anchor.** Walk the tail backwards to locate the most recent
+   `knowledge_proposed` event (`event_type === "knowledge_proposed"`). The
+   anchor's `ts` becomes the lower bound for digest selection. If NO anchor
+   exists, treat all digests in the cache as in-scope.
+3. **Collect session_ids since anchor.** Scan the tail forward from the
+   anchor and collect every distinct `session_id` field that appears on any
+   event newer than the anchor. Distinct ordering preserved.
+4. **Load digests.** For each collected `session_id`, read
+   `.fabric/.cache/session-digests/<session_id>.md`. Missing digest files
+   degrade silently (the digest write was best-effort, so a Stop hook crash
+   can produce a session_id without a digest). Cap the loaded digest set at
+   10 most-recent sessions to bound LLM context (~50KB worst-case).
+5. **Build cross-session context.** Concatenate the loaded digests into a
+   single `### Cross-session digest` block to carry into Phase 0.5 + Phase 1.
+   Use this block to:
+   - Detect session-spanning patterns (e.g. a discussion that started in
+     session A and continued in session B).
+   - Populate the `source_sessions` array on every fab_extract_knowledge
+     call — the array form (T5) replaces the legacy `source_session` string.
+   - Inform the `session_context` blob written to each pending entry's body
+     (3-5 lines summarizing goal + key turning point, per T6).
+
+Graceful degradation: if `.fabric/.cache/session-digests/` is missing
+entirely, this phase reports an empty context and Phase 0 falls back to the
+single-session behaviour. Tests that synthesize events.jsonl without
+populating the digest cache continue to work.
+
 ### Phase 0 — Collect Candidates
 
 Gather raw evidence from the recent session before any classification:

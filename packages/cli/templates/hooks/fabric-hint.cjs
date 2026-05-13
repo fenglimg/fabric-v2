@@ -2,6 +2,17 @@
 const { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } = require("node:fs");
 const { dirname, join } = require("node:path");
 
+// v2.0.0-rc.7 T5: session-digest writer. Best-effort (never blocks Stop hook
+// on failure — see contract in lib/session-digest-writer.cjs).
+let sessionDigestWriter = null;
+try {
+  sessionDigestWriter = require("./lib/session-digest-writer.cjs");
+} catch {
+  // Helper module missing — degrade silently. Digest writing is opt-in
+  // observability; the rest of fabric-hint must still function.
+  sessionDigestWriter = null;
+}
+
 // CONSTANTS — duplicated from packages/server/src/services/_shared.ts.
 // DRY violation accepted: this hook script runs in user repos WITHOUT
 // node_modules access, so it cannot import from @fenglimg/fabric-server.
@@ -559,6 +570,144 @@ function writeShownCache(projectRoot, cache) {
 }
 
 /**
+ * v2.0.0-rc.7 T5: best-effort sync stdin reader for the Stop hook.
+ *
+ * Claude Code passes a JSON payload via stdin on Stop hook fire (session_id,
+ * transcript_path, hook_event_name, etc.). We try to read it synchronously so
+ * we can derive a session digest. On any failure (closed stdin, non-TTY where
+ * fd 0 is not readable, parse error, foreign client) we degrade silently.
+ *
+ * Returns the parsed JSON object on success, or null on any error. NEVER
+ * throws.
+ */
+function tryReadStdinJson() {
+  try {
+    // Skip the read entirely when stdin is a TTY (interactive invocation, no
+    // payload). readFileSync on fd 0 would block forever in that case.
+    if (process.stdin.isTTY === true) return null;
+    const buf = readFileSync(0, "utf8");
+    if (typeof buf !== "string" || buf.trim().length === 0) return null;
+    const parsed = JSON.parse(buf);
+    if (parsed === null || typeof parsed !== "object") return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * v2.0.0-rc.7 T5: extract user_messages + edit_paths + 1-line title from the
+ * transcript JSONL referenced by the hook's stdin payload. Best-effort, never
+ * throws.
+ *
+ * Claude Code's transcript_path points at a JSONL where each line is a
+ * message envelope. We sniff for `role: "user"` lines (text content) and
+ * for tool-use entries naming Edit / Write / MultiEdit to harvest file_path.
+ */
+function summarizeTranscript(transcriptPath) {
+  const out = { user_messages: [], edit_paths: [], title: "" };
+  if (typeof transcriptPath !== "string" || transcriptPath.length === 0) return out;
+  if (!existsSync(transcriptPath)) return out;
+  let raw;
+  try {
+    raw = readFileSync(transcriptPath, "utf8");
+  } catch {
+    return out;
+  }
+  const lines = raw.split(/\r?\n/);
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (trimmed.length === 0) continue;
+    let envelope;
+    try {
+      envelope = JSON.parse(trimmed);
+    } catch {
+      continue;
+    }
+    if (envelope === null || typeof envelope !== "object") continue;
+
+    // User text message — Claude Code shape: { role: "user", content: [...] }
+    // OR nested under `message.role`. Be generous.
+    const role = envelope.role || (envelope.message && envelope.message.role);
+    if (role === "user") {
+      const content = envelope.content || (envelope.message && envelope.message.content);
+      if (typeof content === "string") {
+        out.user_messages.push(content);
+      } else if (Array.isArray(content)) {
+        for (const block of content) {
+          if (block && typeof block === "object" && typeof block.text === "string") {
+            out.user_messages.push(block.text);
+          }
+        }
+      }
+    }
+
+    // Tool use — look for Edit / Write / MultiEdit and harvest file_path.
+    const candidates = [];
+    if (envelope.type === "tool_use") candidates.push(envelope);
+    const msgContent = envelope.message && envelope.message.content;
+    if (Array.isArray(msgContent)) {
+      for (const block of msgContent) {
+        if (block && block.type === "tool_use") candidates.push(block);
+      }
+    }
+    for (const tu of candidates) {
+      const name = tu.name;
+      if (name === "Edit" || name === "Write" || name === "MultiEdit") {
+        const input = tu.input || tu.parameters || {};
+        const fp = input.file_path || input.filePath || input.path;
+        if (typeof fp === "string" && fp.length > 0) {
+          out.edit_paths.push(fp);
+        }
+        if (name === "MultiEdit" && Array.isArray(input.edits)) {
+          for (const e of input.edits) {
+            const f = e && (e.file_path || e.filePath || e.path);
+            if (typeof f === "string" && f.length > 0) out.edit_paths.push(f);
+          }
+        }
+      }
+    }
+  }
+  // 1-line title = first non-empty user message (trimmed). Falls back to "".
+  if (out.user_messages.length > 0) {
+    const first = out.user_messages[0].replace(/\s+/g, " ").trim();
+    out.title = first.slice(0, 80);
+  }
+  // Dedup edit_paths preserving order.
+  const seen = new Set();
+  out.edit_paths = out.edit_paths.filter((p) => {
+    if (seen.has(p)) return false;
+    seen.add(p);
+    return true;
+  });
+  return out;
+}
+
+/**
+ * v2.0.0-rc.7 T5: writeSessionDigestBestEffort — non-blocking digest fan-out.
+ * Called from main() before the existing decide() flow. Failure is silently
+ * swallowed; the Stop hook contract remains "never block on hook failure".
+ */
+function writeSessionDigestBestEffort(projectRoot, stdinPayload) {
+  if (sessionDigestWriter === null) return;
+  if (stdinPayload === null) return;
+  try {
+    const sessionId = stdinPayload.session_id;
+    if (typeof sessionId !== "string" || sessionId.length === 0) return;
+    const transcript = summarizeTranscript(stdinPayload.transcript_path);
+    sessionDigestWriter.writeDigest({
+      projectRoot,
+      session_id: sessionId,
+      title: transcript.title,
+      user_messages: transcript.user_messages,
+      edit_paths: transcript.edit_paths,
+    });
+  } catch {
+    // Best-effort. Stop hook continues.
+  }
+}
+
+/**
  * Main entry — invoked both as a CLI (require.main === module) and in-process by tests.
  *
  * Wraps the entire flow in try/catch: ANY error → silent exit 0. The hook MUST NEVER
@@ -570,6 +719,15 @@ function main(env, stdio) {
     const now = (env && env.now) || new Date();
     const nowMs = now instanceof Date ? now.getTime() : Number(now) || Date.now();
     const out = (stdio && stdio.stdout) || process.stdout;
+
+    // v2.0.0-rc.7 T5: session-digest write (best-effort). Tests can inject
+    // a pre-parsed stdin payload via env.stdin_payload so the digest path
+    // is exercised without needing a real stdin pipe.
+    const stdinPayload =
+      (env && env.stdin_payload) !== undefined
+        ? env.stdin_payload
+        : tryReadStdinJson();
+    writeSessionDigestBestEffort(cwd, stdinPayload);
 
     const events = readLedger(cwd);
     let pendingStats;
@@ -664,6 +822,10 @@ module.exports = {
   readCooldownHours,
   readUnderseedThreshold,
   readArchiveEditThreshold,
+  // v2.0.0-rc.7 T5: session digest helpers (exported for unit testing).
+  tryReadStdinJson,
+  summarizeTranscript,
+  writeSessionDigestBestEffort,
   // rc.7 T7: externalized-threshold readers (3 moved + 2 new for T10).
   readArchiveHintHours,
   readReviewHintPendingCount,
