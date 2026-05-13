@@ -70,6 +70,8 @@ export const zhCNMessages: Messages = {
   "cli.doctor.args.force.description": "即使 serve 进程持有锁，也强制运行。",
   "cli.doctor.args.apply-lint.description":
     "应用 lint 变更：降级孤立的规范条目、归档陈旧 draft、修正漂移的索引计数器；写入 knowledge_demoted / knowledge_archived 事件。默认运行仍然只读。",
+  "cli.doctor.args.yes.description":
+    "跳过 --apply-lint 的安全确认；非 tty 调用必须显式设置该标记，或在环境变量中设置 FABRIC_NONINTERACTIVE=1。",
   "cli.doctor.errors.apply-lint-fix-mutually-exclusive":
     "--apply-lint 与 --fix 不可同时使用。--apply-lint 修改用户知识状态（降级/归档）；--fix 修复派生状态（meta/索引）。请分别运行。",
 

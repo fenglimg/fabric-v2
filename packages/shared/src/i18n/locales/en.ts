@@ -72,6 +72,8 @@ export const enMessages: Messages = {
   "cli.doctor.args.force.description": "Run even if a serve process appears to hold the lock.",
   "cli.doctor.args.apply-lint.description":
     "Apply lint mutations: demote orphaned canonical entries, archive stale drafts, and bump drifted index counters. Emits knowledge_demoted / knowledge_archived events. Default doctor invocation remains report-only.",
+  "cli.doctor.args.yes.description":
+    "Skip the --apply-lint safety confirm. Required for non-tty invocations unless FABRIC_NONINTERACTIVE=1 is set in the environment.",
   "cli.doctor.errors.apply-lint-fix-mutually-exclusive":
     "--apply-lint and --fix cannot be combined. --apply-lint mutates user knowledge state (demote/archive); --fix repairs derived state (meta/index). Run them separately.",
 

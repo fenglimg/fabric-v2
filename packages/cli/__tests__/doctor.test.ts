@@ -155,9 +155,13 @@ describe("doctor command", () => {
         report: createReport("ok"),
       };
       const applyLintSpy = vi.fn().mockResolvedValue(applyLintReport);
+      // rc.7 T11: doctor now runs a preflight runDoctorReport call to derive
+      // the apply-lint mutation plan for the safety confirm. With an "ok"
+      // report (no apply-lint findings), plan.totalCount === 0 and the
+      // confirm is skipped — mutations proceed straight through.
       vi.doMock("@fenglimg/fabric-server", () => ({
         checkLockOrThrow: vi.fn(),
-        runDoctorReport: vi.fn(),
+        runDoctorReport: vi.fn().mockResolvedValue(createReport("ok")),
         runDoctorFix: vi.fn(),
         runDoctorApplyLint: applyLintSpy,
       }));
@@ -173,6 +177,7 @@ describe("doctor command", () => {
             json: false,
             strict: false,
             "apply-lint": true,
+            yes: true,
           },
         } as never);
       } finally {
@@ -206,7 +211,7 @@ describe("doctor command", () => {
       };
       vi.doMock("@fenglimg/fabric-server", () => ({
         checkLockOrThrow: vi.fn(),
-        runDoctorReport: vi.fn(),
+        runDoctorReport: vi.fn().mockResolvedValue(createReport("ok")),
         runDoctorFix: vi.fn(),
         runDoctorApplyLint: vi.fn().mockResolvedValue(applyLintReport),
       }));
@@ -229,6 +234,7 @@ describe("doctor command", () => {
             json: false,
             strict: false,
             "apply-lint": true,
+            yes: true,
           },
         } as never);
       } finally {
@@ -302,7 +308,7 @@ describe("doctor command", () => {
       };
       vi.doMock("@fenglimg/fabric-server", () => ({
         checkLockOrThrow: vi.fn(),
-        runDoctorReport: vi.fn(),
+        runDoctorReport: vi.fn().mockResolvedValue(createReport("ok")),
         runDoctorFix: vi.fn(),
         runDoctorApplyLint: vi.fn().mockResolvedValue(applyLintReport),
       }));
@@ -318,6 +324,7 @@ describe("doctor command", () => {
             json: false,
             strict: false,
             "apply-lint": true,
+            yes: true,
           },
         } as never);
       } finally {
@@ -326,6 +333,210 @@ describe("doctor command", () => {
 
       expect(process.exitCode).toBe(1);
       expect(stdout.lines.some((line) => line.includes("EACCES"))).toBe(true);
+    });
+
+    // -----------------------------------------------------------------------
+    // rc.7 T11: --apply-lint safety prompt
+    // -----------------------------------------------------------------------
+
+    it("--apply-lint with --yes skips the confirm even when mutations are pending", async () => {
+      // Pre-flight report carries an apply-lint finding (orphan_demote warning)
+      // so plan.totalCount > 0 and the prompt would normally appear. --yes
+      // must bypass it.
+      const preReport = createReport("ok");
+      preReport.warnings.push({
+        code: "knowledge_orphan_demote_required",
+        name: "Orphan demote",
+        message: "demote candidate",
+        path: ".fabric/knowledge/decisions/KT-DEC-2001--orphan.md",
+      });
+      const applyReport = {
+        changed: true,
+        mutations: [{
+          kind: "knowledge_orphan_demote_required" as const,
+          path: ".fabric/knowledge/decisions/KT-DEC-2001--orphan.md",
+          detail: "stable -> endorsed",
+          applied: true,
+        }],
+        manual_errors: [],
+        aborted: false,
+        message: "Applied 1 apply-lint mutation.",
+        report: createReport("ok"),
+      };
+      const applyLintSpy = vi.fn().mockResolvedValue(applyReport);
+      vi.doMock("@fenglimg/fabric-server", () => ({
+        checkLockOrThrow: vi.fn(),
+        runDoctorReport: vi.fn().mockResolvedValue(preReport),
+        runDoctorFix: vi.fn(),
+        runDoctorApplyLint: applyLintSpy,
+      }));
+
+      const { doctorCommand } = await import("../src/commands/doctor.ts");
+      const stdout = captureStdout();
+      try {
+        await doctorCommand.run?.({
+          args: {
+            target: "/tmp/fabric-target",
+            fix: false,
+            json: false,
+            strict: false,
+            "apply-lint": true,
+            yes: true,
+          },
+        } as never);
+      } finally {
+        stdout.restore();
+      }
+
+      expect(applyLintSpy).toHaveBeenCalledTimes(1);
+      expect(stdout.lines.some((line) => line.includes("apply-lint mutation plan"))).toBe(true);
+    });
+
+    it("--apply-lint with FABRIC_NONINTERACTIVE=1 (no --yes) skips the confirm", async () => {
+      const preReport = createReport("ok");
+      preReport.warnings.push({
+        code: "knowledge_orphan_demote_required",
+        name: "Orphan demote",
+        message: "demote candidate",
+        path: "x.md",
+      });
+      const applyReport = {
+        changed: true,
+        mutations: [],
+        manual_errors: [],
+        aborted: false,
+        message: "ok",
+        report: createReport("ok"),
+      };
+      const applyLintSpy = vi.fn().mockResolvedValue(applyReport);
+      vi.doMock("@fenglimg/fabric-server", () => ({
+        checkLockOrThrow: vi.fn(),
+        runDoctorReport: vi.fn().mockResolvedValue(preReport),
+        runDoctorFix: vi.fn(),
+        runDoctorApplyLint: applyLintSpy,
+      }));
+
+      const originalEnv = process.env.FABRIC_NONINTERACTIVE;
+      process.env.FABRIC_NONINTERACTIVE = "1";
+      const { doctorCommand } = await import("../src/commands/doctor.ts");
+      const stdout = captureStdout();
+      try {
+        await doctorCommand.run?.({
+          args: {
+            target: "/tmp/fabric-target",
+            fix: false,
+            json: false,
+            strict: false,
+            "apply-lint": true,
+          },
+        } as never);
+      } finally {
+        stdout.restore();
+        if (originalEnv === undefined) {
+          delete process.env.FABRIC_NONINTERACTIVE;
+        } else {
+          process.env.FABRIC_NONINTERACTIVE = originalEnv;
+        }
+      }
+
+      expect(applyLintSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it("--apply-lint without --yes and non-tty stdin exits 1 without mutating", async () => {
+      const preReport = createReport("ok");
+      preReport.warnings.push({
+        code: "knowledge_orphan_demote_required",
+        name: "Orphan demote",
+        message: "demote candidate",
+        path: "x.md",
+      });
+      const applyLintSpy = vi.fn();
+      vi.doMock("@fenglimg/fabric-server", () => ({
+        checkLockOrThrow: vi.fn(),
+        runDoctorReport: vi.fn().mockResolvedValue(preReport),
+        runDoctorFix: vi.fn(),
+        runDoctorApplyLint: applyLintSpy,
+      }));
+
+      // Force non-tty.
+      const originalIsTTY = process.stdin.isTTY;
+      Object.defineProperty(process.stdin, "isTTY", { value: false, configurable: true });
+      // Ensure env bypass is not set for this test.
+      const originalEnv = process.env.FABRIC_NONINTERACTIVE;
+      delete process.env.FABRIC_NONINTERACTIVE;
+
+      const { doctorCommand } = await import("../src/commands/doctor.ts");
+      const stdout = captureStdout();
+      const stderrLines: string[] = [];
+      const stderrSpy = vi
+        .spyOn(process.stderr, "write")
+        .mockImplementation(((chunk: string | Uint8Array) => {
+          stderrLines.push(String(chunk).replace(/\n$/, ""));
+          return true;
+        }) as typeof process.stderr.write);
+      try {
+        await doctorCommand.run?.({
+          args: {
+            target: "/tmp/fabric-target",
+            fix: false,
+            json: false,
+            strict: false,
+            "apply-lint": true,
+          },
+        } as never);
+      } finally {
+        stdout.restore();
+        stderrSpy.mockRestore();
+        Object.defineProperty(process.stdin, "isTTY", { value: originalIsTTY, configurable: true });
+        if (originalEnv !== undefined) {
+          process.env.FABRIC_NONINTERACTIVE = originalEnv;
+        }
+      }
+
+      expect(applyLintSpy).not.toHaveBeenCalled();
+      expect(process.exitCode).toBe(1);
+      expect(stderrLines.some((line) => line.toLowerCase().includes("not a tty"))).toBe(true);
+    });
+
+    it("--apply-lint with NO pending mutations skips the confirm and runs the mutation arm", async () => {
+      // plan.totalCount === 0 → confirm is bypassed; runDoctorApplyLint is
+      // still called so the no-op message is rendered.
+      const preReport = createReport("ok");
+      const applyReport = {
+        changed: false,
+        mutations: [],
+        manual_errors: [],
+        aborted: false,
+        message: "No apply-lint mutations were needed.",
+        report: createReport("ok"),
+      };
+      const applyLintSpy = vi.fn().mockResolvedValue(applyReport);
+      vi.doMock("@fenglimg/fabric-server", () => ({
+        checkLockOrThrow: vi.fn(),
+        runDoctorReport: vi.fn().mockResolvedValue(preReport),
+        runDoctorFix: vi.fn(),
+        runDoctorApplyLint: applyLintSpy,
+      }));
+
+      const { doctorCommand } = await import("../src/commands/doctor.ts");
+      const stdout = captureStdout();
+      try {
+        await doctorCommand.run?.({
+          args: {
+            target: "/tmp/fabric-target",
+            fix: false,
+            json: false,
+            strict: false,
+            "apply-lint": true,
+          },
+        } as never);
+      } finally {
+        stdout.restore();
+      }
+
+      expect(applyLintSpy).toHaveBeenCalledTimes(1);
+      // No plan banner because totalCount was 0.
+      expect(stdout.lines.some((line) => line.includes("apply-lint mutation plan"))).toBe(false);
     });
   });
 });
@@ -353,9 +564,10 @@ function createReport(status: "ok" | "warn" | "error") {
         message: status === "ok" ? "aligned" : "not aligned",
       },
     ],
-    fixable_errors: status === "error" ? [{ code: "agents_meta_stale", name: "Agents metadata", message: "not aligned" }] : [],
-    manual_errors: [],
-    warnings: status === "warn" ? [{ code: "derived_identity", name: "Rule identity", message: "derived identity" }] : [],
+    fixable_errors: status === "error" ? [{ code: "agents_meta_stale", name: "Agents metadata", message: "not aligned" }] : [] as Array<{ code: string; name: string; message: string; path?: string }>,
+    manual_errors: [] as Array<{ code: string; name: string; message: string; path?: string }>,
+    warnings: (status === "warn" ? [{ code: "derived_identity", name: "Rule identity", message: "derived identity" }] : []) as Array<{ code: string; name: string; message: string; path?: string }>,
+    infos: [] as Array<{ code: string; name: string; message: string; path?: string }>,
     summary: {
       target: "/tmp/fabric-target",
       framework: { kind: "vite", version: "^7.0.0", subkind: "vite-application" },
