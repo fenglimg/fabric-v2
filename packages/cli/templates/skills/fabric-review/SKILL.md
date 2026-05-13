@@ -4,6 +4,8 @@ description: Use this skill to review pending knowledge entries in `.fabric/know
 allowed-tools: Read, Glob, Grep, Bash, Edit, mcp__fabric__fab_review
 ---
 
+> **Surface**: This is a Skill (AI-driven, per-entry human-judgment routing). See [`docs/surfaces.md`](https://github.com/fenglimg/fabric/blob/main/docs/surfaces.md) for the CLI / Skill / MCP boundary.
+
 ## Precondition
 
 This skill is invoked when one of the following holds:

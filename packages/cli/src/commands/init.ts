@@ -370,6 +370,14 @@ export async function runInitCommand(args: InitArgs): Promise<InitExecutionResul
     // Sentinel is opt-in convenience — failure must never escalate from
     // the init command's success path.
   }
+  // rc.7 T3: surfaces-doc cross-reference footer. Printed unconditionally
+  // on the success path (plan-only excepted) so users discover the
+  // CLI/Skill/MCP boundary doc the first time they install Fabric. The
+  // line is intentionally a single console.log — paint.muted-only so it
+  // doesn't compete with the capability table above it.
+  if (!intent.options.planOnly) {
+    console.log(paint.muted("More: docs/surfaces.md explains when to use CLI vs Skill vs MCP."));
+  }
   return result;
 }
 

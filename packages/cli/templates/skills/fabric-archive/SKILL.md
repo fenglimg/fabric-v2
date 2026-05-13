@@ -4,6 +4,8 @@ description: Use this skill when the Stop-hook signals an archive opportunity (e
 allowed-tools: Read, Glob, Grep, Bash, mcp__fabric__fab_extract_knowledge
 ---
 
+> **Surface**: This is a Skill (AI-driven, LLM judgment over session digests). See [`docs/surfaces.md`](https://github.com/fenglimg/fabric/blob/main/docs/surfaces.md) for the CLI / Skill / MCP boundary.
+
 ## Precondition
 
 This skill is invoked when one of the following holds:

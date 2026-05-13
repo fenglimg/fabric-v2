@@ -172,6 +172,20 @@ Where Fabric diverges:
 
 Genes are shared. The architecture is original to this project.
 
+## Three surfaces
+
+Fabric splits cleanly across three entry points; pick by who's in the loop:
+
+- **CLI** — terminal, no AI in loop: `fabric init`, `fabric doctor`,
+  `fabric plan-context-hint`.
+- **Skill** — AI is in the conversation and needs to judge content:
+  `/fabric-archive`, `/fabric-review`, `/fabric-import`.
+- **MCP** — primitives the above use internally: `fab_extract_knowledge`,
+  `fab_plan_context`, `fab_get_knowledge_sections`, `fab_review`.
+
+→ See [`docs/surfaces.md`](./docs/surfaces.md) for the full table, decision
+rule, and flow examples.
+
 ## Quick Start
 
 ```bash
