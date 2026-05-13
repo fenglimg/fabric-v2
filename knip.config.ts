@@ -4,7 +4,13 @@ const config: KnipConfig = {
   ignore: [
     'scripts/**',
     'examples/**',
-    'templates/**'
+    'templates/**',
+    // Dogfooded Fabric Stop-hook scripts installed by `fab init` into this
+    // repo's own .claude / .codex client configs. They are runtime hooks
+    // invoked externally by Claude Code / Codex CLI — never imported by TS
+    // sources, so knip --strict reports them as unused.
+    '.claude/hooks/**',
+    '.codex/hooks/**'
   ],
   // Workspace cross-dependencies and build-tool deps are flagged as "unused" by --strict
   // because knip v6 does not resolve workspace: protocol packages as external deps in strict
