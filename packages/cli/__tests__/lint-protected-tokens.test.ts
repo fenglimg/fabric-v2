@@ -1,46 +1,84 @@
 import { describe, expect, it } from "vitest";
 
-import { validateBootstrapFile } from "../../../scripts/lint-protected-tokens.ts";
+import {
+  validateBootstrapFile,
+  validateSkillFile,
+} from "../../../scripts/lint-protected-tokens.ts";
 
-const VALID_BOOTSTRAP_CORE = `# Fabric Bootstrap
-
-## CORE RULES (DO NOT TRANSLATE)
-
-MUST: Treat this file as the Fabric Protocol bootstrap for this repository.
-MUST: Before ANY code reading, architecture planning, or logic modification, call the MCP tool \`fab_plan_context(paths=[<target file>])\`, then call \`fab_get_knowledge_sections\` with selected L1 stable_ids before editing.
-MUST: Treat \`.fabric/events.jsonl\` as the automatic typed Event Ledger; MCP tools, \`fabric doctor --fix\`, and \`fabric sync-meta\` write records without manual \`ledger_entry\` calls.
-MUST: When creating or changing an L1/L2 rule node, update rule sources and run \`fabric sync-meta\` or \`fabric doctor --fix\`; keep \`.fabric/agents.meta.json\` as the generated \`agent_meta\` baseline.
-MUST: Stop and ask the human before editing any \`@HUMAN\` protected range listed in \`.fabric/human-lock.json\`.
-MUST: Preserve protected tokens exactly: \`AGENTS.md\`, \`FABRIC.md\`, \`.fabric/agents/\`, \`.fabric/agents.meta.json\`, \`.fabric/human-lock.json\`, \`.fabric/events.jsonl\`, \`ledger_entry\`, \`agent_meta\`, \`shadow constraints\`, \`Shadow Mirroring\`, \`MUST\`, \`NEVER\`.
-NEVER: Translate, rename, or paraphrase MCP tool names, JSON keys, file paths, or the keywords \`MUST\` and \`NEVER\`.
-NEVER: Reason about or modify code before obtaining local shadow constraints via MCP.
-NEVER: Edit \`.fabric/agents.meta.json\` directly.
-NEVER: Ignore stale, human-lock, doctor, or sync-meta warnings returned by Fabric tools.
-
-## 使用说明 / Explanation
-
-- test
+const VALID_BOOTSTRAP_SOURCE = `# Fabric Bootstrap
+- 修改任何文件前必须调用 \`fab_plan_context(paths=[<被改文件>])\`，再调用 \`fab_get_knowledge_sections\` 获取规则段落。
+- MCP 和 doctor 会写入 \`.fabric/events.jsonl\`。
 `;
 
-describe("lint-protected-tokens stable-id headers", () => {
-  it("accepts a leading fab:rule-id comment header", () => {
-    const source = `<!-- fab:rule-id bootstrap/codex -->\n${VALID_BOOTSTRAP_CORE}`;
+const VALID_SKILL_SOURCE = `---
+name: fabric-archive
+description: Archive worth-keeping knowledge from the current session.
+---
 
-    expect(validateBootstrapFile("/tmp/AGENTS.md", source)).toEqual([]);
+## Phase 2 — Persist
+
+For each user-confirmed candidate, call \`fab_extract_knowledge\` ONCE.
+The pending file lands under \`.fabric/knowledge/pending/\`.
+
+MUST: Re-read the digest before classifying.
+NEVER: Batch multiple candidates into one MCP call.
+`;
+
+describe("validateBootstrapFile", () => {
+  it("returns no violations when all required tokens are present", () => {
+    expect(validateBootstrapFile("/tmp/CLAUDE.md", VALID_BOOTSTRAP_SOURCE)).toEqual([]);
   });
 
-  it("rejects bootstrap files without a leading fab:rule-id comment header", () => {
-    const source = VALID_BOOTSTRAP_CORE;
-
-    expect(validateBootstrapFile("/tmp/AGENTS.md", source)).toContainEqual({
-      filePath: "/tmp/AGENTS.md",
-      message: "missing leading '<!-- fab:rule-id <stable-id> -->' header comment",
+  it("flags a missing MCP tool token", () => {
+    const source = VALID_BOOTSTRAP_SOURCE.replace("fab_plan_context", "计划上下文");
+    expect(validateBootstrapFile("/tmp/CLAUDE.md", source)).toContainEqual({
+      filePath: "/tmp/CLAUDE.md",
+      message: "template is missing protected token fab_plan_context",
     });
   });
 
-  it("accepts a fab:rule-id header immediately after frontmatter", () => {
-    const source = `---\nalwaysApply: true\ndescription: Fabric Protocol bootstrap rules\n---\n<!-- fab:rule-id bootstrap/cursor -->\n${VALID_BOOTSTRAP_CORE}`;
+  it("flags a missing event ledger path token", () => {
+    const source = VALID_BOOTSTRAP_SOURCE.replace(".fabric/events.jsonl", ".fabric/事件.jsonl");
+    expect(validateBootstrapFile("/tmp/CLAUDE.md", source)).toContainEqual({
+      filePath: "/tmp/CLAUDE.md",
+      message: "template is missing protected token .fabric/events.jsonl",
+    });
+  });
+});
 
-    expect(validateBootstrapFile("/tmp/cursor-fabric-bootstrap.mdc", source)).toEqual([]);
+describe("validateSkillFile", () => {
+  it("returns no violations for fabric-archive when all required tokens are present", () => {
+    const filePath = "/tmp/skills/fabric-archive/SKILL.md";
+    expect(validateSkillFile(filePath, VALID_SKILL_SOURCE)).toEqual([]);
+  });
+
+  it("flags missing MUST/NEVER hard-rule keywords", () => {
+    const filePath = "/tmp/skills/fabric-archive/SKILL.md";
+    const source = VALID_SKILL_SOURCE.replace(/MUST/g, "应该").replace(/NEVER/g, "禁止");
+    const violations = validateSkillFile(filePath, source);
+    expect(violations).toContainEqual({
+      filePath,
+      message: "template is missing protected token MUST",
+    });
+    expect(violations).toContainEqual({
+      filePath,
+      message: "template is missing protected token NEVER",
+    });
+  });
+
+  it("flags a missing per-skill MCP tool token (fabric-review must mention fab_review)", () => {
+    const filePath = "/tmp/skills/fabric-review/SKILL.md";
+    // Source missing fab_review entirely.
+    const source = `MUST do things. NEVER skip. .fabric/knowledge/ matters.`;
+    expect(validateSkillFile(filePath, source)).toContainEqual({
+      filePath,
+      message: "template is missing protected token fab_review",
+    });
+  });
+
+  it("only enforces universal SKILL tokens for unknown skill directories", () => {
+    const filePath = "/tmp/skills/unknown-skill/SKILL.md";
+    const source = `MUST do things. NEVER skip. .fabric/knowledge/ matters.`;
+    expect(validateSkillFile(filePath, source)).toEqual([]);
   });
 });

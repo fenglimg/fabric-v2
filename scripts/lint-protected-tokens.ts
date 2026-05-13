@@ -4,21 +4,14 @@ import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
-type TemplateKind = "bootstrap" | "skill";
-
-interface TemplateTarget {
-  filePath: string;
-  kind: TemplateKind;
-}
-
 interface Violation {
   filePath: string;
   message: string;
 }
 
 const ROOT = process.cwd();
-const BOOTSTRAP_DIR = path.join(ROOT, "templates", "bootstrap");
-const CLAUDE_SKILLS_DIR = path.join(ROOT, "templates", "claude-skills");
+const BOOTSTRAP_DIR = path.join(ROOT, "packages", "cli", "templates", "bootstrap");
+const SKILLS_DIR = path.join(ROOT, "packages", "cli", "templates", "skills");
 const PROTECTED_TOKENS_PATH = path.join(
   ROOT,
   "packages",
@@ -28,48 +21,41 @@ const PROTECTED_TOKENS_PATH = path.join(
   "protected-tokens.ts",
 );
 
+// Tokens every bootstrap template MUST contain verbatim. v2.0 bootstrap files
+// are short pointer files (the heavy lifting moved into AGENTS.md + the
+// runtime fab_get_knowledge_sections payload), so the universal contract is
+// just: which two MCP tools to call on edit, and where the event ledger lives.
+// Drifting any of these silently breaks the AI-client handshake.
 const BOOTSTRAP_REQUIRED_TOKENS = [
   "fab_plan_context",
   "fab_get_knowledge_sections",
-  "AGENTS.md",
-  "FABRIC.md",
-  ".fabric/agents/",
-  ".fabric/agents.meta.json",
-  ".fabric/human-lock.json",
   ".fabric/events.jsonl",
-  "ledger_entry",
-  "agent_meta",
-  "shadow constraints",
-  "Shadow Mirroring",
-  "MUST",
-  "NEVER",
 ];
 
-const SKILL_REQUIRED_TOKENS = [
-  "AGENTS.md",
-  "FABRIC.md",
-  ".fabric/agents.meta.json",
-  ".fabric/human-lock.json",
-  ".fabric/init-context.json",
-  ".fabric/forensic.json",
-  "MUST",
-  "NEVER",
-];
+// Tokens every SKILL.md MUST contain verbatim. v2.0 skills are intentionally
+// mixed bilingual (Chinese narrative + English protocol tokens) so the lint
+// enforces only the load-bearing English anchors, not section structure.
+const SKILL_REQUIRED_TOKENS = ["MUST", "NEVER", ".fabric/knowledge/"];
 
+// Per-skill MCP tool that the skill wires up. Keyed by the parent directory
+// name under templates/skills/. Each entry MUST name the MCP tool(s) that
+// the skill actually calls — translating them breaks the skill's behavior.
+const SKILL_MCP_TOKENS: Record<string, string[]> = {
+  "fabric-archive": ["fab_extract_knowledge"],
+  "fabric-import": ["fab_extract_knowledge", "fab_review"],
+  "fabric-review": ["fab_review"],
+};
+
+// PROTECTED_TOKENS registry MUST include these — they form the canonical
+// v2.0 protocol surface (MCP tools + ledger anchors + hard-rule keywords)
+// that any future tooling reuse should respect.
 const REGISTRY_REQUIRED_TOKENS = [
   ...BOOTSTRAP_REQUIRED_TOKENS,
   ...SKILL_REQUIRED_TOKENS,
-  "CORE RULES",
-  "DO NOT TRANSLATE",
+  ".fabric/agents.meta.json",
+  "fab_extract_knowledge",
+  "fab_review",
 ];
-
-const CJK_PATTERN = /[\u3400-\u9fff]/;
-const FAB_RULE_ID_HEADER_PATTERN = /<!--\s*fab:rule-id\s+([A-Za-z0-9][A-Za-z0-9/_-]*)\s*-->/u;
-const OPTIONAL_FRONTMATTER_PATTERN = /^(?:\uFEFF)?---\r?\n[\s\S]*?\r?\n---\r?\n*/u;
-
-function relativePath(filePath: string): string {
-  return path.relative(ROOT, filePath);
-}
 
 async function collectFiles(directory: string): Promise<string[]> {
   const entries = await readdir(directory, { withFileTypes: true });
@@ -89,21 +75,6 @@ async function collectFiles(directory: string): Promise<string[]> {
   }
 
   return files;
-}
-
-function extractSection(source: string, headerPattern: RegExp): string | undefined {
-  const match = headerPattern.exec(source);
-
-  if (match === null || match.index === undefined) {
-    return undefined;
-  }
-
-  const sectionStart = match.index + match[0].length;
-  const rest = source.slice(sectionStart);
-  const nextHeaderIndex = rest.search(/\n##\s+/);
-  const section = nextHeaderIndex === -1 ? rest : rest.slice(0, nextHeaderIndex);
-
-  return section.trim();
 }
 
 function parseProtectedTokens(source: string): string[] {
@@ -126,136 +97,45 @@ function parseProtectedTokens(source: string): string[] {
 function pushMissingTokenViolations(
   violations: Violation[],
   filePath: string,
-  section: string,
-  requiredTokens: string[],
+  source: string,
+  requiredTokens: readonly string[],
 ): void {
   for (const token of requiredTokens) {
-    if (!section.includes(token)) {
+    if (!source.includes(token)) {
       violations.push({
         filePath,
-        message: `core section is missing protected token ${token}`,
+        message: `template is missing protected token ${token}`,
       });
     }
   }
 }
 
-function validateEnglishCore(
-  violations: Violation[],
-  filePath: string,
-  section: string | undefined,
-  requiredTokens: string[],
-): void {
-  if (section === undefined) {
-    violations.push({
-      filePath,
-      message: "missing core section with DO NOT TRANSLATE marker",
-    });
-    return;
-  }
-
-  if (CJK_PATTERN.test(section)) {
-    violations.push({
-      filePath,
-      message: "core section must remain English-only; move Chinese text to the wrapper section",
-    });
-  }
-
-  if (!section.includes("MUST") || !section.includes("NEVER")) {
-    violations.push({
-      filePath,
-      message: "core section must contain both MUST and NEVER hard-rule keywords",
-    });
-  }
-
-  pushMissingTokenViolations(violations, filePath, section, requiredTokens);
-}
-
 export function validateBootstrapFile(filePath: string, source: string): Violation[] {
   const violations: Violation[] = [];
-
-  validateRuleIdHeader(violations, filePath, source);
-
-  if (!/^##\s+CORE RULES\b.*DO NOT TRANSLATE.*$/m.test(source)) {
-    violations.push({
-      filePath,
-      message: "missing '## CORE RULES (DO NOT TRANSLATE)' header",
-    });
-  }
-
-  if (!/^##\s+使用说明\s*\/\s*Explanation\s*$/m.test(source)) {
-    violations.push({
-      filePath,
-      message: "missing Chinese explanation section '## 使用说明 / Explanation'",
-    });
-  }
-
-  const coreSection = extractSection(source, /^##\s+CORE RULES\b.*DO NOT TRANSLATE.*\n/m);
-  validateEnglishCore(violations, filePath, coreSection, BOOTSTRAP_REQUIRED_TOKENS);
-
+  pushMissingTokenViolations(violations, filePath, source, BOOTSTRAP_REQUIRED_TOKENS);
   return violations;
 }
 
 export function validateSkillFile(filePath: string, source: string): Violation[] {
   const violations: Violation[] = [];
+  pushMissingTokenViolations(violations, filePath, source, SKILL_REQUIRED_TOKENS);
 
-  if (!/^---\nname:\s*[A-Za-z0-9_-]+\ndescription:\s*[A-Za-z0-9]/m.test(source)) {
-    violations.push({
-      filePath,
-      message: "frontmatter name and description must be English fields",
-    });
+  const skillName = path.basename(path.dirname(filePath));
+  const mcpTokens = SKILL_MCP_TOKENS[skillName];
+  if (mcpTokens !== undefined) {
+    pushMissingTokenViolations(violations, filePath, source, mcpTokens);
   }
-
-  if (!/^##\s+Hard Rules\b.*DO NOT TRANSLATE.*$/m.test(source)) {
-    violations.push({
-      filePath,
-      message: "missing '## Hard Rules (DO NOT TRANSLATE)' header",
-    });
-  }
-
-  const hardRulesSection = extractSection(source, /^##\s+Hard Rules\b.*DO NOT TRANSLATE.*\n/m);
-  validateEnglishCore(violations, filePath, hardRulesSection, SKILL_REQUIRED_TOKENS);
 
   return violations;
-}
-
-function validateRuleIdHeader(violations: Violation[], filePath: string, source: string): void {
-  const bodyStart = source.match(OPTIONAL_FRONTMATTER_PATTERN)?.[0].length ?? 0;
-  const remainingSource = source.slice(bodyStart);
-  const commentHeaders = [...remainingSource.matchAll(/<!--([\s\S]*?)-->/gu)].filter((match) => match.index === 0);
-  const fabHeaders = commentHeaders.filter((match) => match[0].includes("fab:rule-id"));
-
-  if (fabHeaders.length === 0) {
-    violations.push({
-      filePath,
-      message: "missing leading '<!-- fab:rule-id <stable-id> -->' header comment",
-    });
-    return;
-  }
-
-  if (fabHeaders.length > 1) {
-    violations.push({
-      filePath,
-      message: "only one leading fab:rule-id header comment is allowed",
-    });
-  }
-
-  const headerMatch = FAB_RULE_ID_HEADER_PATTERN.exec(remainingSource);
-  if (headerMatch?.index !== 0) {
-    violations.push({
-      filePath,
-      message:
-        "fab:rule-id header must be the first semantic line, or follow frontmatter, and use '<!-- fab:rule-id <stable-id> -->' syntax",
-    });
-  }
 }
 
 function validateProtectedTokenRegistry(tokens: string[]): Violation[] {
   const violations: Violation[] = [];
 
-  if (tokens.length < 10) {
+  if (tokens.length === 0) {
     violations.push({
       filePath: PROTECTED_TOKENS_PATH,
-      message: "PROTECTED_TOKENS must contain at least 10 items",
+      message: "PROTECTED_TOKENS must contain at least one entry",
     });
   }
 
@@ -271,36 +151,34 @@ function validateProtectedTokenRegistry(tokens: string[]): Violation[] {
   return violations;
 }
 
+function relativePath(filePath: string): string {
+  return path.relative(ROOT, filePath);
+}
+
 export async function main(): Promise<void> {
   const protectedTokenSource = await readFile(PROTECTED_TOKENS_PATH, "utf8");
   const protectedTokens = parseProtectedTokens(protectedTokenSource);
   const violations = validateProtectedTokenRegistry(protectedTokens);
 
-  const bootstrapFiles = (await collectFiles(BOOTSTRAP_DIR)).map<TemplateTarget>((filePath) => ({
-    filePath,
-    kind: "bootstrap",
-  }));
-  const skillFiles = (await collectFiles(CLAUDE_SKILLS_DIR))
-    .filter((filePath) => filePath.endsWith("SKILL.md"))
-    .map<TemplateTarget>((filePath) => ({
-      filePath,
-      kind: "skill",
-    }));
+  const bootstrapFiles = await collectFiles(BOOTSTRAP_DIR);
+  const skillFiles = (await collectFiles(SKILLS_DIR)).filter((filePath) =>
+    filePath.endsWith("SKILL.md"),
+  );
 
-  const targets = [...bootstrapFiles, ...skillFiles];
-
-  for (const target of targets) {
-    const source = await readFile(target.filePath, "utf8");
-    const targetViolations =
-      target.kind === "bootstrap"
-        ? validateBootstrapFile(target.filePath, source)
-        : validateSkillFile(target.filePath, source);
-
-    violations.push(...targetViolations);
+  for (const filePath of bootstrapFiles) {
+    const source = await readFile(filePath, "utf8");
+    violations.push(...validateBootstrapFile(filePath, source));
   }
 
+  for (const filePath of skillFiles) {
+    const source = await readFile(filePath, "utf8");
+    violations.push(...validateSkillFile(filePath, source));
+  }
+
+  const totalChecked = bootstrapFiles.length + skillFiles.length;
+
   if (violations.length === 0) {
-    process.stdout.write(`protected token lint passed: ${targets.length} template files checked.\n`);
+    process.stdout.write(`protected token lint passed: ${totalChecked} template files checked.\n`);
     return;
   }
 
