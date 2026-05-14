@@ -177,7 +177,7 @@ export interface InitScanResult {
  */
 export async function runInitScan(
   targetInput: string,
-  options: { now?: Date; source?: "init" | "scan" | "doctor_fix" } = {},
+  options: { now?: Date; source?: "init" | "scan" | "doctor_fix" | "doctor-rescan" } = {},
 ): Promise<InitScanResult> {
   const startTs = Date.now();
   const target = normalizeTarget(targetInput);

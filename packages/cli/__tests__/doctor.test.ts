@@ -105,9 +105,9 @@ describe("doctor command", () => {
     expect(process.exitCode).toBe(originalExitCode);
   });
 
-  // rc.4 TASK-003: --apply-lint flag plumbing.
-  describe("--apply-lint flag", () => {
-    it("default invocation does NOT call runDoctorApplyLint (apply-lint flag absent)", async () => {
+  // rc.4 TASK-003 (rc.15 rename): --fix-knowledge flag plumbing.
+  describe("--fix-knowledge flag", () => {
+    it("default invocation does NOT call runDoctorApplyLint (fix-knowledge flag absent)", async () => {
       const applyLintSpy = vi.fn();
       const reportSpy = vi.fn().mockResolvedValue(createReport("ok"));
       vi.doMock("@fenglimg/fabric-server", () => ({
@@ -127,7 +127,7 @@ describe("doctor command", () => {
             fix: false,
             json: false,
             strict: false,
-            "apply-lint": false,
+            "fix-knowledge": false,
           },
         } as never);
       } finally {
@@ -138,7 +138,7 @@ describe("doctor command", () => {
       expect(reportSpy).toHaveBeenCalledTimes(1);
     });
 
-    it("--apply-lint flag invokes runDoctorApplyLint and prints mutation summary", async () => {
+    it("--fix-knowledge flag invokes runDoctorApplyLint and prints mutation summary", async () => {
       const applyLintReport = {
         changed: true,
         mutations: [
@@ -156,7 +156,7 @@ describe("doctor command", () => {
       };
       const applyLintSpy = vi.fn().mockResolvedValue(applyLintReport);
       // rc.7 T11: doctor now runs a preflight runDoctorReport call to derive
-      // the apply-lint mutation plan for the safety confirm. With an "ok"
+      // the fix-knowledge mutation plan for the safety confirm. With an "ok"
       // report (no apply-lint findings), plan.totalCount === 0 and the
       // confirm is skipped — mutations proceed straight through.
       vi.doMock("@fenglimg/fabric-server", () => ({
@@ -176,7 +176,7 @@ describe("doctor command", () => {
             fix: false,
             json: false,
             strict: false,
-            "apply-lint": true,
+            "fix-knowledge": true,
             yes: true,
           },
         } as never);
@@ -192,7 +192,7 @@ describe("doctor command", () => {
       expect(process.exitCode).toBe(originalExitCode);
     });
 
-    it("--apply-lint with manual_error blocker (aborted=true) sets exit code 1 and writes abort_reason to stderr", async () => {
+    it("--fix-knowledge with manual_error blocker (aborted=true) sets exit code 1 and writes abort_reason to stderr", async () => {
       const applyLintReport = {
         changed: false,
         mutations: [],
@@ -233,7 +233,7 @@ describe("doctor command", () => {
             fix: false,
             json: false,
             strict: false,
-            "apply-lint": true,
+            "fix-knowledge": true,
             yes: true,
           },
         } as never);
@@ -246,7 +246,7 @@ describe("doctor command", () => {
       expect(process.exitCode).toBe(1);
     });
 
-    it("--apply-lint combined with --fix errors out and does NOT invoke either repair function", async () => {
+    it("--fix-knowledge combined with --fix errors out and does NOT invoke either repair function", async () => {
       const applyLintSpy = vi.fn();
       const fixSpy = vi.fn();
       vi.doMock("@fenglimg/fabric-server", () => ({
@@ -273,7 +273,7 @@ describe("doctor command", () => {
             fix: true,
             json: false,
             strict: false,
-            "apply-lint": true,
+            "fix-knowledge": true,
           },
         } as never);
       } finally {
@@ -284,12 +284,12 @@ describe("doctor command", () => {
       expect(applyLintSpy).not.toHaveBeenCalled();
       expect(fixSpy).not.toHaveBeenCalled();
       expect(
-        stderrLines.some((line) => line.toLowerCase().includes("apply-lint")),
+        stderrLines.some((line) => line.toLowerCase().includes("fix-knowledge")),
       ).toBe(true);
       expect(process.exitCode).toBe(1);
     });
 
-    it("--apply-lint with failing mutation (applied=false) sets exit code 1", async () => {
+    it("--fix-knowledge with failing mutation (applied=false) sets exit code 1", async () => {
       const applyLintReport = {
         changed: false,
         mutations: [
@@ -323,7 +323,7 @@ describe("doctor command", () => {
             fix: false,
             json: false,
             strict: false,
-            "apply-lint": true,
+            "fix-knowledge": true,
             yes: true,
           },
         } as never);
@@ -339,7 +339,7 @@ describe("doctor command", () => {
     // rc.7 T11: --apply-lint safety prompt
     // -----------------------------------------------------------------------
 
-    it("--apply-lint with --yes skips the confirm even when mutations are pending", async () => {
+    it("--fix-knowledge with --yes skips the confirm even when mutations are pending", async () => {
       // Pre-flight report carries an apply-lint finding (orphan_demote warning)
       // so plan.totalCount > 0 and the prompt would normally appear. --yes
       // must bypass it.
@@ -380,7 +380,7 @@ describe("doctor command", () => {
             fix: false,
             json: false,
             strict: false,
-            "apply-lint": true,
+            "fix-knowledge": true,
             yes: true,
           },
         } as never);
@@ -389,10 +389,10 @@ describe("doctor command", () => {
       }
 
       expect(applyLintSpy).toHaveBeenCalledTimes(1);
-      expect(stdout.lines.some((line) => line.includes("apply-lint mutation plan"))).toBe(true);
+      expect(stdout.lines.some((line) => line.includes("fix-knowledge mutation plan"))).toBe(true);
     });
 
-    it("--apply-lint with FABRIC_NONINTERACTIVE=1 (no --yes) skips the confirm", async () => {
+    it("--fix-knowledge with FABRIC_NONINTERACTIVE=1 (no --yes) skips the confirm", async () => {
       const preReport = createReport("ok");
       preReport.warnings.push({
         code: "knowledge_orphan_demote_required",
@@ -427,7 +427,7 @@ describe("doctor command", () => {
             fix: false,
             json: false,
             strict: false,
-            "apply-lint": true,
+            "fix-knowledge": true,
           },
         } as never);
       } finally {
@@ -442,7 +442,7 @@ describe("doctor command", () => {
       expect(applyLintSpy).toHaveBeenCalledTimes(1);
     });
 
-    it("--apply-lint without --yes and non-tty stdin exits 1 without mutating", async () => {
+    it("--fix-knowledge without --yes and non-tty stdin exits 1 without mutating", async () => {
       const preReport = createReport("ok");
       preReport.warnings.push({
         code: "knowledge_orphan_demote_required",
@@ -481,7 +481,7 @@ describe("doctor command", () => {
             fix: false,
             json: false,
             strict: false,
-            "apply-lint": true,
+            "fix-knowledge": true,
           },
         } as never);
       } finally {
@@ -498,7 +498,7 @@ describe("doctor command", () => {
       expect(stderrLines.some((line) => line.toLowerCase().includes("not a tty"))).toBe(true);
     });
 
-    it("--apply-lint with NO pending mutations skips the confirm and runs the mutation arm", async () => {
+    it("--fix-knowledge with NO pending mutations skips the confirm and runs the mutation arm", async () => {
       // plan.totalCount === 0 → confirm is bypassed; runDoctorApplyLint is
       // still called so the no-op message is rendered.
       const preReport = createReport("ok");
@@ -527,7 +527,7 @@ describe("doctor command", () => {
             fix: false,
             json: false,
             strict: false,
-            "apply-lint": true,
+            "fix-knowledge": true,
           },
         } as never);
       } finally {
@@ -536,7 +536,96 @@ describe("doctor command", () => {
 
       expect(applyLintSpy).toHaveBeenCalledTimes(1);
       // No plan banner because totalCount was 0.
-      expect(stdout.lines.some((line) => line.includes("apply-lint mutation plan"))).toBe(false);
+      expect(stdout.lines.some((line) => line.includes("fix-knowledge mutation plan"))).toBe(false);
+    });
+  });
+
+  // rc.15 TASK-003: --rescan flag plumbing. Verifies runInitScan is called
+  // BEFORE runDoctorReport (single-pass: rescan → mutations → report) and
+  // that omitting --rescan skips runInitScan entirely.
+  describe("--rescan flag", () => {
+    it("--rescan invokes runInitScan BEFORE runDoctorReport with source 'doctor-rescan'", async () => {
+      const callOrder: string[] = [];
+      const rescanSpy = vi.fn(async () => {
+        callOrder.push("rescan");
+        return {
+          written_stable_ids: [],
+          skipped_stable_ids: [],
+          total_entries: 0,
+          duration_ms: 0,
+        };
+      });
+      const reportSpy = vi.fn(async () => {
+        callOrder.push("report");
+        return createReport("ok");
+      });
+
+      vi.doMock("@fenglimg/fabric-server", () => ({
+        checkLockOrThrow: vi.fn(),
+        runDoctorReport: reportSpy,
+        runDoctorFix: vi.fn(),
+        runDoctorApplyLint: vi.fn(),
+        appendEventLedgerEvent: vi.fn(),
+      }));
+      vi.doMock("../src/commands/scan.ts", () => ({
+        runInitScan: rescanSpy,
+      }));
+
+      const { doctorCommand } = await import("../src/commands/doctor.ts");
+      const stdout = captureStdout();
+      try {
+        await doctorCommand.run?.({
+          args: {
+            target: "/tmp/fabric-target",
+            fix: false,
+            json: false,
+            strict: false,
+            rescan: true,
+          },
+        } as never);
+      } finally {
+        stdout.restore();
+      }
+
+      expect(rescanSpy).toHaveBeenCalledTimes(1);
+      expect(rescanSpy).toHaveBeenCalledWith("/tmp/fabric-target", { source: "doctor-rescan" });
+      expect(reportSpy).toHaveBeenCalledTimes(1);
+      expect(callOrder).toEqual(["rescan", "report"]);
+    });
+
+    it("default invocation (no --rescan) does NOT call runInitScan", async () => {
+      const rescanSpy = vi.fn();
+      const reportSpy = vi.fn().mockResolvedValue(createReport("ok"));
+
+      vi.doMock("@fenglimg/fabric-server", () => ({
+        checkLockOrThrow: vi.fn(),
+        runDoctorReport: reportSpy,
+        runDoctorFix: vi.fn(),
+        runDoctorApplyLint: vi.fn(),
+        appendEventLedgerEvent: vi.fn(),
+      }));
+      vi.doMock("../src/commands/scan.ts", () => ({
+        runInitScan: rescanSpy,
+      }));
+
+      const { doctorCommand } = await import("../src/commands/doctor.ts");
+      const stdout = captureStdout();
+      try {
+        await doctorCommand.run?.({
+          args: {
+            target: "/tmp/fabric-target",
+            fix: false,
+            json: false,
+            strict: false,
+            rescan: false,
+          },
+        } as never);
+      } finally {
+        stdout.restore();
+      }
+
+      expect(rescanSpy).not.toHaveBeenCalled();
+      expect(reportSpy).toHaveBeenCalledTimes(1);
     });
   });
 });

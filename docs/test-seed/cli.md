@@ -9,8 +9,8 @@
 ### Public commands (5)
 - `install` — 项目脚手架与客户端配置写入；flags: `--target`, `--debug`, `--force`, `--yes`, `--plan`, `--reapply`, `--bootstrap/--no-bootstrap`, `--mcp/--no-mcp`, `--hooks/--no-hooks`, `--interactive/--no-interactive`, `--mcp-install`, `--scope project|user`
 - `scan` — 静态项目扫描，产出 forensic report；flags: `--target`, `--debug`, `--json`
-- `doctor` — 一致性自检与修复；flags: `--target`, `--fix`, `--json`, `--strict`, `--force`
-- `serve` — 启动 HTTP MCP server；flags: `--port`(默认 7373), `--host`(默认 127.0.0.1), `--target`, `--debug`, `--force`
+- `doctor` — 一致性自检与修复；flags: `--target`, `--fix`, `--fix-knowledge`, `--json`, `--rescan`, `--strict`, `--yes`
+- `serve` — 启动 HTTP MCP server；flags: `--port`(默认 7373), `--host`(默认 127.0.0.1), `--target`, `--debug`
 - `uninstall` — Remove Fabric-managed artifacts symmetrically to `fab install`. Flags: `--plan`, `--force`, `--yes`, `--no-bootstrap`, `--no-mcp`, `--no-scaffold`, `--target`, `--interactive`, `--purge`, `--clean-empties`.
 
 ### Internal surface（命令支撑，不单列模块）
@@ -33,7 +33,7 @@ I6. `doctor --fix` 完成后再次运行 `doctor` 时，已修复的 fixable_err
 I7. v1.8.0 弃用客户端 (`windsurf` / `rooCode` / `geminiCLI`) 触发 `legacy_client_path_present` 警告但 doctor 不因此失败。
 I8. `scan` 在源码目录为空或不可读时不抛异常，产出有效 `forensic.json`（fileCount 可为 0，recommendations 数组存在）。
 I9. `serve` 在 `EADDRINUSE` 时释放已获取的 serve-lock 并抛带 next-port 提示的错误，不留持锁孤儿进程。
-I10. `install --reapply` / `doctor` / `serve` 在另一进程持锁时拒绝执行，除非显式 `--force`；锁条目带 PID 校验。
+I10. `doctor` / `serve` 在另一进程持锁时拒绝执行（rc.15: `--force` 已移除；CLI 层无逃生通道，需手动停止持锁进程）；锁条目带 PID 校验，错误消息暴露 PID 与停止指引。
 I11. `fab uninstall` is idempotent — re-run on already-uninstalled project: exit code 0, all step statuses `skipped`.
 I12. `fab uninstall` never modifies `~/.fabric/knowledge/` (personal root) regardless of `--purge`.
 I13. `fab uninstall` un-merge preserves all non-fabric entries in deep-merged hook configs verbatim.

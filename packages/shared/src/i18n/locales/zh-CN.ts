@@ -62,19 +62,20 @@ export const zhCNMessages: Messages = {
   "doctor.section.fixable": "可修复错误：",
   "doctor.section.manual": "需手动修复：",
   "doctor.section.warnings": "警告：",
-  "doctor.section.apply-lint-mutations": "Apply-lint 变更：",
+  "doctor.section.fix-knowledge-mutations": "Fix-knowledge 变更：",
   "cli.doctor.args.target.description":
     "目标项目路径。默认依次使用 CLI 参数、EXTERNAL_FIXTURE_PATH、fabric.config.json、当前目录。",
   "cli.doctor.args.fix.description": "修复确定性派生的 Fabric 状态，包括 meta、knowledge-test 索引、bootstrap 和 events ledger。",
   "cli.doctor.args.json.description": "以 JSON 输出 doctor 报告。",
   "cli.doctor.args.strict.description": "将 warning 也视为失败。",
-  "cli.doctor.args.force.description": "即使 serve 进程持有锁，也强制运行。",
-  "cli.doctor.args.apply-lint.description":
+  "cli.doctor.args.fix-knowledge.description":
     "应用 lint 变更：降级孤立的规范条目、归档陈旧 draft、修正漂移的索引计数器；写入 knowledge_demoted / knowledge_archived 事件。默认运行仍然只读。",
+  "cli.doctor.args.rescan.description":
+    "在 doctor 检查之前重新运行 init scan，以重建 .fabric/agents.meta.json 的取证状态。",
   "cli.doctor.args.yes.description":
-    "跳过 --apply-lint 的安全确认；非 tty 调用必须显式设置该标记，或在环境变量中设置 FABRIC_NONINTERACTIVE=1。",
-  "cli.doctor.errors.apply-lint-fix-mutually-exclusive":
-    "--apply-lint 与 --fix 不可同时使用。--apply-lint 修改用户知识状态（降级/归档）；--fix 修复派生状态（meta/索引）。请分别运行。",
+    "跳过 --fix-knowledge 的安全确认；非 tty 调用必须显式设置该标记，或在环境变量中设置 FABRIC_NONINTERACTIVE=1。",
+  "cli.doctor.errors.fix-knowledge-fix-mutually-exclusive":
+    "--fix-knowledge 与 --fix 不可同时使用。--fix-knowledge 修改用户知识状态（降级/归档）；--fix 修复派生状态（meta/索引）。请分别运行。",
 
   "cli.hooks.description": "管理 Fabric Git 钩子模板。",
   "cli.hooks.install.description": "安装 Fabric Husky pre-commit 钩子模板。",
@@ -283,8 +284,9 @@ export const zhCNMessages: Messages = {
   "cli.serve.args.target.description":
     "目标项目路径。默认依次使用 CLI 参数、EXTERNAL_FIXTURE_PATH、fabric.config.json、当前目录。",
   "cli.serve.args.debug.description": "将目标解析细节输出到 stderr。",
-  "cli.serve.args.force.description": "即使另一个 serve 进程正在运行，也强制获取 serve 锁。",
   "cli.serve.ready.title": "Fabric 仪表盘",
+  "cli.serve.lock-held.action-hint":
+    "另一个 `fab serve` 进程 (PID {pid}) 正占用工作区锁。请先停止它 (在该终端按 Ctrl-C 或运行 `kill {pid}`) 再执行此命令。",
   "cli.serve.warning.host-fallback": "--host {host} 需要 FABRIC_AUTH_TOKEN；为安全起见已回退到 127.0.0.1",
   "cli.serve.error.port-in-use": "端口 {port} 已被占用，可尝试 --port {nextPort}",
 

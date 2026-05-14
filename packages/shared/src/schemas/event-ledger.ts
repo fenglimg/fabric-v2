@@ -161,7 +161,7 @@ export const initScanCompletedEventSchema = z.object({
   event_type: z.literal("init_scan_completed"),
   written_stable_ids: z.array(z.string()),
   duration_ms: z.number().int().nonnegative(),
-  source: z.enum(["init", "scan", "doctor_fix"]).optional(),
+  source: z.enum(["init", "scan", "doctor_fix", "doctor-rescan"]).optional(),
 });
 
 // v2.0 rc.2 grill-followup TASK-004: pre-register 11 knowledge.* lifecycle event

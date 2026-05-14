@@ -4,10 +4,10 @@ import { defineCommand } from "citty";
 import {
   appendEventLedgerEvent,
   checkLockOrThrow,
-  runDoctorApplyLint,
+  runDoctorApplyLint as runDoctorFixKnowledge,
   runDoctorFix,
   runDoctorReport,
-  type DoctorApplyLintReport,
+  type DoctorApplyLintReport as DoctorFixKnowledgeReport,
   type DoctorIssue,
   type DoctorReport,
 } from "@fenglimg/fabric-server";
@@ -15,28 +15,34 @@ import {
 import { paint, symbol } from "../colors.js";
 import { resolveDevMode } from "../dev-mode.js";
 import { t } from "../i18n.js";
+import { runInitScan } from "./scan.js";
 
 type DoctorArgs = {
   target?: string;
   fix?: boolean;
   json?: boolean;
   strict?: boolean;
-  force?: boolean;
-  // rc.4 TASK-003: enable lint mutations (orphan demote / stale archive /
-  // index counter bump). Default doctor invocation remains report-only.
-  "apply-lint"?: boolean;
-  // rc.7 T11: skip the safety confirm before --apply-lint mutates frontmatter
+  // rc.4 TASK-003 (rc.15 rename): enable lint mutations (orphan demote /
+  // stale archive / index counter bump). Default doctor invocation remains
+  // report-only. Renamed from --apply-lint in rc.15 for parallel naming with
+  // --fix (server-side runDoctorApplyLint kept per blast-radius decision).
+  "fix-knowledge"?: boolean;
+  // rc.15 TASK-003: --rescan re-runs the init scan BEFORE the doctor report
+  // to rebuild .fabric/agents.meta.json forensic state. Composable with
+  // --fix and --fix-knowledge (single-pass: rescan → mutations → report).
+  rescan?: boolean;
+  // rc.7 T11: skip the safety confirm before --fix-knowledge mutates frontmatter
   // and runs git mv. Required for any non-tty invocation (CI, nested
   // pipelines) unless FABRIC_NONINTERACTIVE=1 is set in the environment.
   yes?: boolean;
 };
 
-// rc.7 T11: lint codes that --apply-lint will mutate, mapped to the human
+// rc.7 T11: lint codes that --fix-knowledge will mutate, mapped to the human
 // label used in the confirm preview. We derive the mutation plan from the
 // pre-flight DoctorReport (fixable_errors + warnings) so the preview can be
 // rendered BEFORE any mutation runs. Codes outside this set are not part of
-// the apply-lint surface and are not counted.
-const APPLY_LINT_CODE_LABELS: Record<string, string> = {
+// the fix-knowledge surface and are not counted.
+const FIX_KNOWLEDGE_CODE_LABELS: Record<string, string> = {
   knowledge_orphan_demote_required: "demote (maturity)",
   knowledge_stale_archive_required: "archive (git mv)",
   knowledge_pending_auto_archive: "archive (git mv, pending)",
@@ -44,7 +50,7 @@ const APPLY_LINT_CODE_LABELS: Record<string, string> = {
   knowledge_session_hints_stale: "cache delete",
 };
 
-type ApplyLintPlan = {
+type FixKnowledgePlan = {
   totalCount: number;
   // Per-code summary lines (e.g. "demote (maturity): 3 entry"). Ordered by
   // label for stable rendering.
@@ -71,9 +77,19 @@ export const doctorCommand = defineCommand({
       description: t("cli.doctor.args.fix.description"),
       default: false,
     },
+    "fix-knowledge": {
+      type: "boolean",
+      description: t("cli.doctor.args.fix-knowledge.description"),
+      default: false,
+    },
     json: {
       type: "boolean",
       description: t("cli.doctor.args.json.description"),
+      default: false,
+    },
+    rescan: {
+      type: "boolean",
+      description: t("cli.doctor.args.rescan.description"),
       default: false,
     },
     strict: {
@@ -81,18 +97,8 @@ export const doctorCommand = defineCommand({
       description: t("cli.doctor.args.strict.description"),
       default: false,
     },
-    force: {
-      type: "boolean",
-      description: t("cli.doctor.args.force.description"),
-      default: false,
-    },
-    "apply-lint": {
-      type: "boolean",
-      description: t("cli.doctor.args.apply-lint.description"),
-      default: false,
-    },
     // rc.7 T11: skip the safety confirm before mutations. Required for any
-    // non-tty invocation that wants to run --apply-lint without setting
+    // non-tty invocation that wants to run --fix-knowledge without setting
     // FABRIC_NONINTERACTIVE=1 in the environment.
     yes: {
       type: "boolean",
@@ -104,27 +110,38 @@ export const doctorCommand = defineCommand({
     const workspaceRoot = process.cwd();
     const resolution = resolveDevMode(args.target, workspaceRoot);
 
-    // Preflight: refuse to run when serve is actively holding the lock, unless --force
-    checkLockOrThrow(resolution.target, { force: args.force });
+    // Preflight: refuse to run when serve is actively holding the lock.
+    // rc.15: --force was removed (drift→abort principle).
+    checkLockOrThrow(resolution.target);
 
-    const applyLint = args["apply-lint"] === true;
+    const fixKnowledge = args["fix-knowledge"] === true;
     const fix = args.fix === true;
+    const rescan = args.rescan === true;
 
-    // Mutual exclusion: --apply-lint and --fix target different mutation
-    // surfaces (lint mutations are user-knowledge state; --fix mutates derived
+    // Mutual exclusion: --fix-knowledge and --fix target different mutation
+    // surfaces (knowledge mutations are user state; --fix mutates derived
     // state like agents.meta.json revision). Combining them is ambiguous —
-    // require the operator to make a choice. See TASK-003 acceptance criteria.
-    if (applyLint && fix) {
-      writeStderr(t("cli.doctor.errors.apply-lint-fix-mutually-exclusive"));
+    // require the operator to make a choice. --rescan composes with either
+    // (single-pass: rescan → mutations → report).
+    if (fixKnowledge && fix) {
+      writeStderr(t("cli.doctor.errors.fix-knowledge-fix-mutually-exclusive"));
       process.exitCode = 1;
       return;
     }
 
-    let applyLintReport: DoctorApplyLintReport | null = null;
+    // rc.15 TASK-003: --rescan re-runs the init scan BEFORE any doctor
+    // mutations or the report, rebuilding agents.meta.json forensic state.
+    // Composable with --fix and --fix-knowledge so the rescan output feeds
+    // into a fresh doctor pass in a single invocation.
+    if (rescan) {
+      await runInitScan(resolution.target, { source: "doctor-rescan" });
+    }
+
+    let fixKnowledgeReport: DoctorFixKnowledgeReport | null = null;
     let fixReport: Awaited<ReturnType<typeof runDoctorFix>> | null = null;
     let report: DoctorReport;
 
-    if (applyLint) {
+    if (fixKnowledge) {
       // rc.7 T11: safety prompt. Compute the mutation plan from a pre-flight
       // DoctorReport, render it, then either bypass via --yes /
       // FABRIC_NONINTERACTIVE=1 or ask the user. Default-N to make
@@ -132,17 +149,17 @@ export const doctorCommand = defineCommand({
       // a hard error — we never want CI to flip into "user said yes" by
       // accident.
       const preReport = await runDoctorReport(resolution.target);
-      const plan = computeApplyLintPlan(preReport);
+      const plan = computeFixKnowledgePlan(preReport);
       const yesFlag = args.yes === true;
       const envBypass = process.env.FABRIC_NONINTERACTIVE === "1";
 
       if (plan.totalCount === 0) {
         // No mutations would happen — skip the prompt entirely. We still run
-        // runDoctorApplyLint so the report is correctly tagged as a no-op
+        // runDoctorFixKnowledge so the report is correctly tagged as a no-op
         // pass; the existing message text covers this case.
       } else {
-        renderApplyLintPlan(plan);
-        const decision = await resolveApplyLintConsent({
+        renderFixKnowledgePlan(plan);
+        const decision = await resolveFixKnowledgeConsent({
           yesFlag,
           envBypass,
           plan,
@@ -153,8 +170,8 @@ export const doctorCommand = defineCommand({
         }
       }
 
-      applyLintReport = await runDoctorApplyLint(resolution.target);
-      report = applyLintReport.report;
+      fixKnowledgeReport = await runDoctorFixKnowledge(resolution.target);
+      report = fixKnowledgeReport.report;
     } else if (fix) {
       fixReport = await runDoctorFix(resolution.target);
       report = fixReport.report;
@@ -163,14 +180,14 @@ export const doctorCommand = defineCommand({
     }
 
     if (args.json === true) {
-      writeStdout(JSON.stringify(applyLintReport ?? fixReport ?? report, null, 2));
+      writeStdout(JSON.stringify(fixKnowledgeReport ?? fixReport ?? report, null, 2));
     } else {
-      if (applyLintReport !== null) {
-        writeStdout(applyLintReport.message);
-        if (applyLintReport.aborted && applyLintReport.abort_reason !== undefined) {
-          writeStderr(applyLintReport.abort_reason);
+      if (fixKnowledgeReport !== null) {
+        writeStdout(fixKnowledgeReport.message);
+        if (fixKnowledgeReport.aborted && fixKnowledgeReport.abort_reason !== undefined) {
+          writeStderr(fixKnowledgeReport.abort_reason);
         }
-        renderApplyLintMutations(applyLintReport);
+        renderFixKnowledgeMutations(fixKnowledgeReport);
       } else if (fixReport !== null) {
         writeStdout(fixReport.message);
       }
@@ -181,30 +198,30 @@ export const doctorCommand = defineCommand({
     // detect maintenance cadence (Q-16 closure). Best-effort — a write
     // failure must NOT change doctor's exit semantics. We compute the total
     // issue count from the final report (fixable + manual + warnings) so the
-    // event is meaningful for both --lint and --apply-lint modes.
+    // event is meaningful for both --lint and --fix-knowledge modes.
     await emitDoctorRunEventBestEffort(resolution.target, {
-      mode: applyLint ? "apply-lint" : "lint",
+      mode: fixKnowledge ? "apply-lint" : "lint",
       issues:
         report.fixable_errors.length +
         report.manual_errors.length +
         report.warnings.length,
       mutations:
-        applyLintReport !== null
-          ? applyLintReport.mutations.filter((m) => m.applied).length
+        fixKnowledgeReport !== null
+          ? fixKnowledgeReport.mutations.filter((m) => m.applied).length
           : undefined,
     });
 
     // Exit code rules:
-    //   * --apply-lint aborted (manual_error blocker) → 1
-    //   * --apply-lint with any failed mutation → 1
+    //   * --fix-knowledge aborted (manual_error blocker) → 1
+    //   * --fix-knowledge with any failed mutation → 1
     //   * any error status (or strict + warnings) → 1
     //   * otherwise → 0
-    if (applyLintReport !== null) {
-      if (applyLintReport.aborted) {
+    if (fixKnowledgeReport !== null) {
+      if (fixKnowledgeReport.aborted) {
         process.exitCode = 1;
         return;
       }
-      if (applyLintReport.mutations.some((m) => !m.applied)) {
+      if (fixKnowledgeReport.mutations.some((m) => !m.applied)) {
         process.exitCode = 1;
         return;
       }
@@ -228,13 +245,13 @@ function renderHumanReport(report: DoctorReport): void {
   writeIssueSection(t("doctor.section.warnings"), report.warnings);
 }
 
-function renderApplyLintMutations(applyLintReport: DoctorApplyLintReport): void {
-  if (applyLintReport.mutations.length === 0) {
+function renderFixKnowledgeMutations(fixKnowledgeReport: DoctorFixKnowledgeReport): void {
+  if (fixKnowledgeReport.mutations.length === 0) {
     return;
   }
   writeStdout("");
-  writeStdout(t("doctor.section.apply-lint-mutations"));
-  for (const mutation of applyLintReport.mutations) {
+  writeStdout(t("doctor.section.fix-knowledge-mutations"));
+  for (const mutation of fixKnowledgeReport.mutations) {
     const marker = mutation.applied ? symbol.ok : symbol.error;
     const errSuffix = mutation.applied || mutation.error === undefined ? "" : ` (${mutation.error})`;
     writeStdout(`${marker} ${mutation.kind}: ${mutation.path} [${mutation.detail}]${errSuffix}`);
@@ -292,40 +309,40 @@ function writeStderr(message: string): void {
 }
 
 // ---------------------------------------------------------------------------
-// rc.7 T11: --apply-lint safety prompt helpers
+// rc.7 T11 / rc.15: --fix-knowledge safety prompt helpers
 // ---------------------------------------------------------------------------
 
 /**
  * Derive a mutation plan summary from a DoctorReport. We count entries in
- * fixable_errors AND warnings whose `code` is one of the apply-lint surfaces.
- * Some mutations (orphan demote) surface as warnings rather than fixable
- * errors per their severity, so we must scan both lists.
+ * fixable_errors AND warnings whose `code` is one of the fix-knowledge
+ * surfaces. Some mutations (orphan demote) surface as warnings rather than
+ * fixable errors per their severity, so we must scan both lists.
  *
  * Returns zero counts when there is nothing to mutate. Caller is responsible
  * for skipping the prompt in that case (we don't ask "Proceed?" for a no-op).
  */
-function computeApplyLintPlan(report: DoctorReport): ApplyLintPlan {
+function computeFixKnowledgePlan(report: DoctorReport): FixKnowledgePlan {
   const buckets: Record<string, DoctorIssue[]> = {};
   const sources: DoctorIssue[] = [
     ...report.fixable_errors,
     ...report.warnings,
   ];
   for (const issue of sources) {
-    if (APPLY_LINT_CODE_LABELS[issue.code] === undefined) continue;
+    if (FIX_KNOWLEDGE_CODE_LABELS[issue.code] === undefined) continue;
     if (!Array.isArray(buckets[issue.code])) {
       buckets[issue.code] = [];
     }
     buckets[issue.code].push(issue);
   }
   const codes = Object.keys(buckets).sort((a, b) =>
-    APPLY_LINT_CODE_LABELS[a].localeCompare(APPLY_LINT_CODE_LABELS[b]),
+    FIX_KNOWLEDGE_CODE_LABELS[a].localeCompare(FIX_KNOWLEDGE_CODE_LABELS[b]),
   );
   const perCodeLines: string[] = [];
   let totalCount = 0;
   for (const code of codes) {
     const items = buckets[code];
     totalCount += items.length;
-    perCodeLines.push(`  - ${APPLY_LINT_CODE_LABELS[code]}: ${items.length}`);
+    perCodeLines.push(`  - ${FIX_KNOWLEDGE_CODE_LABELS[code]}: ${items.length}`);
   }
 
   const previewLines: string[] = [];
@@ -341,9 +358,9 @@ function computeApplyLintPlan(report: DoctorReport): ApplyLintPlan {
   return { totalCount, perCodeLines, previewLines };
 }
 
-function renderApplyLintPlan(plan: ApplyLintPlan): void {
+function renderFixKnowledgePlan(plan: FixKnowledgePlan): void {
   writeStdout("");
-  writeStdout(`${paint.warn("apply-lint mutation plan")} (${plan.totalCount} total)`);
+  writeStdout(`${paint.warn("fix-knowledge mutation plan")} (${plan.totalCount} total)`);
   for (const line of plan.perCodeLines) {
     writeStdout(line);
   }
@@ -356,13 +373,13 @@ function renderApplyLintPlan(plan: ApplyLintPlan): void {
   }
 }
 
-type ApplyLintDecision = "proceed" | "abort";
+type FixKnowledgeDecision = "proceed" | "abort";
 
-async function resolveApplyLintConsent(options: {
+async function resolveFixKnowledgeConsent(options: {
   yesFlag: boolean;
   envBypass: boolean;
-  plan: ApplyLintPlan;
-}): Promise<ApplyLintDecision> {
+  plan: FixKnowledgePlan;
+}): Promise<FixKnowledgeDecision> {
   if (options.yesFlag || options.envBypass) {
     return "proceed";
   }
@@ -371,7 +388,7 @@ async function resolveApplyLintConsent(options: {
   // never silently mutate a workspace.
   if (process.stdin.isTTY !== true) {
     writeStderr(
-      "doctor --apply-lint: stdin is not a TTY and neither --yes nor FABRIC_NONINTERACTIVE=1 is set. Refusing to mutate.",
+      "doctor --fix-knowledge: stdin is not a TTY and neither --yes nor FABRIC_NONINTERACTIVE=1 is set. Refusing to mutate.",
     );
     return "abort";
   }
@@ -381,7 +398,7 @@ async function resolveApplyLintConsent(options: {
     initialValue: false,
   });
   if (isCancel(answer) || answer !== true) {
-    writeStderr("doctor --apply-lint: aborted by user.");
+    writeStderr("doctor --fix-knowledge: aborted by user.");
     return "abort";
   }
   return "proceed";

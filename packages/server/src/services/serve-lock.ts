@@ -1,9 +1,15 @@
 import fs from "node:fs";
 import path from "node:path";
 
+import { createTranslator, detectNodeLocale } from "@fenglimg/fabric-shared";
 import { IOFabricError } from "@fenglimg/fabric-shared/errors";
 
 const LOCK_FILENAME = ".serve.lock";
+
+// rc.15 TASK-003: i18n action-hint message for ServeLockHeldError. Replaces
+// the previous hardcoded "or run with --force to override" guidance — --force
+// is gone, so the message now surfaces the PID and concrete stop steps.
+const t = createTranslator(detectNodeLocale());
 
 export class ServeLockHeldError extends IOFabricError {
   readonly code = "SERVE_LOCK_HELD";
@@ -49,7 +55,7 @@ export function acquireLock(projectRoot: string, opts?: AcquireOptions): void {
       throw new ServeLockHeldError(
         `serve lock held by live PID ${state.pid}`,
         {
-          actionHint: `Stop the other process (PID ${state.pid}) or run with --force to override`,
+          actionHint: t("cli.serve.lock-held.action-hint", { pid: String(state.pid) }),
           details: state,
         },
       );
@@ -101,7 +107,7 @@ export function checkLockOrThrow(projectRoot: string, opts?: AcquireOptions): vo
   throw new ServeLockHeldError(
     `serve lock held by live PID ${state.pid}`,
     {
-      actionHint: `Stop the other serve process (PID ${state.pid}) before running this command, or pass --force to override`,
+      actionHint: t("cli.serve.lock-held.action-hint", { pid: String(state.pid) }),
       details: state,
     },
   );

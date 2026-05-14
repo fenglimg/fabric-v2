@@ -64,19 +64,20 @@ export const enMessages: Messages = {
   "doctor.section.fixable": "Fixable errors:",
   "doctor.section.manual": "Manual errors:",
   "doctor.section.warnings": "Warnings:",
-  "doctor.section.apply-lint-mutations": "Apply-lint mutations:",
+  "doctor.section.fix-knowledge-mutations": "Fix-knowledge mutations:",
   "cli.doctor.args.target.description":
     "Target project path. Defaults to CLI arg, EXTERNAL_FIXTURE_PATH, fabric.config.json, then cwd.",
   "cli.doctor.args.fix.description": "Repair deterministic derived Fabric state, including meta, knowledge-test index, bootstrap, and events ledger.",
   "cli.doctor.args.json.description": "Print the doctor report as JSON.",
   "cli.doctor.args.strict.description": "Treat warnings as failures.",
-  "cli.doctor.args.force.description": "Run even if a serve process appears to hold the lock.",
-  "cli.doctor.args.apply-lint.description":
+  "cli.doctor.args.fix-knowledge.description":
     "Apply lint mutations: demote orphaned canonical entries, archive stale drafts, and bump drifted index counters. Emits knowledge_demoted / knowledge_archived events. Default doctor invocation remains report-only.",
+  "cli.doctor.args.rescan.description":
+    "Re-run the init scan to rebuild .fabric/agents.meta.json forensic state before doctor checks.",
   "cli.doctor.args.yes.description":
-    "Skip the --apply-lint safety confirm. Required for non-tty invocations unless FABRIC_NONINTERACTIVE=1 is set in the environment.",
-  "cli.doctor.errors.apply-lint-fix-mutually-exclusive":
-    "--apply-lint and --fix cannot be combined. --apply-lint mutates user knowledge state (demote/archive); --fix repairs derived state (meta/index). Run them separately.",
+    "Skip the --fix-knowledge safety confirm. Required for non-tty invocations unless FABRIC_NONINTERACTIVE=1 is set in the environment.",
+  "cli.doctor.errors.fix-knowledge-fix-mutually-exclusive":
+    "--fix-knowledge and --fix cannot be combined. --fix-knowledge mutates user knowledge state (demote/archive); --fix repairs derived state (meta/index). Run them separately.",
 
   "cli.hooks.description": "Manage Fabric Git hook templates.",
   "cli.hooks.install.description": "Install the Fabric Husky pre-commit hook template.",
@@ -292,8 +293,9 @@ export const enMessages: Messages = {
   "cli.serve.args.target.description":
     "Target project path. Defaults to CLI arg, EXTERNAL_FIXTURE_PATH, fabric.config.json, then cwd.",
   "cli.serve.args.debug.description": "Print target resolution details to stderr.",
-  "cli.serve.args.force.description": "Force-acquire the serve lock even if another serve process appears to be running.",
   "cli.serve.ready.title": "Fabric Dashboard",
+  "cli.serve.lock-held.action-hint":
+    "A `fab serve` instance (PID {pid}) is holding the workspace lock. Stop it (Ctrl-C in that terminal or `kill {pid}`) before running this command.",
   "cli.serve.warning.host-fallback":
     "--host {host} requires FABRIC_AUTH_TOKEN; falling back to 127.0.0.1 for safety",
   "cli.serve.error.port-in-use": "Port {port} in use - try --port {nextPort}",

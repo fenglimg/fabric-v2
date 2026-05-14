@@ -49,7 +49,6 @@ describe("I9: serve releases lock on EADDRINUSE", () => {
           port: "19999",
           host: "127.0.0.1",
           debug: false,
-          force: false,
         },
       } as never),
     ).rejects.toThrow(/port|next|19999|20000/i);
@@ -60,8 +59,10 @@ describe("I9: serve releases lock on EADDRINUSE", () => {
   });
 });
 
-// I10 — lock prevents duplicate serves unless --force
-describe("I10: serve-lock prevents duplicate run without --force", () => {
+// I10 — lock prevents duplicate serves (rc.15: --force removed; engine-side
+// force option still validated as a server-internal escape hatch for unit
+// tests + future programmatic callers).
+describe("I10: serve-lock prevents duplicate run", () => {
   it("acquireLock throws ServeLockHeldError when a live lock from another PID is present", () => {
     const dir = makeTempDir("lock-held");
     const lockPath = join(dir, ".fabric", ".serve.lock");
@@ -116,23 +117,15 @@ describe("I10: serve-lock prevents duplicate run without --force", () => {
     releaseLock(dir);
   });
 
-  it("doctor is blocked by active serve lock unless --force", () => {
+  it("doctor is blocked by active serve lock", () => {
     const dir = makeTempDir("doctor-lock");
     const lockPath = join(dir, ".fabric", ".serve.lock");
 
     writeFileSync(lockPath, JSON.stringify({ pid: 1, acquiredAt: Date.now() }), "utf8");
 
     expect(() => checkLockOrThrow(dir, { force: false })).toThrow(ServeLockHeldError);
+    // rc.15: --force was removed from the CLI; engine-side force option
+    // is still honoured for programmatic callers and unit tests.
     expect(() => checkLockOrThrow(dir, { force: true })).not.toThrow();
-  });
-
-  it("init --reapply is blocked by active serve lock unless --force", () => {
-    const dir = makeTempDir("init-reapply-lock");
-    const lockPath = join(dir, ".fabric", ".serve.lock");
-
-    writeFileSync(lockPath, JSON.stringify({ pid: 1, acquiredAt: Date.now() }), "utf8");
-
-    // init --reapply calls checkLockOrThrow internally — confirm behavior via checkLockOrThrow directly
-    expect(() => checkLockOrThrow(dir, { force: false })).toThrow(ServeLockHeldError);
   });
 });

@@ -13,7 +13,6 @@ type ServeArgs = {
   target?: string;
   host?: string;
   debug?: boolean;
-  force?: boolean;
 };
 
 export const serveCommand = defineCommand({
@@ -41,11 +40,6 @@ export const serveCommand = defineCommand({
       description: t("cli.serve.args.debug.description"),
       default: false,
     },
-    force: {
-      type: "boolean",
-      description: t("cli.serve.args.force.description"),
-      default: false,
-    },
   },
   async run({ args }: { args: ServeArgs }) {
     const workspaceRoot = process.cwd();
@@ -57,8 +51,10 @@ export const serveCommand = defineCommand({
     const host = validateHost(requestedHost, authToken);
     const projectRoot = resolution.target;
 
-    // Acquire serve lock — throws ServeLockHeldError if another live serve is running
-    acquireLock(projectRoot, { force: args.force });
+    // Acquire serve lock — throws ServeLockHeldError if another live serve is running.
+    // rc.15: --force was removed (drift→abort principle); lock conflicts always
+    // require the user to stop the other process via the action hint message.
+    acquireLock(projectRoot);
     // Backstop: release lock on process exit (handles normal + SIGTERM/SIGINT cleanup)
     process.on("exit", () => { releaseLock(projectRoot); });
 

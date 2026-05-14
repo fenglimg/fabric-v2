@@ -180,4 +180,43 @@ describe("serve-lock", () => {
 
     expect(() => checkLockOrThrow(projectRoot, { force: true })).not.toThrow();
   });
+
+  // rc.15 TASK-003: ServeLockHeldError actionHint now uses the
+  // cli.serve.lock-held.action-hint i18n key — no hardcoded "--force"
+  // suggestion. Verify both code paths (acquireLock + checkLockOrThrow)
+  // surface the new wording with the live PID substituted in.
+  it("ServeLockHeldError actionHint surfaces PID + stop guidance (no --force mention)", () => {
+    const fabricDir = path.join(projectRoot, ".fabric");
+    fs.mkdirSync(fabricDir, { recursive: true });
+    const livePid = process.pid + 1;
+    fs.writeFileSync(
+      path.join(fabricDir, ".serve.lock"),
+      JSON.stringify({ pid: livePid, acquiredAt: Date.now() } satisfies LockState),
+    );
+
+    vi.spyOn(process, "kill").mockReturnValue(true);
+
+    try {
+      checkLockOrThrow(projectRoot);
+      throw new Error("expected throw");
+    } catch (err) {
+      expect(err).toBeInstanceOf(ServeLockHeldError);
+      const e = err as ServeLockHeldError & { actionHint?: string };
+      expect(e.actionHint).toBeDefined();
+      expect(e.actionHint).toContain(String(livePid));
+      expect(e.actionHint).not.toContain("--force");
+      expect(e.actionHint).toMatch(/Ctrl-C|fab serve|kill/);
+    }
+
+    try {
+      acquireLock(projectRoot);
+      throw new Error("expected throw");
+    } catch (err) {
+      expect(err).toBeInstanceOf(ServeLockHeldError);
+      const e = err as ServeLockHeldError & { actionHint?: string };
+      expect(e.actionHint).toBeDefined();
+      expect(e.actionHint).not.toContain("--force");
+      expect(e.actionHint).toContain(String(livePid));
+    }
+  });
 });
