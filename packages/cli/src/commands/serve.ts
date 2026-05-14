@@ -5,6 +5,7 @@ import { acquireLock, releaseLock, startHttpServer } from "@fenglimg/fabric-serv
 import { paint, symbol } from "../colors.js";
 import { createDebugLogger, resolveDevMode } from "../dev-mode.js";
 import { t } from "../i18n.js";
+import { hasActionHint, renderFabricError } from "../lib/error-render.js";
 
 const DEFAULT_PORT = 7373;
 
@@ -54,7 +55,18 @@ export const serveCommand = defineCommand({
     // Acquire serve lock — throws ServeLockHeldError if another live serve is running.
     // rc.15: --force was removed (drift→abort principle); lock conflicts always
     // require the user to stop the other process via the action hint message.
-    acquireLock(projectRoot);
+    // rc.15 TASK-007: explicitly render `.actionHint` from FabricError-shaped
+    // failures (citty's default handler prints `.message` only) so the verbose
+    // PID + Ctrl-C/kill guidance reaches the user's terminal.
+    try {
+      acquireLock(projectRoot);
+    } catch (err) {
+      if (hasActionHint(err)) {
+        renderFabricError(err);
+        process.exit(1);
+      }
+      throw err;
+    }
     // Backstop: release lock on process exit (handles normal + SIGTERM/SIGINT cleanup)
     process.on("exit", () => { releaseLock(projectRoot); });
 

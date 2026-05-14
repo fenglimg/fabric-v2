@@ -54,12 +54,11 @@ export type InstallStepResult = {
 };
 
 export type InstallOptions = {
-  /**
-   * When true, force-overwrite even when destination already matches the
-   * template. Reserved for callers that want to revert local edits to the
-   * skill / hook script. Currently unused — copy is always idempotent.
-   */
-  force?: boolean;
+  // rc.15 TASK-007: the `force?: boolean` field was deleted as dead code —
+  // it was reserved for callers that wanted to revert local edits to a
+  // skill / hook script, but no consumer ever passed it and copy semantics
+  // are always idempotent. The type is intentionally left empty so the
+  // public surface is unchanged (consumers continue passing `{}`).
 };
 
 const SKILL_TEMPLATE_REL = "skills/fabric-archive/SKILL.md";

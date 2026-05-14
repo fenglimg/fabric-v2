@@ -14,6 +14,7 @@ import { displayWidth, paint, padEnd } from "../colors.js";
 import { createDebugLogger, resolveDevMode } from "../dev-mode.js";
 import type { ClaudeMcpScope } from "../config/json.js";
 import { t } from "../i18n.js";
+import { hasActionHint, renderFabricError } from "../lib/error-render.js";
 import * as configCommand from "./config.js";
 import { installHooks } from "../install/hooks-orchestrator.js";
 import { detectExistingLanguage, runInitScan, type ResolvedLanguage } from "./scan.js";
@@ -279,23 +280,23 @@ export const installCommand = defineCommand({
     description: t("cli.install.description"),
   },
   args: {
-    target: {
-      type: "string",
-      description: t("cli.install.args.target.description"),
-    },
     debug: {
       type: "boolean",
       description: t("cli.install.args.debug.description"),
       default: false,
     },
-    yes: {
-      type: "boolean",
-      description: t("cli.install.args.yes.description"),
-      default: false,
-    },
     "dry-run": {
       type: "boolean",
       description: t("cli.install.args.dry-run.description"),
+      default: false,
+    },
+    target: {
+      type: "string",
+      description: t("cli.install.args.target.description"),
+    },
+    yes: {
+      type: "boolean",
+      description: t("cli.install.args.yes.description"),
       default: false,
     },
   },
@@ -318,7 +319,17 @@ export async function runInitCommand(args: InitArgs): Promise<InitExecutionResul
   // recovery from a stuck lock is `fab uninstall && fab install`.
   const fabricInitialized = existsSync(join(intent.target, ".fabric", "events.jsonl"));
   if (fabricInitialized) {
-    checkLockOrThrow(intent.target);
+    // rc.15 TASK-007: explicitly render `.actionHint` from FabricError-shaped
+    // failures (citty's default handler prints `.message` only).
+    try {
+      checkLockOrThrow(intent.target);
+    } catch (err) {
+      if (hasActionHint(err)) {
+        renderFabricError(err);
+        process.exit(1);
+      }
+      throw err;
+    }
   }
 
   logger(`init target source: ${resolution.source}`);

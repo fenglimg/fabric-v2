@@ -15,6 +15,7 @@ import {
 import { paint, symbol } from "../colors.js";
 import { resolveDevMode } from "../dev-mode.js";
 import { t } from "../i18n.js";
+import { hasActionHint, renderFabricError } from "../lib/error-render.js";
 import { runInitScan } from "./scan.js";
 
 type DoctorArgs = {
@@ -112,7 +113,17 @@ export const doctorCommand = defineCommand({
 
     // Preflight: refuse to run when serve is actively holding the lock.
     // rc.15: --force was removed (drift→abort principle).
-    checkLockOrThrow(resolution.target);
+    // rc.15 TASK-007: explicitly render `.actionHint` from FabricError-shaped
+    // failures (citty's default handler prints `.message` only).
+    try {
+      checkLockOrThrow(resolution.target);
+    } catch (err) {
+      if (hasActionHint(err)) {
+        renderFabricError(err);
+        process.exit(1);
+      }
+      throw err;
+    }
 
     const fixKnowledge = args["fix-knowledge"] === true;
     const fix = args.fix === true;

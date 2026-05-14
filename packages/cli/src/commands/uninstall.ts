@@ -12,6 +12,7 @@ import { createDebugLogger, resolveDevMode } from "../dev-mode.js";
 import { detectClientSupports, resolveClients, type DetectedClientSupport } from "../config/resolver.js";
 import type { ClientConfigWriter, RemoveResult } from "../config/writer.js";
 import { t } from "../i18n.js";
+import { hasActionHint, renderFabricError } from "../lib/error-render.js";
 import {
   uninstallBootstrapStage,
   type UninstallOptions as BootstrapUninstallOptions,
@@ -172,23 +173,23 @@ export const uninstallCommand = defineCommand({
     description: t("cli.uninstall.description"),
   },
   args: {
-    target: {
-      type: "string",
-      description: t("cli.uninstall.args.target.description"),
-    },
     debug: {
       type: "boolean",
       description: t("cli.uninstall.args.debug.description"),
       default: false,
     },
-    yes: {
-      type: "boolean",
-      description: t("cli.uninstall.args.yes.description"),
-      default: false,
-    },
     "dry-run": {
       type: "boolean",
       description: t("cli.uninstall.args.dry-run.description"),
+      default: false,
+    },
+    target: {
+      type: "string",
+      description: t("cli.uninstall.args.target.description"),
+    },
+    yes: {
+      type: "boolean",
+      description: t("cli.uninstall.args.yes.description"),
       default: false,
     },
   },
@@ -210,7 +211,17 @@ export async function runUninstallCommand(args: UninstallArgs): Promise<Uninstal
   }
 
   // Lock safety: refuse if a serve process holds the lock.
-  checkLockOrThrow(intent.target);
+  // rc.15 TASK-007: explicitly render `.actionHint` from FabricError-shaped
+  // failures (citty's default handler prints `.message` only).
+  try {
+    checkLockOrThrow(intent.target);
+  } catch (err) {
+    if (hasActionHint(err)) {
+      renderFabricError(err);
+      process.exit(1);
+    }
+    throw err;
+  }
 
   const supports = detectClientSupports(intent.target);
   const basePlan = await buildUninstallExecutionPlan(intent.target, {

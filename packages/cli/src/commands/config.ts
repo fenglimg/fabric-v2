@@ -32,7 +32,6 @@ type ConfigArgs = {
 
 type InstallMcpClientsOptions = {
   clients?: ClientKind[];
-  force?: boolean;
   dryRun?: boolean;
   localServerPath?: string;
   claudeMcpScope?: ClaudeMcpScope;
