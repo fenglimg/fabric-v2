@@ -5,6 +5,57 @@ All notable changes to Fabric will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0-rc.15] - 2026-05-14
+
+### Changed (Breaking — CLI surface contraction)
+
+**`fab install` flags** 12 → 4:
+- Killed: `--force`, `--reapply`, `--interactive`, `--no-bootstrap`, `--no-mcp`, `--no-hooks`, `--mcp-install`, `--scope`
+- Renamed: `--plan` → `--dry-run`
+- Final: `--target`, `--debug`, `--yes`, `--dry-run`
+- All killed flags had interactive prompts in the install flow (rc.14 wizard); CLI surface now matches "能交互选的就别做 flag" principle (memory/feedback_cli_design.md)
+
+**`fab uninstall` flags** 11 → 4:
+- Killed: `--force`, `--interactive`, `--no-bootstrap`, `--no-mcp`, `--no-scaffold`, `--purge`, `--clean-empties`
+- Renamed: `--plan` → `--dry-run`
+- `--clean-empties` behavior is now always-on default (option deleted entirely, no preservation toggle)
+- `--purge` removal makes `.fabric/knowledge/` unconditionally preserved
+- Final flags symmetric with install: `--target`, `--debug`, `--yes`, `--dry-run`
+
+**`fab doctor` flags**:
+- Killed: `--force` (lock conflict aborts unconditionally per drift→abort principle)
+- Renamed: `--apply-lint` → `--fix-knowledge` (parallel naming with `--fix`)
+- Added: `--rescan` (composable: rescan → mutations → report single-pass)
+- CLI flag rename + doctor.ts local identifier renames; server-side `runDoctorApplyLint` kept (minimize blast radius)
+
+**`fab serve` flags**:
+- Killed: `--force` (lock conflict aborts per drift→abort principle)
+
+### Changed (Breaking — Command tree pruning)
+
+- **Deleted**: top-level `fab hooks` command. `installHooks` + `validateHookPaths` helpers moved to NEW `packages/cli/src/install/hooks-orchestrator.ts` (convention match with `skills-and-hooks.ts`)
+- **Deleted**: top-level `fab scan` command. Use `fab doctor --rescan` instead. Legacy v1 scan helpers (`createScanReport`, `walkFiles`, `buildRecommendations`, etc.) removed; `runInitScan` preserved as internal export
+- **Stripped**: `fab config install` and `fab config hooks` subcommands. `fab config` becomes a rc.16 placeholder pointing at the upcoming TUI panel
+- **Hidden**: `fab plan-context-hint` from `fab --help` (via citty `meta.hidden: true` — still callable by hook scripts)
+- **Visible commands**: `fab --help` now lists exactly 5 — `install`, `doctor`, `serve`, `uninstall`, `config` (three-entry mental model: 装 / 配 / 跑 per memory/feedback_cli_design.md)
+
+### Changed (UX)
+- `ServeLockHeldError` message rewritten via `cli.serve.lock-held.action-hint` i18n key. New message includes target PID and concrete stop guidance (Ctrl-C in that terminal or `kill PID`). Drops the now-defunct `--force to override` suggestion.
+
+### Changed (Schema)
+- `fabric-config.json` schema deduped: dropped duplicate `auditMode` (camelCase) field; only `audit_mode` (snake_case) remains. Convention parity with sibling keys (`archive_hint_hours`, `review_hint_pending_count`, `fabric_language`, etc.). Schema is non-strict — external configs carrying old camelCase key will silently drop the setting at parse time.
+
+### Migration
+
+For users on rc.14: the deprecation warnings for `--force` and `--reapply` (added in rc.14) signaled this rc.15 removal. Drift recovery is now exclusively `fab uninstall && fab install` (no flag override path). Run `fab install --dry-run` (renamed from `--plan`) to preview before applying.
+
+For configs with legacy keys: any `fabric-config.json` declaring `auditMode` should rename to `audit_mode`. No automatic migration shim.
+
+### Stats
+- ~35 flags → ~20 flags (-43%)
+- 7 commands → 5 visible + 1 hidden
+- 54 file changes across 5 refactor commits + this version bump
+
 ## [2.0.0-rc.14] - 2026-05-14
 
 ### Fixed
