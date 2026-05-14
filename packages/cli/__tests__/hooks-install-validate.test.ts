@@ -1,6 +1,7 @@
 /**
  * Unit tests for the rc.5 TASK-010 cross-client hook path validation step
- * added to `installHooks` in packages/cli/src/commands/hooks.ts.
+ * added to `installHooks` in packages/cli/src/install/hooks-orchestrator.ts
+ * (rc.15 relocation; formerly packages/cli/src/commands/hooks.ts).
  *
  * The full installHooks flow needs a fixture project root (covered by the
  * werewolf-fixture integration test). These focused tests exercise the
@@ -19,7 +20,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { installHooks } from "../src/commands/hooks.js";
+import { installHooks } from "../src/install/hooks-orchestrator.js";
 
 const tempRoots: string[] = [];
 

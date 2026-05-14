@@ -9,9 +9,9 @@ vi.hoisted(() => {
   process.env.FAB_LANG = "en";
 });
 
+import configCmd from "../src/commands/config.ts";
 import doctorCommand from "../src/commands/doctor.ts";
 import installCommand from "../src/commands/install.ts";
-import scanCommand from "../src/commands/scan.ts";
 import serveCommand from "../src/commands/serve.ts";
 import uninstallCommand from "../src/commands/uninstall.ts";
 
@@ -76,10 +76,10 @@ describe("CLI surface drift gate (docs/test-seed/cli.md \u00A71)", () => {
   // Snapshot layer: any add/remove/rename/default-change of a flag fails CI.
   it.each([
     ["install", installCommand as CittyCommand],
-    ["scan", scanCommand as CittyCommand],
     ["doctor", doctorCommand as CittyCommand],
     ["serve", serveCommand as CittyCommand],
     ["uninstall", uninstallCommand as CittyCommand],
+    ["config", configCmd as CittyCommand],
   ])("command '%s' surface matches snapshot", (name, cmd) => {
     const surface = commandSurface(cmd);
     // toMatchSnapshot's hint argument is appended to the snapshot key, surfacing
@@ -90,16 +90,18 @@ describe("CLI surface drift gate (docs/test-seed/cli.md \u00A71)", () => {
   // Top-level CLI surface: assert the public command set matches the seed.
   // (We import the registry indirectly through the commands themselves; the
   //  registry shape lives in packages/cli/src/commands/index.ts and is
-  //  re-asserted here to fail loudly if a 5th public command appears.)
-  it("public command set is exactly { install, scan, doctor, serve, uninstall }", () => {
+  //  re-asserted here to fail loudly if a 6th public command appears.)
+  // rc.15 TASK-004 (C7+C9): rotated `scan` -> `config`; `plan-context-hint`
+  // stays callable but is hidden from --help and therefore from this assertion.
+  it("public command set is exactly { install, doctor, serve, uninstall, config }", () => {
     const names = [
       installCommand.meta?.name,
-      scanCommand.meta?.name,
       doctorCommand.meta?.name,
       serveCommand.meta?.name,
       uninstallCommand.meta?.name,
+      configCmd.meta?.name,
     ].sort();
-    expect(names).toEqual(["doctor", "install", "scan", "serve", "uninstall"]);
+    expect(names).toEqual(["config", "doctor", "install", "serve", "uninstall"]);
   });
 
   // Critical-flag layer: even if a future refactor renames descriptions, these
@@ -120,9 +122,9 @@ describe("CLI surface drift gate (docs/test-seed/cli.md \u00A71)", () => {
     );
   });
 
-  it("scan exposes critical flag --json (seed §1)", () => {
-    const flags = commandSurface(scanCommand as CittyCommand).args.map((a) => a.name);
-    expect(flags, DRIFT_HINT).toEqual(expect.arrayContaining(["json"]));
+  it("config exposes --target arg (seed §1)", () => {
+    const flags = commandSurface(configCmd as CittyCommand).args.map((a) => a.name);
+    expect(flags, DRIFT_HINT).toEqual(expect.arrayContaining(["target"]));
   });
 
   it("serve exposes critical flags --port / --host (seed §1)", () => {

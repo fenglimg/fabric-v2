@@ -15,7 +15,7 @@ import { createDebugLogger, resolveDevMode } from "../dev-mode.js";
 import type { ClaudeMcpScope } from "../config/json.js";
 import { t } from "../i18n.js";
 import * as configCommand from "./config.js";
-import { installHooks } from "./hooks.js";
+import { installHooks } from "../install/hooks-orchestrator.js";
 import { detectExistingLanguage, runInitScan, type ResolvedLanguage } from "./scan.js";
 import { buildForensicReport } from "../scanner/forensic.js";
 import { detectClientSupports, type DetectedClientSupport } from "../config/resolver.js";

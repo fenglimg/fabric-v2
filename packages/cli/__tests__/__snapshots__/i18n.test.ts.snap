@@ -2,6 +2,14 @@
 
 exports[`cli i18n > renders en command descriptions and output snapshots 1`] = `
 {
+  "config": {
+    "description": "Manage Fabric MCP client configuration.",
+    "errors": [],
+    "stderr": [],
+    "stdout": [
+      "Config panel coming in rc.16 — edit fabric-config.json directly for now.",
+    ],
+  },
   "install": {
     "description": "Install Fabric in the target project.",
     "errors": [],
@@ -34,14 +42,6 @@ exports[`cli i18n > renders en command descriptions and output snapshots 1`] = `
     ],
   },
   "locale": "en",
-  "scan": {
-    "description": "Scan the project to detect Fabric bootstrap candidates.",
-    "errors": [
-      "[warn] forensic.json not found at <fixture-3>/.fabric/forensic.json; run \`fabric install\` first to produce the deterministic project snapshot.",
-    ],
-    "stderr": [],
-    "stdout": [],
-  },
   "serve": {
     "description": "Start the local Fabric MCP HTTP service. Set FABRIC_AUTH_TOKEN to enable Bearer auth for non-localhost binding.",
     "errors": [
@@ -61,6 +61,14 @@ exports[`cli i18n > renders en command descriptions and output snapshots 1`] = `
 
 exports[`cli i18n > renders zh-CN command descriptions and output snapshots 1`] = `
 {
+  "config": {
+    "description": "管理 Fabric MCP 客户端配置。",
+    "errors": [],
+    "stderr": [],
+    "stdout": [
+      "配置面板将在 rc.16 上线 — 暂请直接编辑 fabric-config.json。",
+    ],
+  },
   "install": {
     "description": "在目标项目中安装 Fabric。",
     "errors": [],
@@ -93,14 +101,6 @@ exports[`cli i18n > renders zh-CN command descriptions and output snapshots 1`] 
     ],
   },
   "locale": "zh-CN",
-  "scan": {
-    "description": "扫描项目以检测 Fabric 引导候选模块。",
-    "errors": [
-      "[warn] 未找到 forensic.json（路径 <fixture-3>/.fabric/forensic.json）；请先运行 \`fabric install\` 生成项目快照。",
-    ],
-    "stderr": [],
-    "stdout": [],
-  },
   "serve": {
     "description": "启动本地 Fabric MCP HTTP 服务。若需绑定到非 localhost，请设置 FABRIC_AUTH_TOKEN 以启用 Bearer 鉴权。",
     "errors": [

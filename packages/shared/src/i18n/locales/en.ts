@@ -46,6 +46,9 @@ export const enMessages: Messages = {
     "Unknown client \"{client}\". Use a comma-separated list such as claude,cursor,codex.",
 
   "cli.config.description": "Manage Fabric MCP client configuration.",
+  "cli.config.placeholder":
+    "Config panel coming in rc.16 \u2014 edit fabric-config.json directly for now.",
+  "cli.config.args.target.description": "Target project directory (defaults to cwd).",
   "cli.config.clients.claude": "Claude Code CLI",
   "cli.config.install.description": "Install Fabric MCP server entries into detected client configs.",
   "cli.config.install.args.clients.description":

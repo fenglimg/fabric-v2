@@ -7,14 +7,17 @@
 ## §1 Feature Surface
 
 ### Public commands (5)
-- `install` — 项目脚手架与客户端配置写入；flags: `--target`, `--debug`, `--force`, `--yes`, `--plan`, `--reapply`, `--bootstrap/--no-bootstrap`, `--mcp/--no-mcp`, `--hooks/--no-hooks`, `--interactive/--no-interactive`, `--mcp-install`, `--scope project|user`
-- `scan` — 静态项目扫描，产出 forensic report；flags: `--target`, `--debug`, `--json`
-- `doctor` — 一致性自检与修复；flags: `--target`, `--fix`, `--fix-knowledge`, `--json`, `--rescan`, `--strict`, `--yes`
+- `install` — 项目脚手架与客户端配置写入；flags: `--target`, `--debug`, `--yes`, `--dry-run`
+- `doctor` — 一致性自检与修复；flags: `--target`, `--fix`, `--fix-knowledge`, `--json`, `--rescan`, `--strict`, `--yes`（`--rescan` 替代 rc.15 已移除的 `fab scan` 顶层命令）
 - `serve` — 启动 HTTP MCP server；flags: `--port`(默认 7373), `--host`(默认 127.0.0.1), `--target`, `--debug`
-- `uninstall` — Remove Fabric-managed artifacts symmetrically to `fab install`. Flags: `--plan`, `--force`, `--yes`, `--no-bootstrap`, `--no-mcp`, `--no-scaffold`, `--target`, `--interactive`, `--purge`, `--clean-empties`.
+- `uninstall` — Remove Fabric-managed artifacts symmetrically to `fab install`. Flags: `--target`, `--debug`, `--yes`, `--dry-run`.
+- `config` — rc.15 起为占位命令（rc.16 上线配置面板）；flags: `--target`。
+
+### Hidden top-level commands（callable but absent from `--help`）
+- `plan-context-hint` — 给 rc.6 hooks 与 `fabric-import` skill 提供 JSON 知识提示流；rc.15 起通过 `meta.hidden: true` 隐藏，但脚本调用仍可触达。
 
 ### Internal surface（命令支撑，不单列模块）
-- bootstrap / config / hooks 子例程
+- bootstrap / hooks 子例程（installHooks 现位于 `packages/cli/src/install/hooks-orchestrator.ts`）
 - forensic scanner（detector + ignores）
 - 客户端配置写入器（Claude Code、Codex CLI、Cursor 三家）
 - MCP 配置 deep-merge with `--scope` 路由（project → `.mcp.json`，user → `~/.claude.json`）
@@ -66,11 +69,15 @@ T7. **`fab uninstall --plan` no-write contract** — `--plan` 模式必须列出
 - shared 包内部 schema/error/i18n 单元行为 — 见 `shared.md`
 - dashboard 客户端 UI
 - 已弃用的 `mcp-config` 命令（v1.8.0 已移除）
+- 已弃用的顶层 `fab scan` 命令（rc.15 已移除 — 等价行为现由 `fab doctor --rescan` 提供）
+- 已弃用的顶层 `fab hooks` 命令与 `fab config {install,hooks}` 子命令（rc.15 移除；`installHooks` helper 迁至 `packages/cli/src/install/hooks-orchestrator.ts`）
 
 ## §5 Source Traceability
 
-- `packages/cli/src/commands/index.ts`（命令注册表）
-- `packages/cli/src/commands/{install,scan,doctor,serve}.ts`（命令定义与 args schema）
+- `packages/cli/src/commands/index.ts`（命令注册表 — rc.15 起 6 条：5 个公共 + 1 个隐藏 `plan-context-hint`）
+- `packages/cli/src/commands/{install,doctor,serve,uninstall,config,plan-context-hint}.ts`（命令定义与 args schema）
+- `packages/cli/src/install/hooks-orchestrator.ts`（rc.15 起 `installHooks` + `validateHookPaths` 的新家；旧路径 `commands/hooks.ts` 已删除）
+- `packages/cli/src/commands/scan.ts`（不再注册 citty 命令；仅导出 `runInitScan` / `detectExistingLanguage` / `__testing__` 供 install + doctor --rescan 调用）
 - `packages/cli/README.md`、`docs/initialization.md`、`docs/getting-started.md`
 - `CHANGELOG.md` 1.8.0 段（client trio、scope、atomic-write、legacy_client_path_present）
 - ADR-002（MCP-first）、ADR-003（scope routing）

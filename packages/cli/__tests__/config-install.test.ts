@@ -4,7 +4,6 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { parseClientFilter } from "../src/commands/config.ts";
 import { CodexTOMLConfigWriter } from "../src/config/toml.ts";
 
 const tempRoots: string[] = [];
@@ -13,16 +12,6 @@ afterEach(() => {
   while (tempRoots.length > 0) {
     rmSync(tempRoots.pop() as string, { recursive: true, force: true });
   }
-});
-
-describe("config install client aliases", () => {
-  it("resolves claude to ClaudeCodeCLI", () => {
-    expect(parseClientFilter("claude")).toEqual(new Set(["ClaudeCodeCLI"]));
-  });
-
-  it("keeps existing cursor and codex aliases working", () => {
-    expect(parseClientFilter("cursor,codex")).toEqual(new Set(["Cursor", "CodexCLI"]));
-  });
 });
 
 describe("Codex config install", () => {

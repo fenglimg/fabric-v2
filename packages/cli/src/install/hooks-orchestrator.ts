@@ -1,8 +1,6 @@
 import { existsSync, statSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
 
-import { defineCommand } from "citty";
-
 import { t } from "../i18n.js";
 import {
   addFabricKnowledgeBaseSection,
@@ -17,11 +15,22 @@ import {
   mergeCursorHookConfig,
   readFabricLanguagePreference,
   type InstallStepResult,
-} from "../install/skills-and-hooks.js";
+} from "./skills-and-hooks.js";
 
-type HooksInstallArgs = {
-  target: string;
-};
+// ---------------------------------------------------------------------------
+// rc.15 relocation rationale:
+//
+// Pure orchestrator for hook + skill installation. Previously lived in
+// `packages/cli/src/commands/hooks.ts`; relocated in rc.15 because
+// `commands/` is reserved for citty command wrappers and the `fab hooks`
+// top-level command was deleted in TASK-004 (C5) while these helpers
+// survive as install-stage infrastructure. Callers:
+//   - `fab install` (packages/cli/src/commands/install.ts) — primary entry
+//   - `installHooks` integration + unit tests
+//
+// The neighbour file `skills-and-hooks.ts` provides the lower-level
+// per-client copy/merge primitives that this orchestrator composes.
+// ---------------------------------------------------------------------------
 
 type InstallHooksOptions = {
   force?: boolean;
@@ -33,47 +42,11 @@ export type InstallHooksResult = {
   errors: string[];
 };
 
-export const hooksCommand = defineCommand({
-  meta: {
-    name: "hooks",
-    description: t("cli.hooks.description"),
-  },
-  subCommands: {
-    install: defineCommand({
-      meta: {
-        name: "install",
-        description: t("cli.hooks.install.description"),
-      },
-      args: {
-        target: {
-          type: "string",
-          description: t("cli.hooks.install.args.target.description"),
-          default: process.cwd(),
-        },
-      },
-      async run({ args }: { args: HooksInstallArgs }) {
-        const result = await installHooks(args.target);
-        for (const path of result.installed) {
-          console.log(`installed ${path}`);
-        }
-        for (const path of result.skipped) {
-          console.log(`skipped ${path}`);
-        }
-        for (const message of result.errors) {
-          console.error(`error ${message}`);
-        }
-      },
-    }),
-  },
-});
-
-export default hooksCommand;
-
 /**
- * v2/rc.2+rc.3+rc.4+rc.5 hook installer. Re-installable from `fabric hooks
- * install` and also invoked from `fabric install` via the bootstrap stage
- * helpers. Performs the full archive+review+import-feature install in
- * sequence (each idempotent):
+ * v2/rc.2+rc.3+rc.4+rc.5 hook installer. Re-installable from `fab install`
+ * (and was historically also `fab hooks install` until rc.15 deleted the
+ * top-level command). Performs the full archive+review+import-feature install
+ * in sequence (each idempotent):
  *   1. Copy templates/skills/fabric-archive/SKILL.md into .claude/skills/ + .codex/skills/
  *   2. Copy templates/skills/fabric-review/SKILL.md into .claude/skills/ + .codex/skills/  (rc.3)
  *   3. Copy templates/skills/fabric-import/SKILL.md into .claude/skills/ + .codex/skills/  (rc.4)
@@ -99,9 +72,8 @@ export default hooksCommand;
  * runs.
  *
  * Why all 9 steps (not just hooks): rc.2 wires the Skill, hook script, and
- * config-merge as one feature. `fabric hooks install` is the user's
- * re-apply entry point — installing only the hook script would leave the
- * Stop hook firing without a Skill to invoke.
+ * config-merge as one feature. Installing only the hook script would leave
+ * the Stop hook firing without a Skill to invoke.
  */
 export async function installHooks(
   target: string,
@@ -153,7 +125,7 @@ export async function installHooks(
 // (fresh install where deep-merge hadn't run — should never happen in this
 // pipeline ordering, but the defensive branch keeps validateHookPaths
 // callable from contexts that skip the merge step).
-function validateHookPaths(projectRoot: string): InstallStepResult[] {
+export function validateHookPaths(projectRoot: string): InstallStepResult[] {
   // Each client contributes one validate row per registered hook script. rc.5
   // shipped the Stop-hook (fabric-hint.cjs) only; rc.6 TASK-019 adds the
   // SessionStart broad-injection hook (knowledge-hint-broad.cjs); rc.6

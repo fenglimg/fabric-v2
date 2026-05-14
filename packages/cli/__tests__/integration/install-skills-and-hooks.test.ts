@@ -26,7 +26,7 @@ import { fileURLToPath } from "node:url";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { installHooks } from "../../src/commands/hooks.ts";
+import { installHooks } from "../../src/install/hooks-orchestrator.ts";
 import {
   cleanupFixtureRoot,
   createWerewolfFixtureRoot,

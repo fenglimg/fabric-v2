@@ -1,9 +1,7 @@
 import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { mkdir, readFile } from "node:fs/promises";
-import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
-
-import { defineCommand } from "citty";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 
 import {
   KnowledgeIdAllocator,
@@ -20,79 +18,27 @@ import {
 } from "@fenglimg/fabric-shared";
 import { atomicWriteJson, atomicWriteText } from "@fenglimg/fabric-shared/node/atomic-write";
 
-import { displayWidth, padEnd, paint, symbol } from "../colors.js";
-import { createDebugLogger, readFabricConfig, resolveDevMode } from "../dev-mode.js";
+import { readFabricConfig } from "../dev-mode.js";
 import { t } from "../i18n.js";
-import { detectFramework, type FrameworkInfo } from "../scanner/detector.js";
-import { resolveIgnores } from "../scanner/ignores.js";
 
 // ---------------------------------------------------------------------------
-// Public legacy API — kept because callers depend on it:
-//   * packages/cli/__tests__/integration/scan-edge-cases.test.ts
-//   * packages/cli/__tests__/init-mcp-scope.test.ts (mocked)
+// rc.15 TASK-004 (C7): The top-level `fab scan` command was deleted; its
+// behaviour is folded into `fab doctor --rescan` (TASK-003). This module now
+// exports only the pure helpers — `runInitScan`, `detectExistingLanguage`,
+// and the `__testing__` builder bundle — consumed by:
+//   * packages/cli/src/commands/install.ts (init-scan stage)
+//   * packages/cli/src/commands/doctor.ts  (--rescan flag)
+//   * packages/cli/__tests__/scan-init.test.ts + scan-builders.test.ts
 //
-// The new init-scan behavior lives in `runInitScan` below and is exposed via
-// `scanCommand.run()`. v2.0: the prior bootstrap guide consumer was retired
-// alongside `.fabric/bootstrap/README.md`.
+// The legacy v1 surface (createScanReport, walkFiles, buildRecommendations,
+// getReadmeQuality, matchesIgnorePattern, etc.) was removed clean-slate; its
+// only consumer (scan-edge-cases.test.ts) was deleted in the same commit.
 // ---------------------------------------------------------------------------
-
-export type ReadmeQuality = "stub" | "ok";
-
-export type ScanReport = {
-  target: string;
-  framework: FrameworkInfo;
-  readmeQuality: ReadmeQuality;
-  hasContributing: boolean;
-  fileCount: number;
-  ignoredCount: number;
-  hasExistingFabric: boolean;
-  recommendations: string[];
-};
-
-type WalkResult = {
-  fileCount: number;
-  ignoredCount: number;
-};
-
-type ScanArgs = {
-  target?: string;
-  debug?: boolean;
-  json?: boolean;
-};
-
-export async function createScanReport(
-  targetInput: string = process.cwd(),
-  fabricConfig?: { scanIgnores?: string[] },
-): Promise<ScanReport> {
-  const target = normalizeTarget(targetInput);
-  const framework = detectFramework(target);
-  const readmeQuality = getReadmeQuality(target);
-  const hasContributing = existsSync(join(target, "CONTRIBUTING.md"));
-  const hasExistingFabric =
-    existsSync(join(target, ".fabric", "bootstrap", "README.md")) || existsSync(join(target, ".fabric"));
-  const walkResult = walkFiles(target, resolveIgnores(fabricConfig));
-
-  return {
-    target,
-    framework,
-    readmeQuality,
-    hasContributing,
-    fileCount: walkResult.fileCount,
-    ignoredCount: walkResult.ignoredCount,
-    hasExistingFabric,
-    recommendations: buildRecommendations({
-      framework,
-      readmeQuality,
-      hasContributing,
-      hasExistingFabric,
-    }),
-  };
-}
 
 // ---------------------------------------------------------------------------
 // v2.0 rc.1 init-scan: deterministic baseline knowledge entries
 //
-// `fab scan` reads the forensic.json snapshot produced by `fabric install`
+// `runInitScan` reads the forensic.json snapshot produced by `fab install`
 // (TASK-008) and emits 4-7 markdown knowledge entries under
 // `.fabric/knowledge/{models,guidelines,processes}/`. Each entry has v2.0
 // frontmatter (id KP-/KT-, type, layer, maturity, layer_reason, created_at)
@@ -278,62 +224,6 @@ export async function runInitScan(
     duration_ms: durationMs,
   };
 }
-
-// ---------------------------------------------------------------------------
-// citty command
-// ---------------------------------------------------------------------------
-
-export const scanCommand = defineCommand({
-  meta: {
-    name: "scan",
-    description: t("cli.scan.description"),
-  },
-  args: {
-    target: {
-      type: "string",
-      description: t("cli.scan.args.target.description"),
-    },
-    debug: {
-      type: "boolean",
-      description: t("cli.scan.args.debug.description"),
-      default: false,
-    },
-    json: {
-      type: "boolean",
-      description: t("cli.scan.args.json.description"),
-      default: false,
-    },
-  },
-  async run({ args }: { args: ScanArgs }) {
-    const workspaceRoot = process.cwd();
-    const logger = createDebugLogger(args.debug);
-    const resolution = resolveDevMode(args.target, workspaceRoot);
-
-    logger(`scan target source: ${resolution.source}`);
-    for (const step of resolution.chain) {
-      logger(step);
-    }
-
-    try {
-      const result = await runInitScan(resolution.target, { source: "scan" });
-
-      if (args.json) {
-        console.log(JSON.stringify(result, null, 2));
-        return;
-      }
-
-      printPrettyResult(result);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      // Exit code 1 with a clean message for missing forensic.json (or any
-      // other deterministic precondition failure).
-      console.error(`${symbol.warn} ${paint.warn(message)}`);
-      process.exitCode = 1;
-    }
-  },
-});
-
-export default scanCommand;
 
 // ---------------------------------------------------------------------------
 // Bilingual baseline templates (TASK-008)
@@ -1430,132 +1320,8 @@ async function ensureParentDirectory(filePath: string): Promise<void> {
   await mkdir(dirname(filePath), { recursive: true });
 }
 
-function printPrettyResult(result: InitScanResult): void {
-  const writtenCount = result.written_stable_ids.length;
-  const skippedCount = result.skipped_stable_ids.length;
-
-  if (writtenCount === 0) {
-    console.log(`${symbol.ok} ${paint.success(t("cli.scan.summary.skipped", { count: String(skippedCount) }))}`);
-    return;
-  }
-
-  console.log(`${symbol.ok} ${paint.success(t("cli.scan.summary.created", { count: String(writtenCount) }))}`);
-  for (const id of result.written_stable_ids) {
-    console.log(`  - ${paint.ai(id)}`);
-  }
-  if (skippedCount > 0) {
-    console.log(paint.muted(`(${skippedCount} unchanged, skipped)`));
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Legacy walk/recommendation helpers — supporting createScanReport()
-// ---------------------------------------------------------------------------
-
 function normalizeTarget(targetInput: string): string {
   return isAbsolute(targetInput) ? targetInput : resolve(process.cwd(), targetInput);
-}
-
-function getReadmeQuality(target: string): ReadmeQuality {
-  const readmePath = join(target, "README.md");
-  if (!existsSync(readmePath)) {
-    return "stub";
-  }
-
-  const wordCount = readFileSync(readmePath, "utf8").trim().split(/\s+/).filter(Boolean).length;
-
-  return wordCount >= 200 ? "ok" : "stub";
-}
-
-function walkFiles(root: string, ignorePatterns: string[]): WalkResult {
-  if (!existsSync(root) || !statSync(root).isDirectory()) {
-    throw new Error(t("cli.shared.target-invalid", { target: root }));
-  }
-
-  let fileCount = 0;
-  let ignoredCount = 0;
-  const stack = [root];
-
-  while (stack.length > 0) {
-    const current = stack.pop();
-    if (current === undefined) {
-      continue;
-    }
-
-    for (const entry of readdirSync(current, { withFileTypes: true })) {
-      const absolutePath = join(current, entry.name);
-      const relativePath = toPosixPath(relative(root, absolutePath));
-
-      if (shouldIgnore(relativePath, entry.isDirectory(), ignorePatterns)) {
-        ignoredCount += 1;
-        continue;
-      }
-
-      if (entry.isDirectory()) {
-        stack.push(absolutePath);
-      } else if (entry.isFile()) {
-        fileCount += 1;
-      }
-    }
-  }
-
-  return { fileCount, ignoredCount };
-}
-
-function shouldIgnore(relativePath: string, isDirectory: boolean, ignorePatterns: string[]): boolean {
-  return ignorePatterns.some((pattern) => matchesIgnorePattern(relativePath, isDirectory, pattern));
-}
-
-function matchesIgnorePattern(relativePath: string, isDirectory: boolean, pattern: string): boolean {
-  const normalizedPattern = toPosixPath(pattern);
-
-  if (normalizedPattern === "**/*.meta") {
-    return relativePath.endsWith(".meta");
-  }
-
-  if (normalizedPattern.endsWith("/**")) {
-    const directoryPrefix = normalizedPattern.slice(0, -3);
-    return (
-      relativePath === directoryPrefix ||
-      relativePath.startsWith(`${directoryPrefix}/`) ||
-      (isDirectory && `${relativePath}/` === directoryPrefix)
-    );
-  }
-
-  return relativePath === normalizedPattern;
-}
-
-function toPosixPath(path: string): string {
-  return path.split(sep).join("/");
-}
-
-function buildRecommendations(input: {
-  framework: FrameworkInfo;
-  readmeQuality: ReadmeQuality;
-  hasContributing: boolean;
-  hasExistingFabric: boolean;
-}): string[] {
-  const recommendations: string[] = [];
-
-  if (!input.hasExistingFabric) {
-    recommendations.push(t("cli.scan.recommendation.init"));
-  }
-
-  if (input.readmeQuality === "stub") {
-    recommendations.push(t("cli.scan.recommendation.readme"));
-  }
-
-  if (!input.hasContributing) {
-    recommendations.push(t("cli.scan.recommendation.contributing"));
-  }
-
-  if (input.framework.kind === "unknown") {
-    recommendations.push(t("cli.scan.recommendation.unknown-framework"));
-  } else {
-    recommendations.push(t("cli.scan.recommendation.framework-dirs", { framework: input.framework.kind }));
-  }
-
-  return recommendations;
 }
 
 // Allow formatKnowledgeId to be referenced downstream tests via re-export.

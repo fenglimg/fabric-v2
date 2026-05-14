@@ -10,25 +10,24 @@ import { resolveClients } from "../config/resolver.js";
 import type { ClaudeMcpScope } from "../config/json.js";
 import type { ClientKind } from "../config/writer.js";
 import { t } from "../i18n.js";
-import { hooksCommand } from "./hooks.js";
 
-const CLIENT_ALIASES: Record<string, ClientKind> = {
-  claude: "ClaudeCodeCLI",
-  claudecodecli: "ClaudeCodeCLI",
-  "claude-code-cli": "ClaudeCodeCLI",
-  claudecli: "ClaudeCodeCLI",
-  claudecodedesktop: "ClaudeCodeDesktop",
-  "claude-code-desktop": "ClaudeCodeDesktop",
-  claudedesktop: "ClaudeCodeDesktop",
-  cursor: "Cursor",
-  codexcli: "CodexCLI",
-  "codex-cli": "CodexCLI",
-  codex: "CodexCLI",
-};
+// ---------------------------------------------------------------------------
+// rc.15 TASK-004 (C6 + C9): `fab config` is a visible placeholder pointing at
+// the rc.16 TUI panel. The previous subCommands map (`fab config hooks`,
+// `fab config install`) has been deleted — hook installation now flows
+// exclusively through `fab install` (which delegates to
+// `installHooks` in ../install/hooks-orchestrator.ts), and MCP-only
+// client wiring is handled by the install pipeline. parseClientFilter +
+// CLIENT_ALIASES (used only by the removed `fab config install` subcommand)
+// have been removed as orphans.
+//
+// `installMcpClients` is preserved as a named export because `install.ts`
+// re-imports it via `import * as configCommand` to wire MCP entries during
+// the install stage.
+// ---------------------------------------------------------------------------
 
-type InstallArgs = {
-  clients?: string;
-  "dry-run"?: boolean;
+type ConfigArgs = {
+  target?: string;
 };
 
 type InstallMcpClientsOptions = {
@@ -53,25 +52,6 @@ export type InstallMcpClientsResult = {
   details: McpInstallDetail[];
 };
 
-export function parseClientFilter(value: string | undefined): Set<ClientKind> | null {
-  if (value === undefined || value.trim().length === 0) {
-    return null;
-  }
-
-  const clients = new Set<ClientKind>();
-  for (const rawClient of value.split(",")) {
-    const alias = rawClient.trim().toLowerCase();
-    const clientKind = CLIENT_ALIASES[alias];
-    if (clientKind === undefined) {
-      throw new Error(t("cli.config.errors.unknown-client", { client: rawClient }));
-    }
-
-    clients.add(clientKind);
-  }
-
-  return clients;
-}
-
 async function loadFabricConfig(workspaceRoot: string): Promise<FabricConfig> {
   const configPath = resolve(workspaceRoot, "fabric.config.json");
   if (!existsSync(configPath)) {
@@ -92,62 +72,20 @@ function resolveServerPath(override?: string): string {
   return fileURLToPath(import.meta.resolve("@fenglimg/fabric-server"));
 }
 
-function writeStderr(message: string): void {
-  process.stderr.write(`${message}\n`);
-}
-
 export const configCmd = defineCommand({
   meta: {
     name: "config",
     description: t("cli.config.description"),
   },
-  subCommands: {
-    hooks: hooksCommand,
-    install: defineCommand({
-      meta: {
-        name: "install",
-        description: t("cli.config.install.description"),
-      },
-      args: {
-        clients: {
-          type: "string",
-          description: t("cli.config.install.args.clients.description"),
-        },
-        "dry-run": {
-          type: "boolean",
-          description: t("cli.config.install.args.dry-run.description"),
-          default: false,
-        },
-      },
-      async run({ args }: { args: InstallArgs }) {
-        const selectedClients = parseClientFilter(args.clients);
-        const result = await installMcpClients(process.cwd(), {
-          clients: selectedClients === null ? undefined : Array.from(selectedClients),
-          dryRun: args["dry-run"],
-        });
-
-        if (result.details.length === 0) {
-          writeStderr(t("cli.config.install.no-configs"));
-          return;
-        }
-
-        for (const detail of result.details) {
-          if (detail.action === "skipped") {
-            writeStderr(t("cli.config.install.no-config-path", { client: detail.client }));
-            continue;
-          }
-
-          if (detail.action === "dry-run" && detail.path !== null) {
-            writeStderr(t("cli.config.install.dry-run", { client: detail.client, path: detail.path }));
-            continue;
-          }
-
-          if (detail.path !== null) {
-            writeStderr(t("cli.config.install.wrote", { client: detail.client, path: detail.path }));
-          }
-        }
-      },
-    }),
+  args: {
+    target: {
+      type: "string",
+      description: t("cli.config.args.target.description"),
+      valueHint: "path",
+    },
+  },
+  async run(_ctx: { args: ConfigArgs }) {
+    console.log(t("cli.config.placeholder"));
   },
 });
 

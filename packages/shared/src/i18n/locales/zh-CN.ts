@@ -45,6 +45,8 @@ export const zhCNMessages: Messages = {
     "未知客户端\u201c{client}\u201d。请使用逗号分隔列表，例如 claude,cursor,codex。",
 
   "cli.config.description": "管理 Fabric MCP 客户端配置。",
+  "cli.config.placeholder": "配置面板将在 rc.16 上线 \u2014 暂请直接编辑 fabric-config.json。",
+  "cli.config.args.target.description": "目标项目目录（默认当前工作目录）。",
   "cli.config.clients.claude": "Claude Code CLI",
   "cli.config.install.description": "将 Fabric MCP 服务端条目安装到检测到的客户端配置中。",
   "cli.config.install.args.clients.description": "可选的逗号分隔客户端过滤器，例如 cursor,codex。",

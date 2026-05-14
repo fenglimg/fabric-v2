@@ -63,11 +63,13 @@ async function collectSnapshots(locale: "en" | "zh-CN") {
     await installCommand.run?.({ args: { target: installTarget } } as never);
   });
 
-  const scanTarget = trackFixture(`fab-i18n-scan-${locale}`);
+  // rc.15 TASK-004 (C7): `fab scan` removed; rescan path moves to `fab doctor --rescan`.
+  // rc.15 TASK-004 (C9): capture `fab config` placeholder output as the replacement
+  // i18n snapshot — locks the rc.16 placeholder string in en + zh-CN.
   vi.resetModules();
-  const { scanCommand } = await import("../src/commands/scan.ts");
-  const scanOutput = await captureOutput(async () => {
-    await scanCommand.run?.({ args: { target: scanTarget } } as never);
+  const { configCmd } = await import("../src/commands/config.ts");
+  const configOutput = await captureOutput(async () => {
+    await configCmd.run?.({ args: {} } as never);
   });
 
   const serveTarget = trackFixture(`fab-i18n-serve-${locale}`);
@@ -102,9 +104,9 @@ async function collectSnapshots(locale: "en" | "zh-CN") {
       description: installCommand.meta.description,
       ...installOutput,
     },
-    scan: {
-      description: scanCommand.meta.description,
-      ...scanOutput,
+    config: {
+      description: configCmd.meta?.description,
+      ...configOutput,
     },
     serve: {
       description: serveCommand.meta.description,
