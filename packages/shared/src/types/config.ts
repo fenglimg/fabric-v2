@@ -29,7 +29,6 @@ export interface FabricConfig {
   clientPaths?: ClientPaths;
   externalFixturePath?: string;
   scanIgnores?: string[];
-  auditMode?: AuditMode;
   audit_mode?: AuditMode;
   mcpPayloadLimits?: McpPayloadLimits;
   fabric_language?: FabricLanguage;

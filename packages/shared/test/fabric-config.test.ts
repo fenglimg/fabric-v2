@@ -105,7 +105,7 @@ describe("fabricConfigSchema — defaults and backward compatibility", () => {
       },
       externalFixturePath: "/tmp/fixtures",
       scanIgnores: ["node_modules", "dist", ".git"],
-      auditMode: "strict" as const,
+      audit_mode: "strict" as const,
       mcpPayloadLimits: { warnBytes: 8192, hardBytes: 32768 },
     };
     const parsed = fabricConfigSchema.parse(previousVersionFixture);
@@ -114,7 +114,7 @@ describe("fabricConfigSchema — defaults and backward compatibility", () => {
     expect(parsed.clientPaths).toEqual(previousVersionFixture.clientPaths);
     expect(parsed.externalFixturePath).toBe("/tmp/fixtures");
     expect(parsed.scanIgnores).toEqual(["node_modules", "dist", ".git"]);
-    expect(parsed.auditMode).toBe("strict");
+    expect(parsed.audit_mode).toBe("strict");
     expect(parsed.mcpPayloadLimits).toEqual({
       warnBytes: 8192,
       hardBytes: 32768,

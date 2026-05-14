@@ -49,7 +49,6 @@ export const fabricConfigSchema = z.object({
   clientPaths: clientPathsSchema.optional(),
   externalFixturePath: z.string().optional(),
   scanIgnores: z.array(z.string()).optional(),
-  auditMode: auditModeSchema.optional(),
   audit_mode: auditModeSchema.optional(),
   mcpPayloadLimits: mcpPayloadLimitsSchema,
   // Backward-compat: both fields are optional with defaults so existing

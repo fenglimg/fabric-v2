@@ -46,11 +46,6 @@ const fabricConfigArbitrary = fc.record(
     clientPaths: clientPathsArbitrary,
     externalFixturePath: fc.string(),
     scanIgnores: fc.array(fc.string()),
-    auditMode: fc.constantFrom(
-      "strict" as const,
-      "warn" as const,
-      "off" as const,
-    ),
     audit_mode: fc.constantFrom(
       "strict" as const,
       "warn" as const,
