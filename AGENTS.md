@@ -7,8 +7,15 @@ Run `fabric doctor` to verify state.
 
 See `.fabric/knowledge/` for project decisions, pitfalls, guidelines, models, and processes.
 
-> Use the fabric-archive Skill when archiving knowledge entries (see .claude/skills/fabric-archive/SKILL.md).
+<!-- fabric:knowledge-base:begin -->
 
-> Use the fabric-review Skill to review pending knowledge entries (see .claude/skills/fabric-review/SKILL.md).
+## Fabric Knowledge Base
 
-> Use the fabric-import Skill for cold-start enrichment from git history and docs (see .claude/skills/fabric-import/SKILL.md).
+This project uses Fabric for persistent project knowledge under `.fabric/knowledge/`.
+
+- **Discovery**: SessionStart lists available entries (broad menu); editing files may surface narrow hints
+- **Usage**: call `fab_get_knowledge_sections` to fetch full content of any entry by id
+- **Write flows**: see fabric-archive (record), fabric-review (validate), fabric-import (backfill) Skills
+- **Language**: rendered per `fabric_language` in `.fabric/fabric-config.json` (current: `zh-CN-hybrid`)
+
+<!-- fabric:knowledge-base:end -->

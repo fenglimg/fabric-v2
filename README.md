@@ -176,7 +176,7 @@ Genes are shared. The architecture is original to this project.
 
 Fabric splits cleanly across three entry points; pick by who's in the loop:
 
-- **CLI** — terminal, no AI in loop: `fabric init`, `fabric doctor`,
+- **CLI** — terminal, no AI in loop: `fabric install`, `fabric doctor`,
   `fabric plan-context-hint`.
 - **Skill** — AI is in the conversation and needs to judge content:
   `/fabric-archive`, `/fabric-review`, `/fabric-import`.
@@ -199,7 +199,7 @@ for each detected client, and writes a baseline `.fabric/` tree with 4-7 seed
 entries.
 
 ```bash
-fabric init                       # install hooks + Skills + bootstrap
+fabric install                    # install hooks + Skills + bootstrap
 fabric serve                      # start the MCP server
 fabric doctor                     # run all 25 lints, report only
 fabric doctor --apply-lint        # apply auto-fixable lints
@@ -265,7 +265,7 @@ is report-only.
 
 - [Knowledge Types](./docs/knowledge-types.md) — semantic definitions of the 5
   entry types, decision criteria, examples.
-- [Initialization](./docs/initialization.md) — what `fabric init` does, what
+- [Initialization](./docs/initialization.md) — what `fabric install` does, what
   it produces, how to re-run safely.
 - [Roadmap](./docs/roadmap.md) — v2.0 (current), v2.1 (team-knowledge.git +
   permissions), v2.x (semantic search, federated teams).

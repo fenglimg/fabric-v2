@@ -33,17 +33,17 @@ fab --help
 ```bash
 cd /path/to/project
 git status --short
-fabric init
+fabric install
 ```
 
 常用模式：
 
 | 命令 | 作用 |
 | --- | --- |
-| `fabric init` | TTY 下进入 wizard，确认计划后写入。 |
-| `fabric init --yes` | 非交互执行当前计划。 |
-| `fabric init --plan` | 只打印计划，不写文件。 |
-| `fabric init --reapply --yes` | 对已初始化仓库重应用 Fabric 管理文件。 |
+| `fabric install` | TTY 下进入 wizard，确认计划后写入。 |
+| `fabric install --yes` | 非交互执行当前计划。 |
+| `fabric install --plan` | 只打印计划，不写文件。 |
+| `fabric install --reapply --yes` | 对已初始化仓库重应用 Fabric 管理文件。 |
 
 初始化会写入或刷新：
 
@@ -58,14 +58,14 @@ fabric init
 - 已检测 AI client 的 MCP 配置
 - Git hook 模板
 
-`fabric init` 默认非破坏性。已有 Fabric 产物时，除非显式使用 `--reapply` 或相关 force 行为，否则应中止或跳过冲突写入。
+`fabric install` 默认非破坏性。已有 Fabric 产物时，除非显式使用 `--reapply` 或相关 force 行为，否则应中止或跳过冲突写入。
 
 ## 3. 完成客户端接力
 
 在 Claude Code、Codex 或其他 MCP-capable client 中打开同一仓库，继续初始化：
 
 ```text
-我刚运行了 fabric init，请继续完成这个仓库的 Fabric 初始化。
+我刚运行了 fabric install，请继续完成这个仓库的 Fabric 初始化。
 ```
 
 预期动作：

@@ -5,7 +5,7 @@
 ## 当前闭环
 
 ```text
-fabric init
+fabric install
   -> 写入 .fabric/bootstrap/README.md、.fabric/INITIAL_TAXONOMY.md、.fabric/forensic.json、.fabric/events.jsonl
   -> 规则正文进入 .fabric/rules/
 
@@ -232,7 +232,7 @@ Explicit V1 exclusions:
 Public CLI commands:
 
 ```text
-fabric init
+fabric install
 fabric scan
 fabric doctor
 fabric serve

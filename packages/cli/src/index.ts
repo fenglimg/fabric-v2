@@ -12,7 +12,7 @@ export const main = defineCommand({
   meta: {
     name: "fabric",
     version: __CLI_VERSION__,
-    description: 'Initialize and manage Fabric projects. Use "fabric init" for one-shot setup.',
+    description: 'Initialize and manage Fabric projects. Use "fabric install" for one-shot setup.',
   },
   subCommands: allCommands,
 });

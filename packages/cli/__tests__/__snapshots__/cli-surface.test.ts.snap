@@ -75,7 +75,7 @@ exports[`CLI surface drift gate (docs/test-seed/cli.md §1) > command 'doctor' s
 }
 `;
 
-exports[`CLI surface drift gate (docs/test-seed/cli.md §1) > command 'init' surface matches snapshot > fab init surface — CLI surface drift detected. Either:
+exports[`CLI surface drift gate (docs/test-seed/cli.md §1) > command 'install' surface matches snapshot > fab install surface — CLI surface drift detected. Either:
   - Update snapshot if intentional: pnpm --filter @fenglimg/fabric-cli test -u
   - Update docs/test-seed/cli.md §1 if seed is now outdated
   - Revert command change if unintentional 1`] = `
@@ -86,7 +86,7 @@ exports[`CLI surface drift gate (docs/test-seed/cli.md §1) > command 'init' sur
       "default": true,
       "description": undefined,
       "name": "bootstrap",
-      "negativeDescription": "Compatibility flag: remove bootstrap from the init plan",
+      "negativeDescription": "Compatibility flag: remove bootstrap from the install plan",
       "required": undefined,
       "type": "boolean",
     },
@@ -113,7 +113,7 @@ exports[`CLI surface drift gate (docs/test-seed/cli.md §1) > command 'init' sur
       "default": true,
       "description": undefined,
       "name": "hooks",
-      "negativeDescription": "Compatibility flag: remove git hooks from the init plan",
+      "negativeDescription": "Compatibility flag: remove git hooks from the install plan",
       "required": undefined,
       "type": "boolean",
     },
@@ -131,7 +131,7 @@ exports[`CLI surface drift gate (docs/test-seed/cli.md §1) > command 'init' sur
       "default": true,
       "description": undefined,
       "name": "mcp",
-      "negativeDescription": "Compatibility flag: remove MCP configuration from the init plan",
+      "negativeDescription": "Compatibility flag: remove MCP configuration from the install plan",
       "required": undefined,
       "type": "boolean",
     },
@@ -147,7 +147,7 @@ exports[`CLI surface drift gate (docs/test-seed/cli.md §1) > command 'init' sur
     {
       "alias": undefined,
       "default": false,
-      "description": "Print the init plan without writing files or running follow-up stages",
+      "description": "Print the install plan without writing files or running follow-up stages",
       "name": "plan",
       "negativeDescription": undefined,
       "required": undefined,
@@ -183,15 +183,15 @@ exports[`CLI surface drift gate (docs/test-seed/cli.md §1) > command 'init' sur
     {
       "alias": undefined,
       "default": false,
-      "description": "Accept the current init plan and run without the TTY wizard",
+      "description": "Accept the current install plan and run without the TTY wizard",
       "name": "yes",
       "negativeDescription": undefined,
       "required": undefined,
       "type": "boolean",
     },
   ],
-  "description": "Initialize Fabric in the target project.",
-  "name": "init",
+  "description": "Install Fabric in the target project.",
+  "name": "install",
 }
 `;
 

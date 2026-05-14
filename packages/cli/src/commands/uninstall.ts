@@ -19,7 +19,7 @@ import {
 } from "../install/uninstall-skills-and-hooks.js";
 
 /**
- * `fab uninstall` — symmetric inverse of `fab init`.
+ * `fab uninstall` — symmetric inverse of `fab install`.
  *
  * Three-stage pipeline mirroring init (reverse order is enforced by the
  * stage helpers themselves; this orchestrator dispatches them):
@@ -172,7 +172,7 @@ const KNOWLEDGE_SUBDIRS = [
   "pending",
 ] as const;
 
-// Top-level `.fabric/` state files written by `fab init`. The default scaffold
+// Top-level `.fabric/` state files written by `fab install`. The default scaffold
 // stage prunes these — knowledge subdir contents are preserved unless --purge
 // is passed.
 const FABRIC_STATE_FILES = ["agents.meta.json", "events.jsonl", "forensic.json"] as const;

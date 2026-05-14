@@ -98,7 +98,9 @@ describe("runDoctorReport", () => {
     // lint #27 added) → 27 rc.6 TASK-023 (knowledge_narrow_too_few lint
     // #26 added — structural + telemetry two-arm check) → 28 rc.9 TASK-003
     // (knowledge_relevance_fields_missing lint #28 added — pending
-    // entries back-fill for relevance_scope / relevance_paths).
+    // entries back-fill for relevance_scope / relevance_paths) → 29 rc.12
+    // (skill_md_yaml_invalid lint #29 added — warns on SKILL.md frontmatter
+    // values that strict YAML parsers reject).
     expect(report.checks.map((check) => check.name)).toEqual([
       "Bootstrap anchor",
       "Knowledge layout",
@@ -127,9 +129,10 @@ describe("runDoctorReport", () => {
       "Knowledge narrow too few",
       "Knowledge session-hints stale",
       "Knowledge relevance fields missing",
+      "Skill markdown YAML",
       "Preexisting root markdown",
     ]);
-    expect(report.checks).toHaveLength(28);
+    expect(report.checks).toHaveLength(29);
   });
 
   it("v2.0: clean post-init repo (mocked layout) reports zero errors AND zero warnings", async () => {
@@ -3317,6 +3320,111 @@ describe("runDoctorReport", () => {
       }
       expect(evt.scanned_count).toBe(0);
       expect(evt.touched_count).toBe(0);
+    });
+  });
+
+  // rc.12 lint #29: skill_md_yaml_invalid. Warning-kind finding that scans
+  // .claude/skills/*/SKILL.md and .codex/skills/*/SKILL.md frontmatter for
+  // unquoted `: ` tokens that Codex CLI's strict YAML parser rejects.
+  describe("rc.12 lint #29: skill_md_yaml_invalid", () => {
+    function seedSkill(target: string, relDir: string, frontmatter: string): void {
+      // Test fixture: only the SKILL.md needs to exist; the lint walks the
+      // skill directory and reads each SKILL.md file.
+      writeFile(`${relDir}/SKILL.md`, frontmatter, target);
+    }
+
+    it("flags a SKILL.md whose description has an unquoted ': '", async () => {
+      const target = createInitializedProject("doctor-rc12-skill-yaml-invalid");
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+      seedSkill(
+        target,
+        ".claude/skills/example-skill",
+        "---\nname: example-skill\ndescription: Use this skill via `tool action: search` to find things.\n---\n# Example\nBody.\n",
+      );
+
+      const report = await runDoctorReport(target);
+      const check = report.checks.find((c) => c.name === "Skill markdown YAML");
+      expect(check?.code).toBe("skill_md_yaml_invalid");
+      expect(check?.kind).toBe("warning");
+      expect(check?.status).toBe("warn");
+      expect(check?.message).toContain(".claude/skills/example-skill/SKILL.md");
+      expect(check?.message).toContain("description");
+      expect(report.warnings.map((w) => w.code)).toContain("skill_md_yaml_invalid");
+    });
+
+    it("flags a Codex SKILL.md alongside Claude ones (both roots scanned)", async () => {
+      const target = createInitializedProject("doctor-rc12-skill-yaml-codex");
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+      seedSkill(
+        target,
+        ".codex/skills/codex-only",
+        "---\nname: codex-only\ndescription: Default layer: team broad.\n---\n# Codex\nBody.\n",
+      );
+
+      const report = await runDoctorReport(target);
+      const check = report.checks.find((c) => c.name === "Skill markdown YAML");
+      expect(check?.code).toBe("skill_md_yaml_invalid");
+      expect(check?.message).toContain(".codex/skills/codex-only/SKILL.md");
+    });
+
+    it("does NOT flag a quoted value containing ': '", async () => {
+      const target = createInitializedProject("doctor-rc12-skill-yaml-quoted");
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+      seedSkill(
+        target,
+        ".claude/skills/quoted-ok",
+        '---\nname: quoted-ok\ndescription: "Use action: search via tool"\n---\n# Quoted\nBody.\n',
+      );
+
+      const report = await runDoctorReport(target);
+      const check = report.checks.find((c) => c.name === "Skill markdown YAML");
+      expect(check?.status).toBe("ok");
+      expect(report.warnings.map((w) => w.code)).not.toContain("skill_md_yaml_invalid");
+    });
+
+    it("does NOT flag a description with no inner ': '", async () => {
+      const target = createInitializedProject("doctor-rc12-skill-yaml-clean");
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+      seedSkill(
+        target,
+        ".claude/skills/clean",
+        "---\nname: clean\ndescription: A perfectly fine description without any inner colons at all.\n---\n# Clean\nBody.\n",
+      );
+
+      const report = await runDoctorReport(target);
+      const check = report.checks.find((c) => c.name === "Skill markdown YAML");
+      expect(check?.status).toBe("ok");
+      expect(report.warnings.map((w) => w.code)).not.toContain("skill_md_yaml_invalid");
+    });
+
+    it("is ok when neither .claude/skills nor .codex/skills exists", async () => {
+      const target = createInitializedProject("doctor-rc12-skill-yaml-absent");
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+
+      const report = await runDoctorReport(target);
+      const check = report.checks.find((c) => c.name === "Skill markdown YAML");
+      expect(check?.status).toBe("ok");
+      expect(report.warnings.map((w) => w.code)).not.toContain("skill_md_yaml_invalid");
+    });
+
+    it("ignores a SKILL.md missing the opening frontmatter `---` line", async () => {
+      const target = createInitializedProject("doctor-rc12-skill-yaml-no-fm");
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+      seedSkill(
+        target,
+        ".claude/skills/no-frontmatter",
+        "# Just a heading\nNot really a skill — has no frontmatter at all even with a: colon.\n",
+      );
+
+      const report = await runDoctorReport(target);
+      const check = report.checks.find((c) => c.name === "Skill markdown YAML");
+      expect(check?.status).toBe("ok");
     });
   });
 });

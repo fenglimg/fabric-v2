@@ -3,6 +3,20 @@
     "Stop": [
       {
         "command": ".codex/hooks/archive-hint.cjs"
+      },
+      {
+        "command": ".codex/hooks/fabric-hint.cjs"
+      }
+    ],
+    "SessionStart": [
+      {
+        "command": ".codex/hooks/knowledge-hint-broad.cjs"
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "command": ".codex/hooks/knowledge-hint-narrow.cjs"
       }
     ]
   }

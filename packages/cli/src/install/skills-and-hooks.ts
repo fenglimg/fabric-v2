@@ -10,11 +10,11 @@ import { deepMerge } from "../config/json.js";
 /**
  * Install helpers for the v2 fabric-archive / fabric-review / fabric-import
  * Skills + the cross-client fabric-hint Stop hook (renamed from archive-hint
- * in rc.5 TASK-010). Each helper is idempotent — re-running `fabric init` (or
+ * in rc.5 TASK-010). Each helper is idempotent — re-running `fabric install` (or
  * `fabric hooks install`) after the first successful run produces no diff.
  *
  * Wiring sites:
- *   - packages/cli/src/commands/init.ts  bootstrap stage (skill + hook + pointer)
+ *   - packages/cli/src/commands/install.ts  bootstrap stage (skill + hook + pointer)
  *   - packages/cli/src/commands/hooks.ts hooks command (re-install only)
  *
  * Templates resolved:
@@ -64,7 +64,7 @@ const CURSOR_HOOK_CONFIG_TEMPLATE_REL = "hooks/configs/cursor-hooks.json";
 
 /**
  * Project-root-relative destination paths for the three v2 Skill markdown
- * files, one entry per supported client. Source of truth shared by `fab init`
+ * files, one entry per supported client. Source of truth shared by `fab install`
  * (install) and `fab uninstall` (removal). Paths are stored with forward
  * slashes; callers must run them through `join(projectRoot, ...)` to obtain
  * absolute, OS-normalized targets.
@@ -91,7 +91,7 @@ export const SKILL_DESTINATIONS = {
 /**
  * Project-root-relative destination paths for the three cross-client hook
  * scripts (Stop / SessionStart / PreToolUse). Source of truth shared by
- * `fab init` (install) and `fab uninstall` (removal). All three clients —
+ * `fab install` (install) and `fab uninstall` (removal). All three clients —
  * Claude Code, Codex CLI, and Cursor — receive every script.
  */
 export const HOOK_SCRIPT_DESTINATIONS = {
@@ -114,7 +114,7 @@ export const HOOK_SCRIPT_DESTINATIONS = {
 
 /**
  * Project-root-relative paths of each client's hook-config JSON file that
- * `fab init` merges fabric entries into. Source of truth shared with
+ * `fab install` merges fabric entries into. Source of truth shared with
  * `fab uninstall` (which must locate and prune those entries).
  */
 export const HOOK_CONFIG_TARGETS = {
@@ -163,31 +163,96 @@ export const FABRIC_HOOK_COMMAND_PATHS = {
 } as const;
 
 /**
- * Literal markdown pointer line referencing the fabric-archive Skill. Source
- * of truth shared with `fab uninstall` (which removes this exact line from
- * each {@link POINTER_TARGETS} file).
+ * Project-root-relative paths of files that receive the managed Fabric
+ * Knowledge Base section written by {@link addFabricKnowledgeBaseSection}.
+ * Source of truth shared with `fab uninstall` (which strips the marker-
+ * delimited region from each present file).
+ *
+ * rc.12 broad-gate-fabric-lang TASK-006: renamed from `POINTER_TARGETS` when
+ * the three POINTER_LINE constants were collapsed into a single HTML-comment-
+ * wrapped managed section.
  */
-export const POINTER_LINE =
-  "> Use the fabric-archive Skill when archiving knowledge entries (see .claude/skills/fabric-archive/SKILL.md).";
-/**
- * Literal markdown pointer line referencing the fabric-review Skill. Source
- * of truth shared with `fab uninstall`.
- */
-export const REVIEW_POINTER_LINE =
-  "> Use the fabric-review Skill to review pending knowledge entries (see .claude/skills/fabric-review/SKILL.md).";
-/**
- * Literal markdown pointer line referencing the fabric-import Skill. Source
- * of truth shared with `fab uninstall`.
- */
-export const IMPORT_POINTER_LINE =
-  "> Use the fabric-import Skill for cold-start enrichment from git history and docs (see .claude/skills/fabric-import/SKILL.md).";
+export const SECTION_TARGETS = ["CLAUDE.md", "AGENTS.md", join(".cursor", "rules")];
 
 /**
- * Project-root-relative paths of files that receive Skill pointer appends in
- * {@link addArchiveSkillPointer}. Source of truth shared with `fab uninstall`
- * (which strips the pointer lines from each present file).
+ * HTML-comment marker pair that delimits the managed "Fabric Knowledge Base"
+ * section. Re-exported for the uninstall helper (which strips the region in
+ * the inverse direction) and for tests asserting marker presence. The literal
+ * strings here MUST stay byte-identical to the markers embedded in
+ * {@link buildFabricKnowledgeBaseSection}'s output — they are matched as plain
+ * substrings by both install (idempotent in-place replace) and uninstall
+ * (clean removal).
  */
-export const POINTER_TARGETS = ["CLAUDE.md", "AGENTS.md", join(".cursor", "rules")];
+export const FABRIC_SECTION_BEGIN_MARKER = "<!-- fabric:knowledge-base:begin -->";
+export const FABRIC_SECTION_END_MARKER = "<!-- fabric:knowledge-base:end -->";
+
+/**
+ * Regex that matches the entire managed section, markers inclusive, with an
+ * optional preceding blank-line separator (so re-install / uninstall don't
+ * leave orphan blank lines). Non-greedy body matches any content between the
+ * begin/end markers, including newlines. Source of truth shared with the
+ * uninstall helper.
+ */
+export const FABRIC_SECTION_REGEX =
+  /(?:\r?\n){0,2}<!-- fabric:knowledge-base:begin -->[\s\S]*?<!-- fabric:knowledge-base:end -->/;
+
+/**
+ * Read the `fabric_language` value from `.fabric/fabric-config.json` at
+ * `projectRoot`. Returns the raw string value (one of `"match-existing" |
+ * "zh-CN" | "en" | "zh-CN-hybrid"`) when present, else `"match-existing"` as
+ * the documented default. Tolerant of missing files and malformed JSON: the
+ * fallback keeps the install path robust even when called before the
+ * fabric-config has been scaffolded (e.g. an isolated `fab hooks install` on
+ * a half-initialized workspace).
+ *
+ * rc.12 broad-gate-fabric-lang TASK-006: extracted from install.ts so the
+ * section writer can resolve the value without coupling to scan.ts's
+ * heavier `resolveFabricLanguage` / `detectExistingLanguage` machinery.
+ */
+export function readFabricLanguagePreference(projectRoot: string): string {
+  const configPath = join(projectRoot, ".fabric", "fabric-config.json");
+  if (!existsSync(configPath)) {
+    return "match-existing";
+  }
+  try {
+    const raw = readFileSync(configPath, "utf8");
+    const parsed = JSON.parse(raw) as unknown;
+    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return "match-existing";
+    }
+    const value = (parsed as Record<string, unknown>)["fabric_language"];
+    return typeof value === "string" && value.length > 0 ? value : "match-existing";
+  } catch {
+    return "match-existing";
+  }
+}
+
+/**
+ * Build the managed "Fabric Knowledge Base" section text wrapped in HTML
+ * comment markers. The section is owned by `fab install` — user edits between
+ * the markers are intentionally NOT preserved on re-run (managed-section
+ * convention, mirrors all-contributors-cli's `<!-- ALL-CONTRIBUTORS-LIST -->`
+ * idiom).
+ *
+ * The `fabricLanguage` argument is interpolated into the "Language" bullet so
+ * users discover the field they need to flip in `.fabric/fabric-config.json`
+ * to change the language preference. Re-running install with a different
+ * value updates this line in place (no duplication, no orphan section).
+ */
+export function buildFabricKnowledgeBaseSection(fabricLanguage: string): string {
+  return `${FABRIC_SECTION_BEGIN_MARKER}
+
+## Fabric Knowledge Base
+
+This project uses Fabric for persistent project knowledge under \`.fabric/knowledge/\`.
+
+- **Discovery**: SessionStart lists available entries (broad menu); editing files may surface narrow hints
+- **Usage**: call \`fab_get_knowledge_sections\` to fetch full content of any entry by id
+- **Write flows**: see fabric-archive (record), fabric-review (validate), fabric-import (backfill) Skills
+- **Language**: rendered per \`fabric_language\` in \`.fabric/fabric-config.json\` (current: \`${fabricLanguage}\`)
+
+${FABRIC_SECTION_END_MARKER}`;
+}
 
 /**
  * Copy templates/skills/fabric-archive/SKILL.md into both .claude/skills/
@@ -423,29 +488,39 @@ export async function mergeCursorHookConfig(
 }
 
 /**
- * Append one-line pointers to CLAUDE.md / AGENTS.md / .cursor/rules
- * referencing the fabric-archive, fabric-review AND fabric-import Skills.
- * Idempotent: skips files that are absent (does not create) and skips
- * appending a given pointer when its exact literal is already present
- * (substring match). Each pointer is dedup-checked independently so a
- * user who deletes one manually still gets the other re-added on
- * `fab init`.
+ * Write the managed "Fabric Knowledge Base" section into CLAUDE.md /
+ * AGENTS.md / .cursor/rules. The section is wrapped in HTML-comment markers
+ * (`<!-- fabric:knowledge-base:begin -->` … `<!-- fabric:knowledge-base:end
+ * -->`) so it is invisible in rendered Markdown but discoverable via plain-
+ * text search.
  *
- * v2/rc.3 (TASK-006): extended from rc.2's archive-only pointer to cover
- * both fabric-archive and fabric-review.
- * v2/rc.4 (TASK-005): further extended to include fabric-import. The
- * function name is preserved for call-site compatibility; callers do not
- * need to invoke separate review/import-pointer helpers.
+ * Idempotent + in-place replace:
+ *   - When markers are absent: append the section to the file (preceded by a
+ *     blank-line separator).
+ *   - When markers are present: replace the entire begin→end region in place
+ *     (so changing `fabric_language` updates the language line without
+ *     duplicating the section, and user edits between markers are
+ *     intentionally overwritten — managed-section convention).
+ *   - Files that don't already exist are skipped (install never creates the
+ *     anchor files; that's executeInitFabricPlan's job for AGENTS.md).
+ *
+ * rc.12 broad-gate-fabric-lang TASK-006: replaces the rc.4-era
+ * `addArchiveSkillPointer` substring-append helper. The three POINTER_LINE
+ * constants and their per-line dedupe logic are gone; the section is now the
+ * single managed surface that pointers to all three v2 Skills (archive /
+ * review / import) plus the `fabric_language` config knob.
  */
-export async function addArchiveSkillPointer(
+export async function addFabricKnowledgeBaseSection(
   projectRoot: string,
+  fabricLanguage: string,
   _options: InstallOptions = {},
 ): Promise<InstallStepResult[]> {
+  const sectionBody = buildFabricKnowledgeBaseSection(fabricLanguage);
   const results: InstallStepResult[] = [];
-  for (const rel of POINTER_TARGETS) {
+  for (const rel of SECTION_TARGETS) {
     const target = join(projectRoot, rel);
     if (!existsSync(target)) {
-      results.push({ step: "pointer", path: target, status: "skipped", message: "absent" });
+      results.push({ step: "section", path: target, status: "skipped", message: "absent" });
       continue;
     }
     let existing: string;
@@ -453,7 +528,7 @@ export async function addArchiveSkillPointer(
       existing = await readFile(target, "utf8");
     } catch (error: unknown) {
       results.push({
-        step: "pointer",
+        step: "section",
         path: target,
         status: "error",
         message: error instanceof Error ? error.message : String(error),
@@ -461,41 +536,44 @@ export async function addArchiveSkillPointer(
       continue;
     }
 
-    let next = existing;
-    let wrote = false;
-
-    // Append fabric-archive pointer if not present
-    if (next.includes(POINTER_LINE)) {
-      results.push({ step: "pointer", path: target, status: "skipped", message: "already-present" });
+    let next: string;
+    const match = existing.match(FABRIC_SECTION_REGEX);
+    if (match !== null) {
+      // Section already present — replace in place. We strip the matched
+      // region (markers + optional preceding blank line) entirely, then re-
+      // append via the same code path as the absent branch so the leading-
+      // separator + trailing-newline shape is byte-identical regardless of
+      // which branch fired. This guarantees idempotency across re-runs and
+      // language-change re-runs.
+      const before = existing.slice(0, match.index ?? 0);
+      const after = existing.slice((match.index ?? 0) + match[0].length);
+      // Strip a leading newline carry-over from `after` so we don't end up
+      // with an orphan blank line where the section used to sit.
+      const stripped = `${before}${after.replace(/^\r?\n/, "")}`;
+      const trailingNewline = stripped.length === 0 || stripped.endsWith("\n") ? "" : "\n";
+      next = `${stripped}${trailingNewline}\n${sectionBody}\n`;
     } else {
-      const trailingNewline = next.length === 0 || next.endsWith("\n") ? "" : "\n";
-      next = `${next}${trailingNewline}\n${POINTER_LINE}\n`;
-      wrote = true;
-      results.push({ step: "pointer", path: target, status: "written" });
+      // Section absent — append with a blank-line separator. Normalize the
+      // trailing newline so the separator is always exactly one blank line.
+      const trailingNewline = existing.length === 0 || existing.endsWith("\n") ? "" : "\n";
+      next = `${existing}${trailingNewline}\n${sectionBody}\n`;
     }
 
-    // Append fabric-review pointer if not present (independent dedup)
-    if (next.includes(REVIEW_POINTER_LINE)) {
-      results.push({ step: "pointer-review", path: target, status: "skipped", message: "already-present" });
-    } else {
-      const trailingNewline = next.length === 0 || next.endsWith("\n") ? "" : "\n";
-      next = `${next}${trailingNewline}\n${REVIEW_POINTER_LINE}\n`;
-      wrote = true;
-      results.push({ step: "pointer-review", path: target, status: "written" });
+    if (next === existing) {
+      results.push({ step: "section", path: target, status: "skipped", message: "up-to-date" });
+      continue;
     }
 
-    // Append fabric-import pointer if not present (independent dedup)
-    if (next.includes(IMPORT_POINTER_LINE)) {
-      results.push({ step: "pointer-import", path: target, status: "skipped", message: "already-present" });
-    } else {
-      const trailingNewline = next.length === 0 || next.endsWith("\n") ? "" : "\n";
-      next = `${next}${trailingNewline}\n${IMPORT_POINTER_LINE}\n`;
-      wrote = true;
-      results.push({ step: "pointer-import", path: target, status: "written" });
-    }
-
-    if (wrote) {
+    try {
       await atomicWriteText(target, next);
+      results.push({ step: "section", path: target, status: "written" });
+    } catch (error: unknown) {
+      results.push({
+        step: "section",
+        path: target,
+        status: "error",
+        message: error instanceof Error ? error.message : String(error),
+      });
     }
   }
   return results;

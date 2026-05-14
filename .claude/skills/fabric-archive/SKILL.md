@@ -19,7 +19,7 @@ If none of the above hold, stop the skill immediately and tell the user (UX i18n
 - zh-CN: `没有触发归档信号；如需手动归档请显式调用 fabric-archive`
 - en: `No archive signal detected; to manually archive, explicitly invoke fabric-archive`
 
-(Render per `knowledge_language` resolved in Phase 0.6 Config Load below.)
+(Render per `fabric_language` resolved in Phase 0.6 Config Load below.)
 
 This skill is `Check-not-Ask`, not a preference interview:
 
@@ -47,9 +47,10 @@ If `.fabric/fabric-config.json` is missing or unreadable, use defaults silently.
 
 ### UX i18n Policy (5-class bilingualization)
 
-The skill consults `knowledge_language` from `.fabric/fabric-config.json`
+The skill consults `fabric_language` from `.fabric/fabric-config.json`
 (固化于 init 时，via `scan.ts:detectExistingLanguage`; default `"en"` when no
-CJK signal is detected in README + docs/). All user-facing text in the
+CJK signal is detected in README + docs/; may resolve to `"match-existing"`,
+`"zh-CN"`, `"en"`, or `"zh-CN-hybrid"`). All user-facing text in the
 following 5 categories MUST be rendered in the resolved language:
 
 1. **Roll-up templates** — the `# Archive Review — N candidates` batch
@@ -73,11 +74,10 @@ following 5 categories MUST be rendered in the resolved language:
 
 Rendering rule:
 
-- `knowledge_language === "zh-CN"` → emit the zh-CN variant.
-- `knowledge_language === "en"` (or any other value) → emit the en variant.
-- The Skill MUST NOT mix languages inside a single user-facing block
-  (no "Chinglish" partial translation); each block is either fully zh-CN
-  or fully en.
+- `fabric_language === "zh-CN"` → emit the zh-CN variant; pure monolingual, no language mixing inside a single user-facing block.
+- `fabric_language === "en"` → emit the en variant; pure monolingual, no language mixing inside a single user-facing block.
+- `fabric_language === "zh-CN-hybrid"` → emit Chinese narrative prose with English technical terms preserved. Protected tokens (always EN): MCP tool names (e.g. `fab_get_knowledge_sections`), CLI command names (e.g. `fab install`), file paths, technical concepts (`Skill`, `SessionStart`, `hook`, `MCP`, `revision_hash`, `pending`, `proven`, `verified`, `draft`).
+- `fabric_language === "match-existing"` or any other value → emit the en variant; pure monolingual.
 
 Protected tokens (`fab_extract_knowledge`, `relevance_scope`,
 `relevance_paths`, `narrow`, `broad`, `source_sessions`, `proposed_reason`,
@@ -91,21 +91,21 @@ bilingualization scope is prose ONLY.
 
 When a skill (this one or any sibling skill the user is composing with)
 issues an `AskUserQuestion`, the `header` and `question` strings are
-user-facing prose → translated per `knowledge_language`. The `options[]`
+user-facing prose → translated per `fabric_language`. The `options[]`
 array entries (e.g. `["approve", "reject", "modify", "defer", "skip"]` in
 fabric-review, or `["team", "personal"]` for a layer-flip target) are
 **routing keys** consumed by the skill state machine — they MUST remain
-English regardless of `knowledge_language`.
+English regardless of `fabric_language`.
 
 ```ts
-// EN (knowledge_language === "en")
+// EN (fabric_language === "en")
 AskUserQuestion({
   header: "Layer-flip target",
   question: "Move '{title}' to which layer? (current: {current_layer})",
   options: ["team", "personal"]
 })
 
-// zh-CN (knowledge_language === "zh-CN")
+// zh-CN (fabric_language === "zh-CN")
 AskUserQuestion({
   header: "Layer 切换目标",
   question: "将 '{title}' 切换到哪一层？(当前: {current_layer})",
@@ -214,7 +214,7 @@ ELSE:
 
 #### On gate FAIL
 
-Stop the skill with the gate-FAIL message (UX i18n Policy class 2 — errors/preconditions; render per `knowledge_language`):
+Stop the skill with the gate-FAIL message (UX i18n Policy class 2 — errors/preconditions; render per `fabric_language`):
 
 zh-CN variant:
 
@@ -317,7 +317,7 @@ Recent session contains an observation worth keeping?
 
 Present all candidates in a single screen. UX i18n Policy classes 1 + 3 — the roll-up structure AND the per-candidate `Confirm?` prompt are bilingualized; protected tokens (`relevance_scope`, `relevance_paths`, `narrow`, `broad`, `layer`, `team`, `personal`, `pending_path`, etc.) appear verbatim in BOTH variants. Field VALUES (slugs, file paths, type/layer enum strings like `decision` / `team`) are data and are NOT translated.
 
-en variant (`knowledge_language === "en"`):
+en variant (`fabric_language === "en"`):
 
 ```md
 # Archive Review — N candidates
@@ -337,7 +337,7 @@ relevance_paths: []
 Confirm? ...
 ```
 
-zh-CN variant (`knowledge_language === "zh-CN"`):
+zh-CN variant (`fabric_language === "zh-CN"`):
 
 ```md
 # 归档 Review — N 条候选

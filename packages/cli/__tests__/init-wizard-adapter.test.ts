@@ -34,7 +34,7 @@ describe("init wizard adapter clack flow", () => {
       isCancel: vi.fn().mockReturnValue(false),
     }));
 
-    const { createDefaultInitWizardAdapter } = await import("../src/commands/init.ts");
+    const { createDefaultInitWizardAdapter } = await import("../src/commands/install.ts");
     const adapter = createDefaultInitWizardAdapter();
 
     const result = await adapter.run({
@@ -51,13 +51,13 @@ describe("init wizard adapter clack flow", () => {
       hooks: false,
       mcpInstallMode: "local",
     });
-    expect(introMock).toHaveBeenCalledWith("Fabric init");
+    expect(introMock).toHaveBeenCalledWith("Fabric install");
     expect(noteMock).toHaveBeenCalledWith(expect.stringContaining("Mode: REAPPLY"), "Install overview");
     expect(logStepMock).toHaveBeenNthCalledWith(1, "Confirm target");
-    expect(logStepMock).toHaveBeenNthCalledWith(2, "Shape init plan");
+    expect(logStepMock).toHaveBeenNthCalledWith(2, "Shape install plan");
     expect(logStepMock).toHaveBeenNthCalledWith(3, "Review final plan");
     expect(groupMock).toHaveBeenCalledTimes(1);
-    expect(outroMock).toHaveBeenCalledWith("Init plan accepted. Running Fabric init...");
+    expect(outroMock).toHaveBeenCalledWith("Install plan accepted. Running Fabric install...");
     expect(cancelMock).not.toHaveBeenCalled();
   });
 
@@ -86,7 +86,7 @@ describe("init wizard adapter clack flow", () => {
       isCancel: vi.fn().mockReturnValue(false),
     }));
 
-    const { createDefaultInitWizardAdapter } = await import("../src/commands/init.ts");
+    const { createDefaultInitWizardAdapter } = await import("../src/commands/install.ts");
     const adapter = createDefaultInitWizardAdapter();
 
     const result = await adapter.run({
@@ -98,10 +98,10 @@ describe("init wizard adapter clack flow", () => {
     });
 
     expect(result).toBeNull();
-    expect(introMock).toHaveBeenCalledWith("Fabric init");
+    expect(introMock).toHaveBeenCalledWith("Fabric install");
     expect(logStepMock).toHaveBeenNthCalledWith(1, "Confirm target");
-    expect(logStepMock).toHaveBeenNthCalledWith(2, "Shape init plan");
-    expect(cancelMock).toHaveBeenCalledWith("Fabric init cancelled before execution.");
+    expect(logStepMock).toHaveBeenNthCalledWith(2, "Shape install plan");
+    expect(cancelMock).toHaveBeenCalledWith("Fabric install cancelled before execution.");
     expect(outroMock).not.toHaveBeenCalled();
   });
 });

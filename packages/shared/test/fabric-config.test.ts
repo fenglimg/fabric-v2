@@ -3,39 +3,53 @@ import { describe, expect, it } from "vitest";
 import {
   defaultLayerFilterSchema,
   fabricConfigSchema,
-  knowledgeLanguageSchema,
+  fabricLanguageSchema,
 } from "../src/schemas/fabric-config";
 
 // ---------------------------------------------------------------------------
-// fabric-config schema — knowledge_language + default_layer_filter
+// fabric-config schema — fabric_language + default_layer_filter
 //
-// v2.0 grill-followup TASK-002: two new optional fields drive Q3 (language
-// policy) and Q6 (layer-filter default). Both are `.optional().default(...)`
-// so existing fabric-config.json files parse unchanged (backward-compat).
+// v2.0 grill-followup TASK-002 introduced two optional fields driving Q3
+// (language policy) and Q6 (layer-filter default). rc.12 broad-gate-fabric-lang
+// hard-renamed the language field from `knowledge_language` →
+// `fabric_language` and added the `zh-CN-hybrid` enum value. Both fields stay
+// `.optional().default(...)` so the new defaults still apply to minimal
+// configs.
 // ---------------------------------------------------------------------------
 
-describe("fabricConfigSchema — knowledge_language", () => {
-  it("accepts all three knowledge_language enum values", () => {
-    for (const value of ["match-existing", "zh-CN", "en"] as const) {
-      const parsed = fabricConfigSchema.parse({ knowledge_language: value });
-      expect(parsed.knowledge_language).toBe(value);
+describe("fabricConfigSchema — fabric_language", () => {
+  it("accepts all four fabric_language enum values", () => {
+    for (const value of [
+      "match-existing",
+      "zh-CN",
+      "en",
+      "zh-CN-hybrid",
+    ] as const) {
+      const parsed = fabricConfigSchema.parse({ fabric_language: value });
+      expect(parsed.fabric_language).toBe(value);
     }
   });
 
-  it("rejects an invalid knowledge_language enum value", () => {
+  it("accepts the rc.12 zh-CN-hybrid value end-to-end", () => {
+    const parsed = fabricConfigSchema.parse({ fabric_language: "zh-CN-hybrid" });
+    expect(parsed.fabric_language).toBe("zh-CN-hybrid");
+  });
+
+  it("rejects an invalid fabric_language enum value", () => {
     expect(() =>
-      fabricConfigSchema.parse({ knowledge_language: "japanese" }),
+      fabricConfigSchema.parse({ fabric_language: "japanese" }),
     ).toThrow();
     expect(() =>
-      fabricConfigSchema.parse({ knowledge_language: "" }),
+      fabricConfigSchema.parse({ fabric_language: "" }),
     ).toThrow();
   });
 
-  it("standalone knowledgeLanguageSchema mirrors the enum domain", () => {
-    expect(knowledgeLanguageSchema.parse("match-existing")).toBe(
+  it("standalone fabricLanguageSchema mirrors the enum domain", () => {
+    expect(fabricLanguageSchema.parse("match-existing")).toBe(
       "match-existing",
     );
-    expect(() => knowledgeLanguageSchema.parse("ja-JP")).toThrow();
+    expect(fabricLanguageSchema.parse("zh-CN-hybrid")).toBe("zh-CN-hybrid");
+    expect(() => fabricLanguageSchema.parse("ja-JP")).toThrow();
   });
 });
 
@@ -65,19 +79,19 @@ describe("fabricConfigSchema — default_layer_filter", () => {
 describe("fabricConfigSchema — defaults and backward compatibility", () => {
   it("missing fields apply defaults: match-existing / both", () => {
     const parsed = fabricConfigSchema.parse({});
-    expect(parsed.knowledge_language).toBe("match-existing");
+    expect(parsed.fabric_language).toBe("match-existing");
     expect(parsed.default_layer_filter).toBe("both");
   });
 
-  it("partial config (only knowledge_language) defaults default_layer_filter", () => {
-    const parsed = fabricConfigSchema.parse({ knowledge_language: "zh-CN" });
-    expect(parsed.knowledge_language).toBe("zh-CN");
+  it("partial config (only fabric_language) defaults default_layer_filter", () => {
+    const parsed = fabricConfigSchema.parse({ fabric_language: "zh-CN" });
+    expect(parsed.fabric_language).toBe("zh-CN");
     expect(parsed.default_layer_filter).toBe("both");
   });
 
-  it("partial config (only default_layer_filter) defaults knowledge_language", () => {
+  it("partial config (only default_layer_filter) defaults fabric_language", () => {
     const parsed = fabricConfigSchema.parse({ default_layer_filter: "team" });
-    expect(parsed.knowledge_language).toBe("match-existing");
+    expect(parsed.fabric_language).toBe("match-existing");
     expect(parsed.default_layer_filter).toBe("team");
   });
 
@@ -107,17 +121,17 @@ describe("fabricConfigSchema — defaults and backward compatibility", () => {
     });
 
     // New fields filled by defaults.
-    expect(parsed.knowledge_language).toBe("match-existing");
+    expect(parsed.fabric_language).toBe("match-existing");
     expect(parsed.default_layer_filter).toBe("both");
   });
 
   it("explicit values override defaults across full config", () => {
     const parsed = fabricConfigSchema.parse({
       clientPaths: { claudeCodeCLI: "/usr/bin/claude" },
-      knowledge_language: "en",
+      fabric_language: "en",
       default_layer_filter: "personal",
     });
-    expect(parsed.knowledge_language).toBe("en");
+    expect(parsed.fabric_language).toBe("en");
     expect(parsed.default_layer_filter).toBe("personal");
     expect(parsed.clientPaths).toEqual({ claudeCodeCLI: "/usr/bin/claude" });
   });
@@ -209,13 +223,13 @@ describe("fabricConfigSchema — rc.9+ skill tunables defaults", () => {
     expect(parsed.review_stale_pending_days).toBe(30);
   });
 
-  it("user's 7-key minimal fabric-config.json still parses (back-compat regression)", () => {
+  it("user's 6-key minimal fabric-config.json still parses (back-compat regression)", () => {
     // Snapshot of the actual user config at .fabric/fabric-config.json as of
-    // rc.9 — six keys (knowledge_language + five rc.7-era hint knobs). None
+    // rc.12 — six keys (fabric_language + five rc.7-era hint knobs). None
     // of the rc.9+ skill tunables are present and the schema must resolve
     // every one to its default.
     const minimalUserConfig = {
-      knowledge_language: "zh-CN" as const,
+      fabric_language: "zh-CN-hybrid" as const,
       archive_hint_hours: 24,
       review_hint_pending_count: 10,
       review_hint_pending_age_days: 7,
@@ -223,7 +237,7 @@ describe("fabricConfigSchema — rc.9+ skill tunables defaults", () => {
       maintenance_hint_cooldown_days: 7,
     };
     const parsed = fabricConfigSchema.parse(minimalUserConfig);
-    expect(parsed.knowledge_language).toBe("zh-CN");
+    expect(parsed.fabric_language).toBe("zh-CN-hybrid");
     expect(parsed.import_window_first_run_months).toBe(60);
     expect(parsed.import_window_rerun_months).toBe(2);
     expect(parsed.import_max_pending_per_run).toBe(10);
@@ -238,14 +252,14 @@ describe("fabricConfigSchema — rc.9+ skill tunables defaults", () => {
 
   it("root schema remains lenient — unknown keys are silently dropped (no .strict())", () => {
     const parsed = fabricConfigSchema.parse({
-      knowledge_language: "en" as const,
+      fabric_language: "en" as const,
       // A bogus key from a future rc that this schema does not know about.
       // Lenient parse means it is silently dropped, not rejected. This is
-      // load-bearing: forward-compat for rc.10+ tunables that have not yet
+      // load-bearing: forward-compat for rc.13+ tunables that have not yet
       // landed in shared/src/schemas/fabric-config.ts.
       some_future_rc_knob: 42,
     });
-    expect(parsed.knowledge_language).toBe("en");
+    expect(parsed.fabric_language).toBe("en");
     expect((parsed as Record<string, unknown>).some_future_rc_knob).toBeUndefined();
   });
 });

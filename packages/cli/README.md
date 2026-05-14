@@ -6,14 +6,14 @@
 
 1. 在 monorepo 根目录运行 `pnpm install`。
 2. 用 `pnpm --filter @fenglimg/fabric-cli build` 构建 CLI。
-3. 在目标项目运行 `fabric init`，完成一站式初始化。
+3. 在目标项目运行 `fabric install`，完成一站式安装。
 4. 启动 `fabric serve`，再去客户端里验证 `fab_plan_context` 和 `fab_get_knowledge_sections`。
 
-`fabric init` 会自动准备 bootstrap、MCP 配置和 git hooks。公共命令面只保留 `init`、`scan`、`doctor`、`serve`。
+`fabric install` 会自动准备 bootstrap、MCP 配置和 git hooks。公共命令面只保留 `install`、`scan`、`doctor`、`serve`。
 
 ## 常用命令
 
-- `fabric init`
+- `fabric install`
 - `fabric scan`
 - `fabric doctor`
 - `fabric doctor --json`

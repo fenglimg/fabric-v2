@@ -20,7 +20,7 @@ import { detectExistingLanguage, runInitScan, type ResolvedLanguage } from "./sc
 import { buildForensicReport } from "../scanner/forensic.js";
 import { detectClientSupports, type DetectedClientSupport } from "../config/resolver.js";
 import {
-  addArchiveSkillPointer,
+  addFabricKnowledgeBaseSection,
   installArchiveHintHook,
   installFabricArchiveSkill,
   installFabricImportSkill,
@@ -30,6 +30,7 @@ import {
   mergeClaudeCodeHookConfig,
   mergeCodexHookConfig,
   mergeCursorHookConfig,
+  readFabricLanguagePreference,
   type InstallStepResult,
 } from "../install/skills-and-hooks.js";
 
@@ -225,75 +226,75 @@ See \`.fabric/knowledge/\` for project decisions, pitfalls, guidelines, models, 
 // v2/rc.2: The v1 client-side init skill (and its reminder hooks for Claude
 // / Codex) was removed. rc.2/3/4 will introduce v2 skills (fabric-archive,
 // fabric-review, fabric-import) with their own templates and wiring; until
-// then `fab init` only emits MCP-agnostic state (knowledge dirs, AGENTS.md,
+// then `fab install` only emits MCP-agnostic state (knowledge dirs, AGENTS.md,
 // forensic.json, events.jsonl).
 const LOCAL_FABRIC_SERVER_PATH = join("node_modules", "@fenglimg", "fabric-server", "dist", "index.js");
 const FABRIC_SERVER_PACKAGE = "@fenglimg/fabric-server";
 const INIT_WIZARD_GROUP_CANCELLED = Symbol("init-wizard-group-cancelled");
 
-export const initCommand = defineCommand({
+export const installCommand = defineCommand({
   meta: {
-    name: "init",
-    description: t("cli.init.description"),
+    name: "install",
+    description: t("cli.install.description"),
   },
   args: {
     target: {
       type: "string",
-      description: t("cli.init.args.target.description"),
+      description: t("cli.install.args.target.description"),
     },
     debug: {
       type: "boolean",
-      description: t("cli.init.args.debug.description"),
+      description: t("cli.install.args.debug.description"),
       default: false,
     },
     force: {
       type: "boolean",
-      description: t("cli.init.args.force.description"),
+      description: t("cli.install.args.force.description"),
       default: false,
     },
     yes: {
       type: "boolean",
-      description: t("cli.init.args.yes.description"),
+      description: t("cli.install.args.yes.description"),
       default: false,
     },
     plan: {
       type: "boolean",
-      description: t("cli.init.args.plan.description"),
+      description: t("cli.install.args.plan.description"),
       default: false,
     },
     reapply: {
       type: "boolean",
-      description: t("cli.init.args.reapply.description"),
+      description: t("cli.install.args.reapply.description"),
       default: false,
     },
     bootstrap: {
       type: "boolean",
       default: true,
-      negativeDescription: t("cli.init.args.no-bootstrap.description"),
+      negativeDescription: t("cli.install.args.no-bootstrap.description"),
     },
     mcp: {
       type: "boolean",
       default: true,
-      negativeDescription: t("cli.init.args.no-mcp.description"),
+      negativeDescription: t("cli.install.args.no-mcp.description"),
     },
     hooks: {
       type: "boolean",
       default: true,
-      negativeDescription: t("cli.init.args.no-hooks.description"),
+      negativeDescription: t("cli.install.args.no-hooks.description"),
     },
     interactive: {
       type: "boolean",
-      description: t("cli.init.args.interactive.description"),
+      description: t("cli.install.args.interactive.description"),
       default: true,
     },
     "mcp-install": {
       type: "string",
       default: "global",
-      description: t("cli.init.mcp.install.prompt"),
+      description: t("cli.install.mcp.install.prompt"),
     },
     scope: {
       type: "string",
-      description: t("cli.init.mcp.scope.description"),
+      description: t("cli.install.mcp.scope.description"),
     },
   },
   async run({ args }: { args: InitArgs }) {
@@ -301,7 +302,7 @@ export const initCommand = defineCommand({
   },
 });
 
-export default initCommand;
+export default installCommand;
 
 export async function runInitCommand(args: InitArgs): Promise<InitExecutionResult | void> {
   const logger = createDebugLogger(args.debug);
@@ -320,15 +321,15 @@ export async function runInitCommand(args: InitArgs): Promise<InitExecutionResul
   }
 
   if (intent.options.planOnly) {
-    writeStderr(t("cli.init.compat.plan"));
+    writeStderr(t("cli.install.compat.plan"));
   }
 
   if (args.interactive === false) {
-    writeStderr(t("cli.init.compat.interactive"));
+    writeStderr(t("cli.install.compat.interactive"));
   }
 
   if (args.bootstrap === false || args.mcp === false || args.hooks === false) {
-    writeStderr(t("cli.init.compat.legacy-stage-flags"));
+    writeStderr(t("cli.install.compat.legacy-stage-flags"));
   }
 
   const supports = detectClientSupports(intent.target);
@@ -377,7 +378,7 @@ export async function runInitCommand(args: InitArgs): Promise<InitExecutionResul
  * field, add the field to FABRIC_CONFIG_DEFAULTS below too — otherwise it
  * remains invisible to fresh-init users (silent default-on-missing).
  *
- * The `knowledge_language` field is fixated at init time (TASK-006 / C1):
+ * The `fabric_language` field is fixated at init time (TASK-006 / C1):
  * we invoke scan.ts's `detectExistingLanguage(targetRoot)` once on a fresh
  * init, which scans `README.md` + `docs/*.md` for the CJK ratio and resolves
  * to `"zh-CN"` (ratio > 0.3) or `"en"` (default). The literal
@@ -395,7 +396,7 @@ function writeDefaultFabricConfig(fabricDir: string, targetRoot: string): void {
   const target = join(fabricDir, "fabric-config.json");
   if (existsSync(target)) return;
 
-  // TASK-006 (C1): probe README + docs to fixate knowledge_language on a
+  // TASK-006 (C1): probe README + docs to fixate fabric_language on a
   // fresh init. The detector accepts the project-root path and returns
   // "zh-CN" or "en" — never "match-existing". Idempotency is preserved by
   // the early return above: existing user configs are never overwritten.
@@ -406,7 +407,7 @@ function writeDefaultFabricConfig(fabricDir: string, targetRoot: string): void {
     // README.md + docs/*.md (CJK ratio > 0.3 → "zh-CN", else "en"). Users
     // can edit `.fabric/fabric-config.json` to override. See
     // packages/shared/src/schemas/fabric-config.ts for the enum.
-    knowledge_language: detectedLanguage,
+    fabric_language: detectedLanguage,
     // fabric-hint Stop hook Signal A (archive): time-branch threshold, hours
     // since last knowledge_proposed event.
     archive_hint_hours: 24,
@@ -469,7 +470,7 @@ function writeDefaultFabricConfig(fabricDir: string, targetRoot: string): void {
   // `intro()` block — it prints a single labeled line and does not
   // interfere with the scaffold path summary below.
   log.info(
-    `Detected and fixated knowledge_language = ${detectedLanguage}; edit ${target} to override.`,
+    `Detected and fixated fabric_language = ${detectedLanguage}; edit ${target} to override.`,
   );
 }
 
@@ -506,7 +507,7 @@ function resolveClaudeMcpScope(raw: string | undefined): ClaudeMcpScope {
   if (raw === "user") {
     return "user";
   }
-  writeStderr(t("cli.init.mcp.scope.invalid", { value: raw }));
+  writeStderr(t("cli.install.mcp.scope.invalid", { value: raw }));
   return "project";
 }
 
@@ -556,7 +557,7 @@ export async function buildInitExecutionPlan(input: {
 
 export async function executeInitExecutionPlan(plan: InitExecutionPlan): Promise<InitExecutionResult> {
   if (plan.options.force) {
-    writeStderr(t("cli.init.force.warning", { path: plan.target }));
+    writeStderr(t("cli.install.force.warning", { path: plan.target }));
   }
 
   if (plan.options.reapply && !plan.options.planOnly && !plan.interactive) {
@@ -679,14 +680,14 @@ export async function executeInitFabricPlan(plan: InitScaffoldPlan): Promise<Ini
   // overwrites pre-existing user edits, even on --reapply. See the
   // helper's JSDoc for the source-of-truth field list. TASK-006 (C1):
   // the helper now also probes plan.target's README/docs to fixate
-  // knowledge_language on fresh init.
+  // fabric_language on fresh init.
   writeDefaultFabricConfig(plan.fabricDir, plan.target);
 
   // v2.0 follow-up (rc.1 fix #1): write the repo-root AGENTS.md anchor when
   // it does not already exist. This satisfies doctor's bootstrap_anchor_missing
   // check on a fresh init while remaining strictly idempotent — pre-existing
-  // content is never overwritten, so user customizations survive `fab init
-  // --reapply` and re-runs of `fab init`. Writing via atomicWriteText keeps
+  // content is never overwritten, so user customizations survive `fab install
+  // --reapply` and re-runs of `fab install`. Writing via atomicWriteText keeps
   // the half-written-file failure mode out of scope.
   if (plan.agentsMdAction === "created" && !existsSync(plan.agentsMdPath)) {
     await atomicWriteText(plan.agentsMdPath, AGENTS_MD_DEFAULT_CONTENT);
@@ -843,29 +844,38 @@ function printInitPostSetup(
 ): void {
   if (shouldPrintHooksNextStep(plan.options, stageResults)) {
     console.log(
-      t("cli.init.next-step", {
+      t("cli.install.next-step", {
         label: nextLabel(),
-        message: paint.muted(t("cli.init.next-step.message")),
+        message: paint.muted(t("cli.install.next-step.message")),
       }),
     );
   }
 
   console.log(
-    t("cli.init.reason-message", {
+    t("cli.install.reason-message", {
       label: reasonLabel(),
       message: paint.muted(formatInitReasonMessage(finalSupports)),
     }),
   );
   printInitStageSummary(stageResults);
   printInitCapabilitySummary(finalSupports, stageResults, plan.options);
+
+  // rc.12 broad-gate-fabric-lang TASK-006: one-line install-end UX hint that
+  // surfaces the resolved fabric_language and tells the user where to change
+  // it. Reads from .fabric/fabric-config.json after the bootstrap stage so
+  // the value reflects what was written (or detected) during this run.
+  const fabricLanguage = readFabricLanguagePreference(plan.target);
+  console.log(
+    paint.muted(t("cli.install.language_preference_hint", { value: fabricLanguage })),
+  );
 }
 
 function printInitPlanPreview(plan: InitExecutionPlan): void {
-  console.log(t("cli.init.plan.preview-title"));
+  console.log(t("cli.install.plan.preview-title"));
   printInitPlanSummary(plan.target, plan.options, plan.mcpInstallMode, plan.supports);
   console.log(
-    t("cli.init.plan.preview-result", {
-      mode: plan.options.reapply ? t("cli.init.mode.reapply") : t("cli.init.mode.default"),
+    t("cli.install.plan.preview-result", {
+      mode: plan.options.reapply ? t("cli.install.mode.reapply") : t("cli.install.mode.default"),
       bootstrap: yesNoLabel(!plan.options.skipBootstrap),
       mcp: yesNoLabel(!plan.options.skipMcp),
       hooks: yesNoLabel(!plan.options.skipHooks),
@@ -902,7 +912,7 @@ async function executeInitStagePlan(
     return { name: stageName, disposition: "skipped" };
   }
 
-  console.log(formatInitStageHeader(t(`cli.init.stages.${stageName}`)));
+  console.log(formatInitStageHeader(t(`cli.install.stages.${stageName}`)));
 
   try {
     switch (stage.name) {
@@ -933,7 +943,14 @@ async function executeInitStagePlan(
         // covered it, but bootstrap-only invocations (e.g. partial-resilience
         // tests) need it inlined here too.
         installResults.push(await runBestEffortSingle("cursor-hook-config", () => mergeCursorHookConfig(plan.target)));
-        installResults.push(...await runBestEffort("pointer", () => addArchiveSkillPointer(plan.target)));
+        // rc.12 broad-gate-fabric-lang TASK-006: managed-section writer
+        // replaces the rc.4-era POINTER_LINE substring appender. The
+        // fabric_language value is read from the .fabric/fabric-config.json
+        // that writeDefaultFabricConfig() wrote earlier in this same plan
+        // execution — by this point in the bootstrap stage the file is
+        // guaranteed to exist (created in executeInitFabricPlan).
+        const fabricLanguage = readFabricLanguagePreference(plan.target);
+        installResults.push(...await runBestEffort("section", () => addFabricKnowledgeBaseSection(plan.target, fabricLanguage)));
         const installedCount = installResults.filter((r) => r.status === "written").length;
         const skippedCount = installResults.filter((r) => r.status === "skipped").length;
         const errorCount = installResults.filter((r) => r.status === "error").length;
@@ -949,12 +966,12 @@ async function executeInitStagePlan(
       case "mcp": {
         if (stage.installMode === "local") {
           const manager = stage.packageManager ?? detectPackageManager(plan.target);
-          writeStderr(t("cli.init.mcp.install.local"));
-          writeStderr(t("cli.init.mcp.local.installing", { manager }));
+          writeStderr(t("cli.install.mcp.install.local"));
+          writeStderr(t("cli.install.mcp.local.installing", { manager }));
           installLocalFabricServer(plan.target, manager);
-          writeStderr(t("cli.init.mcp.local.installed"));
+          writeStderr(t("cli.install.mcp.local.installed"));
         } else {
-          writeStderr(t("cli.init.mcp.install.global"));
+          writeStderr(t("cli.install.mcp.install.global"));
         }
 
         const result = await configCommand.installMcpClients(plan.target, {
@@ -994,7 +1011,7 @@ function shouldReplaceWritableDirectory(path: string, options?: InitOptions): bo
   }
 
   if (!options?.force) {
-    throw new Error(t("cli.init.errors.abort-existing", { path }));
+    throw new Error(t("cli.install.errors.abort-existing", { path }));
   }
 
   return true;
@@ -1006,7 +1023,7 @@ function planFreshPath(path: string, options?: InitOptions): InitWriteAction {
   }
 
   if (!options?.force) {
-    throw new Error(t("cli.init.errors.abort-existing", { path }));
+    throw new Error(t("cli.install.errors.abort-existing", { path }));
   }
 
   return "overwritten";
@@ -1022,19 +1039,19 @@ function preparePlannedPath(path: string, action: InitWriteAction): void {
 export function createDefaultInitWizardAdapter(): InitWizardAdapter {
   return {
     async run(context) {
-      intro(t("cli.init.wizard.intro"));
+      intro(t("cli.install.wizard.intro"));
       note(
-        t("cli.init.wizard.overview.body", {
+        t("cli.install.wizard.overview.body", {
           target: context.target,
           mode: formatInitModeBadge(context.options),
         }),
-        t("cli.init.wizard.overview.title"),
+        t("cli.install.wizard.overview.title"),
       );
       printInitPlanSummary(context.target, context.options, context.mcpInstallMode, context.supports);
 
-      log.step(t("cli.init.wizard.step.target"));
+      log.step(t("cli.install.wizard.step.target"));
       const continueWithTarget = await confirm({
-        message: t("cli.init.wizard.target.confirm", { target: context.target }),
+        message: t("cli.install.wizard.target.confirm", { target: context.target }),
         initialValue: true,
       });
       if (isCancel(continueWithTarget) || !continueWithTarget) {
@@ -1042,7 +1059,7 @@ export function createDefaultInitWizardAdapter(): InitWizardAdapter {
         return null;
       }
 
-      log.step(t("cli.init.wizard.step.plan"));
+      log.step(t("cli.install.wizard.step.plan"));
       let groupedSelection: InitWizardSelection;
       try {
         groupedSelection = await group<InitWizardSelection>(
@@ -1051,7 +1068,7 @@ export function createDefaultInitWizardAdapter(): InitWizardAdapter {
               context.lockedStages.includes("bootstrap")
                 ? false
                 : confirmInGroup({
-                  message: t("cli.init.wizard.stage.bootstrap", {
+                  message: t("cli.install.wizard.stage.bootstrap", {
                     defaultValue: formatPromptDefault(!context.options.skipBootstrap),
                   }),
                   initialValue: !context.options.skipBootstrap,
@@ -1060,7 +1077,7 @@ export function createDefaultInitWizardAdapter(): InitWizardAdapter {
               context.lockedStages.includes("mcp")
                 ? false
                 : confirmInGroup({
-                  message: t("cli.init.wizard.stage.mcp", {
+                  message: t("cli.install.wizard.stage.mcp", {
                     defaultValue: formatPromptDefault(!context.options.skipMcp),
                   }),
                   initialValue: !context.options.skipMcp,
@@ -1068,22 +1085,22 @@ export function createDefaultInitWizardAdapter(): InitWizardAdapter {
             mcpInstallMode: async ({ results }) =>
               results.mcp
                 ? selectMcpInstallModeInGroup({
-                  message: t("cli.init.wizard.mcp-install", { defaultValue: context.mcpInstallMode }),
+                  message: t("cli.install.wizard.mcp-install", { defaultValue: context.mcpInstallMode }),
                   initialValue: context.mcpInstallMode,
                   options: [
-                    { value: "global", label: "global", hint: t("cli.init.mcp.install.global") },
-                    { value: "local", label: "local", hint: t("cli.init.mcp.install.local") },
+                    { value: "global", label: "global", hint: t("cli.install.mcp.install.global") },
+                    { value: "local", label: "local", hint: t("cli.install.mcp.install.local") },
                   ],
                 })
                 : context.mcpInstallMode,
             claudeMcpScope: async ({ results }) =>
               results.mcp
                 ? selectClaudeMcpScopeInGroup({
-                  message: t("cli.init.wizard.mcp-scope", { defaultValue: context.claudeMcpScope }),
+                  message: t("cli.install.wizard.mcp-scope", { defaultValue: context.claudeMcpScope }),
                   initialValue: context.claudeMcpScope,
                   options: [
-                    { value: "project" as ClaudeMcpScope, label: "project", hint: t("cli.init.mcp.scope.project") },
-                    { value: "user" as ClaudeMcpScope, label: "user", hint: t("cli.init.mcp.scope.user") },
+                    { value: "project" as ClaudeMcpScope, label: "project", hint: t("cli.install.mcp.scope.project") },
+                    { value: "user" as ClaudeMcpScope, label: "user", hint: t("cli.install.mcp.scope.user") },
                   ],
                 })
                 : context.claudeMcpScope,
@@ -1091,7 +1108,7 @@ export function createDefaultInitWizardAdapter(): InitWizardAdapter {
               context.lockedStages.includes("hooks")
                 ? false
                 : confirmInGroup({
-                  message: t("cli.init.wizard.stage.hooks", {
+                  message: t("cli.install.wizard.stage.hooks", {
                     defaultValue: formatPromptDefault(!context.options.skipHooks),
                   }),
                   initialValue: !context.options.skipHooks,
@@ -1123,11 +1140,11 @@ export function createDefaultInitWizardAdapter(): InitWizardAdapter {
         skipMcp: !groupedSelection.mcp,
         skipHooks: !groupedSelection.hooks,
       };
-      log.step(t("cli.init.wizard.step.review"));
+      log.step(t("cli.install.wizard.step.review"));
       printInitPlanSummary(context.target, previewOptions, groupedSelection.mcpInstallMode, context.supports);
 
       const confirmed = await confirm({
-        message: t("cli.init.wizard.execute.confirm"),
+        message: t("cli.install.wizard.execute.confirm"),
         initialValue: true,
       });
       if (isCancel(confirmed) || !confirmed) {
@@ -1135,7 +1152,7 @@ export function createDefaultInitWizardAdapter(): InitWizardAdapter {
         return null;
       }
 
-      outro(t("cli.init.wizard.outro"));
+      outro(t("cli.install.wizard.outro"));
 
       return groupedSelection;
     },
@@ -1143,7 +1160,7 @@ export function createDefaultInitWizardAdapter(): InitWizardAdapter {
 }
 
 function emitInitWizardCancellation(): void {
-  cancel(t("cli.init.wizard.cancelled"));
+  cancel(t("cli.install.wizard.cancelled"));
 }
 
 async function confirmInGroup(options: { message: string; initialValue: boolean }): Promise<boolean> {
@@ -1215,34 +1232,34 @@ function formatPromptDefault(value: boolean): string {
 
 function formatInitModeBanner(options: InitOptions): string {
   if (options.planOnly && options.reapply) {
-    return t("cli.init.plan.mode-banner.plan-reapply");
+    return t("cli.install.plan.mode-banner.plan-reapply");
   }
 
   if (options.planOnly) {
-    return t("cli.init.plan.mode-banner.plan");
+    return t("cli.install.plan.mode-banner.plan");
   }
 
   if (options.reapply) {
-    return t("cli.init.plan.mode-banner.reapply");
+    return t("cli.install.plan.mode-banner.reapply");
   }
 
-  return t("cli.init.plan.mode-banner.default");
+  return t("cli.install.plan.mode-banner.default");
 }
 
 function formatInitModeBadge(options: InitOptions): string {
   if (options.planOnly && options.reapply) {
-    return t("cli.init.mode.badge.plan-reapply");
+    return t("cli.install.mode.badge.plan-reapply");
   }
 
   if (options.planOnly) {
-    return t("cli.init.mode.badge.plan");
+    return t("cli.install.mode.badge.plan");
   }
 
   if (options.reapply) {
-    return t("cli.init.mode.badge.reapply");
+    return t("cli.install.mode.badge.reapply");
   }
 
-  return t("cli.init.mode.badge.default");
+  return t("cli.install.mode.badge.default");
 }
 
 function normalizeTarget(targetInput: string): string {
@@ -1278,7 +1295,7 @@ function resolveMcpInstallMode(rawMode: string | undefined): McpInstallMode {
     return rawMode ?? "global";
   }
 
-  writeStderr(t("cli.init.mcp.install.invalid", { value: rawMode }));
+  writeStderr(t("cli.install.mcp.install.invalid", { value: rawMode }));
   return "global";
 }
 
@@ -1389,10 +1406,10 @@ function formatInitStageSummaryLine(
   stages: string[],
 ): string {
   const label = disposition === "ran"
-    ? paint.success(t("cli.init.stages.summary.ran"))
+    ? paint.success(t("cli.install.stages.summary.ran"))
     : disposition === "skipped"
-      ? paint.muted(t("cli.init.stages.summary.skipped"))
-      : paint.error(t("cli.init.stages.summary.failed"));
+      ? paint.muted(t("cli.install.stages.summary.skipped"))
+      : paint.error(t("cli.install.stages.summary.failed"));
   return `${label}: ${stages.length > 0 ? stages.join(", ") : t("cli.shared.none")}`;
 }
 
@@ -1416,11 +1433,11 @@ function printInitPlanSummary(
   mcpInstallMode: McpInstallMode,
   supports: DetectedClientSupport[],
 ): void {
-  console.log(t("cli.init.plan.title"));
+  console.log(t("cli.install.plan.title"));
   console.log(formatInitModeBanner(options));
-  console.log(t("cli.init.plan.target", { target }));
+  console.log(t("cli.install.plan.target", { target }));
   console.log(
-    t("cli.init.plan.actions", {
+    t("cli.install.plan.actions", {
       bootstrap: yesNoLabel(!options.skipBootstrap),
       mcp: yesNoLabel(!options.skipMcp),
       hooks: yesNoLabel(!options.skipHooks),
@@ -1430,11 +1447,11 @@ function printInitPlanSummary(
 
   const detected = supports.filter((support) => support.detected);
   console.log(
-    t("cli.init.plan.detected", {
+    t("cli.install.plan.detected", {
       clients: detected.length > 0 ? detected.map((support) => support.label).join(", ") : t("cli.shared.none"),
     }),
   );
-  console.log(t("cli.init.plan.writes"));
+  console.log(t("cli.install.plan.writes"));
   console.log(`  - ${target}/.fabric/knowledge/{decisions,pitfalls,guidelines,models,processes,pending}/`);
   console.log(`  - ${target}/.fabric/agents.meta.json`);
   console.log(`  - ${target}/.fabric/events.jsonl`);
@@ -1449,19 +1466,19 @@ function printInitCapabilitySummary(
 ): void {
   const detected = supports.filter((support) => support.detected);
   if (detected.length === 0) {
-    console.log(t("cli.init.capabilities.none"));
+    console.log(t("cli.install.capabilities.none"));
     return;
   }
 
-  console.log(t("cli.init.capabilities.title"));
+  console.log(t("cli.install.capabilities.title"));
   const rows = detected.map((support) => toCapabilityRow(support, stageResults, options));
   const headers: InitCapabilityRow = {
-    client: t("cli.init.capabilities.header.client"),
-    bootstrap: t("cli.init.capabilities.header.bootstrap"),
-    mcp: t("cli.init.capabilities.header.mcp"),
-    hook: t("cli.init.capabilities.header.hook"),
-    skill: t("cli.init.capabilities.header.skill"),
-    followUp: t("cli.init.capabilities.header.follow-up"),
+    client: t("cli.install.capabilities.header.client"),
+    bootstrap: t("cli.install.capabilities.header.bootstrap"),
+    mcp: t("cli.install.capabilities.header.mcp"),
+    hook: t("cli.install.capabilities.header.hook"),
+    skill: t("cli.install.capabilities.header.skill"),
+    followUp: t("cli.install.capabilities.header.follow-up"),
   };
 
   const widths = {
@@ -1489,10 +1506,10 @@ function toCapabilityRow(
     stageResults.find((entry) => entry.name === name)?.disposition ?? null;
   const bootstrap = support.capabilities.bootstrap
     ? capabilityStatus(options.skipBootstrap ? "skipped" : stage("bootstrap"))
-    : t("cli.init.capabilities.status.na");
+    : t("cli.install.capabilities.status.na");
   const mcp = support.capabilities.mcp
     ? capabilityStatus(options.skipMcp ? "skipped" : stage("mcp"))
-    : t("cli.init.capabilities.status.na");
+    : t("cli.install.capabilities.status.na");
   const hook = capabilityInstallStatus(support, "hook");
   const skill = capabilityInstallStatus(support, "skill");
 
@@ -1503,10 +1520,10 @@ function toCapabilityRow(
     hook,
     skill,
     followUp: hasInstalledCapability(support, "skill")
-      ? t("cli.init.capabilities.follow-up.ready")
+      ? t("cli.install.capabilities.follow-up.ready")
       : support.capabilities.skill
-        ? t("cli.init.capabilities.follow-up.install")
-        : t("cli.init.capabilities.follow-up.manual"),
+        ? t("cli.install.capabilities.follow-up.install")
+        : t("cli.install.capabilities.follow-up.manual"),
   };
 }
 
@@ -1515,12 +1532,12 @@ function capabilityInstallStatus(
   capability: "hook" | "skill",
 ): string {
   if (!support.capabilities[capability]) {
-    return t("cli.init.capabilities.status.na");
+    return t("cli.install.capabilities.status.na");
   }
 
   return hasInstalledCapability(support, capability)
-    ? t("cli.init.capabilities.status.installed")
-    : t("cli.init.capabilities.status.supported");
+    ? t("cli.install.capabilities.status.installed")
+    : t("cli.install.capabilities.status.supported");
 }
 
 function hasInstalledCapability(
@@ -1533,15 +1550,15 @@ function hasInstalledCapability(
 function capabilityStatus(disposition: InitStageDisposition | "ran" | "skipped" | null): string {
   switch (disposition) {
     case "ran":
-      return t("cli.init.capabilities.status.ready");
+      return t("cli.install.capabilities.status.ready");
     case "skipped":
-      return t("cli.init.capabilities.status.skipped");
+      return t("cli.install.capabilities.status.skipped");
     case "failed":
-      return t("cli.init.capabilities.status.failed");
+      return t("cli.install.capabilities.status.failed");
     case null:
-      return t("cli.init.capabilities.status.na");
+      return t("cli.install.capabilities.status.na");
     default:
-      return t("cli.init.capabilities.status.ready");
+      return t("cli.install.capabilities.status.ready");
   }
 }
 
@@ -1578,10 +1595,10 @@ function formatInitReasonMessage(supports: DetectedClientSupport[]): string {
   const detected = supports.filter((support) => support.detected);
 
   if (detected.some((support) => support.capabilities.skill)) {
-    return t("cli.init.reason-message.installable-body");
+    return t("cli.install.reason-message.installable-body");
   }
 
-  return t("cli.init.reason-message.manual-body");
+  return t("cli.install.reason-message.manual-body");
 }
 
 function yesNoLabel(value: boolean): string {
@@ -1589,7 +1606,7 @@ function yesNoLabel(value: boolean): string {
 }
 
 function formatInitPathAction(path: string, action: InitWriteAction): string {
-  return t("cli.init.created-path", { label: labelForInitWriteAction(action), path });
+  return t("cli.install.created-path", { label: labelForInitWriteAction(action), path });
 }
 
 // v2.0 follow-up (rc.1 fix #1): AGENTS.md uses a `preserved` action variant
@@ -1597,9 +1614,9 @@ function formatInitPathAction(path: string, action: InitWriteAction): string {
 // i18n shell with a localized "preserved" label so output stays uniform.
 function formatAgentsMdAction(path: string, action: AgentsMdAction): string {
   if (action === "preserved") {
-    return t("cli.init.skipped-existing-path", { label: skippedLabel(), path });
+    return t("cli.install.skipped-existing-path", { label: skippedLabel(), path });
   }
-  return t("cli.init.created-path", { label: createdLabel(), path });
+  return t("cli.install.created-path", { label: createdLabel(), path });
 }
 
 function labelForInitWriteAction(action: InitWriteAction): string {
@@ -1627,19 +1644,19 @@ function updatedLabel(): string {
 }
 
 function overwrittenLabel(): string {
-  return paint.warn(t("cli.init.force.overwritten"));
+  return paint.warn(t("cli.install.force.overwritten"));
 }
 
 function completedStageLabel(): string {
-  return paint.success(t("cli.init.stages.completed"));
+  return paint.success(t("cli.install.stages.completed"));
 }
 
 function skippedStageLabel(): string {
-  return paint.muted(t("cli.init.stages.skipped"));
+  return paint.muted(t("cli.install.stages.skipped"));
 }
 
 function failedStageLabel(): string {
-  return paint.error(t("cli.init.stages.failed"));
+  return paint.error(t("cli.install.stages.failed"));
 }
 
 function writeStderr(message: string): void {

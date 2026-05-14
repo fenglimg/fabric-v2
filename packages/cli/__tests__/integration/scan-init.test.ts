@@ -22,7 +22,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { ForensicReport } from "@fenglimg/fabric-shared";
 
 import { runInitScan } from "../../src/commands/scan.ts";
-import { initFabric } from "../../src/commands/init.ts";
+import { initFabric } from "../../src/commands/install.ts";
 
 const tempDirs: string[] = [];
 
@@ -276,7 +276,8 @@ describe("init-scan: end-to-end", () => {
   });
 
   // -------------------------------------------------------------------------
-  // TASK-008: bilingual init-scan templates dispatched on knowledge_language
+  // TASK-008: bilingual init-scan templates dispatched on fabric_language
+  // (rc.12 hard rename from knowledge_language → fabric_language)
   // -------------------------------------------------------------------------
 
   /**
@@ -299,11 +300,11 @@ describe("init-scan: end-to-end", () => {
     return collected.join("\n\n");
   }
 
-  it("knowledge_language_en_produces_english_baselines", async () => {
+  it("fabric_language_en_produces_english_baselines", async () => {
     const target = await setupFixture("lang-en");
     await writeFile(
       join(target, "fabric.config.json"),
-      JSON.stringify({ knowledge_language: "en" }, null, 2),
+      JSON.stringify({ fabric_language: "en" }, null, 2),
     );
 
     const result = await runInitScan(target);
@@ -324,11 +325,11 @@ describe("init-scan: end-to-end", () => {
     expect(/[\u4e00-\u9fff]/u.test(all)).toBe(false);
   });
 
-  it("knowledge_language_zh_cn_produces_chinese_baselines_with_en_headings", async () => {
+  it("fabric_language_zh_cn_produces_chinese_baselines_with_en_headings", async () => {
     const target = await setupFixture("lang-zh");
     await writeFile(
       join(target, "fabric.config.json"),
-      JSON.stringify({ knowledge_language: "zh-CN" }, null, 2),
+      JSON.stringify({ fabric_language: "zh-CN" }, null, 2),
     );
 
     const result = await runInitScan(target);
@@ -353,7 +354,7 @@ describe("init-scan: end-to-end", () => {
     expect(all).toContain("framework");
   });
 
-  it("knowledge_language_match_existing_defaults_to_en_on_empty_repo", async () => {
+  it("fabric_language_match_existing_defaults_to_en_on_empty_repo", async () => {
     const target = makeTempDir("lang-match-empty");
     // Forensic only — no README, no docs/. Empty-repo defaults to 'en'.
     await writeFile(join(target, ".fabric", "forensic.json"), JSON.stringify(makeForensic(target, {
@@ -361,7 +362,7 @@ describe("init-scan: end-to-end", () => {
     }), null, 2));
     await writeFile(
       join(target, "fabric.config.json"),
-      JSON.stringify({ knowledge_language: "match-existing" }, null, 2),
+      JSON.stringify({ fabric_language: "match-existing" }, null, 2),
     );
 
     const result = await runInitScan(target);
@@ -375,7 +376,8 @@ describe("init-scan: end-to-end", () => {
 });
 
 // ---------------------------------------------------------------------------
-// TASK-006 (C1): init-time knowledge_language fixation
+// TASK-006 (C1): init-time fabric_language fixation
+// (rc.12 hard rename: knowledge_language → fabric_language)
 //
 // `writeDefaultFabricConfig` in init.ts probes README.md + docs/*.md via
 // scan.ts's `detectExistingLanguage` on a fresh init, then fixates the
@@ -387,16 +389,16 @@ describe("init-scan: end-to-end", () => {
 // ---------------------------------------------------------------------------
 describe("init-time language fixation (TASK-006 C1)", () => {
   /**
-   * Read the `knowledge_language` field from the scaffolded fabric-config.
+   * Read the `fabric_language` field from the scaffolded fabric-config.
    * Throws if the file is missing or unparseable — both indicate a regression.
    */
   function readFixatedLanguage(target: string): string {
     const configPath = join(target, ".fabric", "fabric-config.json");
     expect(existsSync(configPath)).toBe(true);
     const raw = readFileSync(configPath, "utf8");
-    const parsed = JSON.parse(raw) as { knowledge_language?: unknown };
-    expect(typeof parsed.knowledge_language).toBe("string");
-    return parsed.knowledge_language as string;
+    const parsed = JSON.parse(raw) as { fabric_language?: unknown };
+    expect(typeof parsed.fabric_language).toBe("string");
+    return parsed.fabric_language as string;
   }
 
   it("test_init_writes_zh_cn_for_cjk_readme", async () => {
@@ -409,7 +411,11 @@ describe("init-time language fixation (TASK-006 C1)", () => {
 
     await initFabric(target);
 
-    expect(readFixatedLanguage(target)).toBe("zh-CN");
+    // rc.12 broad-gate-fabric-lang TASK-003: detectExistingLanguage now
+    // resolves CJK-heavy repos to "zh-CN-hybrid" (NOT pure "zh-CN") so
+    // English technical terms in the project's prose stay preserved. Pure
+    // "zh-CN" is reserved for explicit user opt-in via the config field.
+    expect(readFixatedLanguage(target)).toBe("zh-CN-hybrid");
   });
 
   it("test_init_writes_en_for_english_readme", async () => {
@@ -442,7 +448,7 @@ describe("init-time language fixation (TASK-006 C1)", () => {
       "# 项目\n\n大量中文内容确保 detector 会返回 zh-CN，从而验证幂等性。\n",
     );
     const configPath = join(target, ".fabric", "fabric-config.json");
-    const userSeed = { knowledge_language: "match-existing", custom_field: "user-was-here" };
+    const userSeed = { fabric_language: "match-existing", custom_field: "user-was-here" };
     await writeFile(configPath, JSON.stringify(userSeed, null, 2) + "\n");
     const beforeContent = readFileSync(configPath, "utf8");
 
@@ -452,7 +458,7 @@ describe("init-time language fixation (TASK-006 C1)", () => {
     // Byte-identical: no merge, no overwrite, no language fixation applied.
     expect(afterContent).toBe(beforeContent);
     const afterParsed = JSON.parse(afterContent) as Record<string, unknown>;
-    expect(afterParsed.knowledge_language).toBe("match-existing");
+    expect(afterParsed.fabric_language).toBe("match-existing");
     expect(afterParsed.custom_field).toBe("user-was-here");
   });
 });

@@ -11,7 +11,6 @@
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
-  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -56,9 +55,6 @@ type HookModule = {
     typeOrder: string[];
     byType: Map<string, Map<string, NarrowEntry[]>>;
   };
-  // rc.7 T8 helpers exported for unit testing.
-  readSessionStartLastHash: (projectRoot: string) => string | null;
-  writeSessionStartLastHash: (projectRoot: string, hash: string) => void;
   // rc.8 underseed self-check helpers exported for unit testing.
   countCanonicalNodes: (projectRoot: string) => number;
   readUnderseedThreshold: (projectRoot: string) => number;
@@ -69,7 +65,6 @@ type HookModule = {
   CONSTANTS: {
     TRUNCATION_THRESHOLD: number;
     SUMMARY_MAX_LEN: number;
-    SESSIONSTART_HASH_CACHE_FILE: string;
     DEFAULT_UNDERSEED_NODE_THRESHOLD: number;
     KNOWLEDGE_CANONICAL_TYPES: string[];
     IMPORT_RECOMMENDATION_BANNER: string;
@@ -375,175 +370,6 @@ describe("knowledge-hint-broad.cjs — main", () => {
 });
 
 // ---------------------------------------------------------------------------
-// rc.7 T8 — SessionStart revision_hash gating (banner-blindness mitigation).
-// ---------------------------------------------------------------------------
-
-describe("knowledge-hint-broad.cjs — readSessionStartLastHash (rc.7 T8)", () => {
-  let tempRoot: string;
-
-  beforeEach(() => {
-    tempRoot = mkdtempSync(join(tmpdir(), "broad-hash-cache-read-"));
-  });
-
-  afterEach(() => {
-    try {
-      rmSync(tempRoot, { recursive: true, force: true });
-    } catch {
-      // best-effort
-    }
-  });
-
-  it("returns null when sidecar is absent", () => {
-    expect(hook.readSessionStartLastHash(tempRoot)).toBeNull();
-  });
-
-  it("returns null when sidecar is empty", () => {
-    mkdirSync(join(tempRoot, ".fabric", ".cache"), { recursive: true });
-    writeFileSync(join(tempRoot, ".fabric", ".cache", "sessionstart-last-hash"), "", "utf8");
-    expect(hook.readSessionStartLastHash(tempRoot)).toBeNull();
-  });
-
-  it("returns trimmed hash string when sidecar present", () => {
-    mkdirSync(join(tempRoot, ".fabric", ".cache"), { recursive: true });
-    writeFileSync(
-      join(tempRoot, ".fabric", ".cache", "sessionstart-last-hash"),
-      "  rev-abc123\n  ",
-      "utf8",
-    );
-    expect(hook.readSessionStartLastHash(tempRoot)).toBe("rev-abc123");
-  });
-});
-
-describe("knowledge-hint-broad.cjs — writeSessionStartLastHash (rc.7 T8)", () => {
-  let tempRoot: string;
-
-  beforeEach(() => {
-    tempRoot = mkdtempSync(join(tmpdir(), "broad-hash-cache-write-"));
-  });
-
-  afterEach(() => {
-    try {
-      rmSync(tempRoot, { recursive: true, force: true });
-    } catch {
-      // best-effort
-    }
-  });
-
-  it("creates .fabric/.cache/ if missing and writes the hash atomically", () => {
-    hook.writeSessionStartLastHash(tempRoot, "rev-new-99");
-    const p = join(tempRoot, ".fabric", ".cache", "sessionstart-last-hash");
-    expect(existsSync(p)).toBe(true);
-    expect(readFileSync(p, "utf8")).toBe("rev-new-99");
-  });
-
-  it("overwrites prior sidecar contents on second write", () => {
-    hook.writeSessionStartLastHash(tempRoot, "rev-a");
-    hook.writeSessionStartLastHash(tempRoot, "rev-b");
-    const p = join(tempRoot, ".fabric", ".cache", "sessionstart-last-hash");
-    expect(readFileSync(p, "utf8")).toBe("rev-b");
-  });
-
-  it("swallows errors on invalid input (empty/non-string hash) without throw", () => {
-    expect(() => hook.writeSessionStartLastHash(tempRoot, "")).not.toThrow();
-    // @ts-expect-error — defensive type-check path
-    expect(() => hook.writeSessionStartLastHash(tempRoot, null)).not.toThrow();
-    const p = join(tempRoot, ".fabric", ".cache", "sessionstart-last-hash");
-    expect(existsSync(p)).toBe(false);
-  });
-});
-
-describe("knowledge-hint-broad.cjs — main revision_hash gating (rc.7 T8)", () => {
-  let tempRoot: string;
-
-  beforeEach(() => {
-    tempRoot = mkdtempSync(join(tmpdir(), "broad-gate-"));
-  });
-
-  afterEach(() => {
-    try {
-      rmSync(tempRoot, { recursive: true, force: true });
-    } catch {
-      // best-effort
-    }
-  });
-
-  function captureStderr(env: { payload?: Payload | null; cwd?: string }): string[] {
-    const writes: string[] = [];
-    const stderr = { write: (chunk: string) => writes.push(chunk) };
-    hook.main({ cwd: tempRoot, ...env }, { stderr });
-    return writes;
-  }
-
-  it("first run: no cache → emits banner AND writes sidecar with current hash", () => {
-    const narrow = [makeEntry("KT-DEC-0001", "decision", "proven", "x")];
-    const writes = captureStderr({
-      payload: makePayload(narrow, { revision_hash: "rev-aaa111" }),
-    });
-    expect(writes.length).toBeGreaterThan(0);
-    const sidecar = join(tempRoot, ".fabric", ".cache", "sessionstart-last-hash");
-    expect(existsSync(sidecar)).toBe(true);
-    expect(readFileSync(sidecar, "utf8")).toBe("rev-aaa111");
-  });
-
-  it("second run with unchanged hash: silent exit AND sidecar unchanged", () => {
-    const narrow = [makeEntry("KT-DEC-0001", "decision", "proven", "x")];
-    const payload = makePayload(narrow, { revision_hash: "rev-aaa111" });
-
-    // Prime: first run emits + writes.
-    captureStderr({ payload });
-    const sidecar = join(tempRoot, ".fabric", ".cache", "sessionstart-last-hash");
-    const firstWrite = readFileSync(sidecar, "utf8");
-
-    // Second run with the SAME hash → silent exit.
-    const writes2 = captureStderr({ payload });
-    expect(writes2).toEqual([]);
-    expect(readFileSync(sidecar, "utf8")).toBe(firstWrite);
-  });
-
-  it("third run with changed hash: emits banner AND updates sidecar", () => {
-    const narrow = [makeEntry("KT-DEC-0001", "decision", "proven", "x")];
-
-    // Run 1: rev-a.
-    captureStderr({ payload: makePayload(narrow, { revision_hash: "rev-a" }) });
-    // Run 2: rev-a (silent).
-    expect(
-      captureStderr({ payload: makePayload(narrow, { revision_hash: "rev-a" }) }),
-    ).toEqual([]);
-    // Run 3: rev-b (canonical changed) → emit + update.
-    const writes3 = captureStderr({
-      payload: makePayload(narrow, { revision_hash: "rev-b" }),
-    });
-    expect(writes3.length).toBeGreaterThan(0);
-    const sidecar = join(tempRoot, ".fabric", ".cache", "sessionstart-last-hash");
-    expect(readFileSync(sidecar, "utf8")).toBe("rev-b");
-  });
-
-  it("empty revision_hash in payload bypasses gating (always emits, never updates sidecar)", () => {
-    // No hash → no gating data → always emit, no sidecar update.
-    const narrow = [makeEntry("KT-DEC-0001", "decision", "proven", "x")];
-    const writes = captureStderr({
-      payload: makePayload(narrow, { revision_hash: "" }),
-    });
-    expect(writes.length).toBeGreaterThan(0);
-    const sidecar = join(tempRoot, ".fabric", ".cache", "sessionstart-last-hash");
-    expect(existsSync(sidecar)).toBe(false);
-  });
-
-  it("empty narrow set + matching revision_hash → silent (no banner, no sidecar churn)", () => {
-    const sidecar = join(tempRoot, ".fabric", ".cache", "sessionstart-last-hash");
-    mkdirSync(join(tempRoot, ".fabric", ".cache"), { recursive: true });
-    writeFileSync(sidecar, "rev-same", "utf8");
-
-    const writes = captureStderr({
-      payload: makePayload([], { revision_hash: "rev-same" }),
-    });
-    expect(writes).toEqual([]);
-    // Cache should not change because gate short-circuited before write.
-    expect(readFileSync(sidecar, "utf8")).toBe("rev-same");
-  });
-});
-
-// ---------------------------------------------------------------------------
 // rc.8 — underseed self-check helpers (countCanonicalNodes /
 // readUnderseedThreshold / isImportTouched / shouldRecommendImport).
 // ---------------------------------------------------------------------------
@@ -794,7 +620,7 @@ describe("knowledge-hint-broad.cjs — shouldRecommendImport (rc.8)", () => {
 });
 
 // ---------------------------------------------------------------------------
-// rc.8 — main() integration: import-recommendation banner + hash-gate bypass.
+// rc.8 — main() integration: import-recommendation banner emission.
 // ---------------------------------------------------------------------------
 
 describe("knowledge-hint-broad.cjs — main underseed banner integration (rc.8)", () => {
@@ -905,83 +731,6 @@ describe("knowledge-hint-broad.cjs — main underseed banner integration (rc.8)"
     expect(stderr).not.toMatch(/\/fabric-import/);
   });
 
-  it("hash unchanged + should-recommend → banner STILL emitted (gate-bypass for banner)", () => {
-    plantMeta();
-    plantCanonical(2);
-
-    const sidecar = join(tempRoot, ".fabric", ".cache", "sessionstart-last-hash");
-    mkdirSync(join(tempRoot, ".fabric", ".cache"), { recursive: true });
-    writeFileSync(sidecar, "rev-same", "utf8");
-
-    const narrow = [makeEntry("KT-DEC-0001", "decision", "proven", "x")];
-    const writes = captureStderr({
-      payload: makePayload(narrow, { revision_hash: "rev-same" }),
-    });
-    const stderr = writes.join("");
-    // Banner emitted despite cached-hash match
-    expect(stderr).toMatch(/📋 Fabric:/);
-    expect(stderr).toMatch(/\/fabric-import/);
-  });
-
-  it("hash unchanged + should-recommend → broad-summary BODY is NOT re-emitted (regression guard)", () => {
-    // Critical regression test: the gate-bypass for the import banner must
-    // NOT also re-emit the full broad-summary body. The body remains
-    // hash-gated; only the banner line goes out.
-    plantMeta();
-    plantCanonical(2);
-
-    const sidecar = join(tempRoot, ".fabric", ".cache", "sessionstart-last-hash");
-    mkdirSync(join(tempRoot, ".fabric", ".cache"), { recursive: true });
-    writeFileSync(sidecar, "rev-same", "utf8");
-
-    const narrow = [makeEntry("KT-DEC-0001", "decision", "proven", "summary-text")];
-    const writes = captureStderr({
-      payload: makePayload(narrow, { revision_hash: "rev-same" }),
-    });
-    const stderr = writes.join("");
-
-    // Banner is present
-    expect(stderr).toMatch(/📋 Fabric:/);
-    // But the broad-summary body lines are NOT
-    expect(stderr).not.toMatch(/Session start — 1 broad-scoped/);
-    expect(stderr).not.toMatch(/KT-DEC-0001/);
-    expect(stderr).not.toMatch(/fab_get_knowledge_sections/);
-    // And the sidecar was NOT bumped (body suppressed → no hash update)
-    expect(readFileSync(sidecar, "utf8")).toBe("rev-same");
-  });
-
-  it("hash unchanged + should-NOT-recommend → silent (no banner, no body, no churn)", () => {
-    plantMeta();
-    plantCanonical(15); // above threshold → no recommendation
-
-    const sidecar = join(tempRoot, ".fabric", ".cache", "sessionstart-last-hash");
-    mkdirSync(join(tempRoot, ".fabric", ".cache"), { recursive: true });
-    writeFileSync(sidecar, "rev-same", "utf8");
-
-    const narrow = [makeEntry("KT-DEC-0001", "decision", "proven", "x")];
-    const writes = captureStderr({
-      payload: makePayload(narrow, { revision_hash: "rev-same" }),
-    });
-    expect(writes).toEqual([]);
-    expect(readFileSync(sidecar, "utf8")).toBe("rev-same");
-  });
-
-  it("first run + should-recommend → emits both body and banner; updates sidecar", () => {
-    plantMeta();
-    plantCanonical(3);
-
-    const narrow = [makeEntry("KT-DEC-0001", "decision", "proven", "x")];
-    const writes = captureStderr({
-      payload: makePayload(narrow, { revision_hash: "rev-fresh-1" }),
-    });
-    const stderr = writes.join("");
-    // Both body and banner are emitted on first run
-    expect(stderr).toMatch(/Session start — 1 broad-scoped/);
-    expect(stderr).toMatch(/📋 Fabric:/);
-    // Sidecar is bumped (body went out → hash update follows)
-    const sidecar = join(tempRoot, ".fabric", ".cache", "sessionstart-last-hash");
-    expect(readFileSync(sidecar, "utf8")).toBe("rev-fresh-1");
-  });
 });
 
 // ---------------------------------------------------------------------------

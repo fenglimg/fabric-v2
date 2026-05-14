@@ -30,7 +30,7 @@ import {
   buildInitExecutionPlan,
   executeInitExecutionPlan,
   type InitExecutionResult,
-} from "../../src/commands/init.ts";
+} from "../../src/commands/install.ts";
 import { installHooks } from "../../src/commands/hooks.ts";
 import {
   cleanupFixtureRoot,
@@ -433,40 +433,147 @@ describe("TASK-006 install-skills-and-hooks: partial install resilience", () => 
 });
 
 // ---------------------------------------------------------------------------
-// Test 8 — AGENTS.md pointer appended only once on re-run
+// Test 8 — Managed "Fabric Knowledge Base" section
+//
+// rc.12 broad-gate-fabric-lang TASK-006: replaces the rc.4 POINTER_LINE
+// substring-occurrence assertions. The new managed-section writer emits a
+// single HTML-comment-wrapped block per target file (CLAUDE.md / AGENTS.md /
+// .cursor/rules); tests verify presence, idempotency, in-place replace on
+// fabric_language change, and that user edits between markers are
+// intentionally overwritten on re-run (managed-section convention).
 // ---------------------------------------------------------------------------
 
-describe("TASK-006 install-skills-and-hooks: AGENTS.md pointer", () => {
-  it("appends fabric-archive, fabric-review AND fabric-import pointer lines once and does not duplicate on re-init", async () => {
-    const target = createWerewolfFixtureRoot("itg-install-pointer");
+const SECTION_BEGIN = "<!-- fabric:knowledge-base:begin -->";
+const SECTION_END = "<!-- fabric:knowledge-base:end -->";
+
+function countOccurrences(haystack: string, needle: string): number {
+  let count = 0;
+  let idx = 0;
+  while (true) {
+    const found = haystack.indexOf(needle, idx);
+    if (found === -1) break;
+    count += 1;
+    idx = found + needle.length;
+  }
+  return count;
+}
+
+describe("TASK-006 install-skills-and-hooks: Fabric Knowledge Base managed section", () => {
+  it("writes one begin/end marker pair (with heading between) on first install across all three targets", async () => {
+    const target = createWerewolfFixtureRoot("itg-install-section");
     tempRoots.push(target);
 
-    // Pre-create AGENTS.md so the addArchiveSkillPointer helper sees a
-    // non-absent target on the first run. (createWerewolfFixtureRoot deletes
-    // the fixture's AGENTS.md, so we author our own.)
+    // Pre-create each target so addFabricKnowledgeBaseSection sees a non-
+    // absent file. The helper skips targets that don't already exist.
+    const seedContent = "# Project Notes\n\nUser-authored content here.\n";
+    writeFixtureFile(target, "AGENTS.md", seedContent);
+    writeFixtureFile(target, "CLAUDE.md", seedContent);
+    writeFixtureFile(target, ".cursor/rules", seedContent);
+
+    await runInit(target);
+
+    for (const rel of ["AGENTS.md", "CLAUDE.md", ".cursor/rules"]) {
+      const content = readFileSync(join(target, rel), "utf8");
+      expect(countOccurrences(content, SECTION_BEGIN)).toBe(1);
+      expect(countOccurrences(content, SECTION_END)).toBe(1);
+      expect(content).toContain("## Fabric Knowledge Base");
+      // Begin marker precedes the heading which precedes the end marker.
+      const beginIdx = content.indexOf(SECTION_BEGIN);
+      const headingIdx = content.indexOf("## Fabric Knowledge Base");
+      const endIdx = content.indexOf(SECTION_END);
+      expect(beginIdx).toBeLessThan(headingIdx);
+      expect(headingIdx).toBeLessThan(endIdx);
+      // Pre-existing user content preserved verbatim above the section.
+      expect(content.startsWith(seedContent)).toBe(true);
+    }
+  });
+
+  it("is idempotent: re-running install yields byte-identical files", async () => {
+    const target = createWerewolfFixtureRoot("itg-install-section-idempotent");
+    tempRoots.push(target);
+
+    const seedContent = "# Project Notes\n\nUser-authored content here.\n";
+    writeFixtureFile(target, "AGENTS.md", seedContent);
+    writeFixtureFile(target, "CLAUDE.md", seedContent);
+    writeFixtureFile(target, ".cursor/rules", seedContent);
+
+    await runInit(target);
+    const afterFirst: Record<string, string> = {};
+    for (const rel of ["AGENTS.md", "CLAUDE.md", ".cursor/rules"]) {
+      afterFirst[rel] = readFileSync(join(target, rel), "utf8");
+    }
+
+    await runInit(target, { reapply: true, force: true });
+    for (const rel of ["AGENTS.md", "CLAUDE.md", ".cursor/rules"]) {
+      const afterSecond = readFileSync(join(target, rel), "utf8");
+      expect(afterSecond).toBe(afterFirst[rel]);
+      // Still exactly one marker pair.
+      expect(countOccurrences(afterSecond, SECTION_BEGIN)).toBe(1);
+      expect(countOccurrences(afterSecond, SECTION_END)).toBe(1);
+    }
+  });
+
+  it("replaces the section in place when fabric_language changes (no duplication, no orphan section)", async () => {
+    const target = createWerewolfFixtureRoot("itg-install-section-language-change");
+    tempRoots.push(target);
+
     const seedContent = "# Project Notes\n\nUser-authored content here.\n";
     writeFixtureFile(target, "AGENTS.md", seedContent);
 
     await runInit(target);
     const afterFirst = readFileSync(join(target, "AGENTS.md"), "utf8");
-    const archiveOccurrences1 = (afterFirst.match(/fabric-archive Skill when archiving/g) ?? []).length;
-    const reviewOccurrences1 = (afterFirst.match(/fabric-review Skill to review pending/g) ?? []).length;
-    const importOccurrences1 = (afterFirst.match(/fabric-import Skill for cold-start enrichment/g) ?? []).length;
-    expect(archiveOccurrences1).toBe(1);
-    expect(reviewOccurrences1).toBe(1);
-    expect(importOccurrences1).toBe(1);
-    // Original user content preserved verbatim.
-    expect(afterFirst.startsWith(seedContent)).toBe(true);
+    expect(countOccurrences(afterFirst, SECTION_BEGIN)).toBe(1);
+
+    // Flip fabric_language to a different value and re-install.
+    const configPath = join(target, ".fabric", "fabric-config.json");
+    const config = JSON.parse(readFileSync(configPath, "utf8")) as Record<string, unknown>;
+    config["fabric_language"] = "zh-CN-hybrid";
+    writeFixtureFile(target, ".fabric/fabric-config.json", JSON.stringify(config, null, 2) + "\n");
 
     await runInit(target, { reapply: true, force: true });
     const afterSecond = readFileSync(join(target, "AGENTS.md"), "utf8");
-    const archiveOccurrences2 = (afterSecond.match(/fabric-archive Skill when archiving/g) ?? []).length;
-    const reviewOccurrences2 = (afterSecond.match(/fabric-review Skill to review pending/g) ?? []).length;
-    const importOccurrences2 = (afterSecond.match(/fabric-import Skill for cold-start enrichment/g) ?? []).length;
-    expect(archiveOccurrences2).toBe(1);
-    expect(reviewOccurrences2).toBe(1);
-    expect(importOccurrences2).toBe(1);
-    expect(afterSecond).toBe(afterFirst);
+
+    // Exactly one marker pair after re-run — no duplication.
+    expect(countOccurrences(afterSecond, SECTION_BEGIN)).toBe(1);
+    expect(countOccurrences(afterSecond, SECTION_END)).toBe(1);
+    // The "Language" line now mentions the new value.
+    expect(afterSecond).toContain("`zh-CN-hybrid`");
+    // The old line is gone.
+    expect(afterSecond).not.toMatch(/current: `(en|match-existing)`/);
+  });
+
+  it("overwrites user edits inside the markers on re-install (managed-section convention)", async () => {
+    const target = createWerewolfFixtureRoot("itg-install-section-managed");
+    tempRoots.push(target);
+
+    const seedContent = "# Project Notes\n\nUser-authored content here.\n";
+    writeFixtureFile(target, "AGENTS.md", seedContent);
+
+    await runInit(target);
+    const afterFirst = readFileSync(join(target, "AGENTS.md"), "utf8");
+
+    // Inject user "vandalism" inside the markers — replace the entire body
+    // with a sentinel string. The next install must restore the canonical
+    // managed-section body.
+    const beginIdx = afterFirst.indexOf(SECTION_BEGIN);
+    const endIdx = afterFirst.indexOf(SECTION_END) + SECTION_END.length;
+    const vandalized =
+      afterFirst.slice(0, beginIdx) +
+      SECTION_BEGIN +
+      "\n\nUSER VANDALISM — should be wiped on re-install.\n\n" +
+      SECTION_END +
+      afterFirst.slice(endIdx);
+    writeFixtureFile(target, "AGENTS.md", vandalized);
+
+    await runInit(target, { reapply: true, force: true });
+    const afterSecond = readFileSync(join(target, "AGENTS.md"), "utf8");
+
+    expect(afterSecond).not.toContain("USER VANDALISM");
+    expect(afterSecond).toContain("## Fabric Knowledge Base");
+    expect(countOccurrences(afterSecond, SECTION_BEGIN)).toBe(1);
+    expect(countOccurrences(afterSecond, SECTION_END)).toBe(1);
+    // Pre-section user content survives.
+    expect(afterSecond.startsWith(seedContent)).toBe(true);
   });
 });
 

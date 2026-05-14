@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { forensicReportSchema } from "@fenglimg/fabric-shared";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { initFabric } from "../src/commands/init.ts";
+import { initFabric } from "../src/commands/install.ts";
 import { cleanupFixtureRoot, createWerewolfFixtureRoot } from "./helpers/init-test-utils.ts";
 
 const tempRoots: string[] = [];

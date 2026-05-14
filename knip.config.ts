@@ -3,7 +3,7 @@ import type { KnipConfig } from 'knip'
 const config: KnipConfig = {
   ignore: [
     'scripts/**',
-    // Dogfooded Fabric Stop-hook scripts installed by `fab init` into this
+    // Dogfooded Fabric Stop-hook scripts installed by `fab install` into this
     // repo's own .claude / .codex client configs. They are runtime hooks
     // invoked externally by Claude Code / Codex CLI — never imported by TS
     // sources, so knip --strict reports them as unused.

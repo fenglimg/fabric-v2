@@ -20,7 +20,9 @@
         "intent_clues": [],
         "tech_stack": [],
         "impact": [],
-        "must_read_if": "Boundary B: data + lifecycle + async-review primitive"
+        "must_read_if": "Boundary B: data + lifecycle + async-review primitive",
+        "relevance_scope": "broad",
+        "relevance_paths": []
       }
     },
     "KT-DEC-0002": {
@@ -42,7 +44,9 @@
         "intent_clues": [],
         "tech_stack": [],
         "impact": [],
-        "must_read_if": "v2.0 clean rebrand over v1.x staged migration"
+        "must_read_if": "v2.0 clean rebrand over v1.x staged migration",
+        "relevance_scope": "broad",
+        "relevance_paths": []
       }
     },
     "KT-DEC-0003": {
@@ -64,7 +68,9 @@
         "intent_clues": [],
         "tech_stack": [],
         "impact": [],
-        "must_read_if": "Dual-root layout: ~/.fabric + <repo>/.fabric"
+        "must_read_if": "Dual-root layout: ~/.fabric + <repo>/.fabric",
+        "relevance_scope": "broad",
+        "relevance_paths": []
       }
     },
     "KT-DEC-0004": {
@@ -86,7 +92,9 @@
         "intent_clues": [],
         "tech_stack": [],
         "impact": [],
-        "must_read_if": "stable_id format K[PT]-(DEC|MOD|GLD|PIT|PRO)-NNNN with monotonic counter"
+        "must_read_if": "stable_id format K[PT]-(DEC|MOD|GLD|PIT|PRO)-NNNN with monotonic counter",
+        "relevance_scope": "broad",
+        "relevance_paths": []
       }
     },
     "KT-DEC-0005": {
@@ -108,7 +116,9 @@
         "intent_clues": [],
         "tech_stack": [],
         "impact": [],
-        "must_read_if": "5-type / 3-maturity / 2-layer schema with flat scalar frontmatter"
+        "must_read_if": "5-type / 3-maturity / 2-layer schema with flat scalar frontmatter",
+        "relevance_scope": "broad",
+        "relevance_paths": []
       }
     },
     "KT-DEC-0006": {
@@ -130,7 +140,9 @@
         "intent_clues": [],
         "tech_stack": [],
         "impact": [],
-        "must_read_if": "Review mode inferred from context, not solicited via AskUserQuestion"
+        "must_read_if": "Review mode inferred from context, not solicited via AskUserQuestion",
+        "relevance_scope": "broad",
+        "relevance_paths": []
       }
     },
     "KT-DEC-0007": {
@@ -152,7 +164,9 @@
         "intent_clues": [],
         "tech_stack": [],
         "impact": [],
-        "must_read_if": "Hook = reminder layer (exit 2 + stderr/followup_message), never blocks"
+        "must_read_if": "Hook = reminder layer (exit 2 + stderr/followup_message), never blocks",
+        "relevance_scope": "broad",
+        "relevance_paths": []
       }
     },
     "KT-DEC-0008": {
@@ -174,7 +188,9 @@
         "intent_clues": [],
         "tech_stack": [],
         "impact": [],
-        "must_read_if": "Decay thresholds: 90 / 30 / 14 days (1/4 of Tencent article baselines)"
+        "must_read_if": "Decay thresholds: 90 / 30 / 14 days (1/4 of Tencent article baselines)",
+        "relevance_scope": "broad",
+        "relevance_paths": []
       }
     },
     "KT-DEC-0009": {
@@ -210,12 +226,14 @@
     "KT-GLD-0001": {
       "file": ".fabric/knowledge/guidelines/code-style.md",
       "content_ref": ".fabric/knowledge/guidelines/code-style.md",
-      "scope_glob": "**",
-      "deps": [],
+      "scope_glob": "guidelines/code-style/**",
+      "deps": [
+        "L0"
+      ],
       "priority": "medium",
       "level": "L1",
       "layer": "L1",
-      "topology_type": "cross-cutting",
+      "topology_type": "mirror",
       "hash": "sha256:838b90333970c3f330c22a5579a68749be4718a9c984aa0480ab5cfb3eade414",
       "stable_id": "KT-GLD-0001",
       "identity_source": "declared",
@@ -224,7 +242,9 @@
         "intent_clues": [],
         "tech_stack": [],
         "impact": [],
-        "must_read_if": "Code style guidelines"
+        "must_read_if": "Code style guidelines",
+        "relevance_scope": "broad",
+        "relevance_paths": []
       },
       "sections": [
         "MISSION_STATEMENT",
@@ -235,12 +255,14 @@
     "KT-MOD-0001": {
       "file": ".fabric/knowledge/models/tech-stack.md",
       "content_ref": ".fabric/knowledge/models/tech-stack.md",
-      "scope_glob": "**",
-      "deps": [],
+      "scope_glob": "models/tech-stack/**",
+      "deps": [
+        "L0"
+      ],
       "priority": "medium",
       "level": "L1",
       "layer": "L1",
-      "topology_type": "cross-cutting",
+      "topology_type": "mirror",
       "hash": "sha256:f9abcdec207dadd5123bc74cf98cdf29dd3276a7ffe554bc87dc30f96560d13b",
       "stable_id": "KT-MOD-0001",
       "identity_source": "declared",
@@ -249,7 +271,9 @@
         "intent_clues": [],
         "tech_stack": [],
         "impact": [],
-        "must_read_if": "Tech stack: unknown"
+        "must_read_if": "Tech stack: unknown",
+        "relevance_scope": "broad",
+        "relevance_paths": []
       },
       "sections": [
         "MISSION_STATEMENT",
@@ -259,12 +283,14 @@
     "KT-MOD-0002": {
       "file": ".fabric/knowledge/models/module-structure.md",
       "content_ref": ".fabric/knowledge/models/module-structure.md",
-      "scope_glob": "**",
-      "deps": [],
+      "scope_glob": "models/module-structure/**",
+      "deps": [
+        "L0"
+      ],
       "priority": "medium",
       "level": "L1",
       "layer": "L1",
-      "topology_type": "cross-cutting",
+      "topology_type": "mirror",
       "hash": "sha256:75bb9507c9db7beedf73588f9b93ff1a2cebf33a5fe5bf7bc3322c01e57eb713",
       "stable_id": "KT-MOD-0002",
       "identity_source": "declared",
@@ -273,7 +299,9 @@
         "intent_clues": [],
         "tech_stack": [],
         "impact": [],
-        "must_read_if": "Module structure"
+        "must_read_if": "Module structure",
+        "relevance_scope": "broad",
+        "relevance_paths": []
       },
       "sections": [
         "MISSION_STATEMENT",
@@ -283,12 +311,14 @@
     "KT-MOD-0003": {
       "file": ".fabric/knowledge/models/readme-first-paragraph.md",
       "content_ref": ".fabric/knowledge/models/readme-first-paragraph.md",
-      "scope_glob": "**",
-      "deps": [],
+      "scope_glob": "models/readme-first-paragraph/**",
+      "deps": [
+        "L0"
+      ],
       "priority": "medium",
       "level": "L1",
       "layer": "L1",
-      "topology_type": "cross-cutting",
+      "topology_type": "mirror",
       "hash": "sha256:68a7670d183d2c66d495f87435304493cb43b8ed1af9d0655539eeb28010be88",
       "stable_id": "KT-MOD-0003",
       "identity_source": "declared",
@@ -297,7 +327,9 @@
         "intent_clues": [],
         "tech_stack": [],
         "impact": [],
-        "must_read_if": "README first paragraph"
+        "must_read_if": "README first paragraph",
+        "relevance_scope": "broad",
+        "relevance_paths": []
       },
       "sections": [
         "MISSION_STATEMENT",
@@ -322,12 +354,14 @@
     "KT-PRO-0001": {
       "file": ".fabric/knowledge/processes/build-config.md",
       "content_ref": ".fabric/knowledge/processes/build-config.md",
-      "scope_glob": "**",
-      "deps": [],
+      "scope_glob": "processes/build-config/**",
+      "deps": [
+        "L0"
+      ],
       "priority": "medium",
       "level": "L1",
       "layer": "L1",
-      "topology_type": "cross-cutting",
+      "topology_type": "mirror",
       "hash": "sha256:5f3a20fc0af25ed3731bfe8f01cf023da855c7894275b18a8c89ac9040b81ee4",
       "stable_id": "KT-PRO-0001",
       "identity_source": "declared",
@@ -336,7 +370,9 @@
         "intent_clues": [],
         "tech_stack": [],
         "impact": [],
-        "must_read_if": "Build configuration"
+        "must_read_if": "Build configuration",
+        "relevance_scope": "broad",
+        "relevance_paths": []
       },
       "sections": [
         "MISSION_STATEMENT",
@@ -350,15 +386,15 @@
       "MOD": 0,
       "DEC": 0,
       "GLD": 0,
-      "PIT": 1,
+      "PIT": 0,
       "PRO": 0
     },
     "KT": {
-      "MOD": 3,
-      "DEC": 9002,
-      "GLD": 1,
-      "PIT": 9102,
-      "PRO": 1
+      "MOD": 0,
+      "DEC": 0,
+      "GLD": 0,
+      "PIT": 0,
+      "PRO": 0
     }
   }
 }

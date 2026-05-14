@@ -7,7 +7,7 @@ import {
   executeInitExecutionPlan,
   resolveInitExecutionPlanWithWizard,
   shouldUseInitWizard,
-} from "../src/commands/init.ts";
+} from "../src/commands/install.ts";
 import { cleanupFixtureRoot, createWerewolfFixtureRoot, setProcessTty } from "./helpers/init-test-utils.ts";
 
 const tempRoots: string[] = [];
@@ -197,7 +197,7 @@ describe("runInitCommand cancellation", () => {
     }));
 
     vi.resetModules();
-    const { runInitCommand } = await import("../src/commands/init.ts");
+    const { runInitCommand } = await import("../src/commands/install.ts");
 
     let thrown: unknown;
     try {
@@ -210,8 +210,8 @@ describe("runInitCommand cancellation", () => {
 
     expect(thrown).toBeUndefined();
     expect(process.exitCode).toBe(130);
-    expect(cancelMock).toHaveBeenCalledWith("Fabric init cancelled before execution.");
+    expect(cancelMock).toHaveBeenCalledWith("Fabric install cancelled before execution.");
     const stderrText = stderrWrites.join("");
-    expect(stderrText).not.toContain("Fabric init cancelled before execution.");
+    expect(stderrText).not.toContain("Fabric install cancelled before execution.");
   });
 });

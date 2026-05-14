@@ -691,7 +691,7 @@ const IGNORED_DIRECTORIES = new Set([
 //
 // Note: `.fabric/init-context.json` is intentionally NOT listed here. v2.0
 // init-context is owned by the AI-side client init skill (Claude Code / Codex
-// CLI), not by `fabric init` CLI. If the skill never ran the file is
+// CLI), not by `fabric install` CLI. If the skill never ran the file is
 // legitimately absent and doctor must not flag it as a state issue.
 const TARGET_FILE_PATHS = [
   ".fabric/forensic.json",
@@ -776,12 +776,17 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
   // defaults at read time). apply-lint writes the explicit defaults and
   // emits one aggregate `relevance_migration_run` event per run.
   const relevanceFieldsMissing = inspectRelevanceFieldsMissing(projectRoot);
+  // rc.12 lint #29: skill_md_yaml_invalid. Scans .claude/skills and
+  // .codex/skills SKILL.md frontmatter for unquoted ': ' tokens that Codex's
+  // strict YAML parser rejects (Claude Code is lenient). Warning kind —
+  // manual fix only.
+  const skillMdYamlInvalid = inspectSkillMdYamlInvalid(projectRoot);
   const checks: DoctorCheck[] = [
     createBootstrapAnchorCheck(bootstrapAnchor),
     createKnowledgeDirMissingCheck(knowledgeDirMissing),
     createForensicCheck(forensic, framework.kind, entryPoints.length),
     // v2.0: removed `createInitContextCheck` — `.fabric/init-context.json`
-    // is owned by the AI-side client init skill, not by `fabric init` CLI.
+    // is owned by the AI-side client init skill, not by `fabric install` CLI.
     // The file's absence is a legitimate post-init state when the skill has
     // not yet run, so flagging it as a doctor manual_error misrepresents
     // ownership.
@@ -835,6 +840,9 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     // Info kind — applies to pending entries only; canonical entries get
     // the fields written verbatim by fab_review.approve/modify.
     createRelevanceFieldsMissingCheck(relevanceFieldsMissing),
+    // rc.12 lint #29: skill_md_yaml_invalid. Warning kind — surfaces
+    // SKILL.md frontmatter that Codex CLI silently drops at load.
+    createSkillMdYamlInvalidCheck(skillMdYamlInvalid),
     createPreexistingRootFilesCheck(preexistingRootFiles),
     // v2.0 / rc.2: `createLegacyClientPathCheck` removed. The schema now
     // rejects retired clientPaths keys (windsurf/rooCode/geminiCLI) at Zod
@@ -1569,8 +1577,8 @@ async function inspectForensic(projectRoot: string): Promise<{ present: boolean;
 }
 
 // v2.0: `inspectInitContext` removed. `.fabric/init-context.json` is owned
-// by the AI-side client init skill, not by `fabric init` CLI. Its absence
-// after `fab init` is a legitimate "skill has not run yet" state, not a
+// by the AI-side client init skill, not by `fabric install` CLI. Its absence
+// after `fab install` is a legitimate "skill has not run yet" state, not a
 // doctor concern.
 
 function inspectMcpConfigInWrongFile(projectRoot: string): McpConfigInWrongFileInspection {
@@ -1778,7 +1786,7 @@ function inspectBootstrapAnchor(projectRoot: string): BootstrapAnchorInspection 
 function createBootstrapAnchorCheck(inspection: BootstrapAnchorInspection): DoctorCheck {
   // v2.0: bootstrap is anchored at the repo root via AGENTS.md or CLAUDE.md.
   // Either one (or both) is sufficient; missing both is a fixable_error in
-  // the sense that `fabric init` is the canonical remediation (we do not
+  // the sense that `fabric install` is the canonical remediation (we do not
   // auto-write the anchor file from doctor --fix).
   if (!inspection.hasAgentsMd && !inspection.hasClaudeMd) {
     return issueCheck(
@@ -1787,7 +1795,7 @@ function createBootstrapAnchorCheck(inspection: BootstrapAnchorInspection): Doct
       "fixable_error",
       "bootstrap_anchor_missing",
       "Neither AGENTS.md nor CLAUDE.md exists at the repo root. Fabric requires a bootstrap anchor file at the project root.",
-      "Run `fabric init` to generate the AGENTS.md / CLAUDE.md bootstrap anchor at the repo root.",
+      "Run `fabric install` to generate the AGENTS.md / CLAUDE.md bootstrap anchor at the repo root.",
     );
   }
   const present = [
@@ -1841,11 +1849,11 @@ function createForensicCheck(
       "manual_error",
       "forensic_missing",
       `${forensic.error ?? ".fabric/forensic.json is missing."} Live scan detects ${frameworkKind} with ${entryPointCount} entry point${entryPointCount === 1 ? "" : "s"}.`,
-      "Run `fab init` to regenerate .fabric/forensic.json.",
+      "Run `fab install` to regenerate .fabric/forensic.json.",
     );
   }
   if (!forensic.valid) {
-    return issueCheck("Scan evidence", "error", "manual_error", "forensic_invalid", forensic.error ?? ".fabric/forensic.json is invalid.", "Run `fab init` to regenerate .fabric/forensic.json.");
+    return issueCheck("Scan evidence", "error", "manual_error", "forensic_invalid", forensic.error ?? ".fabric/forensic.json is invalid.", "Run `fab install` to regenerate .fabric/forensic.json.");
   }
   return okCheck("Scan evidence", `.fabric/forensic.json is valid for ${forensic.report?.framework.kind ?? "unknown"}.`);
 }
@@ -1938,8 +1946,8 @@ function createMcpConfigInWrongFileCheck(inspection: McpConfigInWrongFileInspect
       "error",
       "fixable_error",
       "mcp_config_in_wrong_file",
-      `.claude/settings.json contains mcpServers.fabric — this file is for hooks/permissions only. Run --fix to remove it, then re-run fab init to write .mcp.json.`,
-      "Run `fab doctor --fix` to remove mcpServers.fabric from .claude/settings.json, then run `fab init` to write .mcp.json.",
+      `.claude/settings.json contains mcpServers.fabric — this file is for hooks/permissions only. Run --fix to remove it, then re-run fab install to write .mcp.json.`,
+      "Run `fab doctor --fix` to remove mcpServers.fabric from .claude/settings.json, then run `fab install` to write .mcp.json.",
     );
   }
 
@@ -3906,6 +3914,138 @@ function createRelevanceFieldsMissingCheck(
     "knowledge_relevance_fields_missing",
     `${inspection.candidates.length} pending entr${inspection.candidates.length === 1 ? "y is" : "ies are"} missing relevance_scope and/or relevance_paths in frontmatter. First: ${detail}.`,
     "Run `fab doctor --apply-lint` to back-fill the schema defaults (relevance_scope: broad, relevance_paths: []).",
+  );
+}
+
+// ---------------------------------------------------------------------------
+// rc.12 lint #29: skill_md_yaml_invalid.
+//
+// Scans `<projectRoot>/.claude/skills/*/SKILL.md` and `.codex/skills/*/SKILL.md`
+// frontmatter for a plain-scalar value that contains an unquoted `: ` (colon
+// followed by whitespace) or trailing `:`. Claude Code's YAML parser is
+// lenient and tolerates it; Codex CLI's strict parser rejects the file with
+// `mapping values are not allowed in this context` and silently drops the
+// skill from the available list. The asymmetry produces cross-client
+// breakage that is hard to spot — fab_doctor surfaces it as a warning.
+//
+// Warning kind (manual fix only). Recommendation: quote the value with `"..."`
+// or rewrite the offending `key: value` token into `key=value` form.
+// ---------------------------------------------------------------------------
+
+const SKILL_MD_FRONTMATTER_ROOTS = [".claude/skills", ".codex/skills"] as const;
+const SKILL_FRONTMATTER_KEY_PATTERN = /^([A-Za-z_][A-Za-z0-9_-]*):[ \t]+(.+?)[ \t]*$/u;
+const SKILL_QUOTED_VALUE_LEADS = new Set(['"', "'", "[", "{", ">", "|"]);
+
+type SkillMdYamlInvalidCandidate = {
+  // Project-relative POSIX path to the offending SKILL.md.
+  path: string;
+  // 1-based line number inside the SKILL.md (matches editors and Codex's
+  // own error message format).
+  line: number;
+  // The frontmatter key whose value violates strict YAML (typically `description`).
+  key: string;
+  // Short value snippet centered on the offending `: ` for human triage.
+  preview: string;
+};
+
+type SkillMdYamlInvalidInspection = {
+  candidates: SkillMdYamlInvalidCandidate[];
+};
+
+function inspectSkillMdYamlInvalid(projectRoot: string): SkillMdYamlInvalidInspection {
+  const candidates: SkillMdYamlInvalidCandidate[] = [];
+  for (const rootRel of SKILL_MD_FRONTMATTER_ROOTS) {
+    const rootAbs = join(projectRoot, rootRel);
+    if (!existsSync(rootAbs)) continue;
+    let dirEntries;
+    try {
+      dirEntries = readdirSync(rootAbs, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const dirEntry of dirEntries) {
+      if (!dirEntry.isDirectory()) continue;
+      const skillFile = join(rootAbs, dirEntry.name, "SKILL.md");
+      if (!existsSync(skillFile)) continue;
+      let raw: string;
+      try {
+        raw = readFileSync(skillFile, "utf8");
+      } catch {
+        continue;
+      }
+      const frontmatter = extractSkillFrontmatterLines(raw);
+      if (frontmatter === null) continue;
+      for (const { line, lineNumber } of frontmatter) {
+        const match = SKILL_FRONTMATTER_KEY_PATTERN.exec(line);
+        if (!match) continue;
+        const [, key, value] = match;
+        if (value.length === 0) continue;
+        if (SKILL_QUOTED_VALUE_LEADS.has(value[0]!)) continue;
+        const colonSpaceIdx = value.indexOf(": ");
+        const trailingColon = value.endsWith(":");
+        if (colonSpaceIdx < 0 && !trailingColon) continue;
+        const anchor = colonSpaceIdx >= 0 ? colonSpaceIdx : value.length - 1;
+        const previewStart = Math.max(0, anchor - 25);
+        const previewEnd = Math.min(value.length, anchor + 30);
+        const preview = `${previewStart > 0 ? "…" : ""}${value.slice(previewStart, previewEnd)}${previewEnd < value.length ? "…" : ""}`;
+        candidates.push({
+          path: posix.join(rootRel, dirEntry.name, "SKILL.md"),
+          line: lineNumber,
+          key,
+          preview,
+        });
+      }
+    }
+  }
+  candidates.sort((a, b) => {
+    const byPath = a.path.localeCompare(b.path);
+    return byPath !== 0 ? byPath : a.line - b.line;
+  });
+  return { candidates };
+}
+
+// Return the lines that fall between the opening `---` (required on line 1)
+// and the next `---`. Returns null when the file has no well-formed
+// frontmatter block — the lint conservatively says nothing about such files
+// (other doctor lints already cover malformed-frontmatter cases for
+// fabric-owned files; for third-party skills we don't want false positives
+// on README-style markdown).
+function extractSkillFrontmatterLines(
+  raw: string,
+): Array<{ line: string; lineNumber: number }> | null {
+  const rawLines = raw.split(/\r?\n/u);
+  if (rawLines.length < 2) return null;
+  if (rawLines[0]?.trim() !== "---") return null;
+  const out: Array<{ line: string; lineNumber: number }> = [];
+  for (let i = 1; i < rawLines.length; i++) {
+    const line = rawLines[i]!;
+    if (line.trim() === "---") {
+      return out;
+    }
+    out.push({ line, lineNumber: i + 1 });
+  }
+  return null;
+}
+
+function createSkillMdYamlInvalidCheck(
+  inspection: SkillMdYamlInvalidInspection,
+): DoctorCheck {
+  if (inspection.candidates.length === 0) {
+    return okCheck(
+      "Skill markdown YAML",
+      "All .claude/.codex SKILL.md frontmatter values parse as strict YAML.",
+    );
+  }
+  const first = inspection.candidates[0]!;
+  const detail = `${first.path}:${first.line} (key \`${first.key}\` value contains an unquoted ': ' — preview: \`${first.preview}\`)`;
+  const plural = inspection.candidates.length === 1;
+  return issueCheck(
+    "Skill markdown YAML",
+    "warn",
+    "warning",
+    "skill_md_yaml_invalid",
+    `${inspection.candidates.length} SKILL.md frontmatter ${plural ? "value contains" : "values contain"} an unquoted ': ' that strict YAML parsers reject (Claude Code tolerates it; Codex CLI drops the skill at load). First: ${detail}.`,
+    "Quote the value with double quotes (`description: \"…\"`) or rewrite the inner `key: value` token to `key=value`.",
   );
 }
 

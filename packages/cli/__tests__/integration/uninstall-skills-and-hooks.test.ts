@@ -25,7 +25,7 @@ import {
   buildInitExecutionPlan,
   executeInitExecutionPlan,
   type InitExecutionResult,
-} from "../../src/commands/init.ts";
+} from "../../src/commands/install.ts";
 import {
   buildUninstallExecutionPlan,
   executeUninstallExecutionPlan,
@@ -304,38 +304,66 @@ describe("TASK-005 uninstall round-trip: T5 idempotent re-run", () => {
 });
 
 // ---------------------------------------------------------------------------
-// T6 — CLAUDE.md pointer strip preserves user content
+// T6 — CLAUDE.md managed-section strip preserves user content
+//
+// rc.12 broad-gate-fabric-lang TASK-006: replaces the rc.4 POINTER_LINE
+// substring-strip assertions. The new managed-section uninstall must remove
+// the entire begin→end region (markers inclusive) from each target, leaving
+// pre-existing user content intact. Re-running uninstall is a no-op.
 // ---------------------------------------------------------------------------
 
-describe("TASK-005 uninstall round-trip: T6 pointer-line strip", () => {
-  it("strips fabric pointer lines from CLAUDE.md while preserving user-authored content", async () => {
-    const target = createWerewolfFixtureRoot("itg-uninstall-t6-pointer");
+const SECTION_BEGIN_UN = "<!-- fabric:knowledge-base:begin -->";
+const SECTION_END_UN = "<!-- fabric:knowledge-base:end -->";
+
+describe("TASK-006 uninstall round-trip: managed-section strip", () => {
+  it("strips the Fabric Knowledge Base section from CLAUDE.md while preserving user-authored content", async () => {
+    const target = createWerewolfFixtureRoot("itg-uninstall-t6-section");
     tempRoots.push(target);
 
-    // Seed user-authored CLAUDE.md BEFORE init so addArchiveSkillPointer sees
-    // a non-absent target. install appends fabric-archive/review/import pointer
-    // lines; uninstall must strip them, leaving only user content.
+    // Seed user-authored CLAUDE.md BEFORE init so addFabricKnowledgeBaseSection
+    // sees a non-absent target. install writes the managed section; uninstall
+    // must strip it cleanly, leaving only the seed content.
     const seed = "# Project notes\n\nUser-authored project guidance lives here.\n";
     writeFixtureFile(target, "CLAUDE.md", seed);
 
     await runInit(target);
 
     const afterInit = readFileSync(join(target, "CLAUDE.md"), "utf8");
-    // Sanity: install actually appended fabric pointer lines.
-    expect(afterInit).toContain("fabric-archive Skill when archiving");
-    expect(afterInit).toContain("fabric-review Skill to review pending");
-    expect(afterInit).toContain("fabric-import Skill for cold-start enrichment");
+    // Sanity: install wrote both markers and the canonical heading.
+    expect(afterInit).toContain(SECTION_BEGIN_UN);
+    expect(afterInit).toContain(SECTION_END_UN);
+    expect(afterInit).toContain("## Fabric Knowledge Base");
 
     await runUninstall(target);
 
     const afterUninstall = readFileSync(join(target, "CLAUDE.md"), "utf8");
-    // All three pointer literals must be gone.
-    expect(afterUninstall).not.toContain("fabric-archive Skill when archiving");
-    expect(afterUninstall).not.toContain("fabric-review Skill to review pending");
-    expect(afterUninstall).not.toContain("fabric-import Skill for cold-start enrichment");
+    // Both markers and the heading must be gone.
+    expect(afterUninstall).not.toContain(SECTION_BEGIN_UN);
+    expect(afterUninstall).not.toContain(SECTION_END_UN);
+    expect(afterUninstall).not.toContain("## Fabric Knowledge Base");
 
     // User content survives — first line of the seed is still present.
     expect(afterUninstall).toContain("# Project notes");
     expect(afterUninstall).toContain("User-authored project guidance lives here.");
+  });
+
+  it("uninstall is idempotent: running it twice yields the same content (no-op on second pass)", async () => {
+    const target = createWerewolfFixtureRoot("itg-uninstall-t6-idempotent");
+    tempRoots.push(target);
+
+    const seed = "# Project notes\n\nUser-authored project guidance lives here.\n";
+    writeFixtureFile(target, "CLAUDE.md", seed);
+
+    await runInit(target);
+    await runUninstall(target);
+    const afterFirst = readFileSync(join(target, "CLAUDE.md"), "utf8");
+
+    // Second uninstall on a section-free file must not throw and must not
+    // mutate the content. The orchestrator may still record a step result
+    // (status: "skipped", message: "no-fabric-section") but file bytes are
+    // byte-identical to the post-first-uninstall snapshot.
+    await runUninstall(target);
+    const afterSecond = readFileSync(join(target, "CLAUDE.md"), "utf8");
+    expect(afterSecond).toBe(afterFirst);
   });
 });

@@ -20,7 +20,7 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { initFabric } from "../src/commands/init.ts";
+import { initFabric } from "../src/commands/install.ts";
 import {
   buildUninstallExecutionPlan,
   executeUninstallExecutionPlan,

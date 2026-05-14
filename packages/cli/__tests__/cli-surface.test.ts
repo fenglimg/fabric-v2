@@ -10,7 +10,7 @@ vi.hoisted(() => {
 });
 
 import doctorCommand from "../src/commands/doctor.ts";
-import initCommand from "../src/commands/init.ts";
+import installCommand from "../src/commands/install.ts";
 import scanCommand from "../src/commands/scan.ts";
 import serveCommand from "../src/commands/serve.ts";
 import uninstallCommand from "../src/commands/uninstall.ts";
@@ -75,7 +75,7 @@ function commandSurface(cmd: CittyCommand): CommandSurface {
 describe("CLI surface drift gate (docs/test-seed/cli.md \u00A71)", () => {
   // Snapshot layer: any add/remove/rename/default-change of a flag fails CI.
   it.each([
-    ["init", initCommand as CittyCommand],
+    ["install", installCommand as CittyCommand],
     ["scan", scanCommand as CittyCommand],
     ["doctor", doctorCommand as CittyCommand],
     ["serve", serveCommand as CittyCommand],
@@ -91,22 +91,22 @@ describe("CLI surface drift gate (docs/test-seed/cli.md \u00A71)", () => {
   // (We import the registry indirectly through the commands themselves; the
   //  registry shape lives in packages/cli/src/commands/index.ts and is
   //  re-asserted here to fail loudly if a 5th public command appears.)
-  it("public command set is exactly { init, scan, doctor, serve, uninstall }", () => {
+  it("public command set is exactly { install, scan, doctor, serve, uninstall }", () => {
     const names = [
-      initCommand.meta?.name,
+      installCommand.meta?.name,
       scanCommand.meta?.name,
       doctorCommand.meta?.name,
       serveCommand.meta?.name,
       uninstallCommand.meta?.name,
     ].sort();
-    expect(names).toEqual(["doctor", "init", "scan", "serve", "uninstall"]);
+    expect(names).toEqual(["doctor", "install", "scan", "serve", "uninstall"]);
   });
 
   // Critical-flag layer: even if a future refactor renames descriptions, these
   // flags MUST exist. Removing one is an intentional breaking change that
   // requires updating docs/test-seed/cli.md §1 first.
-  it("init exposes critical flags --force / --scope / --reapply (seed §1)", () => {
-    const flags = commandSurface(initCommand as CittyCommand).args.map((a) => a.name);
+  it("install exposes critical flags --force / --scope / --reapply (seed §1)", () => {
+    const flags = commandSurface(installCommand as CittyCommand).args.map((a) => a.name);
     expect(flags, DRIFT_HINT).toEqual(
       expect.arrayContaining(["force", "scope", "reapply"]),
     );

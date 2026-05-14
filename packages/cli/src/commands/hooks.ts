@@ -5,7 +5,7 @@ import { defineCommand } from "citty";
 
 import { t } from "../i18n.js";
 import {
-  addArchiveSkillPointer,
+  addFabricKnowledgeBaseSection,
   installArchiveHintHook,
   installFabricArchiveSkill,
   installFabricImportSkill,
@@ -15,6 +15,7 @@ import {
   mergeClaudeCodeHookConfig,
   mergeCodexHookConfig,
   mergeCursorHookConfig,
+  readFabricLanguagePreference,
   type InstallStepResult,
 } from "../install/skills-and-hooks.js";
 
@@ -70,7 +71,7 @@ export default hooksCommand;
 
 /**
  * v2/rc.2+rc.3+rc.4+rc.5 hook installer. Re-installable from `fabric hooks
- * install` and also invoked from `fabric init` via the bootstrap stage
+ * install` and also invoked from `fabric install` via the bootstrap stage
  * helpers. Performs the full archive+review+import-feature install in
  * sequence (each idempotent):
  *   1. Copy templates/skills/fabric-archive/SKILL.md into .claude/skills/ + .codex/skills/
@@ -126,7 +127,13 @@ export async function installHooks(
   results.push(await runSingleStep("claude-hook-config", () => mergeClaudeCodeHookConfig(normalizedTarget)));
   results.push(await runSingleStep("codex-hook-config", () => mergeCodexHookConfig(normalizedTarget)));
   results.push(await runSingleStep("cursor-hook-config", () => mergeCursorHookConfig(normalizedTarget)));
-  results.push(...await runStep(() => addArchiveSkillPointer(normalizedTarget)));
+  // rc.12 broad-gate-fabric-lang TASK-006: managed-section writer replaces
+  // the rc.4-era POINTER_LINE substring appender. Resolve fabric_language
+  // from the workspace's .fabric/fabric-config.json so the section's
+  // "Language" line interpolates the active preference; falls back to
+  // "match-existing" when the config has not yet been scaffolded.
+  const fabricLanguage = readFabricLanguagePreference(normalizedTarget);
+  results.push(...await runStep(() => addFabricKnowledgeBaseSection(normalizedTarget, fabricLanguage)));
   results.push(...validateHookPaths(normalizedTarget));
 
   return summarizeResults(results);

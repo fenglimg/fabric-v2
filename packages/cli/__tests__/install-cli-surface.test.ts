@@ -16,7 +16,7 @@ import {
 // packages/cli/templates/hooks/fabric-hint.cjs reader helpers. If a new
 // reader is added in the future, add the field here too.
 const EXPECTED_FABRIC_CONFIG_FIELDS = [
-  "knowledge_language",
+  "fabric_language",
   "archive_hint_hours",
   "archive_hint_cooldown_hours",
   "review_hint_pending_count",
@@ -48,7 +48,7 @@ describe("init CLI surface", () => {
     const target = createWerewolfFixtureRoot("fab-init-reapply");
     tempRoots.push(target);
 
-    const { buildInitExecutionPlan } = await import("../src/commands/init.ts");
+    const { buildInitExecutionPlan } = await import("../src/commands/install.ts");
     const plan = await buildInitExecutionPlan({
       target,
       options: { force: true, reapply: true },
@@ -65,14 +65,14 @@ describe("init CLI surface", () => {
     const target = createWerewolfFixtureRoot("fab-init-plan-acceptance");
     tempRoots.push(target);
 
-    const { initCommand } = await import("../src/commands/init.ts");
+    const { installCommand } = await import("../src/commands/install.ts");
     vi.spyOn(console, "log").mockImplementation(() => {});
     vi.spyOn(process.stderr, "write").mockImplementation(((chunk: string | Uint8Array) => {
       void chunk;
       return true;
     }) as typeof process.stderr.write);
 
-    await initCommand.run?.({
+    await installCommand.run?.({
       args: {
         target,
         plan: true,
@@ -91,14 +91,14 @@ describe("init CLI surface", () => {
     const target = createWerewolfFixtureRoot("fab-init-reapply-acceptance");
     tempRoots.push(target);
 
-    const { initCommand } = await import("../src/commands/init.ts");
+    const { installCommand } = await import("../src/commands/install.ts");
     vi.spyOn(console, "log").mockImplementation(() => {});
     vi.spyOn(process.stderr, "write").mockImplementation(((chunk: string | Uint8Array) => {
       void chunk;
       return true;
     }) as typeof process.stderr.write);
 
-    await initCommand.run?.({
+    await installCommand.run?.({
       args: {
         target,
         yes: true,
@@ -113,7 +113,7 @@ describe("init CLI surface", () => {
     // legacy bootstrap/README.md.
     writeFixtureFile(target, ".fabric/bootstrap/README.md", "# reapply me\n");
 
-    await initCommand.run?.({
+    await installCommand.run?.({
       args: {
         target,
         reapply: true,
@@ -136,7 +136,7 @@ describe("init CLI surface", () => {
     const target = createWerewolfFixtureRoot("fab-init-cli-surface");
     tempRoots.push(target);
 
-    const { initCommand } = await import("../src/commands/init.ts");
+    const { installCommand } = await import("../src/commands/install.ts");
     const stdout: string[] = [];
     const stderr: string[] = [];
     vi.spyOn(console, "log").mockImplementation((message?: unknown) => {
@@ -148,7 +148,7 @@ describe("init CLI surface", () => {
     }) as typeof process.stderr.write);
     restoreTtyMocks.push(setProcessTty(true));
 
-    await initCommand.run?.({
+    await installCommand.run?.({
       args: {
         target,
         plan: true,
@@ -160,7 +160,7 @@ describe("init CLI surface", () => {
     expect(stderr.some((line) => line.includes("Using standard --plan mode"))).toBe(true);
     expect(stderr.some((line) => line.includes("Compatibility: --interactive=false"))).toBe(true);
     expect(stderr.some((line) => line.includes("legacy --no-* flags"))).toBe(true);
-    expect(stdout.some((line) => line.includes("Fabric init dry run"))).toBe(true);
+    expect(stdout.some((line) => line.includes("Fabric install dry run"))).toBe(true);
     expect(stdout.some((line) => line.includes("Install bootstrap templates?"))).toBe(false);
   });
 });
@@ -170,7 +170,7 @@ describe("init CLI surface — fabric-config.json scaffold (TASK-003)", () => {
     const target = createWerewolfFixtureRoot("fab-init-config-fresh");
     tempRoots.push(target);
 
-    const { initFabric } = await import("../src/commands/init.ts");
+    const { initFabric } = await import("../src/commands/install.ts");
     await initFabric(target);
 
     const configPath = join(target, ".fabric", "fabric-config.json");
@@ -182,11 +182,11 @@ describe("init CLI surface — fabric-config.json scaffold (TASK-003)", () => {
       expect(parsed, `missing field ${field}`).toHaveProperty(field);
     }
     // Verify the documented defaults explicitly so a silent default-shift
-    // is caught by the test. TASK-006 (C1): knowledge_language is fixated
+    // is caught by the test. TASK-006 (C1): fabric_language is fixated
     // at init time by probing README + docs/*.md. The werewolf fixture
     // README is pure English so the detector resolves to "en". The literal
     // "match-existing" placeholder is no longer written.
-    expect(parsed.knowledge_language).toBe("en");
+    expect(parsed.fabric_language).toBe("en");
     expect(parsed.archive_hint_hours).toBe(24);
     expect(parsed.archive_hint_cooldown_hours).toBe(12);
     expect(parsed.review_hint_pending_count).toBe(10);
@@ -201,7 +201,7 @@ describe("init CLI surface — fabric-config.json scaffold (TASK-003)", () => {
     const target = createWerewolfFixtureRoot("fab-init-config-preserved");
     tempRoots.push(target);
 
-    const { initFabric } = await import("../src/commands/init.ts");
+    const { initFabric } = await import("../src/commands/install.ts");
     await initFabric(target);
 
     // User edits the file: changes one field, removes another, adds a custom field.
@@ -224,7 +224,7 @@ describe("init CLI surface — fabric-config.json scaffold (TASK-003)", () => {
     expect(afterParsed.custom_user_field).toBe("user-was-here");
     // Verify NO merge — schema fields the user removed are NOT re-added.
     expect(afterParsed).not.toHaveProperty("archive_hint_hours");
-    expect(afterParsed).not.toHaveProperty("knowledge_language");
+    expect(afterParsed).not.toHaveProperty("fabric_language");
     // Mtime unchanged (no write happened).
     expect(statSync(configPath).mtimeMs).toBe(beforeMtime);
   });
@@ -233,11 +233,11 @@ describe("init CLI surface — fabric-config.json scaffold (TASK-003)", () => {
     const target = createWerewolfFixtureRoot("fab-init-config-reapply");
     tempRoots.push(target);
 
-    const { initFabric } = await import("../src/commands/init.ts");
+    const { initFabric } = await import("../src/commands/install.ts");
     await initFabric(target);
 
     const configPath = join(target, ".fabric", "fabric-config.json");
-    const customised = { review_hint_pending_count: 99, knowledge_language: "en" };
+    const customised = { review_hint_pending_count: 99, fabric_language: "en" };
     writeFileSync(configPath, JSON.stringify(customised, null, 2) + "\n", "utf8");
     const beforeContent = readFileSync(configPath, "utf8");
 
@@ -251,7 +251,7 @@ describe("init CLI surface — fabric-config.json scaffold (TASK-003)", () => {
     const target = createWerewolfFixtureRoot("fab-init-no-sentinel");
     tempRoots.push(target);
 
-    const { initFabric } = await import("../src/commands/init.ts");
+    const { initFabric } = await import("../src/commands/install.ts");
     await initFabric(target);
 
     const sentinelPath = join(target, ".fabric", ".import-requested");
@@ -287,7 +287,7 @@ describe("init CLI surface — fabric-config.json scaffold (TASK-003)", () => {
     }) as typeof process.stderr.write);
 
     vi.resetModules();
-    const { runInitCommand } = await import("../src/commands/init.ts");
+    const { runInitCommand } = await import("../src/commands/install.ts");
     await runInitCommand({ target, yes: true });
 
     // The retired sentinel prompt MUST NOT appear among any confirm() calls.

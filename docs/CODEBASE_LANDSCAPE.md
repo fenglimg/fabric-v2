@@ -29,8 +29,8 @@ packages/shared
 数据流：
 
 ```text
-fabric init
-  cli/commands/init.ts
+fabric install
+  cli/commands/install.ts
   -> cli/scanner/forensic.ts
   -> shared detector 和 schemas
   -> 写入 .fabric/bootstrap、.fabric/INITIAL_TAXONOMY、.fabric/forensic、.fabric/events.jsonl、hooks、client config

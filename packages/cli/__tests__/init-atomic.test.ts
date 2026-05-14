@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import * as atomicWriteModule from "@fenglimg/fabric-shared/node/atomic-write";
-import { initFabric } from "../src/commands/init.ts";
+import { initFabric } from "../src/commands/install.ts";
 import {
   cleanupFixtureRoot,
   createWerewolfFixtureRoot,

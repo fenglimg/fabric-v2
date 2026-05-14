@@ -56,11 +56,11 @@ async function collectSnapshots(locale: "en" | "zh-CN") {
   process.env.HOME = isolatedHome;
   restoreTtyMocks.push(setProcessTty(false));
 
-  const initTarget = trackFixture(`fab-i18n-init-${locale}`);
+  const installTarget = trackFixture(`fab-i18n-install-${locale}`);
   vi.resetModules();
-  const { initCommand } = await import("../src/commands/init.ts");
-  const initOutput = await captureOutput(async () => {
-    await initCommand.run?.({ args: { target: initTarget } } as never);
+  const { installCommand } = await import("../src/commands/install.ts");
+  const installOutput = await captureOutput(async () => {
+    await installCommand.run?.({ args: { target: installTarget } } as never);
   });
 
   const scanTarget = trackFixture(`fab-i18n-scan-${locale}`);
@@ -98,9 +98,9 @@ async function collectSnapshots(locale: "en" | "zh-CN") {
 
   return sanitizeSnapshot({
     locale,
-    init: {
-      description: initCommand.meta.description,
-      ...initOutput,
+    install: {
+      description: installCommand.meta.description,
+      ...installOutput,
     },
     scan: {
       description: scanCommand.meta.description,

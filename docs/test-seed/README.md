@@ -6,7 +6,7 @@
 
 种子粒度与 [CODEBASE_LANDSCAPE](../CODEBASE_LANDSCAPE.md) 表一致，且与各包测试文件的组织粒度对齐。
 
-- **cli**：命令级。仅覆盖 4 个公共命令 `init`、`scan`、`doctor`、`serve`；`scanner/`、`config/` 等内部子例程不单列模块，仅在所属命令的 §2/§3 中作为支撑细节出现。
+- **cli**：命令级。仅覆盖 4 个公共命令 `install`、`scan`、`doctor`、`serve`；`scanner/`、`config/` 等内部子例程不单列模块，仅在所属命令的 §2/§3 中作为支撑细节出现。
 - **server**：endpoint + service + MCP tool 级。覆盖 12 个 REST endpoints、14 个 services、2 个 MCP tools（`fab_plan_context`、`fab_get_rule_sections`）。SSE `/events` 与 Dashboard static 作为 endpoint 各占一格。
 - **shared**：export 子路径级。`packages/shared/package.json` 中每个 `./xxx` 导出（schemas、detector、i18n、types 等）是一个种子单位；不向下展开到具体 schema 或 type。
 

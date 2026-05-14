@@ -18,7 +18,7 @@ v2.0 is a clean rebrand from v1.x. Fabric's mission shifted from
 deliverable is the full archive → review → promote → lint → archive loop,
 hardened across three AI clients.
 
-**Release signal.** `fabric init` on a clean repo produces a 4–7 entry
+**Release signal.** `fabric install` on a clean repo produces a 4–7 entry
 baseline; the agent's Stop hook eventually prompts archival; the
 `fabric-review` Skill drains `pending/`; `fabric doctor --lint` keeps the
 tree healthy.
@@ -114,7 +114,7 @@ designed but not yet implemented; APIs may shift before release.
 
 ### Release signal
 
-`fabric init --team-remote <git-url>` clones the team-knowledge.git
+`fabric install --team-remote <git-url>` clones the team-knowledge.git
 submodule; `fabric review` enforces role checks; new event types appear
 in `events.jsonl`.
 

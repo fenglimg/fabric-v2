@@ -77,7 +77,7 @@ T5. **MCP `init_context_missing` action_hint** (TASK-039) — `.fabric/init-cont
 
 ## §4 Out of Scope
 
-- CLI 命令实现（init / scan / doctor / serve 命令外壳）— 见 `cli.md`
+- CLI 命令实现（install / scan / doctor / serve 命令外壳）— 见 `cli.md`
 - shared 包 schema / errors / i18n 单元行为 — 见 `shared.md`
 - Dashboard 客户端 UI / SPA 路由层
 - stdio transport 启动（仅作为入口存在；test surface 集中在 HTTP）

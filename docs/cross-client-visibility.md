@@ -1,6 +1,6 @@
 # Cross-Client Stderr Visibility — Fabric Hook Reminders
 
-> **Status:** rc.7 T8 documentation skeleton — manual screenshot capture is a
+> **Status:** rc.12 documentation skeleton — manual screenshot capture is a
 > separate dogfood task tracked by maintainers. The contract below documents
 > *where* each supported client renders Fabric hook stderr; the actual visual
 > verification round is appended once captured. PRs adding screenshots welcome.
@@ -12,7 +12,7 @@ under specific conditions:
 
 | Hook                                 | Event        | Trigger                                                                   |
 | ------------------------------------ | ------------ | ------------------------------------------------------------------------- |
-| `templates/hooks/knowledge-hint-broad.cjs` | SessionStart | Knowledge graph changed since last session (`revision_hash` gating, rc.7 T8) |
+| `templates/hooks/knowledge-hint-broad.cjs` | SessionStart | Unconditionally fires on every SessionStart (Skill-style progressive disclosure) |
 | `templates/hooks/fabric-hint.cjs`    | Stop         | One of four signals (A archive / B review / C import / D maintenance) fires |
 | `templates/hooks/knowledge-hint-narrow.cjs` | PreToolUse   | Edit/Write/MultiEdit on a path with matching narrow knowledge entry       |
 
@@ -46,12 +46,14 @@ correctly.
 
 **Gotchas**
 
-- Cooldown sidecars (`archive-hint-shown.json`, `maintenance-hint-last-emit`,
-  `sessionstart-last-hash`) live in `.fabric/.cache/` — if you don't see an
-  expected banner, check whether the sidecar is suppressing it.
-- The SessionStart `revision_hash` gate (T8) means subsequent boots stay
-  silent until the knowledge graph changes. This is intentional banner-
-  blindness mitigation, not a regression.
+- Cooldown sidecars (`archive-hint-shown.json`, `maintenance-hint-last-emit`)
+  live in `.fabric/.cache/` — if you don't see an expected Stop-hook banner,
+  check whether the sidecar is suppressing it.
+- SessionStart broad-menu emission is unconditional in rc.12+ — every
+  SessionStart fire (including compact/clear-triggered re-fires) re-injects
+  the menu. This is intentional progressive disclosure: the agent must
+  re-encounter the broad knowledge index after context-window resets to
+  preserve working memory.
 
 **Screenshot:** _placeholder — to be captured by maintainer during dogfood_
 
@@ -81,8 +83,8 @@ informational note rather than a hard block.
   rendered via a separate notification channel — check Cursor's tool-output
   panel if you don't see it inline.
 - Cursor caches some session state in its own format; restarting the
-  cursor session forces a fresh SessionStart fire which re-evaluates the
-  T8 gate against the latest `revision_hash`.
+  cursor session forces a fresh SessionStart fire which re-injects the
+  broad-knowledge menu.
 
 **Screenshot:** _placeholder — to be captured by maintainer during dogfood_
 
@@ -121,11 +123,11 @@ When capturing screenshots, exercise the following scenarios per client:
 
 - [ ] **SessionStart cold start, knowledge present** → banner with broad
   entries listed, `revision_hash:` line at the bottom.
-- [ ] **SessionStart repeat boot, unchanged canonical graph** → silent
-  (T8 gate). Verify `.fabric/.cache/sessionstart-last-hash` exists and
-  matches the prior emit.
-- [ ] **SessionStart after adding a canonical entry** → banner re-emits
-  with the new `revision_hash`; sidecar updates.
+- [ ] **SessionStart re-fire after `/compact`** → broad-menu re-injected
+  (verifies rc.12 unconditional emission; compact resets the agent's
+  context window, so the menu must re-appear in working memory).
+- [ ] **SessionStart re-fire after `/clear`** → broad-menu re-injected
+  (same rationale as compact).
 - [ ] **Stop hook Signal A** (24h+ since last archive OR ≥20 edits) → 人-
   first banner with `最近活动集中在: ...` line populated from edit-counter.
 - [ ] **Stop hook Signal B** (≥10 pending OR oldest pending ≥7d) → review
@@ -134,9 +136,6 @@ When capturing screenshots, exercise the following scenarios per client:
   banner.
 - [ ] **Stop hook Signal D** (≥14d since last `doctor_run`) → maintenance
   banner with `fabric doctor --lint` CLI prompt.
-- [ ] **Sentinel override** (rc.7 T1): `fabric init` Y-confirm → next
-  SessionStart appends `/fabric-import` recommendation regardless of T8
-  gate state.
 
 ---
 

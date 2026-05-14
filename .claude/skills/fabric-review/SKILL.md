@@ -19,7 +19,7 @@ If none of the above hold, stop the skill immediately and tell the user (UX i18n
 - zh-CN: `没有触发 review 信号；如需手动 review 请显式调用 fabric-review`
 - en: `No review signal detected; to manually review, explicitly invoke fabric-review`
 
-(Render per `knowledge_language` resolved in Config Load below.)
+(Render per `fabric_language` resolved in Config Load below.)
 
 This skill is `Infer-not-Ask` for mode and `Ask-when-genuine` for per-item actions:
 
@@ -51,9 +51,10 @@ If `.fabric/fabric-config.json` is missing or unreadable, use defaults silently.
 
 ### UX i18n Policy (5-class bilingualization)
 
-The skill consults `knowledge_language` from `.fabric/fabric-config.json`
+The skill consults `fabric_language` from `.fabric/fabric-config.json`
 (固化于 init 时，via `scan.ts:detectExistingLanguage`; default `"en"` when no
-CJK signal is detected in README + docs/). All user-facing text in the
+CJK signal is detected in README + docs/; may resolve to `"match-existing"`,
+`"zh-CN"`, `"en"`, or `"zh-CN-hybrid"`). All user-facing text in the
 following 5 categories MUST be rendered in the resolved language:
 
 1. **Roll-up templates** — the `# Review Summary — mode={...}` final block,
@@ -77,11 +78,10 @@ following 5 categories MUST be rendered in the resolved language:
 
 Rendering rule:
 
-- `knowledge_language === "zh-CN"` → emit the zh-CN variant.
-- `knowledge_language === "en"` (or any other value) → emit the en variant.
-- The Skill MUST NOT mix languages inside a single user-facing block
-  (no "Chinglish" partial translation); each block is either fully zh-CN
-  or fully en.
+- `fabric_language === "zh-CN"` → emit the zh-CN variant; pure monolingual, no language mixing inside a single user-facing block.
+- `fabric_language === "en"` → emit the en variant; pure monolingual, no language mixing inside a single user-facing block.
+- `fabric_language === "zh-CN-hybrid"` → emit Chinese narrative prose with English technical terms preserved. Protected tokens (always EN): MCP tool names (e.g. `fab_get_knowledge_sections`), CLI command names (e.g. `fab install`), file paths, technical concepts (`Skill`, `SessionStart`, `hook`, `MCP`, `revision_hash`, `pending`, `proven`, `verified`, `draft`).
+- `fabric_language === "match-existing"` or any other value → emit the en variant; pure monolingual.
 
 Protected tokens (`fab_review`, `relevance_scope`, `relevance_paths`,
 `narrow`, `broad`, `source_sessions`, `proposed_reason`, `session_context`,
@@ -93,9 +93,9 @@ prose ONLY.
 ### AskUserQuestion i18n Policy (value vs label)
 
 When this skill issues an `AskUserQuestion`, the `header` and `question`
-strings are user-facing prose → translated per `knowledge_language`. The
+strings are user-facing prose → translated per `fabric_language`. The
 `options[]` array entries are **routing keys** consumed by the skill
-state machine — they MUST remain English regardless of `knowledge_language`.
+state machine — they MUST remain English regardless of `fabric_language`.
 
 Canonical options arrays used by this skill (every value below stays
 English in BOTH language variants):
@@ -109,14 +109,14 @@ English in BOTH language variants):
 Worked example — per-item action (the most common AskUserQuestion in this skill):
 
 ```ts
-// EN (knowledge_language === "en")
+// EN (fabric_language === "en")
 AskUserQuestion({
   header: "Review pending entry",
   question: "What action for '{title}'?  ({pending_path})",
   options: ["approve", "reject", "modify", "defer", "skip"]
 })
 
-// zh-CN (knowledge_language === "zh-CN")
+// zh-CN (fabric_language === "zh-CN")
 AskUserQuestion({
   header: "审核 pending 条目",
   question: "对 '{title}' 执行什么操作？({pending_path})",
@@ -210,7 +210,7 @@ Each mode produces user-facing output, then routes per-item or per-batch decisio
    templates; protected tokens (`pending_path`, `layer`, `team`, `decisions`,
    `proposed_reason`, `Tags`, etc.) appear verbatim in BOTH variants:
 
-   en variant (`knowledge_language === "en"`):
+   en variant (`fabric_language === "en"`):
 
    ```md
    ## [type=decisions] [layer=team] pending_path=knowledge/pending/decisions/single-cjs-hook.md
@@ -222,7 +222,7 @@ Each mode produces user-facing output, then routes per-item or per-batch decisio
    ⚠ Possible duplicate of KT-D-0007 (LLM subjective dup/subsumption judgement; thresholds intentionally not quantified)
    ```
 
-   zh-CN variant (`knowledge_language === "zh-CN"`):
+   zh-CN variant (`fabric_language === "zh-CN"`):
 
    ```md
    ## [type=decisions] [layer=team] pending_path=knowledge/pending/decisions/single-cjs-hook.md
@@ -286,7 +286,7 @@ Each mode produces user-facing output, then routes per-item or per-batch decisio
 1. Call `fab_review action="list"` with `filters.maturity="draft"` (or no filter for full corpus inspection).
 2. Tail `.fabric/events.jsonl` for layer_changed / demoted / rejected counts in the trailing 30 days.
 3. Compute stale candidates: pending entries with mtime older than `review_stale_pending_days` (config-resolved, default 14) OR maturity=draft entries with no recent evidence-append events.
-4. Render a corpus dashboard. UX i18n Policy class 1 — roll-up templates; render per `knowledge_language`:
+4. Render a corpus dashboard. UX i18n Policy class 1 — roll-up templates; render per `fabric_language`:
 
    en variant:
 
@@ -471,7 +471,7 @@ mcp__fabric__fab_review({
 
 ### Per-Item Question Phrasing Template
 
-UX i18n Policy class 5 — `header` + `question` translated per `knowledge_language`; `options[]` arrays remain English routing keys in BOTH variants. Choose the variant matching the resolved language; the structure (field names, options) is identical.
+UX i18n Policy class 5 — `header` + `question` translated per `fabric_language`; `options[]` arrays remain English routing keys in BOTH variants. Choose the variant matching the resolved language; the structure (field names, options) is identical.
 
 en variant:
 
@@ -556,9 +556,9 @@ Pending entry presented for review
 
 ## Output Contract
 
-After each invocation, the skill MUST produce a brief roll-up to the user. UX i18n Policy class 1 — roll-up templates; render per `knowledge_language`. Protected tokens (event-type strings such as `knowledge_promoted` / `knowledge_layer_changed` / `knowledge_rejected` / `knowledge_deferred`, plus `.fabric/events.jsonl`) appear verbatim in BOTH variants:
+After each invocation, the skill MUST produce a brief roll-up to the user. UX i18n Policy class 1 — roll-up templates; render per `fabric_language`. Protected tokens (event-type strings such as `knowledge_promoted` / `knowledge_layer_changed` / `knowledge_rejected` / `knowledge_deferred`, plus `.fabric/events.jsonl`) appear verbatim in BOTH variants:
 
-en variant (`knowledge_language === "en"`):
+en variant (`fabric_language === "en"`):
 
 ```md
 # Review Summary — mode={pending|topic|health|revisit}
@@ -577,7 +577,7 @@ en variant (`knowledge_language === "en"`):
 - knowledge_deferred ×D
 ```
 
-zh-CN variant (`knowledge_language === "zh-CN"`):
+zh-CN variant (`fabric_language === "zh-CN"`):
 
 ```md
 # Review 汇总 — mode={pending|topic|health|revisit}

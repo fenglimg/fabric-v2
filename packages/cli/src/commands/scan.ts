@@ -92,7 +92,7 @@ export async function createScanReport(
 // ---------------------------------------------------------------------------
 // v2.0 rc.1 init-scan: deterministic baseline knowledge entries
 //
-// `fab scan` reads the forensic.json snapshot produced by `fabric init`
+// `fab scan` reads the forensic.json snapshot produced by `fabric install`
 // (TASK-008) and emits 4-7 markdown knowledge entries under
 // `.fabric/knowledge/{models,guidelines,processes}/`. Each entry has v2.0
 // frontmatter (id KP-/KT-, type, layer, maturity, layer_reason, created_at)
@@ -111,11 +111,19 @@ const FORENSIC_FILE = ".fabric/forensic.json";
 const AGENTS_META_FILE = ".fabric/agents.meta.json";
 const LAYER_REASON = "project artifact (deterministic init scan)";
 
-// v2.0 (grill-followup TASK-008): bilingual init-scan templates. Resolved at
-// scan start from `fabric.config.json#knowledge_language`. `'match-existing'`
-// is resolved against the repo's README / docs prose; an empty repo defaults
-// to `'en'`. Only en + zh-CN are supported (Q3 scope decision).
-export type ResolvedLanguage = "en" | "zh-CN";
+// v2.0 (grill-followup TASK-008) / rc.12 broad-gate-fabric-lang: bilingual
+// init-scan templates. Resolved at scan start from
+// `fabric.config.json#fabric_language`. `'match-existing'` is resolved against
+// the repo's README / docs prose; an empty repo defaults to `'en'`. The
+// supported variants are en + zh-CN (Q3 scope decision); rc.12 additionally
+// introduces `'zh-CN-hybrid'` for projects that author Chinese narrative prose
+// while preserving English technical terms verbatim — auto-detected as the
+// default for any CJK-heavy repo, since real-world CJK projects almost always
+// preserve English tech terms. Templates for `'zh-CN-hybrid'` reuse the
+// `'zh-CN'` registry (same Chinese narrative body, English headings + tech
+// terms preserved by the existing template contract); the enum value remains
+// observable downstream so skills can distinguish strict vs hybrid intent.
+export type ResolvedLanguage = "en" | "zh-CN" | "zh-CN-hybrid";
 type BaselineSlug =
   | "tech-stack"
   | "module-structure"
@@ -183,13 +191,13 @@ export async function runInitScan(
   const nowIso = (options.now ?? new Date()).toISOString();
   const tags = deriveTagsFromForensic(forensic);
 
-  // v2.0 grill-followup TASK-008: read knowledge_language once at scan start
-  // and dispatch every baseline emission through the resolved language. CI
-  // config + project brief stay EN-only for now (out of the 5 explicit slugs
-  // covered by Q3); they are non-baseline / optional entries.
+  // v2.0 grill-followup TASK-008 / rc.12: read fabric_language once at scan
+  // start and dispatch every baseline emission through the resolved language.
+  // CI config + project brief stay EN-only for now (out of the 5 explicit
+  // slugs covered by Q3); they are non-baseline / optional entries.
   const fabricConfig = readFabricConfig(target);
-  const knowledgeLanguage = fabricConfig.knowledge_language ?? "match-existing";
-  const resolvedLanguage = resolveKnowledgeLanguage(knowledgeLanguage, target);
+  const fabricLanguage = fabricConfig.fabric_language ?? "match-existing";
+  const resolvedLanguage = resolveFabricLanguage(fabricLanguage, target);
 
   // Build candidate entries (some may be null when source data is missing).
   const candidates: Array<MarkdownEntry | null> = [
@@ -338,13 +346,17 @@ export default scanCommand;
 // review skills tag-filter without language-specific regex.
 //
 // Resolution order at scan time:
-//   1. `fabric.config.json#knowledge_language` is read once.
-//   2. `'en'` / `'zh-CN'` lock the templates regardless of repo content.
+//   1. `fabric.config.json#fabric_language` is read once.
+//   2. `'en'` / `'zh-CN'` / `'zh-CN-hybrid'` lock the templates regardless of
+//      repo content.
 //   3. `'match-existing'` (default) calls `detectExistingLanguage(target)`,
 //      which scans the repo's README.md (top-level) and docs/ prose for
 //      zh-CN characters (Unicode U+4E00..U+9FFF). When zh-CN ratio > 30%
-//      of letter-equivalents the result is `'zh-CN'`; otherwise (including
-//      empty repo with no README and no docs/) the result is `'en'`.
+//      of letter-equivalents the result is `'zh-CN-hybrid'` (rc.12: the
+//      auto-detect default, since real-world CJK projects preserve English
+//      tech terms); otherwise (including empty repo with no README and no
+//      docs/) the result is `'en'`. Pure `'zh-CN'` is intentional opt-in
+//      via the config field — never auto-detected.
 // ---------------------------------------------------------------------------
 
 interface TechStackInputs {
@@ -398,7 +410,14 @@ interface BaselineTemplateRegistry {
   "readme-first-paragraph": BaselineTemplate<ReadmeFirstParaInputs>;
 }
 
-const BASELINE_TEMPLATES: Record<ResolvedLanguage, BaselineTemplateRegistry> = {
+// rc.12 broad-gate-fabric-lang: `'zh-CN-hybrid'` reuses the `'zh-CN'`
+// registry (same Chinese narrative body; English headings + tech terms
+// preserved by the template contract). We declare `en` + `zh-CN` inline as
+// the strict-pair registry, then alias the hybrid key post-literal so we
+// do not duplicate ~150 lines of template definition. The runtime
+// invariant — `BASELINE_TEMPLATES["zh-CN-hybrid"] === BASELINE_TEMPLATES["zh-CN"]`
+// — is asserted in scan-builders.test.ts.
+const STRICT_BASELINE_TEMPLATES: Record<"en" | "zh-CN", BaselineTemplateRegistry> = {
   en: {
     "tech-stack": {
       title: ({ frameworkSummary }) => `Tech stack: ${frameworkSummary}`,
@@ -549,39 +568,63 @@ const BASELINE_TEMPLATES: Record<ResolvedLanguage, BaselineTemplateRegistry> = {
   },
 };
 
+// rc.12 broad-gate-fabric-lang: `'zh-CN-hybrid'` is the canonical hybrid
+// variant (Chinese narrative prose + English technical terms preserved
+// verbatim). The existing `'zh-CN'` registry already encodes the hybrid
+// contract — section headings + tech terms (Node.js, TypeScript, pnpm, MCP
+// tool names, file paths, etc.) stay English while narrative strings are
+// Chinese — so we alias the hybrid variant to the same registry. The enum
+// distinction remains observable in the config + scan dispatch so downstream
+// skills can branch on intent (strict zh-CN vs hybrid) if needed.
+const BASELINE_TEMPLATES: Record<ResolvedLanguage, BaselineTemplateRegistry> = {
+  en: STRICT_BASELINE_TEMPLATES.en,
+  "zh-CN": STRICT_BASELINE_TEMPLATES["zh-CN"],
+  "zh-CN-hybrid": STRICT_BASELINE_TEMPLATES["zh-CN"],
+};
+
 function resolveTemplateTitle<I>(template: BaselineTemplate<I>, inputs: I): string {
   return typeof template.title === "function" ? template.title(inputs) : template.title;
 }
 
 /**
- * Resolve the configured `knowledge_language` value to a concrete `'en'` or
- * `'zh-CN'`. Pure dispatch for explicit values; delegates to
- * `detectExistingLanguage` for `'match-existing'`.
+ * Resolve the configured `fabric_language` value to a concrete `'en'`,
+ * `'zh-CN'`, or `'zh-CN-hybrid'`. Pure dispatch for explicit values;
+ * delegates to `detectExistingLanguage` for `'match-existing'`.
+ *
+ * rc.12 broad-gate-fabric-lang: input domain widened from the 3-value
+ * (`match-existing | en | zh-CN`) set to the 4-value enum that also
+ * accepts `'zh-CN-hybrid'`, matching `fabricLanguageSchema` in
+ * `@fenglimg/fabric-shared`.
  */
-function resolveKnowledgeLanguage(
-  configured: "match-existing" | "en" | "zh-CN",
+function resolveFabricLanguage(
+  configured: "match-existing" | "en" | "zh-CN" | "zh-CN-hybrid",
   target: string,
 ): ResolvedLanguage {
-  if (configured === "en" || configured === "zh-CN") {
+  if (configured === "en" || configured === "zh-CN" || configured === "zh-CN-hybrid") {
     return configured;
   }
   return detectExistingLanguage(target);
 }
 
 /**
- * Heuristic language detection used when `knowledge_language` is set to
+ * Heuristic language detection used when `fabric_language` is set to
  * `'match-existing'` (the default).
  *
  * Reads README.md (top-level) and the `docs/` directory (one level deep) and
  * counts characters in the CJK Unified Ideographs range U+4E00..U+9FFF
- * (zh-CN, ja, ko share this block; we treat any CJK-heavy prose as zh-CN
+ * (zh-CN, ja, ko share this block; we treat any CJK-heavy prose as Chinese
  * for v2.0 since Q3 scope explicitly limits us to en + zh-CN).
  *
- * Returns `'zh-CN'` when CJK characters account for more than 30 % of the
- * combined CJK + ASCII letter count; otherwise returns `'en'`. An empty
- * repo (no README, no docs/) defaults to `'en'`. The 30 % threshold is
- * deliberately liberal so a short bilingual README with a sizeable zh-CN
- * section still resolves to zh-CN; pure-EN docs sit well below it.
+ * rc.12 broad-gate-fabric-lang: returns `'zh-CN-hybrid'` (NOT pure
+ * `'zh-CN'`) when CJK characters account for more than 30 % of the
+ * combined CJK + ASCII letter count. The hybrid variant renders Chinese
+ * narrative prose while preserving English technical terms verbatim,
+ * which is what real-world CJK projects almost always want — pure
+ * `'zh-CN'` is intentional opt-in via the config field and is never
+ * auto-detected. Otherwise returns `'en'`. An empty repo (no README, no
+ * docs/) defaults to `'en'`. The 30 % threshold is deliberately liberal
+ * so a short bilingual README with a sizeable zh-CN section still
+ * resolves to hybrid; pure-EN docs sit well below it.
  */
 export function detectExistingLanguage(target: string): ResolvedLanguage {
   const ZH_CN_RATIO_THRESHOLD = 0.3;
@@ -640,7 +683,10 @@ export function detectExistingLanguage(target: string): ResolvedLanguage {
   }
 
   const ratio = cjkCount / denominator;
-  return ratio > ZH_CN_RATIO_THRESHOLD ? "zh-CN" : "en";
+  // rc.12 broad-gate-fabric-lang: CJK signal → 'zh-CN-hybrid' (not 'zh-CN').
+  // Real-world CJK projects preserve English technical terms; pure 'zh-CN'
+  // is intentional opt-in via the config field, never auto-detected.
+  return ratio > ZH_CN_RATIO_THRESHOLD ? "zh-CN-hybrid" : "en";
 }
 
 // ---------------------------------------------------------------------------
@@ -652,9 +698,10 @@ export function detectExistingLanguage(target: string): ResolvedLanguage {
 //   - Add MANDATORY_INJECTION when type === 'guideline'
 //   - Add BUSINESS_LOGIC_CHUNKS when type === 'process'
 //
-// TASK-008: the 5 baseline builders dispatch through `BASELINE_TEMPLATES`
-// using the resolved knowledge_language. Section headings + tech terms are
-// preserved verbatim across languages; only narrative prose is localized.
+// TASK-008 / rc.12: the 5 baseline builders dispatch through
+// `BASELINE_TEMPLATES` using the resolved fabric_language. Section headings
+// + tech terms are preserved verbatim across languages; only narrative
+// prose is localized.
 // ---------------------------------------------------------------------------
 
 function buildTechStackEntry(
@@ -1530,8 +1577,8 @@ export const __testing__ = {
   isBuildConfigPath,
   extractFirstParagraph,
   extractExplicitDescription,
-  // TASK-008: bilingual template registry + language detection
+  // TASK-008 / rc.12: bilingual template registry + language detection
   detectExistingLanguage,
-  resolveKnowledgeLanguage,
+  resolveFabricLanguage,
   BASELINE_TEMPLATES,
 };

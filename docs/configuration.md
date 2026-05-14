@@ -236,11 +236,18 @@ the long tail.
 
 ## Workspace policy
 
-### `knowledge_language` (default `match-existing`)
+### `fabric_language` (default `match-existing`)
 
-Drives `fabric init` baseline template language. `match-existing` detects
-the language of the repo's README / docs prose; explicit `zh-CN` / `en`
-lock the policy regardless of detected content.
+Drives `fabric install` baseline template language. `match-existing` detects the language
+of the repo's README / docs prose; explicit `zh-CN` / `en` lock the policy
+regardless of detected content. `zh-CN-hybrid` (rc.12) renders Chinese
+narrative prose with English technical terms preserved (MCP tool names,
+CLI commands, file paths, technical concepts such as Skill, Fabric, Zod).
+
+Field name history: this field was named `knowledge_language` through
+rc.11. rc.12 hard-renamed it to `fabric_language` with no migration
+path — pre-rc.12 `fabric-config.json` files fail Zod parse with a
+clear "Unrecognized key" error.
 
 ### `default_layer_filter` (default `both`)
 

@@ -5,6 +5,48 @@ All notable changes to Fabric will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0-rc.12] — 2026-05-14
+
+**Broad gate + fabric_language naming alignment.** Four breaking renames
+land in a single rc: the `fab init` command becomes `fab install`, the
+`knowledge_language` config field becomes `fabric_language`, the
+SessionStart `revision_hash` gate is removed in favour of the
+managed-section header, and the legacy `POINTER_LINE` mechanism migrates
+to managed-section everywhere it appeared. All four are hard cuts with
+no aliases or compatibility shims (clean-slate per zero-user-period
+preference).
+
+### Changed
+
+- **`fab init` → `fab install` hard rename**: the command, file
+  (`packages/cli/src/commands/install.ts`), citty `meta.name`, exported
+  `installCommand` symbol, dispatch table entry, ~30 `cli.install.*`
+  i18n keys (renamed from `cli.init.*` in `en.ts` + `zh-CN.ts`), help
+  text values ("Initialize Fabric" → "Install Fabric"; "初始化 Fabric"
+  → "安装 Fabric"), six doctor / meta-reader / api `action_hint`
+  strings, and 15+ docs / README references all switch to the install
+  verb. Legacy `fab init` invocations now emit citty's "unknown
+  command" error — no deprecation message, no alias. Snapshots
+  (`cli-surface.test.ts.snap` + `i18n.test.ts.snap`) regenerated to
+  match.
+- **`knowledge_language` → `fabric_language` schema rename** (TASK-003):
+  fabric-config.json field renamed end-to-end (Zod schema, defaults,
+  CLI writer, SKILL.md readers, doctor lints, dashboard surface). New
+  `zh-CN-hybrid` enum value preserves English technical terms in
+  Chinese narrative prose. Existing `knowledge_language` values are
+  not migrated — fresh installs only.
+- **SessionStart `revision_hash` gate removed** (TASK-001): the
+  knowledge-hint-broad SessionStart hook no longer reads or compares
+  the rule-set `revision_hash` before injecting the broad knowledge
+  digest. The check was a no-op safeguard against an unrealised
+  drift case and added latency on every session start.
+- **`POINTER_LINE` → managed-section migration** (TASK-006):
+  pointer-line bootstrap anchoring (the single-line `<!-- fabric:pointer -->`
+  marker) is replaced with the existing managed-section block protocol
+  (`<!-- fabric:managed -->` ... `<!-- /fabric:managed -->`). All
+  bootstrap anchors (AGENTS.md, CLAUDE.md, `.cursor/rules/*.md`) now
+  use the multi-line managed-section format uniformly.
+
 ## [2.0.0-rc.10] — 2026-05-13
 
 **Fabric UX dogfood fixes.** Resolves three first-time-user pain points

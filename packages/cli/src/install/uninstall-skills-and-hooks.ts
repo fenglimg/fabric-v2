@@ -6,13 +6,11 @@ import { atomicWriteJson, atomicWriteText } from "@fenglimg/fabric-shared/node/a
 
 import {
   FABRIC_HOOK_COMMAND_PATHS,
+  FABRIC_SECTION_REGEX,
   HOOK_CONFIG_ARRAY_PATHS,
   HOOK_CONFIG_TARGETS,
   HOOK_SCRIPT_DESTINATIONS,
-  IMPORT_POINTER_LINE,
-  POINTER_LINE,
-  POINTER_TARGETS,
-  REVIEW_POINTER_LINE,
+  SECTION_TARGETS,
   SKILL_DESTINATIONS,
 } from "./skills-and-hooks.js";
 
@@ -30,7 +28,7 @@ import {
  *
  * Wiring site: TASK-002's `fab uninstall` command bootstrap stage invokes
  * {@link uninstallBootstrapStage} which fans out to every helper here in the
- * exact reverse order of `fabric init`'s install pipeline.
+ * exact reverse order of `fabric install`'s install pipeline.
  *
  * Scope: project-local artifacts only. Personal root (`$FABRIC_HOME/.fabric/`)
  * is OUTSIDE bootstrap scope and is never touched by any helper here.
@@ -241,23 +239,34 @@ export async function unmergeCursorHookConfig(
 // -----------------------------------------------------------------------
 
 /**
- * Inverse of `addArchiveSkillPointer`. For each path in `POINTER_TARGETS`
- * (CLAUDE.md / AGENTS.md / .cursor/rules), reads the file (if present) and
- * removes every line that contains the fabric-archive, fabric-review, or
- * fabric-import pointer literal. Writes the result atomically when changed.
+ * Inverse of `addFabricKnowledgeBaseSection`. For each path in
+ * {@link SECTION_TARGETS} (CLAUDE.md / AGENTS.md / .cursor/rules), reads the
+ * file (if present) and strips the entire managed section delimited by
+ * `<!-- fabric:knowledge-base:begin -->` … `<!-- fabric:knowledge-base:end
+ * -->` markers (inclusive of any preceding blank-line separator so we don't
+ * leave an orphan blank line). Writes the result atomically when changed.
  *
- * The file is NEVER deleted even if all lines were fabric pointers — install
- * cannot prove it was the creator of the file, so uninstall preserves it to
- * avoid clobbering pre-existing user content.
+ * Idempotent: when the markers are absent the file is left untouched and the
+ * step records a `skipped/no-fabric-section` result. Running uninstall twice
+ * back-to-back therefore reports 100 % skipped on the second pass.
+ *
+ * The file is NEVER deleted even if all that remained was the section —
+ * install cannot prove it was the creator of the file, so uninstall preserves
+ * it to avoid clobbering pre-existing user content (mirrors the rc.4 pointer-
+ * strip conservatism).
+ *
+ * rc.12 broad-gate-fabric-lang TASK-006: replaces `stripArchiveSkillPointers`.
+ * The three POINTER_LINE substring filters are gone; a single regex captures
+ * the marker-delimited region in one pass.
  */
-export async function stripArchiveSkillPointers(
+export async function stripFabricKnowledgeBaseSection(
   projectRoot: string,
 ): Promise<UninstallStepResult[]> {
   const results: UninstallStepResult[] = [];
-  for (const rel of POINTER_TARGETS) {
+  for (const rel of SECTION_TARGETS) {
     const target = join(projectRoot, rel);
     if (!existsSync(target)) {
-      results.push({ step: "pointer", path: target, status: "skipped", message: "absent" });
+      results.push({ step: "section", path: target, status: "skipped", message: "absent" });
       continue;
     }
     let existing: string;
@@ -265,7 +274,7 @@ export async function stripArchiveSkillPointers(
       existing = await readFile(target, "utf8");
     } catch (error: unknown) {
       results.push({
-        step: "pointer",
+        step: "section",
         path: target,
         status: "error",
         message: error instanceof Error ? error.message : String(error),
@@ -273,28 +282,39 @@ export async function stripArchiveSkillPointers(
       continue;
     }
 
-    const pointerLiterals = [POINTER_LINE, REVIEW_POINTER_LINE, IMPORT_POINTER_LINE];
-    const filtered = existing
-      .split("\n")
-      .filter((line) => !pointerLiterals.some((literal) => line.includes(literal)))
-      .join("\n");
+    const match = existing.match(FABRIC_SECTION_REGEX);
+    if (match === null) {
+      results.push({
+        step: "section",
+        path: target,
+        status: "skipped",
+        message: "no-fabric-section",
+      });
+      continue;
+    }
+
+    const before = existing.slice(0, match.index ?? 0);
+    const after = existing.slice((match.index ?? 0) + match[0].length);
+    // Strip a leading newline that would otherwise survive as an orphan blank
+    // line where the section used to sit.
+    const filtered = `${before}${after.replace(/^\r?\n/, "")}`;
 
     if (filtered === existing) {
       results.push({
-        step: "pointer",
+        step: "section",
         path: target,
         status: "skipped",
-        message: "no-fabric-pointers",
+        message: "no-fabric-section",
       });
       continue;
     }
 
     try {
       await atomicWriteText(target, filtered);
-      results.push({ step: "pointer", path: target, status: "removed" });
+      results.push({ step: "section", path: target, status: "removed" });
     } catch (error: unknown) {
       results.push({
-        step: "pointer",
+        step: "section",
         path: target,
         status: "error",
         message: error instanceof Error ? error.message : String(error),
@@ -310,7 +330,7 @@ export async function stripArchiveSkillPointers(
 
 /**
  * Bootstrap-stage uninstall orchestrator. Runs every helper in this module
- * in the exact reverse order of `fabric init`'s install pipeline:
+ * in the exact reverse order of `fabric install`'s install pipeline:
  *
  *   1. Pointer-line strip (CLAUDE.md / AGENTS.md / .cursor/rules)
  *   2. Hook-config un-merge (cursor → codex → claude — reverse of install)
@@ -328,9 +348,9 @@ export async function uninstallBootstrapStage(
 ): Promise<UninstallStepResult[]> {
   const results: UninstallStepResult[] = [];
 
-  // 1. Pointers first (cheapest, reverses last step of install)
-  await runAndCollect(results, "pointer", projectRoot, () =>
-    stripArchiveSkillPointers(projectRoot),
+  // 1. Managed section first (cheapest, reverses last step of install)
+  await runAndCollect(results, "section", projectRoot, () =>
+    stripFabricKnowledgeBaseSection(projectRoot),
   );
 
   // 2. Hook configs (reverse of install order: cursor → codex → claude)

@@ -29,7 +29,7 @@
 
 - 本仓库当前不能把根 `.fabric/` 当作完整 Fabric runtime registry。
 - 下方表格记录的是源码、模板和 example 中的规则身份来源，不等价于当前项目已激活规则。
-- 若要让本仓库自身成为 Fabric-managed project，应先运行 `fabric init` 或恢复 `.fabric/rules/`，再用 `fabric doctor --fix` 固化派生索引。
+- 若要让本仓库自身成为 Fabric-managed project，应先运行 `fabric install` 或恢复 `.fabric/rules/`，再用 `fabric doctor --fix` 固化派生索引。
 
 ## Stable ID 契约
 

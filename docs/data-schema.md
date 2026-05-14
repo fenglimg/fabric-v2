@@ -248,8 +248,9 @@ Slug rename = `git mv <id>--old-slug.md → <id>--new-slug.md` + emit
 
 ## Language Policy
 
-Source of truth: `knowledgeLanguageSchema` in
-`packages/shared/src/schemas/fabric-config.ts`.
+Source of truth: `fabricLanguageSchema` in
+`packages/shared/src/schemas/fabric-config.ts` (rc.12 hard rename from
+`knowledgeLanguageSchema`).
 
 The **M3 style** (Q3 LOCKED) governs knowledge entry content:
 
@@ -257,10 +258,10 @@ The **M3 style** (Q3 LOCKED) governs knowledge entry content:
 - **Section markers** (`[MISSION_STATEMENT]`, `[MANDATORY_INJECTION]`,
   `[BUSINESS_LOGIC_CHUNKS]`, `[CONTEXT_INFO]`): EN (LLM anchors).
 - **H1 / H2 headings**: EN (structural skeleton, grep/lint stable).
-- **Body paragraphs**: zh-CN OR EN per `knowledge_language` config.
+- **Body paragraphs**: zh-CN OR EN per `fabric_language` config.
 - **Tech terms** in body (TypeScript, Zod, MCP, etc.): preserved EN.
 
-Config field `knowledge_language`:
+Config field `fabric_language` (rc.12 hard rename from `knowledge_language`):
 
 ```
 "match-existing"  (default)  → init-scan detects from existing entries' language;
@@ -268,9 +269,12 @@ Config field `knowledge_language`:
 "zh-CN"                      → explicit lock; init-scan templates and
                                fab_extract_knowledge body output in zh-CN.
 "en"                         → explicit lock; everything English.
+"zh-CN-hybrid"   (rc.12)     → Chinese narrative prose with English technical
+                               terms preserved (MCP tool names, CLI commands,
+                               file paths, Skill/Fabric protected tokens).
 ```
 
-Surfaces that stay EN regardless of `knowledge_language`:
+Surfaces that stay EN regardless of `fabric_language`:
 - Fabric tool source code, CLI messages, error strings.
 - `docs/` directory (OSS audience).
 - Skill files (`SKILL.md` and prompt templates).

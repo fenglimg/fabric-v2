@@ -355,7 +355,7 @@ describe("scan builders — deterministic baseline knowledge", () => {
     expect(__testing__.detectExistingLanguage(target)).toBe("en");
   });
 
-  it("detectExistingLanguage returns 'zh-CN' when README is CJK-heavy", () => {
+  it("detectExistingLanguage returns 'zh-CN-hybrid' when README is CJK-heavy", () => {
     const target = makeTempDir("detect-zh");
     writeFileSync(
       join(target, "README.md"),
@@ -364,7 +364,12 @@ describe("scan builders — deterministic baseline knowledge", () => {
       "# 项目简介\n\n这是一个用于演示 fabric 扫描管线的最小仓库。它会输出确定性的 knowledge entries，并保留 EN tech terms。\n",
       "utf8",
     );
-    expect(__testing__.detectExistingLanguage(target)).toBe("zh-CN");
+    // rc.12 broad-gate-fabric-lang: CJK signal in README + docs implies
+    // mixed Chinese-narrative-with-English-technical-terms; pure zh-CN is
+    // intentional opt-in (set via fabric_language in fabric-config.json),
+    // not auto-detected. zh-CN-hybrid is the canonical auto-detect default
+    // for any CJK-heavy repo.
+    expect(__testing__.detectExistingLanguage(target)).toBe("zh-CN-hybrid");
   });
 
   it("detectExistingLanguage scans docs/ in addition to README", () => {
@@ -376,13 +381,18 @@ describe("scan builders — deterministic baseline knowledge", () => {
       "# 概览\n\n本目录记录了项目的核心设计与实现细节，包含若干模块说明。\n",
       "utf8",
     );
-    expect(__testing__.detectExistingLanguage(target)).toBe("zh-CN");
+    // rc.12: same CJK signal path → 'zh-CN-hybrid'. The docs/ sweep is just
+    // an alternate source for the same heuristic; the return-value contract
+    // is keyed on the signal, not the file location.
+    expect(__testing__.detectExistingLanguage(target)).toBe("zh-CN-hybrid");
   });
 
-  it("resolveKnowledgeLanguage passes through explicit values", () => {
+  it("resolveFabricLanguage passes through explicit values", () => {
     const target = makeTempDir("resolve-explicit");
-    expect(__testing__.resolveKnowledgeLanguage("en", target)).toBe("en");
-    expect(__testing__.resolveKnowledgeLanguage("zh-CN", target)).toBe("zh-CN");
+    expect(__testing__.resolveFabricLanguage("en", target)).toBe("en");
+    expect(__testing__.resolveFabricLanguage("zh-CN", target)).toBe("zh-CN");
+    // rc.12: the 4th enum value is also a pass-through.
+    expect(__testing__.resolveFabricLanguage("zh-CN-hybrid", target)).toBe("zh-CN-hybrid");
   });
 
   it("BASELINE_TEMPLATES has en + zh-CN entries for all 5 baseline slugs", () => {
@@ -393,5 +403,17 @@ describe("scan builders — deterministic baseline knowledge", () => {
         expect(typeof __testing__.BASELINE_TEMPLATES[lang][slug].build).toBe("function");
       }
     }
+  });
+
+  it("BASELINE_TEMPLATES['zh-CN-hybrid'] aliases the 'zh-CN' registry (rc.12)", () => {
+    // rc.12 broad-gate-fabric-lang: the hybrid variant reuses the strict
+    // zh-CN template registry to avoid duplicating ~150 lines of template
+    // definition. The existing zh-CN templates already encode the hybrid
+    // contract (English headings + tech terms verbatim, Chinese narrative
+    // prose); the enum distinction is preserved at the config + scan
+    // dispatch layer so downstream skills can branch on intent if needed.
+    expect(__testing__.BASELINE_TEMPLATES["zh-CN-hybrid"]).toBe(
+      __testing__.BASELINE_TEMPLATES["zh-CN"],
+    );
   });
 });

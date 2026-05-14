@@ -1,6 +1,6 @@
 ---
 name: fabric-import
-description: Use this skill for cold-start enrichment of `.fabric/knowledge/` from existing project artifacts — mines `git log` and `docs/*.md` for candidate observations, proposes pending entries via `fab_extract_knowledge`, then deduplicates against canonical entries via `fab_review action: search` (rejecting obvious duplicates, modifying-to-merge marginal duplicates). Triggered by user prompts like "import knowledge from git history" / "bootstrap fabric for this repo" or by an explicit fabric-import skill mention. Default layer: team (project artifacts are team-shared). The 3-phase pipeline is resumable via `.fabric/.import-state.json`.
+description: Use this skill for cold-start enrichment of `.fabric/knowledge/` from existing project artifacts — mines `git log` and `docs/*.md` for candidate observations, proposes pending entries via `fab_extract_knowledge`, then deduplicates against canonical entries via `fab_review action=search` (rejecting obvious duplicates, modifying-to-merge marginal duplicates). Triggered by user prompts like "import knowledge from git history" / "bootstrap fabric for this repo" or by an explicit fabric-import skill mention. Default layer is `team` (project artifacts are team-shared). The 3-phase pipeline is resumable via `.fabric/.import-state.json`.
 allowed-tools: Read, Glob, Grep, Bash, mcp__fabric__fab_extract_knowledge, mcp__fabric__fab_review
 ---
 
@@ -8,7 +8,7 @@ allowed-tools: Read, Glob, Grep, Bash, mcp__fabric__fab_extract_knowledge, mcp__
 
 ## Purpose
 
-`fabric-import` is a one-time (per project) cold-start skill that lifts existing project artifacts — git commit history and Markdown documentation — into the knowledge layer as pending entries. It is the bridge between a brand-new Fabric installation (which only has the 4–7 baseline entries produced by `fabric init`'s deterministic scan) and a useful corpus that reflects accumulated team thinking. Run it once when adopting Fabric on an existing repo, or after a major refactor that invalidates large chunks of canonical knowledge. Default layer is `team`: project artifacts in git/docs are team-shared by definition; the user can later layer-flip individual entries to `personal` via `fabric-review` modify.
+`fabric-import` is a one-time (per project) cold-start skill that lifts existing project artifacts — git commit history and Markdown documentation — into the knowledge layer as pending entries. It is the bridge between a brand-new Fabric installation (which only has the 4–7 baseline entries produced by `fabric install`'s deterministic scan) and a useful corpus that reflects accumulated team thinking. Run it once when adopting Fabric on an existing repo, or after a major refactor that invalidates large chunks of canonical knowledge. Default layer is `team`: project artifacts in git/docs are team-shared by definition; the user can later layer-flip individual entries to `personal` via `fabric-review` modify.
 
 ## Precondition
 
@@ -23,13 +23,13 @@ If none of the above hold, stop the skill immediately and tell the user:
 - zh-CN: `没有触发 import 信号；如需手动 import 请显式调用 fabric-import`
 - en: `No import signal detected; to manually import, explicitly invoke fabric-import`
 
-(Render per `knowledge_language` resolved in Phase 0.5 Config Load below — class 2 of the UX i18n Policy.)
+(Render per `fabric_language` resolved in Phase 0.5 Config Load below — class 2 of the UX i18n Policy.)
 
 > **Recommendation source (rc.8+)**: 过去版本的 `.fabric/.import-requested` sentinel 机制已下线；推荐由 SessionStart hook 的 underseed 自检触发（`templates/hooks/knowledge-hint-broad.cjs` 的 `shouldRecommendImport()`：`agents.meta.json` 存在 + canonical 节点数 < `underseed_node_threshold` + `.import-state.json` 缺失三条件齐备时一次性提示）。本 skill 不再读写 sentinel 文件，也不需要在 Phase 3 完成时手动清理它。
 
 This skill SHOULD be skipped (warn the user, do not proceed) when:
 
-- `.fabric/` does not exist — direct the user to run `fabric init` first; `fabric-import` is NOT a substitute for the deterministic init-scan
+- `.fabric/` does not exist — direct the user to run `fabric install` first; `fabric-import` is NOT a substitute for the deterministic install-scan
 - `.fabric/knowledge/` already holds **>`import_skip_canonical_threshold` canonical entries (config-resolved, default 50)** across all types — the project is mature; use `fabric-archive` (per-session capture) and `fabric-review` (lifecycle review) instead; bulk import would just create dup churn
 - `.fabric/.import-state.json` exists with `phase: "complete"` and `last_checkpoint_at` is **<24h ago** — the user just ran import; surface the prior result rather than re-running
 
@@ -114,15 +114,16 @@ and `final_summary.proposed == 0`) → first-run window; otherwise re-run window
 
 ### UX i18n Policy (5-class bilingualization)
 
-The skill consults `knowledge_language` from `.fabric/fabric-config.json`
-(固化于 init 时，via `scan.ts:detectExistingLanguage`; default `"en"` when no
-CJK signal is detected in README + docs/). All user-facing text in the
+The skill consults `fabric_language` from `.fabric/fabric-config.json`
+(固化于 install 时，via `scan.ts:detectExistingLanguage`; default `"en"` when no
+CJK signal is detected in README + docs/; may resolve to `"match-existing"`,
+`"zh-CN"`, `"en"`, or `"zh-CN-hybrid"`). All user-facing text in the
 following 5 categories MUST be rendered in the resolved language:
 
 1. **Roll-up templates** — final summary blocks (`# Import Summary — phase=...`,
    `## Phase 2 — Mining`, `## Phase 3 — Dedup`, etc.). zh-CN ↔ en mirror.
 2. **Errors / Preconditions warnings** — abort + gate-fail messages (e.g.
-   "请先运行 fabric init 完成基线扫描…" / "Please run fabric init first…").
+   "请先运行 fabric install 完成基线扫描…" / "Please run fabric install first…").
    zh-CN ↔ en mirror.
 3. **Confirmation prompts** — re-run-within-24h prompt, reset prompts, etc.
    zh-CN ↔ en mirror.
@@ -136,11 +137,10 @@ following 5 categories MUST be rendered in the resolved language:
 
 Rendering rule:
 
-- `knowledge_language === "zh-CN"` → emit the zh-CN variant.
-- `knowledge_language === "en"` (or any other value) → emit the en variant.
-- The Skill MUST NOT mix languages inside a single user-facing block
-  (no "Chinglish" partial translation); each block is either fully zh-CN
-  or fully en.
+- `fabric_language === "zh-CN"` → emit the zh-CN variant; pure monolingual, no language mixing inside a single user-facing block.
+- `fabric_language === "en"` → emit the en variant; pure monolingual, no language mixing inside a single user-facing block.
+- `fabric_language === "zh-CN-hybrid"` → emit Chinese narrative prose with English technical terms preserved. Protected tokens (always EN): MCP tool names (e.g. `fab_get_knowledge_sections`), CLI command names (e.g. `fab install`), file paths, technical concepts (`Skill`, `SessionStart`, `hook`, `MCP`, `revision_hash`, `pending`, `proven`, `verified`, `draft`).
+- `fabric_language === "match-existing"` or any other value → emit the en variant; pure monolingual.
 
 Protected tokens (`fab_extract_knowledge`, `fab_review`, `relevance_scope`,
 `relevance_paths`, `broad`, `narrow`, `source_sessions`, `proposed_reason`,
@@ -153,20 +153,20 @@ The bilingualization scope is prose ONLY.
 
 When a skill (this one or any sibling skill the user is composing with)
 issues an `AskUserQuestion`, the `header` and `question` strings are
-user-facing prose → translated per `knowledge_language`. The `options[]`
+user-facing prose → translated per `fabric_language`. The `options[]`
 array entries (e.g. `["approve", "reject", "modify", "defer", "skip"]` in
 fabric-review) are **routing keys** consumed by the skill state machine —
-they MUST remain English regardless of `knowledge_language`.
+they MUST remain English regardless of `fabric_language`.
 
 ```ts
-// EN (knowledge_language === "en")
+// EN (fabric_language === "en")
 AskUserQuestion({
   header: "Review pending entry",
   question: "What action for '{title}'?",
   options: ["approve", "reject", "modify", "defer", "skip"]
 })
 
-// zh-CN (knowledge_language === "zh-CN")
+// zh-CN (fabric_language === "zh-CN")
 AskUserQuestion({
   header: "审核 pending 条目",
   question: "对 '{title}' 执行什么操作？",
@@ -186,7 +186,7 @@ The pipeline runs strictly in order. Each phase reads the prior phase's outputs 
 
 ### Phase 1 — Init-Scan Reference (NO RE-IMPLEMENTATION)
 
-> Verbatim boundary: `fabric init` (rc.1, deterministic CLI) already produces the baseline scan. Phase 1 of this skill **REFERENCES** that output. It does NOT redo the scan.
+> Verbatim boundary: `fabric install` (v2.0+, deterministic CLI) already produces the baseline scan. Phase 1 of this skill **REFERENCES** that output. It does NOT redo the scan.
 
 The deterministic init-scan has already populated `.fabric/knowledge/team/` with 4–7 baseline entries derived from:
 
@@ -203,8 +203,8 @@ Phase 1 actions performed by THIS skill:
 2. Glob `.fabric/knowledge/team/**/*.md` to enumerate baseline entry titles. Capture the list — Phase 2 uses these titles as a **negative filter** (signals already covered by init-scan should be skipped, not re-proposed).
 3. If `.fabric/agents.meta.json` is missing OR `.fabric/knowledge/team/` is empty: STOP. Tell the user (UX i18n Policy class 2 — errors/preconditions):
 
-   - zh-CN: `请先运行 fabric init 完成基线扫描，再调用 fabric-import`
-   - en: `Please run fabric init first to complete the baseline scan, then invoke fabric-import`
+   - zh-CN: `请先运行 fabric install 完成基线扫描，再调用 fabric-import`
+   - en: `Please run fabric install first to complete the baseline scan, then invoke fabric-import`
 
    …and exit.
 4. Update `.fabric/.import-state.json`: `phase = "P1-done"`, `p1_baseline_titles = [<list>]`, `last_checkpoint_at = <ISO8601 now>`.
@@ -288,7 +288,7 @@ For each commit:
    - `refactor(...)` with body → likely **decision** (architectural choice was made)
    - `docs(...)` → usually a **guideline** if the body announces a convention; skip if it's just typo/reformat
    - `chore(...)`, `test(...)`, `ci(...)` → almost always skip (mechanical; no reusable insight)
-2. Read the commit body. Extract the LLM-judged "core observation" — what would a future engineer want to know about this commit beyond the diff? Aim for 1–2 sentences in zh-CN (project knowledge_language; mirror fabric-archive M3 style).
+2. Read the commit body. Extract the LLM-judged "core observation" — what would a future engineer want to know about this commit beyond the diff? Aim for 1–2 sentences in zh-CN (project fabric_language; mirror fabric-archive M3 style).
 3. Apply the **Skip Decision Tree** below. If the commit is skip-worthy, record it in `p2_processed_commits[]` with `skipped: true` and move on.
 4. For non-skipped commits, classify type / propose slug / draft summary. Then call `fab_extract_knowledge` with the **mandatory broad + [] scope** (see "Mandatory Scope Rule" above):
 
@@ -394,7 +394,7 @@ After Step 2.2 completes (or hits the cap), update `.fabric/.import-state.json`:
 
 When the user invocation includes `dry-run` / `预览` / `--dry-run` keywords, Phase 2 runs WITHOUT calling `fab_extract_knowledge`. Instead it prints a table. UX i18n Policy class 4 — dry-run table headers; the header + column titles are bilingualized; row content (slug / commit sha / doc path) is data and is NOT translated. The protected tokens `broad`, `relevance_scope`, `relevance_paths` appear verbatim in both variants:
 
-zh-CN variant (`knowledge_language === "zh-CN"`):
+zh-CN variant (`fabric_language === "zh-CN"`):
 
 ```md
 # Import 预览 — 将提议 N 条 pending 条目（全部 relevance_scope=broad, relevance_paths=[]）
@@ -406,7 +406,7 @@ zh-CN variant (`knowledge_language === "zh-CN"`):
 | 3 | git 50367b5           | pitfalls  | thundering-herd-no-backoff    | broad+[] | 重试无指数回退导致雪崩；必须 jittered exponential backoff。|
 ```
 
-en variant (`knowledge_language === "en"`):
+en variant (`fabric_language === "en"`):
 
 ```md
 # Import Dry Run — would propose N pending entries (all relevance_scope=broad, relevance_paths=[])
@@ -648,9 +648,9 @@ The contract: re-invoking fabric-import after ANY interruption (Ctrl-C, crash, n
 
 ## Output Contract
 
-After Phase 3 completes (or on any phase exit due to cap / error / interrupt), the skill MUST produce a roll-up. UX i18n Policy class 1 — render either the en variant or the zh-CN variant per `knowledge_language`; the protected tokens (`relevance_scope`, `relevance_paths`, `broad`, `pending_path`, `layer`, `team`, `personal`, `fab_review`, `.fabric/.import-state.json`, etc.) appear verbatim in BOTH variants.
+After Phase 3 completes (or on any phase exit due to cap / error / interrupt), the skill MUST produce a roll-up. UX i18n Policy class 1 — render either the en variant or the zh-CN variant per `fabric_language`; the protected tokens (`relevance_scope`, `relevance_paths`, `broad`, `pending_path`, `layer`, `team`, `personal`, `fab_review`, `.fabric/.import-state.json`, etc.) appear verbatim in BOTH variants.
 
-en variant (`knowledge_language === "en"`):
+en variant (`fabric_language === "en"`):
 
 ```md
 # Import Summary — phase=<P1-done | P2-done | complete>
@@ -678,7 +678,7 @@ en variant (`knowledge_language === "en"`):
 - If any kept entry is actually narrow-scoped, narrow it via `fab_review action="modify"` with `changes.relevance_scope="narrow"` + `changes.relevance_paths=[...]` (this skill cannot narrow — see Mandatory Scope Rule in Phase 2).
 ```
 
-zh-CN variant (`knowledge_language === "zh-CN"`):
+zh-CN variant (`fabric_language === "zh-CN"`):
 
 ```md
 # Import 汇总 — phase=<P1-done | P2-done | complete>
