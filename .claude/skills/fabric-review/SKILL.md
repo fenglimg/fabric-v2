@@ -4,15 +4,22 @@ description: Use this skill to review pending knowledge entries in `.fabric/know
 allowed-tools: Read, Glob, Grep, Bash, Edit, mcp__fabric__fab_review
 ---
 
+> **Surface**: This is a Skill (AI-driven, per-entry human-judgment routing). See [`docs/surfaces.md`](https://github.com/fenglimg/fabric/blob/main/docs/surfaces.md) for the CLI / Skill / MCP boundary.
+
 ## Precondition
 
 This skill is invoked when one of the following holds:
 
-- The Stop-hook printed a stdout JSON pointer of shape `{"decision":"block","reason":"..."}` carrying a `signal=review` (pending overflow: ≥10 entries or oldest pending age ≥7 days)
+- The Stop-hook printed a stdout JSON pointer of shape `{"decision":"block","reason":"..."}` carrying a `signal=review` (pending overflow: pending count ≥ `review_hint_pending_count` (config-resolved, default 10) OR oldest pending age ≥ `review_hint_pending_age_days` (config-resolved, default 7) days)
 - The user typed an explicit review request (e.g. "review knowledge", "show pending", "approve what's queued", "what's stale", "look at KT-D-7")
 - A task end where the agent itself判定 review backlog has crossed the overflow threshold
 
-If none of the above hold, stop the skill immediately and tell the user `没有触发 review 信号；如需手动 review 请显式调用 fabric-review`.
+If none of the above hold, stop the skill immediately and tell the user (UX i18n Policy class 2 — errors/preconditions):
+
+- zh-CN: `没有触发 review 信号；如需手动 review 请显式调用 fabric-review`
+- en: `No review signal detected; to manually review, explicitly invoke fabric-review`
+
+(Render per `knowledge_language` resolved in Config Load below.)
 
 This skill is `Infer-not-Ask` for mode and `Ask-when-genuine` for per-item actions:
 
@@ -26,6 +33,122 @@ Required preconditions before any fab_review call:
 - `mcp__fabric__fab_review` MCP tool is registered and reachable
 - `.fabric/agents.meta.json` is present (the id allocator reads it on approve)
 - `.fabric/events.jsonl` exists (tolerate ENOENT — empty ledger is normal first-run)
+
+### Config Load
+
+Before any mode inference work, the skill MUST read
+`.fabric/fabric-config.json` to resolve the following tunables (with documented
+defaults if absent):
+
+| Config field | Default | Used by |
+|---|---|---|
+| `review_topic_result_cap` | 8 | topic mode top-N rendering cap |
+| `review_stale_pending_days` | 14 | health mode stale-pending detection threshold (days) |
+| `review_hint_pending_count` | 10 | precondition overflow signal (pending-count branch) |
+| `review_hint_pending_age_days` | 7 | precondition overflow signal (oldest-pending-age branch) |
+
+If `.fabric/fabric-config.json` is missing or unreadable, use defaults silently.
+
+### UX i18n Policy (5-class bilingualization)
+
+The skill consults `knowledge_language` from `.fabric/fabric-config.json`
+(固化于 init 时，via `scan.ts:detectExistingLanguage`; default `"en"` when no
+CJK signal is detected in README + docs/). All user-facing text in the
+following 5 categories MUST be rendered in the resolved language:
+
+1. **Roll-up templates** — the `# Review Summary — mode={...}` final block,
+   the `## Health Overview` dashboard in health mode, and any per-item
+   display blocks (`## [type=...] [layer=...] pending_path=...` lines).
+   zh-CN ↔ en mirror.
+2. **Errors / Preconditions warnings** — abort + trigger-miss messages
+   (e.g. "没有触发 review 信号…" / "No review signal detected…").
+   zh-CN ↔ en mirror.
+3. **Confirmation prompts** — free-text reject-reason follow-up, the
+   "Type relevance_paths (comma-separated globs, …)" narrow-scope
+   follow-up, and any other free-text prompts. zh-CN ↔ en mirror.
+4. **Dry-run table headers** — fabric-review does not currently expose
+   a dry-run mode; this slot is reserved for parity with fabric-import.
+   IF a future revision adds dry-run, the table header MUST be
+   bilingualized per this policy. zh-CN ↔ en mirror.
+5. **AskUserQuestion** — `header` + `question` fields (NOT `options[]`).
+   zh-CN ↔ en mirror. fabric-review is the heaviest AskUserQuestion
+   consumer (per-item action, layer-flip target, stale-item action,
+   modify-extended option set), so this class applies broadly.
+
+Rendering rule:
+
+- `knowledge_language === "zh-CN"` → emit the zh-CN variant.
+- `knowledge_language === "en"` (or any other value) → emit the en variant.
+- The Skill MUST NOT mix languages inside a single user-facing block
+  (no "Chinglish" partial translation); each block is either fully zh-CN
+  or fully en.
+
+Protected tokens (`fab_review`, `relevance_scope`, `relevance_paths`,
+`narrow`, `broad`, `source_sessions`, `proposed_reason`, `session_context`,
+`pending_path`, `layer`, `team`, `personal`, `knowledge_scope_degraded`,
+`MUST`, `NEVER`, `.fabric/knowledge/`, etc.) are NEVER translated — they
+appear verbatim in both language variants. The bilingualization scope is
+prose ONLY.
+
+### AskUserQuestion i18n Policy (value vs label)
+
+When this skill issues an `AskUserQuestion`, the `header` and `question`
+strings are user-facing prose → translated per `knowledge_language`. The
+`options[]` array entries are **routing keys** consumed by the skill
+state machine — they MUST remain English regardless of `knowledge_language`.
+
+Canonical options arrays used by this skill (every value below stays
+English in BOTH language variants):
+
+- Per-item action: `["approve", "reject", "modify", "defer", "skip"]`
+- Per-stale-item action (health mode): `["defer", "demote", "skip"]`
+- Layer-flip target: `["team", "personal"]`
+- Modify-extended (import-origin narrow-scope nudge):
+  `["narrow scope", "edit summary", "change layer", "change maturity", "skip"]`
+
+Worked example — per-item action (the most common AskUserQuestion in this skill):
+
+```ts
+// EN (knowledge_language === "en")
+AskUserQuestion({
+  header: "Review pending entry",
+  question: "What action for '{title}'?  ({pending_path})",
+  options: ["approve", "reject", "modify", "defer", "skip"]
+})
+
+// zh-CN (knowledge_language === "zh-CN")
+AskUserQuestion({
+  header: "审核 pending 条目",
+  question: "对 '{title}' 执行什么操作？({pending_path})",
+  options: ["approve", "reject", "modify", "defer", "skip"]   // 不翻译 — routing key
+})
+```
+
+Worked example — layer-flip target:
+
+```ts
+// EN
+AskUserQuestion({
+  header: "Layer-flip target",
+  question: "Move '{title}' to which layer?  (current: {current_layer})",
+  options: ["team", "personal"]
+})
+
+// zh-CN
+AskUserQuestion({
+  header: "Layer 切换目标",
+  question: "将 '{title}' 切换到哪一层？(当前: {current_layer})",
+  options: ["team", "personal"]   // 不翻译 — routing key
+})
+```
+
+Rationale: localizing routing keys would force every routing branch to
+dual-string match (e.g. `if (choice === "approve" || choice === "通过")`),
+which doubles the surface area for protected-token regressions and breaks
+the option-list invariants that downstream tooling (the Skill's own
+`switch` statements over `choice`, plus any future MCP-level audit lint
+that scans for these specific string literals) depends on. Keeping
+`options[]` English-only is contract-locked across all three skills.
 
 ## Mode Inference (System Infers — NEVER Ask)
 
@@ -56,7 +179,7 @@ If exactly one row matches, lock that mode and skip to Step 3.
 
 **Step 3 — Pending count default.** If Step 1 and Step 2 both produced no signal, glob `.fabric/knowledge/pending/**/*.md`:
 
-- If pending count `≥10` OR oldest pending file mtime is `>7 days` ago → infer `pending` (overflow signal — same threshold the Stop-hook uses).
+- If pending count ≥ `review_hint_pending_count` (config-resolved, default 10) OR oldest pending file mtime is older than `review_hint_pending_age_days` (config-resolved, default 7) days → infer `pending` (overflow signal — same threshold the Stop-hook uses).
 - Otherwise → default to `pending` (most common review entry point).
 
 ### Inference Examples (Sample User Messages → Expected Mode)
@@ -80,23 +203,64 @@ Each mode produces user-facing output, then routes per-item or per-batch decisio
 1. Call `fab_review` with `action: "list"`, no filters (or `filters.layer="both"` if user explicitly mentioned both layers).
 2. Server returns `items[]` (each = `{pending_path, type, layer, maturity, tags?, title?, summary?}`).
 3. Before presenting, perform **Semantic Check** (see below) by issuing one or more `action: "search"` calls scoped by `filters.type` to surface possible duplicates / contradictions among already-canonical entries.
-4. For each pending item, render a per-item block:
+4. For each pending item, render a per-item block. v2.0.0-rc.7 T6: render
+   `proposed_reason` (frontmatter) + `## Why proposed` line (body, 1-line enum
+   explanation) + first line of `## Session context` so future-self has full
+   context without re-reading the transcript. UX i18n Policy class 1 — roll-up
+   templates; protected tokens (`pending_path`, `layer`, `team`, `decisions`,
+   `proposed_reason`, `Tags`, etc.) appear verbatim in BOTH variants:
+
+   en variant (`knowledge_language === "en"`):
 
    ```md
    ## [type=decisions] [layer=team] pending_path=knowledge/pending/decisions/single-cjs-hook.md
-   Title: 单 .cjs hook 跨客户端
-   Summary: 三客户端 stdout JSON 格式一致，单脚本即可。
+   Title: Single .cjs hook across clients
+   Summary: stdout JSON shape is identical across the three clients; one script suffices.
    Maturity: draft   Tags: [hook, cli]
-   ⚠ Possible duplicate of KT-D-0007 (similarity 0.78 on title + summary)
+   Proposed reason: decision-confirmation — ≥2 alternatives weighed; rationale stated.
+   Session context: Session goal: ship Stop-hook for v2 release.
+   ⚠ Possible duplicate of KT-D-0007 (LLM subjective dup/subsumption judgement; thresholds intentionally not quantified)
    ```
 
-5. Surface a per-item AskUserQuestion:
+   zh-CN variant (`knowledge_language === "zh-CN"`):
+
+   ```md
+   ## [type=decisions] [layer=team] pending_path=knowledge/pending/decisions/single-cjs-hook.md
+   标题: 单 .cjs hook 跨客户端
+   摘要: 三客户端 stdout JSON 格式一致，单脚本即可。
+   成熟度: draft   Tags: [hook, cli]
+   Proposed reason: decision-confirmation — ≥2 候选方案经权衡后确认选型。
+   Session context: Session goal: ship Stop-hook for v2 release.
+   ⚠ 可能重复 KT-D-0007 (LLM 主观判断 dup/subsumption；具体阈值不可量化)
+   ```
+
+   The Skill MUST read `proposed_reason` from the pending file's frontmatter
+   (parse the YAML block, key `proposed_reason`) and the `## Why proposed`
+   line / first non-blank line of `## Session context` from the body. If
+   either is missing on a pre-rc.7 pending entry, render the legacy fallback
+   (UX i18n Policy class 1):
+
+   - en: `Proposed reason: <legacy entry, no reason recorded>` and `Session context: <not recorded>`
+   - zh-CN: `Proposed reason: <历史条目，未记录 reason>` 与 `Session context: <未记录>`
+
+   …so the reviewer can still proceed.
+
+5. Surface a per-item AskUserQuestion. UX i18n Policy class 5 — `header` +
+   `question` translated; `options[]` array remain English routing keys:
 
    ```ts
+   // EN
    AskUserQuestion({
      header: "Review pending entry",
-     question: "What action for '单 .cjs hook 跨客户端'?",
+     question: "What action for 'Single .cjs hook across clients'?",
      options: ["approve", "reject", "modify", "defer", "skip"]
+   })
+
+   // zh-CN
+   AskUserQuestion({
+     header: "审核 pending 条目",
+     question: "对 '单 .cjs hook 跨客户端' 执行什么操作？",
+     options: ["approve", "reject", "modify", "defer", "skip"]   // 不翻译
    })
    ```
 
@@ -113,7 +277,7 @@ Each mode produces user-facing output, then routes per-item or per-batch decisio
 1. Extract the topic keyword(s) from the user's message (e.g. "find about deepMerge" → query="deepMerge").
 2. Call `fab_review action="search"` with `query` and any obvious filters (if user said "team-only" → `filters.layer="team"`).
 3. Server returns `items[]` ranked by relevance — these are entries already in `.fabric/knowledge/{layer}/{type}/` (NOT pending), unless `filters` says otherwise.
-4. Render top-N (cap at 8) results with title / summary / pending_path.
+4. Render top-N (cap at `review_topic_result_cap`, config-resolved, default 8) results with title / summary / pending_path.
 5. If the user follow-up indicates intent to act ("approve all", "modify the second one"), pivot into the corresponding pending mode action — the search result already gives the `pending_path` needed for the action.
 6. NEVER surface a per-item AskUserQuestion just for browsing — only when the user signals an action verb.
 
@@ -121,8 +285,10 @@ Each mode produces user-facing output, then routes per-item or per-batch decisio
 
 1. Call `fab_review action="list"` with `filters.maturity="draft"` (or no filter for full corpus inspection).
 2. Tail `.fabric/events.jsonl` for layer_changed / demoted / rejected counts in the trailing 30 days.
-3. Compute stale candidates: pending entries with mtime `>14 days` OR maturity=draft entries with no recent evidence-append events.
-4. Render a corpus dashboard:
+3. Compute stale candidates: pending entries with mtime older than `review_stale_pending_days` (config-resolved, default 14) OR maturity=draft entries with no recent evidence-append events.
+4. Render a corpus dashboard. UX i18n Policy class 1 — roll-up templates; render per `knowledge_language`:
+
+   en variant:
 
    ```md
    ## Health Overview
@@ -132,7 +298,35 @@ Each mode produces user-facing output, then routes per-item or per-batch decisio
    - Rejections (30d): 1
    ```
 
-5. For each stale candidate, surface AskUserQuestion `{options: ["defer", "demote", "skip"]}`; route `defer` → `fab_review action="defer"`, `demote` → `fab_review action="modify"` with `changes.maturity` lowered (or `reject` if the user wants outright removal of a pending entry).
+   zh-CN variant:
+
+   ```md
+   ## 健康度总览
+   - Pending: 12 条 (最旧 18 天) — 建议 `defer` 或 `reject`
+   - Drafts: 8 条 (3 条为陈旧候选: KP-G-3, KP-G-5, KT-P-9)
+   - Layer 切换 (30 天): 2
+   - 已驳回 (30 天): 1
+   ```
+
+5. For each stale candidate, surface AskUserQuestion. UX i18n Policy class 5 — `header` + `question` translated; `options[]` remain English routing keys:
+
+   ```ts
+   // EN
+   AskUserQuestion({
+     header: "Stale entry triage",
+     question: "Action for stale entry '{title}'?",
+     options: ["defer", "demote", "skip"]
+   })
+
+   // zh-CN
+   AskUserQuestion({
+     header: "陈旧条目处理",
+     question: "对陈旧条目 '{title}' 执行什么操作？",
+     options: ["defer", "demote", "skip"]   // 不翻译
+   })
+   ```
+
+   Route `defer` → `fab_review action="defer"`, `demote` → `fab_review action="modify"` with `changes.maturity` lowered (or `reject` if the user wants outright removal of a pending entry).
 
 ### Mode: revisit — Specific Entry Deep Dive
 
@@ -150,9 +344,9 @@ Semantic check is the LLM's job — the MCP tool does NOT compare meaning. Run t
 For each pending entry to be presented:
 
 1. Call `fab_review action="search"` with `query=<title or summary keywords>` and `filters.type=<same type>` to fetch already-canonical entries of the same type.
-2. Compare semantically (LLM judgment, not string match):
-   - **Duplicate** — same essential claim. Heuristics: title keyword overlap >60%, summary asserts the same outcome with no novel context. Flag: `⚠ Possible duplicate of <stable_id>`.
-   - **Contradiction** — opposing claims about the same subject. Heuristics: one entry says "use X" while pending says "avoid X" on identical scope. Flag: `⚠ Contradicts <stable_id>`.
+2. Compare semantically (LLM judgment, not string match). 三类判断均为 LLM 主观判断 dup/subsumption；具体阈值不可量化（不使用百分比 / 相似度数值伪精度）：
+   - **Duplicate** — same essential claim. 标题与摘要表达同一核心结论，pending 未提供新证据或新上下文。Flag: `⚠ Possible duplicate of <stable_id>`.
+   - **Contradiction** — opposing claims about the same subject. 例：一个 entry 说 "use X"，pending 说 "avoid X"，且作用域一致。Flag: `⚠ Contradicts <stable_id>`.
    - **Subsumption** — pending fully covered by an existing entry plus extras. Flag: `⚠ Subsumed by <stable_id>; consider modify-to-merge`.
 3. Surface the flag in the per-item display block (see pending mode step 4).
 4. The user decides:
@@ -161,6 +355,63 @@ For each pending entry to be presented:
    - Reject as duplicate → reason field MUST cite the existing stable_id (e.g. `reason="duplicate of KT-D-7"`).
 
 DO NOT call `AskUserQuestion` to ask "is this a duplicate?" — the LLM has already judged. The user only chooses among approve / reject / modify, which is a genuine choice.
+
+## Narrowing Imported Entries
+
+The fabric-import skill creates pending entries with `relevance_scope=broad` 
++ `relevance_paths=[]` as a deliberate contract — it cannot derive paths from 
+git history. **Narrowing imported entries is fabric-review's responsibility.**
+
+### Detection
+
+An entry is "import-origin" when `source_sessions[0]` starts with 
+`fabric-import-` (e.g. `fabric-import-2026-05-10`).
+
+### Pending mode rendering
+
+For each import-origin entry, prepend one warning line to the display block. UX i18n Policy class 1 — roll-up templates; the protected tokens `relevance_scope`, `relevance_paths`, `broad` appear verbatim in BOTH variants:
+
+- en: `⚠ Imported (relevance_scope=broad, relevance_paths=[]) — pick 'modify' + say 'narrow to <paths>' to bind scope.`
+- zh-CN: `⚠ Imported (relevance_scope=broad, relevance_paths=[]) — 选择 'modify' 并指定 'narrow to <paths>' 以收紧作用域。`
+
+This hint is informational. The user MAY ignore it; broad+[] is a valid 
+final state for cross-cutting knowledge.
+
+### Modify follow-up — narrow scope
+
+When the user picks `modify` on an import-origin entry, surface 
+AskUserQuestion with an extended option list. UX i18n Policy class 5 — `header` + `question` translated; `options[]` remain English routing keys:
+
+```ts
+// EN
+AskUserQuestion({
+  header: "Modify imported entry",
+  question: "What aspect of '{title}' to modify?",
+  options: ["narrow scope", "edit summary", "change layer", "change maturity", "skip"]
+})
+
+// zh-CN
+AskUserQuestion({
+  header: "修改 imported 条目",
+  question: "要修改 '{title}' 的哪一项？",
+  options: ["narrow scope", "edit summary", "change layer", "change maturity", "skip"]   // 不翻译
+})
+```
+
+When user picks "narrow scope":
+1. Free-text follow-up. UX i18n Policy class 3 — confirmation prompts:
+   - en: `Type relevance_paths (comma-separated globs, e.g. packages/server/src/retry/**, packages/server/src/lib/retry.ts)`
+   - zh-CN: `请输入 relevance_paths (逗号分隔的 glob，例如 packages/server/src/retry/**, packages/server/src/lib/retry.ts)`
+2. Call fab_review action="modify" with:
+   changes: { relevance_scope: "narrow", relevance_paths: [<parsed paths>] }
+3. Display the resolved frontmatter to confirm.
+
+### Special cases
+
+- Layer=personal entries: server auto-degrades narrow → broad+[]; surface 
+  the `knowledge_scope_degraded` event back to the user.
+- Non-import-origin entries: modify can still narrow (just doesn't show 
+  this UX nudge — user types it as a normal modify).
 
 ## Modify Sub-Flow & Layer-Flip Rules
 
@@ -220,6 +471,10 @@ mcp__fabric__fab_review({
 
 ### Per-Item Question Phrasing Template
 
+UX i18n Policy class 5 — `header` + `question` translated per `knowledge_language`; `options[]` arrays remain English routing keys in BOTH variants. Choose the variant matching the resolved language; the structure (field names, options) is identical.
+
+en variant:
+
 ```ts
 AskUserQuestion({
   header: "Review pending entry",
@@ -228,13 +483,35 @@ AskUserQuestion({
 })
 ```
 
-For layer-flip target:
+zh-CN variant:
+
+```ts
+AskUserQuestion({
+  header: "审核 pending 条目",
+  question: "对 '{title}' 执行什么操作？({pending_path})",
+  options: ["approve", "reject", "modify", "defer", "skip"]   // 不翻译 — routing key
+})
+```
+
+For layer-flip target.
+
+en variant:
 
 ```ts
 AskUserQuestion({
   header: "Layer-flip target",
   question: "Move '{title}' to which layer?  (current: {current_layer})",
   options: ["team", "personal"]
+})
+```
+
+zh-CN variant:
+
+```ts
+AskUserQuestion({
+  header: "Layer 切换目标",
+  question: "将 '{title}' 切换到哪一层？(当前: {current_layer})",
+  options: ["team", "personal"]   // 不翻译 — routing key
 })
 ```
 
@@ -275,11 +552,13 @@ Pending entry presented for review
 - NEVER batch heterogeneous decisions into a single MCP call. Approve and reject MAY be batched within their own action; modify MUST be one call per entry.
 - NEVER invoke `fab_review action="approve"` without at least one `pending_paths` entry.
 - NEVER infer a layer-flip target — the user MUST choose via AskUserQuestion.
-- MUST preserve protected tokens exactly: `stable_id`, `pending_path`, `layer`, `team`, `personal`, `knowledge_promoted`, `knowledge_layer_changed`, `knowledge_proposed`, `fab_review`, `MUST`, `NEVER`.
+- MUST preserve protected tokens exactly: `stable_id`, `pending_path`, `layer`, `team`, `personal`, `knowledge_promoted`, `knowledge_layer_changed`, `knowledge_proposed`, `knowledge_scope_degraded`, `fab_review`, `MUST`, `NEVER`, `relevance_scope`, `relevance_paths`, `narrow`, `broad`, `proposed_reason`, `session_context`.
 
 ## Output Contract
 
-After each invocation, the skill MUST produce a brief roll-up to the user:
+After each invocation, the skill MUST produce a brief roll-up to the user. UX i18n Policy class 1 — roll-up templates; render per `knowledge_language`. Protected tokens (event-type strings such as `knowledge_promoted` / `knowledge_layer_changed` / `knowledge_rejected` / `knowledge_deferred`, plus `.fabric/events.jsonl`) appear verbatim in BOTH variants:
+
+en variant (`knowledge_language === "en"`):
 
 ```md
 # Review Summary — mode={pending|topic|health|revisit}
@@ -297,6 +576,51 @@ After each invocation, the skill MUST produce a brief roll-up to the user:
 - knowledge_rejected ×R
 - knowledge_deferred ×D
 ```
+
+zh-CN variant (`knowledge_language === "zh-CN"`):
+
+```md
+# Review 汇总 — mode={pending|topic|health|revisit}
+- 列出: N 条
+- 已批准: M (新分配 stable_ids: KT-D-12, KT-G-4, KP-P-2)
+- 已驳回: R
+- 已修改: U (含 K 次 layer 切换)
+- 已延后: D
+- 已跳过: S
+
+## 追加事件 (.fabric/events.jsonl 末尾)
+- knowledge_promote_started ×M
+- knowledge_promoted ×M
+- knowledge_layer_changed ×K
+- knowledge_rejected ×R
+- knowledge_deferred ×D
+```
+
+### events.jsonl Constraint Note
+
+Event lines appended to `.fabric/events.jsonl` are subject to POSIX
+single-write atomicity: only writes ≤ 4KB (`PIPE_BUF`) are guaranteed
+atomic via `Bash: echo "..." >> file`. Lines exceeding 4KB risk
+interleaved corruption under concurrent skill + server writes to the
+same ledger.
+
+Skills MUST ensure:
+
+- Each event JSON line is a **single line** (no embedded newlines;
+  escape `\n` in any string value).
+- `session_context` and other free-form text fields **self-truncate** to
+  keep the entire serialized line under 4KB. Suggested per-field caps:
+  `session_context` first 500 chars; `source_sessions` cap at 5
+  entries; `recent_paths` cap at 20 entries; `user_messages_summary`
+  first 500 chars.
+- If approaching the 4KB ceiling after the per-field caps, drop optional
+  fields (e.g. tags / extra metadata) **before** truncating semantic
+  content (the summary / context that carries the actual observation).
+- The promote / reject / modify / defer events listed above are emitted
+  by the MCP server via `appendEventLedgerEvent` and are already
+  length-bounded server-side; this constraint applies to any event the
+  skill itself appends directly to the ledger (rare, but possible for
+  diagnostic markers).
 
 Also surface a one-line `git status` of `.fabric/knowledge/` so the user sees the file moves caused by approve / layer-flip.
 
@@ -318,7 +642,7 @@ Skill flow:
    ## [type=decisions] [layer=team] pending_path=knowledge/pending/decisions/single-cjs-hook.md
    Title: 单 .cjs hook 跨客户端
    Summary: 三客户端 stdout JSON 格式一致，单脚本即可。
-   ⚠ Possible duplicate of KT-D-0007 (similarity 0.84 on title + summary)
+   ⚠ Possible duplicate of KT-D-0007 (LLM 主观判断 dup/subsumption；具体阈值不可量化)
    ```
 
 4. AskUserQuestion fires; user picks `reject`.
@@ -366,3 +690,28 @@ Skill flow:
    - KT-P-9 → user picks `defer` (no until) → `fab_review action="defer"` with no `until`.
    - KP-G-3 → user picks `demote` → `fab_review action="modify"` with `changes.maturity="draft"` (already draft; equivalently demote means reject if pending — skill chooses correct action by inspecting current state).
 5. Roll-up: 2 deferred, 1 modified, events appended (`knowledge_deferred ×2`, `knowledge_promote_started/promoted` not relevant; `knowledge_layer_changed` not relevant).
+
+### Example D — narrowing an imported decision
+
+User: "review the pending knowledge".
+
+Inferred mode: `pending`. Skill lists 5 pending entries; entry 3's frontmatter 
+shows `source_sessions[0] = "fabric-import-2026-05-10"` → import-origin.
+
+Display block prepends warning line. User picks `modify` on entry 3.
+AskUserQuestion fires with extended options including `narrow scope`.
+User picks `narrow scope`; free-text follow-up: 
+`packages/server/src/retry/**, packages/server/src/lib/retry.ts`
+
+Skill calls:
+
+mcp__fabric__fab_review({
+  action: "modify",
+  pending_path: "knowledge/pending/decisions/<slug>.md",
+  changes: {
+    relevance_scope: "narrow",
+    relevance_paths: ["packages/server/src/retry/**", "packages/server/src/lib/retry.ts"]
+  }
+})
+
+Roll-up confirms `relevance_scope: narrow` written to frontmatter.

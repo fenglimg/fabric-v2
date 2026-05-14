@@ -1,0 +1,86 @@
+{
+  "id": "TASK-002",
+  "title": "Core uninstall orchestrator + scaffold/MCP stages + command registration",
+  "scope": "packages/cli/src/commands/uninstall.ts",
+  "action": "Create",
+  "description": "Create new `packages/cli/src/commands/uninstall.ts` mirroring init's three-phase orchestrator (resolveIntent → buildPlan → executePlan). Implement scaffold-stage removal (project-local `.fabric/` artifacts: agents.meta.json, events.jsonl, forensic.json, .gitkeep markers; **preserve `.fabric/knowledge/` unless --purge**; **NEVER touch `~/.fabric/knowledge/`**) and MCP-stage unregistration (per-client `writer.remove('fabric')` removing only the fabric server entry). Bootstrap stage delegates to helpers from TASK-003. Register in `commands/index.ts` allCommands. Implement citty defineCommand with flags: --plan, --force, --yes, --no-bootstrap, --no-mcp, --no-scaffold, --target, --interactive, --purge, --clean-empties. Reuse `checkLockOrThrow` preflight. Add `remove(serverName, workspaceRoot)` method to `config/writer.ts` ClientWriter abstraction; implement for each existing writer (Claude/Codex/Cursor — JSON/JSON/TOML).",
+  "files": [
+    {
+      "path": "packages/cli/src/commands/uninstall.ts",
+      "action": "create",
+      "target": "new module — full file",
+      "change": "Export uninstallCommand (citty defineCommand mirroring initCommand at init.ts:L234-L302), runUninstallCommand orchestrator, buildUninstallExecutionPlan, executeUninstallExecutionPlan, buildUninstallFabricPlan (enumerates scaffold removal targets via the constants from TASK-001 + `.fabric/` paths), executeUninstallFabricPlan (rm with preserve-knowledge logic), uninstallMcpClients (loops detected clients, calls writer.remove('fabric'), best-effort per-client). Reuse `runBestEffort` / `runBestEffortSingle` pattern from init. UninstallStepResult shape = { step, path, status: 'removed'|'skipped'|'error', message? } symmetric to InstallStepResult. Default uninstallFabric() entrypoint accepts (target: string, opts: UninstallOptions). Wizard adapter mirroring createDefaultInitWizardAdapter for interactive mode (intro → log.step per stage → group({scaffold,bootstrap,mcp,purge,cleanEmpties}) → confirm review → outro). All user-facing strings via t('cli.uninstall.*')."
+    },
+    {
+      "path": "packages/cli/src/commands/index.ts",
+      "action": "modify",
+      "target": "allCommands map",
+      "change": "Add line `uninstall: () => import('./uninstall.js').then((module) => module.default),` to allCommands, sorted alphabetically (after `serve`)."
+    },
+    {
+      "path": "packages/cli/src/config/writer.ts",
+      "action": "modify",
+      "target": "ClientWriter abstraction",
+      "change": "Add `remove(serverName: string, workspaceRoot: string): Promise<RemoveResult>` to the ClientWriter interface. Implement for each existing writer (Claude JSON, Cursor JSON, Codex TOML) — read existing config, delete the named server key from the mcpServers map, atomicWrite the result; if file does not exist or key missing, return { status: 'skipped' }. RemoveResult shape = { status: 'removed'|'skipped'|'error', path?, message? }."
+    }
+  ],
+  "implementation": [
+    "Read packages/cli/src/commands/init.ts in full to internalize the 3-phase orchestrator + citty meta + clack wizard adapter; identify which init exports have inverse meaning for uninstall (initCommand→uninstallCommand, runInitCommand→runUninstallCommand, buildInitFabricPlan→buildUninstallFabricPlan, executeInitFabricPlan→executeUninstallFabricPlan, createDefaultInitWizardAdapter→createDefaultUninstallWizardAdapter, KNOWLEDGE_SUBDIRS reused).",
+    "Create packages/cli/src/commands/uninstall.ts. Define UninstallStepResult, UninstallOptions, UninstallExecutionPlan types symmetric to install equivalents. Implement uninstallCommand (citty defineCommand) with the 10 flags from clarification #4. Use t('cli.uninstall.*') for every description.",
+    "Implement runUninstallCommand(args): resolve target → checkLockOrThrow(target, { force: args.force }) → resolveUninstallCliIntent → buildUninstallExecutionPlan → optional wizard → executeUninstallExecutionPlan → summary log.",
+    "Implement buildUninstallFabricPlan: enumerate scaffold artifacts to remove — agents.meta.json, events.jsonl, forensic.json, .gitkeep markers in KNOWLEDGE_SUBDIRS. If args.purge: also enumerate the 6 knowledge subdirs themselves. NEVER include $FABRIC_HOME/.fabric/ (personal root) in the plan regardless of --purge.",
+    "Implement executeUninstallFabricPlan: best-effort rmSync each enumerated path; missing files → status='skipped'. If --purge: rm -rf .fabric/knowledge/ then .fabric/ itself if empty. If not --purge: leave .fabric/knowledge/ and any non-managed files intact; remove .fabric/ only if it becomes empty after derived-state removal.",
+    "Extend packages/cli/src/config/writer.ts: add `remove(serverName, workspaceRoot)` to the writer interface. Implement for Claude (.claude.json or .mcp.json — same as the writer reads), Cursor (similar JSON shape), Codex (TOML via the codex writer). Each: read → if config missing or key missing → status='skipped'; else delete the named server key → atomicWrite → status='removed'. Preserve all other mcpServers entries.",
+    "Implement uninstallMcpClients(target, opts): mirror installMcpClients (config.ts:L156-L191). resolveClients(workspaceRoot, fabricConfig, {claudeMcpScope}) → for each writer: writer.detect(workspaceRoot) → if configPath null skip; if dryRun record; else writer.remove('fabric', workspaceRoot). Best-effort: per-client failure does not abort.",
+    "Wire bootstrap stage to call uninstallBootstrapStage from TASK-003 (import from install/uninstall-skills-and-hooks.ts).",
+    "Register in packages/cli/src/commands/index.ts allCommands.",
+    "Implement createDefaultUninstallWizardAdapter mirroring createDefaultInitWizardAdapter — intro(t('cli.uninstall.wizard.intro')) → log.step per stage → group({scaffold,bootstrap,mcp,purge,cleanEmpties}) with INIT_WIZARD_GROUP_CANCELLED-style symbol → confirm review → outro. shouldUseUninstallWizard mirrors shouldUseInitWizard.",
+    "Test the citty surface manually: `node packages/cli/dist/index.js uninstall --plan --target=/tmp/test-fixture` should print a plan with zero side-effects."
+  ],
+  "reference": {
+    "pattern": "Three-phase orchestrator + citty defineCommand + clack wizard adapter mirroring init.ts; per-client best-effort loop mirroring installMcpClients.",
+    "files": [
+      "packages/cli/src/commands/init.ts",
+      "packages/cli/src/commands/config.ts",
+      "packages/cli/src/config/writer.ts",
+      "packages/cli/src/commands/index.ts"
+    ],
+    "examples": "init.ts:L234-L302 (citty), L306-L382 (orchestrator), L573-L617 (build*Plan), L619-L716 (execute*Plan), L965-L1086 (wizard adapter). config.ts:L156-L191 (per-client loop)."
+  },
+  "convergence": {
+    "criteria": [
+      "`packages/cli/src/commands/uninstall.ts` exists and exports: uninstallCommand (default), runUninstallCommand, buildUninstallExecutionPlan, executeUninstallExecutionPlan, buildUninstallFabricPlan, executeUninstallFabricPlan, uninstallFabric, createDefaultUninstallWizardAdapter, shouldUseUninstallWizard.",
+      "`packages/cli/src/commands/index.ts` allCommands map contains the uninstall entry (verified via grep `\"uninstall:\"` returns 1 match in commands/index.ts).",
+      "`packages/cli/src/config/writer.ts` ClientWriter interface contains a `remove(serverName, workspaceRoot)` method and each concrete writer (Claude/Cursor/Codex) implements it.",
+      "Manual smoke test: `node packages/cli/dist/index.js uninstall --plan --target=<tmpdir>` (after running init on that tmpdir first) prints a plan listing exactly the scaffold + MCP artifacts that init wrote, with zero filesystem mutation (verified via `find <tmpdir> -newer /tmp/before` returning empty).",
+      "Manual smoke test: `node packages/cli/dist/index.js uninstall --target=<tmpdir> --yes` (after init) removes .fabric/agents.meta.json, .fabric/events.jsonl, .fabric/forensic.json, and the fabric mcpServers entry; leaves .fabric/knowledge/ subdirs intact (verified via existsSync checks).",
+      "uninstallCommand.run({args:{target,plan:true,yes:true}}) returns without throwing and writes a structured plan summary to stdout."
+    ]
+  },
+  "depends_on": ["TASK-001"],
+  "rationale": {
+    "chosen_approach": "Full inverse of init's three-phase orchestrator pattern. Single top-level command with `--no-*` flags for per-stage opt-out (clarification #1 + #4). Conservative defaults: preserve knowledge unless --purge; never touch personal root regardless.",
+    "alternatives_considered": ["Use `fab init --uninstall` as a flag — rejected: pollutes init's already-large flag surface", "Per-stage subcommands (fab hooks uninstall / fab config uninstall) — rejected: clarification #4 binds to single top-level command", "Wizard-only with no flag opt-outs — rejected: CI / scripted environments need non-interactive operation"],
+    "decision_factors": ["Symmetry with init for discoverability", "Test-fixture round-trip (init → uninstall → assert fresh) is the strongest correctness check", "Lock safety (checkLockOrThrow) prevents foot-guns during `fab serve`"],
+    "tradeoffs": "More code (mirror of ~1500-line init.ts), but most logic is straightforward inversion; the hard part is un-merge which lives in TASK-003."
+  },
+  "test": {
+    "manual_checks": [
+      "init → uninstall → assert .fabric/agents.meta.json absent and .fabric/knowledge/decisions/ still present",
+      "init → uninstall --purge → assert .fabric/ entirely absent and ~/.fabric/knowledge/ still present",
+      "uninstall on a project without prior init → all steps log 'skipped', exit code 0"
+    ],
+    "success_metrics": [
+      "Default uninstall preserves user-authored knowledge (every file under .fabric/knowledge/{decisions,pitfalls,...} byte-identical after uninstall)",
+      "MCP unregistration leaves non-fabric mcpServers entries byte-identical",
+      "Re-run of uninstall on already-uninstalled project: 100% steps log 'skipped', exit code 0"
+    ],
+    "unit": ["buildUninstallFabricPlan-enumerates-correct-paths", "buildUninstallFabricPlan-respects-purge-flag", "buildUninstallFabricPlan-never-includes-personal-root"],
+    "integration": ["full init → uninstall round-trip removes derived state only", "uninstall --purge removes knowledge but never personal root"]
+  },
+  "cli_execution_id": "uninstall-script-support-2026-05-13-TASK-002",
+  "cli_execution": {
+    "strategy": "resume",
+    "resume_from": "uninstall-script-support-2026-05-13-TASK-001"
+  }
+}

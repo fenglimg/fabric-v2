@@ -96,7 +96,9 @@ describe("runDoctorReport", () => {
     // (narrow_no_paths + relevance_paths_dangling + relevance_paths_drift
     // lints added) → 26 rc.6 TASK-021 (knowledge_session_hints_stale
     // lint #27 added) → 27 rc.6 TASK-023 (knowledge_narrow_too_few lint
-    // #26 added — structural + telemetry two-arm check).
+    // #26 added — structural + telemetry two-arm check) → 28 rc.9 TASK-003
+    // (knowledge_relevance_fields_missing lint #28 added — pending
+    // entries back-fill for relevance_scope / relevance_paths).
     expect(report.checks.map((check) => check.name)).toEqual([
       "Bootstrap anchor",
       "Knowledge layout",
@@ -124,9 +126,10 @@ describe("runDoctorReport", () => {
       "Knowledge relevance_paths drift",
       "Knowledge narrow too few",
       "Knowledge session-hints stale",
+      "Knowledge relevance fields missing",
       "Preexisting root markdown",
     ]);
-    expect(report.checks).toHaveLength(27);
+    expect(report.checks).toHaveLength(28);
   });
 
   it("v2.0: clean post-init repo (mocked layout) reports zero errors AND zero warnings", async () => {
@@ -2019,11 +2022,17 @@ describe("runDoctorReport", () => {
       // rc.5 TASK-009 (B2): auto-archive only triggers strictly above 30d.
       // A 30-day-old pending entry remains in pending/ (overdue lint fires
       // as a warning, but --apply-lint takes no action until age > 30d).
+      //
+      // rc.9 TASK-003 (A3): seed both relevance_scope + relevance_paths
+      // verbatim so lint #28 (relevance_fields_missing) has nothing to
+      // back-fill — keeps this test's "file unchanged" invariant focused
+      // on the pending_auto_archive 30d-threshold semantics rather than
+      // the relevance back-fill side-effect.
       const target = createInitializedProject("doctor-rc4-applylint-pending-noop");
       await writeKnowledgeMeta(target, { source: "doctor_fix" });
       writeFile(".fabric/events.jsonl", "", target);
 
-      const fmPending = `---\ntype: decision\nlayer: team\ncreated_at: ${ageDaysAgoIso(30)}\n---\n# Pending\n`;
+      const fmPending = `---\ntype: decision\nlayer: team\ncreated_at: ${ageDaysAgoIso(30)}\nrelevance_scope: broad\nrelevance_paths: []\n---\n# Pending\n`;
       const pendingRel = ".fabric/knowledge/pending/decisions/old-proposal.md";
       writeFile(pendingRel, fmPending, target);
 
@@ -2034,6 +2043,12 @@ describe("runDoctorReport", () => {
       // No auto-archive mutation: 30d is the exact threshold, not exceeded.
       expect(
         result.mutations.find((m) => m.kind === "knowledge_pending_auto_archive"),
+      ).toBeUndefined();
+      // No relevance back-fill either: both fields are already present.
+      expect(
+        result.mutations.find(
+          (m) => m.kind === "knowledge_relevance_fields_missing",
+        ),
       ).toBeUndefined();
 
       // File unchanged, still in pending/.
@@ -3045,6 +3060,263 @@ describe("runDoctorReport", () => {
       expect(check?.status).toBe("ok");
       expect(check?.message).toMatch(/telemetry skipped/);
       expect(report.infos.map((i) => i.code)).not.toContain("knowledge_narrow_too_few");
+    });
+  });
+
+  // v2.0.0-rc.9 TASK-003 (A3): lint #28 knowledge_relevance_fields_missing.
+  // Detect-mode reports pending entries whose frontmatter is missing
+  // relevance_scope / relevance_paths; apply-lint back-fills the schema
+  // defaults (relevance_scope: broad, relevance_paths: []) and emits one
+  // aggregate `relevance_migration_run` event with scanned_count /
+  // touched_count. Tests use the dual-root (team + personal) pending walker.
+  describe("rc.9 TASK-003 (A3): relevance fields missing lint #28", () => {
+    async function runApplyLint(target: string) {
+      const { runDoctorApplyLint } = await import("./doctor.js");
+      return runDoctorApplyLint(target);
+    }
+
+    // ---- Detect mode ------------------------------------------------------
+    it("#28 flags pending entry missing both relevance_scope and relevance_paths", async () => {
+      const target = createInitializedProject("doctor-rc9-relfields-detect-both");
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+      // Pending frontmatter without relevance_scope / relevance_paths.
+      writeFile(
+        ".fabric/knowledge/pending/decisions/missing-both.md",
+        `---\ntype: decision\nlayer: team\nmaturity: draft\n---\n# Missing Both\nBody.\n`,
+        target,
+      );
+
+      const report = await runDoctorReport(target);
+      const check = report.checks.find(
+        (c) => c.name === "Knowledge relevance fields missing",
+      );
+      expect(check?.code).toBe("knowledge_relevance_fields_missing");
+      expect(check?.kind).toBe("info");
+      expect(check?.status).toBe("ok"); // info kind — status not bumped
+      expect(check?.message).toContain("missing-both.md");
+      expect(check?.message).toMatch(/relevance_scope/);
+      expect(check?.message).toMatch(/relevance_paths/);
+      expect(check?.actionHint).toMatch(/--apply-lint/);
+      expect(report.infos.map((i) => i.code)).toContain(
+        "knowledge_relevance_fields_missing",
+      );
+    });
+
+    it("#28 flags pending entry missing only relevance_paths (partial)", async () => {
+      const target = createInitializedProject("doctor-rc9-relfields-detect-partial");
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+      // Frontmatter has scope but no paths.
+      writeFile(
+        ".fabric/knowledge/pending/pitfalls/partial.md",
+        `---\ntype: pitfall\nlayer: team\nrelevance_scope: broad\n---\n# Partial\nBody.\n`,
+        target,
+      );
+
+      const report = await runDoctorReport(target);
+      const check = report.checks.find(
+        (c) => c.name === "Knowledge relevance fields missing",
+      );
+      expect(check?.code).toBe("knowledge_relevance_fields_missing");
+      expect(check?.message).toContain("partial.md");
+      expect(check?.message).toMatch(/relevance_paths/);
+    });
+
+    it("#28 does NOT flag pending entry that already has both fields", async () => {
+      const target = createInitializedProject("doctor-rc9-relfields-complete");
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+      writeFile(
+        ".fabric/knowledge/pending/decisions/complete.md",
+        `---\ntype: decision\nlayer: team\nrelevance_scope: broad\nrelevance_paths: []\n---\n# Complete\nBody.\n`,
+        target,
+      );
+
+      const report = await runDoctorReport(target);
+      const check = report.checks.find(
+        (c) => c.name === "Knowledge relevance fields missing",
+      );
+      expect(check?.status).toBe("ok");
+      expect(check?.kind).toBeUndefined(); // okCheck path
+      expect(report.infos.map((i) => i.code)).not.toContain(
+        "knowledge_relevance_fields_missing",
+      );
+    });
+
+    it("#28 does NOT scan canonical entries (only pending)", async () => {
+      const target = createInitializedProject("doctor-rc9-relfields-canonical-skip");
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+      // Canonical entry without relevance fields — must NOT be flagged.
+      writeFile(
+        ".fabric/knowledge/decisions/KT-DEC-9001--canonical.md",
+        `---\nid: KT-DEC-9001\ntype: decision\nlayer: team\nmaturity: stable\n---\n# Canonical\nBody.\n`,
+        target,
+      );
+
+      const report = await runDoctorReport(target);
+      const check = report.checks.find(
+        (c) => c.name === "Knowledge relevance fields missing",
+      );
+      expect(check?.status).toBe("ok");
+      expect(report.infos.map((i) => i.code)).not.toContain(
+        "knowledge_relevance_fields_missing",
+      );
+    });
+
+    // ---- Apply-lint mode --------------------------------------------------
+    it("#28 apply-lint writes relevance_scope: broad + relevance_paths: [] to missing entries", async () => {
+      const target = createInitializedProject("doctor-rc9-relfields-apply-write");
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+      const pendingRel =
+        ".fabric/knowledge/pending/decisions/needs-backfill.md";
+      writeFile(
+        pendingRel,
+        `---\ntype: decision\nlayer: team\nmaturity: draft\n---\n# Needs Backfill\nBody.\n`,
+        target,
+      );
+
+      const result = await runApplyLint(target);
+      expect(result.aborted).toBe(false);
+      const mutation = result.mutations.find(
+        (m) => m.kind === "knowledge_relevance_fields_missing",
+      );
+      expect(mutation).toBeDefined();
+      expect(mutation?.applied).toBe(true);
+      expect(mutation?.path).toBe(pendingRel);
+      expect(mutation?.detail).toMatch(/relevance_scope: broad/);
+      expect(mutation?.detail).toMatch(/relevance_paths: \[\]/);
+
+      // Verify the on-disk frontmatter now contains BOTH fields verbatim
+      // (matching the regexes at doctor.ts L627-628).
+      const written = readFileSync(join(target, pendingRel), "utf8");
+      expect(written).toMatch(/^relevance_scope: broad$/mu);
+      expect(written).toMatch(/^relevance_paths: \[\]$/mu);
+      // Original frontmatter preserved.
+      expect(written).toContain("type: decision");
+      expect(written).toContain("# Needs Backfill");
+    });
+
+    it("#28 apply-lint emits exactly one relevance_migration_run event with accurate counts", async () => {
+      const target = createInitializedProject("doctor-rc9-relfields-apply-event");
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+      // Two pending entries needing back-fill + one already complete.
+      writeFile(
+        ".fabric/knowledge/pending/decisions/a.md",
+        `---\ntype: decision\nlayer: team\n---\n# A\n`,
+        target,
+      );
+      writeFile(
+        ".fabric/knowledge/pending/pitfalls/b.md",
+        `---\ntype: pitfall\nlayer: team\nrelevance_scope: narrow\n---\n# B\n`,
+        target,
+      );
+      writeFile(
+        ".fabric/knowledge/pending/models/c.md",
+        `---\ntype: model\nlayer: team\nrelevance_scope: broad\nrelevance_paths: []\n---\n# C\n`,
+        target,
+      );
+
+      await runApplyLint(target);
+
+      const { events } = await readEventLedger(target, {
+        event_type: "relevance_migration_run",
+      });
+      expect(events).toHaveLength(1);
+      const evt = events[0];
+      if (evt.event_type !== "relevance_migration_run") {
+        throw new Error("type narrowing failed");
+      }
+      // 3 scanned, 2 touched (a + b; c already complete).
+      expect(evt.scanned_count).toBe(3);
+      expect(evt.touched_count).toBe(2);
+      expect(evt.timestamp).toMatch(/^\d{4}-\d{2}-\d{2}T/u);
+    });
+
+    it("#28 apply-lint is idempotent — second run produces zero mutations + touched_count=0", async () => {
+      const target = createInitializedProject("doctor-rc9-relfields-idempotent");
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+      writeFile(
+        ".fabric/knowledge/pending/decisions/needs-backfill.md",
+        `---\ntype: decision\nlayer: team\n---\n# A\n`,
+        target,
+      );
+
+      const first = await runApplyLint(target);
+      const firstMutations = first.mutations.filter(
+        (m) => m.kind === "knowledge_relevance_fields_missing",
+      );
+      expect(firstMutations).toHaveLength(1);
+      expect(firstMutations[0].applied).toBe(true);
+
+      const second = await runApplyLint(target);
+      const secondMutations = second.mutations.filter(
+        (m) => m.kind === "knowledge_relevance_fields_missing",
+      );
+      // Idempotent: no mutations on the re-run.
+      expect(secondMutations).toHaveLength(0);
+
+      // Both runs emit a relevance_migration_run event (audit heartbeat),
+      // but the second one has touched_count=0.
+      const { events } = await readEventLedger(target, {
+        event_type: "relevance_migration_run",
+      });
+      expect(events).toHaveLength(2);
+      const second_evt = events[1];
+      if (second_evt.event_type !== "relevance_migration_run") {
+        throw new Error("type narrowing failed");
+      }
+      expect(second_evt.touched_count).toBe(0);
+    });
+
+    it("#28 apply-lint preserves original frontmatter bytes and appends only the missing fields", async () => {
+      const target = createInitializedProject("doctor-rc9-relfields-preserve");
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+      const pendingRel = ".fabric/knowledge/pending/guidelines/preserve.md";
+      const before = `---\ntype: guideline\nlayer: team\nrelevance_scope: narrow\n---\n# Preserve\nKeep this body intact.\n`;
+      writeFile(pendingRel, before, target);
+
+      await runApplyLint(target);
+
+      const after = readFileSync(join(target, pendingRel), "utf8");
+      // Original fields untouched.
+      expect(after).toContain("type: guideline");
+      expect(after).toContain("relevance_scope: narrow");
+      // Newly appended field.
+      expect(after).toMatch(/^relevance_paths: \[\]$/mu);
+      // Body preserved.
+      expect(after).toContain("# Preserve");
+      expect(after).toContain("Keep this body intact.");
+      // No duplicate scope writes (scope was already present, not touched).
+      const scopeMatches = after.match(/relevance_scope:/gu);
+      expect(scopeMatches).toHaveLength(1);
+    });
+
+    it("#28 apply-lint emits aggregate event even with zero pending entries", async () => {
+      const target = createInitializedProject("doctor-rc9-relfields-zero-pending");
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+      // No pending entries seeded.
+
+      await runApplyLint(target);
+
+      const { events } = await readEventLedger(target, {
+        event_type: "relevance_migration_run",
+      });
+      // Heartbeat invariant: one event per --apply-lint invocation, even
+      // when scanned_count=0.
+      expect(events).toHaveLength(1);
+      const evt = events[0];
+      if (evt.event_type !== "relevance_migration_run") {
+        throw new Error("type narrowing failed");
+      }
+      expect(evt.scanned_count).toBe(0);
+      expect(evt.touched_count).toBe(0);
     });
   });
 });

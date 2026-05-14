@@ -1,0 +1,70 @@
+{
+  "id": "TASK-003",
+  "title": "Bootstrap-stage uninstall helpers (skills + hook scripts + un-merge configs + pointer-strippers)",
+  "scope": "packages/cli/src/install/uninstall-skills-and-hooks.ts",
+  "action": "Create",
+  "description": "Create `packages/cli/src/install/uninstall-skills-and-hooks.ts` mirroring `install/skills-and-hooks.ts`. Implement: (1) skill removers — delete each SKILL.md from SKILL_DESTINATIONS (6 files = 3 skills × 2 clients), then rmdir empty parent skill-name dir; (2) hook-script removers — delete each .cjs from HOOK_SCRIPT_DESTINATIONS (9 files = 3 hooks × 3 clients); (3) un-merge helpers for the 3 config files (.claude/settings.json, .codex/hooks.json, .cursor/hooks.json) — conservative: filter each arrayAppendPath array to remove entries whose `command` field matches FABRIC_HOOK_COMMAND_PATHS for that client; with `--clean-empties` flag, cascade-remove empty arrays/objects up to the parent hooks/events key; (4) pointer-line strippers — read each POINTER_TARGETS file (CLAUDE.md / AGENTS.md / .cursor/rules), remove lines containing POINTER_LINE / REVIEW_POINTER_LINE / IMPORT_POINTER_LINE; preserve file unless it becomes empty AND init created it (cannot prove → preserve). All operations idempotent + best-effort: missing artifacts log skipped, do not throw.",
+  "files": [
+    {
+      "path": "packages/cli/src/install/uninstall-skills-and-hooks.ts",
+      "action": "create",
+      "target": "new module — full file",
+      "change": "Import constants from ./skills-and-hooks.ts (SKILL_DESTINATIONS, HOOK_SCRIPT_DESTINATIONS, HOOK_CONFIG_TARGETS, HOOK_CONFIG_ARRAY_PATHS, FABRIC_HOOK_COMMAND_PATHS, POINTER_TARGETS, POINTER_LINE, REVIEW_POINTER_LINE, IMPORT_POINTER_LINE). Export: uninstallFabricArchiveSkill / uninstallFabricReviewSkill / uninstallFabricImportSkill (each removes its 2 SKILL.md files + the now-empty parent skill dir); removeArchiveHintHook / removeKnowledgeHintBroadHook / removeKnowledgeHintNarrowHook (each removes its 3 .cjs files); unmergeClaudeCodeHookConfig / unmergeCodexHookConfig / unmergeCursorHookConfig (each takes opts.cleanEmpties: boolean, filters fabric entries by command-path match, conditionally cascade-removes empty containers); stripArchiveSkillPointers (reads each POINTER_TARGETS file, removes the 3 pointer lines, writes back if changed, deletes file only if it becomes empty AND a forensic check confirms init created it — currently NO such forensic exists, so default to preserve always per clarification #9). Each helper returns InstallStepResult with status 'removed' | 'skipped' | 'error'. Provide top-level uninstallBootstrapStage(target, opts) that runs all helpers best-effort and returns InstallStepResult[]."
+    }
+  ],
+  "implementation": [
+    "Read packages/cli/src/install/skills-and-hooks.ts in full (especially L86-L409) to confirm the install helper contracts: each writes specific paths, returns InstallStepResult, is idempotent.",
+    "Create packages/cli/src/install/uninstall-skills-and-hooks.ts. Import all required constants from ./skills-and-hooks.js (TASK-001 made them exports). Define internal helpers: rmIfExists(path) → InstallStepResult, rmDirIfEmpty(path) → InstallStepResult.",
+    "Implement 3 skill removers: each iterates SKILL_DESTINATIONS[skillKey] = [claudePath, codexPath], rmIfExists each, then rmDirIfEmpty the parent skill-name dir (.claude/skills/fabric-archive/ etc.).",
+    "Implement 3 hook-script removers: each iterates HOOK_SCRIPT_DESTINATIONS[hookKey] = [claude, codex, cursor], rmIfExists each. Do NOT rmdir client hooks/ parent (may contain other client hooks).",
+    "Implement 3 un-merge helpers. For each: readJson(HOOK_CONFIG_TARGETS[clientKey]); for each array path in HOOK_CONFIG_ARRAY_PATHS[clientKey]: walk to the array; filter out entries where any nested `command` field matches FABRIC_HOOK_COMMAND_PATHS[clientKey]; if opts.cleanEmpties && resulting array is empty → delete the key from parent; cascade up: if parent object is now empty (no own keys) AND opts.cleanEmpties → delete it too. atomicWriteJson back. If config file missing → status='skipped'. If file unchanged → status='skipped'. Use deep-equal short-circuit.",
+    "Implement stripArchiveSkillPointers: for each path in POINTER_TARGETS: if existsSync, readFileSync, split lines, filter out lines that contain any of (POINTER_LINE | REVIEW_POINTER_LINE | IMPORT_POINTER_LINE); if changed, atomicWriteText. Per clarification #9: NEVER delete the file even if empty (cannot prove ownership). Return InstallStepResult per pointer target.",
+    "Implement top-level uninstallBootstrapStage(target, opts: { cleanEmpties: boolean }): orchestrate all helpers in reverse order of install (per hooks.ts:L105-L133 invocation order, REVERSED): stripArchiveSkillPointers → un-merge 3 configs → remove 9 hook scripts → remove 6 skill files + empty skill dirs. Aggregate InstallStepResult[]. Wrap each helper invocation in try/catch → on throw, push {step, path, status:'error', message: err.message}. Never throw out of uninstallBootstrapStage.",
+    "Verify the un-merge command-path match is robust: install writes entries with `command` fields like '.claude/hooks/fabric-hint.cjs'; un-merge must match exactly that path string (substring match against FABRIC_HOOK_COMMAND_PATHS values is sufficient because install writes the same constant)."
+  ],
+  "reference": {
+    "pattern": "Mirror inverse of install/skills-and-hooks.ts: every install helper has a remove/un-merge counterpart returning the same InstallStepResult shape so existing summarizers work unchanged.",
+    "files": [
+      "packages/cli/src/install/skills-and-hooks.ts",
+      "packages/cli/src/commands/hooks.ts",
+      "packages/shared/src/node/atomic-write.ts"
+    ],
+    "examples": "skills-and-hooks.ts:L86-L153 (skill install) → uninstall counterparts; L165-L263 (hook install) → remove counterparts; L276-L330 (mergeXHookConfig) → unmergeXHookConfig with command-path filtering; L347-L409 (addArchiveSkillPointer) → stripArchiveSkillPointers."
+  },
+  "convergence": {
+    "criteria": [
+      "packages/cli/src/install/uninstall-skills-and-hooks.ts exports exactly 10 helpers (3 skill removers, 3 hook-script removers, 3 un-merge helpers, 1 stripArchiveSkillPointers) + 1 orchestrator (uninstallBootstrapStage).",
+      "Each un-merge helper produces an output config that is byte-equal to the pre-install state when (a) install was run on an empty config and (b) opts.cleanEmpties=true. Verified manually: write empty {}, run install merge*, run un-merge with cleanEmpties=true, assert JSON.stringify equality with {}.",
+      "Each un-merge helper preserves non-fabric entries verbatim. Verified manually: write a user-authored {hooks:{Stop:[{matcher:'*',hooks:[{type:'command',command:'./my-hook.sh'}]}]}}, run install mergeClaudeCodeHookConfig (which appends fabric entries), run unmergeClaudeCodeHookConfig with cleanEmpties=true, assert resulting JSON deep-equals the original user-authored object.",
+      "stripArchiveSkillPointers preserves the file even if pointer-line removal leaves it empty (per clarification #9 — cannot prove init created it).",
+      "All helpers return InstallStepResult arrays where every result.status ∈ {'removed','skipped','error'} (verified via TypeScript type check + runtime sample of all 10 helpers).",
+      "uninstallBootstrapStage on a project without prior install returns 100% status='skipped' results, exit code 0, no thrown errors."
+    ]
+  },
+  "depends_on": ["TASK-001"],
+  "rationale": {
+    "chosen_approach": "Mirror module structure (install/skills-and-hooks.ts ↔ install/uninstall-skills-and-hooks.ts) so the source of truth for 'what was written' lives co-located with 'what is removed'. Conservative default un-merge (clarification #5): match by command-path, leave empty containers intact unless --clean-empties.",
+    "alternatives_considered": ["Add inverse helpers to install/skills-and-hooks.ts directly — rejected: file grows past readability threshold; separation aids review", "Walk arrays generically removing 'anything whose command path includes fabric' — rejected: fragile; explicit match against FABRIC_HOOK_COMMAND_PATHS is bulletproof"],
+    "decision_factors": ["Co-location with install source of truth", "Conservative un-merge protects user-authored entries", "Idempotent + best-effort matches init's contract"],
+    "tradeoffs": "Two modules to keep in sync if templates evolve; mitigated by shared constants from TASK-001."
+  },
+  "test": {
+    "manual_checks": [
+      "Seed user-authored .claude/settings.json with permissions + custom Stop hook, run install, run un-merge → user content byte-identical",
+      "Run un-merge on missing .codex/hooks.json → status='skipped', no error",
+      "Run stripArchiveSkillPointers on AGENTS.md containing only the fabric pointer line → file preserved (empty), status='removed'"
+    ],
+    "success_metrics": [
+      "Un-merge round-trip on user-authored config: JSON.stringify equality before install/after un-merge with cleanEmpties=true",
+      "Pointer strip preserves all non-fabric lines verbatim (line-by-line diff = only fabric pointer lines removed)",
+      "uninstallBootstrapStage on never-installed project: all 22 sub-step results have status='skipped'"
+    ],
+    "unit": ["unmergeClaudeCodeHookConfig-preserves-user-stop-hook", "unmergeClaudeCodeHookConfig-clean-empties-cascade", "stripArchiveSkillPointers-preserves-non-fabric-content", "removeArchiveHintHook-idempotent-on-missing-file"],
+    "integration": ["full bootstrap install → uninstallBootstrapStage round-trip with cleanEmpties=true → all 3 config files JSON-equal to pre-install state"]
+  },
+  "cli_execution_id": "uninstall-script-support-2026-05-13-TASK-003",
+  "cli_execution": {
+    "strategy": "fork",
+    "resume_from": "uninstall-script-support-2026-05-13-TASK-001"
+  }
+}

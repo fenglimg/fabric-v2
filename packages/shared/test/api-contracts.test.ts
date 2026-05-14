@@ -209,6 +209,85 @@ describe("FabExtractKnowledgeInputSchema", () => {
     });
     expect(result.success).toBe(false);
   });
+
+  // v2.0.0-rc.8 A1: relevance_scope / relevance_paths surface coverage.
+  it("A1: accepts narrow + relevance_paths array", () => {
+    const result = FabExtractKnowledgeInputSchema.safeParse({
+      source_sessions: ["sess-rel"],
+      recent_paths: [],
+      user_messages_summary: "x",
+      type: "decisions",
+      slug: "rel-narrow",
+      relevance_scope: "narrow",
+      relevance_paths: ["src/**"],
+      ...requiredExtras,
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.relevance_scope).toBe("narrow");
+      expect(result.data.relevance_paths).toEqual(["src/**"]);
+    }
+  });
+
+  it("A1: accepts broad + empty paths array", () => {
+    const result = FabExtractKnowledgeInputSchema.safeParse({
+      source_sessions: ["sess-rel"],
+      recent_paths: [],
+      user_messages_summary: "x",
+      type: "decisions",
+      slug: "rel-broad",
+      relevance_scope: "broad",
+      relevance_paths: [],
+      ...requiredExtras,
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.relevance_scope).toBe("broad");
+      expect(result.data.relevance_paths).toEqual([]);
+    }
+  });
+
+  it("A1: omitting relevance fields stays valid (defaults applied downstream)", () => {
+    const result = FabExtractKnowledgeInputSchema.safeParse({
+      source_sessions: ["sess-rel"],
+      recent_paths: [],
+      user_messages_summary: "x",
+      type: "decisions",
+      slug: "rel-omit",
+      ...requiredExtras,
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.relevance_scope).toBeUndefined();
+      expect(result.data.relevance_paths).toBeUndefined();
+    }
+  });
+
+  it("A1: rejects unknown relevance_scope enum value", () => {
+    const result = FabExtractKnowledgeInputSchema.safeParse({
+      source_sessions: ["sess-rel"],
+      recent_paths: [],
+      user_messages_summary: "x",
+      type: "decisions",
+      slug: "rel-bad-scope",
+      relevance_scope: "global",
+      ...requiredExtras,
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("A1: rejects relevance_paths with non-string items", () => {
+    const result = FabExtractKnowledgeInputSchema.safeParse({
+      source_sessions: ["sess-rel"],
+      recent_paths: [],
+      user_messages_summary: "x",
+      type: "decisions",
+      slug: "rel-bad-paths",
+      relevance_paths: ["src/**", 42],
+      ...requiredExtras,
+    });
+    expect(result.success).toBe(false);
+  });
 });
 
 describe("FabExtractKnowledgeOutputSchema", () => {

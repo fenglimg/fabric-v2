@@ -40,6 +40,21 @@ exports[`tool contracts > fab-extract-knowledge contract matches snapshot 1`] = 
         },
         "type": "array",
       },
+      "relevance_paths": {
+        "description": "Optional path anchors for narrow scope. Workspace-relative globs or paths. Omit to let the meta-builder default to []. Ignored when scope is broad (server preserves the array for audit).",
+        "items": {
+          "type": "string",
+        },
+        "type": "array",
+      },
+      "relevance_scope": {
+        "description": "Optional relevance scope. 'narrow' restricts plan-context-hint surfacing to relevance_paths; 'broad' always surfaces. Omit to let the meta-builder default to 'broad'. Personal + narrow is silently degraded to broad + [].",
+        "enum": [
+          "narrow",
+          "broad",
+        ],
+        "type": "string",
+      },
       "session_context": {
         "description": "3-5 line markdown blob — session goal + key turning point. Reviewed by future-self without transcript access.",
         "minLength": 20,

@@ -1,0 +1,128 @@
+{
+  "id": "TASK-011",
+  "title": "F1 + F2 — Import state.json atomic write + corruption recovery + events.jsonl single-line<4KB constraint comments",
+  "scope": "packages/cli/templates/skills/{fabric-import,fabric-archive,fabric-review}/SKILL.md (+ .claude + .codex mirrors)",
+  "action": "Update",
+  "description": "Import SKILL.md: change .fabric/.import-state.json write to two-step (Write → .tmp file, then Bash `mv` for atomic rename); Phase 0 gains .tmp residue scan (mtime comparison; delete on parse failure or stale mtime). Add corruption-recovery chapter (JSON parse + required-field check + phase enum validation; on failure → discard and restart). All three skills: add comment near events.jsonl emit sites: '⚠️ events.jsonl is single-line JSON, target <4KB per event; long fields (session_context, source_sessions etc.) MUST self-truncate to avoid line-length overflow.'",
+  "files": [
+    {
+      "path": "packages/cli/templates/skills/fabric-import/SKILL.md",
+      "action": "modify",
+      "target": "state.json write step + Phase 0 + new corruption-recovery chapter + events.jsonl comment",
+      "change": "Rewrite state.json persistence: 'Step A: Write content to .fabric/.import-state.json.tmp; Step B: Bash `mv .fabric/.import-state.json.tmp .fabric/.import-state.json` (atomic on POSIX).' Add Phase 0 .tmp scan: enumerate .fabric/.import-state.json.tmp; if mtime >5min stale OR fails JSON.parse → unlink. Add 'Corruption Recovery' chapter: on state.json load failure (parse error / missing required fields / phase not in enum {idle, mining, proposing, reviewing, done}) → unlink state file and restart pipeline from Phase 0. Add events.jsonl emit comment block."
+    },
+    {
+      "path": "packages/cli/templates/skills/fabric-archive/SKILL.md",
+      "action": "modify",
+      "target": "events.jsonl emit sites",
+      "change": "Add same events.jsonl single-line<4KB constraint comment near each appendEventLedgerEvent reference; emphasize session_context + source_sessions self-truncation"
+    },
+    {
+      "path": "packages/cli/templates/skills/fabric-review/SKILL.md",
+      "action": "modify",
+      "target": "events.jsonl emit sites",
+      "change": "Same events.jsonl constraint comment"
+    },
+    {
+      "path": ".claude/skills/fabric-import/SKILL.md",
+      "action": "modify",
+      "target": "Full file",
+      "change": "Byte-identical mirror"
+    },
+    {
+      "path": ".codex/skills/fabric-import/SKILL.md",
+      "action": "modify",
+      "target": "Full file",
+      "change": "Byte-identical mirror"
+    },
+    {
+      "path": ".claude/skills/fabric-archive/SKILL.md",
+      "action": "modify",
+      "target": "Full file",
+      "change": "Byte-identical mirror"
+    },
+    {
+      "path": ".codex/skills/fabric-archive/SKILL.md",
+      "action": "modify",
+      "target": "Full file",
+      "change": "Byte-identical mirror"
+    },
+    {
+      "path": ".claude/skills/fabric-review/SKILL.md",
+      "action": "modify",
+      "target": "Full file",
+      "change": "Byte-identical mirror"
+    },
+    {
+      "path": ".codex/skills/fabric-review/SKILL.md",
+      "action": "modify",
+      "target": "Full file",
+      "change": "Byte-identical mirror"
+    }
+  ],
+  "implementation": [
+    "In fabric-import SKILL.md find current state.json write instruction; replace with two-step pattern: 'Write .tmp first, then Bash `mv` to commit atomically (POSIX rename guarantees atomicity on same filesystem)'",
+    "Add Phase 0 .tmp residue scan: 'Before reading state.json, list .fabric/.import-state.json.tmp; if present: try JSON.parse, if fails OR mtime is >5 minutes old → unlink as crash residue'",
+    "Draft 'Corruption Recovery' chapter (placed after Phase 0): 'When state.json load fails — (a) JSON.parse throws, (b) required fields missing (phase, started_at, processed_count), (c) phase value not in {idle, mining, proposing, reviewing, done} — discard the file via unlink and restart pipeline from Phase 0 emit-side. Do NOT attempt partial recovery.'",
+    "Draft events.jsonl constraint comment block (canonical wording shared across three skills): '⚠️ events.jsonl is JSON-Lines (one event per line, append-only). Each line MUST be <4KB to avoid downstream parser line-length overflow. Long fields — session_context, source_sessions, recent_paths, user_messages_summary — MUST self-truncate (e.g. session_context first 500 chars; source_sessions cap at 5 entries). Never serialize multiline strings (escape \\n).'",
+    "Insert events.jsonl comment near each appendEventLedgerEvent / emit instruction in all three templates",
+    "Mirror to .claude and .codex; run install-skills-and-hooks.test.ts and lint-protected-tokens"
+  ],
+  "reference": {
+    "pattern": "Atomic write via .tmp + mv; corruption recovery via discard-and-restart; events.jsonl line-length constraint",
+    "files": [
+      "packages/server/src/services/_shared.ts (atomicWriteText helper for server-side)",
+      "packages/server/src/services/event-ledger.ts (appendEventLedgerEvent — server already atomic)",
+      ".fabric/events.jsonl (existing constraint examples)"
+    ],
+    "examples": "Server-side atomicWriteText already uses temp+rename for canonical entries; this task surfaces the same pattern to client-side skill state writes"
+  },
+  "convergence": {
+    "criteria": [
+      "fabric-import SKILL.md state.json write uses two-step .tmp + mv pattern (greppable for `.import-state.json.tmp`)",
+      "Phase 0 .tmp residue scan documented with mtime comparison + JSON.parse check",
+      "Corruption Recovery chapter present with explicit conditions (parse error + missing fields + phase enum mismatch)",
+      "events.jsonl single-line<4KB comment present in all 3 templates near emit sites",
+      "Comment specifies which fields to self-truncate (session_context, source_sessions, recent_paths)",
+      "Three-mirror byte-identity preserved for all 9 SKILL.md files",
+      "scripts/lint-protected-tokens.ts exits 0",
+      "install-skills-and-hooks.test.ts passes"
+    ]
+  },
+  "depends_on": [],
+  "cli_execution_id": "fabric-skills-contract-fix-2026-05-13-TASK-011",
+  "cli_execution": { "strategy": "new" },
+  "rationale": {
+    "chosen_approach": "Two-step .tmp+mv atomic write + discard-and-restart on corruption + explicit line-length constraint comment",
+    "alternatives_considered": [
+      "Single-step Write (loses atomicity guarantees)",
+      "Attempt partial recovery on corruption (complex, error-prone)",
+      "Server-side state validator API (adds round-trip)"
+    ],
+    "decision_factors": [
+      "POSIX rename atomicity is well-known + reliable",
+      "Skill state is small + cheap to regenerate",
+      "events.jsonl downstream parsers have observed line-length issues"
+    ],
+    "tradeoffs": "Discard-and-restart loses partial progress; mitigated because skill state is checkpoint-only and Phase 0 is cheap"
+  },
+  "test": {
+    "manual_checks": [
+      "Write a corrupted state.json (truncate mid-write); run import → verify skill discards + restarts from Phase 0",
+      "Inject a .tmp file with old mtime; run Phase 0 → verify .tmp unlinked",
+      "Read events.jsonl emit sites in all three templates → verify constraint comment present"
+    ],
+    "success_metrics": [
+      "Atomic write pattern present in import",
+      "Corruption recovery chapter complete",
+      "events.jsonl comment in all 3 skills",
+      "100% three-mirror byte-identity"
+    ],
+    "unit": [
+      "test_lint_protected_tokens_after_atomic_state"
+    ],
+    "integration": [
+      "test_install_skills_three_mirror_parity_after_state_changes"
+    ]
+  }
+}

@@ -1,0 +1,382 @@
+{
+  "project_structure": "Fabric CLI monorepo with three packages: packages/cli, packages/server, packages/shared. Test runner is vitest (>=3.2) per workspace; each package has its own vitest.config.ts under packages/<pkg>/vitest.config.ts. CLI tests live at packages/cli/__tests__/*.test.ts (unit-ish, mostly real-filesystem against a temp fixture) plus packages/cli/__tests__/integration/*.test.ts (cross-module integration). Reusable scaffolding helpers live in packages/cli/__tests__/helpers/init-test-utils.ts. A shared on-disk fixture, packages/cli/__tests__/fixtures/cocos-stub, is cloned into a fresh tmpdir per test via createWerewolfFixtureRoot(). Snapshot tests (packages/cli/__tests__/__snapshots__/i18n.test.ts.snap, cli-surface.test.ts.snap) cover localized command output. Coverage thresholds (lines/statements 70) are declared in packages/cli/vitest.config.ts. Structural release gates live in scripts/rc{2..7}-coverage-gate.mjs and are wired via root package.json scripts (pnpm rc6:gate, rc5:gate). rc6 gate is the currently advertised gate; rc7 gate extends it with rc.7 wave checks. No script named rc6:gate runs c8 coverage thresholds — the gate is structural (regex over source files + a per-suite vitest invocation), not coverage-percentage based; vitest's own thresholds: { lines: 70, statements: 70 } enforce coverage when test:coverage is invoked.",
+  "relevant_files": [
+    {
+      "path": "packages/cli/__tests__/helpers/init-test-utils.ts",
+      "relevance": 1.0,
+      "rationale": "Single source of fixture/teardown helpers used by every init-adjacent test. A new uninstall test suite MUST consume the same helpers (createWerewolfFixtureRoot, cleanupFixtureRoot, writeFixtureFile, readFixtureFile, setProcessTty) to inherit the temp-dir + cocos-stub clone pattern and stay symmetric with init tests.",
+      "role": "pattern_reference",
+      "discovery_source": "bash-scan",
+      "key_code": [
+        {
+          "symbol": "createWerewolfFixtureRoot(prefix)",
+          "location": "L8-L17",
+          "description": "Copies fixtures/cocos-stub into tmpdir under `${prefix}-${pid}-${Date.now()}-${random}`, then strips pre-existing AGENTS.md, .fabric, and .claude so the fixture starts clean. Returns absolute root path. This is the canonical 'fresh project' constructor — uninstall tests should use it and then run initFabric() to produce something to uninstall."
+        },
+        {
+          "symbol": "cleanupFixtureRoot(root)",
+          "location": "L19-L21",
+          "description": "rmSync with recursive+force. Always called from afterEach via a tempRoots[] stack pattern so each test owns its dir."
+        },
+        {
+          "symbol": "writeFixtureFile / readFixtureFile",
+          "location": "L23-L32",
+          "description": "Path-joined helpers used to seed pre-existing user files (custom AGENTS.md, .claude/settings.json, legacy .fabric/bootstrap/README.md) and to byte-compare after the command runs. Uninstall tests need writeFixtureFile to seed user content that uninstall must NOT touch."
+        },
+        {
+          "symbol": "setProcessTty(stdout, stderr, stdin)",
+          "location": "L41-L70",
+          "description": "Mutates process.{stdin,stdout,stderr}.isTTY via Object.defineProperty and returns a restore closure. Required for any uninstall test that wants to exercise the clack interactive path (TTY=true) vs the --yes / non-interactive path (TTY=false)."
+        }
+      ],
+      "topic_relation": "Testing exploration: this helper module is the single seam through which a new uninstall.test.ts attaches to the existing test infrastructure — reusing it guarantees that uninstall tests look and behave like init tests (same temp-dir lifecycle, same fixture seed, same TTY toggling)."
+    },
+    {
+      "path": "packages/cli/__tests__/init-atomic.test.ts",
+      "relevance": 0.95,
+      "rationale": "Closest stylistic ancestor for an uninstall artifact-existence test: asserts presence/absence of specific files under .fabric and .claude after a command runs, uses vi.spyOn on atomicWriteText/atomicWriteJson to verify which files are touched by which primitive. The uninstall suite needs the inverse — assert files have been REMOVED and that no .tmp residue remains.",
+      "role": "pattern_reference",
+      "discovery_source": "bash-scan",
+      "key_code": [
+        {
+          "symbol": "collectTmpFiles(dir) helper",
+          "location": "L22-L38",
+          "description": "Recursive walker that returns every *.tmp file under a directory. Directly reusable verbatim for uninstall to prove no transactional residue is left behind after delete operations."
+        },
+        {
+          "symbol": "tempRoots[] + afterEach pop loop",
+          "location": "L13-L20",
+          "description": "Canonical lifecycle: tests push roots onto a module-scoped tempRoots[] array; afterEach drains and calls cleanupFixtureRoot on each. vi.restoreAllMocks() is also in afterEach. Uninstall tests should copy this pattern verbatim."
+        },
+        {
+          "symbol": "vi.spyOn(atomicWriteModule, 'atomicWriteText')",
+          "location": "L87",
+          "description": "Demonstrates how init tests verify which paths a write primitive was called with (filter spy.mock.calls by p.endsWith('events.jsonl')). The symmetric uninstall test would spy on an analogous delete primitive — or, if uninstall uses rmSync directly, assert post-condition file-tree state instead."
+        },
+        {
+          "symbol": "existsSync + readFileSync post-conditions",
+          "location": "L48-L62, L73-L82, L165-L207",
+          "description": "Pattern: run command, then walk the target's .fabric/.claude trees and assert each well-known artifact does/does not exist and has the expected newline-terminated JSON content. Uninstall tests should mirror this with negated existsSync assertions."
+        }
+      ],
+      "topic_relation": "Testing angle: init-atomic.test.ts demonstrates the file-system-as-truth assertion style the codebase prefers (no in-memory mocks of fs). Uninstall tests must follow the same style — drive the real command against a real tmpdir and prove disk state — because fab init/uninstall are fundamentally filesystem mutations."
+    },
+    {
+      "path": "packages/cli/__tests__/integration/init-guard.test.ts",
+      "relevance": 0.9,
+      "rationale": "Tests init's guard behavior: refuses to overwrite without --force, error message contains action_hint, preserves preexisting user files (CLAUDE.md, AGENTS.md, legacy bootstrap/README.md), and verifies reapply idempotency via SHA256. Uninstall has the symmetric guard contract: must refuse to delete without --force (or explicit confirmation), must NOT delete user-authored files, must be safe to re-run on an already-uninstalled project.",
+      "role": "pattern_reference",
+      "discovery_source": "bash-scan",
+      "key_code": [
+        {
+          "symbol": "sha256 + reapply hash comparison",
+          "location": "L27-L29, L77-L95",
+          "description": "Hashes agents.meta.json after two reapply runs and asserts byte-identity. Uninstall symmetry: hash relevant files BEFORE and AFTER uninstall(--dry-run) — must be identical. Hash user-authored files (CLAUDE.md, AGENTS.md) before and after a real uninstall — must also be identical."
+        },
+        {
+          "symbol": "expect(initFabric(target)).rejects.toThrow() / action_hint regex",
+          "location": "L37-L59",
+          "description": "Pattern for guard-rejection assertions: rejects.toThrow plus a regex match on the error message containing the conflicting path or --force. Uninstall guard test should assert the inverse — rejects when there's nothing to uninstall, or when --force is missing on a destructive path."
+        },
+        {
+          "symbol": "T4 root markdown preservation",
+          "location": "L119-L143",
+          "description": "Seeds CLAUDE.md/AGENTS.md with user content, runs initFabric(target, { force: true }), reads the file back, asserts byte-identical to original. Uninstall tests need this verbatim: seed user-edited CLAUDE.md / AGENTS.md / .claude/settings.json content, run fab uninstall --force, assert byte-identical to original."
+        }
+      ],
+      "topic_relation": "Testing angle: this file is the explicit contract spec for 'commands must not stomp user content'. The uninstall suite inherits this contract directly — every preserved-file assertion in init-guard maps to a preserved-file assertion in uninstall."
+    },
+    {
+      "path": "packages/cli/__tests__/integration/install-skills-and-hooks.test.ts",
+      "relevance": 0.95,
+      "rationale": "Drives full init via buildInitExecutionPlan + executeInitExecutionPlan (skipping MCP to avoid network/global install side-effects), then snapshots the entire .claude/ and .codex/ trees and proves byte-identity on re-init (idempotency) and dedup of hook entries on re-install. This is the closest analog to an integration test that uninstall needs: drive real install, then drive uninstall, then snapshot-diff and prove the trees are gone (or returned to pre-init state) and that pre-existing user customizations (custom Stop hook, permissions block) survive.",
+      "role": "pattern_reference",
+      "discovery_source": "bash-scan",
+      "key_code": [
+        {
+          "symbol": "runInit(target, opts) helper",
+          "location": "L73-L80",
+          "description": "Wraps buildInitExecutionPlan + executeInitExecutionPlan with skipMcp: true so install integration tests don't trigger npm/global writes. A symmetric runUninstall(target, opts) helper would call the new uninstall command's execution-plan API the same way."
+        },
+        {
+          "symbol": "snapshotTree(root, rel): FsSnapshot",
+          "location": "L82-L103",
+          "description": "Recursive walker that produces a Record<relativePath, fileContent> map of a subtree. Used to prove init → reinit produces zero diff. Uninstall tests should use this to prove init → uninstall → init produces the same final state as a fresh init, AND that uninstalling a fresh init returns the tree to empty (or to its pre-init shape)."
+        },
+        {
+          "symbol": "Test 3 — settings preservation",
+          "location": "L250-L288",
+          "description": "Pre-creates .claude/settings.json with custom permissions { allow:[...], deny:[...] } and a user-owned Stop hook, runs init, then asserts the custom permissions block is preserved verbatim AND the fabric Stop hook is appended alongside (not replacing) the user's. Uninstall mirror: assert that fabric Stop hook entries are REMOVED but user-owned hook entries and the permissions block remain verbatim."
+        },
+        {
+          "symbol": "Test 4 — dedup invariant + Test 5 — exec bit",
+          "location": "L294-L322, L329-L363",
+          "description": "Counts hooks.Stop[].length before/after re-init to prove no duplication. POSIX exec-bit (mode & 0o100) check on .cjs hook scripts. Uninstall has no direct dedup parallel but the exec-bit pattern shows how to assert filesystem metadata; uninstall would assert the hook .cjs files are gone but the user's custom hook .cjs files (if any) are not."
+        }
+      ],
+      "topic_relation": "Testing angle: this suite is the gold-standard integration-test reference for the install side of the install/uninstall pair. Every assertion here has a 'reversed' counterpart that the uninstall suite must own — fresh-uninstall removes 16 artifacts, idempotent re-uninstall is a no-op, user settings.json customizations survive, etc."
+    },
+    {
+      "path": "packages/cli/__tests__/init-wizard.test.ts",
+      "relevance": 0.85,
+      "rationale": "Shows how the wizard / clack-prompts surface is exercised: vi.doMock('@clack/prompts', () => ({ intro, note, outro, cancel, confirm, group, ... })) plus vi.resetModules() before dynamic import of the command under test. Critical for testing fab uninstall's interactive confirm prompt ('Are you sure?') without a real TTY.",
+      "role": "pattern_reference",
+      "discovery_source": "bash-scan",
+      "key_code": [
+        {
+          "symbol": "runInitCommand cancellation pattern",
+          "location": "L164-L217",
+          "description": "Full setup for testing a clack-cancellation path: stub TTY with setProcessTty(true), mock @clack/prompts with a cancelMock + confirm returning false, vi.resetModules() + dynamic import of the command, run, then assert process.exitCode === 130 and that the cancel banner was emitted exactly once. Uninstall has the same exact contract: cancelling the 'confirm destructive uninstall' prompt must set exitCode 130 and not throw."
+        },
+        {
+          "symbol": "buildInitExecutionPlan + executeInitExecutionPlan dry-run / plan-only",
+          "location": "L129-L161",
+          "description": "Demonstrates the plan-only contract: a --plan flag returns stageResults with disposition: 'skipped' for every stage and writes zero scaffold artifacts. Uninstall needs a symmetric --plan / --dry-run mode and a symmetric test that asserts no files were deleted."
+        },
+        {
+          "symbol": "wizard adapter dependency injection",
+          "location": "L43-L54",
+          "description": "resolveInitExecutionPlanWithWizard(basePlan, options, { run: vi.fn().mockResolvedValue(...) }) — wizard adapter is passed in by reference, so the test substitutes a vi.fn directly without mocking @clack/prompts at all. Cleanest pattern for exercising uninstall's plan-shaping logic without coupling to UI."
+        }
+      ],
+      "topic_relation": "Testing angle: this file is the reference for testing interactive flows. fab uninstall will need a 'confirm destructive action' prompt (clack confirm) — this file shows exactly how to mock clack, exercise cancellation, and assert the cancel-exitCode 130 contract without flaky TTY behavior."
+    },
+    {
+      "path": "packages/cli/__tests__/init-wizard-adapter.test.ts",
+      "relevance": 0.75,
+      "rationale": "Companion to init-wizard.test.ts that focuses on the @clack/prompts adapter layer in isolation. Documents the intro/note/outro/cancel/log.step call ordering that wizard tests assert against. If uninstall introduces a confirm-prompt adapter, this is the template for its unit test.",
+      "role": "pattern_reference",
+      "discovery_source": "bash-scan",
+      "key_code": [
+        {
+          "symbol": "vi.doMock('@clack/prompts', ...)",
+          "location": "L25-L35, L77-L87",
+          "description": "Full module mock of @clack/prompts with vi.fn for every export the adapter touches. Critical that mock is installed BEFORE the dynamic import of the module under test (note the vi.resetModules() + await import() ordering)."
+        },
+        {
+          "symbol": "logStep.toHaveBeenNthCalledWith assertions",
+          "location": "L56-L58",
+          "description": "Asserts the precise sequence of clack log.step labels: 'Confirm target', 'Shape init plan', 'Review final plan'. Uninstall would have its own ordered step labels (e.g., 'Confirm target', 'Detect installed artifacts', 'Confirm deletion') that the test pins."
+        }
+      ],
+      "topic_relation": "Testing angle: shows the unit-level testing pattern for clack adapters. fab uninstall's confirmation adapter — if extracted into a separate function — gets a near-identical test file."
+    },
+    {
+      "path": "packages/cli/__tests__/init-cli-surface.test.ts",
+      "relevance": 0.85,
+      "rationale": "Exercises init through its citty initCommand.run() entry (not initFabric() directly), and pins flag-level CLI behavior: --reapply, --plan, --yes, --bootstrap=false, and legacy --no-* compatibility notices. The uninstall command will have its own flag matrix (--force, --dry-run, --yes, --keep-knowledge? etc.) that needs the exact same test shape.",
+      "role": "pattern_reference",
+      "discovery_source": "bash-scan",
+      "key_code": [
+        {
+          "symbol": "initCommand.run?.({ args: { ... } } as never)",
+          "location": "L58-L65, L84-L92",
+          "description": "Pattern for invoking a citty subcommand directly from a test by handing it a synthesized args object. Bypasses argv parsing; exercises the run handler. Uninstall test should call uninstallCommand.run?.({ args: { target, force: true, yes: true } } as never)."
+        },
+        {
+          "symbol": "stdout/stderr capture via vi.spyOn(console, 'log') + vi.spyOn(process.stderr, 'write')",
+          "location": "L122-L131",
+          "description": "Standard stream capture pattern. Captures into arrays and then asserts substring presence ('Using standard --plan mode', 'Compatibility: --interactive=false', 'Fabric init dry run'). Uninstall surface tests will assert symmetric phrases ('Fabric uninstall dry run', 'Removed X files', 'Skipped Y user-owned files')."
+        },
+        {
+          "symbol": "--plan no-write contract",
+          "location": "L67-L70",
+          "description": "Asserts existsSync of every key artifact returns false after --plan. Uninstall --dry-run mirror: existsSync of every key artifact returns true (nothing was actually deleted)."
+        }
+      ],
+      "topic_relation": "Testing angle: this file is the template for testing the citty command surface itself, not the underlying logic. fab uninstall's surface test (uninstall-cli-surface.test.ts) inherits its full structure."
+    },
+    {
+      "path": "packages/cli/__tests__/i18n.test.ts",
+      "relevance": 0.8,
+      "rationale": "Single source of truth for localized command-output snapshots. Currently snapshots init/scan/serve in both 'en' and 'zh-CN'. The uninstall command's stdout/stderr (including its localized description from meta.description and any localized 'Removed N files' / 'Skipped user-owned' messages) MUST be appended to this snapshot to maintain locale parity.",
+      "role": "modify_target",
+      "discovery_source": "bash-scan",
+      "key_code": [
+        {
+          "symbol": "collectSnapshots(locale) per-command block",
+          "location": "L49-L101",
+          "description": "For each command (init, scan, serve), the harness: trackFixture()-creates a temp dir, vi.resetModules(), dynamic-imports the command, runs it with captureOutput(), and assembles { description, stdout, stderr, errors } into the snapshot. Adding uninstall is a copy-paste of the init block with the new dynamic import — but the test will fail until the .snap file is regenerated with -u."
+        },
+        {
+          "symbol": "sanitizeSnapshot(value) tempRoot redaction",
+          "location": "L136-L154",
+          "description": "Walks the snapshot recursively and replaces every actual tempRoots[i] absolute path with <fixture-N>. Ensures snapshots are stable across machines. Uninstall's stdout (which will reference paths being removed) MUST pass through this same sanitizer or snapshots will be machine-specific."
+        },
+        {
+          "symbol": "FAB_LANG + NO_COLOR + restoreEnv discipline",
+          "location": "L29-L33, L50-L52",
+          "description": "Snapshots require deterministic locale (FAB_LANG=en|zh-CN), no ANSI (NO_COLOR=1), no auth token, isolated HOME, and TTY=false (non-interactive). Any uninstall snapshot addition must inherit ALL of these env pins or it will flake."
+        }
+      ],
+      "topic_relation": "Testing angle: this is the locale-parity gate. Because Fabric ships in zh-CN as primary locale and uninstall messages will be user-facing, the i18n snapshot MUST be extended; otherwise CI passes locally with FAB_LANG unset and breaks for users."
+    },
+    {
+      "path": "packages/cli/__tests__/__snapshots__/i18n.test.ts.snap",
+      "relevance": 0.7,
+      "rationale": "Generated snapshot file pinning init/scan/serve stdout+stderr+description per locale. Adding an uninstall block to i18n.test.ts will require regenerating this file via `pnpm --filter @fenglimg/fabric-cli test -u`. Reviewers need to inspect the diff carefully.",
+      "role": "test_target",
+      "discovery_source": "bash-scan",
+      "key_code": [
+        {
+          "symbol": "exports[`cli i18n > renders en command descriptions and output snapshots 1`]",
+          "location": "L3-L55",
+          "description": "Per-locale snapshot object shape: { init: { description, errors, stderr, stdout }, locale, scan: {...}, serve: {...} }. Uninstall adds a parallel key — same shape, new content. Note that the existing init stdout includes pathed lines like 'Created <fixture-2>/.fabric/...'; uninstall stdout will analogously have 'Removed <fixture-N>/.fabric/...'."
+        }
+      ],
+      "topic_relation": "Testing angle: this generated artifact is where uninstall localization 'lands' — the actual proof that the command speaks both languages is committed here, not in the .ts test source."
+    },
+    {
+      "path": "packages/cli/__tests__/cli-surface.test.ts",
+      "relevance": 0.75,
+      "rationale": "Per-command flag-surface drift gate via snapshot of citty command metadata (sorted args, types, defaults, negativeDescription). Currently covers init/scan/doctor/serve. The uninstall command must be appended to the it.each() list and to the snapshot or the gate is silently bypassed.",
+      "role": "modify_target",
+      "discovery_source": "bash-scan",
+      "key_code": [
+        {
+          "symbol": "DRIFT_HINT message",
+          "location": "L19-L23",
+          "description": "Error guidance directing the reviewer to docs/test-seed/cli.md §1 Feature Surface when the snapshot fails. Any new command's flags also need a row in that test-seed table."
+        },
+        {
+          "symbol": "vi.hoisted FAB_LANG pin",
+          "location": "L8-L10",
+          "description": "Locks FAB_LANG=en before any command module imports so the captured description is deterministic. Uninstall registration here will inherit this pin automatically; only the it.each tuple needs an entry."
+        }
+      ],
+      "topic_relation": "Testing angle: surface-drift gate that pins the public CLI flag contract. Adding fab uninstall without adding it here means future flag drift on uninstall is invisible to CI."
+    },
+    {
+      "path": "packages/cli/__tests__/fixtures/cocos-stub",
+      "relevance": 0.7,
+      "rationale": "On-disk fixture cloned into every init test's tmpdir by createWerewolfFixtureRoot. Contains a minimal Cocos Creator project (assets/scripts/{Game,Network,Player}.ts plus a .fabric/agents/ tree) that triggers init's forensic + scan stages. Uninstall tests reuse this exact fixture: run initFabric() on it to populate .fabric/.claude/.codex, then run uninstall.",
+      "role": "test_target",
+      "discovery_source": "bash-scan",
+      "key_code": [
+        {
+          "symbol": "fixture file tree",
+          "description": "5 files at root (package.json + 3 readmes + 1 json), assets/scripts/{Game,Network,Player}.ts (+ .meta sidecars), .fabric/agents/_cross + .fabric/agents/assets/scripts/. createWerewolfFixtureRoot strips .fabric/.claude/AGENTS.md so each test starts clean. Uninstall tests must NOT need to extend the fixture — they should rely on initFabric() to seed the post-init layout, then uninstall against it."
+        }
+      ],
+      "topic_relation": "Testing angle: the fixture defines what 'a representative initialized project' means in this codebase. Uninstall tests that work against this fixture inherit the same realism as init tests — same framework detection, same forensic.json shape, same per-domain knowledge layout."
+    },
+    {
+      "path": "packages/cli/vitest.config.ts",
+      "relevance": 0.9,
+      "rationale": "Declares the CLI package's vitest configuration: node environment, __tests__/**/*.test.ts include pattern, v8 coverage provider, lines/statements: 70 threshold, and the @fenglimg/fabric-{server,shared} path aliases that resolve the shared atomic-write module the tests spy on. Uninstall tests inherit all of this automatically as long as they live under packages/cli/__tests__/.",
+      "role": "config",
+      "discovery_source": "bash-scan",
+      "key_code": [
+        {
+          "symbol": "coverage.thresholds = { lines: 70, statements: 70 }",
+          "location": "L34",
+          "description": "Per-package coverage gate. Note the thresholds apply only to src/**/*.ts files (include) and exclude src/**/*.test.ts, types*.ts. Adding a packages/cli/src/commands/uninstall.ts file ADDS to the denominator; the uninstall test suite must therefore cover ≥70% of lines/statements in that new file or the package-level coverage gate degrades."
+        },
+        {
+          "symbol": "alias.@fenglimg/fabric-shared/node/atomic-write",
+          "location": "L12",
+          "description": "Path alias that lets init-atomic.test.ts spy on the real shared atomic-write module rather than the published bundle. If uninstall introduces a new shared primitive (e.g., 'atomicDelete' / 'rmIfManaged'), the same alias mechanism applies for spying."
+        }
+      ],
+      "topic_relation": "Testing angle: this config is the implicit contract for what counts as 'tested' in the CLI package. Uninstall implementation files will be coverage-graded against the 70% bar by the same config."
+    },
+    {
+      "path": "scripts/rc7-coverage-gate.mjs",
+      "relevance": 0.65,
+      "rationale": "Structural gate (regex over source + ADR existence + per-suite vitest invocation) for the rc.7 wave. Currently has zero checks related to uninstall. If uninstall lands inside an rc.8+ wave, a parallel check (e.g., 'uninstall command surface', 'uninstall removes 16 artifacts') should be added here following the existing wave-check pattern.",
+      "role": "pattern_reference",
+      "discovery_source": "bash-scan",
+      "key_code": [
+        {
+          "symbol": "checkT01ImportSentinel() pattern",
+          "location": "L502-L573",
+          "description": "Example structural check: readText() on each affected source file, regex-assert presence of a symbol/string, accumulate failures[], return { id, name, passed, details }. An equivalent checkU01UninstallSurface() would: (a) assert packages/cli/src/commands/uninstall.ts exists, (b) regex for the destructive-confirm prompt + --force gate, (c) assert init.ts and uninstall.ts share a manifest of managed artifacts."
+        },
+        {
+          "symbol": "main() check registration",
+          "location": "L579-L587",
+          "description": "checks.push(await checkTXX(...)) at the top of main(). Single-line addition to wire a new uninstall check into the gate."
+        }
+      ],
+      "topic_relation": "Testing angle: rc-coverage gates encode 'high-level invariants that survive refactor'. They're a different test surface than vitest — structural, not behavioral — and an uninstall task with a corresponding wave should add at least one structural check here."
+    },
+    {
+      "path": "packages/cli/src/commands/init.ts",
+      "relevance": 0.6,
+      "rationale": "The production module that the entire init test suite drives. New uninstall command will live alongside it at packages/cli/src/commands/uninstall.ts and likely share helpers (artifact manifest, target resolution, citty meta). Tests must be able to import buildUninstallExecutionPlan / executeUninstallExecutionPlan in the same shape as buildInitExecutionPlan / executeInitExecutionPlan to keep symmetry.",
+      "role": "context_only",
+      "discovery_source": "bash-scan",
+      "topic_relation": "Testing angle: not directly under test but defines the public API shape that uninstall tests will mirror — the existing exports (initFabric, buildInitExecutionPlan, executeInitExecutionPlan, runInitCommand, createDefaultInitWizardAdapter, initCommand) form the surface contract that uninstall.ts should export symmetrically so tests can be written in parallel structure."
+    },
+    {
+      "path": "packages/cli/__tests__/init-forensic.test.ts",
+      "relevance": 0.5,
+      "rationale": "Smaller, single-purpose test that runs initFabric() once and validates the produced forensic.json against forensicReportSchema. Demonstrates the 'one command run + zod-validate the artifact' pattern that uninstall tests can use to validate any new emitted artifact (e.g., an uninstall-report.json if the design includes one).",
+      "role": "pattern_reference",
+      "discovery_source": "bash-scan",
+      "topic_relation": "Testing angle: shows how to assert command output against a shared zod schema. If fab uninstall emits a structured report (e.g., { removed: string[], skipped_user_owned: string[] }) the same pattern applies."
+    },
+    {
+      "path": "package.json",
+      "relevance": 0.4,
+      "rationale": "Root monorepo manifest. Declares `test` and `test:coverage` scripts plus the rc5:gate / rc6:gate npm scripts. No rc7:gate or coverage-aggregator script is currently wired here — note that the task brief mentions 'pnpm rc6:gate' as the coverage gate, but rc6:gate is structural, not coverage-percentage.",
+      "role": "config",
+      "discovery_source": "bash-scan",
+      "topic_relation": "Testing angle: confirms the test invocation entrypoints (`pnpm -r --if-present test`, `pnpm -r --if-present test:coverage`, `pnpm rc6:gate`) that the uninstall suite must pass on PR."
+    }
+  ],
+  "patterns": "Test style is real-filesystem + temp-dir + cocos-stub fixture rather than fs-mocking. Canonical lifecycle: declare `const tempRoots: string[] = []` at module scope; tests `push` onto it after createWerewolfFixtureRoot(prefix); afterEach pops and calls cleanupFixtureRoot. vi.restoreAllMocks() is in afterEach. Tests drive the production command in three ways: (1) direct call to initFabric(target, opts) for pure-logic assertions, (2) buildInitExecutionPlan + executeInitExecutionPlan for plan-shape inspection and skipping the MCP stage to avoid network/global side-effects, (3) initCommand.run?.({ args: {...} } as never) for citty-surface tests. Interactive flows mock @clack/prompts via vi.doMock — install the mock BEFORE the dynamic import (`vi.resetModules(); const { runInitCommand } = await import(...)`), then assert call ordering with toHaveBeenNthCalledWith. TTY is forced with setProcessTty(true|false) from helpers. Stdout/stderr is captured with vi.spyOn(console, 'log') + vi.spyOn(process.stderr, 'write') into push-into-array shims. Snapshots are sanitized (tempRoot absolute paths → <fixture-N>) and locale/NO_COLOR/auth-token env is pinned per-test. Coverage thresholds (lines/statements 70) live in packages/cli/vitest.config.ts and are evaluated only when `pnpm test:coverage` (or vitest --coverage) runs; the rc6:gate script is structural (regex assertions over source files + a per-file vitest invocation), separate from c8 percentage gates. Idempotency tests use SHA256 hash equality across two runs. User-content-preservation tests seed a sentinel file with writeFixtureFile, run the command, then byte-compare via readFileSync.",
+  "dependencies": "Test deps: vitest@^3.2.4 (root devDependency), @vitest/coverage-v8@^3.2.4 (root devDependency), @clack/prompts (mocked in interactive tests; production runtime dep of CLI package), @fenglimg/fabric-shared (vitest alias resolves to packages/shared/src/index.ts), @fenglimg/fabric-shared/node/atomic-write (aliased to packages/shared/src/node/atomic-write.ts — spied on for write-side verification), @fenglimg/fabric-server (aliased + vi.doMock'd to neutralize startHttpServer in i18n tests). Test runner CLI: `pnpm --filter @fenglimg/fabric-cli test [-u]` for vitest; `pnpm rc6:gate` for structural gate; `pnpm test:coverage` for c8 percentage gate. Internal modules consumed by every init test: ../src/commands/init.ts (initFabric, buildInitExecutionPlan, executeInitExecutionPlan, initCommand, runInitCommand, createDefaultInitWizardAdapter, resolveInitExecutionPlanWithWizard, shouldUseInitWizard) and ./helpers/init-test-utils.ts. Uninstall test suite will need a symmetric ../src/commands/uninstall.ts export surface plus continued use of init-test-utils.ts.",
+  "integration_points": "New file: packages/cli/__tests__/uninstall.test.ts (unit-ish — drives initFabric() then uninstallFabric() against a tmpdir; assertions on artifact-removal, .tmp residue, .fabric/.claude/.codex directory cleanup, force-flag guard). New file: packages/cli/__tests__/integration/uninstall-skills-and-hooks.test.ts (integration — full init via buildInitExecutionPlan(skipMcp:true) → snapshotTree before → run uninstall → snapshotTree after; assert removed-fabric-artifacts AND preserved-user-customizations in .claude/settings.json + CLAUDE.md + AGENTS.md). New file: packages/cli/__tests__/uninstall-cli-surface.test.ts (citty surface — uninstallCommand.run?.({ args: { target, force, dryRun, yes } }), --dry-run no-write contract, legacy flag compat). MODIFY: packages/cli/__tests__/i18n.test.ts — add an `uninstall` block to collectSnapshots(locale) mirroring the init block (dynamic-import ../src/commands/uninstall.ts, run with target only, capture output, include in returned snapshot). MODIFY: packages/cli/__tests__/cli-surface.test.ts — add `['uninstall', uninstallCommand as CittyCommand]` tuple to the it.each list. MODIFY: packages/cli/__tests__/__snapshots__/{i18n,cli-surface}.test.ts.snap — regenerate with `pnpm --filter @fenglimg/fabric-cli test -u`. Optional: scripts/rc{8,...}-coverage-gate.mjs — add a checkUninstall*() structural check (regex for force-guard, regex for clack confirm, presence of artifact-manifest helper shared with init). REUSE without changes: packages/cli/__tests__/helpers/init-test-utils.ts (createWerewolfFixtureRoot, cleanupFixtureRoot, writeFixtureFile, readFixtureFile, setProcessTty all directly applicable). REUSE: packages/cli/__tests__/fixtures/cocos-stub (no fixture extension required).",
+  "constraints": "1) Coverage threshold (packages/cli/vitest.config.ts → lines: 70, statements: 70) applies to all packages/cli/src/**/*.ts including a new src/commands/uninstall.ts. Adding the command without ≥70% test coverage on the new lines will fail `pnpm test:coverage`. 2) Snapshot tests (i18n.test.ts.snap, cli-surface.test.ts.snap) are committed; the PR must include the regenerated snapshots and the diff must be reviewable. Snapshots use sanitizeSnapshot to redact tempRoot paths to <fixture-N> — uninstall stdout that references paths MUST flow through the same sanitizer. 3) FAB_LANG must be explicitly set (FAB_LANG=en or zh-CN) before importing any command module, or i18n captures are non-deterministic; cli-surface.test.ts uses vi.hoisted to pin FAB_LANG=en BEFORE the top-level imports — uninstall surface tests must follow the same hoist pattern. 4) NO_COLOR=1, FABRIC_AUTH_TOKEN unset, HOME → mkdtempSync, and setProcessTty(false) are required for snapshot stability. 5) Mocking @clack/prompts must happen via vi.doMock + vi.resetModules + dynamic await import() — top-level static imports of the command being tested will capture the unmocked clack and break. 6) `pnpm --filter @fenglimg/fabric-cli test` pulls in werewolf-stub-dependent integration tests; the rc6/rc7 gates run a TARGETED vitest subset to avoid known-broken suites. New uninstall integration tests must either be in this targeted subset (if added to the rc gate) or they must not require any infrastructure currently broken in the package-wide run. 7) Tests live under packages/cli/__tests__/ — the vitest config's include pattern is __tests__/**/*.test.ts. Tests outside this dir are not collected. 8) Test names that work end-to-end against the cocos-stub fixture MUST clean up via the tempRoots[] pattern; leaking tmp dirs across test runs accumulates GB-scale junk in /tmp/fab-* under macOS. 9) rc-coverage-gate.mjs scripts are STRUCTURAL gates separate from c8 — they run regex assertions on source files; if uninstall is committed without a structural assertion in the gate of its release wave, regressions are invisible to that gate. 10) The CLI package uses tsx (test/test-runner-side); no compilation step before tests — alias resolution is via vitest.config.ts so cross-package imports work directly against .ts sources.",
+  "clarification_needs": [
+    {
+      "question": "What is the scope of the uninstall test suite — unit-only (drives initFabric() + uninstallFabric() in-process against tmpdirs), or include a true end-to-end test that exec's the published `fab` binary against a tmpdir (init → uninstall → assert) via execFileSync?",
+      "context": "Current init suite is unit+integration but stays in-process (calls into src/ directly via vitest aliases) — no test currently spawns the real `fab` binary. An end-to-end binary-level test would catch packaging/bundling regressions (the same class of bug the i18n snapshot caught for module-resolution: `__vite_ssr_import_meta__.resolve is not a function` in the i18n.test.ts.snap). However, a binary-spawn test requires `pnpm -r build` to run first and slows CI. Decision affects how many files are added and whether the rc8 gate needs a build step.",
+      "options": [
+        "Unit + integration only (mirror init suite exactly: uninstall.test.ts + integration/uninstall-skills-and-hooks.test.ts + uninstall-cli-surface.test.ts) — no binary spawn",
+        "Add a single end-to-end test that does init → uninstall via execFileSync against the dist bundle — gates packaging too",
+        "Unit only (uninstall.test.ts) — defer integration coverage to a follow-up task"
+      ],
+      "recommended": 0
+    },
+    {
+      "question": "Should uninstall tests assert exact 'inverse of init' artifact removal (i.e., for each of the 16 install-skills-and-hooks artifacts assert existsSync === false after uninstall), or should they assert against a SHARED MANIFEST that both init and uninstall consume?",
+      "context": "The install integration suite hand-lists each of 16 artifacts (2 archive skills + 2 review skills + 2 import skills + 3 Stop hooks + 3 SessionStart hooks + 3 PreToolUse hooks + per-client configs). Hand-mirroring this list in the uninstall test duplicates a maintenance burden — every future skill or hook addition needs two test edits. A shared manifest (e.g., packages/cli/src/install/managed-artifacts.ts exporting MANAGED_ARTIFACT_PATHS) lets both init and uninstall consume it and lets one test loop over it. But introducing a shared manifest is a refactor that bleeds into the impl PR, not just the test surface.",
+      "options": [
+        "Hand-list — mirror install-skills-and-hooks.test.ts structure, list each artifact explicitly (more verbose, but symmetric and easy to read)",
+        "Shared manifest — refactor install + uninstall to consume one source of truth and loop in tests",
+        "Snapshot diff — snapshotTree(.claude) + snapshotTree(.codex) before init and after uninstall, assert equality (most concise, but loses per-artifact failure granularity)"
+      ],
+      "recommended": 2
+    },
+    {
+      "question": "How should the uninstall test suite verify that user-authored files are preserved — same fixture-seed pattern as init-guard.test.ts (write a sentinel file, uninstall, byte-compare), or a more aggressive 'fuzz the user-content' approach (multiple sentinel files at every reasonable user-edit point)?",
+      "context": "init-guard.test.ts seeds three user files (CLAUDE.md, AGENTS.md, legacy bootstrap/README.md). Uninstall has more potential user-content touchpoints because it must NOT delete the user-owned half of merged files (.claude/settings.json's user-added permissions block and user-added Stop hook entries, .mcp.json's non-fabric server entries, ~/.claude.json's non-fabric server entries). A 'list every touchpoint' approach is brittle; a 'fuzz with several user files at each touchpoint' approach catches more but adds maintenance.",
+      "options": [
+        "Mirror init-guard exactly — three sentinel files at the same three locations, byte-compare",
+        "Expand to cover every known merge point — CLAUDE.md, AGENTS.md, .claude/settings.json permissions block + user Stop hook, .mcp.json other server, ~/.claude.json other server",
+        "Add a snapshotTree-based 'untouched-tree invariant': snapshot user paths before, uninstall, re-snapshot, assert equality"
+      ],
+      "recommended": 1
+    },
+    {
+      "question": "Should the i18n snapshot capture uninstall in addition to init/scan/serve, given the snapshot currently records command failures (e.g. the init `failed mcp` line) that uninstall may not produce, and given that uninstall's output text is design-pending?",
+      "context": "i18n.test.ts.snap pins exact stdout/stderr lines per locale for init/scan/serve. Adding uninstall means committing its localized text now and re-touching the snapshot whenever the uninstall stdout copy changes during design iteration. Alternative: defer the i18n snapshot until uninstall's output text is frozen, and gate the i18n update behind a separate task.",
+      "options": [
+        "Add uninstall to the i18n snapshot now (locks the localized output as part of this task)",
+        "Defer i18n snapshot until output copy is frozen — add only the cli-surface flag snapshot now",
+        "Add a 'minimal' i18n snapshot that captures only meta.description + (optionally) the help-text usage, not full stdout"
+      ],
+      "recommended": 2
+    }
+  ],
+  "_metadata": {
+    "timestamp": "2026-05-13T00:00:00Z",
+    "task_description": "Add fab uninstall command — needs symmetric test coverage to fab init. Explore how init is tested today and what patterns a new uninstall test suite must follow.",
+    "source": "cli-explore-agent",
+    "exploration_angle": "testing",
+    "exploration_index": 3,
+    "total_explorations": 3
+  }
+}

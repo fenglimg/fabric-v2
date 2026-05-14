@@ -1,0 +1,351 @@
+{
+  "project_structure": "Fabric is a pnpm workspace monorepo with three packages: packages/shared (zod schemas + types), packages/server (MCP services: extract-knowledge, review, doctor, plan-context, knowledge-meta-builder, event-ledger), and packages/cli (init/scan/doctor/serve/uninstall commands + skill templates in packages/cli/templates/skills/). Three skills (fabric-import, fabric-archive, fabric-review) are SOURCED from packages/cli/templates/skills/<skill>/SKILL.md and MIRRORED into .claude/skills/<skill>/SKILL.md and .codex/skills/<skill>/SKILL.md by `fab init` install logic. Configuration policy lives in .fabric/fabric-config.json (validated by fabricConfigSchema in packages/shared/src/schemas/fabric-config.ts). Event observability flows through .fabric/events.jsonl via the appendEventLedgerEvent helper in packages/server/src/services/event-ledger.ts. The plan-context layer applies relevance_scope/relevance_paths filtering (narrow entries gate by glob match against caller-supplied path context; broad entries always surface). The relevance_scope + relevance_paths contract was introduced in rc.5 TASK-012 (C3) for fab_review.modify but was NEVER extended to fab_extract_knowledge — that is the gap this fix closes.",
+  "relevant_files": [
+    {
+      "path": "packages/shared/src/schemas/api-contracts.ts",
+      "relevance": 1.0,
+      "rationale": "L397 _FabExtractKnowledgeInputBaseSchema is the modify-target — must gain relevance_scope (enum narrow|broad) and relevance_paths (string[]) fields. L518-L533 _fabReviewModifyChangesSchema is the pattern to follow (already has these two fields with the same narrow|broad enum). Schema lives behind FabExtractKnowledgeInputShape (.shape exported for MCP registerTool at L476).",
+      "role": "modify_target",
+      "discovery_source": "bash-scan",
+      "key_symbols": ["_FabExtractKnowledgeInputBaseSchema", "FabExtractKnowledgeInputSchema", "FabExtractKnowledgeInputShape", "_fabReviewModifyChangesSchema"],
+      "key_code": [
+        {"symbol": "_FabExtractKnowledgeInputBaseSchema", "location": "L397-L453", "description": "Base z.object for fab_extract_knowledge input. Currently has source_sessions/source_session/recent_paths/user_messages_summary/type/slug/layer/proposed_reason/session_context. Must gain relevance_scope + relevance_paths matching review's modify-changes shape."},
+        {"symbol": "_fabReviewModifyChangesSchema", "location": "L518-L533", "description": "Reference pattern: relevance_scope: z.enum(['narrow','broad']).optional() + relevance_paths: z.array(z.string()).optional(). Comment on L527-L530 documents the personal-implies-broad auto-degrade contract that extract-knowledge must mirror."},
+        {"symbol": "FabExtractKnowledgeInputShape", "location": "L476", "description": "Exported .shape used by registerTool's inputSchema (server/src/tools/extract-knowledge.ts L24). Adding fields here automatically surfaces them in the MCP tool surface — no separate tool registration change needed."}
+      ],
+      "topic_relation": "integration-points: this schema is the boundary between Skill callers (which already write relevance_scope/relevance_paths per their SKILL.md examples) and the service entry — currently the schema would REJECT those fields as unknown keys, so all three skill MCP calls are silently dropping data. Extending the schema is the seam where the rc.5→rc.7 narrow/broad contract finally reaches extract-knowledge."
+    },
+    {
+      "path": "packages/server/src/services/extract-knowledge.ts",
+      "relevance": 1.0,
+      "rationale": "L58 extractKnowledge() is the service entry that must implement the personal+narrow silent-degrade logic and emit knowledge_scope_degraded. L78 idempotency formula (sha256({source_session, type, slug})) must NOT change — relevance_scope/paths must NOT enter the key (preserves rc.5→rc.7 collision behavior). L223 renderFreshEntry() frontmatter assembly must add `relevance_scope:` + `relevance_paths:` lines. L414 emitEventBestEffort helper is the idiomatic emit pattern to reuse.",
+      "role": "modify_target",
+      "discovery_source": "bash-scan",
+      "key_symbols": ["extractKnowledge", "renderFreshEntry", "emitEventBestEffort", "pendingBase"],
+      "key_code": [
+        {"symbol": "extractKnowledge", "location": "L58-L185", "description": "Service entry. Currently routes layer to pendingBase, checks idempotency collision, writes either fresh entry or merges evidence. The personal-implies-broad degrade must happen near L110 (layer resolution) BEFORE renderFreshEntry call at L161. On degrade: flip scope to 'broad' + clear paths + emit knowledge_scope_degraded with reason='personal-implies-broad' BEFORE knowledge_proposed."},
+        {"symbol": "idempotencyKey (sha256 formula)", "location": "L78-L84", "description": "sha256({source_session, type, slug}) — load-bearing. Adding relevance_scope/paths to this hash would break ALL existing pending files' collision detection. New fields MUST stay OUT of the idempotency hash. Validates rc.5→rc.7 compat constraint."},
+        {"symbol": "renderFreshEntry frontmatter", "location": "L223-L234", "description": "YAML frontmatter assembly. Must add `relevance_scope: ${args.relevanceScope}` and `relevance_paths: [...]` (inline flow array form, see scan.ts L1048-L1050 for the exact quoteIfNeeded pattern). Stable order matters — tests use `toMatch(/^relevance_scope: broad$/mu)`."},
+        {"symbol": "emitEventBestEffort", "location": "L414-L424", "description": "Local helper — wraps appendEventLedgerEvent in try/catch so event emission failures never break the pending write. Reuse this for the new knowledge_scope_degraded emit. Note: this helper is DUPLICATED at review.ts L1127 (not yet hoisted to _shared.ts — see patterns)."}
+      ],
+      "topic_relation": "integration-points: this is THE service entry where Skill input meets persistence + event ledger. The new knowledge_scope_degraded emit and silent degrade logic must wire into the existing emit chain (knowledge_archive_attempted at L91/L149, knowledge_proposed at L131/L173) without changing their semantics."
+    },
+    {
+      "path": "packages/server/src/services/review.ts",
+      "relevance": 0.95,
+      "rationale": "L725-L739 contains the EXACT precedent — emits knowledge_scope_degraded when fab_review.modify auto-degrades narrow→broad on team→personal layer flip. Reason string is 'personal-implies-broad'. The extract-knowledge degrade must use the identical reason string + same from_scope/to_scope shape so doctor lints + observability filters key uniformly.",
+      "role": "pattern_reference",
+      "discovery_source": "cli-analysis",
+      "key_symbols": ["emitEventBestEffort (duplicate)", "shouldAutoDegrade branch"],
+      "key_code": [
+        {"symbol": "shouldAutoDegrade emit block", "location": "L725-L739", "description": "Reference emit: event_type='knowledge_scope_degraded', stable_id=newStableId, from_scope='narrow', to_scope='broad', reason='personal-implies-broad'. NOTE: review.ts emits AFTER layer-changed event; extract-knowledge has no prior stable_id (Q2 late-bind — no id frontmatter), so the new emit must use a synthetic correlation key (suggest the pending_path or `pending:${slug}:${idempotency_key}`)."},
+        {"symbol": "emitEventBestEffort", "location": "L1127-L1136", "description": "Second local copy of the same helper from extract-knowledge.ts L414. Duplicate — candidate for hoisting into _shared.ts but NOT load-bearing for this fix. Document as pattern debt."}
+      ],
+      "topic_relation": "integration-points: this file is the rosetta stone for cross-service consistency — the new degrade path in extract-knowledge.ts must produce wire-compatible knowledge_scope_degraded events so doctor lint #23 (narrow_no_paths) and replay-based observability tools treat both emit sites uniformly."
+    },
+    {
+      "path": "packages/shared/src/schemas/event-ledger.ts",
+      "relevance": 0.85,
+      "rationale": "L288-L296 knowledgeScopeDegradedEventSchema already exists (rc.5 TASK-012 / C3). Schema is REGISTERED in the discriminated union at L353-L390 (L383-L384). No schema change needed — but extract-knowledge's emit MUST conform to this exact shape: stable_id + timestamp + from_scope + to_scope + reason. Verifies the 'event already exists' constraint and tells us NO migration of the discriminated union is required.",
+      "role": "type_definition",
+      "discovery_source": "bash-scan",
+      "key_symbols": ["knowledgeScopeDegradedEventSchema", "eventLedgerEventSchema"],
+      "key_code": [
+        {"symbol": "knowledgeScopeDegradedEventSchema", "location": "L288-L296", "description": "Required fields: stable_id (string), timestamp (datetime), from_scope (narrow|broad), to_scope (narrow|broad), reason (string). The `stable_id` field is the wrinkle for extract-knowledge: pending entries have NO stable_id pre-promotion (Q2 late-bind). Must decide: synthesize a pseudo-id, use pending_path, or extend the schema's stable_id to accept a `pending:<idempotency_key>` sentinel."}
+      ],
+      "topic_relation": "integration-points: schema-level integration check confirms event registration is already done. The friction surface is the stable_id field — pending entries lack one, so the integration design must reconcile pending-time emit with a schema field that assumes promoted-entry semantics."
+    },
+    {
+      "path": "packages/shared/src/schemas/fabric-config.ts",
+      "relevance": 0.9,
+      "rationale": "Whole 101-line file is the modify-target for the '+10 旋钮' extension. L35-L101 fabricConfigSchema currently has 14 fields; task requires extending by ~10 new tunables. L45 knowledge_language defines the enum used by init/scan language detection. L101's `.strict()` is implicit (zod default for z.object — unknown keys SILENTLY DROPPED, not rejected — caution for unknown-key handling). The minimal-shape user config at .fabric/fabric-config.json (7 keys) proves additive optional defaults are safe.",
+      "role": "modify_target",
+      "discovery_source": "bash-scan",
+      "key_symbols": ["fabricConfigSchema", "knowledgeLanguageSchema", "defaultLayerFilterSchema"],
+      "key_code": [
+        {"symbol": "fabricConfigSchema", "location": "L35-L101", "description": "Top-level config schema. Existing pattern: each field is optional + has .default() + a multi-line comment explaining trigger threshold + rc-version provenance. New fields MUST follow this exact pattern — additive optional only (no required fields) preserves backward compat with the user's 7-key minimal config at .fabric/fabric-config.json."},
+        {"symbol": "knowledgeLanguageSchema", "location": "L27", "description": "z.enum(['match-existing','zh-CN','en']) — already exists. Task (4) requires INIT-TIME detection to fixate this from 'match-existing' to a concrete value at init scan; no enum change needed."}
+      ],
+      "topic_relation": "integration-points: this schema is the contract surface for all config readers (fabric-hint.cjs, scan.ts, init.ts FABRIC_CONFIG_DEFAULTS, doctor lint thresholds). Every new tunable here must be paired with (a) a default in init.ts writeDefaultFabricConfig, (b) a docs/configuration.md section, (c) at minimum one consumer reading the new field — three integration touchpoints per tunable."
+    },
+    {
+      "path": "packages/cli/templates/skills/fabric-import/SKILL.md",
+      "relevance": 0.95,
+      "rationale": "The TEMPLATE (source of truth) for fabric-import. L141-L158 + L150-L151 already write `relevance_scope: 'broad'` + `relevance_paths: []` in the fab_extract_knowledge call examples — these will START WORKING the moment the schema is extended. L119 cites lint #23 (narrow_no_paths) as the backstop. This file is currently DESYNCED from .claude/.codex mirrors (diff shows extra Surface header + Mandatory Scope Rule section missing from mirrors).",
+      "role": "modify_target",
+      "discovery_source": "cli-analysis",
+      "key_symbols": ["Mandatory Scope Rule section", "Step 2.1 fab_extract_knowledge call"],
+      "key_code": [
+        {"symbol": "fab_extract_knowledge call example (Step 2.1)", "location": "L144-L158", "description": "Already includes relevance_scope: 'broad' + relevance_paths: [] in the canonical call shape. Schema gap means today this works only because zod's default behavior silently drops unknown keys instead of rejecting (verify before fix — could already break if .strict() was added elsewhere). After the fix, these fields will be honored end-to-end."},
+        {"symbol": "Mandatory Scope Rule — Always Broad + Empty Paths section", "location": "L69-L120 (in this template, ABSENT from mirrors)", "description": "Long-form rationale for why fabric-import MUST stay broad. This entire section is missing from .claude/.codex mirrors — three-mirror sync re-install is required."}
+      ],
+      "topic_relation": "integration-points: this is the originating Skill writer of relevance_scope/paths values. Three-mirror sync makes this the canonical version. Re-install (fab init --reapply or doctor --apply-lint with skill-sync mutation) is the integration mechanism."
+    },
+    {
+      "path": ".claude/skills/fabric-import/SKILL.md",
+      "relevance": 0.85,
+      "rationale": "Mirror target #1. Currently DESYNCED from template — missing the entire Mandatory Scope Rule section (template L69-L120) AND the Surface header (L7-L8) AND the rc.8+ Recommendation source note (L23-L24). Will be overwritten by template on next install/reapply. Identical to .codex/skills/fabric-import/SKILL.md (those two ARE in sync with each other, only the TEMPLATE leads).",
+      "role": "modify_target",
+      "discovery_source": "bash-scan",
+      "key_symbols": ["SKILL.md (mirror copy)"],
+      "topic_relation": "integration-points: confirms the actual three-mirror state — .claude == .codex but template leads. This means the mirror-sync integration is NOT a true three-way diff; it's template → {claude, codex} broadcast."
+    },
+    {
+      "path": ".codex/skills/fabric-import/SKILL.md",
+      "relevance": 0.85,
+      "rationale": "Mirror target #2. Byte-identical to .claude/skills/fabric-import/SKILL.md (diff -q returns 0 lines). Confirms mirror-sync semantics: when template ships, both .claude and .codex receive the SAME content (no per-client customization in the SKILL.md body). Validates the 'three-mirror identical' constraint as a sync-direction (template→both) rather than three-way reconciliation.",
+      "role": "modify_target",
+      "discovery_source": "bash-scan",
+      "key_symbols": ["SKILL.md (mirror copy)"],
+      "topic_relation": "integration-points: this file's byte-identity with .claude verifies that the 'three-mirror sync' constraint is really a 'one source, two targets' fan-out pattern, simplifying the sync implementation."
+    },
+    {
+      "path": "packages/cli/templates/skills/fabric-archive/SKILL.md",
+      "relevance": 0.9,
+      "rationale": "fabric-archive template — emits BOTH narrow AND broad relevance_scope values depending on Phase 1.5 outcome (L274-L275). L408 lists explicit constraint: layer=personal MUST force scope=broad + paths=[]. The Skill side enforces this CLIENT-side, but the new server-side silent-degrade is the BELT-AND-BRACES safety net. L412 declares relevance_paths as a protected token (lint check downstream).",
+      "role": "modify_target",
+      "discovery_source": "cli-analysis",
+      "key_symbols": ["Phase 1.5 Scope Decision", "fab_extract_knowledge call (full payload)"],
+      "key_code": [
+        {"symbol": "fab_extract_knowledge call shape", "location": "L322-L338", "description": "The most complete relevance_scope/paths payload in any skill. Server-side schema must accept this verbatim. Comment at L335 documents narrow⇒derived / broad⇒[] invariant — server enforcement is additive, not contradictory."},
+        {"symbol": "Personal-layer force-broad rule", "location": "L233 + L408", "description": "Client-side declaration that personal+narrow auto-flips to broad+[]. The new server-side silent-degrade duplicates this in case a buggy Skill caller ever violates it — defense in depth."}
+      ],
+      "topic_relation": "integration-points: this is the most complex caller (writes BOTH scope values + dynamic relevance_paths). Server contract must accept the full shape including arbitrary-length glob arrays. Three-mirror sync identical concern as fabric-import."
+    },
+    {
+      "path": ".claude/skills/fabric-archive/SKILL.md",
+      "relevance": 0.7,
+      "rationale": "Mirror target. Currently desynced from template (template differs at relevance_paths protected-token list + Phase 1.5 algorithm details). Identical to .codex/skills/fabric-archive/SKILL.md.",
+      "role": "modify_target",
+      "discovery_source": "bash-scan",
+      "topic_relation": "integration-points: mirror sync target — overwritten by template on next install."
+    },
+    {
+      "path": ".codex/skills/fabric-archive/SKILL.md",
+      "relevance": 0.7,
+      "rationale": "Mirror target #2 for fabric-archive. Byte-identical to .claude/skills/fabric-archive/SKILL.md.",
+      "role": "modify_target",
+      "discovery_source": "bash-scan",
+      "topic_relation": "integration-points: confirms two-target fan-out for archive same as import."
+    },
+    {
+      "path": "packages/cli/templates/skills/fabric-review/SKILL.md",
+      "relevance": 0.55,
+      "rationale": "fabric-review template. CONFIRMED via grep: does NOT call fab_extract_knowledge at all (only fab_review.search/modify/approve). Three-mirror sync still required (template L? differs from mirrors per diff -q). The relevance_scope/paths flow into review through fab_review.modify, NOT through this skill's MCP surface.",
+      "role": "modify_target",
+      "discovery_source": "cli-analysis",
+      "topic_relation": "integration-points: review's MCP surface is fab_review NOT fab_extract_knowledge — so review SKILL.md does NOT need relevance_scope/paths in any tool call. Three-mirror sync still required for any other content drift."
+    },
+    {
+      "path": ".claude/skills/fabric-review/SKILL.md",
+      "relevance": 0.5,
+      "rationale": "Mirror target for fabric-review. Identical to .codex/skills/fabric-review/SKILL.md.",
+      "role": "modify_target",
+      "discovery_source": "bash-scan",
+      "topic_relation": "integration-points: mirror sync target."
+    },
+    {
+      "path": ".codex/skills/fabric-review/SKILL.md",
+      "relevance": 0.5,
+      "rationale": "Mirror target #2 for fabric-review. Byte-identical to .claude copy.",
+      "role": "modify_target",
+      "discovery_source": "bash-scan",
+      "topic_relation": "integration-points: mirror sync target."
+    },
+    {
+      "path": "packages/cli/src/commands/init.ts",
+      "relevance": 0.9,
+      "rationale": "L392 writeDefaultFabricConfig() is the modify-target for task (4) — currently writes knowledge_language='match-existing' at L400. Must add detection probe (README.md + package.json → resolve to 'zh-CN' or 'en') and FIXATE that resolved value into the freshly-written fabric-config.json. The existing scan.ts detectExistingLanguage logic (L586-L644) is the reusable detector. Init is IDEMPOTENT (L394 returns if file exists) — fixation only applies on fresh init, not reapply.",
+      "role": "modify_target",
+      "discovery_source": "bash-scan",
+      "key_symbols": ["writeDefaultFabricConfig", "FABRIC_CONFIG_DEFAULTS"],
+      "key_code": [
+        {"symbol": "writeDefaultFabricConfig", "location": "L392-L470 (full helper extends past read window)", "description": "Idempotent: only writes if file absent. Current default knowledge_language='match-existing'. Task (4) replaces the literal with `detectExistingLanguage(target)` call result so fresh init burns in the concrete language. NEW tunables from task (3) must be added to FABRIC_CONFIG_DEFAULTS dict (L396) with rc-version + threshold comments matching the existing pattern."},
+        {"symbol": "FABRIC_CONFIG_DEFAULTS dict", "location": "L396-L420+", "description": "Catalog of all defaults stamped into fresh fabric-config.json. Lookup-by-string-key access — adding fields here without adding the corresponding schema field (or vice versa) will silently work but desynchronize. Pair every schema addition with a dict entry."}
+      ],
+      "topic_relation": "integration-points: init.ts is the seam where the policy-FILE is born. Probing README/package.json at init time is a NEW filesystem read integration; the existing pattern (scan.ts L586-L644 detectExistingLanguage) reads README.md + docs/ — but task says README+package.json. Decision needed: reuse scan's CJK ratio detector or extend to also weight package.json (which is usually English-only ASCII for npm names)."
+    },
+    {
+      "path": "packages/cli/src/commands/scan.ts",
+      "relevance": 0.75,
+      "rationale": "L186-L192 reads knowledge_language at scan start and resolves via resolveKnowledgeLanguage. L586-L644 detectExistingLanguage is the reusable CJK-ratio probe (READS: README.md top-level + docs/ one-level-deep, computes ratio>0.3 → zh-CN else en). L706-L1025 contains the 10+ relevance_scope='narrow'/'broad' assignments per baseline-knowledge type — confirms the scope/paths contract is firmly established here. L1042-L1060 frontmatter emit pattern is the template for extract-knowledge.ts's frontmatter addition.",
+      "role": "pattern_reference",
+      "discovery_source": "bash-scan",
+      "key_symbols": ["resolveKnowledgeLanguage", "detectExistingLanguage", "quoteIfNeeded", "frontmatter emit (L1042-L1060)"],
+      "key_code": [
+        {"symbol": "detectExistingLanguage", "location": "L586-L644", "description": "Reusable CJK-ratio probe — counts CJK Unified Ideographs vs ASCII letters in README + docs/*.md. ratio>0.3 → zh-CN, else en. Empty repo → en. This is the SAME helper init.ts should call for task (4) detection. Suggest hoisting to a shared module or accepting duplication."},
+        {"symbol": "relevance_paths frontmatter emit", "location": "L1042-L1060", "description": "Exact YAML inline flow-form emit: `relevance_paths: [\"path1\", \"path2\"]` with quoteIfNeeded escaping. Pattern that extract-knowledge.ts renderFreshEntry MUST mirror for consistency."}
+      ],
+      "topic_relation": "integration-points: scan.ts is the pattern reference for BOTH (a) language detection logic (task 4) and (b) relevance_paths frontmatter emission (task 1 server side). Reusing scan's helpers prevents drift."
+    },
+    {
+      "path": "packages/server/src/services/knowledge-meta-builder.ts",
+      "relevance": 0.85,
+      "rationale": "L1007-L1021 is the FRONTMATTER FALLBACK: rawRelevanceScope missing/malformed → 'broad'; relevance_paths missing → []. L864-L867 default-safe values when no frontmatter at all → broad + []. CRITICAL for task (5) migration: this fallback ALREADY makes the 16 canonical entries continue to parse — task (5) migration script can rely on the fallback OR fixate values explicitly. L728 emits doctor lint events (pattern_reference for new emit shape).",
+      "role": "pattern_reference",
+      "discovery_source": "cli-analysis",
+      "key_symbols": ["extractKnowledgeFieldsFromFrontmatter", "heading-only fallback (L864)", "relevance_scope default-broad"],
+      "key_code": [
+        {"symbol": "extractKnowledgeFieldsFromFrontmatter relevance_scope fallback", "location": "L1007-L1021", "description": "broad-default behavior: missing key → broad, malformed value → broad, missing relevance_paths → []. This is the SAFETY NET that makes the migration script optional — even without migration, parsing always succeeds. Task (5) is therefore a PROACTIVE hygiene migration, not a correctness fix."},
+        {"symbol": "Heading-only fallback object", "location": "L850-L867", "description": "When entry has no frontmatter at all: relevance_scope='broad', relevance_paths=[]. Confirms the broad-by-default contract universally."}
+      ],
+      "topic_relation": "integration-points: this is the READ-SIDE of the relevance_scope/paths contract. Its broad-by-default fallback decouples the schema extension from migration urgency — migration becomes hygiene, not hotfix. Migration script (task 5) can safely run BEFORE or AFTER the rc.8 ship."
+    },
+    {
+      "path": "packages/server/src/services/event-ledger.ts",
+      "relevance": 0.7,
+      "rationale": "Exports appendEventLedgerEvent — the underlying primitive that emitEventBestEffort wraps. No modification needed; it's a stable integration point. The new knowledge_scope_degraded emit will route through this exact function via the local emitEventBestEffort helper in extract-knowledge.ts.",
+      "role": "dependency",
+      "discovery_source": "dependency-trace",
+      "key_symbols": ["appendEventLedgerEvent"],
+      "topic_relation": "integration-points: stable downstream sink for the new emit — no changes needed but anchors the emit-flow integration architecture."
+    },
+    {
+      "path": "packages/server/src/services/extract-knowledge.test.ts",
+      "relevance": 0.95,
+      "rationale": "Test target for task (1). L41-L55 buildInput helper currently has NO relevance_scope/paths — must extend with defaults (broad, []) for back-compat. New test cases REQUIRED: (a) explicit narrow+paths writes frontmatter correctly, (b) personal+narrow silently degrades to broad+[] AND emits knowledge_scope_degraded with reason='personal-implies-broad', (c) idempotency_key UNCHANGED when only scope/paths change (proves rc.5→rc.7 compat).",
+      "role": "test_target",
+      "discovery_source": "bash-scan",
+      "key_symbols": ["buildInput", "knowledge_proposed event assertion"],
+      "key_code": [
+        {"symbol": "buildInput helper", "location": "L41-L55", "description": "Test fixture builder. Must add optional relevance_scope + relevance_paths params with broad+[] defaults so existing tests stay green."}
+      ],
+      "topic_relation": "integration-points: this is the contract-test entry — any breakage here surfaces schema/service drift immediately. The idempotency-stability test is the canary for rc.5→rc.7 back-compat."
+    },
+    {
+      "path": "packages/server/src/services/review.test.ts",
+      "relevance": 0.65,
+      "rationale": "L500/L569/L603/L639 contains 4 existing knowledge_scope_degraded assertions on review's emit side. EXACT shape reference for the new extract-knowledge emit test (same event_type, from_scope, to_scope, reason). Validates the cross-service event-shape uniformity constraint.",
+      "role": "pattern_reference",
+      "discovery_source": "bash-scan",
+      "key_code": [
+        {"symbol": "knowledge_scope_degraded test assertion", "location": "L500-L513 (representative)", "description": "Expected matchObject shape — extract-knowledge test must mirror this assertion structure so doctor + observability replay treat both emit sites identically."}
+      ],
+      "topic_relation": "integration-points: cross-test contract reference — ensures both emit sites pass the SAME event-shape assertions."
+    },
+    {
+      "path": "packages/shared/test/fabric-config.test.ts",
+      "relevance": 0.7,
+      "rationale": "Test target for task (3). L17-L36 covers knowledge_language enum. L66-L120 covers default application + partial config. NEW tests required for the 10 new tunables: enum/positive-int constraints + default application + partial-config back-compat with the user's existing 7-key minimal config.",
+      "role": "test_target",
+      "discovery_source": "bash-scan",
+      "topic_relation": "integration-points: schema-roundtrip integration boundary — every new tunable needs at least 2 tests (default-when-absent + accepts-explicit-value)."
+    },
+    {
+      "path": "packages/cli/__tests__/integration/scan-init.test.ts",
+      "relevance": 0.75,
+      "rationale": "Test target for task (4) init-time language detection. Must add scenario: README with >30% CJK → fresh init writes knowledge_language='zh-CN' (not 'match-existing'). Counter-scenario: pure-English README → writes 'en'. Empty-repo: writes 'en' (existing detectExistingLanguage default).",
+      "role": "test_target",
+      "discovery_source": "bash-scan",
+      "topic_relation": "integration-points: end-to-end integration test surface — proves init+scan share the language-detection contract."
+    },
+    {
+      "path": "packages/server/src/services/doctor.ts",
+      "relevance": 0.6,
+      "rationale": "L424-L432 + L808-L809 + L3212 implements lints #23 narrow_no_paths + #24 relevance_paths_dangling + #25 (rc.5 TASK-013/C4). These are the LINT BACKSTOPS for the new contract — fabric-import SKILL.md L119 explicitly cites #23 as the safety net if the skill ever deviates from broad+[]. Doctor's --apply-lint MAY be the migration vehicle for task (5) rather than a standalone script.",
+      "role": "integration_point",
+      "discovery_source": "cli-analysis",
+      "key_symbols": ["narrow_no_paths lint", "relevance_paths_dangling lint", "--apply-lint mutation arm"],
+      "topic_relation": "integration-points: doctor is the post-hoc safety net AND a candidate migration vehicle. Decision needed in plan: standalone migration script vs new doctor --apply-lint mutation arm for frontmatter backfill."
+    },
+    {
+      "path": "packages/server/src/tools/extract-knowledge.ts",
+      "relevance": 0.7,
+      "rationale": "L18-L54 is the MCP tool registration — calls registerTool with FabExtractKnowledgeInputShape (.shape of the base schema). No code change needed here: when the schema gains relevance_scope/paths, registerTool automatically picks them up via .shape. Validates the 'schema extension only' integration approach.",
+      "role": "integration_point",
+      "discovery_source": "dependency-trace",
+      "key_symbols": ["registerExtractKnowledge", "FabExtractKnowledgeInputShape"],
+      "topic_relation": "integration-points: confirms zero-touch propagation from schema to MCP tool surface — extending the schema is sufficient for the MCP client (Skill) to see the new fields."
+    },
+    {
+      "path": "docs/configuration.md",
+      "relevance": 0.6,
+      "rationale": "L42-L114 documents existing tunables in `### <key> (default <value>)` h3 sections with rationale + cheat-sheet references. L118 documents knowledge_language. Task (3) adds 10 new tunables — each MUST get an h3 section following the same template. Documentation is part of the configuration-schema integration contract.",
+      "role": "modify_target",
+      "discovery_source": "bash-scan",
+      "topic_relation": "integration-points: docs are a downstream integration target — each schema field has a 3-way link (schema, init defaults, docs). Skipping docs creates the 'silent default' anti-pattern flagged at init.ts L376-L378."
+    },
+    {
+      "path": ".fabric/fabric-config.json",
+      "relevance": 0.6,
+      "rationale": "User's actual config — 7 keys: knowledge_language='zh-CN' + 6 hint thresholds. Provides REAL backward-compat test data: the planned 10 new optional fields MUST default-resolve cleanly when this file is parsed. Confirms additive-optional pattern is the only safe schema-evolution direction.",
+      "role": "context_only",
+      "discovery_source": "manual",
+      "topic_relation": "integration-points: production parse target — every schema change must keep this file valid without modification."
+    },
+    {
+      "path": "packages/shared/test/integration/schemas-roundtrip.test.ts",
+      "relevance": 0.5,
+      "rationale": "L339-L346 covers knowledge_scope_degraded event roundtrip. Will need additive coverage if the event schema's stable_id field needs relaxation (e.g., to accept `pending:<idempotency_key>` sentinels for pre-promotion emits from extract-knowledge).",
+      "role": "test_target",
+      "discovery_source": "bash-scan",
+      "topic_relation": "integration-points: schema-roundtrip integration test catches shape drift between event producer and consumer."
+    }
+  ],
+  "patterns": "1) **Local emitEventBestEffort helper** (extract-knowledge.ts L414-L424, review.ts L1127-L1136) — wraps appendEventLedgerEvent in try/catch so event emission failures NEVER break the primary write. Pattern is DUPLICATED across two services (candidate for hoist to _shared.ts but not load-bearing for this fix). 2) **Idempotency hash exclusion** — relevance_scope/paths must STAY OUT of the sha256({source_session, type, slug}) formula at extract-knowledge.ts L78 (any mutation of the hash inputs breaks all existing pending collision detection). 3) **Frontmatter YAML emit** — flow-style inline arrays via scan.ts L1042-L1060 pattern: `relevance_paths: [\"a\", \"b\"]` with quoteIfNeeded escaping; stable order matters for test regex assertions. 4) **Three-mirror sync direction** — actually template→{claude, codex} fan-out (NOT three-way reconciliation): .claude and .codex are byte-identical to each other and lag behind packages/cli/templates/skills/<skill>/SKILL.md. Re-install (fab init or reapply) is the broadcast mechanism. 5) **Frontmatter fallback safety net** — knowledge-meta-builder.ts L1007-L1021 + L864-L867 already default relevance_scope='broad' / relevance_paths=[] when missing, making the task-(5) migration HYGIENE-ONLY (not a correctness fix). 6) **Schema additive-optional evolution** — all 14 fabricConfigSchema fields are optional+default; user's 7-key minimal config at .fabric/fabric-config.json proves additive expansion is safe with zero migration. 7) **Init/Scan FABRIC_CONFIG_DEFAULTS catalog** (init.ts L396) — every new tunable needs a triple-binding: schema field + defaults-dict entry + docs/configuration.md h3 section (init.ts L376-L378 explicit maintenance note). 8) **CJK-ratio language detector** (scan.ts L586-L644) — read README + docs/*.md, count CJK Unified Ideographs (U+4E00-U+9FFF) vs ASCII letters, ratio>0.3 → zh-CN else en. Empty repo → en. Reusable for init-time fixation. 9) **knowledge_scope_degraded emit shape uniformity** — review.ts L725-L739 sets the canonical shape (from_scope, to_scope, reason='personal-implies-broad'); extract-knowledge.ts new emit MUST match verbatim for doctor lint + observability filter uniformity. 10) **Pending-entry NO-stable_id rule** (Q2 late-bind) — extract-knowledge pending files have NO id frontmatter; stable_id is allocated only at fab_review.approve time. The new knowledge_scope_degraded emit from extract-knowledge MUST decide: synthesize a sentinel like `pending:<idempotency_key>` OR relax the schema's stable_id field OR use pending_path.",
+  "dependencies": "Internal package graph: packages/cli depends on packages/shared (schemas + types); packages/server depends on packages/shared; packages/cli also depends on packages/server's helper exports via @fenglimg/fabric-shared barrel. Key per-file dependencies for this task: (a) extract-knowledge.ts imports from @fenglimg/fabric-shared/schemas/api-contracts (FabExtractKnowledgeInput type) + ./event-ledger (appendEventLedgerEvent) + ./_shared (atomicWriteText, ensureParentDirectory, sha256). (b) tools/extract-knowledge.ts imports FabExtractKnowledgeInputShape from shared — schema extension propagates here automatically. (c) review.ts imports the same event-ledger primitive. (d) init.ts depends on schemas/fabric-config.ts indirectly via JSON serialization (no direct zod import — writes literal JSON object). (e) scan.ts reads knowledge_language via the fabricConfigSchema (parsed from JSON). External deps: zod (schema lib), node:crypto (sha256), node:fs (atomic writes). No new external deps needed for any of the 5 tasks. The shared barrel @fenglimg/fabric-shared is the SOLE cross-package import surface — every new schema export must be re-exported through the package index.",
+  "integration_points": "1) **Schema→Service boundary** (api-contracts.ts L397-L453 → extract-knowledge.ts L58): adding relevance_scope/paths to the base schema automatically threads them through FabExtractKnowledgeInput type into the service entry; no manual plumbing. 2) **Service→Event ledger** (extract-knowledge.ts L91/L131/L149/L173 emit sites): the new knowledge_scope_degraded emit must slot BEFORE the knowledge_proposed emit at L131/L173 on the silent-degrade path. Use the existing emitEventBestEffort helper at L414 for consistency. 3) **Service→Pending file frontmatter** (extract-knowledge.ts renderFreshEntry L223): YAML frontmatter must gain relevance_scope + relevance_paths lines following scan.ts L1042-L1060 flow-style emit pattern; stable order required for test regex. 4) **MCP tool registration auto-propagation** (server/src/tools/extract-knowledge.ts L24): registerTool uses FabExtractKnowledgeInputShape (.shape); schema extension is zero-touch here. 5) **Skill MCP call sites** (templates/skills/fabric-{import,archive}/SKILL.md fab_extract_knowledge invocations): ALREADY write relevance_scope/paths today — they will START WORKING the moment the schema is extended (currently zod silently drops unknown keys, OR rejects with ZodError depending on whether base schema uses .strict() — must verify; the base z.object default is to drop, not reject). 6) **Three-mirror sync** (packages/cli/templates/skills/<skill>/SKILL.md → .claude/skills/<skill>/SKILL.md + .codex/skills/<skill>/SKILL.md): one source, two targets; broadcast via fab init or reapply. CONFIRMED via diff: all three skill template-vs-mirror pairs currently DESYNCED (template leads). 7) **Init-time language fixation** (init.ts L392-L420): replace knowledge_language='match-existing' literal with detectExistingLanguage(target) call result; reuse scan.ts L586-L644. Idempotency preserved (writeDefaultFabricConfig early-returns if file exists). 8) **Frontmatter migration entry point** (task 5): TWO options — (a) standalone scripts/migrate-frontmatter.mjs scanning .fabric/knowledge/pending + .fabric/knowledge/<type>/ + ~/.fabric/knowledge/<type>/, backfilling missing relevance_scope='broad' + relevance_paths=[] inline; OR (b) extend doctor --apply-lint with a new lint #26 (relevance_fields_missing) that mutates frontmatter. Recommend (b) — reuses existing tested mutation machinery + emits lint events. 9) **Config schema→consumer fan-out** (fabric-config.ts → init.ts FABRIC_CONFIG_DEFAULTS + docs/configuration.md + fabric-hint.cjs readers + doctor lint thresholds): each new tunable needs triple-binding documented at init.ts L370-L378. 10) **Cross-emit-site event shape uniformity** (review.ts L725-L739 vs new extract-knowledge.ts emit): both must produce wire-identical knowledge_scope_degraded events; reason='personal-implies-broad' for both; the stable_id field gap (pending entries have no id) needs an explicit design decision.",
+  "constraints": "1) **rc.5→rc.7 idempotency back-compat (HARD)**: sha256({source_session, type, slug}) at extract-knowledge.ts L78 MUST NOT change. Adding relevance_scope/paths into the hash would invalidate every pending file's collision detection. Verified via existing rc.5→rc.7 source_sessions array migration that preserves primarySession (sourceSessions[0]) for the hash. 2) **Three-mirror identical (HARD)**: packages/cli/templates/skills/<skill>/SKILL.md and .claude/skills/<skill>/SKILL.md and .codex/skills/<skill>/SKILL.md MUST be byte-identical post-install. Currently DESYNCED — re-install required as part of this fix. 3) **Schema additive-optional only**: all new fabricConfigSchema fields MUST be optional+default to preserve back-compat with .fabric/fabric-config.json (user's 7-key minimal config). NO required fields. 4) **NO frontmatter migration urgency**: knowledge-meta-builder.ts L1007-L1021 already defaults relevance_scope='broad' + relevance_paths=[] on missing — so task (5) is hygiene-only and can ship in a later rc if needed. 5) **knowledge_scope_degraded event schema FIXED**: event-ledger.ts L288-L296 already locks the shape (stable_id required string). Extract-knowledge.ts has no pre-promotion stable_id (Q2 late-bind contract — NO `id:` in pending frontmatter). Resolution required: either synthesize `pending:<idempotency_key>` sentinel, use pending_path, or relax the schema's stable_id (least preferred — breaks shape contract). 6) **Protected token preservation**: lint-protected-tokens (scripts/lint-protected-tokens.ts) enforces verbatim presence of tokens like `relevance_paths`, `narrow`, `broad`, `fab_extract_knowledge`, `knowledge_proposed`, `knowledge_archive_aborted`, `.fabric/knowledge/pending/`. Three-mirror sync must preserve these tokens exactly. 7) **emitEventBestEffort try/catch semantics**: emit failures MUST NOT break pending writes (observability-only invariant). New degrade emit must wrap appendEventLedgerEvent in the same try/catch. 8) **Init idempotency**: writeDefaultFabricConfig early-returns if fabric-config.json exists. Language fixation (task 4) ONLY applies on fresh init — existing users with knowledge_language='match-existing' are NOT auto-fixated (NEVER overwrite user edits, per init.ts L386-L390). 9) **Doctor lint #23 (narrow_no_paths) compatibility**: the new server-side silent degrade prevents narrow+empty-paths from ever being persisted, so lint #23 should report ZERO hits for entries written after this fix. Tests must verify this invariant. 10) **MCP unknown-key handling**: zod's z.object default is to silently drop unknown keys (NOT reject). Verify _FabExtractKnowledgeInputBaseSchema does NOT use .strict() — if it does, current Skill calls writing relevance_scope/paths ARE already failing today (potential prior bug surface). Schema extension must align with the existing acceptance behavior.",
+  "clarification_needs": [
+    {
+      "question": "knowledge_scope_degraded emit from extract-knowledge — how to handle the missing stable_id (pending entries have no id per Q2 late-bind contract)?",
+      "context": "event-ledger.ts L288-L296 requires stable_id: z.string() but pending entries DON'T have a stable_id (Q2 late-bind — id allocated at fab_review.approve). review.ts emits the event POST-promotion (has newStableId from layer-flip allocator). Extract-knowledge has nothing equivalent.",
+      "options": [
+        "Synthesize a `pending:<idempotency_key>` sentinel for stable_id at extract-knowledge emit time",
+        "Use the pending_path (relative-form) as stable_id (less greppable, but human-readable)",
+        "Relax knowledgeScopeDegradedEventSchema.stable_id to z.string() with a docstring documenting the pending-sentinel form",
+        "Add a new optional field `pending_idempotency_key` to the event schema, keep stable_id optional for pre-promotion emits"
+      ],
+      "recommended": 0
+    },
+    {
+      "question": "Task (5) migration — standalone script or doctor --apply-lint mutation arm?",
+      "context": "knowledge-meta-builder.ts L1007-L1021 ALREADY defaults missing relevance_scope to 'broad' and missing relevance_paths to [], so existing entries parse cleanly. Migration is hygiene (explicit frontmatter values are greppable + audit-trail-friendly) NOT correctness. Two implementation surfaces exist: a one-shot script (matches rc.5→rc.7 migration precedents in CHANGELOG) OR a new doctor lint (#26 relevance_fields_missing) with --apply-lint mutation.",
+      "options": [
+        "Standalone scripts/migrate-frontmatter.mjs — explicit one-shot, easy to discover, no schema/doctor coupling",
+        "New doctor lint #26 (relevance_fields_missing) + --apply-lint mutation — reuses tested mutation machinery, emits lint events, integrates with maintenance_hint_days reminder cadence",
+        "Skip migration entirely — rely on knowledge-meta-builder fallback indefinitely; just document the fallback contract"
+      ],
+      "recommended": 1
+    },
+    {
+      "question": "Init-time language detection (task 4) — README+docs only (reuse scan.ts L586-L644) or also probe package.json?",
+      "context": "Task description says 'README/package.json' but the existing detectExistingLanguage helper reads README.md + docs/*.md (CJK ratio probe). package.json contents are almost always English ASCII (npm names, descriptions, deps) which would skew the ratio toward 'en' incorrectly for zh-CN projects with English package.json. Reusing the existing helper is the lowest-risk path.",
+      "options": [
+        "Reuse scan.ts detectExistingLanguage as-is (README + docs/*.md, CJK ratio probe) — proven, already test-covered",
+        "Extend to README + docs/*.md + package.json#description, weighted (descriptions get 5x weight for zh-CN signal)",
+        "Add package.json#description as a soft tiebreaker only when README+docs are absent or empty"
+      ],
+      "recommended": 0
+    },
+    {
+      "question": "Three-mirror sync — overwrite-mirrors-on-install (current behavior?) or merge-with-warning?",
+      "context": "Current diff shows .claude/.codex desynced from template (missing Surface header, Mandatory Scope Rule section). If fab init naively overwrites, any user customization to .claude/skills/<skill>/SKILL.md is LOST (consistent with init.ts L386-L390 'NEVER overwrites user edits' for fabric-config.json — but skills may follow different rules).",
+      "options": [
+        "Always overwrite mirrors on init/reapply — skills are not user-editable surfaces, treat them like generated artifacts",
+        "Diff-and-skip: if mirror diverges from template, log warning and skip overwrite; user runs `fab doctor --apply-lint` to force resync",
+        "Three-way merge: preserve user-added sections; overwrite known-template sections (complex, error-prone)"
+      ],
+      "recommended": 0
+    },
+    {
+      "question": "fabric-config.json schema extension — base schema uses .strict() or default-drop on unknown keys?",
+      "context": "fabric-config.ts L35-L101 fabricConfigSchema uses plain z.object (NOT .strict()). The clientPaths sub-schema at L9-L16 DOES use .strict() explicitly. Question: do extract-knowledge input + new config tunables need .strict() so MISSPELLED keys fail loudly rather than silently default? clientPaths precedent says strict-for-typo-safety; current fabric-config root says lenient-for-forward-compat.",
+      "options": [
+        "Keep root fabric-config lenient (no .strict()) — adding fields stays back-compat; misspelled keys silently default (existing behavior, observed in user's 7-key config)",
+        "Add .strict() to fabric-config root — typos fail loudly during parse, prevents config-rot bugs; one-time break for any user with stale keys",
+        "Leave fabric-config as-is, BUT add .strict() to _FabExtractKnowledgeInputBaseSchema — MCP surface should reject unknown keys (forward-compat with future Skill versions)"
+      ],
+      "recommended": 0
+    }
+  ],
+  "_metadata": {
+    "timestamp": "2026-05-13T00:00:00Z",
+    "task_description": "Integration-points exploration for fabric three-skill contract fix + optimization. Core changes: (1) Extend fab_extract_knowledge MCP input schema with relevance_scope/relevance_paths + silent personal+narrow degrade + emit knowledge_scope_degraded at service entry; (2) Extend fabricConfigSchema with +10 tunables; (3) Three-skill SKILL.md three-mirror sync (packages/cli/templates/skills, .claude/skills, .codex/skills); (4) Init-time probe README/package.json to fixate knowledge_language; (5) Migration script scanning all pending+canonical entries backfilling missing frontmatter values.",
+    "source": "cli-explore-agent",
+    "exploration_angle": "integration-points",
+    "exploration_index": 1,
+    "total_explorations": 2,
+    "duration_seconds": 240
+  }
+}

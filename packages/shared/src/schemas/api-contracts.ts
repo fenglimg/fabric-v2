@@ -450,6 +450,29 @@ const _FabExtractKnowledgeInputBaseSchema = z.object({
     .describe(
       "3-5 line markdown blob — session goal + key turning point. Reviewed by future-self without transcript access.",
     ),
+  // v2.0.0-rc.8 A1 (skill-contract-fix): relevance scope/paths on the
+  // creation surface. Mirrors `_fabReviewModifyChangesSchema.relevance_*`
+  // (L518-533) verbatim so callers can declare scope at archive time
+  // instead of waiting for a fab_review.modify follow-up. Both fields are
+  // optional — when omitted, the pending file omits the YAML lines entirely
+  // (knowledge-meta-builder defaults to broad + [] at parse time, see
+  // L1007-1021). Personal + narrow is silently degraded to broad + [] at
+  // service entry, mirroring the rc.5 review.ts:725-739 behaviour, and emits
+  // a `knowledge_scope_degraded` event keyed by `pending:<idempotency_key>`.
+  // NOTE: these fields MUST NOT be part of the idempotency hash inputs at
+  // extract-knowledge.ts:78 — preserves rc.5→rc.7 collision detection.
+  relevance_scope: z
+    .enum(["narrow", "broad"])
+    .optional()
+    .describe(
+      "Optional relevance scope. 'narrow' restricts plan-context-hint surfacing to relevance_paths; 'broad' always surfaces. Omit to let the meta-builder default to 'broad'. Personal + narrow is silently degraded to broad + [].",
+    ),
+  relevance_paths: z
+    .array(z.string())
+    .optional()
+    .describe(
+      "Optional path anchors for narrow scope. Workspace-relative globs or paths. Omit to let the meta-builder default to []. Ignored when scope is broad (server preserves the array for audit).",
+    ),
 });
 
 // Exported alias of the base shape — MCP tool registration uses `.shape` to

@@ -1,0 +1,79 @@
+{
+  "id": "TASK-004",
+  "title": "i18n keys for cli.uninstall.* in en and zh-CN locales",
+  "scope": "packages/shared/src/i18n/locales/{en,zh-CN}.ts",
+  "action": "Update",
+  "description": "Add the full `cli.uninstall.*` key family to both `packages/shared/src/i18n/locales/en.ts` and `packages/shared/src/i18n/locales/zh-CN.ts`, mirroring the structure of the existing `cli.init.*` family. Required keys: description, args.*.description (one per flag: target, debug, force, yes, plan, bootstrap, mcp, scaffold, interactive, purge, clean-empties — plus negativeDescription for boolean flags), errors.*, plan.*, stages.*, confirm.prompt, summary.*, wizard.intro, wizard.review. Respect `packages/shared/src/i18n/protected-tokens.ts` — every reference to `.fabric/`, `.fabric/knowledge/`, `.fabric/events.jsonl`, `.fabric/agents.meta.json`, `~/.fabric/knowledge/`, `AGENTS.md`, `CLAUDE.md`, `.cursor/rules` MUST use the exact registered token strings. Ensure parity: every key present in en.ts is present in zh-CN.ts with the same shape.",
+  "files": [
+    {
+      "path": "packages/shared/src/i18n/locales/en.ts",
+      "action": "modify",
+      "target": "cli.uninstall.* key family — new addition adjacent to cli.init.*",
+      "change": "Add cli.uninstall key tree with same nesting depth as cli.init: description, args (target.description, debug.description, force.description, yes.description, plan.description, bootstrap.description, bootstrap.negativeDescription, mcp.description, mcp.negativeDescription, scaffold.description, scaffold.negativeDescription, interactive.description, purge.description, clean-empties.description), errors (target-missing, no-fabric-found, lock-held), plan (header, summary), stages (scaffold.header, scaffold.removed, scaffold.skipped, bootstrap.header, mcp.header), confirm.prompt, summary (removed, skipped, errors), wizard (intro, review). Voice: command-line, terse, matches cli.init.* tone."
+    },
+    {
+      "path": "packages/shared/src/i18n/locales/zh-CN.ts",
+      "action": "modify",
+      "target": "cli.uninstall.* key family — Chinese parallel",
+      "change": "Add cli.uninstall tree with identical structure to en.ts. Chinese voice matches cli.init.* (concise, e.g., cli.uninstall.description = '从目标项目中卸载 Fabric。'). Protected tokens (.fabric/, AGENTS.md, etc.) appear VERBATIM unmodified per protected-tokens.ts registry."
+    }
+  ],
+  "implementation": [
+    "Read packages/shared/src/i18n/locales/en.ts to identify the cli.init.* block boundaries; replicate the structure as cli.uninstall.* placed alphabetically adjacent or symmetric.",
+    "Read packages/shared/src/i18n/locales/zh-CN.ts and packages/shared/src/i18n/protected-tokens.ts. Confirm every protected token string is preserved exactly (no translation/paraphrasing) in zh-CN.",
+    "Author en.ts cli.uninstall.* entries. For each flag from TASK-002's args block, write a one-line description: e.g., cli.uninstall.args.target.description = 'Project root to uninstall Fabric from (default: cwd)'; cli.uninstall.args.purge.description = 'Also remove .fabric/knowledge/ and state files (events.jsonl, agents.meta.json, forensic.json). Personal-root ~/.fabric/knowledge/ is never touched.'; cli.uninstall.args.clean-empties.description = 'When un-merging hook configs, cascade-remove empty arrays/objects.'.",
+    "Author zh-CN.ts mirror: same structure, Chinese strings. Protected tokens unchanged.",
+    "Add cli.uninstall.errors.no-fabric-found ('Fabric not found in {{target}}; nothing to uninstall.' / '在 {{target}} 中未找到 Fabric；无可卸载。'), cli.uninstall.errors.lock-held ('A serve process holds the lock at {{path}}. Use --force to override.' / similar zh).",
+    "Add cli.uninstall.plan.header ('Fabric uninstall dry run'), cli.uninstall.summary.{removed,skipped,errors} (with {{count}} placeholder), cli.uninstall.confirm.prompt ('Proceed with removal? This will delete N artifacts.' — with {{count}}).",
+    "Add cli.uninstall.wizard.intro, cli.uninstall.wizard.review (used by TASK-002's wizard adapter).",
+    "Run `pnpm --filter @fenglimg/fabric-shared build` (or test) to confirm TypeScript types pass.",
+    "Run `pnpm --filter @fenglimg/fabric-cli lint:protected-tokens` (or equivalent script) — confirm zero violations: protected paths appear verbatim in all new strings."
+  ],
+  "reference": {
+    "pattern": "Mirror cli.init.* key family: parallel structure for parallel commands; each flag gets a `.args.<flag>.description` key.",
+    "files": [
+      "packages/shared/src/i18n/locales/en.ts",
+      "packages/shared/src/i18n/locales/zh-CN.ts",
+      "packages/shared/src/i18n/protected-tokens.ts",
+      "scripts/lint-protected-tokens.ts"
+    ],
+    "examples": "en.ts cli.init.description = 'Initialize Fabric in the target project.' → cli.uninstall.description = 'Uninstall Fabric from the target project.'. zh-CN.ts cli.init.description = '在目标项目中初始化 Fabric。' → cli.uninstall.description = '从目标项目中卸载 Fabric。'."
+  },
+  "convergence": {
+    "criteria": [
+      "Every cli.uninstall.* key present in packages/shared/src/i18n/locales/en.ts also present in packages/shared/src/i18n/locales/zh-CN.ts (verified via a Node one-liner: parse both default-exported objects, dot-walk to cli.uninstall, compare key sets — must be equal).",
+      "Every flag declared in TASK-002 uninstallCommand.args has a corresponding cli.uninstall.args.<flag>.description key in both locales (verified by enumerating TASK-002's args block).",
+      "Every boolean flag with negativeDescription (bootstrap, mcp, scaffold) has both .description and .negativeDescription keys in both locales.",
+      "`pnpm --filter @fenglimg/fabric-cli lint:protected-tokens` (or equivalent CI command) exits 0 — zero protected-token violations in the new strings.",
+      "Loading the locale tables via `import en from '.../en.ts'; en.cli.uninstall.description` returns a non-undefined non-empty string in both locales."
+    ]
+  },
+  "depends_on": ["TASK-002", "TASK-003"],
+  "rationale": {
+    "chosen_approach": "Eager full key coverage in both locales BEFORE the i18n.test.ts snapshot is wired (TASK-005), so the snapshot regeneration runs cleanly. Mirror cli.init.* family structure for predictability.",
+    "alternatives_considered": ["Defer zh-CN translations and ship en-only initially — rejected: zh-CN is the project's primary locale (per project memory), users would see raw key strings", "Auto-translate via tool — rejected: command-line voice requires human-tuned terseness"],
+    "decision_factors": ["i18n parity is a CI hard gate (i18n.test.ts.snap)", "Protected-tokens lint is a CI hard gate", "Wizard text affects UX significantly"],
+    "tradeoffs": "Translation latency during this task vs blocking TASK-005; mitigated by depending on TASK-002+TASK-003 having stabilized the flag/string surface first."
+  },
+  "test": {
+    "manual_checks": [
+      "Open packages/shared/src/i18n/locales/en.ts and zh-CN.ts; visually confirm cli.uninstall tree is structurally identical",
+      "Confirm no '.fabric' paraphrased to 'fabric directory' or similar in any new string"
+    ],
+    "success_metrics": [
+      "Key parity en/zh-CN: 100% — zero missing keys in either direction",
+      "Protected-tokens lint: 0 violations",
+      "FAB_LANG=zh-CN node -e \"import('./packages/cli/src/commands/uninstall.ts').then(m => console.log(m.default.meta.description))\" prints the Chinese description"
+    ],
+    "unit": [],
+    "integration": ["packages/shared lint:protected-tokens passes", "packages/shared build passes"]
+  },
+  "cli_execution_id": "uninstall-script-support-2026-05-13-TASK-004",
+  "cli_execution": {
+    "strategy": "merge_fork",
+    "merge_from": [
+      "uninstall-script-support-2026-05-13-TASK-002",
+      "uninstall-script-support-2026-05-13-TASK-003"
+    ]
+  }
+}

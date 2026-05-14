@@ -1,0 +1,154 @@
+{
+  "id": "TASK-008",
+  "title": "D1 + D2 — Protected tokens additions across three skills + idempotency T5-array note in import/archive SKILL.md",
+  "scope": "packages/shared/src/i18n/protected-tokens.ts + 3 template SKILL.md (+ mirrors) + lint test",
+  "action": "Update",
+  "description": "Extend protected-tokens registry: archive adds pending_path, layer, team, personal, relevance_scope, proposed_reason, session_context, source_sessions, knowledge_scope_degraded; import adds proposed_reason, session_context, source_sessions; review adds relevance_scope, relevance_paths, narrow, broad, proposed_reason, session_context, knowledge_scope_degraded. Also add idempotency note to archive SKILL.md (L380-384) and import SKILL.md explaining that T5 source_sessions array form uses only `source_sessions[0]` in the sha256 hash (per extract-knowledge.ts:78 formula).",
+  "files": [
+    {
+      "path": "packages/shared/src/i18n/protected-tokens.ts",
+      "action": "modify",
+      "target": "Per-skill token registry",
+      "change": "Add archive tokens (pending_path, layer, team, personal, relevance_scope, proposed_reason, session_context, source_sessions, knowledge_scope_degraded); add import tokens (proposed_reason, session_context, source_sessions); add review tokens (relevance_scope, relevance_paths, narrow, broad, proposed_reason, session_context, knowledge_scope_degraded)"
+    },
+    {
+      "path": "packages/cli/templates/skills/fabric-archive/SKILL.md",
+      "action": "modify",
+      "target": "Idempotency note at L380-384",
+      "change": "Add explicit note: 'When source_sessions is an array (rc.5→rc.7 T5 form), only source_sessions[0] participates in the sha256({source_session: sourceSessions[0], type, slug}) idempotency hash at extract-knowledge.ts:78. Adding/removing additional sessions does NOT change the idempotency key.'"
+    },
+    {
+      "path": "packages/cli/templates/skills/fabric-import/SKILL.md",
+      "action": "modify",
+      "target": "Idempotency section (find equivalent location)",
+      "change": "Add identical T5-array idempotency note as fabric-archive"
+    },
+    {
+      "path": "packages/cli/templates/skills/fabric-review/SKILL.md",
+      "action": "modify",
+      "target": "Token surface review",
+      "change": "Verify new protected tokens still present verbatim in skill body (most should already exist)"
+    },
+    {
+      "path": ".claude/skills/fabric-archive/SKILL.md",
+      "action": "modify",
+      "target": "Full file",
+      "change": "Byte-identical mirror"
+    },
+    {
+      "path": ".codex/skills/fabric-archive/SKILL.md",
+      "action": "modify",
+      "target": "Full file",
+      "change": "Byte-identical mirror"
+    },
+    {
+      "path": ".claude/skills/fabric-import/SKILL.md",
+      "action": "modify",
+      "target": "Full file",
+      "change": "Byte-identical mirror"
+    },
+    {
+      "path": ".codex/skills/fabric-import/SKILL.md",
+      "action": "modify",
+      "target": "Full file",
+      "change": "Byte-identical mirror"
+    },
+    {
+      "path": ".claude/skills/fabric-review/SKILL.md",
+      "action": "modify",
+      "target": "Full file",
+      "change": "Byte-identical mirror"
+    },
+    {
+      "path": ".codex/skills/fabric-review/SKILL.md",
+      "action": "modify",
+      "target": "Full file",
+      "change": "Byte-identical mirror"
+    },
+    {
+      "path": "packages/cli/__tests__/lint-protected-tokens.test.ts",
+      "action": "modify",
+      "target": "Per-skill token assertions",
+      "change": "Update expected token sets per skill to include the new tokens"
+    }
+  ],
+  "implementation": [
+    "Read scripts/lint-protected-tokens.ts to understand SKILL_MCP_TOKENS shape and per-skill registry layout",
+    "Add the listed tokens to PROTECTED_TOKENS / per-skill keying in packages/shared/src/i18n/protected-tokens.ts",
+    "Draft idempotency T5-array note (canonical wording): 'NOTE: source_sessions can be either a single string or an array of strings. When array, only source_sessions[0] (the primary session) participates in the sha256 idempotency hash at packages/server/src/services/extract-knowledge.ts:78. The server formula is sha256({source_session: sourceSessions[0], type, slug}) — adding/removing additional array entries does not change the idempotency key, preserving rc.5→rc.7 compat.'",
+    "Insert note into archive SKILL.md near L380-L384; insert identical note into import SKILL.md near its idempotency section (grep for 'idempotency' in import template to find location)",
+    "Mirror to .claude and .codex; run lint-protected-tokens and three-mirror parity tests",
+    "Update lint-protected-tokens.test.ts to assert new token sets"
+  ],
+  "reference": {
+    "pattern": "Protected token registry sync; idempotency contract documentation",
+    "files": [
+      "scripts/lint-protected-tokens.ts:43-58",
+      "packages/server/src/services/extract-knowledge.ts:78-84",
+      "packages/cli/__tests__/lint-protected-tokens.test.ts"
+    ],
+    "examples": "Existing tokens like fab_extract_knowledge / .fabric/knowledge/ / MUST / NEVER follow per-skill keyed maps; idempotency formula at extract-knowledge.ts:78 is load-bearing"
+  },
+  "convergence": {
+    "criteria": [
+      "protected-tokens.ts adds 9 archive tokens / 3 import tokens / 7 review tokens to per-skill registry",
+      "Idempotency T5-array note present in archive AND import SKILL.md with consistent wording referencing extract-knowledge.ts:78 formula",
+      "scripts/lint-protected-tokens.ts exits 0 — all new tokens present verbatim in their respective skill bodies",
+      "lint-protected-tokens.test.ts updated and green",
+      "Three-mirror byte-identity preserved for all 9 SKILL.md files",
+      "Server-side idempotency formula at extract-knowledge.ts:78 UNCHANGED (verify via test assertion in TASK-001)"
+    ]
+  },
+  "depends_on": [],
+  "cli_execution_id": "fabric-skills-contract-fix-2026-05-13-TASK-008",
+  "cli_execution": {
+    "strategy": "new"
+  },
+  "rationale": {
+    "chosen_approach": "Documentation-only addition + token registry sync; no behavior change",
+    "alternatives_considered": [
+      "Hoist idempotency formula docs to a shared reference document",
+      "Change server formula to hash all source_sessions entries (breaks rc.5→rc.7 compat)",
+      "Skip the note — rely on doctor hint to surface drift"
+    ],
+    "decision_factors": [
+      "Skills are the discovery surface for users",
+      "Protected token regression is a known failure mode (lefthook pre-commit)",
+      "rc.5→rc.7 idempotency is HARD constraint"
+    ],
+    "tradeoffs": "Adding protected tokens makes future i18n edits more constrained; tradeoff is regression prevention"
+  },
+  "test": {
+    "manual_checks": [
+      "Run scripts/lint-protected-tokens.ts manually — verify 0 errors",
+      "Search archive SKILL.md for 'source_sessions[0]' or equivalent — verify idempotency note present",
+      "diff -q the three mirror pairs for each skill"
+    ],
+    "success_metrics": [
+      "100% protected token lint pass",
+      "100% three-mirror byte-identity",
+      "Server idempotency hash unchanged"
+    ],
+    "unit": [
+      "test_lint_protected_tokens_archive_extended",
+      "test_lint_protected_tokens_import_extended",
+      "test_lint_protected_tokens_review_extended"
+    ],
+    "integration": [
+      "test_install_skills_three_mirror_parity_after_tokens"
+    ]
+  },
+  "status": "completed",
+  "status_history": [
+    {
+      "from": "in_progress",
+      "to": "in_progress",
+      "changed_at": "2026-05-14T10:31:35+08:00"
+    },
+    {
+      "from": "in_progress",
+      "to": "completed",
+      "changed_at": "2026-05-14T10:35:29+08:00"
+    }
+  ]
+}

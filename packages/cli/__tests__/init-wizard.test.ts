@@ -192,7 +192,7 @@ describe("runInitCommand cancellation", () => {
       confirm: vi.fn().mockResolvedValue(false),
       group: vi.fn(),
       select: vi.fn(),
-      log: { step: vi.fn() },
+      log: { step: vi.fn(), info: vi.fn() },
       isCancel: vi.fn().mockReturnValue(false),
     }));
 

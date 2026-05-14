@@ -1,0 +1,81 @@
+{
+  "id": "TASK-006",
+  "title": "Docs + CHANGELOG: rc.9 entry, test-seed §1 bullet + I/T invariants, README quick-ref",
+  "scope": "CHANGELOG.md + docs/test-seed/cli.md + README.md",
+  "action": "Update",
+  "description": "Moderate docs scope per clarification #7. (1) `CHANGELOG.md`: add new `## [2.0.0-rc.9] — 2026-05-13` section above the existing rc.8 entry, with `### Added` bullet describing fab uninstall (flag surface, default scope, --purge / --clean-empties semantics) and file references. (2) `docs/test-seed/cli.md` §1 Feature Surface: add the `uninstall — ...` bullet listing all 10 flags; add behavioral invariants — Ix `uninstall must be idempotent on re-run`, Tx `uninstall --purge never touches ~/.fabric/knowledge/`, Tx `uninstall preserves user-authored entries in deep-merged hook configs` — wired to the rc gate. (3) `README.md` L202-L205 quick-reference: add `fabric uninstall  # remove Fabric-managed artifacts (knowledge stays unless --purge)` line. NO new `docs/uninstall.md` this cycle (clarification #7).",
+  "files": [
+    {
+      "path": "CHANGELOG.md",
+      "action": "modify",
+      "target": "new [2.0.0-rc.9] section above [2.0.0-rc.8]",
+      "change": "Insert `## [2.0.0-rc.9] — 2026-05-13` (or actual release date) section above the existing rc.8 entry. Lead paragraph in bold: e.g., `**fab uninstall — symmetric inverse of fab init.**`. Then `### Added` subsection with bullets: (a) `**fab uninstall command**: removes Fabric-managed artifacts symmetrically to fab init; default scope inverts all 3 init stages (scaffold/bootstrap/MCP). Flags: --plan, --force, --yes, --no-bootstrap, --no-mcp, --no-scaffold, --target, --interactive, --purge, --clean-empties.` with file refs to packages/cli/src/commands/uninstall.ts and packages/cli/src/install/uninstall-skills-and-hooks.ts; (b) `**Shared destination-path constants**: extracted from install/skills-and-hooks.ts as exported tables (SKILL_DESTINATIONS, HOOK_SCRIPT_DESTINATIONS, etc.) consumed by both install and uninstall.`; (c) `**Per-client MCP unregistration**: ClientWriter.remove() implemented for Claude (.claude.json/.mcp.json), Cursor (JSON), Codex (TOML) — removes only the `fabric` server key, preserves other entries.`. Match the rc.8 entry voice exactly (Keep-a-Changelog conventions, file paths pinned)."
+    },
+    {
+      "path": "docs/test-seed/cli.md",
+      "action": "modify",
+      "target": "§1 Feature Surface bullet + I/T invariant rows",
+      "change": "After the existing `- doctor — ...; flags: ...` bullet (L13 or current end of §1 bullet list), add `- uninstall — Remove Fabric-managed artifacts symmetrically to `fab init`. Flags: --plan, --force, --yes, --no-bootstrap, --no-mcp, --no-scaffold, --target, --interactive, --purge, --clean-empties.`. Add behavioral invariants under the I-table: `Iuninstall1: \\`fab uninstall\\` must be idempotent — re-running on an already-uninstalled project is a no-op with exit code 0 and all step statuses 'skipped'.`; `Iuninstall2: \\`fab uninstall\\` must never modify \\`~/.fabric/knowledge/\\` (personal root) regardless of --purge.`; `Iuninstall3: \\`fab uninstall\\` un-merge must preserve all non-fabric entries in deep-merged hook configs verbatim.`. Add tests-pin (T-row) entries: `Tuninstall1: packages/cli/__tests__/integration/uninstall-skills-and-hooks.test.ts (T1-T6) pins round-trip equality.`; `Tuninstall2: packages/cli/__tests__/uninstall.test.ts pins --plan no-write contract and wizard-cancel exit code 130.`."
+    },
+    {
+      "path": "README.md",
+      "action": "modify",
+      "target": "L202-L205 command-line quick reference block",
+      "change": "Append a new line `fabric uninstall # remove Fabric-managed artifacts (knowledge stays unless --purge; personal root ~/.fabric/knowledge/ is never touched)` after the existing `fabric doctor --apply-lint` line at L205. Match indentation/comment style of existing block exactly."
+    }
+  ],
+  "implementation": [
+    "Read CHANGELOG.md current head (rc.8 entry at L8-L36) to internalize the voice and entry shape.",
+    "Insert the new `## [2.0.0-rc.9] — 2026-05-13` section above rc.8. Use `### Added` subsection; bullet style `**title**: detailed body with file paths`. Three bullets (uninstall command, shared constants, MCP unregistration).",
+    "Read docs/test-seed/cli.md §1 to confirm bullet format and I-row / T-row table location and syntax.",
+    "Add the uninstall bullet to §1 Feature Surface. Add 3 I-row invariants (Iuninstall1, Iuninstall2, Iuninstall3) and 2 T-row pins (Tuninstall1, Tuninstall2). Follow the exact prefix convention used for init invariants (e.g., I10, T*).",
+    "Read README.md L195-L210 (context around the quick-reference block) to confirm formatting.",
+    "Append the new `fabric uninstall` line. Use a comment that captures the conservative default (preserve knowledge) and the personal-root invariant succinctly.",
+    "Run `pnpm rc6:gate` (or rc7:gate / equivalent latest gate) to confirm structural checks still pass — especially the cli-surface drift-hint check that points at docs/test-seed/cli.md §1.",
+    "Optional: run `pnpm --filter @fenglimg/fabric-cli test -- cli-surface` to confirm the DRIFT_HINT path still resolves and is referenced."
+  ],
+  "reference": {
+    "pattern": "Keep-a-Changelog with file-path-pinned bullets (matching rc.8 voice); docs/test-seed/cli.md drift-gate I-row + T-row pin structure.",
+    "files": ["CHANGELOG.md", "docs/test-seed/cli.md", "README.md"],
+    "examples": "CHANGELOG.md L8-L36 (rc.8 entry as voice reference); docs/test-seed/cli.md §1 init/scan/doctor/serve bullets and I-row table (existing I10 lock invariant as shape reference); README.md L202-L205 quick-reference block."
+  },
+  "convergence": {
+    "criteria": [
+      "CHANGELOG.md contains `## [2.0.0-rc.9]` section above the rc.8 section with `### Added` listing 3 bullets (uninstall command, shared constants, MCP unregistration); each bullet references at least 1 absolute repo path (packages/cli/src/commands/uninstall.ts, etc.) — verified via grep returning ≥3 path matches inside the new section.",
+      "docs/test-seed/cli.md §1 contains a new `uninstall — ...` bullet listing all 10 flags exactly as exposed by the citty defineCommand args block.",
+      "docs/test-seed/cli.md contains 3 I-row invariants (Iuninstall1/2/3) and 2 T-row pins (Tuninstall1/2) referencing the test files from TASK-005.",
+      "README.md L202-L205 (or post-edit location) contains a `fabric uninstall` line in the quick-reference block with comment text mentioning '--purge' and personal-root preservation.",
+      "`pnpm rc6:gate` (or the latest rc gate) exits 0 after the doc edits.",
+      "No new `docs/uninstall.md` file was created (per clarification #7); verified via `ls docs/uninstall.md` returning ENOENT."
+    ]
+  },
+  "depends_on": ["TASK-002", "TASK-003"],
+  "rationale": {
+    "chosen_approach": "Moderate docs scope per clarification #7 — minimum needed to keep drift-gate coherent (test-seed bullet + I/T invariants) + discoverability (README quick-ref) + release-notes (CHANGELOG rc.9 entry). Defers comprehensive docs/uninstall.md to a follow-up.",
+    "alternatives_considered": ["Minimal: CHANGELOG + test-seed only — rejected per clarification #7 (README discoverability matters)", "Comprehensive: also add docs/uninstall.md — rejected per clarification #7 (saves a doc-iteration cycle)", "Defer all docs to follow-up — rejected: drift gate (cli-surface DRIFT_HINT points at test-seed) breaks if test-seed is not updated"],
+    "decision_factors": ["Drift-gate coherence (test-seed must list new command)", "Discoverability (README quick-ref)", "Release-notes traceability (CHANGELOG rc.9)"],
+    "tradeoffs": "Skips long-form uninstall doc; users discover via --help text + README one-liner this cycle."
+  },
+  "test": {
+    "manual_checks": [
+      "Render CHANGELOG.md in a markdown previewer; confirm rc.9 entry parses cleanly",
+      "Open docs/test-seed/cli.md; confirm uninstall bullet sits alongside init/scan/doctor/serve bullets",
+      "Open README.md L202-L205 block; confirm new line matches existing formatting"
+    ],
+    "success_metrics": [
+      "rc gate (pnpm rc6:gate or rc7:gate) exits 0",
+      "CHANGELOG.md remains valid Keep-a-Changelog format (no broken markdown)",
+      "docs/test-seed/cli.md command-list count matches src/commands/index.ts allCommands count (init, scan, serve, doctor, hooks, plan-context-hint, uninstall = 7 entries, but feature surface bullets typically cover only public/top-level surface)"
+    ],
+    "unit": [],
+    "integration": ["pnpm rc6:gate passes"]
+  },
+  "cli_execution_id": "uninstall-script-support-2026-05-13-TASK-006",
+  "cli_execution": {
+    "strategy": "merge_fork",
+    "merge_from": [
+      "uninstall-script-support-2026-05-13-TASK-002",
+      "uninstall-script-support-2026-05-13-TASK-003"
+    ]
+  }
+}

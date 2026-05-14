@@ -1,0 +1,88 @@
+{
+  "summary": "Resolve three Fabric dogfood UX pain-points (fabric-import interrupted by Stop hook, fabric-config.json invisible to users, /fabric-import recommendation missed on first SessionStart) plus the upstream MCP SDK misuse bug they exposed (fab_review tool fully broken because z.discriminatedUnion is incompatible with @modelcontextprotocol/sdk@1.29.0 registerTool). Four fully parallel tasks, zero file overlap, with a single end-of-chain Gemini review + coverage pass.",
+  "approach": "Four independent tasks executed in parallel: (1) TASK-001 splits fab_review's input/output into a flat ZodRawShape for SDK registration while keeping the discriminatedUnion as the internal authoritative contract. (2) TASK-002 adds an isImportInFlight gate to fabric-hint.cjs Signal B (silencing only B during active imports) and dismantles the sentinel mechanism on the hook side. (3) TASK-003 makes init.ts scaffold a discoverable default fabric-config.json with every reader-consumed field and removes the maybeWriteImportSentinel path + its clack confirm. (4) TASK-004 replaces the retired sentinel with a deterministic SessionStart underseed self-check in knowledge-hint-broad.cjs (with a revision_hash-bypass for the banner) and cleans the dead sentinel sections from the fabric-import SKILL.md. Each task touches a disjoint file set, so all four can run in any order or fully in parallel; sentinel-removal is coordinated via a shared retirement design (each task owns its own surface area).",
+  "task_ids": ["TASK-001", "TASK-002", "TASK-003", "TASK-004"],
+  "task_count": 4,
+  "complexity": "Medium",
+  "estimated_time": "3-4 hours (4 parallel tasks, ~45-60 min each, plus end-of-chain review/coverage)",
+  "recommended_execution": "Parallel",
+  "design_decisions": [
+    {
+      "decision": "Two-layer schema for fab_review (flat ZodRawShape for SDK + discriminatedUnion as internal authoritative contract)",
+      "rationale": "MCP SDK 1.29.0 validateToolOutput requires z.object()-shape input/output; passing a discriminatedUnion crashes on schema._zod access. Splitting the surface preserves discoverable JSON Schema (ToolSearch sees all fields) and runtime cross-field strictness simultaneously, with no client-visible API change.",
+      "tradeoff": "Two parallel definitions must stay in sync (mitigated by collocated definitions and a drift-guard unit test).",
+      "alternatives": ["Replace discriminatedUnion entirely (loses cross-field strictness)", "Wrap in z.object({ payload: union }) (breaks all clients)", "Patch/pin SDK (out-of-band, fragile)"]
+    },
+    {
+      "decision": "Reuse .fabric/.import-state.json (already written by fabric-import skill checkpoints) as the in-flight signal for fabric-hint.cjs Signal B gating",
+      "rationale": "Zero new state files, zero new contract; piggybacks on an artifact the import skill already maintains. Keeps the never-block invariant by treating any read/parse error as 'not in flight'.",
+      "tradeoff": "Tightly couples hook behaviour to an internal skill artifact; mitigated by treating the file's existence as a soft signal only.",
+      "alternatives": ["Dedicated .import-running marker file (doubles state)", "Make Signal B configurable per-skill (over-engineering)"]
+    },
+    {
+      "decision": "Hard-code IMPORT_IN_FLIGHT_MAX_AGE_HOURS = 24 instead of reading from fabric-config.json",
+      "rationale": "YAGNI per design lock; 24h is a conservative upper bound for any real import session. Adding a config knob would expand the discoverability surface without a real user need.",
+      "tradeoff": "If a user truly needs a longer window they must edit hook source; acceptable for an edge case.",
+      "alternatives": ["Read from fabric-config.json (rejected as YAGNI)", "Use much shorter TTL like 1h (too aggressive for a slow import)"]
+    },
+    {
+      "decision": "Retire the .fabric/.import-requested sentinel mechanism entirely (clean-slate per zero-user-period preference) rather than patching its non-interactive write paths",
+      "rationale": "The sentinel's failure modes are systemic: every non-interactive init path (CI, -y, piped input, --plan, FABRIC_NONINTERACTIVE=1, TTY-detection failures) bypasses the clack confirm and never writes the file, leading to silent SessionStart. A SessionStart self-check on agents.meta.json + canonical count is deterministic and removes the entire failure surface.",
+      "tradeoff": "Banner re-emits on every SessionStart until import completes or knowledge graph crosses the threshold; acceptable for a one-line hint.",
+      "alternatives": ["Keep sentinel and force-write in non-interactive paths (still racy across many entry points)", "Lower Stop-hook Signal C TTL (still misses same-day first session)"]
+    },
+    {
+      "decision": "Each task owns a disjoint file set; sentinel removal is split across TASK-002 (fabric-hint.cjs), TASK-003 (init.ts), TASK-004 (knowledge-hint-broad.cjs + SKILL.md) so all four tasks can execute fully in parallel without merge conflicts",
+      "rationale": "Zero file overlap means parallel execution is safe; design coherence is preserved because all three tasks remove their own surface area of the same retired mechanism.",
+      "tradeoff": "Must verify no cross-file import of removed sentinel identifiers (each task does its own grep).",
+      "alternatives": ["Single 'remove sentinel' task spanning multiple files (serialises execution unnecessarily)"]
+    },
+    {
+      "decision": "Banner in knowledge-hint-broad.cjs bypasses the existing revision_hash gate (per-line emit decision)",
+      "rationale": "If the knowledge graph hash hasn't changed, the broad-summary body is correctly suppressed — but the import recommendation must still surface or it would be invisible until the user does something to change the graph (chicken-and-egg).",
+      "tradeoff": "Adds a small special-case to the emit logic; verified by a unit test asserting broad-summary body is NOT re-emitted on unchanged hash even when the banner IS emitted.",
+      "alternatives": ["Always emit broad summary too (over-emits hint noise)", "Reset revision_hash on init (fragile and out-of-band)"]
+    },
+    {
+      "decision": "Run Gemini review + coverage ONCE at end of the 4-task chain, not per-task",
+      "rationale": "Per project memory `feedback_review_batching.md` — for multi-task lite-plan chains the user prefers a single end-of-chain review pass to reduce review fatigue and surface cross-task interactions.",
+      "tradeoff": "If a task has a defect it propagates further before review catches it; mitigated by each task having strong per-task convergence criteria + unit tests as first-line gates.",
+      "alternatives": ["Per-task review (rejected per user memory)"]
+    }
+  ],
+  "shared_context": {
+    "tech_stack": ["pnpm monorepo", "TypeScript", "Zod (3.x w/ zod._zod accessor)", "@modelcontextprotocol/sdk@1.29.0", "Vitest", "@clack/prompts (CLI wizard)"],
+    "conventions": [
+      "Hooks live in packages/cli/templates/hooks/ as standalone .cjs files (no cross-hook require)",
+      "Schemas live in packages/shared/src/schemas/",
+      "Tests in packages/{cli,server}/__tests__/",
+      "v2.0.0-rc.X release naming chain (currently rc.8)",
+      "Never-block invariant: hooks must never produce decision:'block' due to internal errors",
+      "Idempotent file writes for init artifacts (test-then-write, no overwrite)"
+    ],
+    "design_lock": "All four tasks carry pre-grilled, locked design decisions. Implementing agents must NOT re-debate trade-offs; they may flag implementation-level issues (e.g. 'last_checkpoint_at field name doesn't match assumption') and adapt mechanically.",
+    "review_strategy": "End-of-chain Gemini review + coverage (not per-task)"
+  },
+  "_metadata": {
+    "timestamp": "2026-05-13T12:00:00.000Z",
+    "source": "cli-lite-planning-agent",
+    "planning_mode": "agent-based",
+    "plan_type": "feature",
+    "schema_version": "2.0",
+    "exploration_angles": [],
+    "duration_seconds": 0,
+    "quality_check": {
+      "executed": true,
+      "mode": "internal-self-check",
+      "result": "PASS",
+      "dimensions": {
+        "completeness": "All 4 spec'd requirements (1 bug + 3 UX) mapped to tasks; all referenced files included as targets",
+        "granularity": "Each task ~45-60 min scope; no task spans more than 4 source files + their tests",
+        "dependencies": "depends_on=[] for all 4 tasks; zero file overlap verified across files[].path; no circular deps possible",
+        "convergence_criteria": "All criteria are quantified/testable (file existence checks, grep-zero invariants, JSON.parse success, exact field counts, named test cases)",
+        "implementation_steps": "Each task has 6-9 numbered implementation steps with explicit ordering",
+        "constraint_compliance": "Follows zero-user clean-slate preference (sentinel retirement), end-of-chain review preference, never-block invariant, rc.8 naming continuity"
+      }
+    }
+  }
+}

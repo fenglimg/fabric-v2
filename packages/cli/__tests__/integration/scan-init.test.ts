@@ -22,6 +22,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { ForensicReport } from "@fenglimg/fabric-shared";
 
 import { runInitScan } from "../../src/commands/scan.ts";
+import { initFabric } from "../../src/commands/init.ts";
 
 const tempDirs: string[] = [];
 
@@ -370,5 +371,88 @@ describe("init-scan: end-to-end", () => {
     // Empty-repo match-existing → 'en' fallback. Confirm EN narrative + no CJK.
     expect(all).toMatch(/Track the primary tech stack/u);
     expect(/[\u4e00-\u9fff]/u.test(all)).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// TASK-006 (C1): init-time knowledge_language fixation
+//
+// `writeDefaultFabricConfig` in init.ts probes README.md + docs/*.md via
+// scan.ts's `detectExistingLanguage` on a fresh init, then fixates the
+// resolved language ("zh-CN" or "en") into `.fabric/fabric-config.json`.
+// The literal `"match-existing"` placeholder is no longer written.
+//
+// Idempotency is preserved: pre-existing user configs are NEVER overwritten,
+// even when the user has flipped the field to `"match-existing"` manually.
+// ---------------------------------------------------------------------------
+describe("init-time language fixation (TASK-006 C1)", () => {
+  /**
+   * Read the `knowledge_language` field from the scaffolded fabric-config.
+   * Throws if the file is missing or unparseable — both indicate a regression.
+   */
+  function readFixatedLanguage(target: string): string {
+    const configPath = join(target, ".fabric", "fabric-config.json");
+    expect(existsSync(configPath)).toBe(true);
+    const raw = readFileSync(configPath, "utf8");
+    const parsed = JSON.parse(raw) as { knowledge_language?: unknown };
+    expect(typeof parsed.knowledge_language).toBe("string");
+    return parsed.knowledge_language as string;
+  }
+
+  it("test_init_writes_zh_cn_for_cjk_readme", async () => {
+    const target = makeTempDir("lang-fix-zh");
+    // Heavy-CJK README — well above the 0.3 ratio threshold.
+    await writeFile(
+      join(target, "README.md"),
+      "# 项目说明\n\n这是一个用于演示 Fabric 在中文项目中的知识管理示例。\n中文字符占比远高于 30%，因此 detectExistingLanguage 会解算成 zh-CN。\n",
+    );
+
+    await initFabric(target);
+
+    expect(readFixatedLanguage(target)).toBe("zh-CN");
+  });
+
+  it("test_init_writes_en_for_english_readme", async () => {
+    const target = makeTempDir("lang-fix-en");
+    await writeFile(
+      join(target, "README.md"),
+      "# Project\n\nA pure-English README used to exercise the detector's default branch.\nThe CJK ratio is zero so the detector resolves to en.\n",
+    );
+
+    await initFabric(target);
+
+    expect(readFixatedLanguage(target)).toBe("en");
+  });
+
+  it("test_init_writes_en_for_empty_repo", async () => {
+    // No README, no docs/ — the detector's empty-repo contract returns 'en'.
+    const target = makeTempDir("lang-fix-empty");
+
+    await initFabric(target);
+
+    expect(readFixatedLanguage(target)).toBe("en");
+  });
+
+  it("test_init_preserves_existing_config", async () => {
+    const target = makeTempDir("lang-fix-preserve");
+    // CJK README would normally fixate to zh-CN, but the user pre-seeded
+    // a config — init must NEVER overwrite it.
+    await writeFile(
+      join(target, "README.md"),
+      "# 项目\n\n大量中文内容确保 detector 会返回 zh-CN，从而验证幂等性。\n",
+    );
+    const configPath = join(target, ".fabric", "fabric-config.json");
+    const userSeed = { knowledge_language: "match-existing", custom_field: "user-was-here" };
+    await writeFile(configPath, JSON.stringify(userSeed, null, 2) + "\n");
+    const beforeContent = readFileSync(configPath, "utf8");
+
+    await initFabric(target, { force: true });
+
+    const afterContent = readFileSync(configPath, "utf8");
+    // Byte-identical: no merge, no overwrite, no language fixation applied.
+    expect(afterContent).toBe(beforeContent);
+    const afterParsed = JSON.parse(afterContent) as Record<string, unknown>;
+    expect(afterParsed.knowledge_language).toBe("match-existing");
+    expect(afterParsed.custom_field).toBe("user-was-here");
   });
 });

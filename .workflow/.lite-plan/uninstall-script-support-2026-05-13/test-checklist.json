@@ -1,0 +1,135 @@
+{
+  "session": "uninstall-script-support-2026-05-13",
+  "plan_summary": "Add fab uninstall command (symmetric inverse of fab init) — v2.0.0-rc.9",
+  "generated_at": "2026-05-13T11:50:00+08:00",
+  "test_config": {
+    "command": "pnpm --filter @fenglimg/fabric-cli test",
+    "framework": "vitest",
+    "type": "monorepo-package"
+  },
+  "tasks": [
+    {
+      "task_id": "TASK-001",
+      "title": "Extract shared destination-path constants from install/skills-and-hooks.ts",
+      "status": "PASS",
+      "convergence": {
+        "met": [
+          "5 const tables exported (skills-and-hooks.ts:76,97,120,135,147)",
+          "4 pointer constants exported (:170,176,182,190)",
+          "Helper bodies free of inline literal paths"
+        ],
+        "unmet": []
+      },
+      "test_items": [
+        { "type": "integration", "desc": "install-skills-and-hooks.test.ts unchanged", "status": "passed" }
+      ]
+    },
+    {
+      "task_id": "TASK-002",
+      "title": "Core uninstall orchestrator + scaffold/MCP + command registration",
+      "status": "PASS",
+      "convergence": {
+        "met": [
+          "All 9 required exports present in commands/uninstall.ts",
+          "commands/index.ts:5 registers uninstall in allCommands",
+          "ClientWriter.remove() declared and implemented across 3 writers",
+          "All 10 citty flags present (uninstall.ts:185-240)"
+        ],
+        "unmet": []
+      },
+      "test_items": [
+        { "type": "unit", "desc": "buildUninstallFabricPlan personal-root guard", "status": "passed" },
+        { "type": "metric", "desc": "Coverage uninstall.ts ≥70%", "status": "passed (70.04%)" }
+      ]
+    },
+    {
+      "task_id": "TASK-003",
+      "title": "Bootstrap-stage uninstall helpers",
+      "status": "PASS",
+      "convergence": {
+        "met": [
+          "10 helpers + uninstallBootstrapStage exported",
+          "UninstallStepResult union typed",
+          "Integration T2 verifies user-content preservation"
+        ],
+        "unmet": []
+      },
+      "test_items": [
+        { "type": "metric", "desc": "Coverage uninstall-skills-and-hooks.ts ≥70%", "status": "passed (77.48%)" }
+      ]
+    },
+    {
+      "task_id": "TASK-004",
+      "title": "i18n keys for cli.uninstall.* in en + zh-CN",
+      "status": "PARTIAL",
+      "convergence": {
+        "met": [
+          "47 keys present in both locales with key parity",
+          "All consumed t() calls resolve",
+          "cli.shared.error patch landed post-review"
+        ],
+        "unmet": [
+          "Cosmetic: negative-flag keys use cli.uninstall.flags.no-<flag> rather than the spec-suggested cli.uninstall.args.<flag>.negativeDescription — functionally equivalent (citty consumes correctly)"
+        ]
+      },
+      "test_items": [
+        { "type": "integration", "desc": "i18n.test.ts minimal snapshot for uninstall", "status": "passed" }
+      ]
+    },
+    {
+      "task_id": "TASK-005",
+      "title": "Test suite",
+      "status": "PASS",
+      "convergence": {
+        "met": [
+          "7+ unit cases in uninstall.test.ts (cases a-g + extras)",
+          "6 integration cases T1-T6 in integration/uninstall-skills-and-hooks.test.ts",
+          "cli-surface.test.ts drift gate updated",
+          "i18n.test.ts captures exactly {description, usage}",
+          "Both .snap files regenerated"
+        ],
+        "unmet": []
+      },
+      "test_items": [
+        { "type": "metric", "desc": "452/452 tests pass, 3 consecutive runs", "status": "passed" },
+        { "type": "metric", "desc": "Coverage threshold met on both new source files", "status": "passed" }
+      ]
+    },
+    {
+      "task_id": "TASK-006",
+      "title": "Docs + CHANGELOG: rc.9 entry, test-seed §1, README quick-ref",
+      "status": "PASS",
+      "convergence": {
+        "met": [
+          "CHANGELOG.md ## [2.0.0-rc.9] section above rc.8 with 3 bullets + ≥3 file refs",
+          "docs/test-seed/cli.md §1 uninstall bullet listing 10 flags",
+          "3 invariants + 2 test pins added (using local I/T numbering convention)",
+          "README.md L208 fabric uninstall quick-ref line",
+          "No docs/uninstall.md created"
+        ],
+        "unmet": [
+          "Cosmetic: invariant numbering uses I11/I12/I13 and T6/T7 (matches file-local convention) rather than spec's Iuninstall1-3/Tuninstall1-2 — semantically equivalent"
+        ]
+      },
+      "test_items": [
+        { "type": "integration", "desc": "pnpm rc6:gate", "status": "FAILS on pre-existing rc.5 anchor (candidates_full_content in plan-context.ts) — unrelated to this work" }
+      ]
+    }
+  ],
+  "execution": {
+    "command": "pnpm --filter @fenglimg/fabric-cli test",
+    "timestamp": "2026-05-13T11:48:00+08:00",
+    "raw_output": "Test Files  36 passed (36)\n      Tests  452 passed (452)\n   Duration  2.74s",
+    "overall": "PASS",
+    "fix_iteration": null
+  },
+  "code_review": {
+    "tool": "gemini",
+    "verdict": "WARN → fixed",
+    "findings": [
+      { "severity": "High", "issue": "T4 personal-root guard test was false-positive", "status": "FIXED" },
+      { "severity": "Medium", "issue": "Missing cli.shared.error i18n key", "status": "FIXED" },
+      { "severity": "Low", "issue": "Symlink bypass on personal-root guard", "status": "DEFERRED to follow-up" }
+    ]
+  }
+}

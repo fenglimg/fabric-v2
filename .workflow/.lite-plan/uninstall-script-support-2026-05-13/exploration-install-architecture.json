@@ -1,0 +1,236 @@
+{
+  "project_structure": "Fabric CLI monorepo (@fenglimg/fabric-cli v2.0.0-rc.8). Entry: packages/cli/src/index.ts wires citty `main` with subCommands = allCommands. Commands registered in packages/cli/src/commands/index.ts (init, scan, serve, doctor, hooks, plan-context-hint). The `init` command is a 3-stage pipeline (bootstrap → mcp → hooks) preceded by scaffold and followed by post-setup; each stage is best-effort and partial-failure-tolerant. Installation logic that touches per-client artifacts lives in packages/cli/src/install/skills-and-hooks.ts (skill copies, hook script copies, hook-config JSON merges, pointer-line appends). MCP client config writing lives in packages/cli/src/config/{writer.ts,resolver.ts,json.ts,toml.ts,claude-code.ts}, invoked from commands/config.ts → installMcpClients(). Templates ship under packages/cli/templates/{agents-md, bootstrap, hooks, skills}/ and are resolved by walking up from the module dir to find a sibling `templates/` (so it works in both dev/src and dist/bundled layouts). There is currently NO uninstall command, NO un-merge helper, and NO install manifest — uninstall must be designed greenfield.",
+  "relevant_files": [
+    {
+      "path": "packages/cli/src/commands/init.ts",
+      "relevance": 1.0,
+      "rationale": "The install command being inverted. 1591 lines defining the full 3-stage init pipeline (bootstrap/mcp/hooks), the citty command definition with all flags (--target, --force, --yes, --plan, --reapply, --bootstrap/--no-bootstrap, --mcp/--no-mcp, --hooks/--no-hooks, --interactive, --mcp-install, --scope), and the clack-prompts wizard adapter. Every artifact `fab init` writes is enumerated here either directly or via delegation to install/skills-and-hooks.ts.",
+      "role": "pattern_reference",
+      "discovery_source": "manual",
+      "key_symbols": ["initCommand", "runInitCommand", "buildInitExecutionPlan", "executeInitExecutionPlan", "buildInitFabricPlan", "executeInitFabricPlan", "executeInitStagePlan", "createDefaultInitWizardAdapter", "InitExecutionPlan", "InitStagePlan", "InitScaffoldPlan", "KNOWLEDGE_SUBDIRS"],
+      "key_code": [
+        {"symbol": "initCommand (citty)", "location": "L234-L302", "description": "citty defineCommand structure: meta.name='init', i18n description, args block (target/debug/force/yes/plan/reapply/bootstrap/mcp/hooks/interactive/mcp-install/scope), run() delegates to runInitCommand(args). Uninstall command should mirror this exact shape."},
+        {"symbol": "runInitCommand", "location": "L306-L382", "description": "Top-level orchestrator: resolveDevMode→intent parsing→preflight lock check (only on --reapply)→buildInitExecutionPlan→optional wizard→executeInitExecutionPlan→optional .import-requested sentinel→docs/surfaces.md footer. checkLockOrThrow gates serve-process conflicts."},
+        {"symbol": "buildInitFabricPlan", "location": "L573-L617", "description": "Enumerates EVERY scaffold artifact: fabricDir=target/.fabric, agentsMdPath=target/AGENTS.md, knowledgeDir=fabricDir/knowledge with 6 subdirs (decisions/pitfalls/guidelines/models/processes/pending), personalKnowledgeDir=$FABRIC_HOME/.fabric/knowledge with same 6 subdirs, metaPath=fabricDir/agents.meta.json, eventsPath=fabricDir/events.jsonl, forensicPath=fabricDir/forensic.json. THIS IS THE EXHAUSTIVE SCAFFOLD MANIFEST uninstall must invert."},
+        {"symbol": "executeInitFabricPlan", "location": "L619-L716", "description": "Materializes the scaffold: mkdir .fabric, conditional AGENTS.md create (PRESERVED if exists), mkdir all 6 team knowledge subdirs + .gitkeep markers, best-effort same for personal root, atomicWriteJson agents.meta.json, writeFileSync('') events.jsonl, atomicWriteJson forensic.json, then runInitScan to populate baseline knowledge entries. Reapply preserves events.jsonl byte-identically. Uninstall mirror should similarly enumerate and invert with the same idempotent contract."},
+        {"symbol": "executeInitStagePlan('bootstrap')", "location": "L852-L891", "description": "The bootstrap stage calls 9 install helpers from install/skills-and-hooks.ts: installFabricArchiveSkill, installFabricReviewSkill, installFabricImportSkill, installArchiveHintHook, installKnowledgeHintBroadHook, installKnowledgeHintNarrowHook, mergeClaudeCodeHookConfig, mergeCodexHookConfig, mergeCursorHookConfig, addArchiveSkillPointer. Every one of these is a uninstall target."},
+        {"symbol": "executeInitStagePlan('mcp')", "location": "L892-L915", "description": "MCP stage calls configCommand.installMcpClients() with {force, localServerPath, claudeMcpScope}. Optionally runs `pnpm/npm/yarn add -D @fenglimg/fabric-server` for local install mode. Uninstall must invert MCP writer mutations across detected clients (Claude/Cursor/Codex) per claudeMcpScope (project|user)."},
+        {"symbol": "createDefaultInitWizardAdapter", "location": "L965-L1086", "description": "The clack-prompts wizard pattern: intro() → note() overview → log.step() per phase → group({bootstrap, mcp, mcpInstallMode, claudeMcpScope, hooks}) with cancellation via INIT_WIZARD_GROUP_CANCELLED symbol → confirm() review → outro(). Uses confirm/select primitives. Returns InitWizardSelection or null on cancel. The symmetric uninstall wizard should reuse this EXACT pattern."},
+        {"symbol": "AGENTS_MD_DEFAULT_CONTENT", "location": "L215-L223", "description": "The default repo-root anchor written ONLY when AGENTS.md is absent on a fresh init. Even --force never overwrites — `agentsMdAction='preserved'` if existing. Uninstall must therefore DETECT-AND-PRESERVE: a user-customized AGENTS.md must not be deleted, since Fabric cannot prove ownership."},
+        {"symbol": "KNOWLEDGE_SUBDIRS", "location": "L567", "description": "The canonical 6 knowledge subdirs (decisions/pitfalls/guidelines/models/processes/pending). Mirrored team root and personal root. Uninstall must decide: rm -rf knowledge/ (destroys user-authored entries) vs preserve and only remove empty .gitkeep files."},
+        {"symbol": "shouldUseInitWizard", "location": "L722-L727", "description": "Wizard gating: terminalInteractive && interactive !== false && yes !== true. Identical gate should govern an uninstall wizard."}
+      ],
+      "topic_relation": "install-architecture exploration centers on this file because it is the entire surface uninstall must invert. Every flag, every stage, every artifact path, and every UX primitive (intro/note/group/log.step/confirm/select/outro/cancel) lives here as the canonical pattern."
+    },
+    {
+      "path": "packages/cli/src/install/skills-and-hooks.ts",
+      "relevance": 1.0,
+      "rationale": "Contains all per-client install helpers + their inverse mirror would form the core of uninstall logic. 512 lines covering skill copies (3 skills × 2 client dirs), hook script copies (3 scripts × 3 client dirs with chmod 0o755), three deep-merge helpers (Claude .claude/settings.json, Codex .codex/hooks.json, Cursor .cursor/hooks.json), and the multi-pointer appender to CLAUDE.md/AGENTS.md/.cursor/rules. Every helper has an exhaustive destination list — that list IS the uninstall input.",
+      "role": "modify_target",
+      "discovery_source": "manual",
+      "key_symbols": ["installFabricArchiveSkill", "installFabricReviewSkill", "installFabricImportSkill", "installArchiveHintHook", "installKnowledgeHintBroadHook", "installKnowledgeHintNarrowHook", "mergeClaudeCodeHookConfig", "mergeCodexHookConfig", "mergeCursorHookConfig", "addArchiveSkillPointer", "InstallStepResult", "POINTER_LINE", "REVIEW_POINTER_LINE", "IMPORT_POINTER_LINE", "POINTER_TARGETS", "copyTextIdempotent", "mergeJsonIdempotent", "findTemplatePath"],
+      "key_code": [
+        {"symbol": "installFabricArchiveSkill / installFabricReviewSkill / installFabricImportSkill", "location": "L86-L153", "description": "Each writes a SKILL.md into both .claude/skills/<name>/SKILL.md and .codex/skills/<name>/SKILL.md (no .cursor target for skills). Uninstall inverse: rm <projectRoot>/{.claude,.codex}/skills/{fabric-archive,fabric-review,fabric-import}/SKILL.md and the now-empty parent directories."},
+        {"symbol": "installArchiveHintHook / installKnowledgeHintBroadHook / installKnowledgeHintNarrowHook", "location": "L165-L263", "description": "Each writes a hook .cjs into all THREE clients: .claude/hooks/, .codex/hooks/, .cursor/hooks/ (chmod 0o755 on POSIX). Files: fabric-hint.cjs, knowledge-hint-broad.cjs, knowledge-hint-narrow.cjs. Uninstall inverse: 9 file deletes (3 hooks × 3 clients) plus optional parent-dir cleanup."},
+        {"symbol": "mergeClaudeCodeHookConfig", "location": "L276-L287", "description": "Deep-merges templates/hooks/configs/claude-code.json into <projectRoot>/.claude/settings.json with arrayAppendPaths=['hooks.Stop','hooks.SessionStart','hooks.PreToolUse']. CRITICAL FOR UNINSTALL: the merge appends-with-dedupe into user-authored settings.json, so we cannot rm the file — we must un-merge by REMOVING only the entries whose `command` field points at .claude/hooks/{fabric-hint,knowledge-hint-broad,knowledge-hint-narrow}.cjs, leaving all other user entries intact."},
+        {"symbol": "mergeCodexHookConfig", "location": "L297-L308", "description": "Deep-merges templates/hooks/configs/codex-hooks.json into <projectRoot>/.codex/hooks.json with arrayAppendPaths=['events.Stop','events.SessionStart','events.PreToolUse']. Same un-merge requirement as Claude."},
+        {"symbol": "mergeCursorHookConfig", "location": "L319-L330", "description": "Deep-merges into <projectRoot>/.cursor/hooks.json. Same un-merge requirement. Three configs, three un-merges."},
+        {"symbol": "addArchiveSkillPointer", "location": "L347-L409", "description": "Appends 3 pointer lines (POINTER_LINE, REVIEW_POINTER_LINE, IMPORT_POINTER_LINE) to existing CLAUDE.md/AGENTS.md/.cursor/rules files — never creates. Each line is dedup-checked independently. Uninstall inverse: read each pointer-target file, removeLine() any of the 3 exact literal strings, atomicWriteText if changed. AGENTS.md may have been Fabric-created with the default body → uninstall must NOT delete the file (cannot prove ownership) but should still strip Fabric pointer lines."},
+        {"symbol": "POINTER_TARGETS", "location": "L79", "description": "['CLAUDE.md', 'AGENTS.md', '.cursor/rules']. Uninstall reads these to strip pointer lines."},
+        {"symbol": "POINTER_LINE / REVIEW_POINTER_LINE / IMPORT_POINTER_LINE", "location": "L72-L77", "description": "The 3 exact literal strings to remove from POINTER_TARGETS during uninstall. Substring match is sufficient (install uses includes())."},
+        {"symbol": "copyTextIdempotent / mergeJsonIdempotent", "location": "L415-L449", "description": "Idempotency primitives — install returns {step, path, status:'written|skipped|error', message}. Uninstall should mirror this contract: status='removed|skipped|error', so the same printInitStageResult formatter can render uninstall results."}
+      ],
+      "topic_relation": "install-architecture exploration must enumerate per-client write surfaces here because uninstall is the inverse of these exact 9 helpers. The deep-merge semantics in particular create the hardest uninstall constraint (un-merge, not rm)."
+    },
+    {
+      "path": "packages/cli/src/commands/index.ts",
+      "relevance": 0.95,
+      "rationale": "The single registration point where a new `uninstall` (or `init-undo`) command must be added to allCommands. 9 lines total — registers init/scan/serve/doctor/hooks/plan-context-hint via lazy dynamic import.",
+      "role": "integration_point",
+      "discovery_source": "bash-scan",
+      "key_symbols": ["allCommands"],
+      "key_code": [
+        {"symbol": "allCommands", "location": "L1-L9", "description": "Map keyed by command name → () => import('./<name>.js').then(m=>m.default). Uninstall integration: add `uninstall: () => import('./uninstall.js').then((m) => m.default)`. The packages/cli/src/index.ts main command picks it up automatically via subCommands: allCommands."}
+      ],
+      "topic_relation": "install-architecture defines this as the wiring seam — uninstall is added by a single line addition mirroring `init:`."
+    },
+    {
+      "path": "packages/cli/src/commands/hooks.ts",
+      "relevance": 0.9,
+      "rationale": "Demonstrates the `subCommands` pattern within citty (hooks → install subcommand) which is the LIGHTEST-WEIGHT model for `fab init uninstall` if the user prefers `init uninstall` over a top-level `uninstall`. Also documents the 9-step installHooks() pipeline that must be inverted.",
+      "role": "pattern_reference",
+      "discovery_source": "bash-scan",
+      "key_symbols": ["hooksCommand", "installHooks", "validateHookPaths", "InstallHooksResult", "summarizeResults"],
+      "key_code": [
+        {"symbol": "hooksCommand", "location": "L35-L67", "description": "Pattern: defineCommand({meta, subCommands:{install: defineCommand({...})}}). If we choose `fab init uninstall` instead of top-level `fab uninstall`, this is the structural reference."},
+        {"symbol": "installHooks", "location": "L105-L133", "description": "The 9-step install pipeline (3 skills + 3 hook scripts + 3 config merges + pointer append + validate). Uninstall pipeline should mirror these steps in REVERSE order: pointers first → un-merge configs → delete hook scripts → delete skills → clean empty parent dirs."},
+        {"symbol": "summarizeResults", "location": "L245-L263", "description": "Result categorization (installed/skipped/errors). Uninstall should produce {removed, skipped, errors} using the same shape so existing reporters/tests can be reused."},
+        {"symbol": "validateHookPaths", "location": "L149-L210", "description": "Post-install validator: confirms each registered hook command path resolves on disk. Uninstall mirror: post-uninstall validator that confirms no orphan command paths remain in any client config (every Stop/SessionStart/PreToolUse entry pointing at .{claude,codex,cursor}/hooks/ should be gone)."}
+      ],
+      "topic_relation": "install-architecture exploration looks at this to understand how `fab hooks install` re-applies the bootstrap stage. By symmetry, a `fab hooks uninstall` subcommand could remove ONLY the hook+skill+pointer surface (leaving MCP registration and .fabric/ scaffold intact) — useful for partial-uninstall design."
+    },
+    {
+      "path": "packages/cli/src/commands/config.ts",
+      "relevance": 0.85,
+      "rationale": "Owns the MCP client config installation (`fab config install`, also invoked from init's mcp stage). Defines installMcpClients() which writes MCP server registration into per-client config files via resolveClients() → writer.write(). Uninstall must invert these writes for every detected client; no inverse helper exists today.",
+      "role": "modify_target",
+      "discovery_source": "bash-scan",
+      "key_symbols": ["configCmd", "installMcpClients", "parseClientFilter", "CLIENT_ALIASES", "resolveServerPath", "InstallMcpClientsOptions", "InstallMcpClientsResult"],
+      "key_code": [
+        {"symbol": "installMcpClients", "location": "L156-L191", "description": "Per-client loop: writer.detect(workspaceRoot)→if configPath===null skip; if dryRun record dry-run; else writer.write(serverPath, workspaceRoot). The writers come from resolveClients(workspaceRoot, fabricConfig, {claudeMcpScope}). Uninstall needs an inverse uninstallMcpClients(target, {clients,dryRun}) that calls writer.detect() and if config exists removes the fabric server entry (preserving other MCP servers)."},
+        {"symbol": "configCmd", "location": "L99-L152", "description": "Top-level `fab config` with subCommands: hooks (re-exported), install. Adding `uninstall` here as a third subCommand is the lowest-blast-radius integration point if we keep uninstall scoped to MCP-only. Mirrors hooksCommand exactly."},
+        {"symbol": "CLIENT_ALIASES", "location": "L15-L27", "description": "Alias map for --clients flag (claude/cursor/codex/etc.). Uninstall should accept the same alias surface for per-client selective uninstall."}
+      ],
+      "topic_relation": "install-architecture exploration treats this as one of THREE write surfaces that uninstall must invert (the other two being scaffold and bootstrap)."
+    },
+    {
+      "path": "packages/cli/src/config/writer.ts",
+      "relevance": 0.7,
+      "rationale": "Defines the per-client MCP writer abstraction (ClientKind, ServerEntry, write/detect). Each writer encapsulates how a client's config is mutated. Uninstall needs a `remove(serverPath, workspaceRoot)` counterpart on each writer (or a shared remove helper that strips by server name from the config).",
+      "role": "dependency",
+      "discovery_source": "dependency-trace",
+      "key_symbols": ["createServerEntry", "ClientKind", "ServerEntry"],
+      "key_code": [
+        {"symbol": "createServerEntry", "location": "L22", "description": "Builds the canonical fabric MCP server entry. By symmetry, the uninstall path needs a stable key/name (likely 'fabric' or '@fenglimg/fabric-server') to LOCATE the entry within an arbitrary user-authored config and remove only that entry."}
+      ],
+      "topic_relation": "install-architecture exploration must inspect the writer abstraction because uninstall's per-client MCP removal must match how each writer originally wrote (Claude JSON, Cursor JSON, Codex TOML) — three formats, three removal strategies."
+    },
+    {
+      "path": "packages/cli/templates/hooks/configs/claude-code.json",
+      "relevance": 0.85,
+      "rationale": "The exact fragment that mergeClaudeCodeHookConfig deep-merges into .claude/settings.json. Uninstall must scan settings.json's hooks.{Stop,SessionStart,PreToolUse} arrays for entries whose nested `hooks[].command` equals '.claude/hooks/fabric-hint.cjs' / 'knowledge-hint-broad.cjs' / 'knowledge-hint-narrow.cjs' and remove ONLY those.",
+      "role": "config",
+      "discovery_source": "bash-scan",
+      "key_code": [
+        {"symbol": "claude hooks fragment", "location": "L1-end", "description": "Three hook event slots (Stop/SessionStart/PreToolUse) with matcher and command fields. Defines exactly which entries uninstall must strip from .claude/settings.json. Pre-existing user entries in those same arrays MUST be preserved."}
+      ],
+      "topic_relation": "install-architecture exploration depends on this fragment as the canonical 'what was added' manifest for the Claude un-merge path."
+    },
+    {
+      "path": "packages/cli/templates/hooks/configs/codex-hooks.json",
+      "relevance": 0.85,
+      "rationale": "Same un-merge requirement as Claude, but for .codex/hooks.json. Structure differs (events.{Stop,SessionStart,PreToolUse} flat command entries, not nested under hooks[]). Uninstall must handle the per-client config-shape difference.",
+      "role": "config",
+      "discovery_source": "bash-scan",
+      "topic_relation": "install-architecture: this template enumerates the exact entries the Codex un-merge path must remove."
+    },
+    {
+      "path": "packages/cli/templates/hooks/configs/cursor-hooks.json",
+      "relevance": 0.85,
+      "rationale": "Same un-merge requirement for .cursor/hooks.json. Shape identical to Codex.",
+      "role": "config",
+      "discovery_source": "bash-scan",
+      "topic_relation": "install-architecture: enumerates Cursor un-merge entries."
+    },
+    {
+      "path": "packages/cli/templates/",
+      "relevance": 0.6,
+      "rationale": "Top-level templates directory (skills/, hooks/, agents-md/, bootstrap/) — the SOURCE for all install copies. Uninstall does not need to read templates (it knows destinations by path convention), but the directory structure mirrors destination structure 1:1, which is useful for generating the uninstall destination manifest at build time.",
+      "role": "context_only",
+      "discovery_source": "bash-scan",
+      "topic_relation": "install-architecture: the source-of-truth for what install writes; uninstall could optionally walk it to derive a destination manifest at runtime instead of hard-coding paths."
+    },
+    {
+      "path": "packages/cli/src/commands/doctor.ts",
+      "relevance": 0.5,
+      "rationale": "The diagnostics command — likely contains the canonical detection logic for 'is fabric installed in this project' (bootstrap_anchor_missing, etc.). Uninstall preflight should reuse doctor's detection patterns to report exactly which artifacts exist before removing.",
+      "role": "pattern_reference",
+      "discovery_source": "bash-scan",
+      "topic_relation": "install-architecture: doctor's existence-detection patterns are the symmetric source for uninstall's preflight 'what is currently installed' summary."
+    },
+    {
+      "path": "packages/cli/src/i18n.ts",
+      "relevance": 0.5,
+      "rationale": "Holds the t() i18n keys for the CLI. Every uninstall-facing string (descriptions, wizard prompts, stage labels, summary lines) needs new cli.uninstall.* keys mirroring the existing cli.init.* tree.",
+      "role": "modify_target",
+      "discovery_source": "dependency-trace",
+      "topic_relation": "install-architecture: defines the i18n shape uninstall must extend in lock-step (every cli.init.X probably needs a cli.uninstall.X counterpart)."
+    },
+    {
+      "path": "packages/cli/__tests__/integration/install-skills-and-hooks.test.ts",
+      "relevance": 0.6,
+      "rationale": "Integration test for install/skills-and-hooks.ts — demonstrates the test pattern (tmp dir, run install, assert files exist + content matches). Uninstall integration test will mirror: tmp dir → run install → run uninstall → assert all install-created files are gone AND user-authored content preserved.",
+      "role": "pattern_reference",
+      "discovery_source": "bash-scan",
+      "topic_relation": "install-architecture: the test scaffolding pattern for tmp-dir round-trip is directly reusable for install→uninstall round-trip tests."
+    },
+    {
+      "path": "packages/cli/package.json",
+      "relevance": 0.3,
+      "rationale": "Confirms package identity (@fenglimg/fabric-cli v2.0.0-rc.8). Relevant only for release planning when uninstall ships (will likely be rc.9 or v2.0.0 stable).",
+      "role": "context_only",
+      "discovery_source": "bash-scan",
+      "topic_relation": "install-architecture: version context for the rc continuation chain."
+    }
+  ],
+  "patterns": "(1) citty defineCommand pattern with meta.name/description/args/run() — see init.ts L234-L302 and hooks.ts L35-L67. Top-level commands register in commands/index.ts allCommands map via lazy dynamic import. (2) clack-prompts wizard: intro(title) → note(body, title) → log.step(phase) → group({...}, {onCancel}) with cancellation via thrown symbol → confirm() review → outro(message). isCancel() guards on every prompt return — null|isCancel→cancel() and return null. See createDefaultInitWizardAdapter L965-L1086. (3) Plan/Execute split: buildXxxPlan(input) returns a pure data structure (XxxPlan), executeXxxPlan(plan) performs side effects. Enables --plan/--dry-run preview, deterministic testing, and stage-by-stage execution. See buildInitExecutionPlan/executeInitExecutionPlan. (4) Idempotent file ops via copyTextIdempotent (compare-then-write) and mergeJsonIdempotent (deep-merge with arrayAppendPaths and JSON-equal short-circuit). Atomic writes via atomicWriteText/atomicWriteJson from @fenglimg/fabric-shared. (5) Best-effort stage execution: runBestEffort / runBestEffortSingle wrap helpers to convert throws into InstallStepResult{status:'error'} entries; a single failure never aborts the pipeline. (6) Result accounting via InstallStepResult{step, path, status, message?} and downstream summarizers (summarizeResults → {installed, skipped, errors}). (7) i18n via t(key, params) from i18n.ts — every user-facing string is keyed. (8) Per-client capability detection via detectClientSupports/resolveClients returning DetectedClientSupport[] used to render the capability table.",
+  "dependencies": "External: citty (command framework), @clack/prompts (cancel/confirm/group/intro/isCancel/log/note/outro/select), @fenglimg/fabric-shared (atomicWriteJson, atomicWriteText, defaultAgentsMetaCounters, AgentsMeta type), @fenglimg/fabric-server (checkLockOrThrow for serve-process lock guard), node:fs (existsSync, mkdirSync, rmSync, statSync, writeFileSync, appendFileSync, readFile, chmodSync), node:path (dirname, isAbsolute, join, parse, resolve), node:os (homedir), node:url (fileURLToPath), node:crypto (randomUUID for ledger events), node:child_process (execFileSync for local @fenglimg/fabric-server install). Internal: commands/{config,hooks,scan} (cross-stage delegation), config/{resolver,writer,json,toml,claude-code} (MCP per-client writers), install/skills-and-hooks (the 9 install helpers), scanner/forensic (forensic report builder), colors/dev-mode/i18n (presentation+config helpers).",
+  "integration_points": "(1) packages/cli/src/commands/index.ts allCommands map — add `uninstall: () => import('./uninstall.js').then((m) => m.default)`. citty/main in src/index.ts picks it up automatically via subCommands:allCommands. (2) packages/cli/src/install/skills-and-hooks.ts — add inverse helpers (uninstallFabricArchiveSkill, removeFabricHintHook, unmergeClaudeCodeHookConfig, …) reusing the InstallStepResult shape with status 'removed'|'skipped'|'error'. Co-located with installers so the source-of-truth for 'what gets written where' is also the source-of-truth for 'what gets removed'. (3) packages/cli/src/commands/config.ts — add subCommand `uninstall` mirroring `install`, calling a new uninstallMcpClients() helper that loops over writers and calls writer.remove(workspaceRoot) (new method on the ClientWriter abstraction). (4) packages/cli/src/i18n.ts — add cli.uninstall.* keys for descriptions, wizard text, stage labels, capability columns. (5) Existing serve-lock preflight (checkLockOrThrow) MUST be reused — uninstall while a serve process holds the lock is a foot-gun. (6) docs/surfaces.md — add an uninstall row to the CLI/Skill/MCP boundary table.",
+  "constraints": "(1) Deep-merged client configs (.claude/settings.json, .codex/hooks.json, .cursor/hooks.json) cannot be rm'd — they may contain user-authored hook entries unrelated to Fabric. Uninstall must un-merge by removing only entries whose `command` path matches a Fabric script (.{claude,codex,cursor}/hooks/{fabric-hint,knowledge-hint-broad,knowledge-hint-narrow}.cjs). If after removal the hooks.Stop/SessionStart/PreToolUse array is empty, optionally drop the key; if hooks/events object is empty, optionally drop it. (2) AGENTS.md may have been Fabric-created (AgentsMdAction='created') OR pre-existing (AgentsMdAction='preserved') — install never records which. Uninstall CANNOT prove ownership → must default to PRESERVE the file, only strip the 3 pointer lines (POINTER_LINE/REVIEW_POINTER_LINE/IMPORT_POINTER_LINE). Same constraint for CLAUDE.md, .cursor/rules. (3) NO install manifest exists today. Install writes are recorded only via console output and the InstallStepResult return value — both ephemeral. Uninstall must EITHER (a) hard-code the destination manifest (mirror of install paths, brittle to template changes) OR (b) introduce a new .fabric/install-manifest.json artifact that init writes and uninstall reads (greenfield design choice). (4) .fabric/events.jsonl is the project's append-only ledger — may contain post-init events from `fab scan`, `fab serve`, archived knowledge. Removing it destroys audit history. Personal knowledge under ~/.fabric/knowledge/ is shared across projects — removing it from one project's uninstall would corrupt others. (5) .fabric/knowledge/ subdirs may hold user-authored knowledge entries created post-init via fabric-archive Skill. rm -rf .fabric is destructive. (6) Idempotency: re-running uninstall on an already-uninstalled project must be a no-op with status='skipped' for every step (mirror install's behavior). (7) Best-effort partial-failure: one client's failure (e.g. .cursor/ permissions) must not abort uninstall of other clients. (8) Serve-process lock: uninstall while `fab serve` runs would race with file mutations. Must call checkLockOrThrow like init's --reapply path does. (9) Platform: chmod is no-op on Windows during install — symmetric uninstall just unlinks, no special handling needed. (10) Personal-root (~/.fabric/) is multi-project shared. Uninstall must NOT remove it — only the project-local .fabric/ is in scope.",
+  "clarification_needs": [
+    {
+      "question": "What scope should `fab uninstall` cover by default?",
+      "context": "Install does 3 things across distinct surfaces: (A) scaffold the project-local .fabric/ directory (knowledge subdirs, agents.meta.json, events.jsonl, forensic.json) + AGENTS.md anchor; (B) bootstrap stage — write Skills + hook scripts + merge hook configs + append pointer lines across .claude/.codex/.cursor/; (C) MCP stage — register Fabric MCP server in each detected client's MCP config. The .fabric/ scaffold contains user-authored knowledge entries that the fabric-archive Skill writes post-init. Removing it is destructive in a way the other two surfaces are not.",
+      "options": [
+        "Full uninstall: invert all 3 stages (scaffold + bootstrap + MCP), but PRESERVE .fabric/knowledge/ entries and .fabric/events.jsonl by default (only remove if --purge passed)",
+        "Bootstrap+MCP only by default (mirror init's --no-bootstrap), require explicit --scaffold to also remove .fabric/",
+        "Wizard-driven per-stage selection mirroring init's group() prompts (bootstrap/mcp/scaffold each individually toggleable), with --yes accepting defaults",
+        "Top-level fab uninstall = full inverse; partial uninstalls go through `fab hooks uninstall` and `fab config uninstall` subcommands (mirror existing `fab hooks install` / `fab config install`)"
+      ],
+      "recommended": 2
+    },
+    {
+      "question": "Should uninstall hard-code the destination manifest or introduce a new install-time manifest file?",
+      "context": "Install records what it wrote only in ephemeral console output + InstallStepResult arrays. To uninstall correctly we must know exact destination paths. Option A is fragile when templates evolve; Option B requires init to start writing a manifest (one-time migration cost — users on rc.7/8 won't have the manifest until next `fab init --reapply`).",
+      "options": [
+        "Hard-code destination paths in install/skills-and-hooks.ts as exported constants (mirror of the existing install-helper destination lists); uninstall imports the same constants",
+        "Add .fabric/install-manifest.json — init writes it (paths + hashes), uninstall reads it. Fall back to hard-coded list if manifest absent (backward compat for pre-manifest installs)",
+        "Walk packages/cli/templates/ at runtime and derive destination paths by convention (templates/skills/<name>/SKILL.md → .claude/skills/<name>/SKILL.md + .codex/...)",
+        "Hybrid: hard-code constants now, add the manifest as a follow-up enhancement once we have telemetry on uninstall failure modes"
+      ],
+      "recommended": 0
+    },
+    {
+      "question": "How should the un-merge of deep-merged client configs (.claude/settings.json, .codex/hooks.json, .cursor/hooks.json) handle empty arrays/objects after Fabric entries are removed?",
+      "context": "Install array-appends Fabric entries into hooks.Stop/SessionStart/PreToolUse arrays alongside user-authored entries. After removing Fabric entries, an array may become empty. After all event arrays become empty, the parent hooks/events object may become empty. Leaving empty containers in user settings.json is ugly but conservative; removing them is cleaner but changes the file structure beyond strictly inverting install.",
+      "options": [
+        "Conservative: remove only the Fabric entries; leave empty arrays/objects intact (lowest blast radius, lossless un-merge)",
+        "Cleanup: also remove now-empty arrays and now-empty parent objects (matches a fresh install state but mutates user-controlled structure)",
+        "Configurable: default to conservative, add --clean-empties flag for cleanup mode",
+        "Smart: remove empty arrays/objects only when the entire hooks/events subtree becomes empty (file goes back to 'no hook config at all' state); otherwise preserve"
+      ],
+      "recommended": 2
+    },
+    {
+      "question": "Should uninstall support --plan (dry-run preview) and --reapply equivalents like init does?",
+      "context": "Init has --plan (preview only, no writes) and --reapply (force-re-execute even when artifacts exist). Symmetric uninstall flags would be: --plan (preview what would be removed) and --force (proceed even when some artifacts are missing, the way reapply force-runs on already-installed projects).",
+      "options": [
+        "Full parity: --plan, --force, --yes, --no-bootstrap/--no-mcp/--no-scaffold, --target, --interactive (same flag shape as init, just inverted semantics)",
+        "Minimal: --target, --yes, --plan only — keep the uninstall surface narrow until usage patterns emerge",
+        "Parity except --reapply (no symmetric meaning) — instead add --purge for the 'also remove .fabric/knowledge' destructive mode",
+        "Wizard-first: only --target, --yes, --plan as flags; everything else (per-stage selection, purge level) flows through the interactive wizard"
+      ],
+      "recommended": 2
+    },
+    {
+      "question": "What happens to .fabric/events.jsonl and .fabric/agents.meta.json during uninstall (assuming scaffold-stage uninstall is selected)?",
+      "context": "events.jsonl is an append-only ledger of fabric events including init_completed, scan_completed, reapply_completed, archive events from the Skill. agents.meta.json is the counters/nodes envelope populated by scan. Both are derived state — re-runnable from `fab init` + `fab scan` — but contain a project-specific audit trail. Personal knowledge under $FABRIC_HOME/.fabric/knowledge/ is shared with other projects and MUST NOT be removed in any case.",
+      "options": [
+        "Always remove events.jsonl and agents.meta.json when scaffold-stage uninstall runs (they're derived state); never touch personal-root knowledge",
+        "Always preserve events.jsonl (audit trail) and agents.meta.json (counters); only remove the empty .gitkeep markers and the .fabric directory itself if empty post-cleanup",
+        "Default preserve both; --purge flag triggers full project-local .fabric/ removal (knowledge + events + meta + forensic). Personal root NEVER touched regardless of --purge",
+        "Append a final ledger event uninstall_completed before removing events.jsonl (so an external observer monitoring events.jsonl sees the uninstall before the file disappears); same default-preserve + --purge gating otherwise"
+      ],
+      "recommended": 2
+    }
+  ],
+  "_metadata": {
+    "timestamp": "2026-05-13T00:00:00Z",
+    "task_description": "User asks '当前似乎没有支持卸载脚本呢？' — there's no uninstall command; need to design one symmetric to `fab init`. Explore install architecture to understand what fab init writes so an inverse fab uninstall can be planned.",
+    "source": "cli-explore-agent",
+    "exploration_angle": "install-architecture",
+    "exploration_index": 1,
+    "total_explorations": 3,
+    "duration_seconds": 180
+  }
+}

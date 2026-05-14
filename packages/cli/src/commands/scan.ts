@@ -115,7 +115,7 @@ const LAYER_REASON = "project artifact (deterministic init scan)";
 // scan start from `fabric.config.json#knowledge_language`. `'match-existing'`
 // is resolved against the repo's README / docs prose; an empty repo defaults
 // to `'en'`. Only en + zh-CN are supported (Q3 scope decision).
-type ResolvedLanguage = "en" | "zh-CN";
+export type ResolvedLanguage = "en" | "zh-CN";
 type BaselineSlug =
   | "tech-stack"
   | "module-structure"
@@ -583,7 +583,7 @@ function resolveKnowledgeLanguage(
  * deliberately liberal so a short bilingual README with a sizeable zh-CN
  * section still resolves to zh-CN; pure-EN docs sit well below it.
  */
-function detectExistingLanguage(target: string): ResolvedLanguage {
+export function detectExistingLanguage(target: string): ResolvedLanguage {
   const ZH_CN_RATIO_THRESHOLD = 0.3;
   const samples: string[] = [];
 

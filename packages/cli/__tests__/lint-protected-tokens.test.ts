@@ -18,7 +18,12 @@ description: Archive worth-keeping knowledge from the current session.
 ## Phase 2 — Persist
 
 For each user-confirmed candidate, call \`fab_extract_knowledge\` ONCE.
-The pending file lands under \`.fabric/knowledge/pending/\`.
+The pending file lands under \`.fabric/knowledge/pending/\` (\`pending_path\` in response).
+Each call carries \`relevance_scope\`, \`relevance_paths\`, \`source_sessions\` array,
+\`proposed_reason\` enum, and a multi-line \`session_context\` per Phase 1.5 / T6.
+
+Layer values: \`layer\` ∈ {\`team\`, \`personal\`}.
+Personal layer auto-degrades narrow → broad, emitting \`knowledge_scope_degraded\`.
 
 MUST: Re-read the digest before classifying.
 NEVER: Batch multiple candidates into one MCP call.
@@ -74,6 +79,86 @@ describe("validateSkillFile", () => {
       filePath,
       message: "template is missing protected token fab_review",
     });
+  });
+
+  it("flags fabric-archive missing the Phase 1.5 contract fields (relevance_scope / relevance_paths)", () => {
+    const filePath = "/tmp/skills/fabric-archive/SKILL.md";
+    // Has the universal anchors + fab_extract_knowledge, but lacks the
+    // Phase 1.5 contract surface that fabric-archive must pin verbatim.
+    const source = `MUST do things. NEVER skip. .fabric/knowledge/ matters. fab_extract_knowledge call.`;
+    const violations = validateSkillFile(filePath, source);
+    expect(violations).toContainEqual({
+      filePath,
+      message: "template is missing protected token relevance_scope",
+    });
+    expect(violations).toContainEqual({
+      filePath,
+      message: "template is missing protected token relevance_paths",
+    });
+  });
+
+  // TASK-008 D1: per-skill registry was extended with T5/T6 contract fields
+  // (source_sessions / proposed_reason / session_context), layer enums
+  // (layer / team / personal / pending_path), scope enums (narrow / broad)
+  // and the personal-degrade event (knowledge_scope_degraded). The three
+  // tests below assert that the lint flags absence of the new tokens per
+  // skill so future edits cannot silently drop them.
+
+  it("flags fabric-archive missing T5/T6 + layer-enum tokens (TASK-008 D1)", () => {
+    const filePath = "/tmp/skills/fabric-archive/SKILL.md";
+    const source = `MUST do things. NEVER skip. .fabric/knowledge/ matters. fab_extract_knowledge call. relevance_scope. relevance_paths.`;
+    const violations = validateSkillFile(filePath, source);
+    for (const token of [
+      "pending_path",
+      "layer",
+      "team",
+      "personal",
+      "proposed_reason",
+      "session_context",
+      "source_sessions",
+      "knowledge_scope_degraded",
+    ]) {
+      expect(violations).toContainEqual({
+        filePath,
+        message: `template is missing protected token ${token}`,
+      });
+    }
+  });
+
+  it("flags fabric-import missing T5/T6 contract tokens (TASK-008 D1)", () => {
+    const filePath = "/tmp/skills/fabric-import/SKILL.md";
+    const source = `MUST do things. NEVER skip. .fabric/knowledge/ matters. fab_extract_knowledge call. fab_review call.`;
+    const violations = validateSkillFile(filePath, source);
+    for (const token of [
+      "proposed_reason",
+      "session_context",
+      "source_sessions",
+    ]) {
+      expect(violations).toContainEqual({
+        filePath,
+        message: `template is missing protected token ${token}`,
+      });
+    }
+  });
+
+  it("flags fabric-review missing scope-enum + T6 tokens (TASK-008 D1)", () => {
+    const filePath = "/tmp/skills/fabric-review/SKILL.md";
+    const source = `MUST do things. NEVER skip. .fabric/knowledge/ matters. fab_review call.`;
+    const violations = validateSkillFile(filePath, source);
+    for (const token of [
+      "relevance_scope",
+      "relevance_paths",
+      "narrow",
+      "broad",
+      "proposed_reason",
+      "session_context",
+      "knowledge_scope_degraded",
+    ]) {
+      expect(violations).toContainEqual({
+        filePath,
+        message: `template is missing protected token ${token}`,
+      });
+    }
   });
 
   it("only enforces universal SKILL tokens for unknown skill directories", () => {

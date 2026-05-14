@@ -159,3 +159,172 @@ describe("fabricConfigSchema — archive_edit_threshold (rc.6 TASK-022)", () => 
     ).toThrow();
   });
 });
+
+// ---------------------------------------------------------------------------
+// rc.9+ skill-contract-fix B1 — ten new pagination / threshold tunables
+//
+// All ten are optional + .default(N); existing fabric-config.json files
+// (including the 7-key minimal layout shipped in rc.5+) must parse unchanged
+// and resolve every new field to its documented default. min/max bounds
+// reject out-of-range values explicitly.
+// ---------------------------------------------------------------------------
+
+describe("fabricConfigSchema — rc.9+ skill tunables defaults", () => {
+  it("applies all ten defaults when fields are absent", () => {
+    const parsed = fabricConfigSchema.parse({});
+    expect(parsed.import_window_first_run_months).toBe(60);
+    expect(parsed.import_window_rerun_months).toBe(2);
+    expect(parsed.import_max_pending_per_run).toBe(10);
+    expect(parsed.import_max_commits_scan).toBe(500);
+    expect(parsed.import_skip_canonical_threshold).toBe(50);
+    expect(parsed.archive_max_candidates_per_batch).toBe(8);
+    expect(parsed.archive_max_recent_paths).toBe(20);
+    expect(parsed.archive_digest_max_sessions).toBe(10);
+    expect(parsed.review_topic_result_cap).toBe(8);
+    expect(parsed.review_stale_pending_days).toBe(14);
+  });
+
+  it("accepts explicit overrides for all ten fields", () => {
+    const parsed = fabricConfigSchema.parse({
+      import_window_first_run_months: 24,
+      import_window_rerun_months: 6,
+      import_max_pending_per_run: 20,
+      import_max_commits_scan: 1500,
+      import_skip_canonical_threshold: 100,
+      archive_max_candidates_per_batch: 15,
+      archive_max_recent_paths: 50,
+      archive_digest_max_sessions: 20,
+      review_topic_result_cap: 15,
+      review_stale_pending_days: 30,
+    });
+    expect(parsed.import_window_first_run_months).toBe(24);
+    expect(parsed.import_window_rerun_months).toBe(6);
+    expect(parsed.import_max_pending_per_run).toBe(20);
+    expect(parsed.import_max_commits_scan).toBe(1500);
+    expect(parsed.import_skip_canonical_threshold).toBe(100);
+    expect(parsed.archive_max_candidates_per_batch).toBe(15);
+    expect(parsed.archive_max_recent_paths).toBe(50);
+    expect(parsed.archive_digest_max_sessions).toBe(20);
+    expect(parsed.review_topic_result_cap).toBe(15);
+    expect(parsed.review_stale_pending_days).toBe(30);
+  });
+
+  it("user's 7-key minimal fabric-config.json still parses (back-compat regression)", () => {
+    // Snapshot of the actual user config at .fabric/fabric-config.json as of
+    // rc.9 — six keys (knowledge_language + five rc.7-era hint knobs). None
+    // of the rc.9+ skill tunables are present and the schema must resolve
+    // every one to its default.
+    const minimalUserConfig = {
+      knowledge_language: "zh-CN" as const,
+      archive_hint_hours: 24,
+      review_hint_pending_count: 10,
+      review_hint_pending_age_days: 7,
+      maintenance_hint_days: 14,
+      maintenance_hint_cooldown_days: 7,
+    };
+    const parsed = fabricConfigSchema.parse(minimalUserConfig);
+    expect(parsed.knowledge_language).toBe("zh-CN");
+    expect(parsed.import_window_first_run_months).toBe(60);
+    expect(parsed.import_window_rerun_months).toBe(2);
+    expect(parsed.import_max_pending_per_run).toBe(10);
+    expect(parsed.import_max_commits_scan).toBe(500);
+    expect(parsed.import_skip_canonical_threshold).toBe(50);
+    expect(parsed.archive_max_candidates_per_batch).toBe(8);
+    expect(parsed.archive_max_recent_paths).toBe(20);
+    expect(parsed.archive_digest_max_sessions).toBe(10);
+    expect(parsed.review_topic_result_cap).toBe(8);
+    expect(parsed.review_stale_pending_days).toBe(14);
+  });
+
+  it("root schema remains lenient — unknown keys are silently dropped (no .strict())", () => {
+    const parsed = fabricConfigSchema.parse({
+      knowledge_language: "en" as const,
+      // A bogus key from a future rc that this schema does not know about.
+      // Lenient parse means it is silently dropped, not rejected. This is
+      // load-bearing: forward-compat for rc.10+ tunables that have not yet
+      // landed in shared/src/schemas/fabric-config.ts.
+      some_future_rc_knob: 42,
+    });
+    expect(parsed.knowledge_language).toBe("en");
+    expect((parsed as Record<string, unknown>).some_future_rc_knob).toBeUndefined();
+  });
+});
+
+describe("fabricConfigSchema — rc.9+ skill tunables boundaries", () => {
+  it("import_window_first_run_months rejects values below min 1", () => {
+    expect(() =>
+      fabricConfigSchema.parse({ import_window_first_run_months: 0 }),
+    ).toThrow();
+    expect(() =>
+      fabricConfigSchema.parse({ import_window_first_run_months: -5 }),
+    ).toThrow();
+    // min 1 is inclusive
+    expect(
+      fabricConfigSchema.parse({ import_window_first_run_months: 1 })
+        .import_window_first_run_months,
+    ).toBe(1);
+  });
+
+  it("import_window_rerun_months rejects values below min 1", () => {
+    expect(() =>
+      fabricConfigSchema.parse({ import_window_rerun_months: 0 }),
+    ).toThrow();
+    expect(
+      fabricConfigSchema.parse({ import_window_rerun_months: 1 })
+        .import_window_rerun_months,
+    ).toBe(1);
+  });
+
+  it("import_max_pending_per_run enforces range 1-50", () => {
+    expect(() =>
+      fabricConfigSchema.parse({ import_max_pending_per_run: 0 }),
+    ).toThrow();
+    expect(() =>
+      fabricConfigSchema.parse({ import_max_pending_per_run: 51 }),
+    ).toThrow();
+    // Inclusive endpoints
+    expect(
+      fabricConfigSchema.parse({ import_max_pending_per_run: 1 })
+        .import_max_pending_per_run,
+    ).toBe(1);
+    expect(
+      fabricConfigSchema.parse({ import_max_pending_per_run: 50 })
+        .import_max_pending_per_run,
+    ).toBe(50);
+  });
+
+  it("import_max_commits_scan enforces range 50-2000", () => {
+    expect(() =>
+      fabricConfigSchema.parse({ import_max_commits_scan: 49 }),
+    ).toThrow();
+    expect(() =>
+      fabricConfigSchema.parse({ import_max_commits_scan: 2001 }),
+    ).toThrow();
+    // Inclusive endpoints
+    expect(
+      fabricConfigSchema.parse({ import_max_commits_scan: 50 })
+        .import_max_commits_scan,
+    ).toBe(50);
+    expect(
+      fabricConfigSchema.parse({ import_max_commits_scan: 2000 })
+        .import_max_commits_scan,
+    ).toBe(2000);
+  });
+
+  it("positive-int fields reject zero, negative, non-integer, and non-number", () => {
+    const positiveFields = [
+      "import_skip_canonical_threshold",
+      "archive_max_candidates_per_batch",
+      "archive_max_recent_paths",
+      "archive_digest_max_sessions",
+      "review_topic_result_cap",
+      "review_stale_pending_days",
+    ] as const;
+    for (const field of positiveFields) {
+      expect(() => fabricConfigSchema.parse({ [field]: 0 })).toThrow();
+      expect(() => fabricConfigSchema.parse({ [field]: -1 })).toThrow();
+      expect(() => fabricConfigSchema.parse({ [field]: 1.5 })).toThrow();
+      expect(() => fabricConfigSchema.parse({ [field]: "8" })).toThrow();
+    }
+  });
+});

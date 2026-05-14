@@ -365,6 +365,30 @@ describe('I1.8 eventLedgerEventSchema round-trip', () => {
     })
   })
 
+  // v2.0.0-rc.9 TASK-003 (A3): relevance_migration_run event — emitted
+  // (aggregate, one per --apply-lint invocation) by `doctor --apply-lint`
+  // after lint #28 back-fills missing relevance_scope / relevance_paths
+  // on pending entries. Mandatory: timestamp, scanned_count, touched_count.
+  it('relevance_migration_run event (back-fill heartbeat)', () => {
+    roundTrip(eventLedgerEventSchema, {
+      ...envelope,
+      event_type: 'relevance_migration_run',
+      timestamp: '2026-05-13T12:00:00.000Z',
+      scanned_count: 5,
+      touched_count: 2,
+    })
+  })
+
+  it('relevance_migration_run event (zero-touch idempotent re-run)', () => {
+    roundTrip(eventLedgerEventSchema, {
+      ...envelope,
+      event_type: 'relevance_migration_run',
+      timestamp: '2026-05-13T12:30:00.000Z',
+      scanned_count: 5,
+      touched_count: 0,
+    })
+  })
+
   it('tags field roundtrip on ruleDescriptionSchema', () => {
     // v2/rc.2: tags is a flat flow-style YAML array in frontmatter; schema
     // stores it as string[]. Verify default=[] and explicit values survive

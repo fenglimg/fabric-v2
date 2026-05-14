@@ -108,6 +108,35 @@ export async function extractKnowledge(
   //                                                    convention for personal
   //                                                    canonical entries)
   const layer = input.layer ?? "team";
+
+  // v2.0.0-rc.8 A1: personal-implies-broad silent degrade. When the caller
+  // declares both `layer: personal` and `relevance_scope: narrow`, the scope
+  // is invalid by construction — personal knowledge crosses projects so
+  // workspace-relative `relevance_paths` lose meaning. Mirror the rc.5
+  // review.ts:725-739 behaviour: flip to broad + [] and emit a
+  // `knowledge_scope_degraded` event so the audit trail records the original
+  // intent. The pending file has no canonical stable_id yet (id late-bind at
+  // approve), so we use a `pending:<idempotency_key>` sentinel — review.ts
+  // can later attach the real stable_id when the entry approves. The event
+  // is emitted BEFORE the knowledge_proposed write so log readers see the
+  // degrade before the pending file appears.
+  let relevanceScope = input.relevance_scope;
+  let relevancePaths = input.relevance_paths;
+  const shouldAutoDegrade =
+    layer === "personal" && relevanceScope === "narrow";
+  if (shouldAutoDegrade) {
+    relevanceScope = "broad";
+    relevancePaths = [];
+    await emitEventBestEffort(projectRoot, {
+      event_type: "knowledge_scope_degraded",
+      stable_id: `pending:${idempotencyKey}`,
+      timestamp: new Date().toISOString(),
+      from_scope: "narrow",
+      to_scope: "broad",
+      reason: "personal-implies-broad",
+    });
+  }
+
   const baseDir = pendingBase(layer, projectRoot);
   const absolutePath = join(baseDir, input.type, `${sanitizedSlug}.md`);
   const reportedPath = layer === "personal"
@@ -167,6 +196,8 @@ export async function extractKnowledge(
     layer,
     proposedReason: input.proposed_reason,
     sessionContext: input.session_context,
+    relevanceScope,
+    relevancePaths,
   });
   await atomicWriteText(absolutePath, fresh);
 
@@ -212,6 +243,13 @@ type FreshEntryArgs = {
   layer: "team" | "personal";
   proposedReason: ProposedReason;
   sessionContext: string;
+  // v2.0.0-rc.8 A1: optional relevance fields. When undefined, the YAML
+  // emit skips the line entirely — knowledge-meta-builder defaults missing
+  // fields to broad/[] at parse time (L1007-1021). Caller-supplied values
+  // are emitted verbatim using the same flow-style array shape as
+  // scan.ts:1042-1060 / doctor.ts:627-628 regex parser expects.
+  relevanceScope?: "narrow" | "broad";
+  relevancePaths?: string[];
 };
 
 function renderFreshEntry(args: FreshEntryArgs): string {
@@ -220,7 +258,14 @@ function renderFreshEntry(args: FreshEntryArgs): string {
   // at rc.3 fab_review approve. Order is stable to make tests assertive.
   // v2.0.0-rc.7 T5: source_sessions is now an array (YAML flow form).
   // v2.0.0-rc.7 T6: proposed_reason is a new required field.
-  const frontmatter = [
+  // v2.0.0-rc.8 A1: relevance_scope / relevance_paths lines are emitted ONLY
+  // when caller-supplied. Omitted fields → no YAML line, matching the
+  // knowledge-meta-builder default behaviour (broad + []) without forcing a
+  // canonical value into every freshly-archived entry. Flow-style array
+  // form + bare-string scope value match doctor.ts:627-628 regex shape
+  // (RELEVANCE_SCOPE_LINE_PATTERN / RELEVANCE_PATHS_LINE_PATTERN) and
+  // scan.ts:1042-1060 quoteIfNeeded emit pattern.
+  const frontmatterLines: string[] = [
     "---",
     `type: ${args.type}`,
     "maturity: draft",
@@ -229,9 +274,21 @@ function renderFreshEntry(args: FreshEntryArgs): string {
     `source_sessions: [${args.sourceSessions.map((s) => JSON.stringify(s)).join(", ")}]`,
     `proposed_reason: ${args.proposedReason}`,
     "tags: []",
+  ];
+  if (args.relevanceScope !== undefined) {
+    frontmatterLines.push(`relevance_scope: ${args.relevanceScope}`);
+  }
+  if (args.relevancePaths !== undefined) {
+    const pathsBody = args.relevancePaths
+      .map((p) => quoteRelevancePath(p))
+      .join(", ");
+    frontmatterLines.push(`relevance_paths: [${pathsBody}]`);
+  }
+  frontmatterLines.push(
     `x-fabric-idempotency-key: ${args.idempotencyKey}`,
     "---",
-  ].join("\n");
+  );
+  const frontmatter = frontmatterLines.join("\n");
 
   // v2.0.0-rc.7 T6: body section order is fixed:
   //   ## Summary
@@ -260,6 +317,14 @@ function renderFreshEntry(args: FreshEntryArgs): string {
   ].join("\n");
 
   return `${frontmatter}\n${body}`;
+}
+
+// v2.0.0-rc.8 A1: YAML scalar quoting for relevance_paths flow-array items.
+// Mirrors scan.ts:1085 quoteIfNeeded (always quote, escape inner quotes) so
+// the doctor.ts:627-628 line-based regex parses both quoted and unquoted
+// forms uniformly across creation surfaces.
+function quoteRelevancePath(value: string): string {
+  return `"${value.replace(/"/g, '\\"')}"`;
 }
 
 function renderEvidenceBlock(summary: string, recentPaths: string[]): string {

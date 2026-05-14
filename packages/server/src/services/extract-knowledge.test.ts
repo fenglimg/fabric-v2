@@ -8,7 +8,10 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { readEventLedger } from "./event-ledger.js";
 import { extractKnowledge, pendingBase } from "./extract-knowledge.js";
 import type { FabExtractKnowledgeInput } from "@fenglimg/fabric-shared/schemas/api-contracts";
-import type { KnowledgeArchiveAttemptedEvent } from "@fenglimg/fabric-shared";
+import type {
+  KnowledgeArchiveAttemptedEvent,
+  KnowledgeScopeDegradedEvent,
+} from "@fenglimg/fabric-shared";
 
 const tempDirs: string[] = [];
 let originalFabricHome: string | undefined;
@@ -51,6 +54,11 @@ function buildInput(partial: Partial<FabExtractKnowledgeInput>): FabExtractKnowl
       partial.session_context ??
       "Session goal: validate extract-knowledge. Turning point: contract evolved at rc.7 to capture reason + context.",
     source_sessions: partial.source_sessions,
+    // v2.0.0-rc.8 A1: optional relevance fields. Defaults to undefined so
+    // existing tests exercise the omit-line code path; opt-in tests set them
+    // explicitly through `partial` to verify the YAML emit + degrade flow.
+    relevance_scope: partial.relevance_scope,
+    relevance_paths: partial.relevance_paths,
   } as FabExtractKnowledgeInput;
 }
 
@@ -658,6 +666,165 @@ describe("extractKnowledge", () => {
 
     const body = await readFile(join(projectRoot, result.pending_path), "utf8");
     expect(body).toMatch(/^source_sessions: \["sess-legacy"\]$/mu);
+  });
+
+  // -------------------------------------------------------------------------
+  // v2.0.0-rc.8 A1: relevance_scope / relevance_paths on the creation surface
+  // -------------------------------------------------------------------------
+
+  it("extractKnowledge_A1_writes_relevance_scope_and_paths_when_caller_supplies", async () => {
+    // Happy path: caller declares narrow + specific paths on a team-layer
+    // archive. Both YAML lines MUST appear verbatim in the doctor.ts regex
+    // shape: `relevance_scope: narrow` (bare) and `relevance_paths: ["…"]`
+    // (flow-form, double-quoted entries).
+    const projectRoot = await createTempProject();
+
+    const result = await extractKnowledge(projectRoot, buildInput({
+      source_session: "sess-a1-happy",
+      recent_paths: ["src/auth/login.ts"],
+      user_messages_summary: "Narrow team-layer decision body.",
+      type: "decisions",
+      slug: "a1-narrow-team",
+      layer: "team",
+      relevance_scope: "narrow",
+      relevance_paths: ["src/auth/**", "src/oauth/**"],
+    }));
+
+    const body = await readFile(join(projectRoot, result.pending_path), "utf8");
+    expect(body).toMatch(/^relevance_scope: narrow$/mu);
+    expect(body).toMatch(/^relevance_paths: \["src\/auth\/\*\*", "src\/oauth\/\*\*"\]$/mu);
+
+    // No degrade event should fire on the happy path.
+    const degradedLedger = await readEventLedger(projectRoot, {
+      event_type: "knowledge_scope_degraded",
+    });
+    expect(degradedLedger.events).toHaveLength(0);
+  });
+
+  it("extractKnowledge_A1_omits_yaml_lines_when_caller_omits_relevance_fields", async () => {
+    // Default path: when neither relevance_scope nor relevance_paths is
+    // supplied, the YAML emit MUST omit both lines entirely so the
+    // knowledge-meta-builder default (broad + []) governs at parse time.
+    const projectRoot = await createTempProject();
+
+    const result = await extractKnowledge(projectRoot, buildInput({
+      source_session: "sess-a1-omit",
+      recent_paths: [],
+      user_messages_summary: "Body without explicit relevance fields.",
+      type: "guidelines",
+      slug: "a1-omitted",
+    }));
+
+    const body = await readFile(join(projectRoot, result.pending_path), "utf8");
+    expect(body).not.toMatch(/^relevance_scope:/mu);
+    expect(body).not.toMatch(/^relevance_paths:/mu);
+  });
+
+  it("extractKnowledge_A1_personal_narrow_degrades_to_broad_and_emits_event", async () => {
+    // Silent degrade path: personal + narrow → flip to broad + [] and emit
+    // exactly one knowledge_scope_degraded event with stable_id=
+    // `pending:<idempotency_key>` and reason='personal-implies-broad'.
+    // The pending file MUST end up with `relevance_scope: broad` and
+    // `relevance_paths: []` (caller's narrow paths discarded).
+    const projectRoot = await createTempProject();
+
+    const result = await extractKnowledge(projectRoot, buildInput({
+      source_session: "sess-a1-degrade",
+      recent_paths: ["src/personal/**"],
+      user_messages_summary: "Personal-layer entry that tried to declare narrow scope.",
+      type: "decisions",
+      slug: "a1-personal-narrow",
+      layer: "personal",
+      relevance_scope: "narrow",
+      relevance_paths: ["src/personal/**"],
+    }));
+
+    // Pending file landed on the personal root with degraded frontmatter.
+    expect(result.pending_path).toBe(
+      "~/.fabric/knowledge/pending/decisions/a1-personal-narrow.md",
+    );
+    const fakeHome = process.env.FABRIC_HOME!;
+    const body = await readFile(
+      join(
+        fakeHome,
+        ".fabric",
+        "knowledge",
+        "pending",
+        "decisions",
+        "a1-personal-narrow.md",
+      ),
+      "utf8",
+    );
+    expect(body).toMatch(/^relevance_scope: broad$/mu);
+    expect(body).toMatch(/^relevance_paths: \[\]$/mu);
+    // Caller's narrow path MUST NOT have leaked into the frontmatter.
+    expect(body).not.toMatch(/^relevance_paths:.*src\/personal/mu);
+
+    const degradedLedger = await readEventLedger(projectRoot, {
+      event_type: "knowledge_scope_degraded",
+    });
+    expect(degradedLedger.events).toHaveLength(1);
+    const event = degradedLedger.events[0] as KnowledgeScopeDegradedEvent;
+    expect(event).toMatchObject({
+      event_type: "knowledge_scope_degraded",
+      from_scope: "narrow",
+      to_scope: "broad",
+      reason: "personal-implies-broad",
+    });
+    // stable_id sentinel: `pending:<idempotency_key>` because the late-bind
+    // canonical id is allocated at approve time, not extract time.
+    expect(event.stable_id).toBe(`pending:${result.idempotency_key}`);
+    expect(event.stable_id).toMatch(/^pending:sha256:[0-9a-f]{64}$/u);
+  });
+
+  it("extractKnowledge_A1_idempotency_key_stable_across_relevance_changes", async () => {
+    // rc.5→rc.7 back-compat canary: idempotency_key is derived only from
+    // {source_session, type, slug} (extract-knowledge.ts:78). Adding or
+    // varying relevance_scope/paths between calls MUST NOT shift the key —
+    // otherwise the merge-evidence path would split into two pending files
+    // and break the rc.5→rc.7 collision contract.
+    const projectRoot = await createTempProject();
+    const projectRootB = await createTempProject();
+    const projectRootC = await createTempProject();
+
+    const baseTriple = {
+      source_session: "sess-canary",
+      recent_paths: [],
+      user_messages_summary: "Canary body — idempotency must not shift.",
+      type: "decisions" as const,
+      slug: "a1-canary",
+    };
+
+    // Call 1: no relevance fields at all.
+    const r1 = await extractKnowledge(
+      projectRoot,
+      buildInput(baseTriple),
+    );
+
+    // Call 2: identical triple, narrow + paths.
+    const r2 = await extractKnowledge(
+      projectRootB,
+      buildInput({
+        ...baseTriple,
+        relevance_scope: "narrow",
+        relevance_paths: ["src/**"],
+      }),
+    );
+
+    // Call 3: identical triple, broad + [].
+    const r3 = await extractKnowledge(
+      projectRootC,
+      buildInput({
+        ...baseTriple,
+        relevance_scope: "broad",
+        relevance_paths: [],
+      }),
+    );
+
+    // All three calls share the same idempotency_key — the hash inputs at
+    // extract-knowledge.ts:78 are scope-blind by contract.
+    expect(r2.idempotency_key).toBe(r1.idempotency_key);
+    expect(r3.idempotency_key).toBe(r1.idempotency_key);
   });
 });
 

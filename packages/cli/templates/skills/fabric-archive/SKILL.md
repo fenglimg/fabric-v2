@@ -14,17 +14,110 @@ This skill is invoked when one of the following holds:
 - The user typed an explicit archive request (e.g. "archive what we just did", "fabric archive")
 - A task wrap-up moment where the agent itself判定 a worth-keeping insight has surfaced
 
-If none of the above hold, stop the skill immediately and tell the user `没有触发归档信号；如需手动归档请显式调用 fabric-archive`.
+If none of the above hold, stop the skill immediately and tell the user (UX i18n Policy class 2 — errors/preconditions):
+
+- zh-CN: `没有触发归档信号；如需手动归档请显式调用 fabric-archive`
+- en: `No archive signal detected; to manually archive, explicitly invoke fabric-archive`
+
+(Render per `knowledge_language` resolved in Phase 0.6 Config Load below.)
 
 This skill is `Check-not-Ask`, not a preference interview:
 
 - Phase 0 proactively gathers candidate evidence from the session
 - Phase 0.5 viability gate aborts the skill if the session lacks any archive-signal (anti-archive guard)
 - Phase 1 classifies / layers / slugs each candidate and presents one batch review for user correction
-- Phase 1.5 assigns `scope=narrow|broad` and derives `relevance_paths` from edit history (rc.5 single-signal source)
+- Phase 1.5 assigns `relevance_scope=narrow|broad` and derives `relevance_paths` from edit history (rc.5 single-signal source)
 - Phase 2 calls `fab_extract_knowledge` once per confirmed candidate
 
 ## 执行流程 (5 Phase / 1 User Review Round)
+
+### Phase 0.6 — Config Load
+
+Before any candidate-gathering work, the skill MUST read
+`.fabric/fabric-config.json` to resolve the following tunables (with documented
+defaults if absent):
+
+| Config field | Default | Used by |
+|---|---|---|
+| `archive_max_candidates_per_batch` | 8 | Phase 0 hard budget on candidates per Phase 1 batch |
+| `archive_max_recent_paths` | 20 | Phase 0 cap on `recent_paths` enumeration |
+| `archive_digest_max_sessions` | 10 | Phase 0.0 cap on cross-session digest load |
+
+If `.fabric/fabric-config.json` is missing or unreadable, use defaults silently.
+
+### UX i18n Policy (5-class bilingualization)
+
+The skill consults `knowledge_language` from `.fabric/fabric-config.json`
+(固化于 init 时，via `scan.ts:detectExistingLanguage`; default `"en"` when no
+CJK signal is detected in README + docs/). All user-facing text in the
+following 5 categories MUST be rendered in the resolved language:
+
+1. **Roll-up templates** — the `# Archive Review — N candidates` batch
+   review block (one per candidate) AND any final session summary the
+   skill emits after Phase 2 completes. zh-CN ↔ en mirror.
+2. **Errors / Preconditions warnings** — abort + gate-fail messages (e.g.
+   the "没有触发归档信号…" trigger-miss and the "本次会话为常规执行…"
+   viability-gate-FAIL message). zh-CN ↔ en mirror.
+3. **Confirmation prompts** — the per-candidate `Confirm? (Y to accept,
+   edit … inline, N to skip)` line in the batch review template. zh-CN
+   ↔ en mirror.
+4. **Dry-run table headers** — fabric-archive does not currently expose
+   a dry-run mode; this slot is reserved for parity with fabric-import.
+   IF a future revision adds dry-run, the table header MUST be
+   bilingualized per this policy. zh-CN ↔ en mirror.
+5. **AskUserQuestion** — `header` + `question` fields (NOT `options[]`).
+   zh-CN ↔ en mirror. fabric-archive itself does not surface
+   AskUserQuestion in the current contract (Phase 1 batch review is a
+   single markdown screen, not a structured question), but if a future
+   version adds one — e.g. to confirm layer flip — this rule applies.
+
+Rendering rule:
+
+- `knowledge_language === "zh-CN"` → emit the zh-CN variant.
+- `knowledge_language === "en"` (or any other value) → emit the en variant.
+- The Skill MUST NOT mix languages inside a single user-facing block
+  (no "Chinglish" partial translation); each block is either fully zh-CN
+  or fully en.
+
+Protected tokens (`fab_extract_knowledge`, `relevance_scope`,
+`relevance_paths`, `narrow`, `broad`, `source_sessions`, `proposed_reason`,
+`session_context`, `pending_path`, `layer`, `team`, `personal`,
+`knowledge_scope_degraded`, `MUST`, `NEVER`, `.fabric/knowledge/`, the verbatim
+`强 team` / `强 personal` / `默认 team` heuristic block, etc.) are NEVER
+translated — they appear verbatim in both language variants. The
+bilingualization scope is prose ONLY.
+
+### AskUserQuestion i18n Policy (value vs label)
+
+When a skill (this one or any sibling skill the user is composing with)
+issues an `AskUserQuestion`, the `header` and `question` strings are
+user-facing prose → translated per `knowledge_language`. The `options[]`
+array entries (e.g. `["approve", "reject", "modify", "defer", "skip"]` in
+fabric-review, or `["team", "personal"]` for a layer-flip target) are
+**routing keys** consumed by the skill state machine — they MUST remain
+English regardless of `knowledge_language`.
+
+```ts
+// EN (knowledge_language === "en")
+AskUserQuestion({
+  header: "Layer-flip target",
+  question: "Move '{title}' to which layer? (current: {current_layer})",
+  options: ["team", "personal"]
+})
+
+// zh-CN (knowledge_language === "zh-CN")
+AskUserQuestion({
+  header: "Layer 切换目标",
+  question: "将 '{title}' 切换到哪一层？(当前: {current_layer})",
+  options: ["team", "personal"]   // 不翻译 — routing key
+})
+```
+
+Rationale: localizing routing keys would force every routing branch to
+dual-string match (e.g. `if (choice === "team" || choice === "团队")`),
+which doubles the surface area for protected-token regressions and breaks
+the option-list invariants that downstream tooling depends on. Keeping
+`options[]` English-only is contract-locked across all three skills.
 
 ### Phase 0.0 — Collect Cross-Session Digests (v2.0.0-rc.7 T5)
 
@@ -48,7 +141,8 @@ messages + edit_paths + 1-line title), so this phase is a tail-scan + read.
    `.fabric/.cache/session-digests/<session_id>.md`. Missing digest files
    degrade silently (the digest write was best-effort, so a Stop hook crash
    can produce a session_id without a digest). Cap the loaded digest set at
-   10 most-recent sessions to bound LLM context (~50KB worst-case).
+   `archive_digest_max_sessions` most-recent sessions (config-resolved, default
+   10) to bound LLM context (~50KB worst-case at default).
 5. **Build cross-session context.** Concatenate the loaded digests into a
    single `### Cross-session digest` block to carry into Phase 0.5 + Phase 1.
    Use this block to:
@@ -71,11 +165,11 @@ Gather raw evidence from the recent session before any classification:
 1. Read the tail of `.fabric/events.jsonl` since the last `knowledge_proposed` event.
    - Use `Bash` with `tail -n 200 .fabric/events.jsonl` if the file is large.
    - Tolerate ENOENT — empty ledger is a normal first-run state.
-2. Enumerate `recent_paths`: workspace files touched by Read/Edit/Write in the current session. Cap at 20 most-recent paths.
+2. Enumerate `recent_paths`: workspace files touched by Read/Edit/Write in the current session. Cap at `archive_max_recent_paths` most-recent paths (config-resolved, default 20).
 3. Distill `user_messages_summary`: a compact (≤500 char) prose summary of what the user asked for and what was decided. NOT a verbatim transcript.
 4. Build a candidate list: each candidate is one observation that MIGHT be worth archiving.
 
-Hard budget: 8 candidates max per Phase 1 batch. If more surface, keep the 8 with strongest worth-archiving signals (see Phase 1 type definitions) and drop the rest.
+Hard budget: `archive_max_candidates_per_batch` candidates max per Phase 1 batch (config-resolved, default 8). If more surface, keep the configured-N with strongest worth-archiving signals (see Phase 1 type definitions) and drop the rest.
 
 ### Phase 0.5 — Viability Gate (Anti-Archive Guard)
 
@@ -120,13 +214,45 @@ ELSE:
 
 #### On gate FAIL
 
-Stop the skill with the exact user-facing message:
+Stop the skill with the gate-FAIL message (UX i18n Policy class 2 — errors/preconditions; render per `knowledge_language`):
+
+zh-CN variant:
 
 ```
 本次会话为常规执行，无新知识可归档（gate=<reason>）。如需强制归档，请显式调用 fabric-archive。
 ```
 
+en variant:
+
+```
+Current session is routine execution; no new knowledge to archive (gate=<reason>). To force-archive, explicitly invoke fabric-archive.
+```
+
 Optionally append a one-line event to `.fabric/events.jsonl` of shape `{"ts":"...","kind":"knowledge_archive_aborted","reason":"<reason>","session":"<id>"}` if the events ledger is writable; otherwise just log to stderr. Do NOT proceed to Phase 1, do NOT call any MCP tool.
+
+##### events.jsonl Constraint Note
+
+Event lines appended to `.fabric/events.jsonl` are subject to POSIX
+single-write atomicity: only writes ≤ 4KB (`PIPE_BUF`) are guaranteed
+atomic via `Bash: echo "..." >> file`. Lines exceeding 4KB risk
+interleaved corruption under concurrent skill + server writes to the
+same ledger.
+
+Skills MUST ensure:
+
+- Each event JSON line is a **single line** (no embedded newlines;
+  escape `\n` in any string value).
+- `session_context` and other free-form text fields **self-truncate** to
+  keep the entire serialized line under 4KB. Suggested per-field caps:
+  `session_context` first 500 chars; `source_sessions` cap at 5
+  entries; `recent_paths` cap at 20 entries; `user_messages_summary`
+  first 500 chars.
+- If approaching the 4KB ceiling after the per-field caps, drop optional
+  fields (e.g. tags / extra metadata) **before** truncating semantic
+  content (the summary / context that carries the actual observation).
+- This constraint applies to any event the skill itself appends (e.g.
+  the abort signal above); MCP-server-side appends (via
+  `appendEventLedgerEvent`) are already line-length-bounded server-side.
 
 #### On gate PASS
 
@@ -189,19 +315,21 @@ Recent session contains an observation worth keeping?
 
 #### Batch Review Template
 
-Present all candidates in a single screen using this exact structure:
+Present all candidates in a single screen. UX i18n Policy classes 1 + 3 — the roll-up structure AND the per-candidate `Confirm?` prompt are bilingualized; protected tokens (`relevance_scope`, `relevance_paths`, `narrow`, `broad`, `layer`, `team`, `personal`, `pending_path`, etc.) appear verbatim in BOTH variants. Field VALUES (slugs, file paths, type/layer enum strings like `decision` / `team`) are data and are NOT translated.
+
+en variant (`knowledge_language === "en"`):
 
 ```md
 # Archive Review — N candidates
 
-## C1 [type=decision] [layer=team] [scope=narrow] slug=wave-1-parallel-task-dag
+## C1 [type=decision] [layer=team] [relevance_scope=narrow] slug=wave-1-parallel-task-dag
 Summary: <1-2 sentences capturing the observation>
 Layer reasoning: <which 强 team / 强 personal signal applied, or default team>
 Scope reasoning: <why narrow or broad — see Phase 1.5>
 relevance_paths: ["packages/cli/src/commands/plan.ts", "packages/cli/templates/**/*.md"]
-Confirm? (Y to accept, edit type/layer/slug/scope/relevance_paths inline, N to skip)
+Confirm? (Y to accept, edit type/layer/slug/relevance_scope/relevance_paths inline, N to skip)
 
-## C2 [type=pitfall] [layer=team] [scope=broad] slug=deepmerge-array-replace-trap
+## C2 [type=pitfall] [layer=team] [relevance_scope=broad] slug=deepmerge-array-replace-trap
 Summary: ...
 Layer reasoning: ...
 Scope reasoning: ...
@@ -209,16 +337,36 @@ relevance_paths: []
 Confirm? ...
 ```
 
-The user MAY edit type/layer/slug/scope/relevance_paths inline before confirming. The user MAY skip individual candidates without rejecting the whole batch. Inline-editing `[scope=...]` triggers a re-derivation of `relevance_paths` per the Phase 1.5 rules (narrow ⇒ recompute from edit_paths; broad ⇒ force `[]`).
+zh-CN variant (`knowledge_language === "zh-CN"`):
+
+```md
+# 归档 Review — N 条候选
+
+## C1 [type=decision] [layer=team] [relevance_scope=narrow] slug=wave-1-parallel-task-dag
+摘要: <1-2 句捕捉该观察>
+Layer 判定: <命中哪条 强 team / 强 personal 信号，或默认 team>
+Scope 判定: <为什么 narrow 或 broad — 见 Phase 1.5>
+relevance_paths: ["packages/cli/src/commands/plan.ts", "packages/cli/templates/**/*.md"]
+确认？(Y 接受 / 内联编辑 type/layer/slug/relevance_scope/relevance_paths / N 跳过)
+
+## C2 [type=pitfall] [layer=team] [relevance_scope=broad] slug=deepmerge-array-replace-trap
+摘要: ...
+Layer 判定: ...
+Scope 判定: ...
+relevance_paths: []
+确认？...
+```
+
+The user MAY edit type/layer/slug/relevance_scope/relevance_paths inline before confirming. The user MAY skip individual candidates without rejecting the whole batch. Inline-editing `[relevance_scope=...]` triggers a re-derivation of `relevance_paths` per the Phase 1.5 rules (narrow ⇒ recompute from edit_paths; broad ⇒ force `[]`).
 
 ### Phase 1.5 — Scope Decision + relevance_paths Derivation
 
-After classify/layer/slug but BEFORE batch review output, assign a `scope` to each candidate and derive its `relevance_paths` array. These two fields drive rc.6 hint injection: narrow knowledge is gated by working in matching paths, broad knowledge is project-wide.
+After classify/layer/slug but BEFORE batch review output, assign a `relevance_scope` to each candidate and derive its `relevance_paths` array. These two fields drive rc.6 hint injection: narrow knowledge is gated by working in matching paths, broad knowledge is project-wide.
 
 #### Scope decision (narrow vs broad)
 
 ```
-scope =
+relevance_scope =
     narrow  IF the candidate is tied to a specific module / file / subsystem
             AND there is explicit single-module evidence in edit_paths
             (i.e. all worth-keeping edits in this session concentrated in one
@@ -230,7 +378,7 @@ scope =
     broad   (default, on uncertainty — safe偏置 per Q-1 in handoff)
 ```
 
-Special case — Personal layer ALWAYS resolves to `scope=broad` with `relevance_paths=[]`. Rationale: personal knowledge crosses projects; paths from one project do not generalize. If `layer=personal` and a narrow scope was tentatively chosen, auto-flip to `broad` and clear `relevance_paths`.
+Special case — Personal layer ALWAYS resolves to `relevance_scope=broad` with `relevance_paths=[]`. Rationale: personal knowledge crosses projects; paths from one project do not generalize. If `layer=personal` and a narrow scope was tentatively chosen, auto-flip to `broad` and clear `relevance_paths`.
 
 ##### Examples
 
@@ -271,8 +419,8 @@ Step 4: PUBLIC-PREFIX GENERALIZE (depth ≤ 2, minGroupSize = 2)
   Singleton paths (group size = 1) are kept as-is (literal path, no glob).
 
 Step 5: SCOPE GATE
-  IF scope == broad → relevance_paths = []  (force empty regardless of edit_paths)
-  IF scope == narrow → relevance_paths = result of Step 4
+  IF relevance_scope == broad → relevance_paths = []  (force empty regardless of edit_paths)
+  IF relevance_scope == narrow → relevance_paths = result of Step 4
 
 Step 6: ATTACH READ-ONLY EVIDENCE
   Read-only paths (filtered in Step 3) are emitted as a ## Evidence markdown
@@ -298,7 +446,7 @@ Step 4 (generalize, depth ≤ 2, minGroupSize = 2):
 - `packages/server/src/services/{extract,review,promote}.ts` → group size 3 ≥ 2, common prefix `packages/server/src/services/`, glob: `packages/server/src/services/**/*.ts`
 - `packages/cli/src/commands/plan.ts` → group size 1, kept literal.
 
-Step 5 (assume `scope=narrow`):
+Step 5 (assume `relevance_scope=narrow`):
 
 ```json
 "relevance_paths": [
@@ -307,11 +455,11 @@ Step 5 (assume `scope=narrow`):
 ]
 ```
 
-If `scope=broad` had been chosen instead, `relevance_paths` would be `[]` regardless of the above.
+If `relevance_scope=broad` had been chosen instead, `relevance_paths` would be `[]` regardless of the above.
 
 #### Inline-edit support during batch review
 
-The user MAY inline-edit `[scope=...]` in the batch review. When this happens:
+The user MAY inline-edit `[relevance_scope=...]` in the batch review. When this happens:
 
 - Edit changes `narrow → broad`: clear `relevance_paths` to `[]`.
 - Edit changes `broad → narrow`: re-run Steps 1-4 of the derivation algorithm to recompute.
@@ -326,12 +474,12 @@ For each user-confirmed candidate, call `fab_extract_knowledge` ONCE. Do NOT bat
 ```ts
 mcp__fabric__fab_extract_knowledge({
   source_sessions: ["<session id1>", "<session id2>", ...],  // T5: array form (Phase 0.0)
-  recent_paths: ["<path1>", "<path2>", ...],   // capped at 20
+  recent_paths: ["<path1>", "<path2>", ...],   // capped at archive_max_recent_paths (config-resolved, default 20)
   user_messages_summary: "<compact prose ≤500 chars>",
   type: "decisions" | "pitfalls" | "guidelines" | "models" | "processes",
   slug: "<kebab-case-2-to-5-words>",
   layer: "team" | "personal",
-  scope: "narrow" | "broad",                   // from Phase 1.5
+  relevance_scope: "narrow" | "broad",         // from Phase 1.5
   relevance_paths: ["<glob1>", "<literal2>", ...],  // narrow ⇒ derived; broad ⇒ []
   // v2.0.0-rc.7 T6: required fields for future-self reviewability.
   proposed_reason:
@@ -383,19 +531,25 @@ The MCP tool derives `idempotency_key = sha256({source_session, type, slug})`. C
 
 If the skill needs to record a genuinely separate observation in the same session+type, the slug MUST differ.
 
+**T5 array-form note (rc.7+)**: when `source_sessions` is passed as an array (the rc.7 T5 contract), only `source_sessions[0]` participates in the server-side idempotency hash. The actual server formula at `packages/server/src/services/extract-knowledge.ts:78` is `sha256(JSON.stringify({source_session: sourceSessions[0], type, slug}))`. Implications:
+
+- Same `(type, slug)` but a different **first** session → distinct idempotency key → produces two pending files.
+- Same first session but different tail sessions → evidence-merge into the SAME pending file; tail `session_id`s are NOT recorded as independent evidence keys.
+- The formula is intentionally stable across the rc.5 → rc.7 migration; adding or removing tail entries does NOT change the idempotency key, preserving rc.5 single-session compat.
+
 ## Hard Rules (DO NOT TRANSLATE) — DISPLAY / WRITE Split
 
 ### DISPLAY Rules
 
 - MUST complete Phase 0 AND Phase 0.5 viability gate before any batch-review output.
 - MUST abort with the gate-FAIL message (no MCP call) when the viability gate fails AND the user did not explicitly invoke fabric-archive.
-- MUST present every candidate with explicit `[type=...]`, `[layer=...]`, `[scope=...]`, and `slug=...` fields plus a `relevance_paths` line.
+- MUST present every candidate with explicit `[type=...]`, `[layer=...]`, `[relevance_scope=...]`, and `slug=...` fields plus a `relevance_paths` line.
 - MUST include a one-line `Layer reasoning:` for each candidate citing which 强 team / 强 personal signal applied (or default team).
 - MUST include a one-line `Scope reasoning:` for each candidate citing why narrow or broad was chosen (or that personal forced broad).
 - MUST classify against the canonical singular nouns: model / decision / guideline / pitfall / process. NEVER invent new types.
-- MUST cap the batch at 8 candidates; drop weaker ones over the cap.
+- MUST cap the batch at `archive_max_candidates_per_batch` candidates (config-resolved, default 8); drop weaker ones over the cap.
 - MUST display the resolved `pending_path` returned by `fab_extract_knowledge` so the user can verify.
-- MUST treat user inline edits to type/layer/slug/scope/relevance_paths as authoritative replacements before Phase 2.
+- MUST treat user inline edits to type/layer/slug/relevance_scope/relevance_paths as authoritative replacements before Phase 2.
 - MUST skip rather than guess when an observation does not fit any of the 5 types.
 
 ### WRITE Rules
@@ -404,12 +558,12 @@ If the skill needs to record a genuinely separate observation in the same sessio
 - NEVER write outside `.fabric/knowledge/pending/` — promotion to `.fabric/knowledge/<type>/` is rc.3 fab_review concern, NOT this skill.
 - NEVER include an `id` field anywhere — pending entries have no id (late-bind on approve).
 - NEVER classify a candidate as `personal` when a 强 team signal applies. Default to team on ambiguity.
-- NEVER emit a non-empty `relevance_paths` when `scope=broad` — broad MUST always carry `relevance_paths=[]`.
-- NEVER emit a non-empty `relevance_paths` when `layer=personal` — personal forces `scope=broad` + `relevance_paths=[]`.
+- NEVER emit a non-empty `relevance_paths` when `relevance_scope=broad` — broad MUST always carry `relevance_paths=[]`.
+- NEVER emit a non-empty `relevance_paths` when `layer=personal` — personal forces `relevance_scope=broad` + `relevance_paths=[]`.
 - NEVER use multi-signal sources for relevance_paths in rc.5 — `edit_paths` is the SOLE source. `read_paths`, body regex, and symbol extraction are reserved for rc.7+.
 - NEVER batch multiple candidates into a single fab_extract_knowledge call; one call per candidate.
 - NEVER paraphrase the verbatim layer heuristic block above — the Chinese text is contract-locked.
-- MUST preserve protected tokens exactly: `stable_id`, `knowledge_proposed`, `knowledge_archive_aborted`, `.fabric/knowledge/pending/`, `fab_extract_knowledge`, `relevance_paths`, `scope`, `narrow`, `broad`, `edit_paths`, `MUST`, `NEVER`, `强 team`, `强 personal`, `默认 team`.
+- MUST preserve protected tokens exactly: `stable_id`, `knowledge_proposed`, `knowledge_archive_aborted`, `knowledge_scope_degraded`, `.fabric/knowledge/pending/`, `fab_extract_knowledge`, `relevance_paths`, `relevance_scope`, `narrow`, `broad`, `edit_paths`, `source_sessions`, `proposed_reason`, `session_context`, `pending_path`, `layer`, `team`, `personal`, `MUST`, `NEVER`, `强 team`, `强 personal`, `默认 team`.
 
 ## Worked Examples
 
@@ -427,7 +581,7 @@ mcp__fabric__fab_extract_knowledge({
   type: "decisions",
   slug: "single-cjs-hook-script",
   layer: "team",
-  scope: "narrow",
+  relevance_scope: "narrow",
   relevance_paths: [
     "templates/claude-hooks/**/*.cjs",
     "packages/cli/src/commands/hooks.ts"
@@ -453,7 +607,7 @@ mcp__fabric__fab_extract_knowledge({
   type: "pitfalls",
   slug: "deepmerge-array-replace-trap",
   layer: "team",
-  scope: "broad",
+  relevance_scope: "broad",
   relevance_paths: [],
   proposed_reason: "diagnostic-then-fix",
   session_context: "Session goal: wire hook installer for v2.\nTurning point: spent ~30 min chasing why prior Stop[] entries vanished — root cause was deepMerge replacing arrays silently.\nResult: array-append-with-dedupe special case added."
@@ -476,7 +630,7 @@ mcp__fabric__fab_extract_knowledge({
   type: "guidelines",
   slug: "indent-style-by-language",
   layer: "personal",
-  scope: "broad",
+  relevance_scope: "broad",
   relevance_paths: [],
   proposed_reason: "explicit-user-mark",
   session_context: "Session goal: align editor config.\nTurning point: user said '一直 prefer 2-space TS / 4-space Py，across projects'.\nResult: personal-layer guideline; not bound to this project."

@@ -182,8 +182,11 @@ describe("init CLI surface — fabric-config.json scaffold (TASK-003)", () => {
       expect(parsed, `missing field ${field}`).toHaveProperty(field);
     }
     // Verify the documented defaults explicitly so a silent default-shift
-    // is caught by the test.
-    expect(parsed.knowledge_language).toBe("match-existing");
+    // is caught by the test. TASK-006 (C1): knowledge_language is fixated
+    // at init time by probing README + docs/*.md. The werewolf fixture
+    // README is pure English so the detector resolves to "en". The literal
+    // "match-existing" placeholder is no longer written.
+    expect(parsed.knowledge_language).toBe("en");
     expect(parsed.archive_hint_hours).toBe(24);
     expect(parsed.archive_hint_cooldown_hours).toBe(12);
     expect(parsed.review_hint_pending_count).toBe(10);
@@ -273,7 +276,7 @@ describe("init CLI surface — fabric-config.json scaffold (TASK-003)", () => {
       }),
       group: vi.fn(),
       select: vi.fn(),
-      log: { step: vi.fn(), success: vi.fn() },
+      log: { step: vi.fn(), success: vi.fn(), info: vi.fn() },
       isCancel: vi.fn().mockReturnValue(false),
     }));
 

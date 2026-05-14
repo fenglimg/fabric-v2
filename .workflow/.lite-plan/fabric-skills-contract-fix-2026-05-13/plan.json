@@ -1,0 +1,143 @@
+{
+  "summary": "Fabric three-skill (fabric-import / fabric-archive / fabric-review) contract fix + optimization. Closes the rc.5→rc.7 gap where fab_extract_knowledge MCP schema silently dropped relevance_scope/relevance_paths that skills were already writing. Adds doctor lint #26 + --apply-lint migration, extends fabricConfigSchema with 10 new tunables for skill-side pagination/thresholds, fixates knowledge_language at init time, bilingualizes 5 user-facing string classes across all three skills, syncs three-mirror copies (.claude + .codex + templates), adds fabric-review narrowing-imported chapter + fabric-import proposed_reason inference matrix, hardens import state.json with atomic .tmp+mv writes and corruption recovery.",
+  "approach": "Phased delivery in 6 functional blocks (A: schema + service + migration, B: config + skill config-load chapter, C: init-time language fixation + i18n, D: protected tokens + idempotency note, E: review narrowing + import proposed_reason, F: state file hardening). Schema-first changes (TASK-001, TASK-004) unblock dependent skill MD edits (TASK-002 needs schema acceptance; TASK-005/007 need new config keys; TASK-009 needs schema-accepted relevance fields). Doctor lint #26 (TASK-003) is independent hygiene. Three-mirror sync (template → .claude + .codex byte-identity) is invariant — every SKILL.md edit triggers a same-task copy + install-skills-and-hooks.test.ts validation. rc.5→rc.7 idempotency formula at extract-knowledge.ts:78 sha256({source_session,type,slug}) is preserved verbatim.",
+  "task_ids": [
+    "TASK-001",
+    "TASK-002",
+    "TASK-003",
+    "TASK-004",
+    "TASK-005",
+    "TASK-006",
+    "TASK-007",
+    "TASK-008",
+    "TASK-009",
+    "TASK-010",
+    "TASK-011"
+  ],
+  "task_count": 11,
+  "complexity": "High",
+  "estimated_time": "6-8 hours (33-66 minutes per task; mostly serialized due to schema→skill→mirror dependency chain; TASK-003/004/006/008/010/011 can parallelize)",
+  "recommended_execution": "Codex",
+  "design_decisions": [
+    {
+      "decision": "Use `pending:<idempotency_key>` sentinel for knowledge_scope_degraded.stable_id when emitted from extract-knowledge",
+      "rationale": "Pending entries have no stable_id (Q2 late-bind contract — id allocated only at fab_review.approve). Sentinel preserves event schema shape without relaxing the contract.",
+      "tradeoff": "stable_id field carries dual meaning (promoted id vs pending sentinel); consumers must parse the prefix — accepted because doctor + observability filters already string-key the field"
+    },
+    {
+      "decision": "Migration via doctor lint #26 + --apply-lint, not standalone script",
+      "rationale": "Reuses tested mutation machinery, integrates with maintenance_hint_days cadence, emits typed event for audit trail",
+      "tradeoff": "Discoverability lower than CLI command; mitigated because meta-builder fallback at L1007-L1021 makes migration optional (hygiene-only, not correctness)"
+    },
+    {
+      "decision": "Migration scope: pending entries only (not canonical)",
+      "rationale": "Canonical entries already get scope via fab_review.modify natural path (C3 from rc.5); meta-builder fallback covers historical correctness",
+      "tradeoff": "Audit-trail-incomplete for canonical entries; visible via lint #23 (narrow_no_paths) if regressions occur"
+    },
+    {
+      "decision": "Caller-undefined relevance fields → don't write YAML lines (vs writing defaults)",
+      "rationale": "Matches doctor.ts default-broad fallback; produces cleaner git diffs for unaffected entries",
+      "tradeoff": "Less self-documenting frontmatter; mitigated because lint #26 + doctor surfacing makes defaults greppable"
+    },
+    {
+      "decision": "Reuse scan.ts detectExistingLanguage as-is (README+docs CJK probe, no package.json)",
+      "rationale": "package.json is almost always English ASCII (npm names) → would skew detection for zh-CN projects",
+      "tradeoff": "Repos that gain CJK README post-init keep 'en' default; users can manually edit"
+    },
+    {
+      "decision": "Three-mirror sync = always overwrite (skills are generated artifacts)",
+      "rationale": "Treats SKILL.md as derived dist (consistent with install-skills-and-hooks.ts SKILL_DESTINATIONS fan-out)",
+      "tradeoff": "User customizations to .claude/.codex copies are lost on fab init; mitigated because fabric-config.json is the user-editable surface"
+    },
+    {
+      "decision": "fabric-config root remains lenient (no .strict())",
+      "rationale": "Preserves forward-compat with stale user config keys; matches existing 7-key minimal config behavior",
+      "tradeoff": "Typos silently default rather than failing loudly; acceptable cost"
+    },
+    {
+      "decision": "Aggregate relevance_migration_run event (one per --apply-lint run) vs per-file events",
+      "rationale": "Quieter ledger; matches rc.5→rc.7 migration precedent; touched_count surfaces in doctor reports",
+      "tradeoff": "Per-file traceability lost; mitigated by git diff visibility on actual frontmatter mutation"
+    }
+  ],
+  "data_flow": {
+    "diagram": "Skill (fabric-import|archive) → MCP call with relevance_scope/paths → packages/shared schema accepts → extract-knowledge.ts service normalizes (silent degrade for personal+narrow) → renderFreshEntry writes YAML frontmatter → atomic write to .fabric/knowledge/pending/<type>/<slug>.md + emit knowledge_proposed event (+ knowledge_scope_degraded if degraded) → fabric-review reads pending → optional fabric-review modify (narrow-down) → fab_review.approve allocates stable_id + promotes to canonical → knowledge-meta-builder ingests for plan-context filtering",
+    "stages": [
+      {
+        "stage": "Skill MCP Call",
+        "input": "git mining results / session candidates with proposed relevance_scope/paths",
+        "output": "FabExtractKnowledgeInput payload",
+        "component": "fabric-import/archive SKILL.md Phase 2",
+        "transformations": ["proposed_reason inference (TASK-010)", "config-driven pagination (TASK-005)", "i18n rendering (TASK-007)"]
+      },
+      {
+        "stage": "Schema Validation",
+        "input": "FabExtractKnowledgeInput",
+        "output": "validated payload with relevance_scope/paths typed",
+        "component": "packages/shared/src/schemas/api-contracts.ts _FabExtractKnowledgeInputBaseSchema",
+        "transformations": ["optional field acceptance (TASK-001)", "lenient unknown-key handling"]
+      },
+      {
+        "stage": "Service Normalize + Persist",
+        "input": "validated payload",
+        "output": "frontmatter YAML + pending file + events",
+        "component": "packages/server/src/services/extract-knowledge.ts",
+        "transformations": ["personal+narrow → broad+[] silent degrade with knowledge_scope_degraded emit (TASK-001)", "renderFreshEntry YAML assembly", "idempotency key sha256 (preserved verbatim)"]
+      },
+      {
+        "stage": "Doctor Hygiene Migration",
+        "input": ".fabric/knowledge/pending/**/*.md scan",
+        "output": "frontmatter mutations + aggregate event",
+        "component": "packages/server/src/services/doctor.ts lint #26",
+        "transformations": ["detect missing relevance_scope/paths", "--apply-lint writes broad+[] (matches meta-builder default)", "emit relevance_migration_run aggregate event"]
+      },
+      {
+        "stage": "Three-Mirror Sync",
+        "input": "packages/cli/templates/skills/<skill>/SKILL.md",
+        "output": ".claude/skills/<skill>/SKILL.md + .codex/skills/<skill>/SKILL.md (byte-identical)",
+        "component": "packages/cli/src/install/skills-and-hooks.ts SKILL_DESTINATIONS",
+        "transformations": ["fan-out copy at fab init/reapply", "lint-protected-tokens.ts verbatim check"]
+      },
+      {
+        "stage": "State File Hardening",
+        "input": "import pipeline checkpoint",
+        "output": ".fabric/.import-state.json (atomic write)",
+        "component": "fabric-import SKILL.md state persistence",
+        "transformations": ["Write .tmp → Bash mv (atomic rename)", "Phase 0 .tmp residue scan", "corruption recovery (discard + restart)"]
+      }
+    ],
+    "dependencies": [
+      "zod (schema lib)",
+      "@modelcontextprotocol/sdk (MCP tool registration)",
+      "node:crypto (sha256 idempotency)",
+      "node:fs (atomic writes)",
+      "vitest (test runner)",
+      "minimatch (doctor lint #24 glob matching)"
+    ]
+  },
+  "estimated_total_minutes": 480,
+  "recommended_execution_notes": "Codex recommended due to High complexity + cross-package edits + multi-file three-mirror sync. Parallel-safe tasks: TASK-003, TASK-004, TASK-006, TASK-008, TASK-010, TASK-011 (no shared file edits). Serial chains: TASK-001 → TASK-002 → TASK-009 (schema must accept fields before SKILL.md references them); TASK-004 → TASK-005 (skills need new config keys); TASK-004+TASK-006 → TASK-007 (i18n needs both config + knowledge_language). Suggested execution order: TASK-001, TASK-004, TASK-006 (foundation, parallel) → TASK-002, TASK-003, TASK-005, TASK-008, TASK-010, TASK-011 (parallel) → TASK-007, TASK-009 (dependent).",
+  "_metadata": {
+    "timestamp": "2026-05-13T12:50:00Z",
+    "source": "cli-lite-planning-agent",
+    "plan_type": "feature",
+    "schema_version": "2.0",
+    "planning_mode": "agent-based",
+    "exploration_angles": ["integration-points", "dependencies"],
+    "duration_seconds": 0,
+    "session_id": "fabric-skills-contract-fix-2026-05-13",
+    "quality_check": {
+      "status": "self-validated",
+      "dimensions": {
+        "completeness": "11 tasks cover all 11 listed deliverables (A1/A2/A3/B1/B2/C1/C2/D1+D2/E1/E2/F1+F2); all decisions from clarification grill-me + skill-tuning audit applied",
+        "granularity": "All tasks 30-60 min scope; TASK-007 (5-class i18n × 3 skills) is largest at ~60min — kept whole because i18n consistency requires single-pass editing",
+        "dependencies": "4 real dependencies (TASK-002→001, TASK-005→004, TASK-007→004+006, TASK-009→001); 7 independent tasks parallel-safe",
+        "convergence_criteria": "All tasks have 5+ quantified criteria (greppable presence checks, byte-identity diffs, lint exit codes, test counts)",
+        "implementation_steps": "All tasks have 5-7 actionable steps; explicit file:line references where applicable",
+        "constraint_compliance": "rc.5→rc.7 idempotency preserved (TASK-001 explicit assertion); three-mirror byte-identity (TASK-002/005/007/008/009/010/011); protected tokens preserved + extended (TASK-008); additive-optional schema (TASK-004)"
+      },
+      "issues": [],
+      "recommendation": "PASS"
+    }
+  }
+}

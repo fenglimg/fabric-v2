@@ -40,10 +40,41 @@ const SKILL_REQUIRED_TOKENS = ["MUST", "NEVER", ".fabric/knowledge/"];
 // Per-skill MCP tool that the skill wires up. Keyed by the parent directory
 // name under templates/skills/. Each entry MUST name the MCP tool(s) that
 // the skill actually calls — translating them breaks the skill's behavior.
+// fabric-archive additionally pins the Phase 1.5 contract field names
+// (relevance_scope / relevance_paths) so a rename can never silently drift.
+// TASK-008 D1 extended per-skill pins: T5/T6 contract fields + scope enums +
+// layer enums + server event names that templates reference verbatim.
 const SKILL_MCP_TOKENS: Record<string, string[]> = {
-  "fabric-archive": ["fab_extract_knowledge"],
-  "fabric-import": ["fab_extract_knowledge", "fab_review"],
-  "fabric-review": ["fab_review"],
+  "fabric-archive": [
+    "fab_extract_knowledge",
+    "relevance_scope",
+    "relevance_paths",
+    "pending_path",
+    "layer",
+    "team",
+    "personal",
+    "proposed_reason",
+    "session_context",
+    "source_sessions",
+    "knowledge_scope_degraded",
+  ],
+  "fabric-import": [
+    "fab_extract_knowledge",
+    "fab_review",
+    "proposed_reason",
+    "session_context",
+    "source_sessions",
+  ],
+  "fabric-review": [
+    "fab_review",
+    "relevance_scope",
+    "relevance_paths",
+    "narrow",
+    "broad",
+    "proposed_reason",
+    "session_context",
+    "knowledge_scope_degraded",
+  ],
 };
 
 // PROTECTED_TOKENS registry MUST include these — they form the canonical
@@ -55,6 +86,18 @@ const REGISTRY_REQUIRED_TOKENS = [
   ".fabric/agents.meta.json",
   "fab_extract_knowledge",
   "fab_review",
+  "relevance_scope",
+  "relevance_paths",
+  "narrow",
+  "broad",
+  "source_sessions",
+  "proposed_reason",
+  "session_context",
+  "layer",
+  "team",
+  "personal",
+  "pending_path",
+  "knowledge_scope_degraded",
 ];
 
 async function collectFiles(directory: string): Promise<string[]> {

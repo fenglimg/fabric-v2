@@ -22,6 +22,23 @@ export const PROTECTED_TOKENS = [
   ".fabric/knowledge/",
   // Event types templates reference verbatim
   "knowledge_proposed",
+  // fabric-archive Phase 1.5 contract surface (rc.9 — bare `scope` was renamed)
+  "relevance_scope",
+  "relevance_paths",
+  // Phase 1.5 scope enum values (rc.9 — TASK-008 D1)
+  "narrow",
+  "broad",
+  // v2.0.0-rc.7 T5/T6 fab_extract_knowledge contract fields (TASK-008 D1)
+  "source_sessions",
+  "proposed_reason",
+  "session_context",
+  // Layer enum values + pending output path key (TASK-008 D1)
+  "layer",
+  "team",
+  "personal",
+  "pending_path",
+  // Server event emitted when personal layer auto-degrades narrow → broad (TASK-008 D1)
+  "knowledge_scope_degraded",
   // Human-lock marker
   "@HUMAN",
   // Hard-rule keywords AI clients rely on for compliance

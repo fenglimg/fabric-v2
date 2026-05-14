@@ -332,6 +332,30 @@ export const knowledgePathDangledEventSchema = z.object({
   removed_glob: z.string(),
 });
 
+// v2.0.0-rc.9 TASK-003 (A3): emitted by `doctor --apply-lint` after the
+// lint #26 (`relevance_fields_missing`) mutation arm finishes walking the
+// `.fabric/knowledge/pending/**/*.md` tree and back-filling missing
+// `relevance_scope` / `relevance_paths` frontmatter fields. One aggregate
+// event per --apply-lint invocation (NOT per file) — mirrors the
+// rc.5→rc.7 precedent for bulk-migration audit trails. Idempotent:
+// touched_count is zero when every scanned entry already has both fields,
+// and the event is still emitted so the audit log preserves the run
+// timestamp (matches the doctor_run heartbeat shape).
+//
+// `scanned_count`: total pending entries the walker visited (both layers
+//   — team `.fabric/knowledge/pending/` and personal `~/.fabric/knowledge/
+//   pending/`). Includes entries that already had both fields.
+// `touched_count`: subset of scanned entries that received a frontmatter
+//   write back. Always <= scanned_count. Zero on a re-run with no new
+//   pending entries (idempotency invariant).
+export const relevanceMigrationRunEventSchema = z.object({
+  ...eventLedgerEnvelopeSchema,
+  event_type: z.literal("relevance_migration_run"),
+  timestamp: z.string().datetime(),
+  scanned_count: z.number().int().nonnegative(),
+  touched_count: z.number().int().nonnegative(),
+});
+
 // v2.0 rc.5 TASK-009 (B2): emitted by `doctor --apply-lint` when a pending
 // knowledge entry exceeds the 30-day auto-archive threshold and gets moved
 // from the staging area (`.fabric/knowledge/pending/<type>/` or
@@ -390,6 +414,9 @@ export const eventLedgerEventSchema = z.discriminatedUnion("event_type", [
   knowledgePathDangledEventSchema,
   // v2.0.0-rc.7 T10: doctor_run — emitted by `fabric doctor` to drive Signal D.
   doctorRunEventSchema,
+  // v2.0.0-rc.9 TASK-003 (A3): relevance_migration_run — emitted by
+  // `doctor --apply-lint` after the lint #26 frontmatter back-fill pass.
+  relevanceMigrationRunEventSchema,
 ]);
 
 export type KnowledgeContextPlannedEvent = z.infer<typeof knowledgeContextPlannedEventSchema>;
@@ -423,6 +450,7 @@ export type KnowledgeScopeDegradedEvent = z.infer<typeof knowledgeScopeDegradedE
 export type PendingAutoArchivedEvent = z.infer<typeof pendingAutoArchivedEventSchema>;
 export type KnowledgePathDangledEvent = z.infer<typeof knowledgePathDangledEventSchema>;
 export type DoctorRunEvent = z.infer<typeof doctorRunEventSchema>;
+export type RelevanceMigrationRunEvent = z.infer<typeof relevanceMigrationRunEventSchema>;
 export type EventLedgerEvent =
   | KnowledgeContextPlannedEvent
   | KnowledgeSelectionEvent
@@ -454,7 +482,8 @@ export type EventLedgerEvent =
   | KnowledgeScopeDegradedEvent
   | PendingAutoArchivedEvent
   | KnowledgePathDangledEvent
-  | DoctorRunEvent;
+  | DoctorRunEvent
+  | RelevanceMigrationRunEvent;
 export type EventLedgerEventType = EventLedgerEvent["event_type"];
 type EventLedgerEventInputFor<T extends EventLedgerEvent> = T extends EventLedgerEvent
   ? Omit<T, "kind" | "id" | "ts" | "schema_version" | "correlation_id" | "session_id"> &

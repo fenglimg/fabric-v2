@@ -1,0 +1,104 @@
+{
+  "id": "TASK-001",
+  "title": "A1 — Extend fab_extract_knowledge schema + service with relevance_scope/relevance_paths + personal-narrow silent degrade",
+  "scope": "packages/shared/src/schemas/api-contracts.ts + packages/server/src/services/extract-knowledge.ts",
+  "action": "Update",
+  "description": "Add relevance_scope?: enum(narrow|broad) + relevance_paths?: string[] to _FabExtractKnowledgeInputBaseSchema. In extract-knowledge service: normalize layer=personal+narrow → silent degrade to broad+[] (emit knowledge_scope_degraded with stable_id=`pending:<idempotency_key>` sentinel), then renderFreshEntry writes the two YAML lines (only when caller-provided, undefined = no line). Idempotency hash MUST NOT include the new fields (preserves rc.5→rc.7 collision detection).",
+  "files": [
+    {
+      "path": "packages/shared/src/schemas/api-contracts.ts",
+      "action": "modify",
+      "target": "_FabExtractKnowledgeInputBaseSchema (L397-453)",
+      "change": "Add relevance_scope: z.enum(['narrow','broad']).optional() and relevance_paths: z.array(z.string()).optional() — mirror the L518-533 modify schema shape; do NOT add .strict()"
+    },
+    {
+      "path": "packages/server/src/services/extract-knowledge.ts",
+      "action": "modify",
+      "target": "extractKnowledge (L58-185) + renderFreshEntry (L217-263)",
+      "change": "Add normalize helper near L110: if layer==='personal' && relevance_scope==='narrow' → flip to broad+[], call emitEventBestEffort with knowledge_scope_degraded { stable_id: `pending:${idempotency_key}`, from_scope: 'narrow', to_scope: 'broad', reason: 'personal-implies-broad' } BEFORE knowledge_proposed emit. Extend renderFreshEntry frontmatter (L223-234) — emit `relevance_scope: broad` (bare) and `relevance_paths: [\"a\",\"b\"]` (flow form, scan.ts:1042-1060 pattern) ONLY when args supplied. Hash inputs at L78 unchanged."
+    },
+    {
+      "path": "packages/server/src/services/extract-knowledge.test.ts",
+      "action": "modify",
+      "target": "buildInput helper (L41-55) + new test cases",
+      "change": "Extend buildInput with optional relevance_scope/paths params. Add tests: (a) explicit narrow+paths writes frontmatter, (b) personal+narrow silently degrades + emits knowledge_scope_degraded, (c) idempotency_key unchanged when scope/paths vary (rc.5→rc.7 canary)"
+    },
+    {
+      "path": "packages/server/__tests__/__snapshots__/tool-contracts.test.ts.snap",
+      "action": "modify",
+      "target": "fab-extract-knowledge contract snapshot",
+      "change": "Re-baseline via pnpm test -u after schema extension — should show only relevance_scope/paths additions"
+    },
+    {
+      "path": "packages/shared/test/api-contracts.test.ts",
+      "action": "modify",
+      "target": "FabExtractKnowledgeInputSchema describe block (L129-213)",
+      "change": "Add positive/negative parse cases for relevance_scope enum + relevance_paths array"
+    }
+  ],
+  "implementation": [
+    "Mirror the relevance_scope+relevance_paths zod fields from _fabReviewModifyChangesSchema (L518-533) into _FabExtractKnowledgeInputBaseSchema (L397-453); both optional, no .strict()",
+    "In extract-knowledge.ts add a layer-degrade helper invoked at L110 BEFORE renderFreshEntry call at L161: if layer==='personal' && relevance_scope==='narrow' flip to broad+[] and emit knowledge_scope_degraded via emitEventBestEffort using `pending:${idempotency_key}` for stable_id",
+    "Extend renderFreshEntry FreshEntryArgs (L206-215) with relevanceScope?:'narrow'|'broad' + relevancePaths?:string[]; in YAML assembly (L223-234) emit `relevance_scope: ${value}` (bare) and `relevance_paths: [${quoteIfNeeded list}]` only when present",
+    "VERIFY hash inputs at L78 unchanged (sha256 of {source_session,type,slug}) — add an assertion test that key is identical across scope-only diffs",
+    "Update buildInput helper in extract-knowledge.test.ts to accept optional fields; add 3 new test cases (explicit narrow+paths persistence, personal+narrow degrade event, idempotency stability)",
+    "Run pnpm test, re-baseline tool-contracts snapshot, verify api-contracts.test.ts passes"
+  ],
+  "reference": {
+    "pattern": "Dual-export base+refined zod schema; emitEventBestEffort try/catch; YAML flow-style array emit",
+    "files": [
+      "packages/shared/src/schemas/api-contracts.ts:518-533",
+      "packages/server/src/services/review.ts:725-739",
+      "packages/cli/src/commands/scan.ts:1042-1060"
+    ],
+    "examples": "Mirror _fabReviewModifyChangesSchema field shape verbatim; emit knowledge_scope_degraded with the exact reason='personal-implies-broad' string used by review.ts:725-739; YAML emit follows scan.ts:1042-1060 quoteIfNeeded pattern"
+  },
+  "convergence": {
+    "criteria": [
+      "_FabExtractKnowledgeInputBaseSchema accepts relevance_scope+relevance_paths (both optional); zod parse succeeds for {narrow,[\"src/**\"]} and {broad,[]}",
+      "extract-knowledge.ts L78 idempotency hash output identical before/after schema change for fixed {source_session,type,slug} input (test assertion)",
+      "Pending file frontmatter contains `relevance_scope: narrow` + `relevance_paths: [\"src/**\"]` when caller supplies them; NO lines when caller omits (regex assertions toMatch + not.toMatch)",
+      "Personal+narrow input triggers exactly one knowledge_scope_degraded event with stable_id=`pending:<idempotency_key>` + reason='personal-implies-broad'",
+      "pnpm test passes after snapshot re-baseline; tool-contracts.test.ts.snap diff shows ONLY relevance_scope/paths additions",
+      "extract-knowledge.test.ts has 3+ new test cases covering happy path, degrade path, idempotency canary"
+    ]
+  },
+  "depends_on": [],
+  "cli_execution_id": "fabric-skills-contract-fix-2026-05-13-TASK-001",
+  "cli_execution": { "strategy": "new" },
+  "rationale": {
+    "chosen_approach": "Schema-first extension with service-side silent degrade; preserves rc.5→rc.7 idempotency by keeping new fields out of sha256 hash",
+    "alternatives_considered": [
+      "Strict() on base schema to reject unknown keys",
+      "Add fields to idempotency hash for stricter collision detection",
+      "Hard-error on personal+narrow instead of silent degrade"
+    ],
+    "decision_factors": [
+      "rc.5→rc.7 back-compat (HARD constraint)",
+      "Cross-service event shape uniformity with review.ts:725-739",
+      "Forward-compat with future MCP client versions (no .strict())"
+    ],
+    "tradeoffs": "Silent degrade is observability-only (event emitted); a buggy caller cannot detect the flip from MCP response — accepted because review.ts behaves identically"
+  },
+  "test": {
+    "manual_checks": [
+      "Run `fab serve` then invoke fab_extract_knowledge with relevance_scope='narrow', relevance_paths=['src/auth/**'] — verify pending file frontmatter contains both lines verbatim",
+      "Invoke with layer='personal', relevance_scope='narrow' — verify events.jsonl gains knowledge_scope_degraded entry with reason='personal-implies-broad' and stable_id starting with 'pending:'"
+    ],
+    "success_metrics": [
+      "100% test pass rate",
+      "Zero changes to sha256 hash inputs at L78",
+      "Snapshot diff confined to two new fields"
+    ],
+    "unit": [
+      "test_extract_knowledge_accepts_relevance_fields",
+      "test_extract_knowledge_personal_narrow_degrades_to_broad",
+      "test_extract_knowledge_idempotency_stable_across_scope_changes",
+      "test_api_contracts_relevance_scope_enum",
+      "test_api_contracts_relevance_paths_array"
+    ],
+    "integration": [
+      "test_tool_contracts_extract_knowledge_snapshot_match"
+    ]
+  }
+}

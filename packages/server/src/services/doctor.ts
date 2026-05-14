@@ -105,7 +105,15 @@ export type DoctorApplyLintMutationKind =
   // These are local cache files at `.fabric/.cache/session-hints-{id}.json`,
   // not git-tracked, so the apply-lint arm uses plain fs.unlink with no
   // ledger event (no audit trail required for local hot-cache hygiene).
-  | "knowledge_session_hints_stale_cleanup";
+  | "knowledge_session_hints_stale_cleanup"
+  // v2.0.0-rc.9 TASK-003 (A3): pending entries with frontmatter missing
+  // relevance_scope and/or relevance_paths get back-filled with the
+  // schema defaults (`relevance_scope: broad`, `relevance_paths: []`)
+  // by lint #28 (`relevance_fields_missing`). One mutation per back-filled
+  // pending file. A single aggregate `relevance_migration_run` event is
+  // emitted after the full walk (NOT per file) — see runDoctorApplyLint
+  // for the emission site.
+  | "knowledge_relevance_fields_missing";
 
 export type DoctorApplyLintMutation = {
   kind: DoctorApplyLintMutationKind;
@@ -761,6 +769,13 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
   // (mtime-based). Info kind — does not bump report status. apply-lint
   // reaps matched files via unlink (no ledger event; local hot-cache).
   const sessionHintsStale = inspectSessionHintsStale(projectRoot, lintNow);
+  // v2.0.0-rc.9 TASK-003 (A3): relevance fields back-fill (#28). Scans the
+  // pending tree (both layers) for entries whose frontmatter is missing
+  // `relevance_scope` and/or `relevance_paths`. Info kind — back-fill is
+  // hygiene, not correctness (meta-builder falls back to the schema
+  // defaults at read time). apply-lint writes the explicit defaults and
+  // emits one aggregate `relevance_migration_run` event per run.
+  const relevanceFieldsMissing = inspectRelevanceFieldsMissing(projectRoot);
   const checks: DoctorCheck[] = [
     createBootstrapAnchorCheck(bootstrapAnchor),
     createKnowledgeDirMissingCheck(knowledgeDirMissing),
@@ -816,6 +831,10 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     createNarrowTooFewCheck(narrowTooFew),
     // rc.6 TASK-021 (E3): session-hints cache hygiene (lint #27). Info kind.
     createSessionHintsStaleCheck(sessionHintsStale),
+    // v2.0.0-rc.9 TASK-003 (A3): relevance fields back-fill (lint #28).
+    // Info kind — applies to pending entries only; canonical entries get
+    // the fields written verbatim by fab_review.approve/modify.
+    createRelevanceFieldsMissingCheck(relevanceFieldsMissing),
     createPreexistingRootFilesCheck(preexistingRootFiles),
     // v2.0 / rc.2: `createLegacyClientPathCheck` removed. The schema now
     // rejects retired clientPaths keys (windsurf/rooCode/geminiCLI) at Zod
@@ -1059,6 +1078,42 @@ export async function runDoctorApplyLint(target: string): Promise<DoctorApplyLin
   const sessionHintsStale = inspectSessionHintsStale(projectRoot, now);
   for (const candidate of sessionHintsStale.candidates) {
     mutations.push(await applySessionHintsStaleCleanup(projectRoot, candidate));
+  }
+
+  // v2.0.0-rc.9 TASK-003 (A3): relevance fields back-fill (#28). Runs after
+  // pending_auto_archive (which may move stale-pending entries out of the
+  // pending tree, removing them from the back-fill walk's input set) and
+  // after session_hints_stale (which has no overlap but mirrors the
+  // "cheapest mutation last" ordering — back-fill is cheap but bookkeeping
+  // for the aggregate event is independent of the per-file walk). One
+  // mutation per back-filled pending entry; one aggregate
+  // `relevance_migration_run` event emitted unconditionally after the walk
+  // so the audit trail records every --apply-lint heartbeat (matches the
+  // `doctor_run` invariant — fires every run, even when no findings).
+  const relevanceFieldsMissing = inspectRelevanceFieldsMissing(projectRoot);
+  let relevanceTouchedCount = 0;
+  for (const candidate of relevanceFieldsMissing.candidates) {
+    const mutation = await applyRelevanceFieldsMissing(candidate);
+    mutations.push(mutation);
+    if (mutation.applied) {
+      relevanceTouchedCount += 1;
+    }
+  }
+  // Best-effort event emit. A ledger-append failure does NOT roll back the
+  // per-file frontmatter writes — back-fill is hygiene rather than a
+  // transactional correctness boundary, and the next --apply-lint run will
+  // observe the (now-present) fields and skip them (idempotent) so the
+  // aggregate event omission is recoverable on retry. Mirrors the
+  // best-effort policy for the `doctor_run` event emitter at the CLI surface.
+  try {
+    await appendEventLedgerEvent(projectRoot, {
+      event_type: "relevance_migration_run",
+      timestamp: new Date(now).toISOString(),
+      scanned_count: relevanceFieldsMissing.scanned_count,
+      touched_count: relevanceTouchedCount,
+    });
+  } catch {
+    // Silent — observability only.
   }
 
   // Index drift: re-read meta after any prior mutations (none touch
@@ -3575,6 +3630,282 @@ function createRelevancePathsDriftCheck(
     "knowledge_relevance_paths_drift",
     `${inspection.candidates.length} narrow-scope canonical entr${inspection.candidates.length === 1 ? "y has" : "ies have"} relevance_paths whose globs match no file touched in the last ${RELEVANCE_PATHS_DRIFT_WINDOW_DAYS}d of git history. First: ${detail}.`,
     "Review whether the entry is still relevant — use `fab_review.modify` to refresh the anchors or `fab_review.reject` to archive.",
+  );
+}
+
+// ---------------------------------------------------------------------------
+// v2.0.0-rc.9 TASK-003 (A3): lint #28 relevance_fields_missing.
+//
+// Scans the pending staging tree (.fabric/knowledge/pending/**/*.md and
+// ~/.fabric/knowledge/pending/**/*.md) for entries whose YAML frontmatter
+// is missing the `relevance_scope` AND/OR `relevance_paths` fields. These
+// fields were introduced by rc.5 TASK-012 (C3) and rc.5 contracts default
+// missing values to (`broad`, []) at read time via knowledge-meta-builder's
+// fallback (knowledge-meta-builder.ts:1007-1021). Migration is hygiene
+// rather than correctness — but a single `--apply-lint` pass back-fills
+// the explicit defaults so the on-disk shape matches the schema, keeps
+// `fab_review.modify` semantics unambiguous, and emits one aggregate
+// `relevance_migration_run` event per run for audit-trail symmetry with
+// the rc.5→rc.7 bulk-migration precedent (pending_auto_archived /
+// claude_skill_path_migrated etc).
+//
+// Scope: PENDING ONLY. Canonical entries are excluded — the `fab_review`
+// approve/modify flow already writes both fields verbatim (see
+// review.ts approve / modify), and back-filling canonical files would
+// require parsing the layer (KT-/KP-) for each entry. Pending is the
+// only surface where the v2.0 contract still has to tolerate
+// schema-default reads.
+//
+// Idempotency: an entry with BOTH fields already present is skipped (no
+// write, no per-file mutation, no contribution to touched_count). The
+// aggregate event is still emitted on every --apply-lint invocation
+// (touched_count=0 on the no-op pass) so the audit trail reflects every
+// migration heartbeat, mirroring `doctor_run`.
+//
+// Lint number: #28. Lint #26 (`narrow_too_few`, rc.6 TASK-023) and #27
+// (`session_hints_stale`, rc.6 TASK-021) are already allocated; the task
+// spec called this "#26 relevance_fields_missing" but the existing
+// numbering is preserved verbatim to honor TASK-003's "do not break
+// existing lint numbering" constraint.
+// ---------------------------------------------------------------------------
+
+type RelevanceFieldsMissingCandidate = {
+  // Display path: project-relative POSIX for team layer; `~/.fabric/...`
+  // for personal layer (matches the convention used by inspectPendingOverdue
+  // and inspectPendingAutoArchive).
+  pending_path: string;
+  // Absolute filesystem path of the file (used by the apply step to write
+  // back the augmented frontmatter).
+  pending_path_abs: string;
+  // True iff the frontmatter is missing `relevance_scope`. Either flag may
+  // be set independently — a candidate is recorded when at least one is
+  // true; the apply step writes only the missing fields.
+  missing_scope: boolean;
+  // True iff the frontmatter is missing `relevance_paths`.
+  missing_paths: boolean;
+};
+
+type RelevanceFieldsMissingInspection = {
+  candidates: RelevanceFieldsMissingCandidate[];
+  // Total pending entries the walker visited (regardless of whether they
+  // were missing fields). Used by the aggregate event's `scanned_count`.
+  scanned_count: number;
+};
+
+// Walk the pending tree (both team + personal roots), parse each file's
+// frontmatter, and record entries that are missing `relevance_scope` and/or
+// `relevance_paths`. Entries without a parseable `---\n...\n---` frontmatter
+// block are skipped silently — that case is owned by other doctor lints
+// (e.g. malformed frontmatter triggers manual_error elsewhere). Read-only:
+// never writes to disk.
+function inspectRelevanceFieldsMissing(
+  projectRoot: string,
+): RelevanceFieldsMissingInspection {
+  const candidates: RelevanceFieldsMissingCandidate[] = [];
+  let scannedCount = 0;
+
+  const FM_PATTERN = /^(?:\uFEFF)?---\r?\n([\s\S]*?)\r?\n---/u;
+
+  const teamRoot = join(projectRoot, ".fabric", "knowledge", "pending");
+  const personalRoot = join(
+    resolvePersonalRootForPending(),
+    ".fabric",
+    "knowledge",
+    "pending",
+  );
+
+  for (const [root, displayPrefix] of [
+    [teamRoot, ".fabric/knowledge/pending"] as const,
+    [personalRoot, "~/.fabric/knowledge/pending"] as const,
+  ]) {
+    if (!existsSync(root)) {
+      continue;
+    }
+    let typeDirs: string[] = [];
+    try {
+      typeDirs = readdirSync(root, { withFileTypes: true })
+        .filter((entry) => entry.isDirectory())
+        .map((entry) => entry.name);
+    } catch {
+      continue;
+    }
+    for (const typeDir of typeDirs) {
+      const dir = join(root, typeDir);
+      let entries;
+      try {
+        entries = readdirSync(dir, { withFileTypes: true });
+      } catch {
+        continue;
+      }
+      for (const entry of entries) {
+        if (!entry.isFile() || !entry.name.endsWith(".md")) {
+          continue;
+        }
+        const absPath = join(dir, entry.name);
+        let source: string;
+        try {
+          source = readFileSync(absPath, "utf8");
+        } catch {
+          continue;
+        }
+        const fm = FM_PATTERN.exec(source);
+        if (fm === null) {
+          // No parseable frontmatter — out of scope for #28; other doctor
+          // checks own that case.
+          continue;
+        }
+        scannedCount += 1;
+        const block = fm[1];
+        const missingScope = !RELEVANCE_SCOPE_LINE_PATTERN.test(block);
+        const missingPaths = !RELEVANCE_PATHS_LINE_PATTERN.test(block);
+        if (!missingScope && !missingPaths) {
+          continue;
+        }
+        candidates.push({
+          pending_path: posix.join(displayPrefix, typeDir, entry.name),
+          pending_path_abs: absPath,
+          missing_scope: missingScope,
+          missing_paths: missingPaths,
+        });
+      }
+    }
+  }
+  candidates.sort((a, b) => a.pending_path.localeCompare(b.pending_path));
+  return { candidates, scanned_count: scannedCount };
+}
+
+// Pure helper: insert the missing relevance_* YAML lines into a frontmatter
+// block. The replacement writes the fields verbatim against the regex shape
+// at L627-628 so the re-scan invariant holds:
+//   relevance_scope: broad
+//   relevance_paths: []
+// Inserts immediately before the closing `---` delimiter (or after the
+// existing last frontmatter line if there's no trailing blank). Returns
+// null when the source has no parseable frontmatter — caller must handle
+// defensively (the inspection upstream filters that case, but the mutation
+// arm is defensive). If both fields are already present this returns the
+// original source byte-for-byte (idempotency).
+function appendRelevanceFieldsToFrontmatter(
+  source: string,
+  needsScope: boolean,
+  needsPaths: boolean,
+): string | null {
+  const FM_PATTERN = /^(?:\uFEFF)?---\r?\n([\s\S]*?)\r?\n---/u;
+  const fm = FM_PATTERN.exec(source);
+  if (fm === null) {
+    return null;
+  }
+  const block = fm[1];
+  // Re-check inside the helper so an idempotent re-run can never re-add
+  // a field that the original write already produced.
+  const actuallyNeedsScope =
+    needsScope && !RELEVANCE_SCOPE_LINE_PATTERN.test(block);
+  const actuallyNeedsPaths =
+    needsPaths && !RELEVANCE_PATHS_LINE_PATTERN.test(block);
+  if (!actuallyNeedsScope && !actuallyNeedsPaths) {
+    return source;
+  }
+  // Build the new frontmatter block. Append the YAML lines after the
+  // existing block content (which already includes its own trailing line
+  // ending tail, guaranteed by the `\r?\n---` match), separating with a
+  // single newline. The values are written verbatim to match the regex
+  // shapes at L627-628 — `relevance_scope: broad` (unquoted) and
+  // `relevance_paths: []` (flow-style empty array).
+  const additions: string[] = [];
+  if (actuallyNeedsScope) {
+    additions.push("relevance_scope: broad");
+  }
+  if (actuallyNeedsPaths) {
+    additions.push("relevance_paths: []");
+  }
+  const trailing = block.endsWith("\n") ? "" : "\n";
+  const replacedBlock = `${block}${trailing}${additions.join("\n")}`;
+  const blockStart = source.indexOf(block);
+  if (blockStart < 0) {
+    return null;
+  }
+  return (
+    source.slice(0, blockStart) +
+    replacedBlock +
+    source.slice(blockStart + block.length)
+  );
+}
+
+async function applyRelevanceFieldsMissing(
+  candidate: RelevanceFieldsMissingCandidate,
+): Promise<DoctorApplyLintMutation> {
+  const parts: string[] = [];
+  if (candidate.missing_scope) parts.push("relevance_scope: broad");
+  if (candidate.missing_paths) parts.push("relevance_paths: []");
+  const detail = `back-filled: ${parts.join(", ")}`;
+  try {
+    const source = await readFile(candidate.pending_path_abs, "utf8");
+    const rewritten = appendRelevanceFieldsToFrontmatter(
+      source,
+      candidate.missing_scope,
+      candidate.missing_paths,
+    );
+    if (rewritten === null) {
+      return {
+        kind: "knowledge_relevance_fields_missing",
+        path: candidate.pending_path,
+        detail,
+        applied: false,
+        error: "frontmatter not parseable; cannot back-fill",
+      };
+    }
+    if (rewritten === source) {
+      // Idempotency: both fields already present at write time (e.g. a
+      // concurrent process landed the back-fill between inspect and apply).
+      // Surface as applied=false with a benign explanation so the mutation
+      // count stays accurate.
+      return {
+        kind: "knowledge_relevance_fields_missing",
+        path: candidate.pending_path,
+        detail,
+        applied: false,
+        error: "fields already present at write time (no diff)",
+      };
+    }
+    await atomicWriteText(candidate.pending_path_abs, rewritten);
+    return {
+      kind: "knowledge_relevance_fields_missing",
+      path: candidate.pending_path,
+      detail,
+      applied: true,
+    };
+  } catch (error) {
+    return {
+      kind: "knowledge_relevance_fields_missing",
+      path: candidate.pending_path,
+      detail,
+      applied: false,
+      error: truncateErrorMessage(error),
+    };
+  }
+}
+
+function createRelevanceFieldsMissingCheck(
+  inspection: RelevanceFieldsMissingInspection,
+): DoctorCheck {
+  if (inspection.candidates.length === 0) {
+    return okCheck(
+      "Knowledge relevance fields missing",
+      "All pending entries declare both relevance_scope and relevance_paths.",
+    );
+  }
+  const first = inspection.candidates[0];
+  const missingParts: string[] = [];
+  if (first.missing_scope) missingParts.push("relevance_scope");
+  if (first.missing_paths) missingParts.push("relevance_paths");
+  const detail = `${first.pending_path} (missing: ${missingParts.join(", ")})`;
+  return issueCheck(
+    "Knowledge relevance fields missing",
+    "ok",
+    "info",
+    "knowledge_relevance_fields_missing",
+    `${inspection.candidates.length} pending entr${inspection.candidates.length === 1 ? "y is" : "ies are"} missing relevance_scope and/or relevance_paths in frontmatter. First: ${detail}.`,
+    "Run `fab doctor --apply-lint` to back-fill the schema defaults (relevance_scope: broad, relevance_paths: []).",
   );
 }
 

@@ -16,7 +16,7 @@ import type { ClaudeMcpScope } from "../config/json.js";
 import { t } from "../i18n.js";
 import * as configCommand from "./config.js";
 import { installHooks } from "./hooks.js";
-import { runInitScan } from "./scan.js";
+import { detectExistingLanguage, runInitScan, type ResolvedLanguage } from "./scan.js";
 import { buildForensicReport } from "../scanner/forensic.js";
 import { detectClientSupports, type DetectedClientSupport } from "../config/resolver.js";
 import {
@@ -377,11 +377,13 @@ export async function runInitCommand(args: InitArgs): Promise<InitExecutionResul
  * field, add the field to FABRIC_CONFIG_DEFAULTS below too — otherwise it
  * remains invisible to fresh-init users (silent default-on-missing).
  *
- * The `knowledge_language` default is intentionally written as
- * `"match-existing"` (matches the schema's `.default("match-existing")`),
- * letting init/scan resolve the effective language from project content at
- * runtime instead of hard-locking the policy. Users who want a fixed
- * language flip the field to `"zh-CN"` or `"en"` after a fresh init.
+ * The `knowledge_language` field is fixated at init time (TASK-006 / C1):
+ * we invoke scan.ts's `detectExistingLanguage(targetRoot)` once on a fresh
+ * init, which scans `README.md` + `docs/*.md` for the CJK ratio and resolves
+ * to `"zh-CN"` (ratio > 0.3) or `"en"` (default). The literal
+ * `"match-existing"` placeholder is no longer written — users who want a
+ * different language flip the field to `"zh-CN"` or `"en"` after init. The
+ * empty-repo default is `"en"` (matches `detectExistingLanguage`'s contract).
  *
  * Idempotent: writes ONLY when the file does not exist. NEVER merges
  * missing fields into an existing file. NEVER overwrites user edits.
@@ -389,15 +391,22 @@ export async function runInitCommand(args: InitArgs): Promise<InitExecutionResul
  * with identical semantics — re-runs preserve user customisations
  * verbatim.
  */
-function writeDefaultFabricConfig(fabricDir: string): void {
+function writeDefaultFabricConfig(fabricDir: string, targetRoot: string): void {
   const target = join(fabricDir, "fabric-config.json");
   if (existsSync(target)) return;
 
+  // TASK-006 (C1): probe README + docs to fixate knowledge_language on a
+  // fresh init. The detector accepts the project-root path and returns
+  // "zh-CN" or "en" — never "match-existing". Idempotency is preserved by
+  // the early return above: existing user configs are never overwritten.
+  const detectedLanguage: ResolvedLanguage = detectExistingLanguage(targetRoot);
+
   const FABRIC_CONFIG_DEFAULTS = {
-    // Scan/import language policy. `match-existing` lets init resolve the
-    // effective language from project content; explicit `zh-CN` / `en`
-    // lock the policy. See packages/shared/src/schemas/fabric-config.ts.
-    knowledge_language: "match-existing",
+    // Scan/import language policy. Fixated at init time by probing
+    // README.md + docs/*.md (CJK ratio > 0.3 → "zh-CN", else "en"). Users
+    // can edit `.fabric/fabric-config.json` to override. See
+    // packages/shared/src/schemas/fabric-config.ts for the enum.
+    knowledge_language: detectedLanguage,
     // fabric-hint Stop hook Signal A (archive): time-branch threshold, hours
     // since last knowledge_proposed event.
     archive_hint_hours: 24,
@@ -419,10 +428,49 @@ function writeDefaultFabricConfig(fabricDir: string): void {
     // fabric-hint Stop hook Signal C (import) + doctor lint #22: canonical
     // knowledge node count below this value flags an underseeded workspace.
     underseed_node_threshold: 10,
+    // rc.9+ (skill-contract-fix B1): fabric-import first-run git-history
+    // window in months. Default 60 captures the bulk of a mature repo's
+    // signal in one pass; lower to 12-24 for fresh / small repos.
+    import_window_first_run_months: 60,
+    // rc.9+ (skill-contract-fix B1): fabric-import rerun window in months.
+    // Default 2; raise to 6 if the workspace pauses imports for long stretches.
+    import_window_rerun_months: 2,
+    // rc.9+ (skill-contract-fix B1): hard cap on pending entries produced
+    // per fabric-import invocation. Default 10 matches one-sitting triage.
+    import_max_pending_per_run: 10,
+    // rc.9+ (skill-contract-fix B1): hard cap on commits scanned per
+    // fabric-import invocation. Default 500 covers ~2 months of typical churn.
+    import_max_commits_scan: 500,
+    // rc.9+ (skill-contract-fix B1): canonical-node count above which
+    // fabric-import suggests review over importing more. Default 50.
+    import_skip_canonical_threshold: 50,
+    // rc.9+ (skill-contract-fix B1): max candidates per fabric-archive batch.
+    // Default 8 keeps each batch reviewable in one sitting.
+    archive_max_candidates_per_batch: 8,
+    // rc.9+ (skill-contract-fix B1): max recently-touched paths in
+    // fabric-archive's relevance digest. Default 20.
+    archive_max_recent_paths: 20,
+    // rc.9+ (skill-contract-fix B1): max prior fabric-archive sessions
+    // summarised in the digest the skill loads on start. Default 10.
+    archive_digest_max_sessions: 10,
+    // rc.9+ (skill-contract-fix B1): max review results per topic cluster
+    // in fabric-review. Default 8.
+    review_topic_result_cap: 8,
+    // rc.9+ (skill-contract-fix B1): age (days) above which a pending entry
+    // is considered stale by fabric-review. Default 14.
+    review_stale_pending_days: 14,
   };
 
   mkdirSync(fabricDir, { recursive: true });
   writeFileSync(target, JSON.stringify(FABRIC_CONFIG_DEFAULTS, null, 2) + "\n", "utf8");
+
+  // TASK-006 (C1): surface the fixated value so users know what was
+  // detected and how to override it. clack's `log.info` works outside an
+  // `intro()` block — it prints a single labeled line and does not
+  // interfere with the scaffold path summary below.
+  log.info(
+    `Detected and fixated knowledge_language = ${detectedLanguage}; edit ${target} to override.`,
+  );
 }
 
 function resolveInitCliIntent(args: InitArgs, targetInput: string): InitCliIntent {
@@ -629,8 +677,10 @@ export async function executeInitFabricPlan(plan: InitScaffoldPlan): Promise<Ini
   // Scaffold a discoverable default fabric-config.json listing every
   // reader-consumed field at its documented default. Idempotent: never
   // overwrites pre-existing user edits, even on --reapply. See the
-  // helper's JSDoc for the source-of-truth field list.
-  writeDefaultFabricConfig(plan.fabricDir);
+  // helper's JSDoc for the source-of-truth field list. TASK-006 (C1):
+  // the helper now also probes plan.target's README/docs to fixate
+  // knowledge_language on fresh init.
+  writeDefaultFabricConfig(plan.fabricDir, plan.target);
 
   // v2.0 follow-up (rc.1 fix #1): write the repo-root AGENTS.md anchor when
   // it does not already exist. This satisfies doctor's bootstrap_anchor_missing

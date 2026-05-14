@@ -1,0 +1,104 @@
+{
+  "id": "TASK-003",
+  "title": "A3 — Doctor lint #26 `relevance_fields_missing` + --apply-lint mutation arm + aggregate migration event",
+  "scope": "packages/server/src/services/doctor.ts + packages/shared/src/schemas/event-ledger.ts (new event type)",
+  "action": "Add",
+  "description": "Add doctor lint #26 `relevance_fields_missing` that scans .fabric/knowledge/pending/**/*.md for frontmatter missing `relevance_scope` or `relevance_paths`. Detect mode reports findings; --apply-lint mode writes `relevance_scope: broad` + `relevance_paths: []` (matching meta-builder default) and emits one aggregate `relevance_migration_run` event with touched_count. Idempotent: skip files with both fields already present.",
+  "files": [
+    {
+      "path": "packages/server/src/services/doctor.ts",
+      "action": "modify",
+      "target": "Lint registry + new check function + --apply-lint mutation arm",
+      "change": "Add LINT_26_RELEVANCE_FIELDS_MISSING; reuse RELEVANCE_SCOPE_LINE_PATTERN/RELEVANCE_PATHS_LINE_PATTERN (L627-628) to detect absence; mutation appends YAML lines verbatim matching the regex shape; emit aggregate event after run"
+    },
+    {
+      "path": "packages/shared/src/schemas/event-ledger.ts",
+      "action": "modify",
+      "target": "Event discriminated union (L353-390)",
+      "change": "Add relevanceMigrationRunEventSchema { event_type: 'relevance_migration_run', timestamp, touched_count: number, scanned_count: number }; register in eventLedgerEventSchema discriminated union"
+    },
+    {
+      "path": "packages/server/src/services/doctor.test.ts",
+      "action": "modify",
+      "target": "Doctor lint test fixtures",
+      "change": "Add 3 test cases: (a) detect-mode reports missing fields, (b) apply-lint mutation writes correct YAML and skips already-correct entries, (c) emits one relevance_migration_run event with accurate count"
+    },
+    {
+      "path": "packages/shared/test/integration/schemas-roundtrip.test.ts",
+      "action": "modify",
+      "target": "Event roundtrip test",
+      "change": "Add relevance_migration_run event roundtrip case"
+    },
+    {
+      "path": "docs/configuration.md",
+      "action": "modify",
+      "target": "Doctor lints section",
+      "change": "Document lint #26 + --apply-lint behavior"
+    }
+  ],
+  "implementation": [
+    "Define LINT_26 constant + descriptor (id: 26, name: 'relevance_fields_missing', severity: 'info', scope: 'pending')",
+    "Scan .fabric/knowledge/pending/**/*.md; for each file parse frontmatter; if relevance_scope OR relevance_paths absent → record finding",
+    "In --apply-lint branch: read file, append `relevance_scope: broad\\nrelevance_paths: []` to frontmatter (insert before closing `---`), atomic-write via atomicWriteText; skip entries already containing both fields",
+    "After full scan emit one relevance_migration_run event with { touched_count, scanned_count } via appendEventLedgerEvent",
+    "Define + register new event schema in event-ledger.ts; export from package barrel",
+    "Add test fixtures (pending entries missing zero/one/both fields) and assertions covering all branches"
+  ],
+  "reference": {
+    "pattern": "Existing doctor lint #23/#24/#25 implementation + --apply-lint mutation pattern",
+    "files": [
+      "packages/server/src/services/doctor.ts:424-432",
+      "packages/server/src/services/doctor.ts:627-628",
+      "packages/cli/src/commands/uninstall.ts:1-90"
+    ],
+    "examples": "Mirror lint #23 (narrow_no_paths) structure; reuse iterateRelevanceFrontmatter helper (L3286-3299) for scan; mutation arm uses atomicWriteText"
+  },
+  "convergence": {
+    "criteria": [
+      "Doctor `--lint` mode lists lint #26 findings for every pending entry missing either field",
+      "Doctor `--apply-lint` mode writes `relevance_scope: broad` + `relevance_paths: []` to missing entries; running twice produces zero diff (idempotent)",
+      "Written YAML lines match RELEVANCE_SCOPE_LINE_PATTERN + RELEVANCE_PATHS_LINE_PATTERN regexes verbatim",
+      "Exactly one relevance_migration_run event emitted per --apply-lint invocation with correct touched_count",
+      "doctor.test.ts has 3+ new test cases (detect, apply, idempotent re-apply); all green",
+      "schemas-roundtrip.test.ts passes with new event type"
+    ]
+  },
+  "depends_on": [],
+  "cli_execution_id": "fabric-skills-contract-fix-2026-05-13-TASK-003",
+  "cli_execution": { "strategy": "new" },
+  "rationale": {
+    "chosen_approach": "Doctor lint #26 + --apply-lint mutation; reuses tested mutation machinery, integrates with maintenance_hint_days cadence",
+    "alternatives_considered": [
+      "Standalone scripts/migrate-frontmatter.mjs — one-shot, but no event audit trail",
+      "Per-file event (relevance_fields_migrated) instead of aggregate — noisier ledger",
+      "Skip migration entirely — relies on meta-builder fallback indefinitely"
+    ],
+    "decision_factors": [
+      "Migration is hygiene not correctness (meta-builder already defaults)",
+      "Aggregate event matches rc.5→rc.7 precedent",
+      "Idempotency requirement"
+    ],
+    "tradeoffs": "Discoverability: users must run `fab doctor --apply-lint` to migrate; tradeoff accepted because the fallback safety net at knowledge-meta-builder.ts:1007-1021 makes migration optional"
+  },
+  "test": {
+    "manual_checks": [
+      "Create a pending entry without relevance_scope; run `fab doctor --lint` → see finding",
+      "Run `fab doctor --apply-lint` → verify YAML lines added + one event in .fabric/events.jsonl",
+      "Run again → zero changes + no new event (or aggregate event with touched_count=0)"
+    ],
+    "success_metrics": [
+      "100% test pass rate",
+      "Idempotent re-apply (zero diff on second run)",
+      "Single aggregate event per run"
+    ],
+    "unit": [
+      "test_doctor_lint_26_detects_missing_fields",
+      "test_doctor_apply_lint_26_writes_yaml",
+      "test_doctor_apply_lint_26_idempotent_skip_complete",
+      "test_event_ledger_relevance_migration_run_roundtrip"
+    ],
+    "integration": [
+      "test_doctor_migration_emits_aggregate_event"
+    ]
+  }
+}

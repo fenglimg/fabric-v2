@@ -1,0 +1,111 @@
+{
+  "id": "TASK-005",
+  "title": "Test suite: unit + integration + cli-surface + minimal i18n snapshot",
+  "scope": "packages/cli/__tests__/",
+  "action": "Create",
+  "description": "Add comprehensive test coverage for `fab uninstall` mirroring the init test pattern. Four touchpoints: (1) NEW `packages/cli/__tests__/uninstall.test.ts` — unit tests for runUninstallCommand, buildUninstallExecutionPlan plan-shape, --plan no-write contract, --force/--yes/--purge flag semantics, wizard cancellation (exit code 130), idempotent re-run. Mocks @clack/prompts via vi.doMock + vi.resetModules. (2) NEW `packages/cli/__tests__/integration/uninstall-skills-and-hooks.test.ts` — full init → uninstall round-trip with snapshotTree before/after; assert (a) all install-managed artifacts removed, (b) user-authored .claude/settings.json permissions + non-fabric Stop hooks byte-identical, (c) re-uninstall is no-op, (d) `.fabric/knowledge/` preserved without --purge, removed with --purge, (e) `~/.fabric/knowledge/` NEVER touched regardless. Reuses snapshotTree and runInit helpers from existing install-skills-and-hooks.test.ts. (3) MODIFY `packages/cli/__tests__/cli-surface.test.ts` — import uninstallCommand, append to it.each table, update L92-L100 hard-equality `expect(names).toEqual(['doctor','init','scan','serve','uninstall'])`. (4) MODIFY `packages/cli/__tests__/i18n.test.ts` — add MINIMAL uninstall entry (description + help-text usage line only per clarification #8) to collectSnapshots. Regenerate both `.snap` files via `pnpm --filter @fenglimg/fabric-cli test -u`.",
+  "files": [
+    {
+      "path": "packages/cli/__tests__/uninstall.test.ts",
+      "action": "create",
+      "target": "new test file — unit + command-surface tests",
+      "change": "Module-scoped tempRoots[] + afterEach drain (mirror init-atomic.test.ts L13-L20). Test cases: (a) buildUninstallExecutionPlan on a freshly-init'd cocos-stub fixture enumerates expected scaffold artifacts + bootstrap artifacts + MCP entry; (b) --plan mode returns plan with disposition: 'skipped' for every stage and existsSync of every artifact remains true (mirror init-wizard.test.ts L129-L161); (c) executeUninstallExecutionPlan removes derived state (.fabric/agents.meta.json, events.jsonl, forensic.json) and preserves .fabric/knowledge/{decisions,...}/.gitkeep; (d) --purge removes .fabric/knowledge/ but ~/.fabric/knowledge/ is byte-identical; (e) wizard cancellation: setProcessTty(true,true,true), vi.doMock('@clack/prompts',...) with cancel sentinel, run uninstall non-yes/non-plan, assert process.exitCode === 130 and cancel banner emitted exactly once (mirror init-wizard.test.ts L164-L217); (f) idempotent re-run: run uninstall twice, second run returns 100% status='skipped'; (g) --force allows uninstall when artifacts missing without error."
+    },
+    {
+      "path": "packages/cli/__tests__/integration/uninstall-skills-and-hooks.test.ts",
+      "action": "create",
+      "target": "new test file — full round-trip integration",
+      "change": "Mirror install-skills-and-hooks.test.ts structure. tempRoots[] + afterEach. Helpers: runInit(target, {skipMcp:true}) reused from install test file (or duplicated); runUninstall(target, opts) wraps buildUninstallExecutionPlan + executeUninstallExecutionPlan with skipMcp:true. snapshotTree(root, rel) reused. Tests: (T1) fresh init → snapshotTree('.claude') → uninstall → snapshotTree('.claude') deep-equals an empty tree (or only non-fabric files if seeded); (T2) seed user-authored .claude/settings.json with permissions + custom Stop hook before init → init → uninstall --clean-empties → settings.json contains user permissions + user Stop hook only, fabric Stop hook entries removed; (T3) init → seed .fabric/knowledge/decisions/my-decision.md → uninstall (no --purge) → my-decision.md byte-identical, .fabric/agents.meta.json absent; (T4) init → uninstall --purge → .fabric/ entirely absent, but ~/.fabric/knowledge/ (HOME pinned to tmpdir) byte-identical; (T5) init → uninstall → uninstall (re-run) → second run all status='skipped'; (T6) seed CLAUDE.md with user content + run init (appends pointer) → uninstall → CLAUDE.md byte-equal to user content (pointer line stripped, user content untouched)."
+    },
+    {
+      "path": "packages/cli/__tests__/cli-surface.test.ts",
+      "action": "modify",
+      "target": "command-surface drift gate",
+      "change": "Add `import uninstallCommand from '../src/commands/uninstall.ts';` near L12. Append `['uninstall', uninstallCommand as CittyCommand]` tuple to the it.each table at L76-L86. Update L92-L100 hard-equality: `expect(names).toEqual(['doctor','init','scan','serve','uninstall'])`. Update DRIFT_HINT message if it enumerates command names."
+    },
+    {
+      "path": "packages/cli/__tests__/i18n.test.ts",
+      "action": "modify",
+      "target": "collectSnapshots locale-parity gate",
+      "change": "Add to collectSnapshots(locale) per clarification #8 MINIMAL mode: dynamic-import uninstall command (`const uninstallMod = await import('../src/commands/uninstall.ts')`), capture ONLY uninstallMod.default.meta.description (resolved via t) AND the citty-generated usage help-text first line — NOT full stdout. Append { uninstall: { description, usage } } to the returned snapshot object. (Init/scan/serve continue to capture full description+stderr+stdout+errors; uninstall is intentionally narrower this cycle.)"
+    },
+    {
+      "path": "packages/cli/__tests__/__snapshots__/cli-surface.test.ts.snap",
+      "action": "modify",
+      "target": "regenerate snapshot",
+      "change": "Auto-regenerate via `pnpm --filter @fenglimg/fabric-cli test -u`. Will gain a `fab uninstall surface` snapshot block listing the sorted args. Review the diff for unexpected drift."
+    },
+    {
+      "path": "packages/cli/__tests__/__snapshots__/i18n.test.ts.snap",
+      "action": "modify",
+      "target": "regenerate snapshot with minimal uninstall entry",
+      "change": "Auto-regenerate. Will gain a `{ uninstall: { description, usage } }` entry under each locale (en + zh-CN). Review diff to confirm only the description+usage lines were added (not full stdout)."
+    }
+  ],
+  "implementation": [
+    "Create packages/cli/__tests__/uninstall.test.ts. Copy module-scope tempRoots + afterEach lifecycle from init-atomic.test.ts:L13-L20. Import createWerewolfFixtureRoot, cleanupFixtureRoot, writeFixtureFile, readFixtureFile, setProcessTty from helpers/init-test-utils.ts.",
+    "Write the 7 test cases (a)-(g) described in files[0].change. For (b) --plan no-write: snapshot-walk the .fabric/.claude/.codex trees before+after, assert byte equality. For (e) wizard cancel: mirror init-wizard.test.ts L164-L217 exactly, swap initCommand for uninstallCommand.",
+    "Create packages/cli/__tests__/integration/uninstall-skills-and-hooks.test.ts. Mirror install-skills-and-hooks.test.ts:L73-L103 (runInit + snapshotTree). Add runUninstall(target, opts) helper.",
+    "Write tests T1-T6. For T2 user-preservation: writeFixtureFile('.claude/settings.json', JSON.stringify({permissions:{allow:['Read'],deny:[]},hooks:{Stop:[{matcher:'*',hooks:[{type:'command',command:'./user-hook.sh'}]}]}}, null, 2)) before runInit; after runUninstall({cleanEmpties:true}), assert the resulting settings.json deep-equals the pre-init seed.",
+    "For T4 personal-root preservation: in beforeEach pin process.env.HOME = mkdtempSync (or FABRIC_HOME); seed ~/.fabric/knowledge/decisions/personal.md; run init → uninstall --purge; assert existsSync($HOME/.fabric/knowledge/decisions/personal.md) === true.",
+    "Modify packages/cli/__tests__/cli-surface.test.ts as described in files[2].change.",
+    "Modify packages/cli/__tests__/i18n.test.ts as described in files[3].change. Critically: implement the MINIMAL capture per clarification #8 — do NOT run uninstall to capture stdout, just import + read meta.description + format citty usage help line. This keeps the snapshot stable while uninstall stdout copy iterates in subsequent rcs.",
+    "Run `pnpm --filter @fenglimg/fabric-cli test -u` to regenerate both .snap files. Review the .snap diffs manually to confirm only expected additions.",
+    "Run `pnpm --filter @fenglimg/fabric-cli test` to confirm 0 failures.",
+    "Run `pnpm --filter @fenglimg/fabric-cli test:coverage` and confirm packages/cli/src/commands/uninstall.ts and packages/cli/src/install/uninstall-skills-and-hooks.ts both meet ≥70% lines/statements coverage."
+  ],
+  "reference": {
+    "pattern": "Real-fs + tmpdir-fixture + cocos-stub round-trip; wizard mocked via vi.doMock + vi.resetModules + dynamic import; snapshotTree for tree-equality assertions; minimal i18n capture for unstable copy.",
+    "files": [
+      "packages/cli/__tests__/init-atomic.test.ts",
+      "packages/cli/__tests__/init-wizard.test.ts",
+      "packages/cli/__tests__/init-cli-surface.test.ts",
+      "packages/cli/__tests__/integration/install-skills-and-hooks.test.ts",
+      "packages/cli/__tests__/integration/init-guard.test.ts",
+      "packages/cli/__tests__/cli-surface.test.ts",
+      "packages/cli/__tests__/i18n.test.ts",
+      "packages/cli/__tests__/helpers/init-test-utils.ts"
+    ],
+    "examples": "init-atomic.test.ts:L48-L62 (existsSync post-conditions — inverted for uninstall). init-wizard.test.ts:L164-L217 (cancel-exitCode-130 pattern). install-skills-and-hooks.test.ts:L82-L103 (snapshotTree). install-skills-and-hooks.test.ts:L250-L288 (user-content preservation — directly invertible pattern)."
+  },
+  "convergence": {
+    "criteria": [
+      "`packages/cli/__tests__/uninstall.test.ts` exists with at least 7 test cases covering plan-shape, --plan no-write, derived-state removal, --purge knowledge handling, wizard cancellation (exit code 130), idempotent re-run, and --force on missing artifacts.",
+      "`packages/cli/__tests__/integration/uninstall-skills-and-hooks.test.ts` exists with at least 6 test cases (T1-T6 described above), including user-content preservation (T2, T6) and personal-root preservation (T4).",
+      "`packages/cli/__tests__/cli-surface.test.ts` L92-L100 (or equivalent post-edit line range) hard-equality asserts on sorted command names array containing 'uninstall'. New it.each row exists.",
+      "`packages/cli/__tests__/i18n.test.ts` collectSnapshots returns an object containing an `uninstall` key per locale with EXACTLY two fields (description, usage) — verified by Object.keys check.",
+      "`pnpm --filter @fenglimg/fabric-cli test` exits 0; all new tests pass.",
+      "`pnpm --filter @fenglimg/fabric-cli test:coverage` reports ≥70% lines AND ≥70% statements coverage for packages/cli/src/commands/uninstall.ts AND packages/cli/src/install/uninstall-skills-and-hooks.ts.",
+      "Snapshot files cli-surface.test.ts.snap and i18n.test.ts.snap have been regenerated and diff is limited to expected additions (no unrelated existing-command snapshots changed)."
+    ]
+  },
+  "depends_on": ["TASK-002", "TASK-003", "TASK-004"],
+  "rationale": {
+    "chosen_approach": "Mirror init suite's three layers (unit + integration + cli-surface drift gate) plus minimal i18n. Real-fs + tmpdir matches codebase convention. Minimal i18n capture (clarification #8) avoids churn during copy iteration.",
+    "alternatives_considered": ["Full stdout i18n capture for uninstall — rejected per clarification #8 (output copy iterates in subsequent rcs)", "Shared-manifest-driven test (clarification #2 from exploration-testing.json Option B) — rejected: introducing a manifest is a separate refactor; constants from TASK-001 are the manifest", "End-to-end binary-spawn test — deferred; current test convention is in-process via vitest aliases"],
+    "decision_factors": ["≥70% coverage gate on new src/ files", "i18n parity gate (cli-surface.test.ts hard-equality)", "Test-suite consistency with init"],
+    "tradeoffs": "Test code volume roughly doubles the install test surface, but most is mechanical inversion."
+  },
+  "test": {
+    "manual_checks": [
+      "Open both .snap files post-regeneration; visually confirm only uninstall-related additions",
+      "Run `pnpm --filter @fenglimg/fabric-cli test:coverage` and inspect the per-file coverage table for uninstall.ts ≥70%"
+    ],
+    "success_metrics": [
+      "All test files exit 0; total new test count ≥13 (7 unit + 6 integration)",
+      "Coverage threshold (70% lines/statements) holds on packages/cli scope post-merge",
+      "No flakiness: 3 consecutive test runs all pass"
+    ],
+    "unit": ["uninstall.test.ts (7 cases)"],
+    "integration": ["integration/uninstall-skills-and-hooks.test.ts (6 cases)"]
+  },
+  "cli_execution_id": "uninstall-script-support-2026-05-13-TASK-005",
+  "cli_execution": {
+    "strategy": "merge_fork",
+    "merge_from": [
+      "uninstall-script-support-2026-05-13-TASK-002",
+      "uninstall-script-support-2026-05-13-TASK-003",
+      "uninstall-script-support-2026-05-13-TASK-004"
+    ]
+  }
+}

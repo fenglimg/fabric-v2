@@ -1,0 +1,42 @@
+{
+  "session": "fabric-skills-contract-fix-2026-05-13",
+  "plan_summary": "Fabric three-skill (fabric-import / fabric-archive / fabric-review) contract fix + optimization. Closes the rc.5→rc.7 gap where fab_extract_knowledge MCP schema silently dropped relevance_scope/relevance_paths.",
+  "generated_at": "2026-05-14T10:55:00.000Z",
+  "test_config": {
+    "command": "pnpm test",
+    "framework": "vitest",
+    "type": "monorepo (shared + server + cli)"
+  },
+  "tasks": [
+    { "task_id": "TASK-001", "title": "A1 schema + service + personal-narrow degrade", "status": "PASS", "convergence": { "met": ["schema extends ok", "idempotency formula L78 unchanged", "frontmatter YAML omit-when-undefined", "personal+narrow degrade event emitted", "tests pass", "5 new parse cases + 4 service tests"], "unmet": [] } },
+    { "task_id": "TASK-002", "title": "A2 archive scope → relevance_scope rename", "status": "PASS", "convergence": { "met": ["all scope: occurrences renamed", "three-mirror byte-identity", "lint-protected-tokens 8/8 pass", "install-skills-and-hooks 8/8 pass"], "unmet": [] } },
+    { "task_id": "TASK-003", "title": "A3 doctor lint #28 + migration event", "status": "PASS", "convergence": { "met": ["lint #28 detects missing fields", "--apply-lint mutates correctly", "relevance_migration_run event emitted", "402 doctor tests pass", "idempotent re-execution"], "unmet": [] } },
+    { "task_id": "TASK-004", "title": "B1 fabric-config +10 fields", "status": "PASS", "convergence": { "met": ["10 fields added with correct defaults", "lenient root preserved", "docs/configuration.md updated", "fabric-config.test 23/23 pass", "back-compat regression test green"], "unmet": [] } },
+    { "task_id": "TASK-005", "title": "B2 three SKILL.md read config + delete pseudo-precision", "status": "PASS", "convergence": { "met": ["Config Load chapter in 3 skills", "hardcoded values replaced with config refs", ">60%/0.78/0.84 pseudo-precision removed", "12 config fields verified vs schema", "three-mirror parity"], "unmet": [] } },
+    { "task_id": "TASK-006", "title": "C1 init-time knowledge_language fixation", "status": "PASS", "convergence": { "met": ["detectExistingLanguage reused", "config not overwritten when exists", "4 new scan-init tests pass", "log.info notification shown"], "unmet": [] } },
+    { "task_id": "TASK-007", "title": "C2 5-class i18n bilingualization", "status": "PASS", "convergence": { "met": ["UX i18n Policy + AskUserQuestion Policy in 3 skills", "5 classes zh/en mirrored", "options[] EN routing keys preserved", "three-mirror parity", "19/19 tests pass"], "unmet": [] } },
+    { "task_id": "TASK-008", "title": "D1+D2 protected tokens + idempotency T5 note", "status": "PASS", "convergence": { "met": ["protected tokens extended per skill", "idempotency T5-array note added to archive + import", "lint 11/11 pass", "server formula L78 unchanged"], "unmet": [] } },
+    { "task_id": "TASK-009", "title": "E1 review narrowing-imported chapter", "status": "PASS", "convergence": { "met": ["Narrowing Imported Entries chapter inserted before Modify Sub-Flow", "detection signal documented", "5-option modify follow-up", "Worked Example D added", "NOT in Hard Rules", "three-mirror parity"], "unmet": [] } },
+    { "task_id": "TASK-010", "title": "E2 import proposed_reason inference", "status": "PASS", "convergence": { "met": ["Step 2.1.5 chapter inserted", "6-reason coverage matrix", "L179 hardcoded removed", "Worked Example A reclassified to diagnostic-then-fix", "fallback preserved", "three-mirror parity"], "unmet": [] } },
+    { "task_id": "TASK-011", "title": "F1+F2 state.json atomic + events.jsonl constraint", "status": "PASS", "convergence": { "met": ["Phase 0 .tmp residue scan", "Phase 0.1 corruption recovery", "2-step atomic write pattern", "events.jsonl <4KB constraint in 3 skills", "three-mirror parity"], "unmet": [] } }
+  ],
+  "execution": {
+    "command": "pnpm test",
+    "timestamp": "2026-05-14T10:55:00.000Z",
+    "overall": "PASS",
+    "test_counts": {
+      "shared": "306 passed",
+      "server": "402 passed / 1 skipped",
+      "cli": "491 passed",
+      "total": "1199 passed / 1 skipped"
+    },
+    "fix_iteration": 0
+  },
+  "cross_cutting_checks": {
+    "three_mirror_byte_identity": "PASS (6/6 diff pairs empty)",
+    "idempotency_formula_preserved": "PASS (L78 sha256({source_session, type, slug}))",
+    "protected_tokens_lint": "PASS (6 template files)",
+    "install_skills_and_hooks": "PASS (8/8)",
+    "diff_scope": "30 files, +5151 / -291 lines"
+  }
+}

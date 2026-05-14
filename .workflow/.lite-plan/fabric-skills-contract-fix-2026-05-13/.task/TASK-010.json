@@ -1,0 +1,103 @@
+{
+  "id": "TASK-010",
+  "title": "E2 — fabric-import proposed_reason inference upgrade (6-reason coverage matrix)",
+  "scope": "packages/cli/templates/skills/fabric-import/SKILL.md (+ .claude + .codex mirrors)",
+  "action": "Update",
+  "description": "Replace hardcoded `proposed_reason: 'new-dependency-or-pattern'` at L179 with a per-commit inferred value. Add Step 2.1.5 chapter with a 6-reason inference matrix mapping (commit-prefix + body-cue) → reason. Worked Example A reclassified as `diagnostic-then-fix`. Fallback retains `new-dependency-or-pattern`. Three-mirror sync.",
+  "files": [
+    {
+      "path": "packages/cli/templates/skills/fabric-import/SKILL.md",
+      "action": "modify",
+      "target": "Step 2.1 (currently hardcoded reason) + new Step 2.1.5 + Worked Example A",
+      "change": "Delete `proposed_reason: 'new-dependency-or-pattern'` literal at L179; replace with `<inferred per Step 2.1.5>`. Add Step 2.1.5 chapter: inference matrix table — feat:/feat(...): → new-dependency-or-pattern, fix:/fix(...): → diagnostic-then-fix, refactor:/refactor(...): → refactor-pattern-discovery, test:/test(...): → testing-gap-closed, docs:/docs(...): → documentation-decision, chore:/chore(...): → maintenance-process-shift. Body-cue overrides: 'closes #' or 'fixes #' → diagnostic-then-fix regardless of prefix. Reclassify Worked Example A to use diagnostic-then-fix"
+    },
+    {
+      "path": ".claude/skills/fabric-import/SKILL.md",
+      "action": "modify",
+      "target": "Full file",
+      "change": "Byte-identical mirror"
+    },
+    {
+      "path": ".codex/skills/fabric-import/SKILL.md",
+      "action": "modify",
+      "target": "Full file",
+      "change": "Byte-identical mirror"
+    }
+  ],
+  "implementation": [
+    "Read fabric-import SKILL.md around L179 to find the hardcoded reason literal; confirm exact line + context",
+    "Draft Step 2.1.5 'Inferring proposed_reason from Commit Prefix + Body' chapter with a 6-row table:\n  - feat / feat(...): → new-dependency-or-pattern\n  - fix / fix(...): → diagnostic-then-fix\n  - refactor / refactor(...): → refactor-pattern-discovery\n  - test / test(...): → testing-gap-closed\n  - docs / docs(...): → documentation-decision\n  - chore / chore(...): → maintenance-process-shift",
+    "Add body-cue override: if commit body contains 'closes #N' or 'fixes #N' or 'resolves #N' → force diagnostic-then-fix regardless of prefix",
+    "Add fallback rule: when prefix unrecognized and no body cue → use new-dependency-or-pattern (preserves prior behavior)",
+    "Update Step 2.1 — replace literal proposed_reason with `<inferred per Step 2.1.5 — pass commit prefix + body cue>` placeholder",
+    "Find Worked Example A; reclassify the reason in its fab_extract_knowledge call from new-dependency-or-pattern → diagnostic-then-fix (since example commit is a fix)",
+    "Mirror to .claude and .codex; verify byte-identity"
+  ],
+  "reference": {
+    "pattern": "Inference matrix + body-cue override + fallback",
+    "files": [
+      "packages/cli/templates/skills/fabric-import/SKILL.md:L179",
+      "packages/shared/src/schemas/api-contracts.ts (proposed_reason enum if any)",
+      "packages/cli/templates/skills/fabric-archive/SKILL.md (existing proposed_reason usage)"
+    ],
+    "examples": "Existing fabric-archive Phase 2 uses proposed_reason with explicit values; this task generalizes the mapping for import's git-mining pipeline"
+  },
+  "convergence": {
+    "criteria": [
+      "fabric-import SKILL.md L179 area no longer contains literal `proposed_reason: 'new-dependency-or-pattern'`; replaced with inference reference",
+      "Step 2.1.5 chapter present with 6-row matrix table",
+      "Body-cue override (closes/fixes/resolves #N → diagnostic-then-fix) documented",
+      "Fallback rule (unrecognized prefix → new-dependency-or-pattern) documented",
+      "Worked Example A reclassified to diagnostic-then-fix",
+      "Three-mirror byte-identity for fabric-import preserved",
+      "scripts/lint-protected-tokens.ts exits 0",
+      "All 6 reason strings present verbatim in template (greppable)"
+    ]
+  },
+  "depends_on": [],
+  "cli_execution_id": "fabric-skills-contract-fix-2026-05-13-TASK-010",
+  "cli_execution": {
+    "strategy": "new"
+  },
+  "rationale": {
+    "chosen_approach": "6-row matrix + body-cue override + fallback; LLM infers from commit metadata at import time",
+    "alternatives_considered": [
+      "Skill calls a server-side inference helper (adds round-trip)",
+      "Keep hardcoded reason and document override in user docs",
+      "Free-text reason field (loses lint coverage)"
+    ],
+    "decision_factors": [
+      "LLM can infer from commit prefix without server help",
+      "6 reasons matches existing knowledge-meta-builder taxonomy",
+      "Body-cue override catches common fix-as-feature commits"
+    ],
+    "tradeoffs": "LLM may misclassify unconventional commit messages; fallback ensures forward progress"
+  },
+  "test": {
+    "manual_checks": [
+      "Open import SKILL.md and find Step 2.1.5 chapter",
+      "Verify matrix has 6 rows + body-cue override + fallback",
+      "Find Worked Example A and verify reason='diagnostic-then-fix'",
+      "diff -q across three mirror pairs"
+    ],
+    "success_metrics": [
+      "All 6 reason strings present verbatim",
+      "100% three-mirror byte-identity",
+      "100% protected token lint pass"
+    ],
+    "unit": [
+      "test_lint_protected_tokens_import_proposed_reason"
+    ],
+    "integration": [
+      "test_install_skills_three_mirror_parity_import"
+    ]
+  },
+  "status": "completed",
+  "status_history": [
+    {
+      "from": "pending",
+      "to": "completed",
+      "changed_at": "2026-05-14T10:29:28+08:00"
+    }
+  ]
+}
