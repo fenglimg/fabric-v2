@@ -1,27 +1,32 @@
 /**
- * Integration tests: rc.14 TASK-002 — `fab install` diff-mode idempotency.
+ * Integration tests: rc.15 (formerly rc.14 TASK-002) — `fab install`
+ * diff-mode idempotency.
  *
- * Five scenarios derived from the rc.14 「Stop the bleeding」 plan:
+ * Scenarios:
  *   1. canonical no-op: re-running init on an unmodified post-install
  *      workspace prints the canonical confirmation and exits 0 with no
  *      writes (byte-identical snapshot before/after).
  *   2. missing file auto-applies: deleting a managed hook script then
- *      re-running install restores it without --force.
+ *      re-running install restores it.
  *   3. drift aborts with a helpful message: byte-modifying a managed
- *      scaffold file (agents.meta.json) then re-running install (no flags)
- *      throws an error mentioning `fab doctor` AND `fab uninstall && fab install`.
+ *      scaffold file (agents.meta.json) then re-running install throws
+ *      an error mentioning `fab doctor` AND `fab uninstall && fab install`.
  *   4. --dry-run on existing workspace works: runInit with planOnly=true on
- *      a post-install fixture does NOT throw and emits no writes (Bug Z
- *      root cause). Output includes a per-file DiffFileState row.
- *   5. --force on drifted workspace (legacy bypass): seed drift, run with
- *      --force=true, assert success AND the deprecation warning is emitted
- *      to stderr.
+ *      a post-install fixture does NOT throw and emits no writes. Output
+ *      includes a per-file DiffFileState row.
+ *   6. .fabric as regular file aborts with the friendly drift-abort message
+ *      instead of raising native ENOTDIR/EEXIST (rc.14 TASK-004 Finding 1).
  *
  * Source path: packages/cli/src/commands/install.ts — classifyFreshPath,
  * buildInitFabricPlan, executeInitExecutionPlan (drift-abort gate).
+ *
+ * Scenarios 5 (--force legacy bypass) and 7 (events.jsonl as directory +
+ * --force) were retired in rc.15 alongside the --force/--reapply flags.
+ * The recovery path for both pathological cases is now `fab uninstall &&
+ * fab install`, surfaced by the drift-abort message.
  */
 
-import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
@@ -223,39 +228,6 @@ describe("rc.14 TASK-002 install-diff-mode: --dry-run on existing workspace", ()
 });
 
 // ---------------------------------------------------------------------------
-// Scenario 5 — --force on drifted workspace (legacy escape hatch)
-// ---------------------------------------------------------------------------
-
-describe("rc.14 TASK-002 install-diff-mode: --force legacy bypass", () => {
-  it("--force overwrites the drifted file and emits the rc.15 deprecation warning to stderr", async () => {
-    const target = createWerewolfFixtureRoot("itg-diff-force-legacy");
-    tempRoots.push(target);
-
-    await runInit(target);
-    seedDriftedFile(target, ".fabric/agents.meta.json", () => "{}\n");
-
-    const captured = captureStdio();
-    try {
-      await expect(runInit(target, { force: true })).resolves.toBeDefined();
-    } finally {
-      captured.restore();
-    }
-
-    // agents.meta.json was overwritten with the canonical initial structure
-    // (drift-abort was bypassed by --force).
-    const meta = JSON.parse(
-      readFileSync(join(target, ".fabric", "agents.meta.json"), "utf8"),
-    ) as Record<string, unknown>;
-    expect(meta).toHaveProperty("revision");
-    expect(meta).toHaveProperty("counters");
-
-    // Deprecation warning was emitted (en or zh-CN match-either).
-    const stderrJoined = captured.stderr.join("");
-    expect(stderrJoined).toMatch(/--force.*legacy escape hatch|逃生口/);
-  });
-});
-
-// ---------------------------------------------------------------------------
 // Scenario 6 — rc.14 TASK-004 Finding 1: `.fabric` as a regular file aborts
 // with the friendly drift-abort message instead of crashing with native
 // ENOTDIR / EEXIST from mkdirSync.
@@ -291,39 +263,6 @@ describe("rc.14 TASK-004 install-diff-mode: .fabric as regular file aborts with 
     // any write/mutation.
     expect(statSync(fabricPath).isFile()).toBe(true);
     expect(readFileSync(fabricPath, "utf8")).toBe("garbage — not a directory\n");
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Scenario 7 — rc.14 TASK-004 Finding 2: events.jsonl as a directory + --force
-// cleans up and writes a fresh ledger file instead of crashing with EISDIR.
-// ---------------------------------------------------------------------------
-
-describe("rc.14 TASK-004 install-diff-mode: events.jsonl as directory + --force recovers cleanly", () => {
-  it("--force overwrites a directory-where-file-belongs at events.jsonl without raising native EISDIR", async () => {
-    const target = createWerewolfFixtureRoot("itg-diff-events-is-dir");
-    tempRoots.push(target);
-
-    // First install gets the workspace into a canonical state, then we
-    // pathologically replace events.jsonl with a directory.
-    await runInit(target);
-    const eventsPath = join(target, ".fabric", "events.jsonl");
-    expect(statSync(eventsPath).isFile()).toBe(true);
-
-    rmSync(eventsPath, { force: true });
-    mkdirSync(eventsPath, { recursive: true });
-    // Drop a file inside the directory so we can prove the recursive rm
-    // actually fired during recovery (not just a no-op).
-    writeFileSync(join(eventsPath, "stray.txt"), "should not survive --force\n", "utf8");
-    expect(statSync(eventsPath).isDirectory()).toBe(true);
-
-    // --force must take the symmetric cleanup branch (mirrors agents.meta
-    // .json's preparePlannedPath rmSync recursive). No EISDIR.
-    await expect(runInit(target, { force: true })).resolves.toBeDefined();
-
-    // events.jsonl is now a regular file again, the stray subfile is gone.
-    expect(statSync(eventsPath).isFile()).toBe(true);
-    expect(existsSync(join(eventsPath, "stray.txt"))).toBe(false);
   });
 });
 

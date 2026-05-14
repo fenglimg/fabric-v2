@@ -22,11 +22,10 @@ afterEach(() => {
 
 describe("init wizard planning", () => {
   it("enables the wizard by default in TTY mode unless --yes is set", async () => {
-    expect(shouldUseInitWizard({ interactive: true, yes: false }, true)).toBe(true);
-    expect(shouldUseInitWizard({ interactive: undefined, yes: undefined }, true)).toBe(true);
-    expect(shouldUseInitWizard({ interactive: false, yes: false }, true)).toBe(false);
-    expect(shouldUseInitWizard({ interactive: true, yes: true }, true)).toBe(false);
-    expect(shouldUseInitWizard({ interactive: true, yes: false }, false)).toBe(false);
+    expect(shouldUseInitWizard({ yes: false }, true)).toBe(true);
+    expect(shouldUseInitWizard({ yes: undefined }, true)).toBe(true);
+    expect(shouldUseInitWizard({ yes: true }, true)).toBe(false);
+    expect(shouldUseInitWizard({ yes: false }, false)).toBe(false);
   });
 
   it("rewrites the execution plan from wizard selections", async () => {
@@ -42,7 +41,6 @@ describe("init wizard planning", () => {
 
     const nextPlan = await resolveInitExecutionPlanWithWizard(
       basePlan,
-      {},
       {
         run: vi.fn().mockResolvedValue({
           bootstrap: true,
@@ -75,37 +73,6 @@ describe("init wizard planning", () => {
     ]);
   });
 
-  it("preserves explicit no-* flags as locked wizard stages", async () => {
-    const target = createWerewolfFixtureRoot("fab-init-wizard-locked");
-    tempRoots.push(target);
-
-    const basePlan = await buildInitExecutionPlan({
-      target,
-      options: { skipBootstrap: true, skipHooks: true },
-      mcpInstallMode: "global",
-      interactive: false,
-    });
-
-    const adapter = {
-      run: vi.fn().mockResolvedValue({
-        bootstrap: true,
-        mcp: false,
-        hooks: true,
-        mcpInstallMode: "global",
-      }),
-    };
-
-    await resolveInitExecutionPlanWithWizard(
-      basePlan,
-      { bootstrap: false, hooks: false },
-      adapter,
-    );
-
-    expect(adapter.run).toHaveBeenCalledWith(expect.objectContaining({
-      lockedStages: ["bootstrap", "hooks"],
-    }));
-  });
-
   it("returns null when the wizard is cancelled", async () => {
     const target = createWerewolfFixtureRoot("fab-init-wizard-cancel");
     tempRoots.push(target);
@@ -119,7 +86,6 @@ describe("init wizard planning", () => {
 
     const nextPlan = await resolveInitExecutionPlanWithWizard(
       basePlan,
-      {},
       { run: vi.fn().mockResolvedValue(null) },
     );
 
@@ -133,7 +99,7 @@ describe("init wizard planning", () => {
 
     const plan = await buildInitExecutionPlan({
       target,
-      options: { planOnly: true, reapply: true },
+      options: { planOnly: true },
       mcpInstallMode: "global",
       interactive: false,
     });

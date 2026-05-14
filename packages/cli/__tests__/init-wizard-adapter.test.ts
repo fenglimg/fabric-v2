@@ -39,9 +39,10 @@ describe("init wizard adapter clack flow", () => {
 
     const result = await adapter.run({
       target: "/tmp/fabric-target",
-      options: { reapply: true },
+      options: {},
       supports: [],
       mcpInstallMode: "global",
+      claudeMcpScope: "project",
       lockedStages: [],
     });
 
@@ -52,7 +53,7 @@ describe("init wizard adapter clack flow", () => {
       mcpInstallMode: "local",
     });
     expect(introMock).toHaveBeenCalledWith("Fabric install");
-    expect(noteMock).toHaveBeenCalledWith(expect.stringContaining("Mode: REAPPLY"), "Install overview");
+    expect(noteMock).toHaveBeenCalledWith(expect.stringContaining("Mode: APPLY"), "Install overview");
     expect(logStepMock).toHaveBeenNthCalledWith(1, "Confirm target");
     expect(logStepMock).toHaveBeenNthCalledWith(2, "Shape install plan");
     expect(logStepMock).toHaveBeenNthCalledWith(3, "Review final plan");
@@ -94,6 +95,7 @@ describe("init wizard adapter clack flow", () => {
       options: {},
       supports: [],
       mcpInstallMode: "global",
+      claudeMcpScope: "project",
       lockedStages: [],
     });
 

@@ -203,7 +203,7 @@ describe("TASK-006 install-skills-and-hooks: idempotency", () => {
     // sneak past CI. Symmetric coverage now enforces cursor idempotency too.
     const snap1Cursor = snapshotTree(target, ".cursor");
 
-    await runInit(target, { reapply: true, force: true });
+    await runInit(target);
     const snap2Claude = snapshotTree(target, ".claude");
     const snap2Codex = snapshotTree(target, ".codex");
     const snap2Cursor = snapshotTree(target, ".cursor");
@@ -274,7 +274,7 @@ describe("TASK-006 install-skills-and-hooks: dedup", () => {
     const firstCount = settingsAfterFirst.hooks?.Stop?.length ?? 0;
     expect(firstCount).toBeGreaterThanOrEqual(1);
 
-    await runInit(target, { reapply: true, force: true });
+    await runInit(target);
     const settingsAfterSecond = JSON.parse(
       readFileSync(join(target, ".claude/settings.json"), "utf8"),
     ) as { hooks?: { Stop?: unknown[] } };
@@ -474,7 +474,7 @@ describe("TASK-006 install-skills-and-hooks: Fabric Knowledge Base managed secti
       afterFirst[rel] = readFileSync(join(target, rel), "utf8");
     }
 
-    await runInit(target, { reapply: true, force: true });
+    await runInit(target);
     for (const rel of ["AGENTS.md", "CLAUDE.md", ".cursor/rules"]) {
       const afterSecond = readFileSync(join(target, rel), "utf8");
       expect(afterSecond).toBe(afterFirst[rel]);
@@ -501,7 +501,7 @@ describe("TASK-006 install-skills-and-hooks: Fabric Knowledge Base managed secti
     config["fabric_language"] = "zh-CN-hybrid";
     writeFixtureFile(target, ".fabric/fabric-config.json", JSON.stringify(config, null, 2) + "\n");
 
-    await runInit(target, { reapply: true, force: true });
+    await runInit(target);
     const afterSecond = readFileSync(join(target, "AGENTS.md"), "utf8");
 
     // Exactly one marker pair after re-run — no duplication.
@@ -536,7 +536,7 @@ describe("TASK-006 install-skills-and-hooks: Fabric Knowledge Base managed secti
       afterFirst.slice(endIdx);
     writeFixtureFile(target, "AGENTS.md", vandalized);
 
-    await runInit(target, { reapply: true, force: true });
+    await runInit(target);
     const afterSecond = readFileSync(join(target, "AGENTS.md"), "utf8");
 
     expect(afterSecond).not.toContain("USER VANDALISM");

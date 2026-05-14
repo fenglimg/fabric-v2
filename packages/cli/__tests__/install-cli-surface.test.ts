@@ -6,9 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   cleanupFixtureRoot,
   createWerewolfFixtureRoot,
-  readFixtureFile,
   setProcessTty,
-  writeFixtureFile,
 } from "./helpers/init-test-utils.ts";
 
 // Reader-consumed fields enumerated in init.ts writeDefaultFabricConfig.
@@ -44,23 +42,7 @@ afterEach(() => {
 });
 
 describe("init CLI surface", () => {
-  it("treats --reapply as a canonical forceful rerun", async () => {
-    const target = createWerewolfFixtureRoot("fab-init-reapply");
-    tempRoots.push(target);
-
-    const { buildInitExecutionPlan } = await import("../src/commands/install.ts");
-    const plan = await buildInitExecutionPlan({
-      target,
-      options: { force: true, reapply: true },
-      mcpInstallMode: "global",
-      interactive: false,
-    });
-
-    expect(plan.options.force).toBe(true);
-    expect(plan.options.reapply).toBe(true);
-  });
-
-  it("does not write scaffold files when --plan is used", async () => {
+  it("does not write scaffold files when --dry-run is used", async () => {
     process.env.FAB_LANG = "en";
     const target = createWerewolfFixtureRoot("fab-init-plan-acceptance");
     tempRoots.push(target);
@@ -75,71 +57,26 @@ describe("init CLI surface", () => {
     await installCommand.run?.({
       args: {
         target,
-        plan: true,
+        "dry-run": true,
         yes: true,
       },
     } as never);
 
-    // v2.0: --plan does not write any scaffold artifacts.
+    // rc.15: --dry-run does not write any scaffold artifacts.
     expect(existsSync(`${target}/.fabric/agents.meta.json`)).toBe(false);
     expect(existsSync(`${target}/.fabric/forensic.json`)).toBe(false);
     expect(existsSync(`${target}/.fabric/knowledge`)).toBe(false);
   });
 
-  it("reapplies managed scaffold files over an existing init when --reapply is used", async () => {
-    process.env.FAB_LANG = "en";
-    const target = createWerewolfFixtureRoot("fab-init-reapply-acceptance");
-    tempRoots.push(target);
-
-    const { installCommand } = await import("../src/commands/install.ts");
-    vi.spyOn(console, "log").mockImplementation(() => {});
-    vi.spyOn(process.stderr, "write").mockImplementation(((chunk: string | Uint8Array) => {
-      void chunk;
-      return true;
-    }) as typeof process.stderr.write);
-
-    await installCommand.run?.({
-      args: {
-        target,
-        yes: true,
-        bootstrap: false,
-        mcp: false,
-        hooks: false,
-      },
-    } as never);
-
-    // v2.0: re-running init with --reapply re-creates the v2.0 layout (knowledge
-    // subdirs, agents.meta.json, events.jsonl) but does NOT touch any pre-existing
-    // legacy bootstrap/README.md.
-    writeFixtureFile(target, ".fabric/bootstrap/README.md", "# reapply me\n");
-
-    await installCommand.run?.({
-      args: {
-        target,
-        reapply: true,
-        yes: true,
-        bootstrap: false,
-        mcp: false,
-        hooks: false,
-      },
-    } as never);
-
-    // Legacy bootstrap file is preserved verbatim.
-    expect(readFixtureFile(target, ".fabric/bootstrap/README.md")).toBe("# reapply me\n");
-    // v2.0 layout exists alongside it.
-    expect(existsSync(`${target}/.fabric/agents.meta.json`)).toBe(true);
-    expect(readFileSync(`${target}/.fabric/agents.meta.json`, "utf8")).toContain("counters");
-  });
-
-  // rc.14 TASK-002: default `fab install` on an existing canonical workspace
-  // is a no-op success — no throws, the canonical confirmation banner is
-  // emitted, and follow-up runs do not require --reapply / --force.
+  // rc.15 (formerly rc.14 TASK-002): default `fab install` on an existing
+  // canonical workspace is a no-op success — no throws, the canonical
+  // confirmation banner is emitted.
   it("default install on existing canonical workspace is a no-op success", async () => {
     process.env.FAB_LANG = "en";
     const target = createWerewolfFixtureRoot("fab-init-canonical-noop");
     tempRoots.push(target);
 
-    const { installCommand } = await import("../src/commands/install.ts");
+    const { runInit } = await import("./helpers/init-test-utils.ts");
     const stdoutLines: string[] = [];
     const stderrLines: string[] = [];
     vi.spyOn(console, "log").mockImplementation((message?: unknown) => {
@@ -150,34 +87,16 @@ describe("init CLI surface", () => {
       return true;
     }) as typeof process.stderr.write);
 
-    // First install — bootstrap/mcp/hooks disabled to keep the test fast.
-    await installCommand.run?.({
-      args: {
-        target,
-        yes: true,
-        bootstrap: false,
-        mcp: false,
-        hooks: false,
-      },
-    } as never);
+    // First install via runInit helper (skips mcp stage to keep test fast).
+    await runInit(target);
 
     stdoutLines.length = 0;
     stderrLines.length = 0;
 
-    // Second install — same flags, no --reapply / --force. Must succeed
-    // (under rc.13 this threw inside planFreshPath; rc.14 TASK-002 diff-mode
-    // classifies the workspace as canonical and short-circuits cleanly).
+    // Second install — must succeed via canonical-no-op short-circuit.
     let secondRunError: unknown = null;
     try {
-      await installCommand.run?.({
-        args: {
-          target,
-          yes: true,
-          bootstrap: false,
-          mcp: false,
-          hooks: false,
-        },
-      } as never);
+      await runInit(target);
     } catch (e) {
       secondRunError = e;
     }
@@ -188,7 +107,7 @@ describe("init CLI surface", () => {
     expect(allOutput).toMatch(/Workspace already canonical/);
   });
 
-  it("prints compatibility notices for legacy flags and skips wizard when --plan is used", async () => {
+  it("renders dry-run preview when --dry-run is used in a TTY context", async () => {
     process.env.FAB_LANG = "en";
     const target = createWerewolfFixtureRoot("fab-init-cli-surface");
     tempRoots.push(target);
@@ -208,17 +127,16 @@ describe("init CLI surface", () => {
     await installCommand.run?.({
       args: {
         target,
-        plan: true,
-        interactive: false,
-        bootstrap: false,
+        "dry-run": true,
       },
     } as never);
 
-    expect(stderr.some((line) => line.includes("Using standard --plan mode"))).toBe(true);
-    expect(stderr.some((line) => line.includes("Compatibility: --interactive=false"))).toBe(true);
-    expect(stderr.some((line) => line.includes("legacy --no-* flags"))).toBe(true);
     expect(stdout.some((line) => line.includes("Fabric install dry run"))).toBe(true);
+    // Wizard is suppressed under --dry-run (planOnly disables the wizard).
     expect(stdout.some((line) => line.includes("Install bootstrap templates?"))).toBe(false);
+    // Silence linter about unused stderr capture — the bucket is here in case
+    // future dry-run noise lands on stderr and needs to be asserted.
+    void stderr;
   });
 });
 
@@ -272,7 +190,7 @@ describe("init CLI surface — fabric-config.json scaffold (TASK-003)", () => {
     const beforeMtime = statSync(configPath).mtimeMs;
     const beforeContent = readFileSync(configPath, "utf8");
 
-    await initFabric(target, { force: true });
+    await initFabric(target);
 
     const afterContent = readFileSync(configPath, "utf8");
     expect(afterContent).toBe(beforeContent);
@@ -286,7 +204,7 @@ describe("init CLI surface — fabric-config.json scaffold (TASK-003)", () => {
     expect(statSync(configPath).mtimeMs).toBe(beforeMtime);
   });
 
-  it("test_reapply_preserves_existing_fabric_config_json", async () => {
+  it("test_reinstall_preserves_existing_fabric_config_json", async () => {
     const target = createWerewolfFixtureRoot("fab-init-config-reapply");
     tempRoots.push(target);
 
@@ -298,7 +216,7 @@ describe("init CLI surface — fabric-config.json scaffold (TASK-003)", () => {
     writeFileSync(configPath, JSON.stringify(customised, null, 2) + "\n", "utf8");
     const beforeContent = readFileSync(configPath, "utf8");
 
-    await initFabric(target, { reapply: true, force: true });
+    await initFabric(target);
 
     const afterContent = readFileSync(configPath, "utf8");
     expect(afterContent).toBe(beforeContent);

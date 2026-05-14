@@ -104,11 +104,12 @@ describe("CLI surface drift gate (docs/test-seed/cli.md \u00A71)", () => {
 
   // Critical-flag layer: even if a future refactor renames descriptions, these
   // flags MUST exist. Removing one is an intentional breaking change that
-  // requires updating docs/test-seed/cli.md §1 first.
-  it("install exposes critical flags --force / --scope / --reapply (seed §1)", () => {
+  // requires updating docs/test-seed/cli.md §1 first. rc.15 contracted the
+  // install surface to four flags; --dry-run is the canonical preview flag.
+  it("install exposes critical flag --dry-run (seed §1)", () => {
     const flags = commandSurface(installCommand as CittyCommand).args.map((a) => a.name);
     expect(flags, DRIFT_HINT).toEqual(
-      expect.arrayContaining(["force", "scope", "reapply"]),
+      expect.arrayContaining(["dry-run"]),
     );
   });
 

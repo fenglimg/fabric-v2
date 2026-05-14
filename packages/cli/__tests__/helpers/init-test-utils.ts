@@ -98,14 +98,12 @@ export function setProcessTty(
  */
 export async function runInit(
   target: string,
-  opts: { reapply?: boolean; force?: boolean; planOnly?: boolean } = {},
+  opts: { planOnly?: boolean } = {},
 ): Promise<InitExecutionResult> {
   const plan = await buildInitExecutionPlan({
     target,
     options: {
       skipMcp: true,
-      reapply: opts.reapply,
-      force: opts.force,
       planOnly: opts.planOnly,
     },
     interactive: false,

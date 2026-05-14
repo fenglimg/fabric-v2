@@ -1,13 +1,12 @@
 /**
  * Integration tests: init command guard behavior
  *
- * Covers (post rc.14 TASK-002 diff-mode refactor):
+ * Covers (post rc.15 — --force/--reapply removed):
  *   I2 — default `fab install` on already-init canonical workspace is a no-op
  *        success (no throw); drift on a managed file aborts with a helpful
  *        message pointing to `fab doctor` and `fab uninstall && fab install`
  *   I3 — default-install idempotency: byte-identical agents.meta.json across
- *        re-runs without --reapply/--force. A separate legacy --reapply test
- *        preserves the deprecation-warning contract for rc.14.
+ *        re-runs.
  *   T4 — preexisting root markdown files are not modified by init
  */
 
@@ -95,9 +94,8 @@ describe("I2: init guard — diff-mode behavior", () => {
 });
 
 // I3 — default-install idempotency. agents.meta.json and events.jsonl are
-// byte-stable across re-runs under default `fab install` (no --reapply,
-// no --force). A separate legacy --reapply test preserves the deprecation-
-// warning contract for rc.14.
+// byte-stable across re-runs under default `fab install`. (The legacy
+// --reapply path that lived here in rc.14 was retired with the flag in rc.15.)
 describe("I3: init default-install idempotency", () => {
   it("produces byte-identical agents.meta.json on second `fab install` (no flags)", async () => {
     const target = createWerewolfFixtureRoot("itg-init-idem-meta");
@@ -152,56 +150,33 @@ describe("I3: init default-install idempotency", () => {
     expect(content2.startsWith(sentinel + "\n")).toBe(true);
   });
 
-  it("legacy --reapply path still succeeds and emits the rc.14 deprecation warning", async () => {
-    const target = createWerewolfFixtureRoot("itg-init-reapply-legacy");
-    tempRoots.push(target);
-
-    await runInit(target);
-
-    // Capture stderr so we can assert the deprecation banner.
-    const stderrLines: string[] = [];
-    const originalWrite = process.stderr.write.bind(process.stderr);
-    process.stderr.write = ((chunk: string | Uint8Array) => {
-      stderrLines.push(String(chunk));
-      return true;
-    }) as typeof process.stderr.write;
-
-    try {
-      await runInit(target, { reapply: true, force: true });
-    } finally {
-      process.stderr.write = originalWrite;
-    }
-
-    const stderrJoined = stderrLines.join("");
-    // Matches en ("--reapply is a legacy escape hatch") or zh-CN
-    // ("--reapply 是兼容性的逃生口") banner.
-    expect(stderrJoined).toMatch(/--reapply.*(legacy escape hatch|逃生口)/);
-  });
 });
 
-// T4 — existing root markdown files are not modified by init
+// T4 — existing root markdown files are not modified by init. Under rc.15
+// drift detection runs unconditionally on every install; root-level markdown
+// files (CLAUDE.md, AGENTS.md) are NOT in the scaffold-stage classifier set
+// and so are intrinsically preserved by the install pipeline.
 describe("T4: preexisting root markdown preservation", () => {
-  it("does not overwrite existing CLAUDE.md when init is run with --force", async () => {
+  it("does not overwrite existing CLAUDE.md across a fresh init", async () => {
     const target = createWerewolfFixtureRoot("itg-init-root-md-claude");
     tempRoots.push(target);
 
     const original = "# My Project\n\nUser instructions here.\n";
     writeFixtureFile(target, "CLAUDE.md", original);
 
-    // Force init should not touch CLAUDE.md
-    await initFabric(target, { force: true });
+    await initFabric(target);
 
     expect(readFileSync(join(target, "CLAUDE.md"), "utf8")).toBe(original);
   });
 
-  it("does not overwrite existing AGENTS.md when init is run with --force", async () => {
+  it("does not overwrite existing AGENTS.md across a fresh init", async () => {
     const target = createWerewolfFixtureRoot("itg-init-root-md-agents");
     tempRoots.push(target);
 
     const original = "# Agents\n\nCustom agent instructions.\n";
     writeFixtureFile(target, "AGENTS.md", original);
 
-    await initFabric(target, { force: true });
+    await initFabric(target);
 
     expect(readFileSync(join(target, "AGENTS.md"), "utf8")).toBe(original);
   });

@@ -37,28 +37,15 @@ import {
 type InitArgs = {
   target?: string;
   debug?: boolean;
-  force?: boolean;
   yes?: boolean;
-  plan?: boolean;
-  reapply?: boolean;
-  bootstrap?: boolean;
-  mcp?: boolean;
-  hooks?: boolean;
-  interactive?: boolean;
-  "mcp-install"?: string;
-  scope?: string;
-  skipBootstrap?: boolean;
-  skipMcp?: boolean;
-  skipHooks?: boolean;
+  "dry-run"?: boolean;
 };
 
 type InitOptions = {
-  force?: boolean;
   skipBootstrap?: boolean;
   skipMcp?: boolean;
   skipHooks?: boolean;
   planOnly?: boolean;
-  reapply?: boolean;
 };
 
 type InitWriteAction = "created" | "overwritten";
@@ -77,12 +64,12 @@ type InitWriteAction = "created" | "overwritten";
 //   - "present-canonical" : on-disk content matches the canonical state
 //                           (per the per-file detection rule); no write
 //   - "drifted"           : on-disk content differs from canonical state
-//                           (byte-mismatch or structural-mismatch); without
-//                           --force, the run aborts with a helpful message
+//                           (byte-mismatch or structural-mismatch); the run
+//                           aborts unconditionally with a helpful message
 //   - "user-modified"     : managed location holds something canonically
 //                           unexpected (e.g. .fabric/ is a file, agents.meta
 //                           .json fails to parse as AgentsMeta); same abort
-//                           semantics as "drifted" without --force
+//                           semantics as "drifted"
 export type DiffFileState =
   | "missing"
   | "present-canonical"
@@ -113,7 +100,7 @@ type ClassifiedFreshPathResult = {
 // MCP-agnostic bootstrap anchor. Cursor, Codex CLI, and Claude Code all read
 // it; doctor's `bootstrap_anchor_missing` check requires either AGENTS.md or
 // CLAUDE.md to be present. We write a minimal default on a fresh init and
-// PRESERVE any pre-existing file verbatim — even with --force. The intent
+// PRESERVE any pre-existing file verbatim. The intent
 // is "anchor exists" rather than "anchor is canonical"; once the user has
 // customized the file (typically through their AI client flow), init must
 // never clobber that work.
@@ -301,54 +288,15 @@ export const installCommand = defineCommand({
       description: t("cli.install.args.debug.description"),
       default: false,
     },
-    force: {
-      type: "boolean",
-      description: t("cli.install.args.force.description"),
-      default: false,
-    },
     yes: {
       type: "boolean",
       description: t("cli.install.args.yes.description"),
       default: false,
     },
-    plan: {
+    "dry-run": {
       type: "boolean",
-      description: t("cli.install.args.plan.description"),
+      description: t("cli.install.args.dry-run.description"),
       default: false,
-    },
-    reapply: {
-      type: "boolean",
-      description: t("cli.install.args.reapply.description"),
-      default: false,
-    },
-    bootstrap: {
-      type: "boolean",
-      default: true,
-      negativeDescription: t("cli.install.args.no-bootstrap.description"),
-    },
-    mcp: {
-      type: "boolean",
-      default: true,
-      negativeDescription: t("cli.install.args.no-mcp.description"),
-    },
-    hooks: {
-      type: "boolean",
-      default: true,
-      negativeDescription: t("cli.install.args.no-hooks.description"),
-    },
-    interactive: {
-      type: "boolean",
-      description: t("cli.install.args.interactive.description"),
-      default: true,
-    },
-    "mcp-install": {
-      type: "string",
-      default: "global",
-      description: t("cli.install.mcp.install.prompt"),
-    },
-    scope: {
-      type: "string",
-      description: t("cli.install.mcp.scope.description"),
     },
   },
   async run({ args }: { args: InitArgs }) {
@@ -363,31 +311,19 @@ export async function runInitCommand(args: InitArgs): Promise<InitExecutionResul
   const resolution = resolveDevMode(args.target, process.cwd());
   const intent = resolveInitCliIntent(args, resolution.target);
 
-  // rc.14 TASK-002 — Preflight lock check expanded from --reapply-only to
-  // ALL install runs on an already-initialized workspace. Diff-mode default
-  // appends ledger events on every run (install_diff_applied) which opens
-  // events.jsonl, so a running `fab serve` holding the lock would race the
-  // write. --force is the legitimate bypass for the legacy escape hatch.
+  // rc.15 — Preflight lock check on any already-initialized workspace.
+  // Diff-mode default appends ledger events on every run
+  // (install_diff_applied) which opens events.jsonl, so a running `fab serve`
+  // holding the lock would race the write. No legacy --force bypass remains;
+  // recovery from a stuck lock is `fab uninstall && fab install`.
   const fabricInitialized = existsSync(join(intent.target, ".fabric", "events.jsonl"));
-  if (args.reapply === true || fabricInitialized) {
-    checkLockOrThrow(intent.target, { force: args.force });
+  if (fabricInitialized) {
+    checkLockOrThrow(intent.target);
   }
 
   logger(`init target source: ${resolution.source}`);
   for (const step of resolution.chain) {
     logger(step);
-  }
-
-  if (intent.options.planOnly) {
-    writeStderr(t("cli.install.compat.plan"));
-  }
-
-  if (args.interactive === false) {
-    writeStderr(t("cli.install.compat.interactive"));
-  }
-
-  if (args.bootstrap === false || args.mcp === false || args.hooks === false) {
-    writeStderr(t("cli.install.compat.legacy-stage-flags"));
   }
 
   const supports = detectClientSupports(intent.target);
@@ -400,7 +336,7 @@ export async function runInitCommand(args: InitArgs): Promise<InitExecutionResul
     supports,
   });
   const plan = intent.wizardEnabled
-    ? await resolveInitExecutionPlanWithWizard(basePlan, args, createDefaultInitWizardAdapter())
+    ? await resolveInitExecutionPlanWithWizard(basePlan, createDefaultInitWizardAdapter())
     : basePlan;
 
   if (plan === null) {
@@ -445,10 +381,9 @@ export async function runInitCommand(args: InitArgs): Promise<InitExecutionResul
  * empty-repo default is `"en"` (matches `detectExistingLanguage`'s contract).
  *
  * Idempotent: writes ONLY when the file does not exist. NEVER merges
- * missing fields into an existing file. NEVER overwrites user edits.
- * Both the regular init path AND the `--reapply` path share this helper
- * with identical semantics — re-runs preserve user customisations
- * verbatim.
+ * missing fields into an existing file. NEVER overwrites user edits. Every
+ * `fab install` invocation shares this helper with identical semantics —
+ * re-runs preserve user customisations verbatim.
  */
 function writeDefaultFabricConfig(fabricDir: string, targetRoot: string): void {
   const target = join(fabricDir, "fabric-config.json");
@@ -534,18 +469,12 @@ function writeDefaultFabricConfig(fabricDir: string, targetRoot: string): void {
 
 function resolveInitCliIntent(args: InitArgs, targetInput: string): InitCliIntent {
   const target = normalizeTarget(targetInput);
-  const mcpInstallMode = resolveMcpInstallMode(args["mcp-install"]);
-  const claudeMcpScope = resolveClaudeMcpScope(args.scope);
+  const mcpInstallMode: McpInstallMode = "global";
+  const claudeMcpScope: ClaudeMcpScope = "project";
   const terminalInteractive = isInteractiveInit();
-  const planOnly = args.plan === true;
-  const reapply = args.reapply === true;
+  const planOnly = args["dry-run"] === true;
   const options: InitOptions = {
-    force: reapply ? true : args.force,
-    skipBootstrap: args.bootstrap === false ? true : args.skipBootstrap,
-    skipMcp: args.mcp === false ? true : args.skipMcp,
-    skipHooks: args.hooks === false ? true : args.skipHooks,
     planOnly,
-    reapply,
   };
 
   return {
@@ -553,20 +482,9 @@ function resolveInitCliIntent(args: InitArgs, targetInput: string): InitCliInten
     options,
     mcpInstallMode,
     claudeMcpScope,
-    interactiveSummary: args.interactive !== false && terminalInteractive,
+    interactiveSummary: terminalInteractive,
     wizardEnabled: shouldUseInitWizard(args, terminalInteractive) && !planOnly,
   };
-}
-
-function resolveClaudeMcpScope(raw: string | undefined): ClaudeMcpScope {
-  if (raw === undefined || raw === "project") {
-    return "project";
-  }
-  if (raw === "user") {
-    return "user";
-  }
-  writeStderr(t("cli.install.mcp.scope.invalid", { value: raw }));
-  return "project";
 }
 
 export async function buildInitExecutionPlan(input: {
@@ -614,28 +532,15 @@ export async function buildInitExecutionPlan(input: {
 }
 
 export async function executeInitExecutionPlan(plan: InitExecutionPlan): Promise<InitExecutionResult> {
-  if (plan.options.force) {
-    writeStderr(t("cli.install.force.warning", { path: plan.target }));
-    // rc.14 TASK-002 — legacy escape hatch deprecation warning. --force /
-    // --reapply will be removed in v2.0.0-rc.15 (Phase 2 CLI contraction).
-    writeStderr(t("cli.install.diff.deprecation-force"));
-  }
-  if (plan.options.reapply) {
-    writeStderr(t("cli.install.diff.deprecation-reapply"));
-  }
-
-  if (plan.options.reapply && !plan.options.planOnly && !plan.interactive) {
-    writeStderr(formatInitModeBanner(plan.options));
-  }
-
   if (plan.interactive) {
     printInitPlanSummary(plan.target, plan.options, plan.mcpInstallMode, plan.supports);
   }
 
-  // rc.14 TASK-002 — diff-mode classification table is rendered in BOTH the
-  // planOnly preview branch (always) and the no-op canonical confirmation
-  // path (below). For planOnly we exit 0 regardless of drift; for the
-  // mutation path we abort if drift is detected and --force is not set.
+  // rc.15 (formerly rc.14 TASK-002) — diff-mode classification table is
+  // rendered in BOTH the planOnly preview branch (always) and the no-op
+  // canonical confirmation path (below). For planOnly we exit 0 regardless
+  // of drift; for the mutation path we abort unconditionally if drift is
+  // detected.
   const scaffoldStates: Array<{ path: string; state: DiffFileState }> = [
     { path: plan.scaffold.metaPath, state: plan.scaffold.metaState },
     { path: plan.scaffold.eventsPath, state: plan.scaffold.eventsState },
@@ -653,38 +558,32 @@ export async function executeInitExecutionPlan(plan: InitExecutionPlan): Promise
     };
   }
 
-  // rc.14 TASK-004 (Finding 1) — type-collision pre-check. If `.fabric`
-  // itself exists as a non-directory (regular file, symlink to a non-dir,
-  // etc.), the per-inner-file classifier marks every inner path as
-  // "missing" (because existsSync(".fabric/agents.meta.json") returns false
-  // when ".fabric" is a file), which bypasses the per-file drift-abort gate
-  // below and leads to mkdirSync raising native ENOTDIR/EEXIST at write
-  // time. Surface the friendly drift-abort message instead — even with
-  // --force, recovering a file-where-dir-belongs requires explicit user
-  // intent (run `fab uninstall && fab install` for a clean reset).
-  if (!plan.options.force && !plan.options.reapply) {
-    if (
-      existsSync(plan.scaffold.fabricDir)
-      && !statSync(plan.scaffold.fabricDir).isDirectory()
-    ) {
-      throw new Error(
-        t("cli.install.diff.drift-abort", { path: plan.scaffold.fabricDir }),
-      );
-    }
+  // rc.15 (formerly rc.14 TASK-004 Finding 1) — type-collision pre-check.
+  // If `.fabric` itself exists as a non-directory (regular file, symlink to
+  // a non-dir, etc.), the per-inner-file classifier marks every inner path
+  // as "missing" (because existsSync(".fabric/agents.meta.json") returns
+  // false when ".fabric" is a file), which bypasses the per-file drift-abort
+  // gate below and leads to mkdirSync raising native ENOTDIR/EEXIST at
+  // write time. Surface the friendly drift-abort message instead — recovery
+  // from a file-where-dir-belongs is `fab uninstall && fab install`.
+  if (
+    existsSync(plan.scaffold.fabricDir)
+    && !statSync(plan.scaffold.fabricDir).isDirectory()
+  ) {
+    throw new Error(
+      t("cli.install.diff.drift-abort", { path: plan.scaffold.fabricDir }),
+    );
   }
 
-  // rc.14 TASK-002 — drift-abort gate. Fires only at mutation time (i.e. not
-  // planOnly) when any scaffold path is in a non-canonical state AND --force
-  // is NOT set. --reapply also bypasses the gate (legacy escape hatch). The
-  // message points to `fab doctor` (inspect) and `fab uninstall && fab install`
-  // (reset) per the rc.14 plan.
-  if (!plan.options.force && !plan.options.reapply) {
-    const drifted = scaffoldStates.find(
-      (entry) => entry.state === "drifted" || entry.state === "user-modified",
-    );
-    if (drifted !== undefined) {
-      throw new Error(t("cli.install.diff.drift-abort", { path: drifted.path }));
-    }
+  // rc.15 (formerly rc.14 TASK-002) — unconditional drift-abort gate. Fires
+  // at mutation time (i.e. not planOnly) when any scaffold path is in a
+  // non-canonical state. No legacy escape hatch — the message points to
+  // `fab doctor` (inspect) and `fab uninstall && fab install` (reset).
+  const drifted = scaffoldStates.find(
+    (entry) => entry.state === "drifted" || entry.state === "user-modified",
+  );
+  if (drifted !== undefined) {
+    throw new Error(t("cli.install.diff.drift-abort", { path: drifted.path }));
   }
 
   let created: InitScaffoldResult | null = null;
@@ -713,15 +612,10 @@ export async function executeInitExecutionPlan(plan: InitExecutionPlan): Promise
     }
   }
 
-  // rc.14 TASK-002 — canonical-no-op one-line confirmation. Printed when
-  // every scaffold-stage path was already canonical AND --force / --reapply
-  // were not passed (legacy paths get their own banner above). Better UX
+  // rc.15 (formerly rc.14 TASK-002) — canonical-no-op one-line confirmation.
+  // Printed when every scaffold-stage path was already canonical. Better UX
   // than silent success for users still learning the workflow.
-  if (
-    !plan.options.force
-    && !plan.options.reapply
-    && scaffoldStates.every((entry) => entry.state === "present-canonical")
-  ) {
+  if (scaffoldStates.every((entry) => entry.state === "present-canonical")) {
     console.log(
       t("cli.install.diff.canonical", { count: String(scaffoldStates.length) }),
     );
@@ -750,8 +644,8 @@ export async function buildInitFabricPlan(target: string, options?: InitOptions)
   const agentsMdPath = join(target, "AGENTS.md");
   // v2.0 follow-up (rc.1 fix #1): AGENTS.md write is always idempotent —
   // we write the default only when the file is absent and never overwrite
-  // existing content (even with --force). Capturing the action up front
-  // keeps the result schema deterministic for callers/tests.
+  // existing content. Capturing the action up front keeps the result schema
+  // deterministic for callers/tests.
   const agentsMdAction: AgentsMdAction = existsSync(agentsMdPath) ? "preserved" : "created";
   const knowledgeDir = join(fabricDir, "knowledge");
   const personalKnowledgeDir = join(resolvePersonalFabricRoot(), ".fabric", "knowledge");
@@ -762,18 +656,17 @@ export async function buildInitFabricPlan(target: string, options?: InitOptions)
   const replaceFabricDir = shouldReplaceWritableDirectory(fabricDir, options);
   const knowledgeDirAction: InitWriteAction = existsSync(knowledgeDir) ? "overwritten" : "created";
 
-  // rc.14 TASK-002 — diff-mode classification. NEVER throws during planning.
-  // The drift-abort gate inside `executeInitExecutionPlan` is the single
-  // throw site, and it only fires when actually writing (i.e. not planOnly)
-  // AND at least one path is drifted/user-modified AND --force is not set.
+  // rc.15 (formerly rc.14 TASK-002) — diff-mode classification. NEVER throws
+  // during planning. The drift-abort gate inside `executeInitExecutionPlan`
+  // is the single throw site, and it only fires when actually writing
+  // (i.e. not planOnly) and at least one path is drifted/user-modified.
   const metaClassification = classifyFreshPath(metaPath, "structural");
   const eventsClassification = classifyFreshPath(eventsPath, "presence");
   const forensicClassification = classifyFreshPath(forensicPath, "always-rewrite");
 
-  const force = Boolean(options?.force);
-  const metaAction = diffStateToWriteAction(metaClassification.state, force);
-  const eventsAction = diffStateToWriteAction(eventsClassification.state, force);
-  const forensicAction = diffStateToWriteAction(forensicClassification.state, force);
+  const metaAction = diffStateToWriteAction(metaClassification.state);
+  const eventsAction = diffStateToWriteAction(eventsClassification.state);
+  const forensicAction = diffStateToWriteAction(forensicClassification.state);
 
   const forensicReport = await buildForensicReport(target);
   const meta = createInitialMeta();
@@ -803,8 +696,6 @@ export async function buildInitFabricPlan(target: string, options?: InitOptions)
 }
 
 export async function executeInitFabricPlan(plan: InitScaffoldPlan): Promise<InitScaffoldResult> {
-  const isReapply = plan.options?.reapply === true;
-
   if (plan.replaceFabricDir) {
     rmSync(plan.fabricDir, { force: true });
   }
@@ -813,18 +704,17 @@ export async function executeInitFabricPlan(plan: InitScaffoldPlan): Promise<Ini
 
   // Scaffold a discoverable default fabric-config.json listing every
   // reader-consumed field at its documented default. Idempotent: never
-  // overwrites pre-existing user edits, even on --reapply. See the
-  // helper's JSDoc for the source-of-truth field list. TASK-006 (C1):
-  // the helper now also probes plan.target's README/docs to fixate
-  // fabric_language on fresh init.
+  // overwrites pre-existing user edits. See the helper's JSDoc for the
+  // source-of-truth field list. TASK-006 (C1): the helper now also probes
+  // plan.target's README/docs to fixate fabric_language on fresh init.
   writeDefaultFabricConfig(plan.fabricDir, plan.target);
 
   // v2.0 follow-up (rc.1 fix #1): write the repo-root AGENTS.md anchor when
   // it does not already exist. This satisfies doctor's bootstrap_anchor_missing
   // check on a fresh init while remaining strictly idempotent — pre-existing
-  // content is never overwritten, so user customizations survive `fab install
-  // --reapply` and re-runs of `fab install`. Writing via atomicWriteText keeps
-  // the half-written-file failure mode out of scope.
+  // content is never overwritten, so user customizations survive re-runs of
+  // `fab install`. Writing via atomicWriteText keeps the half-written-file
+  // failure mode out of scope.
   if (plan.agentsMdAction === "created" && !existsSync(plan.agentsMdPath)) {
     await atomicWriteText(plan.agentsMdPath, AGENTS_MD_DEFAULT_CONTENT);
   }
@@ -854,51 +744,27 @@ export async function executeInitFabricPlan(plan: InitScaffoldPlan): Promise<Ini
     // Non-fatal — see comment above.
   }
 
-  // rc.14 TASK-002 — diff-mode write semantics for the three scaffold files.
+  // rc.15 (formerly rc.14 TASK-002) — diff-mode write semantics for the
+  // three scaffold files. drifted/user-modified states are intercepted by
+  // the drift-abort gate upstream; only missing → write, present-canonical
+  // → skip survives here.
   //
-  //   agents.meta.json:
-  //     - missing               → write the empty initial meta
-  //     - present-canonical     → SKIP (idempotent re-run); runInitScan will
-  //                               keep it in sync if it fires below
-  //     - drifted/user-modified → only reachable here when --force / --reapply
-  //                               was set (the drift-abort gate intercepts
-  //                               otherwise); overwrite verbatim
-  //
-  //   events.jsonl: presence-canonical. Existing files are preserved verbatim
-  //   (append-only ledger). Only create when missing.
-  //
-  //   forensic.json: always-rewrite. The file is a snapshot regenerated every
-  //   run regardless of diff classification.
-  const force = Boolean(plan.options?.force);
-  if (plan.metaState === "missing" || force) {
+  //   agents.meta.json: write the empty initial meta when missing; skip on
+  //                     present-canonical (idempotent re-run); runInitScan
+  //                     keeps it in sync if it fires below.
+  //   events.jsonl:     presence-canonical. Existing files are preserved
+  //                     verbatim (append-only ledger). Only create when missing.
+  //   forensic.json:    always-rewrite. The file is a snapshot regenerated
+  //                     every run regardless of diff classification.
+  if (plan.metaState === "missing") {
     preparePlannedPath(plan.metaPath, plan.metaAction);
     await atomicWriteJson(plan.metaPath, plan.meta);
   }
 
-  // events.jsonl preservation: under diff-mode default and under --reapply
-  // (legacy escape hatch) we preserve any existing file byte-identically.
-  // Only create when missing.
+  // events.jsonl preservation: under diff-mode default we preserve any
+  // existing file byte-identically. Only create when missing.
   if (plan.eventsState === "missing") {
     preparePlannedPath(plan.eventsPath, plan.eventsAction);
-    mkdirSync(dirname(plan.eventsPath), { recursive: true });
-    writeFileSync(plan.eventsPath, "", "utf8");
-  } else if (
-    force
-    && (plan.eventsState === "user-modified" || plan.eventsState === "drifted")
-  ) {
-    // rc.14 TASK-004 (Finding 2) — symmetric cleanup mirroring agents.meta
-    // .json's force-overwrite branch (via preparePlannedPath's recursive
-    // rmSync). Without this, an events.jsonl directory + --force lands in
-    // appendFileSync(directory, ...) → EISDIR with a native stack trace.
-    // preparePlannedPath does the recursive rm + parent mkdir; we then
-    // recreate as an empty ledger file (force semantics: caller asked for
-    // a reset, the ledger history is intentionally discarded).
-    preparePlannedPath(plan.eventsPath, plan.eventsAction);
-    writeFileSync(plan.eventsPath, "", "utf8");
-  } else if (isReapply && !existsSync(plan.eventsPath)) {
-    // Belt-and-suspenders: --reapply on a state classified as missing already
-    // hit the branch above; this covers any edge where classification raced
-    // a delete (rare). Existing file content is intentionally left untouched.
     mkdirSync(dirname(plan.eventsPath), { recursive: true });
     writeFileSync(plan.eventsPath, "", "utf8");
   }
@@ -913,15 +779,15 @@ export async function executeInitFabricPlan(plan: InitScaffoldPlan): Promise<Ini
   // event. Failure is best-effort (e.g. a read-only home) — the layout above
   // is already complete and `fab scan` can be re-run to populate entries.
   //
-  // rc.14 TASK-002 — skip the scan on a canonical diff-mode re-run. If the
-  // workspace was already canonical (agents.meta.json present-canonical AND
-  // events.jsonl present-canonical), scanning would mutate the meta file
-  // and break the idempotency contract. Force / reapply runs still scan
-  // (legacy semantics). Fresh installs always scan (meta was just created).
+  // rc.15 (formerly rc.14 TASK-002) — skip the scan on a canonical diff-mode
+  // re-run. If the workspace was already canonical (agents.meta.json
+  // present-canonical AND events.jsonl present-canonical), scanning would
+  // mutate the meta file and break the idempotency contract. Fresh installs
+  // always scan (meta was just created).
   const wasCanonicalReRun =
     plan.metaState === "present-canonical"
     && plan.eventsState === "present-canonical";
-  if (!plan.options?.reapply && !wasCanonicalReRun) {
+  if (!wasCanonicalReRun) {
     try {
       await runInitScan(plan.target, { source: "init" });
     } catch (error: unknown) {
@@ -931,36 +797,27 @@ export async function executeInitFabricPlan(plan: InitScaffoldPlan): Promise<Ini
     }
   }
 
-  // Change C: append reapply_completed ledger event after successful --reapply.
-  if (isReapply) {
-    appendReapplyLedgerEvent(plan.eventsPath, {
-      preserved_ledger: true,
-    });
-  } else {
-    // rc.14 TASK-002 — diff-mode default emits install_diff_applied with a
-    // per-file breakdown so doctor/forensic tooling can see whether the run
-    // was a no-op, restored missing pieces, or applied drift overwrites.
-    // Emitted only on the non-reapply path; the legacy --reapply path keeps
-    // its distinct reapply_completed event for rc.14 (both retired in rc.15).
-    if (existsSync(plan.eventsPath)) {
-      const applied: string[] = [];
-      const canonical: string[] = [];
-      const drifted: string[] = [];
-      for (const entry of [
-        { path: plan.metaPath, state: plan.metaState },
-        { path: plan.eventsPath, state: plan.eventsState },
-        { path: plan.forensicPath, state: plan.forensicState },
-      ]) {
-        if (entry.state === "missing") {
-          applied.push(entry.path);
-        } else if (entry.state === "present-canonical") {
-          canonical.push(entry.path);
-        } else {
-          drifted.push(entry.path);
-        }
+  // rc.15 (formerly rc.14 TASK-002) — diff-mode emits install_diff_applied
+  // with a per-file breakdown so doctor/forensic tooling can see whether
+  // the run was a no-op, restored missing pieces, or applied drift overwrites.
+  if (existsSync(plan.eventsPath)) {
+    const applied: string[] = [];
+    const canonical: string[] = [];
+    const drifted: string[] = [];
+    for (const entry of [
+      { path: plan.metaPath, state: plan.metaState },
+      { path: plan.eventsPath, state: plan.eventsState },
+      { path: plan.forensicPath, state: plan.forensicState },
+    ]) {
+      if (entry.state === "missing") {
+        applied.push(entry.path);
+      } else if (entry.state === "present-canonical") {
+        canonical.push(entry.path);
+      } else {
+        drifted.push(entry.path);
       }
-      appendInstallDiffLedgerEvent(plan.eventsPath, { applied, canonical, drifted });
     }
+    appendInstallDiffLedgerEvent(plan.eventsPath, { applied, canonical, drifted });
   }
 
   return {
@@ -983,15 +840,14 @@ export async function initFabric(target: string, options?: InitOptions): Promise
 }
 
 export function shouldUseInitWizard(
-  args: Pick<InitArgs, "interactive" | "yes">,
+  args: Pick<InitArgs, "yes">,
   terminalInteractive = isInteractiveInit(),
 ): boolean {
-  return terminalInteractive && args.interactive !== false && args.yes !== true;
+  return terminalInteractive && args.yes !== true;
 }
 
 export async function resolveInitExecutionPlanWithWizard(
   basePlan: InitExecutionPlan,
-  args: Pick<InitArgs, "bootstrap" | "mcp" | "hooks">,
   wizardAdapter: InitWizardAdapter,
 ): Promise<InitExecutionPlan | null> {
   const selection = await wizardAdapter.run({
@@ -1000,7 +856,7 @@ export async function resolveInitExecutionPlanWithWizard(
     supports: basePlan.supports,
     mcpInstallMode: basePlan.mcpInstallMode,
     claudeMcpScope: basePlan.claudeMcpScope,
-    lockedStages: collectLockedWizardStages(args),
+    lockedStages: [],
   });
 
   if (selection === null) {
@@ -1090,7 +946,7 @@ function printInitPlanPreview(plan: InitExecutionPlan): void {
   printInitPlanSummary(plan.target, plan.options, plan.mcpInstallMode, plan.supports);
   console.log(
     t("cli.install.plan.preview-result", {
-      mode: plan.options.reapply ? t("cli.install.mode.reapply") : t("cli.install.mode.default"),
+      mode: t("cli.install.mode.default"),
       bootstrap: yesNoLabel(!plan.options.skipBootstrap),
       mcp: yesNoLabel(!plan.options.skipMcp),
       hooks: yesNoLabel(!plan.options.skipHooks),
@@ -1190,7 +1046,6 @@ async function executeInitStagePlan(
         }
 
         const result = await configCommand.installMcpClients(plan.target, {
-          force: plan.options.force,
           localServerPath: stage.localServerPath,
           claudeMcpScope: stage.claudeMcpScope,
         });
@@ -1203,7 +1058,7 @@ async function executeInitStagePlan(
         return { name: "mcp", disposition: "ran" };
       }
       case "hooks": {
-        const result = await installHooks(plan.target, { force: plan.options.force });
+        const result = await installHooks(plan.target);
         console.log(formatInitStageResult("hooks", "completed", result.installed.length, result.skipped.length));
         return { name: "hooks", disposition: "ran" };
       }
@@ -1216,13 +1071,14 @@ async function executeInitStagePlan(
   }
 }
 
-// rc.14 TASK-002 — `shouldReplaceWritableDirectory` formerly threw on a
-// non-directory at .fabric/. Under diff-mode, classify it as user-modified
-// (planning never throws); the abort gate inside `executeInitExecutionPlan`
-// surfaces a single helpful drift-abort message before any write. Returns
-// `true` (i.e. the run will rm + recreate the path) only when --force is set
-// and the path exists as a non-directory.
-function shouldReplaceWritableDirectory(path: string, options?: InitOptions): boolean {
+// rc.15 (formerly rc.14 TASK-002) — `shouldReplaceWritableDirectory` formerly
+// threw on a non-directory at .fabric/. Under diff-mode, classify it as
+// user-modified (planning never throws); the abort gate inside
+// `executeInitExecutionPlan` surfaces a single helpful drift-abort message
+// before any write. With --force removed in rc.15, this always returns
+// false — recovery from a file-where-dir-belongs is `fab uninstall && fab
+// install`.
+function shouldReplaceWritableDirectory(path: string, _options?: InitOptions): boolean {
   if (!existsSync(path)) {
     return false;
   }
@@ -1231,11 +1087,10 @@ function shouldReplaceWritableDirectory(path: string, options?: InitOptions): bo
     return false;
   }
 
-  // Non-directory at a managed-directory location. Without --force, the
-  // diff-mode abort gate in executeInitExecutionPlan rejects the run with
-  // the user-modified message; with --force (legacy escape hatch) we rm+
-  // recreate. Either way, no throw during plan construction.
-  return Boolean(options?.force);
+  // Non-directory at a managed-directory location. The diff-mode abort gate
+  // in executeInitExecutionPlan rejects the run with the user-modified
+  // message before any write happens.
+  return false;
 }
 
 /**
@@ -1265,7 +1120,7 @@ function classifyFreshPath(
   }
 
   // If a managed FILE location is occupied by a directory (or vice versa),
-  // that is user-modification — diff-mode aborts unless --force is passed.
+  // that is user-modification — diff-mode aborts unconditionally.
   let stat: ReturnType<typeof statSync>;
   try {
     stat = statSync(path);
@@ -1325,21 +1180,16 @@ function classifyFreshPath(
 }
 
 /**
- * rc.14 TASK-002 — translate DiffFileState to InitWriteAction at the
- * rendering / writing boundary. Used inside `executeInitFabricPlan` so the
- * existing `formatInitPathAction` switch stays exhaustive.
- *
- *   - "missing"                          → "created"
- *   - "present-canonical"                → "overwritten" only when --force;
- *                                          otherwise the write path is
- *                                          skipped entirely (see callers).
- *   - "drifted" / "user-modified" (force) → "overwritten" (legacy bypass)
+ * rc.15 (formerly rc.14 TASK-002) — translate DiffFileState to InitWriteAction
+ * at the rendering / writing boundary. Used inside `executeInitFabricPlan` so
+ * the existing `formatInitPathAction` switch stays exhaustive. With the
+ * removal of --force/--reapply (rc.15 Phase 2), every write the helper is
+ * allowed to perform is a fresh `created` action — present-canonical paths
+ * are skipped at the caller; drifted / user-modified paths are intercepted
+ * upstream by the drift-abort gate.
  */
-function diffStateToWriteAction(state: DiffFileState, force: boolean): InitWriteAction {
-  if (state === "missing") {
-    return "created";
-  }
-  return force ? "overwritten" : "created";
+function diffStateToWriteAction(_state: DiffFileState): InitWriteAction {
+  return "created";
 }
 
 function formatDiffFileState(state: DiffFileState): string {
@@ -1525,55 +1375,21 @@ async function selectClaudeMcpScopeInGroup(options: {
   return result;
 }
 
-function collectLockedWizardStages(args: Pick<InitArgs, "bootstrap" | "mcp" | "hooks">): InitStageName[] {
-  const lockedStages: InitStageName[] = [];
-
-  if (args.bootstrap === false) {
-    lockedStages.push("bootstrap");
-  }
-
-  if (args.mcp === false) {
-    lockedStages.push("mcp");
-  }
-
-  if (args.hooks === false) {
-    lockedStages.push("hooks");
-  }
-
-  return lockedStages;
-}
-
 function formatPromptDefault(value: boolean): string {
   return value ? "Y/n" : "y/N";
 }
 
 function formatInitModeBanner(options: InitOptions): string {
-  if (options.planOnly && options.reapply) {
-    return t("cli.install.plan.mode-banner.plan-reapply");
-  }
-
   if (options.planOnly) {
     return t("cli.install.plan.mode-banner.plan");
-  }
-
-  if (options.reapply) {
-    return t("cli.install.plan.mode-banner.reapply");
   }
 
   return t("cli.install.plan.mode-banner.default");
 }
 
 function formatInitModeBadge(options: InitOptions): string {
-  if (options.planOnly && options.reapply) {
-    return t("cli.install.mode.badge.plan-reapply");
-  }
-
   if (options.planOnly) {
     return t("cli.install.mode.badge.plan");
-  }
-
-  if (options.reapply) {
-    return t("cli.install.mode.badge.reapply");
   }
 
   return t("cli.install.mode.badge.default");
@@ -1607,15 +1423,6 @@ export function detectPackageManager(cwd: string): "pnpm" | "npm" | "yarn" {
   return "npm";
 }
 
-function resolveMcpInstallMode(rawMode: string | undefined): McpInstallMode {
-  if (rawMode === undefined || rawMode === "global" || rawMode === "local") {
-    return rawMode ?? "global";
-  }
-
-  writeStderr(t("cli.install.mcp.install.invalid", { value: rawMode }));
-  return "global";
-}
-
 function installLocalFabricServer(target: string, manager: "pnpm" | "npm" | "yarn"): void {
   const installArgs = manager === "npm"
     ? ["install", "-D", FABRIC_SERVER_PACKAGE]
@@ -1640,33 +1447,14 @@ function createInitialMeta(): AgentsMeta {
   };
 }
 
-function appendReapplyLedgerEvent(
-  eventsPath: string,
-  payload: { preserved_ledger: boolean },
-): void {
-  const event = {
-    kind: "fabric-event",
-    id: `event:${randomUUID()}`,
-    ts: Date.now(),
-    schema_version: 1,
-    event_type: "reapply_completed",
-    preserved_ledger: payload.preserved_ledger,
-  };
-  const line = `${JSON.stringify(event)}\n`;
-  appendFileSync(eventsPath, line, "utf8");
-}
-
 /**
- * rc.14 TASK-002 — emit `install_diff_applied` per non-reapply install run.
+ * rc.15 (formerly rc.14 TASK-002) — emit `install_diff_applied` per install run.
  *
  * The payload's three buckets cover the full scaffold-stage diff classification
  * (every scaffold path lands in exactly one). Doctor / forensic tooling can
  * read these events to surface idempotent re-runs vs. apply-missing-pieces
- * runs vs. drift-overwritten runs without re-running the classifier.
- *
- * Distinct from `reapply_completed` (which stays in rc.14 as the legacy
- * --reapply marker). Both event types are slated for unification in rc.15
- * when --reapply is removed.
+ * runs without re-running the classifier. The legacy `reapply_completed`
+ * event type was retired in rc.15 along with --reapply itself.
  */
 function appendInstallDiffLedgerEvent(
   eventsPath: string,
@@ -1991,7 +1779,7 @@ function updatedLabel(): string {
 }
 
 function overwrittenLabel(): string {
-  return paint.warn(t("cli.install.force.overwritten"));
+  return paint.warn(t("cli.install.label.overwritten"));
 }
 
 function completedStageLabel(): string {
