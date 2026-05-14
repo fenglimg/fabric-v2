@@ -5,6 +5,49 @@ All notable changes to Fabric will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0-rc.14] - 2026-05-14
+
+### Fixed
+- **Cursor hooks.json schema** (Bug X) — rc.13 shipped an incorrect Cursor hook
+  config envelope (`{events: {Stop, SessionStart, PreToolUse}}`) which Cursor
+  rejected with "Config version must be a number; Config hooks must be an
+  object". Now ships the correct schema per
+  [Cursor official docs](https://cursor.com/cn/docs/hooks):
+  top-level `{version: 1, hooks: {stop, sessionStart, preToolUse}}` with
+  camelCase event names and flat per-entry shape. No migration shim per
+  clean-slate policy — re-run `fab install` to refresh.
+- **`fab install` idempotency + dry-run on existing workspace** (Bug V + Z) —
+  `fab install` is now naturally idempotent via diff-mode. Re-running on a
+  canonical workspace prints `Workspace already canonical (N files verified)`
+  and exits 0. Missing pieces auto-apply (e.g., MCP for a newly-installed
+  client). Drift triggers abort with helpful message pointing to `fab doctor`
+  (inspect) or `fab uninstall && fab install` (reset). `--dry-run` now works
+  on any workspace state. New `install_diff_applied` ledger event emitted for
+  diff-mode runs.
+
+### Deprecated
+- `fab install --force` and `fab install --reapply` — slated for removal in
+  rc.15 (Phase 2 CLI surface contraction). Deprecation warning now printed
+  on use. The new diff-mode default behavior (`fab install` with no flags)
+  replaces both: missing pieces auto-apply, drift aborts with reset guidance.
+
+### Deferred
+- **Codex MCP write to `~/.codex/config.toml`** (Bug Y) — diagnosis parked
+  until end of Phase 4 per design decision in 2026-05-14 grilling. Users who
+  need fabric MCP in Codex should manually add the `[mcp_servers.fabric]`
+  block until then.
+
+### Coming in rc.15 (Phase 2: CLI surface contraction)
+- `fab install` flag count 12 → 4 (kill `--force`, `--reapply`, `--interactive`,
+  `--no-bootstrap`, `--no-mcp`, `--no-hooks`, `--mcp-install`, `--scope`;
+  rename `--plan` → `--dry-run`)
+- `fab uninstall` flag count 11 → 4 (symmetric kills + `--clean-empties`
+  becomes default behavior)
+- Remove `fab hooks` command, `fab config install/hooks` subcommands
+- Fold `fab scan` into `fab doctor --rescan`
+- See `.workflow/.lite-plan/rc14-stop-the-bleeding-2026-05-14/` artifacts for
+  the full 5-phase backlog.
+
 ## [2.0.0-rc.13] — 2026-05-14
 
 **rc.12 CI follow-up.** Lint-only patch: extend knip ignore list to
