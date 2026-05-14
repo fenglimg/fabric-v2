@@ -302,7 +302,8 @@ export const knowledgeScopeDegradedEventSchema = z.object({
 // the hook surfaces a "run `fabric doctor --lint`" reminder. The maintenance
 // signal closes Q-16 — without an emit site the chain stayed dormant.
 //
-// `mode`: "lint" for read-only reports, "apply-lint" for mutation runs.
+// `mode`: "lint" for read-only reports, "fix-knowledge" for mutation runs
+// (mirrors the `--fix-knowledge` CLI flag renamed from `--apply-lint` in rc.15).
 // `issues`: total fixable+manual+warning count surfaced by the report. Drives
 //   future "did this run actually do anything?" telemetry.
 // `mutations`: count of applied mutations (apply-lint only — undefined for
@@ -310,7 +311,7 @@ export const knowledgeScopeDegradedEventSchema = z.object({
 export const doctorRunEventSchema = z.object({
   ...eventLedgerEnvelopeSchema,
   event_type: z.literal("doctor_run"),
-  mode: z.enum(["lint", "apply-lint"]),
+  mode: z.enum(["lint", "fix-knowledge"]),
   issues: z.number().int().nonnegative(),
   mutations: z.number().int().nonnegative().optional(),
   timestamp: z.string().datetime(),

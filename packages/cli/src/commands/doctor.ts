@@ -211,7 +211,7 @@ export const doctorCommand = defineCommand({
     // issue count from the final report (fixable + manual + warnings) so the
     // event is meaningful for both --lint and --fix-knowledge modes.
     await emitDoctorRunEventBestEffort(resolution.target, {
-      mode: fixKnowledge ? "apply-lint" : "lint",
+      mode: fixKnowledge ? "fix-knowledge" : "lint",
       issues:
         report.fixable_errors.length +
         report.manual_errors.length +
@@ -300,7 +300,7 @@ function writeStdout(message: string): void {
 // observability writes never propagate failures to the caller.
 async function emitDoctorRunEventBestEffort(
   projectRoot: string,
-  payload: { mode: "lint" | "apply-lint"; issues: number; mutations?: number },
+  payload: { mode: "lint" | "fix-knowledge"; issues: number; mutations?: number },
 ): Promise<void> {
   try {
     await appendEventLedgerEvent(projectRoot, {
