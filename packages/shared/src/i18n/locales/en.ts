@@ -202,29 +202,20 @@ export const enMessages: Messages = {
   "cli.uninstall.args.target.description":
     "Target project path. Defaults to CLI arg, EXTERNAL_FIXTURE_PATH, fabric.config.json, then cwd.",
   "cli.uninstall.args.debug.description": "Print target resolution details to stderr.",
-  "cli.uninstall.args.force.description": "Run even if a serve process appears to hold the lock.",
   "cli.uninstall.args.yes.description": "Accept the current uninstall plan and run without the TTY wizard.",
-  "cli.uninstall.args.plan.description":
+  "cli.uninstall.args.dry-run.description":
     "Print the uninstall plan without removing files or running follow-up stages.",
-  "cli.uninstall.flags.no-bootstrap": "Skip the bootstrap stage (Skills, hook scripts, hook-config un-merge).",
-  "cli.uninstall.flags.no-mcp": "Skip the MCP stage (per-client writer.remove for fabric).",
-  "cli.uninstall.flags.no-scaffold":
-    "Skip the scaffold stage (.fabric/ state files and .gitkeep markers).",
-  "cli.uninstall.flags.interactive": "Run the interactive TTY wizard when available.",
-  "cli.uninstall.flags.purge":
-    "Also remove .fabric/knowledge/ subdir contents and state files. Personal-root ~/.fabric/knowledge/ is never touched.",
-  "cli.uninstall.flags.clean-empties": "Cascade-remove empty arrays/objects when un-merging hook configs.",
   "cli.uninstall.plan.title": "Fabric uninstall plan",
   "cli.uninstall.plan.target": "Target: {target}",
   "cli.uninstall.plan.actions":
-    "Plan: scaffold={scaffold} bootstrap={bootstrap} mcp={mcp} purge={purge} clean-empties={cleanEmpties}",
+    "Plan: scaffold={scaffold} bootstrap={bootstrap} mcp={mcp}",
   "cli.uninstall.plan.detected": "Detected clients: {clients}",
   "cli.uninstall.plan.preserves": "Preserves:",
-  "cli.uninstall.plan.preserves.knowledge": "team knowledge tree (unless --purge)",
+  "cli.uninstall.plan.preserves.knowledge": "team knowledge tree (always preserved)",
   "cli.uninstall.plan.preserves.personal": "personal root, never touched",
   "cli.uninstall.plan.preview-title": "Fabric uninstall dry run",
   "cli.uninstall.plan.preview-result":
-    "scaffold={scaffold} bootstrap={bootstrap} mcp={mcp} purge={purge} clean-empties={cleanEmpties}",
+    "scaffold={scaffold} bootstrap={bootstrap} mcp={mcp}",
   "cli.uninstall.plan.scaffold-entries.title": "Scaffold entries:",
   "cli.uninstall.stages.scaffold": "Removing scaffold artifacts...",
   "cli.uninstall.stages.bootstrap": "Removing bootstrap (Skills + hooks)...",
@@ -237,7 +228,7 @@ export const enMessages: Messages = {
   "cli.uninstall.wizard.intro": "Fabric uninstall",
   "cli.uninstall.wizard.overview.title": "Uninstall overview",
   "cli.uninstall.wizard.overview.body":
-    "Target: {target}\nThis wizard only reshapes the uninstall plan; execution still runs through the existing Fabric uninstall stages.\n.fabric/knowledge/ is preserved unless --purge. ~/.fabric/knowledge/ is never touched.",
+    "Target: {target}\nThis wizard only reshapes the uninstall plan; execution still runs through the existing Fabric uninstall stages.\n.fabric/knowledge/ is always preserved. ~/.fabric/knowledge/ is never touched.",
   "cli.uninstall.wizard.step.target": "Confirm target",
   "cli.uninstall.wizard.step.plan": "Shape uninstall plan",
   "cli.uninstall.wizard.step.review": "Review final plan",
@@ -245,9 +236,6 @@ export const enMessages: Messages = {
   "cli.uninstall.wizard.stage.scaffold": "Remove scaffold artifacts? [{defaultValue}]",
   "cli.uninstall.wizard.stage.bootstrap": "Remove bootstrap (Skills + hooks)? [{defaultValue}]",
   "cli.uninstall.wizard.stage.mcp": "Un-register MCP clients? [{defaultValue}]",
-  "cli.uninstall.wizard.purge":
-    "Purge .fabric/knowledge/ subdir contents too? ~/.fabric/knowledge/ stays untouched. [{defaultValue}]",
-  "cli.uninstall.wizard.clean-empties": "Cascade-remove empty arrays/objects in hook configs? [{defaultValue}]",
   "cli.uninstall.wizard.execute.confirm": "Execute this uninstall plan now? [Y/n]",
   "cli.uninstall.wizard.outro": "Uninstall plan accepted. Running Fabric uninstall...",
   "cli.uninstall.wizard.cancelled": "Fabric uninstall cancelled before execution.",

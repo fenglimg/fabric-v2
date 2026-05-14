@@ -1,5 +1,5 @@
 import { existsSync, statSync } from "node:fs";
-import { readdir, rm } from "node:fs/promises";
+import { rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 
@@ -26,15 +26,15 @@ import {
  *   1. scaffold   — best-effort rm of `.fabric/agents.meta.json`,
  *                   `.fabric/events.jsonl`, `.fabric/forensic.json`, and the
  *                   `.gitkeep` markers under `.fabric/knowledge/<subdir>/`.
- *                   `--purge` extends this to the knowledge subdir contents
- *                   themselves (but never to `~/.fabric/knowledge/`).
+ *                   The knowledge subdir contents themselves are ALWAYS
+ *                   preserved (and `~/.fabric/knowledge/` is never touched).
  *   2. bootstrap  — Skills + hook scripts + hook-config un-merge + pointer-line
  *                   strip. Delegates to {@link uninstallBootstrapStage}.
  *   3. mcp        — Per-client `writer.remove('fabric')` against the JSON /
  *                   TOML configs.
  *
  * Hard invariants (clarifications #1, #2):
- *   - `.fabric/knowledge/` is preserved unless `--purge`.
+ *   - `.fabric/knowledge/` is ALWAYS preserved (rc.15 TASK-002 — --purge gone).
  *   - `~/.fabric/knowledge/` (personal root) is NEVER touched, regardless of
  *     any flag — encoded as a guard in {@link buildUninstallFabricPlan}.
  *   - Best-effort everywhere: missing artifacts log as `skipped`, never throw.
@@ -43,25 +43,15 @@ import {
 type UninstallArgs = {
   target?: string;
   debug?: boolean;
-  force?: boolean;
   yes?: boolean;
-  plan?: boolean;
-  bootstrap?: boolean;
-  mcp?: boolean;
-  scaffold?: boolean;
-  interactive?: boolean;
-  purge?: boolean;
-  "clean-empties"?: boolean;
+  "dry-run"?: boolean;
 };
 
 export type UninstallOptions = {
-  force?: boolean;
   skipBootstrap?: boolean;
   skipMcp?: boolean;
   skipScaffold?: boolean;
   planOnly?: boolean;
-  purge?: boolean;
-  cleanEmpties?: boolean;
 };
 
 type UninstallStageName = "scaffold" | "bootstrap" | "mcp";
@@ -79,9 +69,10 @@ type UninstallStageRecord = {
 type UninstallScaffoldEntry = {
   path: string;
   // `state-file` covers events.jsonl / forensic.json / agents.meta.json;
-  // `gitkeep` covers .gitkeep markers; `knowledge-subdir` covers the entire
-  // subdir tree (only added when --purge).
-  kind: "state-file" | "gitkeep" | "knowledge-subdir" | "fabric-dir";
+  // `gitkeep` covers .gitkeep markers under the team knowledge subdirs.
+  // The knowledge subdir contents themselves are unconditionally preserved
+  // (rc.15 TASK-002 dropped --purge).
+  kind: "state-file" | "gitkeep";
   // When true, the path will be skipped because it does not exist on disk.
   absent: boolean;
 };
@@ -139,8 +130,6 @@ type UninstallWizardSelection = {
   scaffold: boolean;
   bootstrap: boolean;
   mcp: boolean;
-  purge: boolean;
-  cleanEmpties: boolean;
 };
 
 type UninstallWizardContext = {
@@ -173,8 +162,8 @@ const KNOWLEDGE_SUBDIRS = [
 ] as const;
 
 // Top-level `.fabric/` state files written by `fab install`. The default scaffold
-// stage prunes these — knowledge subdir contents are preserved unless --purge
-// is passed.
+// stage prunes these — knowledge subdir contents are ALWAYS preserved
+// (rc.15 TASK-002 removed --purge; team knowledge is now unconditionally kept).
 const FABRIC_STATE_FILES = ["agents.meta.json", "events.jsonl", "forensic.json"] as const;
 
 export const uninstallCommand = defineCommand({
@@ -192,49 +181,14 @@ export const uninstallCommand = defineCommand({
       description: t("cli.uninstall.args.debug.description"),
       default: false,
     },
-    force: {
-      type: "boolean",
-      description: t("cli.uninstall.args.force.description"),
-      default: false,
-    },
     yes: {
       type: "boolean",
       description: t("cli.uninstall.args.yes.description"),
       default: false,
     },
-    plan: {
+    "dry-run": {
       type: "boolean",
-      description: t("cli.uninstall.args.plan.description"),
-      default: false,
-    },
-    bootstrap: {
-      type: "boolean",
-      default: true,
-      negativeDescription: t("cli.uninstall.flags.no-bootstrap"),
-    },
-    mcp: {
-      type: "boolean",
-      default: true,
-      negativeDescription: t("cli.uninstall.flags.no-mcp"),
-    },
-    scaffold: {
-      type: "boolean",
-      default: true,
-      negativeDescription: t("cli.uninstall.flags.no-scaffold"),
-    },
-    interactive: {
-      type: "boolean",
-      description: t("cli.uninstall.flags.interactive"),
-      default: true,
-    },
-    purge: {
-      type: "boolean",
-      description: t("cli.uninstall.flags.purge"),
-      default: false,
-    },
-    "clean-empties": {
-      type: "boolean",
-      description: t("cli.uninstall.flags.clean-empties"),
+      description: t("cli.uninstall.args.dry-run.description"),
       default: false,
     },
   },
@@ -255,8 +209,8 @@ export async function runUninstallCommand(args: UninstallArgs): Promise<Uninstal
     logger(step);
   }
 
-  // Lock safety: refuse if a serve process holds the lock, unless --force.
-  checkLockOrThrow(intent.target, { force: args.force });
+  // Lock safety: refuse if a serve process holds the lock.
+  checkLockOrThrow(intent.target);
 
   const supports = detectClientSupports(intent.target);
   const basePlan = await buildUninstallExecutionPlan(intent.target, {
@@ -270,7 +224,7 @@ export async function runUninstallCommand(args: UninstallArgs): Promise<Uninstal
   };
 
   const finalPlan = intent.wizardEnabled
-    ? await resolveUninstallExecutionPlanWithWizard(planWithSupports, args, createDefaultUninstallWizardAdapter())
+    ? await resolveUninstallExecutionPlanWithWizard(planWithSupports, createDefaultUninstallWizardAdapter())
     : planWithSupports;
 
   if (finalPlan === null) {
@@ -290,8 +244,8 @@ export async function runUninstallCommand(args: UninstallArgs): Promise<Uninstal
     };
   }
 
-  // Confirm prompt for destructive runs in interactive shells unless --yes/--force.
-  if (intent.interactiveSummary && !intent.wizardEnabled && args.yes !== true && args.force !== true) {
+  // Confirm prompt for destructive runs in interactive shells unless --yes.
+  if (intent.interactiveSummary && !intent.wizardEnabled && args.yes !== true) {
     const proceed = await confirmDestructive(finalPlan);
     if (!proceed) {
       process.exitCode = 130;
@@ -307,30 +261,24 @@ export async function runUninstallCommand(args: UninstallArgs): Promise<Uninstal
 function resolveUninstallCliIntent(args: UninstallArgs, targetInput: string): UninstallCliIntent {
   const target = normalizeTarget(targetInput);
   const terminalInteractive = isInteractiveUninstall();
-  const planOnly = args.plan === true;
+  const planOnly = args["dry-run"] === true;
   const options: UninstallOptions = {
-    force: args.force,
-    skipBootstrap: args.bootstrap === false,
-    skipMcp: args.mcp === false,
-    skipScaffold: args.scaffold === false,
     planOnly,
-    purge: args.purge === true,
-    cleanEmpties: args["clean-empties"] === true,
   };
 
   return {
     target,
     options,
-    interactiveSummary: args.interactive !== false && terminalInteractive,
+    interactiveSummary: terminalInteractive,
     wizardEnabled: shouldUseUninstallWizard(args, terminalInteractive) && !planOnly,
   };
 }
 
 export function shouldUseUninstallWizard(
-  args: Pick<UninstallArgs, "interactive" | "yes">,
+  args: Pick<UninstallArgs, "yes">,
   terminalInteractive = isInteractiveUninstall(),
 ): boolean {
-  return terminalInteractive && args.interactive !== false && args.yes !== true;
+  return terminalInteractive && args.yes !== true;
 }
 
 export async function buildUninstallExecutionPlan(
@@ -359,10 +307,10 @@ export async function buildUninstallExecutionPlan(
 /**
  * Enumerate scaffold artifacts that will be removed by the scaffold stage.
  * Encodes the hard invariants from clarifications #1+#2:
- *   - `.fabric/knowledge/` (team) is preserved unless `--purge`.
- *   - `~/.fabric/knowledge/` (personal root) is NEVER included regardless of
- *     `--purge`. Any candidate whose absolute form starts with the resolved
- *     personal root is silently filtered out.
+ *   - `.fabric/knowledge/` (team) is ALWAYS preserved (rc.15 — --purge gone).
+ *   - `~/.fabric/knowledge/` (personal root) is NEVER included. Any candidate
+ *     whose absolute form starts with the resolved personal root is silently
+ *     filtered out as defense-in-depth.
  */
 export function buildUninstallFabricPlan(
   target: string,
@@ -380,23 +328,11 @@ export function buildUninstallFabricPlan(
     entries.push({ path: p, kind: "state-file", absent: !existsSync(p) });
   }
 
-  // Knowledge subdir .gitkeep markers — always candidates; subdir contents are
-  // preserved unless --purge.
+  // Knowledge subdir .gitkeep markers — always candidates; subdir contents
+  // themselves are unconditionally preserved (rc.15 TASK-002 dropped --purge).
   for (const sub of KNOWLEDGE_SUBDIRS) {
     const gk = join(fabricDir, "knowledge", sub, ".gitkeep");
     entries.push({ path: gk, kind: "gitkeep", absent: !existsSync(gk) });
-  }
-
-  // --purge: extend to knowledge subdir contents (team root only — personal
-  // root is filtered below).
-  if (options.purge === true) {
-    for (const sub of KNOWLEDGE_SUBDIRS) {
-      const subdir = join(fabricDir, "knowledge", sub);
-      entries.push({ path: subdir, kind: "knowledge-subdir", absent: !existsSync(subdir) });
-    }
-    // After subdir purge, fabric dir itself may end up empty — record it as a
-    // candidate; executor checks emptiness before rm.
-    entries.push({ path: fabricDir, kind: "fabric-dir", absent: !existsSync(fabricDir) });
   }
 
   // Hard guard: refuse any path whose absolute form falls inside the personal
@@ -417,19 +353,15 @@ export function buildUninstallFabricPlan(
 /**
  * Execute the scaffold sub-plan. Best-effort: every rm is try/catch-wrapped;
  * an entry that fails contributes an `error` step result and the executor
- * proceeds to the next entry. With `--purge`, the `.fabric/` directory itself
- * is removed only when it became empty after the subdir purge.
+ * proceeds to the next entry. Knowledge subdir contents are never enumerated
+ * (rc.15 TASK-002 dropped --purge — team knowledge is unconditionally kept).
  */
 export async function executeUninstallFabricPlan(
   plan: UninstallScaffoldPlan,
 ): Promise<UninstallStepResult[]> {
   const results: UninstallStepResult[] = [];
 
-  // Filter out fabric-dir entry — handle last so it can check emptiness.
-  const fabricDirEntry = plan.entries.find((entry) => entry.kind === "fabric-dir");
-  const otherEntries = plan.entries.filter((entry) => entry.kind !== "fabric-dir");
-
-  for (const entry of otherEntries) {
+  for (const entry of plan.entries) {
     if (entry.absent) {
       results.push({
         step: scaffoldStepLabel(entry.kind),
@@ -441,7 +373,7 @@ export async function executeUninstallFabricPlan(
     }
 
     try {
-      await rm(entry.path, { recursive: entry.kind === "knowledge-subdir", force: true });
+      await rm(entry.path, { force: true });
       results.push({ step: scaffoldStepLabel(entry.kind), path: entry.path, status: "removed" });
     } catch (error: unknown) {
       results.push({
@@ -450,41 +382,6 @@ export async function executeUninstallFabricPlan(
         status: "error",
         message: error instanceof Error ? error.message : String(error),
       });
-    }
-  }
-
-  // .fabric/ removal (only when --purge AND directory now empty).
-  if (fabricDirEntry !== undefined) {
-    const path = fabricDirEntry.path;
-    if (!existsSync(path)) {
-      results.push({
-        step: "fabric-dir",
-        path,
-        status: "skipped",
-        message: "absent",
-      });
-    } else {
-      try {
-        const entries = await readdir(path);
-        if (entries.length > 0) {
-          results.push({
-            step: "fabric-dir",
-            path,
-            status: "skipped",
-            message: "not-empty",
-          });
-        } else {
-          await rm(path, { recursive: true, force: true });
-          results.push({ step: "fabric-dir", path, status: "removed" });
-        }
-      } catch (error: unknown) {
-        results.push({
-          step: "fabric-dir",
-          path,
-          status: "error",
-          message: error instanceof Error ? error.message : String(error),
-        });
-      }
     }
   }
 
@@ -497,10 +394,6 @@ function scaffoldStepLabel(kind: UninstallScaffoldEntry["kind"]): string {
       return "scaffold-state";
     case "gitkeep":
       return "scaffold-gitkeep";
-    case "knowledge-subdir":
-      return "scaffold-knowledge";
-    case "fabric-dir":
-      return "fabric-dir";
   }
 }
 
@@ -643,7 +536,7 @@ async function executeUninstallStage(
     case "scaffold":
       return executeUninstallFabricPlan(plan.scaffold);
     case "bootstrap": {
-      const opts: BootstrapUninstallOptions = { cleanEmpties: plan.options.cleanEmpties === true };
+      const opts: BootstrapUninstallOptions = {};
       return uninstallBootstrapStage(plan.target, opts);
     }
     case "mcp": {
@@ -671,14 +564,13 @@ export async function uninstallFabric(
 
 export async function resolveUninstallExecutionPlanWithWizard(
   basePlan: UninstallExecutionPlan,
-  args: Pick<UninstallArgs, "bootstrap" | "mcp" | "scaffold">,
   wizardAdapter: UninstallWizardAdapter,
 ): Promise<UninstallExecutionPlan | null> {
   const selection = await wizardAdapter.run({
     target: basePlan.target,
     options: basePlan.options,
     supports: basePlan.supports,
-    lockedStages: collectLockedWizardStages(args),
+    lockedStages: [],
   });
 
   if (selection === null) {
@@ -690,8 +582,6 @@ export async function resolveUninstallExecutionPlanWithWizard(
     skipScaffold: !selection.scaffold,
     skipBootstrap: !selection.bootstrap,
     skipMcp: !selection.mcp,
-    purge: selection.purge,
-    cleanEmpties: selection.cleanEmpties,
   };
 
   const rebuilt = await buildUninstallExecutionPlan(basePlan.target, nextOptions);
@@ -756,20 +646,6 @@ export function createDefaultUninstallWizardAdapter(): UninstallWizardAdapter {
                     }),
                     initialValue: !context.options.skipMcp,
                   }),
-            purge: async () =>
-              confirmInGroup({
-                message: t("cli.uninstall.wizard.purge", {
-                  defaultValue: formatPromptDefault(context.options.purge === true),
-                }),
-                initialValue: context.options.purge === true,
-              }),
-            cleanEmpties: async () =>
-              confirmInGroup({
-                message: t("cli.uninstall.wizard.clean-empties", {
-                  defaultValue: formatPromptDefault(context.options.cleanEmpties === true),
-                }),
-                initialValue: context.options.cleanEmpties === true,
-              }),
           },
           {
             onCancel() {
@@ -790,8 +666,6 @@ export function createDefaultUninstallWizardAdapter(): UninstallWizardAdapter {
         skipScaffold: !groupedSelection.scaffold,
         skipBootstrap: !groupedSelection.bootstrap,
         skipMcp: !groupedSelection.mcp,
-        purge: groupedSelection.purge,
-        cleanEmpties: groupedSelection.cleanEmpties,
       };
       log.step(t("cli.uninstall.wizard.step.review"));
       printUninstallPlanSummary(context.target, previewOptions, context.supports);
@@ -824,14 +698,6 @@ async function confirmInGroup(options: { message: string; initialValue: boolean 
   return result;
 }
 
-function collectLockedWizardStages(args: Pick<UninstallArgs, "bootstrap" | "mcp" | "scaffold">): UninstallStageName[] {
-  const locked: UninstallStageName[] = [];
-  if (args.scaffold === false) locked.push("scaffold");
-  if (args.bootstrap === false) locked.push("bootstrap");
-  if (args.mcp === false) locked.push("mcp");
-  return locked;
-}
-
 // -----------------------------------------------------------------------
 // Confirmation prompt (non-wizard interactive path)
 // -----------------------------------------------------------------------
@@ -860,8 +726,6 @@ function printUninstallPlanPreview(plan: UninstallExecutionPlan): void {
       scaffold: yesNoLabel(!plan.options.skipScaffold),
       bootstrap: yesNoLabel(!plan.options.skipBootstrap),
       mcp: yesNoLabel(!plan.options.skipMcp),
-      purge: yesNoLabel(plan.options.purge === true),
-      cleanEmpties: yesNoLabel(plan.options.cleanEmpties === true),
     }),
   );
 
@@ -888,8 +752,6 @@ function printUninstallPlanSummary(
       scaffold: yesNoLabel(!options.skipScaffold),
       bootstrap: yesNoLabel(!options.skipBootstrap),
       mcp: yesNoLabel(!options.skipMcp),
-      purge: yesNoLabel(options.purge === true),
-      cleanEmpties: yesNoLabel(options.cleanEmpties === true),
     }),
   );
   const detected = supports.filter((support) => support.detected);

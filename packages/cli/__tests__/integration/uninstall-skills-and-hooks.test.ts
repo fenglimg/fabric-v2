@@ -86,7 +86,7 @@ describe("TASK-005 uninstall round-trip: T1 fresh init → uninstall", () => {
     expect(existsSync(join(target, ".claude", "skills", "fabric-archive", "SKILL.md"))).toBe(true);
     expect(existsSync(join(target, ".claude", "hooks", "fabric-hint.cjs"))).toBe(true);
 
-    await runUninstall(target, { cleanEmpties: true });
+    await runUninstall(target);
 
     // Fabric-owned skill files are removed.
     expect(existsSync(join(target, ".claude", "skills", "fabric-archive", "SKILL.md"))).toBe(false);
@@ -100,10 +100,10 @@ describe("TASK-005 uninstall round-trip: T1 fresh init → uninstall", () => {
 
     // Snapshot tree: if any files remain in .claude, they MUST not be the
     // fabric-owned ones (settings.json may survive — it predates uninstall
-    // intent and contains a mix of fabric + user content). With cleanEmpties:true
-    // and no user customizations, hooks.* keys should be cleaned out of
-    // settings.json, but the file itself may still exist with permissions or
-    // other unmodified fields.
+    // intent and contains a mix of fabric + user content). cleanEmpties became
+    // default-on in rc.15 TASK-002, so hooks.* keys are cleaned out of
+    // settings.json by default, but the file itself may still exist with
+    // permissions or other unmodified fields.
     //
     // rc.14 TASK-004 (Finding 3) — extend snapshot assertions to `.cursor`
     // and `.codex` alongside `.claude`. Closes the uninstall-side parity
@@ -142,7 +142,7 @@ describe("TASK-005 uninstall round-trip: T1 fresh init → uninstall", () => {
 // ---------------------------------------------------------------------------
 
 describe("TASK-005 uninstall round-trip: T2 user settings.json preservation", () => {
-  it("uninstall {cleanEmpties:true} restores pre-init settings.json byte-for-byte", async () => {
+  it("uninstall restores pre-init settings.json byte-for-byte (cleanEmpties default-on)", async () => {
     const target = createWerewolfFixtureRoot("itg-uninstall-t2-settings");
     tempRoots.push(target);
 
@@ -173,8 +173,9 @@ describe("TASK-005 uninstall round-trip: T2 user settings.json preservation", ()
       .map((h) => h.command);
     expect(mergedStopCommands).toContain(".claude/hooks/fabric-hint.cjs");
 
-    // Uninstall with cleanEmpties so empty arrays/objects cascade away.
-    await runUninstall(target, { cleanEmpties: true });
+    // Uninstall — cleanEmpties is default-on (rc.15 TASK-002), so empty
+    // arrays/objects cascade away unconditionally.
+    await runUninstall(target);
 
     // settings.json must exist (we seeded user content there) and the
     // permissions block + user Stop entry must be preserved verbatim.
@@ -225,11 +226,13 @@ describe("TASK-005 uninstall round-trip: T3 knowledge preserved without --purge"
 });
 
 // ---------------------------------------------------------------------------
-// T4 — HOME-pinned ~/.fabric/knowledge/ NEVER touched even with --purge
+// T4 — HOME-pinned ~/.fabric/knowledge/ NEVER touched; team knowledge always
+// preserved (rc.15 TASK-002 dropped --purge — knowledge preservation is now
+// unconditional, and the personal-root guard remains defense-in-depth).
 // ---------------------------------------------------------------------------
 
-describe("TASK-005 uninstall round-trip: T4 personal root preserved even with --purge", () => {
-  it("--purge removes project .fabric/ but $HOME/.fabric/knowledge/ is byte-identical", async () => {
+describe("TASK-005 uninstall round-trip: T4 personal root always preserved", () => {
+  it("uninstall preserves both project .fabric/knowledge/ and $HOME/.fabric/knowledge/ byte-identically", async () => {
     // Pin BOTH env vars: resolver order is `FABRIC_HOME ?? homedir()`, but
     // setting both is defense-in-depth against future code changes.
     const isolatedHome = join(
@@ -245,7 +248,7 @@ describe("TASK-005 uninstall round-trip: T4 personal root preserved even with --
     const personalDir = join(isolatedHome, ".fabric", "knowledge", "decisions");
     mkdirSync(personalDir, { recursive: true });
     const personalEntry = join(personalDir, "personal.md");
-    const personalContent = "# Personal\n\nCross-project, must survive --purge.\n";
+    const personalContent = "# Personal\n\nCross-project, must survive uninstall.\n";
     writeFileSync(personalEntry, personalContent, "utf8");
 
     const target = createWerewolfFixtureRoot("itg-uninstall-t4-purge");
@@ -253,14 +256,17 @@ describe("TASK-005 uninstall round-trip: T4 personal root preserved even with --
 
     await runInit(target);
 
-    // Run uninstall with --purge.
-    await runUninstall(target, { purge: true });
+    // Seed a project-local knowledge entry to verify team knowledge survives.
+    const projectEntry = join(target, ".fabric", "knowledge", "decisions", "project.md");
+    const projectContent = "# Project\n\nMust survive default uninstall.\n";
+    writeFileSync(projectEntry, projectContent, "utf8");
 
-    // Project .fabric/ is gone (purge cleaned up state files + knowledge subdirs).
-    // Note: depending on whether stage results left the dir non-empty, the
-    // fabric-dir step may not have removed the dir itself — we assert at least
-    // the knowledge subtree was purged.
-    expect(existsSync(join(target, ".fabric", "knowledge", "decisions"))).toBe(false);
+    // Run default uninstall — knowledge preservation is now unconditional.
+    await runUninstall(target);
+
+    // Project knowledge tree survives byte-identical.
+    expect(existsSync(projectEntry)).toBe(true);
+    expect(readFileSync(projectEntry, "utf8")).toBe(projectContent);
 
     // Personal root is byte-identical, untouched.
     expect(existsSync(personalEntry)).toBe(true);

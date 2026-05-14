@@ -18,10 +18,11 @@ import {
  * Uninstall helpers — symmetric inverse of the install pipeline shipped in
  * {@link ./skills-and-hooks.ts}. Each helper is idempotent + best-effort:
  *   - Missing artifacts produce `status: 'skipped'` (never throw).
- *   - Hook-config un-merge is conservative by default: fabric entries are
- *     filtered out by `command`-path match against
- *     {@link FABRIC_HOOK_COMMAND_PATHS}; user-authored entries are preserved.
- *     The optional `cleanEmpties` flag cascades empty arrays/objects up.
+ *   - Hook-config un-merge filters fabric entries out by `command`-path match
+ *     against {@link FABRIC_HOOK_COMMAND_PATHS}; user-authored entries are
+ *     preserved. After filtering, empty arrays/objects unconditionally
+ *     cascade-prune up the JSON tree (rc.15 TASK-002 — cleanEmpties became
+ *     default-on and the option was deleted).
  *   - Pointer stripping NEVER deletes the file even when all remaining lines
  *     were fabric pointers — install cannot prove it created the file, so
  *     uninstall preserves it to avoid clobbering pre-existing user content.
@@ -43,16 +44,7 @@ export type UninstallStepResult = {
   message?: string;
 };
 
-export type UninstallOptions = {
-  /**
-   * When true, after fabric entries are filtered out, recursively delete
-   * empty container keys (empty arrays' parent keys, then empty objects)
-   * up the JSON tree until the first non-empty container is encountered or
-   * the document root is reached. When false (default), empty containers
-   * are left behind — cosmetic but loss-less.
-   */
-  cleanEmpties?: boolean;
-};
+export type UninstallOptions = Record<string, never>;
 
 // -----------------------------------------------------------------------
 // Skill removers
@@ -173,13 +165,12 @@ async function removeHookScripts(
  * / `hooks.PreToolUse` array (matching by descending one nesting level into
  * each matcher-wrapper's `hooks: [{ command }]` field against the literals
  * in `FABRIC_HOOK_COMMAND_PATHS.claudeCode`), then atomically writes the
- * pruned object back. With `opts.cleanEmpties = true`, empty arrays' keys
- * cascade up: empty `hooks.Stop` → delete `hooks.Stop`; if `hooks` then
- * becomes empty → delete `hooks` too.
+ * pruned object back. Empty arrays' keys unconditionally cascade up: empty
+ * `hooks.Stop` → delete `hooks.Stop`; if `hooks` then becomes empty →
+ * delete `hooks` too (rc.15 TASK-002 made this default-on behavior).
  */
 export async function unmergeClaudeCodeHookConfig(
   projectRoot: string,
-  opts: UninstallOptions = {},
 ): Promise<UninstallStepResult> {
   return unmergeHookConfig({
     step: "claude-hook-config",
@@ -188,7 +179,6 @@ export async function unmergeClaudeCodeHookConfig(
     arrayPaths: [...HOOK_CONFIG_ARRAY_PATHS.claudeCode],
     fabricCommands: Object.values(FABRIC_HOOK_COMMAND_PATHS.claudeCode),
     extractCommands: extractClaudeCommands,
-    cleanEmpties: opts.cleanEmpties === true,
   });
 }
 
@@ -200,7 +190,6 @@ export async function unmergeClaudeCodeHookConfig(
  */
 export async function unmergeCodexHookConfig(
   projectRoot: string,
-  opts: UninstallOptions = {},
 ): Promise<UninstallStepResult> {
   return unmergeHookConfig({
     step: "codex-hook-config",
@@ -209,7 +198,6 @@ export async function unmergeCodexHookConfig(
     arrayPaths: [...HOOK_CONFIG_ARRAY_PATHS.codex],
     fabricCommands: Object.values(FABRIC_HOOK_COMMAND_PATHS.codex),
     extractCommands: extractFlatCommands,
-    cleanEmpties: opts.cleanEmpties === true,
   });
 }
 
@@ -222,7 +210,6 @@ export async function unmergeCodexHookConfig(
  */
 export async function unmergeCursorHookConfig(
   projectRoot: string,
-  opts: UninstallOptions = {},
 ): Promise<UninstallStepResult> {
   return unmergeHookConfig({
     step: "cursor-hook-config",
@@ -231,7 +218,6 @@ export async function unmergeCursorHookConfig(
     arrayPaths: [...HOOK_CONFIG_ARRAY_PATHS.cursor],
     fabricCommands: Object.values(FABRIC_HOOK_COMMAND_PATHS.cursor),
     extractCommands: extractFlatCommands,
-    cleanEmpties: opts.cleanEmpties === true,
   });
 }
 
@@ -345,7 +331,7 @@ export async function stripFabricKnowledgeBaseSection(
  */
 export async function uninstallBootstrapStage(
   projectRoot: string,
-  opts: UninstallOptions = {},
+  _opts: UninstallOptions = {},
 ): Promise<UninstallStepResult[]> {
   const results: UninstallStepResult[] = [];
 
@@ -356,13 +342,13 @@ export async function uninstallBootstrapStage(
 
   // 2. Hook configs (reverse of install order: cursor → codex → claude)
   await runAndCollectOne(results, "cursor-hook-config", projectRoot, () =>
-    unmergeCursorHookConfig(projectRoot, opts),
+    unmergeCursorHookConfig(projectRoot),
   );
   await runAndCollectOne(results, "codex-hook-config", projectRoot, () =>
-    unmergeCodexHookConfig(projectRoot, opts),
+    unmergeCodexHookConfig(projectRoot),
   );
   await runAndCollectOne(results, "claude-hook-config", projectRoot, () =>
-    unmergeClaudeCodeHookConfig(projectRoot, opts),
+    unmergeClaudeCodeHookConfig(projectRoot),
   );
 
   // 3. Hook scripts (reverse of install order)
@@ -490,7 +476,6 @@ type UnmergeArgs = {
   arrayPaths: string[];
   fabricCommands: string[];
   extractCommands: (entry: unknown) => string[];
-  cleanEmpties: boolean;
 };
 
 async function unmergeHookConfig(args: UnmergeArgs): Promise<UninstallStepResult> {
@@ -535,7 +520,7 @@ async function unmergeHookConfig(args: UnmergeArgs): Promise<UninstallStepResult
   const next = JSON.parse(JSON.stringify(parsed)) as Record<string, unknown>;
 
   for (const dotted of args.arrayPaths) {
-    pruneArrayAtPath(next, dotted, args.fabricCommands, args.extractCommands, args.cleanEmpties);
+    pruneArrayAtPath(next, dotted, args.fabricCommands, args.extractCommands);
   }
 
   if (jsonEqual(parsed, next)) {
@@ -557,16 +542,16 @@ async function unmergeHookConfig(args: UnmergeArgs): Promise<UninstallStepResult
 
 /**
  * Walks `root` via the dotted `path`, filters the array found at the leaf,
- * and (when `cleanEmpties` is true) cascades empty containers upward by
- * deleting the array's key from its parent, then the parent's key from its
- * grandparent if the parent is itself empty — recursing up the chain.
+ * then unconditionally cascades empty containers upward by deleting the
+ * array's key from its parent, then the parent's key from its grandparent
+ * if the parent is itself empty — recursing up the chain. rc.15 TASK-002
+ * made this default behavior; the cleanEmpties opt-in flag was deleted.
  */
 function pruneArrayAtPath(
   root: Record<string, unknown>,
   path: string,
   fabricCommands: string[],
   extractCommands: (entry: unknown) => string[],
-  cleanEmpties: boolean,
 ): void {
   const keys = path.split(".");
   // Track the chain of (parent, keyInParent) so we can delete upward.
@@ -601,7 +586,7 @@ function pruneArrayAtPath(
   const leaf = chain[chain.length - 1];
   leaf.parent[leaf.key] = filtered;
 
-  if (!cleanEmpties || filtered.length > 0) {
+  if (filtered.length > 0) {
     return;
   }
 

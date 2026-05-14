@@ -6,16 +6,17 @@
  * afterEach. Each case covers one binding contract from the plan:
  *
  *   (a) plan enumerates expected scaffold entries against a freshly-init'd fixture
- *   (b) --plan mode performs no writes (snapshotTree before == after)
+ *   (b) --dry-run mode performs no writes (snapshotTree before == after)
  *   (c) default scaffold execution removes derived state but preserves knowledge .gitkeep
- *   (d) --purge removes .fabric/knowledge/ but NEVER ~/.fabric/knowledge/ (HOME-pinned)
  *   (e) wizard cancellation sets exitCode=130 and emits the cancel banner exactly once
  *   (f) idempotent re-run: second run reports 100% skipped
- *   (g) --force allows uninstall even when artifacts are already missing without error
+ *
+ * rc.15 TASK-002 — cases (d) --purge and (g) --force were deleted alongside
+ * those legacy flags. Knowledge preservation is now unconditional (no --purge);
+ * idempotency on missing artifacts is exercised by case (f).
  */
 
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -123,14 +124,15 @@ describe("uninstall plan enumeration", () => {
     expect(gitkeepEntries.length).toBe(6); // decisions, pitfalls, guidelines, models, processes, pending
     expect(gitkeepEntries.every((e) => e.absent === false)).toBe(true);
 
-    // Without --purge, no knowledge-subdir or fabric-dir entries.
-    expect(plan.scaffold.entries.some((e) => e.kind === "knowledge-subdir")).toBe(false);
-    expect(plan.scaffold.entries.some((e) => e.kind === "fabric-dir")).toBe(false);
+    // rc.15 TASK-002 — --purge gone; entry kinds collapse to state-file + gitkeep.
+    // Knowledge subdir contents and the .fabric/ directory itself are unconditionally
+    // preserved.
+    expect(plan.scaffold.entries.every((e) => e.kind === "state-file" || e.kind === "gitkeep")).toBe(true);
   });
 });
 
-describe("uninstall --plan mode (no-write contract)", () => {
-  it("(b) plan=true via runUninstallCommand returns 100% skipped stageResults and does NOT mutate disk", async () => {
+describe("uninstall --dry-run mode (no-write contract)", () => {
+  it("(b) dry-run=true via runUninstallCommand returns 100% skipped stageResults and does NOT mutate disk", async () => {
     process.env.FAB_LANG = "en";
     const target = createWerewolfFixtureRoot("fab-uninstall-plan-mode");
     tempRoots.push(target);
@@ -158,9 +160,8 @@ describe("uninstall --plan mode (no-write contract)", () => {
     const { runUninstallCommand } = await import("../src/commands/uninstall.ts");
     const result = await runUninstallCommand({
       target,
-      plan: true,
+      "dry-run": true,
       yes: true,
-      mcp: false,
     });
 
     expect(result).toBeDefined();
@@ -211,56 +212,6 @@ describe("uninstall default scaffold execution", () => {
       // Subdir survives even though its .gitkeep is gone.
       expect(existsSync(join(target, ".fabric", "knowledge", sub))).toBe(true);
     }
-  });
-});
-
-describe("uninstall --purge with HOME-pinned personal root", () => {
-  it("(d) --purge removes .fabric/knowledge/ but personal ~/.fabric/knowledge/ is byte-identical", async () => {
-    // Pin BOTH env vars so any resolver (FABRIC_HOME ?? homedir()) lands on the
-    // isolated tmpdir — not the real user home.
-    const isolatedHome = join(tmpdir(), `fab-uninstall-personal-home-${process.pid}-${Date.now()}`);
-    mkdirSync(isolatedHome, { recursive: true });
-    tempRoots.push(isolatedHome);
-    process.env.HOME = isolatedHome;
-    process.env.FABRIC_HOME = isolatedHome;
-
-    // Seed personal knowledge entry inside the pinned HOME.
-    const personalEntryDir = join(isolatedHome, ".fabric", "knowledge", "decisions");
-    mkdirSync(personalEntryDir, { recursive: true });
-    const personalEntry = join(personalEntryDir, "personal.md");
-    const personalContent = "# Personal decision\n\nCross-project, must survive uninstall.\n";
-    writeFileSync(personalEntry, personalContent, "utf8");
-
-    const target = createWerewolfFixtureRoot("fab-uninstall-purge-personal");
-    tempRoots.push(target);
-
-    await initFabric(target);
-
-    // Seed a project-local knowledge entry to confirm --purge removes it.
-    writeFileSync(
-      join(target, ".fabric", "knowledge", "decisions", "project-decision.md"),
-      "# Project decision\n\nProject-local.\n",
-      "utf8",
-    );
-
-    vi.spyOn(console, "log").mockImplementation(() => {});
-
-    const plan = await buildUninstallExecutionPlan(target, {
-      purge: true,
-      skipBootstrap: true,
-      skipMcp: true,
-    });
-    await executeUninstallExecutionPlan(plan);
-
-    // Project-local knowledge subdirs (incl. seeded entry) removed by --purge.
-    for (const sub of ["decisions", "pitfalls", "guidelines", "models", "processes", "pending"]) {
-      expect(existsSync(join(target, ".fabric", "knowledge", sub))).toBe(false);
-    }
-    expect(existsSync(join(target, ".fabric", "knowledge", "decisions", "project-decision.md"))).toBe(false);
-
-    // Personal root MUST be byte-identical, regardless of --purge.
-    expect(existsSync(personalEntry)).toBe(true);
-    expect(readFileSync(personalEntry, "utf8")).toBe(personalContent);
   });
 });
 
@@ -334,32 +285,6 @@ describe("uninstall idempotency", () => {
     const allSteps = result2.stageResults.flatMap((stage) => stage.steps);
     expect(allSteps.length).toBeGreaterThan(0);
     expect(allSteps.every((step) => step.status === "skipped")).toBe(true);
-  });
-});
-
-describe("uninstall --force on already-missing artifacts", () => {
-  it("(g) --force allows uninstall when there is nothing left to remove without error", async () => {
-    const target = createWerewolfFixtureRoot("fab-uninstall-force-empty");
-    tempRoots.push(target);
-
-    // Note: this fixture is NOT init'd. There is no .fabric / .claude / .codex
-    // to remove. --force must not turn this into an error.
-    expect(existsSync(join(target, ".fabric"))).toBe(false);
-
-    vi.spyOn(console, "log").mockImplementation(() => {});
-
-    const plan = await buildUninstallExecutionPlan(target, {
-      force: true,
-      skipMcp: true,
-    });
-    const result = await executeUninstallExecutionPlan(plan);
-
-    // No errors anywhere — every step in every stage must be skipped or removed
-    // (but never errored). In practice on a never-init'd fixture, everything is
-    // skipped with status='skipped' message='absent'.
-    const allSteps = result.stageResults.flatMap((stage) => stage.steps);
-    const errorSteps = allSteps.filter((step) => step.status === "error");
-    expect(errorSteps).toEqual([]);
   });
 });
 
@@ -455,7 +380,7 @@ describe("runUninstallCommand interactive confirmation", () => {
 
     vi.resetModules();
     const { runUninstallCommand } = await import("../src/commands/uninstall.ts");
-    const result = await runUninstallCommand({ target, yes: true, mcp: false });
+    const result = await runUninstallCommand({ target, yes: true });
 
     expect(result).toBeDefined();
     // Plan executed — agents.meta.json gone.
@@ -465,39 +390,14 @@ describe("runUninstallCommand interactive confirmation", () => {
     expect(cancelMock).not.toHaveBeenCalled();
   });
 
-  it("non-interactive TTY path: --force bypass confirms and executes plan", async () => {
-    process.env.FAB_LANG = "en";
-    const target = createWerewolfFixtureRoot("fab-uninstall-force-bypass");
-    tempRoots.push(target);
-
-    await initFabric(target);
-
-    // Non-TTY environment — wizardEnabled=false AND interactiveSummary=false,
-    // so the confirm prompt isn't shown. --force is the documented escape hatch
-    // for the lock-check path; here we just exercise the runner.
-    restoreTtyMocks.push(setProcessTty(false, false, false));
-
-    vi.spyOn(console, "log").mockImplementation(() => {});
-    vi.spyOn(process.stderr, "write").mockImplementation(((chunk: string | Uint8Array) => {
-      void chunk;
-      return true;
-    }) as typeof process.stderr.write);
-
-    vi.resetModules();
-    const { runUninstallCommand } = await import("../src/commands/uninstall.ts");
-    const result = await runUninstallCommand({ target, force: true, mcp: false });
-
-    expect(result).toBeDefined();
-    expect(existsSync(join(target, ".fabric", "agents.meta.json"))).toBe(false);
-  });
 });
 
 describe("buildUninstallFabricPlan personal-root guard", () => {
   it("filters out any candidate path that resolves inside the personal fabric root", async () => {
     // Force genuine overlap: point HOME/FABRIC_HOME at the target project itself.
     // The project's `.fabric/knowledge/` then IS the personal-root knowledge dir,
-    // so every knowledge-subdir candidate enumerated under `--purge` must be
-    // filtered by the personal-root guard.
+    // so every .gitkeep candidate enumerated under the team knowledge tree must
+    // be filtered by the personal-root guard.
     const target = createWerewolfFixtureRoot("fab-uninstall-guard-target");
     tempRoots.push(target);
     process.env.HOME = target;
@@ -506,7 +406,7 @@ describe("buildUninstallFabricPlan personal-root guard", () => {
     const { buildUninstallFabricPlan, isInsidePersonalRoot } = await import(
       "../src/commands/uninstall.ts"
     );
-    const plan = buildUninstallFabricPlan(target, { purge: true });
+    const plan = buildUninstallFabricPlan(target);
 
     // Personal root path resolves under the project tree.
     expect(plan.personalKnowledgeDir).toBe(join(target, ".fabric", "knowledge"));
@@ -516,9 +416,8 @@ describe("buildUninstallFabricPlan personal-root guard", () => {
       expect(isInsidePersonalRoot(entry.path, plan.personalKnowledgeDir)).toBe(false);
     }
 
-    // Guard actually fired: with --purge, knowledge subdirs would normally be
-    // enumerated. With personal-root overlap, none of them survive — the guard
-    // filtered them out. Assert zero entries fall under `.fabric/knowledge/`.
+    // Guard actually fired: every default-scaffold .gitkeep candidate is under
+    // `.fabric/knowledge/` — with personal-root overlap, none survive.
     const knowledgePrefix = join(target, ".fabric", "knowledge");
     const overlapping = plan.entries.filter((e) => e.path.startsWith(knowledgePrefix));
     expect(overlapping).toEqual([]);
