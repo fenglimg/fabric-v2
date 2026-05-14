@@ -215,9 +215,10 @@ export async function unmergeCodexHookConfig(
 
 /**
  * Inverse of `mergeCursorHookConfig`. Reads `.cursor/hooks.json`, filters
- * every fabric entry out of each `events.Stop` / `events.SessionStart` /
- * `events.PreToolUse` array (matching by top-level `command` field), then
- * atomically writes the pruned object back.
+ * every fabric entry out of each `hooks.stop` / `hooks.sessionStart` /
+ * `hooks.preToolUse` array (matching by top-level `command` field), then
+ * atomically writes the pruned object back. Schema per
+ * https://cursor.com/cn/docs/hooks; corrected in rc.14 TASK-001.
  */
 export async function unmergeCursorHookConfig(
   projectRoot: string,

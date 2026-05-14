@@ -201,23 +201,27 @@ describe("TASK-006 install-skills-and-hooks: fresh init", () => {
     );
     expect(JSON.stringify(codexHooks.events?.PreToolUse)).toContain("Edit|Write|MultiEdit");
 
-    // Cursor hooks.json contains events.Stop[] + events.SessionStart[] + events.PreToolUse[]
-    // (rc.5 TASK-010 — Cursor parity; rc.6 TASK-019 — SessionStart slot;
-    // rc.6 TASK-020 — PreToolUse slot)
+    // Cursor hooks.json schema per https://cursor.com/cn/docs/hooks:
+    //   top-level `version: 1` (number) + `hooks: {stop, sessionStart, preToolUse}` (camelCase).
+    // rc.14 TASK-001 — schema fix (rc.13 shipped wrong top-level `events.*` PascalCase).
     const cursorHooks = JSON.parse(
       readFileSync(join(target, ".cursor/hooks.json"), "utf8"),
-    ) as { events?: { Stop?: unknown[]; SessionStart?: unknown[]; PreToolUse?: unknown[] } };
-    expect(Array.isArray(cursorHooks.events?.Stop)).toBe(true);
-    expect(JSON.stringify(cursorHooks.events?.Stop)).toContain(".cursor/hooks/fabric-hint.cjs");
-    expect(Array.isArray(cursorHooks.events?.SessionStart)).toBe(true);
-    expect(JSON.stringify(cursorHooks.events?.SessionStart)).toContain(
+    ) as {
+      version?: unknown;
+      hooks?: { stop?: unknown[]; sessionStart?: unknown[]; preToolUse?: unknown[] };
+    };
+    expect(cursorHooks.version).toBe(1);
+    expect(Array.isArray(cursorHooks.hooks?.stop)).toBe(true);
+    expect(JSON.stringify(cursorHooks.hooks?.stop)).toContain(".cursor/hooks/fabric-hint.cjs");
+    expect(Array.isArray(cursorHooks.hooks?.sessionStart)).toBe(true);
+    expect(JSON.stringify(cursorHooks.hooks?.sessionStart)).toContain(
       ".cursor/hooks/knowledge-hint-broad.cjs",
     );
-    expect(Array.isArray(cursorHooks.events?.PreToolUse)).toBe(true);
-    expect(JSON.stringify(cursorHooks.events?.PreToolUse)).toContain(
+    expect(Array.isArray(cursorHooks.hooks?.preToolUse)).toBe(true);
+    expect(JSON.stringify(cursorHooks.hooks?.preToolUse)).toContain(
       ".cursor/hooks/knowledge-hint-narrow.cjs",
     );
-    expect(JSON.stringify(cursorHooks.events?.PreToolUse)).toContain("Edit|Write|MultiEdit");
+    expect(JSON.stringify(cursorHooks.hooks?.preToolUse)).toContain("Edit|Write|MultiEdit");
   });
 });
 

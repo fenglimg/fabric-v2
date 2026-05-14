@@ -1,16 +1,13 @@
 {
-  "events": {
-    "Stop": [
-      {
-        "command": ".cursor/hooks/fabric-hint.cjs"
-      }
+  "version": 1,
+  "hooks": {
+    "stop": [
+      { "command": ".cursor/hooks/fabric-hint.cjs" }
     ],
-    "SessionStart": [
-      {
-        "command": ".cursor/hooks/knowledge-hint-broad.cjs"
-      }
+    "sessionStart": [
+      { "command": ".cursor/hooks/knowledge-hint-broad.cjs" }
     ],
-    "PreToolUse": [
+    "preToolUse": [
       {
         "matcher": "Edit|Write|MultiEdit",
         "command": ".cursor/hooks/knowledge-hint-narrow.cjs"

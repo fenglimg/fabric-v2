@@ -27,11 +27,15 @@ config (`~/.codex/config.toml`) is TOML.
 
 ## cursor-hooks.json
 
-Written to (or merged into) the user repo's `.cursor/hooks.json`. Mirrors the
-Codex `events.Stop[]` envelope shape — Cursor's hook event vocabulary is
-not stable across releases, so the canonical Stop-on-tool-finish lifecycle hook
-is the only entry we register today. SessionStart / PreToolUse slots are left
-unfilled for rc.6 to add when their semantics stabilise.
+Written to (or merged into) the user repo's `.cursor/hooks.json`. Schema
+authoritative source: https://cursor.com/cn/docs/hooks. Top-level requires
+`version: 1` (number literal, NOT string) and a `hooks` object (NOT `events`)
+keyed by camelCase event names: `stop`, `sessionStart`, `preToolUse`. Per-entry
+shape stays flat (Codex-style): `{command, matcher?, type?, timeout?,
+loop_limit?, failClosed?}`. rc.14 TASK-001 corrected rc.13's wrong top-level
+envelope (was `{events: {Stop, SessionStart, PreToolUse}}` PascalCase, which
+Cursor rejects with "Config version must be a number; Config hooks must be an
+object").
 
 ## fabric-hint.cjs script paths
 

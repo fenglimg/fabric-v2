@@ -129,13 +129,17 @@ export const HOOK_CONFIG_TARGETS = {
  * passed to {@link mergeJsonIdempotent}. Source of truth shared with
  * `fab uninstall` (which must prune fabric entries from those same arrays).
  *
- * Note the client-specific shape: Claude Code groups under `hooks.*`, Codex
- * and Cursor under `events.*` — preserve the upstream schemas exactly.
+ * Note the client-specific shape: Claude Code groups under `hooks.*`
+ * (PascalCase event names), Codex under `events.*` (PascalCase), and Cursor
+ * under `hooks.*` (camelCase event names per https://cursor.com/cn/docs/hooks).
+ * Preserve the upstream schemas exactly — these dotted paths MUST byte-match
+ * each template's top-level keys, otherwise `arrayAppendWithDedupe` in
+ * `deepMerge` silently falls back to array-REPLACE on re-install.
  */
 export const HOOK_CONFIG_ARRAY_PATHS = {
   claudeCode: ["hooks.Stop", "hooks.SessionStart", "hooks.PreToolUse"],
   codex: ["events.Stop", "events.SessionStart", "events.PreToolUse"],
-  cursor: ["events.Stop", "events.SessionStart", "events.PreToolUse"],
+  cursor: ["hooks.stop", "hooks.sessionStart", "hooks.preToolUse"],
 } as const;
 
 /**
@@ -466,12 +470,14 @@ export async function mergeCodexHookConfig(
 
 /**
  * Deep-merge templates/hooks/configs/cursor-hooks.json into the user's
- * `.cursor/hooks.json`. `events.Stop`, `events.SessionStart`, and
- * `events.PreToolUse` arrays are array-append-with-dedupe.
+ * `.cursor/hooks.json`. `hooks.stop`, `hooks.sessionStart`, and
+ * `hooks.preToolUse` arrays are array-append-with-dedupe. Top-level envelope
+ * is `{version: 1, hooks: {…}}` per https://cursor.com/cn/docs/hooks.
  *
  * Added in rc.5 TASK-010 to bring Cursor to parity with Claude Code and
  * Codex CLI for the cross-client hook surface. rc.6 TASK-019 filled the
- * SessionStart slot; rc.6 TASK-020 fills the PreToolUse slot.
+ * SessionStart slot; rc.6 TASK-020 fills the PreToolUse slot. rc.14 TASK-001
+ * corrected the top-level envelope shape (was wrong `events.*` PascalCase).
  */
 export async function mergeCursorHookConfig(
   projectRoot: string,
