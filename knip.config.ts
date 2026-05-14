@@ -8,7 +8,8 @@ const config: KnipConfig = {
     // invoked externally by Claude Code / Codex CLI — never imported by TS
     // sources, so knip --strict reports them as unused.
     '.claude/hooks/**',
-    '.codex/hooks/**'
+    '.codex/hooks/**',
+    '.cursor/hooks/**'
   ],
   // Workspace cross-dependencies and build-tool deps are flagged as "unused" by --strict
   // because knip v6 does not resolve workspace: protocol packages as external deps in strict
@@ -65,7 +66,7 @@ const config: KnipConfig = {
     'packages/cli/src/commands/config.ts': ['duplicates'],
     'packages/cli/src/commands/doctor.ts': ['duplicates'],
     'packages/cli/src/commands/hooks.ts': ['duplicates'],
-    'packages/cli/src/commands/init.ts': ['duplicates'],
+    'packages/cli/src/commands/install.ts': ['duplicates'],
     'packages/cli/src/commands/scan.ts': ['duplicates'],
     'packages/cli/src/commands/serve.ts': ['duplicates']
   },

@@ -5,6 +5,16 @@ All notable changes to Fabric will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0-rc.13] — 2026-05-14
+
+**rc.12 CI follow-up.** Lint-only patch: extend knip ignore list to
+`.cursor/hooks/**` (counterpart of `.claude/hooks/**` / `.codex/hooks/**`,
+which the rc.12 dogfood install began populating) and migrate the stale
+`packages/cli/src/commands/init.ts` entry in `ignoreIssues` to
+`packages/cli/src/commands/install.ts` after the rc.12 rename. No
+source/runtime changes; rc.12 tag remains as a historical marker of the
+failed publish.
+
 ## [2.0.0-rc.12] — 2026-05-14
 
 **Broad gate + fabric_language naming alignment.** Four breaking renames
