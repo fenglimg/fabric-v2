@@ -208,6 +208,18 @@ export const enMessages: Messages = {
   "cli.install.claude-settings.invalid-hooks": "{label} {path}: \"hooks\" must be a JSON object.",
   "cli.install.claude-settings.invalid-stop-array": "{label} {path}: \"hooks.Stop\" must be an array.",
   "cli.install.errors.abort-existing": "ABORT: {path} already exists. fab install is non-destructive.",
+  "cli.install.diff.canonical": "Workspace already canonical ({count} files verified).",
+  "cli.install.diff.applying-missing": "Applying {count} missing pieces: {files}",
+  "cli.install.diff.drift-abort":
+    "Drift detected in {path}. Run `fab uninstall && fab install` to reset, or `fab doctor` to inspect.",
+  "cli.install.diff.deprecation-force":
+    "Note: --force is a legacy escape hatch and will be removed in v2.0.0-rc.15. Use `fab uninstall && fab install` for a clean reset.",
+  "cli.install.diff.deprecation-reapply":
+    "Note: --reapply is a legacy escape hatch and will be removed in v2.0.0-rc.15. Drift detection runs automatically on every `fab install`.",
+  "cli.install.diff.state.missing": "missing",
+  "cli.install.diff.state.present-canonical": "canonical",
+  "cli.install.diff.state.drifted": "drifted",
+  "cli.install.diff.state.user-modified": "user-modified",
 
   "cli.uninstall.description": "Uninstall Fabric from the target project.",
   "cli.uninstall.args.target.description":

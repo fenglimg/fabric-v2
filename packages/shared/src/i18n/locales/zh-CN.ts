@@ -203,6 +203,18 @@ export const zhCNMessages: Messages = {
   "cli.install.claude-settings.invalid-hooks": "{label} {path}：\"hooks\" 必须是 JSON 对象。",
   "cli.install.claude-settings.invalid-stop-array": "{label} {path}：\"hooks.Stop\" 必须是数组。",
   "cli.install.errors.abort-existing": "中止：{path} 已存在。fab install 是非破坏性的。",
+  "cli.install.diff.canonical": "工作区已是规范状态（已校验 {count} 个文件）。",
+  "cli.install.diff.applying-missing": "正在补齐 {count} 个缺失项：{files}",
+  "cli.install.diff.drift-abort":
+    "检测到 {path} 已被修改。运行 `fab uninstall && fab install` 进行重置，或 `fab doctor` 进行检查。",
+  "cli.install.diff.deprecation-force":
+    "提示：--force 是兼容性的逃生口，将在 v2.0.0-rc.15 中移除。请使用 `fab uninstall && fab install` 进行干净重置。",
+  "cli.install.diff.deprecation-reapply":
+    "提示：--reapply 是兼容性的逃生口，将在 v2.0.0-rc.15 中移除。每次 `fab install` 都会自动进行漂移检测。",
+  "cli.install.diff.state.missing": "缺失",
+  "cli.install.diff.state.present-canonical": "规范",
+  "cli.install.diff.state.drifted": "漂移",
+  "cli.install.diff.state.user-modified": "用户修改",
 
   "cli.uninstall.description": "从目标项目中卸载 Fabric。",
   "cli.uninstall.args.target.description":

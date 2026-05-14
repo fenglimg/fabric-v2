@@ -20,21 +20,18 @@
  *      appended only once on re-run
  */
 
-import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import {
-  buildInitExecutionPlan,
-  executeInitExecutionPlan,
-  type InitExecutionResult,
-} from "../../src/commands/install.ts";
 import { installHooks } from "../../src/commands/hooks.ts";
 import {
   cleanupFixtureRoot,
   createWerewolfFixtureRoot,
+  runInit,
+  snapshotTree,
   writeFixtureFile,
 } from "../helpers/init-test-utils.ts";
 
@@ -63,44 +60,8 @@ function readTemplate(rel: string): string {
   return readFileSync(join(TEMPLATES_ROOT, rel), "utf8");
 }
 
-/**
- * Runs `fabric init` end-to-end via the public execution-plan API but skips
- * the MCP stage — local MCP install would try to write outside the fixture
- * (npm install, global config) which is out of scope for these install tests.
- * Bootstrap (skill + hook + per-client configs + pointer) and hooks stages
- * run normally.
- */
-async function runInit(target: string, opts: { reapply?: boolean; force?: boolean } = {}): Promise<InitExecutionResult> {
-  const plan = await buildInitExecutionPlan({
-    target,
-    options: { skipMcp: true, reapply: opts.reapply, force: opts.force },
-    interactive: false,
-  });
-  return executeInitExecutionPlan(plan);
-}
-
-type FsSnapshot = Record<string, string>;
-
-function snapshotTree(root: string, rel: string): FsSnapshot {
-  const out: FsSnapshot = {};
-  const start = join(root, rel);
-  if (!existsSync(start)) return out;
-  walk(start);
-  return out;
-
-  function walk(p: string): void {
-    const stat = statSync(p);
-    if (stat.isDirectory()) {
-      for (const entry of readdirSync(p)) {
-        walk(join(p, entry));
-      }
-      return;
-    }
-    if (stat.isFile()) {
-      out[p.slice(root.length + 1)] = readFileSync(p, "utf8");
-    }
-  }
-}
+// runInit / snapshotTree are hoisted into helpers/init-test-utils.ts as of
+// rc.14 TASK-002. Single source of truth shared with uninstall + diff-mode tests.
 
 // ---------------------------------------------------------------------------
 // Test 1 — fresh init writes all 10 artifacts byte-identical to templates
@@ -230,20 +191,26 @@ describe("TASK-006 install-skills-and-hooks: fresh init", () => {
 // ---------------------------------------------------------------------------
 
 describe("TASK-006 install-skills-and-hooks: idempotency", () => {
-  it("re-running init produces zero diff in .claude/ and .codex/ trees", async () => {
+  it("re-running init produces zero diff in .claude/, .codex/, and .cursor/ trees", async () => {
     const target = createWerewolfFixtureRoot("itg-install-reinit");
     tempRoots.push(target);
 
     await runInit(target);
     const snap1Claude = snapshotTree(target, ".claude");
     const snap1Codex = snapshotTree(target, ".codex");
+    // rc.14 TASK-002: fill .cursor snapshot parity gap. Previously only
+    // .claude and .codex were snapshotted; cursor-side regressions would
+    // sneak past CI. Symmetric coverage now enforces cursor idempotency too.
+    const snap1Cursor = snapshotTree(target, ".cursor");
 
     await runInit(target, { reapply: true, force: true });
     const snap2Claude = snapshotTree(target, ".claude");
     const snap2Codex = snapshotTree(target, ".codex");
+    const snap2Cursor = snapshotTree(target, ".cursor");
 
     expect(snap2Claude).toEqual(snap1Claude);
     expect(snap2Codex).toEqual(snap1Codex);
+    expect(snap2Cursor).toEqual(snap1Cursor);
   });
 });
 

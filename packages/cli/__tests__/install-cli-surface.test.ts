@@ -131,6 +131,63 @@ describe("init CLI surface", () => {
     expect(readFileSync(`${target}/.fabric/agents.meta.json`, "utf8")).toContain("counters");
   });
 
+  // rc.14 TASK-002: default `fab install` on an existing canonical workspace
+  // is a no-op success — no throws, the canonical confirmation banner is
+  // emitted, and follow-up runs do not require --reapply / --force.
+  it("default install on existing canonical workspace is a no-op success", async () => {
+    process.env.FAB_LANG = "en";
+    const target = createWerewolfFixtureRoot("fab-init-canonical-noop");
+    tempRoots.push(target);
+
+    const { installCommand } = await import("../src/commands/install.ts");
+    const stdoutLines: string[] = [];
+    const stderrLines: string[] = [];
+    vi.spyOn(console, "log").mockImplementation((message?: unknown) => {
+      stdoutLines.push(String(message ?? ""));
+    });
+    vi.spyOn(process.stderr, "write").mockImplementation(((chunk: string | Uint8Array) => {
+      stderrLines.push(String(chunk).replace(/\n$/, ""));
+      return true;
+    }) as typeof process.stderr.write);
+
+    // First install — bootstrap/mcp/hooks disabled to keep the test fast.
+    await installCommand.run?.({
+      args: {
+        target,
+        yes: true,
+        bootstrap: false,
+        mcp: false,
+        hooks: false,
+      },
+    } as never);
+
+    stdoutLines.length = 0;
+    stderrLines.length = 0;
+
+    // Second install — same flags, no --reapply / --force. Must succeed
+    // (under rc.13 this threw inside planFreshPath; rc.14 TASK-002 diff-mode
+    // classifies the workspace as canonical and short-circuits cleanly).
+    let secondRunError: unknown = null;
+    try {
+      await installCommand.run?.({
+        args: {
+          target,
+          yes: true,
+          bootstrap: false,
+          mcp: false,
+          hooks: false,
+        },
+      } as never);
+    } catch (e) {
+      secondRunError = e;
+    }
+    expect(secondRunError).toBeNull();
+
+    // Canonical confirmation banner is visible in stdout.
+    const allOutput = [...stdoutLines, ...stderrLines].join("\n");
+    expect(allOutput).toMatch(/Workspace already canonical/);
+  });
+
   it("prints compatibility notices for legacy flags and skips wizard when --plan is used", async () => {
     process.env.FAB_LANG = "en";
     const target = createWerewolfFixtureRoot("fab-init-cli-surface");

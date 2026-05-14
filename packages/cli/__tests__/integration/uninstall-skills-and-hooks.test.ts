@@ -15,17 +15,12 @@
  * afterEach drain, snapshotTree byte-comparison, real-fs + tmpdir fixture.
  */
 
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import {
-  buildInitExecutionPlan,
-  executeInitExecutionPlan,
-  type InitExecutionResult,
-} from "../../src/commands/install.ts";
 import {
   buildUninstallExecutionPlan,
   executeUninstallExecutionPlan,
@@ -35,6 +30,8 @@ import {
 import {
   cleanupFixtureRoot,
   createWerewolfFixtureRoot,
+  runInit,
+  snapshotTree,
   writeFixtureFile,
 } from "../helpers/init-test-utils.ts";
 
@@ -60,20 +57,11 @@ afterEach(() => {
 });
 
 // ---------------------------------------------------------------------------
-// Helpers — mirror install-skills-and-hooks.test.ts runInit + snapshotTree
+// Helpers — runInit + snapshotTree hoisted into helpers/init-test-utils.ts
+// (rc.14 TASK-002 — single source of truth shared with install + diff-mode
+// integration tests). Local runUninstall stays because uninstall is the
+// inverse contract this test exists to validate.
 // ---------------------------------------------------------------------------
-
-async function runInit(
-  target: string,
-  opts: { reapply?: boolean; force?: boolean } = {},
-): Promise<InitExecutionResult> {
-  const plan = await buildInitExecutionPlan({
-    target,
-    options: { skipMcp: true, reapply: opts.reapply, force: opts.force },
-    interactive: false,
-  });
-  return executeInitExecutionPlan(plan);
-}
 
 async function runUninstall(
   target: string,
@@ -81,29 +69,6 @@ async function runUninstall(
 ): Promise<UninstallExecutionResult> {
   const plan = await buildUninstallExecutionPlan(target, { skipMcp: true, ...opts });
   return executeUninstallExecutionPlan(plan);
-}
-
-type FsSnapshot = Record<string, string>;
-
-function snapshotTree(root: string, rel: string): FsSnapshot {
-  const out: FsSnapshot = {};
-  const start = join(root, rel);
-  if (!existsSync(start)) return out;
-  walk(start);
-  return out;
-
-  function walk(p: string): void {
-    const stat = statSync(p);
-    if (stat.isDirectory()) {
-      for (const entry of readdirSync(p)) {
-        walk(join(p, entry));
-      }
-      return;
-    }
-    if (stat.isFile()) {
-      out[p.slice(root.length + 1)] = readFileSync(p, "utf8");
-    }
-  }
 }
 
 // ---------------------------------------------------------------------------

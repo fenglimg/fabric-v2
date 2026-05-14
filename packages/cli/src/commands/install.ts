@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
 import * as childProcess from "node:child_process";
-import { appendFileSync, existsSync, mkdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 
 import { cancel, confirm, group, intro, isCancel, log, note, outro, select } from "@clack/prompts";
@@ -62,6 +62,52 @@ type InitOptions = {
 };
 
 type InitWriteAction = "created" | "overwritten";
+
+// rc.14 TASK-002 (Bug V + Bug Z) — diff-mode classification.
+//
+// `DiffFileState` is the per-file classification computed during
+// `buildInitFabricPlan` (non-throwing) and consumed during
+// `executeInitExecutionPlan` (gates writes and abort behavior). It is
+// intentionally separate from `InitWriteAction` ("created" | "overwritten")
+// so that the existing `formatInitPathAction` switch stays exhaustive and
+// the rendering boundary translates state -> write action at exactly one
+// point (executeInitFabricPlan, when actually writing).
+//
+//   - "missing"           : path absent on disk; canonical write proceeds
+//   - "present-canonical" : on-disk content matches the canonical state
+//                           (per the per-file detection rule); no write
+//   - "drifted"           : on-disk content differs from canonical state
+//                           (byte-mismatch or structural-mismatch); without
+//                           --force, the run aborts with a helpful message
+//   - "user-modified"     : managed location holds something canonically
+//                           unexpected (e.g. .fabric/ is a file, agents.meta
+//                           .json fails to parse as AgentsMeta); same abort
+//                           semantics as "drifted" without --force
+export type DiffFileState =
+  | "missing"
+  | "present-canonical"
+  | "drifted"
+  | "user-modified";
+
+// rc.14 TASK-002 — per-file detection strategy. Each scaffold-stage path
+// uses one of these strategies in classifyFreshPath():
+//
+//   - "presence"       : any existing file is canonical (e.g. events.jsonl
+//                        which is an append-only ledger)
+//   - "structural"     : parse as JSON, sanity-check schema fields; do NOT
+//                        byte-compare (e.g. agents.meta.json which mutates
+//                        immediately after install via runInitScan)
+//   - "always-rewrite" : the file is a snapshot, never user-edited — always
+//                        treat the existing file as canonical for diff but
+//                        always rewrite at the write boundary (e.g.
+//                        forensic.json)
+type DiffDetectStrategy = "presence" | "structural" | "always-rewrite";
+
+type ClassifiedFreshPathResult = {
+  path: string;
+  state: DiffFileState;
+  reason?: string;
+};
 
 // v2.0 follow-up (rc.1 fix #1): AGENTS.md at the repo root is the universal
 // MCP-agnostic bootstrap anchor. Cursor, Codex CLI, and Claude Code all read
@@ -182,6 +228,14 @@ export type InitScaffoldPlan = {
   forensicPath: string;
   forensicAction: InitWriteAction;
   forensicReport: Awaited<ReturnType<typeof buildForensicReport>>;
+  // rc.14 TASK-002 — per-file DiffFileState classifications computed during
+  // planning. Consumed by (a) the planOnly preview branch (renders a diff
+  // table without writing), (b) the drift-abort gate inside
+  // executeInitExecutionPlan, and (c) the diff-mode summary printed on the
+  // canonical-no-op happy path.
+  metaState: DiffFileState;
+  eventsState: DiffFileState;
+  forensicState: DiffFileState;
 };
 
 export type InitExecutionPlan = {
@@ -309,9 +363,13 @@ export async function runInitCommand(args: InitArgs): Promise<InitExecutionResul
   const resolution = resolveDevMode(args.target, process.cwd());
   const intent = resolveInitCliIntent(args, resolution.target);
 
-  // Preflight: when --reapply is used, refuse if a serve process is actively holding the lock
-  // unless --force is explicitly passed. Check-only (no lock acquisition) is sufficient here.
-  if (args.reapply === true) {
+  // rc.14 TASK-002 — Preflight lock check expanded from --reapply-only to
+  // ALL install runs on an already-initialized workspace. Diff-mode default
+  // appends ledger events on every run (install_diff_applied) which opens
+  // events.jsonl, so a running `fab serve` holding the lock would race the
+  // write. --force is the legitimate bypass for the legacy escape hatch.
+  const fabricInitialized = existsSync(join(intent.target, ".fabric", "events.jsonl"));
+  if (args.reapply === true || fabricInitialized) {
     checkLockOrThrow(intent.target, { force: args.force });
   }
 
@@ -558,6 +616,12 @@ export async function buildInitExecutionPlan(input: {
 export async function executeInitExecutionPlan(plan: InitExecutionPlan): Promise<InitExecutionResult> {
   if (plan.options.force) {
     writeStderr(t("cli.install.force.warning", { path: plan.target }));
+    // rc.14 TASK-002 — legacy escape hatch deprecation warning. --force /
+    // --reapply will be removed in v2.0.0-rc.15 (Phase 2 CLI contraction).
+    writeStderr(t("cli.install.diff.deprecation-force"));
+  }
+  if (plan.options.reapply) {
+    writeStderr(t("cli.install.diff.deprecation-reapply"));
   }
 
   if (plan.options.reapply && !plan.options.planOnly && !plan.interactive) {
@@ -568,14 +632,39 @@ export async function executeInitExecutionPlan(plan: InitExecutionPlan): Promise
     printInitPlanSummary(plan.target, plan.options, plan.mcpInstallMode, plan.supports);
   }
 
+  // rc.14 TASK-002 — diff-mode classification table is rendered in BOTH the
+  // planOnly preview branch (always) and the no-op canonical confirmation
+  // path (below). For planOnly we exit 0 regardless of drift; for the
+  // mutation path we abort if drift is detected and --force is not set.
+  const scaffoldStates: Array<{ path: string; state: DiffFileState }> = [
+    { path: plan.scaffold.metaPath, state: plan.scaffold.metaState },
+    { path: plan.scaffold.eventsPath, state: plan.scaffold.eventsState },
+    { path: plan.scaffold.forensicPath, state: plan.scaffold.forensicState },
+  ];
+
   if (plan.options.planOnly) {
     printInitPlanPreview(plan);
+    printInitDiffStateTable(scaffoldStates);
     return {
       plan,
       created: buildPlanOnlyScaffoldResult(plan.scaffold),
       stageResults: plan.stages.map((stage) => ({ name: stage.name, disposition: "skipped" })),
       finalSupports: plan.supports,
     };
+  }
+
+  // rc.14 TASK-002 — drift-abort gate. Fires only at mutation time (i.e. not
+  // planOnly) when any scaffold path is in a non-canonical state AND --force
+  // is NOT set. --reapply also bypasses the gate (legacy escape hatch). The
+  // message points to `fab doctor` (inspect) and `fab uninstall && fab install`
+  // (reset) per the rc.14 plan.
+  if (!plan.options.force && !plan.options.reapply) {
+    const drifted = scaffoldStates.find(
+      (entry) => entry.state === "drifted" || entry.state === "user-modified",
+    );
+    if (drifted !== undefined) {
+      throw new Error(t("cli.install.diff.drift-abort", { path: drifted.path }));
+    }
   }
 
   let created: InitScaffoldResult | null = null;
@@ -602,6 +691,20 @@ export async function executeInitExecutionPlan(plan: InitExecutionPlan): Promise
       default:
         exhaustiveInitExecutionStep(step);
     }
+  }
+
+  // rc.14 TASK-002 — canonical-no-op one-line confirmation. Printed when
+  // every scaffold-stage path was already canonical AND --force / --reapply
+  // were not passed (legacy paths get their own banner above). Better UX
+  // than silent success for users still learning the workflow.
+  if (
+    !plan.options.force
+    && !plan.options.reapply
+    && scaffoldStates.every((entry) => entry.state === "present-canonical")
+  ) {
+    console.log(
+      t("cli.install.diff.canonical", { count: String(scaffoldStates.length) }),
+    );
   }
 
   return {
@@ -638,9 +741,19 @@ export async function buildInitFabricPlan(target: string, options?: InitOptions)
 
   const replaceFabricDir = shouldReplaceWritableDirectory(fabricDir, options);
   const knowledgeDirAction: InitWriteAction = existsSync(knowledgeDir) ? "overwritten" : "created";
-  const metaAction = planFreshPath(metaPath, options);
-  const eventsAction = planFreshPath(eventsPath, options);
-  const forensicAction = planFreshPath(forensicPath, options);
+
+  // rc.14 TASK-002 — diff-mode classification. NEVER throws during planning.
+  // The drift-abort gate inside `executeInitExecutionPlan` is the single
+  // throw site, and it only fires when actually writing (i.e. not planOnly)
+  // AND at least one path is drifted/user-modified AND --force is not set.
+  const metaClassification = classifyFreshPath(metaPath, "structural");
+  const eventsClassification = classifyFreshPath(eventsPath, "presence");
+  const forensicClassification = classifyFreshPath(forensicPath, "always-rewrite");
+
+  const force = Boolean(options?.force);
+  const metaAction = diffStateToWriteAction(metaClassification.state, force);
+  const eventsAction = diffStateToWriteAction(eventsClassification.state, force);
+  const forensicAction = diffStateToWriteAction(forensicClassification.state, force);
 
   const forensicReport = await buildForensicReport(target);
   const meta = createInitialMeta();
@@ -663,6 +776,9 @@ export async function buildInitFabricPlan(target: string, options?: InitOptions)
     forensicPath,
     forensicAction,
     forensicReport,
+    metaState: metaClassification.state,
+    eventsState: eventsClassification.state,
+    forensicState: forensicClassification.state,
   };
 }
 
@@ -718,22 +834,44 @@ export async function executeInitFabricPlan(plan: InitScaffoldPlan): Promise<Ini
     // Non-fatal — see comment above.
   }
 
-  preparePlannedPath(plan.metaPath, plan.metaAction);
-  await atomicWriteJson(plan.metaPath, plan.meta);
-
-  // Change A: on --reapply, preserve events.jsonl byte-identically; only create it if missing.
-  // 0-byte create stays raw — writeFileSync("", "") is atomic by definition.
-  if (isReapply) {
-    if (!existsSync(plan.eventsPath)) {
-      mkdirSync(dirname(plan.eventsPath), { recursive: true });
-      writeFileSync(plan.eventsPath, "", "utf8");
-    }
-    // Existing file content is intentionally left untouched — no truncation.
-  } else {
-    preparePlannedPath(plan.eventsPath, plan.eventsAction);
-    writeFileSync(plan.eventsPath, "", "utf8");
+  // rc.14 TASK-002 — diff-mode write semantics for the three scaffold files.
+  //
+  //   agents.meta.json:
+  //     - missing               → write the empty initial meta
+  //     - present-canonical     → SKIP (idempotent re-run); runInitScan will
+  //                               keep it in sync if it fires below
+  //     - drifted/user-modified → only reachable here when --force / --reapply
+  //                               was set (the drift-abort gate intercepts
+  //                               otherwise); overwrite verbatim
+  //
+  //   events.jsonl: presence-canonical. Existing files are preserved verbatim
+  //   (append-only ledger). Only create when missing.
+  //
+  //   forensic.json: always-rewrite. The file is a snapshot regenerated every
+  //   run regardless of diff classification.
+  const force = Boolean(plan.options?.force);
+  if (plan.metaState === "missing" || force) {
+    preparePlannedPath(plan.metaPath, plan.metaAction);
+    await atomicWriteJson(plan.metaPath, plan.meta);
   }
 
+  // events.jsonl preservation: under diff-mode default and under --reapply
+  // (legacy escape hatch) we preserve any existing file byte-identically.
+  // Only create when missing.
+  if (plan.eventsState === "missing") {
+    preparePlannedPath(plan.eventsPath, plan.eventsAction);
+    mkdirSync(dirname(plan.eventsPath), { recursive: true });
+    writeFileSync(plan.eventsPath, "", "utf8");
+  } else if (isReapply && !existsSync(plan.eventsPath)) {
+    // Belt-and-suspenders: --reapply on a state classified as missing already
+    // hit the branch above; this covers any edge where classification raced
+    // a delete (rare). Existing file content is intentionally left untouched.
+    mkdirSync(dirname(plan.eventsPath), { recursive: true });
+    writeFileSync(plan.eventsPath, "", "utf8");
+  }
+  // events.jsonl present-canonical → no write, preserves ledger.
+
+  // forensic.json: always rewrite — it's a snapshot, not user state.
   preparePlannedPath(plan.forensicPath, plan.forensicAction);
   await atomicWriteJson(plan.forensicPath, plan.forensicReport);
 
@@ -741,7 +879,16 @@ export async function executeInitFabricPlan(plan: InitScaffoldPlan): Promise<Ini
   // produces 4-7 baseline knowledge entries + an init_scan_completed ledger
   // event. Failure is best-effort (e.g. a read-only home) — the layout above
   // is already complete and `fab scan` can be re-run to populate entries.
-  if (!plan.options?.reapply) {
+  //
+  // rc.14 TASK-002 — skip the scan on a canonical diff-mode re-run. If the
+  // workspace was already canonical (agents.meta.json present-canonical AND
+  // events.jsonl present-canonical), scanning would mutate the meta file
+  // and break the idempotency contract. Force / reapply runs still scan
+  // (legacy semantics). Fresh installs always scan (meta was just created).
+  const wasCanonicalReRun =
+    plan.metaState === "present-canonical"
+    && plan.eventsState === "present-canonical";
+  if (!plan.options?.reapply && !wasCanonicalReRun) {
     try {
       await runInitScan(plan.target, { source: "init" });
     } catch (error: unknown) {
@@ -756,6 +903,31 @@ export async function executeInitFabricPlan(plan: InitScaffoldPlan): Promise<Ini
     appendReapplyLedgerEvent(plan.eventsPath, {
       preserved_ledger: true,
     });
+  } else {
+    // rc.14 TASK-002 — diff-mode default emits install_diff_applied with a
+    // per-file breakdown so doctor/forensic tooling can see whether the run
+    // was a no-op, restored missing pieces, or applied drift overwrites.
+    // Emitted only on the non-reapply path; the legacy --reapply path keeps
+    // its distinct reapply_completed event for rc.14 (both retired in rc.15).
+    if (existsSync(plan.eventsPath)) {
+      const applied: string[] = [];
+      const canonical: string[] = [];
+      const drifted: string[] = [];
+      for (const entry of [
+        { path: plan.metaPath, state: plan.metaState },
+        { path: plan.eventsPath, state: plan.eventsState },
+        { path: plan.forensicPath, state: plan.forensicState },
+      ]) {
+        if (entry.state === "missing") {
+          applied.push(entry.path);
+        } else if (entry.state === "present-canonical") {
+          canonical.push(entry.path);
+        } else {
+          drifted.push(entry.path);
+        }
+      }
+      appendInstallDiffLedgerEvent(plan.eventsPath, { applied, canonical, drifted });
+    }
   }
 
   return {
@@ -868,6 +1040,16 @@ function printInitPostSetup(
   console.log(
     paint.muted(t("cli.install.language_preference_hint", { value: fabricLanguage })),
   );
+}
+
+// rc.14 TASK-002 — diff-mode classification table rendered in --dry-run and
+// (optionally) on the canonical-no-op path. Each row maps a scaffold path to
+// its DiffFileState label so the user sees which files are missing /
+// canonical / drifted without any writes.
+function printInitDiffStateTable(entries: Array<{ path: string; state: DiffFileState }>): void {
+  for (const entry of entries) {
+    console.log(`  ${formatDiffFileState(entry.state)}  ${entry.path}`);
+  }
 }
 
 function printInitPlanPreview(plan: InitExecutionPlan): void {
@@ -1001,6 +1183,12 @@ async function executeInitStagePlan(
   }
 }
 
+// rc.14 TASK-002 — `shouldReplaceWritableDirectory` formerly threw on a
+// non-directory at .fabric/. Under diff-mode, classify it as user-modified
+// (planning never throws); the abort gate inside `executeInitExecutionPlan`
+// surfaces a single helpful drift-abort message before any write. Returns
+// `true` (i.e. the run will rm + recreate the path) only when --force is set
+// and the path exists as a non-directory.
 function shouldReplaceWritableDirectory(path: string, options?: InitOptions): boolean {
   if (!existsSync(path)) {
     return false;
@@ -1010,23 +1198,119 @@ function shouldReplaceWritableDirectory(path: string, options?: InitOptions): bo
     return false;
   }
 
-  if (!options?.force) {
-    throw new Error(t("cli.install.errors.abort-existing", { path }));
-  }
-
-  return true;
+  // Non-directory at a managed-directory location. Without --force, the
+  // diff-mode abort gate in executeInitExecutionPlan rejects the run with
+  // the user-modified message; with --force (legacy escape hatch) we rm+
+  // recreate. Either way, no throw during plan construction.
+  return Boolean(options?.force);
 }
 
-function planFreshPath(path: string, options?: InitOptions): InitWriteAction {
+/**
+ * rc.14 TASK-002 — non-throwing classifier replacing the binary planFreshPath.
+ *
+ * Inspects the on-disk state of `path` and returns a `DiffFileState` according
+ * to `strategy`. NEVER throws — even for unreadable files (returns
+ * "user-modified" in that case so the abort gate downstream can produce a
+ * helpful message).
+ *
+ * Per-file detection strategies are picked by callers:
+ *   - "presence"       : the file is canonical-by-presence (events.jsonl)
+ *   - "structural"     : the file is JSON, sanity-check its shape only
+ *                        (agents.meta.json — its content mutates immediately
+ *                        post-install via runInitScan, so byte-compare would
+ *                        always flag drift)
+ *   - "always-rewrite" : the file is a snapshot regenerated every run, so any
+ *                        existing copy is treated as canonical for the diff
+ *                        (forensic.json)
+ */
+function classifyFreshPath(
+  path: string,
+  strategy: DiffDetectStrategy,
+): ClassifiedFreshPathResult {
   if (!existsSync(path)) {
+    return { path, state: "missing" };
+  }
+
+  // If a managed FILE location is occupied by a directory (or vice versa),
+  // that is user-modification — diff-mode aborts unless --force is passed.
+  let stat: ReturnType<typeof statSync>;
+  try {
+    stat = statSync(path);
+  } catch (error: unknown) {
+    return {
+      path,
+      state: "user-modified",
+      reason: error instanceof Error ? error.message : String(error),
+    };
+  }
+  if (!stat.isFile()) {
+    return { path, state: "user-modified", reason: "expected a file" };
+  }
+
+  if (strategy === "presence" || strategy === "always-rewrite") {
+    // Any present, well-formed file is canonical. events.jsonl is append-
+    // only (preserve verbatim); forensic.json is a snapshot (always
+    // rewritten at the write boundary regardless of diff classification).
+    return { path, state: "present-canonical" };
+  }
+
+  // Structural compare for agents.meta.json. Verifies it parses as JSON and
+  // exposes the schema_version-equivalent fields (revision + nodes +
+  // counters) — does NOT byte-compare against createInitialMeta() because
+  // runInitScan mutates the file immediately after install, so any
+  // canonical post-install state diverges byte-wise from the initial empty
+  // template.
+  try {
+    const raw = readFileSync(path, "utf8");
+    const parsed = JSON.parse(raw) as unknown;
+    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return { path, state: "user-modified", reason: "not a JSON object" };
+    }
+    const record = parsed as Record<string, unknown>;
+    const hasRevision = typeof record["revision"] === "string";
+    const hasNodes =
+      record["nodes"] !== undefined
+      && record["nodes"] !== null
+      && typeof record["nodes"] === "object"
+      && !Array.isArray(record["nodes"]);
+    const hasCounters =
+      record["counters"] !== undefined
+      && record["counters"] !== null
+      && typeof record["counters"] === "object"
+      && !Array.isArray(record["counters"]);
+    if (!hasRevision || !hasNodes || !hasCounters) {
+      return { path, state: "drifted", reason: "missing required AgentsMeta fields" };
+    }
+    return { path, state: "present-canonical" };
+  } catch (error: unknown) {
+    return {
+      path,
+      state: "user-modified",
+      reason: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+/**
+ * rc.14 TASK-002 — translate DiffFileState to InitWriteAction at the
+ * rendering / writing boundary. Used inside `executeInitFabricPlan` so the
+ * existing `formatInitPathAction` switch stays exhaustive.
+ *
+ *   - "missing"                          → "created"
+ *   - "present-canonical"                → "overwritten" only when --force;
+ *                                          otherwise the write path is
+ *                                          skipped entirely (see callers).
+ *   - "drifted" / "user-modified" (force) → "overwritten" (legacy bypass)
+ */
+function diffStateToWriteAction(state: DiffFileState, force: boolean): InitWriteAction {
+  if (state === "missing") {
     return "created";
   }
+  return force ? "overwritten" : "created";
+}
 
-  if (!options?.force) {
-    throw new Error(t("cli.install.errors.abort-existing", { path }));
-  }
-
-  return "overwritten";
+function formatDiffFileState(state: DiffFileState): string {
+  return t(`cli.install.diff.state.${state}`);
 }
 
 function preparePlannedPath(path: string, action: InitWriteAction): void {
@@ -1334,6 +1618,36 @@ function appendReapplyLedgerEvent(
     schema_version: 1,
     event_type: "reapply_completed",
     preserved_ledger: payload.preserved_ledger,
+  };
+  const line = `${JSON.stringify(event)}\n`;
+  appendFileSync(eventsPath, line, "utf8");
+}
+
+/**
+ * rc.14 TASK-002 — emit `install_diff_applied` per non-reapply install run.
+ *
+ * The payload's three buckets cover the full scaffold-stage diff classification
+ * (every scaffold path lands in exactly one). Doctor / forensic tooling can
+ * read these events to surface idempotent re-runs vs. apply-missing-pieces
+ * runs vs. drift-overwritten runs without re-running the classifier.
+ *
+ * Distinct from `reapply_completed` (which stays in rc.14 as the legacy
+ * --reapply marker). Both event types are slated for unification in rc.15
+ * when --reapply is removed.
+ */
+function appendInstallDiffLedgerEvent(
+  eventsPath: string,
+  payload: { applied: string[]; canonical: string[]; drifted: string[] },
+): void {
+  const event = {
+    kind: "fabric-event",
+    id: `event:${randomUUID()}`,
+    ts: Date.now(),
+    schema_version: 1,
+    event_type: "install_diff_applied",
+    applied: payload.applied,
+    canonical: payload.canonical,
+    drifted: payload.drifted,
   };
   const line = `${JSON.stringify(event)}\n`;
   appendFileSync(eventsPath, line, "utf8");
