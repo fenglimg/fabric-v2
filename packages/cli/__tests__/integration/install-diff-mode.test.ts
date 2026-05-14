@@ -21,7 +21,7 @@
  * buildInitFabricPlan, executeInitExecutionPlan (drift-abort gate).
  */
 
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
@@ -252,6 +252,78 @@ describe("rc.14 TASK-002 install-diff-mode: --force legacy bypass", () => {
     // Deprecation warning was emitted (en or zh-CN match-either).
     const stderrJoined = captured.stderr.join("");
     expect(stderrJoined).toMatch(/--force.*legacy escape hatch|逃生口/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Scenario 6 — rc.14 TASK-004 Finding 1: `.fabric` as a regular file aborts
+// with the friendly drift-abort message instead of crashing with native
+// ENOTDIR / EEXIST from mkdirSync.
+// ---------------------------------------------------------------------------
+
+describe("rc.14 TASK-004 install-diff-mode: .fabric as regular file aborts with friendly message", () => {
+  it("aborts with the drift-abort message naming `.fabric` instead of raising native ENOTDIR/EEXIST", async () => {
+    const target = createWerewolfFixtureRoot("itg-diff-fabric-is-file");
+    tempRoots.push(target);
+
+    // Place a regular file where the `.fabric` directory belongs. Pathological
+    // user setup — but the friendly-error-message contract must hold.
+    const fabricPath = join(target, ".fabric");
+    writeFileSync(fabricPath, "garbage — not a directory\n", "utf8");
+    expect(statSync(fabricPath).isFile()).toBe(true);
+
+    let thrown: Error | null = null;
+    try {
+      await runInit(target);
+    } catch (e) {
+      thrown = e as Error;
+    }
+
+    expect(thrown).not.toBeNull();
+    // Friendly drift-abort message names the offending path and points at the
+    // recovery commands. Must NOT be a native ENOTDIR/EEXIST stack trace.
+    expect(thrown!.message).toMatch(/\.fabric/);
+    expect(thrown!.message).toMatch(/fab doctor/);
+    expect(thrown!.message).toMatch(/fab uninstall/);
+    expect(thrown!.message).not.toMatch(/ENOTDIR|EEXIST/);
+
+    // The regular file at `.fabric` is preserved verbatim — abort fires before
+    // any write/mutation.
+    expect(statSync(fabricPath).isFile()).toBe(true);
+    expect(readFileSync(fabricPath, "utf8")).toBe("garbage — not a directory\n");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Scenario 7 — rc.14 TASK-004 Finding 2: events.jsonl as a directory + --force
+// cleans up and writes a fresh ledger file instead of crashing with EISDIR.
+// ---------------------------------------------------------------------------
+
+describe("rc.14 TASK-004 install-diff-mode: events.jsonl as directory + --force recovers cleanly", () => {
+  it("--force overwrites a directory-where-file-belongs at events.jsonl without raising native EISDIR", async () => {
+    const target = createWerewolfFixtureRoot("itg-diff-events-is-dir");
+    tempRoots.push(target);
+
+    // First install gets the workspace into a canonical state, then we
+    // pathologically replace events.jsonl with a directory.
+    await runInit(target);
+    const eventsPath = join(target, ".fabric", "events.jsonl");
+    expect(statSync(eventsPath).isFile()).toBe(true);
+
+    rmSync(eventsPath, { force: true });
+    mkdirSync(eventsPath, { recursive: true });
+    // Drop a file inside the directory so we can prove the recursive rm
+    // actually fired during recovery (not just a no-op).
+    writeFileSync(join(eventsPath, "stray.txt"), "should not survive --force\n", "utf8");
+    expect(statSync(eventsPath).isDirectory()).toBe(true);
+
+    // --force must take the symmetric cleanup branch (mirrors agents.meta
+    // .json's preparePlannedPath rmSync recursive). No EISDIR.
+    await expect(runInit(target, { force: true })).resolves.toBeDefined();
+
+    // events.jsonl is now a regular file again, the stray subfile is gone.
+    expect(statSync(eventsPath).isFile()).toBe(true);
+    expect(existsSync(join(eventsPath, "stray.txt"))).toBe(false);
   });
 });
 

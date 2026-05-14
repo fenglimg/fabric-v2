@@ -104,15 +104,35 @@ describe("TASK-005 uninstall round-trip: T1 fresh init → uninstall", () => {
     // and no user customizations, hooks.* keys should be cleaned out of
     // settings.json, but the file itself may still exist with permissions or
     // other unmodified fields.
-    const remaining = snapshotTree(target, ".claude");
-    for (const path of Object.keys(remaining)) {
-      // No fabric-owned filenames remain.
+    //
+    // rc.14 TASK-004 (Finding 3) — extend snapshot assertions to `.cursor`
+    // and `.codex` alongside `.claude`. Closes the uninstall-side parity
+    // gap parallel to the install-side `.cursor` snapshot coverage added
+    // in TASK-002. Without this, cursor/codex-side uninstall regressions
+    // would sneak past CI.
+    const remainingClaude = snapshotTree(target, ".claude");
+    const remainingCursor = snapshotTree(target, ".cursor");
+    const remainingCodex = snapshotTree(target, ".codex");
+    for (const path of Object.keys(remainingClaude)) {
+      // No fabric-owned filenames remain in .claude.
       expect(path).not.toContain("fabric-hint.cjs");
       expect(path).not.toContain("knowledge-hint-broad.cjs");
       expect(path).not.toContain("knowledge-hint-narrow.cjs");
       expect(path).not.toContain("fabric-archive/SKILL.md");
       expect(path).not.toContain("fabric-review/SKILL.md");
       expect(path).not.toContain("fabric-import/SKILL.md");
+    }
+    for (const path of Object.keys(remainingCursor)) {
+      // No fabric-owned hook scripts remain in .cursor.
+      expect(path).not.toContain("fabric-hint.cjs");
+      expect(path).not.toContain("knowledge-hint-broad.cjs");
+      expect(path).not.toContain("knowledge-hint-narrow.cjs");
+    }
+    for (const path of Object.keys(remainingCodex)) {
+      // No fabric-owned hook scripts remain in .codex.
+      expect(path).not.toContain("fabric-hint.cjs");
+      expect(path).not.toContain("knowledge-hint-broad.cjs");
+      expect(path).not.toContain("knowledge-hint-narrow.cjs");
     }
   });
 });

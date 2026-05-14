@@ -653,6 +653,26 @@ export async function executeInitExecutionPlan(plan: InitExecutionPlan): Promise
     };
   }
 
+  // rc.14 TASK-004 (Finding 1) — type-collision pre-check. If `.fabric`
+  // itself exists as a non-directory (regular file, symlink to a non-dir,
+  // etc.), the per-inner-file classifier marks every inner path as
+  // "missing" (because existsSync(".fabric/agents.meta.json") returns false
+  // when ".fabric" is a file), which bypasses the per-file drift-abort gate
+  // below and leads to mkdirSync raising native ENOTDIR/EEXIST at write
+  // time. Surface the friendly drift-abort message instead — even with
+  // --force, recovering a file-where-dir-belongs requires explicit user
+  // intent (run `fab uninstall && fab install` for a clean reset).
+  if (!plan.options.force && !plan.options.reapply) {
+    if (
+      existsSync(plan.scaffold.fabricDir)
+      && !statSync(plan.scaffold.fabricDir).isDirectory()
+    ) {
+      throw new Error(
+        t("cli.install.diff.drift-abort", { path: plan.scaffold.fabricDir }),
+      );
+    }
+  }
+
   // rc.14 TASK-002 — drift-abort gate. Fires only at mutation time (i.e. not
   // planOnly) when any scaffold path is in a non-canonical state AND --force
   // is NOT set. --reapply also bypasses the gate (legacy escape hatch). The
@@ -861,6 +881,19 @@ export async function executeInitFabricPlan(plan: InitScaffoldPlan): Promise<Ini
   if (plan.eventsState === "missing") {
     preparePlannedPath(plan.eventsPath, plan.eventsAction);
     mkdirSync(dirname(plan.eventsPath), { recursive: true });
+    writeFileSync(plan.eventsPath, "", "utf8");
+  } else if (
+    force
+    && (plan.eventsState === "user-modified" || plan.eventsState === "drifted")
+  ) {
+    // rc.14 TASK-004 (Finding 2) — symmetric cleanup mirroring agents.meta
+    // .json's force-overwrite branch (via preparePlannedPath's recursive
+    // rmSync). Without this, an events.jsonl directory + --force lands in
+    // appendFileSync(directory, ...) → EISDIR with a native stack trace.
+    // preparePlannedPath does the recursive rm + parent mkdir; we then
+    // recreate as an empty ledger file (force semantics: caller asked for
+    // a reset, the ledger history is intentionally discarded).
+    preparePlannedPath(plan.eventsPath, plan.eventsAction);
     writeFileSync(plan.eventsPath, "", "utf8");
   } else if (isReapply && !existsSync(plan.eventsPath)) {
     // Belt-and-suspenders: --reapply on a state classified as missing already
