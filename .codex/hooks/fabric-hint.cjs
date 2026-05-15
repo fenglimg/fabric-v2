@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-const { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } = require("node:fs");
+const { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } = require("node:fs");
 const { dirname, join } = require("node:path");
 
 // v2.0.0-rc.7 T5: session-digest writer. Best-effort (never blocks Stop hook
@@ -31,6 +31,11 @@ const EVENT_TYPE_PROPOSED = "knowledge_proposed";
 const EVENT_TYPE_INIT_SCAN_COMPLETED = "init_scan_completed";
 // v2.0.0-rc.7 T10: doctor_run event drives Signal D (maintenance hint).
 const EVENT_TYPE_DOCTOR_RUN = "doctor_run";
+// v2.0.0-rc.20 TASK-03: per-turn cite-policy observation event. Emitted by
+// extractAndWriteAssistantTurnsBestEffort() after the Stop hook parses each
+// assistant envelope's first non-empty line for a `KB:` prefix. Schema
+// registered in packages/shared/src/schemas/event-ledger.ts (rc.20 TASK-02).
+const EVENT_TYPE_ASSISTANT_TURN_OBSERVED = "assistant_turn_observed";
 // rc.6 TASK-022 (E5): Signal A is now `24h OR N-edits since last
 // knowledge_proposed`. The edit-count branch reads
 // `.fabric/.cache/edit-counter` (one ISO-8601 line per PreToolUse fire,
@@ -1000,6 +1005,204 @@ function tryReadStdinJson() {
 }
 
 /**
+ * v2.0.0-rc.20 TASK-03: parse the raw text that follows the `KB:` prefix on
+ * the first non-empty line of an assistant turn. Returns parsed cite ids and
+ * the per-id tag enum vocabulary (planned/recalled/chained-from/dismissed/
+ * none). Never throws; best-effort tolerant parser.
+ *
+ * Vocabulary contract (mirrored in
+ * packages/shared/src/schemas/event-ledger.ts → assistantTurnObservedEventSchema):
+ *   - "none"                                → ids=[], tags=["none"]
+ *   - "KP-001"                              → ids=["KP-001"], tags=[]
+ *   - "KP-001, KT-DEC-0009 (review)"        → ids=["KP-001","KT-DEC-0009"], tags=["review"]
+ *   - "KP-001 [recalled][chained-from KP-002]" →
+ *       ids=["KP-001"], tags=["recalled","chained-from"]
+ *   - "dismissed:<reason>"                  → ids=[], tags=["dismissed"]
+ *       (kb_line_raw preserves the full "dismissed:<reason>" verbatim;
+ *        the parsed `cite_tags` only carries the enum value "dismissed".)
+ *
+ * Tags are filtered to the Zod enum set
+ * { planned, recalled, chained-from, dismissed, none } before being returned —
+ * arbitrary parenthetical/bracket text outside the enum is dropped (silently)
+ * so the emitted event always round-trips through the schema.
+ */
+function parseKbLine(raw) {
+  const result = { cite_ids: [], cite_tags: [] };
+  if (typeof raw !== "string") return result;
+  const trimmed = raw.trim();
+  if (trimmed.length === 0) return result;
+
+  // dismissed:<reason> → tag="dismissed", no ids.
+  if (/^dismissed:/i.test(trimmed)) {
+    result.cite_tags.push("dismissed");
+    return result;
+  }
+  // bare "none" → tag="none".
+  if (/^none$/i.test(trimmed)) {
+    result.cite_tags.push("none");
+    return result;
+  }
+
+  // Allowed tag enum (matches assistantTurnObservedEventSchema.cite_tags z.enum).
+  const ALLOWED_TAGS = new Set(["planned", "recalled", "chained-from", "dismissed", "none"]);
+  const tagSet = new Set();
+
+  // Extract bracketed tags: `[recalled]`, `[chained-from KP-002]`, etc.
+  // We keep only the leading enum token (split on whitespace) so trailing
+  // ref-ids inside the bracket are discarded — they're not part of the tag
+  // vocabulary.
+  const bracketRegex = /\[([^\]]+)\]/g;
+  let bracketMatch;
+  let stripped = trimmed;
+  while ((bracketMatch = bracketRegex.exec(trimmed)) !== null) {
+    const inner = bracketMatch[1].trim();
+    if (inner.length === 0) continue;
+    const head = inner.split(/\s+/)[0].toLowerCase();
+    if (ALLOWED_TAGS.has(head)) tagSet.add(head);
+  }
+  stripped = stripped.replace(bracketRegex, " ");
+
+  // Extract parenthetical tags: `(review)`, `(planned)`, etc. Only enum
+  // members are retained.
+  const parenRegex = /\(([^)]+)\)/g;
+  let parenMatch;
+  while ((parenMatch = parenRegex.exec(trimmed)) !== null) {
+    const inner = parenMatch[1].trim().toLowerCase();
+    if (inner.length === 0) continue;
+    if (ALLOWED_TAGS.has(inner)) tagSet.add(inner);
+  }
+  stripped = stripped.replace(parenRegex, " ");
+
+  // Remaining content: comma-separated ids, possibly with stray whitespace.
+  // We split on comma, trim, and keep tokens that look like ref-ids
+  // (uppercase letter prefix). This filters out leftover english words and
+  // is permissive enough to allow custom id schemes (KP-, KT-, KD-, etc.).
+  const parts = stripped.split(",");
+  for (const partRaw of parts) {
+    const part = partRaw.trim();
+    if (part.length === 0) continue;
+    // Take the leading token (whitespace-bounded) so "KT-DEC-0009 garbage"
+    // still yields "KT-DEC-0009".
+    const token = part.split(/\s+/)[0];
+    if (/^[A-Z][A-Z0-9-]+$/.test(token)) {
+      result.cite_ids.push(token);
+    }
+  }
+
+  // Materialise tagSet → array (preserves insertion order via Set semantics).
+  for (const t of tagSet) result.cite_tags.push(t);
+  return result;
+}
+
+/**
+ * v2.0.0-rc.20 TASK-03: detect which client surface invoked the hook so the
+ * emitted assistant_turn_observed event can carry a `client` discriminator
+ * without having to inspect the transcript shape.
+ *
+ * Resolution order (first match wins):
+ *   1. `FABRIC_HINT_CLIENT` env var — explicit override, set by the per-
+ *      client install pipeline when the hook-config schema supports env
+ *      injection.
+ *   2. Path heuristic against `__dirname` — `.claude/` → "cc", `.codex/` →
+ *      "codex". Covers the dominant deployment shape (hook script lives
+ *      under the client's per-repo dir).
+ *
+ * Returns `undefined` when neither signal fires (e.g. Cursor — deferred to
+ * rc.21 — or a custom deployment). The Zod schema marks `client` optional,
+ * so omitting it leaves the event valid.
+ */
+function detectClient() {
+  const envClient = process.env.FABRIC_HINT_CLIENT;
+  if (typeof envClient === "string" && envClient.length > 0) {
+    const normalised = envClient.trim().toLowerCase();
+    if (normalised === "cc" || normalised === "codex" || normalised === "cursor") {
+      return normalised;
+    }
+  }
+  // Path heuristic — __dirname is the directory containing this .cjs file
+  // when invoked normally (require.main === module).
+  try {
+    if (__dirname.includes(".claude/") || __dirname.includes(".claude\\")) return "cc";
+    if (__dirname.includes(".codex/") || __dirname.includes(".codex\\")) return "codex";
+  } catch {
+    // __dirname always defined for cjs modules; fall through defensively.
+  }
+  return undefined;
+}
+
+/**
+ * v2.0.0-rc.20 TASK-03: emit one `assistant_turn_observed` event per
+ * assistant envelope harvested from the transcript. Wrapped in try/catch
+ * (best-effort, never throws — Stop hook MUST stay non-blocking on any
+ * failure here). The event shape mirrors
+ * assistantTurnObservedEventSchema in
+ * packages/shared/src/schemas/event-ledger.ts (registered in rc.20 TASK-02).
+ *
+ * Call site sits immediately AFTER writeSessionDigestBestEffort so both
+ * digest + per-turn events derive from the same transcript snapshot.
+ *
+ * `id` mirrors the server's convention (`event:<uuid>`) using
+ * crypto.randomUUID when available — falls back to a timestamp+counter
+ * tuple on older Node where randomUUID is missing (cjs hook tooling
+ * defensively targets Node 18+, but the fallback keeps it event-shaped).
+ */
+function extractAndWriteAssistantTurnsBestEffort(cwd, stdinPayload) {
+  if (stdinPayload === null || typeof stdinPayload !== "object") return;
+  try {
+    const sessionId = stdinPayload.session_id;
+    if (typeof sessionId !== "string" || sessionId.length === 0) return;
+    const transcript = summarizeTranscript(stdinPayload.transcript_path);
+    const turns = transcript.assistant_turns;
+    if (!Array.isArray(turns) || turns.length === 0) return;
+
+    // Resolve event-ledger path. Caller already validated cwd shape.
+    const fabricDir = join(cwd, FABRIC_DIR);
+    if (!existsSync(fabricDir)) {
+      // No .fabric/ → workspace is uninitialised. Silently skip; the digest
+      // writer applies the same guard via its own internal check.
+      return;
+    }
+    const ledgerPath = join(fabricDir, EVENT_LEDGER_FILE);
+    const client = detectClient();
+    let randomUUID;
+    try {
+      ({ randomUUID } = require("node:crypto"));
+    } catch {
+      randomUUID = null;
+    }
+
+    for (const turn of turns) {
+      try {
+        const idSuffix = typeof randomUUID === "function"
+          ? randomUUID()
+          : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+        const event = {
+          kind: "fabric-event",
+          id: `event:${idSuffix}`,
+          ts: Date.now(),
+          schema_version: 1,
+          session_id: sessionId,
+          event_type: EVENT_TYPE_ASSISTANT_TURN_OBSERVED,
+          kb_line_raw: turn.kb_line_raw,
+          cite_ids: Array.isArray(turn.cite_ids) ? turn.cite_ids : [],
+          cite_tags: Array.isArray(turn.cite_tags) ? turn.cite_tags : [],
+          turn_id: `${sessionId}-${turn.envelope_index}`,
+          envelope_index: turn.envelope_index,
+          timestamp: new Date().toISOString(),
+        };
+        if (client !== undefined) event.client = client;
+        appendFileSync(ledgerPath, JSON.stringify(event) + "\n", "utf8");
+      } catch {
+        // Per-turn failure must not abort the remaining turns; the Stop hook
+        // contract is "never block on hook failure". Best-effort continues.
+      }
+    }
+  } catch {
+    // Outer guard — never throw. Hook continues silently.
+  }
+}
+
+/**
  * v2.0.0-rc.7 T5: extract user_messages + edit_paths + 1-line title from the
  * transcript JSONL referenced by the hook's stdin payload. Best-effort, never
  * throws.
@@ -1007,9 +1210,18 @@ function tryReadStdinJson() {
  * Claude Code's transcript_path points at a JSONL where each line is a
  * message envelope. We sniff for `role: "user"` lines (text content) and
  * for tool-use entries naming Edit / Write / MultiEdit to harvest file_path.
+ *
+ * v2.0.0-rc.20 TASK-03: additionally collects `assistant_turns[]` — one
+ * entry per assistant envelope with the parsed KB-line cite metadata. Field
+ * is additive; existing callers (writeSessionDigestBestEffort) ignore it.
  */
 function summarizeTranscript(transcriptPath) {
-  const out = { user_messages: [], edit_paths: [], title: "" };
+  // rc.20 TASK-03: additive `assistant_turns` array — one entry per assistant
+  // envelope, regardless of whether the first line matched KB:. Downstream
+  // consumers (extractAndWriteAssistantTurnsBestEffort) emit one
+  // assistant_turn_observed event per element; `kb_line_raw=null` when no
+  // KB: line was found.
+  const out = { user_messages: [], edit_paths: [], title: "", assistant_turns: [] };
   if (typeof transcriptPath !== "string" || transcriptPath.length === 0) return out;
   if (!existsSync(transcriptPath)) return out;
   let raw;
@@ -1019,6 +1231,7 @@ function summarizeTranscript(transcriptPath) {
     return out;
   }
   const lines = raw.split(/\r?\n/);
+  let envelopeIndex = -1;
   for (const line of lines) {
     const trimmed = line.trim();
     if (trimmed.length === 0) continue;
@@ -1029,6 +1242,7 @@ function summarizeTranscript(transcriptPath) {
       continue;
     }
     if (envelope === null || typeof envelope !== "object") continue;
+    envelopeIndex += 1;
 
     // User text message — Claude Code shape: { role: "user", content: [...] }
     // OR nested under `message.role`. Be generous.
@@ -1044,6 +1258,61 @@ function summarizeTranscript(transcriptPath) {
           }
         }
       }
+    }
+
+    // rc.20 TASK-03: assistant envelope — capture first non-empty line of the
+    // first text block and parse for `KB:` prefix. We push ONE assistant_turns
+    // entry per assistant envelope (even when no KB: line) so downstream can
+    // distinguish "turn observed, no KB" (kb_line_raw=null) from "no turn".
+    if (role === "assistant") {
+      const content = envelope.content || (envelope.message && envelope.message.content);
+      let firstText = null;
+      if (typeof content === "string") {
+        firstText = content;
+      } else if (Array.isArray(content)) {
+        for (const block of content) {
+          if (block && typeof block === "object" && block.type === "text" && typeof block.text === "string") {
+            firstText = block.text;
+            break;
+          }
+        }
+      }
+      let kbLineRaw = null;
+      let citeIds = [];
+      let citeTags = [];
+      if (typeof firstText === "string" && firstText.length > 0) {
+        // First non-empty line.
+        const linesOfText = firstText.split(/\r?\n/);
+        let firstNonEmpty = "";
+        for (const l of linesOfText) {
+          if (l.trim().length > 0) {
+            firstNonEmpty = l.trim();
+            break;
+          }
+        }
+        if (firstNonEmpty.length > 0) {
+          // KB: none (case-insensitive on the literal `none`).
+          const noneMatch = firstNonEmpty.match(/^KB:\s*none\s*$/i);
+          const kbMatch = firstNonEmpty.match(/^KB:\s+(.+)$/);
+          if (noneMatch) {
+            kbLineRaw = firstNonEmpty;
+            const parsed = parseKbLine("none");
+            citeIds = parsed.cite_ids;
+            citeTags = parsed.cite_tags;
+          } else if (kbMatch) {
+            kbLineRaw = firstNonEmpty;
+            const parsed = parseKbLine(kbMatch[1]);
+            citeIds = parsed.cite_ids;
+            citeTags = parsed.cite_tags;
+          }
+        }
+      }
+      out.assistant_turns.push({
+        envelope_index: envelopeIndex,
+        kb_line_raw: kbLineRaw,
+        cite_ids: citeIds,
+        cite_tags: citeTags,
+      });
     }
 
     // Tool use — look for Edit / Write / MultiEdit and harvest file_path.
@@ -1132,6 +1401,13 @@ function main(env, stdio) {
         ? env.stdin_payload
         : tryReadStdinJson();
     writeSessionDigestBestEffort(cwd, stdinPayload);
+    // v2.0.0-rc.20 TASK-03: per-turn cite-policy observation events. Same
+    // best-effort contract as the digest writer — never throws, never blocks
+    // the Stop hook on failure. Shares the transcript snapshot read by
+    // writeSessionDigestBestEffort (each call re-reads independently; the
+    // transcript file is small in practice and re-parse cost is dwarfed by
+    // the hook's other I/O).
+    extractAndWriteAssistantTurnsBestEffort(cwd, stdinPayload);
 
     const events = readLedger(cwd);
     let pendingStats;
@@ -1341,6 +1617,11 @@ module.exports = {
   readMaintenanceHintCooldownDays,
   readShownCache,
   writeShownCache,
+  // v2.0.0-rc.20 TASK-03 / TASK-09: cite-policy parsing + per-turn emission
+  // helpers (exported for unit testing of the parse + emit contract).
+  parseKbLine,
+  detectClient,
+  extractAndWriteAssistantTurnsBestEffort,
   CONSTANTS: {
     FABRIC_DIR,
     EVENT_LEDGER_FILE,
