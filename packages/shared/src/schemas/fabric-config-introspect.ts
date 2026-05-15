@@ -31,7 +31,7 @@ import {
 //   ("Anti-scope: Group D / Group E config keys in panel — power users edit JSON").
 //
 // Group C: only `audit_mode` is panel-scoped. The remaining schema fields
-// (`clientPaths`, `externalFixturePath`, `scanIgnores`, `mcpPayloadLimits`)
+// (`clientPaths`, `scanIgnores`, `mcpPayloadLimits`)
 // are Group E plumbing — also out of panel scope.
 
 // Use the inferred schema type (NOT the FabricConfig interface in

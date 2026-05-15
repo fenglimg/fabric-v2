@@ -44,7 +44,6 @@ const mcpPayloadLimitsArbitrary = fc.record(
 const fabricConfigArbitrary = fc.record(
   {
     clientPaths: clientPathsArbitrary,
-    externalFixturePath: fc.string(),
     scanIgnores: fc.array(fc.string()),
     audit_mode: fc.constantFrom(
       "strict" as const,

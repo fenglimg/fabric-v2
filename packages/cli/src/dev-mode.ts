@@ -3,7 +3,7 @@ import { isAbsolute, join, resolve } from "node:path";
 
 import type { FabricConfig } from "@fenglimg/fabric-shared";
 
-export type DevModeSource = "cli" | "env" | "config" | "cwd";
+export type DevModeSource = "cli" | "env" | "cwd";
 
 export type DevModeResolution = {
   target: string;
@@ -27,16 +27,16 @@ export function readFabricConfig(workspaceRoot: string = process.cwd()): FabricC
   return parsed as FabricConfig;
 }
 
+// rc.17 (R-cut): the fabric.config.json fixture-path step was removed —
+// the resolution chain is now 3 sources (cli → env → cwd). The
+// `EXTERNAL_FIXTURE_PATH` env var is the sole dev/test fixture-path source.
 export function resolveDevMode(cliTarget?: string, workspaceRoot: string = process.cwd()): DevModeResolution {
   const envTarget = normalizeTarget(process.env.EXTERNAL_FIXTURE_PATH, workspaceRoot);
-  const fabricConfig = readFabricConfig(workspaceRoot);
-  const configTarget = normalizeTarget(fabricConfig.externalFixturePath, workspaceRoot);
   const directTarget = normalizeTarget(cliTarget, workspaceRoot);
 
   const chain = [
     formatResolutionStep("cliTarget", directTarget),
     formatResolutionStep("EXTERNAL_FIXTURE_PATH", envTarget),
-    formatResolutionStep("fabric.config.json.externalFixturePath", configTarget),
     formatResolutionStep("process.cwd()", workspaceRoot),
   ];
 
@@ -46,10 +46,6 @@ export function resolveDevMode(cliTarget?: string, workspaceRoot: string = proce
 
   if (envTarget !== undefined) {
     return { target: envTarget, source: "env", chain };
-  }
-
-  if (configTarget !== undefined) {
-    return { target: configTarget, source: "config", chain };
   }
 
   return { target: workspaceRoot, source: "cwd", chain };

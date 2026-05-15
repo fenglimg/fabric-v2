@@ -47,7 +47,6 @@ describe('I1.1 fabricConfigSchema round-trip', () => {
   it('full config with all fields', () => {
     roundTrip(fabricConfigSchema, {
       clientPaths: { claudeCodeCLI: '/usr/bin/claude', cursor: '/usr/bin/cursor' },
-      externalFixturePath: '/fixtures',
       scanIgnores: ['node_modules', 'dist'],
       audit_mode: 'strict',
       mcpPayloadLimits: { warnBytes: 8192, hardBytes: 32768 },

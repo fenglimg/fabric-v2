@@ -103,7 +103,6 @@ describe("fabricConfigSchema — defaults and backward compatibility", () => {
         claudeCodeCLI: "/usr/local/bin/claude",
         cursor: "/Applications/Cursor.app/Contents/MacOS/Cursor",
       },
-      externalFixturePath: "/tmp/fixtures",
       scanIgnores: ["node_modules", "dist", ".git"],
       audit_mode: "strict" as const,
       mcpPayloadLimits: { warnBytes: 8192, hardBytes: 32768 },
@@ -112,7 +111,6 @@ describe("fabricConfigSchema — defaults and backward compatibility", () => {
 
     // Existing fields preserved verbatim.
     expect(parsed.clientPaths).toEqual(previousVersionFixture.clientPaths);
-    expect(parsed.externalFixturePath).toBe("/tmp/fixtures");
     expect(parsed.scanIgnores).toEqual(["node_modules", "dist", ".git"]);
     expect(parsed.audit_mode).toBe("strict");
     expect(parsed.mcpPayloadLimits).toEqual({

@@ -27,7 +27,6 @@ export type DefaultLayerFilter = "team" | "personal" | "both";
 
 export interface FabricConfig {
   clientPaths?: ClientPaths;
-  externalFixturePath?: string;
   scanIgnores?: string[];
   audit_mode?: AuditMode;
   mcpPayloadLimits?: McpPayloadLimits;

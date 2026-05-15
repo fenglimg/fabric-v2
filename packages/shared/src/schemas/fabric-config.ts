@@ -47,7 +47,13 @@ export const defaultLayerFilterSchema = z.enum(["team", "personal", "both"]);
 
 export const fabricConfigSchema = z.object({
   clientPaths: clientPathsSchema.optional(),
-  externalFixturePath: z.string().optional(),
+  // rc.17 (R-cut): the dev/test fixture-path config field was removed
+  // end-to-end. The `EXTERNAL_FIXTURE_PATH` env var is now the sole source
+  // consumed by `resolveDevMode()`. No z.preprocess alias — pre-rc.17
+  // fabric-config.json files carrying the field will be silently dropped by
+  // the lenient root parser (no .strict() at root). Pre-user clean-slate per
+  // memory/feedback_clean_slate.md; mirrors the rc.12 hard-rename precedent
+  // documented above.
   scanIgnores: z.array(z.string()).optional(),
   audit_mode: auditModeSchema.optional(),
   mcpPayloadLimits: mcpPayloadLimitsSchema,
