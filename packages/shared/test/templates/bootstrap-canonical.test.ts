@@ -18,15 +18,37 @@ describe("bootstrap-canonical", () => {
       );
     });
 
-    it("contains both required H2 sections", () => {
+    it("contains all required H2 sections", () => {
       expect(BOOTSTRAP_CANONICAL).toContain("## 行为规则");
       expect(BOOTSTRAP_CANONICAL).toContain("## 知识库(KB)");
+      expect(BOOTSTRAP_CANONICAL).toContain("## Cite policy");
     });
 
     it("is at least 400 bytes (utf-8)", () => {
       expect(Buffer.byteLength(BOOTSTRAP_CANONICAL, "utf8")).toBeGreaterThanOrEqual(
         400,
       );
+    });
+
+    describe("cite policy invariants", () => {
+      it("contains the KB cite reply-line format anchor", () => {
+        expect(BOOTSTRAP_CANONICAL).toContain("KB: <id>");
+      });
+
+      it("contains all four cite status keywords", () => {
+        expect(BOOTSTRAP_CANONICAL).toContain("planned|recalled|chained-from");
+        expect(BOOTSTRAP_CANONICAL).toContain("dismissed:<reason>");
+      });
+
+      it("enumerates all dismissed-reason values", () => {
+        expect(BOOTSTRAP_CANONICAL).toContain("scope-mismatch");
+        expect(BOOTSTRAP_CANONICAL).toContain("outdated");
+        expect(BOOTSTRAP_CANONICAL).toContain("not-applicable");
+      });
+
+      it("references the fab doctor --cite-coverage audit command", () => {
+        expect(BOOTSTRAP_CANONICAL).toContain("fab doctor --cite-coverage");
+      });
     });
 
     it("does not contain a UTF-8 BOM", () => {

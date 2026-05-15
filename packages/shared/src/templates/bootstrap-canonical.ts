@@ -71,4 +71,12 @@ export const BOOTSTRAP_CANONICAL = `# Fabric Bootstrap
 - **Usage**:用 \`fab_get_knowledge_sections(id=...)\` 按 id 取条目全文。
 - **Write flows**:\`fabric-archive\` / \`fabric-review\` / \`fabric-import\` 三个 Skills。
 - **Language**:渲染按 \`.fabric/fabric-config.json\` 的 \`fabric_language\` 字段。
+
+## Cite policy
+
+- **触发**: 做 edit / decide / propose plan 之前,**回复首行**必须写 \`KB: <id> (<≤8字 用法>) [planned|recalled|chained-from <id>|dismissed:<reason>]\` 或 \`KB: none\`。
+- **\`[recalled]\` 验证**: 必须紧跟一次 \`fab_get_knowledge_sections(id=...)\`,防止编造 id。
+- **用户口头提规则没给 id**: 先调 \`fab_extract_knowledge\` 或 \`search_context\` 反查。
+- **dismissed reason**: 枚举 \`scope-mismatch | outdated | not-applicable | other:<text>\`。
+- **稽核**: \`fab doctor --cite-coverage [--since=7d] [--client=cc|codex|all]\` 输出 cite 覆盖率。本规则不阻断你工作,只记录。
 `;
