@@ -5243,6 +5243,26 @@ export async function runDoctorCiteCoverage(
     ? assistantTurns
     : assistantTurns.filter((t) => t.client === options.client);
 
+  // Cross-client denominator guard. Edit events carry no `client` field, so a
+  // naive walk would let codex-session edits inflate edits_touched and trigger
+  // expected_but_missed against a cc-filtered cited-kb map that never had a
+  // chance to populate (its source turns were filtered out). We rebuild a set
+  // of session_ids whose turns include at least one matching-client turn from
+  // the UNFILTERED assistant turn list, then gate the edit loop on it. When
+  // the client filter is 'all', this set stays null and every edit counts.
+  let clientSessionIds: Set<string> | null = null;
+  if (options.client !== "all") {
+    clientSessionIds = new Set<string>();
+    for (const turn of assistantTurns) {
+      if (turn.client === options.client) {
+        const sid = turn.session_id;
+        if (typeof sid === "string" && sid.length > 0) {
+          clientSessionIds.add(sid);
+        }
+      }
+    }
+  }
+
   // Build kb index from agents.meta.json. Map stable_id → relevance metadata.
   // A missing meta file (fresh project, doctor pre-init) collapses to an empty
   // index — narrow denominator becomes zero, broad logic still functions on
@@ -5374,10 +5394,21 @@ export async function runDoctorCiteCoverage(
   let editsTouched = 0;
   let expectedButMissed = 0;
   for (const edit of editEvents) {
-    editsTouched += 1;
     // Edit events have no `client` field; per-client edits_touched stays at 0
     // (per_client only tabulates assistant-side metrics — see comment block).
+    // When a client filter is active, skip edits whose session never produced
+    // a matching-client turn — otherwise cross-client edits pollute both the
+    // edits_touched denominator and expected_but_missed (the session's
+    // cited-kb map is empty under the filter, so every narrow match would
+    // false-positive). Edits whose session_id is missing fall through to the
+    // legacy conservative count when the filter is 'all', and are likewise
+    // skipped under a narrowed filter (no way to attribute them).
     const sid = edit.session_id;
+    if (clientSessionIds !== null) {
+      if (typeof sid !== "string" || sid.length === 0) continue;
+      if (!clientSessionIds.has(sid)) continue;
+    }
+    editsTouched += 1;
     if (typeof sid !== "string" || sid.length === 0) continue;
     const citedSet = sessionCitedKbs.get(sid) ?? new Set<string>();
     for (const [kbId, kb] of kbIndex) {

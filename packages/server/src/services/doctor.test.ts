@@ -4465,13 +4465,21 @@ describe("runDoctorCiteCoverage", () => {
     expect(report.metrics.qualifying_cites).toBe(1);
   });
 
-  // 12. --client=cc filter: codex turns excluded from top-level metrics.
-  //     per_client is suppressed when the client filter is narrowed.
-  it("--client=cc filter excludes codex turns and suppresses per_client", async () => {
+  // 12. --client=cc filter: codex turns excluded from top-level metrics,
+  //     and edits from codex-only sessions are excluded from edits_touched +
+  //     expected_but_missed (cross-client denominator guard). per_client is
+  //     suppressed when the client filter is narrowed.
+  it("--client=cc filter excludes codex turns and codex-session edits, suppresses per_client", async () => {
     const target = createInitializedProject("cite-coverage-client-filter");
     writeFile(".fabric/events.jsonl", "", target);
 
     const marker = await ensureCitePolicyActivatedMarker(target);
+
+    // Seed a narrow kb so codex-session edits would otherwise be flagged as
+    // expected_but_missed under a polluted cc filter.
+    seedAgentsMeta(target, [
+      { stable_id: "KT-DEC-0599", relevance_scope: "narrow", relevance_paths: ["src/codex-only/**"] },
+    ]);
 
     seedEvents(target, [
       mkTurnEvent({
@@ -4490,6 +4498,25 @@ describe("runDoctorCiteCoverage", () => {
         client: "codex",
         ts: marker.marker_ts + 20,
       }),
+      // One edit on a cc session — should count.
+      mkEditEvent({
+        path: "src/cc-only/a.ts",
+        sessionId: "sess-CC",
+        ts: marker.marker_ts + 30,
+      }),
+      // Two edits on a codex session — must be skipped under --client=cc.
+      // The second one targets a narrow-kb-relevant path; if the cross-client
+      // guard regressed it would surface as expected_but_missed=1.
+      mkEditEvent({
+        path: "src/codex-only/x.ts",
+        sessionId: "sess-CX",
+        ts: marker.marker_ts + 31,
+      }),
+      mkEditEvent({
+        path: "src/codex-only/y.ts",
+        sessionId: "sess-CX",
+        ts: marker.marker_ts + 32,
+      }),
     ]);
 
     const report = await runDoctorCiteCoverage(target, { since: 0, client: "cc" });
@@ -4497,8 +4524,73 @@ describe("runDoctorCiteCoverage", () => {
     expect(report.client_filter).toBe("cc");
     expect(report.metrics.total_turns).toBe(1);
     expect(report.metrics.qualifying_cites).toBe(1);
+    // Denominator guard: only the cc-session edit counts.
+    expect(report.metrics.edits_touched).toBe(1);
+    // expected_but_missed must NOT be polluted by codex-session edits hitting
+    // the narrow kb's relevance_paths against an empty cc cited-kb map.
+    expect(report.metrics.expected_but_missed).toBe(0);
     // Narrowed filter — per_client suppressed (a single-entry record would
     // duplicate the top-level metrics).
+    expect(report.per_client).toBeUndefined();
+  });
+
+  // 12b. Mirror of #12 against --client=codex: codex edits counted, cc edits
+  //      skipped. Same cross-client guard, opposite filter.
+  it("--client=codex filter excludes cc turns and cc-session edits", async () => {
+    const target = createInitializedProject("cite-coverage-client-filter-codex");
+    writeFile(".fabric/events.jsonl", "", target);
+
+    const marker = await ensureCitePolicyActivatedMarker(target);
+
+    seedAgentsMeta(target, [
+      { stable_id: "KT-DEC-0699", relevance_scope: "narrow", relevance_paths: ["src/cc-only/**"] },
+    ]);
+
+    seedEvents(target, [
+      mkTurnEvent({
+        sessionId: "sess-CC2",
+        kbLineRaw: "KB: cc",
+        citeIds: ["KT-DEC-0601"],
+        citeTags: ["planned"],
+        client: "cc",
+        ts: marker.marker_ts + 10,
+      }),
+      mkTurnEvent({
+        sessionId: "sess-CX2",
+        kbLineRaw: "KB: codex",
+        citeIds: ["KT-DEC-0602"],
+        citeTags: ["planned"],
+        client: "codex",
+        ts: marker.marker_ts + 20,
+      }),
+      // cc-only edits — must be skipped under --client=codex; one of them
+      // targets a narrow-kb path that would otherwise pollute
+      // expected_but_missed under the codex filter.
+      mkEditEvent({
+        path: "src/cc-only/a.ts",
+        sessionId: "sess-CC2",
+        ts: marker.marker_ts + 30,
+      }),
+      mkEditEvent({
+        path: "src/cc-only/b.ts",
+        sessionId: "sess-CC2",
+        ts: marker.marker_ts + 31,
+      }),
+      // One codex-session edit — should count.
+      mkEditEvent({
+        path: "src/codex-only/z.ts",
+        sessionId: "sess-CX2",
+        ts: marker.marker_ts + 32,
+      }),
+    ]);
+
+    const report = await runDoctorCiteCoverage(target, { since: 0, client: "codex" });
+
+    expect(report.client_filter).toBe("codex");
+    expect(report.metrics.total_turns).toBe(1);
+    expect(report.metrics.qualifying_cites).toBe(1);
+    expect(report.metrics.edits_touched).toBe(1);
+    expect(report.metrics.expected_but_missed).toBe(0);
     expect(report.per_client).toBeUndefined();
   });
 
