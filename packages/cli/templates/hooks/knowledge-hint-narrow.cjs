@@ -722,7 +722,8 @@ function main(env, stdio) {
         : invokePlanContextHint(cwd, paths);
     if (cliPayload === null || cliPayload === undefined) return;
 
-    const narrow = Array.isArray(cliPayload.narrow) ? cliPayload.narrow : [];
+    // Protocol v2 (rc.18 TASK-005): wire field is `entries`, no v1 shim.
+    const narrow = Array.isArray(cliPayload.entries) ? cliPayload.entries : [];
     if (narrow.length === 0) {
       // rc.6 TASK-023 (E6): silence-counter — matched-narrow == 0. The CLI
       // had a chance to match against the extracted paths but came back

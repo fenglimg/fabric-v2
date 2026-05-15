@@ -9,7 +9,7 @@
  * plan-context-hint JSON instead of spawning the `fabric` binary.
  */
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   mkdirSync,
   mkdtempSync,
@@ -35,10 +35,10 @@ type NarrowEntry = {
 };
 
 type Payload = {
-  version: 1;
+  version: 2;
   revision_hash: string;
   target_paths: string[];
-  narrow: NarrowEntry[];
+  entries: NarrowEntry[];
   broad_count: number;
 };
 
@@ -87,10 +87,10 @@ function makePayload(
   opts: { revision_hash?: string; broad_count?: number } = {},
 ): Payload {
   return {
-    version: 1,
+    version: 2,
     revision_hash: opts.revision_hash ?? "rev-abc123",
     target_paths: ["**"],
-    narrow,
+    entries: narrow,
     broad_count: opts.broad_count ?? narrow.length,
   };
 }
@@ -177,9 +177,9 @@ describe("knowledge-hint-broad.cjs — renderSummary (empty)", () => {
     expect(hook.renderSummary(makePayload([]))).toEqual([]);
   });
 
-  it("returns [] (silent) when payload.narrow is missing", () => {
+  it("returns [] (silent) when payload.entries is missing", () => {
     // @ts-expect-error — exercising defensive missing-field path
-    expect(hook.renderSummary({ version: 1, revision_hash: "x" })).toEqual([]);
+    expect(hook.renderSummary({ version: 2, revision_hash: "x" })).toEqual([]);
   });
 
   it("returns [] when payload is null", () => {
@@ -769,5 +769,81 @@ describe("knowledge-hint-broad.cjs — fabric-import SKILL.md sentinel cleanup (
     expect(md).not.toMatch(/rc\.7 T1 sentinel clear/);
     // The retirement note SHOULD be present
     expect(md).toMatch(/sentinel 机制已下线/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// rc.18 TASK-005 — v1-receipt stance (protocol v2 cut).
+//
+// Stance proof: a payload still carrying the legacy `version: 1` shape is
+// silent-skipped (returns []) AND emits exactly one stderr breadcrumb so
+// operators grepping a stuck-banner report can diagnose the version drift
+// without source-diving. A null payload returns [] silently with ZERO
+// breadcrumb (no spam on the CLI-unavailable path).
+// ---------------------------------------------------------------------------
+
+describe("knowledge-hint-broad.cjs — v1-receipt stance (protocol v2 cut)", () => {
+  it("returns [] and emits one stderr breadcrumb on version=1 payload", () => {
+    const writes: string[] = [];
+    const spy = vi
+      .spyOn(process.stderr, "write")
+      .mockImplementation((chunk: string | Uint8Array): boolean => {
+        writes.push(typeof chunk === "string" ? chunk : chunk.toString());
+        return true;
+      });
+    try {
+      const lines = hook.renderSummary({
+        version: 1,
+        revision_hash: "rev-legacy",
+        target_paths: ["**"],
+        // legacy v1 wire field name — must NOT be read post-v2 cut.
+        narrow: [makeEntry("KT-DEC-0001", "decision", "proven", "x")],
+        broad_count: 1,
+      } as unknown as Parameters<typeof hook.renderSummary>[0]);
+      expect(lines).toEqual([]);
+      // Exactly one breadcrumb fired, with the canonical wording.
+      expect(writes.length).toBe(1);
+      expect(writes[0]).toMatch(/version=1 unsupported \(expected 2\)/);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("returns [] and writes ZERO stderr on null payload (no spam)", () => {
+    const writes: string[] = [];
+    const spy = vi
+      .spyOn(process.stderr, "write")
+      .mockImplementation((chunk: string | Uint8Array): boolean => {
+        writes.push(typeof chunk === "string" ? chunk : chunk.toString());
+        return true;
+      });
+    try {
+      // @ts-expect-error — exercising the null-payload silent-skip path
+      const lines = hook.renderSummary(null);
+      expect(lines).toEqual([]);
+      expect(writes).toEqual([]);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("returns [] silently (no breadcrumb) when version matches but entries is missing", () => {
+    const writes: string[] = [];
+    const spy = vi
+      .spyOn(process.stderr, "write")
+      .mockImplementation((chunk: string | Uint8Array): boolean => {
+        writes.push(typeof chunk === "string" ? chunk : chunk.toString());
+        return true;
+      });
+    try {
+      // @ts-expect-error — version-matches-but-shape-incomplete defensive path
+      const lines = hook.renderSummary({ version: 2, revision_hash: "x" });
+      expect(lines).toEqual([]);
+      // Version matches → no breadcrumb (the missing `entries` is a
+      // defensive coercion to [], not a protocol drift).
+      expect(writes).toEqual([]);
+    } finally {
+      spy.mockRestore();
+    }
   });
 });

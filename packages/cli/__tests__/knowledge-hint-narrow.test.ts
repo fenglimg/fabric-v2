@@ -10,7 +10,7 @@
  * — tests never touch process.stdin or spawn the `fabric` binary.
  */
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   existsSync,
   mkdirSync,
@@ -36,10 +36,10 @@ type NarrowEntry = {
 };
 
 type CliPayload = {
-  version: 1;
+  version: 2;
   revision_hash: string;
   target_paths: string[];
-  narrow: NarrowEntry[];
+  entries: NarrowEntry[];
   broad_count: number;
 };
 
@@ -139,10 +139,10 @@ function makeCliPayload(
   opts: { revision_hash?: string } = {},
 ): CliPayload {
   return {
-    version: 1,
+    version: 2,
     revision_hash: opts.revision_hash ?? "rev-narrow-001",
     target_paths: ["**"],
-    narrow,
+    entries: narrow,
     broad_count: narrow.length,
   };
 }
@@ -1356,5 +1356,79 @@ describe("knowledge-hint-narrow.cjs — main (E6 silence-counter sidecar)", () =
     expect(readSilenceCounterFile(root)).toBeNull();
     // But edit-counter still fires (its own seam is independent).
     expect(readCounterFile(root)).not.toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// rc.18 TASK-005 — v1-receipt stance (protocol v2 cut).
+//
+// Stance proof: a CLI payload still carrying the legacy `version: 1` shape is
+// silent-skipped (renderSummary returns []) AND emits exactly one stderr
+// breadcrumb for operator visibility. A null payload returns [] silently with
+// ZERO breadcrumb so the CLI-unavailable path stays quiet.
+// ---------------------------------------------------------------------------
+
+describe("knowledge-hint-narrow.cjs — v1-receipt stance (protocol v2 cut)", () => {
+  it("returns [] and emits one stderr breadcrumb on version=1 payload", () => {
+    const writes: string[] = [];
+    const spy = vi
+      .spyOn(process.stderr, "write")
+      .mockImplementation((chunk: string | Uint8Array): boolean => {
+        writes.push(typeof chunk === "string" ? chunk : chunk.toString());
+        return true;
+      });
+    try {
+      const lines = hook.renderSummary({
+        version: 1,
+        revision_hash: "rev-legacy",
+        target_paths: ["**"],
+        // legacy v1 wire field name — must NOT be read post-v2 cut.
+        narrow: [makeEntry("KT-DEC-0001", "decision", "proven", "x")],
+        broad_count: 1,
+      } as unknown as CliPayload);
+      expect(lines).toEqual([]);
+      expect(writes.length).toBe(1);
+      expect(writes[0]).toMatch(/version=1 unsupported \(expected 2\)/);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("returns [] and writes ZERO stderr on null payload (no spam)", () => {
+    const writes: string[] = [];
+    const spy = vi
+      .spyOn(process.stderr, "write")
+      .mockImplementation((chunk: string | Uint8Array): boolean => {
+        writes.push(typeof chunk === "string" ? chunk : chunk.toString());
+        return true;
+      });
+    try {
+      // @ts-expect-error — exercising the null-payload silent-skip path
+      const lines = hook.renderSummary(null);
+      expect(lines).toEqual([]);
+      expect(writes).toEqual([]);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("returns [] silently (no breadcrumb) on { version: 2 } with no entries", () => {
+    const writes: string[] = [];
+    const spy = vi
+      .spyOn(process.stderr, "write")
+      .mockImplementation((chunk: string | Uint8Array): boolean => {
+        writes.push(typeof chunk === "string" ? chunk : chunk.toString());
+        return true;
+      });
+    try {
+      // @ts-expect-error — version-matches-but-entries-missing defensive path
+      const lines = hook.renderSummary({ version: 2, revision_hash: "x" });
+      expect(lines).toEqual([]);
+      // Version matches → no breadcrumb (missing entries is a defensive
+      // coercion to [], not a protocol drift).
+      expect(writes).toEqual([]);
+    } finally {
+      spy.mockRestore();
+    }
   });
 });
