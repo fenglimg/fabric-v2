@@ -6,6 +6,7 @@ export * from "./schemas/api-contracts.js";
 export * from "./schemas/ledger-entry.js";
 export * from "./schemas/human-lock.js";
 export * from "./schemas/fabric-config.js";
+export * from "./schemas/fabric-config-introspect.js";
 export * from "./schemas/forensic-report.js";
 export * from "./schemas/init-context.js";
 export * from "./schemas/events.js";
