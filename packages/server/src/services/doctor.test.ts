@@ -14,7 +14,7 @@ import {
   fabricConfigSchema,
 } from "@fenglimg/fabric-shared";
 
-import { ensureCitePolicyActivatedMarker, runDoctorFix, runDoctorReport } from "./doctor.js";
+import { ensureCitePolicyActivatedMarker, runDoctorCiteCoverage, runDoctorFix, runDoctorReport } from "./doctor.js";
 import { readEventLedger } from "./event-ledger.js";
 import { writeKnowledgeMeta } from "./knowledge-meta-builder.js";
 import { sha256 } from "./_shared.js";
@@ -3860,6 +3860,110 @@ describe("ensureCitePolicyActivatedMarker", () => {
     const result = await ensureCitePolicyActivatedMarker("/nonexistent-cite-policy-fabric-root-xyzzy");
     expect(result.marker_ts).toBe(0);
     expect(result.emitted_now).toBe(false);
+  });
+});
+
+// v2.0.0-rc.20 TASK-06: runDoctorCiteCoverage end-to-end smoke. The exhaustive
+// per-metric coverage lands in TASK-08; this smoke locks the contract that the
+// real algorithm replaced the stub (non-zero metrics from seeded events) and
+// that the 'skipped' branch still surfaces when the marker cannot be written.
+describe("runDoctorCiteCoverage (smoke)", () => {
+  it("aggregates total_turns + qualifying_cites + dismissed_histogram from seeded turns", async () => {
+    const target = createInitializedProject("cite-coverage-smoke-turns");
+    writeFile(".fabric/events.jsonl", "", target);
+
+    // Seed the marker first so effectiveSince = marker_ts (window covers all
+    // subsequent appends). All appends use Date.now() so they sort after the
+    // marker timestamp.
+    const marker = await ensureCitePolicyActivatedMarker(target);
+    expect(marker.marker_ts).toBeGreaterThan(0);
+
+    // Hand-craft a few assistant_turn_observed events. Mix planned / recalled /
+    // dismissed:scope-mismatch / none to exercise the categorize branch.
+    const seedLines = [
+      {
+        kind: "fabric-event",
+        id: "event:smoke-turn-1",
+        ts: marker.marker_ts + 10,
+        schema_version: 1,
+        session_id: "sess-A",
+        event_type: "assistant_turn_observed",
+        kb_line_raw: "KB: KT-DEC-0001",
+        cite_ids: ["KT-DEC-0001"],
+        cite_tags: ["planned"],
+        client: "cc",
+        turn_id: "turn-1",
+        timestamp: new Date(marker.marker_ts + 10).toISOString(),
+      },
+      {
+        // NOTE: cite_tags here is the bare 'dismissed' literal — TASK-02's
+        // schema enum locks the on-ledger vocabulary to 5 values. The reason
+        // payload ('scope-mismatch'/'other:...') is a TASK-09 schema widening;
+        // until then the histogram aggregates under the 'unspecified' key.
+        kind: "fabric-event",
+        id: "event:smoke-turn-2",
+        ts: marker.marker_ts + 20,
+        schema_version: 1,
+        session_id: "sess-B",
+        event_type: "assistant_turn_observed",
+        kb_line_raw: "KB: KT-DEC-0002 (dismissed)",
+        cite_ids: ["KT-DEC-0002"],
+        cite_tags: ["dismissed"],
+        client: "codex",
+        turn_id: "turn-2",
+        timestamp: new Date(marker.marker_ts + 20).toISOString(),
+      },
+      {
+        kind: "fabric-event",
+        id: "event:smoke-turn-3",
+        ts: marker.marker_ts + 30,
+        schema_version: 1,
+        session_id: "sess-C",
+        event_type: "assistant_turn_observed",
+        kb_line_raw: null,
+        cite_ids: [],
+        cite_tags: ["none"],
+        client: "cc",
+        turn_id: "turn-3",
+        timestamp: new Date(marker.marker_ts + 30).toISOString(),
+      },
+    ];
+    const ledgerPath = join(target, ".fabric", "events.jsonl");
+    const existing = readFileSync(ledgerPath, "utf8");
+    writeFileSync(
+      ledgerPath,
+      `${existing}${seedLines.map((e) => JSON.stringify(e)).join("\n")}\n`,
+      "utf8",
+    );
+
+    const report = await runDoctorCiteCoverage(target, { since: 0, client: "all" });
+    expect(report.status).toBe("ok");
+    expect(report.metrics.total_turns).toBe(3);
+    // planned counts; dismissed and none do not.
+    expect(report.metrics.qualifying_cites).toBe(1);
+    expect(report.dismissed_reason_histogram).toEqual({ unspecified: 1 });
+    // per_client surfaces when client filter is 'all'.
+    expect(report.per_client).toBeDefined();
+    expect(report.per_client?.cc?.total_turns).toBe(2);
+    expect(report.per_client?.codex?.total_turns).toBe(1);
+  });
+
+  it("returns status:'skipped' with zero metrics when marker write degrades", async () => {
+    // Same nonexistent-root trick as ensureCitePolicyActivatedMarker's failure
+    // test — both ledger read and append fail, marker_ts collapses to 0.
+    const report = await runDoctorCiteCoverage("/nonexistent-cite-coverage-fabric-root-xyzzy", {
+      since: 0,
+      client: "all",
+    });
+    expect(report.status).toBe("skipped");
+    expect(report.marker_ts).toBe(0);
+    expect(report.metrics).toEqual({
+      edits_touched: 0,
+      qualifying_cites: 0,
+      recalled_unverified: 0,
+      expected_but_missed: 0,
+      total_turns: 0,
+    });
   });
 });
 

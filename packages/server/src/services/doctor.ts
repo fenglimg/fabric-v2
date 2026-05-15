@@ -20,6 +20,7 @@ import {
   BOOTSTRAP_REGEX,
   type AgentsMeta,
   type AgentsMetaCounters,
+  type EventLedgerEvent,
   type ForensicReport,
   type KnowledgeTestIndex,
 } from "@fenglimg/fabric-shared";
@@ -31,6 +32,7 @@ import { ensureParentDirectory, getEventLedgerPath, sha256 } from "./_shared.js"
 import { buildKnowledgeMeta, isSameKnowledgeTestIndex, writeKnowledgeMeta } from "./knowledge-meta-builder.js";
 import { appendEventLedgerEvent, readEventLedger, truncateLedgerToLastNewline } from "./event-ledger.js";
 import { reconcileKnowledge } from "./knowledge-sync.js";
+import { readAgentsMeta } from "../meta-reader.js";
 
 export type DoctorStatus = "ok" | "warn" | "error";
 export type DoctorIssueKind = "fixable_error" | "manual_error" | "warning" | "info";
@@ -5091,21 +5093,83 @@ export type CiteCoverageReport = {
   generated_at: string;
 };
 
-// v2.0.0-rc.20 TASK-05: STUB. Returns the finalized CiteCoverageReport shape
-// with zeroed metrics so the CLI surface (--cite-coverage / --since /
-// --client) can be built and smoke-tested against a stable contract before
-// TASK-06 plumbs in the actual ledger scan. The only real work performed here
-// is anchoring the policy version via `ensureCitePolicyActivatedMarker`:
-// without that marker we cannot tag observations later, so the marker must be
-// emitted on the FIRST coverage invocation even though no metrics flow yet.
+// v2.0.0-rc.20 TASK-06: cite-coverage helpers.
 //
-// status = 'skipped' iff the marker write degraded (ledger I/O error) so the
-// caller can distinguish "no data yet" from "ledger broken — fix doctor first".
+// `categorizeCiteTag` normalizes the cite_tags vocabulary into one of the five
+// outcome buckets the report tabulates. Tags may carry a colon-separated
+// `dismissed:<reason>` payload (e.g. 'dismissed:scope-mismatch',
+// 'dismissed:other:<text>'); the reason is split out for the histogram. TASK-02
+// constrained the on-ledger tag enum to the bare five values, but per-turn
+// dismissed reasons surface via the raw `kb_line_raw` text for now — until
+// TASK-09 widens the schema, the histogram only counts `dismissed` as a
+// generic bucket. The split logic is wired here so TASK-09 only needs to flip
+// on a schema field without touching the aggregator.
+type CiteTagCategory = "planned" | "recalled" | "chained-from" | "dismissed" | "none";
+
+function categorizeCiteTag(tag: string): { category: CiteTagCategory; reason?: string } {
+  if (tag === "planned" || tag === "recalled" || tag === "chained-from" || tag === "none") {
+    return { category: tag };
+  }
+  if (tag === "dismissed") {
+    return { category: "dismissed", reason: "unspecified" };
+  }
+  if (tag.startsWith("dismissed:")) {
+    const remainder = tag.slice("dismissed:".length);
+    if (remainder.startsWith("other:")) {
+      return { category: "dismissed", reason: remainder.slice("other:".length) || "other" };
+    }
+    return { category: "dismissed", reason: remainder || "unspecified" };
+  }
+  // Unknown tag — treat as 'none' so the aggregator does not blow up on a
+  // future schema bump. Mirrors how `buildLastActiveIndex` ignores unrecognized
+  // event_types via its default branch.
+  return { category: "none" };
+}
+
+function matchesRelevancePath(editPath: string, relevancePaths: readonly string[]): boolean {
+  if (relevancePaths.length === 0) {
+    return false;
+  }
+  const normalized = normalizePath(editPath);
+  for (const glob of relevancePaths) {
+    if (minimatch(normalized, glob, { dot: true, matchBase: false })) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// v2.0.0-rc.20 TASK-06: Real cite-coverage report. Single readEventLedger pass
+// (event-type filter is intentionally omitted so the discriminated-union
+// partitioning happens in a single for-loop, per the buildLastActiveIndex
+// structural twin at L2885). Aggregates five metrics:
+//
+//   - total_turns:           assistant_turn_observed in window (filtered by
+//                            client when options.client !== 'all').
+//   - qualifying_cites:      cite_tags ∈ {planned, recalled, chained-from}.
+//   - recalled_unverified:   'recalled' tag with no knowledge_sections_fetched
+//                            in the same session within ±60s.
+//   - edits_touched:         edit_intent_checked events in window.
+//   - expected_but_missed:   edit_intent_checked whose path matches some kb
+//                            entry's relevance_paths but no assistant_turn in
+//                            the same session cited that kb_id.
+//
+// Narrow vs. broad denominator: per the cite-policy spec, narrow KBs
+// (relevance_paths.length > 0) should only be expected when an edit touched
+// a matching path; broad KBs are always-on. This shapes `expected_but_missed`:
+// narrow KBs contribute only when a path-match exists, broad KBs are not
+// counted here (they never produce 'missed' — they are by definition always
+// in scope, so the qualifying_cites/total_turns ratio is the broad signal).
+//
+// Performance: O(N events + M turns × cite_ids + E edits × K narrow_kbs).
+// For typical ledgers (<10k events, <100 narrow kbs) this stays well under
+// 100ms — matches the buildLastActiveIndex envelope.
 export async function runDoctorCiteCoverage(
   projectRoot: string,
   options: { since: number; client: "cc" | "codex" | "cursor" | "all" },
 ): Promise<CiteCoverageReport> {
   const marker = await ensureCitePolicyActivatedMarker(projectRoot);
+  const generatedAt = new Date().toISOString();
   const zeroMetrics: CiteCoverageReport["metrics"] = {
     edits_touched: 0,
     qualifying_cites: 0,
@@ -5122,18 +5186,238 @@ export async function runDoctorCiteCoverage(
       since_ts: options.since,
       client_filter: options.client,
       metrics: zeroMetrics,
-      generated_at: new Date().toISOString(),
+      generated_at: generatedAt,
     };
+  }
+
+  // effectiveSince anchors the window at the policy marker — observations
+  // recorded before the policy activated are not coverable under it.
+  const effectiveSince = Math.max(marker.marker_ts, options.since);
+
+  // Single ledger pass — collect ALL events in window, partition by type.
+  let ledgerEvents: EventLedgerEvent[] = [];
+  try {
+    const result = await readEventLedger(projectRoot, { since: effectiveSince });
+    ledgerEvents = result.events;
+  } catch {
+    // Degraded ledger — fall back to ok-with-zero rather than 'skipped' since
+    // the marker is present. CLI renderer (TASK-07) surfaces zero metrics as
+    // "no qualifying turns yet" which is the correct user-facing message.
+    return {
+      status: "ok",
+      marker_ts: marker.marker_ts,
+      marker_emitted_now: marker.emitted_now,
+      since_ts: effectiveSince,
+      client_filter: options.client,
+      metrics: zeroMetrics,
+      generated_at: generatedAt,
+    };
+  }
+
+  type TurnEvent = Extract<EventLedgerEvent, { event_type: "assistant_turn_observed" }>;
+  type EditEvent = Extract<EventLedgerEvent, { event_type: "edit_intent_checked" }>;
+  type FetchEvent = Extract<EventLedgerEvent, { event_type: "knowledge_sections_fetched" }>;
+  const assistantTurns: TurnEvent[] = [];
+  const editEvents: EditEvent[] = [];
+  const fetchEvents: FetchEvent[] = [];
+  for (const event of ledgerEvents) {
+    switch (event.event_type) {
+      case "assistant_turn_observed":
+        assistantTurns.push(event);
+        break;
+      case "edit_intent_checked":
+        editEvents.push(event);
+        break;
+      case "knowledge_sections_fetched":
+        fetchEvents.push(event);
+        break;
+      default:
+        break;
+    }
+  }
+
+  // Apply client filter to assistant turns (edit/fetch events are not
+  // client-scoped — they originate from the hook layer regardless of which
+  // assistant produced the upstream turn).
+  const filteredTurns = options.client === "all"
+    ? assistantTurns
+    : assistantTurns.filter((t) => t.client === options.client);
+
+  // Build kb index from agents.meta.json. Map stable_id → relevance metadata.
+  // A missing meta file (fresh project, doctor pre-init) collapses to an empty
+  // index — narrow denominator becomes zero, broad logic still functions on
+  // turn data alone.
+  type KbEntry = { relevance_paths: readonly string[]; relevance_scope: "narrow" | "broad" };
+  const kbIndex = new Map<string, KbEntry>();
+  try {
+    const meta = await readAgentsMeta(projectRoot);
+    for (const node of Object.values(meta.nodes)) {
+      const stableId = node.stable_id;
+      if (typeof stableId !== "string" || stableId.length === 0) continue;
+      const description = node.description;
+      if (description === undefined) continue;
+      const paths = description.relevance_paths ?? [];
+      const scope = description.relevance_scope ?? "broad";
+      kbIndex.set(stableId, {
+        relevance_paths: paths,
+        // A broad entry with no paths is the safe default. A narrow entry must
+        // carry at least one path; an empty-paths narrow is treated as broad.
+        relevance_scope: scope === "narrow" && paths.length > 0 ? "narrow" : "broad",
+      });
+    }
+  } catch {
+    // No meta file or invalid — kbIndex stays empty.
+  }
+
+  // Per-session lookup of fetch events for recalled_unverified correlation.
+  // Key: session_id, Value: sorted timestamps of fetch events in that session.
+  const fetchesBySession = new Map<string, number[]>();
+  for (const fetch of fetchEvents) {
+    const sid = fetch.session_id;
+    if (typeof sid !== "string" || sid.length === 0) continue;
+    const list = fetchesBySession.get(sid) ?? [];
+    list.push(fetch.ts);
+    fetchesBySession.set(sid, list);
+  }
+  for (const list of fetchesBySession.values()) {
+    list.sort((a, b) => a - b);
+  }
+  const RECALL_WINDOW_MS = 60_000;
+  const isRecallVerified = (turn: TurnEvent): boolean => {
+    const sid = turn.session_id;
+    if (typeof sid !== "string" || sid.length === 0) return false;
+    const fetches = fetchesBySession.get(sid);
+    if (fetches === undefined || fetches.length === 0) return false;
+    for (const ft of fetches) {
+      if (Math.abs(ft - turn.ts) <= RECALL_WINDOW_MS) return true;
+    }
+    return false;
+  };
+
+  // Aggregation pass — single sweep over filtered turns. Build both the
+  // top-level metrics and per-client buckets in one walk.
+  const dismissedHistogram: Record<string, number> = {};
+  const perClientAccum = new Map<string, CiteCoverageReport["metrics"]>();
+  const emptyMetrics = (): CiteCoverageReport["metrics"] => ({
+    edits_touched: 0,
+    qualifying_cites: 0,
+    recalled_unverified: 0,
+    expected_but_missed: 0,
+    total_turns: 0,
+  });
+  const bumpClient = (client: string | undefined, mut: (m: CiteCoverageReport["metrics"]) => void): void => {
+    if (typeof client !== "string" || client.length === 0) return;
+    const existing = perClientAccum.get(client) ?? emptyMetrics();
+    mut(existing);
+    perClientAccum.set(client, existing);
+  };
+
+  // session_id → Set<cite_id> for expected_but_missed correlation.
+  const sessionCitedKbs = new Map<string, Set<string>>();
+
+  let totalTurns = 0;
+  let qualifyingCites = 0;
+  let recalledUnverified = 0;
+
+  for (const turn of filteredTurns) {
+    totalTurns += 1;
+    bumpClient(turn.client, (m) => {
+      m.total_turns += 1;
+    });
+
+    const sid = turn.session_id;
+    if (typeof sid === "string" && sid.length > 0) {
+      const set = sessionCitedKbs.get(sid) ?? new Set<string>();
+      for (const id of turn.cite_ids) {
+        set.add(id);
+      }
+      sessionCitedKbs.set(sid, set);
+    }
+
+    let turnHadRecalled = false;
+    for (const tag of turn.cite_tags) {
+      const { category, reason } = categorizeCiteTag(tag);
+      switch (category) {
+        case "planned":
+        case "recalled":
+        case "chained-from":
+          qualifyingCites += 1;
+          bumpClient(turn.client, (m) => {
+            m.qualifying_cites += 1;
+          });
+          if (category === "recalled") turnHadRecalled = true;
+          break;
+        case "dismissed": {
+          const key = reason ?? "unspecified";
+          dismissedHistogram[key] = (dismissedHistogram[key] ?? 0) + 1;
+          break;
+        }
+        case "none":
+        default:
+          break;
+      }
+    }
+
+    if (turnHadRecalled && !isRecallVerified(turn)) {
+      recalledUnverified += 1;
+      bumpClient(turn.client, (m) => {
+        m.recalled_unverified += 1;
+      });
+    }
+  }
+
+  // expected_but_missed: walk edit events, for each one find narrow kbs whose
+  // relevance_paths cover the edit's path; if no assistant_turn in the same
+  // session cited that kb, increment. Edits without a session_id cannot be
+  // correlated and are skipped (conservative — better to under-count than to
+  // raise false positives).
+  let editsTouched = 0;
+  let expectedButMissed = 0;
+  for (const edit of editEvents) {
+    editsTouched += 1;
+    // Edit events have no `client` field; per-client edits_touched stays at 0
+    // (per_client only tabulates assistant-side metrics — see comment block).
+    const sid = edit.session_id;
+    if (typeof sid !== "string" || sid.length === 0) continue;
+    const citedSet = sessionCitedKbs.get(sid) ?? new Set<string>();
+    for (const [kbId, kb] of kbIndex) {
+      if (kb.relevance_scope !== "narrow") continue;
+      if (!matchesRelevancePath(edit.path, kb.relevance_paths)) continue;
+      if (!citedSet.has(kbId)) {
+        expectedButMissed += 1;
+      }
+    }
+  }
+
+  const metrics: CiteCoverageReport["metrics"] = {
+    edits_touched: editsTouched,
+    qualifying_cites: qualifyingCites,
+    recalled_unverified: recalledUnverified,
+    expected_but_missed: expectedButMissed,
+    total_turns: totalTurns,
+  };
+
+  // per_client breakdown is only emitted when client filter is 'all' — for a
+  // narrowed query the top-level metrics already represent that client and a
+  // single-entry record would be redundant noise.
+  let perClient: CiteCoverageReport["per_client"];
+  if (options.client === "all" && perClientAccum.size > 0) {
+    perClient = {};
+    for (const [client, m] of perClientAccum) {
+      perClient[client] = m;
+    }
   }
 
   return {
     status: "ok",
     marker_ts: marker.marker_ts,
     marker_emitted_now: marker.emitted_now,
-    since_ts: options.since,
+    since_ts: effectiveSince,
     client_filter: options.client,
-    metrics: zeroMetrics,
-    generated_at: new Date().toISOString(),
+    metrics,
+    ...(perClient !== undefined ? { per_client: perClient } : {}),
+    ...(Object.keys(dismissedHistogram).length > 0 ? { dismissed_reason_histogram: dismissedHistogram } : {}),
+    generated_at: generatedAt,
   };
 }
 
