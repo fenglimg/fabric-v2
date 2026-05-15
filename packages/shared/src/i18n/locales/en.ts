@@ -355,7 +355,7 @@ export const enMessages: Messages = {
   "cli.serve.lock-held.action-hint":
     "A `fab serve` instance (PID {pid}) is holding the workspace lock. Stop it (Ctrl-C in that terminal or `kill {pid}`) before running this command.",
   "cli.serve.warning.host-fallback":
-    "--host {host} requires FABRIC_AUTH_TOKEN; falling back to 127.0.0.1 for safety",
+    "--host {host} requires FABRIC_AUTH_TOKEN for non-loopback exposure; falling back to 127.0.0.1. To bind {host}, run: FABRIC_AUTH_TOKEN=<token> fab serve --host {host}",
   "cli.serve.error.port-in-use": "Port {port} in use - try --port {nextPort}",
 
   "cli.update.description": "Refresh MCP host configuration and git hooks without re-creating Fabric files.",

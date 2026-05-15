@@ -45,7 +45,7 @@ exports[`cli i18n > renders en command descriptions and output snapshots 1`] = `
   "serve": {
     "description": "Start the local Fabric MCP HTTP service. Set FABRIC_AUTH_TOKEN to enable Bearer auth for non-localhost binding.",
     "errors": [
-      "[warn] --host 0.0.0.0 requires FABRIC_AUTH_TOKEN; falling back to 127.0.0.1 for safety",
+      "[warn] --host 0.0.0.0 requires FABRIC_AUTH_TOKEN for non-loopback exposure; falling back to 127.0.0.1. To bind 0.0.0.0, run: FABRIC_AUTH_TOKEN=<token> fab serve --host 0.0.0.0",
     ],
     "stderr": [],
     "stdout": [
@@ -104,7 +104,7 @@ exports[`cli i18n > renders zh-CN command descriptions and output snapshots 1`] 
   "serve": {
     "description": "启动本地 Fabric MCP HTTP 服务。若需绑定到非 localhost，请设置 FABRIC_AUTH_TOKEN 以启用 Bearer 鉴权。",
     "errors": [
-      "[warn] --host 0.0.0.0 需要 FABRIC_AUTH_TOKEN；为安全起见已回退到 127.0.0.1",
+      "[warn] --host 0.0.0.0 需要设置 FABRIC_AUTH_TOKEN 才能对外暴露；已回退到 127.0.0.1。如需绑定 0.0.0.0，请运行：FABRIC_AUTH_TOKEN=<token> fab serve --host 0.0.0.0",
     ],
     "stderr": [],
     "stdout": [

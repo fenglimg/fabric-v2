@@ -345,7 +345,8 @@ export const zhCNMessages: Messages = {
   "cli.serve.ready.title": "Fabric 仪表盘",
   "cli.serve.lock-held.action-hint":
     "另一个 `fab serve` 进程 (PID {pid}) 正占用工作区锁。请先停止它 (在该终端按 Ctrl-C 或运行 `kill {pid}`) 再执行此命令。",
-  "cli.serve.warning.host-fallback": "--host {host} 需要 FABRIC_AUTH_TOKEN；为安全起见已回退到 127.0.0.1",
+  "cli.serve.warning.host-fallback":
+    "--host {host} 需要设置 FABRIC_AUTH_TOKEN 才能对外暴露；已回退到 127.0.0.1。如需绑定 {host}，请运行：FABRIC_AUTH_TOKEN=<token> fab serve --host {host}",
   "cli.serve.error.port-in-use": "端口 {port} 已被占用，可尝试 --port {nextPort}",
 
   "cli.update.description": "刷新 MCP 主机配置和 git hooks，不重新创建 Fabric 文件。",
