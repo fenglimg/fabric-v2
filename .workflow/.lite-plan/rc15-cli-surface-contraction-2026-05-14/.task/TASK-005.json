@@ -1,0 +1,73 @@
+{
+  "id": "TASK-005",
+  "title": "Schema dedupe (C10) — drop auditMode in favor of audit_mode (snake_case parity with sibling keys)",
+  "scope": "packages/shared/src/schemas/fabric-config.ts + packages/shared/src/types/config.ts + 3 test files",
+  "action": "Refactor",
+  "description": "Delete the camelCase `auditMode` duplicate from fabric-config zod schema (L52) and FabricConfig TS type (L32), keeping only the snake_case `audit_mode` (L53/L33). Sibling keys (archive_hint_hours, review_hint_pending_count, import_window_first_run_months, fabric_language) all use snake_case — this dedupe restores convention parity. Zero runtime consumers read either spelling (only test fixtures). Update 3 test files: fabric-config.test.ts (L108 fixture + L117 assertion), schemas-roundtrip.test.ts (L52 input field), zod-roundtrip.test.ts (L44-L62 fast-check arbitrary, delete L49-L53 auditMode block, keep L54-L58 audit_mode block). Per memory feedback_clean_slate.md: NO zod preprocess shim, no 'legacy auditMode detected' warning — direct removal only. Docs at docs/configuration.md:258 already canonical on snake_case (no docs update). Isolated to packages/shared — orthogonal to all CLI changes. Commit: `refactor(rc15): schema dedupe — drop auditMode in favor of audit_mode (snake_case parity)`",
+  "files": [
+    { "path": "packages/shared/src/schemas/fabric-config.ts", "action": "modify", "target": "L52 (auditMode duplicate), L53 (audit_mode canonical — KEEP)", "change": "Delete L52: `auditMode: auditModeSchema.optional(),`. Keep L53: `audit_mode: auditModeSchema.optional(),` as sole spelling. Schema remains non-strict (no .strict() call) — preserves forward-compat for future config additions per exploration constraint." },
+    { "path": "packages/shared/src/types/config.ts", "action": "modify", "target": "L32 (auditMode duplicate), L33 (audit_mode canonical — KEEP)", "change": "Delete L32: `auditMode?: AuditMode;`. Keep L33: `audit_mode?: AuditMode;` as sole TS mirror." },
+    { "path": "packages/shared/test/fabric-config.test.ts", "action": "modify", "target": "L101-L110 (previousVersionFixture), L117 (expect assertion)", "change": "Update L108 inside previousVersionFixture: `auditMode: 'strict' as const,` → `audit_mode: 'strict' as const,`. Update L117 assertion: `expect(parsed.auditMode).toBe('strict')` → `expect(parsed.audit_mode).toBe('strict')`. Without these updates, parse silently succeeds (non-strict schema drops the unknown key) but parsed.auditMode becomes undefined and the assertion fails." },
+    { "path": "packages/shared/test/integration/schemas-roundtrip.test.ts", "action": "modify", "target": "L47-L55 (I1.1 fabricConfigSchema round-trip — full config with all fields)", "change": "Update L52: `auditMode: 'strict'` → `audit_mode: 'strict'`. Round-trip identity assertion now holds (input.audit_mode === parsed.audit_mode)." },
+    { "path": "packages/shared/test/property-based/zod-roundtrip.test.ts", "action": "modify", "target": "L44-L62 (fabricConfigArbitrary fast-check generator), L49-L53 (auditMode block — DELETE), L54-L58 (audit_mode block — KEEP)", "change": "Delete L49-L53 (auditMode constantFrom fc arbitrary block); keep L54-L58 (audit_mode block) as the sole audit-related field generator. The arbitrary now produces configs with only the canonical snake_case spelling." }
+  ],
+  "implementation": [
+    "Read packages/shared/src/schemas/fabric-config.ts L40-L60 to confirm L52/L53 line positions and surrounding context",
+    "Edit fabric-config.ts: delete the L52 `auditMode: auditModeSchema.optional(),` line",
+    "Read packages/shared/src/types/config.ts L25-L40 to confirm L32/L33 positions",
+    "Edit types/config.ts: delete the L32 `auditMode?: AuditMode;` line",
+    "Edit packages/shared/test/fabric-config.test.ts: change L108 from `auditMode: 'strict' as const,` to `audit_mode: 'strict' as const,`; change L117 assertion field name",
+    "Edit packages/shared/test/integration/schemas-roundtrip.test.ts L52: change `auditMode: 'strict'` to `audit_mode: 'strict'`",
+    "Edit packages/shared/test/property-based/zod-roundtrip.test.ts L44-L62: delete the L49-L53 auditMode fast-check arbitrary block; verify L54-L58 audit_mode block remains and the wrapping fc.record continues to type-check",
+    "Run `pnpm --filter @fenglimg/fabric-shared test` — verify all schema tests pass",
+    "Run `pnpm --filter @fenglimg/fabric-shared typecheck` — verify FabricConfig type users (if any in CLI) still compile (expectation: zero runtime consumers per exploration; CLI/server don't read either spelling)",
+    "Run `pnpm test` at root — verify no other packages reference auditMode (search via grep — only test fixtures should match)",
+    "Run `pnpm lint` — verify no lint errors",
+    "git add + commit with message: `refactor(rc15): schema dedupe — drop auditMode in favor of audit_mode (snake_case parity)`"
+  ],
+  "reference": {
+    "pattern": "Schema dedupe pattern: when zod is non-strict, unknown keys silently drop on parse. Tests that asserted on the old spelling will fail at assertion time, not parse time — the post-dedupe failure mode is `undefined !== 'strict'` mismatch. Fix: rename test field name to match the canonical schema key.",
+    "files": ["packages/shared/src/schemas/fabric-config.ts", "packages/shared/src/types/config.ts", "docs/configuration.md L258 (already canonical on audit_mode)"],
+    "examples": "Sibling snake_case keys for convention reference: archive_hint_hours, review_hint_pending_count, import_window_first_run_months, fabric_language. See exploration-schema-and-test-impact.json Pattern 1 (auditMode rename, scoped, mechanical)."
+  },
+  "convergence": {
+    "criteria": [
+      "packages/shared/src/schemas/fabric-config.ts contains only `audit_mode: auditModeSchema.optional(),` — zero `auditMode` references",
+      "packages/shared/src/types/config.ts contains only `audit_mode?: AuditMode;` — zero `auditMode` references",
+      "Zero `auditMode` references in packages/shared (grep across src/ and test/)",
+      "Zero `auditMode` references in packages/cli and packages/server (grep — exploration confirmed zero runtime consumers)",
+      "packages/shared/test/fabric-config.test.ts uses `audit_mode: 'strict' as const` in previousVersionFixture and `parsed.audit_mode` in assertions",
+      "packages/shared/test/integration/schemas-roundtrip.test.ts uses `audit_mode: 'strict'` in I1.1 round-trip",
+      "packages/shared/test/property-based/zod-roundtrip.test.ts fabricConfigArbitrary contains only `audit_mode` arbitrary, not `auditMode`",
+      "`pnpm --filter @fenglimg/fabric-shared test` exit 0",
+      "`pnpm --filter @fenglimg/fabric-shared typecheck` exit 0",
+      "`pnpm test` (root) exit 0 — no other test breaks",
+      "`pnpm lint` exit 0",
+      "Single commit with specified message"
+    ]
+  },
+  "rationale": {
+    "chosen_approach": "Direct removal (no preprocess shim, no deprecation warning) per memory feedback_clean_slate.md and zero-user state. The schema is non-strict so dropping the duplicate field doesn't break existing configs at parse time — they silently lose the camelCase setting. Test fixtures get rename-only updates.",
+    "alternatives_considered": ["Add zod.preprocess to rewrite auditMode→audit_mode for backward-compat", "Mark auditMode as @deprecated in TS type for one more RC", "Add a runtime warning log when auditMode is detected in parsed config"],
+    "decision_factors": ["Pre-user clean-slate (memory feedback_clean_slate.md)", "Zero runtime consumers (exploration verified — only test fixtures read either spelling)", "Convention parity with sibling snake_case keys (archive_hint_hours, fabric_language, etc.)", "Docs at configuration.md:258 already canonical on snake_case — code catches up to docs"],
+    "tradeoffs": "Any external config file in the wild carrying camelCase auditMode will silently drop the setting at parse time. Acceptable given zero published users. Future strict-mode adoption could surface these as parse errors but is out of scope."
+  },
+  "test": {
+    "manual_checks": [
+      "Write a temp fabric-config.json with `\"audit_mode\": \"strict\"` and verify it parses correctly (parsed.audit_mode === 'strict')",
+      "Write a temp fabric-config.json with `\"auditMode\": \"strict\"` and verify it parses (no error — non-strict schema) but parsed.audit_mode is undefined (the dropped-on-parse semantics)"
+    ],
+    "success_metrics": [
+      "All shared package tests pass: `pnpm --filter @fenglimg/fabric-shared test` exit 0",
+      "Type-check passes: `pnpm --filter @fenglimg/fabric-shared typecheck` exit 0",
+      "Root test exit 0",
+      "Lint exit 0",
+      "Grep `auditMode` across packages/{shared,cli,server} returns 0 lines"
+    ],
+    "unit": ["fabric-config.test.ts (previousVersionFixture + assertion update)", "zod-roundtrip.test.ts (fast-check arbitrary cleanup)"],
+    "integration": ["schemas-roundtrip.test.ts (I1.1 round-trip update)"]
+  },
+  "depends_on": [],
+  "cli_execution_id": "rc15-cli-surface-contraction-2026-05-14-TASK-005",
+  "cli_execution": { "strategy": "new" }
+}

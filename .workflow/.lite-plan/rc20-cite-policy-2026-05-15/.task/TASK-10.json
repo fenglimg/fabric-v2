@@ -1,0 +1,78 @@
+{
+  "id": "TASK-10",
+  "title": "Self-host — run fab install + fab doctor --fix to refresh three-end blocks with new cite policy section",
+  "scope": "repo bootstrap files (.claude/AGENTS.md, .codex/AGENTS.md, .cursor/CLAUDE.md or equivalent paths) + .fabric/events.jsonl",
+  "action": "Configure",
+  "description": "Eat our own dog food: after TASK-01..09 land, the local repo's three-end managed blocks still hold the rc.19 canonical (without cite policy). Run `fab install --reinstall` (or whatever the current re-sync invocation is) followed by `fab doctor --fix` to detect drift and rewrite the managed blocks with rc.20 BOOTSTRAP_CANONICAL (now containing `## Cite policy`). Verify by `fab doctor --strict` exits 0. Also smoke-test the cite-coverage path: run `fab doctor --cite-coverage` once locally to emit the marker + confirm the new flow works end-to-end on the live repo.",
+  "scope_layer": "self-host (repo files)",
+  "files": [
+    {
+      "path": ".claude/AGENTS.md",
+      "action": "modify",
+      "target": "managed block between BOOTSTRAP_MARKER_BEGIN and BOOTSTRAP_MARKER_END",
+      "change": "Rewrite via `fab install` to contain new BOOTSTRAP_CANONICAL including `## Cite policy` H2 section (locked verbatim text from TASK-01)."
+    },
+    {
+      "path": ".codex/AGENTS.md (or wherever Codex managed block lives in this repo)",
+      "action": "modify",
+      "target": "managed block",
+      "change": "Refreshed by `fab install` to mirror Claude Code."
+    },
+    {
+      "path": ".cursor/CLAUDE.md (or wherever Cursor managed block lives — verify before run)",
+      "action": "modify",
+      "target": "managed block",
+      "change": "Refreshed by `fab install`."
+    },
+    {
+      "path": ".fabric/events.jsonl",
+      "action": "modify",
+      "target": "ledger tail",
+      "change": "Single new line appended: cite_policy_activated event (emitted by first `fab doctor --cite-coverage` invocation)."
+    }
+  ],
+  "implementation": [
+    "Verify TASK-01..09 are committed and the workspace builds clean (`pnpm -r build`).",
+    "Snapshot current three-end block contents (`git diff` baseline).",
+    "Run `pnpm --filter @fenglimg/fabric-cli build` to rebuild CLI with rc.20 changes.",
+    "Run `pnpm exec fab install --reinstall` (or current rc.20 install command) in repo root.",
+    "Run `pnpm exec fab doctor --strict` — expect drift detected on first run since canonical changed; auto-fix flow may need explicit `fab doctor --fix`.",
+    "Run `pnpm exec fab doctor --fix` to rewrite managed blocks.",
+    "Run `pnpm exec fab doctor --strict` again — expect exit 0 (clean).",
+    "Run `pnpm exec fab doctor --cite-coverage` — expect zero-metric report + marker_emitted_now warning + single cite_policy_activated event appended to .fabric/events.jsonl.",
+    "Verify .claude/AGENTS.md (and other end blocks) now contain `## Cite policy` H2 — `grep -l '## Cite policy' .claude/AGENTS.md .codex/AGENTS.md .cursor/CLAUDE.md` (or whatever the actual paths are).",
+    "Commit the refreshed files. NOTE: do NOT commit any one-off probe events to .fabric/events.jsonl unless that's the established convention; check `git diff .fabric/events.jsonl` and decide."
+  ],
+  "reference": {
+    "pattern": "Self-host bootstrap refresh after canonical bump",
+    "files": [".fabric/events.jsonl", ".claude/AGENTS.md (or current path)"],
+    "examples": "Recent rc.19 commits (bfecffa, ed4bc56) bumped canonical + refreshed end blocks via same flow."
+  },
+  "rationale": {
+    "chosen_approach": "Run install + doctor --fix locally to refresh end blocks — same procedure as rc.19 self-host commit. Smoke-test the new --cite-coverage path on the live repo to catch any integration bugs that unit tests missed.",
+    "alternatives_considered": ["Skip self-host this RC, defer to rc.21 (rejected: leaves repo in inconsistent state where local AGENTS.md doesn't reflect canonical)", "Manual edit of three-end blocks (rejected: bypasses the managed-block writer that real users depend on; can introduce drift)"],
+    "decision_factors": ["Eats own dog food — catches install-path bugs", "Establishes the canonical snapshot for downstream RCs to drift-detect against", "Live smoke test of --cite-coverage flow"],
+    "tradeoffs": "First --cite-coverage run will emit a marker event to the repo's .fabric/events.jsonl — need to decide whether to commit that. Probably YES to give downstream RCs a baseline marker, but verify against rc.17 / rc.19 events.jsonl commit convention."
+  },
+  "test": {
+    "manual_checks": ["After `fab install --reinstall` + `fab doctor --fix`: `fab doctor --strict` exits 0", "`grep '## Cite policy' .claude/AGENTS.md` returns a match", "`fab doctor --cite-coverage --json` returns valid JSON with status:'ok' and marker_emitted_now:true on first run, false on second", "Visually inspect the rewritten managed blocks for correctness (no mangled markdown, no escape issues)"],
+    "success_metrics": ["Three end-block files all contain `## Cite policy` section", "`fab doctor --strict` exits 0 after refresh", "cite_policy_activated event present in .fabric/events.jsonl with valid Zod shape", "`fab doctor --cite-coverage` runs without error on the live repo", "No spurious files modified beyond the expected three end blocks + events.jsonl"],
+    "unit": [],
+    "integration": ["Self-host smoke: full fab install + fab doctor --fix + fab doctor --strict + fab doctor --cite-coverage chain"]
+  },
+  "convergence": {
+    "criteria": [
+      "All three end-block files (Claude Code, Codex, Cursor) contain `## Cite policy` H2",
+      "`fab doctor --strict` exits 0 (no drift) after refresh",
+      "Single cite_policy_activated event present in .fabric/events.jsonl",
+      "`fab doctor --cite-coverage --json` returns status:'ok' (or status:'skipped' only on absolute first run before marker emit)",
+      "Git diff shows only the expected file changes (3 end-blocks + 1 events.jsonl line; no spurious diffs)",
+      "Visual inspection: rewritten managed blocks render correctly (markdown syntax intact, no escape issues)",
+      "Commit msg: `chore(rc20): self-host — refresh three-end blocks with cite policy (TASK-10)`"
+    ]
+  },
+  "depends_on": ["TASK-01", "TASK-02", "TASK-03", "TASK-04", "TASK-05", "TASK-06", "TASK-07", "TASK-08", "TASK-09"],
+  "estimated_minutes": 25,
+  "cli_execution_id": "rc20-cite-policy-2026-05-15-TASK-10",
+  "cli_execution": { "strategy": "merge_fork", "merge_from": ["rc20-cite-policy-2026-05-15-TASK-01", "rc20-cite-policy-2026-05-15-TASK-02", "rc20-cite-policy-2026-05-15-TASK-03", "rc20-cite-policy-2026-05-15-TASK-04", "rc20-cite-policy-2026-05-15-TASK-05", "rc20-cite-policy-2026-05-15-TASK-06", "rc20-cite-policy-2026-05-15-TASK-07", "rc20-cite-policy-2026-05-15-TASK-08", "rc20-cite-policy-2026-05-15-TASK-09"] }
+}

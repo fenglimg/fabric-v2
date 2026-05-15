@@ -1,0 +1,701 @@
+{
+  "project_structure": "Fabric monorepo (pnpm workspace) with three packages: packages/cli (commands/init.ts, install/skills-and-hooks.ts, templates/hooks/, templates/skills/), packages/server (services/, api/), packages/shared (schemas/fabric-config.ts is the Zod source of truth for the field rename). The three rename targets cut across all three packages plus the templates/* mirror tree, plus the four 'three-mirror' install destinations (.claude/, .codex/, .cursor/) into which fab init copies SKILL.md files. Snapshot tests in packages/cli/__tests__/__snapshots__/ (cli-surface.test.ts.snap, i18n.test.ts.snap) hard-code 'init' command name + flag descriptions, so any rename of init→install requires snapshot regeneration. Docs span README.md, docs/getting-started.md, docs/initialization.md, docs/surfaces.md, docs/configuration.md, docs/cross-client-visibility.md, docs/data-schema.md, CHANGELOG.md, RELEASING.md.",
+  "relevant_files": [
+    {
+      "path": "packages/shared/src/schemas/fabric-config.ts",
+      "relevance": 1.0,
+      "rationale": "Single source of truth for the knowledge_language field. The Zod schema declaration at L27 (knowledgeLanguageSchema) and L45 (the field on fabricConfigSchema) are the rename epicenter — every downstream consumer reads the parsed shape from this schema.",
+      "role": "modify_target",
+      "discovery_source": "bash-scan",
+      "key_symbols": ["knowledgeLanguageSchema", "fabricConfigSchema"],
+      "key_code": [
+        {"symbol": "knowledgeLanguageSchema", "location": "L27", "description": "z.enum(['match-existing','zh-CN','en']) — exported standalone for downstream type derivation. Rename targets: the export name itself plus the field key on the parent object."},
+        {"symbol": "fabricConfigSchema.knowledge_language", "location": "L45", "description": "knowledge_language: knowledgeLanguageSchema.optional().default('match-existing'). Renaming the JSON key from 'knowledge_language' to 'fabric_language' breaks every fabric-config.json user file in the wild — back-compat alias may be required."}
+      ],
+      "topic_relation": "dependencies: this is the rename epicenter — ALL knowledge_language consumers transitively depend on the field key declared here; renaming without an alias breaks every user's existing fabric-config.json."
+    },
+    {
+      "path": "packages/shared/src/types/config.ts",
+      "relevance": 0.95,
+      "rationale": "Exports the KnowledgeLanguage TypeScript type alias (L17) and the FabricConfig interface field knowledge_language (L29). Type-level mirror of the Zod schema; renaming requires synchronous edits here to keep TS callers compiling.",
+      "role": "type_definition",
+      "discovery_source": "bash-scan",
+      "key_symbols": ["KnowledgeLanguage", "FabricConfig.knowledge_language"],
+      "key_code": [
+        {"symbol": "KnowledgeLanguage type", "location": "L17", "description": "type KnowledgeLanguage = 'match-existing' | 'zh-CN' | 'en'. Exported symbol — every TS consumer imports this name."},
+        {"symbol": "FabricConfig.knowledge_language", "location": "L29", "description": "Optional knowledge_language?: KnowledgeLanguage field on FabricConfig interface. Field key rename propagates to all object literal initializers."}
+      ],
+      "topic_relation": "dependencies: TS-level mirror of the Zod field; any rename of the JSON key must also rename this interface field plus the exported KnowledgeLanguage type alias."
+    },
+    {
+      "path": "packages/shared/test/fabric-config.test.ts",
+      "relevance": 0.9,
+      "rationale": "Direct unit tests on knowledgeLanguageSchema + fabricConfigSchema. References at L6, L17, L18, L20-21, L25, L27, L30, L34-38, L68, L72-74, L78, L80, L110, L117-120, L214, L218, L226, L241, L248 — every test that parses or asserts the knowledge_language field key needs updating.",
+      "role": "test_target",
+      "discovery_source": "bash-scan",
+      "key_symbols": ["knowledgeLanguageSchema", "fabricConfigSchema.parse"],
+      "key_code": [
+        {"symbol": "describe block — knowledge_language", "location": "L17-L40", "description": "Tests covering all 3 enum values, invalid enum rejection, standalone knowledgeLanguageSchema parsing. Every test name + field reference must match the renamed key."},
+        {"symbol": "partial-config defaults tests", "location": "L68-L80", "description": "Tests that confirm parsed.knowledge_language defaults to 'match-existing' when omitted. Field name appears in assertions."}
+      ],
+      "topic_relation": "dependencies: dedicated test file for the schema being renamed — first batch of tests that will fail until both code and tests are renamed in sync."
+    },
+    {
+      "path": "packages/cli/src/commands/scan.ts",
+      "relevance": 0.9,
+      "rationale": "Primary CLI runtime consumer of the renamed field. L191 reads fabricConfig.knowledge_language at scan start; L192 passes it to resolveKnowledgeLanguage. Comments at L115, L186, L341, L557, L572, L656 reference the field name. The detectExistingLanguage helper (L586+, exported via __testing__ L1534) is the language-detection entry point.",
+      "role": "modify_target",
+      "discovery_source": "bash-scan",
+      "key_symbols": ["resolveKnowledgeLanguage", "detectExistingLanguage", "knowledgeLanguage"],
+      "key_code": [
+        {"symbol": "scan() — config load", "location": "L186-L192", "description": "Reads knowledge_language from parsed fabricConfig and resolves to concrete 'en'/'zh-CN' via resolveKnowledgeLanguage. The property access on parsed config is the load-bearing line."},
+        {"symbol": "resolveKnowledgeLanguage helper", "location": "L557-L568", "description": "Resolves the configured 'match-existing'|'zh-CN'|'en' to a concrete ResolvedLanguage. Function name uses 'KnowledgeLanguage'; rename to 'resolveFabricLanguage' should follow the field rename."},
+        {"symbol": "detectExistingLanguage", "location": "L586-L644", "description": "CJK-ratio probe over README + docs/*.md. Public via export at L1534. Init.ts (L402) and scan.ts (L568) both call it. Independent of the field key rename, but heavily co-located in identifiers."}
+      ],
+      "topic_relation": "dependencies: runtime read site — if the JSON key changes but this property access does not, scan silently falls back to 'match-existing' and emits the wrong language baselines."
+    },
+    {
+      "path": "packages/cli/src/commands/init.ts",
+      "relevance": 0.95,
+      "rationale": "Triple consumer: (1) Imports detectExistingLanguage (L19) for fresh-init language fixation, (2) writes knowledge_language: detectedLanguage into the default fabric-config.json at L409, (3) is the file that needs to be RENAMED (init.ts → install.ts) per the second operation. Also defines initCommand at L234 with name:'init' (L236) — the CLI command name that fab init→fab install replaces.",
+      "role": "modify_target",
+      "discovery_source": "bash-scan",
+      "key_symbols": ["initCommand", "initFabric", "writeDefaultFabricConfig", "detectExistingLanguage"],
+      "key_code": [
+        {"symbol": "imports (skills-and-hooks)", "location": "L22-L34", "description": "Imports addArchiveSkillPointer, installFabricArchiveSkill, etc. from install/skills-and-hooks.ts. Detects existing language via detectExistingLanguage (L19)."},
+        {"symbol": "writeDefaultFabricConfig", "location": "L380-L470", "description": "Probes language via detectExistingLanguage(targetRoot) at L402, fixates knowledge_language: detectedLanguage at L409, logs 'Detected and fixated knowledge_language = …' at L472. Three sites must be updated for the field rename."},
+        {"symbol": "initCommand defineCommand", "location": "L234-L236", "description": "name: 'init' — this string is the CLI command name registered with citty. Renaming to 'install' requires changing this literal AND the file path (init.ts → install.ts) AND the export name (initCommand → installCommand)."}
+      ],
+      "topic_relation": "dependencies: this file is the largest cross-cutting modify_target — touched by all THREE rename operations (knowledge_language field write, fab init→fab install command rename, addArchiveSkillPointer call site that uses POINTER_LINE)."
+    },
+    {
+      "path": "packages/cli/src/commands/index.ts",
+      "relevance": 0.9,
+      "rationale": "Command registry that maps citty subCommand names to lazy-import factories. L2 binds 'init' → import('./init.js'). Renaming the command to 'install' AND the file to install.ts requires updating both the key and the dynamic import path here.",
+      "role": "modify_target",
+      "discovery_source": "bash-scan",
+      "key_symbols": ["allCommands"],
+      "key_code": [
+        {"symbol": "allCommands.init", "location": "L2", "description": "init: () => import('./init.js').then((module) => module.default). Becomes install: () => import('./install.js')…"}
+      ],
+      "topic_relation": "dependencies: top-level CLI dispatch table — the 'init' key here is what citty consumes; without updating both this key and the file rename, fab install fails with 'unknown command'."
+    },
+    {
+      "path": "packages/cli/src/index.ts",
+      "relevance": 0.7,
+      "rationale": "CLI entry meta.description at L15 hard-codes 'Use \"fabric init\" for one-shot setup.' — user-visible string that must change to 'fabric install'.",
+      "role": "modify_target",
+      "discovery_source": "bash-scan",
+      "key_symbols": ["main meta.description"],
+      "key_code": [
+        {"symbol": "defineCommand meta.description", "location": "L15", "description": "'Initialize and manage Fabric projects. Use \"fabric init\" for one-shot setup.' — referenced in --help output and likely covered by cli-surface snapshot."}
+      ],
+      "topic_relation": "dependencies: --help text consumer of the command name; the snapshot test (cli-surface.test.ts.snap) reads this exact description."
+    },
+    {
+      "path": "packages/cli/src/commands/hooks.ts",
+      "relevance": 0.75,
+      "rationale": "L8 imports addArchiveSkillPointer; L129 calls it in install pipeline. Comment at L73 says 'invoked from `fabric init` via the bootstrap stage'. Both the pointer-line API surface (POINTER_LINE replacement) and the 'fabric init' doc-comment rename apply.",
+      "role": "modify_target",
+      "discovery_source": "bash-scan",
+      "key_symbols": ["addArchiveSkillPointer call"],
+      "key_code": [
+        {"symbol": "runStep pointer call", "location": "L129", "description": "results.push(...await runStep(() => addArchiveSkillPointer(normalizedTarget))). This call site will need a section-based write API replacement when POINTER_LINE constants are dropped."},
+        {"symbol": "docComment", "location": "L73", "description": "JSDoc references 'fabric init via the bootstrap stage' — text rename to 'fabric install'."}
+      ],
+      "topic_relation": "dependencies: secondary call site of addArchiveSkillPointer (mirrors init.ts:L936); both must be updated when POINTER_LINE/POINTER_TARGETS are replaced by section-based writes."
+    },
+    {
+      "path": "packages/cli/src/commands/uninstall.ts",
+      "relevance": 0.7,
+      "rationale": "L22 doc-comment ('fab uninstall — symmetric inverse of fab init'); L175 comment ('Top-level .fabric/ state files written by fab init'). Both reference the old command name and must be updated to 'fab install'.",
+      "role": "modify_target",
+      "discovery_source": "bash-scan",
+      "key_symbols": ["uninstallCommand"],
+      "key_code": [
+        {"symbol": "module JSDoc", "location": "L22", "description": "Identifies uninstall as inverse of 'fab init' — text-only reference but required for narrative consistency post-rename."}
+      ],
+      "topic_relation": "dependencies: 'fab init' textual references in the symmetric-inverse command's docs; renaming requires updating these so 'fab uninstall is the inverse of fab install' reads correctly."
+    },
+    {
+      "path": "packages/cli/src/install/skills-and-hooks.ts",
+      "relevance": 1.0,
+      "rationale": "Declares the three POINTER_LINE / REVIEW_POINTER_LINE / IMPORT_POINTER_LINE constants at L170-L183, plus POINTER_TARGETS array at L190, plus the addArchiveSkillPointer function at L440-L502 that uses them. This is the rename epicenter for operation #3 (POINTER_LINE → section-based write).",
+      "role": "modify_target",
+      "discovery_source": "bash-scan",
+      "key_symbols": ["POINTER_LINE", "REVIEW_POINTER_LINE", "IMPORT_POINTER_LINE", "POINTER_TARGETS", "addArchiveSkillPointer"],
+      "key_code": [
+        {"symbol": "POINTER_LINE constant", "location": "L170-L171", "description": "'> Use the fabric-archive Skill when archiving knowledge entries (see .claude/skills/fabric-archive/SKILL.md).' — exact literal appended to CLAUDE.md/AGENTS.md/.cursor/rules during install."},
+        {"symbol": "REVIEW_POINTER_LINE constant", "location": "L176-L177", "description": "'> Use the fabric-review Skill to review pending knowledge entries (see .claude/skills/fabric-review/SKILL.md).'"},
+        {"symbol": "IMPORT_POINTER_LINE constant", "location": "L182-L183", "description": "'> Use the fabric-import Skill for cold-start enrichment from git history and docs (see .claude/skills/fabric-import/SKILL.md).'"},
+        {"symbol": "POINTER_TARGETS array", "location": "L190", "description": "['CLAUDE.md', 'AGENTS.md', join('.cursor', 'rules')] — the three files that receive pointer appends."},
+        {"symbol": "addArchiveSkillPointer", "location": "L440-L502", "description": "Iterates POINTER_TARGETS, for each: reads existing content, dedup-checks all 3 POINTER_LINE constants via String.includes, appends missing ones, writes atomically. Section-based write would replace this includes+append pattern with a managed-section block."}
+      ],
+      "topic_relation": "dependencies: the rename epicenter for op #3 — the three POINTER_LINE constants and POINTER_TARGETS array are exported and consumed by uninstall-skills-and-hooks.ts; any section-based replacement must coordinate both install AND uninstall paths."
+    },
+    {
+      "path": "packages/cli/src/install/uninstall-skills-and-hooks.ts",
+      "relevance": 1.0,
+      "rationale": "L12-L15 imports POINTER_LINE, REVIEW_POINTER_LINE, IMPORT_POINTER_LINE, POINTER_TARGETS. L244 doc-comment ('Inverse of addArchiveSkillPointer'). L257 iterates POINTER_TARGETS. L276 builds pointerLiterals array. stripArchiveSkillPointers at L253-L305 filters lines containing any of the 3 POINTER_LINE literals. Must be rewritten section-aware when POINTER_LINE goes away.",
+      "role": "modify_target",
+      "discovery_source": "bash-scan",
+      "key_symbols": ["stripArchiveSkillPointers", "POINTER_TARGETS"],
+      "key_code": [
+        {"symbol": "POINTER_LINE imports", "location": "L12-L15", "description": "Re-import of the same constants — proves the 'source of truth shared with fab uninstall' design. Eliminate these imports if section-based write replaces literals."},
+        {"symbol": "stripArchiveSkillPointers", "location": "L253-L305", "description": "Reads each POINTER_TARGETS file, splits lines, filters out any line that .includes() any of the 3 pointer literals, atomically writes back. Conservative: never deletes file even if empty. Section-based replacement needs to strip a markdown block instead of substring-matching lines."}
+      ],
+      "topic_relation": "dependencies: the symmetric-inverse counterpart to addArchiveSkillPointer; replacing POINTER_LINE constants without updating this strip function would leave dead pointer lines uninstall can no longer remove."
+    },
+    {
+      "path": "packages/cli/templates/hooks/knowledge-hint-broad.cjs",
+      "relevance": 1.0,
+      "rationale": "Operation #3 (revision_hash gate removal) epicenter. L86 defines SESSIONSTART_HASH_CACHE_FILE; L112-L121 readSessionStartLastHash; L129-L138 writeSessionStartLastHash; L541-L547 bodySuppressed gate logic; L552 lines = bodySuppressed ? [] : renderSummary(payload); L570-L572 sidecar update; L587-L588, L602 module.exports for test seam. Removing the gate means dropping ALL of these.",
+      "role": "modify_target",
+      "discovery_source": "bash-scan",
+      "key_symbols": ["SESSIONSTART_HASH_CACHE_FILE", "readSessionStartLastHash", "writeSessionStartLastHash", "bodySuppressed"],
+      "key_code": [
+        {"symbol": "SESSIONSTART_HASH_CACHE_FILE constant", "location": "L86", "description": "join('.fabric', '.cache', 'sessionstart-last-hash') — the sidecar path. Drop on gate removal."},
+        {"symbol": "readSessionStartLastHash", "location": "L112-L121", "description": "Reads + trims the sidecar; returns null on absence/empty/read-failure. Test-exported via module.exports."},
+        {"symbol": "writeSessionStartLastHash", "location": "L129-L138", "description": "mkdirSync + writeFileSync the hash atomically (best-effort, swallows errors). Test-exported."},
+        {"symbol": "bodySuppressed gate", "location": "L534-L547", "description": "Reads payload.revision_hash; if non-empty and matches sidecar lastHash → bodySuppressed=true. THIS is the gate being removed."},
+        {"symbol": "broad-summary skip", "location": "L552", "description": "const lines = bodySuppressed ? [] : renderSummary(payload). Becomes unconditional renderSummary(payload) once gate is dropped."},
+        {"symbol": "sidecar write after emit", "location": "L570-L572", "description": "if (!bodySuppressed && currentHash.length > 0) writeSessionStartLastHash(cwd, currentHash). Drop entirely."},
+        {"symbol": "module.exports test seam", "location": "L578-L607", "description": "Exports readSessionStartLastHash, writeSessionStartLastHash, and CONSTANTS.SESSIONSTART_HASH_CACHE_FILE — all referenced by the test file. Removing these breaks the test surface contract."}
+      ],
+      "topic_relation": "dependencies: the file actually being modified for op #3; the gate is implemented entirely within this template, but every export is consumed by the dedicated test file knowledge-hint-broad.test.ts."
+    },
+    {
+      "path": "packages/cli/__tests__/knowledge-hint-broad.test.ts",
+      "relevance": 1.0,
+      "rationale": "Type definition (L60-L72) imports readSessionStartLastHash, writeSessionStartLastHash, and SESSIONSTART_HASH_CACHE_FILE from the hook. Three dedicated describe blocks: L381-L415 readSessionStartLastHash (3 tests), L417-L453 writeSessionStartLastHash (4 tests), L455-L544 main revision_hash gating (5 tests). Plus ~30 more sites at L483, L494, L517, L528, L533, L912, L933, L957, L982 that reference the sidecar path. ALL must be deleted when the gate is removed.",
+      "role": "test_target",
+      "discovery_source": "bash-scan",
+      "key_symbols": ["readSessionStartLastHash", "writeSessionStartLastHash", "SESSIONSTART_HASH_CACHE_FILE", "bodySuppressed-related cases"],
+      "key_code": [
+        {"symbol": "HookModule type signature", "location": "L46-L77", "description": "TypeScript shape declares the 3 symbols this test consumes from the hook. Removing the symbols from the hook source REQUIRES removing them from this type or the test fails at compile-time."},
+        {"symbol": "readSessionStartLastHash describe", "location": "L381-L415", "description": "3 tests — null on absent / empty sidecar, returns trimmed hash. Delete describe block."},
+        {"symbol": "writeSessionStartLastHash describe", "location": "L417-L453", "description": "4 tests — atomic write, overwrite, swallow errors on empty/null input. Delete describe block."},
+        {"symbol": "main revision_hash gating describe", "location": "L455-L544", "description": "5 tests — first-run-emits+writes-sidecar, second-run-silent-when-hash-matches, third-run-emits-on-changed-hash, empty-hash-bypasses, empty-narrow+matching-hash silent. ALL contradict the post-removal behavior (which always emits). Delete describe block."},
+        {"symbol": "gate-bypass-for-banner regression tests", "location": "L908-L984", "description": "5 cases under 'rc.8 — broad gate body+banner interactions' that exercise bodySuppressed semantics — hash-unchanged-but-banner-emits, hash-unchanged-no-body-re-emit (line 926), hash-unchanged-no-recommend silent. These collapse to simpler 'always emits' tests post-removal."}
+      ],
+      "topic_relation": "dependencies: the single largest test-surface impact of op #3 — at least 17+ test cases in this file directly depend on the gate symbols and behavior; the file's HookModule type definition is also a hard compile-time dependency."
+    },
+    {
+      "path": "packages/cli/__tests__/cli-surface.test.ts",
+      "relevance": 0.95,
+      "rationale": "L13 default-imports initCommand from '../src/commands/init.ts'; L78 registers ['init', initCommand]; L96 reads initCommand.meta?.name; L102 asserts command names equal ['doctor','init','scan','serve','uninstall']; L109 reads init flags. All five sites + the snapshot it writes need updating for fab init→fab install rename.",
+      "role": "test_target",
+      "discovery_source": "bash-scan",
+      "key_symbols": ["initCommand import", "names assertion", "commandSurface"],
+      "key_code": [
+        {"symbol": "import initCommand", "location": "L13", "description": "import initCommand from '../src/commands/init.ts' — file path AND symbol name both change."},
+        {"symbol": "names equality assertion", "location": "L102", "description": "expect(names).toEqual(['doctor', 'init', 'scan', 'serve', 'uninstall']) — fails when command name changes; update to 'install'."}
+      ],
+      "topic_relation": "dependencies: gate test for the public CLI surface — defines the snapshot that hard-codes the 'init' command name and all its flags."
+    },
+    {
+      "path": "packages/cli/__tests__/__snapshots__/cli-surface.test.ts.snap",
+      "relevance": 0.95,
+      "rationale": "L78-L194+ hold the inline-snapshot for 'command init surface'. Contains literal strings 'fab init surface', 'name: \"init\"' (L194), and full args matrix. MUST be regenerated (or hand-edited) when initCommand renames to installCommand.",
+      "role": "test_target",
+      "discovery_source": "bash-scan",
+      "key_symbols": ["init surface snapshot"],
+      "key_code": [
+        {"symbol": "init surface snapshot block", "location": "L78-L194+", "description": "Snapshot key string is \"command 'init' surface matches snapshot > fab init surface — CLI surface drift detected. Either: …\" — the literal 'init' / 'fab init' appears in both the key and the value. Use pnpm --filter @fenglimg/fabric-cli test -u to regenerate after rename."}
+      ],
+      "topic_relation": "dependencies: snapshot artifact — the rename MUST trigger snapshot regeneration; otherwise the CLI surface drift gate (per docs/testing-architecture.md) blocks CI."
+    },
+    {
+      "path": "packages/cli/__tests__/__snapshots__/i18n.test.ts.snap",
+      "relevance": 0.85,
+      "rationale": "L5 and L63 contain 'init' key as object property (en + zh i18n locale). L6 hard-codes 'Initialize Fabric in the target project.' description. L39 + L97 contain `fabric init` literal references inside i18n test fixtures (warn message). Snapshot regeneration required.",
+      "role": "test_target",
+      "discovery_source": "bash-scan",
+      "key_symbols": ["init i18n keys"],
+      "key_code": [
+        {"symbol": "init key in i18n locale snapshot", "location": "L5-L6, L63", "description": "JSON key 'init' inside both en and zh locale objects. Updating the i18n locale keys (en.ts/zh.ts) AND regenerating the snapshot are paired operations."}
+      ],
+      "topic_relation": "dependencies: i18n snapshot — the 'cli.init.*' key family must rename to 'cli.install.*' across en.ts, zh.ts, AND this snapshot."
+    },
+    {
+      "path": "packages/shared/src/i18n/locales/en.ts",
+      "relevance": 0.9,
+      "rationale": "L99-L129+ defines 30+ 'cli.init.*' translation keys (description, args, mcp.install, wizard, stages). EVERY key + its English value is consumed by initCommand.meta and arg help text. Rename to cli.install.* is mechanical but high-volume.",
+      "role": "modify_target",
+      "discovery_source": "bash-scan",
+      "key_symbols": ["cli.init.description", "cli.init.args.*", "cli.init.mcp.*", "cli.init.wizard.*", "cli.init.stages.*"],
+      "key_code": [
+        {"symbol": "cli.init.description", "location": "L99", "description": "'Initialize Fabric in the target project.' — referenced by initCommand.meta.description via t() lookup."},
+        {"symbol": "cli.init.args.* (10+ flag descriptions)", "location": "L100-L110", "description": "Each citty flag (target, debug, force, yes, plan, reapply, no-bootstrap, no-mcp, no-hooks, interactive) has a corresponding cli.init.args.<name>.description key. Mechanical rename."},
+        {"symbol": "cli.init.mcp.* + cli.init.wizard.* + cli.init.stages.*", "location": "L111-L129+", "description": "MCP install scope strings, wizard prompts, stage labels — all under cli.init.* namespace."}
+      ],
+      "topic_relation": "dependencies: i18n contract — every cli.init.* key in this file MUST be renamed in lockstep with init.ts t() lookups and zh.ts mirror, otherwise t() returns the key literal as fallback (visible UI regression)."
+    },
+    {
+      "path": "packages/shared/src/i18n/locales/zh.ts",
+      "relevance": 0.9,
+      "rationale": "zh-CN mirror of en.ts — same cli.init.* key set must rename. (Not enumerated above but byte-coverage is symmetric per i18n.test.ts snapshot proof of two locales.)",
+      "role": "modify_target",
+      "discovery_source": "dependency-trace",
+      "key_symbols": ["cli.init.* (zh-CN)"],
+      "topic_relation": "dependencies: zh-CN locale mirror — must be renamed in lockstep with en.ts; the i18n-protected-tokens test enforces that both locales have identical key sets."
+    },
+    {
+      "path": "packages/cli/__tests__/i18n.test.ts",
+      "relevance": 0.75,
+      "rationale": "L61 imports initCommand from '../src/commands/init.ts'; L63 calls initCommand.run({args: {target}}); L102 reads initCommand.meta.description. All three sites need rename to installCommand/install.ts.",
+      "role": "test_target",
+      "discovery_source": "bash-scan",
+      "topic_relation": "dependencies: consumer of initCommand symbol — verifies meta.description renders i18n string. Symbol rename + locale-key rename are both required."
+    },
+    {
+      "path": "packages/cli/__tests__/init-cli-surface.test.ts",
+      "relevance": 0.8,
+      "rationale": "Multiple dynamic imports of ../src/commands/init.ts at L68, L94, L139; calls initCommand.run at L75, L101, L116, L151. File itself is named init-cli-surface.test.ts (consider renaming to install-cli-surface.test.ts post-rename for cleanliness, though not strictly necessary).",
+      "role": "test_target",
+      "discovery_source": "bash-scan",
+      "topic_relation": "dependencies: dedicated cli-surface integration test for init — every dynamic import path + symbol name needs updating."
+    },
+    {
+      "path": "packages/cli/__tests__/integration/scan-init.test.ts",
+      "relevance": 0.8,
+      "rationale": "Renaming consideration only (test file path 'scan-init.test.ts'). Body content: L279, L302, L327, L356, L378, L390, L397-L399, L407, L445, L455 reference knowledge_language field key (test scaffolds + assertions). L381+ tests TASK-006 init-time knowledge_language fixation. Field rename impacts ~10 sites.",
+      "role": "test_target",
+      "discovery_source": "bash-scan",
+      "key_code": [
+        {"symbol": "knowledge_language scaffold tests", "location": "L279-L378", "description": "Three describe-it blocks: knowledge_language_en_produces_english_baselines, knowledge_language_zh_cn_produces_chinese_baselines, knowledge_language_match_existing_defaults_to_en_on_empty_repo. JSON keys in test fixtures use 'knowledge_language' literal."},
+        {"symbol": "init-time fixation tests", "location": "L378-L455", "description": "Reads parsed.knowledge_language from scaffolded fabric-config; asserts type 'string'; tests do-not-overwrite-existing-config behavior with userSeed.knowledge_language."}
+      ],
+      "topic_relation": "dependencies: tests the runtime behavior of the field — every JSON-key reference in test fixtures + assertion must be renamed in lockstep with the schema."
+    },
+    {
+      "path": "packages/cli/__tests__/scan-builders.test.ts",
+      "relevance": 0.65,
+      "rationale": "L340-L379: 4 tests for detectExistingLanguage helper (empty repo, EN-only README, CJK-heavy README, docs/ scan). These do not directly use the knowledge_language field key but exercise the helper that determines its value. Rename of detectExistingLanguage requires updating these.",
+      "role": "test_target",
+      "discovery_source": "bash-scan",
+      "topic_relation": "dependencies: indirect — exercises detectExistingLanguage which writes the knowledge_language value but does not itself reference the field key."
+    },
+    {
+      "path": "packages/cli/__tests__/integration/install-skills-and-hooks.test.ts",
+      "relevance": 0.85,
+      "rationale": "L4 doc-comment references the pointer-line family. L452-L465 use regex /fabric-archive Skill when archiving/g, /fabric-review Skill to review pending/g, /fabric-import Skill for cold-start enrichment/g to count POINTER_LINE occurrences in CLAUDE.md/AGENTS.md/.cursor/rules after install. L444 doc-comment references addArchiveSkillPointer. All regex literals must change when POINTER_LINE → section-based write.",
+      "role": "test_target",
+      "discovery_source": "bash-scan",
+      "key_code": [
+        {"symbol": "occurrence-count assertions", "location": "L452-L465", "description": "Six regex literals counting matches of the three POINTER_LINE substrings; tests idempotency (occurrence counts stable across re-runs). Section-based write replaces this with a section-presence check."}
+      ],
+      "topic_relation": "dependencies: integration test that locks the POINTER_LINE substring contract — section-based write requires rewriting these assertions to check for a managed-section block instead."
+    },
+    {
+      "path": "packages/cli/__tests__/integration/uninstall-skills-and-hooks.test.ts",
+      "relevance": 0.85,
+      "rationale": "L315 doc-comment references addArchiveSkillPointer; L325-L327 + L333-L335 assert the three POINTER_LINE substrings are present after install and absent after uninstall. Same six string literals as install test; replacement strategy must coordinate both.",
+      "role": "test_target",
+      "discovery_source": "bash-scan",
+      "key_code": [
+        {"symbol": "pointer-presence/absence assertions", "location": "L325-L335", "description": "afterInit toContain three pointer substrings; afterUninstall NOT toContain same three. Section-based replacement collapses to one section-presence check + one section-absence check."}
+      ],
+      "topic_relation": "dependencies: install/uninstall round-trip test — couples the install and strip APIs; both sides must change together."
+    },
+    {
+      "path": "packages/cli/__tests__/fixtures/cocos-stub/README.md",
+      "relevance": 0.5,
+      "rationale": "L7 references 'fab init against an empty target'. Test fixture documentation — minor textual update for command rename.",
+      "role": "test_target",
+      "discovery_source": "bash-scan",
+      "topic_relation": "dependencies: test-fixture README — text-only reference; updating maintains internal consistency."
+    },
+    {
+      "path": "packages/server/src/services/doctor.ts",
+      "relevance": 0.75,
+      "rationale": "Six 'fab init'/'fabric init' references in user-facing action_hint strings: L694, L784, L1572-L1573 (doc-comments about init.ts behavior), L1790 (action_hint 'Run fabric init to generate the AGENTS.md…'), L1844 + L1848 ('Run fab init to regenerate .fabric/forensic.json.'), L1941-L1942 (mcp config remediation hint).",
+      "role": "modify_target",
+      "discovery_source": "bash-scan",
+      "key_code": [
+        {"symbol": "actionHint strings", "location": "L1790, L1844, L1848, L1942", "description": "User-visible doctor lint action_hint payloads. These strings show up in MCP tool output and CLI doctor output — rename to 'fab install'."},
+        {"symbol": "issueCheck forensic_invalid", "location": "L1844-L1848", "description": "Two adjacent action_hints both say 'Run `fab init` to regenerate .fabric/forensic.json.'"}
+      ],
+      "topic_relation": "dependencies: doctor's remediation hints are how the user discovers the install command name — must rename for the user-discovery path to remain coherent."
+    },
+    {
+      "path": "packages/server/src/meta-reader.ts",
+      "relevance": 0.6,
+      "rationale": "L18 default actionHint: 'Run `fab init` to scaffold the .fabric/agents.meta.json file'. User-visible string for missing-meta error path.",
+      "role": "modify_target",
+      "discovery_source": "bash-scan",
+      "topic_relation": "dependencies: server-side action_hint that surfaces in MCP tool output — direct rename target."
+    },
+    {
+      "path": "packages/server/src/api/scan.ts",
+      "relevance": 0.55,
+      "rationale": "L160 recommendation string: 'L0: Run `fab init` to scaffold the .fabric/ knowledge layout…'. User-visible CLI rec.",
+      "role": "modify_target",
+      "discovery_source": "bash-scan",
+      "topic_relation": "dependencies: scan API recommendation message — text-only update."
+    },
+    {
+      "path": "packages/cli/templates/skills/fabric-archive/SKILL.md",
+      "relevance": 0.85,
+      "rationale": "Source template for fabric-archive Skill — references knowledge_language at L22, L50, L76, L77, L94, L98, L101, L108, L217, L320, L340 (13+ sites). L51 references 'scan.ts:detectExistingLanguage'. This template is COPIED VERBATIM by fab init into .claude/skills/, .codex/skills/ (the three-mirror destinations).",
+      "role": "modify_target",
+      "discovery_source": "bash-scan",
+      "key_code": [
+        {"symbol": "Config Load + variant dispatch references", "location": "L22, L50, L76-L77, L94, L98, L101, L108", "description": "Skill prompt content that instructs the AI to resolve knowledge_language at runtime — every reference to the field key drives skill behavior."},
+        {"symbol": "detectExistingLanguage reference", "location": "L51", "description": "'(固化于 init 时，via scan.ts:detectExistingLanguage; default \"en\" when no…)' — references the CLI helper function by name. If detectExistingLanguage is renamed, update here."}
+      ],
+      "topic_relation": "dependencies: this is one of the THREE-MIRROR sources — its content is copied to .claude/skills/fabric-archive/ AND .codex/skills/fabric-archive/. The three-mirror byte-identity invariant (per .fabric/knowledge/pending/pitfalls/skill-template-mirror-drift.md) means changes here MUST propagate to .claude/skills/, .codex/skills/, and the AGENTS.md-pointed Skill consumer paths."
+    },
+    {
+      "path": "packages/cli/templates/skills/fabric-review/SKILL.md",
+      "relevance": 0.85,
+      "rationale": "Sibling source template — references knowledge_language at L22, L54, L80, L81, L96, L98, L112, L119, L213, L225, L289, L474, L559, L561, L580 (~15 sites). L55 references scan.ts:detectExistingLanguage. Mirrored to .claude/skills/fabric-review/ and .codex/skills/fabric-review/.",
+      "role": "modify_target",
+      "discovery_source": "bash-scan",
+      "topic_relation": "dependencies: second three-mirror template — same byte-identity invariant as fabric-archive; all three mirrors must update in lockstep."
+    },
+    {
+      "path": "packages/cli/templates/skills/fabric-import/SKILL.md",
+      "relevance": 0.85,
+      "rationale": "Sibling source template — references knowledge_language at L26, L117, L139, L140, L156, L159, L162, L169, L291, L397, L409, L651, L653, L681. Also 5 'fabric init' / 'fab init' user-prompt references at L32, L125, L189, L206, L207. Triple-impact: field rename + command rename + L118 detectExistingLanguage reference.",
+      "role": "modify_target",
+      "discovery_source": "bash-scan",
+      "key_code": [
+        {"symbol": "fabric init user-prompt references", "location": "L32, L125, L189, L206, L207", "description": "User-facing prompts saying 'run fabric init first to complete the baseline scan' / 请先运行 fabric init…). All visible in the Skill UI."}
+      ],
+      "topic_relation": "dependencies: third three-mirror template — and the only Skill that references the CLI command name in user-facing prompts (in both en + zh variants), so rename has user-visible UX impact."
+    },
+    {
+      "path": ".claude/skills/fabric-archive/SKILL.md",
+      "relevance": 0.7,
+      "rationale": "Byte-identical mirror of packages/cli/templates/skills/fabric-archive/SKILL.md per the always-overwrite three-mirror policy. Same line numbers, same content. Must update in lockstep.",
+      "role": "modify_target",
+      "discovery_source": "dependency-trace",
+      "topic_relation": "dependencies: target of three-mirror invariant — installed by fab init from the template, but also tracked in repo for the dogfood AGENTS.md pointer chain."
+    },
+    {
+      "path": ".claude/skills/fabric-review/SKILL.md",
+      "relevance": 0.7,
+      "rationale": "Byte-identical mirror of packages/cli/templates/skills/fabric-review/SKILL.md.",
+      "role": "modify_target",
+      "discovery_source": "dependency-trace",
+      "topic_relation": "dependencies: three-mirror byte-identity counterpart for fabric-review."
+    },
+    {
+      "path": ".claude/skills/fabric-import/SKILL.md",
+      "relevance": 0.7,
+      "rationale": "Byte-identical mirror of packages/cli/templates/skills/fabric-import/SKILL.md.",
+      "role": "modify_target",
+      "discovery_source": "dependency-trace",
+      "topic_relation": "dependencies: three-mirror byte-identity counterpart for fabric-import — also carries the user-prompt 'fab init' references."
+    },
+    {
+      "path": ".codex/skills/fabric-archive/SKILL.md",
+      "relevance": 0.7,
+      "rationale": "Codex byte-identical mirror — three-mirror sync target.",
+      "role": "modify_target",
+      "discovery_source": "dependency-trace",
+      "topic_relation": "dependencies: Codex mirror — same content as .claude/skills/."
+    },
+    {
+      "path": ".codex/skills/fabric-review/SKILL.md",
+      "relevance": 0.7,
+      "rationale": "Codex byte-identical mirror.",
+      "role": "modify_target",
+      "discovery_source": "dependency-trace",
+      "topic_relation": "dependencies: Codex mirror for fabric-review."
+    },
+    {
+      "path": ".codex/skills/fabric-import/SKILL.md",
+      "relevance": 0.7,
+      "rationale": "Codex byte-identical mirror — includes 'fab init' user-prompt strings (L11, L32, L125, L189, L206-L207).",
+      "role": "modify_target",
+      "discovery_source": "dependency-trace",
+      "topic_relation": "dependencies: Codex mirror — user-facing 'fab init' strings live here too."
+    },
+    {
+      "path": ".fabric/fabric-config.json",
+      "relevance": 0.7,
+      "rationale": "L2: 'knowledge_language': 'zh-CN'. This is the project's OWN dogfood config — the file that proves the schema field name. Must rename when the schema renames (or back-compat alias must support the old key).",
+      "role": "modify_target",
+      "discovery_source": "bash-scan",
+      "key_code": [
+        {"symbol": "knowledge_language field", "location": "L2", "description": "Project dogfood declaration of zh-CN. The fabric-v2-grill-followup TASK-009 test gate jq-checks this exact key."}
+      ],
+      "topic_relation": "dependencies: dogfood config — back-compat strategy decision point (rename key vs. add alias)."
+    },
+    {
+      "path": "docs/configuration.md",
+      "relevance": 0.6,
+      "rationale": "L239 header '### knowledge_language (default match-existing)'; L241 body 'Drives fabric init baseline template language…'. User-facing docs for the field AND the CLI command.",
+      "role": "modify_target",
+      "discovery_source": "bash-scan",
+      "topic_relation": "dependencies: user-facing config reference — must rename both the field heading and the 'fabric init' references."
+    },
+    {
+      "path": "docs/data-schema.md",
+      "relevance": 0.6,
+      "rationale": "L251 'Source of truth: knowledgeLanguageSchema in…'; L260 'zh-CN OR EN per knowledge_language config'; L263 'Config field knowledge_language'; L273 'Surfaces that stay EN regardless of knowledge_language'.",
+      "role": "modify_target",
+      "discovery_source": "bash-scan",
+      "topic_relation": "dependencies: data-schema reference doc — names the Zod schema export and the JSON key."
+    },
+    {
+      "path": "docs/initialization.md",
+      "relevance": 0.55,
+      "rationale": "L3 '`fabric init` is the standard entry point'; L12 'fabric init' code block; L41 'Before any file is written, fabric init:'; L181 'fabric init is safe to run repeatedly'; L191 'fabric init --force'; L252 'fabric init reports \"no project root\"'. The canonical init documentation page.",
+      "role": "modify_target",
+      "discovery_source": "bash-scan",
+      "topic_relation": "dependencies: canonical command-reference page — every 'fabric init' literal becomes 'fabric install' under the rename."
+    },
+    {
+      "path": "docs/getting-started.md",
+      "relevance": 0.55,
+      "rationale": "L36 'fabric init' code block; L43-L46 four-row table mapping each `fabric init [--flag]` invocation; L61 'fabric init is non-destructive'; L68 user-quoted Chinese line '我刚运行了 fabric init…'; L119 'Returns revision_hash.' Multiple user-visible docs.",
+      "role": "modify_target",
+      "discovery_source": "bash-scan",
+      "topic_relation": "dependencies: onboarding doc — high visibility; the four-row table at L43-46 is the canonical fab init flag matrix."
+    },
+    {
+      "path": "docs/surfaces.md",
+      "relevance": 0.45,
+      "rationale": "L56, L62, L121, L141, L149, L185, L195 — seven 'fabric init' references in the surfaces overview doc.",
+      "role": "modify_target",
+      "discovery_source": "bash-scan",
+      "topic_relation": "dependencies: surfaces narrative — text-only rename."
+    },
+    {
+      "path": "docs/cross-client-visibility.md",
+      "relevance": 0.7,
+      "rationale": "L50 'sessionstart-last-hash' in cooldown-sidecar enumeration; L52-L54 explains 'SessionStart revision_hash gate (T8) means subsequent boots stay silent…'; L85 'T8 gate against the latest revision_hash'; L123-L128 verification checklist with three explicit T8-gate checkboxes; L137 'Sentinel override (rc.7 T1)'. The doc that promises T8 gate behavior to dogfooders — needs rewriting when the gate is removed.",
+      "role": "modify_target",
+      "discovery_source": "bash-scan",
+      "key_code": [
+        {"symbol": "T8 gate sections", "location": "L47-L55, L84-L85, L122-L128", "description": "Three blocks across the doc that describe the revision_hash gate as a feature. After gate removal: drop the 'Gotchas' bullet, drop the cooldown-sidecar mention of sessionstart-last-hash, and rewrite the three verification checkboxes (SessionStart cold start, repeat boot, after adding entry) — only the 'cold start' check survives unchanged."}
+      ],
+      "topic_relation": "dependencies: user-facing doc that ADVERTISES the gate as a feature — removing the gate means rewriting the 'intentional banner-blindness mitigation' narrative."
+    },
+    {
+      "path": "docs/mcp-contracts.md",
+      "relevance": 0.5,
+      "rationale": "L382 references knowledge_language config field in layer-language-detection note. Server contract doc.",
+      "role": "modify_target",
+      "discovery_source": "bash-scan",
+      "topic_relation": "dependencies: MCP contract narrative — single line, but contract-level visibility."
+    },
+    {
+      "path": "docs/SPEC_INTERNAL.md",
+      "relevance": 0.5,
+      "rationale": "L8 and L235 'fabric init' references in internal spec doc.",
+      "role": "modify_target",
+      "discovery_source": "bash-scan",
+      "topic_relation": "dependencies: internal spec — narrative-only rename."
+    },
+    {
+      "path": "docs/migration-1.8.md",
+      "relevance": 0.45,
+      "rationale": "Multiple zh-CN 'fab init' references (L44, L57, L60-L62, L93, L96, L135). Historical migration doc — debatable whether to update or freeze for historical accuracy.",
+      "role": "modify_target",
+      "discovery_source": "bash-scan",
+      "topic_relation": "dependencies: historical migration doc — decision point on whether to retroactively update."
+    },
+    {
+      "path": "docs/contributing.md",
+      "relevance": 0.4,
+      "rationale": "L41 'fabric init 会把 MCP client config 指向已打包的 server entry'.",
+      "role": "modify_target",
+      "discovery_source": "bash-scan",
+      "topic_relation": "dependencies: contributor doc rename."
+    },
+    {
+      "path": "docs/CODEBASE_LANDSCAPE.md",
+      "relevance": 0.4,
+      "rationale": "L32 'fabric init' code block.",
+      "role": "modify_target",
+      "discovery_source": "bash-scan",
+      "topic_relation": "dependencies: codebase overview doc."
+    },
+    {
+      "path": "docs/roadmap.md",
+      "relevance": 0.4,
+      "rationale": "L21 'fabric init on a clean repo produces…'; L117 'fabric init --team-remote' future-feature reference.",
+      "role": "modify_target",
+      "discovery_source": "bash-scan",
+      "topic_relation": "dependencies: roadmap doc."
+    },
+    {
+      "path": "docs/RULE_REGISTRY.md",
+      "relevance": 0.35,
+      "rationale": "L32 zh-CN 'fabric init 或恢复 .fabric/rules/' reference.",
+      "role": "modify_target",
+      "discovery_source": "bash-scan",
+      "topic_relation": "dependencies: rule registry doc."
+    },
+    {
+      "path": "docs/testing-architecture.md",
+      "relevance": 0.65,
+      "rationale": "L88 'fab init --help', 'fab scan --help' — the CLI --help drift gate description (TASK-003) explicitly names the snapshot inputs. Documents which snapshots break on command rename.",
+      "role": "modify_target",
+      "discovery_source": "bash-scan",
+      "topic_relation": "dependencies: testing-architecture doc — names the snapshot gate that fails on init rename."
+    },
+    {
+      "path": "docs/test-seed/cli.md",
+      "relevance": 0.8,
+      "rationale": "L10 enumerates the 'init' command + all its flags; L14 'symmetrically to fab init'; L22 'init wizard'; L23 'init --reapply / doctor / serve'; L28-L36 (I2/I3/I4/I10) — four integration-test contracts naming the init command; L29 'init --reapply on initialized project idempotent'. The 5-command surface contract anchor.",
+      "role": "modify_target",
+      "discovery_source": "bash-scan",
+      "key_code": [
+        {"symbol": "init command surface contract", "location": "L10", "description": "Full flag enumeration: --target, --debug, --force, --yes, --plan, --reapply, --bootstrap/--no-bootstrap, --mcp/--no-mcp, --hooks/--no-hooks, --interactive/--no-interactive, --mcp-install, --scope project|user. Snapshot test reads this seed and compares to actual."}
+      ],
+      "topic_relation": "dependencies: cli surface drift gate seed — the snapshot test compares actual --help output to this seed; the seed must rename in lockstep."
+    },
+    {
+      "path": "docs/test-seed/server.md",
+      "relevance": 0.4,
+      "rationale": "L80 'CLI 命令实现（init / scan / doctor / serve 命令外壳）'. Single line.",
+      "role": "modify_target",
+      "discovery_source": "bash-scan",
+      "topic_relation": "dependencies: server seed names CLI command set."
+    },
+    {
+      "path": "docs/test-seed/README.md",
+      "relevance": 0.4,
+      "rationale": "L9 enumerates the 4 public commands including 'init'.",
+      "role": "modify_target",
+      "discovery_source": "bash-scan",
+      "topic_relation": "dependencies: test-seed top-level README."
+    },
+    {
+      "path": "README.md",
+      "relevance": 0.6,
+      "rationale": "L179 'fabric init, fabric doctor…' command enumeration; L202 'fabric init' install code block; L268 docs link 'Initialization — what fabric init does'. Top-level README — highest user visibility.",
+      "role": "modify_target",
+      "discovery_source": "bash-scan",
+      "topic_relation": "dependencies: top-level README — public face of the rename; must update for users on npmjs.com."
+    },
+    {
+      "path": "RELEASING.md",
+      "relevance": 0.4,
+      "rationale": "L56 'install the published CLI, run `fabric init`, start fabric serve, verify MCP tools'. Release validation playbook.",
+      "role": "modify_target",
+      "discovery_source": "bash-scan",
+      "topic_relation": "dependencies: release-process doc."
+    },
+    {
+      "path": "CHANGELOG.md",
+      "relevance": 0.55,
+      "rationale": "L47-L50 'fabric init now scaffolds…' incl. knowledge_language list; L66 'fabric init path'; L90 'fab uninstall — symmetric inverse of fab init'; L100 'fab uninstall: full inverse of fab init'; L391, L436, L459, L585-L586, L590, L596, L606, L642, L650, L683 — extensive history of 'fab init' references. Historical CHANGELOG; suggest add a new RC entry rather than retroactively update past entries.",
+      "role": "modify_target",
+      "discovery_source": "bash-scan",
+      "topic_relation": "dependencies: changelog — new RC entry must announce the rename; past entries may be left untouched for history."
+    },
+    {
+      "path": "knip.config.ts",
+      "relevance": 0.3,
+      "rationale": "L6 comment 'Dogfooded Fabric Stop-hook scripts installed by fab init into this'. Build-tool config comment.",
+      "role": "modify_target",
+      "discovery_source": "bash-scan",
+      "topic_relation": "dependencies: knip config comment."
+    },
+    {
+      "path": "packages/cli/README.md",
+      "relevance": 0.55,
+      "rationale": "L9, L12, L16 multiple 'fabric init' references in the CLI package README.",
+      "role": "modify_target",
+      "discovery_source": "bash-scan",
+      "topic_relation": "dependencies: CLI package README — published to npm."
+    },
+    {
+      "path": ".fabric/knowledge/pending/decisions/init-fixate-knowledge-language.md",
+      "relevance": 0.45,
+      "rationale": "Pending knowledge entry whose title contains 'knowledge_language' and whose body (L14, L38, L22) describes the field. Project-internal historical artifact.",
+      "role": "context_only",
+      "discovery_source": "bash-scan",
+      "topic_relation": "dependencies: pending decision capturing the init-time fixation design — likely left untouched for historical accuracy."
+    },
+    {
+      "path": ".fabric/knowledge/pending/pitfalls/skill-template-mirror-drift.md",
+      "relevance": 0.5,
+      "rationale": "L24-L25 describes the three-mirror invariant: 'fab init/reapply 是唯一 propagate 时点' and 'CI 应增加 pre-commit hook 校验三镜像 byte-identity'. Documents the invariant that constrains the SKILL.md rename strategy.",
+      "role": "context_only",
+      "discovery_source": "bash-scan",
+      "topic_relation": "dependencies: constraint doc — the three-mirror byte-identity rule it documents IS the reason knowledge_language renames must propagate to all 9 SKILL.md files (3 skills × 3 mirrors)."
+    },
+    {
+      "path": "packages/cli/templates/hooks/configs/README.md",
+      "relevance": 0.4,
+      "rationale": "L3 'consumed by fabric init and' — hook config template doc.",
+      "role": "modify_target",
+      "discovery_source": "bash-scan",
+      "topic_relation": "dependencies: hook config template README."
+    },
+    {
+      "path": "AGENTS.md",
+      "relevance": 0.5,
+      "rationale": "L10, L12, L14 contain the three pointer lines verbatim (project root has been fabric-init-ed; the dogfood install wrote these three lines). Lines are byte-identical to POINTER_LINE/REVIEW_POINTER_LINE/IMPORT_POINTER_LINE. Section-based replacement: replace these three lines with a managed-section block.",
+      "role": "modify_target",
+      "discovery_source": "bash-scan",
+      "key_code": [
+        {"symbol": "fabric-archive pointer", "location": "L10", "description": "'> Use the fabric-archive Skill when archiving knowledge entries (see .claude/skills/fabric-archive/SKILL.md).' — written by addArchiveSkillPointer during dogfood init."},
+        {"symbol": "fabric-review pointer", "location": "L12", "description": "Same pattern for fabric-review."},
+        {"symbol": "fabric-import pointer", "location": "L14", "description": "Same pattern for fabric-import."}
+      ],
+      "topic_relation": "dependencies: dogfood-installed pointer lines — proof of the POINTER_LINE wire format. Replacing the install API with section-based write requires both removing these lines AND letting the new install path re-add them as a section."
+    }
+  ],
+  "patterns": "Three-mirror byte-identity invariant: source template at packages/cli/templates/skills/<skill>/SKILL.md is copied to .claude/skills/<skill>/SKILL.md AND .codex/skills/<skill>/SKILL.md by fab init's installFabricArchiveSkill/installFabricReviewSkill/installFabricImportSkill helpers; the in-repo .claude/ and .codex/ copies must be edited in lockstep with the template (per pitfall skill-template-mirror-drift.md). POINTER_LINE design pattern: three top-level string constants (POINTER_LINE, REVIEW_POINTER_LINE, IMPORT_POINTER_LINE) declared in install/skills-and-hooks.ts and re-imported by uninstall-skills-and-hooks.ts — install appends to POINTER_TARGETS files with String.includes() dedup, uninstall strips lines that .includes() any literal. The 'source of truth shared with fab uninstall' JSDoc convention. Snapshot-test gates: cli-surface.test.ts.snap locks the public CLI command set + each command's flag matrix; i18n.test.ts.snap locks the en/zh i18n key namespace including 'cli.init.*' → all break on rename. Test seam via module.exports: knowledge-hint-broad.cjs exports readSessionStartLastHash/writeSessionStartLastHash/SESSIONSTART_HASH_CACHE_FILE for the .test.ts file to load via createRequire — removing these exports requires synchronous test deletion. Zod schema as field-key source of truth: knowledgeLanguageSchema in fabric-config.ts is referenced by name in docs/data-schema.md, exposed via type alias in shared/src/types/config.ts, and is the parsed-shape contract for every property access.",
+  "dependencies": "Internal: packages/shared/src/schemas/fabric-config.ts → exported via @fenglimg/fabric-shared barrel → consumed by packages/cli (init.ts L19+L22-L34, scan.ts L191, plan-context-hint.ts) and packages/server (services/plan-context.ts, knowledge-meta-builder.ts, knowledge-sections.ts, get-knowledge.ts). packages/cli/src/install/skills-and-hooks.ts (POINTER_LINE constants) ← packages/cli/src/install/uninstall-skills-and-hooks.ts AND packages/cli/src/commands/init.ts (L22-L34 imports) AND packages/cli/src/commands/hooks.ts (L8 import). packages/cli/templates/hooks/knowledge-hint-broad.cjs ← packages/cli/__tests__/knowledge-hint-broad.test.ts (createRequire load). packages/cli/src/commands/init.ts ← packages/cli/src/commands/index.ts (allCommands.init lazy import) ← packages/cli/src/index.ts (subCommands registry). External: citty (defineCommand), zod (z.enum/z.object), @clack/prompts. Implicit/runtime: detectExistingLanguage (scan.ts L586) is referenced by NAME in 8 SKILL.md files (template + .claude + .codex mirrors × 3 skills minus fabric-archive's 0.6 mirror count) — these are documentation strings, not import-trace-detectable. The string 'knowledge_language' appears as a JSON property name in ~50+ files (schemas, tests, fabric-config.json, SKILL.md prompts, docs, plan/task JSON) — only the runtime read sites (scan.ts L191, init.ts L409) are TS-typed; the docs + SKILL.md prompts are string-level dependencies invisible to the type system.",
+  "integration_points": "CLI dispatch: packages/cli/src/index.ts (citty defineCommand) → packages/cli/src/commands/index.ts (allCommands map with 'init' key) → packages/cli/src/commands/init.ts (initCommand defineCommand with name:'init'). Renaming fab init→fab install requires lockstep changes at all three layers PLUS the cli-surface snapshot regeneration. Schema parse: packages/shared/src/schemas/fabric-config.ts is consumed wherever fabricConfigSchema.parse() runs — currently at fabric-config loader (likely via packages/shared/src/node/ or server-side meta-reader). Field rename ripples through every .knowledge_language property access. Three-mirror SKILL.md installs: fab init's installFabricArchiveSkill/installFabricReviewSkill/installFabricImportSkill all write to BOTH .claude/skills/<name>/SKILL.md AND .codex/skills/<name>/SKILL.md (no .cursor/skills/ — confirmed by SKILL_DESTINATIONS). When templates change, the install pipeline propagates on next fab init (or fab install post-rename). Snapshot-test integration: cli-surface.test.ts (CLI shape) + i18n.test.ts (i18n keys) + knowledge-hint-broad.test.ts (hook gate behavior) — three test files form the trio of regression gates that lock fab init's public + internal contracts. Pointer-line install/strip pairing: addArchiveSkillPointer (install) writes 3 lines; stripArchiveSkillPointers (uninstall) removes lines containing same 3 literals — coupled by the four exported constants POINTER_LINE/REVIEW_POINTER_LINE/IMPORT_POINTER_LINE/POINTER_TARGETS. Section-based write must replace BOTH sides AND update both integration tests (install-skills-and-hooks.test.ts L452-L465 + uninstall-skills-and-hooks.test.ts L325-L335) PLUS the live dogfood AGENTS.md (L10-L14) where the current pointer lines live.",
+  "constraints": "Back-compat for knowledge_language: every user with a pre-rename fabric-config.json carries 'knowledge_language' as the key — renaming the Zod field without a back-compat alias breaks all existing user configs at parse time. Recommendation: schema should accept BOTH keys for at least one major version; the new fabric_language wins when present, knowledge_language falls back, with a doctor lint warning suggesting migration. Three-mirror byte-identity: any edit to packages/cli/templates/skills/<name>/SKILL.md must be mirrored to .claude/skills/<name>/SKILL.md AND .codex/skills/<name>/SKILL.md in the same commit (per pitfall doc). For knowledge_language rename, this is 3 skills × 3 paths (template + .claude + .codex) = 9 SKILL.md files with ~13-15 references each → ~115-135 textual replacements. CLI command rename surface: the snapshot at cli-surface.test.ts.snap L78-L194+ is keyed by 'init' literal — regen requires running `pnpm --filter @fenglimg/fabric-cli test -u`. i18n.test.ts snapshot at L5 + L63 is keyed by 'init' object property — same regen required. Init command rename to install conflicts with the existing dogfood verb '/fabric-import' Skill which uses 'import' as concept noun; verify 'install' doesn't collide with any other CLI nouns (none found in packages/cli/src/commands/: only doctor, hooks, init, scan, serve, uninstall, plan-context-hint, config). Revision_hash gate removal regression risk: removing readSessionStartLastHash/writeSessionStartLastHash/SESSIONSTART_HASH_CACHE_FILE means existing user repositories that have a .fabric/.cache/sessionstart-last-hash file will leave the sidecar orphaned — fab uninstall should remove it; or the gate-removal commit should add a one-time cleanup. Also: the 'banner-blindness mitigation' user-promise in docs/cross-client-visibility.md must be retracted, and the verification checklist (L122-L128) must be rewritten to drop the 'silent on unchanged graph' check.",
+  "clarification_needs": [
+    {
+      "question": "knowledge_language → fabric_language rename: should we add a back-compat alias accepting the old key, or hard-rename and ship a migration?",
+      "context": "The schema field is consumed at runtime by scan.ts L191 (fabricConfig.knowledge_language ?? 'match-existing'). All user fabric-config.json files in the wild use 'knowledge_language'. A hard rename breaks every existing user; an alias adds Zod schema complexity but preserves zero-friction upgrades.",
+      "options": [
+        "Back-compat alias (z.preprocess remapping knowledge_language → fabric_language at parse time; doctor lint warns; remove alias in v3.0)",
+        "Hard rename + migration script (fab doctor --fix --migrate or one-shot codemod that rewrites user fabric-config.json)",
+        "Hard rename + breaking-change semver bump (no migration tooling; user reads CHANGELOG)"
+      ],
+      "recommended": 0
+    },
+    {
+      "question": "fab init → fab install: should we keep 'fab init' as a hidden alias for one major version, or hard-cut?",
+      "context": "Citty supports command aliases. Every user muscle memory + every internal doc + every blog post says 'fab init'. Hidden alias (subCommands: {init: installCommand, install: installCommand}) prevents 'unknown command' break-out at minimal complexity cost.",
+      "options": [
+        "Hidden alias for v2.0 (both fab init and fab install work; --help shows only install; remove alias in v3.0)",
+        "Hard cut + deprecation message (fab init prints 'Use fab install — fab init was renamed in v2.0' and exits 1)",
+        "Hard cut + 'unknown command' (no special handling)"
+      ],
+      "recommended": 0
+    },
+    {
+      "question": "revision_hash gate removal: what cleanup strategy for existing .fabric/.cache/sessionstart-last-hash sidecars?",
+      "context": "The gate's sidecar file lives at .fabric/.cache/sessionstart-last-hash. After gate removal, the file becomes orphaned harmlessly (never read) but accumulates as dead state. fab uninstall currently strips it. Options: ignore (let it linger), strip during fab install/reapply, or fab doctor --fix.",
+      "options": [
+        "Ignore — orphaned sidecar is harmless dead state",
+        "Strip during fab install/reapply (one-shot cleanup on next init-equivalent run)",
+        "Add a fab doctor --fix lint that removes the orphaned sidecar"
+      ],
+      "recommended": 1
+    },
+    {
+      "question": "POINTER_LINE → section-based write: should the new section be wrapped in HTML comments (<!-- fabric:skills-start -->...<!-- fabric:skills-end -->) or a markdown heading section?",
+      "context": "addArchiveSkillPointer currently appends 3 lines with String.includes() dedup. Section-based write needs an idempotent block delimiter. HTML comments (invisible in rendered MD) are common for fenced sections (e.g. shields.io README badges); a markdown heading (## Fabric Skills) is human-readable but pollutes the doc outline.",
+      "options": [
+        "HTML-comment delimiters (<!-- fabric:skills-start --> ... <!-- fabric:skills-end -->) — invisible in rendered MD; idempotent replace",
+        "Markdown heading section (## Fabric Skills — auto-managed) — human-readable but visible in TOC",
+        "YAML front-matter-style fence (---fabric-skills--- ... ---/fabric-skills---) — distinctive but non-standard"
+      ],
+      "recommended": 0
+    }
+  ],
+  "_metadata": {
+    "timestamp": "2026-05-14T05:32:16Z",
+    "task_description": "Dependencies exploration for rc.12 broad-gate-fabric-lang refactor: enumerate every consumer/reference for (1) knowledge_language → fabric_language schema rename, (2) fab init → fab install CLI command rename, (3) revision_hash gate removal in knowledge-hint-broad.cjs, plus POINTER_LINE constants → section-based write replacement.",
+    "source": "cli-explore-agent",
+    "exploration_angle": "dependencies",
+    "exploration_index": 2,
+    "total_explorations": 3
+  }
+}

@@ -1,0 +1,82 @@
+{
+  "id": "TASK-006",
+  "title": "Release — CHANGELOG entry + version bump rc.15→rc.18 + batched Gemini review + coverage",
+  "scope": "CHANGELOG.md + packages/cli/package.json (+ root package.json if it pins the version) + final verification",
+  "action": "Update",
+  "description": "Cut rc.18 SOLO. Per memory/project_v2_rc_continuation.md the chain is rc.15 (current) → rc.18 (skipping rc.16/17 which are separate phases not yet cut). Add a CHANGELOG entry under `## [2.0.0-rc.18]` with the Protocol v2 breaking change as the headline. Bump packages/cli/package.json version. Run a SINGLE batched Gemini review focused on emitter↔consumer↔test field-name consistency (per memory/feedback_review_batching.md — no per-task reviews). Run `pnpm -F @fenglimg/fabric-cli vitest run --coverage` to confirm coverage on the changed code paths.",
+  "files": [
+    {
+      "path": "CHANGELOG.md",
+      "action": "modify",
+      "target": "top of file (insert new release header above the rc.15 entry)",
+      "change": "Insert a new section `## [2.0.0-rc.18] — Protocol v2 (BREAKING)` with subsections: **Breaking** (`plan-context-hint` JSON contract bumped 1→2; payload field `narrow` renamed to `entries`; consumer hooks no longer accept v1 payloads — silent-skip with stderr breadcrumb), **Why** (semantic mismatch: `narrow` was misleading in --all mode where it degenerated to the full shared index — `entries` is mode-agnostic; pre-user clean-slate policy removes the migration shim option), **Migration** (none required for users — running `fab install` after upgrade re-syncs hooks; out-of-tree consumers of the JSON wire format MUST update field-read from `payload.narrow` to `payload.entries` and accept `version: 2`), **Headline** (largest blast-radius change in the rc.16/17/18 sequence; ships SOLO to isolate the protocol cut)"
+    },
+    {
+      "path": "packages/cli/package.json",
+      "action": "modify",
+      "target": "version field",
+      "change": "Bump `\"version\": \"2.0.0-rc.15\"` → `\"version\": \"2.0.0-rc.18\"` (the rc.16 and rc.17 numbers correspond to other phases of the post-grill backlog that may ship in their own sessions; rc.18 SOLO per the largest-blast-radius isolation policy)"
+    }
+  ],
+  "implementation": [
+    "Open CHANGELOG.md and locate the existing `## [2.0.0-rc.15]` entry; insert the new `## [2.0.0-rc.18] — Protocol v2 (BREAKING)` section ABOVE it with the four subsections (Breaking / Why / Migration / Headline) populated from this task's `change` field above",
+    "Open packages/cli/package.json and bump version: `\"2.0.0-rc.15\"` → `\"2.0.0-rc.18\"`",
+    "Search for any other version-pinning sites: `grep -rn '2.0.0-rc.15' --include='package.json' --include='*.md'` — patch each. Likely candidates: root package.json, README.md install snippets, server package.json if it cross-references CLI",
+    "Run the full test suite ONCE: `pnpm -F @fenglimg/fabric-cli vitest run` — must be 100% green",
+    "Run coverage ONCE: `pnpm -F @fenglimg/fabric-cli vitest run --coverage` — confirm the changed files (plan-context-hint.ts, knowledge-hint-broad.cjs, knowledge-hint-narrow.cjs) show ≥ pre-rc.18 coverage levels (ideally with the new v1-receipt tests bumping the consumer .cjs coverage)",
+    "Run a SINGLE batched Gemini review at the end: `ccw cli -p 'Review rc.18 protocol v2 cut: verify field-name consistency emitter→consumers→tests (payload.entries everywhere, never payload.narrow); verify version-gate consistency (both consumers reject version!=2 with silent-skip + breadcrumb); verify CHANGELOG accurately describes the breaking change' --tool gemini --mode analysis --context '@CHANGELOG.md @packages/cli/src/commands/plan-context-hint.ts @packages/cli/templates/hooks/knowledge-hint-broad.cjs @packages/cli/templates/hooks/knowledge-hint-narrow.cjs @packages/cli/__tests__/knowledge-hint-broad.test.ts @packages/cli/__tests__/knowledge-hint-narrow.test.ts'`",
+    "If the Gemini review surfaces drift (e.g. a forgotten `narrow:` literal somewhere), patch in a small follow-up edit BEFORE committing — the review-and-fix is part of this task, not a separate task",
+    "Commit message: `chore(rc18): release v2.0.0-rc.18 — protocol v2 cut (BREAKING)`",
+    "Tag the commit: `git tag v2.0.0-rc.18` (note: per memory/project_v2_rc_continuation.md tags are local-only until publish — do NOT push the tag)"
+  ],
+  "reference": {
+    "pattern": "Mirror the format of the existing `## [2.0.0-rc.15]` CHANGELOG section for visual consistency; bump version atomically with the changelog in a single commit",
+    "files": [
+      "CHANGELOG.md",
+      "packages/cli/package.json"
+    ],
+    "examples": "Recent commits to reference for tone and granularity: `cf64a6b fix(rc15): rename telemetry mode 'apply-lint' → 'fix-knowledge'` shows breaking-rename framing; `8643e06 chore(rc15): bump to v2.0.0-rc.15` shows the version-bump commit shape"
+  },
+  "convergence": {
+    "criteria": [
+      "Files modified: CHANGELOG.md (new top entry) + packages/cli/package.json (version bump) + any other site found by version-grep",
+      "CHANGELOG entry under `## [2.0.0-rc.18]` exists with all 4 subsections (Breaking / Why / Migration / Headline) populated and the `payload.narrow → payload.entries` rename called out as the headline breaking change",
+      "Version bumped: `grep -F '2.0.0-rc.18' packages/cli/package.json` returns 1 match; `! grep -F '2.0.0-rc.15' packages/cli/package.json` (clean cut)",
+      "Test command: `pnpm -F @fenglimg/fabric-cli vitest run` exits 0 with 100% pass rate (final integration gate)",
+      "Coverage command: `pnpm -F @fenglimg/fabric-cli vitest run --coverage` completes successfully and the report shows knowledge-hint-broad.cjs + knowledge-hint-narrow.cjs + plan-context-hint.ts coverage at or above pre-rc.18 baseline (degradation is a regression and must be addressed before the commit)",
+      "Gemini review command: a SINGLE `ccw cli ... --tool gemini --mode analysis --context '@CHANGELOG.md @<all 5 changed files>'` is invoked exactly once at the end (NOT per-task) per memory/feedback_review_batching.md; review output saved to session folder as `_gemini-review.md`",
+      "Gemini review surfaces zero drift (or any drift surfaced is patched in this same commit)",
+      "Behavioral expectation: a fresh `pnpm install && pnpm -F @fenglimg/fabric-cli build` produces a binary that emits `version: 2` payloads and ships hooks that consume `payload.entries`",
+      "Field-name consistency check: `grep -rn 'payload\\.narrow' packages/cli/` returns ZERO matches across the entire package (this is the global-grep gate proving the rename is complete)",
+      "Version-receipt stance check: the v1-receipt tests added in TASK-005 are part of the green-suite count; coverage report shows the version-gate branches in both .cjs files are exercised",
+      "Git tag `v2.0.0-rc.18` created locally (NOT pushed — per memory/project_v2_rc_continuation.md)",
+      "Single git commit with `chore(rc18): release v2.0.0-rc.18` prefix"
+    ]
+  },
+  "depends_on": ["TASK-005"],
+  "parallel_safe": false,
+  "cli_execution_id": "rc18-protocol-v2-2026-05-15-TASK-006",
+  "cli_execution": { "strategy": "resume", "resume_from": "rc18-protocol-v2-2026-05-15-TASK-005" },
+  "rationale": {
+    "chosen_approach": "Bundle CHANGELOG + version bump + batched review + coverage into a single release-cutting task per memory/feedback_review_batching.md — the review and coverage runs are the convergence gates, not separate tasks",
+    "alternatives_considered": ["Split CHANGELOG into TASK-006a and version-bump into TASK-006b", "Run Gemini review per-task as part of each preceding task's convergence", "Defer review to a post-merge code-review skill"],
+    "decision_factors": ["Memory mandate: batch review at end of multi-task plans", "Atomic release commits are easier to revert", "Coverage check is meaningless until the full chain lands — must be at the end"],
+    "tradeoffs": "Slightly larger final commit; if Gemini review surfaces issues they amend this commit's working tree pre-commit (acceptable per the no-amend rule because the commit hasn't been created yet)"
+  },
+  "test": {
+    "manual_checks": [
+      "Read the CHANGELOG entry and confirm it accurately describes (a) the field rename, (b) the version bump, (c) the v1-receipt stance, (d) the migration steps for out-of-tree consumers",
+      "Confirm `git tag --list 'v2.0.0-rc.*'` includes `v2.0.0-rc.18` and the tag points to this release commit",
+      "Confirm `git log --oneline -7` shows a clean 6-commit chain: TASK-001 docs → TASK-002/003/004 (any order) → TASK-005 tests → TASK-006 release"
+    ],
+    "success_metrics": [
+      "Full test suite green",
+      "Coverage at or above baseline for the 3 changed source files",
+      "Zero `payload.narrow` references anywhere in the package",
+      "Single Gemini review run at the end (verified by checking session folder for _gemini-review.md and confirming no per-task review artifacts exist)",
+      "Single git commit + local tag"
+    ],
+    "unit": [],
+    "integration": ["Full pnpm vitest run suite", "Coverage run", "Gemini batched review"]
+  }
+}

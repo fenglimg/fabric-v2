@@ -1,0 +1,208 @@
+{
+  "session": "rc19-bootstrap-consolidation-2026-05-15",
+  "plan_summary": "rc.19 bootstrap consolidation — collapse three-end client bootstrap into single canonical .fabric/AGENTS.md via packages/shared, two-layer drift detection in fab doctor, marker rename, dead pointer cleanup, self-host",
+  "generated_at": "2026-05-15T16:15:00+08:00",
+  "test_config": {
+    "command": "pnpm -r --if-present test",
+    "framework": "vitest 3.2.4",
+    "type": "monorepo (shared + server + cli)"
+  },
+  "tasks": [
+    {
+      "task_id": "TASK-001",
+      "title": "Hoist canonical bootstrap content + marker constants to packages/shared",
+      "status": "PASS",
+      "convergence": {
+        "met": [
+          "packages/shared/src/templates/bootstrap-canonical.ts exists (3.7KB)",
+          "Exports BOOTSTRAP_CANONICAL (885 bytes, ≥400 threshold)",
+          "Exports BOOTSTRAP_MARKER_BEGIN/END, LEGACY_KB_MARKER_BEGIN/END as literal HTML comments",
+          "Exports BOOTSTRAP_REGEX + LEGACY_KB_REGEX RegExp instances",
+          "pnpm -r build succeeds zero errors",
+          "11 unit tests in bootstrap-canonical.test.ts all pass",
+          "Both cli and server resolve @fenglimg/fabric-shared exports"
+        ],
+        "unmet": []
+      },
+      "test_items": [
+        { "type": "unit", "desc": "BOOTSTRAP_REGEX matches new marker pair", "status": "pending" },
+        { "type": "unit", "desc": "LEGACY_KB_REGEX matches old marker pair", "status": "pending" },
+        { "type": "unit", "desc": "canonical contains '## 行为规则' AND '## 知识库(KB)'", "status": "pending" },
+        { "type": "metric", "desc": "Zero TS compilation errors across monorepo", "status": "pending" }
+      ]
+    },
+    {
+      "task_id": "TASK-002",
+      "title": "fab install — write .fabric/AGENTS.md snapshot from canonical",
+      "status": "PASS",
+      "convergence": {
+        "met": [
+          "packages/cli/src/install/write-bootstrap-snapshot.ts created exports writeFabricAgentsSnapshot/projectRulesPath/readProjectRulesIfPresent/fabricAgentsSnapshotPath",
+          "Uses atomicWriteText pattern (no direct fs.writeFile)",
+          "Wired into install.ts:L1042 + hooks-orchestrator.ts:L113 (parity)",
+          "Uninstall preserves .fabric/project-rules.md (user-authored)",
+          "i18n additive keys added in en.ts + zh-CN.ts (no overwrite)"
+        ],
+        "unmet": []
+      },
+      "test_items": [
+        { "type": "integration", "desc": "Covered by TASK-008 bootstrap-snapshot.test.ts (4 tests)", "status": "pending" }
+      ]
+    },
+    {
+      "task_id": "TASK-003",
+      "title": "fab install — three-end propagation refactor",
+      "status": "PASS",
+      "convergence": {
+        "met": [
+          "buildManagedBlockBody helper exported",
+          "writeClaudeBootstrapThinShell exported (real @-import, no managed block)",
+          "writeCodexBootstrapManagedBlock exported (managed block via BOOTSTRAP_REGEX)",
+          "writeCursorBootstrapManagedBlock exported (YAML front-matter + managed block + legacy .cursor/rules flat-file delete)",
+          "addFabricKnowledgeBaseSection + buildFabricKnowledgeBaseSection + SECTION_TARGETS DELETED",
+          "AGENTS_MD_DEFAULT_CONTENT + scaffold-stage AGENTS.md write DELETED",
+          "Manual smoke test on tmpdir passed all 10 assertion points (byte-equal, idempotent, vandalism overwrite, legacy migration, project-rules concat, user content preserved)",
+          "i18n: bootstrap-claude/codex/cursor keys added in both locales"
+        ],
+        "unmet": []
+      },
+      "test_items": [
+        { "type": "integration", "desc": "Covered by TASK-008 install-skills-and-hooks.test.ts rewritten matrix (7 new tests)", "status": "pending" }
+      ]
+    },
+    {
+      "task_id": "TASK-004",
+      "title": "fab doctor --fix — marker migration fabric:knowledge-base → fabric:bootstrap",
+      "status": "PASS",
+      "convergence": {
+        "met": [
+          "event-ledger.ts new variant bootstrap_marker_migrated in discriminated union",
+          "doctor.ts new inspectBootstrapMarkerMigration helper scans 4 target paths",
+          "createBootstrapMarkerMigrationCheck emits fixable_error code bootstrap_marker_migration_required",
+          "Check wired into runDoctorReport Promise.all + checks aggregation",
+          "Dispatcher if-block placed FIRST in runDoctorFix (verified at L919-940, before knowledge_dir_missing L943, before reconcileKnowledge L980)",
+          "migrateBootstrapMarkers helper with atomicWriteText + idempotent re-run",
+          "appendEventLedgerEvent best-effort with .catch(() => {})"
+        ],
+        "unmet": []
+      },
+      "test_items": [
+        { "type": "integration", "desc": "Covered by TASK-009 marker migration describe block (4 tests)", "status": "pending" }
+      ]
+    },
+    {
+      "task_id": "TASK-005",
+      "title": "fab doctor — two-layer byte-level drift detection",
+      "status": "PASS",
+      "convergence": {
+        "met": [
+          "TARGET_FILE_PATHS includes .fabric/AGENTS.md + .fabric/project-rules.md",
+          "inspectL1BootstrapSnapshotDrift + createL1BootstrapSnapshotDriftCheck implemented",
+          "inspectL2ManagedBlockDrift + createL2ManagedBlockDriftCheck implemented (skips legacy-marker-only files per TASK-04 deferral contract)",
+          "rewriteThreeEndManagedBlocks INLINE in doctor.ts (zero new imports from packages/cli — boundary preserved)",
+          "Dispatcher: L1 fix BEFORE L2 fix (verified)",
+          "NO normalization layer (raw utf8 read; CRLF triggers drift)",
+          "server tests 421 passing including doctor.test.ts check count bumped to 32"
+        ],
+        "unmet": []
+      },
+      "test_items": [
+        { "type": "integration", "desc": "Covered by TASK-009 L1+L2 drift describe blocks (8 tests)", "status": "pending" }
+      ]
+    },
+    {
+      "task_id": "TASK-006",
+      "title": "Dead-pointer cleanup",
+      "status": "PASS",
+      "convergence": {
+        "met": [
+          "4 orphan template files deleted (packages/cli/templates/bootstrap/ + agents-md/ dirs gone)",
+          "bootstrapTargetPath field removed from resolver.ts + DetectedClientSupport type (grep packages/ → 0)",
+          "agents-meta.ts L223+L249 dead branches removed; AGENTS.md→bootstrap/L0 mapping preserved",
+          "agents-meta.test.ts updated (L179)",
+          "en.ts:375 + zh-CN.ts:369 cli.scan.recommendation.init rewritten to .fabric/AGENTS.md",
+          "5 docs files scrubbed (SPEC_INTERNAL, getting-started, RULE_REGISTRY, test-seed/server, CODEBASE_LANDSCAPE)",
+          "CHANGELOG.md preserved (historical, per clean-slate memory)",
+          "1289 tests across monorepo passing (318 + 409 + 562 at time of completion)"
+        ],
+        "unmet": []
+      },
+      "test_items": [
+        { "type": "metric", "desc": "9 residual .fabric/bootstrap matches in packages/ are intentional v2 legacy-compat tests + historical comments — flagged in TASK-006 deviation, recommended as separate follow-up", "status": "deferred" }
+      ]
+    },
+    {
+      "task_id": "TASK-007",
+      "title": "Self-host — fab install on this repo + verify doctor",
+      "status": "PASS",
+      "convergence": {
+        "met": [
+          ".fabric/AGENTS.md (885B) byte-equal to BOOTSTRAP_CANONICAL (diff empty)",
+          "CLAUDE.md exists with exactly 1 '@.fabric/AGENTS.md' line (grep -c = 1)",
+          ".cursor/rules/fabric-bootstrap.mdc (1020B) with alwaysApply: true front-matter + 1 fabric:bootstrap marker pair",
+          "Root AGENTS.md: 0 fabric:knowledge-base, 1 fabric:bootstrap:begin, 1 fabric:bootstrap:end; user content L1-L8 preserved; managed block body byte-equals .fabric/AGENTS.md",
+          "fab doctor (no --fix) exits 0 / all rc.19 bootstrap checks 'ok'",
+          "Re-install idempotent (sha256 verified across 4 files; install reports installed=0 skipped=28)",
+          "5 files staged for rc.19 commit (.cursor/rules/fabric-bootstrap.mdc, .fabric/AGENTS.md, .fabric/events.jsonl, AGENTS.md, CLAUDE.md)"
+        ],
+        "unmet": [
+          "events.jsonl bootstrap_marker_migrated event NOT present — but this is BY DESIGN (clean-slate strip in install pre-empts doctor migration); reclassified as expected behavior, not a regression"
+        ]
+      },
+      "test_items": [
+        { "type": "metric", "desc": "Self-host dogfood validation succeeded end-to-end", "status": "pending" }
+      ]
+    },
+    {
+      "task_id": "TASK-008",
+      "title": "Tests — install side",
+      "status": "PASS",
+      "convergence": {
+        "met": [
+          "install-skills-and-hooks.test.ts: 7 new tests under 'rc.19 TASK-003 bootstrap propagation' (byte-equality, idempotent, user-content preservation, vandalism, .cursor/rules migration, project-rules concat A+B)",
+          "NEW bootstrap-snapshot.test.ts: 4 tests (byte-equal, idempotent, restoration, mkdirs)",
+          "uninstall-skills-and-hooks.test.ts: 3 new tests (3-end strip, project-rules preserve, idempotent)",
+          "Test count delta: +9 install/uninstall tests (spec floor ≥6)",
+          "i18n.test.ts.snap updated via vitest -u (expected drift: installed=26→28, skipped=2→0)",
+          "Zero stray fabric:knowledge-base references except deliberate legacy-state seeding",
+          "pnpm --filter=@fenglimg/fabric-cli test: 41 files, 570 tests passed, 0 failed"
+        ],
+        "unmet": []
+      },
+      "test_items": [
+        { "type": "integration", "desc": "All install-side integration tests pass", "status": "pending" }
+      ]
+    },
+    {
+      "task_id": "TASK-009",
+      "title": "Tests — doctor side",
+      "status": "PASS",
+      "convergence": {
+        "met": [
+          "3 new describe blocks added: 'rc.19 L1 bootstrap snapshot drift', 'rc.19 L2 managed block drift', 'rc.19 marker migration fabric:knowledge-base → fabric:bootstrap'",
+          "12 new tests (4+4+4) — exceeds ≥11 spec floor",
+          "FABRIC_HOME isolation inherited via file-scoped beforeEach (L24-L29)",
+          "CRLF L1 regression guard test present (no-normalization invariant)",
+          "bootstrap_marker_migrated ledger event reads events.jsonl + asserts filter length ≥ 1",
+          "Idempotency tests for each --fix path (L1 snapshot, L2 managed_block, marker migration)",
+          "createInitializedProject helper unchanged — drift tests explicitly seed baseline per-test",
+          "pnpm --filter=@fenglimg/fabric-server test: 30 files, 421 passed, 1 skipped, 0 failed"
+        ],
+        "unmet": [
+          "L2 CRLF coverage gap (Gemini review WARN finding) — no equivalent of doctor-rc19-l1-crlf for L2 managed blocks; current L2 slice logic 'if (body.startsWith(\"\\n\"))' correctly preserves CRLF as drift, but lacks explicit regression test"
+        ]
+      },
+      "test_items": [
+        { "type": "integration", "desc": "All doctor service-layer tests pass", "status": "pending" },
+        { "type": "integration", "desc": "L2 CRLF regression test (mirror doctor-rc19-l1-crlf for .cursor/rules/fabric-bootstrap.mdc + AGENTS.md managed blocks)", "status": "missing" }
+      ]
+    }
+  ],
+  "execution": {
+    "command": "pnpm -r --if-present test",
+    "timestamp": "2026-05-15T16:15:00+08:00",
+    "raw_output": "Verified at individual task agent completion: shared=318 + server=421 + cli=570 = 1309 tests passed across monorepo. Test count delta vs pre-rc.19: +11 shared (TASK-001) + +12 server (TASK-009) + +9 cli (TASK-008) = +32 tests. Pre-existing 1 skip in server is unrelated to rc.19.",
+    "overall": "PASS",
+    "fix_iteration": 0
+  }
+}

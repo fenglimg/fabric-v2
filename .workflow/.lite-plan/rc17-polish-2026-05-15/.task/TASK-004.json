@@ -1,0 +1,95 @@
+{
+  "id": "TASK-004",
+  "title": "R-cut: Delete externalFixturePath schema field, test fixtures, and any reader sites",
+  "scope": "packages/shared/src/schemas/fabric-config.ts + packages/shared/test/{fabric-config,integration/schemas-roundtrip,property-based/zod-roundtrip}.test.ts + CHANGELOG",
+  "action": "Delete",
+  "description": "Apply the deletion checklist from TASK-003. Remove the `externalFixturePath: z.string().optional(),` line from fabric-config.ts schema. Remove the field from all 3 test fixtures (fabric-config.test.ts:106+115, schemas-roundtrip.test.ts:50, zod-roundtrip.test.ts:47). Delete any production reader code (TASK-003 expected zero, confirm). Add a `BREAKING:` note to CHANGELOG.md under `## [2.0.0-rc.17]` documenting the field removal and pointing users to `EXTERNAL_FIXTURE_PATH` env var. Pre-user clean-slate: NO migration shim, NO z.preprocess alias — pre-rc.17 fabric-config.json with the field will fail parse with a clear `Unrecognized key` error (acceptable per memory/feedback_clean_slate.md).",
+  "files": [
+    {
+      "path": "packages/shared/src/schemas/fabric-config.ts",
+      "action": "modify",
+      "target": "Line 50 (`externalFixturePath: z.string().optional(),`)",
+      "change": "Delete the line — schema becomes strict on the removed key"
+    },
+    {
+      "path": "packages/shared/test/fabric-config.test.ts",
+      "action": "modify",
+      "target": "Lines 106, 115",
+      "change": "Remove externalFixturePath fixture entry and matching expect assertion"
+    },
+    {
+      "path": "packages/shared/test/integration/schemas-roundtrip.test.ts",
+      "action": "modify",
+      "target": "Line 50",
+      "change": "Remove externalFixturePath from roundtrip fixture"
+    },
+    {
+      "path": "packages/shared/test/property-based/zod-roundtrip.test.ts",
+      "action": "modify",
+      "target": "Line 47",
+      "change": "Remove externalFixturePath from arbitrary"
+    },
+    {
+      "path": "CHANGELOG.md",
+      "action": "modify",
+      "target": "Top section under ## [2.0.0-rc.17]",
+      "change": "Add BREAKING note: 'Removed `externalFixturePath` from fabric.config.json schema. Use `EXTERNAL_FIXTURE_PATH` env var for dev/test fixture paths. No migration shim.'"
+    }
+  ],
+  "implementation": [
+    "Apply schema deletion: remove line 50 from fabric-config.ts (verify no surrounding context breaks)",
+    "Update fabric-config.test.ts: drop lines 106 (fixture) + 115 (expect) and adjust any test name if it referenced the field",
+    "Update schemas-roundtrip.test.ts:50: remove the externalFixturePath property from the fixture object",
+    "Update zod-roundtrip.test.ts:47: remove the externalFixturePath line from the fc.record arbitrary",
+    "Add CHANGELOG entry under `## [2.0.0-rc.17]` ➜ `### BREAKING` subsection",
+    "Run `pnpm --filter @fenglimg/fabric-shared build && pnpm --filter @fenglimg/fabric-shared test` — must pass",
+    "Post-delete sweep: `grep -rn 'externalFixturePath' packages/ --include='*.ts' | grep -v dist | grep -v coverage` MUST return empty",
+    "Add a negative test: a fabric.config.json containing `externalFixturePath` should fail parse with `Unrecognized key` (since clientPathsSchema uses .strict() but fabricConfigSchema does not — confirm whether to add .strict() here too or accept silent ignore)"
+  ],
+  "reference": {
+    "pattern": "rc.12 hard-rename of knowledgeLanguageSchema (no preprocess alias)",
+    "files": [
+      "packages/shared/src/schemas/fabric-config.ts"
+    ],
+    "examples": "See lines 33-40 of fabric-config.ts where rc.12 documents `no z.preprocess alias` — mirror that comment style for rc.17 deletion"
+  },
+  "convergence": {
+    "criteria": [
+      "`grep -rn 'externalFixturePath' packages/ --include='*.ts' | grep -v dist | grep -v coverage` returns empty (zero matches)",
+      "Test command: `pnpm --filter @fenglimg/fabric-shared test` passes (all 3 affected test files green)",
+      "CHANGELOG.md `## [2.0.0-rc.17]` section contains a `### BREAKING` bullet about externalFixturePath removal",
+      "Verify env var is preserved: `grep -rn 'EXTERNAL_FIXTURE_PATH' packages/ --include='*.ts' | grep -v dist | grep -v coverage` still returns reader sites (i18n descriptions, env-var consumers)",
+      "Behavioral expectation: a fabric.config.json with the deleted field either parses-and-ignores (current default) or fails with a clear `Unrecognized key` error — document which in the negative-test result"
+    ]
+  },
+  "depends_on": ["TASK-003"],
+  "rationale": {
+    "chosen_approach": "Mechanical deletion driven by TASK-003's checklist; no shim, no soft-deprecation — pure clean-slate",
+    "alternatives_considered": [
+      "Add z.preprocess to silently strip the field from old configs",
+      "Mark deprecated with a parse-time warning for one RC then delete"
+    ],
+    "decision_factors": [
+      "Pre-user clean-slate (Fabric has zero users) — no migration burden (per memory/feedback_clean_slate.md)",
+      "rc.12 set the precedent of hard-renames with no shim — rc.17 follows same convention"
+    ],
+    "tradeoffs": "Hard-break for any local dev still using the field; mitigated by CHANGELOG note + env var alternative"
+  },
+  "test": {
+    "manual_checks": [
+      "Construct a fabric.config.json with `externalFixturePath` set, run any command that loads it, verify error or silent-ignore behavior matches CHANGELOG promise",
+      "Confirm EXTERNAL_FIXTURE_PATH env var still resolves correctly in dev/test scenarios"
+    ],
+    "success_metrics": [
+      "0 occurrences of `externalFixturePath` in non-dist source",
+      "All shared-package tests pass",
+      "Field removal documented in CHANGELOG"
+    ],
+    "unit": [
+      "test_fabric_config_rejects_or_ignores_external_fixture_path"
+    ],
+    "integration": []
+  },
+  "cli_execution_id": "rc17-polish-2026-05-15-TASK-004",
+  "cli_execution": { "strategy": "resume", "resume_from": "rc17-polish-2026-05-15-TASK-003" }
+}

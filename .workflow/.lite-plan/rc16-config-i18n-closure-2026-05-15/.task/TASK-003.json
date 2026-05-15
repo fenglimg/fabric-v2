@@ -1,0 +1,71 @@
+{
+  "id": "TASK-003",
+  "title": "F2-apply-broad-hook: replace IMPORT_RECOMMENDATION_BANNER constant in knowledge-hint-broad.cjs with lib call",
+  "scope": "packages/cli/templates/hooks/knowledge-hint-broad.cjs",
+  "action": "Update",
+  "description": "Delete the hardcoded `IMPORT_RECOMMENDATION_BANNER` const at line 262-263 (`  📋 Fabric: 知识库稀疏，是否调 /fabric-import 从 git 历史与现有文档回灌知识?`) and replace its single use site with a call into the banner-i18n lib (`renderBanner('broadImportBanner', variant, {})`). Like TASK-002, read `fabric_language` ONCE per `main()` invocation via `readFabricLanguage(workspaceRoot)` and pass `variant` into the consumer. Preserve the leading two-space indent and the `📋 Fabric:` emoji prefix and the `/fabric-import` verbatim token (substring contract).",
+  "files": [
+    {
+      "path": "packages/cli/templates/hooks/knowledge-hint-broad.cjs",
+      "action": "modify",
+      "target": "IMPORT_RECOMMENDATION_BANNER constant + its consumer",
+      "change": "Add `const { renderBanner, readFabricLanguage } = require('./lib/banner-i18n.cjs');` near the top. Delete the IMPORT_RECOMMENDATION_BANNER const (lines 262-263). Resolve `variant` once in `main()` via `readFabricLanguage(workspaceRoot)`. Replace the const reference at the consumer site with `renderBanner('broadImportBanner', variant, {})`."
+    }
+  ],
+  "implementation": [
+    "Locate the consumer of IMPORT_RECOMMENDATION_BANNER (single use site — grep for the constant name)",
+    "Add the require for `./lib/banner-i18n.cjs` alongside other top-level requires",
+    "Resolve `const variant = readFabricLanguage(workspaceRoot);` in main() / the entry function",
+    "Replace `IMPORT_RECOMMENDATION_BANNER` reference with `renderBanner('broadImportBanner', variant, {})`",
+    "Delete the now-unused const declaration at lines 262-263"
+  ],
+  "reference": {
+    "pattern": "Same lib-require precedent as TASK-002; the broad hook already reads .fabric/fabric-config.json (line 74 FABRIC_CONFIG_FILE) so adding readFabricLanguage is a natural extension",
+    "files": [
+      "packages/cli/templates/hooks/knowledge-hint-broad.cjs",
+      "packages/cli/templates/hooks/lib/banner-i18n.cjs"
+    ],
+    "examples": "TASK-002 establishes the pattern — TASK-003 is a smaller mirror application"
+  },
+  "convergence": {
+    "criteria": [
+      "File `packages/cli/templates/hooks/knowledge-hint-broad.cjs` no longer contains the literal `'知识库稀疏'` string (banner now flows through renderBanner)",
+      "`IMPORT_RECOMMENDATION_BANNER` const declaration is deleted",
+      "`require('./lib/banner-i18n.cjs')` appears exactly once in knowledge-hint-broad.cjs",
+      "All pre-existing tests under `pnpm --filter @fenglimg/fabric-cli test -- knowledge-hint-broad` PASS (anti-regression: substring `'/fabric-import'` and `'📋 Fabric:'` prefix preserved)",
+      "Behavioral expectation: a workspace with `fabric_language: 'en'` now sees English broad-hook banner; default preserves prior Chinese text via match-existing→en fallback IF prior tests asserted Chinese (verify and update test if so)"
+    ]
+  },
+  "depends_on": ["TASK-001"],
+  "rationale": {
+    "chosen_approach": "Same architecture as TASK-002 — resolve variant once, pass through. Smaller blast radius (single banner) so this task is mostly mechanical.",
+    "alternatives_considered": [
+      "Skip TASK-003 and inline the lib call without deleting the const (rejected: leaves dead code)"
+    ],
+    "decision_factors": [
+      "Consistency with TASK-002 makes future banner additions uniform",
+      "Deleting the dead const keeps the file lint-clean"
+    ],
+    "tradeoffs": "Coupling between this hook and the lib means install pipeline must ship lib/banner-i18n.cjs to broad-hook installs too (verified in TASK-006 install integration check, but worth noting in commit message)"
+  },
+  "test": {
+    "manual_checks": [
+      "Trigger broad-hook underseeded path with `fabric_language: 'en'`, confirm English banner",
+      "Trigger broad-hook underseeded path with default config, confirm fallback to en (match-existing class 1 rule)"
+    ],
+    "success_metrics": [
+      "Existing knowledge-hint-broad tests pass without modification (or with cosmetic update if asserting Chinese-by-default)",
+      "1 const deleted, 1 renderBanner call added"
+    ],
+    "unit": [
+      "test_knowledge_hint_broad_banner_via_lib_en",
+      "test_knowledge_hint_broad_banner_via_lib_zh_cn"
+    ],
+    "integration": []
+  },
+  "cli_execution_id": "rc16-config-i18n-closure-2026-05-15-TASK-003",
+  "cli_execution": {
+    "strategy": "fork",
+    "resume_from": "rc16-config-i18n-closure-2026-05-15-TASK-001"
+  }
+}

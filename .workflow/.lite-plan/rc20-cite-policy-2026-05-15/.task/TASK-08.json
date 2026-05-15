@@ -1,0 +1,63 @@
+{
+  "id": "TASK-08",
+  "title": "Server tests — doctor cite-coverage end-to-end (events.jsonl fixtures, denominator, metrics, per-client, histogram)",
+  "scope": "packages/server/src/services/doctor.test.ts",
+  "action": "Test",
+  "description": "Comprehensive service-layer test suite for runDoctorCiteCoverage covering: empty ledger (skipped), single-turn happy path, multi-cite per turn, narrow vs broad denominator, recalled verified vs unverified (session correlation), expected_but_missed detection, dismissed reason histogram, per-client split, --since window filter, --client filter, large-ledger performance (10k events <100ms).",
+  "scope_layer": "server",
+  "files": [
+    {
+      "path": "packages/server/src/services/doctor.test.ts",
+      "action": "modify",
+      "target": "new describe block 'runDoctorCiteCoverage'",
+      "change": "Add comprehensive test block using existing writeFile / createInitializedProject / FABRIC_HOME isolation patterns. ~12 test cases: (1) empty ledger → status:'skipped'; (2) marker present + no turns → metrics all 0, status:'ok'; (3) single planned cite + 1 matching edit → qualifying_cites=1, edits_touched=1; (4) narrow KB with relevance_paths=['src/foo/**'] + edit on src/foo/bar.ts → denominator counts that edit; (5) narrow KB + edit on UNMATCHED path → denominator=0 for that cite; (6) broad KB (empty relevance_paths) + 3 edits → denominator=3 for that cite; (7) recalled tag + matching fab_get_knowledge_sections in same session → not in recalled_unverified; (8) recalled tag + NO matching fetch → recalled_unverified++; (9) dismissed:scope-mismatch + dismissed:outdated + dismissed:other:foo → histogram has 3 buckets ({scope-mismatch:1, outdated:1, other:1}); (10) per-client: 2 turns from cc + 1 from codex → per_client.cc.total_turns=2, per_client.codex.total_turns=1; (11) --since=1h filters out events older than 1h ago; (12) --client=cc filters out codex turns; (13) expected_but_missed: edit on path matching KB.relevance_paths but no cite emitted in same session → expected_but_missed=1; (14) performance: seed 10k events → runDoctorCiteCoverage completes in <100ms (use performance.now())."
+    }
+  ],
+  "implementation": [
+    "Read packages/server/src/services/doctor.test.ts L391-L426 + L850-L870 to confirm writeFileSync ledger-seeding pattern.",
+    "Read packages/server/src/services/doctor.test.ts L29-L47 to confirm FABRIC_HOME beforeEach isolation.",
+    "Define test helper `seedEvents(target, events)` that JSON.stringify+'\\n'+writes to .fabric/events.jsonl atomically.",
+    "Define test helper `seedAgentsMeta(target, nodes)` that writes a minimal agents.meta.json with stable_id → {description: {relevance_paths, relevance_scope}} entries.",
+    "Define test helper `mkTurnEvent({sessionId, envelopeIndex, kbLineRaw, citeIds, citeTags, client, ts})` building a valid assistant_turn_observed event.",
+    "Define test helper `mkEditEvent({path, ts, sessionId?})` building a valid edit_intent_checked event.",
+    "Define test helper `mkMarkerEvent({ts})` building a valid cite_policy_activated event.",
+    "Write all 14 test cases following describe → it block pattern; each fully isolated via beforeEach.",
+    "For performance test: pre-generate 10k events via faker-ish loop; assert wall time < 100ms.",
+    "Run `pnpm --filter @fenglimg/fabric-server test doctor` and confirm all 14 new tests pass."
+  ],
+  "reference": {
+    "pattern": "createInitializedProject + writeFile seeding + FABRIC_HOME isolation",
+    "files": ["packages/server/src/services/doctor.test.ts:29-47", "packages/server/src/services/doctor.test.ts:391-426", "packages/server/src/services/doctor.test.ts:850-870"],
+    "examples": "Existing event-replay tests (e.g. buildLastActiveIndex tests if present, or doctor_run telemetry tests) show seed→read→assert pattern."
+  },
+  "rationale": {
+    "chosen_approach": "Fixture-based filesystem tests (no MCP runtime, no live AI) — pure-function semantics of the replay algorithm make this clean. Comprehensive enum + edge case coverage protects against silent metric drift as the algorithm matures.",
+    "alternatives_considered": ["Snapshot tests on rendered report (rejected: brittle to i18n key tweaks)", "Integration tests via real fab CLI shell-out (rejected: slower, less granular)", "Property-based testing (rejected: overkill for first cut; useful for follow-up)"],
+    "decision_factors": ["Service-layer is the natural test surface", "All inputs (events + meta) are filesystem fixtures — no mocking needed", "Performance test catches regression on the locked <100ms invariant"],
+    "tradeoffs": "Large test file growth (~14 cases). Mitigated by helper extraction (seedEvents/mkTurnEvent/etc.) — each test stays <20 lines."
+  },
+  "test": {
+    "manual_checks": ["Run `pnpm --filter @fenglimg/fabric-server test doctor` and confirm all new tests pass", "Intentionally regress runDoctorCiteCoverage (e.g. flip narrow denominator filter) to confirm tests catch it", "Verify performance test does NOT flake on CI (run 3x locally)"],
+    "success_metrics": ["All 14 new tests pass", "Test runtime < 5s total (excluding 10k-event perf test)", "Performance test consistently <100ms across 3 runs"],
+    "unit": ["runDoctorCiteCoverage empty-ledger-skipped", "runDoctorCiteCoverage marker-only-zero-metrics", "runDoctorCiteCoverage single-planned-cite", "runDoctorCiteCoverage narrow-denominator-match", "runDoctorCiteCoverage narrow-denominator-no-match", "runDoctorCiteCoverage broad-denominator", "runDoctorCiteCoverage recalled-verified", "runDoctorCiteCoverage recalled-unverified", "runDoctorCiteCoverage dismissed-reason-histogram", "runDoctorCiteCoverage per-client-split", "runDoctorCiteCoverage since-filter", "runDoctorCiteCoverage client-filter", "runDoctorCiteCoverage expected-but-missed", "runDoctorCiteCoverage performance-10k-events"],
+    "integration": []
+  },
+  "convergence": {
+    "criteria": [
+      "≥14 new test cases added to doctor.test.ts under describe('runDoctorCiteCoverage')",
+      "All 14 tests pass on `pnpm --filter @fenglimg/fabric-server test doctor`",
+      "Test helpers (seedEvents, seedAgentsMeta, mkTurnEvent, mkEditEvent, mkMarkerEvent) extracted and reused",
+      "Performance test confirms <100ms wall time for 10k seeded events",
+      "Each enum value in cite_tags (planned/recalled/chained-from/dismissed/none) covered by at least one test",
+      "Each dismissed reason enum value (scope-mismatch/outdated/not-applicable/other) covered by histogram test",
+      "Per-client split test verifies both cc and codex bucketing",
+      "Since-filter test verifies events older than window are excluded",
+      "Test runtime < 5s total (excluding perf test)",
+      "Commit msg: `test(rc20): doctor cite-coverage service-layer tests (TASK-08)`"
+    ]
+  },
+  "depends_on": ["TASK-07"],
+  "estimated_minutes": 60,
+  "cli_execution_id": "rc20-cite-policy-2026-05-15-TASK-08",
+  "cli_execution": { "strategy": "resume", "resume_from": "rc20-cite-policy-2026-05-15-TASK-07" }
+}

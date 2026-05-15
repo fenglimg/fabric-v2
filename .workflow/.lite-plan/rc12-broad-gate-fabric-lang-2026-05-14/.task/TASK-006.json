@@ -1,0 +1,156 @@
+{
+  "id": "TASK-006",
+  "title": "Replace POINTER_LINE constants with marker-delimited 'Fabric Knowledge Base' section + install-end UX message + uninstall symmetric strip + update install/uninstall tests + AGENTS.md migration",
+  "scope": "packages/cli/src/install/skills-and-hooks.ts + uninstall-skills-and-hooks.ts + install.ts (post-rename) + integration tests + AGENTS.md/CLAUDE.md/.cursor/rules dogfood files",
+  "action": "Refactor",
+  "description": "Replace the three POINTER_LINE constants (POINTER_LINE, REVIEW_POINTER_LINE, IMPORT_POINTER_LINE) and the substring-matching addArchiveSkillPointer function with a new addFabricKnowledgeBaseSection function that writes a complete markdown section wrapped in HTML comments (<!-- fabric:knowledge-base:begin --> ... <!-- fabric:knowledge-base:end -->). The section is idempotent (in-place replace if markers exist, append otherwise). Symmetrically replace stripArchiveSkillPointers with a marker-delimited strip. After successful install, the renamed install.ts (TASK-002) prints a one-line UX message: 'Fabric language preference: <X>. To change, edit fabric_language in .fabric/fabric-config.json (values: match-existing | zh-CN | en | zh-CN-hybrid).' Update install + uninstall integration tests. Update the dogfood AGENTS.md / CLAUDE.md / .cursor/rules to remove the three current pointer lines and let the next install pass write the new section.",
+  "files": [
+    {
+      "path": "packages/cli/src/install/skills-and-hooks.ts",
+      "action": "modify",
+      "target": "L170-L183 constants + L190 array + L440-L502 function",
+      "change": "DELETE the three POINTER_LINE constants (POINTER_LINE L170-L171, REVIEW_POINTER_LINE L176-L177, IMPORT_POINTER_LINE L182-L183). KEEP the POINTER_TARGETS array at L190 but rename to SECTION_TARGETS for clarity. REPLACE the addArchiveSkillPointer function (L440-L502) with a new addFabricKnowledgeBaseSection(targetRoot, fabricLanguage) function. New function: (1) computes the section content (markdown wrapped in HTML comment markers) using the template specified in the task description, interpolating the current fabric_language value from .fabric/fabric-config.json; (2) iterates SECTION_TARGETS (CLAUDE.md, AGENTS.md, .cursor/rules); (3) for each target: reads existing content, searches for the begin/end markers — if found, replaces the entire region (markers inclusive); if not found, appends the new section to the file (preceded by two newlines for separation); writes atomically. Idempotent: re-running yields byte-identical result."
+    },
+    {
+      "path": "packages/cli/src/install/uninstall-skills-and-hooks.ts",
+      "action": "modify",
+      "target": "L12-L15 imports + L253-L305 stripArchiveSkillPointers function",
+      "change": "DELETE the imports of POINTER_LINE, REVIEW_POINTER_LINE, IMPORT_POINTER_LINE (L12-L15). REPLACE the stripArchiveSkillPointers function with stripFabricKnowledgeBaseSection. New function: for each target file in SECTION_TARGETS (re-import from install/skills-and-hooks.ts), read content, locate the <!-- fabric:knowledge-base:begin --> and <!-- fabric:knowledge-base:end --> markers (inclusive of any preceding blank line for clean removal), strip the entire region. If markers not found: no-op (idempotent). Preserve the existing 'never deletes file even if empty' conservatism. Update the doc-comment at L244 referencing addArchiveSkillPointer → addFabricKnowledgeBaseSection."
+    },
+    {
+      "path": "packages/cli/src/commands/hooks.ts",
+      "action": "modify",
+      "target": "L8 import + L129 call site",
+      "change": "Replace `import { addArchiveSkillPointer }` with `import { addFabricKnowledgeBaseSection }`. Replace the call `addArchiveSkillPointer(normalizedTarget)` with `addFabricKnowledgeBaseSection(normalizedTarget, fabricLanguage)` — the function now needs the fabric_language value to interpolate into the section text; pull it from the loaded fabric-config or pass it through from the caller."
+    },
+    {
+      "path": "packages/cli/src/commands/install.ts",
+      "action": "modify",
+      "target": "post-rename file from TASK-002 — addArchiveSkillPointer call site (was init.ts:L936) + install-end UX message",
+      "change": "Replace the addArchiveSkillPointer call with addFabricKnowledgeBaseSection (pass the detected/configured fabric_language). After successful install completion (just before the final 'Fabric installed successfully' line or equivalent), print a one-line preference summary using i18n: `Fabric language preference: ${fabricLanguage}. To change, edit \\`fabric_language\\` in \\`.fabric/fabric-config.json\\` (values: match-existing | zh-CN | en | zh-CN-hybrid).` The message uses the resolved fabric_language value (after detectExistingLanguage runs). Add corresponding cli.install.language_preference_hint i18n key to en.ts + zh.ts."
+    },
+    {
+      "path": "packages/cli/__tests__/integration/install-skills-and-hooks.test.ts",
+      "action": "modify",
+      "target": "L452-L465 occurrence-count assertions",
+      "change": "Replace the six regex literals (/fabric-archive Skill when archiving/g etc.) with section-presence assertions: after install, each target file (CLAUDE.md, AGENTS.md, .cursor/rules) MUST contain '<!-- fabric:knowledge-base:begin -->' exactly once and '<!-- fabric:knowledge-base:end -->' exactly once, with the heading '## Fabric Knowledge Base' between them. Add new tests: (1) idempotent re-install yields byte-identical file content (run install twice, diff results); (2) re-install with different fabric_language value updates the language line inside the section in place (no duplication); (3) user-edited content inside the markers gets replaced on re-install (simulates user customization being overwritten — current convention: 'managed section, edits inside markers are not preserved')."
+    },
+    {
+      "path": "packages/cli/__tests__/integration/uninstall-skills-and-hooks.test.ts",
+      "action": "modify",
+      "target": "L315-L335 doc-comment + presence/absence assertions",
+      "change": "Update doc-comment to reference addFabricKnowledgeBaseSection. Replace the three-pointer presence/absence assertions with section-marker assertions: after install, both begin and end markers present in each target; after uninstall, both markers absent in each target. Add a test: uninstall is idempotent (run twice, second invocation no-op, no error)."
+    },
+    {
+      "path": "AGENTS.md",
+      "action": "modify",
+      "target": "L10 + L12 + L14 — three existing pointer lines",
+      "change": "DELETE the three pre-rc.12 pointer lines (POINTER_LINE byte-identical substrings). Do NOT manually add the new section here — the next `fab install` run (or a manual `pnpm --filter @fenglimg/fabric-cli build && fab install --target . --reapply`) will add the new Fabric Knowledge Base section in their place. This leaves AGENTS.md temporarily without the pointer references between commit and the next install run; mitigated by the fact that the dogfood install runs frequently during rc.12 development."
+    },
+    {
+      "path": "CLAUDE.md",
+      "action": "modify",
+      "target": "matching three pointer lines (verify via grep)",
+      "change": "Same as AGENTS.md — delete the three existing pointer lines; let next install write the new section."
+    },
+    {
+      "path": ".cursor/rules",
+      "action": "modify",
+      "target": "matching three pointer lines (verify via grep)",
+      "change": "Same as AGENTS.md — delete the three existing pointer lines; let next install write the new section."
+    },
+    {
+      "path": "packages/shared/src/i18n/locales/en.ts",
+      "action": "modify",
+      "target": "add cli.install.language_preference_hint key",
+      "change": "Add new i18n key under cli.install namespace: language_preference_hint: 'Fabric language preference: {{value}}. To change, edit `fabric_language` in `.fabric/fabric-config.json` (values: match-existing | zh-CN | en | zh-CN-hybrid).'"
+    },
+    {
+      "path": "packages/shared/src/i18n/locales/zh.ts",
+      "action": "modify",
+      "target": "add cli.install.language_preference_hint key (zh-CN translation)",
+      "change": "Add zh-CN translation: language_preference_hint: 'Fabric 语言偏好：{{value}}。如需调整，请编辑 `.fabric/fabric-config.json` 中的 `fabric_language` 字段（可选值：match-existing | zh-CN | en | zh-CN-hybrid）。'"
+    }
+  ],
+  "implementation": [
+    "Read packages/cli/src/install/skills-and-hooks.ts to confirm exact line numbers for POINTER_LINE constants, POINTER_TARGETS, addArchiveSkillPointer",
+    "Define the new section template constant: const FABRIC_KNOWLEDGE_BASE_SECTION_TEMPLATE = `<!-- fabric:knowledge-base:begin -->\\n\\n## Fabric Knowledge Base\\n\\nThis project uses Fabric for persistent project knowledge under \\`.fabric/knowledge/\\`.\\n\\n- **Discovery**: SessionStart lists available entries (broad menu); editing files may surface narrow hints\\n- **Usage**: call \\`fab_get_knowledge_sections\\` to fetch full content of any entry by id\\n- **Write flows**: see fabric-archive (record), fabric-review (validate), fabric-import (backfill) Skills\\n- **Language**: rendered per \\`fabric_language\\` in \\`.fabric/fabric-config.json\\` (current: \\`<value>\\`)\\n\\n<!-- fabric:knowledge-base:end -->`",
+    "Implement addFabricKnowledgeBaseSection(targetRoot, fabricLanguage): interpolate {value} into the template, then for each SECTION_TARGETS file: read content, search for /<!-- fabric:knowledge-base:begin -->[\\s\\S]*?<!-- fabric:knowledge-base:end -->/, replace if found else append. Write atomically via the existing atomic-write helper.",
+    "Delete POINTER_LINE / REVIEW_POINTER_LINE / IMPORT_POINTER_LINE constants and addArchiveSkillPointer function",
+    "Implement stripFabricKnowledgeBaseSection in uninstall-skills-and-hooks.ts: same regex, but replace match with empty string (also strip a single leading \\n\\n if present to avoid orphan blank lines)",
+    "Update commands/hooks.ts and commands/install.ts call sites; thread the fabricLanguage value through",
+    "Add the language_preference_hint i18n key in en.ts and zh.ts; wire the install.ts print at install-end",
+    "Update install-skills-and-hooks.test.ts assertions to check section markers, idempotency, in-place replace on re-install",
+    "Update uninstall-skills-and-hooks.test.ts assertions to check section absence, idempotent uninstall",
+    "Delete the three existing pointer lines from this project's dogfood CLAUDE.md, AGENTS.md, .cursor/rules (find via grep for 'fabric-archive Skill when archiving', 'fabric-review Skill to review pending', 'fabric-import Skill for cold-start enrichment')",
+    "Run `pnpm --filter @fenglimg/fabric-cli build && fab install --target . --reapply` (or equivalent) to invoke the new section writer on the dogfood; verify the new section appears in all three target files with the project's fabric_language value",
+    "Run `pnpm test` — verify install + uninstall integration tests pass; verify dogfood files are byte-identical between two consecutive install runs"
+  ],
+  "reference": {
+    "pattern": "Managed-section pattern with HTML-comment markers: invisible in rendered MD, idempotent replace via regex, follows shields.io / standard-readme conventions. Section is a self-contained content block that the install tool owns; user edits inside the markers are intentionally not preserved (the install tool is the single writer).",
+    "files": [
+      "packages/cli/src/install/skills-and-hooks.ts",
+      "packages/cli/src/install/uninstall-skills-and-hooks.ts",
+      "AGENTS.md"
+    ],
+    "examples": "Closest external example: README.md badge sections wrapped in <!-- ALL-CONTRIBUTORS-LIST:START --> ... <!-- ALL-CONTRIBUTORS-LIST:END --> by all-contributors-cli. Same idempotent-replace semantics."
+  },
+  "convergence": {
+    "criteria": [
+      "packages/cli/src/install/skills-and-hooks.ts no longer exports POINTER_LINE / REVIEW_POINTER_LINE / IMPORT_POINTER_LINE",
+      "addFabricKnowledgeBaseSection exists and writes the HTML-comment-wrapped section to all three SECTION_TARGETS",
+      "addFabricKnowledgeBaseSection is idempotent: running install twice on the same target produces byte-identical files",
+      "addFabricKnowledgeBaseSection is in-place replace: running install with a different fabric_language value updates the language line inside the existing section (no duplication; no orphan section)",
+      "uninstall-skills-and-hooks.ts stripFabricKnowledgeBaseSection removes the section cleanly (markers inclusive); idempotent (second uninstall is no-op)",
+      "install.ts prints the one-line language_preference_hint at install completion, using the resolved fabric_language value",
+      "Dogfood AGENTS.md / CLAUDE.md / .cursor/rules contain the new section (with fabric_language: zh-CN-hybrid) after running `fab install --target . --reapply`",
+      "install + uninstall integration tests pass with the new assertion strategy",
+      "i18n keys cli.install.language_preference_hint exist in en.ts and zh.ts"
+    ]
+  },
+  "depends_on": ["TASK-002", "TASK-003"],
+  "rationale": {
+    "chosen_approach": "HTML-comment-wrapped markdown section is the user-confirmed delimiter strategy (clarification #2). It is invisible in rendered MD, idempotent for replacement, and standard-readme-conventions-aligned. The section content is self-explanatory and serves as both pointer (to .fabric/knowledge/) and config-discovery aid (mentions fabric_language and fab_get_knowledge_sections).",
+    "alternatives_considered": [
+      "Markdown heading-section delimiter (## Fabric Knowledge Base — auto-managed) (rejected: visible in rendered TOC, pollutes doc outline)",
+      "YAML front-matter-style fence (---fabric-skills--- ... ---/fabric-skills---) (rejected: non-standard, may confuse static-site generators)",
+      "Keep POINTER_LINE substring approach (rejected: fragile, three top-level lines pollute target files, user edits between lines easily corrupt)"
+    ],
+    "decision_factors": [
+      "User confirmation (clarification #2)",
+      "Section-based delimiter is the documented best practice for managed-content blocks in user files",
+      "One self-contained section is more discoverable than three scattered pointer lines"
+    ],
+    "tradeoffs": "User edits inside the markers are not preserved (current convention is 'managed section, do not edit between markers'). Documented via the marker comments themselves and via convention."
+  },
+  "test": {
+    "manual_checks": [
+      "Run `fab install --target /tmp/test-fabric --yes`; verify CLAUDE.md / AGENTS.md / .cursor/rules each contain the section with the correct fabric_language interpolation",
+      "Re-run the same `fab install --target /tmp/test-fabric --reapply --yes`; verify all three files are byte-identical to the first run (idempotency)",
+      "Manually change /tmp/test-fabric/.fabric/fabric-config.json to set fabric_language: 'en'; re-run install --reapply; verify the section's language line updates in place to 'en' without duplicating the section",
+      "Run `fab uninstall --target /tmp/test-fabric --yes`; verify all three files have the section removed cleanly (no leftover markers, no orphan blank lines)",
+      "Re-run `fab uninstall`; verify it is a clean no-op (no error)",
+      "Smoke test on dogfood: run `fab install --target . --reapply --yes` on this project; verify AGENTS.md/CLAUDE.md/.cursor/rules contain the new section with fabric_language: 'zh-CN-hybrid'"
+    ],
+    "success_metrics": [
+      "All three pointer constants removed from source",
+      "Idempotency verified: re-install yields byte-identical files",
+      "In-place replace verified: language value updates correctly",
+      "Uninstall removes section cleanly; second uninstall is no-op",
+      "Install-end UX message prints with resolved fabric_language",
+      "All install + uninstall integration tests pass"
+    ],
+    "unit": [
+      "test_addFabricKnowledgeBaseSection_appends_when_no_markers_present",
+      "test_addFabricKnowledgeBaseSection_replaces_in_place_when_markers_present",
+      "test_addFabricKnowledgeBaseSection_idempotent_byte_identical_on_re_run",
+      "test_stripFabricKnowledgeBaseSection_removes_section_cleanly",
+      "test_stripFabricKnowledgeBaseSection_idempotent_no_op_when_markers_absent"
+    ],
+    "integration": [
+      "install-skills-and-hooks.test.ts (rewritten) full pass",
+      "uninstall-skills-and-hooks.test.ts (rewritten) full pass",
+      "End-to-end install + uninstall roundtrip leaves target files byte-identical to pre-install state"
+    ]
+  }
+}

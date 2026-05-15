@@ -1,0 +1,93 @@
+{
+  "id": "TASK-004",
+  "title": "F2-tests: 4-variant coverage for all 6 banners + install-pipeline ships banner-i18n.cjs",
+  "scope": "packages/cli/test/hooks/banner-i18n.test.ts + integration shadow on existing fabric-hint/knowledge-hint-broad tests",
+  "action": "Test",
+  "description": "Add a dedicated test file `packages/cli/test/hooks/banner-i18n.test.ts` covering all 4 language variants (`en`, `zh-CN`, `zh-CN-hybrid`, `match-existing`) for each of the 6 banners (5 fabric-hint signals + 1 broad hook). Minimum required coverage per variant: substring contract assertion (numeric tokens, signal CTA names, file paths) + protected-token preservation. Add a smoke test that the install pipeline (install/skills-and-hooks.ts) ships `lib/banner-i18n.cjs` alongside both hook .cjs files into the target workspace's `.fabric/.hooks/` (or wherever the existing install code places them).",
+  "files": [
+    {
+      "path": "packages/cli/test/hooks/banner-i18n.test.ts",
+      "action": "create",
+      "target": "vitest test suite",
+      "change": "New test file: 24 tests minimum (6 banners × 4 variants); each asserts (a) non-empty render, (b) variant-specific substring (e.g. 'h' or '小时' for time), (c) protected-token presence (e.g. '/fabric-archive' verbatim)"
+    },
+    {
+      "path": "packages/cli/test/install/skills-and-hooks.test.ts",
+      "action": "modify",
+      "target": "install hook test suite (find appropriate existing test file via grep)",
+      "change": "Add an integration assertion that after `installArchiveHintHook()` and `installKnowledgeHintBroadHook()` run on a temp workspace, the file `<workspace>/.fabric/.hooks/lib/banner-i18n.cjs` exists (or whatever the canonical install path is)"
+    }
+  ],
+  "implementation": [
+    "Create `packages/cli/test/hooks/banner-i18n.test.ts` with vitest describe blocks per banner key",
+    "For each variant × banner, assert: render is non-empty, contains expected substring contract, contains expected protected tokens",
+    "Add fuzz test: 100 random (variant, params) combinations never throw",
+    "Locate the existing install-pipeline test (grep for `installArchiveHintHook` in test/) and add an assertion that lib/banner-i18n.cjs is copied",
+    "If the install pipeline does NOT currently copy lib/*.cjs files, file the discrepancy as a sub-finding for TASK-002 to add the copy logic (DO NOT silently let install ship without the lib — hook will fail at runtime)"
+  ],
+  "reference": {
+    "pattern": "Existing fabric-hint test patterns under packages/cli/test/hooks/ (use the same vitest structure, fixture loading, and substring assertions)",
+    "files": [
+      "packages/cli/test/hooks/fabric-hint.test.ts",
+      "packages/cli/templates/hooks/lib/banner-i18n.cjs",
+      "packages/cli/src/install/skills-and-hooks.ts"
+    ],
+    "examples": "Existing fabric-hint.test.ts substring assertions are the model — copy the assertion style and adapt per variant"
+  },
+  "convergence": {
+    "criteria": [
+      "File `packages/cli/test/hooks/banner-i18n.test.ts` exists with at least 24 test cases (6 banners × 4 variants)",
+      "Each variant test asserts at least one variant-specific substring (proves translation actually happened, not silent fallback)",
+      "Install-pipeline integration test asserts `lib/banner-i18n.cjs` is shipped to target workspace alongside the hook .cjs files",
+      "Test command: `pnpm --filter @fenglimg/fabric-cli test -- banner-i18n` exits 0",
+      "Test command: `pnpm --filter @fenglimg/fabric-cli test -- skills-and-hooks` exits 0 (anti-regression for install)",
+      "Behavioral expectation: ANY future change to a banner template now requires updating the test file — translation regressions are caught at PR time"
+    ]
+  },
+  "depends_on": ["TASK-002", "TASK-003"],
+  "rationale": {
+    "chosen_approach": "Dedicated test file per spec (rather than scattering variant tests across existing hook tests) keeps the i18n contract surface searchable and gives a single failure summary when a translation regression lands",
+    "alternatives_considered": [
+      "Inline variant tests inside existing fabric-hint.test.ts (rejected: bloats existing file, harder to grep for i18n coverage)",
+      "Skip zh-CN-hybrid + match-existing tests, only en + zh-CN (rejected: user spec explicitly requires all 4)"
+    ],
+    "decision_factors": [
+      "i18n regressions are silent — must be caught by tests, not manual QA",
+      "Install-pipeline coverage is critical: a missing lib file at runtime would crash the hook silently"
+    ],
+    "tradeoffs": "24+ test cases is verbose, but each is small (1-3 assertions) and follows a uniform shape — easy to maintain"
+  },
+  "test": {
+    "manual_checks": [
+      "Run the new test file in isolation, confirm it fails if banner-i18n.cjs is broken",
+      "Manually delete lib/banner-i18n.cjs from a freshly-installed workspace, confirm the install integration test catches it"
+    ],
+    "success_metrics": [
+      "100% banner × variant matrix coverage (24/24 cases)",
+      "Install integration test passes — lib ships correctly"
+    ],
+    "unit": [
+      "test_banner_i18n_archive_line1_en",
+      "test_banner_i18n_archive_line1_zh_cn",
+      "test_banner_i18n_archive_line1_zh_cn_hybrid",
+      "test_banner_i18n_archive_line1_match_existing",
+      "test_banner_i18n_review_cta_en",
+      "test_banner_i18n_import_cta_zh_cn_hybrid",
+      "test_banner_i18n_maintenance_never_ran_en",
+      "test_banner_i18n_maintenance_aged_zh_cn",
+      "test_banner_i18n_broad_import_en",
+      "test_banner_i18n_broad_import_zh_cn"
+    ],
+    "integration": [
+      "test_install_ships_banner_i18n_lib_alongside_hooks"
+    ]
+  },
+  "cli_execution_id": "rc16-config-i18n-closure-2026-05-15-TASK-004",
+  "cli_execution": {
+    "strategy": "merge_fork",
+    "merge_from": [
+      "rc16-config-i18n-closure-2026-05-15-TASK-002",
+      "rc16-config-i18n-closure-2026-05-15-TASK-003"
+    ]
+  }
+}

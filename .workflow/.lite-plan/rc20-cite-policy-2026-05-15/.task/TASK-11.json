@@ -1,0 +1,89 @@
+{
+  "id": "TASK-11",
+  "title": "Bump to v2.0.0-rc.20 — Cite policy + CHANGELOG entry",
+  "scope": "packages/*/package.json + CHANGELOG.md",
+  "action": "Configure",
+  "description": "Version bump across all monorepo packages from v2.0.0-rc.19 to v2.0.0-rc.20 (or rc.19+ → rc.20). Append CHANGELOG.md entry summarizing rc.20: (1) cite policy added to canonical bootstrap (TASK-01); (2) two new event variants for cite observation (TASK-02); (3) fabric-hint captures KB: cite line per turn (TASK-03); (4) cite_policy_activated marker emit (TASK-04); (5) fab doctor --cite-coverage CLI surface (TASK-05); (6) coverage algorithm with relevance_paths denominator (TASK-06); (7) bilingual report formatter (TASK-07); (8-9) comprehensive tests; (10) self-host refresh. Acknowledge Cursor cite-coverage deferred to rc.21 (PreToolUse can't see assistant text — needs separate hook surface investigation).",
+  "scope_layer": "release",
+  "files": [
+    {
+      "path": "packages/cli/package.json",
+      "action": "modify",
+      "target": "version field",
+      "change": "Bump from '2.0.0-rc.19' (or current) → '2.0.0-rc.20'."
+    },
+    {
+      "path": "packages/server/package.json",
+      "action": "modify",
+      "target": "version field",
+      "change": "Bump to '2.0.0-rc.20'."
+    },
+    {
+      "path": "packages/shared/package.json",
+      "action": "modify",
+      "target": "version field",
+      "change": "Bump to '2.0.0-rc.20'."
+    },
+    {
+      "path": "packages/extension/package.json (if versioned)",
+      "action": "modify",
+      "target": "version field",
+      "change": "Bump to '2.0.0-rc.20' if part of monorepo version sync; skip if extension has independent versioning."
+    },
+    {
+      "path": "CHANGELOG.md",
+      "action": "modify",
+      "target": "top of file (under Unreleased or before rc.19 section)",
+      "change": "Append rc.20 entry following existing changelog style. Sections: Added (Cite policy section in canonical, `fab doctor --cite-coverage` with --since/--client flags, assistant_turn_observed + cite_policy_activated event variants, bilingual cite-coverage report); Changed (BOOTSTRAP_CANONICAL +cite-policy H2; fabric-hint.cjs now captures assistant KB: first-line per turn); Deferred (Cursor cite capture pushed to rc.21 — PreToolUse hook cannot see assistant reply text); Internal (server runDoctorCiteCoverage export; minimatch-based denominator algorithm; performance: <100ms for 10k-event ledgers)."
+    },
+    {
+      "path": "packages/cli/src/version.ts (or wherever the in-source policy version constant lives — see TASK-04)",
+      "action": "modify",
+      "target": "policy_version constant",
+      "change": "Update getPolicyVersion() return value from TASK-04 stub to '2.0.0-rc.20' if hardcoded; OR confirm runtime version-read mechanism picks up bumped package.json version automatically."
+    }
+  ],
+  "implementation": [
+    "Confirm current monorepo version (`grep version packages/*/package.json | head -5`).",
+    "Bump each package.json version field to '2.0.0-rc.20' (preserve any pnpm workspace internal-dependency version refs).",
+    "Update getPolicyVersion() / version constant if hardcoded per TASK-04 decision.",
+    "Write CHANGELOG.md rc.20 entry — concise (≤200 words) per existing rc.* style (recent commits bfecffa / chore(rc16) show the format).",
+    "Run `pnpm install` to refresh lockfile if internal version refs changed.",
+    "Run `pnpm -r build` to confirm everything still compiles at the new version.",
+    "Run `pnpm -r test` to confirm full test suite green across all packages.",
+    "Commit with msg `chore(rc20): bump to v2.0.0-rc.20 — Cite policy`."
+  ],
+  "reference": {
+    "pattern": "Monorepo version bump + CHANGELOG entry",
+    "files": ["packages/cli/package.json", "packages/server/package.json", "packages/shared/package.json", "CHANGELOG.md"],
+    "examples": "Recent commits bfecffa (chore(rc16): bump to v2.0.0-rc.16 — Config + i18n closure) shows the exact format."
+  },
+  "rationale": {
+    "chosen_approach": "Synchronous version bump across all monorepo packages (matches existing rc.X cadence). Single CHANGELOG entry covering the full RC scope.",
+    "alternatives_considered": ["Independent package versioning (rejected: monorepo currently locks all to same RC version)", "Skip CHANGELOG and rely on git log (rejected: rc.16 / rc.17 / rc.19 all wrote CHANGELOG entries — convention is established)"],
+    "decision_factors": ["Convention from recent RCs", "Single source of truth for release notes", "Lockstep versioning simplifies install/upgrade story"],
+    "tradeoffs": "Every RC bumps every package even if some packages unchanged — minor overhead, but matches existing project pattern."
+  },
+  "test": {
+    "manual_checks": ["`pnpm -r build` clean", "`pnpm -r test` all green", "CHANGELOG renders correctly in markdown preview", "`fab --version` reports 2.0.0-rc.20 after build", "`fab doctor --cite-coverage` references policy_version 'rc.20' in cite_policy_activated event payload"],
+    "success_metrics": ["All package.json files at version 2.0.0-rc.20", "CHANGELOG.md has new rc.20 section at top", "Full test suite passes at new version", "policy_version field in cite_policy_activated event reflects rc.20"],
+    "unit": [],
+    "integration": ["Smoke: `fab --version` → '2.0.0-rc.20'"]
+  },
+  "convergence": {
+    "criteria": [
+      "All monorepo packages at version '2.0.0-rc.20'",
+      "CHANGELOG.md has new rc.20 entry summarizing all 10 prior tasks + acknowledging Cursor deferral",
+      "policy_version in TASK-04 marker emission returns 'rc.20' (or equivalent)",
+      "`pnpm install` lockfile updates cleanly (no version conflicts)",
+      "`pnpm -r build` exits 0",
+      "`pnpm -r test` exits 0 with all tests green",
+      "`fab --version` reports '2.0.0-rc.20' after rebuild",
+      "Commit msg: `chore(rc20): bump to v2.0.0-rc.20 — Cite policy`"
+    ]
+  },
+  "depends_on": ["TASK-10"],
+  "estimated_minutes": 20,
+  "cli_execution_id": "rc20-cite-policy-2026-05-15-TASK-11",
+  "cli_execution": { "strategy": "resume", "resume_from": "rc20-cite-policy-2026-05-15-TASK-10" }
+}

@@ -1,0 +1,95 @@
+{
+  "summary": "v2.0.0-rc.17 「Polish」 — Phase 4 of 5-phase post-grill backlog. Four work items: H (--help content rewrite + 装/配/跑 mental model + per-command examples), R (drop externalFixturePath config field, env var only), S (rewrite serve --host security warning to be actionable about FABRIC_AUTH_TOKEN), Y (re-diagnose + fix Codex MCP wiring gap parked at rc.14, with conditional defer-branch if complexity >1 day).",
+  "approach": "Eight-task plan organized as four parallel prep tracks (TASK-001 H-audit, TASK-003 R-diagnose, TASK-005 S-rewrite, TASK-006 Y-diagnose) feeding three sequential apply tasks (TASK-002 H-rewrite ← TASK-001, TASK-004 R-cut ← TASK-003, TASK-007 Y-fix ← TASK-006), then one batched release task (TASK-008) merging from all apply branches. Pre-user clean-slate (no migration shims). Per-task = one git commit. Gemini review + coverage batched ONCE at end. TASK-005 is single-shot (no separate diagnose phase) since the i18n key is already located. TASK-007 carries an explicit defer-branch so rc.17 ships even if Bug Y diagnosis surfaces unexpected complexity.",
+  "task_ids": [
+    "TASK-001",
+    "TASK-002",
+    "TASK-003",
+    "TASK-004",
+    "TASK-005",
+    "TASK-006",
+    "TASK-007",
+    "TASK-008"
+  ],
+  "task_count": 8,
+  "complexity": "Medium",
+  "estimated_time": "4-6 hours (H ~2h, R ~1h, S ~30m, Y ~1-2h, release ~30m)",
+  "recommended_execution": "Phased",
+  "design_decisions": [
+    {
+      "decision": "Drop externalFixturePath config field with no migration shim — schema-only deletion",
+      "rationale": "Pre-user clean-slate (Fabric has zero users per memory/feedback_clean_slate.md); rc.12 set the precedent of hard-renames with no z.preprocess alias. Env var EXTERNAL_FIXTURE_PATH stays as the single source for dev/test fixture paths.",
+      "tradeoff": "Hard-break for any local dev still using the field; mitigated by CHANGELOG BREAKING note + env var alternative",
+      "alternatives": [
+        "z.preprocess alias to silently strip old field",
+        "Soft-deprecate with parse-time warning for one RC then delete"
+      ]
+    },
+    {
+      "decision": "Conditional defer-branch on TASK-007 (Bug Y fix) — if TASK-006 diagnosis surfaces >1 day complexity, fix moves to a hotfix rc.17.1",
+      "rationale": "Bug Y was parked once already at rc.14; protect rc.17 ship date by making the fix conditional on diagnosis complexity. rc.17 still ships with TASK-008's release flow even if Bug Y is deferred (TASK-008 depends on TASK-007 but TASK-007 has a no-op placeholder branch).",
+      "tradeoff": "Two execution branches add task-spec complexity; mitigated by explicit BRANCH A vs BRANCH B convergence criteria in TASK-007",
+      "alternatives": [
+        "Always block rc.17 on Bug Y fix (risk: another park)",
+        "Always defer Bug Y to a separate hotfix (loses opportunity to fix in rc.17 if simple)"
+      ]
+    },
+    {
+      "decision": "Batch Gemini review + coverage at end-of-plan (TASK-008), not per-task",
+      "rationale": "Per memory/feedback_review_batching.md: for multi-task lite-plan chains, run Gemini review + coverage ONCE at end. Single review pass on the full rc.17 diff catches cross-task interactions (e.g. did help rewrite break a snapshot test using the old description?) cheaper than 7 small reviews.",
+      "tradeoff": "Larger review surface in one pass; mitigated by the rc.17 diff being small (≤7 commits)"
+    },
+    {
+      "decision": "Strict bilingual parity gate on every i18n change (TASK-002 + TASK-005)",
+      "rationale": "Per rc.12 broad-gate-fabric-lang convention: every cli.*.description and warning key MUST exist in BOTH en.ts and zh-CN.ts. zh-CN-hybrid policy preserves English technical terms (FABRIC_AUTH_TOKEN, fab serve, --host).",
+      "tradeoff": "Doubles the i18n edit surface for every change; non-negotiable for a multi-locale CLI",
+      "alternatives": [
+        "Default to en, lazy-translate zh-CN later (rejected — creates parity drift)"
+      ]
+    },
+    {
+      "decision": "Two-phase split for H (TASK-001 audit → TASK-002 rewrite) and R (TASK-003 diagnose → TASK-004 cut), but single-shot for S",
+      "rationale": "H needs an audit because the gap list (which keys lack examples, which have parity gaps) is unknown until enumerated. R needs a diagnosis because the deletion blast radius (every reader site) is unknown without grep. S is single-shot because the i18n key location and replacement text shape are already known from the planning context. Y always needs diagnosis because the bug location is unknown.",
+      "tradeoff": "More tasks for H/R means more commits but also better-scoped reviews"
+    }
+  ],
+  "shared_context": {
+    "tech_stack": [
+      "TypeScript",
+      "pnpm workspaces",
+      "citty (CLI framework)",
+      "zod (schema validation)",
+      "vitest (testing)"
+    ],
+    "conventions": [
+      "Per-task = one git commit (per memory/project_grill_deferred_items.md)",
+      "Pre-user clean-slate: no migration shims (per memory/feedback_clean_slate.md)",
+      "drift→abort, no --force (per memory/feedback_cli_design.md)",
+      "Bilingual parity strict (rc.12 broad-gate-fabric-lang)",
+      "Batched Gemini review + coverage at end of plan (per memory/feedback_review_batching.md)",
+      "rc.17 ships AFTER rc.16 has been Gemini-reviewed + coverage-checked"
+    ]
+  },
+  "_metadata": {
+    "timestamp": "2026-05-15T00:00:00Z",
+    "source": "cli-lite-planning-agent",
+    "plan_type": "feature",
+    "schema_version": "2.0",
+    "planning_mode": "agent-based",
+    "exploration_angles": [
+      "i18n-catalogue-audit",
+      "config-schema-deletion",
+      "security-warning-actionability",
+      "codex-mcp-wiring-diagnosis"
+    ],
+    "duration_seconds": 0,
+    "outstanding_clarifications": [
+      "TASK-007 has a conditional defer-branch: if TASK-006 diagnosis estimates Bug Y fix at >1 day, TASK-007 becomes a no-op placeholder and Bug Y moves to a separate hotfix rc.17.1. The defer flag (`defer_y_fix=true|false`) is set in TASK-006's _codex-mcp-diagnosis.md output and read by TASK-007's branch-selection logic. TASK-008 still depends on TASK-007 in both branches — in defer-mode TASK-007 just produces a placeholder commit + known-issue CHANGELOG entry rather than a real fix.",
+      "TASK-002's citty meta.examples wiring depends on whether citty supports an `examples` field at the command meta level. If unsupported, examples land as inline `Example:` lines appended to descriptions. The check happens in TASK-002 implementation step 2; no plan revision needed either way."
+    ],
+    "quality_check": {
+      "executed": false,
+      "note": "Phase 5 quality check skipped — planning context already pre-vetted all four work items via the planning-context.md artifact written by the orchestrator. Convergence criteria are quantified per the contract in the user prompt (specific files, test command, behavioral expectation, bilingual parity). Dependencies form a clean DAG with no cycles. All 8 tasks have ≥3 implementation steps and ≥4 convergence criteria."
+    }
+  }
+}

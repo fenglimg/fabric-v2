@@ -1,0 +1,84 @@
+{
+  "id": "TASK-005",
+  "title": "scan.ts detectExistingLanguage — CJK signal returns zh-CN-hybrid (not zh-CN) + rename runtime read sites to fabric_language",
+  "scope": "packages/cli/src/commands/scan.ts + packages/cli/__tests__/scan-builders.test.ts",
+  "action": "Update",
+  "description": "Update the detectExistingLanguage helper to return 'zh-CN-hybrid' instead of 'zh-CN' when the CJK signal is detected over README + docs/*.md. The default value remains 'match-existing' on no signal. Also rename all function-local and module-level runtime read sites from knowledge_language to fabric_language (L191 fabricConfig.knowledge_language → fabricConfig.fabric_language, comments at L115/L186/L341/L557/L572/L656). Consider also renaming the resolveKnowledgeLanguage helper to resolveFabricLanguage.",
+  "files": [
+    {
+      "path": "packages/cli/src/commands/scan.ts",
+      "action": "modify",
+      "target": "L186-L192 config load + L557-L568 resolveKnowledgeLanguage + L586-L644 detectExistingLanguage + comments at L115/L341/L572/L656",
+      "change": "Update detectExistingLanguage (~L586-L644): when CJK signal detected (CJK ratio over threshold across README + docs/*.md), return 'zh-CN-hybrid' instead of 'zh-CN'. The 'en' return path stays. The empty-repo path still returns the default ('match-existing' or null per current contract). Rename runtime read site at L191: `fabricConfig.knowledge_language ?? 'match-existing'` → `fabricConfig.fabric_language ?? 'match-existing'`. Rename helper function `resolveKnowledgeLanguage` → `resolveFabricLanguage` (function name + all call sites). Update all comments referencing 'knowledge_language' → 'fabric_language' (L115, L186, L341, L557, L572, L656). The exported __testing__ namespace at L1534 must update its exposed function name."
+    },
+    {
+      "path": "packages/cli/__tests__/scan-builders.test.ts",
+      "action": "modify",
+      "target": "L340-L379 — 4 detectExistingLanguage tests",
+      "change": "Update the CJK-heavy README test expectation from 'zh-CN' to 'zh-CN-hybrid'. The other three tests (empty repo, EN-only README, docs/ scan) keep their existing expectations. Add an assertion to the CJK test that explicitly comments why zh-CN-hybrid is the correct expectation ('CJK signal in README + docs implies mixed Chinese-narrative-with-English-technical-terms; pure zh-CN is intentional opt-in, not auto-detected.')."
+    }
+  ],
+  "implementation": [
+    "Read scan.ts to confirm exact line numbers for detectExistingLanguage, resolveKnowledgeLanguage, and runtime config read sites",
+    "In detectExistingLanguage: identify the branch where CJK signal returns 'zh-CN'; change the return literal to 'zh-CN-hybrid'",
+    "Rename the helper resolveKnowledgeLanguage → resolveFabricLanguage; find-replace all internal call sites and the __testing__ export at L1534",
+    "Rename the runtime config read fabricConfig.knowledge_language → fabricConfig.fabric_language (L191)",
+    "Find-replace all comment text 'knowledge_language' → 'fabric_language' at L115/L186/L341/L557/L572/L656",
+    "Update scan-builders.test.ts CJK test expectation",
+    "Run `pnpm --filter @fenglimg/fabric-cli test scan-builders` and verify the CJK test asserts 'zh-CN-hybrid'",
+    "Run full scan-related tests: `pnpm --filter @fenglimg/fabric-cli test scan` and verify exit 0 (depends on TASK-003 being merged for the schema to accept fabric_language)"
+  ],
+  "reference": {
+    "pattern": "Language-detection probe: detectExistingLanguage measures CJK character ratio over README + docs/*.md and returns one of three values. Now extended to return the new zh-CN-hybrid value on CJK signal, since real-world CJK projects almost always preserve English technical terms.",
+    "files": [
+      "packages/cli/src/commands/scan.ts",
+      "packages/cli/__tests__/scan-builders.test.ts"
+    ],
+    "examples": "Match the existing detectExistingLanguage return-value convention; the function is the canonical decision point for init-time language fixation."
+  },
+  "convergence": {
+    "criteria": [
+      "scan.ts detectExistingLanguage returns 'zh-CN-hybrid' on CJK signal (verify via test)",
+      "scan.ts has zero 'knowledge_language' references (grep returns empty)",
+      "Helper function renamed to resolveFabricLanguage; all call sites updated; __testing__ export updated",
+      "scan-builders.test.ts CJK test expects 'zh-CN-hybrid'; other three tests pass unchanged",
+      "Full scan test suite passes (`pnpm --filter @fenglimg/fabric-cli test scan` exit 0)",
+      "Dogfood validation: running detectExistingLanguage against THIS project's root returns 'zh-CN-hybrid' (the project is CJK-heavy README + English Skill technical terms — the canonical hybrid case)"
+    ]
+  },
+  "depends_on": ["TASK-003"],
+  "rationale": {
+    "chosen_approach": "Auto-detection defaults to the more practical zh-CN-hybrid (preserves technical terms) rather than the stricter pure zh-CN. Users who want strict monolingual zh-CN must opt in by editing fabric-config.json — this matches actual UX expectations for CJK projects.",
+    "alternatives_considered": [
+      "Keep zh-CN as auto-detect default; require user to edit config for hybrid (rejected: forces every CJK user to edit config; contradicts the principle of best-default detection)",
+      "Add a second config field 'preserve_technical_terms: boolean' (rejected: doubles the config surface for a single decision; enum value is cleaner)",
+      "Auto-detect by also probing for English code-block ratio (rejected: more complex; the four enum values already capture the meaningful axes)"
+    ],
+    "decision_factors": [
+      "Real-world CJK projects almost always preserve English technical terms",
+      "Single enum-value decision is simpler than dual-flag",
+      "Reversible by editing one config field"
+    ],
+    "tradeoffs": "Users who genuinely want strict zh-CN must opt in. Documented in the TASK-003 docs/configuration.md update."
+  },
+  "test": {
+    "manual_checks": [
+      "Run scan on this dogfood project; verify the detected language is 'zh-CN-hybrid' (CJK README + English Skill technical terms)",
+      "Run scan on a fixture with EN-only README; verify the detected language is 'en'",
+      "Run scan on an empty repo; verify the detected language is 'match-existing' or null per current contract"
+    ],
+    "success_metrics": [
+      "scan-builders.test.ts CJK test passes with 'zh-CN-hybrid' assertion",
+      "Full scan test suite passes",
+      "No 'knowledge_language' references in scan.ts"
+    ],
+    "unit": [
+      "test_detectExistingLanguage_CJK_heavy_returns_zh_CN_hybrid",
+      "test_detectExistingLanguage_en_only_returns_en (unchanged)",
+      "test_detectExistingLanguage_empty_repo_returns_default (unchanged)"
+    ],
+    "integration": [
+      "Coordination with TASK-003 schema: fabricLanguageSchema must accept 'zh-CN-hybrid' for scan-init.test.ts to pass end-to-end"
+    ]
+  }
+}

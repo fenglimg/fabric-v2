@@ -1,0 +1,415 @@
+{
+  "project_structure": "Bootstrap templates live in two orthogonal locations that have drifted: (1) packages/cli/templates/bootstrap/ contains three orphaned hand-edited files (CLAUDE.md, codex-AGENTS-header.md, cursor-fabric-bootstrap.mdc) that are NOT consumed by any production source under packages/cli/src/; (2) the actual install path uses packages/cli/src/install/skills-and-hooks.ts:buildFabricKnowledgeBaseSection() which writes a single HTML-comment-wrapped managed section (marker `fabric:knowledge-base`) into the three SECTION_TARGETS files: CLAUDE.md, AGENTS.md, .cursor/rules. A fourth file packages/cli/templates/agents-md/AGENTS.md.template is also orphaned (no consumer in src/; its content overlaps with the AGENTS_MD_DEFAULT_CONTENT inline string at install.ts:259). The repo's own .fabric/AGENTS.md (the rc.19 future canonical source) does not yet exist — only the root AGENTS.md carries the managed block today.",
+  "relevant_files": [
+    {
+      "path": "packages/cli/templates/bootstrap/CLAUDE.md",
+      "relevance": 0.95,
+      "rationale": "One of three legacy bootstrap templates rc.19 plans to consolidate. Currently contains 7 lines of behavior rules in Chinese and a dead pointer to `.fabric/bootstrap/README.md` (line 2), plus `@AGENTS.md` import directive (line 8). NOT consumed by any code in packages/cli/src/ — confirmed via `grep -r templates/bootstrap packages/cli/src/` returning empty.",
+      "role": "modify_target",
+      "discovery_source": "bash-scan",
+      "key_code": [
+        {
+          "symbol": "L2 dead pointer",
+          "location": "L2",
+          "description": "`- 主说明文档已收敛到 \\`.fabric/bootstrap/README.md\\`。` — dead pointer; .fabric/bootstrap/ no longer exists per v2.0 (server/src/services/knowledge-meta-builder.ts:555 comment 'v2.0: no special-cased L0 node')."
+        },
+        {
+          "symbol": "L4 behavior rule",
+          "location": "L4",
+          "description": "`修改任何文件前必须调用 fab_plan_context(paths=[<被改文件>]), 再调用 fab_get_knowledge_sections...` — this rule is the canonical behavior rule that rc.19 will re-state inside .fabric/AGENTS.md."
+        },
+        {
+          "symbol": "L8 import directive",
+          "location": "L8",
+          "description": "`@AGENTS.md` — Claude Code import syntax. In rc.19 thin-shell model, this becomes `@.fabric/AGENTS.md`."
+        }
+      ],
+      "topic_relation": "bootstrap-templates exploration must capture the exact byte content of all three orphaned templates so rc.19 can decide what to keep (behavior rules in .fabric/AGENTS.md), what to delete (dead `.fabric/bootstrap/README.md` line), and what to migrate (@AGENTS.md → @.fabric/AGENTS.md)."
+    },
+    {
+      "path": "packages/cli/templates/bootstrap/codex-AGENTS-header.md",
+      "relevance": 0.95,
+      "rationale": "Second of three legacy bootstrap templates. Contains the same dead pointer + behavior rules pattern as CLAUDE.md but without the `@AGENTS.md` directive. NOT consumed by any code in packages/cli/src/.",
+      "role": "modify_target",
+      "discovery_source": "bash-scan",
+      "key_code": [
+        {
+          "symbol": "L2 dead pointer",
+          "location": "L2",
+          "description": "`- 主说明文档已收敛到 \\`.fabric/bootstrap/README.md\\`。` — same dead pointer as CLAUDE.md; must be removed in rc.19."
+        },
+        {
+          "symbol": "L3 self-referential note",
+          "location": "L3",
+          "description": "`- 此 header 仅用于把 Codex 引导到 Fabric 项目级规则入口。` — meta-note about the file's role; obsolete because Codex now reads AGENTS.md directly with managed-block injection."
+        }
+      ],
+      "topic_relation": "bootstrap-templates analysis confirms this file is also orphaned and should be deleted. Codex receives the same rc.19 bootstrap content as the other two clients via the consolidated managed-block writer pointing to .fabric/AGENTS.md."
+    },
+    {
+      "path": "packages/cli/templates/bootstrap/cursor-fabric-bootstrap.mdc",
+      "relevance": 0.95,
+      "rationale": "Third of three legacy bootstrap templates. Only one with YAML front-matter (`alwaysApply: true`, `description:`). Reference for Cursor `.mdc` metadata pattern. NOT consumed by any code in packages/cli/src/.",
+      "role": "modify_target",
+      "discovery_source": "bash-scan",
+      "key_code": [
+        {
+          "symbol": "YAML front-matter",
+          "location": "L1-L4",
+          "description": "`---\\nalwaysApply: true\\ndescription: Fabric Protocol bootstrap rules\\n---` — Cursor's project-rules metadata. `alwaysApply: true` means Cursor injects the rule unconditionally on every prompt. Required for the rule to be active without `globs:` or `@` invocation."
+        },
+        {
+          "symbol": "L7 outdated rule",
+          "location": "L7",
+          "description": "`本项目使用 Fabric Protocol 管理规则。` — slightly different phrasing from CLAUDE.md/codex-AGENTS-header.md (Protocol vs. just Fabric). Demonstrates drift across the three templates."
+        },
+        {
+          "symbol": "L10 deprecated terminology",
+          "location": "L10",
+          "description": "Refers to `fab_get_rules` semantics implicitly via `fab_plan_context + fab_get_knowledge_sections`. Matches the new v2 knowledge-API verbs, but path resolution `<被改文件>` still uses pre-v2 phrasing."
+        }
+      ],
+      "topic_relation": "bootstrap-templates exploration must specify the Cursor `.mdc` front-matter requirements for rc.19's `.cursor/rules/fabric-bootstrap.mdc` (or whatever filename is chosen). The thin-shell Cursor file MUST keep `alwaysApply: true` + `description:` lines BEFORE the managed-block markers so Cursor activates the rule."
+    },
+    {
+      "path": "AGENTS.md",
+      "relevance": 0.95,
+      "rationale": "Repo-root AGENTS.md is the ONLY file in this project that currently carries the `fabric:knowledge-base` managed block (verified L10-L21). Lines 1-8 are user-authored content (preserved across re-runs); lines 10-21 are the managed section. This is the existing pattern rc.19 will replicate for `.fabric/AGENTS.md` + new bootstrap files.",
+      "role": "modify_target",
+      "discovery_source": "bash-scan",
+      "key_code": [
+        {
+          "symbol": "Existing managed block",
+          "location": "L10-L21",
+          "description": "`<!-- fabric:knowledge-base:begin --> ... <!-- fabric:knowledge-base:end -->` wraps the Fabric Knowledge Base subsection (KB-only content, no behavior rules). rc.19 will rename marker to `fabric:bootstrap` and expand block to include behavior rules + KB section."
+        },
+        {
+          "symbol": "Pre-block user content",
+          "location": "L1-L8",
+          "description": "User-authored README content survives re-runs verbatim. For rc.19, this content is irrelevant once .fabric/AGENTS.md becomes the source; root AGENTS.md becomes a thin shell that just hosts the managed block."
+        }
+      ],
+      "topic_relation": "bootstrap-templates angle: this file shows the working managed-block pattern (existing fabric:knowledge-base marker + atomic in-place replacement). rc.19's `fabric:bootstrap` marker is a rename + body-expansion of this exact pattern."
+    },
+    {
+      "path": "packages/cli/src/install/skills-and-hooks.ts",
+      "relevance": 0.9,
+      "rationale": "Source of truth for the current `fabric:knowledge-base` marker writer. Contains SECTION_TARGETS (L224), FABRIC_SECTION_BEGIN/END_MARKER constants (L235-L236), FABRIC_SECTION_REGEX (L246), buildFabricKnowledgeBaseSection() (L291-L304) and addFabricKnowledgeBaseSection() (L638-L702). rc.19 must rename the marker and expand the body builder.",
+      "role": "modify_target",
+      "discovery_source": "cli-analysis",
+      "key_code": [
+        {
+          "symbol": "SECTION_TARGETS",
+          "location": "L224",
+          "description": "`['CLAUDE.md', 'AGENTS.md', join('.cursor', 'rules')]` — note `.cursor/rules` is a single FILE path, NOT a directory of .mdc files. This is a pre-existing drift bug: real Cursor rules live at `.cursor/rules/<name>.mdc`. rc.19 should fix this to `.cursor/rules/fabric-bootstrap.mdc`."
+        },
+        {
+          "symbol": "FABRIC_SECTION_BEGIN_MARKER",
+          "location": "L235",
+          "description": "`<!-- fabric:knowledge-base:begin -->` — rc.19 renames to `<!-- fabric:bootstrap:begin -->`. Marker is a plain string substituted into regex L246."
+        },
+        {
+          "symbol": "FABRIC_SECTION_REGEX",
+          "location": "L246",
+          "description": "Non-greedy regex `/(?:\\r?\\n){0,2}<!-- fabric:knowledge-base:begin -->[\\s\\S]*?<!-- fabric:knowledge-base:end -->/` — must be updated in lockstep with marker rename. Used by both install (in-place replace) and uninstall (strip)."
+        },
+        {
+          "symbol": "buildFabricKnowledgeBaseSection",
+          "location": "L291-L304",
+          "description": "Template literal that emits the section body. Currently includes only KB discovery/usage/write-flows/language bullets. rc.19 expands this to include behavior rules section + KB section, with body = byte copy of .fabric/AGENTS.md (+ optional `\\n---\\n` + .fabric/project-rules.md)."
+        },
+        {
+          "symbol": "addFabricKnowledgeBaseSection",
+          "location": "L638-L702",
+          "description": "Idempotent writer: if marker found, in-place replace via FABRIC_SECTION_REGEX; else append with one blank-line separator. Skips files that don't exist (won't create anchor files). rc.19 keeps the same writer mechanics but changes input source from string-literal to file-read of .fabric/AGENTS.md."
+        }
+      ],
+      "topic_relation": "This file is the only place where bootstrap content is actually materialized today. The orphan templates in packages/cli/templates/bootstrap/ never participate; everything the user sees comes from this writer's string-literal body. rc.19's consolidation MUST update this file to read .fabric/AGENTS.md instead of building the string in code."
+    },
+    {
+      "path": "packages/cli/src/install/uninstall-skills-and-hooks.ts",
+      "relevance": 0.85,
+      "rationale": "Counterpart strip logic — imports SECTION_TARGETS, FABRIC_SECTION_REGEX, FABRIC_SECTION_BEGIN/END_MARKER. Strips the managed region during `fab uninstall`. Must be updated in lockstep when rc.19 renames the marker.",
+      "role": "modify_target",
+      "discovery_source": "dependency-trace",
+      "key_code": [
+        {
+          "symbol": "uninstallBootstrapStage",
+          "location": "L379+",
+          "description": "Orchestrator that fans out marker-strip across SECTION_TARGETS. Inverse of addFabricKnowledgeBaseSection. rc.19 marker rename touches the imports here only — no logic changes needed."
+        },
+        {
+          "symbol": "section-strip loop",
+          "location": "L275-L310",
+          "description": "Reads each SECTION_TARGETS path, applies FABRIC_SECTION_REGEX to strip the managed region (markers inclusive + optional leading blank line). Must keep working with renamed `fabric:bootstrap` marker."
+        }
+      ],
+      "topic_relation": "bootstrap-templates rc.19 marker rename has a downstream effect: uninstall must strip the NEW marker name. If users installed under rc.18 (knowledge-base marker) then uninstall under rc.19 (bootstrap marker), the old marker would not be stripped. rc.19 plan must decide: support both markers in regex, or accept clean-slate drift (Y memory: pre-user clean-slate preference)."
+    },
+    {
+      "path": "packages/cli/src/commands/install.ts",
+      "relevance": 0.85,
+      "rationale": "Orchestrates the bootstrap stage at L1002-L1054. Calls addFabricKnowledgeBaseSection at L1043. Also contains AGENTS_MD_DEFAULT_CONTENT (L259-L267) — the inline string used to create root AGENTS.md when missing (L730-L732). rc.19 changes: root AGENTS.md content shrinks to thin-shell (just the managed block); new .fabric/AGENTS.md created with the locked content.",
+      "role": "modify_target",
+      "discovery_source": "cli-analysis",
+      "key_code": [
+        {
+          "symbol": "AGENTS_MD_DEFAULT_CONTENT",
+          "location": "L259-L267",
+          "description": "Inline template literal used when no AGENTS.md exists at install. Currently 8 lines of project-knowledge intro + Fabric reference. rc.19: this should become the thin-shell content (markers only, with optional pre-marker header) OR be deleted in favor of templates/agents-md/AGENTS.md.template (which is currently orphaned)."
+        },
+        {
+          "symbol": "executeInitFabricPlan AGENTS.md write",
+          "location": "L724-L732",
+          "description": "Idempotent guard: only writes AGENTS_MD_DEFAULT_CONTENT when plan.agentsMdAction === 'created' AND !existsSync(plan.agentsMdPath). rc.19 adds a parallel write for .fabric/AGENTS.md with the locked rc.19 content."
+        },
+        {
+          "symbol": "bootstrap stage orchestration",
+          "location": "L1002-L1054",
+          "description": "10-step stage: skill installs (3) + hook scripts (3) + hook libs (1) + hook config merges (3) + managed-section write (1). rc.19: section write at L1043 must use new file-reading body builder."
+        }
+      ],
+      "topic_relation": "bootstrap-templates rc.19 plan revises both the default content (AGENTS_MD_DEFAULT_CONTENT) AND introduces a new .fabric/AGENTS.md write. The bootstrap-stage orchestration list is the integration point where rc.19 inserts (a) .fabric/AGENTS.md creation if missing, (b) revised section body source."
+    },
+    {
+      "path": "packages/cli/templates/agents-md/AGENTS.md.template",
+      "relevance": 0.7,
+      "rationale": "Orphaned template (NOT consumed by any code in packages/cli/src/). 60-line bilingual file containing CORE RULES + Knowledge layer documentation. Line 18 contains the dead pointer `.fabric/bootstrap/README.md`. Either rc.19 wires this in as the source for .fabric/AGENTS.md (replacing the locked-content path), or it should be deleted alongside the bootstrap/ templates.",
+      "role": "modify_target",
+      "discovery_source": "bash-scan",
+      "key_code": [
+        {
+          "symbol": "L5 self-referential rule",
+          "location": "L5",
+          "description": "`MUST: Treat this file as the Fabric Protocol bootstrap for this repository.` — meta-rule about the file's own status. Conflict noted in earlier analysis (ANL-2026-05-09): `this file` is ambiguous when template path differs from install target."
+        },
+        {
+          "symbol": "L18 dead pointer",
+          "location": "L18",
+          "description": "`- 详细 bootstrap 说明位于 \\`.fabric/bootstrap/README.md\\`.` — same dead pointer as the three bootstrap/ templates. Must be removed."
+        }
+      ],
+      "topic_relation": "bootstrap-templates rc.19 should decide: does this file become the source for .fabric/AGENTS.md (template-driven), or is it deleted alongside packages/cli/templates/bootstrap/? Given the locked rc.19 content in the task brief differs from this file's body, the cleanest path is delete + inline literal in commands/install.ts (or .fabric/AGENTS.md.template renamed)."
+    },
+    {
+      "path": "packages/cli/src/install/hooks-orchestrator.ts",
+      "relevance": 0.65,
+      "rationale": "Second call site for addFabricKnowledgeBaseSection (L114). Triggered by standalone `fab hooks install` (not full init). rc.19 marker rename must not break this path — same function call, internal body change.",
+      "role": "dependency",
+      "discovery_source": "dependency-trace",
+      "key_code": [
+        {
+          "symbol": "addFabricKnowledgeBaseSection call",
+          "location": "L114",
+          "description": "Same call signature as install.ts:1043. After rc.19 the function name itself should probably rename to addFabricBootstrapSection for clarity (or stay knowledge-base to minimize churn — design decision)."
+        }
+      ],
+      "topic_relation": "bootstrap-templates rc.19 must verify that hooks-orchestrator (standalone `fab hooks install`) writes the same expanded bootstrap section as the full init path. Drift between the two would reintroduce the rc.18 problem this RC fixes."
+    },
+    {
+      "path": "packages/cli/__tests__/integration/install-skills-and-hooks.test.ts",
+      "relevance": 0.75,
+      "rationale": "Four-test coverage of the managed section: presence, idempotency, fabric_language change replace, user vandalism overwrite. Uses SECTION_BEGIN/END string constants (L442-L443) that must update with rc.19 marker rename.",
+      "role": "test_target",
+      "discovery_source": "bash-scan",
+      "key_code": [
+        {
+          "symbol": "SECTION_BEGIN / SECTION_END constants",
+          "location": "L442-L443",
+          "description": "Local copies of the marker strings used in countOccurrences assertions. Must update to `fabric:bootstrap:begin/end` in rc.19."
+        },
+        {
+          "symbol": "test seed targets",
+          "location": "L465-L467, L492-L494",
+          "description": "`writeFixtureFile(target, '.cursor/rules', seedContent)` — confirms the existing tests treat `.cursor/rules` as a FILE (not a directory). If rc.19 fixes the Cursor target to `.cursor/rules/fabric-bootstrap.mdc`, these test seeds + SECTION_TARGETS must update in lockstep."
+        }
+      ],
+      "topic_relation": "bootstrap-templates rc.19 marker rename + Cursor target fix BOTH require coordinated changes in this test file. Without updates, tests will fail or test stale paths."
+    },
+    {
+      "path": "packages/cli/__tests__/integration/uninstall-skills-and-hooks.test.ts",
+      "relevance": 0.7,
+      "rationale": "Counterpart uninstall coverage. Uses SECTION_BEGIN_UN/SECTION_END_UN local constants (L329-L330) that mirror the marker strings.",
+      "role": "test_target",
+      "discovery_source": "bash-scan",
+      "key_code": [
+        {
+          "symbol": "SECTION_BEGIN_UN / SECTION_END_UN",
+          "location": "L329-L330",
+          "description": "Local marker copies for the strip assertions. Must update in lockstep with rc.19 marker rename."
+        }
+      ],
+      "topic_relation": "bootstrap-templates rc.19 marker rename requires both install + uninstall tests to update their local marker constants. Centralizing these as imports from skills-and-hooks.ts (FABRIC_SECTION_BEGIN_MARKER) would prevent future drift."
+    },
+    {
+      "path": "packages/cli/src/config/resolver.ts",
+      "relevance": 0.55,
+      "rationale": "Four occurrences of dead pointer `.fabric/bootstrap/README.md` at L105, L122, L135, L148 — one per client in the detectClientSupports() return array. Field name is `bootstrapTargetPath`. Currently unused by install (no code reads this field), but documents per-client bootstrap target.",
+      "role": "modify_target",
+      "discovery_source": "bash-scan",
+      "key_code": [
+        {
+          "symbol": "bootstrapTargetPath fields",
+          "location": "L105, L122, L135, L148",
+          "description": "Four identical literals `.fabric/bootstrap/README.md` — one each for ClaudeCodeCLI, ClaudeCodeDesktop, Cursor, CodexCLI. The field is documented in DetectedClientSupport type but no caller consumes it (verified via grep). Dead pointer cleanup: either remove the field entirely or update value (e.g., to .fabric/AGENTS.md for the source, or to the per-client target like CLAUDE.md / .cursor/rules/fabric-bootstrap.mdc / AGENTS.md)."
+        }
+      ],
+      "topic_relation": "bootstrap-templates rc.19 dead-pointer cleanup includes these four lines. Since no caller reads bootstrapTargetPath, the safest cleanup is to delete the field from the four DetectedClientSupport objects and from the type definition (if defined as optional)."
+    },
+    {
+      "path": "packages/shared/src/schemas/agents-meta.ts",
+      "relevance": 0.5,
+      "rationale": "Two dead-pointer occurrences at L223 and L249 — both inside `deriveAgentsMetaStableId`/`deriveAgentsMetaLayer` helpers that special-case the legacy `.fabric/bootstrap/README.md` path alongside `AGENTS.md`. Listed as legacy compat in agents-meta.test.ts:179.",
+      "role": "modify_target",
+      "discovery_source": "bash-scan",
+      "key_code": [
+        {
+          "symbol": "stable_id derivation special case",
+          "location": "L223",
+          "description": "`if (normalized === 'AGENTS.md' || normalized === '.fabric/bootstrap/README.md') { return 'bootstrap'; }` — emits stable_id='bootstrap'. With rc.19 the .fabric/bootstrap/ path never exists, so the second clause is dead code. Safe to remove."
+        },
+        {
+          "symbol": "layer derivation special case",
+          "location": "L249",
+          "description": "Same `.fabric/bootstrap/README.md` special-case in the L0 layer derivation. Dead code; rc.19 removes."
+        }
+      ],
+      "topic_relation": "bootstrap-templates rc.19 cleanup includes removing the dead-pointer special-case branches in agents-meta.ts. Coordinate with packages/shared/test/agents-meta.test.ts:179 which asserts the stable_id mapping (test must be deleted or updated to reflect .fabric/AGENTS.md as the new L0 anchor)."
+    },
+    {
+      "path": "packages/shared/src/i18n/locales/en.ts",
+      "relevance": 0.45,
+      "rationale": "i18n key `cli.scan.recommendation.init` at L375 contains dead pointer text: 'L0: Run fab install to scaffold .fabric/bootstrap/README.md with TODO markers.'. User-visible string surfaced by scan recommendation.",
+      "role": "modify_target",
+      "discovery_source": "bash-scan",
+      "key_code": [
+        {
+          "symbol": "cli.scan.recommendation.init",
+          "location": "L375",
+          "description": "Update to reference `.fabric/AGENTS.md` (or just `AGENTS.md` if rc.19 keeps the canonical source at repo root). i18n English locale; coordinate with zh-CN.ts:369."
+        }
+      ],
+      "topic_relation": "bootstrap-templates dead-pointer cleanup includes user-visible i18n strings. Without updating, scan recommendation tells users to scaffold a path that no longer exists."
+    },
+    {
+      "path": "packages/shared/src/i18n/locales/zh-CN.ts",
+      "relevance": 0.45,
+      "rationale": "Mirror of the en.ts dead-pointer i18n string at L369: '...在 .fabric/bootstrap/README.md 生成带 TODO 标记的初始说明。'. Must update in lockstep with en.ts.",
+      "role": "modify_target",
+      "discovery_source": "bash-scan",
+      "key_code": [
+        {
+          "symbol": "cli.scan.recommendation.init (zh-CN)",
+          "location": "L369",
+          "description": "Translate the rc.19 path-corrected English version. Same key, same path reference."
+        }
+      ],
+      "topic_relation": "bootstrap-templates i18n cleanup. Both locales need synchronized updates per the F2 banner-i18n convention (rc.16)."
+    },
+    {
+      "path": "docs/SPEC_INTERNAL.md",
+      "relevance": 0.4,
+      "rationale": "Two dead-pointer occurrences at L9 (init flow description) and L251 (file inventory). Internal spec document — needs alignment with rc.19 canonical source.",
+      "role": "modify_target",
+      "discovery_source": "bash-scan",
+      "topic_relation": "bootstrap-templates dead-pointer cleanup must extend to internal docs to prevent re-introduction by future work copying the spec."
+    },
+    {
+      "path": "docs/getting-started.md",
+      "relevance": 0.4,
+      "rationale": "Dead pointer at L50 in the user-facing getting-started guide. High user impact if left stale (users searching for `.fabric/bootstrap/README.md` after init won't find it).",
+      "role": "modify_target",
+      "discovery_source": "bash-scan",
+      "topic_relation": "bootstrap-templates rc.19 dead-pointer cleanup; user-facing docs."
+    },
+    {
+      "path": "docs/RULE_REGISTRY.md",
+      "relevance": 0.4,
+      "rationale": "Dead pointer at L17 and references to `templates/bootstrap/CLAUDE.md`, `codex-AGENTS-header.md`, `cursor-fabric-bootstrap.mdc` at L87-L89. Documents the now-orphan template paths.",
+      "role": "modify_target",
+      "discovery_source": "bash-scan",
+      "topic_relation": "bootstrap-templates rc.19 deletes the three orphan templates and removes their RULE_REGISTRY rows. The registry concept itself may also need rethinking if there's only one bootstrap source going forward (.fabric/AGENTS.md)."
+    },
+    {
+      "path": "docs/test-seed/server.md",
+      "relevance": 0.35,
+      "rationale": "Dead pointer at L14 referring to AGENTS_MD_RESOURCE_URI as `.fabric/bootstrap/README.md`. Suggests an MCP resource handler binding that may also be stale (cross-check with rc.19 install-flow exploration).",
+      "role": "context_only",
+      "discovery_source": "bash-scan",
+      "topic_relation": "bootstrap-templates cleanup; docs alignment. The MCP resource URI binding itself is outside bootstrap-templates scope but must be reconciled by another rc.19 task."
+    },
+    {
+      "path": "CHANGELOG.md",
+      "relevance": 0.3,
+      "rationale": "Two historical entries at L870-L871 mentioning `.fabric/bootstrap/README.md` as the v1.3.1-era source. Should be left as historical record (do not retroactively edit changelog) but rc.19 entry must note the consolidation.",
+      "role": "context_only",
+      "discovery_source": "bash-scan",
+      "topic_relation": "bootstrap-templates rc.19 adds a new CHANGELOG entry — existing entries are historical and should NOT be edited."
+    }
+  ],
+  "patterns": "Existing managed-block pattern (rc.12 broad-gate-fabric-lang TASK-006): HTML-comment-wrapped section with begin/end markers, in-place replace via non-greedy regex, idempotent + byte-identical re-runs, skips absent files (does not create anchors), user content outside markers preserved verbatim, user content INSIDE markers intentionally overwritten on re-run. Section body built via template literal in buildFabricKnowledgeBaseSection() with fabric_language interpolated. Marker constants centralized as `FABRIC_SECTION_BEGIN_MARKER` / `FABRIC_SECTION_END_MARKER` in skills-and-hooks.ts but DUPLICATED as local constants in test files (drift risk). Cursor `.mdc` front-matter pattern (from cursor-fabric-bootstrap.mdc): three-line YAML block at top — `---\\nalwaysApply: true\\ndescription: <text>\\n---` — required for the rule to activate. Test fixture pattern uses `.cursor/rules` as a FILE path (not directory), which is a pre-existing drift from real Cursor convention (`.cursor/rules/<name>.mdc`). Atomic write pattern via atomicWriteText() throughout — half-written-file failure mode is out of scope.",
+  "dependencies": "Internal dependencies for the bootstrap section path: packages/cli/src/install/skills-and-hooks.ts (writer + constants) → consumed by packages/cli/src/commands/install.ts (full init) AND packages/cli/src/install/hooks-orchestrator.ts (standalone `fab hooks install`). Uninstall counterpart: packages/cli/src/install/uninstall-skills-and-hooks.ts imports SECTION_TARGETS + FABRIC_SECTION_REGEX. Test imports: install-skills-and-hooks.test.ts + uninstall-skills-and-hooks.test.ts DUPLICATE marker constants locally (drift risk). Schema dependencies: packages/shared/src/schemas/agents-meta.ts contains dead `.fabric/bootstrap/README.md` special-case branches in stable_id + layer derivation (L223, L249). i18n dependencies: cli.scan.recommendation.init key in en.ts (L375) + zh-CN.ts (L369). No runtime/dynamic key lookup detected for bootstrap content — all paths are statically string-literal'd.",
+  "integration_points": "rc.19 integration touch points: (1) packages/cli/src/install/skills-and-hooks.ts — rename markers (knowledge-base → bootstrap), update FABRIC_SECTION_REGEX in lockstep, change buildFabricKnowledgeBaseSection signature/body to read from .fabric/AGENTS.md instead of inline template literal. (2) packages/cli/src/commands/install.ts:730-732 — add parallel write for .fabric/AGENTS.md with rc.19-locked content; AGENTS_MD_DEFAULT_CONTENT (L259) shrinks to thin-shell (markers + optional pre-marker header). (3) packages/cli/src/install/uninstall-skills-and-hooks.ts — imports auto-track marker rename. (4) Tests: install-skills-and-hooks.test.ts (L442-L443, L465-L467) + uninstall-skills-and-hooks.test.ts (L329-L330) update local marker constants and target paths. (5) Schemas: packages/shared/src/schemas/agents-meta.ts (L223, L249) — remove dead special-case clauses or remap to `.fabric/AGENTS.md`. (6) i18n: en.ts:375 + zh-CN.ts:369 update. (7) Templates to DELETE: packages/cli/templates/bootstrap/{CLAUDE.md, codex-AGENTS-header.md, cursor-fabric-bootstrap.mdc} (orphans, no consumer). (8) Templates to DECIDE: packages/cli/templates/agents-md/AGENTS.md.template (also orphan; either wire in as the .fabric/AGENTS.md source or delete). (9) Docs cleanup: docs/SPEC_INTERNAL.md, docs/getting-started.md, docs/RULE_REGISTRY.md, docs/test-seed/server.md. (10) Config resolver: packages/cli/src/config/resolver.ts:105/122/135/148 bootstrapTargetPath field — likely remove (no consumer).",
+  "constraints": "Hard constraints from existing system: (1) Marker rename MUST be lockstep across writer regex, constant exports, uninstall strip regex, and test local copies — otherwise install/uninstall asymmetry breaks idempotency. (2) Cursor `.cursor/rules/<name>.mdc` files REQUIRE YAML front-matter (`alwaysApply: true` + `description:`) BEFORE the managed-block markers for the rule to activate in Cursor; the front-matter is the 'pre-managed-block content' that must survive re-runs. (3) Claude Code thin-shell `CLAUDE.md` can use `@.fabric/AGENTS.md` import directive, but Claude also reads AGENTS.md natively — duplicate content (CLAUDE.md @-import + root AGENTS.md managed block) is allowed but creates two activation paths. (4) Codex CLI reads root `AGENTS.md` directly; thin shell = root AGENTS.md with managed block. (5) Per memory `feedback_clean_slate.md`, while Fabric has zero users, prefer clean-slate marker rename (no dual-marker backward-compat in uninstall regex) over preserving rc.18 marker. (6) The `.cursor/rules` SECTION_TARGETS path is a FILE (existing tests + writer treat it as such); rc.19 must DECIDE: fix to `.cursor/rules/fabric-bootstrap.mdc` (proper Cursor convention) OR keep as `.cursor/rules` (matches existing tests, but Cursor docs deprecate this pattern). (7) The locked `.fabric/AGENTS.md` content uses `fab_plan_context` + `fab_get_knowledge_sections` verbs — these MUST match the actual MCP tool names registered by fabric-server (verify against tools registration in install-flow exploration).",
+  "clarification_needs": [
+    {
+      "question": "Should `.cursor/rules` SECTION_TARGETS path be migrated to `.cursor/rules/fabric-bootstrap.mdc` (proper Cursor directory-rules convention with .mdc extension + YAML front-matter) or kept as `.cursor/rules` (existing single-file convention matching current tests)?",
+      "context": "Current SECTION_TARGETS at skills-and-hooks.ts:224 points to `.cursor/rules` as a file path. Real Cursor projects use `.cursor/rules/<name>.mdc` directory with per-rule .mdc files containing YAML front-matter. The orphan template cursor-fabric-bootstrap.mdc already demonstrates the .mdc YAML pattern (alwaysApply: true). Fixing this is in-scope for rc.19 consolidation since rc.19 is rebuilding the Cursor bootstrap surface anyway.",
+      "options": [
+        "Fix: write to `.cursor/rules/fabric-bootstrap.mdc` with `---\\nalwaysApply: true\\ndescription: Fabric Protocol bootstrap rules\\n---\\n\\n` prefix before managed block (proper Cursor convention)",
+        "Keep: write to `.cursor/rules` as single file (matches current tests, but stale Cursor convention)",
+        "Defer: leave SECTION_TARGETS unchanged in rc.19; file a separate rc.20 ticket for Cursor target fix"
+      ],
+      "recommended": 0
+    },
+    {
+      "question": "Should rc.19 keep dual-marker support in uninstall regex (strip BOTH `fabric:knowledge-base` AND `fabric:bootstrap`) for rc.18→rc.19 migration, or clean-slate (rc.19 uninstall only strips `fabric:bootstrap`)?",
+      "context": "Per memory project_v2_rc_continuation.md, v2.0 is never published, so zero real users exist. Per memory feedback_clean_slate.md, prefer clean-slate refactors. However, internal dev workflows (this very repo's AGENTS.md L10-L21) carry the rc.18 `fabric:knowledge-base` marker. If rc.19 uninstall doesn't recognize the old marker, dev cleanup will leave orphan blocks.",
+      "options": [
+        "Clean-slate: rc.19 strips only `fabric:bootstrap` marker; manual migration of any existing rc.18 blocks (regex find-replace by hand)",
+        "Dual-marker support: uninstall regex matches both `fabric:knowledge-base` AND `fabric:bootstrap` for one RC cycle; remove in rc.20",
+        "Pre-migration script: rc.19 install runs a one-time marker rename pass before the standard install logic; uninstall stays clean-slate"
+      ],
+      "recommended": 0
+    },
+    {
+      "question": "Should the new managed-block body be (a) a byte-copy of `.fabric/AGENTS.md` + optional `\\n---\\n` + `.fabric/project-rules.md`, or (b) the byte-copy plus the existing fabric_language language line + structural markers?",
+      "context": "The locked .fabric/AGENTS.md content already covers behavior rules + KB section but does NOT mention fabric_language explicitly. The current rc.18 managed block ends with `- **Language**: rendered per fabric_language in .fabric/fabric-config.json (current: <value>)`. If the rc.19 body is a pure byte-copy, the fabric_language signal disappears. If it's byte-copy plus tail, the source-of-truth claim (`.fabric/AGENTS.md` IS the bootstrap) is diluted.",
+      "options": [
+        "Pure byte-copy: managed block = `.fabric/AGENTS.md` content verbatim + optional `\\n---\\n` + `.fabric/project-rules.md`. fabric_language goes elsewhere (e.g., a comment line in AGENTS.md itself, or surfaced via a separate scan recommendation)",
+        "Byte-copy + tail: managed block = AGENTS.md content + optional separator + project-rules.md + auto-appended `- Language: <fabric_language>` bullet. Preserves rc.18 signal but adds non-AGENTS.md content to the block",
+        "Byte-copy with placeholder: .fabric/AGENTS.md contains a literal `{{fabric_language}}` placeholder that the writer interpolates. Single source, dynamic value, no tail-append"
+      ],
+      "recommended": 2
+    },
+    {
+      "question": "Should `.fabric/project-rules.md` be created as an empty file by `fab install` (with a TODO marker), created only on demand (`fab knowledge add --as-project-rules`), or never auto-created (skip in block when absent)?",
+      "context": "The locked .fabric/AGENTS.md content doesn't mention project-rules.md, but the rc.19 brief mentions optional `\\n---\\n` + `.fabric/project-rules.md` as the block body. The brief also asks whether 'fab install should skip when absent.' Three install behaviors differ in user-friction and surface area.",
+      "options": [
+        "Create-on-install: `fab install` writes `.fabric/project-rules.md` with a TODO header if missing (parallels AGENTS.md creation at install.ts:730-732). Pro: discoverable. Con: pollutes fresh installs with empty file",
+        "Skip-when-absent: block writer reads project-rules.md only if existsSync; absent → block contains only AGENTS.md content. User creates project-rules.md manually when needed. Pro: clean fresh install. Con: less discoverable",
+        "Wizard-prompted: install wizard asks 'Add project-specific rules file?' (Y/N); if Y, create with TODO scaffold. Pro: opt-in discovery. Con: more wizard steps"
+      ],
+      "recommended": 1
+    },
+    {
+      "question": "What should the root `CLAUDE.md` thin shell contain (assuming the install wizard creates it for Claude users)?",
+      "context": "Three options for Claude Code: (a) NO root CLAUDE.md — rely on Claude reading root AGENTS.md natively. (b) Root CLAUDE.md with just `@.fabric/AGENTS.md` import. (c) Root CLAUDE.md with managed block (same as AGENTS.md). Claude Code prefers CLAUDE.md when present and falls back to AGENTS.md. Two-file maintenance creates drift risk if both carry the block.",
+      "options": [
+        "No root CLAUDE.md: skip; AGENTS.md is the single source. Pro: no drift. Con: Claude users may expect CLAUDE.md",
+        "Thin import: write CLAUDE.md with just `# Project Knowledge\\n\\n@.fabric/AGENTS.md\\n@.fabric/project-rules.md` (no managed block). Pro: no drift, explicit imports. Con: project-rules.md may not exist",
+        "Mirror AGENTS.md: write CLAUDE.md with the SAME managed block as AGENTS.md (writer fans out). Pro: Claude sees content even without @-import support. Con: two files to keep in sync (managed block handles this idempotently)"
+      ],
+      "recommended": 2
+    }
+  ],
+  "_metadata": {
+    "timestamp": "2026-05-15T13:30:00+08:00",
+    "task_description": "rc.19 bootstrap consolidation — replace three drifted bootstrap templates with single canonical .fabric/AGENTS.md source; find dead-pointer references to clean.",
+    "source": "cli-explore-agent",
+    "exploration_angle": "bootstrap-templates",
+    "exploration_index": 3,
+    "total_explorations": 4,
+    "duration_seconds": 240
+  }
+}

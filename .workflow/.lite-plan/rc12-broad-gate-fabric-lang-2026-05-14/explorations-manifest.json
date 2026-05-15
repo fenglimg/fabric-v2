@@ -1,0 +1,16 @@
+{
+  "session_id": "rc12-broad-gate-fabric-lang-2026-05-14",
+  "task_description": "rc.12: remove SessionStart revision_hash gate + unify fabric_language preference + fab init→install rename + Fabric Knowledge Base section in CLAUDE.md/AGENTS.md/.cursor/rules",
+  "timestamp": "2026-05-14T00:00:00.000Z",
+  "complexity": "Medium",
+  "exploration_count": 1,
+  "explorations": [
+    {
+      "angle": "dependencies",
+      "file": "exploration-dependencies.json",
+      "path": "/Users/wepie/Desktop/personal-projects/pcf/.workflow/.lite-plan/rc12-broad-gate-fabric-lang-2026-05-14/exploration-dependencies.json",
+      "index": 2
+    }
+  ],
+  "notes": "Architecture + integration-points agents timed out; user pre-grilled task with file:line precision so dependencies exploration suffices. User-confirmed clarifications: (1) fab init → fab install: HARD CUT no alias unknown-command on legacy invocation; (2) section delimiters: HTML-comment-wrapped heading <!-- fabric:knowledge-base:begin --> ## Fabric Knowledge Base ... <!-- fabric:knowledge-base:end -->; (3) knowledge_language → fabric_language: hard rename clean-slate no alias no migration (pre-decided in grilling, memory confirms zero users); (4) orphaned .fabric/.cache/sessionstart-last-hash sidecar: ignore as harmless dead state (pre-decided in grilling)."
+}

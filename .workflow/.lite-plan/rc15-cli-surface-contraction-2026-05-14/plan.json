@@ -1,0 +1,48 @@
+{
+  "summary": "rc.15 Phase 2 「CLI surface contraction」 release — 10 cleanup items (C1-C10) bundled into 6 sequential git commits. Contracts the public CLI surface from 7 commands × ~35 flags to 5 visible commands × ~20 flags. Kills legacy escape hatches (--force on install/uninstall/doctor/serve; --reapply on install) per rc.14-promised deprecation. Renames --plan→--dry-run (install+uninstall) and --apply-lint→--fix-knowledge (doctor, CLI-local only). Adds --rescan on doctor (composable single-pass: rescan→mutations→report). Prunes command tree: delete top-level fab hooks (helpers move to install/hooks-orchestrator.ts); fold fab scan → fab doctor --rescan (delete legacy createScanReport + walkFiles + buildRecommendations + getReadmeQuality + matchesIgnorePattern, keep runInitScan); strip fab config subCommands; hide fab plan-context-hint via citty meta.hidden:true; wire fab config visible as rc.16 placeholder. Dedupes auditMode/audit_mode schema dup in packages/shared. Rewrites ServeLockHeldError to drop --force suggestion and surface PID + kill cmd guidance. Drift-recovery path consolidates to `fab uninstall && fab install`.",
+  "approach": "Six sequential commits, each = one task = one cohesive concern. Order: TASK-001 (install flags, biggest blast radius, sets drift-abort message baseline) → TASK-002 (uninstall flags, symmetric mirror, also deletes cleanEmpties option entirely) → TASK-003 (doctor+serve paired because shared ServeLockHeldError message rewrite + shared --force kill) → TASK-004 (command-tree batch: 5 edits sharing the snapshot file + index.ts router) → TASK-005 (schema dedupe, isolated to packages/shared) → TASK-006 (version bump + CHANGELOG, final). Sequential ordering chosen over [1,2,5]-parallel-then-3→4→6 to minimize merge conflicts on shared files (CHANGELOG.md, cli-surface.test.ts, snapshot file). Each task: tsc clean, lint clean, vitest passes individually. End of rc.15: Gemini code review + coverage report runs ONCE for the entire chain per memory feedback_review_batching.md.",
+  "task_ids": ["TASK-001", "TASK-002", "TASK-003", "TASK-004", "TASK-005", "TASK-006"],
+  "task_count": 6,
+  "complexity": "Medium",
+  "estimated_time": "3-4 hours (TASK-001 ~45min, TASK-002 ~45min, TASK-003 ~50min, TASK-004 ~60min, TASK-005 ~15min, TASK-006 ~15min)",
+  "recommended_execution": "Agent",
+  "design_decisions": [
+    { "decision": "Move installHooks to NEW packages/cli/src/install/hooks-orchestrator.ts", "rationale": "Convention match with existing src/install/skills-and-hooks.ts; commands/ directory becomes pure citty wrappers", "tradeoff": "Adds one file + 2 test import path updates + 1 install.ts import update" },
+    { "decision": "--apply-lint → --fix-knowledge rename is CLI + doctor.ts local only", "rationale": "Minimize blast radius; server-side runDoctorApplyLint/DoctorApplyLintReport names are internal contract, not user-visible", "tradeoff": "Internal naming asymmetry between CLI (fixKnowledge) and server (applyLint); mitigated by alias-import at boundary" },
+    { "decision": "cleanEmpties option DELETED entirely (not kept as internal toggle defaulting to true)", "rationale": "Pre-user clean-slate per memory feedback_clean_slate.md; zero callers outside CLI", "tradeoff": "Future rc.16+ callers needing cleanEmpties:false must add option back" },
+    { "decision": "createScanReport + walkFiles + buildRecommendations + getReadmeQuality + matchesIgnorePattern DELETED with scan-edge-cases.test.ts", "rationale": "Pure clean-slate; runInitScan is the v2 replacement and the legacy v1 API has no production callers", "tradeoff": "Lose scan-edge-cases.test.ts coverage; runInitScan + scan-init.test.ts provide v2 coverage" },
+    { "decision": "parseClientFilter (config.ts:56-73) DELETED as orphan after C6", "rationale": "Zero production callers post-C6; rc.16 mcp-config sub-panel can re-add if needed", "tradeoff": "config-install.test.ts client-aliases describe block also deleted; helper rewrite cost in rc.16" },
+    { "decision": "fab config VISIBLE in --help with t('cli.config.placeholder') message", "rationale": "Signals rc.16 ETA to users discovering the surface; consistent with the three-entry model from feedback_cli_design.md", "tradeoff": "Half-baked surface advertised; mitigated by clear placeholder wording 'Config panel coming in rc.16'" },
+    { "decision": "--rescan runs BEFORE doctor report; composable with --fix and --fix-knowledge", "rationale": "Single-pass user experience (rescan → mutations → report); fresh state feeds both mutations and report", "tradeoff": "Slightly longer doctor invocation when --rescan flag set; negligible" },
+    { "decision": "--reapply KILLED outright (no preserved drift-recovery affordance)", "rationale": "feedback_cli_design.md locks this in; drift-recovery becomes `fab uninstall && fab install` (already in drift-abort message)", "tradeoff": "Loss of in-place re-application; mitigated by drift-abort guidance already pointing users to uninstall+install" },
+    { "decision": "install-diff-mode.test.ts Scenario 7 DELETED entirely", "rationale": "Without --force, events.jsonl-as-directory recovery converges to `fab uninstall && fab install`; the drift-abort message already documents this path", "tradeoff": "Loss of explicit corruption-recovery test coverage; user manual recovery still works" },
+    { "decision": "ServeLockHeldError message uses verbose option with PID + kill cmd", "rationale": "Max user guidance; copy-paste kill cmd reduces friction when discovering blocking serve instance", "tradeoff": "Longer error message; acceptable for unambiguous user action" },
+    { "decision": "cli-surface.test.ts public command set stays at 5 (rotate scan→config)", "rationale": "Maintains the drift-gate's contract count; visible config replaces visible scan", "tradeoff": "Drift gate doesn't track hidden plan-context-hint; intentional (hidden ≠ public surface)" },
+    { "decision": "Schema dedupe via direct removal (no zod preprocess shim)", "rationale": "Pre-user clean-slate; non-strict schema silently drops dropped key at parse time so wild camelCase configs don't error", "tradeoff": "External configs with camelCase auditMode silently lose the setting; acceptable for zero-user state" }
+  ],
+  "_metadata": {
+    "timestamp": "2026-05-14T19:30:00+08:00",
+    "source": "cli-lite-planning-agent",
+    "plan_type": "feature",
+    "schema_version": "2.0",
+    "planning_mode": "agent-based",
+    "exploration_angles": ["cli-surface-removals", "command-tree-deps", "schema-and-test-impact"],
+    "session_id": "rc15-cli-surface-contraction-2026-05-14",
+    "duration_seconds": 0,
+    "quality_check": {
+      "executed": true,
+      "method": "internal-review-via-context-comparison",
+      "dimensions": {
+        "completeness": { "passed": true, "notes": "All 10 cleanup items C1-C10 mapped to TASK-001..TASK-005; version bump in TASK-006. Each architectural clarification (11 items in task brief) has explicit handling in the corresponding task's files[]/implementation[]/rationale block." },
+        "granularity": { "passed": true, "notes": "Tasks sized 15-60 min each; TASK-004 is the largest (~60min) at 5 batched command-tree edits sharing the snapshot file. Splitting TASK-004 would force inter-commit snapshot regen churn." },
+        "dependencies": { "passed": true, "notes": "No circular deps. TASK-003 depends on [TASK-001, TASK-002] (merge_fork) because doctor.ts/serve-lock.ts message coordination depends on install/uninstall i18n key shapes being settled. TASK-004 depends on TASK-003 because doctor's --rescan handler imports runInitScan path that scan.ts is restructured around. TASK-005 independent. TASK-006 depends on all five (merge_fork) for CHANGELOG completeness." },
+        "convergence_criteria": { "passed": true, "notes": "Every task has 8-15 quantified criteria (grep-verifiable counts, exact file lists, exit-code gates, snapshot shape assertions). No vague language like 'works correctly'." },
+        "implementation_steps": { "passed": true, "notes": "Each task has 12-20 implementation steps; smallest (TASK-005) has 9 steps. All actionable with explicit file paths + line ranges." },
+        "constraint_compliance": { "passed": true, "notes": "Follows memory feedback_clean_slate.md (pure deletions for cleanEmpties, parseClientFilter, createScanReport legacy block, auditMode dup). Follows feedback_review_batching.md (TASK-006 commit message + implementation step explicitly defers Gemini review to one batch at end). Follows feedback_cli_design.md three-entry model. Follows project_v2_rc_continuation.md (continues rc chain → v2.0.0-rc.15)." }
+      },
+      "summary": { "critical_issues": 0, "minor_issues": 0 },
+      "recommendation": "PASS",
+      "fixes_applied": []
+    }
+  }
+}

@@ -1,0 +1,74 @@
+{
+  "summary": "rc.14 「Stop the bleeding」 release — three P0 fixes (each = one commit) addressing Cursor hooks.json schema bug (Bug X), fab install non-idempotency (Bug V), and dry-run failure on existing workspace (Bug Z). Closes with v2.0.0-rc.14 version bump + CHANGELOG. Bug Y (Codex MCP) parked until end of Phase 4. Preview Phase 2 (rc.15) CLI surface contraction in CHANGELOG.",
+  "approach": "Three atomic, sequential tasks each landing as one git commit. TASK-001 fixes the Cursor hooks.json schema (smallest surface, unblocks Cursor users immediately) by rewriting the template to {version: 1, hooks: {stop, sessionStart, preToolUse}} per verified Cursor docs and flipping HOOK_CONFIG_ARRAY_PATHS.cursor constants in lockstep. TASK-002 refactors planFreshPath from throw-on-existing-unless-force into a non-throwing DiffFileState classifier — splits state-detection from state-transition, enabling auto-apply for missing pieces, abort-on-drift with helpful messaging, and dry-run on already-init workspaces. Includes test helper hoist (snapshotTree + runInit into init-test-utils.ts), new install-diff-mode.test.ts with 5 scenarios, .cursor snapshot parity gap fix, and InstallStepResult status enum extension. Existing --force/--reapply remain in rc.14 as legacy escape hatches with deprecation warnings, slated for removal in rc.15. TASK-003 bumps versions to v2.0.0-rc.14 across all 4 package.json files, prepends a CHANGELOG section covering both fixes plus Bug Y deferral and Phase 2 rc.15 preview, and runs the final release gate. Per memory feedback_review_batching.md, Gemini code review + coverage report run ONCE at end across all 3 commits, not per-task.",
+  "task_ids": ["TASK-001", "TASK-002", "TASK-003"],
+  "task_count": 3,
+  "estimated_time": "120 minutes (TASK-001 ~30 min, TASK-002 ~70 min refactor + tests + helper hoist, TASK-003 ~20 min)",
+  "recommended_execution": "Codex",
+  "complexity": "Medium",
+  "design_decisions": [
+    {
+      "decision": "Cursor schema = {version: 1 (number), hooks: {stop, sessionStart, preToolUse}} with camelCase event names and FLAT per-entry shape",
+      "rationale": "Verified against https://cursor.com/cn/docs/hooks per resolved clarification. Picks Codex-style flat entry shape (NOT Claude-Code nested envelope) — confirmed by official docs example.",
+      "tradeoff": "Users with hand-edited .cursor/hooks.json from rc.13 get their version field overwritten on next install; acceptable because rc.13 schema was rejected by Cursor anyway."
+    },
+    {
+      "decision": "Introduce separate DiffFileState type alongside existing InitWriteAction; translate at rendering boundary",
+      "rationale": "Clean separation of concerns. No breaking changes to formatInitPathAction consumers. Avoids extending the formatter switch and keeps classification semantics self-contained.",
+      "tradeoff": "One extra type to maintain vs. extending a single enum; offset by clearer mental model."
+    },
+    {
+      "decision": "Drift → abort with helpful message pointing to fab doctor + fab uninstall; NO --force-override path in default flow",
+      "rationale": "Per design principle: drift→abort. Existing --force / --reapply stay as legacy escape hatches for one release (rc.14), removed in rc.15.",
+      "tradeoff": "Power users with deliberate edits to managed files must run uninstall+install to reset; acceptable because the intended escape hatch (--force) still works during rc.14."
+    },
+    {
+      "decision": "One-line confirmation 'Workspace already canonical (N files verified)' on all-canonical no-op (not silent)",
+      "rationale": "Better discovery UX than silent success for a tool whose users are still learning the workflow.",
+      "tradeoff": "Slightly less Unix-y; mitigated by being a single-line message that doesn't dominate output."
+    },
+    {
+      "decision": "Run actual runInit() at start of each diff-mode test then mutate fixture from there (option 3 from clarification)",
+      "rationale": "Always faithful to real install output; avoids fixture-vs-template drift over time.",
+      "tradeoff": "Slower test setup vs. shipped pre-init fixture variants; acceptable because integration tests already use tmpdir-per-test."
+    },
+    {
+      "decision": "Extend InstallStepResult status enum with new variants (drift, missing-managed); accept breaking existing test count assertions",
+      "rationale": "Typed and discoverable; we're already refactoring tests as part of TASK-002.",
+      "tradeoff": "Filter predicates in hooks-install-validate.test.ts L114-L131 need status-aware updates; mitigated by being a focused audit pass."
+    },
+    {
+      "decision": "Diff-mode emits install_diff_applied ledger event; reapply_completed stays distinct in rc.14",
+      "rationale": "Keeps ledger event semantics clear during transition window. --reapply slated for removal in rc.15 anyway.",
+      "tradeoff": "Two event types overlap in scope during rc.14; resolved by rc.15 cleanup."
+    },
+    {
+      "decision": "Fill .cursor snapshot parity gap in idempotency test (currently only .claude + .codex snapshotted)",
+      "rationale": "Symmetric coverage prevents future Cursor-side regressions from sneaking past CI.",
+      "tradeoff": "Slightly larger snapshot data; negligible."
+    },
+    {
+      "decision": "End-of-rc.14 review batching: Gemini code review + coverage report ONCE across all 3 commits at end",
+      "rationale": "Per memory feedback_review_batching.md for multi-task lite-plan chains.",
+      "tradeoff": "Late discovery of cross-commit issues; mitigated by per-task convergence criteria including typecheck/lint/test gates."
+    },
+    {
+      "decision": "Sequential dependency: TASK-001 → TASK-002 → TASK-003 (not parallel)",
+      "rationale": "TASK-002 hoists snapshotTree + runInit helpers into init-test-utils.ts. Running TASK-001 first means TASK-001 uses the OLD non-hoisted helpers; TASK-002 then hoists in one focused refactor without colliding test-file edits.",
+      "tradeoff": "Sequential execution is slower than parallel; acceptable for 3-task rc release."
+    }
+  ],
+  "_metadata": {
+    "timestamp": "2026-05-14T00:00:00Z",
+    "source": "cli-lite-planning-agent",
+    "plan_type": "fix",
+    "schema_version": "2.0",
+    "planning_mode": "agent-based",
+    "exploration_angles": ["cursor-hooks-schema", "install-diff-state", "test-surface"],
+    "duration_seconds": 0,
+    "quality_check": {
+      "status": "skipped",
+      "reason": "Resolved-clarification block in prompt eliminates ambiguity; per memory feedback_review_batching.md the Gemini review + coverage gate is intentionally batched at end-of-rc.14 after all 3 commits land (TASK-003 convergence criteria)."
+    }
+  }
+}

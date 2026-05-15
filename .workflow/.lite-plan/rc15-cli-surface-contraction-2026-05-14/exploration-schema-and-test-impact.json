@@ -1,0 +1,628 @@
+{
+  "project_structure": "pnpm monorepo with three packages: packages/shared (zod schemas + types + i18n locales), packages/server (MCP HTTP service + serve-lock state machine), packages/cli (citty command surface: install/scan/serve/uninstall/doctor/hooks/plan-context-hint). Schema source of truth is packages/shared/src/schemas/fabric-config.ts; runtime audit-mode consumers are ZERO (audit-mode is declared in schema and typed in packages/shared/src/types/config.ts but no server/cli code path reads it — only test fixtures exercise it). CLI test architecture is anchored by a CLI surface drift gate (packages/cli/__tests__/cli-surface.test.ts) that snapshots every flag of every command into __snapshots__/cli-surface.test.ts.snap, so ANY flag rename/kill from rc.15 mandates simultaneous snapshot update + critical-flag assertion update + docs/test-seed/cli.md §1 sync.",
+  "relevant_files": [
+    {
+      "path": "packages/shared/src/schemas/fabric-config.ts",
+      "relevance": 1.0,
+      "rationale": "Direct C10 modify_target: lines 52-53 declare BOTH `auditMode` (camelCase, line 52) and `audit_mode` (snake_case, line 53) as optional auditModeSchema fields. The duplicate key is a historical bug from a half-finished rename. rc.15 must delete line 52 and keep line 53 (snake_case matches sibling keys like `archive_hint_hours`, `review_hint_pending_count`, `import_window_first_run_months`).",
+      "role": "modify_target",
+      "discovery_source": "bash-scan",
+      "key_symbols": ["fabricConfigSchema", "auditModeSchema"],
+      "key_code": [
+        {
+          "symbol": "fabricConfigSchema.auditMode",
+          "location": "L52",
+          "description": "DELETE in rc.15 C10. `auditMode: auditModeSchema.optional()` — the camelCase legacy duplicate. No runtime consumer reads this field; only test fixtures."
+        },
+        {
+          "symbol": "fabricConfigSchema.audit_mode",
+          "location": "L53",
+          "description": "KEEP in rc.15 C10. `audit_mode: auditModeSchema.optional()` — snake_case, aligned with archive_hint_hours / review_hint_pending_count / fabric_language naming convention. Becomes the sole spelling."
+        },
+        {
+          "symbol": "auditModeSchema",
+          "location": "L3",
+          "description": "`z.enum(['strict', 'warn', 'off'])` — the enum itself is unchanged; only the field-name dedupe is in scope."
+        }
+      ],
+      "topic_relation": "Schema-and-test-impact angle: this file is the single point of definition for the C10 dedupe. Every test file referencing `auditMode` traces back here."
+    },
+    {
+      "path": "packages/shared/src/types/config.ts",
+      "relevance": 1.0,
+      "rationale": "Mirror of the zod schema for the TypeScript-facing FabricConfig interface. Lines 32-33 carry the SAME duplicate `auditMode?: AuditMode` (L32) and `audit_mode?: AuditMode` (L33). Must delete L32 in lockstep with the schema change or the TS type drifts from the zod-inferred type.",
+      "role": "modify_target",
+      "discovery_source": "bash-scan",
+      "key_symbols": ["FabricConfig", "AuditMode"],
+      "key_code": [
+        {
+          "symbol": "FabricConfig.auditMode",
+          "location": "L32",
+          "description": "DELETE in rc.15 C10. `auditMode?: AuditMode;` — TS mirror of the schema duplicate."
+        },
+        {
+          "symbol": "FabricConfig.audit_mode",
+          "location": "L33",
+          "description": "KEEP in rc.15 C10. `audit_mode?: AuditMode;` — TS mirror of the canonical key."
+        }
+      ],
+      "topic_relation": "Schema-and-test-impact angle: the zod schema and TS type must stay in sync; this is the second of two files defining the field shape."
+    },
+    {
+      "path": "packages/shared/test/fabric-config.test.ts",
+      "relevance": 0.95,
+      "rationale": "Test fixture at L108 uses `auditMode: 'strict' as const` inside the `previousVersionFixture` regression test, then asserts `expect(parsed.auditMode).toBe('strict')` at L117. Both lines break post-dedupe: parse will SILENTLY succeed (zod ignores unknown extras because fabricConfigSchema is NOT .strict()) but `parsed.auditMode` becomes undefined and the assertion fails.",
+      "role": "test_target",
+      "discovery_source": "bash-scan",
+      "key_code": [
+        {
+          "symbol": "previousVersionFixture",
+          "location": "L101-L110",
+          "description": "Legacy v2.0-rc.1-shaped config fixture; L108 carries `auditMode: 'strict' as const`. Update to `audit_mode: 'strict' as const`."
+        },
+        {
+          "symbol": "expect(parsed.auditMode).toBe('strict')",
+          "location": "L117",
+          "description": "Assertion on the parsed result; must change to `parsed.audit_mode`."
+        }
+      ],
+      "topic_relation": "Schema-and-test-impact angle: this is the canonical regression test for fabric-config schema parsing — the place where the dedupe most visibly breaks."
+    },
+    {
+      "path": "packages/shared/test/integration/schemas-roundtrip.test.ts",
+      "relevance": 0.85,
+      "rationale": "L52 inside the I1.1 'full config with all fields' round-trip test passes `auditMode: 'strict'` to roundTrip(fabricConfigSchema, ...). Since the schema is not .strict(), the round-trip still succeeds but the parsed output drops the unknown `auditMode` — the round-trip assertion (input deep-equals output) will fail.",
+      "role": "test_target",
+      "discovery_source": "bash-scan",
+      "key_code": [
+        {
+          "symbol": "I1.1 fabricConfigSchema round-trip — full config with all fields",
+          "location": "L47-L55",
+          "description": "Replace `auditMode: 'strict'` with `audit_mode: 'strict'` on L52."
+        }
+      ],
+      "topic_relation": "Schema-and-test-impact angle: round-trip property defends the invariant that schema.parse is identity on valid inputs — the dedupe's only test-side break here is the field-name swap."
+    },
+    {
+      "path": "packages/shared/test/property-based/zod-roundtrip.test.ts",
+      "relevance": 0.85,
+      "rationale": "fast-check arbitrary at L44-L62 generates BOTH `auditMode` (L49) AND `audit_mode` (L54) as optional record keys. Post-dedupe, the L49 arbitrary must be deleted entirely; only L54 (snake_case) remains.",
+      "role": "test_target",
+      "discovery_source": "bash-scan",
+      "key_code": [
+        {
+          "symbol": "fabricConfigArbitrary",
+          "location": "L44-L62",
+          "description": "fc.record arbitrary; delete L49-L53 (auditMode constantFrom block) and keep L54-L58 (audit_mode block). Cleans the property-based test surface to a single canonical spelling."
+        }
+      ],
+      "topic_relation": "Schema-and-test-impact angle: property-based tests generate config shapes randomly — leaving the camelCase arbitrary would generate invalid configs in the post-dedupe world."
+    },
+    {
+      "path": "packages/cli/__tests__/cli-surface.test.ts",
+      "relevance": 1.0,
+      "rationale": "THE rc.15 test-impact epicenter. L83-L88 snapshots EVERY flag of install/scan/doctor/serve/uninstall via toMatchSnapshot. L108-L113 hard-asserts `install exposes critical flags --force / --scope / --reapply`. L94-L103 hard-asserts the public command set is `{install, scan, doctor, serve, uninstall}` (no `hooks` — already off-list). EVERY rc.15 flag kill / rename touches this file.",
+      "role": "test_target",
+      "discovery_source": "bash-scan",
+      "key_code": [
+        {
+          "symbol": "describe('CLI surface drift gate ...')",
+          "location": "L75-L137",
+          "description": "Top-level drift gate. After rc.15 must (a) update L108 critical-flag assertion if --force is killed across install/uninstall/serve/doctor or if --reapply is killed, (b) optionally re-include `scan` in the public command set assertion if scan command is deleted, (c) leave `hooks` out (already not exported as public; verify hooks command kill removes from packages/cli/src/commands/index.ts)."
+        },
+        {
+          "symbol": "public command set assertion",
+          "location": "L94-L103",
+          "description": "Currently expects `[doctor, install, scan, serve, uninstall]`. If C8 deletes the scan command, this must shrink to `[doctor, install, serve, uninstall]`."
+        },
+        {
+          "symbol": "install critical-flag assertion",
+          "location": "L108-L113",
+          "description": "Currently expects install to have `force, scope, reapply`. If --force / --reapply are killed in rc.15, this assertion must be relaxed (e.g. only `scope`) or rewritten to assert `dry-run` (the renamed --plan)."
+        }
+      ],
+      "topic_relation": "Schema-and-test-impact angle: this is the single drift-gate that catches every CLI surface mutation. Cannot land rc.15 without updating this file."
+    },
+    {
+      "path": "packages/cli/__tests__/__snapshots__/cli-surface.test.ts.snap",
+      "relevance": 1.0,
+      "rationale": "5 snapshot blocks (one per public command) each enumerating EVERY flag. install block carries `apply-lint`, `force`, `plan`, `reapply`; doctor block carries `apply-lint`, `force`, `yes` (with apply-lint-specific description on `yes`); uninstall block carries `force`, `plan`; serve block carries `force`; scan block has only debug/json/target. Every rc.15 flag kill/rename requires regenerating this snapshot (vitest -u).",
+      "role": "test_target",
+      "discovery_source": "bash-scan",
+      "key_code": [
+        {
+          "symbol": "fab doctor snapshot",
+          "location": "L3-L76",
+          "description": "Must remove `apply-lint` entry (L8-L17) if renamed → `fix-knowledge`; remove `force` entry (L27-L35) if --force killed on doctor; update `yes` description (L63-L71) which currently references --apply-lint."
+        },
+        {
+          "symbol": "fab install snapshot",
+          "location": "L78-L196",
+          "description": "Must remove `force` entry (L102-L110) if killed; rename `plan` entry (L147-L155) → `dry-run`; remove `reapply` entry (L156-L164) if killed."
+        },
+        {
+          "symbol": "fab scan snapshot",
+          "location": "L198-L235",
+          "description": "If C8 deletes the entire scan command, this whole block deletes. Otherwise unchanged."
+        },
+        {
+          "symbol": "fab serve snapshot",
+          "location": "L237-L292",
+          "description": "Must remove `force` entry (L252-L260) if killed on serve."
+        },
+        {
+          "symbol": "fab uninstall snapshot",
+          "location": "L294-L403",
+          "description": "Must remove `force` entry (L327-L335) if killed on uninstall; rename `plan` entry (L354-L362) → `dry-run`."
+        }
+      ],
+      "topic_relation": "Schema-and-test-impact angle: ALL flag mutations land here as snapshot churn. Regenerate via `pnpm --filter @fenglimg/fabric-cli test -u`."
+    },
+    {
+      "path": "packages/cli/__tests__/__snapshots__/i18n.test.ts.snap",
+      "relevance": 0.75,
+      "rationale": "i18n test captures stdout/stderr from running install + scan + serve + doctor + uninstall in both locales. Help text bleeds into this snapshot whenever a flag is renamed/killed (description strings flow through i18n keys like cli.install.args.force.description). Must regenerate after flag kills + renames.",
+      "role": "test_target",
+      "discovery_source": "bash-scan",
+      "topic_relation": "Schema-and-test-impact angle: secondary snapshot drift — anything captured from command stdout/stderr that references a killed flag will land here."
+    },
+    {
+      "path": "packages/shared/src/i18n/locales/en.ts",
+      "relevance": 0.95,
+      "rationale": "Hosts every flag description string. L73 `cli.doctor.args.force.description`, L103 `cli.install.args.force.description`, L125 `cli.install.force.warning`, L216 deprecation notice referencing 'v2.0.0-rc.15', L228 `cli.uninstall.args.force.description`, L330 `cli.serve.args.force.description` — all i18n keys for the killed --force flag. Plus apply-lint, plan, reapply keys.",
+      "role": "modify_target",
+      "discovery_source": "bash-scan",
+      "key_code": [
+        {
+          "symbol": "cli.*.args.force.description (×4)",
+          "location": "L73, L103, L228, L330",
+          "description": "Delete all four i18n keys when --force is killed; cleans up doctor/install/uninstall/serve."
+        },
+        {
+          "symbol": "cli.install.force.warning + rc.15 deprecation notice",
+          "location": "L125, L216",
+          "description": "L125 holds the warn banner; L216 holds the literal 'will be removed in v2.0.0-rc.15' message. Both deleted in rc.15 itself (no longer applicable)."
+        },
+        {
+          "symbol": "cli.install.args.apply-lint.description / cli.doctor.args.apply-lint.description",
+          "location": "scan needed",
+          "description": "If --apply-lint renamed → --fix-knowledge, all `apply-lint` i18n keys must be renamed correspondingly."
+        }
+      ],
+      "topic_relation": "Schema-and-test-impact angle: i18n keys propagate to help text snapshots and stdout assertions — every test failure cascades from here."
+    },
+    {
+      "path": "packages/shared/src/i18n/locales/zh-CN.ts",
+      "relevance": 0.95,
+      "rationale": "Chinese mirror of en.ts. L71/L100/L122/L211/L223/L320 carry the same --force keys in zh-CN. Must change in lockstep — i18n test asserts both locales render correctly.",
+      "role": "modify_target",
+      "discovery_source": "bash-scan",
+      "topic_relation": "Schema-and-test-impact angle: mirror of en.ts; failing to update zh-CN breaks the bilingual i18n drift gate."
+    },
+    {
+      "path": "packages/cli/src/commands/doctor.ts",
+      "relevance": 0.95,
+      "rationale": "Hosts --apply-lint and --force. L27 `\"apply-lint\"?: boolean` typedef; L86 --force arg declaration; L89-L94 --apply-lint citty arg declaration; L108 `checkLockOrThrow({force: args.force})`; L110-L210 apply-lint code path. If --apply-lint renamed → --fix-knowledge and --force killed, both surfaces change here.",
+      "role": "modify_target",
+      "discovery_source": "bash-scan",
+      "key_code": [
+        {
+          "symbol": "doctor citty args block",
+          "location": "L86-L94",
+          "description": "Currently declares force + apply-lint. Kill force, rename apply-lint→fix-knowledge."
+        },
+        {
+          "symbol": "checkLockOrThrow with args.force",
+          "location": "L107-L108",
+          "description": "After --force kill: drop `{force: args.force}` argument; checkLockOrThrow will always throw on a live serve lock, with the existing ServeLockHeldError message."
+        },
+        {
+          "symbol": "renderApplyLintPlan / renderApplyLintMutations / etc",
+          "location": "L231-L386",
+          "description": "Internal function names referencing apply-lint. Renaming the flag does NOT require renaming these internals (they're file-local), but cosmetic alignment is recommended."
+        },
+        {
+          "symbol": "doctor --rescan code injection point",
+          "location": "L107 (post-lock-check, pre-runDoctor)",
+          "description": "Proposed --rescan: after `checkLockOrThrow`, if `args.rescan === true`, call `runInitScan(resolution.target, {source: 'doctor'})` THEN continue with normal doctor checks. runInitScan is already exported from scan.ts L178."
+        }
+      ],
+      "topic_relation": "Schema-and-test-impact angle: doctor.ts is the single locus of three rc.15 changes (—force kill, —apply-lint→—fix-knowledge rename, +—rescan addition)."
+    },
+    {
+      "path": "packages/cli/src/commands/install.ts",
+      "relevance": 0.95,
+      "rationale": "Hosts --force, --reapply, --plan declarations + extensive `--force` logic comments. L306 --force arg; L314-L318 --plan arg; L540 `args.plan` consumer (planOnly mode); L370-L373 force-aware lock check; L619 rc.14 deprecation warning emit point; L863 etc. THE biggest --force consumer file.",
+      "role": "modify_target",
+      "discovery_source": "bash-scan",
+      "key_code": [
+        {
+          "symbol": "install citty args + planOnly",
+          "location": "L306, L314-L318, L540",
+          "description": "Kill --force arg (L306) and --reapply arg (search L308-ish). Rename --plan → --dry-run: update citty declaration at L314 and consumer at L540 (`const planOnly = args[\"dry-run\"] === true;` or rename variable to `dryRun`)."
+        },
+        {
+          "symbol": "executeInitFabricPlan / executeInitExecutionPlan force-paths",
+          "location": "L370-L373, L543, L619-L638, L663, L677, L717, L753, L863, L891, L1223-L1268",
+          "description": "Pervasive `args.force` / `plan.options.force` references gating drift-handling, file overwrite, events.jsonl directory recovery, agents.meta cleanup. ALL must be deleted — no more force-bypass anywhere in install path."
+        },
+        {
+          "symbol": "rc.14 TASK-002 deprecation warning",
+          "location": "L619-L638",
+          "description": "The 'legacy escape hatch will be removed in rc.15' warning. Delete entirely — rc.15 IS the removal."
+        }
+      ],
+      "topic_relation": "Schema-and-test-impact angle: largest --force surface; killing it requires the most file-internal logic changes (not just arg declarations)."
+    },
+    {
+      "path": "packages/cli/src/commands/uninstall.ts",
+      "relevance": 0.9,
+      "rationale": "Hosts --force + --plan. L197 --force arg declaration; L205-L207 --plan arg; L258-L259 lock check with force; L293-L294 confirm-prompt force bypass; L310 `const planOnly = args.plan === true`; L312 `force: args.force` propagated to executor.",
+      "role": "modify_target",
+      "discovery_source": "bash-scan",
+      "key_code": [
+        {
+          "symbol": "uninstall citty args + plan consumer",
+          "location": "L197, L205-L207, L310",
+          "description": "Kill --force arg (L197); rename --plan → --dry-run (L205-L207, L310 reads args.plan)."
+        },
+        {
+          "symbol": "lock check + confirm bypass",
+          "location": "L258-L259, L293-L294, L312",
+          "description": "Drop force from checkLockOrThrow (L259); drop force from confirm-bypass branch (L294 — confirm now ALWAYS prompts in interactive shells); drop `force: args.force` from executor options (L312)."
+        }
+      ],
+      "topic_relation": "Schema-and-test-impact angle: uninstall is the SECOND big --force surface after install; the confirm-bypass behavior change at L294 is a UX-visible regression risk."
+    },
+    {
+      "path": "packages/cli/src/commands/serve.ts",
+      "relevance": 0.85,
+      "rationale": "Hosts --force on serve. L46 args declaration; L61 `acquireLock(projectRoot, {force: args.force})`. Killing serve's --force means a serve attempting to start while another live PID holds the lock will ALWAYS throw — the rationale from the task notes is the user gets ServeLockHeldError.actionHint which currently says 'Stop the other process (PID X) or run with --force to override' — that hint must be rewritten too.",
+      "role": "modify_target",
+      "discovery_source": "bash-scan",
+      "key_code": [
+        {
+          "symbol": "serveCommand args.force + acquireLock call",
+          "location": "L46, L61",
+          "description": "Kill --force arg (L46); drop `{force: args.force}` from acquireLock (L61). Lock conflict will always throw."
+        }
+      ],
+      "topic_relation": "Schema-and-test-impact angle: third —force consumer; smallest code footprint but biggest UX-error-message concern."
+    },
+    {
+      "path": "packages/server/src/services/serve-lock.ts",
+      "relevance": 0.85,
+      "rationale": "L48-L55 (acquireLock) and L92-L107 (checkLockOrThrow) both compose ServeLockHeldError with actionHint mentioning '--force to override' (L52, L104). After --force kill, these messages MUST be rewritten to: 'Stop the other serve process (PID X) and re-run' — the '--force' suggestion is misleading.",
+      "role": "modify_target",
+      "discovery_source": "implicit-dep-scan",
+      "key_code": [
+        {
+          "symbol": "ServeLockHeldError construction",
+          "location": "L49-L55, L101-L107",
+          "description": "Two call sites build the error with actionHint referencing --force. Update both: drop '--force to override' suffix, replace with 'Wait for the lock to release.' or similar. AcquireOptions.force param can also be deleted entirely from the type (since no caller passes it post-rc.15)."
+        }
+      ],
+      "topic_relation": "Schema-and-test-impact angle: implicit dependency — the runtime error message is what users see when the lock conflict happens; if it still says '--force', users will Google a non-existent flag."
+    },
+    {
+      "path": "packages/cli/src/commands/hooks.ts",
+      "relevance": 0.9,
+      "rationale": "ENTIRE FILE deletion target for C8. Defines hooksCommand (L36+) and exports installHooks function used by integration tests. Not currently in packages/cli/src/commands/index.ts public registry (per L1-L10 above — only install/scan/serve/uninstall/doctor/plan-context-hint exposed; hooks WAS removed from public registry in an earlier rc but the file remains).",
+      "role": "modify_target",
+      "discovery_source": "bash-scan",
+      "key_code": [
+        {
+          "symbol": "hooksCommand + installHooks",
+          "location": "Entire file",
+          "description": "Delete the file. Migrate the installHooks() function (used by integration tests) into packages/cli/src/install/skills-and-hooks.ts (its imports already come from there) or inline its body at the test call site if it's just a thin wrapper."
+        }
+      ],
+      "topic_relation": "Schema-and-test-impact angle: deleting the file orphans 3 test files that import installHooks. Need to either keep installHooks() as a library function (just delete the citty defineCommand wrapper) or rewrite tests to drive install/uninstall integration directly."
+    },
+    {
+      "path": "packages/cli/__tests__/hooks-install-validate.test.ts",
+      "relevance": 0.9,
+      "rationale": "Imports `installHooks` from `../src/commands/hooks.js` at L22. If hooks.ts is deleted, this entire test file either (a) gets deleted, (b) reroutes to install/uninstall-skills-and-hooks.ts equivalents, or (c) keeps installHooks alive as an internal helper function (citty wrapper removed only).",
+      "role": "test_target",
+      "discovery_source": "bash-scan",
+      "key_code": [
+        {
+          "symbol": "rc.5 TASK-010 cross-client hook path validation",
+          "location": "L38+ describe block",
+          "description": "Tests the validateHookPaths post-install step. Coverage value is high — don't delete without porting the validation logic check elsewhere."
+        }
+      ],
+      "topic_relation": "Schema-and-test-impact angle: highest-risk test breakage from C8 hooks command kill — currently the only unit-level test of hook-path validation."
+    },
+    {
+      "path": "packages/cli/__tests__/integration/install-skills-and-hooks.test.ts",
+      "relevance": 0.85,
+      "rationale": "L29 imports `installHooks` from `../../src/commands/hooks.ts`; L341-L356 exercises `await installHooks(target)` in an integration scenario. If hooks.ts is deleted, must port to a sibling helper or call install/uninstall pathways directly.",
+      "role": "test_target",
+      "discovery_source": "bash-scan",
+      "topic_relation": "Schema-and-test-impact angle: second consumer of installHooks export; same migration choice as hooks-install-validate.test.ts."
+    },
+    {
+      "path": "packages/cli/__tests__/install-cli-surface.test.ts",
+      "relevance": 0.9,
+      "rationale": "Heavy --plan, --reapply, --force consumer. L54-L60 buildInitExecutionPlan asserts options.force + options.reapply. L78 `plan: true` arg passed to installCommand.run. L83-L86 asserts no scaffold artifacts when --plan used. L119 `reapply: true` runner arg. L191-L217 'compatibility notices for legacy flags' test mentions 'Using standard --plan mode' assertion at L217 — directly breaks on --plan→--dry-run rename.",
+      "role": "test_target",
+      "discovery_source": "bash-scan",
+      "key_code": [
+        {
+          "symbol": "buildInitExecutionPlan force+reapply assertion",
+          "location": "L54-L60",
+          "description": "After --force/--reapply kill: delete this assertion entirely or rewrite to use the post-kill option set. If reapply is preserved as a force-replacement, only delete force."
+        },
+        {
+          "symbol": "--plan no-scaffold test",
+          "location": "L63-L87",
+          "description": "Rename `plan: true` → `\"dry-run\": true` on L78; semantic preserved."
+        },
+        {
+          "symbol": "Using standard --plan mode stderr assertion",
+          "location": "L217",
+          "description": "Hardcoded substring `Using standard --plan mode`; update to match the new --dry-run message text in i18n locales."
+        }
+      ],
+      "topic_relation": "Schema-and-test-impact angle: largest install-related test casualty after the snapshot file."
+    },
+    {
+      "path": "packages/cli/__tests__/uninstall.test.ts",
+      "relevance": 0.9,
+      "rationale": "L132-L161 `uninstall --plan mode (no-write contract)` describe block — passes `plan: true` (L161) to uninstallCommand. L340-L341 `uninstall --force on already-missing artifacts` (g) test. L468 `non-interactive TTY path: --force bypass confirms and executes plan` — directly tests the --force confirm bypass that's being killed.",
+      "role": "test_target",
+      "discovery_source": "bash-scan",
+      "key_code": [
+        {
+          "symbol": "describe('uninstall --plan mode')",
+          "location": "L132-L180+",
+          "description": "Rename `plan: true` → `\"dry-run\": true` on L161."
+        },
+        {
+          "symbol": "describe('uninstall --force on already-missing artifacts')",
+          "location": "L340-end-of-describe",
+          "description": "Either delete this entire describe (case (g) becomes moot since --force is gone) OR keep the no-error-on-missing-artifacts contract but trigger it via plain `fab uninstall --yes` instead of `--force`."
+        },
+        {
+          "symbol": "non-interactive TTY --force bypass test",
+          "location": "L468+",
+          "description": "Delete or replace — the bypass is killed in rc.15. Post-rc.15 the non-interactive path must rely on --yes alone, not --force."
+        }
+      ],
+      "topic_relation": "Schema-and-test-impact angle: uninstall's biggest test impact — three separate describe blocks touch the killed flags."
+    },
+    {
+      "path": "packages/cli/__tests__/doctor.test.ts",
+      "relevance": 0.9,
+      "rationale": "Eleven occurrences of `apply-lint`/`applyLint` in test names, spy variables, and args. L108-L350+ entire `--apply-lint flag` describe block. L130 `\"apply-lint\": false`, L179 `\"apply-lint\": true`, L236/L276/L326/L342 same. If renamed to --fix-knowledge, every key + every test title updates.",
+      "role": "test_target",
+      "discovery_source": "bash-scan",
+      "key_code": [
+        {
+          "symbol": "describe('--apply-lint flag')",
+          "location": "L108-L350+",
+          "description": "Rename describe + all `\"apply-lint\": true/false` args object keys to `\"fix-knowledge\": true/false`. Rename `applyLintSpy` / `applyLintReport` variables for clarity (optional)."
+        },
+        {
+          "symbol": "L287 stderr substring 'apply-lint'",
+          "location": "L287",
+          "description": "Hardcoded `.toLowerCase().includes('apply-lint')` assertion — update to the new error-message wording."
+        }
+      ],
+      "topic_relation": "Schema-and-test-impact angle: doctor.ts's test mirror; rename ripple is mechanical but pervasive."
+    },
+    {
+      "path": "packages/cli/__tests__/integration/install-diff-mode.test.ts",
+      "relevance": 0.85,
+      "rationale": "Five scenarios, three of which directly test --force semantics. Scenario 5 (L226-L296) 'rc.14 TASK-002 install-diff-mode: --force legacy bypass'. Scenario 7 (L298-L350+) 'events.jsonl as directory + --force recovers cleanly'. L254 hardcodes assertion `expect(stderrJoined).toMatch(/--force.*legacy escape hatch|逃生口/)` directly tied to the rc.14 deprecation warning.",
+      "role": "test_target",
+      "discovery_source": "bash-scan",
+      "key_code": [
+        {
+          "symbol": "Scenario 5 — --force legacy bypass",
+          "location": "L226-L296",
+          "description": "DELETE entirely. The bypass is removed; the warning emission is removed; the test no longer applies."
+        },
+        {
+          "symbol": "Scenario 7 — events.jsonl directory + --force recovery",
+          "location": "L298-L350+",
+          "description": "Tricky: the directory-where-file-belongs recovery currently REQUIRES --force. Without --force there is no recovery path — the install just aborts with the canonical error. Either delete the scenario (acknowledging users must hand-fix corrupted state) OR migrate to `fab uninstall && fab install` per the rc.14 deprecation message guidance."
+        }
+      ],
+      "topic_relation": "Schema-and-test-impact angle: the deprecation-warning-emission scenario is the test that's most-tightly-coupled to the legacy escape hatch deletion."
+    },
+    {
+      "path": "packages/cli/__tests__/integration/init-guard.test.ts",
+      "relevance": 0.75,
+      "rationale": "L99 comment 'no --force', L170 `runInit(target, {reapply: true, force: true})`, L184 'does not overwrite existing CLAUDE.md when init is run with --force', L197 same for AGENTS.md. If --force is fully killed, these scenarios drop the force option (still works because CLAUDE.md/AGENTS.md are SACRED — never overwritten even with --force per install.ts L116 comment).",
+      "role": "test_target",
+      "discovery_source": "bash-scan",
+      "topic_relation": "Schema-and-test-impact angle: tests the 'force does NOT overwrite' invariant — post-kill the test still passes trivially (no force to test), but assertion names need cleanup."
+    },
+    {
+      "path": "packages/cli/__tests__/integration/serve-lock.test.ts",
+      "relevance": 0.95,
+      "rationale": "I10 describe block (L63-L138) — six tests of force-bypass semantics. L75-L92 acquireLock/checkLockOrThrow ±force pairs. L119-L127 doctor lock blocked unless --force. L129-L137 init --reapply blocked unless --force. EVERY test inside this describe touches the killed --force semantics.",
+      "role": "test_target",
+      "discovery_source": "bash-scan",
+      "key_code": [
+        {
+          "symbol": "describe('I10: serve-lock prevents duplicate run without --force')",
+          "location": "L63-L138",
+          "description": "Six tests. Keep the no-force-given throws scenarios (L65-L83). DELETE the three '--force=true passes through' scenarios (L84-L105) — that code path is gone. Update the describe name (no more 'without --force')."
+        }
+      ],
+      "topic_relation": "Schema-and-test-impact angle: serve-lock test surface is half-killed by --force removal. Lock-throws-on-live-PID assertions remain valid; force-overrides assertions delete."
+    },
+    {
+      "path": "packages/server/src/services/serve-lock.test.ts",
+      "relevance": 0.7,
+      "rationale": "L170 `checkLockOrThrow does not throw with --force even when live lock held` — server-side mirror of the CLI-side serve-lock force test. Delete this test post-rc.15.",
+      "role": "test_target",
+      "discovery_source": "bash-scan",
+      "topic_relation": "Schema-and-test-impact angle: server package mirror of the CLI serve-lock test killed by --force removal."
+    },
+    {
+      "path": "packages/cli/__tests__/integration/scan-init.test.ts",
+      "relevance": 0.7,
+      "rationale": "Twelve `runInitScan` calls. If C8 deletes the `scan` command, the `runInitScan` function (currently exported from scan.ts L178) must remain as a library export — these tests drive it directly. The TESTS DON'T BREAK from command deletion as long as the library function stays. Worth flagging to plan for explicit preservation.",
+      "role": "test_target",
+      "discovery_source": "bash-scan",
+      "topic_relation": "Schema-and-test-impact angle: critical preservation constraint — scan COMMAND can be deleted, but runInitScan LIBRARY must survive for both install-internal use (install.ts L926) and these tests."
+    },
+    {
+      "path": "packages/cli/__tests__/integration/scan-edge-cases.test.ts",
+      "relevance": 0.6,
+      "rationale": "Per grep, references scanCommand. Same preservation constraint as scan-init.test.ts — library export must survive even if citty defineCommand is deleted.",
+      "role": "test_target",
+      "discovery_source": "bash-scan",
+      "topic_relation": "Schema-and-test-impact angle: secondary scan-related test; verifies edge cases of scanner. Probably tests internal scan helpers, not the CLI command."
+    },
+    {
+      "path": "packages/cli/__tests__/scan-builders.test.ts",
+      "relevance": 0.6,
+      "rationale": "Per grep, references scan-related symbols. Likely tests deterministic builders directly without invoking the citty scanCommand. Survives command kill cleanly.",
+      "role": "test_target",
+      "discovery_source": "bash-scan",
+      "topic_relation": "Schema-and-test-impact angle: tertiary scan-related test; lowest risk from scan command kill."
+    },
+    {
+      "path": "packages/cli/src/commands/scan.ts",
+      "relevance": 0.85,
+      "rationale": "Hosts BOTH the scanCommand citty wrapper (L34+) AND the runInitScan library function (L178). C8 deletes the citty wrapper but MUST preserve runInitScan as a named export (consumed by install.ts L926 and three test files).",
+      "role": "modify_target",
+      "discovery_source": "bash-scan",
+      "key_code": [
+        {
+          "symbol": "runInitScan",
+          "location": "L178+",
+          "description": "PRESERVE. Internal library used by install and by 12+ test cases. Move into a non-command module (e.g. packages/cli/src/scanner/run-init-scan.ts) if scan.ts is renamed/repurposed."
+        },
+        {
+          "symbol": "scanCommand citty defineCommand",
+          "location": "L34+",
+          "description": "Delete the citty defineCommand wrapper (and its run() handler at ~L318). Remove the scan entry from commands/index.ts (already done in non-public space? — recheck)."
+        }
+      ],
+      "topic_relation": "Schema-and-test-impact angle: the file containing both code-to-delete and code-to-preserve. The runInitScan export is the entry point for the proposed `fab doctor --rescan` flag."
+    },
+    {
+      "path": "packages/cli/src/commands/index.ts",
+      "relevance": 0.85,
+      "rationale": "The public command registry. Currently lists install/scan/serve/uninstall/doctor/hooks/plan-context-hint. rc.15 C8 = remove scan + hooks. Result: install/serve/uninstall/doctor/plan-context-hint (5 commands).",
+      "role": "modify_target",
+      "discovery_source": "bash-scan",
+      "key_code": [
+        {
+          "symbol": "allCommands record",
+          "location": "L1-L10",
+          "description": "Delete `scan:` (L3) and `hooks:` (L7) entries. Six commands → four."
+        }
+      ],
+      "topic_relation": "Schema-and-test-impact angle: the canonical surface — drift gate at cli-surface.test.ts L94-L103 currently asserts the public-command set."
+    },
+    {
+      "path": "packages/cli/__tests__/init-wizard.test.ts",
+      "relevance": 0.65,
+      "rationale": "L136 `options: {planOnly: true, reapply: true}`, L158 comment '--plan does not write any scaffold artifacts'. Mechanical rename if --plan → --dry-run; reapply preservation depends on rc.15 decision.",
+      "role": "test_target",
+      "discovery_source": "bash-scan",
+      "topic_relation": "Schema-and-test-impact angle: minor mechanical update — internal option key planOnly vs CLI flag --plan are distinct, only the test-side flag arg needs renaming if asserted."
+    },
+    {
+      "path": "packages/cli/__tests__/init-wizard-adapter.test.ts",
+      "relevance": 0.55,
+      "rationale": "L42 `options: {reapply: true}`. If --reapply is killed (status unclear from task description), this test updates; if --reapply is preserved as a force-replacement, this test stays.",
+      "role": "test_target",
+      "discovery_source": "bash-scan",
+      "topic_relation": "Schema-and-test-impact angle: minimal — single reapply option key reference."
+    },
+    {
+      "path": "docs/configuration.md",
+      "relevance": 0.6,
+      "rationale": "L258 documents `audit_mode` (default unset — equivalent to warn). No mention of camelCase `auditMode` — the docs are ALREADY canonical on snake_case. C10 dedupe ALIGNS the schema with the docs (currently docs are AHEAD of code).",
+      "role": "context_only",
+      "discovery_source": "bash-scan",
+      "topic_relation": "Schema-and-test-impact angle: confirms docs already use the canonical snake_case spelling — no docs update needed for C10."
+    },
+    {
+      "path": "docs/test-seed/cli.md",
+      "relevance": 0.75,
+      "rationale": "Per cli-surface.test.ts DRIFT_HINT (L20-L24), this seed file documents the §1 Feature Surface. Every rc.15 flag kill must update §1 BEFORE running `vitest -u`. Counter-process: snapshot regen WITHOUT seed update is the leading cause of stale drift gates.",
+      "role": "modify_target",
+      "discovery_source": "bash-scan",
+      "topic_relation": "Schema-and-test-impact angle: the human-readable surface contract that the drift gate enforces. Authoritative for what the post-rc.15 surface SHOULD look like."
+    }
+  ],
+  "patterns": "Two patterns dominate the rc.15 cleanup surface. PATTERN 1 (audit_mode rename, scoped, mechanical): only 5 files touch auditMode — schema (fabric-config.ts L52), type (config.ts L32), and three test files (fabric-config.test.ts L108/L117, schemas-roundtrip.test.ts L52, zod-roundtrip.test.ts L49-L53). Zero runtime consumers in cli/ or server/. Apply rg-driven find-and-replace: kill `auditMode` from schema+type; in tests change `auditMode: 'strict'` → `audit_mode: 'strict'` and `parsed.auditMode` → `parsed.audit_mode`. Clean-slate per `feedback_clean_slate.md` memory — no zod preprocess shim. PATTERN 2 (CLI surface drift gate cascade): every flag kill/rename triggers a 4-step ripple: (a) update citty arg declaration in packages/cli/src/commands/<cmd>.ts, (b) update i18n keys in packages/shared/src/i18n/locales/{en,zh-CN}.ts, (c) update test args & assertions in packages/cli/__tests__/<test>.ts + integration/<test>.ts, (d) regenerate __snapshots__/cli-surface.test.ts.snap and __snapshots__/i18n.test.ts.snap via `vitest -u`, (e) update docs/test-seed/cli.md §1 to match new surface. Skipping any step breaks the drift gate. Test-impact pattern: 4 SNAPSHOT files (cli-surface.snap, i18n.snap, mcp-config-merge.snap, client-configs.snap) — only the first two are flag-sensitive. Hard-coded substring assertions are the highest-risk silent-breakers: cli-surface.test.ts L110-L125 critical-flag assertArrayContaining; install-cli-surface.test.ts L217 'Using standard --plan mode' string; install-diff-mode.test.ts L254 `/--force.*legacy escape hatch|逃生口/` regex; doctor.test.ts L287 `.includes('apply-lint')`.",
+  "dependencies": "INTERNAL: packages/cli/src/commands/scan.ts:178 exports runInitScan() consumed by packages/cli/src/commands/install.ts:926 (after init writes scaffold) AND by 12 test cases in scan-init.test.ts. Critical preservation constraint: scan COMMAND deletion (C8) must NOT delete the runInitScan function — only the citty defineCommand wrapper. packages/cli/src/commands/doctor.ts:107-108 calls checkLockOrThrow from packages/server/src/services/serve-lock.ts:92 with `{force: args.force}` — the force arg propagates from CLI to server. Same pattern install.ts:373 + uninstall.ts:259 + serve.ts:61. AcquireOptions.force in serve-lock.ts can be fully deleted post-rc.15 since no caller passes it. packages/cli/src/commands/hooks.ts exports installHooks() consumed by 2 test files; deletion (C8) must preserve installHooks as a non-command export (perhaps moved into packages/cli/src/install/skills-and-hooks.ts where its imports already originate). EXTERNAL: zod (schema parsing — non-strict default means dropping `auditMode` from schema silently DROPS the field at parse time rather than erroring; tests must explicitly assert on parsed shape, not on parse-throws). citty (CLI framework — flag rename = arg-record key change; killing a flag means removing the key from the args object in defineCommand). vitest (toMatchSnapshot + vi.hoisted for FAB_LANG=en pinning).",
+  "integration_points": "Lock-conflict UX surface (HIGH RISK): packages/server/src/services/serve-lock.ts:52 + L104 — both ServeLockHeldError construction sites embed actionHint strings that reference '--force to override'. Post-rc.15 these MUST be rewritten or the runtime error message dangles users with non-existent CLI flag advice. CLI surface drift gate: packages/cli/__tests__/cli-surface.test.ts is the single canonical contract — adding/removing a flag flows through citty arg declaration → cli-surface.test.ts.snap snapshot → docs/test-seed/cli.md §1 manual sync (per DRIFT_HINT L18-L24 of cli-surface.test.ts). i18n key propagation: every flag.description string lives in packages/shared/src/i18n/locales/en.ts + zh-CN.ts, threaded into help text and into stdout/stderr capture for the i18n.test.ts.snap — i18n locale updates ripple into 2 snapshot files automatically. doctor --rescan integration: the new flag would call runInitScan(target, {source: 'doctor'}) at packages/cli/src/commands/doctor.ts:107 (post-lock-check, pre-runDoctor) — runInitScan is already exported from scan.ts:178 and accepts arbitrary `source` strings. No source-tracking schema change needed.",
+  "constraints": "ZERO-USER CLEAN-SLATE: per memory `feedback_clean_slate.md` Fabric has no published users (v2.0 RC chain never tagged on npm). C10 must NOT add a zod preprocess alias or a 'legacy auditMode detected' warning. Direct removal only. v2.0.0-rc.15 IS the publish target — the rc.14 TASK-002 deprecation banner (en.ts L216, zh-CN.ts L211) literally promises '--force will be removed in v2.0.0-rc.15' — this rc must deliver. NON-STRICT SCHEMA: fabricConfigSchema is z.object({...}) NOT .strict() (only clientPathsSchema is .strict() per L9-L16 of fabric-config.ts). Consequence: after C10, a config carrying `auditMode: 'strict'` will parse SUCCESSFULLY but silently DROP the field — leading to surprising no-op behavior. If we wanted hard-fail-on-unknown-key we'd need to add .strict() to fabricConfigSchema, but that's a separate, riskier change. Recommend: leave non-strict to preserve forward-compat for future config additions; tests must explicitly assert the parsed shape, never assume parse-throws. runInitScan PRESERVATION: deleting the scan command must not break install.ts:926 or the 12 test cases in scan-init.test.ts that drive runInitScan directly. Best practice: keep scan.ts file alive, only delete the citty defineCommand wrapper and remove from commands/index.ts. installHooks PRESERVATION: same pattern — hook-config validation logic in hooks.ts L36+ is consumed by 2 test files via the installHooks named export. CLI surface tests at packages/cli/__tests__/cli-surface.test.ts run BEFORE snapshot — adding `--rescan` to doctor requires citty arg declaration first, otherwise the snapshot won't include it.",
+  "clarification_needs": [
+    {
+      "question": "ServeLockHeldError actionHint post-`--force` removal: how should the runtime message change?",
+      "context": "packages/server/src/services/serve-lock.ts:52 and L104 both construct ServeLockHeldError with actionHint strings that reference '--force to override' — `'Stop the other process (PID ${state.pid}) or run with --force to override'` (L52) and `'Stop the other serve process (PID ${state.pid}) before running this command, or pass --force to override'` (L104). After rc.15 kills --force from doctor/install/uninstall/serve, these messages dangle users with a non-existent flag suggestion. The task brief specifically asks whether to customize.",
+      "options": [
+        "Rewrite to 'Stop the other serve process (PID ${state.pid}) first, then re-run this command.' (no flag suggestion, declarative remedy)",
+        "Rewrite to 'A `fab serve` instance (PID ${state.pid}) is holding the workspace lock. Stop it (Ctrl-C in that terminal or `kill ${state.pid}`) before running this command.' (verbose, max guidance)",
+        "Keep existing message structure; just delete the '--force to override' suffix. Minimal-diff.",
+        "Add a follow-up doctor lint that surfaces stale-lock detection for users who can't find the holding PID. Defer message change."
+      ],
+      "recommended": 1
+    },
+    {
+      "question": "Scenario 7 of install-diff-mode.test.ts (events.jsonl as directory + --force recovery): drop or migrate?",
+      "context": "packages/cli/__tests__/integration/install-diff-mode.test.ts:298-L350+ tests that --force can recover from an events.jsonl-as-directory corruption (rc.14 TASK-004 Finding 2). Without --force, the install simply aborts with the canonical 'directory where file belongs' error. Three migration paths: (a) delete the scenario, accept that users must `fab uninstall && fab install` to recover, (b) port the directory→file recovery into the default install path (no --force needed), making this corruption always-auto-recoverable, (c) port to a new `fab doctor --fix` lint that detects + repairs the directory-where-file-belongs case.",
+      "options": [
+        "Delete the scenario; document `fab uninstall && fab install` as the recovery path in error message",
+        "Move directory→file recovery into default install path (no flag needed) and rewrite the test against the new default behavior",
+        "Add a `fab doctor --fix` lint for events.jsonl-as-directory and move the test under doctor.test.ts",
+        "Keep --force alive ONLY for this corruption recovery (carve-out from the kill); rename to --recover-corrupt-state"
+      ],
+      "recommended": 0
+    },
+    {
+      "question": "fab doctor --rescan: re-run runInitScan THEN doctor checks, or replace doctor checks?",
+      "context": "Proposed new flag from the task brief. runInitScan is already exported from scan.ts:178 and writes deterministic scan artifacts (.fabric/forensic.json, agents.meta.json refresh). User intent: get a fresh scan baseline before running doctor lints. Three semantics: (a) `fab doctor --rescan` runs runInitScan FIRST then continues with normal doctor lint/report (most useful — combined), (b) `fab doctor --rescan` REPLACES the doctor lint phase with scan output (scan-only mode), (c) `fab doctor --rescan` only fires runInitScan if doctor detects a 'scan stale' lint and bails out early otherwise.",
+      "options": [
+        "Run runInitScan first, then continue with normal doctor checks (rescan + report in one invocation)",
+        "Replace doctor lint phase with scan output only (--rescan is a doctor-flavored alias for scan)",
+        "Conditional: only run runInitScan if doctor detects a 'scan stale' lint (current scan output > N days old)",
+        "Make --rescan a top-level command instead: `fab rescan` as a public sibling to install/uninstall/doctor/serve"
+      ],
+      "recommended": 0
+    },
+    {
+      "question": "installHooks function preservation pattern: keep as library export, move, or inline?",
+      "context": "packages/cli/src/commands/hooks.ts hosts BOTH the citty `hooksCommand` (publicly deletable per C8 — it's already not in commands/index.ts's allCommands map) AND the `installHooks(target)` library function consumed by hooks-install-validate.test.ts and install-skills-and-hooks.test.ts. Deletion options: (a) delete the citty wrapper, keep installHooks as a named export from hooks.ts (file stays but stripped down), (b) move installHooks into packages/cli/src/install/skills-and-hooks.ts where its imports already originate; delete hooks.ts entirely, (c) inline installHooks's body at each test call site; delete hooks.ts; pay test duplication cost.",
+      "options": [
+        "Delete the citty wrapper only; keep hooks.ts with the installHooks export (minimal-diff)",
+        "Move installHooks into packages/cli/src/install/skills-and-hooks.ts; delete hooks.ts entirely (cleaner module shape)",
+        "Inline installHooks at each call site; delete hooks.ts (eliminates the export but duplicates assembly)",
+        "Convert installHooks to a private helper, expose only its return value shape via a single thin wrapper in install/skills-and-hooks.ts"
+      ],
+      "recommended": 1
+    },
+    {
+      "question": "--reapply flag: kill or preserve as the post-rc.15 'fix drift' affordance?",
+      "context": "The task brief explicitly lists --plan rename and --apply-lint rename, but does NOT explicitly list --reapply in C1-C9. After --force is killed, --reapply becomes the SOLE remaining install-time affordance for re-running over an existing canonical workspace. install.ts:619 ('legacy escape hatch deprecation warning'), install.ts:543 (`force: reapply ? true : args.force` — implies reapply currently forces internally), and install-cli-surface.test.ts:54 (`{force: true, reapply: true}`) all entangle force+reapply. Need explicit confirm: does rc.15 also kill --reapply?",
+      "options": [
+        "Kill --reapply too; document that users always `fab uninstall && fab install` for a clean reset (matches the rc.14 deprecation guidance)",
+        "Keep --reapply as the only re-application path; decouple from --force semantics (--reapply re-writes managed files but respects drift-abort)",
+        "Keep --reapply AND make it force-overwrite by default (was the internal `force: reapply ? true` behavior at install.ts:543) — effectively renames --force to --reapply",
+        "Defer --reapply decision to rc.16; rc.15 only addresses C1-C10 as listed"
+      ],
+      "recommended": 1
+    }
+  ],
+  "_metadata": {
+    "timestamp": "2026-05-14T00:00:00Z",
+    "task_description": "rc.15 Phase 2 schema-and-test-impact audit: (1) C10 dedupe `auditMode` / `audit_mode` in fabric-config schema + map all consumers (clean-slate, no shim); (2) comprehensive test surface impact map across all rc.15 cleanups (flag kills --force, command deletions hooks/scan, renames --plan→--dry-run + --apply-lint→--fix-knowledge, +--rescan addition, +C10 schema dedupe). Identify breaking tests, snapshot tests, and lock-conflict UX message audit.",
+    "source": "cli-explore-agent",
+    "exploration_angle": "schema-and-test-impact",
+    "exploration_index": 3,
+    "total_explorations": 3,
+    "duration_seconds": 240
+  }
+}

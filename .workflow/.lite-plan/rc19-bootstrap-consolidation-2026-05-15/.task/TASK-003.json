@@ -1,0 +1,179 @@
+{
+  "id": "TASK-003",
+  "title": "fab install — three-end propagation (Claude thin shell + Codex managed block + Cursor .mdc)",
+  "scope": "packages/cli/src/install/skills-and-hooks.ts + commands/install.ts + hooks-orchestrator.ts",
+  "action": "Refactor",
+  "description": "Replace the single addFabricKnowledgeBaseSection writer with three per-client thin-shell propagation writers. Each consumes the L1 snapshot (.fabric/AGENTS.md) + optional .fabric/project-rules.md as input and writes the appropriate output for its client: Claude CLAUDE.md thin-shell (real @import directives, no managed block content), Codex root AGENTS.md managed block (byte copy of snapshot + `\\n---\\n` + project-rules.md if exists), Cursor .cursor/rules/fabric-bootstrap.mdc managed block + YAML front-matter. Includes migration from legacy single-file `.cursor/rules` path to directory rule (clean-slate, no compat shim).",
+  "files": [
+    {
+      "path": "packages/cli/src/install/skills-and-hooks.ts",
+      "action": "modify",
+      "target": "L224-L246 marker constants + SECTION_TARGETS",
+      "change": "Replace FABRIC_SECTION_BEGIN_MARKER / FABRIC_SECTION_END_MARKER / FABRIC_SECTION_REGEX with re-exports from @fenglimg/fabric-shared (BOOTSTRAP_MARKER_BEGIN, BOOTSTRAP_MARKER_END, BOOTSTRAP_REGEX from TASK-01). DELETE SECTION_TARGETS const. DELETE buildFabricKnowledgeBaseSection (L291-L304) — content source is now the L1 snapshot."
+    },
+    {
+      "path": "packages/cli/src/install/skills-and-hooks.ts",
+      "action": "modify",
+      "target": "L638-L705 addFabricKnowledgeBaseSection",
+      "change": "DELETE addFabricKnowledgeBaseSection. Add three new exports: `writeClaudeBootstrapThinShell(targetRoot)`, `writeCodexBootstrapManagedBlock(targetRoot)`, `writeCursorBootstrapManagedBlock(targetRoot)`. Each is atomic, idempotent (byte-compare-skip), and best-effort. Also export shared helper `buildManagedBlockBody(targetRoot): string` = readFileSync('.fabric/AGENTS.md', 'utf8') + (project-rules.md exists ? '\\n---\\n' + readFileSync(...) : '')."
+    },
+    {
+      "path": "packages/cli/src/install/skills-and-hooks.ts",
+      "action": "modify",
+      "target": "writeClaudeBootstrapThinShell implementation",
+      "change": "Write CLAUDE.md with header (e.g. '# Project Knowledge') + idempotent line `@.fabric/AGENTS.md` (line-level idempotent add — appended if missing, preserved if present) + optional `@.fabric/project-rules.md` line IFF project-rules.md exists. No managed block (Claude consumes via @import). Preserve any user content outside these managed import lines."
+    },
+    {
+      "path": "packages/cli/src/install/skills-and-hooks.ts",
+      "action": "modify",
+      "target": "writeCodexBootstrapManagedBlock implementation",
+      "change": "Write root AGENTS.md: locate-or-append managed block with BOOTSTRAP_MARKER_BEGIN/END containing buildManagedBlockBody(targetRoot). In-place replace via BOOTSTRAP_REGEX if marker present; append with blank-line separator otherwise. Preserve user content outside markers verbatim (existing FABRIC_SECTION_REGEX state-machine pattern)."
+    },
+    {
+      "path": "packages/cli/src/install/skills-and-hooks.ts",
+      "action": "modify",
+      "target": "writeCursorBootstrapManagedBlock implementation",
+      "change": "Write `.cursor/rules/fabric-bootstrap.mdc` (mkdirp `.cursor/rules/` directory): YAML front-matter (`---\\nalwaysApply: true\\ndescription: Fabric Protocol bootstrap rules\\n---\\n\\n`) BEFORE managed block. Managed block contains buildManagedBlockBody. Clean-slate: if legacy single-file `.cursor/rules` exists with old `fabric:knowledge-base` marker, delete it (per memory `feedback_clean_slate.md` and user clarification decision 2 — no migration shim)."
+    },
+    {
+      "path": "packages/cli/src/commands/install.ts",
+      "action": "modify",
+      "target": "L1043 (replaces stale section step + integrates with TASK-02 snapshot step)",
+      "change": "After the writeFabricAgentsSnapshot step from TASK-02, add three sequential best-effort steps: `runBestEffort('bootstrap-claude', () => writeClaudeBootstrapThinShell(plan.target))`, `runBestEffort('bootstrap-codex', () => writeCodexBootstrapManagedBlock(plan.target))`, `runBestEffort('bootstrap-cursor', () => writeCursorBootstrapManagedBlock(plan.target))`. Remove the now-deleted addFabricKnowledgeBaseSection import and call. Also DELETE AGENTS_MD_DEFAULT_CONTENT (L259-L267) and the scaffold-stage AGENTS.md write at L724-L732 — root AGENTS.md ownership moves entirely to bootstrap-stage (per install-flow exploration clarification recommended option 1)."
+    },
+    {
+      "path": "packages/cli/src/install/hooks-orchestrator.ts",
+      "action": "modify",
+      "target": "L113-L114 mirror call site",
+      "change": "Mirror the install.ts change — invoke the three thin-shell writers in the same order, each wrapped in runStep. Remove the addFabricKnowledgeBaseSection import."
+    },
+    {
+      "path": "packages/cli/src/install/uninstall-skills-and-hooks.ts",
+      "action": "modify",
+      "target": "L295-L358 stripFabricKnowledgeBaseSection",
+      "change": "Rename to `stripFabricBootstrapBlocks`. Strip BOOTSTRAP_REGEX (new marker) from BOTH root AGENTS.md and `.cursor/rules/fabric-bootstrap.mdc`. Remove `@.fabric/AGENTS.md` and `@.fabric/project-rules.md` line(s) from CLAUDE.md (managed-line strip). Delete `.cursor/rules/fabric-bootstrap.mdc` file if managed block is the only content beyond front-matter."
+    },
+    {
+      "path": "packages/shared/src/i18n/locales/en.ts",
+      "action": "modify",
+      "target": "cli.install.stages.bootstrap step labels",
+      "change": "Add labels for `bootstrap-claude`, `bootstrap-codex`, `bootstrap-cursor` steps. Remove the obsolete `section` step label."
+    },
+    {
+      "path": "packages/shared/src/i18n/locales/zh-CN.ts",
+      "action": "modify",
+      "target": "cli.install.stages.bootstrap step labels (zh-CN mirror)",
+      "change": "Mirror en.ts changes — add three new step labels in zh-CN; remove `section`."
+    }
+  ],
+  "implementation": [
+    "Re-export marker constants from shared (TASK-01) in skills-and-hooks.ts; delete the local definitions",
+    "Delete buildFabricKnowledgeBaseSection (content lives in canonical now)",
+    "Implement buildManagedBlockBody helper that concatenates .fabric/AGENTS.md + optional `\\n---\\n` + .fabric/project-rules.md",
+    "Implement writeClaudeBootstrapThinShell — idempotent @-import line append (NOT managed block) + clean-slate strip of legacy fabric:knowledge-base markers if found in CLAUDE.md",
+    "Implement writeCodexBootstrapManagedBlock — in-place managed-block replace via BOOTSTRAP_REGEX state machine on root AGENTS.md",
+    "Implement writeCursorBootstrapManagedBlock — YAML front-matter + managed block in .cursor/rules/fabric-bootstrap.mdc; delete legacy .cursor/rules flat file if it exists",
+    "Wire all three writers into install.ts bootstrap-stage (after TASK-02 snapshot step)",
+    "Mirror into hooks-orchestrator.ts for parity",
+    "Update uninstall to strip new marker from all three targets + delete legacy paths",
+    "Delete AGENTS_MD_DEFAULT_CONTENT + scaffold-stage AGENTS.md write (ownership consolidated to bootstrap-stage)",
+    "Add i18n keys for new step labels in both locales; remove obsolete `section` key"
+  ],
+  "reference": {
+    "pattern": "Existing addFabricKnowledgeBaseSection state machine (skills-and-hooks.ts:638-705) — match region, slice before/after, reconcat. Carries over verbatim, just split per-client.",
+    "files": [
+      "packages/cli/src/install/skills-and-hooks.ts",
+      "packages/cli/templates/bootstrap/cursor-fabric-bootstrap.mdc"
+    ],
+    "examples": "Cursor front-matter pattern from orphaned cursor-fabric-bootstrap.mdc L1-L4 (will be deleted in TASK-06 but pattern is the canonical reference)"
+  },
+  "convergence": {
+    "criteria": [
+      "After install on a clean fixture: CLAUDE.md exists with `@.fabric/AGENTS.md` line present (when project-rules.md absent) — verified via readFileSync regex match",
+      "After install: root AGENTS.md contains exactly ONE BOOTSTRAP_MARKER_BEGIN and exactly ONE BOOTSTRAP_MARKER_END (regex count === 1)",
+      "After install: `.cursor/rules/fabric-bootstrap.mdc` exists with `alwaysApply: true` in front-matter AND exactly one managed-block pair",
+      "Codex managed block body byte-equals `.fabric/AGENTS.md` content (when project-rules.md absent) or `<.fabric/AGENTS.md>\\n---\\n<.fabric/project-rules.md>` (when present)",
+      "Cursor managed block body byte-equals same content as Codex managed block",
+      "Pre-existing user content outside markers preserved verbatim across install runs (managed-section invariant)",
+      "Second install is byte-identical to first install (idempotency) across all three target files",
+      "If legacy `.cursor/rules` flat file exists, it is deleted (no migration shim per clean-slate)",
+      "Uninstall strips managed blocks from AGENTS.md + .cursor/rules/fabric-bootstrap.mdc AND removes @-import lines from CLAUDE.md",
+      "AGENTS_MD_DEFAULT_CONTENT constant is deleted from install.ts; scaffold-stage no longer writes root AGENTS.md",
+      "i18n keys `cli.install.steps.bootstrap-claude`, `cli.install.steps.bootstrap-codex`, `cli.install.steps.bootstrap-cursor` exist in both en.ts and zh-CN.ts"
+    ]
+  },
+  "rationale": {
+    "chosen_approach": "Three per-client writers each with distinct write strategy reflecting how each client actually consumes the bootstrap: Claude=real @import, Codex=byte-copy managed block (no @import support), Cursor=byte-copy managed block + front-matter (no @import support). Mirrors the locked decision 3 from the task brief.",
+    "alternatives_considered": [
+      "Single generic writer with per-target descriptors (loses clarity, hard to add Cursor front-matter as a special case)",
+      "Keep addFabricKnowledgeBaseSection signature and feed it three different content builders (would re-introduce the inline content builder issue)"
+    ],
+    "decision_factors": ["Each client's consumption model is different", "Future per-client customization easier", "Symmetric with uninstall (3 strip operations)"],
+    "tradeoffs": "More functions vs single generic. Acceptable; each function is small and clearly scoped."
+  },
+  "test": {
+    "manual_checks": [
+      "Install on tmpdir fixture, verify all three target files written with new marker (fabric:bootstrap)",
+      "Pre-seed user content outside markers, install, verify preservation",
+      "Pre-seed legacy `.cursor/rules` flat file, install, verify it's deleted and new `.cursor/rules/fabric-bootstrap.mdc` created",
+      "Create .fabric/project-rules.md, install, verify both Codex and Cursor managed blocks contain the concat with `\\n---\\n` separator",
+      "Re-install, verify byte-identical state"
+    ],
+    "success_metrics": [
+      "Exactly one fabric:bootstrap marker pair per managed target file",
+      "Byte-equality across install re-runs",
+      "Legacy fabric:knowledge-base markers absent from all three new outputs"
+    ],
+    "unit": [],
+    "integration": [
+      "Covered by TASK-08 'three-end propagation matrix' test"
+    ]
+  },
+  "risks": [
+    {
+      "description": "Cursor front-matter ordering — managed block must come AFTER front-matter or Cursor won't parse the rule",
+      "probability": "Medium",
+      "impact": "High",
+      "mitigation": "Test fixture asserts front-matter `---` ends before BOOTSTRAP_MARKER_BEGIN; integration test verifies file order"
+    },
+    {
+      "description": "Claude @-import line placement — if user has existing CLAUDE.md with no fabric content, idempotent append must not duplicate on re-runs",
+      "probability": "Medium",
+      "impact": "Medium",
+      "mitigation": "Use line-level grep before append: skip if line already present anywhere in file (managed-line idempotent add)"
+    },
+    {
+      "description": "Removing AGENTS_MD_DEFAULT_CONTENT + scaffold-stage write may break init-guard tests that pre-seed legacy state",
+      "probability": "Medium",
+      "impact": "Medium",
+      "mitigation": "Search packages/cli/__tests__/integration/init-guard.test.ts for AGENTS_MD_DEFAULT_CONTENT refs; update test expectations to reflect bootstrap-stage ownership"
+    }
+  ],
+  "code_skeleton": {
+    "interfaces": [],
+    "key_functions": [
+      {
+        "signature": "buildManagedBlockBody(targetRoot: string): string",
+        "purpose": "Build the byte content for managed blocks: snapshot + optional concat with project-rules.md",
+        "returns": "string (snapshot content, or snapshot + '\\n---\\n' + project-rules content)"
+      },
+      {
+        "signature": "writeClaudeBootstrapThinShell(targetRoot: string): Promise<InstallStepResult>",
+        "purpose": "Idempotent line-level @-import management in CLAUDE.md",
+        "returns": "InstallStepResult"
+      },
+      {
+        "signature": "writeCodexBootstrapManagedBlock(targetRoot: string): Promise<InstallStepResult>",
+        "purpose": "Managed block in-place replace/append in root AGENTS.md",
+        "returns": "InstallStepResult"
+      },
+      {
+        "signature": "writeCursorBootstrapManagedBlock(targetRoot: string): Promise<InstallStepResult>",
+        "purpose": "Front-matter + managed block write to .cursor/rules/fabric-bootstrap.mdc; clean-slate delete of legacy .cursor/rules flat file",
+        "returns": "InstallStepResult"
+      }
+    ],
+    "classes": []
+  },
+  "depends_on": ["TASK-002"]
+}

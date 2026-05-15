@@ -1,0 +1,87 @@
+{
+  "id": "TASK-002",
+  "title": "H-rewrite: Apply --help content rewrites + examples + 装/配/跑 mental-model intro (bilingual)",
+  "scope": "packages/shared/src/i18n/locales/{en,zh-CN}.ts + packages/cli/src/commands/index.ts (root meta)",
+  "action": "Update",
+  "description": "Apply rewrites driven by TASK-001's gap list. For all 5 visible commands (`install`, `doctor`, `serve`, `uninstall`, `config`) ensure descriptions carry concrete usage examples. Add a 3-line mental-model intro at the root help: 装 (`fab install`) / 配 (`fab config`) / 跑 (`fab serve` + `fab doctor`). If citty `meta.examples` is supported (verify in command definitions), wire examples there; otherwise append `Example: …` to the description string. Maintain strict bilingual parity — every new/edited key must land in BOTH `en.ts` and `zh-CN.ts`.",
+  "files": [
+    {
+      "path": "packages/shared/src/i18n/locales/en.ts",
+      "action": "modify",
+      "target": "cli.main.description, cli.install.description, cli.doctor.description, cli.serve.description, cli.uninstall.description, cli.config.description (and any new cli.*.example.* keys)",
+      "change": "Rewrite root description with 3-line 装/配/跑 mental model; add concrete `Example: fab <cmd> ...` snippets to each visible command description per audit gap list"
+    },
+    {
+      "path": "packages/shared/src/i18n/locales/zh-CN.ts",
+      "action": "modify",
+      "target": "Mirror set of keys",
+      "change": "Bilingual mirror of all en.ts edits — strict parity per rc.12 broad-gate convention"
+    },
+    {
+      "path": "packages/cli/src/commands/index.ts",
+      "action": "modify",
+      "target": "Root command meta block (and per-subcommand meta if citty supports examples there)",
+      "change": "If citty supports `meta.examples`, wire example keys via `t('cli.<cmd>.example.<n>')`; otherwise no code change beyond confirming description is rendered"
+    }
+  ],
+  "implementation": [
+    "Read `_help-audit.md` from TASK-001 to get the precise gap list (which keys need rewrites and which need new example keys)",
+    "Verify whether citty's command meta supports an `examples` field (read packages/cli/src/commands/index.ts or a representative subcommand)",
+    "Draft the 3-line root intro in en + zh-CN: `Install (装): fab install` / `Configure (配): fab config` / `Run (跑): fab serve · fab doctor`",
+    "For each of the 5 visible commands, add 1-2 concrete examples (e.g. `fab install --yes`, `fab serve --host 0.0.0.0 --port 8787`, `fab doctor --json --strict`)",
+    "Apply edits to both locale files in mirrored order so diff review is straightforward",
+    "Run `pnpm --filter @fenglimg/fabric-shared build` to ensure i18n bundle compiles",
+    "Smoke test: `node packages/cli/dist/cli.js --help` and `node packages/cli/dist/cli.js install --help` show new content"
+  ],
+  "reference": {
+    "pattern": "Citty subcommand meta + i18n catalogue helper `t()`",
+    "files": [
+      "packages/shared/src/i18n/locales/en.ts",
+      "packages/shared/src/i18n/locales/zh-CN.ts",
+      "packages/cli/src/commands/index.ts"
+    ],
+    "examples": "Existing `cli.install.description` / `cli.serve.description` shape; mirror tone but add examples line"
+  },
+  "convergence": {
+    "criteria": [
+      "All 5 visible commands (install/doctor/serve/uninstall/config) have at least 1 concrete `Example:` line in BOTH en.ts and zh-CN.ts (verify via grep)",
+      "Root help (`fab --help`) prints the 3-line 装/配/跑 mental-model intro in both locales (LANG=en_US.UTF-8 vs LANG=zh_CN.UTF-8)",
+      "Bilingual parity: `diff <(grep -oE 'cli\\.[a-z.-]+\\.description' en.ts | sort -u) <(grep -oE 'cli\\.[a-z.-]+\\.description' zh-CN.ts | sort -u)` returns empty",
+      "Test command: `pnpm --filter @fenglimg/fabric-shared build && pnpm --filter @fenglimg/fabric-cli build && node packages/cli/dist/cli.js --help | grep -E '装|Install'` exits 0",
+      "Behavioral expectation: a first-time user reading `fab --help` sees the install/configure/run mental model and can find a working example for every visible command without consulting external docs"
+    ]
+  },
+  "depends_on": ["TASK-001"],
+  "rationale": {
+    "chosen_approach": "Drive rewrites from TASK-001's audit so the diff is bounded and reviewable; prefer citty `meta.examples` if supported (cleaner UX) but fall back to inline `Example:` lines to avoid scope creep",
+    "alternatives_considered": [
+      "Generate examples programmatically at help-render time",
+      "Keep examples in a separate markdown doc and link from --help"
+    ],
+    "decision_factors": [
+      "i18n catalogue is the single source of truth — examples belong there",
+      "First-time UX friction is the killer for this RC — concrete examples beat abstract descriptions"
+    ],
+    "tradeoffs": "Slightly larger i18n catalogue (10-15 new keys × 2 locales) for a much more scannable --help"
+  },
+  "test": {
+    "manual_checks": [
+      "Run `node packages/cli/dist/cli.js --help` (English locale) — verify 装/配/跑 intro renders",
+      "Run with `LANG=zh_CN.UTF-8 node packages/cli/dist/cli.js --help` — verify Chinese intro renders",
+      "Run `fab install --help`, `fab serve --help`, `fab doctor --help`, `fab uninstall --help`, `fab config --help` — each shows ≥1 example"
+    ],
+    "success_metrics": [
+      "0 unmatched keys between en.ts and zh-CN.ts (parity diff is empty)",
+      "5/5 visible commands have ≥1 example in both locales",
+      "Root --help carries the 3-line mental-model intro"
+    ],
+    "unit": [],
+    "integration": [
+      "test_help_root_renders_mental_model_en",
+      "test_help_root_renders_mental_model_zh",
+      "test_help_visible_commands_have_examples_bilingual"
+    ]
+  },
+  "cli_execution_id": "rc17-polish-2026-05-15-TASK-002",
+  "cli_execution": { "strategy": "resume", "resume_from": "rc17-polish-2026-05-15-TASK-001" }
+}

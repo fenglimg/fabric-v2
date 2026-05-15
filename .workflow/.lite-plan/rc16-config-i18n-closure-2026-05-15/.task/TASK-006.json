@@ -1,0 +1,115 @@
+{
+  "id": "TASK-006",
+  "title": "F1-panel: replace config.ts placeholder with clack TUI loop driven by schema introspection",
+  "scope": "packages/cli/src/commands/config.ts",
+  "action": "Refactor",
+  "description": "Replace the rc.15 placeholder body of `configCmd.run` with a clack-based interactive panel: `intro` → menu loop (`select` field name → display current value → `text` or `select` to edit → atomic write to fabric.config.json → re-render menu, with explicit `exit` choice) → `outro`. Drive the menu from `getPanelFields()` (TASK-005). KEEP the `installMcpClients` named export unchanged (re-imported by install.ts). Top-level CLI flag set: only `--target`. Uninit workspace path (fabric.config.json absent) → render error message + hint to run `fab install`, do NOT auto-bootstrap. Atomic write strategy: write to `fabric.config.json.tmp` then rename — reuse `atomicWriteJson` from `@fenglimg/fabric-shared/node/atomic-write` (already imported in install.ts). NO lock check (no fab serve contention). All user-facing strings in this command MUST honor `fabric_language` via `t()` from `../i18n.js` — add the new i18n keys (`cli.config.intro`, `cli.config.menu.title`, `cli.config.fields.<key>.label`, `cli.config.fields.<key>.description`, `cli.config.exit.choice`, `cli.config.write.success`, `cli.config.write.failure`, `cli.config.uninit.error`, `cli.config.uninit.hint`, `cli.config.invalid.input`) to the i18n string tables.",
+  "files": [
+    {
+      "path": "packages/cli/src/commands/config.ts",
+      "action": "modify",
+      "target": "configCmd.run body",
+      "change": "Replace placeholder console.log with: (1) check fabric.config.json exists → if not, log error + hint, exit 1; (2) `intro(t('cli.config.intro'))`; (3) menu loop: `select` over getPanelFields() entries + 'exit' choice → if exit, break; (4) for selected field: display current value, prompt edit via `text`+validate or `select`+enum_values; (5) on accept: re-load config, mutate field, atomicWriteJson; (6) re-render menu; (7) `outro` on exit. Handle isCancel at every prompt → graceful cancel."
+    },
+    {
+      "path": "packages/cli/src/commands/config.ts",
+      "action": "modify",
+      "target": "args definition",
+      "change": "Confirm args block has ONLY `target` (already correct in placeholder); no flags added"
+    },
+    {
+      "path": "packages/cli/src/commands/config.ts",
+      "action": "preserve",
+      "target": "installMcpClients export + loadFabricConfig + resolveServerPath + types",
+      "change": "MUST remain unchanged — install.ts re-imports installMcpClients via `import * as configCommand`"
+    },
+    {
+      "path": "packages/shared/src/i18n/strings/<each-locale>.ts",
+      "action": "modify",
+      "target": "i18n string tables (locate via grep for existing 'cli.config.' keys)",
+      "change": "Add new keys: cli.config.intro, cli.config.menu.title, cli.config.fields.<each-key>.label, cli.config.fields.<each-key>.description, cli.config.exit.choice, cli.config.write.success, cli.config.write.failure, cli.config.uninit.error, cli.config.uninit.hint, cli.config.invalid.input — for all supported locales (en, zh-CN, zh-CN-hybrid)"
+    }
+  ],
+  "implementation": [
+    "Locate i18n string-table files (grep for existing key 'cli.config.placeholder' to find files)",
+    "Add new i18n keys for all panel strings across all supported locales",
+    "Replace configCmd.run body: uninit-check → intro → menu loop → outro",
+    "Menu loop iteration: `select({ message, options: [...fields.map(f => ({ value: f.key, label: t(f.label_i18n_key) + ` (current: ${f.format_for_display(currentConfig[f.key])})` })), { value: '__exit__', label: t('cli.config.exit.choice') }] })`",
+    "Field edit: branch on f.widget — 'select' uses select with enum_values; 'text' uses text with `validate: (raw) => f.validate(raw).ok ? undefined : f.validate(raw).error`",
+    "Atomic write: re-read current fabric.config.json (avoid stomping on concurrent edits), spread + override field, call `atomicWriteJson(configPath, mergedConfig)`",
+    "Wrap each prompt with isCancel check → if cancelled, `cancel(t('cli.config.cancelled'))` + return",
+    "Verify `installMcpClients`, `loadFabricConfig`, `resolveServerPath`, type exports remain unchanged (anti-regression for install.ts consumer)"
+  ],
+  "reference": {
+    "pattern": "packages/cli/src/commands/install.ts (clack imports + group/select/intro/outro flow + atomicWriteJson usage)",
+    "files": [
+      "packages/cli/src/commands/install.ts",
+      "packages/cli/src/commands/uninstall.ts",
+      "packages/shared/src/schemas/fabric-config-introspect.ts",
+      "packages/cli/src/i18n.ts"
+    ],
+    "examples": "install.ts:1-37 shows the canonical clack import block + atomicWriteJson import — copy verbatim"
+  },
+  "convergence": {
+    "criteria": [
+      "File `packages/cli/src/commands/config.ts` no longer contains the literal `t('cli.config.placeholder')` console.log (replaced by full clack panel)",
+      "Named export `installMcpClients` still present and signature unchanged (verify via TypeScript: `pnpm --filter @fenglimg/fabric-cli build` passes)",
+      "Args block contains ONLY `target` — no other flags added",
+      "Running `fab config` in a workspace WITHOUT fabric.config.json prints an error message containing 'fab install' and exits non-zero",
+      "Running `fab config` in a workspace WITH fabric.config.json launches the interactive panel showing all 11 fields from getPanelFields()",
+      "After editing a field and confirming, `fabric.config.json` on disk reflects the new value AND a `fabric.config.json.tmp` file is NOT left behind (atomic write succeeded)",
+      "Test command: `pnpm --filter @fenglimg/fabric-cli test -- config` exits 0 (TASK-007 supplies the tests)",
+      "Behavioral expectation: a user running `fab config` interactively edits Group A/B/C fields with localized labels in their fabric_language without touching JSON manually"
+    ]
+  },
+  "depends_on": ["TASK-005", "TASK-002", "TASK-003"],
+  "rationale": {
+    "chosen_approach": "Clack-based menu loop driven by schema introspection — matches the CLI design principle '能交互选的就别做 flag', leverages existing install.ts patterns, and keeps the field list a single-source-of-truth (getPanelFields)",
+    "alternatives_considered": [
+      "Single `--field <key> --value <val>` flag form (rejected: violates interactive-first principle, requires users to know field names)",
+      "TUI dashboard with all fields visible at once (rejected: clack lacks this widget; would require ink/blessed; over-engineered for 11 fields)",
+      "Auto-bootstrap on uninit (rejected: violates clean-slate + drift→abort principle from feedback_cli_design.md)"
+    ],
+    "decision_factors": [
+      "Consistency with install.ts UX (same widget vocabulary)",
+      "Single source of truth: PanelFieldMeta (TASK-005) drives both rendering and validation",
+      "Atomic write avoids partial-write corruption on Ctrl-C mid-edit"
+    ],
+    "tradeoffs": "Menu loop is ~150 LOC vs ~10-line flag-based alternative; justified by the user-facing UX win and avoiding the doc burden of explaining 11 flags"
+  },
+  "test": {
+    "manual_checks": [
+      "Run `fab config` in a fresh test workspace without fabric.config.json — verify error message + 'fab install' hint",
+      "Run `fab config` after `fab install`, navigate to fabric_language, change to 'zh-CN', verify fabric.config.json on disk updated",
+      "Run `fab config`, edit review_hint_pending_count to '0', verify validation rejects (must be positive)",
+      "Run `fab config`, edit a field, then re-launch and verify the new value is shown in the menu (re-render works)",
+      "Verify `fab install` still wires MCP clients (anti-regression for installMcpClients export)"
+    ],
+    "success_metrics": [
+      "Zero `.tmp` files leftover after 100 simulated edits",
+      "Edit roundtrip latency < 500ms (atomic write + re-read)",
+      "All TypeScript compiles strict-mode clean"
+    ],
+    "unit": [
+      "test_config_uninit_workspace_errors_with_install_hint",
+      "test_config_panel_renders_all_panel_fields",
+      "test_config_atomic_write_roundtrip_per_field",
+      "test_config_invalid_input_rejected_with_message",
+      "test_config_exit_choice_returns_cleanly",
+      "test_config_install_mcp_clients_export_unchanged"
+    ],
+    "integration": [
+      "test_config_installs_then_edits_then_re_renders_full_loop",
+      "test_install_pipeline_still_imports_install_mcp_clients_named_export"
+    ]
+  },
+  "cli_execution_id": "rc16-config-i18n-closure-2026-05-15-TASK-006",
+  "cli_execution": {
+    "strategy": "merge_fork",
+    "merge_from": [
+      "rc16-config-i18n-closure-2026-05-15-TASK-005",
+      "rc16-config-i18n-closure-2026-05-15-TASK-002",
+      "rc16-config-i18n-closure-2026-05-15-TASK-003"
+    ]
+  }
+}

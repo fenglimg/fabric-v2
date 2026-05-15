@@ -1,0 +1,27 @@
+{
+  "session_id": "rc15-cli-surface-contraction-2026-05-14",
+  "task_description": "rc.15 Phase 2 CLI surface contraction. 10 cleanup items: 4 flag-kill batches (install/uninstall/doctor/serve) + 5 command-tree pruning (delete hooks, strip config subcommands, fold scan→doctor, hide plan-context-hint, wire fab config) + schema dedupe + version bump. Per memory feedback_cli_design.md three-entry model and 能交互选的就别做flag principle.",
+  "timestamp": "2026-05-14T18:55:00+08:00",
+  "complexity": "Medium",
+  "exploration_count": 3,
+  "explorations": [
+    {
+      "angle": "cli-surface-removals",
+      "file": "exploration-cli-surface-removals.json",
+      "path": ".workflow/.lite-plan/rc15-cli-surface-contraction-2026-05-14/exploration-cli-surface-removals.json",
+      "index": 1
+    },
+    {
+      "angle": "command-tree-deps",
+      "file": "exploration-command-tree-deps.json",
+      "path": ".workflow/.lite-plan/rc15-cli-surface-contraction-2026-05-14/exploration-command-tree-deps.json",
+      "index": 2
+    },
+    {
+      "angle": "schema-and-test-impact",
+      "file": "exploration-schema-and-test-impact.json",
+      "path": ".workflow/.lite-plan/rc15-cli-surface-contraction-2026-05-14/exploration-schema-and-test-impact.json",
+      "index": 3
+    }
+  ]
+}

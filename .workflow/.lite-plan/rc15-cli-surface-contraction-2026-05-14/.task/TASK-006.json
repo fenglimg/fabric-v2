@@ -1,0 +1,70 @@
+{
+  "id": "TASK-006",
+  "title": "Version bump to v2.0.0-rc.15 + CHANGELOG entry — CLI surface contraction summary (35→20 flags, 7→5 commands)",
+  "scope": "package.json (root + 3 workspace packages) + CHANGELOG.md",
+  "action": "Update",
+  "description": "Final commit of rc.15 chain. Bump version from v2.0.0-rc.14 to v2.0.0-rc.15 across root + workspace packages (packages/cli, packages/server, packages/shared, packages/dashboard if version-pinned). Add new CHANGELOG.md entry above the rc.14 entry summarizing the contraction: 4 flag-kill batches (TASK-001..003), 5 command-tree edits (TASK-004), 1 schema dedupe (TASK-005). Quantify the contraction: ~35 flags → ~20 flags net; 7 commands (install, doctor, serve, uninstall, scan, hooks, plan-context-hint) → 5 visible (install, doctor, serve, uninstall, config) + 1 hidden (plan-context-hint). After commit, the user runs Gemini code review + coverage report ONCE for the entire rc.15 chain per memory feedback_review_batching.md. Commit: `chore(rc15): bump to v2.0.0-rc.15 — CLI surface contraction (35→20 flags, 7→5 commands)`",
+  "files": [
+    { "path": "package.json", "action": "modify", "target": "version field at root", "change": "Update `\"version\": \"2.0.0-rc.14\"` → `\"version\": \"2.0.0-rc.15\"` (or whatever rc.14 currently is — read first to confirm baseline)" },
+    { "path": "packages/cli/package.json", "action": "modify", "target": "version field", "change": "Same bump to 2.0.0-rc.15; verify workspace dependency pins on @fenglimg/fabric-shared and @fenglimg/fabric-server use workspace:* (no version update needed there) — if they pin to explicit version, bump those too" },
+    { "path": "packages/server/package.json", "action": "modify", "target": "version field", "change": "Same bump to 2.0.0-rc.15" },
+    { "path": "packages/shared/package.json", "action": "modify", "target": "version field", "change": "Same bump to 2.0.0-rc.15" },
+    { "path": "packages/dashboard/package.json", "action": "modify", "target": "version field (if it exists and is pinned)", "change": "Verify if dashboard tracks main version; if yes, bump to 2.0.0-rc.15" },
+    { "path": "CHANGELOG.md", "action": "modify", "target": "above the existing rc.14 entry (above L8)", "change": "Insert new rc.15 section with header `## [2.0.0-rc.15] - 2026-05-14`. Body summarizes: (a) **Breaking — CLI surface contraction**: list killed flags by command (install: --force/--reapply/--interactive/--no-bootstrap/--no-mcp/--no-hooks/--mcp-install/--scope, renamed --plan→--dry-run; uninstall: --force/--interactive/--no-bootstrap/--no-mcp/--no-scaffold/--purge/--clean-empties, renamed --plan→--dry-run, --clean-empties becomes default; doctor: --force, renamed --apply-lint→--fix-knowledge, added --rescan; serve: --force). (b) **Breaking — Command tree pruning**: deleted top-level `fab hooks` (helpers moved to install/hooks-orchestrator.ts), deleted top-level `fab scan` (fold into `fab doctor --rescan`); stripped `fab config install` and `fab config hooks` subcommands; hidden `fab plan-context-hint` from --help (still callable by hook scripts); wired `fab config` as rc.16 placeholder. (c) **Schema**: deduped `auditMode`/`audit_mode` → snake_case only. (d) **UX**: rewrote ServeLockHeldError message to drop --force suggestion, show PID + kill cmd guidance. (e) **Migration**: drift recovery is now `fab uninstall && fab install` (was `fab install --force` or `--reapply`). Reference contraction stats: ~35 flags → ~20 flags; 7 commands → 5 visible + 1 hidden." }
+  ],
+  "implementation": [
+    "Read package.json at root + 4 workspace packages to confirm current version is 2.0.0-rc.14 (or whatever previous rc; per gitStatus the most recent commit references rc.13, so rc.14 may or may not be in flight — verify before editing)",
+    "Update version field in all 5 (or however many) package.json files to 2.0.0-rc.15",
+    "Read CHANGELOG.md L1-L60 to locate the rc.14 entry header position (L8 per exploration)",
+    "Insert new rc.15 section above the rc.14 entry. Use the same heading depth and structure as existing rc.X entries for consistency",
+    "Cross-check rc.15 entry against TASK-001..TASK-005 commit messages to ensure no item is missed (4 flag-kill commits + 1 command-tree commit + 1 schema commit + this version bump = 6 git commits in the rc.15 chain)",
+    "Run `pnpm install` to refresh lockfile if any workspace versions changed",
+    "Run `pnpm test` + `pnpm typecheck` + `pnpm lint` at root — verify all green (this is the rc.15-gate before tagging)",
+    "Run Gemini code review + coverage report ONCE for the entire rc.15 chain (per memory feedback_review_batching.md) — this is a separate step, not part of the commit itself",
+    "git add + commit with message: `chore(rc15): bump to v2.0.0-rc.15 — CLI surface contraction (35→20 flags, 7→5 commands)`"
+  ],
+  "reference": {
+    "pattern": "Project release pattern (v2.0.0 RC chain): each rc.X bumps all workspace package.json versions in lockstep + adds a CHANGELOG entry above the previous rc. Per memory project_v2_rc_continuation.md: v2.0.0 was tagged locally but never published; rc.5+ continues v2.0.0-rc chain → eventual v2.0.0 stable. rc.15 is one rung on that ladder. Per memory feedback_review_batching.md: review+coverage runs ONCE at end of multi-task lite-plan chain, not per-task.",
+    "files": ["package.json (root)", "packages/cli/package.json", "CHANGELOG.md"],
+    "examples": "Recent commits to follow style: `abbc706 fix(rc13): bump to v2.0.0-rc.13 + knip ignore .cursor/hooks/** + stale init.ts → install.ts`; `22dc6a6 refactor(rc12): bump to v2.0.0-rc.12 + SessionStart gate removal + fab install rename + fabric_language unification`. Pattern: `<type>(rc<N>): bump to v2.0.0-rc.<N> — <one-line summary of biggest items>`."
+  },
+  "convergence": {
+    "criteria": [
+      "All workspace package.json files declare `\"version\": \"2.0.0-rc.15\"` (root + packages/cli + packages/server + packages/shared, and packages/dashboard if pinned — verify with `grep '\"version\":' package.json packages/*/package.json`)",
+      "CHANGELOG.md contains a `## [2.0.0-rc.15] - 2026-05-14` section above the rc.14 entry",
+      "rc.15 CHANGELOG section lists ALL killed flags by command (install/uninstall/doctor/serve), ALL command-tree edits (hooks/scan/config/plan-context-hint), schema dedupe, and ServeLockHeldError message rewrite — verified by cross-checking against TASK-001..TASK-005 commit messages",
+      "rc.15 CHANGELOG section explicitly documents the migration path: `fab uninstall && fab install` for drift recovery",
+      "`pnpm install` succeeds with no lockfile errors after version bump",
+      "`pnpm test` exit 0 (final gate — confirms TASK-001..TASK-005 all integrated cleanly)",
+      "`pnpm typecheck` exit 0",
+      "`pnpm lint` exit 0",
+      "Single commit with specified message",
+      "git log shows the rc.15 chain as exactly 6 commits (TASK-001..TASK-006), all on `main` branch, sequential history"
+    ]
+  },
+  "rationale": {
+    "chosen_approach": "Final commit isolates version bump + CHANGELOG from refactor commits — the refactor commits are reviewable on their own, the version bump is a trivial mechanical change. Aligns with established project rhythm (every prior rc.X follows this pattern per gitStatus recent commits).",
+    "alternatives_considered": ["Bake version bump into TASK-005 (last refactor commit)", "Split version bump and CHANGELOG into two commits", "Tag the release within this commit"],
+    "decision_factors": ["Separation of concerns: refactor vs. release-metadata", "Consistency with prior rc.X commit pattern (`chore(rcN): bump...`)", "CHANGELOG drafting needs the full TASK-001..TASK-005 commit messages as input — sequencing as last commit guarantees completeness"],
+    "tradeoffs": "Adds one commit to the chain. Negligible cost. Tagging is deferred — user explicitly tags via `git tag v2.0.0-rc.15` after this commit if/when they wish to publish."
+  },
+  "test": {
+    "manual_checks": [
+      "Run `node packages/cli/bin/fab.mjs --version` — verify prints `2.0.0-rc.15`",
+      "Read CHANGELOG.md and verify the rc.15 section reads coherently end-to-end",
+      "Verify Gemini review + coverage steps run AFTER this commit (per memory feedback_review_batching.md — review happens once for the whole chain)"
+    ],
+    "success_metrics": [
+      "Root test exit 0",
+      "Type-check exit 0",
+      "Lint exit 0",
+      "fab --version prints 2.0.0-rc.15",
+      "CHANGELOG entry passes human read-through (cohesive narrative, no missing items vs TASK-001..005)"
+    ],
+    "unit": ["existing test suite (no new tests in this commit)"],
+    "integration": ["full pnpm test suite as integration gate"]
+  },
+  "depends_on": ["TASK-001", "TASK-002", "TASK-003", "TASK-004", "TASK-005"],
+  "cli_execution_id": "rc15-cli-surface-contraction-2026-05-14-TASK-006",
+  "cli_execution": { "strategy": "merge_fork", "merge_from": ["rc15-cli-surface-contraction-2026-05-14-TASK-001", "rc15-cli-surface-contraction-2026-05-14-TASK-002", "rc15-cli-surface-contraction-2026-05-14-TASK-003", "rc15-cli-surface-contraction-2026-05-14-TASK-004", "rc15-cli-surface-contraction-2026-05-14-TASK-005"] }
+}

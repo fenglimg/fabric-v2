@@ -1,0 +1,88 @@
+{
+  "id": "TASK-003",
+  "title": "fab doctor (C3) + fab serve (C4) cleanup — kill --force on both; rename --apply-lint → --fix-knowledge on doctor; add --rescan on doctor; rewrite ServeLockHeldError message",
+  "scope": "packages/cli/src/commands/{doctor,serve}.ts + packages/server/src/services/serve-lock.ts + packages/shared/src/i18n/locales/{en,zh-CN}.ts + 4 test files",
+  "action": "Refactor",
+  "description": "Paired commit because both commands kill --force AND share the ServeLockHeldError message that needs rewriting at serve-lock.ts:52 + L104. Doctor adds --rescan (calls runInitScan with source:'doctor-rescan' BEFORE the report — composable with --fix and --fix-knowledge per clarification 7). --apply-lint → --fix-knowledge rename is CLI + doctor.ts local only (per clarification 2 — leave packages/server untouched: runDoctorApplyLint, DoctorApplyLintReport keep old names). Internal doctor.ts identifiers being renamed: applyLint variable → fixKnowledge, ApplyLintPlan type → FixKnowledgePlan, local helpers (computeApplyLintPlan → computeFixKnowledgePlan, renderApplyLintPlan/Mutations, resolveApplyLintConsent, APPLY_LINT_CODE_LABELS const), i18n keys cli.doctor.args.apply-lint.* → cli.doctor.args.fix-knowledge.*. checkLockOrThrow at doctor.ts:107-108 drops {force: args.force}; acquireLock at serve.ts:61 drops {force: args.force}. ServeLockHeldError actionHint rewritten via t() key for en+zh-CN parity to: 'A `fab serve` instance (PID ${state.pid}) is holding the workspace lock. Stop it (Ctrl-C in that terminal or `kill ${state.pid}`) before running this command.' Commit: `refactor(rc15): fab doctor + serve cleanup — kill --force, rename --apply-lint → --fix-knowledge, add --rescan`",
+  "files": [
+    { "path": "packages/cli/src/commands/doctor.ts", "action": "modify", "target": "L64-L102 (citty args), L84-L88 (--force entry — delete), L89-L93 (--apply-lint entry — rename), new entry after L93 (--rescan add), L107-L108 (checkLockOrThrow gate), L110 + L114-L120 (applyLint var/report — rename to fixKnowledge), L117-L121 (apply-lint vs fix mutex check), L123/L156/L168/L184/L202 + L307-L342 (applyLintReport + computeApplyLintPlan + render* helpers — local rename), L27 DoctorArgs type, DoctorOptions if any local", "change": "Delete --force args entry; rename --apply-lint→--fix-knowledge (kebab-case); add --rescan boolean flag with cli.doctor.args.rescan.description i18n key; drop {force: args.force} from checkLockOrThrow; rename local identifiers applyLint→fixKnowledge, ApplyLintPlan→FixKnowledgePlan, computeApplyLintPlan→computeFixKnowledgePlan, renderApplyLintPlan→renderFixKnowledgePlan, renderApplyLintMutations→renderFixKnowledgeMutations, resolveApplyLintConsent→resolveFixKnowledgeConsent, APPLY_LINT_CODE_LABELS→FIX_KNOWLEDGE_CODE_LABELS; update DoctorApplyLintReport import from server (KEEP server-side name — clarification 2; alias on import: `import { runDoctorApplyLint as runDoctorFixKnowledge, DoctorApplyLintReport as DoctorFixKnowledgeReport } from '@fenglimg/fabric-server'`); add --rescan handler that calls `await runInitScan(resolution.target, { source: 'doctor-rescan' })` BEFORE the report (composable with --fix and --fix-knowledge — single-pass)" },
+    { "path": "packages/cli/src/commands/serve.ts", "action": "modify", "target": "L11-L17 ServeArgs type, L24-L48 citty args (L44-L48 force entry), L61 acquireLock call", "change": "Drop `force?: boolean` from ServeArgs; delete force entry from args block; change `acquireLock(projectRoot, { force: args.force })` → `acquireLock(projectRoot)`" },
+    { "path": "packages/server/src/services/serve-lock.ts", "action": "modify", "target": "L19-L21 (AcquireOptions.force — preserve as server-side engine param per clarification — used by serve-lock.test.ts unit tests), L48-L55 + L92-L107 (ServeLockHeldError construction)", "change": "KEEP AcquireOptions.force param (server-side escape hatch survives for internal callers + unit tests). REWRITE actionHint at L51-L52 and L104: replace 'or run with --force to override' with t('cli.serve.lock-held.action-hint', { pid: state.pid }) i18n key producing 'A `fab serve` instance (PID ${state.pid}) is holding the workspace lock. Stop it (Ctrl-C in that terminal or `kill ${state.pid}`) before running this command.' for en; matching zh-CN translation" },
+    { "path": "packages/shared/src/i18n/locales/en.ts", "action": "modify", "target": "L73-L74 (cli.doctor.args.force/apply-lint), L330 (cli.serve.args.force), add cli.doctor.args.fix-knowledge + cli.doctor.args.rescan + cli.doctor.errors.fix-knowledge-fix-mutually-exclusive (renamed from apply-lint-fix-mutually-exclusive) + cli.serve.lock-held.action-hint", "change": "Delete cli.doctor.args.force.description, cli.serve.args.force.description, cli.install.force.* (any residual); rename cli.doctor.args.apply-lint.description → cli.doctor.args.fix-knowledge.description; add cli.doctor.args.rescan.description ('Re-run the init scan to rebuild .fabric/agents.meta.json forensic state before doctor checks.'); rename cli.doctor.errors.apply-lint-fix-mutually-exclusive → cli.doctor.errors.fix-knowledge-fix-mutually-exclusive; add cli.serve.lock-held.action-hint with the verbose PID + kill cmd message" },
+    { "path": "packages/shared/src/i18n/locales/zh-CN.ts", "action": "modify", "target": "L71-L72 + L320 (parallel deletions/renames)", "change": "Mirror en.ts: delete cli.doctor.args.force, cli.serve.args.force; rename apply-lint→fix-knowledge keys; add rescan.description (Chinese translation); add cli.serve.lock-held.action-hint Chinese translation matching the verbose en wording" },
+    { "path": "packages/cli/__tests__/doctor.test.ts", "action": "modify", "target": "L108-L390 ('--apply-lint flag' describe block — 8 tests), L130/L179/L236/L276/L326/L342 (args:{'apply-lint': bool} invocations), L287 (stderr substring includes('apply-lint')) — rename to fix-knowledge; add NEW describe '--rescan flag' with test asserting runInitScan called BEFORE runDoctorReport when args.rescan:true", "change": "Mass-rename describe '--apply-lint flag' → '--fix-knowledge flag'; rename every args:{'apply-lint': X} → args:{'fix-knowledge': X}; update L287 stderr assertion substring to 'fix-knowledge'; add new describe '--rescan flag' (~30 lines) with vi.mock of runInitScan, assert call order rescan→report; applyLintSpy/applyLintReport local vars can stay (internal-only)" },
+    { "path": "packages/cli/__tests__/integration/serve-lock.test.ts", "action": "modify", "target": "L63 (describe 'I10: serve-lock prevents duplicate run without --force'), L75-L93 (checkLockOrThrow ±force), L119 (describe 'doctor blocked by active serve lock unless --force'), L129 (describe 'init --reapply blocked by active serve lock unless --force')", "change": "Rename describe at L63 to 'serve-lock prevents duplicate run' (drop --force qualifier); keep inner force-bypass-engine-API tests (engine still accepts {force:true}); rename describe at L119 to 'doctor is blocked by active serve lock'; DELETE describe at L129-L138 entirely (--reapply gone per TASK-001, --force gone)" },
+    { "path": "packages/server/src/services/serve-lock.test.ts", "action": "modify", "target": "L170 (checkLockOrThrow does not throw with --force test)", "change": "Engine-side force param survives — this test stays valid as unit test for AcquireOptions.force (server-internal). Verify the actionHint string in error tests matches new message." },
+    { "path": "packages/cli/__tests__/__snapshots__/cli-surface.test.ts.snap", "action": "modify", "target": "L13-L67 (doctor args), L247-L286 (serve args)", "change": "Regenerate via vitest -u; expected doctor: [fix, fix-knowledge, json, rescan, strict, target, yes]; expected serve: [debug, host, port, target]" }
+  ],
+  "implementation": [
+    "Read doctor.ts and serve.ts in full to map every force/apply-lint reference",
+    "Edit doctor.ts citty args at L64-L102: delete force entry (L84-L88); rename apply-lint→fix-knowledge (L89-L93); add new entry `rescan: { type: 'boolean', description: t('cli.doctor.args.rescan.description'), default: false }`",
+    "Edit doctor.ts DoctorArgs type at L27: drop `force?: boolean`; rename `apply-lint?: boolean` → `fix-knowledge?: boolean`; add `rescan?: boolean`",
+    "Edit doctor.ts checkLockOrThrow at L107-L108: change to `await checkLockOrThrow(resolution.target);` (drop force opts)",
+    "Edit doctor.ts: rename internal identifiers — applyLint→fixKnowledge, ApplyLintPlan→FixKnowledgePlan, computeApplyLintPlan→computeFixKnowledgePlan, renderApplyLintPlan→renderFixKnowledgePlan, renderApplyLintMutations→renderFixKnowledgeMutations, resolveApplyLintConsent→resolveFixKnowledgeConsent, APPLY_LINT_CODE_LABELS→FIX_KNOWLEDGE_CODE_LABELS (search-and-replace within doctor.ts only)",
+    "Edit doctor.ts: alias server-side imports — `import { runDoctorApplyLint as runDoctorFixKnowledge, DoctorApplyLintReport as DoctorFixKnowledgeReport, type ApplyLintPlan as FixKnowledgePlanInput } from '@fenglimg/fabric-server'` (server names unchanged)",
+    "Edit doctor.ts: add --rescan handler logic — after checkLockOrThrow but BEFORE runDoctorReport, if args.rescan===true: `await runInitScan(resolution.target, { source: 'doctor-rescan' });` (import runInitScan from '../commands/scan.js' — note: in TASK-004 this will move; for now keep import path consistent)",
+    "Edit doctor.ts mutex check at L117-L121: rename i18n key cli.doctor.errors.apply-lint-fix-mutually-exclusive → cli.doctor.errors.fix-knowledge-fix-mutually-exclusive (only fix-knowledge vs fix are mutex; --rescan composes with everything per clarification 7)",
+    "Edit serve.ts ServeArgs at L11-L17: drop `force?: boolean`",
+    "Edit serve.ts args block at L24-L48: delete force entry (L44-L48)",
+    "Edit serve.ts L61: change `acquireLock(projectRoot, { force: args.force })` → `acquireLock(projectRoot)`",
+    "Edit serve-lock.ts L51-L52 and L104: replace hardcoded actionHint strings with `t('cli.serve.lock-held.action-hint', { pid: state.pid })`. NOTE: serve-lock.ts is in packages/server; ensure t() helper is reachable (likely imported from @fenglimg/fabric-shared). Verify the existing pattern for i18n in server package.",
+    "Edit en.ts: delete cli.doctor.args.force.description (L73), cli.serve.args.force.description (L330); rename cli.doctor.args.apply-lint.description → cli.doctor.args.fix-knowledge.description; add cli.doctor.args.rescan.description ('Re-run the init scan before doctor checks to rebuild forensic state.'); rename cli.doctor.errors.apply-lint-fix-mutually-exclusive → cli.doctor.errors.fix-knowledge-fix-mutually-exclusive; add cli.serve.lock-held.action-hint = 'A `fab serve` instance (PID {pid}) is holding the workspace lock. Stop it (Ctrl-C in that terminal or `kill {pid}`) before running this command.'",
+    "Edit zh-CN.ts in parallel with localized Chinese translations",
+    "Update doctor.test.ts: rename describe '--apply-lint flag' → '--fix-knowledge flag'; mass-rename args.{'apply-lint':X} → args.{'fix-knowledge':X}; update L287 substring; add new describe '--rescan flag' with runInitScan vi.mock and call-order assertion",
+    "Update integration/serve-lock.test.ts: rename describe titles dropping '--force' qualifier; DELETE the L129-L138 block (init --reapply blocked — both flags gone)",
+    "Verify serve-lock.test.ts (server-side) still asserts new actionHint string",
+    "Run `pnpm test -u` to regenerate cli-surface.test.ts.snap doctor + serve blocks",
+    "Run tsc/lint/vitest — fix until green",
+    "git add + commit with message: `refactor(rc15): fab doctor + serve cleanup — kill --force, rename --apply-lint → --fix-knowledge, add --rescan`"
+  ],
+  "reference": {
+    "pattern": "Hybrid pattern combining surface-contraction (kill --force) + flag rename (--apply-lint→--fix-knowledge with local-only identifier rename per clarification 2) + flag addition (--rescan calling existing runInitScan helper).",
+    "files": ["packages/cli/src/commands/doctor.ts", "packages/cli/src/commands/serve.ts", "packages/server/src/services/serve-lock.ts"],
+    "examples": "See exploration-cli-surface-removals.json doctor.ts keyCode for --rescan pattern (mirror of install.ts:926 runInitScan call); see exploration-command-tree-deps.json citty meta.hidden type def for how i18n keys integrate with --help"
+  },
+  "convergence": {
+    "criteria": [
+      "doctor.ts citty args block contains exactly 7 entries: fix, fix-knowledge, json, rescan, strict, target, yes (verified by reading)",
+      "serve.ts citty args block contains exactly 4 entries: debug, host, port, target (no force)",
+      "Zero `args.force` references in doctor.ts AND serve.ts (grep returns 0)",
+      "Zero `apply-lint` string references in doctor.ts (grep returns 0; server package still has runDoctorApplyLint per clarification 2)",
+      "doctor.ts imports server functions via alias: `runDoctorApplyLint as runDoctorFixKnowledge` — server-side name unchanged",
+      "ServeLockHeldError actionHint message at serve-lock.ts:51-52 and L104 reads from t('cli.serve.lock-held.action-hint', { pid }) — no hardcoded '--force' string anywhere in serve-lock.ts",
+      "en.ts and zh-CN.ts both contain cli.doctor.args.{fix-knowledge,rescan}.description and cli.serve.lock-held.action-hint keys",
+      "Zero cli.doctor.args.{force,apply-lint}.description and cli.serve.args.force.description keys in either locale",
+      "cli-surface.test.ts.snap doctor block: [fix, fix-knowledge, json, rescan, strict, target, yes]; serve block: [debug, host, port, target]",
+      "doctor.test.ts contains a '--rescan flag' describe block asserting runInitScan called BEFORE runDoctorReport when args.rescan:true",
+      "`pnpm test` exit 0, `pnpm typecheck` exit 0, `pnpm lint` exit 0",
+      "Single commit with specified message"
+    ]
+  },
+  "rationale": {
+    "chosen_approach": "Pair doctor+serve in one commit because both share the ServeLockHeldError message rewrite at serve-lock.ts:52,104. Splitting would either leave the message half-updated (bad UX) or require coordinating between two commits to maintain message integrity. The apply-lint→fix-knowledge rename is bounded to CLI+doctor.ts locals per clarification 2 — server-side names preserved to minimize blast radius into a different package.",
+    "alternatives_considered": ["Three separate commits (doctor, serve, serve-lock message)", "Full rename cascade through server package (runDoctorApplyLint → runDoctorFixKnowledge)", "Skip --rescan add, defer to a separate commit"],
+    "decision_factors": ["ServeLockHeldError message is referenced by both doctor and serve — atomic update prevents inconsistency", "Server-side apply-lint names are internal contract, not user-visible (clarification 2 ground truth)", "rescan composes naturally with the doctor surface (single-pass: rescan→mutations→report per clarification 7)"],
+    "tradeoffs": "Internal naming asymmetry: CLI says fixKnowledge but server-side still uses applyLint. Mitigated by alias-import pattern at the boundary. Future rc.16+ can cascade the server rename if desired."
+  },
+  "test": {
+    "manual_checks": [
+      "Run `node packages/cli/bin/fab.mjs doctor --help` — verify only [fix, fix-knowledge, json, rescan, strict, target, yes]",
+      "Run `node packages/cli/bin/fab.mjs serve --help` — verify only [debug, host, port, target]",
+      "Run `node packages/cli/bin/fab.mjs doctor --rescan /tmp/test-target` — verify runInitScan output appears before doctor report",
+      "Run `node packages/cli/bin/fab.mjs doctor --fix-knowledge /tmp/test-target` — verify the previous --apply-lint behavior triggers under new flag name",
+      "Start `fab serve /tmp/test` in one terminal, then `fab doctor /tmp/test` in another — verify error message reads 'A `fab serve` instance (PID N) is holding the workspace lock. Stop it (Ctrl-C in that terminal or `kill N`) before running this command.' with no '--force' mention"
+    ],
+    "success_metrics": [
+      "All tests pass: `pnpm test` exit 0",
+      "Type-check passes: `pnpm typecheck` exit 0",
+      "Lint passes: `pnpm lint` exit 0",
+      "Snapshot diff at cli-surface.test.ts.snap shows doctor force removed, apply-lint→fix-knowledge, +rescan; serve force removed",
+      "i18n.test.ts.snap diff shows new lock-held.action-hint key, no --force references in any help text"
+    ],
+    "unit": ["doctor.test.ts (apply-lint→fix-knowledge mass-rename + new --rescan describe block)"],
+    "integration": ["serve-lock.test.ts (rename describe titles, delete L129-L138)", "serve-lock.test.ts server-side (assert new actionHint)"]
+  },
+  "depends_on": ["TASK-001", "TASK-002"],
+  "cli_execution_id": "rc15-cli-surface-contraction-2026-05-14-TASK-003",
+  "cli_execution": { "strategy": "merge_fork", "merge_from": ["rc15-cli-surface-contraction-2026-05-14-TASK-001", "rc15-cli-surface-contraction-2026-05-14-TASK-002"] }
+}

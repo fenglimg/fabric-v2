@@ -1,0 +1,128 @@
+{
+  "id": "TASK-008",
+  "title": "Tests — install side (snapshot + three-end propagation + Cursor migration + project-rules)",
+  "scope": "packages/cli/__tests__/integration/",
+  "action": "Test",
+  "description": "Rewrite the existing managed-block test block (install-skills-and-hooks.test.ts:442-574) for the new fabric:bootstrap marker, three per-client target paths, .cursor/rules directory migration, project-rules.md only-if-exists concat behavior, and snapshot write. Add a new bootstrap-snapshot.test.ts integration file covering .fabric/AGENTS.md write + idempotency. Mirrors patterns from codex-mcp-install.test.ts:146-171 (legacy migration) and install-diff-mode.test.ts.",
+  "files": [
+    {
+      "path": "packages/cli/__tests__/integration/install-skills-and-hooks.test.ts",
+      "action": "modify",
+      "target": "L442-L574 managed-block test block",
+      "change": "Rewrite the four-axis matrix (presence × idempotency × in-place-replace × overwrite) for the new fabric:bootstrap marker. SECTION_BEGIN/SECTION_END at L442-L443 updated to '<!-- fabric:bootstrap:begin -->' / '<!-- fabric:bootstrap:end -->'. Test seed targets updated: AGENTS.md remains; CLAUDE.md remains; `.cursor/rules` (FILE) is replaced by `.cursor/rules/fabric-bootstrap.mdc` (DIRECTORY rule). New assertions: (1) .fabric/AGENTS.md exists after install with content byte-equal to BOOTSTRAP_CANONICAL; (2) Codex managed block body byte-equals .fabric/AGENTS.md content; (3) Cursor managed block body byte-equals same; (4) Cursor file front-matter has `alwaysApply: true`; (5) CLAUDE.md contains exactly one `@.fabric/AGENTS.md` line."
+    },
+    {
+      "path": "packages/cli/__tests__/integration/install-skills-and-hooks.test.ts",
+      "action": "modify",
+      "target": "new test 'migrates legacy .cursor/rules flat-file to .cursor/rules/fabric-bootstrap.mdc directory rule'",
+      "change": "Add test that pre-seeds `.cursor/rules` as a single file with legacy fabric:knowledge-base markers via writeFixtureFile, runs runInit, asserts: (1) flat `.cursor/rules` file deleted, (2) `.cursor/rules/fabric-bootstrap.mdc` created with new marker. Mirrors codex-mcp-install legacy-migration assertion shape."
+    },
+    {
+      "path": "packages/cli/__tests__/integration/install-skills-and-hooks.test.ts",
+      "action": "modify",
+      "target": "new test '.fabric/project-rules.md only-if-exists concat behavior'",
+      "change": "Two-scenario test: (A) without project-rules.md — runInit, verify Codex managed block body byte-equals .fabric/AGENTS.md (no separator, no concat). (B) writeFixtureFile('.fabric/project-rules.md', 'CUSTOM RULES\\n'), runInit, verify Codex managed block body byte-equals .fabric/AGENTS.md + '\\n---\\n' + 'CUSTOM RULES\\n'. Both scenarios assert idempotent re-runs."
+    },
+    {
+      "path": "packages/cli/__tests__/integration/install-skills-and-hooks.test.ts",
+      "action": "modify",
+      "target": "user-vandalism test (L541-L573 area)",
+      "change": "Update test that injects 'USER VANDALISM' string inside fabric:bootstrap markers, asserts vandalism wiped after re-install + canonical content restored + pre-section user content preserved. Same shape as existing test, just with new marker strings."
+    },
+    {
+      "path": "packages/cli/__tests__/integration/bootstrap-snapshot.test.ts",
+      "action": "create",
+      "target": "new integration test file",
+      "change": "New file dedicated to TASK-02 snapshot writer + propagation byte-equality. Tests: (1) 'writes .fabric/AGENTS.md byte-equal to BOOTSTRAP_CANONICAL on first install', (2) 'second install is byte-identical (idempotent)', (3) 'restores deleted .fabric/AGENTS.md on re-install', (4) 'mkdirs .fabric/ parent when missing'. Use createWerewolfFixtureRoot + runInit pattern from init-test-utils.ts. Import BOOTSTRAP_CANONICAL from @fenglimg/fabric-shared."
+    },
+    {
+      "path": "packages/cli/__tests__/integration/uninstall-skills-and-hooks.test.ts",
+      "action": "modify",
+      "target": "L329-L330 SECTION_BEGIN_UN / SECTION_END_UN + downstream assertions",
+      "change": "Update marker constants to fabric:bootstrap. Add new assertions: (1) uninstall deletes .fabric/AGENTS.md (existsSync === false after uninstall); (2) uninstall preserves .fabric/project-rules.md if present (user-authored); (3) uninstall removes `@.fabric/AGENTS.md` line from CLAUDE.md; (4) uninstall deletes .cursor/rules/fabric-bootstrap.mdc managed block (or whole file)."
+    }
+  ],
+  "implementation": [
+    "Update SECTION_BEGIN/SECTION_END constants in install-skills-and-hooks.test.ts to new fabric:bootstrap marker",
+    "Update test seed target paths: `.cursor/rules` (file) → `.cursor/rules/fabric-bootstrap.mdc` (directory rule)",
+    "Add new assertions for .fabric/AGENTS.md byte equality with BOOTSTRAP_CANONICAL",
+    "Add new assertions for Codex/Cursor managed block body byte equality with snapshot content",
+    "Add Cursor front-matter assertion (alwaysApply: true)",
+    "Add CLAUDE.md @-import line assertion (countOccurrences === 1)",
+    "Add new test for legacy .cursor/rules flat-file → directory-rule migration (clean-slate delete)",
+    "Add new two-scenario test for project-rules.md only-if-exists concat",
+    "Update vandalism test for new marker",
+    "Create packages/cli/__tests__/integration/bootstrap-snapshot.test.ts with 4 tests",
+    "Update uninstall test for new marker + new strip targets",
+    "Run `pnpm --filter=@fenglimg/fabric-cli test` and verify all tests pass"
+  ],
+  "reference": {
+    "pattern": "install-skills-and-hooks.test.ts:442-574 four-axis matrix; codex-mcp-install.test.ts:146-171 legacy migration assertions; init-test-utils.ts helpers (createWerewolfFixtureRoot, runInit, snapshotTree, writeFixtureFile)",
+    "files": [
+      "packages/cli/__tests__/integration/install-skills-and-hooks.test.ts",
+      "packages/cli/__tests__/integration/codex-mcp-install.test.ts",
+      "packages/cli/__tests__/helpers/init-test-utils.ts"
+    ],
+    "examples": "countOccurrences helper from install-skills-and-hooks.test.ts:445-455; regex match().length === 1 pattern from codex-mcp-install.test.ts:142-143 for 'exactly one marker pair' assertions"
+  },
+  "convergence": {
+    "criteria": [
+      "All updated tests in install-skills-and-hooks.test.ts pass (presence, idempotency, in-place-replace, vandalism — all with new fabric:bootstrap marker)",
+      "New test 'migrates legacy .cursor/rules flat-file to .cursor/rules/fabric-bootstrap.mdc' passes",
+      "New test 'project-rules.md only-if-exists concat' passes both A and B scenarios",
+      "New file bootstrap-snapshot.test.ts contains ≥ 4 tests, all passing",
+      "Updated uninstall-skills-and-hooks.test.ts passes (new marker + new strip behavior)",
+      "Test marker constants no longer reference fabric:knowledge-base anywhere (grep verification)",
+      ".cursor/rules path references in tests use `.cursor/rules/fabric-bootstrap.mdc` directory rule path",
+      "Tests cover the THREE new install steps from TASK-03 (bootstrap-claude, bootstrap-codex, bootstrap-cursor) plus the bootstrap-snapshot step from TASK-02"
+    ]
+  },
+  "rationale": {
+    "chosen_approach": "Rewrite existing tests in-place + add new file for snapshot-specific behavior. Keeps the regression gate strong; ensures rc.19 changes don't silently break the install pipeline.",
+    "alternatives_considered": [
+      "Add new file only, leave old tests in place (creates parallel test surfaces; old tests would fail on marker rename)",
+      "Delete old tests entirely (loses idempotency + vandalism coverage)"
+    ],
+    "decision_factors": ["Preserve four-axis matrix coverage", "Add snapshot-specific assertions cleanly", "Single-PR coordinated update per memory `feedback_review_batching.md`"],
+    "tradeoffs": "Test churn vs additive-only. Acceptable; marker rename forces it."
+  },
+  "test": {
+    "manual_checks": [
+      "Run `pnpm --filter=@fenglimg/fabric-cli test packages/cli/__tests__/integration/install-skills-and-hooks.test.ts`",
+      "Run `pnpm --filter=@fenglimg/fabric-cli test packages/cli/__tests__/integration/bootstrap-snapshot.test.ts`",
+      "Run `pnpm --filter=@fenglimg/fabric-cli test packages/cli/__tests__/integration/uninstall-skills-and-hooks.test.ts`",
+      "Verify zero references to fabric:knowledge-base in test files post-edit"
+    ],
+    "success_metrics": [
+      "All install/uninstall integration tests pass",
+      "Test count increased by ≥ 6 (4 new in bootstrap-snapshot.test.ts + 2 new in install-skills-and-hooks.test.ts)",
+      "Zero references to legacy `.cursor/rules` flat-file path in test seed code (except in the new migration test)"
+    ],
+    "unit": [],
+    "integration": [
+      "test_install_writes_fabric_agents_md_snapshot_byte_equal_canonical",
+      "test_install_three_end_propagation_marker_count",
+      "test_install_idempotent_byte_equal",
+      "test_install_vandalism_overwrite_with_new_marker",
+      "test_install_legacy_cursor_rules_flat_file_migration",
+      "test_install_project_rules_md_only_if_exists_concat",
+      "test_uninstall_deletes_fabric_agents_md_preserves_project_rules"
+    ]
+  },
+  "risks": [
+    {
+      "description": "createWerewolfFixtureRoot may delete the pre-existing .cursor/ — need to confirm post-rc.19 fixture state allows seeding legacy .cursor/rules flat file",
+      "probability": "Low",
+      "impact": "Low",
+      "mitigation": "writeFixtureFile after createWerewolfFixtureRoot — explicit seeding always works regardless of fixture cleanup"
+    },
+    {
+      "description": "Tests may run in parallel and pollute each other if FABRIC_HOME not isolated (snapshot writer touches .fabric/ under target, not FABRIC_HOME — likely safe, but doctor-side tests in TASK-09 do touch FABRIC_HOME)",
+      "probability": "Low",
+      "impact": "Low",
+      "mitigation": "Install-side tests use target-scoped paths only; FABRIC_HOME isolation reserved for TASK-09 doctor tests"
+    }
+  ],
+  "code_skeleton": null,
+  "depends_on": ["TASK-003"]
+}

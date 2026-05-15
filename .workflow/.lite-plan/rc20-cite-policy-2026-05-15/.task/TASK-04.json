@@ -1,0 +1,70 @@
+{
+  "id": "TASK-04",
+  "title": "Emit `cite_policy_activated` marker idempotently on first --cite-coverage invocation",
+  "scope": "packages/server/src/services/doctor.ts",
+  "action": "Implement",
+  "description": "Add a one-time idempotent marker emit at the entry of the new runDoctorCiteCoverage flow: check readEventLedger({event_type:'cite_policy_activated'}) — if empty, appendEventLedgerEvent with current policy_version (read from packages/cli/package.json or BOOTSTRAP_CANONICAL hash). Best-effort: failure to emit must NOT abort the report. This marker becomes the ts-floor for all downstream coverage queries.",
+  "scope_layer": "server",
+  "files": [
+    {
+      "path": "packages/server/src/services/doctor.ts",
+      "action": "modify",
+      "target": "new helper `ensureCitePolicyActivatedMarker(projectRoot)` near other event-emit helpers + invocation site inside future runDoctorCiteCoverage (also called from runDoctorReport for symmetry if cite-coverage runs as part of full report — but locked decision says flag → fast-path, so primary call site is runDoctorCiteCoverage entry)",
+      "change": "Define `ensureCitePolicyActivatedMarker(projectRoot: string): Promise<{ marker_ts: number, emitted_now: boolean }>`. Logic: (1) call readEventLedger(projectRoot, {event_type:'cite_policy_activated'}) wrapped in try/catch — on read error return {marker_ts:0, emitted_now:false}. (2) If events.length > 0: return {marker_ts: events[0].ts, emitted_now:false}. (3) Else: build payload {kind:'fabric-event', id:randomId, ts:Date.now(), schema_version:1, event_type:'cite_policy_activated', policy_version: getPolicyVersion(), timestamp: new Date().toISOString()}. Call appendEventLedgerEvent(projectRoot, payload) wrapped in try/catch — on write error return {marker_ts:0, emitted_now:false}; on success return {marker_ts: payload.ts, emitted_now:true}. Export helper for testing."
+    },
+    {
+      "path": "packages/server/src/services/doctor.ts",
+      "action": "modify",
+      "target": "import block",
+      "change": "Add `import { readEventLedger, appendEventLedgerEvent } from './event-ledger'` if not already imported; import policy version source (e.g. import bootstrap constant or read package version at runtime)."
+    },
+    {
+      "path": "packages/server/src/services/doctor.test.ts",
+      "action": "modify",
+      "target": "test block",
+      "change": "Add 3 tests: (a) first call emits marker, returns emitted_now:true with marker_ts ≈ Date.now(); (b) second call (after marker exists) returns emitted_now:false with marker_ts from existing event; (c) read failure → returns {marker_ts:0, emitted_now:false} silently (never throws). Use existing createInitializedProject + writeFile patterns."
+    }
+  ],
+  "implementation": [
+    "Read packages/server/src/services/doctor.ts existing emit helpers (e.g. emitDoctorRunEventBestEffort or similar) to confirm best-effort pattern.",
+    "Define getPolicyVersion(): string helper — return current Fabric version (read packages/cli/package.json.version OR hardcode '2.0.0-rc.20'; choose simpler — hardcoded literal updated by TASK-11 release).",
+    "Implement ensureCitePolicyActivatedMarker: readEventLedger filter → if 1+ events, return first.ts; else appendEventLedgerEvent + return new ts.",
+    "Wrap both reads and writes in try/catch (best-effort: never throw, return zero marker_ts on error so caller can skip coverage gracefully).",
+    "Export the helper for unit test access.",
+    "Write 3 unit tests covering: empty-ledger first-emit, populated-ledger no-emit, error-path silent-zero.",
+    "Run `pnpm --filter @fenglimg/fabric-server test doctor` to confirm green."
+  ],
+  "reference": {
+    "pattern": "Best-effort observability emit (try/catch swallow)",
+    "files": ["packages/cli/src/commands/doctor.ts:301-316 (emitDoctorRunEventBestEffort)", "packages/server/src/services/event-ledger.ts:33-50 (appendEventLedgerEvent)"],
+    "examples": "emitDoctorRunEventBestEffort is the canonical pattern — never propagates failures."
+  },
+  "rationale": {
+    "chosen_approach": "Emit marker at first --cite-coverage invocation (not at install). Lazy creation = clean test seeding (empty events.jsonl is valid initial state), users who never run --cite-coverage incur zero events.jsonl pollution.",
+    "alternatives_considered": ["Emit at install time (rejected: install hot path pollution, harder to test in isolation, marker would exist for users who never use cite policy)", "Emit on every doctor run (rejected: would create duplicate markers; the locked design says 'idempotent: check first')"],
+    "decision_factors": ["Idempotent: check-before-emit pattern matches MEMORY locked rule", "Lazy = no install path pollution", "Test isolation is easier"],
+    "tradeoffs": "First --cite-coverage run will show 0% coverage (marker_ts = now, no historical events to count). Expected behavior — communicated via report header 'cite policy activated at <ts>'."
+  },
+  "test": {
+    "manual_checks": ["Run helper twice in succession in a clean test workspace; assert first call emits, second doesn't", "Seed events.jsonl with a pre-existing marker manually; assert helper returns existing marker_ts", "Corrupt events.jsonl with malformed line; assert helper returns {marker_ts:0, emitted_now:false} without throwing"],
+    "success_metrics": ["ensureCitePolicyActivatedMarker is idempotent across N calls (only 1 marker line written)", "Returns marker_ts > 0 when marker exists or was just emitted", "Returns marker_ts === 0 only on read/write failure", "Never throws (test: pass invalid projectRoot)"],
+    "unit": ["doctor.test ensureCitePolicyActivatedMarker first-call-emits", "doctor.test ensureCitePolicyActivatedMarker second-call-no-emit", "doctor.test ensureCitePolicyActivatedMarker error-path-silent"],
+    "integration": []
+  },
+  "convergence": {
+    "criteria": [
+      "ensureCitePolicyActivatedMarker exported from packages/server/src/services/doctor.ts",
+      "First invocation on empty ledger writes exactly 1 cite_policy_activated event and returns emitted_now:true with marker_ts ≈ Date.now() ± 100ms",
+      "Second invocation on populated ledger writes NO new event and returns emitted_now:false with marker_ts equal to original event ts",
+      "Read failure (corrupted ledger) returns {marker_ts:0, emitted_now:false} without throwing",
+      "Write failure (read-only fs) returns {marker_ts:0, emitted_now:false} without throwing",
+      "Emitted event passes Zod validation per citePolicyActivatedEventSchema (TASK-02)",
+      "All 3 new tests pass in doctor.test.ts",
+      "Commit msg: `feat(rc20): emit cite_policy_activated marker on first run (TASK-04)`"
+    ]
+  },
+  "depends_on": ["TASK-01", "TASK-02"],
+  "estimated_minutes": 30,
+  "cli_execution_id": "rc20-cite-policy-2026-05-15-TASK-04",
+  "cli_execution": { "strategy": "merge_fork", "merge_from": ["rc20-cite-policy-2026-05-15-TASK-01", "rc20-cite-policy-2026-05-15-TASK-02"] }
+}

@@ -1,0 +1,81 @@
+{
+  "id": "TASK-001",
+  "title": "Kill fab install legacy flags (C1) — drop --force/--reapply/--interactive/--no-bootstrap/--no-mcp/--no-hooks/--mcp-install/--scope; rename --plan → --dry-run",
+  "scope": "packages/cli/src/commands/install.ts + packages/shared/src/i18n/locales/{en,zh-CN}.ts + 4 test files",
+  "action": "Refactor",
+  "description": "Contract the fab install citty arg surface from 12 flags to 4 (target/debug/yes + renamed dry-run). Remove every downstream consumer of the killed flags (force/reapply gates at install.ts:371, 389, 617-625, 665-688, 721-728, 806, 924, 1093, 1551-1576; skipBootstrap/skipMcp/skipHooks/scope/mcp-install in resolveInitCliIntent at L535-559 + InitArgs/InitOptions types at L37-62). Drift-abort guards become unconditional (no escape hatch). Update drift-abort i18n message to drop --force/--reapply mentions, keep `fab doctor` + `fab uninstall && fab install` guidance. Mass-rename args.plan → args['dry-run'] in tests; delete --reapply-related tests + compat-warning tests. Regenerate cli-surface.test.ts.snap. End with: tsc clean, lint clean, vitest passes. Commit message: `refactor(rc15): kill fab install legacy flags — drop --force/--reapply/--interactive/--no-X/--mcp-install/--scope; rename --plan → --dry-run`",
+  "files": [
+    { "path": "packages/cli/src/commands/install.ts", "action": "modify", "target": "L294-L353 (citty args), L37-L62 (InitArgs/InitOptions types), L535-L559 (resolveInitCliIntent reducer), L371-L374 (checkLockOrThrow gate), L385-L391 (compat notices), L617-L625 (deprecation warnings), L665-L688 (drift-abort guards), L721-L728 (canonical no-op confirm), L806 (isReapply), L924 (scan re-run gate), L1093 (banner), L1551-L1576 (mode banners)", "change": "Delete args entries for force/reapply/bootstrap/mcp/hooks/interactive/mcp-install/scope; rename plan→dry-run in args block and consumer reads (args.plan → args['dry-run'], planOnly stays internal or rename to dryRun); strip InitArgs/InitOptions fields; delete deprecation/compat warning blocks; drift-abort gates become unconditional" },
+    { "path": "packages/shared/src/i18n/locales/en.ts", "action": "modify", "target": "L103-L125 (install args + force.warning), L140-L158 (mcp + scope keys), L213-L218 (deprecation-force/-reapply + drift-abort)", "change": "Delete cli.install.args.{force,reapply,no-bootstrap,no-mcp,no-hooks,interactive,mcp-install,scope}.description keys + cli.install.force.{overwritten,warning} + cli.install.diff.deprecation-{force,reapply} + cli.install.compat.{interactive,legacy-stage-flags} + cli.install.plan.mode-banner.{reapply,plan-reapply} + cli.install.mode.{reapply,badge.reapply,badge.plan-reapply} + cli.install.mcp.* + cli.install.scope.*; rename cli.install.args.plan.description → cli.install.args.dry-run.description; update cli.install.diff.drift-abort to drop --force/--reapply mention, keep `fab doctor` + `fab uninstall && fab install` guidance" },
+    { "path": "packages/shared/src/i18n/locales/zh-CN.ts", "action": "modify", "target": "L100-L122 + L137-L155 + L210-L212 (parallel deletions to en.ts)", "change": "Mirror every en.ts deletion 1:1 for zh-CN locale parity; update zh-CN drift-abort message to match en.ts new wording" },
+    { "path": "packages/cli/__tests__/install-cli-surface.test.ts", "action": "modify", "target": "L47-L61 (--reapply test), L63-L87 (--plan no-scaffold test), L89-L132 (--reapply scaffold test), L191-L222 (compat notices test)", "change": "Delete L47-L61 test (--reapply gone); delete L89-L132 test (--reapply gone); delete L191-L222 test (compat warnings die with flags); rename args.plan → args['dry-run'] at L78 and update L83-L86 assertion if needed" },
+    { "path": "packages/cli/__tests__/integration/install-diff-mode.test.ts", "action": "modify", "target": "L226-L297 (Scenario 5 --force legacy bypass), L298+ (Scenario 7 events.jsonl as directory), L254 deprecation regex assertion", "change": "Delete Scenario 5 entirely; DELETE Scenario 7 per clarification 12 (recovery via fab uninstall && fab install per drift-abort message); if Scenario 6 references --force, strip those args" },
+    { "path": "packages/cli/__tests__/integration/init-guard.test.ts", "action": "modify", "target": "L99 comment, L155-L182 (legacy --reapply path test), L170 reapply+force args, L184-L208 (CLAUDE.md/AGENTS.md preservation under --force tests)", "change": "Delete L155-L182 (--reapply gone, deprecation warning gone); rewrite L184-L208 to drop --force argument — protection is now unconditional, not gated by --force vs default" },
+    { "path": "packages/cli/__tests__/helpers/init-test-utils.ts", "action": "modify", "target": "L99-L114 runInit() helper signature", "change": "Drop reapply and force from opts type; planOnly is internal (matches InitOptions.planOnly) so can stay; update 5+ caller test files in lockstep" },
+    { "path": "packages/cli/__tests__/__snapshots__/cli-surface.test.ts.snap", "action": "modify", "target": "L88-L196 (install args snapshot block)", "change": "Regenerate via `pnpm --filter @fenglimg/fabric-cli test -u`; expected final shape: [debug, dry-run, target, yes]" },
+    { "path": "packages/cli/__tests__/cli-surface.test.ts", "action": "modify", "target": "L108-L113 critical-flag assertion", "change": "Remove install force/scope/reapply assertion (all three flags gone); either delete the install-critical-flag describe block or relax to assert `dry-run` presence" }
+  ],
+  "implementation": [
+    "Read install.ts in full to map every args.force / args.reapply / args['mcp-install'] / args.scope / args.bootstrap / args.mcp / args.hooks / args.interactive / args.plan reference",
+    "Edit citty args:{} block at L294-L353: delete force/reapply/bootstrap/mcp/hooks/interactive/mcp-install/scope entries; rename plan → dry-run (kebab-case key; tests will access via args['dry-run'])",
+    "Edit InitArgs (L37-L62) and InitOptions types: drop force/reapply/skipBootstrap/skipMcp/skipHooks/interactive/mcpInstall/scope fields; rename planOnly to internal-only (or keep as planOnly since CLI is dry-run but internal is planOnly)",
+    "Edit resolveInitCliIntent at L535-L559: drop the maps for killed flags; map args['dry-run'] → planOnly (or rename to dryRun field if cascading)",
+    "Edit checkLockOrThrow call at L371-L374: drop the {force: args.force} opts — becomes checkLockOrThrow(intent.target) unconditional",
+    "Delete deprecation warning blocks at L617-L625 (cli.install.diff.deprecation-force, deprecation-reapply emit points)",
+    "Edit drift-abort gates at L665-L688: remove `!plan.options.force && !plan.options.reapply` guards — drift always aborts (no escape hatch)",
+    "Delete canonical no-op confirmation at L721-L728 if it gates on force/reapply",
+    "Strip isReapply checks at L806, scan re-run gate at L924 (keep the runInitScan call itself), banner at L1093, mode banners at L1551-L1576",
+    "Delete compat-flag stderr notices at L385-L391 (cli.install.compat.* emit points)",
+    "Edit i18n locales (en.ts L103-L125, L140-L158, L213-L218 + zh-CN.ts parallel positions): delete all killed-flag description keys + mode-banner variants + deprecation messages + force.warning; rename plan→dry-run key; update cli.install.diff.drift-abort text to drop --force/--reapply mention (keep fab doctor + fab uninstall && fab install guidance)",
+    "Update install-cli-surface.test.ts: delete reapply tests (L47-L61, L89-L132) and compat tests (L191-L222); rename args.plan→args['dry-run'] in remaining tests",
+    "Update integration/init-guard.test.ts: delete L155-L182 (legacy reapply path); rewrite L184-L208 dropping --force args",
+    "Update integration/install-diff-mode.test.ts: delete Scenarios 5 and 7 entirely; trim Scenario 6 if it references --force",
+    "Update helpers/init-test-utils.ts runInit() signature: drop reapply + force from opts; update all 5+ callers (find via grep)",
+    "Run `pnpm --filter @fenglimg/fabric-cli test -u` to regenerate cli-surface.test.ts.snap install block (expected: [debug, dry-run, target, yes])",
+    "Update cli-surface.test.ts L108-L113 critical-flag assertion (relax or delete)",
+    "Run tsc, lint, vitest — fix until green",
+    "git add + commit with message: `refactor(rc15): kill fab install legacy flags — drop --force/--reapply/--interactive/--no-X/--mcp-install/--scope; rename --plan → --dry-run`"
+  ],
+  "reference": {
+    "pattern": "Citty args removal pattern (5-step ripple): delete args entry → delete Args type field → delete consumer args.<flag> reads → delete Options DTO field → delete builder/executor gates. Mirror with en+zh-CN i18n deletion. Regenerate snapshot.",
+    "files": ["packages/cli/src/commands/install.ts", "packages/shared/src/i18n/locales/en.ts", "packages/cli/__tests__/__snapshots__/cli-surface.test.ts.snap"],
+    "examples": "See feedback_cli_design.md three-entry model; see CHANGELOG.md L41-L49 for rc.15 plan; see exploration-cli-surface-removals.json keyCode entries for exact line numbers and key paths"
+  },
+  "convergence": {
+    "criteria": [
+      "packages/cli/src/commands/install.ts citty args block contains exactly 4 entries: target, debug, yes, dry-run (verified by reading the file and counting)",
+      "Zero `args.force`, `args.reapply`, `args['mcp-install']`, `args.scope`, `args.bootstrap`, `args.mcp`, `args.hooks`, `args.interactive`, `args.plan` references in install.ts (grep returns 0 lines)",
+      "Zero `cli.install.args.{force,reapply,no-bootstrap,no-mcp,no-hooks,interactive,mcp-install,scope}.description` keys in en.ts AND zh-CN.ts (grep returns 0 lines per locale)",
+      "Zero `cli.install.diff.deprecation-{force,reapply}` and `cli.install.compat.{interactive,legacy-stage-flags}` keys in either locale",
+      "cli-surface.test.ts.snap install args block enumerates exactly 4 args: debug, dry-run, target, yes (snapshot diff shows the contracted shape)",
+      "`pnpm --filter @fenglimg/fabric-cli test` exits 0 with all tests passing",
+      "`pnpm --filter @fenglimg/fabric-cli typecheck` exits 0",
+      "`pnpm lint` exits 0",
+      "git log shows a single commit with the specified commit message"
+    ]
+  },
+  "rationale": {
+    "chosen_approach": "Single-commit sequential surgery on install.ts + paired i18n + cascading test rewrites. Reducer-level deletion (resolveInitCliIntent) is the funnel — once flags are stripped at the reducer, downstream Options-DTO consumers reading the killed fields fail compile, surfacing every consumer site mechanically.",
+    "alternatives_considered": ["Two-step: kill flags in rc.15a, ship rc.15b with reducer cleanup", "Soft-deprecate via citty hidden flag for one more RC", "Keep --reapply as the drift-recovery affordance"],
+    "decision_factors": ["Pre-user clean-slate (memory feedback_clean_slate.md)", "rc.14 already promised rc.15 removal in deprecation banners (en.ts L216)", "Reducer-funnel deletion makes consumer site discovery mechanical via tsc"],
+    "tradeoffs": "Loses every legacy escape hatch in one shot — users with rc.14 muscle memory typing --force will see an unknown-flag error from citty. Mitigated by: rc.14 deprecation banner already warned; drift-abort message explicitly directs to `fab uninstall && fab install`."
+  },
+  "test": {
+    "manual_checks": [
+      "Run `pnpm --filter @fenglimg/fabric-cli build && node packages/cli/bin/fab.mjs install --help` — verify --help output lists only: target, debug, yes, dry-run",
+      "Run `node packages/cli/bin/fab.mjs install --force /tmp/xyz` — expect citty error 'Unknown argument: --force'",
+      "Run `node packages/cli/bin/fab.mjs install --dry-run --target /tmp/xyz-dryrun` (fresh dir) — verify plan output prints, no scaffold artifacts written"
+    ],
+    "success_metrics": [
+      "All tests pass: `pnpm --filter @fenglimg/fabric-cli test` exit code 0",
+      "Type-check passes: `pnpm --filter @fenglimg/fabric-cli typecheck` exit code 0",
+      "Lint passes: `pnpm lint` exit code 0",
+      "Snapshot diff at cli-surface.test.ts.snap reduces install args from 12 entries to 4 entries"
+    ],
+    "unit": ["install-cli-surface.test.ts (rewritten subset)", "i18n.test.ts (regenerated snapshot)"],
+    "integration": ["init-guard.test.ts (rewritten)", "install-diff-mode.test.ts (Scenarios 5+7 deleted)", "scan-init.test.ts (untouched — runInitScan preserved)"]
+  },
+  "depends_on": [],
+  "cli_execution_id": "rc15-cli-surface-contraction-2026-05-14-TASK-001",
+  "cli_execution": { "strategy": "new" }
+}

@@ -1,0 +1,122 @@
+{
+  "id": "TASK-004",
+  "title": "Update three Skill template docs (fabric-archive/review/import SKILL.md) — rename knowledge_language refs + add zh-CN-hybrid policy + delete strict no-mix rule — three-mirror lockstep",
+  "scope": "packages/cli/templates/skills/{fabric-archive,fabric-review,fabric-import}/SKILL.md + .claude/skills/<same>/SKILL.md + .codex/skills/<same>/SKILL.md (nine files total)",
+  "action": "Refactor",
+  "description": "Update all three Skill template docs to reference the renamed fabric_language config key (~13-15 sites per file), add the new zh-CN-hybrid rendering rule in the UX i18n Policy section, DELETE the strict 'MUST NOT mix languages inside a single user-facing block' rule (currently in fabric-archive/SKILL.md L78-L79), and preserve the strict monolingual rule for pure zh-CN and en values. Critical: three Skill .md files in packages/cli/templates/skills/<name>/SKILL.md are BYTE-IDENTICAL-MIRRORED to .claude/skills/<name>/SKILL.md and .codex/skills/<name>/SKILL.md. Each text change × 3 mirror sites = ~115-135 total textual replacements. Task must handle mirror sync.",
+  "files": [
+    {
+      "path": "packages/cli/templates/skills/fabric-archive/SKILL.md",
+      "action": "modify",
+      "target": "L22 + L50 + L76-L77 + L78-L79 + L94 + L98 + L101 + L108 + L217 + L320 + L340 + UX i18n Policy section",
+      "change": "Rename every knowledge_language reference (~13 sites) to fabric_language. In the '## UX i18n Policy (5-class bilingualization)' section: ADD a new rule for the 'zh-CN-hybrid' enum value — 'Chinese narrative prose with English technical terms preserved. Protected tokens (always EN): MCP tool names (e.g. fab_get_knowledge_sections), CLI command names (e.g. fab install), file paths, technical concepts (Skill, SessionStart, hook, MCP, revision_hash, pending, proven, verified, draft).' DELETE the existing strict rule at L78-L79 'MUST NOT mix languages inside a single user-facing block.' Preserve strict monolingual rendering for pure zh-CN and en values (only zh-CN-hybrid permits mixing). L51 references scan.ts:detectExistingLanguage — keep the reference but update the surrounding text if it implies only zh-CN/en outputs."
+    },
+    {
+      "path": "packages/cli/templates/skills/fabric-review/SKILL.md",
+      "action": "modify",
+      "target": "L22 + L54 + L80-L81 + L96 + L98 + L112 + L119 + L213 + L225 + L289 + L474 + L559 + L561 + L580 + UX i18n Policy section",
+      "change": "Rename every knowledge_language reference (~15 sites) to fabric_language. Add the same zh-CN-hybrid rendering rule to the UX i18n Policy section. Delete the strict no-mix rule if present (mirror what's done in fabric-archive)."
+    },
+    {
+      "path": "packages/cli/templates/skills/fabric-import/SKILL.md",
+      "action": "modify",
+      "target": "L26 + L117 + L139-L140 + L156 + L159 + L162 + L169 + L291 + L397 + L409 + L651 + L653 + L681 + UX i18n Policy section + L32 + L125 + L189 + L206-L207 (fabric init refs)",
+      "change": "Rename every knowledge_language reference (~14 sites) to fabric_language. Add zh-CN-hybrid rendering rule to UX i18n Policy section. CROSS-CUTTING WITH TASK-002: also rename 'fabric init' / 'fab init' user-facing prompts (L32 'run fabric init first', L125, L189, L206-L207 — also their zh-CN translations) to 'fabric install' / 'fab install'. L118 references detectExistingLanguage — preserve."
+    },
+    {
+      "path": ".claude/skills/fabric-archive/SKILL.md",
+      "action": "modify",
+      "target": "BYTE-IDENTICAL mirror of packages/cli/templates/skills/fabric-archive/SKILL.md",
+      "change": "Copy the post-edit template content verbatim from packages/cli/templates/skills/fabric-archive/SKILL.md. Three-mirror invariant requires byte-identity."
+    },
+    {
+      "path": ".claude/skills/fabric-review/SKILL.md",
+      "action": "modify",
+      "target": "BYTE-IDENTICAL mirror of packages/cli/templates/skills/fabric-review/SKILL.md",
+      "change": "Copy the post-edit template content verbatim."
+    },
+    {
+      "path": ".claude/skills/fabric-import/SKILL.md",
+      "action": "modify",
+      "target": "BYTE-IDENTICAL mirror of packages/cli/templates/skills/fabric-import/SKILL.md",
+      "change": "Copy the post-edit template content verbatim. Note: this mirror also carries the fabric init → fabric install user-prompt updates."
+    },
+    {
+      "path": ".codex/skills/fabric-archive/SKILL.md",
+      "action": "modify",
+      "target": "BYTE-IDENTICAL mirror of packages/cli/templates/skills/fabric-archive/SKILL.md",
+      "change": "Copy the post-edit template content verbatim."
+    },
+    {
+      "path": ".codex/skills/fabric-review/SKILL.md",
+      "action": "modify",
+      "target": "BYTE-IDENTICAL mirror of packages/cli/templates/skills/fabric-review/SKILL.md",
+      "change": "Copy the post-edit template content verbatim."
+    },
+    {
+      "path": ".codex/skills/fabric-import/SKILL.md",
+      "action": "modify",
+      "target": "BYTE-IDENTICAL mirror of packages/cli/templates/skills/fabric-import/SKILL.md",
+      "change": "Copy the post-edit template content verbatim — includes fab install user-prompt updates."
+    }
+  ],
+  "implementation": [
+    "Read packages/cli/templates/skills/fabric-archive/SKILL.md fully; produce a single edit pass that: (a) renames knowledge_language → fabric_language at all ~13 sites, (b) deletes the strict no-mix rule at L78-L79, (c) adds the zh-CN-hybrid rendering rule in the UX i18n Policy section with the exact protected-tokens list spec'd in the task description, (d) refines L51 scan.ts:detectExistingLanguage reference text if needed",
+    "Apply the same logical edits to fabric-review/SKILL.md (~15 sites) and fabric-import/SKILL.md (~14 sites + 5 fabric init → fabric install refs)",
+    "After all three template files are edited, use `cp packages/cli/templates/skills/fabric-archive/SKILL.md .claude/skills/fabric-archive/SKILL.md` followed by `cp ... .codex/skills/fabric-archive/SKILL.md`. Repeat for fabric-review and fabric-import (6 cp commands total)",
+    "Verify byte-identity: `diff packages/cli/templates/skills/fabric-archive/SKILL.md .claude/skills/fabric-archive/SKILL.md` should produce zero output; same for .codex/. Repeat for all three skills (9 files, 6 pairwise diffs)",
+    "Run any existing three-mirror byte-identity assertion test (search for 'byte-identity' or 'mirror' in test files); if absent, perform manual diff verification across all 6 pairs",
+    "Verify the UX i18n Policy section in each Skill now documents 4 enum values (match-existing, zh-CN, en, zh-CN-hybrid) and that only zh-CN-hybrid permits mixing",
+    "Cross-check: every fabric_language reference in the Skill prompts should match the schema's snake_case key from TASK-003"
+  ],
+  "reference": {
+    "pattern": "Three-mirror byte-identity invariant: template at packages/cli/templates/skills/<name>/SKILL.md is the authoritative source; .claude/skills/<name>/SKILL.md and .codex/skills/<name>/SKILL.md must be byte-identical copies. fab install propagates the template on next run, but the in-repo mirrors must be edited NOW to satisfy the byte-identity invariant in CI (per .fabric/knowledge/pending/pitfalls/skill-template-mirror-drift.md).",
+    "files": [
+      ".fabric/knowledge/pending/pitfalls/skill-template-mirror-drift.md",
+      "packages/cli/templates/skills/fabric-archive/SKILL.md"
+    ],
+    "examples": "rc.10 fabric UX dogfood fixes touched all three mirrors in lockstep — replay that pattern. Always edit template FIRST, then cp to .claude/ and .codex/ copies."
+  },
+  "convergence": {
+    "criteria": [
+      "All 9 SKILL.md files (3 templates × 3 mirror paths) reference fabric_language (NOT knowledge_language) — grep for 'knowledge_language' across these 9 files returns zero results",
+      "All 3 templates contain the zh-CN-hybrid rendering rule in the UX i18n Policy section with the exact protected-tokens list",
+      "fabric-archive/SKILL.md no longer contains 'MUST NOT mix languages inside a single user-facing block' (or equivalent strict no-mix wording)",
+      "Byte-identity verified: `diff packages/cli/templates/skills/<name>/SKILL.md .claude/skills/<name>/SKILL.md` and `diff packages/cli/templates/skills/<name>/SKILL.md .codex/skills/<name>/SKILL.md` produce zero output for all three Skills",
+      "fabric-import/SKILL.md (all three mirrors) no longer contains 'fabric init' / 'fab init' in user-facing prompts (replaced with 'fabric install' / 'fab install')"
+    ]
+  },
+  "depends_on": ["TASK-003"],
+  "rationale": {
+    "chosen_approach": "Edit templates first (authoritative source), then mechanically copy to .claude/ and .codex/ mirrors. The three-mirror invariant means we MUST not hand-edit the mirrors independently — drift between the three is a confirmed pitfall.",
+    "alternatives_considered": [
+      "Edit each of 9 files independently (rejected: high drift risk; the pitfall doc explicitly warns against this)",
+      "Defer .claude/ and .codex/ updates and rely on next-run fab install to propagate (rejected: leaves repo in inconsistent state; CI byte-identity check fails immediately)",
+      "Write a single edit-then-symlink scheme (rejected: cross-platform symlinks are unreliable; current invariant is byte-identical copies)"
+    ],
+    "decision_factors": [
+      "Three-mirror invariant is enforced by pitfall doc",
+      "Each edit touches ~13-15 sites; bulk find-replace is the practical pattern",
+      "fabric-import uniquely carries the fabric init → fabric install user-prompt rename — coordinate with TASK-002"
+    ],
+    "tradeoffs": "Six cp commands in the implementation feel mechanical; mitigated by a future script (out of scope for this task) that codifies the propagation step."
+  },
+  "test": {
+    "manual_checks": [
+      "Open .claude/skills/fabric-archive/SKILL.md in editor; verify UX i18n Policy section lists all 4 enum values; verify no strict no-mix rule",
+      "Open fabric-import/SKILL.md across all three mirrors; verify zero 'fabric init' / 'fab init' references in user-facing prompts (zh-CN translations too)",
+      "Run a Skill invocation that triggers fabric_language resolution; verify Skill prompt content is coherent with fabric_language: 'zh-CN-hybrid'"
+    ],
+    "success_metrics": [
+      "Zero 'knowledge_language' references in all 9 SKILL.md files",
+      "Byte-identity holds across all three mirror sets (6 pairwise diffs all empty)",
+      "fabric-import variant correctly renders the install verb in user-facing prompts"
+    ],
+    "unit": [
+      "test_skill_template_byte_identity (if such test exists; otherwise add to convergence verification)"
+    ],
+    "integration": [
+      "fab install (post-TASK-002) propagates the updated template to a fresh target and the propagated copy matches the template byte-for-byte"
+    ]
+  }
+}

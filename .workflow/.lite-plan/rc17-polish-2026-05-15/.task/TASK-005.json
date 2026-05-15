@@ -1,0 +1,86 @@
+{
+  "id": "TASK-005",
+  "title": "S-rewrite: Make serve --host security warning actionable (FABRIC_AUTH_TOKEN guidance)",
+  "scope": "packages/shared/src/i18n/locales/{en,zh-CN}.ts (cli.serve.warning.host-fallback) — optional touch packages/cli/src/commands/serve.ts:126-138",
+  "action": "Update",
+  "description": "Rewrite the `cli.serve.warning.host-fallback` warning text in BOTH en.ts and zh-CN.ts to clearly direct the user to set `FABRIC_AUTH_TOKEN` to keep their requested host. Current text (en.ts:302) is too terse: it states the fallback happened but does not tell the user how to override. New text should name the env var, the command shape, and the security implication. Example new en text: `--host {host} requires FABRIC_AUTH_TOKEN for non-loopback exposure; falling back to 127.0.0.1. To bind {host}, run: FABRIC_AUTH_TOKEN=<token> fab serve --host {host}`. Mirror in zh-CN. No code change in serve.ts unless surfacing a second i18n key (e.g. for the env var name) improves clarity — keep diff minimal.",
+  "files": [
+    {
+      "path": "packages/shared/src/i18n/locales/en.ts",
+      "action": "modify",
+      "target": "Line 302-303: cli.serve.warning.host-fallback",
+      "change": "Replace value with actionable text naming FABRIC_AUTH_TOKEN env var and the override command shape"
+    },
+    {
+      "path": "packages/shared/src/i18n/locales/zh-CN.ts",
+      "action": "modify",
+      "target": "Line 292: cli.serve.warning.host-fallback",
+      "change": "Bilingual mirror of en.ts edit — keep technical terms (FABRIC_AUTH_TOKEN, fab serve, --host) in English per zh-CN-hybrid convention"
+    },
+    {
+      "path": "packages/cli/src/commands/serve.ts",
+      "action": "read",
+      "target": "Lines 121-138 (readAuthTokenFromEnv + validateHost)",
+      "change": "Read-only verification — only edit if logic clarification is required (e.g. surfacing env var name as a constant); prefer NO code change to keep diff small"
+    }
+  ],
+  "implementation": [
+    "Read existing en.ts:302 + zh-CN.ts:292 to confirm current value shape and {host} interpolation",
+    "Draft new en text — must include: (a) FABRIC_AUTH_TOKEN env var name, (b) the override command shape, (c) explicit fallback-to-127.0.0.1 statement",
+    "Draft zh-CN mirror — preserve English technical terms per fabric_language=zh-CN-hybrid convention (FABRIC_AUTH_TOKEN, fab serve, --host stay English)",
+    "Apply both edits in same commit",
+    "Search for any snapshot test referencing the old warning text: `grep -rn 'host-fallback\\|requires FABRIC_AUTH_TOKEN' packages/ --include='*.ts'` — update snapshots if found",
+    "Build + smoke test: `pnpm --filter @fenglimg/fabric-shared build` then `node packages/cli/dist/cli.js serve --host 0.0.0.0` (without auth token) — verify new warning text renders and includes FABRIC_AUTH_TOKEN guidance",
+    "OPTIONAL: Run with LANG=zh_CN.UTF-8 to verify zh-CN warning renders correctly"
+  ],
+  "reference": {
+    "pattern": "Actionable error/warning message convention — name the env var + show the override command",
+    "files": [
+      "packages/cli/src/commands/serve.ts",
+      "packages/shared/src/i18n/locales/en.ts",
+      "packages/shared/src/i18n/locales/zh-CN.ts"
+    ],
+    "examples": "Existing keys like `cli.shared.invalid-port` (interpolated value) — keep same {host} placeholder shape"
+  },
+  "convergence": {
+    "criteria": [
+      "`grep -A1 'cli.serve.warning.host-fallback' packages/shared/src/i18n/locales/en.ts` shows new text containing the literal string `FABRIC_AUTH_TOKEN`",
+      "`grep -A1 'cli.serve.warning.host-fallback' packages/shared/src/i18n/locales/zh-CN.ts` shows new text containing literal `FABRIC_AUTH_TOKEN` (preserved English technical term)",
+      "Test command: `pnpm --filter @fenglimg/fabric-shared build && pnpm --filter @fenglimg/fabric-shared test` passes; if any snapshot test exists for the warning, snapshots updated and pass",
+      "Manual smoke: `node packages/cli/dist/cli.js serve --host 0.0.0.0` (no auth token) prints warning that names FABRIC_AUTH_TOKEN and the override command shape",
+      "Bilingual parity: both locales updated in same commit with mirrored semantic content",
+      "Behavioral expectation: a user who sees the warning knows exactly which env var to set and what command to re-run, without consulting docs"
+    ]
+  },
+  "depends_on": [],
+  "rationale": {
+    "chosen_approach": "Pure i18n string update — minimum-diff fix that preserves the existing validateHost logic (which is correct) and just makes the user-facing message actionable",
+    "alternatives_considered": [
+      "Add a second i18n key for the override command shape (more flexible but doubles edit surface)",
+      "Refactor validateHost to also print a follow-up help line"
+    ],
+    "decision_factors": [
+      "validateHost logic is sound — only the message is unhelpful",
+      "rc.17 is a polish RC; minimum-diff string edits maximize signal-to-noise",
+      "Bilingual parity is non-negotiable per rc.12 convention"
+    ],
+    "tradeoffs": "String-only fix means we cannot surface an interactive option (e.g. 'press y to generate a token') — acceptable for rc.17 polish scope"
+  },
+  "test": {
+    "manual_checks": [
+      "Run `fab serve --host 0.0.0.0` without FABRIC_AUTH_TOKEN — verify warning names env var and shows override command",
+      "Run `LANG=zh_CN.UTF-8 fab serve --host 0.0.0.0` — verify zh-CN warning has same actionable content"
+    ],
+    "success_metrics": [
+      "Warning text contains literal `FABRIC_AUTH_TOKEN` in both locales",
+      "Manual smoke test in both LANG settings shows actionable guidance"
+    ],
+    "unit": [],
+    "integration": [
+      "test_serve_host_fallback_warning_names_auth_token_env_var_en",
+      "test_serve_host_fallback_warning_names_auth_token_env_var_zh"
+    ]
+  },
+  "cli_execution_id": "rc17-polish-2026-05-15-TASK-005",
+  "cli_execution": { "strategy": "new" }
+}

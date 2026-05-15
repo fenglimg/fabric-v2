@@ -1,0 +1,19 @@
+{
+  "session_id": "rc20-cite-policy-2026-05-15",
+  "task_description": "rc.20 Cite policy — AI 回复首行 KB: <id> 闭环 + fab doctor --cite-coverage 算账。MEMORY project_cite_policy.md 锁了 6 scenarios + 8 details。rc.20 scope: Claude Code first-class + Codex assume-and-test;Cursor 推 rc.21。",
+  "timestamp": "2026-05-15T16:50:00+08:00",
+  "complexity": "High",
+  "exploration_count": 2,
+  "explorations": [
+    {"angle": "cite-flow", "file": "exploration-cite-flow.json", "path": ".workflow/.lite-plan/rc20-cite-policy-2026-05-15/exploration-cite-flow.json", "index": 1},
+    {"angle": "coverage-algo", "file": "exploration-coverage-algo.json", "path": ".workflow/.lite-plan/rc20-cite-policy-2026-05-15/exploration-coverage-algo.json", "index": 2}
+  ],
+  "auto_orchestrator_decisions": {
+    "cursor_capture": "deferred to rc.21 (PreToolUse only sees tool_input, not assistant reply text — needs different mechanism)",
+    "codex_stop_hook": "assume-and-test; fallback to events.jsonl reconstruction (non-realtime) if shape differs",
+    "turn_boundary_in_envelope": "first non-empty text line of first text block in assistant message",
+    "turn_id_field": "new field in assistant_turn_observed event; generated from session_id + envelope_index",
+    "client_bucket": "new literal field client: 'cc' | 'codex' (Cursor scope: rc.21)",
+    "cli_shape": "--cite-coverage flag that switches doctor to fast-path (skip 28-check pipeline)"
+  }
+}

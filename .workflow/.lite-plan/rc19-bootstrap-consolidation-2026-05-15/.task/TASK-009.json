@@ -1,0 +1,126 @@
+{
+  "id": "TASK-009",
+  "title": "Tests — doctor side (L1 + L2 drift detection + marker migration + ledger event)",
+  "scope": "packages/server/src/services/doctor.test.ts",
+  "action": "Test",
+  "description": "Add service-layer drift detection + marker migration tests in doctor.test.ts. Three test groups: (1) L1 bootstrap_snapshot_drift detection + --fix overwrite + idempotency, (2) L2 managed_block_drift detection across three-end targets + --fix overwrite + idempotency, (3) marker migration from legacy fabric:knowledge-base markers + bootstrap_marker_migrated ledger event assertion. Mirrors existing bootstrap_anchor_missing triplet (L737-L795) + mcp_config_migrated --fix + ledger event pattern (L202-L286). Mandatory FABRIC_HOME isolation beforeEach.",
+  "files": [
+    {
+      "path": "packages/server/src/services/doctor.test.ts",
+      "action": "modify",
+      "target": "L1 bootstrap_snapshot_drift triplet (new describe block)",
+      "change": "Add `describe('rc.19 L1 bootstrap snapshot drift', () => { ... })`. Three tests: (a) 'reports ok when .fabric/AGENTS.md byte-equals BOOTSTRAP_CANONICAL' — create project, install canonical, runDoctorReport, assert status='ok' + no 'bootstrap_snapshot_drift' in fixable_errors. (b) 'reports fixable_error when .fabric/AGENTS.md bytes differ' — same setup, mutate snapshot by one char, runDoctorReport, assert code='bootstrap_snapshot_drift' in fixable_errors. (c) '--fix restores byte-equality and second --fix is a no-op' — continue (b), runDoctorFix, assert .fabric/AGENTS.md byte-equals BOOTSTRAP_CANONICAL, re-runDoctorFix returns changed=false. Use FABRIC_HOME isolation beforeEach pattern from L20-L40."
+    },
+    {
+      "path": "packages/server/src/services/doctor.test.ts",
+      "action": "modify",
+      "target": "L2 managed_block_drift triplet (new describe block)",
+      "change": "Add `describe('rc.19 L2 managed block drift', () => { ... })`. Three tests per managed target (AGENTS.md / .cursor/rules/fabric-bootstrap.mdc / CLAUDE.md @-import): (a) 'reports ok when all three managed blocks byte-equal expected concat', (b) 'reports drift when AGENTS.md block bytes differ', (c) '--fix rewrites all three blocks and idempotent on re-run'. Also include test '@.fabric/AGENTS.md line missing from CLAUDE.md triggers L2 drift' (special case for Claude thin shell). Include CRLF drift test: rewrite .fabric/AGENTS.md with \\r\\n line endings → assert L1 drift fires (NO normalization guard)."
+    },
+    {
+      "path": "packages/server/src/services/doctor.test.ts",
+      "action": "modify",
+      "target": "marker migration triplet (new describe block)",
+      "change": "Add `describe('rc.19 marker migration fabric:knowledge-base → fabric:bootstrap', () => { ... })`. Four tests: (a) 'reports fixable_error when CLAUDE.md / AGENTS.md / .cursor/rules contain legacy fabric:knowledge-base markers' — seed legacy markers via writeFixtureFile, runDoctorReport, assert code='bootstrap_marker_migration_required'. (b) '--fix rewrites legacy markers to fabric:bootstrap in all four target paths' — runDoctorFix, assert each file: zero fabric:knowledge-base substrings + exactly one fabric:bootstrap:begin + exactly one fabric:bootstrap:end. (c) '--fix emits bootstrap_marker_migrated ledger event per file migrated' — read events.jsonl post-fix, parse JSON lines, assert events.filter(e => e.event_type === 'bootstrap_marker_migrated').length === migrated file count. Use existing mcp_config_migrated assertion pattern as reference. (d) 'idempotent: re-running --fix after migration is a no-op' — runDoctorFix twice, second invocation produces zero new events."
+    },
+    {
+      "path": "packages/server/src/services/doctor.test.ts",
+      "action": "modify",
+      "target": "fixable_errors code array assertions (existing tests, e.g. L55-L62)",
+      "change": "Existing tests that assert exact fixable_errors[].map(i => i.code) arrays may need updates if rc.19's three new codes (bootstrap_snapshot_drift, managed_block_drift, bootstrap_marker_migration_required) appear in their fixtures. Audit each existing fixable_errors assertion; expand arrays accordingly OR adjust fixtures so the new codes don't fire in unrelated tests."
+    },
+    {
+      "path": "packages/server/src/services/doctor.test.ts",
+      "action": "modify",
+      "target": "createProject / createInitializedProject helpers (top of file)",
+      "change": "Verify the project setup helpers correctly install .fabric/AGENTS.md with BOOTSTRAP_CANONICAL (post-rc.19 install state). If they bypass install and just write minimal files, extend the helper to also write .fabric/AGENTS.md so L1 drift tests have a baseline. Likely additive only."
+    }
+  ],
+  "implementation": [
+    "Inspect existing doctor.test.ts setup (createProject / createInitializedProject helpers; FABRIC_HOME isolation pattern L20-L40)",
+    "Add L1 bootstrap_snapshot_drift describe block with 3 tests using the existing fixture builder + seedDriftedFile pattern adapted to server-side (file mutation via fs.writeFileSync, since seedDriftedFile lives in CLI test helpers)",
+    "Add L2 managed_block_drift describe block with 3 tests (one per managed target + CLAUDE.md @-import edge case + CRLF drift regression guard)",
+    "Add marker migration describe block with 4 tests (detection / fix / ledger event / idempotency)",
+    "Audit existing fixable_errors[].map assertions across the file — extend arrays where new codes legitimately appear in those test fixtures",
+    "Verify createProject helper installs .fabric/AGENTS.md with canonical content (extend if needed)",
+    "Run `pnpm --filter=@fenglimg/fabric-server test` and verify all new tests pass",
+    "Verify FABRIC_HOME isolation in every new test (beforeEach mkdtempSync + process.env.FABRIC_HOME = fakeHome)"
+  ],
+  "reference": {
+    "pattern": "bootstrap_anchor_missing test triplet (doctor.test.ts:737-795) — three-test shape for inspect → check → fix. mcp_config_in_wrong_file --fix + ledger event (doctor.test.ts:202-286) — events.jsonl assertion via readFileSync + JSON.parse per line + filter by event_type.",
+    "files": [
+      "packages/server/src/services/doctor.test.ts"
+    ],
+    "examples": "FABRIC_HOME isolation beforeEach (L20-L29) is MANDATORY. fixable_errors[].map(i => i.code) assertion pattern (L55-L62) — extend for new codes."
+  },
+  "convergence": {
+    "criteria": [
+      "Three new describe blocks added: 'rc.19 L1 bootstrap snapshot drift', 'rc.19 L2 managed block drift', 'rc.19 marker migration fabric:knowledge-base → fabric:bootstrap'",
+      "Minimum 10 new tests across the three blocks (3 + 4 + 4 = 11 minimum)",
+      "All new tests use FABRIC_HOME isolation beforeEach (verified by grep for process.env.FABRIC_HOME = within each describe)",
+      "CRLF drift regression test exists and asserts drift fires when .fabric/AGENTS.md has \\r\\n line endings (no normalization invariant guard)",
+      "bootstrap_marker_migrated ledger event test reads .fabric/events.jsonl post-fix and asserts via filter(e => e.event_type === 'bootstrap_marker_migrated').length ≥ 1",
+      "Idempotency test for each --fix path: second runDoctorFix call produces zero new file mutations and zero new ledger events",
+      "All existing tests in doctor.test.ts continue to pass (no regression in pre-rc.19 assertions)",
+      "`pnpm --filter=@fenglimg/fabric-server test` passes cleanly"
+    ]
+  },
+  "rationale": {
+    "chosen_approach": "Service-layer tests in doctor.test.ts (real runDoctorReport / runDoctorFix logic) — per exploration test_concerns 'Mocked-server tests don't catch real server-side regressions' (high severity). Skip CLI-layer doctor tests per recent rc.17 pattern.",
+    "alternatives_considered": [
+      "Add CLI-layer mocked tests in packages/cli/__tests__/doctor.test.ts (loses real service coverage)",
+      "Split L1 + L2 + migration tests into separate files (over-engineering for ≤ 15 tests total)"
+    ],
+    "decision_factors": ["Service-layer catches real regressions", "Single test file matches existing convention", "FABRIC_HOME isolation pattern already established"],
+    "tradeoffs": "No CLI flag plumbing coverage. Acceptable; rc.17 doctor.test.ts pattern set the precedent and flag plumbing is unchanged in rc.19."
+  },
+  "test": {
+    "manual_checks": [
+      "Run `pnpm --filter=@fenglimg/fabric-server test packages/server/src/services/doctor.test.ts`",
+      "Verify test count increased by ≥ 11",
+      "Verify zero references to fabric:knowledge-base outside the marker migration test (which deliberately seeds the legacy state)"
+    ],
+    "success_metrics": [
+      "All new tests pass on first run",
+      "Existing tests unchanged or extended (no regressions)",
+      "FABRIC_HOME isolation present in every new test"
+    ],
+    "unit": [],
+    "integration": [
+      "test_doctor_reports_ok_when_snapshot_matches_canonical",
+      "test_doctor_reports_l1_drift_when_snapshot_bytes_differ",
+      "test_doctor_fix_restores_l1_snapshot_and_idempotent",
+      "test_doctor_reports_ok_when_all_managed_blocks_match_expected",
+      "test_doctor_reports_l2_drift_when_agents_md_block_differs",
+      "test_doctor_fix_rewrites_three_managed_blocks_and_idempotent",
+      "test_doctor_reports_l2_drift_when_claude_md_at_import_missing",
+      "test_doctor_reports_l1_drift_with_crlf_line_endings_no_normalization",
+      "test_doctor_reports_marker_migration_required_for_legacy_markers",
+      "test_doctor_fix_rewrites_legacy_markers_to_new_marker_all_four_paths",
+      "test_doctor_fix_emits_bootstrap_marker_migrated_ledger_event_per_file",
+      "test_doctor_fix_marker_migration_idempotent_second_run_no_events"
+    ]
+  },
+  "risks": [
+    {
+      "description": "FABRIC_HOME isolation forgotten in new tests pollutes developer's real ~/.fabric",
+      "probability": "Medium",
+      "impact": "Low",
+      "mitigation": "Code review checklist: every new doctor test must include the FABRIC_HOME beforeEach block (L20-L29 pattern). Lint/grep can verify."
+    },
+    {
+      "description": "createProject helper produces a baseline that conflicts with new L1/L2 drift fixtures",
+      "probability": "Medium",
+      "impact": "Medium",
+      "mitigation": "Inspect createProject helper before writing tests; if it pre-installs .fabric/AGENTS.md with canonical content, drift tests will need to mutate AFTER setup. Adjust accordingly."
+    },
+    {
+      "description": "Existing fixable_errors[].map assertions may break when new codes are introduced into shared fixtures",
+      "probability": "High",
+      "impact": "Low",
+      "mitigation": "Run the test suite immediately after wiring TASK-04 + TASK-05 into runDoctorReport; fix any existing-test failures by expanding the asserted code arrays or adjusting fixtures so new codes don't fire in those tests"
+    }
+  ],
+  "code_skeleton": null,
+  "depends_on": ["TASK-005"]
+}

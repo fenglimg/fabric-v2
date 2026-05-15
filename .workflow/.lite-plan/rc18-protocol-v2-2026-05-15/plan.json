@@ -1,0 +1,88 @@
+{
+  "summary": "rc.18 Protocol v2 — single hard-cut migration of the `plan-context-hint` JSON wire contract: bump `version: 1 → 2`, rename `payload.narrow → payload.entries` across the emitter and both .cjs consumers, update test fixtures in lockstep, and ship SOLO as the largest blast-radius change in the post-grill backlog. Pre-user clean-slate: NO v1 compat shim, NO accept-both. Consumers receiving v1 silent-skip with one stderr breadcrumb line (preserves the existing hook silent-exit-0 contract).",
+  "approach": "6-task chain anchored by an upfront decision-record commit (TASK-001) that locks two protocol-shaping choices — field name (`entries`) and v1-receipt stance (silent-skip + breadcrumb) — so the 3 parallel-safe implementation tasks (TASK-002 emitter, TASK-003 narrow consumer, TASK-004 broad consumer) read from a single source-of-truth without race conditions. TASK-005 lockstep-migrates both test files AFTER all 3 production-code tasks land (acts as the integration GREEN signal). TASK-006 cuts the release with CHANGELOG + version bump + ONE batched Gemini review + coverage check (per memory/feedback_review_batching.md — no per-task reviews). Every task = one git commit per memory/project_grill_deferred_items.md; rc.18 ships SOLO and does NOT bundle with rc.16/rc.17.",
+  "task_ids": ["TASK-001", "TASK-002", "TASK-003", "TASK-004", "TASK-005", "TASK-006"],
+  "task_count": 6,
+  "estimated_time": "~2h45m (decision 30m + emitter 30m + each consumer 30m + tests 45m + release 30m); 3 parallel-safe tasks (TASK-002/003/004) can compress wall-clock to ~2h00m if executed concurrently",
+  "recommended_execution": "Codex",
+  "complexity": "Medium",
+  "design_decisions": [
+    {
+      "decision": "New wire field name = `entries`",
+      "rationale": "The broad consumer (knowledge-hint-broad.cjs:443) already does a local rebind `const entries = payload.narrow ...` because the maintainer found `narrow` misleading at the rendering layer (see comment 437-441). Promoting the rebind name to the wire eliminates the local-vs-wire divergence that the existing comment explicitly flags as a deferred independent task.",
+      "tradeoff": "Loses the historical `narrow` term (which carried path-mode connotation); gains mode-agnostic semantics (`entries` correctly describes both --paths union and --all degenerate modes). Rejected alternatives: `matchedKnowledge` (path-mode bias), `relevantKnowledge` (verbose, same bias)."
+    },
+    {
+      "decision": "v1-receipt stance = silent-skip + one-line stderr breadcrumb",
+      "rationale": "Hooks already wrap everything in try/catch with silent-exit-0 (broad.cjs:464 comment makes this explicit). Silent-skip is the established failure mode — version mismatch should not be the one exception that breaks the rule. The stderr breadcrumb gives debug signal without crashing SessionStart hooks during pre-user upgrade windows.",
+      "tradeoff": "Loses loud-failure-on-drift signal (a hard-throw stance would surface mismatches immediately); gains zero-crash upgrade path. Pre-user clean-slate makes the upgrade-safety argument theoretical (no installed users to break) but the precedent matters for post-launch."
+    },
+    {
+      "decision": "TASK-005 (tests) deferred to after all 3 production-code tasks land — single integration commit",
+      "rationale": "Bundling broad+narrow test migration in one commit guarantees the suite is either red or green, never partially passing. The new v1-receipt tests are the convergence proof for TASK-001's stance decision — without them the stance is documented but not enforced.",
+      "tradeoff": "CI is red between TASK-002/003/004 commits and TASK-005 — accepted because rc.18 ships SOLO and the chain is local until merge."
+    },
+    {
+      "decision": "Single batched Gemini review at TASK-006, not per-task",
+      "rationale": "Per memory/feedback_review_batching.md — for multi-task lite-plan chains, run Gemini review + coverage ONCE at end. Avoids review-fatigue and lets the reviewer see field-name consistency across emitter↔consumers↔tests in a single pass.",
+      "tradeoff": "Drift detected late costs more to fix; mitigated by the per-task convergence criteria already grep-checking `payload.narrow` removal."
+    }
+  ],
+  "estimated_time_breakdown": {
+    "TASK-001_decision_record": "30m",
+    "TASK-002_emitter": "30m",
+    "TASK-003_narrow_consumer": "30m (parallel-safe with 002, 004)",
+    "TASK-004_broad_consumer": "30m (parallel-safe with 002, 003)",
+    "TASK-005_tests": "45m (must run after 002+003+004)",
+    "TASK-006_release": "30m (incl. Gemini review + coverage)"
+  },
+  "_metadata": {
+    "timestamp": "2026-05-15T00:00:00Z",
+    "source": "cli-lite-planning-agent",
+    "plan_type": "feature",
+    "schema_version": "2.0",
+    "planning_mode": "agent-based",
+    "exploration_angles": ["protocol-emitter-site", "protocol-consumer-sites", "test-fixture-sites", "v1-receipt-stance-decision", "field-name-decision"],
+    "duration_seconds": 0,
+    "rc_phase": "Phase 5 of 5 (post-grill backlog)",
+    "rc_version": "v2.0.0-rc.18",
+    "ships_solo": true,
+    "do_not_bundle_with": ["rc.16-banner-i18n", "rc.17-help-text-polish"],
+    "parallel_safe_task_count": 3,
+    "parallel_safe_tasks": ["TASK-002", "TASK-003", "TASK-004"],
+    "dag_summary": "TASK-001 → {TASK-002, TASK-003, TASK-004 in parallel} → TASK-005 → TASK-006",
+    "outstanding_clarifications": [
+      {
+        "question": "Veto field name `entries`?",
+        "agent_recommendation": "entries",
+        "alternatives": ["matchedKnowledge", "relevantKnowledge"],
+        "veto_impact_radius": "Re-runs TASK-002/003/004/005 with the chosen alternative substituted; no DAG change",
+        "rationale_summary": "Matches existing local rebind in broad.cjs:443; mode-agnostic (covers --paths AND --all); resolves the comment block at lines 437-441 that flags this exact rename as a deferred task"
+      },
+      {
+        "question": "Veto v1-receipt stance `silent-skip + breadcrumb`?",
+        "agent_recommendation": "silent-skip + one-line stderr breadcrumb",
+        "alternatives": ["error-log (verbose stderr)", "hard-throw (crash hook)"],
+        "veto_impact_radius": "Re-runs TASK-003/004/005 with the chosen alternative; emitter (TASK-002) unaffected",
+        "rationale_summary": "Aligns with existing hook silent-exit-0 contract (broad.cjs:464); preserves SessionStart non-fatal property during upgrade windows"
+      }
+    ],
+    "cross_phase_constraints": [
+      "Each task = one git commit (memory/project_grill_deferred_items.md)",
+      "Pre-user clean-slate: no migration shim (memory/feedback_clean_slate.md)",
+      "Single batched Gemini review + coverage at TASK-006 (memory/feedback_review_batching.md)",
+      "rc.18 ships SOLO — do NOT bundle with rc.16/rc.17"
+    ],
+    "anti_scope": [
+      "Do NOT add CLI flags / change command tree (rc.15 surface contract-locked)",
+      "Do NOT backport v1 compat (zero-user clean-slate)",
+      "Do NOT touch banner i18n (rc.16 territory)",
+      "Do NOT touch help text / target chain / serve warnings (rc.17 territory)",
+      "Do NOT add new payload fields beyond the rename (scope creep)"
+    ],
+    "quality_check": {
+      "executed": false,
+      "reason": "Per memory/feedback_review_batching.md — quality review batched into TASK-006 instead of per-task or per-plan-generation. Pre-execution validation handled by per-task convergence.criteria (every task has 7-11 quantified, testable criteria including grep gates and pnpm vitest commands)."
+    }
+  }
+}

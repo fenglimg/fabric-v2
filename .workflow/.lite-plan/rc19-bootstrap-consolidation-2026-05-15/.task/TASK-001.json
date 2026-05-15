@@ -1,0 +1,93 @@
+{
+  "id": "TASK-001",
+  "title": "Hoist canonical bootstrap content + marker constants to packages/shared",
+  "scope": "packages/shared/src/templates/",
+  "action": "Create",
+  "description": "Create packages/shared/src/templates/bootstrap-canonical.ts exporting the locked rc.19 canonical bootstrap content as a `const BOOTSTRAP_CANONICAL: string` plus marker constants. Resolves the cross-package gap: packages/server has zero dep on packages/cli, so canonical + markers MUST live in shared for both CLI install (writer) and server doctor (drift comparator) to consume from one source. Pattern mirrors rc.18 banner-i18n shared module.",
+  "files": [
+    {
+      "path": "packages/shared/src/templates/bootstrap-canonical.ts",
+      "action": "create",
+      "target": "module body",
+      "change": "Export `BOOTSTRAP_CANONICAL` (verbatim the locked草案 text from task brief — Fabric Bootstrap heading + 行为规则 + 知识库(KB) sections), `BOOTSTRAP_MARKER_BEGIN = '<!-- fabric:bootstrap:begin -->'`, `BOOTSTRAP_MARKER_END = '<!-- fabric:bootstrap:end -->'`, `LEGACY_KB_MARKER_BEGIN = '<!-- fabric:knowledge-base:begin -->'`, `LEGACY_KB_MARKER_END = '<!-- fabric:knowledge-base:end -->'`, and a precompiled `BOOTSTRAP_REGEX` matching the new marker pair (non-greedy body, optional 2-leading-blank-lines, mirrors current FABRIC_SECTION_REGEX shape). Also export a `LEGACY_KB_REGEX` for one-time migration detection."
+    },
+    {
+      "path": "packages/shared/src/templates/index.ts",
+      "action": "create",
+      "target": "barrel export",
+      "change": "Re-export all from ./bootstrap-canonical.js (if barrel does not exist; otherwise append the re-export)."
+    },
+    {
+      "path": "packages/shared/src/index.ts",
+      "action": "modify",
+      "target": "package public surface",
+      "change": "Add `export * from './templates/index.js';` so both `@fenglimg/fabric-shared` consumers (CLI + server) can import { BOOTSTRAP_CANONICAL, BOOTSTRAP_MARKER_BEGIN, ... } directly."
+    }
+  ],
+  "implementation": [
+    "Read the locked草案 content verbatim from task brief — preserve every character including the zh-CN-hybrid wording (canonical is fixed text per clarification decision 3, no `{{fabric_language}}` interpolation)",
+    "Create packages/shared/src/templates/bootstrap-canonical.ts with the BOOTSTRAP_CANONICAL string export plus the 4 marker constants plus the 2 regex constants",
+    "Add packages/shared/src/templates/index.ts barrel (or extend existing) so consumers don't need deep imports",
+    "Wire into packages/shared/src/index.ts root barrel — verify no name collisions (BOOTSTRAP_* names are unique)",
+    "Build packages/shared (pnpm --filter=@fenglimg/fabric-shared build) and verify dist/templates/bootstrap-canonical.{js,d.ts} are emitted",
+    "Verify both packages/cli and packages/server can resolve the import via TypeScript (run pnpm typecheck on monorepo)"
+  ],
+  "reference": {
+    "pattern": "rc.18 banner-i18n shared module — shared types/constants consumed by both CLI install paths and server runtime",
+    "files": [
+      "packages/shared/src/index.ts",
+      "packages/shared/src/schemas/event-ledger.ts"
+    ],
+    "examples": "Existing schema re-exports show the barrel pattern. Use ESM .js suffix in TS imports per packages/shared/tsconfig.json"
+  },
+  "convergence": {
+    "criteria": [
+      "File packages/shared/src/templates/bootstrap-canonical.ts exists and exports `BOOTSTRAP_CANONICAL` as a non-empty string matching the locked草案 byte-for-byte",
+      "Exports `BOOTSTRAP_MARKER_BEGIN`, `BOOTSTRAP_MARKER_END`, `LEGACY_KB_MARKER_BEGIN`, `LEGACY_KB_MARKER_END` as exact HTML-comment string literals",
+      "Exports `BOOTSTRAP_REGEX` and `LEGACY_KB_REGEX` as RegExp instances that match `<marker_begin>[content]<marker_end>` with non-greedy body and optional 2-leading-blank-lines",
+      "`pnpm --filter=@fenglimg/fabric-shared build` succeeds with zero TS errors and emits dist/templates/bootstrap-canonical.{js,d.ts}",
+      "`pnpm typecheck` at monorepo root passes — both packages/cli and packages/server can resolve `from '@fenglimg/fabric-shared'` to the new exports",
+      "BOOTSTRAP_CANONICAL string length ≥ 400 bytes (sanity bound — locked草案 has ~500 chars)"
+    ]
+  },
+  "rationale": {
+    "chosen_approach": "TS const export in packages/shared. Both CLI install and server doctor import from one place via existing `@fenglimg/fabric-shared` workspace dep.",
+    "alternatives_considered": [
+      "Keep templates as files in packages/cli/templates/ and bundle hash into shared at build time (option B from doctor-flow exploration)",
+      "Add workspace dep server → cli (option C, creates cyclic-feel given cli depends on server for runDoctor*)"
+    ],
+    "decision_factors": ["Cross-package boundary respected", "Mirrors rc.18 pattern", "Zero build-script changes", "Single source of truth"],
+    "tradeoffs": "Content lives in TS (less human-friendly for non-devs to edit) vs file-on-disk template. Acceptable given pre-user clean-slate phase and short canonical body."
+  },
+  "test": {
+    "manual_checks": [
+      "Verify dist artifact has expected named exports via `node -e \"import('@fenglimg/fabric-shared').then(m => console.log(Object.keys(m).filter(k => k.startsWith('BOOTSTRAP_'))))\"`",
+      "Verify the canonical content matches the locked草案 byte-for-byte (paste into a temporary file and diff)"
+    ],
+    "success_metrics": [
+      "Zero TS compilation errors across monorepo",
+      "Six exports present (1 canonical string + 4 marker literals + 2 regexes minimum)",
+      "Build artifact size < 5KB (templates module should be tiny)"
+    ],
+    "unit": [
+      "packages/shared/test/templates/bootstrap-canonical.test.ts — assert canonical contains '## 行为规则' AND '## 知识库(KB)' substrings",
+      "packages/shared/test/templates/bootstrap-canonical.test.ts — assert BOOTSTRAP_REGEX.test('<!-- fabric:bootstrap:begin -->\\nbody\\n<!-- fabric:bootstrap:end -->') === true",
+      "packages/shared/test/templates/bootstrap-canonical.test.ts — assert LEGACY_KB_REGEX.test('<!-- fabric:knowledge-base:begin -->\\nbody\\n<!-- fabric:knowledge-base:end -->') === true"
+    ],
+    "integration": []
+  },
+  "risks": [
+    {
+      "description": "Encoding drift — copy-paste of zh-CN text may introduce stray U+FEFF BOM or smart-quote chars vs the locked草案",
+      "probability": "Low",
+      "impact": "Medium",
+      "mitigation": "Write canonical via Edit tool with the exact byte sequence from task brief. Add unit test asserting startsWith('# Fabric Bootstrap\\n\\n本项目')."
+    }
+  ],
+  "code_skeleton": {
+    "interfaces": [],
+    "key_functions": [],
+    "classes": []
+  },
+  "depends_on": []
+}

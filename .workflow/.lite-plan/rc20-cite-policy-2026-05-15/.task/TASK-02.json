@@ -1,0 +1,65 @@
+{
+  "id": "TASK-02",
+  "title": "Add `assistant_turn_observed` + `cite_policy_activated` event schemas to event-ledger discriminated union",
+  "scope": "packages/shared/src/schemas/event-ledger.ts",
+  "action": "Update",
+  "description": "Register two new event variants in the Zod discriminated union eventLedgerEventSchema: (1) `assistant_turn_observed` — captures per-turn KB: line emission with kb_line_raw, cite_ids[], cite_tags[], client, turn_id, session_id; (2) `cite_policy_activated` — idempotent marker emitted on first --cite-coverage invocation, carries policy version and timestamp. Both spread the standard envelope (kind/id/ts/schema_version). Roundtrip tests assert write→read shape preservation.",
+  "scope_layer": "shared",
+  "files": [
+    {
+      "path": "packages/shared/src/schemas/event-ledger.ts",
+      "action": "modify",
+      "target": "schema definitions + discriminated union (L330-L443) + type union (L478-L511)",
+      "change": "Add `assistantTurnObservedEventSchema` (envelope + event_type literal 'assistant_turn_observed' + kb_line_raw: z.string().nullable() + cite_ids: z.array(z.string()).default([]) + cite_tags: z.array(z.enum(['planned','recalled','chained-from','dismissed','none'])).default([]) + client: z.enum(['cc','codex','cursor']).optional() + turn_id: z.string() + envelope_index: z.number().int().nonnegative().optional() + timestamp: z.string().datetime()). Add `citePolicyActivatedEventSchema` (envelope + event_type literal 'cite_policy_activated' + policy_version: z.string() + timestamp: z.string().datetime()). Append both to eventLedgerEventSchema.discriminatedUnion array. Append type aliases AssistantTurnObservedEvent + CitePolicyActivatedEvent to EventLedgerEvent union."
+    },
+    {
+      "path": "packages/server/src/services/event-ledger.test.ts",
+      "action": "modify",
+      "target": "roundtrip test block",
+      "change": "Add two parallel roundtrip tests: (a) append + read assistant_turn_observed event preserves kb_line_raw/cite_ids/cite_tags/client/turn_id; (b) append + read cite_policy_activated event preserves policy_version/timestamp. Mirror existing doctorRunEventSchema roundtrip test pattern."
+    }
+  ],
+  "implementation": [
+    "Read packages/shared/src/schemas/event-ledger.ts L1-L60 (envelope shape) and L330-L443 (doctor precedent + union site) to confirm patterns.",
+    "Define assistantTurnObservedEventSchema as a const z.object spreading eventLedgerEnvelopeSchema.shape + the new fields; export the schema and TS type via z.infer.",
+    "Define citePolicyActivatedEventSchema with minimal fields (policy_version + timestamp + envelope) — mirrors doctorRunEventSchema shape.",
+    "Append both to the discriminated union (preserve comment-header style 'v2.0.0-rc.20 TASK-02').",
+    "Append type aliases to EventLedgerEvent union near L478-L511.",
+    "Add roundtrip tests in event-ledger.test.ts using appendEventLedgerEvent + readEventLedger flow.",
+    "Run `pnpm --filter @fenglimg/fabric-shared test schemas` + `pnpm --filter @fenglimg/fabric-server test event-ledger` to confirm green."
+  ],
+  "reference": {
+    "pattern": "Zod discriminated union extension (rc.7 T5 doctorRunEventSchema precedent)",
+    "files": ["packages/shared/src/schemas/event-ledger.ts:330-337", "packages/shared/src/schemas/event-ledger.ts:397-443"],
+    "examples": "doctorRunEventSchema is the structural twin: literal event_type, minimal fields, appended to union + type alias."
+  },
+  "rationale": {
+    "chosen_approach": "Single discriminated-union registration for both new events in one commit — shared schema is a unit; partial registration breaks appendEventLedgerEvent for the unregistered variant.",
+    "alternatives_considered": ["Split into two separate commits (rejected: artificial — both events are part of the same policy contract and would force TASK-03 + TASK-04 to depend on different commits)", "Use generic event_type:'cite' with a sub_kind discriminator (rejected: violates existing discriminated-union pattern, complicates readEventLedger filter)"],
+    "decision_factors": ["Atomic schema additions match existing rc.X TASK-Y commit precedent", "Both events part of same protocol surface", "Unblock TASK-03 + TASK-04 in parallel"],
+    "tradeoffs": "Slightly larger single commit, but the bytes-of-change are small (two schema objects + union entries + type aliases + two tests)."
+  },
+  "test": {
+    "manual_checks": ["Confirm appendEventLedgerEvent accepts a sample assistant_turn_observed payload without throwing", "Confirm readEventLedger returns the parsed event with all fields intact", "Confirm typescript compiles cleanly (pnpm --filter @fenglimg/fabric-shared build)"],
+    "success_metrics": ["Both new schemas exported and reachable from @fenglimg/fabric-shared barrel", "Roundtrip test passes: write event → read event → assert deep-equal on shape", "0 typescript errors across shared + server packages"],
+    "unit": ["event-ledger.test assistant_turn_observed roundtrip", "event-ledger.test cite_policy_activated roundtrip", "schema typescript compile passes"],
+    "integration": []
+  },
+  "convergence": {
+    "criteria": [
+      "assistantTurnObservedEventSchema exported from packages/shared/src/schemas/event-ledger.ts",
+      "citePolicyActivatedEventSchema exported from packages/shared/src/schemas/event-ledger.ts",
+      "Both schemas present in eventLedgerEventSchema.discriminatedUnion union",
+      "Both TS type aliases present in EventLedgerEvent type union",
+      "Roundtrip tests pass: append → read preserves all fields including cite_tags enum + kb_line_raw + turn_id",
+      "appendEventLedgerEvent({event_type:'assistant_turn_observed', ...}) succeeds without zod parse error",
+      "appendEventLedgerEvent({event_type:'cite_policy_activated', ...}) succeeds without zod parse error",
+      "Zero typescript errors in shared + server packages",
+      "Commit msg: `feat(rc20): event ledger variants for cite observation (TASK-02)`"
+    ]
+  },
+  "depends_on": [],
+  "estimated_minutes": 35,
+  "cli_execution_id": "rc20-cite-policy-2026-05-15-TASK-02",
+  "cli_execution": { "strategy": "new" }
+}

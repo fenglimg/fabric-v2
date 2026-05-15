@@ -1,0 +1,72 @@
+{
+  "id": "TASK-004",
+  "title": "Consumer (broad hook) — read payload.entries + accept version 2 + silent-skip v1 + update comment",
+  "scope": "packages/cli/templates/hooks/knowledge-hint-broad.cjs",
+  "action": "Update",
+  "description": "Update the SessionStart broad-injection hook to read the renamed wire field `payload.entries` and to enforce the `version: 2` gate per the v1-receipt stance from TASK-001 (silent-skip with one-line stderr breadcrumb). Critically: ALSO update the comment block at lines 437-441 which currently asserts the wire-name is unchanged — that assertion is now stale and must be inverted to document the v2 rename.",
+  "files": [
+    {
+      "path": "packages/cli/templates/hooks/knowledge-hint-broad.cjs",
+      "action": "modify",
+      "target": "lines 436-460 (renderSummary function) + the misleading-name comment at 437-441",
+      "change": "In renderSummary (line 436-): add a leading version-gate `if (!payload || payload.version !== 2) { if (payload && payload.version !== undefined) { try { process.stderr.write('[fabric] hint payload version=' + payload.version + ' unsupported (expected 2), skipping\\n'); } catch {} } return []; }`. Rewrite the comment block at lines 437-441 to document the v2 cut: REPLACE the assertion `The CLI protocol field name (\\`payload.narrow\\`) is unchanged — a wire-shape rename is a deferred independent task.` with `Protocol v2 (rc.18): the wire field is now \\`payload.entries\\` matching this local rebind. The local-vs-wire-name divergence has been resolved by promoting the rebind name to the wire.` Rename the field read at line 443 from `payload.narrow` → `payload.entries`. Update the function docstring (lines 428-435) to document the v2 protocol gate."
+    }
+  ],
+  "implementation": [
+    "Open packages/cli/templates/hooks/knowledge-hint-broad.cjs; locate `function renderSummary(payload)` at line 436",
+    "Add a version-gate block as the FIRST statement in renderSummary (identical code as TASK-003): `if (!payload || payload.version !== 2) { if (payload && payload.version !== undefined) { try { process.stderr.write('[fabric] hint payload version=' + payload.version + ' unsupported (expected 2), skipping\\n'); } catch {} } return []; }`",
+    "Rewrite the 5-line comment block at lines 437-441 — DELETE the old text starting `Local rebind: ...` and ENDING `... deferred independent task.`. REPLACE with: `// Protocol v2 (rc.18): the wire field is now \\`payload.entries\\`, matching what this renderer always called it locally. The historical `narrow` name (which degenerated in --all mode) has been retired without a compat shim per pre-user clean-slate policy.`",
+    "Rename the field read at line 443: `payload.narrow` → `payload.entries`. The local variable `entries` is already correctly named — no cascading rename needed (this is the original precedent for the wire-name choice)",
+    "Update the function docstring (lines 428-435) to add a sentence documenting the v2-protocol gate and the silent-skip-with-breadcrumb behavior on version mismatch",
+    "Verify by reading lines 436-460 end-to-end that the version gate fires before the entries read, the entries read uses `payload.entries`, and the comment block no longer asserts the wire name is unchanged",
+    "Manual smoke: pipe `{version: 2, entries: [{id:'KT-DEC-0001', type:'decision', maturity:'proven', summary:'test'}]}` via the test seam and confirm a banner + entry + revision_hash + footer render",
+    "Commit message: `feat(rc18)!: knowledge-hint-broad hook reads payload.entries + drops misleading-name comment (protocol v2)`"
+  ],
+  "reference": {
+    "pattern": "Mirror the v2-gate code from TASK-003 verbatim — both consumers SHOULD have identical gate code",
+    "files": [
+      "packages/cli/templates/hooks/knowledge-hint-broad.cjs",
+      "packages/cli/templates/hooks/knowledge-hint-narrow.cjs",
+      ".workflow/.lite-plan/rc18-protocol-v2-2026-05-15/_protocol-v2-decisions.md"
+    ],
+    "examples": "The local `const entries = ...` rebind already exists at line 443 — this task is the wire-name catching-up to the renderer's view of the world. The comment-rewrite at 437-441 is the most semantically loaded change in the whole rc — it moves from `we plan to rename` to `the rename is done`."
+  },
+  "convergence": {
+    "criteria": [
+      "File modified: packages/cli/templates/hooks/knowledge-hint-broad.cjs at lines 428-460 (renderSummary + docstring + comment block)",
+      "Field-read uses `payload.entries`, NOT `payload.narrow` (verified via `! grep -E 'payload\\.narrow' packages/cli/templates/hooks/knowledge-hint-broad.cjs`)",
+      "Comment block at lines 437-441 NO LONGER asserts the wire-name is unchanged — the old phrase `is unchanged — a wire-shape rename is a deferred independent task` is fully removed (verified via `! grep -F 'is unchanged' packages/cli/templates/hooks/knowledge-hint-broad.cjs`)",
+      "New comment cites Protocol v2 (rc.18) and the rename completion explicitly (verified via `grep -F 'Protocol v2' packages/cli/templates/hooks/knowledge-hint-broad.cjs`)",
+      "Version-gate present: `payload.version !== 2` check exists as the first statement in renderSummary (verified via `grep -A1 'function renderSummary' packages/cli/templates/hooks/knowledge-hint-broad.cjs | grep -q 'version !== 2'`)",
+      "Test command: `pnpm -F @fenglimg/fabric-cli vitest run knowledge-hint-broad` — pre-TASK-005 this WILL fail because fixtures still use v1; that failure is the desired protocol-cut signal",
+      "Behavioral expectation: with a v2 payload the hook renders the SessionStart banner + entries + revision_hash + footer; with a v1 payload the hook emits exactly one stderr breadcrumb and zero other output",
+      "Field-name consistency check: emitter (`entries`) ↔ this consumer (`payload.entries`) ↔ comment block (`payload.entries`) ↔ docstring all aligned",
+      "Version-receipt stance check: piping `{version: 1, narrow: [...]}` produces stderr `[fabric] hint payload version=1 unsupported (expected 2), skipping` and zero further output",
+      "Single git commit recorded with breaking-change marker (`!`) and conventional commits format"
+    ]
+  },
+  "depends_on": ["TASK-001"],
+  "parallel_safe": true,
+  "cli_execution_id": "rc18-protocol-v2-2026-05-15-TASK-004",
+  "cli_execution": { "strategy": "fork", "resume_from": "rc18-protocol-v2-2026-05-15-TASK-001" },
+  "rationale": {
+    "chosen_approach": "Update both the runtime field-read AND the load-bearing comment in a single commit so the comment never lags reality (the previous state where the comment asserted the rename was deferred is exactly what this task corrects)",
+    "alternatives_considered": ["Split comment update into a docs-only follow-up commit", "Leave the old comment and add a contradicting one"],
+    "decision_factors": ["Comment-truth alignment (a comment that asserts the opposite of code reality is worse than no comment)", "Single-commit-per-file convention", "Reviewability (one diff shows code + comment moved together)"],
+    "tradeoffs": "Slightly larger diff than TASK-003 (because the comment block is non-trivial), accepted"
+  },
+  "test": {
+    "manual_checks": [
+      "Run `pnpm -F @fenglimg/fabric-cli vitest run knowledge-hint-broad` and confirm the failures are field-name/version mismatches in fixtures (expected pre-TASK-005)",
+      "Read lines 436-460 end-to-end and confirm the comment block reads as a completion announcement, not a future-work flag",
+      "Smoke-test by piping a v1 payload and confirm exactly one stderr breadcrumb, zero other output"
+    ],
+    "success_metrics": [
+      "Zero remaining `payload.narrow` references in the file",
+      "Zero remaining `is unchanged` phrases in the file (the old comment fully retired)",
+      "Single git commit, single-file diff"
+    ],
+    "unit": [],
+    "integration": []
+  }
+}

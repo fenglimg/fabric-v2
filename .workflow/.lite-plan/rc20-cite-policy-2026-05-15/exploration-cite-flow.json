@@ -1,0 +1,261 @@
+{
+  "project_structure": "Fabric is a pnpm monorepo (packages/cli, packages/server, packages/shared, packages/extension). The cite-flow surface spans three layers: (1) shared hook scripts under packages/cli/templates/hooks/ that ship to .claude/.codex/.cursor at fab install time (fabric-hint.cjs runs on Stop, knowledge-hint-narrow.cjs on PreToolUse, knowledge-hint-broad.cjs on SessionStart — three-end shared per KT-DEC-0009); (2) the server-side event ledger schema and writer at packages/shared/src/schemas/event-ledger.ts (Zod discriminated union of 31 event variants) plus packages/server/src/services/event-ledger.ts (appendEventLedgerEvent / readEventLedger atomic writer/reader); and (3) the CLI doctor surface at packages/cli/src/commands/doctor.ts (citty defineCommand wrapping server-side runDoctorReport / runDoctorFix / runDoctorApplyLint, with doctor_run telemetry already wired). The canonical bootstrap content lives in packages/shared/src/templates/bootstrap-canonical.ts (rc.19 hoisted constant injected into AGENTS.md/CLAUDE.md/AGENTS.md three-end managed blocks).",
+  "relevant_files": [
+    {
+      "path": "packages/cli/templates/hooks/fabric-hint.cjs",
+      "relevance": 1.0,
+      "rationale": "This is the SINGLE hook script (per KT-DEC-0009) that the cite policy must extend — currently wired to Stop on Claude Code (.claude), Stop on Codex (.codex), and Stop on Cursor (.cursor). It already has the infrastructure to read stdin payload (tryReadStdinJson at L987-1000), parse a Claude Code transcript_path JSONL (summarizeTranscript at L1011-1088, currently only extracting user_messages + edit_paths), and append to events.jsonl. The KB: first-line extraction logic must be added inside summarizeTranscript (extend to harvest `role: 'assistant'` content) and a new writeAssistantTurnObservedBestEffort helper must be added alongside writeSessionDigestBestEffort at L1095-1112.",
+      "role": "modify_target",
+      "discovery_source": "manual",
+      "key_code": [
+        {
+          "symbol": "tryReadStdinJson()",
+          "location": "L987-L1000",
+          "description": "Best-effort sync stdin reader. Already returns parsed JSON from Claude Code Stop hook payload (session_id, transcript_path, hook_event_name). Returns null for Cursor/Codex where stdin contract differs — cite policy must NOT assume this works on Cursor."
+        },
+        {
+          "symbol": "summarizeTranscript(transcriptPath)",
+          "location": "L1011-L1088",
+          "description": "Parses Claude Code transcript JSONL line-by-line. Currently extracts user_messages (envelope.role === 'user' branch L1036-1047) and edit_paths from tool_use blocks. To capture KB: lines we must add an assistant branch that iterates content text blocks, applies /^KB:\\s+.+/ regex on the first non-empty line, and emits one assistant_turn_observed event per assistant turn. Turn boundary = each assistant envelope is one turn (Claude Code JSONL pre-separates turns)."
+        },
+        {
+          "symbol": "writeSessionDigestBestEffort(projectRoot, stdinPayload)",
+          "location": "L1095-L1112",
+          "description": "Pattern reference for the new writeAssistantTurnObservedBestEffort helper. Wraps the entire flow in try/catch, calls session-digest writer module (loaded best-effort at L7-14). The cite-policy emit must follow this never-block invariant byte-for-byte."
+        },
+        {
+          "symbol": "main(env, stdio)",
+          "location": "L1120-L1309",
+          "description": "Main entry. The new cite-extraction step should be inserted at L1134 (right after writeSessionDigestBestEffort), so a stdinPayload-parse success drives BOTH digest writing AND cite extraction in one pass. Failure stays silent (line 1306 outer try/catch)."
+        },
+        {
+          "symbol": "FABRIC_DIR / EVENT_LEDGER_FILE constants",
+          "location": "L28-L29",
+          "description": "Constant duplication from packages/server/src/services/_shared.ts — same pattern needed for the new EVENT_TYPE_ASSISTANT_TURN_OBSERVED + EVENT_TYPE_CITE_POLICY_ACTIVATED string literals (hook lives in user repos without node_modules, cannot import from @fenglimg/fabric-shared)."
+        }
+      ],
+      "topic_relation": "cite-flow exploration targets this file because the assistant_turn_observed event emission is the FIRST data-collection step in the cite policy closed loop — without a working capture point, doctor --cite-coverage has nothing to count. The single-script three-end shared decision (KT-DEC-0009) means this is the ONLY place to extend cite-line capture."
+    },
+    {
+      "path": "packages/shared/src/schemas/event-ledger.ts",
+      "relevance": 1.0,
+      "rationale": "All event types in events.jsonl are pre-registered as Zod schemas in the eventLedgerEventSchema discriminated union (L397-L443). The two new cite events (assistant_turn_observed, cite_policy_activated) MUST be added here before any emit site is wired, otherwise appendEventLedgerEvent at packages/server/src/services/event-ledger.ts:38 will throw on schema.parse(). The file already shows the rc.7 precedent (doctorRunEventSchema at L330-L337) for adding a single-purpose telemetry event.",
+      "role": "modify_target",
+      "discovery_source": "bash-scan",
+      "key_code": [
+        {
+          "symbol": "eventLedgerEnvelopeSchema",
+          "location": "L3-L10",
+          "description": "Required envelope spread into every variant: kind: 'fabric-event', id, ts, schema_version: 1, optional correlation_id, optional session_id. The new assistant_turn_observed and cite_policy_activated variants must spread this envelope."
+        },
+        {
+          "symbol": "doctorRunEventSchema",
+          "location": "L330-L337",
+          "description": "Closest structural precedent: a single-purpose telemetry event with a literal event_type, an enum mode, a count field, and an ISO timestamp. assistant_turn_observed should mirror this shape: literal event_type 'assistant_turn_observed', kb_line_raw (string, optional — null when KB: absent), cite_ids (array of string), cite_tags (array of enum 'planned'|'recalled'|'chained-from'|'dismissed'), client (enum 'claude-code'|'codex'|'cursor'), turn_id (string), timestamp (ISO datetime)."
+        },
+        {
+          "symbol": "eventLedgerEventSchema discriminatedUnion",
+          "location": "L397-L443",
+          "description": "Add BOTH new schemas to this union (after relevanceMigrationRunEventSchema at L442). Without this, the writer schema.parse() rejects the new events. Pattern: append two new entries with comment headers matching the existing rc.X TASK-Y style (e.g. 'v2.0.0-rc.20 TASK-001: assistant_turn_observed — cite-policy KB: line capture')."
+        },
+        {
+          "symbol": "EventLedgerEvent type union",
+          "location": "L478-L511",
+          "description": "Also append the two new type aliases (AssistantTurnObservedEvent, CitePolicyActivatedEvent) to the type union — required for the appendEventLedgerEvent input type to discriminate on event_type."
+        }
+      ],
+      "topic_relation": "cite-flow exploration targets this file because the assistant_turn_observed payload IS the data contract between hook capture and doctor --cite-coverage analysis. Field shape decided here determines what doctor can compute (cite_ids[] enables coverage math; cite_tags[] enables dismissed-reason analysis; client enables --client=cc|codex|cursor filtering)."
+    },
+    {
+      "path": "packages/shared/src/templates/bootstrap-canonical.ts",
+      "relevance": 1.0,
+      "rationale": "The cite policy text is locked to be added to AGENTS.md (the canonical post-rc.19 bootstrap) per MEMORY project_cite_policy.md step 4. This file holds BOOTSTRAP_CANONICAL (L61-L74) which fab install propagates to all three end blocks. The new `## Cite policy` H2 section must be inserted after `## 知识库(KB)` (which ends at L73), bumping the byte-locked content. Test invariants in packages/shared/test/templates/bootstrap-canonical.test.ts will need a new 'contains ## Cite policy' assertion.",
+      "role": "modify_target",
+      "discovery_source": "manual",
+      "key_code": [
+        {
+          "symbol": "BOOTSTRAP_CANONICAL",
+          "location": "L61-L74",
+          "description": "The byte-locked canonical body. Currently has three H2 sections: '# Fabric Bootstrap' header, '## 行为规则' (L65-67), '## 知识库(KB)' (L69-73). Length guaranteed ≥400 bytes. Cite policy section insertion point: between L73 (current end of KB section, last line ending with `fabric_language` 字段。`) and L74 (closing backtick). The new section adds 4 bullet points: trigger (KB:<id> ...), tag enum (planned/recalled/chained-from/dismissed), recalled-must-verify rule, no-block ceremony promise. Must keep ≥400 byte guarantee (will grow, not shrink)."
+        },
+        {
+          "symbol": "BOOTSTRAP_MARKER_BEGIN / BOOTSTRAP_MARKER_END",
+          "location": "L23-L24",
+          "description": "Delimiter markers (<!-- fabric:bootstrap:begin --> / <!-- fabric:bootstrap:end -->). Do NOT change — fab install's idempotent replace + the rc.19 one-time legacy-marker migration depend on byte-identical match."
+        }
+      ],
+      "topic_relation": "cite-flow exploration targets this file because the cite policy is a USER-facing protocol — the AI must read the policy text to know to emit KB: lines. The bootstrap-canonical is the ONLY surface that propagates to all three clients (Claude Code, Codex CLI, Cursor) via fab install's three-end managed block writer, making it the single source of truth for the cite-policy contract."
+    },
+    {
+      "path": "packages/cli/src/commands/doctor.ts",
+      "relevance": 0.95,
+      "rationale": "This is the citty command wrapper where the new --cite-coverage flag plumbing lives. Existing flags (--fix, --fix-knowledge, --rescan, --strict, --yes, --json) at L71-109 demonstrate the citty arg-declaration pattern. The command dispatches to server-side runDoctor* functions imported from @fenglimg/fabric-server (L4-13); --cite-coverage will need a new server-side service (e.g. runDoctorCiteCoverage) following the runDoctorReport pattern. Existing doctor_run event emission at L301-316 shows the best-effort write pattern.",
+      "role": "modify_target",
+      "discovery_source": "bash-scan",
+      "key_code": [
+        {
+          "symbol": "DoctorArgs type + arg declarations",
+          "location": "L21-L109",
+          "description": "Citty-driven arg declarations. Add `cite-coverage?: boolean`, `since?: string`, `client?: string` to DoctorArgs (L21-39), then add three matching entries to args object (L71-109). --cite-coverage is read-only (no mutation), so no consent prompt needed. --since accepts the same shape as ReadEventLedgerOptions.since (epoch ms or '7d' duration suffix — parser needed). --client enum: 'cc' | 'codex' | 'cursor' | 'all' (default 'all')."
+        },
+        {
+          "symbol": "run dispatcher",
+          "location": "L110-L244",
+          "description": "Main run() body. --cite-coverage must be mutually exclusive with --fix and --fix-knowledge (already pattern at L137-141 for fix/fix-knowledge); when --cite-coverage is set, the entire dispatcher branches early — no rescan, no runDoctorReport call, just runDoctorCiteCoverage(target, {since, client}) → render. Output respects --json (L193) for orchestrator integration."
+        },
+        {
+          "symbol": "emitDoctorRunEventBestEffort",
+          "location": "L301-L316",
+          "description": "Pattern reference for the cite-coverage telemetry event (if we want one). Mirrors the never-throw, observability-only contract."
+        }
+      ],
+      "topic_relation": "cite-flow exploration targets this file because doctor IS the cite-coverage report surface per the rc.15 CLI-contraction principle (no new top-level command, extend doctor). The flag must be plumbed here before any server-side cite-coverage algorithm runs."
+    },
+    {
+      "path": "packages/server/src/services/event-ledger.ts",
+      "relevance": 0.9,
+      "rationale": "Defines appendEventLedgerEvent (L33-L50) — the canonical writer that validates against eventLedgerEventSchema before atomic append. The hook script doesn't call this directly (it lives in user repos without node_modules), but ANY new emit site running in-process (e.g. doctor's cite_policy_activated marker write on first --cite-coverage invocation) must use this entry point. Also defines readEventLedger (L52-L105) — the canonical reader that doctor --cite-coverage will call to replay events.",
+      "role": "dependency",
+      "discovery_source": "bash-scan",
+      "key_code": [
+        {
+          "symbol": "appendEventLedgerEvent",
+          "location": "L33-L50",
+          "description": "Atomic JSONL append with schema validation. The hook script duplicates this logic inline (because node_modules unavailable in user repos), but in-process emit sites (doctor.ts for cite_policy_activated marker) call this function directly. Failure throws — best-effort callers (like emitDoctorRunEventBestEffort) wrap in try/catch."
+        },
+        {
+          "symbol": "readEventLedger(projectRoot, options)",
+          "location": "L52-L105",
+          "description": "Canonical reader. Options support event_type filter (will be 'assistant_turn_observed' for cite-coverage), since filter (for --since=7d), correlation_id / session_id filters. The cite-coverage algorithm walks the returned events array, filters by ts >= cite_policy_activated marker ts (Q-5 'pre-policy' rule), then joins against agents.meta.json relevance_paths to compute denominator."
+        }
+      ],
+      "topic_relation": "cite-flow exploration targets this file because the hook MUST write events.jsonl in a format the in-process Zod schema validates — schema drift between the duplicated hook-side constants and this in-process writer would silently corrupt the ledger. doctor --cite-coverage reads via readEventLedger so the new event variant must be discoverable via event_type filter."
+    },
+    {
+      "path": "packages/cli/templates/hooks/configs/cursor-hooks.json",
+      "relevance": 0.85,
+      "rationale": "Cursor hook wiring contract: confirms Cursor's PreToolUse hook matches `Edit|Write|MultiEdit` and runs knowledge-hint-narrow.cjs — NOT fabric-hint.cjs. fabric-hint.cjs is wired to Stop on Cursor (L4-6). This is critical because the cite policy MEMORY notes 'Cursor: doesn't read its SQLite; PreToolUse hook actively writes events' — but in the current wiring, PreToolUse runs knowledge-hint-narrow.cjs, not fabric-hint.cjs. The PreToolUse hook ALSO does not see assistant reply text — Cursor PreToolUse stdin payload contains tool_input (file paths), not assistant message content. This is a fundamental constraint that needs explicit clarification.",
+      "role": "config",
+      "discovery_source": "manual",
+      "key_code": [
+        {
+          "symbol": "events.PreToolUse[0]",
+          "location": "L10-L15",
+          "description": "Cursor PreToolUse matcher 'Edit|Write|MultiEdit' → knowledge-hint-narrow.cjs. To capture AI assistant KB: lines on Cursor, EITHER (a) extend fabric-hint.cjs to handle Stop events on Cursor and somehow access assistant text (Cursor Stop stdin payload shape unknown — may not include transcript), OR (b) accept that Cursor cite capture is best-effort / impossible and only mark fabric-hint on Stop for state-based events, OR (c) wire a different Cursor hook event (e.g. AssistantMessage if it exists) — Cursor's hook event vocabulary is the constraint."
+        },
+        {
+          "symbol": "events.Stop[0]",
+          "location": "L3-L5",
+          "description": "Cursor Stop hook → fabric-hint.cjs. This is where cite-line extraction MUST happen on Cursor — but only if Cursor's Stop hook stdin payload includes transcript or last assistant message. Currently fabric-hint's tryReadStdinJson is tailored to Claude Code shape; Cursor compatibility is unverified."
+        }
+      ],
+      "topic_relation": "cite-flow exploration targets this file because it reveals the THORNIEST cite-policy constraint: Cursor's hook surface may not expose AI assistant reply text at any event. The MEMORY decision 'PreToolUse hook actively writes events' may be wrong (PreToolUse runs before edit, sees tool_input not assistant text) — needs clarification before rc.20 implementation."
+    },
+    {
+      "path": "packages/cli/templates/hooks/configs/claude-code.json",
+      "relevance": 0.7,
+      "rationale": "Claude Code hook wiring contract: Stop event passes session_id + transcript_path via stdin (verified by existing summarizeTranscript at fabric-hint.cjs:1011). This is the ONE client where assistant KB: extraction is feasible without new infrastructure — Claude Code transcript JSONL contains envelopes with role:'assistant' and content text blocks. The cite-flow extraction is straightforward here.",
+      "role": "config",
+      "discovery_source": "bash-scan",
+      "key_code": [
+        {
+          "symbol": "Stop hook command",
+          "location": "L3-L13",
+          "description": "Stop → .claude/hooks/fabric-hint.cjs. fabric-hint.cjs already reads stdin payload (tryReadStdinJson at fabric-hint.cjs:987) and parses transcript_path JSONL (summarizeTranscript:1011). Extending summarizeTranscript to also harvest the FIRST assistant envelope after each user envelope gives us per-turn KB: line extraction with zero new wiring."
+        }
+      ],
+      "topic_relation": "cite-flow exploration targets this file because Claude Code is the easiest cite-capture client — the existing rc.7 T5 session-digest infrastructure already provides everything needed (stdin payload → transcript path → per-line envelope parse)."
+    },
+    {
+      "path": "packages/cli/templates/hooks/configs/codex-hooks.json",
+      "relevance": 0.7,
+      "rationale": "Codex hook wiring contract: Stop → fabric-hint.cjs. Codex CLI uses a different stdin payload shape than Claude Code; whether it includes transcript path is unverified. If Codex Stop stdin lacks transcript, cite capture on Codex needs a different strategy (e.g. read from $CODEX_TRANSCRIPT env, or accept Codex cite as gap and rely on Claude Code coverage).",
+      "role": "config",
+      "discovery_source": "bash-scan",
+      "key_code": [
+        {
+          "symbol": "events.Stop[0].command",
+          "location": "L3-L7",
+          "description": "Codex Stop → .codex/hooks/fabric-hint.cjs. Same script, but Codex stdin contract is undocumented in current code. fabric-hint's tryReadStdinJson degrades to null on parse failure (silent), so Codex would currently silently skip cite extraction — needs investigation or explicit gap acceptance."
+        }
+      ],
+      "topic_relation": "cite-flow exploration targets this file because the three-end story (cc/codex/cursor) is locked but Codex's cite-extraction feasibility is uncertain — clarification needed for rc.20 scope."
+    },
+    {
+      "path": "packages/server/src/services/event-ledger.test.ts",
+      "relevance": 0.6,
+      "rationale": "Test patterns for event-ledger roundtrip (read/write). The new assistant_turn_observed and cite_policy_activated variants need parallel tests: append → read → assert shape preserved. Mirrors the existing doctorRunEventSchema tests.",
+      "role": "test_target",
+      "discovery_source": "bash-scan",
+      "topic_relation": "cite-flow exploration includes this file because new event schemas in event-ledger.ts need roundtrip test coverage before doctor --cite-coverage can rely on read-back semantics."
+    },
+    {
+      "path": "packages/shared/test/templates/bootstrap-canonical.test.ts",
+      "relevance": 0.6,
+      "rationale": "Test invariants for BOOTSTRAP_CANONICAL — already asserts contains '## 行为规则' + '## 知识库(KB)' (L22-24). Adding '## Cite policy' section will require a parallel assertion. The ≥400 byte guarantee (L26-30) will hold since cite-policy text adds bytes.",
+      "role": "test_target",
+      "discovery_source": "bash-scan",
+      "topic_relation": "cite-flow exploration includes this file because the bootstrap modification must update the section-presence test to lock the cite-policy contract — without the test, future edits could silently drop the policy."
+    },
+    {
+      "path": "packages/server/src/services/doctor.ts",
+      "relevance": 0.5,
+      "rationale": "5129-line doctor service module — contains runDoctorReport, runDoctorFix, runDoctorApplyLint surfaces. A new runDoctorCiteCoverage(target, options) export should live here (or in a dedicated cite-coverage.ts service file imported into doctor.ts). The CLI imports from @fenglimg/fabric-server barrel — server index.ts re-export needed.",
+      "role": "dependency",
+      "discovery_source": "bash-scan",
+      "topic_relation": "cite-flow exploration includes this file because the CLI doctor command dispatches into this service module — the cite-coverage report algorithm (replay events → join agents.meta.json → compute coverage matrix) lives here or alongside it."
+    },
+    {
+      "path": "packages/cli/templates/hooks/lib/banner-i18n.cjs",
+      "relevance": 0.3,
+      "rationale": "Pattern reference for the rc.16 hook-lib module pattern (per task brief). Hook libraries live alongside fabric-hint.cjs and are required via `./lib/<name>.cjs` (see fabric-hint.cjs:23). If KB: parsing logic grows complex (multi-cite parse, tag enum validation, dedupe), extract into a new lib/cite-parser.cjs following this lib precedent. Not strictly required for rc.20 if logic stays small.",
+      "role": "pattern_reference",
+      "discovery_source": "manual",
+      "topic_relation": "cite-flow exploration includes this file as a structural hint: if cite-line parsing becomes >50 lines, the lib/ pattern keeps fabric-hint.cjs's already-1380-line size manageable."
+    }
+  ],
+  "patterns": "Five concrete patterns shape cite-flow implementation: (1) HOOK NEVER-BLOCK INVARIANT — fabric-hint.cjs wraps the entire main() in try/catch (L1121, 1306) and every helper degrades silently on I/O/parse error (readLedger, readPendingStats, countEditsSince, tryReadStdinJson). The new cite-extraction helper MUST follow this contract. (2) HOOK CONSTANT DUPLICATION — fabric-hint.cjs lives in user repos without node_modules, so all schema constants are duplicated as string literals (L28-31 EVENT_TYPE_PROPOSED, EVENT_TYPE_INIT_SCAN_COMPLETED, EVENT_TYPE_DOCTOR_RUN). New EVENT_TYPE_ASSISTANT_TURN_OBSERVED + EVENT_TYPE_CITE_POLICY_ACTIVATED follow this pattern. (3) EVENT VARIANT REGISTRATION — every event_type is a Zod schema added to eventLedgerEventSchema.discriminatedUnion (event-ledger.ts:397-443) + a type alias appended to EventLedgerEvent union (L478-511). Skipping either step breaks appendEventLedgerEvent. (4) BEST-EFFORT TELEMETRY EMIT — doctor.ts:301-316 emitDoctorRunEventBestEffort shows the pattern: in-process emit sites wrap appendEventLedgerEvent in try/catch with silent failure, comment 'observability only'. (5) BOOTSTRAP H2 SECTIONS — bootstrap-canonical.ts uses zh-CN '## <Section>' headers; new cite-policy section follows the same shape, inserted as the third H2 after '## 行为规则' and '## 知识库(KB)'.",
+  "dependencies": "Internal: hooks → events.jsonl (hook-side inline JSON.stringify since node_modules unavailable); event-ledger.ts ← event-ledger.ts (schema is source-of-truth); doctor.ts → readEventLedger + appendEventLedgerEvent (both at packages/server/src/services/event-ledger.ts); CLI doctor command → @fenglimg/fabric-server barrel re-exports (packages/server/src/index.ts); bootstrap-canonical.ts ← consumed by skills-and-hooks.ts install writer + doctor drift comparator (server). External: zod (schema validation in event-ledger.ts), citty (doctor CLI definition), @clack/prompts (confirm prompts in doctor — not needed for read-only --cite-coverage). RUNTIME DEPENDENCY (implicit): hook script ↔ in-process Zod schema — duplicated string literal EVENT_TYPE_* must stay byte-identical with the z.literal(...) in event-ledger.ts; any drift causes appendEventLedgerEvent to reject hook-written events at the next in-process read+rewrite. NOT a current risk for cite-flow (the hook writes directly without re-validation), but the read-time risk applies: doctor --cite-coverage parses via eventLedgerEventSchema which would silently drop unrecognized event_type values.",
+  "integration_points": "Five exact integration points: (1) packages/cli/templates/hooks/fabric-hint.cjs:1134 — insert `extractAndWriteAssistantTurnsBestEffort(cwd, stdinPayload)` immediately after the existing writeSessionDigestBestEffort call; this reuses the already-parsed stdinPayload (no double-parse). (2) packages/cli/templates/hooks/fabric-hint.cjs:1011-1088 — extend summarizeTranscript to also collect `assistant_envelopes: Array<{turn_id, kb_line_raw, ts}>`; harvest the first non-empty text line from each `role: 'assistant'` envelope, apply regex `^KB:\\s+(.+)$|^KB:\\s*none$`. (3) packages/shared/src/schemas/event-ledger.ts:442 (just before the closing `]` of the discriminatedUnion) — add `assistantTurnObservedEventSchema` and `citePolicyActivatedEventSchema` entries; then append the two type aliases to the EventLedgerEvent union at L511. (4) packages/shared/src/templates/bootstrap-canonical.ts:73 — insert the new `## Cite policy` H2 block AFTER the `## 知识库(KB)` block's last line (`- **Language**: ...`) and BEFORE the closing backtick on L74. (5) packages/cli/src/commands/doctor.ts:39 (args type), L109 (args declaration), L155 (run dispatcher branch) — add --cite-coverage / --since / --client flag plumbing dispatching to a new runDoctorCiteCoverage server export. ALSO: packages/cli/src/commands/doctor.ts must emit cite_policy_activated marker via appendEventLedgerEvent on first --cite-coverage invocation when no prior marker event exists (idempotent: check via readEventLedger({event_type: 'cite_policy_activated'}) first).",
+  "constraints": "Six hard constraints: (1) HOOK NEVER-BLOCK — any failure in cite extraction must exit 0 silently; cite-flow cannot delay Stop hook completion. (2) NODE_MODULES UNAVAILABLE in hook — cannot import Zod from @fenglimg/fabric-shared; emit logic is hand-written JSON.stringify with inline shape. (3) THREE-END CONTRACT — fabric-hint.cjs is ONE script shipped to .claude/.codex/.cursor (KT-DEC-0009); cite logic must handle stdin shape variance gracefully (Claude Code: transcript_path; Codex: unknown; Cursor: unknown). (4) BYTE-LOCKED BOOTSTRAP — BOOTSTRAP_CANONICAL is byte-locked per rc.19 (header comment L12-15); any change is a deliberate version bump and the test invariants (≥400 bytes, contains required H2s) must hold. (5) NO --force IN DOCTOR — per CLI design principle 'drift→abort 不要 --force', --cite-coverage is read-only; no mutation flag. (6) PRE-POLICY MARKER — per MEMORY 'doctor 只统计 marker 之后', cite-coverage MUST filter events.jsonl by `ts >= cite_policy_activated.ts` to avoid counting pre-rc.20 reports against the new contract.",
+  "clarification_needs": [
+    {
+      "question": "Cursor cite capture: PreToolUse hook only sees tool_input (Edit/Write/MultiEdit file paths) — NOT assistant reply text. Cursor Stop hook stdin payload shape is undocumented in current code. How should rc.20 handle Cursor cite extraction?",
+      "context": "MEMORY project_cite_policy.md says 'Cursor 不读它的 SQLite：靠 PreToolUse hook 主动写事件'. But the current fabric-hint Cursor wiring is on Stop (cursor-hooks.json L4-5), and PreToolUse runs knowledge-hint-narrow.cjs which sees tool_input (file paths) not assistant message text. The actual capture point for Cursor KB: lines is unclear. Options below assume we discover Cursor Stop stdin contract during rc.20 implementation.",
+      "options": [
+        "Best-effort: try Cursor Stop stdin in rc.20; if shape lacks assistant text, ship as 'Cursor cite-coverage is approximate (PreToolUse marks edit happened, no KB: line captured)' and document gap.",
+        "Defer Cursor: rc.20 ships Claude Code + Codex cite-flow only; Cursor cite-coverage marked TODO with explicit doctor warning when --client=cursor.",
+        "Investigate first: run a probe hook on Cursor Stop to dump stdin shape to .fabric/.cache/cursor-stdin-probe.jsonl before deciding capture strategy."
+      ],
+      "recommended": 2
+    },
+    {
+      "question": "Codex cite capture: Codex Stop hook stdin contract is undocumented. summarizeTranscript currently assumes Claude Code shape (transcript_path field). Does Codex pass an equivalent transcript reference?",
+      "context": "fabric-hint.cjs:1011 summarizeTranscript reads stdinPayload.transcript_path — this is a Claude Code contract. Codex CLI Stop hook payload shape is not verified in current code. Without a transcript reference, cite extraction on Codex needs a different mechanism (env var, stdin assistant content blob, or accept gap).",
+      "options": [
+        "Assume Codex passes transcript_path: implement once, test against real Codex; if missing, fall through to silent skip (matches Cursor degradation).",
+        "Probe Codex stdin shape before rc.20 implementation: add temporary debug logging hook to dump Codex Stop payload, then design capture.",
+        "Explicit Codex gap: doctor --client=codex returns 'Codex cite-coverage not supported' warning; defer to a future RC when Codex transcript surface is verified."
+      ],
+      "recommended": 1
+    },
+    {
+      "question": "Turn boundary on Claude Code transcript: a single assistant envelope contains one model response. Is the FIRST text block's first line where KB: must appear, or could text blocks be interleaved with tool_use blocks (where KB: might land after a tool result)?",
+      "context": "Claude Code transcript JSONL envelopes for `role: 'assistant'` have content arrays mixing 'text' and 'tool_use' blocks. The cite policy says 'first line of reply' — but if a turn contains [tool_use, text, tool_use, text], which text block is 'the reply'? The current summarizeTranscript already iterates content blocks but only harvests user 'text' (L1041-1045) and tool_use blocks (L1058-1071) without distinguishing first vs subsequent text within one assistant envelope.",
+      "options": [
+        "First text block, first non-empty line: simplest rule, matches 'reply first line' literal reading; risk: model may emit text after tool_use that's the 'real' answer.",
+        "ANY text block, first matching `^KB:` line: more forgiving, lets model emit KB: anywhere in its turn output; weakens contract.",
+        "Concatenate all text blocks in envelope, then first line of joined text: hybrid — treats whole turn as the 'reply', preserves spirit of 'first line'."
+      ],
+      "recommended": 0
+    }
+  ],
+  "_metadata": {
+    "timestamp": "2026-05-15T00:00:00Z",
+    "task_description": "rc.20 Cite policy implementation — cite-flow exploration: hook capture path (fabric-hint.cjs), event schema (assistant_turn_observed, cite_policy_activated), bootstrap canonical extension, doctor --cite-coverage CLI surface",
+    "source": "cli-explore-agent",
+    "exploration_angle": "cite-flow",
+    "exploration_index": 1,
+    "duration_seconds": 180
+  }
+}

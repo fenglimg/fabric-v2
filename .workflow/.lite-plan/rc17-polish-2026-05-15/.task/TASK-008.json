@@ -1,0 +1,108 @@
+{
+  "id": "TASK-008",
+  "title": "Release: CHANGELOG entry, version bump rc.16→rc.17, batched Gemini review + coverage",
+  "scope": "CHANGELOG.md + all package.json with version field + Gemini review + coverage check",
+  "action": "Configure",
+  "description": "Cut the rc.17 release. (1) Finalize CHANGELOG.md `## [2.0.0-rc.17]` section consolidating all four work items (H/R/S/Y) — TASK-004 already added the BREAKING note for externalFixturePath; this task collects the remaining entries (help rewrite, host warning, Codex MCP fix or known-issue). (2) Bump version in root package.json + every workspace package.json from `2.0.0-rc.16` to `2.0.0-rc.17`. (3) Run BATCHED Gemini review across the rc.17 diff (per memory/feedback_review_batching.md — review ONCE at end, not per-task). (4) Run coverage check: `pnpm test --coverage` across affected packages, verify no regression vs rc.16 baseline. (5) If TASK-007 deferred Bug Y, add a 'Known Issues' subsection to the rc.17 CHANGELOG entry pointing at the hotfix plan.",
+  "files": [
+    {
+      "path": "CHANGELOG.md",
+      "action": "modify",
+      "target": "## [2.0.0-rc.17] section",
+      "change": "Consolidate entries: ### Polish (help rewrite, host warning rewrite), ### BREAKING (externalFixturePath removal — already added by TASK-004), ### Fixes (Codex MCP wiring per TASK-007 BRANCH A) OR ### Known Issues (Bug Y deferred per BRANCH B)"
+    },
+    {
+      "path": "package.json",
+      "action": "modify",
+      "target": "version field (root)",
+      "change": "Bump 2.0.0-rc.16 → 2.0.0-rc.17"
+    },
+    {
+      "path": "packages/*/package.json",
+      "action": "modify",
+      "target": "version field in every workspace package",
+      "change": "Bump 2.0.0-rc.16 → 2.0.0-rc.17 across all workspace packages"
+    }
+  ],
+  "implementation": [
+    "Read git log since rc.16 tag to enumerate every commit landing in rc.17 (should be ~7 commits = TASK-001..007)",
+    "Draft CHANGELOG.md `## [2.0.0-rc.17]` section with subsections: ### Polish, ### BREAKING (preserve TASK-004's entry), ### Fixes OR ### Known Issues (depending on TASK-007 branch)",
+    "Bump version: use `pnpm -r exec npm version 2.0.0-rc.17 --no-git-tag-version` (or manual edit if pnpm command misbehaves) across root + all workspace packages",
+    "Verify: `grep -rn '\"version\"' packages/*/package.json package.json` shows uniform 2.0.0-rc.17",
+    "Run BATCHED Gemini review: `ccw cli -p 'Review the diff between rc.16 and HEAD for the rc.17 release' --tool gemini --mode analysis` — capture findings",
+    "Address any HIGH-severity findings from Gemini review (or document as deferred)",
+    "Run coverage: `pnpm -r test --coverage` (or per-package equivalent) — capture coverage % per affected package",
+    "Compare coverage to rc.16 baseline (if recorded) — flag any regression >2%",
+    "Final smoke: `pnpm build && node packages/cli/dist/cli.js --version` prints `2.0.0-rc.17`",
+    "Final smoke: `node packages/cli/dist/cli.js --help` shows the 装/配/跑 intro from TASK-002"
+  ],
+  "reference": {
+    "pattern": "rc release cadence — version bump + CHANGELOG + batched review (per memory/project_v2_rc_continuation.md)",
+    "files": [
+      "CHANGELOG.md",
+      "package.json"
+    ],
+    "examples": "Recent rc.15 / rc.16 release commits (`git log --oneline | grep 'rc.1[56]'`) — mirror their CHANGELOG structure and version-bump scope"
+  },
+  "convergence": {
+    "criteria": [
+      "CHANGELOG.md `## [2.0.0-rc.17]` section exists with subsections covering all 4 work items (Polish, BREAKING, Fixes/Known Issues)",
+      "All package.json files (root + every workspace) show `\"version\": \"2.0.0-rc.17\"` (verify: `grep -c '2.0.0-rc.17' package.json packages/*/package.json` returns count == file count)",
+      "Test command: `pnpm -r test --coverage` passes across all affected packages with no new failures",
+      "Gemini review report captured (in session folder or commit message); HIGH-severity findings either fixed or explicitly deferred with rationale",
+      "`node packages/cli/dist/cli.js --version` prints `2.0.0-rc.17`",
+      "`node packages/cli/dist/cli.js --help` shows TASK-002's 装/配/跑 mental-model intro",
+      "Bilingual parity check (re-run from TASK-002): `diff <(grep -oE 'cli\\.[a-z.-]+\\.description' en.ts | sort -u) <(grep -oE 'cli\\.[a-z.-]+\\.description' zh-CN.ts | sort -u)` returns empty",
+      "Behavioral expectation: rc.17 is publishable — version bumped, changelog complete, tests green, no HIGH-severity Gemini findings outstanding"
+    ]
+  },
+  "depends_on": ["TASK-002", "TASK-004", "TASK-005", "TASK-007"],
+  "rationale": {
+    "chosen_approach": "Batch the Gemini review + coverage at end-of-plan rather than per-task (per memory/feedback_review_batching.md) — single review pass on the full rc.17 diff catches cross-task interactions cheaper",
+    "alternatives_considered": [
+      "Run Gemini review per-task (rejected per memory)",
+      "Skip coverage check (rejected — coverage regression in a polish RC is unacceptable)"
+    ],
+    "decision_factors": [
+      "Per-task review is wasteful for a polish RC where each task is small + isolated",
+      "Single end-of-plan review surfaces interaction bugs (e.g. did help rewrite break a test that uses the old description string?)"
+    ],
+    "tradeoffs": "Larger review surface in one pass; mitigated by the diff being small (≤7 commits)"
+  },
+  "test": {
+    "manual_checks": [
+      "Run `pnpm -r test --coverage` and capture summary",
+      "Run `node packages/cli/dist/cli.js --version` and `--help`",
+      "Spot-check that CHANGELOG entries match actual git log of rc.17 commits"
+    ],
+    "success_metrics": [
+      "100% of package.json files at 2.0.0-rc.17",
+      "0 new test failures vs rc.16",
+      "0 outstanding HIGH-severity Gemini findings",
+      "CHANGELOG section complete with all 4 work items represented"
+    ],
+    "unit": [],
+    "integration": [
+      "test_release_version_uniform_across_workspace_packages"
+    ]
+  },
+  "risks": [
+    {
+      "description": "Gemini review surfaces a HIGH-severity issue requiring code changes that delay rc.17 ship",
+      "probability": "Low",
+      "impact": "Medium",
+      "mitigation": "Address within the same plan if scope ≤30min; otherwise defer to rc.17.1 hotfix and document",
+      "fallback": "Ship rc.17 with the deferred finding in CHANGELOG Known Issues"
+    }
+  ],
+  "cli_execution_id": "rc17-polish-2026-05-15-TASK-008",
+  "cli_execution": {
+    "strategy": "merge_fork",
+    "merge_from": [
+      "rc17-polish-2026-05-15-TASK-002",
+      "rc17-polish-2026-05-15-TASK-004",
+      "rc17-polish-2026-05-15-TASK-005",
+      "rc17-polish-2026-05-15-TASK-007"
+    ]
+  }
+}

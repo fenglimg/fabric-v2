@@ -1,0 +1,93 @@
+{
+  "id": "TASK-05",
+  "title": "Add `--cite-coverage` / `--since` / `--client` CLI flags + server runDoctorCiteCoverage entry stub",
+  "scope": "packages/cli/src/commands/doctor.ts + packages/server/src/services/doctor.ts",
+  "action": "Implement",
+  "description": "Plumb three new citty args on `fab doctor`: --cite-coverage (boolean, mutually exclusive with --fix/--fix-knowledge), --since (string, default '7d', accepts duration suffix like '7d'/'24h'/'30m' OR epoch-ms string), --client (string, enum 'cc'|'codex'|'cursor'|'all', default 'all'). When --cite-coverage is set, the CLI run dispatcher takes the FAST-PATH branch: skip the 28-check inspection pipeline; instead call new server export runDoctorCiteCoverage(target, options). Server function is a stub returning a CiteCoverageReport shape with marker_ts (from TASK-04) + placeholder metrics — actual algorithm lands in TASK-06.",
+  "scope_layer": "cli + server",
+  "files": [
+    {
+      "path": "packages/cli/src/commands/doctor.ts",
+      "action": "modify",
+      "target": "DoctorArgs type (L21-L39) + args declarations (L71-L109) + run dispatcher branching (L110-L244)",
+      "change": "(1) Add to DoctorArgs: `'cite-coverage'?: boolean; since?: string; client?: string`. (2) Add args entries: cite-coverage (type:'boolean', description i18n key cli.doctor.args.cite-coverage.description); since (type:'string', default:'7d', description key); client (type:'string', default:'all', valueHint:'cc|codex|cursor|all', description key). (3) In run() body before the existing rescan/inspect dispatch, add early-return branch: if (args['cite-coverage']) { validate mutex with --fix/--fix-knowledge (error if either set); parse --since via parseSinceDuration helper; validate --client enum; dispatch to runDoctorCiteCoverage(target, {since: parsedSinceMs, client: clientFilter}); render via renderCiteCoverageReport (TASK-07 will replace with rich formatter; TASK-05 ships minimal JSON-stringify or single-line print); respect --json; return. }"
+    },
+    {
+      "path": "packages/cli/src/commands/doctor.ts",
+      "action": "modify",
+      "target": "new helper parseSinceDuration(input: string): number",
+      "change": "Add `parseSinceDuration(input)`: accepts 'Nd' (days), 'Nh' (hours), 'Nm' (minutes), or numeric epoch-ms string. Returns epoch-ms floor (Date.now() - deltaMs). Invalid input → throw with i18n error key. Default '7d' = Date.now() - 7*86400_000."
+    },
+    {
+      "path": "packages/server/src/services/doctor.ts",
+      "action": "modify",
+      "target": "new export runDoctorCiteCoverage + CiteCoverageReport type",
+      "change": "Define `type CiteCoverageReport = { status: 'ok' | 'skipped', marker_ts: number, marker_emitted_now: boolean, since_ts: number, client_filter: 'cc'|'codex'|'cursor'|'all', metrics: { edits_touched: number, qualifying_cites: number, recalled_unverified: number, expected_but_missed: number, total_turns: number }, per_client?: Record<string, Partial<CiteCoverageReport['metrics']>>, dismissed_reason_histogram?: Record<string, number>, generated_at: string }`. Implement runDoctorCiteCoverage(projectRoot, options) STUB: call ensureCitePolicyActivatedMarker → if marker_ts==0 return {status:'skipped', ...zeros, ...}; else return {status:'ok', marker_ts, marker_emitted_now, since_ts: options.since, client_filter: options.client, metrics: zero-filled, generated_at: new Date().toISOString()}. TASK-06 replaces stub with real algorithm."
+    },
+    {
+      "path": "packages/server/src/index.ts",
+      "action": "modify",
+      "target": "barrel re-exports",
+      "change": "Add `export { runDoctorCiteCoverage } from './services/doctor'` and `export type { CiteCoverageReport } from './services/doctor'` so CLI can import."
+    },
+    {
+      "path": "packages/shared/src/i18n/locales/en.ts",
+      "action": "modify",
+      "target": "cli.doctor.args.* keys + error keys",
+      "change": "Add: `cli.doctor.args.cite-coverage.description = 'Generate cite policy adherence report (read-only; skips standard inspections)'`, `cli.doctor.args.since.description = 'Time window for cite coverage (e.g. 7d, 24h, 30m)'`, `cli.doctor.args.client.description = 'Filter cite coverage by client (cc|codex|cursor|all)'`, `cli.doctor.errors.cite-coverage-mutex = '--cite-coverage cannot be combined with --fix or --fix-knowledge'`, `cli.doctor.errors.invalid-since = 'Invalid --since value: {input}. Expected duration like 7d, 24h, 30m or epoch ms.'`, `cli.doctor.errors.invalid-client = 'Invalid --client value: {input}. Expected cc, codex, cursor, or all.'`"
+    },
+    {
+      "path": "packages/shared/src/i18n/locales/zh-CN.ts",
+      "action": "modify",
+      "target": "symmetric zh-CN keys",
+      "change": "Add Chinese mirrors of the 6 new keys above (descriptions + 3 error messages)."
+    }
+  ],
+  "implementation": [
+    "Read packages/cli/src/commands/doctor.ts L21-L244 to confirm existing arg + dispatcher patterns.",
+    "Add new args to DoctorArgs type + args block following existing --fix-knowledge pattern.",
+    "Implement parseSinceDuration helper near top of file or in a shared util — regex /^(\\d+)([dhm])$/ for duration, else parseInt for epoch-ms.",
+    "Add early-return cite-coverage branch in run() dispatcher BEFORE the standard inspection pipeline starts.",
+    "In server doctor.ts: define CiteCoverageReport type + runDoctorCiteCoverage stub (calls ensureCitePolicyActivatedMarker from TASK-04, returns zero metrics).",
+    "Re-export from packages/server/src/index.ts.",
+    "Add 6 new i18n keys to en.ts + zh-CN.ts symmetrically.",
+    "Run `pnpm --filter @fenglimg/fabric-cli build` + `pnpm --filter @fenglimg/fabric-server build` to confirm typescript clean.",
+    "Run `fab doctor --cite-coverage --since 7d --client all` in a test workspace; expect zero-metric JSON-ish report + marker event in events.jsonl."
+  ],
+  "reference": {
+    "pattern": "citty arg declaration + run dispatcher early-return branch",
+    "files": ["packages/cli/src/commands/doctor.ts:71-109 (args)", "packages/cli/src/commands/doctor.ts:110-244 (dispatcher)", "packages/shared/src/i18n/locales/en.ts:140-163 (i18n keys)"],
+    "examples": "Existing --fix / --fix-knowledge / --rescan / --strict / --json args show the pattern verbatim."
+  },
+  "rationale": {
+    "chosen_approach": "Flag (not subcommand) per auto-orchestrator Q-3 option 3: maintains doctor's existing flag-only design while fast-path skips 28-check overhead. Stub server function ships in TASK-05 so TASK-06 algorithm can land in isolation without coupling CLI + algorithm in one commit.",
+    "alternatives_considered": ["Subcommand `fab doctor cite-coverage` (rejected: changes doctor's design; user expressed CLI design preference for flat surface)", "Land algorithm in TASK-05 (rejected: commits get fat; separation of concerns easier to review)"],
+    "decision_factors": ["Flat doctor surface", "Fast-path opt-out of 28-check pipeline", "Commit chain stays linear"],
+    "tradeoffs": "Stub returns zero metrics — TASK-06 must land before report is meaningful. Mitigated by TASK-05's metrics structure already final (TASK-06 only fills in numbers)."
+  },
+  "test": {
+    "manual_checks": ["Run `fab doctor --cite-coverage` in test workspace; assert exits 0 with stub report + cite_policy_activated event in events.jsonl", "Run `fab doctor --cite-coverage --fix` and assert error message about mutex", "Run `fab doctor --cite-coverage --since invalid` and assert error message", "Run `fab doctor --cite-coverage --client xyz` and assert error", "Run `fab doctor --cite-coverage --json` and assert valid JSON output"],
+    "success_metrics": ["All 3 new args appear in `fab doctor --help`", "Mutex validation throws before any inspection runs", "parseSinceDuration handles 7d/24h/30m/epoch-ms cases", "Stub report has correct shape and respects --json", "Marker event emitted to events.jsonl on first run"],
+    "unit": ["doctor.test --cite-coverage mutex with --fix", "doctor.test --cite-coverage mutex with --fix-knowledge", "doctor.test parseSinceDuration 7d → ms floor", "doctor.test parseSinceDuration invalid throws", "doctor.test parseSinceDuration epoch-ms passthrough", "doctor.test --client invalid enum rejection", "doctor.test runDoctorCiteCoverage stub returns shape"],
+    "integration": ["CLI smoke: `fab doctor --cite-coverage --since=1d --client=cc` exits 0 + emits marker"]
+  },
+  "convergence": {
+    "criteria": [
+      "DoctorArgs type includes cite-coverage, since, client fields",
+      "citty args block declares all 3 flags with i18n-backed descriptions",
+      "parseSinceDuration correctly handles 7d/24h/30m suffixes + epoch-ms passthrough + invalid throw",
+      "run() dispatcher early-returns to runDoctorCiteCoverage when --cite-coverage set (no 28-check pipeline runs)",
+      "Mutex with --fix/--fix-knowledge enforced before any I/O",
+      "runDoctorCiteCoverage exported from @fenglimg/fabric-server barrel",
+      "Marker event emitted on first invocation (via ensureCitePolicyActivatedMarker)",
+      "CiteCoverageReport type shape matches TASK-06/07 contract (metrics object, per_client, dismissed_reason_histogram)",
+      "i18n keys added symmetrically to en.ts + zh-CN.ts",
+      "`fab doctor --cite-coverage --json` returns valid JSON; --json absent prints minimal text",
+      "Commit msg: `feat(rc20): fab doctor --cite-coverage flag + server entry (TASK-05)`"
+    ]
+  },
+  "depends_on": ["TASK-04"],
+  "estimated_minutes": 50,
+  "cli_execution_id": "rc20-cite-policy-2026-05-15-TASK-05",
+  "cli_execution": { "strategy": "resume", "resume_from": "rc20-cite-policy-2026-05-15-TASK-04" }
+}

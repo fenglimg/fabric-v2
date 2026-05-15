@@ -1,0 +1,79 @@
+{
+  "id": "TASK-002",
+  "title": "Kill fab uninstall legacy flags (C2) — drop --force/--interactive/--no-bootstrap/--no-mcp/--no-scaffold/--purge/--clean-empties; rename --plan → --dry-run; flip cleanEmpties to default behavior + delete option entirely",
+  "scope": "packages/cli/src/commands/uninstall.ts + packages/cli/src/install/uninstall-skills-and-hooks.ts + packages/shared/src/i18n/locales/{en,zh-CN}.ts + 3 test files",
+  "action": "Refactor",
+  "description": "Symmetric mirror of TASK-001 on uninstall. Contract uninstall citty args from 11 flags to 4 (target/debug/yes + renamed dry-run). Delete --purge (knowledge preservation becomes unconditional), --clean-empties (becomes default-on behavior, option type DELETED entirely per clarification 5). Strip cleanEmpties threading through uninstall-skills-and-hooks.ts (L24, L54, L191, L212, L234, L493, L538, L569, L604) — hardcode cleanEmpties:true throughout, then delete the option from BootstrapUninstallOptions and UninstallOptions types. Delete wizard cleanEmpties prompt at uninstall.ts:766-771. Force-confirm bypass at uninstall.ts:294 becomes args.yes-only. Lock check at L259 drops {force: args.force} opts. Delete --purge knowledge-preservation guard test (d) and --force already-missing test (g). Regenerate snapshot. Commit: `refactor(rc15): kill fab uninstall legacy flags — same kills + --purge + --clean-empties (default behavior); rename --plan → --dry-run`",
+  "files": [
+    { "path": "packages/cli/src/commands/uninstall.ts", "action": "modify", "target": "L185-L240 (citty args), L259 (checkLockOrThrow), L294 (force-confirm bypass), L307-L327 (resolveUninstallCliIntent reducer + cleanEmpties default flip), L313-L315 + L344-L346 + L829-L831 (skipBootstrap/skipMcp/skipScaffold consumers), L317 + L392-L400 (purge consumers + wizard purge prompt), L646 (BootstrapUninstallOptions cleanEmpties threading — delete), L766-L771 (wizard cleanEmpties prompt — delete), UninstallArgs/UninstallOptions type defs", "change": "Delete args entries for force/interactive/bootstrap/mcp/scaffold/purge/clean-empties; rename plan→dry-run; drop force/skip*/purge/cleanEmpties from UninstallOptions; drop force opts from checkLockOrThrow; drop args.force from confirm bypass (args.yes alone gates); delete purge wizard prompt + knowledge-subdir guard (preservation becomes unconditional); delete cleanEmpties wizard prompt; remove BootstrapUninstallOptions.cleanEmpties threading from L646" },
+    { "path": "packages/cli/src/install/uninstall-skills-and-hooks.ts", "action": "modify", "target": "L24 (signature opts), L54 (BootstrapUninstallOptions type def), L191/L212/L234/L493/L538/L569 (cleanEmpties option reads), L600-L606 (pruneArrayAtPath cleanEmpties guard), L604 (pruneArrayAtPath param)", "change": "Delete cleanEmpties from BootstrapUninstallOptions type at L54; remove all cleanEmpties parameter threading; collapse pruneArrayAtPath guard at L600-L606 to unconditional cascade-prune (the cleanEmpties:true default semantics)" },
+    { "path": "packages/shared/src/i18n/locales/en.ts", "action": "modify", "target": "L228-L252 (uninstall args), L266-L273 (uninstall wizard/purge/clean-empties keys)", "change": "Delete cli.uninstall.args.{force,interactive,no-bootstrap,no-mcp,no-scaffold,purge,clean-empties}.description; rename cli.uninstall.args.plan.description → cli.uninstall.args.dry-run.description; delete cli.uninstall.wizard.clean-empties + cli.uninstall.flags.* keys; update cli.uninstall.plan.summary template at L243 to drop purge={purge} clean-empties={cleanEmpties} placeholders" },
+    { "path": "packages/shared/src/i18n/locales/zh-CN.ts", "action": "modify", "target": "L223-L232 + L266 (parallel to en.ts deletions)", "change": "Mirror every en.ts deletion 1:1; update zh-CN plan.summary template parallel to en.ts" },
+    { "path": "packages/cli/__tests__/uninstall.test.ts", "action": "modify", "target": "L7-L14 docstring, L132-L210 (case b --plan), L217-L266 (case d --purge), L340-L408 (case g --force already-missing), L468-L497 (non-interactive TTY --force bypass)", "change": "Delete describe block 'case (d) --purge with HOME-pinned personal root' entirely; delete describe 'case (g) --force on already-missing artifacts' (idempotency contract moves to default-behavior test); delete L468-L497 --force bypass test; rename --plan → --dry-run throughout case (b); update docstring at L7-L14 to drop killed contracts (d, e, g)" },
+    { "path": "packages/cli/__tests__/integration/uninstall-skills-and-hooks.test.ts", "action": "modify", "target": "L89, L103, L145, L176-L177 (cleanEmpties:true invocations)", "change": "Strip explicit cleanEmpties:true args from runUninstall(target) invocations; if any cleanEmpties:false tests exist, delete (path no longer exists)" },
+    { "path": "packages/cli/__tests__/__snapshots__/cli-surface.test.ts.snap", "action": "modify", "target": "L304-L397 (uninstall args snapshot block)", "change": "Regenerate via `vitest -u`; expected final shape: [debug, dry-run, target, yes]" }
+  ],
+  "implementation": [
+    "Map every args.force / args.interactive / args.bootstrap / args.mcp / args.scaffold / args.purge / args['clean-empties'] / args.plan reference in uninstall.ts (grep -n)",
+    "Edit citty args:{} block at L185-L240: delete force/interactive/bootstrap/mcp/scaffold/purge/clean-empties; rename plan→dry-run",
+    "Edit UninstallArgs and UninstallOptions types: drop force/interactive/skipBootstrap/skipMcp/skipScaffold/purge/cleanEmpties fields",
+    "Edit resolveUninstallCliIntent at L307-L327: drop maps for killed flags; map args['dry-run']→planOnly",
+    "Edit checkLockOrThrow call at L259: drop {force: args.force} opts (becomes checkLockOrThrow(intent.target))",
+    "Edit force-confirm bypass at L294: change `args.yes !== true && args.force !== true` to `args.yes !== true`",
+    "Delete purge wizard prompt at L392-L400 + purge consumer at L317 (knowledge-subdir guard becomes unconditional preservation)",
+    "Delete clean-empties wizard prompt at L766-L771",
+    "Delete cleanEmpties threading at uninstall.ts:646 (BootstrapUninstallOptions construction)",
+    "Edit uninstall-skills-and-hooks.ts: delete cleanEmpties field from BootstrapUninstallOptions at L54; remove cleanEmpties parameter from all 9 threading sites (L24, L54, L191, L212, L234, L493, L538, L569, L604); collapse pruneArrayAtPath guard at L600-L606 to unconditional cascade-prune",
+    "Edit i18n en.ts L228-L273: delete cli.uninstall.args.{force,interactive,no-*,purge,clean-empties}.description, cli.uninstall.wizard.clean-empties, cli.uninstall.flags.*, rename plan→dry-run; update plan.summary template at L243",
+    "Edit zh-CN.ts L223-L266 in parallel",
+    "Update uninstall.test.ts: delete describe (d) at L217-L266, delete describe (g) at L340-L408, delete L468-L497 force-bypass test, rename --plan args in case (b) at L132-L210, update docstring L7-L14",
+    "Update integration/uninstall-skills-and-hooks.test.ts: strip explicit cleanEmpties:true from runUninstall calls at L89/L177",
+    "Run `pnpm --filter @fenglimg/fabric-cli test -u` to regenerate cli-surface.test.ts.snap uninstall block",
+    "Verify tsc/lint/vitest green",
+    "git add + commit with message: `refactor(rc15): kill fab uninstall legacy flags — same kills + --purge + --clean-empties (default behavior); rename --plan → --dry-run`"
+  ],
+  "reference": {
+    "pattern": "Symmetric to TASK-001 install pattern, PLUS default-flip pattern for --clean-empties: kill flag at citty → kill option at reducer → kill option at threading helper (uninstall-skills-and-hooks.ts) → kill option from type defs → hardcode the previous-on behavior as unconditional logic.",
+    "files": ["packages/cli/src/commands/uninstall.ts", "packages/cli/src/install/uninstall-skills-and-hooks.ts", "packages/shared/src/i18n/locales/en.ts"],
+    "examples": "Mirror TASK-001 install changes for symmetry. See exploration-cli-surface-removals.json uninstall.ts keyCode entries for L185-L240 args block, L307-L327 reducer, L646 BootstrapUninstallOptions threading."
+  },
+  "convergence": {
+    "criteria": [
+      "uninstall.ts citty args block contains exactly 4 entries: target, debug, yes, dry-run (verified by reading)",
+      "Zero `args.force`, `args.interactive`, `args.bootstrap`, `args.mcp`, `args.scaffold`, `args.purge`, `args['clean-empties']`, `args.plan` references in uninstall.ts (grep returns 0)",
+      "Zero `cleanEmpties` references in uninstall.ts AND uninstall-skills-and-hooks.ts (grep returns 0; the option is fully deleted per clarification 5)",
+      "Zero `cli.uninstall.args.{force,interactive,no-bootstrap,no-mcp,no-scaffold,purge,clean-empties}.description` keys in en.ts AND zh-CN.ts",
+      "Zero `cli.uninstall.wizard.clean-empties` and `cli.uninstall.flags.*` keys in either locale",
+      "cli-surface.test.ts.snap uninstall args block enumerates exactly 4 args: debug, dry-run, target, yes",
+      "`pnpm --filter @fenglimg/fabric-cli test` exits 0",
+      "`pnpm --filter @fenglimg/fabric-cli typecheck` exits 0",
+      "`pnpm lint` exits 0",
+      "Single commit with specified commit message"
+    ]
+  },
+  "rationale": {
+    "chosen_approach": "Mirror TASK-001 surgery for symmetry, plus aggressive cleanEmpties option deletion (not internal-toggle preservation) per clarification 5 + memory feedback_clean_slate.md. Pre-user state allows hard cleanup without compat shim.",
+    "alternatives_considered": ["Keep cleanEmpties as internal toggle defaulting to true (option 2 in clarification 5)", "Keep --clean-empties flag but flip default", "Soft-deprecate --purge by always preserving but emit notice"],
+    "decision_factors": ["Pre-user clean-slate (memory feedback_clean_slate.md)", "Symmetric to install kill for predictable rc.15 UX", "Internal API surface clean-up is part of the contraction goal"],
+    "tradeoffs": "Internal callers (none exist outside CLI) lose the cleanEmpties:false escape; future rc.16 callers requiring empty-array preservation must add an explicit option back. Acceptable per zero-user state."
+  },
+  "test": {
+    "manual_checks": [
+      "Run `pnpm --filter @fenglimg/fabric-cli build && node packages/cli/bin/fab.mjs uninstall --help` — verify --help output lists only: target, debug, yes, dry-run",
+      "Run `node packages/cli/bin/fab.mjs uninstall --force /tmp/xyz` — expect citty error 'Unknown argument: --force'",
+      "Run fresh `fab install /tmp/xyz` then `fab uninstall --dry-run /tmp/xyz` — verify plan prints without writes; verify plan summary template does not mention purge or clean-empties placeholders",
+      "Run `fab uninstall /tmp/xyz` and verify .fabric/knowledge/ is preserved (purge guard now unconditional)"
+    ],
+    "success_metrics": [
+      "All tests pass: `pnpm --filter @fenglimg/fabric-cli test` exit code 0",
+      "Type-check passes: `pnpm --filter @fenglimg/fabric-cli typecheck` exit code 0",
+      "Lint passes: `pnpm lint` exit code 0",
+      "Snapshot diff at cli-surface.test.ts.snap reduces uninstall args from 11 entries to 4"
+    ],
+    "unit": ["uninstall.test.ts (rewritten subset)"],
+    "integration": ["uninstall-skills-and-hooks.test.ts (cleanEmpties args stripped)"]
+  },
+  "depends_on": [],
+  "cli_execution_id": "rc15-cli-surface-contraction-2026-05-14-TASK-002",
+  "cli_execution": { "strategy": "new" }
+}

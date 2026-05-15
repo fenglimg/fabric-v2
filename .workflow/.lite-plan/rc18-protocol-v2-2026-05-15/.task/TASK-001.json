@@ -1,0 +1,65 @@
+{
+  "id": "TASK-001",
+  "title": "Decision record — pick new field name + v1-receipt stance",
+  "scope": ".workflow/.lite-plan/rc18-protocol-v2-2026-05-15/_protocol-v2-decisions.md",
+  "action": "Create",
+  "description": "Lock in two protocol-shaping decisions BEFORE any code changes: (a) new wire field name to replace payload.narrow; (b) consumer behavior on receipt of a v1 payload after the v2 cut. Documented as a session-folder decision record. NO code changes — pure documentation. Recommended values: field=`entries`, stance=`silent-skip + one-line stderr breadcrumb`. User retains veto rights via outstanding_clarifications; veto only shifts implementation details inside downstream tasks, not the DAG.",
+  "files": [
+    {
+      "path": ".workflow/.lite-plan/rc18-protocol-v2-2026-05-15/_protocol-v2-decisions.md",
+      "action": "create",
+      "target": "decision record",
+      "change": "Document chosen field name (`entries`) with 1-paragraph rationale citing existing local rebind in broad.cjs:443; document chosen v1-receipt stance (`silent-skip + breadcrumb`) with 1-paragraph rationale citing hook silent-exit-0 contract; list both decisions as outstanding_clarifications for user veto"
+    }
+  ],
+  "implementation": [
+    "Open packages/cli/templates/hooks/knowledge-hint-broad.cjs:437-443 to confirm the existing local rebind `const entries = ...` exists — this is the precedent for choosing `entries` as the wire name",
+    "Open packages/cli/templates/hooks/knowledge-hint-broad.cjs:464 comment to confirm the hook silent-exit-0 contract — this is the precedent for `silent-skip` v1-receipt stance",
+    "Write _protocol-v2-decisions.md with two sections: Decision 1 (field name) + Decision 2 (v1 stance), each with rejected alternatives and 3-bullet rationale",
+    "Add an Outstanding Clarifications section listing the user-veto window (field name veto only changes TASK-002/003/004/005 implementation, not DAG; stance veto only changes TASK-003/004/005 implementation)",
+    "Commit message: `docs(rc18): protocol v2 decision record — field=entries, v1-stance=silent-skip`"
+  ],
+  "reference": {
+    "pattern": "Pre-implementation decision record",
+    "files": [
+      "packages/cli/templates/hooks/knowledge-hint-broad.cjs",
+      "packages/cli/src/commands/plan-context-hint.ts",
+      ".workflow/.lite-plan/rc18-protocol-v2-2026-05-15/planning-context.md"
+    ],
+    "examples": "Mirror the structure of memory/project_grill_deferred_items.md decision sections — short, evidence-anchored, alternatives explicit"
+  },
+  "convergence": {
+    "criteria": [
+      "File `.workflow/.lite-plan/rc18-protocol-v2-2026-05-15/_protocol-v2-decisions.md` exists and contains both Decision 1 (field name = `entries`) and Decision 2 (v1 stance = silent-skip) with explicit rationale citing broad.cjs line numbers",
+      "Outstanding Clarifications section enumerates exactly 2 user-veto items with the impact-radius statement (which downstream tasks shift on veto)",
+      "Test command: `test -f .workflow/.lite-plan/rc18-protocol-v2-2026-05-15/_protocol-v2-decisions.md && grep -q '`entries`' .workflow/.lite-plan/rc18-protocol-v2-2026-05-15/_protocol-v2-decisions.md && grep -q 'silent-skip' .workflow/.lite-plan/rc18-protocol-v2-2026-05-15/_protocol-v2-decisions.md`",
+      "Behavioral expectation: downstream task agents have an unambiguous answer to `what is the new field name?` and `what should v1-receipt do?` without re-deriving",
+      "Field-name consistency check: all 5 downstream tasks (TASK-002 through TASK-006) cite `entries` as the wire name in their convergence criteria — a grep of all .task/*.json for `payload.entries` returns ≥4 matches",
+      "Version-receipt stance check: documented stance (silent-skip + stderr breadcrumb) is testable via a unit test in TASK-005 asserting `renderSummary({version: 1, ...})` returns `[]`",
+      "Single git commit recorded with message starting `docs(rc18): protocol v2 decision record`"
+    ]
+  },
+  "depends_on": [],
+  "parallel_safe": false,
+  "cli_execution_id": "rc18-protocol-v2-2026-05-15-TASK-001",
+  "cli_execution": { "strategy": "new" },
+  "rationale": {
+    "chosen_approach": "Front-load both protocol-shaping decisions into a single docs-only commit so all 3 parallel implementation tasks (TASK-002/003/004) read from the same source-of-truth without race conditions",
+    "alternatives_considered": ["Inline decisions in commit messages of TASK-002", "Defer decisions to user mid-execution"],
+    "decision_factors": ["Parallel safety (TASK-002/003/004 must agree on names)", "Auditability (decisions need a git-tracked artifact, not just commit messages)", "Vetoability (user must see proposed values before code lands)"],
+    "tradeoffs": "Adds 1 task to the chain (6 commits instead of 5) for the upside of a documented pre-decision and zero ambiguity downstream"
+  },
+  "test": {
+    "manual_checks": [
+      "Open the decision record and confirm rationale references concrete broad.cjs line numbers (not vague claims)",
+      "Confirm Outstanding Clarifications section explicitly states what user-veto would change in downstream tasks"
+    ],
+    "success_metrics": [
+      "Both decisions documented with rejected alternatives explicit",
+      "User-veto impact radius stated for both decisions",
+      "Single git commit, docs-only diff"
+    ],
+    "unit": [],
+    "integration": []
+  }
+}
