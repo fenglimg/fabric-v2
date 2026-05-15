@@ -3,7 +3,11 @@
 exports[`cli i18n > renders en command descriptions and output snapshots 1`] = `
 {
   "config": {
-    "description": "Manage Fabric MCP client configuration.",
+    "description": "Open the interactive Fabric configuration panel (language, knowledge layer, audit mode, hint windows, MCP client wiring, etc.).
+
+Examples:
+  fab config                   open the interactive panel
+  fab config --target /path    edit configuration for a specific project",
     "errors": [
       "Workspace not initialized. Run \`fab install\` first.",
     ],
@@ -11,7 +15,12 @@ exports[`cli i18n > renders en command descriptions and output snapshots 1`] = `
     "stdout": [],
   },
   "install": {
-    "description": "Install Fabric in the target project.",
+    "description": "Install Fabric in the target project (scaffold .fabric/, bootstrap templates, MCP client wiring, git hooks).
+
+Examples:
+  fab install                  interactive install in the current project
+  fab install --yes            accept defaults, skip the TTY wizard
+  fab install --dry-run        preview the install plan without writing files",
     "errors": [],
     "stderr": [
       "Using globally-installed @fenglimg/fabric-server",
@@ -43,7 +52,12 @@ exports[`cli i18n > renders en command descriptions and output snapshots 1`] = `
   },
   "locale": "en",
   "serve": {
-    "description": "Start the local Fabric MCP HTTP service. Set FABRIC_AUTH_TOKEN to enable Bearer auth for non-localhost binding.",
+    "description": "Start the local Fabric MCP HTTP service.
+
+Examples:
+  fab serve                              bind 127.0.0.1:7373 (default)
+  fab serve --port 8787                  use a custom port
+  FABRIC_AUTH_TOKEN=<token> fab serve --host 0.0.0.0   bind non-loopback with Bearer auth",
     "errors": [
       "[warn] --host 0.0.0.0 requires FABRIC_AUTH_TOKEN for non-loopback exposure; falling back to 127.0.0.1. To bind 0.0.0.0, run: FABRIC_AUTH_TOKEN=<token> fab serve --host 0.0.0.0",
     ],
@@ -53,8 +67,18 @@ exports[`cli i18n > renders en command descriptions and output snapshots 1`] = `
     ],
   },
   "uninstall": {
-    "description": "Uninstall Fabric from the target project.",
-    "usage": "fab uninstall - Uninstall Fabric from the target project.",
+    "description": "Uninstall Fabric from the target project. .fabric/knowledge/ is always preserved; ~/.fabric/knowledge/ is never touched.
+
+Examples:
+  fab uninstall                interactive uninstall in the current project
+  fab uninstall --yes          accept defaults, skip the TTY wizard
+  fab uninstall --dry-run      preview the uninstall plan without removing files",
+    "usage": "fab uninstall - Uninstall Fabric from the target project. .fabric/knowledge/ is always preserved; ~/.fabric/knowledge/ is never touched.
+
+Examples:
+  fab uninstall                interactive uninstall in the current project
+  fab uninstall --yes          accept defaults, skip the TTY wizard
+  fab uninstall --dry-run      preview the uninstall plan without removing files",
   },
 }
 `;
@@ -62,7 +86,11 @@ exports[`cli i18n > renders en command descriptions and output snapshots 1`] = `
 exports[`cli i18n > renders zh-CN command descriptions and output snapshots 1`] = `
 {
   "config": {
-    "description": "管理 Fabric MCP 客户端配置。",
+    "description": "打开 Fabric 交互式配置面板（语言、知识层、审计模式、提示窗口、MCP 客户端配置等）。
+
+示例：
+  fab config                   打开交互式面板
+  fab config --target /path    编辑指定项目的配置",
     "errors": [
       "工作区尚未初始化。请先运行 \`fab install\`。",
     ],
@@ -70,7 +98,12 @@ exports[`cli i18n > renders zh-CN command descriptions and output snapshots 1`] 
     "stdout": [],
   },
   "install": {
-    "description": "在目标项目中安装 Fabric。",
+    "description": "在目标项目中安装 Fabric（脚手架 .fabric/、bootstrap 模板、MCP 客户端配置、git hooks）。
+
+示例：
+  fab install                  在当前项目中以交互模式安装
+  fab install --yes            接受默认值，跳过 TTY 向导
+  fab install --dry-run        仅预览安装计划，不写入文件",
     "errors": [],
     "stderr": [
       "使用全局安装的 @fenglimg/fabric-server",
@@ -102,7 +135,12 @@ exports[`cli i18n > renders zh-CN command descriptions and output snapshots 1`] 
   },
   "locale": "zh-CN",
   "serve": {
-    "description": "启动本地 Fabric MCP HTTP 服务。若需绑定到非 localhost，请设置 FABRIC_AUTH_TOKEN 以启用 Bearer 鉴权。",
+    "description": "启动本地 Fabric MCP HTTP 服务。
+
+示例：
+  fab serve                              绑定 127.0.0.1:7373（默认）
+  fab serve --port 8787                  使用自定义端口
+  FABRIC_AUTH_TOKEN=<token> fab serve --host 0.0.0.0   绑定非 loopback 并启用 Bearer 鉴权",
     "errors": [
       "[warn] --host 0.0.0.0 需要设置 FABRIC_AUTH_TOKEN 才能对外暴露；已回退到 127.0.0.1。如需绑定 0.0.0.0，请运行：FABRIC_AUTH_TOKEN=<token> fab serve --host 0.0.0.0",
     ],
@@ -112,8 +150,18 @@ exports[`cli i18n > renders zh-CN command descriptions and output snapshots 1`] 
     ],
   },
   "uninstall": {
-    "description": "从目标项目中卸载 Fabric。",
-    "usage": "fab uninstall - 从目标项目中卸载 Fabric。",
+    "description": "从目标项目中卸载 Fabric。.fabric/knowledge/ 始终保留；~/.fabric/knowledge/ 永不受影响。
+
+示例：
+  fab uninstall                在当前项目中以交互模式卸载
+  fab uninstall --yes          接受默认值，跳过 TTY 向导
+  fab uninstall --dry-run      仅预览卸载计划，不删除文件",
+    "usage": "fab uninstall - 从目标项目中卸载 Fabric。.fabric/knowledge/ 始终保留；~/.fabric/knowledge/ 永不受影响。
+
+示例：
+  fab uninstall                在当前项目中以交互模式卸载
+  fab uninstall --yes          接受默认值，跳过 TTY 向导
+  fab uninstall --dry-run      仅预览卸载计划，不删除文件",
   },
 }
 `;

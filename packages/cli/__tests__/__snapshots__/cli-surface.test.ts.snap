@@ -16,7 +16,11 @@ exports[`CLI surface drift gate (docs/test-seed/cli.md §1) > command 'config' s
       "type": "string",
     },
   ],
-  "description": "Manage Fabric MCP client configuration.",
+  "description": "Open the interactive Fabric configuration panel (language, knowledge layer, audit mode, hint windows, MCP client wiring, etc.).
+
+Examples:
+  fab config                   open the interactive panel
+  fab config --target /path    edit configuration for a specific project",
   "name": "config",
 }
 `;
@@ -30,7 +34,7 @@ exports[`CLI surface drift gate (docs/test-seed/cli.md §1) > command 'doctor' s
     {
       "alias": undefined,
       "default": false,
-      "description": "Repair deterministic derived Fabric state, including meta, knowledge-test index, bootstrap, and events ledger.",
+      "description": "Repair derived Fabric state (meta + indexes).",
       "name": "fix",
       "negativeDescription": undefined,
       "required": undefined,
@@ -39,7 +43,7 @@ exports[`CLI surface drift gate (docs/test-seed/cli.md §1) > command 'doctor' s
     {
       "alias": undefined,
       "default": false,
-      "description": "Apply lint mutations: demote orphaned canonical entries, archive stale drafts, and bump drifted index counters. Emits knowledge_demoted / knowledge_archived events. Default doctor invocation remains report-only.",
+      "description": "Apply knowledge lint mutations: demote orphaned canonical entries, archive stale drafts, and bump drifted index counters. Default doctor run remains report-only.",
       "name": "fix-knowledge",
       "negativeDescription": undefined,
       "required": undefined,
@@ -75,7 +79,7 @@ exports[`CLI surface drift gate (docs/test-seed/cli.md §1) > command 'doctor' s
     {
       "alias": undefined,
       "default": undefined,
-      "description": "Target project path. Defaults to CLI arg, EXTERNAL_FIXTURE_PATH, fabric.config.json, then cwd.",
+      "description": "Target project path. Defaults to --target, then EXTERNAL_FIXTURE_PATH, then cwd.",
       "name": "target",
       "negativeDescription": undefined,
       "required": undefined,
@@ -91,7 +95,13 @@ exports[`CLI surface drift gate (docs/test-seed/cli.md §1) > command 'doctor' s
       "type": "boolean",
     },
   ],
-  "description": "Run Fabric target-state diagnostics.",
+  "description": "Run Fabric target-state diagnostics (meta sync, knowledge index, bootstrap, events ledger, human-lock drift).
+
+Examples:
+  fab doctor                   read-only diagnostics report
+  fab doctor --fix             repair derived state (meta + indexes)
+  fab doctor --fix-knowledge   apply lint mutations (demote / archive)
+  fab doctor --json --strict   machine-readable output, warnings as errors",
   "name": "doctor",
 }
 `;
@@ -123,7 +133,7 @@ exports[`CLI surface drift gate (docs/test-seed/cli.md §1) > command 'install' 
     {
       "alias": undefined,
       "default": undefined,
-      "description": "Target project path. Defaults to CLI arg, EXTERNAL_FIXTURE_PATH, fabric.config.json, then cwd.",
+      "description": "Target project path. Defaults to --target, then EXTERNAL_FIXTURE_PATH, then cwd.",
       "name": "target",
       "negativeDescription": undefined,
       "required": undefined,
@@ -139,7 +149,12 @@ exports[`CLI surface drift gate (docs/test-seed/cli.md §1) > command 'install' 
       "type": "boolean",
     },
   ],
-  "description": "Install Fabric in the target project.",
+  "description": "Install Fabric in the target project (scaffold .fabric/, bootstrap templates, MCP client wiring, git hooks).
+
+Examples:
+  fab install                  interactive install in the current project
+  fab install --yes            accept defaults, skip the TTY wizard
+  fab install --dry-run        preview the install plan without writing files",
   "name": "install",
 }
 `;
@@ -162,7 +177,7 @@ exports[`CLI surface drift gate (docs/test-seed/cli.md §1) > command 'serve' su
     {
       "alias": undefined,
       "default": "127.0.0.1",
-      "description": "Listen host, default 127.0.0.1. Set FABRIC_AUTH_TOKEN to enable Bearer auth for non-localhost binding.",
+      "description": "Listen host, default 127.0.0.1. Non-loopback hosts (e.g. 0.0.0.0) require FABRIC_AUTH_TOKEN to enable Bearer auth, otherwise serve falls back to 127.0.0.1.",
       "name": "host",
       "negativeDescription": undefined,
       "required": undefined,
@@ -180,14 +195,19 @@ exports[`CLI surface drift gate (docs/test-seed/cli.md §1) > command 'serve' su
     {
       "alias": undefined,
       "default": undefined,
-      "description": "Target project path. Defaults to CLI arg, EXTERNAL_FIXTURE_PATH, fabric.config.json, then cwd.",
+      "description": "Target project path. Defaults to --target, then EXTERNAL_FIXTURE_PATH, then cwd.",
       "name": "target",
       "negativeDescription": undefined,
       "required": undefined,
       "type": "string",
     },
   ],
-  "description": "Start the local Fabric MCP HTTP service. Set FABRIC_AUTH_TOKEN to enable Bearer auth for non-localhost binding.",
+  "description": "Start the local Fabric MCP HTTP service.
+
+Examples:
+  fab serve                              bind 127.0.0.1:7373 (default)
+  fab serve --port 8787                  use a custom port
+  FABRIC_AUTH_TOKEN=<token> fab serve --host 0.0.0.0   bind non-loopback with Bearer auth",
   "name": "serve",
 }
 `;
@@ -219,7 +239,7 @@ exports[`CLI surface drift gate (docs/test-seed/cli.md §1) > command 'uninstall
     {
       "alias": undefined,
       "default": undefined,
-      "description": "Target project path. Defaults to CLI arg, EXTERNAL_FIXTURE_PATH, fabric.config.json, then cwd.",
+      "description": "Target project path. Defaults to --target, then EXTERNAL_FIXTURE_PATH, then cwd.",
       "name": "target",
       "negativeDescription": undefined,
       "required": undefined,
@@ -235,7 +255,12 @@ exports[`CLI surface drift gate (docs/test-seed/cli.md §1) > command 'uninstall
       "type": "boolean",
     },
   ],
-  "description": "Uninstall Fabric from the target project.",
+  "description": "Uninstall Fabric from the target project. .fabric/knowledge/ is always preserved; ~/.fabric/knowledge/ is never touched.
+
+Examples:
+  fab uninstall                interactive uninstall in the current project
+  fab uninstall --yes          accept defaults, skip the TTY wizard
+  fab uninstall --dry-run      preview the uninstall plan without removing files",
   "name": "uninstall",
 }
 `;

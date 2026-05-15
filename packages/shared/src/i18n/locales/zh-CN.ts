@@ -1,7 +1,21 @@
 import type { Messages } from "../types.js";
 
 export const zhCNMessages: Messages = {
-  "cli.main.description": "Fabric CLI - AI 智能体协作框架",
+  "cli.main.description":
+    "Fabric CLI - AI 智能体协作框架。\n" +
+    "\n" +
+    "三步心智模型：\n" +
+    "  装 (install) - fab install   一键完成项目初始化\n" +
+    "  配 (config)  - fab config    打开交互式配置面板\n" +
+    "  跑 (run)     - fab serve     启动本地 MCP HTTP 服务\n" +
+    "                fab doctor     运行目标态诊断\n" +
+    "\n" +
+    "示例：\n" +
+    "  fab install                  在当前项目中安装 Fabric\n" +
+    "  fab config                   打开交互式配置面板\n" +
+    "  fab serve --port 7373        启动 MCP HTTP 服务\n" +
+    "  fab doctor --fix             修复 Fabric 派生状态\n" +
+    "  fab uninstall --dry-run      预览卸载，不删除文件",
   "cli.shared.created": "已创建",
   "cli.shared.skipped": "已跳过",
   "cli.shared.next": "下一步",
@@ -44,7 +58,12 @@ export const zhCNMessages: Messages = {
   "cli.bootstrap.errors.unknown-client":
     "未知客户端\u201c{client}\u201d。请使用逗号分隔列表，例如 claude,cursor,codex。",
 
-  "cli.config.description": "管理 Fabric MCP 客户端配置。",
+  "cli.config.description":
+    "打开 Fabric 交互式配置面板（语言、知识层、审计模式、提示窗口、MCP 客户端配置等）。\n" +
+    "\n" +
+    "示例：\n" +
+    "  fab config                   打开交互式面板\n" +
+    "  fab config --target /path    编辑指定项目的配置",
   "cli.config.args.target.description": "目标项目目录（默认当前工作目录）。",
   "cli.config.clients.claude": "Claude Code CLI",
   "cli.config.install.description": "将 Fabric MCP 服务端条目安装到检测到的客户端配置中。",
@@ -116,18 +135,25 @@ export const zhCNMessages: Messages = {
   "cli.config.fields.audit_mode.description":
     "human-lock 与漂移检测的审计粒度（strict / warn / off）。",
 
-  "cli.doctor.description": "运行 Fabric 目标态诊断。",
+  "cli.doctor.description":
+    "运行 Fabric 目标态诊断（meta 同步、知识索引、bootstrap、events ledger、human-lock 漂移）。\n" +
+    "\n" +
+    "示例：\n" +
+    "  fab doctor                   只读诊断报告\n" +
+    "  fab doctor --fix             修复派生状态（meta + 索引）\n" +
+    "  fab doctor --fix-knowledge   应用知识库 lint 变更（降级 / 归档）\n" +
+    "  fab doctor --json --strict   机器可读输出，warning 视为失败",
   "doctor.section.fixable": "可修复错误：",
   "doctor.section.manual": "需手动修复：",
   "doctor.section.warnings": "警告：",
   "doctor.section.fix-knowledge-mutations": "Fix-knowledge 变更：",
   "cli.doctor.args.target.description":
-    "目标项目路径。默认依次使用 CLI 参数、EXTERNAL_FIXTURE_PATH、fabric.config.json、当前目录。",
-  "cli.doctor.args.fix.description": "修复确定性派生的 Fabric 状态，包括 meta、knowledge-test 索引、bootstrap 和 events ledger。",
+    "目标项目路径。默认依次使用 --target、EXTERNAL_FIXTURE_PATH、当前目录。",
+  "cli.doctor.args.fix.description": "修复 Fabric 派生状态（meta + 索引）。",
   "cli.doctor.args.json.description": "以 JSON 输出 doctor 报告。",
   "cli.doctor.args.strict.description": "将 warning 也视为失败。",
   "cli.doctor.args.fix-knowledge.description":
-    "应用 lint 变更：降级孤立的规范条目、归档陈旧 draft、修正漂移的索引计数器；写入 knowledge_demoted / knowledge_archived 事件。默认运行仍然只读。",
+    "应用知识库 lint 变更：降级孤立的规范条目、归档陈旧 draft、修正漂移的索引计数器。默认 doctor 运行仍然只读。",
   "cli.doctor.args.rescan.description":
     "在 doctor 检查之前重新运行 init scan，以重建 .fabric/agents.meta.json 的取证状态。",
   "cli.doctor.args.yes.description":
@@ -152,9 +178,15 @@ export const zhCNMessages: Messages = {
   "cli.human-lint.table.expected": "预期",
   "cli.human-lint.table.got": "实际",
 
-  "cli.install.description": "在目标项目中安装 Fabric。",
+  "cli.install.description":
+    "在目标项目中安装 Fabric（脚手架 .fabric/、bootstrap 模板、MCP 客户端配置、git hooks）。\n" +
+    "\n" +
+    "示例：\n" +
+    "  fab install                  在当前项目中以交互模式安装\n" +
+    "  fab install --yes            接受默认值，跳过 TTY 向导\n" +
+    "  fab install --dry-run        仅预览安装计划，不写入文件",
   "cli.install.args.target.description":
-    "目标项目路径。默认依次使用 CLI 参数、EXTERNAL_FIXTURE_PATH、fabric.config.json、当前目录。",
+    "目标项目路径。默认依次使用 --target、EXTERNAL_FIXTURE_PATH、当前目录。",
   "cli.install.args.debug.description": "将目标解析细节输出到 stderr。",
   "cli.install.args.yes.description": "接受当前安装计划并跳过 TTY 向导直接执行",
   "cli.install.args.dry-run.description": "仅输出安装计划，不写文件也不执行后续阶段",
@@ -252,9 +284,15 @@ export const zhCNMessages: Messages = {
   "cli.install.diff.state.drifted": "漂移",
   "cli.install.diff.state.user-modified": "用户修改",
 
-  "cli.uninstall.description": "从目标项目中卸载 Fabric。",
+  "cli.uninstall.description":
+    "从目标项目中卸载 Fabric。.fabric/knowledge/ 始终保留；~/.fabric/knowledge/ 永不受影响。\n" +
+    "\n" +
+    "示例：\n" +
+    "  fab uninstall                在当前项目中以交互模式卸载\n" +
+    "  fab uninstall --yes          接受默认值，跳过 TTY 向导\n" +
+    "  fab uninstall --dry-run      仅预览卸载计划，不删除文件",
   "cli.uninstall.args.target.description":
-    "目标项目路径。默认依次使用 CLI 参数、EXTERNAL_FIXTURE_PATH、fabric.config.json、当前目录。",
+    "目标项目路径。默认依次使用 --target、EXTERNAL_FIXTURE_PATH、当前目录。",
   "cli.uninstall.args.debug.description": "将目标解析细节输出到 stderr。",
   "cli.uninstall.args.yes.description": "接受当前卸载计划并跳过 TTY 向导直接执行。",
   "cli.uninstall.args.dry-run.description": "仅输出卸载计划，不删除文件也不执行后续阶段。",
@@ -309,7 +347,7 @@ export const zhCNMessages: Messages = {
 
   "cli.scan.description": "扫描项目以检测 Fabric 引导候选模块。",
   "cli.scan.args.target.description":
-    "目标绝对路径。默认依次使用 CLI 参数、EXTERNAL_FIXTURE_PATH、fabric.config.json、当前目录。",
+    "目标绝对路径。默认依次使用 --target、EXTERNAL_FIXTURE_PATH、当前目录。",
   "cli.scan.args.debug.description": "以格式化输出打印检测证据。",
   "cli.scan.args.json.description": "以 JSON 格式输出诊断报告。",
   "cli.scan.error.missing-forensic":
@@ -335,12 +373,17 @@ export const zhCNMessages: Messages = {
   "cli.scan.recommendation.framework-dirs": "L1：检查 {framework} 目录，后续为其补充对应作用域的 Fabric 规则文件。",
 
   "cli.serve.description":
-    "启动本地 Fabric MCP HTTP 服务。若需绑定到非 localhost，请设置 FABRIC_AUTH_TOKEN 以启用 Bearer 鉴权。",
+    "启动本地 Fabric MCP HTTP 服务。\n" +
+    "\n" +
+    "示例：\n" +
+    "  fab serve                              绑定 127.0.0.1:7373（默认）\n" +
+    "  fab serve --port 8787                  使用自定义端口\n" +
+    "  FABRIC_AUTH_TOKEN=<token> fab serve --host 0.0.0.0   绑定非 loopback 并启用 Bearer 鉴权",
   "cli.serve.args.port.description": "监听端口，默认 7373。",
   "cli.serve.args.host.description":
-    "监听主机，默认 127.0.0.1。若需绑定到非 localhost，请设置 FABRIC_AUTH_TOKEN 以启用 Bearer 鉴权。",
+    "监听主机，默认 127.0.0.1。绑定非 loopback 主机（如 0.0.0.0）必须设置 FABRIC_AUTH_TOKEN 启用 Bearer 鉴权，否则将自动回退到 127.0.0.1。",
   "cli.serve.args.target.description":
-    "目标项目路径。默认依次使用 CLI 参数、EXTERNAL_FIXTURE_PATH、fabric.config.json、当前目录。",
+    "目标项目路径。默认依次使用 --target、EXTERNAL_FIXTURE_PATH、当前目录。",
   "cli.serve.args.debug.description": "将目标解析细节输出到 stderr。",
   "cli.serve.ready.title": "Fabric 仪表盘",
   "cli.serve.lock-held.action-hint":
@@ -351,7 +394,7 @@ export const zhCNMessages: Messages = {
 
   "cli.update.description": "刷新 MCP 主机配置和 git hooks，不重新创建 Fabric 文件。",
   "cli.update.args.target.description":
-    "目标项目路径。默认依次使用 CLI 参数、EXTERNAL_FIXTURE_PATH、fabric.config.json、当前目录。",
+    "目标项目路径。默认依次使用 --target、EXTERNAL_FIXTURE_PATH、当前目录。",
   "cli.update.args.no-mcp.description": "跳过重新配置 MCP 客户端",
   "cli.update.args.no-hooks.description": "跳过重新安装 git hooks",
 

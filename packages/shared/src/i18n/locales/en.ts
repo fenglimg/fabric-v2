@@ -1,7 +1,21 @@
 import type { Messages } from "../types.js";
 
 export const enMessages: Messages = {
-  "cli.main.description": "Fabric CLI - AI agent collaboration framework",
+  "cli.main.description":
+    "Fabric CLI - AI agent collaboration framework.\n" +
+    "\n" +
+    "Three-step mental model:\n" +
+    "  Install (装) - fab install   one-shot project setup\n" +
+    "  Configure (配) - fab config  interactive configuration panel\n" +
+    "  Run (跑) - fab serve         launch the local MCP HTTP service\n" +
+    "             fab doctor        run target-state diagnostics\n" +
+    "\n" +
+    "Examples:\n" +
+    "  fab install                  install Fabric in the current project\n" +
+    "  fab config                   open the interactive configuration panel\n" +
+    "  fab serve --port 7373        start the MCP HTTP service\n" +
+    "  fab doctor --fix             repair derived Fabric state\n" +
+    "  fab uninstall --dry-run      preview uninstall without removing files",
   "cli.shared.created": "Created",
   "cli.shared.skipped": "Skipped",
   "cli.shared.next": "Next",
@@ -45,7 +59,12 @@ export const enMessages: Messages = {
   "cli.bootstrap.errors.unknown-client":
     "Unknown client \"{client}\". Use a comma-separated list such as claude,cursor,codex.",
 
-  "cli.config.description": "Manage Fabric MCP client configuration.",
+  "cli.config.description":
+    "Open the interactive Fabric configuration panel (language, knowledge layer, audit mode, hint windows, MCP client wiring, etc.).\n" +
+    "\n" +
+    "Examples:\n" +
+    "  fab config                   open the interactive panel\n" +
+    "  fab config --target /path    edit configuration for a specific project",
   "cli.config.args.target.description": "Target project directory (defaults to cwd).",
   "cli.config.clients.claude": "Claude Code CLI",
   "cli.config.install.description": "Install Fabric MCP server entries into detected client configs.",
@@ -118,18 +137,25 @@ export const enMessages: Messages = {
   "cli.config.fields.audit_mode.description":
     "Audit verbosity for human-lock + drift detection (strict / warn / off).",
 
-  "cli.doctor.description": "Run Fabric target-state diagnostics.",
+  "cli.doctor.description":
+    "Run Fabric target-state diagnostics (meta sync, knowledge index, bootstrap, events ledger, human-lock drift).\n" +
+    "\n" +
+    "Examples:\n" +
+    "  fab doctor                   read-only diagnostics report\n" +
+    "  fab doctor --fix             repair derived state (meta + indexes)\n" +
+    "  fab doctor --fix-knowledge   apply lint mutations (demote / archive)\n" +
+    "  fab doctor --json --strict   machine-readable output, warnings as errors",
   "doctor.section.fixable": "Fixable errors:",
   "doctor.section.manual": "Manual errors:",
   "doctor.section.warnings": "Warnings:",
   "doctor.section.fix-knowledge-mutations": "Fix-knowledge mutations:",
   "cli.doctor.args.target.description":
-    "Target project path. Defaults to CLI arg, EXTERNAL_FIXTURE_PATH, fabric.config.json, then cwd.",
-  "cli.doctor.args.fix.description": "Repair deterministic derived Fabric state, including meta, knowledge-test index, bootstrap, and events ledger.",
+    "Target project path. Defaults to --target, then EXTERNAL_FIXTURE_PATH, then cwd.",
+  "cli.doctor.args.fix.description": "Repair derived Fabric state (meta + indexes).",
   "cli.doctor.args.json.description": "Print the doctor report as JSON.",
   "cli.doctor.args.strict.description": "Treat warnings as failures.",
   "cli.doctor.args.fix-knowledge.description":
-    "Apply lint mutations: demote orphaned canonical entries, archive stale drafts, and bump drifted index counters. Emits knowledge_demoted / knowledge_archived events. Default doctor invocation remains report-only.",
+    "Apply knowledge lint mutations: demote orphaned canonical entries, archive stale drafts, and bump drifted index counters. Default doctor run remains report-only.",
   "cli.doctor.args.rescan.description":
     "Re-run the init scan to rebuild .fabric/agents.meta.json forensic state before doctor checks.",
   "cli.doctor.args.yes.description":
@@ -155,9 +181,15 @@ export const enMessages: Messages = {
   "cli.human-lint.table.expected": "Expected",
   "cli.human-lint.table.got": "Got",
 
-  "cli.install.description": "Install Fabric in the target project.",
+  "cli.install.description":
+    "Install Fabric in the target project (scaffold .fabric/, bootstrap templates, MCP client wiring, git hooks).\n" +
+    "\n" +
+    "Examples:\n" +
+    "  fab install                  interactive install in the current project\n" +
+    "  fab install --yes            accept defaults, skip the TTY wizard\n" +
+    "  fab install --dry-run        preview the install plan without writing files",
   "cli.install.args.target.description":
-    "Target project path. Defaults to CLI arg, EXTERNAL_FIXTURE_PATH, fabric.config.json, then cwd.",
+    "Target project path. Defaults to --target, then EXTERNAL_FIXTURE_PATH, then cwd.",
   "cli.install.args.debug.description": "Print target resolution details to stderr.",
   "cli.install.args.yes.description": "Accept the current install plan and run without the TTY wizard",
   "cli.install.args.dry-run.description": "Print the install plan without writing files or running follow-up stages",
@@ -257,9 +289,15 @@ export const enMessages: Messages = {
   "cli.install.diff.state.drifted": "drifted",
   "cli.install.diff.state.user-modified": "user-modified",
 
-  "cli.uninstall.description": "Uninstall Fabric from the target project.",
+  "cli.uninstall.description":
+    "Uninstall Fabric from the target project. .fabric/knowledge/ is always preserved; ~/.fabric/knowledge/ is never touched.\n" +
+    "\n" +
+    "Examples:\n" +
+    "  fab uninstall                interactive uninstall in the current project\n" +
+    "  fab uninstall --yes          accept defaults, skip the TTY wizard\n" +
+    "  fab uninstall --dry-run      preview the uninstall plan without removing files",
   "cli.uninstall.args.target.description":
-    "Target project path. Defaults to CLI arg, EXTERNAL_FIXTURE_PATH, fabric.config.json, then cwd.",
+    "Target project path. Defaults to --target, then EXTERNAL_FIXTURE_PATH, then cwd.",
   "cli.uninstall.args.debug.description": "Print target resolution details to stderr.",
   "cli.uninstall.args.yes.description": "Accept the current uninstall plan and run without the TTY wizard.",
   "cli.uninstall.args.dry-run.description":
@@ -315,7 +353,7 @@ export const enMessages: Messages = {
 
   "cli.scan.description": "Scan the project to detect Fabric bootstrap candidates.",
   "cli.scan.args.target.description":
-    "Target absolute path. Defaults to CLI arg, EXTERNAL_FIXTURE_PATH, fabric.config.json, then cwd.",
+    "Target absolute path. Defaults to --target, then EXTERNAL_FIXTURE_PATH, then cwd.",
   "cli.scan.args.debug.description": "Print detection evidence in formatted output.",
   "cli.scan.args.json.description": "Print the diagnostic report as JSON.",
   "cli.scan.error.missing-forensic":
@@ -344,12 +382,17 @@ export const enMessages: Messages = {
   "cli.scan.recommendation.framework-dirs": "L1: Review {framework} directories for future scoped Fabric rule files.",
 
   "cli.serve.description":
-    "Start the local Fabric MCP HTTP service. Set FABRIC_AUTH_TOKEN to enable Bearer auth for non-localhost binding.",
+    "Start the local Fabric MCP HTTP service.\n" +
+    "\n" +
+    "Examples:\n" +
+    "  fab serve                              bind 127.0.0.1:7373 (default)\n" +
+    "  fab serve --port 8787                  use a custom port\n" +
+    "  FABRIC_AUTH_TOKEN=<token> fab serve --host 0.0.0.0   bind non-loopback with Bearer auth",
   "cli.serve.args.port.description": "Listen port, default 7373.",
   "cli.serve.args.host.description":
-    "Listen host, default 127.0.0.1. Set FABRIC_AUTH_TOKEN to enable Bearer auth for non-localhost binding.",
+    "Listen host, default 127.0.0.1. Non-loopback hosts (e.g. 0.0.0.0) require FABRIC_AUTH_TOKEN to enable Bearer auth, otherwise serve falls back to 127.0.0.1.",
   "cli.serve.args.target.description":
-    "Target project path. Defaults to CLI arg, EXTERNAL_FIXTURE_PATH, fabric.config.json, then cwd.",
+    "Target project path. Defaults to --target, then EXTERNAL_FIXTURE_PATH, then cwd.",
   "cli.serve.args.debug.description": "Print target resolution details to stderr.",
   "cli.serve.ready.title": "Fabric Dashboard",
   "cli.serve.lock-held.action-hint":
@@ -360,7 +403,7 @@ export const enMessages: Messages = {
 
   "cli.update.description": "Refresh MCP host configuration and git hooks without re-creating Fabric files.",
   "cli.update.args.target.description":
-    "Target project path. Defaults to CLI arg, EXTERNAL_FIXTURE_PATH, fabric.config.json, then cwd.",
+    "Target project path. Defaults to --target, then EXTERNAL_FIXTURE_PATH, then cwd.",
   "cli.update.args.no-mcp.description": "Skip re-configuring MCP clients",
   "cli.update.args.no-hooks.description": "Skip re-installing git hooks",
 
