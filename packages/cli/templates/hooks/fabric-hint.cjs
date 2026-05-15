@@ -1617,6 +1617,11 @@ module.exports = {
   readMaintenanceHintCooldownDays,
   readShownCache,
   writeShownCache,
+  // v2.0.0-rc.20 TASK-03 / TASK-09: cite-policy parsing + per-turn emission
+  // helpers (exported for unit testing of the parse + emit contract).
+  parseKbLine,
+  detectClient,
+  extractAndWriteAssistantTurnsBestEffort,
   CONSTANTS: {
     FABRIC_DIR,
     EVENT_LEDGER_FILE,
