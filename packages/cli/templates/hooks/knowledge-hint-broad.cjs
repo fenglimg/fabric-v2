@@ -54,6 +54,12 @@ const {
 } = require("node:fs");
 const { join } = require("node:path");
 
+// rc.16 TASK-003: shared banner-i18n lib (resolves fabric_language config and
+// renders localized banner text). Mirror of the wiring in fabric-hint.cjs
+// (TASK-002). Variant is resolved ONCE per main() invocation via
+// readFabricLanguage(cwd) and threaded into renderBanner — no fs in render path.
+const { renderBanner, readFabricLanguage } = require("./lib/banner-i18n.cjs");
+
 // -----------------------------------------------------------------------------
 // rc.12: SessionStart broad-menu is now unconditionally emitted on every
 // SessionStart fire (matching Skill-style progressive disclosure). Prior
@@ -257,10 +263,12 @@ const MATURITY_PROVEN = "proven";
 const MATURITY_VERIFIED = "verified";
 const MATURITY_DRAFT = "draft";
 
-// rc.8 underseed self-check banner text. Single line, mirrors the emoji-prefix
-// style of other Fabric banners (cf. fabric-hint.cjs Signal C `📋 Fabric:`).
-const IMPORT_RECOMMENDATION_BANNER =
-  "  📋 Fabric: 知识库稀疏，是否调 /fabric-import 从 git 历史与现有文档回灌知识?";
+// rc.8 underseed self-check banner: single line, emoji-prefixed (cf.
+// fabric-hint.cjs Signal C `📋 Fabric:`). rc.16 TASK-003 routed the literal
+// through the banner-i18n lib (key: 'broadImportBanner') — see main() below
+// for the renderBanner call site. Substring contracts preserved across all
+// variants: leading two-space indent, `📋 Fabric:` prefix, `/fabric-import`
+// verbatim token (asserted by knowledge-hint-broad.test.ts).
 
 // -----------------------------------------------------------------------------
 // CLI invocation
@@ -487,7 +495,12 @@ function main(env, stdio) {
     const lines = renderSummary(payload);
 
     if (recommendImport) {
-      lines.push(IMPORT_RECOMMENDATION_BANNER);
+      // rc.16 TASK-003: resolve fabric_language ONCE per invocation (only when
+      // we actually need to emit the banner — keeps the no-banner path free of
+      // the extra config read). 'match-existing' / unknown variant folds to 'en'
+      // inside renderBanner per UX i18n Policy class 1.
+      const variant = readFabricLanguage(cwd);
+      lines.push(renderBanner("broadImportBanner", variant, {}));
     }
 
     if (lines.length === 0) return; // nothing to say — silent exit
@@ -523,7 +536,6 @@ module.exports = {
     MATURITY_DRAFT,
     DEFAULT_UNDERSEED_NODE_THRESHOLD,
     KNOWLEDGE_CANONICAL_TYPES,
-    IMPORT_RECOMMENDATION_BANNER,
   },
 };
 
