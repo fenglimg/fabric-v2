@@ -13,6 +13,15 @@ try {
   sessionDigestWriter = null;
 }
 
+// v2.0.0-rc.16 TASK-002 (F2-apply): banner-i18n lib for the 5 Signal
+// banners (A/B/C/D-never/D-aged). Resolved ONCE per main() invocation and
+// threaded into decide() / evaluateMaintenanceSignal() via the existing
+// thresholds object. Lib is required at module load; failure to load is
+// fatal-here-but-silent: the require itself can't throw without the .cjs
+// being missing entirely (a packaging bug we'd want to surface during
+// install integration tests, not silently swallow).
+const { renderBanner, readFabricLanguage } = require("./lib/banner-i18n.cjs");
+
 // CONSTANTS — duplicated from packages/server/src/services/_shared.ts.
 // DRY violation accepted: this hook script runs in user repos WITHOUT
 // node_modules access, so it cannot import from @fenglimg/fabric-server.
@@ -556,6 +565,10 @@ function decide(events, now, pendingStats, underseedStats, editCounterStats, thr
     typeof cfg.reviewHintPendingAgeDays === "number" && cfg.reviewHintPendingAgeDays > 0
       ? cfg.reviewHintPendingAgeDays
       : DEFAULT_REVIEW_HINT_PENDING_AGE_DAYS;
+  // rc.16 TASK-002: banner variant for the i18n lib. Defaults to 'zh-CN' so
+  // existing test callers (which never pass thresholds.variant) get the rc.15
+  // byte-identical Chinese output. main() always supplies the resolved variant.
+  const variant = typeof cfg.variant === "string" ? cfg.variant : "zh-CN";
 
   // ---- Archive signal (rc.6 TASK-022 — Signal A, 24h-OR-N-edits) -----------
   // Locate the most-recent knowledge_proposed event. If none exists, Signal A
@@ -611,14 +624,17 @@ function decide(events, now, pendingStats, underseedStats, editCounterStats, thr
         `累计 ${editStats.editsSinceLastProposed} 次编辑（阈值 ${editStats.threshold}）`,
       );
     }
-    const line1 = `📋 Fabric: 距上次归档 ${parts.join(" / ")}。`;
+    // rc.16 TASK-002: 5-banner i18n via lib/banner-i18n.cjs. Substring
+    // contracts ('25.0h', '阈值 N', 'fabric-archive') preserved by the lib's
+    // zh-CN templates — see lib header for the full contract.
+    const line1 = renderBanner("archiveLine1", variant, { parts: parts.join(" / ") });
     const activity = banner && typeof banner.activityOverview === "string"
       ? banner.activityOverview
       : "";
     const line2 = activity.length > 0
-      ? `   最近活动集中在: ${activity}。`
+      ? renderBanner("archiveActivity", variant, { activity })
       : "";
-    const line3 = "   是否调 /fabric-archive 检查值得归档的决策/踩坑/复用?";
+    const line3 = renderBanner("archiveCta", variant, {});
     const reason = [line1, line2, line3].filter((l) => l.length > 0).join("\n");
     return {
       decision: "block",
@@ -648,8 +664,13 @@ function decide(events, now, pendingStats, underseedStats, editCounterStats, thr
       stats.oldestAgeMs !== null
         ? ` / 最早一条 ${(stats.oldestAgeMs / MS_PER_DAY).toFixed(1)} 天前`
         : "";
-    const line1 = `📋 Fabric: 已积累 ${stats.count} 条待审核知识${ageSuffix}。`;
-    const line2 = "   是否调 /fabric-review 审核 pending/ 条目?";
+    // rc.16 TASK-002: i18n via lib. Substrings ('${count} 条', 'fabric-review')
+    // preserved by the lib's zh-CN templates.
+    const line1 = renderBanner("reviewLine1", variant, {
+      count: stats.count,
+      ageSuffix,
+    });
+    const line2 = renderBanner("reviewCta", variant, {});
     const reason = `${line1}\n${line2}`;
     return {
       decision: "block",
@@ -690,12 +711,16 @@ function decide(events, now, pendingStats, underseedStats, editCounterStats, thr
     (hoursSinceProposed === null || hoursSinceProposed >= UNDERSEED_NO_PROPOSED_HOURS);
 
   if (triggerUnderseed) {
-    // rc.7 T4: 人-first banner reformat for Signal C. Preserves the
-    // `${nodeCount}/${threshold}` substring (e.g. "3/10") that existing
-    // tests assert against; drops Agent-jussive phrasing.
-    const line1 =
-      `📋 Fabric: 知识库节点数 ${underseed.nodeCount}/${underseed.threshold}，距 init_scan_completed ${hoursSinceInit.toFixed(1)}h。`;
-    const line2 = "   是否调 /fabric-import 从 git 历史与现有文档回灌知识?";
+    // rc.16 TASK-002: i18n via lib. Substrings ('${nodeCount}/${threshold}',
+    // 'fabric-import', '${hoursSinceInit}h') preserved by the lib's zh-CN
+    // templates. Note: hoursSinceInit is passed as already-toFixed(1) string
+    // to keep the lib pure (no number formatting in render path).
+    const line1 = renderBanner("importLine1", variant, {
+      nodeCount: underseed.nodeCount,
+      threshold: underseed.threshold,
+      hoursSinceInit: hoursSinceInit.toFixed(1),
+    });
+    const line2 = renderBanner("importCta", variant, {});
     const reason = `${line1}\n${line2}`;
     return {
       decision: "block",
@@ -898,6 +923,10 @@ function evaluateMaintenanceSignal(events, now, canonicalCount, lastEmitMs, thre
     typeof cfg.maintenanceHintCooldownDays === "number" && cfg.maintenanceHintCooldownDays > 0
       ? cfg.maintenanceHintCooldownDays
       : DEFAULT_MAINTENANCE_HINT_COOLDOWN_DAYS;
+  // rc.16 TASK-002: banner variant for the i18n lib. Defaults to 'zh-CN' so
+  // existing rc.7 T10 test fixtures (which never set thresholds.variant) get
+  // the byte-identical Chinese maintenance banner.
+  const variant = typeof cfg.variant === "string" ? cfg.variant : "zh-CN";
 
   if (canonicalCount < MAINTENANCE_HINT_MIN_CANONICAL) {
     return null;
@@ -922,14 +951,18 @@ function evaluateMaintenanceSignal(events, now, canonicalCount, lastEmitMs, thre
     if (ageDays < days) return null; // doctor ran recently, no nag.
   }
 
-  // rc.7 T4: keep the existing T10 banner shape (already 人-first with the
-  // 📋 prefix), but split the action-prompt onto its own line for visual
-  // consistency with Signals A/B/C. Substrings ("从未运行 lint 检查",
-  // "已 N 天未跑 lint", "fabric doctor --lint") preserved for the T10 tests.
-  const line2 = "   是否调 `fabric doctor --lint` 看看知识库健康度?";
-  const reason = lastDoctorTs === null
-    ? `📋 Fabric: 从未运行 lint 检查。\n${line2}`
-    : `📋 Fabric: 已 ${days} 天未跑 lint 检查（实际 ${ageDays.toFixed(1)}d）。\n${line2}`;
+  // rc.16 TASK-002: i18n via lib. Substrings ('从未运行 lint 检查',
+  // '已 N 天未跑 lint', 'fabric doctor --lint') preserved by the lib's
+  // zh-CN templates. ageDays passed as already-toFixed(1) string to keep
+  // the lib pure (no number formatting in render path).
+  const line2 = renderBanner("maintenanceLine2", variant, {});
+  const line1 = lastDoctorTs === null
+    ? renderBanner("maintenanceLine1Never", variant, {})
+    : renderBanner("maintenanceLine1Aged", variant, {
+        days,
+        ageDays: ageDays.toFixed(1),
+      });
+  const reason = `${line1}\n${line2}`;
 
   return {
     decision: "block",
@@ -1147,6 +1180,19 @@ function main(env, stdio) {
     // rc.7 T7: read the externalized thresholds and pass them into decide.
     // Reader failures degrade silently to documented defaults — fabric-hint
     // must never block on config errors (see hook contract above).
+    //
+    // rc.16 TASK-002 (F2-apply): resolve `fabric_language` ONCE per main()
+    // invocation via the banner-i18n lib. The result threads through
+    // `thresholds.variant` into both decide() and evaluateMaintenanceSignal()
+    // so we read the config file at most once, not five times. Lib reader
+    // is never-throw; defensive try/catch is belt-and-suspenders.
+    let variant = "zh-CN";
+    try {
+      variant = readFabricLanguage(cwd);
+    } catch {
+      variant = "zh-CN";
+    }
+
     let thresholds;
     try {
       thresholds = {
@@ -1155,6 +1201,7 @@ function main(env, stdio) {
         reviewHintPendingAgeDays: readReviewHintPendingAgeDays(cwd),
         maintenanceHintDays: readMaintenanceHintDays(cwd),
         maintenanceHintCooldownDays: readMaintenanceHintCooldownDays(cwd),
+        variant,
       };
     } catch {
       thresholds = {
@@ -1163,6 +1210,7 @@ function main(env, stdio) {
         reviewHintPendingAgeDays: DEFAULT_REVIEW_HINT_PENDING_AGE_DAYS,
         maintenanceHintDays: DEFAULT_MAINTENANCE_HINT_DAYS,
         maintenanceHintCooldownDays: DEFAULT_MAINTENANCE_HINT_COOLDOWN_DAYS,
+        variant,
       };
     }
 
