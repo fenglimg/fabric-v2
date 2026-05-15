@@ -204,6 +204,11 @@ export const enMessages: Messages = {
   "cli.install.skipped-existing-path": "{label} {path}: already exists.",
   "cli.install.label.overwritten": "Overwritten",
   "cli.install.stages.bootstrap": "Installing bootstrap templates...",
+  "cli.install.stages.bootstrap.snapshot.written": "Wrote .fabric/AGENTS.md snapshot",
+  "cli.install.stages.bootstrap.snapshot.skipped": "Skipped .fabric/AGENTS.md — already current",
+  "cli.install.steps.bootstrap-claude": "Updated CLAUDE.md with @-import directives",
+  "cli.install.steps.bootstrap-codex": "Updated AGENTS.md with fabric:bootstrap managed block",
+  "cli.install.steps.bootstrap-cursor": "Updated .cursor/rules/fabric-bootstrap.mdc",
   "cli.install.stages.mcp": "Configuring MCP clients...",
   "cli.install.stages.hooks": "Installing git hooks...",
   "cli.install.stages.skipped": "skipped",
@@ -372,7 +377,7 @@ export const enMessages: Messages = {
   "cli.scan.report.recommendations": "Recommendations:",
   "cli.scan.readme-quality.ok": "ok",
   "cli.scan.readme-quality.stub": "stub",
-  "cli.scan.recommendation.init": "L0: Run fab install to scaffold .fabric/bootstrap/README.md with TODO markers.",
+  "cli.scan.recommendation.init": "L0: Run fab install to scaffold `.fabric/AGENTS.md` with the canonical Fabric bootstrap content.",
   "cli.scan.recommendation.readme":
     "L0: Expand README.md before promoting project facts into Fabric references.",
   "cli.scan.recommendation.contributing":

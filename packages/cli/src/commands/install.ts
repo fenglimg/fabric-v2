@@ -6,7 +6,7 @@ import { dirname, isAbsolute, join, resolve } from "node:path";
 
 import { cancel, confirm, group, intro, isCancel, log, note, outro, select } from "@clack/prompts";
 import { defaultAgentsMetaCounters, type AgentsMeta } from "@fenglimg/fabric-shared";
-import { atomicWriteJson, atomicWriteText } from "@fenglimg/fabric-shared/node/atomic-write";
+import { atomicWriteJson } from "@fenglimg/fabric-shared/node/atomic-write";
 import { defineCommand } from "citty";
 import { checkLockOrThrow } from "@fenglimg/fabric-server";
 
@@ -17,11 +17,11 @@ import { t } from "../i18n.js";
 import { hasActionHint, renderFabricError } from "../lib/error-render.js";
 import * as configCommand from "./config.js";
 import { installHooks } from "../install/hooks-orchestrator.js";
+import { writeFabricAgentsSnapshot } from "../install/write-bootstrap-snapshot.js";
 import { detectExistingLanguage, runInitScan, type ResolvedLanguage } from "./scan.js";
 import { buildForensicReport } from "../scanner/forensic.js";
 import { detectClientSupports, type DetectedClientSupport } from "../config/resolver.js";
 import {
-  addFabricKnowledgeBaseSection,
   installArchiveHintHook,
   installFabricArchiveSkill,
   installFabricImportSkill,
@@ -33,6 +33,9 @@ import {
   mergeCodexHookConfig,
   mergeCursorHookConfig,
   readFabricLanguagePreference,
+  writeClaudeBootstrapThinShell,
+  writeCodexBootstrapManagedBlock,
+  writeCursorBootstrapManagedBlock,
   type InstallStepResult,
 } from "../install/skills-and-hooks.js";
 
@@ -246,26 +249,12 @@ export type InitExecutionResult = {
   finalSupports: DetectedClientSupport[];
 };
 
-// v2.0 follow-up (rc.1 fix #1): minimal default contents for the repo-root
-// AGENTS.md anchor. Kept deliberately short — the user (or their AI client)
-// expands the file with project-specific sections post-init. The CLI's job
-// is only to ensure SOME anchor exists post-init so doctor's
-// bootstrap_anchor_missing check is clean.
+// rc.19 TASK-003: root AGENTS.md ownership moved from scaffold-stage to
+// bootstrap-stage. The legacy `AGENTS_MD_DEFAULT_CONTENT` constant and the
+// scaffold-stage write that consumed it are deleted — the file is now
+// produced (with the canonical fabric:bootstrap managed block) by
+// `writeCodexBootstrapManagedBlock` in the bootstrap stage.
 //
-// AGENTS.md (rather than CLAUDE.md) was chosen because it is the universal
-// MCP-agnostic format: Cursor, Codex CLI, and Claude Code all read it.
-// Claude Code in particular treats AGENTS.md as a fallback when CLAUDE.md
-// is absent, so this single file unblocks all three supported clients.
-const AGENTS_MD_DEFAULT_CONTENT = `# Project Knowledge
-
-This project uses [Fabric](https://github.com/fenglimg/fabric) for cross-client AI knowledge management.
-
-Knowledge entries live in \`.fabric/knowledge/\` (team) and \`~/.fabric/knowledge/\` (personal).
-Run \`fabric doctor\` to verify state.
-
-See \`.fabric/knowledge/\` for project decisions, pitfalls, guidelines, models, and processes.
-`;
-
 // v2/rc.2: The v1 client-side init skill (and its reminder hooks for Claude
 // / Codex) was removed. rc.2/3/4 will introduce v2 skills (fabric-archive,
 // fabric-review, fabric-import) with their own templates and wiring; until
@@ -721,15 +710,13 @@ export async function executeInitFabricPlan(plan: InitScaffoldPlan): Promise<Ini
   // plan.target's README/docs to fixate fabric_language on fresh init.
   writeDefaultFabricConfig(plan.fabricDir, plan.target);
 
-  // v2.0 follow-up (rc.1 fix #1): write the repo-root AGENTS.md anchor when
-  // it does not already exist. This satisfies doctor's bootstrap_anchor_missing
-  // check on a fresh init while remaining strictly idempotent — pre-existing
-  // content is never overwritten, so user customizations survive re-runs of
-  // `fab install`. Writing via atomicWriteText keeps the half-written-file
-  // failure mode out of scope.
-  if (plan.agentsMdAction === "created" && !existsSync(plan.agentsMdPath)) {
-    await atomicWriteText(plan.agentsMdPath, AGENTS_MD_DEFAULT_CONTENT);
-  }
+  // rc.19 TASK-003: root AGENTS.md is no longer written in the scaffold
+  // stage. Ownership moved to `writeCodexBootstrapManagedBlock` in the
+  // bootstrap stage so the canonical fabric:bootstrap managed block is
+  // included on the first write rather than retroactively patched in by
+  // the section writer. `plan.agentsMdAction` / `plan.agentsMdPath` are
+  // still computed and surfaced through the install reporter for parity
+  // with other anchors, but the file itself is created downstream.
 
   // v2.0 stage (a) bootstrap: materialize knowledge subdirs (team + personal)
   // with .gitkeep markers so a fresh repo carries the canonical layout even
@@ -1033,14 +1020,21 @@ async function executeInitStagePlan(
         // covered it, but bootstrap-only invocations (e.g. partial-resilience
         // tests) need it inlined here too.
         installResults.push(await runBestEffortSingle("cursor-hook-config", () => mergeCursorHookConfig(plan.target)));
-        // rc.12 broad-gate-fabric-lang TASK-006: managed-section writer
-        // replaces the rc.4-era POINTER_LINE substring appender. The
-        // fabric_language value is read from the .fabric/fabric-config.json
-        // that writeDefaultFabricConfig() wrote earlier in this same plan
-        // execution — by this point in the bootstrap stage the file is
-        // guaranteed to exist (created in executeInitFabricPlan).
-        const fabricLanguage = readFabricLanguagePreference(plan.target);
-        installResults.push(...await runBestEffort("section", () => addFabricKnowledgeBaseSection(plan.target, fabricLanguage)));
+        // rc.19 TASK-002: L1 bootstrap snapshot — materialize the canonical
+        // `.fabric/AGENTS.md` from BOOTSTRAP_CANONICAL. Idempotent + atomic.
+        // This snapshot is the source-of-truth that the three propagation
+        // writers below fan out into per-client thin shells.
+        installResults.push(await runBestEffortSingle("bootstrap-snapshot", () => writeFabricAgentsSnapshot(plan.target)));
+        // rc.19 TASK-003: three-end propagation. Each writer consumes the L1
+        // snapshot (plus optional `.fabric/project-rules.md`) and writes the
+        // appropriate per-client output:
+        //   - Claude Code: real `@`-import directives in CLAUDE.md
+        //   - Codex CLI:   byte-copy managed block in root AGENTS.md
+        //   - Cursor:      byte-copy managed block + YAML front-matter in
+        //                  `.cursor/rules/fabric-bootstrap.mdc`
+        installResults.push(await runBestEffortSingle("bootstrap-claude", () => writeClaudeBootstrapThinShell(plan.target)));
+        installResults.push(await runBestEffortSingle("bootstrap-codex", () => writeCodexBootstrapManagedBlock(plan.target)));
+        installResults.push(await runBestEffortSingle("bootstrap-cursor", () => writeCursorBootstrapManagedBlock(plan.target)));
         const installedCount = installResults.filter((r) => r.status === "written").length;
         const skippedCount = installResults.filter((r) => r.status === "skipped").length;
         const errorCount = installResults.filter((r) => r.status === "error").length;

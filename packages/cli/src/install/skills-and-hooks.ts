@@ -1,11 +1,22 @@
-import { chmodSync, existsSync, readdirSync, readFileSync } from "node:fs";
-import { mkdir, readFile } from "node:fs/promises";
+import { chmodSync, existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { mkdir, readFile, rm } from "node:fs/promises";
 import { dirname, join, parse, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { atomicWriteJson, atomicWriteText } from "@fenglimg/fabric-shared/node/atomic-write";
+import {
+  BOOTSTRAP_MARKER_BEGIN,
+  BOOTSTRAP_MARKER_END,
+  BOOTSTRAP_REGEX,
+  LEGACY_KB_REGEX,
+} from "@fenglimg/fabric-shared/templates/bootstrap-canonical";
 
 import { deepMerge } from "../config/json.js";
+import {
+  fabricAgentsSnapshotPath,
+  projectRulesPath,
+  readProjectRulesIfPresent,
+} from "./write-bootstrap-snapshot.js";
 
 /**
  * Install helpers for the v2 fabric-archive / fabric-review / fabric-import
@@ -212,38 +223,22 @@ export const FABRIC_HOOK_COMMAND_PATHS = {
 } as const;
 
 /**
- * Project-root-relative paths of files that receive the managed Fabric
- * Knowledge Base section written by {@link addFabricKnowledgeBaseSection}.
- * Source of truth shared with `fab uninstall` (which strips the marker-
- * delimited region from each present file).
+ * rc.19 TASK-003 — bootstrap marker constants are now owned by
+ * `@fenglimg/fabric-shared/templates/bootstrap-canonical` so the CLI install
+ * pipeline (writer) and the server doctor (drift comparator) consume the same
+ * source of truth. Re-exported here for backwards-compatible imports
+ * (uninstall helper + integration tests still reach for them via this module).
  *
- * rc.12 broad-gate-fabric-lang TASK-006: renamed from `POINTER_TARGETS` when
- * the three POINTER_LINE constants were collapsed into a single HTML-comment-
- * wrapped managed section.
+ * The legacy `fabric:knowledge-base` marker pair has been retired from active
+ * use: install no longer writes it, and any pre-existing occurrence in the
+ * three propagation targets is cleaned up by the per-client writers below
+ * (clean-slate, no migration shim — feedback_clean_slate.md memory).
  */
-export const SECTION_TARGETS = ["CLAUDE.md", "AGENTS.md", join(".cursor", "rules")];
-
-/**
- * HTML-comment marker pair that delimits the managed "Fabric Knowledge Base"
- * section. Re-exported for the uninstall helper (which strips the region in
- * the inverse direction) and for tests asserting marker presence. The literal
- * strings here MUST stay byte-identical to the markers embedded in
- * {@link buildFabricKnowledgeBaseSection}'s output — they are matched as plain
- * substrings by both install (idempotent in-place replace) and uninstall
- * (clean removal).
- */
-export const FABRIC_SECTION_BEGIN_MARKER = "<!-- fabric:knowledge-base:begin -->";
-export const FABRIC_SECTION_END_MARKER = "<!-- fabric:knowledge-base:end -->";
-
-/**
- * Regex that matches the entire managed section, markers inclusive, with an
- * optional preceding blank-line separator (so re-install / uninstall don't
- * leave orphan blank lines). Non-greedy body matches any content between the
- * begin/end markers, including newlines. Source of truth shared with the
- * uninstall helper.
- */
-export const FABRIC_SECTION_REGEX =
-  /(?:\r?\n){0,2}<!-- fabric:knowledge-base:begin -->[\s\S]*?<!-- fabric:knowledge-base:end -->/;
+export {
+  BOOTSTRAP_MARKER_BEGIN,
+  BOOTSTRAP_MARKER_END,
+  BOOTSTRAP_REGEX,
+};
 
 /**
  * Read the `fabric_language` value from `.fabric/fabric-config.json` at
@@ -274,33 +269,6 @@ export function readFabricLanguagePreference(projectRoot: string): string {
   } catch {
     return "match-existing";
   }
-}
-
-/**
- * Build the managed "Fabric Knowledge Base" section text wrapped in HTML
- * comment markers. The section is owned by `fab install` — user edits between
- * the markers are intentionally NOT preserved on re-run (managed-section
- * convention, mirrors all-contributors-cli's `<!-- ALL-CONTRIBUTORS-LIST -->`
- * idiom).
- *
- * The `fabricLanguage` argument is interpolated into the "Language" bullet so
- * users discover the field they need to flip in `.fabric/fabric-config.json`
- * to change the language preference. Re-running install with a different
- * value updates this line in place (no duplication, no orphan section).
- */
-export function buildFabricKnowledgeBaseSection(fabricLanguage: string): string {
-  return `${FABRIC_SECTION_BEGIN_MARKER}
-
-## Fabric Knowledge Base
-
-This project uses Fabric for persistent project knowledge under \`.fabric/knowledge/\`.
-
-- **Discovery**: SessionStart lists available entries (broad menu); editing files may surface narrow hints
-- **Usage**: call \`fab_get_knowledge_sections\` to fetch full content of any entry by id
-- **Write flows**: see fabric-archive (record), fabric-review (validate), fabric-import (backfill) Skills
-- **Language**: rendered per \`fabric_language\` in \`.fabric/fabric-config.json\` (current: \`${fabricLanguage}\`)
-
-${FABRIC_SECTION_END_MARKER}`;
 }
 
 /**
@@ -612,96 +580,381 @@ export async function mergeCursorHookConfig(
   );
 }
 
+// ===========================================================================
+// rc.19 TASK-003 — three-end bootstrap propagation
+// ===========================================================================
+//
+// The legacy single-writer `addFabricKnowledgeBaseSection` has been split into
+// three per-client thin-shell writers, each tailored to how that client
+// actually consumes the bootstrap:
+//
+//   - Claude Code: real `@`-import directives in CLAUDE.md (no managed block).
+//   - Codex CLI:   byte-copy managed block in root AGENTS.md.
+//   - Cursor:      byte-copy managed block in `.cursor/rules/fabric-bootstrap.mdc`
+//                  prefixed with YAML front-matter (Cursor directory-rule
+//                  contract: `alwaysApply: true`).
+//
+// All three writers consume the L1 bootstrap snapshot at `.fabric/AGENTS.md`
+// (written by `writeFabricAgentsSnapshot` from write-bootstrap-snapshot.ts in
+// TASK-002) plus the optional `.fabric/project-rules.md` (user-authored, only-
+// if-exists). The shared helper {@link buildManagedBlockBody} concatenates
+// these two sources so the Codex and Cursor managed blocks contain byte-
+// identical content.
+//
+// Clean-slate (no migration shim):
+//   - CLAUDE.md / AGENTS.md / .cursor/rules/fabric-bootstrap.mdc: any pre-
+//     existing legacy `fabric:knowledge-base` marker pair is stripped at
+//     install time. The new `fabric:bootstrap` marker is the only managed
+//     marker going forward.
+//   - .cursor/rules (legacy flat-file path): deleted on install when present.
+//     Cursor's real convention is the directory-rule `.cursor/rules/*.mdc`.
+//
+// Idempotency contract: each writer must produce a byte-identical destination
+// state on second invocation against an unchanged input (snapshot + optional
+// project-rules). The integration test matrix in TASK-008 asserts this across
+// all three targets.
+
 /**
- * Write the managed "Fabric Knowledge Base" section into CLAUDE.md /
- * AGENTS.md / .cursor/rules. The section is wrapped in HTML-comment markers
- * (`<!-- fabric:knowledge-base:begin -->` … `<!-- fabric:knowledge-base:end
- * -->`) so it is invisible in rendered Markdown but discoverable via plain-
- * text search.
+ * Build the byte content embedded inside the Codex / Cursor managed blocks.
  *
- * Idempotent + in-place replace:
- *   - When markers are absent: append the section to the file (preceded by a
- *     blank-line separator).
- *   - When markers are present: replace the entire begin→end region in place
- *     (so changing `fabric_language` updates the language line without
- *     duplicating the section, and user edits between markers are
- *     intentionally overwritten — managed-section convention).
- *   - Files that don't already exist are skipped (install never creates the
- *     anchor files; that's executeInitFabricPlan's job for AGENTS.md).
+ * Concatenates:
+ *   1. `.fabric/AGENTS.md` (BOOTSTRAP_CANONICAL snapshot written by TASK-002)
+ *   2. `\n---\n` separator + `.fabric/project-rules.md` content WHEN that
+ *      user-authored companion file exists (only-if-exists per locked
+ *      decision NEW-4; never scaffolded by install).
  *
- * rc.12 broad-gate-fabric-lang TASK-006: replaces the rc.4-era
- * `addArchiveSkillPointer` substring-append helper. The three POINTER_LINE
- * constants and their per-line dedupe logic are gone; the section is now the
- * single managed surface that pointers to all three v2 Skills (archive /
- * review / import) plus the `fabric_language` config knob.
+ * Pure read — no filesystem mutation. Caller is responsible for ensuring the
+ * snapshot exists (the bootstrap-stage install order guarantees this since
+ * `writeFabricAgentsSnapshot` runs immediately before the three propagation
+ * writers).
+ *
+ * Throws if `.fabric/AGENTS.md` is missing: the propagation writers depend on
+ * the snapshot being present, and missing snapshot indicates an install-order
+ * regression that should fail loudly rather than emit an empty managed block.
  */
-export async function addFabricKnowledgeBaseSection(
-  projectRoot: string,
-  fabricLanguage: string,
+export function buildManagedBlockBody(targetRoot: string): string {
+  const snapshotPath = fabricAgentsSnapshotPath(targetRoot);
+  const snapshot = readFileSync(snapshotPath, "utf8");
+  const projectRules = readProjectRulesIfPresent(targetRoot);
+  if (projectRules === null) {
+    return snapshot;
+  }
+  return `${snapshot}\n---\n${projectRules}`;
+}
+
+/**
+ * Wrap a managed-block body in the BOOTSTRAP marker pair. Used by the Codex
+ * and Cursor writers to ensure byte-identical marker formatting across the
+ * two targets (only difference between them is the file path and the
+ * Cursor-specific YAML front-matter prefix).
+ */
+function wrapInBootstrapMarkers(body: string): string {
+  return `${BOOTSTRAP_MARKER_BEGIN}\n${body}\n${BOOTSTRAP_MARKER_END}`;
+}
+
+/**
+ * Strip any legacy `fabric:knowledge-base` marker region from `existing`,
+ * including an optional preceding blank-line separator (mirrors the
+ * BOOTSTRAP_REGEX shape). Returns the cleaned string. Idempotent: no-op when
+ * the legacy marker is absent.
+ *
+ * Used by all three TASK-003 writers as the first transform on any pre-
+ * existing target file so clean-slate migration happens transparently on
+ * install (per memory feedback_clean_slate.md — no compat shim).
+ */
+function stripLegacyKnowledgeBaseSection(existing: string): string {
+  const match = existing.match(LEGACY_KB_REGEX);
+  if (match === null) return existing;
+  const before = existing.slice(0, match.index ?? 0);
+  const after = existing.slice((match.index ?? 0) + match[0].length);
+  return `${before}${after.replace(/^\r?\n/, "")}`;
+}
+
+const CLAUDE_BOOTSTRAP_HEADER = "# Project Knowledge";
+const CLAUDE_AGENTS_IMPORT_LINE = "@.fabric/AGENTS.md";
+const CLAUDE_PROJECT_RULES_IMPORT_LINE = "@.fabric/project-rules.md";
+
+/**
+ * Write `CLAUDE.md` as a thin-shell with real Claude `@`-import directives
+ * pointing at the canonical L1 snapshot (and the optional project-rules
+ * companion). No managed block — Claude Code resolves `@<path>` lines at
+ * runtime so we want the actual references in plain markdown.
+ *
+ * Idempotency: each `@`-import line is line-level idempotent. We grep the
+ * file for an exact-line match before appending; if present, we leave it
+ * alone. The project-rules `@`-line is only written when the companion file
+ * exists; if it does not, we also strip any stale `@.fabric/project-rules.md`
+ * line from CLAUDE.md so the import set stays consistent with on-disk
+ * reality.
+ *
+ * Clean-slate: any legacy `fabric:knowledge-base` managed-section region is
+ * stripped on first invocation (one-shot migration; idempotent on re-run).
+ *
+ * Bootstrap header: when CLAUDE.md does not pre-exist, we seed it with a
+ * single `# Project Knowledge` header before the imports so the file is
+ * self-explanatory; when CLAUDE.md does exist we leave user content alone
+ * and just append the missing import lines at the end (separated by a
+ * blank line for readability).
+ */
+export async function writeClaudeBootstrapThinShell(
+  targetRoot: string,
   _options: InstallOptions = {},
-): Promise<InstallStepResult[]> {
-  const sectionBody = buildFabricKnowledgeBaseSection(fabricLanguage);
-  const results: InstallStepResult[] = [];
-  for (const rel of SECTION_TARGETS) {
-    const target = join(projectRoot, rel);
-    if (!existsSync(target)) {
-      results.push({ step: "section", path: target, status: "skipped", message: "absent" });
-      continue;
-    }
-    let existing: string;
+): Promise<InstallStepResult> {
+  const step = "bootstrap-claude";
+  const target = join(targetRoot, "CLAUDE.md");
+  const projectRulesPresent = existsSync(projectRulesPath(targetRoot));
+
+  let existing = "";
+  let preExisted = false;
+  if (existsSync(target)) {
+    preExisted = true;
     try {
       existing = await readFile(target, "utf8");
     } catch (error: unknown) {
-      results.push({
-        step: "section",
+      return {
+        step,
         path: target,
         status: "error",
         message: error instanceof Error ? error.message : String(error),
-      });
-      continue;
-    }
-
-    let next: string;
-    const match = existing.match(FABRIC_SECTION_REGEX);
-    if (match !== null) {
-      // Section already present — replace in place. We strip the matched
-      // region (markers + optional preceding blank line) entirely, then re-
-      // append via the same code path as the absent branch so the leading-
-      // separator + trailing-newline shape is byte-identical regardless of
-      // which branch fired. This guarantees idempotency across re-runs and
-      // language-change re-runs.
-      const before = existing.slice(0, match.index ?? 0);
-      const after = existing.slice((match.index ?? 0) + match[0].length);
-      // Strip a leading newline carry-over from `after` so we don't end up
-      // with an orphan blank line where the section used to sit.
-      const stripped = `${before}${after.replace(/^\r?\n/, "")}`;
-      const trailingNewline = stripped.length === 0 || stripped.endsWith("\n") ? "" : "\n";
-      next = `${stripped}${trailingNewline}\n${sectionBody}\n`;
-    } else {
-      // Section absent — append with a blank-line separator. Normalize the
-      // trailing newline so the separator is always exactly one blank line.
-      const trailingNewline = existing.length === 0 || existing.endsWith("\n") ? "" : "\n";
-      next = `${existing}${trailingNewline}\n${sectionBody}\n`;
-    }
-
-    if (next === existing) {
-      results.push({ step: "section", path: target, status: "skipped", message: "up-to-date" });
-      continue;
-    }
-
-    try {
-      await atomicWriteText(target, next);
-      results.push({ step: "section", path: target, status: "written" });
-    } catch (error: unknown) {
-      results.push({
-        step: "section",
-        path: target,
-        status: "error",
-        message: error instanceof Error ? error.message : String(error),
-      });
+      };
     }
   }
-  return results;
+
+  // Phase 1: clean-slate strip of any legacy fabric:knowledge-base section.
+  let next = stripLegacyKnowledgeBaseSection(existing);
+
+  // Phase 2: drop stale project-rules @-import when the companion file is
+  // absent on disk. Keeps the import set consistent with reality.
+  if (!projectRulesPresent) {
+    next = removeImportLine(next, CLAUDE_PROJECT_RULES_IMPORT_LINE);
+  }
+
+  // Phase 3: seed header if file did not pre-exist (or was wiped to empty
+  // by the legacy-strip + import-strip above).
+  if (!preExisted && next.length === 0) {
+    next = `${CLAUDE_BOOTSTRAP_HEADER}\n`;
+  }
+
+  // Phase 4: append `@`-import lines as needed (line-level idempotent).
+  next = ensureImportLine(next, CLAUDE_AGENTS_IMPORT_LINE);
+  if (projectRulesPresent) {
+    next = ensureImportLine(next, CLAUDE_PROJECT_RULES_IMPORT_LINE);
+  }
+
+  if (next === existing) {
+    return { step, path: target, status: "skipped", message: "up-to-date" };
+  }
+
+  try {
+    await mkdir(dirname(target), { recursive: true });
+    await atomicWriteText(target, next);
+    return { step, path: target, status: "written" };
+  } catch (error: unknown) {
+    return {
+      step,
+      path: target,
+      status: "error",
+      message: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+/**
+ * Append `line` to `content` as its own newline-terminated line IFF no exact
+ * line-match already exists. Separates the new line from the previous file
+ * content with a single blank line (when previous content does not already
+ * end with one). Returns the new content.
+ */
+function ensureImportLine(content: string, line: string): string {
+  if (hasExactLine(content, line)) return content;
+  if (content.length === 0) return `${line}\n`;
+  const endsWithBlank = content.endsWith("\n\n");
+  const endsWithNewline = content.endsWith("\n");
+  if (endsWithBlank) {
+    return `${content}${line}\n`;
+  }
+  if (endsWithNewline) {
+    return `${content}\n${line}\n`;
+  }
+  return `${content}\n\n${line}\n`;
+}
+
+/**
+ * Strip every line whose trimmed-right content exactly equals `line` from
+ * `content`. Returns the cleaned content. Idempotent on absence.
+ */
+function removeImportLine(content: string, line: string): string {
+  const lines = content.split(/\r?\n/);
+  const filtered = lines.filter((l) => l.replace(/\s+$/, "") !== line);
+  // Reassemble using \n (we normalize to LF on write — CRLF preservation is
+  // an explicit non-goal per the rc.19 byte-comparison contract).
+  return filtered.join("\n");
+}
+
+/**
+ * True when `content` contains a line whose trimmed-right content exactly
+ * equals `line`. Trailing whitespace tolerated so user-edited copies do not
+ * trigger spurious re-append on second install.
+ */
+function hasExactLine(content: string, line: string): boolean {
+  const lines = content.split(/\r?\n/);
+  return lines.some((l) => l.replace(/\s+$/, "") === line);
+}
+
+/**
+ * Write the BOOTSTRAP managed block to root `AGENTS.md`, sourced from
+ * `buildManagedBlockBody`. In-place replace when the BOOTSTRAP marker pair is
+ * already present; append with a blank-line separator when absent. Pre-
+ * existing user content outside the markers is preserved verbatim (managed-
+ * section invariant).
+ *
+ * Clean-slate: any legacy `fabric:knowledge-base` region is stripped on first
+ * invocation so a single managed block (the new `fabric:bootstrap` one) is
+ * the only Fabric-owned region after install.
+ *
+ * Creates AGENTS.md if missing (root anchor responsibility moved to bootstrap-
+ * stage per rc.19 TASK-003 — scaffold-stage no longer writes it).
+ */
+export async function writeCodexBootstrapManagedBlock(
+  targetRoot: string,
+  _options: InstallOptions = {},
+): Promise<InstallStepResult> {
+  const step = "bootstrap-codex";
+  const target = join(targetRoot, "AGENTS.md");
+
+  let existing = "";
+  if (existsSync(target)) {
+    try {
+      existing = await readFile(target, "utf8");
+    } catch (error: unknown) {
+      return {
+        step,
+        path: target,
+        status: "error",
+        message: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
+  const body = buildManagedBlockBody(targetRoot);
+  const managedBlock = wrapInBootstrapMarkers(body);
+
+  // Phase 1: clean-slate strip of any legacy fabric:knowledge-base section.
+  const stripped = stripLegacyKnowledgeBaseSection(existing);
+
+  // Phase 2: in-place replace of new fabric:bootstrap section, else append.
+  let next: string;
+  const match = stripped.match(BOOTSTRAP_REGEX);
+  if (match !== null) {
+    const before = stripped.slice(0, match.index ?? 0);
+    const after = stripped.slice((match.index ?? 0) + match[0].length);
+    const cleaned = `${before}${after.replace(/^\r?\n/, "")}`;
+    const trailingNewline = cleaned.length === 0 || cleaned.endsWith("\n") ? "" : "\n";
+    next = `${cleaned}${trailingNewline}${cleaned.length === 0 ? "" : "\n"}${managedBlock}\n`;
+  } else {
+    if (stripped.length === 0) {
+      next = `${managedBlock}\n`;
+    } else {
+      const trailingNewline = stripped.endsWith("\n") ? "" : "\n";
+      next = `${stripped}${trailingNewline}\n${managedBlock}\n`;
+    }
+  }
+
+  if (next === existing) {
+    return { step, path: target, status: "skipped", message: "up-to-date" };
+  }
+
+  try {
+    await mkdir(dirname(target), { recursive: true });
+    await atomicWriteText(target, next);
+    return { step, path: target, status: "written" };
+  } catch (error: unknown) {
+    return {
+      step,
+      path: target,
+      status: "error",
+      message: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+const CURSOR_RULE_FRONT_MATTER =
+  "---\nalwaysApply: true\ndescription: Fabric Protocol bootstrap rules\n---\n\n";
+
+const CURSOR_LEGACY_FLAT_FILE_REL = join(".cursor", "rules");
+const CURSOR_BOOTSTRAP_MDC_REL = join(".cursor", "rules", "fabric-bootstrap.mdc");
+
+/**
+ * Write the BOOTSTRAP managed block to `.cursor/rules/fabric-bootstrap.mdc`,
+ * prefixed with the Cursor directory-rule YAML front-matter
+ * (`alwaysApply: true`) so the rule is always active.
+ *
+ * Clean-slate migration: if the legacy `.cursor/rules` flat-file (pre-
+ * directory-rule convention) exists AS A FILE (not a directory), delete it.
+ * Per memory feedback_clean_slate.md — the pre-user phase prefers clean-slate
+ * refactors over preservation. Cursor's real convention is directory-rule
+ * `.cursor/rules/*.mdc`; the flat-file path was a drift bug in rc.12-rc.18.
+ *
+ * Idempotency: front-matter + managed block produced via byte-identical
+ * concatenation; re-runs against unchanged inputs produce identical output.
+ */
+export async function writeCursorBootstrapManagedBlock(
+  targetRoot: string,
+  _options: InstallOptions = {},
+): Promise<InstallStepResult> {
+  const step = "bootstrap-cursor";
+  const target = join(targetRoot, CURSOR_BOOTSTRAP_MDC_REL);
+  const legacyFlatFile = join(targetRoot, CURSOR_LEGACY_FLAT_FILE_REL);
+
+  // Phase 1: clean-slate delete legacy flat-file `.cursor/rules` IFF it is
+  // a regular file (not a directory). The directory case is the intended
+  // post-migration state and must be preserved (it hosts the .mdc rules).
+  try {
+    if (existsSync(legacyFlatFile)) {
+      const stat = statSync(legacyFlatFile);
+      if (stat.isFile()) {
+        await rm(legacyFlatFile, { force: true });
+      }
+    }
+  } catch {
+    // best-effort — a failure to delete the legacy file should not abort the
+    // new-file write below
+  }
+
+  const body = buildManagedBlockBody(targetRoot);
+  const managedBlock = wrapInBootstrapMarkers(body);
+  const expected = `${CURSOR_RULE_FRONT_MATTER}${managedBlock}\n`;
+
+  let existing = "";
+  if (existsSync(target)) {
+    try {
+      existing = await readFile(target, "utf8");
+    } catch (error: unknown) {
+      return {
+        step,
+        path: target,
+        status: "error",
+        message: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
+  if (existing === expected) {
+    return { step, path: target, status: "skipped", message: "up-to-date" };
+  }
+
+  try {
+    await mkdir(dirname(target), { recursive: true });
+    await atomicWriteText(target, expected);
+    return { step, path: target, status: "written" };
+  } catch (error: unknown) {
+    return {
+      step,
+      path: target,
+      status: "error",
+      message: error instanceof Error ? error.message : String(error),
+    };
+  }
 }
 
 // -----------------------------------------------------------------------

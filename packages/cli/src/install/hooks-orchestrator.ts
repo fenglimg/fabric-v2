@@ -3,7 +3,6 @@ import { isAbsolute, join, resolve } from "node:path";
 
 import { t } from "../i18n.js";
 import {
-  addFabricKnowledgeBaseSection,
   installArchiveHintHook,
   installFabricArchiveSkill,
   installFabricImportSkill,
@@ -14,9 +13,12 @@ import {
   mergeClaudeCodeHookConfig,
   mergeCodexHookConfig,
   mergeCursorHookConfig,
-  readFabricLanguagePreference,
+  writeClaudeBootstrapThinShell,
+  writeCodexBootstrapManagedBlock,
+  writeCursorBootstrapManagedBlock,
   type InstallStepResult,
 } from "./skills-and-hooks.js";
+import { writeFabricAgentsSnapshot } from "./write-bootstrap-snapshot.js";
 
 // ---------------------------------------------------------------------------
 // rc.15 relocation rationale:
@@ -105,13 +107,16 @@ export async function installHooks(
   results.push(await runSingleStep("claude-hook-config", () => mergeClaudeCodeHookConfig(normalizedTarget)));
   results.push(await runSingleStep("codex-hook-config", () => mergeCodexHookConfig(normalizedTarget)));
   results.push(await runSingleStep("cursor-hook-config", () => mergeCursorHookConfig(normalizedTarget)));
-  // rc.12 broad-gate-fabric-lang TASK-006: managed-section writer replaces
-  // the rc.4-era POINTER_LINE substring appender. Resolve fabric_language
-  // from the workspace's .fabric/fabric-config.json so the section's
-  // "Language" line interpolates the active preference; falls back to
-  // "match-existing" when the config has not yet been scaffolded.
-  const fabricLanguage = readFabricLanguagePreference(normalizedTarget);
-  results.push(...await runStep(() => addFabricKnowledgeBaseSection(normalizedTarget, fabricLanguage)));
+  // rc.19 TASK-002: L1 bootstrap snapshot — mirror of install.ts bootstrap
+  // stage. Writes `.fabric/AGENTS.md` from BOOTSTRAP_CANONICAL first so the
+  // three propagation writers below see a populated snapshot when they
+  // build their managed-block bodies.
+  results.push(await runSingleStep("bootstrap-snapshot", () => writeFabricAgentsSnapshot(normalizedTarget)));
+  // rc.19 TASK-003: three-end propagation. Mirrors install.ts ordering —
+  // Claude thin-shell → Codex managed block → Cursor managed block.
+  results.push(await runSingleStep("bootstrap-claude", () => writeClaudeBootstrapThinShell(normalizedTarget)));
+  results.push(await runSingleStep("bootstrap-codex", () => writeCodexBootstrapManagedBlock(normalizedTarget)));
+  results.push(await runSingleStep("bootstrap-cursor", () => writeCursorBootstrapManagedBlock(normalizedTarget)));
   results.push(...validateHookPaths(normalizedTarget));
 
   return summarizeResults(results);

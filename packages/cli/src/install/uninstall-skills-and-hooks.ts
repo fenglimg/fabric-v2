@@ -3,17 +3,17 @@ import { readdir, readFile, rm, rmdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 import { atomicWriteJson, atomicWriteText } from "@fenglimg/fabric-shared/node/atomic-write";
+import { BOOTSTRAP_REGEX } from "@fenglimg/fabric-shared/templates/bootstrap-canonical";
 
 import {
   FABRIC_HOOK_COMMAND_PATHS,
-  FABRIC_SECTION_REGEX,
   HOOK_CONFIG_ARRAY_PATHS,
   HOOK_CONFIG_TARGETS,
   HOOK_LIB_DESTINATIONS,
   HOOK_SCRIPT_DESTINATIONS,
-  SECTION_TARGETS,
   SKILL_DESTINATIONS,
 } from "./skills-and-hooks.js";
+import { fabricAgentsSnapshotPath } from "./write-bootstrap-snapshot.js";
 
 /**
  * Uninstall helpers — symmetric inverse of the install pipeline shipped in
@@ -272,89 +272,198 @@ export async function unmergeCursorHookConfig(
 // -----------------------------------------------------------------------
 
 /**
- * Inverse of `addFabricKnowledgeBaseSection`. For each path in
- * {@link SECTION_TARGETS} (CLAUDE.md / AGENTS.md / .cursor/rules), reads the
- * file (if present) and strips the entire managed section delimited by
- * `<!-- fabric:knowledge-base:begin -->` … `<!-- fabric:knowledge-base:end
- * -->` markers (inclusive of any preceding blank-line separator so we don't
- * leave an orphan blank line). Writes the result atomically when changed.
+ * rc.19 TASK-003 — inverse of the three propagation writers
+ * (`writeClaudeBootstrapThinShell`, `writeCodexBootstrapManagedBlock`,
+ * `writeCursorBootstrapManagedBlock`).
  *
- * Idempotent: when the markers are absent the file is left untouched and the
- * step records a `skipped/no-fabric-section` result. Running uninstall twice
- * back-to-back therefore reports 100 % skipped on the second pass.
+ * Strips Fabric-owned content from each propagation target:
+ *   - `CLAUDE.md`: removes the `@.fabric/AGENTS.md` and `@.fabric/project-rules.md`
+ *     `@`-import lines (line-level strip; leaves any user content alone).
+ *   - `AGENTS.md`: strips the BOOTSTRAP managed block (markers inclusive,
+ *     with optional preceding blank-line separator) via {@link BOOTSTRAP_REGEX}.
+ *   - `.cursor/rules/fabric-bootstrap.mdc`: strips the BOOTSTRAP managed
+ *     block; if the only remaining content is the YAML front-matter (i.e.
+ *     no user-authored body), the file itself is deleted.
  *
- * The file is NEVER deleted even if all that remained was the section —
- * install cannot prove it was the creator of the file, so uninstall preserves
- * it to avoid clobbering pre-existing user content (mirrors the rc.4 pointer-
- * strip conservatism).
+ * Idempotent: when nothing fabric-owned is found in a target the step
+ * records `skipped/no-fabric-section`. Running uninstall twice back-to-back
+ * reports 100% skipped on the second pass.
  *
- * rc.12 broad-gate-fabric-lang TASK-006: replaces `stripArchiveSkillPointers`.
- * The three POINTER_LINE substring filters are gone; a single regex captures
- * the marker-delimited region in one pass.
+ * Files are NEVER deleted (except the Cursor mdc per the rule above), even
+ * if all that remained was the managed block — install cannot prove it was
+ * the file's creator, so uninstall preserves user-authored content
+ * surrounding it (mirrors the rc.4 pointer-strip conservatism).
+ *
+ * Renamed from `stripFabricKnowledgeBaseSection` (rc.12 broad-gate-fabric-
+ * lang TASK-006) when rc.19 split the writer into three per-client
+ * propagators with distinct strip rules per target.
  */
-export async function stripFabricKnowledgeBaseSection(
+export async function stripFabricBootstrapBlocks(
   projectRoot: string,
 ): Promise<UninstallStepResult[]> {
   const results: UninstallStepResult[] = [];
-  for (const rel of SECTION_TARGETS) {
-    const target = join(projectRoot, rel);
-    if (!existsSync(target)) {
-      results.push({ step: "section", path: target, status: "skipped", message: "absent" });
-      continue;
-    }
-    let existing: string;
+
+  // 1. CLAUDE.md — remove `@.fabric/AGENTS.md` + `@.fabric/project-rules.md` lines.
+  results.push(await stripClaudeBootstrapImports(projectRoot));
+
+  // 2. AGENTS.md — strip BOOTSTRAP managed block (regex-based).
+  results.push(await stripManagedBlock(projectRoot, "AGENTS.md", { deleteWhenEmpty: false }));
+
+  // 3. .cursor/rules/fabric-bootstrap.mdc — strip BOOTSTRAP managed block;
+  // delete the file when the body is just YAML front-matter (i.e. fabric
+  // was the only producer of meaningful content).
+  results.push(
+    await stripManagedBlock(projectRoot, join(".cursor", "rules", "fabric-bootstrap.mdc"), {
+      deleteWhenEmpty: true,
+    }),
+  );
+
+  return results;
+}
+
+/**
+ * Remove `@.fabric/AGENTS.md` and `@.fabric/project-rules.md` lines from
+ * `CLAUDE.md`. Line-level strip; whitespace-tolerant exact-match (mirrors
+ * the install-side `hasExactLine` semantics).
+ */
+async function stripClaudeBootstrapImports(projectRoot: string): Promise<UninstallStepResult> {
+  const step = "bootstrap-claude";
+  const target = join(projectRoot, "CLAUDE.md");
+  if (!existsSync(target)) {
+    return { step, path: target, status: "skipped", message: "absent" };
+  }
+  let existing: string;
+  try {
+    existing = await readFile(target, "utf8");
+  } catch (error: unknown) {
+    return {
+      step,
+      path: target,
+      status: "error",
+      message: error instanceof Error ? error.message : String(error),
+    };
+  }
+  const managedLines = new Set(["@.fabric/AGENTS.md", "@.fabric/project-rules.md"]);
+  const lines = existing.split(/\r?\n/);
+  const filtered = lines.filter((l) => !managedLines.has(l.replace(/\s+$/, "")));
+  if (filtered.length === lines.length) {
+    return { step, path: target, status: "skipped", message: "no-fabric-section" };
+  }
+  // Collapse runs of trailing empty lines that the line removal may have
+  // left behind. Idempotency target: re-running strip is a no-op.
+  while (filtered.length > 1 && filtered[filtered.length - 1] === "" && filtered[filtered.length - 2] === "") {
+    filtered.pop();
+  }
+  const next = filtered.join("\n");
+  if (next === existing) {
+    return { step, path: target, status: "skipped", message: "no-fabric-section" };
+  }
+  try {
+    await atomicWriteText(target, next);
+    return { step, path: target, status: "removed" };
+  } catch (error: unknown) {
+    return {
+      step,
+      path: target,
+      status: "error",
+      message: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+/**
+ * Strip the BOOTSTRAP managed block (regex-matched, markers inclusive) from
+ * the file at `projectRoot/relPath`. When `deleteWhenEmpty` is true and the
+ * post-strip content has no user-authored body beyond YAML front-matter, the
+ * file is deleted instead of left as an orphan front-matter shell.
+ */
+async function stripManagedBlock(
+  projectRoot: string,
+  relPath: string,
+  options: { deleteWhenEmpty: boolean },
+): Promise<UninstallStepResult> {
+  const step = relPath.endsWith(".mdc") ? "bootstrap-cursor" : "bootstrap-codex";
+  const target = join(projectRoot, relPath);
+  if (!existsSync(target)) {
+    return { step, path: target, status: "skipped", message: "absent" };
+  }
+  let existing: string;
+  try {
+    existing = await readFile(target, "utf8");
+  } catch (error: unknown) {
+    return {
+      step,
+      path: target,
+      status: "error",
+      message: error instanceof Error ? error.message : String(error),
+    };
+  }
+  const match = existing.match(BOOTSTRAP_REGEX);
+  if (match === null) {
+    return { step, path: target, status: "skipped", message: "no-fabric-section" };
+  }
+  const before = existing.slice(0, match.index ?? 0);
+  const after = existing.slice((match.index ?? 0) + match[0].length);
+  const filtered = `${before}${after.replace(/^\r?\n/, "")}`;
+
+  if (options.deleteWhenEmpty && isFrontMatterOnly(filtered)) {
     try {
-      existing = await readFile(target, "utf8");
+      await rm(target, { force: true });
+      return { step, path: target, status: "removed", message: "front-matter-only" };
     } catch (error: unknown) {
-      results.push({
-        step: "section",
+      return {
+        step,
         path: target,
         status: "error",
         message: error instanceof Error ? error.message : String(error),
-      });
-      continue;
-    }
-
-    const match = existing.match(FABRIC_SECTION_REGEX);
-    if (match === null) {
-      results.push({
-        step: "section",
-        path: target,
-        status: "skipped",
-        message: "no-fabric-section",
-      });
-      continue;
-    }
-
-    const before = existing.slice(0, match.index ?? 0);
-    const after = existing.slice((match.index ?? 0) + match[0].length);
-    // Strip a leading newline that would otherwise survive as an orphan blank
-    // line where the section used to sit.
-    const filtered = `${before}${after.replace(/^\r?\n/, "")}`;
-
-    if (filtered === existing) {
-      results.push({
-        step: "section",
-        path: target,
-        status: "skipped",
-        message: "no-fabric-section",
-      });
-      continue;
-    }
-
-    try {
-      await atomicWriteText(target, filtered);
-      results.push({ step: "section", path: target, status: "removed" });
-    } catch (error: unknown) {
-      results.push({
-        step: "section",
-        path: target,
-        status: "error",
-        message: error instanceof Error ? error.message : String(error),
-      });
+      };
     }
   }
-  return results;
+
+  try {
+    await atomicWriteText(target, filtered);
+    return { step, path: target, status: "removed" };
+  } catch (error: unknown) {
+    return {
+      step,
+      path: target,
+      status: "error",
+      message: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+/**
+ * True when `content` consists of nothing but a YAML front-matter block
+ * (`---` … `---`) optionally followed by whitespace-only trailing content.
+ * Used by {@link stripManagedBlock} to decide whether to delete the file
+ * after a Cursor managed-block strip.
+ */
+function isFrontMatterOnly(content: string): boolean {
+  // Strip leading whitespace, then attempt to match a front-matter block at
+  // the head, then ensure the remainder is pure whitespace.
+  const trimmed = content.replace(/^\s+/, "");
+  const match = trimmed.match(/^---\n[\s\S]*?\n---\s*$/);
+  if (match === null) return trimmed.length === 0;
+  return true;
+}
+
+// -----------------------------------------------------------------------
+// rc.19 TASK-002 — bootstrap snapshot uninstall
+// -----------------------------------------------------------------------
+
+/**
+ * Inverse of `writeFabricAgentsSnapshot` — removes `.fabric/AGENTS.md` if
+ * present. Idempotent: a missing file returns `status: 'skipped'` rather
+ * than throwing. The companion file `.fabric/project-rules.md` is
+ * intentionally preserved on uninstall because it holds user-authored
+ * content (per locked decision NEW-4).
+ */
+export async function deleteFabricAgentsSnapshot(
+  projectRoot: string,
+): Promise<UninstallStepResult> {
+  const target = fabricAgentsSnapshotPath(projectRoot);
+  return rmIfExists("bootstrap-snapshot", target);
 }
 
 // -----------------------------------------------------------------------
@@ -382,9 +491,18 @@ export async function uninstallBootstrapStage(
 ): Promise<UninstallStepResult[]> {
   const results: UninstallStepResult[] = [];
 
-  // 1. Managed section first (cheapest, reverses last step of install)
-  await runAndCollect(results, "section", projectRoot, () =>
-    stripFabricKnowledgeBaseSection(projectRoot),
+  // 1. Three-end bootstrap blocks first (cheapest, reverses TASK-003
+  // propagation writers from install). rc.19 TASK-003: renamed from
+  // `stripFabricKnowledgeBaseSection`; the single-regex strip across three
+  // identical targets is gone, replaced by per-client strip rules.
+  await runAndCollect(results, "bootstrap-blocks", projectRoot, () =>
+    stripFabricBootstrapBlocks(projectRoot),
+  );
+
+  // 1b. rc.19 TASK-002: remove the L1 bootstrap snapshot at .fabric/AGENTS.md.
+  // The companion .fabric/project-rules.md is preserved (user-authored).
+  await runAndCollectOne(results, "bootstrap-snapshot", projectRoot, () =>
+    deleteFabricAgentsSnapshot(projectRoot),
   );
 
   // 2. Hook configs (reverse of install order: cursor → codex → claude)
