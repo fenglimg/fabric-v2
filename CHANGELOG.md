@@ -5,6 +5,44 @@ All notable changes to Fabric will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0-rc.16] - 2026-05-15
+
+Phase 3 of the post-grill 5-phase backlog: **Config + i18n closure**. F2 (banner i18n) lands first to give every Stop-hook banner four-language rendering; F1 (`fab config` clack TUI panel) replaces the rc.15 placeholder with a schema-driven menu loop.
+
+### Added
+
+- **Banner i18n library** (`packages/cli/templates/hooks/lib/banner-i18n.cjs`) — shared `.cjs` lib exposing `readFabricLanguage(projectRoot)` + `renderBanner(key, variant, params)` + 11-key × 4-variant string table (`zh-CN` / `en` / `zh-CN-hybrid` / `match-existing`). Default-on-unset is `zh-CN` to preserve rc.15 user-visible behavior; explicit `match-existing` folds to `en` per the UX i18n Policy class 1 rule. Protected tokens (slash-command names, `` `fabric doctor --lint` ``) preserved verbatim across all variants.
+- **Schema introspection helper** (`packages/shared/src/schemas/fabric-config-introspect.ts`) — exports `getPanelFields()` / `getPanelFieldByKey(key)` returning typed metadata for the 11 Group A+B+C fields (2 locale + 8 hint thresholds + 1 audit). Single source of truth for the panel — adding a defaulted field requires only one new entry.
+- **`fab config` clack TUI panel** (`packages/cli/src/commands/config.ts`) — interactive menu loop replacing the rc.15 placeholder. Iterates `getPanelFields()`, branches on widget type (`select` for enums, `text` for positive integers), atomic-writes to `.fabric/fabric-config.json` (tmp + rename, no lock check), re-renders after each save. Top-level CLI surface: `--target` only (per "能交互选的就别做 flag"). Uninit workspace → exitCode 1 with `fab install` hint.
+- **Install pipeline copies hook libs** — `installHooks()` (in `packages/cli/src/install/hooks-orchestrator.ts` + `skills-and-hooks.ts`) now ships the entire `templates/hooks/lib/` directory (banner-i18n.cjs + session-digest-writer.cjs) into all three client install targets (Claude / Cursor / Codex). Symmetric uninstall cascade-prunes empty `lib/` dirs.
+- **i18n keys** — 40 new `cli.config.*` keys across both `en.ts` and `zh-CN.ts` (parity verified): panel intro/outro, menu prompts, per-field labels + descriptions, validation messages, write success/failure, value display formatters.
+
+### Changed
+
+- **`fab config` placeholder** (rc.15) → full clack panel. The placeholder string `cli.config.placeholder` is removed. `installMcpClients` named export is preserved verbatim — `install.ts` re-imports it during the MCP install stage.
+- **5 hardcoded zh-CN banner blocks** in `fabric-hint.cjs` (Signals A/B/C/D) → `renderBanner()` calls. Existing test-asserted substrings (`${count} 条`, `${days} 天`, `阈值 ${threshold}`, `从未运行 lint 检查`, `已 N 天未跑 lint`, `` `fabric doctor --lint` ``) preserved by the lib's zh-CN variant.
+- **1 hardcoded zh-CN banner constant** (`IMPORT_RECOMMENDATION_BANNER`) in `knowledge-hint-broad.cjs` → `renderBanner()` call. Constant declaration removed.
+
+### Tests
+
+- 55 new banner-i18n unit tests (4-variant × 11-key matrix + readFabricLanguage edge cases + protected-token verbatim assertions).
+- 8 new `fab config` panel scenarios (uninit gate ×2, exit path, Group A enum roundtrip, Group B int roundtrip, validator rejection ×2, installMcpClients export contract).
+- Integration tests asserting hook libs ship to all 3 clients + symmetric uninstall cascade-prunes.
+- CLI test suite: 478 → 552 passed (no regressions).
+
+### Cross-phase
+
+- Group D (skill-internal tuning, 10 keys) + Group E (plumbing, 5 keys) intentionally NOT in panel — power users edit JSON directly.
+- 7-vs-8 Group B count discrepancy resolved: `archive_edit_threshold` (Signal A edit-count cutoff) was the missing 8th key.
+- Pre-user clean-slate: no migration shim, no v1 compat — direct rename + introspection wiring.
+
+### Coming in rc.17 (Phase 4)
+
+- `--help` content rewrite + 装/配/跑 mental model intro
+- Target resolution chain consolidation (drop `externalFixturePath` config field)
+- `serve --host` security warning rewrite
+- Bug Y (Codex MCP wiring re-diagnosis)
+
 ## [2.0.0-rc.15] - 2026-05-14
 
 ### Changed (Breaking — CLI surface contraction)
