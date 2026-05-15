@@ -54,6 +54,12 @@ const {
 } = require("node:fs");
 const { join } = require("node:path");
 
+// rc.16 TASK-003: shared banner-i18n lib (resolves fabric_language config and
+// renders localized banner text). Mirror of the wiring in fabric-hint.cjs
+// (TASK-002). Variant is resolved ONCE per main() invocation via
+// readFabricLanguage(cwd) and threaded into renderBanner — no fs in render path.
+const { renderBanner, readFabricLanguage } = require("./lib/banner-i18n.cjs");
+
 // -----------------------------------------------------------------------------
 // rc.12: SessionStart broad-menu is now unconditionally emitted on every
 // SessionStart fire (matching Skill-style progressive disclosure). Prior
@@ -257,10 +263,12 @@ const MATURITY_PROVEN = "proven";
 const MATURITY_VERIFIED = "verified";
 const MATURITY_DRAFT = "draft";
 
-// rc.8 underseed self-check banner text. Single line, mirrors the emoji-prefix
-// style of other Fabric banners (cf. fabric-hint.cjs Signal C `📋 Fabric:`).
-const IMPORT_RECOMMENDATION_BANNER =
-  "  📋 Fabric: 知识库稀疏，是否调 /fabric-import 从 git 历史与现有文档回灌知识?";
+// rc.8 underseed self-check banner: single line, emoji-prefixed (cf.
+// fabric-hint.cjs Signal C `📋 Fabric:`). rc.16 TASK-003 routed the literal
+// through the banner-i18n lib (key: 'broadImportBanner') — see main() below
+// for the renderBanner call site. Substring contracts preserved across all
+// variants: leading two-space indent, `📋 Fabric:` prefix, `/fabric-import`
+// verbatim token (asserted by knowledge-hint-broad.test.ts).
 
 // -----------------------------------------------------------------------------
 // CLI invocation
@@ -431,16 +439,29 @@ function renderTruncated(narrow) {
  *
  * Returns an array of lines (one stderr write per line keeps the formatter
  * trivial and testable). Returns [] when there is nothing meaningful to say
- * (empty narrow set) so callers know to stay silent.
+ * (empty entries set) so callers know to stay silent.
+ *
+ * Protocol v2 gate (rc.18): payloads must carry `version: 2`. A null/missing
+ * payload returns [] silently; a payload with a mismatched `version` returns []
+ * after writing exactly one stderr breadcrumb so operators grepping a stuck-
+ * banner report can diagnose the version drift without source-diving.
  */
 function renderSummary(payload) {
-  // Local rebind: `payload.narrow` in `--all` mode degenerates to the full
-  // shared index (every broad-scoped entry), so the field name `narrow` is
-  // misleading at this rendering layer. We rename the local variable to
-  // `entries` to avoid name confusion when reading renderSummary in isolation.
-  // The CLI protocol field name (`payload.narrow`) is unchanged — a wire-shape
-  // rename is a deferred independent task.
-  const entries = Array.isArray(payload && payload.narrow) ? payload.narrow : [];
+  if (!payload || payload.version !== 2) {
+    if (payload && payload.version !== undefined) {
+      try {
+        process.stderr.write(
+          `[fabric] hint payload version=${payload.version} unsupported (expected 2), skipping\n`,
+        );
+      } catch {}
+    }
+    return [];
+  }
+  // Protocol v2 (rc.18): the wire field is now `payload.entries`, matching what
+  // this renderer always called it locally. The historical `narrow` name (which
+  // degenerated in --all mode) has been retired without a compat shim per
+  // pre-user clean-slate policy.
+  const entries = Array.isArray(payload.entries) ? payload.entries : [];
   if (entries.length === 0) return [];
 
   const truncated = entries.length > TRUNCATION_THRESHOLD;
@@ -487,7 +508,12 @@ function main(env, stdio) {
     const lines = renderSummary(payload);
 
     if (recommendImport) {
-      lines.push(IMPORT_RECOMMENDATION_BANNER);
+      // rc.16 TASK-003: resolve fabric_language ONCE per invocation (only when
+      // we actually need to emit the banner — keeps the no-banner path free of
+      // the extra config read). 'match-existing' / unknown variant folds to 'en'
+      // inside renderBanner per UX i18n Policy class 1.
+      const variant = readFabricLanguage(cwd);
+      lines.push(renderBanner("broadImportBanner", variant, {}));
     }
 
     if (lines.length === 0) return; // nothing to say — silent exit
@@ -523,7 +549,6 @@ module.exports = {
     MATURITY_DRAFT,
     DEFAULT_UNDERSEED_NODE_THRESHOLD,
     KNOWLEDGE_CANONICAL_TYPES,
-    IMPORT_RECOMMENDATION_BANNER,
   },
 };
 

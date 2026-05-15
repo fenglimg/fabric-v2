@@ -615,8 +615,16 @@ function formatEntryLine(entry) {
 
 /**
  * Render the narrow-match block to an array of stderr lines. Returns []
- * when there is nothing to render (empty narrow set). Callers stay silent
+ * when there is nothing to render (empty entries set). Callers stay silent
  * on empty output.
+ *
+ * Protocol gate (rc.18): only `payload.version === 2` payloads are
+ * rendered. Anything else returns []. When the payload exists but carries
+ * a mismatched (non-undefined) version, a one-line stderr breadcrumb is
+ * emitted as a debug aid — see `_protocol-v2-decisions.md` (Decision 2,
+ * "silent-skip + one-line stderr breadcrumb"). The wire field is
+ * `payload.entries` (renamed from `payload.narrow` in protocol v2,
+ * Decision 1).
  *
  * Output shape:
  *   [fabric] N narrow-scoped knowledge entries match your edit targets:
@@ -625,13 +633,28 @@ function formatEntryLine(entry) {
  *   (如需重读 broad 决策，调 fab_plan_context 或 fabric plan-context-hint --all)
  */
 function renderSummary(payload) {
-  const narrow = Array.isArray(payload && payload.narrow) ? payload.narrow : [];
-  if (narrow.length === 0) return [];
+  if (!payload || payload.version !== 2) {
+    if (payload && payload.version !== undefined) {
+      // breadcrumb only if payload exists but version mismatches (avoid
+      // spam on null). Best-effort write — silent-on-failure honors the
+      // hook's "never block edits" contract.
+      try {
+        process.stderr.write(
+          `[fabric] hint payload version=${payload.version} unsupported (expected 2), skipping\n`,
+        );
+      } catch {
+        // ignore — stderr unavailable, silent-skip still applies
+      }
+    }
+    return [];
+  }
+  const entries = Array.isArray(payload.entries) ? payload.entries : [];
+  if (entries.length === 0) return [];
 
   const lines = [
-    `[fabric] ${narrow.length} narrow-scoped knowledge entries match your edit targets:`,
+    `[fabric] ${entries.length} narrow-scoped knowledge entries match your edit targets:`,
   ];
-  for (const entry of narrow) {
+  for (const entry of entries) {
     lines.push(formatEntryLine(entry));
   }
   lines.push("  (如需重读 broad 决策，调 fab_plan_context 或 fabric plan-context-hint --all)");
@@ -699,7 +722,8 @@ function main(env, stdio) {
         : invokePlanContextHint(cwd, paths);
     if (cliPayload === null || cliPayload === undefined) return;
 
-    const narrow = Array.isArray(cliPayload.narrow) ? cliPayload.narrow : [];
+    // Protocol v2 (rc.18 TASK-005): wire field is `entries`, no v1 shim.
+    const narrow = Array.isArray(cliPayload.entries) ? cliPayload.entries : [];
     if (narrow.length === 0) {
       // rc.6 TASK-023 (E6): silence-counter — matched-narrow == 0. The CLI
       // had a chance to match against the extracted paths but came back
@@ -764,7 +788,7 @@ function main(env, stdio) {
       });
     }
 
-    const lines = renderSummary({ ...cliPayload, narrow: gateDecision.narrow });
+    const lines = renderSummary({ ...cliPayload, entries: gateDecision.narrow });
     if (lines.length === 0) return;
     for (const line of lines) {
       err.write(`${line}\n`);

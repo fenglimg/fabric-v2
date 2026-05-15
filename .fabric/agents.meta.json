@@ -5,13 +5,6 @@
       "file": ".fabric/knowledge/decisions/KT-DEC-0001.md",
       "content_ref": ".fabric/knowledge/decisions/KT-DEC-0001.md",
       "scope_glob": "decisions/KT-DEC-0001/**",
-      "deps": [
-        "L0"
-      ],
-      "priority": "medium",
-      "level": "L1",
-      "layer": "L1",
-      "topology_type": "mirror",
       "hash": "sha256:a632197470a264aebf4a4df622c6a9869272b19ef4207f92a543341370e6fa87",
       "stable_id": "KT-DEC-0001",
       "identity_source": "declared",
@@ -23,19 +16,19 @@
         "must_read_if": "Boundary B: data + lifecycle + async-review primitive",
         "relevance_scope": "broad",
         "relevance_paths": []
-      }
-    },
-    "KT-DEC-0002": {
-      "file": ".fabric/knowledge/decisions/KT-DEC-0002.md",
-      "content_ref": ".fabric/knowledge/decisions/KT-DEC-0002.md",
-      "scope_glob": "decisions/KT-DEC-0002/**",
+      },
       "deps": [
         "L0"
       ],
       "priority": "medium",
       "level": "L1",
       "layer": "L1",
-      "topology_type": "mirror",
+      "topology_type": "mirror"
+    },
+    "KT-DEC-0002": {
+      "file": ".fabric/knowledge/decisions/KT-DEC-0002.md",
+      "content_ref": ".fabric/knowledge/decisions/KT-DEC-0002.md",
+      "scope_glob": "decisions/KT-DEC-0002/**",
       "hash": "sha256:b704567ab43bd713fb3e1a1014d56d30f8c217dacec6010ab02a0fdfdd2eddb4",
       "stable_id": "KT-DEC-0002",
       "identity_source": "declared",
@@ -47,19 +40,19 @@
         "must_read_if": "v2.0 clean rebrand over v1.x staged migration",
         "relevance_scope": "broad",
         "relevance_paths": []
-      }
-    },
-    "KT-DEC-0003": {
-      "file": ".fabric/knowledge/decisions/KT-DEC-0003.md",
-      "content_ref": ".fabric/knowledge/decisions/KT-DEC-0003.md",
-      "scope_glob": "decisions/KT-DEC-0003/**",
+      },
       "deps": [
         "L0"
       ],
       "priority": "medium",
       "level": "L1",
       "layer": "L1",
-      "topology_type": "mirror",
+      "topology_type": "mirror"
+    },
+    "KT-DEC-0003": {
+      "file": ".fabric/knowledge/decisions/KT-DEC-0003.md",
+      "content_ref": ".fabric/knowledge/decisions/KT-DEC-0003.md",
+      "scope_glob": "decisions/KT-DEC-0003/**",
       "hash": "sha256:dc642c30594642556d62e61bf87f4956d014576aba35e45c23621d5b74856076",
       "stable_id": "KT-DEC-0003",
       "identity_source": "declared",
@@ -71,19 +64,19 @@
         "must_read_if": "Dual-root layout: ~/.fabric + <repo>/.fabric",
         "relevance_scope": "broad",
         "relevance_paths": []
-      }
-    },
-    "KT-DEC-0004": {
-      "file": ".fabric/knowledge/decisions/KT-DEC-0004.md",
-      "content_ref": ".fabric/knowledge/decisions/KT-DEC-0004.md",
-      "scope_glob": "decisions/KT-DEC-0004/**",
+      },
       "deps": [
         "L0"
       ],
       "priority": "medium",
       "level": "L1",
       "layer": "L1",
-      "topology_type": "mirror",
+      "topology_type": "mirror"
+    },
+    "KT-DEC-0004": {
+      "file": ".fabric/knowledge/decisions/KT-DEC-0004.md",
+      "content_ref": ".fabric/knowledge/decisions/KT-DEC-0004.md",
+      "scope_glob": "decisions/KT-DEC-0004/**",
       "hash": "sha256:2ce2adf4bf15301ba59aa8cfc19dd0d97ee656e6ff867c6514dc626a43b99458",
       "stable_id": "KT-DEC-0004",
       "identity_source": "declared",
@@ -95,19 +88,19 @@
         "must_read_if": "stable_id format K[PT]-(DEC|MOD|GLD|PIT|PRO)-NNNN with monotonic counter",
         "relevance_scope": "broad",
         "relevance_paths": []
-      }
-    },
-    "KT-DEC-0005": {
-      "file": ".fabric/knowledge/decisions/KT-DEC-0005.md",
-      "content_ref": ".fabric/knowledge/decisions/KT-DEC-0005.md",
-      "scope_glob": "decisions/KT-DEC-0005/**",
+      },
       "deps": [
         "L0"
       ],
       "priority": "medium",
       "level": "L1",
       "layer": "L1",
-      "topology_type": "mirror",
+      "topology_type": "mirror"
+    },
+    "KT-DEC-0005": {
+      "file": ".fabric/knowledge/decisions/KT-DEC-0005.md",
+      "content_ref": ".fabric/knowledge/decisions/KT-DEC-0005.md",
+      "scope_glob": "decisions/KT-DEC-0005/**",
       "hash": "sha256:2efcb6919b48663c6c29d4f0c046d8cfe0211279a78ca41e37f278445bea54e7",
       "stable_id": "KT-DEC-0005",
       "identity_source": "declared",
@@ -119,19 +112,19 @@
         "must_read_if": "5-type / 3-maturity / 2-layer schema with flat scalar frontmatter",
         "relevance_scope": "broad",
         "relevance_paths": []
-      }
-    },
-    "KT-DEC-0006": {
-      "file": ".fabric/knowledge/decisions/KT-DEC-0006.md",
-      "content_ref": ".fabric/knowledge/decisions/KT-DEC-0006.md",
-      "scope_glob": "decisions/KT-DEC-0006/**",
+      },
       "deps": [
         "L0"
       ],
       "priority": "medium",
       "level": "L1",
       "layer": "L1",
-      "topology_type": "mirror",
+      "topology_type": "mirror"
+    },
+    "KT-DEC-0006": {
+      "file": ".fabric/knowledge/decisions/KT-DEC-0006.md",
+      "content_ref": ".fabric/knowledge/decisions/KT-DEC-0006.md",
+      "scope_glob": "decisions/KT-DEC-0006/**",
       "hash": "sha256:00b9f770283988cea25328e41317aa9d4804225b7cdd86725235a4fb5ea41109",
       "stable_id": "KT-DEC-0006",
       "identity_source": "declared",
@@ -143,19 +136,19 @@
         "must_read_if": "Review mode inferred from context, not solicited via AskUserQuestion",
         "relevance_scope": "broad",
         "relevance_paths": []
-      }
-    },
-    "KT-DEC-0007": {
-      "file": ".fabric/knowledge/decisions/KT-DEC-0007.md",
-      "content_ref": ".fabric/knowledge/decisions/KT-DEC-0007.md",
-      "scope_glob": "decisions/KT-DEC-0007/**",
+      },
       "deps": [
         "L0"
       ],
       "priority": "medium",
       "level": "L1",
       "layer": "L1",
-      "topology_type": "mirror",
+      "topology_type": "mirror"
+    },
+    "KT-DEC-0007": {
+      "file": ".fabric/knowledge/decisions/KT-DEC-0007.md",
+      "content_ref": ".fabric/knowledge/decisions/KT-DEC-0007.md",
+      "scope_glob": "decisions/KT-DEC-0007/**",
       "hash": "sha256:736eb5a83fed3005b97a7be1a0936f64ab41111fce8ebf7117fc2ccca77b911a",
       "stable_id": "KT-DEC-0007",
       "identity_source": "declared",
@@ -167,19 +160,19 @@
         "must_read_if": "Hook = reminder layer (exit 2 + stderr/followup_message), never blocks",
         "relevance_scope": "broad",
         "relevance_paths": []
-      }
-    },
-    "KT-DEC-0008": {
-      "file": ".fabric/knowledge/decisions/KT-DEC-0008.md",
-      "content_ref": ".fabric/knowledge/decisions/KT-DEC-0008.md",
-      "scope_glob": "decisions/KT-DEC-0008/**",
+      },
       "deps": [
         "L0"
       ],
       "priority": "medium",
       "level": "L1",
       "layer": "L1",
-      "topology_type": "mirror",
+      "topology_type": "mirror"
+    },
+    "KT-DEC-0008": {
+      "file": ".fabric/knowledge/decisions/KT-DEC-0008.md",
+      "content_ref": ".fabric/knowledge/decisions/KT-DEC-0008.md",
+      "scope_glob": "decisions/KT-DEC-0008/**",
       "hash": "sha256:eb5ec81143e00201168587c80ed9783ac85ca9ee42fde49bb9d68870c6e4492f",
       "stable_id": "KT-DEC-0008",
       "identity_source": "declared",
@@ -191,49 +184,49 @@
         "must_read_if": "Decay thresholds: 90 / 30 / 14 days (1/4 of Tencent article baselines)",
         "relevance_scope": "broad",
         "relevance_paths": []
-      }
+      },
+      "deps": [
+        "L0"
+      ],
+      "priority": "medium",
+      "level": "L1",
+      "layer": "L1",
+      "topology_type": "mirror"
     },
     "KT-DEC-0009": {
       "file": ".fabric/knowledge/decisions/KT-DEC-0009--rc2-single-cjs-hook-across-clients.md",
       "content_ref": ".fabric/knowledge/decisions/KT-DEC-0009--rc2-single-cjs-hook-across-clients.md",
       "scope_glob": "decisions/KT-DEC-0009--rc2-single-cjs-hook-across-clients/**",
+      "hash": "sha256:f05d50a42b238ba27aba9acad93efb5530a4245da6b55e6e3b8fcbe09a1baa9d",
+      "stable_id": "KT-DEC-0009",
+      "identity_source": "declared",
       "deps": [
         "L0"
       ],
       "priority": "medium",
       "level": "L1",
       "layer": "L1",
-      "topology_type": "mirror",
-      "hash": "sha256:f05d50a42b238ba27aba9acad93efb5530a4245da6b55e6e3b8fcbe09a1baa9d",
-      "stable_id": "KT-DEC-0009",
-      "identity_source": "declared"
+      "topology_type": "mirror"
     },
     "KT-DEC-9001": {
       "file": ".fabric/knowledge/decisions/KT-DEC-9001--manual-rc3-fallback-test.md",
       "content_ref": ".fabric/knowledge/decisions/KT-DEC-9001--manual-rc3-fallback-test.md",
       "scope_glob": "decisions/KT-DEC-9001--manual-rc3-fallback-test/**",
+      "hash": "sha256:2a82468e986a3787df85c060fbfed84e2ab63035eeb801d4b0588017da4c387f",
+      "stable_id": "KT-DEC-9001",
+      "identity_source": "declared",
       "deps": [
         "L0"
       ],
       "priority": "medium",
       "level": "L1",
       "layer": "L1",
-      "topology_type": "mirror",
-      "hash": "sha256:2a82468e986a3787df85c060fbfed84e2ab63035eeb801d4b0588017da4c387f",
-      "stable_id": "KT-DEC-9001",
-      "identity_source": "declared"
+      "topology_type": "mirror"
     },
     "KT-GLD-0001": {
       "file": ".fabric/knowledge/guidelines/code-style.md",
       "content_ref": ".fabric/knowledge/guidelines/code-style.md",
       "scope_glob": "guidelines/code-style/**",
-      "deps": [
-        "L0"
-      ],
-      "priority": "medium",
-      "level": "L1",
-      "layer": "L1",
-      "topology_type": "mirror",
       "hash": "sha256:838b90333970c3f330c22a5579a68749be4718a9c984aa0480ab5cfb3eade414",
       "stable_id": "KT-GLD-0001",
       "identity_source": "declared",
@@ -250,19 +243,19 @@
         "MISSION_STATEMENT",
         "MANDATORY_INJECTION",
         "CONTEXT_INFO"
-      ]
-    },
-    "KT-MOD-0001": {
-      "file": ".fabric/knowledge/models/tech-stack.md",
-      "content_ref": ".fabric/knowledge/models/tech-stack.md",
-      "scope_glob": "models/tech-stack/**",
+      ],
       "deps": [
         "L0"
       ],
       "priority": "medium",
       "level": "L1",
       "layer": "L1",
-      "topology_type": "mirror",
+      "topology_type": "mirror"
+    },
+    "KT-MOD-0001": {
+      "file": ".fabric/knowledge/models/tech-stack.md",
+      "content_ref": ".fabric/knowledge/models/tech-stack.md",
+      "scope_glob": "models/tech-stack/**",
       "hash": "sha256:f9abcdec207dadd5123bc74cf98cdf29dd3276a7ffe554bc87dc30f96560d13b",
       "stable_id": "KT-MOD-0001",
       "identity_source": "declared",
@@ -278,19 +271,19 @@
       "sections": [
         "MISSION_STATEMENT",
         "CONTEXT_INFO"
-      ]
-    },
-    "KT-MOD-0002": {
-      "file": ".fabric/knowledge/models/module-structure.md",
-      "content_ref": ".fabric/knowledge/models/module-structure.md",
-      "scope_glob": "models/module-structure/**",
+      ],
       "deps": [
         "L0"
       ],
       "priority": "medium",
       "level": "L1",
       "layer": "L1",
-      "topology_type": "mirror",
+      "topology_type": "mirror"
+    },
+    "KT-MOD-0002": {
+      "file": ".fabric/knowledge/models/module-structure.md",
+      "content_ref": ".fabric/knowledge/models/module-structure.md",
+      "scope_glob": "models/module-structure/**",
       "hash": "sha256:75bb9507c9db7beedf73588f9b93ff1a2cebf33a5fe5bf7bc3322c01e57eb713",
       "stable_id": "KT-MOD-0002",
       "identity_source": "declared",
@@ -306,19 +299,19 @@
       "sections": [
         "MISSION_STATEMENT",
         "CONTEXT_INFO"
-      ]
-    },
-    "KT-MOD-0003": {
-      "file": ".fabric/knowledge/models/readme-first-paragraph.md",
-      "content_ref": ".fabric/knowledge/models/readme-first-paragraph.md",
-      "scope_glob": "models/readme-first-paragraph/**",
+      ],
       "deps": [
         "L0"
       ],
       "priority": "medium",
       "level": "L1",
       "layer": "L1",
-      "topology_type": "mirror",
+      "topology_type": "mirror"
+    },
+    "KT-MOD-0003": {
+      "file": ".fabric/knowledge/models/readme-first-paragraph.md",
+      "content_ref": ".fabric/knowledge/models/readme-first-paragraph.md",
+      "scope_glob": "models/readme-first-paragraph/**",
       "hash": "sha256:68a7670d183d2c66d495f87435304493cb43b8ed1af9d0655539eeb28010be88",
       "stable_id": "KT-MOD-0003",
       "identity_source": "declared",
@@ -334,34 +327,34 @@
       "sections": [
         "MISSION_STATEMENT",
         "CONTEXT_INFO"
-      ]
+      ],
+      "deps": [
+        "L0"
+      ],
+      "priority": "medium",
+      "level": "L1",
+      "layer": "L1",
+      "topology_type": "mirror"
     },
     "KT-PIT-9101": {
       "file": ".fabric/knowledge/pitfalls/KT-PIT-9101--rc4-dogfood-orphan-demote-fixture.md",
       "content_ref": ".fabric/knowledge/pitfalls/KT-PIT-9101--rc4-dogfood-orphan-demote-fixture.md",
       "scope_glob": "pitfalls/KT-PIT-9101--rc4-dogfood-orphan-demote-fixture/**",
+      "hash": "sha256:311cee17be60b346ca151e4c4c64dbb84770dc498849eb73a4e301f47fba7d13",
+      "stable_id": "KT-PIT-9101",
+      "identity_source": "declared",
       "deps": [
         "L0"
       ],
       "priority": "medium",
       "level": "L1",
       "layer": "L1",
-      "topology_type": "mirror",
-      "hash": "sha256:311cee17be60b346ca151e4c4c64dbb84770dc498849eb73a4e301f47fba7d13",
-      "stable_id": "KT-PIT-9101",
-      "identity_source": "declared"
+      "topology_type": "mirror"
     },
     "KT-PRO-0001": {
       "file": ".fabric/knowledge/processes/build-config.md",
       "content_ref": ".fabric/knowledge/processes/build-config.md",
       "scope_glob": "processes/build-config/**",
-      "deps": [
-        "L0"
-      ],
-      "priority": "medium",
-      "level": "L1",
-      "layer": "L1",
-      "topology_type": "mirror",
       "hash": "sha256:5f3a20fc0af25ed3731bfe8f01cf023da855c7894275b18a8c89ac9040b81ee4",
       "stable_id": "KT-PRO-0001",
       "identity_source": "declared",
@@ -378,7 +371,14 @@
         "MISSION_STATEMENT",
         "BUSINESS_LOGIC_CHUNKS",
         "CONTEXT_INFO"
-      ]
+      ],
+      "deps": [
+        "L0"
+      ],
+      "priority": "medium",
+      "level": "L1",
+      "layer": "L1",
+      "topology_type": "mirror"
     }
   },
   "counters": {
@@ -390,11 +390,11 @@
       "PRO": 0
     },
     "KT": {
-      "MOD": 0,
-      "DEC": 0,
-      "GLD": 0,
-      "PIT": 0,
-      "PRO": 0
+      "MOD": 3,
+      "DEC": 9001,
+      "GLD": 1,
+      "PIT": 9101,
+      "PRO": 1
     }
   }
 }

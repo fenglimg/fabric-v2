@@ -1,13 +1,3 @@
-# Project Knowledge
-
-This project uses [Fabric](https://github.com/fenglimg/fabric) for cross-client AI knowledge management.
-
-Knowledge entries live in `.fabric/knowledge/` (team) and `~/.fabric/knowledge/` (personal).
-Run `fabric doctor` to verify state.
-
-See `.fabric/knowledge/` for project decisions, pitfalls, guidelines, models, and processes.
-
-<!-- fabric:bootstrap:begin -->
 # Fabric Bootstrap
 
 本项目使用 Fabric 管理跨客户端 AI 知识与行为规则。本文件由 `fab install` 同步到三端 managed block,**不要手动编辑三端的 block**,只改这里 + 重跑 `fab install`。
@@ -21,5 +11,3 @@ See `.fabric/knowledge/` for project decisions, pitfalls, guidelines, models, an
 - **Usage**:用 `fab_get_knowledge_sections(id=...)` 按 id 取条目全文。
 - **Write flows**:`fabric-archive` / `fabric-review` / `fabric-import` 三个 Skills。
 - **Language**:渲染按 `.fabric/fabric-config.json` 的 `fabric_language` 字段。
-
-<!-- fabric:bootstrap:end -->
