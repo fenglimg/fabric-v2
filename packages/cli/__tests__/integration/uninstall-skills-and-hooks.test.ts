@@ -318,47 +318,98 @@ describe("TASK-005 uninstall round-trip: T5 idempotent re-run", () => {
 });
 
 // ---------------------------------------------------------------------------
-// T6 — CLAUDE.md managed-section strip preserves user content
+// T6 — Three-end bootstrap strip (rc.19 TASK-003)
 //
-// rc.12 broad-gate-fabric-lang TASK-006: replaces the rc.4 POINTER_LINE
-// substring-strip assertions. The new managed-section uninstall must remove
-// the entire begin→end region (markers inclusive) from each target, leaving
-// pre-existing user content intact. Re-running uninstall is a no-op.
+// Symmetric inverse of the three-end propagation writers in install. Each
+// target has its own strip rule:
+//   - CLAUDE.md                          — line-level strip of `@.fabric/AGENTS.md`
+//                                          and `@.fabric/project-rules.md`
+//                                          (managed block was never written
+//                                          to CLAUDE.md, so no marker strip).
+//   - AGENTS.md                          — strip `fabric:bootstrap` managed
+//                                          block (markers inclusive).
+//   - .cursor/rules/fabric-bootstrap.mdc — strip managed block; delete the
+//                                          file when only YAML front-matter
+//                                          remains.
+//
+// New assertions:
+//   - uninstall deletes `.fabric/AGENTS.md` (the L1 snapshot).
+//   - uninstall PRESERVES `.fabric/project-rules.md` byte-for-byte
+//     (user-authored, only-if-exists per locked decision NEW-4).
 // ---------------------------------------------------------------------------
 
-const SECTION_BEGIN_UN = "<!-- fabric:knowledge-base:begin -->";
-const SECTION_END_UN = "<!-- fabric:knowledge-base:end -->";
+const SECTION_BEGIN_UN = "<!-- fabric:bootstrap:begin -->";
+const SECTION_END_UN = "<!-- fabric:bootstrap:end -->";
 
-describe("TASK-006 uninstall round-trip: managed-section strip", () => {
-  it("strips the Fabric Knowledge Base section from CLAUDE.md while preserving user-authored content", async () => {
+const CURSOR_BOOTSTRAP_MDC_REL_UN = ".cursor/rules/fabric-bootstrap.mdc";
+
+describe("rc.19 TASK-003 uninstall round-trip: bootstrap three-end strip", () => {
+  it("strips fabric content from CLAUDE.md / AGENTS.md / Cursor mdc while preserving user content", async () => {
     const target = createWerewolfFixtureRoot("itg-uninstall-t6-section");
     tempRoots.push(target);
 
-    // Seed user-authored CLAUDE.md BEFORE init so addFabricKnowledgeBaseSection
-    // sees a non-absent target. install writes the managed section; uninstall
-    // must strip it cleanly, leaving only the seed content.
+    // Seed user-authored CLAUDE.md + AGENTS.md BEFORE init so the install
+    // propagators see non-absent targets. Install appends the managed
+    // payload; uninstall must strip cleanly, leaving only the seed content.
     const seed = "# Project notes\n\nUser-authored project guidance lives here.\n";
     writeFixtureFile(target, "CLAUDE.md", seed);
+    writeFixtureFile(target, "AGENTS.md", seed);
 
     await runInit(target);
 
-    const afterInit = readFileSync(join(target, "CLAUDE.md"), "utf8");
-    // Sanity: install wrote both markers and the canonical heading.
-    expect(afterInit).toContain(SECTION_BEGIN_UN);
-    expect(afterInit).toContain(SECTION_END_UN);
-    expect(afterInit).toContain("## Fabric Knowledge Base");
+    // Sanity: install wrote the propagated bytes.
+    const claudeAfterInit = readFileSync(join(target, "CLAUDE.md"), "utf8");
+    expect(claudeAfterInit).toContain("@.fabric/AGENTS.md");
+    // CLAUDE.md does NOT receive a managed block.
+    expect(claudeAfterInit).not.toContain(SECTION_BEGIN_UN);
+
+    const agentsAfterInit = readFileSync(join(target, "AGENTS.md"), "utf8");
+    expect(agentsAfterInit).toContain(SECTION_BEGIN_UN);
+    expect(agentsAfterInit).toContain(SECTION_END_UN);
+
+    expect(existsSync(join(target, CURSOR_BOOTSTRAP_MDC_REL_UN))).toBe(true);
+    expect(existsSync(join(target, ".fabric/AGENTS.md"))).toBe(true);
 
     await runUninstall(target);
 
-    const afterUninstall = readFileSync(join(target, "CLAUDE.md"), "utf8");
-    // Both markers and the heading must be gone.
-    expect(afterUninstall).not.toContain(SECTION_BEGIN_UN);
-    expect(afterUninstall).not.toContain(SECTION_END_UN);
-    expect(afterUninstall).not.toContain("## Fabric Knowledge Base");
+    // CLAUDE.md: `@`-import line is gone; user content survives.
+    const claudeAfterUninstall = readFileSync(join(target, "CLAUDE.md"), "utf8");
+    expect(claudeAfterUninstall).not.toContain("@.fabric/AGENTS.md");
+    expect(claudeAfterUninstall).toContain("# Project notes");
+    expect(claudeAfterUninstall).toContain("User-authored project guidance lives here.");
 
-    // User content survives — first line of the seed is still present.
-    expect(afterUninstall).toContain("# Project notes");
-    expect(afterUninstall).toContain("User-authored project guidance lives here.");
+    // AGENTS.md: managed block stripped; user content survives.
+    const agentsAfterUninstall = readFileSync(join(target, "AGENTS.md"), "utf8");
+    expect(agentsAfterUninstall).not.toContain(SECTION_BEGIN_UN);
+    expect(agentsAfterUninstall).not.toContain(SECTION_END_UN);
+    expect(agentsAfterUninstall).toContain("# Project notes");
+    expect(agentsAfterUninstall).toContain("User-authored project guidance lives here.");
+
+    // Cursor mdc: file deleted (front-matter-only after strip).
+    expect(existsSync(join(target, CURSOR_BOOTSTRAP_MDC_REL_UN))).toBe(false);
+
+    // L1 snapshot deleted.
+    expect(existsSync(join(target, ".fabric/AGENTS.md"))).toBe(false);
+  });
+
+  it("preserves user-authored .fabric/project-rules.md byte-for-byte", async () => {
+    const target = createWerewolfFixtureRoot("itg-uninstall-t6-project-rules");
+    tempRoots.push(target);
+
+    // Seed user-authored project-rules.md before init.
+    const userRules = "CUSTOM RULES — must survive uninstall.\n";
+    writeFixtureFile(target, ".fabric/project-rules.md", userRules);
+
+    await runInit(target);
+    // Sanity: install did not clobber the user file.
+    expect(readFileSync(join(target, ".fabric/project-rules.md"), "utf8")).toBe(userRules);
+
+    await runUninstall(target);
+
+    // L1 snapshot gone, but the user-authored companion survives byte-for-byte.
+    expect(existsSync(join(target, ".fabric/AGENTS.md"))).toBe(false);
+    expect(existsSync(join(target, ".fabric/project-rules.md"))).toBe(true);
+    expect(readFileSync(join(target, ".fabric/project-rules.md"), "utf8")).toBe(userRules);
   });
 
   it("uninstall is idempotent: running it twice yields the same content (no-op on second pass)", async () => {
@@ -367,17 +418,19 @@ describe("TASK-006 uninstall round-trip: managed-section strip", () => {
 
     const seed = "# Project notes\n\nUser-authored project guidance lives here.\n";
     writeFixtureFile(target, "CLAUDE.md", seed);
+    writeFixtureFile(target, "AGENTS.md", seed);
 
     await runInit(target);
     await runUninstall(target);
-    const afterFirst = readFileSync(join(target, "CLAUDE.md"), "utf8");
+    const claudeFirst = readFileSync(join(target, "CLAUDE.md"), "utf8");
+    const agentsFirst = readFileSync(join(target, "AGENTS.md"), "utf8");
 
     // Second uninstall on a section-free file must not throw and must not
     // mutate the content. The orchestrator may still record a step result
     // (status: "skipped", message: "no-fabric-section") but file bytes are
     // byte-identical to the post-first-uninstall snapshot.
     await runUninstall(target);
-    const afterSecond = readFileSync(join(target, "CLAUDE.md"), "utf8");
-    expect(afterSecond).toBe(afterFirst);
+    expect(readFileSync(join(target, "CLAUDE.md"), "utf8")).toBe(claudeFirst);
+    expect(readFileSync(join(target, "AGENTS.md"), "utf8")).toBe(agentsFirst);
   });
 });

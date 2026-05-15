@@ -26,6 +26,8 @@ import { fileURLToPath } from "node:url";
 
 import { afterEach, describe, expect, it } from "vitest";
 
+import { BOOTSTRAP_CANONICAL } from "@fenglimg/fabric-shared/templates/bootstrap-canonical";
+
 import { installHooks } from "../../src/install/hooks-orchestrator.ts";
 import {
   cleanupFixtureRoot,
@@ -429,18 +431,32 @@ describe("TASK-006 install-skills-and-hooks: partial install resilience", () => 
 });
 
 // ---------------------------------------------------------------------------
-// Test 8 — Managed "Fabric Knowledge Base" section
+// Test 8 — Three-end bootstrap propagation (rc.19 TASK-003)
 //
-// rc.12 broad-gate-fabric-lang TASK-006: replaces the rc.4 POINTER_LINE
-// substring-occurrence assertions. The new managed-section writer emits a
-// single HTML-comment-wrapped block per target file (CLAUDE.md / AGENTS.md /
-// .cursor/rules); tests verify presence, idempotency, in-place replace on
-// fabric_language change, and that user edits between markers are
-// intentionally overwritten on re-run (managed-section convention).
+// The legacy single-writer `addFabricKnowledgeBaseSection` (which emitted one
+// HTML-comment-wrapped block per CLAUDE.md / AGENTS.md / .cursor/rules) was
+// split into three per-client thin-shell writers backed by the L1 snapshot at
+// `.fabric/AGENTS.md`. New propagation targets:
+//
+//   - CLAUDE.md                          — thin shell with `@.fabric/AGENTS.md`
+//                                          `@`-import line (no managed block)
+//   - AGENTS.md                          — Codex managed block, body byte-equal
+//                                          to `.fabric/AGENTS.md`
+//   - .cursor/rules/fabric-bootstrap.mdc — Cursor directory rule with YAML
+//                                          front-matter (alwaysApply: true)
+//                                          and a managed block, body byte-
+//                                          equal to `.fabric/AGENTS.md`
+//
+// Marker constants moved to the new `fabric:bootstrap` pair. The legacy
+// `fabric:knowledge-base` marker is intentionally never written by install;
+// any pre-existing legacy region is stripped on first install (clean-slate
+// migration; see memory feedback_clean_slate.md).
 // ---------------------------------------------------------------------------
 
-const SECTION_BEGIN = "<!-- fabric:knowledge-base:begin -->";
-const SECTION_END = "<!-- fabric:knowledge-base:end -->";
+const SECTION_BEGIN = "<!-- fabric:bootstrap:begin -->";
+const SECTION_END = "<!-- fabric:bootstrap:end -->";
+
+const CURSOR_BOOTSTRAP_MDC_REL = ".cursor/rules/fabric-bootstrap.mdc";
 
 function countOccurrences(haystack: string, needle: string): number {
   let count = 0;
@@ -454,92 +470,125 @@ function countOccurrences(haystack: string, needle: string): number {
   return count;
 }
 
-describe("TASK-006 install-skills-and-hooks: Fabric Knowledge Base managed section", () => {
-  it("writes one begin/end marker pair (with heading between) on first install across all three targets", async () => {
-    const target = createWerewolfFixtureRoot("itg-install-section");
-    tempRoots.push(target);
+/**
+ * Extract the body of the BOOTSTRAP managed block from `content` (between but
+ * excluding the markers and the marker-trailing newlines). Returns null if no
+ * marker pair is present.
+ */
+function extractManagedBlockBody(content: string): string | null {
+  const beginIdx = content.indexOf(SECTION_BEGIN);
+  const endIdx = content.indexOf(SECTION_END);
+  if (beginIdx === -1 || endIdx === -1) return null;
+  // Body lives between `<begin>\n` and `\n<end>`.
+  const innerStart = beginIdx + SECTION_BEGIN.length + 1; // skip newline after begin
+  const innerEnd = endIdx - 1; // drop the newline before end
+  return content.slice(innerStart, innerEnd);
+}
 
-    // Pre-create each target so addFabricKnowledgeBaseSection sees a non-
-    // absent file. The helper skips targets that don't already exist.
-    const seedContent = "# Project Notes\n\nUser-authored content here.\n";
-    writeFixtureFile(target, "AGENTS.md", seedContent);
-    writeFixtureFile(target, "CLAUDE.md", seedContent);
-    writeFixtureFile(target, ".cursor/rules", seedContent);
+describe("rc.19 TASK-003 bootstrap propagation: three-end managed block + thin shell", () => {
+  it("writes .fabric/AGENTS.md byte-equal to BOOTSTRAP_CANONICAL + propagates to all three clients", async () => {
+    const target = createWerewolfFixtureRoot("itg-install-bootstrap-propagation");
+    tempRoots.push(target);
 
     await runInit(target);
 
-    for (const rel of ["AGENTS.md", "CLAUDE.md", ".cursor/rules"]) {
-      const content = readFileSync(join(target, rel), "utf8");
-      expect(countOccurrences(content, SECTION_BEGIN)).toBe(1);
-      expect(countOccurrences(content, SECTION_END)).toBe(1);
-      expect(content).toContain("## Fabric Knowledge Base");
-      // Begin marker precedes the heading which precedes the end marker.
-      const beginIdx = content.indexOf(SECTION_BEGIN);
-      const headingIdx = content.indexOf("## Fabric Knowledge Base");
-      const endIdx = content.indexOf(SECTION_END);
-      expect(beginIdx).toBeLessThan(headingIdx);
-      expect(headingIdx).toBeLessThan(endIdx);
-      // Pre-existing user content preserved verbatim above the section.
-      expect(content.startsWith(seedContent)).toBe(true);
-    }
+    // L1 snapshot: .fabric/AGENTS.md exists with content byte-equal to canonical.
+    const snapshotPath = join(target, ".fabric/AGENTS.md");
+    expect(existsSync(snapshotPath)).toBe(true);
+    const snapshot = readFileSync(snapshotPath, "utf8");
+    expect(snapshot).toBe(BOOTSTRAP_CANONICAL);
+
+    // Codex: AGENTS.md at project root contains exactly one bootstrap marker
+    // pair; the body between markers byte-equals the snapshot.
+    const agentsMd = readFileSync(join(target, "AGENTS.md"), "utf8");
+    expect(countOccurrences(agentsMd, SECTION_BEGIN)).toBe(1);
+    expect(countOccurrences(agentsMd, SECTION_END)).toBe(1);
+    const codexBody = extractManagedBlockBody(agentsMd);
+    expect(codexBody).toBe(snapshot);
+
+    // Cursor: directory rule file exists with YAML front-matter
+    // (alwaysApply: true) + managed block byte-equal to snapshot.
+    const cursorRulePath = join(target, CURSOR_BOOTSTRAP_MDC_REL);
+    expect(existsSync(cursorRulePath)).toBe(true);
+    const cursorRule = readFileSync(cursorRulePath, "utf8");
+    expect(cursorRule).toContain("alwaysApply: true");
+    // Front-matter sits at the head of the file (well before the marker).
+    expect(cursorRule.indexOf("alwaysApply: true")).toBeLessThan(
+      cursorRule.indexOf(SECTION_BEGIN),
+    );
+    expect(countOccurrences(cursorRule, SECTION_BEGIN)).toBe(1);
+    expect(countOccurrences(cursorRule, SECTION_END)).toBe(1);
+    const cursorBody = extractManagedBlockBody(cursorRule);
+    expect(cursorBody).toBe(snapshot);
+
+    // Claude: CLAUDE.md is a thin shell with `@.fabric/AGENTS.md` exactly once
+    // and NO managed block (no `<!-- fabric:bootstrap:* -->` markers).
+    const claudeMd = readFileSync(join(target, "CLAUDE.md"), "utf8");
+    expect(claudeMd).not.toContain(SECTION_BEGIN);
+    expect(claudeMd).not.toContain(SECTION_END);
+    // Exactly one `@.fabric/AGENTS.md` line (whitespace-tolerant match per
+    // install-side hasExactLine semantics).
+    const importLines = claudeMd
+      .split(/\r?\n/)
+      .filter((l) => l.replace(/\s+$/, "") === "@.fabric/AGENTS.md");
+    expect(importLines).toHaveLength(1);
   });
 
-  it("is idempotent: re-running install yields byte-identical files", async () => {
-    const target = createWerewolfFixtureRoot("itg-install-section-idempotent");
+  it("is idempotent: re-running install yields byte-identical files across all targets", async () => {
+    const target = createWerewolfFixtureRoot("itg-install-bootstrap-idempotent");
     tempRoots.push(target);
-
-    const seedContent = "# Project Notes\n\nUser-authored content here.\n";
-    writeFixtureFile(target, "AGENTS.md", seedContent);
-    writeFixtureFile(target, "CLAUDE.md", seedContent);
-    writeFixtureFile(target, ".cursor/rules", seedContent);
 
     await runInit(target);
     const afterFirst: Record<string, string> = {};
-    for (const rel of ["AGENTS.md", "CLAUDE.md", ".cursor/rules"]) {
+    for (const rel of [
+      ".fabric/AGENTS.md",
+      "AGENTS.md",
+      "CLAUDE.md",
+      CURSOR_BOOTSTRAP_MDC_REL,
+    ]) {
       afterFirst[rel] = readFileSync(join(target, rel), "utf8");
     }
 
     await runInit(target);
-    for (const rel of ["AGENTS.md", "CLAUDE.md", ".cursor/rules"]) {
+    for (const rel of [
+      ".fabric/AGENTS.md",
+      "AGENTS.md",
+      "CLAUDE.md",
+      CURSOR_BOOTSTRAP_MDC_REL,
+    ]) {
       const afterSecond = readFileSync(join(target, rel), "utf8");
-      expect(afterSecond).toBe(afterFirst[rel]);
-      // Still exactly one marker pair.
-      expect(countOccurrences(afterSecond, SECTION_BEGIN)).toBe(1);
-      expect(countOccurrences(afterSecond, SECTION_END)).toBe(1);
+      expect(afterSecond, `${rel} drifted on second install`).toBe(afterFirst[rel]);
     }
+    // Codex + Cursor still have exactly one marker pair after re-run.
+    const agentsMd = readFileSync(join(target, "AGENTS.md"), "utf8");
+    expect(countOccurrences(agentsMd, SECTION_BEGIN)).toBe(1);
+    expect(countOccurrences(agentsMd, SECTION_END)).toBe(1);
+    const cursorRule = readFileSync(join(target, CURSOR_BOOTSTRAP_MDC_REL), "utf8");
+    expect(countOccurrences(cursorRule, SECTION_BEGIN)).toBe(1);
+    expect(countOccurrences(cursorRule, SECTION_END)).toBe(1);
   });
 
-  it("replaces the section in place when fabric_language changes (no duplication, no orphan section)", async () => {
-    const target = createWerewolfFixtureRoot("itg-install-section-language-change");
+  it("preserves pre-existing user content above managed block in AGENTS.md", async () => {
+    const target = createWerewolfFixtureRoot("itg-install-bootstrap-preserve-user");
     tempRoots.push(target);
 
     const seedContent = "# Project Notes\n\nUser-authored content here.\n";
     writeFixtureFile(target, "AGENTS.md", seedContent);
 
     await runInit(target);
-    const afterFirst = readFileSync(join(target, "AGENTS.md"), "utf8");
-    expect(countOccurrences(afterFirst, SECTION_BEGIN)).toBe(1);
 
-    // Flip fabric_language to a different value and re-install.
-    const configPath = join(target, ".fabric", "fabric-config.json");
-    const config = JSON.parse(readFileSync(configPath, "utf8")) as Record<string, unknown>;
-    config["fabric_language"] = "zh-CN-hybrid";
-    writeFixtureFile(target, ".fabric/fabric-config.json", JSON.stringify(config, null, 2) + "\n");
-
-    await runInit(target);
-    const afterSecond = readFileSync(join(target, "AGENTS.md"), "utf8");
-
-    // Exactly one marker pair after re-run — no duplication.
-    expect(countOccurrences(afterSecond, SECTION_BEGIN)).toBe(1);
-    expect(countOccurrences(afterSecond, SECTION_END)).toBe(1);
-    // The "Language" line now mentions the new value.
-    expect(afterSecond).toContain("`zh-CN-hybrid`");
-    // The old line is gone.
-    expect(afterSecond).not.toMatch(/current: `(en|match-existing)`/);
+    const content = readFileSync(join(target, "AGENTS.md"), "utf8");
+    // User content survives above the managed block.
+    expect(content.startsWith(seedContent)).toBe(true);
+    // Single marker pair appended after.
+    expect(countOccurrences(content, SECTION_BEGIN)).toBe(1);
+    expect(countOccurrences(content, SECTION_END)).toBe(1);
+    // Body byte-equals canonical.
+    expect(extractManagedBlockBody(content)).toBe(BOOTSTRAP_CANONICAL);
   });
 
-  it("overwrites user edits inside the markers on re-install (managed-section convention)", async () => {
-    const target = createWerewolfFixtureRoot("itg-install-section-managed");
+  it("overwrites user vandalism inside fabric:bootstrap markers on re-install", async () => {
+    const target = createWerewolfFixtureRoot("itg-install-bootstrap-vandalism");
     tempRoots.push(target);
 
     const seedContent = "# Project Notes\n\nUser-authored content here.\n";
@@ -556,7 +605,7 @@ describe("TASK-006 install-skills-and-hooks: Fabric Knowledge Base managed secti
     const vandalized =
       afterFirst.slice(0, beginIdx) +
       SECTION_BEGIN +
-      "\n\nUSER VANDALISM — should be wiped on re-install.\n\n" +
+      "\nUSER VANDALISM - should be wiped on re-install.\n" +
       SECTION_END +
       afterFirst.slice(endIdx);
     writeFixtureFile(target, "AGENTS.md", vandalized);
@@ -565,11 +614,110 @@ describe("TASK-006 install-skills-and-hooks: Fabric Knowledge Base managed secti
     const afterSecond = readFileSync(join(target, "AGENTS.md"), "utf8");
 
     expect(afterSecond).not.toContain("USER VANDALISM");
-    expect(afterSecond).toContain("## Fabric Knowledge Base");
+    // Body byte-equals canonical content again.
+    expect(extractManagedBlockBody(afterSecond)).toBe(BOOTSTRAP_CANONICAL);
     expect(countOccurrences(afterSecond, SECTION_BEGIN)).toBe(1);
     expect(countOccurrences(afterSecond, SECTION_END)).toBe(1);
     // Pre-section user content survives.
     expect(afterSecond.startsWith(seedContent)).toBe(true);
+  });
+
+  it("migrates legacy .cursor/rules flat-file to .cursor/rules/fabric-bootstrap.mdc directory rule", async () => {
+    const target = createWerewolfFixtureRoot("itg-install-bootstrap-cursor-migrate");
+    tempRoots.push(target);
+
+    // Seed the legacy state: `.cursor/rules` is a flat file (not a directory)
+    // containing a stale legacy `fabric:knowledge-base` managed section.
+    // Mirrors the rc.12-rc.18 install output that rc.19 now migrates away from.
+    const legacyContent =
+      "# User notes\n\n" +
+      "<!-- fabric:knowledge-base:begin -->\n" +
+      "## Fabric Knowledge Base\n\nLegacy body that must vanish.\n" +
+      "<!-- fabric:knowledge-base:end -->\n";
+    writeFixtureFile(target, ".cursor/rules", legacyContent);
+
+    // Sanity: legacy flat file present BEFORE install.
+    expect(existsSync(join(target, ".cursor/rules"))).toBe(true);
+    expect(statSync(join(target, ".cursor/rules")).isFile()).toBe(true);
+
+    await runInit(target);
+
+    // Post-install: legacy flat file is gone — `.cursor/rules` is now a
+    // DIRECTORY (the parent of the new `.mdc` directory rule), not the
+    // legacy single-file blob.
+    const cursorRulesPath = join(target, ".cursor/rules");
+    expect(existsSync(cursorRulesPath)).toBe(true);
+    expect(statSync(cursorRulesPath).isDirectory()).toBe(true);
+    expect(statSync(cursorRulesPath).isFile()).toBe(false);
+
+    // New directory rule exists at the canonical path.
+    const newPath = join(target, CURSOR_BOOTSTRAP_MDC_REL);
+    expect(existsSync(newPath)).toBe(true);
+    const newContent = readFileSync(newPath, "utf8");
+
+    // New file uses the new bootstrap marker and NOT the legacy marker.
+    expect(newContent).toContain(SECTION_BEGIN);
+    expect(newContent).toContain(SECTION_END);
+    expect(newContent).not.toContain("fabric:knowledge-base");
+    // Exactly one bootstrap marker pair.
+    expect(countOccurrences(newContent, SECTION_BEGIN)).toBe(1);
+    expect(countOccurrences(newContent, SECTION_END)).toBe(1);
+    // Front-matter is present.
+    expect(newContent).toContain("alwaysApply: true");
+    // Body byte-equals canonical (no project-rules.md present in this scenario).
+    expect(extractManagedBlockBody(newContent)).toBe(BOOTSTRAP_CANONICAL);
+  });
+
+  describe("project-rules.md only-if-exists concat behavior", () => {
+    it("Scenario A: without .fabric/project-rules.md — Codex block body byte-equals .fabric/AGENTS.md", async () => {
+      const target = createWerewolfFixtureRoot("itg-install-bootstrap-project-rules-absent");
+      tempRoots.push(target);
+
+      await runInit(target);
+
+      const snapshot = readFileSync(join(target, ".fabric/AGENTS.md"), "utf8");
+      const agentsMd = readFileSync(join(target, "AGENTS.md"), "utf8");
+      // No separator, no concat — body byte-equals snapshot alone.
+      expect(extractManagedBlockBody(agentsMd)).toBe(snapshot);
+      expect(snapshot).toBe(BOOTSTRAP_CANONICAL);
+
+      // Idempotent re-run: same bytes.
+      const before = readFileSync(join(target, "AGENTS.md"), "utf8");
+      await runInit(target);
+      const after = readFileSync(join(target, "AGENTS.md"), "utf8");
+      expect(after).toBe(before);
+    });
+
+    it("Scenario B: with .fabric/project-rules.md — Codex block body = snapshot + '\\n---\\n' + rules", async () => {
+      const target = createWerewolfFixtureRoot("itg-install-bootstrap-project-rules-present");
+      tempRoots.push(target);
+
+      // Seed the user-authored project-rules.md BEFORE init so the propagator
+      // picks it up on first run.
+      writeFixtureFile(target, ".fabric/project-rules.md", "CUSTOM RULES\n");
+
+      await runInit(target);
+
+      const snapshot = readFileSync(join(target, ".fabric/AGENTS.md"), "utf8");
+      const agentsMd = readFileSync(join(target, "AGENTS.md"), "utf8");
+
+      const expectedBody = `${snapshot}\n---\nCUSTOM RULES\n`;
+      expect(extractManagedBlockBody(agentsMd)).toBe(expectedBody);
+
+      // Cursor block body uses the same concat.
+      const cursorRule = readFileSync(join(target, CURSOR_BOOTSTRAP_MDC_REL), "utf8");
+      expect(extractManagedBlockBody(cursorRule)).toBe(expectedBody);
+
+      // Idempotent re-run: same bytes across both targets.
+      const beforeAgents = readFileSync(join(target, "AGENTS.md"), "utf8");
+      const beforeCursor = readFileSync(join(target, CURSOR_BOOTSTRAP_MDC_REL), "utf8");
+      await runInit(target);
+      expect(readFileSync(join(target, "AGENTS.md"), "utf8")).toBe(beforeAgents);
+      expect(readFileSync(join(target, CURSOR_BOOTSTRAP_MDC_REL), "utf8")).toBe(beforeCursor);
+
+      // user-authored project-rules.md is preserved byte-for-byte.
+      expect(readFileSync(join(target, ".fabric/project-rules.md"), "utf8")).toBe("CUSTOM RULES\n");
+    });
   });
 });
 
