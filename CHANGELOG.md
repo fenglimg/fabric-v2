@@ -5,6 +5,45 @@ All notable changes to Fabric will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0-rc.17] - 2026-05-15
+
+Phase 4 of the post-grill 5-phase backlog: **Polish**. Four parallel tracks landed: H (`--help` rewrite + 装/配/跑 mental model), R (drop `externalFixturePath` config field), S (`serve --host` warning rewrite), Y (Codex MCP regression test — bug confirmed non-reproducible).
+
+### Added
+
+- **装/配/跑 mental-model intro** at root help (`cli.main.description`) — three lines explaining the three-entry CLI model (install / config / serve+doctor). Bilingual (en + zh-CN). Root help is now wired through `t()` instead of a hardcoded English string.
+- **Examples blocks** appended to root + 5 visible commands (install / doctor / serve / uninstall / config) via multiline string concatenation in the description (`citty` v0.2.2 doesn't expose `meta.examples`). Bilingual.
+- **Codex MCP TOML write regression test** (`packages/cli/__tests__/integration/codex-mcp-install.test.ts`) — 4 scenarios: block presence after `write()`, preserves all original sections + top-level keys, idempotent (write twice → byte-equal), legacy `[mcp.servers.fabric]` (dot-spelling) migrates to `[mcp_servers.fabric]` (underscore).
+
+### Changed
+
+- **`serve --host` security warning** (`cli.serve.warning.host-fallback`) rewritten to be actionable — names `FABRIC_AUTH_TOKEN` verbatim, explains the 127.0.0.1 fallback, shows the exact override command. Bilingual. No `serve.ts` code change (logic unchanged, i18n value only).
+- **Resolution-chain wording** in 7 `cli.*.args.target.description` keys — dropped `fabric.config.json` from the documented chain (now matches the actual code path: CLI / env / cwd). Coordinated with R-cut.
+- **Help-text tightening**: `doctor.args.fix-knowledge.description` lost `knowledge_demoted/knowledge_archived` event jargon; `doctor.args.fix.description` collapsed the 4-item list; `serve.description` dropped duplicated `FABRIC_AUTH_TOKEN` sentence (canonical home is `serve.args.host.description`).
+
+### Removed (Breaking)
+
+- **`externalFixturePath` config field** deleted from `fabric.config.json` schema, type mirror, sole production reader (`packages/cli/src/dev-mode.ts`), and 4 test fixtures across 3 test files. Pre-user clean-slate — no migration shim. Use the `EXTERNAL_FIXTURE_PATH` environment variable for dev/test fixture paths.
+- **`DevModeSource` enum** narrowed: `cli | env | config | cwd` → `cli | env | cwd`.
+
+### Fixed
+
+- **Bug Y (parked since rc.14)**: confirmed **not reproducible**. TASK-006 diagnosis ran a real `fab install --dry-run` against the user's `~/.codex/config.toml` — the writer correctly appends `[mcp_servers.fabric]` while preserving all 8 pre-existing sections (`features`, `notice`, multiple `projects."<path>"` blocks, top-level `model = ...`, etc.). Most likely original-report cause: stale binary or legacy `[mcp.servers.fabric]` (dot-spelling) that pre-dated the migration logic. The new regression test guards against future repro.
+
+### Tests
+
+- Tests: shared 307/307 + server 409/409+1 skip + CLI 552 → 556 = **1272 passed**, 0 regressions.
+- Snapshot updates accepted: 7 entries in `i18n.test.ts.snap`, 4 lines in `cli-surface.test.ts.snap` (all cosmetic, expected from i18n value rewrites).
+
+### Cross-phase
+
+- 22 hidden-command i18n keys (approve / bootstrap / hooks / human-lint / ledger-append / pre-commit / scan / update / sync-meta) intentionally NOT removed in this rc — deferred cleanup pass (some may be load-bearing in unexpected places).
+- Dev-mode `readFabricConfig` export retained — still consumed by `commands/scan.ts` (reads `fabric_language`) and `packages/server/src/config-loader.ts` (reads `mcpPayloadLimits`).
+
+### Coming in rc.18 / v2.1 (Phase 5)
+
+- **Protocol v2** — hard cut of the `plan-context-hint` JSON wire contract: bump `version: 1 → 2`, rename `payload.narrow → payload.entries`, lockstep update to both `.cjs` consumers + test fixtures. Pre-user clean-slate (no v1 shim). Largest blast radius — ships solo.
+
 ## [2.0.0-rc.16] - 2026-05-15
 
 Phase 3 of the post-grill 5-phase backlog: **Config + i18n closure**. F2 (banner i18n) lands first to give every Stop-hook banner four-language rendering; F1 (`fab config` clack TUI panel) replaces the rc.15 placeholder with a schema-driven menu loop.
