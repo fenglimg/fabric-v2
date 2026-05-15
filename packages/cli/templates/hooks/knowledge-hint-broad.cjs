@@ -439,16 +439,29 @@ function renderTruncated(narrow) {
  *
  * Returns an array of lines (one stderr write per line keeps the formatter
  * trivial and testable). Returns [] when there is nothing meaningful to say
- * (empty narrow set) so callers know to stay silent.
+ * (empty entries set) so callers know to stay silent.
+ *
+ * Protocol v2 gate (rc.18): payloads must carry `version: 2`. A null/missing
+ * payload returns [] silently; a payload with a mismatched `version` returns []
+ * after writing exactly one stderr breadcrumb so operators grepping a stuck-
+ * banner report can diagnose the version drift without source-diving.
  */
 function renderSummary(payload) {
-  // Local rebind: `payload.narrow` in `--all` mode degenerates to the full
-  // shared index (every broad-scoped entry), so the field name `narrow` is
-  // misleading at this rendering layer. We rename the local variable to
-  // `entries` to avoid name confusion when reading renderSummary in isolation.
-  // The CLI protocol field name (`payload.narrow`) is unchanged — a wire-shape
-  // rename is a deferred independent task.
-  const entries = Array.isArray(payload && payload.narrow) ? payload.narrow : [];
+  if (!payload || payload.version !== 2) {
+    if (payload && payload.version !== undefined) {
+      try {
+        process.stderr.write(
+          `[fabric] hint payload version=${payload.version} unsupported (expected 2), skipping\n`,
+        );
+      } catch {}
+    }
+    return [];
+  }
+  // Protocol v2 (rc.18): the wire field is now `payload.entries`, matching what
+  // this renderer always called it locally. The historical `narrow` name (which
+  // degenerated in --all mode) has been retired without a compat shim per
+  // pre-user clean-slate policy.
+  const entries = Array.isArray(payload.entries) ? payload.entries : [];
   if (entries.length === 0) return [];
 
   const truncated = entries.length > TRUNCATION_THRESHOLD;
