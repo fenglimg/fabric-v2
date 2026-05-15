@@ -13,6 +13,11 @@ import {
   forensicReportSchema,
   parseKnowledgeId,
   knowledgeTestIndexSchema,
+  LEGACY_KB_REGEX,
+  BOOTSTRAP_CANONICAL,
+  BOOTSTRAP_MARKER_BEGIN,
+  BOOTSTRAP_MARKER_END,
+  BOOTSTRAP_REGEX,
   type AgentsMeta,
   type AgentsMetaCounters,
   type ForensicReport,
@@ -271,6 +276,37 @@ type CounterDesyncInspection = {
 type BootstrapAnchorInspection = {
   hasAgentsMd: boolean;
   hasClaudeMd: boolean;
+};
+
+// v2.0.0-rc.19 bootstrap-consolidation TASK-004: one-time legacy marker
+// migration. `filesNeedingMigration` is the subset of the four target paths
+// (CLAUDE.md / AGENTS.md / .cursor/rules / .cursor/rules/fabric-bootstrap.mdc)
+// whose content still contains the LEGACY_KB_REGEX match. Empty array means
+// nothing to migrate (post-fix idempotency invariant).
+type BootstrapMarkerMigrationInspection = {
+  filesNeedingMigration: string[];
+};
+
+// v2.0.0-rc.19 bootstrap-consolidation TASK-005: L1 = canonical bootstrap body
+// byte-compared against `.fabric/AGENTS.md` on disk. `missing` defers to the
+// existing bootstrap_anchor_missing check; `drift` means bytes differ from
+// BOOTSTRAP_CANONICAL — fixable_error.
+type L1BootstrapSnapshotDriftInspection = {
+  status: "ok" | "missing" | "drift";
+  canonical: string;
+  onDisk: string | null;
+};
+
+// v2.0.0-rc.19 bootstrap-consolidation TASK-005: L2 = three-end managed block
+// bodies byte-compared against expectedBody (= .fabric/AGENTS.md + optional
+// `\n---\n` + .fabric/project-rules.md). `drifted` lists per-target paths
+// whose managed block body diverges; CLAUDE.md is checked for @-import line
+// presence (no managed block — thin shell). `no-managed-block` is returned
+// when none of the targets carry the new marker (legacy-marker pre-migration
+// state — TASK-004 already flagged it).
+type L2ManagedBlockDriftInspection = {
+  status: "ok" | "drift" | "no-managed-block";
+  drifted: Array<{ path: string; expected: string; actual: string }>;
 };
 
 type PreexistingRootFilesInspection = {
@@ -699,6 +735,12 @@ const TARGET_FILE_PATHS = [
   ".fabric/.cache/knowledge-test.index.json",
   ".fabric/events.jsonl",
   ".fabric/knowledge",
+  // v2.0.0-rc.19 bootstrap-consolidation TASK-005: L1 canonical snapshot
+  // (.fabric/AGENTS.md) and optional project-rules concat source
+  // (.fabric/project-rules.md). Surfaced in summary.targetFiles so --json
+  // consumers can confirm L1 presence at a glance.
+  ".fabric/AGENTS.md",
+  ".fabric/project-rules.md",
 ] as const;
 
 export async function runDoctorReport(target: string): Promise<DoctorReport> {
@@ -710,11 +752,23 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     meta,
     eventLedger,
     knowledgeTestIndex,
+    bootstrapMarkerMigration,
+    l1BootstrapSnapshotDrift,
+    l2ManagedBlockDrift,
   ] = await Promise.all([
     inspectForensic(projectRoot),
     inspectMeta(projectRoot),
     inspectEventLedger(projectRoot),
     inspectKnowledgeTestIndex(projectRoot),
+    // v2.0.0-rc.19 TASK-004: one-time fabric:knowledge-base → fabric:bootstrap
+    // marker migration scan. Inspect runs in this Promise.all block to keep
+    // performance parity with the other I/O-bound inspections.
+    inspectBootstrapMarkerMigration(projectRoot),
+    // v2.0.0-rc.19 TASK-005: L1 + L2 byte-level drift detection. Both are
+    // I/O-bound (small file reads + buffer compare) so they live in the same
+    // Promise.all block as the other bootstrap inspections.
+    inspectL1BootstrapSnapshotDrift(projectRoot),
+    inspectL2ManagedBlockDrift(projectRoot),
   ]);
   const mcpConfigInWrongFile = inspectMcpConfigInWrongFile(projectRoot);
   const metaManuallyDiverged = await inspectMetaManuallyDiverged(projectRoot);
@@ -783,6 +837,15 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
   const skillMdYamlInvalid = inspectSkillMdYamlInvalid(projectRoot);
   const checks: DoctorCheck[] = [
     createBootstrapAnchorCheck(bootstrapAnchor),
+    // v2.0.0-rc.19 TASK-004: bootstrap marker migration check sits adjacent to
+    // the anchor check — both are bootstrap-file invariants. fixable_error
+    // when any of the four target paths still carries the legacy marker.
+    createBootstrapMarkerMigrationCheck(bootstrapMarkerMigration),
+    // v2.0.0-rc.19 TASK-005: L1 + L2 byte-level drift detection sit immediately
+    // after the marker migration check. Order: anchor existence → migration →
+    // L1 (canonical ↔ snapshot) → L2 (snapshot+rules ↔ three-end blocks).
+    createL1BootstrapSnapshotDriftCheck(l1BootstrapSnapshotDrift),
+    createL2ManagedBlockDriftCheck(l2ManagedBlockDrift),
     createKnowledgeDirMissingCheck(knowledgeDirMissing),
     createForensicCheck(forensic, framework.kind, entryPoints.length),
     // v2.0: removed `createInitContextCheck` — `.fabric/init-context.json`
@@ -894,6 +957,54 @@ export async function runDoctorFix(target: string): Promise<DoctorFixReport> {
   const projectRoot = normalizeTarget(target);
   const before = await runDoctorReport(projectRoot);
   const fixed: DoctorIssue[] = [];
+
+  // v2.0.0-rc.19 bootstrap-consolidation TASK-004: marker migration runs FIRST
+  // so subsequent L1/L2 drift checks (TASK-05) see the post-rename state. One
+  // ledger event is appended per rewritten file as a best-effort write —
+  // failures are swallowed (.catch(() => {})) so a disk-full / permission
+  // error on the ledger does not roll back the file rewrite.
+  if (
+    before.fixable_errors.some(
+      (issue) => issue.code === "bootstrap_marker_migration_required",
+    )
+  ) {
+    const migrated = await migrateBootstrapMarkers(projectRoot);
+    fixed.push(findIssue(before.fixable_errors, "bootstrap_marker_migration_required"));
+    for (const path of migrated.paths) {
+      await appendEventLedgerEvent(projectRoot, {
+        event_type: "bootstrap_marker_migrated",
+        path,
+        migrated_count: migrated.countPerPath[path] ?? 1,
+        legacy_marker: "fabric:knowledge-base",
+        new_marker: "fabric:bootstrap",
+        timestamp: new Date().toISOString(),
+      }).catch(() => {});
+    }
+  }
+
+  // v2.0.0-rc.19 bootstrap-consolidation TASK-005: L1 drift fix MUST run before
+  // L2 fix — L2's expectedBody is computed from the on-disk `.fabric/AGENTS.md`
+  // snapshot, so restoring L1 to canonical first guarantees L2's rewrite
+  // sources the correct body. Idempotent: `atomicWriteText` with content
+  // byte-equal to current state still writes (acceptable — re-runs with no
+  // L1 drift entry skip this whole block via the .some() guard).
+  if (before.fixable_errors.some((issue) => issue.code === "bootstrap_snapshot_drift")) {
+    const snapshotPath = join(projectRoot, ".fabric", "AGENTS.md");
+    await ensureParentDirectory(snapshotPath);
+    await atomicWriteText(snapshotPath, BOOTSTRAP_CANONICAL);
+    fixed.push(findIssue(before.fixable_errors, "bootstrap_snapshot_drift"));
+  }
+
+  // v2.0.0-rc.19 bootstrap-consolidation TASK-005: L2 drift fix replays the
+  // three-end managed block writes from the now-canonical `.fabric/AGENTS.md`
+  // (+ optional project-rules concat). See `rewriteThreeEndManagedBlocks` for
+  // the inline regex+replace logic — duplicated from the install-side writers
+  // (TASK-003) to preserve the cross-package boundary (packages/server has
+  // zero dep on packages/cli).
+  if (before.fixable_errors.some((issue) => issue.code === "managed_block_drift")) {
+    await rewriteThreeEndManagedBlocks(projectRoot);
+    fixed.push(findIssue(before.fixable_errors, "managed_block_drift"));
+  }
 
   if (before.fixable_errors.some((issue) => issue.code === "knowledge_dir_missing")) {
     await ensureKnowledgeSubdirs(projectRoot);
@@ -1781,6 +1892,254 @@ function inspectBootstrapAnchor(projectRoot: string): BootstrapAnchorInspection 
     hasAgentsMd: existsSync(join(projectRoot, "AGENTS.md")),
     hasClaudeMd: existsSync(join(projectRoot, "CLAUDE.md")),
   };
+}
+
+// v2.0.0-rc.19 TASK-004: scan the four target paths for the legacy
+// `fabric:knowledge-base` managed-block markers. Missing files are silently
+// skipped (legitimate post-clean-install state). Returns the absolute paths
+// of every file whose content still matches LEGACY_KB_REGEX so the dispatcher
+// can rewrite them in a single pass. Idempotent: re-running on a post-fix
+// tree returns an empty list (the rewrite replaces the marker tokens, so the
+// regex no longer matches).
+const BOOTSTRAP_MARKER_MIGRATION_TARGETS = [
+  "CLAUDE.md",
+  "AGENTS.md",
+  ".cursor/rules",
+  ".cursor/rules/fabric-bootstrap.mdc",
+] as const;
+
+async function inspectBootstrapMarkerMigration(
+  target: string,
+): Promise<BootstrapMarkerMigrationInspection> {
+  const filesNeedingMigration: string[] = [];
+  for (const rel of BOOTSTRAP_MARKER_MIGRATION_TARGETS) {
+    const abs = join(target, rel);
+    if (!existsSync(abs)) {
+      continue;
+    }
+    let content: string;
+    try {
+      content = await readFile(abs, "utf8");
+    } catch {
+      // Unreadable file (permission / EISDIR for the legacy `.cursor/rules`
+      // directory variant) — treat as "not a legacy-marker carrier" and skip.
+      continue;
+    }
+    if (LEGACY_KB_REGEX.test(content)) {
+      filesNeedingMigration.push(abs);
+    }
+  }
+  return { filesNeedingMigration };
+}
+
+function createBootstrapMarkerMigrationCheck(
+  inspection: BootstrapMarkerMigrationInspection,
+): DoctorCheck {
+  if (inspection.filesNeedingMigration.length === 0) {
+    return okCheck(
+      "Bootstrap marker migration",
+      "No legacy fabric:knowledge-base markers detected in bootstrap target files.",
+    );
+  }
+  const list = inspection.filesNeedingMigration.join(", ");
+  return issueCheck(
+    "Bootstrap marker migration",
+    "error",
+    "fixable_error",
+    "bootstrap_marker_migration_required",
+    `${inspection.filesNeedingMigration.length} file${inspection.filesNeedingMigration.length === 1 ? "" : "s"} still carry the legacy fabric:knowledge-base bootstrap marker: ${list}.`,
+    "Run `fab doctor --fix` to migrate to fabric:bootstrap marker",
+  );
+}
+
+// v2.0.0-rc.19 bootstrap-consolidation TASK-005: L1 byte-level drift.
+// Reads `.fabric/AGENTS.md` and byte-compares against BOOTSTRAP_CANONICAL.
+// CRITICAL: NO normalization — content read as raw utf8; CRLF differences MUST
+// trigger drift so an install-side line-ending bug surfaces here. The 'missing'
+// branch defers to the existing bootstrap_anchor_missing check (separate code).
+async function inspectL1BootstrapSnapshotDrift(
+  target: string,
+): Promise<L1BootstrapSnapshotDriftInspection> {
+  const abs = join(target, ".fabric", "AGENTS.md");
+  if (!existsSync(abs)) {
+    return { status: "missing", canonical: BOOTSTRAP_CANONICAL, onDisk: null };
+  }
+  let onDisk: string;
+  try {
+    onDisk = await readFile(abs, "utf8");
+  } catch {
+    // Unreadable — treat as missing for purposes of L1 (other checks surface
+    // permission errors via the anchor-missing path).
+    return { status: "missing", canonical: BOOTSTRAP_CANONICAL, onDisk: null };
+  }
+  if (onDisk === BOOTSTRAP_CANONICAL) {
+    return { status: "ok", canonical: BOOTSTRAP_CANONICAL, onDisk };
+  }
+  return { status: "drift", canonical: BOOTSTRAP_CANONICAL, onDisk };
+}
+
+function createL1BootstrapSnapshotDriftCheck(
+  inspection: L1BootstrapSnapshotDriftInspection,
+): DoctorCheck {
+  if (inspection.status === "drift") {
+    return issueCheck(
+      "Bootstrap snapshot drift",
+      "error",
+      "fixable_error",
+      "bootstrap_snapshot_drift",
+      ".fabric/AGENTS.md content diverges byte-for-byte from BOOTSTRAP_CANONICAL.",
+      "Run `fab doctor --fix` to restore canonical bootstrap snapshot",
+    );
+  }
+  // 'missing' is delegated to bootstrap_anchor_missing — return ok here so we
+  // don't double-report.
+  return okCheck(
+    "Bootstrap snapshot drift",
+    inspection.status === "ok"
+      ? ".fabric/AGENTS.md byte-equals BOOTSTRAP_CANONICAL."
+      : ".fabric/AGENTS.md absent — delegated to bootstrap_anchor_missing.",
+  );
+}
+
+// v2.0.0-rc.19 bootstrap-consolidation TASK-005: L2 byte-level drift across
+// the three propagation targets — root AGENTS.md, .cursor/rules/fabric-bootstrap.mdc
+// (managed block bodies) and CLAUDE.md (@import line). The expected body is
+// computed once from `.fabric/AGENTS.md` (+ optional `\n---\n` + project-rules)
+// and byte-compared against each extracted block body. Files where the new
+// marker is absent BUT the legacy marker is present are skipped — TASK-04's
+// bootstrap_marker_migration_required already flagged them and migration
+// runs FIRST in the dispatcher.
+async function inspectL2ManagedBlockDrift(
+  target: string,
+): Promise<L2ManagedBlockDriftInspection> {
+  const snapshotPath = join(target, ".fabric", "AGENTS.md");
+  if (!existsSync(snapshotPath)) {
+    // No L1 → L2 has no expectedBody to compare against. Defer to L1 fix.
+    return { status: "ok", drifted: [] };
+  }
+  let snapshot: string;
+  try {
+    snapshot = await readFile(snapshotPath, "utf8");
+  } catch {
+    return { status: "ok", drifted: [] };
+  }
+  const projectRulesPath = join(target, ".fabric", "project-rules.md");
+  let expectedBody = snapshot;
+  if (existsSync(projectRulesPath)) {
+    try {
+      const projectRules = await readFile(projectRulesPath, "utf8");
+      expectedBody = `${snapshot}\n---\n${projectRules}`;
+    } catch {
+      // best-effort — fall back to snapshot-only expectedBody
+    }
+  }
+
+  const drifted: Array<{ path: string; expected: string; actual: string }> = [];
+  let anyManagedBlockFound = false;
+
+  // Managed-block targets: extract body between BOOTSTRAP_MARKER_BEGIN/END
+  // and byte-compare against expectedBody.
+  const blockTargets = [
+    join(target, "AGENTS.md"),
+    join(target, ".cursor", "rules", "fabric-bootstrap.mdc"),
+  ];
+  for (const abs of blockTargets) {
+    if (!existsSync(abs)) {
+      continue;
+    }
+    let content: string;
+    try {
+      content = await readFile(abs, "utf8");
+    } catch {
+      continue;
+    }
+    // Skip files in legacy-marker pre-migration state (TASK-04 owns those).
+    if (!BOOTSTRAP_REGEX.test(content) && LEGACY_KB_REGEX.test(content)) {
+      continue;
+    }
+    const match = content.match(BOOTSTRAP_REGEX);
+    if (match === null) {
+      // No managed block — propagator never ran for this file. L2 doesn't own
+      // the missing-block diagnostic; doctor will surface install bugs via
+      // other paths.
+      continue;
+    }
+    anyManagedBlockFound = true;
+    // Extract the body bytes between BOOTSTRAP_MARKER_BEGIN and BOOTSTRAP_MARKER_END.
+    // match[0] includes optional leading newlines + the full begin..end region.
+    const region = match[0];
+    const beginIdx = region.indexOf(BOOTSTRAP_MARKER_BEGIN);
+    const bodyStart = beginIdx + BOOTSTRAP_MARKER_BEGIN.length;
+    const endIdx = region.indexOf(BOOTSTRAP_MARKER_END, bodyStart);
+    if (bodyStart < 0 || endIdx < 0) {
+      continue;
+    }
+    // Body convention: `{BEGIN}\n{expectedBody}\n{END}` — strip exactly one
+    // leading and one trailing newline (matching the writer convention) before
+    // byte-compare. CRITICAL: no other normalization.
+    let body = region.slice(bodyStart, endIdx);
+    if (body.startsWith("\n")) body = body.slice(1);
+    if (body.endsWith("\n")) body = body.slice(0, -1);
+    if (body !== expectedBody) {
+      drifted.push({ path: abs, expected: expectedBody, actual: body });
+    }
+  }
+
+  // CLAUDE.md: thin shell — verify `@.fabric/AGENTS.md` line is present.
+  const claudeMdPath = join(target, "CLAUDE.md");
+  if (existsSync(claudeMdPath)) {
+    let claudeContent: string;
+    try {
+      claudeContent = await readFile(claudeMdPath, "utf8");
+      // Skip legacy-marker pre-migration state (TASK-04 owns).
+      if (!BOOTSTRAP_REGEX.test(claudeContent) && LEGACY_KB_REGEX.test(claudeContent)) {
+        // skip
+      } else {
+        anyManagedBlockFound = true;
+        const lines = claudeContent.split(/\r?\n/u);
+        const hasAtImport = lines.some((line) => line.trim() === "@.fabric/AGENTS.md");
+        if (!hasAtImport) {
+          drifted.push({
+            path: claudeMdPath,
+            expected: "@.fabric/AGENTS.md",
+            actual: "(line missing)",
+          });
+        }
+      }
+    } catch {
+      // best-effort
+    }
+  }
+
+  if (!anyManagedBlockFound) {
+    return { status: "no-managed-block", drifted: [] };
+  }
+  if (drifted.length === 0) {
+    return { status: "ok", drifted: [] };
+  }
+  return { status: "drift", drifted };
+}
+
+function createL2ManagedBlockDriftCheck(
+  inspection: L2ManagedBlockDriftInspection,
+): DoctorCheck {
+  if (inspection.status === "drift") {
+    const list = inspection.drifted.map((d) => d.path).join(", ");
+    return issueCheck(
+      "Managed block drift",
+      "error",
+      "fixable_error",
+      "managed_block_drift",
+      `${inspection.drifted.length} three-end managed block${inspection.drifted.length === 1 ? "" : "s"} diverge from expected body (snapshot + optional project-rules concat): ${list}.`,
+      "Run `fab doctor --fix` to restore three-end managed blocks from canonical",
+    );
+  }
+  return okCheck(
+    "Managed block drift",
+    inspection.status === "ok"
+      ? "Three-end managed blocks byte-equal expectedBody."
+      : "No three-end managed blocks detected — propagation pending or legacy-marker state.",
+  );
 }
 
 function createBootstrapAnchorCheck(inspection: BootstrapAnchorInspection): DoctorCheck {
@@ -4391,6 +4750,173 @@ function createIndexDriftCheck(inspection: IndexDriftInspection): DoctorCheck {
 // fix. The corresponding `legacy_client_path_present` event-type literal
 // remains in event-ledger.ts and will be removed in TASK-006 alongside the
 // broader event-vocabulary rename.
+
+// v2.0.0-rc.19 bootstrap-consolidation TASK-004: one-time legacy → new marker
+// rewrite across the four bootstrap target paths. Mirrors the
+// fixMcpConfigInWrongFile pattern (read → mutate → atomicWriteText). Idempotent:
+// re-running on already-migrated content leaves bytes untouched (the .replace
+// chain produces a string identical to the input when no legacy markers
+// remain). Body content between the markers is preserved verbatim — only the
+// marker tokens are rewritten. Any body-content drift is L2 drift territory
+// (TASK-05's domain) and surfaces on the next doctor report.
+//
+// Returns the absolute paths of every file rewritten alongside a per-path
+// replacement count so the dispatcher can emit one ledger event per file with
+// the exact token-replacement count baked in.
+async function migrateBootstrapMarkers(
+  projectRoot: string,
+): Promise<{ paths: string[]; countPerPath: Record<string, number> }> {
+  const paths: string[] = [];
+  const countPerPath: Record<string, number> = {};
+
+  for (const rel of BOOTSTRAP_MARKER_MIGRATION_TARGETS) {
+    const abs = join(projectRoot, rel);
+    if (!existsSync(abs)) {
+      continue;
+    }
+    let original: string;
+    try {
+      original = await readFile(abs, "utf8");
+    } catch {
+      continue;
+    }
+    // Count legacy marker tokens BEFORE rewrite — sum of :begin + :end
+    // occurrences. Drives `migrated_count` in the ledger event.
+    const beginMatches = original.match(/<!-- fabric:knowledge-base:begin -->/g);
+    const endMatches = original.match(/<!-- fabric:knowledge-base:end -->/g);
+    const replacedCount = (beginMatches?.length ?? 0) + (endMatches?.length ?? 0);
+    if (replacedCount === 0) {
+      continue;
+    }
+    const rewritten = original
+      .replace(/<!-- fabric:knowledge-base:begin -->/g, BOOTSTRAP_MARKER_BEGIN)
+      .replace(/<!-- fabric:knowledge-base:end -->/g, BOOTSTRAP_MARKER_END);
+    if (rewritten === original) {
+      // Defensive: replacedCount > 0 implies a real rewrite, but guard against
+      // surprise idempotency anyway.
+      continue;
+    }
+    await atomicWriteText(abs, rewritten);
+    paths.push(abs);
+    countPerPath[abs] = replacedCount;
+  }
+
+  return { paths, countPerPath };
+}
+
+// v2.0.0-rc.19 bootstrap-consolidation TASK-005: L2 drift fix. Replays the
+// three-end managed block writes using inline regex+replace logic — DUPLICATED
+// from the install-side writers (TASK-003) in packages/cli rather than imported
+// to preserve the cross-package boundary (packages/server has zero dep on
+// packages/cli). Cross-reference: keep this logic byte-aligned with
+// packages/cli/src/install/skills-and-hooks.ts writers when those land in
+// TASK-003 — integration tests assert post-install and post-doctor-fix states
+// are byte-equal.
+//
+// Behavior summary per target:
+//   - AGENTS.md / .cursor/rules/fabric-bootstrap.mdc: locate-or-append a
+//     managed block via BOOTSTRAP_REGEX; body is
+//     `{BEGIN}\n{expectedBody}\n{END}`. In-place replace when marker present;
+//     append with blank-line separator when absent. Skip files that do not
+//     exist (propagator never ran — install bug, not doctor's concern).
+//   - CLAUDE.md: idempotent line-add `@.fabric/AGENTS.md` (+ optional
+//     `@.fabric/project-rules.md` when project-rules.md exists). No managed
+//     block — thin shell convention.
+async function rewriteThreeEndManagedBlocks(projectRoot: string): Promise<void> {
+  const snapshotPath = join(projectRoot, ".fabric", "AGENTS.md");
+  if (!existsSync(snapshotPath)) {
+    // L1 fix should have created this — defensive guard.
+    return;
+  }
+  let snapshot: string;
+  try {
+    snapshot = await readFile(snapshotPath, "utf8");
+  } catch {
+    return;
+  }
+  const projectRulesPath = join(projectRoot, ".fabric", "project-rules.md");
+  const hasProjectRules = existsSync(projectRulesPath);
+  let expectedBody = snapshot;
+  if (hasProjectRules) {
+    try {
+      const projectRules = await readFile(projectRulesPath, "utf8");
+      expectedBody = `${snapshot}\n---\n${projectRules}`;
+    } catch {
+      // fall back to snapshot-only
+    }
+  }
+  const managedBlock = `${BOOTSTRAP_MARKER_BEGIN}\n${expectedBody}\n${BOOTSTRAP_MARKER_END}`;
+
+  // Managed-block targets: AGENTS.md + .cursor/rules/fabric-bootstrap.mdc.
+  const blockTargets = [
+    join(projectRoot, "AGENTS.md"),
+    join(projectRoot, ".cursor", "rules", "fabric-bootstrap.mdc"),
+  ];
+  for (const abs of blockTargets) {
+    if (!existsSync(abs)) {
+      continue;
+    }
+    let existing: string;
+    try {
+      existing = await readFile(abs, "utf8");
+    } catch {
+      continue;
+    }
+    let next: string;
+    const match = existing.match(BOOTSTRAP_REGEX);
+    if (match !== null) {
+      // In-place replace. Mirrors the install-side state-machine: strip the
+      // matched region (markers + optional leading newlines), then re-append
+      // with a leading blank-line separator. This keeps the trailing-newline
+      // shape byte-identical across re-runs (idempotency invariant).
+      const before = existing.slice(0, match.index ?? 0);
+      const after = existing.slice((match.index ?? 0) + match[0].length);
+      const stripped = `${before}${after.replace(/^\r?\n/, "")}`;
+      const trailingNewline =
+        stripped.length === 0 || stripped.endsWith("\n") ? "" : "\n";
+      next = `${stripped}${trailingNewline}\n${managedBlock}\n`;
+    } else {
+      // Append with blank-line separator.
+      const trailingNewline =
+        existing.length === 0 || existing.endsWith("\n") ? "" : "\n";
+      next = `${existing}${trailingNewline}\n${managedBlock}\n`;
+    }
+    if (next === existing) {
+      continue;
+    }
+    await atomicWriteText(abs, next);
+  }
+
+  // CLAUDE.md: thin shell — idempotent line-add for `@.fabric/AGENTS.md` and
+  // optionally `@.fabric/project-rules.md`. No managed block markers here.
+  const claudeMdPath = join(projectRoot, "CLAUDE.md");
+  if (existsSync(claudeMdPath)) {
+    let claudeContent: string;
+    try {
+      claudeContent = await readFile(claudeMdPath, "utf8");
+    } catch {
+      return;
+    }
+    const lines = claudeContent.split(/\r?\n/u);
+    let updated = claudeContent;
+    const ensureLine = (line: string): void => {
+      if (lines.some((existingLine) => existingLine.trim() === line)) {
+        return;
+      }
+      const trailingNewline =
+        updated.length === 0 || updated.endsWith("\n") ? "" : "\n";
+      updated = `${updated}${trailingNewline}${line}\n`;
+      lines.push(line);
+    };
+    ensureLine("@.fabric/AGENTS.md");
+    if (hasProjectRules) {
+      ensureLine("@.fabric/project-rules.md");
+    }
+    if (updated !== claudeContent) {
+      await atomicWriteText(claudeMdPath, updated);
+    }
+  }
+}
 
 async function fixMcpConfigInWrongFile(projectRoot: string): Promise<void> {
   const settingsPath = join(projectRoot, ".claude", "settings.json");

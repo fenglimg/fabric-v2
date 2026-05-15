@@ -5,7 +5,14 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ZodError } from "zod";
 
-import { fabricConfigSchema } from "@fenglimg/fabric-shared";
+import {
+  BOOTSTRAP_CANONICAL,
+  BOOTSTRAP_MARKER_BEGIN,
+  BOOTSTRAP_MARKER_END,
+  LEGACY_KB_MARKER_BEGIN,
+  LEGACY_KB_MARKER_END,
+  fabricConfigSchema,
+} from "@fenglimg/fabric-shared";
 
 import { runDoctorFix, runDoctorReport } from "./doctor.js";
 import { readEventLedger } from "./event-ledger.js";
@@ -103,6 +110,16 @@ describe("runDoctorReport", () => {
     // values that strict YAML parsers reject).
     expect(report.checks.map((check) => check.name)).toEqual([
       "Bootstrap anchor",
+      // rc.19 bootstrap-consolidation TASK-004: fabric:knowledge-base →
+      // fabric:bootstrap one-time marker migration sits adjacent to the
+      // anchor check — both are bootstrap-file invariants.
+      "Bootstrap marker migration",
+      // rc.19 bootstrap-consolidation TASK-005: L1 + L2 byte-level drift
+      // detection sit immediately after the marker migration check. Order:
+      // anchor existence → migration → L1 (canonical ↔ snapshot) → L2
+      // (snapshot+rules ↔ three-end blocks).
+      "Bootstrap snapshot drift",
+      "Managed block drift",
       "Knowledge layout",
       "Scan evidence",
       "Agents metadata",
@@ -132,7 +149,7 @@ describe("runDoctorReport", () => {
       "Skill markdown YAML",
       "Preexisting root markdown",
     ]);
-    expect(report.checks).toHaveLength(29);
+    expect(report.checks).toHaveLength(32);
   });
 
   it("v2.0: clean post-init repo (mocked layout) reports zero errors AND zero warnings", async () => {
@@ -3425,6 +3442,367 @@ describe("runDoctorReport", () => {
       const report = await runDoctorReport(target);
       const check = report.checks.find((c) => c.name === "Skill markdown YAML");
       expect(check?.status).toBe("ok");
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // rc.19 bootstrap-consolidation TASK-009: L1 + L2 byte-level drift detection
+  // + marker migration service-layer tests. Mirrors the bootstrap_anchor_missing
+  // triplet (L1) and mcp_config_migrated --fix + ledger event pattern (migration).
+  //
+  // FABRIC_HOME isolation: inherited from the file-scoped beforeEach at L24-L29.
+  // Every new test here exercises FABRIC_HOME-derived inspection paths through
+  // runDoctorReport / runDoctorFix and therefore inherits the isolation already
+  // installed at the top of the file (mkdtempSync + process.env.FABRIC_HOME).
+  // ---------------------------------------------------------------------------
+  describe("rc.19 L1 bootstrap snapshot drift", () => {
+    it("reports ok when .fabric/AGENTS.md byte-equals BOOTSTRAP_CANONICAL", async () => {
+      const target = createInitializedProject("doctor-rc19-l1-canonical");
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+
+      // Seed the canonical bootstrap snapshot — byte-for-byte BOOTSTRAP_CANONICAL.
+      writeFileSync(join(target, ".fabric", "AGENTS.md"), BOOTSTRAP_CANONICAL, "utf8");
+
+      const report = await runDoctorReport(target);
+
+      expect(report.fixable_errors.map((e) => e.code)).not.toContain("bootstrap_snapshot_drift");
+      expect(report.checks.find((c) => c.name === "Bootstrap snapshot drift")?.status).toBe("ok");
+    });
+
+    it("reports fixable_error when .fabric/AGENTS.md bytes differ", async () => {
+      const target = createInitializedProject("doctor-rc19-l1-drift");
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+
+      // Mutate the snapshot by one char — bytes diverge from BOOTSTRAP_CANONICAL.
+      const mutated = `${BOOTSTRAP_CANONICAL}X`;
+      writeFileSync(join(target, ".fabric", "AGENTS.md"), mutated, "utf8");
+
+      const report = await runDoctorReport(target);
+      const codes = report.fixable_errors.map((e) => e.code);
+      expect(codes).toContain("bootstrap_snapshot_drift");
+      expect(report.checks.find((c) => c.name === "Bootstrap snapshot drift")?.status).toBe("error");
+      const issue = report.fixable_errors.find((e) => e.code === "bootstrap_snapshot_drift");
+      expect(issue?.message).toContain("BOOTSTRAP_CANONICAL");
+    });
+
+    it("--fix restores byte-equality and second --fix is no-op for the L1 drift code", async () => {
+      const target = createInitializedProject("doctor-rc19-l1-fix");
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+
+      writeFileSync(join(target, ".fabric", "AGENTS.md"), `${BOOTSTRAP_CANONICAL}drift`, "utf8");
+
+      const fix = await runDoctorFix(target);
+      expect(fix.fixed.map((e) => e.code)).toContain("bootstrap_snapshot_drift");
+      // Byte-equality restored.
+      const restored = readFileSync(join(target, ".fabric", "AGENTS.md"), "utf8");
+      expect(restored).toBe(BOOTSTRAP_CANONICAL);
+
+      // Second --fix: L1 drift code MUST NOT re-fire (idempotency).
+      const after = await runDoctorReport(target);
+      expect(after.fixable_errors.map((e) => e.code)).not.toContain("bootstrap_snapshot_drift");
+
+      const refix = await runDoctorFix(target);
+      expect(refix.fixed.map((e) => e.code)).not.toContain("bootstrap_snapshot_drift");
+    });
+
+    it("reports L1 drift when .fabric/AGENTS.md has CRLF line endings (no normalization invariant)", async () => {
+      // CRLF regression guard: the inspector MUST NOT normalize line endings —
+      // an install-side line-ending bug must surface here as drift even though
+      // a semantic diff would call the bytes equivalent.
+      const target = createInitializedProject("doctor-rc19-l1-crlf");
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+
+      const crlf = BOOTSTRAP_CANONICAL.replace(/\n/g, "\r\n");
+      // Sanity: the bytes really do differ from canonical.
+      expect(crlf).not.toBe(BOOTSTRAP_CANONICAL);
+      writeFileSync(join(target, ".fabric", "AGENTS.md"), crlf, "utf8");
+
+      const report = await runDoctorReport(target);
+      expect(report.fixable_errors.map((e) => e.code)).toContain("bootstrap_snapshot_drift");
+    });
+  });
+
+  describe("rc.19 L2 managed block drift", () => {
+    function seedManagedBlock(target: string, relPath: string, body: string): void {
+      const block = `${BOOTSTRAP_MARKER_BEGIN}\n${body}\n${BOOTSTRAP_MARKER_END}`;
+      // Use writeFileSync (no synthetic trailing newline mutation) — the L2
+      // inspector reads raw bytes and tolerates trailing newline shape.
+      const abs = join(target, relPath);
+      mkdirSync(join(abs, ".."), { recursive: true });
+      writeFileSync(abs, `${block}\n`, "utf8");
+    }
+
+    it("reports ok when all three managed blocks byte-equal expected concat (no project-rules)", async () => {
+      const target = createInitializedProject("doctor-rc19-l2-ok");
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+
+      // L1 must be canonical so L2's expectedBody == BOOTSTRAP_CANONICAL.
+      writeFileSync(join(target, ".fabric", "AGENTS.md"), BOOTSTRAP_CANONICAL, "utf8");
+      // Seed both managed-block targets with the canonical body.
+      seedManagedBlock(target, "AGENTS.md", BOOTSTRAP_CANONICAL);
+      seedManagedBlock(target, ".cursor/rules/fabric-bootstrap.mdc", BOOTSTRAP_CANONICAL);
+      // CLAUDE.md: thin shell — needs @-import line.
+      writeFileSync(join(target, "CLAUDE.md"), "# CLAUDE\n\n@.fabric/AGENTS.md\n", "utf8");
+
+      const report = await runDoctorReport(target);
+      expect(report.fixable_errors.map((e) => e.code)).not.toContain("managed_block_drift");
+      expect(report.checks.find((c) => c.name === "Managed block drift")?.status).toBe("ok");
+    });
+
+    it("reports drift when root AGENTS.md managed block bytes differ", async () => {
+      const target = createInitializedProject("doctor-rc19-l2-drift");
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+
+      writeFileSync(join(target, ".fabric", "AGENTS.md"), BOOTSTRAP_CANONICAL, "utf8");
+      // Mutate body in root AGENTS.md managed block.
+      seedManagedBlock(target, "AGENTS.md", `${BOOTSTRAP_CANONICAL}\nROGUE EDIT`);
+
+      const report = await runDoctorReport(target);
+      const codes = report.fixable_errors.map((e) => e.code);
+      expect(codes).toContain("managed_block_drift");
+      expect(report.checks.find((c) => c.name === "Managed block drift")?.status).toBe("error");
+    });
+
+    it("--fix rewrites all three managed blocks and is idempotent on re-run", async () => {
+      const target = createInitializedProject("doctor-rc19-l2-fix");
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+
+      writeFileSync(join(target, ".fabric", "AGENTS.md"), BOOTSTRAP_CANONICAL, "utf8");
+      seedManagedBlock(target, "AGENTS.md", "WRONG BODY A");
+      seedManagedBlock(target, ".cursor/rules/fabric-bootstrap.mdc", "WRONG BODY B");
+      writeFileSync(join(target, "CLAUDE.md"), "# CLAUDE\n", "utf8"); // missing @-import
+
+      const fix = await runDoctorFix(target);
+      expect(fix.fixed.map((e) => e.code)).toContain("managed_block_drift");
+
+      // All three managed blocks now byte-equal expectedBody == BOOTSTRAP_CANONICAL.
+      const after = await runDoctorReport(target);
+      expect(after.fixable_errors.map((e) => e.code)).not.toContain("managed_block_drift");
+      expect(after.checks.find((c) => c.name === "Managed block drift")?.status).toBe("ok");
+
+      // Verify the rewritten managed block bodies match canonical.
+      const agentsContent = readFileSync(join(target, "AGENTS.md"), "utf8");
+      const cursorContent = readFileSync(join(target, ".cursor", "rules", "fabric-bootstrap.mdc"), "utf8");
+      expect(agentsContent).toContain(BOOTSTRAP_MARKER_BEGIN);
+      expect(agentsContent).toContain(BOOTSTRAP_MARKER_END);
+      expect(agentsContent).toContain(BOOTSTRAP_CANONICAL);
+      expect(cursorContent).toContain(BOOTSTRAP_MARKER_BEGIN);
+      expect(cursorContent).toContain(BOOTSTRAP_MARKER_END);
+      expect(cursorContent).toContain(BOOTSTRAP_CANONICAL);
+      // CLAUDE.md gains the @-import line.
+      const claudeContent = readFileSync(join(target, "CLAUDE.md"), "utf8");
+      expect(claudeContent.split(/\r?\n/u).some((line) => line.trim() === "@.fabric/AGENTS.md")).toBe(true);
+
+      // Idempotency: re-run --fix does NOT report managed_block_drift again.
+      const refix = await runDoctorFix(target);
+      expect(refix.fixed.map((e) => e.code)).not.toContain("managed_block_drift");
+    });
+
+    it("reports L2 drift when CLAUDE.md is missing the @.fabric/AGENTS.md import line", async () => {
+      const target = createInitializedProject("doctor-rc19-l2-claude-missing-at");
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+
+      writeFileSync(join(target, ".fabric", "AGENTS.md"), BOOTSTRAP_CANONICAL, "utf8");
+      // CLAUDE.md exists but lacks the @-import line (thin shell special case).
+      writeFileSync(join(target, "CLAUDE.md"), "# CLAUDE\nNo at-import line here.\n", "utf8");
+
+      const report = await runDoctorReport(target);
+      expect(report.fixable_errors.map((e) => e.code)).toContain("managed_block_drift");
+      const issue = report.fixable_errors.find((e) => e.code === "managed_block_drift");
+      expect(issue?.message).toContain("CLAUDE.md");
+    });
+
+    it("reports L2 drift when AGENTS.md managed block contains CRLF line endings", async () => {
+      // CRLF regression guard (L2 parallel of doctor-rc19-l1-crlf): the L2
+      // inspector's slice logic strips a single leading "\n" but MUST NOT
+      // normalize "\r\n" inside the managed-block body. A CRLF-injected body
+      // therefore byte-diverges from the LF-only expectedBody, surfacing as
+      // managed_block_drift. This pins the no-normalization invariant so a
+      // future "helpful" normalization patch breaks the test.
+      const target = createInitializedProject("doctor-rc19-l2-crlf-agents");
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+
+      // Install canonical state (post-rc.19): L1 snapshot canonical, both L2
+      // managed-block targets seeded canonical, CLAUDE.md with @-import.
+      writeFileSync(join(target, ".fabric", "AGENTS.md"), BOOTSTRAP_CANONICAL, "utf8");
+      seedManagedBlock(target, "AGENTS.md", BOOTSTRAP_CANONICAL);
+      seedManagedBlock(target, ".cursor/rules/fabric-bootstrap.mdc", BOOTSTRAP_CANONICAL);
+      writeFileSync(join(target, "CLAUDE.md"), "# CLAUDE\n\n@.fabric/AGENTS.md\n", "utf8");
+
+      // Sanity: baseline is clean (no managed_block_drift).
+      const baseline = await runDoctorReport(target);
+      expect(baseline.fixable_errors.map((e) => e.code)).not.toContain("managed_block_drift");
+
+      // Mutate ONLY the AGENTS.md managed-block file: rewrite every "\n" inside
+      // the body to "\r\n". The L2 inspector reads raw bytes, slices a single
+      // leading "\n", and byte-compares against the LF-only expectedBody —
+      // CRLF bytes survive and must register as drift.
+      const agentsPath = join(target, "AGENTS.md");
+      const lf = readFileSync(agentsPath, "utf8");
+      const crlf = lf.replace(/\n/g, "\r\n");
+      // Sanity: the bytes really do differ from the LF original.
+      expect(crlf).not.toBe(lf);
+      writeFileSync(agentsPath, crlf, "utf8");
+
+      const report = await runDoctorReport(target);
+      const codes = report.fixable_errors.map((e) => e.code);
+      expect(codes).toContain("managed_block_drift");
+      expect(report.checks.find((c) => c.name === "Managed block drift")?.status).toBe("error");
+    });
+
+    it("reports L2 drift when .cursor/rules/fabric-bootstrap.mdc managed block contains CRLF line endings", async () => {
+      // CRLF regression guard for the Cursor mdc target — parallel to the
+      // AGENTS.md CRLF case above. Pins the no-normalization invariant for the
+      // second L2 managed-block surface.
+      const target = createInitializedProject("doctor-rc19-l2-crlf-cursor");
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+
+      // Install canonical state.
+      writeFileSync(join(target, ".fabric", "AGENTS.md"), BOOTSTRAP_CANONICAL, "utf8");
+      seedManagedBlock(target, "AGENTS.md", BOOTSTRAP_CANONICAL);
+      seedManagedBlock(target, ".cursor/rules/fabric-bootstrap.mdc", BOOTSTRAP_CANONICAL);
+      writeFileSync(join(target, "CLAUDE.md"), "# CLAUDE\n\n@.fabric/AGENTS.md\n", "utf8");
+
+      // Sanity: baseline is clean.
+      const baseline = await runDoctorReport(target);
+      expect(baseline.fixable_errors.map((e) => e.code)).not.toContain("managed_block_drift");
+
+      // Mutate ONLY the cursor mdc file to carry CRLF line endings.
+      const cursorPath = join(target, ".cursor", "rules", "fabric-bootstrap.mdc");
+      const lf = readFileSync(cursorPath, "utf8");
+      const crlf = lf.replace(/\n/g, "\r\n");
+      expect(crlf).not.toBe(lf);
+      writeFileSync(cursorPath, crlf, "utf8");
+
+      const report = await runDoctorReport(target);
+      const codes = report.fixable_errors.map((e) => e.code);
+      expect(codes).toContain("managed_block_drift");
+      expect(report.checks.find((c) => c.name === "Managed block drift")?.status).toBe("error");
+    });
+  });
+
+  describe("rc.19 marker migration fabric:knowledge-base → fabric:bootstrap", () => {
+    function seedLegacyMarker(target: string, relPath: string, body: string): void {
+      // Legacy managed block: same body convention as the new marker, but using
+      // the pre-rc.19 fabric:knowledge-base marker token pair.
+      const legacyBlock = `${LEGACY_KB_MARKER_BEGIN}\n${body}\n${LEGACY_KB_MARKER_END}`;
+      const abs = join(target, relPath);
+      mkdirSync(join(abs, ".."), { recursive: true });
+      writeFileSync(abs, `${legacyBlock}\n`, "utf8");
+    }
+
+    it("reports fixable_error when bootstrap target files carry legacy fabric:knowledge-base markers", async () => {
+      const target = createInitializedProject("doctor-rc19-marker-detect");
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+
+      seedLegacyMarker(target, "CLAUDE.md", "legacy body for CLAUDE.md");
+      seedLegacyMarker(target, "AGENTS.md", "legacy body for AGENTS.md");
+      seedLegacyMarker(target, ".cursor/rules/fabric-bootstrap.mdc", "legacy body for cursor");
+
+      const report = await runDoctorReport(target);
+      const codes = report.fixable_errors.map((e) => e.code);
+      expect(codes).toContain("bootstrap_marker_migration_required");
+      const check = report.checks.find((c) => c.name === "Bootstrap marker migration");
+      expect(check?.status).toBe("error");
+      expect(check?.message).toContain("fabric:knowledge-base");
+    });
+
+    it("--fix rewrites legacy markers to fabric:bootstrap in all seeded target paths", async () => {
+      const target = createInitializedProject("doctor-rc19-marker-fix-paths");
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+
+      const targets: string[] = [
+        "CLAUDE.md",
+        "AGENTS.md",
+        ".cursor/rules/fabric-bootstrap.mdc",
+      ];
+      for (const rel of targets) {
+        seedLegacyMarker(target, rel, `legacy body for ${rel}`);
+      }
+
+      await runDoctorFix(target);
+
+      // Per-file invariants: zero legacy substrings, exactly one new begin/end.
+      for (const rel of targets) {
+        const content = readFileSync(join(target, rel), "utf8");
+        expect(content.split(LEGACY_KB_MARKER_BEGIN).length - 1).toBe(0);
+        expect(content.split(LEGACY_KB_MARKER_END).length - 1).toBe(0);
+        // Defensive: even the bare token "fabric:knowledge-base" must be gone.
+        expect(content.includes("fabric:knowledge-base")).toBe(false);
+        expect(content.split(BOOTSTRAP_MARKER_BEGIN).length - 1).toBe(1);
+        expect(content.split(BOOTSTRAP_MARKER_END).length - 1).toBe(1);
+      }
+    });
+
+    it("--fix emits one bootstrap_marker_migrated ledger event per file migrated", async () => {
+      const target = createInitializedProject("doctor-rc19-marker-ledger");
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+
+      const targets: string[] = [
+        "CLAUDE.md",
+        "AGENTS.md",
+        ".cursor/rules/fabric-bootstrap.mdc",
+      ];
+      for (const rel of targets) {
+        seedLegacyMarker(target, rel, `legacy body for ${rel}`);
+      }
+
+      await runDoctorFix(target);
+
+      // Read the events.jsonl directly (parallel to the mcp_config_migrated
+      // ledger pattern at L239-L241) and assert one migrated event per file.
+      const ledgerPath = join(target, ".fabric", "events.jsonl");
+      const raw = readFileSync(ledgerPath, "utf8");
+      const lines = raw.split(/\r?\n/u).filter((l) => l.trim().length > 0);
+      const migratedEvents = lines
+        .map((line) => JSON.parse(line) as { event_type?: string; path?: string })
+        .filter((evt) => evt.event_type === "bootstrap_marker_migrated");
+      expect(migratedEvents.length).toBe(targets.length);
+      // Every event references an absolute path under the project root.
+      for (const evt of migratedEvents) {
+        expect(typeof evt.path).toBe("string");
+        expect(evt.path?.startsWith(target)).toBe(true);
+      }
+    });
+
+    it("idempotent: re-running --fix after migration produces zero new bootstrap_marker_migrated events", async () => {
+      const target = createInitializedProject("doctor-rc19-marker-idempotent");
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+
+      seedLegacyMarker(target, "CLAUDE.md", "legacy body 1");
+      seedLegacyMarker(target, "AGENTS.md", "legacy body 2");
+
+      await runDoctorFix(target);
+
+      const countMigratedEvents = (): number => {
+        const raw = readFileSync(join(target, ".fabric", "events.jsonl"), "utf8");
+        const lines = raw.split(/\r?\n/u).filter((l) => l.trim().length > 0);
+        return lines
+          .map((line) => JSON.parse(line) as { event_type?: string })
+          .filter((evt) => evt.event_type === "bootstrap_marker_migrated").length;
+      };
+      const firstCount = countMigratedEvents();
+      expect(firstCount).toBeGreaterThanOrEqual(1);
+
+      // Second --fix: legacy markers are already gone, so no new migration runs.
+      const refix = await runDoctorFix(target);
+      expect(refix.fixed.map((e) => e.code)).not.toContain("bootstrap_marker_migration_required");
+      const secondCount = countMigratedEvents();
+      expect(secondCount).toBe(firstCount);
     });
   });
 });
