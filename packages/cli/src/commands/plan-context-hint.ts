@@ -15,11 +15,11 @@ import { resolveDevMode } from "../dev-mode.js";
 //
 // Contract (stable JSON):
 //   {
-//     version: 1,
+//     version: 2,
 //     revision_hash: string,         // agents.meta revision at time of call
 //     target_paths: string[],        // paths passed to planContext (after
 //                                    // normalization); `--all` => ["**"]
-//     narrow: Array<{                // path-relevant description_index slice
+//     entries: Array<{               // mode-agnostic description_index slice
 //       id: string,                  //   stable_id
 //       type: string,                //   knowledge_type (model/decision/...)
 //       maturity: string,            //   draft|verified|proven
@@ -46,18 +46,21 @@ type PlanContextHintArgs = {
   target?: string;
 };
 
-export interface PlanContextHintNarrowEntry {
+export interface PlanContextHintEntry {
   id: string;
   type: string;
   maturity: string;
   summary: string;
 }
 
+// Protocol v2 (rc.18): renamed `narrow` → `entries` (field is mode-agnostic —
+// covers both --paths union and --all degenerate); v1 emission is removed
+// without a compat shim per pre-user clean-slate policy.
 export interface PlanContextHintOutput {
-  version: 1;
+  version: 2;
   revision_hash: string;
   target_paths: string[];
-  narrow: PlanContextHintNarrowEntry[];
+  entries: PlanContextHintEntry[];
   broad_count: number;
 }
 
@@ -154,7 +157,7 @@ export async function runPlanContextHint(opts: {
       // scope_glob matches the requested path.
       dedupeByStableId(result.entries.flatMap((entry) => entry.description_index));
 
-  const narrow: PlanContextHintNarrowEntry[] = narrowSource.map((item) => ({
+  const entries: PlanContextHintEntry[] = narrowSource.map((item) => ({
     id: item.stable_id,
     type: item.type ?? item.description.knowledge_type ?? "",
     maturity: item.maturity ?? item.description.maturity ?? "",
@@ -162,10 +165,10 @@ export async function runPlanContextHint(opts: {
   }));
 
   return {
-    version: 1,
+    version: 2,
     revision_hash: result.revision_hash,
     target_paths: targetPaths,
-    narrow,
+    entries,
     broad_count: sharedIndex.length,
   };
 }
