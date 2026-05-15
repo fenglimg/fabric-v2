@@ -5,6 +5,25 @@ All notable changes to Fabric will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0-rc.21] - 2026-05-15
+
+Hotfix for rc.20 CI breakage. rc.20 tag landed with two strict-typecheck regressions that local `pnpm -r build` (tsup DTS, not workspace-wide `tsc --noEmit`) failed to catch.
+
+### Fixed
+
+- **`packages/server/src/services/event-ledger.test.ts:106`** — TASK-02's `kb_line_raw: null` roundtrip test built an `assistant_turn_observed` event missing `cite_ids: []` + `cite_tags: []`. zod's `.default([])` applies at parse-time but the TS *input* type still requires both fields. Added explicit empty-array literals to satisfy `EventLedgerEventInput`.
+- **`packages/cli/src/commands/config.ts:251`** — pre-existing `field.validate(raw)` call where `raw` is `string | undefined` from clack's `text()` validate callback. Changed to `field.validate(raw ?? "")` for type safety; runtime behavior unchanged (empty string fails the validator's positive-integer check, same as undefined would have).
+
+### Added
+
+- **`typecheck` script at root** (`pnpm typecheck` → `pnpm -r exec tsc --noEmit`) — closes the gap where release-rc skill's Phase 3 gate had nothing to call. Local + CI now share a single typecheck command.
+
+### Notes
+
+- `v2.0.0-rc.20` tag remains on GitHub for historical record. Cite policy implementation is correct end-to-end; only the CI gate failed. Consumers should clone `v2.0.0-rc.21` or later.
+- Cite policy features (TASK-01..TASK-12 from rc.20) are unchanged in rc.21.
+- Deferred to rc.22: Cursor capture + `cite_tags` schema widening (`dismissed_reason` field) + `renderCiteCoverageReport` unit tests.
+
 ## [2.0.0-rc.20] - 2026-05-15
 
 Cite policy. Closes the "KB 是否真的被用了" audit loop. AI agents working on this repo MUST write a first-line `KB: <id> (<≤8字 用法>) [planned|recalled|chained-from <id>|dismissed:<reason>]` or `KB: none` directive before every edit / decide / propose-plan action. `fab doctor --cite-coverage` reads the resulting `assistant_turn_observed` events from `.fabric/events.jsonl` and reports cite coverage with denominators computed from `agents.meta.json` `relevance_paths`. Policy text lives in `BOOTSTRAP_CANONICAL` (added in rc.19), so the three-end managed block writers automatically propagate it. **rc.20 scope: Claude Code first-class + Codex assume-and-test; Cursor capture deferred to rc.21** (Cursor PreToolUse hook only sees `tool_input`, not assistant reply text — needs PostToolUse or journal scan, separate RC).

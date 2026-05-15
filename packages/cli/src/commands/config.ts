@@ -248,7 +248,7 @@ async function promptFieldValue(
     placeholder: currentDisplay,
     initialValue: currentDisplay,
     validate(raw) {
-      const result = field.validate(raw);
+      const result = field.validate(raw ?? "");
       return result.ok ? undefined : result.error;
     },
   });

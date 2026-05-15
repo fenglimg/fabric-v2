@@ -106,6 +106,8 @@ describe("event-ledger", () => {
     const event = await appendEventLedgerEvent(projectRoot, {
       event_type: "assistant_turn_observed",
       kb_line_raw: null,
+      cite_ids: [],
+      cite_tags: [],
       turn_id: "turn-43",
       timestamp,
       ts: 4_000,
