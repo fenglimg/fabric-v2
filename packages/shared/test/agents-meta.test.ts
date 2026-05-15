@@ -176,7 +176,7 @@ describe("agentsMetaNodeSchema", () => {
 
     expect(parsed.stable_id).toBe("packages/server/rules");
     expect(parsed.identity_source).toBe("derived");
-    expect(deriveAgentsMetaStableId(".fabric/bootstrap/README.md")).toBe("bootstrap");
+    expect(deriveAgentsMetaStableId("AGENTS.md")).toBe("bootstrap");
     expect(deriveAgentsMetaIdentitySource(parsed)).toBe("derived");
   });
 

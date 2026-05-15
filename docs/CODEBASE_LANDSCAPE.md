@@ -33,7 +33,7 @@ fabric install
   cli/commands/install.ts
   -> cli/scanner/forensic.ts
   -> shared detector 和 schemas
-  -> 写入 .fabric/bootstrap、.fabric/INITIAL_TAXONOMY、.fabric/forensic、.fabric/events.jsonl、hooks、client config
+  -> 写入 .fabric/AGENTS.md、.fabric/INITIAL_TAXONOMY、.fabric/forensic、.fabric/events.jsonl、hooks、client config
 
 fabric serve
   cli/commands/serve.ts

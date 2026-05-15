@@ -22,7 +22,6 @@ export type DetectedClientSupport = {
   clientKind: ClientConfigWriter["clientKind"];
   label: string;
   detected: boolean;
-  bootstrapTargetPath: string | null;
   configPath: string | null;
   capabilities: Partial<Record<DetectedClientCapability, boolean>>;
   installedCapabilities?: Partial<Record<DetectedClientCapability, boolean>>;
@@ -102,7 +101,6 @@ export function detectClientSupports(
       clientKind: "ClaudeCodeCLI",
       label: "Claude Code CLI",
       detected: claudeDetected || hasExplicitPath(clientPaths, "claudeCodeCLI"),
-      bootstrapTargetPath: ".fabric/bootstrap/README.md",
       configPath: "project .claude/settings.json",
       capabilities: {
         bootstrap: true,
@@ -119,7 +117,6 @@ export function detectClientSupports(
       clientKind: "ClaudeCodeDesktop",
       label: "Claude Code Desktop",
       detected: claudeDesktopDetected || hasExplicitPath(clientPaths, "claudeCodeDesktop"),
-      bootstrapTargetPath: ".fabric/bootstrap/README.md",
       configPath: "desktop Claude config",
       capabilities: {
         bootstrap: true,
@@ -132,7 +129,6 @@ export function detectClientSupports(
       clientKind: "Cursor",
       label: "Cursor",
       detected: cursorDetected || hasExplicitPath(clientPaths, "cursor"),
-      bootstrapTargetPath: ".fabric/bootstrap/README.md",
       configPath: ".cursor/mcp.json",
       capabilities: {
         bootstrap: true,
@@ -145,7 +141,6 @@ export function detectClientSupports(
       clientKind: "CodexCLI",
       label: "Codex CLI",
       detected: codexDetected || hasExplicitPath(clientPaths, "codexCLI"),
-      bootstrapTargetPath: ".fabric/bootstrap/README.md",
       configPath: "~/.codex/config.toml",
       capabilities: {
         bootstrap: true,

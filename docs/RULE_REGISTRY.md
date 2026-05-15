@@ -14,7 +14,7 @@
 
 ```text
 .fabric/agents.meta.json
-.fabric/bootstrap/README.md
+.fabric/AGENTS.md
 .fabric/INITIAL_TAXONOMY.md
 .fabric/rules/
 .fabric/rule-test.index.json
@@ -84,14 +84,7 @@ describe("seer script contract", () => {
 
 | Stable ID | 文件 | 范围 | 备注 |
 | --- | --- | --- | --- |
-| `bootstrap/claude` | `templates/bootstrap/CLAUDE.md` | Bootstrap template | 已声明 `fab:rule-id`。 |
-| `bootstrap/codex` | `templates/bootstrap/codex-AGENTS-header.md` | Bootstrap template | 已声明 `fab:rule-id`。 |
-| `bootstrap/cursor` | `templates/bootstrap/cursor-fabric-bootstrap.mdc` | Bootstrap template | 已声明 `fab:rule-id`。 |
-
-重复的 package templates：
-
-- `packages/cli/templates/bootstrap/*` 镜像根目录 `templates/bootstrap/*`，用于 packaged CLI assets。
-- 部分 package templates 首行仍缺少 `fab:rule-id`，在把 package templates 当作 canonical rule source 前应先统一。
+| `bootstrap` | `packages/shared/src/templates/bootstrap-canonical.ts` | Canonical `.fabric/AGENTS.md` content | rc.19：单一 canonical bootstrap 源，由 `fab install` 写入。 |
 
 ## Example Rule Files
 

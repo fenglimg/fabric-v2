@@ -220,7 +220,7 @@ export function defaultAgentsMetaCounters(): AgentsMetaCounters {
 export function deriveAgentsMetaStableId(file: string): string {
   const normalized = normalizePath(file);
 
-  if (normalized === "AGENTS.md" || normalized === ".fabric/bootstrap/README.md") {
+  if (normalized === "AGENTS.md") {
     return "bootstrap";
   }
 
@@ -246,7 +246,7 @@ export function deriveAgentsMetaIdentitySource(
 export function deriveAgentsMetaLayer(file: string): AgentsLayer {
   const normalized = normalizePath(file);
 
-  if (normalized === "AGENTS.md" || normalized === ".fabric/bootstrap/README.md") {
+  if (normalized === "AGENTS.md") {
     return "L0";
   }
 

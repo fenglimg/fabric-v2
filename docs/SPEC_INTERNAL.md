@@ -6,7 +6,7 @@
 
 ```text
 fabric install
-  -> 写入 .fabric/bootstrap/README.md、.fabric/INITIAL_TAXONOMY.md、.fabric/forensic.json、.fabric/events.jsonl
+  -> 写入 .fabric/AGENTS.md、.fabric/INITIAL_TAXONOMY.md、.fabric/forensic.json、.fabric/events.jsonl
   -> 规则正文进入 .fabric/rules/
 
 fabric serve
@@ -248,7 +248,7 @@ fabric doctor --fix
 
 Target `.fabric/` state:
 
-- `.fabric/bootstrap/README.md`
+- `.fabric/AGENTS.md`
 - `.fabric/INITIAL_TAXONOMY.md`
 - `.fabric/forensic.json`
 - `.fabric/init-context.json`

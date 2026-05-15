@@ -11,7 +11,7 @@
 - `fab_get_rule_sections` — 按 AI 选择的 L1 ID 拉取规则正文（含强制 L0/L2）
 
 ### MCP resource (1)
-- `AGENTS_MD_RESOURCE_URI` — L0 bootstrap README（`.fabric/bootstrap/README.md`）
+- `AGENTS_MD_RESOURCE_URI` — L0 bootstrap canonical（`.fabric/AGENTS.md`）
 
 ### REST endpoints
 - `GET  /api/rules` — 全量规则（cache-backed）

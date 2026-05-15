@@ -47,7 +47,7 @@ fabric install
 
 初始化会写入或刷新：
 
-- `.fabric/bootstrap/README.md`
+- `.fabric/AGENTS.md`
 - `.fabric/INITIAL_TAXONOMY.md`
 - `.fabric/rules/`
 - `.fabric/agents.meta.json`
