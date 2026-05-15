@@ -8,3 +8,6 @@ coverage/
 .DS_Store
 .fabric/.cache/
 .fabric-personal-dogfood-tmp/
+# MCP client configs contain absolute local paths — per-machine, not for repo
+.mcp.json
+.cursor/mcp.json
