@@ -11,3 +11,4 @@ export * from "./schemas/forensic-report.js";
 export * from "./schemas/init-context.js";
 export * from "./schemas/events.js";
 export * from "./schemas/event-ledger.js";
+export * from "./templates/index.js";
