@@ -98,6 +98,22 @@ describe("TASK-005 uninstall round-trip: T1 fresh init → uninstall", () => {
     expect(existsSync(join(target, ".claude", "hooks", "knowledge-hint-broad.cjs"))).toBe(false);
     expect(existsSync(join(target, ".claude", "hooks", "knowledge-hint-narrow.cjs"))).toBe(false);
 
+    // rc.16 TASK-004 (F2-tests): fabric-owned hook libs are removed too.
+    // Symmetric inverse of installHookLibs — the lib `.cjs` files plus the
+    // empty `lib/` directory should be gone across all 3 client trees.
+    for (const clientDir of [".claude", ".codex", ".cursor"]) {
+      expect(
+        existsSync(join(target, clientDir, "hooks/lib/banner-i18n.cjs")),
+        `${clientDir} banner-i18n.cjs should be removed`,
+      ).toBe(false);
+      expect(
+        existsSync(join(target, clientDir, "hooks/lib/session-digest-writer.cjs")),
+        `${clientDir} session-digest-writer.cjs should be removed`,
+      ).toBe(false);
+      // Empty lib/ dir cascade-removed by removeHookLibs.
+      expect(existsSync(join(target, clientDir, "hooks/lib"))).toBe(false);
+    }
+
     // Snapshot tree: if any files remain in .claude, they MUST not be the
     // fabric-owned ones (settings.json may survive — it predates uninstall
     // intent and contains a mix of fabric + user content). cleanEmpties became
@@ -121,18 +137,25 @@ describe("TASK-005 uninstall round-trip: T1 fresh init → uninstall", () => {
       expect(path).not.toContain("fabric-archive/SKILL.md");
       expect(path).not.toContain("fabric-review/SKILL.md");
       expect(path).not.toContain("fabric-import/SKILL.md");
+      // rc.16 TASK-004: lib `.cjs` helpers shipped via installHookLibs.
+      expect(path).not.toContain("hooks/lib/banner-i18n.cjs");
+      expect(path).not.toContain("hooks/lib/session-digest-writer.cjs");
     }
     for (const path of Object.keys(remainingCursor)) {
       // No fabric-owned hook scripts remain in .cursor.
       expect(path).not.toContain("fabric-hint.cjs");
       expect(path).not.toContain("knowledge-hint-broad.cjs");
       expect(path).not.toContain("knowledge-hint-narrow.cjs");
+      expect(path).not.toContain("hooks/lib/banner-i18n.cjs");
+      expect(path).not.toContain("hooks/lib/session-digest-writer.cjs");
     }
     for (const path of Object.keys(remainingCodex)) {
       // No fabric-owned hook scripts remain in .codex.
       expect(path).not.toContain("fabric-hint.cjs");
       expect(path).not.toContain("knowledge-hint-broad.cjs");
       expect(path).not.toContain("knowledge-hint-narrow.cjs");
+      expect(path).not.toContain("hooks/lib/banner-i18n.cjs");
+      expect(path).not.toContain("hooks/lib/session-digest-writer.cjs");
     }
   });
 });

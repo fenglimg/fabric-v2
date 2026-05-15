@@ -9,6 +9,7 @@ import {
   FABRIC_SECTION_REGEX,
   HOOK_CONFIG_ARRAY_PATHS,
   HOOK_CONFIG_TARGETS,
+  HOOK_LIB_DESTINATIONS,
   HOOK_SCRIPT_DESTINATIONS,
   SECTION_TARGETS,
   SKILL_DESTINATIONS,
@@ -151,6 +152,51 @@ async function removeHookScripts(
   for (const rel of rels) {
     const target = join(projectRoot, rel);
     results.push(await rmIfExists(step, target));
+  }
+  return results;
+}
+
+/**
+ * Inverse of `installHookLibs`. For each client's `<client>/hooks/lib/`
+ * directory listed in {@link HOOK_LIB_DESTINATIONS}, deletes every `.cjs`
+ * file present (best-effort — an absent directory yields a single skipped
+ * row), then attempts to rmdir the now-empty `lib/` directory.
+ *
+ * The `.cjs` glob is intentional: future non-`.cjs` files in `<client>/
+ * hooks/lib/` (e.g. user-authored helpers, README) are preserved per the
+ * same conservatism that keeps `<client>/hooks/` itself in place.
+ *
+ * rc.16 TASK-004 (F2-tests): added in lock-step with installHookLibs so
+ * `fab uninstall` returns the workspace to a clean state without orphan
+ * lib files.
+ */
+export async function removeHookLibs(
+  projectRoot: string,
+): Promise<UninstallStepResult[]> {
+  const results: UninstallStepResult[] = [];
+  for (const dirRel of HOOK_LIB_DESTINATIONS) {
+    const dirAbs = join(projectRoot, dirRel);
+    if (!existsSync(dirAbs)) {
+      results.push({ step: "hook-lib", path: dirAbs, status: "skipped", message: "absent" });
+      continue;
+    }
+    let entries: string[];
+    try {
+      entries = await readdir(dirAbs);
+    } catch (error: unknown) {
+      results.push({
+        step: "hook-lib",
+        path: dirAbs,
+        status: "error",
+        message: error instanceof Error ? error.message : String(error),
+      });
+      continue;
+    }
+    for (const entry of entries) {
+      if (!entry.endsWith(".cjs")) continue;
+      results.push(await rmIfExists("hook-lib", join(dirAbs, entry)));
+    }
+    results.push(await rmDirIfEmpty("hook-lib-dir", dirAbs));
   }
   return results;
 }
@@ -321,8 +367,9 @@ export async function stripFabricKnowledgeBaseSection(
  *
  *   1. Pointer-line strip (CLAUDE.md / AGENTS.md / .cursor/rules)
  *   2. Hook-config un-merge (cursor → codex → claude — reverse of install)
- *   3. Hook-script removal (knowledge-narrow → knowledge-broad → fabric-hint)
- *   4. Skill removal (fabric-import → fabric-review → fabric-archive)
+ *   3. Hook-lib removal (lib/*.cjs across all 3 client hook dirs — rc.16 TASK-004)
+ *   4. Hook-script removal (knowledge-narrow → knowledge-broad → fabric-hint)
+ *   5. Skill removal (fabric-import → fabric-review → fabric-archive)
  *
  * Each helper invocation is try/catch-wrapped: a thrown error becomes a
  * `{ status: 'error', message }` entry in the returned results array. The
@@ -351,7 +398,11 @@ export async function uninstallBootstrapStage(
     unmergeClaudeCodeHookConfig(projectRoot),
   );
 
-  // 3. Hook scripts (reverse of install order)
+  // 3. Hook libs (reverse of install order — libs come AFTER scripts in
+  // install, so they come BEFORE scripts in uninstall). rc.16 TASK-004.
+  await runAndCollect(results, "hook-lib", projectRoot, () => removeHookLibs(projectRoot));
+
+  // 4. Hook scripts (reverse of install order)
   await runAndCollect(results, "hook-narrow-script", projectRoot, () =>
     removeKnowledgeHintNarrowHook(projectRoot),
   );
@@ -362,7 +413,7 @@ export async function uninstallBootstrapStage(
     removeArchiveHintHook(projectRoot),
   );
 
-  // 4. Skill files (reverse of install order: import → review → archive)
+  // 5. Skill files (reverse of install order: import → review → archive)
   await runAndCollect(results, "skill-import", projectRoot, () =>
     uninstallFabricImportSkill(projectRoot),
   );

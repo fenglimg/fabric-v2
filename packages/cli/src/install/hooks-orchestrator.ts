@@ -8,6 +8,7 @@ import {
   installFabricArchiveSkill,
   installFabricImportSkill,
   installFabricReviewSkill,
+  installHookLibs,
   installKnowledgeHintBroadHook,
   installKnowledgeHintNarrowHook,
   mergeClaudeCodeHookConfig,
@@ -96,6 +97,11 @@ export async function installHooks(
   // edit-counter sidecar. Same copy plumbing as the broad sibling — three
   // dest dirs, chmod 0o755 on POSIX, copy before merge so validate finds it.
   results.push(...await runStep(() => installKnowledgeHintNarrowHook(normalizedTarget)));
+  // rc.16 TASK-004 (F2-tests): copy shared lib/*.cjs helpers (banner-i18n,
+  // session-digest-writer) into each client's <client>/hooks/lib/ dir. The
+  // hook scripts above hard-require these via `./lib/<name>.cjs` and crash
+  // at runtime if absent — the install step closes that packaging gap.
+  results.push(...await runStep(() => installHookLibs(normalizedTarget)));
   results.push(await runSingleStep("claude-hook-config", () => mergeClaudeCodeHookConfig(normalizedTarget)));
   results.push(await runSingleStep("codex-hook-config", () => mergeCodexHookConfig(normalizedTarget)));
   results.push(await runSingleStep("cursor-hook-config", () => mergeCursorHookConfig(normalizedTarget)));

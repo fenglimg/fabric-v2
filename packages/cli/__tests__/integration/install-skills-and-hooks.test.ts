@@ -20,7 +20,7 @@
  *      appended only once on re-run
  */
 
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -127,6 +127,29 @@ describe("TASK-006 install-skills-and-hooks: fresh init", () => {
     expect(claudeNarrow).toBe(narrowHookTemplate);
     expect(codexNarrow).toBe(narrowHookTemplate);
     expect(cursorNarrow).toBe(narrowHookTemplate);
+
+    // rc.16 TASK-004 (F2-tests): banner-i18n.cjs lib MUST ship to every
+    // client's <client>/hooks/lib/ directory. fabric-hint.cjs and knowledge-
+    // hint-broad.cjs both `require("./lib/banner-i18n.cjs")` at module load
+    // — without this copy step the user-facing hook crashes on the first
+    // Stop / SessionStart event after install. Byte-equality vs the shipped
+    // template is asserted to also catch any drift in the lib content.
+    const bannerLibTemplate = readTemplate("hooks/lib/banner-i18n.cjs");
+    for (const clientDir of [".claude", ".codex", ".cursor"]) {
+      const libPath = join(target, clientDir, "hooks/lib/banner-i18n.cjs");
+      expect(existsSync(libPath), `missing: ${libPath}`).toBe(true);
+      expect(readFileSync(libPath, "utf8")).toBe(bannerLibTemplate);
+    }
+    // session-digest-writer.cjs is the second `.cjs` file in the lib dir
+    // and must ship via the same install step. Asserting both files keeps
+    // installHookLibs honest about its directory-walk contract: it copies
+    // every `.cjs` under templates/hooks/lib/, not just banner-i18n.
+    const digestLibTemplate = readTemplate("hooks/lib/session-digest-writer.cjs");
+    for (const clientDir of [".claude", ".codex", ".cursor"]) {
+      const libPath = join(target, clientDir, "hooks/lib/session-digest-writer.cjs");
+      expect(existsSync(libPath), `missing: ${libPath}`).toBe(true);
+      expect(readFileSync(libPath, "utf8")).toBe(digestLibTemplate);
+    }
 
     // Claude settings.json contains hooks.Stop[] + hooks.SessionStart[] +
     // hooks.PreToolUse[] entries each pointing at the corresponding script.
@@ -362,7 +385,9 @@ describe("TASK-006 install-skills-and-hooks: fabric hooks idempotent", () => {
     // skills + 3 Stop hook scripts (claude/codex/cursor) + 3 SessionStart hook
     // scripts (rc.6 TASK-019) + 3 PreToolUse hook scripts (rc.6 TASK-020) +
     // 3 client configs = 18 minimum.
-    expect(result.skipped.length).toBeGreaterThanOrEqual(18);
+    // rc.16 TASK-004: + 3 clients × N hook libs (currently 2: banner-i18n,
+    // session-digest-writer) = 6 more rows; threshold updated to ≥24.
+    expect(result.skipped.length).toBeGreaterThanOrEqual(24);
   });
 });
 
@@ -545,6 +570,59 @@ describe("TASK-006 install-skills-and-hooks: Fabric Knowledge Base managed secti
     expect(countOccurrences(afterSecond, SECTION_END)).toBe(1);
     // Pre-section user content survives.
     expect(afterSecond.startsWith(seedContent)).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// rc.16 TASK-004 (F2-tests) — hook-lib install pipeline
+//
+// Dedicated focus on installHookLibs: every `.cjs` file under templates/
+// hooks/lib/ must land in each client's <client>/hooks/lib/ directory, and
+// the operation must be idempotent on re-run. The fresh-init test above
+// already covers presence + byte-equality; this block locks in the
+// directory-walk contract and the idempotency guarantee separately so a
+// regression in either dimension surfaces as a focused failure.
+// ---------------------------------------------------------------------------
+
+describe("rc.16 TASK-004 install-hook-libs: directory-walk contract", () => {
+  it("ships every .cjs file from templates/hooks/lib/ to all 3 client lib dirs", async () => {
+    const target = createWerewolfFixtureRoot("itg-install-hook-libs");
+    tempRoots.push(target);
+
+    await runInit(target);
+
+    // Discover the source-of-truth set of lib files at test time so this
+    // assertion auto-tracks future additions to templates/hooks/lib/.
+    const libTemplateDir = join(TEMPLATES_ROOT, "hooks/lib");
+    const expectedLibFiles = readdirSync(libTemplateDir).filter((name) =>
+      name.endsWith(".cjs"),
+    );
+    // Sanity: at least banner-i18n.cjs (rc.16 TASK-001) must be present.
+    expect(expectedLibFiles).toContain("banner-i18n.cjs");
+
+    for (const clientDir of [".claude", ".codex", ".cursor"]) {
+      for (const libFile of expectedLibFiles) {
+        const dest = join(target, clientDir, "hooks/lib", libFile);
+        expect(existsSync(dest), `expected lib at ${dest}`).toBe(true);
+        expect(readFileSync(dest, "utf8")).toBe(
+          readFileSync(join(libTemplateDir, libFile), "utf8"),
+        );
+      }
+    }
+  });
+
+  it("re-running init does not duplicate or alter shipped lib files", async () => {
+    const target = createWerewolfFixtureRoot("itg-install-hook-libs-idempotent");
+    tempRoots.push(target);
+
+    await runInit(target);
+    const libRel = ".claude/hooks/lib/banner-i18n.cjs";
+    const afterFirst = readFileSync(join(target, libRel), "utf8");
+
+    await runInit(target);
+    const afterSecond = readFileSync(join(target, libRel), "utf8");
+
+    expect(afterSecond).toBe(afterFirst);
   });
 });
 

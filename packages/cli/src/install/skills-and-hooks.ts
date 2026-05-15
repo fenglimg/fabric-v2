@@ -1,4 +1,4 @@
-import { chmodSync, existsSync, readFileSync } from "node:fs";
+import { chmodSync, existsSync, readdirSync, readFileSync } from "node:fs";
 import { mkdir, readFile } from "node:fs/promises";
 import { dirname, join, parse, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -74,6 +74,13 @@ const HOOK_BROAD_SCRIPT_TEMPLATE_REL = "hooks/knowledge-hint-broad.cjs";
 // plumbing but registered against PreToolUse with Edit|Write|MultiEdit
 // matchers in each client config.
 const HOOK_NARROW_SCRIPT_TEMPLATE_REL = "hooks/knowledge-hint-narrow.cjs";
+// rc.16 TASK-004 (F2-tests): shared `.cjs` helpers consumed by the three
+// hook scripts at runtime via `require("./lib/<name>.cjs")`. Currently
+// houses banner-i18n.cjs (rc.16 TASK-001) and session-digest-writer.cjs
+// (pre-existing). The install pipeline copies EVERY `.cjs` file in this
+// directory into each client's `<client>/hooks/lib/` so future additions
+// ship without further wiring (e.g. a new `lib/foo.cjs` is auto-picked).
+const HOOK_LIB_TEMPLATE_DIR_REL = "hooks/lib";
 const CLAUDE_HOOK_CONFIG_TEMPLATE_REL = "hooks/configs/claude-code.json";
 const CODEX_HOOK_CONFIG_TEMPLATE_REL = "hooks/configs/codex-hooks.json";
 const CURSOR_HOOK_CONFIG_TEMPLATE_REL = "hooks/configs/cursor-hooks.json";
@@ -127,6 +134,28 @@ export const HOOK_SCRIPT_DESTINATIONS = {
     ".cursor/hooks/knowledge-hint-narrow.cjs",
   ],
 } as const;
+
+/**
+ * Project-root-relative destination DIRECTORIES (one per client) for the
+ * shared hook-lib `.cjs` helpers. The lib directory is co-located next to
+ * each client's hook scripts so the scripts can `require("./lib/<name>.cjs")`
+ * with a relative path that works identically in dev (templates/) and in
+ * the user's installed workspace.
+ *
+ * Source of truth shared by `fab install` (copy) and `fab uninstall` (prune).
+ *
+ * rc.16 TASK-004 (F2-tests): added when banner-i18n.cjs (rc.16 TASK-001)
+ * became the second `lib/*.cjs` file required at hook runtime. The pre-
+ * existing session-digest-writer.cjs was historically NOT shipped — it
+ * was either tolerated as a soft-fail (writer wraps require in try/catch)
+ * or shipped via an out-of-band path; this constant unifies the install
+ * pipeline so every `.cjs` under templates/hooks/lib/ ships uniformly.
+ */
+export const HOOK_LIB_DESTINATIONS = [
+  ".claude/hooks/lib",
+  ".codex/hooks/lib",
+  ".cursor/hooks/lib",
+] as const;
 
 /**
  * Project-root-relative paths of each client's hook-config JSON file that
@@ -433,6 +462,80 @@ export async function installKnowledgeHintNarrowHook(
       }
     }
     results.push(result);
+  }
+  return results;
+}
+
+/**
+ * Copy every `.cjs` file from templates/hooks/lib/ into each client's
+ * `<client>/hooks/lib/` directory (.claude/hooks/lib/, .codex/hooks/lib/,
+ * .cursor/hooks/lib/). Idempotent per file via {@link copyTextIdempotent}.
+ *
+ * The directory listing is read at install time (not hard-coded) so
+ * adding a new `templates/hooks/lib/foo.cjs` in a future RC ships
+ * automatically without further wiring — keeps the lib directory the
+ * single source of truth for hook-side helpers.
+ *
+ * rc.16 TASK-004 (F2-tests): introduced when banner-i18n.cjs became a
+ * hard runtime dependency of fabric-hint.cjs and knowledge-hint-broad.cjs.
+ * Without this step the user-facing hook scripts crash with
+ * `Cannot find module './lib/banner-i18n.cjs'` on the first Stop /
+ * SessionStart event after install.
+ *
+ * Returns one InstallStepResult per (client × lib file) — N libs shipped
+ * across 3 clients = 3N rows. Empty lib directory is allowed (returns
+ * a single skipped row noting the absence) so the function is safe to
+ * call before any libs have been authored.
+ */
+export async function installHookLibs(
+  projectRoot: string,
+  _options: InstallOptions = {},
+): Promise<InstallStepResult[]> {
+  const libTemplateDir = findTemplatePath(HOOK_LIB_TEMPLATE_DIR_REL);
+  let libFiles: string[];
+  try {
+    libFiles = readdirSync(libTemplateDir).filter((name) => name.endsWith(".cjs"));
+  } catch (error: unknown) {
+    return [
+      {
+        step: "hook-lib",
+        path: libTemplateDir,
+        status: "error",
+        message: error instanceof Error ? error.message : String(error),
+      },
+    ];
+  }
+
+  if (libFiles.length === 0) {
+    return [
+      {
+        step: "hook-lib",
+        path: libTemplateDir,
+        status: "skipped",
+        message: "no-libs-to-ship",
+      },
+    ];
+  }
+
+  const results: InstallStepResult[] = [];
+  for (const libFile of libFiles) {
+    const sourcePath = join(libTemplateDir, libFile);
+    let source: string;
+    try {
+      source = readFileSync(sourcePath, "utf8");
+    } catch (error: unknown) {
+      results.push({
+        step: "hook-lib",
+        path: sourcePath,
+        status: "error",
+        message: error instanceof Error ? error.message : String(error),
+      });
+      continue;
+    }
+    for (const destDirRel of HOOK_LIB_DESTINATIONS) {
+      const target = join(projectRoot, destDirRel, libFile);
+      results.push(await copyTextIdempotent("hook-lib", source, target));
+    }
   }
   return results;
 }

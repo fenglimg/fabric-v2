@@ -26,6 +26,7 @@ import {
   installFabricArchiveSkill,
   installFabricImportSkill,
   installFabricReviewSkill,
+  installHookLibs,
   installKnowledgeHintBroadHook,
   installKnowledgeHintNarrowHook,
   mergeClaudeCodeHookConfig,
@@ -1017,6 +1018,13 @@ async function executeInitStagePlan(
         installResults.push(...await runBestEffort("hook-broad-script", () => installKnowledgeHintBroadHook(plan.target)));
         // rc.6 TASK-020 (E2 + E4): PreToolUse narrow-injection hook + edit-counter sidecar.
         installResults.push(...await runBestEffort("hook-narrow-script", () => installKnowledgeHintNarrowHook(plan.target)));
+        // rc.16 TASK-004 (F2-tests): copy shared hook-lib helpers
+        // (banner-i18n.cjs, session-digest-writer.cjs) into each client's
+        // <client>/hooks/lib/ directory. Same best-effort discipline as the
+        // sibling hook-script copies; missing lib files would crash the
+        // Stop hook at runtime in user workspaces (banner-i18n is hard-
+        // required from fabric-hint.cjs and knowledge-hint-broad.cjs).
+        installResults.push(...await runBestEffort("hook-lib", () => installHookLibs(plan.target)));
         installResults.push(await runBestEffortSingle("claude-hook-config", () => mergeClaudeCodeHookConfig(plan.target)));
         installResults.push(await runBestEffortSingle("codex-hook-config", () => mergeCodexHookConfig(plan.target)));
         // rc.5 TASK-010 cursor parity (rc.6 also writes the SessionStart slot
