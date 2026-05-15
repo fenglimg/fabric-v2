@@ -4,11 +4,11 @@ exports[`cli i18n > renders en command descriptions and output snapshots 1`] = `
 {
   "config": {
     "description": "Manage Fabric MCP client configuration.",
-    "errors": [],
-    "stderr": [],
-    "stdout": [
-      "Config panel coming in rc.16 — edit fabric-config.json directly for now.",
+    "errors": [
+      "Workspace not initialized. Run \`fab install\` first.",
     ],
+    "stderr": [],
+    "stdout": [],
   },
   "install": {
     "description": "Install Fabric in the target project.",
@@ -63,11 +63,11 @@ exports[`cli i18n > renders zh-CN command descriptions and output snapshots 1`] 
 {
   "config": {
     "description": "管理 Fabric MCP 客户端配置。",
-    "errors": [],
-    "stderr": [],
-    "stdout": [
-      "配置面板将在 rc.16 上线 — 暂请直接编辑 fabric-config.json。",
+    "errors": [
+      "工作区尚未初始化。请先运行 \`fab install\`。",
     ],
+    "stderr": [],
+    "stdout": [],
   },
   "install": {
     "description": "在目标项目中安装 Fabric。",

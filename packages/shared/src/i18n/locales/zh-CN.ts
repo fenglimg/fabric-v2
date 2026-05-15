@@ -45,7 +45,6 @@ export const zhCNMessages: Messages = {
     "未知客户端\u201c{client}\u201d。请使用逗号分隔列表，例如 claude,cursor,codex。",
 
   "cli.config.description": "管理 Fabric MCP 客户端配置。",
-  "cli.config.placeholder": "配置面板将在 rc.16 上线 \u2014 暂请直接编辑 fabric-config.json。",
   "cli.config.args.target.description": "目标项目目录（默认当前工作目录）。",
   "cli.config.clients.claude": "Claude Code CLI",
   "cli.config.install.description": "将 Fabric MCP 服务端条目安装到检测到的客户端配置中。",
@@ -59,6 +58,63 @@ export const zhCNMessages: Messages = {
   "cli.config.install.no-config-path": "跳过 {client}：未检测到配置路径。",
   "cli.config.install.dry-run": "[dry-run] {client}：将写入 {path}",
   "cli.config.install.wrote": "{client}：已写入 {path}",
+
+  // rc.16 TASK-006 (F1-panel): clack 驱动的 `fab config` 交互式面板。
+  // 由 packages/cli/src/commands/config.ts（菜单循环 + 字段编辑）以及
+  // getPanelFields() 的 label_i18n_key 引用消费。
+  "cli.config.intro": "Fabric 配置",
+  "cli.config.outro": "配置已保存。",
+  "cli.config.outro-no-changes": "未做任何修改。",
+  "cli.config.cancel": "已取消。",
+  "cli.config.non-tty-notice":
+    "fab config 需要在交互式终端中运行。请在 TTY 中执行以编辑配置字段。",
+  "cli.config.menu.field-select": "选择要编辑的字段：",
+  "cli.config.menu.exit": "退出",
+  "cli.config.value.current": "当前：{value}",
+  "cli.config.value.default-marker": "（默认）",
+  "cli.config.prompt.select": "为 {key} 选择新值（当前：{current}）：",
+  "cli.config.prompt.text": "为 {key} 输入新值（当前：{current}）：",
+  "cli.config.write.success": "已保存 {key} = {value}",
+  "cli.config.write.failure": "写入 fabric-config.json 失败：{message}",
+  "cli.config.errors.uninit-workspace.message":
+    "工作区尚未初始化。请先运行 `fab install`。",
+  "cli.config.errors.invalid-int": "必须是正整数。",
+  "cli.config.errors.unknown-field": "未知字段选择 — 已跳过。",
+  "cli.config.errors.no-enum-options": "该字段没有可选枚举值 — 已跳过。",
+  // 11 个面板字段标签（A 组 2 个 + B 组 8 个 + C 组 1 个）。
+  "cli.config.fields.fabric_language.label": "语言",
+  "cli.config.fields.fabric_language.description":
+    "Fabric 钩子与 Skill 输出使用的语言。",
+  "cli.config.fields.default_layer_filter.label": "默认知识层",
+  "cli.config.fields.default_layer_filter.description":
+    "知识列表的默认层级范围（team / personal / both）。",
+  "cli.config.fields.archive_hint_hours.label": "归档提示窗口（小时）",
+  "cli.config.fields.archive_hint_hours.description":
+    "Signal A 用于检测频繁编辑的时间窗口（小时）。",
+  "cli.config.fields.archive_hint_cooldown_hours.label": "归档提示冷却（小时）",
+  "cli.config.fields.archive_hint_cooldown_hours.description":
+    "同一归档提示再次触发前的冷却时间（小时）。",
+  "cli.config.fields.archive_edit_threshold.label": "归档编辑阈值",
+  "cli.config.fields.archive_edit_threshold.description":
+    "触发 Signal A 归档提示所需的编辑次数阈值。",
+  "cli.config.fields.underseed_node_threshold.label": "知识节点不足阈值",
+  "cli.config.fields.underseed_node_threshold.description":
+    "知识节点数低于该阈值时，Fabric 视为知识库尚未充实。",
+  "cli.config.fields.review_hint_pending_count.label": "待审条目数阈值",
+  "cli.config.fields.review_hint_pending_count.description":
+    "待审条目数超过该阈值时触发审核提示。",
+  "cli.config.fields.review_hint_pending_age_days.label": "待审条目年龄（天）",
+  "cli.config.fields.review_hint_pending_age_days.description":
+    "待审条目存留天数超过该阈值时触发审核提示。",
+  "cli.config.fields.maintenance_hint_days.label": "维护提示窗口（天）",
+  "cli.config.fields.maintenance_hint_days.description":
+    "Fabric 触发知识维护提示的时间窗口（天）。",
+  "cli.config.fields.maintenance_hint_cooldown_days.label": "维护提示冷却（天）",
+  "cli.config.fields.maintenance_hint_cooldown_days.description":
+    "维护提示再次触发前的冷却时间（天）。",
+  "cli.config.fields.audit_mode.label": "审计模式",
+  "cli.config.fields.audit_mode.description":
+    "human-lock 与漂移检测的审计粒度（strict / warn / off）。",
 
   "cli.doctor.description": "运行 Fabric 目标态诊断。",
   "doctor.section.fixable": "可修复错误：",

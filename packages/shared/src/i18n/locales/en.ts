@@ -46,8 +46,6 @@ export const enMessages: Messages = {
     "Unknown client \"{client}\". Use a comma-separated list such as claude,cursor,codex.",
 
   "cli.config.description": "Manage Fabric MCP client configuration.",
-  "cli.config.placeholder":
-    "Config panel coming in rc.16 \u2014 edit fabric-config.json directly for now.",
   "cli.config.args.target.description": "Target project directory (defaults to cwd).",
   "cli.config.clients.claude": "Claude Code CLI",
   "cli.config.install.description": "Install Fabric MCP server entries into detected client configs.",
@@ -62,6 +60,63 @@ export const enMessages: Messages = {
   "cli.config.install.no-config-path": "Skipping {client}: no config path detected.",
   "cli.config.install.dry-run": "[dry-run] {client}: would write {path}",
   "cli.config.install.wrote": "{client}: wrote {path}",
+
+  // rc.16 TASK-006 (F1-panel): clack-driven `fab config` interactive panel.
+  // Keys consumed by packages/cli/src/commands/config.ts (menu loop +
+  // per-field prompts) and by getPanelFields() (label_i18n_key references).
+  "cli.config.intro": "Fabric Configuration",
+  "cli.config.outro": "Configuration saved.",
+  "cli.config.outro-no-changes": "No changes made.",
+  "cli.config.cancel": "Cancelled.",
+  "cli.config.non-tty-notice":
+    "fab config requires an interactive terminal. Run it from a TTY to edit configuration fields.",
+  "cli.config.menu.field-select": "Select a field to edit:",
+  "cli.config.menu.exit": "Exit",
+  "cli.config.value.current": "current: {value}",
+  "cli.config.value.default-marker": "(default)",
+  "cli.config.prompt.select": "Choose a new value for {key} (current: {current}):",
+  "cli.config.prompt.text": "Enter a new value for {key} (current: {current}):",
+  "cli.config.write.success": "Saved {key} = {value}",
+  "cli.config.write.failure": "Failed to write fabric-config.json: {message}",
+  "cli.config.errors.uninit-workspace.message":
+    "Workspace not initialized. Run `fab install` first.",
+  "cli.config.errors.invalid-int": "Must be a positive integer.",
+  "cli.config.errors.unknown-field": "Unknown field selection — skipping.",
+  "cli.config.errors.no-enum-options": "No enum options available for this field — skipping.",
+  // Per-field labels (11 total: 2 Group A + 8 Group B + 1 Group C).
+  "cli.config.fields.fabric_language.label": "Language",
+  "cli.config.fields.fabric_language.description":
+    "Language used by Fabric hooks and Skills output.",
+  "cli.config.fields.default_layer_filter.label": "Default knowledge layer",
+  "cli.config.fields.default_layer_filter.description":
+    "Default layer scope for knowledge listings (team / personal / both).",
+  "cli.config.fields.archive_hint_hours.label": "Archive hint window (hours)",
+  "cli.config.fields.archive_hint_hours.description":
+    "Window (in hours) used by Signal A to detect frequent edits worth archiving.",
+  "cli.config.fields.archive_hint_cooldown_hours.label": "Archive hint cooldown (hours)",
+  "cli.config.fields.archive_hint_cooldown_hours.description":
+    "Cooldown (in hours) before the same archive hint can fire again.",
+  "cli.config.fields.archive_edit_threshold.label": "Archive edit threshold",
+  "cli.config.fields.archive_edit_threshold.description":
+    "Edit-count cutoff that triggers the Signal A archive hint.",
+  "cli.config.fields.underseed_node_threshold.label": "Underseed node threshold",
+  "cli.config.fields.underseed_node_threshold.description":
+    "Minimum knowledge-node count below which Fabric flags the workspace as underseeded.",
+  "cli.config.fields.review_hint_pending_count.label": "Review pending count",
+  "cli.config.fields.review_hint_pending_count.description":
+    "Pending-review count above which the review hint fires.",
+  "cli.config.fields.review_hint_pending_age_days.label": "Review pending age (days)",
+  "cli.config.fields.review_hint_pending_age_days.description":
+    "Pending-review age (in days) above which the review hint fires.",
+  "cli.config.fields.maintenance_hint_days.label": "Maintenance hint window (days)",
+  "cli.config.fields.maintenance_hint_days.description":
+    "Day window for Fabric to surface a knowledge-maintenance hint.",
+  "cli.config.fields.maintenance_hint_cooldown_days.label": "Maintenance hint cooldown (days)",
+  "cli.config.fields.maintenance_hint_cooldown_days.description":
+    "Cooldown (in days) before the maintenance hint can fire again.",
+  "cli.config.fields.audit_mode.label": "Audit mode",
+  "cli.config.fields.audit_mode.description":
+    "Audit verbosity for human-lock + drift detection (strict / warn / off).",
 
   "cli.doctor.description": "Run Fabric target-state diagnostics.",
   "doctor.section.fixable": "Fixable errors:",
