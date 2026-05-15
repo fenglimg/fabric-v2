@@ -5012,6 +5012,49 @@ async function ensureEventLedger(projectRoot: string): Promise<void> {
   await writeFile(path, "", { encoding: "utf8", flag: "a" });
 }
 
+// v2.0.0-rc.20 TASK-04: idempotently emit a `cite_policy_activated` marker on
+// the first invocation for a given project. Subsequent invocations short-circuit
+// after a single ledger read and report the existing marker's `ts`. Read/write
+// failures are absorbed and reported as `{ marker_ts: 0, emitted_now: false }`
+// so callers (doctor / fabric-hint warm-up) can keep moving without surfacing
+// audit-trail churn to the user. Pairs with `assistant_turn_observed` (TASK-03):
+// the activation marker anchors the policy_version under which subsequent
+// per-turn observations were recorded.
+//
+// The hard-coded `CITE_POLICY_VERSION` literal is rotated by TASK-11's policy
+// bump pass — kept inline (vs. a shared const) so a single grep over doctor.ts
+// surfaces every site that needs updating.
+const CITE_POLICY_VERSION = "2.0.0-rc.20";
+
+export async function ensureCitePolicyActivatedMarker(
+  projectRoot: string,
+): Promise<{ marker_ts: number; emitted_now: boolean }> {
+  let existing: { ts: number } | undefined;
+  try {
+    const { events } = await readEventLedger(projectRoot, { event_type: "cite_policy_activated" });
+    if (events.length > 0) {
+      existing = events[0];
+    }
+  } catch {
+    return { marker_ts: 0, emitted_now: false };
+  }
+
+  if (existing !== undefined) {
+    return { marker_ts: existing.ts, emitted_now: false };
+  }
+
+  try {
+    const stored = await appendEventLedgerEvent(projectRoot, {
+      event_type: "cite_policy_activated",
+      policy_version: CITE_POLICY_VERSION,
+      timestamp: new Date().toISOString(),
+    });
+    return { marker_ts: stored.ts, emitted_now: true };
+  } catch {
+    return { marker_ts: 0, emitted_now: false };
+  }
+}
+
 function createFixMessage(fixed: DoctorIssue[], report: DoctorReport): string {
   const fixedText = fixed.length === 0
     ? "No deterministic doctor fixes were needed."

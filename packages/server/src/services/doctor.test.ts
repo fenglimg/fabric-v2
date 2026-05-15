@@ -14,7 +14,7 @@ import {
   fabricConfigSchema,
 } from "@fenglimg/fabric-shared";
 
-import { runDoctorFix, runDoctorReport } from "./doctor.js";
+import { ensureCitePolicyActivatedMarker, runDoctorFix, runDoctorReport } from "./doctor.js";
 import { readEventLedger } from "./event-ledger.js";
 import { writeKnowledgeMeta } from "./knowledge-meta-builder.js";
 import { sha256 } from "./_shared.js";
@@ -3804,6 +3804,62 @@ describe("runDoctorReport", () => {
       const secondCount = countMigratedEvents();
       expect(secondCount).toBe(firstCount);
     });
+  });
+});
+
+// v2.0.0-rc.20 TASK-04: ensureCitePolicyActivatedMarker — idempotent activation
+// marker for the cite-policy enforcement layer. First call writes the event,
+// subsequent calls short-circuit on the existing marker, and read/write
+// failures are absorbed silently so the warm-up path never raises.
+describe("ensureCitePolicyActivatedMarker", () => {
+  it("first call emits marker and returns emitted_now:true with marker_ts ≈ Date.now()", async () => {
+    const target = createInitializedProject("cite-policy-marker-first");
+    writeFile(".fabric/events.jsonl", "", target);
+
+    const before = Date.now();
+    const result = await ensureCitePolicyActivatedMarker(target);
+    const after = Date.now();
+
+    expect(result.emitted_now).toBe(true);
+    expect(result.marker_ts).toBeGreaterThanOrEqual(before);
+    expect(result.marker_ts).toBeLessThanOrEqual(after);
+
+    // Round-trip through readEventLedger — passes Zod validation if reachable.
+    const { events } = await readEventLedger(target, { event_type: "cite_policy_activated" });
+    expect(events).toHaveLength(1);
+    const [event] = events;
+    if (event.event_type !== "cite_policy_activated") {
+      throw new Error("unexpected event_type");
+    }
+    expect(event.policy_version).toBe("2.0.0-rc.20");
+    expect(event.ts).toBe(result.marker_ts);
+    expect(() => new Date(event.timestamp).toISOString()).not.toThrow();
+  });
+
+  it("second call after marker exists returns emitted_now:false with marker_ts from existing event", async () => {
+    const target = createInitializedProject("cite-policy-marker-idempotent");
+    writeFile(".fabric/events.jsonl", "", target);
+
+    const first = await ensureCitePolicyActivatedMarker(target);
+    expect(first.emitted_now).toBe(true);
+
+    const second = await ensureCitePolicyActivatedMarker(target);
+    expect(second.emitted_now).toBe(false);
+    expect(second.marker_ts).toBe(first.marker_ts);
+
+    // Confirm exactly one event was written across both invocations.
+    const { events } = await readEventLedger(target, { event_type: "cite_policy_activated" });
+    expect(events).toHaveLength(1);
+  });
+
+  it("read failure (nonexistent projectRoot) returns {marker_ts:0, emitted_now:false} silently", async () => {
+    // A read against a nonexistent project root forces appendEventLedgerEvent
+    // to fail (parent dir missing for the ledger path under
+    // /nonexistent-cite-policy-...). Both error paths must collapse to the
+    // sentinel without throwing.
+    const result = await ensureCitePolicyActivatedMarker("/nonexistent-cite-policy-fabric-root-xyzzy");
+    expect(result.marker_ts).toBe(0);
+    expect(result.emitted_now).toBe(false);
   });
 });
 
