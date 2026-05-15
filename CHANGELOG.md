@@ -5,6 +5,44 @@ All notable changes to Fabric will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0-rc.19] - 2026-05-15
+
+Bootstrap consolidation. Collapses the three-end client bootstrap surfaces (Claude `CLAUDE.md` / Codex root `AGENTS.md` / Cursor `.cursor/rules/*.mdc`) into a single canonical source at `.fabric/AGENTS.md`, hoisted via `packages/shared/src/templates/bootstrap-canonical.ts` so both CLI install (writer) and server doctor (drift comparator) consume from one place. Resolves the cross-package boundary cleanly (server has zero new dep on cli).
+
+### Added
+
+- **`@fenglimg/fabric-shared` canonical exports** — `BOOTSTRAP_CANONICAL` (zh-CN-hybrid locked body), `BOOTSTRAP_MARKER_BEGIN/END`, `LEGACY_KB_MARKER_BEGIN/END`, `BOOTSTRAP_REGEX`, `LEGACY_KB_REGEX`. Re-exported via root barrel + `./templates/bootstrap-canonical` subpath.
+- **`fab install` four-step bootstrap stage** — `bootstrap-snapshot` writes `.fabric/AGENTS.md` from canonical, then per-client `bootstrap-claude` / `bootstrap-codex` / `bootstrap-cursor` writers propagate to the three ends. Claude uses real `@-import` (no managed block); Codex + Cursor get byte-copy managed blocks with new `fabric:bootstrap` marker. Cursor target migrates from legacy single-file `.cursor/rules` to `.cursor/rules/fabric-bootstrap.mdc` directory rule with `alwaysApply: true` front-matter. `.fabric/project-rules.md` is only-if-exists: when present, concatenated into Codex + Cursor managed blocks via `\n---\n` separator and surfaced as an additional `@-import` in CLAUDE.md.
+- **`fab doctor` two-layer drift detection** — L1 byte-compares `BOOTSTRAP_CANONICAL` ↔ `.fabric/AGENTS.md` (`bootstrap_snapshot_drift`); L2 byte-compares expected body (snapshot + optional project-rules concat) ↔ each three-end managed block (`managed_block_drift`). Zero normalization: CRLF differences trigger drift. Skips L2 inspection on files in legacy-marker-only state (handled by marker migration check first).
+- **`fab doctor --fix` one-time marker migration** — Detects legacy `fabric:knowledge-base` markers across CLAUDE.md / AGENTS.md / `.cursor/rules` / `.cursor/rules/fabric-bootstrap.mdc`; rewrites to `fabric:bootstrap` and emits one `bootstrap_marker_migrated` ledger event per migrated file. Migration runs FIRST in dispatcher; L1 fix and L2 fix follow in order.
+- **23 new tests** — 11 in `packages/shared/test/templates/bootstrap-canonical.test.ts`, 14 in `packages/server/src/services/doctor.test.ts` (L1 drift / L2 drift incl. CRLF regression guards on both AGENTS.md and Cursor mdc / marker migration with ledger-event assertion), 9 in `packages/cli/__tests__/integration/{install-skills-and-hooks, bootstrap-snapshot, uninstall-skills-and-hooks}.test.ts`.
+
+### Changed (Breaking — bootstrap surface)
+
+- **Marker token**: `<!-- fabric:knowledge-base:begin/end -->` → `<!-- fabric:bootstrap:begin/end -->`. One-time migration runs under `fab doctor --fix` only; install's clean-slate strip also rewrites if encountered. No compat shim.
+- **Cursor target path**: `.cursor/rules` flat-file → `.cursor/rules/fabric-bootstrap.mdc` directory rule. Install clean-slate deletes the legacy flat-file when present.
+- **Root `AGENTS.md` ownership**: scaffold-stage no longer writes `AGENTS_MD_DEFAULT_CONTENT`; bootstrap-stage owns the file end-to-end via `writeCodexBootstrapManagedBlock`.
+- **`CLAUDE.md`**: minimal thin shell — `# Project Knowledge\n\n@.fabric/AGENTS.md` (no managed block).
+- **`packages/shared` exports surface**: adds `BOOTSTRAP_*` constants + `bootstrap_marker_migrated` event-ledger variant.
+
+### Removed
+
+- **Four orphan templates** — `packages/cli/templates/bootstrap/{CLAUDE.md, codex-AGENTS-header.md, cursor-fabric-bootstrap.mdc}` + `packages/cli/templates/agents-md/AGENTS.md.template`. Zero source refs verified before deletion; content replaced by `BOOTSTRAP_CANONICAL` shared export.
+- **`DetectedClientSupport.bootstrapTargetPath`** field — v1 dead pointer to `.fabric/bootstrap/README.md`, no readers project-wide.
+- **`agents-meta.ts` dead branches** — special-case paths for the v1 README dead pointer.
+- **`AGENTS_MD_DEFAULT_CONTENT` + scaffold AGENTS.md write** in `install.ts`.
+- **`buildFabricKnowledgeBaseSection` + `addFabricKnowledgeBaseSection` + `SECTION_TARGETS`** — superseded by the three per-client writers.
+
+### Migration
+
+**None for users.** Existing repos with legacy `fabric:knowledge-base` markers will see `fab doctor` report `bootstrap_marker_migration_required` as a fixable error; running `fab doctor --fix` migrates in place + emits ledger events. Re-running `fab install` thereafter is idempotent. Pre-user clean-slate: no shim.
+
+### Notes
+
+- Cross-package boundary preserved — `packages/server` has zero new dep on `packages/cli`. The ~40 LOC of managed-block-write logic in `rewriteThreeEndManagedBlocks` is deliberately duplicated inline in `doctor.ts` rather than imported across the boundary.
+- Self-host validated end-to-end on this repo (Codex MCP TOML, Cursor mdc front-matter, Claude `@-import` idempotency, CRLF byte-compare guard).
+- Unblocks rc.20 (Cite policy) — bootstrap managed block now exists as the host for `KB: <id>` first-line policy text.
+
 ## [2.0.0-rc.18] - 2026-05-15
 
 Phase 5 of the post-grill 5-phase backlog: **Protocol v2**. Hard cut of the `plan-context-hint` JSON wire contract — bump `version: 1 → 2`, rename `payload.narrow → payload.entries`. Pre-user clean-slate: NO v1 compatibility shim. Largest blast radius — ships solo. Closes the 5-phase backlog.
