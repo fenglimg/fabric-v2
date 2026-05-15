@@ -21,8 +21,10 @@ declare const __SERVER_VERSION__: string;
 
 export {
   runDoctorApplyLint,
+  runDoctorCiteCoverage,
   runDoctorFix,
   runDoctorReport,
+  type CiteCoverageReport,
   type DoctorApplyLintMutation,
   type DoctorApplyLintMutationKind,
   type DoctorApplyLintReport,

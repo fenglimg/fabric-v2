@@ -5055,6 +5055,88 @@ export async function ensureCitePolicyActivatedMarker(
   }
 }
 
+// v2.0.0-rc.20 TASK-05: cite policy adherence report shape returned by
+// `fab doctor --cite-coverage`. STUB scaffolding — TASK-06 fills the
+// `metrics` / `per_client` / `dismissed_reason_histogram` fields by scanning
+// `assistant_turn_observed` ledger events emitted by TASK-03. The shape is
+// finalized here so the CLI renderer (TASK-07) and any downstream consumers
+// can compile against a stable type before metrics are populated.
+//
+// status:
+//   - 'skipped' when no `cite_policy_activated` marker exists AND the marker
+//     write also failed (degraded ledger). Callers should render this as
+//     "no data yet — re-run after first AI turn" rather than as an error.
+//   - 'ok' once the marker is present (newly emitted or pre-existing). Zero
+//     metrics in 'ok' status are valid: it means the marker is fresh and no
+//     qualifying turns have been observed yet within the requested window.
+//
+// per_client / dismissed_reason_histogram are intentionally optional — they
+// are only emitted by TASK-06 once the underlying observation events carry
+// the `client` and `dismissed_reason` fields. STUB returns neither.
+export type CiteCoverageReport = {
+  status: "ok" | "skipped";
+  marker_ts: number;
+  marker_emitted_now: boolean;
+  since_ts: number;
+  client_filter: "cc" | "codex" | "cursor" | "all";
+  metrics: {
+    edits_touched: number;
+    qualifying_cites: number;
+    recalled_unverified: number;
+    expected_but_missed: number;
+    total_turns: number;
+  };
+  per_client?: Record<string, Partial<CiteCoverageReport["metrics"]>>;
+  dismissed_reason_histogram?: Record<string, number>;
+  generated_at: string;
+};
+
+// v2.0.0-rc.20 TASK-05: STUB. Returns the finalized CiteCoverageReport shape
+// with zeroed metrics so the CLI surface (--cite-coverage / --since /
+// --client) can be built and smoke-tested against a stable contract before
+// TASK-06 plumbs in the actual ledger scan. The only real work performed here
+// is anchoring the policy version via `ensureCitePolicyActivatedMarker`:
+// without that marker we cannot tag observations later, so the marker must be
+// emitted on the FIRST coverage invocation even though no metrics flow yet.
+//
+// status = 'skipped' iff the marker write degraded (ledger I/O error) so the
+// caller can distinguish "no data yet" from "ledger broken — fix doctor first".
+export async function runDoctorCiteCoverage(
+  projectRoot: string,
+  options: { since: number; client: "cc" | "codex" | "cursor" | "all" },
+): Promise<CiteCoverageReport> {
+  const marker = await ensureCitePolicyActivatedMarker(projectRoot);
+  const zeroMetrics: CiteCoverageReport["metrics"] = {
+    edits_touched: 0,
+    qualifying_cites: 0,
+    recalled_unverified: 0,
+    expected_but_missed: 0,
+    total_turns: 0,
+  };
+
+  if (marker.marker_ts === 0) {
+    return {
+      status: "skipped",
+      marker_ts: 0,
+      marker_emitted_now: false,
+      since_ts: options.since,
+      client_filter: options.client,
+      metrics: zeroMetrics,
+      generated_at: new Date().toISOString(),
+    };
+  }
+
+  return {
+    status: "ok",
+    marker_ts: marker.marker_ts,
+    marker_emitted_now: marker.emitted_now,
+    since_ts: options.since,
+    client_filter: options.client,
+    metrics: zeroMetrics,
+    generated_at: new Date().toISOString(),
+  };
+}
+
 function createFixMessage(fixed: DoctorIssue[], report: DoctorReport): string {
   const fixedText = fixed.length === 0
     ? "No deterministic doctor fixes were needed."

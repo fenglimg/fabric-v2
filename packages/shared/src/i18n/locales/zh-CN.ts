@@ -160,6 +160,19 @@ export const zhCNMessages: Messages = {
     "跳过 --fix-knowledge 的安全确认；非 tty 调用必须显式设置该标记，或在环境变量中设置 FABRIC_NONINTERACTIVE=1。",
   "cli.doctor.errors.fix-knowledge-fix-mutually-exclusive":
     "--fix-knowledge 与 --fix 不可同时使用。--fix-knowledge 修改用户知识状态（降级/归档）；--fix 修复派生状态（meta/索引）。请分别运行。",
+  // rc.20 TASK-05: --cite-coverage 报告参数；只读，与 --fix/--fix-knowledge 互斥。
+  "cli.doctor.args.cite-coverage.description":
+    "Cite 政策合规报告(只读;跳过标准检查)",
+  "cli.doctor.args.since.description":
+    "Cite 覆盖率统计窗口(如 7d, 24h, 30m)",
+  "cli.doctor.args.client.description":
+    "按客户端过滤(cc|codex|cursor|all)",
+  "cli.doctor.errors.cite-coverage-mutex":
+    "--cite-coverage 不能与 --fix 或 --fix-knowledge 同时使用",
+  "cli.doctor.errors.invalid-since":
+    "--since 取值无效: {input}。预期格式 7d / 24h / 30m 或 epoch ms。",
+  "cli.doctor.errors.invalid-client":
+    "--client 取值无效: {input}。预期 cc / codex / cursor / all。",
 
   "cli.hooks.description": "管理 Fabric Git 钩子模板。",
   "cli.hooks.install.description": "安装 Fabric Husky pre-commit 钩子模板。",

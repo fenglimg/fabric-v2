@@ -5,6 +5,7 @@ import {
   appendEventLedgerEvent,
   checkLockOrThrow,
   runDoctorApplyLint as runDoctorFixKnowledge,
+  runDoctorCiteCoverage,
   runDoctorFix,
   runDoctorReport,
   type DoctorApplyLintReport as DoctorFixKnowledgeReport,
@@ -36,6 +37,12 @@ type DoctorArgs = {
   // and runs git mv. Required for any non-tty invocation (CI, nested
   // pipelines) unless FABRIC_NONINTERACTIVE=1 is set in the environment.
   yes?: boolean;
+  // rc.20 TASK-05: cite policy adherence report. Read-only; mutually exclusive
+  // with --fix and --fix-knowledge (those mutate state; cite-coverage only
+  // reads ledger events). Pairs with --since (window) and --client (filter).
+  "cite-coverage"?: boolean;
+  since?: string;
+  client?: string;
 };
 
 // rc.7 T11: lint codes that --fix-knowledge will mutate, mapped to the human
@@ -106,6 +113,25 @@ export const doctorCommand = defineCommand({
       description: t("cli.doctor.args.yes.description"),
       default: false,
     },
+    // rc.20 TASK-05: cite policy adherence report (read-only). Skips standard
+    // inspections entirely — different output surface. Mutually exclusive
+    // with --fix / --fix-knowledge (enforced in run()).
+    "cite-coverage": {
+      type: "boolean",
+      description: t("cli.doctor.args.cite-coverage.description"),
+      default: false,
+    },
+    since: {
+      type: "string",
+      description: t("cli.doctor.args.since.description"),
+      default: "7d",
+    },
+    client: {
+      type: "string",
+      description: t("cli.doctor.args.client.description"),
+      default: "all",
+      valueHint: "cc|codex|cursor|all",
+    },
   },
   async run({ args }: { args: DoctorArgs }) {
     const workspaceRoot = process.cwd();
@@ -128,6 +154,59 @@ export const doctorCommand = defineCommand({
     const fixKnowledge = args["fix-knowledge"] === true;
     const fix = args.fix === true;
     const rescan = args.rescan === true;
+    const citeCoverage = args["cite-coverage"] === true;
+
+    // rc.20 TASK-05: --cite-coverage is a read-only report surface. It must
+    // run BEFORE the rescan/fix/fix-knowledge dispatch and short-circuit
+    // entirely — different output shape, no mutations, no standard checks.
+    // Mutex with --fix/--fix-knowledge keeps semantics unambiguous (we never
+    // mix a mutation pass with a report-only pass in a single invocation).
+    if (citeCoverage) {
+      if (fix || fixKnowledge) {
+        writeStderr(t("cli.doctor.errors.cite-coverage-mutex"));
+        process.exitCode = 1;
+        return;
+      }
+
+      let sinceMs: number;
+      try {
+        sinceMs = parseSinceDuration(args.since ?? "7d");
+      } catch {
+        writeStderr(t("cli.doctor.errors.invalid-since", { input: args.since ?? "7d" }));
+        process.exitCode = 1;
+        return;
+      }
+
+      const clientFilter = args.client ?? "all";
+      if (!isValidClientFilter(clientFilter)) {
+        writeStderr(t("cli.doctor.errors.invalid-client", { input: clientFilter }));
+        process.exitCode = 1;
+        return;
+      }
+
+      const report = await runDoctorCiteCoverage(resolution.target, {
+        since: sinceMs,
+        client: clientFilter,
+      });
+
+      if (args.json === true) {
+        writeStdout(JSON.stringify(report, null, 2));
+      } else {
+        // Minimal renderer — TASK-07 will add a rich human-readable formatter.
+        writeStdout(
+          `Cite coverage [${report.status}] marker=${report.marker_ts} window=${sinceMs} client=${clientFilter}`,
+        );
+      }
+
+      // Intentionally do NOT emit doctor_run here: the ledger schema's
+      // `mode` enum is currently {lint, fix-knowledge}, and cite-coverage
+      // is a separate read-only surface. Extending the enum is deferred to
+      // the rc.20 follow-up that wires Signal D awareness for cite reports
+      // (TASK-06/07 scope decision), so this path keeps the ledger contract
+      // unchanged.
+
+      return;
+    }
 
     // Mutual exclusion: --fix-knowledge and --fix target different mutation
     // surfaces (knowledge mutations are user state; --fix mutates derived
@@ -413,4 +492,70 @@ async function resolveFixKnowledgeConsent(options: {
     return "abort";
   }
   return "proceed";
+}
+
+// ---------------------------------------------------------------------------
+// rc.20 TASK-05: --cite-coverage flag helpers
+// ---------------------------------------------------------------------------
+
+type CiteCoverageClientFilter = "cc" | "codex" | "cursor" | "all";
+
+const CITE_COVERAGE_CLIENT_FILTERS: ReadonlySet<CiteCoverageClientFilter> = new Set([
+  "cc",
+  "codex",
+  "cursor",
+  "all",
+]);
+
+function isValidClientFilter(input: string): input is CiteCoverageClientFilter {
+  return CITE_COVERAGE_CLIENT_FILTERS.has(input as CiteCoverageClientFilter);
+}
+
+/**
+ * Parse a `--since` value into an absolute epoch-ms floor for ledger scans.
+ *
+ * Accepted forms:
+ *   - `Nd`  → N days   (e.g. `7d`)
+ *   - `Nh`  → N hours  (e.g. `24h`)
+ *   - `Nm`  → N minutes (e.g. `30m`)
+ *   - bare digits → treated as an absolute epoch-ms cutoff (passed through)
+ *
+ * Returns:
+ *   - For durations: `Date.now() - deltaMs`
+ *   - For epoch-ms: the numeric value as-is
+ *
+ * Throws on any other shape so the caller can surface
+ * `cli.doctor.errors.invalid-since` to the user. We deliberately reject
+ * negative durations and zero — `0d`/`0h`/`0m` is almost certainly user
+ * error (would scan a zero-width window).
+ */
+export function parseSinceDuration(input: string): number {
+  const trimmed = input.trim();
+  if (trimmed.length === 0) {
+    throw new Error(`invalid --since value: ${input}`);
+  }
+
+  // Duration form: <digits><unit>
+  const durationMatch = /^(\d+)([dhm])$/.exec(trimmed);
+  if (durationMatch !== null) {
+    const value = Number.parseInt(durationMatch[1], 10);
+    const unit = durationMatch[2];
+    if (!Number.isFinite(value) || value <= 0) {
+      throw new Error(`invalid --since value: ${input}`);
+    }
+    const unitMs =
+      unit === "d" ? 86_400_000 : unit === "h" ? 3_600_000 : 60_000;
+    return Date.now() - value * unitMs;
+  }
+
+  // Bare epoch-ms form.
+  if (/^\d+$/.test(trimmed)) {
+    const value = Number.parseInt(trimmed, 10);
+    if (!Number.isFinite(value) || value < 0) {
+      throw new Error(`invalid --since value: ${input}`);
+    }
+    return value;
+  }
+
+  throw new Error(`invalid --since value: ${input}`);
 }

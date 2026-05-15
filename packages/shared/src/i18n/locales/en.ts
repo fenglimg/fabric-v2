@@ -162,6 +162,19 @@ export const enMessages: Messages = {
     "Skip the --fix-knowledge safety confirm. Required for non-tty invocations unless FABRIC_NONINTERACTIVE=1 is set in the environment.",
   "cli.doctor.errors.fix-knowledge-fix-mutually-exclusive":
     "--fix-knowledge and --fix cannot be combined. --fix-knowledge mutates user knowledge state (demote/archive); --fix repairs derived state (meta/index). Run them separately.",
+  // rc.20 TASK-05: --cite-coverage report flags. Read-only; mutually exclusive with --fix/--fix-knowledge.
+  "cli.doctor.args.cite-coverage.description":
+    "Generate cite policy adherence report (read-only; skips standard inspections)",
+  "cli.doctor.args.since.description":
+    "Time window for cite coverage (e.g. 7d, 24h, 30m)",
+  "cli.doctor.args.client.description":
+    "Filter cite coverage by client (cc|codex|cursor|all)",
+  "cli.doctor.errors.cite-coverage-mutex":
+    "--cite-coverage cannot be combined with --fix or --fix-knowledge",
+  "cli.doctor.errors.invalid-since":
+    "Invalid --since value: {input}. Expected duration like 7d, 24h, 30m or epoch ms.",
+  "cli.doctor.errors.invalid-client":
+    "Invalid --client value: {input}. Expected cc, codex, cursor, or all.",
 
   "cli.hooks.description": "Manage Fabric Git hook templates.",
   "cli.hooks.install.description": "Install the Fabric Husky pre-commit hook template.",
