@@ -8,6 +8,7 @@ import {
   runDoctorCiteCoverage,
   runDoctorFix,
   runDoctorReport,
+  type CiteCoverageReport,
   type DoctorApplyLintReport as DoctorFixKnowledgeReport,
   type DoctorIssue,
   type DoctorReport,
@@ -189,14 +190,7 @@ export const doctorCommand = defineCommand({
         client: clientFilter,
       });
 
-      if (args.json === true) {
-        writeStdout(JSON.stringify(report, null, 2));
-      } else {
-        // Minimal renderer — TASK-07 will add a rich human-readable formatter.
-        writeStdout(
-          `Cite coverage [${report.status}] marker=${report.marker_ts} window=${sinceMs} client=${clientFilter}`,
-        );
-      }
+      renderCiteCoverageReport(report, args.json === true);
 
       // Intentionally do NOT emit doctor_run here: the ledger schema's
       // `mode` enum is currently {lint, fix-knowledge}, and cite-coverage
@@ -509,6 +503,87 @@ const CITE_COVERAGE_CLIENT_FILTERS: ReadonlySet<CiteCoverageClientFilter> = new 
 
 function isValidClientFilter(input: string): input is CiteCoverageClientFilter {
   return CITE_COVERAGE_CLIENT_FILTERS.has(input as CiteCoverageClientFilter);
+}
+
+/**
+ * rc.20 TASK-07: bilingual human-readable formatter for the cite coverage
+ * report. JSON mode preserves the structured payload verbatim so downstream
+ * consumers (CI, dashboards) keep a stable contract.
+ *
+ * Layout:
+ *   <section header>
+ *   <since/marker header line>
+ *   [marker_emitted_now warning, if first run]
+ *
+ *     <metric>: <count>      (5 lines, in canonical order)
+ *
+ *   ### Per-client                (only when all-mode and >1 client bucket)
+ *     <client>: k1=v1 / k2=v2 ...
+ *
+ *   ### Dismissed reasons         (only when histogram non-empty)
+ *     <translated reason>: <count>
+ */
+function renderCiteCoverageReport(report: CiteCoverageReport, jsonMode: boolean): void {
+  if (jsonMode) {
+    writeStdout(JSON.stringify(report, null, 2));
+    return;
+  }
+
+  if (report.status === "skipped") {
+    writeStdout(t("doctor.cite.status.skipped"));
+    return;
+  }
+
+  const lines: string[] = [];
+  lines.push(t("doctor.section.cite-coverage"));
+  lines.push(
+    t("doctor.cite.header", {
+      since: new Date(report.since_ts).toISOString(),
+      marker: new Date(report.marker_ts).toISOString(),
+    }),
+  );
+  if (report.marker_emitted_now) {
+    lines.push(t("doctor.cite.warning.justActivated"));
+  }
+  lines.push("");
+  lines.push(`  ${t("doctor.cite.metric.editsTouched")}: ${report.metrics.edits_touched}`);
+  lines.push(`  ${t("doctor.cite.metric.qualifyingCites")}: ${report.metrics.qualifying_cites}`);
+  lines.push(`  ${t("doctor.cite.metric.recalledUnverified")}: ${report.metrics.recalled_unverified}`);
+  lines.push(`  ${t("doctor.cite.metric.expectedButMissed")}: ${report.metrics.expected_but_missed}`);
+  lines.push(`  ${t("doctor.cite.metric.totalTurns")}: ${report.metrics.total_turns}`);
+
+  // Per-client subsection: only renders for `--client all` when more than one
+  // client bucket exists. A single-client filter (or a single observed client)
+  // would just re-render the top-level metrics — pointless noise.
+  if (report.per_client !== undefined && Object.keys(report.per_client).length > 1) {
+    lines.push("");
+    lines.push(`### ${t("doctor.cite.section.perClient")}`);
+    for (const [client, metrics] of Object.entries(report.per_client)) {
+      const summary = Object.entries(metrics)
+        .map(([k, v]) => `${k}=${v}`)
+        .join(" / ");
+      lines.push(`  ${client}: ${summary}`);
+    }
+  }
+
+  // Dismissed reasons histogram: only when at least one observation carried a
+  // `dismissed:<reason>` tag. We translate known reasons through the i18n
+  // table; unknown reasons fall back to the raw bucket key (the translator
+  // returns the key itself when no entry exists, which is exactly the
+  // pass-through behavior we want).
+  if (
+    report.dismissed_reason_histogram !== undefined &&
+    Object.keys(report.dismissed_reason_histogram).length > 0
+  ) {
+    lines.push("");
+    lines.push(`### ${t("doctor.cite.section.dismissedReasons")}`);
+    for (const [reason, count] of Object.entries(report.dismissed_reason_histogram)) {
+      const label = t(`doctor.cite.dismissed.${reason}`);
+      lines.push(`  ${label}: ${count}`);
+    }
+  }
+
+  writeStdout(lines.join("\n"));
 }
 
 /**

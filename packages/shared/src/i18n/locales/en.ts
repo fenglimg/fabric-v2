@@ -149,6 +149,25 @@ export const enMessages: Messages = {
   "doctor.section.manual": "Manual errors:",
   "doctor.section.warnings": "Warnings:",
   "doctor.section.fix-knowledge-mutations": "Fix-knowledge mutations:",
+  // rc.20 TASK-07: cite-coverage human-readable formatter keys.
+  "doctor.section.cite-coverage": "Cite coverage:",
+  "doctor.cite.header": "Since {since} via marker {marker}",
+  "doctor.cite.warning.justActivated":
+    "Cite policy activated on this run; no historical data yet.",
+  "doctor.cite.metric.editsTouched": "Edits touched",
+  "doctor.cite.metric.qualifyingCites": "Qualifying cites",
+  "doctor.cite.metric.recalledUnverified": "Recalled but not verified",
+  "doctor.cite.metric.expectedButMissed": "Expected cite missing",
+  "doctor.cite.metric.totalTurns": "Total turns",
+  "doctor.cite.section.perClient": "Per-client",
+  "doctor.cite.section.dismissedReasons": "Dismissed reasons",
+  "doctor.cite.dismissed.scope-mismatch": "Scope mismatch",
+  "doctor.cite.dismissed.outdated": "Outdated",
+  "doctor.cite.dismissed.not-applicable": "Not applicable",
+  "doctor.cite.dismissed.other": "Other",
+  "doctor.cite.dismissed.unspecified": "Unspecified",
+  "doctor.cite.status.skipped":
+    "Cite policy not yet activated for this workspace.",
   "cli.doctor.args.target.description":
     "Target project path. Defaults to --target, then EXTERNAL_FIXTURE_PATH, then cwd.",
   "cli.doctor.args.fix.description": "Repair derived Fabric state (meta + indexes).",
