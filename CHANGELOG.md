@@ -5,6 +5,45 @@ All notable changes to Fabric will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0-rc.20] - 2026-05-15
+
+Cite policy. Closes the "KB 是否真的被用了" audit loop. AI agents working on this repo MUST write a first-line `KB: <id> (<≤8字 用法>) [planned|recalled|chained-from <id>|dismissed:<reason>]` or `KB: none` directive before every edit / decide / propose-plan action. `fab doctor --cite-coverage` reads the resulting `assistant_turn_observed` events from `.fabric/events.jsonl` and reports cite coverage with denominators computed from `agents.meta.json` `relevance_paths`. Policy text lives in `BOOTSTRAP_CANONICAL` (added in rc.19), so the three-end managed block writers automatically propagate it. **rc.20 scope: Claude Code first-class + Codex assume-and-test; Cursor capture deferred to rc.21** (Cursor PreToolUse hook only sees `tool_input`, not assistant reply text — needs PostToolUse or journal scan, separate RC).
+
+### Added
+
+- **`## Cite policy` section in `BOOTSTRAP_CANONICAL`** — extends the rc.19 single-source canonical with 5 locked bullets: 触发 / `[recalled]` 验证 / id 反查 / dismissed reason enum / 稽核 hook. Propagates to all three end blocks via existing `fab install` writers; no new install plumbing.
+- **Two event ledger variants** in `@fenglimg/fabric-shared`:
+  - `assistant_turn_observed` — captures per-turn `KB:` line emission with `kb_line_raw`, `cite_ids[]`, `cite_tags[]` (enum: planned / recalled / chained-from / dismissed / none), `client` (cc/codex/cursor, optional), `turn_id`, `envelope_index`, `timestamp`.
+  - `cite_policy_activated` — idempotent marker emitted on first `fab doctor --cite-coverage` invocation to establish the ts-floor for downstream coverage queries.
+- **`fabric-hint.cjs` capture surface** — extends `summarizeTranscript` to harvest `role:'assistant'` envelopes + first-line `KB:` regex. New helpers: `parseKbLine(raw)` (tolerant parser handling multi-cite + nested tags + `dismissed:<reason>` + `KB: none`), `detectClient()` (env-var override + `__dirname` path heuristic), `extractAndWriteAssistantTurnsBestEffort(cwd, stdinPayload)` (best-effort emit, never throws). Wired right after `writeSessionDigestBestEffort` in `main()`.
+- **`fab doctor --cite-coverage` flag + `runDoctorCiteCoverage` server entry** — three new flags (`--cite-coverage` / `--since` / `--client`) on `fab doctor` with mutex validation against `--fix` / `--fix-knowledge`. Fast-path branch skips the 28-check inspection pipeline. `parseSinceDuration` handles `Nd` / `Nh` / `Nm` / epoch-ms; `--client` enum validation (cc|codex|cursor|all).
+- **Single-pass cite coverage algorithm** — one `readEventLedger` pass partitions events into assistant_turns / edits / fetches; joins against `agents.meta.json` `relevance_paths` to compute narrow denominators (minimatch glob) vs broad denominators (total edit count); session-correlated `recalled_unverified` detection (±60s window); `expected_but_missed` for narrow KBs with no matching cite; `per_client` breakdown when `--client=all`; `dismissed_reason_histogram` (current schema buckets all dismisseds under `unspecified`; per-reason buckets land when TASK-09-followup schema widens).
+- **Bilingual cite coverage report formatter** — 16 new i18n keys symmetric in en + zh-CN under `doctor.cite.*` namespace. Locked zh-CN metric names preserved verbatim: `Edit 触达数 / 合格 cite / recalled 但未验证 / 应查没查 / 总回合数`. Conditional sections for per-client and dismissed reasons. `marker_emitted_now` warning prepended on first invocation.
+- **29 new tests** — 14 server-side (`doctor.test.ts`: empty-ledger, narrow/broad denominator, recalled verification, dismissed histogram, per-client split, since/client filters, expected_but_missed, performance 10k events <2s) + 15 hook-side (`fabric-hint-cite.test.ts`: parseKbLine all tag enum + multi-cite + Zod roundtrip + 3 never-throws + client detection).
+
+### Changed
+
+- **`BOOTSTRAP_CANONICAL`** — grows from ~885 to ~1200+ bytes (adds 5-bullet cite policy section). All three end-block files re-propagated via self-host run.
+- **`fabric-hint.cjs`** — Stop-hook now emits one `assistant_turn_observed` event per assistant envelope (in addition to existing session digest). Hook config files (claude-code.json / codex-hooks.json) untouched; `__dirname` path heuristic identifies client.
+- **`event-ledger.ts` discriminated union** — gains two new variants; `EventLedgerEvent` TS union extended.
+
+### Deferred to rc.21
+
+- **Cursor capture** — Cursor PreToolUse hook only sees `tool_input`, not the assistant reply text. Needs different mechanism (PostToolUse or journal scan). `detectClient()` already supports `'cursor'` enum value; algorithm gracefully ignores absent Cursor data.
+- **Cite tags colon-suffix schema** — Current `cite_tags` enum is `{planned|recalled|chained-from|dismissed|none}` (bare literals). `dismissed:scope-mismatch` etc. get bucketed under `unspecified`. rc.21 schema widening adds `dismissed_reason` as a separate field with the locked enum.
+- **Doctor-run ledger event for cite-coverage mode** — `doctorRunEventSchema.mode` is currently `z.enum(['lint', 'fix-knowledge'])`. Extending the enum is a separate schema migration belonging in a later task.
+
+### Migration
+
+**None.** Pre-user clean-slate. Existing repos need only `fab install` + `fab doctor --fix` to refresh their three-end managed blocks with the new `## Cite policy` section. First `fab doctor --cite-coverage` invocation emits the activation marker; subsequent runs report coverage normally.
+
+### Notes
+
+- AI agents working on this repo from rc.20 onward MUST follow the cite policy. The policy text in the managed block IS the source of truth — AI consults it on every session start via SessionStart hook.
+- `fab doctor --cite-coverage` runs in fast-path mode (zero of the 28 standard checks). Read-only. Safe to run frequently.
+- Performance budget: 10k events processed in <200ms locally (single-pass O(N) replay).
+- Memory `project_cite_policy.md` locked the 6 scenarios + 8 details that drove this RC. Cursor + dismissed_reason follow-ups noted under "Deferred to rc.21".
+
 ## [2.0.0-rc.19] - 2026-05-15
 
 Bootstrap consolidation. Collapses the three-end client bootstrap surfaces (Claude `CLAUDE.md` / Codex root `AGENTS.md` / Cursor `.cursor/rules/*.mdc`) into a single canonical source at `.fabric/AGENTS.md`, hoisted via `packages/shared/src/templates/bootstrap-canonical.ts` so both CLI install (writer) and server doctor (drift comparator) consume from one place. Resolves the cross-package boundary cleanly (server has zero new dep on cli).
