@@ -61,6 +61,97 @@ describe("event-ledger", () => {
     });
   });
 
+  it("roundtrips an assistant_turn_observed event preserving cite-policy fields", async () => {
+    const projectRoot = await createTempProject();
+
+    const timestamp = new Date(3_000).toISOString();
+    const event = await appendEventLedgerEvent(projectRoot, {
+      event_type: "assistant_turn_observed",
+      kb_line_raw: "KB: bootstrap, ui-rules [planned, recalled]",
+      cite_ids: ["bootstrap", "ui-rules"],
+      cite_tags: ["planned", "recalled"],
+      client: "cc",
+      turn_id: "turn-42",
+      envelope_index: 0,
+      timestamp,
+      ts: 3_000,
+      correlation_id: "corr-turn",
+      session_id: "session-turn",
+    });
+
+    const { events: entries, warnings } = await readEventLedger(projectRoot);
+
+    expect(event).toMatchObject({
+      kind: "fabric-event",
+      schema_version: 1,
+      event_type: "assistant_turn_observed",
+      kb_line_raw: "KB: bootstrap, ui-rules [planned, recalled]",
+      cite_ids: ["bootstrap", "ui-rules"],
+      cite_tags: ["planned", "recalled"],
+      client: "cc",
+      turn_id: "turn-42",
+      envelope_index: 0,
+      timestamp,
+      correlation_id: "corr-turn",
+      session_id: "session-turn",
+    });
+    expect(entries).toEqual([event]);
+    expect(warnings).toEqual([]);
+  });
+
+  it("roundtrips an assistant_turn_observed event when kb_line_raw is null and defaults apply", async () => {
+    const projectRoot = await createTempProject();
+
+    const timestamp = new Date(4_000).toISOString();
+    const event = await appendEventLedgerEvent(projectRoot, {
+      event_type: "assistant_turn_observed",
+      kb_line_raw: null,
+      turn_id: "turn-43",
+      timestamp,
+      ts: 4_000,
+    });
+
+    const { events: entries } = await readEventLedger(projectRoot);
+
+    expect(event).toMatchObject({
+      event_type: "assistant_turn_observed",
+      kb_line_raw: null,
+      cite_ids: [],
+      cite_tags: [],
+      turn_id: "turn-43",
+      timestamp,
+    });
+    expect(entries).toEqual([event]);
+  });
+
+  it("roundtrips a cite_policy_activated event preserving policy_version and timestamp", async () => {
+    const projectRoot = await createTempProject();
+
+    const timestamp = new Date(5_000).toISOString();
+    const event = await appendEventLedgerEvent(projectRoot, {
+      event_type: "cite_policy_activated",
+      policy_version: "rc.20",
+      timestamp,
+      ts: 5_000,
+      correlation_id: "corr-policy",
+      session_id: "session-policy",
+    });
+
+    const { events: entries, warnings } = await readEventLedger(projectRoot);
+
+    expect(event).toMatchObject({
+      kind: "fabric-event",
+      schema_version: 1,
+      event_type: "cite_policy_activated",
+      policy_version: "rc.20",
+      timestamp,
+      correlation_id: "corr-policy",
+      session_id: "session-policy",
+    });
+    expect(entries).toEqual([event]);
+    expect(warnings).toEqual([]);
+  });
+
   it("serializes concurrent appends without corruption", async () => {
     const projectRoot = await createTempProject();
     await mkdir(join(projectRoot, ".fabric"), { recursive: true });

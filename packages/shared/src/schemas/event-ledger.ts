@@ -394,6 +394,41 @@ export const pendingAutoArchivedEventSchema = z.object({
   reason: z.string(),
 });
 
+// v2.0.0-rc.20 TASK-02: emitted per assistant turn after the assistant emits
+// its first non-empty line. Drives cite-policy observability — the Stop hook
+// (or transcript scanner) records the raw KB: line text (or null when the
+// turn opened without one), plus the parsed cite_ids and the per-id cite_tags
+// vocabulary (planned/recalled/chained-from/dismissed/none). `client` records
+// which surface produced the turn so per-client compliance can be tabulated
+// without joining against session metadata. `turn_id` is the conversation-
+// local turn identifier; `envelope_index` (optional) is a monotonic counter
+// for multi-event turns. Schema pre-registers the shape so rc.20+ analytics
+// can ship without a follow-up event-ledger bump.
+export const assistantTurnObservedEventSchema = z.object({
+  ...eventLedgerEnvelopeSchema,
+  event_type: z.literal("assistant_turn_observed"),
+  kb_line_raw: z.string().nullable(),
+  cite_ids: z.array(z.string()).default([]),
+  cite_tags: z.array(z.enum(["planned", "recalled", "chained-from", "dismissed", "none"])).default([]),
+  client: z.enum(["cc", "codex", "cursor"]).optional(),
+  turn_id: z.string(),
+  envelope_index: z.number().int().nonnegative().optional(),
+  timestamp: z.string().datetime(),
+});
+
+// v2.0.0-rc.20 TASK-02: emitted once per session (or per policy bump) when
+// the cite-policy enforcement layer activates. `policy_version` is a free
+// string (e.g. "rc.20") so future policy revisions can advance without
+// schema churn. Pairs with `assistant_turn_observed` to provide the audit
+// trail: "policy X was active starting at timestamp Y, and these turns
+// were observed under it".
+export const citePolicyActivatedEventSchema = z.object({
+  ...eventLedgerEnvelopeSchema,
+  event_type: z.literal("cite_policy_activated"),
+  policy_version: z.string(),
+  timestamp: z.string().datetime(),
+});
+
 export const eventLedgerEventSchema = z.discriminatedUnion("event_type", [
   knowledgeContextPlannedEventSchema,
   knowledgeSelectionEventSchema,
@@ -440,6 +475,12 @@ export const eventLedgerEventSchema = z.discriminatedUnion("event_type", [
   // v2.0.0-rc.9 TASK-003 (A3): relevance_migration_run — emitted by
   // `doctor --apply-lint` after the lint #26 frontmatter back-fill pass.
   relevanceMigrationRunEventSchema,
+  // v2.0.0-rc.20 TASK-02: assistant_turn_observed — per-turn cite-policy
+  // observation (raw KB: line text + parsed cite_ids/cite_tags + client).
+  assistantTurnObservedEventSchema,
+  // v2.0.0-rc.20 TASK-02: cite_policy_activated — session/policy-bump
+  // marker recording when a given policy_version became active.
+  citePolicyActivatedEventSchema,
 ]);
 
 export type KnowledgeContextPlannedEvent = z.infer<typeof knowledgeContextPlannedEventSchema>;
@@ -475,6 +516,8 @@ export type PendingAutoArchivedEvent = z.infer<typeof pendingAutoArchivedEventSc
 export type KnowledgePathDangledEvent = z.infer<typeof knowledgePathDangledEventSchema>;
 export type DoctorRunEvent = z.infer<typeof doctorRunEventSchema>;
 export type RelevanceMigrationRunEvent = z.infer<typeof relevanceMigrationRunEventSchema>;
+export type AssistantTurnObservedEvent = z.infer<typeof assistantTurnObservedEventSchema>;
+export type CitePolicyActivatedEvent = z.infer<typeof citePolicyActivatedEventSchema>;
 export type EventLedgerEvent =
   | KnowledgeContextPlannedEvent
   | KnowledgeSelectionEvent
@@ -508,7 +551,9 @@ export type EventLedgerEvent =
   | PendingAutoArchivedEvent
   | KnowledgePathDangledEvent
   | DoctorRunEvent
-  | RelevanceMigrationRunEvent;
+  | RelevanceMigrationRunEvent
+  | AssistantTurnObservedEvent
+  | CitePolicyActivatedEvent;
 export type EventLedgerEventType = EventLedgerEvent["event_type"];
 type EventLedgerEventInputFor<T extends EventLedgerEvent> = T extends EventLedgerEvent
   ? Omit<T, "kind" | "id" | "ts" | "schema_version" | "correlation_id" | "session_id"> &
