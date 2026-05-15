@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -3964,6 +3965,616 @@ describe("runDoctorCiteCoverage (smoke)", () => {
       expected_but_missed: 0,
       total_turns: 0,
     });
+  });
+});
+
+// v2.0.0-rc.20 TASK-08: comprehensive runDoctorCiteCoverage coverage.
+//
+// Locks the contract for every metric the report tabulates plus the two CLI
+// filters (--since / --client). Each test seeds a fresh initialized project
+// (FABRIC_HOME is isolated per-test by the top-level beforeEach), emits a
+// cite_policy_activated marker, then appends one or more hand-crafted events
+// directly via writeFileSync. We bypass `appendEventLedgerEvent` because the
+// queue serializes via Promise chaining + Date.now() and we need exact `ts`
+// control to test the window logic.
+//
+// NOTE on `dismissed` reasons: the on-ledger schema (TASK-02) constrains
+// `cite_tags` to {planned, recalled, chained-from, dismissed, none}.
+// Colon-suffixed reasons (e.g. `dismissed:scope-mismatch`) fail Zod and the
+// event is dropped by `readEventLedger`. TASK-09 will widen the schema to
+// carry a per-reason payload; until then the histogram tests assert the
+// current shape (bare `dismissed` → `unspecified` bucket).
+describe("runDoctorCiteCoverage", () => {
+  // -------------------------------------------------------------------------
+  // Helpers — extracted at the top of the block so all 14 tests share them.
+  // -------------------------------------------------------------------------
+
+  function seedEvents(target: string, events: unknown[]): void {
+    const ledgerPath = join(target, ".fabric", "events.jsonl");
+    const existing = existsSync(ledgerPath) ? readFileSync(ledgerPath, "utf8") : "";
+    const newlines = events.map((e) => JSON.stringify(e)).join("\n") + "\n";
+    writeFileSync(ledgerPath, existing + newlines, "utf8");
+  }
+
+  function seedAgentsMeta(
+    target: string,
+    nodes: Array<{
+      stable_id: string;
+      relevance_paths?: readonly string[];
+      relevance_scope?: "narrow" | "broad";
+    }>,
+  ): void {
+    // Minimal agents.meta.json shape that `readAgentsMeta` will parse without
+    // tripping `agentsMetaSchema`. Each node carries the four required base
+    // fields (file/scope_glob/hash) plus a description{} carrying the
+    // relevance_paths / relevance_scope the cite-coverage aggregator reads.
+    const metaNodes: Record<string, unknown> = {};
+    for (const node of nodes) {
+      const key = node.stable_id;
+      metaNodes[key] = {
+        file: `.fabric/knowledge/decisions/${node.stable_id}.md`,
+        content_ref: `.fabric/knowledge/decisions/${node.stable_id}.md`,
+        scope_glob: "**",
+        hash: "deadbeef",
+        stable_id: node.stable_id,
+        identity_source: "declared",
+        description: {
+          summary: "test",
+          intent_clues: [],
+          tech_stack: [],
+          impact: [],
+          must_read_if: "always",
+          relevance_scope: node.relevance_scope ?? "broad",
+          relevance_paths: node.relevance_paths ?? [],
+        },
+      };
+    }
+    const meta = {
+      revision: "test-revision",
+      nodes: metaNodes,
+    };
+    const metaPath = join(target, ".fabric", "agents.meta.json");
+    writeFileSync(metaPath, JSON.stringify(meta, null, 2), "utf8");
+  }
+
+  function mkTurnEvent(opts: {
+    sessionId: string;
+    turnId?: string;
+    kbLineRaw: string | null;
+    citeIds: string[];
+    citeTags: string[];
+    client?: "cc" | "codex" | "cursor";
+    ts: number;
+  }): object {
+    return {
+      kind: "fabric-event",
+      id: `event:turn:${randomUUID()}`,
+      ts: opts.ts,
+      schema_version: 1,
+      session_id: opts.sessionId,
+      event_type: "assistant_turn_observed",
+      kb_line_raw: opts.kbLineRaw,
+      cite_ids: opts.citeIds,
+      cite_tags: opts.citeTags,
+      ...(opts.client !== undefined ? { client: opts.client } : {}),
+      turn_id: opts.turnId ?? `turn-${randomUUID()}`,
+      timestamp: new Date(opts.ts).toISOString(),
+    };
+  }
+
+  function mkEditEvent(opts: {
+    path: string;
+    ts: number;
+    sessionId?: string;
+  }): object {
+    return {
+      kind: "fabric-event",
+      id: `event:edit:${randomUUID()}`,
+      ts: opts.ts,
+      schema_version: 1,
+      ...(opts.sessionId !== undefined ? { session_id: opts.sessionId } : {}),
+      event_type: "edit_intent_checked",
+      path: opts.path,
+      compliant: true,
+      intent: "test edit",
+      ledger_entry_id: `ledger:${randomUUID()}`,
+      matched_rule_context_ts: null,
+      window_ms: 60_000,
+    };
+  }
+
+  function mkKnowledgeFetchEvent(opts: {
+    sessionId: string;
+    ids: string[];
+    ts: number;
+  }): object {
+    return {
+      kind: "fabric-event",
+      id: `event:fetch:${randomUUID()}`,
+      ts: opts.ts,
+      schema_version: 1,
+      session_id: opts.sessionId,
+      event_type: "knowledge_sections_fetched",
+      selection_token: `tok:${randomUUID()}`,
+      requested_sections: opts.ids,
+      final_stable_ids: opts.ids,
+      ai_selected_stable_ids: opts.ids,
+    };
+  }
+
+  // -------------------------------------------------------------------------
+  // 14 tests
+  // -------------------------------------------------------------------------
+
+  // 1. Missing .fabric/ dir → ledger read + append both fail → marker_ts=0 →
+  //    status='skipped' with zero metrics.
+  it("status='skipped' when the project root has no .fabric/ tree (marker write fails)", async () => {
+    const report = await runDoctorCiteCoverage(
+      "/nonexistent-cite-coverage-task-08-skipped-xyzzy",
+      { since: 0, client: "all" },
+    );
+    expect(report.status).toBe("skipped");
+    expect(report.marker_ts).toBe(0);
+    expect(report.metrics).toEqual({
+      edits_touched: 0,
+      qualifying_cites: 0,
+      recalled_unverified: 0,
+      expected_but_missed: 0,
+      total_turns: 0,
+    });
+  });
+
+  // 1b. Empty events.jsonl + first invocation → marker emitted, no turns yet
+  //     → status='ok' with zero metrics, marker_emitted_now=true.
+  it("status='ok' with zero metrics + marker_emitted_now=true on first invocation against empty ledger", async () => {
+    const target = createInitializedProject("cite-coverage-empty-ledger");
+    writeFile(".fabric/events.jsonl", "", target);
+
+    const report = await runDoctorCiteCoverage(target, { since: 0, client: "all" });
+
+    expect(report.status).toBe("ok");
+    expect(report.marker_emitted_now).toBe(true);
+    expect(report.marker_ts).toBeGreaterThan(0);
+    expect(report.metrics).toEqual({
+      edits_touched: 0,
+      qualifying_cites: 0,
+      recalled_unverified: 0,
+      expected_but_missed: 0,
+      total_turns: 0,
+    });
+  });
+
+  // 2. Marker present, no turns/edits → metrics all zero, status='ok'.
+  it("marker present without any turns produces zero metrics, status='ok'", async () => {
+    const target = createInitializedProject("cite-coverage-marker-only");
+    writeFile(".fabric/events.jsonl", "", target);
+
+    // First call seeds the marker; second call exercises the "marker exists,
+    // no work to do" path with emitted_now=false.
+    await runDoctorCiteCoverage(target, { since: 0, client: "all" });
+    const report = await runDoctorCiteCoverage(target, { since: 0, client: "all" });
+
+    expect(report.status).toBe("ok");
+    expect(report.marker_emitted_now).toBe(false);
+    expect(report.metrics.total_turns).toBe(0);
+    expect(report.metrics.qualifying_cites).toBe(0);
+    expect(report.metrics.edits_touched).toBe(0);
+    expect(report.metrics.expected_but_missed).toBe(0);
+    expect(report.metrics.recalled_unverified).toBe(0);
+  });
+
+  // 3. Single planned cite + 1 matching edit (broad KB) → qualifying_cites=1,
+  //    edits_touched=1, no expected_but_missed contribution.
+  it("aggregates a single planned cite + a matching edit", async () => {
+    const target = createInitializedProject("cite-coverage-single-planned");
+    writeFile(".fabric/events.jsonl", "", target);
+
+    const marker = await ensureCitePolicyActivatedMarker(target);
+    seedAgentsMeta(target, [{ stable_id: "KT-DEC-0001", relevance_scope: "broad" }]);
+
+    seedEvents(target, [
+      mkTurnEvent({
+        sessionId: "sess-A",
+        kbLineRaw: "KB: KT-DEC-0001",
+        citeIds: ["KT-DEC-0001"],
+        citeTags: ["planned"],
+        client: "cc",
+        ts: marker.marker_ts + 10,
+      }),
+      mkEditEvent({
+        path: "src/foo.ts",
+        sessionId: "sess-A",
+        ts: marker.marker_ts + 20,
+      }),
+    ]);
+
+    const report = await runDoctorCiteCoverage(target, { since: 0, client: "all" });
+
+    expect(report.status).toBe("ok");
+    expect(report.metrics.total_turns).toBe(1);
+    expect(report.metrics.qualifying_cites).toBe(1);
+    expect(report.metrics.edits_touched).toBe(1);
+    expect(report.metrics.expected_but_missed).toBe(0);
+  });
+
+  // 4. Narrow KB with relevance_paths=['src/foo/**'] + edit on src/foo/bar.ts
+  //    + a turn that DID cite the kb in the same session → no missed entry
+  //    (the cite covered the narrow obligation).
+  it("narrow KB covered by a same-session cite produces zero expected_but_missed", async () => {
+    const target = createInitializedProject("cite-coverage-narrow-covered");
+    writeFile(".fabric/events.jsonl", "", target);
+
+    const marker = await ensureCitePolicyActivatedMarker(target);
+    seedAgentsMeta(target, [
+      { stable_id: "KT-DEC-0042", relevance_scope: "narrow", relevance_paths: ["src/foo/**"] },
+    ]);
+
+    seedEvents(target, [
+      mkTurnEvent({
+        sessionId: "sess-N",
+        kbLineRaw: "KB: KT-DEC-0042",
+        citeIds: ["KT-DEC-0042"],
+        citeTags: ["planned"],
+        client: "cc",
+        ts: marker.marker_ts + 10,
+      }),
+      mkEditEvent({
+        path: "src/foo/bar.ts",
+        sessionId: "sess-N",
+        ts: marker.marker_ts + 20,
+      }),
+    ]);
+
+    const report = await runDoctorCiteCoverage(target, { since: 0, client: "all" });
+
+    expect(report.metrics.qualifying_cites).toBe(1);
+    expect(report.metrics.edits_touched).toBe(1);
+    expect(report.metrics.expected_but_missed).toBe(0);
+  });
+
+  // 5. Narrow KB + edit on UNMATCHED path → no contribution to
+  //    expected_but_missed (path didn't match the kb's relevance_paths).
+  it("narrow KB with edit on unmatched path produces zero expected_but_missed", async () => {
+    const target = createInitializedProject("cite-coverage-narrow-unmatched");
+    writeFile(".fabric/events.jsonl", "", target);
+
+    const marker = await ensureCitePolicyActivatedMarker(target);
+    seedAgentsMeta(target, [
+      { stable_id: "KT-DEC-0043", relevance_scope: "narrow", relevance_paths: ["src/foo/**"] },
+    ]);
+
+    seedEvents(target, [
+      mkEditEvent({
+        path: "src/bar/baz.ts",
+        sessionId: "sess-U",
+        ts: marker.marker_ts + 10,
+      }),
+    ]);
+
+    const report = await runDoctorCiteCoverage(target, { since: 0, client: "all" });
+
+    expect(report.metrics.edits_touched).toBe(1);
+    expect(report.metrics.expected_but_missed).toBe(0);
+  });
+
+  // 6. Broad KB (no relevance_paths) + 3 edits → broad kbs never contribute
+  //    to expected_but_missed (per TASK-06 narrow-only design).
+  it("broad KB with multiple edits never contributes to expected_but_missed", async () => {
+    const target = createInitializedProject("cite-coverage-broad-edits");
+    writeFile(".fabric/events.jsonl", "", target);
+
+    const marker = await ensureCitePolicyActivatedMarker(target);
+    seedAgentsMeta(target, [{ stable_id: "KT-DEC-0050", relevance_scope: "broad" }]);
+
+    seedEvents(target, [
+      mkEditEvent({ path: "src/a.ts", sessionId: "sess-B", ts: marker.marker_ts + 10 }),
+      mkEditEvent({ path: "src/b.ts", sessionId: "sess-B", ts: marker.marker_ts + 20 }),
+      mkEditEvent({ path: "src/c.ts", sessionId: "sess-B", ts: marker.marker_ts + 30 }),
+    ]);
+
+    const report = await runDoctorCiteCoverage(target, { since: 0, client: "all" });
+
+    expect(report.metrics.edits_touched).toBe(3);
+    expect(report.metrics.expected_but_missed).toBe(0);
+  });
+
+  // 7. Recalled tag + matching knowledge_sections_fetched in same session
+  //    within ±60s → recalled_unverified does NOT increment.
+  it("recalled tag verified by a same-session fetch within +/-60s does not increment recalled_unverified", async () => {
+    const target = createInitializedProject("cite-coverage-recall-verified");
+    writeFile(".fabric/events.jsonl", "", target);
+
+    const marker = await ensureCitePolicyActivatedMarker(target);
+    seedAgentsMeta(target, [{ stable_id: "KT-DEC-0099", relevance_scope: "broad" }]);
+
+    seedEvents(target, [
+      mkTurnEvent({
+        sessionId: "sess-R",
+        kbLineRaw: "KB: KT-DEC-0099",
+        citeIds: ["KT-DEC-0099"],
+        citeTags: ["recalled"],
+        client: "cc",
+        ts: marker.marker_ts + 1_000,
+      }),
+      // Fetch 30s after the turn — well inside the 60s window.
+      mkKnowledgeFetchEvent({
+        sessionId: "sess-R",
+        ids: ["KT-DEC-0099"],
+        ts: marker.marker_ts + 31_000,
+      }),
+    ]);
+
+    const report = await runDoctorCiteCoverage(target, { since: 0, client: "all" });
+
+    expect(report.metrics.qualifying_cites).toBe(1);
+    expect(report.metrics.recalled_unverified).toBe(0);
+  });
+
+  // 8. Recalled tag + NO matching fetch (or fetch outside +/-60s) →
+  //    recalled_unverified increments.
+  it("recalled tag with no same-session fetch increments recalled_unverified", async () => {
+    const target = createInitializedProject("cite-coverage-recall-unverified");
+    writeFile(".fabric/events.jsonl", "", target);
+
+    const marker = await ensureCitePolicyActivatedMarker(target);
+
+    seedEvents(target, [
+      mkTurnEvent({
+        sessionId: "sess-U2",
+        kbLineRaw: "KB: KT-DEC-0100",
+        citeIds: ["KT-DEC-0100"],
+        citeTags: ["recalled"],
+        client: "cc",
+        ts: marker.marker_ts + 10,
+      }),
+      // No knowledge_sections_fetched in sess-U2 → unverified.
+    ]);
+
+    const report = await runDoctorCiteCoverage(target, { since: 0, client: "all" });
+
+    expect(report.metrics.qualifying_cites).toBe(1);
+    expect(report.metrics.recalled_unverified).toBe(1);
+  });
+
+  // 9. Dismissed histogram: per TASK-06's inline note, the on-ledger enum
+  //    only carries bare 'dismissed'. Colon-suffixed reasons would be
+  //    rejected by Zod and dropped from `readEventLedger`. Today, every
+  //    `dismissed` tag lands in the 'unspecified' bucket. This test pins
+  //    the current shape; TASK-09 widens the schema and updates the
+  //    expectation to per-reason buckets.
+  it("dismissed_reason_histogram aggregates bare 'dismissed' tags under the 'unspecified' bucket", async () => {
+    const target = createInitializedProject("cite-coverage-dismissed-histogram");
+    writeFile(".fabric/events.jsonl", "", target);
+
+    const marker = await ensureCitePolicyActivatedMarker(target);
+
+    seedEvents(target, [
+      mkTurnEvent({
+        sessionId: "sess-D1",
+        kbLineRaw: "KB: KT-DEC-0201 (dismissed)",
+        citeIds: ["KT-DEC-0201"],
+        citeTags: ["dismissed"],
+        client: "cc",
+        ts: marker.marker_ts + 10,
+      }),
+      mkTurnEvent({
+        sessionId: "sess-D2",
+        kbLineRaw: "KB: KT-DEC-0202 (dismissed)",
+        citeIds: ["KT-DEC-0202"],
+        citeTags: ["dismissed"],
+        client: "cc",
+        ts: marker.marker_ts + 20,
+      }),
+      mkTurnEvent({
+        sessionId: "sess-D3",
+        kbLineRaw: "KB: KT-DEC-0203 (dismissed)",
+        citeIds: ["KT-DEC-0203"],
+        citeTags: ["dismissed"],
+        client: "cc",
+        ts: marker.marker_ts + 30,
+      }),
+    ]);
+
+    const report = await runDoctorCiteCoverage(target, { since: 0, client: "all" });
+
+    expect(report.metrics.total_turns).toBe(3);
+    expect(report.metrics.qualifying_cites).toBe(0);
+    expect(report.dismissed_reason_histogram).toEqual({ unspecified: 3 });
+  });
+
+  // 10. Per-client split: 2 cc turns + 1 codex turn → per_client.cc=2,
+  //     per_client.codex=1. per_client is only emitted when client='all'.
+  it("per_client split tabulates total_turns separately for each client when client='all'", async () => {
+    const target = createInitializedProject("cite-coverage-per-client");
+    writeFile(".fabric/events.jsonl", "", target);
+
+    const marker = await ensureCitePolicyActivatedMarker(target);
+
+    seedEvents(target, [
+      mkTurnEvent({
+        sessionId: "sess-P1",
+        kbLineRaw: "KB: KT-DEC-0301",
+        citeIds: ["KT-DEC-0301"],
+        citeTags: ["planned"],
+        client: "cc",
+        ts: marker.marker_ts + 10,
+      }),
+      mkTurnEvent({
+        sessionId: "sess-P2",
+        kbLineRaw: "KB: KT-DEC-0302",
+        citeIds: ["KT-DEC-0302"],
+        citeTags: ["planned"],
+        client: "cc",
+        ts: marker.marker_ts + 20,
+      }),
+      mkTurnEvent({
+        sessionId: "sess-P3",
+        kbLineRaw: "KB: KT-DEC-0303",
+        citeIds: ["KT-DEC-0303"],
+        citeTags: ["none"],
+        client: "codex",
+        ts: marker.marker_ts + 30,
+      }),
+    ]);
+
+    const report = await runDoctorCiteCoverage(target, { since: 0, client: "all" });
+
+    expect(report.per_client).toBeDefined();
+    expect(report.per_client?.cc?.total_turns).toBe(2);
+    expect(report.per_client?.cc?.qualifying_cites).toBe(2);
+    expect(report.per_client?.codex?.total_turns).toBe(1);
+    expect(report.per_client?.codex?.qualifying_cites).toBe(0);
+  });
+
+  // 11. --since=<future> filter: events with `ts < since` are excluded from
+  //     the window. effectiveSince = max(marker_ts, options.since), so we
+  //     pick `since` > marker_ts.
+  it("--since filter excludes events older than the cutoff", async () => {
+    const target = createInitializedProject("cite-coverage-since-filter");
+    writeFile(".fabric/events.jsonl", "", target);
+
+    const marker = await ensureCitePolicyActivatedMarker(target);
+
+    // Pick a cutoff far after the marker. Old turn lands BEFORE the cutoff;
+    // new turn lands AFTER it. Only the new turn should survive the filter.
+    const cutoff = marker.marker_ts + 100_000;
+
+    seedEvents(target, [
+      mkTurnEvent({
+        sessionId: "sess-OLD",
+        kbLineRaw: "KB: old",
+        citeIds: ["KT-DEC-0401"],
+        citeTags: ["planned"],
+        client: "cc",
+        ts: marker.marker_ts + 10, // < cutoff → excluded
+      }),
+      mkTurnEvent({
+        sessionId: "sess-NEW",
+        kbLineRaw: "KB: new",
+        citeIds: ["KT-DEC-0402"],
+        citeTags: ["planned"],
+        client: "cc",
+        ts: cutoff + 10, // >= cutoff → included
+      }),
+    ]);
+
+    const report = await runDoctorCiteCoverage(target, { since: cutoff, client: "all" });
+
+    expect(report.since_ts).toBe(cutoff);
+    expect(report.metrics.total_turns).toBe(1);
+    expect(report.metrics.qualifying_cites).toBe(1);
+  });
+
+  // 12. --client=cc filter: codex turns excluded from top-level metrics.
+  //     per_client is suppressed when the client filter is narrowed.
+  it("--client=cc filter excludes codex turns and suppresses per_client", async () => {
+    const target = createInitializedProject("cite-coverage-client-filter");
+    writeFile(".fabric/events.jsonl", "", target);
+
+    const marker = await ensureCitePolicyActivatedMarker(target);
+
+    seedEvents(target, [
+      mkTurnEvent({
+        sessionId: "sess-CC",
+        kbLineRaw: "KB: cc",
+        citeIds: ["KT-DEC-0501"],
+        citeTags: ["planned"],
+        client: "cc",
+        ts: marker.marker_ts + 10,
+      }),
+      mkTurnEvent({
+        sessionId: "sess-CX",
+        kbLineRaw: "KB: codex",
+        citeIds: ["KT-DEC-0502"],
+        citeTags: ["planned"],
+        client: "codex",
+        ts: marker.marker_ts + 20,
+      }),
+    ]);
+
+    const report = await runDoctorCiteCoverage(target, { since: 0, client: "cc" });
+
+    expect(report.client_filter).toBe("cc");
+    expect(report.metrics.total_turns).toBe(1);
+    expect(report.metrics.qualifying_cites).toBe(1);
+    // Narrowed filter — per_client suppressed (a single-entry record would
+    // duplicate the top-level metrics).
+    expect(report.per_client).toBeUndefined();
+  });
+
+  // 13. expected_but_missed: edit on src/foo/x.ts matches a narrow KB whose
+  //     stable_id was NOT cited in the same session → counter increments.
+  it("narrow KB with matching edit but no same-session cite increments expected_but_missed", async () => {
+    const target = createInitializedProject("cite-coverage-expected-missed");
+    writeFile(".fabric/events.jsonl", "", target);
+
+    const marker = await ensureCitePolicyActivatedMarker(target);
+    seedAgentsMeta(target, [
+      { stable_id: "KT-DEC-0601", relevance_scope: "narrow", relevance_paths: ["src/foo/**"] },
+    ]);
+
+    seedEvents(target, [
+      // Turn in sess-M that cites a DIFFERENT kb (or cites nothing).
+      mkTurnEvent({
+        sessionId: "sess-M",
+        kbLineRaw: null,
+        citeIds: [],
+        citeTags: ["none"],
+        client: "cc",
+        ts: marker.marker_ts + 5,
+      }),
+      // Edit in the same session, path matches the narrow kb's
+      // relevance_paths — but KT-DEC-0601 was not cited, so this should
+      // be flagged as expected_but_missed=1.
+      mkEditEvent({
+        path: "src/foo/x.ts",
+        sessionId: "sess-M",
+        ts: marker.marker_ts + 10,
+      }),
+    ]);
+
+    const report = await runDoctorCiteCoverage(target, { since: 0, client: "all" });
+
+    expect(report.metrics.edits_touched).toBe(1);
+    expect(report.metrics.expected_but_missed).toBe(1);
+  });
+
+  // 14. Performance: seed 10k assistant_turn_observed events and assert the
+  //     full report builds in well under 2s. The single-pass aggregator
+  //     (TASK-06) should land closer to ~100ms locally; the 2s ceiling is
+  //     CI-tolerant. Adjust downward once we have stable CI numbers.
+  it("runs in under 2s for 10k seeded events (performance smoke)", async () => {
+    const target = createInitializedProject("cite-coverage-perf-10k");
+    writeFile(".fabric/events.jsonl", "", target);
+
+    const marker = await ensureCitePolicyActivatedMarker(target);
+
+    const N = 10_000;
+    const events: unknown[] = [];
+    for (let i = 0; i < N; i += 1) {
+      events.push(
+        mkTurnEvent({
+          sessionId: `sess-${i % 50}`,
+          turnId: `turn-${i}`,
+          kbLineRaw: i % 2 === 0 ? `KB: KT-DEC-${String(i).padStart(4, "0")}` : null,
+          citeIds: i % 2 === 0 ? [`KT-DEC-${String(i).padStart(4, "0")}`] : [],
+          citeTags: i % 3 === 0 ? ["planned"] : i % 3 === 1 ? ["none"] : ["dismissed"],
+          client: i % 2 === 0 ? "cc" : "codex",
+          ts: marker.marker_ts + i + 1,
+        }),
+      );
+    }
+    seedEvents(target, events);
+
+    const t0 = Date.now();
+    const report = await runDoctorCiteCoverage(target, { since: 0, client: "all" });
+    const elapsedMs = Date.now() - t0;
+
+    expect(report.status).toBe("ok");
+    expect(report.metrics.total_turns).toBe(N);
+    // Lenient ceiling — CI fluctuates. Local runs should be well under 500ms;
+    // 2s leaves headroom for slow-spinning runners.
+    expect(elapsedMs).toBeLessThan(2_000);
   });
 });
 
