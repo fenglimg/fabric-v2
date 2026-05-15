@@ -5,6 +5,47 @@ All notable changes to Fabric will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0-rc.18] - 2026-05-15
+
+Phase 5 of the post-grill 5-phase backlog: **Protocol v2**. Hard cut of the `plan-context-hint` JSON wire contract — bump `version: 1 → 2`, rename `payload.narrow → payload.entries`. Pre-user clean-slate: NO v1 compatibility shim. Largest blast radius — ships solo. Closes the 5-phase backlog.
+
+### Changed (Breaking — wire protocol)
+
+- **`plan-context-hint` emitter** (`packages/cli/src/commands/plan-context-hint.ts`) — `version: 1 → 2`; field `payload.narrow → payload.entries`. The exported TS type `PlanContextHintNarrowEntry` renamed to `PlanContextHintEntry`. Three sites updated: docstring example (line 18), output type (line 49-62), runtime emission (line 157-169).
+- **Hook consumers** (`packages/cli/templates/hooks/knowledge-hint-narrow.cjs` + `knowledge-hint-broad.cjs`) — both now read `payload.entries` and gate on `version === 2`. v1 (or any other version) payload is silent-skipped with a single stderr breadcrumb (`[fabric] hint payload version=N unsupported (expected 2), skipping`). Null payload is silent-skipped with no stderr write (avoids spam on the common no-data path).
+
+### Added
+
+- **v1-receipt stance test coverage**: 6 new test cases (3 per consumer suite) asserting silent-skip + breadcrumb-fires + no-spam-on-null + version-matches-but-entries-missing-still-silent.
+- **Decision record** (`.workflow/.lite-plan/rc18-protocol-v2-2026-05-15/_protocol-v2-decisions.md`) — documents the two locked decisions (field name choice + v1-receipt stance) with rejected alternatives + rationale, for future-archeology readers.
+
+### Rationale
+
+- **`entries` over `narrow`**: the consumer-side already had a local rebind (`knowledge-hint-broad.cjs:443`) precisely because the maintainer found `narrow` misleading at the rendering layer. The deferred-task comment at lines 437-441 is now closed by adopting the rebind name as the wire name. Mode-agnostic — fits both `--paths` and `--all` modes equally.
+- **Silent-skip + breadcrumb**: aligns with the existing hook contract (`knowledge-hint-broad.cjs:464` wraps everything in try/catch with silent-exit-0). Upgrade-safe — a `fab` binary update before re-running `fab install` won't crash SessionStart. The single-line stderr breadcrumb gives diagnose-ability without source-diving.
+
+### Migration
+
+**None.** Pre-user clean-slate. Anyone with a stale hook installation should re-run `fab install` to refresh the templates. The new emitter unconditionally produces v2; old v1 hooks (now impossible after `fab install`) would silent-skip with a breadcrumb if they somehow received a v2 payload (no — wait, it's the opposite: new v2 emitter + new v2 hooks; the silent-skip protects against the cross-version scenario where user ran a partial upgrade).
+
+### Tests
+
+- shared 307/307 + server 409/410 + CLI 556 → 562 = **1278 passed**, 0 regressions.
+- 6 new test cases for v1-receipt stance.
+- No snapshot regeneration required.
+
+### 5-phase backlog: COMPLETE
+
+| Phase | Tag | Theme |
+|---|---|---|
+| 1 | rc.14 | Stop the bleeding (P0 fixes) |
+| 2 | rc.15 | CLI surface contraction (35→20 flags) |
+| 3 | rc.16 | Config + i18n closure |
+| 4 | rc.17 | Polish (--help, target chain, serve warning, Bug Y) |
+| 5 | rc.18 | Protocol v2 (this release) |
+
+Next steps are open — possible directions: v2.0.0 stable cut, or new feature work.
+
 ## [2.0.0-rc.17] - 2026-05-15
 
 Phase 4 of the post-grill 5-phase backlog: **Polish**. Four parallel tracks landed: H (`--help` rewrite + 装/配/跑 mental model), R (drop `externalFixturePath` config field), S (`serve --host` warning rewrite), Y (Codex MCP regression test — bug confirmed non-reproducible).
