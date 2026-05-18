@@ -101,7 +101,21 @@ const REGISTRY_REQUIRED_TOKENS = [
 ];
 
 async function collectFiles(directory: string): Promise<string[]> {
-  const entries = await readdir(directory, { withFileTypes: true });
+  let entries: Awaited<ReturnType<typeof readdir>>;
+  try {
+    entries = await readdir(directory, { withFileTypes: true });
+  } catch (error) {
+    // rc.19 TASK-006 deleted packages/cli/templates/bootstrap/. The single
+    // source of truth for bootstrap content is now
+    // packages/shared/src/templates/bootstrap-canonical.ts, validated by its
+    // own unit-test invariants in bootstrap-canonical.test.ts. Treat a
+    // missing legacy directory as "nothing to lint here". rc.22 follow-up:
+    // repoint this script at the TS canonical for deeper protection.
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      return [];
+    }
+    throw error;
+  }
   const files: string[] = [];
 
   for (const entry of entries) {
