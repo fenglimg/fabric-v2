@@ -1,7 +1,7 @@
 {
   "version": "1.0",
-  "generated_at": "2026-05-15T09:34:24.614Z",
-  "generated_by": "fab-cli@2.0.0-rc.19",
+  "generated_at": "2026-05-18T02:24:43.418Z",
+  "generated_by": "fab-cli@2.0.0-rc.21",
   "target": "/Users/wepie/Desktop/personal-projects/pcf",
   "project_name": "fabric-monorepo",
   "framework": {
@@ -13,14 +13,14 @@
     ]
   },
   "topology": {
-    "total_files": 1070,
+    "total_files": 1057,
     "by_ext": {
-      ".cjs": 22,
+      ".cjs": 13,
       ".csv": 75,
       ".html": 4,
       ".json": 527,
       ".jsonl": 4,
-      ".md": 187,
+      ".md": 183,
       ".mdc": 1,
       ".meta": 3,
       ".mjs": 11,
@@ -48,7 +48,7 @@
     {
       "path": "scripts/lint-protected-tokens.ts",
       "reason": "top-level script",
-      "size_bytes": 7083
+      "size_bytes": 7689
     }
   ],
   "code_samples": [
