@@ -476,6 +476,46 @@ function renderSummary(payload) {
   if (revHash !== null && revHash.length > 0) {
     lines.push(`  revision_hash: ${revHash}`);
   }
+
+  // rc.22 Scope D T-D4 (TASK-011): meta auto-refresh breadcrumb. Emitted ONLY
+  // when the server's planContext() detected meta drift and rebuilt the meta
+  // in-place (auto_healed === true). One informational line — operators need
+  // a paper trail when revision_hash flips mid-session.
+  //
+  // Variant resolution:
+  //   - Both hashes present → full transition line (`sha PREV → CUR`) with
+  //     8-char hex prefixes stripped of the `sha256:` scheme prefix.
+  //   - auto_healed:true but previous_revision_hash missing → generic line
+  //     (T10 noted the server may emit `auto_healed:true` alone if it lost
+  //     the prior hash for any reason). Stays informational.
+  //
+  // i18n: routed through renderBanner so zh-CN / en / zh-CN-hybrid variants
+  // share one call site. fabric_language is resolved via readFabricLanguage()
+  // ONLY when the line is actually emitted (keeps the no-banner path free of
+  // the extra config read, matching the broadImportBanner site below).
+  if (payload.auto_healed === true) {
+    const variant = readFabricLanguage(process.cwd());
+    const prevRaw =
+      typeof payload.previous_revision_hash === "string"
+        ? payload.previous_revision_hash
+        : null;
+    const curRaw =
+      typeof payload.revision_hash === "string" ? payload.revision_hash : null;
+    if (prevRaw && curRaw) {
+      // Strip optional `sha256:` scheme prefix, then take first 8 hex chars.
+      const stripScheme = (h) =>
+        h.startsWith("sha256:") ? h.slice("sha256:".length) : h;
+      const prev = stripScheme(prevRaw).slice(0, 8);
+      const cur = stripScheme(curRaw).slice(0, 8);
+      lines.push(
+        renderBanner("metaAutoRefreshedBanner", variant, { prev, cur }),
+      );
+    } else {
+      // Defensive: auto_healed:true but no usable previous hash → generic line.
+      lines.push(renderBanner("metaAutoRefreshedBannerGeneric", variant, {}));
+    }
+  }
+
   lines.push("  Use `fab_get_knowledge_sections` to fetch full content.");
   return lines;
 }

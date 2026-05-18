@@ -174,4 +174,17 @@ export const fabricConfigSchema = z.object({
   // 7d Signal-B trigger because review specifically targets the long
   // tail. Large repos with slower cadence can raise to 30.
   review_stale_pending_days: z.number().int().positive().optional().default(14),
+  // v2.0.0-rc.22 Scope A T3: sliding-window retention (in days) for the
+  // event ledger rotation primitive (`rotateEventLedgerIfNeeded`). Lines
+  // whose `ts` is older than `now - fabric_event_retention_days * 86_400_000`
+  // are partitioned into `.fabric/events.archive/events-rotated-YYYY-MM-DD.jsonl`.
+  // Locked to 7/30/90 — three operator-friendly preset windows. Default 30
+  // is applied at the consumer site (rotateEventLedgerIfNeeded), so this
+  // field stays `.optional()` without a `.default()` to keep the schema
+  // surface honest: absence means "use the library default", not "schema
+  // default of 30 was injected." 7 = ~tight, 30 = balanced, 90 = forensic.
+  // Mirrors cite-policy precedent of locking enum-style numeric tunables
+  // to a small literal set (vs free `.positive()`) to prevent fat-finger
+  // misconfig.
+  fabric_event_retention_days: z.union([z.literal(7), z.literal(30), z.literal(90)]).optional(),
 });

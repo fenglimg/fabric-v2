@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -108,7 +108,9 @@ describe("runDoctorReport", () => {
     // (knowledge_relevance_fields_missing lint #28 added — pending
     // entries back-fill for relevance_scope / relevance_paths) → 29 rc.12
     // (skill_md_yaml_invalid lint #29 added — warns on SKILL.md frontmatter
-    // values that strict YAML parsers reject).
+    // values that strict YAML parsers reject) → 33 rc.22 TASK-006
+    // (lint-baseline-filename-format hard error added — bare-slug baseline
+    // filenames violating the canonical `${id}--${slug}.md` invariant).
     expect(report.checks.map((check) => check.name)).toEqual([
       "Bootstrap anchor",
       // rc.19 bootstrap-consolidation TASK-004: fabric:knowledge-base →
@@ -122,6 +124,9 @@ describe("runDoctorReport", () => {
       "Bootstrap snapshot drift",
       "Managed block drift",
       "Knowledge layout",
+      // rc.22 TASK-006: baseline filename format — sits adjacent to the
+      // Knowledge layout check (both are knowledge-layout invariants).
+      "Baseline filename format",
       "Scan evidence",
       "Agents metadata",
       "Rule content refs",
@@ -150,7 +155,7 @@ describe("runDoctorReport", () => {
       "Skill markdown YAML",
       "Preexisting root markdown",
     ]);
-    expect(report.checks).toHaveLength(32);
+    expect(report.checks).toHaveLength(33);
   });
 
   it("v2.0: clean post-init repo (mocked layout) reports zero errors AND zero warnings", async () => {
@@ -354,6 +359,202 @@ describe("runDoctorReport", () => {
     expect(events.map((event) => event.event_type)).toContain("event_ledger_truncated");
   });
 
+  // v2.0.0-rc.22 Scope A T4: rotateEventLedgerIfNeeded integration into
+  // `fab doctor --fix`. Rotation runs as an unconditional hygiene step (no
+  // gating check) and is idempotent — a re-run on a freshly-rotated ledger
+  // is a no-op. A `event_ledger_rotated` synthetic `fixed[]` entry is
+  // surfaced ONLY when archivedCount > 0; no-op runs do not pollute the
+  // report. Tests below cover the contract end-to-end via runDoctorFix.
+  describe("rc.22 TASK-004: rotateEventLedgerIfNeeded wired into doctor --fix", () => {
+    // Helper: seed events.jsonl with hand-crafted lines (newline-terminated)
+    // whose `ts` is far enough in the past to fall outside the default 30d
+    // retention window. We write the file directly rather than via
+    // appendEventLedgerEvent so the timestamps are not clamped to Date.now().
+    function seedLedger(target: string, lines: string[]): void {
+      const ledgerPath = join(target, ".fabric", "events.jsonl");
+      writeFileSync(ledgerPath, lines.map((l) => `${l}\n`).join(""), "utf8");
+    }
+
+    // Build a schema-valid old event line. mcp_event carries an envelope
+    // (mcp_event_id, stream_id, message) that the event-ledger schema
+    // accepts; we use a fixed `ts` well past the 30d retention cutoff.
+    function oldMcpEventLine(id: string, ts: number): string {
+      return JSON.stringify({
+        kind: "fabric-event",
+        id: `event:${id}`,
+        ts,
+        schema_version: 1,
+        event_type: "mcp_event",
+        mcp_event_id: id,
+        stream_id: "stream-1",
+        message: { jsonrpc: "2.0", method: "ping" },
+      });
+    }
+
+    // Build a schema-valid recent event line. ts = Date.now() is well
+    // within the 30d window so it is always kept by rotation.
+    function recentMcpEventLine(id: string): string {
+      return JSON.stringify({
+        kind: "fabric-event",
+        id: `event:${id}`,
+        ts: Date.now(),
+        schema_version: 1,
+        event_type: "mcp_event",
+        mcp_event_id: id,
+        stream_id: "stream-1",
+        message: { jsonrpc: "2.0", method: "ping" },
+      });
+    }
+
+    // Cutoff helper: 45d-old timestamp, comfortably past the 30d default.
+    function staleTs(): number {
+      return Date.now() - 45 * 86_400_000;
+    }
+
+    it("doctor_fix_triggers_rotation: --fix on a ledger with old lines archives them and reports a fixed entry", async () => {
+      const target = createInitializedProject("doctor-rotate-trigger");
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
+      const baseTs = staleTs();
+      seedLedger(target, [
+        oldMcpEventLine("mcp-old-1", baseTs),
+        oldMcpEventLine("mcp-old-2", baseTs + 1),
+        recentMcpEventLine("mcp-new-1"),
+      ]);
+
+      const fix = await runDoctorFix(target);
+
+      // Synthetic fixed entry surfaced (archivedCount > 0)
+      const rotated = fix.fixed.find((issue) => issue.code === "event_ledger_rotated");
+      expect(rotated).toBeDefined();
+      expect(rotated?.path).toMatch(/^\.fabric\/events\.archive\/events-rotated-\d{4}-\d{2}-\d{2}\.jsonl$/);
+      expect(rotated?.message).toContain("2");
+
+      // Archive file exists and contains exactly the two old lines
+      const archiveDir = join(target, ".fabric", "events.archive");
+      expect(existsSync(archiveDir)).toBe(true);
+
+      // Main ledger now contains audit event + only the recent event
+      const { events } = await readEventLedger(target);
+      const mcpEvents = events.filter((e) => e.event_type === "mcp_event") as Array<{
+        event_type: "mcp_event";
+        mcp_event_id: string;
+      }>;
+      expect(mcpEvents.map((e) => e.mcp_event_id)).toEqual(["mcp-new-1"]);
+    });
+
+    it("doctor_fix_rotation_idempotent: a second --fix on a freshly-rotated ledger is a no-op", async () => {
+      const target = createInitializedProject("doctor-rotate-idempotent");
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
+      const baseTs = staleTs();
+      seedLedger(target, [
+        oldMcpEventLine("mcp-old-1", baseTs),
+        recentMcpEventLine("mcp-new-1"),
+      ]);
+
+      const firstFix = await runDoctorFix(target);
+      expect(firstFix.fixed.map((i) => i.code)).toContain("event_ledger_rotated");
+
+      // Snapshot archive size + main ledger contents after first --fix.
+      const archiveFiles = readdirSync(join(target, ".fabric", "events.archive"));
+      expect(archiveFiles.length).toBe(1);
+      const archivePath = join(target, ".fabric", "events.archive", archiveFiles[0]);
+      const archiveSizeBefore = statSync(archivePath).size;
+      const mainBefore = readFileSync(join(target, ".fabric", "events.jsonl"), "utf8");
+
+      const secondFix = await runDoctorFix(target);
+
+      // No `event_ledger_rotated` entry — nothing to rotate this round.
+      expect(secondFix.fixed.map((i) => i.code)).not.toContain("event_ledger_rotated");
+
+      // Archive untouched, main file untouched.
+      expect(statSync(archivePath).size).toBe(archiveSizeBefore);
+      expect(readFileSync(join(target, ".fabric", "events.jsonl"), "utf8")).toBe(mainBefore);
+    });
+
+    it("doctor_fix_no_archive_when_under_retention: --fix with only recent events does NOT create an archive file or fixed entry", async () => {
+      const target = createInitializedProject("doctor-rotate-noop");
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
+      seedLedger(target, [recentMcpEventLine("mcp-new-1"), recentMcpEventLine("mcp-new-2")]);
+
+      const fix = await runDoctorFix(target);
+
+      expect(fix.fixed.map((i) => i.code)).not.toContain("event_ledger_rotated");
+      // No archive directory was created (rotation primitive only mkdirs
+      // when it actually has lines to write).
+      expect(existsSync(join(target, ".fabric", "events.archive"))).toBe(false);
+    });
+
+    it("doctor_fix_emits_events_rotated: post-rotation main ledger contains an events_rotated audit event", async () => {
+      const target = createInitializedProject("doctor-rotate-audit");
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
+      const baseTs = staleTs();
+      seedLedger(target, [
+        oldMcpEventLine("mcp-old-1", baseTs),
+        oldMcpEventLine("mcp-old-2", baseTs + 1),
+        recentMcpEventLine("mcp-new-1"),
+      ]);
+
+      await runDoctorFix(target);
+
+      const { events } = await readEventLedger(target);
+      const audit = events.find((e) => e.event_type === "events_rotated") as
+        | { event_type: "events_rotated"; archived_count: number; kept_count: number; archive_path: string }
+        | undefined;
+      expect(audit).toBeDefined();
+      expect(audit?.archived_count).toBe(2);
+      // kept_count reflects only the lines retained from the pre-rotation
+      // ledger — the audit event itself is prepended afterwards and is not
+      // counted in kept_count.
+      expect(audit?.kept_count).toBe(1);
+      expect(audit?.archive_path).toMatch(/^\.fabric\/events\.archive\/events-rotated-\d{4}-\d{2}-\d{2}\.jsonl$/);
+    });
+
+    it("doctor_fix_same_day_appends_archive: two --fix invocations on the same day with fresh stale events append to the same archive file", async () => {
+      const target = createInitializedProject("doctor-rotate-sameday");
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
+      const baseTs = staleTs();
+
+      // Round 1: one old + one new event → rotation archives the old one
+      seedLedger(target, [oldMcpEventLine("mcp-old-1", baseTs), recentMcpEventLine("mcp-new-1")]);
+      const firstFix = await runDoctorFix(target);
+      expect(firstFix.fixed.map((i) => i.code)).toContain("event_ledger_rotated");
+
+      const archiveDir = join(target, ".fabric", "events.archive");
+      const archiveFiles1 = readdirSync(archiveDir);
+      expect(archiveFiles1).toHaveLength(1);
+      const archivePath = join(archiveDir, archiveFiles1[0]);
+      const sizeAfterRound1 = statSync(archivePath).size;
+
+      // Round 2: append another stale event to the main ledger (simulating
+      // an old event arriving between --fix invocations on the same day),
+      // then re-run --fix. The same archive file should grow, not a new
+      // one be created.
+      const currentMain = readFileSync(join(target, ".fabric", "events.jsonl"), "utf8");
+      writeFileSync(
+        join(target, ".fabric", "events.jsonl"),
+        `${currentMain}${oldMcpEventLine("mcp-old-2", baseTs + 1000)}\n`,
+        "utf8",
+      );
+
+      const secondFix = await runDoctorFix(target);
+      expect(secondFix.fixed.map((i) => i.code)).toContain("event_ledger_rotated");
+
+      // Still exactly one archive file — and it grew.
+      const archiveFiles2 = readdirSync(archiveDir);
+      expect(archiveFiles2).toEqual(archiveFiles1);
+      const sizeAfterRound2 = statSync(archivePath).size;
+      expect(sizeAfterRound2).toBeGreaterThan(sizeAfterRound1);
+
+      // Both old events end up in the archive in append order.
+      const archiveContents = readFileSync(archivePath, "utf8");
+      const ids = archiveContents
+        .split("\n")
+        .filter((l) => l.length > 0)
+        .map((l) => (JSON.parse(l) as { mcp_event_id: string }).mcp_event_id);
+      expect(ids).toEqual(["mcp-old-1", "mcp-old-2"]);
+    });
+  });
+
   it("--fix calls reconcileKnowledge and emits meta_reconciled event", async () => {
     const target = createInitializedProject("doctor-reconcile-fix");
     // Drop a new knowledge file (not yet indexed) so reconcile must run.
@@ -447,6 +648,116 @@ describe("runDoctorReport", () => {
 
     expect(report.warnings.map((w) => w.code)).not.toContain("meta_manually_diverged");
     expect(report.checks.find((c) => c.name === "Meta manual divergence")?.status).toBe("ok");
+  });
+
+  // rc.22 TASK-012 (Scope D T-D5): agents_meta_stale demoted from error → warning.
+  // Auto-heal on next plan-context/get-sections MCP call means a detected drift is
+  // benign; doctor exit code stays 0 (unless --strict). `fab doctor --fix` still
+  // reconciles explicitly via the warnings-aware guard in runDoctorFix.
+  describe("rc.22 TASK-012: agents_meta_stale severity demotion", () => {
+    it("meta_check_stale_emits_warning_not_error: stale meta surfaces as warning, not fixable_error", async () => {
+      const target = createInitializedProject("doctor-stale-meta-warning");
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+
+      // Trigger meta.stale by editing the body of an indexed knowledge file —
+      // recomputed revision differs from stored revision.
+      writeFileSync(
+        join(target, ".fabric", "knowledge", "decisions", "server.md"),
+        "<!-- fab:rule-id rules/server -->\n# Server\n\n## [MANDATORY_INJECTION]\nUse services. Edited body to force stale meta.\n",
+        "utf8",
+      );
+
+      const report = await runDoctorReport(target);
+
+      expect(report.warnings.map((w) => w.code)).toContain("agents_meta_stale");
+      expect(report.fixable_errors.map((e) => e.code)).not.toContain("agents_meta_stale");
+      const check = report.checks.find((c) => c.name === "Agents metadata");
+      expect(check?.status).toBe("warn");
+      expect(check?.kind).toBe("warning");
+      expect(check?.code).toBe("agents_meta_stale");
+      expect(check?.fixable).toBe(false);
+    });
+
+    it("doctor_exits_zero_with_stale_meta: report.status is 'warn' (not 'error') so non-strict CLI exits 0", async () => {
+      const target = createInitializedProject("doctor-stale-meta-exit-zero");
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+
+      writeFileSync(
+        join(target, ".fabric", "knowledge", "decisions", "server.md"),
+        "<!-- fab:rule-id rules/server -->\n# Server\n\n## [MANDATORY_INJECTION]\nUse services. Edited body for exit-zero test.\n",
+        "utf8",
+      );
+
+      const report = await runDoctorReport(target);
+
+      // The demoted `agents_meta_stale` itself must no longer contribute an
+      // "error" status — it must surface as a "warn" check.
+      const metaCheck = report.checks.find((c) => c.code === "agents_meta_stale");
+      expect(metaCheck?.status).toBe("warn");
+      // Equivalent assertion from the report rollup: agents_meta_stale must
+      // NOT appear among fixable_errors / manual_errors any more.
+      expect(report.fixable_errors.map((e) => e.code)).not.toContain("agents_meta_stale");
+      expect(report.manual_errors.map((e) => e.code)).not.toContain("agents_meta_stale");
+    });
+
+    it("doctor_fix_still_reconciles_stale: --fix runs reconcile and clears agents_meta_stale via warnings-path", async () => {
+      const target = createInitializedProject("doctor-stale-meta-fix");
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+
+      // Mutate the seeded knowledge file's body so the recomputed revision
+      // differs from the stored revision AND reconcileKnowledge detects a
+      // real hash change (events.length > 0 → writeKnowledgeMeta rewrites
+      // meta with the fresh revision).
+      writeFileSync(
+        join(target, ".fabric", "knowledge", "decisions", "server.md"),
+        "<!-- fab:rule-id rules/server -->\n# Server\n\n## [MANDATORY_INJECTION]\nUse services. Hand-edited body for rc.22 stale-meta fix test.\n",
+        "utf8",
+      );
+
+      const before = await runDoctorReport(target);
+      expect(before.warnings.map((w) => w.code)).toContain("agents_meta_stale");
+      expect(before.fixable_errors.map((e) => e.code)).not.toContain("agents_meta_stale");
+
+      const fix = await runDoctorFix(target);
+      const after = await runDoctorReport(target);
+
+      // The warnings-aware fix guard should pick up the stale code and
+      // include it in the `fixed` set, even though it's now a warning.
+      expect(fix.fixed.map((e) => e.code)).toContain("agents_meta_stale");
+      expect(after.warnings.map((w) => w.code)).not.toContain("agents_meta_stale");
+      expect(after.fixable_errors.map((e) => e.code)).not.toContain("agents_meta_stale");
+
+      // meta_reconciled event must be written to the ledger.
+      const { events } = await readEventLedger(target);
+      expect(events.map((event) => event.event_type)).toContain("meta_reconciled");
+    });
+
+    it("meta_check_resolution_references_auto_heal: actionHint mentions auto-heal + --fix path", async () => {
+      const target = createInitializedProject("doctor-stale-meta-resolution-text");
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+
+      writeFileSync(
+        join(target, ".fabric", "knowledge", "decisions", "server.md"),
+        "<!-- fab:rule-id rules/server -->\n# Server\n\n## [MANDATORY_INJECTION]\nUse services. Edited body for resolution-text test.\n",
+        "utf8",
+      );
+
+      const report = await runDoctorReport(target);
+
+      const check = report.checks.find((c) => c.name === "Agents metadata");
+      expect(check?.code).toBe("agents_meta_stale");
+      // Resolution text now communicates: (a) drift is benign, (b) engine
+      // auto-heals on next read-side MCP call, (c) --fix is the explicit
+      // reconcile escape hatch.
+      expect(check?.actionHint).toContain("Benign");
+      expect(check?.actionHint).toContain("auto-heals");
+      expect(check?.actionHint).toContain("plan-context/get-sections");
+      expect(check?.actionHint).toContain("fab doctor --fix");
+    });
   });
 
   it("TASK-032: all doctor checks with issues have a non-empty actionHint", async () => {
@@ -3804,6 +4115,106 @@ describe("runDoctorReport", () => {
       expect(refix.fixed.map((e) => e.code)).not.toContain("bootstrap_marker_migration_required");
       const secondCount = countMigratedEvents();
       expect(secondCount).toBe(firstCount);
+    });
+  });
+
+  // v2.0.0-rc.22 TASK-006: doctor lint `lint-baseline-filename-format` —
+  // hard error (no --fix path; resolution delegates to `fab scan` for the
+  // one-shot migration). Aligns with feedback_cli_design "drift→abort"
+  // (--force was already removed from doctor in rc.15).
+  describe("rc.22 TASK-006: lint-baseline-filename-format hard error", () => {
+    // Helper: write a baseline knowledge file with the requested filename and
+    // frontmatter id under the given canonical subdir. The frontmatter shape
+    // mirrors what `fab scan` emits so `extractKnowledgeFrontmatterId` parses
+    // it identically to a real baseline file.
+    const writeBaselineFile = (
+      target: string,
+      subdir: string,
+      filename: string,
+      id: string,
+      slug: string,
+    ): void => {
+      writeFile(
+        `.fabric/knowledge/${subdir}/${filename}`,
+        `---\nid: ${id}\ntype: ${subdir.slice(0, -1)}\nlayer: team\nmaturity: stable\nslug: ${slug}\n---\n# ${slug}\n`,
+        target,
+      );
+    };
+
+    it("lint_baseline_filename_passes_when_clean: id-prefixed filenames produce ok status", async () => {
+      const target = createInitializedProject("doctor-baseline-fname-clean");
+      // Seed an already-migrated baseline file (canonical `${id}--${slug}.md`).
+      writeBaselineFile(
+        target,
+        "guidelines",
+        "KT-GLD-0001--code-style.md",
+        "KT-GLD-0001",
+        "code-style",
+      );
+
+      const report = await runDoctorReport(target);
+      const check = report.checks.find((c) => c.code === "lint-baseline-filename-format")
+        ?? report.checks.find((c) => c.name === "Baseline filename format");
+      expect(check).toBeDefined();
+      expect(check?.status).toBe("ok");
+      expect(report.manual_errors.map((e) => e.code)).not.toContain("lint-baseline-filename-format");
+    });
+
+    it("lint_baseline_filename_errors_on_bare_slug_baseline: emits manual_error listing the offending file", async () => {
+      const target = createInitializedProject("doctor-baseline-fname-bare");
+      // Bare-slug baseline file with id in the allowlist — should fire.
+      writeBaselineFile(target, "guidelines", "code-style.md", "KT-GLD-0001", "code-style");
+
+      const report = await runDoctorReport(target);
+      expect(report.manual_errors.map((e) => e.code)).toContain("lint-baseline-filename-format");
+      const issue = report.manual_errors.find((e) => e.code === "lint-baseline-filename-format");
+      expect(issue?.message).toContain(".fabric/knowledge/guidelines/code-style.md");
+      expect(issue?.message).toContain("KT-GLD-0001");
+    });
+
+    it("lint_baseline_filename_skips_non_baseline_ids: KP-* / non-allowlist ids are NOT flagged", async () => {
+      const target = createInitializedProject("doctor-baseline-fname-non-baseline");
+      // Bare-slug filename but id is NOT in the baseline allowlist — must be
+      // ignored (this is a user-promoted entry, governed by a different
+      // invariant).
+      writeBaselineFile(target, "decisions", "some-decision.md", "KP-DEC-0001", "some-decision");
+
+      const report = await runDoctorReport(target);
+      expect(report.manual_errors.map((e) => e.code)).not.toContain("lint-baseline-filename-format");
+      const check = report.checks.find((c) => c.name === "Baseline filename format");
+      expect(check?.status).toBe("ok");
+    });
+
+    it("lint_baseline_filename_force_does_not_mask: hard-error contract — runDoctorFix never auto-fixes this code", async () => {
+      // Hard-error contract regression: --fix MUST NOT silence the lint
+      // (the only mutation surface in doctor; --force was removed in rc.15
+      // per feedback_cli_design drift→abort). The check must remain reported
+      // after a --fix pass and the issue must NOT appear in `fixed`.
+      const target = createInitializedProject("doctor-baseline-fname-no-mask");
+      writeBaselineFile(target, "models", "tech-stack.md", "KT-MOD-0001", "tech-stack");
+
+      const before = await runDoctorReport(target);
+      expect(before.manual_errors.map((e) => e.code)).toContain("lint-baseline-filename-format");
+
+      const fixReport = await runDoctorFix(target);
+      // The hard-error code must NOT be in `fixed` (it has no auto-fix path).
+      expect(fixReport.fixed.map((e) => e.code)).not.toContain("lint-baseline-filename-format");
+      // After --fix, the bare-slug file still exists on disk — re-running the
+      // report continues to surface the manual_error.
+      const after = await runDoctorReport(target);
+      expect(after.manual_errors.map((e) => e.code)).toContain("lint-baseline-filename-format");
+    });
+
+    it("lint_baseline_filename_resolution_references_fab_scan: action hint instructs user to run `fab scan`", async () => {
+      const target = createInitializedProject("doctor-baseline-fname-resolution");
+      writeBaselineFile(target, "processes", "build-config.md", "KT-PRO-0001", "build-config");
+
+      const report = await runDoctorReport(target);
+      const check = report.checks.find((c) => c.code === "lint-baseline-filename-format");
+      expect(check).toBeDefined();
+      expect(check?.status).toBe("error");
+      expect(check?.kind).toBe("manual_error");
+      expect(check?.actionHint).toContain("fab scan");
     });
   });
 });

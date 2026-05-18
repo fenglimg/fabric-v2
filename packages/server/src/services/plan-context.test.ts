@@ -2,14 +2,36 @@ import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { readEventLedger } from "./event-ledger.js";
 import { planContext } from "./plan-context.js";
+import { contextCache } from "../cache.js";
 
 const tempDirs: string[] = [];
+let originalFabricHome: string | undefined;
+
+// v2.0.0-rc.22 Scope D T-D2: planContext now routes through
+// loadActiveMetaOrStale which calls buildKnowledgeMeta — that scan walks BOTH
+// the team root (.fabric/knowledge/) and the personal root
+// (~/.fabric/knowledge/). Without FABRIC_HOME isolation the developer's real
+// personal knowledge leaks into the fixture's derived meta and corrupts
+// description_index assertions. Mirror load-active-meta.test.ts setup.
+beforeEach(async () => {
+  originalFabricHome = process.env.FABRIC_HOME;
+  const fakeHome = await mkdtemp(join(tmpdir(), "fabric-plan-context-home-"));
+  tempDirs.push(fakeHome);
+  process.env.FABRIC_HOME = fakeHome;
+  contextCache.invalidate("file_watch");
+});
 
 afterEach(async () => {
+  vi.restoreAllMocks();
+  if (originalFabricHome === undefined) {
+    delete process.env.FABRIC_HOME;
+  } else {
+    process.env.FABRIC_HOME = originalFabricHome;
+  }
   await Promise.all(tempDirs.splice(0).map(async (path) => {
     await rm(path, { recursive: true, force: true });
   }));
@@ -21,9 +43,11 @@ describe("planContext", () => {
     await mkdir(join(projectRoot, ".fabric", "knowledge", "decisions"), { recursive: true });
     await mkdir(join(projectRoot, ".fabric", "knowledge", "guidelines"), { recursive: true });
     await writeFile(join(projectRoot, ".fabric", "human-lock.json"), `${JSON.stringify({ locked: [] }, null, 2)}\n`);
+    // v2.0.0-rc.22 Scope D T-D2: only seed files that have hand-crafted meta
+    // nodes — auto-heal would otherwise mint a fresh node (with derived id)
+    // for the orphan battle-view.md and pollute the description_index.
     await writeFile(join(projectRoot, ".fabric", "knowledge", "decisions", "global.md"), "# Global\n");
     await writeFile(join(projectRoot, ".fabric", "knowledge", "guidelines", "ui.md"), "# UI\n");
-    await writeFile(join(projectRoot, ".fabric", "knowledge", "guidelines", "battle-view.md"), "# Battle View\n");
     await writeFile(
       join(projectRoot, ".fabric", "agents.meta.json"),
       `${JSON.stringify({
@@ -72,7 +96,16 @@ describe("planContext", () => {
       session_id: "session-plan",
     });
 
-    expect(result.revision_hash).toBe("rev-neutral");
+    // v2.0.0-rc.22 Scope D T-D2: revision_hash is now auto-healed from the
+    // on-disk knowledge tree by loadActiveMetaOrStale. The "rev-neutral"
+    // sentinel in the seeded meta drifts away the moment buildKnowledgeMeta
+    // sees the real .md files, so we assert shape (non-empty string) rather
+    // than a literal — the heal pipeline is exercised by the dedicated
+    // auto-heal tests below.
+    expect(result.revision_hash).toEqual(expect.any(String));
+    expect(result.revision_hash.length).toBeGreaterThan(0);
+    expect(result.auto_healed).toBe(true);
+    expect(result.previous_revision_hash).toBe("rev-neutral");
     expect(result.entries).toHaveLength(1);
     expect(result.entries[0]?.path).toBe("src/index.ts");
     expect(result.entries[0]?.requirement_profile).toMatchObject({
@@ -133,7 +166,13 @@ describe("planContext", () => {
       client_hash: "rev-old",
     });
 
-    expect(result.revision_hash).toBe("rev-current");
+    // v2.0.0-rc.22 Scope D T-D2: empty knowledge tree → derived meta has
+    // nodes:{} and a deterministic revision based on `computeRevision({})`.
+    // We don't pin the literal — just verify the staleness contract: a
+    // client_hash that does not match the current (post-heal) revision flips
+    // `stale: true`.
+    expect(result.revision_hash).toEqual(expect.any(String));
+    expect(result.revision_hash).not.toBe("rev-old");
     expect(result.stale).toBe(true);
     expect(result.entries).toEqual([
       {
@@ -158,6 +197,48 @@ describe("planContext", () => {
     const projectRoot = await createTempProject();
     await mkdir(join(projectRoot, ".fabric"), { recursive: true });
     await writeFile(join(projectRoot, ".fabric", "human-lock.json"), `${JSON.stringify({ locked: [] }, null, 2)}\n`);
+    // v2.0.0-rc.22 Scope D T-D2: auto-heal now scans the on-disk knowledge
+    // tree. Seed the .md files this fixture used to reference only by meta
+    // so buildKnowledgeMeta preserves the hand-crafted description blobs via
+    // its `...existing?.node` carry-over. The personal entry lives under
+    // FABRIC_HOME (set in beforeEach) — its dual-root scan picks it up.
+    await mkdir(join(projectRoot, ".fabric", "knowledge", "decisions"), { recursive: true });
+    await mkdir(join(projectRoot, ".fabric", "knowledge", "pending"), { recursive: true });
+    await writeFile(
+      join(projectRoot, ".fabric", "knowledge", "decisions", "team-auth.md"),
+      [
+        "---",
+        "summary: Team JWT decision",
+        "id: KT-DEC-0001",
+        "type: decision",
+        "maturity: verified",
+        "layer: team",
+        "layer_reason: shared across services",
+        "---",
+        "# Team JWT decision",
+        "",
+      ].join("\n"),
+    );
+    // legacy.md intentionally has NO frontmatter — exercises the heading-only
+    // fallback path where extractRuleDescription synthesizes a description
+    // with type=undefined / maturity=undefined / layer=undefined.
+    await writeFile(join(projectRoot, ".fabric", "knowledge", "pending", "legacy.md"), "# Legacy v1.x entry\n");
+    const fakeHome = process.env.FABRIC_HOME!;
+    await mkdir(join(fakeHome, ".fabric", "knowledge", "guidelines"), { recursive: true });
+    await writeFile(
+      join(fakeHome, ".fabric", "knowledge", "guidelines", "personal-style.md"),
+      [
+        "---",
+        "summary: Personal coding style",
+        "id: KP-GLD-0001",
+        "type: guideline",
+        "maturity: draft",
+        "layer: personal",
+        "---",
+        "# Personal coding style",
+        "",
+      ].join("\n"),
+    );
     await writeFile(
       join(projectRoot, ".fabric", "agents.meta.json"),
       `${JSON.stringify({
@@ -303,9 +384,15 @@ describe("planContext", () => {
     const nodes: Record<string, unknown> = {};
     // 100 stub entries — well above the legacy degenerate threshold. Shape
     // must match the small-set response exactly.
+    // v2.0.0-rc.22 Scope D T-D2: each stub needs a backing .md file so
+    // buildKnowledgeMeta (now invoked by auto-heal) preserves the hand-crafted
+    // description blob via `...existing?.node`. Without the file the node is
+    // dropped from the rebuilt meta and the description_index shrinks below
+    // 100.
     for (let i = 0; i < 100; i += 1) {
       const id = `KT-DEC-${String(i + 1).padStart(4, "0")}`;
       const file = `.fabric/knowledge/decisions/d${i + 1}.md`;
+      await writeFile(join(projectRoot, file), `# Decision ${i + 1}\n`);
       nodes[id] = {
         stable_id: id,
         file,
@@ -354,9 +441,58 @@ describe("planContext", () => {
     await mkdir(join(projectRoot, ".fabric", "knowledge", "guidelines"), { recursive: true });
     await mkdir(join(projectRoot, ".fabric", "knowledge", "decisions"), { recursive: true });
     await writeFile(join(projectRoot, ".fabric", "human-lock.json"), `${JSON.stringify({ locked: [] }, null, 2)}\n`);
-    await writeFile(join(projectRoot, ".fabric", "knowledge", "guidelines", "broad.md"), "# Broad\n");
-    await writeFile(join(projectRoot, ".fabric", "knowledge", "guidelines", "ui-narrow.md"), "# UI Narrow\n");
-    await writeFile(join(projectRoot, ".fabric", "knowledge", "decisions", "auth-narrow.md"), "# Auth Narrow\n");
+    // v2.0.0-rc.22 Scope D T-D2: seed real YAML frontmatter so auto-heal's
+    // extractRuleDescription parses the same relevance_scope / relevance_paths
+    // the hand-crafted meta declared. Heading-only fallback would default to
+    // broad+[] and silently flip every narrow entry to fail-open.
+    await writeFile(
+      join(projectRoot, ".fabric", "knowledge", "guidelines", "broad.md"),
+      [
+        "---",
+        "summary: Broad cross-cutting guideline",
+        "id: KT-GLD-0001",
+        "type: guideline",
+        "maturity: verified",
+        "layer: team",
+        "relevance_scope: broad",
+        "relevance_paths: []",
+        "---",
+        "# Broad",
+        "",
+      ].join("\n"),
+    );
+    await writeFile(
+      join(projectRoot, ".fabric", "knowledge", "guidelines", "ui-narrow.md"),
+      [
+        "---",
+        "summary: Narrow UI guideline",
+        "id: KT-GLD-0002",
+        "type: guideline",
+        "maturity: verified",
+        "layer: team",
+        "relevance_scope: narrow",
+        `relevance_paths: ["src/ui/**", "packages/ui/"]`,
+        "---",
+        "# UI Narrow",
+        "",
+      ].join("\n"),
+    );
+    await writeFile(
+      join(projectRoot, ".fabric", "knowledge", "decisions", "auth-narrow.md"),
+      [
+        "---",
+        "summary: Narrow auth decision",
+        "id: KT-DEC-0001",
+        "type: decision",
+        "maturity: verified",
+        "layer: team",
+        "relevance_scope: narrow",
+        `relevance_paths: ["src/auth/**"]`,
+        "---",
+        "# Auth Narrow",
+        "",
+      ].join("\n"),
+    );
     await writeFile(
       join(projectRoot, ".fabric", "agents.meta.json"),
       `${JSON.stringify({
@@ -551,6 +687,70 @@ describe("planContext", () => {
     expect(entry).not.toHaveProperty("initial_selected_stable_ids");
     expect(result.shared).not.toHaveProperty("required_stable_ids");
     expect(result.shared).not.toHaveProperty("ai_selectable_stable_ids");
+  });
+
+  // ---------------------------------------------------------------------------
+  // v2.0.0-rc.22 Scope D T-D2 (TASK-009): auto-heal banner + graceful degrade
+  //
+  // The two paths under test:
+  //   1. fresh meta + matching tree → no auto_healed field in the response
+  //      (omitting the field on the steady-state path keeps the wire shape
+  //      minimal — downstream renderers branch only when the field is true).
+  //   2. graceful degrade when buildKnowledgeMeta throws → response carries
+  //      stale:true and falls back to the on-disk meta, never throws.
+  //
+  // The stale → auto_healed:true path is exercised by the very first test in
+  // this file (revision_hash + auto_healed + previous_revision_hash); no need
+  // to re-prove the heal pipeline here.
+  // ---------------------------------------------------------------------------
+
+  it("planContext_no_auto_healed_field_when_fresh — steady-state response omits auto_healed", async () => {
+    const projectRoot = await createTempProject();
+    await mkdir(join(projectRoot, ".fabric", "knowledge", "decisions"), { recursive: true });
+    await writeFile(
+      join(projectRoot, ".fabric", "knowledge", "decisions", "foo.md"),
+      "# Foo\n",
+    );
+    // Build the meta from the real on-disk tree so its revision matches the
+    // derived revision — no drift → no heal.
+    const { writeKnowledgeMeta } = await import("./knowledge-meta-builder.js");
+    await writeKnowledgeMeta(projectRoot, { source: "doctor_fix" });
+
+    const result = await planContext(projectRoot, { paths: ["src/index.ts"] });
+
+    expect(result.auto_healed).toBeUndefined();
+    expect(result.previous_revision_hash).toBeUndefined();
+    // stale stays false on the steady-state path — no client_hash was sent.
+    expect(result.stale).toBe(false);
+  });
+
+  it("planContext_degrades_on_build_failure — graceful return with stale:true", async () => {
+    const projectRoot = await createTempProject();
+    await mkdir(join(projectRoot, ".fabric", "knowledge", "decisions"), { recursive: true });
+    await writeFile(
+      join(projectRoot, ".fabric", "knowledge", "decisions", "foo.md"),
+      "# Foo\n",
+    );
+    const knowledgeMetaBuilder = await import("./knowledge-meta-builder.js");
+    await knowledgeMetaBuilder.writeKnowledgeMeta(projectRoot, { source: "doctor_fix" });
+
+    // Inject a synthetic build failure. loadActiveMetaOrStale must return the
+    // on-disk meta with degraded:true (we only see the surface via stale:true).
+    vi.spyOn(knowledgeMetaBuilder, "buildKnowledgeMeta").mockRejectedValueOnce(
+      new Error("synthetic build failure"),
+    );
+
+    const result = await planContext(projectRoot, { paths: ["src/index.ts"] });
+
+    // Graceful path — no exception, response shape preserved, stale flag set.
+    expect(result.stale).toBe(true);
+    // No auto-heal happened (build threw before any write), so the banner
+    // pair stays absent.
+    expect(result.auto_healed).toBeUndefined();
+    expect(result.previous_revision_hash).toBeUndefined();
+    // The on-disk meta is still served — revision_hash is non-empty.
+    expect(result.revision_hash).toEqual(expect.any(String));
+    expect(result.revision_hash.length).toBeGreaterThan(0);
   });
 });
 

@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
-import { mkdir, readFile } from "node:fs/promises";
+import { mkdir, readFile, unlink } from "node:fs/promises";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 
 import {
@@ -56,6 +56,41 @@ const SCAN_STATE_FILE = ".scan-state.json";
 const FORENSIC_FILE = ".fabric/forensic.json";
 const AGENTS_META_FILE = ".fabric/agents.meta.json";
 const LAYER_REASON = "project artifact (deterministic init scan)";
+
+// v2.0-rc.22 T5: baseline filename unification — every baseline knowledge file
+// emitted by `fab scan` now uses `${id}--${slug}.md` (matching the format the
+// fabric-archive Skill writes for user-promoted entries). The bare-slug
+// filename format (`code-style.md`, `tech-stack.md`, …) shipped through
+// rc.21 and is now deprecated; `migrateLegacyBaselineFilenames` (below) runs
+// at the start of every `fab scan` and renames any surviving bare-slug
+// baseline files in-place. Pre-user clean-slate: no compat fallback — the
+// old format is unsupported the moment a `fab scan` runs.
+const KNOWN_BASELINE_IDS = new Set<string>([
+  "KT-MOD-0001", // tech-stack
+  "KT-MOD-0002", // module-structure
+  "KT-MOD-0003", // readme-first-paragraph
+  "KT-PRO-0001", // build-config
+  "KT-PRO-0002", // ci-config (allocated after build-config in the deterministic order)
+  "KT-GLD-0001", // code-style
+]);
+
+// Slug allowlist mirroring the baseline builders. The migration matches
+// `${bare_slug}.md` against this set as a safety belt — a stray file under
+// `.fabric/knowledge/**/foo.md` with an unrelated id in KNOWN_BASELINE_IDS
+// (impossible in practice, but cheap to guard) is left untouched.
+const KNOWN_BASELINE_SLUGS = new Set<string>([
+  "tech-stack",
+  "module-structure",
+  "build-config",
+  "code-style",
+  "ci-config",
+  "readme-first-paragraph",
+  "project-brief",
+]);
+
+// Match `${id}--${slug}.md` filenames the new emit path produces, e.g.
+// `KT-MOD-0001--tech-stack.md`. Used to skip already-migrated files.
+const ID_PREFIXED_FILENAME_PATTERN = /^KT-[A-Z]+-\d+--.+\.md$/u;
 
 // v2.0 (grill-followup TASK-008) / rc.12 broad-gate-fabric-lang: bilingual
 // init-scan templates. Resolved at scan start from
@@ -133,9 +168,22 @@ export async function runInitScan(
     throw new Error(t("cli.scan.error.missing-forensic", { path: forensicPath }));
   }
 
+  // v2.0-rc.22 T5: rename any legacy bare-slug baseline files to the
+  // canonical `${id}--${slug}.md` form BEFORE the emit loop, so the existence
+  // check inside the loop sees the new path and re-uses the existing id
+  // (no counter regression) instead of allocating a fresh slot.
+  await migrateLegacyBaselineFilenames(target);
+
   const forensic = await readForensic(forensicPath);
   const nowIso = (options.now ?? new Date()).toISOString();
-  const tags = deriveTagsFromForensic(forensic);
+
+  // v2.0-rc.22 TASK-007 (Scope C / γ): baseline tag derivation removed.
+  // Every baseline frontmatter now emits `tags: []` unconditionally —
+  // rationale: the previous `deriveTagsFromForensic` derivation accumulated
+  // four mis-tagging bugs (unknown framework leak, typescript over-tag,
+  // etc.); γ-strategy eliminates the bug class entirely. Consumers
+  // (review.ts searchEntries) still work — baselines just no longer
+  // tag-match, which is intended since callers can filter by `type` instead.
 
   // v2.0 grill-followup TASK-008 / rc.12: read fabric_language once at scan
   // start and dispatch every baseline emission through the resolved language.
@@ -147,13 +195,13 @@ export async function runInitScan(
 
   // Build candidate entries (some may be null when source data is missing).
   const candidates: Array<MarkdownEntry | null> = [
-    buildTechStackEntry(forensic, nowIso, tags, resolvedLanguage),
-    buildModuleStructureEntry(forensic, nowIso, tags, resolvedLanguage),
-    buildBuildConfigEntry(forensic, nowIso, tags, resolvedLanguage),
-    buildCodeStyleEntry(forensic, nowIso, tags, resolvedLanguage),
-    buildCIConfigEntry(forensic, nowIso, tags),
-    buildReadmeFirstParaEntry(target, forensic, nowIso, tags, resolvedLanguage),
-    buildProjectBriefEntry(target, forensic, nowIso, tags),
+    buildTechStackEntry(forensic, nowIso, resolvedLanguage),
+    buildModuleStructureEntry(forensic, nowIso, resolvedLanguage),
+    buildBuildConfigEntry(forensic, nowIso, resolvedLanguage),
+    buildCodeStyleEntry(forensic, nowIso, resolvedLanguage),
+    buildCIConfigEntry(forensic, nowIso),
+    buildReadmeFirstParaEntry(target, forensic, nowIso, resolvedLanguage),
+    buildProjectBriefEntry(target, forensic, nowIso),
   ];
   const entries = candidates.filter((e): e is MarkdownEntry => e !== null);
 
@@ -168,11 +216,19 @@ export async function runInitScan(
   const placedEntries: BuiltEntry[] = [];
 
   for (const entry of entries) {
-    const targetPath = join(target, KNOWLEDGE_DIR, entry.target_subdir, `${entry.slug}.md`);
-    const existingId = findExistingIdForFile(sidecar, targetPath, target);
+    // v2.0-rc.22 T5: the on-disk filename now embeds the id
+    // (`${id}--${slug}.md`). Re-use the existing id by scanning the subdir
+    // for any `*--${slug}.md` file whose frontmatter id is sidecar-tracked;
+    // this preserves the no-counter-regression contract across re-runs and
+    // makes the loop tolerant of the migration step above (which may have
+    // just renamed a bare-slug file into this exact shape).
+    const subdirAbs = join(target, KNOWLEDGE_DIR, entry.target_subdir);
+    const existingId = findExistingIdBySlug(sidecar, subdirAbs, entry.slug);
     const id = existingId ?? (await allocator.allocate(entry.layer, entry.type));
     const built: BuiltEntry = { ...entry, id };
     placedEntries.push(built);
+
+    const targetPath = join(subdirAbs, `${id}--${entry.slug}.md`);
 
     const fullContent = renderMarkdown(built);
     const bodyHash = sha256(stripFrontmatter(fullContent));
@@ -597,7 +653,6 @@ export function detectExistingLanguage(target: string): ResolvedLanguage {
 function buildTechStackEntry(
   forensic: ForensicReport,
   nowIso: string,
-  tags: string[],
   language: ResolvedLanguage = "en",
 ): MarkdownEntry {
   const framework = forensic.framework;
@@ -639,7 +694,7 @@ function buildTechStackEntry(
     body,
     target_subdir: "models",
     slug: "tech-stack",
-    tags,
+    tags: [],
     relevance_scope: "narrow",
     relevance_paths: relevancePaths,
   };
@@ -648,7 +703,6 @@ function buildTechStackEntry(
 function buildModuleStructureEntry(
   forensic: ForensicReport,
   nowIso: string,
-  tags: string[],
   language: ResolvedLanguage = "en",
 ): MarkdownEntry {
   const keyDirs = forensic.topology.key_dirs ?? [];
@@ -690,7 +744,7 @@ function buildModuleStructureEntry(
     body,
     target_subdir: "models",
     slug: "module-structure",
-    tags,
+    tags: [],
     relevance_scope: "narrow",
     relevance_paths: relevancePaths,
   };
@@ -699,7 +753,6 @@ function buildModuleStructureEntry(
 function buildBuildConfigEntry(
   forensic: ForensicReport,
   nowIso: string,
-  tags: string[],
   language: ResolvedLanguage = "en",
 ): MarkdownEntry {
   const configFiles = (forensic.candidate_files ?? [])
@@ -739,7 +792,7 @@ function buildBuildConfigEntry(
     body,
     target_subdir: "processes",
     slug: "build-config",
-    tags,
+    tags: [],
     relevance_scope: "narrow",
     relevance_paths: relevancePaths,
   };
@@ -748,7 +801,6 @@ function buildBuildConfigEntry(
 function buildCodeStyleEntry(
   forensic: ForensicReport,
   nowIso: string,
-  tags: string[],
   language: ResolvedLanguage = "en",
 ): MarkdownEntry {
   const dominantPatterns = (forensic.assertions ?? [])
@@ -797,13 +849,13 @@ function buildCodeStyleEntry(
     body,
     target_subdir: "guidelines",
     slug: "code-style",
-    tags,
+    tags: [],
     relevance_scope: "narrow",
     relevance_paths: relevancePaths,
   };
 }
 
-function buildCIConfigEntry(forensic: ForensicReport, nowIso: string, tags: string[]): MarkdownEntry | null {
+function buildCIConfigEntry(forensic: ForensicReport, nowIso: string): MarkdownEntry | null {
   const ciFiles = (forensic.candidate_files ?? [])
     .map((entry) => entry.path)
     .filter((path) => isCIConfigPath(path));
@@ -857,7 +909,7 @@ function buildCIConfigEntry(forensic: ForensicReport, nowIso: string, tags: stri
     body,
     target_subdir: "processes",
     slug: "ci-config",
-    tags,
+    tags: [],
     relevance_scope: "narrow",
     relevance_paths: relevancePaths,
   };
@@ -867,7 +919,6 @@ function buildReadmeFirstParaEntry(
   target: string,
   forensic: ForensicReport,
   nowIso: string,
-  tags: string[],
   language: ResolvedLanguage = "en",
 ): MarkdownEntry | null {
   if (forensic.readme.quality === "missing") {
@@ -903,7 +954,7 @@ function buildReadmeFirstParaEntry(
     body,
     target_subdir: "models",
     slug: "readme-first-paragraph",
-    tags,
+    tags: [],
     // v2.0-rc.7 T2: broad by design — single repo-root file, the Phase 1.5
     // PreToolUse blacklist already covers README. Anchoring this entry to
     // README.md would surface it on every README edit, which is noise.
@@ -916,7 +967,6 @@ function buildProjectBriefEntry(
   target: string,
   forensic: ForensicReport,
   nowIso: string,
-  tags: string[],
 ): MarkdownEntry | null {
   if (forensic.readme.quality === "missing") {
     return null;
@@ -953,7 +1003,7 @@ function buildProjectBriefEntry(
     body,
     target_subdir: "models",
     slug: "project-brief",
-    tags,
+    tags: [],
     // v2.0-rc.7 T2: broad — project brief is a cross-cutting description
     // with no path anchor. Narrowing it to README.md would duplicate the
     // readme-first-paragraph surface; keeping it broad lets the
@@ -1034,65 +1084,13 @@ function stripFrontmatter(content: string): string {
 // Forensic reading + helpers
 // ---------------------------------------------------------------------------
 
-/**
- * Derive up to 5 tag keywords from a forensic report.
- *
- * Priority: framework.kind first, then top file-extension languages derived
- * from by_ext (strip dot, skip 'json'/'md'/'lock'). Tags are lowercased and
- * deduplicated. Used to populate the `tags` frontmatter field on init-scan
- * baseline entries so the rc.3 review skill can filter by tech stack.
- */
-export function deriveTagsFromForensic(forensic: ForensicReport): string[] {
-  const MAX_TAGS = 5;
-  const seen = new Set<string>();
-  const tags: string[] = [];
-
-  function add(raw: string): void {
-    const normalized = raw.toLowerCase().trim().replace(/\s+/gu, "-");
-    if (normalized.length > 0 && !seen.has(normalized)) {
-      seen.add(normalized);
-      tags.push(normalized);
-    }
-  }
-
-  // Framework kind takes highest priority (e.g. 'vite', 'next', 'node').
-  if (forensic.framework.kind) {
-    add(forensic.framework.kind);
-  }
-
-  // Map file extensions to language/tool names; skip noise extensions.
-  const SKIP_EXTS = new Set([".json", ".md", ".lock", ".yaml", ".yml", ".txt", ".env"]);
-  const EXT_MAP: Record<string, string> = {
-    ".ts": "typescript",
-    ".tsx": "typescript",
-    ".js": "javascript",
-    ".jsx": "javascript",
-    ".mjs": "javascript",
-    ".cjs": "javascript",
-    ".py": "python",
-    ".go": "go",
-    ".rs": "rust",
-    ".java": "java",
-    ".cs": "csharp",
-    ".rb": "ruby",
-    ".php": "php",
-    ".swift": "swift",
-    ".kt": "kotlin",
-  };
-
-  const byExt = forensic.topology.by_ext ?? {};
-  const sorted = Object.entries(byExt)
-    .filter(([ext]) => !SKIP_EXTS.has(ext))
-    .sort(([, a], [, b]) => b - a);
-
-  for (const [ext] of sorted) {
-    if (tags.length >= MAX_TAGS) break;
-    const mapped = EXT_MAP[ext] ?? ext.replace(/^\./u, "");
-    add(mapped);
-  }
-
-  return tags.slice(0, MAX_TAGS);
-}
+// v2.0-rc.22 TASK-007 (Scope C / γ): `deriveTagsFromForensic` deleted.
+// The legacy helper mapped framework.kind + top file-extensions into a 5-tag
+// list for baseline frontmatter, but produced four recurring mis-tags. The
+// γ-strategy eliminates the bug class: baselines now emit `tags: []` (see
+// `runInitScan` builder call site). If tag-style filtering is ever needed
+// for baselines, prefer filtering by `type` / `slug` instead — they already
+// carry the relevant semantics deterministically.
 
 async function readForensic(forensicPath: string): Promise<ForensicReport> {
   const raw = await readFile(forensicPath, "utf8");
@@ -1125,6 +1123,206 @@ async function readScanState(sidecarPath: string): Promise<ScanState> {
 }
 
 /**
+ * v2.0-rc.22 T5: rename any surviving bare-slug baseline files
+ * (`code-style.md`, `tech-stack.md`, …) to the canonical
+ * `${id}--${slug}.md` form. Runs once at the start of every `fab scan` so
+ * one command completes the migration end-to-end — there is no separate
+ * codemod.
+ *
+ * Allowlist is intentionally hardcoded (KNOWN_BASELINE_IDS + KNOWN_BASELINE_SLUGS):
+ *   * id must be in the baseline id allowlist
+ *   * basename minus `.md` must be in the baseline slug allowlist
+ *
+ * Both must match; this guards against an unrelated user file that happens to
+ * declare one of the baseline ids in its frontmatter. User-promoted entries
+ * (KP-* or KT-* outside the allowlist) are left untouched.
+ *
+ * Side effects:
+ *   * `unlink` the old path
+ *   * `atomicWriteText` the same content at the new path (no body mutation)
+ * Returns the migration report so callers (and tests) can assert the set.
+ */
+export async function migrateLegacyBaselineFilenames(
+  target: string,
+): Promise<{ migrated: Array<{ from: string; to: string; id: string }> }> {
+  const knowledgeRoot = join(target, KNOWLEDGE_DIR);
+  if (!existsSync(knowledgeRoot)) {
+    return { migrated: [] };
+  }
+
+  const migrated: Array<{ from: string; to: string; id: string }> = [];
+  const subdirs: TargetSubdir[] = ["models", "guidelines", "processes"];
+
+  for (const sub of subdirs) {
+    const subdirPath = join(knowledgeRoot, sub);
+    if (!existsSync(subdirPath)) continue;
+
+    let entries: string[];
+    try {
+      entries = readdirSync(subdirPath);
+    } catch {
+      continue;
+    }
+
+    for (const name of entries) {
+      if (!name.endsWith(".md")) continue;
+
+      // v2.0-rc.22 hotfix (Finding 1 / Scope B+C interplay): even files
+      // that were already migrated to the canonical `${id}--${slug}.md`
+      // form may carry pre-T7 stale tags in their frontmatter (the
+      // body-hash skip gate in runInitScan short-circuits the rewrite
+      // when the rendered body is unchanged). Scrub those in-place
+      // here, before the gate runs, so one `fab scan` cleans them.
+      if (ID_PREFIXED_FILENAME_PATTERN.test(name)) {
+        const idMatch = /^(KT-[A-Z]+-\d+)--(.+)\.md$/u.exec(name);
+        if (idMatch === null) continue;
+        const [, fileId, fileSlug] = idMatch;
+        if (!KNOWN_BASELINE_IDS.has(fileId)) continue;
+        if (!KNOWN_BASELINE_SLUGS.has(fileSlug)) continue;
+        const onDiskPath = join(subdirPath, name);
+        let onDiskRaw: string;
+        try {
+          onDiskRaw = readFileSync(onDiskPath, "utf8");
+        } catch {
+          continue;
+        }
+        const scrubbed = stripStaleTagsLine(onDiskRaw);
+        if (scrubbed !== onDiskRaw) {
+          await atomicWriteText(onDiskPath, scrubbed);
+        }
+        continue;
+      }
+
+      const bareSlug = name.slice(0, -".md".length);
+      if (!KNOWN_BASELINE_SLUGS.has(bareSlug)) continue;
+
+      const oldPath = join(subdirPath, name);
+      let raw: string;
+      try {
+        raw = readFileSync(oldPath, "utf8");
+      } catch {
+        continue;
+      }
+
+      const id = extractFrontmatterId(raw);
+      if (id === null || !KNOWN_BASELINE_IDS.has(id)) continue;
+
+      const newName = `${id}--${bareSlug}.md`;
+      const newPath = join(subdirPath, newName);
+
+      // v2.0-rc.22 hotfix (Finding 1 / Scope B+C interplay): clear any stale
+      // `tags:` line from the legacy frontmatter during the rename so the
+      // body-hash skip gate in runInitScan cannot leave pre-T7 tags
+      // (`tags: [unknown, typescript, csv, ndjson, [none]]` etc.) on disk
+      // when the rendered body is unchanged. T7 (Scope C / γ) made baseline
+      // tags unconditionally `[]`, but the existing rendered-body hash
+      // matches the new emit and the skip gate short-circuits before any
+      // rewrite, so without this strip the stale tags survive forever.
+      // Idempotent: `tags: []` is the canonical T7 form, so re-running this
+      // migration on an already-clean file is a no-op string replacement.
+      const cleanedRaw = stripStaleTagsLine(raw);
+
+      // Idempotent: if the target already exists (e.g. previous interrupted
+      // migration left both files behind), just drop the legacy bare-slug
+      // file. atomicWriteText would overwrite the new path with stale content
+      // otherwise, since `raw` here is the legacy file.
+      if (existsSync(newPath)) {
+        try {
+          await unlink(oldPath);
+        } catch {
+          // best-effort — leave the stale legacy file in place if unlink fails
+        }
+        continue;
+      }
+
+      await atomicWriteText(newPath, cleanedRaw);
+      try {
+        await unlink(oldPath);
+      } catch {
+        // best-effort — atomicWriteText already placed the new file; a stale
+        // duplicate is recoverable by re-running scan.
+      }
+
+      migrated.push({ from: oldPath, to: newPath, id });
+    }
+  }
+
+  return { migrated };
+}
+
+/**
+ * v2.0-rc.22 hotfix (Finding 1): replace any `tags:` line inside the
+ * frontmatter block with the canonical `tags: []` form. Used by
+ * `migrateLegacyBaselineFilenames` to scrub pre-T7 stale tags
+ * (`tags: [unknown, typescript, csv, ndjson, [none]]`, etc.) during the
+ * rename so the body-hash skip gate in `runInitScan` cannot leave them on
+ * disk when the rendered body is unchanged.
+ *
+ * Defensive against both YAML styles:
+ *   - flow style (single line):  `tags: [a, b, c]` or `tags: []`
+ *   - block style (multi-line):  `tags:\n  - a\n  - b\n`
+ *   - bare empty:                `tags:` (treated as null/empty)
+ *
+ * Operates strictly within the leading `---\n...\n---` frontmatter block; if
+ * no frontmatter is present (or it is malformed), returns `raw` unchanged.
+ * Always emits `tags: []` — never deletes the line — so downstream parsers
+ * see a stable, idempotent shape.
+ */
+function stripStaleTagsLine(raw: string): string {
+  const fmMatch = /^(---\r?\n)([\s\S]*?)(\r?\n---\s*(?:\r?\n|$))/u.exec(raw);
+  if (fmMatch === null) return raw;
+  const head = fmMatch[1];
+  const body = fmMatch[2];
+  const tail = fmMatch[3];
+  const rest = raw.slice(fmMatch[0].length);
+
+  // 1) Try flow-style first: `tags: [...]` on a single line. The bracket
+  // contents may contain other brackets (the historical pre-T7 bug emitted
+  // `[unknown, typescript, csv, ndjson, [none]]`), so we greedily consume
+  // up to the last `]` on the line rather than requiring a flat character
+  // class — safe because we anchor the line via the `m` flag.
+  const flowPattern = /^tags:[ \t]*\[[^\n]*\][ \t]*$/mu;
+  if (flowPattern.test(body)) {
+    const replaced = body.replace(flowPattern, "tags: []");
+    return `${head}${replaced}${tail}${rest}`;
+  }
+
+  // 2) Block-style: `tags:` followed by indented `- value` lines.
+  const blockPattern = /^tags:[ \t]*\r?\n(?:[ \t]+-[ \t]+.+\r?\n?)+/mu;
+  if (blockPattern.test(body)) {
+    // Re-anchor without consuming the trailing newline so we keep block layout.
+    const replaced = body.replace(blockPattern, "tags: []\n");
+    // Normalize duplicate trailing newlines that the substitution may produce.
+    return `${head}${replaced.replace(/\n{2,}$/u, "\n")}${tail}${rest}`;
+  }
+
+  // 3) Bare empty: `tags:` with nothing after (null scalar). Normalize to [].
+  const barePattern = /^tags:[ \t]*$/mu;
+  if (barePattern.test(body)) {
+    const replaced = body.replace(barePattern, "tags: []");
+    return `${head}${replaced}${tail}${rest}`;
+  }
+
+  // No tags line present — caller's frontmatter is already minimal, leave
+  // untouched. The init-scan emit path will add `tags: []` on next rewrite.
+  return raw;
+}
+
+/**
+ * Pull the frontmatter `id:` value out of a raw markdown string, or null when
+ * the file has no frontmatter / no id line. Mirrors the regex used by
+ * `findExistingIdForFile` but returns the string id (caller validates against
+ * the baseline allowlist).
+ */
+function extractFrontmatterId(raw: string): string | null {
+  const match = /^---\r?\n([\s\S]*?)\r?\n---/u.exec(raw);
+  if (match === null) return null;
+  const idLine = /^id:\s*(.+)$/mu.exec(match[1]);
+  if (idLine === null) return null;
+  return idLine[1].replace(/^["'](.*)["']$/u, "$1").trim();
+}
+
+/**
  * If the sidecar contains a key whose entry was previously written for the
  * given target file path (matched by file existence), return that id so we do
  * NOT allocate a fresh counter on re-run for an unchanged-but-renamed slot.
@@ -1133,6 +1331,71 @@ async function readScanState(sidecarPath: string): Promise<ScanState> {
  * the same; the simpler "look for any sidecar entry whose path matches" logic
  * suffices and avoids burning counter slots when content drifts.
  */
+/**
+ * v2.0-rc.22 T5: locate an existing id-prefixed baseline file by slug.
+ *
+ * Scans `subdirAbs` for any file matching `^KT-[A-Z]+-\d+--${slug}\.md$`,
+ * reads its frontmatter id, and returns it iff the id is recorded in the
+ * sidecar (i.e. this scan emitted it on a previous run). Returns null when
+ * no matching file exists, multiple match (defensive — should never happen
+ * with the deterministic builder set), or the on-disk id is not
+ * sidecar-tracked.
+ *
+ * Replaces the path-keyed `findExistingIdForFile` call previously used in
+ * the runInitScan loop; the legacy helper is preserved (and still exported
+ * via tests) but no longer reachable from the main flow.
+ */
+function findExistingIdBySlug(sidecar: ScanState, subdirAbs: string, slug: string): StableId | null {
+  if (!existsSync(subdirAbs)) {
+    return null;
+  }
+  let entries: string[];
+  try {
+    entries = readdirSync(subdirAbs);
+  } catch {
+    return null;
+  }
+
+  // Escape slug for the regex (slugs are plain `a-z0-9-` today, but defensive).
+  const escapedSlug = slug.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+  const pattern = new RegExp(`^(KT-[A-Z]+-\\d+)--${escapedSlug}\\.md$`, "u");
+
+  const matches: Array<{ id: string; file: string }> = [];
+  for (const name of entries) {
+    const m = pattern.exec(name);
+    if (m === null) continue;
+    matches.push({ id: m[1], file: name });
+  }
+
+  if (matches.length !== 1) {
+    return null;
+  }
+
+  // Cross-check on-disk frontmatter id against the filename id; mismatch
+  // means a hand-edited or corrupted file — fall back to fresh allocation.
+  const filenameId = matches[0].id;
+  try {
+    const raw = readFileSync(join(subdirAbs, matches[0].file), "utf8");
+    const frontmatterId = extractFrontmatterId(raw);
+    if (frontmatterId !== filenameId) {
+      return null;
+    }
+  } catch {
+    return null;
+  }
+
+  if (!/^K[PT]-(MOD|DEC|GLD|PIT|PRO)-\d{4,}$/u.test(filenameId)) {
+    return null;
+  }
+  if (sidecar[filenameId] === undefined) {
+    // Unknown to sidecar — this is the first run after a manual file drop;
+    // treat as fresh and allocate a new counter slot to keep semantics
+    // identical to the legacy path-keyed lookup.
+    return null;
+  }
+  return filenameId as StableId;
+}
+
 function findExistingIdForFile(sidecar: ScanState, targetPath: string, target: string): StableId | null {
   if (!existsSync(targetPath)) {
     return null;
@@ -1275,7 +1538,11 @@ async function registerKnowledgeNodesInMeta(target: string, entries: BuiltEntry[
     : {}) as Record<string, unknown>;
 
   for (const entry of entries) {
-    const contentRef = `${KNOWLEDGE_DIR}/${entry.target_subdir}/${entry.slug}.md`;
+    // v2.0-rc.22 T5: content_ref mirrors the new on-disk filename
+    // (`${id}--${slug}.md`). Drives PreToolUse narrow-injection lookups via
+    // meta.nodes[id].content_ref, so it must stay aligned with the actual
+    // file written by runInitScan above.
+    const contentRef = `${KNOWLEDGE_DIR}/${entry.target_subdir}/${entry.id}--${entry.slug}.md`;
     const absPath = join(target, contentRef);
     let hash = "";
     try {
@@ -1347,4 +1614,6 @@ export const __testing__ = {
   detectExistingLanguage,
   resolveFabricLanguage,
   BASELINE_TEMPLATES,
+  // v2.0-rc.22 hotfix (Finding 1): stale-tag scrub used during migration
+  stripStaleTagsLine,
 };

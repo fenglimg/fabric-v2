@@ -416,4 +416,188 @@ describe("scan builders — deterministic baseline knowledge", () => {
       __testing__.BASELINE_TEMPLATES["zh-CN"],
     );
   });
+
+  // -------------------------------------------------------------------------
+  // TASK-007 (rc.22 / Scope C / γ): baseline tags universally empty
+  // -------------------------------------------------------------------------
+  //
+  // The legacy `deriveTagsFromForensic` helper produced 4 recurring mis-tags
+  // (unknown framework leak, typescript over-tag, csv/ndjson noise, [none]
+  // placeholder). γ-strategy nukes the derivation entirely; every baseline
+  // builder now emits `tags: []` regardless of forensic input shape. These
+  // tests guard the contract across varied fixtures so a future refactor
+  // cannot silently re-introduce derivation logic.
+
+  it("baseline_tags_always_empty — every builder emits tags: [] across varied forensic fixtures", () => {
+    const fixtures: ForensicReport[] = [
+      // Fixture A: rich vite/typescript repo (the default).
+      makeForensic(),
+      // Fixture B: minimal node project, no framework version, sparse topology.
+      makeForensic({
+        framework: { kind: "node", version: undefined, subkind: undefined, evidence: [] },
+        topology: { total_files: 3, by_ext: { ".js": 3 }, key_dirs: ["src"], max_depth: 1 },
+        candidate_files: [],
+        assertions: [],
+      }),
+      // Fixture C: 'unknown' framework + noisy extensions (the historical
+      // mis-tag trigger). Pre-γ this would have produced
+      // ['unknown', 'typescript', 'csv', 'ndjson']; post-γ must be [].
+      makeForensic({
+        framework: { kind: "unknown", version: undefined, subkind: undefined, evidence: [] },
+        topology: {
+          total_files: 50,
+          by_ext: { ".ts": 10, ".csv": 20, ".ndjson": 15, ".md": 5 },
+          key_dirs: ["data"],
+          max_depth: 2,
+        },
+      }),
+    ];
+
+    const ciTarget = makeTempDir("baseline-tags-ci");
+    const readmeTarget = makeTempDir("baseline-tags-readme");
+    writeFileSync(
+      join(readmeTarget, "README.md"),
+      "# Project\n\n## Description\n\nFixture for baseline-tags universal test.\n\nFirst body paragraph here.\n",
+      "utf8",
+    );
+
+    for (const forensic of fixtures) {
+      // 5 language-aware baseline builders.
+      expect(__testing__.buildTechStackEntry(forensic, NOW).tags).toEqual([]);
+      expect(__testing__.buildModuleStructureEntry(forensic, NOW).tags).toEqual([]);
+      expect(__testing__.buildBuildConfigEntry(forensic, NOW).tags).toEqual([]);
+      expect(__testing__.buildCodeStyleEntry(forensic, NOW).tags).toEqual([]);
+
+      // CI config builder — supply a CI-signal fixture so it returns non-null.
+      const ciForensic = {
+        ...forensic,
+        candidate_files: [
+          { path: ".github/workflows/ci.yml", family: "config" as const, rationale: "" },
+        ],
+      };
+      const ciEntry = __testing__.buildCIConfigEntry(ciForensic, NOW);
+      expect(ciEntry).not.toBeNull();
+      expect(ciEntry!.tags).toEqual([]);
+
+      // README-driven builders need a README with an explicit description.
+      const readmeForensic = { ...forensic, readme: { quality: "ok" as const, line_count: 8, has_contributing: false } };
+      const readmeEntry = __testing__.buildReadmeFirstParaEntry(readmeTarget, readmeForensic, NOW);
+      expect(readmeEntry).not.toBeNull();
+      expect(readmeEntry!.tags).toEqual([]);
+
+      const briefEntry = __testing__.buildProjectBriefEntry(readmeTarget, readmeForensic, NOW);
+      expect(briefEntry).not.toBeNull();
+      expect(briefEntry!.tags).toEqual([]);
+    }
+
+    // Touch ciTarget so the temp-dir cleanup helper has something to drop.
+    expect(ciTarget).toMatch(/baseline-tags-ci/);
+  });
+
+  it("baseline_tags_render_as_empty_yaml_array_literal — frontmatter shape verifies", () => {
+    // Convergence criterion: confirm `tags: []` renders as a flow-style empty
+    // array literal (NOT `tags:\n  - []` or any block-form variant). The
+    // existing empty-tags branch in renderMarkdown handles this, but γ makes
+    // it the only path baselines hit — so guard it explicitly.
+    const forensic = makeForensic();
+    const entry = __testing__.buildTechStackEntry(forensic, NOW);
+    const built = {
+      ...entry,
+      id: "KT-MOD-0001" as const,
+    };
+    const md = __testing__.renderMarkdown(built);
+    expect(md).toContain("\ntags: []\n");
+    expect(md).not.toMatch(/tags:\s*\n\s*-/u);
+  });
+
+  // ---------------------------------------------------------------------------
+  // v2.0-rc.22 hotfix (Finding 1): stripStaleTagsLine unit coverage
+  //
+  // The migration helper in scan.ts runs BEFORE the body-hash skip gate and
+  // is the only thing keeping pre-T7 stale tags from surviving an unchanged
+  // re-render. These tests pin the YAML shapes it must handle.
+  // ---------------------------------------------------------------------------
+
+  describe("stripStaleTagsLine", () => {
+    it("scrubs flow-style populated tags to empty array literal", () => {
+      const input =
+        "---\n" +
+        "id: KT-GLD-0001\n" +
+        "tags: [unknown, typescript, csv, ndjson, [none]]\n" +
+        "---\n\n# body\n";
+      const out = __testing__.stripStaleTagsLine(input);
+      expect(out).toContain("\ntags: []\n");
+      expect(out).not.toMatch(/tags: \[unknown/u);
+    });
+
+    it("is a no-op when tags already canonical `[]`", () => {
+      const input =
+        "---\n" +
+        "id: KT-GLD-0001\n" +
+        "tags: []\n" +
+        "---\n\n# body\n";
+      expect(__testing__.stripStaleTagsLine(input)).toBe(input);
+    });
+
+    it("scrubs block-style multi-line tags into flow-style empty array", () => {
+      const input =
+        "---\n" +
+        "id: KT-GLD-0001\n" +
+        "tags:\n" +
+        "  - typescript\n" +
+        "  - csv\n" +
+        "  - ndjson\n" +
+        "relevance_scope: narrow\n" +
+        "---\n\n# body\n";
+      const out = __testing__.stripStaleTagsLine(input);
+      expect(out).toMatch(/^tags: \[\]$/mu);
+      expect(out).not.toMatch(/^\s+- typescript$/mu);
+      // Surrounding fields preserved.
+      expect(out).toContain("\nrelevance_scope: narrow\n");
+      expect(out).toMatch(/^id: KT-GLD-0001$/mu);
+    });
+
+    it("normalizes bare empty `tags:` (null scalar) to flow-style `[]`", () => {
+      const input =
+        "---\n" +
+        "id: KT-GLD-0001\n" +
+        "tags:\n" +
+        "relevance_scope: broad\n" +
+        "---\n\n# body\n";
+      const out = __testing__.stripStaleTagsLine(input);
+      expect(out).toMatch(/^tags: \[\]$/mu);
+      expect(out).toContain("\nrelevance_scope: broad\n");
+    });
+
+    it("leaves frontmatter untouched when no tags line is present", () => {
+      const input =
+        "---\n" +
+        "id: KT-GLD-0001\n" +
+        "relevance_scope: broad\n" +
+        "---\n\n# body\n";
+      expect(__testing__.stripStaleTagsLine(input)).toBe(input);
+    });
+
+    it("returns raw unchanged when no frontmatter block exists", () => {
+      const input = "# heading only\n\nbody text\n";
+      expect(__testing__.stripStaleTagsLine(input)).toBe(input);
+    });
+
+    it("only touches tags inside the frontmatter, not the body", () => {
+      // Defensive: a body line that happens to match `tags: [...]` (e.g.
+      // documentation showing an example) must NOT be rewritten.
+      const input =
+        "---\n" +
+        "id: KT-GLD-0001\n" +
+        "tags: [stale]\n" +
+        "---\n\n# body\n\nExample: `tags: [foo, bar]`\n";
+      const out = __testing__.stripStaleTagsLine(input);
+      // Frontmatter tag scrubbed.
+      const fmMatch = /^---\n([\s\S]*?)\n---/u.exec(out);
+      expect(fmMatch).not.toBeNull();
+      expect(fmMatch![1]).toMatch(/^tags: \[\]$/mu);
+      // Body example preserved verbatim.
+      expect(out).toContain("Example: `tags: [foo, bar]`");
+    });
+  });
 });

@@ -2,7 +2,7 @@
  * v2.0.0-rc.16 TASK-004 (F2-tests): contract tests for the shared banner
  * i18n library at `templates/hooks/lib/banner-i18n.cjs`.
  *
- * Coverage matrix: 11 banner keys × 4 language variants — every (key, variant)
+ * Coverage matrix: 13 banner keys × 4 language variants — every (key, variant)
  * combination is exercised at least once. Each per-variant assertion proves
  * that translation actually happened (variant-specific substring present)
  * AND that protected tokens survive verbatim across all variants
@@ -73,6 +73,10 @@ const FIXTURE_PARAMS: Record<string, Record<string, unknown>> = {
   maintenanceLine1Aged: { days: 14, ageDays: "14.7" },
   maintenanceLine2: {},
   broadImportBanner: {},
+  // rc.22 Scope D T-D4 (TASK-011): meta auto-refresh breadcrumb. `prev` / `cur`
+  // are 8-char hex strings (caller already strips the sha256: scheme prefix).
+  metaAutoRefreshedBanner: { prev: "a1b2c3d4", cur: "e5f60718" },
+  metaAutoRefreshedBannerGeneric: {},
 };
 
 const ALL_KEYS = Object.keys(FIXTURE_PARAMS);
@@ -91,8 +95,8 @@ describe("banner-i18n: STRINGS table coverage envelope", () => {
     expect(fixtureKeys).toEqual(stringsKeys);
   });
 
-  it("exposes exactly 11 banner keys (file header contract)", () => {
-    expect(Object.keys(lib.STRINGS)).toHaveLength(11);
+  it("exposes exactly 13 banner keys (file header contract)", () => {
+    expect(Object.keys(lib.STRINGS)).toHaveLength(13);
   });
 });
 
@@ -183,6 +187,22 @@ const CONTRACTS: Record<string, KeyContract> = {
     protectedTokens: ["📋 Fabric:", "/fabric-import"],
     zhCNContract: ["知识库稀疏"],
     enHints: ["knowledge base is sparse"],
+  },
+  // rc.22 Scope D T-D4 (TASK-011): meta auto-refresh transition line. The
+  // 8-char hex prev/cur values are interpolated verbatim into every variant;
+  // the `🔄 Fabric:` prefix + `sha` literal + arrow are protected tokens. The
+  // 'sha ' substring (with trailing space) is sufficient to pin the format
+  // without coupling to copy.
+  metaAutoRefreshedBanner: {
+    protectedTokens: ["🔄 Fabric:", "sha ", "a1b2c3d4", "e5f60718", "→"],
+    zhCNContract: ["元数据已自动刷新"],
+    enHints: ["meta auto-refreshed"],
+  },
+  // Generic fallback — same prefix, no hash transition.
+  metaAutoRefreshedBannerGeneric: {
+    protectedTokens: ["🔄 Fabric:"],
+    zhCNContract: ["元数据已自动刷新"],
+    enHints: ["meta auto-refreshed"],
   },
 };
 

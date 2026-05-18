@@ -388,6 +388,64 @@ describe('I1.8 eventLedgerEventSchema round-trip', () => {
     })
   })
 
+  // v2.0.0-rc.22 Scope D T-D1: knowledge_meta_auto_healed event — emitted by
+  // loadActiveMeta when read-path drift triggers an in-place meta rebuild.
+  // Mandatory: previous_revision_hash, revision_hash, trigger:'read'.
+  // Optional: caller (planContext | getKnowledgeSections | getKnowledge |
+  // extractKnowledge) — telemetry tag identifying the read-side service.
+  it('knowledge_meta_auto_healed event (with caller)', () => {
+    roundTrip(eventLedgerEventSchema, {
+      ...envelope,
+      event_type: 'knowledge_meta_auto_healed',
+      previous_revision_hash: 'sha256:before',
+      revision_hash: 'sha256:after',
+      trigger: 'read',
+      caller: 'getKnowledgeSections',
+    })
+  })
+
+  it('knowledge_meta_auto_healed event (no caller field)', () => {
+    roundTrip(eventLedgerEventSchema, {
+      ...envelope,
+      event_type: 'knowledge_meta_auto_healed',
+      previous_revision_hash: 'sha256:before',
+      revision_hash: 'sha256:after',
+      trigger: 'read',
+    })
+  })
+
+  // v2.0.0-rc.22 Scope A T3: events_rotated event — emitted as the first
+  // line of the post-rotation events.jsonl when sliding-window-by-age
+  // rotation partitions stale entries off into events.archive/. Mandatory:
+  // cutoff_ts (ISO datetime), archived_count + kept_count (nonneg int),
+  // archive_path (workspace-relative). Mirrors the event_ledger_truncated
+  // partial-write-recovery shape one level up the recovery spectrum.
+  it('events_rotated event (sliding-window rotation audit)', () => {
+    roundTrip(eventLedgerEventSchema, {
+      ...envelope,
+      event_type: 'events_rotated',
+      cutoff_ts: '2026-04-18T00:00:00.000Z',
+      archived_count: 12,
+      kept_count: 3,
+      archive_path: '.fabric/events.archive/events-rotated-2026-05-18.jsonl',
+    })
+  })
+
+  it('events_rotated event (zero-archive boundary — admittedly degenerate)', () => {
+    // The rotation primitive only emits the audit event when archived_count
+    // > 0, but the schema itself permits archived_count: 0. This round-trip
+    // protects against future emit-site refactors that might wire the
+    // primitive to always emit a heartbeat-style event.
+    roundTrip(eventLedgerEventSchema, {
+      ...envelope,
+      event_type: 'events_rotated',
+      cutoff_ts: '2026-04-18T00:00:00.000Z',
+      archived_count: 0,
+      kept_count: 5,
+      archive_path: '.fabric/events.archive/events-rotated-2026-05-18.jsonl',
+    })
+  })
+
   it('tags field roundtrip on ruleDescriptionSchema', () => {
     // v2/rc.2: tags is a flat flow-style YAML array in frontmatter; schema
     // stores it as string[]. Verify default=[] and explicit values survive

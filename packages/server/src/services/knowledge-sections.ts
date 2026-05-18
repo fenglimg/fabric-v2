@@ -4,10 +4,11 @@ import { join } from "node:path";
 
 import type { AgentsLayer } from "@fenglimg/fabric-shared";
 
-import { readAgentsMeta, type AgentsMeta } from "../meta-reader.js";
+import { type AgentsMeta } from "../meta-reader.js";
 import { appendEventLedgerEvent } from "./event-ledger.js";
 import { normalizeKnowledgePath } from "./get-knowledge.js";
 import { readSelectionToken } from "./plan-context.js";
+import { loadActiveMeta } from "./load-active-meta.js";
 
 export const KNOWLEDGE_SECTION_NAMES = [
   "MISSION_STATEMENT",
@@ -146,7 +147,11 @@ export async function getKnowledgeSections(
 
   validateAiSelections(token.ai_selectable_stable_ids, input.ai_selected_stable_ids, input.ai_selection_reasons);
 
-  const meta = await readAgentsMeta(projectRoot);
+  // v2.0.0-rc.22 Scope D T-D2: strict meta-load. Section delivery is an
+  // authoritative id-based lookup; serving stale meta would mean handing back
+  // bodies for ids that no longer exist or missing newly-resolved ones. We
+  // want a loud failure (vs. silent staleness) when buildKnowledgeMeta breaks.
+  const { meta } = await loadActiveMeta(projectRoot, { caller: "getKnowledgeSections" });
   const selectedStableIds = [...token.required_stable_ids, ...input.ai_selected_stable_ids];
   const selectedRules = sortRuleNodes(selectedStableIds.map((stableId) => findRuleNode(meta, stableId)));
   const diagnostics: KnowledgeSectionDiagnostic[] = [];

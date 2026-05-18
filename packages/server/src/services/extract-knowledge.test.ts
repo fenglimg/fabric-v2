@@ -826,6 +826,85 @@ describe("extractKnowledge", () => {
     expect(r2.idempotency_key).toBe(r1.idempotency_key);
     expect(r3.idempotency_key).toBe(r1.idempotency_key);
   });
+
+  // ---------------------------------------------------------------------------
+  // v2.0.0-rc.22 Scope D T-D2 (TASK-009): meta auto-heal on extract entry.
+  //
+  // extract-knowledge calls loadActiveMeta at the start so the persisted meta
+  // is rebuilt to match the on-disk knowledge tree BEFORE any pending file
+  // lands. The downstream review/approve path then sees a counter envelope
+  // that is consistent with the actual knowledge surface — this is the
+  // "fresh counter post-heal" guarantee the task plan calls out.
+  //
+  // Missing on-disk meta is the documented exception (extract is often the
+  // first-touch entry on un-initialized projects) so the existing test suite
+  // above keeps running without seeding a meta. The auto-heal contract is
+  // only meaningful when there IS a meta to heal.
+  // ---------------------------------------------------------------------------
+
+  it("extractKnowledge_uses_fresh_counter_post_heal — stale meta is healed before pending lands", async () => {
+    const projectRoot = await createTempProject();
+
+    // Seed a knowledge tree + baseline meta, then drift the tree so the
+    // on-disk meta is stale relative to the real files.
+    const { writeKnowledgeMeta } = await import("./knowledge-meta-builder.js");
+    await mkdir(join(projectRoot, ".fabric", "knowledge", "decisions"), {
+      recursive: true,
+    });
+    await writeFile(
+      join(projectRoot, ".fabric", "knowledge", "decisions", "foo.md"),
+      "# Foo\n",
+    );
+    const baseline = await writeKnowledgeMeta(projectRoot, { source: "doctor_fix" });
+    const baselineRevision = baseline.meta.revision;
+
+    // Drift: add a second knowledge file but do not persist a new meta.
+    await writeFile(
+      join(projectRoot, ".fabric", "knowledge", "decisions", "bar.md"),
+      "# Bar\n",
+    );
+
+    await extractKnowledge(
+      projectRoot,
+      buildInput({
+        source_session: "sess-heal",
+        slug: "post-heal-counter",
+        type: "decisions",
+        user_messages_summary: "Verifying extract triggers auto-heal.",
+      }),
+    );
+
+    // After extract, the persisted meta MUST have been rewritten to match
+    // the drifted tree — its revision differs from the pre-extract baseline.
+    const metaAfter = JSON.parse(
+      await readFile(
+        join(projectRoot, ".fabric", "agents.meta.json"),
+        "utf8",
+      ),
+    ) as { revision: string };
+    expect(metaAfter.revision).not.toBe(baselineRevision);
+    expect(metaAfter.revision).toEqual(expect.any(String));
+  });
+
+  it("extractKnowledge_tolerates_missing_meta — first-touch project keeps working", async () => {
+    // Documents the AgentsMetaFileMissingError swallow at extract-knowledge.ts.
+    // A fresh project with NO .fabric/agents.meta.json must still accept a
+    // pending write — that's the onboarding surface for "import knowledge
+    // from this session" flows that predate doctor-init.
+    const projectRoot = await createTempProject();
+
+    const result = await extractKnowledge(
+      projectRoot,
+      buildInput({
+        source_session: "sess-fresh",
+        slug: "fresh-project",
+        type: "decisions",
+        user_messages_summary: "First-touch extract on an un-initialized project.",
+      }),
+    );
+
+    expect(result.pending_path).toBe(".fabric/knowledge/pending/decisions/fresh-project.md");
+  });
 });
 
 async function createTempProject(): Promise<string> {

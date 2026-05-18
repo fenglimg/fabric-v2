@@ -2,11 +2,12 @@ import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createSelectionToken, planContext } from "./plan-context.js";
 import { readEventLedger } from "./event-ledger.js";
 import { getKnowledgeSections, parseKnowledgeSections } from "./knowledge-sections.js";
+import { contextCache } from "../cache.js";
 
 // v2.0-rc.7 T9: planContext() always emits a selection_token, but the token
 // it mints carries `required_stable_ids = []` (the L0/L1/L2 selection
@@ -29,8 +30,26 @@ function mintTokenFromPlan(
 }
 
 const tempDirs: string[] = [];
+let originalFabricHome: string | undefined;
+
+// v2.0.0-rc.22 Scope D T-D2: isolate FABRIC_HOME so loadActiveMeta's dual-root
+// scan does not pull in the developer's personal knowledge entries while the
+// fixture's hand-crafted meta is being auto-healed against the team root only.
+beforeEach(async () => {
+  originalFabricHome = process.env.FABRIC_HOME;
+  const fakeHome = await mkdtemp(join(tmpdir(), "fabric-knowledge-sections-home-"));
+  tempDirs.push(fakeHome);
+  process.env.FABRIC_HOME = fakeHome;
+  contextCache.invalidate("file_watch");
+});
 
 afterEach(async () => {
+  vi.restoreAllMocks();
+  if (originalFabricHome === undefined) {
+    delete process.env.FABRIC_HOME;
+  } else {
+    process.env.FABRIC_HOME = originalFabricHome;
+  }
   await Promise.all(tempDirs.splice(0).map(async (path) => {
     await rm(path, { recursive: true, force: true });
   }));
@@ -103,7 +122,13 @@ describe("getKnowledgeSections", () => {
       session_id: "session-sections",
     });
 
-    expect(result.revision_hash).toBe("rev-sections");
+    // v2.0.0-rc.22 Scope D T-D2: revision_hash is now sourced from the
+    // auto-healed meta. The "rev-sections" literal in the fixture drifts the
+    // moment buildKnowledgeMeta rescans the seeded .md files, so we assert
+    // shape only — the auto-heal contract is exercised by the dedicated
+    // stale-meta tests below.
+    expect(result.revision_hash).toEqual(expect.any(String));
+    expect(result.revision_hash.length).toBeGreaterThan(0);
     expect(result.precedence).toEqual(["L2", "L1", "L0"]);
     expect(result.selected_stable_ids).toEqual(["global-protocol", "ui-batch-rendering", "battle-view-local"]);
     expect(result.rules).toEqual([
@@ -206,8 +231,21 @@ describe("getKnowledgeSections", () => {
     // request) after knowledge_sections_fetched. Use slice/find rather than
     // a brittle exact-array match.
     const allEvents = (await readEventLedger(projectRoot)).events;
+    // v2.0.0-rc.22 Scope D T-D2: loadActiveMeta now fires auto-heal on stale
+    // fixtures. The heal pipeline emits side events (knowledge_drift_detected
+    // / baseline_synced / knowledge_meta_auto_healed) which are NOT part of
+    // the selection lifecycle this test pins. Filter them out so the strict
+    // ordering assertion below stays focused on the planContext →
+    // getKnowledgeSections flow.
+    const HEAL_EVENT_TYPES = new Set([
+      "knowledge_drift_detected",
+      "baseline_synced",
+      "knowledge_meta_auto_healed",
+    ]);
     const lifecycleEvents = allEvents.filter(
-      (e) => e.event_type !== "knowledge_consumed",
+      (e) =>
+        e.event_type !== "knowledge_consumed" &&
+        !HEAL_EVENT_TYPES.has(e.event_type),
     );
     expect(lifecycleEvents).toEqual([
       expect.objectContaining({
@@ -447,9 +485,31 @@ describe("getKnowledgeSections", () => {
     );
     await mkdir(join(projectRoot, ".fabric", "knowledge", "decisions"), { recursive: true });
     await mkdir(join(projectRoot, ".fabric", "knowledge", "guidelines"), { recursive: true });
+    // v2.0.0-rc.22 Scope D T-D2: global.md gets v2.0 knowledge frontmatter so
+    // auto-heal's extractRuleDescription returns a description with
+    // knowledge_type/knowledge_layer (no missing-metadata diagnostic). ui.md
+    // is deliberately heading-only so the heading-only fallback in
+    // extractRuleDescription sets knowledge_type=undefined, which IS the
+    // un-migrated v1.x signature the diagnostic targets.
+    // Note: no `id:` line — declaring KT-DEC-0001 here would rewrite the
+    // node's stable_id and break the test's "global-protocol" lookup. The
+    // node carries identity_source:"declared" in the hand-crafted meta which
+    // preserves the legacy id through deriveRuleIdentity.
     await writeFile(
       join(projectRoot, ".fabric", "knowledge", "decisions", "global.md"),
-      "# Global\n\n## [MANDATORY_INJECTION]\nGlobal mandatory.\n",
+      [
+        "---",
+        "summary: Global protocol",
+        "type: decision",
+        "maturity: verified",
+        "layer: team",
+        "---",
+        "# Global",
+        "",
+        "## [MANDATORY_INJECTION]",
+        "Global mandatory.",
+        "",
+      ].join("\n"),
     );
     await writeFile(
       join(projectRoot, ".fabric", "knowledge", "guidelines", "ui.md"),
@@ -463,6 +523,9 @@ describe("getKnowledgeSections", () => {
         nodes: {
           "L0/global": {
             stable_id: "global-protocol",
+            // v2.0.0-rc.22 Scope D T-D2: identity_source:"declared" preserves
+            // the legacy "global-protocol" stable_id across auto-heal rebuild.
+            identity_source: "declared",
             file: ".fabric/knowledge/decisions/global.md",
             content_ref: ".fabric/knowledge/decisions/global.md",
             scope_glob: "**",
@@ -487,6 +550,8 @@ describe("getKnowledgeSections", () => {
           },
           "L1/ui": {
             stable_id: "ui-rule",
+            // v2.0.0-rc.22 Scope D T-D2: preserve legacy stable_id past heal.
+            identity_source: "declared",
             file: ".fabric/knowledge/guidelines/ui.md",
             content_ref: ".fabric/knowledge/guidelines/ui.md",
             scope_glob: "**",
@@ -535,6 +600,42 @@ describe("getKnowledgeSections", () => {
           "Rule ui-rule has no knowledge metadata (type/layer) — likely an un-migrated v1.x entry.",
       },
     ]);
+  });
+
+  // ---------------------------------------------------------------------------
+  // v2.0.0-rc.22 Scope D T-D2 (TASK-009): STRICT mode — build failure throws.
+  //
+  // getKnowledgeSections is an authoritative id-based lookup. When the meta
+  // rebuild fails (transient fs error, corrupt knowledge file, etc.) we MUST
+  // surface a loud error rather than silently serve potentially-wrong bodies
+  // from a stale on-disk snapshot. The strict variant of loadActiveMeta
+  // propagates that build failure unchanged.
+  // ---------------------------------------------------------------------------
+
+  it("getKnowledgeSections_strict_throws_on_build_failure", async () => {
+    const projectRoot = await createSectionProject();
+    const plan = await planContext(projectRoot, { paths: ["assets/scripts/ui/BattleView.ts"] });
+    const selectionToken = mintTokenFromPlan(
+      plan,
+      ["global-protocol", "battle-view-local"],
+      ["ui-batch-rendering"],
+    );
+
+    const knowledgeMetaBuilder = await import("./knowledge-meta-builder.js");
+    vi.spyOn(knowledgeMetaBuilder, "buildKnowledgeMeta").mockRejectedValueOnce(
+      new Error("synthetic build failure"),
+    );
+
+    await expect(
+      getKnowledgeSections(projectRoot, {
+        selection_token: selectionToken,
+        sections: ["MANDATORY_INJECTION"],
+        ai_selected_stable_ids: ["ui-batch-rendering"],
+        ai_selection_reasons: {
+          "ui-batch-rendering": "BattleView touches UI.",
+        },
+      }),
+    ).rejects.toThrow("synthetic build failure");
   });
 });
 
@@ -614,6 +715,12 @@ UI low mandatory.
 function ruleNode(stableId: string, level: "L0" | "L1" | "L2", file: string, scopeGlob: string) {
   return {
     stable_id: stableId,
+    // v2.0.0-rc.22 Scope D T-D2: marking identity_source as "declared" tells
+    // deriveRuleIdentity to preserve the hand-crafted stable_id across the
+    // auto-heal rebuild — without this, the helper falls through to
+    // path-derived ids ("decisions/global" etc.) and the test's stable_id
+    // lookups break.
+    identity_source: "declared" as const,
     file,
     content_ref: file,
     scope_glob: scopeGlob,

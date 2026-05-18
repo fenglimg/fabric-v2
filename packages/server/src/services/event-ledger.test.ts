@@ -1,12 +1,18 @@
-import { existsSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { describe, expect, it, afterEach } from "vitest";
+import { describe, expect, it, afterEach, beforeEach, vi } from "vitest";
 
 import { EVENT_LEDGER_PATH } from "./_shared.js";
-import { appendEventLedgerEvent, readEventLedger, truncateLedgerToLastNewline } from "./event-ledger.js";
+import {
+  __resetOversizeWarnForTests,
+  appendEventLedgerEvent,
+  readEventLedger,
+  rotateEventLedgerIfNeeded,
+  truncateLedgerToLastNewline,
+} from "./event-ledger.js";
 
 const tempDirs: string[] = [];
 
@@ -448,6 +454,393 @@ describe("event-ledger", () => {
       const remaining = await readFile(ledgerPath, "utf8");
       expect(remaining).toBe("");
     });
+  });
+});
+
+// v2.0.0-rc.22 Scope A T3 — rotateEventLedgerIfNeeded + 50MB soft-warn
+describe("rotateEventLedgerIfNeeded", () => {
+  it("rotate_noop_when_under_retention: returns rotated:false when all lines are within the retention window", async () => {
+    const projectRoot = await createTempProject();
+    const now = new Date("2026-05-18T12:00:00.000Z");
+    // Two events 5 days old — well inside the 30-day default window.
+    const recentTs = now.getTime() - 5 * 86_400_000;
+    await appendEventLedgerEvent(projectRoot, {
+      event_type: "mcp_event",
+      mcp_event_id: "mcp-recent-1",
+      stream_id: "stream-1",
+      message: { jsonrpc: "2.0", method: "ping" },
+      ts: recentTs,
+    });
+    await appendEventLedgerEvent(projectRoot, {
+      event_type: "mcp_event",
+      mcp_event_id: "mcp-recent-2",
+      stream_id: "stream-1",
+      message: { jsonrpc: "2.0", method: "ping" },
+      ts: recentTs + 1,
+    });
+
+    const before = await readFile(join(projectRoot, ".fabric", "events.jsonl"), "utf8");
+    const result = await rotateEventLedgerIfNeeded(projectRoot, { now });
+
+    expect(result.rotated).toBe(false);
+    expect(result.archivedCount).toBe(0);
+    expect(result.keptCount).toBe(2);
+    expect(result.archivePath).toBeUndefined();
+
+    // Main file untouched
+    const after = await readFile(join(projectRoot, ".fabric", "events.jsonl"), "utf8");
+    expect(after).toBe(before);
+
+    // No archive directory was created
+    expect(existsSync(join(projectRoot, ".fabric", "events.archive"))).toBe(false);
+  });
+
+  it("rotate_partitions_correctly: archives stale lines and keeps recent ones", async () => {
+    const projectRoot = await createTempProject();
+    const now = new Date("2026-05-18T12:00:00.000Z");
+    const oldTs = now.getTime() - 45 * 86_400_000; // past 30d window
+    const newTs = now.getTime() - 5 * 86_400_000;
+
+    await appendEventLedgerEvent(projectRoot, {
+      event_type: "mcp_event",
+      mcp_event_id: "mcp-old-1",
+      stream_id: "stream-1",
+      message: { jsonrpc: "2.0", method: "ping" },
+      ts: oldTs,
+    });
+    await appendEventLedgerEvent(projectRoot, {
+      event_type: "mcp_event",
+      mcp_event_id: "mcp-old-2",
+      stream_id: "stream-1",
+      message: { jsonrpc: "2.0", method: "ping" },
+      ts: oldTs + 1,
+    });
+    await appendEventLedgerEvent(projectRoot, {
+      event_type: "mcp_event",
+      mcp_event_id: "mcp-new-1",
+      stream_id: "stream-1",
+      message: { jsonrpc: "2.0", method: "ping" },
+      ts: newTs,
+    });
+
+    const result = await rotateEventLedgerIfNeeded(projectRoot, { now });
+
+    expect(result.rotated).toBe(true);
+    expect(result.archivedCount).toBe(2);
+    expect(result.keptCount).toBe(1);
+    expect(result.archivePath).toBe(".fabric/events.archive/events-rotated-2026-05-18.jsonl");
+
+    // Archive file contains the two old events
+    const archiveContents = await readFile(
+      join(projectRoot, ".fabric", "events.archive", "events-rotated-2026-05-18.jsonl"),
+      "utf8",
+    );
+    const archiveLines = archiveContents.split("\n").filter((l) => l.length > 0);
+    expect(archiveLines).toHaveLength(2);
+    for (const line of archiveLines) {
+      const parsed = JSON.parse(line) as Record<string, unknown>;
+      expect(parsed["mcp_event_id"]).toMatch(/^mcp-old-/);
+    }
+
+    // Main file now has audit event + 1 kept event
+    const { events } = await readEventLedger(projectRoot);
+    expect(events).toHaveLength(2);
+    expect(events[0].event_type).toBe("events_rotated");
+    expect(events[1].event_type).toBe("mcp_event");
+    expect((events[1] as { mcp_event_id: string }).mcp_event_id).toBe("mcp-new-1");
+  });
+
+  it("rotate_same_day_appends_archive: second rotation on the same day appends to existing archive file (no new file)", async () => {
+    const projectRoot = await createTempProject();
+    const now = new Date("2026-05-18T12:00:00.000Z");
+    const oldTs = now.getTime() - 45 * 86_400_000;
+
+    // Round 1: write + rotate one old event
+    await appendEventLedgerEvent(projectRoot, {
+      event_type: "mcp_event",
+      mcp_event_id: "mcp-round1",
+      stream_id: "stream-1",
+      message: { jsonrpc: "2.0", method: "ping" },
+      ts: oldTs,
+    });
+    const round1 = await rotateEventLedgerIfNeeded(projectRoot, { now });
+    expect(round1.rotated).toBe(true);
+    expect(round1.archivedCount).toBe(1);
+
+    const archivePath = join(
+      projectRoot,
+      ".fabric",
+      "events.archive",
+      "events-rotated-2026-05-18.jsonl",
+    );
+    const sizeAfterRound1 = statSync(archivePath).size;
+    expect(sizeAfterRound1).toBeGreaterThan(0);
+
+    // Round 2: write + rotate another old event on the same calendar day
+    await appendEventLedgerEvent(projectRoot, {
+      event_type: "mcp_event",
+      mcp_event_id: "mcp-round2",
+      stream_id: "stream-1",
+      message: { jsonrpc: "2.0", method: "ping" },
+      ts: oldTs + 100,
+    });
+    const round2 = await rotateEventLedgerIfNeeded(projectRoot, { now });
+    expect(round2.rotated).toBe(true);
+    expect(round2.archivedCount).toBe(1);
+    expect(round2.archivePath).toBe(".fabric/events.archive/events-rotated-2026-05-18.jsonl");
+
+    // Archive file grew (append, not overwrite)
+    const sizeAfterRound2 = statSync(archivePath).size;
+    expect(sizeAfterRound2).toBeGreaterThan(sizeAfterRound1);
+
+    const archiveContents = await readFile(archivePath, "utf8");
+    const ids = archiveContents
+      .split("\n")
+      .filter((l) => l.length > 0)
+      .map((l) => (JSON.parse(l) as Record<string, unknown>)["mcp_event_id"]);
+    expect(ids).toEqual(["mcp-round1", "mcp-round2"]);
+  });
+
+  it("rotate_new_day_creates_archive: a different rotation day creates a separate archive file", async () => {
+    const projectRoot = await createTempProject();
+    const day1 = new Date("2026-05-18T12:00:00.000Z");
+    const day2 = new Date("2026-05-19T12:00:00.000Z");
+    // For both rounds, the events themselves are older than (now - 30d).
+    const oldTsRelativeToDay1 = day1.getTime() - 45 * 86_400_000;
+    const oldTsRelativeToDay2 = day2.getTime() - 45 * 86_400_000;
+
+    await appendEventLedgerEvent(projectRoot, {
+      event_type: "mcp_event",
+      mcp_event_id: "mcp-day1",
+      stream_id: "stream-1",
+      message: { jsonrpc: "2.0", method: "ping" },
+      ts: oldTsRelativeToDay1,
+    });
+    await rotateEventLedgerIfNeeded(projectRoot, { now: day1 });
+
+    await appendEventLedgerEvent(projectRoot, {
+      event_type: "mcp_event",
+      mcp_event_id: "mcp-day2",
+      stream_id: "stream-1",
+      message: { jsonrpc: "2.0", method: "ping" },
+      ts: oldTsRelativeToDay2,
+    });
+    await rotateEventLedgerIfNeeded(projectRoot, { now: day2 });
+
+    expect(
+      existsSync(join(projectRoot, ".fabric", "events.archive", "events-rotated-2026-05-18.jsonl")),
+    ).toBe(true);
+    expect(
+      existsSync(join(projectRoot, ".fabric", "events.archive", "events-rotated-2026-05-19.jsonl")),
+    ).toBe(true);
+  });
+
+  it("rotate_audit_event_first_line: post-rotation main file's first line is events_rotated with correct counts", async () => {
+    const projectRoot = await createTempProject();
+    const now = new Date("2026-05-18T12:00:00.000Z");
+    const oldTs = now.getTime() - 60 * 86_400_000;
+    const newTs = now.getTime() - 1 * 86_400_000;
+
+    await appendEventLedgerEvent(projectRoot, {
+      event_type: "mcp_event",
+      mcp_event_id: "mcp-old",
+      stream_id: "stream-1",
+      message: { jsonrpc: "2.0", method: "ping" },
+      ts: oldTs,
+    });
+    await appendEventLedgerEvent(projectRoot, {
+      event_type: "mcp_event",
+      mcp_event_id: "mcp-new",
+      stream_id: "stream-1",
+      message: { jsonrpc: "2.0", method: "ping" },
+      ts: newTs,
+    });
+
+    const result = await rotateEventLedgerIfNeeded(projectRoot, { now });
+    expect(result.rotated).toBe(true);
+
+    const raw = await readFile(join(projectRoot, ".fabric", "events.jsonl"), "utf8");
+    const firstLine = raw.split("\n")[0];
+    const firstParsed = JSON.parse(firstLine) as Record<string, unknown>;
+
+    expect(firstParsed["event_type"]).toBe("events_rotated");
+    expect(firstParsed["archived_count"]).toBe(1);
+    expect(firstParsed["kept_count"]).toBe(1);
+    expect(firstParsed["archive_path"]).toBe(
+      ".fabric/events.archive/events-rotated-2026-05-18.jsonl",
+    );
+    // cutoff_ts is ISO datetime equal to now - 30 days.
+    const expectedCutoff = new Date(now.getTime() - 30 * 86_400_000).toISOString();
+    expect(firstParsed["cutoff_ts"]).toBe(expectedCutoff);
+  });
+
+  it("rotate_schema_round_trip: the audit event parses through readEventLedger's schema validator", async () => {
+    const projectRoot = await createTempProject();
+    const now = new Date("2026-05-18T12:00:00.000Z");
+    await appendEventLedgerEvent(projectRoot, {
+      event_type: "mcp_event",
+      mcp_event_id: "mcp-old",
+      stream_id: "stream-1",
+      message: { jsonrpc: "2.0", method: "ping" },
+      ts: now.getTime() - 60 * 86_400_000,
+    });
+    await rotateEventLedgerIfNeeded(projectRoot, { now });
+
+    const { events, warnings } = await readEventLedger(projectRoot, {
+      event_type: "events_rotated",
+    });
+    expect(warnings).toEqual([]);
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      kind: "fabric-event",
+      event_type: "events_rotated",
+      archived_count: 1,
+      kept_count: 0,
+      archive_path: ".fabric/events.archive/events-rotated-2026-05-18.jsonl",
+    });
+  });
+
+  it("rotate_reads_config_retention: reads fabric_event_retention_days from .fabric/fabric-config.json", async () => {
+    const projectRoot = await createTempProject();
+    await mkdir(join(projectRoot, ".fabric"), { recursive: true });
+    // Set config to 7 days.
+    await writeFile(
+      join(projectRoot, ".fabric", "fabric-config.json"),
+      JSON.stringify({ fabric_event_retention_days: 7 }),
+      "utf8",
+    );
+
+    const now = new Date("2026-05-18T12:00:00.000Z");
+    // 10 days old — inside default 30d window, but outside the 7d config window.
+    const tenDaysOldTs = now.getTime() - 10 * 86_400_000;
+    // 2 days old — inside both windows.
+    const twoDaysOldTs = now.getTime() - 2 * 86_400_000;
+
+    await appendEventLedgerEvent(projectRoot, {
+      event_type: "mcp_event",
+      mcp_event_id: "mcp-10d",
+      stream_id: "stream-1",
+      message: { jsonrpc: "2.0", method: "ping" },
+      ts: tenDaysOldTs,
+    });
+    await appendEventLedgerEvent(projectRoot, {
+      event_type: "mcp_event",
+      mcp_event_id: "mcp-2d",
+      stream_id: "stream-1",
+      message: { jsonrpc: "2.0", method: "ping" },
+      ts: twoDaysOldTs,
+    });
+
+    const result = await rotateEventLedgerIfNeeded(projectRoot, { now });
+    expect(result.rotated).toBe(true);
+    expect(result.archivedCount).toBe(1);
+    expect(result.keptCount).toBe(1);
+
+    const archive = await readFile(
+      join(projectRoot, ".fabric", "events.archive", "events-rotated-2026-05-18.jsonl"),
+      "utf8",
+    );
+    const archivedIds = archive
+      .split("\n")
+      .filter((l) => l.length > 0)
+      .map((l) => (JSON.parse(l) as Record<string, unknown>)["mcp_event_id"]);
+    expect(archivedIds).toEqual(["mcp-10d"]);
+  });
+
+  it("rotate is a no-op for an absent main file", async () => {
+    const projectRoot = await createTempProject();
+    const result = await rotateEventLedgerIfNeeded(projectRoot, {
+      now: new Date("2026-05-18T12:00:00.000Z"),
+    });
+    expect(result.rotated).toBe(false);
+    expect(result.archivedCount).toBe(0);
+    expect(result.keptCount).toBe(0);
+  });
+});
+
+describe("appendEventLedgerEvent — 50MB soft-warn (rc.22 Scope A T3)", () => {
+  beforeEach(() => {
+    __resetOversizeWarnForTests();
+  });
+
+  it("soft_warn_50mb_oneshot: writes to stderr exactly once when the ledger crosses 50MB", async () => {
+    const projectRoot = await createTempProject();
+    await mkdir(join(projectRoot, ".fabric"), { recursive: true });
+    // Pre-seed the ledger with > 50MB of NDJSON content. We hand-write the
+    // bytes (instead of looping appendEventLedgerEvent millions of times)
+    // because the test is purely about the post-append size check, not
+    // about realistic event payloads. The file ends with a trailing newline
+    // so subsequent appends do not produce a partial-write warning.
+    const filler =
+      JSON.stringify({
+        kind: "fabric-event",
+        id: "event:pad",
+        ts: 1_000,
+        schema_version: 1,
+        event_type: "mcp_event",
+        mcp_event_id: "mcp-pad",
+        stream_id: "stream-pad",
+        message: { padding: "x".repeat(1024) },
+      }) + "\n";
+    // ~1.1 KB per line — 50_000 lines ≈ 55MB; gives a small safety margin.
+    const lineCount = 50_000;
+    await writeFile(
+      join(projectRoot, ".fabric", "events.jsonl"),
+      filler.repeat(lineCount),
+      "utf8",
+    );
+    const seededSize = statSync(join(projectRoot, ".fabric", "events.jsonl")).size;
+    expect(seededSize).toBeGreaterThan(50 * 1024 * 1024);
+
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    try {
+      await appendEventLedgerEvent(projectRoot, {
+        event_type: "mcp_event",
+        mcp_event_id: "mcp-warn-1",
+        stream_id: "stream-1",
+        message: { jsonrpc: "2.0", method: "ping" },
+        ts: 2_000,
+      });
+      await appendEventLedgerEvent(projectRoot, {
+        event_type: "mcp_event",
+        mcp_event_id: "mcp-warn-2",
+        stream_id: "stream-1",
+        message: { jsonrpc: "2.0", method: "ping" },
+        ts: 3_000,
+      });
+
+      const warnCalls = stderrSpy.mock.calls.filter((call) =>
+        typeof call[0] === "string" &&
+        (call[0] as string).includes("events.jsonl > 50MB"),
+      );
+      expect(warnCalls).toHaveLength(1);
+      expect(warnCalls[0][0]).toBe(
+        'fabric: events.jsonl > 50MB, run "fab doctor --fix" to rotate\n',
+      );
+    } finally {
+      stderrSpy.mockRestore();
+    }
+  });
+
+  it("does not warn when the ledger stays under 50MB", async () => {
+    const projectRoot = await createTempProject();
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    try {
+      await appendEventLedgerEvent(projectRoot, {
+        event_type: "mcp_event",
+        mcp_event_id: "mcp-small",
+        stream_id: "stream-1",
+        message: { jsonrpc: "2.0", method: "ping" },
+        ts: 1_000,
+      });
+      const warnCalls = stderrSpy.mock.calls.filter((call) =>
+        typeof call[0] === "string" &&
+        (call[0] as string).includes("events.jsonl > 50MB"),
+      );
+      expect(warnCalls).toHaveLength(0);
+    } finally {
+      stderrSpy.mockRestore();
+    }
   });
 });
 

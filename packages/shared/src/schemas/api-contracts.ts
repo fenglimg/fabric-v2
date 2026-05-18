@@ -177,6 +177,13 @@ export const planContextOutputSchema = z.object({
     ),
   }),
   warnings: z.array(structuredWarningSchema).optional(),
+  // v2.0.0-rc.22 Scope D T-D2: optional auto-heal banner fields. Surfaced
+  // ONLY when the loadActiveMetaOrStale call detected drift and rebuilt the
+  // meta in-place. Downstream CLI / hint renderers use this pair to render a
+  // "knowledge meta auto-healed (was <prev>, now <curr>)" notice without
+  // having to query the event ledger.
+  auto_healed: z.boolean().optional(),
+  previous_revision_hash: z.string().optional(),
 });
 
 export const planContextAnnotations = {

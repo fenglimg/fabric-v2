@@ -246,11 +246,13 @@ describe("init-scan: end-to-end", () => {
     expect(second.written_stable_ids.length).toBeLessThan(first.written_stable_ids.length);
     expect(second.skipped_stable_ids.length).toBeGreaterThan(0);
 
-    // Updated tech-stack file mentions the new framework
-    const techStackBody = readFileSync(
-      join(target, ".fabric", "knowledge", "models", "tech-stack.md"),
-      "utf8",
-    );
+    // Updated tech-stack file mentions the new framework. v2.0-rc.22 T5:
+    // baseline filenames now embed the id, so we discover the file by
+    // matching `*--tech-stack.md` rather than hardcoding the bare-slug name.
+    const modelsDir = join(target, ".fabric", "knowledge", "models");
+    const techStackFile = readdirSync(modelsDir).find((f) => /--tech-stack\.md$/u.test(f));
+    expect(techStackFile).toBeDefined();
+    const techStackBody = readFileSync(join(modelsDir, techStackFile as string), "utf8");
     expect(techStackBody).toContain("next");
   });
 
@@ -262,6 +264,250 @@ describe("init-scan: end-to-end", () => {
     // No partial writes
     expect(existsSync(join(target, ".fabric", "knowledge"))).toBe(false);
     expect(existsSync(join(target, ".fabric", "agents.meta.json"))).toBe(false);
+  });
+
+  // -------------------------------------------------------------------------
+  // v2.0-rc.22 T5: baseline filename unification + auto-migration
+  //
+  // Every baseline file emitted by `fab scan` now uses `${id}--${slug}.md`
+  // (matching the fabric-archive Skill format). `migrateLegacyBaselineFilenames`
+  // runs at the start of every scan to rename any surviving bare-slug
+  // baselines in-place — one `fab scan` completes the migration end-to-end.
+  // -------------------------------------------------------------------------
+
+  it("scan_emits_id_prefixed_filename", async () => {
+    const target = await setupFixture("id-prefixed-filename");
+
+    await runInitScan(target);
+
+    const knowledgeRoot = join(target, ".fabric", "knowledge");
+    const subdirs = ["models", "guidelines", "processes"];
+    let inspected = 0;
+
+    for (const sub of subdirs) {
+      const dir = join(knowledgeRoot, sub);
+      if (!existsSync(dir)) continue;
+      for (const file of readdirSync(dir)) {
+        if (!file.endsWith(".md")) continue;
+        // v2.0-rc.22 T5: every emitted file must embed the id.
+        expect(file).toMatch(/^KT-[A-Z]+-\d+--[a-z0-9-]+\.md$/u);
+        inspected += 1;
+      }
+    }
+
+    expect(inspected).toBeGreaterThanOrEqual(4);
+  });
+
+  it("scan_content_ref_uses_id_prefixed_filename", async () => {
+    const target = await setupFixture("content-ref-id-prefixed");
+
+    const result = await runInitScan(target);
+
+    const meta = JSON.parse(
+      readFileSync(join(target, ".fabric", "agents.meta.json"), "utf8"),
+    ) as { nodes: Record<string, { content_ref?: string; file?: string }> };
+
+    for (const id of result.written_stable_ids) {
+      const node = meta.nodes[id];
+      expect(node).toBeDefined();
+      // content_ref + file both reflect the id-prefixed filename.
+      expect(node.content_ref).toBeDefined();
+      expect(node.content_ref).toMatch(
+        new RegExp(`^\\.fabric/knowledge/(models|guidelines|processes)/${id}--[a-z0-9-]+\\.md$`, "u"),
+      );
+      expect(node.file).toBe(node.content_ref);
+    }
+  });
+
+  it("migrate_legacy_baseline_renames_in_allowlist", async () => {
+    const target = await setupFixture("migrate-allowlist");
+
+    // Pre-seed a legacy bare-slug file with a frontmatter id from the
+    // baseline allowlist (KT-GLD-0001 → code-style.md). The migration must
+    // rename it to `KT-GLD-0001--code-style.md` and unlink the legacy path.
+    const guidelinesDir = join(target, ".fabric", "knowledge", "guidelines");
+    await mkdir(guidelinesDir, { recursive: true });
+    const legacyPath = join(guidelinesDir, "code-style.md");
+    const legacyBody =
+      "---\n" +
+      "id: KT-GLD-0001\n" +
+      "type: guideline\n" +
+      "layer: team\n" +
+      "maturity: verified\n" +
+      'layer_reason: "project artifact (deterministic init scan)"\n' +
+      "created_at: 2026-05-10T00:00:00.000Z\n" +
+      "tags: []\n" +
+      "relevance_scope: narrow\n" +
+      "relevance_paths: []\n" +
+      "---\n\n# Code style\n\nLegacy bare-slug body.\n";
+    writeFileSync(legacyPath, legacyBody, "utf8");
+
+    // Pre-seed the sidecar so the rerun loop considers KT-GLD-0001 known
+    // (mirrors what happens after the original run that wrote the legacy
+    // file — only the filename moved, the id was already allocated).
+    const sidecarPath = join(target, ".fabric", "knowledge", ".scan-state.json");
+    writeFileSync(
+      sidecarPath,
+      JSON.stringify({ "KT-GLD-0001": "sha256:legacy-hash-placeholder" }, null, 2),
+      "utf8",
+    );
+
+    await runInitScan(target);
+
+    // Legacy path gone, new path present.
+    expect(existsSync(legacyPath)).toBe(false);
+    const newPath = join(guidelinesDir, "KT-GLD-0001--code-style.md");
+    expect(existsSync(newPath)).toBe(true);
+    // Frontmatter id preserved.
+    expect(readFileSync(newPath, "utf8")).toMatch(/^id: KT-GLD-0001$/mu);
+  });
+
+  it("migrate_scrubs_stale_tags_on_already_prefixed_baseline", async () => {
+    // v2.0-rc.22 hotfix (Finding 1 — already-migrated branch): when a
+    // baseline file is already in canonical `${id}--${slug}.md` form but
+    // still carries pre-T7 stale tags (the bare-slug→id rename already
+    // happened on a prior run that ran before T7), the body-hash skip
+    // gate would otherwise leave the stale tags on disk forever. The
+    // migration helper must scrub stale tags in-place on already-prefixed
+    // baseline files too.
+    const target = await setupFixture("migrate-prefixed-stale-tags");
+
+    const guidelinesDir = join(target, ".fabric", "knowledge", "guidelines");
+    await mkdir(guidelinesDir, { recursive: true });
+    const prefixedPath = join(guidelinesDir, "KT-GLD-0001--code-style.md");
+    const staleBody =
+      "---\n" +
+      "id: KT-GLD-0001\n" +
+      "type: guideline\n" +
+      "layer: team\n" +
+      "maturity: verified\n" +
+      'layer_reason: "project artifact (deterministic init scan)"\n' +
+      "created_at: 2026-05-10T00:00:00.000Z\n" +
+      "tags: [unknown, typescript, csv, ndjson, [none]]\n" +
+      "relevance_scope: narrow\n" +
+      "relevance_paths: []\n" +
+      "---\n\n# Code style guidelines\n\nBody.\n";
+    writeFileSync(prefixedPath, staleBody, "utf8");
+
+    await runInitScan(target);
+
+    expect(existsSync(prefixedPath)).toBe(true);
+    const onDisk = readFileSync(prefixedPath, "utf8");
+    // Stale tags scrubbed; surrounding frontmatter unchanged.
+    expect(onDisk).toMatch(/^tags: \[\]$/mu);
+    expect(onDisk).not.toMatch(/tags: \[unknown/u);
+    expect(onDisk).toMatch(/^id: KT-GLD-0001$/mu);
+    expect(onDisk).toMatch(/^relevance_scope: narrow$/mu);
+  });
+
+  it("migrate_legacy_clears_stale_tags_during_rename", async () => {
+    // v2.0-rc.22 hotfix (Finding 1 / Scope B+C interplay): the body-hash
+    // skip gate in runInitScan short-circuits the rewrite when the rendered
+    // body is unchanged. If migration only renamed the file (without
+    // mutating the frontmatter), stale pre-T7 `tags:` lines would survive
+    // forever. Migration must scrub `tags:` to `tags: []` during the
+    // rename so the on-disk frontmatter is canonical immediately, even
+    // when the subsequent body-hash skip gate triggers.
+    const target = await setupFixture("migrate-stale-tags");
+
+    const guidelinesDir = join(target, ".fabric", "knowledge", "guidelines");
+    await mkdir(guidelinesDir, { recursive: true });
+    const legacyPath = join(guidelinesDir, "code-style.md");
+    const staleBody =
+      "---\n" +
+      "id: KT-GLD-0001\n" +
+      "type: guideline\n" +
+      "layer: team\n" +
+      "maturity: verified\n" +
+      'layer_reason: "project artifact (deterministic init scan)"\n' +
+      "created_at: 2026-05-10T00:00:00.000Z\n" +
+      "tags: [unknown, typescript, csv, ndjson, [none]]\n" +
+      "relevance_scope: narrow\n" +
+      "relevance_paths: []\n" +
+      "---\n\n# Code style guidelines\n\nLegacy stale-tag body.\n";
+    writeFileSync(legacyPath, staleBody, "utf8");
+
+    // Pre-seed sidecar with a body-hash that matches what runInitScan would
+    // produce for the new render, so the skip gate fires and migration is
+    // the only thing that can clean the file. Use a placeholder hash here
+    // since we just need the gate to potentially trigger — the migration's
+    // tag-strip is unconditional and runs BEFORE the gate is evaluated.
+    const sidecarPath = join(target, ".fabric", "knowledge", ".scan-state.json");
+    writeFileSync(
+      sidecarPath,
+      JSON.stringify({ "KT-GLD-0001": "sha256:placeholder" }, null, 2),
+      "utf8",
+    );
+
+    await runInitScan(target);
+
+    const newPath = join(guidelinesDir, "KT-GLD-0001--code-style.md");
+    expect(existsSync(legacyPath)).toBe(false);
+    expect(existsSync(newPath)).toBe(true);
+    const onDisk = readFileSync(newPath, "utf8");
+    // Stale tags scrubbed to canonical `tags: []`. Whichever path produced
+    // the final file content (migration scrub or full re-render), the
+    // observable end state is identical: no stale list lingers.
+    expect(onDisk).toMatch(/^tags: \[\]$/mu);
+    expect(onDisk).not.toMatch(/tags: \[unknown/u);
+  });
+
+  it("migrate_legacy_skips_unknown_ids", async () => {
+    const target = await setupFixture("migrate-skip-unknown");
+
+    // User-promoted file with an id OUTSIDE the baseline allowlist. The
+    // migration must not touch it even though the filename happens to be
+    // bare-slug (matches a baseline slug to make the test maximally hostile).
+    const guidelinesDir = join(target, ".fabric", "knowledge", "guidelines");
+    await mkdir(guidelinesDir, { recursive: true });
+    const userPath = join(guidelinesDir, "code-style.md");
+    const userBody =
+      "---\n" +
+      "id: KT-GLD-9999\n" +
+      "type: guideline\n" +
+      "layer: team\n" +
+      "maturity: verified\n" +
+      'layer_reason: "user-authored"\n' +
+      "created_at: 2026-05-10T00:00:00.000Z\n" +
+      "tags: []\n" +
+      "relevance_scope: broad\n" +
+      "relevance_paths: []\n" +
+      "---\n\n# User code style\n\nNot a baseline.\n";
+    writeFileSync(userPath, userBody, "utf8");
+
+    await runInitScan(target);
+
+    // User file with non-allowlist id is left in place.
+    expect(existsSync(userPath)).toBe(true);
+    expect(readFileSync(userPath, "utf8")).toMatch(/^id: KT-GLD-9999$/mu);
+    // No phantom rename happened.
+    expect(existsSync(join(guidelinesDir, "KT-GLD-9999--code-style.md"))).toBe(false);
+  });
+
+  it("migrate_legacy_no_op_when_already_prefixed", async () => {
+    const target = await setupFixture("migrate-noop");
+
+    // First run writes the baseline files in the new id-prefixed format.
+    await runInitScan(target);
+
+    const knowledgeRoot = join(target, ".fabric", "knowledge");
+    const beforeListing: Record<string, string[]> = {};
+    for (const sub of ["models", "guidelines", "processes"]) {
+      const dir = join(knowledgeRoot, sub);
+      if (existsSync(dir)) {
+        beforeListing[sub] = readdirSync(dir).sort();
+      }
+    }
+
+    // Second run: nothing to migrate; listings identical.
+    await runInitScan(target);
+
+    for (const sub of ["models", "guidelines", "processes"]) {
+      const dir = join(knowledgeRoot, sub);
+      if (existsSync(dir)) {
+        expect(readdirSync(dir).sort()).toEqual(beforeListing[sub]);
+      }
+    }
   });
 
   it("performance_budget_under_two_seconds", async () => {

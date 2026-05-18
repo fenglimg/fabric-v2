@@ -54,6 +54,22 @@ export async function atomicWriteJson(
 
 export interface LedgerWriteQueue {
   append(path: string, line: string): Promise<void>;
+  /**
+   * Run `fn` with exclusive access to `path` against all other queue operations
+   * (other `runExclusive` calls and `append` calls) on the same path within
+   * this LedgerWriteQueue instance.
+   *
+   * Scope: per-path, in-process (same Node process, same queue instance).
+   * Does NOT provide cross-process locking — separate concern.
+   *
+   * Error semantics: a rejection from `fn` is propagated to the returned
+   * Promise but does NOT poison the chain — subsequent `runExclusive` /
+   * `append` calls on the same path will still acquire and run.
+   *
+   * Ordering: submission-order FIFO. Calls on different paths run independently
+   * (in parallel where possible).
+   */
+  runExclusive<T>(path: string, fn: () => Promise<T>): Promise<T>;
 }
 
 export function createLedgerWriteQueue(): LedgerWriteQueue {
@@ -64,22 +80,33 @@ export function createLedgerWriteQueue(): LedgerWriteQueue {
     await appendFile(path, normalized, "utf8");
   }
 
+  function enqueue<T>(path: string, work: () => Promise<T>): Promise<T> {
+    const prev = chains.get(path) ?? Promise.resolve();
+    // Caller-facing promise: resolves/rejects with `work`'s result.
+    const result = prev.catch(() => undefined).then(() => work());
+    // Chain-internal promise: never rejects, so a failing `work` doesn't
+    // poison subsequent operations on this path.
+    const chainSlot = result.then(
+      () => undefined,
+      () => undefined,
+    );
+    chains.set(path, chainSlot);
+    // When this slot settles, remove it from the map if it is still the
+    // latest entry for this path.
+    chainSlot.finally(() => {
+      if (chains.get(path) === chainSlot) {
+        chains.delete(path);
+      }
+    });
+    return result;
+  }
+
   return {
     append(path: string, line: string): Promise<void> {
-      const prev = chains.get(path) ?? Promise.resolve();
-      const next = prev.catch(() => undefined).then(() => doAppend(path, line));
-      chains.set(path, next);
-      // When this append settles, remove it from the map if it is still the
-      // latest entry for this path.  Attach a no-op catch before the finally
-      // so that deleting the reference does not surface a spurious unhandled
-      // rejection in environments that track promise reachability.
-      const guarded = next.catch(() => undefined);
-      guarded.finally(() => {
-        if (chains.get(path) === next) {
-          chains.delete(path);
-        }
-      });
-      return next;
+      return enqueue(path, () => doAppend(path, line));
+    },
+    runExclusive<T>(path: string, fn: () => Promise<T>): Promise<T> {
+      return enqueue(path, fn);
     },
   };
 }

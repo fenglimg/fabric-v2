@@ -1052,6 +1052,9 @@ exports[`tool contracts > plan-context contract matches snapshot 1`] = `
     "$schema": "http://json-schema.org/draft-07/schema#",
     "additionalProperties": false,
     "properties": {
+      "auto_healed": {
+        "type": "boolean",
+      },
       "entries": {
         "items": {
           "additionalProperties": false,
@@ -1250,6 +1253,9 @@ exports[`tool contracts > plan-context contract matches snapshot 1`] = `
           "type": "object",
         },
         "type": "array",
+      },
+      "previous_revision_hash": {
+        "type": "string",
       },
       "revision_hash": {
         "type": "string",

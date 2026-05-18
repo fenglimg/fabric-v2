@@ -40,6 +40,11 @@ type Payload = {
   target_paths: string[];
   entries: NarrowEntry[];
   broad_count: number;
+  // rc.22 Scope D T-D4 (TASK-011): additive optional auto-heal fields. Server
+  // emits these ONLY when planContext() detected meta drift and rebuilt the
+  // meta in-place; steady-state payloads omit both.
+  auto_healed?: boolean;
+  previous_revision_hash?: string;
 };
 
 type HookModule = {
@@ -293,6 +298,204 @@ describe("knowledge-hint-broad.cjs — renderSummary (truncated mode, count > 30
     expect(
       lines.some((l) => l.includes("fab_get_knowledge_sections")),
     ).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// rc.22 Scope D T-D4 (TASK-011) — meta auto-refresh banner line.
+//
+// When the server's planContext() detects meta drift and rebuilds the meta
+// in-place, the plan-context-hint payload carries `auto_healed: true` plus
+// (optionally) `previous_revision_hash`. The hook renderer surfaces ONE
+// additional informational line in renderSummary's output, positioned
+// BETWEEN the `revision_hash:` line and the `fab_get_knowledge_sections`
+// usage-hint footer. Tests below pin that contract.
+// ---------------------------------------------------------------------------
+
+describe("knowledge-hint-broad.cjs — renderSummary auto-heal banner (rc.22 T-D4)", () => {
+  // Helpers to assert line ordering — order matters: revision_hash MUST
+  // appear before the auto-heal line, and the auto-heal line MUST appear
+  // before the fab_get_knowledge_sections footer.
+  function indexOf(lines: string[], needle: string): number {
+    return lines.findIndex((l) => l.includes(needle));
+  }
+
+  it("does NOT emit auto-refresh line when auto_healed is absent", () => {
+    const narrow = [makeEntry("KT-DEC-0001", "decision", "proven", "x")];
+    const lines = hook.renderSummary(makePayload(narrow));
+    const body = lines.join("\n");
+    expect(body).not.toMatch(/auto-refreshed/);
+    expect(body).not.toMatch(/元数据已自动刷新/);
+    expect(body).not.toMatch(/🔄 Fabric:/);
+  });
+
+  it("does NOT emit auto-refresh line when auto_healed is explicitly false", () => {
+    const narrow = [makeEntry("KT-DEC-0001", "decision", "proven", "x")];
+    const payload = makePayload(narrow);
+    (payload as Payload).auto_healed = false;
+    const lines = hook.renderSummary(payload);
+    expect(lines.join("\n")).not.toMatch(/🔄 Fabric:/);
+  });
+
+  it("emits ONE auto-refresh line with 8-char hash prefixes when both hashes present", () => {
+    const narrow = [makeEntry("KT-DEC-0001", "decision", "proven", "x")];
+    const payload: Payload = {
+      ...makePayload(narrow, {
+        revision_hash: "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      }),
+      auto_healed: true,
+      previous_revision_hash:
+        "sha256:fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210",
+    };
+    const lines = hook.renderSummary(payload);
+    const matches = lines.filter((l) => l.includes("🔄 Fabric:"));
+    // Exactly ONE auto-heal line emitted (not multiple).
+    expect(matches.length).toBe(1);
+    const line = matches[0];
+    // Default fabric_language unset in cwd → zh-CN per back-compat default.
+    // Both en + zh-CN templates carry "sha PREV → CUR" with 8-char prefixes.
+    expect(line).toMatch(/sha fedcba98 → 01234567/);
+    // Ensure the full 64-char hash did NOT leak in.
+    expect(line).not.toMatch(/0123456789abcdef0/);
+    expect(line).not.toMatch(/fedcba98765/);
+  });
+
+  it("positions auto-refresh line BETWEEN revision_hash and the usage-hint footer", () => {
+    const narrow = [makeEntry("KT-DEC-0001", "decision", "proven", "x")];
+    const payload: Payload = {
+      ...makePayload(narrow, { revision_hash: "sha256:aabbccddeeff00112233" }),
+      auto_healed: true,
+      previous_revision_hash: "sha256:99887766554433221100",
+    };
+    const lines = hook.renderSummary(payload);
+    const idxRev = indexOf(lines, "revision_hash:");
+    const idxHeal = indexOf(lines, "🔄 Fabric:");
+    const idxFooter = indexOf(lines, "fab_get_knowledge_sections");
+    expect(idxRev).toBeGreaterThanOrEqual(0);
+    expect(idxHeal).toBeGreaterThan(idxRev);
+    expect(idxFooter).toBeGreaterThan(idxHeal);
+  });
+
+  it("falls back to generic line (no hash transition) when previous_revision_hash is missing", () => {
+    const narrow = [makeEntry("KT-DEC-0001", "decision", "proven", "x")];
+    const payload: Payload = {
+      ...makePayload(narrow, { revision_hash: "sha256:aabbccddeeff" }),
+      auto_healed: true,
+      // previous_revision_hash intentionally omitted (defensive T10 edge case).
+    };
+    const lines = hook.renderSummary(payload);
+    const heals = lines.filter((l) => l.includes("🔄 Fabric:"));
+    expect(heals.length).toBe(1);
+    // Generic variant must NOT include a sha transition.
+    expect(heals[0]).not.toMatch(/sha /);
+    expect(heals[0]).not.toMatch(/→/);
+  });
+
+  it("handles revision_hash WITHOUT the `sha256:` scheme prefix (defensive)", () => {
+    // Older / synthesized payloads may carry raw hex without the scheme prefix.
+    // The renderer should still produce 8-char prefixes (just slicing from the
+    // start of the string).
+    const narrow = [makeEntry("KT-DEC-0001", "decision", "proven", "x")];
+    const payload: Payload = {
+      ...makePayload(narrow, { revision_hash: "0123456789abcdef0123" }),
+      auto_healed: true,
+      previous_revision_hash: "fedcba9876543210fedc",
+    };
+    const lines = hook.renderSummary(payload);
+    const heals = lines.filter((l) => l.includes("🔄 Fabric:"));
+    expect(heals.length).toBe(1);
+    expect(heals[0]).toMatch(/sha fedcba98 → 01234567/);
+  });
+
+  it("preserves the substring contracts of existing tests (📋, revision_hash, fab_get_knowledge_sections)", () => {
+    // Adding the auto-heal line MUST NOT disturb the existing substring
+    // assertions other tests pin against. This guards against accidental
+    // reordering that would break the main() integration tests below.
+    const narrow = [makeEntry("KT-DEC-0001", "decision", "proven", "x")];
+    const payload: Payload = {
+      ...makePayload(narrow, { revision_hash: "sha256:deadbeefcafebabe" }),
+      auto_healed: true,
+      previous_revision_hash: "sha256:1234567890abcdef",
+    };
+    const lines = hook.renderSummary(payload);
+    const body = lines.join("\n");
+    expect(body).toMatch(/Session start — 1 broad-scoped/);
+    expect(body).toMatch(/revision_hash: sha256:deadbeefcafebabe/);
+    expect(body).toMatch(/fab_get_knowledge_sections/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// rc.22 Scope D T-D4 (TASK-011) — auto-heal banner i18n variant resolution.
+// We plant a .fabric/fabric-config.json with fabric_language=en (resp. zh-CN)
+// in an isolated tmp cwd and use the `chdir`-via-tempRoot helper to prove
+// that the renderSummary auto-heal line picks up the locale.
+// ---------------------------------------------------------------------------
+
+describe("knowledge-hint-broad.cjs — auto-heal banner i18n variants (rc.22 T-D4)", () => {
+  let tempRoot: string;
+  let originalCwd: string;
+
+  beforeEach(() => {
+    originalCwd = process.cwd();
+    tempRoot = mkdtempSync(join(tmpdir(), "broad-autoheal-i18n-"));
+    mkdirSync(join(tempRoot, ".fabric"), { recursive: true });
+    // chdir so renderSummary's process.cwd() picks up the planted config.
+    process.chdir(tempRoot);
+  });
+
+  afterEach(() => {
+    try {
+      process.chdir(originalCwd);
+    } catch {
+      // best-effort
+    }
+    try {
+      rmSync(tempRoot, { recursive: true, force: true });
+    } catch {
+      // best-effort
+    }
+  });
+
+  function plantLanguage(lang: string): void {
+    writeFileSync(
+      join(tempRoot, ".fabric", "fabric-config.json"),
+      JSON.stringify({ fabric_language: lang }),
+      "utf8",
+    );
+  }
+
+  it("renders English copy when fabric_language=en", () => {
+    plantLanguage("en");
+    const narrow = [makeEntry("KT-DEC-0001", "decision", "proven", "x")];
+    const payload: Payload = {
+      ...makePayload(narrow, { revision_hash: "sha256:aaaaaaaa11112222" }),
+      auto_healed: true,
+      previous_revision_hash: "sha256:bbbbbbbb33334444",
+    };
+    const lines = hook.renderSummary(payload);
+    const heal = lines.find((l) => l.includes("🔄 Fabric:"));
+    expect(heal).toBeDefined();
+    expect(heal!).toContain("meta auto-refreshed");
+    // No Chinese characters in en variant.
+    expect(heal!).not.toMatch(/[\u4e00-\u9fff]/);
+  });
+
+  it("renders Chinese copy when fabric_language=zh-CN", () => {
+    plantLanguage("zh-CN");
+    const narrow = [makeEntry("KT-DEC-0001", "decision", "proven", "x")];
+    const payload: Payload = {
+      ...makePayload(narrow, { revision_hash: "sha256:aaaaaaaa11112222" }),
+      auto_healed: true,
+      previous_revision_hash: "sha256:bbbbbbbb33334444",
+    };
+    const lines = hook.renderSummary(payload);
+    const heal = lines.find((l) => l.includes("🔄 Fabric:"));
+    expect(heal).toBeDefined();
+    expect(heal!).toContain("元数据已自动刷新");
+    // 8-char hex prefixes survive in both variants.
+    expect(heal!).toContain("bbbbbbbb");
+    expect(heal!).toContain("aaaaaaaa");
   });
 });
 

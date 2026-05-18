@@ -847,23 +847,41 @@ function extractRuleDescription(source: string): RuleDescription | undefined {
     return undefined;
   }
 
+  // v2.0-rc.22 hotfix (Finding 2 / B1): when frontmatter exists but lacks a
+  // `summary:` field (the canonical baseline shape: h1 heading carries the
+  // title, knowledge fields live in frontmatter), still pull knowledge
+  // fields out of frontmatter rather than emitting all-undefined. Without
+  // this, baseline KT-* entries surface in plan-context-hint with empty
+  // `type` / `maturity`, which downstream consumers display as ""; only
+  // user-promoted entries that author an explicit `summary:` get full
+  // knowledge fields. The h1 heading provides the summary; frontmatter
+  // provides the rest.
+  const knowledge = frontmatter !== null
+    ? extractKnowledgeFieldsFromFrontmatter(frontmatter[1])
+    : undefined;
+
   return {
     summary,
     intent_clues: [],
     tech_stack: [],
     impact: [],
     must_read_if: summary,
-    // v2.0 knowledge fields are absent in heading-only fallback.
-    id: undefined,
-    knowledge_type: undefined,
-    maturity: undefined,
-    knowledge_layer: undefined,
-    layer_reason: undefined,
-    created_at: undefined,
-    tags: undefined,
-    // v2.0-rc.5 (C1): default-safe values when there is no frontmatter at all.
-    relevance_scope: "broad",
-    relevance_paths: [],
+    // v2.0-rc.22: when frontmatter is present, merge its knowledge fields;
+    // when fully absent (no `---` block), all knowledge fields stay
+    // undefined, matching the original heading-only fallback contract.
+    id: knowledge?.id,
+    knowledge_type: knowledge?.knowledge_type,
+    maturity: knowledge?.maturity,
+    knowledge_layer: knowledge?.knowledge_layer,
+    layer_reason: knowledge?.layer_reason,
+    created_at: knowledge?.created_at,
+    tags: knowledge?.tags,
+    // v2.0-rc.5 (C1): default-safe values when there is no frontmatter at all;
+    // when frontmatter exists, honor its declared values (extractKnowledge
+    // FieldsFromFrontmatter already applies the broad-default for missing
+    // or malformed scopes).
+    relevance_scope: knowledge?.relevance_scope ?? "broad",
+    relevance_paths: knowledge?.relevance_paths ?? [],
   };
 }
 

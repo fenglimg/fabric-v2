@@ -16,14 +16,65 @@
 
 import { readdir, readFile, stat } from "node:fs/promises";
 import { existsSync, statSync } from "node:fs";
-import { join, relative, sep } from "node:path";
+import { homedir } from "node:os";
+import { join } from "node:path";
 
 import { RuleValidationError } from "@fenglimg/fabric-shared/errors";
 
 import { contextCache } from "../cache.js";
+import { readAgentsMeta, AgentsMetaFileMissingError, AgentsMetaInvalidError } from "../meta-reader.js";
 import { appendEventLedgerEvent } from "./event-ledger.js";
 import { sha256 } from "./_shared.js";
-import { writeKnowledgeMeta } from "./knowledge-meta-builder.js";
+import { buildKnowledgeMeta, writeKnowledgeMeta } from "./knowledge-meta-builder.js";
+
+// v2.0 dual-root knowledge layout — content_ref prefixes mirror
+// knowledge-meta-builder.ts so meta entries and rule-sync scans share the
+// same path vocabulary. Keeping these constants local (rather than importing
+// from knowledge-meta-builder.ts) avoids exposing internal helpers and
+// keeps each module's surface area minimal.
+const PERSONAL_CONTENT_REF_PREFIX = "~/.fabric/knowledge/";
+const TEAM_CONTENT_REF_PREFIX = ".fabric/knowledge/";
+
+// v2.0.0-rc.22 TASK-014 Scope E: subdir whitelist for rule-sync's dual-root
+// scan. Mirrors KNOWLEDGE_SUBDIRS in knowledge-meta-builder.ts. `pending` is
+// included so unreviewed knowledge entries participate in drift detection;
+// their lifecycle is governed by frontmatter, not directory placement.
+const KNOWLEDGE_SUBDIRS = [
+  "decisions",
+  "pitfalls",
+  "guidelines",
+  "models",
+  "processes",
+  "pending",
+] as const;
+
+/**
+ * Resolve the personal-layer fabric root. Test-friendly via FABRIC_HOME env
+ * var; production callers fall through to os.homedir(). Mirrors the helper
+ * with the same name in knowledge-meta-builder.ts — kept local here for
+ * the same encapsulation reason as the PREFIX constants above.
+ */
+function resolvePersonalRoot(): string {
+  return process.env.FABRIC_HOME ?? homedir();
+}
+
+/**
+ * Resolve a content_ref-style path (either team-relative or personal-prefixed)
+ * to an absolute filesystem path. Personal entries carry the
+ * `~/.fabric/knowledge/` prefix; team entries are plain project-relative
+ * paths under `.fabric/knowledge/`.
+ */
+function resolveContentRefPath(projectRoot: string, relPath: string): string {
+  if (relPath.startsWith(PERSONAL_CONTENT_REF_PREFIX)) {
+    return join(
+      resolvePersonalRoot(),
+      ".fabric",
+      "knowledge",
+      relPath.slice(PERSONAL_CONTENT_REF_PREFIX.length),
+    );
+  }
+  return join(projectRoot, relPath);
+}
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -142,39 +193,62 @@ async function readMetaEntries(projectRoot: string): Promise<Map<string, MetaEnt
   return map;
 }
 
+/**
+ * v2.0.0-rc.22 TASK-014 (Scope E): dual-root rule scan.
+ *
+ * Walks BOTH the team root (`<projectRoot>/.fabric/knowledge/`) and the
+ * personal root (`<resolvePersonalRoot()>/.fabric/knowledge/`), returning
+ * content_ref-style paths:
+ *   - Team entries:     `.fabric/knowledge/<subdir>/<file>.md`     (project-relative)
+ *   - Personal entries: `~/.fabric/knowledge/<subdir>/<file>.md`   (prefixed)
+ *
+ * Mirrors `findKnowledgeFiles` in knowledge-meta-builder.ts so the two
+ * pipelines (meta build + rule-sync drift) see the same disk vocabulary —
+ * which is what makes meta_entries.path comparisons against findRuleFiles
+ * output work correctly across both layers.
+ *
+ * Personal-root materialization is deliberately NOT performed here (unlike
+ * the meta builder which calls mkdir to seed the canonical layout). Rule
+ * sync is a read-only scan; missing personal directories simply contribute
+ * zero entries, identical to a team-only repo on a host that never used
+ * personal knowledge.
+ */
 async function findRuleFiles(projectRoot: string): Promise<string[]> {
-  const knowledgeRoot = join(projectRoot, ".fabric", "knowledge");
-
-  if (!existsSync(knowledgeRoot) || !statSync(knowledgeRoot).isDirectory()) {
-    return [];
-  }
+  const teamRoot = join(projectRoot, ".fabric", "knowledge");
+  const personalRoot = join(resolvePersonalRoot(), ".fabric", "knowledge");
 
   const files: string[] = [];
-  const stack = [knowledgeRoot];
 
-  while (stack.length > 0) {
-    const current = stack.pop();
-    if (current === undefined) {
+  for (const [root, prefix] of [
+    [teamRoot, TEAM_CONTENT_REF_PREFIX] as const,
+    [personalRoot, PERSONAL_CONTENT_REF_PREFIX] as const,
+  ]) {
+    if (!existsSync(root) || !statSync(root).isDirectory()) {
       continue;
     }
 
-    for (const entry of await readdir(current, { withFileTypes: true })) {
-      const absolutePath = join(current, entry.name);
+    for (const subdir of KNOWLEDGE_SUBDIRS) {
+      const dir = join(root, subdir);
+      if (!existsSync(dir) || !statSync(dir).isDirectory()) {
+        continue;
+      }
 
-      if (entry.isDirectory()) {
-        stack.push(absolutePath);
-      } else if (entry.isFile() && entry.name.endsWith(".md")) {
-        const rel = toPosixPath(relative(projectRoot, absolutePath));
-        files.push(rel);
+      let entries;
+      try {
+        entries = await readdir(dir, { withFileTypes: true });
+      } catch {
+        continue;
+      }
+
+      for (const entry of entries) {
+        if (entry.isFile() && entry.name.endsWith(".md")) {
+          files.push(`${prefix}${subdir}/${entry.name}`);
+        }
       }
     }
   }
 
   return files.sort();
-}
-
-function toPosixPath(p: string): string {
-  return p.split(sep).join("/");
 }
 
 /**
@@ -251,7 +325,9 @@ async function processSingleFile(
   source: "ensureKnowledgeFresh" | "reconcileKnowledge",
   throwOnInvalidFrontmatter: boolean,
 ): Promise<{ event: KnowledgeSyncLedgerEvent | null; warning: StructuredWarning | null }> {
-  const absPath = join(projectRoot, relPath);
+  // v2.0.0-rc.22 TASK-014: paths may be team-relative or personal-prefixed
+  // (`~/.fabric/knowledge/...`); resolveContentRefPath handles both.
+  const absPath = resolveContentRefPath(projectRoot, relPath);
 
   try {
     await stat(absPath);
@@ -400,10 +476,12 @@ export async function ensureKnowledgeFresh(
     }
   }
 
-  // Check for removals: meta entries whose files no longer exist on disk
+  // Check for removals: meta entries whose files no longer exist on disk.
+  // v2.0.0-rc.22 TASK-014: meta paths may carry the personal prefix —
+  // resolve via resolveContentRefPath to check both layers correctly.
   for (const [relPath, entry] of metaEntries) {
     if (!ruleFiles.includes(relPath)) {
-      const absPath = join(projectRoot, relPath);
+      const absPath = resolveContentRefPath(projectRoot, relPath);
       if (!existsSync(absPath)) {
         events.push({
           type: "rule_removed",
@@ -485,10 +563,10 @@ export async function reconcileKnowledge(projectRoot: string, opts?: ReconcileKn
     }
   }
 
-  // Check for removals
+  // Check for removals. v2.0.0-rc.22 TASK-014: resolve dual-root paths.
   for (const [relPath, entry] of metaEntries) {
     if (!ruleFiles.includes(relPath)) {
-      const absPath = join(projectRoot, relPath);
+      const absPath = resolveContentRefPath(projectRoot, relPath);
       if (!existsSync(absPath)) {
         events.push({
           type: "rule_removed",
@@ -503,19 +581,69 @@ export async function reconcileKnowledge(projectRoot: string, opts?: ReconcileKn
     }
   }
 
-  // High 2: Rewrite agents.meta.json with ground-truth disk state when drift detected.
-  // writeKnowledgeMeta rebuilds from disk (hashes, stable_ids, paths) and writes atomically.
-  if (events.length > 0) {
+  // v2.0.0-rc.22 TASK-014 (Scope E): top-level revision-drift detection.
+  //
+  // The per-file content-hash gate above is necessary but not sufficient: it
+  // only fires when SOME knowledge file's bytes diverge from its meta entry.
+  // Top-level schema/revision drift (e.g. old meta with null knowledge_type
+  // from a v1.x baseline, or revision-string corruption) leaves every per-file
+  // hash matching while the agents.meta.json envelope is still stale.
+  //
+  // Recompute the meta from disk, compare its revision against the on-disk
+  // copy, and force a write when they diverge. This is the symmetric
+  // counterpart to loadActiveMeta's auto-heal on the read path: read-side
+  // auto-heal closes the gap when no one calls reconcile; this closes the
+  // gap when something explicitly calls reconcile (doctor --fix, startup,
+  // manual).
+  //
+  // We deliberately call buildKnowledgeMeta + readAgentsMeta directly rather
+  // than reusing loadActiveMeta. loadActiveMeta would also persist on drift
+  // (good) — but it lives in load-active-meta.ts which itself imports from
+  // this module's neighbour (knowledge-meta-builder.ts). Going through
+  // loadActiveMeta here would invert the dependency direction in a way that
+  // risks future circular imports. The direct comparison keeps the
+  // dependency arrow stable: knowledge-sync depends only on
+  // knowledge-meta-builder + meta-reader.
+  let revisionDrift = false;
+  try {
+    const derived = await buildKnowledgeMeta(projectRoot);
+    const onDisk = await readAgentsMeta(projectRoot);
+    revisionDrift = onDisk.revision !== derived.meta.revision;
+  } catch (error) {
+    // Missing/invalid on-disk meta is NOT a revisionDrift case for this
+    // gate — the higher-level doctor/startup flows handle agents_meta_missing
+    // / agents_meta_invalid separately. Per-file events (if any) will still
+    // trigger writeKnowledgeMeta below, which creates the meta from scratch.
+    if (
+      !(error instanceof AgentsMetaFileMissingError) &&
+      !(error instanceof AgentsMetaInvalidError)
+    ) {
+      throw error;
+    }
+  }
+
+  // High 2: Rewrite agents.meta.json with ground-truth disk state when drift
+  // detected (either per-file or top-level revision drift). writeKnowledgeMeta
+  // rebuilds from disk (hashes, stable_ids, paths) and writes atomically.
+  if (events.length > 0 || revisionDrift) {
     await writeKnowledgeMeta(projectRoot, { source: "sync_meta" });
-    await appendRuleSyncEvents(projectRoot, events);
+    if (events.length > 0) {
+      await appendRuleSyncEvents(projectRoot, events);
+    }
     contextCache.invalidate("file_watch", projectRoot);
+    // The contextCache "meta" slot was populated by readAgentsMeta above; bust
+    // it so subsequent reads see the freshly-written meta.
+    contextCache.invalidate("meta_write", projectRoot);
   }
 
   const duration_ms = Date.now() - startTime;
   const reconciledFiles = events.map((e) => e.path);
 
-  // Emit summary ledger event when a trigger is specified and drift was found.
-  if (trigger !== undefined && events.length > 0) {
+  // Emit summary ledger event when a trigger is specified and ANY write
+  // happened (per-file drift OR top-level revision drift). The
+  // force_write_reason field disambiguates revision-only writes from
+  // standard per-file flows so the audit trail is unambiguous.
+  if (trigger !== undefined && (events.length > 0 || revisionDrift)) {
     if (trigger === "startup") {
       await appendEventLedgerEvent(projectRoot, {
         event_type: "meta_reconciled_on_startup",
@@ -530,11 +658,14 @@ export async function reconcileKnowledge(projectRoot: string, opts?: ReconcileKn
         duration_ms,
         trigger,
         source: "reconcileKnowledge",
+        ...(events.length === 0 && revisionDrift
+          ? { force_write_reason: "revision_drift" as const }
+          : {}),
       });
     }
   }
 
-  if (events.length === 0 && warnings.length === 0) {
+  if (events.length === 0 && warnings.length === 0 && !revisionDrift) {
     return { status: "fresh", events: [], warnings: [] };
   }
 

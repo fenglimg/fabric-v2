@@ -11,7 +11,10 @@ import {
 } from "@fenglimg/fabric-shared/schemas/api-contracts";
 import type { EventLedgerEventInput } from "@fenglimg/fabric-shared";
 
+import { AgentsMetaFileMissingError } from "../meta-reader.js";
+
 import { appendEventLedgerEvent } from "./event-ledger.js";
+import { loadActiveMeta } from "./load-active-meta.js";
 import {
   atomicWriteText,
   ensureParentDirectory,
@@ -59,6 +62,27 @@ export async function extractKnowledge(
   projectRoot: string,
   input: FabExtractKnowledgeInput,
 ): Promise<FabExtractKnowledgeOutput> {
+  // v2.0.0-rc.22 Scope D T-D2: STRICT meta auto-heal at extract entry. extract
+  // itself never reads agents.meta.json — id allocation happens at review/
+  // approve time. But review's KnowledgeIdAllocator pulls its counter directly
+  // from the persisted meta, so if a stale meta survives until approve, the
+  // counter advance starts from the wrong base. Re-healing here keeps the
+  // counter / nodes envelope consistent with the on-disk knowledge tree the
+  // moment a new pending entry is proposed. Build failures (e.g. transient
+  // fs errors during the rebuild) propagate loudly — that's the strict
+  // contract. Missing on-disk meta is the ONE exception: extract is the
+  // first-touch entry for many "import knowledge from session" flows where
+  // doctor-init hasn't run yet, and refusing to write a pending until the
+  // baseline exists would break those onboarding paths. So we swallow
+  // AgentsMetaFileMissingError specifically; every other failure is loud.
+  try {
+    await loadActiveMeta(projectRoot, { caller: "extractKnowledge" });
+  } catch (error) {
+    if (!(error instanceof AgentsMetaFileMissingError)) {
+      throw error;
+    }
+  }
+
   const sanitizedSlug = sanitizeSlug(input.slug);
 
   // v2.0.0-rc.7 T5: source_sessions[] is the array form. Pre-T5 callers may

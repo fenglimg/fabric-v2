@@ -56,12 +56,21 @@ export interface PlanContextHintEntry {
 // Protocol v2 (rc.18): renamed `narrow` → `entries` (field is mode-agnostic —
 // covers both --paths union and --all degenerate); v1 emission is removed
 // without a compat shim per pre-user clean-slate policy.
+//
+// v2.0.0-rc.22 Scope D T-D3 (TASK-010): additive optional auto-heal banner
+// fields. Surfaced ONLY when the server's planContext() detected meta drift
+// and rebuilt the meta in-place (auto_healed === true). Both fields stay
+// omitted on the steady-state path so the wire shape remains minimal in the
+// common case. Version stays at 2 — additive optional fields preserve v2
+// compat for hook consumers that don't read them.
 export interface PlanContextHintOutput {
   version: 2;
   revision_hash: string;
   target_paths: string[];
   entries: PlanContextHintEntry[];
   broad_count: number;
+  auto_healed?: boolean;
+  previous_revision_hash?: string;
 }
 
 // Sentinel path used when `--all` is set. planContext requires at least one
@@ -164,13 +173,26 @@ export async function runPlanContextHint(opts: {
     summary: item.description.summary,
   }));
 
-  return {
+  const output: PlanContextHintOutput = {
     version: 2,
     revision_hash: result.revision_hash,
     target_paths: targetPaths,
     entries,
     broad_count: sharedIndex.length,
   };
+
+  // v2.0.0-rc.22 Scope D T-D3 (TASK-010): thread auto-heal banner pair through
+  // to the wire payload, but ONLY when the server actually healed. Omitting
+  // both fields on the steady-state path keeps the JSON tidy and lets hook
+  // consumers branch on `auto_healed === true` without a tri-state check.
+  if (result.auto_healed === true) {
+    output.auto_healed = true;
+    if (typeof result.previous_revision_hash === "string") {
+      output.previous_revision_hash = result.previous_revision_hash;
+    }
+  }
+
+  return output;
 }
 
 function parsePathsArg(raw: string | undefined): string[] {

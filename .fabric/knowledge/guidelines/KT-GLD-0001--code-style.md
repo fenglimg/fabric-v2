@@ -5,7 +5,7 @@ layer: team
 maturity: verified
 layer_reason: "project artifact (deterministic init scan)"
 created_at: 2026-05-10T05:24:25.169Z
-tags: [unknown, typescript, csv, ndjson, [none]]
+tags: []
 ---
 
 # Code style guidelines

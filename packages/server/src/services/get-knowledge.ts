@@ -6,6 +6,7 @@ import { minimatch } from "minimatch";
 import { contextCache } from "../cache.js";
 import { readAgentsMeta, type AgentsMeta } from "../meta-reader.js";
 import { appendEventLedgerEvent } from "./event-ledger.js";
+import { loadActiveMeta } from "./load-active-meta.js";
 
 export type KnowledgeEntryItem = {
   path: string;
@@ -82,6 +83,21 @@ const PRIORITY_ORDER: Record<"high" | "medium" | "low", number> = {
 };
 
 export async function getKnowledge(projectRoot: string, input: GetKnowledgeInput): Promise<GetKnowledgeResult> {
+  // v2.0.0-rc.22 Scope D T-D2: strict meta-load happens BEFORE the context
+  // cache lookup so a stale on-disk meta is auto-healed (and the ledger event
+  // emitted) before any downstream path-based rule matching runs. If a heal
+  // fired the meta slot is already invalidated by loadActiveMeta — we also
+  // drop the context slot here so the rebuilt context picks up the new meta
+  // instead of returning a TTL-cached snapshot keyed on the prior revision.
+  const metaResult = await loadActiveMeta(projectRoot, { caller: "getKnowledge" });
+  if (metaResult.auto_healed) {
+    // contextCache.invalidate only knows "meta_write" / "file_watch"; the
+    // first clears just the meta slot, the second clears meta + context. We
+    // want "context too" because the cached GetKnowledgeContext embeds the
+    // pre-heal meta. "file_watch" is the closest reason — semantically the
+    // on-disk file did just change (we just wrote it).
+    contextCache.invalidate("file_watch", projectRoot);
+  }
   const context = await loadGetKnowledgeContext(projectRoot);
   const stale = input.client_hash !== undefined && input.client_hash !== context.meta.revision;
   const matchedNodes = matchRuleNodes(context.meta, input.path);

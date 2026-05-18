@@ -223,6 +223,36 @@ const STRINGS = {
     "zh-CN-hybrid": () =>
       "  📋 Fabric: 知识库稀疏，是否调 /fabric-import 从 git 历史与现有文档回灌知识?",
   },
+
+  // ---- Broad hook: meta auto-refresh breadcrumb (rc.22 Scope D T-D4) -------
+  // Surfaced ONLY when planContext() detected meta drift and rebuilt the meta
+  // in-place (server emits `auto_healed: true` in plan-context-hint payload).
+  // Single informational line — operators need a breadcrumb when meta auto-
+  // heals so a "why did revision change?" question has a paper trail.
+  //
+  // Two render shapes:
+  //   - metaAutoRefreshedBanner: full transition with prev → cur 8-char hash
+  //     prefixes. Used when both previous_revision_hash + revision_hash present.
+  //   - metaAutoRefreshedBannerGeneric: defensive fallback when the server
+  //     emitted `auto_healed: true` but did not include previous_revision_hash
+  //     (T10 noted this edge case). No hash transition shown.
+  //
+  // Note: 🔄 emoji prefix is intentional (matches the project's general "no
+  // emoji" rule's exception for explicit user request — see TASK-011 description).
+  // params: { prev, cur } — both already 8-char hex strings, caller-supplied.
+  metaAutoRefreshedBanner: {
+    "zh-CN": (p) => `  🔄 Fabric: 元数据已自动刷新(sha ${p.prev} → ${p.cur})`,
+    en: (p) => `  🔄 Fabric: meta auto-refreshed (sha ${p.prev} → ${p.cur})`,
+    "zh-CN-hybrid": (p) => `  🔄 Fabric: 元数据已自动刷新(sha ${p.prev} → ${p.cur})`,
+  },
+
+  // Generic variant — no hash transition. Used when auto_healed:true but
+  // previous_revision_hash is missing from the payload.
+  metaAutoRefreshedBannerGeneric: {
+    "zh-CN": () => "  🔄 Fabric: 元数据已自动刷新",
+    en: () => "  🔄 Fabric: meta auto-refreshed",
+    "zh-CN-hybrid": () => "  🔄 Fabric: 元数据已自动刷新",
+  },
 };
 
 /**

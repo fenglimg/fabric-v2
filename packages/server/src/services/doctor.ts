@@ -30,7 +30,12 @@ import { contextCache } from "../cache.js";
 import { atomicWriteJson, atomicWriteText } from "@fenglimg/fabric-shared/node/atomic-write";
 import { ensureParentDirectory, getEventLedgerPath, sha256 } from "./_shared.js";
 import { buildKnowledgeMeta, isSameKnowledgeTestIndex, writeKnowledgeMeta } from "./knowledge-meta-builder.js";
-import { appendEventLedgerEvent, readEventLedger, truncateLedgerToLastNewline } from "./event-ledger.js";
+import {
+  appendEventLedgerEvent,
+  readEventLedger,
+  rotateEventLedgerIfNeeded,
+  truncateLedgerToLastNewline,
+} from "./event-ledger.js";
 import { reconcileKnowledge } from "./knowledge-sync.js";
 import { readAgentsMeta } from "../meta-reader.js";
 
@@ -251,6 +256,18 @@ type RulesDirUnindexedInspection = {
 
 type KnowledgeDirMissingInspection = {
   missingSubdirs: string[];
+};
+
+// v2.0.0-rc.22 TASK-006: baseline filename format lint.
+// Each entry records the offending project-relative path plus the baseline
+// stable_id parsed from the file's frontmatter.
+type BaselineFilenameFormatOffender = {
+  path: string;
+  stable_id: string;
+};
+
+type BaselineFilenameFormatInspection = {
+  offenders: BaselineFilenameFormatOffender[];
 };
 
 type StableIdCollision = {
@@ -706,6 +723,28 @@ const CANONICAL_KNOWLEDGE_FILENAME_PATTERN =
 
 const KNOWLEDGE_SUBDIRS = ["decisions", "pitfalls", "guidelines", "models", "processes", "pending"] as const;
 
+// v2.0.0-rc.22 TASK-006: baseline filename format hard-error lint.
+//
+// Mirrors `KNOWN_BASELINE_IDS` in packages/cli/src/commands/scan.ts (T5).
+// Kept in sync by convention; T15 dogfood may refactor the duplication out
+// to a shared constant. Any stable_id NOT in this allowlist is treated as a
+// user-promoted entry (e.g. KP-DEC-0001) and intentionally left untouched —
+// only deterministic baselines emitted by `fab scan` are subject to the
+// `${id}--${slug}.md` filename invariant this lint enforces.
+const BASELINE_FILENAME_LINT_BASELINE_IDS = new Set<string>([
+  "KT-MOD-0001", // tech-stack
+  "KT-MOD-0002", // module-structure
+  "KT-MOD-0003", // readme-first-paragraph
+  "KT-PRO-0001", // build-config
+  "KT-PRO-0002", // ci-config
+  "KT-GLD-0001", // code-style
+]);
+
+// Filename pattern for the canonical id-prefixed form. Mirrors
+// `ID_PREFIXED_FILENAME_PATTERN` in scan.ts (T5). Files matching this pattern
+// are already migrated and not flagged by this lint.
+const BASELINE_ID_PREFIXED_FILENAME_PATTERN = /^KT-[A-Z]+-\d+--.+\.md$/u;
+
 // Knowledge counter type-codes. Mirrors KNOWLEDGE_TYPE_CODES values in shared/api-contracts.
 const COUNTER_TYPE_CODES = ["MOD", "DEC", "GLD", "PIT", "PRO"] as const;
 
@@ -776,6 +815,11 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
   const metaManuallyDiverged = await inspectMetaManuallyDiverged(projectRoot);
   const knowledgeDirUnindexed = inspectKnowledgeDirUnindexed(projectRoot, meta);
   const knowledgeDirMissing = inspectKnowledgeDirMissing(projectRoot);
+  // v2.0.0-rc.22 TASK-006: baseline filename format hard error. Detects
+  // bare-slug baseline files (pre-rc.22 layout) and instructs the user to
+  // run `fab scan` for one-shot migration. manual_error kind (no --fix path;
+  // delegated fixer is `fab scan`).
+  const baselineFilenameFormat = inspectBaselineFilenameFormat(projectRoot);
   const stableIdCollision = await inspectStableIdCollisions(projectRoot);
   const counterDesync = inspectCounterDesync(meta);
   const preexistingRootFiles = inspectPreexistingRootFiles(projectRoot);
@@ -849,6 +893,10 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     createL1BootstrapSnapshotDriftCheck(l1BootstrapSnapshotDrift),
     createL2ManagedBlockDriftCheck(l2ManagedBlockDrift),
     createKnowledgeDirMissingCheck(knowledgeDirMissing),
+    // v2.0.0-rc.22 TASK-006: baseline filename format. Sits adjacent to
+    // knowledge_dir_missing — both are knowledge-layout invariants. manual_error
+    // kind; resolution delegates to `fab scan` (no --fix path).
+    createBaselineFilenameFormatCheck(baselineFilenameFormat),
     createForensicCheck(forensic, framework.kind, entryPoints.length),
     // v2.0: removed `createInitContextCheck` — `.fabric/init-context.json`
     // is owned by the AI-side client init skill, not by `fabric install` CLI.
@@ -1028,17 +1076,21 @@ export async function runDoctorFix(target: string): Promise<DoctorFixReport> {
     contextCache.invalidate("meta_write", projectRoot);
   }
 
+  // rc.22 TASK-012: agents_meta_stale is now a `warning` tier (engine
+  // auto-heals on next MCP call), but `fab doctor --fix` must still reconcile
+  // it explicitly. We look in both `fixable_errors` and `warnings` so the
+  // demotion doesn't break the existing fix-path.
+  const reconcileCodes = [
+    "agents_meta_missing",
+    "agents_meta_stale",
+    "knowledge_test_index_missing",
+    "knowledge_test_index_stale",
+    "content_ref_missing",
+    "knowledge_dir_unindexed",
+  ];
   if (
-    before.fixable_errors.some((issue) =>
-      [
-        "agents_meta_missing",
-        "agents_meta_stale",
-        "knowledge_test_index_missing",
-        "knowledge_test_index_stale",
-        "content_ref_missing",
-        "knowledge_dir_unindexed",
-      ].includes(issue.code),
-    )
+    before.fixable_errors.some((issue) => reconcileCodes.includes(issue.code))
+    || before.warnings.some((issue) => reconcileCodes.includes(issue.code))
   ) {
     // D22: doctor's role is now consistency repairer, not baseline promoter.
     // reconcileKnowledge rewrites agents.meta.json from disk ground-truth and emits
@@ -1047,14 +1099,12 @@ export async function runDoctorFix(target: string): Promise<DoctorFixReport> {
     // knowledge_dir_unindexed: reconcile incorporates any .md files not yet in the index.
     await reconcileKnowledge(projectRoot, { trigger: "doctor" });
     for (const issue of before.fixable_errors.filter((candidate) =>
-      [
-        "agents_meta_missing",
-        "agents_meta_stale",
-        "knowledge_test_index_missing",
-        "knowledge_test_index_stale",
-        "content_ref_missing",
-        "knowledge_dir_unindexed",
-      ].includes(candidate.code),
+      reconcileCodes.includes(candidate.code),
+    )) {
+      fixed.push(issue);
+    }
+    for (const issue of before.warnings.filter((candidate) =>
+      reconcileCodes.includes(candidate.code),
     )) {
       fixed.push(issue);
     }
@@ -1080,6 +1130,25 @@ export async function runDoctorFix(target: string): Promise<DoctorFixReport> {
       corrupted_path: truncResult.corrupted_path,
     });
     fixed.push(findIssue(before.fixable_errors, "event_ledger_partial_write"));
+  }
+
+  // v2.0.0-rc.22 Scope A T4: unconditional sliding-window rotation step. This
+  // is hygiene, not error correction — there is no `doctor` check that gates
+  // it, so `rotateEventLedgerIfNeeded` runs on every `--fix` invocation. It
+  // is idempotent: when no line satisfies `ts < cutoff` it returns
+  // `{ rotated: false, archivedCount: 0 }` and the main file is untouched.
+  // We synthesize a `fixed[]` entry ONLY when `archivedCount > 0` so a no-op
+  // re-run does not pollute the report. Placed after
+  // `event_ledger_partial_write` so rotation always operates on a
+  // newline-terminated main ledger (no partial-tail edge cases).
+  const rotateResult = await rotateEventLedgerIfNeeded(projectRoot);
+  if (rotateResult.rotated && rotateResult.archivedCount > 0) {
+    fixed.push({
+      code: "event_ledger_rotated",
+      name: "Event ledger rotated",
+      message: `Rotated ${rotateResult.archivedCount} event(s) older than retention window to ${rotateResult.archivePath ?? "archive"}`,
+      path: rotateResult.archivePath,
+    });
   }
 
   if (before.fixable_errors.some((issue) => issue.code === "mcp_config_in_wrong_file")) {
@@ -2180,6 +2249,84 @@ function inspectKnowledgeDirMissing(projectRoot: string): KnowledgeDirMissingIns
   return { missingSubdirs };
 }
 
+// v2.0.0-rc.22 TASK-006: scan canonical knowledge subdirs for bare-slug
+// baseline files (e.g. `code-style.md`) — the pre-rc.22 emit format. Files
+// matching the id-prefixed pattern are skipped; bare-slug files have their
+// frontmatter `id:` parsed and are flagged only when that id is in the
+// baseline allowlist (so a user-promoted `KP-DEC-0001--slug.md` mis-named
+// `slug.md` is intentionally NOT flagged here — that's an unrelated invariant).
+// Personal-layer files outside the project root are NOT inspected (only
+// project-local `.fabric/knowledge/{canonical-type}/` is scanned).
+function inspectBaselineFilenameFormat(projectRoot: string): BaselineFilenameFormatInspection {
+  const offenders: BaselineFilenameFormatOffender[] = [];
+  const knowledgeRoot = join(projectRoot, ".fabric", "knowledge");
+  if (!existsSync(knowledgeRoot)) {
+    return { offenders };
+  }
+  for (const sub of KNOWLEDGE_CANONICAL_TYPE_DIRS) {
+    const dir = join(knowledgeRoot, sub);
+    if (!existsSync(dir)) {
+      continue;
+    }
+    let entries;
+    try {
+      entries = readdirSync(dir, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      const entryName = entry.name;
+      if (!entry.isFile() || !entryName.endsWith(".md")) {
+        continue;
+      }
+      if (BASELINE_ID_PREFIXED_FILENAME_PATTERN.test(entryName)) {
+        continue;
+      }
+      const abs = join(dir, entryName);
+      let source: string;
+      try {
+        source = readFileSync(abs, "utf8");
+      } catch {
+        continue;
+      }
+      const id = extractKnowledgeFrontmatterId(source);
+      if (id === null) {
+        continue;
+      }
+      if (!BASELINE_FILENAME_LINT_BASELINE_IDS.has(id)) {
+        continue;
+      }
+      offenders.push({
+        path: posix.join(".fabric/knowledge", sub, entryName),
+        stable_id: id,
+      });
+    }
+  }
+  offenders.sort((a, b) => a.path.localeCompare(b.path));
+  return { offenders };
+}
+
+function createBaselineFilenameFormatCheck(
+  inspection: BaselineFilenameFormatInspection,
+): DoctorCheck {
+  if (inspection.offenders.length === 0) {
+    return okCheck(
+      "Baseline filename format",
+      "All baseline knowledge files use the canonical `${id}--${slug}.md` filename format.",
+    );
+  }
+  const first = inspection.offenders[0];
+  const detail = `${first.stable_id} at ${first.path}`;
+  return issueCheck(
+    "Baseline filename format",
+    "error",
+    "manual_error",
+    "lint-baseline-filename-format",
+    `${inspection.offenders.length} baseline knowledge file${inspection.offenders.length === 1 ? "" : "s"} use${inspection.offenders.length === 1 ? "s" : ""} the deprecated bare-slug filename format and must be migrated to \`\${id}--\${slug}.md\`. First: ${detail}.`,
+    "Run `fab scan` to auto-migrate baseline filenames to the canonical `${id}--${slug}.md` format.",
+  );
+}
+
 function createKnowledgeDirMissingCheck(inspection: KnowledgeDirMissingInspection): DoctorCheck {
   if (inspection.missingSubdirs.length > 0) {
     const list = inspection.missingSubdirs.join(", ");
@@ -2230,13 +2377,19 @@ function createMetaCheck(meta: MetaInspection): DoctorCheck {
     return issueCheck("Agents metadata", "error", "manual_error", "agents_meta_invalid", meta.readError ?? ".fabric/agents.meta.json is invalid.", "Delete .fabric/agents.meta.json and run `fab doctor --fix` to regenerate it.");
   }
   if (meta.stale) {
+    // rc.22 TASK-012: demoted error → warning. The engine auto-heals stale meta
+    // on the next plan-context / get-sections MCP call (lazy reconcile), so a
+    // detected drift is benign by the time a human looks at it. We keep the
+    // check visible (operator wants to see drift for transient debugging) but
+    // exit code 0 unless --strict is set. The fix path at the warnings guard
+    // (see runDoctorFix) still reconciles when --fix is invoked explicitly.
     return issueCheck(
       "Agents metadata",
-      "error",
-      "fixable_error",
+      "warn",
+      "warning",
       "agents_meta_stale",
       `.fabric/agents.meta.json revision ${meta.revision} does not match .fabric/knowledge derived revision ${meta.computedRevision ?? "<unknown>"}.`,
-      "Run `fab doctor --fix` to reconcile agents.meta.json with the current knowledge files.",
+      "Benign — engine auto-heals on next plan-context/get-sections call. Run `fab doctor --fix` for explicit reconciliation.",
     );
   }
   return okCheck("Agents metadata", `.fabric/agents.meta.json revision ${meta.revision} is aligned with .fabric/knowledge.`);

@@ -323,6 +323,33 @@ describe("fabricConfigSchema — rc.9+ skill tunables boundaries", () => {
     ).toBe(2000);
   });
 
+  // v2.0.0-rc.22 Scope A T3: fabric_event_retention_days literal union
+  // (7 / 30 / 90). Optional with NO `.default()` — absence is meaningful
+  // (the rotation primitive applies its own library-side default).
+  it("fabric_event_retention_days accepts 7 / 30 / 90 and rejects everything else", () => {
+    for (const value of [7, 30, 90] as const) {
+      const parsed = fabricConfigSchema.parse({ fabric_event_retention_days: value });
+      expect(parsed.fabric_event_retention_days).toBe(value);
+    }
+    expect(() =>
+      fabricConfigSchema.parse({ fabric_event_retention_days: 14 }),
+    ).toThrow();
+    expect(() =>
+      fabricConfigSchema.parse({ fabric_event_retention_days: 0 }),
+    ).toThrow();
+    expect(() =>
+      fabricConfigSchema.parse({ fabric_event_retention_days: -1 }),
+    ).toThrow();
+    expect(() =>
+      fabricConfigSchema.parse({ fabric_event_retention_days: "30" }),
+    ).toThrow();
+  });
+
+  it("fabric_event_retention_days is undefined when absent (no schema default)", () => {
+    const parsed = fabricConfigSchema.parse({});
+    expect(parsed.fabric_event_retention_days).toBeUndefined();
+  });
+
   it("positive-int fields reject zero, negative, non-integer, and non-number", () => {
     const positiveFields = [
       "import_skip_canonical_threshold",

@@ -229,6 +229,123 @@ describe("createLedgerWriteQueue", () => {
     expect(content).toBe("after-bad\n");
   });
 
+  it("runExclusive_serializes_same_path: two concurrent calls on same path run in submission order", async () => {
+    const dir = makeTempDir("aw-runex-serial-");
+    const target = join(dir, "shared.txt");
+
+    const queue = createLedgerWriteQueue();
+    const order: string[] = [];
+
+    const p1 = queue.runExclusive(target, async () => {
+      order.push("A:start");
+      // Force interleaving opportunity
+      await new Promise((r) => setTimeout(r, 20));
+      order.push("A:end");
+      return "A";
+    });
+    const p2 = queue.runExclusive(target, async () => {
+      order.push("B:start");
+      await new Promise((r) => setTimeout(r, 5));
+      order.push("B:end");
+      return "B";
+    });
+
+    const [r1, r2] = await Promise.all([p1, p2]);
+    expect(r1).toBe("A");
+    expect(r2).toBe("B");
+    // B must NOT start before A ends — proves serialization in submission order
+    expect(order).toEqual(["A:start", "A:end", "B:start", "B:end"]);
+  });
+
+  it("runExclusive_parallel_different_paths: calls on different paths run in parallel", async () => {
+    const dir = makeTempDir("aw-runex-parallel-");
+    const pathA = join(dir, "a.txt");
+    const pathB = join(dir, "b.txt");
+
+    const queue = createLedgerWriteQueue();
+    const events: string[] = [];
+
+    const p1 = queue.runExclusive(pathA, async () => {
+      events.push("A:start");
+      await new Promise((r) => setTimeout(r, 30));
+      events.push("A:end");
+      return 1;
+    });
+    const p2 = queue.runExclusive(pathB, async () => {
+      events.push("B:start");
+      await new Promise((r) => setTimeout(r, 5));
+      events.push("B:end");
+      return 2;
+    });
+
+    const [r1, r2] = await Promise.all([p1, p2]);
+    expect(r1).toBe(1);
+    expect(r2).toBe(2);
+    // Both start before either ends — proves parallelism across paths
+    const aStartIdx = events.indexOf("A:start");
+    const bStartIdx = events.indexOf("B:start");
+    const aEndIdx = events.indexOf("A:end");
+    const bEndIdx = events.indexOf("B:end");
+    expect(bStartIdx).toBeLessThan(aEndIdx);
+    expect(aStartIdx).toBeLessThan(bEndIdx);
+    // B (shorter) should finish before A (longer)
+    expect(bEndIdx).toBeLessThan(aEndIdx);
+  });
+
+  it("runExclusive_error_no_deadlock: rejection in fn does not block subsequent calls on same path", async () => {
+    const dir = makeTempDir("aw-runex-error-");
+    const target = join(dir, "p.txt");
+
+    const queue = createLedgerWriteQueue();
+
+    const p1 = queue.runExclusive(target, async () => {
+      throw new Error("boom");
+    });
+    const p2 = queue.runExclusive(target, async () => {
+      return "ok";
+    });
+
+    await expect(p1).rejects.toThrow("boom");
+    await expect(p2).resolves.toBe("ok");
+
+    // A third call after both settle still works
+    const p3 = await queue.runExclusive(target, async () => "still-fine");
+    expect(p3).toBe("still-fine");
+  });
+
+  it("runExclusive_interleaved_with_append: append after runExclusive waits for the exclusive section", async () => {
+    const dir = makeTempDir("aw-runex-interleave-");
+    const target = join(dir, "ledger.jsonl");
+
+    const queue = createLedgerWriteQueue();
+    const order: string[] = [];
+
+    // runExclusive simulates "read-partition-write" — slow critical section
+    const pEx = queue.runExclusive(target, async () => {
+      order.push("ex:start");
+      // Write something to target inside the critical section so we can verify
+      // ordering on disk too.
+      await readFile(target, "utf8").catch(() => "");
+      await new Promise((r) => setTimeout(r, 20));
+      const { appendFile: af } = await import("node:fs/promises");
+      await af(target, "exclusive\n", "utf8");
+      order.push("ex:end");
+      return "done";
+    });
+
+    // append scheduled after runExclusive — must wait until ex:end
+    const pAp = queue.append(target, "after-exclusive").then(() => {
+      order.push("append:done");
+    });
+
+    await Promise.all([pEx, pAp]);
+
+    expect(order).toEqual(["ex:start", "ex:end", "append:done"]);
+
+    const content = await readFile(target, "utf8");
+    expect(content).toBe("exclusive\nafter-exclusive\n");
+  });
+
   it("chains map is cleaned up after appends settle (no memory leak)", async () => {
     const dir = makeTempDir("aw-ledger-cleanup-");
     const pathA = join(dir, "a.jsonl");

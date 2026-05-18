@@ -2,9 +2,10 @@ import { minimatch } from "minimatch";
 
 import { deriveAgentsMetaLayer, type RuleDescription, type RuleDescriptionIndexItem } from "@fenglimg/fabric-shared";
 
-import { readAgentsMeta, type AgentsMeta } from "../meta-reader.js";
+import { type AgentsMeta } from "../meta-reader.js";
 import { appendEventLedgerEvent } from "./event-ledger.js";
 import { normalizeKnowledgePath } from "./get-knowledge.js";
+import { loadActiveMetaOrStale } from "./load-active-meta.js";
 
 export type PlanContextInput = {
   paths: string[];
@@ -66,6 +67,14 @@ export type PlanContextResult = {
       path?: string;
     }>;
   };
+  // v2.0.0-rc.22 Scope D T-D2: optional auto-heal banner fields. Surfaced ONLY
+  // when loadActiveMetaOrStale detected drift between on-disk meta and the
+  // derived knowledge tree and rebuilt the meta in-place. Omitted (undefined)
+  // when the meta was already fresh — keeps the wire shape minimal in the
+  // common case. Downstream CLI shim (rc.22 T-D3) reads this pair to render
+  // a one-line banner without querying the event ledger.
+  auto_healed?: boolean;
+  previous_revision_hash?: string;
 };
 
 export type SelectionTokenState = {
@@ -87,8 +96,16 @@ export async function planContext(
   projectRoot: string,
   input: PlanContextInput,
 ): Promise<PlanContextResult> {
-  const meta = await readAgentsMeta(projectRoot);
-  const stale = input.client_hash !== undefined && input.client_hash !== meta.revision;
+  // v2.0.0-rc.22 Scope D T-D2: graceful meta-load. planContext is a hint-time
+  // advisor — when buildKnowledgeMeta fails transiently we'd rather return a
+  // slightly stale broad-scope hint than surface an fs-error to the caller.
+  // loadActiveMetaOrStale degrades to the on-disk meta in that case and flags
+  // the response via `stale: true` so consumers can warn.
+  const metaResult = await loadActiveMetaOrStale(projectRoot, { caller: "planContext" });
+  const meta = metaResult.meta;
+  const stale =
+    metaResult.degraded === true ||
+    (input.client_hash !== undefined && input.client_hash !== meta.revision);
   const uniquePaths = dedupePaths(input.paths);
   const allDescriptions = buildDescriptionIndex(meta);
 
@@ -130,6 +147,15 @@ export async function planContext(
       description_index: sharedDescriptionIndex,
       preflight_diagnostics: buildPreflightDiagnostics(meta),
     },
+    // v2.0.0-rc.22 Scope D T-D2: surface auto-heal pair only when a heal
+    // actually fired. Keeping these fields absent on the steady-state path
+    // means existing consumers see the same wire shape they always have.
+    ...(metaResult.auto_healed
+      ? {
+          auto_healed: true,
+          previous_revision_hash: metaResult.previous_revision_hash,
+        }
+      : {}),
   };
 
   try {

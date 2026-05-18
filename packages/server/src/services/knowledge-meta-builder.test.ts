@@ -203,6 +203,60 @@ describe("knowledge-meta-builder", () => {
     });
   });
 
+  it("parses_baseline_frontmatter_without_summary — heading-derived summary + knowledge fields populated (rc.22 Finding 2)", async () => {
+    // v2.0-rc.22 hotfix (Finding 2 / B1): the deterministic init-scan
+    // baselines (KT-MOD-*, KT-GLD-*, KT-PRO-*) embed their title in the
+    // markdown h1 rather than a `summary:` field, then declare knowledge
+    // fields (type/maturity/layer/...) in frontmatter. Before this fix,
+    // extractDescriptionFromFrontmatter early-returned undefined whenever
+    // summary was absent, dropping callers into a heading-only fallback
+    // that hardcoded knowledge_type/maturity/knowledge_layer to undefined.
+    // Result: plan-context-hint surfaced baselines with empty type/maturity
+    // while user-promoted KP-* entries (which always author `summary:`)
+    // displayed correctly. The fix: heading-only fallback ALSO calls
+    // extractKnowledgeFieldsFromFrontmatter and merges the parsed fields.
+    const projectRoot = await createProject("rules-builder-v2-no-summary");
+    await writeProjectFile(
+      projectRoot,
+      ".fabric/knowledge/guidelines/KT-GLD-0001--code-style.md",
+      [
+        "---",
+        "id: KT-GLD-0001",
+        "type: guideline",
+        "layer: team",
+        "maturity: verified",
+        'layer_reason: "project artifact (deterministic init scan)"',
+        "created_at: 2026-05-10T00:00:00.000Z",
+        "tags: []",
+        "relevance_scope: narrow",
+        "relevance_paths: [.prettierrc, .editorconfig]",
+        "---",
+        "# Code style guidelines",
+        "",
+        "Body text.",
+        "",
+      ].join("\n"),
+    );
+
+    const meta = await computeKnowledgeBasedAgentsMeta(projectRoot);
+    const node = Object.values(meta.nodes).find(
+      (n) => n.file === ".fabric/knowledge/guidelines/KT-GLD-0001--code-style.md",
+    );
+    expect(node).toBeDefined();
+    // Heading provides the summary in the fallback path.
+    expect(node?.description?.summary).toBe("Code style guidelines");
+    // Knowledge fields pulled from frontmatter rather than dropped.
+    expect(node?.description?.id).toBe("KT-GLD-0001");
+    expect(node?.description?.knowledge_type).toBe("guideline");
+    expect(node?.description?.maturity).toBe("verified");
+    expect(node?.description?.knowledge_layer).toBe("team");
+    expect(node?.description?.layer_reason).toBe("project artifact (deterministic init scan)");
+    expect(node?.description?.created_at).toBe("2026-05-10T00:00:00.000Z");
+    // Relevance fields honor declared values (not the broad/[] defaults).
+    expect(node?.description?.relevance_scope).toBe("narrow");
+    expect(node?.description?.relevance_paths).toEqual([".prettierrc", ".editorconfig"]);
+  });
+
   it("parses_v1_minimal_frontmatter — knowledge fields stay undefined and no warnings emitted", async () => {
     const projectRoot = await createProject("rules-builder-v1");
     // v2.0 (TASK-004): the parser emits warnings via process.stderr.write

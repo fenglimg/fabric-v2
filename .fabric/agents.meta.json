@@ -1,5 +1,5 @@
 {
-  "revision": "sha256:0582b2af37f7305ff7b8d7dafbcb548cccab709c9dd3612dbd80f2c7525ed4e6",
+  "revision": "sha256:3e1dd67092507186e83c1a826f1783ec65e82e68783bb44d0fd97c3ffa6a9cae",
   "nodes": {
     "KT-DEC-0001": {
       "file": ".fabric/knowledge/decisions/KT-DEC-0001.md",
@@ -21,6 +21,16 @@
         "tech_stack": [],
         "impact": [],
         "must_read_if": "Boundary B: data + lifecycle + async-review primitive",
+        "id": "KT-DEC-0001",
+        "knowledge_type": "decision",
+        "maturity": "proven",
+        "knowledge_layer": "team",
+        "layer_reason": "architecture decision from v2.0 design review (grill-me 2026-05-10)",
+        "created_at": "2026-05-10T05:24:25.000Z",
+        "tags": [
+          "v2-architecture",
+          "scope-boundary"
+        ],
         "relevance_scope": "broad",
         "relevance_paths": []
       }
@@ -45,6 +55,16 @@
         "tech_stack": [],
         "impact": [],
         "must_read_if": "v2.0 clean rebrand over v1.x staged migration",
+        "id": "KT-DEC-0002",
+        "knowledge_type": "decision",
+        "maturity": "proven",
+        "knowledge_layer": "team",
+        "layer_reason": "architecture decision from v2.0 design review (grill-me 2026-05-10)",
+        "created_at": "2026-05-10T05:24:25.000Z",
+        "tags": [
+          "v2-architecture",
+          "migration-strategy"
+        ],
         "relevance_scope": "broad",
         "relevance_paths": []
       }
@@ -69,6 +89,16 @@
         "tech_stack": [],
         "impact": [],
         "must_read_if": "Dual-root layout: ~/.fabric + <repo>/.fabric",
+        "id": "KT-DEC-0003",
+        "knowledge_type": "decision",
+        "maturity": "proven",
+        "knowledge_layer": "team",
+        "layer_reason": "architecture decision from v2.0 design review (grill-me 2026-05-10)",
+        "created_at": "2026-05-10T05:24:25.000Z",
+        "tags": [
+          "storage-layout",
+          "gitignore"
+        ],
         "relevance_scope": "broad",
         "relevance_paths": []
       }
@@ -93,6 +123,17 @@
         "tech_stack": [],
         "impact": [],
         "must_read_if": "stable_id format K[PT]-(DEC|MOD|GLD|PIT|PRO)-NNNN with monotonic counter",
+        "id": "KT-DEC-0004",
+        "knowledge_type": "decision",
+        "maturity": "proven",
+        "knowledge_layer": "team",
+        "layer_reason": "architecture decision from v2.0 design review (grill-me 2026-05-10)",
+        "created_at": "2026-05-10T05:24:25.000Z",
+        "tags": [
+          "identity",
+          "stable-id",
+          "counters"
+        ],
         "relevance_scope": "broad",
         "relevance_paths": []
       }
@@ -117,6 +158,16 @@
         "tech_stack": [],
         "impact": [],
         "must_read_if": "5-type / 3-maturity / 2-layer schema with flat scalar frontmatter",
+        "id": "KT-DEC-0005",
+        "knowledge_type": "decision",
+        "maturity": "proven",
+        "knowledge_layer": "team",
+        "layer_reason": "architecture decision from v2.0 design review (grill-me 2026-05-10)",
+        "created_at": "2026-05-10T05:24:25.000Z",
+        "tags": [
+          "schema-design",
+          "frontmatter"
+        ],
         "relevance_scope": "broad",
         "relevance_paths": []
       }
@@ -141,6 +192,16 @@
         "tech_stack": [],
         "impact": [],
         "must_read_if": "Review mode inferred from context, not solicited via AskUserQuestion",
+        "id": "KT-DEC-0006",
+        "knowledge_type": "decision",
+        "maturity": "proven",
+        "knowledge_layer": "team",
+        "layer_reason": "architecture decision from v2.0 design review (grill-me 2026-05-10)",
+        "created_at": "2026-05-10T05:24:25.000Z",
+        "tags": [
+          "ux-design",
+          "review-skill"
+        ],
         "relevance_scope": "broad",
         "relevance_paths": []
       }
@@ -165,6 +226,16 @@
         "tech_stack": [],
         "impact": [],
         "must_read_if": "Hook = reminder layer (exit 2 + stderr/followup_message), never blocks",
+        "id": "KT-DEC-0007",
+        "knowledge_type": "decision",
+        "maturity": "proven",
+        "knowledge_layer": "team",
+        "layer_reason": "architecture decision from v2.0 design review (grill-me 2026-05-10)",
+        "created_at": "2026-05-10T05:24:25.000Z",
+        "tags": [
+          "hooks-design",
+          "ux-design"
+        ],
         "relevance_scope": "broad",
         "relevance_paths": []
       }
@@ -189,6 +260,17 @@
         "tech_stack": [],
         "impact": [],
         "must_read_if": "Decay thresholds: 90 / 30 / 14 days (1/4 of Tencent article baselines)",
+        "id": "KT-DEC-0008",
+        "knowledge_type": "decision",
+        "maturity": "proven",
+        "knowledge_layer": "team",
+        "layer_reason": "architecture decision from v2.0 design review (grill-me 2026-05-10)",
+        "created_at": "2026-05-10T05:24:25.000Z",
+        "tags": [
+          "decay",
+          "lint",
+          "rc4-scope"
+        ],
         "relevance_scope": "broad",
         "relevance_paths": []
       }
@@ -269,17 +351,15 @@
       "identity_source": "declared"
     },
     "KT-GLD-0001": {
-      "file": ".fabric/knowledge/guidelines/code-style.md",
-      "content_ref": ".fabric/knowledge/guidelines/code-style.md",
-      "scope_glob": "guidelines/code-style/**",
-      "deps": [
-        "L0"
-      ],
+      "file": ".fabric/knowledge/guidelines/KT-GLD-0001--code-style.md",
+      "content_ref": ".fabric/knowledge/guidelines/KT-GLD-0001--code-style.md",
+      "scope_glob": "**",
+      "deps": [],
       "priority": "medium",
       "level": "L1",
       "layer": "L1",
-      "topology_type": "mirror",
-      "hash": "sha256:838b90333970c3f330c22a5579a68749be4718a9c984aa0480ab5cfb3eade414",
+      "topology_type": "cross-cutting",
+      "hash": "sha256:a10f451b2b156330c956f48785daadab2b0240dc765e4c7d18cfb6a180c16e1c",
       "stable_id": "KT-GLD-0001",
       "identity_source": "declared",
       "description": {
@@ -288,6 +368,12 @@
         "tech_stack": [],
         "impact": [],
         "must_read_if": "Code style guidelines",
+        "id": "KT-GLD-0001",
+        "knowledge_type": "guideline",
+        "maturity": "verified",
+        "knowledge_layer": "team",
+        "layer_reason": "project artifact (deterministic init scan)",
+        "created_at": "2026-05-10T05:24:25.169Z",
         "relevance_scope": "broad",
         "relevance_paths": []
       },
@@ -343,27 +429,34 @@
       "identity_source": "declared"
     },
     "KT-MOD-0001": {
-      "file": ".fabric/knowledge/models/tech-stack.md",
-      "content_ref": ".fabric/knowledge/models/tech-stack.md",
-      "scope_glob": "models/tech-stack/**",
-      "deps": [
-        "L0"
-      ],
+      "file": ".fabric/knowledge/models/KT-MOD-0001--tech-stack.md",
+      "content_ref": ".fabric/knowledge/models/KT-MOD-0001--tech-stack.md",
+      "scope_glob": "**",
+      "deps": [],
       "priority": "medium",
       "level": "L1",
       "layer": "L1",
-      "topology_type": "mirror",
-      "hash": "sha256:f9abcdec207dadd5123bc74cf98cdf29dd3276a7ffe554bc87dc30f96560d13b",
+      "topology_type": "cross-cutting",
+      "hash": "sha256:de4fceb35bba680184f8bd60acde48a4ad78dbe82906162e5229d4a0d3f1feea",
       "stable_id": "KT-MOD-0001",
       "identity_source": "declared",
       "description": {
-        "summary": "Tech stack: unknown",
+        "summary": "Tech stack: unknown unknown / unknown",
         "intent_clues": [],
         "tech_stack": [],
         "impact": [],
-        "must_read_if": "Tech stack: unknown",
-        "relevance_scope": "broad",
-        "relevance_paths": []
+        "must_read_if": "Tech stack: unknown unknown / unknown",
+        "id": "KT-MOD-0001",
+        "knowledge_type": "model",
+        "maturity": "verified",
+        "knowledge_layer": "team",
+        "layer_reason": "project artifact (deterministic init scan)",
+        "created_at": "2026-05-18T05:01:51.809Z",
+        "relevance_scope": "narrow",
+        "relevance_paths": [
+          "package.json",
+          "pnpm-workspace.yaml"
+        ]
       },
       "sections": [
         "MISSION_STATEMENT",
@@ -371,17 +464,15 @@
       ]
     },
     "KT-MOD-0002": {
-      "file": ".fabric/knowledge/models/module-structure.md",
-      "content_ref": ".fabric/knowledge/models/module-structure.md",
-      "scope_glob": "models/module-structure/**",
-      "deps": [
-        "L0"
-      ],
+      "file": ".fabric/knowledge/models/KT-MOD-0002--module-structure.md",
+      "content_ref": ".fabric/knowledge/models/KT-MOD-0002--module-structure.md",
+      "scope_glob": "**",
+      "deps": [],
       "priority": "medium",
       "level": "L1",
       "layer": "L1",
-      "topology_type": "mirror",
-      "hash": "sha256:75bb9507c9db7beedf73588f9b93ff1a2cebf33a5fe5bf7bc3322c01e57eb713",
+      "topology_type": "cross-cutting",
+      "hash": "sha256:0106abe72f63c1755c9c9a8d50bc5a55eb5bac056b30ae48571aaa708245e024",
       "stable_id": "KT-MOD-0002",
       "identity_source": "declared",
       "description": {
@@ -390,8 +481,16 @@
         "tech_stack": [],
         "impact": [],
         "must_read_if": "Module structure",
-        "relevance_scope": "broad",
-        "relevance_paths": []
+        "id": "KT-MOD-0002",
+        "knowledge_type": "model",
+        "maturity": "verified",
+        "knowledge_layer": "team",
+        "layer_reason": "project artifact (deterministic init scan)",
+        "created_at": "2026-05-18T05:01:51.809Z",
+        "relevance_scope": "narrow",
+        "relevance_paths": [
+          "packages/**/package.json"
+        ]
       },
       "sections": [
         "MISSION_STATEMENT",
@@ -399,17 +498,15 @@
       ]
     },
     "KT-MOD-0003": {
-      "file": ".fabric/knowledge/models/readme-first-paragraph.md",
-      "content_ref": ".fabric/knowledge/models/readme-first-paragraph.md",
-      "scope_glob": "models/readme-first-paragraph/**",
-      "deps": [
-        "L0"
-      ],
+      "file": ".fabric/knowledge/models/KT-MOD-0003--readme-first-paragraph.md",
+      "content_ref": ".fabric/knowledge/models/KT-MOD-0003--readme-first-paragraph.md",
+      "scope_glob": "**",
+      "deps": [],
       "priority": "medium",
       "level": "L1",
       "layer": "L1",
-      "topology_type": "mirror",
-      "hash": "sha256:68a7670d183d2c66d495f87435304493cb43b8ed1af9d0655539eeb28010be88",
+      "topology_type": "cross-cutting",
+      "hash": "sha256:e0d316190714464cc4e15f3d3a340c5911ee76e6c139f855a2de94648cef99b1",
       "stable_id": "KT-MOD-0003",
       "identity_source": "declared",
       "description": {
@@ -418,6 +515,12 @@
         "tech_stack": [],
         "impact": [],
         "must_read_if": "README first paragraph",
+        "id": "KT-MOD-0003",
+        "knowledge_type": "model",
+        "maturity": "verified",
+        "knowledge_layer": "team",
+        "layer_reason": "project artifact (deterministic init scan)",
+        "created_at": "2026-05-18T05:01:51.809Z",
         "relevance_scope": "broad",
         "relevance_paths": []
       },
@@ -502,17 +605,15 @@
       "identity_source": "declared"
     },
     "KT-PRO-0001": {
-      "file": ".fabric/knowledge/processes/build-config.md",
-      "content_ref": ".fabric/knowledge/processes/build-config.md",
-      "scope_glob": "processes/build-config/**",
-      "deps": [
-        "L0"
-      ],
+      "file": ".fabric/knowledge/processes/KT-PRO-0001--build-config.md",
+      "content_ref": ".fabric/knowledge/processes/KT-PRO-0001--build-config.md",
+      "scope_glob": "**",
+      "deps": [],
       "priority": "medium",
       "level": "L1",
       "layer": "L1",
-      "topology_type": "mirror",
-      "hash": "sha256:5f3a20fc0af25ed3731bfe8f01cf023da855c7894275b18a8c89ac9040b81ee4",
+      "topology_type": "cross-cutting",
+      "hash": "sha256:56d26575e42ec98cf0ec67ca53b6294c72a93f4e97b194df24838eabc82d5d9f",
       "stable_id": "KT-PRO-0001",
       "identity_source": "declared",
       "description": {
@@ -521,8 +622,17 @@
         "tech_stack": [],
         "impact": [],
         "must_read_if": "Build configuration",
-        "relevance_scope": "broad",
-        "relevance_paths": []
+        "id": "KT-PRO-0001",
+        "knowledge_type": "process",
+        "maturity": "verified",
+        "knowledge_layer": "team",
+        "layer_reason": "project artifact (deterministic init scan)",
+        "created_at": "2026-05-18T05:01:51.809Z",
+        "relevance_scope": "narrow",
+        "relevance_paths": [
+          "package.json",
+          "packages/cli/__tests__/fixtures/cocos-stub/package.json"
+        ]
       },
       "sections": [
         "MISSION_STATEMENT",
@@ -534,7 +644,7 @@
   "counters": {
     "KP": {
       "MOD": 0,
-      "DEC": 0,
+      "DEC": 9999,
       "GLD": 0,
       "PIT": 0,
       "PRO": 0

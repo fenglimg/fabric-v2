@@ -210,6 +210,135 @@ describe("eventLedgerEventSchema", () => {
     ]);
   });
 
+  // v2.0.0-rc.22 Scope D T-D1: knowledge_meta_auto_healed round-trip parse
+  it("parses knowledge_meta_auto_healed (with and without caller)", () => {
+    const base = {
+      kind: "fabric-event" as const,
+      id: "event:test",
+      ts: 1_000,
+      schema_version: 1 as const,
+    };
+    const withCaller = eventLedgerEventSchema.parse({
+      ...base,
+      event_type: "knowledge_meta_auto_healed",
+      previous_revision_hash: "sha256:old",
+      revision_hash: "sha256:new",
+      trigger: "read",
+      caller: "planContext",
+    });
+    expect(withCaller).toMatchObject({
+      event_type: "knowledge_meta_auto_healed",
+      previous_revision_hash: "sha256:old",
+      revision_hash: "sha256:new",
+      trigger: "read",
+      caller: "planContext",
+    });
+
+    const withoutCaller = eventLedgerEventSchema.parse({
+      ...base,
+      event_type: "knowledge_meta_auto_healed",
+      previous_revision_hash: "sha256:old",
+      revision_hash: "sha256:new",
+      trigger: "read",
+    });
+    expect(withoutCaller).toMatchObject({
+      event_type: "knowledge_meta_auto_healed",
+      caller: undefined,
+    });
+
+    // trigger literal — only 'read' is currently accepted.
+    expect(() =>
+      eventLedgerEventSchema.parse({
+        ...base,
+        event_type: "knowledge_meta_auto_healed",
+        previous_revision_hash: "sha256:old",
+        revision_hash: "sha256:new",
+        trigger: "write",
+      }),
+    ).toThrow();
+
+    // caller enum is closed — bad values reject.
+    expect(() =>
+      eventLedgerEventSchema.parse({
+        ...base,
+        event_type: "knowledge_meta_auto_healed",
+        previous_revision_hash: "sha256:old",
+        revision_hash: "sha256:new",
+        trigger: "read",
+        caller: "unknownCaller",
+      }),
+    ).toThrow();
+  });
+
+  // v2.0.0-rc.22 Scope A T3: events_rotated round-trip parse + required-field
+  // coverage. Mirrors the existing event_ledger_truncated pattern — same
+  // envelope, same numeric/string field shape, but adds the cutoff_ts ISO
+  // datetime constraint and the archived_count/kept_count nonneg-int pair.
+  it("parses events_rotated with all required fields", () => {
+    const base = {
+      kind: "fabric-event" as const,
+      id: "event:test",
+      ts: 1_000,
+      schema_version: 1 as const,
+    };
+    const parsed = eventLedgerEventSchema.parse({
+      ...base,
+      event_type: "events_rotated",
+      cutoff_ts: "2026-04-18T00:00:00.000Z",
+      archived_count: 12,
+      kept_count: 3,
+      archive_path: ".fabric/events.archive/events-rotated-2026-05-18.jsonl",
+    });
+    expect(parsed).toMatchObject({
+      event_type: "events_rotated",
+      cutoff_ts: "2026-04-18T00:00:00.000Z",
+      archived_count: 12,
+      kept_count: 3,
+      archive_path: ".fabric/events.archive/events-rotated-2026-05-18.jsonl",
+    });
+  });
+
+  it("rejects events_rotated when required fields are missing or wrong-typed", () => {
+    const base = {
+      kind: "fabric-event" as const,
+      id: "event:test",
+      ts: 1_000,
+      schema_version: 1 as const,
+    };
+    // missing cutoff_ts
+    expect(() =>
+      eventLedgerEventSchema.parse({
+        ...base,
+        event_type: "events_rotated",
+        archived_count: 1,
+        kept_count: 1,
+        archive_path: ".fabric/events.archive/x.jsonl",
+      }),
+    ).toThrow();
+    // non-ISO cutoff_ts
+    expect(() =>
+      eventLedgerEventSchema.parse({
+        ...base,
+        event_type: "events_rotated",
+        cutoff_ts: "yesterday",
+        archived_count: 1,
+        kept_count: 1,
+        archive_path: ".fabric/events.archive/x.jsonl",
+      }),
+    ).toThrow();
+    // negative archived_count
+    expect(() =>
+      eventLedgerEventSchema.parse({
+        ...base,
+        event_type: "events_rotated",
+        cutoff_ts: "2026-04-18T00:00:00.000Z",
+        archived_count: -1,
+        kept_count: 1,
+        archive_path: ".fabric/events.archive/x.jsonl",
+      }),
+    ).toThrow();
+  });
+
   it("requires reason on knowledge_promote_failed and knowledge_rejected (mandatory field)", () => {
     const base = {
       kind: "fabric-event" as const,

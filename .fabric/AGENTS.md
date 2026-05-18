@@ -4,7 +4,7 @@
 
 ## 行为规则
 - **修改任何文件前**:必须先调 `fab_plan_context(paths=[<被改文件>])`,再调 `fab_get_knowledge_sections` 取相关规则段落。
-- **`.fabric/agents.meta.json` 严禁手动编辑**:baseline 变更只能通过 `fabric doctor --fix` 接受。
+- **`.fabric/agents.meta.json` 严禁手动编辑**;engine 会自动同步派生状态,显式 reconcile 跑 `fab doctor --fix`。
 
 ## 知识库(KB)
 - **Discovery**:SessionStart hook 列 broad-scoped 条目;edit 文件时 PreToolUse hook 可能触发 narrow hint。

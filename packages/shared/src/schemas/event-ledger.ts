@@ -151,6 +151,11 @@ export const metaReconciledEventSchema = z.object({
   duration_ms: z.number().int().nonnegative(),
   trigger: z.enum(["doctor", "manual"]),
   source: z.literal("reconcileKnowledge"),
+  // v2.0.0-rc.22 TASK-014 (Scope E): set when reconcileKnowledge forced a
+  // writeKnowledgeMeta on revision drift alone (no per-file content drift).
+  // Distinguishes top-level schema/revision repair from the standard per-file
+  // drift path. Optional so existing emitters stay unchanged.
+  force_write_reason: z.enum(["revision_drift"]).optional(),
 });
 
 export const claudeSkillPathMigratedEventSchema = z.object({
@@ -429,6 +434,45 @@ export const citePolicyActivatedEventSchema = z.object({
   timestamp: z.string().datetime(),
 });
 
+// v2.0.0-rc.22 Scope A T3: emitted by `rotateEventLedgerIfNeeded` as the FIRST
+// line of the post-rotation main events.jsonl. Provides forensic continuity
+// after a sliding-window-by-age rotation moves stale lines into
+// `.fabric/events.archive/events-rotated-YYYY-MM-DD.jsonl`. `cutoff_ts` is the
+// ISO timestamp used as the partition boundary (lines with `ts <
+// cutoff` were archived). `archive_path` is a workspace-relative path so the
+// audit trail survives moving the workspace. Mirrors the
+// `event_ledger_truncated` precedent (line 105) — same shape, different
+// rotation semantics (truncate is partial-write recovery; rotate is
+// age-based windowing).
+export const eventsRotatedEventSchema = z.object({
+  ...eventLedgerEnvelopeSchema,
+  event_type: z.literal("events_rotated"),
+  cutoff_ts: z.string().datetime(),
+  archived_count: z.number().int().nonnegative(),
+  kept_count: z.number().int().nonnegative(),
+  archive_path: z.string(),
+});
+
+// v2.0.0-rc.22 Scope D T-D1: emitted by the read-path `loadActiveMeta` helper
+// when on-disk `.fabric/agents.meta.json` revision does not match the
+// derived revision computed from current knowledge files — i.e. the helper
+// rebuilt the meta file in-place to repair drift. Provides the audit trail
+// for every silent auto-heal so operators can correlate revision churn with
+// the read call that triggered it. `trigger` is currently fixed to `'read'`
+// (the only path that invokes auto-heal); future trigger sources (e.g. a
+// timed reconcile pass) can extend the literal union without a schema bump.
+// `caller` records WHICH read-side service drove the heal so per-caller
+// telemetry can be tabulated (planContext is best-effort hint; the other
+// three are authoritative read paths).
+export const knowledgeMetaAutoHealedEventSchema = z.object({
+  ...eventLedgerEnvelopeSchema,
+  event_type: z.literal("knowledge_meta_auto_healed"),
+  previous_revision_hash: z.string(),
+  revision_hash: z.string(),
+  trigger: z.literal("read"),
+  caller: z.enum(["planContext", "getKnowledgeSections", "getKnowledge", "extractKnowledge"]).optional(),
+});
+
 export const eventLedgerEventSchema = z.discriminatedUnion("event_type", [
   knowledgeContextPlannedEventSchema,
   knowledgeSelectionEventSchema,
@@ -481,6 +525,13 @@ export const eventLedgerEventSchema = z.discriminatedUnion("event_type", [
   // v2.0.0-rc.20 TASK-02: cite_policy_activated — session/policy-bump
   // marker recording when a given policy_version became active.
   citePolicyActivatedEventSchema,
+  // v2.0.0-rc.22 Scope D T-D1: knowledge_meta_auto_healed — emitted by
+  // loadActiveMeta when read-path drift triggers an in-place meta rebuild.
+  knowledgeMetaAutoHealedEventSchema,
+  // v2.0.0-rc.22 Scope A T3: events_rotated — emitted as the first line of
+  // the post-rotation events.jsonl when sliding-window-by-age rotation moves
+  // stale entries to events.archive/events-rotated-YYYY-MM-DD.jsonl.
+  eventsRotatedEventSchema,
 ]);
 
 export type KnowledgeContextPlannedEvent = z.infer<typeof knowledgeContextPlannedEventSchema>;
@@ -518,6 +569,8 @@ export type DoctorRunEvent = z.infer<typeof doctorRunEventSchema>;
 export type RelevanceMigrationRunEvent = z.infer<typeof relevanceMigrationRunEventSchema>;
 export type AssistantTurnObservedEvent = z.infer<typeof assistantTurnObservedEventSchema>;
 export type CitePolicyActivatedEvent = z.infer<typeof citePolicyActivatedEventSchema>;
+export type KnowledgeMetaAutoHealedEvent = z.infer<typeof knowledgeMetaAutoHealedEventSchema>;
+export type EventsRotatedEvent = z.infer<typeof eventsRotatedEventSchema>;
 export type EventLedgerEvent =
   | KnowledgeContextPlannedEvent
   | KnowledgeSelectionEvent
@@ -553,7 +606,9 @@ export type EventLedgerEvent =
   | DoctorRunEvent
   | RelevanceMigrationRunEvent
   | AssistantTurnObservedEvent
-  | CitePolicyActivatedEvent;
+  | CitePolicyActivatedEvent
+  | KnowledgeMetaAutoHealedEvent
+  | EventsRotatedEvent;
 export type EventLedgerEventType = EventLedgerEvent["event_type"];
 type EventLedgerEventInputFor<T extends EventLedgerEvent> = T extends EventLedgerEvent
   ? Omit<T, "kind" | "id" | "ts" | "schema_version" | "correlation_id" | "session_id"> &
