@@ -1,11 +1,11 @@
 ---
+id: KT-GLD-0003
 type: guidelines
 maturity: draft
 layer: team
 created_at: 2026-05-10T11:29:43.867Z
 source_session: WFS-rc2-impl-2026-05-10
 tags: []
-x-fabric-idempotency-key: sha256:9ee3493ede177e9452047f9cb6cf4e19ff5cf4d687ce3fe51b361aa94e637e3c
 ---
 
 ## Summary

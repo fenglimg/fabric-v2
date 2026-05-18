@@ -1,4 +1,5 @@
 ---
+id: KT-DEC-9004
 type: decisions
 maturity: draft
 layer: team
@@ -6,7 +7,6 @@ created_at: 2026-05-14T02:58:43.499Z
 source_sessions: ["WFS-2026-05-14-fabric-skills-contract-fix"]
 proposed_reason: decision-confirmation
 tags: []
-x-fabric-idempotency-key: sha256:3c34e7396adbb3aed3f13603fa76b59d2ed6d774477387098af46b0277f6b9a7
 ---
 
 ## Summary

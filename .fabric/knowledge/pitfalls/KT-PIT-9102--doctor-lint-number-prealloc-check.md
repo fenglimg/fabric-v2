@@ -1,4 +1,5 @@
 ---
+id: KT-PIT-9102
 type: pitfalls
 maturity: draft
 layer: team
@@ -6,7 +7,6 @@ created_at: 2026-05-14T02:58:33.549Z
 source_sessions: ["WFS-2026-05-14-fabric-skills-contract-fix"]
 proposed_reason: wrong-turn-revert
 tags: []
-x-fabric-idempotency-key: sha256:950f3d22157d07d536118c26b75413de21a8b15255465ef2f83d1a8b841fb8f8
 ---
 
 ## Summary

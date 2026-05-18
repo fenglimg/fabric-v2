@@ -1,4 +1,5 @@
 ---
+id: KT-GLD-0004
 type: guidelines
 maturity: draft
 layer: team
@@ -6,7 +7,6 @@ created_at: 2026-05-14T02:59:02.636Z
 source_sessions: ["WFS-2026-05-14-fabric-skills-contract-fix"]
 proposed_reason: decision-confirmation
 tags: []
-x-fabric-idempotency-key: sha256:eb0b50c463ccc18f1877b8a8de85c46341fe5f7b1d63473a7b3ec2d642cc861e
 ---
 
 ## Summary
