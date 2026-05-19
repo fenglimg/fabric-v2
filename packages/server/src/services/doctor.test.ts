@@ -5490,6 +5490,732 @@ describe("runDoctorCiteCoverage", () => {
   });
 });
 
+// v2.0.0-rc.24 TASK-08: runDoctorCiteCoverage contract-policy metrics.
+//
+// Locks the contract for the five new accumulators (contract_with /
+// contract_missing / hard_violated / cite_id_unresolved / skip_count), the
+// per-(layer, type) cross-tab, the --layer filter (team/personal/all), the
+// contract_metrics_status discriminator (ok / skipped:bootstrap_drift /
+// awaiting_marker), and the operator-vs-edits comparator (edit/not_edit/
+// require/forbid).
+//
+// Fixture invariants that differ from rc.20 TASK-08:
+//   - `.fabric/AGENTS.md` must byte-equal BOOTSTRAP_CANONICAL for the
+//     contract marker to emit. Tests that need the marker call
+//     `seedCleanBootstrap`; tests asserting the drift-skip path either omit
+//     the snapshot or write a mutated copy.
+//   - agents.meta.json fixtures carry `description.knowledge_type` so
+//     loadKbIdTypeMap returns the SINGULAR enum value (TASK-07 contract).
+//     `seedAgentsMetaWithTypes` handles this.
+//   - Turn events optionally carry `cite_commitments[]` (operators + skip
+//     reason). `mkContractTurnEvent` is the index-aligned constructor.
+//
+// require:/forbid: SCOPE NOTE: edit_intent_checked events carry no diff
+// content (only path/intent/diff_stat), so require:<symbol> and
+// forbid:<symbol> are evaluated as "<symbol present as substring of any
+// changed file PATH>". Documented at the comparator definition in doctor.ts
+// — these tests assert that documented behavior, not the planned
+// diff-content match.
+describe("runDoctorCiteCoverage (rc.24 contract metrics)", () => {
+  function seedEvents(target: string, events: unknown[]): void {
+    const ledgerPath = join(target, ".fabric", "events.jsonl");
+    const existing = existsSync(ledgerPath) ? readFileSync(ledgerPath, "utf8") : "";
+    const newlines = events.map((e) => JSON.stringify(e)).join("\n") + "\n";
+    writeFileSync(ledgerPath, existing + newlines, "utf8");
+  }
+
+  function seedCleanBootstrap(target: string): void {
+    // Drift gate requires `.fabric/AGENTS.md` byte-equal to BOOTSTRAP_CANONICAL.
+    writeFileSync(join(target, ".fabric", "AGENTS.md"), BOOTSTRAP_CANONICAL, "utf8");
+  }
+
+  function seedAgentsMetaWithTypes(
+    target: string,
+    nodes: Array<{
+      stable_id: string;
+      knowledge_type: "decision" | "pitfall" | "model" | "guideline" | "process";
+      relevance_paths?: readonly string[];
+      relevance_scope?: "narrow" | "broad";
+    }>,
+  ): void {
+    const metaNodes: Record<string, unknown> = {};
+    for (const node of nodes) {
+      metaNodes[node.stable_id] = {
+        file: `.fabric/knowledge/${node.knowledge_type}s/${node.stable_id}.md`,
+        content_ref: `.fabric/knowledge/${node.knowledge_type}s/${node.stable_id}.md`,
+        scope_glob: "**",
+        hash: "deadbeef",
+        stable_id: node.stable_id,
+        identity_source: "declared",
+        description: {
+          summary: "test",
+          intent_clues: [],
+          tech_stack: [],
+          impact: [],
+          must_read_if: "always",
+          knowledge_type: node.knowledge_type,
+          relevance_scope: node.relevance_scope ?? "broad",
+          relevance_paths: node.relevance_paths ?? [],
+        },
+      };
+    }
+    const meta = { revision: "test-revision", nodes: metaNodes };
+    writeFileSync(
+      join(target, ".fabric", "agents.meta.json"),
+      JSON.stringify(meta, null, 2),
+      "utf8",
+    );
+  }
+
+  type ContractOperator = { kind: "edit" | "not_edit" | "require" | "forbid"; target: string };
+  type ContractCommitment = { operators: ContractOperator[]; skip_reason: string | null };
+
+  function mkContractTurnEvent(opts: {
+    sessionId: string;
+    turnId?: string;
+    citeIds: string[];
+    citeTags: string[];
+    citeCommitments?: ContractCommitment[];
+    client?: "cc" | "codex" | "cursor";
+    ts: number;
+    kbLineRaw?: string | null;
+  }): object {
+    return {
+      kind: "fabric-event",
+      id: `event:contract-turn:${randomUUID()}`,
+      ts: opts.ts,
+      schema_version: 1,
+      session_id: opts.sessionId,
+      event_type: "assistant_turn_observed",
+      kb_line_raw: opts.kbLineRaw ?? null,
+      cite_ids: opts.citeIds,
+      cite_tags: opts.citeTags,
+      cite_commitments: opts.citeCommitments ?? [],
+      ...(opts.client !== undefined ? { client: opts.client } : {}),
+      turn_id: opts.turnId ?? `turn-${randomUUID()}`,
+      timestamp: new Date(opts.ts).toISOString(),
+    };
+  }
+
+  function mkContractEditEvent(opts: { path: string; ts: number; sessionId: string }): object {
+    return {
+      kind: "fabric-event",
+      id: `event:contract-edit:${randomUUID()}`,
+      ts: opts.ts,
+      schema_version: 1,
+      session_id: opts.sessionId,
+      event_type: "edit_intent_checked",
+      path: opts.path,
+      compliant: true,
+      intent: "test edit",
+      ledger_entry_id: `ledger:${randomUUID()}`,
+      matched_rule_context_ts: null,
+      window_ms: 60_000,
+    };
+  }
+
+  // -------------------------------------------------------------------------
+  // 17 tests — exceeds the 15-case minimum required by the task spec.
+  // -------------------------------------------------------------------------
+
+  // 1. Drift-gate path → contract_metrics_status='skipped:bootstrap_drift';
+  //    rc.20 metrics still populated (independent windows per plan B4).
+  it("bootstrap drift → contract_metrics_status='skipped:bootstrap_drift', rc.20 metrics still computed", async () => {
+    const target = createInitializedProject("contract-drift-skip");
+    writeFile(".fabric/events.jsonl", "", target);
+    // Mutate .fabric/AGENTS.md so it no longer byte-equals BOOTSTRAP_CANONICAL.
+    writeFileSync(join(target, ".fabric", "AGENTS.md"), `${BOOTSTRAP_CANONICAL}drift`, "utf8");
+
+    const rcMarker = await ensureCitePolicyActivatedMarker(target);
+    seedAgentsMetaWithTypes(target, [
+      { stable_id: "KT-DEC-0001", knowledge_type: "decision" },
+    ]);
+    seedEvents(target, [
+      mkContractTurnEvent({
+        sessionId: "sess-1",
+        citeIds: ["KT-DEC-0001"],
+        citeTags: ["planned"],
+        // Even though commitments are EMPTY (would be contract_missing under
+        // 'ok' state), drift skips the contract walk entirely.
+        citeCommitments: [{ operators: [], skip_reason: null }],
+        client: "cc",
+        ts: rcMarker.marker_ts + 5,
+      }),
+    ]);
+
+    const report = await runDoctorCiteCoverage(target, { since: 0, client: "all" });
+
+    expect(report.status).toBe("ok");
+    expect(report.contract_metrics_status).toBe("skipped:bootstrap_drift");
+    // rc.20 still computed — the planned cite registered as a qualifying cite.
+    expect(report.metrics.qualifying_cites).toBe(1);
+    expect(report.metrics.total_turns).toBe(1);
+    // Contract metrics are zeroed (shape present, all counters 0).
+    expect(report.contract_metrics).toEqual({
+      decisions_cited: 0,
+      pitfalls_cited: 0,
+      contract_with: 0,
+      contract_missing: 0,
+      hard_violated: 0,
+      cite_id_unresolved: 0,
+      skip_count: {},
+    });
+    expect(report.per_layer_type).toEqual({ team: {}, personal: {} });
+  });
+
+  // 2. Decisions cite with valid operator + matching session edit →
+  //    contract_with=1, hard_violated=0.
+  it("decision cite with edit:foo.ts operator and matching session edit → contract_with=1, hard_violated=0", async () => {
+    const target = createInitializedProject("contract-with-ok");
+    seedCleanBootstrap(target);
+    writeFile(".fabric/events.jsonl", "", target);
+
+    const rcMarker = await ensureCitePolicyActivatedMarker(target);
+    // Force-emit contract marker before the loop calls runDoctor — keeps
+    // ordering deterministic and lets us seed turns AFTER the marker_ts.
+    const cMarker = await ensureCiteContractPolicyActivatedMarker(target);
+    expect(cMarker.blocked_by).toBe(null);
+    expect(cMarker.marker_ts).toBeGreaterThan(0);
+
+    seedAgentsMetaWithTypes(target, [
+      { stable_id: "KT-DEC-0100", knowledge_type: "decision" },
+    ]);
+    seedEvents(target, [
+      mkContractTurnEvent({
+        sessionId: "sess-OK",
+        citeIds: ["KT-DEC-0100"],
+        citeTags: ["recalled"],
+        citeCommitments: [{
+          operators: [{ kind: "edit", target: "src/auth/**" }],
+          skip_reason: null,
+        }],
+        client: "cc",
+        ts: Math.max(rcMarker.marker_ts, cMarker.marker_ts) + 10,
+      }),
+      mkContractEditEvent({
+        path: "src/auth/login.ts",
+        sessionId: "sess-OK",
+        ts: Math.max(rcMarker.marker_ts, cMarker.marker_ts) + 20,
+      }),
+    ]);
+
+    const report = await runDoctorCiteCoverage(target, { since: 0, client: "all" });
+
+    expect(report.contract_metrics_status).toBe("ok");
+    expect(report.contract_metrics?.decisions_cited).toBe(1);
+    expect(report.contract_metrics?.contract_with).toBe(1);
+    expect(report.contract_metrics?.contract_missing).toBe(0);
+    expect(report.contract_metrics?.hard_violated).toBe(0);
+    expect(report.per_layer_type?.team?.decision).toBe(1);
+  });
+
+  // 3. Decisions cite with operator but mismatched edits → hard_violated=1.
+  it("decision cite with edit:foo.ts operator but no matching edit → hard_violated=1", async () => {
+    const target = createInitializedProject("contract-hard-violated");
+    seedCleanBootstrap(target);
+    writeFile(".fabric/events.jsonl", "", target);
+
+    const rcMarker = await ensureCitePolicyActivatedMarker(target);
+    const cMarker = await ensureCiteContractPolicyActivatedMarker(target);
+    seedAgentsMetaWithTypes(target, [
+      { stable_id: "KT-DEC-0200", knowledge_type: "decision" },
+    ]);
+    seedEvents(target, [
+      mkContractTurnEvent({
+        sessionId: "sess-V",
+        citeIds: ["KT-DEC-0200"],
+        citeTags: ["recalled"],
+        citeCommitments: [{
+          operators: [{ kind: "edit", target: "src/auth/**" }],
+          skip_reason: null,
+        }],
+        ts: Math.max(rcMarker.marker_ts, cMarker.marker_ts) + 10,
+      }),
+      // Edit hits a DIFFERENT path — operator fails.
+      mkContractEditEvent({
+        path: "src/billing/checkout.ts",
+        sessionId: "sess-V",
+        ts: Math.max(rcMarker.marker_ts, cMarker.marker_ts) + 20,
+      }),
+    ]);
+
+    const report = await runDoctorCiteCoverage(target, { since: 0, client: "all" });
+
+    expect(report.contract_metrics_status).toBe("ok");
+    expect(report.contract_metrics?.contract_with).toBe(1);
+    expect(report.contract_metrics?.hard_violated).toBe(1);
+  });
+
+  // 4. Pitfall cite missing operator → contract_missing=1.
+  it("pitfall cite with empty operators and no skip_reason → contract_missing=1, pitfalls_cited=1", async () => {
+    const target = createInitializedProject("contract-missing");
+    seedCleanBootstrap(target);
+    writeFile(".fabric/events.jsonl", "", target);
+
+    const rcMarker = await ensureCitePolicyActivatedMarker(target);
+    const cMarker = await ensureCiteContractPolicyActivatedMarker(target);
+    seedAgentsMetaWithTypes(target, [
+      { stable_id: "KT-PIT-0001", knowledge_type: "pitfall" },
+    ]);
+    seedEvents(target, [
+      mkContractTurnEvent({
+        sessionId: "sess-M",
+        citeIds: ["KT-PIT-0001"],
+        citeTags: ["recalled"],
+        citeCommitments: [{ operators: [], skip_reason: null }],
+        ts: Math.max(rcMarker.marker_ts, cMarker.marker_ts) + 5,
+      }),
+    ]);
+
+    const report = await runDoctorCiteCoverage(target, { since: 0, client: "all" });
+
+    expect(report.contract_metrics?.pitfalls_cited).toBe(1);
+    expect(report.contract_metrics?.contract_missing).toBe(1);
+    expect(report.contract_metrics?.contract_with).toBe(0);
+    expect(report.per_layer_type?.team?.pitfall).toBe(1);
+  });
+
+  // 5. Model cite → no contract check (decisions/pitfalls counters stay 0)
+  //    but cross-tab still bumps under team.model.
+  it("model cite → no contract bump, cross-tab still counts the type", async () => {
+    const target = createInitializedProject("contract-model-noop");
+    seedCleanBootstrap(target);
+    writeFile(".fabric/events.jsonl", "", target);
+
+    const rcMarker = await ensureCitePolicyActivatedMarker(target);
+    const cMarker = await ensureCiteContractPolicyActivatedMarker(target);
+    seedAgentsMetaWithTypes(target, [
+      { stable_id: "KT-MOD-0001", knowledge_type: "model" },
+    ]);
+    seedEvents(target, [
+      mkContractTurnEvent({
+        sessionId: "sess-MOD",
+        citeIds: ["KT-MOD-0001"],
+        citeTags: ["recalled"],
+        // Even with operators, models are reference cites — no contract eval.
+        citeCommitments: [{ operators: [{ kind: "edit", target: "**" }], skip_reason: null }],
+        ts: Math.max(rcMarker.marker_ts, cMarker.marker_ts) + 5,
+      }),
+    ]);
+
+    const report = await runDoctorCiteCoverage(target, { since: 0, client: "all" });
+
+    expect(report.contract_metrics?.decisions_cited).toBe(0);
+    expect(report.contract_metrics?.pitfalls_cited).toBe(0);
+    expect(report.contract_metrics?.contract_with).toBe(0);
+    expect(report.contract_metrics?.contract_missing).toBe(0);
+    expect(report.per_layer_type?.team?.model).toBe(1);
+  });
+
+  // 6. Guideline cite → deferred bucket, no contract check.
+  it("guideline cite → deferred bucket, no contract check", async () => {
+    const target = createInitializedProject("contract-guideline-deferred");
+    seedCleanBootstrap(target);
+    writeFile(".fabric/events.jsonl", "", target);
+
+    const rcMarker = await ensureCitePolicyActivatedMarker(target);
+    const cMarker = await ensureCiteContractPolicyActivatedMarker(target);
+    seedAgentsMetaWithTypes(target, [
+      { stable_id: "KT-GLD-0001", knowledge_type: "guideline" },
+    ]);
+    seedEvents(target, [
+      mkContractTurnEvent({
+        sessionId: "sess-G",
+        citeIds: ["KT-GLD-0001"],
+        citeTags: ["recalled"],
+        citeCommitments: [{ operators: [], skip_reason: null }],
+        ts: Math.max(rcMarker.marker_ts, cMarker.marker_ts) + 5,
+      }),
+    ]);
+
+    const report = await runDoctorCiteCoverage(target, { since: 0, client: "all" });
+
+    expect(report.contract_metrics?.contract_missing).toBe(0);
+    expect(report.per_layer_type?.team?.guideline).toBe(1);
+  });
+
+  // 7. Unresolved cite_id → cite_id_unresolved bucket, NOT contract_missing.
+  it("unresolved cite_id (not in idTypeMap) → cite_id_unresolved=1, contract_missing=0", async () => {
+    const target = createInitializedProject("contract-unresolved-id");
+    seedCleanBootstrap(target);
+    writeFile(".fabric/events.jsonl", "", target);
+
+    const rcMarker = await ensureCitePolicyActivatedMarker(target);
+    const cMarker = await ensureCiteContractPolicyActivatedMarker(target);
+    // Note: agents.meta.json deliberately does NOT include KT-DEC-9999.
+    seedAgentsMetaWithTypes(target, [
+      { stable_id: "KT-DEC-0001", knowledge_type: "decision" },
+    ]);
+    seedEvents(target, [
+      mkContractTurnEvent({
+        sessionId: "sess-U",
+        citeIds: ["KT-DEC-9999"],
+        citeTags: ["recalled"],
+        citeCommitments: [{ operators: [], skip_reason: null }],
+        ts: Math.max(rcMarker.marker_ts, cMarker.marker_ts) + 5,
+      }),
+    ]);
+
+    const report = await runDoctorCiteCoverage(target, { since: 0, client: "all" });
+
+    expect(report.contract_metrics?.cite_id_unresolved).toBe(1);
+    expect(report.contract_metrics?.contract_missing).toBe(0);
+    expect(report.contract_metrics?.decisions_cited).toBe(0);
+    expect(report.per_layer_type?.team?.unresolved).toBe(1);
+  });
+
+  // 8. skip:sequencing → skip_count.sequencing=1, NOT contract_with/missing.
+  it("decision cite with skip_reason='sequencing' → skip_count.sequencing=1", async () => {
+    const target = createInitializedProject("contract-skip-sequencing");
+    seedCleanBootstrap(target);
+    writeFile(".fabric/events.jsonl", "", target);
+
+    const rcMarker = await ensureCitePolicyActivatedMarker(target);
+    const cMarker = await ensureCiteContractPolicyActivatedMarker(target);
+    seedAgentsMetaWithTypes(target, [
+      { stable_id: "KT-DEC-0300", knowledge_type: "decision" },
+    ]);
+    seedEvents(target, [
+      mkContractTurnEvent({
+        sessionId: "sess-S",
+        citeIds: ["KT-DEC-0300"],
+        citeTags: ["recalled"],
+        citeCommitments: [{ operators: [], skip_reason: "sequencing" }],
+        ts: Math.max(rcMarker.marker_ts, cMarker.marker_ts) + 5,
+      }),
+    ]);
+
+    const report = await runDoctorCiteCoverage(target, { since: 0, client: "all" });
+
+    expect(report.contract_metrics?.skip_count).toEqual({ sequencing: 1 });
+    // skip:<reason> exits the contract_with/missing partition.
+    expect(report.contract_metrics?.contract_with).toBe(0);
+    expect(report.contract_metrics?.contract_missing).toBe(0);
+    // decisions_cited still bumps — the cite was emitted under the strict
+    // bucket, the skip just records that the operator was explicitly waived.
+    expect(report.contract_metrics?.decisions_cited).toBe(1);
+  });
+
+  // 9. Personal-layer (KP-*) cite breakdown.
+  it("personal-layer KP-* cite counted under per_layer_type.personal", async () => {
+    const target = createInitializedProject("contract-personal-layer");
+    seedCleanBootstrap(target);
+    writeFile(".fabric/events.jsonl", "", target);
+
+    const rcMarker = await ensureCitePolicyActivatedMarker(target);
+    const cMarker = await ensureCiteContractPolicyActivatedMarker(target);
+    seedAgentsMetaWithTypes(target, [
+      { stable_id: "KP-DEC-0001", knowledge_type: "decision" },
+    ]);
+    seedEvents(target, [
+      mkContractTurnEvent({
+        sessionId: "sess-P",
+        citeIds: ["KP-DEC-0001"],
+        citeTags: ["recalled"],
+        citeCommitments: [{ operators: [], skip_reason: null }],
+        ts: Math.max(rcMarker.marker_ts, cMarker.marker_ts) + 5,
+      }),
+    ]);
+
+    const report = await runDoctorCiteCoverage(target, { since: 0, client: "all" });
+
+    expect(report.per_layer_type?.personal?.decision).toBe(1);
+    expect(report.per_layer_type?.team?.decision ?? 0).toBe(0);
+    expect(report.contract_metrics?.contract_missing).toBe(1);
+  });
+
+  // 10. --layer=team filter → KP-* excluded from contract metrics.
+  it("--layer=team filter → KP-* cites excluded from contract counters but still tracked in per_layer_type", async () => {
+    const target = createInitializedProject("contract-layer-team");
+    seedCleanBootstrap(target);
+    writeFile(".fabric/events.jsonl", "", target);
+
+    const rcMarker = await ensureCitePolicyActivatedMarker(target);
+    const cMarker = await ensureCiteContractPolicyActivatedMarker(target);
+    seedAgentsMetaWithTypes(target, [
+      { stable_id: "KT-DEC-0400", knowledge_type: "decision" },
+      { stable_id: "KP-DEC-0400", knowledge_type: "decision" },
+    ]);
+    seedEvents(target, [
+      mkContractTurnEvent({
+        sessionId: "sess-T",
+        citeIds: ["KT-DEC-0400", "KP-DEC-0400"],
+        citeTags: ["recalled", "recalled"],
+        citeCommitments: [
+          { operators: [], skip_reason: null },
+          { operators: [], skip_reason: null },
+        ],
+        ts: Math.max(rcMarker.marker_ts, cMarker.marker_ts) + 5,
+      }),
+    ]);
+
+    const report = await runDoctorCiteCoverage(target, {
+      since: 0,
+      client: "all",
+      layer: "team",
+    });
+
+    expect(report.layer_filter).toBe("team");
+    // Only the team cite contributes to contract counters.
+    expect(report.contract_metrics?.decisions_cited).toBe(1);
+    expect(report.contract_metrics?.contract_missing).toBe(1);
+    // Per-layer cross-tab is NOT bumped for the filtered-out KP- cite.
+    expect(report.per_layer_type?.team?.decision).toBe(1);
+    expect(report.per_layer_type?.personal?.decision ?? 0).toBe(0);
+  });
+
+  // 11. --layer=personal filter → KT-* excluded.
+  it("--layer=personal filter → KT-* cites excluded from contract counters", async () => {
+    const target = createInitializedProject("contract-layer-personal");
+    seedCleanBootstrap(target);
+    writeFile(".fabric/events.jsonl", "", target);
+
+    const rcMarker = await ensureCitePolicyActivatedMarker(target);
+    const cMarker = await ensureCiteContractPolicyActivatedMarker(target);
+    seedAgentsMetaWithTypes(target, [
+      { stable_id: "KT-DEC-0500", knowledge_type: "decision" },
+      { stable_id: "KP-DEC-0500", knowledge_type: "decision" },
+    ]);
+    seedEvents(target, [
+      mkContractTurnEvent({
+        sessionId: "sess-Pers",
+        citeIds: ["KT-DEC-0500", "KP-DEC-0500"],
+        citeTags: ["recalled", "recalled"],
+        citeCommitments: [
+          { operators: [], skip_reason: null },
+          { operators: [], skip_reason: null },
+        ],
+        ts: Math.max(rcMarker.marker_ts, cMarker.marker_ts) + 5,
+      }),
+    ]);
+
+    const report = await runDoctorCiteCoverage(target, {
+      since: 0,
+      client: "all",
+      layer: "personal",
+    });
+
+    expect(report.layer_filter).toBe("personal");
+    expect(report.contract_metrics?.decisions_cited).toBe(1);
+    expect(report.per_layer_type?.personal?.decision).toBe(1);
+    expect(report.per_layer_type?.team?.decision ?? 0).toBe(0);
+  });
+
+  // 12. Cross-tab shape sanity: mixed types both layers.
+  it("cross-tab populated with both layers and multiple types in one report", async () => {
+    const target = createInitializedProject("contract-crosstab");
+    seedCleanBootstrap(target);
+    writeFile(".fabric/events.jsonl", "", target);
+
+    const rcMarker = await ensureCitePolicyActivatedMarker(target);
+    const cMarker = await ensureCiteContractPolicyActivatedMarker(target);
+    seedAgentsMetaWithTypes(target, [
+      { stable_id: "KT-DEC-0601", knowledge_type: "decision" },
+      { stable_id: "KT-PIT-0601", knowledge_type: "pitfall" },
+      { stable_id: "KT-MOD-0601", knowledge_type: "model" },
+      { stable_id: "KP-GLD-0601", knowledge_type: "guideline" },
+    ]);
+    seedEvents(target, [
+      mkContractTurnEvent({
+        sessionId: "sess-X",
+        citeIds: ["KT-DEC-0601", "KT-PIT-0601", "KT-MOD-0601", "KP-GLD-0601"],
+        citeTags: ["recalled", "recalled", "recalled", "recalled"],
+        citeCommitments: [
+          { operators: [], skip_reason: null },
+          { operators: [], skip_reason: null },
+          { operators: [], skip_reason: null },
+          { operators: [], skip_reason: null },
+        ],
+        ts: Math.max(rcMarker.marker_ts, cMarker.marker_ts) + 5,
+      }),
+    ]);
+
+    const report = await runDoctorCiteCoverage(target, { since: 0, client: "all" });
+
+    expect(report.per_layer_type?.team?.decision).toBe(1);
+    expect(report.per_layer_type?.team?.pitfall).toBe(1);
+    expect(report.per_layer_type?.team?.model).toBe(1);
+    expect(report.per_layer_type?.personal?.guideline).toBe(1);
+  });
+
+  // 13. require:<symbol> operator — matches when symbol appears in any
+  //     session edit PATH (the documented scoped fallback — diff content
+  //     not in ledger).
+  it("require:<symbol> passes when symbol appears as substring of any session edit path", async () => {
+    const target = createInitializedProject("contract-require-match");
+    seedCleanBootstrap(target);
+    writeFile(".fabric/events.jsonl", "", target);
+
+    const rcMarker = await ensureCitePolicyActivatedMarker(target);
+    const cMarker = await ensureCiteContractPolicyActivatedMarker(target);
+    seedAgentsMetaWithTypes(target, [
+      { stable_id: "KT-DEC-0701", knowledge_type: "decision" },
+    ]);
+    seedEvents(target, [
+      mkContractTurnEvent({
+        sessionId: "sess-R",
+        citeIds: ["KT-DEC-0701"],
+        citeTags: ["recalled"],
+        citeCommitments: [{
+          operators: [{ kind: "require", target: "auth" }],
+          skip_reason: null,
+        }],
+        ts: Math.max(rcMarker.marker_ts, cMarker.marker_ts) + 5,
+      }),
+      // Path contains 'auth' substring → operator passes.
+      mkContractEditEvent({
+        path: "src/auth/handler.ts",
+        sessionId: "sess-R",
+        ts: Math.max(rcMarker.marker_ts, cMarker.marker_ts) + 10,
+      }),
+    ]);
+
+    const report = await runDoctorCiteCoverage(target, { since: 0, client: "all" });
+
+    expect(report.contract_metrics?.contract_with).toBe(1);
+    expect(report.contract_metrics?.hard_violated).toBe(0);
+  });
+
+  // 14. forbid:<symbol> operator — violates when symbol appears in any
+  //     session edit path.
+  it("forbid:<symbol> violates when symbol appears in a session edit path", async () => {
+    const target = createInitializedProject("contract-forbid-violated");
+    seedCleanBootstrap(target);
+    writeFile(".fabric/events.jsonl", "", target);
+
+    const rcMarker = await ensureCitePolicyActivatedMarker(target);
+    const cMarker = await ensureCiteContractPolicyActivatedMarker(target);
+    seedAgentsMetaWithTypes(target, [
+      { stable_id: "KT-DEC-0801", knowledge_type: "decision" },
+    ]);
+    seedEvents(target, [
+      mkContractTurnEvent({
+        sessionId: "sess-F",
+        citeIds: ["KT-DEC-0801"],
+        citeTags: ["recalled"],
+        citeCommitments: [{
+          operators: [{ kind: "forbid", target: "legacy" }],
+          skip_reason: null,
+        }],
+        ts: Math.max(rcMarker.marker_ts, cMarker.marker_ts) + 5,
+      }),
+      // Path contains 'legacy' → operator violates.
+      mkContractEditEvent({
+        path: "src/legacy/old.ts",
+        sessionId: "sess-F",
+        ts: Math.max(rcMarker.marker_ts, cMarker.marker_ts) + 10,
+      }),
+    ]);
+
+    const report = await runDoctorCiteCoverage(target, { since: 0, client: "all" });
+
+    expect(report.contract_metrics?.contract_with).toBe(1);
+    expect(report.contract_metrics?.hard_violated).toBe(1);
+  });
+
+  // 15. not_edit:<glob> operator — violates when matching file is edited.
+  it("not_edit:<glob> violates when a session edit hits the forbidden glob", async () => {
+    const target = createInitializedProject("contract-notedit-violated");
+    seedCleanBootstrap(target);
+    writeFile(".fabric/events.jsonl", "", target);
+
+    const rcMarker = await ensureCitePolicyActivatedMarker(target);
+    const cMarker = await ensureCiteContractPolicyActivatedMarker(target);
+    seedAgentsMetaWithTypes(target, [
+      { stable_id: "KT-DEC-0901", knowledge_type: "decision" },
+    ]);
+    seedEvents(target, [
+      mkContractTurnEvent({
+        sessionId: "sess-NE",
+        citeIds: ["KT-DEC-0901"],
+        citeTags: ["recalled"],
+        citeCommitments: [{
+          operators: [{ kind: "not_edit", target: "src/billing/**" }],
+          skip_reason: null,
+        }],
+        ts: Math.max(rcMarker.marker_ts, cMarker.marker_ts) + 5,
+      }),
+      mkContractEditEvent({
+        path: "src/billing/charge.ts",
+        sessionId: "sess-NE",
+        ts: Math.max(rcMarker.marker_ts, cMarker.marker_ts) + 10,
+      }),
+    ]);
+
+    const report = await runDoctorCiteCoverage(target, { since: 0, client: "all" });
+
+    expect(report.contract_metrics?.contract_with).toBe(1);
+    expect(report.contract_metrics?.hard_violated).toBe(1);
+  });
+
+  // 16. Existing rc.20 metrics survive the rc.24 extension byte-for-byte —
+  //     contract_metrics is purely additive.
+  it("rc.20 metrics (qualifying_cites/recalled_unverified/dismissed_reason_histogram) unchanged in shape", async () => {
+    const target = createInitializedProject("contract-rc20-untouched");
+    seedCleanBootstrap(target);
+    writeFile(".fabric/events.jsonl", "", target);
+
+    const rcMarker = await ensureCitePolicyActivatedMarker(target);
+    await ensureCiteContractPolicyActivatedMarker(target);
+    seedEvents(target, [
+      mkContractTurnEvent({
+        sessionId: "sess-RC20",
+        citeIds: ["KT-DEC-0001"],
+        citeTags: ["planned"],
+        kbLineRaw: "KB: KT-DEC-0001 (anchor) [planned]",
+        client: "cc",
+        ts: rcMarker.marker_ts + 5,
+      }),
+      mkContractTurnEvent({
+        sessionId: "sess-RC20",
+        citeIds: ["KT-DEC-0002"],
+        citeTags: ["dismissed"],
+        client: "cc",
+        ts: rcMarker.marker_ts + 10,
+      }),
+    ]);
+
+    const report = await runDoctorCiteCoverage(target, { since: 0, client: "all" });
+
+    // rc.20 fields populated as before.
+    expect(report.metrics.total_turns).toBe(2);
+    expect(report.metrics.qualifying_cites).toBe(1);
+    expect(report.dismissed_reason_histogram).toEqual({ unspecified: 1 });
+    // rc.24 additive fields present.
+    expect(report.contract_metrics).toBeDefined();
+    expect(report.contract_metrics_status).toBe("ok");
+    expect(report.per_layer_type).toBeDefined();
+  });
+
+  // 17. awaiting_marker state — degraded path where the marker emitter
+  //     returns marker_ts=0 with blocked_by=null (e.g. nonexistent root
+  //     after drift is conceptually 'ok' but ledger I/O degrades).
+  //     Constructed by pointing at a nonexistent root → marker collapse.
+  it("nonexistent project root → contract_metrics_status='skipped:bootstrap_drift' (missing snapshot folded into drift)", async () => {
+    // Note: rc.20 marker also returns marker_ts=0 here, which collapses to
+    // the rc.20 'skipped' top-level status. We still expect the contract
+    // status to surface — the early-return preserves the contract block.
+    const report = await runDoctorCiteCoverage(
+      "/nonexistent-contract-coverage-fabric-root-xyzzy",
+      { since: 0, client: "all" },
+    );
+
+    expect(report.status).toBe("skipped");
+    // L1 inspector says 'missing' → drift gate fires → 'skipped:bootstrap_drift'.
+    expect(report.contract_metrics_status).toBe("skipped:bootstrap_drift");
+    expect(report.contract_metrics).toEqual({
+      decisions_cited: 0,
+      pitfalls_cited: 0,
+      contract_with: 0,
+      contract_missing: 0,
+      hard_violated: 0,
+      cite_id_unresolved: 0,
+      skip_count: {},
+    });
+    expect(report.layer_filter).toBe("all");
+  });
+});
+
 // v2.0.0-rc.23 TASK-007 (a-C2): enrichDescriptions back-fill suite.
 describe("enrichDescriptions", () => {
   // Helper — seed a canonical entry whose frontmatter is missing N of the

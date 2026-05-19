@@ -32,7 +32,7 @@ import { detectFramework } from "@fenglimg/fabric-shared/node";
 import { contextCache } from "../cache.js";
 import { atomicWriteJson, atomicWriteText } from "@fenglimg/fabric-shared/node/atomic-write";
 import { ensureParentDirectory, getEventLedgerPath, sha256 } from "./_shared.js";
-import { buildKnowledgeMeta, isSameKnowledgeTestIndex, writeKnowledgeMeta } from "./knowledge-meta-builder.js";
+import { buildKnowledgeMeta, isSameKnowledgeTestIndex, loadKbIdTypeMap, writeKnowledgeMeta } from "./knowledge-meta-builder.js";
 import {
   appendEventLedgerEvent,
   readEventLedger,
@@ -5588,12 +5588,60 @@ export async function ensureCiteContractPolicyActivatedMarker(
 // per_client / dismissed_reason_histogram are intentionally optional — they
 // are only emitted by TASK-06 once the underlying observation events carry
 // the `client` and `dismissed_reason` fields. STUB returns neither.
+//
+// v2.0.0-rc.24 TASK-08: extended with contract-policy metrics. Five new
+// accumulators (contract_with / contract_missing / hard_violated / skip_count
+// / cite_id_unresolved) plus per-(layer, type) cross-tab and a
+// contract_metrics_status discriminator gating the contract audit window.
+// The rc.20 metrics block stays untouched — contract metrics are an additive
+// extension. See plan.json design_decisions for the B4 marker-independence
+// rationale.
+export type CiteContractMetrics = {
+  // Counts of strict-bucket cites (decision/pitfall) actually observed in the
+  // contract window. decisions_cited + pitfalls_cited = the denominator that
+  // contract_with / contract_missing / hard_violated partitions.
+  decisions_cited: number;
+  pitfalls_cited: number;
+  // contract_with: strict-bucket cite carried at least one operator (i.e.
+  // commitment.operators.length > 0). contract_missing: strict-bucket cite
+  // had no operators AND no skip_reason — the lazy default the policy
+  // explicitly refuses. hard_violated: cite had operators but the session
+  // edits diverged from at least one operator (e.g. edit:foo.ts but no
+  // session edit hit foo.ts). cite_id_unresolved: cite_id absent from
+  // knowledge-meta idTypeMap (hallucinated id or stale meta).
+  contract_with: number;
+  contract_missing: number;
+  hard_violated: number;
+  cite_id_unresolved: number;
+  // skip_count: histogram of skip_reason buckets. Keys are the reasons the
+  // hook parser emitted verbatim — bootstrap docs canonicalize the vocabulary
+  // (e.g. "sequencing", "tribal-knowledge"), but the doctor does NOT
+  // gatekeeper the enum here; it surfaces whatever the parser wrote so
+  // operators can data-drive vocabulary expansion (per B1 grill-me lock).
+  skip_count: Record<string, number>;
+};
+
+// Per-(layer, type) cross-tab — populated whenever contract metrics are
+// computed. Keyed by layer ("team"/"personal") then by SINGULAR knowledge_type
+// from TASK-07's idTypeMap (so the keys match the schema enum verbatim).
+// "unresolved" is a sixth bucket for cite_ids that did not resolve in
+// idTypeMap. Counts are turn-cite occurrences, not session-level.
+export type CiteLayerTypeBreakdown = {
+  team: Record<string, number>;
+  personal: Record<string, number>;
+};
+
 export type CiteCoverageReport = {
   status: "ok" | "skipped";
   marker_ts: number;
   marker_emitted_now: boolean;
   since_ts: number;
   client_filter: "cc" | "codex" | "cursor" | "all";
+  // v2.0.0-rc.24 TASK-08: layer filter for personal-layer parity. 'all' =
+  // both team (KT-*) and personal (KP-*); 'team' / 'personal' = restrict
+  // top-level metrics to one root. Optional (defaults to 'all') so existing
+  // callers (CLI rc.20 surface) do not break before TASK-10 wires the flag.
+  layer_filter?: "team" | "personal" | "all";
   metrics: {
     edits_touched: number;
     qualifying_cites: number;
@@ -5609,6 +5657,21 @@ export type CiteCoverageReport = {
   // none` — legacy/lazy). Optional — only emitted when at least one turn
   // carried the `none` cite tag.
   none_reason_histogram?: Record<string, number>;
+  // v2.0.0-rc.24 TASK-08: contract-policy audit metrics. `status` discriminates:
+  //   - 'ok'                       — contract metrics populated (marker present).
+  //   - 'skipped:bootstrap_drift'  — `fab install` has not run post-upgrade;
+  //                                  contract_metrics shape is present but all
+  //                                  counters are zero.
+  //   - 'awaiting_marker'          — marker emit succeeded in the past but a
+  //                                  read/write degraded the current invocation
+  //                                  (rare); same zero-counter degraded mode.
+  // contract_metrics is always emitted (even in skipped states) so the CLI
+  // renderer (TASK-09) can iterate the shape without optional-chaining each
+  // field. per_layer_type is likewise always emitted with zeroed buckets.
+  contract_metrics_status?: "ok" | "skipped:bootstrap_drift" | "awaiting_marker";
+  contract_metrics?: CiteContractMetrics;
+  per_layer_type?: CiteLayerTypeBreakdown;
+  contract_marker_ts?: number;
   generated_at: string;
 };
 
@@ -5701,9 +5764,29 @@ function matchesRelevancePath(editPath: string, relevancePaths: readonly string[
 // 100ms — matches the buildLastActiveIndex envelope.
 export async function runDoctorCiteCoverage(
   projectRoot: string,
-  options: { since: number; client: "cc" | "codex" | "cursor" | "all" },
+  options: {
+    since: number;
+    client: "cc" | "codex" | "cursor" | "all";
+    // v2.0.0-rc.24 TASK-08: layer filter for personal-layer parity. Optional
+    // — defaults to 'all' so the CLI rc.20 surface (which has not yet wired
+    // --layer; TASK-10 owns that change) keeps working byte-for-byte.
+    layer?: "team" | "personal" | "all";
+  },
 ): Promise<CiteCoverageReport> {
+  const layerFilter = options.layer ?? "all";
   const marker = await ensureCitePolicyActivatedMarker(projectRoot);
+  // v2.0.0-rc.24 TASK-08: contract marker (independent audit window from the
+  // rc.20 cite_policy_activated marker — see plan B4). The drift gate inside
+  // ensureCiteContractPolicyActivatedMarker bridges the rc.23→rc.24
+  // half-upgrade window: when `.fabric/AGENTS.md` does NOT byte-equal the
+  // current BOOTSTRAP_CANONICAL we refuse activation, so contract metrics
+  // surface as 'skipped:bootstrap_drift' until the user reruns `fab install`.
+  const contractMarker = await ensureCiteContractPolicyActivatedMarker(projectRoot);
+  // idTypeMap loaded once per invocation — typical corpora <200 entries so
+  // <5ms, no caching needed. An empty map (no meta or read failure) collapses
+  // every cite into the cite_id_unresolved bucket which is the correct
+  // degraded mode (operators can fix by running `fab doctor --fix`).
+  const idTypeMap = await loadKbIdTypeMap(projectRoot);
   const generatedAt = new Date().toISOString();
   const zeroMetrics: CiteCoverageReport["metrics"] = {
     edits_touched: 0,
@@ -5713,6 +5796,29 @@ export async function runDoctorCiteCoverage(
     total_turns: 0,
   };
 
+  // Contract-metrics status discriminator. Resolved here (before any ledger
+  // I/O) so all early-return branches can attach the same zeroed contract
+  // shape — the CLI renderer never has to optional-chain.
+  const contractStatus: "ok" | "skipped:bootstrap_drift" | "awaiting_marker" =
+    contractMarker.blocked_by === "bootstrap_drift"
+      ? "skipped:bootstrap_drift"
+      : contractMarker.marker_ts === 0
+        ? "awaiting_marker"
+        : "ok";
+  const zeroContractMetrics: CiteContractMetrics = {
+    decisions_cited: 0,
+    pitfalls_cited: 0,
+    contract_with: 0,
+    contract_missing: 0,
+    hard_violated: 0,
+    cite_id_unresolved: 0,
+    skip_count: {},
+  };
+  const zeroLayerType: CiteLayerTypeBreakdown = {
+    team: {},
+    personal: {},
+  };
+
   if (marker.marker_ts === 0) {
     return {
       status: "skipped",
@@ -5720,7 +5826,12 @@ export async function runDoctorCiteCoverage(
       marker_emitted_now: false,
       since_ts: options.since,
       client_filter: options.client,
+      layer_filter: layerFilter,
       metrics: zeroMetrics,
+      contract_metrics_status: contractStatus,
+      contract_metrics: zeroContractMetrics,
+      per_layer_type: zeroLayerType,
+      contract_marker_ts: contractMarker.marker_ts,
       generated_at: generatedAt,
     };
   }
@@ -5728,6 +5839,15 @@ export async function runDoctorCiteCoverage(
   // effectiveSince anchors the window at the policy marker — observations
   // recorded before the policy activated are not coverable under it.
   const effectiveSince = Math.max(marker.marker_ts, options.since);
+
+  // v2.0.0-rc.24 TASK-08: contract metrics open their OWN audit window — the
+  // rc.20 marker (which gates qualifying_cites/recalled_unverified) is
+  // intentionally NOT used here. When contractStatus !== 'ok', this bound
+  // stays at Infinity (no event qualifies). Otherwise we take max with the
+  // user's `since` so --since narrows both windows symmetrically.
+  const contractEffectiveSince = contractStatus === "ok"
+    ? Math.max(contractMarker.marker_ts, options.since)
+    : Number.POSITIVE_INFINITY;
 
   // Single ledger pass — collect ALL events in window, partition by type.
   let ledgerEvents: EventLedgerEvent[] = [];
@@ -5744,7 +5864,12 @@ export async function runDoctorCiteCoverage(
       marker_emitted_now: marker.emitted_now,
       since_ts: effectiveSince,
       client_filter: options.client,
+      layer_filter: layerFilter,
       metrics: zeroMetrics,
+      contract_metrics_status: contractStatus,
+      contract_metrics: zeroContractMetrics,
+      per_layer_type: zeroLayerType,
+      contract_marker_ts: contractMarker.marker_ts,
       generated_at: generatedAt,
     };
   }
@@ -5873,6 +5998,115 @@ export async function runDoctorCiteCoverage(
   // session_id → Set<cite_id> for expected_but_missed correlation.
   const sessionCitedKbs = new Map<string, Set<string>>();
 
+  // v2.0.0-rc.24 TASK-08: per-session edit-path index for contract operator
+  // evaluation. Built once from the edit events partition; reused across the
+  // turn loop. Each session maps to its observed edit paths (normalized).
+  const sessionEditPaths = new Map<string, string[]>();
+  for (const edit of editEvents) {
+    const sid = edit.session_id;
+    if (typeof sid !== "string" || sid.length === 0) continue;
+    const list = sessionEditPaths.get(sid) ?? [];
+    list.push(normalizePath(edit.path));
+    sessionEditPaths.set(sid, list);
+  }
+
+  // v2.0.0-rc.24 TASK-08: contract accumulators.
+  let decisionsCited = 0;
+  let pitfallsCited = 0;
+  let contractWith = 0;
+  let contractMissing = 0;
+  let hardViolated = 0;
+  let citeIdUnresolved = 0;
+  const skipCount: Record<string, number> = {};
+  const layerTypeAccum: CiteLayerTypeBreakdown = { team: {}, personal: {} };
+  const bumpLayerType = (citeId: string, type: string): void => {
+    const layer = citeId.startsWith("KP-") ? "personal" : citeId.startsWith("KT-") ? "team" : null;
+    if (layer === null) return;
+    layerTypeAccum[layer][type] = (layerTypeAccum[layer][type] ?? 0) + 1;
+  };
+  // Layer filter helper — decides whether a cite_id contributes to the
+  // top-level rc.20 metrics (qualifying_cites etc.) AND to the contract
+  // accumulators. Edits don't carry layer info (they describe filesystem
+  // paths, not knowledge entries) so edits are NOT layer-filtered. Cites
+  // with neither KP-/KT- prefix (rare/legacy) pass through under 'all' but
+  // are dropped under any narrowed filter — conservative.
+  const passesLayerFilter = (citeId: string): boolean => {
+    if (layerFilter === "all") return true;
+    if (layerFilter === "team") return citeId.startsWith("KT-");
+    return citeId.startsWith("KP-");
+  };
+
+  // Operator-vs-edits comparator. session_id is required to evaluate edits;
+  // a turn lacking a session_id is treated as having NO observable edits,
+  // which means edit:/not_edit: operators violate on edit: and pass on
+  // not_edit:. This matches the conservative "no evidence the edit
+  // happened" interpretation.
+  //
+  // require:/forbid: operator vs diff content: the edit_intent_checked
+  // event schema (event-ledger.ts L53-L68) carries no full diff content —
+  // only path / compliant / intent / optional diff_stat (numeric summary)
+  // / optional annotation. We therefore SCOPE the require:/forbid: check
+  // to "<symbol present in any changed file PATH>" — a strict downgrade
+  // from the planned diff-content match, documented in TASK-08 summary so
+  // TASK-09 i18n can label this honestly. If a future rc widens the
+  // ledger schema to carry the textual diff, only this comparator function
+  // changes.
+  const evaluateOperatorViolation = (
+    sessionId: string | undefined,
+    operators: ReadonlyArray<{ kind: "edit" | "not_edit" | "require" | "forbid"; target: string }>,
+  ): boolean => {
+    const editPaths = (typeof sessionId === "string" && sessionId.length > 0)
+      ? (sessionEditPaths.get(sessionId) ?? [])
+      : [];
+    for (const op of operators) {
+      switch (op.kind) {
+        case "edit": {
+          let matched = false;
+          for (const p of editPaths) {
+            if (minimatch(p, op.target, { dot: true, matchBase: false })) {
+              matched = true;
+              break;
+            }
+          }
+          if (!matched) return true;
+          break;
+        }
+        case "not_edit": {
+          for (const p of editPaths) {
+            if (minimatch(p, op.target, { dot: true, matchBase: false })) {
+              return true;
+            }
+          }
+          break;
+        }
+        case "require": {
+          // Scoped to file-path symbol match (substring) — diff content not
+          // available in ledger. Documented in TASK-08 summary.
+          let found = false;
+          for (const p of editPaths) {
+            if (p.includes(op.target)) {
+              found = true;
+              break;
+            }
+          }
+          if (!found) return true;
+          break;
+        }
+        case "forbid": {
+          for (const p of editPaths) {
+            if (p.includes(op.target)) {
+              return true;
+            }
+          }
+          break;
+        }
+        default:
+          break;
+      }
+    }
+    return false;
+  };
+
   let totalTurns = 0;
   let qualifyingCites = 0;
   let recalledUnverified = 0;
@@ -5892,6 +6126,10 @@ export async function runDoctorCiteCoverage(
       sessionCitedKbs.set(sid, set);
     }
 
+    // -------------------------------------------------------------------
+    // rc.20 cite_tags walk (unchanged behavior — touch only if the
+    // categorize/dismissed/none shape needs widening).
+    // -------------------------------------------------------------------
     let turnHadRecalled = false;
     for (const tag of turn.cite_tags) {
       const { category, reason } = categorizeCiteTag(tag);
@@ -5927,6 +6165,70 @@ export async function runDoctorCiteCoverage(
       bumpClient(turn.client, (m) => {
         m.recalled_unverified += 1;
       });
+    }
+
+    // -------------------------------------------------------------------
+    // v2.0.0-rc.24 TASK-08: per-cite contract walk. Iterates index-aligned
+    // (cite_ids[i], cite_commitments[i]). cite_tags is NOT index-aligned
+    // with cite_ids (sentinel `KB: none` produces a cite_tags entry but no
+    // cite_ids entry — see plan B3 and the cite_commitments parallel-array
+    // doc on event-ledger.ts L424). Skipped entirely when the contract
+    // marker has not been emitted (contractStatus !== 'ok').
+    // -------------------------------------------------------------------
+    if (contractStatus === "ok" && turn.ts >= contractEffectiveSince) {
+      const commitments = turn.cite_commitments ?? [];
+      for (let i = 0; i < turn.cite_ids.length; i += 1) {
+        const citeId = turn.cite_ids[i];
+        if (typeof citeId !== "string" || citeId.length === 0) continue;
+        if (!passesLayerFilter(citeId)) continue;
+
+        const kbType = idTypeMap.get(citeId);
+        if (kbType === undefined) {
+          // Hallucinated or pre-meta id — dedicated bucket so the user can
+          // distinguish "AI made up an id" from "AI cited a real id without
+          // an operator".
+          citeIdUnresolved += 1;
+          bumpLayerType(citeId, "unresolved");
+          continue;
+        }
+
+        // Cross-tab by (layer, type) for every resolved cite, regardless of
+        // bucket — this is the breakdown TASK-09's i18n renderer surfaces.
+        bumpLayerType(citeId, kbType);
+
+        // Singular knowledge_type enum (TASK-07 contract). Matching against
+        // the singular literals — no plural drift.
+        if (kbType === "decision" || kbType === "pitfall") {
+          if (kbType === "decision") decisionsCited += 1;
+          else pitfallsCited += 1;
+
+          const commitment = commitments[i];
+          // Missing commitment slot is equivalent to "lazy default" — no
+          // operators, no skip. Counts as contract_missing.
+          const operators = commitment?.operators ?? [];
+          const skipReason = commitment?.skip_reason ?? null;
+
+          if (skipReason !== null) {
+            skipCount[skipReason] = (skipCount[skipReason] ?? 0) + 1;
+            // skip:<reason> exits the contract_with/contract_missing
+            // partition — operator is explicitly waived.
+            continue;
+          }
+
+          if (operators.length === 0) {
+            contractMissing += 1;
+            continue;
+          }
+
+          contractWith += 1;
+          if (evaluateOperatorViolation(sid, operators)) {
+            hardViolated += 1;
+          }
+        }
+        // model → reference-only (no contract check), already cross-tabbed.
+        // guideline / process → deferred to rc.25 LLM-judge (no contract
+        // check), already cross-tabbed.
+      }
     }
   }
 
@@ -5983,16 +6285,31 @@ export async function runDoctorCiteCoverage(
     }
   }
 
+  const contractMetrics: CiteContractMetrics = {
+    decisions_cited: decisionsCited,
+    pitfalls_cited: pitfallsCited,
+    contract_with: contractWith,
+    contract_missing: contractMissing,
+    hard_violated: hardViolated,
+    cite_id_unresolved: citeIdUnresolved,
+    skip_count: skipCount,
+  };
+
   return {
     status: "ok",
     marker_ts: marker.marker_ts,
     marker_emitted_now: marker.emitted_now,
     since_ts: effectiveSince,
     client_filter: options.client,
+    layer_filter: layerFilter,
     metrics,
     ...(perClient !== undefined ? { per_client: perClient } : {}),
     ...(Object.keys(dismissedHistogram).length > 0 ? { dismissed_reason_histogram: dismissedHistogram } : {}),
     ...(Object.keys(noneHistogram).length > 0 ? { none_reason_histogram: noneHistogram } : {}),
+    contract_metrics_status: contractStatus,
+    contract_metrics: contractMetrics,
+    per_layer_type: layerTypeAccum,
+    contract_marker_ts: contractMarker.marker_ts,
     generated_at: generatedAt,
   };
 }
