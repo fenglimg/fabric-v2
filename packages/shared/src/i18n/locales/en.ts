@@ -172,6 +172,43 @@ export const enMessages: Messages = {
   "doctor.cite.none.unspecified": "Unspecified",
   "doctor.cite.status.skipped":
     "Cite policy not yet activated for this workspace.",
+  // v2.0.0-rc.24 TASK-09: cite-coverage contract-policy renderer keys.
+  // Companion schema: packages/shared/src/schemas/api-contracts.ts
+  // citeCoverageReportSchema. Consumer: TASK-10 CLI doctor --cite-coverage.
+  "cite-coverage.contract.header": "Contract check",
+  "cite-coverage.contract.decisions_cited": "Decisions cited",
+  "cite-coverage.contract.pitfalls_cited": "Pitfalls cited",
+  "cite-coverage.contract.with": "With contract",
+  "cite-coverage.contract.missing": "Missing contract",
+  "cite-coverage.contract.hard_violated":
+    "Hard violations (operator did not match session edits)",
+  "cite-coverage.contract.cite_id_unresolved": "Unresolved cite IDs",
+  "cite-coverage.contract.skip_count": "Skip bucket",
+  "cite-coverage.contract.status.ok": "ok",
+  "cite-coverage.contract.status.skipped_bootstrap_drift":
+    "skipped (bootstrap drift — run `fab install`)",
+  "cite-coverage.contract.status.awaiting_marker": "awaiting first marker emit",
+  // Singular knowledge-type labels (verbatim alignment with KnowledgeTypeSchema)
+  // plus the sixth "unresolved" bucket.
+  "cite-coverage.contract.type.decision": "decision",
+  "cite-coverage.contract.type.pitfall": "pitfall",
+  "cite-coverage.contract.type.model": "model",
+  "cite-coverage.contract.type.guideline": "guideline",
+  "cite-coverage.contract.type.process": "process",
+  "cite-coverage.contract.type.unresolved": "unresolved",
+  // Layer labels (per_layer_type headers + layer_filter banner).
+  "cite-coverage.layer.team": "team",
+  "cite-coverage.layer.personal": "personal",
+  "cite-coverage.layer.team_review": "[team — review]",
+  "cite-coverage.layer.personal_fyi": "[personal — fyi]",
+  // skip_reason vocabulary (bootstrap-docs canonical; renderer falls back to
+  // the raw key for unknown buckets — operators data-drive extensions).
+  "cite-coverage.skip.sequencing": "sequencing constraint",
+  "cite-coverage.skip.conditional": "conditional branch",
+  "cite-coverage.skip.semantic": "semantic rule",
+  "cite-coverage.skip.aesthetic": "style / aesthetic",
+  "cite-coverage.skip.architectural": "architectural layer",
+  "cite-coverage.skip.other": "other",
   "cli.doctor.args.target.description":
     "Target project path. Defaults to --target, then EXTERNAL_FIXTURE_PATH, then cwd.",
   "cli.doctor.args.fix.description": "Repair derived Fabric state (meta + indexes).",

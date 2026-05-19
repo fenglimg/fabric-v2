@@ -816,6 +816,99 @@ export const fabReviewAnnotations = {
 } as const;
 
 // ---------------------------------------------------------------------------
+// CLI contract — `fab doctor --cite-coverage`
+//
+// v2.0.0-rc.24 TASK-09: Zod schema mirroring the `CiteCoverageReport` runtime
+// type that lives in `packages/server/src/services/doctor.ts` (TASK-08). The
+// shape is intentionally duplicated here so the CLI renderer (TASK-10) can
+// validate JSON output and downstream tooling can consume a single typed
+// surface without taking a server-package import.
+//
+// Field-by-field equivalence with the doctor.ts type is enforced by the
+// roundtrip tests in `packages/shared/test/api-contracts.test.ts`. If a field
+// is added to the runtime type, both this schema and the i18n locales must be
+// updated in lockstep.
+// ---------------------------------------------------------------------------
+
+// CiteContractMetrics — strict-bucket contract audit counters. All counters
+// are turn-cite occurrences (not session-level). `skip_count` is open-keyed
+// because skip-reason vocabulary is parser-author-controlled (see B1
+// grill-me lock — operators data-drive vocabulary expansion).
+export const citeContractMetricsSchema = z.object({
+  decisions_cited: z.number().int().nonnegative(),
+  pitfalls_cited: z.number().int().nonnegative(),
+  contract_with: z.number().int().nonnegative(),
+  contract_missing: z.number().int().nonnegative(),
+  hard_violated: z.number().int().nonnegative(),
+  cite_id_unresolved: z.number().int().nonnegative(),
+  skip_count: z.record(z.string(), z.number().int().nonnegative()),
+});
+export type CiteContractMetrics = z.infer<typeof citeContractMetricsSchema>;
+
+// CiteLayerTypeBreakdown — (layer × singular knowledge_type) cross-tab.
+// Inner keys = the SINGULAR KnowledgeType enum literals
+// ("decision" / "pitfall" / "model" / "guideline" / "process") plus
+// "unresolved" for cite_ids not present in the idTypeMap. Inner record is
+// open-keyed so a future type addition does not break the wire shape.
+export const citeLayerTypeBreakdownSchema = z.object({
+  team: z.record(z.string(), z.number().int().nonnegative()),
+  personal: z.record(z.string(), z.number().int().nonnegative()),
+});
+export type CiteLayerTypeBreakdown = z.infer<typeof citeLayerTypeBreakdownSchema>;
+
+// CiteCoverageReport — full payload returned by `runDoctorCiteCoverage`.
+// rc.20 fields (status / marker_ts / marker_emitted_now / since_ts /
+// client_filter / metrics / per_client / dismissed_reason_histogram /
+// none_reason_histogram / generated_at) preserved verbatim. rc.24 additions
+// (TASK-08): layer_filter, contract_metrics_status, contract_metrics,
+// per_layer_type, contract_marker_ts.
+export const citeCoverageReportSchema = z.object({
+  status: z.enum(["ok", "skipped"]),
+  marker_ts: z.number().int().nonnegative(),
+  marker_emitted_now: z.boolean(),
+  since_ts: z.number().int().nonnegative(),
+  client_filter: z.enum(["cc", "codex", "cursor", "all"]),
+  // v2.0.0-rc.24 TASK-08: layer filter discriminator. Optional so pre-TASK-10
+  // CLI callers (which never set the flag) still parse. Defaults to "all" at
+  // the service layer.
+  layer_filter: z.enum(["team", "personal", "all"]).optional(),
+  metrics: z.object({
+    edits_touched: z.number().int().nonnegative(),
+    qualifying_cites: z.number().int().nonnegative(),
+    recalled_unverified: z.number().int().nonnegative(),
+    expected_but_missed: z.number().int().nonnegative(),
+    total_turns: z.number().int().nonnegative(),
+  }),
+  per_client: z
+    .record(
+      z.string(),
+      z.object({
+        edits_touched: z.number().int().nonnegative().optional(),
+        qualifying_cites: z.number().int().nonnegative().optional(),
+        recalled_unverified: z.number().int().nonnegative().optional(),
+        expected_but_missed: z.number().int().nonnegative().optional(),
+        total_turns: z.number().int().nonnegative().optional(),
+      }),
+    )
+    .optional(),
+  dismissed_reason_histogram: z
+    .record(z.string(), z.number().int().nonnegative())
+    .optional(),
+  none_reason_histogram: z.record(z.string(), z.number().int().nonnegative()).optional(),
+  // v2.0.0-rc.24 TASK-08: contract-policy audit metrics. Status discriminates
+  // populated vs degraded modes. contract_metrics + per_layer_type are emitted
+  // (zeroed) in degraded modes so the renderer iterates one stable shape.
+  contract_metrics_status: z
+    .enum(["ok", "skipped:bootstrap_drift", "awaiting_marker"])
+    .optional(),
+  contract_metrics: citeContractMetricsSchema.optional(),
+  per_layer_type: citeLayerTypeBreakdownSchema.optional(),
+  contract_marker_ts: z.number().int().nonnegative().optional(),
+  generated_at: z.string(),
+});
+export type CiteCoverageReport = z.infer<typeof citeCoverageReportSchema>;
+
+// ---------------------------------------------------------------------------
 // Existing API contract schemas
 // ---------------------------------------------------------------------------
 

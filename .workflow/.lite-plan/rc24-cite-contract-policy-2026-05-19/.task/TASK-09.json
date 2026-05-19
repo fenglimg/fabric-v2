@@ -1,0 +1,80 @@
+{
+  "id": "TASK-09",
+  "title": "CiteCoverageReport type extension + i18n locales for contract metrics",
+  "scope": "packages/shared/src/schemas/api-contracts.ts + packages/shared/src/i18n/locales/{zh-CN,en}.ts",
+  "action": "Update",
+  "description": "Finalize CiteCoverageReport TypeScript type with new contract fields (contract_marker_ts, contract_metrics_status, contract_metrics object with all sub-fields, per_layer_type cross-tab, cite_id_unresolved). Add zh-CN + en i18n strings for new report sections (contract check header, skip reason labels, layer breakdown, drift skip message).",
+  "files": [
+    {
+      "path": "packages/shared/src/schemas/api-contracts.ts",
+      "action": "modify",
+      "target": "CiteCoverageReport zod schema + TypeScript type (locate via grep CiteCoverageReport)",
+      "change": "Extend Zod schema with: contract_marker_ts: z.number(), contract_marker_emitted_now: z.boolean(), contract_metrics_status: z.enum(['ok','skipped:bootstrap_drift','awaiting_marker']), contract_metrics: z.object({ decisions_cited: z.number(), pitfalls_cited: z.number(), contract_with: z.number(), contract_missing: z.number(), hard_violated: z.number(), cite_id_unresolved: z.number(), skip_count: z.record(z.string(), z.number()) }).optional(), per_layer_type: z.record(z.string(), z.record(z.string(), z.number())).optional(). Preserve all existing fields exactly."
+    },
+    {
+      "path": "packages/shared/src/i18n/locales/zh-CN.ts",
+      "action": "modify",
+      "target": "doctor.cite-coverage keys block (grep cite-coverage)",
+      "change": "Add keys: 'cite-coverage.contract.header': '应用契约校验', 'cite-coverage.contract.decisions_cited': 'decisions 引用', 'cite-coverage.contract.pitfalls_cited': 'pitfalls 引用', 'cite-coverage.contract.with': '已附契约', 'cite-coverage.contract.missing': '缺契约', 'cite-coverage.contract.hard_violated': '硬性违规', 'cite-coverage.contract.cite_id_unresolved': '引用 ID 不存在', 'cite-coverage.contract.skip_count': 'skip 桶', 'cite-coverage.contract.skipped_bootstrap_drift': '已跳过(bootstrap drift — 请运行 fab install)', 'cite-coverage.contract.awaiting_marker': '等待首次 marker emit', 'cite-coverage.layer.team': 'team', 'cite-coverage.layer.personal': 'personal', 'cite-coverage.layer.team_review': '[team — 需复核]', 'cite-coverage.layer.personal_fyi': '[personal — fyi]', 'cite-coverage.skip.sequencing': '顺序约束', 'cite-coverage.skip.conditional': '条件分支', 'cite-coverage.skip.semantic': '语义约束', 'cite-coverage.skip.aesthetic': '美学/风格', 'cite-coverage.skip.architectural': '架构层', 'cite-coverage.skip.other': '其他'."
+    },
+    {
+      "path": "packages/shared/src/i18n/locales/en.ts",
+      "action": "modify",
+      "target": "parallel doctor.cite-coverage block",
+      "change": "Mirror zh-CN keys with English text: 'cite-coverage.contract.header': 'Contract check', 'decisions_cited': 'Decisions cited', 'pitfalls_cited': 'Pitfalls cited', 'with': 'With contract', 'missing': 'Missing contract', 'hard_violated': 'Hard violations', 'cite_id_unresolved': 'Unresolved cite IDs', 'skip_count': 'Skip bucket', 'skipped_bootstrap_drift': 'skipped (bootstrap drift — run `fab install`)', 'awaiting_marker': 'awaiting first marker emit', 'layer.team_review': '[team — review]', 'layer.personal_fyi': '[personal — fyi]', skip labels: 'sequencing constraint', 'conditional branch', 'semantic rule', 'style/aesthetic', 'architectural layer', 'other'."
+    },
+    {
+      "path": "packages/shared/test/api-contracts.test.ts",
+      "action": "modify",
+      "target": "CiteCoverageReport schema roundtrip tests",
+      "change": "Add cases: (1) report with full contract_metrics roundtrips; (2) report without contract_metrics (optional) still valid; (3) per_layer_type cross-tab roundtrip; (4) reject invalid contract_metrics_status enum value. ≥4 cases."
+    }
+  ],
+  "implementation": [
+    "Read packages/shared/src/schemas/api-contracts.ts to locate current CiteCoverageReport schema.",
+    "Extend Zod schema with new fields (preserving optional/required semantics).",
+    "Update both i18n locales with parallel key sets (verify keys exactly match between zh-CN and en files).",
+    "Add api-contracts.test roundtrip cases.",
+    "Run `pnpm --filter @fenglimg/fabric-shared test api-contracts` to confirm green."
+  ],
+  "reference": {
+    "pattern": "Zod schema + i18n key parity",
+    "files": ["packages/shared/src/schemas/api-contracts.ts", "packages/shared/src/i18n/locales/zh-CN.ts", "packages/shared/src/i18n/locales/en.ts"],
+    "examples": "rc.20 CiteCoverageReport initial definition + i18n; rc.23 cite-none-sentinel extension."
+  },
+  "rationale": {
+    "chosen_approach": "Extend existing CiteCoverageReport; do not split into separate ContractMetricsReport. Single payload simplifies CLI consumption.",
+    "alternatives_considered": ["Separate ContractReport type (rejected: forces caller to do two queries)"],
+    "decision_factors": ["Single CLI consumer (doctor command)", "i18n parity easier with one block", "rc.20 precedent"],
+    "tradeoffs": "CiteCoverageReport type grows; mitigated by optional fields for backward-compat."
+  },
+  "test": {
+    "manual_checks": ["pnpm --filter @fenglimg/fabric-shared test passes", "Verify zh-CN and en have identical key sets (no missing translations)"],
+    "success_metrics": ["≥4 schema test cases all passing", "i18n key parity verified", "TypeScript type compiles without errors"],
+    "unit": ["api-contracts CiteCoverageReport with-contract-roundtrip", "api-contracts CiteCoverageReport without-contract-optional", "api-contracts per_layer_type-roundtrip", "api-contracts reject-invalid-contract-status"],
+    "integration": ["i18n key parity check (custom test: assert Object.keys(zhCN) === Object.keys(en) for cite-coverage block)"]
+  },
+  "convergence": {
+    "criteria": [
+      "api-contracts.ts CiteCoverageReport schema contains 'contract_marker_ts', 'contract_metrics_status', 'contract_metrics'",
+      "contract_metrics_status enum includes 'ok', 'skipped:bootstrap_drift', 'awaiting_marker'",
+      "contract_metrics shape contains all 7 sub-fields per spec",
+      "zh-CN.ts contains ≥18 new cite-coverage.contract.* and cite-coverage.skip.* keys",
+      "en.ts contains identical key set to zh-CN",
+      "api-contracts.test.ts adds ≥4 new roundtrip cases",
+      "pnpm --filter @fenglimg/fabric-shared test exits 0",
+      "Commit msg: 'feat(rc24): CiteCoverageReport contract fields + bilingual i18n (TASK-09)'"
+    ]
+  },
+  "read_first": [
+    "packages/shared/src/schemas/api-contracts.ts",
+    "packages/shared/src/i18n/locales/zh-CN.ts",
+    "packages/shared/src/i18n/locales/en.ts",
+    "packages/shared/test/api-contracts.test.ts"
+  ],
+  "depends_on": ["TASK-08"],
+  "estimated_minutes": 35,
+  "cli_execution_id": "rc24-cite-contract-policy-2026-05-19-TASK-09",
+  "cli_execution": { "strategy": "new" },
+  "status": "completed"
+}

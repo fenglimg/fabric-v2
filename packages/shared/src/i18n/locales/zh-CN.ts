@@ -168,6 +168,40 @@ export const zhCNMessages: Messages = {
   "doctor.cite.none.not-applicable": "不在范围",
   "doctor.cite.none.unspecified": "未注明",
   "doctor.cite.status.skipped": "本工作区 Cite policy 尚未激活。",
+  // v2.0.0-rc.24 TASK-09: cite-coverage 合约审计渲染键（contract-policy 审计窗口）。
+  // 配套 schema：packages/shared/src/schemas/api-contracts.ts citeCoverageReportSchema。
+  // 渲染器消费方：TASK-10 CLI doctor --cite-coverage（layer / type / skip / status / contract）。
+  "cite-coverage.contract.header": "应用契约校验",
+  "cite-coverage.contract.decisions_cited": "decisions 引用",
+  "cite-coverage.contract.pitfalls_cited": "pitfalls 引用",
+  "cite-coverage.contract.with": "已附契约",
+  "cite-coverage.contract.missing": "缺契约",
+  "cite-coverage.contract.hard_violated": "硬性违规（操作符未匹配 session 编辑）",
+  "cite-coverage.contract.cite_id_unresolved": "引用 ID 不存在",
+  "cite-coverage.contract.skip_count": "skip 桶",
+  "cite-coverage.contract.status.ok": "正常",
+  "cite-coverage.contract.status.skipped_bootstrap_drift":
+    "已跳过（bootstrap drift — 请运行 fab install）",
+  "cite-coverage.contract.status.awaiting_marker": "等待首次 marker emit",
+  // 单数知识类型（与 KnowledgeTypeSchema 枚举字面量逐字对齐）+ 第六桶 unresolved。
+  "cite-coverage.contract.type.decision": "decision",
+  "cite-coverage.contract.type.pitfall": "pitfall",
+  "cite-coverage.contract.type.model": "model",
+  "cite-coverage.contract.type.guideline": "guideline",
+  "cite-coverage.contract.type.process": "process",
+  "cite-coverage.contract.type.unresolved": "unresolved",
+  // 知识层标签（per_layer_type 表头 + layer_filter 标识）。
+  "cite-coverage.layer.team": "team",
+  "cite-coverage.layer.personal": "personal",
+  "cite-coverage.layer.team_review": "[team — 需复核]",
+  "cite-coverage.layer.personal_fyi": "[personal — fyi]",
+  // skip_reason 标准词表（bootstrap 文档定义；运营方可继续扩展词条，渲染器对未知键回退到原始 key）。
+  "cite-coverage.skip.sequencing": "顺序约束",
+  "cite-coverage.skip.conditional": "条件分支",
+  "cite-coverage.skip.semantic": "语义约束",
+  "cite-coverage.skip.aesthetic": "美学/风格",
+  "cite-coverage.skip.architectural": "架构层",
+  "cite-coverage.skip.other": "其他",
   "cli.doctor.args.target.description":
     "目标项目路径。默认依次使用 --target、EXTERNAL_FIXTURE_PATH、当前目录。",
   "cli.doctor.args.fix.description": "修复 Fabric 派生状态（meta + 索引）。",
