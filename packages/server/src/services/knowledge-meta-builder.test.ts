@@ -9,6 +9,7 @@ import {
   buildKnowledgeMeta,
   computeKnowledgeTestIndex,
   computeKnowledgeBasedAgentsMeta,
+  loadKbIdTypeMap,
   writeKnowledgeMeta,
 } from "./knowledge-meta-builder.js";
 
@@ -819,6 +820,229 @@ describe("knowledge-meta-builder", () => {
     // surfaced rather than dropping out of the registry.
     expect(node?.description?.relevance_scope).toBe("broad");
     expect(node?.description?.relevance_paths).toEqual([]);
+  });
+});
+
+// v2.0-rc.24 TASK-07: cite-coverage routing loader. The map is consumed by
+// `runDoctorCiteCoverage` to route cites by knowledge_type. We assert the
+// singular-form enum contract explicitly so a future plural rename in the
+// schema would surface here first.
+describe("loadKbIdTypeMap", () => {
+  it("returns team-layer KT-* entries with their singular knowledge_type", async () => {
+    const projectRoot = await createProject("kb-idtype-team-only");
+    await writeProjectFile(
+      projectRoot,
+      ".fabric/knowledge/decisions/KT-DEC-0001.md",
+      [
+        "---",
+        "id: KT-DEC-0001",
+        "type: decision",
+        "maturity: proven",
+        "layer: team",
+        "created_at: 2026-05-19T00:00:00.000Z",
+        "summary: Team decision one",
+        "---",
+        "# Team decision one",
+        "",
+      ].join("\n"),
+    );
+    await writeProjectFile(
+      projectRoot,
+      ".fabric/knowledge/pitfalls/KT-PIT-0001.md",
+      [
+        "---",
+        "id: KT-PIT-0001",
+        "type: pitfall",
+        "maturity: verified",
+        "layer: team",
+        "created_at: 2026-05-19T00:00:00.000Z",
+        "summary: Team pitfall one",
+        "---",
+        "# Team pitfall one",
+        "",
+      ].join("\n"),
+    );
+    await writeKnowledgeMeta(projectRoot, { source: "doctor_fix" });
+
+    const map = await loadKbIdTypeMap(projectRoot);
+
+    expect(map.size).toBe(2);
+    expect(map.get("KT-DEC-0001")).toBe("decision");
+    expect(map.get("KT-PIT-0001")).toBe("pitfall");
+  });
+
+  it("includes personal-layer KP-* entries alongside team entries (dual-root)", async () => {
+    const projectRoot = await createProject("kb-idtype-dual-layer");
+    await writeProjectFile(
+      projectRoot,
+      ".fabric/knowledge/models/KT-MOD-0001.md",
+      [
+        "---",
+        "id: KT-MOD-0001",
+        "type: model",
+        "maturity: draft",
+        "layer: team",
+        "created_at: 2026-05-19T00:00:00.000Z",
+        "summary: Team model",
+        "---",
+        "# Team model",
+        "",
+      ].join("\n"),
+    );
+    // Personal-layer entry under the FABRIC_HOME-redirected fake home dir.
+    const personalGuidelinesDir = join(process.env.FABRIC_HOME!, ".fabric", "knowledge", "guidelines");
+    await mkdir(personalGuidelinesDir, { recursive: true });
+    await writeFile(
+      join(personalGuidelinesDir, "KP-GLD-0001.md"),
+      [
+        "---",
+        "id: KP-GLD-0001",
+        "type: guideline",
+        "maturity: draft",
+        "layer: personal",
+        "created_at: 2026-05-19T00:00:00.000Z",
+        "summary: Personal guideline",
+        "---",
+        "# Personal guideline",
+        "",
+      ].join("\n"),
+    );
+    await writeKnowledgeMeta(projectRoot, { source: "doctor_fix" });
+
+    const map = await loadKbIdTypeMap(projectRoot);
+
+    expect(map.get("KT-MOD-0001")).toBe("model");
+    expect(map.get("KP-GLD-0001")).toBe("guideline");
+  });
+
+  it("returns an empty map when agents.meta.json is missing (graceful)", async () => {
+    const projectRoot = await createProject("kb-idtype-missing-meta");
+    // No writeKnowledgeMeta call → no .fabric/agents.meta.json exists.
+
+    const map = await loadKbIdTypeMap(projectRoot);
+
+    expect(map).toBeInstanceOf(Map);
+    expect(map.size).toBe(0);
+  });
+
+  it("returns an empty map when agents.meta.json is malformed JSON (no throw)", async () => {
+    const projectRoot = await createProject("kb-idtype-malformed-json");
+    await writeProjectFile(projectRoot, ".fabric/agents.meta.json", "{not valid json at all");
+
+    const map = await loadKbIdTypeMap(projectRoot);
+
+    expect(map.size).toBe(0);
+  });
+
+  it("skips nodes lacking description.knowledge_type without throwing", async () => {
+    const projectRoot = await createProject("kb-idtype-missing-field");
+    // Hand-craft meta with one valid node and one node whose description
+    // lacks knowledge_type. The loader must skip the malformed one and still
+    // surface the well-formed one.
+    await writeProjectFile(
+      projectRoot,
+      ".fabric/agents.meta.json",
+      JSON.stringify(
+        {
+          revision: "sha256:test",
+          nodes: {
+            "KT-DEC-0042": {
+              file: ".fabric/knowledge/decisions/KT-DEC-0042.md",
+              content_ref: ".fabric/knowledge/decisions/KT-DEC-0042.md",
+              scope_glob: "decisions/KT-DEC-0042/**",
+              hash: "sha256:abc",
+              stable_id: "KT-DEC-0042",
+              identity_source: "declared",
+              description: {
+                summary: "Valid decision",
+                intent_clues: [],
+                tech_stack: [],
+                impact: [],
+                must_read_if: "valid",
+                knowledge_type: "decision",
+                relevance_scope: "broad",
+                relevance_paths: [],
+              },
+            },
+            "KT-DEC-0099": {
+              file: ".fabric/knowledge/decisions/KT-DEC-0099.md",
+              content_ref: ".fabric/knowledge/decisions/KT-DEC-0099.md",
+              scope_glob: "decisions/KT-DEC-0099/**",
+              hash: "sha256:def",
+              stable_id: "KT-DEC-0099",
+              identity_source: "declared",
+              description: {
+                summary: "Description but no knowledge_type",
+                intent_clues: [],
+                tech_stack: [],
+                impact: [],
+                must_read_if: "no-type",
+                relevance_scope: "broad",
+                relevance_paths: [],
+              },
+            },
+            "rules/legacy": {
+              file: ".fabric/agents/legacy.md",
+              scope_glob: "**",
+              hash: "sha256:legacy",
+              stable_id: "rules/legacy",
+              identity_source: "derived",
+            },
+          },
+        },
+        null,
+        2,
+      ),
+    );
+
+    const map = await loadKbIdTypeMap(projectRoot);
+
+    expect(map.get("KT-DEC-0042")).toBe("decision");
+    expect(map.has("KT-DEC-0099")).toBe(false);
+    // Legacy non-knowledge nodes (no KP-/KT- stable_id) are excluded.
+    expect(map.has("rules/legacy")).toBe(false);
+    expect(map.size).toBe(1);
+  });
+
+  it("returns values from the canonical singular KnowledgeType enum (no plural drift)", async () => {
+    const projectRoot = await createProject("kb-idtype-enum-canonical");
+    const expected: Array<{ id: string; type: "model" | "decision" | "guideline" | "pitfall" | "process"; dir: string }> = [
+      { id: "KT-MOD-0001", type: "model", dir: "models" },
+      { id: "KT-DEC-0001", type: "decision", dir: "decisions" },
+      { id: "KT-GLD-0001", type: "guideline", dir: "guidelines" },
+      { id: "KT-PIT-0001", type: "pitfall", dir: "pitfalls" },
+      { id: "KT-PRO-0001", type: "process", dir: "processes" },
+    ];
+    for (const { id, type, dir } of expected) {
+      await writeProjectFile(
+        projectRoot,
+        `.fabric/knowledge/${dir}/${id}.md`,
+        [
+          "---",
+          `id: ${id}`,
+          `type: ${type}`,
+          "maturity: proven",
+          "layer: team",
+          "created_at: 2026-05-19T00:00:00.000Z",
+          `summary: ${type} summary`,
+          "---",
+          `# ${type} entry`,
+          "",
+        ].join("\n"),
+      );
+    }
+    await writeKnowledgeMeta(projectRoot, { source: "doctor_fix" });
+
+    const map = await loadKbIdTypeMap(projectRoot);
+
+    for (const { id, type } of expected) {
+      expect(map.get(id)).toBe(type);
+    }
+    // Singular contract — no plural form should ever appear as a value.
+    const values = new Set(map.values());
+    for (const plural of ["models", "decisions", "guidelines", "pitfalls", "processes"]) {
+      expect(values.has(plural as never)).toBe(false);
+    }
   });
 });
 

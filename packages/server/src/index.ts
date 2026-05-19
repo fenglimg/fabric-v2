@@ -44,6 +44,7 @@ export {
   deriveKnowledgeMetaLayer,
   deriveKnowledgeMetaTopologyType,
   isSameKnowledgeTestIndex,
+  loadKbIdTypeMap,
   stableStringify,
   writeKnowledgeMeta,
   type KnowledgeMetaBuildResult,

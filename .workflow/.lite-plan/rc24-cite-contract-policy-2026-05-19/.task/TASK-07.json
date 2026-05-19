@@ -1,0 +1,68 @@
+{
+  "id": "TASK-07",
+  "title": "knowledge-meta idTypeMap loader for doctor cite-coverage routing",
+  "scope": "packages/server/src/services/knowledge-meta-builder.ts (or new helper in doctor.ts)",
+  "action": "Add",
+  "description": "Add loader function loadKbIdTypeMap(projectRoot) returning Map<stable_id, knowledge_type> from the existing knowledge-meta build pipeline. Consumed by runDoctorCiteCoverage (TASK-08) for type-aware cite routing and cite_id_unresolved bucket detection.",
+  "files": [
+    {
+      "path": "packages/server/src/services/knowledge-meta-builder.ts",
+      "action": "modify",
+      "target": "export new helper near existing exports",
+      "change": "Add `export async function loadKbIdTypeMap(projectRoot: string): Promise<Map<string, KnowledgeType>>`. Implementation: invoke existing knowledge-meta build (or read .fabric/agents.meta.json directly), iterate entries (team + personal layers via existing dual-root loop), produce Map<stable_id, knowledge_type>. Return empty map on read failure (graceful — doctor will report all cites as unresolved)."
+    },
+    {
+      "path": "packages/server/src/services/knowledge-meta-builder.test.ts",
+      "action": "modify",
+      "target": "add describe block for loadKbIdTypeMap",
+      "change": "Test cases: (1) team layer only — returns KT-* entries with types; (2) personal layer populated — returns mixed KT-* and KP-* entries; (3) missing agents.meta.json — returns empty map; (4) malformed entry — skipped with no throw; (5) snapshot type values match canonical enum. ≥5 cases."
+    }
+  ],
+  "implementation": [
+    "Read packages/server/src/services/knowledge-meta-builder.ts L337-L400 to confirm existing dual-root scan pattern (team + personal).",
+    "Decide source: option A (re-run knowledge-meta build), option B (read .fabric/agents.meta.json directly — faster). Prefer B since meta is kept in sync by engine.",
+    "Implement loadKbIdTypeMap parsing agents.meta.json nodes; for each node extract stable_id + knowledge_type frontmatter mirror.",
+    "Handle absence of meta file (graceful empty map).",
+    "Add test cases per files[].change directive.",
+    "Run `pnpm --filter @fenglimg/fabric-server test knowledge-meta-builder` to confirm green."
+  ],
+  "reference": {
+    "pattern": "Dual-root knowledge scan (existing)",
+    "files": ["packages/server/src/services/knowledge-meta-builder.ts:337-400", "packages/shared/src/schemas/agents-meta.ts"],
+    "examples": "Existing knowledge-meta-builder scans team+personal roots; loadKbIdTypeMap is a thin extract on top."
+  },
+  "rationale": {
+    "chosen_approach": "Read agents.meta.json directly (B) — engine keeps it in sync, no need to re-walk filesystem on every doctor invocation.",
+    "alternatives_considered": ["Re-run knowledge-meta build (rejected: slow, IO-heavy for what's a constant data point)", "Walk knowledge/ directories directly (rejected: duplicates engine logic)"],
+    "decision_factors": ["meta is authoritative", "fast read (<5ms)", "no dual logic with engine"],
+    "tradeoffs": "Stale meta → stale type map; mitigated by engine auto-sync + fab doctor --fix recovery."
+  },
+  "test": {
+    "manual_checks": ["pnpm --filter @fenglimg/fabric-server test passes", "Manual: populate personal KB entry, verify loader returns KP-* entry with correct type"],
+    "success_metrics": ["≥5 loader test cases all passing", "Empty map graceful on missing meta", "Personal layer entries surfaced"],
+    "unit": ["loadKbIdTypeMap team-only", "loadKbIdTypeMap dual-layer", "loadKbIdTypeMap missing-meta-graceful", "loadKbIdTypeMap malformed-entry-skipped", "loadKbIdTypeMap type-enum-canonical"],
+    "integration": []
+  },
+  "convergence": {
+    "criteria": [
+      "knowledge-meta-builder.ts exports loadKbIdTypeMap function",
+      "Function returns Map<string, KnowledgeType>",
+      "Function handles missing meta file gracefully (empty map, no throw)",
+      "Function includes both team (KT-*) and personal (KP-*) entries",
+      "knowledge-meta-builder.test.ts adds ≥5 loader test cases",
+      "pnpm --filter @fenglimg/fabric-server test exits 0",
+      "Commit msg: 'feat(rc24): knowledge-meta idTypeMap loader (TASK-07)'"
+    ]
+  },
+  "read_first": [
+    "packages/server/src/services/knowledge-meta-builder.ts",
+    "packages/shared/src/schemas/agents-meta.ts",
+    "packages/server/src/services/knowledge-meta-builder.test.ts",
+    ".fabric/agents.meta.json"
+  ],
+  "depends_on": [],
+  "estimated_minutes": 35,
+  "cli_execution_id": "rc24-cite-contract-policy-2026-05-19-TASK-07",
+  "cli_execution": { "strategy": "new" },
+  "status": "completed"
+}

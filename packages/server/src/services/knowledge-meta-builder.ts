@@ -65,6 +65,55 @@ export type WriteKnowledgeMetaOptions = {
   source: KnowledgeMetaBuildSource;
 };
 
+/**
+ * v2.0-rc.24 TASK-07: Load a Map<stable_id, knowledge_type> from the
+ * project's `.fabric/agents.meta.json`. Consumed by the doctor cite-coverage
+ * routing (TASK-08) to dispatch cites to the correct policy bucket
+ * (decision/pitfall = strict contract / model = reference-only /
+ * guideline+process = deferred to rc.25 LLM-judge). Cited ids absent from
+ * this map fall into the `cite_id_unresolved` bucket.
+ *
+ * **Singular knowledge_type contract (rc.24 lock):** the returned map values
+ * are the SINGULAR `KnowledgeType` enum (`"model" | "decision" | "guideline"
+ * | "pitfall" | "process"`) — matching both the on-disk `agents.meta.json`
+ * storage AND the canonical `KnowledgeTypeSchema` exported from
+ * `@fenglimg/fabric-shared`. No normalization happens at this boundary; the
+ * loader is a thin extract over engine-maintained meta. Downstream callers
+ * (TASK-08 doctor) must match against the singular enum.
+ *
+ * Both team (KT-*) and personal (KP-*) entries are included — they live in
+ * the same `meta.nodes` map.
+ *
+ * Graceful on failure: a missing meta file, malformed JSON, or schema
+ * validation failure all yield an empty Map (no throw). The doctor will then
+ * surface every cite as `cite_id_unresolved`, which is the safe degraded
+ * mode.
+ */
+export async function loadKbIdTypeMap(projectRootInput: string): Promise<Map<string, KnowledgeType>> {
+  const projectRoot = normalizeProjectRoot(projectRootInput);
+  const metaPath = join(projectRoot, ".fabric", "agents.meta.json");
+  const meta = await readExistingMeta(metaPath);
+  const map = new Map<string, KnowledgeType>();
+
+  if (meta === undefined) {
+    return map;
+  }
+
+  for (const node of Object.values(meta.nodes)) {
+    const stableId = node.stable_id;
+    if (stableId === undefined || !isKnowledgeStableId(stableId)) {
+      continue;
+    }
+    const knowledgeType = node.description?.knowledge_type;
+    if (knowledgeType === undefined) {
+      continue;
+    }
+    map.set(stableId, knowledgeType);
+  }
+
+  return map;
+}
+
 export async function buildKnowledgeMeta(projectRootInput: string): Promise<KnowledgeMetaBuildResult> {
   const projectRoot = normalizeProjectRoot(projectRootInput);
   assertExistingDirectory(projectRoot);
