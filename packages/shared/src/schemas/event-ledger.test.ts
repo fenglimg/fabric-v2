@@ -365,6 +365,117 @@ describe("eventLedgerEventSchema", () => {
     ).toThrow();
   });
 
+  // v2.0.0-rc.24 TASK-01: cite_commitments parallel array + cite_contract_policy_activated marker
+  it("parses assistant_turn_observed with non-empty cite_commitments (rc.24 contract policy)", () => {
+    const base = {
+      kind: "fabric-event" as const,
+      id: "event:test",
+      ts: 1_000,
+      schema_version: 1 as const,
+    };
+    const parsed = eventLedgerEventSchema.parse({
+      ...base,
+      event_type: "assistant_turn_observed",
+      kb_line_raw: "KB: KT-D-0001 (auth) [recalled] → edit:src/auth/**/* !edit:src/legacy/**/*",
+      cite_ids: ["KT-D-0001"],
+      cite_tags: ["recalled"],
+      cite_commitments: [
+        {
+          operators: [
+            { kind: "edit", target: "src/auth/**/*" },
+            { kind: "not_edit", target: "src/legacy/**/*" },
+            { kind: "require", target: "tests/auth/*.test.ts" },
+            { kind: "forbid", target: "console.log" },
+          ],
+          skip_reason: null,
+        },
+      ],
+      client: "cc",
+      turn_id: "turn-1",
+      timestamp: "2026-05-19T10:00:00.000Z",
+    });
+    expect(parsed).toMatchObject({
+      event_type: "assistant_turn_observed",
+      cite_commitments: [
+        {
+          operators: [
+            { kind: "edit", target: "src/auth/**/*" },
+            { kind: "not_edit", target: "src/legacy/**/*" },
+            { kind: "require", target: "tests/auth/*.test.ts" },
+            { kind: "forbid", target: "console.log" },
+          ],
+          skip_reason: null,
+        },
+      ],
+    });
+  });
+
+  it("defaults cite_commitments to [] for rc.20-rc.23 events without the field (backward-compat)", () => {
+    const base = {
+      kind: "fabric-event" as const,
+      id: "event:test",
+      ts: 1_000,
+      schema_version: 1 as const,
+    };
+    const parsed = eventLedgerEventSchema.parse({
+      ...base,
+      event_type: "assistant_turn_observed",
+      kb_line_raw: "KB: none [no-relevant]",
+      cite_ids: [],
+      cite_tags: [],
+      turn_id: "turn-legacy",
+      timestamp: "2026-05-15T10:00:00.000Z",
+    });
+    expect(parsed).toMatchObject({
+      event_type: "assistant_turn_observed",
+      cite_commitments: [],
+    });
+  });
+
+  it("parses cite_contract_policy_activated marker (rc.24 drift-gated activation)", () => {
+    const base = {
+      kind: "fabric-event" as const,
+      id: "event:test",
+      ts: 1_000,
+      schema_version: 1 as const,
+      session_id: "session-1",
+    };
+    const parsed = eventLedgerEventSchema.parse({
+      ...base,
+      event_type: "cite_contract_policy_activated",
+    });
+    expect(parsed).toMatchObject({
+      event_type: "cite_contract_policy_activated",
+      session_id: "session-1",
+    });
+  });
+
+  it("rejects cite_commitments operator with unknown kind", () => {
+    const base = {
+      kind: "fabric-event" as const,
+      id: "event:test",
+      ts: 1_000,
+      schema_version: 1 as const,
+    };
+    expect(() =>
+      eventLedgerEventSchema.parse({
+        ...base,
+        event_type: "assistant_turn_observed",
+        kb_line_raw: "KB: KT-D-0001 (anchor) [recalled] → delete:foo.ts",
+        cite_ids: ["KT-D-0001"],
+        cite_tags: ["recalled"],
+        cite_commitments: [
+          {
+            operators: [{ kind: "delete", target: "foo.ts" }],
+            skip_reason: null,
+          },
+        ],
+        turn_id: "turn-bad",
+        timestamp: "2026-05-19T10:00:00.000Z",
+      }),
+    ).toThrow();
+  });
+
   it("rejects deleted v1 event types (rule_baseline_accepted, baseline_synced, legacy_client_path_present)", () => {
     const base = {
       kind: "fabric-event",

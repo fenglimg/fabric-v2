@@ -421,6 +421,24 @@ export const assistantTurnObservedEventSchema = z.object({
   kb_line_raw: z.string().nullable(),
   cite_ids: z.array(z.string()).default([]),
   cite_tags: z.array(z.enum(["planned", "recalled", "chained-from", "dismissed", "none"])).default([]),
+  // v2.0.0-rc.24 TASK-01: per-cite contract commitments. Index-aligned with
+  // cite_ids/cite_tags (commitments[i] belongs to cite_ids[i]). Each slot
+  // carries `operators[]` (kind + glob target) or `skip_reason` when the cite
+  // cannot be operator-ized. Old rc.20-rc.23 events naturally parse with an
+  // empty array via `.default([])` and are excluded from contract-policy
+  // audits by the marker-gate (see cite_contract_policy_activated below).
+  // Mirrors the rc.20 cite_tags parallel-array evolution exactly.
+  cite_commitments: z.array(
+    z.object({
+      operators: z.array(
+        z.object({
+          kind: z.enum(["edit", "not_edit", "require", "forbid"]),
+          target: z.string(),
+        }),
+      ),
+      skip_reason: z.string().nullable(),
+    }),
+  ).default([]),
   client: z.enum(["cc", "codex", "cursor"]).optional(),
   turn_id: z.string(),
   envelope_index: z.number().int().nonnegative().optional(),
@@ -438,6 +456,20 @@ export const citePolicyActivatedEventSchema = z.object({
   event_type: z.literal("cite_policy_activated"),
   policy_version: z.string(),
   timestamp: z.string().datetime(),
+});
+
+// v2.0.0-rc.24 TASK-01: idempotent marker emitted once per session (or per
+// policy bump) by `fab doctor --cite-coverage` when the cite-contract policy
+// layer activates — but only if no bootstrap drift is detected (otherwise
+// the marker emit is skipped to bridge the rc.23→rc.24 half-upgrade window
+// where servers run rc.24 but installed hooks still produce rc.23-shape
+// events). Independent of `cite_policy_activated` (rc.20 id-existence
+// marker) so contract metrics open their own audit window without polluting
+// the existing recalled_unverified / qualifying_cites accounting. Pure
+// marker shape — no extra payload beyond the envelope.
+export const citeContractPolicyActivatedEventSchema = z.object({
+  ...eventLedgerEnvelopeSchema,
+  event_type: z.literal("cite_contract_policy_activated"),
 });
 
 // v2.0.0-rc.22 Scope A T3: emitted by `rotateEventLedgerIfNeeded` as the FIRST
@@ -577,6 +609,10 @@ export const eventLedgerEventSchema = z.discriminatedUnion("event_type", [
   // v2.0.0-rc.20 TASK-02: cite_policy_activated — session/policy-bump
   // marker recording when a given policy_version became active.
   citePolicyActivatedEventSchema,
+  // v2.0.0-rc.24 TASK-01: cite_contract_policy_activated — drift-gated
+  // idempotent marker opening the contract-policy audit window. Distinct
+  // from cite_policy_activated so contract metrics get their own window.
+  citeContractPolicyActivatedEventSchema,
   // v2.0.0-rc.22 Scope D T-D1: knowledge_meta_auto_healed — emitted by
   // loadActiveMeta when read-path drift triggers an in-place meta rebuild.
   knowledgeMetaAutoHealedEventSchema,
@@ -630,6 +666,7 @@ export type DoctorRunEvent = z.infer<typeof doctorRunEventSchema>;
 export type RelevanceMigrationRunEvent = z.infer<typeof relevanceMigrationRunEventSchema>;
 export type AssistantTurnObservedEvent = z.infer<typeof assistantTurnObservedEventSchema>;
 export type CitePolicyActivatedEvent = z.infer<typeof citePolicyActivatedEventSchema>;
+export type CiteContractPolicyActivatedEvent = z.infer<typeof citeContractPolicyActivatedEventSchema>;
 export type KnowledgeMetaAutoHealedEvent = z.infer<typeof knowledgeMetaAutoHealedEventSchema>;
 export type EventsRotatedEvent = z.infer<typeof eventsRotatedEventSchema>;
 export type ServeLockClearedEvent = z.infer<typeof serveLockClearedEventSchema>;
@@ -670,6 +707,7 @@ export type EventLedgerEvent =
   | RelevanceMigrationRunEvent
   | AssistantTurnObservedEvent
   | CitePolicyActivatedEvent
+  | CiteContractPolicyActivatedEvent
   | KnowledgeMetaAutoHealedEvent
   | EventsRotatedEvent
   | ServeLockClearedEvent
