@@ -41,9 +41,26 @@ const FABRIC_DIR = ".fabric";
 const EVENT_LEDGER_FILE = "events.jsonl";
 const EVENT_TYPE_PROPOSED = "knowledge_proposed";
 const EVENT_TYPE_PLAN_CONTEXT = "knowledge_context_planned";
+const EVENT_TYPE_ROTATED = "events_rotated";
 const THRESHOLD_PLAN_CONTEXTS = 5;
 const THRESHOLD_HOURS = 24;
 const MS_PER_HOUR = 60 * 60 * 1000;
+
+// rc.25 review remediation: differentiate "rotation cut watermark" from
+// "ledger truly fresh (never archived)" when `lastProposedTs === null`.
+// The previous wording appended `(watermark 已被 rotation 清理)` in both
+// cases, which is misleading for a brand-new project. Heuristic:
+//   - events.length > ROTATION_HINT_EVENTS_THRESHOLD (>50 events
+//     accumulated but no knowledge_proposed) → likely rotation cut the
+//     watermark, OR
+//   - an explicit `events_rotated` event appears in the ledger → definite
+//     rotation evidence.
+// In either case, keep the legacy `(watermark 已被 rotation 清理)` suffix.
+// Otherwise the ledger is genuinely young (e.g. a brand-new project that
+// has accumulated a handful of plan_context events but never archived) —
+// emit no suffix, since claiming rotation cleared the watermark would
+// confuse the operator.
+const ROTATION_HINT_EVENTS_THRESHOLD = 50;
 
 // Cooldown throttle. After the hook surfaces a reminder, it stays silent for
 // this many hours — purely a reminder-noise throttle, not a state machine.
@@ -264,7 +281,14 @@ function decide(events, now, language) {
   // as the virtual watermark so hoursElapsed is meaningful instead of null.
   // We track whether the fallback fired so the reason copy can append a
   // breadcrumb explaining the approximation.
+  //
+  // rc.25 review remediation: only claim "rotation cut the watermark" when
+  // there is evidence of rotation (events.length > 50 OR an `events_rotated`
+  // event appears). For a truly fresh ledger (small, no rotation marker),
+  // the fallback still fires (so hoursElapsed renders) but the suffix is
+  // suppressed — claiming rotation in a brand-new project is misleading.
   let watermarkFallbackFired = false;
+  let rotationLikely = false;
   let effectiveWatermarkTs = lastProposedTs;
   if (lastProposedTs === null) {
     const firstEventTs =
@@ -272,6 +296,11 @@ function decide(events, now, language) {
     if (firstEventTs !== null) {
       effectiveWatermarkTs = firstEventTs;
       watermarkFallbackFired = true;
+      const hasRotatedEvent = events.some(
+        (ev) => ev && ev.event_type === EVENT_TYPE_ROTATED,
+      );
+      rotationLikely =
+        events.length > ROTATION_HINT_EVENTS_THRESHOLD || hasRotatedEvent;
     }
   }
 
@@ -303,11 +332,17 @@ function decide(events, now, language) {
         : "never archived"
       : `${hoursElapsed.toFixed(1)}h`;
 
-  const watermarkSuffix = watermarkFallbackFired
-    ? lang === "zh-CN"
-      ? "(watermark 已被 rotation 清理)"
-      : "(watermark cleaned by rotation)"
-    : "";
+  // Suffix decision (rc.25 review remediation):
+  //   - Fallback fired + rotation evidence → emit rotation-clarification suffix.
+  //   - Fallback fired + truly fresh ledger → no suffix (claiming rotation
+  //     would mislead first-time users).
+  //   - Fallback did not fire (proposed event exists) → no suffix.
+  const watermarkSuffix =
+    watermarkFallbackFired && rotationLikely
+      ? lang === "zh-CN"
+        ? "(watermark 已被 rotation 清理)"
+        : "(watermark cleaned by rotation)"
+      : "";
 
   const reason = buildReason({
     language: lang,
@@ -410,12 +445,14 @@ module.exports = {
     EVENT_LEDGER_FILE,
     EVENT_TYPE_PROPOSED,
     EVENT_TYPE_PLAN_CONTEXT,
+    EVENT_TYPE_ROTATED,
     THRESHOLD_PLAN_CONTEXTS,
     THRESHOLD_HOURS,
     CONFIG_FILE,
     DEFAULT_COOLDOWN_HOURS,
     SHOWN_CACHE_FILE,
     SESSION_COVERAGE_THRESHOLD,
+    ROTATION_HINT_EVENTS_THRESHOLD,
     DEFAULT_LANGUAGE,
   },
 };

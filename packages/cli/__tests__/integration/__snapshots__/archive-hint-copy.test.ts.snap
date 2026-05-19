@@ -18,10 +18,19 @@ exports[`TASK-11 archive-hint copy: case 2 — degraded session phrase > renders
 }
 `;
 
-exports[`TASK-11 archive-hint copy: case 3 — rotation watermark fallback > appends '(watermark 已被 rotation 清理)' when no knowledge_proposed exists 1`] = `
+exports[`TASK-11 archive-hint copy: case 3 — rotation watermark fallback > appends '(watermark 已被 rotation 清理)' when no knowledge_proposed exists + rotation marker 1`] = `
 {
   "decision": "block",
   "reason": "跨 3 个会话累计 6 次 plan_context · 距上次归档 40.0h (watermark 已被 rotation 清理) — 这是项目级长期欠债, 不一定来自本会话。
+若本会话有产出, 可调用 fabric-archive; 否则可忽略, 12h 后再提醒。",
+  "signal": "archive",
+}
+`;
+
+exports[`TASK-11 archive-hint copy: case 3 — rotation watermark fallback > omits the rotation suffix when ledger is truly fresh 1`] = `
+{
+  "decision": "block",
+  "reason": "跨 3 个会话累计 6 次 plan_context · 距上次归档 40.0h — 这是项目级长期欠债, 不一定来自本会话。
 若本会话有产出, 可调用 fabric-archive; 否则可忽略, 12h 后再提醒。",
   "signal": "archive",
 }

@@ -384,6 +384,19 @@ messages + edit_paths + 1-line title), so this phase is a tail-scan + read.
    - **(e) Never attempted (no `session_archive_attempted` event found for
      this `session_id`) → keep.** First-time scan; nothing to filter
      against.
+   - **(f) Cross-session pending dedupe** (operates on candidate
+     observations, not on `session_id` filter): gather all
+     `knowledge_proposed_ids` from `session_archive_attempted` events with
+     `outcome === "proposed"` across ALL sessions in the recent window
+     (NOT just the current candidate session). This builds a global set of
+     idempotency keys already proposed by prior archive runs but not yet
+     reviewed by the user (`.fabric/knowledge/pending/` may still contain
+     them). When classifying new observations in Phase 1, drop any
+     candidate whose computed `idempotency_key` matches an id already in
+     this set — it was already proposed by an earlier archive run, the
+     user just hasn't reviewed it yet, so re-proposing would duplicate
+     pending entries and inflate `candidates_proposed` counts. Per Phase
+     2.5 line 1112 — this is the dedupe consumer of `knowledge_proposed_ids`.
 
    The resulting filtered `session_id[]` proceeds into step 5's digest
    concatenation. Sessions filtered out in this step do NOT contribute to
@@ -466,7 +479,7 @@ is the canonical taxonomy for this gate.
 |-------|--------|-------------------------------------------------------|
 | **E1** | `hook_passive` | stdout JSON `{decision:'block', ...}` from `archive-hint.cjs` detected at skill entry (the Stop-hook reminder path). |
 | **E2** | `explicit_user_invoke` | User prompt is a direct invocation: `fabric archive` / `/fabric-archive` / `archive what we just did` / `归档一下` / similar imperative. |
-| **E3** | `ai_self_trigger` | AI internal marker `self-archive policy triggered by signal X` present (one of the 4 self-trigger signals from AGENTS.md E3 section). |
+| **E3** | `ai_self_trigger` | AI internal marker `self-archive policy triggered by signal: <X>` present (substring match on the verbatim prefix `self-archive policy triggered by signal`; `<X>` is one of the 4 self-trigger signals from AGENTS.md E3 section: `Normative` / `Wrong-turn-and-revert` / `Decision confirmation` / `Explicit dismissal`). |
 | **E4** | `user_range_rollback` | Prompt contains a **range hint** (parsed in Phase -0.5 — e.g. `今日` / `上周` / `rc.20`) AND the user is invoking. Sub-mode of E2. |
 | **E5** | `cron` | Prompt contains literal `今日复盘` / `daily recap` / `daily-archive` AND no human is present (running under `/loop`, OS cron, or scheduled trigger). |
 
@@ -728,7 +741,10 @@ ELSE (entry_point ∈ {E2_explicit, E4_user_range}):
   → User-active path: render the gate-FAIL message below (UX i18n Policy
     class 2 — errors/preconditions; render per `fabric_language`).
   → Still write ONE `session_archive_attempted` event per session in scope
-    with outcome='skipped_no_signal' (see Phase 2.5).
+    with outcome='viability_failed' (see Phase 2.5 Outcome Decision Matrix
+    row 2 — user-active gate failure populates `viability_failed`, NOT
+    `skipped_no_signal` which is reserved for the SILENT-SKIP branch
+    above).
   → Exit the skill.
 ```
 

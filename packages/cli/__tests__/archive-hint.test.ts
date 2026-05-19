@@ -205,11 +205,14 @@ describe("archive-hint decide() — rotation watermark fallback", () => {
     teardownProject(root);
   });
 
-  it("uses events[0].ts as virtual watermark and appends '(watermark 已被 rotation 清理)' when no knowledge_proposed present", () => {
+  it("uses events[0].ts as virtual watermark and appends '(watermark 已被 rotation 清理)' when no knowledge_proposed present + rotation marker", () => {
     // No knowledge_proposed event (simulates post-rotation state). 5
     // plan_context events; first one at 40h ago becomes virtual watermark.
+    // rc.25 review remediation: inject an explicit `events_rotated` event
+    // so decide() classifies this as rotation-cut rather than truly-fresh.
     const events: Array<Record<string, unknown>> = [
       planContextEvent(40),
+      { event_type: "events_rotated", ts: NOW_MS - 35 * 60 * 60 * 1000 },
       planContextEvent(30),
       planContextEvent(20),
       planContextEvent(10),
@@ -220,6 +223,26 @@ describe("archive-hint decide() — rotation watermark fallback", () => {
     expect(result).not.toBeNull();
     expect(result?.reason).toMatch(/watermark 已被 rotation 清理/);
     // hoursElapsed computed from events[0].ts = 40h ago
+    expect(result?.reason).toMatch(/40\.0h/);
+  });
+
+  it("omits the rotation suffix when ledger is truly fresh (no proposed event + no rotation marker + few events)", () => {
+    // Brand-new project: never archived, no rotation. The fallback still
+    // fires so hoursElapsed renders, but the suffix MUST be suppressed —
+    // claiming rotation cleared the watermark would mislead the user.
+    const events: Array<Record<string, unknown>> = [
+      planContextEvent(40),
+      planContextEvent(30),
+      planContextEvent(20),
+      planContextEvent(10),
+      planContextEvent(5),
+      planContextEvent(1),
+    ];
+    const result = hook.decide(events, NOW, "zh-CN");
+    expect(result).not.toBeNull();
+    expect(result?.reason).not.toMatch(/watermark 已被 rotation 清理/);
+    expect(result?.reason).not.toMatch(/watermark cleaned by rotation/);
+    // hoursElapsed still computed from events[0].ts = 40h ago
     expect(result?.reason).toMatch(/40\.0h/);
   });
 });

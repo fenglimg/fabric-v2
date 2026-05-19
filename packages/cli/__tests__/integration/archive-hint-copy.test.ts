@@ -173,10 +173,34 @@ describe("TASK-11 archive-hint copy: case 2 — degraded session phrase", () => 
 // ---------------------------------------------------------------------------
 
 describe("TASK-11 archive-hint copy: case 3 — rotation watermark fallback", () => {
-  it("appends '(watermark 已被 rotation 清理)' when no knowledge_proposed exists", () => {
+  it("appends '(watermark 已被 rotation 清理)' when no knowledge_proposed exists + rotation marker", () => {
     const root = setupProject("case3");
     writeFabricConfig(root, { fabric_language: "zh-CN" });
     // No knowledge_proposed event present — simulates a post-rotation ledger.
+    // rc.25 review remediation: inject an explicit `events_rotated` event so
+    // the hook classifies this fixture as rotation-cut rather than truly-fresh
+    // (the truly-fresh branch no longer renders the rotation suffix).
+    writeEvents(root, [
+      planContextEvent(40, "session-A"),
+      { event_type: "events_rotated", ts: NOW_MS - 35 * 60 * 60 * 1000 },
+      planContextEvent(30, "session-B"),
+      planContextEvent(20, "session-C"),
+      planContextEvent(10, "session-A"),
+      planContextEvent(5, "session-B"),
+      planContextEvent(1, "session-C"),
+    ]);
+
+    const payload = runHook(root);
+    expect(payload).toMatchSnapshot();
+  });
+
+  it("omits the rotation suffix when ledger is truly fresh", () => {
+    // Brand-new project: never archived, no rotation marker, small ledger.
+    // The fallback still fires so hoursElapsed renders, but the suffix MUST
+    // be suppressed — claiming rotation cleared the watermark would
+    // mislead first-time users.
+    const root = setupProject("case3-fresh");
+    writeFabricConfig(root, { fabric_language: "zh-CN" });
     writeEvents(root, [
       planContextEvent(40, "session-A"),
       planContextEvent(30, "session-B"),
