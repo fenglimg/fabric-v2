@@ -715,7 +715,24 @@ ELSE:
 
 #### On gate FAIL
 
-Stop the skill with the gate-FAIL message (UX i18n Policy class 2 — errors/preconditions; render per `fabric_language`):
+Branching by `entry_point` (resolved at Phase -0.5):
+
+```
+IF entry_point ∈ {E1_hook, E3_ai_self_trigger, E5_cron}:
+  → SILENT-SKIP path: do NOT emit the gate-FAIL message; do NOT trigger AskUserQuestion.
+  → Still write ONE `session_archive_attempted` event per session in scope
+    with outcome='skipped_no_signal' (see Phase 2.5 for the emission contract).
+  → Exit the skill silently. Rationale: hook / AI self-trigger / cron are
+    non-user-active contexts — a verbose message there is pure noise.
+ELSE (entry_point ∈ {E2_explicit, E4_user_range}):
+  → User-active path: render the gate-FAIL message below (UX i18n Policy
+    class 2 — errors/preconditions; render per `fabric_language`).
+  → Still write ONE `session_archive_attempted` event per session in scope
+    with outcome='skipped_no_signal' (see Phase 2.5).
+  → Exit the skill.
+```
+
+For the user-active branch (E2 / E4), the gate-FAIL message variants are:
 
 zh-CN variant:
 
@@ -729,7 +746,7 @@ en variant:
 Current session is routine execution; no new knowledge to archive (gate=<reason>). To force-archive, explicitly invoke fabric-archive.
 ```
 
-Optionally append a one-line event to `.fabric/events.jsonl` of shape `{"ts":"...","kind":"knowledge_archive_aborted","reason":"<reason>","session":"<id>"}` if the events ledger is writable; otherwise just log to stderr. Do NOT proceed to Phase 1, do NOT call any MCP tool.
+In BOTH branches: do NOT proceed to Phase 1, do NOT call any MCP tool. The legacy `knowledge_archive_aborted` event line (`{"ts":"...","kind":"knowledge_archive_aborted","reason":"<reason>","session":"<id>"}`) MAY be appended in addition to the mandatory Phase 2.5 `session_archive_attempted` event — they serve different audit purposes (legacy abort reason vs new outcome state machine) and the two coexist during the rc.25 transition window.
 
 ##### events.jsonl Constraint Note
 
@@ -1057,6 +1074,85 @@ If the skill needs to record a genuinely separate observation in the same sessio
 - Same `(type, slug)` but a different **first** session → distinct idempotency key → produces two pending files.
 - Same first session but different tail sessions → evidence-merge into the SAME pending file; tail `session_id`s are NOT recorded as independent evidence keys.
 - The formula is intentionally stable across the rc.5 → rc.7 migration; adding or removing tail entries does NOT change the idempotency key, preserving rc.5 single-session compat.
+
+### Phase 2.5 — Persist Archive Attempt
+
+MANDATORY closing step on every skill invocation — runs AFTER Phase 2 (success path) AND on every early-exit path (Phase 0.0 dropped-all, Phase 0.5 gate-FAIL silent-skip or user-active, Phase 1 batch user-dismissed). Drives the Q3.4 outcome state machine + cross-session digest rescan filter.
+
+#### What to emit
+
+For EACH `session_id` in the run's scope (multi-session E4 runs emit MULTIPLE events — one per session_id; single-session E1/E2/E3/E5 runs emit ONE event), append ONE `session_archive_attempted` line to `.fabric/events.jsonl`:
+
+```jsonc
+{
+  "kind": "fabric-event",
+  "id": "<uuid or ts-derived>",
+  "ts": <epoch ms>,
+  "schema_version": 1,
+  "session_id": "<the session this event pertains to>",
+  "event_type": "session_archive_attempted",
+  "outcome": "proposed" | "viability_failed" | "user_dismissed" | "skipped_no_signal",
+  "covered_through_ts": <max event ts scanned for this session>,
+  "candidates_proposed": <integer, default 0>,
+  "knowledge_proposed_ids": ["<idempotency_key_1>", "..."]   // default []
+}
+```
+
+#### Outcome decision matrix
+
+| Skill terminal state                                                 | outcome              | candidates_proposed | knowledge_proposed_ids                          |
+|----------------------------------------------------------------------|----------------------|---------------------|-------------------------------------------------|
+| Phase 2 wrote ≥ 1 pending entry                                      | `proposed`           | N (count written)   | `[idempotency_key_1, idempotency_key_2, ...]` (from each fab_extract_knowledge response) |
+| Phase 0.5 viability_failed AND entry_point ∈ {E2_explicit, E4_user_range} AND user saw + accepted the gate-FAIL message | `viability_failed`   | 0                   | `[]`                                            |
+| Phase 1 batch review — user dismissed ALL presented candidates       | `user_dismissed`     | 0                   | `[]`                                            |
+| Phase 0.0 filter dropped every session in scope OR Phase 0.5 silent-skip path (E1_hook / E3_ai_self_trigger / E5_cron) | `skipped_no_signal`  | 0                   | `[]`                                            |
+
+Rationale highlights:
+- `user_dismissed` is the ONLY outcome that suppresses future auto-rescan (respects user decision per Q3.4).
+- `proposed` populates `knowledge_proposed_ids` so the cross-session digest in Phase 0.0 can dedupe future runs against already-proposed entries.
+- `viability_failed` vs `skipped_no_signal` distinguishes "user was prompted but the gate stopped us" from "we never bothered the user" — both allow rescan but the doctor history report differentiates them.
+
+#### covered_through_ts watermark
+
+```
+covered_through_ts = max(events_in_scope[*].ts)
+```
+
+where `events_in_scope` is the set of events the skill actually examined for THAT session_id (Phase 0 + Phase 0.0 digest input). On rescan, Phase 0.0 compares the current `max(ts)` against this stored watermark — only sessions with new events past the watermark are eligible candidates.
+
+#### Multi-session emission rule
+
+When the run scope spans multiple session_ids (E4 user-range with `--since` / topic-keyword matching multiple sessions), emit ONE `session_archive_attempted` event PER session_id. Each event's `covered_through_ts` is computed against that session's own event subset. The `knowledge_proposed_ids` for a multi-session `proposed` run lists ALL idempotency_keys produced by the run; ledger consumers that want per-session breakdown should join against `source_sessions` on each pending entry.
+
+#### Append pattern (Bash echo, 4KB-safe, fail-tolerant)
+
+Reuse the Phase 0.5 `events.jsonl Constraint Note` pattern: single-line JSON ≤ 4KB, no embedded newlines. Best-effort write — if the append fails (disk full, permission denied, race), the skill MUST still exit successfully. Log the failure to stderr only; do NOT surface it to the user. Rationale: a missing `session_archive_attempted` event degrades gracefully — the next Phase 0.0 digest treats the session as "never archived" and re-evaluates it, which is the safe-default behavior.
+
+```bash
+# Pseudo — actual implementation uses the same pattern as the legacy
+# knowledge_archive_aborted emit at the end of Phase 0.5.
+echo '{"kind":"fabric-event","id":"...","ts":..., "schema_version":1, "session_id":"...", "event_type":"session_archive_attempted","outcome":"...","covered_through_ts":...,"candidates_proposed":0,"knowledge_proposed_ids":[]}' >> .fabric/events.jsonl
+```
+
+The per-field caps from Phase 0.5's constraint note carry over: `knowledge_proposed_ids` capped at 20 entries (drop tail with `...` marker in `id` field if truncated); other fields are bounded by schema.
+
+#### Worked example: E5 cron silent-skip
+
+Setup: An OS cron job runs `fabric-archive` at 03:00 daily for the "today" range (E5 entry_point). Today's session was routine config edits — no archive signals fire.
+
+Trace:
+1. Phase -0.5 resolves `entry_point=E5_cron`, range = "today" → 1 session_id in scope.
+2. Phase 0.0 digest collects events for that session_id; nothing dropped.
+3. Phase 0.4 onboard is skipped (E5 is not E2).
+4. Phase 0.5 viability gate runs — `archive_signals_hit=0` → `gate=FAIL (reason=no_signal)`.
+5. `entry_point=E5_cron` ∈ {E1, E3, E5} → SILENT-SKIP branch. No message rendered.
+6. Phase 2.5 (mandatory) appends ONE event:
+   ```
+   {"kind":"fabric-event","id":"...","ts":<now>,"schema_version":1,"session_id":"<today-session-id>","event_type":"session_archive_attempted","outcome":"skipped_no_signal","covered_through_ts":<max ts of today's events>,"candidates_proposed":0,"knowledge_proposed_ids":[]}
+   ```
+7. Skill exits silently. Cron output is empty.
+
+Next day's cron rescan: Phase 0.0 sees `covered_through_ts < max(ts of session's new events)` → session is rescan-eligible → loop continues without `user_dismissed` block.
 
 ## Hard Rules (DO NOT TRANSLATE) — DISPLAY / WRITE Split
 
