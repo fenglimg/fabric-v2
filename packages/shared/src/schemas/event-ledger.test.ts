@@ -243,8 +243,12 @@ describe("eventLedgerEventSchema", () => {
     });
     expect(withoutCaller).toMatchObject({
       event_type: "knowledge_meta_auto_healed",
-      caller: undefined,
     });
+    // `caller` is optional — zod strips `undefined` optional fields, so we
+    // assert absence rather than literal-undefined (vitest toMatchObject
+    // requires the key to be present-with-undefined, which fails for
+    // zod-stripped fields).
+    expect("caller" in withoutCaller).toBe(false);
 
     // trigger literal — only 'read' is currently accepted.
     expect(() =>

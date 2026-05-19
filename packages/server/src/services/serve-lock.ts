@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 
-import { createTranslator, detectNodeLocale } from "@fenglimg/fabric-shared";
+import { createTranslator, resolveFabricLocale } from "@fenglimg/fabric-shared";
 import { IOFabricError } from "@fenglimg/fabric-shared/errors";
 
 const LOCK_FILENAME = ".serve.lock";
@@ -9,7 +9,12 @@ const LOCK_FILENAME = ".serve.lock";
 // rc.15 TASK-003: i18n action-hint message for ServeLockHeldError. Replaces
 // the previous hardcoded "or run with --force to override" guidance — --force
 // is gone, so the message now surfaces the PID and concrete stop steps.
-const t = createTranslator(detectNodeLocale());
+//
+// rc.26 TASK-01: switched from module-level env-detected locale to a per-call
+// `resolveFabricLocale(projectRoot)` factory so the serve-lock error honors
+// the user's fabric_language config (KT-DEC-9004 invariant). `acquireLock`
+// and `checkLockOrThrow` now construct `t` themselves; release and read paths
+// don't surface user-facing messages and stay translator-free.
 
 export class ServeLockHeldError extends IOFabricError {
   readonly code = "SERVE_LOCK_HELD";
@@ -52,6 +57,7 @@ export function acquireLock(projectRoot: string, opts?: AcquireOptions): void {
       // malformed — treat as stale
     }
     if (state && state.pid && state.pid !== process.pid && isAlive(state.pid) && !opts?.force) {
+      const t = createTranslator(resolveFabricLocale(projectRoot));
       throw new ServeLockHeldError(
         `serve lock held by live PID ${state.pid}`,
         {
@@ -104,6 +110,7 @@ export function checkLockOrThrow(projectRoot: string, opts?: AcquireOptions): vo
     return;
   }
   if (opts?.force) return;
+  const t = createTranslator(resolveFabricLocale(projectRoot));
   throw new ServeLockHeldError(
     `serve lock held by live PID ${state.pid}`,
     {
