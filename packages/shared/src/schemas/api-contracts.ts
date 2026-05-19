@@ -147,7 +147,9 @@ export const planContextInputSchema = z.object({
   session_id: z
     .string()
     .optional()
-    .describe("Optional caller-provided session id for Event Ledger records"),
+    .describe(
+      "Recommended: pass the current client session id (Claude Code: $session_id; Codex: corresponding identifier) — enables cross-session debt tracking in fab doctor and accurate archive-hint cross-session count. Falls back gracefully if omitted.",
+    ),
   // v2.0-rc.5 A3 (TASK-007): `include_deprecated` removed — it was a no-op
   // placeholder (MaturitySchema has no `deprecated` value). When the maturity
   // enum widens we re-introduce the flag as part of that protocol bump.
