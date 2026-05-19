@@ -1,0 +1,76 @@
+{
+  "id": "TASK-03",
+  "title": "Create shared cite-line parser lib (parseCiteLine → cite_ids + cite_tags + cite_commitments)",
+  "scope": "packages/shared/src/cite-line-parser.ts (new)",
+  "action": "Create",
+  "description": "Extract cite-line parsing into a shared zero-dep pure-function module. Parses `KB: <id> (<anchor>) [<tag>] → <contract>` and `KB: none [<reason>]` forms. Output shape matches event-ledger schema (cite_ids[] + cite_tags[] + cite_commitments[] index-aligned). Tolerates whitespace, CR/LF, multiple cite lines per turn. Three client hooks (TASK-04) will import + inline-bundle this module to avoid node_modules dependency at hook runtime.",
+  "files": [
+    {
+      "path": "packages/shared/src/cite-line-parser.ts",
+      "action": "create",
+      "target": "new file",
+      "change": "Export function parseCiteLine(raw: string): { cite_ids: string[]; cite_tags: CiteTag[]; cite_commitments: CiteCommitment[] }. Match regex:\n- /^KB:\\s*none\\s*(?:\\[([^\\]]*)\\])?\\s*$/i for sentinel\n- /^KB:\\s+(K[TP]-[A-Z]+-\\d+)(?:\\s+\\(([^)]+)\\))?(?:\\s+\\[([^\\]]+)\\])?(?:\\s+→\\s*(.+))?$/ for full cite\nContract tail parser:\n- Split contract string by whitespace into tokens\n- Each token matches /^(!?edit|require|forbid):(.+)$/ → operator {kind, target}\n- Or /^skip:(\\S+)$/ → skip_reason\n- Tokens that don't match any → ignored (forward-compat)\nReturn structured arrays, all index-aligned. Module is zero-dep TypeScript, exports type CiteTag = 'planned'|'recalled'|'chained-from'|'dismissed'|'none' and type CiteCommitment = { operators: Array<{kind, target}>, skip_reason: string|null }."
+    },
+    {
+      "path": "packages/shared/test/cite-line-parser.test.ts",
+      "action": "create",
+      "target": "new file",
+      "change": "Cover cases: (1) bare KB: none; (2) KB: none [no-relevant]; (3) KB: KT-DEC-0001 (Summary) [planned]; (4) full form with contract: 'KB: KT-DEC-9003 (Summary) [recalled] → edit:.fabric/AGENTS.md !edit:CLAUDE.md'; (5) skip form: '→ skip:sequencing'; (6) multiple operators mixed; (7) malformed contract token ignored gracefully; (8) CR/LF tolerance; (9) leading whitespace tolerance; (10) multiple cite lines (returns multiple cite_ids/tags/commitments). At least 15 cases."
+    },
+    {
+      "path": "packages/shared/src/index.ts",
+      "action": "modify",
+      "target": "barrel exports",
+      "change": "Add `export { parseCiteLine } from './cite-line-parser'; export type { CiteTag, CiteCommitment, CiteCommitmentOperator } from './cite-line-parser';`."
+    }
+  ],
+  "implementation": [
+    "Create packages/shared/src/cite-line-parser.ts as zero-dep module (no other imports allowed — hook runtime constraint).",
+    "Define types: CiteTag union, CiteCommitmentOperator object, CiteCommitment object.",
+    "Implement parseCiteLine function: split input by newlines, parse each non-empty line, accumulate results.",
+    "Implement parseContractTail helper: tokenize by whitespace, classify each token via regex, collect into operators[] + skip_reason.",
+    "Add comprehensive test file covering all enumerated cases.",
+    "Add barrel export from packages/shared/src/index.ts.",
+    "Run `pnpm --filter @fenglimg/fabric-shared test cite-line-parser` to confirm all green.",
+    "Verify module is zero-dep: `grep -E '^import' packages/shared/src/cite-line-parser.ts` should return empty (only type-only imports allowed)."
+  ],
+  "reference": {
+    "pattern": "Zero-dep pure-function utility module (consumable by hook runtime)",
+    "files": ["packages/cli/templates/hooks/fabric-hint.cjs", "packages/shared/src/schemas/event-ledger.ts"],
+    "examples": "Existing rc.20 inline parser in fabric-hint.cjs (target for extraction). No prior pattern for shared lib consumed by hook — TASK-03 establishes it."
+  },
+  "rationale": {
+    "chosen_approach": "Extract parser to shared lib; three hooks become thin import + serialize wrappers. Reduces drift risk (single canonical implementation).",
+    "alternatives_considered": ["Duplicate parser per-client (rejected: 3x drift surface, rc.20 already had this pain)", "Server-side parsing only (rejected: hook is the only component that sees per-turn cite line)"],
+    "decision_factors": ["Single source of truth", "Test coverage centralized", "Future operator additions touch one file"],
+    "tradeoffs": "Hook bundling complexity in TASK-04 (must inline-serialize since node_modules unavailable at hook runtime)."
+  },
+  "test": {
+    "manual_checks": ["pnpm --filter @fenglimg/fabric-shared test passes", "Manually parse 3 real cite lines from werewolf project knowledge corpus", "Verify zero external imports in module"],
+    "success_metrics": ["≥15 test cases covering all syntax variants", "100% function coverage", "Module compiles in isolation (no monorepo type leakage)"],
+    "unit": ["cite-line-parser sentinel form", "cite-line-parser sentinel with reason", "cite-line-parser full form with contract", "cite-line-parser skip form", "cite-line-parser multiple operators", "cite-line-parser malformed token tolerance", "cite-line-parser CR/LF handling", "cite-line-parser multi-line input", "cite-line-parser anchor field parsing", "cite-line-parser empty input"],
+    "integration": []
+  },
+  "convergence": {
+    "criteria": [
+      "packages/shared/src/cite-line-parser.ts exists and exports parseCiteLine",
+      "packages/shared/src/cite-line-parser.ts has zero non-type imports (grep '^import' returns only type-only)",
+      "packages/shared/test/cite-line-parser.test.ts contains ≥15 test cases",
+      "packages/shared/src/index.ts exports parseCiteLine and types",
+      "pnpm --filter @fenglimg/fabric-shared test exits 0",
+      "Module bytes <5KB (suitable for hook inline-bundle)",
+      "Commit msg: 'feat(rc24): shared cite-line parser with contract syntax support (TASK-03)'"
+    ]
+  },
+  "read_first": [
+    "packages/cli/templates/hooks/fabric-hint.cjs",
+    "packages/shared/src/schemas/event-ledger.ts",
+    "packages/shared/src/index.ts",
+    ".workflow/.lite-plan/rc24-cite-contract-policy-2026-05-19/planning-context.md"
+  ],
+  "depends_on": ["TASK-01"],
+  "estimated_minutes": 55,
+  "cli_execution_id": "rc24-cite-contract-policy-2026-05-19-TASK-03",
+  "cli_execution": { "strategy": "new" },
+  "status": "completed"
+}
