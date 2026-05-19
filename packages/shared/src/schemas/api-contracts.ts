@@ -20,6 +20,36 @@ export const structuredWarningSchema = z.object({
 // v2.0 knowledge enums — declared here as schemas (not just types) so they can
 // flow through plan-context output validation. Mirrors the canonical enums
 // further down in this file (KnowledgeTypeSchema/MaturitySchema/LayerSchema).
+//
+// ⚠ INTENTIONAL DUAL VOCABULARY — do not "unify".
+//
+// Fabric uses TWO parallel enum vocabularies for knowledge types, by design:
+//
+//   • SINGULAR (this enum + `KnowledgeTypeSchema` re-export below + agents-meta
+//     `knowledge_type` field + ID-prefix codes DEC/PIT/MOD/GLD/PRO + rc.24
+//     `per_layer_type` cross-tab keys + i18n `cite-coverage.contract.type.*`
+//     labels):
+//        ["model", "decision", "guideline", "pitfall", "process"]
+//     ← grammatically correct for a SINGLE entry's type
+//        ("this entry IS a decision", not "decisions").
+//
+//   • PLURAL (FabExtractKnowledgeInputSchema.type @ L397 + fabReviewFilters @
+//     L567 + fabReviewListItem @ L693 + filesystem paths
+//     .fabric/knowledge/decisions/ etc. + SKILL.md MCP examples):
+//        ["decisions", "pitfalls", "guidelines", "models", "processes"]
+//     ← matches FS directory layout the MCP user actually sees.
+//
+// Conversion lives in `packages/server/src/services/review.ts:35` as the
+// explicitly-named `PluralType` bridge. Documented in
+// `templates/skills/fabric-archive/SKILL.md` "Note on type plurality".
+//
+// Why TWO not ONE: collapsing to all-singular breaks the FS-directory ↔ MCP-
+// API symmetry that external users navigate by ("I see decisions/ dir, I pass
+// decisions to the MCP filter"). Collapsing to all-plural breaks frontmatter
+// grammar ("this entry's type IS decisions" reads wrong — it IS one decision).
+// The bridge is the correct shape; the test
+// `knowledge_type plural-singular bridge invariant` (api-contracts.test.ts)
+// guards against either side adding a new value without the other.
 const _knowledgeTypeEnum = z.enum(["model", "decision", "guideline", "pitfall", "process"]);
 const _maturityEnum = z.enum(["draft", "verified", "proven"]);
 const _layerEnum = z.enum(["personal", "team"]);

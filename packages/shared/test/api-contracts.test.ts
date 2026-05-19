@@ -5,9 +5,11 @@ import {
   citeCoverageReportSchema,
   citeLayerTypeBreakdownSchema,
   FabExtractKnowledgeInputSchema,
+  FabExtractKnowledgeInputShape,
   FabExtractKnowledgeOutputSchema,
   FabReviewInputSchema,
   FabReviewOutputSchema,
+  KnowledgeTypeSchema,
   planContextInputSchema,
   planContextOutputSchema,
   knowledgeSectionsInputSchema,
@@ -925,5 +927,45 @@ describe("CiteCoverageReport i18n key parity (rc.24 TASK-09)", () => {
       expect(zhCiteKeys, `zh missing ${key}`).toContain(key);
       expect(enCiteKeys, `en missing ${key}`).toContain(key);
     }
+  });
+});
+
+// rc.24 fixup — guards the intentional singular ↔ plural knowledge_type
+// vocabulary boundary documented on `_knowledgeTypeEnum` at api-contracts.ts:23.
+// Catches drift in either direction: adding a singular type without the
+// matching plural in MCP-facing schemas (or vice versa) breaks the bijection
+// assertion below.
+//
+// SINGULAR ↔ PLURAL bijection table (the one source of truth for this mapping
+// in tests). English plurals are NOT mechanical singular+'s' — `process` →
+// `processes` is an `-es` plural — so the mapping is enumerated, not computed.
+const KNOWLEDGE_TYPE_BIJECTION: ReadonlyArray<readonly [string, string]> = [
+  ["model", "models"],
+  ["decision", "decisions"],
+  ["guideline", "guidelines"],
+  ["pitfall", "pitfalls"],
+  ["process", "processes"],
+];
+
+describe("knowledge_type plural-singular bridge invariant (rc.24)", () => {
+  it("singular canonical enum equals expected 5-tuple", () => {
+    const expectedSingular = KNOWLEDGE_TYPE_BIJECTION.map(([s]) => s).sort();
+    expect([...KnowledgeTypeSchema.options].sort()).toEqual(expectedSingular);
+  });
+
+  it("FabExtractKnowledgeInputSchema.type plural enum equals expected 5-tuple (MCP surface)", () => {
+    // FabExtractKnowledgeInputShape is the exported `.shape` of the base
+    // schema (used by MCP tool registration). Its `type` field is the rc.4
+    // plural enum at api-contracts.ts:397.
+    const expectedPlural = KNOWLEDGE_TYPE_BIJECTION.map(([, p]) => p).sort();
+    const typeField = FabExtractKnowledgeInputShape.type;
+    expect([...typeField.options].sort()).toEqual(expectedPlural);
+  });
+
+  it("singular and plural enums have matching cardinality (bijection is total)", () => {
+    const singularField = KnowledgeTypeSchema;
+    const pluralField = FabExtractKnowledgeInputShape.type;
+    expect(singularField.options.length).toBe(KNOWLEDGE_TYPE_BIJECTION.length);
+    expect(pluralField.options.length).toBe(KNOWLEDGE_TYPE_BIJECTION.length);
   });
 });
