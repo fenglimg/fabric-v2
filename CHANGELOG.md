@@ -5,6 +5,25 @@ All notable changes to Fabric will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0-rc.25] - 2026-05-19
+
+### Added
+- `fab doctor --archive-history [--since=Nd]` — session-by-session archive attempt audit
+- `session_archive_attempted` event type in events.jsonl — tracks per-session archive outcomes (proposed | viability_failed | user_dismissed | skipped_no_signal)
+- fabric-archive Phase -0.5 Range Resolution — natural-language parsing for '今日复盘' / '上周' / 'rc.20' style invocations
+- AGENTS.md Self-archive policy — AI E3 self-trigger via 4 normative signals
+- E5 周期触发 documentation — /loop + OS cron samples in SKILL.md appendix
+
+### Changed
+- archive-hint.cjs reason copy — now communicates cross-session count + project-level debt nature
+- fabric-archive Phase 0.0 — outcome-based re-scan filter with 12h anti-loop
+- fabric-archive Phase 0.4 — onboard trigger gate (E2-only execution)
+- fabric-archive Phase 0.5 — silent-skip path for E1/E3/E5 contexts
+
+### Migration
+- Run `fab install` after upgrade to sync new AGENTS.md Self-archive policy to all client managed blocks
+- Old events.jsonl without session_archive_attempted entries — natural cold-start, no migration needed
+
 ## [2.0.0-rc.24] - 2026-05-19
 
 Cite contract policy. The rc.20 cite policy answered "did the AI cite a KB id?" — rc.24 answers "did the AI honour the rule it cited?" by adding a 5-operator commitment syntax on `KB:` lines for decisions/pitfalls類 entries and wiring `fab doctor --cite-coverage` to cross-check committed operators against the session's actual edit diff. Bootstrap drift gates marker activation so the contract policy never partially fires during the rc.24 upgrade window. Wave breakdown: schema + bootstrap (TASK-01, TASK-02) → shared parser + hook templates (TASK-03, TASK-04, TASK-05) → doctor service (TASK-06, TASK-07, TASK-08) → shared schema + i18n + CLI (TASK-09, TASK-10, TASK-11) → release (TASK-12).
