@@ -1,0 +1,78 @@
+{
+  "id": "TASK-04",
+  "title": "Wire shared cite-line parser into cc/codex/cursor hook templates (replace inline regex)",
+  "scope": "packages/cli/templates/hooks/fabric-hint.cjs (+ per-client variants if present)",
+  "action": "Update",
+  "description": "Replace existing inline cite-line regex parsing in fabric-hint.cjs with calls to the shared parseCiteLine module. Since node_modules is unavailable at hook runtime, the shared module must be inline-bundled at install time (or embedded as a string template). Output cite_commitments structured field on assistant_turn_observed events.",
+  "files": [
+    {
+      "path": "packages/cli/templates/hooks/fabric-hint.cjs",
+      "action": "modify",
+      "target": "parseKbLine function (extract current regex location via grep parseKbLine) + appendAssistantTurnEvent payload construction",
+      "change": "Replace parseKbLine body with call to inlined parseCiteLine. Inline the shared parser via build-time transformation (see install pipeline note below). Update event payload to include cite_commitments field populated from parser output."
+    },
+    {
+      "path": "packages/cli/src/install/skills-and-hooks.ts",
+      "action": "modify",
+      "target": "hook template rendering pipeline",
+      "change": "Add build step: read packages/shared/src/cite-line-parser.ts, transpile to CJS string (use existing build infra or inline TypeScript-to-JS via tsc API), inject as `const { parseCiteLine } = (function() { /* inlined module */ return module.exports; })();` at top of generated hook script. Cache transpiled output to avoid per-install cost."
+    },
+    {
+      "path": "packages/cli/__tests__/fabric-hint-cite.test.ts",
+      "action": "modify",
+      "target": "existing parseKbLine tests + add cite_commitments coverage",
+      "change": "Update existing test expectations to include cite_commitments field in parsed output. Add 5 new cases covering contract syntax variants from TASK-03 test corpus."
+    }
+  ],
+  "implementation": [
+    "Read packages/cli/templates/hooks/fabric-hint.cjs in full to map current parseKbLine location and event payload assembly.",
+    "Determine inline-bundle strategy: option A (string-template approach — write parser source as a string literal in install.ts, inject into hook), option B (esbuild bundle-once at install — preferred if esbuild is already a dep).",
+    "Check packages/cli/package.json for existing transpile/bundle deps; choose option matching existing infra.",
+    "Modify install pipeline to inject the inlined parser at the top of fabric-hint.cjs during rendering.",
+    "Update parseKbLine call sites in hook to use inlined parseCiteLine; remove dead regex code.",
+    "Update appendAssistantTurnEvent (or equivalent) to populate cite_commitments field on the event.",
+    "Update fabric-hint-cite.test.ts: existing tests assert new cite_commitments shape; add 5 new contract-syntax cases.",
+    "Run `pnpm --filter @fenglimg/fabric-cli test fabric-hint-cite` to confirm green.",
+    "Manually verify install: `node packages/cli/dist/cli.mjs install --dry-run` (or equivalent) shows fabric-hint.cjs with inlined parser at the top."
+  ],
+  "reference": {
+    "pattern": "Hook template inline-bundle (new pattern in this repo)",
+    "files": ["packages/cli/templates/hooks/fabric-hint.cjs", "packages/cli/src/install/skills-and-hooks.ts", "packages/cli/__tests__/fabric-hint-cite.test.ts"],
+    "examples": "No prior precedent for hook-time shared module import. TASK-04 establishes the inline-bundle pipeline."
+  },
+  "rationale": {
+    "chosen_approach": "Inline-bundle shared parser into hook template at install time. Hook is self-contained zero-dep CJS at runtime.",
+    "alternatives_considered": ["Vendor parser as embedded string and eval (rejected: eval safety + sourcemap loss)", "Skip shared lib, leave inline regex (rejected: defeats TASK-03 drift mitigation)", "Use Node 22 native TypeScript stripping (rejected: not portable across user Node versions)"],
+    "decision_factors": ["Hook stays zero-dep at runtime", "Single canonical parser source", "esbuild likely already in repo (verify)"],
+    "tradeoffs": "Install becomes marginally slower (transpile parser); cached after first install."
+  },
+  "test": {
+    "manual_checks": ["pnpm --filter @fenglimg/fabric-cli test passes", "Manually trigger Stop hook on test transcript with contract syntax → verify cite_commitments populated in events.jsonl", "Run fab install on a clean test project → verify fabric-hint.cjs contains inlined parser"],
+    "success_metrics": ["fabric-hint-cite.test adds 5 new cases all passing", "Existing tests updated to assert cite_commitments field", "Install pipeline emits hook with inlined parser (file size grows by ~3-4KB)"],
+    "unit": ["fabric-hint-cite parseKbLine returns cite_commitments", "fabric-hint-cite contract operators parsed", "fabric-hint-cite skip reason parsed", "fabric-hint-cite sentinel still works", "fabric-hint-cite multi-line cite block"],
+    "integration": ["install-skills-and-hooks.test: rendered fabric-hint.cjs contains parseCiteLine inlined"]
+  },
+  "convergence": {
+    "criteria": [
+      "fabric-hint.cjs no longer contains old inline cite regex (grep for parseKbLine returns only the new inlined-parser invocation site)",
+      "Install pipeline includes inline-bundle step (grep for 'cite-line-parser' or 'parseCiteLine' in skills-and-hooks.ts)",
+      "fabric-hint-cite.test.ts adds 5 new test cases (grep test names)",
+      "Generated hook script (after install) contains string 'parseCiteLine'",
+      "events.jsonl assistant_turn_observed events written by new hook contain cite_commitments field",
+      "pnpm --filter @fenglimg/fabric-cli test exits 0",
+      "Commit msg: 'feat(rc24): wire shared parser into hook templates with inline-bundle (TASK-04)'"
+    ]
+  },
+  "read_first": [
+    "packages/cli/templates/hooks/fabric-hint.cjs",
+    "packages/cli/src/install/skills-and-hooks.ts",
+    "packages/cli/__tests__/fabric-hint-cite.test.ts",
+    "packages/shared/src/cite-line-parser.ts",
+    "packages/cli/package.json"
+  ],
+  "depends_on": ["TASK-01", "TASK-03"],
+  "estimated_minutes": 60,
+  "cli_execution_id": "rc24-cite-contract-policy-2026-05-19-TASK-04",
+  "cli_execution": { "strategy": "new" },
+  "status": "completed"
+}

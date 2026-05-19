@@ -22,6 +22,22 @@ try {
 // install integration tests, not silently swallow).
 const { renderBanner, readFabricLanguage } = require("./lib/banner-i18n.cjs");
 
+// v2.0.0-rc.24 TASK-04: shared cite-line parser (CJS twin of
+// packages/shared/src/cite-line-parser.ts, byte-shipped via installHookLibs).
+// Provides `parseCiteLine(raw)` → { cite_ids, cite_tags, cite_commitments }.
+// Hook runtime has no node_modules access; the twin is hand-synced and
+// behavior-parity-tested against the TS source.
+let citeLineParser = null;
+try {
+  citeLineParser = require("./lib/cite-line-parser.cjs");
+} catch {
+  // Helper module missing — degrade silently. parseKbLine falls back to a
+  // legacy in-file regex when the lib is unavailable (e.g. mid-upgrade where
+  // hook script lands before lib is copied). New cite_commitments output is
+  // empty in degraded mode.
+  citeLineParser = null;
+}
+
 // CONSTANTS — duplicated from packages/server/src/services/_shared.ts.
 // DRY violation accepted: this hook script runs in user repos WITHOUT
 // node_modules access, so it cannot import from @fenglimg/fabric-server.
@@ -1005,93 +1021,45 @@ function tryReadStdinJson() {
 }
 
 /**
- * v2.0.0-rc.20 TASK-03: parse the raw text that follows the `KB:` prefix on
- * the first non-empty line of an assistant turn. Returns parsed cite ids and
- * the per-id tag enum vocabulary (planned/recalled/chained-from/dismissed/
- * none). Never throws; best-effort tolerant parser.
+ * v2.0.0-rc.20 TASK-03 → v2.0.0-rc.24 TASK-04: legacy shim signature for
+ * parsing the raw text that follows the `KB:` prefix on the first non-empty
+ * line of an assistant turn. As of rc.24 the implementation delegates to the
+ * shared `parseCiteLine` (inline-shipped via lib/cite-line-parser.cjs) to
+ * eliminate per-client regex drift.
  *
- * Vocabulary contract (mirrored in
- * packages/shared/src/schemas/event-ledger.ts → assistantTurnObservedEventSchema):
- *   - "none"                                → ids=[], tags=["none"]
- *   - "KP-001"                              → ids=["KP-001"], tags=[]
- *   - "KP-001, KT-DEC-0009 (review)"        → ids=["KP-001","KT-DEC-0009"], tags=["review"]
- *   - "KP-001 [recalled][chained-from KP-002]" →
- *       ids=["KP-001"], tags=["recalled","chained-from"]
- *   - "dismissed:<reason>"                  → ids=[], tags=["dismissed"]
- *       (kb_line_raw preserves the full "dismissed:<reason>" verbatim;
- *        the parsed `cite_tags` only carries the enum value "dismissed".)
+ * Contract (rc.24 strict mode — superset of rc.20):
+ *   - Sentinel `none` (incl. `[no-relevant]` / `[not-applicable]` tail)
+ *     → cite_ids=[], cite_tags=["none"], cite_commitments=[]
+ *   - `KT-DEC-0001 [planned]` → cite_ids=["KT-DEC-0001"], cite_tags=["planned"],
+ *     cite_commitments=[{operators:[], skip_reason:null}]
+ *   - `KT-DEC-0001 [recalled] → edit:foo.ts` → cite_commitments=[{operators:
+ *     [{kind:"edit", target:"foo.ts"}], skip_reason:null}]
+ *   - `KT-DEC-0001 [recalled] → skip:sequencing` → cite_commitments=[{operators:
+ *     [], skip_reason:"sequencing"}]
+ *   - Id form is now strict `K[TP]-[A-Z]+-\d+` (rc.20 lax form `KP-001`
+ *     without letter-prefix is rejected — see TASK-03 schema).
  *
- * Tags are filtered to the Zod enum set
- * { planned, recalled, chained-from, dismissed, none } before being returned —
- * arbitrary parenthetical/bracket text outside the enum is dropped (silently)
- * so the emitted event always round-trips through the schema.
+ * Argument is the post-`KB:` substring (matches the rc.20 call site). Returns
+ * { cite_ids, cite_tags, cite_commitments }; cite_commitments was added in
+ * rc.24 and is always present (empty array when no cite-line found).
+ *
+ * Never throws.
  */
 function parseKbLine(raw) {
-  const result = { cite_ids: [], cite_tags: [] };
-  if (typeof raw !== "string") return result;
-  const trimmed = raw.trim();
-  if (trimmed.length === 0) return result;
-
-  // dismissed:<reason> → tag="dismissed", no ids.
-  if (/^dismissed:/i.test(trimmed)) {
-    result.cite_tags.push("dismissed");
-    return result;
+  // Compose the full `KB: <raw>` line because the shared parser anchors on
+  // the `KB:` prefix. Handles the legacy `none` / `<sentinel>` inputs naturally
+  // because parseCiteLine's SENTINEL_RE matches the composed line.
+  if (typeof raw !== "string") {
+    return { cite_ids: [], cite_tags: [], cite_commitments: [] };
   }
-  // bare "none" → tag="none".
-  if (/^none$/i.test(trimmed)) {
-    result.cite_tags.push("none");
-    return result;
+  const composed = `KB: ${raw}`;
+  if (citeLineParser && typeof citeLineParser.parseCiteLine === "function") {
+    return citeLineParser.parseCiteLine(composed);
   }
-
-  // Allowed tag enum (matches assistantTurnObservedEventSchema.cite_tags z.enum).
-  const ALLOWED_TAGS = new Set(["planned", "recalled", "chained-from", "dismissed", "none"]);
-  const tagSet = new Set();
-
-  // Extract bracketed tags: `[recalled]`, `[chained-from KP-002]`, etc.
-  // We keep only the leading enum token (split on whitespace) so trailing
-  // ref-ids inside the bracket are discarded — they're not part of the tag
-  // vocabulary.
-  const bracketRegex = /\[([^\]]+)\]/g;
-  let bracketMatch;
-  let stripped = trimmed;
-  while ((bracketMatch = bracketRegex.exec(trimmed)) !== null) {
-    const inner = bracketMatch[1].trim();
-    if (inner.length === 0) continue;
-    const head = inner.split(/\s+/)[0].toLowerCase();
-    if (ALLOWED_TAGS.has(head)) tagSet.add(head);
-  }
-  stripped = stripped.replace(bracketRegex, " ");
-
-  // Extract parenthetical tags: `(review)`, `(planned)`, etc. Only enum
-  // members are retained.
-  const parenRegex = /\(([^)]+)\)/g;
-  let parenMatch;
-  while ((parenMatch = parenRegex.exec(trimmed)) !== null) {
-    const inner = parenMatch[1].trim().toLowerCase();
-    if (inner.length === 0) continue;
-    if (ALLOWED_TAGS.has(inner)) tagSet.add(inner);
-  }
-  stripped = stripped.replace(parenRegex, " ");
-
-  // Remaining content: comma-separated ids, possibly with stray whitespace.
-  // We split on comma, trim, and keep tokens that look like ref-ids
-  // (uppercase letter prefix). This filters out leftover english words and
-  // is permissive enough to allow custom id schemes (KP-, KT-, KD-, etc.).
-  const parts = stripped.split(",");
-  for (const partRaw of parts) {
-    const part = partRaw.trim();
-    if (part.length === 0) continue;
-    // Take the leading token (whitespace-bounded) so "KT-DEC-0009 garbage"
-    // still yields "KT-DEC-0009".
-    const token = part.split(/\s+/)[0];
-    if (/^[A-Z][A-Z0-9-]+$/.test(token)) {
-      result.cite_ids.push(token);
-    }
-  }
-
-  // Materialise tagSet → array (preserves insertion order via Set semantics).
-  for (const t of tagSet) result.cite_tags.push(t);
-  return result;
+  // Degraded fallback: lib missing (e.g. partial install). Emit empty result
+  // so downstream consumers see the cite-line as unobservable rather than
+  // mis-parsed. The Stop-hook contract is best-effort, never blocking.
+  return { cite_ids: [], cite_tags: [], cite_commitments: [] };
 }
 
 /**
@@ -1186,6 +1154,13 @@ function extractAndWriteAssistantTurnsBestEffort(cwd, stdinPayload) {
           kb_line_raw: turn.kb_line_raw,
           cite_ids: Array.isArray(turn.cite_ids) ? turn.cite_ids : [],
           cite_tags: Array.isArray(turn.cite_tags) ? turn.cite_tags : [],
+          // rc.24 TASK-04: cite_commitments parallel array (assistantTurn
+          // ObservedEventSchema gained this slot in rc.24 TASK-01). Empty
+          // array for legacy turns or when the parser lib is unavailable —
+          // the schema defaults `.default([])` so omitting it would also be
+          // valid, but emitting an explicit `[]` keeps the on-disk shape
+          // uniform across rc.24+ events.
+          cite_commitments: Array.isArray(turn.cite_commitments) ? turn.cite_commitments : [],
           turn_id: `${sessionId}-${turn.envelope_index}`,
           envelope_index: turn.envelope_index,
           timestamp: new Date().toISOString(),
@@ -1280,6 +1255,11 @@ function summarizeTranscript(transcriptPath) {
       let kbLineRaw = null;
       let citeIds = [];
       let citeTags = [];
+      // rc.24 TASK-04: parallel `cite_commitments` array, populated by the
+      // shared cite-line parser. One entry per non-sentinel cite (index-aligned
+      // with cite_ids). Sentinel `KB: none` contributes a `cite_tags=["none"]`
+      // entry but no commitment — matches the parseCiteLine index contract.
+      let citeCommitments = [];
       if (typeof firstText === "string" && firstText.length > 0) {
         // First non-empty line.
         const linesOfText = firstText.split(/\r?\n/);
@@ -1291,24 +1271,23 @@ function summarizeTranscript(transcriptPath) {
           }
         }
         if (firstNonEmpty.length > 0) {
-          // KB: none — with optional `[<sentinel>]` tail per rc.23 T8.
-          // Accepts bare `KB: none` (legacy → unspecified) AND
-          // `KB: none [no-relevant]` / `KB: none [not-applicable]`. The sentinel
-          // tail stays in `kb_line_raw` for doctor's downstream histogram parse;
-          // the cite_tags vocab still emits the bare `none` token (schema
-          // enum-bound).
-          const noneMatch = firstNonEmpty.match(/^KB:\s*none\b\s*(?:\[[^\]]*\])?\s*$/i);
-          const kbMatch = firstNonEmpty.match(/^KB:\s+(.+)$/);
-          if (noneMatch) {
+          // rc.24 TASK-04: route the FULL `KB: ...` line to the shared parser.
+          // parseCiteLine handles sentinels (`KB: none [<reason>]`) AND full
+          // cite form including contract tail (`KB: KT-DEC-0001 [recalled] →
+          // edit:foo.ts`) uniformly. The sentinel's `[<reason>]` tail stays in
+          // `kb_line_raw` for doctor's downstream histogram parse; cite_tags
+          // still emits the bare `none` token (schema enum-bound).
+          if (/^KB:\s*/i.test(firstNonEmpty)) {
             kbLineRaw = firstNonEmpty;
-            const parsed = parseKbLine("none");
-            citeIds = parsed.cite_ids;
-            citeTags = parsed.cite_tags;
-          } else if (kbMatch) {
-            kbLineRaw = firstNonEmpty;
-            const parsed = parseKbLine(kbMatch[1]);
-            citeIds = parsed.cite_ids;
-            citeTags = parsed.cite_tags;
+            if (citeLineParser && typeof citeLineParser.parseCiteLine === "function") {
+              const parsed = citeLineParser.parseCiteLine(firstNonEmpty);
+              citeIds = parsed.cite_ids;
+              citeTags = parsed.cite_tags;
+              citeCommitments = parsed.cite_commitments;
+            }
+            // Degraded mode (lib missing) → keep kbLineRaw but emit empty
+            // arrays; doctor downstream treats this as "turn observed, parse
+            // unavailable" without crashing.
           }
         }
       }
@@ -1317,6 +1296,7 @@ function summarizeTranscript(transcriptPath) {
         kb_line_raw: kbLineRaw,
         cite_ids: citeIds,
         cite_tags: citeTags,
+        cite_commitments: citeCommitments,
       });
     }
 
