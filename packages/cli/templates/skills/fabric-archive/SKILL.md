@@ -447,6 +447,84 @@ step 4.5 rule (e) applies uniformly, so the filter degrades to the legacy
 
 ### Phase 0.4 — First-run Onboard Phase (rc.23 F8c)
 
+#### Phase 0.4 Trigger Gate (rc.25 — entry-context aware)
+
+Before running ANY of the onboard coverage steps below, evaluate the
+**entry-context gate**. Onboard slot collection is an interactive,
+one-time project-tone capture flow that REQUIRES live user dialogue.
+Non-user-active entries (hook / AI self-trigger / cron) either interrupt
+the user mid-work or run unattended where dialogue is impossible, so
+they MUST skip Phase 0.4 entirely and fall through to Phase 0.
+
+Read `context.entry_point` — already determined in **Phase -0.5 Range
+Resolution** (see TASK-04 / Phase -0.5 section above). The 5-entry model
+is the canonical taxonomy for this gate.
+
+##### Entry-context detection rules
+
+| Entry | Symbol | Detection rule (LLM-native, evaluated at skill entry) |
+|-------|--------|-------------------------------------------------------|
+| **E1** | `hook_passive` | stdout JSON `{decision:'block', ...}` from `archive-hint.cjs` detected at skill entry (the Stop-hook reminder path). |
+| **E2** | `explicit_user_invoke` | User prompt is a direct invocation: `fabric archive` / `/fabric-archive` / `archive what we just did` / `归档一下` / similar imperative. |
+| **E3** | `ai_self_trigger` | AI internal marker `self-archive policy triggered by signal X` present (one of the 4 self-trigger signals from AGENTS.md E3 section). |
+| **E4** | `user_range_rollback` | Prompt contains a **range hint** (parsed in Phase -0.5 — e.g. `今日` / `上周` / `rc.20`) AND the user is invoking. Sub-mode of E2. |
+| **E5** | `cron` | Prompt contains literal `今日复盘` / `daily recap` / `daily-archive` AND no human is present (running under `/loop`, OS cron, or scheduled trigger). |
+
+##### Gate decision
+
+```
+IF context.entry_point ∈ {E2_explicit_user_invoke, E4_user_range_rollback}:
+    → gate = PROCEED       # user is live, dialogue is possible
+    → continue to Step 1 (Check coverage) below
+ELSE (E1_hook_passive | E3_ai_self_trigger | E5_cron):
+    → gate = SKIP           # no live user, onboard prompting would misfire
+    → emit one-line log: "Phase 0.4 skipped (entry=<E1|E3|E5>, no live user)"
+    → proceed directly to Phase 0
+```
+
+##### Rationale
+
+Onboard slot collection is a one-time project-tone capture flow that
+requires user dialogue. Non-user-active entries (hook / AI / cron)
+interrupt the user mid-work or run unattended where dialogue is
+impossible, so they MUST skip Phase 0.4. The S5 slot semantics
+(`tech-stack-decision`, `architecture-pattern`, ...) are user-validated
+baselines — populating them from a hook fire-and-forget or a cron daily
+recap would defeat the purpose of capturing _user-confirmed_ project
+tone.
+
+##### Tradeoff (documented in CHANGELOG)
+
+A first-time user whose ONLY invocations ever come via hook (never an
+explicit `/fabric-archive`) will not see the onboard prompt; the 5
+onboard slots remain empty. Mitigation: documentation tells users to
+run an explicit `fab archive` at least once to populate the onboard
+baseline.
+
+##### Worked example
+
+```
+$ /loop 24h /fabric-archive 今日复盘
+  → cron context, no live user
+  → Phase -0.5 detects literal "今日复盘" + no-human marker
+  → context.entry_point = E5_cron
+  → Phase 0.4 Trigger Gate evaluates: E5 ∉ {E2, E4} → SKIP
+  → emit log "Phase 0.4 skipped (entry=E5, no live user)"
+  → proceed directly to Phase 0 (collect candidates for daily window)
+```
+
+Contrast with E2:
+
+```
+$ /fabric-archive
+  → user typed explicit invocation
+  → Phase -0.5: context.entry_point = E2_explicit_user_invoke
+  → Phase 0.4 Trigger Gate evaluates: E2 ∈ {E2, E4} → PROCEED
+  → run Step 1 (Check coverage) below
+```
+
+---
+
 After F8a removed the auto-`fab scan` baseline pipeline, a freshly installed
 Fabric workspace ships with an EMPTY `.fabric/knowledge/` tree. Five fixed
 **S5 onboard slots** capture the "project tone" baseline that the AI needs
