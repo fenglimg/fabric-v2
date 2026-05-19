@@ -8,7 +8,7 @@
 
 ### Public commands (5)
 - `install` — 项目脚手架与客户端配置写入；flags: `--target`, `--debug`, `--yes`, `--dry-run`
-- `doctor` — 一致性自检与修复；flags: `--target`, `--fix`, `--fix-knowledge`, `--json`, `--rescan`, `--strict`, `--yes`（`--rescan` 替代 rc.15 已移除的 `fab scan` 顶层命令）
+- `doctor` — 一致性自检与修复；flags: `--target`, `--fix`, `--fix-knowledge`, `--json`, `--layer`(rc.24: filter cite contract audit by KB layer — team|personal|all), `--rescan`, `--strict`, `--yes`（`--rescan` 替代 rc.15 已移除的 `fab scan` 顶层命令）
 - `serve` — 启动 HTTP MCP server；flags: `--port`(默认 7373), `--host`(默认 127.0.0.1), `--target`, `--debug`
 - `uninstall` — Remove Fabric-managed artifacts symmetrically to `fab install`. Flags: `--target`, `--debug`, `--yes`, `--dry-run`.
 - `config` — rc.15 起为占位命令（rc.16 上线配置面板）；flags: `--target`。

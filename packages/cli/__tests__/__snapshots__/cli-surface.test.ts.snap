@@ -105,6 +105,15 @@ exports[`CLI surface drift gate (docs/test-seed/cli.md §1) > command 'doctor' s
     },
     {
       "alias": undefined,
+      "default": "all",
+      "description": "Filter cite contract audit by KB layer (team|personal|all)",
+      "name": "layer",
+      "negativeDescription": undefined,
+      "required": undefined,
+      "type": "string",
+    },
+    {
+      "alias": undefined,
       "default": "7d",
       "description": "Time window for cite coverage (e.g. 7d, 24h, 30m)",
       "name": "since",
