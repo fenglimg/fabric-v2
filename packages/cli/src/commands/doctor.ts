@@ -41,6 +41,10 @@ type DoctorArgs = {
   "cite-coverage"?: boolean;
   since?: string;
   client?: string;
+  // v2.0.0-rc.24 TASK-10: filter cite contract audit by KB layer. Applies only
+  // to the contract-policy renderer block (rc.20 metrics are layer-blind by
+  // design). Accepts 'team' | 'personal' | 'all'; defaults to 'all'.
+  layer?: string;
   // rc.23 TASK-007 (a-C2): back-fill the four description-grade frontmatter
   // fields (intent_clues / tech_stack / impact / must_read_if) on legacy
   // canonical entries that pre-date rc.23. `--auto` writes stub values; the
@@ -133,6 +137,15 @@ export const doctorCommand = defineCommand({
       description: t("cli.doctor.args.client.description"),
       default: "all",
       valueHint: "cc|codex|cursor|all",
+    },
+    // v2.0.0-rc.24 TASK-10: --layer filter for the cite contract audit. Pairs
+    // with --cite-coverage. Validated against {'team','personal','all'} at
+    // command entry; rejects 'both' (rc.20 plan-context vocabulary) explicitly.
+    layer: {
+      type: "string",
+      description: t("cli.doctor.args.layer.description"),
+      default: "all",
+      valueHint: "team|personal|all",
     },
     // rc.23 TASK-007 (a-C2): description-grade back-fill flag set. Read-side
     // by default; `--auto` flips the writer arm on. Mutually exclusive with
@@ -229,9 +242,25 @@ export const doctorCommand = defineCommand({
         return;
       }
 
+      // v2.0.0-rc.24 TASK-10: --layer validation. We reject anything outside
+      // {'team','personal','all'} — in particular `both` (the rc.20
+      // plan-context vocabulary) is intentionally rejected because the
+      // cite-coverage semantics use `all` (no filter) instead of `both`
+      // (union of two enumerated values). The runDoctorCiteCoverage signature
+      // already treats `layer` as optional with default 'all'; we still pass
+      // the explicit value through so the report's `layer_filter` surfaces
+      // the operator-selected filter.
+      const layerFilter = args.layer ?? "all";
+      if (!isValidLayerFilter(layerFilter)) {
+        writeStderr(t("cli.doctor.errors.invalid-layer", { input: layerFilter }));
+        process.exitCode = 1;
+        return;
+      }
+
       const report = await runDoctorCiteCoverage(resolution.target, {
         since: sinceMs,
         client: clientFilter,
+        layer: layerFilter,
       });
 
       renderCiteCoverageReport(report, args.json === true);
@@ -540,6 +569,23 @@ function isValidClientFilter(input: string): input is CiteCoverageClientFilter {
   return CITE_COVERAGE_CLIENT_FILTERS.has(input as CiteCoverageClientFilter);
 }
 
+// v2.0.0-rc.24 TASK-10: --layer filter accepted values. Note the vocabulary
+// is `all` (not `both` — the rc.20 plan-context layer_filter uses `both`
+// because it expresses "union of two named layers"; the cite-coverage audit
+// uses `all` because it expresses "no layer filter, count everything"). The
+// explicit rejection of `both` is part of the test surface per spec.
+type CiteCoverageLayerFilter = "team" | "personal" | "all";
+
+const CITE_COVERAGE_LAYER_FILTERS: ReadonlySet<CiteCoverageLayerFilter> = new Set([
+  "team",
+  "personal",
+  "all",
+]);
+
+function isValidLayerFilter(input: string): input is CiteCoverageLayerFilter {
+  return CITE_COVERAGE_LAYER_FILTERS.has(input as CiteCoverageLayerFilter);
+}
+
 /**
  * rc.20 TASK-07: bilingual human-readable formatter for the cite coverage
  * report. JSON mode preserves the structured payload verbatim so downstream
@@ -632,7 +678,178 @@ function renderCiteCoverageReport(report: CiteCoverageReport, jsonMode: boolean)
     }
   }
 
+  // v2.0.0-rc.24 TASK-10: contract-policy renderer block. Additive — preserves
+  // the rc.20 output above. The block is suppressed entirely when the server
+  // reports `awaiting_marker` AND every contract counter is zero (the "nothing
+  // to say" mode that follows a fresh marker emit with no qualifying turns
+  // yet). All other states (ok / skipped:bootstrap_drift / awaiting_marker
+  // with non-zero counts) render visible feedback.
+  appendContractSection(lines, report);
+
   writeStdout(lines.join("\n"));
+}
+
+/**
+ * v2.0.0-rc.24 TASK-10: render the cite contract-policy audit block.
+ *
+ * Visibility rules:
+ *   - `contract_metrics_status === undefined` → server is rc.20-shaped; emit nothing.
+ *   - `awaiting_marker` AND all contract_metrics counters zero → emit nothing
+ *     (renders nothing during the gap between first run and first qualifying
+ *     cite). Per convergence criterion: "Renderer suppresses contract section
+ *     when status='awaiting_marker' AND all counts 0".
+ *   - `skipped:bootstrap_drift` → emit a one-line "skipped" warning so the
+ *     user is told to run `fab install`.
+ *   - `ok` (or `awaiting_marker` with any non-zero count) → emit full block.
+ *
+ * Layout (ok mode):
+ *   ### Contract check
+ *     status: <status>
+ *     since: <iso timestamp from contract_marker_ts>
+ *     layer filter: <layer>
+ *     Decisions cited: N
+ *     Pitfalls cited: N
+ *     With contract: N
+ *     Missing contract: N
+ *     Hard violations [team — review]: N    (only when team count > 0)
+ *     Hard violations [personal — fyi]: N   (only when personal count > 0)
+ *
+ *   #### Per-layer × type
+ *     team / personal — <type>: N
+ *
+ *   #### Skip buckets
+ *     <i18n-translated reason>: N
+ *
+ *   ⚠ Unresolved cite IDs: N   (only when > 0)
+ *
+ * i18n key fallback: `cite-coverage.contract.type.<type>` and
+ * `cite-coverage.skip.<reason>` look up via `t()`; unknown keys pass through
+ * the raw key, which is the desired behavior for operator-extensible
+ * vocabulary (per TASK-09 NOTES).
+ */
+function appendContractSection(lines: string[], report: CiteCoverageReport): void {
+  const status = report.contract_metrics_status;
+  if (status === undefined) {
+    // Pre-TASK-08 server payload — nothing to render.
+    return;
+  }
+
+  const metrics = report.contract_metrics;
+  const perLayerType = report.per_layer_type;
+  const allCountsZero =
+    metrics === undefined ||
+    (metrics.decisions_cited === 0 &&
+      metrics.pitfalls_cited === 0 &&
+      metrics.contract_with === 0 &&
+      metrics.contract_missing === 0 &&
+      metrics.hard_violated === 0 &&
+      metrics.cite_id_unresolved === 0 &&
+      Object.keys(metrics.skip_count).length === 0);
+
+  // Suppression rule per convergence criterion.
+  if (status === "awaiting_marker" && allCountsZero) {
+    return;
+  }
+
+  lines.push("");
+  lines.push(`### ${t("cite-coverage.contract.header")}`);
+
+  if (status === "skipped:bootstrap_drift") {
+    // One-line skipped warning. The i18n string already carries the
+    // remediation hint ("run `fab install`").
+    lines.push(`  ${t("cite-coverage.contract.status.skipped_bootstrap_drift")}`);
+    return;
+  }
+
+  // Status + filter context lines (always rendered in ok / awaiting_marker
+  // with non-zero counts).
+  const statusKey =
+    status === "ok"
+      ? "cite-coverage.contract.status.ok"
+      : "cite-coverage.contract.status.awaiting_marker";
+  lines.push(`  status: ${t(statusKey)}`);
+
+  if (typeof report.contract_marker_ts === "number" && report.contract_marker_ts > 0) {
+    lines.push(`  since: ${new Date(report.contract_marker_ts).toISOString()}`);
+  }
+  if (report.layer_filter !== undefined) {
+    lines.push(`  layer filter: ${report.layer_filter}`);
+  }
+
+  if (metrics !== undefined) {
+    lines.push(`  ${t("cite-coverage.contract.decisions_cited")}: ${metrics.decisions_cited}`);
+    lines.push(`  ${t("cite-coverage.contract.pitfalls_cited")}: ${metrics.pitfalls_cited}`);
+    lines.push(`  ${t("cite-coverage.contract.with")}: ${metrics.contract_with}`);
+    lines.push(`  ${t("cite-coverage.contract.missing")}: ${metrics.contract_missing}`);
+
+    // Hard-violation line. per_layer_type does NOT carry hard_violated (its
+    // inner keys are singular knowledge types + 'unresolved' per TASK-08 +
+    // TASK-09 contract). The hard-violation count is only aggregated at
+    // contract_metrics.hard_violated — we use the active layer_filter to
+    // choose the right suffix:
+    //   - layer_filter === 'personal' → [personal — fyi]
+    //   - layer_filter === 'team' OR 'all' (default) → [team — review]
+    // Rationale: when filter='all', the conservative interpretation is that
+    // any unresolved violation in mixed-layer audit defaults to "team review
+    // required". A future rc that surfaces per-layer hard_violated counters
+    // can split this line; the current shape gives one stable interpretation.
+    if (metrics.hard_violated > 0) {
+      const layerSuffix =
+        report.layer_filter === "personal"
+          ? t("cite-coverage.layer.personal_fyi")
+          : t("cite-coverage.layer.team_review");
+      lines.push(
+        `  ${t("cite-coverage.contract.hard_violated")} ${layerSuffix}: ${metrics.hard_violated}`,
+      );
+    }
+  }
+
+  // Per-layer × type cross-tab. Singular type keys per TASK-09 i18n contract
+  // (`decision` / `pitfall` / `model` / `guideline` / `process` / `unresolved`).
+  // We only emit rows for non-zero counts so an empty layer (typical when
+  // --layer=team is set and personal corpus is empty) collapses cleanly.
+  if (perLayerType !== undefined) {
+    const teamKeys = Object.keys(perLayerType.team).filter(
+      (k) => perLayerType.team[k] > 0,
+    );
+    const personalKeys = Object.keys(perLayerType.personal).filter(
+      (k) => perLayerType.personal[k] > 0,
+    );
+    if (teamKeys.length > 0 || personalKeys.length > 0) {
+      lines.push("");
+      lines.push(`#### ${t("cite-coverage.layer.team")} × ${t("cite-coverage.layer.personal")}`);
+      for (const key of teamKeys) {
+        const label = t(`cite-coverage.contract.type.${key}`);
+        lines.push(`  ${t("cite-coverage.layer.team")} — ${label}: ${perLayerType.team[key]}`);
+      }
+      for (const key of personalKeys) {
+        const label = t(`cite-coverage.contract.type.${key}`);
+        lines.push(
+          `  ${t("cite-coverage.layer.personal")} — ${label}: ${perLayerType.personal[key]}`,
+        );
+      }
+    }
+  }
+
+  // Skip bucket histogram — operator-extensible vocabulary. Fall back to the
+  // raw key when i18n misses (open-keyed per B1 grill-me lock).
+  if (metrics !== undefined && Object.keys(metrics.skip_count).length > 0) {
+    lines.push("");
+    lines.push(`#### ${t("cite-coverage.contract.skip_count")}`);
+    for (const [reason, count] of Object.entries(metrics.skip_count)) {
+      const label = t(`cite-coverage.skip.${reason}`);
+      lines.push(`  ${label}: ${count}`);
+    }
+  }
+
+  // Unresolved-cite tail. Rendered as a separate ⚠ line per spec so operators
+  // see hallucinated KB ids distinct from the contract_missing bucket.
+  if (metrics !== undefined && metrics.cite_id_unresolved > 0) {
+    lines.push("");
+    lines.push(
+      `${symbol.warn} ${t("cite-coverage.contract.cite_id_unresolved")}: ${metrics.cite_id_unresolved}`,
+    );
+  }
 }
 
 /**

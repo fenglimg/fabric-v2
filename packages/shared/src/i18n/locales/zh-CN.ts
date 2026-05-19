@@ -220,12 +220,17 @@ export const zhCNMessages: Messages = {
     "Cite 覆盖率统计窗口(如 7d, 24h, 30m)",
   "cli.doctor.args.client.description":
     "按客户端过滤(cc|codex|cursor|all)",
+  // v2.0.0-rc.24 TASK-10: --layer 过滤 cite 合约审计的知识层 (team|personal|all)。
+  "cli.doctor.args.layer.description":
+    "按知识层过滤 cite 合约审计 (team|personal|all)",
   "cli.doctor.errors.cite-coverage-mutex":
     "--cite-coverage 不能与 --fix 或 --fix-knowledge 同时使用",
   "cli.doctor.errors.invalid-since":
     "--since 取值无效: {input}。预期格式 7d / 24h / 30m 或 epoch ms。",
   "cli.doctor.errors.invalid-client":
     "--client 取值无效: {input}。预期 cc / codex / cursor / all。",
+  "cli.doctor.errors.invalid-layer":
+    "--layer 取值无效: {input}。预期 team / personal / all。",
   // rc.23 TASK-007 (a-C2): --enrich-descriptions 回填四个 description 字段。
   "cli.doctor.args.enrich-descriptions.description":
     "回填正式知识条目缺失的 intent_clues / tech_stack / impact / must_read_if 字段（默认只读;搭配 --auto 写入 stub）。",

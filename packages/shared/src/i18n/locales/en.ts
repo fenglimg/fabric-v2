@@ -227,12 +227,17 @@ export const enMessages: Messages = {
     "Time window for cite coverage (e.g. 7d, 24h, 30m)",
   "cli.doctor.args.client.description":
     "Filter cite coverage by client (cc|codex|cursor|all)",
+  // v2.0.0-rc.24 TASK-10: --layer filters cite contract audit by KB layer (team|personal|all).
+  "cli.doctor.args.layer.description":
+    "Filter cite contract audit by KB layer (team|personal|all)",
   "cli.doctor.errors.cite-coverage-mutex":
     "--cite-coverage cannot be combined with --fix or --fix-knowledge",
   "cli.doctor.errors.invalid-since":
     "Invalid --since value: {input}. Expected duration like 7d, 24h, 30m or epoch ms.",
   "cli.doctor.errors.invalid-client":
     "Invalid --client value: {input}. Expected cc, codex, cursor, or all.",
+  "cli.doctor.errors.invalid-layer":
+    "Invalid --layer value: {input}. Expected team, personal, or all.",
   // rc.23 TASK-007 (a-C2): --enrich-descriptions flag set. Back-fills the
   // four description-grade frontmatter fields on canonical knowledge entries.
   "cli.doctor.args.enrich-descriptions.description":
