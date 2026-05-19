@@ -23,9 +23,12 @@ declare const __SERVER_VERSION__: string;
 export {
   enrichDescriptions,
   runDoctorApplyLint,
+  runDoctorArchiveHistory,
   runDoctorCiteCoverage,
   runDoctorFix,
   runDoctorReport,
+  type ArchiveHistoryEntry,
+  type ArchiveHistoryReport,
   type CiteCoverageReport,
   type DoctorApplyLintMutation,
   type DoctorApplyLintMutationKind,

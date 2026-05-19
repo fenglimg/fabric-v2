@@ -242,6 +242,18 @@ export const zhCNMessages: Messages = {
     "--enrich-descriptions 不能与 --fix / --fix-knowledge / --cite-coverage 同时使用,请分别运行。",
   "doctor.enrich.allComplete":
     "所有正式知识条目均已包含 intent_clues / tech_stack / impact / must_read_if。",
+  // v2.0.0-rc.25 TASK-10: --archive-history 子命令——按 session 维度审计归档尝试记录。
+  "cli.doctor.args.archive-history.description":
+    "按 session 维度渲染归档尝试历史(只读;读取 session_archive_attempted 事件)。",
+  "cli.doctor.errors.archive-history-mutex":
+    "--archive-history 不能与 --fix / --fix-knowledge / --cite-coverage / --enrich-descriptions 同时使用,请分别运行。",
+  "doctor.archive-history.header": "归档历史(最近 {sinceLabel},{count} 个会话)",
+  "doctor.archive-history.empty": "暂无归档历史记录 (--since={sinceLabel} 窗口内)。",
+  "doctor.archive-history.table.session": "会话",
+  "doctor.archive-history.table.lastAttempt": "最近尝试",
+  "doctor.archive-history.table.outcome": "结果",
+  "doctor.archive-history.table.candidates": "候选数",
+  "doctor.archive-history.table.coveredGap": "覆盖距今",
 
   "cli.hooks.description": "管理 Fabric Git 钩子模板。",
   "cli.hooks.install.description": "安装 Fabric Husky pre-commit 钩子模板。",

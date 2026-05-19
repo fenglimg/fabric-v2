@@ -6,9 +6,11 @@ import {
   checkLockOrThrow,
   enrichDescriptions,
   runDoctorApplyLint as runDoctorFixKnowledge,
+  runDoctorArchiveHistory,
   runDoctorCiteCoverage,
   runDoctorFix,
   runDoctorReport,
+  type ArchiveHistoryReport,
   type CiteCoverageReport,
   type DoctorApplyLintReport as DoctorFixKnowledgeReport,
   type DoctorIssue,
@@ -54,6 +56,10 @@ type DoctorArgs = {
   "enrich-descriptions"?: boolean;
   auto?: boolean;
   "dry-run"?: boolean;
+  // v2.0.0-rc.25 TASK-10: per-session archive attempt audit. Read-only;
+  // mutually exclusive with the other mutation/report surfaces. Pairs with
+  // `--since` for the time window (default 7d).
+  "archive-history"?: boolean;
 };
 
 // rc.7 T11: lint codes that --fix-knowledge will mutate, mapped to the human
@@ -165,6 +171,14 @@ export const doctorCommand = defineCommand({
       description: t("cli.doctor.args.dry-run.description"),
       default: false,
     },
+    // v2.0.0-rc.25 TASK-10: --archive-history flag (parallel to rc.20
+    // --cite-coverage). Read-only; reads session_archive_attempted events
+    // and renders a per-session table. Pairs with the shared `--since` flag.
+    "archive-history": {
+      type: "boolean",
+      description: t("cli.doctor.args.archive-history.description"),
+      default: false,
+    },
   },
   async run({ args }: { args: DoctorArgs }) {
     const workspaceRoot = process.cwd();
@@ -188,6 +202,40 @@ export const doctorCommand = defineCommand({
     const fix = args.fix === true;
     const citeCoverage = args["cite-coverage"] === true;
     const enrichDesc = args["enrich-descriptions"] === true;
+    const archiveHistory = args["archive-history"] === true;
+
+    // v2.0.0-rc.25 TASK-10: --archive-history is a read-only audit surface.
+    // Dispatched BEFORE the other arms so the mutex check fails fast. It
+    // shares --since with --cite-coverage but never mixes with any mutation
+    // or report arm (different output shape).
+    if (archiveHistory) {
+      if (fix || fixKnowledge || citeCoverage || enrichDesc) {
+        writeStderr(t("cli.doctor.errors.archive-history-mutex"));
+        process.exitCode = 1;
+        return;
+      }
+
+      const sinceInput = args.since ?? "7d";
+      let sinceMs: number;
+      try {
+        sinceMs = parseSinceDuration(sinceInput);
+      } catch {
+        writeStderr(t("cli.doctor.errors.invalid-since", { input: sinceInput }));
+        process.exitCode = 1;
+        return;
+      }
+
+      const report = await runDoctorArchiveHistory(resolution.target, {
+        since: sinceMs,
+      });
+
+      if (args.json === true) {
+        writeStdout(JSON.stringify(report, null, 2));
+      } else {
+        renderArchiveHistoryReport(report, sinceInput);
+      }
+      return;
+    }
 
     // rc.23 TASK-007 (a-C2): --enrich-descriptions is its own dispatch arm
     // (different surface — back-fill description-grade frontmatter fields).
@@ -936,4 +984,68 @@ export function parseSinceDuration(input: string): number {
   }
 
   throw new Error(`invalid --since value: ${input}`);
+}
+
+// ---------------------------------------------------------------------------
+// v2.0.0-rc.25 TASK-10: --archive-history renderer
+// ---------------------------------------------------------------------------
+//
+// Bilingual table renderer. Header + markdown-style pipe table + footer
+// summary line. Empty results collapse to a single-line "no history" message
+// rather than rendering an empty table.
+//
+// Layout:
+//   Archive history (last 7d, 3 sessions)
+//   | Session | Last attempt    | Outcome  | Candidates | Covered gap |
+//   | ------- | --------------- | -------- | ---------- | ----------- |
+//   | abc1... | 2026-05-19 13:42 | proposed | 3          | 0h          |
+//
+// `last_attempted_at` ISO timestamps are projected to "YYYY-MM-DD HH:mm"
+// (UTC) so the table stays narrow. Operators who need second-precision
+// or timezone context use `--json` mode (preserves ISO verbatim).
+function renderArchiveHistoryReport(
+  report: ArchiveHistoryReport,
+  sinceLabel: string,
+): void {
+  if (report.entries.length === 0) {
+    writeStdout(t("doctor.archive-history.empty", { sinceLabel }));
+    return;
+  }
+
+  const lines: string[] = [];
+  lines.push(
+    t("doctor.archive-history.header", {
+      sinceLabel,
+      count: String(report.total),
+      plural: report.total === 1 ? "" : "s",
+    }),
+  );
+  lines.push("");
+  lines.push(
+    `| ${t("doctor.archive-history.table.session")} | ${t(
+      "doctor.archive-history.table.lastAttempt",
+    )} | ${t("doctor.archive-history.table.outcome")} | ${t(
+      "doctor.archive-history.table.candidates",
+    )} | ${t("doctor.archive-history.table.coveredGap")} |`,
+  );
+  lines.push("| ------- | ---------------- | -------- | ---------- | ----------- |");
+  for (const entry of report.entries) {
+    const lastAttempt = formatTimestampForTable(entry.last_attempted_at);
+    lines.push(
+      `| ${entry.session_id_short} | ${lastAttempt} | ${entry.outcome} | ${entry.candidates_proposed} | ${entry.age_since_covered_hours}h |`,
+    );
+  }
+  writeStdout(lines.join("\n"));
+}
+
+// Project an ISO-8601 timestamp ("2026-05-19T13:42:07.123Z") to
+// "2026-05-19 13:42" (UTC) for table density. Falls back to the raw input on
+// parse failure so the renderer never throws.
+function formatTimestampForTable(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  const pad = (n: number): string => (n < 10 ? `0${n}` : `${n}`);
+  return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())} ${pad(
+    d.getUTCHours(),
+  )}:${pad(d.getUTCMinutes())}`;
 }

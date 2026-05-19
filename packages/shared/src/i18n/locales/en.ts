@@ -250,6 +250,20 @@ export const enMessages: Messages = {
     "--enrich-descriptions cannot be combined with --fix, --fix-knowledge, or --cite-coverage. Run them separately.",
   "doctor.enrich.allComplete":
     "All canonical knowledge entries already declare intent_clues / tech_stack / impact / must_read_if.",
+  // v2.0.0-rc.25 TASK-10: --archive-history flag set. Read-only audit of
+  // session_archive_attempted events; mutually exclusive with the other
+  // mutation/report surfaces.
+  "cli.doctor.args.archive-history.description":
+    "Render per-session archive attempt history (read-only; reads session_archive_attempted events).",
+  "cli.doctor.errors.archive-history-mutex":
+    "--archive-history cannot be combined with --fix, --fix-knowledge, --cite-coverage, or --enrich-descriptions. Run them separately.",
+  "doctor.archive-history.header": "Archive history (last {sinceLabel}, {count} session{plural})",
+  "doctor.archive-history.empty": "No archive history yet within the --since={sinceLabel} window.",
+  "doctor.archive-history.table.session": "Session",
+  "doctor.archive-history.table.lastAttempt": "Last attempt",
+  "doctor.archive-history.table.outcome": "Outcome",
+  "doctor.archive-history.table.candidates": "Candidates",
+  "doctor.archive-history.table.coveredGap": "Covered gap",
 
   "cli.hooks.description": "Manage Fabric Git hook templates.",
   "cli.hooks.install.description": "Install the Fabric Husky pre-commit hook template.",

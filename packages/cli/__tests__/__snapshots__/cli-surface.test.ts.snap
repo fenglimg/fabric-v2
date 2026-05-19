@@ -34,6 +34,15 @@ exports[`CLI surface drift gate (docs/test-seed/cli.md §1) > command 'doctor' s
     {
       "alias": undefined,
       "default": false,
+      "description": "Render per-session archive attempt history (read-only; reads session_archive_attempted events).",
+      "name": "archive-history",
+      "negativeDescription": undefined,
+      "required": undefined,
+      "type": "boolean",
+    },
+    {
+      "alias": undefined,
+      "default": false,
       "description": "With --enrich-descriptions: write deterministic stub values for missing fields. Without --auto, the run is read-only.",
       "name": "auto",
       "negativeDescription": undefined,

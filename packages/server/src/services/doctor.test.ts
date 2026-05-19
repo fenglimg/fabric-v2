@@ -6397,6 +6397,137 @@ describe("enrichDescriptions", () => {
   });
 });
 
+// v2.0.0-rc.25 TASK-10: runDoctorArchiveHistory — per-session archive attempt
+// audit. Covers the four core cases: basic distinct-session aggregation,
+// most-recent-wins for multi-attempt sessions, --since window exclusion, and
+// empty-ledger no-crash. Helpers seed raw JSONL rows the same way the
+// runDoctorCiteCoverage tests do so we control `ts` precisely.
+describe("runDoctorArchiveHistory", () => {
+  function seedArchiveEvents(
+    target: string,
+    rows: Array<{
+      sessionId: string;
+      ts: number;
+      outcome: "proposed" | "viability_failed" | "user_dismissed" | "skipped_no_signal";
+      candidatesProposed?: number;
+      coveredThroughTs?: number;
+      knowledgeProposedIds?: string[];
+    }>,
+  ): void {
+    const ledgerPath = join(target, ".fabric", "events.jsonl");
+    const existing = existsSync(ledgerPath) ? readFileSync(ledgerPath, "utf8") : "";
+    const newlines =
+      rows
+        .map((row) =>
+          JSON.stringify({
+            kind: "fabric-event",
+            id: `event:arch:${randomUUID()}`,
+            ts: row.ts,
+            schema_version: 1,
+            session_id: row.sessionId,
+            event_type: "session_archive_attempted",
+            outcome: row.outcome,
+            covered_through_ts: row.coveredThroughTs ?? row.ts,
+            candidates_proposed: row.candidatesProposed ?? 0,
+            knowledge_proposed_ids: row.knowledgeProposedIds ?? [],
+          }),
+        )
+        .join("\n") + "\n";
+    writeFileSync(ledgerPath, existing + newlines, "utf8");
+  }
+
+  it("aggregates one entry per session when each session has a single attempt", async () => {
+    // Imported lazily to avoid a top-of-file edit that conflicts with parallel
+    // tasks. Once the module evaluates, subsequent calls reuse the same binding.
+    const { runDoctorArchiveHistory } = await import("./doctor.js");
+    const target = createInitializedProject("archive-history-basic");
+    writeFile(".fabric/events.jsonl", "", target);
+
+    const now = Date.now();
+    seedArchiveEvents(target, [
+      { sessionId: "sess-A", ts: now - 60_000, outcome: "proposed", candidatesProposed: 3 },
+      { sessionId: "sess-B", ts: now - 30_000, outcome: "skipped_no_signal" },
+      { sessionId: "sess-C", ts: now - 10_000, outcome: "user_dismissed" },
+    ]);
+
+    const report = await runDoctorArchiveHistory(target, { since: 0 });
+    expect(report.total).toBe(3);
+    expect(report.entries).toHaveLength(3);
+    // Descending by last_attempted_at — sess-C is most recent.
+    expect(report.entries[0].outcome).toBe("user_dismissed");
+    expect(report.entries[1].outcome).toBe("skipped_no_signal");
+    expect(report.entries[2].outcome).toBe("proposed");
+    // session_id_short truncation: all our seeded ids are <= 8 chars so they
+    // render verbatim (no `...` suffix).
+    expect(report.entries[0].session_id_short).toBe("sess-C");
+    expect(report.entries[2].candidates_proposed).toBe(3);
+  });
+
+  it("keeps only the most recent attempt when the same session retries", async () => {
+    const { runDoctorArchiveHistory } = await import("./doctor.js");
+    const target = createInitializedProject("archive-history-most-recent");
+    writeFile(".fabric/events.jsonl", "", target);
+
+    const base = Date.now() - 60_000;
+    seedArchiveEvents(target, [
+      // Earliest attempt — skipped_no_signal, will lose.
+      { sessionId: "sess-retry", ts: base, outcome: "skipped_no_signal" },
+      // Middle attempt — viability_failed, will lose.
+      { sessionId: "sess-retry", ts: base + 10_000, outcome: "viability_failed" },
+      // Latest attempt — proposed, MUST win.
+      {
+        sessionId: "sess-retry",
+        ts: base + 20_000,
+        outcome: "proposed",
+        candidatesProposed: 2,
+      },
+    ]);
+
+    const report = await runDoctorArchiveHistory(target, { since: 0 });
+    expect(report.total).toBe(1);
+    expect(report.entries).toHaveLength(1);
+    expect(report.entries[0].outcome).toBe("proposed");
+    expect(report.entries[0].candidates_proposed).toBe(2);
+    // last_attempted_at corresponds to the latest ts.
+    expect(report.entries[0].last_attempted_at).toBe(new Date(base + 20_000).toISOString());
+  });
+
+  it("excludes events older than the --since floor", async () => {
+    const { runDoctorArchiveHistory } = await import("./doctor.js");
+    const target = createInitializedProject("archive-history-since");
+    writeFile(".fabric/events.jsonl", "", target);
+
+    const now = Date.now();
+    const oneDayMs = 86_400_000;
+    seedArchiveEvents(target, [
+      // 10d ago — outside a 7d window.
+      { sessionId: "sess-old", ts: now - 10 * oneDayMs, outcome: "proposed" },
+      // 2d ago — inside a 7d window.
+      { sessionId: "sess-recent", ts: now - 2 * oneDayMs, outcome: "proposed" },
+    ]);
+
+    const sevenDayFloor = now - 7 * oneDayMs;
+    const report = await runDoctorArchiveHistory(target, { since: sevenDayFloor });
+    expect(report.total).toBe(1);
+    expect(report.entries[0].session_id_short).toBe("sess-rec...");
+    // since_ms is echoed back verbatim.
+    expect(report.since_ms).toBe(sevenDayFloor);
+  });
+
+  it("returns an empty report (no crash) when events.jsonl is empty", async () => {
+    const { runDoctorArchiveHistory } = await import("./doctor.js");
+    const target = createInitializedProject("archive-history-empty");
+    writeFile(".fabric/events.jsonl", "", target);
+
+    const report = await runDoctorArchiveHistory(target, { since: 0 });
+    expect(report.total).toBe(0);
+    expect(report.entries).toEqual([]);
+    expect(report.since_ms).toBe(0);
+    // generated_at must be a parseable ISO timestamp.
+    expect(Number.isNaN(new Date(report.generated_at).getTime())).toBe(false);
+  });
+});
+
 function createInitializedProject(name: string): string {
   const target = createProject(name);
   writeFile("package.json", JSON.stringify({ name, dependencies: { vite: "^7.0.0" } }, null, 2), target);

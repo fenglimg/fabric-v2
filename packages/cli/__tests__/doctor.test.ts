@@ -543,6 +543,97 @@ describe("doctor command", () => {
   // rc.23 TASK-012 (F8a): the legacy --rescan flag and its runInitScan dispatch
   // were removed clean-slate. The describe block previously covering --rescan
   // call-order assertions has been deleted along with the scan.ts module.
+
+  // v2.0.0-rc.25 TASK-10: --archive-history flag dispatch + --since parsing.
+  describe("--archive-history flag", () => {
+    it("invokes runDoctorArchiveHistory with default --since=7d window", async () => {
+      const archiveSpy = vi.fn().mockResolvedValue({
+        entries: [],
+        total: 0,
+        since_ms: Date.now() - 7 * 86_400_000,
+        generated_at: new Date().toISOString(),
+      });
+      vi.doMock("@fenglimg/fabric-server", () => ({
+        checkLockOrThrow: vi.fn(),
+        runDoctorReport: vi.fn(),
+        runDoctorFix: vi.fn(),
+        runDoctorApplyLint: vi.fn(),
+        runDoctorCiteCoverage: vi.fn(),
+        runDoctorArchiveHistory: archiveSpy,
+        enrichDescriptions: vi.fn(),
+      }));
+
+      const { doctorCommand } = await import("../src/commands/doctor.ts");
+      const stdout = captureStdout();
+      const now = Date.now();
+      try {
+        await doctorCommand.run?.({
+          args: {
+            target: "/tmp/fabric-target",
+            fix: false,
+            json: false,
+            strict: false,
+            "archive-history": true,
+            since: "7d",
+          },
+        } as never);
+      } finally {
+        stdout.restore();
+      }
+
+      expect(archiveSpy).toHaveBeenCalledTimes(1);
+      const [resolvedTarget, opts] = archiveSpy.mock.calls[0] as [string, { since: number }];
+      expect(typeof resolvedTarget).toBe("string");
+      // Default 7d window: since should be approximately now - 7*86400000.
+      // Allow a 5-second slack for the inner Date.now() vs ours.
+      const expected = now - 7 * 86_400_000;
+      expect(Math.abs(opts.since - expected)).toBeLessThan(5_000);
+    });
+
+    it("parses --since=14d to 14 * 86_400_000 ms", async () => {
+      const archiveSpy = vi.fn().mockResolvedValue({
+        entries: [],
+        total: 0,
+        since_ms: 0,
+        generated_at: new Date().toISOString(),
+      });
+      vi.doMock("@fenglimg/fabric-server", () => ({
+        checkLockOrThrow: vi.fn(),
+        runDoctorReport: vi.fn(),
+        runDoctorFix: vi.fn(),
+        runDoctorApplyLint: vi.fn(),
+        runDoctorCiteCoverage: vi.fn(),
+        runDoctorArchiveHistory: archiveSpy,
+        enrichDescriptions: vi.fn(),
+      }));
+
+      const { doctorCommand } = await import("../src/commands/doctor.ts");
+      const stdout = captureStdout();
+      const now = Date.now();
+      try {
+        await doctorCommand.run?.({
+          args: {
+            target: "/tmp/fabric-target",
+            fix: false,
+            json: false,
+            strict: false,
+            "archive-history": true,
+            since: "14d",
+          },
+        } as never);
+      } finally {
+        stdout.restore();
+      }
+
+      expect(archiveSpy).toHaveBeenCalledTimes(1);
+      const [, opts] = archiveSpy.mock.calls[0] as [string, { since: number }];
+      const expected = now - 14 * 86_400_000;
+      // Same 5-second slack window — `parseSinceDuration` calls `Date.now()`
+      // internally so the floor moves slightly between the test and the
+      // command. 5s is generous; CI flakes have never crossed that bound.
+      expect(Math.abs(opts.since - expected)).toBeLessThan(5_000);
+    });
+  });
 });
 
 function captureStdout(): { lines: string[]; restore: () => void } {
