@@ -1,0 +1,55 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`TASK-11 archive-hint copy: case 1 — distinct session count > renders '跨 N 个会话累计' when session_id coverage ≥50% 1`] = `
+{
+  "decision": "block",
+  "reason": "跨 3 个会话累计 6 次 plan_context · 距上次归档 30.0h — 这是项目级长期欠债, 不一定来自本会话。
+若本会话有产出, 可调用 fabric-archive; 否则可忽略, 12h 后再提醒。",
+  "signal": "archive",
+}
+`;
+
+exports[`TASK-11 archive-hint copy: case 2 — degraded session phrase > renders '跨多个会话累计' when session_id coverage <50% 1`] = `
+{
+  "decision": "block",
+  "reason": "跨多个会话累计 6 次 plan_context · 距上次归档 30.0h — 这是项目级长期欠债, 不一定来自本会话。
+若本会话有产出, 可调用 fabric-archive; 否则可忽略, 12h 后再提醒。",
+  "signal": "archive",
+}
+`;
+
+exports[`TASK-11 archive-hint copy: case 3 — rotation watermark fallback > appends '(watermark 已被 rotation 清理)' when no knowledge_proposed exists 1`] = `
+{
+  "decision": "block",
+  "reason": "跨 3 个会话累计 6 次 plan_context · 距上次归档 40.0h (watermark 已被 rotation 清理) — 这是项目级长期欠债, 不一定来自本会话。
+若本会话有产出, 可调用 fabric-archive; 否则可忽略, 12h 后再提醒。",
+  "signal": "archive",
+}
+`;
+
+exports[`TASK-11 archive-hint copy: case 4 — fabric_language=en > renders English copy with 'project-level long-term debt' phrase 1`] = `
+{
+  "decision": "block",
+  "reason": "Across 3 sessions, 5 plan_context calls accumulated · 30.0h since last archive — this is project-level long-term debt, not necessarily from the current session.
+If the current session produced something, run fabric-archive; otherwise feel free to ignore — next reminder in 12h.",
+  "signal": "archive",
+}
+`;
+
+exports[`TASK-11 archive-hint copy: case 5 — fabric_language=zh-CN explicit > renders Chinese copy with '项目级长期欠债' phrase 1`] = `
+{
+  "decision": "block",
+  "reason": "跨 3 个会话累计 5 次 plan_context · 距上次归档 30.0h — 这是项目级长期欠债, 不一定来自本会话。
+若本会话有产出, 可调用 fabric-archive; 否则可忽略, 12h 后再提醒。",
+  "signal": "archive",
+}
+`;
+
+exports[`TASK-11 archive-hint copy: case 6 — cooldown regression > suppresses stdout on second invoke within 12h cooldown window > first invoke (writes cache) 1`] = `
+{
+  "decision": "block",
+  "reason": "跨 3 个会话累计 5 次 plan_context · 距上次归档 30.0h — 这是项目级长期欠债, 不一定来自本会话。
+若本会话有产出, 可调用 fabric-archive; 否则可忽略, 12h 后再提醒。",
+  "signal": "archive",
+}
+`;

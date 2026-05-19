@@ -927,7 +927,7 @@ exports[`tool contracts > plan-context contract matches snapshot 1`] = `
         "type": "array",
       },
       "session_id": {
-        "description": "Optional caller-provided session id for Event Ledger records",
+        "description": "Recommended: pass the current client session id (Claude Code: $session_id; Codex: corresponding identifier) — enables cross-session debt tracking in fab doctor and accurate archive-hint cross-session count. Falls back gracefully if omitted.",
         "type": "string",
       },
       "target_paths": {
