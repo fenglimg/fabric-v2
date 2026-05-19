@@ -1,0 +1,68 @@
+{
+  "id": "TASK-05",
+  "title": "Stop hook soft reminder (L1) for missing contract on decisions/pitfalls cites",
+  "scope": "packages/cli/templates/hooks/fabric-hint.cjs (Stop hook reminder logic)",
+  "action": "Update",
+  "description": "Add post-turn soft reminder: when an assistant turn cited a decisions/pitfalls类 KB id with [recalled] tag but no contract operators or skip:<reason>, the Stop hook emits a stderr warning visible to the next model turn (system message in cc; equivalent injection in codex/cursor). Non-blocking — only nudges. Type resolution uses idTypeMap snapshot read from .fabric/agents.meta.json (already maintained by knowledge-meta-builder).",
+  "files": [
+    {
+      "path": "packages/cli/templates/hooks/fabric-hint.cjs",
+      "action": "modify",
+      "target": "Stop hook reminder section (extends existing fabric-hint reminder logic)",
+      "change": "After parseCiteLine + event write, for each cite_id with tag='recalled' AND empty operators[] AND null skip_reason: lookup id type via .fabric/agents.meta.json knowledge_type field; if type ∈ ['decisions','pitfalls'] → append reminder string '⚠ KB: <id> cited as [recalled] but missing contract; add `→ edit:<glob>` or `→ skip:<reason>` next turn' to hook stderr. Reminders aggregated per turn (one line per offending id). Skip emit if no offenders."
+    },
+    {
+      "path": "packages/cli/__tests__/fabric-hint-reminder.test.ts",
+      "action": "create",
+      "target": "new file",
+      "change": "Test cases: (1) decisions cite with operators → no reminder; (2) decisions cite without contract → reminder emitted; (3) pitfalls cite with skip:sequencing → no reminder (skip counts as satisfied); (4) models cite without contract → no reminder (type-routed out); (5) recalled but unresolved id → no reminder (cannot type-check, defer to doctor); (6) multiple offenders → multi-line reminder; (7) non-recalled tag → no reminder. ≥8 cases total."
+    }
+  ],
+  "implementation": [
+    "Read packages/cli/templates/hooks/fabric-hint.cjs to locate existing reminder/stderr emission patterns.",
+    "Define helper readAgentsMetaForType(projectRoot): parses .fabric/agents.meta.json, returns Map<stable_id, knowledge_type>. Cache result per hook invocation.",
+    "After event write, iterate cite_ids/cite_tags/cite_commitments index-aligned: check if (tag==='recalled' AND empty commitment) AND (type ∈ ['decisions','pitfalls']) → append reminder line.",
+    "Emit reminders via existing stderr channel; preserve existing reminder pipeline if present.",
+    "Create fabric-hint-reminder.test.ts with mocked agents.meta.json + transcript fixtures.",
+    "Run `pnpm --filter @fenglimg/fabric-cli test fabric-hint-reminder` to confirm green."
+  ],
+  "reference": {
+    "pattern": "Stop hook reminder injection (existing in fabric-hint.cjs)",
+    "files": ["packages/cli/templates/hooks/fabric-hint.cjs", "packages/server/src/services/knowledge-meta-builder.ts"],
+    "examples": "Existing fabric-hint emits archive-opportunity reminders on Stop; rc.24 extends with contract-missing reminders."
+  },
+  "rationale": {
+    "chosen_approach": "Reuse existing Stop hook reminder pipeline. Type check via agents.meta.json which hooks already read for other purposes (zero new I/O cost).",
+    "alternatives_considered": ["PreToolUse blocking (rejected: violates B2 L3+L1 lock + rc.20 non-blocking 总则)", "Doctor-only audit (rejected: no feedback loop, model never learns within session)"],
+    "decision_factors": ["Reuse existing infra", "Non-blocking matches rc.20 总则", "Cross-client uniformity (stderr is universal)"],
+    "tradeoffs": "Reminder visibility depends on client (cc shows stderr as system message; codex/cursor behavior may vary). Acceptable for soft enforcement."
+  },
+  "test": {
+    "manual_checks": ["pnpm --filter @fenglimg/fabric-cli test passes", "Manually trigger Stop hook on transcript with cite missing contract → verify stderr reminder", "Verify type routing: models cite without contract → no reminder"],
+    "success_metrics": ["≥8 reminder test cases all passing", "No reminder false positives on models/guidelines/processes types"],
+    "unit": ["fabric-hint-reminder decisions-missing-contract", "fabric-hint-reminder decisions-with-skip", "fabric-hint-reminder pitfalls-missing-contract", "fabric-hint-reminder models-no-reminder", "fabric-hint-reminder unresolved-id-no-reminder", "fabric-hint-reminder multi-offender", "fabric-hint-reminder non-recalled-tag-no-reminder", "fabric-hint-reminder empty-cite-no-reminder"],
+    "integration": []
+  },
+  "convergence": {
+    "criteria": [
+      "fabric-hint.cjs contains string '⚠ KB:' (reminder template)",
+      "fabric-hint.cjs reads .fabric/agents.meta.json (grep agents.meta)",
+      "fabric-hint-reminder.test.ts exists with ≥8 cases",
+      "Reminder NOT emitted for type ∈ {'models','guidelines','processes'}",
+      "Reminder NOT emitted when cite_commitments has operators or skip_reason",
+      "pnpm --filter @fenglimg/fabric-cli test exits 0",
+      "Commit msg: 'feat(rc24): Stop hook soft reminder for missing contract on decisions/pitfalls (TASK-05)'"
+    ]
+  },
+  "read_first": [
+    "packages/cli/templates/hooks/fabric-hint.cjs",
+    "packages/server/src/services/knowledge-meta-builder.ts",
+    ".fabric/agents.meta.json",
+    "packages/shared/src/schemas/agents-meta.ts"
+  ],
+  "depends_on": ["TASK-04"],
+  "estimated_minutes": 40,
+  "cli_execution_id": "rc24-cite-contract-policy-2026-05-19-TASK-05",
+  "cli_execution": { "strategy": "new" },
+  "status": "completed"
+}
