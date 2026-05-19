@@ -5,6 +5,87 @@ All notable changes to Fabric will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0-rc.24] - 2026-05-19
+
+Cite contract policy. The rc.20 cite policy answered "did the AI cite a KB id?" — rc.24 answers "did the AI honour the rule it cited?" by adding a 5-operator commitment syntax on `KB:` lines for decisions/pitfalls類 entries and wiring `fab doctor --cite-coverage` to cross-check committed operators against the session's actual edit diff. Bootstrap drift gates marker activation so the contract policy never partially fires during the rc.24 upgrade window. Wave breakdown: schema + bootstrap (TASK-01, TASK-02) → shared parser + hook templates (TASK-03, TASK-04, TASK-05) → doctor service (TASK-06, TASK-07, TASK-08) → shared schema + i18n + CLI (TASK-09, TASK-10, TASK-11) → release (TASK-12).
+
+### Added
+
+- **Cite contract syntax (5 operators)** — `KB:` lines for `decision`/`pitfall` type entries may now append `→ <operator> [<operator> ...]` where operator ∈ {`edit:<glob>` / `!edit:<glob>` / `require:<symbol>` / `forbid:<symbol>` / `skip:<reason>`}. The 6-value skip-reason dictionary (`sequencing` / `conditional` / `semantic` / `aesthetic` / `architectural` / `other:<text>`) is documented in `BOOTSTRAP_CANONICAL`. Operators are author-extensible at the doctor level (`skip_count` keys data-drive vocabulary growth — TASK-02, TASK-03).
+- **`cite_commitments` parallel array on `assistant_turn_observed` events** — index-aligned with `cite_ids`; each element is `{ operators: Array<{kind, target}>, skip_reason: string | null }` with `kind ∈ {edit, not_edit, require, forbid}`. Defaults to `[]` so rc.20-rc.23 ledger events parse unchanged (TASK-01).
+- **`cite_contract_policy_activated` marker event** — pure marker (no payload beyond envelope) emitted once by `ensureCiteContractPolicyActivatedMarker` after the bootstrap-drift gate clears. Anchors an independent audit window separate from the rc.20 `cite_policy_activated` marker (TASK-01, TASK-06).
+- **Shared cite-line parser** — `packages/shared/src/cite-line-parser.ts` (zero-dep, 4.4KB) exports `parseCiteLine(raw)` returning `{ cite_ids, cite_tags, cite_commitments }`. Forward-compatible: unknown operator tokens silently drop so rc.25+ vocab additions degrade gracefully on rc.24-installed hooks (TASK-03).
+- **Hand-authored CJS twin** at `packages/cli/templates/hooks/lib/cite-line-parser.cjs` — auto-ships to all three clients via the existing `installHookLibs` glob (Claude Code / Codex / Cursor). Parity to the TS source guarded by `cite-line-parser-parity.test.ts` (29-input corpus + null/undefined tolerance) so any future drift fails CI before commit (TASK-04).
+- **Stop hook L1 soft reminder** — `cite-contract-reminder.cjs` lib + `emitCiteContractRemindersBestEffort` in `fabric-hint.cjs`. When the hook detects a `[recalled]` cite on a decision/pitfall whose `cite_commitments[i]` is empty (no operators AND no skip_reason), it writes a `⚠ KB:` line to stderr. Best-effort, never blocks the Stop hook (TASK-05).
+- **`loadKbIdTypeMap` knowledge-meta loader** — `packages/server/src/services/knowledge-meta-builder.ts` exports `loadKbIdTypeMap(projectRoot): Promise<Map<stable_id, KnowledgeType>>` reading `.fabric/agents.meta.json` directly. Returns the SINGULAR `KnowledgeType` enum (`model` / `decision` / `guideline` / `pitfall` / `process`) verbatim — no plural translation at any boundary. Handles missing/malformed/legacy meta gracefully (TASK-07).
+- **`runDoctorCiteCoverage` contract metrics + type routing + cross-tab** — new optional `layer?: "team" | "personal" | "all"` parameter (defaults `"all"`). Report extension is purely additive over rc.20:
+  - `contract_metrics_status: "ok" | "skipped:bootstrap_drift" | "awaiting_marker"` discriminator.
+  - `contract_metrics: { decisions_cited, pitfalls_cited, contract_with, contract_missing, hard_violated, cite_id_unresolved, skip_count: Record<string, number> }`.
+  - `per_layer_type: { team, personal: Record<knowledge_type | "unresolved", number> }` — 6 buckets per layer.
+  - `contract_marker_ts` pass-through for two-window rendering.
+  - Operator comparator: `edit:<glob>` minimatch over session edit paths; `not_edit:<glob>` violates on any match; `require:<symbol>` / `forbid:<symbol>` substring-match changed file paths (NOT diff content — strict downgrade documented inline pending an `edit_intent_checked` schema widening) (TASK-08).
+- **`citeCoverageReportSchema` + `CiteContractMetrics` + `CiteLayerTypeBreakdown` Zod schemas** in `@fenglimg/fabric-shared` — mirror the TASK-08 runtime types verbatim with all rc.24 additions optional to preserve rc.20 wire-compat (TASK-09).
+- **27 bilingual i18n keys under `cite-coverage.*`** — header / counter labels / 3-value status enum / 6 singular type labels / 2 layer labels (+ `team — review` / `personal — fyi` suffix) / 6 skip-reason labels. zh-CN ↔ en parity guarded by `api-contracts.test.ts` superset-equality test (TASK-09).
+- **`fab doctor --cite-coverage --layer=<team|personal|all>` CLI flag** — string-typed citty arg with `default: "all"` and `valueHint: "team|personal|all"`. Explicitly rejects `"both"` (the rc.20 plan-context vocabulary) to keep the two filter semantics from leaking. New `cli.doctor.errors.invalid-layer` + `cli.doctor.args.layer.description` i18n keys (TASK-10).
+- **Bilingual contract-report renderer** — `appendContractSection` helper in `renderCiteCoverageReport`. Emits `### Contract check` block when `status === 'ok'`, drift-warning line when `'skipped:bootstrap_drift'`, fully suppresses when `'awaiting_marker'` + all counts zero. `hard_violated` line carries `[team — review]` / `[personal — fyi]` layer suffix; per-layer × type cross-tab + `skip_count` histogram + tail `⚠ Unresolved cite IDs: N` line all conditionally rendered (TASK-10).
+- **`docs/test-seed/cli.md` `--layer` row** — curated public-flag list updated with rc.24 inline annotation (TASK-11).
+
+### Changed
+
+- **`BOOTSTRAP_CANONICAL` grew from ~1.4KB to ~2.9KB** — adds three new `## Cite policy` bullets (contract syntax with `→ edit:` example, 6-value skip-reason dictionary, type-routing rule that models class is reference-cite-only and guidelines/processes are deferred to rc.25 LLM-judge). Discovery bullet now mentions personal-layer `KP-*` entries explicitly. The byte-length guarantee comment bumps from `≥ 400 bytes` to `≥ 800 bytes` (TASK-02).
+- **`parseKbLine` in `fabric-hint.cjs` is now a thin shim** over the inlined CJS parser — the 65-LOC inline regex/bracket/paren extractor is gone. Legacy lax id forms (e.g. `KP-001` without the letter-middle segment) no longer match — strict grammar is `K[TP]-[A-Z]+-\d+`. Two rc.20 test cases that exercised the lax form are now legitimate rejects (TASK-04).
+- **`extractAndWriteAssistantTurnsBestEffort`** writes `cite_commitments` into every emitted `assistant_turn_observed` event (explicit `[]` when empty so the on-disk shape is uniform across rc.20-rc.24 events) (TASK-04).
+- **`CLI surface snapshot`** regenerated for the `--layer` arg addition — exact 7-line citty-descriptor block inserted at the `json`→`since` alphabetical position. Snapshots for `install` / `serve` / `uninstall` / `config` are byte-identical to rc.23 (TASK-11).
+
+### Fixed
+
+- **`packages/server/src/services/event-ledger.test.ts` strict-typecheck regression** — two test fixtures at L74 + L112 omitted `cite_commitments`, which Zod accepts at parse-time via `.default([])` but the TypeScript *input* type requires explicitly (same rc.21 shape: `.default()` does not relax `z.input` types). Both fixtures now include `cite_commitments: []`. Caught by the release-rc skill's Phase 3 `pnpm typecheck` gate before tag — this is exactly the rc.21 hotfix pattern the gate was designed to surface.
+
+### Breaking (require `fab install` rerun)
+
+- **`BOOTSTRAP_CANONICAL` byte content changed** — the existing three-end managed blocks (`AGENTS.md` for Claude Code / Codex, `CLAUDE.md` for Cursor) are now out of sync with the canonical source. Running `fab install` will overwrite them with the new contract-policy section. The drift gate at `inspectL1BootstrapSnapshotDrift` will report `status: "drift"` until the install completes.
+- **Hook template `fabric-hint.cjs` updated** — emits `cite_commitments` on every assistant turn, requires the new `lib/cite-line-parser.cjs` + `lib/cite-contract-reminder.cjs` files. Existing rc.23-installed hooks will continue to function (graceful degrade: degraded mode emits `cite_commitments: []` if the parser lib is missing) but won't surface the new soft-reminder. `fab install` reships all three.
+
+### Migration
+
+After upgrade, run `fab uninstall && fab install` to sync `BOOTSTRAP_CANONICAL` + hook templates + parser libs across all three clients (Claude Code / Codex CLI / Cursor). Until reinstall completes:
+
+- `fab doctor --cite-coverage` will render `contract_check: skipped (bootstrap drift — run \`fab install\`)` in place of the contract-metrics block — this is the **B5-α drift gate** behaving correctly (refuses to activate the contract policy while the toolchain is partially upgraded).
+- The Stop-hook soft reminder will not fire on rc.23-era installed hooks (degraded mode: no `cite_commitments` parsed → no offenders detected).
+
+Post-install, the first `fab doctor --cite-coverage` invocation emits the `cite_contract_policy_activated` marker and opens the contract audit window. The rc.20 marker (`cite_policy_activated`) is independent — it does not need to be re-activated.
+
+### Deferred to rc.25+
+
+- **LLM-judge path for `guideline` / `process` types** — these knowledge types currently fall into the `deferred_llm_judge` bucket (cross-tab only, no contract enforcement). Semantic rules need natural-language interpretation that the rc.24 operator vocabulary intentionally avoids (B1 grill-me lock).
+- **User-level cite-policy override (`~/.fabric/AGENTS.md`)** — global policy customization across multiple projects. Bootstrap-canonical is currently project-scoped only.
+- **Operator vocabulary expansion** — `sequencing` / `conditional` / `aspectual` operators (e.g. `before:<symbol>`, `if:<condition>`). Data-driven from `skip_count[reason]` frequency in real-world deployments; ratio of `skip:other:<text>` to enumerated reasons determines which slot to promote next.
+- **`require:` / `forbid:` over diff content** (currently file-path substring only) — gated on `edit_intent_checked` schema widening to carry diff text. Operator surface unchanged; only comparator semantics tighten.
+- **Per-layer `hard_violated` split** — currently aggregated at `contract_metrics.hard_violated` with the report's `layer_filter` deciding the line suffix. A split view would require the inner cross-tab to grow a 7th bucket per layer.
+
+### Tasks
+
+12 tasks across 4 waves (single commit per task per release-rc convention):
+
+- **Wave 1 — schema + bootstrap**: TASK-01 (event-ledger `cite_commitments` + marker schema), TASK-02 (`BOOTSTRAP_CANONICAL` contract syntax + personal layer mention).
+- **Wave 2 — hooks**: TASK-03 (shared cite-line parser), TASK-04 (CJS twin + hook inline-bundle + parity test), TASK-05 (Stop hook soft reminder lib).
+- **Wave 3 — doctor**: TASK-06 (marker emitter with drift gate), TASK-07 (`loadKbIdTypeMap` server-side loader), TASK-08 (`runDoctorCiteCoverage` contract metrics + type routing + comparator).
+- **Wave 4 — surface + release**: TASK-09 (shared `citeCoverageReportSchema` + 27 i18n keys), TASK-10 (`--layer` CLI flag + bilingual renderer), TASK-11 (CLI surface snapshot regen), TASK-12 (version bump + CHANGELOG + tag).
+
+### Verification
+
+- **Tests**: 396 shared + 553 server (+ 1 pre-existing skip) + 619 CLI = **1568 passing**, zero failures.
+- **typecheck**: clean (after TASK-12 fix-forward of the two pre-existing `event-ledger.test.ts` `cite_commitments`-missing fixtures — rc.21 precedent).
+- **lint** (`knip --strict`): clean.
+- **CLI surface snapshot**: single new `--layer` arg block in `'doctor' surface`; no other commands' snapshots touched.
+- **Cite coverage on this repo**: rc.24 self-host run pending the post-tag `fab install` step (drift gate refuses to activate the contract window until the new BOOTSTRAP_CANONICAL is propagated).
+
+### Notes
+
+- The CJS twin pattern at `templates/hooks/lib/cite-line-parser.cjs` carries a parity-test guard. Future edits to either the TS source or the CJS mirror MUST keep `cite-line-parser-parity.test.ts` green.
+- `KnowledgeTypeSchema` (`packages/shared/src/schemas/api-contracts.ts`) remains SINGULAR — the TASK-05 hook-side `CONTRACT_REQUIRED_TYPES` defensively accepts both singular + plural for forward-compat, but no boundary in the rc.24 codebase actually emits plural.
+- `werewolf-minigame` consumer-repo regression deferred to post-tag manual verification, matching rc.23 precedent.
+
 ## [2.0.0-rc.23] - 2026-05-18
 
 Combined 12-scope release. Bootstrap + AGENTS.md realigned to the actual two-step API, api-contracts.ts taken through a schema sweep, read-side description auto-heal mirrored from rc.22 D2 pattern, cite policy widened with two new sentinels, MCP startup made non-blocking with a 5s handler gate, stale serve-lock surfaced as a doctor advisory, and the rc.5-era `fab scan` baseline mechanism + sections-enum tuple fully removed in favor of a clean-state KB that fills from the Skill onboarding phase. Two new tracks added during in-session grill: F8a/F8b clean-state demolition + F8c onboard-phase mechanism (S5 slot enum + onboard-coverage CLI + `onboard_slot` frontmatter + dismiss/reset). Gemini batch review verdict captured in TASK-011.
