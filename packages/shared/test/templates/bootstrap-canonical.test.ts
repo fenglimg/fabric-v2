@@ -24,9 +24,11 @@ describe("bootstrap-canonical", () => {
       expect(BOOTSTRAP_CANONICAL).toContain("## Cite policy");
     });
 
-    it("is at least 400 bytes (utf-8)", () => {
+    it("is at least 800 bytes (utf-8)", () => {
+      // rc.24: grew from ≥400 with cite-contract syntax bullets (operators +
+      // skip-reason dictionary + type routing + personal-layer mention).
       expect(Buffer.byteLength(BOOTSTRAP_CANONICAL, "utf8")).toBeGreaterThanOrEqual(
-        400,
+        800,
       );
     });
 
@@ -48,6 +50,40 @@ describe("bootstrap-canonical", () => {
 
       it("references the fab doctor --cite-coverage audit command", () => {
         expect(BOOTSTRAP_CANONICAL).toContain("fab doctor --cite-coverage");
+      });
+
+      describe("cite contract syntax (rc.24)", () => {
+        // rc.24: `[recalled]` cite lines for decisions/pitfalls类 entries must
+        // append operator-based contract commitments. BOOTSTRAP_CANONICAL is
+        // the byte-locked source of truth for the contract vocabulary —
+        // operators, skip-reason dictionary, and type routing all live here
+        // first, then propagate to hooks + doctor via fab install.
+
+        it("contains-operator-syntax — shows the `→ edit:` operator anchor", () => {
+          expect(BOOTSTRAP_CANONICAL).toContain("→ edit:");
+        });
+
+        it("contains-operator-syntax — enumerates all 5 operators", () => {
+          expect(BOOTSTRAP_CANONICAL).toContain("edit:<glob>");
+          expect(BOOTSTRAP_CANONICAL).toContain("!edit:<glob>");
+          expect(BOOTSTRAP_CANONICAL).toContain("require:<symbol>");
+          expect(BOOTSTRAP_CANONICAL).toContain("forbid:<symbol>");
+          expect(BOOTSTRAP_CANONICAL).toContain("skip:<reason>");
+        });
+
+        it("contains-skip-reason-dict — enumerates all 6 skip reasons", () => {
+          expect(BOOTSTRAP_CANONICAL).toContain(
+            "sequencing | conditional | semantic | aesthetic | architectural | other:<text>",
+          );
+        });
+
+        it("contains-type-routing-bullet — documents models reference-cite policy", () => {
+          expect(BOOTSTRAP_CANONICAL).toContain("models 类引用为 reference cite");
+        });
+
+        it("contains-KP-personal-mention — Discovery bullet calls out personal layer", () => {
+          expect(BOOTSTRAP_CANONICAL).toContain("KP-*");
+        });
       });
 
       describe("KB: none sentinel enums (rc.23 T8c)", () => {
