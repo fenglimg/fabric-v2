@@ -1,0 +1,64 @@
+{
+  "id": "TASK-012",
+  "title": "Scope D T-D5: demote agents_meta_stale from error → warning in doctor",
+  "scope": "packages/server/src/services/doctor.ts + tests",
+  "action": "Modify",
+  "description": "In createMetaCheck (doctor.ts:2232-2240), change `agents_meta_stale` severity from `error` to `warning`. Update resolution message: 'Benign — engine auto-heals on next plan-context/get-sections call. Run `fab doctor --fix` for explicit reconciliation.' Existing 'fixable_error' classification → 'fixable_warning' (or whichever severity tier the doctor framework supports for warnings with auto-fix).",
+  "files": [
+    {
+      "path": "packages/server/src/services/doctor.ts",
+      "action": "modify",
+      "target": "createMetaCheck stale branch at lines 2232-2240",
+      "change": "Change `issueCheck(..., 'error', 'fixable_error', 'agents_meta_stale', ...)` to `issueCheck(..., 'warning', 'fixable_warning', 'agents_meta_stale', ...)`. Update message + resolution text per task description (engine auto-heals; --fix for explicit). NOTE: verify the doctor framework supports a 'fixable_warning' tier — if not, use the closest equivalent (likely just 'warning' with the fix-path still wired via the existing doctor.ts:1031-1071 block — that block fixes regardless of severity tier as long as the code is in its list)."
+    },
+    {
+      "path": "packages/server/src/services/doctor.test.ts",
+      "action": "modify",
+      "target": "createMetaCheck stale-path tests",
+      "change": "Update assertions: (1) stale meta produces a warning (not error) check entry; (2) `fab doctor` exits with code 0 (warning doesn't fail); (3) `fab doctor --fix` still reconciles the stale meta (via existing reconcile block at 1031); (4) resolution text references auto-heal."
+    }
+  ],
+  "implementation": [
+    "Inspect doctor.ts framework for warning severity tier — confirm 'fixable_warning' or equivalent exists",
+    "Update createMetaCheck stale branch (lines 2232-2240) to use warning severity",
+    "Update resolution text",
+    "Verify the fixable-codes registry at doctor.ts:1031-1071 still includes 'agents_meta_stale' (it should — the demotion is about exit-code severity, not fix-path participation)",
+    "Update doctor.test.ts assertions",
+    "Run `pnpm --filter @fabric/server test doctor` to confirm green",
+    "Manually verify: `fab doctor` with stale meta exits 0 (not 1)"
+  ],
+  "reference": {
+    "pattern": "Existing warning-severity checks in doctor.ts (use grep for `'warning'`)",
+    "files": ["packages/server/src/services/doctor.ts:2225-2243", "packages/server/src/services/doctor.ts:1031-1071"],
+    "examples": "Locate a peer warning check (e.g., some lint rules) and mirror its severity/type pairing"
+  },
+  "convergence": {
+    "criteria": [
+      "agents_meta_stale renders as warning, not error",
+      "`fab doctor` with stale meta exits code 0",
+      "`fab doctor --fix` still reconciles agents_meta_stale (existing fix path unbroken)",
+      "Resolution message references 'engine auto-heals on next plan-context/get-sections call'",
+      "doctor.test.ts assertions updated; suite green"
+    ]
+  },
+  "depends_on": [],
+  "cli_execution_id": "rc-22-combined-2026-05-18-TASK-012",
+  "cli_execution": { "strategy": "new" },
+  "rationale": {
+    "chosen_approach": "Demote severity tier; preserve fix path",
+    "alternatives_considered": ["Remove the check entirely (loses operator visibility into drift)", "Keep as error (CI false-positives once auto-heal lands)"],
+    "decision_factors": ["Auto-heal makes drift benign", "Operator still wants drift surfaced for transient cases", "CI exit-code 0 prevents pipeline flakiness"],
+    "tradeoffs": "Slight risk that operators ignore the warning permanently (mitigated by hook banner from T-D4 surfacing actual heal events)"
+  },
+  "test": {
+    "manual_checks": ["Run `fab doctor` on a synthesized stale-meta repo, confirm exit code 0 + warning text"],
+    "success_metrics": ["doctor.test.ts green", "exit code semantics correct"],
+    "unit": [
+      "meta_check_stale_emits_warning_not_error",
+      "doctor_exits_zero_with_stale_meta",
+      "doctor_fix_still_reconciles_stale",
+      "meta_check_resolution_references_auto_heal"
+    ],
+    "integration": []
+  }
+}

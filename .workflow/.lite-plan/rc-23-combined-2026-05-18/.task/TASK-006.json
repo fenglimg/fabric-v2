@@ -1,0 +1,79 @@
+{
+  "id": "TASK-006",
+  "title": "a-C1: extend FabExtractKnowledge schema with 4 optional fields (intent_clues / tech_stack / impact / must_read_if) + skill prompts fill",
+  "scope": "api-contracts schema + extract-knowledge handler + frontmatter writer + archive/import skill prompts",
+  "action": "Modify",
+  "description": "KB entries currently have intent_clues / tech_stack / impact / must_read_if implicit in description prose, costing the LLM extra read to triage relevance. Add four optional structured fields to FabExtractKnowledge*Schema (input + output + annotations), persist them to frontmatter on write, and update the fabric-archive + fabric-import skill prompts to teach the LLM how to infer them from raw observations.",
+  "files": [
+    {
+      "path": "packages/shared/src/schemas/api-contracts.ts",
+      "action": "modify",
+      "target": "FabExtractKnowledgeInputSchema + FabExtractKnowledgeOutputSchema + FabExtractKnowledgeAnnotationsSchema",
+      "change": "Add 4 optional string-array (or string) fields: intent_clues, tech_stack, impact, must_read_if; document semantics in .describe()"
+    },
+    {
+      "path": "packages/server/src/services/extract-knowledge.ts",
+      "action": "modify",
+      "target": "frontmatter writer",
+      "change": "Pass-through the 4 new fields into emitted .md frontmatter (keep optional — omit when absent)"
+    },
+    {
+      "path": "packages/shared/src/skills/fabric-archive.md (or skill prompt file)",
+      "action": "modify",
+      "target": "Extraction prompt body",
+      "change": "Add a section instructing the LLM to populate intent_clues / tech_stack / impact / must_read_if from observed evidence; provide one tiny example"
+    },
+    {
+      "path": "packages/shared/src/skills/fabric-import.md",
+      "action": "modify",
+      "target": "Extraction prompt body",
+      "change": "Same as archive skill"
+    }
+  ],
+  "implementation": [
+    "Read api-contracts.ts to find FabExtractKnowledge*Schema definitions",
+    "Add the 4 optional fields to all three schemas + corresponding describe() copy",
+    "Read extract-knowledge.ts and locate the frontmatter assembly site; thread through the new fields",
+    "Update fabric-archive + fabric-import skill markdown prompts with the new field semantics + 1 worked example each",
+    "Add unit tests for: (a) emit with all 4 fields, (b) emit with none, (c) emit with subset",
+    "Run typecheck + tests"
+  ],
+  "reference": {
+    "pattern": "Existing optional frontmatter fields (tags / id / slug)",
+    "files": [
+      "packages/shared/src/schemas/api-contracts.ts (FabExtractKnowledge*)",
+      "packages/server/src/services/extract-knowledge.ts (frontmatter assembly)"
+    ],
+    "examples": "Mirror how `tags: string[]` was originally added"
+  },
+  "convergence": {
+    "criteria": [
+      "Schema accepts all 4 new fields as optional with describe text",
+      "Emitted .md frontmatter contains the 4 fields when supplied, omits when undefined",
+      "Both skill prompts mention the 4 new fields",
+      "Unit tests pass for present/absent/subset cases"
+    ]
+  },
+  "depends_on": ["TASK-002"],
+  "cli_execution_id": "rc-23-combined-2026-05-18-TASK-006",
+  "cli_execution": { "strategy": "new" },
+  "rationale": {
+    "chosen_approach": "Optional fields (additive, non-breaking) — let LLM populate where useful, no migration needed for older entries",
+    "alternatives_considered": [
+      "Required fields (rejected: forces migration of all existing entries)",
+      "Single combined `metadata: object` field (rejected: lower structure → worse LLM relevance scoring)"
+    ],
+    "decision_factors": ["Backward compatibility within KB", "Optional = safe for partial adoption"],
+    "tradeoffs": "Schema surface grows by 4 fields — manageable; describe copy must be tight"
+  },
+  "test": {
+    "manual_checks": [
+      "Run fabric-archive skill, supply intent_clues=['session-start'], verify .md frontmatter has the field"
+    ],
+    "success_metrics": ["LLM populates fields ≥30% of the time after skill update"],
+    "unit": [
+      "packages/server/src/services/__tests__/extract-knowledge.test.ts (add 3 cases)"
+    ],
+    "integration": []
+  }
+}

@@ -1,0 +1,70 @@
+{
+  "id": "TASK-007",
+  "title": "a-C2: fab doctor --enrich-descriptions — backfill missing intent_clues/tech_stack/impact/must_read_if on legacy entries",
+  "scope": "packages/cli/src/commands/doctor.ts + packages/server/src/services/doctor.ts",
+  "action": "Add",
+  "description": "After TASK-006 adds the 4 optional fields, legacy KB entries written before rc.23 won't have them. Add a `fab doctor --enrich-descriptions` subcommand that scans .fabric/knowledge/**/*.md, lists entries missing any of the 4 fields, and either (a) writes deterministic stub values, or (b) prompts the user (interactive mode) to either fill or skip per entry. Non-interactive `--enrich-descriptions --auto` writes stubs only.",
+  "files": [
+    {
+      "path": "packages/cli/src/commands/doctor.ts",
+      "action": "modify",
+      "target": "doctor command builder + flag definitions",
+      "change": "Add --enrich-descriptions [--auto] flag; route to new service handler"
+    },
+    {
+      "path": "packages/server/src/services/doctor.ts",
+      "action": "modify",
+      "target": "doctor service runner",
+      "change": "Add enrichDescriptions(projectRoot, {auto:boolean}) — scan KB files, for each entry missing any of the 4 fields prompt or stub-fill, then atomicWriteText with revised frontmatter"
+    }
+  ],
+  "implementation": [
+    "Scope the scan to .fabric/knowledge/**/*.md only (both team + personal roots)",
+    "Parse frontmatter via existing parser used elsewhere in services/doctor.ts",
+    "For each entry, detect missing field set ⊆ {intent_clues, tech_stack, impact, must_read_if}",
+    "In --auto mode: emit empty-array stubs (intent_clues: []) and log per-file decision",
+    "In interactive mode: surface one prompt per file with a multi-select for which fields to leave empty vs fill — use the existing CLI inquirer wrapper",
+    "Atomically rewrite the .md file preserving body content",
+    "Emit a doctor_enrich_descriptions event for each modified file",
+    "Add tests covering: (a) entry already complete → skipped, (b) entry missing 2 fields → stubs added, (c) idempotent re-run"
+  ],
+  "reference": {
+    "pattern": "fab doctor --fix existing subcommand routing",
+    "files": [
+      "packages/cli/src/commands/doctor.ts",
+      "packages/server/src/services/doctor.ts (reconcileKnowledge invocation pattern)"
+    ],
+    "examples": "Mirror reconcileKnowledge result-event shape"
+  },
+  "convergence": {
+    "criteria": [
+      "`fab doctor --enrich-descriptions --auto` scans + stubs missing fields with exit-code 0",
+      "Existing complete entries are unchanged (idempotent)",
+      "doctor_enrich_descriptions events emitted per modified file",
+      "Tests pass for three scenarios"
+    ]
+  },
+  "depends_on": ["TASK-006"],
+  "cli_execution_id": "rc-23-combined-2026-05-18-TASK-007",
+  "cli_execution": { "strategy": "new" },
+  "status": "completed",
+  "rationale": {
+    "chosen_approach": "Doctor subcommand (consistent with rc.22 doctor surface) + auto/interactive split",
+    "alternatives_considered": [
+      "Run-on-every-scan automatic backfill (rejected: surprises user; should be explicit)",
+      "Migration codemod (rejected: doctor command is the canonical place for KB hygiene)"
+    ],
+    "decision_factors": ["UX consistency with existing fab doctor pattern", "Explicit user invocation"],
+    "tradeoffs": "Adds one more doctor flag — small surface increase; pays back via clean KB"
+  },
+  "test": {
+    "manual_checks": [
+      "Run `fab doctor --enrich-descriptions --auto` on a repo with mixed pre/post-rc.23 entries; verify only legacy entries are touched"
+    ],
+    "success_metrics": ["Zero unchanged-but-modified-mtime files (idempotency)"],
+    "unit": [
+      "packages/server/src/services/__tests__/doctor.test.ts (add 3 cases)"
+    ],
+    "integration": []
+  }
+}

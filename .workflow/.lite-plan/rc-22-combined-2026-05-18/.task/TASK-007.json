@@ -1,0 +1,70 @@
+{
+  "id": "TASK-007",
+  "title": "Scope C T7: drop baseline tag derivation (γ) — emit tags: []",
+  "scope": "packages/cli/src/commands/scan.ts + tests",
+  "action": "Refactor",
+  "description": "Strategy γ: eliminate the bug class by removing `deriveTagsFromForensic` from the baseline emit path. Baseline frontmatter renders `tags: []`. If no other callers remain, delete `deriveTagsFromForensic` entirely (dead-code cleanup per pre-user clean-slate).",
+  "files": [
+    {
+      "path": "packages/cli/src/commands/scan.ts",
+      "action": "modify",
+      "target": "baseline emit path at line 138 + 7 builder signatures",
+      "change": "Remove `const tags = deriveTagsFromForensic(forensic);` at line 138. Update all 7 baseline builder signatures (buildTechStackEntry, buildModuleStructureEntry, buildBuildConfigEntry, buildCodeStyleEntry, buildCIConfigEntry, buildReadmeFirstParaEntry, buildProjectBriefEntry) to drop the `tags` parameter. Each builder internally constructs MarkdownEntry with `tags: []` (existing tags=[] branch at scan.ts:978 already handles this — verify it renders correctly to `tags: []`)."
+    },
+    {
+      "path": "packages/cli/src/commands/scan.ts",
+      "action": "delete-if-orphan",
+      "target": "deriveTagsFromForensic function at line 1045",
+      "change": "After removing the call site, run `grep deriveTagsFromForensic` over the codebase. If zero remaining references, delete the function definition (and its tests if scoped). If any caller remains outside the scan path, leave the function and document why in a comment."
+    },
+    {
+      "path": "packages/cli/__tests__/scan-builders.test.ts",
+      "action": "modify",
+      "target": "tags assertions across 7 builder tests",
+      "change": "Change all `expect(tags).toEqual([...derived])` style assertions to `expect(tags).toEqual([])`. Drop tag-input fixtures from builder invocations to match new signature. Add one test 'baseline_tags_always_empty' that runs all 7 builders against varied forensic fixtures and asserts tags=[] universally."
+    }
+  ],
+  "implementation": [
+    "Remove deriveTagsFromForensic call at scan.ts:138",
+    "Update 7 baseline builder signatures to drop tags parameter",
+    "Run typecheck — fix any cascade compile errors in builder bodies (likely none if they only pass tags through)",
+    "grep `deriveTagsFromForensic` — if zero references, delete fn at scan.ts:1045 + any sibling tests/test-imports",
+    "Update scan-builders.test.ts tag assertions to expect []",
+    "Verify YAML render path at scan.ts:978 (existing tags=[] branch) produces `tags: []` literally (not `tags:\\n  - []` or similar)",
+    "Run `pnpm --filter @fabric/cli test scan` to confirm green",
+    "Grep `searchEntries` in review.ts:765 to confirm consumer-side gracefully handles empty tags (existing behavior; just no tag matches for baselines now)"
+  ],
+  "reference": {
+    "pattern": "Existing tags=[] render branch at scan.ts:978",
+    "files": ["packages/cli/src/commands/scan.ts:138", "packages/cli/src/commands/scan.ts:978", "packages/cli/src/commands/scan.ts:1045"],
+    "examples": "scan.ts:978 has the empty-tags rendering branch — that's the path baselines flow into post-T7"
+  },
+  "convergence": {
+    "criteria": [
+      "All 7 baseline builders emit `tags: []` regardless of forensic input",
+      "scan-builders.test.ts asserts tags=[] for all 7 builders + new universal-baseline-tags test",
+      "If deleted: `grep deriveTagsFromForensic` returns zero matches; if retained: a comment documents the remaining consumer",
+      "agents.meta.json post-scan does NOT regress its tags-excluded serialization (verified by knowledge-meta-builder.test.ts still green)",
+      "searchEntries (review.ts:765) still works — baselines just no longer tag-match (intended)"
+    ]
+  },
+  "depends_on": [],
+  "cli_execution_id": "rc-22-combined-2026-05-18-TASK-007",
+  "cli_execution": { "strategy": "new" },
+  "rationale": {
+    "chosen_approach": "γ-strategy: eliminate the bug class by dropping the derivation entirely",
+    "alternatives_considered": ["α (fix 4 bugs in derivation — code-style.md still mistagged 'typescript')", "β (per-builder semantic tags — over-engineered for 6 fixed slots)"],
+    "decision_factors": ["Filtering baselines by `type` is already precise", "Fewer surface bugs over time", "Pre-user clean-slate allows breaking change"],
+    "tradeoffs": "searchEntries cannot tag-match baselines — acceptable because users can filter by `type` instead"
+  },
+  "test": {
+    "manual_checks": ["Run fab scan on this repo, inspect frontmatter of code-style.md (post-rename from T5) — confirm tags: []"],
+    "success_metrics": ["scan-builders.test.ts green", "no regression in knowledge-meta-builder.test.ts", "scan.ts file shrinks (deriveTagsFromForensic deleted)"],
+    "unit": [
+      "all_baselines_emit_empty_tags",
+      "deriveTagsFromForensic_deleted_or_documented",
+      "yaml_renders_tags_empty_array_literal"
+    ],
+    "integration": []
+  }
+}

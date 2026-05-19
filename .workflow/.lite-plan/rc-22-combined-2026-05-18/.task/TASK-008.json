@@ -1,0 +1,78 @@
+{
+  "id": "TASK-008",
+  "title": "Scope D T-D1: loadActiveMeta helper (strict + graceful variants) + knowledge_meta_auto_healed event",
+  "scope": "packages/server/src/services/load-active-meta.ts (new) + packages/shared/src/schemas/event-ledger.ts",
+  "action": "Create",
+  "description": "New module exposing two entry points: `loadActiveMeta(projectRoot)` (STRICT — throws on rebuild failure) and `loadActiveMetaOrStale(projectRoot)` (GRACEFUL — falls back to on-disk stale meta with degraded:true flag on rebuild failure). Internally: read on-disk meta → call buildKnowledgeMeta(projectRoot) → compare revision hashes → if mismatch, writeKnowledgeMeta to persist and return with auto_healed:true; if match, return on-disk with auto_healed:false. When auto-heal triggers, append knowledge_meta_auto_healed event to events.jsonl with previous_revision_hash + revision_hash + trigger:'read'.",
+  "files": [
+    {
+      "path": "packages/shared/src/schemas/event-ledger.ts",
+      "action": "modify",
+      "target": "event_type enum + discriminated union",
+      "change": "Add new event shape `knowledge_meta_auto_healed` with fields: `previous_revision_hash: string`, `revision_hash: string`, `trigger: 'read'` (literal — currently only one trigger), `caller: 'planContext' | 'getKnowledgeSections' | 'getKnowledge' | 'extractKnowledge'` (optional but recommended for telemetry). Add to discriminated union at line 432."
+    },
+    {
+      "path": "packages/shared/src/schemas/event-ledger.test.ts",
+      "action": "modify",
+      "target": "schema parse coverage",
+      "change": "Add round-trip parse fixture for knowledge_meta_auto_healed."
+    },
+    {
+      "path": "packages/server/src/services/load-active-meta.ts",
+      "action": "create",
+      "target": "new module",
+      "change": "Export type `LoadActiveMetaResult = { meta: AgentsMeta; auto_healed: boolean; previous_revision_hash: string; revision_hash: string }`. Export type `LoadActiveMetaOrStaleResult = LoadActiveMetaResult & { degraded: boolean; error?: string }`. Export `async function loadActiveMeta(projectRoot, opts?: { caller?: string }): Promise<LoadActiveMetaResult>` — reads on-disk meta via readAgentsMeta, calls buildKnowledgeMeta to get derived, compares revisions; on mismatch calls writeKnowledgeMeta and returns auto_healed:true; on rebuild THROWS. Export `async function loadActiveMetaOrStale(projectRoot, opts?)` — same flow but rebuild failure → return on-disk meta + degraded:true + error:string. Both emit knowledge_meta_auto_healed event when auto-heal triggers (best-effort try/catch around appendEventLedgerEvent so telemetry can't break read path)."
+    },
+    {
+      "path": "packages/server/src/services/load-active-meta.test.ts",
+      "action": "create",
+      "target": "new test file",
+      "change": "Tests: (1) fresh meta (revision matches derived) → no auto-heal, auto_healed:false, no event emitted; (2) stale meta (revisions differ) → auto-heal, writeKnowledgeMeta called once, event emitted with previous + new hash; (3) build failure under strict mode → throws; (4) build failure under OrStale → returns on-disk meta with degraded:true + error string; (5) auto-heal emits event with correct caller field when opts.caller supplied; (6) idempotent: second call after first auto-heal → no second heal (meta is now fresh)."
+    }
+  ],
+  "implementation": [
+    "Add knowledge_meta_auto_healed schema first",
+    "Create load-active-meta.ts with both functions sharing internal logic",
+    "Wire knowledge_meta_auto_healed event emission via appendEventLedgerEvent (best-effort)",
+    "Write 6 unit tests covering all enumerated cases (use vitest mocks for buildKnowledgeMeta failure path)",
+    "Verify schema round-trips in event-ledger.test.ts",
+    "Run `pnpm --filter @fabric/server test load-active-meta` to confirm green"
+  ],
+  "reference": {
+    "pattern": "Existing readAgentsMeta + writeKnowledgeMeta in knowledge-meta-builder.ts",
+    "files": ["packages/server/src/services/knowledge-meta-builder.ts:80-120", "packages/shared/src/schemas/event-ledger.ts:107"],
+    "examples": "writeKnowledgeMeta result shape + readAgentsMeta helper provide the building blocks; event_ledger_truncated event shape at line 107 is the precedent for adding new events"
+  },
+  "convergence": {
+    "criteria": [
+      "Two named exports: loadActiveMeta (strict) and loadActiveMetaOrStale (graceful)",
+      "Strict mode throws on rebuild failure; graceful mode returns degraded:true",
+      "Fresh meta (revision matches derived) → auto_healed:false, no event emitted, no write",
+      "Stale meta → writeKnowledgeMeta called exactly once + knowledge_meta_auto_healed event emitted",
+      "Event payload includes previous_revision_hash, revision_hash, trigger:'read', and caller when supplied",
+      "6 unit tests green; schema round-trip green"
+    ]
+  },
+  "depends_on": [],
+  "cli_execution_id": "rc-22-combined-2026-05-18-TASK-008",
+  "cli_execution": { "strategy": "new" },
+  "rationale": {
+    "chosen_approach": "Two entry points (strict + graceful) — let each caller pick the right failure semantics",
+    "alternatives_considered": ["Single graceful entry (sections/get/extract risk silent corruption)", "Single strict entry (planContext hint path becomes brittle)"],
+    "decision_factors": ["planContext is best-effort hint — degradation acceptable", "Sections/get/extract are authoritative — must fail loud", "Symmetry with existing read/write split in knowledge-meta-builder"],
+    "tradeoffs": "Two functions to maintain (small cost; tests fully cover both branches)"
+  },
+  "test": {
+    "manual_checks": ["Manually corrupt on-disk meta revision (edit string), trigger any read-side caller, observe heal + event in events.jsonl"],
+    "success_metrics": ["6 new tests pass", "Schema test green", "No regression in knowledge-meta-builder.test.ts"],
+    "unit": [
+      "loadActiveMeta_fresh_no_heal",
+      "loadActiveMeta_stale_heals_and_emits",
+      "loadActiveMeta_build_failure_strict_throws",
+      "loadActiveMetaOrStale_build_failure_returns_degraded",
+      "loadActiveMeta_caller_field_in_event",
+      "loadActiveMeta_idempotent_after_heal"
+    ],
+    "integration": []
+  }
+}

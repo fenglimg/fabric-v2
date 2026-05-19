@@ -1,0 +1,98 @@
+{
+  "id": "TASK-014",
+  "title": "Scope E T-E1 (Option 2 — root cause): fix reconcileKnowledge dual-root scan + force-write on revision drift",
+  "scope": "packages/server/src/services/knowledge-sync.ts + tests",
+  "action": "Fix",
+  "description": "Root-cause fix in reconcileKnowledge: (1) extend findRuleFiles to scan personal layer (~/.fabric/knowledge/) alongside team root, mirroring findKnowledgeFiles dual-root pattern in knowledge-meta-builder.ts:335-383; (2) after the per-file loop, compare on-disk meta.revision_hash to derived revision via buildKnowledgeMeta — if mismatch, force writeKnowledgeMeta even when events.length === 0. Fixes the per-file-content-hash gate that previously suppressed top-level schema/revision drift fixes.",
+  "files": [
+    {
+      "path": "packages/server/src/services/knowledge-sync.ts",
+      "action": "modify",
+      "target": "findRuleFiles at lines 145-170",
+      "change": "Extend findRuleFiles to scan BOTH team root (existing) AND personal root (`resolvePersonalRoot()/.fabric/knowledge/`). Mirror findKnowledgeFiles in knowledge-meta-builder.ts:335-383: iterate over [(teamRoot, TEAM_PREFIX), (personalRoot, PERSONAL_PREFIX)], list .md files in each subdir, build relative paths using the appropriate prefix convention. Verify downstream consumer (the for-loop at line 475) handles personal: prefix correctly — it currently joins with projectRoot, so personal-layer paths need either prefix-aware handling OR pass through a resolveContentRefPath-style helper. Pick whichever approach matches what readMetaEntries returns at line 137 (it already includes content_ref paths with PERSONAL_CONTENT_REF_PREFIX, so the comparison should naturally work)."
+    },
+    {
+      "path": "packages/server/src/services/knowledge-sync.ts",
+      "action": "modify",
+      "target": "reconcileKnowledge at lines 460-512, especially the events.length gate at line 508",
+      "change": "After the per-file processing loop completes, compute derived revision: `const derived = await buildKnowledgeMeta(projectRoot); const onDiskMeta = await readAgentsMeta(projectRoot); const revisionDrift = onDiskMeta && derived.meta.revision !== onDiskMeta.revision`. Replace the gate `if (events.length > 0)` with `if (events.length > 0 || revisionDrift)`. When triggered by revisionDrift alone (events empty), still emit a `meta_reconciled` summary event with a synthetic field like `force_write_reason: 'revision_drift'` (or extend the existing event shape minimally — coordinate with T-D1 event schema patterns). Append the resulting reconciled_files (may be empty when only revision drift)."
+    },
+    {
+      "path": "packages/server/src/services/knowledge-sync.test.ts",
+      "action": "modify",
+      "target": "new regression tests",
+      "change": "Tests: (1) stale meta with no per-file content drift → reconcile DOES write the new meta (regression for the events.length gate bug); (2) personal-layer KP-DEC-9999 entry on disk → appears in agents.meta.json after reconcile (regression for findRuleFiles team-only bug); (3) idempotent re-run: after first reconcile, second reconcile is no-op (no extra writes, no extra events); (4) team + personal both present → meta indexes both layers correctly; (5) original drift path (per-file content drift) still works (no regression)."
+    }
+  ],
+  "implementation": [
+    "Read knowledge-meta-builder.ts findKnowledgeFiles (lines 335-383) to extract the dual-root scan pattern",
+    "Refactor findRuleFiles to mirror that pattern, returning paths with appropriate prefix conventions",
+    "Verify downstream consumers (reconcileKnowledge loop, processSingleFile) handle prefixed paths — likely already work via readMetaEntries path matching since meta already stores prefixed content_refs",
+    "Add the post-loop revision-drift check in reconcileKnowledge",
+    "Extend writeKnowledgeMeta call condition to include revisionDrift case",
+    "Update event emission to include force_write_reason when triggered by revisionDrift only",
+    "Write 5 new tests covering both bugs (team-only scan + per-file gate) plus regression coverage",
+    "Run `pnpm --filter @fabric/server test knowledge-sync` to confirm green",
+    "Verify no regression in doctor.test.ts (since doctor.ts:1048 calls reconcileKnowledge)"
+  ],
+  "reference": {
+    "pattern": "findKnowledgeFiles dual-root pattern at knowledge-meta-builder.ts:335-383",
+    "files": ["packages/server/src/services/knowledge-sync.ts:145-170", "packages/server/src/services/knowledge-sync.ts:460-512", "packages/server/src/services/knowledge-meta-builder.ts:335-383"],
+    "examples": "knowledge-meta-builder.ts:335-383 is the canonical dual-root scan; mirror its iteration over [(teamRoot, TEAM_PREFIX), (personalRoot, PERSONAL_PREFIX)]"
+  },
+  "convergence": {
+    "criteria": [
+      "findRuleFiles returns entries from BOTH .fabric/knowledge/ AND ~/.fabric/knowledge/ (verified via personal-layer regression test)",
+      "reconcileKnowledge writes agents.meta.json when on-disk revision !== derived revision, even when per-file events empty",
+      "Personal-layer files (e.g., KP-DEC-*) appear in agents.meta.json after reconcile",
+      "Idempotent: second reconcile is no-op",
+      "5 new tests pass; existing knowledge-sync.test.ts + doctor.test.ts green",
+      "MCP startup ensureKnowledgeFresh callers benefit transparently (no callsite changes needed)"
+    ]
+  },
+  "depends_on": ["TASK-008"],
+  "cli_execution_id": "rc-22-combined-2026-05-18-TASK-014",
+  "cli_execution": { "strategy": "resume", "resume_from": "rc-22-combined-2026-05-18-TASK-008" },
+  "rationale": {
+    "chosen_approach": "Option 2 (root cause) — fix findRuleFiles dual-root + reconcile revision-drift gate",
+    "alternatives_considered": ["Option 1 (surgical doctor.ts swap to writeKnowledgeMeta for stale codes) — leaves MCP startup + future callers broken", "No fix relying solely on T-D1 auto-heal — write-side flows still broken"],
+    "decision_factors": ["Symmetry with findKnowledgeFiles", "Multi-caller coverage (MCP startup)", "Pre-user clean-slate allows the bigger fix"],
+    "tradeoffs": "Larger blast radius (touched by doctor + MCP startup) — mitigated by 5 unit tests + T8 dogfood pass"
+  },
+  "risks": [
+    {
+      "description": "findRuleFiles return-type change breaks downstream callers expecting team-only paths",
+      "probability": "Medium",
+      "impact": "Medium",
+      "mitigation": "Pre-flight grep all findRuleFiles consumers; align prefix convention with existing knowledge-meta-builder.findKnowledgeFiles signature; run full server test suite before commit",
+      "fallback": "If unforeseen breakage emerges, split into two callsite-scoped helpers (findTeamRuleFiles + findPersonalRuleFiles) and call both explicitly in reconcileKnowledge"
+    },
+    {
+      "description": "force-write on revision drift could thrash if buildKnowledgeMeta and on-disk revision algorithms disagree spuriously",
+      "probability": "Low",
+      "impact": "High",
+      "mitigation": "Verify buildKnowledgeMeta uses the same computeRevision path that wrote the meta originally; add an explicit assertion in test 3 that idempotency holds after one reconcile",
+      "fallback": "Add a max-write-per-reconcile guard (write at most once per call); log a warning if repeated revision drift detected in single process"
+    }
+  ],
+  "test": {
+    "manual_checks": [
+      "Pre-seed a stub at ~/.fabric/knowledge/decisions/KP-DEC-9999.md, run fab doctor --fix, observe entry appears in agents.meta.json",
+      "Manually corrupt agents.meta.json revision string (not per-file content), run fab doctor --fix, observe meta gets rewritten"
+    ],
+    "success_metrics": [
+      "Both regression tests (per-file-gate + dual-root) green",
+      "Idempotency test green",
+      "doctor.test.ts unaffected (reconcileKnowledge call from doctor.ts:1048 still works)",
+      "MCP startup ensureKnowledgeFresh tests (if scoped) green"
+    ],
+    "unit": [
+      "reconcile_force_write_on_revision_drift_only",
+      "reconcile_indexes_personal_layer_files",
+      "reconcile_idempotent_after_first_run",
+      "reconcile_indexes_team_and_personal_together",
+      "reconcile_per_file_drift_still_triggers_write"
+    ],
+    "integration": []
+  }
+}

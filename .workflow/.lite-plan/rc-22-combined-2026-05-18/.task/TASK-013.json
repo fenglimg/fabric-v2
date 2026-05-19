@@ -1,0 +1,73 @@
+{
+  "id": "TASK-013",
+  "title": "Scope D T-D6: AGENTS.md rule text + fab install re-sync + memory updates",
+  "scope": ".fabric/AGENTS.md + 3-end managed blocks + memory files",
+  "action": "Update",
+  "description": "Update the .fabric/AGENTS.md second bullet to reflect new auto-heal contract, re-run `fab install` to propagate to all three managed blocks (CLAUDE.md / AGENTS.md / .cursor/rules/fabric-bootstrap.mdc), and update the corresponding memory entry. Verify byte-equality across the three ends after install.",
+  "files": [
+    {
+      "path": ".fabric/AGENTS.md",
+      "action": "modify",
+      "target": "second bullet under '行为规则'",
+      "change": "Change `- **`.fabric/agents.meta.json` 严禁手动编辑**:baseline 变更只能通过 `fabric doctor --fix` 接受。` to `- **`.fabric/agents.meta.json` 严禁手动编辑**;engine 会自动同步派生状态,显式 reconcile 跑 `fab doctor --fix`。`"
+    },
+    {
+      "path": "<repo-root>/CLAUDE.md, AGENTS.md, .cursor/rules/fabric-bootstrap.mdc (via fab install)",
+      "action": "regenerate",
+      "target": "managed blocks at all three client ends",
+      "change": "Run `fab install` to propagate .fabric/AGENTS.md content into the three managed blocks. Verify byte-equality post-install: `diff <(awk '/<fabric-managed>/,/<\\/fabric-managed>/' CLAUDE.md) <(awk '/<fabric-managed>/,/<\\/fabric-managed>/' AGENTS.md)` returns empty."
+    },
+    {
+      "path": "/Users/wepie/.claude/projects/-Users-wepie-Desktop-personal-projects-pcf/memory/project_rc19_bootstrap_consolidation.md",
+      "action": "modify",
+      "target": "section noting the AGENTS.md initial content",
+      "change": "Update the section that quotes the second bullet text to reflect the new wording; or add a marginalia note that rc.22 amended the bullet to drop the 'baseline 变更只能通过 doctor --fix' phrasing."
+    },
+    {
+      "path": "/Users/wepie/.claude/projects/-Users-wepie-Desktop-personal-projects-pcf/memory/MEMORY.md",
+      "action": "modify",
+      "target": "rc.22 ledger-rotation entry (after rc.22 ships)",
+      "change": "Replace the rc.22-ledger-rotation entry with a 'rc.22 SHIPPED' entry covering all 5 scopes (A ledger rotation, B baseline filename, C tags drop, D auto-heal, E reconcile fix). Mark in T9 task workflow that this update happens AFTER rc.22 actually ships (post-tag, post-CI green)."
+    }
+  ],
+  "implementation": [
+    "Edit .fabric/AGENTS.md second bullet",
+    "Run `fab install` (from repo root) and observe propagation",
+    "Manually diff the three managed blocks to confirm byte-equality",
+    "Update project_rc19_bootstrap_consolidation.md to note the new wording",
+    "Defer MEMORY.md SHIPPED-entry update until T8/T9 confirm rc.22 lands (i.e., document in T9 post-release checklist; do NOT update MEMORY.md until then)",
+    "Run snapshot drift test if any (`pnpm --filter @fabric/cli test bootstrap-snapshot` etc.) to verify the install produces stable output"
+  ],
+  "reference": {
+    "pattern": "Existing .fabric/AGENTS.md cite-policy section + fab install propagation flow",
+    "files": [".fabric/AGENTS.md", "packages/cli/src/commands/install.ts (if name varies)"],
+    "examples": "rc.20 cite-policy update is the precedent — same workflow (edit source + fab install + diff verify)"
+  },
+  "convergence": {
+    "criteria": [
+      ".fabric/AGENTS.md second bullet uses new wording (no `baseline 变更只能通过 doctor --fix` phrase)",
+      "CLAUDE.md, AGENTS.md (repo root), .cursor/rules/fabric-bootstrap.mdc managed blocks are byte-equal after `fab install`",
+      "Bootstrap snapshot test passes (if such test exists)",
+      "project_rc19_bootstrap_consolidation.md reflects new wording",
+      "MEMORY.md update deferred to T9 post-release (documented in task description, not done here)"
+    ]
+  },
+  "depends_on": [],
+  "cli_execution_id": "rc-22-combined-2026-05-18-TASK-013",
+  "cli_execution": { "strategy": "new" },
+  "rationale": {
+    "chosen_approach": "Single source edit (.fabric/AGENTS.md) + fab install propagation — established pattern",
+    "alternatives_considered": ["Manually edit all 3 ends (违反 fab install 设计)", "Skip the rule text update (leaves docs stale)"],
+    "decision_factors": ["Documentation accuracy matters for downstream users", "Established propagation pattern"],
+    "tradeoffs": "MEMORY.md update has to happen post-ship (T9), small coordination cost"
+  },
+  "test": {
+    "manual_checks": [
+      "Run `fab install` and inspect output for the three target paths",
+      "Diff managed blocks across the three ends — must be byte-equal"
+    ],
+    "success_metrics": ["fab install completes without errors", "Bootstrap snapshot test (if any) stays green", "Manual diff confirms 3-way byte-equality"],
+    "unit": [],
+    "integration": ["fab install snapshot test (if present)"]
+  }
+}

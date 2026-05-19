@@ -1,0 +1,100 @@
+{
+  "id": "TASK-009",
+  "title": "Scope D T-D2: wire loadActiveMeta into 4 engine read callers + extend PlanContextResult",
+  "scope": "packages/server/src/services/{plan-context,knowledge-sections,get-knowledge,extract-knowledge}.ts",
+  "action": "Refactor",
+  "description": "Replace direct readAgentsMeta calls in 4 engine read paths with the appropriate loadActiveMeta variant: planContext → graceful (loadActiveMetaOrStale), getKnowledgeSections + getKnowledge + extractKnowledge → strict (loadActiveMeta). Extend PlanContextResult shape to surface auto_healed, previous_revision_hash, revision_hash so downstream CLI shim (T-D3) can render banner.",
+  "files": [
+    {
+      "path": "packages/server/src/services/plan-context.ts",
+      "action": "modify",
+      "target": "lines 54-69 PlanContextResult type + line 86-90 readAgentsMeta call",
+      "change": "Extend `PlanContextResult` with optional fields `auto_healed?: boolean`, `previous_revision_hash?: string` (revision_hash field already exists). Replace `const meta = await readAgentsMeta(projectRoot);` at line 90 with `const metaResult = await loadActiveMetaOrStale(projectRoot, { caller: 'planContext' }); const meta = metaResult.meta;`. Populate result with `auto_healed: metaResult.auto_healed, previous_revision_hash: metaResult.previous_revision_hash` (only when auto_healed is true, otherwise omit for cleanliness)."
+    },
+    {
+      "path": "packages/server/src/services/knowledge-sections.ts",
+      "action": "modify",
+      "target": "readAgentsMeta callsite(s) in getKnowledgeSections",
+      "change": "Replace direct readAgentsMeta with `const { meta } = await loadActiveMeta(projectRoot, { caller: 'getKnowledgeSections' });`. Strict mode — id-based section lookup must be authoritative."
+    },
+    {
+      "path": "packages/server/src/services/get-knowledge.ts",
+      "action": "modify",
+      "target": "readAgentsMeta callsite(s)",
+      "change": "Replace with `const { meta } = await loadActiveMeta(projectRoot, { caller: 'getKnowledge' });`. Strict."
+    },
+    {
+      "path": "packages/server/src/services/extract-knowledge.ts",
+      "action": "modify",
+      "target": "readAgentsMeta callsite(s) — counter is used here for id allocation",
+      "change": "Replace with `const { meta } = await loadActiveMeta(projectRoot, { caller: 'extractKnowledge' });`. Strict — counter must be fresh for id allocation."
+    },
+    {
+      "path": "packages/server/src/services/plan-context.test.ts",
+      "action": "modify",
+      "target": "test coverage for new auto_healed surfacing",
+      "change": "Add tests: (1) fresh meta → result.auto_healed undefined; (2) stale meta → result.auto_healed:true + previous_revision_hash present; (3) build failure → result.stale:true + meta still usable (graceful degradation)."
+    },
+    {
+      "path": "packages/server/src/services/knowledge-sections.test.ts",
+      "action": "modify",
+      "target": "strict-mode coverage",
+      "change": "Add test: stale meta → auto-heal triggers, getKnowledgeSections still returns expected sections (regression). Build failure → throws (strict semantics preserved)."
+    },
+    {
+      "path": "packages/server/src/services/get-knowledge.test.ts",
+      "action": "modify",
+      "target": "strict-mode coverage",
+      "change": "Add equivalent strict-mode tests."
+    },
+    {
+      "path": "packages/server/src/services/extract-knowledge.test.ts",
+      "action": "modify",
+      "target": "counter-freshness coverage",
+      "change": "Add test: stale meta + extractKnowledge → counter is from healed (fresh) meta, not stale on-disk (regression for id-allocation correctness)."
+    }
+  ],
+  "implementation": [
+    "Update plan-context.ts PlanContextResult type + readAgentsMeta callsite",
+    "Update knowledge-sections.ts, get-knowledge.ts, extract-knowledge.ts call sites (3 files, similar pattern)",
+    "Run typecheck across server package",
+    "Update 4 test files with the enumerated cases",
+    "Run `pnpm --filter @fabric/server test` to confirm green",
+    "Verify no consumer of readAgentsMeta still bypasses loadActiveMeta in the 4 listed engine paths (grep)"
+  ],
+  "reference": {
+    "pattern": "Existing readAgentsMeta usage at plan-context.ts:90 + loadActiveMeta from T-D1",
+    "files": ["packages/server/src/services/plan-context.ts:86-90", "packages/server/src/services/load-active-meta.ts"],
+    "examples": "loadActiveMeta result destructure pattern: `const { meta } = await loadActiveMeta(...)` for strict callers"
+  },
+  "convergence": {
+    "criteria": [
+      "All 4 engine read paths route through loadActiveMeta or loadActiveMetaOrStale (verified by grep)",
+      "PlanContextResult exposes optional auto_healed + previous_revision_hash fields",
+      "Strict callers (sections/get/extract) throw on build failure; graceful caller (planContext) degrades",
+      "All 4 affected test files pass with new tests; no regression in upstream tests"
+    ]
+  },
+  "depends_on": ["TASK-008"],
+  "cli_execution_id": "rc-22-combined-2026-05-18-TASK-009",
+  "cli_execution": { "strategy": "resume", "resume_from": "rc-22-combined-2026-05-18-TASK-008" },
+  "rationale": {
+    "chosen_approach": "Per-caller variant selection — planContext graceful, others strict",
+    "alternatives_considered": ["All-strict (planContext loses degradation safety)", "All-graceful (loses authority guarantees on id-based lookups)"],
+    "decision_factors": ["planContext is hint-time advisor", "sections/get/extract are content-fetch contracts", "extractKnowledge needs fresh counter"],
+    "tradeoffs": "Two variants increase API surface (mitigated by single-module export from T-D1)"
+  },
+  "test": {
+    "manual_checks": ["Trigger a stale meta state, invoke planContext via MCP, confirm result carries auto_healed:true"],
+    "success_metrics": ["All 4 test files green", "No grep-detected residual direct readAgentsMeta in the 4 engine paths"],
+    "unit": [
+      "planContext_surfaces_auto_healed_on_stale",
+      "planContext_no_auto_healed_field_when_fresh",
+      "planContext_degrades_on_build_failure",
+      "getKnowledgeSections_strict_throws_on_build_failure",
+      "getKnowledge_strict_throws_on_build_failure",
+      "extractKnowledge_uses_fresh_counter_post_heal"
+    ],
+    "integration": []
+  }
+}

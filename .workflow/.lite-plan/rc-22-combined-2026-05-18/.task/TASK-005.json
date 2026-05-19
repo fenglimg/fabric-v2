@@ -1,0 +1,85 @@
+{
+  "id": "TASK-005",
+  "title": "Scope B T5: baseline filename unification `${id}--${slug}.md` + auto-migration in fab scan",
+  "scope": "packages/cli/src/commands/scan.ts + tests",
+  "action": "Refactor",
+  "description": "Change baseline KB emit path from `${entry.slug}.md` to `${entry.id}--${entry.slug}.md` (matches promoted-entry format). Add pre-scan `migrateLegacyBaselineFilenames(target)` that scans canonical knowledge dirs for `.md` files NOT matching `KT-[A-Z]+-\\d+--.*\\.md`, reads each frontmatter `id:`, and if id is in the known baseline id allowlist hardcoded in scan.ts, unlinks the old file and writes the new name. Updates content_ref construction at scan.ts:1278. One `fab scan` completes the migration end-to-end.",
+  "files": [
+    {
+      "path": "packages/cli/src/commands/scan.ts",
+      "action": "modify",
+      "target": "baseline emit path at line 171",
+      "change": "Change `join(target, KNOWLEDGE_DIR, entry.target_subdir, \\`${entry.slug}.md\\`)` to `join(target, KNOWLEDGE_DIR, entry.target_subdir, \\`${entry.id}--${entry.slug}.md\\`)`. Note: entry.id is allocated earlier so it's available here in the rendered MarkdownEntry."
+    },
+    {
+      "path": "packages/cli/src/commands/scan.ts",
+      "action": "modify",
+      "target": "content_ref construction at line 1278",
+      "change": "Mirror the filename change: content_ref becomes `${KNOWLEDGE_DIR}/${entry.target_subdir}/${entry.id}--${entry.slug}.md`."
+    },
+    {
+      "path": "packages/cli/src/commands/scan.ts",
+      "action": "modify",
+      "target": "new function migrateLegacyBaselineFilenames + call site in runInitScan",
+      "change": "Add new fn `async function migrateLegacyBaselineFilenames(target: string): Promise<{ migrated: Array<{ from: string; to: string; id: string }> }>`. Hardcode KNOWN_BASELINE_IDS = ['KT-MOD-0001','KT-MOD-0002','KT-MOD-0003','KT-PRO-0001','KT-GLD-0001'] + ci-config id when present. For each canonical KB subdir, readdir; for each `.md` file whose name does NOT match `/^KT-[A-Z]+-\\d+--.*\\.md$/`, read frontmatter, extract id, if id is in KNOWN_BASELINE_IDS + sluggified-name reasonably matches the entry slug -> rename via unlink + atomicWriteText with new content (preserves content; only filename changes). Call this fn at the start of runInitScan, before the candidate-build loop. Side-effect: also update sidecar (.scan-state.json) key entries if they reference the old path."
+    },
+    {
+      "path": "packages/cli/__tests__/scan-builders.test.ts",
+      "action": "modify",
+      "target": "filename assertions (around line 154 and peers)",
+      "change": "Replace bare-slug filename assertions (e.g., expect 'code-style.md') with id-prefixed form (e.g., expect 'KT-MOD-0001--code-style.md' or whichever id the deterministic allocator assigns). Update all 6-7 builder tests that assert filename."
+    },
+    {
+      "path": "packages/cli/__tests__/scan-init.test.ts",
+      "action": "modify",
+      "target": "end-to-end filename + content_ref assertions",
+      "change": "Update assertions on resulting files in .fabric/knowledge/* and agents.meta.json content_ref entries to expect new format. Add new test 'migrates_bare_slug_to_id_prefixed' that pre-seeds a bare-slug baseline file with frontmatter id matching KNOWN_BASELINE_IDS, runs init scan, then asserts old path is unlinked and new id-prefixed path exists with same content."
+    }
+  ],
+  "implementation": [
+    "Add migrateLegacyBaselineFilenames fn near top of scan.ts with KNOWN_BASELINE_IDS hardcoded set",
+    "Wire migration call as first step of runInitScan (before forensic read or right after, but before entry build loop)",
+    "Update line 171 + line 1278 emit paths to id-prefixed format",
+    "Update scan-builders.test.ts filename assertions across 6-7 builders",
+    "Add scan-init.test.ts migration test covering: pre-seeded bare-slug file with matching id → renamed; bare-slug file with unknown id → left alone (NOT renamed); already-id-prefixed file → no-op",
+    "Run `pnpm --filter @fabric/cli test scan` to confirm green",
+    "Run `pnpm --filter @fabric/cli typecheck`"
+  ],
+  "reference": {
+    "pattern": "Existing baseline emit at scan.ts:170-190 + sidecar update flow at scan.ts:181-193",
+    "files": ["packages/cli/src/commands/scan.ts:138-200", "packages/cli/__tests__/scan-builders.test.ts"],
+    "examples": "Use atomicWriteText (already imported) + readFile for migration writes; mirror existing readForensic helper for frontmatter parsing if no helper exists yet"
+  },
+  "convergence": {
+    "criteria": [
+      "All baseline files written by `fab scan` use `${id}--${slug}.md` filename format",
+      "agents.meta.json content_ref entries reflect new filename format after scan",
+      "Pre-seeded bare-slug baseline files with id in KNOWN_BASELINE_IDS are auto-renamed in one `fab scan` run",
+      "Bare-slug files with id NOT in allowlist (e.g., user-promoted KP-* files) are left untouched",
+      "Already-id-prefixed files are no-op (idempotent)",
+      "scan-builders.test.ts + scan-init.test.ts pass with new assertions",
+      "Migration covers all 4 currently-existing legacy bare-slug baselines on this repo (code-style.md, tech-stack.md, module-structure.md, readme-first-paragraph.md)"
+    ]
+  },
+  "depends_on": [],
+  "cli_execution_id": "rc-22-combined-2026-05-18-TASK-005",
+  "cli_execution": { "strategy": "new" },
+  "rationale": {
+    "chosen_approach": "Migration auto-runs inside fab scan; zero extra command, hardcoded allowlist prevents accidental touching of user entries",
+    "alternatives_considered": ["doctor --fix migration (worse UX, two commands)", "One-shot codemod script (extra ceremony)", "Grandfather (defeats cite UX motivation)"],
+    "decision_factors": ["fab scan is already the canonical baseline-emit command", "Allowlist gives safety", "Single-command UX"],
+    "tradeoffs": "Hardcoded allowlist needs update if new baseline slot added later (acceptable; small surface)"
+  },
+  "test": {
+    "manual_checks": ["Pre-seed a bare-slug file in `.fabric/knowledge/guidelines/` matching KT-GLD-0001, run fab scan, observe rename"],
+    "success_metrics": ["All scan-builders.test.ts + scan-init.test.ts assertions green", "Repo-level `fab scan` dogfood produces clean id-prefixed canonical layout"],
+    "unit": [
+      "scan_emits_id_prefixed_filename",
+      "scan_content_ref_id_prefixed",
+      "migrate_legacy_baseline_renames_in_allowlist",
+      "migrate_legacy_skips_unknown_ids",
+      "migrate_legacy_no_op_when_already_prefixed"
+    ],
+    "integration": ["scan-init end-to-end migration roundtrip"]
+  }
+}

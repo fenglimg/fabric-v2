@@ -1,0 +1,57 @@
+{
+  "id": "TASK-002",
+  "title": "Scope A T2: add runExclusive<T>(path, fn) to shared atomic-write LedgerWriteQueue",
+  "scope": "packages/shared/src/node/atomic-write.ts",
+  "action": "Implement",
+  "description": "Expose a per-path exclusive-execution primitive `runExclusive<T>(path, fn): Promise<T>` that reuses the existing `LedgerWriteQueue` per-path Promise chain so rotation read-partition-write sequences are serialized against ledger appends within a single Node process.",
+  "files": [
+    {
+      "path": "packages/shared/src/node/atomic-write.ts",
+      "action": "modify",
+      "target": "LedgerWriteQueue class + module exports",
+      "change": "Add method `runExclusive<T>(path: string, fn: () => Promise<T>): Promise<T>` to the existing `LedgerWriteQueue` (or as a free function tapping the same per-path Promise map). Returns the value resolved by `fn`. Errors thrown by `fn` reject the returned Promise without breaking the chain (next runExclusive can still acquire). Export as named export."
+    },
+    {
+      "path": "packages/shared/src/node/atomic-write.test.ts",
+      "action": "create",
+      "target": "new test file (or extend existing)",
+      "change": "Add unit tests: (1) sequential ordering — two concurrent runExclusive calls on same path execute in submission order; (2) cross-path parallelism — concurrent calls on different paths run in parallel; (3) error in fn doesn't deadlock subsequent calls; (4) interleave with LedgerWriteQueue.append() — append after runExclusive waits for the exclusive section."
+    }
+  ],
+  "implementation": [
+    "Read existing LedgerWriteQueue impl to understand per-path Promise-chain pattern",
+    "Add `runExclusive<T>` either as a method on LedgerWriteQueue (preferred) or as a sibling export that reuses the same per-path map",
+    "Ensure error propagation: rejection from `fn` resolves the chain slot (so next caller proceeds) but rethrows to the original caller",
+    "Add 4 unit tests covering ordering, cross-path parallelism, error isolation, and interleave with append",
+    "Run `pnpm --filter @fabric/shared test` to confirm green"
+  ],
+  "reference": {
+    "pattern": "Existing per-path Promise chain in LedgerWriteQueue",
+    "files": ["packages/shared/src/node/atomic-write.ts"],
+    "examples": "LedgerWriteQueue.append uses `this.queues.get(path) ?? Promise.resolve()` chaining — runExclusive should hook into the same map"
+  },
+  "convergence": {
+    "criteria": [
+      "`runExclusive` exported from atomic-write module and referenced from rotateEventLedgerIfNeeded in T3",
+      "Unit test suite covers 4 scenarios listed above, all green",
+      "Concurrent runExclusive + append on same path serialize correctly (verified by ordering assertion in tests)",
+      "Error in `fn` does NOT block subsequent runExclusive calls on the same path (verified by test 3)",
+      "Type signature: `runExclusive<T>(path: string, fn: () => Promise<T>): Promise<T>` — `T` properly inferred"
+    ]
+  },
+  "depends_on": [],
+  "cli_execution_id": "rc-22-combined-2026-05-18-TASK-002",
+  "cli_execution": { "strategy": "new" },
+  "rationale": {
+    "chosen_approach": "Reuse existing per-path Promise chain — zero new abstraction surface",
+    "alternatives_considered": ["proper-lockfile (cross-process — out of rc.22 scope, TODO documented in memory)", "Mutex library (extra dep, no value over Promise chain)"],
+    "decision_factors": ["Same-process serialization sufficient for current rotation flow", "Familiar pattern in codebase", "Cross-process gap pre-existing — separate concern"],
+    "tradeoffs": "Doesn't solve MCP server + standalone doctor cross-process race (already acknowledged gap)"
+  },
+  "test": {
+    "manual_checks": ["Inspect that runExclusive method doc-comment describes exclusivity scope (per-path, in-process)"],
+    "success_metrics": ["All 4 new unit tests pass", "Existing LedgerWriteQueue tests still pass"],
+    "unit": ["runExclusive_serializes_same_path", "runExclusive_parallel_different_paths", "runExclusive_error_no_deadlock", "runExclusive_interleaved_with_append"],
+    "integration": []
+  }
+}

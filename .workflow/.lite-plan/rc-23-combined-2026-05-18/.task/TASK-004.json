@@ -1,0 +1,56 @@
+{
+  "id": "TASK-004",
+  "title": "F6: self-describe fab_get_knowledge_sections — describe field names the 4 section enum values",
+  "scope": "packages/server/src/tools/knowledge-sections.ts (or knowledge-sections tool descriptor)",
+  "action": "Modify",
+  "description": "The fab_get_knowledge_sections tool description currently says 'sections: pick one or more section names' but never lists the four enum values (MISSION_STATEMENT / REFERENCE / DIRECTIVES / EVIDENCE). LLMs without the schema in context guess wrong values. Rewrite the description to be self-contained: enumerate all four section names with a one-line semantic gloss for each, plus a usage example showing common combos.",
+  "files": [
+    {
+      "path": "packages/server/src/tools/knowledge-sections.ts",
+      "action": "modify",
+      "target": "Tool descriptor / sections field describe()",
+      "change": "Expand description text to list MISSION_STATEMENT (intent/what), REFERENCE (citations/links), DIRECTIVES (rules/must-do), EVIDENCE (examples/snippets); add one-line typical-combo hint"
+    }
+  ],
+  "implementation": [
+    "Read current tool descriptor and locate the `sections` field describe text",
+    "Compose the self-contained description listing the four enum values with concise glosses",
+    "Confirm enum is still source-of-truth: import the section enum from schemas and ensure description references the same set",
+    "Update any snapshot tests that pin the tool description string",
+    "Regenerate MCP manifest if cached (run `fab --list-tools` to spot-check)"
+  ],
+  "reference": {
+    "pattern": "Self-describing MCP tool descriptors elsewhere in tools/",
+    "files": [
+      "packages/server/src/tools/knowledge-sections.ts",
+      "packages/server/src/tools/plan-context.ts (for tone reference)"
+    ],
+    "examples": "Mirror the tone of fab_plan_context's existing description"
+  },
+  "convergence": {
+    "criteria": [
+      "fab_get_knowledge_sections description string contains the literal substrings MISSION_STATEMENT, REFERENCE, DIRECTIVES, EVIDENCE",
+      "Description ≤ 600 chars (manifest size budget)",
+      "Snapshot tests, if any, are updated and pass"
+    ]
+  },
+  "depends_on": [],
+  "cli_execution_id": "rc-23-combined-2026-05-18-TASK-004",
+  "cli_execution": { "strategy": "new" },
+  "rationale": {
+    "chosen_approach": "Plain description rewrite — no schema change needed since the enum is already authoritative",
+    "alternatives_considered": [
+      "Add per-section sub-tools (rejected: over-engineering for 4 enum values)"
+    ],
+    "decision_factors": ["LLM-self-sufficient descriptions reduce hallucination", "Cheap fix"],
+    "tradeoffs": "Slightly longer description text (still under budget)"
+  },
+  "test": {
+    "manual_checks": [
+      "List tools via `fab --list-tools` and grep the four section names in the printed description"
+    ],
+    "success_metrics": ["LLM call-success rate proxy: agent picks correct section name without schema injection"],
+    "unit": [],
+    "integration": []
+  }
+}

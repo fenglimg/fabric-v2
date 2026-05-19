@@ -1,0 +1,73 @@
+{
+  "id": "TASK-003",
+  "title": "F5: drop fab_extract_knowledge.source_session singular field (use source_sessions plural only)",
+  "scope": "api-contracts schema + extract-knowledge handler + all callers",
+  "action": "Modify",
+  "description": "fab_extract_knowledge currently accepts BOTH source_session (singular legacy) and source_sessions (plural canonical). The dual-field design creates a superRefine branch that has zero remaining users — the archive skill and import skill both use the plural form. Remove source_session entirely (schema, superRefine, handler, frontmatter writer, all callers + tests).",
+  "files": [
+    {
+      "path": "packages/shared/src/schemas/api-contracts.ts",
+      "action": "modify",
+      "target": "_FabExtractKnowledgeInputBaseSchema + superRefine + FabExtractKnowledgeInputSchema",
+      "change": "Delete source_session field; drop the superRefine block that reconciled singular vs plural; collapse to just source_sessions array"
+    },
+    {
+      "path": "packages/server/src/services/extract-knowledge.ts",
+      "action": "modify",
+      "target": "handler body that reads source_session",
+      "change": "Delete the legacy-merge logic; consume source_sessions directly"
+    },
+    {
+      "path": "packages/shared/src/skills/**",
+      "action": "audit-and-modify",
+      "target": "fabric-archive / fabric-import / fabric-review skill templates",
+      "change": "Search-and-replace any source_session: occurrences with source_sessions: [...]"
+    }
+  ],
+  "implementation": [
+    "Grep `source_session\\b` across the repo to enumerate all caller sites",
+    "Patch api-contracts.ts schema (remove field + superRefine arm)",
+    "Patch services/extract-knowledge.ts handler",
+    "Patch each caller emission point (skills templates, CLI commands, tests)",
+    "Update __tests__ for extract-knowledge to drop singular-form fixtures",
+    "Run full test suite via `pnpm -r test` to catch any missed callers"
+  ],
+  "reference": {
+    "pattern": "Prior dual-field deprecation (e.g. how rc.21 dropped legacy fields)",
+    "files": [
+      "packages/shared/src/schemas/api-contracts.ts",
+      "packages/server/src/services/extract-knowledge.ts"
+    ],
+    "examples": "Mirror rc.21 cite-policy field cleanup pattern"
+  },
+  "convergence": {
+    "criteria": [
+      "grep `source_session\\b` returns zero non-test, non-history matches",
+      "extract-knowledge schema accepts ONLY source_sessions (zod parse rejects singular form)",
+      "All extract-knowledge unit + integration tests pass",
+      "`pnpm -r typecheck` clean"
+    ]
+  },
+  "depends_on": [],
+  "cli_execution_id": "rc-23-combined-2026-05-18-TASK-003",
+  "cli_execution": { "strategy": "new" },
+  "rationale": {
+    "chosen_approach": "Hard removal across schema + handler + all callers in one PR — pre-user clean-slate",
+    "alternatives_considered": [
+      "Deprecate-then-remove over two rcs (rejected: no real users; deprecation overhead unjustified)"
+    ],
+    "decision_factors": ["feedback_clean_slate", "Zero external users"],
+    "tradeoffs": "Any in-flight skill scripts using singular form must be regenerated — acceptable scope"
+  },
+  "test": {
+    "manual_checks": [
+      "Run fabric-archive skill end-to-end and confirm source_sessions path works"
+    ],
+    "success_metrics": ["All tests green", "Zero singular-form references"],
+    "unit": [
+      "packages/server/src/services/__tests__/extract-knowledge.test.ts",
+      "packages/shared/src/schemas/__tests__/api-contracts.test.ts"
+    ],
+    "integration": []
+  }
+}

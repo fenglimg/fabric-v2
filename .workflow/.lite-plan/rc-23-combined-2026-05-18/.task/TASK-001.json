@@ -1,0 +1,78 @@
+{
+  "id": "TASK-001",
+  "title": "F1: rewrite bootstrap canonical template + .fabric/AGENTS.md to two-step real API (plan_context → get_knowledge_sections)",
+  "scope": "bootstrap text + AGENTS.md rule body",
+  "action": "Modify",
+  "description": "The current bootstrap-canonical.ts template + .fabric/AGENTS.md teach the LLM a single-step `fab_get_knowledge_sections(id=...)` call that does NOT match the real two-step API (which requires a selection_token from fab_plan_context plus ai_selected_stable_ids + sections). This produces guaranteed schema-validation failures on the very first KB read. F1 is the highest-urgency rc.23 scope because every fresh-installed agent will hit it. Rewrite both surfaces (1) the source-of-truth template at packages/shared/src/templates/bootstrap-canonical.ts and (2) the project bootstrap doc .fabric/AGENTS.md to describe the real two-step flow: call fab_plan_context(paths=[...]) → inspect plan_context.entries[].selectable===true → pick one or more stable_ids → call fab_get_knowledge_sections(selection_token, ai_selected_stable_ids=[...], sections=[...]).",
+  "files": [
+    {
+      "path": "packages/shared/src/templates/bootstrap-canonical.ts",
+      "action": "modify",
+      "target": "L71-78 行为规则区块",
+      "change": "替换单步 fab_get_knowledge_sections(id=...) 描述为完整两步流程文本(plan_context → 选 selectable → get_knowledge_sections with selection_token + ai_selected_stable_ids + sections);保留中文措辞风格"
+    },
+    {
+      "path": ".fabric/AGENTS.md",
+      "action": "modify",
+      "target": "L11 行为规则 / L18 知识库 (KB) Usage 行",
+      "change": "L11 修改修改前调用顺序;L18 Usage 行从 `用 fab_get_knowledge_sections(id=...) 按 id 取条目全文` 改为完整两步描述,显式 selection_token 是从 fab_plan_context 返回的"
+    }
+  ],
+  "implementation": [
+    "Read current packages/shared/src/templates/bootstrap-canonical.ts to locate exact L71/L78 anchor strings",
+    "Rewrite the two relevant blocks to teach: step 1 — fab_plan_context(paths=[<files>]) returns entries with selectable=true; step 2 — fab_get_knowledge_sections({selection_token, ai_selected_stable_ids: [...], sections: ['MISSION_STATEMENT','REFERENCE','DIRECTIVES','EVIDENCE']})",
+    "Mirror the same wording into .fabric/AGENTS.md (note: AGENTS.md is the generated bootstrap output, but rc.22 ledger keeps it the canonical project KB README — so manually patch it ONCE so user docs match before next fab install regen)",
+    "Validate the template renders: run `node -e \"const t=require('./packages/shared/dist/templates/bootstrap-canonical.js'); console.log(t.default || t.template)\"` to dump output (after `pnpm -F @fabric/shared build`)",
+    "Confirm no stray references to bare `fab_get_knowledge_sections(id=...)` remain in template OR AGENTS.md via grep",
+    "Add a unit test in packages/shared/src/templates/__tests__/bootstrap-canonical.test.ts that asserts the rendered output contains both `fab_plan_context` AND `ai_selected_stable_ids`"
+  ],
+  "reference": {
+    "pattern": "Existing CDATA-style multi-line bootstrap template literal",
+    "files": [
+      "packages/shared/src/templates/bootstrap-canonical.ts",
+      "packages/server/src/services/plan-context.ts (real selection_token producer)",
+      "packages/server/src/tools/knowledge-sections.ts (real consumer signature)"
+    ],
+    "examples": "Mirror tone of existing 知识库 (KB) section; keep four-bullet rhythm"
+  },
+  "convergence": {
+    "criteria": [
+      "grep -nE 'fab_get_knowledge_sections\\(id=' packages/shared/src/templates/bootstrap-canonical.ts .fabric/AGENTS.md returns ZERO matches",
+      "Rendered bootstrap template contains both literal strings `fab_plan_context` and `ai_selected_stable_ids`",
+      "Unit test packages/shared/src/templates/__tests__/bootstrap-canonical.test.ts asserts presence of two-step keywords and passes",
+      "Manual `fab install` dry-run renders the two-step flow into the three target client AGENTS.md managed blocks"
+    ]
+  },
+  "depends_on": [],
+  "cli_execution_id": "rc-23-combined-2026-05-18-TASK-001",
+  "cli_execution": { "strategy": "new" },
+  "rationale": {
+    "chosen_approach": "Edit source template + manually patch .fabric/AGENTS.md once — keeps next-fab-install propagation correct and unblocks current users immediately",
+    "alternatives_considered": [
+      "Only edit template, regenerate via fab install (rejected: current AGENTS.md stays broken until reinstall)",
+      "Add an aliasing shim in fab_get_knowledge_sections that accepts bare id (rejected: violates feedback_clean_slate.md no-compat-shim policy)"
+    ],
+    "decision_factors": [
+      "Pre-user clean-slate (feedback_clean_slate)",
+      "F1 is highest-urgency — every fresh install breaks today",
+      "Two-step API is intentional (plan_context is the necessary precondition for relevance scoring)"
+    ],
+    "tradeoffs": "Slight wording bloat in bootstrap (two-step flow needs ~4 lines vs 1) — acceptable for correctness"
+  },
+  "test": {
+    "manual_checks": [
+      "Run fab install in a scratch repo and verify the rendered .fabric/AGENTS.md teaches the two-step flow",
+      "Feed the rendered AGENTS.md to a fresh agent session and confirm it makes the correct fab_plan_context → fab_get_knowledge_sections call sequence"
+    ],
+    "success_metrics": [
+      "Zero stale `fab_get_knowledge_sections(id=...)` references in source",
+      "Bootstrap template unit test green"
+    ],
+    "unit": [
+      "packages/shared/src/templates/__tests__/bootstrap-canonical.test.ts — assert two-step keywords present"
+    ],
+    "integration": [
+      "fab install dry-run smoke check"
+    ]
+  }
+}

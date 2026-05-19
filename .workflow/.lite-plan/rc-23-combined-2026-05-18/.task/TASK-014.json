@@ -1,0 +1,154 @@
+{
+  "id": "TASK-014",
+  "title": "F8c: onboard phase in fabric-archive + S5 slot mechanism + fab onboard-coverage CLI + onboard_slot frontmatter + fabric-config opted_out",
+  "scope": "fabric-archive SKILL.md + cli onboard-coverage subcommand + fab_extract_knowledge schema (onboard_slot field) + fabric-config schema (opted_out array) + doctor coverage report",
+  "action": "Add",
+  "description": "F8a 删 scan 后,新装用户 KB 空。F8c 在 fabric-archive Skill 引入 first-run 'onboard phase':检测 5 个固定基调 slot 是否被认领,缺则提示 user 让 AI tour 项目 propose pending entry。S5 slot 列表(grill 已锁): tech-stack-decision / architecture-pattern / code-style-tone / build-system-idiom / domain-vocabulary。slot 用 frontmatter `onboard_slot: <name>` 标记,正交于 5 个 type(decisions/pitfalls/guidelines/models/processes)。dismiss 写 fabric-config.json 的 onboard_slots_opted_out 数组,显式 `fab config onboard-reset <slot>` 才能重开。",
+  "files": [
+    {
+      "path": "packages/shared/src/schemas/api-contracts.ts",
+      "action": "modify",
+      "target": "FabExtractKnowledge*Schema",
+      "change": "新增可选字段 `onboard_slot: z.enum(['tech-stack-decision','architecture-pattern','code-style-tone','build-system-idiom','domain-vocabulary']).optional().describe('...')`;不进 idempotency_key hash(rc.8 A1 规则);frontmatter 写入"
+    },
+    {
+      "path": "packages/server/src/services/extract-knowledge.ts",
+      "action": "modify",
+      "target": "frontmatter 组装(同 a-C1 的 4 字段相邻)",
+      "change": "若 input.onboard_slot 非空,frontmatterLines.push(`onboard_slot: ${slot}`);保持与 4 字段一致的'空则不写'规则"
+    },
+    {
+      "path": "packages/shared/src/schemas/fabric-config.ts",
+      "action": "modify",
+      "target": "FabricConfigSchema (实际路径以现有定义为准,grep 'fabric_language' 找入口)",
+      "change": "新增可选字段 `onboard_slots_opted_out: z.array(z.string()).default([]).describe('Slot names user dismissed during onboard phase; never re-prompted unless reset via `fab config onboard-reset`')`"
+    },
+    {
+      "path": "packages/cli/src/commands/onboard-coverage.ts",
+      "action": "add",
+      "target": "新文件 — onboard-coverage 子命令",
+      "change": "导出 `fab onboard-coverage` 子命令处理函数:扫 .fabric/knowledge/**/*.md frontmatter 收集 onboard_slot 值,读 fabric-config.onboard_slots_opted_out;输出 JSON `{filled:{slot:[stable_ids]}, missing:[slots], opted_out:[slots], total:5}`;支持 --json 标准输出,默认人类可读"
+    },
+    {
+      "path": "packages/cli/src/cli.ts",
+      "action": "modify",
+      "target": "subcommand 注册位置(grep `register*Command` 找入口)",
+      "change": "注册 onboard-coverage 子命令到 fab CLI 顶级"
+    },
+    {
+      "path": "packages/cli/src/commands/config.ts",
+      "action": "modify",
+      "target": "config 子命令处理(若已有 `fab config` 入口)",
+      "change": "新增 `fab config onboard-reset <slot>` 子命令:从 onboard_slots_opted_out 数组移除 slot;若文件不存在或 slot 未在列表中,无操作并提示"
+    },
+    {
+      "path": "packages/cli/templates/skills/fabric-archive/SKILL.md",
+      "action": "modify",
+      "target": "PURPOSE / 流程段",
+      "change": "Skill 入口加 first-run 检测 phase:调用 `fab onboard-coverage --json` 获取 missing slots;若非空,提示用户 'KB 缺以下基调 slot:[X,Y]。要 tour 项目并 propose 吗?[全部/逐项/dismiss/skip]';tour 模式下 LLM 主动 Read 关键文件,推 entry 时附 `onboard_slot:<slot>` 字段调 fab_extract_knowledge;dismiss 模式 invoke `fab config dismiss-slot <slot>` 写入 opted_out 列表"
+    },
+    {
+      "path": "packages/server/src/services/doctor.ts",
+      "action": "modify",
+      "target": "runDoctorReport(增加 'Onboard coverage' 检查项)",
+      "change": "新增 `inspectOnboardCoverage` reader + `createOnboardCoverageCheck` advisory:若 missing slots 非空,info 级别提示 'Onboard slots not yet covered: [X,Y,Z]. Run /fabric-archive to onboard.';满覆盖时输出 'Onboard coverage: 5/5 ✓'"
+    },
+    {
+      "path": "packages/cli/__tests__/onboard-coverage.test.ts",
+      "action": "add",
+      "target": "新 unit + 集成测试",
+      "change": "fixture .md 含/不含 onboard_slot frontmatter;断言 missing/filled/opted_out 计算正确;fixture 含 fabric-config.json 含 opted_out 列表;断言 opted_out slot 不出现在 missing 中"
+    },
+    {
+      "path": "packages/server/src/services/extract-knowledge.test.ts",
+      "action": "modify",
+      "target": "现有用例 + 新增",
+      "change": "新增 onboard_slot 字段写入测试:fixture 含 onboard_slot:'architecture-pattern',断言 frontmatter 含 `onboard_slot: architecture-pattern`;断言 idempotency_key 不受 onboard_slot 影响"
+    },
+    {
+      "path": "packages/server/src/services/doctor.test.ts",
+      "action": "modify",
+      "target": "扩展现有 checks 期望",
+      "change": "增加 onboard-coverage advisory 用例;fixture 含/不含完整 slot 覆盖;断言 advisory 出现/不出现"
+    },
+    {
+      "path": "packages/shared/test/api-contracts.test.ts",
+      "action": "modify",
+      "target": "FabExtractKnowledge schema 测试",
+      "change": "新增 onboard_slot enum 验证:接受 5 个合法值;拒绝非法值;omit 时 valid"
+    }
+  ],
+  "implementation": [
+    "1. 设计 onboard_slot enum 常量,放 api-contracts.ts 或 shared/src/onboard-slots.ts(单独导出供 CLI 与 server 共用)",
+    "2. 扩 FabExtractKnowledge*Schema 加 onboard_slot 可选字段(与 a-C1 4 字段相邻)",
+    "3. 扩 services/extract-knowledge.ts frontmatter 写入逻辑",
+    "4. 扩 fabric-config schema 加 onboard_slots_opted_out",
+    "5. 实现 cli/src/commands/onboard-coverage.ts:扫 KB frontmatter + 读 config",
+    "6. 注册 onboard-coverage 子命令;新增 config onboard-reset 子命令",
+    "7. 扩 fabric-archive SKILL.md 加 first-run phase(行为说明,非代码)",
+    "8. 扩 doctor.ts 加 onboard-coverage advisory",
+    "9. 测试:扩 4 个 .test.ts 文件 + 新增 onboard-coverage.test.ts",
+    "10. 验证:本仓 fab onboard-coverage 输出 missing=[5 个全空](因为 F8a 删 baseline 后 KB 空)",
+    "11. pnpm -F @fenglimg/fabric-cli test && pnpm -F @fenglimg/fabric-server test && pnpm -F @fenglimg/fabric-shared test 全绿"
+  ],
+  "reference": {
+    "pattern": "a-C1 (TASK-006) 已开 frontmatter 可选字段扩展先例;TASK-008 (c sentinel) 已示范 fabric-config 字段扩展",
+    "files": [
+      "packages/cli/src/commands/doctor.ts (advisory 注册模式参考)",
+      "packages/shared/src/schemas/api-contracts.ts (FabExtractKnowledge*Schema)",
+      "packages/cli/templates/skills/fabric-archive/SKILL.md (Skill 扩展点)"
+    ]
+  },
+  "convergence": {
+    "criteria": [
+      "fab onboard-coverage --json 在本仓输出 missing 列表(F8a 删 baseline 后 KB 为空,missing 应等于 5 个 slot)",
+      "fab_extract_knowledge schema 接受 onboard_slot 字段且不影响 idempotency_key",
+      "fabric-archive SKILL.md PURPOSE 段含 first-run phase 描述",
+      "fabric-config schema 含 onboard_slots_opted_out",
+      "fab config onboard-reset <slot> 子命令可用",
+      "doctor advisory 报告 onboard 覆盖率",
+      "pnpm 全包测试套件全绿(shared/server/cli)"
+    ]
+  },
+  "depends_on": ["TASK-012", "TASK-013", "TASK-007"],
+  "status": "completed",
+  "cli_execution_id": "rc-23-combined-2026-05-18-TASK-014",
+  "cli_execution": { "strategy": "new" },
+  "rationale": {
+    "chosen_approach": "用户在 grill 中提出:基调价值不丢但承载形式从 auto-scan 改成 Skill-orchestrated tour;S5 slot 列表 + coverage 触发 + frontmatter 标记 + 显式 dismiss",
+    "alternatives_considered": [
+      "install 末尾印 hint 提示用户 (rejected:可发现性低,用户可能忽略)",
+      "新增 /fabric-onboard skill (rejected:与 fabric-archive 边界模糊)",
+      "扩 fabric-archive 检测空 KB 一次性触发 (rejected:用户后期清空 KB 会重触发,不期望)",
+      "S3 仅 3 slot (rejected:漏 build-idiom + domain-vocabulary;两者对 AI 日常决策有直接影响)",
+      "S7 加 testing/release (rejected:N/A 率高,dismiss 噪声大)"
+    ],
+    "decision_factors": [
+      "用户认同 coverage-based 自校验比 marker boolean 更优",
+      "S5 平衡覆盖 vs dismiss 噪声",
+      "Pre-user clean-state:onboard 体系 first-time 一次建对",
+      "onboard_slot 是正交标签不绑 type:LLM/user 自由分类灵活度"
+    ],
+    "tradeoffs": "fabric-archive Skill 复杂度增加 1 个 phase 分支;CLI 新增 2 个子命令(onboard-coverage / config onboard-reset);slot 列表 hard-code 在 enum,扩张/收缩需要 schema 演进"
+  },
+  "test": {
+    "manual_checks": [
+      "本仓 fab onboard-coverage --json 输出 missing 含 5 个 slot(F8a 后)",
+      "fab config dismiss-slot architecture-pattern 后,再次 onboard-coverage 应将其归入 opted_out",
+      "fabric-archive 在 fresh repo 触发 first-run phase 提示"
+    ],
+    "success_metrics": [
+      "5 slot 全部可通过 onboard_slot 字段认领",
+      "dismiss 显式重置不破坏现有 archive 流"
+    ],
+    "unit": [
+      "onboard-coverage.test.ts: 扫描 + 计算覆盖率",
+      "api-contracts.test.ts: onboard_slot enum 验证",
+      "extract-knowledge.test.ts: frontmatter 写入 + idempotency 验证",
+      "doctor.test.ts: advisory 报告"
+    ],
+    "integration": [
+      "fabric-archive Skill 行为(SKILL.md 描述驱动,LLM 执行)"
+    ]
+  }
+}

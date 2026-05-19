@@ -1,0 +1,74 @@
+{
+  "id": "TASK-005",
+  "title": "a-B: plan-context description-undefined auto-heal — trigger reconcileKnowledge on read",
+  "scope": "packages/server/src/services/plan-context.ts (+ ensureKnowledgeFresh)",
+  "action": "Modify",
+  "description": "When an existing KB entry has description===undefined in agents.meta.json (drift from older versions or human edits), plan_context responses serve undefined to the LLM and degrade hint quality. Add a buildPreflightDiagnostics check that detects any entry with missing description and triggers reconcileKnowledge({trigger:'auto-heal-description'}); response carries auto_healed:true + previous_revision_hash (mirrors rc.22 D2 pattern). Also extend ensureKnowledgeFresh to call into the same heal path on MCP startup.",
+  "files": [
+    {
+      "path": "packages/server/src/services/plan-context.ts",
+      "action": "modify",
+      "target": "buildPreflightDiagnostics + PlanContextResult assembly",
+      "change": "Add detector: if any active entry has description===undefined → invoke reconcileKnowledge({trigger:'auto-heal-description'}); set auto_healed=true on returned PlanContextResult; carry previous_revision_hash"
+    },
+    {
+      "path": "packages/server/src/services/knowledge-sync.ts (or ensureKnowledgeFresh location)",
+      "action": "modify",
+      "target": "ensureKnowledgeFresh",
+      "change": "Extend to detect description-undefined case alongside existing revision-drift case"
+    },
+    {
+      "path": "packages/shared/src/schemas/event-ledger.ts",
+      "action": "modify",
+      "target": "event_type enum",
+      "change": "Add new trigger value `'auto-heal-description'` to meta_reconciled trigger union (or add new event_type if cleaner)"
+    }
+  ],
+  "implementation": [
+    "Read services/plan-context.ts to confirm exact buildPreflightDiagnostics signature and where PlanContextResult is assembled",
+    "Add description-undefined scan loop over active entries",
+    "If detected, call reconcileKnowledge with new trigger value; capture pre/post revision_hash",
+    "Surface auto_healed + previous_revision_hash on PlanContextResult (additive, optional fields — mirrors rc.22 D2)",
+    "Extend ensureKnowledgeFresh to share the heal path (DRY: extract a small `healDescriptionDrift` helper if useful)",
+    "Add unit tests: (a) entry with description=undefined → reconcile fires + auto_healed=true; (b) all-fresh KB → no reconcile, auto_healed=false; (c) idempotent re-run"
+  ],
+  "reference": {
+    "pattern": "rc.22 D2 loadActiveMeta auto-heal + planContextResult.auto_healed plumbing",
+    "files": [
+      "packages/server/src/services/plan-context.ts",
+      "packages/server/src/services/load-active-meta.ts (rc.22)",
+      "packages/server/src/services/knowledge-sync.ts:reconcileKnowledge"
+    ],
+    "examples": "Mirror rc.22 knowledge_meta_auto_healed event-emission flow"
+  },
+  "convergence": {
+    "criteria": [
+      "Plan_context response includes auto_healed=true when any entry had description=undefined pre-call",
+      "Post-heal, agents.meta.json shows description populated for the previously-undefined entry",
+      "Unit tests cover three scenarios (detection, no-op, idempotent)",
+      "Event ledger captures the auto-heal-description trigger"
+    ]
+  },
+  "depends_on": [],
+  "cli_execution_id": "rc-23-combined-2026-05-18-TASK-005",
+  "cli_execution": { "strategy": "new" },
+  "rationale": {
+    "chosen_approach": "Auto-heal on read path (mirrors rc.22 D2) — keeps hint quality up without forcing user intervention",
+    "alternatives_considered": [
+      "Hard-error on description-undefined (rejected: blocks plan_context for benign drift)",
+      "Doctor-only fix (rejected: read path needs immediate quality, can't wait for explicit fab doctor)"
+    ],
+    "decision_factors": ["Symmetry with rc.22 D2", "Read-side degradation safety"],
+    "tradeoffs": "Slight extra reconcile cost on hint path (mitigated by check-cheap detector + cache)"
+  },
+  "test": {
+    "manual_checks": [
+      "Manually nullify description on a test entry, call fab_plan_context, verify auto_healed=true"
+    ],
+    "success_metrics": ["No KB entries served with description=undefined post-rc.23"],
+    "unit": [
+      "packages/server/src/services/__tests__/plan-context.test.ts (add 3 cases)"
+    ],
+    "integration": []
+  }
+}

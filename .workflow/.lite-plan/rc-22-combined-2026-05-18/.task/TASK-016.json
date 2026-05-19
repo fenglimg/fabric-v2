@@ -1,0 +1,104 @@
+{
+  "id": "TASK-016",
+  "title": "T9 batch Gemini review + cite-coverage verification + MEMORY.md SHIPPED entry",
+  "scope": "repo-level (full rc.22 diff)",
+  "action": "Review",
+  "description": "Per feedback_review_batching: ONE Gemini review at end of rc, not per-task. Review full rc.22 diff against rc.21 base, run `fab doctor --cite-coverage` to confirm cite policy still active (rc.20), then update MEMORY.md with rc.22 SHIPPED entry covering all 5 scopes.",
+  "files": [
+    {
+      "path": "<repo-root> (review target — full rc.22 diff)",
+      "action": "review",
+      "target": "diff vs rc.21 tag",
+      "change": "Run Gemini review (e.g., `ccw cli --tool gemini --mode analysis` with appropriate prompt) over the rc.22 diff. Capture findings in `${SESSION}/gemini-review.md`. Address any critical issues before tagging."
+    },
+    {
+      "path": ".fabric/events.jsonl",
+      "action": "verify",
+      "target": "cite policy events still emitting",
+      "change": "Run `fab doctor --cite-coverage` and confirm output shows cite-policy still active (>0 cite_policy_activated or related events in recent window)"
+    },
+    {
+      "path": "/Users/wepie/.claude/projects/-Users-wepie-Desktop-personal-projects-pcf/memory/MEMORY.md",
+      "action": "modify",
+      "target": "rc.22 ledger-rotation entry (or add new SHIPPED entry)",
+      "change": "Replace the pending rc.22 entry (which currently mentions only ledger rotation per project_rc22_plan.md) with a 'rc.22 SHIPPED YYYY-MM-DD' entry covering all 5 scopes: A (ledger rotation + 50MB warn), B (baseline filename id-prefix + lint rule), C (baseline tags []), D (read-side auto-heal + hook banner), E (reconcile dual-root + revision-drift force-write). Link to relevant memory files. Date should be the actual ship date."
+    },
+    {
+      "path": "${SESSION}/gemini-review.md",
+      "action": "create",
+      "target": "review log artifact",
+      "change": "Capture Gemini review findings (clean, minor, or critical) for the rc.22 PR/tag record"
+    }
+  ],
+  "implementation": [
+    "Generate rc.22 diff: `git diff v2.0.0-rc.21..HEAD` (or appropriate tag base)",
+    "Run Gemini review via ccw cli with planning-mode prompt — focus on cross-scope interactions (especially A↔D event emission paths, D↔E reconcile/auto-heal overlap, B↔scan idempotency)",
+    "Capture results in `${SESSION}/gemini-review.md` — categorize as critical / minor / clean",
+    "If critical findings: cycle back to relevant task (do NOT tag until resolved)",
+    "If minor/clean: proceed",
+    "Run `fab doctor --cite-coverage` — verify cite policy still active",
+    "Update MEMORY.md with rc.22 SHIPPED entry",
+    "Update project_rc22_plan.md (or add a sibling memory file) marking rc.22 as shipped if needed",
+    "Hand off to release-rc skill for the actual tag/publish cadence (NOT done in this task — separate ceremony)"
+  ],
+  "reference": {
+    "pattern": "rc.20/rc.21 batch-review precedent",
+    "files": [
+      "~/.claude/projects/-Users-wepie-Desktop-personal-projects-pcf/memory/feedback_review_batching.md",
+      "~/.claude/projects/-Users-wepie-Desktop-personal-projects-pcf/memory/project_cite_policy.md"
+    ],
+    "examples": "rc.20 used single Gemini sweep at end + cite-coverage verify — mirror that flow"
+  },
+  "convergence": {
+    "criteria": [
+      "Gemini review run produces a review.md artifact with critical/minor/clean classification",
+      "Zero unresolved critical findings (or all resolved before tagging)",
+      "`fab doctor --cite-coverage` shows cite policy still active (>0 events in expected window)",
+      "MEMORY.md updated with rc.22 SHIPPED entry covering all 5 scopes",
+      "Release ceremony handed off to release-rc skill (NOT this task's responsibility)"
+    ]
+  },
+  "depends_on": [
+    "TASK-015"
+  ],
+  "cli_execution_id": "rc-22-combined-2026-05-18-TASK-016",
+  "cli_execution": {
+    "strategy": "resume",
+    "resume_from": "rc-22-combined-2026-05-18-TASK-015"
+  },
+  "rationale": {
+    "chosen_approach": "One Gemini sweep at end + automated cite-coverage check + memory update",
+    "alternatives_considered": [
+      "Per-task Gemini review (违反 feedback_review_batching)",
+      "Skip Gemini (loses cross-scope interaction visibility)"
+    ],
+    "decision_factors": [
+      "Established rc cadence",
+      "Cross-scope review catches issues that per-task review misses",
+      "MEMORY.md update keeps future sessions accurate"
+    ],
+    "tradeoffs": "Single point of failure if Gemini API hiccups (mitigated by falling back to Qwen per agent fallback chain)"
+  },
+  "test": {
+    "manual_checks": [
+      "Review gemini-review.md output for false positives",
+      "Confirm cite-coverage output is meaningful"
+    ],
+    "success_metrics": [
+      "Zero critical findings outstanding",
+      "MEMORY.md SHIPPED entry present"
+    ],
+    "unit": [],
+    "integration": [
+      "end-to-end review pass"
+    ]
+  },
+  "status": "completed",
+  "status_history": [
+    {
+      "from": "in_progress",
+      "to": "completed",
+      "changed_at": "2026-05-18T13:25:22+08:00"
+    }
+  ]
+}

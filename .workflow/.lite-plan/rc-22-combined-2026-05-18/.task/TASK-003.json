@@ -1,0 +1,100 @@
+{
+  "id": "TASK-003",
+  "title": "Scope A T3: implement rotateEventLedgerIfNeeded + 50MB soft-warn + events_rotated audit event",
+  "scope": "packages/server/src/services/event-ledger.ts + packages/shared/src/schemas/event-ledger.ts",
+  "action": "Implement",
+  "description": "Sliding-window-by-age rotation primitive: read main ledger → partition by ts vs cutoff (now - retention_days * 86400_000) → append archived lines to events.archive/events-rotated-{YYYY-MM-DD}.jsonl (same-day appends to same file) → atomicWrite kept tail → emit events_rotated audit event as first line of new main. Also adds 50MB soft stderr warn on append paths and reads retention from fabric_event_retention_days config (default 30, accepts 7/30/90).",
+  "files": [
+    {
+      "path": "packages/shared/src/schemas/event-ledger.ts",
+      "action": "modify",
+      "target": "event_type enum + discriminated union",
+      "change": "Add new event shape `events_rotated` with fields `cutoff_ts: string (ISO)`, `archived_count: number`, `kept_count: number`, `archive_path: string (relative .fabric/events.archive/...)`. Add to discriminated union at line 432. Include `source` field consistent with peer events."
+    },
+    {
+      "path": "packages/shared/src/schemas/event-ledger.test.ts",
+      "action": "modify",
+      "target": "schema parse coverage",
+      "change": "Add parse-fixture test for `events_rotated` including required + optional fields; assert discriminated union rejects unknown fields per existing pattern."
+    },
+    {
+      "path": "packages/server/src/services/event-ledger.ts",
+      "action": "modify",
+      "target": "module exports",
+      "change": "Add `rotateEventLedgerIfNeeded(projectRoot: string, opts?: { now?: Date; retentionDays?: number }): Promise<{ rotated: boolean; archivedCount: number; keptCount: number; archivePath?: string }>`. Wraps the full read-partition-write in `runExclusive(getEventLedgerPath(projectRoot), async () => ...)`. Reads retention from `readFabricConfig().fabric_event_retention_days ?? 30` when opts.retentionDays omitted. Computes cutoff_ts = (opts.now ?? new Date()).getTime() - retention_days * 86400_000. Reads ledger (returning early with rotated:false when no lines older than cutoff). Partitions into [archived, kept] by ts field. Ensures .fabric/events.archive/ exists. Builds archive filename `events-rotated-${YYYY-MM-DD}.jsonl` using rotation-date (opts.now). Appends archived NDJSON lines via fs.appendFile (creates if absent). Builds new main content = `events_rotated` audit JSONL + '\\n' + kept lines. atomicWriteText to main path. Returns counts."
+    },
+    {
+      "path": "packages/server/src/services/event-ledger.ts",
+      "action": "modify",
+      "target": "appendEventLedgerEvent (or post-write hook)",
+      "change": "After successful append, run `statSync(path).size` and if > 50 * 1024 * 1024, emit one-shot `process.stderr.write('fabric: events.jsonl > 50MB, run \"fab doctor --fix\" to rotate\\n')`. Gate the one-shot via a process-scoped flag so warnings don't spam (e.g., module-level `let warnedOversize = false`)."
+    },
+    {
+      "path": "packages/shared/src/schemas/fabric-config.ts",
+      "action": "modify",
+      "target": "config schema",
+      "change": "Add optional field `fabric_event_retention_days?: number` (z.union of literals 7 / 30 / 90 OR z.number().int().positive() — pick stricter literal union per cite-policy precedent). Default 30 applied at consumer site."
+    },
+    {
+      "path": "packages/server/src/services/event-ledger.test.ts",
+      "action": "create",
+      "target": "new test file (or extend existing)",
+      "change": "Tests for rotateEventLedgerIfNeeded: (1) no-op when all lines within retention window; (2) partitions correctly when some lines older than cutoff; (3) same-day re-run appends to same archive file (not overwrite); (4) new-day rotation creates new archive file with new YYYY-MM-DD; (5) first line of new main is events_rotated audit with correct counts; (6) emits events_rotated through schema validator (round-trip); (7) reads retention from config (mock readFabricConfig returning 7) and applies it; (8) 50MB soft-warn one-shot fires exactly once."
+    }
+  ],
+  "implementation": [
+    "Add `events_rotated` schema first (smallest unit, drives type-safety for impl below)",
+    "Add `fabric_event_retention_days` to fabric-config schema",
+    "Implement `rotateEventLedgerIfNeeded` using `runExclusive` from T2",
+    "Add 50MB soft-warn one-shot in append path with module-level guard",
+    "Write 8 unit tests covering all scenarios",
+    "Run `pnpm --filter @fabric/server test event-ledger` and `pnpm --filter @fabric/shared test event-ledger` to confirm green"
+  ],
+  "reference": {
+    "pattern": "Existing event-ledger schema discriminated union + appendEventLedgerEvent flow",
+    "files": ["packages/shared/src/schemas/event-ledger.ts:107", "packages/server/src/services/event-ledger.ts"],
+    "examples": "`event_ledger_truncated` event shape (line 107) is the closest precedent — copy structure for `events_rotated`"
+  },
+  "convergence": {
+    "criteria": [
+      "`events_rotated` enum + discriminated union member parses round-trip via existing schema test pattern",
+      "`rotateEventLedgerIfNeeded` is exported and wraps work inside `runExclusive(ledgerPath, ...)`",
+      "Same-day re-rotation appends to the same `events-rotated-{date}.jsonl` archive (verified by file size growth in test)",
+      "Post-rotation main file's first line parses as `events_rotated` with archived_count + kept_count matching test setup",
+      "Retention reads from `fabric_event_retention_days` config key with default 30 (test mocks 7 and verifies behavior)",
+      "50MB soft-warn writes to stderr exactly once per process when threshold crossed",
+      "All 8 unit tests green"
+    ]
+  },
+  "depends_on": ["TASK-002"],
+  "cli_execution_id": "rc-22-combined-2026-05-18-TASK-003",
+  "cli_execution": { "strategy": "resume", "resume_from": "rc-22-combined-2026-05-18-TASK-002" },
+  "rationale": {
+    "chosen_approach": "Sliding window by age + same-day archive append + audit event as new main first-line",
+    "alternatives_considered": ["Write-time filter (breaks cite-coverage denominator)", "Compaction (over-engineered for trace data)", "Stream split (premature)"],
+    "decision_factors": ["Rotation date is deterministic", "Archive filename groups same-day rotations naturally", "Audit event provides forensic continuity post-rotation"],
+    "tradeoffs": "Same-day archive can grow unboundedly if rotation runs many times in one day (acceptable; cap by reducing retention if user hits this)"
+  },
+  "test": {
+    "manual_checks": [
+      "Manually inspect a post-rotation events.jsonl: first line is JSON with event_type=events_rotated",
+      "Run with retention_days=0 (force full rotation) on a test fixture and confirm main becomes audit-only"
+    ],
+    "success_metrics": [
+      "8 new unit tests pass",
+      "Schema round-trips through event-ledger.test.ts harness",
+      "No regression in existing event-ledger.test.ts"
+    ],
+    "unit": [
+      "rotate_noop_when_under_retention",
+      "rotate_partitions_correctly",
+      "rotate_same_day_appends_archive",
+      "rotate_new_day_creates_archive",
+      "rotate_audit_event_first_line",
+      "rotate_schema_round_trip",
+      "rotate_reads_config_retention",
+      "soft_warn_50mb_oneshot"
+    ],
+    "integration": []
+  }
+}
