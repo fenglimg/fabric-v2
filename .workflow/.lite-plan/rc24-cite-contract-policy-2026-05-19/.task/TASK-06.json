@@ -1,0 +1,68 @@
+{
+  "id": "TASK-06",
+  "title": "ensureCiteContractPolicyActivatedMarker with bootstrap-drift gate",
+  "scope": "packages/server/src/services/doctor.ts",
+  "action": "Add",
+  "description": "Add new marker emission function for cite_contract_policy_activated event. Unlike rc.20 cite_policy_activated marker, this one is gated on bootstrap-drift detection: if BOOTSTRAP drift is present, refuse to emit and return blocked_by='bootstrap_drift'. Caller (runDoctorCiteCoverage) renders 'contract_check: skipped (bootstrap drift — run fab install)' in report.",
+  "files": [
+    {
+      "path": "packages/server/src/services/doctor.ts",
+      "action": "modify",
+      "target": "After existing ensureCitePolicyActivatedMarker (around L5455-L5497)",
+      "change": "Add `async function ensureCiteContractPolicyActivatedMarker(projectRoot: string): Promise<{ marker_ts: number; emitted_now: boolean; blocked_by: 'bootstrap_drift' | null }>`. Implementation: (1) Call existing bootstrap-drift detection helper (locate via grep BOOTSTRAP_REGEX or check rc.23 self-heal logic); (2) If drift detected → return { marker_ts: 0, emitted_now: false, blocked_by: 'bootstrap_drift' }; (3) Else mirror ensureCitePolicyActivatedMarker exactly — readEventLedger filtering event_type='cite_contract_policy_activated', if no existing marker emit one via writeEventLedger, return { marker_ts, emitted_now, blocked_by: null }."
+    },
+    {
+      "path": "packages/server/src/services/doctor.test.ts",
+      "action": "modify",
+      "target": "add new describe block for ensureCiteContractPolicyActivatedMarker",
+      "change": "Test cases: (1) clean bootstrap + no prior marker → emits new marker with marker_emitted_now=true; (2) clean bootstrap + existing marker → returns existing marker_ts with emitted_now=false; (3) drifted bootstrap → returns blocked_by='bootstrap_drift', no emission; (4) idempotency: two consecutive calls emit only once; (5) corrupted ledger → graceful return matching rc.20 marker behavior. ≥5 cases."
+    }
+  ],
+  "implementation": [
+    "Read packages/server/src/services/doctor.ts L5455-L5497 to confirm ensureCitePolicyActivatedMarker implementation pattern.",
+    "Locate existing bootstrap-drift detection helper. Likely candidates: detectBootstrapDrift in skills-and-hooks.ts, or doctor-side fault check. Grep for BOOTSTRAP_REGEX or BOOTSTRAP_CANONICAL.",
+    "If no reusable helper exists, write minimal detector: read project's AGENTS.md / CLAUDE.md / .cursor/rules/fabric-bootstrap.mdc, locate managed block via BOOTSTRAP_MARKER_BEGIN/END, byte-compare extracted content vs BOOTSTRAP_CANONICAL.",
+    "Implement ensureCiteContractPolicyActivatedMarker calling drift detector first.",
+    "Add test cases per files[].change directive with mocked ledger + bootstrap fixtures.",
+    "Run `pnpm --filter @fenglimg/fabric-server test doctor` to confirm green."
+  ],
+  "reference": {
+    "pattern": "Idempotent ledger marker emission (rc.20 cite_policy_activated)",
+    "files": ["packages/server/src/services/doctor.ts:5455-5497", "packages/shared/src/templates/bootstrap-canonical.ts"],
+    "examples": "rc.20 TASK-04 introduced ensureCitePolicyActivatedMarker; rc.24 replicates with drift-gate addition."
+  },
+  "rationale": {
+    "chosen_approach": "Drift-gated marker — refuses activation until tool chain is consistent. Zero false-violation risk during upgrade window.",
+    "alternatives_considered": ["Marker emit at install (rejected per grill-me B5-β analysis: changes marker ownership semantics)", "Accept transition noise (rejected: violates B4-y first-day-clean design)"],
+    "decision_factors": ["Reuses bootstrap-drift detection", "Same emission pattern as rc.20", "Single emit-blocker fits in <30 LoC"],
+    "tradeoffs": "User must complete `fab install` for contract policy to activate; documented in TASK-12 CHANGELOG migration section."
+  },
+  "test": {
+    "manual_checks": ["pnpm --filter @fenglimg/fabric-server test passes", "Manual: scaffold project with drifted BOOTSTRAP, run fab doctor --cite-coverage → confirm skipped:bootstrap_drift", "Manual: clean bootstrap → marker emits on first run, no-op on second"],
+    "success_metrics": ["≥5 marker test cases all passing", "Drift detection prevents emit", "Idempotency verified"],
+    "unit": ["ensureCiteContractPolicyActivatedMarker emits-on-clean", "ensureCiteContractPolicyActivatedMarker returns-existing", "ensureCiteContractPolicyActivatedMarker blocked-by-drift", "ensureCiteContractPolicyActivatedMarker idempotent", "ensureCiteContractPolicyActivatedMarker corrupted-ledger-graceful"],
+    "integration": []
+  },
+  "convergence": {
+    "criteria": [
+      "doctor.ts exports ensureCiteContractPolicyActivatedMarker function",
+      "Function returns object with marker_ts, emitted_now, blocked_by fields",
+      "Function calls bootstrap-drift detector before emit",
+      "On drift detected: returns blocked_by='bootstrap_drift' AND no ledger write",
+      "doctor.test.ts adds ≥5 marker test cases",
+      "pnpm --filter @fenglimg/fabric-server test exits 0",
+      "Commit msg: 'feat(rc24): cite_contract_policy_activated marker with drift gate (TASK-06)'"
+    ]
+  },
+  "read_first": [
+    "packages/server/src/services/doctor.ts",
+    "packages/shared/src/templates/bootstrap-canonical.ts",
+    "packages/cli/src/install/skills-and-hooks.ts",
+    "packages/server/src/services/doctor.test.ts"
+  ],
+  "depends_on": ["TASK-01"],
+  "estimated_minutes": 45,
+  "cli_execution_id": "rc24-cite-contract-policy-2026-05-19-TASK-06",
+  "cli_execution": { "strategy": "new" },
+  "status": "completed"
+}

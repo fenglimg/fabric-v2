@@ -5495,6 +5495,81 @@ export async function ensureCitePolicyActivatedMarker(
   }
 }
 
+// v2.0.0-rc.24 TASK-06: ensureCiteContractPolicyActivatedMarker — drift-gated
+// counterpart to ensureCitePolicyActivatedMarker (rc.20). The cite-contract
+// policy upgrade introduces structured `cite_commitments` written by post-rc.24
+// hooks. During the rc.23 → rc.24 half-upgrade window (server on rc.24, hooks
+// still rc.23) the marker emit MUST be refused — otherwise contract metrics
+// open an audit window against events that physically cannot carry the new
+// commitments field, manufacturing false `contract_missing` violations.
+//
+// The gate reuses `inspectL1BootstrapSnapshotDrift` (rc.19): if `.fabric/
+// AGENTS.md` byte-equals the current `BOOTSTRAP_CANONICAL`, the user has run
+// the rc.24 `fab install` and the hook layer is in sync with the schema.
+// 'missing' is also treated as drift (deliberate conservative choice — no
+// install snapshot present means we cannot prove the hook layer matches; user
+// must run `fab install` to seed `.fabric/AGENTS.md`).
+//
+// Return shape mirrors `ensureCitePolicyActivatedMarker` with one added
+// discriminator: `blocked_by`. `null` when activation succeeded (or marker
+// already existed); `'bootstrap_drift'` when the snapshot did not byte-equal
+// canonical. Caller (`runDoctorCiteCoverage` extension in TASK-08) renders
+// `contract_check: skipped (bootstrap drift — run fab install)` when this
+// field is non-null.
+export async function ensureCiteContractPolicyActivatedMarker(
+  projectRoot: string,
+): Promise<{
+  marker_ts: number;
+  emitted_now: boolean;
+  blocked_by: "bootstrap_drift" | null;
+}> {
+  // Step 1: gate on bootstrap drift. Use the existing L1 inspector so the
+  // drift definition stays single-sourced. Any inspector throw (permissions,
+  // unreadable FS) is treated as drift — conservative: better to skip
+  // activation than to falsely advance the contract window.
+  let driftStatus: "ok" | "drift" | "missing";
+  try {
+    const inspection = await inspectL1BootstrapSnapshotDrift(projectRoot);
+    driftStatus = inspection.status;
+  } catch {
+    driftStatus = "drift";
+  }
+  if (driftStatus !== "ok") {
+    return { marker_ts: 0, emitted_now: false, blocked_by: "bootstrap_drift" };
+  }
+
+  // Step 2: mirror ensureCitePolicyActivatedMarker — read existing marker
+  // first, then append-if-missing. Read/write failures collapse to the
+  // sentinel `{ marker_ts: 0, emitted_now: false }` exactly as the rc.20
+  // marker does. Note: `blocked_by` is `null` for the silent-failure path —
+  // the drift gate is the only path that surfaces a blocker, the ledger
+  // sentinel preserves the rc.20 "warm-up never raises" contract.
+  let existing: { ts: number } | undefined;
+  try {
+    const { events } = await readEventLedger(projectRoot, {
+      event_type: "cite_contract_policy_activated",
+    });
+    if (events.length > 0) {
+      existing = events[0];
+    }
+  } catch {
+    return { marker_ts: 0, emitted_now: false, blocked_by: null };
+  }
+
+  if (existing !== undefined) {
+    return { marker_ts: existing.ts, emitted_now: false, blocked_by: null };
+  }
+
+  try {
+    const stored = await appendEventLedgerEvent(projectRoot, {
+      event_type: "cite_contract_policy_activated",
+    });
+    return { marker_ts: stored.ts, emitted_now: true, blocked_by: null };
+  } catch {
+    return { marker_ts: 0, emitted_now: false, blocked_by: null };
+  }
+}
+
 // v2.0.0-rc.20 TASK-05: cite policy adherence report shape returned by
 // `fab doctor --cite-coverage`. STUB scaffolding — TASK-06 fills the
 // `metrics` / `per_client` / `dismissed_reason_histogram` fields by scanning

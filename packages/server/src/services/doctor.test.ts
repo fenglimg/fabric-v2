@@ -16,6 +16,7 @@ import {
 } from "@fenglimg/fabric-shared";
 
 import {
+  ensureCiteContractPolicyActivatedMarker,
   ensureCitePolicyActivatedMarker,
   enrichDescriptions,
   runDoctorCiteCoverage,
@@ -4485,6 +4486,133 @@ describe("ensureCitePolicyActivatedMarker", () => {
     const result = await ensureCitePolicyActivatedMarker("/nonexistent-cite-policy-fabric-root-xyzzy");
     expect(result.marker_ts).toBe(0);
     expect(result.emitted_now).toBe(false);
+  });
+});
+
+// v2.0.0-rc.24 TASK-06: ensureCiteContractPolicyActivatedMarker — drift-gated
+// counterpart of ensureCitePolicyActivatedMarker. Marker emit is refused when
+// `.fabric/AGENTS.md` does not byte-equal BOOTSTRAP_CANONICAL (rc.23→rc.24
+// upgrade window safeguard). Once drift clears, behaves exactly like rc.20
+// marker: idempotent, silent on read/write failure.
+describe("ensureCiteContractPolicyActivatedMarker", () => {
+  it("clean bootstrap + no prior marker → emits new marker with emitted_now:true and blocked_by:null", async () => {
+    const target = createInitializedProject("cite-contract-marker-clean-first");
+    writeFileSync(join(target, ".fabric", "AGENTS.md"), BOOTSTRAP_CANONICAL, "utf8");
+    writeFile(".fabric/events.jsonl", "", target);
+
+    const before = Date.now();
+    const result = await ensureCiteContractPolicyActivatedMarker(target);
+    const after = Date.now();
+
+    expect(result.emitted_now).toBe(true);
+    expect(result.blocked_by).toBe(null);
+    expect(result.marker_ts).toBeGreaterThanOrEqual(before);
+    expect(result.marker_ts).toBeLessThanOrEqual(after);
+
+    // Round-trip via readEventLedger — exactly one marker line, parses cleanly.
+    const { events } = await readEventLedger(target, {
+      event_type: "cite_contract_policy_activated",
+    });
+    expect(events).toHaveLength(1);
+    const [event] = events;
+    if (event.event_type !== "cite_contract_policy_activated") {
+      throw new Error("unexpected event_type");
+    }
+    expect(event.ts).toBe(result.marker_ts);
+  });
+
+  it("clean bootstrap + existing marker → returns existing marker_ts with emitted_now:false", async () => {
+    const target = createInitializedProject("cite-contract-marker-existing");
+    writeFileSync(join(target, ".fabric", "AGENTS.md"), BOOTSTRAP_CANONICAL, "utf8");
+    writeFile(".fabric/events.jsonl", "", target);
+
+    const first = await ensureCiteContractPolicyActivatedMarker(target);
+    expect(first.emitted_now).toBe(true);
+    expect(first.blocked_by).toBe(null);
+
+    const second = await ensureCiteContractPolicyActivatedMarker(target);
+    expect(second.emitted_now).toBe(false);
+    expect(second.blocked_by).toBe(null);
+    expect(second.marker_ts).toBe(first.marker_ts);
+
+    // Only one marker event should be present after two invocations.
+    const { events } = await readEventLedger(target, {
+      event_type: "cite_contract_policy_activated",
+    });
+    expect(events).toHaveLength(1);
+  });
+
+  it("drifted bootstrap → returns blocked_by:'bootstrap_drift', no ledger write", async () => {
+    const target = createInitializedProject("cite-contract-marker-drifted");
+    // Drift: AGENTS.md present but bytes diverge from BOOTSTRAP_CANONICAL.
+    writeFileSync(join(target, ".fabric", "AGENTS.md"), `${BOOTSTRAP_CANONICAL}drift`, "utf8");
+    writeFile(".fabric/events.jsonl", "", target);
+
+    const result = await ensureCiteContractPolicyActivatedMarker(target);
+    expect(result.blocked_by).toBe("bootstrap_drift");
+    expect(result.emitted_now).toBe(false);
+    expect(result.marker_ts).toBe(0);
+
+    // Ledger must NOT have received a cite_contract_policy_activated event.
+    const { events } = await readEventLedger(target, {
+      event_type: "cite_contract_policy_activated",
+    });
+    expect(events).toHaveLength(0);
+  });
+
+  it("missing .fabric/AGENTS.md snapshot → returns blocked_by:'bootstrap_drift' (conservative gate)", async () => {
+    const target = createInitializedProject("cite-contract-marker-missing-snapshot");
+    // createInitializedProject does NOT write `.fabric/AGENTS.md` by default;
+    // L1 inspector reports status='missing' which the gate treats as drift.
+    writeFile(".fabric/events.jsonl", "", target);
+
+    const result = await ensureCiteContractPolicyActivatedMarker(target);
+    expect(result.blocked_by).toBe("bootstrap_drift");
+    expect(result.emitted_now).toBe(false);
+    expect(result.marker_ts).toBe(0);
+
+    const { events } = await readEventLedger(target, {
+      event_type: "cite_contract_policy_activated",
+    });
+    expect(events).toHaveLength(0);
+  });
+
+  it("idempotency under drift-clear transition: drifted-then-clean only emits once", async () => {
+    const target = createInitializedProject("cite-contract-marker-drift-then-clean");
+    writeFile(".fabric/events.jsonl", "", target);
+
+    // Phase 1: drift → blocked.
+    writeFileSync(join(target, ".fabric", "AGENTS.md"), `${BOOTSTRAP_CANONICAL}X`, "utf8");
+    const blocked = await ensureCiteContractPolicyActivatedMarker(target);
+    expect(blocked.blocked_by).toBe("bootstrap_drift");
+
+    // Phase 2: user runs `fab install` → snapshot restored to canonical.
+    writeFileSync(join(target, ".fabric", "AGENTS.md"), BOOTSTRAP_CANONICAL, "utf8");
+    const emitted = await ensureCiteContractPolicyActivatedMarker(target);
+    expect(emitted.emitted_now).toBe(true);
+    expect(emitted.blocked_by).toBe(null);
+
+    // Phase 3: subsequent call must be a no-op (idempotent).
+    const noop = await ensureCiteContractPolicyActivatedMarker(target);
+    expect(noop.emitted_now).toBe(false);
+    expect(noop.blocked_by).toBe(null);
+    expect(noop.marker_ts).toBe(emitted.marker_ts);
+
+    const { events } = await readEventLedger(target, {
+      event_type: "cite_contract_policy_activated",
+    });
+    expect(events).toHaveLength(1);
+  });
+
+  it("read failure (nonexistent projectRoot, gated as missing-snapshot drift) returns blocked_by:'bootstrap_drift' silently", async () => {
+    // Nonexistent root has no .fabric/AGENTS.md → L1 inspector returns 'missing',
+    // which we treat as drift. No throw, no ledger write attempted.
+    const result = await ensureCiteContractPolicyActivatedMarker(
+      "/nonexistent-cite-contract-fabric-root-xyzzy",
+    );
+    expect(result.blocked_by).toBe("bootstrap_drift");
+    expect(result.emitted_now).toBe(false);
+    expect(result.marker_ts).toBe(0);
   });
 });
 
