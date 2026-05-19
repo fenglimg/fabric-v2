@@ -351,6 +351,81 @@ messages + edit_paths + 1-line title), so this phase is a tail-scan + read.
    can produce a session_id without a digest). Cap the loaded digest set at
    `archive_digest_max_sessions` most-recent sessions (config-resolved, default
    10) to bound LLM context (~50KB worst-case at default).
+4.5. **Filter via session_archive_attempted ledger (rc.25 TASK-05).** Before
+   step 5 builds the cross-session context, drop sessions that the outcome
+   ledger says we should not re-scan. For each `session_id` collected in
+   steps 1-3, scan `.fabric/events.jsonl` for events where
+   `event_type === "session_archive_attempted"` AND `session_id` matches,
+   keep the most-recent one by `ts`, and apply this state machine:
+
+   - **(a) Look up the most recent `session_archive_attempted`** event for
+     this `session_id` (none found → fall through to (e)).
+   - **(b) `outcome === "user_dismissed"` → drop (permanent skip).** The
+     user explicitly rejected this session's candidates; never auto-re-scan
+     it. Respect the dismissal forever — re-scanning would re-propose the
+     same content the user already declined.
+   - **(c) `(nowMs - attempted_event.ts) < ANTI_LOOP_HOURS * 3_600_000` →
+     drop (cooldown skip).** Anti-loop window: even if outcome is otherwise
+     re-scannable, never re-scan a session within 12 hours of the last
+     attempt. Aligns 心智 with the Stop-hook cooldown so a single user does
+     not see the same session repeatedly within one work day.
+   - **(d) `covered_through_ts` present → check for high-value signal in
+     `ts > covered_through_ts` events for this `session_id`.** Tail-scan
+     `events.jsonl` for events newer than the watermark whose
+     `session_id` matches. A session passes this gate iff at least ONE of:
+     - ≥1 event with `event_type ∈ HIGH_VALUE_EVENT_TYPES`
+       (`knowledge_context_planned`, `edit_paths_recorded`), OR
+     - the latest `assistant_turn_observed` event body contains ≥1 of
+       `NORMATIVE_KEYWORDS` (substring match, case-insensitive for
+       English entries).
+
+     No high-value signal → drop (no new content worth re-scanning, even
+     though the cooldown has expired). Has signal → keep for re-scan.
+   - **(e) Never attempted (no `session_archive_attempted` event found for
+     this `session_id`) → keep.** First-time scan; nothing to filter
+     against.
+
+   The resulting filtered `session_id[]` proceeds into step 5's digest
+   concatenation. Sessions filtered out in this step do NOT contribute to
+   `### Cross-session digest`, are NOT included in `source_sessions` on any
+   fab_extract_knowledge call, and are NOT referenced in `session_context`
+   bodies.
+
+   **Constants (rc.25 — verbatim):**
+
+   - `ANTI_LOOP_HOURS = 12` — cooldown window in hours between consecutive
+     re-scans of the same `session_id`. Rationale: 心智对齐 hook cooldown
+     (`stop_hook_cooldown_hours = 12`); identical mental model avoids user
+     confusion when a session shows up in both hook reminders and
+     archive re-scan candidates.
+   - `HIGH_VALUE_EVENT_TYPES = ['knowledge_context_planned', 'edit_paths_recorded']`
+     — event types that count as "new substantive activity worth
+     re-scanning" past `covered_through_ts`. Chat accumulation
+     (`assistant_turn_observed` alone) does NOT count — it would let mere
+     conversation noise trigger re-scans.
+   - `NORMATIVE_KEYWORDS = ['以后','always','never','from now on','下次','记一下','永远不要']`
+     — substring patterns scanned against the latest
+     `assistant_turn_observed` body for the session. Mixed CN/EN to cover
+     bilingual users. If any keyword hits, the session is flagged as
+     having high-value chat-only signal even without code edits.
+
+   **Worked examples:**
+
+   - **Session X (user_dismissed)** — last `session_archive_attempted` ts
+     = 3 days ago, outcome = `user_dismissed`. Rule (b) fires → permanent
+     skip. Session X is dropped even if 50 new `knowledge_context_planned`
+     events have accumulated since.
+   - **Session Y (proposed 6h ago)** — last `session_archive_attempted`
+     ts = 6h ago, outcome = `proposed`. Rule (c) fires: 6h < 12h cooldown
+     window → drop (cooldown skip). Y becomes eligible again after the
+     12h window closes, provided high-value signal accumulates by then.
+   - **Session Z (viability_failed 14h ago + 3 new plan_context)** — last
+     `session_archive_attempted` ts = 14h ago, outcome = `viability_failed`,
+     `covered_through_ts` = T₀. Rules (b)(c) pass. Rule (d) tail-scans for
+     `session_id === Z AND ts > T₀`: finds 3 `knowledge_context_planned`
+     events. HIGH_VALUE_EVENT_TYPES match → keep Z for re-scan. The
+     previous viability failure does not block a re-scan once new
+     substantive activity has accumulated.
 5. **Build cross-session context.** Concatenate the loaded digests into a
    single `### Cross-session digest` block to carry into Phase 0.5 + Phase 1.
    Use this block to:
@@ -364,7 +439,11 @@ messages + edit_paths + 1-line title), so this phase is a tail-scan + read.
 Graceful degradation: if `.fabric/.cache/session-digests/` is missing
 entirely, this phase reports an empty context and Phase 0 falls back to the
 single-session behaviour. Tests that synthesize events.jsonl without
-populating the digest cache continue to work.
+populating the digest cache continue to work. If `session_archive_attempted`
+events are missing entirely (pre-rc.25 ledger or rotation has trimmed older
+events), treat all sessions as never-attempted (current default behavior) —
+step 4.5 rule (e) applies uniformly, so the filter degrades to the legacy
+"scan everything since anchor" semantics without raising errors.
 
 ### Phase 0.4 — First-run Onboard Phase (rc.23 F8c)
 
