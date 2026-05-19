@@ -10,6 +10,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { AGENTS_MD_RESOURCE_URI } from "./constants.js";
 import { resolveProjectRoot } from "./meta-reader.js";
 import { flushAndSyncEventLedger } from "./services/event-ledger.js";
+import { setFirstReconcile } from "./services/first-reconcile-gate.js";
 import { createInFlightTracker, type InFlightTracker } from "./services/in-flight-tracker.js";
 import { reconcileKnowledge } from "./services/knowledge-sync.js";
 import { registerExtractKnowledge } from "./tools/extract-knowledge.js";
@@ -20,6 +21,7 @@ import { registerKnowledgeSections } from "./tools/knowledge-sections.js";
 declare const __SERVER_VERSION__: string;
 
 export {
+  enrichDescriptions,
   runDoctorApplyLint,
   runDoctorCiteCoverage,
   runDoctorFix,
@@ -31,6 +33,9 @@ export {
   type DoctorFixReport,
   type DoctorIssue,
   type DoctorReport,
+  type EnrichDescriptionsCandidate,
+  type EnrichDescriptionsMode,
+  type EnrichDescriptionsReport,
 } from "./services/doctor.js";
 export {
   buildKnowledgeMeta,
@@ -166,17 +171,9 @@ export async function startStdioServer(): Promise<void> {
   const tracker = createInFlightTracker();
   const projectRoot = resolveProjectRoot();
 
-  // TASK-022 (R28): run full rule consistency scan BEFORE accepting MCP requests.
-  // Rules added while the server was offline become visible immediately; callers
-  // no longer need to run `fab doctor --fix` after an offline rule change.
-  const syncStart = Date.now();
-  const reconcileResult = await reconcileKnowledge(projectRoot, { trigger: "startup" });
-  const syncDurationMs = Date.now() - syncStart;
-  process.stderr.write(
-    `[startup] rule sync: status=${reconcileResult.status}, events=${reconcileResult.events.length}, ${syncDurationMs}ms\n`,
-  );
-
   // TASK-034: info-level detection of pre-existing root markdown files.
+  // Surfaced BEFORE handshake so the operator sees the hint regardless of
+  // how the MCP client renders later stderr lines.
   const rootMsg = formatPreexistingRootMessage(projectRoot);
   if (rootMsg !== null) {
     process.stderr.write(`${rootMsg}\n`);
@@ -185,7 +182,35 @@ export async function startStdioServer(): Promise<void> {
   const server = createFabricServer(tracker);
   const transport = new StdioServerTransport();
 
+  // v2.0.0-rc.23 TASK-009 (d): connect the MCP handshake BEFORE running
+  // reconcile. Previously `reconcileKnowledge` ran synchronously here and
+  // could take 2-15s on large knowledge trees — long enough for
+  // `claude mcp list` to mark the server as unreachable even when tools
+  // themselves worked fine. Decoupling handshake from reconcile removes
+  // the diagnostic mismatch.
+  //
+  // Reconcile is kicked off as a tracked background promise. Each tool
+  // handler awaits it via `awaitFirstReconcileGate` with a 5s deadline —
+  // see `services/first-reconcile-gate.ts` for the fail-loud contract
+  // (`meta_stale` / `reconcile_failed` warnings).
   await server.connect(transport);
+
+  const syncStart = Date.now();
+  const backgroundReconcile = (async () => {
+    const reconcileResult = await reconcileKnowledge(projectRoot, { trigger: "startup" });
+    const syncDurationMs = Date.now() - syncStart;
+    process.stderr.write(
+      `[startup] rule sync: status=${reconcileResult.status}, events=${reconcileResult.events.length}, ${syncDurationMs}ms\n`,
+    );
+  })().catch((error: unknown) => {
+    // Fail-loud: write a stderr banner so operators see the failure even
+    // before any tool call surfaces a `reconcile_failed` warning. We
+    // rethrow so the gate observes the rejection and caches it.
+    const message = error instanceof Error ? (error.stack ?? error.message) : String(error);
+    process.stderr.write(`[startup] rule sync FAILED: ${message}\n`);
+    throw error;
+  });
+  setFirstReconcile(backgroundReconcile);
 
   const closeServer = async (): Promise<void> => {
     await server.close();

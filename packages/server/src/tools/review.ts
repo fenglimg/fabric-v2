@@ -12,6 +12,11 @@ import { enforcePayloadLimit } from "@fenglimg/fabric-shared/node/mcp-payload-gu
 
 import { resolveProjectRoot } from "../meta-reader.js";
 import { readPayloadLimits } from "../config-loader.js";
+import {
+  awaitFirstReconcileGate,
+  gateWarning,
+  type GateWarning,
+} from "../services/first-reconcile-gate.js";
 import { type InFlightTracker } from "../services/in-flight-tracker.js";
 import { reviewKnowledge } from "../services/review.js";
 
@@ -33,13 +38,20 @@ export function registerReview(server: McpServer, tracker?: InFlightTracker): vo
       const requestId = randomUUID();
       tracker?.enter(requestId);
       try {
+        // v2.0.0-rc.23 TASK-009 (d): see plan-context.ts for rationale.
+        const gateResult = await awaitFirstReconcileGate();
+        const gateWarn = gateWarning(gateResult);
+
         // Narrow via the discriminatedUnion to recover full per-action
         // strictness (e.g. action=approve requires non-empty pending_paths).
         const narrowed = FabReviewInputSchema.parse(input);
         const projectRoot = resolveProjectRoot();
         const result = await reviewKnowledge(projectRoot, narrowed);
 
-        const response = result;
+        const response: typeof result & { warnings?: GateWarning[] } = { ...result };
+        if (gateWarn) {
+          response.warnings = [gateWarn];
+        }
 
         const payloadLimits = readPayloadLimits(projectRoot);
         const serialized = JSON.stringify(response);

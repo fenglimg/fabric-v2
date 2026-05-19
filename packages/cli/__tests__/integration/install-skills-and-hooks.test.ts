@@ -279,7 +279,7 @@ describe("TASK-006 install-skills-and-hooks: settings preservation", () => {
       .flatMap((entry) => entry.hooks ?? [])
       .map((h) => h.command);
     expect(stopCommands).toContain(".claude/hooks/my-custom-hook.cjs");
-    expect(stopCommands).toContain(".claude/hooks/fabric-hint.cjs");
+    expect(stopCommands).toContain("${CLAUDE_PROJECT_DIR}/.claude/hooks/fabric-hint.cjs");
   });
 });
 

@@ -49,10 +49,79 @@ describe("bootstrap-canonical", () => {
       it("references the fab doctor --cite-coverage audit command", () => {
         expect(BOOTSTRAP_CANONICAL).toContain("fab doctor --cite-coverage");
       });
+
+      describe("KB: none sentinel enums (rc.23 T8c)", () => {
+        // rc.23 T8c: `KB: none` accepts two reason sentinels — `[no-relevant]`
+        // (LLM searched but found nothing) and `[not-applicable]` (action not
+        // in cite scope). Bare `KB: none` is treated as `[unspecified]` for
+        // legacy/lazy emissions.
+
+        it("documents the [no-relevant] sentinel", () => {
+          expect(BOOTSTRAP_CANONICAL).toContain("[no-relevant]");
+        });
+
+        it("documents the [not-applicable] sentinel as a KB: none reason", () => {
+          // 'not-applicable' already exists as a dismissed reason — the T8c
+          // addition is the explanatory phrase tying it to KB: none scope.
+          expect(BOOTSTRAP_CANONICAL).toContain("不在 cite 范围");
+        });
+
+        it("retains bare `KB: none` as legacy [unspecified] form", () => {
+          expect(BOOTSTRAP_CANONICAL).toContain("[unspecified]");
+        });
+
+        it("uses the new bracketed reply-line shape `KB: none [<reason>]`", () => {
+          expect(BOOTSTRAP_CANONICAL).toContain("KB: none [<reason>]");
+        });
+      });
     });
 
     it("does not contain a UTF-8 BOM", () => {
       expect(BOOTSTRAP_CANONICAL.charCodeAt(0)).not.toBe(0xfeff);
+    });
+
+    describe("two-step KB read flow (rc.23 F1)", () => {
+      // rc.23 F1: the template teaches the real two-step API
+      //   step 1 — fab_plan_context(paths=[...]) → returns selection_token + entries
+      //   step 2 — fab_get_knowledge_sections({selection_token, ai_selected_stable_ids, sections})
+      // The pre-rc.23 single-step `fab_get_knowledge_sections(id=...)` form would
+      // fail schema validation on the very first KB read.
+
+      it("mentions fab_plan_context as the step-1 entry point", () => {
+        expect(BOOTSTRAP_CANONICAL).toContain("fab_plan_context");
+      });
+
+      it("mentions ai_selected_stable_ids as a required step-2 argument", () => {
+        expect(BOOTSTRAP_CANONICAL).toContain("ai_selected_stable_ids");
+      });
+
+      it("references selection_token as the inter-step contract", () => {
+        expect(BOOTSTRAP_CANONICAL).toContain("selection_token");
+      });
+
+      // rc.23 TASK-013 (F8b): the legacy KNOWLEDGE_SECTION_NAMES tuple
+      // (MISSION_STATEMENT / MANDATORY_INJECTION / BUSINESS_LOGIC_CHUNKS /
+      // CONTEXT_INFO) was retired. The bootstrap no longer enumerates a
+      // section enum — fab_get_knowledge_sections returns the full body and
+      // the LLM scans whatever B-set headings the rule defines.
+      it("no longer references the retired KNOWLEDGE_SECTION_NAMES enum", () => {
+        expect(BOOTSTRAP_CANONICAL).not.toContain("MISSION_STATEMENT");
+        expect(BOOTSTRAP_CANONICAL).not.toContain("MANDATORY_INJECTION");
+        expect(BOOTSTRAP_CANONICAL).not.toContain("BUSINESS_LOGIC_CHUNKS");
+        expect(BOOTSTRAP_CANONICAL).not.toContain("CONTEXT_INFO");
+      });
+
+      it("no longer shows a `sections:` parameter in the step-2 example", () => {
+        // The `sections` input parameter on fab_get_knowledge_sections was
+        // removed in rc.23 F8b. The two-step example must not demo it.
+        expect(BOOTSTRAP_CANONICAL).not.toMatch(/sections:\s*\[/);
+      });
+
+      it("does not teach the obsolete single-step fab_get_knowledge_sections(id=...) form", () => {
+        // The bare `id=` arg form is the rc.22-and-earlier mistake that drove
+        // KB:none 25/25. Schema requires selection_token + ai_selected_stable_ids.
+        expect(BOOTSTRAP_CANONICAL).not.toMatch(/fab_get_knowledge_sections\(id=/);
+      });
     });
   });
 

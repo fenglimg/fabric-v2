@@ -163,6 +163,10 @@ export const zhCNMessages: Messages = {
   "doctor.cite.dismissed.not-applicable": "不适用",
   "doctor.cite.dismissed.other": "其他",
   "doctor.cite.dismissed.unspecified": "未注明",
+  "doctor.cite.section.noneReasons": "KB: none 原因分布",
+  "doctor.cite.none.no-relevant": "已查无可用",
+  "doctor.cite.none.not-applicable": "不在范围",
+  "doctor.cite.none.unspecified": "未注明",
   "doctor.cite.status.skipped": "本工作区 Cite policy 尚未激活。",
   "cli.doctor.args.target.description":
     "目标项目路径。默认依次使用 --target、EXTERNAL_FIXTURE_PATH、当前目录。",
@@ -171,8 +175,6 @@ export const zhCNMessages: Messages = {
   "cli.doctor.args.strict.description": "将 warning 也视为失败。",
   "cli.doctor.args.fix-knowledge.description":
     "应用知识库 lint 变更：降级孤立的规范条目、归档陈旧 draft、修正漂移的索引计数器。默认 doctor 运行仍然只读。",
-  "cli.doctor.args.rescan.description":
-    "在 doctor 检查之前重新运行 init scan，以重建 .fabric/agents.meta.json 的取证状态。",
   "cli.doctor.args.yes.description":
     "跳过 --fix-knowledge 的安全确认；非 tty 调用必须显式设置该标记，或在环境变量中设置 FABRIC_NONINTERACTIVE=1。",
   "cli.doctor.errors.fix-knowledge-fix-mutually-exclusive":
@@ -190,6 +192,17 @@ export const zhCNMessages: Messages = {
     "--since 取值无效: {input}。预期格式 7d / 24h / 30m 或 epoch ms。",
   "cli.doctor.errors.invalid-client":
     "--client 取值无效: {input}。预期 cc / codex / cursor / all。",
+  // rc.23 TASK-007 (a-C2): --enrich-descriptions 回填四个 description 字段。
+  "cli.doctor.args.enrich-descriptions.description":
+    "回填正式知识条目缺失的 intent_clues / tech_stack / impact / must_read_if 字段（默认只读;搭配 --auto 写入 stub）。",
+  "cli.doctor.args.auto.description":
+    "与 --enrich-descriptions 搭配：为缺失字段写入确定性 stub 值。不加 --auto 仅做只读扫描。",
+  "cli.doctor.args.dry-run.description":
+    "与 --enrich-descriptions --auto 搭配：仅预览改动计划,不写入磁盘。",
+  "cli.doctor.errors.enrich-descriptions-mutex":
+    "--enrich-descriptions 不能与 --fix / --fix-knowledge / --cite-coverage 同时使用,请分别运行。",
+  "doctor.enrich.allComplete":
+    "所有正式知识条目均已包含 intent_clues / tech_stack / impact / must_read_if。",
 
   "cli.hooks.description": "管理 Fabric Git 钩子模板。",
   "cli.hooks.install.description": "安装 Fabric Husky pre-commit 钩子模板。",

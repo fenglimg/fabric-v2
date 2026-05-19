@@ -10,6 +10,10 @@ import {
 import { enforcePayloadLimit } from "@fenglimg/fabric-shared/node/mcp-payload-guard";
 import { resolveProjectRoot } from "../meta-reader.js";
 import { readPayloadLimits } from "../config-loader.js";
+import {
+  awaitFirstReconcileGate,
+  gateWarning,
+} from "../services/first-reconcile-gate.js";
 import { type InFlightTracker } from "../services/in-flight-tracker.js";
 import {
   getKnowledgeSections,
@@ -22,7 +26,7 @@ export function registerKnowledgeSections(server: McpServer, tracker?: InFlightT
     "fab_get_knowledge_sections",
     {
       description:
-        "Fetch structured Fabric rule sections after fab_plan_context. Required L0/L2 rules are merged with AI-selected L1 rules server-side.",
+        "Fetch the full markdown body of one or more Fabric rules picked from fab_plan_context. Returns body strings keyed by stable_id (frontmatter stripped). Use after fab_plan_context returned selectable entries to load full rule content for LLM context injection — scan the body for whatever headings the rule defines (Summary / Why proposed / Session context / Evidence, etc.).",
       inputSchema: knowledgeSectionsInputSchema,
       outputSchema: knowledgeSectionsOutputSchema,
       annotations: knowledgeSectionsAnnotations,
@@ -31,13 +35,20 @@ export function registerKnowledgeSections(server: McpServer, tracker?: InFlightT
       const requestId = randomUUID();
       tracker?.enter(requestId);
       try {
+        // v2.0.0-rc.23 TASK-009 (d): see plan-context.ts for rationale.
+        const gateResult = await awaitFirstReconcileGate();
+        const gateWarn = gateWarning(gateResult);
+
         const projectRoot = resolveProjectRoot();
         const syncReport = await ensureKnowledgeFresh(projectRoot);
         const result = await getKnowledgeSections(projectRoot, input);
 
         const response = {
           ...result,
-          warnings: [...syncReport.warnings],
+          warnings: [
+            ...(gateWarn ? [gateWarn] : []),
+            ...syncReport.warnings,
+          ],
         };
 
         const payloadLimits = readPayloadLimits(projectRoot);

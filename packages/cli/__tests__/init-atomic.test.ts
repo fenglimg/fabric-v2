@@ -61,8 +61,8 @@ describe("init-atomic: no .tmp files remain after fresh init", () => {
   });
 });
 
-describe("init-atomic: events.jsonl created as raw file (0-byte after scaffold, populated by init-scan)", () => {
-  it("events.jsonl exists and contains init_scan_completed after fresh init", async () => {
+describe("init-atomic: events.jsonl created as raw file and populated by install ledger event", () => {
+  it("events.jsonl exists and contains install_diff_applied after fresh init", async () => {
     const target = createWerewolfFixtureRoot("fab-atomic-events");
     tempRoots.push(target);
 
@@ -71,13 +71,14 @@ describe("init-atomic: events.jsonl created as raw file (0-byte after scaffold, 
     const eventsPath = join(target, ".fabric", "events.jsonl");
     expect(existsSync(eventsPath)).toBe(true);
 
-    // v2.0: scaffold writes a 0-byte events.jsonl, then the init-scan stage
-    // appends `init_scan_completed` and supporting reconcile entries. Asserting
-    // that the ledger is non-empty AND contains init_scan_completed verifies
-    // both the raw-create contract and the scan invocation.
+    // rc.23 TASK-012 (F8a): scaffold writes a 0-byte events.jsonl, then the
+    // install stage appends `install_diff_applied` (the legacy
+    // `init_scan_completed` event was removed alongside the baseline scan).
+    // Asserting non-empty + contains install_diff_applied verifies both the
+    // raw-create contract and the install-ledger contract.
     const raw = readFileSync(eventsPath, "utf8");
     expect(raw.length).toBeGreaterThan(0);
-    expect(raw).toContain("init_scan_completed");
+    expect(raw).toContain("install_diff_applied");
   });
 
   it("atomicWriteText is NOT called for events.jsonl", async () => {
@@ -107,9 +108,9 @@ describe("init-atomic: events.jsonl created as raw file (0-byte after scaffold, 
 
 describe("init-atomic: P1 scaffold artifacts use atomic writes", () => {
   // v2.0: legacy `.fabric/bootstrap/README.md` and `.fabric/INITIAL_TAXONOMY.md`
-  // are no longer produced. The remaining atomic writes target
-  // `agents.meta.json`, `forensic.json`, and the knowledge entries placed by
-  // the init-scan stage (which use atomicWriteText for each markdown file).
+  // are no longer produced. rc.23 TASK-012 (F8a) also removed the baseline-emit
+  // stage, so the remaining atomic writes only target `agents.meta.json` and
+  // `forensic.json` on a fresh install — no knowledge .md files are placed.
 
   it("atomicWriteJson is called for agents.meta.json", async () => {
     const target = createWerewolfFixtureRoot("fab-atomic-meta");
@@ -120,7 +121,8 @@ describe("init-atomic: P1 scaffold artifacts use atomic writes", () => {
     await initFabric(target);
 
     const calls = spy.mock.calls.filter(([p]) => p.endsWith("agents.meta.json"));
-    // Two writes: scaffold-stage (empty meta) + post-scan (registerKnowledgeNodesInMeta).
+    // Single scaffold-stage write (empty meta). rc.23 TASK-012 (F8a) removed
+    // the post-scan registerKnowledgeNodesInMeta mutation.
     expect(calls.length).toBeGreaterThanOrEqual(1);
   });
 
@@ -136,7 +138,7 @@ describe("init-atomic: P1 scaffold artifacts use atomic writes", () => {
     expect(calls).toHaveLength(1);
   });
 
-  it("scan stage emits knowledge entries via atomicWriteText (markdown)", async () => {
+  it("fresh init emits zero knowledge .md files (baseline scan removed)", async () => {
     const target = createWerewolfFixtureRoot("fab-atomic-knowledge-entries");
     tempRoots.push(target);
 
@@ -144,13 +146,14 @@ describe("init-atomic: P1 scaffold artifacts use atomic writes", () => {
 
     await initFabric(target);
 
-    // Each scan-placed knowledge entry (.fabric/knowledge/<sub>/<slug>.md) is
-    // written via atomicWriteText. The deterministic builders produce 4-7
-    // entries; assert at least one .md write under .fabric/knowledge/.
+    // rc.23 TASK-012 (F8a): KB is intentionally empty on fresh install. No
+    // .md files under .fabric/knowledge/ should be written by `fab install`
+    // — the fabric-archive / fabric-import / fabric-review Skill flows are
+    // the sole post-install entry sources.
     const knowledgeMarkdownCalls = spy.mock.calls.filter(
       ([p]) => typeof p === "string" && p.includes(".fabric/knowledge/") && p.endsWith(".md"),
     );
-    expect(knowledgeMarkdownCalls.length).toBeGreaterThanOrEqual(1);
+    expect(knowledgeMarkdownCalls).toHaveLength(0);
   });
 });
 

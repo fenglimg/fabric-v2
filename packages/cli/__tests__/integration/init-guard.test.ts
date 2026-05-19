@@ -103,7 +103,8 @@ describe("I3: init default-install idempotency", () => {
 
     await runInit(target);
 
-    // Put a knowledge file so meta is preserved by runInitScan.
+    // Put a knowledge file under a canonical type subdir to exercise the
+    // meta-preservation path on idempotent re-run.
     mkdirSync(join(target, ".fabric", "knowledge", "decisions"), { recursive: true });
     writeFixtureFile(target, ".fabric/knowledge/decisions/my-rule.md", "# My Rule\n");
 

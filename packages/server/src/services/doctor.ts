@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync } from "node:fs";
-import { access, mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { constants } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, join, posix, relative as nodeRelative, resolve, sep } from "node:path";
@@ -18,11 +18,14 @@ import {
   BOOTSTRAP_MARKER_BEGIN,
   BOOTSTRAP_MARKER_END,
   BOOTSTRAP_REGEX,
+  ONBOARD_SLOT_NAMES,
+  ONBOARD_SLOT_TOTAL,
   type AgentsMeta,
   type AgentsMetaCounters,
   type EventLedgerEvent,
   type ForensicReport,
   type KnowledgeTestIndex,
+  type OnboardSlot,
 } from "@fenglimg/fabric-shared";
 import { detectFramework } from "@fenglimg/fabric-shared/node";
 
@@ -38,6 +41,7 @@ import {
 } from "./event-ledger.js";
 import { reconcileKnowledge } from "./knowledge-sync.js";
 import { readAgentsMeta } from "../meta-reader.js";
+import { isAlive, readLockState } from "./serve-lock.js";
 
 export type DoctorStatus = "ok" | "warn" | "error";
 export type DoctorIssueKind = "fixable_error" | "manual_error" | "warning" | "info";
@@ -461,6 +465,24 @@ type SessionHintsStaleInspection = {
   candidates: SessionHintsStaleCandidate[];
 };
 
+// rc.23 TASK-010 (e): stale `.fabric/.serve.lock` advisory. The lock is
+// written by `acquireLock` at the top of `fab serve` and removed by
+// `releaseLock` on graceful shutdown; a SIGKILL / crash leaves the file
+// behind, holding a dead PID. A subsequent `fab serve` invocation then hits
+// `ServeLockHeldError` with confusing 423 prose. Doctor surfaces a
+// non-blocking info-kind advisory (`stale_serve_lock`) when the lock holds a
+// dead PID, and `--fix` unlinks the corpse. `present=false` means no lock
+// file (skip); `pidAlive=true` means a healthy `fab serve` is running (skip).
+type StaleServeLockInspection =
+  | { present: false }
+  | {
+      present: true;
+      pid: number;
+      acquiredAt: number;
+      ageMs: number;
+      pidAlive: boolean;
+    };
+
 // rc.6 TASK-023 (E6): narrow_too_few — two-part check on narrow-scope KB
 // hygiene. Inspection consolidates a structural ratio (how much of the
 // canonical corpus is narrow-with-paths) with a telemetry-derived silence
@@ -725,12 +747,12 @@ const KNOWLEDGE_SUBDIRS = ["decisions", "pitfalls", "guidelines", "models", "pro
 
 // v2.0.0-rc.22 TASK-006: baseline filename format hard-error lint.
 //
-// Mirrors `KNOWN_BASELINE_IDS` in packages/cli/src/commands/scan.ts (T5).
-// Kept in sync by convention; T15 dogfood may refactor the duplication out
-// to a shared constant. Any stable_id NOT in this allowlist is treated as a
-// user-promoted entry (e.g. KP-DEC-0001) and intentionally left untouched —
-// only deterministic baselines emitted by `fab scan` are subject to the
-// `${id}--${slug}.md` filename invariant this lint enforces.
+// rc.23 TASK-012 (F8a) removed the baseline-emit pipeline; this lint
+// remains as a defensive detector for any legacy baseline files that
+// survive on disk in pre-rc.23 workspaces. Any stable_id NOT in this
+// allowlist is treated as a user-promoted entry (e.g. KP-DEC-0001) and
+// intentionally left untouched — only the historical deterministic
+// baseline ids are subject to the filename invariant this lint enforces.
 const BASELINE_FILENAME_LINT_BASELINE_IDS = new Set<string>([
   "KT-MOD-0001", // tech-stack
   "KT-MOD-0002", // module-structure
@@ -740,9 +762,8 @@ const BASELINE_FILENAME_LINT_BASELINE_IDS = new Set<string>([
   "KT-GLD-0001", // code-style
 ]);
 
-// Filename pattern for the canonical id-prefixed form. Mirrors
-// `ID_PREFIXED_FILENAME_PATTERN` in scan.ts (T5). Files matching this pattern
-// are already migrated and not flagged by this lint.
+// Filename pattern for the canonical id-prefixed form. Files matching this
+// pattern are already migrated and not flagged by this lint.
 const BASELINE_ID_PREFIXED_FILENAME_PATTERN = /^KT-[A-Z]+-\d+--.+\.md$/u;
 
 // Knowledge counter type-codes. Mirrors KNOWLEDGE_TYPE_CODES values in shared/api-contracts.
@@ -816,9 +837,10 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
   const knowledgeDirUnindexed = inspectKnowledgeDirUnindexed(projectRoot, meta);
   const knowledgeDirMissing = inspectKnowledgeDirMissing(projectRoot);
   // v2.0.0-rc.22 TASK-006: baseline filename format hard error. Detects
-  // bare-slug baseline files (pre-rc.22 layout) and instructs the user to
-  // run `fab scan` for one-shot migration. manual_error kind (no --fix path;
-  // delegated fixer is `fab scan`).
+  // legacy bare-slug baseline files. rc.23 TASK-012 (F8a) deleted the
+  // baseline-emit pipeline outright, so the lint now serves only as a
+  // forensic indicator for stale pre-rc.23 workspaces; resolution is
+  // manual deletion of the offending file. manual_error kind, no --fix path.
   const baselineFilenameFormat = inspectBaselineFilenameFormat(projectRoot);
   const stableIdCollision = await inspectStableIdCollisions(projectRoot);
   const counterDesync = inspectCounterDesync(meta);
@@ -869,6 +891,11 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
   // (mtime-based). Info kind — does not bump report status. apply-lint
   // reaps matched files via unlink (no ledger event; local hot-cache).
   const sessionHintsStale = inspectSessionHintsStale(projectRoot, lintNow);
+  // rc.23 TASK-010 (e): stale .fabric/.serve.lock advisory. Read-side only —
+  // mutation (unlink + ledger event) is owned by runDoctorFix. Re-uses the
+  // same lintNow timestamp as the other read-side hygiene inspections so a
+  // single doctor run reports an internally-consistent set of age figures.
+  const staleServeLock = inspectStaleServeLock(projectRoot, lintNow);
   // v2.0.0-rc.9 TASK-003 (A3): relevance fields back-fill (#28). Scans the
   // pending tree (both layers) for entries whose frontmatter is missing
   // `relevance_scope` and/or `relevance_paths`. Info kind — back-fill is
@@ -881,6 +908,12 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
   // strict YAML parser rejects (Claude Code is lenient). Warning kind —
   // manual fix only.
   const skillMdYamlInvalid = inspectSkillMdYamlInvalid(projectRoot);
+  // v2.0.0-rc.23 TASK-014 (F8c): onboard-coverage advisory. Info kind —
+  // does not bump report status. Mirrors the fab onboard-coverage CLI
+  // scanner; reports which of the 5 S5 slots are unclaimed and recommends
+  // /fabric-archive (whose first-run phase tours the project and proposes
+  // pending entries with `onboard_slot: <slot>` set).
+  const onboardCoverage = inspectOnboardCoverage(projectRoot);
   const checks: DoctorCheck[] = [
     createBootstrapAnchorCheck(bootstrapAnchor),
     // v2.0.0-rc.19 TASK-004: bootstrap marker migration check sits adjacent to
@@ -895,7 +928,8 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     createKnowledgeDirMissingCheck(knowledgeDirMissing),
     // v2.0.0-rc.22 TASK-006: baseline filename format. Sits adjacent to
     // knowledge_dir_missing — both are knowledge-layout invariants. manual_error
-    // kind; resolution delegates to `fab scan` (no --fix path).
+    // kind; resolution is manual file deletion (rc.23 TASK-012 (F8a) removed
+    // the baseline-emit pipeline, so no auto-fix exists).
     createBaselineFilenameFormatCheck(baselineFilenameFormat),
     createForensicCheck(forensic, framework.kind, entryPoints.length),
     // v2.0: removed `createInitContextCheck` — `.fabric/init-context.json`
@@ -949,6 +983,10 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     createNarrowTooFewCheck(narrowTooFew),
     // rc.6 TASK-021 (E3): session-hints cache hygiene (lint #27). Info kind.
     createSessionHintsStaleCheck(sessionHintsStale),
+    // rc.23 TASK-010 (e): stale .fabric/.serve.lock advisory. Info kind —
+    // does not bump report status. `--fix` unlinks the corpse and emits
+    // `serve_lock_cleared`.
+    createStaleServeLockCheck(staleServeLock),
     // v2.0.0-rc.9 TASK-003 (A3): relevance fields back-fill (lint #28).
     // Info kind — applies to pending entries only; canonical entries get
     // the fields written verbatim by fab_review.approve/modify.
@@ -956,6 +994,11 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     // rc.12 lint #29: skill_md_yaml_invalid. Warning kind — surfaces
     // SKILL.md frontmatter that Codex CLI silently drops at load.
     createSkillMdYamlInvalidCheck(skillMdYamlInvalid),
+    // v2.0.0-rc.23 TASK-014 (F8c): Onboard coverage advisory. Info kind.
+    // Surfaces uncovered S5 onboard slots and recommends /fabric-archive
+    // first-run phase. Sits adjacent to Skill markdown YAML — both are
+    // Skill-adjacent advisories. --fix never mutates onboard state.
+    createOnboardCoverageCheck(onboardCoverage),
     createPreexistingRootFilesCheck(preexistingRootFiles),
     // v2.0 / rc.2: `createLegacyClientPathCheck` removed. The schema now
     // rejects retired clientPaths keys (windsurf/rooCode/geminiCLI) at Zod
@@ -1154,6 +1197,40 @@ export async function runDoctorFix(target: string): Promise<DoctorFixReport> {
   if (before.fixable_errors.some((issue) => issue.code === "mcp_config_in_wrong_file")) {
     await fixMcpConfigInWrongFile(projectRoot);
     fixed.push(findIssue(before.fixable_errors, "mcp_config_in_wrong_file"));
+  }
+
+  // rc.23 TASK-010 (e): stale .fabric/.serve.lock cleanup. The advisory rides
+  // in `before.infos` (info kind, not fixable_errors) — `--fix` is the only
+  // mutation surface that handles info findings. Re-inspect rather than
+  // re-parsing the advisory message so the unlink decision uses fresh
+  // filesystem state and a fresh liveness probe. One ledger event
+  // (`serve_lock_cleared`) per cleared lock; failure to append the event
+  // (e.g. ledger corrupt) is swallowed so the unlink still succeeds.
+  if (before.infos.some((issue) => issue.code === "stale_serve_lock")) {
+    const lockInspection = inspectStaleServeLock(projectRoot, Date.now());
+    if (lockInspection.present && !lockInspection.pidAlive) {
+      const lockFilePath = join(projectRoot, ".fabric", ".serve.lock");
+      try {
+        await unlink(lockFilePath);
+      } catch (err: unknown) {
+        // ENOENT is fine — lock disappeared between inspect and unlink (race
+        // with another doctor run). Any other error propagates.
+        const errno = err as NodeJS.ErrnoException;
+        if (errno.code !== "ENOENT") throw err;
+      }
+      await appendEventLedgerEvent(projectRoot, {
+        event_type: "serve_lock_cleared",
+        pid: lockInspection.pid,
+        age_ms: lockInspection.ageMs,
+        timestamp: new Date().toISOString(),
+      }).catch(() => {});
+      fixed.push({
+        code: "stale_serve_lock",
+        name: "Serve lock",
+        message: `Removed stale .fabric/.serve.lock (dead PID ${lockInspection.pid}).`,
+        path: ".fabric/.serve.lock",
+      });
+    }
   }
 
   const report = await runDoctorReport(projectRoot);
@@ -2323,7 +2400,7 @@ function createBaselineFilenameFormatCheck(
     "manual_error",
     "lint-baseline-filename-format",
     `${inspection.offenders.length} baseline knowledge file${inspection.offenders.length === 1 ? "" : "s"} use${inspection.offenders.length === 1 ? "s" : ""} the deprecated bare-slug filename format and must be migrated to \`\${id}--\${slug}.md\`. First: ${detail}.`,
-    "Run `fab scan` to auto-migrate baseline filenames to the canonical `${id}--${slug}.md` format.",
+    "Delete the legacy bare-slug baseline file(s) manually — the baseline pipeline was removed in rc.23 and is no longer an auto-fix path.",
   );
 }
 
@@ -2614,7 +2691,9 @@ function collectMdFilesUnder(
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
       const abs = join(dir, entry.name);
       if (entry.isDirectory()) {
-        stack.push(abs);
+        if (entry.name !== "pending" && entry.name !== "archive") {
+          stack.push(abs);
+        }
       } else if (entry.isFile() && entry.name.endsWith(".md")) {
         const rel = posix.join(relPrefix, abs.slice(rootDir.length + 1).replace(/\\/gu, "/"));
         out.add(rel);
@@ -3566,6 +3645,34 @@ function inspectSessionHintsStale(
   return { candidates };
 }
 
+// rc.23 TASK-010 (e): inspect `.fabric/.serve.lock` for a dead-PID corpse.
+// Re-uses `readLockState` (best-effort JSON parse — returns null on
+// missing/malformed) and `isAlive` (process.kill signal-0 probe) from
+// serve-lock.ts so a single canonical liveness rule applies across the
+// acquire path and the doctor advisory.
+function inspectStaleServeLock(
+  projectRoot: string,
+  now: number,
+): StaleServeLockInspection {
+  const state = readLockState(projectRoot);
+  if (state === null) {
+    return { present: false };
+  }
+  // Defensive: a malformed lock file is treated as "present + stale" — we
+  // still want the operator to know there's a corpse on disk. readLockState
+  // returns null on parse errors though, so this branch handles only the
+  // happy-parse case. The acquireLock-side overwrites a malformed file
+  // silently; the doctor surface is the operator's only visibility.
+  const ageMs = Math.max(0, now - state.acquiredAt);
+  return {
+    present: true,
+    pid: state.pid,
+    acquiredAt: state.acquiredAt,
+    ageMs,
+    pidAlive: isAlive(state.pid),
+  };
+}
+
 // rc.6 TASK-023 (E6): inspect narrow-scope KB hygiene via two independent
 // arms. Part A is a synchronous filesystem walk over canonical entries —
 // the same iterator used by lints #23/#24/#25 — that computes the ratio of
@@ -3782,6 +3889,40 @@ function createSessionHintsStaleCheck(
     "knowledge_session_hints_stale",
     `${inspection.candidates.length} session-hints cache file${inspection.candidates.length === 1 ? "" : "s"} under .fabric/.cache/ ${inspection.candidates.length === 1 ? "is" : "are"} older than ${SESSION_HINTS_STALE_DAYS} days. First: ${detail}.`,
     "Run `fab doctor --apply-lint` to delete stale session-hints cache files.",
+  );
+}
+
+// rc.23 TASK-010 (e): surface a stale `.fabric/.serve.lock` (dead-PID corpse)
+// as an info-kind advisory. Status stays "ok" — a stale lock is operator
+// hygiene, not a doctor-fatal. `--fix` (runDoctorFix) unlinks the file and
+// emits `serve_lock_cleared`. Skip cases: no lock file (steady state) and
+// lock held by a live PID (a healthy `fab serve` is running — never touch).
+function createStaleServeLockCheck(
+  inspection: StaleServeLockInspection,
+): DoctorCheck {
+  if (!inspection.present) {
+    return okCheck("Serve lock", "No .fabric/.serve.lock present.");
+  }
+  if (inspection.pidAlive) {
+    return okCheck(
+      "Serve lock",
+      `.fabric/.serve.lock held by live PID ${inspection.pid}.`,
+    );
+  }
+  // Coarse "K time ago" — days when ≥1d, hours otherwise. Matches the prose
+  // shape requested in the task spec; we floor-round so a 0-day reading
+  // never confuses the operator about whether the lock is fresh.
+  const days = Math.floor(inspection.ageMs / MS_PER_DAY);
+  const hours = Math.floor(inspection.ageMs / (60 * 60 * 1000));
+  const acquiredAgo =
+    days >= 1 ? `${days} day${days === 1 ? "" : "s"} ago` : `${hours} hour${hours === 1 ? "" : "s"} ago`;
+  return issueCheck(
+    "Serve lock",
+    "ok",
+    "info",
+    "stale_serve_lock",
+    `[advisory] .fabric/.serve.lock holds dead PID ${inspection.pid} (acquired ${acquiredAgo}). Run \`fab doctor --fix\` to remove.`,
+    "Run `fab doctor --fix` to remove the stale .fabric/.serve.lock.",
   );
 }
 
@@ -4563,6 +4704,150 @@ function createSkillMdYamlInvalidCheck(
   );
 }
 
+// ---------------------------------------------------------------------------
+// v2.0.0-rc.23 TASK-014 (F8c): onboard-coverage advisory.
+//
+// Walks canonical knowledge frontmatter for the `onboard_slot:` key, reads
+// `fabric-config.json#onboard_slots_opted_out`, and reports which of the
+// five S5 slots are unclaimed. Info kind — does NOT bump doctor status.
+//
+// This mirrors `runOnboardCoverage` in packages/cli/src/commands/onboard-coverage.ts
+// — duplicated rather than imported because the server package has zero
+// dependency on the CLI package (and vice-versa for the cross-package
+// boundary). The scanner shape is small enough that duplication is cheaper
+// than carving out a third "core" package. A drift test in doctor.test.ts
+// asserts both implementations stay in agreement on a shared fixture.
+//
+// `--fix` does NOT touch onboard coverage — slot fill is a user-driven Skill
+// flow, never an automated mutation. The advisory just informs.
+// ---------------------------------------------------------------------------
+
+const KNOWLEDGE_CANONICAL_TYPE_DIRS_FOR_ONBOARD = [
+  "decisions",
+  "pitfalls",
+  "guidelines",
+  "models",
+  "processes",
+] as const;
+
+type OnboardCoverageInspection = {
+  filled: Record<OnboardSlot, string[]>;
+  missing: OnboardSlot[];
+  opted_out: string[];
+};
+
+function inspectOnboardCoverage(projectRoot: string): OnboardCoverageInspection {
+  const filled = {} as Record<OnboardSlot, string[]>;
+  for (const slot of ONBOARD_SLOT_NAMES) {
+    filled[slot] = [];
+  }
+  const knowledgeRoot = join(projectRoot, ".fabric", "knowledge");
+  if (existsSync(knowledgeRoot)) {
+    for (const typeDir of KNOWLEDGE_CANONICAL_TYPE_DIRS_FOR_ONBOARD) {
+      const dir = join(knowledgeRoot, typeDir);
+      if (!existsSync(dir)) continue;
+      let entries;
+      try {
+        entries = readdirSync(dir, { withFileTypes: true });
+      } catch {
+        continue;
+      }
+      for (const entry of entries) {
+        if (!entry.isFile()) continue;
+        if (!entry.name.endsWith(".md")) continue;
+        const filePath = join(dir, entry.name);
+        let content: string;
+        try {
+          content = readFileSync(filePath, "utf8");
+        } catch {
+          continue;
+        }
+        const slot = readFrontmatterScalar(content, "onboard_slot");
+        if (slot === undefined) continue;
+        if (!(ONBOARD_SLOT_NAMES as readonly string[]).includes(slot)) continue;
+        const stableId = readFrontmatterScalar(content, "id") ?? entry.name.replace(/\.md$/u, "");
+        filled[slot as OnboardSlot].push(stableId);
+      }
+    }
+  }
+  for (const slot of ONBOARD_SLOT_NAMES) {
+    filled[slot].sort();
+  }
+  const optedOut = readOnboardOptedOut(projectRoot);
+  const missing: OnboardSlot[] = ONBOARD_SLOT_NAMES.filter((slot) => {
+    if (filled[slot].length > 0) return false;
+    if (optedOut.includes(slot)) return false;
+    return true;
+  });
+  return { filled, missing, opted_out: optedOut };
+}
+
+function readOnboardOptedOut(projectRoot: string): string[] {
+  const path = join(projectRoot, ".fabric", "fabric-config.json");
+  if (!existsSync(path)) return [];
+  let raw: string;
+  try {
+    raw = readFileSync(path, "utf8");
+  } catch {
+    return [];
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return [];
+  }
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return [];
+  }
+  const list = (parsed as Record<string, unknown>).onboard_slots_opted_out;
+  if (!Array.isArray(list)) return [];
+  return list.filter((v): v is string => typeof v === "string");
+}
+
+// Minimal frontmatter scalar reader — mirrors readFrontmatterKey in
+// extract-knowledge.ts (also intentionally duplicated to avoid a cross-file
+// import for a 10-line regex). Returns the trimmed value, with surrounding
+// double-quotes stripped if present.
+function readFrontmatterScalar(content: string, key: string): string | undefined {
+  const match = /^---\n([\s\S]*?)\n---/u.exec(content);
+  if (match === null) return undefined;
+  const block = match[1];
+  if (block === undefined) return undefined;
+  for (const rawLine of block.split(/\r?\n/u)) {
+    const line = rawLine.trim();
+    const sep = line.indexOf(":");
+    if (sep === -1) continue;
+    if (line.slice(0, sep).trim() !== key) continue;
+    let value = line.slice(sep + 1).trim();
+    if (value.startsWith('"') && value.endsWith('"') && value.length >= 2) {
+      value = value.slice(1, -1);
+    }
+    return value;
+  }
+  return undefined;
+}
+
+function createOnboardCoverageCheck(inspection: OnboardCoverageInspection): DoctorCheck {
+  const filledCount = ONBOARD_SLOT_NAMES.filter(
+    (slot) => inspection.filled[slot].length > 0,
+  ).length;
+  if (inspection.missing.length === 0) {
+    return okCheck(
+      "Onboard coverage",
+      `Onboard coverage: ${filledCount}/${ONBOARD_SLOT_TOTAL} ✓ (opted-out: ${inspection.opted_out.length}).`,
+    );
+  }
+  return issueCheck(
+    "Onboard coverage",
+    "ok",
+    "info",
+    "onboard_coverage_incomplete",
+    `Onboard slots not yet covered: [${inspection.missing.join(", ")}]. ${filledCount}/${ONBOARD_SLOT_TOTAL} filled; ${inspection.opted_out.length} opted-out.`,
+    "Run /fabric-archive to onboard — the Skill's first-run phase will tour the project and propose pending entries for each unclaimed slot.",
+  );
+}
+
 // rc.6 TASK-023 (E6): lint #26 narrow_too_few. Info-kind finding that
 // recommends running fabric-import to (re-)seed narrow anchors when EITHER
 // the structural ratio of narrow-with-paths entries is too low OR the
@@ -5243,8 +5528,30 @@ export type CiteCoverageReport = {
   };
   per_client?: Record<string, Partial<CiteCoverageReport["metrics"]>>;
   dismissed_reason_histogram?: Record<string, number>;
+  // v2.0.0-rc.23 TASK-08(c): breakdown of `KB: none` sentinel tails parsed
+  // from `kb_line_raw`. Keys: 'no-relevant' (LLM searched, nothing matched),
+  // 'not-applicable' (action not in cite scope), 'unspecified' (bare `KB:
+  // none` — legacy/lazy). Optional — only emitted when at least one turn
+  // carried the `none` cite tag.
+  none_reason_histogram?: Record<string, number>;
   generated_at: string;
 };
+
+// v2.0.0-rc.23 TASK-08(c): extract the `KB: none` sentinel reason from the raw
+// kb-line text. Returns 'no-relevant' / 'not-applicable' for the documented
+// enums, 'unspecified' for bare `KB: none` (legacy form). Unknown bracket
+// payloads also collapse to 'unspecified' — we keep the histogram bounded to
+// known buckets and rely on bootstrap docs to channel new emissions into the
+// enum. Case-insensitive on the bracket payload, tolerant of surrounding
+// whitespace.
+function parseNoneSentinel(kbLineRaw: string | null | undefined): string {
+  if (typeof kbLineRaw !== "string" || kbLineRaw.length === 0) return "unspecified";
+  const m = kbLineRaw.match(/^KB:\s*none\b\s*(?:\[([^\]]*)\])?\s*$/i);
+  if (m === null) return "unspecified";
+  const inner = (m[1] ?? "").trim().toLowerCase();
+  if (inner === "no-relevant" || inner === "not-applicable") return inner;
+  return "unspecified";
+}
 
 // v2.0.0-rc.20 TASK-06: cite-coverage helpers.
 //
@@ -5470,6 +5777,9 @@ export async function runDoctorCiteCoverage(
   // Aggregation pass — single sweep over filtered turns. Build both the
   // top-level metrics and per-client buckets in one walk.
   const dismissedHistogram: Record<string, number> = {};
+  // v2.0.0-rc.23 TASK-08(c): `KB: none` sentinel breakdown. Keyed by
+  // 'no-relevant' / 'not-applicable' / 'unspecified'.
+  const noneHistogram: Record<string, number> = {};
   const perClientAccum = new Map<string, CiteCoverageReport["metrics"]>();
   const emptyMetrics = (): CiteCoverageReport["metrics"] => ({
     edits_touched: 0,
@@ -5525,7 +5835,13 @@ export async function runDoctorCiteCoverage(
           dismissedHistogram[key] = (dismissedHistogram[key] ?? 0) + 1;
           break;
         }
-        case "none":
+        case "none": {
+          // v2.0.0-rc.23 TASK-08(c): parse sentinel tail from kb_line_raw and
+          // bump the breakdown bucket. Bare `KB: none` → 'unspecified'.
+          const sentinel = parseNoneSentinel(turn.kb_line_raw);
+          noneHistogram[sentinel] = (noneHistogram[sentinel] ?? 0) + 1;
+          break;
+        }
         default:
           break;
       }
@@ -5601,6 +5917,7 @@ export async function runDoctorCiteCoverage(
     metrics,
     ...(perClient !== undefined ? { per_client: perClient } : {}),
     ...(Object.keys(dismissedHistogram).length > 0 ? { dismissed_reason_histogram: dismissedHistogram } : {}),
+    ...(Object.keys(noneHistogram).length > 0 ? { none_reason_histogram: noneHistogram } : {}),
     generated_at: generatedAt,
   };
 }
@@ -5717,6 +6034,244 @@ function reduceStatus(statuses: DoctorStatus[]): DoctorStatus {
 
 function isMissingFileError(error: unknown): error is NodeJS.ErrnoException {
   return error instanceof Error && "code" in error && error.code === "ENOENT";
+}
+
+// ---------------------------------------------------------------------------
+// v2.0.0-rc.23 TASK-007 (a-C2): `fab doctor --enrich-descriptions`
+// ---------------------------------------------------------------------------
+//
+// TASK-006 (a-C1) added four optional description-grade frontmatter fields
+// (`intent_clues`, `tech_stack`, `impact`, `must_read_if`) to the
+// extract-knowledge schema + writer. Entries archived BEFORE rc.23 — and
+// rc.23 entries that the Skill chose to omit them on — won't carry the
+// fields, leaving the planContext description budget thinner than it could
+// be. `enrichDescriptions` walks the canonical knowledge tree (both team and
+// personal roots) and either back-fills deterministic stub values
+// (`--auto`) or surfaces a missing-field summary for the operator to feed
+// back into the archive Skill / manual editor.
+//
+// Scope:
+//   * `.fabric/knowledge/{decisions,pitfalls,guidelines,models,processes}/*.md`
+//     across both roots (`.fabric/knowledge/` + `<personal>/.fabric/knowledge/`)
+//   * `pending/` and `archive/` subtrees are deliberately skipped — pending
+//     entries are still in flight (the Skill owns their schema) and archived
+//     entries are immutable history.
+//
+// Atomicity: the on-disk rewrite goes through `atomicWriteText` so a crash
+// mid-write never leaves a half-state. Idempotent: a file already carrying
+// all four fields produces no diff and no event.
+
+export type EnrichDescriptionsMode = "auto" | "interactive";
+
+export type EnrichDescriptionsCandidate = {
+  // Workspace-relative POSIX path for team entries; `~/.fabric/...` form for
+  // personal entries. Matches the displayPath convention used elsewhere in
+  // this module (iterateCanonicalFilenames).
+  path: string;
+  // Subset of the four field names absent from the file's frontmatter, in a
+  // fixed canonical order so test assertions are deterministic.
+  missing: Array<"intent_clues" | "tech_stack" | "impact" | "must_read_if">;
+  // Whether enrichDescriptions actually rewrote this file. False in
+  // interactive mode (no auto-write), in dry-run mode (preview only), and
+  // when frontmatter could not be parsed (the file is reported but skipped).
+  modified: boolean;
+  // Populated when modified=true. Mirrors the `added_fields` payload in the
+  // `knowledge_enriched` event so callers can audit the per-file diff
+  // without re-reading the file.
+  added_fields: Array<"intent_clues" | "tech_stack" | "impact" | "must_read_if">;
+  // Set on a file we surfaced but couldn't rewrite (e.g. frontmatter not
+  // parseable). Undefined on the happy path.
+  error?: string;
+};
+
+export type EnrichDescriptionsReport = {
+  mode: EnrichDescriptionsMode;
+  dryRun: boolean;
+  scanned: number;
+  // Files actually rewritten on disk. Equal to candidates.filter(c =>
+  // c.modified).length on the auto+!dryRun path; always zero in interactive
+  // or dryRun mode.
+  modified: number;
+  // Files that the scan visited but found nothing to change (all four fields
+  // already present). Idempotency indicator.
+  skipped: number;
+  candidates: EnrichDescriptionsCandidate[];
+};
+
+const ENRICH_DESC_FIELDS = ["intent_clues", "tech_stack", "impact", "must_read_if"] as const;
+type EnrichDescField = (typeof ENRICH_DESC_FIELDS)[number];
+
+// Per-field line detectors. Matches the same shape extract-knowledge.ts emits:
+// flow-form arrays (`intent_clues: [...]` / `intent_clues: []`) and a single
+// quoted/unquoted scalar for must_read_if. Anchored on the field name + colon
+// so a substring (e.g. inside a body code block) cannot trick the regex.
+const ENRICH_DESC_FIELD_PATTERNS: Record<EnrichDescField, RegExp> = {
+  intent_clues: /^intent_clues\s*:/mu,
+  tech_stack: /^tech_stack\s*:/mu,
+  impact: /^impact\s*:/mu,
+  must_read_if: /^must_read_if\s*:/mu,
+};
+
+export async function enrichDescriptions(
+  projectRoot: string,
+  opts: { auto?: boolean; dryRun?: boolean } = {},
+): Promise<EnrichDescriptionsReport> {
+  const auto = opts.auto === true;
+  const dryRun = opts.dryRun === true;
+  const mode: EnrichDescriptionsMode = auto ? "auto" : "interactive";
+
+  const candidates: EnrichDescriptionsCandidate[] = [];
+  let scanned = 0;
+  let modified = 0;
+  let skipped = 0;
+
+  for (const visit of iterateCanonicalFilenames(projectRoot)) {
+    const layerRoot =
+      visit.layer === "team"
+        ? join(projectRoot, ".fabric", "knowledge")
+        : resolvePersonalKnowledgeRoot();
+    const absPath = join(layerRoot, visit.type, visit.filename);
+    scanned += 1;
+
+    let source: string;
+    try {
+      source = await readFile(absPath, "utf8");
+    } catch {
+      // Disappeared between readdir and read — skip silently (next doctor
+      // run picks up the live state).
+      continue;
+    }
+
+    const fmMatch = /^(?:\uFEFF)?---\r?\n([\s\S]*?)\r?\n---/u.exec(source);
+    if (fmMatch === null) {
+      // Body-only files: surface as a candidate with a parse-error marker so
+      // the operator sees they exist, but skip the rewrite arm — we don't
+      // synthesize a frontmatter block from nothing (the Skill owns initial
+      // archive shape).
+      candidates.push({
+        path: visit.displayPath,
+        missing: [...ENRICH_DESC_FIELDS],
+        modified: false,
+        added_fields: [],
+        error: "frontmatter not parseable",
+      });
+      continue;
+    }
+    const block = fmMatch[1];
+
+    const missing = ENRICH_DESC_FIELDS.filter(
+      (field) => !ENRICH_DESC_FIELD_PATTERNS[field].test(block),
+    );
+
+    if (missing.length === 0) {
+      skipped += 1;
+      continue;
+    }
+
+    if (!auto || dryRun) {
+      // Interactive or dryRun: report but don't rewrite. Operator drives the
+      // resolution (rerun the archive Skill, or manually edit + commit).
+      candidates.push({
+        path: visit.displayPath,
+        missing,
+        modified: false,
+        added_fields: [],
+      });
+      continue;
+    }
+
+    // Auto mode (with write): synthesize stubs. Empty arrays for the three
+    // list-valued fields are the deliberate "I have nothing to add" signal —
+    // they make the entry schema-valid for planContext's
+    // description-budget builder without claiming knowledge we don't have.
+    // For must_read_if we derive a one-line summary from the body's first
+    // H1 (or the slug-derived filename token) so the field carries SOMETHING
+    // operator-meaningful by default. The stub strings stay short so the
+    // YAML scalar fits on one line without folding.
+    const mustReadIf = synthesizeMustReadIfStub(source, visit.filename);
+    const additions: Array<{ field: EnrichDescField; line: string }> = [];
+    for (const field of missing) {
+      if (field === "must_read_if") {
+        additions.push({ field, line: `must_read_if: ${yamlQuoteIfNeeded(mustReadIf)}` });
+      } else {
+        additions.push({ field, line: `${field}: []` });
+      }
+    }
+    const trailing = block.endsWith("\n") ? "" : "\n";
+    const replacedBlock = `${block}${trailing}${additions.map((a) => a.line).join("\n")}`;
+    const blockStart = source.indexOf(block);
+    if (blockStart < 0) {
+      // Defensive: should never happen since fmMatch came from source.
+      candidates.push({
+        path: visit.displayPath,
+        missing,
+        modified: false,
+        added_fields: [],
+        error: "frontmatter block not located after match",
+      });
+      continue;
+    }
+    const rewritten =
+      source.slice(0, blockStart) + replacedBlock + source.slice(blockStart + block.length);
+
+    await atomicWriteText(absPath, rewritten);
+    modified += 1;
+    candidates.push({
+      path: visit.displayPath,
+      missing,
+      modified: true,
+      added_fields: additions.map((a) => a.field),
+    });
+
+    // Best-effort audit trail. A ledger write failure must NOT propagate —
+    // the file is already on disk and re-running the command would be a
+    // no-op (idempotency), so dropping the event is preferable to rolling
+    // back a successful write.
+    await appendEventLedgerEvent(projectRoot, {
+      event_type: "knowledge_enriched",
+      path: visit.displayPath,
+      added_fields: additions.map((a) => a.field),
+      mode,
+      timestamp: new Date().toISOString(),
+    }).catch(() => {});
+  }
+
+  // Stable display order — alphabetical by path so callers (CLI render, test
+  // assertions) don't depend on readdir() ordering quirks.
+  candidates.sort((a, b) => a.path.localeCompare(b.path));
+
+  return { mode, dryRun, scanned, modified, skipped, candidates };
+}
+
+// Derive a default `must_read_if` line from the entry's body. Preference:
+// the first H1 heading (`# Title`), falling back to a humanized form of the
+// canonical filename slug. The result is trimmed and clamped to 120 chars to
+// match the field's documented per-item budget (see api-contracts.ts).
+function synthesizeMustReadIfStub(source: string, filename: string): string {
+  const h1Match = /^#\s+(.+?)\s*$/mu.exec(source);
+  let raw = h1Match !== null ? h1Match[1] : filename.replace(/^K[PT]-[A-Z]+-\d+--/, "").replace(/\.md$/u, "").replace(/-/g, " ");
+  raw = raw.trim();
+  if (raw.length === 0) {
+    raw = "describes a knowledge invariant for this project";
+  }
+  if (raw.length > 120) {
+    raw = `${raw.slice(0, 117)}...`;
+  }
+  return raw;
+}
+
+// YAML flow scalar quoting. Mirrors the extract-knowledge `quoteRelevancePath`
+// rule: if the string contains characters that would confuse the line-based
+// parser (colon, `#`, leading `-`, leading `?`, brackets, quotes), wrap in
+// double quotes and escape embedded quotes/backslashes. Otherwise emit bare.
+function yamlQuoteIfNeeded(value: string): string {
+  if (value.length === 0) {
+    return '""';
+  }
+  if (/[:#"'\\[\]{},&*!|>%@`]/.test(value) || /^[\s-?]/.test(value) || /\s$/.test(value)) {
+    return `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+  }
+  return value;
 }
 
 export { getEventLedgerPath };

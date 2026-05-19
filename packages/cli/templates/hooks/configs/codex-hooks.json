@@ -2,18 +2,18 @@
   "events": {
     "Stop": [
       {
-        "command": ".codex/hooks/fabric-hint.cjs"
+        "command": "\"$(git rev-parse --show-toplevel)/.codex/hooks/fabric-hint.cjs\""
       }
     ],
     "SessionStart": [
       {
-        "command": ".codex/hooks/knowledge-hint-broad.cjs"
+        "command": "\"$(git rev-parse --show-toplevel)/.codex/hooks/knowledge-hint-broad.cjs\""
       }
     ],
     "PreToolUse": [
       {
         "matcher": "Edit|Write|MultiEdit",
-        "command": ".codex/hooks/knowledge-hint-narrow.cjs"
+        "command": "\"$(git rev-parse --show-toplevel)/.codex/hooks/knowledge-hint-narrow.cjs\""
       }
     ]
   }

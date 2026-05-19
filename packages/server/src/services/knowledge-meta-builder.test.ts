@@ -52,7 +52,7 @@ describe("knowledge-meta-builder", () => {
         "---",
         "<!-- fab:rule-id rules/server-core -->",
         "# Server rule contract",
-        "## [MANDATORY_INJECTION]",
+        "## Summary",
         "Use the service layer.",
         "",
       ].join("\n"),
@@ -90,7 +90,9 @@ describe("knowledge-meta-builder", () => {
       content_ref: ".fabric/knowledge/decisions/server-core.md",
       stable_id: "rules/server-core",
       identity_source: "declared",
-      sections: ["MANDATORY_INJECTION"],
+      // v2.0.0-rc.23 TASK-013 (F8b): the heading extractor now reads B-set
+      // plain `## <Title>` headings; the A-set `## [BRACKET]` enum was retired.
+      sections: ["Summary"],
       description: {
         summary: "Server rule contract",
         intent_clues: ["server"],

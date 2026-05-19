@@ -13,11 +13,40 @@ exports[`tool contracts > fab-extract-knowledge contract matches snapshot 1`] = 
     "$schema": "http://json-schema.org/draft-07/schema#",
     "additionalProperties": false,
     "properties": {
+      "impact": {
+        "description": "Consequences of ignoring this rule, used by the LLM to weight relevance vs cost. Each item ≤120 chars (e.g. 'O(n²) re-render on every frame', 'silent data loss on collision'). Optional — omit when impact is not observable.",
+        "items": {
+          "type": "string",
+        },
+        "type": "array",
+      },
+      "intent_clues": {
+        "description": "Short LLM-readable triggers describing when this rule should fire and when it should not. Each item ≤80 chars, imperative phrasing (e.g. 'when editing Cocos UI batch code', 'NOT for non-batch contexts'). Optional — omit when the skill cannot infer cleanly.",
+        "items": {
+          "type": "string",
+        },
+        "type": "array",
+      },
       "layer": {
         "description": "Storage layer for the pending entry. 'team' writes under the workspace; 'personal' writes under the user's home. Defaults to 'team'.",
         "enum": [
           "team",
           "personal",
+        ],
+        "type": "string",
+      },
+      "must_read_if": {
+        "description": "One-line strong trigger; when this condition holds the entry is considered required reading. Single line ≤160 chars (e.g. 'touching anything under packages/cli/src/commands/hooks.ts'). Optional — omit when no single strong trigger fits.",
+        "type": "string",
+      },
+      "onboard_slot": {
+        "description": "Optional slot tag from the S5 onboarding set (tech-stack-decision / architecture-pattern / code-style-tone / build-system-idiom / domain-vocabulary); lets fabric-archive's first-run phase claim a project-tone slot. Skill propose-time only; never required.",
+        "enum": [
+          "tech-stack-decision",
+          "architecture-pattern",
+          "code-style-tone",
+          "build-system-idiom",
+          "domain-vocabulary",
         ],
         "type": "string",
       },
@@ -64,18 +93,20 @@ exports[`tool contracts > fab-extract-knowledge contract matches snapshot 1`] = 
         "description": "URL-safe short identifier proposed by the Skill; server may sanitize",
         "type": "string",
       },
-      "source_session": {
-        "description": "DEPRECATED — pre-T5 alias for source_sessions. Use source_sessions: string[]. Single string still accepted for back-compat.",
-        "minLength": 1,
-        "type": "string",
-      },
       "source_sessions": {
-        "description": "Originating session ids; correlates with Event Ledger records. Array form (T5). Single string accepted via back-compat shim.",
+        "description": "Originating session ids; correlates with Event Ledger records. Array form (T5+, rc.23 made it the sole accepted shape).",
         "items": {
           "minLength": 1,
           "type": "string",
         },
         "minItems": 1,
+        "type": "array",
+      },
+      "tech_stack": {
+        "description": "Tech stack / languages / frameworks the rule applies to (e.g. ['typescript', 'cocos-creator', 'nodejs']). Inferred from recent_paths file extensions and manifest files. Optional — omit when the rule is stack-agnostic.",
+        "items": {
+          "type": "string",
+        },
         "type": "array",
       },
       "type": {
@@ -115,6 +146,32 @@ exports[`tool contracts > fab-extract-knowledge contract matches snapshot 1`] = 
       "pending_path": {
         "description": "Workspace-relative path to the persisted pending entry",
         "type": "string",
+      },
+      "warnings": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "action_hint": {
+              "type": "string",
+            },
+            "code": {
+              "type": "string",
+            },
+            "file": {
+              "type": "string",
+            },
+            "line": {
+              "type": "number",
+            },
+          },
+          "required": [
+            "code",
+            "file",
+            "action_hint",
+          ],
+          "type": "object",
+        },
+        "type": "array",
       },
     },
     "required": [
@@ -428,6 +485,32 @@ exports[`tool contracts > fab-review contract matches snapshot 1`] = `
             },
             "type": "array",
           },
+          "warnings": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "action_hint": {
+                  "type": "string",
+                },
+                "code": {
+                  "type": "string",
+                },
+                "file": {
+                  "type": "string",
+                },
+                "line": {
+                  "type": "number",
+                },
+              },
+              "required": [
+                "code",
+                "file",
+                "action_hint",
+              ],
+              "type": "object",
+            },
+            "type": "array",
+          },
         },
         "required": [
           "action",
@@ -461,6 +544,12 @@ exports[`tool contracts > fab-review contract matches snapshot 1`] = `
             },
             "type": "array",
           },
+          "warnings": {
+            "items": {
+              "$ref": "#/anyOf/0/properties/warnings/items",
+            },
+            "type": "array",
+          },
         },
         "required": [
           "action",
@@ -478,6 +567,12 @@ exports[`tool contracts > fab-review contract matches snapshot 1`] = `
           "rejected": {
             "items": {
               "type": "string",
+            },
+            "type": "array",
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/anyOf/0/properties/warnings/items",
             },
             "type": "array",
           },
@@ -504,6 +599,12 @@ exports[`tool contracts > fab-review contract matches snapshot 1`] = `
           "prior_stable_id": {
             "type": "string",
           },
+          "warnings": {
+            "items": {
+              "$ref": "#/anyOf/0/properties/warnings/items",
+            },
+            "type": "array",
+          },
         },
         "required": [
           "action",
@@ -521,6 +622,12 @@ exports[`tool contracts > fab-review contract matches snapshot 1`] = `
           "items": {
             "items": {
               "$ref": "#/anyOf/0/properties/items/items",
+            },
+            "type": "array",
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/anyOf/0/properties/warnings/items",
             },
             "type": "array",
           },
@@ -544,6 +651,12 @@ exports[`tool contracts > fab-review contract matches snapshot 1`] = `
             },
             "type": "array",
           },
+          "warnings": {
+            "items": {
+              "$ref": "#/anyOf/0/properties/warnings/items",
+            },
+            "type": "array",
+          },
         },
         "required": [
           "action",
@@ -552,166 +665,6 @@ exports[`tool contracts > fab-review contract matches snapshot 1`] = `
         "type": "object",
       },
     ],
-  },
-}
-`;
-
-exports[`tool contracts > get-knowledge contract matches snapshot 1`] = `
-{
-  "annotations": {
-    "destructiveHint": false,
-    "idempotentHint": true,
-    "openWorldHint": false,
-    "readOnlyHint": true,
-    "title": "Get rule content",
-  },
-  "inputSchema": {
-    "$schema": "http://json-schema.org/draft-07/schema#",
-    "additionalProperties": false,
-    "properties": {
-      "client_hash": {
-        "description": "Revision hash from prior fab_get_rules response; enables stale detection",
-        "type": "string",
-      },
-      "correlation_id": {
-        "description": "Optional caller-provided correlation id for Event Ledger records",
-        "type": "string",
-      },
-      "path": {
-        "description": "Target file path to query rules for",
-        "type": "string",
-      },
-      "session_id": {
-        "description": "Optional caller-provided session id for Event Ledger records",
-        "type": "string",
-      },
-    },
-    "required": [
-      "path",
-    ],
-    "type": "object",
-  },
-  "outputSchema": {
-    "$schema": "http://json-schema.org/draft-07/schema#",
-    "additionalProperties": false,
-    "properties": {
-      "revision_hash": {
-        "type": "string",
-      },
-      "rules": {
-        "additionalProperties": false,
-        "properties": {
-          "L0": {
-            "type": "string",
-          },
-          "L1": {
-            "items": {
-              "additionalProperties": false,
-              "properties": {
-                "content": {
-                  "type": "string",
-                },
-                "path": {
-                  "type": "string",
-                },
-              },
-              "required": [
-                "path",
-                "content",
-              ],
-              "type": "object",
-            },
-            "type": "array",
-          },
-          "L2": {
-            "items": {
-              "$ref": "#/properties/rules/properties/L1/items",
-            },
-            "type": "array",
-          },
-          "description_stubs": {
-            "items": {
-              "additionalProperties": false,
-              "properties": {
-                "description": {
-                  "type": "string",
-                },
-                "path": {
-                  "type": "string",
-                },
-              },
-              "required": [
-                "path",
-                "description",
-              ],
-              "type": "object",
-            },
-            "type": "array",
-          },
-          "human_locked_nearby": {
-            "items": {
-              "additionalProperties": false,
-              "properties": {
-                "excerpt": {
-                  "type": "string",
-                },
-                "file": {
-                  "type": "string",
-                },
-              },
-              "required": [
-                "file",
-                "excerpt",
-              ],
-              "type": "object",
-            },
-            "type": "array",
-          },
-        },
-        "required": [
-          "L0",
-          "L1",
-          "L2",
-          "human_locked_nearby",
-        ],
-        "type": "object",
-      },
-      "stale": {
-        "type": "boolean",
-      },
-      "warnings": {
-        "items": {
-          "additionalProperties": false,
-          "properties": {
-            "action_hint": {
-              "type": "string",
-            },
-            "code": {
-              "type": "string",
-            },
-            "file": {
-              "type": "string",
-            },
-            "line": {
-              "type": "number",
-            },
-          },
-          "required": [
-            "code",
-            "file",
-            "action_hint",
-          ],
-          "type": "object",
-        },
-        "type": "array",
-      },
-    },
-    "required": [
-      "revision_hash",
-      "stale",
-      "rules",
-    ],
-    "type": "object",
   },
 }
 `;
@@ -730,7 +683,7 @@ exports[`tool contracts > knowledge-sections contract matches snapshot 1`] = `
     "additionalProperties": false,
     "properties": {
       "ai_selected_stable_ids": {
-        "description": "AI-selected L1 stable_ids chosen from fab_plan_context ai_selectable_stable_ids",
+        "description": "Stable ids picked from fab_plan_context entries[].description_index[].stable_id where selectable=true; choose 1..N to fetch bodies for",
         "items": {
           "type": "string",
         },
@@ -752,20 +705,6 @@ exports[`tool contracts > knowledge-sections contract matches snapshot 1`] = `
         "description": "Optional caller-provided correlation id for Event Ledger records",
         "type": "string",
       },
-      "sections": {
-        "description": "Structured rule sections to fetch",
-        "items": {
-          "enum": [
-            "MISSION_STATEMENT",
-            "MANDATORY_INJECTION",
-            "BUSINESS_LOGIC_CHUNKS",
-            "CONTEXT_INFO",
-          ],
-          "type": "string",
-        },
-        "minItems": 1,
-        "type": "array",
-      },
       "selection_token": {
         "description": "Selection token returned by fab_plan_context",
         "minLength": 1,
@@ -778,7 +717,6 @@ exports[`tool contracts > knowledge-sections contract matches snapshot 1`] = `
     },
     "required": [
       "selection_token",
-      "sections",
       "ai_selected_stable_ids",
       "ai_selection_reasons",
     ],
@@ -790,74 +728,35 @@ exports[`tool contracts > knowledge-sections contract matches snapshot 1`] = `
     "properties": {
       "diagnostics": {
         "items": {
-          "anyOf": [
-            {
-              "additionalProperties": false,
-              "properties": {
-                "code": {
-                  "const": "missing_section",
-                  "type": "string",
-                },
-                "message": {
-                  "type": "string",
-                },
-                "section": {
-                  "enum": [
-                    "MISSION_STATEMENT",
-                    "MANDATORY_INJECTION",
-                    "BUSINESS_LOGIC_CHUNKS",
-                    "CONTEXT_INFO",
-                  ],
-                  "type": "string",
-                },
-                "severity": {
-                  "const": "warn",
-                  "type": "string",
-                },
-                "stable_id": {
-                  "type": "string",
-                },
-              },
-              "required": [
-                "code",
-                "severity",
-                "stable_id",
-                "section",
-                "message",
-              ],
-              "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "code": {
+              "const": "missing_knowledge_metadata",
+              "type": "string",
             },
-            {
-              "additionalProperties": false,
-              "properties": {
-                "code": {
-                  "const": "missing_knowledge_metadata",
-                  "type": "string",
-                },
-                "message": {
-                  "type": "string",
-                },
-                "severity": {
-                  "const": "warn",
-                  "type": "string",
-                },
-                "stable_id": {
-                  "type": "string",
-                },
-              },
-              "required": [
-                "code",
-                "severity",
-                "stable_id",
-                "message",
-              ],
-              "type": "object",
+            "message": {
+              "type": "string",
             },
+            "severity": {
+              "const": "warn",
+              "type": "string",
+            },
+            "stable_id": {
+              "type": "string",
+            },
+          },
+          "required": [
+            "code",
+            "severity",
+            "stable_id",
+            "message",
           ],
+          "type": "object",
         },
         "type": "array",
       },
       "precedence": {
+        "description": "DEPRECATED (removed in rc.24): hardcoded L2/L1/L0 precedence tuple from the retired rc.5 selection ceremony. Use rules[].level instead.",
         "items": [
           {
             "const": "L2",
@@ -896,6 +795,9 @@ exports[`tool contracts > knowledge-sections contract matches snapshot 1`] = `
         "items": {
           "additionalProperties": false,
           "properties": {
+            "body": {
+              "type": "string",
+            },
             "level": {
               "enum": [
                 "L0",
@@ -907,12 +809,6 @@ exports[`tool contracts > knowledge-sections contract matches snapshot 1`] = `
             "path": {
               "type": "string",
             },
-            "sections": {
-              "additionalProperties": {
-                "type": "string",
-              },
-              "type": "object",
-            },
             "stable_id": {
               "type": "string",
             },
@@ -921,7 +817,7 @@ exports[`tool contracts > knowledge-sections contract matches snapshot 1`] = `
             "stable_id",
             "level",
             "path",
-            "sections",
+            "body",
           ],
           "type": "object",
         },
@@ -962,7 +858,6 @@ exports[`tool contracts > knowledge-sections contract matches snapshot 1`] = `
     },
     "required": [
       "revision_hash",
-      "precedence",
       "selected_stable_ids",
       "rules",
       "diagnostics",

@@ -6,4 +6,8 @@ export const allCommands = {
   config: () => import("./config.js").then((module) => module.default),
   "plan-context-hint": () =>
     import("./plan-context-hint.js").then((module) => module.default),
+  // v2.0.0-rc.23 TASK-014 (F8c): S5 onboard-slot coverage. Used by the
+  // fabric-archive Skill's first-run phase to detect unclaimed slots.
+  "onboard-coverage": () =>
+    import("./onboard-coverage.js").then((module) => module.default),
 };

@@ -724,6 +724,190 @@ describe("planContext", () => {
     expect(result.stale).toBe(false);
   });
 
+  // ---------------------------------------------------------------------------
+  // v2.0.0-rc.23 TASK-005 (a-B): description-undefined auto-heal
+  //
+  // Symmetric to rc.22 D2 but covers the case where revision hashes match
+  // (no revision drift) yet on-disk meta carries nodes with
+  // description === undefined. Such legacy meta degrades hint quality and
+  // collapses to "KB: none" in cite enforcement. Three cases:
+  //   1. Undefined-description present → reconcile fires + auto_healed:true,
+  //      meta_reconciled event emitted with trigger:'auto-heal-description'.
+  //   2. All-fresh KB → no reconcile, auto_healed stays absent.
+  //   3. Idempotent re-run on already-healed KB → no second reconcile.
+  // ---------------------------------------------------------------------------
+
+  it("planContext_auto_heals_when_description_is_undefined — fires reconcile + auto_healed:true", async () => {
+    const projectRoot = await createTempProject();
+    await mkdir(join(projectRoot, ".fabric", "knowledge", "decisions"), { recursive: true });
+    // Seed an .md file WITH frontmatter so the reconcile rebuild can populate
+    // a real description for it — the heal must be observably effective.
+    await writeFile(
+      join(projectRoot, ".fabric", "knowledge", "decisions", "global.md"),
+      [
+        "---",
+        "stable_id: DEC-001",
+        "knowledge_type: decision",
+        "maturity: verified",
+        "knowledge_layer: team",
+        "description:",
+        "  summary: Global protocol",
+        "  intent_clues: []",
+        "  tech_stack: [Fabric]",
+        "  impact: []",
+        "  must_read_if: before any edit",
+        "---",
+        "# Global",
+        "",
+      ].join("\n"),
+    );
+
+    // Seed an on-disk meta whose revision matches the derived revision
+    // (so loadActiveMetaOrStale does NOT trigger its own auto-heal) but whose
+    // node lacks `description`. To do that we first let writeKnowledgeMeta
+    // compute the canonical meta, then surgically strip the description.
+    const { writeKnowledgeMeta } = await import("./knowledge-meta-builder.js");
+    await writeKnowledgeMeta(projectRoot, { source: "doctor_fix" });
+
+    const metaPath = join(projectRoot, ".fabric", "agents.meta.json");
+    const fs = await import("node:fs/promises");
+    const raw = await fs.readFile(metaPath, "utf8");
+    const parsed = JSON.parse(raw) as {
+      revision: string;
+      nodes: Record<string, { description?: unknown; activation?: { description?: unknown } }>;
+    };
+    const originalRevision = parsed.revision;
+    // Strip both description surfaces from every node so the predicate
+    // (description===undefined && activation?.description===undefined) is hit.
+    for (const node of Object.values(parsed.nodes)) {
+      delete node.description;
+      if (node.activation !== undefined) {
+        delete node.activation.description;
+      }
+    }
+    await fs.writeFile(metaPath, `${JSON.stringify(parsed, null, 2)}\n`);
+
+    // Bust the meta cache so the next read sees our doctored bytes.
+    contextCache.invalidate("meta_write", projectRoot);
+
+    const result = await planContext(projectRoot, { paths: ["src/index.ts"] });
+
+    // Auto-heal banner surfaced.
+    expect(result.auto_healed).toBe(true);
+    expect(result.previous_revision_hash).toBe(originalRevision);
+
+    // Post-heal meta on disk has description populated again.
+    const healedRaw = await fs.readFile(metaPath, "utf8");
+    const healedParsed = JSON.parse(healedRaw) as {
+      nodes: Record<string, { description?: unknown }>;
+    };
+    const healedNodes = Object.values(healedParsed.nodes);
+    expect(healedNodes.length).toBeGreaterThan(0);
+    for (const node of healedNodes) {
+      expect(node.description).toBeDefined();
+    }
+
+    // Ledger captured the trigger.
+    const ledger = await readEventLedger(projectRoot, { event_type: "meta_reconciled" });
+    const triggers = ledger.events.map((e) => (e as { trigger?: string }).trigger);
+    expect(triggers).toContain("auto-heal-description");
+  });
+
+  it("planContext_no_heal_when_descriptions_all_defined — auto_healed stays absent", async () => {
+    const projectRoot = await createTempProject();
+    await mkdir(join(projectRoot, ".fabric", "knowledge", "decisions"), { recursive: true });
+    await writeFile(
+      join(projectRoot, ".fabric", "knowledge", "decisions", "global.md"),
+      [
+        "---",
+        "stable_id: DEC-001",
+        "knowledge_type: decision",
+        "maturity: verified",
+        "knowledge_layer: team",
+        "description:",
+        "  summary: Global protocol",
+        "  intent_clues: []",
+        "  tech_stack: [Fabric]",
+        "  impact: []",
+        "  must_read_if: before any edit",
+        "---",
+        "# Global",
+        "",
+      ].join("\n"),
+    );
+    const { writeKnowledgeMeta } = await import("./knowledge-meta-builder.js");
+    await writeKnowledgeMeta(projectRoot, { source: "doctor_fix" });
+
+    const result = await planContext(projectRoot, { paths: ["src/index.ts"] });
+
+    // No drift on either axis → wire shape stays minimal.
+    expect(result.auto_healed).toBeUndefined();
+    expect(result.previous_revision_hash).toBeUndefined();
+
+    // And no auto-heal-description event in the ledger.
+    const ledger = await readEventLedger(projectRoot, { event_type: "meta_reconciled" });
+    const triggers = ledger.events.map((e) => (e as { trigger?: string }).trigger);
+    expect(triggers).not.toContain("auto-heal-description");
+  });
+
+  it("planContext_idempotent_after_description_heal — second call does not re-trigger", async () => {
+    const projectRoot = await createTempProject();
+    await mkdir(join(projectRoot, ".fabric", "knowledge", "decisions"), { recursive: true });
+    await writeFile(
+      join(projectRoot, ".fabric", "knowledge", "decisions", "global.md"),
+      [
+        "---",
+        "stable_id: DEC-001",
+        "knowledge_type: decision",
+        "maturity: verified",
+        "knowledge_layer: team",
+        "description:",
+        "  summary: Global protocol",
+        "  intent_clues: []",
+        "  tech_stack: [Fabric]",
+        "  impact: []",
+        "  must_read_if: before any edit",
+        "---",
+        "# Global",
+        "",
+      ].join("\n"),
+    );
+    const { writeKnowledgeMeta } = await import("./knowledge-meta-builder.js");
+    await writeKnowledgeMeta(projectRoot, { source: "doctor_fix" });
+
+    // Strip descriptions to set up the drift, same way as the first test.
+    const metaPath = join(projectRoot, ".fabric", "agents.meta.json");
+    const fs = await import("node:fs/promises");
+    const raw = await fs.readFile(metaPath, "utf8");
+    const parsed = JSON.parse(raw) as {
+      nodes: Record<string, { description?: unknown; activation?: { description?: unknown } }>;
+    };
+    for (const node of Object.values(parsed.nodes)) {
+      delete node.description;
+      if (node.activation !== undefined) {
+        delete node.activation.description;
+      }
+    }
+    await fs.writeFile(metaPath, `${JSON.stringify(parsed, null, 2)}\n`);
+    contextCache.invalidate("meta_write", projectRoot);
+
+    // First call heals.
+    const first = await planContext(projectRoot, { paths: ["src/index.ts"] });
+    expect(first.auto_healed).toBe(true);
+
+    // Second call must NOT heal again — meta is fresh now.
+    const second = await planContext(projectRoot, { paths: ["src/index.ts"] });
+    expect(second.auto_healed).toBeUndefined();
+    expect(second.previous_revision_hash).toBeUndefined();
+
+    // Ledger holds exactly one auto-heal-description event from the first call.
+    const ledger = await readEventLedger(projectRoot, { event_type: "meta_reconciled" });
+    const autoHealEvents = ledger.events.filter(
+      (e) => (e as { trigger?: string }).trigger === "auto-heal-description",
+    );
+    expect(autoHealEvents).toHaveLength(1);
+  });
+
   it("planContext_degrades_on_build_failure — graceful return with stale:true", async () => {
     const projectRoot = await createTempProject();
     await mkdir(join(projectRoot, ".fabric", "knowledge", "decisions"), { recursive: true });

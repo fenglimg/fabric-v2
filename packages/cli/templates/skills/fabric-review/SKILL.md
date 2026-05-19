@@ -52,7 +52,7 @@ If `.fabric/fabric-config.json` is missing or unreadable, use defaults silently.
 ### UX i18n Policy (5-class bilingualization)
 
 The skill consults `fabric_language` from `.fabric/fabric-config.json`
-(固化于 init 时，via `scan.ts:detectExistingLanguage`; default `"en"` when no
+(固化于 init 时，via `lib/detect-language.ts:detectExistingLanguage`; default `"en"` when no
 CJK signal is detected in README + docs/; may resolve to `"match-existing"`,
 `"zh-CN"`, `"en"`, or `"zh-CN-hybrid"`). All user-facing text in the
 following 5 categories MUST be rendered in the resolved language:

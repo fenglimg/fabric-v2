@@ -187,4 +187,21 @@ export const fabricConfigSchema = z.object({
   // to a small literal set (vs free `.positive()`) to prevent fat-finger
   // misconfig.
   fabric_event_retention_days: z.union([z.literal(7), z.literal(30), z.literal(90)]).optional(),
+  // v2.0.0-rc.23 TASK-014 (F8c): onboard slot opt-out list. Tracks slot
+  // names the user explicitly dismissed during fabric-archive's first-run
+  // onboard phase (or via `fab config dismiss-slot <slot>`). Dismissed
+  // slots are excluded from `fab onboard-coverage`'s `missing` set and the
+  // doctor `Onboard coverage` advisory's recompute, so the user is never
+  // re-prompted for slots they consciously declined.
+  //
+  // Re-opening a dismissed slot requires `fab config onboard-reset <slot>`
+  // — a deliberate two-command UX to keep the dismiss intent reversible
+  // but never silently undone. Schema is intentionally `z.array(z.string())`
+  // rather than `z.array(onboardSlotSchema)` so historical configs survive
+  // a slot rename without a Zod parse error; downstream consumers
+  // intersect against ONBOARD_SLOT_NAMES at read time.
+  //
+  // Default `[]` keeps the field optional on existing configs — fresh
+  // installs land with no opt-outs.
+  onboard_slots_opted_out: z.array(z.string()).optional().default([]),
 });

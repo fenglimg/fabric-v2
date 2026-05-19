@@ -1,5 +1,5 @@
 {
-  "revision": "sha256:3e1dd67092507186e83c1a826f1783ec65e82e68783bb44d0fd97c3ffa6a9cae",
+  "revision": "sha256:23dae8fc07f3122b7028e96e83d79528a2468278710c52c6be906ae40bce9b13",
   "nodes": {
     "KT-DEC-0001": {
       "file": ".fabric/knowledge/decisions/KT-DEC-0001.md",
@@ -33,7 +33,13 @@
         ],
         "relevance_scope": "broad",
         "relevance_paths": []
-      }
+      },
+      "sections": [
+        "Decision",
+        "Alternatives considered",
+        "Rationale",
+        "Reference"
+      ]
     },
     "KT-DEC-0002": {
       "file": ".fabric/knowledge/decisions/KT-DEC-0002.md",
@@ -67,7 +73,13 @@
         ],
         "relevance_scope": "broad",
         "relevance_paths": []
-      }
+      },
+      "sections": [
+        "Decision",
+        "Alternatives considered",
+        "Rationale",
+        "Reference"
+      ]
     },
     "KT-DEC-0003": {
       "file": ".fabric/knowledge/decisions/KT-DEC-0003.md",
@@ -101,7 +113,14 @@
         ],
         "relevance_scope": "broad",
         "relevance_paths": []
-      }
+      },
+      "sections": [
+        "Decision",
+        "Alternatives considered",
+        "Rationale",
+        "Tradeoffs",
+        "Reference"
+      ]
     },
     "KT-DEC-0004": {
       "file": ".fabric/knowledge/decisions/KT-DEC-0004.md",
@@ -136,7 +155,14 @@
         ],
         "relevance_scope": "broad",
         "relevance_paths": []
-      }
+      },
+      "sections": [
+        "Decision",
+        "Alternatives considered",
+        "Rationale",
+        "Constraints",
+        "Reference"
+      ]
     },
     "KT-DEC-0005": {
       "file": ".fabric/knowledge/decisions/KT-DEC-0005.md",
@@ -170,7 +196,13 @@
         ],
         "relevance_scope": "broad",
         "relevance_paths": []
-      }
+      },
+      "sections": [
+        "Decision",
+        "Alternatives considered",
+        "Rationale",
+        "Reference"
+      ]
     },
     "KT-DEC-0006": {
       "file": ".fabric/knowledge/decisions/KT-DEC-0006.md",
@@ -204,7 +236,13 @@
         ],
         "relevance_scope": "broad",
         "relevance_paths": []
-      }
+      },
+      "sections": [
+        "Decision",
+        "Alternatives considered",
+        "Rationale",
+        "Reference"
+      ]
     },
     "KT-DEC-0007": {
       "file": ".fabric/knowledge/decisions/KT-DEC-0007.md",
@@ -238,7 +276,13 @@
         ],
         "relevance_scope": "broad",
         "relevance_paths": []
-      }
+      },
+      "sections": [
+        "Decision",
+        "Alternatives considered",
+        "Rationale",
+        "Reference"
+      ]
     },
     "KT-DEC-0008": {
       "file": ".fabric/knowledge/decisions/KT-DEC-0008.md",
@@ -273,7 +317,14 @@
         ],
         "relevance_scope": "broad",
         "relevance_paths": []
-      }
+      },
+      "sections": [
+        "Decision",
+        "Alternatives considered",
+        "Rationale",
+        "Tradeoffs",
+        "Reference"
+      ]
     },
     "KT-DEC-0009": {
       "file": ".fabric/knowledge/decisions/KT-DEC-0009--rc2-single-cjs-hook-across-clients.md",
@@ -288,7 +339,16 @@
       "topology_type": "mirror",
       "hash": "sha256:f05d50a42b238ba27aba9acad93efb5530a4245da6b55e6e3b8fcbe09a1baa9d",
       "stable_id": "KT-DEC-0009",
-      "identity_source": "declared"
+      "identity_source": "declared",
+      "sections": [
+        "Summary",
+        "Evidence (call 1)",
+        "Evidence (call 2)",
+        "Evidence (call 3)",
+        "Evidence (call 4)",
+        "Evidence (call 5)",
+        "Evidence (call 6)"
+      ]
     },
     "KT-DEC-9001": {
       "file": ".fabric/knowledge/decisions/KT-DEC-9001--manual-rc3-fallback-test.md",
@@ -303,7 +363,11 @@
       "topology_type": "mirror",
       "hash": "sha256:2a82468e986a3787df85c060fbfed84e2ab63035eeb801d4b0588017da4c387f",
       "stable_id": "KT-DEC-9001",
-      "identity_source": "declared"
+      "identity_source": "declared",
+      "sections": [
+        "Summary",
+        "Evidence"
+      ]
     },
     "KT-DEC-9002": {
       "file": ".fabric/knowledge/decisions/KT-DEC-9002--file-boundary-over-section-boundary.md",
@@ -318,7 +382,13 @@
       "topology_type": "mirror",
       "hash": "sha256:41d6a27504840da5aff1a69bca70f2f767380835d2efc36eca2c88632b31ef17",
       "stable_id": "KT-DEC-9002",
-      "identity_source": "declared"
+      "identity_source": "declared",
+      "sections": [
+        "Summary",
+        "Why proposed",
+        "Session context",
+        "Evidence"
+      ]
     },
     "KT-DEC-9003": {
       "file": ".fabric/knowledge/decisions/KT-DEC-9003--fabric-rules-via-doclink-not-native-memo.md",
@@ -333,7 +403,13 @@
       "topology_type": "mirror",
       "hash": "sha256:84bc4d1801baf1bc71b66ec9f7845ceb7118bd2993465c3b11320da2052f05ee",
       "stable_id": "KT-DEC-9003",
-      "identity_source": "declared"
+      "identity_source": "declared",
+      "sections": [
+        "Summary",
+        "Why proposed",
+        "Session context",
+        "Evidence"
+      ]
     },
     "KT-DEC-9004": {
       "file": ".fabric/knowledge/decisions/KT-DEC-9004--init-fixate-knowledge-language.md",
@@ -348,7 +424,13 @@
       "topology_type": "mirror",
       "hash": "sha256:00c939de1b7c4194096616bf84ec95aa925dc2427eb17aac2d72db076b25f333",
       "stable_id": "KT-DEC-9004",
-      "identity_source": "declared"
+      "identity_source": "declared",
+      "sections": [
+        "Summary",
+        "Why proposed",
+        "Session context",
+        "Evidence"
+      ]
     },
     "KT-GLD-0001": {
       "file": ".fabric/knowledge/guidelines/KT-GLD-0001--code-style.md",
@@ -378,9 +460,9 @@
         "relevance_paths": []
       },
       "sections": [
-        "MISSION_STATEMENT",
-        "MANDATORY_INJECTION",
-        "CONTEXT_INFO"
+        "[MISSION_STATEMENT]",
+        "[MANDATORY_INJECTION]",
+        "[CONTEXT_INFO]"
       ]
     },
     "KT-GLD-0002": {
@@ -396,7 +478,13 @@
       "topology_type": "mirror",
       "hash": "sha256:448601fb792b84c6f3f91ea8ab99d603d97ea9783aad79103098141d53d993c2",
       "stable_id": "KT-GLD-0002",
-      "identity_source": "declared"
+      "identity_source": "declared",
+      "sections": [
+        "Summary",
+        "Why proposed",
+        "Session context",
+        "Evidence"
+      ]
     },
     "KT-GLD-0003": {
       "file": ".fabric/knowledge/guidelines/KT-GLD-0003--deepmerge-array-append-paths-for-stop-ho.md",
@@ -411,7 +499,13 @@
       "topology_type": "mirror",
       "hash": "sha256:416742a2a0282ff6421e933869b798a49f68d962a4da7a02ba88af3d57b3a792",
       "stable_id": "KT-GLD-0003",
-      "identity_source": "declared"
+      "identity_source": "declared",
+      "sections": [
+        "Summary",
+        "Evidence (call 1)",
+        "Evidence (call 2)",
+        "Evidence (call 3)"
+      ]
     },
     "KT-GLD-0004": {
       "file": ".fabric/knowledge/guidelines/KT-GLD-0004--skill-md-promise-matches-llm-capability.md",
@@ -426,107 +520,12 @@
       "topology_type": "mirror",
       "hash": "sha256:a4bea24b68e059afd6013cd34a179a7e9b1440af6551e4ce1fefe82e6321aa07",
       "stable_id": "KT-GLD-0004",
-      "identity_source": "declared"
-    },
-    "KT-MOD-0001": {
-      "file": ".fabric/knowledge/models/KT-MOD-0001--tech-stack.md",
-      "content_ref": ".fabric/knowledge/models/KT-MOD-0001--tech-stack.md",
-      "scope_glob": "**",
-      "deps": [],
-      "priority": "medium",
-      "level": "L1",
-      "layer": "L1",
-      "topology_type": "cross-cutting",
-      "hash": "sha256:de4fceb35bba680184f8bd60acde48a4ad78dbe82906162e5229d4a0d3f1feea",
-      "stable_id": "KT-MOD-0001",
       "identity_source": "declared",
-      "description": {
-        "summary": "Tech stack: unknown unknown / unknown",
-        "intent_clues": [],
-        "tech_stack": [],
-        "impact": [],
-        "must_read_if": "Tech stack: unknown unknown / unknown",
-        "id": "KT-MOD-0001",
-        "knowledge_type": "model",
-        "maturity": "verified",
-        "knowledge_layer": "team",
-        "layer_reason": "project artifact (deterministic init scan)",
-        "created_at": "2026-05-18T05:01:51.809Z",
-        "relevance_scope": "narrow",
-        "relevance_paths": [
-          "package.json",
-          "pnpm-workspace.yaml"
-        ]
-      },
       "sections": [
-        "MISSION_STATEMENT",
-        "CONTEXT_INFO"
-      ]
-    },
-    "KT-MOD-0002": {
-      "file": ".fabric/knowledge/models/KT-MOD-0002--module-structure.md",
-      "content_ref": ".fabric/knowledge/models/KT-MOD-0002--module-structure.md",
-      "scope_glob": "**",
-      "deps": [],
-      "priority": "medium",
-      "level": "L1",
-      "layer": "L1",
-      "topology_type": "cross-cutting",
-      "hash": "sha256:0106abe72f63c1755c9c9a8d50bc5a55eb5bac056b30ae48571aaa708245e024",
-      "stable_id": "KT-MOD-0002",
-      "identity_source": "declared",
-      "description": {
-        "summary": "Module structure",
-        "intent_clues": [],
-        "tech_stack": [],
-        "impact": [],
-        "must_read_if": "Module structure",
-        "id": "KT-MOD-0002",
-        "knowledge_type": "model",
-        "maturity": "verified",
-        "knowledge_layer": "team",
-        "layer_reason": "project artifact (deterministic init scan)",
-        "created_at": "2026-05-18T05:01:51.809Z",
-        "relevance_scope": "narrow",
-        "relevance_paths": [
-          "packages/**/package.json"
-        ]
-      },
-      "sections": [
-        "MISSION_STATEMENT",
-        "CONTEXT_INFO"
-      ]
-    },
-    "KT-MOD-0003": {
-      "file": ".fabric/knowledge/models/KT-MOD-0003--readme-first-paragraph.md",
-      "content_ref": ".fabric/knowledge/models/KT-MOD-0003--readme-first-paragraph.md",
-      "scope_glob": "**",
-      "deps": [],
-      "priority": "medium",
-      "level": "L1",
-      "layer": "L1",
-      "topology_type": "cross-cutting",
-      "hash": "sha256:e0d316190714464cc4e15f3d3a340c5911ee76e6c139f855a2de94648cef99b1",
-      "stable_id": "KT-MOD-0003",
-      "identity_source": "declared",
-      "description": {
-        "summary": "README first paragraph",
-        "intent_clues": [],
-        "tech_stack": [],
-        "impact": [],
-        "must_read_if": "README first paragraph",
-        "id": "KT-MOD-0003",
-        "knowledge_type": "model",
-        "maturity": "verified",
-        "knowledge_layer": "team",
-        "layer_reason": "project artifact (deterministic init scan)",
-        "created_at": "2026-05-18T05:01:51.809Z",
-        "relevance_scope": "broad",
-        "relevance_paths": []
-      },
-      "sections": [
-        "MISSION_STATEMENT",
-        "CONTEXT_INFO"
+        "Summary",
+        "Why proposed",
+        "Session context",
+        "Evidence"
       ]
     },
     "KT-PIT-9101": {
@@ -542,7 +541,11 @@
       "topology_type": "mirror",
       "hash": "sha256:311cee17be60b346ca151e4c4c64dbb84770dc498849eb73a4e301f47fba7d13",
       "stable_id": "KT-PIT-9101",
-      "identity_source": "declared"
+      "identity_source": "declared",
+      "sections": [
+        "Summary",
+        "Evidence"
+      ]
     },
     "KT-PIT-9102": {
       "file": ".fabric/knowledge/pitfalls/KT-PIT-9102--doctor-lint-number-prealloc-check.md",
@@ -557,7 +560,13 @@
       "topology_type": "mirror",
       "hash": "sha256:bd556d185b7ae9fbdc2230a5607aa48ad8e69cc640f3a13b5ea07ed8f6b9f9e4",
       "stable_id": "KT-PIT-9102",
-      "identity_source": "declared"
+      "identity_source": "declared",
+      "sections": [
+        "Summary",
+        "Why proposed",
+        "Session context",
+        "Evidence"
+      ]
     },
     "KT-PIT-9103": {
       "file": ".fabric/knowledge/pitfalls/KT-PIT-9103--lint-stale-ref-after-content-relocation.md",
@@ -572,7 +581,13 @@
       "topology_type": "mirror",
       "hash": "sha256:1cd764e22b699b007d225c4afca116b105fba958e1ea3bb436529e1790a4964e",
       "stable_id": "KT-PIT-9103",
-      "identity_source": "declared"
+      "identity_source": "declared",
+      "sections": [
+        "Summary",
+        "Why proposed",
+        "Session context",
+        "Evidence"
+      ]
     },
     "KT-PIT-9104": {
       "file": ".fabric/knowledge/pitfalls/KT-PIT-9104--skill-template-mirror-drift.md",
@@ -587,7 +602,13 @@
       "topology_type": "mirror",
       "hash": "sha256:487dc4289ff5d88e6368df17f64f52a86198eed7deb5065a6e1ea8583fae70b5",
       "stable_id": "KT-PIT-9104",
-      "identity_source": "declared"
+      "identity_source": "declared",
+      "sections": [
+        "Summary",
+        "Why proposed",
+        "Session context",
+        "Evidence"
+      ]
     },
     "KT-PIT-9105": {
       "file": ".fabric/knowledge/pitfalls/KT-PIT-9105--zod-strip-drops-unknown-mcp-fields.md",
@@ -602,42 +623,12 @@
       "topology_type": "mirror",
       "hash": "sha256:70fabf08c9504b0a60915a76015891ca165dc6b6ccb3e19b1ad9c5493ecfa5c5",
       "stable_id": "KT-PIT-9105",
-      "identity_source": "declared"
-    },
-    "KT-PRO-0001": {
-      "file": ".fabric/knowledge/processes/KT-PRO-0001--build-config.md",
-      "content_ref": ".fabric/knowledge/processes/KT-PRO-0001--build-config.md",
-      "scope_glob": "**",
-      "deps": [],
-      "priority": "medium",
-      "level": "L1",
-      "layer": "L1",
-      "topology_type": "cross-cutting",
-      "hash": "sha256:56d26575e42ec98cf0ec67ca53b6294c72a93f4e97b194df24838eabc82d5d9f",
-      "stable_id": "KT-PRO-0001",
       "identity_source": "declared",
-      "description": {
-        "summary": "Build configuration",
-        "intent_clues": [],
-        "tech_stack": [],
-        "impact": [],
-        "must_read_if": "Build configuration",
-        "id": "KT-PRO-0001",
-        "knowledge_type": "process",
-        "maturity": "verified",
-        "knowledge_layer": "team",
-        "layer_reason": "project artifact (deterministic init scan)",
-        "created_at": "2026-05-18T05:01:51.809Z",
-        "relevance_scope": "narrow",
-        "relevance_paths": [
-          "package.json",
-          "packages/cli/__tests__/fixtures/cocos-stub/package.json"
-        ]
-      },
       "sections": [
-        "MISSION_STATEMENT",
-        "BUSINESS_LOGIC_CHUNKS",
-        "CONTEXT_INFO"
+        "Summary",
+        "Why proposed",
+        "Session context",
+        "Evidence"
       ]
     }
   },

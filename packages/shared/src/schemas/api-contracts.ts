@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { onboardSlotSchema } from "../onboard-slots.js";
+
 // ---------------------------------------------------------------------------
 // Shared warning schema (R24 contract)
 // ---------------------------------------------------------------------------
@@ -224,62 +226,33 @@ export const planContextHintOutputSchema = z.object({
 });
 
 // ---------------------------------------------------------------------------
-// MCP tool contracts — get-knowledge
-// ---------------------------------------------------------------------------
-
-const _knowledgeEntrySchema = z.object({ path: z.string(), content: z.string() });
-const _humanLockedSchema = z.object({ file: z.string(), excerpt: z.string() });
-const _descriptionStubSchema = z.object({ path: z.string(), description: z.string() });
-
-export const getKnowledgeInputSchema = z.object({
-  path: z.string().describe("Target file path to query rules for"),
-  client_hash: z
-    .string()
-    .optional()
-    .describe("Revision hash from prior fab_get_rules response; enables stale detection"),
-  correlation_id: z
-    .string()
-    .optional()
-    .describe("Optional caller-provided correlation id for Event Ledger records"),
-  session_id: z
-    .string()
-    .optional()
-    .describe("Optional caller-provided session id for Event Ledger records"),
-});
-
-export const getKnowledgeOutputSchema = z.object({
-  revision_hash: z.string(),
-  stale: z.boolean(),
-  rules: z.object({
-    L0: z.string(),
-    L1: z.array(_knowledgeEntrySchema),
-    L2: z.array(_knowledgeEntrySchema),
-    human_locked_nearby: z.array(_humanLockedSchema),
-    description_stubs: z.array(_descriptionStubSchema).optional(),
-  }),
-  warnings: z.array(structuredWarningSchema).optional(),
-});
-
-export const getKnowledgeAnnotations = {
-  readOnlyHint: true,
-  idempotentHint: true,
-  destructiveHint: false,
-  openWorldHint: false,
-  title: "Get rule content",
-} as const;
-
-// ---------------------------------------------------------------------------
 // MCP tool contracts — knowledge-sections
+//
+// rc.23 TASK-002 F4: the legacy single-call `fab_get_rules` /
+// `getKnowledgeInputSchema` / `getKnowledgeOutputSchema` / `getKnowledgeAnnotations`
+// surface was removed. After the rc.5 two-step rewrite (`fab_plan_context` →
+// `fab_get_knowledge_sections`) the single-shot tool became unreachable; its
+// supporting `_knowledgeEntrySchema` / `_humanLockedSchema` /
+// `_descriptionStubSchema` helpers and `fab_get_rules` describe references
+// were dead weight that misled future maintainers.
 // ---------------------------------------------------------------------------
 
-const KNOWLEDGE_SECTION_NAMES_TUPLE = ["MISSION_STATEMENT", "MANDATORY_INJECTION", "BUSINESS_LOGIC_CHUNKS", "CONTEXT_INFO"] as const;
-
+// v2.0.0-rc.23 TASK-013 (F8b): the legacy 4-element KNOWLEDGE_SECTION_NAMES_TUPLE
+// enum (MISSION_STATEMENT / MANDATORY_INJECTION / BUSINESS_LOGIC_CHUNKS /
+// CONTEXT_INFO — the A-set `## [BRACKET]` heading discipline) was removed.
+// After F8a deleted the scan baseline writers, the A-set has no writer; B-set
+// `## <Title>` headings (Summary / Why proposed / Session context / Evidence
+// from rc.7 fab_extract_knowledge) are now the only convention. The `sections`
+// input parameter on fab_get_knowledge_sections went with it — callers fetch
+// the full markdown body keyed by stable_id (`rules[].body: string`) and the
+// LLM scans/extracts what it needs.
 export const knowledgeSectionsInputSchema = z.object({
   selection_token: z.string().min(1).describe("Selection token returned by fab_plan_context"),
-  sections: z.array(z.enum(KNOWLEDGE_SECTION_NAMES_TUPLE)).min(1).describe("Structured rule sections to fetch"),
   ai_selected_stable_ids: z
     .array(z.string())
-    .describe("AI-selected L1 stable_ids chosen from fab_plan_context ai_selectable_stable_ids"),
+    .describe(
+      "Stable ids picked from fab_plan_context entries[].description_index[].stable_id where selectable=true; choose 1..N to fetch bodies for",
+    ),
   ai_selection_reasons: z
     .record(z.string().min(1))
     .describe("Reason for each AI-selected L1 stable_id"),
@@ -302,34 +275,45 @@ export const knowledgeSectionsInputSchema = z.object({
 
 export const knowledgeSectionsOutputSchema = z.object({
   revision_hash: z.string(),
-  precedence: z.tuple([z.literal("L2"), z.literal("L1"), z.literal("L0")]),
+  /**
+   * @deprecated rc.23 TASK-002 F3 — removed in rc.24. The L0/L1/L2 selection
+   * ceremony was fully retired in rc.5 A3 (see comment above
+   * `planContextOutputSchema`); downstream consumers should use
+   * `rules[].level` directly. Kept as optional for one rc to avoid breaking
+   * pre-rc.23 clients that destructure this field.
+   */
+  precedence: z
+    .tuple([z.literal("L2"), z.literal("L1"), z.literal("L0")])
+    .optional()
+    .describe(
+      "DEPRECATED (removed in rc.24): hardcoded L2/L1/L0 precedence tuple from the retired rc.5 selection ceremony. Use rules[].level instead.",
+    ),
   selected_stable_ids: z.array(z.string()),
   rules: z.array(
     z.object({
       stable_id: z.string(),
       level: z.enum(["L0", "L1", "L2"]),
       path: z.string(),
-      sections: z.record(z.string()),
+      // v2.0.0-rc.23 TASK-013 (F8b): replaced the legacy
+      // `sections: Record<string,string>` (keyed by the 4-element A-set enum)
+      // with the full markdown body (frontmatter stripped). Callers scan the
+      // body for whichever B-set heading they need (Summary / Why proposed /
+      // Session context / Evidence) — section-name discipline is now a writer
+      // convention, not an API contract.
+      body: z.string(),
     }),
   ),
   diagnostics: z.array(
-    z.discriminatedUnion("code", [
-      z.object({
-        code: z.literal("missing_section"),
-        severity: z.literal("warn"),
-        stable_id: z.string(),
-        section: z.enum(KNOWLEDGE_SECTION_NAMES_TUPLE),
-        message: z.string(),
-      }),
-      // v2.0: warn-level diagnostic for un-migrated v1.x entries (no
-      // knowledge_type and no knowledge_layer). Does NOT block selection.
-      z.object({
-        code: z.literal("missing_knowledge_metadata"),
-        severity: z.literal("warn"),
-        stable_id: z.string(),
-        message: z.string(),
-      }),
-    ]),
+    // v2.0.0-rc.23 TASK-013 (F8b): `missing_section` was removed alongside the
+    // A-set enum. `missing_knowledge_metadata` stays as the warn-level signal
+    // for un-migrated v1.x entries (no knowledge_type AND no knowledge_layer
+    // in frontmatter). Does NOT block selection.
+    z.object({
+      code: z.literal("missing_knowledge_metadata"),
+      severity: z.literal("warn"),
+      stable_id: z.string(),
+      message: z.string(),
+    }),
   ),
   // v2/rc.3 (Q6): present iff a layer-flip in fab_review/modify changed the
   // canonical stable_id since the caller's selection_token was minted.
@@ -385,40 +369,23 @@ export const PROPOSED_REASON_DESCRIPTIONS: Record<ProposedReason, string> = {
   "dismissal-with-reason": "用户明确拒绝某方案并给出原因，原因即可归档知识。",
 };
 
-// v2.0.0-rc.7 T5: `source_session: string` → `source_sessions: string[]`.
-// Pre-T5 callers may still pass a single string; the preprocess shim below
-// transforms it transparently to `[s]` so the rest of the schema sees the
-// array form. The output frontmatter is always the array form.
-const _sourceSessionsField = z.preprocess(
-  (value) => {
-    if (typeof value === "string") return [value];
-    return value;
-  },
-  z.array(z.string().min(1)).min(1),
-);
+// v2.0.0-rc.7 T5: source_sessions[] is the canonical array form.
+// v2.0.0-rc.23 TASK-003 (F5): the pre-T5 `source_session: string` alias and
+// its preprocess shim were removed — the dual-field design had zero remaining
+// users (fabric-archive / fabric-import / fabric-review skills all emit the
+// array form). Schema now requires source_sessions: string[] directly.
+const _sourceSessionsField = z.array(z.string().min(1)).min(1);
 
-// Internal: base z.object schema. The exported FabExtractKnowledgeInputSchema
-// adds a superRefine on top to require at least one of source_sessions /
-// source_session. We keep the un-refined base around so the MCP tool
-// registration can still use `.shape` (registerTool's inputSchema contract).
+// Internal: base z.object schema. Kept separate from FabExtractKnowledgeInputSchema
+// so MCP tool registration can use `.shape` (registerTool's inputSchema contract);
+// the parse-facing export below adds the superRefine that enforces non-empty
+// source_sessions when the field is omitted entirely.
 const _FabExtractKnowledgeInputBaseSchema = z.object({
-  // v2.0.0-rc.7 T5: array form. Legacy single-string callers are accepted
-  // via the preprocess shim above. The optional pre-T5 alias `source_session`
-  // is kept as an accepted alternative below for in-flight integrations
-  // (Zod parses one or the other — see refinement).
+  // v2.0.0-rc.7 T5: array form. rc.23 dropped the legacy single-string alias.
   source_sessions: _sourceSessionsField
     .optional()
     .describe(
-      "Originating session ids; correlates with Event Ledger records. Array form (T5). Single string accepted via back-compat shim.",
-    ),
-  // Pre-T5 alias. When set and source_sessions is missing, the handler maps
-  // it to [source_session]. Marked optional so new callers can drop it.
-  source_session: z
-    .string()
-    .min(1)
-    .optional()
-    .describe(
-      "DEPRECATED — pre-T5 alias for source_sessions. Use source_sessions: string[]. Single string still accepted for back-compat.",
+      "Originating session ids; correlates with Event Ledger records. Array form (T5+, rc.23 made it the sole accepted shape).",
     ),
   recent_paths: z
     .array(z.string())
@@ -480,6 +447,67 @@ const _FabExtractKnowledgeInputBaseSchema = z.object({
     .describe(
       "Optional path anchors for narrow scope. Workspace-relative globs or paths. Omit to let the meta-builder default to []. Ignored when scope is broad (server preserves the array for audit).",
     ),
+  // v2.0.0-rc.23 TASK-006 (a-C1): four optional structured fields that the
+  // skill-side LLM populates from raw observations. The same information
+  // historically lived only in `## Session context` prose, forcing future-self
+  // reviewers / plan-context retrievers to re-read the entire body to decide
+  // relevance. Lifting them into structured frontmatter lets downstream
+  // surfaces (description_index, scoring, relevance triage) consume them
+  // directly. ALL FOUR ARE STRICTLY OPTIONAL — skills that cannot infer them
+  // confidently must omit, not guess.
+  //
+  // IMPORTANT: these fields MUST NOT participate in the idempotency_key hash
+  // (see rc.8 A1 convention at extract-knowledge.ts — relevance_scope /
+  // relevance_paths follow the same rule). Including them would let an LLM
+  // re-roll of the same observation create a second pending file just because
+  // its inferred metadata wording drifted.
+  intent_clues: z
+    .array(z.string())
+    .optional()
+    .describe(
+      "Short LLM-readable triggers describing when this rule should fire and when it should not. Each item ≤80 chars, imperative phrasing (e.g. 'when editing Cocos UI batch code', 'NOT for non-batch contexts'). Optional — omit when the skill cannot infer cleanly.",
+    ),
+  tech_stack: z
+    .array(z.string())
+    .optional()
+    .describe(
+      "Tech stack / languages / frameworks the rule applies to (e.g. ['typescript', 'cocos-creator', 'nodejs']). Inferred from recent_paths file extensions and manifest files. Optional — omit when the rule is stack-agnostic.",
+    ),
+  impact: z
+    .array(z.string())
+    .optional()
+    .describe(
+      "Consequences of ignoring this rule, used by the LLM to weight relevance vs cost. Each item ≤120 chars (e.g. 'O(n²) re-render on every frame', 'silent data loss on collision'). Optional — omit when impact is not observable.",
+    ),
+  must_read_if: z
+    .string()
+    .optional()
+    .describe(
+      "One-line strong trigger; when this condition holds the entry is considered required reading. Single line ≤160 chars (e.g. 'touching anything under packages/cli/src/commands/hooks.ts'). Optional — omit when no single strong trigger fits.",
+    ),
+  // v2.0.0-rc.23 TASK-014 (F8c): optional onboard-slot tag. The S5 slot
+  // mechanism reintroduces a Skill-orchestrated "project tone" capture
+  // surface after F8a deleted the auto-`fab scan` baseline pipeline.
+  // fabric-archive's first-run phase reads `fab onboard-coverage` to
+  // discover unclaimed slots, then propagates the chosen slot label here
+  // so the resulting pending entry counts toward coverage.
+  //
+  // STRICT optionality: every non-onboard fab_extract_knowledge call MUST
+  // omit this field. The skill is the only producer; downstream consumers
+  // (plan_context retrieval, doctor lints) treat missing as a steady-state
+  // signal that the entry was NOT part of an onboard pass.
+  //
+  // IDEMPOTENCY: like the four a-C1 fields and the rc.8 A1 relevance pair,
+  // `onboard_slot` MUST NOT participate in the idempotency_key hash at
+  // extract-knowledge.ts:100-106. An LLM that re-rolls the same observation
+  // with a different (or absent) slot must still collapse onto the same
+  // pending file — otherwise the slot mechanic itself could spawn
+  // duplicate entries.
+  onboard_slot: onboardSlotSchema
+    .optional()
+    .describe(
+      "Optional slot tag from the S5 onboarding set (tech-stack-decision / architecture-pattern / code-style-tone / build-system-idiom / domain-vocabulary); lets fabric-archive's first-run phase claim a project-tone slot. Skill propose-time only; never required.",
+    ),
 });
 
 // Exported alias of the base shape — MCP tool registration uses `.shape` to
@@ -487,16 +515,15 @@ const _FabExtractKnowledgeInputBaseSchema = z.object({
 // downstream on the parse-facing schema.
 export const FabExtractKnowledgeInputSchema = _FabExtractKnowledgeInputBaseSchema.superRefine(
   (value, ctx) => {
-    // Exactly one of source_sessions / source_session must produce a non-empty
-    // array. We accept both for migration ease but require at least one.
+    // rc.23 TASK-003 (F5): source_sessions is the only accepted shape — require
+    // a non-empty array. The legacy `source_session` single-string alias was
+    // removed; callers that still emit it will fail Zod parsing at the unknown-
+    // key boundary (or be silently dropped by the .object() default-strip).
     const hasArray = Array.isArray(value.source_sessions) && value.source_sessions.length > 0;
-    const hasString =
-      typeof value.source_session === "string" && value.source_session.length > 0;
-    if (!hasArray && !hasString) {
+    if (!hasArray) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message:
-          "either source_sessions (array, preferred) or source_session (legacy single string) must be provided",
+        message: "source_sessions (non-empty string array) is required",
         path: ["source_sessions"],
       });
     }
@@ -513,6 +540,9 @@ export const FabExtractKnowledgeOutputSchema = z.object({
   idempotency_key: z
     .string()
     .describe("Stable key derived from inputs; identical inputs yield identical key"),
+  // v2.0.0-rc.23 TASK-009 (d): optional warnings surface for the first-reconcile
+  // gate (`meta_stale` / `reconcile_failed`). Absent on the steady-state path.
+  warnings: z.array(structuredWarningSchema).optional(),
 });
 export type FabExtractKnowledgeOutput = z.infer<typeof FabExtractKnowledgeOutputSchema>;
 
@@ -673,18 +703,25 @@ const _fabReviewListItemSchema = z.object({
   origin: z.enum(["team", "personal"]).optional(),
 });
 
+// v2.0.0-rc.23 TASK-009 (d): every variant carries an optional `warnings`
+// array so the first-reconcile gate can surface `meta_stale` / `reconcile_failed`
+// regardless of which review action ran. Field stays absent on the
+// steady-state path — no wire shape change for existing consumers.
 export const FabReviewOutputSchema = z.discriminatedUnion("action", [
   z.object({
     action: z.literal("list"),
     items: z.array(_fabReviewListItemSchema),
+    warnings: z.array(structuredWarningSchema).optional(),
   }),
   z.object({
     action: z.literal("approve"),
     approved: z.array(z.object({ pending_path: z.string(), stable_id: z.string() })),
+    warnings: z.array(structuredWarningSchema).optional(),
   }),
   z.object({
     action: z.literal("reject"),
     rejected: z.array(z.string()),
+    warnings: z.array(structuredWarningSchema).optional(),
   }),
   z.object({
     action: z.literal("modify"),
@@ -692,14 +729,17 @@ export const FabReviewOutputSchema = z.discriminatedUnion("action", [
     // When a layer-flip occurred, prior_stable_id and new_stable_id differ.
     prior_stable_id: z.string().optional(),
     new_stable_id: z.string().optional(),
+    warnings: z.array(structuredWarningSchema).optional(),
   }),
   z.object({
     action: z.literal("search"),
     items: z.array(_fabReviewListItemSchema),
+    warnings: z.array(structuredWarningSchema).optional(),
   }),
   z.object({
     action: z.literal("defer"),
     deferred: z.array(z.string()),
+    warnings: z.array(structuredWarningSchema).optional(),
   }),
 ]);
 export type FabReviewOutput = z.infer<typeof FabReviewOutputSchema>;
@@ -762,6 +802,9 @@ export const FabReviewOutputShape = {
     .describe(
       "Pending paths that were deferred (files retained on disk). Present when action=defer.",
     ),
+  // v2.0.0-rc.23 TASK-009 (d): optional warnings surface for the first-reconcile
+  // gate (`meta_stale` / `reconcile_failed`). Absent on the steady-state path.
+  warnings: z.array(structuredWarningSchema).optional(),
 } as const;
 
 export const fabReviewAnnotations = {

@@ -1,5 +1,6 @@
 export * from "./types/index.js";
 export * from "./i18n/index.js";
+export * from "./onboard-slots.js";
 export * from "./schemas/agents-meta.js";
 export * from "./schemas/knowledge-test-index.js";
 export * from "./schemas/api-contracts.js";

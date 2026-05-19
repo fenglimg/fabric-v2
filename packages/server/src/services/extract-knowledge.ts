@@ -49,8 +49,11 @@ function resolvePersonalRoot(): string {
 /**
  * Append-evidence-on-collision service for fab_extract_knowledge.
  *
- * Idempotency_key = sha256({source_session, type, slug}). When the same
- * triple hits an existing pending file (verified by frontmatter
+ * Idempotency_key = sha256({source_session: source_sessions[0], type, slug}).
+ * The `source_session` key inside the hash payload is FROZEN for backward
+ * compatibility with on-disk pending entries written before rc.23 — changing
+ * it would invalidate every existing `x-fabric-idempotency-key`. When the
+ * same triple hits an existing pending file (verified by frontmatter
  * `x-fabric-idempotency-key`), the body is preserved and a fresh
  * `## Evidence (call N)` section is appended — LLM-regenerated summaries
  * stay observable without overwriting prior context.
@@ -85,18 +88,13 @@ export async function extractKnowledge(
 
   const sanitizedSlug = sanitizeSlug(input.slug);
 
-  // v2.0.0-rc.7 T5: source_sessions[] is the array form. Pre-T5 callers may
-  // still pass a single `source_session` string; the schema's preprocess shim
-  // already coerces that to [string], and the superRefine guarantees at least
-  // one of the two fields is present. We normalize to the array form here
-  // and pick the first session for legacy-keyed structures (idempotency_key,
-  // event correlation_id) so existing on-disk pending files keep colliding
-  // correctly across the rc.5 → rc.7 transition.
-  const sourceSessions: string[] = Array.isArray(input.source_sessions) && input.source_sessions.length > 0
-    ? input.source_sessions
-    : input.source_session !== undefined && input.source_session.length > 0
-      ? [input.source_session]
-      : [];
+  // v2.0.0-rc.7 T5 / rc.23 TASK-003 (F5): source_sessions[] is the only accepted
+  // shape. The schema's superRefine guarantees a non-empty array at parse time,
+  // so direct destructuring is safe. primarySession (= source_sessions[0]) is
+  // still used as the idempotency-hash and event correlation_id input — that
+  // hash payload's `source_session` key is frozen for on-disk compatibility
+  // (see jsdoc above) but the wire-level field is array-only.
+  const sourceSessions: string[] = input.source_sessions ?? [];
   const primarySession = sourceSessions[0] ?? "";
 
   const idempotencyKey = sha256(
@@ -222,6 +220,19 @@ export async function extractKnowledge(
     sessionContext: input.session_context,
     relevanceScope,
     relevancePaths,
+    // v2.0.0-rc.23 TASK-006 (a-C1): optional structured triage fields. Each is
+    // emitted as a YAML line only when caller-supplied; omitted lines preserve
+    // the historical pending-file shape.
+    intentClues: input.intent_clues,
+    techStack: input.tech_stack,
+    impact: input.impact,
+    mustReadIf: input.must_read_if,
+    // v2.0.0-rc.23 TASK-014 (F8c): optional S5 onboard-slot tag. Same emit
+    // discipline as the four a-C1 fields — bare YAML line iff caller-supplied,
+    // never in the idempotency_key hash. fabric-archive's first-run phase is
+    // the only producer; downstream `fab onboard-coverage` walks frontmatter
+    // looking for this exact key.
+    onboardSlot: input.onboard_slot,
   });
   await atomicWriteText(absolutePath, fresh);
 
@@ -274,6 +285,20 @@ type FreshEntryArgs = {
   // scan.ts:1042-1060 / doctor.ts:627-628 regex parser expects.
   relevanceScope?: "narrow" | "broad";
   relevancePaths?: string[];
+  // v2.0.0-rc.23 TASK-006 (a-C1): optional structured triage fields.
+  // Each line is emitted ONLY when caller-supplied; missing values produce
+  // no YAML line. Arrays use the same flow-form shape as relevance_paths;
+  // must_read_if is a single quoted string. None of these participate in
+  // the idempotency_key hash (extract-knowledge.ts:100-106).
+  intentClues?: string[];
+  techStack?: string[];
+  impact?: string[];
+  mustReadIf?: string;
+  // v2.0.0-rc.23 TASK-014 (F8c): S5 onboard slot label. Same emit discipline as
+  // the four a-C1 fields — YAML line iff caller-supplied; never in the
+  // idempotency_key hash. The value is the bare slot name (no quoting needed —
+  // every slot name in `ONBOARD_SLOT_NAMES` is alphanumeric+dash).
+  onboardSlot?: string;
 };
 
 function renderFreshEntry(args: FreshEntryArgs): string {
@@ -307,6 +332,34 @@ function renderFreshEntry(args: FreshEntryArgs): string {
       .map((p) => quoteRelevancePath(p))
       .join(", ");
     frontmatterLines.push(`relevance_paths: [${pathsBody}]`);
+  }
+  // v2.0.0-rc.23 TASK-006 (a-C1): emit structured triage fields when supplied.
+  // Arrays use the same flow-form quoting as relevance_paths so the existing
+  // line-based YAML regex parsers can scan them uniformly; must_read_if is
+  // quoted as a YAML flow-scalar. Empty arrays are honoured verbatim ("[]")
+  // because an explicit empty value is a deliberate skill-side signal —
+  // distinct from "field absent entirely" which omits the line.
+  if (args.intentClues !== undefined) {
+    const body = args.intentClues.map((s) => quoteRelevancePath(s)).join(", ");
+    frontmatterLines.push(`intent_clues: [${body}]`);
+  }
+  if (args.techStack !== undefined) {
+    const body = args.techStack.map((s) => quoteRelevancePath(s)).join(", ");
+    frontmatterLines.push(`tech_stack: [${body}]`);
+  }
+  if (args.impact !== undefined) {
+    const body = args.impact.map((s) => quoteRelevancePath(s)).join(", ");
+    frontmatterLines.push(`impact: [${body}]`);
+  }
+  if (args.mustReadIf !== undefined) {
+    frontmatterLines.push(`must_read_if: ${quoteRelevancePath(args.mustReadIf)}`);
+  }
+  // v2.0.0-rc.23 TASK-014 (F8c): onboard_slot bare-scalar line. Slot names
+  // are constrained to ONBOARD_SLOT_NAMES (alphanumeric + dash), so emitting
+  // without quotes is YAML-safe and matches the `type:`/`maturity:`/`layer:`
+  // bare-scalar shape upstream of this block. Omitted when undefined.
+  if (args.onboardSlot !== undefined) {
+    frontmatterLines.push(`onboard_slot: ${args.onboardSlot}`);
   }
   frontmatterLines.push(
     `x-fabric-idempotency-key: ${args.idempotencyKey}`,

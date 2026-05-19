@@ -111,8 +111,8 @@ describe("rc.14 TASK-002 install-diff-mode: canonical no-op", () => {
     expect(snapshot2Cursor).toEqual(snapshot1Cursor);
 
     // .fabric/agents.meta.json must be byte-stable (present-canonical → no
-    // write under diff-mode; runInitScan is also skipped on a canonical
-    // re-run so post-scan mutation does not happen either).
+    // write under diff-mode; rc.23 TASK-012 (F8a) removed the post-install
+    // baseline scan that previously mutated this file).
     const metaBefore = snapshot1Fabric[".fabric/agents.meta.json"];
     expect(metaBefore).toBeDefined();
     const metaAfter = readFileSync(join(target, ".fabric", "agents.meta.json"), "utf8");

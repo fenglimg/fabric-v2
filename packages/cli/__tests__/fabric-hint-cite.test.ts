@@ -213,6 +213,41 @@ describe("fabric-hint.cjs — extractAndWriteAssistantTurnsBestEffort", () => {
     expect(parsed[1].envelope_index).toBe(2);
   });
 
+  // rc.23 T8c: `KB: none [<sentinel>]` form. Hook must keep the full bracket
+  // tail in `kb_line_raw` (doctor downstream parses it into the
+  // none_reason_histogram); cite_tags still emits the bare `none` token
+  // (schema-bound enum).
+  it("rc.23 T8c: KB: none [no-relevant] / [not-applicable] sentinels are preserved in kb_line_raw", () => {
+    writeTranscriptFixture(transcriptPath, [
+      { role: "user", text: "p1" },
+      { role: "assistant", text: "KB: none [no-relevant]\n\nbody-1" },
+      { role: "user", text: "p2" },
+      { role: "assistant", text: "KB: none [not-applicable]\n\nbody-2" },
+    ]);
+
+    hook.extractAndWriteAssistantTurnsBestEffort(tempRoot, {
+      session_id: "sentinel-session",
+      transcript_path: transcriptPath,
+    });
+
+    const ledgerPath = join(tempRoot, ".fabric", "events.jsonl");
+    const lines = readFileSync(ledgerPath, "utf8")
+      .split(/\r?\n/)
+      .filter((l) => l.length > 0)
+      .map((l) => JSON.parse(l));
+
+    const parsed = lines.map((l) => assistantTurnObservedEventSchema.parse(l));
+    expect(parsed).toHaveLength(2);
+
+    expect(parsed[0].kb_line_raw).toBe("KB: none [no-relevant]");
+    expect(parsed[0].cite_ids).toEqual([]);
+    expect(parsed[0].cite_tags).toEqual(["none"]);
+
+    expect(parsed[1].kb_line_raw).toBe("KB: none [not-applicable]");
+    expect(parsed[1].cite_ids).toEqual([]);
+    expect(parsed[1].cite_tags).toEqual(["none"]);
+  });
+
   it("never-throws: stdinPayload without transcript_path emits no events and does not throw", () => {
     expect(() =>
       hook.extractAndWriteAssistantTurnsBestEffort(tempRoot, {

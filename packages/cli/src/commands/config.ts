@@ -5,7 +5,11 @@ import { fileURLToPath } from "node:url";
 
 import { cancel, intro, isCancel, log, outro, select, text } from "@clack/prompts";
 import type { FabricConfig } from "@fenglimg/fabric-shared";
-import { getPanelFields, type PanelFieldMeta } from "@fenglimg/fabric-shared";
+import {
+  getPanelFields,
+  ONBOARD_SLOT_NAMES,
+  type PanelFieldMeta,
+} from "@fenglimg/fabric-shared";
 import { atomicWriteJson } from "@fenglimg/fabric-shared/node/atomic-write";
 import { defineCommand } from "citty";
 
@@ -85,6 +89,165 @@ const EXIT_CHOICE = "__exit__" as const;
 
 type PanelConfig = Record<string, unknown>;
 
+// ---------------------------------------------------------------------------
+// v2.0.0-rc.23 TASK-014 (F8c): onboard-slot opt-out helpers.
+//
+// `fab config dismiss-slot <slot>` is invoked by fabric-archive's first-run
+// onboard phase when the user picks "dismiss" — it appends the slot name to
+// `onboard_slots_opted_out` in `.fabric/fabric-config.json` so subsequent
+// `fab onboard-coverage` runs treat the slot as resolved (no missing report).
+//
+// `fab config onboard-reset <slot>` is the reverse — it removes the slot
+// from the opted-out list. Naming discipline: `dismiss-slot` = add to list,
+// `onboard-reset` = remove from list. Keeping the verbs distinct prevents
+// users from accidentally re-prompting a deliberately dismissed slot.
+//
+// Both subcommands are non-interactive (no clack prompts) — they're meant
+// to be invoked programmatically by the Skill OR typed directly by the user.
+// ---------------------------------------------------------------------------
+
+type SlotMutationArgs = {
+  slot?: string;
+  target?: string;
+};
+
+async function readOnboardSlotsList(configPath: string): Promise<{
+  config: Record<string, unknown>;
+  optedOut: string[];
+}> {
+  const raw = await readFile(configPath, "utf8");
+  const parsed = JSON.parse(raw) as unknown;
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error(t("cli.config.errors.expected-object", { path: configPath }));
+  }
+  const obj = parsed as Record<string, unknown>;
+  const list = obj.onboard_slots_opted_out;
+  const optedOut = Array.isArray(list)
+    ? list.filter((v): v is string => typeof v === "string")
+    : [];
+  return { config: obj, optedOut };
+}
+
+function ensureUninitGate(workspaceRoot: string): string | null {
+  const configPath = join(workspaceRoot, ...PANEL_CONFIG_RELATIVE_PATH);
+  const fabricDir = join(workspaceRoot, ".fabric");
+  const fabricDirOk = existsSync(fabricDir) && statSync(fabricDir).isDirectory();
+  const configOk = fabricDirOk && existsSync(configPath);
+  if (!configOk) {
+    console.error(t("cli.config.errors.uninit-workspace.message"));
+    return null;
+  }
+  return configPath;
+}
+
+function validateSlotArg(slot: string | undefined): string | null {
+  if (slot === undefined || slot.length === 0) {
+    console.error(`Missing required <slot> argument. Valid slots: ${ONBOARD_SLOT_NAMES.join(", ")}.`);
+    return null;
+  }
+  if (!(ONBOARD_SLOT_NAMES as readonly string[]).includes(slot)) {
+    console.error(`Unknown slot "${slot}". Valid slots: ${ONBOARD_SLOT_NAMES.join(", ")}.`);
+    return null;
+  }
+  return slot;
+}
+
+const dismissSlotCmd = defineCommand({
+  meta: {
+    name: "dismiss-slot",
+    description:
+      "Add an S5 onboard slot to the opted-out list (fabric-archive Skill onboard phase invokes this).",
+    hidden: true,
+  },
+  args: {
+    slot: {
+      type: "positional",
+      description: "Slot name to dismiss (one of the locked S5 set).",
+      required: true,
+    },
+    target: {
+      type: "string",
+      description: "Override the project root (defaults to cwd).",
+    },
+  },
+  async run({ args }: { args: SlotMutationArgs }) {
+    const slot = validateSlotArg(args.slot);
+    if (slot === null) {
+      process.exitCode = 1;
+      return;
+    }
+    const workspaceRoot = resolve(args.target ?? process.cwd());
+    const configPath = ensureUninitGate(workspaceRoot);
+    if (configPath === null) {
+      process.exitCode = 1;
+      return;
+    }
+    try {
+      const { config, optedOut } = await readOnboardSlotsList(configPath);
+      if (optedOut.includes(slot)) {
+        console.log(`Slot "${slot}" already opted out; no-op.`);
+        return;
+      }
+      const next = [...optedOut, slot];
+      const merged = { ...config, onboard_slots_opted_out: next };
+      await atomicWriteJson(configPath, merged);
+      console.log(`Dismissed onboard slot "${slot}". Run \`fab config onboard-reset ${slot}\` to re-open.`);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error(`dismiss-slot failed: ${message}`);
+      process.exitCode = 1;
+    }
+  },
+});
+
+const onboardResetCmd = defineCommand({
+  meta: {
+    name: "onboard-reset",
+    description:
+      "Remove an S5 onboard slot from the opted-out list — re-opens the slot for future fabric-archive onboard prompts.",
+    hidden: true,
+  },
+  args: {
+    slot: {
+      type: "positional",
+      description: "Slot name to reset (one of the locked S5 set).",
+      required: true,
+    },
+    target: {
+      type: "string",
+      description: "Override the project root (defaults to cwd).",
+    },
+  },
+  async run({ args }: { args: SlotMutationArgs }) {
+    const slot = validateSlotArg(args.slot);
+    if (slot === null) {
+      process.exitCode = 1;
+      return;
+    }
+    const workspaceRoot = resolve(args.target ?? process.cwd());
+    const configPath = ensureUninitGate(workspaceRoot);
+    if (configPath === null) {
+      process.exitCode = 1;
+      return;
+    }
+    try {
+      const { config, optedOut } = await readOnboardSlotsList(configPath);
+      if (!optedOut.includes(slot)) {
+        console.log(`Slot "${slot}" not opted out; no-op.`);
+        return;
+      }
+      const next = optedOut.filter((s) => s !== slot);
+      const merged = { ...config, onboard_slots_opted_out: next };
+      await atomicWriteJson(configPath, merged);
+      console.log(`Reset onboard slot "${slot}"; it will appear in \`fab onboard-coverage\` as missing again.`);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error(`onboard-reset failed: ${message}`);
+      process.exitCode = 1;
+    }
+  },
+});
+
 export const configCmd = defineCommand({
   meta: {
     name: "config",
@@ -97,7 +260,22 @@ export const configCmd = defineCommand({
       valueHint: "path",
     },
   },
+  subCommands: {
+    "dismiss-slot": dismissSlotCmd,
+    "onboard-reset": onboardResetCmd,
+  },
   async run({ args }: { args: ConfigArgs }) {
+    // v2.0.0-rc.23 TASK-014 (F8c): citty runs the parent `run` AFTER routing
+    // to a matched subcommand. The subcommands (`dismiss-slot` /
+    // `onboard-reset`) do their own work; we must NOT also launch the
+    // interactive panel after them. Short-circuit by detecting the
+    // subcommand name in process.argv — argv[3] is the first positional
+    // after `fab config` (argv[0]=node, argv[1]=fab, argv[2]=config).
+    const argvSub = process.argv[3];
+    if (argvSub === "dismiss-slot" || argvSub === "onboard-reset") {
+      return;
+    }
+
     const workspaceRoot = resolve(args.target ?? process.cwd());
     const configPath = join(workspaceRoot, ...PANEL_CONFIG_RELATIVE_PATH);
     const fabricDir = join(workspaceRoot, ".fabric");

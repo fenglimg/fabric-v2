@@ -5,6 +5,57 @@ All notable changes to Fabric will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0-rc.23] - 2026-05-18
+
+Combined 12-scope release. Bootstrap + AGENTS.md realigned to the actual two-step API, api-contracts.ts taken through a schema sweep, read-side description auto-heal mirrored from rc.22 D2 pattern, cite policy widened with two new sentinels, MCP startup made non-blocking with a 5s handler gate, stale serve-lock surfaced as a doctor advisory, and the rc.5-era `fab scan` baseline mechanism + sections-enum tuple fully removed in favor of a clean-state KB that fills from the Skill onboarding phase. Two new tracks added during in-session grill: F8a/F8b clean-state demolition + F8c onboard-phase mechanism (S5 slot enum + onboard-coverage CLI + `onboard_slot` frontmatter + dismiss/reset). Gemini batch review verdict captured in TASK-011.
+
+### Added
+
+- **F8c — onboard phase + S5 slot mechanism** — `fabric-archive` SKILL.md grows a first-run onboard phase that proposes entries for the five "tone" slots (`tech-stack-decision` / `architecture-pattern` / `code-style-tone` / `build-system-idiom` / `domain-vocabulary`). New `fab onboard-coverage` CLI command + `onboard_slot` frontmatter field on knowledge entries + `onboard_slots_opted_out: string[]` in `fabric-config.json` for explicit dismiss. `fab doctor` surfaces an advisory when slots are missing and not dismissed. Closes the "新装 fabric KB 空白怎么补基调" gap left by F8a's removal of baseline-scan.
+- **a-C1 — `FabExtractKnowledge*Schema` 4 optional fields** — `intent_clues` / `tech_stack` / `impact` / `must_read_if` (all `z.string().optional()`) added to extract-knowledge input + output schemas. Carry-through to frontmatter assembly in `extract-knowledge.ts`. Backward-compatible: existing entries without these fields parse unchanged.
+- **a-C2 — `fab doctor --enrich-descriptions`** — new doctor sub-flag that scans `.fabric/knowledge/**/*.md`, identifies entries missing the rc.23 fields, and back-fills them (stub-on-`--auto`, interactive prompt otherwise). Uses `atomicWriteText` for safe frontmatter rewrites. Audit events written to `events.jsonl`.
+- **c — Cite sentinel enums** — `KB: none [no-relevant]` and `KB: none [not-applicable]` join the existing `[planned|recalled|chained-from|dismissed:<reason>]` enum. `KB: none` (bare) maps to `[unspecified]` for historical event-stream compatibility. `parseKbLine` extended (5-branch parser); `renderCiteCoverageReport` gains a breakdown column for the two new sentinels. Bootstrap text updated to teach the new enums.
+- **d — Non-blocking MCP startup + 5s handler gate** — `startStdioServer` now calls `server.connect` first and kicks off `reconcileKnowledge` as a fire-and-forget promise stored on `serverContext`. Each tool handler entry-point awaits the promise with a 5s timeout via `awaitWithTimeout`. On timeout, response includes `reconcile_pending: true` warning + fresh `meta_stale_at_handler` event. First-call latency budget < 100ms in the warm path.
+- **e — Stale `.serve.lock` advisory** — `fab doctor` now reports a stale `.serve.lock` (pid dead or `>24h` old) as an advisory line. `fab doctor --fix` unlinks the file and emits a `serve_lock_cleared` event. Never auto-cleaned — matches rc.22 "demote-to-warning" precedent.
+
+### Changed
+
+- **F1 — Bootstrap real-API alignment** — `bootstrap-canonical.ts` + project `.fabric/AGENTS.md` updated to describe the actual two-step KB-fetch API (`fab_plan_context` → `fab_get_knowledge_sections`). Prior single-step `fab_get_rules`-style hint removed (it never matched runtime). Three-end managed blocks propagate via `fab install`.
+- **F2/F3/F4 — `api-contracts.ts` schema sweep** — `.describe()` strings tightened across all MCP-tool input/output schemas (one-line role descriptions, no historical baggage). `precedence` field marked `deprecated` in JSDoc. Dead exports removed: `getKnowledgeInput` / `getKnowledgeOutput` / `getKnowledgeAnnotations` / `fab_get_rules` tool registration. Hard delete, no transition period — pre-user clean-slate.
+- **F5 — `source_session` (singular) removed** — only `source_sessions: string[]` survives on `FabExtractKnowledgeInput`. `superRefine` simplified.
+- **F6 — `fab_get_knowledge_sections` self-describes** — MCP tool description now contains the full usage contract (input shape + output shape + invariants). F8b later simplified this further by removing the `sections: enum[]` input parameter — body is returned as a single string.
+- **a-B — `description===undefined` read-side auto-heal** — `buildPreflightDiagnostics` in `plan-context.ts` detects entries where the active meta record is missing `description`, triggers `reconcileKnowledge({trigger: 'auto-heal-description'})`, and returns `auto_healed: true` + `previous_revision_hash` on the response. Matches rc.22 D2 read-side auto-heal pattern.
+- **F8a — `fab scan` baseline mechanism removed** — `packages/cli/src/commands/scan.ts` deleted; `fab scan` subcommand unregistered; 4 baseline `.md` files removed from `.fabric/knowledge/` (`KT-MOD-0001..3`, `KT-PRO-0001`); `install.ts` no longer seeds baselines; `doctor.ts` no longer lints baseline filenames. Rationale: dogfood data showed all 5 baseline entries were `selectable: false` in plan_context — zero LLM contribution. KB is now seeded exclusively via the `fabric-archive` / `fabric-import` / `fabric-review` Skill paths.
+- **F8b — `KNOWLEDGE_SECTION_NAMES_TUPLE` + `sections:` input removed** — `fab_get_knowledge_sections` now takes only `id` and returns `body: string` (full entry body) instead of `rules[].sections`. The A-set `## [BRACKET]` heading convention is gone; only the B-set `## <PlainTitle>` form survives. `knowledge-meta-builder.ts` parser updated. `fabric-archive` / `fabric-import` / `fabric-review` SKILL.md text re-flowed to drop sections-enum demonstrations.
+
+### Removed
+
+- `packages/cli/src/commands/scan.ts` (F8a)
+- 4 baseline `.md` files under `.fabric/knowledge/models/` + `.fabric/knowledge/processes/` (F8a)
+- `KNOWLEDGE_SECTION_NAMES_TUPLE` export from `@fenglimg/fabric-shared` (F8b)
+- `sections: enum[]` input on `fab_get_knowledge_sections` (F8b)
+- `getKnowledgeInput` / `getKnowledgeOutput` / `getKnowledgeAnnotations` exports (F4)
+- `fab_get_rules` MCP tool registration (F4)
+- `source_session` (singular) field on extract-knowledge schemas (F5)
+- `__tests__/integration/scan-init.test.ts` + `__tests__/scan-builders.test.ts` (F8a)
+
+### Verification
+
+- **Tests**: 354 shared + 524 server (+ 1 skipped) + 578 CLI = **1456 passing**, zero failures.
+- **Cite coverage**: `fab doctor --cite-coverage --since=7d --client=all` reports cleanly from the rc.20 activation-marker floor; new sentinel breakdown column renders for `[no-relevant]` / `[not-applicable]`.
+- **Dogfood**: rc.23 cumulative diff cuts ~722 net lines (3440 ins / 4162 del) via clean-state demolition of `fab scan` + baseline KB + sections-enum.
+- **Werewolf-minigame regression**: deferred — to be verified post-tag in the consumer repo.
+
+### Migration
+
+**None.** Pre-user clean-slate. Existing repos run `fab install` + `fab doctor --fix` to refresh three-end managed blocks. The 4 baseline `.md` files removed from this repo are pre-existing fabric-scan outputs — consumer repos that haven't run `fab scan` are unaffected. KB onboarding now flows through the `fabric-archive` first-run prompt or `fab onboard-coverage` advisory; no manual back-fill required.
+
+### Notes
+
+- `release-rc` skill handles version bump (root + workspaces) + tag + push. This CHANGELOG entry is preparatory.
+- Cite policy from rc.20 remains active; new sentinels are additive.
+- Next: post-tag werewolf-minigame regression sample + monitor `fab doctor --enrich-descriptions` adoption.
+
 ## [2.0.0-rc.21] - 2026-05-15
 
 Hotfix for rc.20 CI breakage. rc.20 tag landed with two strict-typecheck regressions that local `pnpm -r build` (tsup DTS, not workspace-wide `tsc --noEmit`) failed to catch.

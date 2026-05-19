@@ -10,6 +10,10 @@ import {
 import { enforcePayloadLimit } from "@fenglimg/fabric-shared/node/mcp-payload-guard";
 import { resolveProjectRoot } from "../meta-reader.js";
 import { readPayloadLimits } from "../config-loader.js";
+import {
+  awaitFirstReconcileGate,
+  gateWarning,
+} from "../services/first-reconcile-gate.js";
 import { type InFlightTracker } from "../services/in-flight-tracker.js";
 import { planContext, type PlanContextInput } from "../services/plan-context.js";
 import { ensureKnowledgeFresh } from "../services/knowledge-sync.js";
@@ -28,6 +32,13 @@ export function registerPlanContext(server: McpServer, tracker?: InFlightTracker
       const requestId = randomUUID();
       tracker?.enter(requestId);
       try {
+        // v2.0.0-rc.23 TASK-009 (d): wait at most 5s for the background
+        // first reconcile to complete. On timeout or failure we still
+        // serve the call from whatever meta is on disk, but tag the
+        // response with a fail-loud warning so the caller knows.
+        const gateResult = await awaitFirstReconcileGate();
+        const gateWarn = gateWarning(gateResult);
+
         const projectRoot = resolveProjectRoot();
         const syncReport = await ensureKnowledgeFresh(projectRoot);
         const result = await planContext(projectRoot, {
@@ -42,7 +53,10 @@ export function registerPlanContext(server: McpServer, tracker?: InFlightTracker
 
         const response = {
           ...result,
-          warnings: [...syncReport.warnings],
+          warnings: [
+            ...(gateWarn ? [gateWarn] : []),
+            ...syncReport.warnings,
+          ],
         };
 
         const payloadLimits = readPayloadLimits(projectRoot);

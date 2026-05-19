@@ -885,10 +885,18 @@ function extractRuleDescription(source: string): RuleDescription | undefined {
   };
 }
 
+// v2.0.0-rc.23 TASK-013 (F8b): the heading-format A-set enum
+// (MISSION_STATEMENT / MANDATORY_INJECTION / BUSINESS_LOGIC_CHUNKS /
+// CONTEXT_INFO inside `## [BRACKET]` shells) was retired alongside the scan
+// baseline writers. Section discovery now accepts B-set plain `## <Title>`
+// headings (Summary / Why proposed / Session context / Evidence — the rc.7
+// fab_extract_knowledge convention). The result is captured in
+// agents.meta.json `nodes[].sections` purely as forensic metadata for doctor
+// lints — no API surface consumes it.
 function extractRuleSections(source: string): string[] | undefined {
-  const sections = Array.from(source.matchAll(/^(?:#{2,6})\s+\[([A-Z_]+)\]\s*$/gmu))
-    .map((match) => match[1])
-    .filter((section, index, all) => all.indexOf(section) === index);
+  const sections = Array.from(source.matchAll(/^#{2,6}\s+(.+?)\s*$/gmu))
+    .map((match) => match[1].trim())
+    .filter((section, index, all) => section.length > 0 && all.indexOf(section) === index);
 
   return sections.length > 0 ? sections : undefined;
 }

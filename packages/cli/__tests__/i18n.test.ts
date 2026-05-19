@@ -63,7 +63,8 @@ async function collectSnapshots(locale: "en" | "zh-CN") {
     await installCommand.run?.({ args: { target: installTarget } } as never);
   });
 
-  // rc.15 TASK-004 (C7): `fab scan` removed; rescan path moves to `fab doctor --rescan`.
+  // rc.23 TASK-012 (F8a): legacy baseline scan paths were removed clean-slate;
+  // KB on fresh install is empty by design.
   // rc.15 TASK-004 (C9): capture `fab config` placeholder output as the replacement
   // i18n snapshot — locks the rc.16 placeholder string in en + zh-CN.
   vi.resetModules();

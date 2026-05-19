@@ -12,6 +12,7 @@
 import { describe, expect, it } from "vitest";
 import { zodToJsonSchema } from "zod-to-json-schema";
 
+import * as apiContracts from "@fenglimg/fabric-shared/schemas/api-contracts";
 import {
   FabExtractKnowledgeInputSchema,
   FabExtractKnowledgeOutputSchema,
@@ -19,9 +20,6 @@ import {
   FabReviewOutputSchema,
   fabExtractKnowledgeAnnotations,
   fabReviewAnnotations,
-  getKnowledgeAnnotations,
-  getKnowledgeInputSchema,
-  getKnowledgeOutputSchema,
   planContextAnnotations,
   planContextInputSchema,
   planContextOutputSchema,
@@ -47,11 +45,6 @@ const contracts: Record<string, ToolContract> = {
     inputSchema: zodToJsonSchema(planContextInputSchema),
     outputSchema: zodToJsonSchema(planContextOutputSchema),
     annotations: planContextAnnotations,
-  },
-  "get-knowledge": {
-    inputSchema: zodToJsonSchema(getKnowledgeInputSchema),
-    outputSchema: zodToJsonSchema(getKnowledgeOutputSchema),
-    annotations: getKnowledgeAnnotations,
   },
   "knowledge-sections": {
     inputSchema: zodToJsonSchema(knowledgeSectionsInputSchema),
@@ -83,4 +76,15 @@ describe("tool contracts", () => {
       }
     });
   }
+
+  // rc.23 TASK-002 F4: getKnowledge* / fab_get_rules surface removed.
+  // These exports were orphaned after the two-step plan_context →
+  // get_knowledge_sections API rewrite. Assert they are gone so a future
+  // regression cannot silently re-introduce a dead tool surface.
+  it("does not export removed getKnowledge* schemas (rc.23 F4)", () => {
+    const exports = apiContracts as Record<string, unknown>;
+    expect(exports.getKnowledgeInputSchema).toBeUndefined();
+    expect(exports.getKnowledgeOutputSchema).toBeUndefined();
+    expect(exports.getKnowledgeAnnotations).toBeUndefined();
+  });
 });

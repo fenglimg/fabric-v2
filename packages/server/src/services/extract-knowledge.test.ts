@@ -43,7 +43,8 @@ afterEach(async () => {
 // to exercise the new fields can override here.
 function buildInput(partial: Partial<FabExtractKnowledgeInput>): FabExtractKnowledgeInput {
   return {
-    source_session: partial.source_session ?? "sess-test",
+    // rc.23 TASK-003 (F5): source_sessions[] is the only accepted shape.
+    source_sessions: partial.source_sessions ?? ["sess-test"],
     recent_paths: partial.recent_paths ?? [],
     user_messages_summary: partial.user_messages_summary ?? "Test summary body.",
     type: partial.type ?? "decisions",
@@ -53,12 +54,19 @@ function buildInput(partial: Partial<FabExtractKnowledgeInput>): FabExtractKnowl
     session_context:
       partial.session_context ??
       "Session goal: validate extract-knowledge. Turning point: contract evolved at rc.7 to capture reason + context.",
-    source_sessions: partial.source_sessions,
     // v2.0.0-rc.8 A1: optional relevance fields. Defaults to undefined so
     // existing tests exercise the omit-line code path; opt-in tests set them
     // explicitly through `partial` to verify the YAML emit + degrade flow.
     relevance_scope: partial.relevance_scope,
     relevance_paths: partial.relevance_paths,
+    // v2.0.0-rc.23 TASK-006 (a-C1): four optional structured triage fields.
+    // Default to undefined so the existing suite exercises the omit-line path.
+    intent_clues: partial.intent_clues,
+    tech_stack: partial.tech_stack,
+    impact: partial.impact,
+    must_read_if: partial.must_read_if,
+    // v2.0.0-rc.23 TASK-014 (F8c): optional S5 onboard-slot tag.
+    onboard_slot: partial.onboard_slot,
   } as FabExtractKnowledgeInput;
 }
 
@@ -67,7 +75,7 @@ describe("extractKnowledge", () => {
     const projectRoot = await createTempProject();
 
     const result = await extractKnowledge(projectRoot, buildInput({
-      source_session: "sess-001",
+      source_sessions: ["sess-001"],
       recent_paths: ["packages/server/src/index.ts"],
       user_messages_summary: "We decided to keep idempotency at the triple level.",
       type: "decisions",
@@ -116,14 +124,14 @@ describe("extractKnowledge", () => {
     const projectRoot = await createTempProject();
 
     const first = await extractKnowledge(projectRoot, buildInput({
-      source_session: "sess-002",
+      source_sessions: ["sess-002"],
       recent_paths: ["a.ts"],
       user_messages_summary: "First-call summary body.",
       type: "guidelines",
       slug: "naming-pattern",
     }));
     const second = await extractKnowledge(projectRoot, buildInput({
-      source_session: "sess-002",
+      source_sessions: ["sess-002"],
       recent_paths: ["b.ts"],
       // Different summary on purpose — merge semantics dedup by trimmed text.
       user_messages_summary: "Second-call summary body — should merge, not duplicate.",
@@ -168,7 +176,7 @@ describe("extractKnowledge", () => {
 
     for (let i = 0; i < 3; i += 1) {
       await extractKnowledge(projectRoot, buildInput({
-        source_session: "sess-dup",
+        source_sessions: ["sess-dup"],
         recent_paths: ["dup.ts"],
         user_messages_summary: sharedNote,
         type: "decisions",
@@ -202,21 +210,21 @@ describe("extractKnowledge", () => {
     const projectRoot = await createTempProject();
 
     await extractKnowledge(projectRoot, buildInput({
-      source_session: "sess-distinct",
+      source_sessions: ["sess-distinct"],
       recent_paths: ["one.ts"],
       user_messages_summary: "Observation A: discovered pattern X.",
       type: "models",
       slug: "merged-evidence",
     }));
     await extractKnowledge(projectRoot, buildInput({
-      source_session: "sess-distinct",
+      source_sessions: ["sess-distinct"],
       recent_paths: ["two.ts"],
       user_messages_summary: "Observation B: pattern X interacts with Y.",
       type: "models",
       slug: "merged-evidence",
     }));
     await extractKnowledge(projectRoot, buildInput({
-      source_session: "sess-distinct",
+      source_sessions: ["sess-distinct"],
       recent_paths: ["three.ts"],
       user_messages_summary: "Observation C: revised understanding after Z.",
       type: "models",
@@ -242,7 +250,7 @@ describe("extractKnowledge", () => {
     const projectRoot = await createTempProject();
 
     const result = await extractKnowledge(projectRoot, buildInput({
-      source_session: "sess-003",
+      source_sessions: ["sess-003"],
       recent_paths: [],
       user_messages_summary: "   \n  \t  ",
       type: "pitfalls",
@@ -269,7 +277,7 @@ describe("extractKnowledge", () => {
     const projectRoot = await createTempProject();
 
     const result = await extractKnowledge(projectRoot, buildInput({
-      source_session: "sess-004",
+      source_sessions: ["sess-004"],
       recent_paths: ["x.ts"],
       user_messages_summary: "Some content.",
       type: "models",
@@ -289,7 +297,7 @@ describe("extractKnowledge", () => {
 
     // user_messages_summary undefined exercises nullish-coalesce branch.
     const result = await extractKnowledge(projectRoot, {
-      source_session: "sess-undef",
+      source_sessions: ["sess-undef"],
       recent_paths: [],
       // intentionally omit user_messages_summary
       type: "decisions",
@@ -308,7 +316,7 @@ describe("extractKnowledge", () => {
     const projectRoot = await createTempProject();
 
     const result = await extractKnowledge(projectRoot, buildInput({
-      source_session: "sess-punct",
+      source_sessions: ["sess-punct"],
       recent_paths: [],
       user_messages_summary: "Some non-empty body.",
       type: "decisions",
@@ -342,7 +350,7 @@ describe("extractKnowledge", () => {
 
     await expect(
       extractKnowledge(projectRoot, buildInput({
-        source_session: "sess-collision",
+        source_sessions: ["sess-collision"],
         recent_paths: [],
         user_messages_summary: "Fresh body must NOT win.",
         type: "decisions",
@@ -360,7 +368,7 @@ describe("extractKnowledge", () => {
 
     // recent_paths=[] exercises the empty-array branch in renderEvidenceBlock.
     const result = await extractKnowledge(projectRoot, buildInput({
-      source_session: "sess-empty-paths",
+      source_sessions: ["sess-empty-paths"],
       recent_paths: [],
       user_messages_summary: "Body without recent paths.",
       type: "guidelines",
@@ -376,7 +384,7 @@ describe("extractKnowledge", () => {
 
     // First write to establish an entry.
     const first = await extractKnowledge(projectRoot, buildInput({
-      source_session: "sess-no-nl",
+      source_sessions: ["sess-no-nl"],
       recent_paths: ["a.ts"],
       user_messages_summary: "First body.",
       type: "guidelines",
@@ -391,7 +399,7 @@ describe("extractKnowledge", () => {
     await writeFile(path, stripped, "utf8");
 
     const second = await extractKnowledge(projectRoot, buildInput({
-      source_session: "sess-no-nl",
+      source_sessions: ["sess-no-nl"],
       recent_paths: ["b.ts"],
       user_messages_summary: "Second body, merged.",
       type: "guidelines",
@@ -416,7 +424,7 @@ describe("extractKnowledge", () => {
 
     await expect(
       extractKnowledge(projectRoot, buildInput({
-        source_session: "sess-no-fm",
+        source_sessions: ["sess-no-fm"],
         recent_paths: [],
         user_messages_summary: "Replacement body.",
         type: "decisions",
@@ -441,7 +449,7 @@ describe("extractKnowledge", () => {
     }
 
     const result = await extractKnowledge(projectRoot, buildInput({
-      source_session: "sess-evt-fail",
+      source_sessions: ["sess-evt-fail"],
       recent_paths: ["a.ts"],
       user_messages_summary: "Body that succeeds writing the pending file.",
       type: "decisions",
@@ -466,7 +474,7 @@ describe("extractKnowledge", () => {
 
     const longSlug = "a-very-long-slug-name-with-many-words-going-far-beyond-forty";
     const result = await extractKnowledge(projectRoot, buildInput({
-      source_session: "sess-long",
+      source_sessions: ["sess-long"],
       recent_paths: [],
       user_messages_summary: "Body.",
       type: "decisions",
@@ -485,7 +493,7 @@ describe("extractKnowledge", () => {
     const projectRoot = await createTempProject();
 
     const first = await extractKnowledge(projectRoot, buildInput({
-      source_session: "sess-A",
+      source_sessions: ["sess-A"],
       recent_paths: ["a.ts"],
       user_messages_summary: "Original entry from session A.",
       type: "decisions",
@@ -501,7 +509,7 @@ describe("extractKnowledge", () => {
 
     await expect(
       extractKnowledge(projectRoot, buildInput({
-        source_session: "sess-B",
+        source_sessions: ["sess-B"],
         recent_paths: ["b.ts"],
         user_messages_summary: "Conflicting entry from session B.",
         type: "decisions",
@@ -549,7 +557,7 @@ describe("extractKnowledge", () => {
   it("extractKnowledge_routes_team_layer_write_to_workspace_pending", async () => {
     const projectRoot = await createTempProject();
     const result = await extractKnowledge(projectRoot, buildInput({
-      source_session: "sess-team",
+      source_sessions: ["sess-team"],
       recent_paths: ["x.ts"],
       user_messages_summary: "Team-layer body.",
       type: "decisions",
@@ -580,7 +588,7 @@ describe("extractKnowledge", () => {
     const fakeHome = process.env.FABRIC_HOME!;
 
     const result = await extractKnowledge(projectRoot, buildInput({
-      source_session: "sess-personal",
+      source_sessions: ["sess-personal"],
       recent_paths: ["y.ts"],
       user_messages_summary: "Personal-layer body.",
       type: "guidelines",
@@ -616,7 +624,7 @@ describe("extractKnowledge", () => {
   it("extractKnowledge_defaults_layer_to_team_when_omitted", async () => {
     const projectRoot = await createTempProject();
     const result = await extractKnowledge(projectRoot, buildInput({
-      source_session: "sess-default",
+      source_sessions: ["sess-default"],
       recent_paths: [],
       user_messages_summary: "Body without layer field.",
       type: "models",
@@ -630,14 +638,15 @@ describe("extractKnowledge", () => {
   });
 
   // -------------------------------------------------------------------------
-  // v2.0.0-rc.7 T5: source_sessions[] (array form + back-compat shim)
+  // v2.0.0-rc.7 T5 / rc.23 TASK-003 (F5): source_sessions[] is the sole accepted
+  // wire shape. The pre-T5 single-string `source_session` alias and its
+  // back-compat shim were removed in rc.23 — only the array form is exercised.
   // -------------------------------------------------------------------------
 
   it("extractKnowledge_T5_accepts_source_sessions_array_form", async () => {
     const projectRoot = await createTempProject();
 
     const result = await extractKnowledge(projectRoot, buildInput({
-      source_session: undefined,
       source_sessions: ["sess-a", "sess-b", "sess-c"],
       recent_paths: [],
       user_messages_summary: "Multi-session archive.",
@@ -649,23 +658,6 @@ describe("extractKnowledge", () => {
     const body = await readFile(join(projectRoot, result.pending_path), "utf8");
     // Frontmatter renders the array form.
     expect(body).toMatch(/^source_sessions: \["sess-a", "sess-b", "sess-c"\]$/mu);
-  });
-
-  it("extractKnowledge_T5_back_compat_single_string_maps_to_array", async () => {
-    const projectRoot = await createTempProject();
-
-    // Legacy caller: passes single `source_session` string — must transparently
-    // map to `source_sessions: ["sess-legacy"]` in the frontmatter.
-    const result = await extractKnowledge(projectRoot, buildInput({
-      source_session: "sess-legacy",
-      recent_paths: [],
-      user_messages_summary: "Legacy caller body.",
-      type: "guidelines",
-      slug: "legacy-shim",
-    }));
-
-    const body = await readFile(join(projectRoot, result.pending_path), "utf8");
-    expect(body).toMatch(/^source_sessions: \["sess-legacy"\]$/mu);
   });
 
   // -------------------------------------------------------------------------
@@ -680,7 +672,7 @@ describe("extractKnowledge", () => {
     const projectRoot = await createTempProject();
 
     const result = await extractKnowledge(projectRoot, buildInput({
-      source_session: "sess-a1-happy",
+      source_sessions: ["sess-a1-happy"],
       recent_paths: ["src/auth/login.ts"],
       user_messages_summary: "Narrow team-layer decision body.",
       type: "decisions",
@@ -708,7 +700,7 @@ describe("extractKnowledge", () => {
     const projectRoot = await createTempProject();
 
     const result = await extractKnowledge(projectRoot, buildInput({
-      source_session: "sess-a1-omit",
+      source_sessions: ["sess-a1-omit"],
       recent_paths: [],
       user_messages_summary: "Body without explicit relevance fields.",
       type: "guidelines",
@@ -729,7 +721,7 @@ describe("extractKnowledge", () => {
     const projectRoot = await createTempProject();
 
     const result = await extractKnowledge(projectRoot, buildInput({
-      source_session: "sess-a1-degrade",
+      source_sessions: ["sess-a1-degrade"],
       recent_paths: ["src/personal/**"],
       user_messages_summary: "Personal-layer entry that tried to declare narrow scope.",
       type: "decisions",
@@ -788,7 +780,7 @@ describe("extractKnowledge", () => {
     const projectRootC = await createTempProject();
 
     const baseTriple = {
-      source_session: "sess-canary",
+      source_sessions: ["sess-canary"],
       recent_paths: [],
       user_messages_summary: "Canary body — idempotency must not shift.",
       type: "decisions" as const,
@@ -867,7 +859,7 @@ describe("extractKnowledge", () => {
     await extractKnowledge(
       projectRoot,
       buildInput({
-        source_session: "sess-heal",
+        source_sessions: ["sess-heal"],
         slug: "post-heal-counter",
         type: "decisions",
         user_messages_summary: "Verifying extract triggers auto-heal.",
@@ -886,6 +878,180 @@ describe("extractKnowledge", () => {
     expect(metaAfter.revision).toEqual(expect.any(String));
   });
 
+  // -------------------------------------------------------------------------
+  // v2.0.0-rc.23 TASK-006 (a-C1): four optional structured triage fields
+  // (intent_clues / tech_stack / impact / must_read_if). Each emitted as a
+  // YAML line only when caller-supplied; omitted fields produce no line.
+  // None participate in the idempotency_key hash — verified by canary test.
+  // -------------------------------------------------------------------------
+
+  it("extractKnowledge_C1_writes_four_triage_fields_when_caller_supplies", async () => {
+    const projectRoot = await createTempProject();
+
+    const result = await extractKnowledge(projectRoot, buildInput({
+      source_sessions: ["sess-c1-full"],
+      recent_paths: [".fabric/AGENTS.md"],
+      user_messages_summary: "Triage-field happy path coverage.",
+      type: "guidelines",
+      slug: "c1-triage-full",
+      intent_clues: ["when editing batch UI code", "NOT for one-off scripts"],
+      tech_stack: ["typescript", "cocos-creator"],
+      impact: ["O(n²) re-render on every frame"],
+      must_read_if: "touching anything under packages/cli/src/commands/hooks.ts",
+    }));
+
+    const body = await readFile(join(projectRoot, result.pending_path), "utf8");
+    // Arrays render in flow form with quoted entries (matches relevance_paths).
+    expect(body).toMatch(
+      /^intent_clues: \["when editing batch UI code", "NOT for one-off scripts"\]$/mu,
+    );
+    expect(body).toMatch(/^tech_stack: \["typescript", "cocos-creator"\]$/mu);
+    expect(body).toMatch(/^impact: \["O\(n²\) re-render on every frame"\]$/mu);
+    // must_read_if renders as a quoted scalar (single line).
+    expect(body).toMatch(
+      /^must_read_if: "touching anything under packages\/cli\/src\/commands\/hooks\.ts"$/mu,
+    );
+  });
+
+  it("extractKnowledge_C1_omits_all_four_lines_when_caller_omits_fields", async () => {
+    const projectRoot = await createTempProject();
+
+    const result = await extractKnowledge(projectRoot, buildInput({
+      source_sessions: ["sess-c1-omit"],
+      recent_paths: [],
+      user_messages_summary: "Triage fields omitted — frontmatter must drop the lines entirely.",
+      type: "decisions",
+      slug: "c1-triage-omit",
+    }));
+
+    const body = await readFile(join(projectRoot, result.pending_path), "utf8");
+    // None of the four YAML keys should appear when the caller omits them.
+    expect(body).not.toMatch(/^intent_clues:/mu);
+    expect(body).not.toMatch(/^tech_stack:/mu);
+    expect(body).not.toMatch(/^impact:/mu);
+    expect(body).not.toMatch(/^must_read_if:/mu);
+  });
+
+  it("extractKnowledge_C1_writes_only_supplied_triage_fields", async () => {
+    const projectRoot = await createTempProject();
+
+    const result = await extractKnowledge(projectRoot, buildInput({
+      source_sessions: ["sess-c1-subset"],
+      recent_paths: ["x.ts"],
+      user_messages_summary: "Subset triage coverage.",
+      type: "models",
+      slug: "c1-triage-subset",
+      tech_stack: ["typescript"],
+      must_read_if: "auditing cite-policy logs",
+    }));
+
+    const body = await readFile(join(projectRoot, result.pending_path), "utf8");
+    expect(body).toMatch(/^tech_stack: \["typescript"\]$/mu);
+    expect(body).toMatch(/^must_read_if: "auditing cite-policy logs"$/mu);
+    expect(body).not.toMatch(/^intent_clues:/mu);
+    expect(body).not.toMatch(/^impact:/mu);
+  });
+
+  it("extractKnowledge_C1_idempotency_key_stable_across_triage_field_changes", async () => {
+    // Canary: idempotency_key is derived from {source_session, type, slug}
+    // only — adding/varying the four triage fields between calls MUST NOT
+    // shift the key. Mirrors the rc.8 A1 canary for relevance fields.
+    const projectRoot = await createTempProject();
+    const projectRootB = await createTempProject();
+    const projectRootC = await createTempProject();
+
+    const baseTriple = {
+      source_sessions: ["sess-c1-canary"],
+      recent_paths: [],
+      user_messages_summary: "Canary body — triage fields must not shift key.",
+      type: "decisions" as const,
+      slug: "c1-canary",
+    };
+
+    const r1 = await extractKnowledge(projectRoot, buildInput(baseTriple));
+    const r2 = await extractKnowledge(projectRootB, buildInput({
+      ...baseTriple,
+      intent_clues: ["clue"],
+      tech_stack: ["ts"],
+      impact: ["bad"],
+      must_read_if: "trigger",
+    }));
+    const r3 = await extractKnowledge(projectRootC, buildInput({
+      ...baseTriple,
+      // Different values from r2 — key must still match r1.
+      intent_clues: ["clue-other"],
+      tech_stack: ["go"],
+      impact: ["worse"],
+      must_read_if: "different trigger",
+    }));
+
+    expect(r2.idempotency_key).toBe(r1.idempotency_key);
+    expect(r3.idempotency_key).toBe(r1.idempotency_key);
+  });
+
+  // -------------------------------------------------------------------------
+  // v2.0.0-rc.23 TASK-014 (F8c): onboard_slot frontmatter + idempotency
+  // -------------------------------------------------------------------------
+
+  it("extractKnowledge_F8c_writes_onboard_slot_line_when_caller_supplies", async () => {
+    const projectRoot = await createTempProject();
+    const result = await extractKnowledge(projectRoot, buildInput({
+      source_sessions: ["sess-onboard-fill"],
+      recent_paths: ["package.json", "tsconfig.json"],
+      user_messages_summary: "Captured tech-stack baseline from package.json + tsconfig.json.",
+      type: "decisions",
+      slug: "f8c-onboard-tech-stack",
+      onboard_slot: "tech-stack-decision",
+    }));
+    const body = await readFile(join(projectRoot, result.pending_path), "utf8");
+    // Bare-scalar line (slot names are alphanumeric+dash so no quoting).
+    expect(body).toMatch(/^onboard_slot: tech-stack-decision$/mu);
+  });
+
+  it("extractKnowledge_F8c_omits_onboard_slot_line_when_omitted", async () => {
+    const projectRoot = await createTempProject();
+    const result = await extractKnowledge(projectRoot, buildInput({
+      source_sessions: ["sess-onboard-omit"],
+      recent_paths: [],
+      user_messages_summary: "Non-onboard archive — slot must NOT appear in frontmatter.",
+      type: "guidelines",
+      slug: "f8c-onboard-omit",
+    }));
+    const body = await readFile(join(projectRoot, result.pending_path), "utf8");
+    expect(body).not.toMatch(/^onboard_slot:/mu);
+  });
+
+  it("extractKnowledge_F8c_idempotency_key_stable_across_onboard_slot_changes", async () => {
+    // Canary: idempotency_key is derived from {source_session, type, slug}
+    // only. Adding or varying onboard_slot between calls MUST NOT shift the
+    // key — otherwise the slot mechanic itself could spawn duplicate
+    // pending files. Mirrors the rc.8 A1 and a-C1 canary precedents.
+    const projectRoot = await createTempProject();
+    const projectRootB = await createTempProject();
+    const projectRootC = await createTempProject();
+
+    const baseTriple = {
+      source_sessions: ["sess-f8c-canary"],
+      recent_paths: [],
+      user_messages_summary: "Canary body — onboard_slot must not shift key.",
+      type: "decisions" as const,
+      slug: "f8c-canary",
+    };
+
+    const r1 = await extractKnowledge(projectRoot, buildInput(baseTriple));
+    const r2 = await extractKnowledge(projectRootB, buildInput({
+      ...baseTriple,
+      onboard_slot: "tech-stack-decision",
+    }));
+    const r3 = await extractKnowledge(projectRootC, buildInput({
+      ...baseTriple,
+      onboard_slot: "architecture-pattern",
+    }));
+
+    expect(r2.idempotency_key).toBe(r1.idempotency_key);
+    expect(r3.idempotency_key).toBe(r1.idempotency_key);
+  });
+
   it("extractKnowledge_tolerates_missing_meta — first-touch project keeps working", async () => {
     // Documents the AgentsMetaFileMissingError swallow at extract-knowledge.ts.
     // A fresh project with NO .fabric/agents.meta.json must still accept a
@@ -896,7 +1062,7 @@ describe("extractKnowledge", () => {
     const result = await extractKnowledge(
       projectRoot,
       buildInput({
-        source_session: "sess-fresh",
+        source_sessions: ["sess-fresh"],
         slug: "fresh-project",
         type: "decisions",
         user_messages_summary: "First-touch extract on an un-initialized project.",

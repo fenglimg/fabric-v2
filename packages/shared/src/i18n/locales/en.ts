@@ -166,6 +166,10 @@ export const enMessages: Messages = {
   "doctor.cite.dismissed.not-applicable": "Not applicable",
   "doctor.cite.dismissed.other": "Other",
   "doctor.cite.dismissed.unspecified": "Unspecified",
+  "doctor.cite.section.noneReasons": "KB: none reasons",
+  "doctor.cite.none.no-relevant": "No relevant entry",
+  "doctor.cite.none.not-applicable": "Not applicable",
+  "doctor.cite.none.unspecified": "Unspecified",
   "doctor.cite.status.skipped":
     "Cite policy not yet activated for this workspace.",
   "cli.doctor.args.target.description":
@@ -175,8 +179,6 @@ export const enMessages: Messages = {
   "cli.doctor.args.strict.description": "Treat warnings as failures.",
   "cli.doctor.args.fix-knowledge.description":
     "Apply knowledge lint mutations: demote orphaned canonical entries, archive stale drafts, and bump drifted index counters. Default doctor run remains report-only.",
-  "cli.doctor.args.rescan.description":
-    "Re-run the init scan to rebuild .fabric/agents.meta.json forensic state before doctor checks.",
   "cli.doctor.args.yes.description":
     "Skip the --fix-knowledge safety confirm. Required for non-tty invocations unless FABRIC_NONINTERACTIVE=1 is set in the environment.",
   "cli.doctor.errors.fix-knowledge-fix-mutually-exclusive":
@@ -194,6 +196,18 @@ export const enMessages: Messages = {
     "Invalid --since value: {input}. Expected duration like 7d, 24h, 30m or epoch ms.",
   "cli.doctor.errors.invalid-client":
     "Invalid --client value: {input}. Expected cc, codex, cursor, or all.",
+  // rc.23 TASK-007 (a-C2): --enrich-descriptions flag set. Back-fills the
+  // four description-grade frontmatter fields on canonical knowledge entries.
+  "cli.doctor.args.enrich-descriptions.description":
+    "Back-fill missing intent_clues / tech_stack / impact / must_read_if on canonical knowledge entries (read-only by default; pair with --auto to write stubs).",
+  "cli.doctor.args.auto.description":
+    "With --enrich-descriptions: write deterministic stub values for missing fields. Without --auto, the run is read-only.",
+  "cli.doctor.args.dry-run.description":
+    "With --enrich-descriptions --auto: preview the would-be changes without writing to disk.",
+  "cli.doctor.errors.enrich-descriptions-mutex":
+    "--enrich-descriptions cannot be combined with --fix, --fix-knowledge, or --cite-coverage. Run them separately.",
+  "doctor.enrich.allComplete":
+    "All canonical knowledge entries already declare intent_clues / tech_stack / impact / must_read_if.",
 
   "cli.hooks.description": "Manage Fabric Git hook templates.",
   "cli.hooks.install.description": "Install the Fabric Husky pre-commit hook template.",

@@ -15,7 +15,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": ".claude/hooks/fabric-hint.cjs"
+            "command": "${CLAUDE_PROJECT_DIR}/.claude/hooks/fabric-hint.cjs"
           }
         ]
       }
@@ -26,7 +26,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": ".claude/hooks/knowledge-hint-broad.cjs"
+            "command": "${CLAUDE_PROJECT_DIR}/.claude/hooks/knowledge-hint-broad.cjs"
           }
         ]
       }
@@ -37,7 +37,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": ".claude/hooks/knowledge-hint-narrow.cjs"
+            "command": "${CLAUDE_PROJECT_DIR}/.claude/hooks/knowledge-hint-narrow.cjs"
           }
         ]
       }

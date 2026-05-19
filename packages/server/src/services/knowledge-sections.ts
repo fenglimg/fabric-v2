@@ -10,18 +10,15 @@ import { normalizeKnowledgePath } from "./get-knowledge.js";
 import { readSelectionToken } from "./plan-context.js";
 import { loadActiveMeta } from "./load-active-meta.js";
 
-export const KNOWLEDGE_SECTION_NAMES = [
-  "MISSION_STATEMENT",
-  "MANDATORY_INJECTION",
-  "BUSINESS_LOGIC_CHUNKS",
-  "CONTEXT_INFO",
-] as const;
-
-export type KnowledgeSectionName = typeof KNOWLEDGE_SECTION_NAMES[number];
+// v2.0.0-rc.23 TASK-013 (F8b): KNOWLEDGE_SECTION_NAMES + KnowledgeSectionName
+// + the `missing_section` diagnostic + the per-section structured response
+// were removed. After F8a deleted the scan baseline writers, the A-set
+// `## [BRACKET]` heading discipline had no writer; the LLM-facing API now
+// returns the full markdown body (frontmatter stripped) keyed by stable_id.
+// See parseKnowledgeSections (now `extractBody`) below.
 
 export type GetKnowledgeSectionsInput = {
   selection_token: string;
-  sections: KnowledgeSectionName[];
   ai_selected_stable_ids: string[];
   ai_selection_reasons: Record<string, string>;
   correlation_id?: string;
@@ -32,23 +29,15 @@ export type GetKnowledgeSectionsInput = {
   client_hash?: string;
 };
 
-export type KnowledgeSectionDiagnostic =
-  | {
-      code: "missing_section";
-      severity: "warn";
-      stable_id: string;
-      section: KnowledgeSectionName;
-      message: string;
-    }
-  | {
-      // v2.0: warn-level signal that a fetched rule lacks knowledge metadata
-      // (no `type` AND no `layer` in frontmatter). Surfaces un-migrated v1.x
-      // files without breaking selection — the rule is still returned.
-      code: "missing_knowledge_metadata";
-      severity: "warn";
-      stable_id: string;
-      message: string;
-    };
+export type KnowledgeSectionDiagnostic = {
+  // v2.0: warn-level signal that a fetched rule lacks knowledge metadata
+  // (no `type` AND no `layer` in frontmatter). Surfaces un-migrated v1.x
+  // files without breaking selection — the rule is still returned.
+  code: "missing_knowledge_metadata";
+  severity: "warn";
+  stable_id: string;
+  message: string;
+};
 
 export type KnowledgeSectionResult = {
   revision_hash: string;
@@ -58,7 +47,7 @@ export type KnowledgeSectionResult = {
     stable_id: string;
     level: AgentsLayer;
     path: string;
-    sections: Record<KnowledgeSectionName, string>;
+    body: string;
   }>;
   diagnostics: KnowledgeSectionDiagnostic[];
 };
@@ -79,61 +68,22 @@ const PRIORITY_ORDER: Record<NodePriority, number> = {
   low: 2,
 };
 
-export function parseKnowledgeSections(content: string): Map<KnowledgeSectionName, string> {
-  const sections = new Map<KnowledgeSectionName, string[]>();
-  const lines = content.split(/\r?\n/u);
-  let activeSection: KnowledgeSectionName | undefined;
-  let activeSectionDepth = 0;
-  let buffer: string[] = [];
-
-  const flush = (): void => {
-    if (activeSection === undefined) {
-      return;
-    }
-
-    const text = buffer.join("\n").trim();
-    if (text.length === 0) {
-      buffer = [];
-      return;
-    }
-
-    sections.set(activeSection, [...(sections.get(activeSection) ?? []), text]);
-    buffer = [];
-  };
-
-  for (const line of lines) {
-    const heading = /^(#{2,6})\s+\[([A-Z_]+)\]\s*$/u.exec(line.trim());
-
-    if (heading !== null) {
-      flush();
-      activeSection = isKnowledgeSectionName(heading[2]) ? heading[2] : undefined;
-      activeSectionDepth = activeSection === undefined ? 0 : heading[1].length;
-      continue;
-    }
-
-    const ordinaryHeading = /^(#{1,6})\s+/u.exec(line.trim());
-    if (ordinaryHeading !== null) {
-      if (activeSection !== undefined && ordinaryHeading[1].length > activeSectionDepth) {
-        buffer.push(line);
-        continue;
-      }
-
-      flush();
-      activeSection = undefined;
-      activeSectionDepth = 0;
-      continue;
-    }
-
-    if (activeSection !== undefined) {
-      buffer.push(line);
-    }
+/**
+ * v2.0.0-rc.23 TASK-013 (F8b): strip a YAML frontmatter block from raw rule
+ * markdown and return the remaining body. The frontmatter regex mirrors the
+ * one in knowledge-meta-builder.ts (extractDescription / extractIdFromFrontmatter)
+ * to keep parsing behavior consistent. When no frontmatter is present the
+ * original content is returned unchanged.
+ *
+ * Replaces the legacy `parseKnowledgeSections` which split markdown into the
+ * 4-element A-set enum (removed in F8b).
+ */
+export function extractBody(content: string): string {
+  const match = /^(?:\uFEFF)?---\r?\n([\s\S]*?)\r?\n---\s*(?:\r?\n|$)/u.exec(content);
+  if (match === null) {
+    return content.replace(/^\uFEFF/u, "");
   }
-
-  flush();
-
-  return new Map(
-    Array.from(sections.entries()).map(([section, values]) => [section, values.join("\n\n")]),
-  );
+  return content.slice(match[0].length);
 }
 
 export async function getKnowledgeSections(
@@ -159,23 +109,10 @@ export async function getKnowledgeSections(
 
   for (const rule of selectedRules) {
     const content = await readFile(resolveRuleSourcePath(projectRoot, rule.path), "utf8");
-    const parsedSections = parseKnowledgeSections(content);
-    const sections = {} as Record<KnowledgeSectionName, string>;
-
-    for (const section of input.sections) {
-      const sectionContent = parsedSections.get(section);
-      sections[section] = sectionContent ?? "";
-
-      if (sectionContent === undefined) {
-        diagnostics.push({
-          code: "missing_section",
-          severity: "warn",
-          stable_id: rule.stable_id,
-          section,
-          message: `Rule ${rule.stable_id} does not define section ${section}.`,
-        });
-      }
-    }
+    // v2.0.0-rc.23 TASK-013 (F8b): the API now returns the full markdown body
+    // (frontmatter stripped). Section-name discipline is a writer convention,
+    // not an API contract — callers scan for B-set headings as needed.
+    const body = extractBody(content);
 
     // v2.0: emit a warn-level diagnostic when a fetched rule has neither
     // `knowledge_type` nor `knowledge_layer` in its description — these are
@@ -198,7 +135,7 @@ export async function getKnowledgeSections(
       stable_id: rule.stable_id,
       level: rule.level,
       path: rule.path,
-      sections,
+      body,
     });
   }
 
@@ -230,11 +167,17 @@ export async function getKnowledgeSections(
   }
 
   try {
+    // v2.0.0-rc.23 TASK-013 (F8b): `requested_sections` retained in the
+    // ledger envelope for replay/audit continuity (event schema is generic
+    // `z.array(z.string())`), but always emitted as an empty array now that
+    // the `sections` input parameter was removed. Downstream cite-coverage /
+    // orphan-demote replay code never reads this field — the canonical
+    // signal is `final_stable_ids`.
     await appendEventLedgerEvent(projectRoot, {
       event_type: "knowledge_sections_fetched",
       selection_token: input.selection_token,
       target_paths: token.target_paths,
-      requested_sections: input.sections,
+      requested_sections: [],
       final_stable_ids: result.selected_stable_ids,
       ai_selected_stable_ids: input.ai_selected_stable_ids,
       diagnostics,
@@ -343,10 +286,6 @@ function outputLevelOrder(level: AgentsLayer): number {
     case "L2":
       return 2;
   }
-}
-
-function isKnowledgeSectionName(value: string): value is KnowledgeSectionName {
-  return KNOWLEDGE_SECTION_NAMES.includes(value as KnowledgeSectionName);
 }
 
 /**

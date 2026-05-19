@@ -30,7 +30,7 @@ function lockPath(projectRoot: string): string {
   return path.join(projectRoot, ".fabric", LOCK_FILENAME);
 }
 
-function isAlive(pid: number): boolean {
+export function isAlive(pid: number): boolean {
   try {
     process.kill(pid, 0); // signal 0 = liveness check
     return true;

@@ -9,7 +9,7 @@
 3. 在目标项目运行 `fabric install`，完成一站式安装。
 4. 启动 `fabric serve`，再去客户端里验证 `fab_plan_context` 和 `fab_get_knowledge_sections`。
 
-`fabric install` 会自动准备 bootstrap、MCP 配置和 git hooks。公共命令面只保留 `install`、`doctor`、`serve`、`uninstall`、`config`（rc.15 起 `fab scan` 已折叠到 `fab doctor --rescan`）。
+`fabric install` 会自动准备 bootstrap、MCP 配置和 git hooks。公共命令面只保留 `install`、`doctor`、`serve`、`uninstall`、`config`（rc.23 起移除了 baseline scan 机制，知识库唯一合法来源是 Skill 路径：`fabric-archive` / `fabric-import` / `fabric-review`）。
 
 ## 常用命令
 
@@ -18,7 +18,6 @@
 - `fabric doctor --json`
 - `fabric doctor --strict`
 - `fabric doctor --fix`
-- `fabric doctor --rescan`（替代旧的 `fabric scan`）
 - `fabric serve`
 - `fabric uninstall`
 - `fabric config`（rc.16 起将提供配置面板；当前为占位提示）

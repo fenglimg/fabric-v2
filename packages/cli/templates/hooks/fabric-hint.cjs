@@ -1291,8 +1291,13 @@ function summarizeTranscript(transcriptPath) {
           }
         }
         if (firstNonEmpty.length > 0) {
-          // KB: none (case-insensitive on the literal `none`).
-          const noneMatch = firstNonEmpty.match(/^KB:\s*none\s*$/i);
+          // KB: none — with optional `[<sentinel>]` tail per rc.23 T8.
+          // Accepts bare `KB: none` (legacy → unspecified) AND
+          // `KB: none [no-relevant]` / `KB: none [not-applicable]`. The sentinel
+          // tail stays in `kb_line_raw` for doctor's downstream histogram parse;
+          // the cite_tags vocab still emits the bare `none` token (schema
+          // enum-bound).
+          const noneMatch = firstNonEmpty.match(/^KB:\s*none\b\s*(?:\[[^\]]*\])?\s*$/i);
           const kbMatch = firstNonEmpty.match(/^KB:\s+(.+)$/);
           if (noneMatch) {
             kbLineRaw = firstNonEmpty;

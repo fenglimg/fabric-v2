@@ -206,14 +206,14 @@ export const HOOK_CONFIG_ARRAY_PATHS = {
  */
 export const FABRIC_HOOK_COMMAND_PATHS = {
   claudeCode: {
-    fabricHint: ".claude/hooks/fabric-hint.cjs",
-    knowledgeHintBroad: ".claude/hooks/knowledge-hint-broad.cjs",
-    knowledgeHintNarrow: ".claude/hooks/knowledge-hint-narrow.cjs",
+    fabricHint: "${CLAUDE_PROJECT_DIR}/.claude/hooks/fabric-hint.cjs",
+    knowledgeHintBroad: "${CLAUDE_PROJECT_DIR}/.claude/hooks/knowledge-hint-broad.cjs",
+    knowledgeHintNarrow: "${CLAUDE_PROJECT_DIR}/.claude/hooks/knowledge-hint-narrow.cjs",
   },
   codex: {
-    fabricHint: ".codex/hooks/fabric-hint.cjs",
-    knowledgeHintBroad: ".codex/hooks/knowledge-hint-broad.cjs",
-    knowledgeHintNarrow: ".codex/hooks/knowledge-hint-narrow.cjs",
+    fabricHint: "\"$(git rev-parse --show-toplevel)/.codex/hooks/fabric-hint.cjs\"",
+    knowledgeHintBroad: "\"$(git rev-parse --show-toplevel)/.codex/hooks/knowledge-hint-broad.cjs\"",
+    knowledgeHintNarrow: "\"$(git rev-parse --show-toplevel)/.codex/hooks/knowledge-hint-narrow.cjs\"",
   },
   cursor: {
     fabricHint: ".cursor/hooks/fabric-hint.cjs",

@@ -23,6 +23,7 @@ If none of the above hold, stop the skill immediately and tell the user (UX i18n
 
 This skill is `Check-not-Ask`, not a preference interview:
 
+- **Phase 0.4 (rc.23 F8c) first-run onboard phase** — checks S5 onboard-slot coverage; if unclaimed slots remain, prompts user to fill / dismiss / skip before proceeding to normal archive flow
 - Phase 0 proactively gathers candidate evidence from the session
 - Phase 0.5 viability gate aborts the skill if the session lacks any archive-signal (anti-archive guard)
 - Phase 1 classifies / layers / slugs each candidate and presents one batch review for user correction
@@ -48,7 +49,7 @@ If `.fabric/fabric-config.json` is missing or unreadable, use defaults silently.
 ### UX i18n Policy (5-class bilingualization)
 
 The skill consults `fabric_language` from `.fabric/fabric-config.json`
-(固化于 init 时，via `scan.ts:detectExistingLanguage`; default `"en"` when no
+(固化于 init 时，via `lib/detect-language.ts:detectExistingLanguage`; default `"en"` when no
 CJK signal is detected in README + docs/; may resolve to `"match-existing"`,
 `"zh-CN"`, `"en"`, or `"zh-CN-hybrid"`). All user-facing text in the
 following 5 categories MUST be rendered in the resolved language:
@@ -81,7 +82,8 @@ Rendering rule:
 
 Protected tokens (`fab_extract_knowledge`, `relevance_scope`,
 `relevance_paths`, `narrow`, `broad`, `source_sessions`, `proposed_reason`,
-`session_context`, `pending_path`, `layer`, `team`, `personal`,
+`session_context`, `intent_clues`, `tech_stack`, `impact`, `must_read_if`,
+`pending_path`, `layer`, `team`, `personal`,
 `knowledge_scope_degraded`, `MUST`, `NEVER`, `.fabric/knowledge/`, the verbatim
 `强 team` / `强 personal` / `默认 team` heuristic block, etc.) are NEVER
 translated — they appear verbatim in both language variants. The
@@ -157,6 +159,142 @@ Graceful degradation: if `.fabric/.cache/session-digests/` is missing
 entirely, this phase reports an empty context and Phase 0 falls back to the
 single-session behaviour. Tests that synthesize events.jsonl without
 populating the digest cache continue to work.
+
+### Phase 0.4 — First-run Onboard Phase (rc.23 F8c)
+
+After F8a removed the auto-`fab scan` baseline pipeline, a freshly installed
+Fabric workspace ships with an EMPTY `.fabric/knowledge/` tree. Five fixed
+**S5 onboard slots** capture the "project tone" baseline that the AI needs
+for high-quality plan_context retrieval from day one:
+
+- `tech-stack-decision` — primary languages / frameworks / runtime stack
+- `architecture-pattern` — module layout, service boundaries, layering rules
+- `code-style-tone` — naming / formatting / idiom conventions the project enforces
+- `build-system-idiom` — build tool quirks, scripts, deploy pipeline shape
+- `domain-vocabulary` — business / product terminology that names code entities
+
+This phase runs ONCE per archive-skill invocation, BEFORE Phase 0 evidence
+gathering, so coverage state is fresh for the session.
+
+#### Step 1 — Check coverage
+
+Invoke `fab onboard-coverage --json` and parse the JSON payload:
+
+```bash
+fab onboard-coverage --json
+```
+
+Expected shape:
+
+```json
+{
+  "filled":    { "tech-stack-decision": ["KT-DEC-0012"], ... },
+  "missing":   ["architecture-pattern", "code-style-tone"],
+  "opted_out": ["domain-vocabulary"],
+  "total": 5
+}
+```
+
+#### Step 2 — Decide
+
+```
+IF missing.length === 0:
+    → skip Phase 0.4 entirely; proceed to Phase 0.
+ELSE:
+    → ask the user how to handle the missing slots (Step 3).
+```
+
+#### Step 3 — Prompt user
+
+Present a single roll-up listing each missing slot. UX i18n Policy class 5
+applies: the `header` + `question` strings are translated per
+`fabric_language`; the `options[]` routing keys stay English.
+
+```ts
+AskUserQuestion({
+  header: "Onboard coverage",  // zh-CN: "首装基调覆盖"
+  question:
+    "KB is missing the following project-tone slots: " +
+    missing.join(", ") +
+    ". Tour the project and propose pending entries for each?",
+  options: ["fill-all", "fill-each", "dismiss-all", "skip"]
+})
+```
+
+`fab_extract_knowledge` is called with `onboard_slot: <slot>` set so each
+proposed entry counts toward coverage once approved via fab_review.
+
+| User choice    | Action |
+|----------------|--------|
+| `fill-all`     | For EACH slot in `missing`, run Step 4 (Tour-and-propose). All proposals share session_id; one batch review at the end (Phase 1). |
+| `fill-each`    | Loop slot-by-slot through `missing`. Per slot: ask user `confirm | dismiss | skip` (per-slot AskUserQuestion); `confirm` → run Step 4; `dismiss` → `fab config dismiss-slot <slot>`; `skip` → leave for next archive run. |
+| `dismiss-all`  | For EACH slot in `missing`, invoke `Bash("fab config dismiss-slot <slot>")`. Print a one-line confirmation each. Skip to Phase 0. |
+| `skip`         | No-op. Slots remain in `missing` for the next archive run. Skip to Phase 0. |
+
+#### Step 4 — Tour-and-propose (per-slot)
+
+For each slot to fill, the LLM independently sources slot-specific evidence
+from the project (no user prompt — this is a Read-only tour):
+
+| Slot                     | Source files (LLM should Read these) |
+|--------------------------|---------------------------------------|
+| `tech-stack-decision`    | `package.json` (+ lockfile), `pyproject.toml` / `Cargo.toml` / `go.mod`, `tsconfig.json`, root README |
+| `architecture-pattern`   | Top-level dir tree (`ls -F`), 1-2 entry-point files (`src/index.ts`, `main.go`, etc.), framework-config files (`next.config`, `vite.config`, `astro.config`) |
+| `code-style-tone`        | `.editorconfig`, `prettier.config.*`, `eslint.config.*`, `biome.*`, `.prettierrc*`, framework lint config, 2-3 representative source files for naming-pattern inference |
+| `build-system-idiom`     | `package.json` `scripts` block, `Makefile`, `taskfile.yaml`, CI yml (`.github/workflows/*.yml`), Dockerfile if present |
+| `domain-vocabulary`      | README, `docs/*.md`, top-level `src/` directory names (often domain-aligned), public API entry types |
+
+After Read-ing the slot-specific sources, classify the observation:
+
+- `tech-stack-decision` → type=`decisions`, `proposed_reason=decision-confirmation`
+- `architecture-pattern` → type=`models`, `proposed_reason=new-dependency-or-pattern`
+- `code-style-tone` → type=`guidelines`, `proposed_reason=explicit-user-mark` (the project ITSELF is the mark)
+- `build-system-idiom` → type=`processes`, `proposed_reason=new-dependency-or-pattern`
+- `domain-vocabulary` → type=`models`, `proposed_reason=new-dependency-or-pattern`
+
+Call `fab_extract_knowledge` with the inferred fields PLUS `onboard_slot:
+<slot>`. The pending file's frontmatter will carry the slot label, and the
+next `fab onboard-coverage` run will see the slot as filled (once approved
+via fab_review).
+
+Example:
+
+```ts
+mcp__fabric__fab_extract_knowledge({
+  source_sessions: ["<current-session-id>"],
+  recent_paths: ["package.json", "tsconfig.json"],
+  user_messages_summary: "Project uses TypeScript + pnpm workspace + Vitest. Node 20 LTS target. ESM-only.",
+  type: "decisions",
+  slug: "primary-tech-stack",
+  layer: "team",
+  relevance_scope: "broad",        // tech stack applies everywhere
+  relevance_paths: [],
+  proposed_reason: "decision-confirmation",
+  session_context:
+    "Session goal: capture onboard tech-stack baseline.\nTurning point: read package.json + tsconfig.json + pnpm-workspace.yaml; stack confirmed.",
+  onboard_slot: "tech-stack-decision",    // ← claims the slot
+  tech_stack: ["typescript", "nodejs", "pnpm", "vitest"]
+})
+```
+
+#### Onboard phase constraints (DO NOT TRANSLATE)
+
+- MUST run BEFORE Phase 0 evidence gathering — onboard is a separate flow,
+  not interleaved with session-archive candidates.
+- MUST call `fab onboard-coverage --json` before deciding; never assume
+  coverage state.
+- NEVER fill a slot that is in `opted_out` — `fab onboard-coverage` already
+  excludes those from `missing`, but the Skill MUST NOT re-propose them
+  even if the user asks "fill all of them" — the dismiss is intentional.
+- NEVER prompt the user when `missing.length === 0` — silent skip.
+- NEVER set `onboard_slot` on a regular session-archive candidate in
+  Phase 2 — that field is RESERVED for the onboard phase. Mixing the
+  two would let session-archive proposals masquerade as onboard
+  coverage and let any random pending file claim a slot.
+- MUST emit `onboard_slot: <slot>` verbatim — the slot name is one of
+  the locked S5 strings (tech-stack-decision / architecture-pattern /
+  code-style-tone / build-system-idiom / domain-vocabulary). The
+  fab_extract_knowledge schema enum will reject anything else.
 
 ### Phase 0 — Collect Candidates
 
@@ -490,9 +628,29 @@ mcp__fabric__fab_extract_knowledge({
     | "new-dependency-or-pattern" // new dep/lib/abstraction introduced
     | "dismissal-with-reason",    // user rejected approach AND said why
   session_context: "<3-5 line markdown: session goal + key turning point>",
+  // v2.0.0-rc.23 TASK-006 (a-C1): four OPTIONAL structured triage fields.
+  // Lift implicit signals out of `## Session context` prose so future-self
+  // reviewers / plan-context retrievers can triage relevance from
+  // frontmatter alone, without re-reading the body. Omit any field the
+  // skill cannot infer cleanly — guessing is worse than omitting.
+  intent_clues: ["<short trigger>", "<negative trigger e.g. 'NOT for X'>"],  // when this rule applies / when NOT
+  tech_stack: ["<lang/framework>", "..."],  // inferred from recent_paths (see table below)
+  impact: ["<consequence of ignoring>"],    // why future-self should care
+  must_read_if: "<one-line strong trigger>" // single condition; if it holds, the entry is required reading
   // tags? — NOT in current schema; reserved for future
 })
 ```
+
+##### C1 triage-field inference table
+
+| Field          | Inference source                                                                 | Skip when                          |
+|----------------|----------------------------------------------------------------------------------|------------------------------------|
+| `intent_clues` | Pull from `session_context` turning point + negative phrasing in the transcript ("not for", "don't do X when") | No clear trigger phrasing surfaced |
+| `tech_stack`   | Map `recent_paths` extensions: `.ts`→`typescript`, `.tsx`→`typescript`+`react`, `.go`→`go`, `package.json`→`nodejs`, `pyproject.toml`→`python`, `Cargo.toml`→`rust`. Add framework markers from path heuristics (`cocos`→`cocos-creator`, `next.config`→`nextjs`) | Rule is stack-agnostic            |
+| `impact`       | Pull from the diagnostic-loop body — "wasted 30 min", "production outage", "silent data loss" | No observable consequence stated   |
+| `must_read_if` | Strongest single trigger from the worth-archive signal: a file path, a routine, a recurring condition; ≤160 chars | No single dominant trigger fits    |
+
+All four fields are STRICTLY OPTIONAL. The schema accepts the call without any of them — omit rather than guess. None of the four participate in the idempotency_key hash (server formula at `extract-knowledge.ts:100-106` is frozen to `{source_session, type, slug}`), so partial-vs-full fill of these fields on the same triple is safe.
 
 The Skill infers `proposed_reason` from the classification + viability-gate
 signal that fired:
@@ -563,7 +721,7 @@ If the skill needs to record a genuinely separate observation in the same sessio
 - NEVER use multi-signal sources for relevance_paths in rc.5 — `edit_paths` is the SOLE source. `read_paths`, body regex, and symbol extraction are reserved for rc.7+.
 - NEVER batch multiple candidates into a single fab_extract_knowledge call; one call per candidate.
 - NEVER paraphrase the verbatim layer heuristic block above — the Chinese text is contract-locked.
-- MUST preserve protected tokens exactly: `stable_id`, `knowledge_proposed`, `knowledge_archive_aborted`, `knowledge_scope_degraded`, `.fabric/knowledge/pending/`, `fab_extract_knowledge`, `relevance_paths`, `relevance_scope`, `narrow`, `broad`, `edit_paths`, `source_sessions`, `proposed_reason`, `session_context`, `pending_path`, `layer`, `team`, `personal`, `MUST`, `NEVER`, `强 team`, `强 personal`, `默认 team`.
+- MUST preserve protected tokens exactly: `stable_id`, `knowledge_proposed`, `knowledge_archive_aborted`, `knowledge_scope_degraded`, `.fabric/knowledge/pending/`, `fab_extract_knowledge`, `relevance_paths`, `relevance_scope`, `narrow`, `broad`, `edit_paths`, `source_sessions`, `proposed_reason`, `session_context`, `intent_clues`, `tech_stack`, `impact`, `must_read_if`, `pending_path`, `layer`, `team`, `personal`, `MUST`, `NEVER`, `强 team`, `强 personal`, `默认 team`.
 
 ## Worked Examples
 

@@ -149,7 +149,13 @@ export const metaReconciledEventSchema = z.object({
   event_type: z.literal("meta_reconciled"),
   reconciled_files: z.array(z.string()),
   duration_ms: z.number().int().nonnegative(),
-  trigger: z.enum(["doctor", "manual"]),
+  // v2.0.0-rc.23 TASK-005 (a-B): added `auto-heal-description` trigger so the
+  // read-path plan_context handler can drive a full reconcile when it detects
+  // any node carrying `description === undefined` (legacy meta drift that the
+  // revision-hash gate cannot catch — a missing description doesn't move the
+  // revision). Symmetric to rc.22 D2 read-side auto-heal but covers the
+  // description-undefined case which the revision drift gate misses.
+  trigger: z.enum(["doctor", "manual", "auto-heal-description"]),
   source: z.literal("reconcileKnowledge"),
   // v2.0.0-rc.22 TASK-014 (Scope E): set when reconcileKnowledge forced a
   // writeKnowledgeMeta on revision drift alone (no per-file content drift).
@@ -473,6 +479,52 @@ export const knowledgeMetaAutoHealedEventSchema = z.object({
   caller: z.enum(["planContext", "getKnowledgeSections", "getKnowledge", "extractKnowledge"]).optional(),
 });
 
+// v2.0.0-rc.23 TASK-010 (e): emitted by `fab doctor --fix` when a stale
+// `.fabric/.serve.lock` file holding a dead PID is unlinked. The lock is
+// written by `acquireLock` at the top of `fab serve` and released on graceful
+// shutdown; a SIGKILL / crash leaves the file behind, blocking subsequent
+// serve attempts with a confusing 423 error. The doctor advisory + --fix
+// unlink restores the workspace to a serveable state. One event per cleared
+// lock per --fix invocation (idempotent: no file → no event).
+//
+// `pid`: the dead process id recorded in the unlinked lock file.
+// `age_ms`: milliseconds since the lock was acquired (Date.now() - acquiredAt).
+//   Coarse signal for operator forensics — how long the corpse sat on disk.
+export const serveLockClearedEventSchema = z.object({
+  ...eventLedgerEnvelopeSchema,
+  event_type: z.literal("serve_lock_cleared"),
+  pid: z.number().int().nonnegative(),
+  age_ms: z.number().int().nonnegative(),
+  timestamp: z.string().datetime(),
+});
+
+// v2.0.0-rc.23 TASK-007 (a-C2): emitted by `fab doctor --enrich-descriptions`
+// once per modified canonical knowledge file when one or more of the four
+// rc.23 description-grade frontmatter fields (`intent_clues`, `tech_stack`,
+// `impact`, `must_read_if`) is back-filled. Audit trail for the legacy
+// back-fill pass so operators can correlate description-grade changes with
+// the run that produced them. Idempotent: a file already carrying all four
+// fields produces no event.
+//
+// `path`: workspace-relative POSIX path of the rewritten .md file. Personal
+//   layer entries use the `~/.fabric/...` prefix so the trail differentiates
+//   the two roots.
+// `added_fields`: subset of the four field names that the run inserted into
+//   the frontmatter (verbatim YAML keys). Always non-empty for an emitted
+//   event.
+// `mode`: which entry point triggered the rewrite. `auto` writes deterministic
+//   stub values without prompting; `interactive` would be the future
+//   user-driven branch (currently `auto` is the only emitter, but the enum is
+//   pre-locked so future modes can ship without a schema bump).
+export const knowledgeEnrichedEventSchema = z.object({
+  ...eventLedgerEnvelopeSchema,
+  event_type: z.literal("knowledge_enriched"),
+  path: z.string(),
+  added_fields: z.array(z.enum(["intent_clues", "tech_stack", "impact", "must_read_if"])),
+  mode: z.enum(["auto", "interactive"]),
+  timestamp: z.string().datetime(),
+});
+
 export const eventLedgerEventSchema = z.discriminatedUnion("event_type", [
   knowledgeContextPlannedEventSchema,
   knowledgeSelectionEventSchema,
@@ -532,6 +584,15 @@ export const eventLedgerEventSchema = z.discriminatedUnion("event_type", [
   // the post-rotation events.jsonl when sliding-window-by-age rotation moves
   // stale entries to events.archive/events-rotated-YYYY-MM-DD.jsonl.
   eventsRotatedEventSchema,
+  // v2.0.0-rc.23 TASK-010 (e): serve_lock_cleared — emitted by
+  // `fab doctor --fix` when a stale `.fabric/.serve.lock` with a dead PID is
+  // unlinked.
+  serveLockClearedEventSchema,
+  // v2.0.0-rc.23 TASK-007 (a-C2): knowledge_enriched — emitted by
+  // `fab doctor --enrich-descriptions` once per modified canonical knowledge
+  // file when one or more of the four rc.23 description-grade frontmatter
+  // fields is back-filled.
+  knowledgeEnrichedEventSchema,
 ]);
 
 export type KnowledgeContextPlannedEvent = z.infer<typeof knowledgeContextPlannedEventSchema>;
@@ -571,6 +632,8 @@ export type AssistantTurnObservedEvent = z.infer<typeof assistantTurnObservedEve
 export type CitePolicyActivatedEvent = z.infer<typeof citePolicyActivatedEventSchema>;
 export type KnowledgeMetaAutoHealedEvent = z.infer<typeof knowledgeMetaAutoHealedEventSchema>;
 export type EventsRotatedEvent = z.infer<typeof eventsRotatedEventSchema>;
+export type ServeLockClearedEvent = z.infer<typeof serveLockClearedEventSchema>;
+export type KnowledgeEnrichedEvent = z.infer<typeof knowledgeEnrichedEventSchema>;
 export type EventLedgerEvent =
   | KnowledgeContextPlannedEvent
   | KnowledgeSelectionEvent
@@ -608,7 +671,9 @@ export type EventLedgerEvent =
   | AssistantTurnObservedEvent
   | CitePolicyActivatedEvent
   | KnowledgeMetaAutoHealedEvent
-  | EventsRotatedEvent;
+  | EventsRotatedEvent
+  | ServeLockClearedEvent
+  | KnowledgeEnrichedEvent;
 export type EventLedgerEventType = EventLedgerEvent["event_type"];
 type EventLedgerEventInputFor<T extends EventLedgerEvent> = T extends EventLedgerEvent
   ? Omit<T, "kind" | "id" | "ts" | "schema_version" | "correlation_id" | "session_id"> &

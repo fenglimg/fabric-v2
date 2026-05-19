@@ -4,6 +4,7 @@ import { defineCommand } from "citty";
 import {
   appendEventLedgerEvent,
   checkLockOrThrow,
+  enrichDescriptions,
   runDoctorApplyLint as runDoctorFixKnowledge,
   runDoctorCiteCoverage,
   runDoctorFix,
@@ -12,13 +13,13 @@ import {
   type DoctorApplyLintReport as DoctorFixKnowledgeReport,
   type DoctorIssue,
   type DoctorReport,
+  type EnrichDescriptionsReport,
 } from "@fenglimg/fabric-server";
 
 import { paint, symbol } from "../colors.js";
 import { resolveDevMode } from "../dev-mode.js";
 import { t } from "../i18n.js";
 import { hasActionHint, renderFabricError } from "../lib/error-render.js";
-import { runInitScan } from "./scan.js";
 
 type DoctorArgs = {
   target?: string;
@@ -30,10 +31,6 @@ type DoctorArgs = {
   // report-only. Renamed from --apply-lint in rc.15 for parallel naming with
   // --fix (server-side runDoctorApplyLint kept per blast-radius decision).
   "fix-knowledge"?: boolean;
-  // rc.15 TASK-003: --rescan re-runs the init scan BEFORE the doctor report
-  // to rebuild .fabric/agents.meta.json forensic state. Composable with
-  // --fix and --fix-knowledge (single-pass: rescan → mutations → report).
-  rescan?: boolean;
   // rc.7 T11: skip the safety confirm before --fix-knowledge mutates frontmatter
   // and runs git mv. Required for any non-tty invocation (CI, nested
   // pipelines) unless FABRIC_NONINTERACTIVE=1 is set in the environment.
@@ -44,6 +41,15 @@ type DoctorArgs = {
   "cite-coverage"?: boolean;
   since?: string;
   client?: string;
+  // rc.23 TASK-007 (a-C2): back-fill the four description-grade frontmatter
+  // fields (intent_clues / tech_stack / impact / must_read_if) on legacy
+  // canonical entries that pre-date rc.23. `--auto` writes stub values; the
+  // default (interactive) run lists missing entries without mutating disk so
+  // the operator can rerun the archive Skill or hand-edit. `--dry-run` pairs
+  // with `--auto` to preview the would-be changes without writing.
+  "enrich-descriptions"?: boolean;
+  auto?: boolean;
+  "dry-run"?: boolean;
 };
 
 // rc.7 T11: lint codes that --fix-knowledge will mutate, mapped to the human
@@ -96,11 +102,6 @@ export const doctorCommand = defineCommand({
       description: t("cli.doctor.args.json.description"),
       default: false,
     },
-    rescan: {
-      type: "boolean",
-      description: t("cli.doctor.args.rescan.description"),
-      default: false,
-    },
     strict: {
       type: "boolean",
       description: t("cli.doctor.args.strict.description"),
@@ -133,6 +134,24 @@ export const doctorCommand = defineCommand({
       default: "all",
       valueHint: "cc|codex|cursor|all",
     },
+    // rc.23 TASK-007 (a-C2): description-grade back-fill flag set. Read-side
+    // by default; `--auto` flips the writer arm on. Mutually exclusive with
+    // --fix / --fix-knowledge / --cite-coverage (different mutation surfaces).
+    "enrich-descriptions": {
+      type: "boolean",
+      description: t("cli.doctor.args.enrich-descriptions.description"),
+      default: false,
+    },
+    auto: {
+      type: "boolean",
+      description: t("cli.doctor.args.auto.description"),
+      default: false,
+    },
+    "dry-run": {
+      type: "boolean",
+      description: t("cli.doctor.args.dry-run.description"),
+      default: false,
+    },
   },
   async run({ args }: { args: DoctorArgs }) {
     const workspaceRoot = process.cwd();
@@ -154,11 +173,36 @@ export const doctorCommand = defineCommand({
 
     const fixKnowledge = args["fix-knowledge"] === true;
     const fix = args.fix === true;
-    const rescan = args.rescan === true;
     const citeCoverage = args["cite-coverage"] === true;
+    const enrichDesc = args["enrich-descriptions"] === true;
+
+    // rc.23 TASK-007 (a-C2): --enrich-descriptions is its own dispatch arm
+    // (different surface — back-fill description-grade frontmatter fields).
+    // Mutex with the other mutation/report surfaces keeps the run semantics
+    // unambiguous. --auto enables the write arm; default (interactive) is
+    // read-only — lists missing-field entries for operator action.
+    if (enrichDesc) {
+      if (fix || fixKnowledge || citeCoverage) {
+        writeStderr(t("cli.doctor.errors.enrich-descriptions-mutex"));
+        process.exitCode = 1;
+        return;
+      }
+      const autoFlag = args.auto === true;
+      const dryRun = args["dry-run"] === true;
+      const report = await enrichDescriptions(resolution.target, {
+        auto: autoFlag,
+        dryRun,
+      });
+      if (args.json === true) {
+        writeStdout(JSON.stringify(report, null, 2));
+      } else {
+        renderEnrichDescriptionsReport(report);
+      }
+      return;
+    }
 
     // rc.20 TASK-05: --cite-coverage is a read-only report surface. It must
-    // run BEFORE the rescan/fix/fix-knowledge dispatch and short-circuit
+    // run BEFORE the fix/fix-knowledge dispatch and short-circuit
     // entirely — different output shape, no mutations, no standard checks.
     // Mutex with --fix/--fix-knowledge keeps semantics unambiguous (we never
     // mix a mutation pass with a report-only pass in a single invocation).
@@ -205,20 +249,11 @@ export const doctorCommand = defineCommand({
     // Mutual exclusion: --fix-knowledge and --fix target different mutation
     // surfaces (knowledge mutations are user state; --fix mutates derived
     // state like agents.meta.json revision). Combining them is ambiguous —
-    // require the operator to make a choice. --rescan composes with either
-    // (single-pass: rescan → mutations → report).
+    // require the operator to make a choice.
     if (fixKnowledge && fix) {
       writeStderr(t("cli.doctor.errors.fix-knowledge-fix-mutually-exclusive"));
       process.exitCode = 1;
       return;
-    }
-
-    // rc.15 TASK-003: --rescan re-runs the init scan BEFORE any doctor
-    // mutations or the report, rebuilding agents.meta.json forensic state.
-    // Composable with --fix and --fix-knowledge so the rescan output feeds
-    // into a fresh doctor pass in a single invocation.
-    if (rescan) {
-      await runInitScan(resolution.target, { source: "doctor-rescan" });
     }
 
     let fixKnowledgeReport: DoctorFixKnowledgeReport | null = null;
@@ -583,7 +618,58 @@ function renderCiteCoverageReport(report: CiteCoverageReport, jsonMode: boolean)
     }
   }
 
+  // rc.23 TASK-08(c): KB: none sentinel breakdown — mirrors the dismissed
+  // reasons section. Renders only when at least one `KB: none` was observed.
+  if (
+    report.none_reason_histogram !== undefined &&
+    Object.keys(report.none_reason_histogram).length > 0
+  ) {
+    lines.push("");
+    lines.push(`### ${t("doctor.cite.section.noneReasons")}`);
+    for (const [reason, count] of Object.entries(report.none_reason_histogram)) {
+      const label = t(`doctor.cite.none.${reason}`);
+      lines.push(`  ${label}: ${count}`);
+    }
+  }
+
   writeStdout(lines.join("\n"));
+}
+
+/**
+ * rc.23 TASK-007 (a-C2): human-readable formatter for the
+ * --enrich-descriptions report. JSON mode preserves the structured payload
+ * verbatim (handled at the call site). Layout:
+ *
+ *   <header line: mode + dryRun + scanned/modified/skipped tallies>
+ *   <per-file lines, alphabetical by path>
+ *     <symbol> <path> — missing: a, b, c [→ added: a, b, c]
+ *     ! <path> — <error>
+ */
+function renderEnrichDescriptionsReport(report: EnrichDescriptionsReport): void {
+  const header = `${symbol.ok} ${paint.ai("fab doctor --enrich-descriptions")} mode=${report.mode}${
+    report.dryRun ? " (dry-run)" : ""
+  } scanned=${report.scanned} modified=${report.modified} skipped=${report.skipped}`;
+  writeStdout(header);
+  if (report.candidates.length === 0) {
+    writeStdout(t("doctor.enrich.allComplete"));
+    return;
+  }
+  writeStdout("");
+  for (const candidate of report.candidates) {
+    if (candidate.error !== undefined) {
+      writeStdout(`${symbol.error} ${candidate.path} — ${candidate.error}`);
+      continue;
+    }
+    const missing = candidate.missing.join(", ");
+    if (candidate.modified) {
+      const added = candidate.added_fields.join(", ");
+      writeStdout(
+        `${symbol.ok} ${candidate.path} — missing: ${missing} → added: ${added}`,
+      );
+    } else {
+      writeStdout(`${symbol.warn} ${candidate.path} — missing: ${missing}`);
+    }
+  }
 }
 
 /**

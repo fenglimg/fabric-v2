@@ -6,6 +6,10 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { registerExtractKnowledge } from "./extract-knowledge.js";
+import {
+  resetFirstReconcileGate,
+  setFirstReconcile,
+} from "../services/first-reconcile-gate.js";
 import type { InFlightTracker } from "../services/in-flight-tracker.js";
 
 type RegisteredTool = {
@@ -13,7 +17,12 @@ type RegisteredTool = {
   definition: { inputSchema: unknown; outputSchema: unknown; annotations: unknown };
   handler: (input: Record<string, unknown>) => Promise<{
     content: Array<{ type: string; text: string }>;
-    structuredContent: { pending_path: string; idempotency_key: string };
+    structuredContent: {
+      pending_path: string;
+      idempotency_key: string;
+      // v2.0.0-rc.23 TASK-009 (d): optional warnings surface.
+      warnings?: Array<{ code: string; file: string; action_hint: string }>;
+    };
   }>;
 };
 
@@ -30,6 +39,9 @@ afterEach(async () => {
   } else {
     process.env.FABRIC_PROJECT_ROOT = originalProjectRoot;
   }
+  // v2.0.0-rc.23 TASK-009 (d): reset gate state so the "no reconcile
+  // registered" fast path applies cleanly to the next case.
+  resetFirstReconcileGate();
   await Promise.all(tempDirs.splice(0).map(async (path) => {
     await rm(path, { recursive: true, force: true });
   }));
@@ -75,7 +87,7 @@ describe("registerExtractKnowledge", () => {
     const t = tool();
 
     const result = await t.handler({
-      source_session: "sess-tool-001",
+      source_sessions: ["sess-tool-001"],
       recent_paths: ["packages/server/src/index.ts"],
       user_messages_summary: "Tool-handler integration: write through to pending.",
       type: "decisions",
@@ -110,7 +122,7 @@ describe("registerExtractKnowledge", () => {
     const t = tool();
 
     await t.handler({
-      source_session: "sess-tracker",
+      source_sessions: ["sess-tracker"],
       recent_paths: [],
       user_messages_summary: "Tracker exercises enter/exit on success.",
       type: "guidelines",
@@ -142,7 +154,7 @@ describe("registerExtractKnowledge", () => {
 
     await expect(
       t.handler({
-        source_session: "sess-throw",
+        source_sessions: ["sess-throw"],
         recent_paths: [],
         user_messages_summary: "Forces a failure path.",
         type: "decisions",
@@ -152,6 +164,112 @@ describe("registerExtractKnowledge", () => {
 
     expect(enter).toHaveBeenCalledTimes(1);
     expect(exit).toHaveBeenCalledTimes(1);
+  });
+
+  // v2.0.0-rc.23 TASK-009 (d): handler-level wiring of the first-reconcile
+  // gate. The gate's stale/ready/failed semantics themselves are exercised
+  // exhaustively in first-reconcile-gate.test.ts; this case verifies the
+  // tool handler actually consults the gate and translates a non-ready
+  // result into a response.warnings entry. We pick extract-knowledge as
+  // the concrete probe because its happy path is the smallest — the
+  // wiring is identical in plan-context, knowledge-sections, and review.
+  //
+  // We exercise the `failed` path (not `stale`) because the gate's default
+  // timeout is 5s — a stale-path handler test would block the suite for
+  // 5s with no extra signal beyond what the unit test already provides.
+  // The `failed` path resolves immediately and proves the same wiring.
+  it("attaches reconcile_failed warning when first reconcile has rejected", async () => {
+    const projectRoot = await mkdtemp(join(tmpdir(), "fabric-tools-extract-gate-fail-"));
+    tempDirs.push(projectRoot);
+    process.env.FABRIC_PROJECT_ROOT = projectRoot;
+
+    const failure = new Error("simulated reconcile failure");
+    setFirstReconcile(Promise.reject(failure));
+    // Let the gate's wrapper observe the rejection before the handler runs.
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const { server, tool } = captureRegistration();
+    registerExtractKnowledge(server);
+    const t = tool();
+
+    const result = await t.handler({
+      source_sessions: ["sess-gate-failed"],
+      recent_paths: [],
+      user_messages_summary: "Gate failed-path coverage.",
+      type: "decisions",
+      slug: "gate-failed-coverage",
+    });
+
+    expect(result.structuredContent.warnings).toBeDefined();
+    expect(result.structuredContent.warnings?.[0]?.code).toBe("reconcile_failed");
+    expect(result.structuredContent.warnings?.[0]?.action_hint).toMatch(/fab doctor --fix/);
+  });
+
+  // v2.0.0-rc.23 TASK-006 (a-C1): four optional structured triage fields
+  // (intent_clues / tech_stack / impact / must_read_if) flow through the
+  // tool handler -> service -> pending-file frontmatter unchanged. The
+  // service-level test exercises emit / omit / subset / idempotency exhaustively;
+  // here we verify the tool registration accepts them via the public schema
+  // and persists them end-to-end through the registered handler.
+  it("passes through C1 triage fields end-to-end via the tool handler", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const projectRoot = await mkdtemp(join(tmpdir(), "fabric-tools-extract-c1-"));
+    tempDirs.push(projectRoot);
+    process.env.FABRIC_PROJECT_ROOT = projectRoot;
+
+    const { server, tool } = captureRegistration();
+    registerExtractKnowledge(server);
+    const t = tool();
+
+    const result = await t.handler({
+      source_sessions: ["sess-tool-c1"],
+      recent_paths: ["packages/cli/src/commands/hooks.ts"],
+      user_messages_summary: "C1 triage fields propagate via the tool layer.",
+      type: "guidelines",
+      slug: "c1-tool-layer",
+      intent_clues: ["editing hooks.ts"],
+      tech_stack: ["typescript"],
+      impact: ["protected-token drift"],
+      must_read_if: "touching hooks.ts",
+    });
+
+    const body = await readFile(
+      join(projectRoot, result.structuredContent.pending_path),
+      "utf8",
+    );
+    expect(body).toMatch(/^intent_clues: \["editing hooks\.ts"\]$/mu);
+    expect(body).toMatch(/^tech_stack: \["typescript"\]$/mu);
+    expect(body).toMatch(/^impact: \["protected-token drift"\]$/mu);
+    expect(body).toMatch(/^must_read_if: "touching hooks\.ts"$/mu);
+  });
+
+  it("omits all C1 frontmatter lines when caller omits the four fields", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const projectRoot = await mkdtemp(join(tmpdir(), "fabric-tools-extract-c1-omit-"));
+    tempDirs.push(projectRoot);
+    process.env.FABRIC_PROJECT_ROOT = projectRoot;
+
+    const { server, tool } = captureRegistration();
+    registerExtractKnowledge(server);
+    const t = tool();
+
+    const result = await t.handler({
+      source_sessions: ["sess-tool-c1-omit"],
+      recent_paths: [],
+      user_messages_summary: "C1 omit path coverage at the tool layer.",
+      type: "decisions",
+      slug: "c1-tool-omit",
+    });
+
+    const body = await readFile(
+      join(projectRoot, result.structuredContent.pending_path),
+      "utf8",
+    );
+    expect(body).not.toMatch(/^intent_clues:/mu);
+    expect(body).not.toMatch(/^tech_stack:/mu);
+    expect(body).not.toMatch(/^impact:/mu);
+    expect(body).not.toMatch(/^must_read_if:/mu);
   });
 
   it("works without a tracker (optional argument)", async () => {
@@ -164,7 +282,7 @@ describe("registerExtractKnowledge", () => {
     const t = tool();
 
     const result = await t.handler({
-      source_session: "sess-no-tracker",
+      source_sessions: ["sess-no-tracker"],
       recent_paths: [],
       user_messages_summary: "Verifies the optional-tracker branch.",
       type: "guidelines",

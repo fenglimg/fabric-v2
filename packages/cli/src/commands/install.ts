@@ -18,7 +18,7 @@ import { hasActionHint, renderFabricError } from "../lib/error-render.js";
 import * as configCommand from "./config.js";
 import { installHooks } from "../install/hooks-orchestrator.js";
 import { writeFabricAgentsSnapshot } from "../install/write-bootstrap-snapshot.js";
-import { detectExistingLanguage, runInitScan, type ResolvedLanguage } from "./scan.js";
+import { detectExistingLanguage, type ResolvedLanguage } from "../lib/detect-language.js";
 import { buildForensicReport } from "../scanner/forensic.js";
 import { detectClientSupports, type DetectedClientSupport } from "../config/resolver.js";
 import {
@@ -87,8 +87,10 @@ export type DiffFileState =
 //   - "presence"       : any existing file is canonical (e.g. events.jsonl
 //                        which is an append-only ledger)
 //   - "structural"     : parse as JSON, sanity-check schema fields; do NOT
-//                        byte-compare (e.g. agents.meta.json which mutates
-//                        immediately after install via runInitScan)
+//                        byte-compare (e.g. agents.meta.json which is the
+//                        canonical counter envelope; post-install AI-driven
+//                        knowledge promotions add nodes but the structural
+//                        sanity-check is preserved)
 //   - "always-rewrite" : the file is a snapshot, never user-edited — always
 //                        treat the existing file as canonical for diff but
 //                        always rewrite at the write boundary (e.g.
@@ -125,8 +127,10 @@ type InitStageRecord = {
 export type InitScaffoldResult = {
   // v2.0 layout: knowledge subdirs (.gitkeep markers) + agents.meta.json
   // (counters envelope) + events.jsonl + forensic.json. Knowledge entries
-  // are created by the scan stage. AGENTS.md is also written at the repo
-  // root as the universal anchor (idempotent on re-run).
+  // are created on-demand by the fabric-archive / fabric-import / fabric-review
+  // Skill flows (rc.23 TASK-012 (F8a) removed the legacy init-scan baseline
+  // stage). AGENTS.md is also written at the repo root as the universal
+  // anchor (idempotent on re-run).
   agentsMdPath: string;
   agentsMdAction: AgentsMdAction;
   knowledgeDir: string;
@@ -374,12 +378,13 @@ export async function runInitCommand(args: InitArgs): Promise<InitExecutionResul
  * remains invisible to fresh-init users (silent default-on-missing).
  *
  * The `fabric_language` field is fixated at init time (TASK-006 / C1):
- * we invoke scan.ts's `detectExistingLanguage(targetRoot)` once on a fresh
- * init, which scans `README.md` + `docs/*.md` for the CJK ratio and resolves
- * to `"zh-CN"` (ratio > 0.3) or `"en"` (default). The literal
- * `"match-existing"` placeholder is no longer written — users who want a
- * different language flip the field to `"zh-CN"` or `"en"` after init. The
- * empty-repo default is `"en"` (matches `detectExistingLanguage`'s contract).
+ * we invoke `detectExistingLanguage(targetRoot)` (lib/detect-language.ts)
+ * once on a fresh init, which scans `README.md` + `docs/*.md` for the CJK
+ * ratio and resolves to `"zh-CN-hybrid"` (ratio > 0.3) or `"en"` (default).
+ * The literal `"match-existing"` placeholder is no longer written — users
+ * who want a different language flip the field to `"zh-CN"` or `"en"` after
+ * init. The empty-repo default is `"en"` (matches `detectExistingLanguage`'s
+ * contract).
  *
  * Idempotent: writes ONLY when the file does not exist. NEVER merges
  * missing fields into an existing file. NEVER overwrites user edits. Every
@@ -749,8 +754,8 @@ export async function executeInitFabricPlan(plan: InitScaffoldPlan): Promise<Ini
   // → skip survives here.
   //
   //   agents.meta.json: write the empty initial meta when missing; skip on
-  //                     present-canonical (idempotent re-run); runInitScan
-  //                     keeps it in sync if it fires below.
+  //                     present-canonical (idempotent re-run). Skill-driven
+  //                     knowledge promotions keep it in sync post-install.
   //   events.jsonl:     presence-canonical. Existing files are preserved
   //                     verbatim (append-only ledger). Only create when missing.
   //   forensic.json:    always-rewrite. The file is a snapshot regenerated
@@ -773,28 +778,11 @@ export async function executeInitFabricPlan(plan: InitScaffoldPlan): Promise<Ini
   preparePlannedPath(plan.forensicPath, plan.forensicAction);
   await atomicWriteJson(plan.forensicPath, plan.forensicReport);
 
-  // v2.0 stage (b) scan: invoke runInitScan programmatically so a fresh init
-  // produces 4-7 baseline knowledge entries + an init_scan_completed ledger
-  // event. Failure is best-effort (e.g. a read-only home) — the layout above
-  // is already complete and `fab scan` can be re-run to populate entries.
-  //
-  // rc.15 (formerly rc.14 TASK-002) — skip the scan on a canonical diff-mode
-  // re-run. If the workspace was already canonical (agents.meta.json
-  // present-canonical AND events.jsonl present-canonical), scanning would
-  // mutate the meta file and break the idempotency contract. Fresh installs
-  // always scan (meta was just created).
-  const wasCanonicalReRun =
-    plan.metaState === "present-canonical"
-    && plan.eventsState === "present-canonical";
-  if (!wasCanonicalReRun) {
-    try {
-      await runInitScan(plan.target, { source: "init" });
-    } catch (error: unknown) {
-      writeStderr(
-        `[warn] init-scan failed: ${error instanceof Error ? error.message : String(error)} — re-run \`fab scan\` to populate baseline knowledge entries.`,
-      );
-    }
-  }
+  // rc.23 TASK-012 (F8a): the legacy baseline-emit stage was removed
+  // clean-slate. KB on fresh install is intentionally empty — the onboard
+  // phase (F8c) and the fabric-archive / fabric-import / fabric-review Skill
+  // paths are now the sole sources of knowledge entries. Re-runs no longer
+  // mutate agents.meta.json post-install.
 
   // rc.15 (formerly rc.14 TASK-002) — diff-mode emits install_diff_applied
   // with a per-file breakdown so doctor/forensic tooling can see whether
@@ -1117,9 +1105,9 @@ function shouldReplaceWritableDirectory(path: string, _options?: InitOptions): b
  * Per-file detection strategies are picked by callers:
  *   - "presence"       : the file is canonical-by-presence (events.jsonl)
  *   - "structural"     : the file is JSON, sanity-check its shape only
- *                        (agents.meta.json — its content mutates immediately
- *                        post-install via runInitScan, so byte-compare would
- *                        always flag drift)
+ *                        (agents.meta.json — its content may mutate post-
+ *                        install via Skill-driven knowledge promotions, so
+ *                        byte-compare would flag false drift)
  *   - "always-rewrite" : the file is a snapshot regenerated every run, so any
  *                        existing copy is treated as canonical for the diff
  *                        (forensic.json)
@@ -1158,9 +1146,8 @@ function classifyFreshPath(
   // Structural compare for agents.meta.json. Verifies it parses as JSON and
   // exposes the schema_version-equivalent fields (revision + nodes +
   // counters) — does NOT byte-compare against createInitialMeta() because
-  // runInitScan mutates the file immediately after install, so any
-  // canonical post-install state diverges byte-wise from the initial empty
-  // template.
+  // AI-driven Skill flows may add nodes post-install, so any canonical
+  // post-install state diverges byte-wise from the initial empty template.
   try {
     const raw = readFileSync(path, "utf8");
     const parsed = JSON.parse(raw) as unknown;
@@ -1450,9 +1437,10 @@ function installLocalFabricServer(target: string, manager: "pnpm" | "npm" | "yar
 
 function createInitialMeta(): AgentsMeta {
   // v2.0: agents.meta.json starts empty (`nodes: {}`) with a zeroed counters
-  // envelope. The init-scan stage adds nodes/counters as it places the
-  // baseline knowledge entries; subsequent `fab scan` runs and rule-meta
-  // synchronization keep the file in sync.
+  // envelope. AI-driven Skill flows (fabric-archive / fabric-review) add
+  // nodes/counters via writeKnowledgeMeta when promoting entries; rule-meta
+  // synchronization keeps the file in sync. rc.23 TASK-012 (F8a) removed
+  // the legacy baseline init-scan stage that previously seeded entries.
   return {
     revision: "sha256:initial",
     nodes: {},

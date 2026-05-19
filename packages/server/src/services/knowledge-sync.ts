@@ -522,8 +522,14 @@ export async function ensureKnowledgeFresh(
 }
 
 export interface ReconcileKnowledgeOptions {
-  /** Identifies who triggered the reconcile; controls which summary ledger event is written. */
-  trigger?: "startup" | "doctor" | "manual";
+  /**
+   * Identifies who triggered the reconcile; controls which summary ledger event is written.
+   *
+   * v2.0.0-rc.23 TASK-005 (a-B): `auto-heal-description` added so plan_context
+   * can drive a full reconcile when it detects nodes with `description === undefined`
+   * (legacy meta drift the revision-hash gate cannot detect).
+   */
+  trigger?: "startup" | "doctor" | "manual" | "auto-heal-description";
 }
 
 /**
@@ -622,10 +628,20 @@ export async function reconcileKnowledge(projectRoot: string, opts?: ReconcileKn
     }
   }
 
+  // v2.0.0-rc.23 TASK-005 (a-B): the `auto-heal-description` trigger forces a
+  // writeKnowledgeMeta even when neither per-file content nor top-level
+  // revision drift is detected. Rationale: `computeRevision` hashes only
+  // `id|hash|stable_id|identity_source`, so stripping or never-populating the
+  // `description` field on an entry leaves the revision unchanged. The
+  // per-file and revision-drift gates above both miss this case. plan_context
+  // detects it on the read path (any node with `description === undefined`)
+  // and calls in here to drive an unconditional rebuild from disk.
+  const forceWriteForDescriptionHeal = trigger === "auto-heal-description";
+
   // High 2: Rewrite agents.meta.json with ground-truth disk state when drift
   // detected (either per-file or top-level revision drift). writeKnowledgeMeta
   // rebuilds from disk (hashes, stable_ids, paths) and writes atomically.
-  if (events.length > 0 || revisionDrift) {
+  if (events.length > 0 || revisionDrift || forceWriteForDescriptionHeal) {
     await writeKnowledgeMeta(projectRoot, { source: "sync_meta" });
     if (events.length > 0) {
       await appendRuleSyncEvents(projectRoot, events);
@@ -640,10 +656,11 @@ export async function reconcileKnowledge(projectRoot: string, opts?: ReconcileKn
   const reconciledFiles = events.map((e) => e.path);
 
   // Emit summary ledger event when a trigger is specified and ANY write
-  // happened (per-file drift OR top-level revision drift). The
-  // force_write_reason field disambiguates revision-only writes from
-  // standard per-file flows so the audit trail is unambiguous.
-  if (trigger !== undefined && (events.length > 0 || revisionDrift)) {
+  // happened (per-file drift OR top-level revision drift OR the rc.23
+  // description-heal force-write). The force_write_reason field disambiguates
+  // revision-only writes from standard per-file flows so the audit trail is
+  // unambiguous.
+  if (trigger !== undefined && (events.length > 0 || revisionDrift || forceWriteForDescriptionHeal)) {
     if (trigger === "startup") {
       await appendEventLedgerEvent(projectRoot, {
         event_type: "meta_reconciled_on_startup",

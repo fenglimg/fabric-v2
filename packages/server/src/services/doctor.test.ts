@@ -15,7 +15,13 @@ import {
   fabricConfigSchema,
 } from "@fenglimg/fabric-shared";
 
-import { ensureCitePolicyActivatedMarker, runDoctorCiteCoverage, runDoctorFix, runDoctorReport } from "./doctor.js";
+import {
+  ensureCitePolicyActivatedMarker,
+  enrichDescriptions,
+  runDoctorCiteCoverage,
+  runDoctorFix,
+  runDoctorReport,
+} from "./doctor.js";
 import { readEventLedger } from "./event-ledger.js";
 import { writeKnowledgeMeta } from "./knowledge-meta-builder.js";
 import { sha256 } from "./_shared.js";
@@ -151,11 +157,18 @@ describe("runDoctorReport", () => {
       "Knowledge relevance_paths drift",
       "Knowledge narrow too few",
       "Knowledge session-hints stale",
+      // rc.23 TASK-010 (e): stale `.fabric/.serve.lock` advisory sits adjacent
+      // to the other read-side hygiene infos. Info kind — does not bump
+      // report status.
+      "Serve lock",
       "Knowledge relevance fields missing",
       "Skill markdown YAML",
+      // rc.23 TASK-014 (F8c): Onboard coverage advisory — info kind. Sits
+      // adjacent to Skill markdown YAML (both are Skill-adjacent advisories).
+      "Onboard coverage",
       "Preexisting root markdown",
     ]);
-    expect(report.checks).toHaveLength(33);
+    expect(report.checks).toHaveLength(35);
   });
 
   it("v2.0: clean post-init repo (mocked layout) reports zero errors AND zero warnings", async () => {
@@ -2041,6 +2054,94 @@ describe("runDoctorReport", () => {
     });
   });
 
+  // rc.23 TASK-014 (F8c): Onboard coverage advisory. Info kind — never
+  // bumps doctor status. Surfaces missing slots from the locked S5 set;
+  // recommends running /fabric-archive whose first-run phase tours the
+  // project and proposes pending entries with `onboard_slot: <slot>` set.
+  describe("rc.23 TASK-014: Onboard coverage advisory", () => {
+    function seedOnboardEntry(target: string, type: string, filename: string, slot: string): void {
+      const dir = join(target, ".fabric", "knowledge", type);
+      mkdirSync(dir, { recursive: true });
+      const id = filename.split("--")[0] ?? filename.replace(/\.md$/u, "");
+      const body =
+        `---\nid: ${id}\ntype: ${type}\nonboard_slot: ${slot}\n---\n\n# stub\n`;
+      writeFileSync(join(dir, filename), body, "utf8");
+    }
+
+    it("emits info advisory listing missing slots when KB is empty", async () => {
+      const target = createInitializedProject("doctor-rc23-onboard-empty");
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+
+      const report = await runDoctorReport(target);
+      const check = report.checks.find((c) => c.name === "Onboard coverage");
+      expect(check?.kind).toBe("info");
+      expect(check?.code).toBe("onboard_coverage_incomplete");
+      expect(check?.status).toBe("ok");
+      // All 5 slots should be missing on an empty workspace.
+      for (const slot of [
+        "tech-stack-decision",
+        "architecture-pattern",
+        "code-style-tone",
+        "build-system-idiom",
+        "domain-vocabulary",
+      ]) {
+        expect(check?.message).toContain(slot);
+      }
+      expect(check?.actionHint).toContain("fabric-archive");
+      expect(report.infos.map((i) => i.code)).toContain("onboard_coverage_incomplete");
+    });
+
+    it("emits 5/5 ✓ when every slot is filled by a canonical entry", async () => {
+      const target = createInitializedProject("doctor-rc23-onboard-full");
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+
+      seedOnboardEntry(target, "decisions", "KT-DEC-0001--stack.md", "tech-stack-decision");
+      seedOnboardEntry(target, "models", "KT-MOD-0001--layout.md", "architecture-pattern");
+      seedOnboardEntry(target, "guidelines", "KT-GLD-0001--style.md", "code-style-tone");
+      seedOnboardEntry(target, "processes", "KT-PRO-0001--build.md", "build-system-idiom");
+      seedOnboardEntry(target, "models", "KT-MOD-0002--vocab.md", "domain-vocabulary");
+
+      const report = await runDoctorReport(target);
+      const check = report.checks.find((c) => c.name === "Onboard coverage");
+      expect(check?.status).toBe("ok");
+      expect(check?.kind).toBeUndefined(); // okCheck = no kind
+      expect(check?.message).toMatch(/5\/5/u);
+      expect(check?.message).toContain("✓");
+      expect(report.infos.map((i) => i.code)).not.toContain("onboard_coverage_incomplete");
+    });
+
+    it("excludes opted-out slots from missing AND surfaces the count in message", async () => {
+      const target = createInitializedProject("doctor-rc23-onboard-opted-out");
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+
+      // Dismiss 2 of the 5 slots — they should drop out of `missing`.
+      writeFile(
+        ".fabric/fabric-config.json",
+        JSON.stringify({
+          onboard_slots_opted_out: ["domain-vocabulary", "build-system-idiom"],
+        }),
+        target,
+      );
+
+      const report = await runDoctorReport(target);
+      const check = report.checks.find((c) => c.name === "Onboard coverage");
+      expect(check?.kind).toBe("info");
+      expect(check?.code).toBe("onboard_coverage_incomplete");
+      // 3 slots still missing (5 − 2 opted out − 0 filled).
+      expect(check?.message).toContain("tech-stack-decision");
+      expect(check?.message).toContain("architecture-pattern");
+      expect(check?.message).toContain("code-style-tone");
+      // Opted-out slots should NOT appear in the missing list.
+      // Construct the precise missing-list substring to anchor the check.
+      expect(check?.message).toMatch(/Onboard slots not yet covered: \[(?!.*domain-vocabulary)(?!.*build-system-idiom)/u);
+      // Opt-out count surfaces in the trailing detail.
+      expect(check?.message).toContain("2 opted-out");
+    });
+  });
+
   // rc.4 TASK-003: apply-lint mutations. Each test seeds the same fixture
   // shape used by TASK-001 / TASK-002 inspections, then invokes
   // runDoctorApplyLint and asserts (a) on-disk mutations occurred, (b) the
@@ -3180,6 +3281,117 @@ describe("runDoctorReport", () => {
     });
   });
 
+  // rc.23 TASK-010 (e): stale `.fabric/.serve.lock` advisory + --fix unlink.
+  // The serve lock is written by `acquireLock` at the top of `fab serve` and
+  // released on graceful shutdown; a SIGKILL leaves the file on disk holding
+  // a dead PID, blocking subsequent serve attempts. Doctor surfaces an
+  // info-kind advisory; `--fix` unlinks the corpse and emits
+  // `serve_lock_cleared`.
+  describe("rc.23 TASK-010 (e): stale .fabric/.serve.lock advisory", () => {
+    // A PID guaranteed never to exist: > 2^22 (Linux pid_max ceiling) and
+    // safely outside any reasonable system's allocation. signal-0 returns
+    // ESRCH ("no such process") so `isAlive` reports false.
+    const DEAD_PID = 99999999;
+
+    function seedServeLock(target: string, pid: number, acquiredAt: number): string {
+      const dir = join(target, ".fabric");
+      mkdirSync(dir, { recursive: true });
+      const file = join(dir, ".serve.lock");
+      writeFileSync(file, JSON.stringify({ pid, acquiredAt, host: "test-host" }), "utf8");
+      return file;
+    }
+
+    it("reports ok when .fabric/.serve.lock is absent", async () => {
+      const target = createInitializedProject("doctor-rc23-servelock-absent");
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+
+      const report = await runDoctorReport(target);
+      const check = report.checks.find((c) => c.name === "Serve lock");
+      expect(check?.status).toBe("ok");
+      expect(check?.kind).toBeUndefined();
+      expect(report.infos.map((i) => i.code)).not.toContain("stale_serve_lock");
+    });
+
+    it("reports ok when lock holds a live PID (no advisory)", async () => {
+      const target = createInitializedProject("doctor-rc23-servelock-alive");
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+      // process.pid is the vitest worker — guaranteed alive for the duration
+      // of the test. acquireLock writes Date.now(); we mirror that.
+      seedServeLock(target, process.pid, Date.now());
+
+      const report = await runDoctorReport(target);
+      const check = report.checks.find((c) => c.name === "Serve lock");
+      expect(check?.status).toBe("ok");
+      expect(report.infos.map((i) => i.code)).not.toContain("stale_serve_lock");
+    });
+
+    it("flags stale lock (dead PID) as info-kind advisory", async () => {
+      const target = createInitializedProject("doctor-rc23-servelock-stale-flag");
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+      // 5 days ago — matches the dogfood report shape: "acquired 5 days ago".
+      const acquired = Date.now() - 5 * 24 * 60 * 60 * 1000;
+      seedServeLock(target, DEAD_PID, acquired);
+
+      const report = await runDoctorReport(target);
+      const check = report.checks.find((c) => c.name === "Serve lock");
+      expect(check?.status).toBe("ok"); // info kind — status not bumped
+      expect(check?.kind).toBe("info");
+      expect(check?.code).toBe("stale_serve_lock");
+      expect(check?.message).toContain("[advisory]");
+      expect(check?.message).toContain(`dead PID ${DEAD_PID}`);
+      expect(check?.message).toContain("5 days ago");
+      expect(report.infos.map((i) => i.code)).toContain("stale_serve_lock");
+    });
+
+    it("renders hours-ago wording when lock < 1 day old", async () => {
+      const target = createInitializedProject("doctor-rc23-servelock-hours");
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+      // 3 hours ago — below the days threshold.
+      const acquired = Date.now() - 3 * 60 * 60 * 1000;
+      seedServeLock(target, DEAD_PID, acquired);
+
+      const report = await runDoctorReport(target);
+      const check = report.checks.find((c) => c.name === "Serve lock");
+      expect(check?.message).toContain("3 hours ago");
+    });
+
+    it("--fix unlinks the stale lock and emits serve_lock_cleared event", async () => {
+      const target = createInitializedProject("doctor-rc23-servelock-fix");
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+      const acquired = Date.now() - 5 * 24 * 60 * 60 * 1000;
+      const lockFile = seedServeLock(target, DEAD_PID, acquired);
+      expect(existsSync(lockFile)).toBe(true);
+
+      const fix = await runDoctorFix(target);
+
+      expect(existsSync(lockFile)).toBe(false);
+      expect(fix.fixed.map((i) => i.code)).toContain("stale_serve_lock");
+
+      // Ledger event recorded for audit trail.
+      const { events } = await readEventLedger(target);
+      const cleared = events.filter((e) => e.event_type === "serve_lock_cleared");
+      expect(cleared).toHaveLength(1);
+      expect((cleared[0] as { pid: number }).pid).toBe(DEAD_PID);
+    });
+
+    it("--fix preserves a lock held by a live PID (no-op)", async () => {
+      const target = createInitializedProject("doctor-rc23-servelock-fix-preserve");
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+      const lockFile = seedServeLock(target, process.pid, Date.now());
+
+      const fix = await runDoctorFix(target);
+
+      expect(existsSync(lockFile)).toBe(true);
+      expect(fix.fixed.map((i) => i.code)).not.toContain("stale_serve_lock");
+    });
+  });
+
   // rc.6 TASK-023 (E6): lint #26 knowledge_narrow_too_few. Two-arm check —
   // Part A (structural ratio < 0.20 AND total >= 10) and Part B (silence
   // rate > 0.95 over 30d window). Either arm independently can flag; both
@@ -4119,14 +4331,15 @@ describe("runDoctorReport", () => {
   });
 
   // v2.0.0-rc.22 TASK-006: doctor lint `lint-baseline-filename-format` —
-  // hard error (no --fix path; resolution delegates to `fab scan` for the
-  // one-shot migration). Aligns with feedback_cli_design "drift→abort"
-  // (--force was already removed from doctor in rc.15).
+  // hard error (no --fix path). rc.23 TASK-012 (F8a) removed the legacy
+  // baseline-emit pipeline, so resolution is manual file deletion. Aligns
+  // with feedback_cli_design "drift→abort" (--force was removed in rc.15).
   describe("rc.22 TASK-006: lint-baseline-filename-format hard error", () => {
     // Helper: write a baseline knowledge file with the requested filename and
     // frontmatter id under the given canonical subdir. The frontmatter shape
-    // mirrors what `fab scan` emits so `extractKnowledgeFrontmatterId` parses
-    // it identically to a real baseline file.
+    // mirrors the historical baseline emit format so
+    // `extractKnowledgeFrontmatterId` parses it identically to a legacy
+    // pre-rc.23 baseline file on disk.
     const writeBaselineFile = (
       target: string,
       subdir: string,
@@ -4205,7 +4418,7 @@ describe("runDoctorReport", () => {
       expect(after.manual_errors.map((e) => e.code)).toContain("lint-baseline-filename-format");
     });
 
-    it("lint_baseline_filename_resolution_references_fab_scan: action hint instructs user to run `fab scan`", async () => {
+    it("lint_baseline_filename_resolution_instructs_manual_deletion: action hint guides user to manual cleanup (rc.23 removed baseline pipeline)", async () => {
       const target = createInitializedProject("doctor-baseline-fname-resolution");
       writeBaselineFile(target, "processes", "build-config.md", "KT-PRO-0001", "build-config");
 
@@ -4214,7 +4427,7 @@ describe("runDoctorReport", () => {
       expect(check).toBeDefined();
       expect(check?.status).toBe("error");
       expect(check?.kind).toBe("manual_error");
-      expect(check?.actionHint).toContain("fab scan");
+      expect(check?.actionHint?.toLowerCase()).toMatch(/delete|manual/);
     });
   });
 });
@@ -4793,6 +5006,74 @@ describe("runDoctorCiteCoverage", () => {
     expect(report.dismissed_reason_histogram).toEqual({ unspecified: 3 });
   });
 
+  // 9b. rc.23 T8c: KB: none sentinel breakdown. Parser pulls the bracket
+  //     payload from `kb_line_raw` since the on-ledger cite_tags enum still
+  //     emits the bare `none` token (schema-bound). Three forms must
+  //     tabulate: `[no-relevant]`, `[not-applicable]`, and bare `KB: none`
+  //     (→ unspecified bucket for legacy/lazy emissions).
+  it("none_reason_histogram aggregates KB: none sentinels into no-relevant / not-applicable / unspecified buckets", async () => {
+    const target = createInitializedProject("cite-coverage-none-sentinel");
+    writeFile(".fabric/events.jsonl", "", target);
+
+    const marker = await ensureCitePolicyActivatedMarker(target);
+
+    seedEvents(target, [
+      mkTurnEvent({
+        sessionId: "sess-N1",
+        kbLineRaw: "KB: none [no-relevant]",
+        citeIds: [],
+        citeTags: ["none"],
+        client: "cc",
+        ts: marker.marker_ts + 10,
+      }),
+      mkTurnEvent({
+        sessionId: "sess-N2",
+        kbLineRaw: "KB: none [no-relevant]",
+        citeIds: [],
+        citeTags: ["none"],
+        client: "cc",
+        ts: marker.marker_ts + 20,
+      }),
+      mkTurnEvent({
+        sessionId: "sess-N3",
+        kbLineRaw: "KB: none [not-applicable]",
+        citeIds: [],
+        citeTags: ["none"],
+        client: "cc",
+        ts: marker.marker_ts + 30,
+      }),
+      // Bare legacy form → unspecified bucket.
+      mkTurnEvent({
+        sessionId: "sess-N4",
+        kbLineRaw: "KB: none",
+        citeIds: [],
+        citeTags: ["none"],
+        client: "cc",
+        ts: marker.marker_ts + 40,
+      }),
+      // Unknown bracket payload also collapses to unspecified (bounded
+      // histogram; new enums must come via bootstrap doc updates).
+      mkTurnEvent({
+        sessionId: "sess-N5",
+        kbLineRaw: "KB: none [bogus-reason]",
+        citeIds: [],
+        citeTags: ["none"],
+        client: "cc",
+        ts: marker.marker_ts + 50,
+      }),
+    ]);
+
+    const report = await runDoctorCiteCoverage(target, { since: 0, client: "all" });
+
+    expect(report.metrics.total_turns).toBe(5);
+    expect(report.metrics.qualifying_cites).toBe(0);
+    expect(report.none_reason_histogram).toEqual({
+      "no-relevant": 2,
+      "not-applicable": 1,
+      unspecified: 2,
+    });
+  });
+
   // 10. Per-client split: 2 cc turns + 1 codex turn → per_client.cc=2,
   //     per_client.codex=1. per_client is only emitted when client='all'.
   it("per_client split tabulates total_turns separately for each client when client='all'", async () => {
@@ -5078,6 +5359,187 @@ describe("runDoctorCiteCoverage", () => {
     // Lenient ceiling — CI fluctuates. Local runs should be well under 500ms;
     // 2s leaves headroom for slow-spinning runners.
     expect(elapsedMs).toBeLessThan(2_000);
+  });
+});
+
+// v2.0.0-rc.23 TASK-007 (a-C2): enrichDescriptions back-fill suite.
+describe("enrichDescriptions", () => {
+  // Helper — seed a canonical entry whose frontmatter is missing N of the
+  // four rc.23 description-grade fields. Layout matches the
+  // CANONICAL_KNOWLEDGE_FILENAME_PATTERN (`<id>--<slug>.md`) so
+  // iterateCanonicalFilenames yields the visit.
+  function seedLegacyEntry(
+    target: string,
+    relPath: string,
+    overrides: { withFields?: string[]; body?: string } = {},
+  ): void {
+    const withFields = overrides.withFields ?? [];
+    const lines = [
+      "---",
+      "id: KT-DEC-0001",
+      "type: decision",
+      "maturity: draft",
+      "layer: team",
+      "created_at: 2026-05-10T00:00:00Z",
+    ];
+    if (withFields.includes("intent_clues")) lines.push('intent_clues: ["foo"]');
+    if (withFields.includes("tech_stack")) lines.push('tech_stack: ["bar"]');
+    if (withFields.includes("impact")) lines.push('impact: ["baz"]');
+    if (withFields.includes("must_read_if")) lines.push('must_read_if: "existing"');
+    lines.push("---", overrides.body ?? "# Legacy Entry\n\nBody.\n");
+    writeFile(relPath, lines.join("\n"), target);
+  }
+
+  it("auto mode back-fills all four fields with deterministic stubs", async () => {
+    const target = createInitializedProject("enrich-auto-missing-all");
+    seedLegacyEntry(target, ".fabric/knowledge/decisions/KT-DEC-0001--legacy.md");
+
+    const report = await enrichDescriptions(target, { auto: true });
+
+    expect(report.mode).toBe("auto");
+    expect(report.scanned).toBe(1);
+    expect(report.modified).toBe(1);
+    expect(report.skipped).toBe(0);
+    expect(report.candidates).toHaveLength(1);
+    const candidate = report.candidates[0];
+    expect(candidate.modified).toBe(true);
+    expect(candidate.missing).toEqual([
+      "intent_clues",
+      "tech_stack",
+      "impact",
+      "must_read_if",
+    ]);
+    expect(candidate.added_fields).toEqual([
+      "intent_clues",
+      "tech_stack",
+      "impact",
+      "must_read_if",
+    ]);
+
+    // Verify on-disk frontmatter now carries all four fields.
+    const absPath = join(target, ".fabric/knowledge/decisions/KT-DEC-0001--legacy.md");
+    const rewritten = readFileSync(absPath, "utf8");
+    expect(rewritten).toMatch(/^intent_clues:\s*\[\]/m);
+    expect(rewritten).toMatch(/^tech_stack:\s*\[\]/m);
+    expect(rewritten).toMatch(/^impact:\s*\[\]/m);
+    expect(rewritten).toMatch(/^must_read_if:\s*Legacy Entry/m);
+
+    // knowledge_enriched event emitted to the ledger.
+    const { events } = await readEventLedger(target);
+    const enrichEvents = events.filter((e) => e.event_type === "knowledge_enriched");
+    expect(enrichEvents).toHaveLength(1);
+    expect(enrichEvents[0]).toMatchObject({
+      mode: "auto",
+      path: ".fabric/knowledge/decisions/KT-DEC-0001--legacy.md",
+      added_fields: ["intent_clues", "tech_stack", "impact", "must_read_if"],
+    });
+  });
+
+  it("auto mode is no-op (idempotent) on entries that already have all four fields", async () => {
+    const target = createInitializedProject("enrich-auto-noop");
+    seedLegacyEntry(target, ".fabric/knowledge/decisions/KT-DEC-0001--complete.md", {
+      withFields: ["intent_clues", "tech_stack", "impact", "must_read_if"],
+    });
+    const absPath = join(target, ".fabric/knowledge/decisions/KT-DEC-0001--complete.md");
+    const before = readFileSync(absPath, "utf8");
+    const beforeMtime = statSync(absPath).mtimeMs;
+
+    const report = await enrichDescriptions(target, { auto: true });
+
+    expect(report.scanned).toBe(1);
+    expect(report.modified).toBe(0);
+    expect(report.skipped).toBe(1);
+    expect(report.candidates).toEqual([]);
+
+    // File content unchanged byte-for-byte.
+    const after = readFileSync(absPath, "utf8");
+    expect(after).toBe(before);
+    // mtime invariant (the convergence criteria's idempotency check). On some
+    // filesystems mtime resolution is coarse, so we assert <= rather than ==.
+    const afterMtime = statSync(absPath).mtimeMs;
+    expect(afterMtime).toBeLessThanOrEqual(beforeMtime);
+
+    // No knowledge_enriched event emitted.
+    const { events } = await readEventLedger(target);
+    expect(events.filter((e) => e.event_type === "knowledge_enriched")).toHaveLength(0);
+  });
+
+  it("dry-run mode reports missing fields without writing", async () => {
+    const target = createInitializedProject("enrich-dry-run");
+    seedLegacyEntry(target, ".fabric/knowledge/decisions/KT-DEC-0001--legacy.md", {
+      withFields: ["intent_clues"],
+    });
+    const absPath = join(target, ".fabric/knowledge/decisions/KT-DEC-0001--legacy.md");
+    const before = readFileSync(absPath, "utf8");
+
+    const report = await enrichDescriptions(target, { auto: true, dryRun: true });
+
+    expect(report.dryRun).toBe(true);
+    expect(report.scanned).toBe(1);
+    expect(report.modified).toBe(0);
+    expect(report.candidates).toHaveLength(1);
+    expect(report.candidates[0].modified).toBe(false);
+    expect(report.candidates[0].missing).toEqual(["tech_stack", "impact", "must_read_if"]);
+
+    // File unchanged.
+    expect(readFileSync(absPath, "utf8")).toBe(before);
+
+    // No ledger event emitted in dry-run mode.
+    const { events } = await readEventLedger(target);
+    expect(events.filter((e) => e.event_type === "knowledge_enriched")).toHaveLength(0);
+  });
+
+  it("interactive (default) mode reports missing fields without writing", async () => {
+    const target = createInitializedProject("enrich-interactive");
+    seedLegacyEntry(target, ".fabric/knowledge/pitfalls/KP-PIT-0001--gotcha.md", {
+      withFields: ["tech_stack", "impact"],
+    });
+    const absPath = join(target, ".fabric/knowledge/pitfalls/KP-PIT-0001--gotcha.md");
+    const before = readFileSync(absPath, "utf8");
+
+    const report = await enrichDescriptions(target, {}); // no auto
+
+    expect(report.mode).toBe("interactive");
+    expect(report.scanned).toBe(1);
+    expect(report.modified).toBe(0);
+    expect(report.candidates).toHaveLength(1);
+    expect(report.candidates[0].missing).toEqual(["intent_clues", "must_read_if"]);
+    expect(report.candidates[0].modified).toBe(false);
+    expect(report.candidates[0].added_fields).toEqual([]);
+
+    // File unchanged.
+    expect(readFileSync(absPath, "utf8")).toBe(before);
+  });
+
+  it("auto mode is idempotent across two runs (second pass writes nothing)", async () => {
+    const target = createInitializedProject("enrich-idempotent");
+    seedLegacyEntry(target, ".fabric/knowledge/guidelines/KT-GLD-0001--rule.md");
+
+    const first = await enrichDescriptions(target, { auto: true });
+    expect(first.modified).toBe(1);
+
+    const second = await enrichDescriptions(target, { auto: true });
+    expect(second.modified).toBe(0);
+    expect(second.skipped).toBe(1);
+    expect(second.candidates).toEqual([]);
+  });
+
+  it("skips pending/ subtree (Skill owns pending shape)", async () => {
+    const target = createInitializedProject("enrich-skip-pending");
+    // Pending entries use bare-slug filenames; iterateCanonicalFilenames is
+    // scoped to KNOWLEDGE_CANONICAL_TYPE_DIRS which deliberately excludes
+    // pending/. Belt-and-suspenders: even if a Skill landed a pending entry
+    // missing all four fields, enrichDescriptions must not touch it.
+    writeFile(
+      ".fabric/knowledge/pending/decisions/draft.md",
+      "---\ntype: decision\nmaturity: draft\nlayer: team\ncreated_at: 2026-05-10T00:00:00Z\n---\n# Draft\n",
+      target,
+    );
+
+    const report = await enrichDescriptions(target, { auto: true });
+
+    expect(report.scanned).toBe(0);
+    expect(report.candidates).toEqual([]);
   });
 });
 

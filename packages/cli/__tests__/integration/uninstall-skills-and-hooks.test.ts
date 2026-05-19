@@ -194,7 +194,7 @@ describe("TASK-005 uninstall round-trip: T2 user settings.json preservation", ()
     const mergedStopCommands = (merged.hooks?.Stop ?? [])
       .flatMap((entry) => entry.hooks ?? [])
       .map((h) => h.command);
-    expect(mergedStopCommands).toContain(".claude/hooks/fabric-hint.cjs");
+    expect(mergedStopCommands).toContain("${CLAUDE_PROJECT_DIR}/.claude/hooks/fabric-hint.cjs");
 
     // Uninstall — cleanEmpties is default-on (rc.15 TASK-002), so empty
     // arrays/objects cascade away unconditionally.

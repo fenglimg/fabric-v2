@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createSelectionToken, planContext } from "./plan-context.js";
 import { readEventLedger } from "./event-ledger.js";
-import { getKnowledgeSections, parseKnowledgeSections } from "./knowledge-sections.js";
+import { extractBody, getKnowledgeSections } from "./knowledge-sections.js";
 import { contextCache } from "../cache.js";
 
 // v2.0-rc.7 T9: planContext() always emits a selection_token, but the token
@@ -55,49 +55,39 @@ afterEach(async () => {
   }));
 });
 
-describe("parseKnowledgeSections", () => {
-  it("extracts structured sections without falling back to full content", () => {
-    const sections = parseKnowledgeSections(`# 规则：对象池规范
+// v2.0.0-rc.23 TASK-013 (F8b): `parseKnowledgeSections` (and the 4-element
+// A-set enum it indexed) was retired. The replacement `extractBody` strips a
+// YAML frontmatter block and returns the raw markdown — callers scan whatever
+// B-set heading layout the rule defines.
+describe("extractBody", () => {
+  it("strips a leading YAML frontmatter block and returns the body unchanged", () => {
+    const body = extractBody(`---
+summary: Pool rules
+type: decision
+---
+# 规则：对象池规范
 
-## [MISSION_STATEMENT]
-- 本脚本只负责资源池生命周期。
+## Summary
+本脚本只负责资源池生命周期。
 
-## [MANDATORY_INJECTION]
-- 必须在 onDestroy 中执行 unuse 逻辑。
-
-## [BUSINESS_LOGIC_CHUNKS]
-### ID: BL-CC-POOL-001
-- **Anchor**: \`BL-CC-POOL-001\`
-- **Intent**: 保持资源释放顺序稳定。
-- **Scars**: 连续 Tab 切换曾出现黑屏。
-- **Constraint**: 必须延迟一帧释放资源。
-
-## [CONTEXT_INFO]
-- 此规则关联到：assets/scripts/core/PoolManager.ts
-
-## 普通说明
-不应该进入结构化 section。
+## Mandatory
+必须在 onDestroy 中执行 unuse 逻辑。
 `);
-
-    expect(sections.get("MISSION_STATEMENT")).toBe("- 本脚本只负责资源池生命周期。");
-    expect(sections.get("MANDATORY_INJECTION")).toBe("- 必须在 onDestroy 中执行 unuse 逻辑。");
-    expect(sections.get("BUSINESS_LOGIC_CHUNKS")).toContain("BL-CC-POOL-001");
-    expect(sections.get("CONTEXT_INFO")).toBe("- 此规则关联到：assets/scripts/core/PoolManager.ts");
-    expect(Array.from(sections.keys())).not.toContain("普通说明");
+    expect(body.startsWith("# 规则：对象池规范")).toBe(true);
+    expect(body).toContain("## Summary");
+    expect(body).toContain("## Mandatory");
+    expect(body).not.toContain("summary: Pool rules");
   });
 
-  it("merges duplicate structured headings in document order", () => {
-    const sections = parseKnowledgeSections(`## [MANDATORY_INJECTION]
-first
+  it("returns the full content unchanged when no frontmatter is present", () => {
+    const source = "# Heading\n\n## Body\nplain markdown\n";
+    expect(extractBody(source)).toBe(source);
+  });
 
-## [CONTEXT_INFO]
-context
-
-### [MANDATORY_INJECTION]
-second
-`);
-
-    expect(sections.get("MANDATORY_INJECTION")).toBe("first\n\nsecond");
+  it("strips a leading UTF-8 BOM even when frontmatter is absent", () => {
+    const body = extractBody(`\uFEFF# Heading\n\nbody\n`);
+    expect(body.charCodeAt(0)).not.toBe(0xfeff);
+    expect(body.startsWith("# Heading")).toBe(true);
   });
 });
 
@@ -113,7 +103,6 @@ describe("getKnowledgeSections", () => {
 
     const result = await getKnowledgeSections(projectRoot, {
       selection_token: selectionToken,
-      sections: ["MISSION_STATEMENT", "MANDATORY_INJECTION", "BUSINESS_LOGIC_CHUNKS", "CONTEXT_INFO"],
       ai_selected_stable_ids: ["ui-batch-rendering"],
       ai_selection_reasons: {
         "ui-batch-rendering": "BattleView.ts touches UI rendering nodes and labels.",
@@ -131,87 +120,33 @@ describe("getKnowledgeSections", () => {
     expect(result.revision_hash.length).toBeGreaterThan(0);
     expect(result.precedence).toEqual(["L2", "L1", "L0"]);
     expect(result.selected_stable_ids).toEqual(["global-protocol", "ui-batch-rendering", "battle-view-local"]);
-    expect(result.rules).toEqual([
-      expect.objectContaining({
-        stable_id: "global-protocol",
-        level: "L0",
-        sections: {
-          MISSION_STATEMENT: "",
-          MANDATORY_INJECTION: "Global mandatory.",
-          BUSINESS_LOGIC_CHUNKS: "",
-          CONTEXT_INFO: "",
-        },
-      }),
-      expect.objectContaining({
-        stable_id: "ui-batch-rendering",
-        level: "L1",
-        sections: {
-          MISSION_STATEMENT: "",
-          MANDATORY_INJECTION: "UI mandatory.",
-          BUSINESS_LOGIC_CHUNKS: "",
-          CONTEXT_INFO: "UI context.",
-        },
-      }),
-      expect.objectContaining({
-        stable_id: "battle-view-local",
-        level: "L2",
-        sections: {
-          MISSION_STATEMENT: "BattleView owns combat UI lifecycle boundaries.",
-          MANDATORY_INJECTION: "BattleView mandatory.",
-          BUSINESS_LOGIC_CHUNKS: [
-            "### ID: BL-BATTLE-001",
-            "- **Anchor**: `BL-BATTLE-001`",
-            "- **Intent**: Avoid flicker when tabs switch quickly.",
-            "- **Scars**: Releasing assets immediately caused black frames.",
-            "- **Constraint**: Keep delayed release.",
-          ].join("\n"),
-          CONTEXT_INFO: "BattleView context.",
-        },
-      }),
+    // v2.0.0-rc.23 TASK-013 (F8b): the API now returns the full markdown body
+    // (frontmatter stripped). We assert shape + signature substrings rather
+    // than exact whole-file equality — the fixture markdown carries an h1
+    // heading + the legacy `## [MANDATORY_INJECTION]` heading verbatim.
+    expect(result.rules.map((r) => r.stable_id)).toEqual([
+      "global-protocol",
+      "ui-batch-rendering",
+      "battle-view-local",
     ]);
+    expect(result.rules[0]!.body).toContain("# Global");
+    expect(result.rules[0]!.body).toContain("Global mandatory.");
+    expect(result.rules[1]!.body).toContain("# UI");
+    expect(result.rules[1]!.body).toContain("UI mandatory.");
+    expect(result.rules[1]!.body).toContain("UI context.");
+    expect(result.rules[2]!.body).toContain("# Battle");
+    expect(result.rules[2]!.body).toContain("BattleView owns combat UI lifecycle boundaries.");
+    expect(result.rules[2]!.body).toContain("BL-BATTLE-001");
+    expect(result.rules[2]!.body).toContain("BattleView context.");
+    // v2.0.0-rc.23 TASK-013 (F8b): `missing_section` diagnostics retired
+    // along with the A-set enum. Only `missing_knowledge_metadata` warnings
+    // remain — fixture nodes have no knowledge_type/knowledge_layer.
     expect(result.diagnostics).toEqual([
-      {
-        code: "missing_section",
-        severity: "warn",
-        stable_id: "global-protocol",
-        section: "MISSION_STATEMENT",
-        message: "Rule global-protocol does not define section MISSION_STATEMENT.",
-      },
-      {
-        code: "missing_section",
-        severity: "warn",
-        stable_id: "global-protocol",
-        section: "BUSINESS_LOGIC_CHUNKS",
-        message: "Rule global-protocol does not define section BUSINESS_LOGIC_CHUNKS.",
-      },
-      {
-        code: "missing_section",
-        severity: "warn",
-        stable_id: "global-protocol",
-        section: "CONTEXT_INFO",
-        message: "Rule global-protocol does not define section CONTEXT_INFO.",
-      },
-      // v2.0: warn-level signal that this rule lacks knowledge metadata
-      // (no type/layer in frontmatter). Does not block delivery.
       {
         code: "missing_knowledge_metadata",
         severity: "warn",
         stable_id: "global-protocol",
         message: "Rule global-protocol has no knowledge metadata (type/layer) — likely an un-migrated v1.x entry.",
-      },
-      {
-        code: "missing_section",
-        severity: "warn",
-        stable_id: "ui-batch-rendering",
-        section: "MISSION_STATEMENT",
-        message: "Rule ui-batch-rendering does not define section MISSION_STATEMENT.",
-      },
-      {
-        code: "missing_section",
-        severity: "warn",
-        stable_id: "ui-batch-rendering",
-        section: "BUSINESS_LOGIC_CHUNKS",
-        message: "Rule ui-batch-rendering does not define section BUSINESS_LOGIC_CHUNKS.",
       },
       {
         code: "missing_knowledge_metadata",
@@ -270,7 +205,9 @@ describe("getKnowledgeSections", () => {
         event_type: "knowledge_sections_fetched",
         selection_token: selectionToken,
         target_paths: ["assets/scripts/ui/BattleView.ts"],
-        requested_sections: ["MISSION_STATEMENT", "MANDATORY_INJECTION", "BUSINESS_LOGIC_CHUNKS", "CONTEXT_INFO"],
+        // rc.23 F8b: `requested_sections` is now always emitted as []
+        // (the `sections` input parameter was removed).
+        requested_sections: [],
         final_stable_ids: ["global-protocol", "ui-batch-rendering", "battle-view-local"],
         ai_selected_stable_ids: ["ui-batch-rendering"],
         diagnostics: result.diagnostics,
@@ -301,7 +238,6 @@ describe("getKnowledgeSections", () => {
     const before = Date.now();
     await getKnowledgeSections(projectRoot, {
       selection_token: selectionToken,
-      sections: ["MANDATORY_INJECTION"],
       ai_selected_stable_ids: ["ui-batch-rendering"],
       ai_selection_reasons: { "ui-batch-rendering": "BattleView touches UI rendering." },
       correlation_id: "corr-consume",
@@ -356,7 +292,6 @@ describe("getKnowledgeSections", () => {
 
     await getKnowledgeSections(projectRoot, {
       selection_token: selectionToken,
-      sections: ["MANDATORY_INJECTION"],
       ai_selected_stable_ids: ["ui-batch-rendering"],
       ai_selection_reasons: { "ui-batch-rendering": "UI." },
       client_hash: "rev-sections",
@@ -381,7 +316,6 @@ describe("getKnowledgeSections", () => {
 
     await getKnowledgeSections(projectRoot, {
       selection_token: selectionToken,
-      sections: ["MANDATORY_INJECTION"],
       ai_selected_stable_ids: ["ui-batch-rendering"],
       ai_selection_reasons: { "ui-batch-rendering": "UI." },
       // No client_hash passed — service should default to "".
@@ -406,21 +340,18 @@ describe("getKnowledgeSections", () => {
 
     await expect(getKnowledgeSections(projectRoot, {
       selection_token: selectionToken,
-      sections: ["MANDATORY_INJECTION"],
       ai_selected_stable_ids: ["unknown-l1"],
       ai_selection_reasons: { "unknown-l1": "not selectable" },
     })).rejects.toThrow(/Invalid L1 rule selection/u);
 
     await expect(getKnowledgeSections(projectRoot, {
       selection_token: selectionToken,
-      sections: ["MANDATORY_INJECTION"],
       ai_selected_stable_ids: ["ui-batch-rendering"],
       ai_selection_reasons: {},
     })).rejects.toThrow(/Missing AI selection reason/u);
 
     await expect(getKnowledgeSections(projectRoot, {
       selection_token: selectionToken,
-      sections: ["MANDATORY_INJECTION"],
       ai_selected_stable_ids: ["global-protocol"],
       ai_selection_reasons: { "global-protocol": "L0 cannot be selected by AI." },
     })).rejects.toThrow(/Invalid L1 rule selection/u);
@@ -431,7 +362,6 @@ describe("getKnowledgeSections", () => {
 
     await expect(getKnowledgeSections(projectRoot, {
       selection_token: "missing",
-      sections: ["MANDATORY_INJECTION"],
       ai_selected_stable_ids: [],
       ai_selection_reasons: {},
     })).rejects.toThrow(/selection_token is missing or expired/u);
@@ -450,7 +380,6 @@ describe("getKnowledgeSections", () => {
 
     const result = await getKnowledgeSections(projectRoot, {
       selection_token: selectionToken,
-      sections: ["MANDATORY_INJECTION"],
       ai_selected_stable_ids: ["ui-low-priority", "ui-batch-rendering"],
       ai_selection_reasons: {
         "ui-low-priority": "Also touches UI rendering.",
@@ -578,7 +507,6 @@ describe("getKnowledgeSections", () => {
     const selectionToken = mintTokenFromPlan(plan, ["global-protocol"], ["ui-rule"]);
     const result = await getKnowledgeSections(projectRoot, {
       selection_token: selectionToken,
-      sections: ["MANDATORY_INJECTION"],
       ai_selected_stable_ids: ["ui-rule"],
       ai_selection_reasons: { "ui-rule": "ui touch" },
     });
@@ -629,8 +557,7 @@ describe("getKnowledgeSections", () => {
     await expect(
       getKnowledgeSections(projectRoot, {
         selection_token: selectionToken,
-        sections: ["MANDATORY_INJECTION"],
-        ai_selected_stable_ids: ["ui-batch-rendering"],
+          ai_selected_stable_ids: ["ui-batch-rendering"],
         ai_selection_reasons: {
           "ui-batch-rendering": "BattleView touches UI.",
         },

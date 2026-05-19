@@ -6,6 +6,7 @@ import { type AgentsMeta } from "../meta-reader.js";
 import { appendEventLedgerEvent } from "./event-ledger.js";
 import { normalizeKnowledgePath } from "./get-knowledge.js";
 import { loadActiveMetaOrStale } from "./load-active-meta.js";
+import { reconcileKnowledge } from "./knowledge-sync.js";
 
 export type PlanContextInput = {
   paths: string[];
@@ -101,8 +102,59 @@ export async function planContext(
   // slightly stale broad-scope hint than surface an fs-error to the caller.
   // loadActiveMetaOrStale degrades to the on-disk meta in that case and flags
   // the response via `stale: true` so consumers can warn.
-  const metaResult = await loadActiveMetaOrStale(projectRoot, { caller: "planContext" });
-  const meta = metaResult.meta;
+  let metaResult = await loadActiveMetaOrStale(projectRoot, { caller: "planContext" });
+  let meta = metaResult.meta;
+
+  // v2.0.0-rc.23 TASK-005 (a-B): description-undefined auto-heal.
+  //
+  // Symmetric to rc.22 D2 read-side auto-heal, but covers a case the
+  // revision-hash gate cannot detect: an older agents.meta.json was authored
+  // before frontmatter descriptions were required and the on-disk knowledge
+  // tree has no descriptive frontmatter to populate them. Such entries
+  // serve `description: undefined` to the LLM and degrade hint quality —
+  // they collapse to "KB: none" in cite enforcement. Revision hashes match,
+  // so loadActiveMetaOrStale's auto-heal stays silent.
+  //
+  // We probe the freshly-loaded meta for any node missing BOTH the structured
+  // description and the legacy activation.description summary. On hit, we
+  // drive a full reconcile (which re-derives frontmatter from disk and writes
+  // a new meta), then reload. The guard `metaResult.auto_healed !== true`
+  // prevents an infinite loop: if loadActiveMetaOrStale already healed once
+  // this call and we STILL see undefined descriptions, that means the
+  // knowledge .md files genuinely lack frontmatter — a second reconcile would
+  // not change anything. We accept the degraded state and surface the
+  // existing preflight_diagnostics warning instead.
+  //
+  // No threshold (grill decision): any single undefined description triggers
+  // the heal. A threshold would introduce a confusing middle state where
+  // some legacy entries get healed and others don't.
+  let firstSeenPreviousRevision = metaResult.previous_revision_hash;
+  let autoHealedAccumulated = metaResult.auto_healed;
+  if (
+    metaResult.auto_healed !== true &&
+    hasUndefinedDescription(meta)
+  ) {
+    try {
+      await reconcileKnowledge(projectRoot, { trigger: "auto-heal-description" });
+      // Re-read the meta after the reconcile rebuild. Use loadActiveMetaOrStale
+      // again rather than readAgentsMeta directly so the same graceful-degrade
+      // semantics apply if the post-reconcile load fails.
+      const healedResult = await loadActiveMetaOrStale(projectRoot, { caller: "planContext" });
+      meta = healedResult.meta;
+      autoHealedAccumulated = true;
+      // Preserve the ORIGINAL pre-call revision so the response always
+      // carries the oldest known hash. healedResult.previous_revision_hash
+      // would be the post-reconcile revision (same as the current one),
+      // which is not useful for downstream "what changed under me?" audit.
+      firstSeenPreviousRevision = metaResult.previous_revision_hash;
+      metaResult = healedResult;
+    } catch {
+      // Best-effort heal — never propagate. The hint path must remain
+      // available even when reconcile encounters fs errors; the original
+      // meta is still usable and the preflight_diagnostics warning will
+      // surface the missing descriptions to the caller.
+    }
+  }
   const stale =
     metaResult.degraded === true ||
     (input.client_hash !== undefined && input.client_hash !== meta.revision);
@@ -147,13 +199,15 @@ export async function planContext(
       description_index: sharedDescriptionIndex,
       preflight_diagnostics: buildPreflightDiagnostics(meta),
     },
-    // v2.0.0-rc.22 Scope D T-D2: surface auto-heal pair only when a heal
-    // actually fired. Keeping these fields absent on the steady-state path
-    // means existing consumers see the same wire shape they always have.
-    ...(metaResult.auto_healed
+    // v2.0.0-rc.22 Scope D T-D2 + rc.23 TASK-005 (a-B): surface auto-heal pair
+    // only when a heal actually fired (either revision-drift heal in
+    // loadActiveMetaOrStale or description-undefined heal driven from here).
+    // Keeping these fields absent on the steady-state path means existing
+    // consumers see the same wire shape they always have.
+    ...(autoHealedAccumulated
       ? {
           auto_healed: true,
-          previous_revision_hash: metaResult.previous_revision_hash,
+          previous_revision_hash: firstSeenPreviousRevision,
         }
       : {}),
   };
@@ -381,6 +435,24 @@ function shouldIncludeIndexItemForPath(
   _path: string,
 ): boolean {
   return true;
+}
+
+/**
+ * v2.0.0-rc.23 TASK-005 (a-B): detector for description-undefined drift.
+ *
+ * Returns true if ANY node in the meta lacks both the structured description
+ * AND the legacy activation.description summary. Matches the exact predicate
+ * used by buildPreflightDiagnostics so the detector and the diagnostic stay in
+ * lockstep: every entry that would surface a `missing_description` warning
+ * also drives the auto-heal trigger.
+ *
+ * No threshold — any single undefined description triggers heal. See the
+ * call-site comment in planContext for the rationale.
+ */
+function hasUndefinedDescription(meta: AgentsMeta): boolean {
+  return Object.values(meta.nodes).some(
+    (node) => node.description === undefined && node.activation?.description === undefined,
+  );
 }
 
 function buildPreflightDiagnostics(meta: AgentsMeta): PlanContextResult["shared"]["preflight_diagnostics"] {

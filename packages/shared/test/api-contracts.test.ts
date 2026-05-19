@@ -7,6 +7,7 @@ import {
   FabReviewOutputSchema,
   planContextInputSchema,
   planContextOutputSchema,
+  knowledgeSectionsInputSchema,
   knowledgeSectionsOutputSchema,
 } from "../src/schemas/api-contracts";
 
@@ -126,6 +127,71 @@ describe("GetRuleSectionsResult — redirect_to", () => {
   });
 });
 
+// v2.0.0-rc.23 TASK-013 (F8b): the `sections` enum input parameter was
+// retired alongside the A-set heading discipline. The schema now expects
+// only `selection_token` + `ai_selected_stable_ids` + `ai_selection_reasons`.
+describe("knowledgeSectionsInputSchema — rc.23 F8b shape", () => {
+  it("accepts a payload without a `sections` field", () => {
+    const parsed = knowledgeSectionsInputSchema.parse({
+      selection_token: "selection:rev:abc",
+      ai_selected_stable_ids: ["ui-batch-rendering"],
+      ai_selection_reasons: { "ui-batch-rendering": "UI touch" },
+    });
+    expect(parsed.selection_token).toBe("selection:rev:abc");
+    expect(parsed.ai_selected_stable_ids).toEqual(["ui-batch-rendering"]);
+  });
+
+  it("strips an unknown legacy `sections` key (back-compat: rejected silently by z.object)", () => {
+    // zod default object behavior strips unknown keys; the test pins that
+    // a pre-rc.23 caller passing the retired field still parses (parsed
+    // object has no `sections` property).
+    const parsed = knowledgeSectionsInputSchema.parse({
+      selection_token: "selection:rev:abc",
+      ai_selected_stable_ids: [],
+      ai_selection_reasons: {},
+      sections: ["MISSION_STATEMENT"],
+    } as Record<string, unknown>);
+    expect((parsed as Record<string, unknown>).sections).toBeUndefined();
+  });
+});
+
+describe("knowledgeSectionsOutputSchema — rc.23 F8b body shape", () => {
+  it("accepts rules[].body as a string and rejects legacy sections record", () => {
+    const parsed = knowledgeSectionsOutputSchema.parse({
+      revision_hash: "r",
+      precedence: ["L2", "L1", "L0"],
+      selected_stable_ids: ["ui-batch-rendering"],
+      rules: [
+        {
+          stable_id: "ui-batch-rendering",
+          level: "L1",
+          path: ".fabric/knowledge/guidelines/ui.md",
+          body: "# UI\n\n## Summary\n\nKeep frames stable.\n",
+        },
+      ],
+      diagnostics: [],
+    });
+    expect(parsed.rules[0]!.body).toContain("Keep frames stable");
+  });
+
+  it("rejects a rule entry missing the body field", () => {
+    const result = knowledgeSectionsOutputSchema.safeParse({
+      revision_hash: "r",
+      precedence: ["L2", "L1", "L0"],
+      selected_stable_ids: ["x"],
+      rules: [
+        {
+          stable_id: "x",
+          level: "L1",
+          path: "x.md",
+        },
+      ],
+      diagnostics: [],
+    });
+    expect(result.success).toBe(false);
+  });
+});
+
 describe("FabExtractKnowledgeInputSchema", () => {
   // v2.0.0-rc.7 T6: proposed_reason + session_context are now required.
   // v2.0.0-rc.7 T5: source_sessions[] array form + single-string back-compat shim.
@@ -150,8 +216,11 @@ describe("FabExtractKnowledgeInputSchema", () => {
     expect(parsed.proposed_reason).toBe("diagnostic-then-fix");
   });
 
-  it("T5 back-compat: single source_session string is accepted", () => {
-    const parsed = FabExtractKnowledgeInputSchema.parse({
+  // rc.23 TASK-003 (F5): the pre-T5 single-string `source_session` alias was
+  // removed. Callers must use `source_sessions: string[]` directly; the schema
+  // no longer accepts the singular form via a back-compat shim.
+  it("rc.23: rejects legacy single source_session string (no back-compat shim)", () => {
+    const result = FabExtractKnowledgeInputSchema.safeParse({
       source_session: "sess-legacy",
       recent_paths: [],
       user_messages_summary: "x",
@@ -159,10 +228,12 @@ describe("FabExtractKnowledgeInputSchema", () => {
       slug: "x",
       ...requiredExtras,
     });
-    expect(parsed.success !== false).toBe(true);
+    // The unknown `source_session` key is stripped by the default object
+    // contract; superRefine then fails because `source_sessions` is absent.
+    expect(result.success).toBe(false);
   });
 
-  it("rejects payload missing both source_sessions and source_session", () => {
+  it("rejects payload missing source_sessions", () => {
     const result = FabExtractKnowledgeInputSchema.safeParse({
       recent_paths: [],
       user_messages_summary: "x",
@@ -287,6 +358,164 @@ describe("FabExtractKnowledgeInputSchema", () => {
       ...requiredExtras,
     });
     expect(result.success).toBe(false);
+  });
+
+  // -------------------------------------------------------------------------
+  // v2.0.0-rc.23 TASK-006 (a-C1): four optional structured triage fields
+  // -------------------------------------------------------------------------
+
+  it("C1: accepts payload that omits all four new triage fields (backward compat)", () => {
+    const result = FabExtractKnowledgeInputSchema.safeParse({
+      source_sessions: ["sess-c1-omit"],
+      recent_paths: [],
+      user_messages_summary: "x",
+      type: "decisions",
+      slug: "c1-omit",
+      ...requiredExtras,
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.intent_clues).toBeUndefined();
+      expect(result.data.tech_stack).toBeUndefined();
+      expect(result.data.impact).toBeUndefined();
+      expect(result.data.must_read_if).toBeUndefined();
+    }
+  });
+
+  it("C1: accepts payload that fills all four triage fields", () => {
+    const result = FabExtractKnowledgeInputSchema.safeParse({
+      source_sessions: ["sess-c1-fill"],
+      recent_paths: [],
+      user_messages_summary: "x",
+      type: "decisions",
+      slug: "c1-fill",
+      intent_clues: ["when editing batch UI code", "NOT for one-off scripts"],
+      tech_stack: ["typescript", "cocos-creator"],
+      impact: ["O(n²) re-render on every frame"],
+      must_read_if: "touching anything under packages/cli/src/commands/hooks.ts",
+      ...requiredExtras,
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.intent_clues).toEqual([
+        "when editing batch UI code",
+        "NOT for one-off scripts",
+      ]);
+      expect(result.data.tech_stack).toEqual(["typescript", "cocos-creator"]);
+      expect(result.data.impact).toEqual(["O(n²) re-render on every frame"]);
+      expect(result.data.must_read_if).toBe(
+        "touching anything under packages/cli/src/commands/hooks.ts",
+      );
+    }
+  });
+
+  it("C1: accepts payload that fills a subset of the four triage fields", () => {
+    const result = FabExtractKnowledgeInputSchema.safeParse({
+      source_sessions: ["sess-c1-subset"],
+      recent_paths: [],
+      user_messages_summary: "x",
+      type: "decisions",
+      slug: "c1-subset",
+      tech_stack: ["typescript"],
+      must_read_if: "auditing cite-policy logs",
+      ...requiredExtras,
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.intent_clues).toBeUndefined();
+      expect(result.data.tech_stack).toEqual(["typescript"]);
+      expect(result.data.impact).toBeUndefined();
+      expect(result.data.must_read_if).toBe("auditing cite-policy logs");
+    }
+  });
+
+  it("C1: rejects intent_clues / tech_stack / impact with non-string items", () => {
+    for (const bad of [
+      { intent_clues: ["ok", 42] as unknown },
+      { tech_stack: ["ts", false] as unknown },
+      { impact: [null, "ok"] as unknown },
+    ]) {
+      const result = FabExtractKnowledgeInputSchema.safeParse({
+        source_sessions: ["sess-c1-bad"],
+        recent_paths: [],
+        user_messages_summary: "x",
+        type: "decisions",
+        slug: "c1-bad",
+        ...requiredExtras,
+        ...bad,
+      });
+      expect(result.success).toBe(false);
+    }
+  });
+
+  it("C1: rejects must_read_if when not a string", () => {
+    const result = FabExtractKnowledgeInputSchema.safeParse({
+      source_sessions: ["sess-c1-bad-must"],
+      recent_paths: [],
+      user_messages_summary: "x",
+      type: "decisions",
+      slug: "c1-bad-must",
+      must_read_if: ["not", "a", "string"],
+      ...requiredExtras,
+    });
+    expect(result.success).toBe(false);
+  });
+
+  // -------------------------------------------------------------------------
+  // v2.0.0-rc.23 TASK-014 (F8c): onboard_slot S5 enum
+  // -------------------------------------------------------------------------
+
+  it("F8c: accepts each of the five locked S5 slot values", () => {
+    const slots = [
+      "tech-stack-decision",
+      "architecture-pattern",
+      "code-style-tone",
+      "build-system-idiom",
+      "domain-vocabulary",
+    ] as const;
+    for (const slot of slots) {
+      const result = FabExtractKnowledgeInputSchema.safeParse({
+        source_sessions: ["sess-onboard-good"],
+        recent_paths: [],
+        user_messages_summary: "x",
+        type: "decisions",
+        slug: `onboard-${slot}`,
+        onboard_slot: slot,
+        ...requiredExtras,
+      });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.onboard_slot).toBe(slot);
+      }
+    }
+  });
+
+  it("F8c: rejects an unknown slot value (anti-drift guard for the locked S5)", () => {
+    const result = FabExtractKnowledgeInputSchema.safeParse({
+      source_sessions: ["sess-onboard-bad"],
+      recent_paths: [],
+      user_messages_summary: "x",
+      type: "decisions",
+      slug: "onboard-bad",
+      onboard_slot: "release-process", // not in S5
+      ...requiredExtras,
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("F8c: omitting onboard_slot stays valid (steady-state non-onboard call)", () => {
+    const result = FabExtractKnowledgeInputSchema.safeParse({
+      source_sessions: ["sess-onboard-omit"],
+      recent_paths: [],
+      user_messages_summary: "x",
+      type: "decisions",
+      slug: "no-onboard",
+      ...requiredExtras,
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.onboard_slot).toBeUndefined();
+    }
   });
 });
 

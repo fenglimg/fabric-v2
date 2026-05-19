@@ -540,94 +540,9 @@ describe("doctor command", () => {
     });
   });
 
-  // rc.15 TASK-003: --rescan flag plumbing. Verifies runInitScan is called
-  // BEFORE runDoctorReport (single-pass: rescan → mutations → report) and
-  // that omitting --rescan skips runInitScan entirely.
-  describe("--rescan flag", () => {
-    it("--rescan invokes runInitScan BEFORE runDoctorReport with source 'doctor-rescan'", async () => {
-      const callOrder: string[] = [];
-      const rescanSpy = vi.fn(async () => {
-        callOrder.push("rescan");
-        return {
-          written_stable_ids: [],
-          skipped_stable_ids: [],
-          total_entries: 0,
-          duration_ms: 0,
-        };
-      });
-      const reportSpy = vi.fn(async () => {
-        callOrder.push("report");
-        return createReport("ok");
-      });
-
-      vi.doMock("@fenglimg/fabric-server", () => ({
-        checkLockOrThrow: vi.fn(),
-        runDoctorReport: reportSpy,
-        runDoctorFix: vi.fn(),
-        runDoctorApplyLint: vi.fn(),
-        appendEventLedgerEvent: vi.fn(),
-      }));
-      vi.doMock("../src/commands/scan.ts", () => ({
-        runInitScan: rescanSpy,
-      }));
-
-      const { doctorCommand } = await import("../src/commands/doctor.ts");
-      const stdout = captureStdout();
-      try {
-        await doctorCommand.run?.({
-          args: {
-            target: "/tmp/fabric-target",
-            fix: false,
-            json: false,
-            strict: false,
-            rescan: true,
-          },
-        } as never);
-      } finally {
-        stdout.restore();
-      }
-
-      expect(rescanSpy).toHaveBeenCalledTimes(1);
-      expect(rescanSpy).toHaveBeenCalledWith("/tmp/fabric-target", { source: "doctor-rescan" });
-      expect(reportSpy).toHaveBeenCalledTimes(1);
-      expect(callOrder).toEqual(["rescan", "report"]);
-    });
-
-    it("default invocation (no --rescan) does NOT call runInitScan", async () => {
-      const rescanSpy = vi.fn();
-      const reportSpy = vi.fn().mockResolvedValue(createReport("ok"));
-
-      vi.doMock("@fenglimg/fabric-server", () => ({
-        checkLockOrThrow: vi.fn(),
-        runDoctorReport: reportSpy,
-        runDoctorFix: vi.fn(),
-        runDoctorApplyLint: vi.fn(),
-        appendEventLedgerEvent: vi.fn(),
-      }));
-      vi.doMock("../src/commands/scan.ts", () => ({
-        runInitScan: rescanSpy,
-      }));
-
-      const { doctorCommand } = await import("../src/commands/doctor.ts");
-      const stdout = captureStdout();
-      try {
-        await doctorCommand.run?.({
-          args: {
-            target: "/tmp/fabric-target",
-            fix: false,
-            json: false,
-            strict: false,
-            rescan: false,
-          },
-        } as never);
-      } finally {
-        stdout.restore();
-      }
-
-      expect(rescanSpy).not.toHaveBeenCalled();
-      expect(reportSpy).toHaveBeenCalledTimes(1);
-    });
-  });
+  // rc.23 TASK-012 (F8a): the legacy --rescan flag and its runInitScan dispatch
+  // were removed clean-slate. The describe block previously covering --rescan
+  // call-order assertions has been deleted along with the scan.ts module.
 });
 
 function captureStdout(): { lines: string[]; restore: () => void } {
