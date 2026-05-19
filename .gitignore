@@ -14,3 +14,9 @@ coverage/
 # MCP client configs contain absolute local paths — per-machine, not for repo
 .mcp.json
 .cursor/mcp.json
+
+# maestro CLI session debris — empty spec stubs auto-created by `maestro spec
+# load` (E1.5 of execute workflow), plus per-invocation analytics. No real
+# content, regenerated on each session.
+.workflow/specs/
+.workflow/spec-analytics.jsonl

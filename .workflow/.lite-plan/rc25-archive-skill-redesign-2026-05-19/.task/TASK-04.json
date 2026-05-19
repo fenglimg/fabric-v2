@@ -1,0 +1,58 @@
+{
+  "id": "TASK-04",
+  "title": "fabric-archive SKILL.md — Add Phase -0.5 Range Resolution (time-window + topic-keyword)",
+  "scope": "packages/cli/templates/skills/fabric-archive/SKILL.md",
+  "action": "Update",
+  "description": "Insert a new Phase -0.5 BEFORE Phase 0 that parses the skill invocation prompt for explicit range hints (time window OR topic keyword OR session_id reference) and resolves them to a concrete session_id[] set. This is the foundation of the E4 (user-language range selection) entry point. Parsing rules: zh-CN time words (`今日`/`上周`/`过去 N 天`/`自上次归档`), en time words (`today`/`last week`/`past N days`/`since last archive`), topic keywords matched against session-digest user_messages content. On parse miss → AskUserQuestion fallback. Falls through to Phase 0 unchanged if no range hint detected.",
+  "files": [
+    {
+      "path": "packages/cli/templates/skills/fabric-archive/SKILL.md",
+      "action": "modify",
+      "target": "insert new H3 section between '## 执行流程 (5 Phase / 1 User Review Round)' header and existing '### Phase 0.6 — Config Load'",
+      "change": "Add complete Phase -0.5 section with: (1) invocation context detection (prompt natural-language analysis); (2) time-window parsing table (zh-CN + en patterns); (3) topic-keyword extraction (free-form word matching against session digests); (4) session_id resolution algorithm (filter events.jsonl by time-window AND/OR digest keyword match); (5) fallback AskUserQuestion shape per UX i18n Policy class 5 with options=['today','last-week','since-last-archive','custom']; (6) carry-forward contract — Phase -0.5 produces session_id[] passed to Phase 0.0 as input filter; absent range hint → all-distinct-session behavior (current default)."
+    }
+  ],
+  "implementation": [
+    "Read current SKILL.md L33-L48 (Phase 0.6 Config Load) to confirm insertion point.",
+    "Write Phase -0.5 section with these subsections:\n  - Step 1: Invocation context inspection (read user prompt text + hook-context-marker if E1)\n  - Step 2: Time-window parsing (table of zh/en patterns → ts_start/ts_end)\n  - Step 3: Topic-keyword extraction (split prompt into 2-5 word tokens, filter common stop-words, retain content words)\n  - Step 4: session_id resolution algorithm:\n    a. Read events.jsonl tail (last 500 events)\n    b. For each distinct session_id: gather its [ts_min, ts_max] + digest content\n    c. Filter by time-window: keep session_id if [ts_min, ts_max] intersects parsed window\n    d. Filter by topic-keyword: keep session_id if digest content matches ≥1 keyword (case-insensitive substring)\n    e. AND semantics: session must pass BOTH filters if both present; OR semantics within each filter category\n  - Step 5: Fallback flow when no range hints AND user_invocation_type ∈ {E2, E4} (not E1/E3/E5):\n    a. AskUserQuestion with options ['today','last-week','since-last-archive','custom']\n    b. 'custom' → loops back into Phase -0.5 with user-typed sub-prompt\n  - Step 6: Pass session_id[] (or 'all' sentinel when no range) to Phase 0.0",
+    "Add UX i18n Policy class 5 example for the AskUserQuestion (zh-CN header '归档范围' + en header 'Archive range', options stays English).",
+    "Add 3 worked examples: '今日复盘' (time-only), 'rc.20 的归档下' (keyword-only), '上周 rc.20' (combined).",
+    "Update Phase numbering: existing Phase 0.6 / 0.0 / 0.4 / 0 / 0.5 retain their numbers; new -0.5 prefixes the chain."
+  ],
+  "reference": {
+    "pattern": "Phase 0.6 Config Load (existing, L33-L48) — same H3 + table + bullet structure",
+    "files": ["packages/cli/templates/skills/fabric-archive/SKILL.md:33-122", "packages/cli/templates/skills/fabric-archive/SKILL.md:299-310 (Phase 0)"],
+    "examples": "Phase 0.0 Cross-Session Digest collection (L124-L161) is the structural precedent for cross-session reasoning within the skill."
+  },
+  "rationale": {
+    "chosen_approach": "Pure SKILL.md prose change. AI (Claude/Codex) interprets the Phase -0.5 instructions at runtime — no parser code needed since LLM is the parser. Time-window patterns + keyword extraction are LLM-native tasks.",
+    "alternatives_considered": ["CLI flag (--since=7d) — rejected per cli-design principle 'can interact, don't make a flag'", "Server-side parser endpoint — rejected: AI in skill context has full LLM capability, server-side parser duplicates work", "Skip Phase -0.5, force user to always rely on Phase 0.0 defaults — rejected: E4 entry point would have no implementation"],
+    "decision_factors": ["LLM-native parsing is more flexible than regex", "AskUserQuestion fallback is acceptable since E2/E4 are user-active entries", "Phase -0.5 is additive — Phase 0.0 onwards unaffected when no range hint"],
+    "tradeoffs": "AI must correctly interpret natural-language time references; mitigation: AskUserQuestion fallback when parse confidence is low."
+  },
+  "test": {
+    "manual_checks": ["Dogfood: invoke '/fabric-archive 上周的归档下' in a fresh session, verify Phase -0.5 filters session_ids correctly", "Dogfood: invoke '/fabric-archive' without range, verify falls through to current Phase 0.0 behavior"],
+    "success_metrics": ["SKILL.md adds new '### Phase -0.5 — Range Resolution' H3 section", "All 3 worked examples present", "AskUserQuestion fallback example renders correctly per UX i18n Policy class 5"],
+    "unit": [],
+    "integration": ["Manual dogfood with 3 prompt patterns (time-only / keyword-only / combined / no-range)"]
+  },
+  "convergence": {
+    "criteria": [
+      "SKILL.md contains exact string '### Phase -0.5 — Range Resolution'",
+      "SKILL.md contains zh-CN time pattern table with at least 4 entries (今日 / 上周 / 过去 N 天 / 自上次归档)",
+      "SKILL.md contains en time pattern table with at least 4 entries (today / last week / past N days / since last archive)",
+      "SKILL.md contains 3 worked examples (time-only, keyword-only, combined)",
+      "SKILL.md contains AskUserQuestion fallback example with options=['today','last-week','since-last-archive','custom']",
+      "Commit msg: 'feat(rc25): fabric-archive Phase -0.5 Range Resolution (TASK-04)'"
+    ]
+  },
+  "read_first": [
+    "packages/cli/templates/skills/fabric-archive/SKILL.md",
+    ".workflow/.lite-plan/rc25-archive-skill-redesign-2026-05-19/planning-context.md"
+  ],
+  "depends_on": ["TASK-02"],
+  "estimated_minutes": 60,
+  "cli_execution_id": "rc25-archive-skill-redesign-2026-05-19-TASK-04",
+  "cli_execution": { "strategy": "new" },
+  "status": "pending"
+}

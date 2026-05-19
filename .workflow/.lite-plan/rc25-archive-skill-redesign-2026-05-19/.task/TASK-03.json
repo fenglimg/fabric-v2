@@ -1,0 +1,69 @@
+{
+  "id": "TASK-03",
+  "title": "archive-hint.cjs 文案改造 — 跨会话计数 + 项目级欠债 wording",
+  "scope": "packages/cli/templates/hooks/archive-hint.cjs",
+  "action": "Update",
+  "description": "Replace the existing single-line archive trigger reason with a multi-line message that explicitly communicates: (1) this is cross-session accumulated debt, not current-session activity; (2) the user MAY ignore if current session has no产出; (3) 12h cooldown applies. Decode session_id from events.jsonl events when present; degrade gracefully to '跨多个会话' wording when most plan_context events lack session_id. Add bilingual support per existing fabric_language config. Also fix Q3.8 gap: when watermark not found (rotation cut off knowledge_proposed), use the first event ts as virtual watermark instead of treating hours-elapsed as null forever.",
+  "files": [
+    {
+      "path": "packages/cli/templates/hooks/archive-hint.cjs",
+      "action": "modify",
+      "target": "decide() function (L148-L189) reason field construction (around L185-L188)",
+      "change": "(1) Replace single-line reason with bilingual two-line copy. zh-CN: `跨 ${N} 个会话累计 ${plan_context_count} 次 plan_context · 距上次归档 ${hoursDisplay} — 这是项目级长期欠债, 不一定来自本会话。\\n若本会话有产出, 可调用 fabric-archive; 否则可忽略, 12h 后再提醒。`. en: parallel wording. (2) When session_id field missing on most events (>50%), substitute '跨多个会话累计' for '跨 N 个会话累计'. (3) When lastProposedTs is null (rotation cut watermark), use events[0].ts as virtual watermark and append '(watermark 已被 rotation 清理)' suffix. (4) Read fabric_language from .fabric/fabric-config.json (consistent with existing CONFIG_FILE pattern at L26) to choose zh-CN vs en variant; default en when missing."
+    },
+    {
+      "path": "packages/cli/__tests__/archive-hint.test.ts",
+      "action": "create",
+      "target": "new test file (or extend existing archive-hint test if present)",
+      "change": "Add test cases: (1) events with session_id present → reason contains '跨 N 个会话' with correct count; (2) events without session_id → reason contains '跨多个会话累计'; (3) lastProposedTs=null + rotation scenario → reason contains 'watermark 已被 rotation 清理'; (4) en variant when fabric_language='en'; (5) zh-CN variant when fabric_language='zh-CN'; (6) existing cooldown behavior unchanged (regression check)."
+    }
+  ],
+  "implementation": [
+    "Read archive-hint.cjs in full to ensure understanding of decide() + readLedger() shape.",
+    "Add helper function countDistinctSessions(events, lastProposedTs) returning {count, coverage_ratio} where coverage_ratio = events_with_session_id / total_events.",
+    "Add helper readFabricLanguage(projectRoot) reading .fabric/fabric-config.json.fabric_language (default 'en').",
+    "Update decide() reason construction: branch on language, conditionally use distinct-session count vs '多个' phrase based on coverage_ratio >= 0.5.",
+    "Add fallback for null lastProposedTs: use events[0]?.ts when count-based trigger fires.",
+    "Snapshot the new wording in tests via the 6 cases above.",
+    "Manual smoke test: run with sample events.jsonl fixtures, verify stdout JSON shape unchanged (still {decision: 'block', reason: '...', signal: 'archive'})."
+  ],
+  "reference": {
+    "pattern": "Hook fail-silent + JSON stdout pattern (rc.2 KT-DEC-0009 single-cjs-hook); fabric_language detection per .fabric/fabric-config.json (existing precedent)",
+    "files": ["packages/cli/templates/hooks/archive-hint.cjs", "packages/cli/templates/hooks/lib/banner-i18n.cjs"],
+    "examples": "banner-i18n.cjs already implements zh-CN/en branching in cjs hook context — copy structure."
+  },
+  "rationale": {
+    "chosen_approach": "Pure文案 + helper extraction (no schema change, no trigger logic change). Bilingual via existing fabric_language detection. Graceful degrade when session_id missing maintains backward compat with pre-TASK-02 events.",
+    "alternatives_considered": ["Full C-scheme double-AND session_ready trigger (rejected: complexity, deferred per Q2)", "Drop session count entirely (rejected: weakens user understanding)", "Hard-fail when session_id missing (rejected: violates fail-silent)"],
+    "decision_factors": ["Minimal change addresses cognitive错位 root cause", "Graceful degrade required for transitional period before TASK-02 fully effects AI behavior", "fabric_language i18n is existing infrastructure"],
+    "tradeoffs": "Hint will still fire on new sessions with no current activity (S1 痛点 not structurally fixed); but user reads the new wording and understands '这是项目级债务, 可忽略', reducing perceived noise."
+  },
+  "test": {
+    "manual_checks": ["Run archive-hint.cjs with hand-crafted events.jsonl having mix of session_id present/missing", "Verify zh-CN output renders correctly in actual Claude Code Stop hook"],
+    "success_metrics": ["6 test cases all pass", "Existing cooldown tests still pass (regression check)", "stdout JSON shape unchanged"],
+    "unit": ["archive-hint.test cross-session count via session_id", "archive-hint.test degrade to '多个' on missing session_id", "archive-hint.test rotation watermark fallback", "archive-hint.test en variant", "archive-hint.test zh-CN variant", "archive-hint.test cooldown regression"],
+    "integration": []
+  },
+  "convergence": {
+    "criteria": [
+      "archive-hint.cjs contains string '项目级长期欠债'",
+      "archive-hint.cjs contains string 'project-level' OR 'long-term debt'",
+      "archive-hint.cjs reads .fabric/fabric-config.json for fabric_language",
+      "archive-hint.cjs has fallback path when lastProposedTs is null using events[0].ts",
+      "archive-hint.test.ts contains ≥6 test cases (grep test names)",
+      "pnpm --filter @fenglimg/fabric-cli test archive-hint exits 0",
+      "Commit msg: 'feat(rc25): archive-hint copy + cross-session count + watermark fallback (TASK-03)'"
+    ]
+  },
+  "read_first": [
+    "packages/cli/templates/hooks/archive-hint.cjs",
+    "packages/cli/templates/hooks/lib/banner-i18n.cjs",
+    "packages/shared/src/schemas/fabric-config.ts",
+    ".workflow/.lite-plan/rc25-archive-skill-redesign-2026-05-19/planning-context.md"
+  ],
+  "depends_on": [],
+  "estimated_minutes": 50,
+  "cli_execution_id": "rc25-archive-skill-redesign-2026-05-19-TASK-03",
+  "cli_execution": { "strategy": "new" },
+  "status": "pending"
+}

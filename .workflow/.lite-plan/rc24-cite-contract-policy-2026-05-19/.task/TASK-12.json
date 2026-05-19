@@ -1,0 +1,96 @@
+{
+  "id": "TASK-12",
+  "title": "CHANGELOG rc.24 entry + version bump to v2.0.0-rc.24",
+  "scope": "CHANGELOG.md + package.json (root + workspaces) + version-sync verification",
+  "action": "Update",
+  "description": "Cut v2.0.0-rc.24 release: bump version across root + all workspace package.json files (root + cli + server + shared), update CHANGELOG.md with rc.24 entry covering all 12 tasks + breaking-change migration note (fab uninstall && fab install required), verify version-sync (fab -v matches package.json), run full gates (typecheck + lint + test). Follow release-rc skill from memory (it was created to prevent rc.7/rc.12/rc.13 fix-forward cascades and rc.18 desync bug).",
+  "files": [
+    {
+      "path": "package.json",
+      "action": "modify",
+      "target": "version field",
+      "change": "Bump version: '2.0.0-rc.23' → '2.0.0-rc.24'."
+    },
+    {
+      "path": "packages/cli/package.json",
+      "action": "modify",
+      "target": "version field",
+      "change": "Bump version: '2.0.0-rc.23' → '2.0.0-rc.24'."
+    },
+    {
+      "path": "packages/server/package.json",
+      "action": "modify",
+      "target": "version field",
+      "change": "Bump version: '2.0.0-rc.23' → '2.0.0-rc.24'."
+    },
+    {
+      "path": "packages/shared/package.json",
+      "action": "modify",
+      "target": "version field",
+      "change": "Bump version: '2.0.0-rc.23' → '2.0.0-rc.24'."
+    },
+    {
+      "path": "CHANGELOG.md",
+      "action": "modify",
+      "target": "top of file (newest entries first)",
+      "change": "Prepend new entry:\n\n## v2.0.0-rc.24 — 2026-XX-XX\n\n### Highlights\n\nCite contract policy — `[recalled]` cites on decisions/pitfalls类 KB now require operator-based commitment. Doctor compares commitments against session edit diff to detect actual rule violations (not just hallucinated ids).\n\n### Features\n\n- **Cite contract syntax (5 operators)**: `→ edit:<glob> / !edit:<glob> / require:<symbol> / forbid:<symbol> / skip:<reason>` appended to cite line (TASK-02)\n- **Schema bump**: `cite_commitments` parallel array on assistant_turn_observed + new `cite_contract_policy_activated` marker event (TASK-01)\n- **Shared parser lib**: cite-line-parser module consumed by cc/codex/cursor hooks via inline-bundle (TASK-03, TASK-04)\n- **Stop hook soft reminder**: warns when decisions/pitfalls cite missing contract (non-blocking) (TASK-05)\n- **Doctor contract metrics**: per-(layer,type) cross-tab, hard_violated detection, cite_id_unresolved bucket, skip reason histogram (TASK-06, TASK-07, TASK-08, TASK-09)\n- **`--layer` filter**: fab doctor --cite-coverage --layer=team|personal|all (TASK-10)\n- **Personal layer parity**: BOOTSTRAP mentions KP-* entries, violations split team/personal in report\n\n### Breaking (require fab install rerun)\n\n- BOOTSTRAP byte content updated (cite policy section extended with contract syntax)\n- Hook templates updated (cite-line parser inlined; emits cite_commitments structured field)\n\n### Migration\n\nAfter upgrade, rerun `fab uninstall && fab install` to sync bootstrap + hooks across all 3 clients (Claude Code / Codex CLI / Cursor). Until reinstall completes, `fab doctor --cite-coverage` shows `contract_check: skipped (bootstrap drift — run fab install)` — this is expected (B5-α drift gate).\n\n### Deferred to rc.25+\n\n- LLM-judge path for guidelines/processes類 KB (semantic rules)\n- User-level cite-policy override (~/.fabric/AGENTS.md)\n- Operator vocabulary expansion (sequencing/conditional) — data-driven from skip:<reason> ratio\n\n### Tasks\n\n12 tasks across 4 waves: schema+bootstrap → hook parsers → doctor service → CLI+release.\n"
+    }
+  ],
+  "implementation": [
+    "Bump version across all 4 package.json files (use rg/Edit to update each).",
+    "Verify version-sync: run `fab -v` (after rebuild) — must report 2.0.0-rc.24.",
+    "Run typecheck: `pnpm typecheck` — expect zero errors.",
+    "Run lint: `pnpm lint` — expect zero errors.",
+    "Run full test: `pnpm test` — expect zero failures.",
+    "Prepend CHANGELOG entry per files[].change directive (fill in actual release date YYYY-MM-DD).",
+    "Stage all changes + commit with conventional title: `chore(rc24): bump to v2.0.0-rc.24 — cite contract policy`.",
+    "Tag: `git tag v2.0.0-rc.24`.",
+    "Per release-rc skill: do not push until user confirms; this task ends at local tag creation."
+  ],
+  "reference": {
+    "pattern": "RC version bump (release-rc skill)",
+    "files": ["CHANGELOG.md", "package.json"],
+    "examples": "rc.22 commit fe4e186 (bump rc.22), rc.23 commit 434319c (bump rc.23) — same shape."
+  },
+  "rationale": {
+    "chosen_approach": "Standard RC bump per memory release-rc skill. Single commit for version+CHANGELOG, separate from feature commits (TASK-01 through TASK-11).",
+    "alternatives_considered": ["Squash all into one mega-commit (rejected: violates per-task commit convention)", "Skip CHANGELOG (rejected: required by release process)"],
+    "decision_factors": ["release-rc skill explicitly created for this", "rc.20 precedent", "User memory explicitly prefers per-task commits"],
+    "tradeoffs": "13-commit chain (12 features + 1 release); acceptable per rc.20."
+  },
+  "test": {
+    "manual_checks": ["fab -v reports 2.0.0-rc.24", "All gates pass (typecheck + lint + test)", "git tag v2.0.0-rc.24 created locally"],
+    "success_metrics": ["Version-sync verified across 4 package.json", "Zero gate failures", "CHANGELOG entry complete with migration section"],
+    "unit": [],
+    "integration": ["fab -v matches root package.json version", "version-sync test (if exists) passes"]
+  },
+  "convergence": {
+    "criteria": [
+      "All 4 package.json files contain '2.0.0-rc.24'",
+      "CHANGELOG.md top entry is 'v2.0.0-rc.24'",
+      "CHANGELOG entry contains all 12 TASK references (TASK-01 through TASK-12)",
+      "CHANGELOG entry contains 'Breaking' section with fab install rerun guidance",
+      "CHANGELOG entry contains 'Migration' section explaining bootstrap drift gate",
+      "CHANGELOG entry contains 'Deferred to rc.25+' section",
+      "Local git tag 'v2.0.0-rc.24' exists",
+      "pnpm typecheck exits 0",
+      "pnpm lint exits 0",
+      "pnpm test exits 0",
+      "fab -v reports '2.0.0-rc.24'",
+      "Commit msg: 'chore(rc24): bump to v2.0.0-rc.24 — cite contract policy (TASK-12)'"
+    ]
+  },
+  "read_first": [
+    "CHANGELOG.md",
+    "package.json",
+    "packages/cli/package.json",
+    "packages/server/package.json",
+    "packages/shared/package.json",
+    ".workflow/.lite-plan/rc-23-combined-2026-05-18/plan.json"
+  ],
+  "depends_on": ["TASK-01", "TASK-02", "TASK-03", "TASK-04", "TASK-05", "TASK-06", "TASK-07", "TASK-08", "TASK-09", "TASK-10", "TASK-11"],
+  "estimated_minutes": 25,
+  "cli_execution_id": "rc24-cite-contract-policy-2026-05-19-TASK-12",
+  "cli_execution": { "strategy": "new" },
+  "status": "completed"
+}

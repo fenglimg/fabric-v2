@@ -1,0 +1,59 @@
+{
+  "id": "TASK-06",
+  "title": "fabric-archive SKILL.md — Phase 0.4 onboard trigger gate (E2-only execution)",
+  "scope": "packages/cli/templates/skills/fabric-archive/SKILL.md (Phase 0.4)",
+  "action": "Update",
+  "description": "Wrap the existing Phase 0.4 onboard coverage flow with an entry-context gate. Onboard slot prompting only runs when the skill was invoked via E2 (user explicit `/fabric-archive`); E1 (hook-passive), E3 (AI self-trigger), E4 (user range回溯), E5 (cron-daily) skip Phase 0.4 entirely. Resolves the UX错位 where hook/AI/cron contexts would otherwise be interrupted by an interactive onboard wizard.",
+  "files": [
+    {
+      "path": "packages/cli/templates/skills/fabric-archive/SKILL.md",
+      "action": "modify",
+      "target": "Phase 0.4 section (L163-L297)",
+      "change": "(1) Insert a new H4 'Phase 0.4 Trigger Gate' at the top of the Phase 0.4 section (between '### Phase 0.4 — First-run Onboard Phase (rc.23 F8c)' header and 'After F8a removed...' paragraph). (2) Gate logic: Read invocation context (already determined in Phase -0.5 from TASK-04). If context.entry_point ∈ {E2_explicit_user_invoke, E4_user_range_rollback (E2 sub-mode)} → proceed to existing Phase 0.4 flow. Otherwise (E1_hook, E3_ai_self_trigger, E5_cron) → SKIP Phase 0.4 entirely and go directly to Phase 0. (3) Document the entry-context detection rules:\n  - E1: stdout JSON {decision:'block'} from archive-hint.cjs detected at skill entry\n  - E2: user prompt is a direct invocation like 'fabric archive' / '/fabric-archive' / 'archive what we just did'\n  - E3: AI内部 'self-archive policy triggered by signal X' marker\n  - E4: prompt contains range hint (parsed in Phase -0.5) AND user is invoking\n  - E5: prompt contains '今日复盘' / 'daily recap' literal AND no human present (running under /loop or cron context)\n(4) Add gate-skip rationale paragraph: 'Onboard slot collection is a one-time project-tone capture flow that requires user dialogue. Non-user-active entries (hook/AI/cron) interrupt the user mid-work or run unattended where dialogue is impossible, so they MUST skip Phase 0.4.'"
+    }
+  ],
+  "implementation": [
+    "Read current Phase 0.4 (L163-L297) in full.",
+    "Insert the new 'Phase 0.4 Trigger Gate' subsection at the top.",
+    "Write the entry-context detection table (5 entries with detection rules each).",
+    "Add the rationale paragraph explaining why non-user-active entries must skip.",
+    "Cross-reference TASK-04 Phase -0.5 for entry-context determination.",
+    "Verify the rest of Phase 0.4 (Step 1 Check coverage / Step 2 Decide / Step 3 Prompt / Step 4 Tour-and-propose) is unchanged.",
+    "Add a worked example: E5 cron invokes /fabric-archive 今日复盘 → entry_point=E5 → Phase 0.4 skip → proceed to Phase 0."
+  ],
+  "reference": {
+    "pattern": "Existing Phase 0.5 viability gate (L312-L351) — gate-PASS vs gate-FAIL pattern with explicit decision logic",
+    "files": ["packages/cli/templates/skills/fabric-archive/SKILL.md:163-297", "packages/cli/templates/skills/fabric-archive/SKILL.md:312-397 (Phase 0.5)"],
+    "examples": "Phase 0.5 gate logic is the structural model for Phase 0.4 trigger gate."
+  },
+  "rationale": {
+    "chosen_approach": "Pure SKILL.md prose change. AI reads the gate logic at skill entry and decides skip-vs-execute. Entry-context detection is LLM-native (reading prompt + presence/absence of hook JSON marker).",
+    "alternatives_considered": ["--no-onboard internal flag passed by hook (rejected: violates 'no flags' principle)", "Phase 0.4 fully auto mode that doesn't prompt (rejected: defeats onboard's purpose of capturing user-validated project tone)", "Skip Phase 0.4 for ALL invocations (rejected: E2 first-time user genuinely needs onboard prompt)"],
+    "decision_factors": ["E2 is the only natural context for interactive prompting", "Hook/cron/AI contexts have no human available", "Pure SKILL.md keeps the boundary in policy not code"],
+    "tradeoffs": "First-time users who only ever trigger via hook (never explicit invoke) won't see the onboard prompt; the 5 onboard slots remain empty. Mitigation: documentation in CHANGELOG + SKILL.md noting 'explicit fab archive at least once to populate onboard slots'."
+  },
+  "test": {
+    "manual_checks": ["Dogfood: trigger fabric-archive via hook in a clean workspace (no onboard yet) → verify Phase 0.4 skipped, no AskUserQuestion fired", "Dogfood: explicit /fabric-archive in same workspace → verify Phase 0.4 prompts onboard slots"],
+    "success_metrics": ["SKILL.md Phase 0.4 has new H4 'Phase 0.4 Trigger Gate'", "Entry-context table has 5 entries", "Rationale paragraph present"],
+    "unit": [],
+    "integration": ["Manual dogfood validates 2-context behavior (hook-skip vs explicit-run)"]
+  },
+  "convergence": {
+    "criteria": [
+      "SKILL.md Phase 0.4 contains exact string 'Phase 0.4 Trigger Gate'",
+      "SKILL.md contains entry-context table with E1, E2, E3, E4, E5 detection rules",
+      "SKILL.md contains exact string 'Non-user-active entries' OR 'non-user-active entries'",
+      "SKILL.md contains the rationale paragraph about interrupting user mid-work",
+      "Commit msg: 'feat(rc25): Phase 0.4 onboard trigger gate (E2-only) (TASK-06)'"
+    ]
+  },
+  "read_first": [
+    "packages/cli/templates/skills/fabric-archive/SKILL.md",
+    ".workflow/.lite-plan/rc25-archive-skill-redesign-2026-05-19/planning-context.md"
+  ],
+  "depends_on": [],
+  "estimated_minutes": 35,
+  "cli_execution_id": "rc25-archive-skill-redesign-2026-05-19-TASK-06",
+  "cli_execution": { "strategy": "new" },
+  "status": "pending"
+}

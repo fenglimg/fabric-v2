@@ -1,0 +1,59 @@
+{
+  "id": "TASK-08",
+  "title": "fabric-archive SKILL.md — E5 周期触发 appendix (/loop + OS cron samples)",
+  "scope": "packages/cli/templates/skills/fabric-archive/SKILL.md (new appendix section)",
+  "action": "Update",
+  "description": "Append a new H2 section at the end of SKILL.md documenting E5 (周期触发) usage. This is zero-code — fab CLI doesn't ship a cron helper. Instead, the SKILL.md gives explicit /loop sample (Claude Code native, primary path) and OS cron sample (cross-platform alternative). User chooses based on their environment. The section also defines '今日复盘' as a magic invocation phrase that Phase -0.5 recognizes as 'time_window = today'.",
+  "files": [
+    {
+      "path": "packages/cli/templates/skills/fabric-archive/SKILL.md",
+      "action": "modify",
+      "target": "end of file, after existing Worked Examples section",
+      "change": "Add new H2 section '## E5 周期触发 (Scheduled Daily Recap)' with subsections:\n  (1) Overview: '今日复盘 = E5 entry point. Default scope = today. Falls back to historical scan if today yields no candidates (silent-skip per Phase 2.5).'\n  (2) /loop sample (recommended for Claude Code):\n    ```\n    /loop /fabric-archive 今日复盘 --cron \"0 23 * * *\"\n    ```\n  (3) OS cron sample (macOS launchd / Linux crontab):\n    ```\n    # crontab -e\n    0 23 * * * cd /path/to/project && claude code -p \"/fabric-archive 今日复盘\" 2>&1 >> /var/log/fabric-daily-recap.log\n    ```\n  (4) E5 prompt parse contract: when user/cron invokes with '今日复盘' / 'daily recap' literal:\n    - Phase -0.5 sets time_window = today (00:00 local timezone to current ts)\n    - Phase 0.4 skipped (entry_point=E5)\n    - Phase 2.5 always writes session_archive_attempted event (silent-skip path if no candidates)\n  (5) Trade-off table (/loop vs OS cron):\n    | 维度 | /loop | OS cron |\n    |---|---|---|\n    | 鉴权 | 复用 Claude session | 独立 token / login |\n    | 跨平台 | Claude Code 全平台一致 | macOS launchd / Linux cron 不同 |\n    | Token 成本 | 累积 (长 session) | 每 tick fresh, 无累积 |\n    | 调试 | Claude UI 可见 | 日志文件 |\n  (6) Failure modes documentation: '/loop session crash → 归档暂停, 用户需重启 /loop; OS cron 自带恢复, 但需独立 claude code CLI 安装与鉴权'."
+    }
+  ],
+  "implementation": [
+    "Read current SKILL.md end-of-file to confirm appendix insertion point.",
+    "Write the H2 section with all 6 subsections per files[].change directive.",
+    "Verify the /loop sample syntax matches Claude Code /loop spec (cron flag string).",
+    "Verify the OS cron sample uses portable shell syntax (no bash-isms).",
+    "Add a 'NOT in scope' bullet: 'fab CLI does NOT provide a cron helper command — keeps fab focused on archive/install, not scheduling infrastructure.'"
+  ],
+  "reference": {
+    "pattern": "Existing 'Worked Examples' H2 section at end of SKILL.md — same level/style/structure",
+    "files": ["packages/cli/templates/skills/fabric-archive/SKILL.md:727-end"],
+    "examples": "rc.23 F8c S5 onboard documentation pattern — table + code blocks + decision matrix"
+  },
+  "rationale": {
+    "chosen_approach": "Zero fab code change — documentation only. User opts into E5 via their existing OS scheduler. /loop primary path leverages Claude Code's native cron-like feature; OS cron is fallback for non-Claude-Code environments.",
+    "alternatives_considered": ["fab CLI 'fab schedule daily 23:00' subcommand (rejected: violates cli-design 'don't make a scheduler', cross-platform OS integration is heavy)", "Server daemon for scheduling (rejected: fab is a CLI tool, daemon is out of scope)", "Skip E5 documentation (rejected: user explicitly requested E5 support in Q3 design)"],
+    "decision_factors": ["fab端零代码 means rc.25 ships without new commands or test surface for scheduling", "/loop 是 Claude Code 原生功能, samples are stable across Claude versions", "User自主选 /loop vs cron based on environment"],
+    "tradeoffs": "Users must understand OS cron syntax or /loop semantics to use E5; mitigation: 2 ready-to-copy samples in SKILL.md."
+  },
+  "test": {
+    "manual_checks": ["Read appendix in actual Claude Code UI to verify markdown renders", "Manually copy /loop sample into Claude Code and verify it accepts the cron flag"],
+    "success_metrics": ["SKILL.md has new H2 '## E5 周期触发'", "Both /loop and OS cron samples present", "Trade-off table renders correctly"],
+    "unit": [],
+    "integration": []
+  },
+  "convergence": {
+    "criteria": [
+      "SKILL.md contains exact string '## E5 周期触发'",
+      "SKILL.md contains string '/loop /fabric-archive 今日复盘'",
+      "SKILL.md contains string '0 23 * * *' (cron pattern sample)",
+      "SKILL.md contains the trade-off table with both /loop and OS cron columns",
+      "SKILL.md contains '今日复盘' as a recognized magic phrase",
+      "SKILL.md mentions 'fab CLI does NOT provide a cron helper'",
+      "Commit msg: 'docs(rc25): fabric-archive E5 周期触发 appendix (TASK-08)'"
+    ]
+  },
+  "read_first": [
+    "packages/cli/templates/skills/fabric-archive/SKILL.md",
+    ".workflow/.lite-plan/rc25-archive-skill-redesign-2026-05-19/planning-context.md"
+  ],
+  "depends_on": ["TASK-04"],
+  "estimated_minutes": 35,
+  "cli_execution_id": "rc25-archive-skill-redesign-2026-05-19-TASK-08",
+  "cli_execution": { "strategy": "new" },
+  "status": "pending"
+}

@@ -1,0 +1,62 @@
+{
+  "id": "TASK-07",
+  "title": "fabric-archive SKILL.md — silent-skip path + write session_archive_attempted event",
+  "scope": "packages/cli/templates/skills/fabric-archive/SKILL.md (Phase 0.5 + new post-Phase 2 section)",
+  "action": "Update",
+  "description": "Two related changes: (1) Phase 0.5 viability gate FAIL — when entry_point ∈ {E1, E3, E5} (non-user-active), suppress the verbose gate-FAIL message and exit silently (only write the session_archive_attempted event). Existing behavior preserved for E2/E4 — user-active invocations still see the explicit message so they understand why nothing was archived. (2) NEW post-Phase 2 section: after every skill invocation (regardless of outcome), append a session_archive_attempted event to events.jsonl with the appropriate outcome enum value. This is the persistence half of the Q3.4 outcome state machine.",
+  "files": [
+    {
+      "path": "packages/cli/templates/skills/fabric-archive/SKILL.md",
+      "action": "modify",
+      "target": "Phase 0.5 'On gate FAIL' subsection (L353-L397) + new post-Phase 2 section",
+      "change": "(1) Replace 'On gate FAIL' section content with branching logic:\n  ```\n  IF entry_point ∈ {E1_hook, E3_ai_self_trigger, E5_cron}:\n    → SILENT-SKIP: do NOT emit gate-FAIL message; do NOT trigger AskUserQuestion\n    → Still write session_archive_attempted event with outcome='skipped_no_signal'\n    → exit skill silently\n  ELSE (E2_explicit, E4_user_range):\n    → existing gate-FAIL message (zh-CN/en variants preserved)\n    → write session_archive_attempted event with outcome='skipped_no_signal'\n    → exit skill\n  ```\n(2) Add new H3 'Phase 2.5 — Persist Archive Attempt' AFTER Phase 2 (Persist via MCP, L606-L696):\n  - Mandatory step at end of every skill run\n  - Append session_archive_attempted event to events.jsonl via Bash echo (line ≤ 4KB constraint already documented at L371-L393)\n  - Outcome enum determination:\n    a. Phase 2 wrote ≥1 pending entry → outcome='proposed', candidates_proposed=N, knowledge_proposed_ids=[idempotency_key_1, ...]\n    b. Phase 0.5 viability gate FAILed → outcome='viability_failed' (if user was prompted but rejected) OR 'skipped_no_signal' (if E1/E3/E5 silent-skip path)\n    c. Phase 1 batch review presented candidates BUT user dismissed all → outcome='user_dismissed'\n    d. Phase 0.0 filter dropped all sessions → outcome='skipped_no_signal'\n  - covered_through_ts = max(events_in_scope[*].ts) at time of skill run\n  - For each session_id in scope, emit ONE session_archive_attempted event (multi-session archive = multi-event emission)\n  - Append failure tolerant (fail-silent, log to stderr): event write is best-effort, must not block skill completion"
+    }
+  ],
+  "implementation": [
+    "Read Phase 0.5 gate-FAIL section (L353-L397) and Phase 2 (L606-L696) to confirm structure.",
+    "Rewrite 'On gate FAIL' subsection with the entry_point branching.",
+    "Add Phase 2.5 — Persist Archive Attempt as a new H3 section after Phase 2.",
+    "Document the outcome enum decision matrix (4-row table mapping skill terminal state to outcome value).",
+    "Document the multi-session emission rule (one event per session_id when archive spans multiple).",
+    "Add the 4KB single-line constraint reminder (referencing existing constraint at L371-L393).",
+    "Add a worked example: E5 cron runs, Phase 0.5 fails on no_signal → silent skip + write 1 attempted event with outcome='skipped_no_signal' for the today session."
+  ],
+  "reference": {
+    "pattern": "Existing event emission via Bash echo (L368-L370 in current Phase 0.5 abort) + Phase 2 fab_extract_knowledge call pattern (L612-L641)",
+    "files": ["packages/cli/templates/skills/fabric-archive/SKILL.md:353-397", "packages/cli/templates/skills/fabric-archive/SKILL.md:606-696"],
+    "examples": "Existing 'knowledge_archive_aborted' event emission (L369) — Phase 2.5 follows same Bash echo pattern but with new event_type."
+  },
+  "rationale": {
+    "chosen_approach": "Pure SKILL.md prose change. Event emission via existing Bash echo pattern. Silent-skip path is a single branch in gate-FAIL logic. Phase 2.5 is the persistence half of the Q3.4 outcome state machine.",
+    "alternatives_considered": ["Server-side fab_extract_knowledge emits attempted event (rejected: fab_extract_knowledge is only called on success path; we need to record FAILURE too)", "Skip silent-skip path, always emit gate-FAIL message (rejected: violates Q3.6 UX requirement that hook/cron contexts shouldn't interrupt with messages)"],
+    "decision_factors": ["E1/E3/E5 are non-user-active → no human to receive a verbose message", "Outcome tracking is mandatory for Q3.4 re-scan filter to work", "Bash echo pattern is already established and 4KB-safe"],
+    "tradeoffs": "Event emission failure is silent (fail-tolerant); if events.jsonl write fails mid-skill, the outcome is lost. Mitigation: rc.22 events.jsonl 4KB atomic write guarantees + .fabric/.cache fallback is documented but NOT implemented in rc.25."
+  },
+  "test": {
+    "manual_checks": ["Dogfood: trigger E5 path → verify silent exit (no terminal noise) + events.jsonl has session_archive_attempted with outcome='skipped_no_signal'", "Dogfood: trigger E2 → all candidates dismissed → events.jsonl has outcome='user_dismissed'"],
+    "success_metrics": ["SKILL.md gate-FAIL section has entry_point branching", "SKILL.md has new H3 'Phase 2.5 — Persist Archive Attempt'", "Outcome decision matrix table present", "Multi-session emission rule documented"],
+    "unit": [],
+    "integration": ["Manual dogfood validates 4 outcome paths writing events correctly"]
+  },
+  "convergence": {
+    "criteria": [
+      "SKILL.md contains exact string 'silent-skip'",
+      "SKILL.md gate-FAIL section contains 'IF entry_point ∈' branching",
+      "SKILL.md contains exact string '### Phase 2.5 — Persist Archive Attempt'",
+      "SKILL.md contains outcome decision matrix with 4 rows (proposed / viability_failed / user_dismissed / skipped_no_signal)",
+      "SKILL.md mentions 'covered_through_ts' in Phase 2.5",
+      "SKILL.md mentions multi-session emission rule",
+      "Commit msg: 'feat(rc25): fabric-archive silent-skip + Phase 2.5 attempt persistence (TASK-07)'"
+    ]
+  },
+  "read_first": [
+    "packages/cli/templates/skills/fabric-archive/SKILL.md",
+    "packages/shared/src/schemas/event-ledger.ts",
+    ".workflow/.lite-plan/rc25-archive-skill-redesign-2026-05-19/planning-context.md"
+  ],
+  "depends_on": ["TASK-01"],
+  "estimated_minutes": 55,
+  "cli_execution_id": "rc25-archive-skill-redesign-2026-05-19-TASK-07",
+  "cli_execution": { "strategy": "new" },
+  "status": "pending"
+}
