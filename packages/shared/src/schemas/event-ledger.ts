@@ -557,6 +557,39 @@ export const knowledgeEnrichedEventSchema = z.object({
   timestamp: z.string().datetime(),
 });
 
+// v2.0.0-rc.25 TASK-01: emitted by the `fabric-archive` skill at the end of
+// every invocation (whether candidates were proposed, viability failed, the
+// user dismissed, or there was nothing to extract). Drives the cross-session
+// digest in Phase 0.0 of fabric-archive — outcome-based filter (skipped on
+// `user_dismissed`), covered_through_ts watermark vs current max event ts for
+// rescan candidacy, and the 12h anti-loop cooldown live on top of these
+// records. Single source of truth: events.jsonl owns session archive state,
+// rc.22 rotation handles row turnover, and `fab doctor --archive-history`
+// (TASK-04) renders the history report directly from this event stream.
+//
+// `outcome`: closed enum covering the four terminal states of the skill's
+//   state machine. `proposed` = at least one candidate written to
+//   `.fabric/knowledge/pending/`. `viability_failed` = Phase 0.5 gate
+//   rejected the run (candidates existed but failed the quality bar).
+//   `user_dismissed` = user explicitly declined to archive (we MUST NOT
+//   auto-rescan after this — respects user decision). `skipped_no_signal` =
+//   no candidates surfaced in the first place (empty session digest).
+// `covered_through_ts`: the latest event `ts` value scanned by this archive
+//   run. Compare against current `max(ts)` to decide rescan eligibility.
+// `candidates_proposed`: count of pending knowledge entries written. Always 0
+//   for outcomes other than `proposed` (defaulted so callers can omit).
+// `knowledge_proposed_ids`: stable_ids of the pending entries this run
+//   produced (parallel to `candidates_proposed`). Default empty for non-
+//   `proposed` outcomes.
+export const sessionArchiveAttemptedEventSchema = z.object({
+  ...eventLedgerEnvelopeSchema,
+  event_type: z.literal("session_archive_attempted"),
+  outcome: z.enum(["proposed", "viability_failed", "user_dismissed", "skipped_no_signal"]),
+  covered_through_ts: z.number().int().nonnegative(),
+  candidates_proposed: z.number().int().nonnegative().default(0),
+  knowledge_proposed_ids: z.array(z.string()).default([]),
+});
+
 export const eventLedgerEventSchema = z.discriminatedUnion("event_type", [
   knowledgeContextPlannedEventSchema,
   knowledgeSelectionEventSchema,
@@ -629,6 +662,11 @@ export const eventLedgerEventSchema = z.discriminatedUnion("event_type", [
   // file when one or more of the four rc.23 description-grade frontmatter
   // fields is back-filled.
   knowledgeEnrichedEventSchema,
+  // v2.0.0-rc.25 TASK-01: session_archive_attempted — emitted by the
+  // fabric-archive skill at the end of every invocation. Drives Phase 0.0
+  // cross-session digest, outcome-based rescan filter (skips user_dismissed),
+  // covered_through_ts watermark, and `fab doctor --archive-history`.
+  sessionArchiveAttemptedEventSchema,
 ]);
 
 export type KnowledgeContextPlannedEvent = z.infer<typeof knowledgeContextPlannedEventSchema>;
@@ -671,6 +709,7 @@ export type KnowledgeMetaAutoHealedEvent = z.infer<typeof knowledgeMetaAutoHeale
 export type EventsRotatedEvent = z.infer<typeof eventsRotatedEventSchema>;
 export type ServeLockClearedEvent = z.infer<typeof serveLockClearedEventSchema>;
 export type KnowledgeEnrichedEvent = z.infer<typeof knowledgeEnrichedEventSchema>;
+export type SessionArchiveAttemptedEvent = z.infer<typeof sessionArchiveAttemptedEventSchema>;
 export type EventLedgerEvent =
   | KnowledgeContextPlannedEvent
   | KnowledgeSelectionEvent
@@ -711,7 +750,8 @@ export type EventLedgerEvent =
   | KnowledgeMetaAutoHealedEvent
   | EventsRotatedEvent
   | ServeLockClearedEvent
-  | KnowledgeEnrichedEvent;
+  | KnowledgeEnrichedEvent
+  | SessionArchiveAttemptedEvent;
 export type EventLedgerEventType = EventLedgerEvent["event_type"];
 type EventLedgerEventInputFor<T extends EventLedgerEvent> = T extends EventLedgerEvent
   ? Omit<T, "kind" | "id" | "ts" | "schema_version" | "correlation_id" | "session_id"> &

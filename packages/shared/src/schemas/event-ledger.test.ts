@@ -476,6 +476,118 @@ describe("eventLedgerEventSchema", () => {
     ).toThrow();
   });
 
+  // v2.0.0-rc.25 TASK-01: session_archive_attempted variant — closed outcome
+  // enum + structured payload. Mirrors rc.20 cite_policy_activated / rc.24
+  // cite_contract_policy_activated pre-registration precedent but with real
+  // payload fields (not a pure marker).
+  it("parses session_archive_attempted with outcome=proposed and non-empty knowledge_proposed_ids", () => {
+    const base = {
+      kind: "fabric-event" as const,
+      id: "event:test",
+      ts: 1_000,
+      schema_version: 1 as const,
+      session_id: "session-1",
+    };
+    const parsed = eventLedgerEventSchema.parse({
+      ...base,
+      event_type: "session_archive_attempted",
+      outcome: "proposed",
+      covered_through_ts: 1_779_000_000,
+      candidates_proposed: 2,
+      knowledge_proposed_ids: ["KT-D-0042", "KT-P-0017"],
+    });
+    expect(parsed).toMatchObject({
+      event_type: "session_archive_attempted",
+      outcome: "proposed",
+      covered_through_ts: 1_779_000_000,
+      candidates_proposed: 2,
+      knowledge_proposed_ids: ["KT-D-0042", "KT-P-0017"],
+      session_id: "session-1",
+    });
+  });
+
+  it("parses session_archive_attempted with outcome=viability_failed (defaults applied)", () => {
+    const base = {
+      kind: "fabric-event" as const,
+      id: "event:test",
+      ts: 1_000,
+      schema_version: 1 as const,
+    };
+    const parsed = eventLedgerEventSchema.parse({
+      ...base,
+      event_type: "session_archive_attempted",
+      outcome: "viability_failed",
+      covered_through_ts: 1_779_000_000,
+    });
+    expect(parsed).toMatchObject({
+      event_type: "session_archive_attempted",
+      outcome: "viability_failed",
+      candidates_proposed: 0,
+      knowledge_proposed_ids: [],
+    });
+  });
+
+  it("parses session_archive_attempted with outcome=user_dismissed (anti-rescan signal)", () => {
+    const base = {
+      kind: "fabric-event" as const,
+      id: "event:test",
+      ts: 1_000,
+      schema_version: 1 as const,
+    };
+    const parsed = eventLedgerEventSchema.parse({
+      ...base,
+      event_type: "session_archive_attempted",
+      outcome: "user_dismissed",
+      covered_through_ts: 1_779_500_000,
+    });
+    expect(parsed).toMatchObject({
+      event_type: "session_archive_attempted",
+      outcome: "user_dismissed",
+      covered_through_ts: 1_779_500_000,
+      candidates_proposed: 0,
+      knowledge_proposed_ids: [],
+    });
+  });
+
+  it("parses session_archive_attempted with outcome=skipped_no_signal", () => {
+    const base = {
+      kind: "fabric-event" as const,
+      id: "event:test",
+      ts: 1_000,
+      schema_version: 1 as const,
+    };
+    const parsed = eventLedgerEventSchema.parse({
+      ...base,
+      event_type: "session_archive_attempted",
+      outcome: "skipped_no_signal",
+      covered_through_ts: 1_779_600_000,
+    });
+    expect(parsed).toMatchObject({
+      event_type: "session_archive_attempted",
+      outcome: "skipped_no_signal",
+      covered_through_ts: 1_779_600_000,
+      candidates_proposed: 0,
+      knowledge_proposed_ids: [],
+    });
+  });
+
+  it("rejects session_archive_attempted with unknown outcome enum value", () => {
+    const base = {
+      kind: "fabric-event" as const,
+      id: "event:test",
+      ts: 1_000,
+      schema_version: 1 as const,
+    };
+    expect(() =>
+      eventLedgerEventSchema.parse({
+        ...base,
+        event_type: "session_archive_attempted",
+        outcome: "unknown_outcome",
+        covered_through_ts: 1_779_000_000,
+      }),
+    ).toThrow();
+  });
+
   it("rejects deleted v1 event types (rule_baseline_accepted, baseline_synced, legacy_client_path_present)", () => {
     const base = {
       kind: "fabric-event",
