@@ -20,6 +20,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `packages/cli/src/commands/doctor.ts` — runtime messages emitted after `resolveDevMode()` rebind to `getDoctorTranslator(resolution.target)` so error/status output respects `fabric_language`; help text + arg descriptions remain on the module-level translator
 - `packages/server/src/services/serve-lock.ts` — already consumed `resolveFabricLocale` since TASK-01 (no rc.26 churn beyond that)
 
+### Fixed
+- `DoctorIssue` now forwards `actionHint` from the underlying `DoctorCheck`; the CLI renders the localized remediation on an indented `→` line under each issue. Previously `collectIssues` dropped this field, so the i18n-migrated remediation strings were never surfaced inline with the fixable/manual/warning sections.
+
 ### Migration
 - Existing users: upgrade is transparent if your config has no `fabric_language` field — locale detection falls through to `detectNodeLocale()` (`FAB_LANG` → `LANG` → `"en"`), preserving current behavior
 - zh-CN users: set `fabric_language: "zh-CN"` in `.fabric/fabric-config.json` (either by re-running `fab init` or hand-editing). Existing `fab init` runs eager-resolve this field per `KT-DEC-9004`
