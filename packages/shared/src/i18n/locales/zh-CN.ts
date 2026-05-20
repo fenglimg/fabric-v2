@@ -549,6 +549,52 @@ export const zhCNMessages: Messages = {
     "Narrow-scope KB coverage 低于可用下限：{parts}。",
   "doctor.check.narrow_too_few.remediation":
     "Run the fabric-import Skill (`/fabric-import`) to re-seed narrow anchors against the current codebase.",
+  "doctor.check.session_hints_stale.name": "Knowledge session-hints stale",
+  "doctor.check.session_hints_stale.ok":
+    ".fabric/.cache/ 下没有超过 {days} 天的 session-hints cache files。",
+  "doctor.check.session_hints_stale.message.singular":
+    ".fabric/.cache/ 下有 {count} 个 session-hints cache file 超过 {days} 天。首个：{detail}。",
+  "doctor.check.session_hints_stale.message.plural":
+    ".fabric/.cache/ 下有 {count} 个 session-hints cache files 超过 {days} 天。首个：{detail}。",
+  "doctor.check.session_hints_stale.remediation":
+    "Run `fab doctor --apply-lint` to delete stale session-hints cache files.",
+  "doctor.check.stale_serve_lock.name": "Serve lock",
+  "doctor.check.stale_serve_lock.ok.no_lock": "未发现 .fabric/.serve.lock。",
+  "doctor.check.stale_serve_lock.ok.live_pid":
+    ".fabric/.serve.lock 由 live PID {pid} 持有。",
+  "doctor.check.stale_serve_lock.age.day.singular": "{count} 天前",
+  "doctor.check.stale_serve_lock.age.day.plural": "{count} 天前",
+  "doctor.check.stale_serve_lock.age.hour.singular": "{count} 小时前",
+  "doctor.check.stale_serve_lock.age.hour.plural": "{count} 小时前",
+  "doctor.check.stale_serve_lock.message.dead_pid":
+    "[advisory] .fabric/.serve.lock 持有 dead PID {pid}（acquired {acquiredAgo}）。运行 `fab doctor --fix` 移除。",
+  "doctor.check.stale_serve_lock.remediation.dead_pid":
+    "Run `fab doctor --fix` to remove the stale .fabric/.serve.lock.",
+  "doctor.check.relevance_fields_missing.name": "Knowledge relevance fields missing",
+  "doctor.check.relevance_fields_missing.ok":
+    "所有 pending entries 都声明了 relevance_scope 和 relevance_paths。",
+  "doctor.check.relevance_fields_missing.message.singular":
+    "{count} 个 pending entry 的 frontmatter 缺少 relevance_scope 和/或 relevance_paths。首个：{detail}。",
+  "doctor.check.relevance_fields_missing.message.plural":
+    "{count} 个 pending entries 的 frontmatter 缺少 relevance_scope 和/或 relevance_paths。首个：{detail}。",
+  "doctor.check.relevance_fields_missing.remediation":
+    "Run `fab doctor --apply-lint` to back-fill the schema defaults (relevance_scope: broad, relevance_paths: []).",
+  "doctor.check.skill_md_yaml_invalid.name": "Skill markdown YAML",
+  "doctor.check.skill_md_yaml_invalid.ok":
+    "所有 .claude/.codex SKILL.md frontmatter values 都能按 strict YAML 解析。",
+  "doctor.check.skill_md_yaml_invalid.message.singular":
+    "{count} 个 SKILL.md frontmatter value 包含未加引号的 ': '，strict YAML parsers 会拒绝（Claude Code tolerates it；Codex CLI drops the skill at load）。首个：{detail}。",
+  "doctor.check.skill_md_yaml_invalid.message.plural":
+    "{count} 个 SKILL.md frontmatter values 包含未加引号的 ': '，strict YAML parsers 会拒绝（Claude Code tolerates it；Codex CLI drops the skill at load）。首个：{detail}。",
+  "doctor.check.skill_md_yaml_invalid.remediation":
+    "Quote the value with double quotes (`description: \"…\"`) or rewrite the inner `key: value` token to `key=value`.",
+  "doctor.check.onboard_coverage.name": "Onboard coverage",
+  "doctor.check.onboard_coverage.ok.complete":
+    "Onboard coverage：{filledCount}/{total} ✓（opted-out：{optedOutCount}）。",
+  "doctor.check.onboard_coverage.message.incomplete":
+    "尚未覆盖的 onboard slots：[{missingSlots}]。{filledCount}/{total} filled；{optedOutCount} opted-out。",
+  "doctor.check.onboard_coverage.remediation.incomplete":
+    "运行 /fabric-archive 执行 onboard — Skill's first-run phase 会遍历项目，并为每个 unclaimed slot 提议 pending entries。",
   // v2.0.0-rc.25 TASK-10: --archive-history 子命令——按 session 维度审计归档尝试记录。
   "cli.doctor.args.archive-history.description":
     "按 session 维度渲染归档尝试历史(只读;读取 session_archive_attempted 事件)。",

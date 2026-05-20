@@ -986,23 +986,23 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     // (structural + telemetry) recommend the same fabric-import action.
     createNarrowTooFewCheck(t, narrowTooFew),
     // rc.6 TASK-021 (E3): session-hints cache hygiene (lint #27). Info kind.
-    createSessionHintsStaleCheck(sessionHintsStale),
+    createSessionHintsStaleCheck(t, sessionHintsStale),
     // rc.23 TASK-010 (e): stale .fabric/.serve.lock advisory. Info kind —
     // does not bump report status. `--fix` unlinks the corpse and emits
     // `serve_lock_cleared`.
-    createStaleServeLockCheck(staleServeLock),
+    createStaleServeLockCheck(t, staleServeLock),
     // v2.0.0-rc.9 TASK-003 (A3): relevance fields back-fill (lint #28).
     // Info kind — applies to pending entries only; canonical entries get
     // the fields written verbatim by fab_review.approve/modify.
-    createRelevanceFieldsMissingCheck(relevanceFieldsMissing),
+    createRelevanceFieldsMissingCheck(t, relevanceFieldsMissing),
     // rc.12 lint #29: skill_md_yaml_invalid. Warning kind — surfaces
     // SKILL.md frontmatter that Codex CLI silently drops at load.
-    createSkillMdYamlInvalidCheck(skillMdYamlInvalid),
+    createSkillMdYamlInvalidCheck(t, skillMdYamlInvalid),
     // v2.0.0-rc.23 TASK-014 (F8c): Onboard coverage advisory. Info kind.
     // Surfaces uncovered S5 onboard slots and recommends /fabric-archive
     // first-run phase. Sits adjacent to Skill markdown YAML — both are
     // Skill-adjacent advisories. --fix never mutates onboard state.
-    createOnboardCoverageCheck(onboardCoverage),
+    createOnboardCoverageCheck(t, onboardCoverage),
     createPreexistingRootFilesCheck(t, preexistingRootFiles),
     // v2.0 / rc.2: `createLegacyClientPathCheck` removed. The schema now
     // rejects retired clientPaths keys (windsurf/rooCode/geminiCLI) at Zod
@@ -4065,23 +4065,31 @@ function createUnderseededCheck(t: Translator, inspection: UnderseededInspection
 // a correctness concern. The actionHint points at apply-lint so users can
 // reap accumulated cache files in a single pass.
 function createSessionHintsStaleCheck(
+  t: Translator,
   inspection: SessionHintsStaleInspection,
 ): DoctorCheck {
   if (inspection.candidates.length === 0) {
     return okCheck(
-      "Knowledge session-hints stale",
-      `No session-hints cache files older than ${SESSION_HINTS_STALE_DAYS} days under .fabric/.cache/.`,
+      t("doctor.check.session_hints_stale.name"),
+      t("doctor.check.session_hints_stale.ok", {
+        days: String(SESSION_HINTS_STALE_DAYS),
+      }),
     );
   }
   const first = inspection.candidates[0];
   const detail = `${first.path} (${first.age_days}d old)`;
+  const count = inspection.candidates.length;
   return issueCheck(
-    "Knowledge session-hints stale",
+    t("doctor.check.session_hints_stale.name"),
     "ok",
     "info",
     "knowledge_session_hints_stale",
-    `${inspection.candidates.length} session-hints cache file${inspection.candidates.length === 1 ? "" : "s"} under .fabric/.cache/ ${inspection.candidates.length === 1 ? "is" : "are"} older than ${SESSION_HINTS_STALE_DAYS} days. First: ${detail}.`,
-    "Run `fab doctor --apply-lint` to delete stale session-hints cache files.",
+    t(`doctor.check.session_hints_stale.message.${count === 1 ? "singular" : "plural"}`, {
+      count: String(count),
+      days: String(SESSION_HINTS_STALE_DAYS),
+      detail,
+    }),
+    t("doctor.check.session_hints_stale.remediation"),
   );
 }
 
@@ -4091,15 +4099,21 @@ function createSessionHintsStaleCheck(
 // emits `serve_lock_cleared`. Skip cases: no lock file (steady state) and
 // lock held by a live PID (a healthy `fab serve` is running — never touch).
 function createStaleServeLockCheck(
+  t: Translator,
   inspection: StaleServeLockInspection,
 ): DoctorCheck {
   if (!inspection.present) {
-    return okCheck("Serve lock", "No .fabric/.serve.lock present.");
+    return okCheck(
+      t("doctor.check.stale_serve_lock.name"),
+      t("doctor.check.stale_serve_lock.ok.no_lock"),
+    );
   }
   if (inspection.pidAlive) {
     return okCheck(
-      "Serve lock",
-      `.fabric/.serve.lock held by live PID ${inspection.pid}.`,
+      t("doctor.check.stale_serve_lock.name"),
+      t("doctor.check.stale_serve_lock.ok.live_pid", {
+        pid: String(inspection.pid),
+      }),
     );
   }
   // Coarse "K time ago" — days when ≥1d, hours otherwise. Matches the prose
@@ -4108,14 +4122,23 @@ function createStaleServeLockCheck(
   const days = Math.floor(inspection.ageMs / MS_PER_DAY);
   const hours = Math.floor(inspection.ageMs / (60 * 60 * 1000));
   const acquiredAgo =
-    days >= 1 ? `${days} day${days === 1 ? "" : "s"} ago` : `${hours} hour${hours === 1 ? "" : "s"} ago`;
+    days >= 1
+      ? t(`doctor.check.stale_serve_lock.age.day.${days === 1 ? "singular" : "plural"}`, {
+          count: String(days),
+        })
+      : t(`doctor.check.stale_serve_lock.age.hour.${hours === 1 ? "singular" : "plural"}`, {
+          count: String(hours),
+        });
   return issueCheck(
-    "Serve lock",
+    t("doctor.check.stale_serve_lock.name"),
     "ok",
     "info",
     "stale_serve_lock",
-    `[advisory] .fabric/.serve.lock holds dead PID ${inspection.pid} (acquired ${acquiredAgo}). Run \`fab doctor --fix\` to remove.`,
-    "Run `fab doctor --fix` to remove the stale .fabric/.serve.lock.",
+    t("doctor.check.stale_serve_lock.message.dead_pid", {
+      pid: String(inspection.pid),
+      acquiredAgo,
+    }),
+    t("doctor.check.stale_serve_lock.remediation.dead_pid"),
   );
 }
 
@@ -4761,12 +4784,13 @@ async function applyRelevanceFieldsMissing(
 }
 
 function createRelevanceFieldsMissingCheck(
+  t: Translator,
   inspection: RelevanceFieldsMissingInspection,
 ): DoctorCheck {
   if (inspection.candidates.length === 0) {
     return okCheck(
-      "Knowledge relevance fields missing",
-      "All pending entries declare both relevance_scope and relevance_paths.",
+      t("doctor.check.relevance_fields_missing.name"),
+      t("doctor.check.relevance_fields_missing.ok"),
     );
   }
   const first = inspection.candidates[0];
@@ -4774,13 +4798,17 @@ function createRelevanceFieldsMissingCheck(
   if (first.missing_scope) missingParts.push("relevance_scope");
   if (first.missing_paths) missingParts.push("relevance_paths");
   const detail = `${first.pending_path} (missing: ${missingParts.join(", ")})`;
+  const count = inspection.candidates.length;
   return issueCheck(
-    "Knowledge relevance fields missing",
+    t("doctor.check.relevance_fields_missing.name"),
     "ok",
     "info",
     "knowledge_relevance_fields_missing",
-    `${inspection.candidates.length} pending entr${inspection.candidates.length === 1 ? "y is" : "ies are"} missing relevance_scope and/or relevance_paths in frontmatter. First: ${detail}.`,
-    "Run `fab doctor --apply-lint` to back-fill the schema defaults (relevance_scope: broad, relevance_paths: []).",
+    t(`doctor.check.relevance_fields_missing.message.${count === 1 ? "singular" : "plural"}`, {
+      count: String(count),
+      detail,
+    }),
+    t("doctor.check.relevance_fields_missing.remediation"),
   );
 }
 
@@ -4895,24 +4923,28 @@ function extractSkillFrontmatterLines(
 }
 
 function createSkillMdYamlInvalidCheck(
+  t: Translator,
   inspection: SkillMdYamlInvalidInspection,
 ): DoctorCheck {
   if (inspection.candidates.length === 0) {
     return okCheck(
-      "Skill markdown YAML",
-      "All .claude/.codex SKILL.md frontmatter values parse as strict YAML.",
+      t("doctor.check.skill_md_yaml_invalid.name"),
+      t("doctor.check.skill_md_yaml_invalid.ok"),
     );
   }
   const first = inspection.candidates[0]!;
   const detail = `${first.path}:${first.line} (key \`${first.key}\` value contains an unquoted ': ' — preview: \`${first.preview}\`)`;
   const plural = inspection.candidates.length === 1;
   return issueCheck(
-    "Skill markdown YAML",
+    t("doctor.check.skill_md_yaml_invalid.name"),
     "warn",
     "warning",
     "skill_md_yaml_invalid",
-    `${inspection.candidates.length} SKILL.md frontmatter ${plural ? "value contains" : "values contain"} an unquoted ': ' that strict YAML parsers reject (Claude Code tolerates it; Codex CLI drops the skill at load). First: ${detail}.`,
-    "Quote the value with double quotes (`description: \"…\"`) or rewrite the inner `key: value` token to `key=value`.",
+    t(`doctor.check.skill_md_yaml_invalid.message.${plural ? "singular" : "plural"}`, {
+      count: String(inspection.candidates.length),
+      detail,
+    }),
+    t("doctor.check.skill_md_yaml_invalid.remediation"),
   );
 }
 
@@ -5040,23 +5072,32 @@ function readFrontmatterScalar(content: string, key: string): string | undefined
   return undefined;
 }
 
-function createOnboardCoverageCheck(inspection: OnboardCoverageInspection): DoctorCheck {
+function createOnboardCoverageCheck(t: Translator, inspection: OnboardCoverageInspection): DoctorCheck {
   const filledCount = ONBOARD_SLOT_NAMES.filter(
     (slot) => inspection.filled[slot].length > 0,
   ).length;
   if (inspection.missing.length === 0) {
     return okCheck(
-      "Onboard coverage",
-      `Onboard coverage: ${filledCount}/${ONBOARD_SLOT_TOTAL} ✓ (opted-out: ${inspection.opted_out.length}).`,
+      t("doctor.check.onboard_coverage.name"),
+      t("doctor.check.onboard_coverage.ok.complete", {
+        filledCount: String(filledCount),
+        total: String(ONBOARD_SLOT_TOTAL),
+        optedOutCount: String(inspection.opted_out.length),
+      }),
     );
   }
   return issueCheck(
-    "Onboard coverage",
+    t("doctor.check.onboard_coverage.name"),
     "ok",
     "info",
     "onboard_coverage_incomplete",
-    `Onboard slots not yet covered: [${inspection.missing.join(", ")}]. ${filledCount}/${ONBOARD_SLOT_TOTAL} filled; ${inspection.opted_out.length} opted-out.`,
-    "Run /fabric-archive to onboard — the Skill's first-run phase will tour the project and propose pending entries for each unclaimed slot.",
+    t("doctor.check.onboard_coverage.message.incomplete", {
+      missingSlots: inspection.missing.join(", "),
+      filledCount: String(filledCount),
+      total: String(ONBOARD_SLOT_TOTAL),
+      optedOutCount: String(inspection.opted_out.length),
+    }),
+    t("doctor.check.onboard_coverage.remediation.incomplete"),
   );
 }
 

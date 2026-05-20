@@ -557,6 +557,52 @@ export const enMessages: Messages = {
     "Narrow-scope KB coverage is below the useful floor: {parts}.",
   "doctor.check.narrow_too_few.remediation":
     "Run the fabric-import Skill (`/fabric-import`) to re-seed narrow anchors against the current codebase.",
+  "doctor.check.session_hints_stale.name": "Knowledge session-hints stale",
+  "doctor.check.session_hints_stale.ok":
+    "No session-hints cache files older than {days} days under .fabric/.cache/.",
+  "doctor.check.session_hints_stale.message.singular":
+    "{count} session-hints cache file under .fabric/.cache/ is older than {days} days. First: {detail}.",
+  "doctor.check.session_hints_stale.message.plural":
+    "{count} session-hints cache files under .fabric/.cache/ are older than {days} days. First: {detail}.",
+  "doctor.check.session_hints_stale.remediation":
+    "Run `fab doctor --apply-lint` to delete stale session-hints cache files.",
+  "doctor.check.stale_serve_lock.name": "Serve lock",
+  "doctor.check.stale_serve_lock.ok.no_lock": "No .fabric/.serve.lock present.",
+  "doctor.check.stale_serve_lock.ok.live_pid":
+    ".fabric/.serve.lock held by live PID {pid}.",
+  "doctor.check.stale_serve_lock.age.day.singular": "{count} day ago",
+  "doctor.check.stale_serve_lock.age.day.plural": "{count} days ago",
+  "doctor.check.stale_serve_lock.age.hour.singular": "{count} hour ago",
+  "doctor.check.stale_serve_lock.age.hour.plural": "{count} hours ago",
+  "doctor.check.stale_serve_lock.message.dead_pid":
+    "[advisory] .fabric/.serve.lock holds dead PID {pid} (acquired {acquiredAgo}). Run `fab doctor --fix` to remove.",
+  "doctor.check.stale_serve_lock.remediation.dead_pid":
+    "Run `fab doctor --fix` to remove the stale .fabric/.serve.lock.",
+  "doctor.check.relevance_fields_missing.name": "Knowledge relevance fields missing",
+  "doctor.check.relevance_fields_missing.ok":
+    "All pending entries declare both relevance_scope and relevance_paths.",
+  "doctor.check.relevance_fields_missing.message.singular":
+    "{count} pending entry is missing relevance_scope and/or relevance_paths in frontmatter. First: {detail}.",
+  "doctor.check.relevance_fields_missing.message.plural":
+    "{count} pending entries are missing relevance_scope and/or relevance_paths in frontmatter. First: {detail}.",
+  "doctor.check.relevance_fields_missing.remediation":
+    "Run `fab doctor --apply-lint` to back-fill the schema defaults (relevance_scope: broad, relevance_paths: []).",
+  "doctor.check.skill_md_yaml_invalid.name": "Skill markdown YAML",
+  "doctor.check.skill_md_yaml_invalid.ok":
+    "All .claude/.codex SKILL.md frontmatter values parse as strict YAML.",
+  "doctor.check.skill_md_yaml_invalid.message.singular":
+    "{count} SKILL.md frontmatter value contains an unquoted ': ' that strict YAML parsers reject (Claude Code tolerates it; Codex CLI drops the skill at load). First: {detail}.",
+  "doctor.check.skill_md_yaml_invalid.message.plural":
+    "{count} SKILL.md frontmatter values contain an unquoted ': ' that strict YAML parsers reject (Claude Code tolerates it; Codex CLI drops the skill at load). First: {detail}.",
+  "doctor.check.skill_md_yaml_invalid.remediation":
+    "Quote the value with double quotes (`description: \"…\"`) or rewrite the inner `key: value` token to `key=value`.",
+  "doctor.check.onboard_coverage.name": "Onboard coverage",
+  "doctor.check.onboard_coverage.ok.complete":
+    "Onboard coverage: {filledCount}/{total} ✓ (opted-out: {optedOutCount}).",
+  "doctor.check.onboard_coverage.message.incomplete":
+    "Onboard slots not yet covered: [{missingSlots}]. {filledCount}/{total} filled; {optedOutCount} opted-out.",
+  "doctor.check.onboard_coverage.remediation.incomplete":
+    "Run /fabric-archive to onboard — the Skill's first-run phase will tour the project and propose pending entries for each unclaimed slot.",
   // v2.0.0-rc.25 TASK-10: --archive-history flag set. Read-only audit of
   // session_archive_attempted events; mutually exclusive with the other
   // mutation/report surfaces.
