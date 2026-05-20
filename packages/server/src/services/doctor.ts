@@ -10,6 +10,7 @@ import { minimatch } from "minimatch";
 import {
   agentsMetaSchema,
   AgentsMetaCountersSchema,
+  createTranslator,
   forensicReportSchema,
   parseKnowledgeId,
   knowledgeTestIndexSchema,
@@ -26,6 +27,8 @@ import {
   type ForensicReport,
   type KnowledgeTestIndex,
   type OnboardSlot,
+  resolveFabricLocale,
+  type Translator,
 } from "@fenglimg/fabric-shared";
 import { detectFramework } from "@fenglimg/fabric-shared/node";
 
@@ -807,6 +810,7 @@ const TARGET_FILE_PATHS = [
 
 export async function runDoctorReport(target: string): Promise<DoctorReport> {
   const projectRoot = normalizeTarget(target);
+  const t = createTranslator(resolveFabricLocale(projectRoot));
   const framework = detectFramework(projectRoot);
   const entryPoints = collectEntryPoints(projectRoot);
   const [
@@ -915,38 +919,38 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
   // pending entries with `onboard_slot: <slot>` set).
   const onboardCoverage = inspectOnboardCoverage(projectRoot);
   const checks: DoctorCheck[] = [
-    createBootstrapAnchorCheck(bootstrapAnchor),
+    createBootstrapAnchorCheck(t, bootstrapAnchor),
     // v2.0.0-rc.19 TASK-004: bootstrap marker migration check sits adjacent to
     // the anchor check — both are bootstrap-file invariants. fixable_error
     // when any of the four target paths still carries the legacy marker.
-    createBootstrapMarkerMigrationCheck(bootstrapMarkerMigration),
+    createBootstrapMarkerMigrationCheck(t, bootstrapMarkerMigration),
     // v2.0.0-rc.19 TASK-005: L1 + L2 byte-level drift detection sit immediately
     // after the marker migration check. Order: anchor existence → migration →
     // L1 (canonical ↔ snapshot) → L2 (snapshot+rules ↔ three-end blocks).
-    createL1BootstrapSnapshotDriftCheck(l1BootstrapSnapshotDrift),
-    createL2ManagedBlockDriftCheck(l2ManagedBlockDrift),
-    createKnowledgeDirMissingCheck(knowledgeDirMissing),
+    createL1BootstrapSnapshotDriftCheck(t, l1BootstrapSnapshotDrift),
+    createL2ManagedBlockDriftCheck(t, l2ManagedBlockDrift),
+    createKnowledgeDirMissingCheck(t, knowledgeDirMissing),
     // v2.0.0-rc.22 TASK-006: baseline filename format. Sits adjacent to
     // knowledge_dir_missing — both are knowledge-layout invariants. manual_error
     // kind; resolution is manual file deletion (rc.23 TASK-012 (F8a) removed
     // the baseline-emit pipeline, so no auto-fix exists).
-    createBaselineFilenameFormatCheck(baselineFilenameFormat),
-    createForensicCheck(forensic, framework.kind, entryPoints.length),
+    createBaselineFilenameFormatCheck(t, baselineFilenameFormat),
+    createForensicCheck(t, forensic, framework.kind, entryPoints.length),
     // v2.0: removed `createInitContextCheck` — `.fabric/init-context.json`
     // is owned by the AI-side client init skill, not by `fabric install` CLI.
     // The file's absence is a legitimate post-init state when the skill has
     // not yet run, so flagging it as a doctor manual_error misrepresents
     // ownership.
-    createMetaCheck(meta),
-    createRuleContentRefCheck(meta),
+    createMetaCheck(t, meta),
+    createRuleContentRefCheck(t, meta),
     // v2.0 / rc.2: `createRuleSectionsCheck` removed — it parsed v1.x
     // [MANDATORY_INJECTION] sections out of legacy rule files, a structural
     // concept that has no v2 equivalent. rc.4 will introduce a dedicated v2
     // lint suite for the new knowledge frontmatter contract.
-    createKnowledgeTestIndexCheck(knowledgeTestIndex),
-    createEventLedgerCheck(eventLedger),
-    createEventLedgerPartialWriteCheck(eventLedger),
-    createMcpConfigInWrongFileCheck(mcpConfigInWrongFile),
+    createKnowledgeTestIndexCheck(t, knowledgeTestIndex),
+    createEventLedgerCheck(t, eventLedger),
+    createEventLedgerPartialWriteCheck(t, eventLedger),
+    createMcpConfigInWrongFileCheck(t, mcpConfigInWrongFile),
     createMetaManuallyDivergedCheck(metaManuallyDiverged),
     createKnowledgeDirUnindexedCheck(knowledgeDirUnindexed),
     createStableIdCollisionCheck(stableIdCollision),
@@ -2081,22 +2085,27 @@ async function inspectBootstrapMarkerMigration(
 }
 
 function createBootstrapMarkerMigrationCheck(
+  t: Translator,
   inspection: BootstrapMarkerMigrationInspection,
 ): DoctorCheck {
   if (inspection.filesNeedingMigration.length === 0) {
     return okCheck(
-      "Bootstrap marker migration",
-      "No legacy fabric:knowledge-base markers detected in bootstrap target files.",
+      t("doctor.check.bootstrap_marker_migration.name"),
+      t("doctor.check.bootstrap_marker_migration.ok"),
     );
   }
   const list = inspection.filesNeedingMigration.join(", ");
+  const count = inspection.filesNeedingMigration.length;
   return issueCheck(
-    "Bootstrap marker migration",
+    t("doctor.check.bootstrap_marker_migration.name"),
     "error",
     "fixable_error",
     "bootstrap_marker_migration_required",
-    `${inspection.filesNeedingMigration.length} file${inspection.filesNeedingMigration.length === 1 ? "" : "s"} still carry the legacy fabric:knowledge-base bootstrap marker: ${list}.`,
-    "Run `fab doctor --fix` to migrate to fabric:bootstrap marker",
+    t(`doctor.check.bootstrap_marker_migration.message.${count === 1 ? "singular" : "plural"}`, {
+      count: String(count),
+      list,
+    }),
+    t("doctor.check.bootstrap_marker_migration.remediation"),
   );
 }
 
@@ -2127,25 +2136,26 @@ async function inspectL1BootstrapSnapshotDrift(
 }
 
 function createL1BootstrapSnapshotDriftCheck(
+  t: Translator,
   inspection: L1BootstrapSnapshotDriftInspection,
 ): DoctorCheck {
   if (inspection.status === "drift") {
     return issueCheck(
-      "Bootstrap snapshot drift",
+      t("doctor.check.bootstrap_snapshot_drift.name"),
       "error",
       "fixable_error",
       "bootstrap_snapshot_drift",
-      ".fabric/AGENTS.md content diverges byte-for-byte from BOOTSTRAP_CANONICAL.",
-      "Run `fab doctor --fix` to restore canonical bootstrap snapshot",
+      t("doctor.check.bootstrap_snapshot_drift.message.drift"),
+      t("doctor.check.bootstrap_snapshot_drift.remediation.drift"),
     );
   }
   // 'missing' is delegated to bootstrap_anchor_missing — return ok here so we
   // don't double-report.
   return okCheck(
-    "Bootstrap snapshot drift",
+    t("doctor.check.bootstrap_snapshot_drift.name"),
     inspection.status === "ok"
-      ? ".fabric/AGENTS.md byte-equals BOOTSTRAP_CANONICAL."
-      : ".fabric/AGENTS.md absent — delegated to bootstrap_anchor_missing.",
+      ? t("doctor.check.bootstrap_snapshot_drift.ok.ok")
+      : t("doctor.check.bootstrap_snapshot_drift.ok.missing_delegated"),
   );
 }
 
@@ -2269,40 +2279,45 @@ async function inspectL2ManagedBlockDrift(
 }
 
 function createL2ManagedBlockDriftCheck(
+  t: Translator,
   inspection: L2ManagedBlockDriftInspection,
 ): DoctorCheck {
   if (inspection.status === "drift") {
     const list = inspection.drifted.map((d) => d.path).join(", ");
+    const count = inspection.drifted.length;
     return issueCheck(
-      "Managed block drift",
+      t("doctor.check.managed_block_drift.name"),
       "error",
       "fixable_error",
       "managed_block_drift",
-      `${inspection.drifted.length} three-end managed block${inspection.drifted.length === 1 ? "" : "s"} diverge from expected body (snapshot + optional project-rules concat): ${list}.`,
-      "Run `fab doctor --fix` to restore three-end managed blocks from canonical",
+      t(`doctor.check.managed_block_drift.message.${count === 1 ? "singular" : "plural"}`, {
+        count: String(count),
+        list,
+      }),
+      t("doctor.check.managed_block_drift.remediation"),
     );
   }
   return okCheck(
-    "Managed block drift",
+    t("doctor.check.managed_block_drift.name"),
     inspection.status === "ok"
-      ? "Three-end managed blocks byte-equal expectedBody."
-      : "No three-end managed blocks detected — propagation pending or legacy-marker state.",
+      ? t("doctor.check.managed_block_drift.ok.ok")
+      : t("doctor.check.managed_block_drift.ok.no_managed_block"),
   );
 }
 
-function createBootstrapAnchorCheck(inspection: BootstrapAnchorInspection): DoctorCheck {
+function createBootstrapAnchorCheck(t: Translator, inspection: BootstrapAnchorInspection): DoctorCheck {
   // v2.0: bootstrap is anchored at the repo root via AGENTS.md or CLAUDE.md.
   // Either one (or both) is sufficient; missing both is a fixable_error in
   // the sense that `fabric install` is the canonical remediation (we do not
   // auto-write the anchor file from doctor --fix).
   if (!inspection.hasAgentsMd && !inspection.hasClaudeMd) {
     return issueCheck(
-      "Bootstrap anchor",
+      t("doctor.check.bootstrap_anchor.name"),
       "error",
       "fixable_error",
       "bootstrap_anchor_missing",
-      "Neither AGENTS.md nor CLAUDE.md exists at the repo root. Fabric requires a bootstrap anchor file at the project root.",
-      "Run `fabric install` to generate the AGENTS.md / CLAUDE.md bootstrap anchor at the repo root.",
+      t("doctor.check.bootstrap_anchor.message.missing"),
+      t("doctor.check.bootstrap_anchor.remediation.missing"),
     );
   }
   const present = [
@@ -2311,7 +2326,10 @@ function createBootstrapAnchorCheck(inspection: BootstrapAnchorInspection): Doct
   ]
     .filter((entry): entry is string => entry !== null)
     .join(", ");
-  return okCheck("Bootstrap anchor", `Bootstrap anchor present at repo root: ${present}.`);
+  return okCheck(
+    t("doctor.check.bootstrap_anchor.name"),
+    t("doctor.check.bootstrap_anchor.ok", { present }),
+  );
 }
 
 function inspectKnowledgeDirMissing(projectRoot: string): KnowledgeDirMissingInspection {
@@ -2384,74 +2402,112 @@ function inspectBaselineFilenameFormat(projectRoot: string): BaselineFilenameFor
 }
 
 function createBaselineFilenameFormatCheck(
+  t: Translator,
   inspection: BaselineFilenameFormatInspection,
 ): DoctorCheck {
   if (inspection.offenders.length === 0) {
     return okCheck(
-      "Baseline filename format",
-      "All baseline knowledge files use the canonical `${id}--${slug}.md` filename format.",
+      t("doctor.check.baseline_filename_format.name"),
+      t("doctor.check.baseline_filename_format.ok"),
     );
   }
   const first = inspection.offenders[0];
   const detail = `${first.stable_id} at ${first.path}`;
+  const count = inspection.offenders.length;
   return issueCheck(
-    "Baseline filename format",
+    t("doctor.check.baseline_filename_format.name"),
     "error",
     "manual_error",
     "lint-baseline-filename-format",
-    `${inspection.offenders.length} baseline knowledge file${inspection.offenders.length === 1 ? "" : "s"} use${inspection.offenders.length === 1 ? "s" : ""} the deprecated bare-slug filename format and must be migrated to \`\${id}--\${slug}.md\`. First: ${detail}.`,
-    "Delete the legacy bare-slug baseline file(s) manually — the baseline pipeline was removed in rc.23 and is no longer an auto-fix path.",
+    t(`doctor.check.baseline_filename_format.message.${count === 1 ? "singular" : "plural"}`, {
+      count: String(count),
+      detail,
+    }),
+    t("doctor.check.baseline_filename_format.remediation"),
   );
 }
 
-function createKnowledgeDirMissingCheck(inspection: KnowledgeDirMissingInspection): DoctorCheck {
+function createKnowledgeDirMissingCheck(t: Translator, inspection: KnowledgeDirMissingInspection): DoctorCheck {
   if (inspection.missingSubdirs.length > 0) {
     const list = inspection.missingSubdirs.join(", ");
+    const count = inspection.missingSubdirs.length;
     return issueCheck(
-      "Knowledge layout",
+      t("doctor.check.knowledge_dir_missing.name"),
       "error",
       "fixable_error",
       "knowledge_dir_missing",
-      `${inspection.missingSubdirs.length} required knowledge subdir${inspection.missingSubdirs.length === 1 ? " is" : "s are"} missing: ${list}.`,
-      "Run `fab doctor --fix` to create the missing .fabric/knowledge/* subdirectories.",
+      t(`doctor.check.knowledge_dir_missing.message.${count === 1 ? "singular" : "plural"}`, {
+        count: String(count),
+        list,
+      }),
+      t("doctor.check.knowledge_dir_missing.remediation"),
     );
   }
   return okCheck(
-    "Knowledge layout",
-    `All ${KNOWLEDGE_SUBDIRS.length} required .fabric/knowledge/* subdirectories exist.`,
+    t("doctor.check.knowledge_dir_missing.name"),
+    t("doctor.check.knowledge_dir_missing.ok", { count: String(KNOWLEDGE_SUBDIRS.length) }),
   );
 }
 
 function createForensicCheck(
+  t: Translator,
   forensic: Awaited<ReturnType<typeof inspectForensic>>,
   frameworkKind: string,
   entryPointCount: number,
 ): DoctorCheck {
   if (!forensic.present) {
     return issueCheck(
-      "Scan evidence",
+      t("doctor.check.forensic.name"),
       "error",
       "manual_error",
       "forensic_missing",
-      `${forensic.error ?? ".fabric/forensic.json is missing."} Live scan detects ${frameworkKind} with ${entryPointCount} entry point${entryPointCount === 1 ? "" : "s"}.`,
-      "Run `fab install` to regenerate .fabric/forensic.json.",
+      t(`doctor.check.forensic.message.missing.${entryPointCount === 1 ? "singular" : "plural"}`, {
+        error: forensic.error ?? t("doctor.check.forensic.message.missing-default"),
+        frameworkKind,
+        count: String(entryPointCount),
+      }),
+      t("doctor.check.forensic.remediation"),
     );
   }
   if (!forensic.valid) {
-    return issueCheck("Scan evidence", "error", "manual_error", "forensic_invalid", forensic.error ?? ".fabric/forensic.json is invalid.", "Run `fab install` to regenerate .fabric/forensic.json.");
+    return issueCheck(
+      t("doctor.check.forensic.name"),
+      "error",
+      "manual_error",
+      "forensic_invalid",
+      forensic.error ?? t("doctor.check.forensic.message.invalid-default"),
+      t("doctor.check.forensic.remediation"),
+    );
   }
-  return okCheck("Scan evidence", `.fabric/forensic.json is valid for ${forensic.report?.framework.kind ?? "unknown"}.`);
+  return okCheck(
+    t("doctor.check.forensic.name"),
+    t("doctor.check.forensic.ok", { frameworkKind: forensic.report?.framework.kind ?? "unknown" }),
+  );
 }
 
 // v2.0: `createInitContextCheck` removed alongside `inspectInitContext` —
 // see comment at the call site in `runDoctorReport`.
 
-function createMetaCheck(meta: MetaInspection): DoctorCheck {
+function createMetaCheck(t: Translator, meta: MetaInspection): DoctorCheck {
   if (!meta.present) {
-    return issueCheck("Agents metadata", "error", "fixable_error", "agents_meta_missing", ".fabric/agents.meta.json is missing.", "Run `fab doctor --fix` to rebuild agents.meta.json from .fabric/knowledge/.");
+    return issueCheck(
+      t("doctor.check.agents_meta.name"),
+      "error",
+      "fixable_error",
+      "agents_meta_missing",
+      t("doctor.check.agents_meta.message.missing"),
+      t("doctor.check.agents_meta.remediation.missing"),
+    );
   }
   if (!meta.valid) {
-    return issueCheck("Agents metadata", "error", "manual_error", "agents_meta_invalid", meta.readError ?? ".fabric/agents.meta.json is invalid.", "Delete .fabric/agents.meta.json and run `fab doctor --fix` to regenerate it.");
+    return issueCheck(
+      t("doctor.check.agents_meta.name"),
+      "error",
+      "manual_error",
+      "agents_meta_invalid",
+      meta.readError ?? t("doctor.check.agents_meta.message.invalid-default"),
+      t("doctor.check.agents_meta.remediation.invalid"),
+    );
   }
   if (meta.stale) {
     // rc.22 TASK-012: demoted error → warning. The engine auto-heals stale meta
@@ -2461,105 +2517,184 @@ function createMetaCheck(meta: MetaInspection): DoctorCheck {
     // exit code 0 unless --strict is set. The fix path at the warnings guard
     // (see runDoctorFix) still reconciles when --fix is invoked explicitly.
     return issueCheck(
-      "Agents metadata",
+      t("doctor.check.agents_meta.name"),
       "warn",
       "warning",
       "agents_meta_stale",
-      `.fabric/agents.meta.json revision ${meta.revision} does not match .fabric/knowledge derived revision ${meta.computedRevision ?? "<unknown>"}.`,
-      "Benign — engine auto-heals on next plan-context/get-sections call. Run `fab doctor --fix` for explicit reconciliation.",
+      t("doctor.check.agents_meta.message.stale", {
+        revision: meta.revision,
+        computedRevision: meta.computedRevision ?? "<unknown>",
+      }),
+      t("doctor.check.agents_meta.remediation.stale"),
     );
   }
-  return okCheck("Agents metadata", `.fabric/agents.meta.json revision ${meta.revision} is aligned with .fabric/knowledge.`);
+  return okCheck(
+    t("doctor.check.agents_meta.name"),
+    t("doctor.check.agents_meta.ok", { revision: meta.revision }),
+  );
 }
 
-function createRuleContentRefCheck(meta: MetaInspection): DoctorCheck {
+function createRuleContentRefCheck(t: Translator, meta: MetaInspection): DoctorCheck {
   if (!meta.valid) {
-    return issueCheck("Rule content refs", "error", "manual_error", "content_refs_unavailable", "Cannot inspect content_ref entries until agents.meta.json is valid.", "Fix agents.meta.json first: run `fab doctor --fix`.");
+    return issueCheck(
+      t("doctor.check.rule_content_refs.name"),
+      "error",
+      "manual_error",
+      "content_refs_unavailable",
+      t("doctor.check.rule_content_refs.message.unavailable"),
+      t("doctor.check.rule_content_refs.remediation.unavailable"),
+    );
   }
 
   if (meta.invalidContentRefs.length > 0) {
+    const count = meta.invalidContentRefs.length;
     return issueCheck(
-      "Rule content refs",
+      t("doctor.check.rule_content_refs.name"),
       "error",
       "manual_error",
       "content_ref_outside_rules",
-      `${meta.invalidContentRefs.length} content_ref entr${meta.invalidContentRefs.length === 1 ? "y is" : "ies are"} outside .fabric/knowledge.`,
-      "Edit agents.meta.json to ensure all content_ref values point inside .fabric/knowledge/{type}/ (team) or ~/.fabric/knowledge/{type}/ (personal).",
+      t(`doctor.check.rule_content_refs.message.outside.${count === 1 ? "singular" : "plural"}`, {
+        count: String(count),
+      }),
+      t("doctor.check.rule_content_refs.remediation.outside"),
     );
   }
 
   if (meta.missingContentRefs.length > 0) {
     // content_ref_missing is fixable: reconcileKnowledge rebuilds agents.meta.json from
     // the physical .fabric/knowledge/**/*.md files, dropping any stale refs automatically.
+    const count = meta.missingContentRefs.length;
     return issueCheck(
-      "Rule content refs",
+      t("doctor.check.rule_content_refs.name"),
       "error",
       "fixable_error",
       "content_ref_missing",
-      `${meta.missingContentRefs.length} content_ref target${meta.missingContentRefs.length === 1 ? "" : "s"} are missing. Run \`fab doctor --fix\` to reconcile.`,
-      "Run `fab doctor --fix` to reconcile agents.meta.json with the files present in .fabric/knowledge/.",
+      t(`doctor.check.rule_content_refs.message.missing.${count === 1 ? "singular" : "plural"}`, {
+        count: String(count),
+      }),
+      t("doctor.check.rule_content_refs.remediation.missing"),
     );
   }
 
-  return okCheck("Rule content refs", "All content_ref entries resolve to .fabric/knowledge files.");
+  return okCheck(t("doctor.check.rule_content_refs.name"), t("doctor.check.rule_content_refs.ok"));
 }
 
-function createKnowledgeTestIndexCheck(index: KnowledgeTestIndexInspection): DoctorCheck {
+function createKnowledgeTestIndexCheck(t: Translator, index: KnowledgeTestIndexInspection): DoctorCheck {
   if (!index.present) {
-    return issueCheck("Knowledge-test index", "error", "fixable_error", "knowledge_test_index_missing", index.error, "Run `fab doctor --fix` to rebuild .fabric/.cache/knowledge-test.index.json.");
+    return issueCheck(
+      t("doctor.check.knowledge_test_index.name"),
+      "error",
+      "fixable_error",
+      "knowledge_test_index_missing",
+      index.error,
+      t("doctor.check.knowledge_test_index.remediation.missing"),
+    );
   }
   if (!index.valid) {
-    return issueCheck("Knowledge-test index", "error", "manual_error", "knowledge_test_index_invalid", index.error, "Delete .fabric/.cache/knowledge-test.index.json and run `fab doctor --fix` to regenerate it.");
+    return issueCheck(
+      t("doctor.check.knowledge_test_index.name"),
+      "error",
+      "manual_error",
+      "knowledge_test_index_invalid",
+      index.error,
+      t("doctor.check.knowledge_test_index.remediation.invalid"),
+    );
   }
   if (index.stale) {
-    return issueCheck("Knowledge-test index", "error", "fixable_error", "knowledge_test_index_stale", ".fabric/.cache/knowledge-test.index.json is stale.", "Run `fab doctor --fix` to rebuild the knowledge-test index.");
+    return issueCheck(
+      t("doctor.check.knowledge_test_index.name"),
+      "error",
+      "fixable_error",
+      "knowledge_test_index_stale",
+      t("doctor.check.knowledge_test_index.message.stale"),
+      t("doctor.check.knowledge_test_index.remediation.stale"),
+    );
   }
-  return okCheck("Knowledge-test index", `${index.linkCount} link${index.linkCount === 1 ? "" : "s"} and ${index.orphanCount} orphan annotation${index.orphanCount === 1 ? "" : "s"} indexed.`);
+  return okCheck(
+    t("doctor.check.knowledge_test_index.name"),
+    t(
+      `doctor.check.knowledge_test_index.ok.${index.linkCount === 1 ? "link_singular" : "link_plural"}.${index.orphanCount === 1 ? "orphan_singular" : "orphan_plural"}`,
+      { linkCount: String(index.linkCount), orphanCount: String(index.orphanCount) },
+    ),
+  );
 }
 
-function createEventLedgerCheck(ledger: EventLedgerInspection): DoctorCheck {
+function createEventLedgerCheck(t: Translator, ledger: EventLedgerInspection): DoctorCheck {
   if (!ledger.exists) {
-    return issueCheck("Event ledger", "error", "fixable_error", "event_ledger_missing", ".fabric/events.jsonl is missing.", "Run `fab doctor --fix` to create .fabric/events.jsonl.");
+    return issueCheck(
+      t("doctor.check.event_ledger.name"),
+      "error",
+      "fixable_error",
+      "event_ledger_missing",
+      t("doctor.check.event_ledger.message.missing"),
+      t("doctor.check.event_ledger.remediation.missing"),
+    );
   }
   if (!ledger.writable) {
-    return issueCheck("Event ledger", "error", "manual_error", "event_ledger_not_writable", ledger.error ?? ".fabric/events.jsonl is not writable.", "Check file permissions on .fabric/events.jsonl and ensure no other process holds a write lock.");
+    return issueCheck(
+      t("doctor.check.event_ledger.name"),
+      "error",
+      "manual_error",
+      "event_ledger_not_writable",
+      ledger.error ?? t("doctor.check.event_ledger.message.not_writable-default"),
+      t("doctor.check.event_ledger.remediation.not_writable"),
+    );
   }
   if (!ledger.parseable) {
-    return issueCheck("Event ledger", "error", "manual_error", "event_ledger_invalid", ledger.error ?? ".fabric/events.jsonl is invalid.", "Delete .fabric/events.jsonl and run `fab doctor --fix` to recreate it.");
+    return issueCheck(
+      t("doctor.check.event_ledger.name"),
+      "error",
+      "manual_error",
+      "event_ledger_invalid",
+      ledger.error ?? t("doctor.check.event_ledger.message.invalid-default"),
+      t("doctor.check.event_ledger.remediation.invalid"),
+    );
   }
-  return okCheck("Event ledger", ".fabric/events.jsonl exists, is writable, and is parseable.");
+  return okCheck(t("doctor.check.event_ledger.name"), t("doctor.check.event_ledger.ok"));
 }
 
-function createMcpConfigInWrongFileCheck(inspection: McpConfigInWrongFileInspection): DoctorCheck {
+function createMcpConfigInWrongFileCheck(t: Translator, inspection: McpConfigInWrongFileInspection): DoctorCheck {
   if (inspection.hasWrongEntry) {
     return issueCheck(
-      "Claude MCP config location",
+      t("doctor.check.mcp_config_in_wrong_file.name"),
       "error",
       "fixable_error",
       "mcp_config_in_wrong_file",
-      `.claude/settings.json contains mcpServers.fabric — this file is for hooks/permissions only. Run --fix to remove it, then re-run fab install to write .mcp.json.`,
-      "Run `fab doctor --fix` to remove mcpServers.fabric from .claude/settings.json, then run `fab install` to write .mcp.json.",
+      t("doctor.check.mcp_config_in_wrong_file.message"),
+      t("doctor.check.mcp_config_in_wrong_file.remediation"),
     );
   }
 
-  return okCheck("Claude MCP config location", "mcpServers.fabric is not in .claude/settings.json.");
+  return okCheck(
+    t("doctor.check.mcp_config_in_wrong_file.name"),
+    t("doctor.check.mcp_config_in_wrong_file.ok"),
+  );
 }
 
-function createEventLedgerPartialWriteCheck(ledger: EventLedgerInspection): DoctorCheck {
+function createEventLedgerPartialWriteCheck(t: Translator, ledger: EventLedgerInspection): DoctorCheck {
   if (!ledger.exists || !ledger.writable) {
-    return okCheck("Event ledger partial write", "No partial-write check needed (ledger missing or not writable).");
+    return okCheck(
+      t("doctor.check.event_ledger_partial_write.name"),
+      t("doctor.check.event_ledger_partial_write.ok.skipped"),
+    );
   }
   if (ledger.hasPartialWrite) {
     return issueCheck(
-      "Event ledger partial write",
+      t("doctor.check.event_ledger_partial_write.name"),
       "error",
       "fixable_error",
       "event_ledger_partial_write",
-      `events.jsonl has a partial write at byte offset ${ledger.partialWriteByteOffset} (${ledger.partialWriteByteLength} corrupted bytes). Run --fix to truncate and preserve corrupted bytes.`,
-      "Run `fab doctor --fix` to truncate the partial write and restore events.jsonl to a valid state.",
+      t("doctor.check.event_ledger_partial_write.message", {
+        byteOffset: String(ledger.partialWriteByteOffset),
+        byteLength: String(ledger.partialWriteByteLength),
+      }),
+      t("doctor.check.event_ledger_partial_write.remediation"),
     );
   }
-  return okCheck("Event ledger partial write", "events.jsonl has no partial trailing write.");
+  return okCheck(
+    t("doctor.check.event_ledger_partial_write.name"),
+    t("doctor.check.event_ledger_partial_write.ok.clean"),
+  );
 }
 
 function okCheck(name: string, message: string): DoctorCheck {

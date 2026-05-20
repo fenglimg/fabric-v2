@@ -250,6 +250,147 @@ export const enMessages: Messages = {
     "--enrich-descriptions cannot be combined with --fix, --fix-knowledge, or --cite-coverage. Run them separately.",
   "doctor.enrich.allComplete":
     "All canonical knowledge entries already declare intent_clues / tech_stack / impact / must_read_if.",
+  // rc.26 TASK-02a: doctor foundation-batch check messages.
+  "doctor.check.bootstrap_marker_migration.name": "Bootstrap marker migration",
+  "doctor.check.bootstrap_marker_migration.ok":
+    "No legacy fabric:knowledge-base markers detected in bootstrap target files.",
+  "doctor.check.bootstrap_marker_migration.message.singular":
+    "{count} file still carry the legacy fabric:knowledge-base bootstrap marker: {list}.",
+  "doctor.check.bootstrap_marker_migration.message.plural":
+    "{count} files still carry the legacy fabric:knowledge-base bootstrap marker: {list}.",
+  "doctor.check.bootstrap_marker_migration.remediation":
+    "Run `fab doctor --fix` to migrate to fabric:bootstrap marker",
+  "doctor.check.bootstrap_snapshot_drift.name": "Bootstrap snapshot drift",
+  "doctor.check.bootstrap_snapshot_drift.message.drift":
+    ".fabric/AGENTS.md content diverges byte-for-byte from BOOTSTRAP_CANONICAL.",
+  "doctor.check.bootstrap_snapshot_drift.remediation.drift":
+    "Run `fab doctor --fix` to restore canonical bootstrap snapshot",
+  "doctor.check.bootstrap_snapshot_drift.ok.ok":
+    ".fabric/AGENTS.md byte-equals BOOTSTRAP_CANONICAL.",
+  "doctor.check.bootstrap_snapshot_drift.ok.missing_delegated":
+    ".fabric/AGENTS.md absent — delegated to bootstrap_anchor_missing.",
+  "doctor.check.managed_block_drift.name": "Managed block drift",
+  "doctor.check.managed_block_drift.message.singular":
+    "{count} three-end managed block diverge from expected body (snapshot + optional project-rules concat): {list}.",
+  "doctor.check.managed_block_drift.message.plural":
+    "{count} three-end managed blocks diverge from expected body (snapshot + optional project-rules concat): {list}.",
+  "doctor.check.managed_block_drift.remediation":
+    "Run `fab doctor --fix` to restore three-end managed blocks from canonical",
+  "doctor.check.managed_block_drift.ok.ok":
+    "Three-end managed blocks byte-equal expectedBody.",
+  "doctor.check.managed_block_drift.ok.no_managed_block":
+    "No three-end managed blocks detected — propagation pending or legacy-marker state.",
+  "doctor.check.bootstrap_anchor.name": "Bootstrap anchor",
+  "doctor.check.bootstrap_anchor.message.missing":
+    "Neither AGENTS.md nor CLAUDE.md exists at the repo root. Fabric requires a bootstrap anchor file at the project root.",
+  "doctor.check.bootstrap_anchor.remediation.missing":
+    "Run `fabric install` to generate the AGENTS.md / CLAUDE.md bootstrap anchor at the repo root.",
+  "doctor.check.bootstrap_anchor.ok": "Bootstrap anchor present at repo root: {present}.",
+  "doctor.check.baseline_filename_format.name": "Baseline filename format",
+  "doctor.check.baseline_filename_format.ok":
+    "All baseline knowledge files use the canonical `${id}--${slug}.md` filename format.",
+  "doctor.check.baseline_filename_format.message.singular":
+    "{count} baseline knowledge file uses the deprecated bare-slug filename format and must be migrated to `${id}--${slug}.md`. First: {detail}.",
+  "doctor.check.baseline_filename_format.message.plural":
+    "{count} baseline knowledge files use the deprecated bare-slug filename format and must be migrated to `${id}--${slug}.md`. First: {detail}.",
+  "doctor.check.baseline_filename_format.remediation":
+    "Delete the legacy bare-slug baseline file(s) manually — the baseline pipeline was removed in rc.23 and is no longer an auto-fix path.",
+  "doctor.check.knowledge_dir_missing.name": "Knowledge layout",
+  "doctor.check.knowledge_dir_missing.message.singular":
+    "{count} required knowledge subdir is missing: {list}.",
+  "doctor.check.knowledge_dir_missing.message.plural":
+    "{count} required knowledge subdirs are missing: {list}.",
+  "doctor.check.knowledge_dir_missing.remediation":
+    "Run `fab doctor --fix` to create the missing .fabric/knowledge/* subdirectories.",
+  "doctor.check.knowledge_dir_missing.ok":
+    "All {count} required .fabric/knowledge/* subdirectories exist.",
+  "doctor.check.forensic.name": "Scan evidence",
+  "doctor.check.forensic.message.missing.singular":
+    "{error} Live scan detects {frameworkKind} with {count} entry point.",
+  "doctor.check.forensic.message.missing.plural":
+    "{error} Live scan detects {frameworkKind} with {count} entry points.",
+  "doctor.check.forensic.message.missing-default": ".fabric/forensic.json is missing.",
+  "doctor.check.forensic.message.invalid-default": ".fabric/forensic.json is invalid.",
+  "doctor.check.forensic.remediation": "Run `fab install` to regenerate .fabric/forensic.json.",
+  "doctor.check.forensic.ok": ".fabric/forensic.json is valid for {frameworkKind}.",
+  "doctor.check.agents_meta.name": "Agents metadata",
+  "doctor.check.agents_meta.message.missing": ".fabric/agents.meta.json is missing.",
+  "doctor.check.agents_meta.remediation.missing":
+    "Run `fab doctor --fix` to rebuild agents.meta.json from .fabric/knowledge/.",
+  "doctor.check.agents_meta.message.invalid-default": ".fabric/agents.meta.json is invalid.",
+  "doctor.check.agents_meta.remediation.invalid":
+    "Delete .fabric/agents.meta.json and run `fab doctor --fix` to regenerate it.",
+  "doctor.check.agents_meta.message.stale":
+    ".fabric/agents.meta.json revision {revision} does not match .fabric/knowledge derived revision {computedRevision}.",
+  "doctor.check.agents_meta.remediation.stale":
+    "Benign — engine auto-heals on next plan-context/get-sections call. Run `fab doctor --fix` for explicit reconciliation.",
+  "doctor.check.agents_meta.ok":
+    ".fabric/agents.meta.json revision {revision} is aligned with .fabric/knowledge.",
+  "doctor.check.rule_content_refs.name": "Rule content refs",
+  "doctor.check.rule_content_refs.message.unavailable":
+    "Cannot inspect content_ref entries until agents.meta.json is valid.",
+  "doctor.check.rule_content_refs.remediation.unavailable":
+    "Fix agents.meta.json first: run `fab doctor --fix`.",
+  "doctor.check.rule_content_refs.message.outside.singular":
+    "{count} content_ref entry is outside .fabric/knowledge.",
+  "doctor.check.rule_content_refs.message.outside.plural":
+    "{count} content_ref entries are outside .fabric/knowledge.",
+  "doctor.check.rule_content_refs.remediation.outside":
+    "Edit agents.meta.json to ensure all content_ref values point inside .fabric/knowledge/{type}/ (team) or ~/.fabric/knowledge/{type}/ (personal).",
+  "doctor.check.rule_content_refs.message.missing.singular":
+    "{count} content_ref target is missing. Run `fab doctor --fix` to reconcile.",
+  "doctor.check.rule_content_refs.message.missing.plural":
+    "{count} content_ref targets are missing. Run `fab doctor --fix` to reconcile.",
+  "doctor.check.rule_content_refs.remediation.missing":
+    "Run `fab doctor --fix` to reconcile agents.meta.json with the files present in .fabric/knowledge/.",
+  "doctor.check.rule_content_refs.ok":
+    "All content_ref entries resolve to .fabric/knowledge files.",
+  "doctor.check.knowledge_test_index.name": "Knowledge-test index",
+  "doctor.check.knowledge_test_index.remediation.missing":
+    "Run `fab doctor --fix` to rebuild .fabric/.cache/knowledge-test.index.json.",
+  "doctor.check.knowledge_test_index.remediation.invalid":
+    "Delete .fabric/.cache/knowledge-test.index.json and run `fab doctor --fix` to regenerate it.",
+  "doctor.check.knowledge_test_index.message.stale":
+    ".fabric/.cache/knowledge-test.index.json is stale.",
+  "doctor.check.knowledge_test_index.remediation.stale":
+    "Run `fab doctor --fix` to rebuild the knowledge-test index.",
+  "doctor.check.knowledge_test_index.ok.link_singular.orphan_singular":
+    "{linkCount} link and {orphanCount} orphan annotation indexed.",
+  "doctor.check.knowledge_test_index.ok.link_singular.orphan_plural":
+    "{linkCount} link and {orphanCount} orphan annotations indexed.",
+  "doctor.check.knowledge_test_index.ok.link_plural.orphan_singular":
+    "{linkCount} links and {orphanCount} orphan annotation indexed.",
+  "doctor.check.knowledge_test_index.ok.link_plural.orphan_plural":
+    "{linkCount} links and {orphanCount} orphan annotations indexed.",
+  "doctor.check.event_ledger.name": "Event ledger",
+  "doctor.check.event_ledger.message.missing": ".fabric/events.jsonl is missing.",
+  "doctor.check.event_ledger.remediation.missing":
+    "Run `fab doctor --fix` to create .fabric/events.jsonl.",
+  "doctor.check.event_ledger.message.not_writable-default":
+    ".fabric/events.jsonl is not writable.",
+  "doctor.check.event_ledger.remediation.not_writable":
+    "Check file permissions on .fabric/events.jsonl and ensure no other process holds a write lock.",
+  "doctor.check.event_ledger.message.invalid-default": ".fabric/events.jsonl is invalid.",
+  "doctor.check.event_ledger.remediation.invalid":
+    "Delete .fabric/events.jsonl and run `fab doctor --fix` to recreate it.",
+  "doctor.check.event_ledger.ok":
+    ".fabric/events.jsonl exists, is writable, and is parseable.",
+  "doctor.check.mcp_config_in_wrong_file.name": "Claude MCP config location",
+  "doctor.check.mcp_config_in_wrong_file.message":
+    ".claude/settings.json contains mcpServers.fabric — this file is for hooks/permissions only. Run --fix to remove it, then re-run fab install to write .mcp.json.",
+  "doctor.check.mcp_config_in_wrong_file.remediation":
+    "Run `fab doctor --fix` to remove mcpServers.fabric from .claude/settings.json, then run `fab install` to write .mcp.json.",
+  "doctor.check.mcp_config_in_wrong_file.ok":
+    "mcpServers.fabric is not in .claude/settings.json.",
+  "doctor.check.event_ledger_partial_write.name": "Event ledger partial write",
+  "doctor.check.event_ledger_partial_write.ok.skipped":
+    "No partial-write check needed (ledger missing or not writable).",
+  "doctor.check.event_ledger_partial_write.message":
+    "events.jsonl has a partial write at byte offset {byteOffset} ({byteLength} corrupted bytes). Run --fix to truncate and preserve corrupted bytes.",
+  "doctor.check.event_ledger_partial_write.remediation":
+    "Run `fab doctor --fix` to truncate the partial write and restore events.jsonl to a valid state.",
+  "doctor.check.event_ledger_partial_write.ok.clean":
+    "events.jsonl has no partial trailing write.",
   // v2.0.0-rc.25 TASK-10: --archive-history flag set. Read-only audit of
   // session_archive_attempted events; mutually exclusive with the other
   // mutation/report surfaces.

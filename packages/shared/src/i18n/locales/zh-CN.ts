@@ -242,6 +242,147 @@ export const zhCNMessages: Messages = {
     "--enrich-descriptions 不能与 --fix / --fix-knowledge / --cite-coverage 同时使用,请分别运行。",
   "doctor.enrich.allComplete":
     "所有正式知识条目均已包含 intent_clues / tech_stack / impact / must_read_if。",
+  // rc.26 TASK-02a: doctor foundation-batch check messages.
+  "doctor.check.bootstrap_marker_migration.name": "Bootstrap marker 迁移",
+  "doctor.check.bootstrap_marker_migration.ok":
+    "bootstrap 目标文件中未检测到旧 fabric:knowledge-base marker。",
+  "doctor.check.bootstrap_marker_migration.message.singular":
+    "{count} 个文件仍带有旧 fabric:knowledge-base bootstrap marker：{list}。",
+  "doctor.check.bootstrap_marker_migration.message.plural":
+    "{count} 个文件仍带有旧 fabric:knowledge-base bootstrap marker：{list}。",
+  "doctor.check.bootstrap_marker_migration.remediation":
+    "Run `fab doctor --fix` to migrate to fabric:bootstrap marker",
+  "doctor.check.bootstrap_snapshot_drift.name": "Bootstrap snapshot drift",
+  "doctor.check.bootstrap_snapshot_drift.message.drift":
+    ".fabric/AGENTS.md 内容与 BOOTSTRAP_CANONICAL 逐字节不一致。",
+  "doctor.check.bootstrap_snapshot_drift.remediation.drift":
+    "Run `fab doctor --fix` to restore canonical bootstrap snapshot",
+  "doctor.check.bootstrap_snapshot_drift.ok.ok":
+    ".fabric/AGENTS.md 与 BOOTSTRAP_CANONICAL 逐字节一致。",
+  "doctor.check.bootstrap_snapshot_drift.ok.missing_delegated":
+    ".fabric/AGENTS.md 不存在，已交由 bootstrap_anchor_missing 报告。",
+  "doctor.check.managed_block_drift.name": "Managed block drift",
+  "doctor.check.managed_block_drift.message.singular":
+    "{count} 个 three-end managed block 与期望内容（snapshot + 可选 project-rules concat）不一致：{list}。",
+  "doctor.check.managed_block_drift.message.plural":
+    "{count} 个 three-end managed block 与期望内容（snapshot + 可选 project-rules concat）不一致：{list}。",
+  "doctor.check.managed_block_drift.remediation":
+    "Run `fab doctor --fix` to restore three-end managed blocks from canonical",
+  "doctor.check.managed_block_drift.ok.ok":
+    "Three-end managed blocks 与 expectedBody 逐字节一致。",
+  "doctor.check.managed_block_drift.ok.no_managed_block":
+    "未检测到 three-end managed blocks；可能尚未传播，或仍处于 legacy-marker 状态。",
+  "doctor.check.bootstrap_anchor.name": "Bootstrap anchor",
+  "doctor.check.bootstrap_anchor.message.missing":
+    "repo root 下 AGENTS.md 与 CLAUDE.md 都不存在。Fabric 需要在项目根目录存在 bootstrap anchor 文件。",
+  "doctor.check.bootstrap_anchor.remediation.missing":
+    "Run `fabric install` to generate the AGENTS.md / CLAUDE.md bootstrap anchor at the repo root.",
+  "doctor.check.bootstrap_anchor.ok": "repo root 下已存在 Bootstrap anchor：{present}。",
+  "doctor.check.baseline_filename_format.name": "Baseline 文件名格式",
+  "doctor.check.baseline_filename_format.ok":
+    "所有 baseline knowledge 文件都使用 canonical `${id}--${slug}.md` 文件名格式。",
+  "doctor.check.baseline_filename_format.message.singular":
+    "{count} 个 baseline knowledge 文件仍使用已废弃的 bare-slug 文件名格式，必须迁移为 `${id}--${slug}.md`。首个：{detail}。",
+  "doctor.check.baseline_filename_format.message.plural":
+    "{count} 个 baseline knowledge 文件仍使用已废弃的 bare-slug 文件名格式，必须迁移为 `${id}--${slug}.md`。首个：{detail}。",
+  "doctor.check.baseline_filename_format.remediation":
+    "手动删除旧 bare-slug baseline file(s)；baseline pipeline 已在 rc.23 移除，不再提供 auto-fix 路径。",
+  "doctor.check.knowledge_dir_missing.name": "Knowledge layout",
+  "doctor.check.knowledge_dir_missing.message.singular":
+    "{count} 个必需 knowledge subdir 缺失：{list}。",
+  "doctor.check.knowledge_dir_missing.message.plural":
+    "{count} 个必需 knowledge subdir 缺失：{list}。",
+  "doctor.check.knowledge_dir_missing.remediation":
+    "Run `fab doctor --fix` to create the missing .fabric/knowledge/* subdirectories.",
+  "doctor.check.knowledge_dir_missing.ok":
+    "全部 {count} 个必需 .fabric/knowledge/* subdirectories 均已存在。",
+  "doctor.check.forensic.name": "Scan evidence",
+  "doctor.check.forensic.message.missing.singular":
+    "{error} Live scan 检测到 {frameworkKind}，共有 {count} 个 entry point。",
+  "doctor.check.forensic.message.missing.plural":
+    "{error} Live scan 检测到 {frameworkKind}，共有 {count} 个 entry point。",
+  "doctor.check.forensic.message.missing-default": ".fabric/forensic.json is missing.",
+  "doctor.check.forensic.message.invalid-default": ".fabric/forensic.json is invalid.",
+  "doctor.check.forensic.remediation": "Run `fab install` to regenerate .fabric/forensic.json.",
+  "doctor.check.forensic.ok": ".fabric/forensic.json 对 {frameworkKind} 有效。",
+  "doctor.check.agents_meta.name": "Agents metadata",
+  "doctor.check.agents_meta.message.missing": ".fabric/agents.meta.json is missing.",
+  "doctor.check.agents_meta.remediation.missing":
+    "Run `fab doctor --fix` to rebuild agents.meta.json from .fabric/knowledge/.",
+  "doctor.check.agents_meta.message.invalid-default": ".fabric/agents.meta.json is invalid.",
+  "doctor.check.agents_meta.remediation.invalid":
+    "Delete .fabric/agents.meta.json and run `fab doctor --fix` to regenerate it.",
+  "doctor.check.agents_meta.message.stale":
+    ".fabric/agents.meta.json revision {revision} 与 .fabric/knowledge 派生 revision {computedRevision} 不一致。",
+  "doctor.check.agents_meta.remediation.stale":
+    "可忽略；engine 会在下一次 plan-context/get-sections 调用时自动修复。需要显式 reconcile 时运行 `fab doctor --fix`。",
+  "doctor.check.agents_meta.ok":
+    ".fabric/agents.meta.json revision {revision} 已与 .fabric/knowledge 对齐。",
+  "doctor.check.rule_content_refs.name": "Rule content refs",
+  "doctor.check.rule_content_refs.message.unavailable":
+    "agents.meta.json 有效前，无法检查 content_ref entries。",
+  "doctor.check.rule_content_refs.remediation.unavailable":
+    "先修复 agents.meta.json：运行 `fab doctor --fix`。",
+  "doctor.check.rule_content_refs.message.outside.singular":
+    "{count} 个 content_ref entry 位于 .fabric/knowledge 外部。",
+  "doctor.check.rule_content_refs.message.outside.plural":
+    "{count} 个 content_ref entries 位于 .fabric/knowledge 外部。",
+  "doctor.check.rule_content_refs.remediation.outside":
+    "编辑 agents.meta.json，确保所有 content_ref 值都指向 .fabric/knowledge/{type}/（team）或 ~/.fabric/knowledge/{type}/（personal）内部。",
+  "doctor.check.rule_content_refs.message.missing.singular":
+    "{count} 个 content_ref target 缺失。运行 `fab doctor --fix` 执行 reconcile。",
+  "doctor.check.rule_content_refs.message.missing.plural":
+    "{count} 个 content_ref targets 缺失。运行 `fab doctor --fix` 执行 reconcile。",
+  "doctor.check.rule_content_refs.remediation.missing":
+    "Run `fab doctor --fix` to reconcile agents.meta.json with the files present in .fabric/knowledge/.",
+  "doctor.check.rule_content_refs.ok":
+    "所有 content_ref entries 都能解析到 .fabric/knowledge files。",
+  "doctor.check.knowledge_test_index.name": "Knowledge-test index",
+  "doctor.check.knowledge_test_index.remediation.missing":
+    "Run `fab doctor --fix` to rebuild .fabric/.cache/knowledge-test.index.json.",
+  "doctor.check.knowledge_test_index.remediation.invalid":
+    "Delete .fabric/.cache/knowledge-test.index.json and run `fab doctor --fix` to regenerate it.",
+  "doctor.check.knowledge_test_index.message.stale":
+    ".fabric/.cache/knowledge-test.index.json 已过期。",
+  "doctor.check.knowledge_test_index.remediation.stale":
+    "Run `fab doctor --fix` to rebuild the knowledge-test index.",
+  "doctor.check.knowledge_test_index.ok.link_singular.orphan_singular":
+    "已索引 {linkCount} 个 link 和 {orphanCount} 个 orphan annotation。",
+  "doctor.check.knowledge_test_index.ok.link_singular.orphan_plural":
+    "已索引 {linkCount} 个 link 和 {orphanCount} 个 orphan annotation。",
+  "doctor.check.knowledge_test_index.ok.link_plural.orphan_singular":
+    "已索引 {linkCount} 个 link 和 {orphanCount} 个 orphan annotation。",
+  "doctor.check.knowledge_test_index.ok.link_plural.orphan_plural":
+    "已索引 {linkCount} 个 link 和 {orphanCount} 个 orphan annotation。",
+  "doctor.check.event_ledger.name": "Event ledger",
+  "doctor.check.event_ledger.message.missing": ".fabric/events.jsonl is missing.",
+  "doctor.check.event_ledger.remediation.missing":
+    "Run `fab doctor --fix` to create .fabric/events.jsonl.",
+  "doctor.check.event_ledger.message.not_writable-default":
+    ".fabric/events.jsonl is not writable.",
+  "doctor.check.event_ledger.remediation.not_writable":
+    "检查 .fabric/events.jsonl 的文件权限，并确认没有其他进程持有写锁。",
+  "doctor.check.event_ledger.message.invalid-default": ".fabric/events.jsonl is invalid.",
+  "doctor.check.event_ledger.remediation.invalid":
+    "Delete .fabric/events.jsonl and run `fab doctor --fix` to recreate it.",
+  "doctor.check.event_ledger.ok":
+    ".fabric/events.jsonl 已存在，可写，且可解析。",
+  "doctor.check.mcp_config_in_wrong_file.name": "Claude MCP config 位置",
+  "doctor.check.mcp_config_in_wrong_file.message":
+    ".claude/settings.json 包含 mcpServers.fabric；此文件仅用于 hooks/permissions。运行 --fix 移除它，然后重新运行 fab install 写入 .mcp.json。",
+  "doctor.check.mcp_config_in_wrong_file.remediation":
+    "Run `fab doctor --fix` to remove mcpServers.fabric from .claude/settings.json, then run `fab install` to write .mcp.json.",
+  "doctor.check.mcp_config_in_wrong_file.ok":
+    "mcpServers.fabric 不在 .claude/settings.json 中。",
+  "doctor.check.event_ledger_partial_write.name": "Event ledger partial write",
+  "doctor.check.event_ledger_partial_write.ok.skipped":
+    "无需执行 partial-write 检查（ledger 缺失或不可写）。",
+  "doctor.check.event_ledger_partial_write.message":
+    "events.jsonl 在 byte offset {byteOffset} 处存在 partial write（{byteLength} 个 corrupted bytes）。运行 --fix 截断并保留 corrupted bytes。",
+  "doctor.check.event_ledger_partial_write.remediation":
+    "Run `fab doctor --fix` to truncate the partial write and restore events.jsonl to a valid state.",
+  "doctor.check.event_ledger_partial_write.ok.clean":
+    "events.jsonl 没有 partial trailing write。",
   // v2.0.0-rc.25 TASK-10: --archive-history 子命令——按 session 维度审计归档尝试记录。
   "cli.doctor.args.archive-history.description":
     "按 session 维度渲染归档尝试历史(只读;读取 session_archive_attempted 事件)。",
