@@ -469,6 +469,9 @@ function writeIssueSection(title: string, issues: DoctorIssue[]): void {
   writeStdout(title);
   for (const issue of issues) {
     writeStdout(`- ${issue.code}: ${issue.message}`);
+    if (issue.actionHint !== undefined && issue.actionHint.length > 0) {
+      writeStdout(`  → ${issue.actionHint}`);
+    }
   }
 }
 

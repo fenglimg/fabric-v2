@@ -64,6 +64,10 @@ export type DoctorIssue = {
   name: string;
   message: string;
   path?: string;
+  // rc.26 TASK-06 follow-up (Gemini review M1): forward the localized remediation
+  // text from DoctorCheck.actionHint so CLI consumers can render it inline with
+  // the issue. Optional — pre-rc.26 issues without actionHint stay backward-compat.
+  actionHint?: string;
 };
 
 export type DoctorSummary = {
@@ -2727,6 +2731,7 @@ function collectIssues(checks: DoctorCheck[], kind: DoctorIssueKind): DoctorIssu
       code: check.code ?? check.name,
       name: check.name,
       message: check.message,
+      actionHint: check.actionHint,
     }));
 }
 
