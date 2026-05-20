@@ -383,6 +383,56 @@ export const zhCNMessages: Messages = {
     "Run `fab doctor --fix` to truncate the partial write and restore events.jsonl to a valid state.",
   "doctor.check.event_ledger_partial_write.ok.clean":
     "events.jsonl 没有 partial trailing write。",
+  "doctor.check.meta_manually_diverged.name": "Meta manual divergence",
+  "doctor.check.meta_manually_diverged.ok.unreadable":
+    "agents.meta.json 不可读，跳过 divergence 检查。",
+  "doctor.check.meta_manually_diverged.message.extra.singular":
+    "agents.meta.json 中有 {count} 个 entry 在磁盘上没有对应文件。运行 --fix 执行 reconcile。",
+  "doctor.check.meta_manually_diverged.message.extra.plural":
+    "agents.meta.json 中有 {count} 个 entries 在磁盘上没有对应文件。运行 --fix 执行 reconcile。",
+  "doctor.check.meta_manually_diverged.remediation.extra":
+    "Run `fab doctor --fix` to reconcile agents.meta.json with the rule files currently on disk.",
+  "doctor.check.meta_manually_diverged.message.hash.singular":
+    "agents.meta.json 中有 {count} 个 entry 的 hash 与磁盘文件不匹配。运行 --fix 执行 reconcile。",
+  "doctor.check.meta_manually_diverged.message.hash.plural":
+    "agents.meta.json 中有 {count} 个 entries 的 hash 与磁盘文件不匹配。运行 --fix 执行 reconcile。",
+  "doctor.check.meta_manually_diverged.remediation.hash":
+    "Run `fab doctor --fix` to reconcile agents.meta.json with the current rule file contents.",
+  "doctor.check.meta_manually_diverged.ok.consistent":
+    "agents.meta.json 与磁盘上的 rule files 一致。",
+  "doctor.check.knowledge_dir_unindexed.name": "Knowledge dir unindexed",
+  "doctor.check.knowledge_dir_unindexed.message.singular":
+    ".fabric/knowledge/ 中有 {count} 个 .md file 未索引到 agents.meta.json。运行 `fab doctor --fix` 索引缺失的 knowledge files。",
+  "doctor.check.knowledge_dir_unindexed.message.plural":
+    ".fabric/knowledge/ 中有 {count} 个 .md files 未索引到 agents.meta.json。运行 `fab doctor --fix` 索引缺失的 knowledge files。",
+  "doctor.check.knowledge_dir_unindexed.remediation":
+    "Run `fab doctor --fix` to index the missing knowledge files.",
+  "doctor.check.knowledge_dir_unindexed.ok":
+    "所有 .fabric/knowledge/ .md files 都已索引到 agents.meta.json。",
+  "doctor.check.stable_id_collision.name": "Stable ID collision",
+  "doctor.check.stable_id_collision.message.singular":
+    "stable_id \"{stableId}\" 被声明在 {fileCount} 个文件中：{files}。请编辑其中一个 knowledge file，改用唯一 stable_id。",
+  "doctor.check.stable_id_collision.message.plural":
+    "检测到 {count} 个 stable_id collisions。首个：\"{stableId}\" 位于 {files}。请编辑其中一个 knowledge file，改用唯一 stable_id。",
+  "doctor.check.stable_id_collision.remediation":
+    "Edit one of the colliding knowledge files to declare a different `id: K[PT]-XXX-NNNN` frontmatter value.",
+  "doctor.check.stable_id_collision.ok":
+    ".fabric/knowledge/ 中未发现已声明的 stable_id collisions。",
+  "doctor.check.counter_desync.name": "Knowledge counter desync",
+  "doctor.check.counter_desync.message.singular":
+    "{count} 个 knowledge counter 与观测到的 stable_ids 不同步。{counterPath} = {current}，但检测到 {observedId}。运行 `fab doctor --fix` bump counters。",
+  "doctor.check.counter_desync.message.plural":
+    "{count} 个 knowledge counters 与观测到的 stable_ids 不同步。{counterPath} = {current}，但检测到 {observedId}。运行 `fab doctor --fix` bump counters。",
+  "doctor.check.counter_desync.remediation":
+    "Run `fab doctor --fix` to bump agents.meta.json counters to the maximum observed counter value.",
+  "doctor.check.counter_desync.ok":
+    "agents.meta.json counters envelope 与观测到的 stable_ids 一致。",
+  "doctor.check.preexisting_root_files.name": "Preexisting root markdown",
+  "doctor.check.preexisting_root_files.ok": "project root 未检测到 CLAUDE.md 或 AGENTS.md。",
+  "doctor.check.preexisting_root_files.message":
+    "project root 检测到 {files}。这些 root files 不会被 Fabric MCP 自动加载。",
+  "doctor.check.preexisting_root_files.remediation":
+    "Move knowledge content to `.fabric/knowledge/{type}/` if you want it available in MCP responses.",
   // v2.0.0-rc.25 TASK-10: --archive-history 子命令——按 session 维度审计归档尝试记录。
   "cli.doctor.args.archive-history.description":
     "按 session 维度渲染归档尝试历史(只读;读取 session_archive_attempted 事件)。",

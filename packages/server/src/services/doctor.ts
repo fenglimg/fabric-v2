@@ -951,10 +951,10 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     createEventLedgerCheck(t, eventLedger),
     createEventLedgerPartialWriteCheck(t, eventLedger),
     createMcpConfigInWrongFileCheck(t, mcpConfigInWrongFile),
-    createMetaManuallyDivergedCheck(metaManuallyDiverged),
-    createKnowledgeDirUnindexedCheck(knowledgeDirUnindexed),
-    createStableIdCollisionCheck(stableIdCollision),
-    createCounterDesyncCheck(counterDesync),
+    createMetaManuallyDivergedCheck(t, metaManuallyDiverged),
+    createKnowledgeDirUnindexedCheck(t, knowledgeDirUnindexed),
+    createStableIdCollisionCheck(t, stableIdCollision),
+    createCounterDesyncCheck(t, counterDesync),
     createFilesystemEditFallbackCheck(filesystemEditFallback),
     // rc.4 TASK-001: read-side lint checks #16-18. Findings only — mutation
     // + event emission lands in TASK-003 behind --apply-lint.
@@ -1003,7 +1003,7 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     // first-run phase. Sits adjacent to Skill markdown YAML — both are
     // Skill-adjacent advisories. --fix never mutates onboard state.
     createOnboardCoverageCheck(onboardCoverage),
-    createPreexistingRootFilesCheck(preexistingRootFiles),
+    createPreexistingRootFilesCheck(t, preexistingRootFiles),
     // v2.0 / rc.2: `createLegacyClientPathCheck` removed. The schema now
     // rejects retired clientPaths keys (windsurf/rooCode/geminiCLI) at Zod
     // parse time, so the soft-deprecation warn-and-fix path no longer has a
@@ -2837,18 +2837,24 @@ function collectMdFilesUnder(
   }
 }
 
-function createKnowledgeDirUnindexedCheck(inspection: RulesDirUnindexedInspection): DoctorCheck {
+function createKnowledgeDirUnindexedCheck(t: Translator, inspection: RulesDirUnindexedInspection): DoctorCheck {
   if (inspection.unindexedFiles.length > 0) {
+    const count = inspection.unindexedFiles.length;
     return issueCheck(
-      "Knowledge dir unindexed",
+      t("doctor.check.knowledge_dir_unindexed.name"),
       "error",
       "fixable_error",
       "knowledge_dir_unindexed",
-      `${inspection.unindexedFiles.length} .md file${inspection.unindexedFiles.length === 1 ? "" : "s"} in .fabric/knowledge/ not indexed in agents.meta.json. Run \`fab doctor --fix\` to index the missing knowledge files.`,
-      "Run `fab doctor --fix` to index the missing knowledge files.",
+      t(`doctor.check.knowledge_dir_unindexed.message.${count === 1 ? "singular" : "plural"}`, {
+        count: String(count),
+      }),
+      t("doctor.check.knowledge_dir_unindexed.remediation"),
     );
   }
-  return okCheck("Knowledge dir unindexed", "All .fabric/knowledge/ .md files are indexed in agents.meta.json.");
+  return okCheck(
+    t("doctor.check.knowledge_dir_unindexed.name"),
+    t("doctor.check.knowledge_dir_unindexed.ok"),
+  );
 }
 
 async function inspectStableIdCollisions(projectRoot: string): Promise<StableIdCollisionInspection> {
@@ -2988,69 +2994,90 @@ function inspectCounterDesync(meta: MetaInspection): CounterDesyncInspection {
   };
 }
 
-function createCounterDesyncCheck(inspection: CounterDesyncInspection): DoctorCheck {
+function createCounterDesyncCheck(t: Translator, inspection: CounterDesyncInspection): DoctorCheck {
   if (inspection.desyncs.length > 0) {
     const first = inspection.desyncs[0];
-    const detail = `counters.${first.layer}.${first.type} = ${first.current} but observed K${first.layer === "KP" ? "P" : "T"}-${first.type}-${String(first.observed).padStart(4, "0")}`;
+    const observedId = `K${first.layer === "KP" ? "P" : "T"}-${first.type}-${String(first.observed).padStart(4, "0")}`;
+    const count = inspection.desyncs.length;
     return issueCheck(
-      "Knowledge counter desync",
+      t("doctor.check.counter_desync.name"),
       "error",
       "fixable_error",
       "counter_desync",
-      `${inspection.desyncs.length} knowledge counter${inspection.desyncs.length === 1 ? "" : "s"} desynced from observed stable_ids. ${detail}. Run \`fab doctor --fix\` to bump counters.`,
-      "Run `fab doctor --fix` to bump agents.meta.json counters to the maximum observed counter value.",
+      t(`doctor.check.counter_desync.message.${count === 1 ? "singular" : "plural"}`, {
+        count: String(count),
+        counterPath: `counters.${first.layer}.${first.type}`,
+        current: String(first.current),
+        observedId,
+      }),
+      t("doctor.check.counter_desync.remediation"),
     );
   }
-  return okCheck("Knowledge counter desync", "agents.meta.json counters envelope is consistent with observed stable_ids.");
+  return okCheck(t("doctor.check.counter_desync.name"), t("doctor.check.counter_desync.ok"));
 }
 
-function createStableIdCollisionCheck(inspection: StableIdCollisionInspection): DoctorCheck {
+function createStableIdCollisionCheck(t: Translator, inspection: StableIdCollisionInspection): DoctorCheck {
   if (inspection.collisions.length > 0) {
     const first = inspection.collisions[0];
-    const detail = inspection.collisions.length === 1
-      ? `stable_id "${first.stable_id}" is declared in ${first.files.length} files: ${first.files.join(", ")}.`
-      : `${inspection.collisions.length} stable_id collision${inspection.collisions.length === 1 ? "" : "s"} detected. First: "${first.stable_id}" in ${first.files.join(", ")}.`;
+    const count = inspection.collisions.length;
     return issueCheck(
-      "Stable ID collision",
+      t("doctor.check.stable_id_collision.name"),
       "warn",
       "warning",
       "stable_id_collision",
-      `${detail} Edit one of the knowledge files to use a unique stable_id.`,
-      "Edit one of the colliding knowledge files to declare a different `id: K[PT]-XXX-NNNN` frontmatter value.",
+      t(`doctor.check.stable_id_collision.message.${count === 1 ? "singular" : "plural"}`, {
+        count: String(count),
+        stableId: first.stable_id,
+        fileCount: String(first.files.length),
+        files: first.files.join(", "),
+      }),
+      t("doctor.check.stable_id_collision.remediation"),
     );
   }
-  return okCheck("Stable ID collision", "No declared stable_id collisions found in .fabric/knowledge/.");
+  return okCheck(t("doctor.check.stable_id_collision.name"), t("doctor.check.stable_id_collision.ok"));
 }
 
-function createMetaManuallyDivergedCheck(inspection: MetaManuallyDivergedInspection): DoctorCheck {
+function createMetaManuallyDivergedCheck(t: Translator, inspection: MetaManuallyDivergedInspection): DoctorCheck {
   if (!inspection.readable) {
     // meta unreadable is already surfaced by createMetaCheck; skip here
-    return okCheck("Meta manual divergence", "agents.meta.json not readable; skipping divergence check.");
+    return okCheck(
+      t("doctor.check.meta_manually_diverged.name"),
+      t("doctor.check.meta_manually_diverged.ok.unreadable"),
+    );
   }
 
   if (inspection.extraMetaEntries.length > 0) {
+    const count = inspection.extraMetaEntries.length;
     return issueCheck(
-      "Meta manual divergence",
+      t("doctor.check.meta_manually_diverged.name"),
       "warn",
       "warning",
       "meta_manually_diverged",
-      `agents.meta.json has ${inspection.extraMetaEntries.length} entr${inspection.extraMetaEntries.length === 1 ? "y" : "ies"} with no backing file on disk. Run --fix to reconcile.`,
-      "Run `fab doctor --fix` to reconcile agents.meta.json with the rule files currently on disk.",
+      t(`doctor.check.meta_manually_diverged.message.extra.${count === 1 ? "singular" : "plural"}`, {
+        count: String(count),
+      }),
+      t("doctor.check.meta_manually_diverged.remediation.extra"),
     );
   }
 
   if (inspection.hashMismatchEntries.length > 0) {
+    const count = inspection.hashMismatchEntries.length;
     return issueCheck(
-      "Meta manual divergence",
+      t("doctor.check.meta_manually_diverged.name"),
       "warn",
       "warning",
       "meta_manually_diverged",
-      `agents.meta.json has ${inspection.hashMismatchEntries.length} entr${inspection.hashMismatchEntries.length === 1 ? "y" : "ies"} whose hash does not match the file on disk. Run --fix to reconcile.`,
-      "Run `fab doctor --fix` to reconcile agents.meta.json with the current rule file contents.",
+      t(`doctor.check.meta_manually_diverged.message.hash.${count === 1 ? "singular" : "plural"}`, {
+        count: String(count),
+      }),
+      t("doctor.check.meta_manually_diverged.remediation.hash"),
     );
   }
 
-  return okCheck("Meta manual divergence", "agents.meta.json is consistent with rule files on disk.");
+  return okCheck(
+    t("doctor.check.meta_manually_diverged.name"),
+    t("doctor.check.meta_manually_diverged.ok.consistent"),
+  );
 }
 
 function inspectPreexistingRootFiles(projectRoot: string): PreexistingRootFilesInspection {
@@ -3164,18 +3191,18 @@ function createFilesystemEditFallbackCheck(inspection: FilesystemEditFallbackIns
   };
 }
 
-function createPreexistingRootFilesCheck(inspection: PreexistingRootFilesInspection): DoctorCheck {
+function createPreexistingRootFilesCheck(t: Translator, inspection: PreexistingRootFilesInspection): DoctorCheck {
   if (inspection.detected.length === 0) {
-    return okCheck("Preexisting root markdown", "No CLAUDE.md or AGENTS.md detected at project root.");
+    return okCheck(t("doctor.check.preexisting_root_files.name"), t("doctor.check.preexisting_root_files.ok"));
   }
   return {
-    name: "Preexisting root markdown",
+    name: t("doctor.check.preexisting_root_files.name"),
     status: "ok",
     kind: "info",
     code: "preexisting_root_claude_md",
     fixable: false,
-    message: `${inspection.detected.join(", ")} detected at project root. These root files are not auto-loaded by Fabric MCP.`,
-    actionHint: "Move knowledge content to `.fabric/knowledge/{type}/` if you want it available in MCP responses.",
+    message: t("doctor.check.preexisting_root_files.message", { files: inspection.detected.join(", ") }),
+    actionHint: t("doctor.check.preexisting_root_files.remediation"),
   };
 }
 

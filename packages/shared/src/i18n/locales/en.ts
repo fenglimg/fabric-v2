@@ -391,6 +391,56 @@ export const enMessages: Messages = {
     "Run `fab doctor --fix` to truncate the partial write and restore events.jsonl to a valid state.",
   "doctor.check.event_ledger_partial_write.ok.clean":
     "events.jsonl has no partial trailing write.",
+  "doctor.check.meta_manually_diverged.name": "Meta manual divergence",
+  "doctor.check.meta_manually_diverged.ok.unreadable":
+    "agents.meta.json not readable; skipping divergence check.",
+  "doctor.check.meta_manually_diverged.message.extra.singular":
+    "agents.meta.json has {count} entry with no backing file on disk. Run --fix to reconcile.",
+  "doctor.check.meta_manually_diverged.message.extra.plural":
+    "agents.meta.json has {count} entries with no backing file on disk. Run --fix to reconcile.",
+  "doctor.check.meta_manually_diverged.remediation.extra":
+    "Run `fab doctor --fix` to reconcile agents.meta.json with the rule files currently on disk.",
+  "doctor.check.meta_manually_diverged.message.hash.singular":
+    "agents.meta.json has {count} entry whose hash does not match the file on disk. Run --fix to reconcile.",
+  "doctor.check.meta_manually_diverged.message.hash.plural":
+    "agents.meta.json has {count} entries whose hash does not match the file on disk. Run --fix to reconcile.",
+  "doctor.check.meta_manually_diverged.remediation.hash":
+    "Run `fab doctor --fix` to reconcile agents.meta.json with the current rule file contents.",
+  "doctor.check.meta_manually_diverged.ok.consistent":
+    "agents.meta.json is consistent with rule files on disk.",
+  "doctor.check.knowledge_dir_unindexed.name": "Knowledge dir unindexed",
+  "doctor.check.knowledge_dir_unindexed.message.singular":
+    "{count} .md file in .fabric/knowledge/ not indexed in agents.meta.json. Run `fab doctor --fix` to index the missing knowledge files.",
+  "doctor.check.knowledge_dir_unindexed.message.plural":
+    "{count} .md files in .fabric/knowledge/ not indexed in agents.meta.json. Run `fab doctor --fix` to index the missing knowledge files.",
+  "doctor.check.knowledge_dir_unindexed.remediation":
+    "Run `fab doctor --fix` to index the missing knowledge files.",
+  "doctor.check.knowledge_dir_unindexed.ok":
+    "All .fabric/knowledge/ .md files are indexed in agents.meta.json.",
+  "doctor.check.stable_id_collision.name": "Stable ID collision",
+  "doctor.check.stable_id_collision.message.singular":
+    "stable_id \"{stableId}\" is declared in {fileCount} files: {files}. Edit one of the knowledge files to use a unique stable_id.",
+  "doctor.check.stable_id_collision.message.plural":
+    "{count} stable_id collisions detected. First: \"{stableId}\" in {files}. Edit one of the knowledge files to use a unique stable_id.",
+  "doctor.check.stable_id_collision.remediation":
+    "Edit one of the colliding knowledge files to declare a different `id: K[PT]-XXX-NNNN` frontmatter value.",
+  "doctor.check.stable_id_collision.ok":
+    "No declared stable_id collisions found in .fabric/knowledge/.",
+  "doctor.check.counter_desync.name": "Knowledge counter desync",
+  "doctor.check.counter_desync.message.singular":
+    "{count} knowledge counter desynced from observed stable_ids. {counterPath} = {current} but observed {observedId}. Run `fab doctor --fix` to bump counters.",
+  "doctor.check.counter_desync.message.plural":
+    "{count} knowledge counters desynced from observed stable_ids. {counterPath} = {current} but observed {observedId}. Run `fab doctor --fix` to bump counters.",
+  "doctor.check.counter_desync.remediation":
+    "Run `fab doctor --fix` to bump agents.meta.json counters to the maximum observed counter value.",
+  "doctor.check.counter_desync.ok":
+    "agents.meta.json counters envelope is consistent with observed stable_ids.",
+  "doctor.check.preexisting_root_files.name": "Preexisting root markdown",
+  "doctor.check.preexisting_root_files.ok": "No CLAUDE.md or AGENTS.md detected at project root.",
+  "doctor.check.preexisting_root_files.message":
+    "{files} detected at project root. These root files are not auto-loaded by Fabric MCP.",
+  "doctor.check.preexisting_root_files.remediation":
+    "Move knowledge content to `.fabric/knowledge/{type}/` if you want it available in MCP responses.",
   // v2.0.0-rc.25 TASK-10: --archive-history flag set. Read-only audit of
   // session_archive_attempted events; mutually exclusive with the other
   // mutation/report surfaces.
