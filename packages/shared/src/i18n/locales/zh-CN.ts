@@ -251,12 +251,12 @@ export const zhCNMessages: Messages = {
   "doctor.check.bootstrap_marker_migration.message.plural":
     "{count} 个文件仍带有旧 fabric:knowledge-base bootstrap marker：{list}。",
   "doctor.check.bootstrap_marker_migration.remediation":
-    "Run `fab doctor --fix` to migrate to fabric:bootstrap marker",
+    "运行 `fab doctor --fix` 迁移到 fabric:bootstrap marker",
   "doctor.check.bootstrap_snapshot_drift.name": "Bootstrap snapshot drift",
   "doctor.check.bootstrap_snapshot_drift.message.drift":
     ".fabric/AGENTS.md 内容与 BOOTSTRAP_CANONICAL 逐字节不一致。",
   "doctor.check.bootstrap_snapshot_drift.remediation.drift":
-    "Run `fab doctor --fix` to restore canonical bootstrap snapshot",
+    "运行 `fab doctor --fix` 恢复 canonical bootstrap snapshot",
   "doctor.check.bootstrap_snapshot_drift.ok.ok":
     ".fabric/AGENTS.md 与 BOOTSTRAP_CANONICAL 逐字节一致。",
   "doctor.check.bootstrap_snapshot_drift.ok.missing_delegated":
@@ -267,7 +267,7 @@ export const zhCNMessages: Messages = {
   "doctor.check.managed_block_drift.message.plural":
     "{count} 个 three-end managed block 与期望内容（snapshot + 可选 project-rules concat）不一致：{list}。",
   "doctor.check.managed_block_drift.remediation":
-    "Run `fab doctor --fix` to restore three-end managed blocks from canonical",
+    "运行 `fab doctor --fix` 从 canonical 恢复 three-end managed blocks",
   "doctor.check.managed_block_drift.ok.ok":
     "Three-end managed blocks 与 expectedBody 逐字节一致。",
   "doctor.check.managed_block_drift.ok.no_managed_block":
@@ -276,7 +276,7 @@ export const zhCNMessages: Messages = {
   "doctor.check.bootstrap_anchor.message.missing":
     "repo root 下 AGENTS.md 与 CLAUDE.md 都不存在。Fabric 需要在项目根目录存在 bootstrap anchor 文件。",
   "doctor.check.bootstrap_anchor.remediation.missing":
-    "Run `fabric install` to generate the AGENTS.md / CLAUDE.md bootstrap anchor at the repo root.",
+    "运行 `fabric install` 在 repo root 生成 AGENTS.md / CLAUDE.md bootstrap anchor。",
   "doctor.check.bootstrap_anchor.ok": "repo root 下已存在 Bootstrap anchor：{present}。",
   "doctor.check.baseline_filename_format.name": "Baseline 文件名格式",
   "doctor.check.baseline_filename_format.ok":
@@ -293,25 +293,25 @@ export const zhCNMessages: Messages = {
   "doctor.check.knowledge_dir_missing.message.plural":
     "{count} 个必需 knowledge subdir 缺失：{list}。",
   "doctor.check.knowledge_dir_missing.remediation":
-    "Run `fab doctor --fix` to create the missing .fabric/knowledge/* subdirectories.",
+    "运行 `fab doctor --fix` 创建缺失的 .fabric/knowledge/* subdirectories。",
   "doctor.check.knowledge_dir_missing.ok":
     "全部 {count} 个必需 .fabric/knowledge/* subdirectories 均已存在。",
   "doctor.check.forensic.name": "Scan evidence",
   "doctor.check.forensic.message.missing.singular":
-    "{error} Live scan 检测到 {frameworkKind}，共有 {count} 个 entry point。",
+    "{error} 实时扫描检测到 {frameworkKind}，共有 {count} 个入口点。",
   "doctor.check.forensic.message.missing.plural":
-    "{error} Live scan 检测到 {frameworkKind}，共有 {count} 个 entry point。",
-  "doctor.check.forensic.message.missing-default": ".fabric/forensic.json is missing.",
-  "doctor.check.forensic.message.invalid-default": ".fabric/forensic.json is invalid.",
-  "doctor.check.forensic.remediation": "Run `fab install` to regenerate .fabric/forensic.json.",
+    "{error} 实时扫描检测到 {frameworkKind}，共有 {count} 个入口点。",
+  "doctor.check.forensic.message.missing-default": ".fabric/forensic.json 缺失。",
+  "doctor.check.forensic.message.invalid-default": ".fabric/forensic.json 无效。",
+  "doctor.check.forensic.remediation": "运行 `fab install` 重新生成 .fabric/forensic.json。",
   "doctor.check.forensic.ok": ".fabric/forensic.json 对 {frameworkKind} 有效。",
   "doctor.check.agents_meta.name": "Agents metadata",
-  "doctor.check.agents_meta.message.missing": ".fabric/agents.meta.json is missing.",
+  "doctor.check.agents_meta.message.missing": ".fabric/agents.meta.json 缺失。",
   "doctor.check.agents_meta.remediation.missing":
-    "Run `fab doctor --fix` to rebuild agents.meta.json from .fabric/knowledge/.",
-  "doctor.check.agents_meta.message.invalid-default": ".fabric/agents.meta.json is invalid.",
+    "运行 `fab doctor --fix` 从 .fabric/knowledge/ 重建 agents.meta.json。",
+  "doctor.check.agents_meta.message.invalid-default": ".fabric/agents.meta.json 无效。",
   "doctor.check.agents_meta.remediation.invalid":
-    "Delete .fabric/agents.meta.json and run `fab doctor --fix` to regenerate it.",
+    "删除 .fabric/agents.meta.json 并运行 `fab doctor --fix` 重新生成。",
   "doctor.check.agents_meta.message.stale":
     ".fabric/agents.meta.json revision {revision} 与 .fabric/knowledge 派生 revision {computedRevision} 不一致。",
   "doctor.check.agents_meta.remediation.stale":
@@ -334,18 +334,18 @@ export const zhCNMessages: Messages = {
   "doctor.check.rule_content_refs.message.missing.plural":
     "{count} 个 content_ref targets 缺失。运行 `fab doctor --fix` 执行 reconcile。",
   "doctor.check.rule_content_refs.remediation.missing":
-    "Run `fab doctor --fix` to reconcile agents.meta.json with the files present in .fabric/knowledge/.",
+    "运行 `fab doctor --fix` 让 agents.meta.json 与 .fabric/knowledge/ 中的现有文件 reconcile。",
   "doctor.check.rule_content_refs.ok":
     "所有 content_ref entries 都能解析到 .fabric/knowledge files。",
   "doctor.check.knowledge_test_index.name": "Knowledge-test index",
   "doctor.check.knowledge_test_index.remediation.missing":
-    "Run `fab doctor --fix` to rebuild .fabric/.cache/knowledge-test.index.json.",
+    "运行 `fab doctor --fix` 重建 .fabric/.cache/knowledge-test.index.json。",
   "doctor.check.knowledge_test_index.remediation.invalid":
-    "Delete .fabric/.cache/knowledge-test.index.json and run `fab doctor --fix` to regenerate it.",
+    "删除 .fabric/.cache/knowledge-test.index.json 并运行 `fab doctor --fix` 重新生成。",
   "doctor.check.knowledge_test_index.message.stale":
     ".fabric/.cache/knowledge-test.index.json 已过期。",
   "doctor.check.knowledge_test_index.remediation.stale":
-    "Run `fab doctor --fix` to rebuild the knowledge-test index.",
+    "运行 `fab doctor --fix` 重建 knowledge-test index。",
   "doctor.check.knowledge_test_index.ok.link_singular.orphan_singular":
     "已索引 {linkCount} 个 link 和 {orphanCount} 个 orphan annotation。",
   "doctor.check.knowledge_test_index.ok.link_singular.orphan_plural":
@@ -355,23 +355,23 @@ export const zhCNMessages: Messages = {
   "doctor.check.knowledge_test_index.ok.link_plural.orphan_plural":
     "已索引 {linkCount} 个 link 和 {orphanCount} 个 orphan annotation。",
   "doctor.check.event_ledger.name": "Event ledger",
-  "doctor.check.event_ledger.message.missing": ".fabric/events.jsonl is missing.",
+  "doctor.check.event_ledger.message.missing": ".fabric/events.jsonl 缺失。",
   "doctor.check.event_ledger.remediation.missing":
-    "Run `fab doctor --fix` to create .fabric/events.jsonl.",
+    "运行 `fab doctor --fix` 创建 .fabric/events.jsonl。",
   "doctor.check.event_ledger.message.not_writable-default":
-    ".fabric/events.jsonl is not writable.",
+    ".fabric/events.jsonl 不可写。",
   "doctor.check.event_ledger.remediation.not_writable":
     "检查 .fabric/events.jsonl 的文件权限，并确认没有其他进程持有写锁。",
-  "doctor.check.event_ledger.message.invalid-default": ".fabric/events.jsonl is invalid.",
+  "doctor.check.event_ledger.message.invalid-default": ".fabric/events.jsonl 无效。",
   "doctor.check.event_ledger.remediation.invalid":
-    "Delete .fabric/events.jsonl and run `fab doctor --fix` to recreate it.",
+    "删除 .fabric/events.jsonl 并运行 `fab doctor --fix` 重新创建。",
   "doctor.check.event_ledger.ok":
     ".fabric/events.jsonl 已存在，可写，且可解析。",
   "doctor.check.mcp_config_in_wrong_file.name": "Claude MCP config 位置",
   "doctor.check.mcp_config_in_wrong_file.message":
     ".claude/settings.json 包含 mcpServers.fabric；此文件仅用于 hooks/permissions。运行 --fix 移除它，然后重新运行 fab install 写入 .mcp.json。",
   "doctor.check.mcp_config_in_wrong_file.remediation":
-    "Run `fab doctor --fix` to remove mcpServers.fabric from .claude/settings.json, then run `fab install` to write .mcp.json.",
+    "运行 `fab doctor --fix` 从 .claude/settings.json 中移除 mcpServers.fabric，然后运行 `fab install` 写入 .mcp.json。",
   "doctor.check.mcp_config_in_wrong_file.ok":
     "mcpServers.fabric 不在 .claude/settings.json 中。",
   "doctor.check.event_ledger_partial_write.name": "Event ledger partial write",
@@ -380,7 +380,7 @@ export const zhCNMessages: Messages = {
   "doctor.check.event_ledger_partial_write.message":
     "events.jsonl 在 byte offset {byteOffset} 处存在 partial write（{byteLength} 个 corrupted bytes）。运行 --fix 截断并保留 corrupted bytes。",
   "doctor.check.event_ledger_partial_write.remediation":
-    "Run `fab doctor --fix` to truncate the partial write and restore events.jsonl to a valid state.",
+    "运行 `fab doctor --fix` 截断 partial write 并将 events.jsonl 恢复到有效状态。",
   "doctor.check.event_ledger_partial_write.ok.clean":
     "events.jsonl 没有 partial trailing write。",
   "doctor.check.meta_manually_diverged.name": "Meta manual divergence",
@@ -391,13 +391,13 @@ export const zhCNMessages: Messages = {
   "doctor.check.meta_manually_diverged.message.extra.plural":
     "agents.meta.json 中有 {count} 个 entries 在磁盘上没有对应文件。运行 --fix 执行 reconcile。",
   "doctor.check.meta_manually_diverged.remediation.extra":
-    "Run `fab doctor --fix` to reconcile agents.meta.json with the rule files currently on disk.",
+    "运行 `fab doctor --fix` 让 agents.meta.json 与磁盘上当前的 rule files reconcile。",
   "doctor.check.meta_manually_diverged.message.hash.singular":
     "agents.meta.json 中有 {count} 个 entry 的 hash 与磁盘文件不匹配。运行 --fix 执行 reconcile。",
   "doctor.check.meta_manually_diverged.message.hash.plural":
     "agents.meta.json 中有 {count} 个 entries 的 hash 与磁盘文件不匹配。运行 --fix 执行 reconcile。",
   "doctor.check.meta_manually_diverged.remediation.hash":
-    "Run `fab doctor --fix` to reconcile agents.meta.json with the current rule file contents.",
+    "运行 `fab doctor --fix` 让 agents.meta.json 与当前 rule file 内容 reconcile。",
   "doctor.check.meta_manually_diverged.ok.consistent":
     "agents.meta.json 与磁盘上的 rule files 一致。",
   "doctor.check.knowledge_dir_unindexed.name": "Knowledge dir unindexed",
@@ -406,7 +406,7 @@ export const zhCNMessages: Messages = {
   "doctor.check.knowledge_dir_unindexed.message.plural":
     ".fabric/knowledge/ 中有 {count} 个 .md files 未索引到 agents.meta.json。运行 `fab doctor --fix` 索引缺失的 knowledge files。",
   "doctor.check.knowledge_dir_unindexed.remediation":
-    "Run `fab doctor --fix` to index the missing knowledge files.",
+    "运行 `fab doctor --fix` 索引缺失的 knowledge files。",
   "doctor.check.knowledge_dir_unindexed.ok":
     "所有 .fabric/knowledge/ .md files 都已索引到 agents.meta.json。",
   "doctor.check.stable_id_collision.name": "Stable ID collision",
@@ -415,7 +415,7 @@ export const zhCNMessages: Messages = {
   "doctor.check.stable_id_collision.message.plural":
     "检测到 {count} 个 stable_id collisions。首个：\"{stableId}\" 位于 {files}。请编辑其中一个 knowledge file，改用唯一 stable_id。",
   "doctor.check.stable_id_collision.remediation":
-    "Edit one of the colliding knowledge files to declare a different `id: K[PT]-XXX-NNNN` frontmatter value.",
+    "编辑其中一个 colliding knowledge file，改用不同的 `id: K[PT]-XXX-NNNN` frontmatter 值。",
   "doctor.check.stable_id_collision.ok":
     ".fabric/knowledge/ 中未发现已声明的 stable_id collisions。",
   "doctor.check.counter_desync.name": "Knowledge counter desync",
@@ -424,7 +424,7 @@ export const zhCNMessages: Messages = {
   "doctor.check.counter_desync.message.plural":
     "{count} 个 knowledge counters 与观测到的 stable_ids 不同步。{counterPath} = {current}，但检测到 {observedId}。运行 `fab doctor --fix` bump counters。",
   "doctor.check.counter_desync.remediation":
-    "Run `fab doctor --fix` to bump agents.meta.json counters to the maximum observed counter value.",
+    "运行 `fab doctor --fix` 将 agents.meta.json counters 提升到观测到的最大 counter 值。",
   "doctor.check.counter_desync.ok":
     "agents.meta.json counters envelope 与观测到的 stable_ids 一致。",
   "doctor.check.preexisting_root_files.name": "Preexisting root markdown",
@@ -432,7 +432,7 @@ export const zhCNMessages: Messages = {
   "doctor.check.preexisting_root_files.message":
     "project root 检测到 {files}。这些 root files 不会被 Fabric MCP 自动加载。",
   "doctor.check.preexisting_root_files.remediation":
-    "Move knowledge content to `.fabric/knowledge/{type}/` if you want it available in MCP responses.",
+    "如果希望这些 knowledge 内容在 MCP 响应中可用，请将其移动到 `.fabric/knowledge/{type}/`。",
   "doctor.check.filesystem_edit_fallback.name": "Filesystem-edit fallback",
   "doctor.check.filesystem_edit_fallback.ok":
     "No orphan canonical knowledge entries detected；events.jsonl promotion trail 完整。",
@@ -450,7 +450,7 @@ export const zhCNMessages: Messages = {
   "doctor.check.orphan_demote.message.plural":
     "{count} 个 canonical knowledge entries 超过按 maturity 设定的 inactivity threshold（stable={stableDays}d / endorsed={endorsedDays}d / draft={draftDays}d）。首个：{detail}。",
   "doctor.check.orphan_demote.remediation":
-    "Run `fab doctor --apply-lint` (rc.4 TASK-003) to demote orphan entries one maturity tier.",
+    "运行 `fab doctor --apply-lint`（rc.4 TASK-003）将 orphan entries 降级一个 maturity tier。",
   "doctor.check.stale_archive.name": "Knowledge stale archive",
   "doctor.check.stale_archive.ok":
     "没有 draft knowledge entries 超过额外的 stale-archive quiet window。",
@@ -459,7 +459,7 @@ export const zhCNMessages: Messages = {
   "doctor.check.stale_archive.message.plural":
     "{count} 个 draft knowledge entries 已超过 demote+{additionalDays}d 额外 quiet window。首个：{detail}。",
   "doctor.check.stale_archive.remediation":
-    "Run `fab doctor --apply-lint` (rc.4 TASK-003) to move stale entries into `.fabric/.archive/<type>/`.",
+    "运行 `fab doctor --apply-lint`（rc.4 TASK-003）将 stale entries 移动到 `.fabric/.archive/<type>/`。",
   "doctor.check.pending_overdue.name": "Knowledge pending overdue",
   "doctor.check.pending_overdue.ok":
     "没有 pending knowledge entries 超过 14-day review threshold。",
@@ -468,7 +468,7 @@ export const zhCNMessages: Messages = {
   "doctor.check.pending_overdue.message.plural":
     "{count} 个 pending knowledge entries 已等待 review 超过 {thresholdDays} 天。首个：{detail}。",
   "doctor.check.pending_overdue.remediation":
-    "Review pending entries via the fabric-review Skill (`/fabric-review`) and approve, reject, defer, or modify.",
+    "通过 fabric-review Skill（`/fabric-review`）审阅 pending entries，并执行 approve / reject / defer / modify。",
   "doctor.check.stable_id_duplicate.name": "Knowledge stable_id duplicate",
   "doctor.check.stable_id_duplicate.ok":
     "team / personal trees 中没有 canonical knowledge files 共享 stable_id。",
@@ -477,7 +477,7 @@ export const zhCNMessages: Messages = {
   "doctor.check.stable_id_duplicate.message.plural":
     "{count} 个 stable_ids 在 canonical knowledge files 中重复（path-decoupled identity invariant）。首个：{detail}。",
   "doctor.check.stable_id_duplicate.remediation":
-    "Manually rename one of the colliding files to a fresh `<prefix>-<type>-<counter>--<slug>.md` allocated via the canonical id allocator; do not edit by hand.",
+    "手动将其中一个 colliding file 重命名为通过 canonical id allocator 分配的新 `<prefix>-<type>-<counter>--<slug>.md`；不要手工编辑。",
   "doctor.check.layer_mismatch.name": "Knowledge layer mismatch",
   "doctor.check.layer_mismatch.ok":
     "所有 canonical knowledge files 都位于 stable_id prefix 声明的 layer 下。",
@@ -486,7 +486,7 @@ export const zhCNMessages: Messages = {
   "doctor.check.layer_mismatch.message.plural":
     "{count} 个 canonical knowledge files 与其 stable_id layer prefix 的物理位置不一致（KT-* must live under team/, KP-* under personal/）。首个：{detail}。",
   "doctor.check.layer_mismatch.remediation":
-    "Move the file to the correct layer root, or use the fabric-review modify flow to flip its layer (which renames the stable_id prefix accordingly).",
+    "将文件移动到正确的 layer root，或通过 fabric-review modify 流程切换其 layer（会相应重命名 stable_id prefix）。",
   "doctor.check.index_drift.name": "Knowledge index drift",
   "doctor.check.index_drift.ok":
     "agents.meta.json counters envelope 对每个 (layer, type) pair 都大于或等于现有 canonical counter 最大值。",
@@ -495,16 +495,16 @@ export const zhCNMessages: Messages = {
   "doctor.check.index_drift.message.plural":
     "{count} 个 (layer, type) counter slots 已低于观测到的 canonical maximum（next allocate would collide）。首个：{detail}。",
   "doctor.check.index_drift.remediation":
-    "Run `fab doctor --apply-lint` (rc.4 TASK-003) to bump agents.meta.json counters to max_observed + 1.",
+    "运行 `fab doctor --apply-lint`（rc.4 TASK-003）将 agents.meta.json counters 提升到 max_observed + 1。",
   "doctor.check.underseeded.name": "Knowledge underseeded",
   "doctor.check.underseeded.ok":
-    "Knowledge corpus 有 {count} 个 canonical entries（>= {threshold}）。",
+    "知识库已有 {count} 个 canonical entries（>= {threshold}）。",
   "doctor.check.underseeded.message.singular":
-    "Knowledge corpus 只有 {count} 个 canonical entry（< {threshold} threshold）。plan_context retrieval surface 低于可用下限。",
+    "知识库仅有 {count} 个 canonical entry（< {threshold} threshold）。plan_context 检索面低于可用下限。",
   "doctor.check.underseeded.message.plural":
-    "Knowledge corpus 只有 {count} 个 canonical entries（< {threshold} threshold）。plan_context retrieval surface 低于可用下限。",
+    "知识库仅有 {count} 个 canonical entries（< {threshold} threshold）。plan_context 检索面低于可用下限。",
   "doctor.check.underseeded.remediation":
-    "Run the fabric-import Skill (`/fabric-import`) to backfill knowledge from git history and existing docs.",
+    "运行 fabric-import Skill（`/fabric-import`）从 git history 与现有文档回填 knowledge。",
   "doctor.check.narrow_no_paths.name": "Knowledge narrow without paths",
   "doctor.check.narrow_no_paths.ok":
     "没有 narrow-scope canonical entries 的 relevance_paths array 为空。",
@@ -513,7 +513,7 @@ export const zhCNMessages: Messages = {
   "doctor.check.narrow_no_paths.message.plural":
     "{count} 个 narrow-scope canonical entries 的 relevance_paths array 为空（silent recall risk — narrow without anchors can never match a target path）。首个：{detail}。",
   "doctor.check.narrow_no_paths.remediation":
-    "Either add path anchors to relevance_paths or widen the entry's relevance_scope to broad.",
+    "为 relevance_paths 添加 path anchors，或将 entry 的 relevance_scope 放宽到 broad。",
   "doctor.check.relevance_paths_dangling.name": "Knowledge relevance_paths dangling",
   "doctor.check.relevance_paths_dangling.ok":
     "所有 relevance_paths globs 都能在 workspace root 下解析到至少 1 个文件。",
@@ -522,7 +522,7 @@ export const zhCNMessages: Messages = {
   "doctor.check.relevance_paths_dangling.message.plural":
     "{count} 个 relevance_paths globs 在当前 workspace 中解析到 0 个文件。首个：{detail}。",
   "doctor.check.relevance_paths_dangling.remediation":
-    "Update the entry's relevance_paths to remove globs that no longer match any files, or use `fab_review.modify` to rewrite the anchor set.",
+    "更新 entry 的 relevance_paths，移除不再匹配任何文件的 globs，或使用 `fab_review.modify` 重写 anchor set。",
   "doctor.check.relevance_paths_drift.name": "Knowledge relevance_paths drift",
   "doctor.check.relevance_paths_drift.ok.skipped":
     "已跳过（git history unavailable；无法评估 {windowDays}d drift window）。",
@@ -533,7 +533,7 @@ export const zhCNMessages: Messages = {
   "doctor.check.relevance_paths_drift.message.plural":
     "{count} 个 narrow-scope canonical entries 的 relevance_paths globs 没有匹配到最近 {windowDays}d git history 中触碰过的文件。首个：{detail}。",
   "doctor.check.relevance_paths_drift.remediation":
-    "Review whether the entry is still relevant — use `fab_review.modify` to refresh the anchors or `fab_review.reject` to archive.",
+    "审阅该 entry 是否仍然相关 — 使用 `fab_review.modify` 刷新 anchors，或使用 `fab_review.reject` 归档。",
   "doctor.check.narrow_too_few.name": "Knowledge narrow too few",
   "doctor.check.narrow_too_few.ok":
     "Narrow-with-paths ratio {ratioPct}%（{narrowCount}/{totalCount}）；{teleNote}。",
@@ -548,7 +548,7 @@ export const zhCNMessages: Messages = {
   "doctor.check.narrow_too_few.message.summary":
     "Narrow-scope KB coverage 低于可用下限：{parts}。",
   "doctor.check.narrow_too_few.remediation":
-    "Run the fabric-import Skill (`/fabric-import`) to re-seed narrow anchors against the current codebase.",
+    "运行 fabric-import Skill（`/fabric-import`）针对当前 codebase 重新播种 narrow anchors。",
   "doctor.check.session_hints_stale.name": "Knowledge session-hints stale",
   "doctor.check.session_hints_stale.ok":
     ".fabric/.cache/ 下没有超过 {days} 天的 session-hints cache files。",
@@ -557,7 +557,7 @@ export const zhCNMessages: Messages = {
   "doctor.check.session_hints_stale.message.plural":
     ".fabric/.cache/ 下有 {count} 个 session-hints cache files 超过 {days} 天。首个：{detail}。",
   "doctor.check.session_hints_stale.remediation":
-    "Run `fab doctor --apply-lint` to delete stale session-hints cache files.",
+    "运行 `fab doctor --apply-lint` 删除过期的 session-hints cache files。",
   "doctor.check.stale_serve_lock.name": "Serve lock",
   "doctor.check.stale_serve_lock.ok.no_lock": "未发现 .fabric/.serve.lock。",
   "doctor.check.stale_serve_lock.ok.live_pid":
@@ -569,7 +569,7 @@ export const zhCNMessages: Messages = {
   "doctor.check.stale_serve_lock.message.dead_pid":
     "[advisory] .fabric/.serve.lock 持有 dead PID {pid}（acquired {acquiredAgo}）。运行 `fab doctor --fix` 移除。",
   "doctor.check.stale_serve_lock.remediation.dead_pid":
-    "Run `fab doctor --fix` to remove the stale .fabric/.serve.lock.",
+    "运行 `fab doctor --fix` 移除过期的 .fabric/.serve.lock。",
   "doctor.check.relevance_fields_missing.name": "Knowledge relevance fields missing",
   "doctor.check.relevance_fields_missing.ok":
     "所有 pending entries 都声明了 relevance_scope 和 relevance_paths。",
@@ -578,7 +578,7 @@ export const zhCNMessages: Messages = {
   "doctor.check.relevance_fields_missing.message.plural":
     "{count} 个 pending entries 的 frontmatter 缺少 relevance_scope 和/或 relevance_paths。首个：{detail}。",
   "doctor.check.relevance_fields_missing.remediation":
-    "Run `fab doctor --apply-lint` to back-fill the schema defaults (relevance_scope: broad, relevance_paths: []).",
+    "运行 `fab doctor --apply-lint` 回填 schema defaults（relevance_scope: broad，relevance_paths: []）。",
   "doctor.check.skill_md_yaml_invalid.name": "Skill markdown YAML",
   "doctor.check.skill_md_yaml_invalid.ok":
     "所有 .claude/.codex SKILL.md frontmatter values 都能按 strict YAML 解析。",
@@ -587,7 +587,7 @@ export const zhCNMessages: Messages = {
   "doctor.check.skill_md_yaml_invalid.message.plural":
     "{count} 个 SKILL.md frontmatter values 包含未加引号的 ': '，strict YAML parsers 会拒绝（Claude Code tolerates it；Codex CLI drops the skill at load）。首个：{detail}。",
   "doctor.check.skill_md_yaml_invalid.remediation":
-    "Quote the value with double quotes (`description: \"…\"`) or rewrite the inner `key: value` token to `key=value`.",
+    "使用双引号包裹该 value（`description: \"…\"`），或将内部的 `key: value` token 改写为 `key=value`。",
   "doctor.check.onboard_coverage.name": "Onboard coverage",
   "doctor.check.onboard_coverage.ok.complete":
     "Onboard coverage：{filledCount}/{total} ✓（opted-out：{optedOutCount}）。",

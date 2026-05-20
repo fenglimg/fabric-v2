@@ -195,10 +195,10 @@ exports[`runDoctorReport i18n snapshots > renders stable Chinese doctor checks f
     "status": "ok",
   },
   {
-    "actionHint_prefix_30_chars": "Run the fabric-import Skill (\`",
+    "actionHint_prefix_30_chars": "运行 fabric-import Skill（\`/fabri",
     "code": "knowledge_underseeded",
     "kind": "info",
-    "message_prefix_30_chars": "Knowledge corpus 只有 0 个 canoni",
+    "message_prefix_30_chars": "知识库仅有 0 个 canonical entries（< ",
     "name": "Knowledge underseeded",
     "status": "ok",
   },
@@ -275,7 +275,7 @@ exports[`runDoctorReport i18n snapshots > renders stable Chinese doctor checks f
     "status": "ok",
   },
   {
-    "actionHint_prefix_30_chars": "Move knowledge content to \`.fa",
+    "actionHint_prefix_30_chars": "如果希望这些 knowledge 内容在 MCP 响应中可用",
     "code": "preexisting_root_claude_md",
     "kind": "info",
     "message_prefix_30_chars": "project root 检测到 AGENTS.md。这些 ",

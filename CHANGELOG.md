@@ -5,6 +5,30 @@ All notable changes to Fabric will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0-rc.26] - Unreleased
+
+`fab doctor` now respects the `fabric_language` field in `.fabric/fabric-config.json`. The long-standing gap between `KT-DEC-9004` (which defined `fabric_language` as the authoritative locale source) and runtime is closed: with `fabric_language: "zh-CN"`, doctor output (check names, messages, remediations) renders in Simplified Chinese; with `"en"` (or no field), English is preserved unchanged. Machine-readable `code` fields, file paths, schema field names, and shell commands stay English in both locales. Wave breakdown: locale resolver foundation (TASK-01) → doctor.ts migration across 35 check functions in 4 sequential batches (TASK-02a, TASK-02b, TASK-03, TASK-04) → CLI runtime translator rewire + bilingual snapshot test (TASK-05) → closure (TASK-06).
+
+### Added
+- `resolveFabricLocale(projectRoot)` shared helper — reads `.fabric/fabric-config.json::fabric_language`, falls back to `detectNodeLocale()` then `"en"`; never throws (every failure path degrades silently)
+- `getDoctorTranslator(projectRoot)` CLI factory — γ-pattern projectRoot-aware translator used by the `fab doctor` command; module-level `t` retained for help/banner contexts where projectRoot is unknown
+- `packages/server/src/services/doctor-i18n.test.ts` — 2-locale snapshot test verifying en + zh-CN structural alignment (identical check ordering, severity, and `code` field across locales)
+- ~280 new i18n keys per locale (en + zh-CN) under the `doctor.check.<inspect_name>.{name|ok|message[.arm|.singular|.plural]|remediation[.arm]}` namespace
+
+### Changed
+- `packages/server/src/services/doctor.ts` — all 84 `okCheck()` / `issueCheck()` call sites across 35 check functions now consume `t: Translator` (built once per `runDoctorReport` from `resolveFabricLocale(projectRoot)`); literal English strings replaced with translation keys
+- `packages/cli/src/commands/doctor.ts` — runtime messages emitted after `resolveDevMode()` rebind to `getDoctorTranslator(resolution.target)` so error/status output respects `fabric_language`; help text + arg descriptions remain on the module-level translator
+- `packages/server/src/services/serve-lock.ts` — already consumed `resolveFabricLocale` since TASK-01 (no rc.26 churn beyond that)
+
+### Migration
+- Existing users: upgrade is transparent if your config has no `fabric_language` field — locale detection falls through to `detectNodeLocale()` (`FAB_LANG` → `LANG` → `"en"`), preserving current behavior
+- zh-CN users: set `fabric_language: "zh-CN"` in `.fabric/fabric-config.json` (either by re-running `fab init` or hand-editing). Existing `fab init` runs eager-resolve this field per `KT-DEC-9004`
+- Pre-rc.26 doctor test snapshots may need regeneration if they captured English strings: accept with `pnpm test -- -u`
+
+### Out of Scope (Deferred)
+- i18n for other CLI commands (`install`, `config`, `serve`, `uninstall`) — those still use the module-level `detectNodeLocale()`-driven translator; can be unified in a future sweep
+- ICU plural syntax — current `.singular`/`.plural` two-key approach is sufficient for en + zh-CN; future Russian/Arabic support would require parser extension
+
 ## [2.0.0-rc.25] - 2026-05-19
 
 ### Added
