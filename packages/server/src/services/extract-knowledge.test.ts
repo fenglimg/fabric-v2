@@ -246,6 +246,62 @@ describe("extractKnowledge", () => {
     expect(body).toMatch(/^- three\.ts$/mu);
   });
 
+  // v2.0.0-rc.27 TASK-003 (audit §2.13/§2.19/§2.27): narrative sections
+  // (## Summary, ## Why proposed, ## Session context) are LAST-WINS on
+  // idempotency collision. Prior rc.7 behaviour was first-wins, which meant
+  // a re-archive with a refined understanding could never land — the only
+  // workaround was reject + re-extract. The Evidence section stays
+  // append-merged (covered by neighbouring tests).
+  it("extractKnowledge_rc27_last_wins_on_summary_section", async () => {
+    const projectRoot = await createTempProject();
+
+    // First call: incomplete understanding.
+    await extractKnowledge(projectRoot, buildInput({
+      source_sessions: ["sess-lw"],
+      recent_paths: ["only-a.ts"],
+      user_messages_summary: "Stale incomplete summary v1.",
+      session_context: "Investigating issue A.",
+      type: "decisions",
+      slug: "last-wins-narrative",
+    }));
+
+    // Second call: refined understanding — should REPLACE the narrative.
+    await extractKnowledge(projectRoot, buildInput({
+      source_sessions: ["sess-lw"],
+      recent_paths: ["plus-b.ts"],
+      user_messages_summary: "Refined complete summary v2.",
+      session_context: "Issue A turned out to be issue B in disguise.",
+      type: "decisions",
+      slug: "last-wins-narrative",
+    }));
+
+    const body = await readFile(
+      join(projectRoot, ".fabric/knowledge/pending/decisions/last-wins-narrative.md"),
+      "utf8",
+    );
+
+    // ## Summary section: last-wins (v2 only).
+    const summaryBlock = /## Summary\s*\n\s*\n([\s\S]*?)\n\s*\n## /u.exec(body);
+    expect(summaryBlock).not.toBeNull();
+    expect(summaryBlock?.[1]?.trim()).toBe("Refined complete summary v2.");
+
+    // ## Session context: last-wins (v2 only).
+    const sessionBlock = /## Session context\s*\n\s*\n([\s\S]*?)\n\s*\n## /u.exec(body);
+    expect(sessionBlock).not.toBeNull();
+    expect(sessionBlock?.[1]?.trim()).toBe(
+      "Issue A turned out to be issue B in disguise.",
+    );
+
+    // ## Evidence Notes: BOTH summaries appear (append-merged dedup).
+    const evidenceBlock = /## Evidence\s*\n([\s\S]*?)$/u.exec(body);
+    expect(evidenceBlock?.[1]).toMatch(/Stale incomplete summary v1\./u);
+    expect(evidenceBlock?.[1]).toMatch(/Refined complete summary v2\./u);
+
+    // ## Evidence Recent paths: BOTH paths appear.
+    expect(body).toMatch(/^- only-a\.ts$/mu);
+    expect(body).toMatch(/^- plus-b\.ts$/mu);
+  });
+
   it("extractKnowledge_emits_archive_attempted_on_empty_summary", async () => {
     const projectRoot = await createTempProject();
 

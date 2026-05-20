@@ -28,8 +28,11 @@
 
 const ID_RE = /^K[TP]-[A-Z]+-\d+$/;
 const SENTINEL_RE = /^KB:\s*none\b\s*(?:\[[^\]]*\])?\s*$/i;
+// v2.0.0-rc.27 TASK-003 (audit §2.18): multi-id citations supported via
+// comma-separated ID group. Mirrors packages/shared/src/cite-line-parser.ts.
 const FULL_RE =
-  /^KB:\s+(K[TP]-[A-Z]+-\d+)(?:\s+\(([^)]*)\))?(?:\s+\[([^\]]+)\])?(?:\s+→\s*(.+))?\s*$/;
+  /^KB:\s+(K[TP]-[A-Z]+-\d+(?:\s*,\s*K[TP]-[A-Z]+-\d+)*)(?:\s+\(([^)]*)\))?(?:\s+\[([^\]]+)\])?(?:\s+→\s*(.+))?\s*$/;
+const CHAINED_FROM_ID_RE = /chained-from\s+(K[TP]-[A-Z]+-\d+)/i;
 
 const ALLOWED_TAGS = new Set([
   "planned",
@@ -80,15 +83,32 @@ function parseLine(line) {
   const trimmed = line.trim();
   if (trimmed.length === 0) return null;
   if (SENTINEL_RE.test(trimmed)) {
-    return { id: null, tag: "none", commitment: null };
+    return { ids: [], tag: "none", commitment: null };
   }
   const fullMatch = trimmed.match(FULL_RE);
   if (fullMatch) {
-    const id = fullMatch[1];
-    if (!ID_RE.test(id)) return null;
+    // v2.0.0-rc.27 TASK-003 (audit §2.18): split + revalidate each id;
+    // capture chained-from tail id when present.
+    const primaryIds = fullMatch[1]
+      .split(",")
+      .map((part) => part.trim())
+      .filter((part) => part.length > 0);
+    if (primaryIds.some((id) => !ID_RE.test(id))) return null;
+
+    const rawTag = fullMatch[3];
+    const tag = parseTag(rawTag);
+
+    const chainedIds = [];
+    if (rawTag) {
+      const chained = CHAINED_FROM_ID_RE.exec(rawTag);
+      if (chained && ID_RE.test(chained[1])) {
+        chainedIds.push(chained[1]);
+      }
+    }
+
     return {
-      id,
-      tag: parseTag(fullMatch[3]),
+      ids: primaryIds.concat(chainedIds),
+      tag,
       commitment: parseContractTail(fullMatch[4]),
     };
   }
@@ -99,6 +119,10 @@ function parseLine(line) {
  * Parse one or more newline-separated `KB:` cite lines into structured arrays
  * matching the assistant_turn_observed event-ledger fields. Tolerates
  * whitespace, CR/LF, blank lines, interleaved prose. Never throws.
+ *
+ * v2.0.0-rc.27 TASK-003 (audit §2.18): supports multi-id citations
+ * (`KB: KT-DEC-0001, KT-PIT-0005 ...`) and surfaces `chained-from <id>`'s
+ * embedded id as an additional cite_id. cite_tags carries one tag per LINE.
  */
 function parseCiteLine(raw) {
   const result = { cite_ids: [], cite_tags: [], cite_commitments: [] };
@@ -107,7 +131,9 @@ function parseCiteLine(raw) {
     const parsed = parseLine(line);
     if (!parsed) continue;
     result.cite_tags.push(parsed.tag);
-    if (parsed.id !== null) result.cite_ids.push(parsed.id);
+    for (const id of parsed.ids) {
+      result.cite_ids.push(id);
+    }
     if (parsed.commitment !== null) {
       result.cite_commitments.push(parsed.commitment);
     }

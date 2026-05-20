@@ -289,3 +289,65 @@ describe("parseCiteLine — multi-line input (index alignment)", () => {
     expect(r.cite_tags).toEqual(["planned", "recalled"]);
   });
 });
+
+// ---------------------------------------------------------------------------
+// v2.0.0-rc.27 TASK-003 (audit §2.18): multi-id + chained-from id extraction
+// ---------------------------------------------------------------------------
+
+describe("parseCiteLine — rc.27 multi-id + chained-from (audit §2.18)", () => {
+  it("parses comma-separated multi-id citation into ordered cite_ids", () => {
+    const r = parseCiteLine(
+      "KB: KT-DEC-0001, KT-PIT-0005 (combined) [recalled] → edit:src/foo.ts",
+    );
+    expect(r.cite_ids).toEqual(["KT-DEC-0001", "KT-PIT-0005"]);
+    expect(r.cite_tags).toEqual(["recalled"]);
+    expect(r.cite_commitments).toEqual([
+      { operators: [{ kind: "edit", target: "src/foo.ts" }], skip_reason: null },
+    ]);
+  });
+
+  it("multi-id with three primaries — all surface in order", () => {
+    const r = parseCiteLine(
+      "KB: KT-DEC-0001, KT-DEC-0002, KP-MOD-0007 (multi) [planned]",
+    );
+    expect(r.cite_ids).toEqual([
+      "KT-DEC-0001",
+      "KT-DEC-0002",
+      "KP-MOD-0007",
+    ]);
+  });
+
+  it("multi-id tolerates whitespace around the comma", () => {
+    const r = parseCiteLine("KB: KT-DEC-0001 , KT-PIT-0005 [recalled]");
+    expect(r.cite_ids).toEqual(["KT-DEC-0001", "KT-PIT-0005"]);
+  });
+
+  it("malformed id inside an otherwise-valid multi-id line → entire line drops", () => {
+    const r = parseCiteLine("KB: KT-DEC-0001, NOT-AN-ID [recalled]");
+    expect(r.cite_ids).toEqual([]);
+    expect(r.cite_tags).toEqual([]);
+  });
+
+  it("[chained-from <id>] surfaces the embedded id as a sibling cite_id", () => {
+    const r = parseCiteLine(
+      "KB: KT-DEC-0001 (a) [chained-from KT-MOD-0007]",
+    );
+    expect(r.cite_ids).toEqual(["KT-DEC-0001", "KT-MOD-0007"]);
+    expect(r.cite_tags).toEqual(["chained-from"]);
+  });
+
+  it("audit §2.18 reproduction — multi-id + chained-from + contract together", () => {
+    const r = parseCiteLine(
+      "KB: KT-DEC-0001, KT-PIT-0005 (combined) [chained-from KT-MOD-0007] → edit:src/foo.ts",
+    );
+    expect(r.cite_ids).toEqual([
+      "KT-DEC-0001",
+      "KT-PIT-0005",
+      "KT-MOD-0007",
+    ]);
+    expect(r.cite_tags).toEqual(["chained-from"]);
+    expect(r.cite_commitments).toEqual([
+      { operators: [{ kind: "edit", target: "src/foo.ts" }], skip_reason: null },
+    ]);
+  });
+});

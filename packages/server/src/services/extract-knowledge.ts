@@ -174,9 +174,40 @@ export async function extractKnowledge(
       // v2.0.0-rc.7 T6: Evidence-merge on idempotency_key collision.
       // Previously, each repeated call appended `## Evidence (call N)` with
       // the full summary verbatim — re-running extract three times produced
-      // three duplicated Notes blocks. The fix: merge new note text into a
-      // single `## Evidence` section, dedup by trimmed-text match.
-      const augmented = mergeEvidenceNotes(existing, summary, input.recent_paths);
+      // three duplicated Notes blocks.
+      //
+      // v2.0.0-rc.27 TASK-003 (audit §2.13/§2.19/§2.27): semantic decision —
+      // narrative body sections (## Summary / ## Why proposed / ## Session
+      // context) are now LAST-WINS, not first-wins. The rc.7 fix only merged
+      // Evidence (notes + recent_paths) but preserved the old `head`
+      // verbatim, which meant repeated extract calls with refined summaries
+      // could never replace the first call's incomplete narrative — the only
+      // workaround was reject + re-extract. Per audit §2.19, callers expect
+      // last-wins semantics on the narrative fields because each extract
+      // call represents the operator's CURRENT understanding.
+      //
+      // New flow: render the fresh entry first (new head with current
+      // summary / why proposed / session context, plus new Evidence holding
+      // current note + recent_paths), then transplant the OLD Evidence
+      // notes/paths INTO the fresh content (Evidence stays append-merged).
+      const fresh = renderFreshEntry({
+        type: input.type,
+        sourceSessions,
+        idempotencyKey,
+        summary,
+        recentPaths: input.recent_paths,
+        layer,
+        proposedReason: input.proposed_reason,
+        sessionContext: input.session_context,
+        relevanceScope,
+        relevancePaths,
+        intentClues: input.intent_clues,
+        techStack: input.tech_stack,
+        impact: input.impact,
+        mustReadIf: input.must_read_if,
+        onboardSlot: input.onboard_slot,
+      });
+      const augmented = mergeEvidenceNotes(existing, fresh);
       await atomicWriteText(absolutePath, augmented);
       await emitEventBestEffort(projectRoot, {
         event_type: "knowledge_proposed",
@@ -420,79 +451,43 @@ function renderEvidenceBlock(summary: string, recentPaths: string[]): string {
 }
 
 // v2.0.0-rc.7 T6: replace prior append-`## Evidence (call N)` semantics with a
-// merged `## Evidence` section. On idempotency collision we parse the existing
-// section, dedup notes by trimmed text, and rewrite — guaranteeing a single
-// section regardless of how many times extract is re-invoked.
+// merged `## Evidence` section. On idempotency collision we parse Evidence from
+// both old + fresh content, dedup notes by trimmed text, and rewrite —
+// guaranteeing a single section regardless of how many times extract is re-invoked.
+//
+// v2.0.0-rc.27 TASK-003 (audit §2.13/§2.19/§2.27): semantic flip — narrative
+// `head` (## Summary / ## Why proposed / ## Session context) now comes from
+// FRESH content instead of EXISTING. This makes those sections last-wins
+// while keeping Evidence (notes + Recent paths) append-merged. Callers
+// re-running extract with a refined understanding finally see the new
+// narrative land on disk; prior calls' contributions remain visible in
+// Evidence notes for the audit trail.
 //
 // Bullet shape: each note becomes a leading-dash list item under `Notes:`.
-// Recent paths are union-merged (dedup by literal path string). The Summary
-// / Why proposed / Session context sections are preserved verbatim.
-function mergeEvidenceNotes(
-  existing: string,
-  newSummary: string,
-  newRecentPaths: string[],
-): string {
-  // Parse existing Evidence section (best-effort; supports both rc.7 single
-  // `## Evidence` and any leftover rc.6 `## Evidence (call N)` blocks).
-  const beforeMatch = /^([\s\S]*?)(\n## Evidence(?:\s*\(call \d+\))?\s*\n)/u.exec(
-    existing.endsWith("\n") ? existing : `${existing}\n`,
-  );
-  if (beforeMatch === null) {
-    // No existing Evidence section — append a fresh one.
-    const trimmed = existing.endsWith("\n") ? existing : `${existing}\n`;
-    return `${trimmed}\n## Evidence\n\n${renderEvidenceBlock(newSummary, newRecentPaths)}\n`;
+// Recent paths are union-merged (dedup by literal path string).
+function mergeEvidenceNotes(existing: string, fresh: string): string {
+  // Find the Evidence section in the fresh content (the new head + new
+  // notes + new recent_paths). The fresh content always has an Evidence
+  // section because it comes from renderFreshEntry.
+  const freshSplit = splitAtEvidence(fresh);
+  if (freshSplit === null) {
+    // Defensive: fresh content lacks Evidence. Should not happen given
+    // renderFreshEntry's contract, but degrade to "use fresh as-is" rather
+    // than mangling.
+    return fresh.endsWith("\n") ? fresh : `${fresh}\n`;
   }
-  const head = beforeMatch[1] ?? "";
+  const freshHead = freshSplit.head;
 
-  // Collect existing notes (lines starting with "- " under Notes:) and existing
-  // path bullets (lines starting with "- " under Recent paths:) by scanning
-  // every Evidence-* block in the file.
-  const existingNotes: string[] = [];
-  const existingPaths: string[] = [];
-  const evidenceBlockRe = /\n## Evidence(?:\s*\(call \d+\))?\s*\n([\s\S]*?)(?=\n## |$)/gu;
-  let m: RegExpExecArray | null;
-  while ((m = evidenceBlockRe.exec(`${existing}\n`)) !== null) {
-    const block = m[1] ?? "";
-    // Split into the two sub-sections by their labels. The rc.6 shape may
-    // have inline summary lines instead of a Notes: list; treat any leading
-    // dash line as a note bullet, paragraphs as a single note.
-    const pathSection = /Recent paths:\s*\n([\s\S]*?)(?:\n\s*Notes:|$)/u.exec(block);
-    if (pathSection !== null) {
-      for (const rawLine of (pathSection[1] ?? "").split(/\r?\n/u)) {
-        const t = rawLine.trim();
-        if (t.startsWith("- ")) {
-          existingPaths.push(t.slice(2).trim());
-        }
-      }
-    }
-    const notesSection = /Notes:\s*\n([\s\S]*?)$/u.exec(block);
-    const noteBody = (notesSection !== null ? notesSection[1] : block) ?? "";
-    // Extract dash-list items; if no dashes, treat the whole body as one note.
-    const bulletLines: string[] = [];
-    let prose: string[] = [];
-    for (const rawLine of noteBody.split(/\r?\n/u)) {
-      const t = rawLine.trim();
-      if (t.length === 0) continue;
-      if (t.startsWith("- ")) {
-        if (prose.length > 0) {
-          existingNotes.push(prose.join(" ").trim());
-          prose = [];
-        }
-        bulletLines.push(t.slice(2).trim());
-      } else {
-        prose.push(t);
-      }
-    }
-    if (prose.length > 0) existingNotes.push(prose.join(" ").trim());
-    for (const n of bulletLines) existingNotes.push(n);
-  }
+  // Collect evidence (notes + paths) from BOTH existing and fresh. Order
+  // matters for the dedup pass below — existing items appear first so a
+  // re-archive doesn't reorder historical notes.
+  const oldEvidence = collectEvidenceItems(existing);
+  const freshEvidence = collectEvidenceItems(fresh);
 
-  // Dedup notes + paths.
+  // Dedup notes (case-sensitive after whitespace collapse).
   const mergedNotes: string[] = [];
   const seenNotes = new Set<string>();
-  const incomingNote = newSummary.trim();
-  const candidates = [...existingNotes, incomingNote];
-  for (const note of candidates) {
+  for (const note of [...oldEvidence.notes, ...freshEvidence.notes]) {
     const key = note.replace(/\s+/gu, " ").trim();
     if (key.length === 0) continue;
     if (seenNotes.has(key)) continue;
@@ -500,9 +495,10 @@ function mergeEvidenceNotes(
     mergedNotes.push(note);
   }
 
+  // Dedup paths (literal trimmed string).
   const mergedPaths: string[] = [];
   const seenPaths = new Set<string>();
-  for (const p of [...existingPaths, ...newRecentPaths]) {
+  for (const p of [...oldEvidence.paths, ...freshEvidence.paths]) {
     const key = p.trim();
     if (key.length === 0) continue;
     if (seenPaths.has(key)) continue;
@@ -527,9 +523,67 @@ function mergeEvidenceNotes(
     noteLines,
   ].join("\n");
 
-  // Rebuild: head (frontmatter + Summary + Why proposed + Session context) +
-  // single merged Evidence section. Trailing newline preserved.
-  return `${head}\n## Evidence\n\n${evidenceBody}\n`;
+  // Rebuild: fresh head (new frontmatter + new Summary + new Why proposed
+  // + new Session context) + merged Evidence section. Trailing newline.
+  return `${freshHead}\n## Evidence\n\n${evidenceBody}\n`;
+}
+
+/**
+ * Split content at the first `\n## Evidence` line. Returns null if no
+ * Evidence section is present. Shared by mergeEvidenceNotes (which uses
+ * fresh's head) and collectEvidenceItems (which walks all evidence blocks
+ * in a single content blob).
+ */
+function splitAtEvidence(content: string): { head: string } | null {
+  const tail = content.endsWith("\n") ? content : `${content}\n`;
+  const match = /^([\s\S]*?)(\n## Evidence(?:\s*\(call \d+\))?\s*\n)/u.exec(tail);
+  if (match === null) return null;
+  return { head: match[1] ?? "" };
+}
+
+/**
+ * Extract notes + Recent paths from every `## Evidence` block in `content`.
+ * Supports both the rc.7 single-block shape and any leftover rc.6
+ * `## Evidence (call N)` repetitions. Returns parallel arrays — caller
+ * is responsible for dedup + merge ordering.
+ */
+function collectEvidenceItems(content: string): { notes: string[]; paths: string[] } {
+  const notes: string[] = [];
+  const paths: string[] = [];
+  const evidenceBlockRe = /\n## Evidence(?:\s*\(call \d+\))?\s*\n([\s\S]*?)(?=\n## |$)/gu;
+  let m: RegExpExecArray | null;
+  while ((m = evidenceBlockRe.exec(`${content}\n`)) !== null) {
+    const block = m[1] ?? "";
+    const pathSection = /Recent paths:\s*\n([\s\S]*?)(?:\n\s*Notes:|$)/u.exec(block);
+    if (pathSection !== null) {
+      for (const rawLine of (pathSection[1] ?? "").split(/\r?\n/u)) {
+        const t = rawLine.trim();
+        if (t.startsWith("- ")) {
+          paths.push(t.slice(2).trim());
+        }
+      }
+    }
+    const notesSection = /Notes:\s*\n([\s\S]*?)$/u.exec(block);
+    const noteBody = (notesSection !== null ? notesSection[1] : block) ?? "";
+    const bulletLines: string[] = [];
+    let prose: string[] = [];
+    for (const rawLine of noteBody.split(/\r?\n/u)) {
+      const t = rawLine.trim();
+      if (t.length === 0) continue;
+      if (t.startsWith("- ")) {
+        if (prose.length > 0) {
+          notes.push(prose.join(" ").trim());
+          prose = [];
+        }
+        bulletLines.push(t.slice(2).trim());
+      } else {
+        prose.push(t);
+      }
+    }
+    if (prose.length > 0) notes.push(prose.join(" ").trim());
+    for (const n of bulletLines) notes.push(n);
+  }
+  return { notes, paths };
 }
 
 function readFrontmatterKey(content: string, key: string): string | undefined {

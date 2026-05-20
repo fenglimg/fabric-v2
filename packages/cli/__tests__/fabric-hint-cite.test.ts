@@ -86,9 +86,14 @@ describe("fabric-hint.cjs — parseKbLine (rc.24 shim delegating to shared parse
     ]);
   });
 
-  it("parses '[chained-from KT-DEC-0009]' — bracket tail head normalized to 'chained-from'", () => {
+  it("parses '[chained-from KT-DEC-0009]' — bracket tail head normalized to 'chained-from', embedded id surfaced (rc.27)", () => {
     const r = hook.parseKbLine("KT-DEC-0001 (anchor) [chained-from KT-DEC-0009]");
-    expect(r.cite_ids).toEqual(["KT-DEC-0001"]);
+    // v2.0.0-rc.27 TASK-003 (audit §2.18): the chained-from tail's embedded
+    // id now lands in cite_ids as a sibling reference so cite-coverage
+    // routing can resolve the chain. Prior rc.26 behavior dropped it
+    // silently — the tag was recognised but the linked id never reached
+    // downstream consumers.
+    expect(r.cite_ids).toEqual(["KT-DEC-0001", "KT-DEC-0009"]);
     expect(r.cite_tags).toEqual(["chained-from"]);
     // No `→` tail → empty commitment.
     expect(r.cite_commitments).toEqual([
