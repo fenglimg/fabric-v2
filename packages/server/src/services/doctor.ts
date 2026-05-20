@@ -955,36 +955,36 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     createKnowledgeDirUnindexedCheck(t, knowledgeDirUnindexed),
     createStableIdCollisionCheck(t, stableIdCollision),
     createCounterDesyncCheck(t, counterDesync),
-    createFilesystemEditFallbackCheck(filesystemEditFallback),
+    createFilesystemEditFallbackCheck(t, filesystemEditFallback),
     // rc.4 TASK-001: read-side lint checks #16-18. Findings only — mutation
     // + event emission lands in TASK-003 behind --apply-lint.
-    createOrphanDemoteCheck(orphanDemote),
-    createStaleArchiveCheck(staleArchive),
-    createPendingOverdueCheck(pendingOverdue),
+    createOrphanDemoteCheck(t, orphanDemote),
+    createStaleArchiveCheck(t, staleArchive),
+    createPendingOverdueCheck(t, pendingOverdue),
     // rc.4 TASK-002: read-side integrity checks #19-21. Stable_id duplicate
     // runs first in this trio — it is the most critical integrity break and
     // surfaces ahead of layer-mismatch / index-drift in the report so a
     // human operator triages the collision before reasoning about counter
     // state. Index drift is the only fixable_error of the three; stable_id
     // duplicate and layer mismatch require manual triage (rename / move).
-    createStableIdDuplicateCheck(stableIdDuplicate),
-    createLayerMismatchCheck(layerMismatch),
-    createIndexDriftCheck(indexDrift),
+    createStableIdDuplicateCheck(t, stableIdDuplicate),
+    createLayerMismatchCheck(t, layerMismatch),
+    createIndexDriftCheck(t, indexDrift),
     // rc.5 TASK-010: read-side underseeded-corpus check (#22). Info kind —
     // does not bump report status. Recommends running the fabric-import skill
     // to backfill knowledge when the corpus is below the threshold floor.
-    createUnderseededCheck(underseeded),
+    createUnderseededCheck(t, underseeded),
     // rc.5 TASK-013 (C4): relevance_paths hygiene checks #23/#24/#25.
     // All three are flag-only in rc.5 (no apply-lint mutations).
     //   #23 narrow_no_paths        — warning kind (silent recall risk)
     //   #24 relevance_paths_dangling — warning kind (glob → zero matches)
     //   #25 relevance_paths_drift  — info kind (git-log heuristic; noisy)
-    createNarrowNoPathsCheck(narrowNoPaths),
-    createRelevancePathsDanglingCheck(relevancePathsDangling),
-    createRelevancePathsDriftCheck(relevancePathsDrift),
+    createNarrowNoPathsCheck(t, narrowNoPaths),
+    createRelevancePathsDanglingCheck(t, relevancePathsDangling),
+    createRelevancePathsDriftCheck(t, relevancePathsDrift),
     // rc.6 TASK-023 (E6): narrow_too_few (lint #26). Info kind; both arms
     // (structural + telemetry) recommend the same fabric-import action.
-    createNarrowTooFewCheck(narrowTooFew),
+    createNarrowTooFewCheck(t, narrowTooFew),
     // rc.6 TASK-021 (E3): session-hints cache hygiene (lint #27). Info kind.
     createSessionHintsStaleCheck(sessionHintsStale),
     // rc.23 TASK-010 (e): stale .fabric/.serve.lock advisory. Info kind —
@@ -3172,22 +3172,30 @@ async function inspectFilesystemEditFallback(projectRoot: string): Promise<Files
   return { synthesized: orphanIds.length, synthesizedStableIds: orphanIds };
 }
 
-function createFilesystemEditFallbackCheck(inspection: FilesystemEditFallbackInspection): DoctorCheck {
+function createFilesystemEditFallbackCheck(t: Translator, inspection: FilesystemEditFallbackInspection): DoctorCheck {
   if (inspection.synthesized === 0) {
     return okCheck(
-      "Filesystem-edit fallback",
-      "No orphan canonical knowledge entries detected; events.jsonl promotion trail is complete.",
+      t("doctor.check.filesystem_edit_fallback.name"),
+      t("doctor.check.filesystem_edit_fallback.ok"),
     );
   }
   const sample = inspection.synthesizedStableIds.slice(0, 3).join(", ");
   return {
-    name: "Filesystem-edit fallback",
+    name: t("doctor.check.filesystem_edit_fallback.name"),
     status: "ok",
     kind: "info",
     code: "knowledge_promoted_synthesized",
     fixable: false,
-    message: `Synthesized ${inspection.synthesized} knowledge_promoted event${inspection.synthesized === 1 ? "" : "s"} for orphan canonical entries (${sample}${inspection.synthesizedStableIds.length > 3 ? ", ..." : ""}). Reason='${SYNTHESIZED_PROMOTED_REASON}'.`,
-    actionHint: "These entries were moved into .fabric/knowledge/<type>/ outside fab_review.approve. The synthesized events restore audit-trail completeness.",
+    message: t(
+      `doctor.check.filesystem_edit_fallback.message.synthesized.${inspection.synthesized === 1 ? "singular" : "plural"}`,
+      {
+        count: String(inspection.synthesized),
+        sample,
+        suffix: inspection.synthesizedStableIds.length > 3 ? ", ..." : "",
+        reason: SYNTHESIZED_PROMOTED_REASON,
+      },
+    ),
+    actionHint: t("doctor.check.filesystem_edit_fallback.remediation.synthesized"),
   };
 }
 
@@ -3950,60 +3958,77 @@ function readUnderseedThresholdFromConfig(projectRoot: string): number {
   return DEFAULT_UNDERSEED_NODE_THRESHOLD;
 }
 
-function createOrphanDemoteCheck(inspection: OrphanDemoteInspection): DoctorCheck {
+function createOrphanDemoteCheck(t: Translator, inspection: OrphanDemoteInspection): DoctorCheck {
   if (inspection.candidates.length === 0) {
     return okCheck(
-      "Knowledge orphan demote",
-      "No canonical knowledge entries exceed their maturity-keyed inactivity threshold.",
+      t("doctor.check.orphan_demote.name"),
+      t("doctor.check.orphan_demote.ok"),
     );
   }
   const first = inspection.candidates[0];
   const detail = `${first.stable_id} (${first.maturity}, ${first.age_days}d inactive at ${first.path})`;
+  const count = inspection.candidates.length;
   return issueCheck(
-    "Knowledge orphan demote",
+    t("doctor.check.orphan_demote.name"),
     "warn",
     "warning",
     "knowledge_orphan_demote_required",
-    `${inspection.candidates.length} canonical knowledge entr${inspection.candidates.length === 1 ? "y exceeds" : "ies exceed"} their maturity-keyed inactivity threshold (stable=${ORPHAN_DEMOTE_THRESHOLD_DAYS.stable}d / endorsed=${ORPHAN_DEMOTE_THRESHOLD_DAYS.endorsed}d / draft=${ORPHAN_DEMOTE_THRESHOLD_DAYS.draft}d). First: ${detail}.`,
-    "Run `fab doctor --apply-lint` (rc.4 TASK-003) to demote orphan entries one maturity tier.",
+    t(`doctor.check.orphan_demote.message.${count === 1 ? "singular" : "plural"}`, {
+      count: String(count),
+      stableDays: String(ORPHAN_DEMOTE_THRESHOLD_DAYS.stable),
+      endorsedDays: String(ORPHAN_DEMOTE_THRESHOLD_DAYS.endorsed),
+      draftDays: String(ORPHAN_DEMOTE_THRESHOLD_DAYS.draft),
+      detail,
+    }),
+    t("doctor.check.orphan_demote.remediation"),
   );
 }
 
-function createStaleArchiveCheck(inspection: StaleArchiveInspection): DoctorCheck {
+function createStaleArchiveCheck(t: Translator, inspection: StaleArchiveInspection): DoctorCheck {
   if (inspection.candidates.length === 0) {
     return okCheck(
-      "Knowledge stale archive",
-      "No draft knowledge entries exceed the additional stale-archive quiet window.",
+      t("doctor.check.stale_archive.name"),
+      t("doctor.check.stale_archive.ok"),
     );
   }
   const first = inspection.candidates[0];
   const detail = `${first.stable_id} (${first.age_days}d inactive at ${first.path}) → ${first.archive_path}`;
+  const count = inspection.candidates.length;
   return issueCheck(
-    "Knowledge stale archive",
+    t("doctor.check.stale_archive.name"),
     "warn",
     "warning",
     "knowledge_stale_archive_required",
-    `${inspection.candidates.length} draft knowledge entr${inspection.candidates.length === 1 ? "y is" : "ies are"} stale beyond the demote+${STALE_ARCHIVE_ADDITIONAL_DAYS}d additional quiet window. First: ${detail}.`,
-    "Run `fab doctor --apply-lint` (rc.4 TASK-003) to move stale entries into `.fabric/.archive/<type>/`.",
+    t(`doctor.check.stale_archive.message.${count === 1 ? "singular" : "plural"}`, {
+      count: String(count),
+      additionalDays: String(STALE_ARCHIVE_ADDITIONAL_DAYS),
+      detail,
+    }),
+    t("doctor.check.stale_archive.remediation"),
   );
 }
 
-function createPendingOverdueCheck(inspection: PendingOverdueInspection): DoctorCheck {
+function createPendingOverdueCheck(t: Translator, inspection: PendingOverdueInspection): DoctorCheck {
   if (inspection.candidates.length === 0) {
     return okCheck(
-      "Knowledge pending overdue",
-      "No pending knowledge entries exceed the 14-day review threshold.",
+      t("doctor.check.pending_overdue.name"),
+      t("doctor.check.pending_overdue.ok"),
     );
   }
   const first = inspection.candidates[0];
   const detail = `${first.path} (${first.age_days}d old)`;
+  const count = inspection.candidates.length;
   return issueCheck(
-    "Knowledge pending overdue",
+    t("doctor.check.pending_overdue.name"),
     "warn",
     "warning",
     "knowledge_pending_overdue",
-    `${inspection.candidates.length} pending knowledge entr${inspection.candidates.length === 1 ? "y has" : "ies have"} been awaiting review for more than ${PENDING_OVERDUE_THRESHOLD_DAYS} days. First: ${detail}.`,
-    "Review pending entries via the fabric-review Skill (`/fabric-review`) and approve, reject, defer, or modify.",
+    t(`doctor.check.pending_overdue.message.${count === 1 ? "singular" : "plural"}`, {
+      count: String(count),
+      thresholdDays: String(PENDING_OVERDUE_THRESHOLD_DAYS),
+      detail,
+    }),
+    t("doctor.check.pending_overdue.remediation"),
   );
 }
 
@@ -4012,20 +4037,26 @@ function createPendingOverdueCheck(inspection: PendingOverdueInspection): Doctor
 // corpus is a legitimate state during early adoption, not a defect. The
 // actionHint points the user at the fabric-import Skill, mirroring the
 // fabric-hint hook's import-signal recommendation.
-function createUnderseededCheck(inspection: UnderseededInspection): DoctorCheck {
+function createUnderseededCheck(t: Translator, inspection: UnderseededInspection): DoctorCheck {
   if (!inspection.underseeded) {
     return okCheck(
-      "Knowledge underseeded",
-      `Knowledge corpus has ${inspection.node_count} canonical entries (>= ${inspection.threshold}).`,
+      t("doctor.check.underseeded.name"),
+      t("doctor.check.underseeded.ok", {
+        count: String(inspection.node_count),
+        threshold: String(inspection.threshold),
+      }),
     );
   }
   return issueCheck(
-    "Knowledge underseeded",
+    t("doctor.check.underseeded.name"),
     "ok",
     "info",
     "knowledge_underseeded",
-    `Knowledge corpus has only ${inspection.node_count} canonical entr${inspection.node_count === 1 ? "y" : "ies"} (< ${inspection.threshold} threshold). The plan_context retrieval surface is below its useful floor.`,
-    "Run the fabric-import Skill (`/fabric-import`) to backfill knowledge from git history and existing docs.",
+    t(`doctor.check.underseeded.message.${inspection.node_count === 1 ? "singular" : "plural"}`, {
+      count: String(inspection.node_count),
+      threshold: String(inspection.threshold),
+    }),
+    t("doctor.check.underseeded.remediation"),
   );
 }
 
@@ -4391,70 +4422,89 @@ function readRecentGitTouchedPaths(
   return Array.from(set);
 }
 
-function createNarrowNoPathsCheck(inspection: NarrowNoPathsInspection): DoctorCheck {
+function createNarrowNoPathsCheck(t: Translator, inspection: NarrowNoPathsInspection): DoctorCheck {
   if (inspection.candidates.length === 0) {
     return okCheck(
-      "Knowledge narrow without paths",
-      "No narrow-scope canonical entries have an empty relevance_paths array.",
+      t("doctor.check.narrow_no_paths.name"),
+      t("doctor.check.narrow_no_paths.ok"),
     );
   }
   const first = inspection.candidates[0];
   const detail = `${first.stable_id} (${first.path})`;
+  const count = inspection.candidates.length;
   return issueCheck(
-    "Knowledge narrow without paths",
+    t("doctor.check.narrow_no_paths.name"),
     "warn",
     "warning",
     "knowledge_narrow_no_paths",
-    `${inspection.candidates.length} narrow-scope canonical entr${inspection.candidates.length === 1 ? "y has" : "ies have"} an empty relevance_paths array (silent recall risk — narrow without anchors can never match a target path). First: ${detail}.`,
-    "Either add path anchors to relevance_paths or widen the entry's relevance_scope to broad.",
+    t(`doctor.check.narrow_no_paths.message.${count === 1 ? "singular" : "plural"}`, {
+      count: String(count),
+      detail,
+    }),
+    t("doctor.check.narrow_no_paths.remediation"),
   );
 }
 
 function createRelevancePathsDanglingCheck(
+  t: Translator,
   inspection: RelevancePathsDanglingInspection,
 ): DoctorCheck {
   if (inspection.entries.length === 0) {
     return okCheck(
-      "Knowledge relevance_paths dangling",
-      "All relevance_paths globs resolve to at least one file under the workspace root.",
+      t("doctor.check.relevance_paths_dangling.name"),
+      t("doctor.check.relevance_paths_dangling.ok"),
     );
   }
   const first = inspection.entries[0];
   const detail = `${first.stable_id} at ${first.path} → \`${first.dangling_glob}\` (0 matches)`;
+  const count = inspection.entries.length;
   return issueCheck(
-    "Knowledge relevance_paths dangling",
+    t("doctor.check.relevance_paths_dangling.name"),
     "warn",
     "warning",
     "knowledge_relevance_paths_dangling",
-    `${inspection.entries.length} relevance_paths glob${inspection.entries.length === 1 ? " resolves" : "s resolve"} to zero files in the current workspace. First: ${detail}.`,
-    "Update the entry's relevance_paths to remove globs that no longer match any files, or use `fab_review.modify` to rewrite the anchor set.",
+    t(`doctor.check.relevance_paths_dangling.message.${count === 1 ? "singular" : "plural"}`, {
+      count: String(count),
+      detail,
+    }),
+    t("doctor.check.relevance_paths_dangling.remediation"),
   );
 }
 
 function createRelevancePathsDriftCheck(
+  t: Translator,
   inspection: RelevancePathsDriftInspection,
 ): DoctorCheck {
   if (!inspection.git_available) {
     return okCheck(
-      "Knowledge relevance_paths drift",
-      `Skipped (git history unavailable; cannot evaluate ${RELEVANCE_PATHS_DRIFT_WINDOW_DAYS}d drift window).`,
+      t("doctor.check.relevance_paths_drift.name"),
+      t("doctor.check.relevance_paths_drift.ok.skipped", {
+        windowDays: String(RELEVANCE_PATHS_DRIFT_WINDOW_DAYS),
+      }),
     );
   }
   if (inspection.candidates.length === 0) {
     return okCheck(
-      "Knowledge relevance_paths drift",
-      `All narrow-scope canonical entries have at least one relevance_path touched in the last ${RELEVANCE_PATHS_DRIFT_WINDOW_DAYS}d.`,
+      t("doctor.check.relevance_paths_drift.name"),
+      t("doctor.check.relevance_paths_drift.ok.fresh", {
+        windowDays: String(RELEVANCE_PATHS_DRIFT_WINDOW_DAYS),
+      }),
     );
   }
   const first = inspection.candidates[0];
   const detail = `${first.stable_id} at ${first.path} (globs: ${first.globs.join(", ")})`;
+  const count = inspection.candidates.length;
   return issueCheck(
-    "Knowledge relevance_paths drift",
+    t("doctor.check.relevance_paths_drift.name"),
     "ok",
     "info",
     "knowledge_relevance_paths_drift",
-    `${inspection.candidates.length} narrow-scope canonical entr${inspection.candidates.length === 1 ? "y has" : "ies have"} relevance_paths whose globs match no file touched in the last ${RELEVANCE_PATHS_DRIFT_WINDOW_DAYS}d of git history. First: ${detail}.`,
-    "Review whether the entry is still relevant — use `fab_review.modify` to refresh the anchors or `fab_review.reject` to archive.",
+    t(`doctor.check.relevance_paths_drift.message.${count === 1 ? "singular" : "plural"}`, {
+      count: String(count),
+      windowDays: String(RELEVANCE_PATHS_DRIFT_WINDOW_DAYS),
+      detail,
+    }),
+    t("doctor.check.relevance_paths_drift.remediation"),
   );
 }
 
@@ -5020,18 +5070,26 @@ function createOnboardCoverageCheck(inspection: OnboardCoverageInspection): Doct
 // Status remains "ok" (info kind) — narrow_too_few is an informational
 // usage-pattern signal, not a correctness break. Mirrors the
 // knowledge_underseeded (#22) precedent.
-function createNarrowTooFewCheck(inspection: NarrowTooFewInspection): DoctorCheck {
+function createNarrowTooFewCheck(t: Translator, inspection: NarrowTooFewInspection): DoctorCheck {
   const { structural_flagged, telemetry_flagged } = inspection;
   if (!structural_flagged && !telemetry_flagged) {
     // Compose a passing message that includes whichever arm contributed
     // data — keeps the surface informative even on the happy path.
     const ratioPct = (inspection.narrow_ratio * 100).toFixed(0);
     const teleNote = inspection.telemetry_skipped
-      ? "telemetry skipped (no edit-counter fires in window)"
-      : `silence rate ${(inspection.silence_rate * 100).toFixed(0)}% over ${SILENCE_WINDOW_DAYS}d`;
+      ? t("doctor.check.narrow_too_few.message.telemetry_skipped")
+      : t("doctor.check.narrow_too_few.message.telemetry_window", {
+        silencePct: (inspection.silence_rate * 100).toFixed(0),
+        windowDays: String(SILENCE_WINDOW_DAYS),
+      });
     return okCheck(
-      "Knowledge narrow too few",
-      `Narrow-with-paths ratio ${ratioPct}% (${inspection.narrow_with_paths_count}/${inspection.total_canonical_entries}); ${teleNote}.`,
+      t("doctor.check.narrow_too_few.name"),
+      t("doctor.check.narrow_too_few.ok", {
+        ratioPct,
+        narrowCount: String(inspection.narrow_with_paths_count),
+        totalCount: String(inspection.total_canonical_entries),
+        teleNote,
+      }),
     );
   }
   // Build a message that describes which arm(s) fired. Both arms point at
@@ -5040,22 +5098,33 @@ function createNarrowTooFewCheck(inspection: NarrowTooFewInspection): DoctorChec
   if (structural_flagged) {
     const ratioPct = (inspection.narrow_ratio * 100).toFixed(0);
     parts.push(
-      `narrow-with-paths share ${ratioPct}% (${inspection.narrow_with_paths_count}/${inspection.total_canonical_entries}) below ${(NARROW_RATIO_THRESHOLD * 100).toFixed(0)}% threshold`,
+      t("doctor.check.narrow_too_few.message.structural", {
+        ratioPct,
+        narrowCount: String(inspection.narrow_with_paths_count),
+        totalCount: String(inspection.total_canonical_entries),
+        thresholdPct: (NARROW_RATIO_THRESHOLD * 100).toFixed(0),
+      }),
     );
   }
   if (telemetry_flagged) {
     const silencePct = (inspection.silence_rate * 100).toFixed(0);
     parts.push(
-      `narrow-hook silence rate ${silencePct}% (${inspection.silence_fires_in_window}/${inspection.total_edit_fires_in_window}) over ${SILENCE_WINDOW_DAYS}d above ${(SILENCE_RATE_THRESHOLD * 100).toFixed(0)}% threshold`,
+      t("doctor.check.narrow_too_few.message.telemetry", {
+        silencePct,
+        silenceFires: String(inspection.silence_fires_in_window),
+        totalFires: String(inspection.total_edit_fires_in_window),
+        windowDays: String(SILENCE_WINDOW_DAYS),
+        thresholdPct: (SILENCE_RATE_THRESHOLD * 100).toFixed(0),
+      }),
     );
   }
   return issueCheck(
-    "Knowledge narrow too few",
+    t("doctor.check.narrow_too_few.name"),
     "ok",
     "info",
     "knowledge_narrow_too_few",
-    `Narrow-scope KB coverage is below the useful floor: ${parts.join("; ")}.`,
-    "Run the fabric-import Skill (`/fabric-import`) to re-seed narrow anchors against the current codebase.",
+    t("doctor.check.narrow_too_few.message.summary", { parts: parts.join("; ") }),
+    t("doctor.check.narrow_too_few.remediation"),
   );
 }
 
@@ -5282,60 +5351,72 @@ function inspectIndexDrift(
   return { drifts };
 }
 
-function createStableIdDuplicateCheck(inspection: StableIdDuplicateInspection): DoctorCheck {
+function createStableIdDuplicateCheck(t: Translator, inspection: StableIdDuplicateInspection): DoctorCheck {
   if (inspection.duplicates.length === 0) {
     return okCheck(
-      "Knowledge stable_id duplicate",
-      "No canonical knowledge files share a stable_id across team / personal trees.",
+      t("doctor.check.stable_id_duplicate.name"),
+      t("doctor.check.stable_id_duplicate.ok"),
     );
   }
   const first = inspection.duplicates[0];
   const detail = `${first.stable_id} appears in ${first.paths.length} files: ${first.paths.join(", ")}`;
+  const count = inspection.duplicates.length;
   return issueCheck(
-    "Knowledge stable_id duplicate",
+    t("doctor.check.stable_id_duplicate.name"),
     "error",
     "manual_error",
     "knowledge_stable_id_duplicate",
-    `${inspection.duplicates.length} stable_id${inspection.duplicates.length === 1 ? "" : "s"} duplicated across canonical knowledge files (path-decoupled identity invariant). First: ${detail}.`,
-    "Manually rename one of the colliding files to a fresh `<prefix>-<type>-<counter>--<slug>.md` allocated via the canonical id allocator; do not edit by hand.",
+    t(`doctor.check.stable_id_duplicate.message.${count === 1 ? "singular" : "plural"}`, {
+      count: String(count),
+      detail,
+    }),
+    t("doctor.check.stable_id_duplicate.remediation"),
   );
 }
 
-function createLayerMismatchCheck(inspection: LayerMismatchInspection): DoctorCheck {
+function createLayerMismatchCheck(t: Translator, inspection: LayerMismatchInspection): DoctorCheck {
   if (inspection.mismatches.length === 0) {
     return okCheck(
-      "Knowledge layer mismatch",
-      "All canonical knowledge files are physically located under the layer their stable_id prefix declares.",
+      t("doctor.check.layer_mismatch.name"),
+      t("doctor.check.layer_mismatch.ok"),
     );
   }
   const first = inspection.mismatches[0];
   const detail = `${first.stable_id} at ${first.path} (located in ${first.located_in}, expected ${first.expected_layer})`;
+  const count = inspection.mismatches.length;
   return issueCheck(
-    "Knowledge layer mismatch",
+    t("doctor.check.layer_mismatch.name"),
     "error",
     "manual_error",
     "knowledge_layer_mismatch",
-    `${inspection.mismatches.length} canonical knowledge file${inspection.mismatches.length === 1 ? "" : "s"} are physically misaligned with their stable_id layer prefix (KT-* must live under team/, KP-* under personal/). First: ${detail}.`,
-    "Move the file to the correct layer root, or use the fabric-review modify flow to flip its layer (which renames the stable_id prefix accordingly).",
+    t(`doctor.check.layer_mismatch.message.${count === 1 ? "singular" : "plural"}`, {
+      count: String(count),
+      detail,
+    }),
+    t("doctor.check.layer_mismatch.remediation"),
   );
 }
 
-function createIndexDriftCheck(inspection: IndexDriftInspection): DoctorCheck {
+function createIndexDriftCheck(t: Translator, inspection: IndexDriftInspection): DoctorCheck {
   if (inspection.drifts.length === 0) {
     return okCheck(
-      "Knowledge index drift",
-      "agents.meta.json counters envelope is at or above the highest existing canonical counter for every (layer, type) pair.",
+      t("doctor.check.index_drift.name"),
+      t("doctor.check.index_drift.ok"),
     );
   }
   const first = inspection.drifts[0];
   const detail = `${first.layer}.${first.type} counter=${first.counter} but max_observed=${first.max_observed} (would propose counters.${first.layer}.${first.type}=${first.proposed_after})`;
+  const count = inspection.drifts.length;
   return issueCheck(
-    "Knowledge index drift",
+    t("doctor.check.index_drift.name"),
     "error",
     "fixable_error",
     "knowledge_index_drift",
-    `${inspection.drifts.length} (layer, type) counter slot${inspection.drifts.length === 1 ? "" : "s"} have drifted below the observed canonical maximum (next allocate would collide). First: ${detail}.`,
-    "Run `fab doctor --apply-lint` (rc.4 TASK-003) to bump agents.meta.json counters to max_observed + 1.",
+    t(`doctor.check.index_drift.message.${count === 1 ? "singular" : "plural"}`, {
+      count: String(count),
+      detail,
+    }),
+    t("doctor.check.index_drift.remediation"),
   );
 }
 

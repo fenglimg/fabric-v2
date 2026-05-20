@@ -433,6 +433,122 @@ export const zhCNMessages: Messages = {
     "project root 检测到 {files}。这些 root files 不会被 Fabric MCP 自动加载。",
   "doctor.check.preexisting_root_files.remediation":
     "Move knowledge content to `.fabric/knowledge/{type}/` if you want it available in MCP responses.",
+  "doctor.check.filesystem_edit_fallback.name": "Filesystem-edit fallback",
+  "doctor.check.filesystem_edit_fallback.ok":
+    "No orphan canonical knowledge entries detected；events.jsonl promotion trail 完整。",
+  "doctor.check.filesystem_edit_fallback.message.synthesized.singular":
+    "已为孤立 canonical entries 合成 {count} 个 knowledge_promoted event（{sample}{suffix}）。Reason='{reason}'。",
+  "doctor.check.filesystem_edit_fallback.message.synthesized.plural":
+    "已为孤立 canonical entries 合成 {count} 个 knowledge_promoted events（{sample}{suffix}）。Reason='{reason}'。",
+  "doctor.check.filesystem_edit_fallback.remediation.synthesized":
+    "这些 entries 是在 fab_review.approve 之外被移动到 .fabric/knowledge/<type>/ 的。合成 events 会恢复 audit-trail 完整性。",
+  "doctor.check.orphan_demote.name": "Knowledge orphan demote",
+  "doctor.check.orphan_demote.ok":
+    "没有 canonical knowledge entries 超过按 maturity 设定的 inactivity threshold。",
+  "doctor.check.orphan_demote.message.singular":
+    "{count} 个 canonical knowledge entry 超过按 maturity 设定的 inactivity threshold（stable={stableDays}d / endorsed={endorsedDays}d / draft={draftDays}d）。首个：{detail}。",
+  "doctor.check.orphan_demote.message.plural":
+    "{count} 个 canonical knowledge entries 超过按 maturity 设定的 inactivity threshold（stable={stableDays}d / endorsed={endorsedDays}d / draft={draftDays}d）。首个：{detail}。",
+  "doctor.check.orphan_demote.remediation":
+    "Run `fab doctor --apply-lint` (rc.4 TASK-003) to demote orphan entries one maturity tier.",
+  "doctor.check.stale_archive.name": "Knowledge stale archive",
+  "doctor.check.stale_archive.ok":
+    "没有 draft knowledge entries 超过额外的 stale-archive quiet window。",
+  "doctor.check.stale_archive.message.singular":
+    "{count} 个 draft knowledge entry 已超过 demote+{additionalDays}d 额外 quiet window。首个：{detail}。",
+  "doctor.check.stale_archive.message.plural":
+    "{count} 个 draft knowledge entries 已超过 demote+{additionalDays}d 额外 quiet window。首个：{detail}。",
+  "doctor.check.stale_archive.remediation":
+    "Run `fab doctor --apply-lint` (rc.4 TASK-003) to move stale entries into `.fabric/.archive/<type>/`.",
+  "doctor.check.pending_overdue.name": "Knowledge pending overdue",
+  "doctor.check.pending_overdue.ok":
+    "没有 pending knowledge entries 超过 14-day review threshold。",
+  "doctor.check.pending_overdue.message.singular":
+    "{count} 个 pending knowledge entry 已等待 review 超过 {thresholdDays} 天。首个：{detail}。",
+  "doctor.check.pending_overdue.message.plural":
+    "{count} 个 pending knowledge entries 已等待 review 超过 {thresholdDays} 天。首个：{detail}。",
+  "doctor.check.pending_overdue.remediation":
+    "Review pending entries via the fabric-review Skill (`/fabric-review`) and approve, reject, defer, or modify.",
+  "doctor.check.stable_id_duplicate.name": "Knowledge stable_id duplicate",
+  "doctor.check.stable_id_duplicate.ok":
+    "team / personal trees 中没有 canonical knowledge files 共享 stable_id。",
+  "doctor.check.stable_id_duplicate.message.singular":
+    "{count} 个 stable_id 在 canonical knowledge files 中重复（path-decoupled identity invariant）。首个：{detail}。",
+  "doctor.check.stable_id_duplicate.message.plural":
+    "{count} 个 stable_ids 在 canonical knowledge files 中重复（path-decoupled identity invariant）。首个：{detail}。",
+  "doctor.check.stable_id_duplicate.remediation":
+    "Manually rename one of the colliding files to a fresh `<prefix>-<type>-<counter>--<slug>.md` allocated via the canonical id allocator; do not edit by hand.",
+  "doctor.check.layer_mismatch.name": "Knowledge layer mismatch",
+  "doctor.check.layer_mismatch.ok":
+    "所有 canonical knowledge files 都位于 stable_id prefix 声明的 layer 下。",
+  "doctor.check.layer_mismatch.message.singular":
+    "{count} 个 canonical knowledge file 与其 stable_id layer prefix 的物理位置不一致（KT-* must live under team/, KP-* under personal/）。首个：{detail}。",
+  "doctor.check.layer_mismatch.message.plural":
+    "{count} 个 canonical knowledge files 与其 stable_id layer prefix 的物理位置不一致（KT-* must live under team/, KP-* under personal/）。首个：{detail}。",
+  "doctor.check.layer_mismatch.remediation":
+    "Move the file to the correct layer root, or use the fabric-review modify flow to flip its layer (which renames the stable_id prefix accordingly).",
+  "doctor.check.index_drift.name": "Knowledge index drift",
+  "doctor.check.index_drift.ok":
+    "agents.meta.json counters envelope 对每个 (layer, type) pair 都大于或等于现有 canonical counter 最大值。",
+  "doctor.check.index_drift.message.singular":
+    "{count} 个 (layer, type) counter slot 已低于观测到的 canonical maximum（next allocate would collide）。首个：{detail}。",
+  "doctor.check.index_drift.message.plural":
+    "{count} 个 (layer, type) counter slots 已低于观测到的 canonical maximum（next allocate would collide）。首个：{detail}。",
+  "doctor.check.index_drift.remediation":
+    "Run `fab doctor --apply-lint` (rc.4 TASK-003) to bump agents.meta.json counters to max_observed + 1.",
+  "doctor.check.underseeded.name": "Knowledge underseeded",
+  "doctor.check.underseeded.ok":
+    "Knowledge corpus 有 {count} 个 canonical entries（>= {threshold}）。",
+  "doctor.check.underseeded.message.singular":
+    "Knowledge corpus 只有 {count} 个 canonical entry（< {threshold} threshold）。plan_context retrieval surface 低于可用下限。",
+  "doctor.check.underseeded.message.plural":
+    "Knowledge corpus 只有 {count} 个 canonical entries（< {threshold} threshold）。plan_context retrieval surface 低于可用下限。",
+  "doctor.check.underseeded.remediation":
+    "Run the fabric-import Skill (`/fabric-import`) to backfill knowledge from git history and existing docs.",
+  "doctor.check.narrow_no_paths.name": "Knowledge narrow without paths",
+  "doctor.check.narrow_no_paths.ok":
+    "没有 narrow-scope canonical entries 的 relevance_paths array 为空。",
+  "doctor.check.narrow_no_paths.message.singular":
+    "{count} 个 narrow-scope canonical entry 的 relevance_paths array 为空（silent recall risk — narrow without anchors can never match a target path）。首个：{detail}。",
+  "doctor.check.narrow_no_paths.message.plural":
+    "{count} 个 narrow-scope canonical entries 的 relevance_paths array 为空（silent recall risk — narrow without anchors can never match a target path）。首个：{detail}。",
+  "doctor.check.narrow_no_paths.remediation":
+    "Either add path anchors to relevance_paths or widen the entry's relevance_scope to broad.",
+  "doctor.check.relevance_paths_dangling.name": "Knowledge relevance_paths dangling",
+  "doctor.check.relevance_paths_dangling.ok":
+    "所有 relevance_paths globs 都能在 workspace root 下解析到至少 1 个文件。",
+  "doctor.check.relevance_paths_dangling.message.singular":
+    "{count} 个 relevance_paths glob 在当前 workspace 中解析到 0 个文件。首个：{detail}。",
+  "doctor.check.relevance_paths_dangling.message.plural":
+    "{count} 个 relevance_paths globs 在当前 workspace 中解析到 0 个文件。首个：{detail}。",
+  "doctor.check.relevance_paths_dangling.remediation":
+    "Update the entry's relevance_paths to remove globs that no longer match any files, or use `fab_review.modify` to rewrite the anchor set.",
+  "doctor.check.relevance_paths_drift.name": "Knowledge relevance_paths drift",
+  "doctor.check.relevance_paths_drift.ok.skipped":
+    "已跳过（git history unavailable；无法评估 {windowDays}d drift window）。",
+  "doctor.check.relevance_paths_drift.ok.fresh":
+    "所有 narrow-scope canonical entries 都至少有 1 个 relevance_path 在最近 {windowDays}d 内被触碰。",
+  "doctor.check.relevance_paths_drift.message.singular":
+    "{count} 个 narrow-scope canonical entry 的 relevance_paths globs 没有匹配到最近 {windowDays}d git history 中触碰过的文件。首个：{detail}。",
+  "doctor.check.relevance_paths_drift.message.plural":
+    "{count} 个 narrow-scope canonical entries 的 relevance_paths globs 没有匹配到最近 {windowDays}d git history 中触碰过的文件。首个：{detail}。",
+  "doctor.check.relevance_paths_drift.remediation":
+    "Review whether the entry is still relevant — use `fab_review.modify` to refresh the anchors or `fab_review.reject` to archive.",
+  "doctor.check.narrow_too_few.name": "Knowledge narrow too few",
+  "doctor.check.narrow_too_few.ok":
+    "Narrow-with-paths ratio {ratioPct}%（{narrowCount}/{totalCount}）；{teleNote}。",
+  "doctor.check.narrow_too_few.message.telemetry_skipped":
+    "telemetry skipped（no edit-counter fires in window）",
+  "doctor.check.narrow_too_few.message.telemetry_window":
+    "silence rate {silencePct}% over {windowDays}d",
+  "doctor.check.narrow_too_few.message.structural":
+    "narrow-with-paths share {ratioPct}%（{narrowCount}/{totalCount}）below {thresholdPct}% threshold",
+  "doctor.check.narrow_too_few.message.telemetry":
+    "narrow-hook silence rate {silencePct}%（{silenceFires}/{totalFires}）over {windowDays}d above {thresholdPct}% threshold",
+  "doctor.check.narrow_too_few.message.summary":
+    "Narrow-scope KB coverage 低于可用下限：{parts}。",
+  "doctor.check.narrow_too_few.remediation":
+    "Run the fabric-import Skill (`/fabric-import`) to re-seed narrow anchors against the current codebase.",
   // v2.0.0-rc.25 TASK-10: --archive-history 子命令——按 session 维度审计归档尝试记录。
   "cli.doctor.args.archive-history.description":
     "按 session 维度渲染归档尝试历史(只读;读取 session_archive_attempted 事件)。",

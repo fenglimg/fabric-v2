@@ -441,6 +441,122 @@ export const enMessages: Messages = {
     "{files} detected at project root. These root files are not auto-loaded by Fabric MCP.",
   "doctor.check.preexisting_root_files.remediation":
     "Move knowledge content to `.fabric/knowledge/{type}/` if you want it available in MCP responses.",
+  "doctor.check.filesystem_edit_fallback.name": "Filesystem-edit fallback",
+  "doctor.check.filesystem_edit_fallback.ok":
+    "No orphan canonical knowledge entries detected; events.jsonl promotion trail is complete.",
+  "doctor.check.filesystem_edit_fallback.message.synthesized.singular":
+    "Synthesized {count} knowledge_promoted event for orphan canonical entries ({sample}{suffix}). Reason='{reason}'.",
+  "doctor.check.filesystem_edit_fallback.message.synthesized.plural":
+    "Synthesized {count} knowledge_promoted events for orphan canonical entries ({sample}{suffix}). Reason='{reason}'.",
+  "doctor.check.filesystem_edit_fallback.remediation.synthesized":
+    "These entries were moved into .fabric/knowledge/<type>/ outside fab_review.approve. The synthesized events restore audit-trail completeness.",
+  "doctor.check.orphan_demote.name": "Knowledge orphan demote",
+  "doctor.check.orphan_demote.ok":
+    "No canonical knowledge entries exceed their maturity-keyed inactivity threshold.",
+  "doctor.check.orphan_demote.message.singular":
+    "{count} canonical knowledge entry exceeds their maturity-keyed inactivity threshold (stable={stableDays}d / endorsed={endorsedDays}d / draft={draftDays}d). First: {detail}.",
+  "doctor.check.orphan_demote.message.plural":
+    "{count} canonical knowledge entries exceed their maturity-keyed inactivity threshold (stable={stableDays}d / endorsed={endorsedDays}d / draft={draftDays}d). First: {detail}.",
+  "doctor.check.orphan_demote.remediation":
+    "Run `fab doctor --apply-lint` (rc.4 TASK-003) to demote orphan entries one maturity tier.",
+  "doctor.check.stale_archive.name": "Knowledge stale archive",
+  "doctor.check.stale_archive.ok":
+    "No draft knowledge entries exceed the additional stale-archive quiet window.",
+  "doctor.check.stale_archive.message.singular":
+    "{count} draft knowledge entry is stale beyond the demote+{additionalDays}d additional quiet window. First: {detail}.",
+  "doctor.check.stale_archive.message.plural":
+    "{count} draft knowledge entries are stale beyond the demote+{additionalDays}d additional quiet window. First: {detail}.",
+  "doctor.check.stale_archive.remediation":
+    "Run `fab doctor --apply-lint` (rc.4 TASK-003) to move stale entries into `.fabric/.archive/<type>/`.",
+  "doctor.check.pending_overdue.name": "Knowledge pending overdue",
+  "doctor.check.pending_overdue.ok":
+    "No pending knowledge entries exceed the 14-day review threshold.",
+  "doctor.check.pending_overdue.message.singular":
+    "{count} pending knowledge entry has been awaiting review for more than {thresholdDays} days. First: {detail}.",
+  "doctor.check.pending_overdue.message.plural":
+    "{count} pending knowledge entries have been awaiting review for more than {thresholdDays} days. First: {detail}.",
+  "doctor.check.pending_overdue.remediation":
+    "Review pending entries via the fabric-review Skill (`/fabric-review`) and approve, reject, defer, or modify.",
+  "doctor.check.stable_id_duplicate.name": "Knowledge stable_id duplicate",
+  "doctor.check.stable_id_duplicate.ok":
+    "No canonical knowledge files share a stable_id across team / personal trees.",
+  "doctor.check.stable_id_duplicate.message.singular":
+    "{count} stable_id duplicated across canonical knowledge files (path-decoupled identity invariant). First: {detail}.",
+  "doctor.check.stable_id_duplicate.message.plural":
+    "{count} stable_ids duplicated across canonical knowledge files (path-decoupled identity invariant). First: {detail}.",
+  "doctor.check.stable_id_duplicate.remediation":
+    "Manually rename one of the colliding files to a fresh `<prefix>-<type>-<counter>--<slug>.md` allocated via the canonical id allocator; do not edit by hand.",
+  "doctor.check.layer_mismatch.name": "Knowledge layer mismatch",
+  "doctor.check.layer_mismatch.ok":
+    "All canonical knowledge files are physically located under the layer their stable_id prefix declares.",
+  "doctor.check.layer_mismatch.message.singular":
+    "{count} canonical knowledge file are physically misaligned with their stable_id layer prefix (KT-* must live under team/, KP-* under personal/). First: {detail}.",
+  "doctor.check.layer_mismatch.message.plural":
+    "{count} canonical knowledge files are physically misaligned with their stable_id layer prefix (KT-* must live under team/, KP-* under personal/). First: {detail}.",
+  "doctor.check.layer_mismatch.remediation":
+    "Move the file to the correct layer root, or use the fabric-review modify flow to flip its layer (which renames the stable_id prefix accordingly).",
+  "doctor.check.index_drift.name": "Knowledge index drift",
+  "doctor.check.index_drift.ok":
+    "agents.meta.json counters envelope is at or above the highest existing canonical counter for every (layer, type) pair.",
+  "doctor.check.index_drift.message.singular":
+    "{count} (layer, type) counter slot have drifted below the observed canonical maximum (next allocate would collide). First: {detail}.",
+  "doctor.check.index_drift.message.plural":
+    "{count} (layer, type) counter slots have drifted below the observed canonical maximum (next allocate would collide). First: {detail}.",
+  "doctor.check.index_drift.remediation":
+    "Run `fab doctor --apply-lint` (rc.4 TASK-003) to bump agents.meta.json counters to max_observed + 1.",
+  "doctor.check.underseeded.name": "Knowledge underseeded",
+  "doctor.check.underseeded.ok":
+    "Knowledge corpus has {count} canonical entries (>= {threshold}).",
+  "doctor.check.underseeded.message.singular":
+    "Knowledge corpus has only {count} canonical entry (< {threshold} threshold). The plan_context retrieval surface is below its useful floor.",
+  "doctor.check.underseeded.message.plural":
+    "Knowledge corpus has only {count} canonical entries (< {threshold} threshold). The plan_context retrieval surface is below its useful floor.",
+  "doctor.check.underseeded.remediation":
+    "Run the fabric-import Skill (`/fabric-import`) to backfill knowledge from git history and existing docs.",
+  "doctor.check.narrow_no_paths.name": "Knowledge narrow without paths",
+  "doctor.check.narrow_no_paths.ok":
+    "No narrow-scope canonical entries have an empty relevance_paths array.",
+  "doctor.check.narrow_no_paths.message.singular":
+    "{count} narrow-scope canonical entry has an empty relevance_paths array (silent recall risk — narrow without anchors can never match a target path). First: {detail}.",
+  "doctor.check.narrow_no_paths.message.plural":
+    "{count} narrow-scope canonical entries have an empty relevance_paths array (silent recall risk — narrow without anchors can never match a target path). First: {detail}.",
+  "doctor.check.narrow_no_paths.remediation":
+    "Either add path anchors to relevance_paths or widen the entry's relevance_scope to broad.",
+  "doctor.check.relevance_paths_dangling.name": "Knowledge relevance_paths dangling",
+  "doctor.check.relevance_paths_dangling.ok":
+    "All relevance_paths globs resolve to at least one file under the workspace root.",
+  "doctor.check.relevance_paths_dangling.message.singular":
+    "{count} relevance_paths glob resolves to zero files in the current workspace. First: {detail}.",
+  "doctor.check.relevance_paths_dangling.message.plural":
+    "{count} relevance_paths globs resolve to zero files in the current workspace. First: {detail}.",
+  "doctor.check.relevance_paths_dangling.remediation":
+    "Update the entry's relevance_paths to remove globs that no longer match any files, or use `fab_review.modify` to rewrite the anchor set.",
+  "doctor.check.relevance_paths_drift.name": "Knowledge relevance_paths drift",
+  "doctor.check.relevance_paths_drift.ok.skipped":
+    "Skipped (git history unavailable; cannot evaluate {windowDays}d drift window).",
+  "doctor.check.relevance_paths_drift.ok.fresh":
+    "All narrow-scope canonical entries have at least one relevance_path touched in the last {windowDays}d.",
+  "doctor.check.relevance_paths_drift.message.singular":
+    "{count} narrow-scope canonical entry has relevance_paths whose globs match no file touched in the last {windowDays}d of git history. First: {detail}.",
+  "doctor.check.relevance_paths_drift.message.plural":
+    "{count} narrow-scope canonical entries have relevance_paths whose globs match no file touched in the last {windowDays}d of git history. First: {detail}.",
+  "doctor.check.relevance_paths_drift.remediation":
+    "Review whether the entry is still relevant — use `fab_review.modify` to refresh the anchors or `fab_review.reject` to archive.",
+  "doctor.check.narrow_too_few.name": "Knowledge narrow too few",
+  "doctor.check.narrow_too_few.ok":
+    "Narrow-with-paths ratio {ratioPct}% ({narrowCount}/{totalCount}); {teleNote}.",
+  "doctor.check.narrow_too_few.message.telemetry_skipped":
+    "telemetry skipped (no edit-counter fires in window)",
+  "doctor.check.narrow_too_few.message.telemetry_window":
+    "silence rate {silencePct}% over {windowDays}d",
+  "doctor.check.narrow_too_few.message.structural":
+    "narrow-with-paths share {ratioPct}% ({narrowCount}/{totalCount}) below {thresholdPct}% threshold",
+  "doctor.check.narrow_too_few.message.telemetry":
+    "narrow-hook silence rate {silencePct}% ({silenceFires}/{totalFires}) over {windowDays}d above {thresholdPct}% threshold",
+  "doctor.check.narrow_too_few.message.summary":
+    "Narrow-scope KB coverage is below the useful floor: {parts}.",
+  "doctor.check.narrow_too_few.remediation":
+    "Run the fabric-import Skill (`/fabric-import`) to re-seed narrow anchors against the current codebase.",
   // v2.0.0-rc.25 TASK-10: --archive-history flag set. Read-only audit of
   // session_archive_attempted events; mutually exclusive with the other
   // mutation/report surfaces.
