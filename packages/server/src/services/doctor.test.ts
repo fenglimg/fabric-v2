@@ -35,12 +35,20 @@ const tempRoots: string[] = [];
 // isolate FABRIC_HOME to a per-test tmpdir for every doctor test. The
 // originating env var is restored in afterEach.
 let originalFabricHome: string | undefined;
+// rc.26 TASK-02a: doctor.ts now resolves locale via resolveFabricLocale(projectRoot)
+// → falls through to detectNodeLocale (FAB_LANG → LANG → "en") when fixtures
+// have no fabric-config.json. Pin FAB_LANG=en so existing tests keep asserting
+// English UI strings regardless of dev-env LANG. Bilingual snapshot coverage
+// lands in TASK-05 with explicit per-locale fixtures.
+let originalFabLang: string | undefined;
 
 beforeEach(() => {
   originalFabricHome = process.env.FABRIC_HOME;
   const fakeHome = mkdtempSync(join(tmpdir(), "doctor-fabric-home-"));
   tempRoots.push(fakeHome);
   process.env.FABRIC_HOME = fakeHome;
+  originalFabLang = process.env.FAB_LANG;
+  process.env.FAB_LANG = "en";
 });
 
 afterEach(() => {
@@ -48,6 +56,11 @@ afterEach(() => {
     delete process.env.FABRIC_HOME;
   } else {
     process.env.FABRIC_HOME = originalFabricHome;
+  }
+  if (originalFabLang === undefined) {
+    delete process.env.FAB_LANG;
+  } else {
+    process.env.FAB_LANG = originalFabLang;
   }
   while (tempRoots.length > 0) {
     rmSync(tempRoots.pop() as string, { recursive: true, force: true });
