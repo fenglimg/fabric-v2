@@ -20,8 +20,10 @@ import {
 
 import { paint, symbol } from "../colors.js";
 import { resolveDevMode } from "../dev-mode.js";
-import { t } from "../i18n.js";
+import { getDoctorTranslator, t } from "../i18n.js";
 import { hasActionHint, renderFabricError } from "../lib/error-render.js";
+
+type DoctorTranslator = typeof t;
 
 type DoctorArgs = {
   target?: string;
@@ -183,6 +185,7 @@ export const doctorCommand = defineCommand({
   async run({ args }: { args: DoctorArgs }) {
     const workspaceRoot = process.cwd();
     const resolution = resolveDevMode(args.target, workspaceRoot);
+    const dt = getDoctorTranslator(resolution.target);
 
     // Preflight: refuse to run when serve is actively holding the lock.
     // rc.15: --force was removed (drift→abort principle).
@@ -210,7 +213,7 @@ export const doctorCommand = defineCommand({
     // or report arm (different output shape).
     if (archiveHistory) {
       if (fix || fixKnowledge || citeCoverage || enrichDesc) {
-        writeStderr(t("cli.doctor.errors.archive-history-mutex"));
+        writeStderr(dt("cli.doctor.errors.archive-history-mutex"));
         process.exitCode = 1;
         return;
       }
@@ -220,7 +223,7 @@ export const doctorCommand = defineCommand({
       try {
         sinceMs = parseSinceDuration(sinceInput);
       } catch {
-        writeStderr(t("cli.doctor.errors.invalid-since", { input: sinceInput }));
+        writeStderr(dt("cli.doctor.errors.invalid-since", { input: sinceInput }));
         process.exitCode = 1;
         return;
       }
@@ -232,7 +235,7 @@ export const doctorCommand = defineCommand({
       if (args.json === true) {
         writeStdout(JSON.stringify(report, null, 2));
       } else {
-        renderArchiveHistoryReport(report, sinceInput);
+        renderArchiveHistoryReport(report, sinceInput, dt);
       }
       return;
     }
@@ -244,7 +247,7 @@ export const doctorCommand = defineCommand({
     // read-only — lists missing-field entries for operator action.
     if (enrichDesc) {
       if (fix || fixKnowledge || citeCoverage) {
-        writeStderr(t("cli.doctor.errors.enrich-descriptions-mutex"));
+        writeStderr(dt("cli.doctor.errors.enrich-descriptions-mutex"));
         process.exitCode = 1;
         return;
       }
@@ -257,7 +260,7 @@ export const doctorCommand = defineCommand({
       if (args.json === true) {
         writeStdout(JSON.stringify(report, null, 2));
       } else {
-        renderEnrichDescriptionsReport(report);
+        renderEnrichDescriptionsReport(report, dt);
       }
       return;
     }
@@ -269,7 +272,7 @@ export const doctorCommand = defineCommand({
     // mix a mutation pass with a report-only pass in a single invocation).
     if (citeCoverage) {
       if (fix || fixKnowledge) {
-        writeStderr(t("cli.doctor.errors.cite-coverage-mutex"));
+        writeStderr(dt("cli.doctor.errors.cite-coverage-mutex"));
         process.exitCode = 1;
         return;
       }
@@ -278,14 +281,14 @@ export const doctorCommand = defineCommand({
       try {
         sinceMs = parseSinceDuration(args.since ?? "7d");
       } catch {
-        writeStderr(t("cli.doctor.errors.invalid-since", { input: args.since ?? "7d" }));
+        writeStderr(dt("cli.doctor.errors.invalid-since", { input: args.since ?? "7d" }));
         process.exitCode = 1;
         return;
       }
 
       const clientFilter = args.client ?? "all";
       if (!isValidClientFilter(clientFilter)) {
-        writeStderr(t("cli.doctor.errors.invalid-client", { input: clientFilter }));
+        writeStderr(dt("cli.doctor.errors.invalid-client", { input: clientFilter }));
         process.exitCode = 1;
         return;
       }
@@ -300,7 +303,7 @@ export const doctorCommand = defineCommand({
       // the operator-selected filter.
       const layerFilter = args.layer ?? "all";
       if (!isValidLayerFilter(layerFilter)) {
-        writeStderr(t("cli.doctor.errors.invalid-layer", { input: layerFilter }));
+        writeStderr(dt("cli.doctor.errors.invalid-layer", { input: layerFilter }));
         process.exitCode = 1;
         return;
       }
@@ -311,7 +314,7 @@ export const doctorCommand = defineCommand({
         layer: layerFilter,
       });
 
-      renderCiteCoverageReport(report, args.json === true);
+      renderCiteCoverageReport(report, args.json === true, dt);
 
       // Intentionally do NOT emit doctor_run here: the ledger schema's
       // `mode` enum is currently {lint, fix-knowledge}, and cite-coverage
@@ -328,7 +331,7 @@ export const doctorCommand = defineCommand({
     // state like agents.meta.json revision). Combining them is ambiguous —
     // require the operator to make a choice.
     if (fixKnowledge && fix) {
-      writeStderr(t("cli.doctor.errors.fix-knowledge-fix-mutually-exclusive"));
+      writeStderr(dt("cli.doctor.errors.fix-knowledge-fix-mutually-exclusive"));
       process.exitCode = 1;
       return;
     }
@@ -383,11 +386,11 @@ export const doctorCommand = defineCommand({
         if (fixKnowledgeReport.aborted && fixKnowledgeReport.abort_reason !== undefined) {
           writeStderr(fixKnowledgeReport.abort_reason);
         }
-        renderFixKnowledgeMutations(fixKnowledgeReport);
+        renderFixKnowledgeMutations(fixKnowledgeReport, dt);
       } else if (fixReport !== null) {
         writeStdout(fixReport.message);
       }
-      renderHumanReport(report);
+      renderHumanReport(report, dt);
     }
 
     // v2.0.0-rc.7 T10: emit doctor_run event so Signal D in fabric-hint can
@@ -431,22 +434,25 @@ export const doctorCommand = defineCommand({
 
 export default doctorCommand;
 
-function renderHumanReport(report: DoctorReport): void {
+function renderHumanReport(report: DoctorReport, dt: DoctorTranslator): void {
   writeStdout(`${renderStatus(report.status)} ${paint.ai("fabric doctor")} ${paint.human(report.summary.target)}`);
   for (const check of report.checks) {
     writeStdout(`${renderStatus(check.status)} ${check.name}: ${check.message}`);
   }
-  writeIssueSection(t("doctor.section.fixable"), report.fixable_errors);
-  writeIssueSection(t("doctor.section.manual"), report.manual_errors);
-  writeIssueSection(t("doctor.section.warnings"), report.warnings);
+  writeIssueSection(dt("doctor.section.fixable"), report.fixable_errors);
+  writeIssueSection(dt("doctor.section.manual"), report.manual_errors);
+  writeIssueSection(dt("doctor.section.warnings"), report.warnings);
 }
 
-function renderFixKnowledgeMutations(fixKnowledgeReport: DoctorFixKnowledgeReport): void {
+function renderFixKnowledgeMutations(
+  fixKnowledgeReport: DoctorFixKnowledgeReport,
+  dt: DoctorTranslator,
+): void {
   if (fixKnowledgeReport.mutations.length === 0) {
     return;
   }
   writeStdout("");
-  writeStdout(t("doctor.section.fix-knowledge-mutations"));
+  writeStdout(dt("doctor.section.fix-knowledge-mutations"));
   for (const mutation of fixKnowledgeReport.mutations) {
     const marker = mutation.applied ? symbol.ok : symbol.error;
     const errSuffix = mutation.applied || mutation.error === undefined ? "" : ` (${mutation.error})`;
@@ -652,41 +658,45 @@ function isValidLayerFilter(input: string): input is CiteCoverageLayerFilter {
  *   ### Dismissed reasons         (only when histogram non-empty)
  *     <translated reason>: <count>
  */
-function renderCiteCoverageReport(report: CiteCoverageReport, jsonMode: boolean): void {
+function renderCiteCoverageReport(
+  report: CiteCoverageReport,
+  jsonMode: boolean,
+  dt: DoctorTranslator,
+): void {
   if (jsonMode) {
     writeStdout(JSON.stringify(report, null, 2));
     return;
   }
 
   if (report.status === "skipped") {
-    writeStdout(t("doctor.cite.status.skipped"));
+    writeStdout(dt("doctor.cite.status.skipped"));
     return;
   }
 
   const lines: string[] = [];
-  lines.push(t("doctor.section.cite-coverage"));
+  lines.push(dt("doctor.section.cite-coverage"));
   lines.push(
-    t("doctor.cite.header", {
+    dt("doctor.cite.header", {
       since: new Date(report.since_ts).toISOString(),
       marker: new Date(report.marker_ts).toISOString(),
     }),
   );
   if (report.marker_emitted_now) {
-    lines.push(t("doctor.cite.warning.justActivated"));
+    lines.push(dt("doctor.cite.warning.justActivated"));
   }
   lines.push("");
-  lines.push(`  ${t("doctor.cite.metric.editsTouched")}: ${report.metrics.edits_touched}`);
-  lines.push(`  ${t("doctor.cite.metric.qualifyingCites")}: ${report.metrics.qualifying_cites}`);
-  lines.push(`  ${t("doctor.cite.metric.recalledUnverified")}: ${report.metrics.recalled_unverified}`);
-  lines.push(`  ${t("doctor.cite.metric.expectedButMissed")}: ${report.metrics.expected_but_missed}`);
-  lines.push(`  ${t("doctor.cite.metric.totalTurns")}: ${report.metrics.total_turns}`);
+  lines.push(`  ${dt("doctor.cite.metric.editsTouched")}: ${report.metrics.edits_touched}`);
+  lines.push(`  ${dt("doctor.cite.metric.qualifyingCites")}: ${report.metrics.qualifying_cites}`);
+  lines.push(`  ${dt("doctor.cite.metric.recalledUnverified")}: ${report.metrics.recalled_unverified}`);
+  lines.push(`  ${dt("doctor.cite.metric.expectedButMissed")}: ${report.metrics.expected_but_missed}`);
+  lines.push(`  ${dt("doctor.cite.metric.totalTurns")}: ${report.metrics.total_turns}`);
 
   // Per-client subsection: only renders for `--client all` when more than one
   // client bucket exists. A single-client filter (or a single observed client)
   // would just re-render the top-level metrics — pointless noise.
   if (report.per_client !== undefined && Object.keys(report.per_client).length > 1) {
     lines.push("");
-    lines.push(`### ${t("doctor.cite.section.perClient")}`);
+    lines.push(`### ${dt("doctor.cite.section.perClient")}`);
     for (const [client, metrics] of Object.entries(report.per_client)) {
       const summary = Object.entries(metrics)
         .map(([k, v]) => `${k}=${v}`)
@@ -705,9 +715,9 @@ function renderCiteCoverageReport(report: CiteCoverageReport, jsonMode: boolean)
     Object.keys(report.dismissed_reason_histogram).length > 0
   ) {
     lines.push("");
-    lines.push(`### ${t("doctor.cite.section.dismissedReasons")}`);
+    lines.push(`### ${dt("doctor.cite.section.dismissedReasons")}`);
     for (const [reason, count] of Object.entries(report.dismissed_reason_histogram)) {
-      const label = t(`doctor.cite.dismissed.${reason}`);
+      const label = dt(`doctor.cite.dismissed.${reason}`);
       lines.push(`  ${label}: ${count}`);
     }
   }
@@ -719,9 +729,9 @@ function renderCiteCoverageReport(report: CiteCoverageReport, jsonMode: boolean)
     Object.keys(report.none_reason_histogram).length > 0
   ) {
     lines.push("");
-    lines.push(`### ${t("doctor.cite.section.noneReasons")}`);
+    lines.push(`### ${dt("doctor.cite.section.noneReasons")}`);
     for (const [reason, count] of Object.entries(report.none_reason_histogram)) {
-      const label = t(`doctor.cite.none.${reason}`);
+      const label = dt(`doctor.cite.none.${reason}`);
       lines.push(`  ${label}: ${count}`);
     }
   }
@@ -732,7 +742,7 @@ function renderCiteCoverageReport(report: CiteCoverageReport, jsonMode: boolean)
   // to say" mode that follows a fresh marker emit with no qualifying turns
   // yet). All other states (ok / skipped:bootstrap_drift / awaiting_marker
   // with non-zero counts) render visible feedback.
-  appendContractSection(lines, report);
+  appendContractSection(lines, report, dt);
 
   writeStdout(lines.join("\n"));
 }
@@ -771,11 +781,15 @@ function renderCiteCoverageReport(report: CiteCoverageReport, jsonMode: boolean)
  *   ⚠ Unresolved cite IDs: N   (only when > 0)
  *
  * i18n key fallback: `cite-coverage.contract.type.<type>` and
- * `cite-coverage.skip.<reason>` look up via `t()`; unknown keys pass through
- * the raw key, which is the desired behavior for operator-extensible
+ * `cite-coverage.skip.<reason>` look up via the active translator; unknown
+ * keys pass through the raw key, which is the desired behavior for operator-extensible
  * vocabulary (per TASK-09 NOTES).
  */
-function appendContractSection(lines: string[], report: CiteCoverageReport): void {
+function appendContractSection(
+  lines: string[],
+  report: CiteCoverageReport,
+  dt: DoctorTranslator,
+): void {
   const status = report.contract_metrics_status;
   if (status === undefined) {
     // Pre-TASK-08 server payload — nothing to render.
@@ -800,12 +814,12 @@ function appendContractSection(lines: string[], report: CiteCoverageReport): voi
   }
 
   lines.push("");
-  lines.push(`### ${t("cite-coverage.contract.header")}`);
+  lines.push(`### ${dt("cite-coverage.contract.header")}`);
 
   if (status === "skipped:bootstrap_drift") {
     // One-line skipped warning. The i18n string already carries the
     // remediation hint ("run `fab install`").
-    lines.push(`  ${t("cite-coverage.contract.status.skipped_bootstrap_drift")}`);
+    lines.push(`  ${dt("cite-coverage.contract.status.skipped_bootstrap_drift")}`);
     return;
   }
 
@@ -815,7 +829,7 @@ function appendContractSection(lines: string[], report: CiteCoverageReport): voi
     status === "ok"
       ? "cite-coverage.contract.status.ok"
       : "cite-coverage.contract.status.awaiting_marker";
-  lines.push(`  status: ${t(statusKey)}`);
+  lines.push(`  status: ${dt(statusKey)}`);
 
   if (typeof report.contract_marker_ts === "number" && report.contract_marker_ts > 0) {
     lines.push(`  since: ${new Date(report.contract_marker_ts).toISOString()}`);
@@ -825,10 +839,10 @@ function appendContractSection(lines: string[], report: CiteCoverageReport): voi
   }
 
   if (metrics !== undefined) {
-    lines.push(`  ${t("cite-coverage.contract.decisions_cited")}: ${metrics.decisions_cited}`);
-    lines.push(`  ${t("cite-coverage.contract.pitfalls_cited")}: ${metrics.pitfalls_cited}`);
-    lines.push(`  ${t("cite-coverage.contract.with")}: ${metrics.contract_with}`);
-    lines.push(`  ${t("cite-coverage.contract.missing")}: ${metrics.contract_missing}`);
+    lines.push(`  ${dt("cite-coverage.contract.decisions_cited")}: ${metrics.decisions_cited}`);
+    lines.push(`  ${dt("cite-coverage.contract.pitfalls_cited")}: ${metrics.pitfalls_cited}`);
+    lines.push(`  ${dt("cite-coverage.contract.with")}: ${metrics.contract_with}`);
+    lines.push(`  ${dt("cite-coverage.contract.missing")}: ${metrics.contract_missing}`);
 
     // Hard-violation line. per_layer_type does NOT carry hard_violated (its
     // inner keys are singular knowledge types + 'unresolved' per TASK-08 +
@@ -844,10 +858,10 @@ function appendContractSection(lines: string[], report: CiteCoverageReport): voi
     if (metrics.hard_violated > 0) {
       const layerSuffix =
         report.layer_filter === "personal"
-          ? t("cite-coverage.layer.personal_fyi")
-          : t("cite-coverage.layer.team_review");
+          ? dt("cite-coverage.layer.personal_fyi")
+          : dt("cite-coverage.layer.team_review");
       lines.push(
-        `  ${t("cite-coverage.contract.hard_violated")} ${layerSuffix}: ${metrics.hard_violated}`,
+        `  ${dt("cite-coverage.contract.hard_violated")} ${layerSuffix}: ${metrics.hard_violated}`,
       );
     }
   }
@@ -865,15 +879,15 @@ function appendContractSection(lines: string[], report: CiteCoverageReport): voi
     );
     if (teamKeys.length > 0 || personalKeys.length > 0) {
       lines.push("");
-      lines.push(`#### ${t("cite-coverage.layer.team")} × ${t("cite-coverage.layer.personal")}`);
+      lines.push(`#### ${dt("cite-coverage.layer.team")} × ${dt("cite-coverage.layer.personal")}`);
       for (const key of teamKeys) {
-        const label = t(`cite-coverage.contract.type.${key}`);
-        lines.push(`  ${t("cite-coverage.layer.team")} — ${label}: ${perLayerType.team[key]}`);
+        const label = dt(`cite-coverage.contract.type.${key}`);
+        lines.push(`  ${dt("cite-coverage.layer.team")} — ${label}: ${perLayerType.team[key]}`);
       }
       for (const key of personalKeys) {
-        const label = t(`cite-coverage.contract.type.${key}`);
+        const label = dt(`cite-coverage.contract.type.${key}`);
         lines.push(
-          `  ${t("cite-coverage.layer.personal")} — ${label}: ${perLayerType.personal[key]}`,
+          `  ${dt("cite-coverage.layer.personal")} — ${label}: ${perLayerType.personal[key]}`,
         );
       }
     }
@@ -883,9 +897,9 @@ function appendContractSection(lines: string[], report: CiteCoverageReport): voi
   // raw key when i18n misses (open-keyed per B1 grill-me lock).
   if (metrics !== undefined && Object.keys(metrics.skip_count).length > 0) {
     lines.push("");
-    lines.push(`#### ${t("cite-coverage.contract.skip_count")}`);
+    lines.push(`#### ${dt("cite-coverage.contract.skip_count")}`);
     for (const [reason, count] of Object.entries(metrics.skip_count)) {
-      const label = t(`cite-coverage.skip.${reason}`);
+      const label = dt(`cite-coverage.skip.${reason}`);
       lines.push(`  ${label}: ${count}`);
     }
   }
@@ -895,7 +909,7 @@ function appendContractSection(lines: string[], report: CiteCoverageReport): voi
   if (metrics !== undefined && metrics.cite_id_unresolved > 0) {
     lines.push("");
     lines.push(
-      `${symbol.warn} ${t("cite-coverage.contract.cite_id_unresolved")}: ${metrics.cite_id_unresolved}`,
+      `${symbol.warn} ${dt("cite-coverage.contract.cite_id_unresolved")}: ${metrics.cite_id_unresolved}`,
     );
   }
 }
@@ -910,13 +924,16 @@ function appendContractSection(lines: string[], report: CiteCoverageReport): voi
  *     <symbol> <path> — missing: a, b, c [→ added: a, b, c]
  *     ! <path> — <error>
  */
-function renderEnrichDescriptionsReport(report: EnrichDescriptionsReport): void {
+function renderEnrichDescriptionsReport(
+  report: EnrichDescriptionsReport,
+  dt: DoctorTranslator,
+): void {
   const header = `${symbol.ok} ${paint.ai("fab doctor --enrich-descriptions")} mode=${report.mode}${
     report.dryRun ? " (dry-run)" : ""
   } scanned=${report.scanned} modified=${report.modified} skipped=${report.skipped}`;
   writeStdout(header);
   if (report.candidates.length === 0) {
-    writeStdout(t("doctor.enrich.allComplete"));
+    writeStdout(dt("doctor.enrich.allComplete"));
     return;
   }
   writeStdout("");
@@ -1006,15 +1023,16 @@ export function parseSinceDuration(input: string): number {
 function renderArchiveHistoryReport(
   report: ArchiveHistoryReport,
   sinceLabel: string,
+  dt: DoctorTranslator,
 ): void {
   if (report.entries.length === 0) {
-    writeStdout(t("doctor.archive-history.empty", { sinceLabel }));
+    writeStdout(dt("doctor.archive-history.empty", { sinceLabel }));
     return;
   }
 
   const lines: string[] = [];
   lines.push(
-    t("doctor.archive-history.header", {
+    dt("doctor.archive-history.header", {
       sinceLabel,
       count: String(report.total),
       plural: report.total === 1 ? "" : "s",
@@ -1022,11 +1040,11 @@ function renderArchiveHistoryReport(
   );
   lines.push("");
   lines.push(
-    `| ${t("doctor.archive-history.table.session")} | ${t(
+    `| ${dt("doctor.archive-history.table.session")} | ${dt(
       "doctor.archive-history.table.lastAttempt",
-    )} | ${t("doctor.archive-history.table.outcome")} | ${t(
+    )} | ${dt("doctor.archive-history.table.outcome")} | ${dt(
       "doctor.archive-history.table.candidates",
-    )} | ${t("doctor.archive-history.table.coveredGap")} |`,
+    )} | ${dt("doctor.archive-history.table.coveredGap")} |`,
   );
   lines.push("| ------- | ---------------- | -------- | ---------- | ----------- |");
   for (const entry of report.entries) {
