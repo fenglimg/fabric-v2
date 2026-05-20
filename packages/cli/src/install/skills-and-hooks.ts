@@ -993,6 +993,135 @@ async function copyTextIdempotent(
   return { step, path: target, status: "written" };
 }
 
+/**
+ * v2.0.0-rc.27 TASK-004 (audit §2.6): canonical basenames for the three
+ * cross-client hook scripts plus the rc.5-era legacy name. Used by the
+ * install-time sweep below and by `fab doctor`'s SettingsHookDuplicates
+ * invariant to identify fabric-owned entries inside each client's hook
+ * config — regardless of which path form (relative / `${CLAUDE_PROJECT_DIR}`
+ * sigil / Codex `$(git rev-parse ...)` substitution) the entry was authored
+ * with. A workspace that upgraded across the rc.5 rename
+ * (archive-hint → fabric-hint) used to accumulate BOTH names as separate
+ * entries because deepMerge's dedupe compared raw command strings; the
+ * sweep removes any matching entry pre-merge so the template re-adds the
+ * canonical entry as the sole survivor.
+ */
+export const FABRIC_HOOK_SCRIPT_BASENAMES: ReadonlySet<string> = new Set([
+  "fabric-hint.cjs",
+  "knowledge-hint-broad.cjs",
+  "knowledge-hint-narrow.cjs",
+  // rc.5 TASK-010 rename — old hook scripts that pre-upgrade workspaces
+  // may still have registered. Sweeping them prevents the double-fire
+  // documented in audit §2.6.
+  "archive-hint.cjs",
+]);
+
+/**
+ * Extract the basename of a hook command string. Handles:
+ *   - bare relative paths: ".claude/hooks/foo.cjs" → "foo.cjs"
+ *   - sigil-prefixed paths: "${CLAUDE_PROJECT_DIR}/.claude/hooks/foo.cjs" → "foo.cjs"
+ *   - Codex shell-substitution: "\"$(git rev-parse ...)/codex/hooks/foo.cjs\"" → "foo.cjs"
+ *   - Windows backslashes (defensive).
+ *
+ * Returns null when the command doesn't end in a `.cjs` file (likely a
+ * user-authored hook unrelated to fabric).
+ */
+function commandBasename(command: string): string | null {
+  // Trim trailing quotes / whitespace that Codex/Cursor templates wrap.
+  const trimmed = command.trim().replace(/^"+|"+$/g, "");
+  const match = /([^/\\]+\.cjs)$/u.exec(trimmed);
+  return match === null ? null : match[1];
+}
+
+/**
+ * v2.0.0-rc.27 TASK-004 (audit §2.6): pre-merge sweep that strips any
+ * existing array entries whose hook command basename is in
+ * FABRIC_HOOK_SCRIPT_BASENAMES. Run before deepMerge so the merge pass
+ * cleanly re-adds the canonical template entry. Walks the dotted
+ * arrayAppendPaths (e.g. `hooks.Stop`) without disturbing other keys.
+ *
+ * Entry shape (claude-code form, matched by hook-config templates):
+ *   { matcher: "...", hooks: [{ type: "command", command: "..." }] }
+ *
+ * An entry is fabric-owned when ANY of its `hooks[].command` basenames is
+ * in the known set — we drop the entire entry (matcher + sibling hooks)
+ * because mixing fabric and non-fabric hooks under a single matcher
+ * shouldn't happen with the template-only writers in this file. User
+ * configs with such mixed entries pre-existing are degenerate and the
+ * sweep gives them a clean slate (pre-user clean-slate policy).
+ */
+function stripStaleHookEntries(
+  existing: Record<string, unknown>,
+  arrayAppendPaths: string[],
+): { swept: Record<string, unknown>; removed: number } {
+  // Shallow clone then walk-and-mutate so callers' input is untouched.
+  const swept = JSON.parse(JSON.stringify(existing)) as Record<string, unknown>;
+  let removed = 0;
+
+  for (const dottedPath of arrayAppendPaths) {
+    const segments = dottedPath.split(".");
+    // Descend to the array slot — bail on the first missing segment so
+    // missing arrays (e.g. user never wrote a Stop slot) are no-ops.
+    let cursor: unknown = swept;
+    for (let i = 0; i < segments.length - 1; i++) {
+      const seg = segments[i]!;
+      if (cursor === null || typeof cursor !== "object" || Array.isArray(cursor)) {
+        cursor = undefined;
+        break;
+      }
+      cursor = (cursor as Record<string, unknown>)[seg];
+    }
+    if (cursor === null || cursor === undefined || typeof cursor !== "object" || Array.isArray(cursor)) {
+      continue;
+    }
+    const finalSeg = segments[segments.length - 1]!;
+    const arr = (cursor as Record<string, unknown>)[finalSeg];
+    if (!Array.isArray(arr)) continue;
+
+    const filtered: unknown[] = [];
+    for (const item of arr) {
+      if (item === null || typeof item !== "object") {
+        filtered.push(item);
+        continue;
+      }
+      const entry = item as Record<string, unknown>;
+      const hooks = entry.hooks;
+      // Claude/Codex shape: hooks[].command. Cursor shape: same key.
+      let isFabricOwned = false;
+      if (Array.isArray(hooks)) {
+        for (const h of hooks) {
+          if (h !== null && typeof h === "object") {
+            const cmd = (h as Record<string, unknown>).command;
+            if (typeof cmd === "string") {
+              const base = commandBasename(cmd);
+              if (base !== null && FABRIC_HOOK_SCRIPT_BASENAMES.has(base)) {
+                isFabricOwned = true;
+                break;
+              }
+            }
+          }
+        }
+      }
+      // Also tolerate the cursor flat shape `{ command: "..." }` without a
+      // nested hooks[] wrapper — defensive against schema drift.
+      if (!isFabricOwned && typeof entry.command === "string") {
+        const base = commandBasename(entry.command);
+        if (base !== null && FABRIC_HOOK_SCRIPT_BASENAMES.has(base)) {
+          isFabricOwned = true;
+        }
+      }
+      if (isFabricOwned) {
+        removed += 1;
+      } else {
+        filtered.push(item);
+      }
+    }
+    (cursor as Record<string, unknown>)[finalSeg] = filtered;
+  }
+
+  return { swept, removed };
+}
+
 async function mergeJsonIdempotent(
   step: string,
   target: string,
@@ -1000,7 +1129,13 @@ async function mergeJsonIdempotent(
   arrayAppendPaths: string[],
 ): Promise<InstallStepResult> {
   const existing = await readJsonObjectOrEmpty(target);
-  const merged = deepMerge(existing, fragment, { arrayAppendPaths });
+  // v2.0.0-rc.27 TASK-004 (audit §2.6): sweep stale fabric-owned hook
+  // entries BEFORE the merge so the upgrade path
+  // (rc.5 archive-hint → rc.5+ fabric-hint, or relative-path → sigil-path)
+  // doesn't accumulate duplicates. The merge then re-adds the canonical
+  // entry from the template fragment as the sole survivor.
+  const { swept } = stripStaleHookEntries(existing, arrayAppendPaths);
+  const merged = deepMerge(swept, fragment, { arrayAppendPaths });
   if (jsonEqual(existing, merged)) {
     return { step, path: target, status: "skipped", message: "up-to-date" };
   }

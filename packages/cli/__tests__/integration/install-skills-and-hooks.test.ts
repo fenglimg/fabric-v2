@@ -20,7 +20,7 @@
  *      appended only once on re-run
  */
 
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -315,6 +315,65 @@ describe("TASK-006 install-skills-and-hooks: dedup", () => {
       readFileSync(join(target, ".codex/hooks.json"), "utf8"),
     ) as { events?: { Stop?: unknown[] } };
     expect(codexAfterSecond.events?.Stop?.length).toBe(codexAfterFirst.events?.Stop?.length);
+  });
+
+  // v2.0.0-rc.27 TASK-004 (audit §2.6): legacy archive-hint.cjs is swept on
+  // install. Pre-rc.5 workspaces registered hooks under the old
+  // `archive-hint.cjs` name; the rc.5 TASK-010 rename to `fabric-hint.cjs`
+  // did not retroactively remove those entries — re-running `fab install`
+  // would deepMerge the new entry alongside the legacy one and both fired
+  // for every Stop event. rc.27 introduces stripStaleHookEntries to drop
+  // any entry whose hook command basename is in FABRIC_HOOK_SCRIPT_BASENAMES
+  // before the merge, so the canonical template entry becomes the sole
+  // survivor.
+  it("rc27 §2.6: install sweeps legacy archive-hint.cjs and any path-form duplicates", async () => {
+    const target = createWerewolfFixtureRoot("itg-install-rc27-sweep");
+    tempRoots.push(target);
+
+    // First install establishes the canonical state.
+    await runInit(target);
+    const settingsPath = join(target, ".claude/settings.json");
+
+    // Inject a legacy archive-hint.cjs entry alongside the canonical fabric-hint
+    // entry, plus a sibling sigil-prefix duplicate of fabric-hint (simulating
+    // an upgrade-time path-form drift).
+    const polluted = JSON.parse(readFileSync(settingsPath, "utf8")) as {
+      hooks?: { Stop?: Array<{ matcher: string; hooks: Array<{ type: string; command: string }> }> };
+    };
+    if (!polluted.hooks) polluted.hooks = {};
+    if (!polluted.hooks.Stop) polluted.hooks.Stop = [];
+    polluted.hooks.Stop.push({
+      matcher: "*",
+      hooks: [{ type: "command", command: ".claude/hooks/archive-hint.cjs" }],
+    });
+    polluted.hooks.Stop.push({
+      matcher: "*",
+      hooks: [{ type: "command", command: ".claude/hooks/fabric-hint.cjs" }],
+    });
+    writeFileSync(settingsPath, JSON.stringify(polluted, null, 2), "utf8");
+
+    // Re-run install — sweep should drop both injected entries before merge.
+    await runInit(target);
+
+    const settingsFinal = JSON.parse(readFileSync(settingsPath, "utf8")) as {
+      hooks?: { Stop?: Array<{ hooks: Array<{ command: string }> }> };
+    };
+    const stopEntries = settingsFinal.hooks?.Stop ?? [];
+
+    // Count entries whose any hook command basename ends in archive-hint.cjs.
+    const archiveHintCount = stopEntries.filter((entry) =>
+      entry.hooks.some((h) => h.command.endsWith("archive-hint.cjs")),
+    ).length;
+    expect(archiveHintCount).toBe(0);
+
+    // Exactly one canonical fabric-hint entry remains (matched on basename).
+    const fabricHintCount = stopEntries.filter((entry) =>
+      entry.hooks.some((h) => {
+        const m = /([^/\\]+\.cjs)$/u.exec(h.command);
+        return m !== null && m[1] === "fabric-hint.cjs";
+      }),
+    ).length;
+    expect(fabricHintCount).toBe(1);
   });
 });
 

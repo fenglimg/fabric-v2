@@ -1131,6 +1131,14 @@ export async function runDoctorFix(target: string): Promise<DoctorFixReport> {
   // auto-heals on next MCP call), but `fab doctor --fix` must still reconcile
   // it explicitly. We look in both `fixable_errors` and `warnings` so the
   // demotion doesn't break the existing fix-path.
+  //
+  // v2.0.0-rc.27 TASK-004 (audit §2.14): `meta_manually_diverged` added.
+  // Before rc.27 this warning surfaced a remediation message that said "run
+  // fab doctor --fix" but the --fix arm took no reconcile path — the warning
+  // remained on every subsequent run (self-referential loop documented in
+  // audit §2.14). reconcileKnowledge rebuilds nodes from disk ground-truth
+  // so dangling meta entries (nodes for which no file exists) are dropped
+  // and hash-mismatch entries get fresh hashes.
   const reconcileCodes = [
     "agents_meta_missing",
     "agents_meta_stale",
@@ -1138,6 +1146,7 @@ export async function runDoctorFix(target: string): Promise<DoctorFixReport> {
     "knowledge_test_index_stale",
     "content_ref_missing",
     "knowledge_dir_unindexed",
+    "meta_manually_diverged",
   ];
   if (
     before.fixable_errors.some((issue) => reconcileCodes.includes(issue.code))
