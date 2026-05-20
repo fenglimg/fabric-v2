@@ -116,10 +116,37 @@ const STRINGS = {
   // ---- Signal A: archive ----------------------------------------------------
   // Source (zh-CN): fabric-hint.cjs:614  `📋 Fabric: 距上次归档 ${parts}。`
   // params: { parts } where parts is pre-joined `已过 25.0h（阈值 24h）` etc.
+  //
+  // v2.0.0-rc.27 TASK-005 (audit §2.17): `parts` is now constructed by the
+  // sibling archivePartsHours / archivePartsEdits keys (also per-variant) so
+  // the caller never hardcodes Chinese into the en banner. The substring
+  // contract on "25.0h" / "阈值 N" / "次编辑" is preserved per-variant but
+  // each variant gets a coherent monolingual rendering — pre-rc.27 produced
+  // mixed-language output like `📋 Fabric: 已过 25.0h since last archive.`
+  // (audit §2.17 reproduction).
   archiveLine1: {
     "zh-CN": (p) => `📋 Fabric: 距上次归档 ${p.parts}。`,
     en: (p) => `📋 Fabric: ${p.parts} since last archive.`,
     "zh-CN-hybrid": (p) => `📋 Fabric: 距上次归档 ${p.parts}。`,
+  },
+
+  // v2.0.0-rc.27 TASK-005 (audit §2.17): per-variant assembly of the
+  // hours-trigger fragment. zh-CN tightens to the original substring
+  // contract (`已过 25.0h（阈值 24h）`); en variant translates the prose
+  // while preserving the numeric tokens; hybrid mirrors zh-CN.
+  // params: { hoursFixed: string (already toFixed(1)), threshold: number }
+  archivePartsHours: {
+    "zh-CN": (p) => `已过 ${p.hoursFixed}h（阈值 ${p.threshold}h）`,
+    en: (p) => `${p.hoursFixed}h elapsed (threshold ${p.threshold}h)`,
+    "zh-CN-hybrid": (p) => `已过 ${p.hoursFixed}h（阈值 ${p.threshold}h）`,
+  },
+
+  // v2.0.0-rc.27 TASK-005 (audit §2.17): edits-trigger fragment.
+  // params: { count: number, threshold: number }
+  archivePartsEdits: {
+    "zh-CN": (p) => `累计 ${p.count} 次编辑（阈值 ${p.threshold}）`,
+    en: (p) => `${p.count} edits since last archive (threshold ${p.threshold})`,
+    "zh-CN-hybrid": (p) => `累计 ${p.count} 次编辑（阈值 ${p.threshold}）`,
   },
 
   // Source (zh-CN): fabric-hint.cjs:619  `   最近活动集中在: ${activity}。`

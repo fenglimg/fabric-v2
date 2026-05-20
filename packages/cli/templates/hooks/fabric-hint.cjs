@@ -477,14 +477,49 @@ function getTopEditedDirectories(projectRoot, topN, anchorTs) {
       // any leading "./". POSIX-style only — the hook ships under POSIX
       // path conventions even on Windows (the project doesn't currently
       // ship a CRLF/backslash test matrix for the sidecar).
-      const norm = p.replace(/\\/g, "/").replace(/^\.\//, "");
+      //
+      // v2.0.0-rc.27 TASK-005 (audit §2.8 leak surface): absolute paths
+      // already accumulated in legacy sidecars start with `/`. We strip
+      // the leading slash and also reject buckets that resolve to user-home
+      // segments (`Users/<name>/...`, `home/<name>/...`) so historical
+      // pollution from absolute-path writes doesn't surface the user's
+      // $HOME in the archive banner. The rc.27 appendEditCounter no longer
+      // writes such paths, but the sidecar is append-only so old lines
+      // persist until rotation.
+      let norm = p.replace(/\\/g, "/").replace(/^\.\//, "");
+      // Strip leading `/` so a stale absolute entry doesn't generate a leak.
+      while (norm.startsWith("/")) norm = norm.slice(1);
       const segs = norm.split("/").filter((s) => s.length > 0);
+      // Reject any bucket whose top segments look like a host-system home
+      // prefix. The pattern is `<top>/<user>/...` where top ∈ Users|home|root.
+      // This silently drops legacy absolute-path entries from $HOME without
+      // mangling the buckets for legitimate project-relative `Users/...`
+      // (unlikely but possible) — the heuristic favours $HOME leak prevention
+      // over false-positive bucketing of project paths named after Unix
+      // conventions.
+      if (segs.length >= 2 && (segs[0] === "Users" || segs[0] === "home" || segs[0] === "root")) {
+        continue;
+      }
+      // v2.0.0-rc.27 TASK-005 (audit §2.8 file-as-dir): when segs[1] looks
+      // like a file (contains a dot-extension at the end), surface segs[0]
+      // alone instead of `segs[0]/segs[1]/` — a 2-seg path of the form
+      // `assets/foo.ts` would otherwise render as "assets/foo.ts/" which
+      // misleads the operator about whether they're seeing a file or a
+      // directory. The extension regex is permissive: any `.X` where X is
+      // 1-8 alphanumerics counts. README.md / package.json / foo.ts all
+      // match; "v1.2" or "dotted.module" do too — acceptable false-positive
+      // rate, since the worst outcome is over-aggregation to the parent.
+      const looksLikeFile = (segment) => /\.[A-Za-z0-9]{1,8}$/u.test(segment);
       let bucket;
       if (segs.length >= 2) {
-        // Leading 2 segments: "packages/cli", "docs/decisions", etc. We
-        // trail with "/" so the banner reads "packages/cli/" — clearly a
-        // directory rather than a file basename.
-        bucket = `${segs[0]}/${segs[1]}/`;
+        if (looksLikeFile(segs[1])) {
+          bucket = `${segs[0]}/`;
+        } else {
+          // Leading 2 segments: "packages/cli", "docs/decisions", etc. We
+          // trail with "/" so the banner reads "packages/cli/" — clearly a
+          // directory rather than a file basename.
+          bucket = `${segs[0]}/${segs[1]}/`;
+        }
       } else if (segs.length === 1) {
         // Single segment — treat the basename as its own bucket. Bare
         // root-level files (README.md, package.json) get some signal too.
@@ -653,13 +688,25 @@ function decide(events, now, pendingStats, underseedStats, editCounterStats, thr
     //   - "<editCount> 次编辑"
     //   - "阈值 <N>"
     //   - "fabric-archive"
+    // v2.0.0-rc.27 TASK-005 (audit §2.17): parts now assembled per-variant
+    // via banner-i18n's archivePartsHours / archivePartsEdits so en mode
+    // gets fully-English fragments instead of mixed-language output. zh-CN
+    // / zh-CN-hybrid still render the original substring contract verbatim.
     const parts = [];
     if (triggerByHours) {
-      parts.push(`已过 ${hoursElapsed.toFixed(1)}h（阈值 ${archiveHintHours}h）`);
+      parts.push(
+        renderBanner("archivePartsHours", variant, {
+          hoursFixed: hoursElapsed.toFixed(1),
+          threshold: archiveHintHours,
+        }),
+      );
     }
     if (triggerByEdits) {
       parts.push(
-        `累计 ${editStats.editsSinceLastProposed} 次编辑（阈值 ${editStats.threshold}）`,
+        renderBanner("archivePartsEdits", variant, {
+          count: editStats.editsSinceLastProposed,
+          threshold: editStats.threshold,
+        }),
       );
     }
     // rc.16 TASK-002: 5-banner i18n via lib/banner-i18n.cjs. Substring

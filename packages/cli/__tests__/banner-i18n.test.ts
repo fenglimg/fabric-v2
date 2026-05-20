@@ -63,6 +63,11 @@ const lib = require(libPath) as LibModule;
 // interpolation path the caller drives in production.
 const FIXTURE_PARAMS: Record<string, Record<string, unknown>> = {
   archiveLine1: { parts: "25.0h since last write" },
+  // v2.0.0-rc.27 TASK-005 (audit §2.17): per-variant parts assembly. Caller
+  // now invokes these to build `parts` so the en variant gets a fully
+  // English fragment instead of mixed-language output.
+  archivePartsHours: { hoursFixed: "25.0", threshold: 24 },
+  archivePartsEdits: { count: 21, threshold: 20 },
   archiveActivity: { activity: "src/app.ts, src/util.ts" },
   archiveCta: {},
   reviewLine1: { count: 7, ageSuffix: " / 最早一条 3.2 天前" },
@@ -95,8 +100,9 @@ describe("banner-i18n: STRINGS table coverage envelope", () => {
     expect(fixtureKeys).toEqual(stringsKeys);
   });
 
-  it("exposes exactly 13 banner keys (file header contract)", () => {
-    expect(Object.keys(lib.STRINGS)).toHaveLength(13);
+  it("exposes exactly 15 banner keys (rc.27 contract — was 13 pre-archive-parts-i18n)", () => {
+    // rc.27 TASK-005 added archivePartsHours + archivePartsEdits (audit §2.17).
+    expect(Object.keys(lib.STRINGS)).toHaveLength(15);
   });
 });
 
@@ -142,6 +148,19 @@ const CONTRACTS: Record<string, KeyContract> = {
     protectedTokens: ["src/app.ts, src/util.ts"],
     zhCNContract: ["最近活动集中在"],
     enHints: ["Recent activity"],
+  },
+  // v2.0.0-rc.27 TASK-005 (audit §2.17): per-variant parts assembly. zh-CN
+  // keeps the rc.15 substring contract (`阈值`, `已过`, `次编辑`); en gets a
+  // fully English fragment so the post-merge archiveLine1 is monolingual.
+  archivePartsHours: {
+    protectedTokens: ["25.0", "24"],
+    zhCNContract: ["已过", "阈值"],
+    enHints: ["elapsed", "threshold"],
+  },
+  archivePartsEdits: {
+    protectedTokens: ["21", "20"],
+    zhCNContract: ["累计", "次编辑", "阈值"],
+    enHints: ["edits since last archive", "threshold"],
   },
   archiveCta: {
     protectedTokens: ["/fabric-archive"],

@@ -33,6 +33,11 @@ type NarrowEntry = {
   type: string;
   maturity: string;
   summary: string;
+  // v2.0.0-rc.27 TASK-005 (audit §2.5): per-entry scope. Defaults to
+  // "narrow" in the makeNarrow helper so the existing test corpus (all
+  // testing the narrow render path) keeps its semantics. The broad-leak
+  // regression test passes "broad" explicitly.
+  relevance_scope?: "narrow" | "broad";
 };
 
 type CliPayload = {
@@ -130,8 +135,11 @@ function makeEntry(
   type: string,
   maturity: string,
   summary: string,
+  scope: "narrow" | "broad" = "narrow",
 ): NarrowEntry {
-  return { id, type, maturity, summary };
+  // v2.0.0-rc.27 TASK-005 default: "narrow" so prior corpus keeps the
+  // semantics it always had. Pass "broad" to exercise the new filter.
+  return { id, type, maturity, summary, relevance_scope: scope };
 }
 
 function makeCliPayload(
@@ -1430,5 +1438,98 @@ describe("knowledge-hint-narrow.cjs — v1-receipt stance (protocol v2 cut)", ()
     } finally {
       spy.mockRestore();
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// v2.0.0-rc.27 TASK-005 (audit §2.5/§2.7): scope filter — broad entries
+// emitted by SessionStart hook must NOT also surface in PreToolUse narrow
+// banner. The CLI plan-context-hint emits a union of narrow+broad in its
+// entries[]; the hook applies a per-entry relevance_scope filter so only
+// "narrow" entries reach stderr.
+// ---------------------------------------------------------------------------
+
+describe("knowledge-hint-narrow.cjs — rc.27 §2.5 broad-leak filter", () => {
+  it("filters out broad entries before render — only narrow surface to stderr", () => {
+    const root = mkRoot("rc27-broad-leak");
+    const writes = captureStderr({
+      cwd: root,
+      payload: {
+        tool_name: "Edit",
+        tool_input: { file_path: "src/foo.ts" },
+      },
+      cliResult: {
+        version: 2,
+        revision_hash: "rev-rc27-001",
+        target_paths: ["src/foo.ts"],
+        entries: [
+          makeEntry("KT-DEC-0001", "decision", "verified", "narrow entry 1", "narrow"),
+          makeEntry("KT-GLD-0002", "guideline", "verified", "broad cross-cutting", "broad"),
+          makeEntry("KT-PIT-0003", "pitfall", "draft", "narrow entry 2", "narrow"),
+        ],
+        broad_count: 3,
+      },
+    });
+
+    const joined = writes.join("");
+
+    // The two narrow entries surface; the broad entry does NOT.
+    expect(joined).toContain("KT-DEC-0001");
+    expect(joined).toContain("KT-PIT-0003");
+    expect(joined).not.toContain("KT-GLD-0002");
+    // Header reflects the post-filter count.
+    expect(joined).toMatch(/2 narrow-scoped knowledge entries/u);
+  });
+
+  it("all-broad input renders nothing (silence) — broad-only sets are not narrow's domain", () => {
+    const root = mkRoot("rc27-all-broad");
+    const writes = captureStderr({
+      cwd: root,
+      payload: {
+        tool_name: "Edit",
+        tool_input: { file_path: "src/foo.ts" },
+      },
+      cliResult: {
+        version: 2,
+        revision_hash: "rev-rc27-002",
+        target_paths: ["src/foo.ts"],
+        entries: [
+          makeEntry("KT-GLD-0001", "guideline", "verified", "broad 1", "broad"),
+          makeEntry("KT-GLD-0002", "guideline", "verified", "broad 2", "broad"),
+        ],
+        broad_count: 2,
+      },
+    });
+    expect(writes).toEqual([]);
+  });
+
+  it("missing relevance_scope on a malformed entry → treated as broad, filtered out", () => {
+    const root = mkRoot("rc27-no-scope");
+    const writes = captureStderr({
+      cwd: root,
+      payload: {
+        tool_name: "Edit",
+        tool_input: { file_path: "src/foo.ts" },
+      },
+      cliResult: {
+        version: 2,
+        revision_hash: "rev-rc27-003",
+        target_paths: ["src/foo.ts"],
+        // Intentionally missing relevance_scope to test the defensive
+        // "absent === broad" filter behavior. Cast through unknown to
+        // bypass the test-side NarrowEntry shape; the hook's runtime
+        // filter is the contract under test.
+        entries: [
+          {
+            id: "KT-DEC-0001",
+            type: "decision",
+            maturity: "verified",
+            summary: "no scope",
+          } as unknown as NarrowEntry,
+        ],
+        broad_count: 1,
+      },
+    });
+    expect(writes).toEqual([]);
   });
 });
