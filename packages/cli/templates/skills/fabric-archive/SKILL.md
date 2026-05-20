@@ -1095,6 +1095,20 @@ If the skill needs to record a genuinely separate observation in the same sessio
 
 MANDATORY closing step on every skill invocation — runs AFTER Phase 2 (success path) AND on every early-exit path (Phase 0.0 dropped-all, Phase 0.5 gate-FAIL silent-skip or user-active, Phase 1 batch user-dismissed). Drives the Q3.4 outcome state machine + cross-session digest rescan filter.
 
+#### Dry-run override (v2.0.0-rc.27 TASK-007 / audit §2.25)
+
+When the user's invocation explicitly carries a dry-run intent — the prompt or `/fabric-archive` invocation contains a literal `--dry-run`, `dry-run`, `dry_run`, or `预览` token — the skill MUST skip Phase 2.5's ledger write. The mandatory contract above is suspended only in this single case; every other early-exit path still emits the event.
+
+Rationale: pre-rc.27 the spec read as "MANDATORY on every invocation" which created an irreconcilable conflict when the user explicitly requested a no-mutation preview (audit §2.25). The dry-run override resolves the deadlock by treating dry-run as an entry-context override that disables the ledger side-effect while preserving the rest of the skill's read-side machinery (Phase 0.0 digest collection, Phase 0.5 viability gate, Phase 1 candidate preview render). The user sees what WOULD have happened without the audit trail recording an attempt that never produced a pending entry.
+
+Detection rule (substring match, case-insensitive): if the originating prompt contains `--dry-run` | `dry-run` | `dry_run` | `预览` as a standalone token, set `dry_run = true` for the entire skill run and skip the Phase 2.5 event emission. All other phases run normally; their user-facing output should prefix `[DRY-RUN]` to make the mode visible.
+
+When `dry_run = true`:
+- Phase 1 batch review header MUST include `[DRY-RUN — no writes will occur]`
+- Phase 2 candidate emission is REPLACED with a "would write N pending entries" preview rendered as a numbered table (`would-write` shape — same columns as the real Phase 1 review)
+- Phase 2.5 event emission is SKIPPED entirely (the rationale above)
+- No `fab_extract_knowledge` MCP call is issued (dry-run is purely read-side)
+
 #### What to emit
 
 For EACH `session_id` in the run's scope (multi-session E4 runs emit MULTIPLE events — one per session_id; single-session E1/E2/E3/E5 runs emit ONE event), append ONE `session_archive_attempted` line to `.fabric/events.jsonl`:
