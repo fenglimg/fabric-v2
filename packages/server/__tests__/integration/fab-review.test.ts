@@ -231,10 +231,17 @@ describe("fab_review integration (rc.3 TASK-007)", () => {
   });
 
   // ---------------------------------------------------------------------------
-  // (2) Reject batch — files retained for doctor vacuum (rc.3 contract).
+  // (2) Reject batch — files retained (vacuum-owned) + frontmatter status=rejected
+  //
+  // v2.0.0-rc.27 TASK-001 (§2.2): rc.3 reject was observability-only — the
+  // event fired but the file stayed visible in list/search, generating the
+  // "ghost queue" loop documented in audit §2.2. rc.27 dual-writes: event
+  // ledger PLUS `status: rejected` in the pending file frontmatter, so list
+  // default-hides rejected entries while still preserving the file for
+  // forensic recovery / doctor --vacuum.
   // ---------------------------------------------------------------------------
 
-  it("(2) reject_batch_emits_three_rejected_events_and_retains_files", async () => {
+  it("(2) reject_batch_emits_events_writes_status_and_default_list_hides_rejected", async () => {
     const projectRoot = await createTempProject();
     const a = await seedPending(projectRoot, "decisions", "stale-a");
     const b = await seedPending(projectRoot, "guidelines", "stale-b");
@@ -243,7 +250,7 @@ describe("fab_review integration (rc.3 TASK-007)", () => {
     const result = await reviewKnowledge(projectRoot, {
       action: "reject",
       pending_paths: [a, b, c],
-      reason: "test rejection (rc3)",
+      reason: "test rejection (rc27)",
     });
     if (result.action !== "reject") throw new Error("unreachable");
     expect(result.rejected).toEqual([a, b, c]);
@@ -252,18 +259,31 @@ describe("fab_review integration (rc.3 TASK-007)", () => {
     expect(rejected.events).toHaveLength(3);
     for (const ev of rejected.events) {
       expect(ev.event_type).toBe("knowledge_rejected");
-      expect((ev as { reason: string }).reason).toMatch(/test rejection \(rc3\)/u);
+      expect((ev as { reason: string }).reason).toMatch(/test rejection \(rc27\)/u);
     }
 
-    // rc.3 contract: reject is observability-only; doctor (rc.4) owns vacuum.
+    // Files retained for forensic recovery (vacuum-owned cleanup).
     expect(existsSync(join(projectRoot, a))).toBe(true);
     expect(existsSync(join(projectRoot, b))).toBe(true);
     expect(existsSync(join(projectRoot, c))).toBe(true);
 
-    // list still surfaces all three (since files remain on disk).
-    const listed = await reviewKnowledge(projectRoot, { action: "list", filters: undefined });
-    if (listed.action !== "list") throw new Error("unreachable");
-    expect(listed.items).toHaveLength(3);
+    // Frontmatter mutation: each file now carries `status: rejected`.
+    const aContent = await readFile(join(projectRoot, a), "utf8");
+    expect(aContent).toMatch(/^status:\s*rejected\s*$/mu);
+
+    // Default list hides rejected entries.
+    const listedDefault = await reviewKnowledge(projectRoot, { action: "list", filters: undefined });
+    if (listedDefault.action !== "list") throw new Error("unreachable");
+    expect(listedDefault.items).toHaveLength(0);
+
+    // Opt-in surfacing returns all three with status=rejected.
+    const listedAll = await reviewKnowledge(projectRoot, {
+      action: "list",
+      filters: { include_rejected: true },
+    });
+    if (listedAll.action !== "list") throw new Error("unreachable");
+    expect(listedAll.items).toHaveLength(3);
+    expect(listedAll.items.every((it) => it.status === "rejected")).toBe(true);
   });
 
   // ---------------------------------------------------------------------------

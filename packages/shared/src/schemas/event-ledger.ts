@@ -155,7 +155,11 @@ export const metaReconciledEventSchema = z.object({
   // revision-hash gate cannot catch — a missing description doesn't move the
   // revision). Symmetric to rc.22 D2 read-side auto-heal but covers the
   // description-undefined case which the revision drift gate misses.
-  trigger: z.enum(["doctor", "manual", "auto-heal-description"]),
+  // v2.0.0-rc.27 TASK-001 (§2.9): `post-approve` / `post-modify` added so
+  // `fab_review` write-actions can flush newly-promoted entries into
+  // `agents.meta.json.nodes[id]` synchronously — without this the new entry
+  // remains description-less until the next plan_context auto-heal.
+  trigger: z.enum(["doctor", "manual", "auto-heal-description", "post-approve", "post-modify"]),
   source: z.literal("reconcileKnowledge"),
   // v2.0.0-rc.22 TASK-014 (Scope E): set when reconcileKnowledge forced a
   // writeKnowledgeMeta on revision drift alone (no per-file content drift).

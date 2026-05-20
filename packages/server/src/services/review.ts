@@ -13,6 +13,7 @@ import type { EventLedgerEventInput } from "@fenglimg/fabric-shared";
 
 import { appendEventLedgerEvent } from "./event-ledger.js";
 import { KnowledgeIdAllocator } from "./knowledge-id-allocator.js";
+import { reconcileKnowledge } from "./knowledge-sync.js";
 import { atomicWriteText, ensureParentDirectory } from "./_shared.js";
 
 // rc.5 B1: dual pending root. Team layer writes/reads via the workspace
@@ -56,6 +57,14 @@ type Maturity = "draft" | "verified" | "proven";
 
 type RelevanceScope = "narrow" | "broad";
 
+// v2.0.0-rc.27 TASK-001 (§2.2/§2.3): lifecycle status markers authored by
+// reject/defer write paths. Default "active" semantics when field is absent
+// (legacy behavior — every pending entry was treated as approvable). Stored
+// in frontmatter so list/search can filter without re-walking the event ledger,
+// and so the doctor cleanup pass (rc.4 vacuum policy) has a stable signal
+// independent of jsonl events.
+type LifecycleStatus = "active" | "rejected" | "deferred";
+
 type ParsedFrontmatter = {
   id?: string;
   type?: PluralType;
@@ -70,6 +79,9 @@ type ParsedFrontmatter = {
   // at consumption time (matches knowledge-meta-builder defaults).
   relevance_scope?: RelevanceScope;
   relevance_paths?: string[];
+  // v2.0.0-rc.27 TASK-001 (§2.2/§2.3 frontmatter authoring path).
+  status?: LifecycleStatus;
+  deferred_until?: string;
 };
 
 /**
@@ -209,10 +221,21 @@ type ListFilters = {
   // string, which is correct for fully-qualified UTC timestamps with
   // identical zone suffix (Z) — the contract layer enforces datetime() format.
   created_after?: string;
+  // v2.0.0-rc.27 TASK-001 (§2.2/§2.3): opt-in surfacing of lifecycle-filtered
+  // entries. Default behavior hides rejected (always) and deferred (when the
+  // deferred_until threshold is still in the future). Callers that need the
+  // full pending population — vacuum tooling, audit dashboards — pass these
+  // overrides explicitly.
+  include_rejected?: boolean;
+  include_deferred?: boolean;
 };
 
 type ListItem = {
   pending_path: string;
+  // v2.0.0-rc.27 TASK-001 (§2.12): only emitted for personal-layer entries.
+  // Team entries use project-relative paths in `pending_path` which are
+  // already programmatically consumable without expansion.
+  pending_path_absolute?: string;
   type: PluralType;
   layer: Layer;
   maturity: Maturity;
@@ -223,7 +246,42 @@ type ListItem = {
   // team   → workspace .fabric/knowledge/pending  (path is workspace-relative)
   // personal → ~/.fabric/knowledge/pending        (path uses `~/...` form)
   origin?: "team" | "personal";
+  // v2.0.0-rc.27 TASK-001 (§2.2/§2.3): lifecycle status surfaced when present
+  // in the frontmatter. Listings filter on this by default (see
+  // applyLifecycleFilter); the field is also surfaced so callers can pivot
+  // their own UI on it (e.g. show a "deferred" badge).
+  status?: LifecycleStatus;
+  deferred_until?: string;
 };
+
+/**
+ * v2.0.0-rc.27 TASK-001 (§2.2/§2.3): default visibility filter for list/search.
+ * Returns true if the entry should be SHOWN given the caller's filter request.
+ *
+ * Defaults (when filters absent):
+ *   - status="rejected"   → hide (audit only via doctor/event-ledger)
+ *   - status="deferred"   → hide IFF deferred_until is absent OR > now
+ *   - status="active" / absent → show
+ *
+ * Callers can pass include_rejected / include_deferred to override. The
+ * include_deferred override surfaces deferred entries regardless of their
+ * deferred_until threshold (useful for "show me what I've parked" workflows).
+ */
+function isVisibleByLifecycle(
+  fm: ParsedFrontmatter,
+  filters: ListFilters | undefined,
+): boolean {
+  if (fm.status === "rejected" && filters?.include_rejected !== true) {
+    return false;
+  }
+  if (fm.status === "deferred" && filters?.include_deferred !== true) {
+    // No deferred_until → indefinite defer, stay hidden until override.
+    // deferred_until in the past → defer expired, surface again.
+    if (fm.deferred_until === undefined) return false;
+    if (fm.deferred_until > new Date().toISOString()) return false;
+  }
+  return true;
+}
 
 async function listPending(
   projectRoot: string,
@@ -294,17 +352,29 @@ async function listPending(
           }
         }
 
+        // v2.0.0-rc.27 TASK-001 (§2.2/§2.3): hide rejected/deferred entries
+        // by default. See isVisibleByLifecycle for the precise rules.
+        if (!isVisibleByLifecycle(fm, filters)) {
+          continue;
+        }
+
         const reportedPath = source.origin === "personal"
           ? `~/${relative(resolvePersonalRoot(), absolutePath)}`
           : relative(projectRoot, absolutePath);
 
         items.push({
           pending_path: reportedPath,
+          // v2.0.0-rc.27 TASK-001 (§2.12): absolute path companion for
+          // personal entries so programmatic consumers (Read, fs.readFile)
+          // don't need to shell-expand the `~` themselves.
+          ...(source.origin === "personal" ? { pending_path_absolute: absolutePath } : {}),
           type,
           layer,
           maturity,
           origin: source.origin,
           ...(fm.tags !== undefined && fm.tags.length > 0 ? { tags: fm.tags } : {}),
+          ...(fm.status !== undefined ? { status: fm.status } : {}),
+          ...(fm.deferred_until !== undefined ? { deferred_until: fm.deferred_until } : {}),
         });
       }
     }
@@ -459,6 +529,26 @@ async function approveOne(
       reason: `approve:${slug}`,
     });
 
+    // v2.0.0-rc.27 TASK-001 (§2.9 root): synchronously rebuild agents.meta.json
+    // so the newly-promoted entry's frontmatter description flows into
+    // `nodes[id].description` immediately. Without this, the new entry's node
+    // stays empty (`{}`) — KnowledgeIdAllocator only mutates `counters` —
+    // until the next plan_context call's auto-heal fires. That gap (between
+    // approve and the next hint call) leaves the entry invisible to the L1
+    // cite-contract reminder + description_index window, which was the
+    // observable symptom in audit §2.1 / §2.11.
+    //
+    // Best-effort: a reconcile failure must NOT roll back the approve. The
+    // event ledger pair (promote_started + promoted) is the source of truth
+    // for the operation; reconcile is an observability flush. The next
+    // plan_context call's auto-heal will eventually catch up on its own
+    // schedule even if this synchronous attempt fails.
+    try {
+      await reconcileKnowledge(projectRoot, { trigger: "post-approve" });
+    } catch {
+      // Swallow — see comment above.
+    }
+
     return { pending_path: pendingPath, stable_id: stableId };
   } catch (err) {
     // Best-effort rollback: if the target was written before failure, remove
@@ -485,11 +575,19 @@ async function approveOne(
 }
 
 // ---------------------------------------------------------------------------
-// reject action (TASK-002)
+// reject action
 //
-// Per task spec: emits knowledge_rejected event but does NOT delete the file.
-// Doctor (rc.4) owns cleanup so the audit history remains inspectable until
-// the operator runs vacuum.
+// v2.0.0-rc.27 TASK-001 (§2.2): writes `status: rejected` to the pending
+// file's frontmatter so subsequent list/search calls filter the entry out by
+// default. The original rc.3 design only emitted a `knowledge_rejected` event
+// and left the file untouched — that left a "ghost queue" of rejected entries
+// that re-surfaced on every list call and aged into the stale-archive signal
+// at 14d, generating a permanent review-hint loop. Frontmatter authoring
+// makes the rejection visible to the same code path that reads pending files
+// without requiring callers to cross-reference the ledger.
+//
+// Physical deletion remains a vacuum concern (doctor --vacuum) so the audit
+// history stays inspectable for forensic recovery.
 // ---------------------------------------------------------------------------
 
 async function rejectAll(
@@ -499,6 +597,28 @@ async function rejectAll(
 ): Promise<string[]> {
   const rejected: string[] = [];
   for (const pendingPath of pendingPaths) {
+    // Best-effort frontmatter write. A read/parse/write failure must NOT
+    // prevent the ledger event from firing — the event is the durable record
+    // of the operator's intent, frontmatter is the secondary cache that
+    // list/search consult. Same priority ordering as approve's event-vs-IO
+    // contract (line 383-387 above: signal-then-mutate).
+    try {
+      const sandboxed = resolveSandboxedPath(projectRoot, pendingPath, { allowPersonal: true });
+      if (existsSync(sandboxed.abs)) {
+        const content = await readFile(sandboxed.abs, "utf8");
+        const merged = rewriteFrontmatterMerge(content, { status: "rejected" });
+        if (merged !== content) {
+          await atomicWriteText(sandboxed.abs, merged);
+        }
+      }
+    } catch {
+      // Sandboxed-resolve threw (path traversal) or IO error. The event
+      // below still records the operator intent; list/search will continue
+      // surfacing the entry until the operator runs vacuum or fixes the
+      // path. Silent failure is intentional — the public contract for
+      // reject is "the entry is no longer recommended", not "the file is
+      // mutated", so partial mutation is acceptable.
+    }
     await emitEventBestEffort(projectRoot, {
       event_type: "knowledge_rejected",
       timestamp: new Date().toISOString(),
@@ -539,6 +659,15 @@ type ModifyChanges = {
   // values — see `modifyEntry`.
   relevance_scope?: RelevanceScope;
   relevance_paths?: string[];
+};
+
+// v2.0.0-rc.27 TASK-001: superset of ModifyChanges used internally by
+// reject/defer write paths. Kept distinct from ModifyChanges so the public
+// modify surface does not silently grow status/deferred_until fields — the
+// only legal way to author a lifecycle status is reject/defer, never modify.
+type FrontmatterScalarPatch = ModifyChanges & {
+  status?: LifecycleStatus;
+  deferred_until?: string;
 };
 
 async function modifyEntry(
@@ -637,6 +766,22 @@ async function modifyLayerFlip(
   fm: ParsedFrontmatter,
   changes: ModifyChanges,
 ): Promise<FabReviewOutput> {
+  // v2.0.0-rc.27 TASK-001 (§2.10): refuse layer-flip on pending entries. The
+  // rc.3 modify+layer-flip was designed for canonical → canonical movement
+  // (a published team entry reclassified as personal, or vice versa). On a
+  // pending entry the flip silently doubled as a promote — allocating a
+  // stable_id, writing the canonical destination, and skipping the
+  // approve gate's frontmatter audit. That's a quiet way to launder
+  // unreviewed content into the canonical registry. Callers who actually
+  // want "promote with layer X" must approve first (which writes the
+  // canonical file with the source-declared layer) and then modify the
+  // canonical entry's layer.
+  if (target.absPath.includes("/pending/")) {
+    throw new Error(
+      "layer-flip not allowed on pending entries; approve first, then modify the canonical entry's layer",
+    );
+  }
+
   const fromLayer: Layer = fm.layer ?? "team";
   const toLayer: Layer = changes.layer as Layer;
   const pluralType = fm.type ?? target.inferredType;
@@ -745,6 +890,18 @@ async function modifyLayerFlip(
     ? relative(projectRoot, toAbs)
     : `~/${relative(resolvePersonalRoot(), toAbs)}`;
 
+  // v2.0.0-rc.27 TASK-001 (§2.9 mirror): like approve, the layer-flip creates
+  // a new canonical entry with a fresh stable_id under the destination
+  // layer's counter space. The destination's `nodes[id]` is uninitialized
+  // until a meta rebuild runs; trigger one synchronously so the new id is
+  // immediately visible to plan_context / cite-contract consumers. Same
+  // best-effort contract as approve (event ledger is the durable record).
+  try {
+    await reconcileKnowledge(projectRoot, { trigger: "post-modify" });
+  } catch {
+    // Swallow — see post-approve reconcile call.
+  }
+
   return {
     action: "modify",
     pending_path: responsePath,
@@ -828,6 +985,14 @@ async function searchEntries(
           }
         }
 
+        // v2.0.0-rc.27 TASK-001 (§2.2/§2.3): mirror listPending's lifecycle
+        // visibility default. Search shares the same hide-rejected /
+        // hide-future-deferred semantics so callers don't see different
+        // populations from the two read APIs.
+        if (!isVisibleByLifecycle(fm, filters)) {
+          continue;
+        }
+
         // Query match: title || summary || tags || filename
         const haystacks = [
           fm.title ?? "",
@@ -846,6 +1011,9 @@ async function searchEntries(
 
         items.push({
           pending_path: reportedPath,
+          // v2.0.0-rc.27 TASK-001 (§2.12): absolute companion for personal
+          // entries (mirrors listPending).
+          ...(source.isPersonal ? { pending_path_absolute: absolutePath } : {}),
           type,
           layer,
           maturity,
@@ -855,6 +1023,8 @@ async function searchEntries(
           ...(fm.tags !== undefined && fm.tags.length > 0 ? { tags: fm.tags } : {}),
           ...(fm.title !== undefined ? { title: fm.title } : {}),
           ...(fm.summary !== undefined ? { summary: fm.summary } : {}),
+          ...(fm.status !== undefined ? { status: fm.status } : {}),
+          ...(fm.deferred_until !== undefined ? { deferred_until: fm.deferred_until } : {}),
         });
       }
     }
@@ -864,7 +1034,18 @@ async function searchEntries(
 }
 
 // ---------------------------------------------------------------------------
-// defer action (TASK-002)
+// defer action
+//
+// v2.0.0-rc.27 TASK-001 (§2.3): writes `status: deferred` + `deferred_until`
+// to the pending file's frontmatter so list/search hide the entry until the
+// deferred_until threshold passes. Mirrors the reject action's frontmatter
+// authoring pattern — both lifecycle mutations are dual-write (ledger event
+// + frontmatter cache) so consumers don't need to walk the ledger.
+//
+// When `until` is omitted the caller didn't request a time gate; we still
+// write status=deferred so list/search can hide the entry, but list will
+// surface it again at the next manual filter relaxation
+// (filters.include_deferred=true).
 // ---------------------------------------------------------------------------
 
 async function deferAll(
@@ -875,6 +1056,24 @@ async function deferAll(
 ): Promise<string[]> {
   const deferred: string[] = [];
   for (const pendingPath of pendingPaths) {
+    // Mirror reject's best-effort dual-write contract (see rejectAll for the
+    // event-vs-IO priority rationale).
+    try {
+      const sandboxed = resolveSandboxedPath(projectRoot, pendingPath, { allowPersonal: true });
+      if (existsSync(sandboxed.abs)) {
+        const content = await readFile(sandboxed.abs, "utf8");
+        const patch: FrontmatterScalarPatch = {
+          status: "deferred",
+          ...(until !== undefined ? { deferred_until: until } : {}),
+        };
+        const merged = rewriteFrontmatterMerge(content, patch);
+        if (merged !== content) {
+          await atomicWriteText(sandboxed.abs, merged);
+        }
+      }
+    } catch {
+      // See rejectAll comment for failure semantics.
+    }
     await emitEventBestEffort(projectRoot, {
       event_type: "knowledge_deferred",
       timestamp: new Date().toISOString(),
@@ -956,6 +1155,20 @@ function parseFrontmatter(content: string): ParsedFrontmatter {
         // v2.0-rc.5 C3: flow-style inline YAML array, same parser as `tags`.
         out.relevance_paths = parseFlowArray(value);
         break;
+      case "status":
+        // v2.0.0-rc.27 TASK-001 (§2.2/§2.3): strict allow-list. Unknown
+        // values leave the field absent so list/search apply the "active"
+        // default — matches the relevance_scope handling pattern above.
+        if (value === "active" || value === "rejected" || value === "deferred") {
+          out.status = value;
+        }
+        break;
+      case "deferred_until":
+        // ISO-8601 string per FabReviewInput.defer schema. We do NOT validate
+        // here — list/search compare lexicographically against new Date()
+        // ISO, and malformed values lose that comparison (treated as past).
+        out.deferred_until = stripQuotes(value);
+        break;
       default:
         break;
     }
@@ -1026,7 +1239,7 @@ function rewriteFrontmatterForPromote(content: string, stableId: string): string
  */
 function rewriteFrontmatterMerge(
   content: string,
-  patch: ModifyChanges,
+  patch: FrontmatterScalarPatch,
   forced?: { id?: string },
 ): string {
   const match = /^(?:\uFEFF)?---\r?\n([\s\S]*?)\r?\n---/u.exec(content);
@@ -1049,6 +1262,12 @@ function rewriteFrontmatterMerge(
   // v2.0-rc.5 C3 (TASK-012): relevance hints — same flow-array shape as tags.
   if (patch.relevance_scope !== undefined) updates.relevance_scope = `relevance_scope: ${patch.relevance_scope}`;
   if (patch.relevance_paths !== undefined) updates.relevance_paths = `relevance_paths: [${patch.relevance_paths.join(", ")}]`;
+  // v2.0.0-rc.27 TASK-001 (§2.2/§2.3): status + deferred_until are only ever
+  // written by reject/defer write paths. quoteIfNeeded handles ISO-8601
+  // datetimes correctly (no colon in the date portion would need quoting,
+  // but the `T` and `Z` separators are unambiguous YAML bareword chars).
+  if (patch.status !== undefined) updates.status = `status: ${patch.status}`;
+  if (patch.deferred_until !== undefined) updates.deferred_until = `deferred_until: ${quoteIfNeeded(patch.deferred_until)}`;
 
   const lines = block.split(/\r?\n/u);
   const seen = new Set<string>();
@@ -1078,7 +1297,7 @@ function rewriteFrontmatterMerge(
   return `${before}---\n${newBlock}\n---${after}`;
 }
 
-function appendPatchLines(lines: string[], patch: ModifyChanges): void {
+function appendPatchLines(lines: string[], patch: FrontmatterScalarPatch): void {
   if (patch.title !== undefined) lines.push(`title: ${quoteIfNeeded(patch.title)}`);
   if (patch.summary !== undefined) lines.push(`summary: ${quoteIfNeeded(patch.summary)}`);
   if (patch.layer !== undefined) lines.push(`layer: ${patch.layer}`);
@@ -1086,6 +1305,8 @@ function appendPatchLines(lines: string[], patch: ModifyChanges): void {
   if (patch.tags !== undefined) lines.push(`tags: [${patch.tags.join(", ")}]`);
   if (patch.relevance_scope !== undefined) lines.push(`relevance_scope: ${patch.relevance_scope}`);
   if (patch.relevance_paths !== undefined) lines.push(`relevance_paths: [${patch.relevance_paths.join(", ")}]`);
+  if (patch.status !== undefined) lines.push(`status: ${patch.status}`);
+  if (patch.deferred_until !== undefined) lines.push(`deferred_until: ${quoteIfNeeded(patch.deferred_until)}`);
 }
 
 function quoteIfNeeded(value: string): string {

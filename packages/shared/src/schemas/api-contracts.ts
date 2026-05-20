@@ -604,6 +604,12 @@ const _fabReviewFiltersSchema = z
     // strictly older than this threshold are excluded from list / search
     // results. Additive optional field — existing callers unaffected.
     created_after: z.string().datetime().optional(),
+    // v2.0.0-rc.27 TASK-001 (§2.2/§2.3): opt-in surfacing of lifecycle-filtered
+    // entries. Default (omit both) hides rejected entries and deferred entries
+    // whose deferred_until is in the future. Pass true to include them — e.g.
+    // for vacuum tooling, audit dashboards, or "show me what I parked" UX.
+    include_rejected: z.boolean().optional(),
+    include_deferred: z.boolean().optional(),
   })
   .optional();
 
@@ -722,6 +728,14 @@ export const FabReviewInputShape = {
 // consumer can pair `(input.action, output.action)` without extra plumbing.
 const _fabReviewListItemSchema = z.object({
   pending_path: z.string(),
+  // v2.0.0-rc.27 TASK-001 (§2.12): for personal-layer entries `pending_path`
+  // carries the human-friendly `~/...` form (legacy contract) while
+  // `pending_path_absolute` carries the os-expanded absolute path. Programmatic
+  // consumers (Read tool, fs.readFile, downstream MCP servers) should prefer
+  // the absolute variant — the `~` is a shell-only sigil that breaks every
+  // non-shell consumer. Team entries omit this field because their
+  // `pending_path` is already project-relative and unambiguous.
+  pending_path_absolute: z.string().optional(),
   type: z.enum(["decisions", "pitfalls", "guidelines", "models", "processes"]),
   layer: z.enum(["team", "personal"]),
   maturity: z.enum(["draft", "verified", "proven"]),
@@ -733,6 +747,13 @@ const _fabReviewListItemSchema = z.object({
   // origin reflects where the pending file actually lives on disk; layer reflects
   // the declared classification that will drive the approve destination.
   origin: z.enum(["team", "personal"]).optional(),
+  // v2.0.0-rc.27 TASK-001 (§2.2/§2.3): frontmatter status markers. Default
+  // "active" (or absent). `rejected` entries are excluded from list/search
+  // unless filters.include_rejected=true; `deferred` entries are excluded
+  // when deferred_until is in the future. Authored by reject/defer write
+  // paths — never by extract or approve.
+  status: z.enum(["active", "rejected", "deferred"]).optional(),
+  deferred_until: z.string().datetime().optional(),
 });
 
 // v2.0.0-rc.23 TASK-009 (d): every variant carries an optional `warnings`

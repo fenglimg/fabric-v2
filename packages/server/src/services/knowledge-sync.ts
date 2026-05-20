@@ -528,8 +528,14 @@ export interface ReconcileKnowledgeOptions {
    * v2.0.0-rc.23 TASK-005 (a-B): `auto-heal-description` added so plan_context
    * can drive a full reconcile when it detects nodes with `description === undefined`
    * (legacy meta drift the revision-hash gate cannot detect).
+   *
+   * v2.0.0-rc.27 TASK-001 (§2.9 root): `post-approve` / `post-modify` added so
+   * `fab_review` approve/modify-layer-flip can drive an immediate meta rebuild
+   * — without this the new entry's `nodes[id]` stays empty until the next
+   * plan_context call's auto-heal, which leaves the entry undiscoverable in
+   * the description_index window between approve and the next hint call.
    */
-  trigger?: "startup" | "doctor" | "manual" | "auto-heal-description";
+  trigger?: "startup" | "doctor" | "manual" | "auto-heal-description" | "post-approve" | "post-modify";
 }
 
 /**

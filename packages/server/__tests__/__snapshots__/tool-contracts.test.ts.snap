@@ -209,6 +209,12 @@ exports[`tool contracts > fab-review contract matches snapshot 1`] = `
                 "format": "date-time",
                 "type": "string",
               },
+              "include_deferred": {
+                "type": "boolean",
+              },
+              "include_rejected": {
+                "type": "boolean",
+              },
               "layer": {
                 "enum": [
                   "team",
@@ -427,6 +433,10 @@ exports[`tool contracts > fab-review contract matches snapshot 1`] = `
             "items": {
               "additionalProperties": false,
               "properties": {
+                "deferred_until": {
+                  "format": "date-time",
+                  "type": "string",
+                },
                 "layer": {
                   "enum": [
                     "team",
@@ -450,6 +460,17 @@ exports[`tool contracts > fab-review contract matches snapshot 1`] = `
                   "type": "string",
                 },
                 "pending_path": {
+                  "type": "string",
+                },
+                "pending_path_absolute": {
+                  "type": "string",
+                },
+                "status": {
+                  "enum": [
+                    "active",
+                    "rejected",
+                    "deferred",
+                  ],
                   "type": "string",
                 },
                 "summary": {
