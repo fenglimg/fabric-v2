@@ -1,0 +1,64 @@
+{
+  "id": "TASK-03",
+  "title": "Doctor i18n migration — knowledge lint batch (L3793-4697, ~29 sites)",
+  "scope": "packages/server/src/services/doctor.ts",
+  "action": "Modify",
+  "description": "Migrate the knowledge-lint region of doctor.ts (L3793-4697) from hardcoded English to translator-driven keys. Region covers: filesystem_edit_fallback (multi-arm), orphan_demote, stale_archive, pending_overdue, stable_id_duplicate, layer_mismatch, index_drift, underseeded, narrow_no_paths, relevance_paths_dangling, relevance_paths_drift, narrow_too_few. These are the lint #16-#27 family checks. Mechanically identical to TASK-02 — only the line range and the key set differ. Translator threading is reused (already added in TASK-02), so this task only modifies call sites without re-touching runDoctorReport signature.",
+  "files": [
+    {
+      "path": "packages/server/src/services/doctor.ts",
+      "action": "modify",
+      "target": "L3793-4697 (approximately 29 okCheck/issueCheck call sites). Specific anchors: filesystem_edit_fallback arms L3793-3919, serve_lock advisory L3904-3919, stable_id_duplicate L4234-4248, layer_mismatch + index_drift L4255-4297 (note: relevance_paths_dangling also in this range but belongs to relevance group), underseeded L4555-4565, narrow_no_paths L4689-4697",
+      "change": "Same migration pattern as TASK-02: thread the already-introduced Translator parameter `t` into each create*Check function in this range (most should already accept it from TASK-02's signature change, but per-function param adds happen task-local — verify and add as needed). Replace name + message + remediation literals with t() calls. Key naming: `doctor.check.<lint_kind>.{name|<arm>.{message|remediation|ok}}` matching the `code` field stem (e.g. `doctor.check.orphan_demote.*`, `doctor.check.relevance_paths_dangling.*`). Plural via `.singular`/`.plural` per planning-context D2."
+    }
+  ],
+  "implementation": [
+    "Read packages/server/src/services/doctor.ts L3793-4700 in chunks to enumerate the 29 call sites with their inspectFn → createFn → callSite chain.",
+    "For each create*Check function in this range: ensure it accepts the Translator parameter (passed by runDoctorReport per TASK-02). If function signature lacks it, add and update call site at L917+ checks array.",
+    "Replace English literals with t() calls per the convention. Use the same key namespace `doctor.check.<kind>.*` as TASK-02 — do not invent a new namespace.",
+    "Multi-arm functions (filesystem_edit_fallback has multiple branches based on orphan state) get .arm1/.arm2 suffixes or descriptive names like `.with_orphans`, `.complete`. Document the chosen arm names in this file's working comments.",
+    "Be especially careful with plural-form ternaries (`entry/entries`, `has/have`) — split into singular/plural keys per planning-context D2.",
+    "Run `pnpm --filter @fenglimg/fabric-server typecheck` after this batch — green required.",
+    "Run `pnpm --filter @fenglimg/fabric-server test doctor` — expect some snapshot mismatches if any old snapshot captured English strings (acceptable; TASK-05 finalizes).",
+    "Commit: `feat(rc26): doctor i18n batch 2 — knowledge lint (TASK-03)`"
+  ],
+  "reference": {
+    "pattern": "Identical to TASK-02 pattern. Lint #16-#27 namespace conventions from rc.4-rc.6 development.",
+    "files": [
+      "packages/server/src/services/doctor.ts:3793-4697",
+      ".workflow/.lite-plan/rc26-doctor-i18n-closure-2026-05-19/.task/TASK-02.json"
+    ],
+    "examples": "TASK-02 establishes the migration pattern; TASK-03 applies it to the next batch."
+  },
+  "rationale": {
+    "chosen_approach": "Mechanical batch identical to TASK-02 — only line range and key set change. Sequential after TASK-02 (same-file collision).",
+    "alternatives_considered": ["Merge into TASK-02 — rejected: 55 sites in one task is too large for clean review surface", "Split further into TASK-03a/3b/3c — rejected: ~29 sites in one logical region (knowledge lints) is bisect-coherent"],
+    "decision_factors": ["Per-task commit ≤ 60min target", "Knowledge-lint group is a natural code module"],
+    "tradeoffs": "None significant — task is a straightforward continuation of TASK-02."
+  },
+  "test": {
+    "manual_checks": ["typecheck passes", "doctor.test stub-translator path still works"],
+    "success_metrics": ["Zero hardcoded English strings remain in L3793-4697 (grep for common phrases) returns 0", "All 29 sites use t() calls"],
+    "unit": ["doctor.test passes with stub translator"],
+    "integration": []
+  },
+  "convergence": {
+    "criteria": [
+      "packages/server/src/services/doctor.ts L3793-4697 grep -c 't(' returns ≥ 29",
+      "packages/server/src/services/doctor.ts L3793-4697 grep -c '\"All relevance_paths globs resolve\"' OR '\"No .fabric/.serve.lock present\"' (hardcoded English) returns 0",
+      "pnpm --filter @fenglimg/fabric-server typecheck exits 0",
+      "Commit msg: 'feat(rc26): doctor i18n batch 2 — knowledge lint (TASK-03)'"
+    ]
+  },
+  "read_first": [
+    "packages/server/src/services/doctor.ts",
+    "packages/shared/src/i18n/create-translator.ts",
+    ".workflow/.lite-plan/rc26-doctor-i18n-closure-2026-05-19/.task/TASK-02.json",
+    ".workflow/.lite-plan/rc26-doctor-i18n-closure-2026-05-19/planning-context.md"
+  ],
+  "depends_on": ["TASK-02"],
+  "estimated_minutes": 60,
+  "cli_execution_id": "rc26-doctor-i18n-closure-2026-05-19-TASK-03",
+  "cli_execution": { "strategy": "new" },
+  "status": "pending"
+}

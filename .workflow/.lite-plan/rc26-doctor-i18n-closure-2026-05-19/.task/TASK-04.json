@@ -1,0 +1,68 @@
+{
+  "id": "TASK-04",
+  "title": "Doctor i18n migration — skill/onboard/cite batch (L4836-5170, ~29 sites)",
+  "scope": "packages/server/src/services/doctor.ts",
+  "action": "Modify",
+  "description": "Final doctor.ts migration batch: covers session_hints_stale, stale_serve_lock, relevance_fields_missing, skill_md_yaml, onboard_coverage, narrow_too_few (telemetry arm), and cite_coverage multi-arm checks. Lint #26-#29 + cite-coverage from rc.20. This task closes the in-file migration — after this, every `okCheck()` / `issueCheck()` in doctor.ts uses the translator.",
+  "files": [
+    {
+      "path": "packages/server/src/services/doctor.ts",
+      "action": "modify",
+      "target": "L4836-5170 (approximately 29 okCheck/issueCheck call sites). Specific anchors: session_hints_stale L4836-4890, stale_serve_lock L4870-4890, relevance_fields_missing near narrow_too_few, skill_md_yaml_invalid L4890+, onboard_coverage near L5125, cite_coverage arms L5125-5170",
+      "change": "Same migration pattern as TASK-02/03. After this batch, run `grep -c '\"\\(Bootstrap\\|Knowledge\\|Event\\|Agents\\|Stable\\|Serve\\|Skill\\|Onboard\\)' packages/server/src/services/doctor.ts | grep -v 't(' ` to verify zero hardcoded English check names remain. The 84 sites should all use t()."
+    }
+  ],
+  "implementation": [
+    "Read packages/server/src/services/doctor.ts L4836-5200 to enumerate remaining sites.",
+    "Apply identical migration pattern: name → t('doctor.check.X.name'), message → t('doctor.check.X.<arm>.message', vars), remediation → t('doctor.check.X.<arm>.remediation').",
+    "cite_coverage subcommand (rc.20) has more complex structure — multiple arms covering justActivated / perClient / dismissedReasons / noneReasons. Inspect the existing doctor.cite.* keys in en.ts (L152-200) — many keys already exist. Reuse them; do NOT create duplicates under doctor.check.cite_coverage.* namespace. The rc.26 task here is to ensure the cite-coverage rendering path uses t() consistently, not to add new keys for already-translated parts.",
+    "Skill_md_yaml_invalid has special list-rendering for affected files — translate the wrapper text, leave file paths as data.",
+    "Onboard_coverage emits a list of uncovered slots — same pattern: translate wrapper, keep slot names as data.",
+    "Final grep audit: `grep -nE 'okCheck\\(|issueCheck\\(' doctor.ts | grep -v 't('` → expect ZERO output (every call site references t).",
+    "Run `pnpm --filter @fenglimg/fabric-server typecheck` → green.",
+    "Run `pnpm --filter @fenglimg/fabric-server test doctor` → expect snapshot mismatches (TASK-05 finalizes).",
+    "Commit: `feat(rc26): doctor i18n batch 3 — skill/onboard/cite (TASK-04)`"
+  ],
+  "reference": {
+    "pattern": "Continuation of TASK-02/03. cite_coverage reuses existing rc.20 doctor.cite.* keys.",
+    "files": [
+      "packages/server/src/services/doctor.ts:4836-5200",
+      "packages/shared/src/i18n/locales/en.ts:152-200",
+      ".workflow/.lite-plan/rc26-doctor-i18n-closure-2026-05-19/.task/TASK-02.json"
+    ],
+    "examples": "rc.20 cite-coverage formatter already uses doctor.cite.* — extend the t() coverage to the wrapper functions in this batch."
+  },
+  "rationale": {
+    "chosen_approach": "Final batch closes the in-file migration. Wave 2 ends here.",
+    "alternatives_considered": ["Skip cite_coverage in this RC (it's already partially translated) — rejected: leaving 50% migrated is worse than 100%; the wrapper functions use t() inconsistently and the rc.26 audit needs to be 100% clean"],
+    "decision_factors": ["Wave 2 completion requires zero hardcoded English in doctor.ts", "cite_coverage 50%-migrated state is messy"],
+    "tradeoffs": "cite_coverage's existing doctor.cite.* keys may need an audit — handled inline in implementation."
+  },
+  "test": {
+    "manual_checks": ["Final grep audit: zero hardcoded English check names in doctor.ts", "typecheck passes"],
+    "success_metrics": ["After this task, `grep -nE 'okCheck\\(|issueCheck\\(' doctor.ts | grep -v 't('` returns 0 lines"],
+    "unit": ["doctor.test passes with stub translator"],
+    "integration": []
+  },
+  "convergence": {
+    "criteria": [
+      "packages/server/src/services/doctor.ts L4836-5170 grep -c 't(' returns ≥ 29",
+      "Across the full doctor.ts file, `grep -cE 'okCheck\\(|issueCheck\\(' packages/server/src/services/doctor.ts` minus `grep -cE 'okCheck\\(t\\(|issueCheck\\(t\\(|, t\\(' packages/server/src/services/doctor.ts` returns 0 (no untranslated call sites — final audit)",
+      "packages/server/src/services/doctor.ts grep -c '\"All relevance_paths\\|\"No CLAUDE.md\\|\"Skipped\"' (sample hardcoded English) returns 0",
+      "pnpm --filter @fenglimg/fabric-server typecheck exits 0",
+      "Commit msg: 'feat(rc26): doctor i18n batch 3 — skill/onboard/cite (TASK-04)'"
+    ]
+  },
+  "read_first": [
+    "packages/server/src/services/doctor.ts",
+    "packages/shared/src/i18n/locales/en.ts",
+    ".workflow/.lite-plan/rc26-doctor-i18n-closure-2026-05-19/.task/TASK-02.json",
+    ".workflow/.lite-plan/rc26-doctor-i18n-closure-2026-05-19/.task/TASK-03.json",
+    ".workflow/.lite-plan/rc26-doctor-i18n-closure-2026-05-19/planning-context.md"
+  ],
+  "depends_on": ["TASK-03"],
+  "estimated_minutes": 60,
+  "cli_execution_id": "rc26-doctor-i18n-closure-2026-05-19-TASK-04",
+  "cli_execution": { "strategy": "new" },
+  "status": "pending"
+}

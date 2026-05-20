@@ -20,3 +20,7 @@ coverage/
 # content, regenerated on each session.
 .workflow/specs/
 .workflow/spec-analytics.jsonl
+# rc.26: fabric wiki cache + per-package .fabric cache dirs created by local
+# dogfood / build runs are not part of the source contract.
+.workflow/wiki-index.json
+packages/*/.fabric/
