@@ -184,3 +184,129 @@ describe("plan-context-hint — auto_healed projection (TASK-010)", () => {
     ).toBe(false);
   });
 });
+
+// ---------------------------------------------------------------------------
+// v2.0.0-rc.27 TASK-002 (audit §2.5/§2.7): scope expose + split counts.
+// ---------------------------------------------------------------------------
+
+function makeIndexItem(opts: {
+  id: string;
+  scope: "narrow" | "broad";
+  type?: string;
+  maturity?: string;
+}): unknown {
+  return {
+    stable_id: opts.id,
+    level: "L2",
+    required: false,
+    selectable: false,
+    description: {
+      summary: `summary for ${opts.id}`,
+      intent_clues: [],
+      tech_stack: [],
+      impact: [],
+      must_read_if: `summary for ${opts.id}`,
+      knowledge_type: opts.type ?? "guideline",
+      maturity: opts.maturity ?? "draft",
+    },
+    type: opts.type ?? "guideline",
+    maturity: opts.maturity ?? "draft",
+    relevance_scope: opts.scope,
+    relevance_paths: opts.scope === "narrow" ? ["src/**/*.ts"] : [],
+  };
+}
+
+describe("plan-context-hint — relevance_scope expose (TASK-002 / audit §2.5/§2.7)", () => {
+  it("entry shape carries relevance_scope per item", async () => {
+    const narrow = makeIndexItem({ id: "KT-DEC-0001", scope: "narrow" });
+    const broad = makeIndexItem({ id: "KT-GLD-0001", scope: "broad" });
+    mockServer({
+      revision_hash: "rev-scope",
+      stale: false,
+      selection_token: "tok-scope",
+      entries: [],
+      shared: {
+        description_index: [narrow, broad],
+        preflight_diagnostics: [],
+      },
+    });
+
+    const { runPlanContextHint } = await import(
+      "../src/commands/plan-context-hint.ts"
+    );
+    const output = await runPlanContextHint({ all: true });
+
+    expect(output.entries).toHaveLength(2);
+    const byId = Object.fromEntries(output.entries.map((e) => [e.id, e]));
+    expect(byId["KT-DEC-0001"]?.relevance_scope).toBe("narrow");
+    expect(byId["KT-GLD-0001"]?.relevance_scope).toBe("broad");
+  });
+
+  it("narrow_count + broad_only_count partition the entries set", async () => {
+    const items = [
+      makeIndexItem({ id: "KT-DEC-0001", scope: "narrow" }),
+      makeIndexItem({ id: "KT-DEC-0002", scope: "narrow" }),
+      makeIndexItem({ id: "KT-GLD-0001", scope: "broad" }),
+    ];
+    mockServer({
+      revision_hash: "rev-counts",
+      stale: false,
+      selection_token: "tok-counts",
+      entries: [],
+      shared: {
+        description_index: items,
+        preflight_diagnostics: [],
+      },
+    });
+
+    const { runPlanContextHint } = await import(
+      "../src/commands/plan-context-hint.ts"
+    );
+    const output = await runPlanContextHint({ all: true });
+
+    expect(output.narrow_count).toBe(2);
+    expect(output.broad_only_count).toBe(1);
+    expect(output.narrow_count + output.broad_only_count).toBe(
+      output.entries.length,
+    );
+  });
+
+  it("missing relevance_scope on a server-side item defaults to broad", async () => {
+    // Defensive: a malformed item missing relevance_scope should not crash —
+    // the CLI defaults to "broad" so the entry is still discoverable.
+    const item = {
+      stable_id: "KT-DEC-0999",
+      level: "L2",
+      required: false,
+      selectable: false,
+      description: {
+        summary: "no scope item",
+        intent_clues: [],
+        tech_stack: [],
+        impact: [],
+        must_read_if: "no scope item",
+      },
+      type: "guideline",
+      maturity: "draft",
+      // relevance_scope intentionally omitted
+    };
+    mockServer({
+      revision_hash: "rev-default",
+      stale: false,
+      selection_token: "tok-default",
+      entries: [],
+      shared: {
+        description_index: [item],
+        preflight_diagnostics: [],
+      },
+    });
+
+    const { runPlanContextHint } = await import(
+      "../src/commands/plan-context-hint.ts"
+    );
+    const output = await runPlanContextHint({ all: true });
+    expect(output.entries[0]?.relevance_scope).toBe("broad");
+    expect(output.broad_only_count).toBe(1);
+    expect(output.narrow_count).toBe(0);
+  });
+});

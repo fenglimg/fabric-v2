@@ -938,6 +938,58 @@ describe("planContext", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// v2.0.0-rc.27 TASK-002 (audit §2.22): path traversal sandbox at planContext
+// entry. The MCP layer is trusted but a misconfigured skill prompt that
+// emits "../../../etc/passwd" must not silently land in downstream path
+// matching.
+// ---------------------------------------------------------------------------
+
+describe("planContext path sandbox (TASK-002 / audit §2.22)", () => {
+  it("rejects absolute paths in input.paths", async () => {
+    const projectRoot = await createTempProject();
+    await expect(
+      planContext(projectRoot, { paths: ["/etc/passwd"] }),
+    ).rejects.toThrow(/absolute paths are not allowed/u);
+  });
+
+  it("rejects `..` traversal in input.paths", async () => {
+    const projectRoot = await createTempProject();
+    await expect(
+      planContext(projectRoot, { paths: ["../../../etc/passwd"] }),
+    ).rejects.toThrow(/traversal is not allowed/u);
+  });
+
+  it("rejects `~/` shell sigil in input.paths", async () => {
+    const projectRoot = await createTempProject();
+    await expect(
+      planContext(projectRoot, { paths: ["~/.ssh/id_rsa"] }),
+    ).rejects.toThrow(/shell sigil/u);
+  });
+
+  it("rejects `..` traversal in input.target_paths", async () => {
+    const projectRoot = await createTempProject();
+    await expect(
+      planContext(projectRoot, {
+        paths: ["src/index.ts"],
+        target_paths: ["../../../etc/hosts"],
+      }),
+    ).rejects.toThrow(/traversal is not allowed/u);
+  });
+
+  it("accepts the `**` global sentinel without throwing", async () => {
+    const projectRoot = await createTempProject();
+    await mkdir(join(projectRoot, ".fabric"), { recursive: true });
+    await writeFile(
+      join(projectRoot, ".fabric", "agents.meta.json"),
+      JSON.stringify({ revision: "init", nodes: {} }),
+    );
+    const result = await planContext(projectRoot, { paths: ["**"] });
+    expect(result.entries).toHaveLength(1);
+    expect(result.entries[0]?.path).toBe("**");
+  });
+});
+
 async function createTempProject(): Promise<string> {
   const projectRoot = await mkdtemp(join(tmpdir(), "fabric-plan-context-"));
   tempDirs.push(projectRoot);

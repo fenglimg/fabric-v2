@@ -892,9 +892,6 @@ function extractRuleDescription(source: string): RuleDescription | undefined {
 
   const heading = /^#\s+(.+?)\s*$/mu.exec(source);
   const summary = heading?.[1]?.trim();
-  if (summary === undefined || summary.length === 0) {
-    return undefined;
-  }
 
   // v2.0-rc.22 hotfix (Finding 2 / B1): when frontmatter exists but lacks a
   // `summary:` field (the canonical baseline shape: h1 heading carries the
@@ -909,12 +906,55 @@ function extractRuleDescription(source: string): RuleDescription | undefined {
     ? extractKnowledgeFieldsFromFrontmatter(frontmatter[1])
     : undefined;
 
+  // v2.0.0-rc.27 TASK-002 (audit §2.1/§2.11 fallback hardening): if the
+  // entry has an h1 heading, prefer it as the summary. Otherwise — and this
+  // is the new rc.27 branch — synthesize a minimal description from
+  // frontmatter when the file is "structurally a knowledge entry" (has at
+  // least one of: declared id, declared knowledge_type, or non-empty tags).
+  //
+  // Rationale: rc.26 returned undefined in that case, which caused the
+  // entry to be invisible to description_index AND to permanently appear in
+  // preflight_diagnostics.missing_description regardless of how many times
+  // plan_context's auto-heal ran. The promote pipeline doesn't enforce a
+  // summary/h1 on pending files, and historical baseline scans authored
+  // many entries without either — so undefined-return is a foot-gun, not a
+  // safety net. The minimal description we emit here is intentionally
+  // unhelpful for AI consumption (`(unnamed)` summary, empty arrays) so
+  // operators still feel the pressure to author proper summaries, but it
+  // keeps the entry DISCOVERABLE in description_index instead of silently
+  // dropping it.
+  const isStructurallyAKnowledgeEntry =
+    summary !== undefined && summary.length > 0
+      ? true
+      : knowledge !== undefined &&
+        (knowledge.id !== undefined ||
+          knowledge.knowledge_type !== undefined ||
+          (knowledge.tags !== undefined && knowledge.tags.length > 0));
+
+  if (!isStructurallyAKnowledgeEntry) {
+    // Truly empty file (no h1, no knowledge frontmatter). Preserve
+    // pre-rc.27 undefined-return so genuine "this isn't a knowledge entry"
+    // cases still trip the diagnostic and operators can investigate.
+    return undefined;
+  }
+
+  // Choose a summary in priority order: h1 heading → id → derived from tags
+  // → static placeholder. `must_read_if` mirrors summary so cite-contract
+  // consumers still get a non-empty must_read string.
+  const synthesizedSummary =
+    summary !== undefined && summary.length > 0
+      ? summary
+      : knowledge?.id ??
+        (knowledge?.tags !== undefined && knowledge.tags.length > 0
+          ? `(unnamed; tags: ${knowledge.tags.join(", ")})`
+          : "(unnamed knowledge entry)");
+
   return {
-    summary,
+    summary: synthesizedSummary,
     intent_clues: [],
     tech_stack: [],
     impact: [],
-    must_read_if: summary,
+    must_read_if: synthesizedSummary,
     // v2.0-rc.22: when frontmatter is present, merge its knowledge fields;
     // when fully absent (no `---` block), all knowledge fields stay
     // undefined, matching the original heading-only fallback contract.

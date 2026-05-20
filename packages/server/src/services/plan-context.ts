@@ -93,10 +93,70 @@ const SELECTION_TOKEN_TTL_MS = 5 * 60 * 1000;
 // across all candidate counts. See docs/decisions/rc5-a3-superseded.md.
 const selectionTokenCache = new Map<string, SelectionTokenState>();
 
+/**
+ * v2.0.0-rc.27 TASK-002 (audit §2.22): sandbox each caller-supplied path
+ * before it reaches downstream consumers. plan_context currently only echoes
+ * paths into requirement_profile.path_segments and the description_index
+ * matcher — but two of its downstream calls (knowledge-meta-builder
+ * relevance-paths glob matching, plus the rc.5 D1 hint CLI) DO take the
+ * path further. A traversal like `../../../etc/passwd` slips through
+ * `normalizeKnowledgePath` (slash-only normalization) and would land in
+ * those callers as an absolute escape vector when the next iteration of
+ * relevance_paths glob matching adds prefix anchoring.
+ *
+ * Allowed shapes:
+ *   - relative paths under the project root: `src/foo.ts`, `a/b/c.md`
+ *   - the `**` sentinel (used by --all to probe broad/cross-cutting entries)
+ *   - the bare `*` glob (matches anything at root)
+ *
+ * Rejected:
+ *   - absolute paths (`/etc/passwd`, `/Users/x/...`)
+ *   - traversal segments (`..` anywhere in the path)
+ *   - shell-only sigils (`~/...` — caller must expand before passing)
+ *
+ * Thrown errors propagate to the MCP layer which surfaces them as
+ * structured tool errors — no silent drop to broad-fallback.
+ */
+function assertPathInSandbox(rawPath: string): void {
+  // Allow the global-match sentinels first (the only legitimate non-tree paths).
+  if (rawPath === "**" || rawPath === "*") return;
+
+  const normalized = rawPath.replaceAll("\\", "/");
+  if (normalized.startsWith("/")) {
+    throw new Error(
+      `plan_context: absolute paths are not allowed (got "${rawPath}"); pass a path relative to the project root`,
+    );
+  }
+  if (normalized.startsWith("~/") || normalized === "~") {
+    throw new Error(
+      `plan_context: shell sigil "~" is not allowed (got "${rawPath}"); expand to a project-relative path before calling`,
+    );
+  }
+  if (normalized.split("/").some((seg) => seg === "..")) {
+    throw new Error(
+      `plan_context: ".." traversal is not allowed (got "${rawPath}"); pass a path that resolves under the project root`,
+    );
+  }
+}
+
 export async function planContext(
   projectRoot: string,
   input: PlanContextInput,
 ): Promise<PlanContextResult> {
+  // v2.0.0-rc.27 TASK-002 (audit §2.22): sandbox every caller-supplied path
+  // before any matching/reconcile work runs. Failure here is a hard throw
+  // — plan_context callers are MCP-trusted but a stray traversal from a
+  // misconfigured skill or a malformed prompt should not silently land in
+  // the description_index matcher.
+  for (const p of input.paths) {
+    assertPathInSandbox(p);
+  }
+  if (input.target_paths !== undefined) {
+    for (const p of input.target_paths) {
+      assertPathInSandbox(p);
+    }
+  }
+
   // v2.0.0-rc.22 Scope D T-D2: graceful meta-load. planContext is a hint-time
   // advisor — when buildKnowledgeMeta fails transiently we'd rather return a
   // slightly stale broad-scope hint than surface an fs-error to the caller.
