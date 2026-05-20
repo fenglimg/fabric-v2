@@ -610,6 +610,16 @@ const _fabReviewFiltersSchema = z
     // for vacuum tooling, audit dashboards, or "show me what I parked" UX.
     include_rejected: z.boolean().optional(),
     include_deferred: z.boolean().optional(),
+    // v2.0.0-rc.27 TASK-006 (audit §2.23): opt-in body inspection. Default
+    // list/search return only frontmatter-derived fields — a malicious
+    // pending entry could hide a prompt-injection payload under `## Evidence`
+    // body content that frontmatter inspection never surfaces. Setting
+    // `include_body: true` attaches the full post-frontmatter content to
+    // each item, and (for search) extends the haystack to body text. The
+    // default-off design keeps the wire payload small for routine list
+    // calls; reviewer workflows pass `true` before approving so the body
+    // is rendered into the reviewer's UI for visual scan.
+    include_body: z.boolean().optional(),
   })
   .optional();
 
@@ -754,6 +764,11 @@ const _fabReviewListItemSchema = z.object({
   // paths — never by extract or approve.
   status: z.enum(["active", "rejected", "deferred"]).optional(),
   deferred_until: z.string().datetime().optional(),
+  // v2.0.0-rc.27 TASK-006 (audit §2.23): full body content (everything
+  // after the closing `---` of frontmatter). Surfaced only when caller
+  // passes `filters.include_body: true`. Default-omitted to keep payload
+  // small for routine list calls.
+  body: z.string().optional(),
 });
 
 // v2.0.0-rc.23 TASK-009 (d): every variant carries an optional `warnings`

@@ -228,7 +228,31 @@ type ListFilters = {
   // overrides explicitly.
   include_rejected?: boolean;
   include_deferred?: boolean;
+  // v2.0.0-rc.27 TASK-006 (audit §2.23): opt-in body inspection. When true,
+  // list/search attach the full post-frontmatter body to each item; search
+  // additionally extends the query haystack to body text. Default-off
+  // (keeps the wire payload small).
+  include_body?: boolean;
 };
+
+/**
+ * v2.0.0-rc.27 TASK-006 (audit §2.23): extract everything AFTER the closing
+ * `---` of frontmatter. Used by list/search when filters.include_body=true
+ * to surface the body content for reviewer inspection — the prompt-injection
+ * mitigation surface (a malicious payload hiding under `## Evidence` is
+ * invisible to frontmatter-only views).
+ *
+ * Returns the trimmed body; if no frontmatter is present, returns the
+ * full content as body (defensive — a malformed entry without `---`
+ * fences shouldn't be silently dropped from the body inspection surface).
+ */
+function extractBody(content: string): string {
+  const match = /^(?:\uFEFF)?---\r?\n[\s\S]*?\r?\n---\s*(?:\r?\n|$)/u.exec(content);
+  if (match === null) {
+    return content.trim();
+  }
+  return content.slice(match[0].length).trim();
+}
 
 type ListItem = {
   pending_path: string;
@@ -252,6 +276,10 @@ type ListItem = {
   // their own UI on it (e.g. show a "deferred" badge).
   status?: LifecycleStatus;
   deferred_until?: string;
+  // v2.0.0-rc.27 TASK-006 (audit §2.23): full body content (everything
+  // after the closing `---` of frontmatter). Surfaced only when the
+  // caller passed `filters.include_body: true`.
+  body?: string;
 };
 
 /**
@@ -375,6 +403,10 @@ async function listPending(
           ...(fm.tags !== undefined && fm.tags.length > 0 ? { tags: fm.tags } : {}),
           ...(fm.status !== undefined ? { status: fm.status } : {}),
           ...(fm.deferred_until !== undefined ? { deferred_until: fm.deferred_until } : {}),
+          // v2.0.0-rc.27 TASK-006 (audit §2.23): full body when caller
+          // opted in. Reviewer UI consumes this to scan for prompt-injection
+          // payloads hidden under `## Evidence` body.
+          ...(filters?.include_body === true ? { body: extractBody(content) } : {}),
         });
       }
     }
@@ -993,12 +1025,17 @@ async function searchEntries(
           continue;
         }
 
-        // Query match: title || summary || tags || filename
+        // Query match: title || summary || tags || filename. v2.0.0-rc.27
+        // TASK-006 (audit §2.23): when filters.include_body=true, extend
+        // the haystack to body text so reviewers can search for payload
+        // strings hidden under `## Evidence`.
+        const bodyForSearch = filters?.include_body === true ? extractBody(content) : "";
         const haystacks = [
           fm.title ?? "",
           fm.summary ?? "",
           ...(fm.tags ?? []),
           name,
+          bodyForSearch,
         ].map((s) => s.toLowerCase());
         const matches = haystacks.some((h) => h.includes(lowerQuery));
         if (!matches) continue;
@@ -1025,6 +1062,11 @@ async function searchEntries(
           ...(fm.summary !== undefined ? { summary: fm.summary } : {}),
           ...(fm.status !== undefined ? { status: fm.status } : {}),
           ...(fm.deferred_until !== undefined ? { deferred_until: fm.deferred_until } : {}),
+          // v2.0.0-rc.27 TASK-006 (audit §2.23): body emission when opted in.
+          // Reuse the already-computed bodyForSearch to avoid a second pass
+          // over the content (the search loop above extracted it iff
+          // include_body=true).
+          ...(filters?.include_body === true ? { body: bodyForSearch } : {}),
         });
       }
     }

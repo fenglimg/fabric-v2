@@ -209,6 +209,9 @@ exports[`tool contracts > fab-review contract matches snapshot 1`] = `
                 "format": "date-time",
                 "type": "string",
               },
+              "include_body": {
+                "type": "boolean",
+              },
               "include_deferred": {
                 "type": "boolean",
               },
@@ -433,6 +436,9 @@ exports[`tool contracts > fab-review contract matches snapshot 1`] = `
             "items": {
               "additionalProperties": false,
               "properties": {
+                "body": {
+                  "type": "string",
+                },
                 "deferred_until": {
                   "format": "date-time",
                   "type": "string",

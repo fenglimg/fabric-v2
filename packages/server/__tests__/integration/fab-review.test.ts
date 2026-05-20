@@ -734,3 +734,97 @@ describe("fab_review integration (rc.3 TASK-007)", () => {
     expect(c).toContain("rt-action-c");
   });
 });
+
+// ---------------------------------------------------------------------------
+// v2.0.0-rc.27 TASK-006 (audit §2.23): fab_review include_body for
+// prompt-injection mitigation. Default list/search shows only frontmatter
+// fields; reviewers pass include_body=true to render the body content
+// (everything after the closing `---`) so a payload hidden under
+// `## Evidence` can be visually inspected before approve.
+// ---------------------------------------------------------------------------
+
+describe("fab_review rc.27 §2.23 include_body", () => {
+  it("list default omits body; include_body=true emits full body content", async () => {
+    const projectRoot = await createTempProject();
+    await seedPending(projectRoot, "decisions", "rc27-body-test", {
+      summary: "summary line in frontmatter",
+    });
+
+    // Default — no body field.
+    const defaultList = await reviewKnowledge(projectRoot, { action: "list", filters: undefined });
+    if (defaultList.action !== "list") throw new Error("unreachable");
+    expect(defaultList.items).toHaveLength(1);
+    expect(defaultList.items[0].body).toBeUndefined();
+
+    // Opt-in — body present, contains the "## Summary" section we seeded.
+    const withBody = await reviewKnowledge(projectRoot, {
+      action: "list",
+      filters: { include_body: true },
+    });
+    if (withBody.action !== "list") throw new Error("unreachable");
+    expect(withBody.items[0].body).toBeDefined();
+    expect(withBody.items[0].body).toContain("## Summary");
+    expect(withBody.items[0].body).toContain("summary line in frontmatter");
+  });
+
+  it("search default does NOT match body-only payloads; include_body=true does", async () => {
+    const projectRoot = await createTempProject();
+    // Seed an entry whose frontmatter says one thing but whose body carries
+    // a hypothetical prompt-injection payload — only body-scan should match.
+    const dir = join(projectRoot, ".fabric", "knowledge", "pending", "decisions");
+    await mkdir(dir, { recursive: true });
+    const filePath = join(dir, "rc27-injection-probe.md");
+    await writeFile(
+      filePath,
+      [
+        "---",
+        "type: decisions",
+        "maturity: draft",
+        "layer: team",
+        `created_at: ${new Date().toISOString()}`,
+        "source_session: sess-int-test",
+        "tags: []",
+        "summary: innocuous-looking summary",
+        "x-fabric-idempotency-key: sha256:0000000000000000000000000000000000000000000000000000000000000000",
+        "---",
+        "",
+        "## Summary",
+        "",
+        "innocuous-looking summary",
+        "",
+        "## Evidence",
+        "",
+        "PROMPT_INJECTION_PAYLOAD_MARKER hidden in body",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+    execFileSync("git", ["add", ".fabric/knowledge/pending/decisions/rc27-injection-probe.md"], {
+      cwd: projectRoot,
+      stdio: "pipe",
+    });
+    execFileSync("git", ["commit", "--quiet", "-m", "seed: rc27-injection-probe"], {
+      cwd: projectRoot,
+      stdio: "pipe",
+    });
+
+    // Default search — body-only term must NOT match.
+    const defaultSearch = await reviewKnowledge(projectRoot, {
+      action: "search",
+      query: "PROMPT_INJECTION_PAYLOAD_MARKER",
+      filters: undefined,
+    });
+    if (defaultSearch.action !== "search") throw new Error("unreachable");
+    expect(defaultSearch.items).toHaveLength(0);
+
+    // include_body=true — body-scan now matches.
+    const bodySearch = await reviewKnowledge(projectRoot, {
+      action: "search",
+      query: "PROMPT_INJECTION_PAYLOAD_MARKER",
+      filters: { include_body: true },
+    });
+    if (bodySearch.action !== "search") throw new Error("unreachable");
+    expect(bodySearch.items).toHaveLength(1);
+    expect(bodySearch.items[0].body).toContain("PROMPT_INJECTION_PAYLOAD_MARKER");
+  });
+});
