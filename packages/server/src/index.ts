@@ -295,10 +295,12 @@ export async function startHttpServer(options: {
   projectRoot: string;
   host?: string;
   authToken?: string;
+  // v2.0.0-rc.29 TASK-002 (BUG-K1): forwarded to createFabricHttpApp.
+  allowLoopbackNoAuth?: boolean;
 }): Promise<HttpServer> {
   const { createFabricHttpApp } = await import("./http.js");
-  const { port, projectRoot, host = "127.0.0.1", authToken } = options;
-  const app = createFabricHttpApp({ projectRoot, host, authToken });
+  const { port, projectRoot, host = "127.0.0.1", authToken, allowLoopbackNoAuth } = options;
+  const app = createFabricHttpApp({ projectRoot, host, authToken, allowLoopbackNoAuth });
 
   return await new Promise<HttpServer>((resolveServer, rejectServer) => {
     const server = app.listen(port, host);

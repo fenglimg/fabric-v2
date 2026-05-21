@@ -874,11 +874,15 @@ export const enMessages: Messages = {
   "cli.serve.args.target.description":
     "Target project path. Defaults to --target, then EXTERNAL_FIXTURE_PATH, then cwd.",
   "cli.serve.args.debug.description": "Print target resolution details to stderr.",
+  "cli.serve.args.allow-loopback-no-auth.description":
+    "Opt in to running the loopback HTTP server without Bearer auth (default-deny). Use only on a trusted single-user machine; any local process can then read your knowledge ledger.",
   "cli.serve.ready.title": "Fabric Dashboard",
   "cli.serve.lock-held.action-hint":
     "A `fab serve` instance (PID {pid}) is holding the workspace lock. Stop it (Ctrl-C in that terminal or `kill {pid}`) before running this command.",
   "cli.serve.warning.host-fallback":
     "--host {host} requires FABRIC_AUTH_TOKEN for non-loopback exposure; falling back to 127.0.0.1. To bind {host}, run: FABRIC_AUTH_TOKEN=<token> fab serve --host {host}",
+  "cli.serve.warning.loopback-deny-default":
+    "FABRIC_AUTH_TOKEN is not set: /api /events /mcp will return 401 by default (any local process could otherwise read .fabric/agents.meta.json + forensic.json + events.jsonl). Set FABRIC_AUTH_TOKEN=<secret> or pass --allow-loopback-no-auth to opt in.",
   "cli.serve.error.port-in-use": "Port {port} in use - try --port {nextPort}",
 
   "cli.update.description": "Refresh MCP host configuration and git hooks without re-creating Fabric files.",

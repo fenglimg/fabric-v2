@@ -21,7 +21,7 @@ import { registerLedgerApi } from "./api/ledger.js";
 import { registerKnowledgeApi } from "./api/knowledge.js";
 import { registerKnowledgeContextApi } from "./api/knowledge-context.js";
 import { registerScanApi } from "./api/scan.js";
-import { createBearerAuthMiddleware } from "./middleware/bearer-auth.js";
+import { createBearerAuthMiddleware, createLoopbackDenyMiddleware } from "./middleware/bearer-auth.js";
 import { getLedgerPath, getLegacyLedgerPath } from "./services/_shared.js";
 import { appendEventLedgerEvent, readEventLedger } from "./services/event-ledger.js";
 import { invalidateKnowledgeSyncCooldown } from "./services/knowledge-sync.js";
@@ -45,6 +45,12 @@ export type CreateFabricHttpAppOptions = {
   projectRoot: string;
   host?: string;
   authToken?: string;
+  // v2.0.0-rc.29 TASK-002 (BUG-K1): when true, allow loopback bind without a
+  // bearer token (no middleware mounted). Default false → loopback no-token
+  // requests get a 401 deny-all middleware that prints the remediation hint.
+  // Non-loopback hosts still always require a token (enforced at the CLI
+  // layer in serve.ts).
+  allowLoopbackNoAuth?: boolean;
 };
 
 export type FabricHttpApp = ReturnType<typeof createMcpExpressApp> & {
@@ -198,7 +204,7 @@ export function handleCacheWatcherEvent(
 }
 
 export function createFabricHttpApp(options: CreateFabricHttpAppOptions) {
-  const { projectRoot, host = DEFAULT_HOST, authToken } = options;
+  const { projectRoot, host = DEFAULT_HOST, authToken, allowLoopbackNoAuth = false } = options;
   const app = createMcpExpressApp({ host }) as FabricHttpApp;
   const eventStore = new JsonlEventStore(projectRoot);
   const sessions = new Map<string, FabricHttpSession>();
@@ -262,11 +268,20 @@ export function createFabricHttpApp(options: CreateFabricHttpAppOptions) {
   };
 
   app.disable("x-powered-by");
+  // v2.0.0-rc.29 TASK-002 (BUG-K1): strict-auth policy.
+  // - Token set → mount bearer auth (every request must carry it).
+  // - No token AND !allowLoopbackNoAuth → mount deny-all that returns 401.
+  // - No token AND allowLoopbackNoAuth → mount nothing (explicit opt-in).
   if (authToken !== undefined) {
     const bearerAuth = createBearerAuthMiddleware(authToken);
     app.use("/api", bearerAuth);
     app.use("/events", bearerAuth);
     app.use("/mcp", bearerAuth);
+  } else if (!allowLoopbackNoAuth) {
+    const denyAll = createLoopbackDenyMiddleware();
+    app.use("/api", denyAll);
+    app.use("/events", denyAll);
+    app.use("/mcp", denyAll);
   }
 
   registerKnowledgeApi(app, projectRoot);

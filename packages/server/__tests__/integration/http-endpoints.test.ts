@@ -74,7 +74,10 @@ describe("HTTP integration — REST endpoints", () => {
     app = createFabricHttpApp({
       projectRoot: tempDir,
       host: "127.0.0.1",
-      // No authToken — auth is tested separately
+      // No authToken — auth is tested separately. v2.0.0-rc.29 TASK-002 made
+      // loopback default-deny when no token is present; this suite explicitly
+      // opts in so the endpoint behaviour can be exercised without a token.
+      allowLoopbackNoAuth: true,
     });
   });
 
@@ -426,6 +429,9 @@ describe("HTTP integration — createFabricHttpApp smoke tests", () => {
     app = createFabricHttpApp({
       projectRoot: tempDir,
       host: "127.0.0.1",
+      // v2.0.0-rc.29 TASK-002: smoke tests exercise transport / lifecycle, not
+      // auth — opt into the new no-auth loopback mode to match prior behavior.
+      allowLoopbackNoAuth: true,
     });
   });
 
@@ -448,5 +454,85 @@ describe("HTTP integration — createFabricHttpApp smoke tests", () => {
   it("x-powered-by header is disabled", async () => {
     const res = await supertest(app).get("/api/rules");
     expect(res.headers["x-powered-by"]).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// rc.29 TASK-002 (BUG-K1): default-deny when no token and no opt-in
+// ---------------------------------------------------------------------------
+
+describe("HTTP integration — rc.29 BUG-K1 loopback default-deny", () => {
+  let tempDir: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let app: any;
+
+  beforeEach(async () => {
+    tempDir = makeTempRoot();
+    // No authToken AND no allowLoopbackNoAuth → expect default-deny.
+    app = createFabricHttpApp({
+      projectRoot: tempDir,
+      host: "127.0.0.1",
+    });
+  });
+
+  afterEach(async () => {
+    if (app?.dispose) {
+      await app.dispose();
+    }
+    rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  it("returns 401 on /api/rules without an opt-in flag (no inadvertent reads)", async () => {
+    const res = await supertest(app).get("/api/rules");
+    expect(res.status).toBe(401);
+    const body = res.body as { error: { code: string; message: string } };
+    expect(body.error.code).toBe("UNAUTHORIZED");
+    expect(body.error.message).toContain("FABRIC_AUTH_TOKEN");
+    expect(body.error.message).toContain("--allow-loopback-no-auth");
+  });
+
+  it("returns 401 on /api/ledger by default (no token, no opt-in)", async () => {
+    const res = await supertest(app).get("/api/ledger");
+    expect(res.status).toBe(401);
+  });
+
+  it("returns 401 on /events by default", async () => {
+    const res = await supertest(app).get("/events");
+    expect(res.status).toBe(401);
+  });
+
+  it("returns 401 on /mcp by default", async () => {
+    const res = await supertest(app)
+      .post("/mcp")
+      .set("Content-Type", "application/json")
+      .send({ jsonrpc: "2.0", method: "tools/list", id: 1 });
+    expect(res.status).toBe(401);
+  });
+});
+
+describe("HTTP integration — rc.29 BUG-K1 --allow-loopback-no-auth opt-in", () => {
+  let tempDir: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let app: any;
+
+  beforeEach(async () => {
+    tempDir = makeTempRoot();
+    app = createFabricHttpApp({
+      projectRoot: tempDir,
+      host: "127.0.0.1",
+      allowLoopbackNoAuth: true,
+    });
+  });
+
+  afterEach(async () => {
+    if (app?.dispose) {
+      await app.dispose();
+    }
+    rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  it("returns 200 on /api/rules when operator opts in via allowLoopbackNoAuth", async () => {
+    const res = await supertest(app).get("/api/rules");
+    expect(res.status).toBe(200);
   });
 });

@@ -12,7 +12,7 @@
 
 import { describe, it, expect } from "vitest";
 
-import { createBearerAuthMiddleware } from "../../src/middleware/bearer-auth.js";
+import { createBearerAuthMiddleware, createLoopbackDenyMiddleware } from "../../src/middleware/bearer-auth.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -149,5 +149,43 @@ describe("I7 — bearer auth middleware (createBearerAuthMiddleware)", () => {
     const err = body.error as Record<string, unknown>;
     expect(typeof err.code).toBe("string");
     expect(typeof err.message).toBe("string");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// rc.29 TASK-002 (BUG-K1): loopback default-deny middleware
+// ---------------------------------------------------------------------------
+
+describe("rc.29 TASK-002 — createLoopbackDenyMiddleware (BUG-K1)", () => {
+  it("returns 401 unconditionally with a remediation hint pointing at FABRIC_AUTH_TOKEN and --allow-loopback-no-auth", () => {
+    const mw = createLoopbackDenyMiddleware();
+    const req: MockRequest = { headers: { authorization: "Bearer anything" } };
+    const res = makeRes();
+    let nextCalled = false;
+
+    mw(req as Parameters<typeof mw>[0], res as Parameters<typeof mw>[1], () => {
+      nextCalled = true;
+    });
+
+    expect(res.statusCode).toBe(401);
+    expect(nextCalled).toBe(false);
+    const body = res.body as { error: { code: string; message: string } };
+    expect(body.error.code).toBe("UNAUTHORIZED");
+    expect(body.error.message).toContain("FABRIC_AUTH_TOKEN");
+    expect(body.error.message).toContain("--allow-loopback-no-auth");
+  });
+
+  it("returns 401 even when an Authorization header is absent (no inadvertent bypass)", () => {
+    const mw = createLoopbackDenyMiddleware();
+    const req: MockRequest = { headers: {} };
+    const res = makeRes();
+    let nextCalled = false;
+
+    mw(req as Parameters<typeof mw>[0], res as Parameters<typeof mw>[1], () => {
+      nextCalled = true;
+    });
+
+    expect(res.statusCode).toBe(401);
+    expect(nextCalled).toBe(false);
   });
 });

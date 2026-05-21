@@ -231,6 +231,15 @@ exports[`CLI surface drift gate (docs/test-seed/cli.md §1) > command 'serve' su
     {
       "alias": undefined,
       "default": false,
+      "description": "Opt in to running the loopback HTTP server without Bearer auth (default-deny). Use only on a trusted single-user machine; any local process can then read your knowledge ledger.",
+      "name": "allow-loopback-no-auth",
+      "negativeDescription": undefined,
+      "required": undefined,
+      "type": "boolean",
+    },
+    {
+      "alias": undefined,
+      "default": false,
       "description": "Print target resolution details to stderr.",
       "name": "debug",
       "negativeDescription": undefined,

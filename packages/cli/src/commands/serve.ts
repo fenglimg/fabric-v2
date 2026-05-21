@@ -14,6 +14,8 @@ type ServeArgs = {
   target?: string;
   host?: string;
   debug?: boolean;
+  // v2.0.0-rc.29 TASK-002 (BUG-K1): opt-in escape hatch for loopback no-token.
+  "allow-loopback-no-auth"?: boolean;
 };
 
 export const serveCommand = defineCommand({
@@ -41,6 +43,12 @@ export const serveCommand = defineCommand({
       description: t("cli.serve.args.debug.description"),
       default: false,
     },
+    // v2.0.0-rc.29 TASK-002 (BUG-K1): default-deny strict-auth.
+    "allow-loopback-no-auth": {
+      type: "boolean",
+      description: t("cli.serve.args.allow-loopback-no-auth.description"),
+      default: false,
+    },
   },
   async run({ args }: { args: ServeArgs }) {
     const workspaceRoot = process.cwd();
@@ -49,7 +57,8 @@ export const serveCommand = defineCommand({
     const port = parsePort(args.port);
     const requestedHost = parseHost(args.host);
     const authToken = readAuthTokenFromEnv();
-    const host = validateHost(requestedHost, authToken);
+    const allowLoopbackNoAuth = args["allow-loopback-no-auth"] === true;
+    const host = validateHost(requestedHost, authToken, allowLoopbackNoAuth);
     const projectRoot = resolution.target;
 
     // Acquire serve lock — throws ServeLockHeldError if another live serve is running.
@@ -81,6 +90,7 @@ export const serveCommand = defineCommand({
         projectRoot,
         host,
         authToken,
+        allowLoopbackNoAuth,
       });
     } catch (error) {
       if (isNodeError(error) && error.code === "EADDRINUSE") {
@@ -123,7 +133,7 @@ function readAuthTokenFromEnv(): string | undefined {
   return token === undefined || token.length === 0 ? undefined : token;
 }
 
-function validateHost(host: string, authToken: string | undefined): string {
+function validateHost(host: string, authToken: string | undefined, allowLoopbackNoAuth: boolean): string {
   if (authToken !== undefined) {
     return host;
   }
@@ -133,6 +143,15 @@ function validateHost(host: string, authToken: string | undefined): string {
       `${symbol.warn} ${paint.warn(t("cli.serve.warning.host-fallback", { host }))}`,
     );
     return "127.0.0.1";
+  }
+
+  // v2.0.0-rc.29 TASK-002 (BUG-K1): loopback + no token is now default-deny.
+  // Print a banner explaining how to either set a token or opt in to the
+  // no-auth mode, so operators don't get surprised by 401s.
+  if (!allowLoopbackNoAuth) {
+    console.error(
+      `${symbol.warn} ${paint.warn(t("cli.serve.warning.loopback-deny-default"))}`,
+    );
   }
 
   return host;
