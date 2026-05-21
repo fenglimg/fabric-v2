@@ -3412,18 +3412,62 @@ async function inspectFilesystemEditFallback(projectRoot: string): Promise<Files
   }
   orphanIds.sort();
 
+  // v2.0.0-rc.29 TASK-004 (BUG-G2 + BUG-G5): emit the full
+  // knowledge_proposed → knowledge_promote_started → knowledge_promoted
+  // lifecycle triplet for each synthesized orphan, with monotonic timestamps
+  // and a shared correlation_id, so the two-phase invariant
+  // (promoted ≤ promote_started ≤ proposed) holds in the ledger. Previously
+  // this synth path emitted only the terminal `knowledge_promoted` event
+  // (audit BUG-G2 root cause: 19 promoted > 13 promote_started in this repo).
   for (const stable_id of orphanIds) {
-    await appendEventLedgerEvent(projectRoot, {
-      event_type: "knowledge_promoted",
-      stable_id,
-      timestamp: new Date().toISOString(),
-      reason: SYNTHESIZED_PROMOTED_REASON,
-      correlation_id: "doctor-synthesized",
-      session_id: "doctor-synthesized",
-    });
+    await emitSynthesizedPromotionTriplet(projectRoot, stable_id);
   }
 
   return { synthesized: orphanIds.length, synthesizedStableIds: orphanIds };
+}
+
+// v2.0.0-rc.29 TASK-004 (BUG-G2 + BUG-G5): triplet emitter helper used by the
+// filesystem-edit fallback synth path. Each call writes exactly three events
+// in the canonical lifecycle order, sharing `correlation_id: doctor-synthesized`
+// and using strictly monotonic `ts` values (millisecond-step) so downstream
+// invariant checks can pair them by correlation_id + monotonic order without
+// resorting to floating-point timestamp comparisons. `session_id` mirrors the
+// correlation_id sentinel so this synth source is easy to grep out of audits.
+async function emitSynthesizedPromotionTriplet(
+  projectRoot: string,
+  stable_id: string,
+): Promise<void> {
+  const baseTs = Date.now();
+
+  await appendEventLedgerEvent(projectRoot, {
+    event_type: "knowledge_proposed",
+    stable_id,
+    timestamp: new Date(baseTs).toISOString(),
+    reason: SYNTHESIZED_PROMOTED_REASON,
+    correlation_id: "doctor-synthesized",
+    session_id: "doctor-synthesized",
+    ts: baseTs,
+  });
+
+  await appendEventLedgerEvent(projectRoot, {
+    event_type: "knowledge_promote_started",
+    stable_id,
+    timestamp: new Date(baseTs + 1).toISOString(),
+    reason: SYNTHESIZED_PROMOTED_REASON,
+    correlation_id: "doctor-synthesized",
+    session_id: "doctor-synthesized",
+    ts: baseTs + 1,
+  });
+
+  await appendEventLedgerEvent(projectRoot, {
+    event_type: "knowledge_promoted",
+    stable_id,
+    timestamp: new Date(baseTs + 2).toISOString(),
+    reason: SYNTHESIZED_PROMOTED_REASON,
+    correlation_id: "doctor-synthesized",
+    session_id: "doctor-synthesized",
+    ts: baseTs + 2,
+  });
 }
 
 function createFilesystemEditFallbackCheck(t: Translator, inspection: FilesystemEditFallbackInspection): DoctorCheck {

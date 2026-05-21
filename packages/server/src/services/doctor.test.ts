@@ -1501,6 +1501,55 @@ describe("runDoctorReport", () => {
     expect(synth2).toHaveLength(1);
   });
 
+  // v2.0.0-rc.29 TASK-004 (BUG-G2 + BUG-G5): the synth path emits the full
+  // proposed → promote_started → promoted triplet (not just the terminal
+  // promoted event) so the historical invariant
+  //   knowledge_promoted ≤ knowledge_promote_started ≤ knowledge_proposed
+  // holds on ledgers that contain synth-restored orphans. Pre-fix on this repo
+  // the ratio was 19 promoted > 13 promote_started (6 orphan deltas).
+  it("filesystem_edit_fallback: emits a synthesized triplet (proposed + promote_started + promoted) per orphan", async () => {
+    const target = createInitializedProject("doctor-fef-triplet-emit");
+    await writeKnowledgeMeta(target, { source: "doctor_fix" });
+    writeFile(".fabric/events.jsonl", "", target);
+
+    const fm = "---\nid: KT-DEC-0077\ntype: decision\nmaturity: draft\nlayer: team\ncreated_at: 2026-05-10T00:00:00Z\n---\n# Triplet\n";
+    writeFile(".fabric/knowledge/decisions/KT-DEC-0077--triplet.md", fm, target);
+
+    await runDoctorReport(target);
+
+    const { events } = await readEventLedger(target);
+    const synth = events.filter(
+      (e) => "reason" in e && e.reason === "[synthesized] filesystem-edit-fallback",
+    );
+
+    // Each orphan now produces exactly 3 events.
+    expect(synth).toHaveLength(3);
+
+    const byType = new Map<string, typeof synth>();
+    for (const ev of synth) {
+      const bucket = byType.get(ev.event_type) ?? ([] as unknown as typeof synth);
+      bucket.push(ev);
+      byType.set(ev.event_type, bucket);
+    }
+    expect(byType.get("knowledge_proposed")).toHaveLength(1);
+    expect(byType.get("knowledge_promote_started")).toHaveLength(1);
+    expect(byType.get("knowledge_promoted")).toHaveLength(1);
+
+    // All three share the same doctor-synthesized correlation_id.
+    for (const ev of synth) {
+      expect(ev.correlation_id).toBe("doctor-synthesized");
+      expect(ev.session_id).toBe("doctor-synthesized");
+      expect("stable_id" in ev && ev.stable_id).toBe("KT-DEC-0077");
+    }
+
+    // Monotonic ts in lifecycle order (proposed ≤ promote_started ≤ promoted).
+    const proposedTs = byType.get("knowledge_proposed")?.[0]?.ts ?? 0;
+    const startedTs = byType.get("knowledge_promote_started")?.[0]?.ts ?? 0;
+    const promotedTs = byType.get("knowledge_promoted")?.[0]?.ts ?? 0;
+    expect(proposedTs).toBeLessThan(startedTs);
+    expect(startedTs).toBeLessThan(promotedTs);
+  });
+
   it("filesystem_edit_fallback: silently ignores files without <id>--<slug> filename pattern", async () => {
     const target = createInitializedProject("doctor-fef-malformed");
     await writeKnowledgeMeta(target, { source: "doctor_fix" });
