@@ -5943,6 +5943,49 @@ describe("runDoctorCiteCoverage (rc.24 contract metrics)", () => {
     expect(report.per_layer_type?.team?.guideline).toBe(1);
   });
 
+  // v2.0.0-rc.27.1 (Codex review fix): multi-id contract walk must look up
+  // commitments[i] for EVERY i < cite_ids.length. Prior to the fix, the
+  // parser only emitted one commitment for a shared contract — the 2nd id
+  // got a `commitments[1] === undefined` lookup and was counted as
+  // contract_missing, even though the line carried a valid `→ edit:...`
+  // operator. This test guards against re-introducing that regression by
+  // synthesizing the post-fix event shape (commitment duplicated per id)
+  // and asserting contract_with=2, contract_missing=0.
+  it("multi-id cite with shared contract → contract_with bumps for every id, contract_missing=0 (rc.27.1)", async () => {
+    const target = createInitializedProject("contract-multi-id-shared");
+    seedCleanBootstrap(target);
+    writeFile(".fabric/events.jsonl", "", target);
+
+    const rcMarker = await ensureCitePolicyActivatedMarker(target);
+    const cMarker = await ensureCiteContractPolicyActivatedMarker(target);
+    seedAgentsMetaWithTypes(target, [
+      { stable_id: "KT-DEC-0001", knowledge_type: "decision" },
+      { stable_id: "KT-PIT-0005", knowledge_type: "pitfall" },
+    ]);
+    // Post-fix wire shape: one commitment slot per id, sharing the parsed
+    // contract verbatim. `mkContractTurnEvent` accepts the array directly.
+    const sharedCommitment = {
+      operators: [{ kind: "edit" as const, target: "src/foo.ts" }],
+      skip_reason: null,
+    };
+    seedEvents(target, [
+      mkContractTurnEvent({
+        sessionId: "sess-multi",
+        citeIds: ["KT-DEC-0001", "KT-PIT-0005"],
+        citeTags: ["recalled"],
+        citeCommitments: [sharedCommitment, sharedCommitment],
+        ts: Math.max(rcMarker.marker_ts, cMarker.marker_ts) + 5,
+      }),
+    ]);
+
+    const report = await runDoctorCiteCoverage(target, { since: 0, client: "all" });
+
+    expect(report.contract_metrics?.decisions_cited).toBe(1);
+    expect(report.contract_metrics?.pitfalls_cited).toBe(1);
+    expect(report.contract_metrics?.contract_with).toBe(2);
+    expect(report.contract_metrics?.contract_missing).toBe(0);
+  });
+
   // 7. Unresolved cite_id → cite_id_unresolved bucket, NOT contract_missing.
   it("unresolved cite_id (not in idTypeMap) → cite_id_unresolved=1, contract_missing=0", async () => {
     const target = createInitializedProject("contract-unresolved-id");

@@ -285,6 +285,57 @@ describe("cite-contract-reminder.cjs — formatContractMissingReminders", () => 
     expect(out[1]).toContain("KT-PIT-0001");
   });
 
+  // v2.0.0-rc.27.1 (Codex review fix): multi-id citation reminder walk must
+  // look up commitments[i] for EVERY i < cite_ids.length. Before the parser
+  // fix, a 2-id cite missing contract only surfaced ONE id in the reminder
+  // because commitments[1] === undefined caused the loop to `continue`. This
+  // test guards against that regression by feeding the post-fix wire shape
+  // (one commitment slot per id) and verifying both ids appear in the
+  // reminder output.
+  it("(6b) multi-id cite with shared empty commitment → reminder lists every id (rc.27.1)", () => {
+    const turns: AssistantTurn[] = [
+      {
+        envelope_index: 0,
+        kb_line_raw: "KB: KT-DEC-0001, KT-PIT-0001 [recalled]",
+        cite_ids: ["KT-DEC-0001", "KT-PIT-0001"],
+        cite_tags: ["recalled"],
+        cite_commitments: [
+          { operators: [], skip_reason: null },
+          { operators: [], skip_reason: null },
+        ],
+      },
+    ];
+    const out = reminderLib.formatContractMissingReminders({
+      assistant_turns: turns,
+      idTypeMap,
+    });
+    expect(out).toHaveLength(2);
+    expect(out.join("\n")).toContain("KT-DEC-0001");
+    expect(out.join("\n")).toContain("KT-PIT-0001");
+  });
+
+  // Companion to (6b): a multi-id cite with a SHARED contract operator must
+  // NOT emit any reminder for either id — both slots carry the operator.
+  it("(6c) multi-id cite with shared operator contract → NO reminder (rc.27.1)", () => {
+    const sharedCommitment = {
+      operators: [{ kind: "edit" as const, target: "src/foo.ts" }],
+      skip_reason: null,
+    };
+    const turns: AssistantTurn[] = [
+      {
+        envelope_index: 0,
+        kb_line_raw:
+          "KB: KT-DEC-0001, KT-PIT-0001 [recalled] → edit:src/foo.ts",
+        cite_ids: ["KT-DEC-0001", "KT-PIT-0001"],
+        cite_tags: ["recalled"],
+        cite_commitments: [sharedCommitment, sharedCommitment],
+      },
+    ];
+    expect(
+      reminderLib.formatContractMissingReminders({ assistant_turns: turns, idTypeMap }),
+    ).toEqual([]);
+  });
+
   it("(7) non-recalled tag (planned) → NO reminder even on decisions cite", () => {
     const turns: AssistantTurn[] = [
       {

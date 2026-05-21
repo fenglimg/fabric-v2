@@ -301,9 +301,27 @@ describe("parseCiteLine — rc.27 multi-id + chained-from (audit §2.18)", () =>
     );
     expect(r.cite_ids).toEqual(["KT-DEC-0001", "KT-PIT-0005"]);
     expect(r.cite_tags).toEqual(["recalled"]);
-    expect(r.cite_commitments).toEqual([
-      { operators: [{ kind: "edit", target: "src/foo.ts" }], skip_reason: null },
-    ]);
+    // v2.0.0-rc.27.1 (Codex review fix): cite_commitments MUST be index-
+    // aligned with cite_ids per schema doc — a shared contract propagates to
+    // every id slot so doctor.ts + cite-contract-reminder.cjs can index by
+    // cite_ids[i] without hitting an undefined slot.
+    const sharedCommitment = {
+      operators: [{ kind: "edit", target: "src/foo.ts" }],
+      skip_reason: null,
+    };
+    expect(r.cite_commitments).toEqual([sharedCommitment, sharedCommitment]);
+  });
+
+  it("multi-id without contract emits one (empty) commitment per id (index alignment)", () => {
+    const r = parseCiteLine("KB: KT-DEC-0001, KT-PIT-0005 [recalled]");
+    expect(r.cite_ids).toHaveLength(2);
+    // No `→ <ops>` tail → parseContractTail produces an empty commitment;
+    // the empty commitment must still propagate to N slots so downstream
+    // index lookups never see `undefined`.
+    expect(r.cite_commitments).toHaveLength(2);
+    for (const c of r.cite_commitments) {
+      expect(c).toEqual({ operators: [], skip_reason: null });
+    }
   });
 
   it("multi-id with three primaries — all surface in order", () => {
@@ -346,8 +364,16 @@ describe("parseCiteLine — rc.27 multi-id + chained-from (audit §2.18)", () =>
       "KT-MOD-0007",
     ]);
     expect(r.cite_tags).toEqual(["chained-from"]);
+    // v2.0.0-rc.27.1 (Codex review fix): commitments are index-aligned with
+    // cite_ids — primary + chained ids each carry the shared parsed contract.
+    const sharedCommitment = {
+      operators: [{ kind: "edit", target: "src/foo.ts" }],
+      skip_reason: null,
+    };
     expect(r.cite_commitments).toEqual([
-      { operators: [{ kind: "edit", target: "src/foo.ts" }], skip_reason: null },
+      sharedCommitment,
+      sharedCommitment,
+      sharedCommitment,
     ]);
   });
 });

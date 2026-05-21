@@ -95,8 +95,11 @@ describe("fabric-hint.cjs — parseKbLine (rc.24 shim delegating to shared parse
     // downstream consumers.
     expect(r.cite_ids).toEqual(["KT-DEC-0001", "KT-DEC-0009"]);
     expect(r.cite_tags).toEqual(["chained-from"]);
-    // No `→` tail → empty commitment.
+    // No `→` tail → empty commitment. v2.0.0-rc.27.1 (Codex review fix):
+    // commitment array is index-aligned with cite_ids, so the shared empty
+    // commitment appears once per id slot.
     expect(r.cite_commitments).toEqual([
+      { operators: [], skip_reason: null },
       { operators: [], skip_reason: null },
     ]);
   });
