@@ -1283,11 +1283,21 @@ function summarizeTranscript(transcriptPath) {
     if (envelope === null || typeof envelope !== "object") continue;
     envelopeIndex += 1;
 
-    // User text message — Claude Code shape: { role: "user", content: [...] }
-    // OR nested under `message.role`. Be generous.
-    const role = envelope.role || (envelope.message && envelope.message.role);
+    // v2.0.0-rc.27 TASK-009 (audit §2.16): Codex CLI uses a different
+    // envelope shape — { type:"response_item", payload:{ type:"message",
+    // role, content:[{type:"input_text"|"output_text", text}] } } — vs Claude
+    // Code's { type:"user", message:{ role, content } }. Resolve role +
+    // content from whichever shape is present; without this, every Codex
+    // session's digest came out empty (audit §2.16 — fixed here).
+    const role =
+      envelope.role ||
+      (envelope.message && envelope.message.role) ||
+      (envelope.payload && envelope.payload.role);
     if (role === "user") {
-      const content = envelope.content || (envelope.message && envelope.message.content);
+      const content =
+        envelope.content ||
+        (envelope.message && envelope.message.content) ||
+        (envelope.payload && envelope.payload.content);
       if (typeof content === "string") {
         out.user_messages.push(content);
       } else if (Array.isArray(content)) {
@@ -1304,7 +1314,10 @@ function summarizeTranscript(transcriptPath) {
     // entry per assistant envelope (even when no KB: line) so downstream can
     // distinguish "turn observed, no KB" (kb_line_raw=null) from "no turn".
     if (role === "assistant") {
-      const content = envelope.content || (envelope.message && envelope.message.content);
+      const content =
+        envelope.content ||
+        (envelope.message && envelope.message.content) ||
+        (envelope.payload && envelope.payload.content);
       let firstText = null;
       if (typeof content === "string") {
         firstText = content;
@@ -1324,6 +1337,17 @@ function summarizeTranscript(transcriptPath) {
       // with cite_ids). Sentinel `KB: none` contributes a `cite_tags=["none"]`
       // entry but no commitment — matches the parseCiteLine index contract.
       let citeCommitments = [];
+      // v2.0.0-rc.27 TASK-009: Codex assistant blocks carry text under
+      // `type:"output_text"` (not `type:"text"`). Fall back when no text-typed
+      // block matched but a typed output_text block exists.
+      if (firstText === null && Array.isArray(content)) {
+        for (const block of content) {
+          if (block && typeof block === "object" && block.type === "output_text" && typeof block.text === "string") {
+            firstText = block.text;
+            break;
+          }
+        }
+      }
       if (typeof firstText === "string" && firstText.length > 0) {
         // First non-empty line.
         const linesOfText = firstText.split(/\r?\n/);
@@ -1387,6 +1411,27 @@ function summarizeTranscript(transcriptPath) {
             if (typeof f === "string" && f.length > 0) out.edit_paths.push(f);
           }
         }
+      }
+    }
+
+    // v2.0.0-rc.27 TASK-009 (audit §2.16): Codex apply_patch path. Codex
+    // emits one response_item envelope per file-edit invocation with payload
+    // shape { type:"custom_tool_call", name:"apply_patch", input:<patch
+    // string> }. The patch body lists target files via `*** Update File:`,
+    // `*** Add File:`, `*** Delete File:` directives — harvest those.
+    if (
+      envelope.type === "response_item" &&
+      envelope.payload &&
+      envelope.payload.type === "custom_tool_call" &&
+      envelope.payload.name === "apply_patch" &&
+      typeof envelope.payload.input === "string"
+    ) {
+      const patchInput = envelope.payload.input;
+      const fileDirectiveRe = /^\*\*\*\s+(?:Update|Add|Delete)\s+File:\s+(.+?)\s*$/gm;
+      let m;
+      while ((m = fileDirectiveRe.exec(patchInput)) !== null) {
+        const fp = m[1].trim();
+        if (fp.length > 0) out.edit_paths.push(fp);
       }
     }
   }
