@@ -8,23 +8,27 @@ import { readAgentsMeta, type AgentsMeta } from "../meta-reader.js";
 import { appendEventLedgerEvent } from "./event-ledger.js";
 import { loadActiveMeta } from "./load-active-meta.js";
 
-export type KnowledgeEntryItem = {
+// v2.0.0-rc.29 TASK-006 (BUG-Q1): dropped `export` on the following types and
+// helpers — knip confirmed they are referenced only inside this file and have
+// no cross-package consumers (cli/shared/test). Keeping them local shrinks the
+// emitted .d.ts surface without breaking any caller.
+type KnowledgeEntryItem = {
   path: string;
   content: string;
 };
 
-export type DescriptionStub = {
+type DescriptionStub = {
   path: string;
   description: string;
 };
 
-export type SharedDescriptionStub = DescriptionStub & {
+type SharedDescriptionStub = DescriptionStub & {
   stable_id: string;
   identity_source: NonNullable<AgentsMeta["nodes"][string]["identity_source"]>;
   level: "L1" | "L2";
 };
 
-export type HumanLockedNearby = {
+type HumanLockedNearby = {
   file: string;
   excerpt: string;
 };
@@ -63,12 +67,12 @@ type LoadedRule = {
   entry: KnowledgeEntryItem;
 };
 
-export type LoadedKnowledgeResult = {
+type LoadedKnowledgeResult = {
   rules: LoadedRule[];
   stubs: SharedDescriptionStub[];
 };
 
-export type MatchedRuleNode = {
+type MatchedRuleNode = {
   node_id: string;
   level: "L1" | "L2" | null;
   stable_id: string;
@@ -168,7 +172,7 @@ export function normalizeKnowledgePath(value: string): string {
   return value.replaceAll("\\", "/");
 }
 
-export function matchRuleNodes(meta: AgentsMeta, path: string): MatchedRuleNode[] {
+function matchRuleNodes(meta: AgentsMeta, path: string): MatchedRuleNode[] {
   const requestedPath = normalizeKnowledgePath(path);
 
   return Object.entries(meta.nodes)
@@ -190,7 +194,7 @@ export function matchRuleNodes(meta: AgentsMeta, path: string): MatchedRuleNode[
     }));
 }
 
-export async function loadMatchedRules(
+async function loadMatchedRules(
   projectRoot: string,
   matchedNodes: MatchedRuleNode[],
   fileContentCache: Map<string, Promise<string>> = new Map(),
@@ -228,7 +232,7 @@ export async function loadMatchedRules(
   return { rules, stubs };
 }
 
-export function buildKnowledgePayload(
+function buildKnowledgePayload(
   context: GetKnowledgeContext,
   loaded: LoadedKnowledgeResult,
   options: {

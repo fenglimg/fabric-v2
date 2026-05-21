@@ -29,7 +29,10 @@ export type GetKnowledgeSectionsInput = {
   client_hash?: string;
 };
 
-export type KnowledgeSectionDiagnostic = {
+// v2.0.0-rc.29 TASK-006 (BUG-Q1): dropped `export` — only referenced inside
+// this file (`KnowledgeSectionResult.diagnostics[]` field type + local
+// `diagnostics: KnowledgeSectionDiagnostic[]` array). No external consumer.
+type KnowledgeSectionDiagnostic = {
   // v2.0: warn-level signal that a fetched rule lacks knowledge metadata
   // (no `type` AND no `layer` in frontmatter). Surfaces un-migrated v1.x
   // files without breaking selection — the rule is still returned.

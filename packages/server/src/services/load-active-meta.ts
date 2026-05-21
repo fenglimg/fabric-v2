@@ -45,7 +45,10 @@ import type { AgentsMeta } from "@fenglimg/fabric-shared";
 import { buildKnowledgeMeta, writeKnowledgeMeta } from "./knowledge-meta-builder.js";
 import { appendEventLedgerEvent } from "./event-ledger.js";
 
-export type LoadActiveMetaCaller =
+// v2.0.0-rc.29 TASK-006 (BUG-Q1): dropped `export` — referenced only inside
+// this file as the `caller` field type of LoadActiveMetaOptions; no external
+// consumer ever imported it.
+type LoadActiveMetaCaller =
   | "planContext"
   | "getKnowledgeSections"
   | "getKnowledge"

@@ -21,8 +21,10 @@ const ledgerQueue = createLedgerWriteQueue();
 // is the one-shot stderr soft-warn threshold checked after every successful
 // append — emits exactly once per Node process to avoid spamming long-lived
 // MCP servers.
-export const EVENT_LEDGER_DEFAULT_RETENTION_DAYS = 30;
-export const EVENT_LEDGER_SIZE_WARN_BYTES = 50 * 1024 * 1024;
+// v2.0.0-rc.29 TASK-006 (BUG-Q1): dropped `export` — both constants are
+// internal to this module; no cross-package consumer ever imported them.
+const EVENT_LEDGER_DEFAULT_RETENTION_DAYS = 30;
+const EVENT_LEDGER_SIZE_WARN_BYTES = 50 * 1024 * 1024;
 const EVENT_LEDGER_ARCHIVE_DIR = ".fabric/events.archive";
 
 // Module-level one-shot guard for the 50MB soft-warn. Exported test helper

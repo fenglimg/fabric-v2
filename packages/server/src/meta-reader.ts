@@ -6,8 +6,13 @@ import { IOFabricError } from "@fenglimg/fabric-shared/errors";
 
 import { contextCache } from "./cache.js";
 
+// v2.0.0-rc.29 TASK-006 (BUG-Q1): dropped `agentsMetaNodeSchema` re-export —
+// downstream consumers (cli/tests) import it directly from
+// `@fenglimg/fabric-shared`, the re-export here was dead. `agentsMetaSchema` is
+// still re-exported because `parseAgentsMetaFile` below uses it internally and
+// other server modules consume the type via this barrel.
 export type { AgentsMeta } from "@fenglimg/fabric-shared";
-export { agentsMetaNodeSchema, agentsMetaSchema } from "@fenglimg/fabric-shared";
+export { agentsMetaSchema } from "@fenglimg/fabric-shared";
 
 export class AgentsMetaFileMissingError extends IOFabricError {
   readonly code = "FABRIC_META_MISSING";
@@ -71,6 +76,7 @@ export async function readAgentsMeta(projectRoot: string): Promise<AgentsMeta> {
   return parsed;
 }
 
-export async function getRevision(projectRoot: string): Promise<string> {
-  return (await readAgentsMeta(projectRoot)).revision;
-}
+// v2.0.0-rc.29 TASK-006 (BUG-Q1): removed `getRevision(projectRoot)` —
+// orphan helper with zero callers across the entire monorepo. Callers that
+// need the revision use `(await readAgentsMeta(projectRoot)).revision`
+// directly, which avoids the extra round-trip through this 1-liner.
