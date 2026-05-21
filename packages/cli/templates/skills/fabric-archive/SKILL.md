@@ -269,10 +269,11 @@ following 5 categories MUST be rendered in the resolved language:
 3. **Confirmation prompts** — the per-candidate `Confirm? (Y to accept,
    edit … inline, N to skip)` line in the batch review template. zh-CN
    ↔ en mirror.
-4. **Dry-run table headers** — fabric-archive does not currently expose
-   a dry-run mode; this slot is reserved for parity with fabric-import.
-   IF a future revision adds dry-run, the table header MUST be
-   bilingualized per this policy. zh-CN ↔ en mirror.
+4. **Dry-run table headers** — v2.0.0-rc.27 TASK-007 added a dry-run
+   override path (see Phase 2.5 "dry-run") so users can preview the
+   archive proposal without writing pending entries. The dry-run summary
+   header and per-candidate preview labels MUST be bilingualized per
+   this policy. zh-CN ↔ en mirror.
 5. **AskUserQuestion** — `header` + `question` fields (NOT `options[]`).
    zh-CN ↔ en mirror. fabric-archive itself does not surface
    AskUserQuestion in the current contract (Phase 1 batch review is a
