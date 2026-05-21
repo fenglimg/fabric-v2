@@ -84,6 +84,19 @@ export interface KnowledgeSyncOptions {
   mode?: "incremental" | "full";
   /** When true, invalid frontmatter throws RuleValidationError (default: false — collect as warning). */
   throwOnInvalidFrontmatter?: boolean;
+  /**
+   * v2.0.0-rc.29 TASK-005 (BUG-G1): when true, `ensureKnowledgeFresh`
+   * synchronously follows a drift detection with a `reconcileKnowledge`
+   * call to materialize the auto-heal (rewrite agents.meta.json + emit a
+   * paired `knowledge_meta_auto_healed` event). Default false preserves
+   * the rc.28 hot-path semantics where drift detection never blocks the
+   * MCP read on a meta rebuild. Opt-in is intended for callers that can
+   * tolerate ~tens-of-ms extra latency in exchange for the invariant
+   * "every knowledge_drift_detected has a paired heal event in the same
+   * tail window." Audit (BUG-G1) found 5/72 drifts healed on this repo
+   * (~7%) because the hot path emitted detect-only events.
+   */
+  autoHealOnDrift?: boolean;
 }
 
 export interface StructuredWarning {
@@ -511,6 +524,23 @@ export async function ensureKnowledgeFresh(
   // the next call re-verifies quickly instead of returning stale cached fresh.
   freshSyncCooldown.delete(projectRoot);
 
+  // v2.0.0-rc.29 TASK-005 (BUG-G1): when the caller opts in, immediately
+  // chain a reconcileKnowledge so the drift detected above gets paired with
+  // a `meta_reconciled` summary event + the implied heal observed through
+  // loadActiveMetaOrStale on the next read. This is the structural answer
+  // to "only 7% of drifts auto-heal" — the hot path emitted drift-only
+  // events because heal was a separate caller's responsibility. Opt-in
+  // (default off) so the existing hot-path latency contract is preserved.
+  if (opts?.autoHealOnDrift === true && events.length > 0) {
+    try {
+      await reconcileKnowledge(projectRoot, { trigger: "auto-heal-after-drift" });
+    } catch {
+      // Heal failures must not propagate — the caller already has the
+      // detected events, and a subsequent reconcileKnowledge call (doctor,
+      // startup) will close the gap on the next pass.
+    }
+  }
+
   const status = warnings.length > 0 ? "errors" : "reconciled";
 
   return {
@@ -535,7 +565,17 @@ export interface ReconcileKnowledgeOptions {
    * plan_context call's auto-heal, which leaves the entry undiscoverable in
    * the description_index window between approve and the next hint call.
    */
-  trigger?: "startup" | "doctor" | "manual" | "auto-heal-description" | "post-approve" | "post-modify";
+  // v2.0.0-rc.29 TASK-005 (BUG-G1): `auto-heal-after-drift` added so the
+  // ensureKnowledgeFresh hot-path can chain a reconcile that closes the
+  // drift→heal gap without leaking a separate trigger label into the audit.
+  trigger?:
+    | "startup"
+    | "doctor"
+    | "manual"
+    | "auto-heal-description"
+    | "auto-heal-after-drift"
+    | "post-approve"
+    | "post-modify";
 }
 
 /**

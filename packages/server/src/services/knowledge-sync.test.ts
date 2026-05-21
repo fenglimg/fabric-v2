@@ -26,7 +26,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { readEventLedger } from "./event-ledger.js";
 import { writeKnowledgeMeta } from "./knowledge-meta-builder.js";
 import { contextCache } from "../cache.js";
-import { reconcileKnowledge } from "./knowledge-sync.js";
+import { ensureKnowledgeFresh, reconcileKnowledge } from "./knowledge-sync.js";
 
 const tempDirs: string[] = [];
 let originalFabricHome: string | undefined;
@@ -271,6 +271,119 @@ describe("reconcileKnowledge — Scope E (TASK-014)", () => {
 
     const ledgerAfterSecond = (await readEventLedger(projectRoot)).events.length;
     expect(ledgerAfterSecond).toBe(ledgerAfterFirst);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// v2.0.0-rc.29 TASK-005 (BUG-G1): ensureKnowledgeFresh autoHealOnDrift opt-in
+//
+// Audit found 5/72 drifts auto-healed on this repo (~7%). Root cause: the
+// hot-path detector (`ensureKnowledgeFresh`) emitted `knowledge_drift_detected`
+// but never chained a heal — heal only fired when a separate caller invoked
+// `reconcileKnowledge` (doctor, startup, plan-context auto-heal-description).
+// The new `autoHealOnDrift` flag lets callers opt in to a same-call reconcile
+// so every detected drift gets a paired heal event in the same ledger tail
+// window. Default off preserves the rc.28 hot-path latency contract.
+// ---------------------------------------------------------------------------
+
+describe("ensureKnowledgeFresh autoHealOnDrift (rc.29 BUG-G1)", () => {
+  it("default (autoHealOnDrift omitted) detects drift but does NOT emit meta_reconciled — preserves rc.28 hot-path semantics", async () => {
+    const projectRoot = await createProject("ks-drift-no-heal");
+    const fakeHome = process.env.FABRIC_HOME!;
+    void fakeHome; // suppress unused-var
+
+    await seedTeamEntry(
+      projectRoot,
+      "decisions/d1.md",
+      "KT-DEC-0001",
+      "decisions",
+      "verified",
+      "team",
+      "Original body.",
+    );
+    // Materialize the baseline meta + ledger.
+    await writeKnowledgeMeta(projectRoot, { source: "doctor_fix" });
+    await writeFile(join(projectRoot, ".fabric/events.jsonl"), "", "utf8");
+
+    // Mutate the file body to inject content drift.
+    await writeFile(
+      join(projectRoot, ".fabric/knowledge/decisions/d1.md"),
+      [
+        "---",
+        "id: KT-DEC-0001",
+        "type: decisions",
+        "maturity: verified",
+        "layer: team",
+        "---",
+        "",
+        "Mutated body — drift simulated.",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const report = await ensureKnowledgeFresh(projectRoot);
+    expect(report.status).toBe("reconciled");
+
+    const { events } = await readEventLedger(projectRoot);
+    const driftEvents = events.filter((e) => e.event_type === "knowledge_drift_detected");
+    const healSummaryEvents = events.filter(
+      (e) =>
+        e.event_type === "meta_reconciled" &&
+        "trigger" in e &&
+        e.trigger === "auto-heal-after-drift",
+    );
+    expect(driftEvents.length).toBeGreaterThanOrEqual(1);
+    expect(healSummaryEvents).toHaveLength(0);
+  });
+
+  it("with autoHealOnDrift=true, drift emits a paired meta_reconciled (trigger=auto-heal-after-drift)", async () => {
+    const projectRoot = await createProject("ks-drift-with-heal");
+    const fakeHome = process.env.FABRIC_HOME!;
+    void fakeHome;
+
+    await seedTeamEntry(
+      projectRoot,
+      "decisions/d1.md",
+      "KT-DEC-0001",
+      "decisions",
+      "verified",
+      "team",
+      "Original body.",
+    );
+    await writeKnowledgeMeta(projectRoot, { source: "doctor_fix" });
+    await writeFile(join(projectRoot, ".fabric/events.jsonl"), "", "utf8");
+
+    await writeFile(
+      join(projectRoot, ".fabric/knowledge/decisions/d1.md"),
+      [
+        "---",
+        "id: KT-DEC-0001",
+        "type: decisions",
+        "maturity: verified",
+        "layer: team",
+        "---",
+        "",
+        "Mutated body — drift simulated, heal opt-in.",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const report = await ensureKnowledgeFresh(projectRoot, { autoHealOnDrift: true });
+    expect(report.status).toBe("reconciled");
+
+    const { events } = await readEventLedger(projectRoot);
+    const driftEvents = events.filter((e) => e.event_type === "knowledge_drift_detected");
+    const healSummaryEvents = events.filter(
+      (e) =>
+        e.event_type === "meta_reconciled" &&
+        "trigger" in e &&
+        e.trigger === "auto-heal-after-drift",
+    );
+    expect(driftEvents.length).toBeGreaterThanOrEqual(1);
+    // The structural fix: at least one paired meta_reconciled fires when the
+    // caller opts in to heal-after-drift. The earlier 5/72 (~7%) coverage was
+    // the audit's symptom of this paired emission being absent.
+    expect(healSummaryEvents.length).toBeGreaterThanOrEqual(1);
   });
 });
 

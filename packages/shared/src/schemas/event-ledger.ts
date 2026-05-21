@@ -172,7 +172,17 @@ export const metaReconciledEventSchema = z.object({
   // `fab_review` write-actions can flush newly-promoted entries into
   // `agents.meta.json.nodes[id]` synchronously — without this the new entry
   // remains description-less until the next plan_context auto-heal.
-  trigger: z.enum(["doctor", "manual", "auto-heal-description", "post-approve", "post-modify"]),
+  // v2.0.0-rc.29 TASK-005 (BUG-G1): `auto-heal-after-drift` added so
+  // `ensureKnowledgeFresh` hot-path can chain a paired reconcile (closing the
+  // drift→heal gap) when the caller opts in via `autoHealOnDrift: true`.
+  trigger: z.enum([
+    "doctor",
+    "manual",
+    "auto-heal-description",
+    "auto-heal-after-drift",
+    "post-approve",
+    "post-modify",
+  ]),
   source: z.literal("reconcileKnowledge"),
   // v2.0.0-rc.22 TASK-014 (Scope E): set when reconcileKnowledge forced a
   // writeKnowledgeMeta on revision drift alone (no per-file content drift).
