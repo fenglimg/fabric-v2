@@ -41,58 +41,9 @@ Required preconditions before any MCP call:
 - `mcp__fabric__fab_extract_knowledge` AND `mcp__fabric__fab_review` MCP tools are registered and reachable
 - Working tree is reasonably clean (large uncommitted churn pollutes git-log mining; warn but allow)
 
-### Phase 0 — Init & .tmp Residue Scan
+### Phase 0 — Init (state-recovery ref-only)
 
-Before reading `.fabric/.import-state.json`, scan for residue left by a
-prior crashed run. Skill state writes use a 2-step atomic pattern (Write
-`.tmp` then `Bash mv`); a crash between Step A and Step B leaves a
-`.fabric/.import-state.json.tmp` sidecar that the next invocation MUST
-triage.
-
-1. Does `.fabric/.import-state.json.tmp` exist? (`Bash: ls .fabric/.import-state.json.tmp 2>/dev/null`)
-   - **Does not exist** → proceed normally to Phase 0.1 (no residue work).
-   - **Exists** → triage:
-     1. `Read` the `.tmp` file; try `JSON.parse` on the content.
-     2. Compare `mtime` of `.tmp` vs `.fabric/.import-state.json` via `Bash: stat`.
-        - **Parse OK + .tmp mtime newer than main file** → rescue:
-          `Bash: mv .fabric/.import-state.json.tmp .fabric/.import-state.json`
-          (commits the last incomplete write atomically).
-        - **Parse OK + .tmp mtime older than main file** → stale residue
-          from an earlier run that subsequently completed; delete it:
-          `Bash: rm .fabric/.import-state.json.tmp`.
-        - **Parse fails** (syntax error / unterminated structure / truncated
-          mid-write) → half-written, unrecoverable; delete it:
-          `Bash: rm .fabric/.import-state.json.tmp`.
-     3. After triage, proceed to Phase 0.1.
-
-The 5-minute mtime heuristic (treat any `.tmp` older than 5 minutes as
-stale regardless of parse result) is an acceptable conservative simplification:
-no legitimate atomic write window stays open that long; anything older
-than 5 minutes is definitely crash residue. Implementations MAY use either
-the mtime-comparison rule above OR the 5-minute staleness rule.
-
-### Phase 0.1 — State Corruption Recovery
-
-After residue triage, `Read` `.fabric/.import-state.json`. Detect
-corruption if ANY of the following hold:
-
-- `JSON.parse` throws (syntax error / unterminated structure / truncated)
-- Missing required field: `phase` OR `started_at` OR `last_checkpoint_at`
-- `phase` value not in the enum `{P1-done, P2-done, complete}`
-
-On corruption (any condition above):
-
-1. `Bash: mv .fabric/.import-state.json .fabric/.import-state.json.corrupt-<ISO8601>`
-   (preserve the corrupt file for postmortem; do NOT silently overwrite).
-2. Phase 1 restarts from scratch (Phase 1 produces no MCP calls, so re-run
-   is safe — re-globbing `.fabric/knowledge/team/**/*.md` is cheap and
-   idempotent; the `p1_baseline_titles` array is regenerated).
-3. DO NOT attempt automatic partial recovery; corrupt state is a signal
-   that something serious happened (disk-full, kill -9 mid-write, fs
-   error). Discard-and-restart is the only safe path.
-
-ENOENT (state file absent) is NOT corruption — it is the normal
-first-run state. Proceed to Phase 0.5.
+On invocation: read/initialize `.fabric/.import-state.json` (resumable phase tracker — see Checkpoint Logic section below for schema). Scan workspace for stale `.tmp-import-*` residues (`.fabric/.import-state.json.tmp-*`). For details on the .tmp scan + state corruption recovery (rare — only triggers when a prior import crashed mid-phase), `Read packages/cli/templates/skills/fabric-import/ref/state-recovery.md` (or `.claude/skills/fabric-import/ref/state-recovery.md` post-install).
 
 ### Phase 0.5 — Config Load
 
@@ -112,74 +63,13 @@ Whether the run is "first-run" vs "re-run" is decided by inspecting
 `.fabric/.import-state.json`: ENOENT (or any state with `phase != "complete"`
 and `final_summary.proposed == 0`) → first-run window; otherwise re-run window.
 
-### UX i18n Policy (5-class bilingualization)
+### UX i18n Policy
 
-The skill consults `fabric_language` from `.fabric/fabric-config.json`
-(固化于 install 时，via `scan.ts:detectExistingLanguage`; default `"en"` when no
-CJK signal is detected in README + docs/; may resolve to `"match-existing"`,
-`"zh-CN"`, `"en"`, or `"zh-CN-hybrid"`). All user-facing text in the
-following 5 categories MUST be rendered in the resolved language:
+Read `.fabric/fabric-config.json` → `fabric_language` (`zh-CN` / `en` / `zh-CN-hybrid` / `match-existing`). Emit user-facing prose in the resolved variant. Protected tokens (`fab_extract_knowledge`, `fab_review`, `.fabric/.import-state.json`, schema/scope/layer enum values) are NEVER translated.
 
-1. **Roll-up templates** — final summary blocks (`# Import Summary — phase=...`,
-   `## Phase 2 — Mining`, `## Phase 3 — Dedup`, etc.). zh-CN ↔ en mirror.
-2. **Errors / Preconditions warnings** — abort + gate-fail messages (e.g.
-   "请先运行 fabric install 完成基线扫描…" / "Please run fabric install first…").
-   zh-CN ↔ en mirror.
-3. **Confirmation prompts** — re-run-within-24h prompt, reset prompts, etc.
-   zh-CN ↔ en mirror.
-4. **Dry-run table headers** — `# Import Dry Run — would propose N pending
-   entries…` + the `| # | Source | Type | Slug | Scope | Summary |` header row.
-   zh-CN ↔ en mirror.
-5. **AskUserQuestion** — `header` + `question` fields (NOT `options[]`).
-   zh-CN ↔ en mirror. fabric-import itself does not surface AskUserQuestion
-   in the current contract (the rare re-run prompt is free-text), but if a
-   future version adds one, this rule applies.
+`AskUserQuestion` policy: `header` + `question` translate; `options[]` are routing keys — stay English regardless of locale.
 
-Rendering rule:
-
-- `fabric_language === "zh-CN"` → emit the zh-CN variant; pure monolingual, no language mixing inside a single user-facing block.
-- `fabric_language === "en"` → emit the en variant; pure monolingual, no language mixing inside a single user-facing block.
-- `fabric_language === "zh-CN-hybrid"` → emit Chinese narrative prose with English technical terms preserved. Protected tokens (always EN): MCP tool names (e.g. `fab_get_knowledge_sections`), CLI command names (e.g. `fab install`), file paths, technical concepts (`Skill`, `SessionStart`, `hook`, `MCP`, `revision_hash`, `pending`, `proven`, `verified`, `draft`).
-- `fabric_language === "match-existing"` or any other value → emit the en variant; pure monolingual.
-
-Protected tokens (`fab_extract_knowledge`, `fab_review`, `relevance_scope`,
-`relevance_paths`, `broad`, `narrow`, `source_sessions`, `proposed_reason`,
-`session_context`, `intent_clues`, `tech_stack`, `impact`, `must_read_if`,
-`pending_path`, `layer`, `team`, `personal`,
-`knowledge_scope_degraded`, `MUST`, `NEVER`, `.fabric/knowledge/`, etc.)
-are NEVER translated — they appear verbatim in both language variants.
-The bilingualization scope is prose ONLY.
-
-### AskUserQuestion i18n Policy (value vs label)
-
-When a skill (this one or any sibling skill the user is composing with)
-issues an `AskUserQuestion`, the `header` and `question` strings are
-user-facing prose → translated per `fabric_language`. The `options[]`
-array entries (e.g. `["approve", "reject", "modify", "defer", "skip"]` in
-fabric-review) are **routing keys** consumed by the skill state machine —
-they MUST remain English regardless of `fabric_language`.
-
-```ts
-// EN (fabric_language === "en")
-AskUserQuestion({
-  header: "Review pending entry",
-  question: "What action for '{title}'?",
-  options: ["approve", "reject", "modify", "defer", "skip"]
-})
-
-// zh-CN (fabric_language === "zh-CN")
-AskUserQuestion({
-  header: "审核 pending 条目",
-  question: "对 '{title}' 执行什么操作？",
-  options: ["approve", "reject", "modify", "defer", "skip"]   // 不翻译 — routing key
-})
-```
-
-Rationale: localizing routing keys would force every routing branch to
-dual-string match (e.g. `if (choice === "approve" || choice === "通过")`),
-which doubles the surface area for protected-token regressions and breaks
-the option-list invariants that downstream tooling depends on. Keeping
-`options[]` English-only is contract-locked across all three skills.
+**For the full 5-class taxonomy + edge cases:** `Read packages/cli/templates/skills/fabric-import/ref/i18n-policy.md` (or `.claude/skills/fabric-import/ref/i18n-policy.md` post-install).
 
 ## 3-Phase Pipeline (P1 reference / P2 mine / P3 dedup)
 

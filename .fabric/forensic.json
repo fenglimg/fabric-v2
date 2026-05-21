@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "generated_at": "2026-05-21T04:45:18.757Z",
+  "generated_at": "2026-05-21T04:50:43.325Z",
   "generated_by": "fab-cli@2.0.0-rc.27",
   "target": "/Users/wepie/Desktop/personal-projects/pcf",
   "project_name": "fabric-monorepo",
@@ -13,14 +13,14 @@
     ]
   },
   "topology": {
-    "total_files": 1237,
+    "total_files": 1241,
     "by_ext": {
       ".cjs": 31,
       ".csv": 75,
       ".html": 4,
       ".json": 595,
       ".jsonl": 5,
-      ".md": 252,
+      ".md": 256,
       ".mdc": 1,
       ".meta": 3,
       ".mjs": 11,

@@ -49,106 +49,13 @@ defaults if absent):
 
 If `.fabric/fabric-config.json` is missing or unreadable, use defaults silently.
 
-### UX i18n Policy (5-class bilingualization)
+### UX i18n Policy
 
-The skill consults `fabric_language` from `.fabric/fabric-config.json`
-(固化于 init 时，via `lib/detect-language.ts:detectExistingLanguage`; default `"en"` when no
-CJK signal is detected in README + docs/; may resolve to `"match-existing"`,
-`"zh-CN"`, `"en"`, or `"zh-CN-hybrid"`). All user-facing text in the
-following 5 categories MUST be rendered in the resolved language:
+Read `.fabric/fabric-config.json` → `fabric_language` (`zh-CN` / `en` / `zh-CN-hybrid` / `match-existing`). Emit user-facing prose in the resolved variant. Protected tokens (`fab_review`, `fab_extract_knowledge`, `relevance_scope`, layer/scope enum values, `stable_id`, the verbatim `强 team` / `强 personal` / `默认 team` block) are NEVER translated.
 
-1. **Roll-up templates** — the `# Review Summary — mode={...}` final block,
-   the `## Health Overview` dashboard in health mode, and any per-item
-   display blocks (`## [type=...] [layer=...] pending_path=...` lines).
-   zh-CN ↔ en mirror.
-2. **Errors / Preconditions warnings** — abort + trigger-miss messages
-   (e.g. "没有触发 review 信号…" / "No review signal detected…").
-   zh-CN ↔ en mirror.
-3. **Confirmation prompts** — free-text reject-reason follow-up, the
-   "Type relevance_paths (comma-separated globs, …)" narrow-scope
-   follow-up, and any other free-text prompts. zh-CN ↔ en mirror.
-4. **Dry-run table headers** — fabric-review does not currently expose
-   a dry-run mode; this slot is reserved for parity with fabric-import.
-   IF a future revision adds dry-run, the table header MUST be
-   bilingualized per this policy. zh-CN ↔ en mirror.
-5. **AskUserQuestion** — `header` + `question` fields (NOT `options[]`).
-   zh-CN ↔ en mirror. fabric-review is the heaviest AskUserQuestion
-   consumer (per-item action, layer-flip target, stale-item action,
-   modify-extended option set), so this class applies broadly.
+`AskUserQuestion` policy: `header` + `question` translate; `options[]` are routing keys — stay English regardless of locale.
 
-Rendering rule:
-
-- `fabric_language === "zh-CN"` → emit the zh-CN variant; pure monolingual, no language mixing inside a single user-facing block.
-- `fabric_language === "en"` → emit the en variant; pure monolingual, no language mixing inside a single user-facing block.
-- `fabric_language === "zh-CN-hybrid"` → emit Chinese narrative prose with English technical terms preserved. Protected tokens (always EN): MCP tool names (e.g. `fab_get_knowledge_sections`), CLI command names (e.g. `fab install`), file paths, technical concepts (`Skill`, `SessionStart`, `hook`, `MCP`, `revision_hash`, `pending`, `proven`, `verified`, `draft`).
-- `fabric_language === "match-existing"` or any other value → emit the en variant; pure monolingual.
-
-Protected tokens (`fab_review`, `relevance_scope`, `relevance_paths`,
-`narrow`, `broad`, `source_sessions`, `proposed_reason`, `session_context`,
-`pending_path`, `layer`, `team`, `personal`, `knowledge_scope_degraded`,
-`MUST`, `NEVER`, `.fabric/knowledge/`, etc.) are NEVER translated — they
-appear verbatim in both language variants. The bilingualization scope is
-prose ONLY.
-
-### AskUserQuestion i18n Policy (value vs label)
-
-When this skill issues an `AskUserQuestion`, the `header` and `question`
-strings are user-facing prose → translated per `fabric_language`. The
-`options[]` array entries are **routing keys** consumed by the skill
-state machine — they MUST remain English regardless of `fabric_language`.
-
-Canonical options arrays used by this skill (every value below stays
-English in BOTH language variants):
-
-- Per-item action: `["approve", "reject", "modify", "defer", "skip"]`
-- Per-stale-item action (health mode): `["defer", "demote", "skip"]`
-- Layer-flip target: `["team", "personal"]`
-- Modify-extended (import-origin narrow-scope nudge):
-  `["narrow scope", "edit summary", "change layer", "change maturity", "skip"]`
-
-Worked example — per-item action (the most common AskUserQuestion in this skill):
-
-```ts
-// EN (fabric_language === "en")
-AskUserQuestion({
-  header: "Review pending entry",
-  question: "What action for '{title}'?  ({pending_path})",
-  options: ["approve", "reject", "modify", "defer", "skip"]
-})
-
-// zh-CN (fabric_language === "zh-CN")
-AskUserQuestion({
-  header: "审核 pending 条目",
-  question: "对 '{title}' 执行什么操作？({pending_path})",
-  options: ["approve", "reject", "modify", "defer", "skip"]   // 不翻译 — routing key
-})
-```
-
-Worked example — layer-flip target:
-
-```ts
-// EN
-AskUserQuestion({
-  header: "Layer-flip target",
-  question: "Move '{title}' to which layer?  (current: {current_layer})",
-  options: ["team", "personal"]
-})
-
-// zh-CN
-AskUserQuestion({
-  header: "Layer 切换目标",
-  question: "将 '{title}' 切换到哪一层？(当前: {current_layer})",
-  options: ["team", "personal"]   // 不翻译 — routing key
-})
-```
-
-Rationale: localizing routing keys would force every routing branch to
-dual-string match (e.g. `if (choice === "approve" || choice === "通过")`),
-which doubles the surface area for protected-token regressions and breaks
-the option-list invariants that downstream tooling (the Skill's own
-`switch` statements over `choice`, plus any future MCP-level audit lint
-that scans for these specific string literals) depends on. Keeping
-`options[]` English-only is contract-locked across all three skills.
+**For the full 5-class taxonomy + edge cases:** `Read packages/cli/templates/skills/fabric-review/ref/i18n-policy.md` (or `.claude/skills/fabric-review/ref/i18n-policy.md` post-install).
 
 ## Mode Inference (System Infers — NEVER Ask)
 
@@ -624,94 +531,6 @@ Skills MUST ensure:
 
 Also surface a one-line `git status` of `.fabric/knowledge/` so the user sees the file moves caused by approve / layer-flip.
 
-## Worked Examples
+## Worked Examples (ref-only)
 
-### Example A — pending mode with semantic check flagging a duplicate (user chooses reject)
-
-User: "review the pending knowledge".
-
-Inferred mode: `pending` (Step 1 keyword "review … pending").
-
-Skill flow:
-
-1. `fab_review action="list"` → returns 3 pending items.
-2. Semantic check on item 2 (`pending/decisions/single-cjs-hook.md`) — `fab_review action="search"` with `query="single cjs hook"` filter `type=decisions` returns canonical `KT-D-0007--single-cjs-hook-across-clients.md` (similarity high).
-3. Display block:
-
-   ```md
-   ## [type=decisions] [layer=team] pending_path=knowledge/pending/decisions/single-cjs-hook.md
-   Title: 单 .cjs hook 跨客户端
-   Summary: 三客户端 stdout JSON 格式一致，单脚本即可。
-   ⚠ Possible duplicate of KT-D-0007 (LLM 主观判断 dup/subsumption；具体阈值不可量化)
-   ```
-
-4. AskUserQuestion fires; user picks `reject`.
-5. Free-text follow-up: user types `duplicate of KT-D-7`.
-6. `fab_review action="reject"` with `pending_paths=["knowledge/pending/decisions/single-cjs-hook.md"]` and `reason="duplicate of KT-D-7"`.
-7. Roll-up reports: 1 rejected, 0 approved, events appended.
-
-### Example B — revisit mode with layer flip (KT → KP)
-
-User: "look at KT-G-3, that's actually personal not team".
-
-Inferred mode: `revisit` (Step 1 keyword "look at <id>").
-
-Skill flow:
-
-1. Read `.fabric/knowledge/team/guidelines/KT-G-0003--indent-style.md`. Display body to user.
-2. AskUserQuestion `{options: ["approve", "modify", "reject", "skip"]}` — user picks `modify`.
-3. Skill detects user-stated intent "actually personal not team" — surface AskUserQuestion `{options: ["team", "personal"]}` with current layer=team noted; user confirms `personal`.
-4. Call:
-
-   ```ts
-   mcp__fabric__fab_review({
-     action: "modify",
-     pending_path: "knowledge/team/guidelines/KT-G-0003--indent-style.md",
-     changes: { layer: "personal" }
-   })
-   ```
-
-5. Server returns `{prior_stable_id: "KT-G-0003", new_stable_id: "KP-G-0001"}`.
-6. Roll-up: `Layer flipped: KT-G-0003 → KP-G-0001`. `git status` shows the rename across layer roots.
-
-### Example C — health mode finding stale entries (defer 2, demote 1)
-
-User: "anything stale in our knowledge base?"
-
-Inferred mode: `health` (Step 1 keyword "stale").
-
-Skill flow:
-
-1. `fab_review action="list"` (no filter) + tail events.jsonl for trailing-30d demoted/layer_changed counts.
-2. Compute stale candidates: 3 pending entries with mtime >14d (KP-G-5 candidate-pending, KT-P-9 candidate-pending, KP-G-3 canonical draft with no evidence-append in 21d).
-3. Render dashboard then loop per stale item.
-4. Per-item AskUserQuestion fires:
-   - KP-G-5 → user picks `defer` (until="2026-06-01") → `fab_review action="defer"` with `until` set.
-   - KT-P-9 → user picks `defer` (no until) → `fab_review action="defer"` with no `until`.
-   - KP-G-3 → user picks `demote` → `fab_review action="modify"` with `changes.maturity="draft"` (already draft; equivalently demote means reject if pending — skill chooses correct action by inspecting current state).
-5. Roll-up: 2 deferred, 1 modified, events appended (`knowledge_deferred ×2`, `knowledge_promote_started/promoted` not relevant; `knowledge_layer_changed` not relevant).
-
-### Example D — narrowing an imported decision
-
-User: "review the pending knowledge".
-
-Inferred mode: `pending`. Skill lists 5 pending entries; entry 3's frontmatter 
-shows `source_sessions[0] = "fabric-import-2026-05-10"` → import-origin.
-
-Display block prepends warning line. User picks `modify` on entry 3.
-AskUserQuestion fires with extended options including `narrow scope`.
-User picks `narrow scope`; free-text follow-up: 
-`packages/server/src/retry/**, packages/server/src/lib/retry.ts`
-
-Skill calls:
-
-mcp__fabric__fab_review({
-  action: "modify",
-  pending_path: "knowledge/pending/decisions/<slug>.md",
-  changes: {
-    relevance_scope: "narrow",
-    relevance_paths: ["packages/server/src/retry/**", "packages/server/src/lib/retry.ts"]
-  }
-})
-
-Roll-up confirms `relevance_scope: narrow` written to frontmatter.
+Four worked examples (pending-mode dedupe / revisit layer-flip / health mode / narrowing imported entries) live in `packages/cli/templates/skills/fabric-review/ref/worked-examples.md` (or `.claude/skills/fabric-review/ref/worked-examples.md` post-install). Load when you want to see how the full Mode + AskUserQuestion + MCP-call shape composes on real candidate sets.
