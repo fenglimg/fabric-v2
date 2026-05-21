@@ -33,9 +33,15 @@ import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
 
+// v2.0.0-rc.28 TASK-01 (audit §3.1): the Phase 0.4 trigger-gate doc moved
+// out of SKILL.md (~1343 lines) into ref/phase-0-4-onboard.md. The gate
+// contract — entry-point detection table + SKIP/PROCEED decision per entry
+// type — is unchanged; only its file location did. The skill loader still
+// surfaces a hot-path pointer in SKILL.md; this test pins the gate region
+// at the new authoritative location.
 const SKILL_MD_PATH = fileURLToPath(
   new URL(
-    "../../templates/skills/fabric-archive/SKILL.md",
+    "../../templates/skills/fabric-archive/ref/phase-0-4-onboard.md",
     import.meta.url,
   ),
 );
@@ -49,11 +55,14 @@ const SKILL_MD = readFileSync(SKILL_MD_PATH, "utf8");
  * edits cannot accidentally satisfy a marker check.
  */
 function extractGateRegion(): string {
+  // v2.0.0-rc.28: gate-region heading kept as `####` for byte-identity with
+  // the pre-split content; the new file just has the gate region a level
+  // deeper than the file's top-level heading.
   const startMarker = "#### Phase 0.4 Trigger Gate";
   const startIdx = SKILL_MD.indexOf(startMarker);
   if (startIdx === -1) {
     throw new Error(
-      "SKILL.md is missing '#### Phase 0.4 Trigger Gate' heading — TASK-06 may have regressed",
+      "ref/phase-0-4-onboard.md is missing 'Phase 0.4 Trigger Gate' heading — rc.28 TASK-01 split may have regressed",
     );
   }
   // Find the next major heading (### or ####) AFTER the start marker.

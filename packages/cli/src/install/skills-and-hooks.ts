@@ -122,6 +122,19 @@ export const SKILL_DESTINATIONS = {
   ],
 } as const;
 
+// v2.0.0-rc.28 TASK-01 (audit §3.1): per-skill `ref/` subdirectories carrying
+// load-on-demand reference content (rc-history, i18n-policy, phase-specific
+// guidance). Each entry maps the skill-tree slug → installed-side parent dir;
+// installSkillRefFiles walks `templates/skills/<slug>/ref/*.md` and copies
+// every file to `<parent>/<slug>/ref/` for both Claude Code and Codex CLI.
+// Absent ref/ directories degrade silently (skill keeps shipping with no ref
+// content) so retro-fitting earlier skills doesn't break existing installs.
+const SKILL_REF_TREE_ROOTS = [
+  { templateSlug: "fabric-archive", clientPrefixes: [".claude", ".codex"] as const },
+  { templateSlug: "fabric-review", clientPrefixes: [".claude", ".codex"] as const },
+  { templateSlug: "fabric-import", clientPrefixes: [".claude", ".codex"] as const },
+] as const;
+
 /**
  * Project-root-relative destination paths for the three cross-client hook
  * scripts (Stop / SessionStart / PreToolUse). Source of truth shared by
@@ -275,6 +288,10 @@ export function readFabricLanguagePreference(projectRoot: string): string {
  * Copy templates/skills/fabric-archive/SKILL.md into both .claude/skills/
  * and .codex/skills/ subtrees under the project root. Idempotent: if the
  * destination already contains an identical copy, no write occurs.
+ *
+ * v2.0.0-rc.28 TASK-01 (audit §3.1): also walks the skill's `ref/` directory
+ * and ships every `*.md` companion to the same client subtrees so
+ * load-on-demand references resolve at runtime.
  */
 export async function installFabricArchiveSkill(
   projectRoot: string,
@@ -286,6 +303,7 @@ export async function installFabricArchiveSkill(
   for (const target of targets) {
     results.push(await copyTextIdempotent("skill", source, target));
   }
+  results.push(...(await installSkillRefFiles(projectRoot, "fabric-archive")));
   return results;
 }
 
@@ -309,6 +327,7 @@ export async function installFabricReviewSkill(
   for (const target of targets) {
     results.push(await copyTextIdempotent("skill-review", source, target));
   }
+  results.push(...(await installSkillRefFiles(projectRoot, "fabric-review")));
   return results;
 }
 
@@ -332,6 +351,84 @@ export async function installFabricImportSkill(
   const results: InstallStepResult[] = [];
   for (const target of targets) {
     results.push(await copyTextIdempotent("skill-import", source, target));
+  }
+  results.push(...(await installSkillRefFiles(projectRoot, "fabric-import")));
+  return results;
+}
+
+/**
+ * v2.0.0-rc.28 TASK-01 (audit §3.1): copy every `*.md` file under the
+ * skill's `templates/skills/<slug>/ref/` directory to BOTH `.claude/skills/
+ * <slug>/ref/` and `.codex/skills/<slug>/ref/`. Idempotent — unchanged files
+ * skip the write. Missing template `ref/` directory degrades silently with a
+ * single `skipped` row noting `no-ref-files` so retro-fitting older skills
+ * doesn't require schema migration. Cursor is intentionally absent: it has
+ * no Skills concept, matching SKILL_DESTINATIONS coverage.
+ */
+async function installSkillRefFiles(
+  projectRoot: string,
+  skillSlug: string,
+): Promise<InstallStepResult[]> {
+  let refTemplateDir: string;
+  try {
+    refTemplateDir = findTemplatePath(`skills/${skillSlug}/ref`);
+  } catch {
+    // No ref/ directory in this skill's template tree — silently skip. Most
+    // skills do not have ref/ companions; only those refactored under rc.28
+    // TASK-01 do. The single-row 'skipped' return preserves the install
+    // summary's installed/skipped/error accounting.
+    return [
+      {
+        step: "skill-ref",
+        path: `skills/${skillSlug}/ref`,
+        status: "skipped",
+        message: `no-ref-dir: ${skillSlug}`,
+      },
+    ];
+  }
+  let refFiles: string[];
+  try {
+    refFiles = readdirSync(refTemplateDir).filter((name) => name.endsWith(".md"));
+  } catch {
+    return [
+      {
+        step: "skill-ref",
+        path: refTemplateDir,
+        status: "skipped",
+        message: `no-ref-files: ${skillSlug}`,
+      },
+    ];
+  }
+  if (refFiles.length === 0) {
+    return [
+      {
+        step: "skill-ref",
+        path: refTemplateDir,
+        status: "skipped",
+        message: `no-ref-files: ${skillSlug}`,
+      },
+    ];
+  }
+  const clientPrefixes = [".claude", ".codex"] as const;
+  const results: InstallStepResult[] = [];
+  for (const refFile of refFiles) {
+    const sourcePath = join(refTemplateDir, refFile);
+    let source: string;
+    try {
+      source = readFileSync(sourcePath, "utf8");
+    } catch (error: unknown) {
+      results.push({
+        step: "skill-ref",
+        path: sourcePath,
+        status: "error",
+        message: error instanceof Error ? error.message : String(error),
+      });
+      continue;
+    }
+    for (const prefix of clientPrefixes) {
+      const target = join(projectRoot, prefix, "skills", skillSlug, "ref", refFile);
+      results.push(await copyTextIdempotent("skill-ref", source, target));
+    }
   }
   return results;
 }
