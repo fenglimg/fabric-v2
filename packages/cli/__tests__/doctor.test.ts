@@ -634,6 +634,72 @@ describe("doctor command", () => {
       expect(Math.abs(opts.since - expected)).toBeLessThan(5_000);
     });
   });
+
+  // v2.0.0-rc.29 TASK-007 (BUG-M2): --since is now validated up-front before
+  // any dispatch arm checks. Previously bare `fab doctor --since=bogus`
+  // (without --cite-coverage / --archive-history) silently dropped the value
+  // and exited 0; now it fails fast with exit 1 and the standard
+  // cli.doctor.errors.invalid-since stderr line.
+  describe("--since up-front validation (rc.29 BUG-M2)", () => {
+    it("rejects bogus --since on a bare `fab doctor` invocation (no --cite-coverage / --archive-history)", async () => {
+      vi.doMock("@fenglimg/fabric-server", () => ({
+        checkLockOrThrow: vi.fn(),
+        runDoctorReport: vi.fn().mockResolvedValue(createReport("ok")),
+        runDoctorFix: vi.fn(),
+        runDoctorApplyLint: vi.fn(),
+      }));
+
+      const { doctorCommand } = await import("../src/commands/doctor.ts");
+      const stderr = captureStderr();
+
+      try {
+        await doctorCommand.run?.({
+          args: {
+            target: "/tmp/fabric-target",
+            json: false,
+            strict: false,
+            fix: false,
+            since: "bogus-format",
+          },
+        } as never);
+      } finally {
+        stderr.restore();
+      }
+
+      expect(process.exitCode).toBe(1);
+      expect(stderr.lines.join("\n")).toContain("bogus-format");
+    });
+
+    it("accepts a valid --since on a bare `fab doctor` invocation and still runs the standard check pipeline", async () => {
+      const reportSpy = vi.fn().mockResolvedValue(createReport("ok"));
+      vi.doMock("@fenglimg/fabric-server", () => ({
+        checkLockOrThrow: vi.fn(),
+        runDoctorReport: reportSpy,
+        runDoctorFix: vi.fn(),
+        runDoctorApplyLint: vi.fn(),
+      }));
+
+      const { doctorCommand } = await import("../src/commands/doctor.ts");
+      const stdout = captureStdout();
+
+      try {
+        await doctorCommand.run?.({
+          args: {
+            target: "/tmp/fabric-target",
+            json: false,
+            strict: false,
+            fix: false,
+            since: "7d",
+          },
+        } as never);
+      } finally {
+        stdout.restore();
+      }
+
+      // No fail-fast → bare doctor pipeline executed.
+      expect(reportSpy).toHaveBeenCalledTimes(1);
+    });
+  });
 });
 
 function captureStdout(): { lines: string[]; restore: () => void } {
@@ -642,6 +708,19 @@ function captureStdout(): { lines: string[]; restore: () => void } {
     lines.push(String(chunk).replace(/\n$/, ""));
     return true;
   }) as typeof process.stdout.write);
+
+  return {
+    lines,
+    restore: () => spy.mockRestore(),
+  };
+}
+
+function captureStderr(): { lines: string[]; restore: () => void } {
+  const lines: string[] = [];
+  const spy = vi.spyOn(process.stderr, "write").mockImplementation(((chunk: string | Uint8Array) => {
+    lines.push(String(chunk).replace(/\n$/, ""));
+    return true;
+  }) as typeof process.stderr.write);
 
   return {
     lines,

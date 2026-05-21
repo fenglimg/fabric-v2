@@ -193,8 +193,12 @@ describe("knowledge-hint-broad.cjs — renderSummary (empty)", () => {
   });
 });
 
-describe("knowledge-hint-broad.cjs — renderSummary (full mode, count <= 30)", () => {
-  it("emits banner without (truncated) suffix when count <= 30", () => {
+// v2.0.0-rc.29 TASK-007 (BUG-F1): TRUNCATION_THRESHOLD lowered from 30 → 12.
+// Test groups below reference TRUNCATION_THRESHOLD via hook.CONSTANTS so the
+// describe titles intentionally describe the BEHAVIOR ("<= threshold") rather
+// than a magic-number cutoff.
+describe("knowledge-hint-broad.cjs — renderSummary (full mode, count <= TRUNCATION_THRESHOLD)", () => {
+  it("emits banner without (truncated) suffix when count <= TRUNCATION_THRESHOLD", () => {
     const narrow = [makeEntry("KT-DEC-0001", "decision", "proven", "x")];
     const lines = hook.renderSummary(makePayload(narrow));
     expect(lines[0]).toMatch(/Session start — 1 broad-scoped knowledge entries available:/);
@@ -235,14 +239,14 @@ describe("knowledge-hint-broad.cjs — renderSummary (full mode, count <= 30)", 
     );
     const lines = hook.renderSummary(makePayload(narrow));
     expect(lines[0]).not.toMatch(/truncated/);
-    // 1 banner + 1 group header + 30 entries + revision_hash + footer = 34
+    // 1 banner + 1 group header + max entries + revision_hash + footer.
     const entryLines = lines.filter((l) => /^\s+- KT-DEC-/.test(l));
     expect(entryLines.length).toBe(max);
   });
 });
 
-describe("knowledge-hint-broad.cjs — renderSummary (truncated mode, count > 30)", () => {
-  it("emits (truncated) banner when count > 30", () => {
+describe("knowledge-hint-broad.cjs — renderSummary (truncated mode, count > TRUNCATION_THRESHOLD)", () => {
+  it("emits (truncated) banner when count > TRUNCATION_THRESHOLD", () => {
     const max = hook.CONSTANTS.TRUNCATION_THRESHOLD;
     const narrow = Array.from({ length: max + 1 }, (_, i) =>
       makeEntry(`KT-DEC-${1000 + i}`, "decision", "proven", `s${i}`),

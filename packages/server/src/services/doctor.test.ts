@@ -6634,6 +6634,8 @@ describe("enrichDescriptions", () => {
     const report = await enrichDescriptions(target, { auto: true, dryRun: true });
 
     expect(report.dryRun).toBe(true);
+    // v2.0.0-rc.29 TASK-007 (BUG-M1): --auto + --dry-run reports as `preview`.
+    expect(report.mode).toBe("preview");
     expect(report.scanned).toBe(1);
     expect(report.modified).toBe(0);
     expect(report.candidates).toHaveLength(1);
@@ -6648,8 +6650,13 @@ describe("enrichDescriptions", () => {
     expect(events.filter((e) => e.event_type === "knowledge_enriched")).toHaveLength(0);
   });
 
-  it("interactive (default) mode reports missing fields without writing", async () => {
-    const target = createInitializedProject("enrich-interactive");
+  // v2.0.0-rc.29 TASK-007 (BUG-M1): mode label now reflects what actually
+  // happens — readonly when no `--auto` is passed (writes nothing). The
+  // previous "interactive" label was misleading because no prompt actually
+  // ran. Legacy `"interactive"` literal is kept in the type union as a
+  // deprecated alias for downstream consumers.
+  it("readonly (default) mode reports missing fields without writing", async () => {
+    const target = createInitializedProject("enrich-readonly");
     seedLegacyEntry(target, ".fabric/knowledge/pitfalls/KP-PIT-0001--gotcha.md", {
       withFields: ["tech_stack", "impact"],
     });
@@ -6658,7 +6665,7 @@ describe("enrichDescriptions", () => {
 
     const report = await enrichDescriptions(target, {}); // no auto
 
-    expect(report.mode).toBe("interactive");
+    expect(report.mode).toBe("readonly");
     expect(report.scanned).toBe(1);
     expect(report.modified).toBe(0);
     expect(report.candidates).toHaveLength(1);

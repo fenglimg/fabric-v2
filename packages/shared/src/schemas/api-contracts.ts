@@ -720,6 +720,14 @@ export const FabReviewInputShape = {
 
 // Per-action result shapes. Each variant mirrors its input action so the
 // consumer can pair `(input.action, output.action)` without extra plumbing.
+//
+// v2.0.0-rc.29 TASK-007 (BUG-M4): list and search no longer share a single
+// item schema. `_fabReviewListItemSchema` continues to describe pending-only
+// entries returned by `action=list` (path semantics: `pending_path`). The new
+// `_fabReviewSearchItemSchema` describes search results, which can be EITHER
+// pending OR canonical — disambiguated by the required `area` discriminator
+// and a neutrally-named `path` field. See FabReviewOutputSchema below for the
+// per-action wiring.
 const _fabReviewListItemSchema = z.object({
   pending_path: z.string(),
   // v2.0.0-rc.27 TASK-001 (§2.12): for personal-layer entries `pending_path`
@@ -755,6 +763,36 @@ const _fabReviewListItemSchema = z.object({
   body: z.string().optional(),
 });
 
+// v2.0.0-rc.29 TASK-007 (BUG-M4): search-result item schema. Unlike list,
+// search ranges over BOTH pending and canonical knowledge. `area` is the
+// authoritative discriminator. `path` is the neutrally-named filesystem
+// pointer (replaces the misleading `pending_path` for canonical hits); the
+// optional `path_absolute` carries the os-expanded path for personal-layer
+// entries (mirrors `_fabReviewListItemSchema.pending_path_absolute`). All
+// other fields are the same as the list-item schema.
+const _fabReviewSearchItemSchema = z.object({
+  // Search hits live in one of two trees:
+  //  - "pending"   → .fabric/knowledge/pending/ (or ~/.fabric/knowledge/pending/)
+  //  - "canonical" → .fabric/knowledge/{decisions,pitfalls,...} (or personal mirror)
+  area: z.enum(["pending", "canonical"]),
+  path: z.string(),
+  path_absolute: z.string().optional(),
+  type: z.enum(["decisions", "pitfalls", "guidelines", "models", "processes"]),
+  layer: z.enum(["team", "personal"]),
+  maturity: z.enum(["draft", "verified", "proven"]),
+  tags: z.array(z.string()).optional(),
+  title: z.string().optional(),
+  summary: z.string().optional(),
+  origin: z.enum(["team", "personal"]).optional(),
+  status: z.enum(["active", "rejected", "deferred"]).optional(),
+  deferred_until: z.string().datetime().optional(),
+  body: z.string().optional(),
+  // For pending hits the upstream stable_id may still be unassigned — keep it
+  // optional so canonical hits (which always have one) parse alongside pending
+  // hits in the same array.
+  stable_id: z.string().optional(),
+});
+
 // v2.0.0-rc.23 TASK-009 (d): every variant carries an optional `warnings`
 // array so the first-reconcile gate can surface `meta_stale` / `reconcile_failed`
 // regardless of which review action ran. Field stays absent on the
@@ -785,7 +823,9 @@ export const FabReviewOutputSchema = z.discriminatedUnion("action", [
   }),
   z.object({
     action: z.literal("search"),
-    items: z.array(_fabReviewListItemSchema),
+    // v2.0.0-rc.29 TASK-007 (BUG-M4): search returns the new search-item
+    // shape with `area` discriminator + neutrally-named `path` field.
+    items: z.array(_fabReviewSearchItemSchema),
     warnings: z.array(structuredWarningSchema).optional(),
   }),
   z.object({
@@ -813,10 +853,16 @@ export const FabReviewOutputShape = {
       "Echoes the input action; clients can switch on it for per-variant fields below.",
     ),
   items: z
-    .array(_fabReviewListItemSchema)
+    // v2.0.0-rc.29 TASK-007 (BUG-M4): list returns list-item shape (pending
+    // only, `pending_path`); search returns search-item shape (pending or
+    // canonical, with `area` discriminator + `path` field). The flat
+    // MCP-output shape accepts either via a per-element union so existing
+    // FlatOutput.safeParse() callers don't need to know about the per-action
+    // narrowing — FabReviewOutputSchema retains per-variant precision.
+    .array(z.union([_fabReviewListItemSchema, _fabReviewSearchItemSchema]))
     .optional()
     .describe(
-      "Pending/canonical entries surfaced. Present when action=list or action=search.",
+      "Pending entries (action=list, `pending_path` shape) or pending+canonical entries (action=search, `area`+`path` shape).",
     ),
   approved: z
     .array(z.object({ pending_path: z.string(), stable_id: z.string() }))

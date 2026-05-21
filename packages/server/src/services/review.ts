@@ -276,6 +276,30 @@ type ListItem = {
   body?: string;
 };
 
+// v2.0.0-rc.29 TASK-007 (BUG-M4): search result item. Search ranges over both
+// pending and canonical entries, so the misleading `pending_path` field (used
+// by `list` for pending-only results) is renamed to a neutral `path` and a
+// required `area` discriminator is added so consumers can tell the two apart
+// without parsing the directory prefix out of the path string.
+type SearchItem = {
+  area: "pending" | "canonical";
+  path: string;
+  // `path_absolute` mirrors `ListItem.pending_path_absolute`: emitted only for
+  // personal-layer entries where the `path` carries the `~/...` shell-only form.
+  path_absolute?: string;
+  type: PluralType;
+  layer: Layer;
+  maturity: Maturity;
+  tags?: string[];
+  title?: string;
+  summary?: string;
+  origin?: "team" | "personal";
+  status?: LifecycleStatus;
+  deferred_until?: string;
+  body?: string;
+  stable_id?: string;
+};
+
 /**
  * v2.0.0-rc.27 TASK-001 (§2.2/§2.3): default visibility filter for list/search.
  * Returns true if the entry should be SHOWN given the caller's filter request.
@@ -951,9 +975,9 @@ async function searchEntries(
   projectRoot: string,
   query: string,
   filters: ListFilters | undefined,
-): Promise<ListItem[]> {
+): Promise<SearchItem[]> {
   const lowerQuery = query.toLowerCase();
-  const items: ListItem[] = [];
+  const items: SearchItem[] = [];
 
   // Sources: pending (team + personal, rc.5 B1) + team canonical + personal
   // canonical. `isPersonal` flags the home-rooted sources so the path-reporting
@@ -1042,16 +1066,20 @@ async function searchEntries(
           ? `~/${relative(resolvePersonalRoot(), absolutePath)}`
           : relative(projectRoot, absolutePath);
 
+        // v2.0.0-rc.29 TASK-007 (BUG-M4): emit the new search-item shape.
+        // `area` is the authoritative pending-vs-canonical discriminator;
+        // `path` replaces the misleading `pending_path` field (which made
+        // sense for list-only but lied about canonical search hits). Personal
+        // hits add `path_absolute` (mirrors list's `pending_path_absolute`).
         items.push({
-          pending_path: reportedPath,
-          // v2.0.0-rc.27 TASK-001 (§2.12): absolute companion for personal
-          // entries (mirrors listPending).
-          ...(source.isPersonal ? { pending_path_absolute: absolutePath } : {}),
+          area: source.isPending ? "pending" : "canonical",
+          path: reportedPath,
+          ...(source.isPersonal ? { path_absolute: absolutePath } : {}),
           type,
           layer,
           maturity,
-          // Only pending entries carry an origin tag (search results that are
-          // canonical entries don't have a pending root to point back to).
+          // Only pending entries carry an origin tag (canonical hits live
+          // outside the dual-pending-root convention).
           ...(source.isPending ? { origin: source.isPersonal ? ("personal" as const) : ("team" as const) } : {}),
           ...(fm.tags !== undefined && fm.tags.length > 0 ? { tags: fm.tags } : {}),
           ...(fm.title !== undefined ? { title: fm.title } : {}),
@@ -1059,10 +1087,11 @@ async function searchEntries(
           ...(fm.status !== undefined ? { status: fm.status } : {}),
           ...(fm.deferred_until !== undefined ? { deferred_until: fm.deferred_until } : {}),
           // v2.0.0-rc.27 TASK-006 (audit §2.23): body emission when opted in.
-          // Reuse the already-computed bodyForSearch to avoid a second pass
-          // over the content (the search loop above extracted it iff
-          // include_body=true).
           ...(filters?.include_body === true ? { body: bodyForSearch } : {}),
+          // Canonical hits always have an id; pending hits typically don't
+          // yet — surface the frontmatter id when present so consumers can
+          // dedupe across runs.
+          ...(fm.id !== undefined ? { stable_id: fm.id } : {}),
         });
       }
     }

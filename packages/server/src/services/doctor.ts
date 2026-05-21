@@ -7191,7 +7191,18 @@ function isMissingFileError(error: unknown): error is NodeJS.ErrnoException {
 // mid-write never leaves a half-state. Idempotent: a file already carrying
 // all four fields produces no diff and no event.
 
-export type EnrichDescriptionsMode = "auto" | "interactive";
+// v2.0.0-rc.29 TASK-007 (BUG-M1): expand the mode label so the report
+// honestly distinguishes the three observable behaviors of
+// `fab doctor --enrich-descriptions`:
+//   - readonly: no `--auto`, no `--dry-run` → scan + report, write nothing.
+//   - preview : `--auto --dry-run` → simulate writes, show diff, write nothing.
+//   - auto    : `--auto` (no `--dry-run`) → actually mutate frontmatter on disk.
+// Previously this was `auto | interactive`; the audit (rc.28 round 1) flagged
+// `mode: "interactive", dryRun: false` as misleading when 0 files were written.
+// "interactive" is retained as a deprecated alias mapping to "readonly" so
+// existing API consumers keep parsing — the label printed by the renderer is
+// the canonical one chosen by the new logic below.
+export type EnrichDescriptionsMode = "auto" | "preview" | "readonly" | "interactive";
 
 export type EnrichDescriptionsCandidate = {
   // Workspace-relative POSIX path for team entries; `~/.fabric/...` form for
@@ -7248,7 +7259,11 @@ export async function enrichDescriptions(
 ): Promise<EnrichDescriptionsReport> {
   const auto = opts.auto === true;
   const dryRun = opts.dryRun === true;
-  const mode: EnrichDescriptionsMode = auto ? "auto" : "interactive";
+  // v2.0.0-rc.29 TASK-007 (BUG-M1): tri-mode label. `--auto && --dry-run` is
+  // preview; bare `--auto` is the only true mutating mode; everything else is
+  // readonly. The legacy "interactive" label is kept in the type union as a
+  // deprecated alias so external schema consumers continue to parse.
+  const mode: EnrichDescriptionsMode = auto ? (dryRun ? "preview" : "auto") : "readonly";
 
   const candidates: EnrichDescriptionsCandidate[] = [];
   let scanned = 0;

@@ -70,6 +70,37 @@ export const ruleDescriptionIndexItemSchema = z
 // path-derivable via `deriveAgentsMetaLayer` / `deriveAgentsMetaTopologyType`
 // when consumers need it. Older on-disk meta files carrying these fields
 // continue to load (Zod strips unknown keys by default).
+//
+// v2.0.0-rc.29 TASK-007 (BUG-P1): documentation-only clarification of the
+// `level` vs `layer` double semantic for any code path still consuming the
+// passthrough fields (currently `knowledge-sections.ts` + `get-knowledge.ts`):
+//
+//   - `layer`  → STORAGE LOCATION. Which on-disk root the file lives under.
+//                "personal" = ~/.fabric/knowledge/...; "team" = workspace
+//                .fabric/knowledge/...; older meta files use the L-token
+//                vocabulary ("L0"|"L1"|"L2") with the same precedence-stack
+//                meaning that `level` carries — the two were intentionally
+//                kept interchangeable in rc.4 and earlier to ease migration,
+//                but going forward `layer` is the storage-of-truth.
+//
+//   - `level`  → PRECEDENCE-STACK POSITION. Where the entry sits in the
+//                resolution order applied by `knowledge-sections.ts:251`:
+//                  L0 = personal-override (highest precedence, narrowest scope)
+//                  L1 = workspace          (default working surface)
+//                  L2 = team               (broadest sharable scope, lowest
+//                                            precedence below L0/L1)
+//                When `level` is absent, `knowledge-sections.ts` falls back
+//                to `layer` (then default "L2") — the dual semantic that the
+//                rc.28 audit (BUG-P1) flagged. The rename to
+//                `storage_level` / `precedence_level` is deferred (would
+//                require a schema migration touching every consumer); the
+//                fallback chain documented at services/knowledge-sections.ts
+//                lines 245-260 remains the canonical contract.
+//
+// Rule of thumb when reading code: a check that influences DISK PLACEMENT
+// (which root to write/read) consults `layer`; a check that influences
+// PRECEDENCE (which entry wins on collision) consults `level`. The
+// inputs may coincide in vocabulary but they are semantically distinct.
 const agentsMetaNodeBaseSchema = z.object({
   file: z.string(),
   content_ref: z.string().optional(),

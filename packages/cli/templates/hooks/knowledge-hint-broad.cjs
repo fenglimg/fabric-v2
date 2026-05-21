@@ -227,12 +227,16 @@ function shouldRecommendImport(projectRoot) {
 // CONSTANTS
 // -----------------------------------------------------------------------------
 
-// Per-type truncation triggers when total narrow entries > 30. The threshold
-// was originally aligned with the rc.5 plan-context degenerate-mode cutoff,
-// which is now retired (rc.7 T9 — see docs/decisions/rc5-a3-superseded.md).
-// We keep 30 here as a stable rendering boundary independent of that protocol
-// change: it's a UI-density choice, not a wire-shape one.
-const TRUNCATION_THRESHOLD = 30;
+// Per-type truncation triggers when total broad-scope entries > N.
+// v2.0.0-rc.29 TASK-007 (BUG-F1): lowered from 30 → 12. SessionStart hint
+// should bias toward "is there anything relevant?" rather than "exhaustive
+// index" — at 30, the banner consumed several terminal screens on
+// well-seeded repos and operators reported scroll fatigue. 12 keeps a
+// dense-enough scan (still fits "top hits per type" in 1-2 screenfuls)
+// without prompting the user to mentally truncate themselves. The constant
+// stays a stable rendering boundary; downstream consumers (banner-i18n.cjs,
+// truncation summary lines) consume it as a single source of truth.
+const TRUNCATION_THRESHOLD = 12;
 
 // `fabric plan-context-hint` is a thin wrapper over planContext(); on a
 // well-seeded repo it returns in ~100ms. Two-second cap is defensive — any

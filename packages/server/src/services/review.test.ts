@@ -671,7 +671,8 @@ describe("reviewKnowledge", () => {
     if (result.action !== "search") throw new Error("unreachable");
     expect(result.items).toHaveLength(1);
     expect(result.items[0].type).toBe("decisions");
-    expect(result.items[0].pending_path).toContain("auth-flow");
+    // v2.0.0-rc.29 TASK-007 (BUG-M4): search items use `path` + `area`.
+    expect(result.items[0].path).toContain("auth-flow");
   });
 
   it("search_filters_by_tags_subset", async () => {
@@ -688,7 +689,7 @@ describe("reviewKnowledge", () => {
     if (result.action !== "search") throw new Error("unreachable");
     // Only `alpha` has both auth AND rbac tags.
     expect(result.items).toHaveLength(1);
-    expect(result.items[0].pending_path).toContain("alpha");
+    expect(result.items[0].path).toContain("alpha");
   });
 
   it("search_query_case_insensitive_substring_on_filename", async () => {
@@ -702,7 +703,7 @@ describe("reviewKnowledge", () => {
     });
     if (result.action !== "search") throw new Error("unreachable");
     expect(result.items).toHaveLength(1);
-    expect(result.items[0].pending_path).toContain("MyImportantDecision");
+    expect(result.items[0].path).toContain("MyImportantDecision");
   });
 
   it("search_includes_pending_and_canonical_entries", async () => {
@@ -726,7 +727,7 @@ describe("reviewKnowledge", () => {
     if (result.action !== "search") throw new Error("unreachable");
     // Both the still-pending entry and the canonical post-approve entry match.
     expect(result.items.length).toBeGreaterThanOrEqual(2);
-    const paths = result.items.map((i) => i.pending_path);
+    const paths = result.items.map((i) => i.path);
     expect(paths.some((p) => p.includes("pending-x"))).toBe(true);
     expect(paths.some((p) => p.includes("topic-canonical"))).toBe(true);
   });
@@ -1001,7 +1002,7 @@ describe("reviewKnowledge", () => {
       filters: undefined,
     });
     if (result.action !== "search") throw new Error("unreachable");
-    const personal = result.items.find((i) => i.pending_path.startsWith("~/"));
+    const personal = result.items.find((i) => i.path.startsWith("~/"));
     expect(personal).toBeDefined();
     expect(personal!.layer).toBe("personal");
   });
@@ -1330,7 +1331,7 @@ describe("reviewKnowledge", () => {
     });
     if (filtered.action !== "search") throw new Error("unreachable");
     expect(filtered.items).toHaveLength(1);
-    expect(filtered.items[0].pending_path).toBe(
+    expect(filtered.items[0].path).toBe(
       ".fabric/knowledge/pending/decisions/after.md",
     );
   });

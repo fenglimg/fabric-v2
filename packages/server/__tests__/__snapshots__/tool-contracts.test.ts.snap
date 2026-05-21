@@ -648,7 +648,92 @@ exports[`tool contracts > fab-review contract matches snapshot 1`] = `
           },
           "items": {
             "items": {
-              "$ref": "#/anyOf/0/properties/items/items",
+              "additionalProperties": false,
+              "properties": {
+                "area": {
+                  "enum": [
+                    "pending",
+                    "canonical",
+                  ],
+                  "type": "string",
+                },
+                "body": {
+                  "type": "string",
+                },
+                "deferred_until": {
+                  "format": "date-time",
+                  "type": "string",
+                },
+                "layer": {
+                  "enum": [
+                    "team",
+                    "personal",
+                  ],
+                  "type": "string",
+                },
+                "maturity": {
+                  "enum": [
+                    "draft",
+                    "verified",
+                    "proven",
+                  ],
+                  "type": "string",
+                },
+                "origin": {
+                  "enum": [
+                    "team",
+                    "personal",
+                  ],
+                  "type": "string",
+                },
+                "path": {
+                  "type": "string",
+                },
+                "path_absolute": {
+                  "type": "string",
+                },
+                "stable_id": {
+                  "type": "string",
+                },
+                "status": {
+                  "enum": [
+                    "active",
+                    "rejected",
+                    "deferred",
+                  ],
+                  "type": "string",
+                },
+                "summary": {
+                  "type": "string",
+                },
+                "tags": {
+                  "items": {
+                    "type": "string",
+                  },
+                  "type": "array",
+                },
+                "title": {
+                  "type": "string",
+                },
+                "type": {
+                  "enum": [
+                    "decisions",
+                    "pitfalls",
+                    "guidelines",
+                    "models",
+                    "processes",
+                  ],
+                  "type": "string",
+                },
+              },
+              "required": [
+                "area",
+                "path",
+                "type",
+                "layer",
+                "maturity",
+              ],
+              "type": "object",
             },
             "type": "array",
           },

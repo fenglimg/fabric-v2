@@ -441,7 +441,10 @@ describe("fab_review integration (rc.3 TASK-007)", () => {
     expect(personalResult.items).toHaveLength(1);
     expect(personalResult.items[0].layer).toBe("personal");
     expect(personalResult.items[0].type).toBe("guidelines");
-    expect(personalResult.items[0].pending_path).toMatch(/^~\/\.fabric\/knowledge\/guidelines\//u);
+    // v2.0.0-rc.29 TASK-007 (BUG-M4): search items use `path` (with `area`
+    // discriminant) instead of the misleading `pending_path`.
+    expect(personalResult.items[0].path).toMatch(/^~\/\.fabric\/knowledge\/guidelines\//u);
+    expect(personalResult.items[0].area).toBe("canonical");
 
     // search tags subset — all four entries share `topic-search`, so match by query+tag returns the 4.
     const tagResult = await reviewKnowledge(projectRoot, {
@@ -618,6 +621,10 @@ describe("fab_review integration (rc.3 TASK-007)", () => {
     if (parsedSearchOutput.action !== "search") throw new Error("unreachable");
     expect(parsedSearchOutput.items).toHaveLength(1);
     expect(parsedSearchOutput.items[0].type).toBe("decisions");
+    // v2.0.0-rc.29 TASK-007 (BUG-M4): every search item carries the `area`
+    // discriminator + neutrally-named `path`.
+    expect(parsedSearchOutput.items[0].area).toMatch(/^(pending|canonical)$/);
+    expect(typeof parsedSearchOutput.items[0].path).toBe("string");
   });
 
   // ---------------------------------------------------------------------------

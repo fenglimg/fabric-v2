@@ -207,6 +207,22 @@ export const doctorCommand = defineCommand({
     const enrichDesc = args["enrich-descriptions"] === true;
     const archiveHistory = args["archive-history"] === true;
 
+    // v2.0.0-rc.29 TASK-007 (BUG-M2): up-front --since validation. Previously
+    // `parseSinceDuration` was only called inside the --archive-history and
+    // --cite-coverage arms; bare `fab doctor --since=bogus` silently dropped
+    // the value with exit 0. Lift the parse here so any future arm that
+    // consumes the field gets a validated number, and an invalid format on
+    // ANY invocation fails fast with a clear stderr line.
+    if (args.since !== undefined) {
+      try {
+        parseSinceDuration(args.since);
+      } catch {
+        writeStderr(dt("cli.doctor.errors.invalid-since", { input: args.since }));
+        process.exitCode = 1;
+        return;
+      }
+    }
+
     // v2.0.0-rc.25 TASK-10: --archive-history is a read-only audit surface.
     // Dispatched BEFORE the other arms so the mutex check fails fast. It
     // shares --since with --cite-coverage but never mixes with any mutation
