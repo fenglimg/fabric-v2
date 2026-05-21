@@ -188,13 +188,13 @@ export const enMessages: Messages = {
   "cite-coverage.contract.status.skipped_bootstrap_drift":
     "skipped (bootstrap drift — run `fab install`)",
   "cite-coverage.contract.status.awaiting_marker": "awaiting first marker emit",
-  // Singular knowledge-type labels (verbatim alignment with KnowledgeTypeSchema)
-  // plus the sixth "unresolved" bucket.
-  "cite-coverage.contract.type.decision": "decision",
-  "cite-coverage.contract.type.pitfall": "pitfall",
-  "cite-coverage.contract.type.model": "model",
-  "cite-coverage.contract.type.guideline": "guideline",
-  "cite-coverage.contract.type.process": "process",
+  // Plural knowledge-type labels (rc.29 BUG-C1: verbatim alignment with
+  // canonical KnowledgeTypeSchema) plus the sixth "unresolved" bucket.
+  "cite-coverage.contract.type.decisions": "decisions",
+  "cite-coverage.contract.type.pitfalls": "pitfalls",
+  "cite-coverage.contract.type.models": "models",
+  "cite-coverage.contract.type.guidelines": "guidelines",
+  "cite-coverage.contract.type.processes": "processes",
   "cite-coverage.contract.type.unresolved": "unresolved",
   // Layer labels (per_layer_type headers + layer_filter banner).
   "cite-coverage.layer.team": "team",

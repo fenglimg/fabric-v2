@@ -183,12 +183,12 @@ export const zhCNMessages: Messages = {
   "cite-coverage.contract.status.skipped_bootstrap_drift":
     "已跳过（bootstrap drift — 请运行 fab install）",
   "cite-coverage.contract.status.awaiting_marker": "等待首次 marker emit",
-  // 单数知识类型（与 KnowledgeTypeSchema 枚举字面量逐字对齐）+ 第六桶 unresolved。
-  "cite-coverage.contract.type.decision": "decision",
-  "cite-coverage.contract.type.pitfall": "pitfall",
-  "cite-coverage.contract.type.model": "model",
-  "cite-coverage.contract.type.guideline": "guideline",
-  "cite-coverage.contract.type.process": "process",
+  // 复数知识类型（rc.29 BUG-C1: 与统一后的 KnowledgeTypeSchema 枚举字面量逐字对齐）+ 第六桶 unresolved。
+  "cite-coverage.contract.type.decisions": "decisions",
+  "cite-coverage.contract.type.pitfalls": "pitfalls",
+  "cite-coverage.contract.type.models": "models",
+  "cite-coverage.contract.type.guidelines": "guidelines",
+  "cite-coverage.contract.type.processes": "processes",
   "cite-coverage.contract.type.unresolved": "unresolved",
   // 知识层标签（per_layer_type 表头 + layer_filter 标识）。
   "cite-coverage.layer.team": "team",

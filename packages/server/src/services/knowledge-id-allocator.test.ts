@@ -28,9 +28,9 @@ describe("KnowledgeIdAllocator", () => {
     const metaPath = join(dir, "agents.meta.json");
     const allocator = new KnowledgeIdAllocator(metaPath);
 
-    const id1 = await allocator.allocate("team", "decision");
-    const id2 = await allocator.allocate("team", "decision");
-    const id3 = await allocator.allocate("team", "decision");
+    const id1 = await allocator.allocate("team", "decisions");
+    const id2 = await allocator.allocate("team", "decisions");
+    const id3 = await allocator.allocate("team", "decisions");
 
     expect(id1).toBe("KT-DEC-0001");
     expect(id2).toBe("KT-DEC-0002");
@@ -41,10 +41,10 @@ describe("KnowledgeIdAllocator", () => {
     const dir = await createTempDir("kid-independence");
     const allocator = new KnowledgeIdAllocator(join(dir, "agents.meta.json"));
 
-    const teamDec = await allocator.allocate("team", "decision");
-    const personalDec = await allocator.allocate("personal", "decision");
-    const teamMod = await allocator.allocate("team", "model");
-    const teamDec2 = await allocator.allocate("team", "decision");
+    const teamDec = await allocator.allocate("team", "decisions");
+    const personalDec = await allocator.allocate("personal", "decisions");
+    const teamMod = await allocator.allocate("team", "models");
+    const teamDec2 = await allocator.allocate("team", "decisions");
 
     expect(teamDec).toBe("KT-DEC-0001");
     expect(personalDec).toBe("KP-DEC-0001");
@@ -57,16 +57,16 @@ describe("KnowledgeIdAllocator", () => {
     const metaPath = join(dir, "agents.meta.json");
 
     const first = new KnowledgeIdAllocator(metaPath);
-    await first.allocate("team", "guideline");
-    await first.allocate("team", "guideline");
-    await first.allocate("personal", "pitfall");
+    await first.allocate("team", "guidelines");
+    await first.allocate("team", "guidelines");
+    await first.allocate("personal", "pitfalls");
 
     const second = new KnowledgeIdAllocator(metaPath);
     const counters = await second.getCounters();
     expect(counters.KT.GLD).toBe(2);
     expect(counters.KP.PIT).toBe(1);
 
-    const next = await second.allocate("team", "guideline");
+    const next = await second.allocate("team", "guidelines");
     expect(next).toBe("KT-GLD-0003");
   });
 
@@ -75,14 +75,14 @@ describe("KnowledgeIdAllocator", () => {
     const metaPath = join(dir, "agents.meta.json");
     const allocator = new KnowledgeIdAllocator(metaPath);
 
-    const first = await allocator.allocate("team", "process");
-    const second = await allocator.allocate("team", "process");
+    const first = await allocator.allocate("team", "processes");
+    const second = await allocator.allocate("team", "processes");
     expect(first).toBe("KT-PRO-0001");
     expect(second).toBe("KT-PRO-0002");
 
     // Simulate deleting the file/entry whose id was KT-PRO-0001.
     // The counter must NOT regress — next allocation is still strictly greater.
-    const third = await allocator.allocate("team", "process");
+    const third = await allocator.allocate("team", "processes");
     expect(third).toBe("KT-PRO-0003");
   });
 
@@ -109,7 +109,7 @@ describe("KnowledgeIdAllocator", () => {
     expect(counters.KP).toEqual({ MOD: 0, DEC: 0, GLD: 0, PIT: 0, PRO: 0 });
     expect(counters.KT).toEqual({ MOD: 0, DEC: 0, GLD: 0, PIT: 0, PRO: 0 });
 
-    const id = await allocator.allocate("team", "decision");
+    const id = await allocator.allocate("team", "decisions");
     expect(id).toBe("KT-DEC-0001");
   });
 
@@ -118,8 +118,8 @@ describe("KnowledgeIdAllocator", () => {
     const metaPath = join(dir, "agents.meta.json");
     const allocator = new KnowledgeIdAllocator(metaPath);
 
-    await allocator.allocate("team", "decision");
-    await allocator.allocate("personal", "model");
+    await allocator.allocate("team", "decisions");
+    await allocator.allocate("personal", "models");
 
     const raw = await readFile(metaPath, "utf8");
     const parsed = JSON.parse(raw) as { counters?: unknown };
@@ -153,7 +153,7 @@ describe("KnowledgeIdAllocator", () => {
     );
 
     const allocator = new KnowledgeIdAllocator(metaPath);
-    const id = await allocator.allocate("team", "decision");
+    const id = await allocator.allocate("team", "decisions");
     expect(id).toBe("KT-DEC-0006");
 
     const counters = await allocator.getCounters();

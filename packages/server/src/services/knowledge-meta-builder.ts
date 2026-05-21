@@ -73,13 +73,13 @@ export type WriteKnowledgeMetaOptions = {
  * guideline+process = deferred to rc.25 LLM-judge). Cited ids absent from
  * this map fall into the `cite_id_unresolved` bucket.
  *
- * **Singular knowledge_type contract (rc.24 lock):** the returned map values
- * are the SINGULAR `KnowledgeType` enum (`"model" | "decision" | "guideline"
- * | "pitfall" | "process"`) — matching both the on-disk `agents.meta.json`
- * storage AND the canonical `KnowledgeTypeSchema` exported from
- * `@fenglimg/fabric-shared`. No normalization happens at this boundary; the
- * loader is a thin extract over engine-maintained meta. Downstream callers
- * (TASK-08 doctor) must match against the singular enum.
+ * **Plural knowledge_type contract (rc.29 BUG-C1 unification):** the returned
+ * map values are the PLURAL `KnowledgeType` enum (`"models" | "decisions" |
+ * "guidelines" | "pitfalls" | "processes"`) — matching disk frontmatter,
+ * filesystem layout, MCP I/O surface, and the canonical `KnowledgeTypeSchema`
+ * exported from `@fenglimg/fabric-shared`. Legacy singular frontmatter is
+ * normalized at parse time (see `SINGULAR_TO_PLURAL` in `parseFrontmatter`);
+ * downstream callers (TASK-08 doctor) match against the plural enum.
  *
  * Both team (KT-*) and personal (KP-*) entries are included — they live in
  * the same `meta.nodes` map.
@@ -1063,9 +1063,23 @@ function extractKnowledgeFieldsFromFrontmatter(frontmatter: string): KnowledgeFr
     }
   }
 
+  // rc.29 BUG-C1: legacy singular → canonical plural normalizer. Disk corpora
+  // pre-dating the unification may carry `type: decision` (singular); the
+  // canonical schema is now plural. Map legacy values up before safeParse so
+  // those entries are accepted instead of silently dropped.
+  const SINGULAR_TO_PLURAL = {
+    model: "models",
+    decision: "decisions",
+    guideline: "guidelines",
+    pitfall: "pitfalls",
+    process: "processes",
+  } as const;
+
   let knowledge_type: KnowledgeType | undefined;
   if (rawType !== undefined) {
-    const parsed = KnowledgeTypeSchema.safeParse(rawType);
+    const normalized =
+      SINGULAR_TO_PLURAL[rawType as keyof typeof SINGULAR_TO_PLURAL] ?? rawType;
+    const parsed = KnowledgeTypeSchema.safeParse(normalized);
     if (parsed.success) {
       knowledge_type = parsed.data;
     } else {

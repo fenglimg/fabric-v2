@@ -47,12 +47,12 @@ describe("mcp-server integration (v2.0 dual-root)", () => {
     );
 
     expect(indexById.get("KT-DEC-0001")).toMatchObject({
-      type: "decision",
+      type: "decisions",
       maturity: "verified",
       layer: "team",
     });
     expect(indexById.get("KP-GLD-0001")).toMatchObject({
-      type: "guideline",
+      type: "guidelines",
       maturity: "draft",
       layer: "personal",
     });
@@ -161,7 +161,7 @@ async function createV2Project(): Promise<string> {
               impact: [],
               must_read_if: "Team JWT decision",
               id: "KT-DEC-0001",
-              knowledge_type: "decision",
+              knowledge_type: "decisions",
               maturity: "verified",
               knowledge_layer: "team",
               created_at: "2026-05-10T08:00:00Z",
@@ -186,7 +186,7 @@ async function createV2Project(): Promise<string> {
               impact: [],
               must_read_if: "Personal coding style",
               id: "KP-GLD-0001",
-              knowledge_type: "guideline",
+              knowledge_type: "guidelines",
               maturity: "draft",
               knowledge_layer: "personal",
               created_at: "2026-05-10T08:00:00Z",

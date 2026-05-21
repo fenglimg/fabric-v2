@@ -39,7 +39,7 @@ export const ruleDescriptionSchema = z
     entities: z.array(z.string()).optional(),
     // v2.0 knowledge entry fields (TASK-002 schemas). All optional for backward compat.
     id: z.string().optional(),
-    knowledge_type: z.enum(["model", "decision", "guideline", "pitfall", "process"]).optional(),
+    knowledge_type: z.enum(["models", "decisions", "guidelines", "pitfalls", "processes"]).optional(),
     maturity: z.enum(["draft", "verified", "proven"]).optional(),
     knowledge_layer: z.enum(["personal", "team"]).optional(),
     layer_reason: z.string().optional(),
@@ -172,7 +172,7 @@ export function withDerivedAgentsMetaNodeDefaults(node: AgentsMetaNodeInput): Ag
  * counter, even after deletion, so historical ids remain unique.
  *
  * @example
- *   allocateKnowledgeId('team', 'decision',
+ *   allocateKnowledgeId('team', 'decisions',
  *     { KP: zeros, KT: { MOD: 0, DEC: 5, GLD: 0, PIT: 0, PRO: 0 } })
  *   // → { id: 'KT-DEC-0006',
  *   //     nextCounters: { KP: zeros, KT: { ..., DEC: 6 } } }

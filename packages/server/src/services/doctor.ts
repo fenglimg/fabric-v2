@@ -3212,11 +3212,11 @@ function inspectCounterDesync(meta: MetaInspection): CounterDesyncInspection {
     }
     const layer = parsed.layer === "personal" ? "KP" : "KT";
     const typeCode = ([
-      ["model", "MOD"],
-      ["decision", "DEC"],
-      ["guideline", "GLD"],
-      ["pitfall", "PIT"],
-      ["process", "PRO"],
+      ["models", "MOD"],
+      ["decisions", "DEC"],
+      ["guidelines", "GLD"],
+      ["pitfalls", "PIT"],
+      ["processes", "PRO"],
     ] as const).find(([t]) => t === parsed.type)?.[1];
     if (typeCode === undefined) {
       continue;
@@ -6160,8 +6160,9 @@ export type CiteContractMetrics = {
 };
 
 // Per-(layer, type) cross-tab — populated whenever contract metrics are
-// computed. Keyed by layer ("team"/"personal") then by SINGULAR knowledge_type
-// from TASK-07's idTypeMap (so the keys match the schema enum verbatim).
+// computed. Keyed by layer ("team"/"personal") then by PLURAL knowledge_type
+// (rc.29 BUG-C1) from TASK-07's idTypeMap (so the keys match the schema enum
+// verbatim).
 // "unresolved" is a sixth bucket for cite_ids that did not resolve in
 // idTypeMap. Counts are turn-cite occurrences, not session-level.
 export type CiteLayerTypeBreakdown = {
@@ -6734,10 +6735,10 @@ export async function runDoctorCiteCoverage(
         // bucket — this is the breakdown TASK-09's i18n renderer surfaces.
         bumpLayerType(citeId, kbType);
 
-        // Singular knowledge_type enum (TASK-07 contract). Matching against
-        // the singular literals — no plural drift.
-        if (kbType === "decision" || kbType === "pitfall") {
-          if (kbType === "decision") decisionsCited += 1;
+        // Plural knowledge_type enum (rc.29 BUG-C1 unification). Matching
+        // against the canonical plural literals.
+        if (kbType === "decisions" || kbType === "pitfalls") {
+          if (kbType === "decisions") decisionsCited += 1;
           else pitfallsCited += 1;
 
           const commitment = commitments[i];

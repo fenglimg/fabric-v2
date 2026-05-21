@@ -181,7 +181,7 @@ describe("knowledge-meta-builder", () => {
         "---",
         "summary: Use JWT for auth",
         "id: KT-DEC-0001",
-        "type: decision",
+        "type: decisions",
         "maturity: verified",
         "layer: team",
         "layer_reason: shared across services",
@@ -198,7 +198,7 @@ describe("knowledge-meta-builder", () => {
     expect(node?.description).toMatchObject({
       summary: "Use JWT for auth",
       id: "KT-DEC-0001",
-      knowledge_type: "decision",
+      knowledge_type: "decisions",
       maturity: "verified",
       knowledge_layer: "team",
       layer_reason: "shared across services",
@@ -225,7 +225,7 @@ describe("knowledge-meta-builder", () => {
       [
         "---",
         "id: KT-GLD-0001",
-        "type: guideline",
+        "type: guidelines",
         "layer: team",
         "maturity: verified",
         'layer_reason: "project artifact (deterministic init scan)"',
@@ -250,7 +250,7 @@ describe("knowledge-meta-builder", () => {
     expect(node?.description?.summary).toBe("Code style guidelines");
     // Knowledge fields pulled from frontmatter rather than dropped.
     expect(node?.description?.id).toBe("KT-GLD-0001");
-    expect(node?.description?.knowledge_type).toBe("guideline");
+    expect(node?.description?.knowledge_type).toBe("guidelines");
     expect(node?.description?.maturity).toBe("verified");
     expect(node?.description?.knowledge_layer).toBe("team");
     expect(node?.description?.layer_reason).toBe("project artifact (deterministic init scan)");
@@ -313,7 +313,7 @@ describe("knowledge-meta-builder", () => {
           "---",
           "summary: Bad id",
           "id: foo-bar-baz",
-          "type: decision",
+          "type: decisions",
           "---",
           "# Bad id",
           "",
@@ -324,7 +324,7 @@ describe("knowledge-meta-builder", () => {
       const node = Object.values(meta.nodes).find((n) => n.file === ".fabric/knowledge/decisions/bad.md");
 
       expect(node?.description?.id).toBeUndefined();
-      expect(node?.description?.knowledge_type).toBe("decision");
+      expect(node?.description?.knowledge_type).toBe("decisions");
       expect(warnSpy).toHaveBeenCalledWith(
         expect.stringContaining("invalid knowledge id format"),
       );
@@ -381,7 +381,7 @@ describe("knowledge-meta-builder", () => {
           "---",
           "summary: Mismatch",
           "id: KP-DEC-0001",
-          "type: decision",
+          "type: decisions",
           "layer: team",
           "---",
           "# Mismatch",
@@ -395,7 +395,7 @@ describe("knowledge-meta-builder", () => {
       expect(node?.description?.id).toBeUndefined();
       expect(node?.description?.knowledge_layer).toBeUndefined();
       // Type and other valid fields survive the cross-validation drop.
-      expect(node?.description?.knowledge_type).toBe("decision");
+      expect(node?.description?.knowledge_type).toBe("decisions");
       expect(warnSpy).toHaveBeenCalledWith(
         expect.stringContaining("dropping both"),
       );
@@ -445,7 +445,7 @@ describe("knowledge-meta-builder", () => {
         "---",
         "summary: JWT decision",
         "id: KT-DEC-0001",
-        "type: decision",
+        "type: decisions",
         "maturity: verified",
         "layer: team",
         "created_at: 2026-05-10T08:00:00Z",
@@ -471,7 +471,7 @@ describe("knowledge-meta-builder", () => {
       "---",
       "summary: OAuth strategy",
       "id: KP-GLD-0003",
-      "type: guideline",
+      "type: guidelines",
       "maturity: verified",
       "layer: personal",
       "created_at: 2026-05-10T08:00:00Z",
@@ -546,7 +546,7 @@ describe("knowledge-meta-builder", () => {
         "---",
         "summary: Team JWT decision",
         "id: KT-DEC-0001",
-        "type: decision",
+        "type: decisions",
         "maturity: verified",
         "layer: team",
         "created_at: 2026-05-10T08:00:00Z",
@@ -566,7 +566,7 @@ describe("knowledge-meta-builder", () => {
         "---",
         "summary: Personal coding style",
         "id: KP-GLD-0001",
-        "type: guideline",
+        "type: guidelines",
         "maturity: draft",
         "layer: personal",
         "created_at: 2026-05-10T08:00:00Z",
@@ -836,7 +836,7 @@ describe("loadKbIdTypeMap", () => {
       [
         "---",
         "id: KT-DEC-0001",
-        "type: decision",
+        "type: decisions",
         "maturity: proven",
         "layer: team",
         "created_at: 2026-05-19T00:00:00.000Z",
@@ -852,7 +852,7 @@ describe("loadKbIdTypeMap", () => {
       [
         "---",
         "id: KT-PIT-0001",
-        "type: pitfall",
+        "type: pitfalls",
         "maturity: verified",
         "layer: team",
         "created_at: 2026-05-19T00:00:00.000Z",
@@ -867,8 +867,8 @@ describe("loadKbIdTypeMap", () => {
     const map = await loadKbIdTypeMap(projectRoot);
 
     expect(map.size).toBe(2);
-    expect(map.get("KT-DEC-0001")).toBe("decision");
-    expect(map.get("KT-PIT-0001")).toBe("pitfall");
+    expect(map.get("KT-DEC-0001")).toBe("decisions");
+    expect(map.get("KT-PIT-0001")).toBe("pitfalls");
   });
 
   it("includes personal-layer KP-* entries alongside team entries (dual-root)", async () => {
@@ -879,7 +879,7 @@ describe("loadKbIdTypeMap", () => {
       [
         "---",
         "id: KT-MOD-0001",
-        "type: model",
+        "type: models",
         "maturity: draft",
         "layer: team",
         "created_at: 2026-05-19T00:00:00.000Z",
@@ -897,7 +897,7 @@ describe("loadKbIdTypeMap", () => {
       [
         "---",
         "id: KP-GLD-0001",
-        "type: guideline",
+        "type: guidelines",
         "maturity: draft",
         "layer: personal",
         "created_at: 2026-05-19T00:00:00.000Z",
@@ -911,8 +911,8 @@ describe("loadKbIdTypeMap", () => {
 
     const map = await loadKbIdTypeMap(projectRoot);
 
-    expect(map.get("KT-MOD-0001")).toBe("model");
-    expect(map.get("KP-GLD-0001")).toBe("guideline");
+    expect(map.get("KT-MOD-0001")).toBe("models");
+    expect(map.get("KP-GLD-0001")).toBe("guidelines");
   });
 
   it("returns an empty map when agents.meta.json is missing (graceful)", async () => {
@@ -959,7 +959,7 @@ describe("loadKbIdTypeMap", () => {
                 tech_stack: [],
                 impact: [],
                 must_read_if: "valid",
-                knowledge_type: "decision",
+                knowledge_type: "decisions",
                 relevance_scope: "broad",
                 relevance_paths: [],
               },
@@ -997,21 +997,21 @@ describe("loadKbIdTypeMap", () => {
 
     const map = await loadKbIdTypeMap(projectRoot);
 
-    expect(map.get("KT-DEC-0042")).toBe("decision");
+    expect(map.get("KT-DEC-0042")).toBe("decisions");
     expect(map.has("KT-DEC-0099")).toBe(false);
     // Legacy non-knowledge nodes (no KP-/KT- stable_id) are excluded.
     expect(map.has("rules/legacy")).toBe(false);
     expect(map.size).toBe(1);
   });
 
-  it("returns values from the canonical singular KnowledgeType enum (no plural drift)", async () => {
+  it("returns values from the canonical plural KnowledgeType enum (rc.29 BUG-C1: no singular drift)", async () => {
     const projectRoot = await createProject("kb-idtype-enum-canonical");
-    const expected: Array<{ id: string; type: "model" | "decision" | "guideline" | "pitfall" | "process"; dir: string }> = [
-      { id: "KT-MOD-0001", type: "model", dir: "models" },
-      { id: "KT-DEC-0001", type: "decision", dir: "decisions" },
-      { id: "KT-GLD-0001", type: "guideline", dir: "guidelines" },
-      { id: "KT-PIT-0001", type: "pitfall", dir: "pitfalls" },
-      { id: "KT-PRO-0001", type: "process", dir: "processes" },
+    const expected: Array<{ id: string; type: "models" | "decisions" | "guidelines" | "pitfalls" | "processes"; dir: string }> = [
+      { id: "KT-MOD-0001", type: "models", dir: "models" },
+      { id: "KT-DEC-0001", type: "decisions", dir: "decisions" },
+      { id: "KT-GLD-0001", type: "guidelines", dir: "guidelines" },
+      { id: "KT-PIT-0001", type: "pitfalls", dir: "pitfalls" },
+      { id: "KT-PRO-0001", type: "processes", dir: "processes" },
     ];
     for (const { id, type, dir } of expected) {
       await writeProjectFile(
@@ -1038,10 +1038,51 @@ describe("loadKbIdTypeMap", () => {
     for (const { id, type } of expected) {
       expect(map.get(id)).toBe(type);
     }
-    // Singular contract — no plural form should ever appear as a value.
+    // Plural contract — no singular form should ever appear as a value.
     const values = new Set(map.values());
-    for (const plural of ["models", "decisions", "guidelines", "pitfalls", "processes"]) {
-      expect(values.has(plural as never)).toBe(false);
+    for (const singular of ["model", "decision", "guideline", "pitfall", "process"]) {
+      expect(values.has(singular as never)).toBe(false);
+    }
+  });
+
+  it("rc.29 BUG-C1: legacy singular frontmatter (`type: decision`) is normalized to plural", async () => {
+    // Disk corpora pre-dating the unification carry singular `type:` values
+    // (e.g. KT-DEC-0001..0007 on this repo). The SINGULAR_TO_PLURAL normalizer
+    // in parseFrontmatter maps them to the canonical plural before safeParse;
+    // verify the map surfaces the plural form so downstream callers (doctor
+    // cite-coverage) see one shape.
+    const projectRoot = await createProject("kb-idtype-legacy-singular");
+    const legacy: Array<{ id: string; singular: string; plural: string; dir: string }> = [
+      { id: "KT-MOD-0001", singular: "model", plural: "models", dir: "models" },
+      { id: "KT-DEC-0001", singular: "decision", plural: "decisions", dir: "decisions" },
+      { id: "KT-GLD-0001", singular: "guideline", plural: "guidelines", dir: "guidelines" },
+      { id: "KT-PIT-0001", singular: "pitfall", plural: "pitfalls", dir: "pitfalls" },
+      { id: "KT-PRO-0001", singular: "process", plural: "processes", dir: "processes" },
+    ];
+    for (const { id, singular, dir } of legacy) {
+      await writeProjectFile(
+        projectRoot,
+        `.fabric/knowledge/${dir}/${id}.md`,
+        [
+          "---",
+          `id: ${id}`,
+          `type: ${singular}`,
+          "maturity: proven",
+          "layer: team",
+          "created_at: 2026-05-19T00:00:00.000Z",
+          `summary: legacy ${singular} summary`,
+          "---",
+          `# ${singular} legacy entry`,
+          "",
+        ].join("\n"),
+      );
+    }
+    await writeKnowledgeMeta(projectRoot, { source: "doctor_fix" });
+
+    const map = await loadKbIdTypeMap(projectRoot);
+
+    for (const { id, plural } of legacy) {
+      expect(map.get(id)).toBe(plural);
     }
   });
 });

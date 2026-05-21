@@ -1021,11 +1021,11 @@ exports[`tool contracts > plan-context contract matches snapshot 1`] = `
                       },
                       "knowledge_type": {
                         "enum": [
-                          "model",
-                          "decision",
-                          "guideline",
-                          "pitfall",
-                          "process",
+                          "models",
+                          "decisions",
+                          "guidelines",
+                          "pitfalls",
+                          "processes",
                         ],
                         "type": "string",
                       },

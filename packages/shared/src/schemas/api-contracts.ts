@@ -21,36 +21,20 @@ export const structuredWarningSchema = z.object({
 // flow through plan-context output validation. Mirrors the canonical enums
 // further down in this file (KnowledgeTypeSchema/MaturitySchema/LayerSchema).
 //
-// ⚠ INTENTIONAL DUAL VOCABULARY — do not "unify".
+// v2.0.0-rc.29 BUG-C1: Unified to PLURAL across the board (frontmatter, MCP I/O,
+// filesystem layout, agents-meta, i18n cross-tab keys). Disk frontmatter has
+// always been authored with plural (`type: decisions`); the previous singular
+// schema rejected those entries silently (40/41 dropped → planner downgraded
+// them to `selectable=false` → AI could not recall team knowledge). The dual
+// vocabulary has been collapsed; conversion code in `review.ts` is now an
+// identity. Legacy singular disk entries are normalized in
+// `knowledge-meta-builder.ts:parseFrontmatter` (SINGULAR_TO_PLURAL).
 //
-// Fabric uses TWO parallel enum vocabularies for knowledge types, by design:
-//
-//   • SINGULAR (this enum + `KnowledgeTypeSchema` re-export below + agents-meta
-//     `knowledge_type` field + ID-prefix codes DEC/PIT/MOD/GLD/PRO + rc.24
-//     `per_layer_type` cross-tab keys + i18n `cite-coverage.contract.type.*`
-//     labels):
-//        ["model", "decision", "guideline", "pitfall", "process"]
-//     ← grammatically correct for a SINGLE entry's type
-//        ("this entry IS a decision", not "decisions").
-//
-//   • PLURAL (FabExtractKnowledgeInputSchema.type @ L397 + fabReviewFilters @
-//     L567 + fabReviewListItem @ L693 + filesystem paths
-//     .fabric/knowledge/decisions/ etc. + SKILL.md MCP examples):
-//        ["decisions", "pitfalls", "guidelines", "models", "processes"]
-//     ← matches FS directory layout the MCP user actually sees.
-//
-// Conversion lives in `packages/server/src/services/review.ts:35` as the
-// explicitly-named `PluralType` bridge. Documented in
-// `templates/skills/fabric-archive/SKILL.md` "Note on type plurality".
-//
-// Why TWO not ONE: collapsing to all-singular breaks the FS-directory ↔ MCP-
-// API symmetry that external users navigate by ("I see decisions/ dir, I pass
-// decisions to the MCP filter"). Collapsing to all-plural breaks frontmatter
-// grammar ("this entry's type IS decisions" reads wrong — it IS one decision).
-// The bridge is the correct shape; the test
-// `knowledge_type plural-singular bridge invariant` (api-contracts.test.ts)
-// guards against either side adding a new value without the other.
-const _knowledgeTypeEnum = z.enum(["model", "decision", "guideline", "pitfall", "process"]);
+// Canonical vocabulary:
+//   ["models", "decisions", "guidelines", "pitfalls", "processes"]
+// matching FS directory layout the MCP user navigates by and the disk
+// frontmatter the existing corpus already uses.
+const _knowledgeTypeEnum = z.enum(["models", "decisions", "guidelines", "pitfalls", "processes"]);
 const _maturityEnum = z.enum(["draft", "verified", "proven"]);
 const _layerEnum = z.enum(["personal", "team"]);
 
@@ -913,9 +897,9 @@ export const citeContractMetricsSchema = z.object({
 });
 export type CiteContractMetrics = z.infer<typeof citeContractMetricsSchema>;
 
-// CiteLayerTypeBreakdown — (layer × singular knowledge_type) cross-tab.
-// Inner keys = the SINGULAR KnowledgeType enum literals
-// ("decision" / "pitfall" / "model" / "guideline" / "process") plus
+// CiteLayerTypeBreakdown — (layer × knowledge_type) cross-tab.
+// Inner keys = the canonical PLURAL KnowledgeType enum literals
+// ("decisions" / "pitfalls" / "models" / "guidelines" / "processes") plus
 // "unresolved" for cite_ids not present in the idTypeMap. Inner record is
 // open-keyed so a future type addition does not break the wire shape.
 export const citeLayerTypeBreakdownSchema = z.object({
@@ -1054,13 +1038,14 @@ export const annotateIntentRequestSchema = z.object({
 // packages/server/src/services/knowledge-meta-builder.ts:748-785.
 // ---------------------------------------------------------------------------
 
-// 5 knowledge types (MECE)
+// 5 knowledge types (MECE) — canonical PLURAL form matching disk layout and
+// MCP I/O surface (v2.0.0-rc.29 BUG-C1 unification).
 export const KnowledgeTypeSchema = z.enum([
-  "model", // entities, data structures, relationships
-  "decision", // architectural/technical choices with rationale
-  "guideline", // recommended practices (recommend) or anti-patterns (avoid)
-  "pitfall", // known risks, failure modes, troubleshooting
-  "process", // workflows, state machines, operational steps
+  "models", // entities, data structures, relationships
+  "decisions", // architectural/technical choices with rationale
+  "guidelines", // recommended practices (recommend) or anti-patterns (avoid)
+  "pitfalls", // known risks, failure modes, troubleshooting
+  "processes", // workflows, state machines, operational steps
 ]);
 export type KnowledgeType = z.infer<typeof KnowledgeTypeSchema>;
 
@@ -1073,7 +1058,7 @@ export const LayerSchema = z.enum(["personal", "team"]);
 export type Layer = z.infer<typeof LayerSchema>;
 
 // stable_id format: KP-{type-code}-{counter} (personal) | KT-{type-code}-{counter} (team)
-// type-code map: model=MOD, decision=DEC, guideline=GLD, pitfall=PIT, process=PRO
+// type-code map: models=MOD, decisions=DEC, guidelines=GLD, pitfalls=PIT, processes=PRO
 export const StableIdSchema = z.string().regex(/^K[PT]-(MOD|DEC|GLD|PIT|PRO)-\d{4,}$/);
 export type StableId = z.infer<typeof StableIdSchema>;
 
@@ -1089,13 +1074,13 @@ export const KnowledgeEntryFrontmatterSchema = z.object({
 });
 export type KnowledgeEntryFrontmatter = z.infer<typeof KnowledgeEntryFrontmatterSchema>;
 
-// Helper: type-code mapping
+// Helper: type-code mapping (plural keys → 3-letter ID-prefix code)
 export const KNOWLEDGE_TYPE_CODES = {
-  model: "MOD",
-  decision: "DEC",
-  guideline: "GLD",
-  pitfall: "PIT",
-  process: "PRO",
+  models: "MOD",
+  decisions: "DEC",
+  guidelines: "GLD",
+  pitfalls: "PIT",
+  processes: "PRO",
 } as const;
 
 export type KnowledgeTypeCode = (typeof KNOWLEDGE_TYPE_CODES)[KnowledgeType];

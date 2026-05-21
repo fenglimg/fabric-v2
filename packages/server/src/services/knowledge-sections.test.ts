@@ -472,7 +472,7 @@ describe("getKnowledgeSections", () => {
               must_read_if: "any edit",
               // v2.0 frontmatter present — should NOT trigger diagnostic.
               id: "KT-DEC-0001",
-              knowledge_type: "decision",
+              knowledge_type: "decisions",
               maturity: "verified",
               knowledge_layer: "team",
             },

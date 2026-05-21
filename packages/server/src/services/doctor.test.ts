@@ -5746,7 +5746,7 @@ describe("runDoctorCiteCoverage (rc.24 contract metrics)", () => {
     target: string,
     nodes: Array<{
       stable_id: string;
-      knowledge_type: "decision" | "pitfall" | "model" | "guideline" | "process";
+      knowledge_type: "decisions" | "pitfalls" | "models" | "guidelines" | "processes";
       relevance_paths?: readonly string[];
       relevance_scope?: "narrow" | "broad";
     }>,
@@ -5841,7 +5841,7 @@ describe("runDoctorCiteCoverage (rc.24 contract metrics)", () => {
 
     const rcMarker = await ensureCitePolicyActivatedMarker(target);
     seedAgentsMetaWithTypes(target, [
-      { stable_id: "KT-DEC-0001", knowledge_type: "decision" },
+      { stable_id: "KT-DEC-0001", knowledge_type: "decisions" },
     ]);
     seedEvents(target, [
       mkContractTurnEvent({
@@ -5891,7 +5891,7 @@ describe("runDoctorCiteCoverage (rc.24 contract metrics)", () => {
     expect(cMarker.marker_ts).toBeGreaterThan(0);
 
     seedAgentsMetaWithTypes(target, [
-      { stable_id: "KT-DEC-0100", knowledge_type: "decision" },
+      { stable_id: "KT-DEC-0100", knowledge_type: "decisions" },
     ]);
     seedEvents(target, [
       mkContractTurnEvent({
@@ -5919,7 +5919,7 @@ describe("runDoctorCiteCoverage (rc.24 contract metrics)", () => {
     expect(report.contract_metrics?.contract_with).toBe(1);
     expect(report.contract_metrics?.contract_missing).toBe(0);
     expect(report.contract_metrics?.hard_violated).toBe(0);
-    expect(report.per_layer_type?.team?.decision).toBe(1);
+    expect(report.per_layer_type?.team?.decisions).toBe(1);
   });
 
   // 3. Decisions cite with operator but mismatched edits → hard_violated=1.
@@ -5931,7 +5931,7 @@ describe("runDoctorCiteCoverage (rc.24 contract metrics)", () => {
     const rcMarker = await ensureCitePolicyActivatedMarker(target);
     const cMarker = await ensureCiteContractPolicyActivatedMarker(target);
     seedAgentsMetaWithTypes(target, [
-      { stable_id: "KT-DEC-0200", knowledge_type: "decision" },
+      { stable_id: "KT-DEC-0200", knowledge_type: "decisions" },
     ]);
     seedEvents(target, [
       mkContractTurnEvent({
@@ -5968,7 +5968,7 @@ describe("runDoctorCiteCoverage (rc.24 contract metrics)", () => {
     const rcMarker = await ensureCitePolicyActivatedMarker(target);
     const cMarker = await ensureCiteContractPolicyActivatedMarker(target);
     seedAgentsMetaWithTypes(target, [
-      { stable_id: "KT-PIT-0001", knowledge_type: "pitfall" },
+      { stable_id: "KT-PIT-0001", knowledge_type: "pitfalls" },
     ]);
     seedEvents(target, [
       mkContractTurnEvent({
@@ -5985,7 +5985,7 @@ describe("runDoctorCiteCoverage (rc.24 contract metrics)", () => {
     expect(report.contract_metrics?.pitfalls_cited).toBe(1);
     expect(report.contract_metrics?.contract_missing).toBe(1);
     expect(report.contract_metrics?.contract_with).toBe(0);
-    expect(report.per_layer_type?.team?.pitfall).toBe(1);
+    expect(report.per_layer_type?.team?.pitfalls).toBe(1);
   });
 
   // 5. Model cite → no contract check (decisions/pitfalls counters stay 0)
@@ -5998,7 +5998,7 @@ describe("runDoctorCiteCoverage (rc.24 contract metrics)", () => {
     const rcMarker = await ensureCitePolicyActivatedMarker(target);
     const cMarker = await ensureCiteContractPolicyActivatedMarker(target);
     seedAgentsMetaWithTypes(target, [
-      { stable_id: "KT-MOD-0001", knowledge_type: "model" },
+      { stable_id: "KT-MOD-0001", knowledge_type: "models" },
     ]);
     seedEvents(target, [
       mkContractTurnEvent({
@@ -6017,7 +6017,7 @@ describe("runDoctorCiteCoverage (rc.24 contract metrics)", () => {
     expect(report.contract_metrics?.pitfalls_cited).toBe(0);
     expect(report.contract_metrics?.contract_with).toBe(0);
     expect(report.contract_metrics?.contract_missing).toBe(0);
-    expect(report.per_layer_type?.team?.model).toBe(1);
+    expect(report.per_layer_type?.team?.models).toBe(1);
   });
 
   // 6. Guideline cite → deferred bucket, no contract check.
@@ -6029,7 +6029,7 @@ describe("runDoctorCiteCoverage (rc.24 contract metrics)", () => {
     const rcMarker = await ensureCitePolicyActivatedMarker(target);
     const cMarker = await ensureCiteContractPolicyActivatedMarker(target);
     seedAgentsMetaWithTypes(target, [
-      { stable_id: "KT-GLD-0001", knowledge_type: "guideline" },
+      { stable_id: "KT-GLD-0001", knowledge_type: "guidelines" },
     ]);
     seedEvents(target, [
       mkContractTurnEvent({
@@ -6044,7 +6044,7 @@ describe("runDoctorCiteCoverage (rc.24 contract metrics)", () => {
     const report = await runDoctorCiteCoverage(target, { since: 0, client: "all" });
 
     expect(report.contract_metrics?.contract_missing).toBe(0);
-    expect(report.per_layer_type?.team?.guideline).toBe(1);
+    expect(report.per_layer_type?.team?.guidelines).toBe(1);
   });
 
   // v2.0.0-rc.27.1 (Codex review fix): multi-id contract walk must look up
@@ -6063,8 +6063,8 @@ describe("runDoctorCiteCoverage (rc.24 contract metrics)", () => {
     const rcMarker = await ensureCitePolicyActivatedMarker(target);
     const cMarker = await ensureCiteContractPolicyActivatedMarker(target);
     seedAgentsMetaWithTypes(target, [
-      { stable_id: "KT-DEC-0001", knowledge_type: "decision" },
-      { stable_id: "KT-PIT-0005", knowledge_type: "pitfall" },
+      { stable_id: "KT-DEC-0001", knowledge_type: "decisions" },
+      { stable_id: "KT-PIT-0005", knowledge_type: "pitfalls" },
     ]);
     // Post-fix wire shape: one commitment slot per id, sharing the parsed
     // contract verbatim. `mkContractTurnEvent` accepts the array directly.
@@ -6100,7 +6100,7 @@ describe("runDoctorCiteCoverage (rc.24 contract metrics)", () => {
     const cMarker = await ensureCiteContractPolicyActivatedMarker(target);
     // Note: agents.meta.json deliberately does NOT include KT-DEC-9999.
     seedAgentsMetaWithTypes(target, [
-      { stable_id: "KT-DEC-0001", knowledge_type: "decision" },
+      { stable_id: "KT-DEC-0001", knowledge_type: "decisions" },
     ]);
     seedEvents(target, [
       mkContractTurnEvent({
@@ -6129,7 +6129,7 @@ describe("runDoctorCiteCoverage (rc.24 contract metrics)", () => {
     const rcMarker = await ensureCitePolicyActivatedMarker(target);
     const cMarker = await ensureCiteContractPolicyActivatedMarker(target);
     seedAgentsMetaWithTypes(target, [
-      { stable_id: "KT-DEC-0300", knowledge_type: "decision" },
+      { stable_id: "KT-DEC-0300", knowledge_type: "decisions" },
     ]);
     seedEvents(target, [
       mkContractTurnEvent({
@@ -6161,7 +6161,7 @@ describe("runDoctorCiteCoverage (rc.24 contract metrics)", () => {
     const rcMarker = await ensureCitePolicyActivatedMarker(target);
     const cMarker = await ensureCiteContractPolicyActivatedMarker(target);
     seedAgentsMetaWithTypes(target, [
-      { stable_id: "KP-DEC-0001", knowledge_type: "decision" },
+      { stable_id: "KP-DEC-0001", knowledge_type: "decisions" },
     ]);
     seedEvents(target, [
       mkContractTurnEvent({
@@ -6175,8 +6175,8 @@ describe("runDoctorCiteCoverage (rc.24 contract metrics)", () => {
 
     const report = await runDoctorCiteCoverage(target, { since: 0, client: "all" });
 
-    expect(report.per_layer_type?.personal?.decision).toBe(1);
-    expect(report.per_layer_type?.team?.decision ?? 0).toBe(0);
+    expect(report.per_layer_type?.personal?.decisions).toBe(1);
+    expect(report.per_layer_type?.team?.decisions ?? 0).toBe(0);
     expect(report.contract_metrics?.contract_missing).toBe(1);
   });
 
@@ -6189,8 +6189,8 @@ describe("runDoctorCiteCoverage (rc.24 contract metrics)", () => {
     const rcMarker = await ensureCitePolicyActivatedMarker(target);
     const cMarker = await ensureCiteContractPolicyActivatedMarker(target);
     seedAgentsMetaWithTypes(target, [
-      { stable_id: "KT-DEC-0400", knowledge_type: "decision" },
-      { stable_id: "KP-DEC-0400", knowledge_type: "decision" },
+      { stable_id: "KT-DEC-0400", knowledge_type: "decisions" },
+      { stable_id: "KP-DEC-0400", knowledge_type: "decisions" },
     ]);
     seedEvents(target, [
       mkContractTurnEvent({
@@ -6216,8 +6216,8 @@ describe("runDoctorCiteCoverage (rc.24 contract metrics)", () => {
     expect(report.contract_metrics?.decisions_cited).toBe(1);
     expect(report.contract_metrics?.contract_missing).toBe(1);
     // Per-layer cross-tab is NOT bumped for the filtered-out KP- cite.
-    expect(report.per_layer_type?.team?.decision).toBe(1);
-    expect(report.per_layer_type?.personal?.decision ?? 0).toBe(0);
+    expect(report.per_layer_type?.team?.decisions).toBe(1);
+    expect(report.per_layer_type?.personal?.decisions ?? 0).toBe(0);
   });
 
   // 11. --layer=personal filter → KT-* excluded.
@@ -6229,8 +6229,8 @@ describe("runDoctorCiteCoverage (rc.24 contract metrics)", () => {
     const rcMarker = await ensureCitePolicyActivatedMarker(target);
     const cMarker = await ensureCiteContractPolicyActivatedMarker(target);
     seedAgentsMetaWithTypes(target, [
-      { stable_id: "KT-DEC-0500", knowledge_type: "decision" },
-      { stable_id: "KP-DEC-0500", knowledge_type: "decision" },
+      { stable_id: "KT-DEC-0500", knowledge_type: "decisions" },
+      { stable_id: "KP-DEC-0500", knowledge_type: "decisions" },
     ]);
     seedEvents(target, [
       mkContractTurnEvent({
@@ -6253,8 +6253,8 @@ describe("runDoctorCiteCoverage (rc.24 contract metrics)", () => {
 
     expect(report.layer_filter).toBe("personal");
     expect(report.contract_metrics?.decisions_cited).toBe(1);
-    expect(report.per_layer_type?.personal?.decision).toBe(1);
-    expect(report.per_layer_type?.team?.decision ?? 0).toBe(0);
+    expect(report.per_layer_type?.personal?.decisions).toBe(1);
+    expect(report.per_layer_type?.team?.decisions ?? 0).toBe(0);
   });
 
   // 12. Cross-tab shape sanity: mixed types both layers.
@@ -6266,10 +6266,10 @@ describe("runDoctorCiteCoverage (rc.24 contract metrics)", () => {
     const rcMarker = await ensureCitePolicyActivatedMarker(target);
     const cMarker = await ensureCiteContractPolicyActivatedMarker(target);
     seedAgentsMetaWithTypes(target, [
-      { stable_id: "KT-DEC-0601", knowledge_type: "decision" },
-      { stable_id: "KT-PIT-0601", knowledge_type: "pitfall" },
-      { stable_id: "KT-MOD-0601", knowledge_type: "model" },
-      { stable_id: "KP-GLD-0601", knowledge_type: "guideline" },
+      { stable_id: "KT-DEC-0601", knowledge_type: "decisions" },
+      { stable_id: "KT-PIT-0601", knowledge_type: "pitfalls" },
+      { stable_id: "KT-MOD-0601", knowledge_type: "models" },
+      { stable_id: "KP-GLD-0601", knowledge_type: "guidelines" },
     ]);
     seedEvents(target, [
       mkContractTurnEvent({
@@ -6288,10 +6288,10 @@ describe("runDoctorCiteCoverage (rc.24 contract metrics)", () => {
 
     const report = await runDoctorCiteCoverage(target, { since: 0, client: "all" });
 
-    expect(report.per_layer_type?.team?.decision).toBe(1);
-    expect(report.per_layer_type?.team?.pitfall).toBe(1);
-    expect(report.per_layer_type?.team?.model).toBe(1);
-    expect(report.per_layer_type?.personal?.guideline).toBe(1);
+    expect(report.per_layer_type?.team?.decisions).toBe(1);
+    expect(report.per_layer_type?.team?.pitfalls).toBe(1);
+    expect(report.per_layer_type?.team?.models).toBe(1);
+    expect(report.per_layer_type?.personal?.guidelines).toBe(1);
   });
 
   // 13. require:<symbol> operator — matches when symbol appears in any
@@ -6305,7 +6305,7 @@ describe("runDoctorCiteCoverage (rc.24 contract metrics)", () => {
     const rcMarker = await ensureCitePolicyActivatedMarker(target);
     const cMarker = await ensureCiteContractPolicyActivatedMarker(target);
     seedAgentsMetaWithTypes(target, [
-      { stable_id: "KT-DEC-0701", knowledge_type: "decision" },
+      { stable_id: "KT-DEC-0701", knowledge_type: "decisions" },
     ]);
     seedEvents(target, [
       mkContractTurnEvent({
@@ -6342,7 +6342,7 @@ describe("runDoctorCiteCoverage (rc.24 contract metrics)", () => {
     const rcMarker = await ensureCitePolicyActivatedMarker(target);
     const cMarker = await ensureCiteContractPolicyActivatedMarker(target);
     seedAgentsMetaWithTypes(target, [
-      { stable_id: "KT-DEC-0801", knowledge_type: "decision" },
+      { stable_id: "KT-DEC-0801", knowledge_type: "decisions" },
     ]);
     seedEvents(target, [
       mkContractTurnEvent({
@@ -6378,7 +6378,7 @@ describe("runDoctorCiteCoverage (rc.24 contract metrics)", () => {
     const rcMarker = await ensureCitePolicyActivatedMarker(target);
     const cMarker = await ensureCiteContractPolicyActivatedMarker(target);
     seedAgentsMetaWithTypes(target, [
-      { stable_id: "KT-DEC-0901", knowledge_type: "decision" },
+      { stable_id: "KT-DEC-0901", knowledge_type: "decisions" },
     ]);
     seedEvents(target, [
       mkContractTurnEvent({

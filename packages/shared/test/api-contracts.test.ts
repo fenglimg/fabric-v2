@@ -717,11 +717,11 @@ const CITE_COVERAGE_TASK09_KEYS = [
   "cite-coverage.contract.status.ok",
   "cite-coverage.contract.status.skipped_bootstrap_drift",
   "cite-coverage.contract.status.awaiting_marker",
-  "cite-coverage.contract.type.decision",
-  "cite-coverage.contract.type.pitfall",
-  "cite-coverage.contract.type.model",
-  "cite-coverage.contract.type.guideline",
-  "cite-coverage.contract.type.process",
+  "cite-coverage.contract.type.decisions",
+  "cite-coverage.contract.type.pitfalls",
+  "cite-coverage.contract.type.models",
+  "cite-coverage.contract.type.guidelines",
+  "cite-coverage.contract.type.processes",
   "cite-coverage.contract.type.unresolved",
   "cite-coverage.layer.team",
   "cite-coverage.layer.personal",
@@ -930,42 +930,35 @@ describe("CiteCoverageReport i18n key parity (rc.24 TASK-09)", () => {
   });
 });
 
-// rc.24 fixup — guards the intentional singular ↔ plural knowledge_type
-// vocabulary boundary documented on `_knowledgeTypeEnum` at api-contracts.ts:23.
-// Catches drift in either direction: adding a singular type without the
-// matching plural in MCP-facing schemas (or vice versa) breaks the bijection
-// assertion below.
-//
-// SINGULAR ↔ PLURAL bijection table (the one source of truth for this mapping
-// in tests). English plurals are NOT mechanical singular+'s' — `process` →
-// `processes` is an `-es` plural — so the mapping is enumerated, not computed.
-const KNOWLEDGE_TYPE_BIJECTION: ReadonlyArray<readonly [string, string]> = [
-  ["model", "models"],
-  ["decision", "decisions"],
-  ["guideline", "guidelines"],
-  ["pitfall", "pitfalls"],
-  ["process", "processes"],
+// rc.29 BUG-C1 — knowledge_type vocabulary has been unified to PLURAL across
+// the codebase (schema, frontmatter, MCP I/O, FS layout, agents-meta, i18n).
+// The previous singular ↔ plural bridge collapses to identity; this test now
+// guards that the canonical enum AND the MCP-facing FabExtractKnowledge.type
+// share the same plural 5-tuple — any divergence is drift.
+const KNOWLEDGE_TYPE_CANONICAL_PLURAL: ReadonlyArray<string> = [
+  "models",
+  "decisions",
+  "guidelines",
+  "pitfalls",
+  "processes",
 ];
 
-describe("knowledge_type plural-singular bridge invariant (rc.24)", () => {
-  it("singular canonical enum equals expected 5-tuple", () => {
-    const expectedSingular = KNOWLEDGE_TYPE_BIJECTION.map(([s]) => s).sort();
-    expect([...KnowledgeTypeSchema.options].sort()).toEqual(expectedSingular);
+describe("knowledge_type canonical plural invariant (rc.29 BUG-C1)", () => {
+  it("KnowledgeTypeSchema equals canonical plural 5-tuple", () => {
+    const expected = [...KNOWLEDGE_TYPE_CANONICAL_PLURAL].sort();
+    expect([...KnowledgeTypeSchema.options].sort()).toEqual(expected);
   });
 
-  it("FabExtractKnowledgeInputSchema.type plural enum equals expected 5-tuple (MCP surface)", () => {
-    // FabExtractKnowledgeInputShape is the exported `.shape` of the base
-    // schema (used by MCP tool registration). Its `type` field is the rc.4
-    // plural enum at api-contracts.ts:397.
-    const expectedPlural = KNOWLEDGE_TYPE_BIJECTION.map(([, p]) => p).sort();
+  it("FabExtractKnowledgeInputSchema.type equals canonical plural 5-tuple (MCP surface)", () => {
+    const expected = [...KNOWLEDGE_TYPE_CANONICAL_PLURAL].sort();
     const typeField = FabExtractKnowledgeInputShape.type;
-    expect([...typeField.options].sort()).toEqual(expectedPlural);
+    expect([...typeField.options].sort()).toEqual(expected);
   });
 
-  it("singular and plural enums have matching cardinality (bijection is total)", () => {
-    const singularField = KnowledgeTypeSchema;
-    const pluralField = FabExtractKnowledgeInputShape.type;
-    expect(singularField.options.length).toBe(KNOWLEDGE_TYPE_BIJECTION.length);
-    expect(pluralField.options.length).toBe(KNOWLEDGE_TYPE_BIJECTION.length);
+  it("canonical and MCP-surface enums have matching cardinality", () => {
+    const canonicalField = KnowledgeTypeSchema;
+    const mcpField = FabExtractKnowledgeInputShape.type;
+    expect(canonicalField.options.length).toBe(KNOWLEDGE_TYPE_CANONICAL_PLURAL.length);
+    expect(mcpField.options.length).toBe(KNOWLEDGE_TYPE_CANONICAL_PLURAL.length);
   });
 });

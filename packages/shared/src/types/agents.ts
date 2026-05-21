@@ -14,7 +14,7 @@ export interface RuleDescription {
   entities?: string[];
   // v2.0 knowledge entry fields (TASK-002 schemas). All optional for backward compat.
   id?: string;
-  knowledge_type?: "model" | "decision" | "guideline" | "pitfall" | "process";
+  knowledge_type?: "models" | "decisions" | "guidelines" | "pitfalls" | "processes";
   maturity?: "draft" | "verified" | "proven";
   knowledge_layer?: "personal" | "team";
   layer_reason?: string;
@@ -39,7 +39,7 @@ export interface RuleDescriptionIndexItem {
   // v2.0: knowledge-layer surface for client-side filtering. Mirrors the
   // homonymous fields on `description` so callers don't have to reach into
   // the nested payload. Optional because v1.x entries lack frontmatter.
-  type?: "model" | "decision" | "guideline" | "pitfall" | "process";
+  type?: "models" | "decisions" | "guidelines" | "pitfalls" | "processes";
   maturity?: "draft" | "verified" | "proven";
   layer?: "personal" | "team";
   layer_reason?: string;

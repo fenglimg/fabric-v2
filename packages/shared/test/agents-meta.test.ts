@@ -219,7 +219,7 @@ describe("v2.0 knowledge stable_id (path-decoupled)", () => {
       KP: { MOD: 0, DEC: 0, GLD: 0, PIT: 0, PRO: 0 },
       KT: { MOD: 0, DEC: 5, GLD: 0, PIT: 0, PRO: 0 },
     };
-    const { id, nextCounters } = allocateKnowledgeId("team", "decision", seed);
+    const { id, nextCounters } = allocateKnowledgeId("team", "decisions", seed);
     expect(id).toBe("KT-DEC-0006");
     expect(nextCounters.KT.DEC).toBe(6);
     // Other slots untouched.
@@ -230,7 +230,7 @@ describe("v2.0 knowledge stable_id (path-decoupled)", () => {
   it("allocateKnowledgeId is pure (does not mutate input)", () => {
     const seed = defaultAgentsMetaCounters();
     const before = JSON.stringify(seed);
-    allocateKnowledgeId("personal", "model", seed);
+    allocateKnowledgeId("personal", "models", seed);
     expect(JSON.stringify(seed)).toBe(before);
   });
 

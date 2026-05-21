@@ -30,10 +30,12 @@ function pendingBaseAbs(layer: "team" | "personal", projectRoot: string): string
   return join(projectRoot, PENDING_BASE_TEAM_REL);
 }
 
-// Plural directory names mirror FabExtractKnowledge type enum + on-disk layout
-// (.fabric/knowledge/pending/decisions/, etc.). KnowledgeType (singular) is
-// only used when crossing into the allocator boundary.
-type PluralType = "decisions" | "pitfalls" | "guidelines" | "models" | "processes";
+// rc.29 BUG-C1: the plural ↔ singular bridge is now identity — the canonical
+// KnowledgeType enum was unified to plural across the codebase (matches FS
+// layout, MCP I/O, and disk frontmatter). `PluralType` is retained as an
+// alias for local readability of "directory name" sites; equivalent to
+// KnowledgeType.
+type PluralType = KnowledgeType;
 
 const PLURAL_TYPES: ReadonlyArray<PluralType> = [
   "decisions",
@@ -42,14 +44,6 @@ const PLURAL_TYPES: ReadonlyArray<PluralType> = [
   "models",
   "processes",
 ];
-
-const PLURAL_TO_SINGULAR: Record<PluralType, KnowledgeType> = {
-  decisions: "decision",
-  pitfalls: "pitfall",
-  guidelines: "guideline",
-  models: "model",
-  processes: "process",
-};
 
 type Layer = "team" | "personal";
 
@@ -502,8 +496,9 @@ async function approveOne(
     }
     const layer: Layer = fm.layer ?? "team";
 
-    const singularType = PLURAL_TO_SINGULAR[pluralType];
-    const stableId = await allocator.allocate(layer, singularType);
+    // rc.29 BUG-C1: KnowledgeType is now plural; pluralType is the canonical
+    // value passed straight to the allocator.
+    const stableId = await allocator.allocate(layer, pluralType);
     allocatedId = stableId;
 
     const newFilename = `${stableId}--${slug}.md`;
@@ -839,8 +834,9 @@ async function modifyLayerFlip(
   const allocator = new KnowledgeIdAllocator(
     join(projectRoot, ".fabric", "agents.meta.json"),
   );
-  const singularType = PLURAL_TO_SINGULAR[pluralType];
-  const newStableId = await allocator.allocate(toLayer, singularType);
+  // rc.29 BUG-C1: KnowledgeType is now plural; pluralType is the canonical
+  // value passed straight to the allocator.
+  const newStableId = await allocator.allocate(toLayer, pluralType);
 
   const toRoot = toLayer === "personal"
     ? join(resolvePersonalRoot(), ".fabric")

@@ -5,34 +5,41 @@
       "file": "~/.fabric/knowledge/processes/KP-PRO-0001--stale-git-lock-safe-removal.md",
       "content_ref": "~/.fabric/knowledge/processes/KP-PRO-0001--stale-git-lock-safe-removal.md",
       "scope_glob": "processes/KP-PRO-0001--stale-git-lock-safe-removal/**",
-      "deps": [
-        "L0"
-      ],
-      "priority": "medium",
-      "level": "L1",
-      "layer": "L1",
-      "topology_type": "mirror",
       "hash": "sha256:68919c5721c1fbfe5277dc4fd1e6834bc95fa5ac1656cbb3439cd888e10e79b8",
       "stable_id": "KP-PRO-0001",
       "identity_source": "declared",
+      "description": {
+        "summary": "KP-PRO-0001",
+        "intent_clues": [],
+        "tech_stack": [],
+        "impact": [],
+        "must_read_if": "KP-PRO-0001",
+        "id": "KP-PRO-0001",
+        "knowledge_type": "processes",
+        "maturity": "draft",
+        "knowledge_layer": "personal",
+        "created_at": "2026-05-18T07:59:28.459Z",
+        "relevance_scope": "broad",
+        "relevance_paths": []
+      },
       "sections": [
         "Summary",
         "Why proposed",
         "Session context",
         "Evidence"
-      ]
-    },
-    "KT-DEC-0001": {
-      "file": ".fabric/knowledge/decisions/KT-DEC-0001.md",
-      "content_ref": ".fabric/knowledge/decisions/KT-DEC-0001.md",
-      "scope_glob": "decisions/KT-DEC-0001/**",
+      ],
       "deps": [
         "L0"
       ],
       "priority": "medium",
       "level": "L1",
       "layer": "L1",
-      "topology_type": "mirror",
+      "topology_type": "mirror"
+    },
+    "KT-DEC-0001": {
+      "file": ".fabric/knowledge/decisions/KT-DEC-0001.md",
+      "content_ref": ".fabric/knowledge/decisions/KT-DEC-0001.md",
+      "scope_glob": "decisions/KT-DEC-0001/**",
       "hash": "sha256:a632197470a264aebf4a4df622c6a9869272b19ef4207f92a543341370e6fa87",
       "stable_id": "KT-DEC-0001",
       "identity_source": "declared",
@@ -43,7 +50,7 @@
         "impact": [],
         "must_read_if": "Boundary B: data + lifecycle + async-review primitive",
         "id": "KT-DEC-0001",
-        "knowledge_type": "decision",
+        "knowledge_type": "decisions",
         "maturity": "proven",
         "knowledge_layer": "team",
         "layer_reason": "architecture decision from v2.0 design review (grill-me 2026-05-10)",
@@ -60,19 +67,19 @@
         "Alternatives considered",
         "Rationale",
         "Reference"
-      ]
-    },
-    "KT-DEC-0002": {
-      "file": ".fabric/knowledge/decisions/KT-DEC-0002.md",
-      "content_ref": ".fabric/knowledge/decisions/KT-DEC-0002.md",
-      "scope_glob": "decisions/KT-DEC-0002/**",
+      ],
       "deps": [
         "L0"
       ],
       "priority": "medium",
       "level": "L1",
       "layer": "L1",
-      "topology_type": "mirror",
+      "topology_type": "mirror"
+    },
+    "KT-DEC-0002": {
+      "file": ".fabric/knowledge/decisions/KT-DEC-0002.md",
+      "content_ref": ".fabric/knowledge/decisions/KT-DEC-0002.md",
+      "scope_glob": "decisions/KT-DEC-0002/**",
       "hash": "sha256:b704567ab43bd713fb3e1a1014d56d30f8c217dacec6010ab02a0fdfdd2eddb4",
       "stable_id": "KT-DEC-0002",
       "identity_source": "declared",
@@ -83,7 +90,7 @@
         "impact": [],
         "must_read_if": "v2.0 clean rebrand over v1.x staged migration",
         "id": "KT-DEC-0002",
-        "knowledge_type": "decision",
+        "knowledge_type": "decisions",
         "maturity": "proven",
         "knowledge_layer": "team",
         "layer_reason": "architecture decision from v2.0 design review (grill-me 2026-05-10)",
@@ -100,19 +107,19 @@
         "Alternatives considered",
         "Rationale",
         "Reference"
-      ]
-    },
-    "KT-DEC-0003": {
-      "file": ".fabric/knowledge/decisions/KT-DEC-0003.md",
-      "content_ref": ".fabric/knowledge/decisions/KT-DEC-0003.md",
-      "scope_glob": "decisions/KT-DEC-0003/**",
+      ],
       "deps": [
         "L0"
       ],
       "priority": "medium",
       "level": "L1",
       "layer": "L1",
-      "topology_type": "mirror",
+      "topology_type": "mirror"
+    },
+    "KT-DEC-0003": {
+      "file": ".fabric/knowledge/decisions/KT-DEC-0003.md",
+      "content_ref": ".fabric/knowledge/decisions/KT-DEC-0003.md",
+      "scope_glob": "decisions/KT-DEC-0003/**",
       "hash": "sha256:dc642c30594642556d62e61bf87f4956d014576aba35e45c23621d5b74856076",
       "stable_id": "KT-DEC-0003",
       "identity_source": "declared",
@@ -123,7 +130,7 @@
         "impact": [],
         "must_read_if": "Dual-root layout: ~/.fabric + <repo>/.fabric",
         "id": "KT-DEC-0003",
-        "knowledge_type": "decision",
+        "knowledge_type": "decisions",
         "maturity": "proven",
         "knowledge_layer": "team",
         "layer_reason": "architecture decision from v2.0 design review (grill-me 2026-05-10)",
@@ -141,19 +148,19 @@
         "Rationale",
         "Tradeoffs",
         "Reference"
-      ]
-    },
-    "KT-DEC-0004": {
-      "file": ".fabric/knowledge/decisions/KT-DEC-0004.md",
-      "content_ref": ".fabric/knowledge/decisions/KT-DEC-0004.md",
-      "scope_glob": "decisions/KT-DEC-0004/**",
+      ],
       "deps": [
         "L0"
       ],
       "priority": "medium",
       "level": "L1",
       "layer": "L1",
-      "topology_type": "mirror",
+      "topology_type": "mirror"
+    },
+    "KT-DEC-0004": {
+      "file": ".fabric/knowledge/decisions/KT-DEC-0004.md",
+      "content_ref": ".fabric/knowledge/decisions/KT-DEC-0004.md",
+      "scope_glob": "decisions/KT-DEC-0004/**",
       "hash": "sha256:2ce2adf4bf15301ba59aa8cfc19dd0d97ee656e6ff867c6514dc626a43b99458",
       "stable_id": "KT-DEC-0004",
       "identity_source": "declared",
@@ -164,7 +171,7 @@
         "impact": [],
         "must_read_if": "stable_id format K[PT]-(DEC|MOD|GLD|PIT|PRO)-NNNN with monotonic counter",
         "id": "KT-DEC-0004",
-        "knowledge_type": "decision",
+        "knowledge_type": "decisions",
         "maturity": "proven",
         "knowledge_layer": "team",
         "layer_reason": "architecture decision from v2.0 design review (grill-me 2026-05-10)",
@@ -183,19 +190,19 @@
         "Rationale",
         "Constraints",
         "Reference"
-      ]
-    },
-    "KT-DEC-0005": {
-      "file": ".fabric/knowledge/decisions/KT-DEC-0005.md",
-      "content_ref": ".fabric/knowledge/decisions/KT-DEC-0005.md",
-      "scope_glob": "decisions/KT-DEC-0005/**",
+      ],
       "deps": [
         "L0"
       ],
       "priority": "medium",
       "level": "L1",
       "layer": "L1",
-      "topology_type": "mirror",
+      "topology_type": "mirror"
+    },
+    "KT-DEC-0005": {
+      "file": ".fabric/knowledge/decisions/KT-DEC-0005.md",
+      "content_ref": ".fabric/knowledge/decisions/KT-DEC-0005.md",
+      "scope_glob": "decisions/KT-DEC-0005/**",
       "hash": "sha256:2efcb6919b48663c6c29d4f0c046d8cfe0211279a78ca41e37f278445bea54e7",
       "stable_id": "KT-DEC-0005",
       "identity_source": "declared",
@@ -206,7 +213,7 @@
         "impact": [],
         "must_read_if": "5-type / 3-maturity / 2-layer schema with flat scalar frontmatter",
         "id": "KT-DEC-0005",
-        "knowledge_type": "decision",
+        "knowledge_type": "decisions",
         "maturity": "proven",
         "knowledge_layer": "team",
         "layer_reason": "architecture decision from v2.0 design review (grill-me 2026-05-10)",
@@ -223,19 +230,19 @@
         "Alternatives considered",
         "Rationale",
         "Reference"
-      ]
-    },
-    "KT-DEC-0006": {
-      "file": ".fabric/knowledge/decisions/KT-DEC-0006.md",
-      "content_ref": ".fabric/knowledge/decisions/KT-DEC-0006.md",
-      "scope_glob": "decisions/KT-DEC-0006/**",
+      ],
       "deps": [
         "L0"
       ],
       "priority": "medium",
       "level": "L1",
       "layer": "L1",
-      "topology_type": "mirror",
+      "topology_type": "mirror"
+    },
+    "KT-DEC-0006": {
+      "file": ".fabric/knowledge/decisions/KT-DEC-0006.md",
+      "content_ref": ".fabric/knowledge/decisions/KT-DEC-0006.md",
+      "scope_glob": "decisions/KT-DEC-0006/**",
       "hash": "sha256:00b9f770283988cea25328e41317aa9d4804225b7cdd86725235a4fb5ea41109",
       "stable_id": "KT-DEC-0006",
       "identity_source": "declared",
@@ -246,7 +253,7 @@
         "impact": [],
         "must_read_if": "Review mode inferred from context, not solicited via AskUserQuestion",
         "id": "KT-DEC-0006",
-        "knowledge_type": "decision",
+        "knowledge_type": "decisions",
         "maturity": "proven",
         "knowledge_layer": "team",
         "layer_reason": "architecture decision from v2.0 design review (grill-me 2026-05-10)",
@@ -263,19 +270,19 @@
         "Alternatives considered",
         "Rationale",
         "Reference"
-      ]
-    },
-    "KT-DEC-0007": {
-      "file": ".fabric/knowledge/decisions/KT-DEC-0007.md",
-      "content_ref": ".fabric/knowledge/decisions/KT-DEC-0007.md",
-      "scope_glob": "decisions/KT-DEC-0007/**",
+      ],
       "deps": [
         "L0"
       ],
       "priority": "medium",
       "level": "L1",
       "layer": "L1",
-      "topology_type": "mirror",
+      "topology_type": "mirror"
+    },
+    "KT-DEC-0007": {
+      "file": ".fabric/knowledge/decisions/KT-DEC-0007.md",
+      "content_ref": ".fabric/knowledge/decisions/KT-DEC-0007.md",
+      "scope_glob": "decisions/KT-DEC-0007/**",
       "hash": "sha256:736eb5a83fed3005b97a7be1a0936f64ab41111fce8ebf7117fc2ccca77b911a",
       "stable_id": "KT-DEC-0007",
       "identity_source": "declared",
@@ -286,7 +293,7 @@
         "impact": [],
         "must_read_if": "Hook = reminder layer (exit 2 + stderr/followup_message), never blocks",
         "id": "KT-DEC-0007",
-        "knowledge_type": "decision",
+        "knowledge_type": "decisions",
         "maturity": "proven",
         "knowledge_layer": "team",
         "layer_reason": "architecture decision from v2.0 design review (grill-me 2026-05-10)",
@@ -303,19 +310,19 @@
         "Alternatives considered",
         "Rationale",
         "Reference"
-      ]
-    },
-    "KT-DEC-0008": {
-      "file": ".fabric/knowledge/decisions/KT-DEC-0008.md",
-      "content_ref": ".fabric/knowledge/decisions/KT-DEC-0008.md",
-      "scope_glob": "decisions/KT-DEC-0008/**",
+      ],
       "deps": [
         "L0"
       ],
       "priority": "medium",
       "level": "L1",
       "layer": "L1",
-      "topology_type": "mirror",
+      "topology_type": "mirror"
+    },
+    "KT-DEC-0008": {
+      "file": ".fabric/knowledge/decisions/KT-DEC-0008.md",
+      "content_ref": ".fabric/knowledge/decisions/KT-DEC-0008.md",
+      "scope_glob": "decisions/KT-DEC-0008/**",
       "hash": "sha256:eb5ec81143e00201168587c80ed9783ac85ca9ee42fde49bb9d68870c6e4492f",
       "stable_id": "KT-DEC-0008",
       "identity_source": "declared",
@@ -326,7 +333,7 @@
         "impact": [],
         "must_read_if": "Decay thresholds: 90 / 30 / 14 days (1/4 of Tencent article baselines)",
         "id": "KT-DEC-0008",
-        "knowledge_type": "decision",
+        "knowledge_type": "decisions",
         "maturity": "proven",
         "knowledge_layer": "team",
         "layer_reason": "architecture decision from v2.0 design review (grill-me 2026-05-10)",
@@ -345,22 +352,36 @@
         "Rationale",
         "Tradeoffs",
         "Reference"
-      ]
-    },
-    "KT-DEC-0009": {
-      "file": ".fabric/knowledge/decisions/KT-DEC-0009--rc2-single-cjs-hook-across-clients.md",
-      "content_ref": ".fabric/knowledge/decisions/KT-DEC-0009--rc2-single-cjs-hook-across-clients.md",
-      "scope_glob": "decisions/KT-DEC-0009--rc2-single-cjs-hook-across-clients/**",
+      ],
       "deps": [
         "L0"
       ],
       "priority": "medium",
       "level": "L1",
       "layer": "L1",
-      "topology_type": "mirror",
+      "topology_type": "mirror"
+    },
+    "KT-DEC-0009": {
+      "file": ".fabric/knowledge/decisions/KT-DEC-0009--rc2-single-cjs-hook-across-clients.md",
+      "content_ref": ".fabric/knowledge/decisions/KT-DEC-0009--rc2-single-cjs-hook-across-clients.md",
+      "scope_glob": "decisions/KT-DEC-0009--rc2-single-cjs-hook-across-clients/**",
       "hash": "sha256:f05d50a42b238ba27aba9acad93efb5530a4245da6b55e6e3b8fcbe09a1baa9d",
       "stable_id": "KT-DEC-0009",
       "identity_source": "declared",
+      "description": {
+        "summary": "KT-DEC-0009",
+        "intent_clues": [],
+        "tech_stack": [],
+        "impact": [],
+        "must_read_if": "KT-DEC-0009",
+        "id": "KT-DEC-0009",
+        "knowledge_type": "decisions",
+        "maturity": "draft",
+        "knowledge_layer": "team",
+        "created_at": "2026-05-10T11:29:43.862Z",
+        "relevance_scope": "broad",
+        "relevance_paths": []
+      },
       "sections": [
         "Summary",
         "Evidence (call 1)",
@@ -369,99 +390,166 @@
         "Evidence (call 4)",
         "Evidence (call 5)",
         "Evidence (call 6)"
-      ]
+      ],
+      "deps": [
+        "L0"
+      ],
+      "priority": "medium",
+      "level": "L1",
+      "layer": "L1",
+      "topology_type": "mirror"
     },
     "KT-DEC-9001": {
       "file": ".fabric/knowledge/decisions/KT-DEC-9001--manual-rc3-fallback-test.md",
       "content_ref": ".fabric/knowledge/decisions/KT-DEC-9001--manual-rc3-fallback-test.md",
       "scope_glob": "decisions/KT-DEC-9001--manual-rc3-fallback-test/**",
+      "hash": "sha256:2a82468e986a3787df85c060fbfed84e2ab63035eeb801d4b0588017da4c387f",
+      "stable_id": "KT-DEC-9001",
+      "identity_source": "declared",
+      "description": {
+        "summary": "KT-DEC-9001",
+        "intent_clues": [],
+        "tech_stack": [],
+        "impact": [],
+        "must_read_if": "KT-DEC-9001",
+        "id": "KT-DEC-9001",
+        "knowledge_type": "decisions",
+        "maturity": "draft",
+        "knowledge_layer": "team",
+        "created_at": "2026-05-10T15:28:03.164Z",
+        "tags": [
+          "dogfood",
+          "fallback"
+        ],
+        "relevance_scope": "broad",
+        "relevance_paths": []
+      },
+      "sections": [
+        "Summary",
+        "Evidence"
+      ],
       "deps": [
         "L0"
       ],
       "priority": "medium",
       "level": "L1",
       "layer": "L1",
-      "topology_type": "mirror",
-      "hash": "sha256:2a82468e986a3787df85c060fbfed84e2ab63035eeb801d4b0588017da4c387f",
-      "stable_id": "KT-DEC-9001",
-      "identity_source": "declared",
-      "sections": [
-        "Summary",
-        "Evidence"
-      ]
+      "topology_type": "mirror"
     },
     "KT-DEC-9002": {
       "file": ".fabric/knowledge/decisions/KT-DEC-9002--file-boundary-over-section-boundary.md",
       "content_ref": ".fabric/knowledge/decisions/KT-DEC-9002--file-boundary-over-section-boundary.md",
       "scope_glob": "decisions/KT-DEC-9002--file-boundary-over-section-boundary/**",
+      "hash": "sha256:41d6a27504840da5aff1a69bca70f2f767380835d2efc36eca2c88632b31ef17",
+      "stable_id": "KT-DEC-9002",
+      "identity_source": "declared",
+      "description": {
+        "summary": "KT-DEC-9002",
+        "intent_clues": [],
+        "tech_stack": [],
+        "impact": [],
+        "must_read_if": "KT-DEC-9002",
+        "id": "KT-DEC-9002",
+        "knowledge_type": "decisions",
+        "maturity": "draft",
+        "knowledge_layer": "team",
+        "created_at": "2026-05-18T02:31:33.670Z",
+        "relevance_scope": "narrow",
+        "relevance_paths": [
+          "packages/cli/src/commands/install.ts",
+          "packages/cli/src/commands/doctor.ts",
+          "packages/shared/src/templates/bootstrap-canonical.ts",
+          ".fabric/AGENTS.md"
+        ]
+      },
+      "sections": [
+        "Summary",
+        "Why proposed",
+        "Session context",
+        "Evidence"
+      ],
       "deps": [
         "L0"
       ],
       "priority": "medium",
       "level": "L1",
       "layer": "L1",
-      "topology_type": "mirror",
-      "hash": "sha256:41d6a27504840da5aff1a69bca70f2f767380835d2efc36eca2c88632b31ef17",
-      "stable_id": "KT-DEC-9002",
-      "identity_source": "declared",
-      "sections": [
-        "Summary",
-        "Why proposed",
-        "Session context",
-        "Evidence"
-      ]
+      "topology_type": "mirror"
     },
     "KT-DEC-9003": {
       "file": ".fabric/knowledge/decisions/KT-DEC-9003--fabric-rules-via-doclink-not-native-memo.md",
       "content_ref": ".fabric/knowledge/decisions/KT-DEC-9003--fabric-rules-via-doclink-not-native-memo.md",
       "scope_glob": "decisions/KT-DEC-9003--fabric-rules-via-doclink-not-native-memo/**",
+      "hash": "sha256:84bc4d1801baf1bc71b66ec9f7845ceb7118bd2993465c3b11320da2052f05ee",
+      "stable_id": "KT-DEC-9003",
+      "identity_source": "declared",
+      "description": {
+        "summary": "KT-DEC-9003",
+        "intent_clues": [],
+        "tech_stack": [],
+        "impact": [],
+        "must_read_if": "KT-DEC-9003",
+        "id": "KT-DEC-9003",
+        "knowledge_type": "decisions",
+        "maturity": "draft",
+        "knowledge_layer": "team",
+        "created_at": "2026-05-18T02:31:46.087Z",
+        "relevance_scope": "broad",
+        "relevance_paths": []
+      },
+      "sections": [
+        "Summary",
+        "Why proposed",
+        "Session context",
+        "Evidence"
+      ],
       "deps": [
         "L0"
       ],
       "priority": "medium",
       "level": "L1",
       "layer": "L1",
-      "topology_type": "mirror",
-      "hash": "sha256:84bc4d1801baf1bc71b66ec9f7845ceb7118bd2993465c3b11320da2052f05ee",
-      "stable_id": "KT-DEC-9003",
-      "identity_source": "declared",
-      "sections": [
-        "Summary",
-        "Why proposed",
-        "Session context",
-        "Evidence"
-      ]
+      "topology_type": "mirror"
     },
     "KT-DEC-9004": {
       "file": ".fabric/knowledge/decisions/KT-DEC-9004--init-fixate-knowledge-language.md",
       "content_ref": ".fabric/knowledge/decisions/KT-DEC-9004--init-fixate-knowledge-language.md",
       "scope_glob": "decisions/KT-DEC-9004--init-fixate-knowledge-language/**",
+      "hash": "sha256:00c939de1b7c4194096616bf84ec95aa925dc2427eb17aac2d72db076b25f333",
+      "stable_id": "KT-DEC-9004",
+      "identity_source": "declared",
+      "description": {
+        "summary": "KT-DEC-9004",
+        "intent_clues": [],
+        "tech_stack": [],
+        "impact": [],
+        "must_read_if": "KT-DEC-9004",
+        "id": "KT-DEC-9004",
+        "knowledge_type": "decisions",
+        "maturity": "draft",
+        "knowledge_layer": "team",
+        "created_at": "2026-05-14T02:58:43.499Z",
+        "relevance_scope": "broad",
+        "relevance_paths": []
+      },
+      "sections": [
+        "Summary",
+        "Why proposed",
+        "Session context",
+        "Evidence"
+      ],
       "deps": [
         "L0"
       ],
       "priority": "medium",
       "level": "L1",
       "layer": "L1",
-      "topology_type": "mirror",
-      "hash": "sha256:00c939de1b7c4194096616bf84ec95aa925dc2427eb17aac2d72db076b25f333",
-      "stable_id": "KT-DEC-9004",
-      "identity_source": "declared",
-      "sections": [
-        "Summary",
-        "Why proposed",
-        "Session context",
-        "Evidence"
-      ]
+      "topology_type": "mirror"
     },
     "KT-GLD-0001": {
       "file": ".fabric/knowledge/guidelines/KT-GLD-0001--code-style.md",
       "content_ref": ".fabric/knowledge/guidelines/KT-GLD-0001--code-style.md",
-      "scope_glob": "**",
-      "deps": [],
-      "priority": "medium",
-      "level": "L1",
-      "layer": "L1",
-      "topology_type": "cross-cutting",
+      "scope_glob": "guidelines/KT-GLD-0001--code-style/**",
       "hash": "sha256:a10f451b2b156330c956f48785daadab2b0240dc765e4c7d18cfb6a180c16e1c",
       "stable_id": "KT-GLD-0001",
       "identity_source": "declared",
@@ -472,7 +560,7 @@
         "impact": [],
         "must_read_if": "Code style guidelines",
         "id": "KT-GLD-0001",
-        "knowledge_type": "guideline",
+        "knowledge_type": "guidelines",
         "maturity": "verified",
         "knowledge_layer": "team",
         "layer_reason": "project artifact (deterministic init scan)",
@@ -484,189 +572,315 @@
         "[MISSION_STATEMENT]",
         "[MANDATORY_INJECTION]",
         "[CONTEXT_INFO]"
-      ]
+      ],
+      "deps": [
+        "L0"
+      ],
+      "priority": "medium",
+      "level": "L1",
+      "layer": "L1",
+      "topology_type": "mirror"
     },
     "KT-GLD-0002": {
       "file": ".fabric/knowledge/guidelines/KT-GLD-0002--askuserquestion-i18n-value-vs-label.md",
       "content_ref": ".fabric/knowledge/guidelines/KT-GLD-0002--askuserquestion-i18n-value-vs-label.md",
       "scope_glob": "guidelines/KT-GLD-0002--askuserquestion-i18n-value-vs-label/**",
+      "hash": "sha256:448601fb792b84c6f3f91ea8ab99d603d97ea9783aad79103098141d53d993c2",
+      "stable_id": "KT-GLD-0002",
+      "identity_source": "declared",
+      "description": {
+        "summary": "KT-GLD-0002",
+        "intent_clues": [],
+        "tech_stack": [],
+        "impact": [],
+        "must_read_if": "KT-GLD-0002",
+        "id": "KT-GLD-0002",
+        "knowledge_type": "guidelines",
+        "maturity": "draft",
+        "knowledge_layer": "team",
+        "created_at": "2026-05-14T02:58:52.319Z",
+        "relevance_scope": "broad",
+        "relevance_paths": []
+      },
+      "sections": [
+        "Summary",
+        "Why proposed",
+        "Session context",
+        "Evidence"
+      ],
       "deps": [
         "L0"
       ],
       "priority": "medium",
       "level": "L1",
       "layer": "L1",
-      "topology_type": "mirror",
-      "hash": "sha256:448601fb792b84c6f3f91ea8ab99d603d97ea9783aad79103098141d53d993c2",
-      "stable_id": "KT-GLD-0002",
-      "identity_source": "declared",
-      "sections": [
-        "Summary",
-        "Why proposed",
-        "Session context",
-        "Evidence"
-      ]
+      "topology_type": "mirror"
     },
     "KT-GLD-0003": {
       "file": ".fabric/knowledge/guidelines/KT-GLD-0003--deepmerge-array-append-paths-for-stop-ho.md",
       "content_ref": ".fabric/knowledge/guidelines/KT-GLD-0003--deepmerge-array-append-paths-for-stop-ho.md",
       "scope_glob": "guidelines/KT-GLD-0003--deepmerge-array-append-paths-for-stop-ho/**",
-      "deps": [
-        "L0"
-      ],
-      "priority": "medium",
-      "level": "L1",
-      "layer": "L1",
-      "topology_type": "mirror",
       "hash": "sha256:416742a2a0282ff6421e933869b798a49f68d962a4da7a02ba88af3d57b3a792",
       "stable_id": "KT-GLD-0003",
       "identity_source": "declared",
+      "description": {
+        "summary": "KT-GLD-0003",
+        "intent_clues": [],
+        "tech_stack": [],
+        "impact": [],
+        "must_read_if": "KT-GLD-0003",
+        "id": "KT-GLD-0003",
+        "knowledge_type": "guidelines",
+        "maturity": "draft",
+        "knowledge_layer": "team",
+        "created_at": "2026-05-10T11:29:43.867Z",
+        "relevance_scope": "broad",
+        "relevance_paths": []
+      },
       "sections": [
         "Summary",
         "Evidence (call 1)",
         "Evidence (call 2)",
         "Evidence (call 3)"
-      ]
+      ],
+      "deps": [
+        "L0"
+      ],
+      "priority": "medium",
+      "level": "L1",
+      "layer": "L1",
+      "topology_type": "mirror"
     },
     "KT-GLD-0004": {
       "file": ".fabric/knowledge/guidelines/KT-GLD-0004--skill-md-promise-matches-llm-capability.md",
       "content_ref": ".fabric/knowledge/guidelines/KT-GLD-0004--skill-md-promise-matches-llm-capability.md",
       "scope_glob": "guidelines/KT-GLD-0004--skill-md-promise-matches-llm-capability/**",
+      "hash": "sha256:a4bea24b68e059afd6013cd34a179a7e9b1440af6551e4ce1fefe82e6321aa07",
+      "stable_id": "KT-GLD-0004",
+      "identity_source": "declared",
+      "description": {
+        "summary": "KT-GLD-0004",
+        "intent_clues": [],
+        "tech_stack": [],
+        "impact": [],
+        "must_read_if": "KT-GLD-0004",
+        "id": "KT-GLD-0004",
+        "knowledge_type": "guidelines",
+        "maturity": "draft",
+        "knowledge_layer": "team",
+        "created_at": "2026-05-14T02:59:02.636Z",
+        "relevance_scope": "broad",
+        "relevance_paths": []
+      },
+      "sections": [
+        "Summary",
+        "Why proposed",
+        "Session context",
+        "Evidence"
+      ],
       "deps": [
         "L0"
       ],
       "priority": "medium",
       "level": "L1",
       "layer": "L1",
-      "topology_type": "mirror",
-      "hash": "sha256:a4bea24b68e059afd6013cd34a179a7e9b1440af6551e4ce1fefe82e6321aa07",
-      "stable_id": "KT-GLD-0004",
-      "identity_source": "declared",
-      "sections": [
-        "Summary",
-        "Why proposed",
-        "Session context",
-        "Evidence"
-      ]
+      "topology_type": "mirror"
     },
     "KT-PIT-9101": {
       "file": ".fabric/knowledge/pitfalls/KT-PIT-9101--rc4-dogfood-orphan-demote-fixture.md",
       "content_ref": ".fabric/knowledge/pitfalls/KT-PIT-9101--rc4-dogfood-orphan-demote-fixture.md",
       "scope_glob": "pitfalls/KT-PIT-9101--rc4-dogfood-orphan-demote-fixture/**",
+      "hash": "sha256:311cee17be60b346ca151e4c4c64dbb84770dc498849eb73a4e301f47fba7d13",
+      "stable_id": "KT-PIT-9101",
+      "identity_source": "declared",
+      "description": {
+        "summary": "KT-PIT-9101",
+        "intent_clues": [],
+        "tech_stack": [],
+        "impact": [],
+        "must_read_if": "KT-PIT-9101",
+        "id": "KT-PIT-9101",
+        "knowledge_type": "pitfalls",
+        "knowledge_layer": "team",
+        "created_at": "2026-01-30T16:58:49.587Z",
+        "tags": [
+          "dogfood",
+          "fixture",
+          "rc4"
+        ],
+        "relevance_scope": "broad",
+        "relevance_paths": []
+      },
+      "sections": [
+        "Summary",
+        "Evidence"
+      ],
       "deps": [
         "L0"
       ],
       "priority": "medium",
       "level": "L1",
       "layer": "L1",
-      "topology_type": "mirror",
-      "hash": "sha256:311cee17be60b346ca151e4c4c64dbb84770dc498849eb73a4e301f47fba7d13",
-      "stable_id": "KT-PIT-9101",
-      "identity_source": "declared",
-      "sections": [
-        "Summary",
-        "Evidence"
-      ]
+      "topology_type": "mirror"
     },
     "KT-PIT-9102": {
       "file": ".fabric/knowledge/pitfalls/KT-PIT-9102--doctor-lint-number-prealloc-check.md",
       "content_ref": ".fabric/knowledge/pitfalls/KT-PIT-9102--doctor-lint-number-prealloc-check.md",
       "scope_glob": "pitfalls/KT-PIT-9102--doctor-lint-number-prealloc-check/**",
+      "hash": "sha256:bd556d185b7ae9fbdc2230a5607aa48ad8e69cc640f3a13b5ea07ed8f6b9f9e4",
+      "stable_id": "KT-PIT-9102",
+      "identity_source": "declared",
+      "description": {
+        "summary": "KT-PIT-9102",
+        "intent_clues": [],
+        "tech_stack": [],
+        "impact": [],
+        "must_read_if": "KT-PIT-9102",
+        "id": "KT-PIT-9102",
+        "knowledge_type": "pitfalls",
+        "maturity": "draft",
+        "knowledge_layer": "team",
+        "created_at": "2026-05-14T02:58:33.549Z",
+        "relevance_scope": "broad",
+        "relevance_paths": []
+      },
+      "sections": [
+        "Summary",
+        "Why proposed",
+        "Session context",
+        "Evidence"
+      ],
       "deps": [
         "L0"
       ],
       "priority": "medium",
       "level": "L1",
       "layer": "L1",
-      "topology_type": "mirror",
-      "hash": "sha256:bd556d185b7ae9fbdc2230a5607aa48ad8e69cc640f3a13b5ea07ed8f6b9f9e4",
-      "stable_id": "KT-PIT-9102",
-      "identity_source": "declared",
-      "sections": [
-        "Summary",
-        "Why proposed",
-        "Session context",
-        "Evidence"
-      ]
+      "topology_type": "mirror"
     },
     "KT-PIT-9103": {
       "file": ".fabric/knowledge/pitfalls/KT-PIT-9103--lint-stale-ref-after-content-relocation.md",
       "content_ref": ".fabric/knowledge/pitfalls/KT-PIT-9103--lint-stale-ref-after-content-relocation.md",
       "scope_glob": "pitfalls/KT-PIT-9103--lint-stale-ref-after-content-relocation/**",
+      "hash": "sha256:1cd764e22b699b007d225c4afca116b105fba958e1ea3bb436529e1790a4964e",
+      "stable_id": "KT-PIT-9103",
+      "identity_source": "declared",
+      "description": {
+        "summary": "KT-PIT-9103",
+        "intent_clues": [],
+        "tech_stack": [],
+        "impact": [],
+        "must_read_if": "KT-PIT-9103",
+        "id": "KT-PIT-9103",
+        "knowledge_type": "pitfalls",
+        "maturity": "draft",
+        "knowledge_layer": "team",
+        "created_at": "2026-05-18T02:31:58.929Z",
+        "relevance_scope": "narrow",
+        "relevance_paths": [
+          "scripts/lint-protected-tokens.ts",
+          "packages/shared/src/templates/bootstrap-canonical.ts"
+        ]
+      },
+      "sections": [
+        "Summary",
+        "Why proposed",
+        "Session context",
+        "Evidence"
+      ],
       "deps": [
         "L0"
       ],
       "priority": "medium",
       "level": "L1",
       "layer": "L1",
-      "topology_type": "mirror",
-      "hash": "sha256:1cd764e22b699b007d225c4afca116b105fba958e1ea3bb436529e1790a4964e",
-      "stable_id": "KT-PIT-9103",
-      "identity_source": "declared",
-      "sections": [
-        "Summary",
-        "Why proposed",
-        "Session context",
-        "Evidence"
-      ]
+      "topology_type": "mirror"
     },
     "KT-PIT-9104": {
       "file": ".fabric/knowledge/pitfalls/KT-PIT-9104--skill-template-mirror-drift.md",
       "content_ref": ".fabric/knowledge/pitfalls/KT-PIT-9104--skill-template-mirror-drift.md",
       "scope_glob": "pitfalls/KT-PIT-9104--skill-template-mirror-drift/**",
+      "hash": "sha256:487dc4289ff5d88e6368df17f64f52a86198eed7deb5065a6e1ea8583fae70b5",
+      "stable_id": "KT-PIT-9104",
+      "identity_source": "declared",
+      "description": {
+        "summary": "KT-PIT-9104",
+        "intent_clues": [],
+        "tech_stack": [],
+        "impact": [],
+        "must_read_if": "KT-PIT-9104",
+        "id": "KT-PIT-9104",
+        "knowledge_type": "pitfalls",
+        "maturity": "draft",
+        "knowledge_layer": "team",
+        "created_at": "2026-05-14T02:58:24.934Z",
+        "relevance_scope": "broad",
+        "relevance_paths": []
+      },
+      "sections": [
+        "Summary",
+        "Why proposed",
+        "Session context",
+        "Evidence"
+      ],
       "deps": [
         "L0"
       ],
       "priority": "medium",
       "level": "L1",
       "layer": "L1",
-      "topology_type": "mirror",
-      "hash": "sha256:487dc4289ff5d88e6368df17f64f52a86198eed7deb5065a6e1ea8583fae70b5",
-      "stable_id": "KT-PIT-9104",
-      "identity_source": "declared",
-      "sections": [
-        "Summary",
-        "Why proposed",
-        "Session context",
-        "Evidence"
-      ]
+      "topology_type": "mirror"
     },
     "KT-PIT-9105": {
       "file": ".fabric/knowledge/pitfalls/KT-PIT-9105--zod-strip-drops-unknown-mcp-fields.md",
       "content_ref": ".fabric/knowledge/pitfalls/KT-PIT-9105--zod-strip-drops-unknown-mcp-fields.md",
       "scope_glob": "pitfalls/KT-PIT-9105--zod-strip-drops-unknown-mcp-fields/**",
+      "hash": "sha256:70fabf08c9504b0a60915a76015891ca165dc6b6ccb3e19b1ad9c5493ecfa5c5",
+      "stable_id": "KT-PIT-9105",
+      "identity_source": "declared",
+      "description": {
+        "summary": "KT-PIT-9105",
+        "intent_clues": [],
+        "tech_stack": [],
+        "impact": [],
+        "must_read_if": "KT-PIT-9105",
+        "id": "KT-PIT-9105",
+        "knowledge_type": "pitfalls",
+        "maturity": "draft",
+        "knowledge_layer": "team",
+        "created_at": "2026-05-14T02:58:13.737Z",
+        "relevance_scope": "broad",
+        "relevance_paths": []
+      },
+      "sections": [
+        "Summary",
+        "Why proposed",
+        "Session context",
+        "Evidence"
+      ],
       "deps": [
         "L0"
       ],
       "priority": "medium",
       "level": "L1",
       "layer": "L1",
-      "topology_type": "mirror",
-      "hash": "sha256:70fabf08c9504b0a60915a76015891ca165dc6b6ccb3e19b1ad9c5493ecfa5c5",
-      "stable_id": "KT-PIT-9105",
-      "identity_source": "declared",
-      "sections": [
-        "Summary",
-        "Why proposed",
-        "Session context",
-        "Evidence"
-      ]
+      "topology_type": "mirror"
     }
   },
   "counters": {
     "KP": {
       "MOD": 0,
-      "DEC": 9999,
+      "DEC": 0,
       "GLD": 0,
       "PIT": 0,
-      "PRO": 0
+      "PRO": 1
     },
     "KT": {
-      "MOD": 3,
+      "MOD": 0,
       "DEC": 9004,
       "GLD": 4,
       "PIT": 9105,
-      "PRO": 1
+      "PRO": 0
     }
   }
 }
