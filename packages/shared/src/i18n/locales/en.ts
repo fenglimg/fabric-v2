@@ -391,6 +391,18 @@ export const enMessages: Messages = {
     "Run `fab doctor --fix` to truncate the partial write and restore events.jsonl to a valid state.",
   "doctor.check.event_ledger_partial_write.ok.clean":
     "events.jsonl has no partial trailing write.",
+  // v2.0.0-rc.27 TASK-010 (audit §2.24): schema-compat forward-warn category.
+  "doctor.check.event_ledger_schema_compat.name": "Event ledger schema compat",
+  "doctor.check.event_ledger_schema_compat.ok.skipped":
+    "No schema-compat check needed (ledger missing or not writable).",
+  "doctor.check.event_ledger_schema_compat.ok.clean":
+    "events.jsonl rows all parse against the current schema.",
+  "doctor.check.event_ledger_schema_compat.message.schema_version":
+    "events.jsonl has {count} row(s) with unsupported `schema_version` (samples: {samples}).",
+  "doctor.check.event_ledger_schema_compat.message.event_type":
+    "events.jsonl has {count} row(s) with unknown `event_type` (samples: {samples}).",
+  "doctor.check.event_ledger_schema_compat.remediation":
+    "Either upgrade the fab CLI to a server-compatible version, or archive `.fabric/events.jsonl` and run `fab doctor --fix` to recreate a fresh ledger.",
   "doctor.check.meta_manually_diverged.name": "Meta manual divergence",
   "doctor.check.meta_manually_diverged.ok.unreadable":
     "agents.meta.json not readable; skipping divergence check.",

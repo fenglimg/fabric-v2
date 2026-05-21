@@ -219,6 +219,19 @@ type EventLedgerInspection = {
   hasPartialWrite: boolean;
   partialWriteByteOffset: number;
   partialWriteByteLength: number;
+  // v2.0.0-rc.27 TASK-010 (audit §2.24): forward-compat counters surfaced
+  // from event-ledger.LedgerWarning. `schemaVersionUnsupportedCount` counts
+  // lines whose `schema_version !== 1` (legacy rc.0/rc.1 imports or future
+  // rollback artifacts). `eventTypeUnknownCount` counts lines whose
+  // `event_type` is not in the current discriminator set (likely a newer
+  // server emitted a token the running CLI does not recognise — operator
+  // should upgrade the CLI). Both default to 0; the new
+  // `createEventLedgerSchemaCompatCheck` surfaces warnings when either is
+  // non-zero.
+  schemaVersionUnsupportedCount: number;
+  eventTypeUnknownCount: number;
+  schemaVersionSamples: string[];
+  eventTypeSamples: string[];
   path: string;
   error?: string;
 };
@@ -954,6 +967,10 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     createKnowledgeTestIndexCheck(t, knowledgeTestIndex),
     createEventLedgerCheck(t, eventLedger),
     createEventLedgerPartialWriteCheck(t, eventLedger),
+    // v2.0.0-rc.27 TASK-010 (audit §2.24): forward-compat warning surface for
+    // events.jsonl rows that fail Zod validation because of unknown
+    // schema_version or event_type tokens. Previously silently dropped.
+    createEventLedgerSchemaCompatCheck(t, eventLedger),
     createMcpConfigInWrongFileCheck(t, mcpConfigInWrongFile),
     createMetaManuallyDivergedCheck(t, metaManuallyDiverged),
     createKnowledgeDirUnindexedCheck(t, knowledgeDirUnindexed),
@@ -1984,7 +2001,19 @@ async function inspectEventLedger(projectRoot: string): Promise<EventLedgerInspe
   const exists = existsSync(path);
 
   if (!exists) {
-    return { exists: false, writable: false, parseable: false, hasPartialWrite: false, partialWriteByteOffset: 0, partialWriteByteLength: 0, path };
+    return {
+      exists: false,
+      writable: false,
+      parseable: false,
+      hasPartialWrite: false,
+      partialWriteByteOffset: 0,
+      partialWriteByteLength: 0,
+      schemaVersionUnsupportedCount: 0,
+      eventTypeUnknownCount: 0,
+      schemaVersionSamples: [],
+      eventTypeSamples: [],
+      path,
+    };
   }
 
   try {
@@ -1998,6 +2027,27 @@ async function inspectEventLedger(projectRoot: string): Promise<EventLedgerInspe
       .find((line) => !isValidJsonLine(line));
 
     const partialWarning = warnings.find((w) => w.kind === "partial_write_at_tail");
+    // v2.0.0-rc.27 TASK-010 (audit §2.24): tally schema-compat rejections and
+    // capture up to 3 sample tokens for the doctor remediation hint.
+    const schemaVersionSamples: string[] = [];
+    const eventTypeSamples: string[] = [];
+    let schemaVersionUnsupportedCount = 0;
+    let eventTypeUnknownCount = 0;
+    for (const w of warnings) {
+      if (w.kind === "schema_version_unsupported") {
+        schemaVersionUnsupportedCount += 1;
+        const token = String(w.schema_version);
+        if (!schemaVersionSamples.includes(token) && schemaVersionSamples.length < 3) {
+          schemaVersionSamples.push(token);
+        }
+      } else if (w.kind === "event_type_unknown") {
+        eventTypeUnknownCount += 1;
+        const token = String(w.event_type);
+        if (!eventTypeSamples.includes(token) && eventTypeSamples.length < 3) {
+          eventTypeSamples.push(token);
+        }
+      }
+    }
 
     return {
       exists: true,
@@ -2006,6 +2056,10 @@ async function inspectEventLedger(projectRoot: string): Promise<EventLedgerInspe
       hasPartialWrite: partialWarning !== undefined,
       partialWriteByteOffset: partialWarning?.byte_offset ?? 0,
       partialWriteByteLength: partialWarning?.byte_length ?? 0,
+      schemaVersionUnsupportedCount,
+      eventTypeUnknownCount,
+      schemaVersionSamples,
+      eventTypeSamples,
       path,
       error: invalidLine === undefined ? undefined : "events.jsonl contains an invalid JSON line.",
     };
@@ -2017,6 +2071,10 @@ async function inspectEventLedger(projectRoot: string): Promise<EventLedgerInspe
       hasPartialWrite: false,
       partialWriteByteOffset: 0,
       partialWriteByteLength: 0,
+      schemaVersionUnsupportedCount: 0,
+      eventTypeUnknownCount: 0,
+      schemaVersionSamples: [],
+      eventTypeSamples: [],
       path,
       error: error instanceof Error ? error.message : String(error),
     };
@@ -2681,6 +2739,61 @@ function createMcpConfigInWrongFileCheck(t: Translator, inspection: McpConfigInW
   return okCheck(
     t("doctor.check.mcp_config_in_wrong_file.name"),
     t("doctor.check.mcp_config_in_wrong_file.ok"),
+  );
+}
+
+// v2.0.0-rc.27 TASK-010 (audit §2.24): surfaces forward-compat warnings when
+// events.jsonl contains rows the current parser cannot validate (legacy
+// schema_version != 1 OR an event_type not in the discriminator set). Both
+// states usually mean the operator needs to pick between two recoveries:
+//   1) archive + recreate events.jsonl (when stale rc.0/rc.1 rows linger), or
+//   2) upgrade the CLI (when a newer server emitted a token this CLI does not
+//      yet recognise).
+// `warning` severity, not `error` — readEventLedger already silently drops
+// these rows so the workspace continues to function; the check exists to
+// stop the audit blind-spot, not to block progress.
+function createEventLedgerSchemaCompatCheck(
+  t: Translator,
+  ledger: EventLedgerInspection,
+): DoctorCheck {
+  if (!ledger.exists || !ledger.writable) {
+    return okCheck(
+      t("doctor.check.event_ledger_schema_compat.name"),
+      t("doctor.check.event_ledger_schema_compat.ok.skipped"),
+    );
+  }
+  const hasUnsupportedVersion = ledger.schemaVersionUnsupportedCount > 0;
+  const hasUnknownEventType = ledger.eventTypeUnknownCount > 0;
+  if (!hasUnsupportedVersion && !hasUnknownEventType) {
+    return okCheck(
+      t("doctor.check.event_ledger_schema_compat.name"),
+      t("doctor.check.event_ledger_schema_compat.ok.clean"),
+    );
+  }
+  const parts: string[] = [];
+  if (hasUnsupportedVersion) {
+    parts.push(
+      t("doctor.check.event_ledger_schema_compat.message.schema_version", {
+        count: String(ledger.schemaVersionUnsupportedCount),
+        samples: ledger.schemaVersionSamples.join(", "),
+      }),
+    );
+  }
+  if (hasUnknownEventType) {
+    parts.push(
+      t("doctor.check.event_ledger_schema_compat.message.event_type", {
+        count: String(ledger.eventTypeUnknownCount),
+        samples: ledger.eventTypeSamples.join(", "),
+      }),
+    );
+  }
+  return issueCheck(
+    t("doctor.check.event_ledger_schema_compat.name"),
+    "warn",
+    "warning",
+    "event_ledger_schema_compat",
+    parts.join(" "),
+    t("doctor.check.event_ledger_schema_compat.remediation"),
   );
 }
 

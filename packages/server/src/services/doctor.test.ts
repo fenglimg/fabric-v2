@@ -153,6 +153,7 @@ describe("runDoctorReport", () => {
       "Knowledge-test index",
       "Event ledger",
       "Event ledger partial write",
+      "Event ledger schema compat",
       "Claude MCP config location",
       "Meta manual divergence",
       "Knowledge dir unindexed",
@@ -182,7 +183,7 @@ describe("runDoctorReport", () => {
       "Onboard coverage",
       "Preexisting root markdown",
     ]);
-    expect(report.checks).toHaveLength(35);
+    expect(report.checks).toHaveLength(36);
   });
 
   it("v2.0: clean post-init repo (mocked layout) reports zero errors AND zero warnings", async () => {
@@ -384,6 +385,101 @@ describe("runDoctorReport", () => {
     // The ledger should contain the truncation event
     const { events } = await readEventLedger(target);
     expect(events.map((event) => event.event_type)).toContain("event_ledger_truncated");
+  });
+
+  // v2.0.0-rc.27 TASK-010 (audit §2.24): doctor surfaces schema-compat warnings
+  // for events.jsonl rows whose schema_version != 1 OR whose event_type is not
+  // in the current discriminator set. The check is `warning` severity — does
+  // not block, but stops the prior silent-drop blind spot.
+  it("event_ledger_schema_compat: warns on schema_version=0 rows (audit §2.24)", async () => {
+    const target = createInitializedProject("doctor-event-ledger-schema-compat-version");
+    await writeKnowledgeMeta(target, { source: "doctor_fix" });
+
+    const validLine = JSON.stringify({
+      kind: "fabric-event",
+      id: "event:ok",
+      ts: 1_000,
+      schema_version: 1,
+      event_type: "reapply_completed",
+      preserved_ledger: true,
+      preserved_meta: true,
+      rules_count: 0,
+    });
+    const legacyLine = JSON.stringify({
+      kind: "fabric-event",
+      id: "event:legacy",
+      ts: 1_001,
+      schema_version: 0,
+      event_type: "deprecated_event_type_from_rc_0",
+    });
+    writeFileSync(
+      join(target, ".fabric", "events.jsonl"),
+      `${validLine}\n${legacyLine}\n`,
+      "utf8",
+    );
+
+    const report = await runDoctorReport(target);
+    const check = report.checks.find(
+      (c) => c.code === "event_ledger_schema_compat",
+    );
+    expect(check).toBeDefined();
+    expect(check?.status).toBe("warn");
+    expect(check?.message).toMatch(/schema_version/);
+    expect(check?.message).toMatch(/0/);
+  });
+
+  it("event_ledger_schema_compat: warns on unknown event_type (audit §2.24)", async () => {
+    const target = createInitializedProject("doctor-event-ledger-schema-compat-event-type");
+    await writeKnowledgeMeta(target, { source: "doctor_fix" });
+
+    const unknownTypeLine = JSON.stringify({
+      kind: "fabric-event",
+      id: "event:future",
+      ts: 1_002,
+      schema_version: 1,
+      event_type: "knowledge_telepathy_observed",
+    });
+    writeFileSync(
+      join(target, ".fabric", "events.jsonl"),
+      `${unknownTypeLine}\n`,
+      "utf8",
+    );
+
+    const report = await runDoctorReport(target);
+    const check = report.checks.find(
+      (c) => c.code === "event_ledger_schema_compat",
+    );
+    expect(check).toBeDefined();
+    expect(check?.status).toBe("warn");
+    expect(check?.message).toMatch(/event_type/);
+    expect(check?.message).toMatch(/knowledge_telepathy_observed/);
+  });
+
+  it("event_ledger_schema_compat: clean when all rows match current schema", async () => {
+    const target = createInitializedProject("doctor-event-ledger-schema-compat-clean");
+    await writeKnowledgeMeta(target, { source: "doctor_fix" });
+
+    const validLine = JSON.stringify({
+      kind: "fabric-event",
+      id: "event:ok",
+      ts: 1_000,
+      schema_version: 1,
+      event_type: "reapply_completed",
+      preserved_ledger: true,
+      preserved_meta: true,
+      rules_count: 0,
+    });
+    writeFileSync(
+      join(target, ".fabric", "events.jsonl"),
+      `${validLine}\n`,
+      "utf8",
+    );
+
+    const report = await runDoctorReport(target);
+    const check = report.checks.find(
+      (c) => c.name === "Event ledger schema compat",
+    );
+    expect(check?.status).toBe("ok");
   });
 
   // v2.0.0-rc.22 Scope A T4: rotateEventLedgerIfNeeded integration into

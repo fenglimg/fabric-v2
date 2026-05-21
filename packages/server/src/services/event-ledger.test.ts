@@ -346,10 +346,12 @@ describe("event-ledger", () => {
       expect(events[0]).toMatchObject({ id: "event:good", event_type: "mcp_event" });
 
       expect(warnings).toHaveLength(1);
-      expect(warnings[0].kind).toBe("partial_write_at_tail");
-      expect(warnings[0].byte_offset).toBe(Buffer.byteLength(`${goodLine}\n`, "utf8"));
-      expect(warnings[0].byte_length).toBe(Buffer.byteLength(partialLine, "utf8"));
-      expect(warnings[0].snippet_first_120).toBe(partialLine.slice(0, 120));
+      const w = warnings[0];
+      expect(w.kind).toBe("partial_write_at_tail");
+      if (w.kind !== "partial_write_at_tail") throw new Error("unreachable");
+      expect(w.byte_offset).toBe(Buffer.byteLength(`${goodLine}\n`, "utf8"));
+      expect(w.byte_length).toBe(Buffer.byteLength(partialLine, "utf8"));
+      expect(w.snippet_first_120).toBe(partialLine.slice(0, 120));
     });
 
     it("returns no warnings when file ends with a newline", async () => {
@@ -389,6 +391,105 @@ describe("event-ledger", () => {
 
       expect(events).toEqual([]);
       expect(warnings).toEqual([]);
+    });
+
+    // v2.0.0-rc.27 TASK-010 (audit §2.24): forward-compat classification —
+    // lines that fail Zod validation because of schema_version != 1 or an
+    // unknown event_type must surface as LedgerWarning entries (previously
+    // silently dropped).
+    it("emits a schema_version_unsupported warning for rows with schema_version != 1", async () => {
+      const projectRoot = await createTempProject();
+      await mkdir(join(projectRoot, ".fabric"), { recursive: true });
+
+      const validLine = JSON.stringify({
+        kind: "fabric-event",
+        id: "event:ok",
+        ts: 1_000,
+        schema_version: 1,
+        event_type: "reapply_completed",
+        preserved_ledger: true,
+        preserved_meta: true,
+        rules_count: 0,
+      });
+      const legacyLine = JSON.stringify({
+        kind: "fabric-event",
+        id: "event:legacy",
+        ts: 1_001,
+        schema_version: 0,
+        event_type: "deprecated_event_type_from_rc_0",
+      });
+
+      await writeFile(
+        join(projectRoot, ".fabric", "events.jsonl"),
+        `${validLine}\n${legacyLine}\n`,
+        "utf8",
+      );
+
+      const { events, warnings } = await readEventLedger(projectRoot);
+      expect(events).toHaveLength(1);
+      expect(events[0].id).toBe("event:ok");
+
+      const versionWarnings = warnings.filter(
+        (w) => w.kind === "schema_version_unsupported",
+      );
+      expect(versionWarnings).toHaveLength(1);
+      const w = versionWarnings[0];
+      if (w.kind !== "schema_version_unsupported") throw new Error("unreachable");
+      expect(w.schema_version).toBe(0);
+      expect(w.line_index).toBe(1);
+    });
+
+    it("emits an event_type_unknown warning for rows with valid schema_version but unrecognised event_type", async () => {
+      const projectRoot = await createTempProject();
+      await mkdir(join(projectRoot, ".fabric"), { recursive: true });
+
+      const unknownTypeLine = JSON.stringify({
+        kind: "fabric-event",
+        id: "event:future",
+        ts: 1_002,
+        schema_version: 1,
+        event_type: "knowledge_telepathy_observed",
+      });
+
+      await writeFile(
+        join(projectRoot, ".fabric", "events.jsonl"),
+        `${unknownTypeLine}\n`,
+        "utf8",
+      );
+
+      const { events, warnings } = await readEventLedger(projectRoot);
+      expect(events).toEqual([]);
+
+      const typeWarnings = warnings.filter(
+        (w) => w.kind === "event_type_unknown",
+      );
+      expect(typeWarnings).toHaveLength(1);
+      const w = typeWarnings[0];
+      if (w.kind !== "event_type_unknown") throw new Error("unreachable");
+      expect(w.event_type).toBe("knowledge_telepathy_observed");
+    });
+
+    it("classifies schema_version mismatch BEFORE event_type unknown (priority order)", async () => {
+      const projectRoot = await createTempProject();
+      await mkdir(join(projectRoot, ".fabric"), { recursive: true });
+
+      const badBothLine = JSON.stringify({
+        kind: "fabric-event",
+        id: "event:both",
+        ts: 1_003,
+        schema_version: 2,
+        event_type: "knowledge_unicorn_observed",
+      });
+
+      await writeFile(
+        join(projectRoot, ".fabric", "events.jsonl"),
+        `${badBothLine}\n`,
+        "utf8",
+      );
+
+      const { warnings } = await readEventLedger(projectRoot);
+      expect(warnings).toHaveLength(1);
+      expect(warnings[0].kind).toBe("schema_version_unsupported");
     });
   });
 

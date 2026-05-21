@@ -43,7 +43,83 @@ export type ReadEventLedgerOptions = {
 };
 
 export type LedgerWarning =
-  | { kind: "partial_write_at_tail"; byte_offset: number; byte_length: number; snippet_first_120: string };
+  | { kind: "partial_write_at_tail"; byte_offset: number; byte_length: number; snippet_first_120: string }
+  // v2.0.0-rc.27 TASK-010 (audit §2.24): forward-compat warning categories. Lines that
+  // are valid JSON but fail Zod validation because of `schema_version !== 1` or
+  // an unknown `event_type` token used to be silently dropped — operators had
+  // no way to spot stale rc.0/rc.1 ledger rows or events emitted by a newer
+  // server against an older CLI. These warnings get surfaced through
+  // `fab doctor` so the operator can decide whether to archive + re-create the
+  // ledger or upgrade the CLI to a server-compatible version.
+  | {
+      kind: "schema_version_unsupported";
+      line_index: number;
+      schema_version: unknown;
+      snippet_first_120: string;
+    }
+  | {
+      kind: "event_type_unknown";
+      line_index: number;
+      event_type: unknown;
+      snippet_first_120: string;
+    };
+
+// v2.0.0-rc.27 TASK-010 (audit §2.24): derive the known event_type set lazily
+// from the discriminated-union options so the warning classifier stays in
+// sync with the schema without a manual mirror. Each option is a ZodObject
+// whose `event_type` field is a ZodLiteral — the literal value is the wire
+// token.
+let knownEventTypesCache: Set<string> | null = null;
+function getKnownEventTypes(): Set<string> {
+  if (knownEventTypesCache !== null) return knownEventTypesCache;
+  const set = new Set<string>();
+  for (const opt of eventLedgerEventSchema.options) {
+    const shape = (opt as { shape: { event_type: { value: string } } }).shape;
+    if (shape && typeof shape.event_type?.value === "string") {
+      set.add(shape.event_type.value);
+    }
+  }
+  knownEventTypesCache = set;
+  return set;
+}
+
+function classifyRejection(line: string, index: number): LedgerWarning | null {
+  let parsed: Record<string, unknown>;
+  try {
+    parsed = JSON.parse(line) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+  if (parsed === null || typeof parsed !== "object") return null;
+  // schema_version classification fires when the line carries a numeric
+  // version that does not equal 1. Lines missing the field entirely are
+  // treated as legacy/malformed and stay silently dropped.
+  if (
+    "schema_version" in parsed &&
+    parsed.schema_version !== 1 &&
+    (typeof parsed.schema_version === "number" || parsed.schema_version === null)
+  ) {
+    return {
+      kind: "schema_version_unsupported",
+      line_index: index,
+      schema_version: parsed.schema_version,
+      snippet_first_120: line.slice(0, 120),
+    };
+  }
+  // event_type classification fires when schema_version IS valid (or
+  // absent — the dominant rc.0-era shape was schema_version-less) but the
+  // declared event_type is not in the known discriminator set.
+  const known = getKnownEventTypes();
+  if (typeof parsed.event_type === "string" && !known.has(parsed.event_type)) {
+    return {
+      kind: "event_type_unknown",
+      line_index: index,
+      event_type: parsed.event_type,
+      snippet_first_120: line.slice(0, 120),
+    };
+  }
+  return null;
+}
 
 export type ReadEventLedgerResult = {
   events: StoredEventLedgerEvent[];
@@ -131,17 +207,34 @@ export async function readEventLedger(
     });
   }
 
-  const events = lines
+  // v2.0.0-rc.27 TASK-010 (audit §2.24): classify rejected lines so
+  // forward-compat warnings surface through `fab doctor`. We walk lines once,
+  // collecting either a parsed event or a warning describing why the line
+  // failed validation (currently: schema_version mismatch or unknown
+  // event_type). Lines that fail JSON.parse OR fail Zod for unclassified
+  // reasons stay silently dropped — those are non-actionable for the operator.
+  const trimmed = lines
     .map((line) => line.trim())
-    .filter((line) => line.length > 0)
-    .map((line, index) => parseEventLedgerLine(line, index))
-    .filter((entry): entry is StoredEventLedgerEvent => entry !== null)
+    .filter((line) => line.length > 0);
+  const events: StoredEventLedgerEvent[] = [];
+  for (let i = 0; i < trimmed.length; i++) {
+    const line = trimmed[i];
+    const parsed = parseEventLedgerLine(line, i);
+    if (parsed !== null) {
+      events.push(parsed);
+      continue;
+    }
+    const rejection = classifyRejection(line, i);
+    if (rejection !== null) warnings.push(rejection);
+  }
+
+  const filtered = events
     .filter((entry) => options.event_type === undefined || entry.event_type === options.event_type)
     .filter((entry) => options.since === undefined || entry.ts >= options.since)
     .filter((entry) => options.correlation_id === undefined || entry.correlation_id === options.correlation_id)
     .filter((entry) => options.session_id === undefined || entry.session_id === options.session_id);
 
-  return { events, warnings };
+  return { events: filtered, warnings };
 }
 
 /**

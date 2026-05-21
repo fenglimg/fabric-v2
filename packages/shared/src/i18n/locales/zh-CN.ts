@@ -383,6 +383,18 @@ export const zhCNMessages: Messages = {
     "运行 `fab doctor --fix` 截断 partial write 并将 events.jsonl 恢复到有效状态。",
   "doctor.check.event_ledger_partial_write.ok.clean":
     "events.jsonl 没有 partial trailing write。",
+  // v2.0.0-rc.27 TASK-010 (audit §2.24): schema-compat 向前兼容警告类别。
+  "doctor.check.event_ledger_schema_compat.name": "Event ledger schema 兼容性",
+  "doctor.check.event_ledger_schema_compat.ok.skipped":
+    "无需做 schema 兼容性检查（events.jsonl 不存在或不可写）。",
+  "doctor.check.event_ledger_schema_compat.ok.clean":
+    "events.jsonl 所有行都能解析为当前 schema。",
+  "doctor.check.event_ledger_schema_compat.message.schema_version":
+    "events.jsonl 含 {count} 行 `schema_version` 不被当前 CLI 识别（样本: {samples}）。",
+  "doctor.check.event_ledger_schema_compat.message.event_type":
+    "events.jsonl 含 {count} 行 `event_type` 不在当前 schema 中（样本: {samples}）。",
+  "doctor.check.event_ledger_schema_compat.remediation":
+    "升级 fab CLI 到与 server 兼容的版本，或备份 `.fabric/events.jsonl` 后跑 `fab doctor --fix` 重建空 ledger。",
   "doctor.check.meta_manually_diverged.name": "Meta manual divergence",
   "doctor.check.meta_manually_diverged.ok.unreadable":
     "agents.meta.json 不可读，跳过 divergence 检查。",
