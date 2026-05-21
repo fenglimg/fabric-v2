@@ -78,6 +78,14 @@ describe("runDoctorReport", () => {
     expect(report.status).toBe("error");
     expect(report.summary.framework.kind).toBe("vite");
     expect(report.summary.entryPoints.map((entry) => entry.path)).toContain("src/main.ts");
+    // v2.0.0-rc.29 TASK-008 (BUG-F2): payload_limits surfaced in doctor summary.
+    // No fabric.config.json overrides on the seed → source must be "default"
+    // and values must equal the published library constants (16 KiB / 64 KiB).
+    expect(report.summary.payload_limits).toMatchObject({
+      warn_bytes: 16384,
+      hard_bytes: 65536,
+      source: "default",
+    });
     // v2.0: bootstrap_anchor_missing replaces bootstrap_missing; knowledge_dir_missing
     // replaces taxonomy_missing.
     expect(report.fixable_errors.map((issue) => issue.code)).toEqual([

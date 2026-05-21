@@ -9,6 +9,8 @@ import {
   type OnboardSlot,
 } from "@fenglimg/fabric-shared";
 
+import { t } from "../i18n.js";
+
 // ---------------------------------------------------------------------------
 // v2.0.0-rc.23 TASK-014 (F8c) — `fab onboard-coverage`
 //
@@ -269,8 +271,11 @@ interface OnboardCoverageArgs {
 export const onboardCoverageCommand = defineCommand({
   meta: {
     name: "onboard-coverage",
-    description:
-      "Report S5 onboard-slot coverage for the workspace. Used by the fabric-archive Skill's first-run phase to detect unclaimed project-tone slots.",
+    // v2.0.0-rc.29 TASK-008 (BUG-L2): route description strings through t()
+    // (mirrors serve.ts pattern). Previously this command was English-only
+    // even when the rest of `fab --help` rendered zh-CN, so Chinese-locale
+    // users saw an isolated English block under --help.
+    description: t("cli.onboard-coverage.description"),
     // Mirrors `plan-context-hint`: hidden from `fab --help` so the top-level
     // banner stays focused on install/doctor/serve/config. The command stays
     // callable directly from Skills via `fab onboard-coverage --json`.
@@ -279,12 +284,12 @@ export const onboardCoverageCommand = defineCommand({
   args: {
     json: {
       type: "boolean",
-      description: "Emit machine-readable JSON to stdout instead of the human table.",
+      description: t("cli.onboard-coverage.args.json.description"),
       default: false,
     },
     target: {
       type: "string",
-      description: "Override the project root (defaults to cwd).",
+      description: t("cli.onboard-coverage.args.target.description"),
     },
   },
   async run({ args }: { args: OnboardCoverageArgs }) {

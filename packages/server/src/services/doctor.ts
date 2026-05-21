@@ -31,6 +31,12 @@ import {
   type Translator,
 } from "@fenglimg/fabric-shared";
 import { detectFramework } from "@fenglimg/fabric-shared/node";
+// v2.0.0-rc.29 TASK-008 (BUG-F2): surface MCP payload thresholds in doctor.
+import {
+  PAYLOAD_LIMIT_DEFAULT_HARD_BYTES,
+  PAYLOAD_LIMIT_DEFAULT_WARN_BYTES,
+} from "@fenglimg/fabric-shared/node/mcp-payload-guard";
+import { readPayloadLimits } from "../config-loader.js";
 
 import { contextCache } from "../cache.js";
 import { atomicWriteJson, atomicWriteText } from "@fenglimg/fabric-shared/node/atomic-write";
@@ -70,6 +76,18 @@ export type DoctorIssue = {
   actionHint?: string;
 };
 
+// v2.0.0-rc.29 TASK-008 (BUG-F2): surface the active MCP payload thresholds so
+// operators can see (a) what's enforced and (b) whether the values came from
+// the library default or a fabric.config.json override. Previously
+// DEFAULT_WARN/DEFAULT_HARD were buried in code and never rendered in
+// `fab doctor --json`, leaving operators in the dark about why a knowledge
+// section returned with `mcp_payload_warn`.
+export type DoctorPayloadLimits = {
+  warn_bytes: number;
+  hard_bytes: number;
+  source: "default" | "config";
+};
+
 export type DoctorSummary = {
   target: string;
   framework: {
@@ -90,6 +108,8 @@ export type DoctorSummary = {
   warningCount: number;
   infoCount: number;
   targetFiles: Record<string, boolean>;
+  // v2.0.0-rc.29 TASK-008 (BUG-F2): active MCP payload thresholds.
+  payload_limits: DoctorPayloadLimits;
 };
 
 export type DoctorReport = {
@@ -1097,8 +1117,29 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
       targetFiles: Object.fromEntries(
         TARGET_FILE_PATHS.map((path) => [path, existsSync(join(projectRoot, path))]),
       ),
+      // v2.0.0-rc.29 TASK-008 (BUG-F2): resolve and surface payload thresholds.
+      // Best-effort: a corrupt fabric.config.json should not fail doctor; on
+      // any read/parse error fall back to library defaults with source="default".
+      payload_limits: resolvePayloadLimits(projectRoot),
     },
   };
+}
+
+// v2.0.0-rc.29 TASK-008 (BUG-F2): translate the optional override block into
+// the doctor-surface shape, recording whether any override actually moved the
+// needle (`source: "config"`) or both values came from the library default.
+function resolvePayloadLimits(projectRoot: string): DoctorPayloadLimits {
+  let override: { warnBytes?: number; hardBytes?: number } | undefined;
+  try {
+    override = readPayloadLimits(projectRoot);
+  } catch {
+    override = undefined;
+  }
+  const warn = override?.warnBytes ?? PAYLOAD_LIMIT_DEFAULT_WARN_BYTES;
+  const hard = override?.hardBytes ?? PAYLOAD_LIMIT_DEFAULT_HARD_BYTES;
+  const source: "default" | "config" =
+    override?.warnBytes !== undefined || override?.hardBytes !== undefined ? "config" : "default";
+  return { warn_bytes: warn, hard_bytes: hard, source };
 }
 
 export async function runDoctorFix(target: string): Promise<DoctorFixReport> {

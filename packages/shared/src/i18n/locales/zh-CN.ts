@@ -868,6 +868,14 @@ export const zhCNMessages: Messages = {
     "未设置 FABRIC_AUTH_TOKEN：/api /events /mcp 默认返回 401（否则任何本机进程都能读取 .fabric/agents.meta.json + forensic.json + events.jsonl）。请设置 FABRIC_AUTH_TOKEN=<secret>，或传入 --allow-loopback-no-auth 显式放行。",
   "cli.serve.error.port-in-use": "端口 {port} 已被占用，可尝试 --port {nextPort}",
 
+  // v2.0.0-rc.29 TASK-008 (BUG-L2): onboard-coverage 国际化键。
+  "cli.onboard-coverage.description":
+    "汇总当前工作区的 S5 onboard-slot 覆盖度。fabric-archive Skill 首跑阶段用它判断哪些项目语调槽位尚未被认领。",
+  "cli.onboard-coverage.args.json.description":
+    "输出机器可读的 JSON 到 stdout（替代人类可读的表格）。",
+  "cli.onboard-coverage.args.target.description":
+    "覆盖项目根目录（默认为当前工作目录）。",
+
   "cli.update.description": "刷新 MCP 主机配置和 git hooks，不重新创建 Fabric 文件。",
   "cli.update.args.target.description":
     "目标项目路径。默认依次使用 --target、EXTERNAL_FIXTURE_PATH、当前目录。",

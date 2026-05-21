@@ -15,8 +15,16 @@ export interface PayloadGuardResult {
   warning?: { code: 'mcp_payload_warn'; message: string; bytes: number; threshold: number }
 }
 
-const DEFAULT_WARN = 16384
-const DEFAULT_HARD = 65536
+// v2.0.0-rc.29 TASK-008 (BUG-F2): publish the default thresholds so doctor
+// (and any other operator-facing surface) can render the active values
+// without re-deriving them. The defaults are intentionally narrow:
+//   warn  = 16 KiB (legible payload, room for >1 MCP round-trip per minute)
+//   hard  = 64 KiB (single MCP tool result safely fits stdio + websocket)
+// Override via fabric.config.json `mcpPayloadLimits.{warnBytes,hardBytes}`.
+export const PAYLOAD_LIMIT_DEFAULT_WARN_BYTES = 16384
+export const PAYLOAD_LIMIT_DEFAULT_HARD_BYTES = 65536
+const DEFAULT_WARN = PAYLOAD_LIMIT_DEFAULT_WARN_BYTES
+const DEFAULT_HARD = PAYLOAD_LIMIT_DEFAULT_HARD_BYTES
 
 export function enforcePayloadLimit(
   serializedPayload: string,

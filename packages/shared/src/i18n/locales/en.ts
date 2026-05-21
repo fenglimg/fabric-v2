@@ -885,6 +885,14 @@ export const enMessages: Messages = {
     "FABRIC_AUTH_TOKEN is not set: /api /events /mcp will return 401 by default (any local process could otherwise read .fabric/agents.meta.json + forensic.json + events.jsonl). Set FABRIC_AUTH_TOKEN=<secret> or pass --allow-loopback-no-auth to opt in.",
   "cli.serve.error.port-in-use": "Port {port} in use - try --port {nextPort}",
 
+  // v2.0.0-rc.29 TASK-008 (BUG-L2): onboard-coverage i18n keys.
+  "cli.onboard-coverage.description":
+    "Report S5 onboard-slot coverage for the workspace. Used by the fabric-archive Skill's first-run phase to detect unclaimed project-tone slots.",
+  "cli.onboard-coverage.args.json.description":
+    "Emit machine-readable JSON to stdout instead of the human table.",
+  "cli.onboard-coverage.args.target.description":
+    "Override the project root (defaults to cwd).",
+
   "cli.update.description": "Refresh MCP host configuration and git hooks without re-creating Fabric files.",
   "cli.update.args.target.description":
     "Target project path. Defaults to --target, then EXTERNAL_FIXTURE_PATH, then cwd.",

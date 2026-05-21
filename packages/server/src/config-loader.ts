@@ -29,3 +29,18 @@ function readFabricConfig(projectRoot: string): FabricConfig {
 export function readPayloadLimits(projectRoot: string): McpPayloadLimits | undefined {
   return readFabricConfig(projectRoot).mcpPayloadLimits;
 }
+
+/**
+ * v2.0.0-rc.29 TASK-008 (BUG-F3): returns the selection_token_ttl_ms override
+ * from fabric.config.json, or undefined when absent so the caller (plan-context.ts)
+ * falls back to its 5-minute default. Best-effort: any parse failure returns
+ * undefined rather than throwing — plan_context is on the hot read path and
+ * must not crash on a corrupt config file.
+ */
+export function readSelectionTokenTtlMs(projectRoot: string): number | undefined {
+  try {
+    return readFabricConfig(projectRoot).selection_token_ttl_ms;
+  } catch {
+    return undefined;
+  }
+}

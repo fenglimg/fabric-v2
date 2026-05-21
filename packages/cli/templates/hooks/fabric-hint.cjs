@@ -1079,7 +1079,20 @@ function tryReadStdinJson() {
     const parsed = JSON.parse(buf);
     if (parsed === null || typeof parsed !== "object") return null;
     return parsed;
-  } catch {
+  } catch (e) {
+    // v2.0.0-rc.29 TASK-008 (BUG-L1): hook used to silent-swallow JSON.parse
+    // errors which masked real client-side payload bugs (e.g. CLI hosts that
+    // stopped emitting Stop-hook JSON envelopes). Log a single best-effort
+    // diagnostic line so operators see WHY the hook went quiet; keep returning
+    // null so downstream behaviour (graceful exit 0, no rule render) is
+    // unchanged.
+    try {
+      const message = (e && typeof e === "object" && "message" in e) ? String(e.message) : String(e);
+      process.stderr.write(`[fabric-hint] malformed input: ${message}\n`);
+    } catch {
+      // stderr write failed (very unusual — sandbox / closed fd). The
+      // hook contract still requires we never throw upward.
+    }
     return null;
   }
 }

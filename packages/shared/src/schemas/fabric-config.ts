@@ -204,4 +204,20 @@ export const fabricConfigSchema = z.object({
   // Default `[]` keeps the field optional on existing configs — fresh
   // installs land with no opt-outs.
   onboard_slots_opted_out: z.array(z.string()).optional().default([]),
+  // v2.0.0-rc.29 TASK-008 (BUG-F3): selection-token TTL override. The
+  // `fab_plan_context` MCP tool hands clients a `selection_token` whose default
+  // 5-minute lifetime (`SELECTION_TOKEN_TTL_MS` at
+  // packages/server/src/services/plan-context.ts:91) was hard-coded and could
+  // not be tuned for slow review cycles. Operators on long-running sessions
+  // (manual paste-and-review flows, debugger pauses, etc.) reported tokens
+  // expiring mid-review. Override here; absence means "use the library default
+  // of 5*60*1000 ms." Range 30s..1h keeps the value useful — below 30s the
+  // token expires before MCP round-trips finish; above 1h it stops being a
+  // meaningful liveness signal for the plan-context cache.
+  selection_token_ttl_ms: z
+    .number()
+    .int()
+    .min(30_000)
+    .max(3_600_000)
+    .optional(),
 });

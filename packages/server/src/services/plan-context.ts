@@ -2,6 +2,7 @@ import { minimatch } from "minimatch";
 
 import { deriveAgentsMetaLayer, type RuleDescription, type RuleDescriptionIndexItem } from "@fenglimg/fabric-shared";
 
+import { readSelectionTokenTtlMs } from "../config-loader.js";
 import { type AgentsMeta } from "../meta-reader.js";
 import { appendEventLedgerEvent } from "./event-ledger.js";
 import { normalizeKnowledgePath } from "./get-knowledge.js";
@@ -88,7 +89,10 @@ export type SelectionTokenState = {
   expires_at: number;
 };
 
-const SELECTION_TOKEN_TTL_MS = 5 * 60 * 1000;
+// v2.0.0-rc.29 TASK-008 (BUG-F3): default selection_token TTL. Overridable
+// at runtime via fabric.config.json's `selection_token_ttl_ms` (per
+// projectRoot). The default 5 minutes matches the pre-rc.29 hard-coded value.
+const SELECTION_TOKEN_TTL_DEFAULT_MS = 5 * 60 * 1000;
 // v2.0-rc.7 T9: degenerate-mode threshold removed — the API is now symmetric
 // across all candidate counts. See docs/decisions/rc5-a3-superseded.md.
 const selectionTokenCache = new Map<string, SelectionTokenState>();
@@ -248,7 +252,12 @@ export async function planContext(
   // event required for rc.5 C5 closure) to load bodies. The inline
   // `candidates_full_content` short-circuit is gone.
   const sharedStableIds = sharedDescriptionIndex.map((item) => item.stable_id);
-  const selectionToken = createSelectionToken(meta.revision, uniquePaths, [], sharedStableIds);
+  // v2.0.0-rc.29 TASK-008 (BUG-F3): resolve per-workspace TTL override (if any)
+  // and thread it through createSelectionToken so the token's expires_at lines
+  // up with the operator's chosen lifetime. Hot-path safe: readSelectionTokenTtlMs
+  // is best-effort and returns undefined on any read/parse failure.
+  const ttlMs = readSelectionTokenTtlMs(projectRoot) ?? SELECTION_TOKEN_TTL_DEFAULT_MS;
+  const selectionToken = createSelectionToken(meta.revision, uniquePaths, [], sharedStableIds, Date.now(), ttlMs);
 
   const result: PlanContextResult = {
     revision_hash: meta.revision,
@@ -318,6 +327,10 @@ export function createSelectionToken(
   requiredStableIds: string[],
   aiSelectableStableIds: string[],
   now = Date.now(),
+  // v2.0.0-rc.29 TASK-008 (BUG-F3): caller-provided TTL override (defaults to
+  // the constant when omitted). Test scaffolds can short-circuit by passing
+  // a small ttlMs to exercise expiry without sleeping for 5 minutes.
+  ttlMs: number = SELECTION_TOKEN_TTL_DEFAULT_MS,
 ): string {
   const token = `selection:${revisionHash}:${now.toString(36)}:${Math.random().toString(36).slice(2)}`;
   selectionTokenCache.set(token, {
@@ -327,7 +340,7 @@ export function createSelectionToken(
     required_stable_ids: requiredStableIds,
     ai_selectable_stable_ids: aiSelectableStableIds,
     created_at: now,
-    expires_at: now + SELECTION_TOKEN_TTL_MS,
+    expires_at: now + ttlMs,
   });
   return token;
 }
