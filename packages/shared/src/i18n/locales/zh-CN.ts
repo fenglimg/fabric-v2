@@ -395,6 +395,14 @@ export const zhCNMessages: Messages = {
     "events.jsonl 含 {count} 行 `event_type` 不在当前 schema 中（样本: {samples}）。",
   "doctor.check.event_ledger_schema_compat.remediation":
     "升级 fab CLI 到与 server 兼容的版本，或备份 `.fabric/events.jsonl` 后跑 `fab doctor --fix` 重建空 ledger。",
+  // v2.0.0-rc.28 TASK-04 (audit §3.1): SKILL ref/ 镜像一致性检查。
+  "doctor.check.skill_ref_mirror.name": "Skill ref 镜像一致性",
+  "doctor.check.skill_ref_mirror.ok":
+    "`.claude/skills/<slug>/ref/` 与 `.codex/skills/<slug>/ref/` 字节一致。",
+  "doctor.check.skill_ref_mirror.message":
+    "有 {count} 个 ref 文件在 `.claude/skills/` 与 `.codex/skills/` 之间不一致（路径: {list}）。可能某端被手动编辑或 install 写入失败。",
+  "doctor.check.skill_ref_mirror.remediation":
+    "跑 `fab install` 从 canonical templates 重写两端 ref 子树以恢复一致。",
   "doctor.check.meta_manually_diverged.name": "Meta manual divergence",
   "doctor.check.meta_manually_diverged.ok.unreadable":
     "agents.meta.json 不可读，跳过 divergence 检查。",

@@ -236,6 +236,27 @@ type EventLedgerInspection = {
   error?: string;
 };
 
+// v2.0.0-rc.28 TASK-04 (audit §3.1 follow-up): SKILL.md split moved
+// reference content from a single SKILL.md into per-skill `ref/` subdirs.
+// Both `.claude/skills/<slug>/ref/` and `.codex/skills/<slug>/ref/` get
+// byte-identical copies via `fab install`. A hand-edit to one client's
+// ref/ file OR a partial install (one client succeeded, the other got an
+// error mid-write) breaks mirror parity. This inspection collects the
+// drifted pairs so the doctor check can surface them.
+//
+// Detection model: mirror parity between the two client subtrees. The
+// templates/ source-of-truth is not part of the runtime workspace so it
+// cannot be the reference; the install pipeline writes the same bytes to
+// both clients, and any subsequent hand-edit shows up as parity drift.
+// Missing client subtree (e.g. user only uses Codex CLI) degrades to "ok"
+// — only files that exist in BOTH clients are compared.
+type SkillRefMirrorInspection =
+  | { status: "ok" }
+  | {
+      status: "drift";
+      driftedPaths: string[]; // relative paths reported in remediation
+    };
+
 type KnowledgeTestIndexInspection =
   | {
       present: true;
@@ -854,6 +875,10 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     inspectL2ManagedBlockDrift(projectRoot),
   ]);
   const mcpConfigInWrongFile = inspectMcpConfigInWrongFile(projectRoot);
+  // v2.0.0-rc.28 TASK-04 (audit §3.1): SKILL ref/ mirror parity check.
+  // Pure-sync (readdirSync + readFileSync), so it lives outside the
+  // Promise.all block.
+  const skillRefMirror = inspectSkillRefMirror(projectRoot);
   const metaManuallyDiverged = await inspectMetaManuallyDiverged(projectRoot);
   const knowledgeDirUnindexed = inspectKnowledgeDirUnindexed(projectRoot, meta);
   const knowledgeDirMissing = inspectKnowledgeDirMissing(projectRoot);
@@ -971,6 +996,11 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     // events.jsonl rows that fail Zod validation because of unknown
     // schema_version or event_type tokens. Previously silently dropped.
     createEventLedgerSchemaCompatCheck(t, eventLedger),
+    // v2.0.0-rc.28 TASK-04 (audit §3.1 follow-up): SKILL ref/ mirror parity.
+    // Detects hand-edits or partial install that breaks the byte-identical
+    // contract between .claude/skills/<slug>/ref/ and .codex/skills/<slug>/
+    // ref/. warning severity — fab install restores parity.
+    createSkillRefMirrorCheck(t, skillRefMirror),
     createMcpConfigInWrongFileCheck(t, mcpConfigInWrongFile),
     createMetaManuallyDivergedCheck(t, metaManuallyDiverged),
     createKnowledgeDirUnindexedCheck(t, knowledgeDirUnindexed),
@@ -2081,6 +2111,55 @@ async function inspectEventLedger(projectRoot: string): Promise<EventLedgerInspe
   }
 }
 
+// v2.0.0-rc.28 TASK-04 (audit §3.1 follow-up): scan the three v2 skill
+// directories under `.claude/skills/<slug>/ref/` and `.codex/skills/<slug>/
+// ref/`. For every ref filename that exists in BOTH client subtrees, byte-
+// compare the contents. Any mismatch is recorded as a drifted relative
+// path. Filenames present in only one client are tolerated (the user may
+// only have one client installed), but a parity mismatch on files present
+// in both is flagged.
+function inspectSkillRefMirror(projectRoot: string): SkillRefMirrorInspection {
+  const skillSlugs = ["fabric-archive", "fabric-review", "fabric-import"];
+  const driftedPaths: string[] = [];
+  for (const slug of skillSlugs) {
+    const claudeRef = join(projectRoot, ".claude", "skills", slug, "ref");
+    const codexRef = join(projectRoot, ".codex", "skills", slug, "ref");
+    let claudeFiles: string[] = [];
+    let codexFiles: string[] = [];
+    try {
+      claudeFiles = readdirSync(claudeRef).filter((n) => n.endsWith(".md"));
+    } catch {
+      // Missing client subtree — not necessarily drift; user may only have one
+      // client installed. Skip parity check for this skill on this client.
+    }
+    try {
+      codexFiles = readdirSync(codexRef).filter((n) => n.endsWith(".md"));
+    } catch {
+      // Same — tolerate missing subtree.
+    }
+    const shared = claudeFiles.filter((f) => codexFiles.includes(f));
+    for (const fname of shared) {
+      let claudeBody: string;
+      let codexBody: string;
+      try {
+        claudeBody = readFileSync(join(claudeRef, fname), "utf8");
+      } catch {
+        continue;
+      }
+      try {
+        codexBody = readFileSync(join(codexRef, fname), "utf8");
+      } catch {
+        continue;
+      }
+      if (claudeBody !== codexBody) {
+        driftedPaths.push(`skills/${slug}/ref/${fname}`);
+      }
+    }
+  }
+  if (driftedPaths.length === 0) return { status: "ok" };
+  return { status: "drift", driftedPaths };
+}
+
 async function inspectKnowledgeTestIndex(projectRoot: string): Promise<KnowledgeTestIndexInspection> {
   const path = join(projectRoot, ".fabric", ".cache", "knowledge-test.index.json");
   const built = await tryBuildRuleMeta(projectRoot);
@@ -2794,6 +2873,35 @@ function createEventLedgerSchemaCompatCheck(
     "event_ledger_schema_compat",
     parts.join(" "),
     t("doctor.check.event_ledger_schema_compat.remediation"),
+  );
+}
+
+// v2.0.0-rc.28 TASK-04 (audit §3.1): doctor check that surfaces mirror-parity
+// drift between `.claude/skills/<slug>/ref/` and `.codex/skills/<slug>/ref/`.
+// `warning` severity (not `error`): the workspace stays functional; the
+// concern is that an LLM consulting the drifted ref/ file may see different
+// content depending on which client surfaced it. `fab install` restores
+// parity by rewriting both subtrees from the canonical templates/.
+function createSkillRefMirrorCheck(
+  t: Translator,
+  inspection: SkillRefMirrorInspection,
+): DoctorCheck {
+  if (inspection.status === "ok") {
+    return okCheck(
+      t("doctor.check.skill_ref_mirror.name"),
+      t("doctor.check.skill_ref_mirror.ok"),
+    );
+  }
+  return issueCheck(
+    t("doctor.check.skill_ref_mirror.name"),
+    "warn",
+    "warning",
+    "skill_ref_mirror_drift",
+    t("doctor.check.skill_ref_mirror.message", {
+      count: String(inspection.driftedPaths.length),
+      list: inspection.driftedPaths.join(", "),
+    }),
+    t("doctor.check.skill_ref_mirror.remediation"),
   );
 }
 

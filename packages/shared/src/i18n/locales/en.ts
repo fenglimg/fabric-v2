@@ -403,6 +403,14 @@ export const enMessages: Messages = {
     "events.jsonl has {count} row(s) with unknown `event_type` (samples: {samples}).",
   "doctor.check.event_ledger_schema_compat.remediation":
     "Either upgrade the fab CLI to a server-compatible version, or archive `.fabric/events.jsonl` and run `fab doctor --fix` to recreate a fresh ledger.",
+  // v2.0.0-rc.28 TASK-04 (audit §3.1): SKILL ref/ mirror parity check.
+  "doctor.check.skill_ref_mirror.name": "Skill ref mirror parity",
+  "doctor.check.skill_ref_mirror.ok":
+    "All `.claude/skills/<slug>/ref/` and `.codex/skills/<slug>/ref/` files are byte-identical.",
+  "doctor.check.skill_ref_mirror.message":
+    "{count} skill ref file(s) differ between `.claude/skills/` and `.codex/skills/` (paths: {list}). One client was hand-edited or partially installed.",
+  "doctor.check.skill_ref_mirror.remediation":
+    "Run `fab install` to rewrite both client subtrees from the canonical templates and restore parity.",
   "doctor.check.meta_manually_diverged.name": "Meta manual divergence",
   "doctor.check.meta_manually_diverged.ok.unreadable":
     "agents.meta.json not readable; skipping divergence check.",

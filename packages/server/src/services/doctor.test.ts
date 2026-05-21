@@ -154,6 +154,7 @@ describe("runDoctorReport", () => {
       "Event ledger",
       "Event ledger partial write",
       "Event ledger schema compat",
+      "Skill ref mirror parity",
       "Claude MCP config location",
       "Meta manual divergence",
       "Knowledge dir unindexed",
@@ -183,7 +184,7 @@ describe("runDoctorReport", () => {
       "Onboard coverage",
       "Preexisting root markdown",
     ]);
-    expect(report.checks).toHaveLength(36);
+    expect(report.checks).toHaveLength(37);
   });
 
   it("v2.0: clean post-init repo (mocked layout) reports zero errors AND zero warnings", async () => {
@@ -478,6 +479,80 @@ describe("runDoctorReport", () => {
     const report = await runDoctorReport(target);
     const check = report.checks.find(
       (c) => c.name === "Event ledger schema compat",
+    );
+    expect(check?.status).toBe("ok");
+  });
+
+  // v2.0.0-rc.28 TASK-04 (audit §3.1): skill_ref_mirror parity check —
+  // detects hand-edits or partial install that diverge the .claude/ ↔ .codex/
+  // ref/ subtrees.
+  it("skill_ref_mirror: ok when fresh install (no skill ref subtrees yet)", async () => {
+    const target = createInitializedProject("doctor-skill-ref-mirror-empty");
+    await writeKnowledgeMeta(target, { source: "doctor_fix" });
+    writeFile(".fabric/events.jsonl", "", target);
+
+    const report = await runDoctorReport(target);
+    const check = report.checks.find(
+      (c) => c.name === "Skill ref mirror parity",
+    );
+    expect(check?.status).toBe("ok");
+  });
+
+  it("skill_ref_mirror: ok when both clients carry byte-identical ref content", async () => {
+    const target = createInitializedProject("doctor-skill-ref-mirror-parity");
+    await writeKnowledgeMeta(target, { source: "doctor_fix" });
+    writeFile(".fabric/events.jsonl", "", target);
+
+    const refBody = "# i18n policy\n\nbody bytes";
+    const claudeRef = join(target, ".claude", "skills", "fabric-archive", "ref");
+    const codexRef = join(target, ".codex", "skills", "fabric-archive", "ref");
+    mkdirSync(claudeRef, { recursive: true });
+    mkdirSync(codexRef, { recursive: true });
+    writeFileSync(join(claudeRef, "i18n-policy.md"), refBody, "utf8");
+    writeFileSync(join(codexRef, "i18n-policy.md"), refBody, "utf8");
+
+    const report = await runDoctorReport(target);
+    const check = report.checks.find(
+      (c) => c.name === "Skill ref mirror parity",
+    );
+    expect(check?.status).toBe("ok");
+  });
+
+  it("skill_ref_mirror: warns when .claude/ ref/ diverges from .codex/ ref/", async () => {
+    const target = createInitializedProject("doctor-skill-ref-mirror-drift");
+    await writeKnowledgeMeta(target, { source: "doctor_fix" });
+    writeFile(".fabric/events.jsonl", "", target);
+
+    const claudeRef = join(target, ".claude", "skills", "fabric-archive", "ref");
+    const codexRef = join(target, ".codex", "skills", "fabric-archive", "ref");
+    mkdirSync(claudeRef, { recursive: true });
+    mkdirSync(codexRef, { recursive: true });
+    // Same filename, different content → drift detected.
+    writeFileSync(join(claudeRef, "i18n-policy.md"), "claude version", "utf8");
+    writeFileSync(join(codexRef, "i18n-policy.md"), "codex version", "utf8");
+
+    const report = await runDoctorReport(target);
+    const check = report.checks.find(
+      (c) => c.code === "skill_ref_mirror_drift",
+    );
+    expect(check).toBeDefined();
+    expect(check?.status).toBe("warn");
+    expect(check?.message).toMatch(/fabric-archive\/ref\/i18n-policy\.md/);
+  });
+
+  it("skill_ref_mirror: tolerates client-asymmetric installs (one client only)", async () => {
+    const target = createInitializedProject("doctor-skill-ref-mirror-asymmetric");
+    await writeKnowledgeMeta(target, { source: "doctor_fix" });
+    writeFile(".fabric/events.jsonl", "", target);
+
+    // Only Codex installed; Claude subtree absent entirely.
+    const codexRef = join(target, ".codex", "skills", "fabric-archive", "ref");
+    mkdirSync(codexRef, { recursive: true });
+    writeFileSync(join(codexRef, "i18n-policy.md"), "codex only", "utf8");
+
+    const report = await runDoctorReport(target);
+    const check = report.checks.find(
+      (c) => c.name === "Skill ref mirror parity",
     );
     expect(check?.status).toBe("ok");
   });
