@@ -1,7 +1,7 @@
 {
   "version": "1.0",
-  "generated_at": "2026-05-18T04:22:46.555Z",
-  "generated_by": "fab-cli@2.0.0-rc.21",
+  "generated_at": "2026-05-21T02:59:46.909Z",
+  "generated_by": "fab-cli@2.0.0-rc.26",
   "target": "/Users/wepie/Desktop/personal-projects/pcf",
   "project_name": "fabric-monorepo",
   "framework": {
@@ -13,23 +13,24 @@
     ]
   },
   "topology": {
-    "total_files": 1091,
+    "total_files": 1221,
     "by_ext": {
-      ".cjs": 22,
+      ".cjs": 31,
       ".csv": 75,
       ".html": 4,
-      ".json": 545,
-      ".jsonl": 4,
-      ".md": 190,
+      ".json": 595,
+      ".jsonl": 5,
+      ".md": 237,
       ".mdc": 1,
       ".meta": 3,
       ".mjs": 11,
       ".ndjson": 6,
       ".py": 3,
       ".pyc": 5,
-      ".snap": 5,
+      ".snap": 7,
       ".svg": 2,
-      ".ts": 206,
+      ".ts": 225,
+      ".txt": 2,
       ".yaml": 2,
       ".yml": 3,
       "[none]": 4
@@ -145,8 +146,8 @@
         }
       ],
       "coverage": {
-        "ratio": 0.015,
-        "total": 206,
+        "ratio": 0.013,
+        "total": 225,
         "matched": 3,
         "co_occurring_patterns": [
           "meta-sidecar"

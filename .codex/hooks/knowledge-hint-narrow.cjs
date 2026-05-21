@@ -267,8 +267,34 @@ function appendEditCounter(projectRoot, now, paths) {
       mkdirSync(dir, { recursive: true });
     }
     const iso = now instanceof Date ? now.toISOString() : new Date(now).toISOString();
+    // v2.0.0-rc.27 TASK-005 (audit §2.8): normalize every path to a
+    // project-relative form BEFORE persistence. rc.26 wrote whatever the
+    // tool_input handed in — frequently absolute paths like
+    // `/Users/wepie/.../foo.ts` — which then leaked into the archive banner's
+    // "recent activity centered on: Users/wepie/" prose (the dirname pass
+    // stripped the leading `/` but produced a $HOME-prefix surface). The
+    // normalize-on-write keeps the sidecar containing only project-internal
+    // paths so downstream banner rendering can't accidentally surface
+    // host-system paths.
+    //
+    // Strategy: for each path, attempt path.relative(projectRoot, abs). When
+    // the result starts with `..` (path is outside the project tree) we
+    // silently drop the entry — out-of-tree edits are not meaningful
+    // activity for THIS project's banner. Bare relative paths (already in
+    // canonical form) round-trip through relative() unchanged.
+    const { isAbsolute: pathIsAbsolute, relative: pathRelative } = require("node:path");
     const pathList = Array.isArray(paths)
-      ? paths.filter((p) => typeof p === "string" && p.length > 0)
+      ? paths
+          .filter((p) => typeof p === "string" && p.length > 0)
+          .map((p) => {
+            if (pathIsAbsolute(p)) {
+              const rel = pathRelative(projectRoot, p);
+              // path.relative returns `..` segments when p escapes projectRoot.
+              return rel.startsWith("..") ? null : rel;
+            }
+            return p;
+          })
+          .filter((p) => typeof p === "string" && p.length > 0)
       : [];
     const line = JSON.stringify({ ts: iso, paths: pathList });
     appendFileSync(file, `${line}\n`, "utf8");
@@ -723,7 +749,20 @@ function main(env, stdio) {
     if (cliPayload === null || cliPayload === undefined) return;
 
     // Protocol v2 (rc.18 TASK-005): wire field is `entries`, no v1 shim.
-    const narrow = Array.isArray(cliPayload.entries) ? cliPayload.entries : [];
+    //
+    // v2.0.0-rc.27 TASK-005 (audit §2.5/§2.7): filter to entries whose
+    // `relevance_scope === "narrow"` so broad cross-cutting entries do NOT
+    // pollute the PreToolUse banner. rc.26 emitted broad + narrow as a
+    // single list — every Edit fired a hint even for paths the entry never
+    // anchored against (audit §2.5 reproduction). Broad entries are already
+    // surfaced once per session by the SessionStart hook so the PreToolUse
+    // surface should be narrow-only by design.
+    //
+    // Defensive default: when the CLI omits `relevance_scope` (older server
+    // / malformed item) we treat it as broad and skip — pre-rc.27 entries
+    // without the field are exactly the broad-leak surface §2.5 calls out.
+    const allEntries = Array.isArray(cliPayload.entries) ? cliPayload.entries : [];
+    const narrow = allEntries.filter((entry) => entry && entry.relevance_scope === "narrow");
     if (narrow.length === 0) {
       // rc.6 TASK-023 (E6): silence-counter — matched-narrow == 0. The CLI
       // had a chance to match against the extracted paths but came back

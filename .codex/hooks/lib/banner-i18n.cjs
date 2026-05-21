@@ -116,10 +116,37 @@ const STRINGS = {
   // ---- Signal A: archive ----------------------------------------------------
   // Source (zh-CN): fabric-hint.cjs:614  `📋 Fabric: 距上次归档 ${parts}。`
   // params: { parts } where parts is pre-joined `已过 25.0h（阈值 24h）` etc.
+  //
+  // v2.0.0-rc.27 TASK-005 (audit §2.17): `parts` is now constructed by the
+  // sibling archivePartsHours / archivePartsEdits keys (also per-variant) so
+  // the caller never hardcodes Chinese into the en banner. The substring
+  // contract on "25.0h" / "阈值 N" / "次编辑" is preserved per-variant but
+  // each variant gets a coherent monolingual rendering — pre-rc.27 produced
+  // mixed-language output like `📋 Fabric: 已过 25.0h since last archive.`
+  // (audit §2.17 reproduction).
   archiveLine1: {
     "zh-CN": (p) => `📋 Fabric: 距上次归档 ${p.parts}。`,
     en: (p) => `📋 Fabric: ${p.parts} since last archive.`,
     "zh-CN-hybrid": (p) => `📋 Fabric: 距上次归档 ${p.parts}。`,
+  },
+
+  // v2.0.0-rc.27 TASK-005 (audit §2.17): per-variant assembly of the
+  // hours-trigger fragment. zh-CN tightens to the original substring
+  // contract (`已过 25.0h（阈值 24h）`); en variant translates the prose
+  // while preserving the numeric tokens; hybrid mirrors zh-CN.
+  // params: { hoursFixed: string (already toFixed(1)), threshold: number }
+  archivePartsHours: {
+    "zh-CN": (p) => `已过 ${p.hoursFixed}h（阈值 ${p.threshold}h）`,
+    en: (p) => `${p.hoursFixed}h elapsed (threshold ${p.threshold}h)`,
+    "zh-CN-hybrid": (p) => `已过 ${p.hoursFixed}h（阈值 ${p.threshold}h）`,
+  },
+
+  // v2.0.0-rc.27 TASK-005 (audit §2.17): edits-trigger fragment.
+  // params: { count: number, threshold: number }
+  archivePartsEdits: {
+    "zh-CN": (p) => `累计 ${p.count} 次编辑（阈值 ${p.threshold}）`,
+    en: (p) => `${p.count} edits since last archive (threshold ${p.threshold})`,
+    "zh-CN-hybrid": (p) => `累计 ${p.count} 次编辑（阈值 ${p.threshold}）`,
   },
 
   // Source (zh-CN): fabric-hint.cjs:619  `   最近活动集中在: ${activity}。`
@@ -222,6 +249,36 @@ const STRINGS = {
       "  📋 Fabric: knowledge base is sparse — run /fabric-import to backfill from git history and existing docs?",
     "zh-CN-hybrid": () =>
       "  📋 Fabric: 知识库稀疏，是否调 /fabric-import 从 git 历史与现有文档回灌知识?",
+  },
+
+  // ---- Broad hook: meta auto-refresh breadcrumb (rc.22 Scope D T-D4) -------
+  // Surfaced ONLY when planContext() detected meta drift and rebuilt the meta
+  // in-place (server emits `auto_healed: true` in plan-context-hint payload).
+  // Single informational line — operators need a breadcrumb when meta auto-
+  // heals so a "why did revision change?" question has a paper trail.
+  //
+  // Two render shapes:
+  //   - metaAutoRefreshedBanner: full transition with prev → cur 8-char hash
+  //     prefixes. Used when both previous_revision_hash + revision_hash present.
+  //   - metaAutoRefreshedBannerGeneric: defensive fallback when the server
+  //     emitted `auto_healed: true` but did not include previous_revision_hash
+  //     (T10 noted this edge case). No hash transition shown.
+  //
+  // Note: 🔄 emoji prefix is intentional (matches the project's general "no
+  // emoji" rule's exception for explicit user request — see TASK-011 description).
+  // params: { prev, cur } — both already 8-char hex strings, caller-supplied.
+  metaAutoRefreshedBanner: {
+    "zh-CN": (p) => `  🔄 Fabric: 元数据已自动刷新(sha ${p.prev} → ${p.cur})`,
+    en: (p) => `  🔄 Fabric: meta auto-refreshed (sha ${p.prev} → ${p.cur})`,
+    "zh-CN-hybrid": (p) => `  🔄 Fabric: 元数据已自动刷新(sha ${p.prev} → ${p.cur})`,
+  },
+
+  // Generic variant — no hash transition. Used when auto_healed:true but
+  // previous_revision_hash is missing from the payload.
+  metaAutoRefreshedBannerGeneric: {
+    "zh-CN": () => "  🔄 Fabric: 元数据已自动刷新",
+    en: () => "  🔄 Fabric: meta auto-refreshed",
+    "zh-CN-hybrid": () => "  🔄 Fabric: 元数据已自动刷新",
   },
 };
 

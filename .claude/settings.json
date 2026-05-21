@@ -6,15 +6,6 @@
         "hooks": [
           {
             "type": "command",
-            "command": ".claude/hooks/archive-hint.cjs"
-          }
-        ]
-      },
-      {
-        "matcher": "*",
-        "hooks": [
-          {
-            "type": "command",
             "command": "${CLAUDE_PROJECT_DIR}/.claude/hooks/fabric-hint.cjs"
           }
         ]

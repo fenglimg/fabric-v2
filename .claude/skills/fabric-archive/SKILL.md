@@ -23,13 +23,220 @@ If none of the above hold, stop the skill immediately and tell the user (UX i18n
 
 This skill is `Check-not-Ask`, not a preference interview:
 
+- **Phase 0.4 (rc.23 F8c) first-run onboard phase** — checks S5 onboard-slot coverage; if unclaimed slots remain, prompts user to fill / dismiss / skip before proceeding to normal archive flow
 - Phase 0 proactively gathers candidate evidence from the session
 - Phase 0.5 viability gate aborts the skill if the session lacks any archive-signal (anti-archive guard)
 - Phase 1 classifies / layers / slugs each candidate and presents one batch review for user correction
 - Phase 1.5 assigns `relevance_scope=narrow|broad` and derives `relevance_paths` from edit history (rc.5 single-signal source)
 - Phase 2 calls `fab_extract_knowledge` once per confirmed candidate
 
-## 执行流程 (5 Phase / 1 User Review Round)
+## 执行流程 (6 Phase / 1 User Review Round)
+
+### Phase -0.5 — Range Resolution (rc.25 E4 Entry Foundation)
+
+When the skill is invoked, the user's prompt may carry an explicit range hint —
+a time window (`今日` / `last week`), a topic keyword (`rc.20`, `cite policy`),
+or a literal session_id reference. This phase parses those hints and resolves
+them to a concrete `session_id[]` set that constrains Phase 0.0 cross-session
+digest collection. **Falls through silently** when no hint is detected — Phase
+0.0 then sees the legacy "all distinct sessions since last anchor" behaviour.
+
+This is the foundation of the **E4 (user-language range selection) entry
+point** per rc.25 Q3.3. AI (Claude/Codex) interprets the rules below at runtime
+— there is no parser code; the LLM IS the parser. Time-window patterns +
+keyword extraction are LLM-native tasks; an `AskUserQuestion` fallback covers
+the low-confidence case.
+
+#### Step 1 — Invocation context inspection
+
+Read three sources to determine whether a range hint is present:
+
+| Source | Inspection | Yields |
+|---|---|---|
+| User prompt text (the natural-language string that triggered the skill) | Free-form parse for time words + topic keywords + literal `session_id=...` | Candidate `time_window`, `topic_keywords[]`, `explicit_session_ids[]` |
+| Hook-context-marker (only when entry = E1 hook-triggered) | Already-parsed `{count, hours_since_last, sessions_since_last_proposed}` block emitted by archive-hint.cjs | Optional default scope = "since last archive" |
+| User invocation type | E1 / E2 / E3 / E4 / E5 (per rc.25 5-entry model) | Decides whether to fall back to `AskUserQuestion` (E2/E4 only) |
+
+If NONE of the three yields a usable hint AND `user_invocation_type ∉ {E2, E4}`,
+fall through directly to Phase 0.6 with `range = "all"` sentinel (legacy
+behaviour). E2 / E4 with no hint → proceed to Step 5 fallback.
+
+#### Step 2 — Time-window parsing
+
+Match the user prompt against the following bilingual patterns (case-insensitive
+substring match, leftmost-longest wins). The matched span yields a
+`[ts_start, ts_end]` pair in Unix milliseconds. `now` = the skill invocation
+timestamp.
+
+zh-CN pattern table:
+
+| Pattern | ts_start | ts_end |
+|---|---|---|
+| `今日` / `今天` | `floor(now, day)` (本地时区 00:00) | `now` |
+| `上周` / `过去一周` | `now - 7d` | `now` |
+| `过去 N 天` / `近 N 天` (N ∈ 1..30) | `now - N*24h` | `now` |
+| `自上次归档` / `自上次 archive` | tail-scan events.jsonl → most recent `knowledge_proposed.ts` (fallback `events[0].ts`) | `now` |
+
+en pattern table:
+
+| Pattern | ts_start | ts_end |
+|---|---|---|
+| `today` | `floor(now, day)` (local TZ 00:00) | `now` |
+| `last week` / `past week` | `now - 7d` | `now` |
+| `past N days` / `last N days` (N ∈ 1..30) | `now - N*24h` | `now` |
+| `since last archive` / `since last archived` | tail-scan events.jsonl → most recent `knowledge_proposed.ts` (fallback `events[0].ts`) | `now` |
+
+Notes:
+
+- Patterns are non-exclusive — if the prompt matches multiple (e.g. "今日 cite policy"),
+  apply time-window THEN topic-keyword as AND.
+- Numeric N must parse as a positive integer ≤ 30; reject anything else as parse-miss.
+- All other date phrasings (specific dates like `5月10日`, relative phrasings
+  like `三天前下午`) are NOT handled here — emit parse-miss and let Step 5
+  fallback collect a structured answer.
+
+#### Step 3 — Topic-keyword extraction
+
+After time-window matching (or alongside it when both apply), extract content
+keywords from the prompt:
+
+1. Strip recognised time-window tokens (e.g. remove `今日` / `last week` from
+   the residual prompt).
+2. Tokenize residual on whitespace + CJK boundary. Combine adjacent CJK
+   characters into one token; split en words on spaces.
+3. Filter **stop-words**: skill control verbs (`archive`, `归档`, `下`, `的`),
+   articles / particles (`the`, `a`, `an`, `了`, `吧`), pronouns (`it`, `this`,
+   `that`, `这个`, `那个`), and 1-character en tokens.
+4. Retain **2-5 word tokens** (or 1-token CJK content words ≥ 2 chars like
+   `rc.20`, `cite`). Cap at 8 keywords; drop weaker (later-position) ones.
+
+The retained set is `topic_keywords[]`. Empty set = no keyword filter.
+
+#### Step 4 — session_id resolution algorithm
+
+Given `time_window = [ts_start, ts_end] | null` and `topic_keywords[] | []`:
+
+```
+Step a — Read events.jsonl tail (last 500 events) via `Bash: tail -n 500
+         .fabric/events.jsonl`. ENOENT → empty list (no resolution possible
+         → emit parse-miss → Step 5 fallback).
+
+Step b — Per distinct session_id present in the tail, compute:
+           ts_min      = min(ts) over events with this session_id
+           ts_max      = max(ts) over events with this session_id
+           digest_path = .fabric/.cache/session-digests/<session_id>.md
+           digest_body = Read(digest_path) if exists, else ""
+
+Step c — TIME-WINDOW FILTER (skip when time_window is null):
+           Keep session_id IFF [ts_min, ts_max] intersects [ts_start, ts_end]
+           (i.e. ts_max >= ts_start AND ts_min <= ts_end).
+           Multiple time intervals are OR'd within the time-window filter
+           category (none currently supported; reserved for future ranges).
+
+Step d — TOPIC-KEYWORD FILTER (skip when topic_keywords is empty):
+           Keep session_id IFF digest_body (case-insensitive) contains
+           AT LEAST ONE keyword from topic_keywords[].
+           Multiple keywords are OR'd within the keyword filter category.
+
+Step e — AND across filter categories:
+           A session must pass BOTH filters when BOTH are present.
+           Pass either filter alone when only one is present.
+           Pass-through (all sessions) when neither is present.
+
+Step f — Result: distinct session_id[] (preserve event-order); if empty AND
+         a parse hit was claimed → degrade to Step 5 fallback (user wanted a
+         range that resolved to zero sessions).
+```
+
+#### Step 5 — AskUserQuestion fallback (E2 / E4 only)
+
+When Step 2/3 emit parse-miss OR Step 4 resolves to zero sessions AND the
+invocation type permits prompting (E2 user-active or E4 user回溯-active —
+NEVER E1 hook / E3 AI-self / E5 cron), surface a structured question. UX i18n
+Policy class 5 applies: `header` + `question` translate per `fabric_language`;
+`options[]` routing keys stay English.
+
+```ts
+AskUserQuestion({
+  header: "Archive range",                              // zh-CN: "归档范围"
+  question:
+    "Which session range should this archive cover? " +
+    "(today = current calendar day; last-week = past 7 days; " +
+    "since-last-archive = newer than last knowledge_proposed event; " +
+    "custom = type a free-form range)",
+  options: ["today", "last-week", "since-last-archive", "custom"]
+})
+```
+
+Routing:
+
+| Choice | Action |
+|---|---|
+| `today` | Re-enter Step 2 with synthetic prompt `今日` / `today` (per `fabric_language`); resolve session_ids; proceed to Phase 0.6. |
+| `last-week` | Re-enter Step 2 with synthetic prompt `上周` / `last week`; proceed to Phase 0.6. |
+| `since-last-archive` | Re-enter Step 2 with synthetic prompt `自上次归档` / `since last archive`; proceed to Phase 0.6. |
+| `custom` | Surface a one-line text prompt to the user ("type a range, e.g. 'rc.20', 'past 3 days', '上周 cite policy'"). Re-enter Phase -0.5 Step 1 with the user-typed sub-prompt. Loop max 1 time — second parse-miss falls through to `range = "all"` with a warning. |
+
+#### Step 6 — Carry-forward contract
+
+Phase -0.5 produces ONE of:
+
+- `session_id[]` (non-empty array of distinct session_ids) — passed to Phase
+  0.0 as the explicit scope filter; Phase 0.0 skips its own anchor-walk and
+  uses this list directly.
+- `"all"` (sentinel string) — no range hint detected; Phase 0.0 falls back to
+  the legacy anchor-walk behaviour ("all distinct sessions since last
+  `knowledge_proposed`").
+
+NEVER pass an empty `session_id[]` forward — that case must degrade to Step 5
+fallback (or, when fallback is forbidden by invocation type, to `"all"` with
+a one-line stderr warning).
+
+#### Worked examples
+
+**Example A — time-only: `今日复盘`**
+
+```
+Step 1: prompt = "今日复盘"; user_invocation_type = E2.
+Step 2: matches `今日` → time_window = [floor(now, day), now].
+Step 3: residual "复盘" survives stop-word filter → topic_keywords = ["复盘"].
+        (Edge case: the residual content word may also filter; if 复盘 is
+        in the stop list it becomes []. Treat as topic-keyword empty.)
+Step 4: tail-scan events.jsonl; keep sessions whose [ts_min, ts_max]
+        intersects today's window. Say 3 sessions match.
+Step 5: skipped (resolution succeeded).
+Step 6: emit session_id[] = ["sess-a", "sess-b", "sess-c"] → Phase 0.6.
+```
+
+**Example B — keyword-only: `rc.20 的归档下`**
+
+```
+Step 1: prompt = "rc.20 的归档下"; user_invocation_type = E2.
+Step 2: no time pattern matches → time_window = null.
+Step 3: strip "归档"/"下"/"的" stop-words → topic_keywords = ["rc.20"].
+Step 4: tail-scan events.jsonl; for each session_id, Read its digest;
+        keep those whose digest body matches /rc\.20/i. Say 2 sessions
+        match (one was the rc.20 grilling session, one had a tangential
+        mention).
+Step 5: skipped.
+Step 6: emit session_id[] = ["sess-x", "sess-y"] → Phase 0.6.
+```
+
+**Example C — combined: `上周 rc.20`**
+
+```
+Step 1: prompt = "上周 rc.20"; user_invocation_type = E4.
+Step 2: matches `上周` → time_window = [now - 7d, now].
+Step 3: strip "上周" → topic_keywords = ["rc.20"].
+Step 4: AND filter — keep sessions whose [ts_min, ts_max] intersects last
+        week AND whose digest matches /rc\.20/i. Say 1 session matches.
+Step 5: skipped.
+Step 6: emit session_id[] = ["sess-z"] → Phase 0.6.
+```
+
+If Example C had resolved to zero sessions (e.g. user types `上周 rc.99`),
+Step 4 would degrade into Step 5 — surfacing AskUserQuestion since E4 permits
+prompting.
 
 ### Phase 0.6 — Config Load
 
@@ -48,7 +255,7 @@ If `.fabric/fabric-config.json` is missing or unreadable, use defaults silently.
 ### UX i18n Policy (5-class bilingualization)
 
 The skill consults `fabric_language` from `.fabric/fabric-config.json`
-(固化于 init 时，via `scan.ts:detectExistingLanguage`; default `"en"` when no
+(固化于 init 时，via `lib/detect-language.ts:detectExistingLanguage`; default `"en"` when no
 CJK signal is detected in README + docs/; may resolve to `"match-existing"`,
 `"zh-CN"`, `"en"`, or `"zh-CN-hybrid"`). All user-facing text in the
 following 5 categories MUST be rendered in the resolved language:
@@ -81,7 +288,8 @@ Rendering rule:
 
 Protected tokens (`fab_extract_knowledge`, `relevance_scope`,
 `relevance_paths`, `narrow`, `broad`, `source_sessions`, `proposed_reason`,
-`session_context`, `pending_path`, `layer`, `team`, `personal`,
+`session_context`, `intent_clues`, `tech_stack`, `impact`, `must_read_if`,
+`pending_path`, `layer`, `team`, `personal`,
 `knowledge_scope_degraded`, `MUST`, `NEVER`, `.fabric/knowledge/`, the verbatim
 `强 team` / `强 personal` / `默认 team` heuristic block, etc.) are NEVER
 translated — they appear verbatim in both language variants. The
@@ -143,6 +351,94 @@ messages + edit_paths + 1-line title), so this phase is a tail-scan + read.
    can produce a session_id without a digest). Cap the loaded digest set at
    `archive_digest_max_sessions` most-recent sessions (config-resolved, default
    10) to bound LLM context (~50KB worst-case at default).
+4.5. **Filter via session_archive_attempted ledger (rc.25 TASK-05).** Before
+   step 5 builds the cross-session context, drop sessions that the outcome
+   ledger says we should not re-scan. For each `session_id` collected in
+   steps 1-3, scan `.fabric/events.jsonl` for events where
+   `event_type === "session_archive_attempted"` AND `session_id` matches,
+   keep the most-recent one by `ts`, and apply this state machine:
+
+   - **(a) Look up the most recent `session_archive_attempted`** event for
+     this `session_id` (none found → fall through to (e)).
+   - **(b) `outcome === "user_dismissed"` → drop (permanent skip).** The
+     user explicitly rejected this session's candidates; never auto-re-scan
+     it. Respect the dismissal forever — re-scanning would re-propose the
+     same content the user already declined.
+   - **(c) `(nowMs - attempted_event.ts) < ANTI_LOOP_HOURS * 3_600_000` →
+     drop (cooldown skip).** Anti-loop window: even if outcome is otherwise
+     re-scannable, never re-scan a session within 12 hours of the last
+     attempt. Aligns 心智 with the Stop-hook cooldown so a single user does
+     not see the same session repeatedly within one work day.
+   - **(d) `covered_through_ts` present → check for high-value signal in
+     `ts > covered_through_ts` events for this `session_id`.** Tail-scan
+     `events.jsonl` for events newer than the watermark whose
+     `session_id` matches. A session passes this gate iff at least ONE of:
+     - ≥1 event with `event_type ∈ HIGH_VALUE_EVENT_TYPES`
+       (`knowledge_context_planned`, `edit_paths_recorded`), OR
+     - the latest `assistant_turn_observed` event body contains ≥1 of
+       `NORMATIVE_KEYWORDS` (substring match, case-insensitive for
+       English entries).
+
+     No high-value signal → drop (no new content worth re-scanning, even
+     though the cooldown has expired). Has signal → keep for re-scan.
+   - **(e) Never attempted (no `session_archive_attempted` event found for
+     this `session_id`) → keep.** First-time scan; nothing to filter
+     against.
+   - **(f) Cross-session pending dedupe** (operates on candidate
+     observations, not on `session_id` filter): gather all
+     `knowledge_proposed_ids` from `session_archive_attempted` events with
+     `outcome === "proposed"` across ALL sessions in the recent window
+     (NOT just the current candidate session). This builds a global set of
+     idempotency keys already proposed by prior archive runs but not yet
+     reviewed by the user (`.fabric/knowledge/pending/` may still contain
+     them). When classifying new observations in Phase 1, drop any
+     candidate whose computed `idempotency_key` matches an id already in
+     this set — it was already proposed by an earlier archive run, the
+     user just hasn't reviewed it yet, so re-proposing would duplicate
+     pending entries and inflate `candidates_proposed` counts. Per Phase
+     2.5 line 1112 — this is the dedupe consumer of `knowledge_proposed_ids`.
+
+   The resulting filtered `session_id[]` proceeds into step 5's digest
+   concatenation. Sessions filtered out in this step do NOT contribute to
+   `### Cross-session digest`, are NOT included in `source_sessions` on any
+   fab_extract_knowledge call, and are NOT referenced in `session_context`
+   bodies.
+
+   **Constants (rc.25 — verbatim):**
+
+   - `ANTI_LOOP_HOURS = 12` — cooldown window in hours between consecutive
+     re-scans of the same `session_id`. Rationale: 心智对齐 hook cooldown
+     (`stop_hook_cooldown_hours = 12`); identical mental model avoids user
+     confusion when a session shows up in both hook reminders and
+     archive re-scan candidates.
+   - `HIGH_VALUE_EVENT_TYPES = ['knowledge_context_planned', 'edit_paths_recorded']`
+     — event types that count as "new substantive activity worth
+     re-scanning" past `covered_through_ts`. Chat accumulation
+     (`assistant_turn_observed` alone) does NOT count — it would let mere
+     conversation noise trigger re-scans.
+   - `NORMATIVE_KEYWORDS = ['以后','always','never','from now on','下次','记一下','永远不要']`
+     — substring patterns scanned against the latest
+     `assistant_turn_observed` body for the session. Mixed CN/EN to cover
+     bilingual users. If any keyword hits, the session is flagged as
+     having high-value chat-only signal even without code edits.
+
+   **Worked examples:**
+
+   - **Session X (user_dismissed)** — last `session_archive_attempted` ts
+     = 3 days ago, outcome = `user_dismissed`. Rule (b) fires → permanent
+     skip. Session X is dropped even if 50 new `knowledge_context_planned`
+     events have accumulated since.
+   - **Session Y (proposed 6h ago)** — last `session_archive_attempted`
+     ts = 6h ago, outcome = `proposed`. Rule (c) fires: 6h < 12h cooldown
+     window → drop (cooldown skip). Y becomes eligible again after the
+     12h window closes, provided high-value signal accumulates by then.
+   - **Session Z (viability_failed 14h ago + 3 new plan_context)** — last
+     `session_archive_attempted` ts = 14h ago, outcome = `viability_failed`,
+     `covered_through_ts` = T₀. Rules (b)(c) pass. Rule (d) tail-scans for
+     `session_id === Z AND ts > T₀`: finds 3 `knowledge_context_planned`
+     events. HIGH_VALUE_EVENT_TYPES match → keep Z for re-scan. The
+     previous viability failure does not block a re-scan once new
+     substantive activity has accumulated.
 5. **Build cross-session context.** Concatenate the loaded digests into a
    single `### Cross-session digest` block to carry into Phase 0.5 + Phase 1.
    Use this block to:
@@ -156,7 +452,225 @@ messages + edit_paths + 1-line title), so this phase is a tail-scan + read.
 Graceful degradation: if `.fabric/.cache/session-digests/` is missing
 entirely, this phase reports an empty context and Phase 0 falls back to the
 single-session behaviour. Tests that synthesize events.jsonl without
-populating the digest cache continue to work.
+populating the digest cache continue to work. If `session_archive_attempted`
+events are missing entirely (pre-rc.25 ledger or rotation has trimmed older
+events), treat all sessions as never-attempted (current default behavior) —
+step 4.5 rule (e) applies uniformly, so the filter degrades to the legacy
+"scan everything since anchor" semantics without raising errors.
+
+### Phase 0.4 — First-run Onboard Phase (rc.23 F8c)
+
+#### Phase 0.4 Trigger Gate (rc.25 — entry-context aware)
+
+Before running ANY of the onboard coverage steps below, evaluate the
+**entry-context gate**. Onboard slot collection is an interactive,
+one-time project-tone capture flow that REQUIRES live user dialogue.
+Non-user-active entries (hook / AI self-trigger / cron) either interrupt
+the user mid-work or run unattended where dialogue is impossible, so
+they MUST skip Phase 0.4 entirely and fall through to Phase 0.
+
+Read `context.entry_point` — already determined in **Phase -0.5 Range
+Resolution** (see TASK-04 / Phase -0.5 section above). The 5-entry model
+is the canonical taxonomy for this gate.
+
+##### Entry-context detection rules
+
+| Entry | Symbol | Detection rule (LLM-native, evaluated at skill entry) |
+|-------|--------|-------------------------------------------------------|
+| **E1** | `hook_passive` | stdout JSON `{decision:'block', ...}` from `archive-hint.cjs` detected at skill entry (the Stop-hook reminder path). |
+| **E2** | `explicit_user_invoke` | User prompt is a direct invocation: `fabric archive` / `/fabric-archive` / `archive what we just did` / `归档一下` / similar imperative. |
+| **E3** | `ai_self_trigger` | AI internal marker `self-archive policy triggered by signal: <X>` present (substring match on the verbatim prefix `self-archive policy triggered by signal`; `<X>` is one of the 4 self-trigger signals from AGENTS.md E3 section: `Normative` / `Wrong-turn-and-revert` / `Decision confirmation` / `Explicit dismissal`). |
+| **E4** | `user_range_rollback` | Prompt contains a **range hint** (parsed in Phase -0.5 — e.g. `今日` / `上周` / `rc.20`) AND the user is invoking. Sub-mode of E2. |
+| **E5** | `cron` | Prompt contains literal `今日复盘` / `daily recap` / `daily-archive` AND no human is present (running under `/loop`, OS cron, or scheduled trigger). |
+
+##### Gate decision
+
+```
+IF context.entry_point ∈ {E2_explicit_user_invoke, E4_user_range_rollback}:
+    → gate = PROCEED       # user is live, dialogue is possible
+    → continue to Step 1 (Check coverage) below
+ELSE (E1_hook_passive | E3_ai_self_trigger | E5_cron):
+    → gate = SKIP           # no live user, onboard prompting would misfire
+    → emit one-line log: "Phase 0.4 skipped (entry=<E1|E3|E5>, no live user)"
+    → proceed directly to Phase 0
+```
+
+##### Rationale
+
+Onboard slot collection is a one-time project-tone capture flow that
+requires user dialogue. Non-user-active entries (hook / AI / cron)
+interrupt the user mid-work or run unattended where dialogue is
+impossible, so they MUST skip Phase 0.4. The S5 slot semantics
+(`tech-stack-decision`, `architecture-pattern`, ...) are user-validated
+baselines — populating them from a hook fire-and-forget or a cron daily
+recap would defeat the purpose of capturing _user-confirmed_ project
+tone.
+
+##### Tradeoff (documented in CHANGELOG)
+
+A first-time user whose ONLY invocations ever come via hook (never an
+explicit `/fabric-archive`) will not see the onboard prompt; the 5
+onboard slots remain empty. Mitigation: documentation tells users to
+run an explicit `fab archive` at least once to populate the onboard
+baseline.
+
+##### Worked example
+
+```
+$ /loop 24h /fabric-archive 今日复盘
+  → cron context, no live user
+  → Phase -0.5 detects literal "今日复盘" + no-human marker
+  → context.entry_point = E5_cron
+  → Phase 0.4 Trigger Gate evaluates: E5 ∉ {E2, E4} → SKIP
+  → emit log "Phase 0.4 skipped (entry=E5, no live user)"
+  → proceed directly to Phase 0 (collect candidates for daily window)
+```
+
+Contrast with E2:
+
+```
+$ /fabric-archive
+  → user typed explicit invocation
+  → Phase -0.5: context.entry_point = E2_explicit_user_invoke
+  → Phase 0.4 Trigger Gate evaluates: E2 ∈ {E2, E4} → PROCEED
+  → run Step 1 (Check coverage) below
+```
+
+---
+
+After F8a removed the auto-`fab scan` baseline pipeline, a freshly installed
+Fabric workspace ships with an EMPTY `.fabric/knowledge/` tree. Five fixed
+**S5 onboard slots** capture the "project tone" baseline that the AI needs
+for high-quality plan_context retrieval from day one:
+
+- `tech-stack-decision` — primary languages / frameworks / runtime stack
+- `architecture-pattern` — module layout, service boundaries, layering rules
+- `code-style-tone` — naming / formatting / idiom conventions the project enforces
+- `build-system-idiom` — build tool quirks, scripts, deploy pipeline shape
+- `domain-vocabulary` — business / product terminology that names code entities
+
+This phase runs ONCE per archive-skill invocation, BEFORE Phase 0 evidence
+gathering, so coverage state is fresh for the session.
+
+#### Step 1 — Check coverage
+
+Invoke `fab onboard-coverage --json` and parse the JSON payload:
+
+```bash
+fab onboard-coverage --json
+```
+
+Expected shape:
+
+```json
+{
+  "filled":    { "tech-stack-decision": ["KT-DEC-0012"], ... },
+  "missing":   ["architecture-pattern", "code-style-tone"],
+  "opted_out": ["domain-vocabulary"],
+  "total": 5
+}
+```
+
+#### Step 2 — Decide
+
+```
+IF missing.length === 0:
+    → skip Phase 0.4 entirely; proceed to Phase 0.
+ELSE:
+    → ask the user how to handle the missing slots (Step 3).
+```
+
+#### Step 3 — Prompt user
+
+Present a single roll-up listing each missing slot. UX i18n Policy class 5
+applies: the `header` + `question` strings are translated per
+`fabric_language`; the `options[]` routing keys stay English.
+
+```ts
+AskUserQuestion({
+  header: "Onboard coverage",  // zh-CN: "首装基调覆盖"
+  question:
+    "KB is missing the following project-tone slots: " +
+    missing.join(", ") +
+    ". Tour the project and propose pending entries for each?",
+  options: ["fill-all", "fill-each", "dismiss-all", "skip"]
+})
+```
+
+`fab_extract_knowledge` is called with `onboard_slot: <slot>` set so each
+proposed entry counts toward coverage once approved via fab_review.
+
+| User choice    | Action |
+|----------------|--------|
+| `fill-all`     | For EACH slot in `missing`, run Step 4 (Tour-and-propose). All proposals share session_id; one batch review at the end (Phase 1). |
+| `fill-each`    | Loop slot-by-slot through `missing`. Per slot: ask user `confirm | dismiss | skip` (per-slot AskUserQuestion); `confirm` → run Step 4; `dismiss` → `fab config dismiss-slot <slot>`; `skip` → leave for next archive run. |
+| `dismiss-all`  | For EACH slot in `missing`, invoke `Bash("fab config dismiss-slot <slot>")`. Print a one-line confirmation each. Skip to Phase 0. |
+| `skip`         | No-op. Slots remain in `missing` for the next archive run. Skip to Phase 0. |
+
+#### Step 4 — Tour-and-propose (per-slot)
+
+For each slot to fill, the LLM independently sources slot-specific evidence
+from the project (no user prompt — this is a Read-only tour):
+
+| Slot                     | Source files (LLM should Read these) |
+|--------------------------|---------------------------------------|
+| `tech-stack-decision`    | `package.json` (+ lockfile), `pyproject.toml` / `Cargo.toml` / `go.mod`, `tsconfig.json`, root README |
+| `architecture-pattern`   | Top-level dir tree (`ls -F`), 1-2 entry-point files (`src/index.ts`, `main.go`, etc.), framework-config files (`next.config`, `vite.config`, `astro.config`) |
+| `code-style-tone`        | `.editorconfig`, `prettier.config.*`, `eslint.config.*`, `biome.*`, `.prettierrc*`, framework lint config, 2-3 representative source files for naming-pattern inference |
+| `build-system-idiom`     | `package.json` `scripts` block, `Makefile`, `taskfile.yaml`, CI yml (`.github/workflows/*.yml`), Dockerfile if present |
+| `domain-vocabulary`      | README, `docs/*.md`, top-level `src/` directory names (often domain-aligned), public API entry types |
+
+After Read-ing the slot-specific sources, classify the observation:
+
+- `tech-stack-decision` → type=`decisions`, `proposed_reason=decision-confirmation`
+- `architecture-pattern` → type=`models`, `proposed_reason=new-dependency-or-pattern`
+- `code-style-tone` → type=`guidelines`, `proposed_reason=explicit-user-mark` (the project ITSELF is the mark)
+- `build-system-idiom` → type=`processes`, `proposed_reason=new-dependency-or-pattern`
+- `domain-vocabulary` → type=`models`, `proposed_reason=new-dependency-or-pattern`
+
+Call `fab_extract_knowledge` with the inferred fields PLUS `onboard_slot:
+<slot>`. The pending file's frontmatter will carry the slot label, and the
+next `fab onboard-coverage` run will see the slot as filled (once approved
+via fab_review).
+
+Example:
+
+```ts
+mcp__fabric__fab_extract_knowledge({
+  source_sessions: ["<current-session-id>"],
+  recent_paths: ["package.json", "tsconfig.json"],
+  user_messages_summary: "Project uses TypeScript + pnpm workspace + Vitest. Node 20 LTS target. ESM-only.",
+  type: "decisions",
+  slug: "primary-tech-stack",
+  layer: "team",
+  relevance_scope: "broad",        // tech stack applies everywhere
+  relevance_paths: [],
+  proposed_reason: "decision-confirmation",
+  session_context:
+    "Session goal: capture onboard tech-stack baseline.\nTurning point: read package.json + tsconfig.json + pnpm-workspace.yaml; stack confirmed.",
+  onboard_slot: "tech-stack-decision",    // ← claims the slot
+  tech_stack: ["typescript", "nodejs", "pnpm", "vitest"]
+})
+```
+
+#### Onboard phase constraints (DO NOT TRANSLATE)
+
+- MUST run BEFORE Phase 0 evidence gathering — onboard is a separate flow,
+  not interleaved with session-archive candidates.
+- MUST call `fab onboard-coverage --json` before deciding; never assume
+  coverage state.
+- NEVER fill a slot that is in `opted_out` — `fab onboard-coverage` already
+  excludes those from `missing`, but the Skill MUST NOT re-propose them
+  even if the user asks "fill all of them" — the dismiss is intentional.
+- NEVER prompt the user when `missing.length === 0` — silent skip.
+- NEVER set `onboard_slot` on a regular session-archive candidate in
+  Phase 2 — that field is RESERVED for the onboard phase. Mixing the
+  two would let session-archive proposals masquerade as onboard
+  coverage and let any random pending file claim a slot.
+- MUST emit `onboard_slot: <slot>` verbatim — the slot name is one of
+  the locked S5 strings (tech-stack-decision / architecture-pattern /
+  code-style-tone / build-system-idiom / domain-vocabulary). The
+  fab_extract_knowledge schema enum will reject anything else.
 
 ### Phase 0 — Collect Candidates
 
@@ -214,7 +728,27 @@ ELSE:
 
 #### On gate FAIL
 
-Stop the skill with the gate-FAIL message (UX i18n Policy class 2 — errors/preconditions; render per `fabric_language`):
+Branching by `entry_point` (resolved at Phase -0.5):
+
+```
+IF entry_point ∈ {E1_hook, E3_ai_self_trigger, E5_cron}:
+  → SILENT-SKIP path: do NOT emit the gate-FAIL message; do NOT trigger AskUserQuestion.
+  → Still write ONE `session_archive_attempted` event per session in scope
+    with outcome='skipped_no_signal' (see Phase 2.5 for the emission contract).
+  → Exit the skill silently. Rationale: hook / AI self-trigger / cron are
+    non-user-active contexts — a verbose message there is pure noise.
+ELSE (entry_point ∈ {E2_explicit, E4_user_range}):
+  → User-active path: render the gate-FAIL message below (UX i18n Policy
+    class 2 — errors/preconditions; render per `fabric_language`).
+  → Still write ONE `session_archive_attempted` event per session in scope
+    with outcome='viability_failed' (see Phase 2.5 Outcome Decision Matrix
+    row 2 — user-active gate failure populates `viability_failed`, NOT
+    `skipped_no_signal` which is reserved for the SILENT-SKIP branch
+    above).
+  → Exit the skill.
+```
+
+For the user-active branch (E2 / E4), the gate-FAIL message variants are:
 
 zh-CN variant:
 
@@ -228,7 +762,7 @@ en variant:
 Current session is routine execution; no new knowledge to archive (gate=<reason>). To force-archive, explicitly invoke fabric-archive.
 ```
 
-Optionally append a one-line event to `.fabric/events.jsonl` of shape `{"ts":"...","kind":"knowledge_archive_aborted","reason":"<reason>","session":"<id>"}` if the events ledger is writable; otherwise just log to stderr. Do NOT proceed to Phase 1, do NOT call any MCP tool.
+In BOTH branches: do NOT proceed to Phase 1, do NOT call any MCP tool. The legacy `knowledge_archive_aborted` event line (`{"ts":"...","kind":"knowledge_archive_aborted","reason":"<reason>","session":"<id>"}`) MAY be appended in addition to the mandatory Phase 2.5 `session_archive_attempted` event — they serve different audit purposes (legacy abort reason vs new outcome state machine) and the two coexist during the rc.25 transition window.
 
 ##### events.jsonl Constraint Note
 
@@ -490,9 +1024,29 @@ mcp__fabric__fab_extract_knowledge({
     | "new-dependency-or-pattern" // new dep/lib/abstraction introduced
     | "dismissal-with-reason",    // user rejected approach AND said why
   session_context: "<3-5 line markdown: session goal + key turning point>",
+  // v2.0.0-rc.23 TASK-006 (a-C1): four OPTIONAL structured triage fields.
+  // Lift implicit signals out of `## Session context` prose so future-self
+  // reviewers / plan-context retrievers can triage relevance from
+  // frontmatter alone, without re-reading the body. Omit any field the
+  // skill cannot infer cleanly — guessing is worse than omitting.
+  intent_clues: ["<short trigger>", "<negative trigger e.g. 'NOT for X'>"],  // when this rule applies / when NOT
+  tech_stack: ["<lang/framework>", "..."],  // inferred from recent_paths (see table below)
+  impact: ["<consequence of ignoring>"],    // why future-self should care
+  must_read_if: "<one-line strong trigger>" // single condition; if it holds, the entry is required reading
   // tags? — NOT in current schema; reserved for future
 })
 ```
+
+##### C1 triage-field inference table
+
+| Field          | Inference source                                                                 | Skip when                          |
+|----------------|----------------------------------------------------------------------------------|------------------------------------|
+| `intent_clues` | Pull from `session_context` turning point + negative phrasing in the transcript ("not for", "don't do X when") | No clear trigger phrasing surfaced |
+| `tech_stack`   | Map `recent_paths` extensions: `.ts`→`typescript`, `.tsx`→`typescript`+`react`, `.go`→`go`, `package.json`→`nodejs`, `pyproject.toml`→`python`, `Cargo.toml`→`rust`. Add framework markers from path heuristics (`cocos`→`cocos-creator`, `next.config`→`nextjs`) | Rule is stack-agnostic            |
+| `impact`       | Pull from the diagnostic-loop body — "wasted 30 min", "production outage", "silent data loss" | No observable consequence stated   |
+| `must_read_if` | Strongest single trigger from the worth-archive signal: a file path, a routine, a recurring condition; ≤160 chars | No single dominant trigger fits    |
+
+All four fields are STRICTLY OPTIONAL. The schema accepts the call without any of them — omit rather than guess. None of the four participate in the idempotency_key hash (server formula at `extract-knowledge.ts:100-106` is frozen to `{source_session, type, slug}`), so partial-vs-full fill of these fields on the same triple is safe.
 
 The Skill infers `proposed_reason` from the classification + viability-gate
 signal that fired:
@@ -537,6 +1091,99 @@ If the skill needs to record a genuinely separate observation in the same sessio
 - Same first session but different tail sessions → evidence-merge into the SAME pending file; tail `session_id`s are NOT recorded as independent evidence keys.
 - The formula is intentionally stable across the rc.5 → rc.7 migration; adding or removing tail entries does NOT change the idempotency key, preserving rc.5 single-session compat.
 
+### Phase 2.5 — Persist Archive Attempt
+
+MANDATORY closing step on every skill invocation — runs AFTER Phase 2 (success path) AND on every early-exit path (Phase 0.0 dropped-all, Phase 0.5 gate-FAIL silent-skip or user-active, Phase 1 batch user-dismissed). Drives the Q3.4 outcome state machine + cross-session digest rescan filter.
+
+#### Dry-run override (v2.0.0-rc.27 TASK-007 / audit §2.25)
+
+When the user's invocation explicitly carries a dry-run intent — the prompt or `/fabric-archive` invocation contains a literal `--dry-run`, `dry-run`, `dry_run`, or `预览` token — the skill MUST skip Phase 2.5's ledger write. The mandatory contract above is suspended only in this single case; every other early-exit path still emits the event.
+
+Rationale: pre-rc.27 the spec read as "MANDATORY on every invocation" which created an irreconcilable conflict when the user explicitly requested a no-mutation preview (audit §2.25). The dry-run override resolves the deadlock by treating dry-run as an entry-context override that disables the ledger side-effect while preserving the rest of the skill's read-side machinery (Phase 0.0 digest collection, Phase 0.5 viability gate, Phase 1 candidate preview render). The user sees what WOULD have happened without the audit trail recording an attempt that never produced a pending entry.
+
+Detection rule (substring match, case-insensitive): if the originating prompt contains `--dry-run` | `dry-run` | `dry_run` | `预览` as a standalone token, set `dry_run = true` for the entire skill run and skip the Phase 2.5 event emission. All other phases run normally; their user-facing output should prefix `[DRY-RUN]` to make the mode visible.
+
+When `dry_run = true`:
+- Phase 1 batch review header MUST include `[DRY-RUN — no writes will occur]`
+- Phase 2 candidate emission is REPLACED with a "would write N pending entries" preview rendered as a numbered table (`would-write` shape — same columns as the real Phase 1 review)
+- Phase 2.5 event emission is SKIPPED entirely (the rationale above)
+- No `fab_extract_knowledge` MCP call is issued (dry-run is purely read-side)
+
+#### What to emit
+
+For EACH `session_id` in the run's scope (multi-session E4 runs emit MULTIPLE events — one per session_id; single-session E1/E2/E3/E5 runs emit ONE event), append ONE `session_archive_attempted` line to `.fabric/events.jsonl`:
+
+```jsonc
+{
+  "kind": "fabric-event",
+  "id": "<uuid or ts-derived>",
+  "ts": <epoch ms>,
+  "schema_version": 1,
+  "session_id": "<the session this event pertains to>",
+  "event_type": "session_archive_attempted",
+  "outcome": "proposed" | "viability_failed" | "user_dismissed" | "skipped_no_signal",
+  "covered_through_ts": <max event ts scanned for this session>,
+  "candidates_proposed": <integer, default 0>,
+  "knowledge_proposed_ids": ["<idempotency_key_1>", "..."]   // default []
+}
+```
+
+#### Outcome decision matrix
+
+| Skill terminal state                                                 | outcome              | candidates_proposed | knowledge_proposed_ids                          |
+|----------------------------------------------------------------------|----------------------|---------------------|-------------------------------------------------|
+| Phase 2 wrote ≥ 1 pending entry                                      | `proposed`           | N (count written)   | `[idempotency_key_1, idempotency_key_2, ...]` (from each fab_extract_knowledge response) |
+| Phase 0.5 viability_failed AND entry_point ∈ {E2_explicit, E4_user_range} AND user saw + accepted the gate-FAIL message | `viability_failed`   | 0                   | `[]`                                            |
+| Phase 1 batch review — user dismissed ALL presented candidates       | `user_dismissed`     | 0                   | `[]`                                            |
+| Phase 0.0 filter dropped every session in scope OR Phase 0.5 silent-skip path (E1_hook / E3_ai_self_trigger / E5_cron) | `skipped_no_signal`  | 0                   | `[]`                                            |
+
+Rationale highlights:
+- `user_dismissed` is the ONLY outcome that suppresses future auto-rescan (respects user decision per Q3.4).
+- `proposed` populates `knowledge_proposed_ids` so the cross-session digest in Phase 0.0 can dedupe future runs against already-proposed entries.
+- `viability_failed` vs `skipped_no_signal` distinguishes "user was prompted but the gate stopped us" from "we never bothered the user" — both allow rescan but the doctor history report differentiates them.
+
+#### covered_through_ts watermark
+
+```
+covered_through_ts = max(events_in_scope[*].ts)
+```
+
+where `events_in_scope` is the set of events the skill actually examined for THAT session_id (Phase 0 + Phase 0.0 digest input). On rescan, Phase 0.0 compares the current `max(ts)` against this stored watermark — only sessions with new events past the watermark are eligible candidates.
+
+#### Multi-session emission rule
+
+When the run scope spans multiple session_ids (E4 user-range with `--since` / topic-keyword matching multiple sessions), emit ONE `session_archive_attempted` event PER session_id. Each event's `covered_through_ts` is computed against that session's own event subset. The `knowledge_proposed_ids` for a multi-session `proposed` run lists ALL idempotency_keys produced by the run; ledger consumers that want per-session breakdown should join against `source_sessions` on each pending entry.
+
+#### Append pattern (Bash echo, 4KB-safe, fail-tolerant)
+
+Reuse the Phase 0.5 `events.jsonl Constraint Note` pattern: single-line JSON ≤ 4KB, no embedded newlines. Best-effort write — if the append fails (disk full, permission denied, race), the skill MUST still exit successfully. Log the failure to stderr only; do NOT surface it to the user. Rationale: a missing `session_archive_attempted` event degrades gracefully — the next Phase 0.0 digest treats the session as "never archived" and re-evaluates it, which is the safe-default behavior.
+
+```bash
+# Pseudo — actual implementation uses the same pattern as the legacy
+# knowledge_archive_aborted emit at the end of Phase 0.5.
+echo '{"kind":"fabric-event","id":"...","ts":..., "schema_version":1, "session_id":"...", "event_type":"session_archive_attempted","outcome":"...","covered_through_ts":...,"candidates_proposed":0,"knowledge_proposed_ids":[]}' >> .fabric/events.jsonl
+```
+
+The per-field caps from Phase 0.5's constraint note carry over: `knowledge_proposed_ids` capped at 20 entries (drop tail with `...` marker in `id` field if truncated); other fields are bounded by schema.
+
+#### Worked example: E5 cron silent-skip
+
+Setup: An OS cron job runs `fabric-archive` at 03:00 daily for the "today" range (E5 entry_point). Today's session was routine config edits — no archive signals fire.
+
+Trace:
+1. Phase -0.5 resolves `entry_point=E5_cron`, range = "today" → 1 session_id in scope.
+2. Phase 0.0 digest collects events for that session_id; nothing dropped.
+3. Phase 0.4 onboard is skipped (E5 is not E2).
+4. Phase 0.5 viability gate runs — `archive_signals_hit=0` → `gate=FAIL (reason=no_signal)`.
+5. `entry_point=E5_cron` ∈ {E1, E3, E5} → SILENT-SKIP branch. No message rendered.
+6. Phase 2.5 (mandatory) appends ONE event:
+   ```
+   {"kind":"fabric-event","id":"...","ts":<now>,"schema_version":1,"session_id":"<today-session-id>","event_type":"session_archive_attempted","outcome":"skipped_no_signal","covered_through_ts":<max ts of today's events>,"candidates_proposed":0,"knowledge_proposed_ids":[]}
+   ```
+7. Skill exits silently. Cron output is empty.
+
+Next day's cron rescan: Phase 0.0 sees `covered_through_ts < max(ts of session's new events)` → session is rescan-eligible → loop continues without `user_dismissed` block.
+
 ## Hard Rules (DO NOT TRANSLATE) — DISPLAY / WRITE Split
 
 ### DISPLAY Rules
@@ -563,7 +1210,7 @@ If the skill needs to record a genuinely separate observation in the same sessio
 - NEVER use multi-signal sources for relevance_paths in rc.5 — `edit_paths` is the SOLE source. `read_paths`, body regex, and symbol extraction are reserved for rc.7+.
 - NEVER batch multiple candidates into a single fab_extract_knowledge call; one call per candidate.
 - NEVER paraphrase the verbatim layer heuristic block above — the Chinese text is contract-locked.
-- MUST preserve protected tokens exactly: `stable_id`, `knowledge_proposed`, `knowledge_archive_aborted`, `knowledge_scope_degraded`, `.fabric/knowledge/pending/`, `fab_extract_knowledge`, `relevance_paths`, `relevance_scope`, `narrow`, `broad`, `edit_paths`, `source_sessions`, `proposed_reason`, `session_context`, `pending_path`, `layer`, `team`, `personal`, `MUST`, `NEVER`, `强 team`, `强 personal`, `默认 team`.
+- MUST preserve protected tokens exactly: `stable_id`, `knowledge_proposed`, `knowledge_archive_aborted`, `knowledge_scope_degraded`, `.fabric/knowledge/pending/`, `fab_extract_knowledge`, `relevance_paths`, `relevance_scope`, `narrow`, `broad`, `edit_paths`, `source_sessions`, `proposed_reason`, `session_context`, `intent_clues`, `tech_stack`, `impact`, `must_read_if`, `pending_path`, `layer`, `team`, `personal`, `MUST`, `NEVER`, `强 team`, `强 personal`, `默认 team`.
 
 ## Worked Examples
 
@@ -638,3 +1285,59 @@ mcp__fabric__fab_extract_knowledge({
 ```
 
 Layer = personal (跨项目通用 + 工具/编辑器偏好 signals dominate; no 强 team signal applies). Scope = broad with `relevance_paths=[]` (personal layer ALWAYS forces broad — paths don't generalize across projects per Phase 1.5 special case).
+
+## E5 周期触发 (Scheduled Daily Recap)
+
+### Overview
+
+`今日复盘` = E5 entry point. Default scope = today. Falls back to historical scan if today yields no candidates (silent-skip per Phase 2.5).
+
+E5 是 5 入口模型中唯一由 OS 调度器或 Claude Code `/loop` 周期触发的入口形态。fab 端**零代码**——不提供 `fab schedule` 子命令,亦不内嵌 daemon。用户基于自己的执行环境二选一接入: `/loop`(Claude Code 原生,推荐) 或 OS cron(跨平台 fallback)。
+
+### /loop sample (primary path for Claude Code)
+
+```
+/loop /fabric-archive 今日复盘 --cron "0 23 * * *"
+```
+
+每晚 23:00 在当前 Claude Code session 中触发 fabric-archive skill,scope = today。`/loop` 复用现有 Claude session 鉴权,无需独立 token。
+
+### OS cron sample (cross-platform alternative)
+
+```
+# crontab -e
+0 23 * * * cd /path/to/project && claude code -p "/fabric-archive 今日复盘" 2>&1 >> /var/log/fabric-daily-recap.log
+```
+
+适用于:
+- 非 Claude Code 环境(纯 server / CI 节点)
+- 希望脱离 /loop session 生命周期独立运行的场景
+- 已有 cron / launchd 调度基础设施的团队
+
+macOS 用户可改用 `launchd` plist;Linux 用户直接 `crontab -e`。命令需自行确保 `claude code` CLI 已安装且鉴权可用。
+
+### E5 prompt parse contract
+
+当用户或 cron 以 `今日复盘` / `daily recap` 字面短语触发 fabric-archive 时,skill 应按以下契约处理:
+
+- **Phase -0.5 Range Resolution**: 识别 `今日复盘` / `daily recap` 为 magic phrase, 直接设置 `time_window = today` (00:00 local timezone → current ts), 无需 AskUserQuestion 兜底。
+- **Phase 0.4 Onboard Coverage**: 跳过 (entry_point = E5_cron, 非 E2_explicit, 不弹 onboard 弹问)。
+- **Phase 2.5 Persist Archive Attempt**: 始终写入 `session_archive_attempted` event。当今日无 archive 信号触发 viability gate FAIL 时,走 silent-skip 路径(outcome = `skipped_no_signal`),skill 静默退出,cron 日志为空。
+
+### Trade-off table (/loop vs OS cron)
+
+| 维度 | /loop | OS cron |
+|---|---|---|
+| 鉴权 | 复用 Claude session | 独立 token / login |
+| 跨平台 | Claude Code 全平台一致 | macOS launchd / Linux cron 不同 |
+| Token 成本 | 累积 (长 session) | 每 tick fresh, 无累积 |
+| 调试 | Claude UI 可见 | 日志文件 |
+
+### Failure modes
+
+- **/loop session crash**: 归档暂停,用户需重启 `/loop`。无自动恢复机制——`/loop` 与 Claude Code session 生命周期绑定。
+- **OS cron**: 自带恢复(下一个 tick 重新启动),但需独立 `claude code` CLI 安装与鉴权;鉴权 token 过期时 cron job 会静默失败,需人工 `claude login` 重置。
+
+### NOT in scope
+
+- fab CLI does NOT provide a cron helper command — keeps fab focused on archive/install, not scheduling infrastructure. 用户自行管理调度器是显式设计决策(参见 Q3.1 入口集 + cli-design 原则"能交互别做 flag, 不做调度器")。

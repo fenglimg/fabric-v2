@@ -144,7 +144,8 @@ Rendering rule:
 
 Protected tokens (`fab_extract_knowledge`, `fab_review`, `relevance_scope`,
 `relevance_paths`, `broad`, `narrow`, `source_sessions`, `proposed_reason`,
-`session_context`, `pending_path`, `layer`, `team`, `personal`,
+`session_context`, `intent_clues`, `tech_stack`, `impact`, `must_read_if`,
+`pending_path`, `layer`, `team`, `personal`,
 `knowledge_scope_degraded`, `MUST`, `NEVER`, `.fabric/knowledge/`, etc.)
 are NEVER translated — they appear verbatim in both language variants.
 The bilingualization scope is prose ONLY.
@@ -305,7 +306,28 @@ mcp__fabric__fab_extract_knowledge({
   // session_context cites the commit / doc origin so future-self reviewers
   // know this is an LLM-mined entry rather than a live-session capture.
   proposed_reason: "<inferred per Step 2.1.5 — varies>",
-  session_context: "Imported from git log analysis. Origin: commit <sha7> (<subject 30 chars>). No live session — see commit body for full context."
+  session_context: "Imported from git log analysis. Origin: commit <sha7> (<subject 30 chars>). No live session — see commit body for full context.",
+  // v2.0.0-rc.23 TASK-006 (a-C1): four OPTIONAL structured triage fields.
+  // Inference for the import path (no live session, only commit/doc evidence):
+  //   intent_clues: pull from commit subject/body — when is this rule worth
+  //     consulting? (e.g. ["editing retry/backoff logic"]). Omit if unclear.
+  //   tech_stack:   derived from extensions in `recent_paths` (.ts→typescript;
+  //     package.json→nodejs; pyproject.toml→python; etc.). Omit if mixed.
+  //   impact:       quote the commit body's "fixes …" / "prevents …" clause
+  //     when present (e.g. ["thundering-herd outage on retry"]). Omit if
+  //     the body has no impact statement.
+  //   must_read_if: ONE strong trigger, ≤160 chars, from the commit's
+  //     primary touched-path family (e.g. "touching retry / backoff logic
+  //     in packages/server/"). Omit if no single path family dominates.
+  // ALL FOUR ARE OPTIONAL — omit any field that cannot be inferred cleanly
+  // from commit/doc text alone. None participate in the idempotency_key hash
+  // (server formula: sha256({source_session, type, slug})), so subsequent
+  // imports with refined inference do NOT split a single pending entry into
+  // duplicates.
+  intent_clues: ["<inferred trigger if commit body suggests one>"],
+  tech_stack: ["<lang/framework from recent_paths extensions>"],
+  impact: ["<consequence stated in commit body / doc>"],
+  must_read_if: "<one-line strongest trigger from commit's touched-path family>"
 })
 ```
 
@@ -644,7 +666,7 @@ The contract: re-invoking fabric-import after ANY interruption (Ctrl-C, crash, n
 - NEVER populate `relevance_paths` with a non-empty array on import — every call from this skill MUST pass `relevance_paths: []`. Do not derive paths from `git log --name-only`, `git show --stat`, commit subjects/bodies, or the path of a mined Markdown file.
 - NEVER copy fabric-archive's Phase 1.5 scope-decision logic (narrow-vs-broad rules, public-prefix generalization, glob blacklist) into this skill — that logic requires a live `edit_paths` signal from an active session, which fabric-import does not have.
 - Narrowing of imported entries happens out-of-band through `fab_review action="modify"` (issued by user via `fabric-review`), NOT inside this skill.
-- MUST preserve protected tokens exactly: `stable_id`, `pending_path`, `layer`, `team`, `personal`, `knowledge_proposed`, `fab_extract_knowledge`, `fab_review`, `MUST`, `NEVER`, `phase`, `.import-state.json`, `relevance_scope`, `relevance_paths`, `broad`, `narrow`, `source_sessions`, `proposed_reason`, `session_context`.
+- MUST preserve protected tokens exactly: `stable_id`, `pending_path`, `layer`, `team`, `personal`, `knowledge_proposed`, `fab_extract_knowledge`, `fab_review`, `MUST`, `NEVER`, `phase`, `.import-state.json`, `relevance_scope`, `relevance_paths`, `broad`, `narrow`, `source_sessions`, `proposed_reason`, `session_context`, `intent_clues`, `tech_stack`, `impact`, `must_read_if`.
 
 ## Output Contract
 
@@ -766,7 +788,7 @@ Skill output (broad+[] mandatory; the doc's own path stays in `recent_paths` for
 
 ```ts
 mcp__fabric__fab_extract_knowledge({
-  source_session: "fabric-import-2026-05-10",
+  source_sessions: ["fabric-import-2026-05-10"],
   recent_paths: ["docs/architecture.md"],                  // provenance only
   user_messages_summary: "选择单体架构而非微服务：3 人团队无法承担多服务运维成本，且主要性能瓶颈在 DB 吞吐而非应用层水平扩展。src=docs/architecture.md",
   type: "decisions",

@@ -22,6 +22,39 @@ try {
 // install integration tests, not silently swallow).
 const { renderBanner, readFabricLanguage } = require("./lib/banner-i18n.cjs");
 
+// v2.0.0-rc.24 TASK-04: shared cite-line parser (CJS twin of
+// packages/shared/src/cite-line-parser.ts, byte-shipped via installHookLibs).
+// Provides `parseCiteLine(raw)` → { cite_ids, cite_tags, cite_commitments }.
+// Hook runtime has no node_modules access; the twin is hand-synced and
+// behavior-parity-tested against the TS source.
+let citeLineParser = null;
+try {
+  citeLineParser = require("./lib/cite-line-parser.cjs");
+} catch {
+  // Helper module missing — degrade silently. parseKbLine falls back to a
+  // legacy in-file regex when the lib is unavailable (e.g. mid-upgrade where
+  // hook script lands before lib is copied). New cite_commitments output is
+  // empty in degraded mode.
+  citeLineParser = null;
+}
+
+// v2.0.0-rc.24 TASK-05: L1 enforcement layer — soft Stop hook reminder for
+// [recalled] cites of decision/pitfall types that arrived without operator
+// contract or skip:<reason>. Reads .fabric/agents.meta.json (via
+// lib/cite-contract-reminder.cjs#readKnowledgeTypeMap) to type-route cite
+// ids per B6 lock; emits one
+//   ⚠ KB: <id> cited as [recalled] but missing contract; add → edit:<glob>
+//     or → skip:<reason> next turn
+// line to stderr per offending id. Non-blocking, never throws.
+let citeContractReminder = null;
+try {
+  citeContractReminder = require("./lib/cite-contract-reminder.cjs");
+} catch {
+  // Helper module missing — soft reminder simply doesn't fire. Audit-side
+  // doctor (TASK-08) still catches contract violations at the next run.
+  citeContractReminder = null;
+}
+
 // CONSTANTS — duplicated from packages/server/src/services/_shared.ts.
 // DRY violation accepted: this hook script runs in user repos WITHOUT
 // node_modules access, so it cannot import from @fenglimg/fabric-server.
@@ -444,14 +477,49 @@ function getTopEditedDirectories(projectRoot, topN, anchorTs) {
       // any leading "./". POSIX-style only — the hook ships under POSIX
       // path conventions even on Windows (the project doesn't currently
       // ship a CRLF/backslash test matrix for the sidecar).
-      const norm = p.replace(/\\/g, "/").replace(/^\.\//, "");
+      //
+      // v2.0.0-rc.27 TASK-005 (audit §2.8 leak surface): absolute paths
+      // already accumulated in legacy sidecars start with `/`. We strip
+      // the leading slash and also reject buckets that resolve to user-home
+      // segments (`Users/<name>/...`, `home/<name>/...`) so historical
+      // pollution from absolute-path writes doesn't surface the user's
+      // $HOME in the archive banner. The rc.27 appendEditCounter no longer
+      // writes such paths, but the sidecar is append-only so old lines
+      // persist until rotation.
+      let norm = p.replace(/\\/g, "/").replace(/^\.\//, "");
+      // Strip leading `/` so a stale absolute entry doesn't generate a leak.
+      while (norm.startsWith("/")) norm = norm.slice(1);
       const segs = norm.split("/").filter((s) => s.length > 0);
+      // Reject any bucket whose top segments look like a host-system home
+      // prefix. The pattern is `<top>/<user>/...` where top ∈ Users|home|root.
+      // This silently drops legacy absolute-path entries from $HOME without
+      // mangling the buckets for legitimate project-relative `Users/...`
+      // (unlikely but possible) — the heuristic favours $HOME leak prevention
+      // over false-positive bucketing of project paths named after Unix
+      // conventions.
+      if (segs.length >= 2 && (segs[0] === "Users" || segs[0] === "home" || segs[0] === "root")) {
+        continue;
+      }
+      // v2.0.0-rc.27 TASK-005 (audit §2.8 file-as-dir): when segs[1] looks
+      // like a file (contains a dot-extension at the end), surface segs[0]
+      // alone instead of `segs[0]/segs[1]/` — a 2-seg path of the form
+      // `assets/foo.ts` would otherwise render as "assets/foo.ts/" which
+      // misleads the operator about whether they're seeing a file or a
+      // directory. The extension regex is permissive: any `.X` where X is
+      // 1-8 alphanumerics counts. README.md / package.json / foo.ts all
+      // match; "v1.2" or "dotted.module" do too — acceptable false-positive
+      // rate, since the worst outcome is over-aggregation to the parent.
+      const looksLikeFile = (segment) => /\.[A-Za-z0-9]{1,8}$/u.test(segment);
       let bucket;
       if (segs.length >= 2) {
-        // Leading 2 segments: "packages/cli", "docs/decisions", etc. We
-        // trail with "/" so the banner reads "packages/cli/" — clearly a
-        // directory rather than a file basename.
-        bucket = `${segs[0]}/${segs[1]}/`;
+        if (looksLikeFile(segs[1])) {
+          bucket = `${segs[0]}/`;
+        } else {
+          // Leading 2 segments: "packages/cli", "docs/decisions", etc. We
+          // trail with "/" so the banner reads "packages/cli/" — clearly a
+          // directory rather than a file basename.
+          bucket = `${segs[0]}/${segs[1]}/`;
+        }
       } else if (segs.length === 1) {
         // Single segment — treat the basename as its own bucket. Bare
         // root-level files (README.md, package.json) get some signal too.
@@ -620,13 +688,25 @@ function decide(events, now, pendingStats, underseedStats, editCounterStats, thr
     //   - "<editCount> 次编辑"
     //   - "阈值 <N>"
     //   - "fabric-archive"
+    // v2.0.0-rc.27 TASK-005 (audit §2.17): parts now assembled per-variant
+    // via banner-i18n's archivePartsHours / archivePartsEdits so en mode
+    // gets fully-English fragments instead of mixed-language output. zh-CN
+    // / zh-CN-hybrid still render the original substring contract verbatim.
     const parts = [];
     if (triggerByHours) {
-      parts.push(`已过 ${hoursElapsed.toFixed(1)}h（阈值 ${archiveHintHours}h）`);
+      parts.push(
+        renderBanner("archivePartsHours", variant, {
+          hoursFixed: hoursElapsed.toFixed(1),
+          threshold: archiveHintHours,
+        }),
+      );
     }
     if (triggerByEdits) {
       parts.push(
-        `累计 ${editStats.editsSinceLastProposed} 次编辑（阈值 ${editStats.threshold}）`,
+        renderBanner("archivePartsEdits", variant, {
+          count: editStats.editsSinceLastProposed,
+          threshold: editStats.threshold,
+        }),
       );
     }
     // rc.16 TASK-002: 5-banner i18n via lib/banner-i18n.cjs. Substring
@@ -1005,93 +1085,45 @@ function tryReadStdinJson() {
 }
 
 /**
- * v2.0.0-rc.20 TASK-03: parse the raw text that follows the `KB:` prefix on
- * the first non-empty line of an assistant turn. Returns parsed cite ids and
- * the per-id tag enum vocabulary (planned/recalled/chained-from/dismissed/
- * none). Never throws; best-effort tolerant parser.
+ * v2.0.0-rc.20 TASK-03 → v2.0.0-rc.24 TASK-04: legacy shim signature for
+ * parsing the raw text that follows the `KB:` prefix on the first non-empty
+ * line of an assistant turn. As of rc.24 the implementation delegates to the
+ * shared `parseCiteLine` (inline-shipped via lib/cite-line-parser.cjs) to
+ * eliminate per-client regex drift.
  *
- * Vocabulary contract (mirrored in
- * packages/shared/src/schemas/event-ledger.ts → assistantTurnObservedEventSchema):
- *   - "none"                                → ids=[], tags=["none"]
- *   - "KP-001"                              → ids=["KP-001"], tags=[]
- *   - "KP-001, KT-DEC-0009 (review)"        → ids=["KP-001","KT-DEC-0009"], tags=["review"]
- *   - "KP-001 [recalled][chained-from KP-002]" →
- *       ids=["KP-001"], tags=["recalled","chained-from"]
- *   - "dismissed:<reason>"                  → ids=[], tags=["dismissed"]
- *       (kb_line_raw preserves the full "dismissed:<reason>" verbatim;
- *        the parsed `cite_tags` only carries the enum value "dismissed".)
+ * Contract (rc.24 strict mode — superset of rc.20):
+ *   - Sentinel `none` (incl. `[no-relevant]` / `[not-applicable]` tail)
+ *     → cite_ids=[], cite_tags=["none"], cite_commitments=[]
+ *   - `KT-DEC-0001 [planned]` → cite_ids=["KT-DEC-0001"], cite_tags=["planned"],
+ *     cite_commitments=[{operators:[], skip_reason:null}]
+ *   - `KT-DEC-0001 [recalled] → edit:foo.ts` → cite_commitments=[{operators:
+ *     [{kind:"edit", target:"foo.ts"}], skip_reason:null}]
+ *   - `KT-DEC-0001 [recalled] → skip:sequencing` → cite_commitments=[{operators:
+ *     [], skip_reason:"sequencing"}]
+ *   - Id form is now strict `K[TP]-[A-Z]+-\d+` (rc.20 lax form `KP-001`
+ *     without letter-prefix is rejected — see TASK-03 schema).
  *
- * Tags are filtered to the Zod enum set
- * { planned, recalled, chained-from, dismissed, none } before being returned —
- * arbitrary parenthetical/bracket text outside the enum is dropped (silently)
- * so the emitted event always round-trips through the schema.
+ * Argument is the post-`KB:` substring (matches the rc.20 call site). Returns
+ * { cite_ids, cite_tags, cite_commitments }; cite_commitments was added in
+ * rc.24 and is always present (empty array when no cite-line found).
+ *
+ * Never throws.
  */
 function parseKbLine(raw) {
-  const result = { cite_ids: [], cite_tags: [] };
-  if (typeof raw !== "string") return result;
-  const trimmed = raw.trim();
-  if (trimmed.length === 0) return result;
-
-  // dismissed:<reason> → tag="dismissed", no ids.
-  if (/^dismissed:/i.test(trimmed)) {
-    result.cite_tags.push("dismissed");
-    return result;
+  // Compose the full `KB: <raw>` line because the shared parser anchors on
+  // the `KB:` prefix. Handles the legacy `none` / `<sentinel>` inputs naturally
+  // because parseCiteLine's SENTINEL_RE matches the composed line.
+  if (typeof raw !== "string") {
+    return { cite_ids: [], cite_tags: [], cite_commitments: [] };
   }
-  // bare "none" → tag="none".
-  if (/^none$/i.test(trimmed)) {
-    result.cite_tags.push("none");
-    return result;
+  const composed = `KB: ${raw}`;
+  if (citeLineParser && typeof citeLineParser.parseCiteLine === "function") {
+    return citeLineParser.parseCiteLine(composed);
   }
-
-  // Allowed tag enum (matches assistantTurnObservedEventSchema.cite_tags z.enum).
-  const ALLOWED_TAGS = new Set(["planned", "recalled", "chained-from", "dismissed", "none"]);
-  const tagSet = new Set();
-
-  // Extract bracketed tags: `[recalled]`, `[chained-from KP-002]`, etc.
-  // We keep only the leading enum token (split on whitespace) so trailing
-  // ref-ids inside the bracket are discarded — they're not part of the tag
-  // vocabulary.
-  const bracketRegex = /\[([^\]]+)\]/g;
-  let bracketMatch;
-  let stripped = trimmed;
-  while ((bracketMatch = bracketRegex.exec(trimmed)) !== null) {
-    const inner = bracketMatch[1].trim();
-    if (inner.length === 0) continue;
-    const head = inner.split(/\s+/)[0].toLowerCase();
-    if (ALLOWED_TAGS.has(head)) tagSet.add(head);
-  }
-  stripped = stripped.replace(bracketRegex, " ");
-
-  // Extract parenthetical tags: `(review)`, `(planned)`, etc. Only enum
-  // members are retained.
-  const parenRegex = /\(([^)]+)\)/g;
-  let parenMatch;
-  while ((parenMatch = parenRegex.exec(trimmed)) !== null) {
-    const inner = parenMatch[1].trim().toLowerCase();
-    if (inner.length === 0) continue;
-    if (ALLOWED_TAGS.has(inner)) tagSet.add(inner);
-  }
-  stripped = stripped.replace(parenRegex, " ");
-
-  // Remaining content: comma-separated ids, possibly with stray whitespace.
-  // We split on comma, trim, and keep tokens that look like ref-ids
-  // (uppercase letter prefix). This filters out leftover english words and
-  // is permissive enough to allow custom id schemes (KP-, KT-, KD-, etc.).
-  const parts = stripped.split(",");
-  for (const partRaw of parts) {
-    const part = partRaw.trim();
-    if (part.length === 0) continue;
-    // Take the leading token (whitespace-bounded) so "KT-DEC-0009 garbage"
-    // still yields "KT-DEC-0009".
-    const token = part.split(/\s+/)[0];
-    if (/^[A-Z][A-Z0-9-]+$/.test(token)) {
-      result.cite_ids.push(token);
-    }
-  }
-
-  // Materialise tagSet → array (preserves insertion order via Set semantics).
-  for (const t of tagSet) result.cite_tags.push(t);
-  return result;
+  // Degraded fallback: lib missing (e.g. partial install). Emit empty result
+  // so downstream consumers see the cite-line as unobservable rather than
+  // mis-parsed. The Stop-hook contract is best-effort, never blocking.
+  return { cite_ids: [], cite_tags: [], cite_commitments: [] };
 }
 
 /**
@@ -1186,6 +1218,13 @@ function extractAndWriteAssistantTurnsBestEffort(cwd, stdinPayload) {
           kb_line_raw: turn.kb_line_raw,
           cite_ids: Array.isArray(turn.cite_ids) ? turn.cite_ids : [],
           cite_tags: Array.isArray(turn.cite_tags) ? turn.cite_tags : [],
+          // rc.24 TASK-04: cite_commitments parallel array (assistantTurn
+          // ObservedEventSchema gained this slot in rc.24 TASK-01). Empty
+          // array for legacy turns or when the parser lib is unavailable —
+          // the schema defaults `.default([])` so omitting it would also be
+          // valid, but emitting an explicit `[]` keeps the on-disk shape
+          // uniform across rc.24+ events.
+          cite_commitments: Array.isArray(turn.cite_commitments) ? turn.cite_commitments : [],
           turn_id: `${sessionId}-${turn.envelope_index}`,
           envelope_index: turn.envelope_index,
           timestamp: new Date().toISOString(),
@@ -1280,6 +1319,11 @@ function summarizeTranscript(transcriptPath) {
       let kbLineRaw = null;
       let citeIds = [];
       let citeTags = [];
+      // rc.24 TASK-04: parallel `cite_commitments` array, populated by the
+      // shared cite-line parser. One entry per non-sentinel cite (index-aligned
+      // with cite_ids). Sentinel `KB: none` contributes a `cite_tags=["none"]`
+      // entry but no commitment — matches the parseCiteLine index contract.
+      let citeCommitments = [];
       if (typeof firstText === "string" && firstText.length > 0) {
         // First non-empty line.
         const linesOfText = firstText.split(/\r?\n/);
@@ -1291,19 +1335,23 @@ function summarizeTranscript(transcriptPath) {
           }
         }
         if (firstNonEmpty.length > 0) {
-          // KB: none (case-insensitive on the literal `none`).
-          const noneMatch = firstNonEmpty.match(/^KB:\s*none\s*$/i);
-          const kbMatch = firstNonEmpty.match(/^KB:\s+(.+)$/);
-          if (noneMatch) {
+          // rc.24 TASK-04: route the FULL `KB: ...` line to the shared parser.
+          // parseCiteLine handles sentinels (`KB: none [<reason>]`) AND full
+          // cite form including contract tail (`KB: KT-DEC-0001 [recalled] →
+          // edit:foo.ts`) uniformly. The sentinel's `[<reason>]` tail stays in
+          // `kb_line_raw` for doctor's downstream histogram parse; cite_tags
+          // still emits the bare `none` token (schema enum-bound).
+          if (/^KB:\s*/i.test(firstNonEmpty)) {
             kbLineRaw = firstNonEmpty;
-            const parsed = parseKbLine("none");
-            citeIds = parsed.cite_ids;
-            citeTags = parsed.cite_tags;
-          } else if (kbMatch) {
-            kbLineRaw = firstNonEmpty;
-            const parsed = parseKbLine(kbMatch[1]);
-            citeIds = parsed.cite_ids;
-            citeTags = parsed.cite_tags;
+            if (citeLineParser && typeof citeLineParser.parseCiteLine === "function") {
+              const parsed = citeLineParser.parseCiteLine(firstNonEmpty);
+              citeIds = parsed.cite_ids;
+              citeTags = parsed.cite_tags;
+              citeCommitments = parsed.cite_commitments;
+            }
+            // Degraded mode (lib missing) → keep kbLineRaw but emit empty
+            // arrays; doctor downstream treats this as "turn observed, parse
+            // unavailable" without crashing.
           }
         }
       }
@@ -1312,6 +1360,7 @@ function summarizeTranscript(transcriptPath) {
         kb_line_raw: kbLineRaw,
         cite_ids: citeIds,
         cite_tags: citeTags,
+        cite_commitments: citeCommitments,
       });
     }
 
@@ -1354,6 +1403,50 @@ function summarizeTranscript(transcriptPath) {
     return true;
   });
   return out;
+}
+
+/**
+ * v2.0.0-rc.24 TASK-05: emit soft L1 reminder to stderr when assistant turns
+ * cited a decision/pitfall id with [recalled] but no operator contract and no
+ * skip:<reason>. Reads agents.meta.json once per invocation; aggregated per
+ * turn (one line per offending id). Non-blocking — never throws, always
+ * returns the array of emitted reminder strings (for unit tests + callers
+ * that want to observe what was written).
+ *
+ * The reminder writes go to stderr (the hook contract: stdout is structured
+ * banner JSON consumed by the harness; stderr is free-text system message
+ * that surfaces back to the model on the next turn in cc / codex / cursor).
+ */
+function emitCiteContractRemindersBestEffort(cwd, stdinPayload, stderr) {
+  if (citeContractReminder === null) return [];
+  if (stdinPayload === null || typeof stdinPayload !== "object") return [];
+  try {
+    const transcript = summarizeTranscript(stdinPayload.transcript_path);
+    const turns = transcript.assistant_turns;
+    if (!Array.isArray(turns) || turns.length === 0) return [];
+
+    const idTypeMap = citeContractReminder.readKnowledgeTypeMap(cwd);
+    if (!(idTypeMap instanceof Map) || idTypeMap.size === 0) return [];
+
+    const reminders = citeContractReminder.formatContractMissingReminders({
+      assistant_turns: turns,
+      idTypeMap,
+    });
+    if (!Array.isArray(reminders) || reminders.length === 0) return [];
+
+    const sink = stderr || process.stderr;
+    for (const line of reminders) {
+      try {
+        sink.write(line + "\n");
+      } catch {
+        // Sink write failure must not abort emission of remaining reminders.
+      }
+    }
+    return reminders;
+  } catch {
+    // Outer guard — never throw. Hook continues silently.
+    return [];
+  }
 }
 
 /**
@@ -1408,6 +1501,16 @@ function main(env, stdio) {
     // transcript file is small in practice and re-parse cost is dwarfed by
     // the hook's other I/O).
     extractAndWriteAssistantTurnsBestEffort(cwd, stdinPayload);
+
+    // v2.0.0-rc.24 TASK-05: L1 soft reminder layer. Surfaces ⚠ KB:<id> lines
+    // to stderr when decision/pitfall cites arrived with [recalled] tag but
+    // empty contract. Non-blocking, never throws; doctor (TASK-08) catches
+    // any contract violation the model ignored.
+    emitCiteContractRemindersBestEffort(
+      cwd,
+      stdinPayload,
+      stdio && stdio.stderr,
+    );
 
     const events = readLedger(cwd);
     let pendingStats;
@@ -1622,6 +1725,10 @@ module.exports = {
   parseKbLine,
   detectClient,
   extractAndWriteAssistantTurnsBestEffort,
+  // v2.0.0-rc.24 TASK-05: L1 soft reminder helpers (exported for unit testing
+  // of the contract-missing emission contract). The lib module itself is
+  // also exported indirectly via the reminder helper.
+  emitCiteContractRemindersBestEffort,
   CONSTANTS: {
     FABRIC_DIR,
     EVENT_LEDGER_FILE,

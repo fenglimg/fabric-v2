@@ -7,7 +7,7 @@
 - **`.fabric/agents.meta.json` 严禁手动编辑**;engine 会自动同步派生状态,显式 reconcile 跑 `fab doctor --fix`。
 
 ## 知识库(KB)
-- **Discovery**:SessionStart hook 列 broad-scoped 条目;edit 文件时 PreToolUse hook 可能触发 narrow hint。
+- **Discovery**:SessionStart hook 列 broad-scoped 条目(含 personal layer `KP-*` 条目,引用方式相同);edit 文件时 PreToolUse hook 可能触发 narrow hint。
 - **Usage**:两步式——`fab_plan_context(paths=[...])` 返回 `selection_token` + 候选 entries,再 `fab_get_knowledge_sections({ selection_token, ai_selected_stable_ids: [<id>...] })` 拉全文;`selection_token` 必须来自最近一次 `fab_plan_context`,不可凭空编造。
 - **session_id**: 调用 `fab_plan_context` 时, 务必把当前 client session id 作为 `session_id` 参数传入(Claude Code 的 session id 在 stdin payload 中, Codex 的对应 identifier 同理)。这能让 `fab doctor --archive-history` 与 archive-hint hook 准确识别跨会话 debt 状态。
 - **Write flows**:`fabric-archive` / `fabric-review` / `fabric-import` 三个 Skills。
@@ -43,6 +43,9 @@
 
 - **触发**: 做 edit / decide / propose plan 之前,**回复首行**必须写 `KB: <id> (<≤8字 用法>) [planned|recalled|chained-from <id>|dismissed:<reason>]` 或 `KB: none [<reason>]`。
 - **`[recalled]` 验证**: 必须紧跟两步调用——先 `fab_plan_context(paths=[...])` 拿 `selection_token`,再 `fab_get_knowledge_sections({ selection_token, ai_selected_stable_ids: [<id>] })`,防止编造 id。
+- **contract 语法**: decisions/pitfalls 类引用必须在尾段加 contract: `→ <operator> [<operator> ...]`,operator ∈ {`edit:<glob>` `!edit:<glob>` `require:<symbol>` `forbid:<symbol>` `skip:<reason>`}。例:`KB: K-001 (auth) [planned] → edit:src/auth/**/*.ts !edit:src/legacy/**`。
+- **skip reason 词典**: `sequencing | conditional | semantic | aesthetic | architectural | other:<text>`。
+- **type 路由**: models 类引用为 reference cite,不需要 contract;guidelines/processes 类暂不强制,推后 LLM-judge。
 - **用户口头提规则没给 id**: 先调 `fab_extract_knowledge` 或 `search_context` 反查。
 - **dismissed reason**: 枚举 `scope-mismatch | outdated | not-applicable | other:<text>`。
 - **`KB: none` sentinel**: 枚举两种合规理由——`[no-relevant]` 已调 `fab_plan_context`(或 hook 输出可见)但无可用条目;`[not-applicable]` 当前动作不在 cite 范围(纯探索 / Bash 只读 / 用户问答)。裸 `KB: none`(无后缀)仍然 valid,归类为 `[unspecified]`(legacy 兼容,鼓励后续补注)。

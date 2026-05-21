@@ -2,9 +2,6 @@
   "events": {
     "Stop": [
       {
-        "command": ".codex/hooks/archive-hint.cjs"
-      },
-      {
         "command": "\"$(git rev-parse --show-toplevel)/.codex/hooks/fabric-hint.cjs\""
       }
     ],

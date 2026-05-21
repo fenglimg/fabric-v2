@@ -1,6 +1,27 @@
 {
-  "revision": "sha256:23dae8fc07f3122b7028e96e83d79528a2468278710c52c6be906ae40bce9b13",
+  "revision": "sha256:c98e502eb7c115c699572c7cbafc776326e0b06707797d0f72db37b6a561ff94",
   "nodes": {
+    "KP-PRO-0001": {
+      "file": "~/.fabric/knowledge/processes/KP-PRO-0001--stale-git-lock-safe-removal.md",
+      "content_ref": "~/.fabric/knowledge/processes/KP-PRO-0001--stale-git-lock-safe-removal.md",
+      "scope_glob": "processes/KP-PRO-0001--stale-git-lock-safe-removal/**",
+      "deps": [
+        "L0"
+      ],
+      "priority": "medium",
+      "level": "L1",
+      "layer": "L1",
+      "topology_type": "mirror",
+      "hash": "sha256:68919c5721c1fbfe5277dc4fd1e6834bc95fa5ac1656cbb3439cd888e10e79b8",
+      "stable_id": "KP-PRO-0001",
+      "identity_source": "declared",
+      "sections": [
+        "Summary",
+        "Why proposed",
+        "Session context",
+        "Evidence"
+      ]
+    },
     "KT-DEC-0001": {
       "file": ".fabric/knowledge/decisions/KT-DEC-0001.md",
       "content_ref": ".fabric/knowledge/decisions/KT-DEC-0001.md",
