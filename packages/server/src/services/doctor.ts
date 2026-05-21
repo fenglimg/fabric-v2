@@ -2124,21 +2124,40 @@ function inspectSkillRefMirror(projectRoot: string): SkillRefMirrorInspection {
   for (const slug of skillSlugs) {
     const claudeRef = join(projectRoot, ".claude", "skills", slug, "ref");
     const codexRef = join(projectRoot, ".codex", "skills", slug, "ref");
-    let claudeFiles: string[] = [];
-    let codexFiles: string[] = [];
+    let claudeFiles: string[] | null = null;
+    let codexFiles: string[] | null = null;
     try {
       claudeFiles = readdirSync(claudeRef).filter((n) => n.endsWith(".md"));
     } catch {
-      // Missing client subtree — not necessarily drift; user may only have one
-      // client installed. Skip parity check for this skill on this client.
+      // Missing client subtree — tolerated only when the OTHER client subtree
+      // is also missing OR when the user explicitly only installed one
+      // client (the asymmetric-install case). `null` here is distinct from
+      // "exists but empty" — only `null` skips the parity check.
     }
     try {
       codexFiles = readdirSync(codexRef).filter((n) => n.endsWith(".md"));
     } catch {
-      // Same — tolerate missing subtree.
+      // Same.
     }
-    const shared = claudeFiles.filter((f) => codexFiles.includes(f));
-    for (const fname of shared) {
+    // Asymmetric install — at most one client surface exists. Parity check
+    // does not apply; do not flag anything for this slug.
+    if (claudeFiles === null || codexFiles === null) continue;
+    // v2.0.0-rc.28 TASK-04 (Gemini review fix): when BOTH client subtrees
+    // exist, files present in only one side ARE drift (partial install or
+    // manual deletion). Previously the inspection filtered to the
+    // intersection, silently ignoring file-level asymmetry. The fix takes
+    // the symmetric difference and flags every missing file from either
+    // side, on top of the byte-comparison for the intersection.
+    const claudeSet = new Set(claudeFiles);
+    const codexSet = new Set(codexFiles);
+    const union = new Set([...claudeFiles, ...codexFiles]);
+    for (const fname of union) {
+      const inClaude = claudeSet.has(fname);
+      const inCodex = codexSet.has(fname);
+      if (!inClaude || !inCodex) {
+        driftedPaths.push(`skills/${slug}/ref/${fname}`);
+        continue;
+      }
       let claudeBody: string;
       let codexBody: string;
       try {

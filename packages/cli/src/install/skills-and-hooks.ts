@@ -122,18 +122,6 @@ export const SKILL_DESTINATIONS = {
   ],
 } as const;
 
-// v2.0.0-rc.28 TASK-01 (audit §3.1): per-skill `ref/` subdirectories carrying
-// load-on-demand reference content (rc-history, i18n-policy, phase-specific
-// guidance). Each entry maps the skill-tree slug → installed-side parent dir;
-// installSkillRefFiles walks `templates/skills/<slug>/ref/*.md` and copies
-// every file to `<parent>/<slug>/ref/` for both Claude Code and Codex CLI.
-// Absent ref/ directories degrade silently (skill keeps shipping with no ref
-// content) so retro-fitting earlier skills doesn't break existing installs.
-const SKILL_REF_TREE_ROOTS = [
-  { templateSlug: "fabric-archive", clientPrefixes: [".claude", ".codex"] as const },
-  { templateSlug: "fabric-review", clientPrefixes: [".claude", ".codex"] as const },
-  { templateSlug: "fabric-import", clientPrefixes: [".claude", ".codex"] as const },
-] as const;
 
 /**
  * Project-root-relative destination paths for the three cross-client hook

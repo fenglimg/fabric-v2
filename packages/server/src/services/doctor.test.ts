@@ -540,6 +540,35 @@ describe("runDoctorReport", () => {
     expect(check?.message).toMatch(/fabric-archive\/ref\/i18n-policy\.md/);
   });
 
+  // v2.0.0-rc.28 (Gemini review fix): partial file asymmetry — both client
+  // subtrees exist, but one is missing a specific ref file. The original
+  // intersection-based comparison silently passed this case; the fix takes
+  // the symmetric difference + byte-compare so missing files surface as
+  // drift.
+  it("skill_ref_mirror: warns when both clients exist but one is missing a ref file (partial drift)", async () => {
+    const target = createInitializedProject("doctor-skill-ref-mirror-partial");
+    await writeKnowledgeMeta(target, { source: "doctor_fix" });
+    writeFile(".fabric/events.jsonl", "", target);
+
+    const claudeRef = join(target, ".claude", "skills", "fabric-archive", "ref");
+    const codexRef = join(target, ".codex", "skills", "fabric-archive", "ref");
+    mkdirSync(claudeRef, { recursive: true });
+    mkdirSync(codexRef, { recursive: true });
+    // Claude has BOTH files; Codex has only ONE — the second is missing.
+    writeFileSync(join(claudeRef, "i18n-policy.md"), "policy bytes", "utf8");
+    writeFileSync(join(claudeRef, "worked-examples.md"), "examples bytes", "utf8");
+    writeFileSync(join(codexRef, "i18n-policy.md"), "policy bytes", "utf8");
+    // worked-examples.md absent in .codex/ — should surface as drift.
+
+    const report = await runDoctorReport(target);
+    const check = report.checks.find(
+      (c) => c.code === "skill_ref_mirror_drift",
+    );
+    expect(check).toBeDefined();
+    expect(check?.status).toBe("warn");
+    expect(check?.message).toMatch(/fabric-archive\/ref\/worked-examples\.md/);
+  });
+
   it("skill_ref_mirror: tolerates client-asymmetric installs (one client only)", async () => {
     const target = createInitializedProject("doctor-skill-ref-mirror-asymmetric");
     await writeKnowledgeMeta(target, { source: "doctor_fix" });
