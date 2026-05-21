@@ -274,6 +274,52 @@ describe("eventLedgerEventSchema", () => {
     ).toThrow();
   });
 
+  // v2.0.0-rc.29 TASK-003 (BUG-H4): install_diff_applied round-trip parse.
+  // Mirrors the cli `appendInstallDiffLedgerEvent` payload at
+  // packages/cli/src/commands/install.ts so the server-side schema no longer
+  // emits `event_ledger_schema_compat warn` for install-driven events.
+  it("parses install_diff_applied with applied/canonical/drifted arrays", () => {
+    const base = {
+      kind: "fabric-event" as const,
+      id: "event:install-diff",
+      ts: 1_700_000_000_000,
+      schema_version: 1 as const,
+    };
+    const parsed = eventLedgerEventSchema.parse({
+      ...base,
+      event_type: "install_diff_applied",
+      applied: [".claude/hooks/fabric-hint.cjs"],
+      canonical: [".fabric/AGENTS.md", "AGENTS.md"],
+      drifted: [],
+    });
+    expect(parsed).toMatchObject({
+      event_type: "install_diff_applied",
+      applied: [".claude/hooks/fabric-hint.cjs"],
+      canonical: [".fabric/AGENTS.md", "AGENTS.md"],
+      drifted: [],
+    });
+    // empty arrays still accepted (no-op install run)
+    expect(() =>
+      eventLedgerEventSchema.parse({
+        ...base,
+        event_type: "install_diff_applied",
+        applied: [],
+        canonical: [],
+        drifted: [],
+      }),
+    ).not.toThrow();
+    // applied must be an array, not a string
+    expect(() =>
+      eventLedgerEventSchema.parse({
+        ...base,
+        event_type: "install_diff_applied",
+        applied: "single-string",
+        canonical: [],
+        drifted: [],
+      }),
+    ).toThrow();
+  });
+
   // v2.0.0-rc.22 Scope A T3: events_rotated round-trip parse + required-field
   // coverage. Mirrors the existing event_ledger_truncated pattern — same
   // envelope, same numeric/string field shape, but adds the cutoff_ts ISO

@@ -102,6 +102,19 @@ export const reapplyCompletedEventSchema = z.object({
   rules_count: z.number().int().nonnegative(),
 });
 
+// v2.0.0-rc.29 TASK-003 (BUG-H4): install_diff_applied — emitted by
+// `fab install` (cli `commands/install.ts:appendInstallDiffLedgerEvent`)
+// per install run summarizing managed-file diff outcomes. Closes the
+// `event_ledger_schema_compat` warn that CLI-only events produced when the
+// server schema lacked the discriminant.
+export const installDiffAppliedEventSchema = z.object({
+  ...eventLedgerEnvelopeSchema,
+  event_type: z.literal("install_diff_applied"),
+  applied: z.array(z.string()),
+  canonical: z.array(z.string()),
+  drifted: z.array(z.string()),
+});
+
 export const eventLedgerTruncatedEventSchema = z.object({
   ...eventLedgerEnvelopeSchema,
   event_type: z.literal("event_ledger_truncated"),
@@ -602,6 +615,7 @@ export const eventLedgerEventSchema = z.discriminatedUnion("event_type", [
   knowledgeDriftDetectedEventSchema,
   mcpEventLedgerEventSchema,
   reapplyCompletedEventSchema,
+  installDiffAppliedEventSchema,
   eventLedgerTruncatedEventSchema,
   mcpConfigMigratedEventSchema,
   // v2.0.0-rc.19 TASK-004: bootstrap_marker_migrated — one-time fabric:knowledge-base
@@ -680,6 +694,7 @@ export type EditIntentCheckedEvent = z.infer<typeof editIntentCheckedEventSchema
 export type KnowledgeDriftDetectedEvent = z.infer<typeof knowledgeDriftDetectedEventSchema>;
 export type McpEventLedgerEvent = z.infer<typeof mcpEventLedgerEventSchema>;
 export type ReapplyCompletedEvent = z.infer<typeof reapplyCompletedEventSchema>;
+export type InstallDiffAppliedEvent = z.infer<typeof installDiffAppliedEventSchema>;
 export type EventLedgerTruncatedEvent = z.infer<typeof eventLedgerTruncatedEventSchema>;
 export type McpConfigMigratedEvent = z.infer<typeof mcpConfigMigratedEventSchema>;
 export type BootstrapMarkerMigratedEvent = z.infer<typeof bootstrapMarkerMigratedEventSchema>;
@@ -722,6 +737,7 @@ export type EventLedgerEvent =
   | KnowledgeDriftDetectedEvent
   | McpEventLedgerEvent
   | ReapplyCompletedEvent
+  | InstallDiffAppliedEvent
   | EventLedgerTruncatedEvent
   | McpConfigMigratedEvent
   | BootstrapMarkerMigratedEvent
