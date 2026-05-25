@@ -251,7 +251,10 @@ export const enMessages: Messages = {
   "cli.doctor.args.auto.description":
     "With --enrich-descriptions: write deterministic stub values for missing fields. Without --auto, the run is read-only.",
   "cli.doctor.args.dry-run.description":
-    "With --enrich-descriptions --auto: preview the would-be changes without writing to disk.",
+    "With --enrich-descriptions --auto or --fix: preview the planned changes without writing to disk. The fix-dry-run output mirrors --fix's fixable_errors list but executes no mutations.",
+  // v2.0.0-rc.33 W4-B1 (T6 P2): --fix --dry-run banner — printed before the standard report so users see no mutations were applied.
+  "cli.doctor.fix-dry-run-banner":
+    "[dry-run] No mutations were applied. The fixable_errors list below shows what `fab doctor --fix` would address; rerun without --dry-run to actually fix.",
   "cli.doctor.errors.enrich-descriptions-mutex":
     "--enrich-descriptions cannot be combined with --fix, --fix-knowledge, or --cite-coverage. Run them separately.",
   "doctor.enrich.allComplete":
@@ -290,7 +293,7 @@ export const enMessages: Messages = {
   "doctor.check.bootstrap_anchor.message.missing":
     "Neither AGENTS.md nor CLAUDE.md exists at the repo root. Fabric requires a bootstrap anchor file at the project root.",
   "doctor.check.bootstrap_anchor.remediation.missing":
-    "Run `fabric install` to generate the AGENTS.md / CLAUDE.md bootstrap anchor at the repo root.",
+    "Run `fab install` to generate the AGENTS.md / CLAUDE.md bootstrap anchor at the repo root.",
   "doctor.check.bootstrap_anchor.ok": "Bootstrap anchor present at repo root: {present}.",
   "doctor.check.baseline_filename_format.name": "Baseline filename format",
   "doctor.check.baseline_filename_format.ok":
@@ -451,6 +454,14 @@ export const enMessages: Messages = {
     "Detected {count} cite-policy Goodhart patterns: {list}.",
   "doctor.check.cite_goodhart.remediation":
     "Review the fired patterns: G1 ritual → the same id repeated as [recalled] suggests the KB should land into a contract instead; G2 dismissal abuse → > 60% of recalled cites used skip: bypasses contract enforcement, audit skip-reason validity; G3 chained-from misuse → chained-from tag with no commitment (operators=[] + skip_reason=null), add operators or use a different tag; G5 placeholder cite → too many bare 'KB: none' / [unspecified], prefer specific sentinels like [no-relevant] / [not-applicable]. For raw data, run `fab doctor --cite-coverage --since=7d`.",
+  // v2.0.0-rc.33 W4-A4 (T5 P2): draft-backlog lint. rc.32 baseline showed 92% of entries stuck at draft, signaling a broken promote loop. Warns when > 50% draft (workspace must have >= 10 entries to compute the ratio — small corpora are noisy).
+  "doctor.check.draft_backlog.name": "Knowledge draft backlog",
+  "doctor.check.draft_backlog.ok":
+    "draft-maturity entry ratio is healthy (< 50%, or workspace too small to compute).",
+  "doctor.check.draft_backlog.message":
+    "{draftCount}/{totalCount} ({pct}%) canonical knowledge entries are stuck at draft maturity — promote loop is broken (rc.32 baseline was 92%).",
+  "doctor.check.draft_backlog.remediation":
+    "Run `/fabric-review` to triage drafts: approve to promote to verified/proven, reject to drop, modify to fix. A long-standing draft backlog usually means archive produces drafts faster than review can promote them.",
   "doctor.check.meta_manually_diverged.name": "Meta manual divergence",
   "doctor.check.meta_manually_diverged.ok.unreadable":
     "agents.meta.json not readable; skipping divergence check.",
@@ -519,7 +530,7 @@ export const enMessages: Messages = {
   "doctor.check.orphan_demote.message.plural":
     "{count} canonical knowledge entries exceed their maturity-keyed inactivity threshold (stable={stableDays}d / endorsed={endorsedDays}d / draft={draftDays}d). First: {detail}.",
   "doctor.check.orphan_demote.remediation":
-    "Run `fab doctor --fix-knowledge` (rc.4 TASK-003) to demote orphan entries one maturity tier.",
+    "Run `fab doctor --fix-knowledge` to demote orphan entries one maturity tier.",
   "doctor.check.stale_archive.name": "Knowledge stale archive",
   "doctor.check.stale_archive.ok":
     "No draft knowledge entries exceed the additional stale-archive quiet window.",
@@ -528,7 +539,7 @@ export const enMessages: Messages = {
   "doctor.check.stale_archive.message.plural":
     "{count} draft knowledge entries are stale beyond the demote+{additionalDays}d additional quiet window. First: {detail}.",
   "doctor.check.stale_archive.remediation":
-    "Run `fab doctor --fix-knowledge` (rc.4 TASK-003) to move stale entries into `.fabric/.archive/<type>/`.",
+    "Run `fab doctor --fix-knowledge` to move stale entries into `.fabric/.archive/<type>/`.",
   "doctor.check.pending_overdue.name": "Knowledge pending overdue",
   "doctor.check.pending_overdue.ok":
     "No pending knowledge entries exceed the 14-day review threshold.",
@@ -566,7 +577,7 @@ export const enMessages: Messages = {
   "doctor.check.index_drift.message.plural":
     "{count} (layer, type) counter slots have drifted below the observed canonical maximum (next allocate would collide). First: {detail}.",
   "doctor.check.index_drift.remediation":
-    "Run `fab doctor --fix-knowledge` (rc.4 TASK-003) to bump agents.meta.json counters to max_observed + 1.",
+    "Run `fab doctor --fix-knowledge` to bump agents.meta.json counters to max_observed + 1.",
   "doctor.check.underseeded.name": "Knowledge underseeded",
   "doctor.check.underseeded.ok":
     "Knowledge corpus has {count} canonical entries (>= {threshold}).",
@@ -901,7 +912,7 @@ export const enMessages: Messages = {
   "cli.scan.args.debug.description": "Print detection evidence in formatted output.",
   "cli.scan.args.json.description": "Print the diagnostic report as JSON.",
   "cli.scan.error.missing-forensic":
-    "forensic.json not found at {path}; run `fabric install` first to produce the deterministic project snapshot.",
+    "forensic.json not found at {path}; run `fab install` first to produce the deterministic project snapshot.",
   "cli.scan.summary.created": "Wrote {count} knowledge entries to .fabric/knowledge/.",
   "cli.scan.summary.skipped": "No changes detected; {count} entries already up-to-date.",
   "cli.scan.report.title": "Fabric scan report",

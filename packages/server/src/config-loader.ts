@@ -55,3 +55,37 @@ export function readSelectionTokenTtlMs(projectRoot: string): number | undefined
     return undefined;
   }
 }
+
+/**
+ * v2.0.0-rc.33 W4-B3 (T5 P2): per-maturity orphan_demote thresholds. Returns
+ * the override Map keyed by maturity ("stable"|"endorsed"|"draft") so doctor's
+ * orphan_demote inspect can spread it over the hardcoded defaults. Absent keys
+ * fall through. Best-effort: any read/parse failure returns an empty map.
+ *
+ * Validation rule mirrors the schema: integer in [1, 3650] (one day to ten
+ * years). Out-of-range or non-numeric values are silently dropped so a
+ * partial override file does not nuke the hardcoded defaults wholesale.
+ */
+export function readOrphanDemoteThresholdDays(projectRoot: string): Partial<Record<"stable" | "endorsed" | "draft", number>> {
+  try {
+    const cfg = readFabricConfig(projectRoot) as Partial<
+      Record<"orphan_demote_stable_days" | "orphan_demote_endorsed_days" | "orphan_demote_draft_days", unknown>
+    >;
+    const out: Partial<Record<"stable" | "endorsed" | "draft", number>> = {};
+    const validate = (v: unknown): number | undefined => {
+      if (typeof v !== "number" || !Number.isFinite(v) || v < 1 || v > 3650 || !Number.isInteger(v)) {
+        return undefined;
+      }
+      return v;
+    };
+    const s = validate(cfg.orphan_demote_stable_days);
+    if (s !== undefined) out.stable = s;
+    const e = validate(cfg.orphan_demote_endorsed_days);
+    if (e !== undefined) out.endorsed = e;
+    const d = validate(cfg.orphan_demote_draft_days);
+    if (d !== undefined) out.draft = d;
+    return out;
+  } catch {
+    return {};
+  }
+}

@@ -256,6 +256,21 @@ export const fabricConfigSchema = z.object({
   // throttle hint frequency during rapid-fire editing sprints. Range
   // 0..168 (one week).
   hint_narrow_cooldown_hours: z.number().int().min(0).max(168).optional().default(0),
+  // v2.0.0-rc.33 W4-B3 (T5 P2): per-maturity inactivity thresholds (days)
+  // driving orphan_demote. Hardcoded at stable=90/endorsed=30/draft=14 in
+  // rc.32; chatty workspaces want them tighter, slow ones want them looser.
+  // Each field optional; absent → defaults inside doctor.ts apply. Ranges
+  // chosen so a typo can't accidentally disable the lint (min 1).
+  orphan_demote_stable_days: z.number().int().min(1).max(3650).optional(),
+  orphan_demote_endorsed_days: z.number().int().min(1).max(3650).optional(),
+  orphan_demote_draft_days: z.number().int().min(1).max(3650).optional(),
+  // v2.0.0-rc.33 W4-A3 (T4 P2): per-entry summary truncation length used by
+  // knowledge-hint-{broad,narrow}.cjs. Hard-coded at 80 chars in rc.32 — too
+  // short for entries with parameterized summaries (e.g. "Use bcrypt with
+  // cost=12 for password hashing"), too long for terse pitfalls. Range 40..240;
+  // default 80 preserves rc.32 behavior. Both hooks read the same key so the
+  // banner styling stays consistent across SessionStart + PreToolUse.
+  hint_summary_max_len: z.number().int().min(40).max(240).optional().default(80),
   // v2.0.0-rc.33 W2-6 (P0-7 + P0-8): when true, knowledge-hint hooks emit
   // their banners as `hookSpecificOutput.additionalContext` JSON on stdout
   // (per Claude Code PreToolUse hook contract — see

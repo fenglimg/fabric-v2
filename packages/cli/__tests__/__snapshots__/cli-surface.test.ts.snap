@@ -70,7 +70,7 @@ exports[`CLI surface drift gate (docs/test-seed/cli.md §1) > command 'doctor' s
     {
       "alias": undefined,
       "default": false,
-      "description": "With --enrich-descriptions --auto: preview the would-be changes without writing to disk.",
+      "description": "With --enrich-descriptions --auto or --fix: preview the planned changes without writing to disk. The fix-dry-run output mirrors --fix's fixable_errors list but executes no mutations.",
       "name": "dry-run",
       "negativeDescription": undefined,
       "required": undefined,

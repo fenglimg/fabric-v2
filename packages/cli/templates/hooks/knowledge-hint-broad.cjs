@@ -362,8 +362,24 @@ const CLI_TIMEOUT_MS = 2000;
 
 // Maximum summary length per entry. Keeps each line bounded so stderr does
 // not blow up terminal width with multi-paragraph summaries from sloppy
-// pending entries. Truncation appends an ellipsis.
-const SUMMARY_MAX_LEN = 80;
+// pending entries. Truncation appends an ellipsis. v2.0.0-rc.33 W4-A3:
+// `hint_summary_max_len` in fabric-config overrides this default (range 40..240).
+const DEFAULT_SUMMARY_MAX_LEN = 80;
+
+function readSummaryMaxLen(projectRoot) {
+  const configPath = join(projectRoot, FABRIC_DIR_REL, FABRIC_CONFIG_FILE);
+  if (!existsSync(configPath)) return DEFAULT_SUMMARY_MAX_LEN;
+  try {
+    const parsed = JSON.parse(readFileSync(configPath, "utf8"));
+    const v = parsed && parsed.hint_summary_max_len;
+    if (typeof v === "number" && Number.isFinite(v) && v >= 40 && v <= 240) {
+      return Math.floor(v);
+    }
+  } catch {
+    // fall through to default
+  }
+  return DEFAULT_SUMMARY_MAX_LEN;
+}
 
 // Canonical type order — render groups in this sequence so output is stable
 // across runs (Object.keys iteration order is insertion order, but the JSON
@@ -493,17 +509,21 @@ function groupEntries(narrow) {
   return { typeOrder, byType };
 }
 
-function truncateSummary(raw) {
+// v2.0.0-rc.33 W4-A3: maxLen is now caller-supplied (sourced from
+// fabric-config#hint_summary_max_len in main; tests + ad-hoc callers may
+// omit to fall back to DEFAULT_SUMMARY_MAX_LEN).
+function truncateSummary(raw, maxLen) {
   const s = typeof raw === "string" ? raw : "";
   // Collapse newlines / runs of whitespace so each entry fits one line.
   const flat = s.replace(/\s+/g, " ").trim();
-  if (flat.length <= SUMMARY_MAX_LEN) return flat;
-  return `${flat.slice(0, SUMMARY_MAX_LEN - 1)}…`;
+  const cap = typeof maxLen === "number" && maxLen > 0 ? maxLen : DEFAULT_SUMMARY_MAX_LEN;
+  if (flat.length <= cap) return flat;
+  return `${flat.slice(0, cap - 1)}…`;
 }
 
-function formatEntryLine(entry) {
+function formatEntryLine(entry, maxLen) {
   const id = entry.id || "(no-id)";
-  const summary = truncateSummary(entry.summary);
+  const summary = truncateSummary(entry.summary, maxLen);
   return summary.length > 0 ? `    - ${id} · ${summary}` : `    - ${id}`;
 }
 
@@ -512,7 +532,7 @@ function formatEntryLine(entry) {
  * Each entry gets one line: `    - <id> · <summary>`. Type/maturity headers
  * group the listing.
  */
-function renderFull(narrow) {
+function renderFull(narrow, maxLen) {
   const { typeOrder, byType } = groupEntries(narrow);
   const lines = [];
   for (const type of typeOrder) {
@@ -531,7 +551,7 @@ function renderFull(narrow) {
     for (const maturity of maturities) {
       lines.push(`  [${type}] (${maturity}):`);
       for (const entry of maturityMap.get(maturity)) {
-        lines.push(formatEntryLine(entry));
+        lines.push(formatEntryLine(entry, maxLen));
       }
     }
   }
@@ -544,7 +564,7 @@ function renderFull(narrow) {
  * an inline id list (no summary); draft (and unknown) buckets collapse to a
  * count.
  */
-function renderTruncated(narrow) {
+function renderTruncated(narrow, maxLen) {
   const { typeOrder, byType } = groupEntries(narrow);
   const lines = [];
   for (const type of typeOrder) {
@@ -555,7 +575,7 @@ function renderTruncated(narrow) {
     if (proven && proven.length > 0) {
       lines.push(`  [${type}] proven (${proven.length}):`);
       for (const entry of proven) {
-        lines.push(formatEntryLine(entry));
+        lines.push(formatEntryLine(entry, maxLen));
       }
     }
 
@@ -592,7 +612,7 @@ function renderTruncated(narrow) {
  * after writing exactly one stderr breadcrumb so operators grepping a stuck-
  * banner report can diagnose the version drift without source-diving.
  */
-function renderSummary(payload) {
+function renderSummary(payload, maxLen) {
   if (!payload || payload.version !== 2) {
     if (payload && payload.version !== undefined) {
       try {
@@ -615,7 +635,7 @@ function renderSummary(payload) {
     ? `[fabric] Session start — ${entries.length} broad-scoped knowledge entries available (truncated):`
     : `[fabric] Session start — ${entries.length} broad-scoped knowledge entries available:`;
 
-  const body = truncated ? renderTruncated(entries) : renderFull(entries);
+  const body = truncated ? renderTruncated(entries, maxLen) : renderFull(entries, maxLen);
 
   const lines = [banner, ...body];
   const revHash = typeof payload.revision_hash === "string" ? payload.revision_hash : null;
@@ -720,7 +740,8 @@ function main(env, stdio) {
     // compact/clear-triggered SessionStart re-fires must re-inject the menu
     // for the agent's working memory. rc.33 W2-5 reintroduces an opt-in
     // hours-based cooldown via fabric-config (see gate above).
-    const lines = renderSummary(slicedPayload);
+    const summaryMaxLen = readSummaryMaxLen(cwd);
+    const lines = renderSummary(slicedPayload, summaryMaxLen);
 
     if (recommendImport) {
       // rc.16 TASK-003: resolve fabric_language ONCE per invocation (only when
@@ -793,10 +814,12 @@ module.exports = {
   readReminderToContext,
   readBroadLastEmit,
   writeBroadLastEmit,
+  readSummaryMaxLen,
   CONSTANTS: {
     TRUNCATION_THRESHOLD,
     CLI_TIMEOUT_MS,
-    SUMMARY_MAX_LEN,
+    SUMMARY_MAX_LEN: DEFAULT_SUMMARY_MAX_LEN,
+    DEFAULT_SUMMARY_MAX_LEN,
     CANONICAL_TYPE_ORDER,
     MATURITY_PROVEN,
     MATURITY_VERIFIED,

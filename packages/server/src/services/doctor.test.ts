@@ -170,6 +170,9 @@ describe("runDoctorReport", () => {
       "Skill token budget",
       "Skill description quality",
       "Cite-policy Goodhart",
+      // v2.0.0-rc.33 W4-A4 (T5 P2): draft-backlog ratio. Inserted adjacent to
+      // cite_goodhart — both are observability checks built on disk + ledger.
+      "Knowledge draft backlog",
       "Claude MCP config location",
       "Meta manual divergence",
       "Knowledge dir unindexed",
@@ -207,7 +210,7 @@ describe("runDoctorReport", () => {
       "Promote ledger invariant",
       "Preexisting root markdown",
     ]);
-    expect(report.checks).toHaveLength(42);
+    expect(report.checks).toHaveLength(43);
   });
 
   it("v2.0: clean post-init repo (mocked layout) reports zero errors AND zero warnings", async () => {

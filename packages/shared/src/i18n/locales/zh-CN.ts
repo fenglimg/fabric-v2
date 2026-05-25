@@ -241,7 +241,10 @@ export const zhCNMessages: Messages = {
   "cli.doctor.args.auto.description":
     "与 --enrich-descriptions 搭配：为缺失字段写入确定性 stub 值。不加 --auto 仅做只读扫描。",
   "cli.doctor.args.dry-run.description":
-    "与 --enrich-descriptions --auto 搭配：仅预览改动计划,不写入磁盘。",
+    "与 --enrich-descriptions --auto 或 --fix 搭配:仅预览改动计划,不写入磁盘。fix-dry-run 输出与 --fix 相同的 fixable_errors 列表,但不执行任何 mutation。",
+  // v2.0.0-rc.33 W4-B1 (T6 P2): --fix --dry-run banner — 出现在 report 之前, 让用户明确没有发生 mutation。
+  "cli.doctor.fix-dry-run-banner":
+    "[dry-run] 未应用任何 mutation。下方 fixable_errors 列表就是 `fab doctor --fix` 会处理的项;去掉 --dry-run 再跑可实际修复。",
   "cli.doctor.errors.enrich-descriptions-mutex":
     "--enrich-descriptions 不能与 --fix / --fix-knowledge / --cite-coverage 同时使用,请分别运行。",
   "doctor.enrich.allComplete":
@@ -280,7 +283,7 @@ export const zhCNMessages: Messages = {
   "doctor.check.bootstrap_anchor.message.missing":
     "repo root 下 AGENTS.md 与 CLAUDE.md 都不存在。Fabric 需要在项目根目录存在 bootstrap anchor 文件。",
   "doctor.check.bootstrap_anchor.remediation.missing":
-    "运行 `fabric install` 在 repo root 生成 AGENTS.md / CLAUDE.md bootstrap anchor。",
+    "运行 `fab install` 在 repo root 生成 AGENTS.md / CLAUDE.md bootstrap anchor。",
   "doctor.check.bootstrap_anchor.ok": "repo root 下已存在 Bootstrap anchor：{present}。",
   "doctor.check.baseline_filename_format.name": "Baseline 文件名格式",
   "doctor.check.baseline_filename_format.ok":
@@ -441,6 +444,14 @@ export const zhCNMessages: Messages = {
     "检测到 {count} 个 cite-policy Goodhart 模式: {list}。",
   "doctor.check.cite_goodhart.remediation":
     "审阅触发的 pattern: G1 仪式化 → 同一 [recalled] cite 重复用,该把 KB 真正落到 contract; G2 抄底引用 → > 60% recalled 用 skip: 是绕过 contract, review skip reason 真实性; G3 chained-from 滥用 → chained-from 标了但没 commitment, 要补 operators 或改用其他 tag; G5 placeholder cite → 'KB: none' / [unspecified] 太多, 该用具体 sentinel 如 [no-relevant] / [not-applicable]。详细数据跑 `fab doctor --cite-coverage --since=7d`。",
+  // v2.0.0-rc.33 W4-A4 (T5 P2): draft-backlog lint。rc.32 baseline 92% entry 卡在 draft, 揭示 promote 断流。> 50% draft 触发 warning (workspace 必须 >= 10 entries 才计算比率, 避免小语料噪音)。
+  "doctor.check.draft_backlog.name": "Knowledge draft backlog",
+  "doctor.check.draft_backlog.ok":
+    "canonical knowledge entries 中 draft 占比正常 (< 50%, 或 workspace 太小不评)。",
+  "doctor.check.draft_backlog.message":
+    "{draftCount}/{totalCount} ({pct}%) canonical knowledge entries 卡在 draft maturity — promote 断流 (rc.32 baseline 92%)。",
+  "doctor.check.draft_backlog.remediation":
+    "调 `/fabric-review` 批量审 draft entries: approve 升 verified/proven, reject 丢, modify 修。draft 长期堆积通常意味着 archive skill 产 draft 太快或 review skill 没跟上。",
   "doctor.check.meta_manually_diverged.name": "Meta manual divergence",
   "doctor.check.meta_manually_diverged.ok.unreadable":
     "agents.meta.json 不可读，跳过 divergence 检查。",
@@ -509,7 +520,7 @@ export const zhCNMessages: Messages = {
   "doctor.check.orphan_demote.message.plural":
     "{count} 个 canonical knowledge entries 超过按 maturity 设定的 inactivity threshold（stable={stableDays}d / endorsed={endorsedDays}d / draft={draftDays}d）。首个：{detail}。",
   "doctor.check.orphan_demote.remediation":
-    "运行 `fab doctor --fix-knowledge`（rc.4 TASK-003）将 orphan entries 降级一个 maturity tier。",
+    "运行 `fab doctor --fix-knowledge`将 orphan entries 降级一个 maturity tier。",
   "doctor.check.stale_archive.name": "Knowledge stale archive",
   "doctor.check.stale_archive.ok":
     "没有 draft knowledge entries 超过额外的 stale-archive quiet window。",
@@ -518,7 +529,7 @@ export const zhCNMessages: Messages = {
   "doctor.check.stale_archive.message.plural":
     "{count} 个 draft knowledge entries 已超过 demote+{additionalDays}d 额外 quiet window。首个：{detail}。",
   "doctor.check.stale_archive.remediation":
-    "运行 `fab doctor --fix-knowledge`（rc.4 TASK-003）将 stale entries 移动到 `.fabric/.archive/<type>/`。",
+    "运行 `fab doctor --fix-knowledge`将 stale entries 移动到 `.fabric/.archive/<type>/`。",
   "doctor.check.pending_overdue.name": "Knowledge pending overdue",
   "doctor.check.pending_overdue.ok":
     "没有 pending knowledge entries 超过 14-day review threshold。",
@@ -556,7 +567,7 @@ export const zhCNMessages: Messages = {
   "doctor.check.index_drift.message.plural":
     "{count} 个 (layer, type) counter slots 已低于观测到的 canonical maximum（next allocate would collide）。首个：{detail}。",
   "doctor.check.index_drift.remediation":
-    "运行 `fab doctor --fix-knowledge`（rc.4 TASK-003）将 agents.meta.json counters 提升到 max_observed + 1。",
+    "运行 `fab doctor --fix-knowledge`将 agents.meta.json counters 提升到 max_observed + 1。",
   "doctor.check.underseeded.name": "Knowledge underseeded",
   "doctor.check.underseeded.ok":
     "知识库已有 {count} 个 canonical entries（>= {threshold}）。",
@@ -885,7 +896,7 @@ export const zhCNMessages: Messages = {
   "cli.scan.args.debug.description": "以格式化输出打印检测证据。",
   "cli.scan.args.json.description": "以 JSON 格式输出诊断报告。",
   "cli.scan.error.missing-forensic":
-    "未找到 forensic.json（路径 {path}）；请先运行 `fabric install` 生成项目快照。",
+    "未找到 forensic.json（路径 {path}）；请先运行 `fab install` 生成项目快照。",
   "cli.scan.summary.created": "已写入 {count} 条知识条目至 .fabric/knowledge/。",
   "cli.scan.summary.skipped": "无差异；{count} 条已存在的条目保持不变。",
   "cli.scan.report.title": "Fabric 扫描报告",

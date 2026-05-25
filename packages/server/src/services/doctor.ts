@@ -36,7 +36,7 @@ import {
   PAYLOAD_LIMIT_DEFAULT_HARD_BYTES,
   PAYLOAD_LIMIT_DEFAULT_WARN_BYTES,
 } from "@fenglimg/fabric-shared/node/mcp-payload-guard";
-import { readPayloadLimits } from "../config-loader.js";
+import { readOrphanDemoteThresholdDays, readPayloadLimits } from "../config-loader.js";
 
 import { contextCache } from "../cache.js";
 import { atomicWriteJson, atomicWriteText } from "@fenglimg/fabric-shared/node/atomic-write";
@@ -309,6 +309,18 @@ type SkillDescriptionLintInspection = {
   issues: Array<{ slug: string; problem: "missing" | "too_long" | "no_cjk" | "no_ascii"; detail: string }>;
 };
 
+// v2.0.0-rc.33 W4-A4 (T5 P2): "draft backlog" detection. Warns when the
+// proportion of `draft`-maturity canonical entries exceeds DRAFT_BACKLOG_RATIO
+// (default 0.5). A workspace where the majority of entries never graduate
+// past draft signals a broken promote loop — the rc.32 baseline showed 92%
+// of entries stuck at draft, which is what motivated this lint.
+type DraftBacklogInspection = {
+  status: "ok" | "warn";
+  draftCount: number;
+  totalCount: number;
+  ratio: number; // draftCount / totalCount, 0..1
+};
+
 // v2.0.0-rc.33 W3-3 (P1-3): cite-policy Goodhart detection. Static heuristics
 // over the last 7 days of `assistant_turn_observed` events. Four anti-patterns
 // (G4 was unallocated by the audit author — fired pattern set is G1/G2/G3/G5):
@@ -486,6 +498,11 @@ type OrphanDemoteCandidate = {
 
 type OrphanDemoteInspection = {
   candidates: OrphanDemoteCandidate[];
+  // v2.0.0-rc.33 W4-B3 (T5 P2): per-maturity thresholds resolved at inspect
+  // time (merges fabric-config overrides over hardcoded defaults). Surfaced
+  // back to createOrphanDemoteCheck so the user sees the ACTUAL threshold
+  // their workspace is running under, not the always-90/30/14 hardcode.
+  thresholds: Record<LintMaturity, number>;
 };
 
 type StaleArchiveCandidate = {
@@ -966,6 +983,8 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
   // (reads event ledger); placed after the sync inspections so the await
   // doesn't gate them.
   const citeGoodhart = await inspectCiteGoodhart(projectRoot);
+  // v2.0.0-rc.33 W4-A4 (T5 P2): draft-backlog ratio (sync, disk-only).
+  const draftBacklog = inspectDraftBacklog(projectRoot);
   const metaManuallyDiverged = await inspectMetaManuallyDiverged(projectRoot);
   const knowledgeDirUnindexed = inspectKnowledgeDirUnindexed(projectRoot, meta);
   const knowledgeDirMissing = inspectKnowledgeDirMissing(projectRoot);
@@ -1107,6 +1126,7 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     createSkillTokenBudgetCheck(t, skillTokenBudget),
     createSkillDescriptionCheck(t, skillDescription),
     createCiteGoodhartCheck(t, citeGoodhart),
+    createDraftBacklogCheck(t, draftBacklog),
     createMcpConfigInWrongFileCheck(t, mcpConfigInWrongFile),
     createMetaManuallyDivergedCheck(t, metaManuallyDiverged),
     createKnowledgeDirUnindexedCheck(t, knowledgeDirUnindexed),
@@ -2538,6 +2558,32 @@ async function inspectCiteGoodhart(projectRoot: string): Promise<CiteGoodhartIns
   return { status: fired.length === 0 ? "ok" : "warn", fired };
 }
 
+// v2.0.0-rc.33 W4-A4 (T5 P2): draft-backlog ratio. Reuses iterateCanonicalEntries
+// which already exposes the parsed maturity. No event-ledger read — purely
+// disk-state. Total < 10 is fail-open (small workspaces are noisy denominators).
+function inspectDraftBacklog(projectRoot: string): DraftBacklogInspection {
+  const DRAFT_BACKLOG_RATIO = 0.5;
+  const MIN_TOTAL_FOR_RATIO = 10;
+  let draftCount = 0;
+  let totalCount = 0;
+  // Pass an empty index — iterateCanonicalEntries only consults it for the
+  // lastReferenceMs field which we don't need here.
+  for (const entry of iterateCanonicalEntries(projectRoot, new Map())) {
+    totalCount += 1;
+    if (entry.maturity === "draft") draftCount += 1;
+  }
+  if (totalCount < MIN_TOTAL_FOR_RATIO) {
+    return { status: "ok", draftCount, totalCount, ratio: 0 };
+  }
+  const ratio = draftCount / totalCount;
+  return {
+    status: ratio > DRAFT_BACKLOG_RATIO ? "warn" : "ok",
+    draftCount,
+    totalCount,
+    ratio,
+  };
+}
+
 async function inspectKnowledgeTestIndex(projectRoot: string): Promise<KnowledgeTestIndexInspection> {
   const path = join(projectRoot, ".fabric", ".cache", "knowledge-test.index.json");
   const built = await tryBuildRuleMeta(projectRoot);
@@ -3311,6 +3357,35 @@ function createSkillTokenBudgetCheck(
       list,
     }),
     t("doctor.check.skill_token_budget.remediation"),
+  );
+}
+
+// v2.0.0-rc.33 W4-A4 (T5 P2): draft-backlog check. Single ratio + count
+// message — operator does not need a per-entry breakdown to act on the signal
+// (the action is "run fabric-review to promote drafts" regardless of which
+// entries are involved).
+function createDraftBacklogCheck(
+  t: Translator,
+  inspection: DraftBacklogInspection,
+): DoctorCheck {
+  if (inspection.status === "ok") {
+    return okCheck(
+      t("doctor.check.draft_backlog.name"),
+      t("doctor.check.draft_backlog.ok"),
+    );
+  }
+  const pct = Math.round(inspection.ratio * 100);
+  return issueCheck(
+    t("doctor.check.draft_backlog.name"),
+    "warn",
+    "warning",
+    "knowledge_draft_backlog",
+    t("doctor.check.draft_backlog.message", {
+      draftCount: String(inspection.draftCount),
+      totalCount: String(inspection.totalCount),
+      pct: String(pct),
+    }),
+    t("doctor.check.draft_backlog.remediation"),
   );
 }
 
@@ -4302,8 +4377,21 @@ async function buildLastActiveIndex(
 }
 
 // Pure helper: maturity → inactivity threshold in days.
-function maturityThresholdDays(maturity: LintMaturity): number {
-  return ORPHAN_DEMOTE_THRESHOLD_DAYS[maturity];
+// v2.0.0-rc.33 W4-B3 (T5 P2): per-maturity threshold with fabric-config
+// override. Cached per-projectRoot to avoid re-reading the config file on
+// every iterateCanonicalEntries iteration (called O(N) per inspect pass).
+// The cache key is a WeakMap-style closure over (projectRoot, defaults).
+function resolveMaturityThresholds(projectRoot: string): Record<LintMaturity, number> {
+  const overrides = readOrphanDemoteThresholdDays(projectRoot);
+  return {
+    stable: overrides.stable ?? ORPHAN_DEMOTE_THRESHOLD_DAYS.stable,
+    endorsed: overrides.endorsed ?? ORPHAN_DEMOTE_THRESHOLD_DAYS.endorsed,
+    draft: overrides.draft ?? ORPHAN_DEMOTE_THRESHOLD_DAYS.draft,
+  };
+}
+
+function maturityThresholdDays(maturity: LintMaturity, thresholds?: Record<LintMaturity, number>): number {
+  return (thresholds ?? ORPHAN_DEMOTE_THRESHOLD_DAYS)[maturity];
 }
 
 // Pure helper: maturity → next-lower tier (or null when terminal).
@@ -4426,12 +4514,13 @@ async function inspectOrphanDemote(
   // inside iterateCanonicalEntries so fresh-but-never-consumed entries are
   // not immediately flagged.
   const lastConsumedIndex = await buildLastConsumedIndex(projectRoot);
+  const thresholds = resolveMaturityThresholds(projectRoot);
   const candidates: OrphanDemoteCandidate[] = [];
 
   for (const entry of iterateCanonicalEntries(projectRoot, lastConsumedIndex)) {
     const ageMs = entry.lastReferenceMs > 0 ? now - entry.lastReferenceMs : now;
     const ageDays = Math.floor(ageMs / MS_PER_DAY);
-    const threshold = maturityThresholdDays(entry.maturity);
+    const threshold = maturityThresholdDays(entry.maturity, thresholds);
     if (ageDays <= threshold) {
       continue;
     }
@@ -4445,7 +4534,7 @@ async function inspectOrphanDemote(
   }
 
   candidates.sort((a, b) => a.path.localeCompare(b.path));
-  return { candidates };
+  return { candidates, thresholds };
 }
 
 async function inspectStaleArchive(
@@ -4923,9 +5012,9 @@ function createOrphanDemoteCheck(t: Translator, inspection: OrphanDemoteInspecti
     "knowledge_orphan_demote_required",
     t(`doctor.check.orphan_demote.message.${count === 1 ? "singular" : "plural"}`, {
       count: String(count),
-      stableDays: String(ORPHAN_DEMOTE_THRESHOLD_DAYS.stable),
-      endorsedDays: String(ORPHAN_DEMOTE_THRESHOLD_DAYS.endorsed),
-      draftDays: String(ORPHAN_DEMOTE_THRESHOLD_DAYS.draft),
+      stableDays: String(inspection.thresholds.stable),
+      endorsedDays: String(inspection.thresholds.endorsed),
+      draftDays: String(inspection.thresholds.draft),
       detail,
     }),
     t("doctor.check.orphan_demote.remediation"),

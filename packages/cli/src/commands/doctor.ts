@@ -388,8 +388,16 @@ export const doctorCommand = defineCommand({
       fixKnowledgeReport = await runDoctorFixKnowledge(resolution.target);
       report = fixKnowledgeReport.report;
     } else if (fix) {
-      fixReport = await runDoctorFix(resolution.target);
-      report = fixReport.report;
+      // v2.0.0-rc.33 W4-B1 (T6 P2): --fix --dry-run 短路 — 跑只读 doctor 报告,
+      // 不调用 runDoctorFix 的 mutation 路径。fixable_errors 列表本身就是
+      // "--fix would address these" 的预览, 不需要单独 dry-run mutation 模拟器。
+      // 输出在下方加 banner 让用户明确 "no mutations applied this run"。
+      if (args["dry-run"] === true) {
+        report = await runDoctorReport(resolution.target);
+      } else {
+        fixReport = await runDoctorFix(resolution.target);
+        report = fixReport.report;
+      }
     } else {
       report = await runDoctorReport(resolution.target);
     }
@@ -405,6 +413,12 @@ export const doctorCommand = defineCommand({
         renderFixKnowledgeMutations(fixKnowledgeReport, dt);
       } else if (fixReport !== null) {
         writeStdout(fixReport.message);
+      } else if (fix && args["dry-run"] === true) {
+        // v2.0.0-rc.33 W4-B1: dry-run banner. Surfaces above the standard
+        // report so user knows no mutations were applied; the fixable_errors
+        // section already lists what `fab doctor --fix` (sans --dry-run) would
+        // address.
+        writeStdout(dt("cli.doctor.fix-dry-run-banner"));
       }
       renderHumanReport(report, dt);
     }

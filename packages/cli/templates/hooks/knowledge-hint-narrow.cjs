@@ -86,7 +86,9 @@ const CLI_TIMEOUT_MS = 2000;
 
 // Maximum summary length per entry. Bounds each stderr line so a sloppy
 // pending entry can't blow up terminal width. Truncation appends an ellipsis.
-const SUMMARY_MAX_LEN = 80;
+// v2.0.0-rc.33 W4-A3: `hint_summary_max_len` in fabric-config overrides this
+// default (range 40..240). Resolved per-invocation via readSummaryMaxLen.
+const DEFAULT_SUMMARY_MAX_LEN = 80;
 
 // Edit-counter sidecar — workspace-relative path. Process-local file; no
 // network. TASK-022 will read this back to compute edits-since-archive.
@@ -952,20 +954,33 @@ function applyNarrowDedupWindow(state, narrow, targetPaths, windowTurns, current
 // Rendering
 // -----------------------------------------------------------------------------
 
-function truncateSummary(raw) {
+// v2.0.0-rc.33 W4-A3: maxLen sourced from fabric-config#hint_summary_max_len.
+function truncateSummary(raw, maxLen) {
   const s = typeof raw === "string" ? raw : "";
   const flat = s.replace(/\s+/g, " ").trim();
-  if (flat.length <= SUMMARY_MAX_LEN) return flat;
-  return `${flat.slice(0, SUMMARY_MAX_LEN - 1)}…`;
+  const cap = typeof maxLen === "number" && maxLen > 0 ? maxLen : DEFAULT_SUMMARY_MAX_LEN;
+  if (flat.length <= cap) return flat;
+  return `${flat.slice(0, cap - 1)}…`;
 }
 
-function formatEntryLine(entry) {
+function formatEntryLine(entry, maxLen) {
   const id = entry.id || "(no-id)";
   const type = entry.type || "unknown";
   const maturity = entry.maturity || "unknown";
-  const summary = truncateSummary(entry.summary);
+  const summary = truncateSummary(entry.summary, maxLen);
   const tail = summary.length > 0 ? ` ${summary}` : "";
   return `  [${id}] (${type}/${maturity})${tail}`;
+}
+
+function readSummaryMaxLen(projectRoot) {
+  const parsed = _readNarrowConfigValue(projectRoot);
+  if (parsed && typeof parsed === "object") {
+    const v = parsed.hint_summary_max_len;
+    if (typeof v === "number" && Number.isFinite(v) && v >= 40 && v <= 240) {
+      return Math.floor(v);
+    }
+  }
+  return DEFAULT_SUMMARY_MAX_LEN;
 }
 
 /**
@@ -987,7 +1002,7 @@ function formatEntryLine(entry) {
  *     ...
  *   (如需重读 broad 决策，调 fab_plan_context 或 fabric plan-context-hint --all)
  */
-function renderSummary(payload) {
+function renderSummary(payload, maxLen) {
   if (!payload || payload.version !== 2) {
     if (payload && payload.version !== undefined) {
       // breadcrumb only if payload exists but version mismatches (avoid
@@ -1010,7 +1025,7 @@ function renderSummary(payload) {
     `[fabric] ${entries.length} narrow-scoped knowledge entries match your edit targets:`,
   ];
   for (const entry of entries) {
-    lines.push(formatEntryLine(entry));
+    lines.push(formatEntryLine(entry, maxLen));
   }
   lines.push("  (如需重读 broad 决策，调 fab_plan_context 或 fabric plan-context-hint --all)");
   return lines;
@@ -1212,7 +1227,8 @@ function main(env, stdio) {
       writeNarrowDedupWindow(cwd, dedupDecision.nextState);
     }
 
-    const lines = renderSummary({ ...cliPayload, entries: dedupDecision.filtered });
+    const summaryMaxLen = readSummaryMaxLen(cwd);
+    const lines = renderSummary({ ...cliPayload, entries: dedupDecision.filtered }, summaryMaxLen);
     if (lines.length === 0) return;
 
     // Stderr: human-facing breadcrumb + legacy contract.
@@ -1283,9 +1299,11 @@ module.exports = {
   readNarrowDedupWindow,
   writeNarrowDedupWindow,
   applyNarrowDedupWindow,
+  readSummaryMaxLen,
   CONSTANTS: {
     CLI_TIMEOUT_MS,
-    SUMMARY_MAX_LEN,
+    SUMMARY_MAX_LEN: DEFAULT_SUMMARY_MAX_LEN,
+    DEFAULT_SUMMARY_MAX_LEN,
     EDIT_COUNTER_DIR_REL,
     EDIT_COUNTER_FILE,
     HINT_SILENCE_COUNTER_DIR_REL,
