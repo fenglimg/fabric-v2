@@ -40,7 +40,12 @@ export function registerPlanContext(server: McpServer, tracker?: InFlightTracker
         const gateWarn = gateWarning(gateResult);
 
         const projectRoot = resolveProjectRoot();
-        const syncReport = await ensureKnowledgeFresh(projectRoot);
+        // v2.0.0-rc.30 TASK-002 (G1 flip): opted into autoHealOnDrift after
+        // rc.29 PARTIAL built the channel. micro-bench (knowledge-sync.bench.ts)
+        // measured ~12% hz regression on the no-drift hot path (well below the
+        // 30% threshold from the deferral plan) — drift→heal pairing now ships
+        // by default, closing the 7% heal-coverage gap reported in rc.29 BUG-G1.
+        const syncReport = await ensureKnowledgeFresh(projectRoot, { autoHealOnDrift: true });
         const result = await planContext(projectRoot, {
           paths,
           intent,
