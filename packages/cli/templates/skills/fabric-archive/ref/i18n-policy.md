@@ -12,7 +12,7 @@ following 5 categories MUST be rendered in the resolved language:
 
 1. **Roll-up templates** — the `# Archive Review — N candidates` batch
    review block (one per candidate) AND any final session summary the
-   skill emits after Phase 2 completes. zh-CN ↔ en mirror.
+   skill emits after Phase 4 completes. zh-CN ↔ en mirror.
 2. **Errors / Preconditions warnings** — abort + gate-fail messages (e.g.
    the "没有触发归档信号…" trigger-miss and the "本次会话为常规执行…"
    viability-gate-FAIL message). zh-CN ↔ en mirror.
@@ -20,13 +20,13 @@ following 5 categories MUST be rendered in the resolved language:
    edit … inline, N to skip)` line in the batch review template. zh-CN
    ↔ en mirror.
 4. **Dry-run table headers** — v2.0.0-rc.27 TASK-007 added a dry-run
-   override path (see Phase 2.5 "dry-run") so users can preview the
+   override path (see Phase 4.5 "dry-run") so users can preview the
    archive proposal without writing pending entries. The dry-run summary
    header and per-candidate preview labels MUST be bilingualized per
    this policy. zh-CN ↔ en mirror.
 5. **AskUserQuestion** — `header` + `question` fields (NOT `options[]`).
    zh-CN ↔ en mirror. fabric-archive itself does not surface
-   AskUserQuestion in the current contract (Phase 1 batch review is a
+   AskUserQuestion in the current contract (Phase 3 batch review is a
    single markdown screen, not a structured question), but if a future
    version adds one — e.g. to confirm layer flip — this rule applies.
 

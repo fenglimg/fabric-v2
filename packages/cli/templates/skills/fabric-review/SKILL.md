@@ -1,6 +1,6 @@
 ---
 name: fabric-review
-description: Use this skill to review pending knowledge entries in `.fabric/knowledge/pending/` — list, approve (late-bind id allocation), reject, modify (incl. layer flip), search, defer. Mode is inferred from invocation context (recent user message + events.jsonl tail + pending count) — NEVER asked. Per-item actions (approve / reject / modify / defer) are surfaced via AskUserQuestion because they are genuine human-judgment choices.
+description: Review entries in .fabric/knowledge/pending/ only (NOT PR/code review) — list / approve / reject / modify (incl. layer flip) / search / defer. Trigger on 审批/批准/驳回/修改/复审/list pending/approve/reject/review pending knowledge.
 allowed-tools: Read, Glob, Grep, Bash, Edit, mcp__fabric__fab_review
 ---
 

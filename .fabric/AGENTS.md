@@ -29,15 +29,15 @@
 - **Anti-loop 三条防护**:
   - 同 turn 最多自调 1 次
   - 同 session 同 outcome 不重复 (若 user_dismissed, 本会话不再自调相同主题)
-  - Phase 0.5 viability gate 兜底 (skill 内部仍跑 gate, AI 判错不会乱写 pending)
+  - Phase 2.5 viability gate 兜底 (skill 内部仍跑 gate, AI 判错不会乱写 pending)
 
-- **呈现模板** (turn 末尾插入, 两行: 先 marker 行供 Phase 0.4 检测, 再 user-facing 提示):
+- **呈现模板** (turn 末尾插入, 两行: 先 marker 行供 Phase 1.5 检测, 再 user-facing 提示):
   ```
   self-archive policy triggered by signal: <Normative|Wrong-turn-and-revert|Decision confirmation|Explicit dismissal>
   顺手归档: 注意到你说 `<触发短语>`, 已调用 fabric-archive 抓 N 条候选 → .fabric/knowledge/pending/...
   若不该记, 答 '撤销' 我会调 fab_review reject。
   ```
-  第一行是 Phase 0.4 Trigger Gate 用来识别 E3 入口的 structured marker (verbatim 字符串 `self-archive policy triggered by signal`, 后接冒号 + 触发信号名)。第二行起是给用户看的中文提示。两行都必须出现; 缺 marker 行 Phase 0.4 无法路由到 E3_ai_self_trigger。
+  第一行是 Phase 1.5 Trigger Gate 用来识别 E3 入口的 structured marker (verbatim 字符串 `self-archive policy triggered by signal`, 后接冒号 + 触发信号名)。第二行起是给用户看的中文提示。两行都必须出现; 缺 marker 行 Phase 1.5 无法路由到 E3_ai_self_trigger。
 
 ## Cite policy
 
