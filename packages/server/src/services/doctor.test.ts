@@ -20,6 +20,7 @@ import {
   ensureCitePolicyActivatedMarker,
   enrichDescriptions,
   runDoctorCiteCoverage,
+  runDoctorEmitCadenceCheck,
   runDoctorFix,
   runDoctorReport,
 } from "./doctor.js";
@@ -6936,3 +6937,97 @@ function createForensic(target: string, name: string): unknown {
     recommendations_for_skill: [],
   };
 }
+
+// ---------------------------------------------------------------------------
+// v2.0.0-rc.30 TASK-003 (H2 deferred-from-rc.29): emit-cadence sub-check.
+//
+// Pins the function contract — fetched=0 vacuously OK; observed/fetched <
+// EMIT_CADENCE_WARN_THRESHOLD (0.8) yields warn; healthy ratio yields ok.
+// Wired-into-main-doctor decision deferred to v2.1 design doc per
+// memory/project_l0_l1_l2_redesign_v21.md.
+// ---------------------------------------------------------------------------
+
+describe("runDoctorEmitCadenceCheck (rc.30 TASK-003 H2)", () => {
+  function seedEventsRaw(target: string, events: unknown[]): void {
+    const fabricDir = join(target, ".fabric");
+    if (!existsSync(fabricDir)) {
+      mkdirSync(fabricDir, { recursive: true });
+    }
+    const ledgerPath = join(fabricDir, "events.jsonl");
+    const existing = existsSync(ledgerPath) ? readFileSync(ledgerPath, "utf8") : "";
+    const newlines = events.map((e) => JSON.stringify(e)).join("\n") + "\n";
+    writeFileSync(ledgerPath, existing + newlines, "utf8");
+  }
+
+  function makeFetchEvent(i: number): Record<string, unknown> {
+    return {
+      kind: "fabric-event",
+      id: `fetch-${String(i)}`,
+      ts: 1700000000000 + i,
+      schema_version: 1,
+      event_type: "knowledge_sections_fetched",
+      selection_token: `tok-${String(i)}`,
+      requested_sections: [],
+      final_stable_ids: [`KT-DEC-${String(i).padStart(4, "0")}`],
+      ai_selected_stable_ids: [],
+    };
+  }
+
+  function makeObserveEvent(i: number): Record<string, unknown> {
+    return {
+      kind: "fabric-event",
+      id: `obs-${String(i)}`,
+      ts: 1700000001000 + i,
+      schema_version: 1,
+      event_type: "assistant_turn_observed",
+      kb_line_raw: null,
+      cite_ids: [],
+      cite_tags: [],
+      cite_commitments: [],
+      turn_id: `t-${String(i)}`,
+      timestamp: new Date(1700000001000 + i).toISOString(),
+    };
+  }
+
+  it("returns ok with ratio 1 when no knowledge_sections_fetched events exist (vacuous pass)", async () => {
+    const target = mkdtempSync(join(tmpdir(), "cadence-empty-"));
+    tempRoots.push(target);
+    seedEventsRaw(target, [makeObserveEvent(0)]);
+    const report = await runDoctorEmitCadenceCheck(target);
+    expect(report.fetched).toBe(0);
+    expect(report.ratio).toBe(1);
+    expect(report.status).toBe("ok");
+    expect(report.message).toContain("not applicable");
+  });
+
+  it("returns warn when assistant_turn_observed/knowledge_sections_fetched < 0.8", async () => {
+    const target = mkdtempSync(join(tmpdir(), "cadence-warn-"));
+    tempRoots.push(target);
+    const events = [
+      ...Array.from({ length: 10 }, (_unused, i) => makeFetchEvent(i)),
+      ...Array.from({ length: 5 }, (_unused, i) => makeObserveEvent(i)),
+    ];
+    seedEventsRaw(target, events);
+    const report = await runDoctorEmitCadenceCheck(target);
+    expect(report.fetched).toBe(10);
+    expect(report.observed).toBe(5);
+    expect(report.ratio).toBe(0.5);
+    expect(report.status).toBe("warn");
+    expect(report.message).toContain("Stop hook may not be wired");
+  });
+
+  it("returns ok when ratio ≥ 0.8 (healthy emit cadence)", async () => {
+    const target = mkdtempSync(join(tmpdir(), "cadence-ok-"));
+    tempRoots.push(target);
+    const events = [
+      ...Array.from({ length: 10 }, (_unused, i) => makeFetchEvent(i)),
+      ...Array.from({ length: 9 }, (_unused, i) => makeObserveEvent(i)),
+    ];
+    seedEventsRaw(target, events);
+    const report = await runDoctorEmitCadenceCheck(target);
+    expect(report.fetched).toBe(10);
+    expect(report.observed).toBe(9);
+    expect(report.ratio).toBe(0.9);
+    expect(report.status).toBe("ok");
+  });
+});

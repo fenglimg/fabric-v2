@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-import type { AgentsLayer } from "@fenglimg/fabric-shared";
+import { deriveAgentsMetaLayer, type AgentsLayer } from "@fenglimg/fabric-shared";
 
 import { type AgentsMeta } from "../meta-reader.js";
 import { appendEventLedgerEvent } from "./event-ledger.js";
@@ -251,7 +251,14 @@ function findRuleNode(meta: AgentsMeta, stableId: string): RuleNodeEntry {
       continue;
     }
 
-    const level: AgentsLayer = node.level ?? node.layer ?? "L2";
+    // v2.0.0-rc.30 TASK-003 (B.1 前置): 三段 fallback `node.level ?? node.layer
+    // ?? "L2"` 简化为 `node.level ?? deriveAgentsMetaLayer(node.file)` —
+    // 删 `node.layer` 中间段,移除对即将被 TASK-004 删除的 passthrough field
+    // 的依赖。`node.level` declared 优先依然成立,fixture / 用户显式标的 level
+    // 仍生效;只在节点未声明 level 时走 derive 而非吃 v1.x 残留 layer 字段。
+    // `priority` 同理保留 declared 优先 — fixture 依赖 priority sort,
+    // 提早全硬编码 "medium" 会破现有测试契约。
+    const level: AgentsLayer = node.level ?? deriveAgentsMetaLayer(node.file);
     return {
       stable_id: nodeStableId,
       level,

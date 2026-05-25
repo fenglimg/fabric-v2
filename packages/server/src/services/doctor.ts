@@ -7461,3 +7461,76 @@ function yamlQuoteIfNeeded(value: string): string {
 }
 
 export { getEventLedgerPath };
+
+// ---------------------------------------------------------------------------
+// v2.0.0-rc.30 TASK-003 (H2 deferred-from-rc.29): Emit-cadence sub-check.
+//
+// rc.29 BUG-H2 audit reported `qualifying_cites=0` on 16K-turn workspace
+// while cite-coverage `runDoctorCiteCoverage` reads `assistant_turn_observed`
+// from events.jsonl. Audit hypothesised cite-line-parser type-enum split as
+// root cause; VERIFICATION.md refuted that (parser shape already events-
+// based) and noted the symptom might still be real via a different code
+// path — specifically the assistant_turn_observed emit cadence (Stop hook
+// not firing on every turn).
+//
+// This standalone check pairs `knowledge_sections_fetched` (every time a
+// client pulled rule bodies via fab_get_knowledge_sections) with
+// `assistant_turn_observed` (Stop hook emit per assistant turn). Each fetch
+// implies at least one downstream assistant turn — if fetched >> observed,
+// the hook is silently failing somewhere. Standalone (not wired into the
+// runDoctorReport pipeline yet) so v2.1 design doc can finalise integration
+// shape (CLI flag? JSON envelope? human render?); the function + tests pin
+// the contract and the threshold.
+// ---------------------------------------------------------------------------
+
+export type EmitCadenceReport = {
+  fetched: number;
+  observed: number;
+  ratio: number; // observed / fetched; 1.0 when fetched=0 (vacuously OK)
+  status: "ok" | "warn";
+  message: string;
+};
+
+const EMIT_CADENCE_WARN_THRESHOLD = 0.8;
+
+export async function runDoctorEmitCadenceCheck(projectRoot: string): Promise<EmitCadenceReport> {
+  const { events } = await readEventLedger(projectRoot);
+  let fetched = 0;
+  let observed = 0;
+  for (const event of events) {
+    if (event.event_type === "knowledge_sections_fetched") {
+      fetched += 1;
+    } else if (event.event_type === "assistant_turn_observed") {
+      observed += 1;
+    }
+  }
+  if (fetched === 0) {
+    return {
+      fetched: 0,
+      observed,
+      ratio: 1,
+      status: "ok",
+      message: "No knowledge_sections_fetched events yet — cadence not applicable.",
+    };
+  }
+  const ratio = observed / fetched;
+  if (ratio < EMIT_CADENCE_WARN_THRESHOLD) {
+    return {
+      fetched,
+      observed,
+      ratio,
+      status: "warn",
+      message:
+        `assistant_turn_observed/knowledge_sections_fetched ratio ${ratio.toFixed(2)} ` +
+        `< ${EMIT_CADENCE_WARN_THRESHOLD} — Stop hook may not be wired on every client. ` +
+        `Check .claude/settings.json + .codex/skills/* hooks.Stop entries.`,
+    };
+  }
+  return {
+    fetched,
+    observed,
+    ratio,
+    status: "ok",
+    message: `assistant_turn_observed cadence healthy (ratio ${ratio.toFixed(2)}).`,
+  };
+}

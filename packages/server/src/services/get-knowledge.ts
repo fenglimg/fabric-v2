@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 
+import { deriveAgentsMetaLayer } from "@fenglimg/fabric-shared";
 import { minimatch } from "minimatch";
 
 import { contextCache } from "../cache.js";
@@ -80,11 +81,9 @@ type MatchedRuleNode = {
   node: AgentsMeta["nodes"][string];
 };
 
-const PRIORITY_ORDER: Record<"high" | "medium" | "low", number> = {
-  high: 0,
-  medium: 1,
-  low: 2,
-};
+// v2.0.0-rc.30 TASK-003: PRIORITY_ORDER removed alongside matchRuleNodes'
+// priority-based tiebreaker. Sort key is now stable_id lex only; reintroduce
+// this constant if a real priority signal returns to the schema.
 
 export async function getKnowledge(projectRoot: string, input: GetKnowledgeInput): Promise<GetKnowledgeResult> {
   // v2.0.0-rc.22 Scope D T-D2: strict meta-load happens BEFORE the context
@@ -175,16 +174,15 @@ export function normalizeKnowledgePath(value: string): string {
 function matchRuleNodes(meta: AgentsMeta, path: string): MatchedRuleNode[] {
   const requestedPath = normalizeKnowledgePath(path);
 
+  // v2.0.0-rc.30 TASK-003: removed `node.priority` passthrough fallback from
+  // the sort key. The rc.5 A1 retire dropped `priority` from the declared
+  // schema; passthrough values were untrusted and historically defaulted to
+  // "medium" for every node anyway (effectively a no-op tiebreaker). Sort
+  // now collapses to stable_id lexicographic order, matching the actual
+  // observable behaviour on every real workspace.
   return Object.entries(meta.nodes)
     .filter(([, node]) => shouldLoadNodeForPath(requestedPath, node))
-    .sort((left, right) => {
-      const [leftId, leftNode] = left;
-      const [rightId, rightNode] = right;
-      const priorityDelta =
-        PRIORITY_ORDER[leftNode.priority ?? "medium"] - PRIORITY_ORDER[rightNode.priority ?? "medium"];
-
-      return priorityDelta !== 0 ? priorityDelta : leftId.localeCompare(rightId);
-    })
+    .sort((left, right) => left[0].localeCompare(right[0]))
     .map(([nodeId, node]) => ({
       node_id: nodeId,
       level: classifyNode(nodeId, node),
@@ -255,15 +253,21 @@ function classifyNode(
   nodeId: string,
   node: AgentsMeta["nodes"][string],
 ): "L1" | "L2" | null {
+  // v2.0.0-rc.30 TASK-003 (B.1 前置): 三段 fallback 简化为二段。
+  // node-id prefix override 保留 — get-knowledge.test.ts fixture 用
+  // "L1/always" 等 id 形式 pin layer 不依赖 file path 深度。
+  // 第三段 `node.layer === "L0" ? null : (node.layer ?? null)` 改为
+  // `node.level ?? deriveAgentsMetaLayer(file)`,移除对 passthrough
+  // `node.layer` 的依赖 (即将由 TASK-004 删除该字段);
+  // declared `node.level` 优先依然有效,只在未声明时走 derive。
   if (nodeId.startsWith("L1/")) {
     return "L1";
   }
-
   if (nodeId.startsWith("L2/")) {
     return "L2";
   }
-
-  return node.layer === "L0" ? null : (node.layer ?? null);
+  const layer = node.level ?? deriveAgentsMetaLayer(node.file);
+  return layer === "L0" ? null : layer;
 }
 
 function partitionRulesByLevel(
