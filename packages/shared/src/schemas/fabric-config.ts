@@ -211,6 +211,61 @@ export const fabricConfigSchema = z.object({
   // Default `[]` keeps the field optional on existing configs — fresh
   // installs land with no opt-outs.
   onboard_slots_opted_out: z.array(z.string()).optional().default([]),
+  // v2.0.0-rc.33 W2-1 (P0-9): TopK upper bound for the broad SessionStart hint
+  // banner emitted by knowledge-hint-broad.cjs. After plan-context-hint returns
+  // its full broad-scoped index, the hook slices the entries to this many
+  // before grouping/truncation rendering — keeps the banner from scrolling off
+  // screen on well-seeded repos (Werewolf-class projects routinely surface 40+
+  // broad entries which buried the actually-relevant top hits). Default 8 is
+  // calibrated against the rc.32 eval baseline (cite-coverage 3.1%): the
+  // banner needs to fit in ~1 screenful so the agent actually reads it.
+  // Range 1..50; values above 20 effectively disable the cap because the
+  // TRUNCATION_THRESHOLD=12 grouped-render kicks in. Mirrors the rc.7 T7 +
+  // archive_max_* pattern of externalizing previously-hardcoded thresholds.
+  hint_broad_top_k: z.number().int().min(1).max(50).optional().default(8),
+  // v2.0.0-rc.33 W2-1 (P0-9): TopK upper bound for the narrow PreToolUse hint
+  // emitted by knowledge-hint-narrow.cjs. After filtering to entries whose
+  // `relevance_scope === "narrow"` (rc.27 TASK-005 audit §2.5 fix), the hook
+  // slices to this many before the E3 emit-gate / renderSummary pipeline.
+  // Default 5 keeps each per-Edit hint terse — five lines max so the agent's
+  // working memory is not displaced by an unwieldy banner. Range 1..20.
+  hint_narrow_top_k: z.number().int().min(1).max(20).optional().default(5),
+  // v2.0.0-rc.33 W2-1 (P0-9): per-file dedup window (in PreToolUse turns) for
+  // the narrow hint. Same (file_path, stable_id) tuple stays silent for this
+  // many turns even when the E3 cross-session cache would otherwise re-emit.
+  // Closes the rc.32 eval finding that a single hot file (e.g. werewolf
+  // GameRoom.tsx edited 30 times in a row) re-fired the same narrow hint
+  // each time, training the agent to ignore it. Default 5; range 1..50.
+  // Storage: .fabric/.cache/narrow-dedup-window.json — distinct from session-
+  // hints cache so a window-only suppression does not poison cross-session
+  // dedupe semantics.
+  hint_narrow_dedup_window_turns: z.number().int().min(1).max(50).optional().default(5),
+  // v2.0.0-rc.33 W2-5 (P1-8): cooldown between broad SessionStart hint emits,
+  // in hours. Distinct from the archive_hint_cooldown_hours that gates the
+  // fabric-hint Stop hook — knowledge-hint-broad re-fires on every
+  // SessionStart by default (compact / clear / new-window), which on long
+  // sessions becomes redundant noise. Setting to 1 means "emit the broad
+  // menu at most once per hour"; 0 means "no cooldown, current behavior."
+  // Range 0..168 (one week). Stored alongside fabric-hint's cooldown cache
+  // under a distinct knowledge-hint-broad key.
+  hint_broad_cooldown_hours: z.number().int().min(0).max(168).optional().default(0),
+  // v2.0.0-rc.33 W2-5 (P1-8): cooldown for the narrow PreToolUse hint.
+  // Same shape as hint_broad_cooldown_hours but applies to per-Edit hint
+  // re-emission across the cooldown window — independent of E3 session-
+  // hints dedupe. Default 0 preserves rc.32 behavior; set to e.g. 1 to
+  // throttle hint frequency during rapid-fire editing sprints. Range
+  // 0..168 (one week).
+  hint_narrow_cooldown_hours: z.number().int().min(0).max(168).optional().default(0),
+  // v2.0.0-rc.33 W2-6 (P0-7 + P0-8): when true, knowledge-hint hooks emit
+  // their banners as `hookSpecificOutput.additionalContext` JSON on stdout
+  // (per Claude Code PreToolUse hook contract — see
+  // https://docs.claude.com/en/docs/claude-code/hooks#preToolUse), so the
+  // agent receives them in-context instead of as stderr breadcrumbs the
+  // user may not surface to the model. Default true reflects the rc.33 cite-
+  // coverage focus (rc.32 baseline 3.1% → primary cause: reminders never
+  // entered model context). Set false to revert to legacy stderr-only mode
+  // for hosts that don't honor the JSON contract.
+  hint_reminder_to_context: z.boolean().optional().default(true),
   // v2.0.0-rc.29 TASK-008 (BUG-F3): selection-token TTL override. The
   // `fab_plan_context` MCP tool hands clients a `selection_token` whose default
   // 5-minute lifetime (`SELECTION_TOKEN_TTL_MS` at

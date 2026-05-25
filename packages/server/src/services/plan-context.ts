@@ -223,7 +223,18 @@ export async function planContext(
     metaResult.degraded === true ||
     (input.client_hash !== undefined && input.client_hash !== meta.revision);
   const uniquePaths = dedupePaths(input.paths);
-  const allDescriptions = buildDescriptionIndex(meta);
+  // v2.0.0-rc.33 W2-3 / W2-4: pass scoring context so workspace-wide sort
+  // pulls recency-boosted + path-local entries to the top. Uses the same
+  // path resolution as relevanceTargetPaths (input.target_paths if provided,
+  // else the deduped request paths). The `**` sentinel that --all mode uses
+  // contributes zero locality score (no dirname / no package root), which is
+  // the correct degenerate behavior — broad mode falls through to recency +
+  // stable_id tiebreaker.
+  const scoringContext = {
+    nowMs: Date.now(),
+    targetPaths: input.target_paths ?? dedupePaths(input.paths),
+  };
+  const allDescriptions = buildDescriptionIndex(meta, scoringContext);
 
   // v2.0-rc.5 C3 (TASK-012): caller-supplied path context for relevance
   // filtering. When omitted, fall back to `paths` so direct callers (without
@@ -378,7 +389,10 @@ function buildRequirementProfile(path: string, input: PlanContextInput): Require
   };
 }
 
-function buildDescriptionIndex(meta: AgentsMeta): RuleDescriptionIndexItem[] {
+function buildDescriptionIndex(
+  meta: AgentsMeta,
+  scoringContext?: { nowMs: number; targetPaths: string[] },
+): RuleDescriptionIndexItem[] {
   return Object.entries(meta.nodes)
     .flatMap(([nodeId, node]) => {
       // v2.0-rc.5 A3 (TASK-007): legacy `node.level` / `node.layer` reads
@@ -420,7 +434,7 @@ function buildDescriptionIndex(meta: AgentsMeta): RuleDescriptionIndexItem[] {
         relevance_paths: description.relevance_paths,
       }];
     })
-    .sort(compareDescriptionIndexItems);
+    .sort((left, right) => compareDescriptionIndexItems(left, right, scoringContext));
 }
 
 // v2.0-rc.5 C3 (TASK-012): relevance-paths filter. Returns true when an entry
@@ -562,8 +576,117 @@ function dedupeDescriptionIndex(items: RuleDescriptionIndexItem[]): RuleDescript
   });
 }
 
-// v2.0-rc.5 A3 (TASK-007): sort by stable_id only — the legacy levelOrder
-// switch keyed off L0/L1/L2 selection ceremony which no longer drives output.
-function compareDescriptionIndexItems(left: RuleDescriptionIndexItem, right: RuleDescriptionIndexItem): number {
+// v2.0-rc.5 A3 (TASK-007): primary sort is stable_id only — the legacy
+// levelOrder switch keyed off L0/L1/L2 selection ceremony which no longer
+// drives output.
+//
+// v2.0.0-rc.33 W2-3 / W2-4 (P1-6 + P1-7): scoring layer. When `now` and
+// `targetPaths` are provided, compute a per-item score and sort DESCENDING
+// by score, with stable_id ascending as tiebreaker. Scoring components:
+//
+//   recency_score (W2-3, P1-6):
+//     +100 if description.created_at parses and is within the last 7 days
+//     of `now`. Binary boost — avoids over-fitting to micro-time differences.
+//
+//   locality_score (W2-4, P1-7): max over (relevance_path, target_path) pairs
+//     +100 if exact file match (rp === tp)
+//     +50  if same directory (dirname matches)
+//     +25  if same package (first 2 path segments match — captures monorepo
+//          packages/cli, packages/server, src/auth etc. ad-hoc heuristic)
+//     +0   otherwise
+//
+// Sort is stable: items with identical scores fall through to the
+// pre-existing alphabetic stable_id order.
+function compareDescriptionIndexItems(
+  left: RuleDescriptionIndexItem,
+  right: RuleDescriptionIndexItem,
+  context?: { nowMs: number; targetPaths: string[] },
+): number {
+  if (context !== undefined) {
+    const leftScore = scoreDescriptionItem(left, context.nowMs, context.targetPaths);
+    const rightScore = scoreDescriptionItem(right, context.nowMs, context.targetPaths);
+    if (leftScore !== rightScore) {
+      return rightScore - leftScore; // descending
+    }
+  }
   return left.stable_id.localeCompare(right.stable_id);
+}
+
+// v2.0.0-rc.33 W2-3: recency boost — entries created within RECENCY_WINDOW_MS
+// of `now` get +RECENCY_BOOST. Binary boost (vs. linear decay) keeps the
+// sort key resilient against clock skew and ISO-string parse jitter.
+const RECENCY_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+const RECENCY_BOOST = 100;
+
+// v2.0.0-rc.33 W2-4: locality tiers. Same-file > same-dir > same-package >
+// none. Values are calibrated so a same-dir hit dominates a recency boost
+// (recency 100 ties with same-dir 50 + same-package 25 if entry is also
+// new), keeping locality the lead signal — recency is a secondary nudge.
+const LOCALITY_SAME_FILE = 100;
+const LOCALITY_SAME_DIR = 50;
+const LOCALITY_SAME_PACKAGE = 25;
+
+function scoreDescriptionItem(
+  item: RuleDescriptionIndexItem,
+  nowMs: number,
+  targetPaths: string[],
+): number {
+  let score = 0;
+
+  // W2-3: recency boost — read description.created_at, compare with now.
+  const createdAtRaw = item.description?.created_at;
+  if (typeof createdAtRaw === "string" && createdAtRaw.length > 0) {
+    const createdMs = Date.parse(createdAtRaw);
+    if (Number.isFinite(createdMs) && nowMs - createdMs < RECENCY_WINDOW_MS) {
+      score += RECENCY_BOOST;
+    }
+  }
+
+  // W2-4: path-locality scoring — max over (relevance_path, target_path).
+  if (targetPaths.length > 0) {
+    const relevancePaths = item.relevance_paths ?? item.description?.relevance_paths ?? [];
+    let best = 0;
+    for (const rp of relevancePaths) {
+      for (const tp of targetPaths) {
+        const tier = localityTier(rp, tp);
+        if (tier > best) best = tier;
+      }
+    }
+    score += best;
+  }
+
+  return score;
+}
+
+function localityTier(relevancePath: string, targetPath: string): number {
+  if (relevancePath === targetPath) return LOCALITY_SAME_FILE;
+  const rpDir = dirnameOfPath(relevancePath);
+  const tpDir = dirnameOfPath(targetPath);
+  if (rpDir.length > 0 && rpDir === tpDir) return LOCALITY_SAME_DIR;
+  const rpPkg = packageRootOfPath(relevancePath);
+  const tpPkg = packageRootOfPath(targetPath);
+  if (rpPkg.length > 0 && rpPkg === tpPkg) return LOCALITY_SAME_PACKAGE;
+  return 0;
+}
+
+function dirnameOfPath(p: string): string {
+  // Strip trailing glob segments (e.g. `packages/cli/src/**/*.ts` → `packages/cli/src`)
+  // and read the directory. We treat `*` and `**` as glob delimiters; the
+  // first one terminates the path prefix.
+  const idx = p.search(/[*?[]/);
+  const stem = idx >= 0 ? p.slice(0, idx).replace(/\/$/, "") : p;
+  const lastSlash = stem.lastIndexOf("/");
+  return lastSlash >= 0 ? stem.slice(0, lastSlash) : "";
+}
+
+function packageRootOfPath(p: string): string {
+  // First two path segments captures the conventional `packages/<name>` or
+  // `src/<area>` monorepo / mid-size-app rooting. Ad-hoc heuristic; the W2-4
+  // task spec calls this out as a "rough scoring" knob, not a precise
+  // dependency-graph lookup.
+  const idx = p.search(/[*?[]/);
+  const stem = idx >= 0 ? p.slice(0, idx).replace(/\/$/, "") : p;
+  const segments = stem.split("/").filter(Boolean);
+  if (segments.length < 2) return "";
+  return segments.slice(0, 2).join("/");
 }

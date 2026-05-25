@@ -14,7 +14,7 @@
  *     in the load-bearing entry-point detection contract
  *
  * The 5 entry points and the markers that MUST be present per
- * planning-context.md Q3.6 + SKILL.md `Phase 0.4 Trigger Gate (rc.25 —
+ * planning-context.md Q3.6 + SKILL.md `Phase 1.5 Trigger Gate (rc.25 —
  * entry-context aware)`:
  *
  *   E1 hook_passive          → references stdout JSON `{decision:'block'}`
@@ -34,14 +34,14 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 // v2.0.0-rc.28 TASK-01 (audit §3.1): the Phase 0.4 trigger-gate doc moved
-// out of SKILL.md (~1343 lines) into ref/phase-0-4-onboard.md. The gate
+// out of SKILL.md (~1343 lines) into ref/phase-1-5-onboard.md. The gate
 // contract — entry-point detection table + SKIP/PROCEED decision per entry
 // type — is unchanged; only its file location did. The skill loader still
 // surfaces a hot-path pointer in SKILL.md; this test pins the gate region
 // at the new authoritative location.
 const SKILL_MD_PATH = fileURLToPath(
   new URL(
-    "../../templates/skills/fabric-archive/ref/phase-0-4-onboard.md",
+    "../../templates/skills/fabric-archive/ref/phase-1-5-onboard.md",
     import.meta.url,
   ),
 );
@@ -49,7 +49,7 @@ const SKILL_MD_PATH = fileURLToPath(
 const SKILL_MD = readFileSync(SKILL_MD_PATH, "utf8");
 
 /**
- * Extract the Phase 0.4 Trigger Gate region (`#### Phase 0.4 Trigger Gate`
+ * Extract the Phase 1.5 Trigger Gate region (`#### Phase 1.5 Trigger Gate`
  * heading through the next `####` or `###` heading). Lets each test
  * narrow the haystack to the gate-specific block so unrelated SKILL.md
  * edits cannot accidentally satisfy a marker check.
@@ -58,11 +58,11 @@ function extractGateRegion(): string {
   // v2.0.0-rc.28: gate-region heading kept as `####` for byte-identity with
   // the pre-split content; the new file just has the gate region a level
   // deeper than the file's top-level heading.
-  const startMarker = "#### Phase 0.4 Trigger Gate";
+  const startMarker = "#### Phase 1.5 Trigger Gate";
   const startIdx = SKILL_MD.indexOf(startMarker);
   if (startIdx === -1) {
     throw new Error(
-      "ref/phase-0-4-onboard.md is missing 'Phase 0.4 Trigger Gate' heading — rc.28 TASK-01 split may have regressed",
+      "ref/phase-1-5-onboard.md is missing 'Phase 1.5 Trigger Gate' heading — rc.28 TASK-01 split may have regressed",
     );
   }
   // Find the next major heading (### or ####) AFTER the start marker.
@@ -78,8 +78,8 @@ function extractGateRegion(): string {
 const GATE_REGION = extractGateRegion();
 
 describe("TASK-11 SKILL.md Phase 0.4 trigger-gate — entry-point detection", () => {
-  it("Phase 0.4 Trigger Gate section exists in SKILL.md", () => {
-    expect(SKILL_MD).toContain("#### Phase 0.4 Trigger Gate");
+  it("Phase 1.5 Trigger Gate section exists in SKILL.md", () => {
+    expect(SKILL_MD).toContain("#### Phase 1.5 Trigger Gate");
     expect(GATE_REGION.length).toBeGreaterThan(200);
   });
 
@@ -116,10 +116,11 @@ describe("TASK-11 SKILL.md Phase 0.4 trigger-gate — entry-point detection", ()
     expect(GATE_REGION).toMatch(/E3[\s\S]{0,200}SKIP|SKIP[\s\S]{0,300}E3/);
   });
 
-  it("E4 user_range_rollback: gate documents Phase -0.5 parsed range hint + user invoking", () => {
+  it("E4 user_range_rollback: gate documents Phase 0 parsed range hint + user invoking", () => {
     expect(GATE_REGION).toMatch(/E4/);
     expect(GATE_REGION).toMatch(/user_range_rollback/);
-    expect(GATE_REGION).toMatch(/Phase -0\.5/);
+    // v2.0.0-rc.33 W1: Phase -0.5 was renamed to Phase 0 (numerical-aligned).
+    expect(GATE_REGION).toMatch(/Phase 0(?!\.\d)/);
     // The detection rule must mention BOTH "range hint" and "user" so the
     // condition stays AND-shaped (range alone is not enough; cron also
     // carries a range hint).

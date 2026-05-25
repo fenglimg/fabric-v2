@@ -49,10 +49,12 @@
 const { spawnSync } = require("node:child_process");
 const {
   existsSync,
+  mkdirSync,
   readdirSync,
   readFileSync,
+  writeFileSync,
 } = require("node:fs");
-const { join } = require("node:path");
+const { dirname, join } = require("node:path");
 
 // rc.16 TASK-003: shared banner-i18n lib (resolves fabric_language config and
 // renders localized banner text). Mirror of the wiring in fabric-hint.cjs
@@ -88,6 +90,30 @@ const KNOWLEDGE_CANONICAL_TYPES = [
   "processes",
 ];
 const DEFAULT_UNDERSEED_NODE_THRESHOLD = 10;
+
+// v2.0.0-rc.33 W2-1 (P0-9): TopK upper bound on broad-scoped entries surfaced
+// per SessionStart fire. Keeps the banner inside ~1 screenful so the agent
+// actually reads the top-priority entries instead of triaging a wall of text.
+// Overridable via fabric-config.json#hint_broad_top_k (range 1..50).
+const DEFAULT_HINT_BROAD_TOP_K = 8;
+
+// v2.0.0-rc.33 W2-5 (P1-8): cooldown (in hours) between broad-hint re-emits.
+// Default 0 preserves rc.32 behavior — every SessionStart re-fires the banner.
+// Cache key uses a separate sidecar from the fabric-hint Signal A/B/C cache
+// so the two cooldowns don't interfere.
+const DEFAULT_HINT_BROAD_COOLDOWN_HOURS = 0;
+const MS_PER_HOUR = 60 * 60 * 1000;
+const HINT_BROAD_LAST_EMIT_FILE = join(
+  ".fabric",
+  ".cache",
+  "knowledge-hint-broad-last-emit",
+);
+
+// v2.0.0-rc.33 W2-6 (P0-7): when true, emit banner as
+// hookSpecificOutput.additionalContext JSON on stdout (Claude Code PreToolUse
+// contract) so the model receives the reminder in-context. Stderr remains the
+// human-facing channel for logs / breadcrumbs.
+const DEFAULT_HINT_REMINDER_TO_CONTEXT = true;
 
 // -----------------------------------------------------------------------------
 // rc.8 underseed self-check helpers.
@@ -151,6 +177,97 @@ function readUnderseedThreshold(projectRoot) {
     // fall through to default
   }
   return DEFAULT_UNDERSEED_NODE_THRESHOLD;
+}
+
+/**
+ * v2.0.0-rc.33 W2-1: resolve hint_broad_top_k from fabric-config.json. Slices
+ * the broad entry list to TopK before group/truncation render. Validates the
+ * schema's 1..50 range inline so a malformed config silently falls back.
+ */
+function readBroadTopK(projectRoot) {
+  const configPath = join(projectRoot, FABRIC_DIR_REL, FABRIC_CONFIG_FILE);
+  if (!existsSync(configPath)) return DEFAULT_HINT_BROAD_TOP_K;
+  try {
+    const parsed = JSON.parse(readFileSync(configPath, "utf8"));
+    const v = parsed && parsed.hint_broad_top_k;
+    if (typeof v === "number" && Number.isFinite(v) && v >= 1 && v <= 50) {
+      return Math.floor(v);
+    }
+  } catch {
+    // fall through to default
+  }
+  return DEFAULT_HINT_BROAD_TOP_K;
+}
+
+/**
+ * v2.0.0-rc.33 W2-5: resolve hint_broad_cooldown_hours. Schema clamps 0..168;
+ * 0 means "no cooldown" (re-emit on every SessionStart, rc.32 behavior).
+ */
+function readBroadCooldownHours(projectRoot) {
+  const configPath = join(projectRoot, FABRIC_DIR_REL, FABRIC_CONFIG_FILE);
+  if (!existsSync(configPath)) return DEFAULT_HINT_BROAD_COOLDOWN_HOURS;
+  try {
+    const parsed = JSON.parse(readFileSync(configPath, "utf8"));
+    const v = parsed && parsed.hint_broad_cooldown_hours;
+    if (typeof v === "number" && Number.isFinite(v) && v >= 0 && v <= 168) {
+      return v;
+    }
+  } catch {
+    // fall through to default
+  }
+  return DEFAULT_HINT_BROAD_COOLDOWN_HOURS;
+}
+
+/**
+ * v2.0.0-rc.33 W2-6: resolve hint_reminder_to_context. Boolean flag — when
+ * true (default) the hook writes a Claude-Code-shaped JSON envelope to stdout
+ * carrying the banner under hookSpecificOutput.additionalContext so the model
+ * receives the reminder in-context. Stderr stays informational either way.
+ */
+function readReminderToContext(projectRoot) {
+  const configPath = join(projectRoot, FABRIC_DIR_REL, FABRIC_CONFIG_FILE);
+  if (!existsSync(configPath)) return DEFAULT_HINT_REMINDER_TO_CONTEXT;
+  try {
+    const parsed = JSON.parse(readFileSync(configPath, "utf8"));
+    const v = parsed && parsed.hint_reminder_to_context;
+    if (typeof v === "boolean") return v;
+  } catch {
+    // fall through to default
+  }
+  return DEFAULT_HINT_REMINDER_TO_CONTEXT;
+}
+
+/**
+ * v2.0.0-rc.33 W2-5: read/write the broad-hint last-emit timestamp sidecar.
+ * Distinct from fabric-hint's shown-cache so signal cooldowns stay isolated.
+ * Returns epoch ms or null when missing/unreadable.
+ */
+function readBroadLastEmit(projectRoot) {
+  const p = join(projectRoot, HINT_BROAD_LAST_EMIT_FILE);
+  if (!existsSync(p)) return null;
+  try {
+    const raw = readFileSync(p, "utf8").trim();
+    if (raw.length === 0) return null;
+    const asNum = Number(raw);
+    if (Number.isFinite(asNum) && asNum > 0) return asNum;
+    const ms = Date.parse(raw);
+    if (Number.isFinite(ms)) return ms;
+  } catch {
+    // ignore
+  }
+  return null;
+}
+
+function writeBroadLastEmit(projectRoot, nowMs) {
+  const p = join(projectRoot, HINT_BROAD_LAST_EMIT_FILE);
+  try {
+    if (!existsSync(dirname(p))) {
+      mkdirSync(dirname(p), { recursive: true });
+    }
+    writeFileSync(p, String(nowMs));
+  } catch {
+    // Silent — sidecar failure must never block session start.
+  }
 }
 
 /**
@@ -557,13 +674,41 @@ function renderSummary(payload) {
 function main(env, stdio) {
   try {
     const cwd = (env && env.cwd) || process.cwd();
+    const now = (env && env.now) || new Date();
+    const nowMs = now instanceof Date ? now.getTime() : Number(now);
     const err = (stdio && stdio.stderr) || process.stderr;
+    const out = (stdio && stdio.stdout) || process.stdout;
+
+    // v2.0.0-rc.33 W2-5 (P1-8): cooldown gate. When configured > 0 hours, the
+    // broad banner stays silent for that many hours after a successful emit.
+    // 0 (default) preserves rc.32 behavior — every SessionStart re-fires the
+    // banner. Test seam env.skipCooldown bypasses for unit tests.
+    const cooldownHours = readBroadCooldownHours(cwd);
+    if (cooldownHours > 0 && !(env && env.skipCooldown === true)) {
+      const lastEmitMs = readBroadLastEmit(cwd);
+      if (
+        typeof lastEmitMs === "number" &&
+        nowMs - lastEmitMs < cooldownHours * MS_PER_HOUR
+      ) {
+        return; // still in cooldown — silent
+      }
+    }
 
     // Test seam: env.payload short-circuits the CLI spawn so unit tests can
     // feed canned plan-context-hint JSON without depending on a built CLI.
     const payload =
       env && env.payload !== undefined ? env.payload : invokePlanContextHint(cwd);
     if (payload === null || payload === undefined) return; // silent
+
+    // v2.0.0-rc.33 W2-1 (P0-9): apply TopK slice BEFORE renderSummary so the
+    // grouped/truncation rendering operates on the bounded set. Slicing here
+    // (not inside renderSummary) keeps the formatter pure — it never has to
+    // know about the cap.
+    const topK = readBroadTopK(cwd);
+    const slicedPayload =
+      payload && Array.isArray(payload.entries) && payload.entries.length > topK
+        ? { ...payload, entries: payload.entries.slice(0, topK) }
+        : payload;
 
     // rc.8 underseed self-check: decide whether to surface the one-line
     // `/fabric-import` recommendation banner alongside the broad summary.
@@ -573,8 +718,9 @@ function main(env, stdio) {
     // SessionStart fire (Skill-style progressive disclosure). The prior
     // revision_hash cooldown gate (rc.7 T8 — rc.11) was removed because
     // compact/clear-triggered SessionStart re-fires must re-inject the menu
-    // for the agent's working memory.
-    const lines = renderSummary(payload);
+    // for the agent's working memory. rc.33 W2-5 reintroduces an opt-in
+    // hours-based cooldown via fabric-config (see gate above).
+    const lines = renderSummary(slicedPayload);
 
     if (recommendImport) {
       // rc.16 TASK-003: resolve fabric_language ONCE per invocation (only when
@@ -587,8 +733,41 @@ function main(env, stdio) {
 
     if (lines.length === 0) return; // nothing to say — silent exit
 
+    // Stderr: always emit (human-facing breadcrumb + legacy contract).
     for (const line of lines) {
       err.write(`${line}\n`);
+    }
+
+    // v2.0.0-rc.33 W2-6 (P0-7): stdout JSON envelope. When
+    // hint_reminder_to_context is true (default), serialize the same banner
+    // body as Claude Code's SessionStart hookSpecificOutput shape so the model
+    // receives the reminder IN-CONTEXT (rc.32 baseline cite-coverage 3.1%
+    // root cause: reminders never entered model context). Stderr stays the
+    // host-facing channel.
+    //
+    // Failure to write JSON envelope must NOT crash the hook — stderr already
+    // delivered, the stdout layer is best-effort.
+    const reminderToContext = readReminderToContext(cwd);
+    if (reminderToContext && !(env && env.skipStdout === true)) {
+      try {
+        const envelope = {
+          hookSpecificOutput: {
+            hookEventName: "SessionStart",
+            additionalContext: lines.join("\n"),
+          },
+        };
+        out.write(`${JSON.stringify(envelope)}\n`);
+      } catch {
+        // Best-effort — stderr is the durable contract
+      }
+    }
+
+    // v2.0.0-rc.33 W2-5 (P1-8): record successful emit timestamp for the
+    // cooldown gate's next-invocation check. Skip when cooldown is disabled
+    // (cooldownHours === 0) to avoid polluting the FS with a never-read
+    // sidecar on rc.32-style "no cooldown" workspaces.
+    if (cooldownHours > 0 && !(env && env.skipCooldownWrite === true)) {
+      writeBroadLastEmit(cwd, nowMs);
     }
   } catch {
     // Silent — never block session start on hook failure.
@@ -608,6 +787,12 @@ module.exports = {
   readUnderseedThreshold,
   isImportTouched,
   shouldRecommendImport,
+  // v2.0.0-rc.33 W2-1 / W2-5 / W2-6 helpers.
+  readBroadTopK,
+  readBroadCooldownHours,
+  readReminderToContext,
+  readBroadLastEmit,
+  writeBroadLastEmit,
   CONSTANTS: {
     TRUNCATION_THRESHOLD,
     CLI_TIMEOUT_MS,
@@ -618,6 +803,10 @@ module.exports = {
     MATURITY_DRAFT,
     DEFAULT_UNDERSEED_NODE_THRESHOLD,
     KNOWLEDGE_CANONICAL_TYPES,
+    DEFAULT_HINT_BROAD_TOP_K,
+    DEFAULT_HINT_BROAD_COOLDOWN_HOURS,
+    DEFAULT_HINT_REMINDER_TO_CONTEXT,
+    HINT_BROAD_LAST_EMIT_FILE,
   },
 };
 
