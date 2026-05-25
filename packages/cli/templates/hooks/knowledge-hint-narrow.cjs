@@ -1204,6 +1204,15 @@ function main(env, stdio) {
       currentRevisionHash,
     );
     if (dedupDecision.filtered.length === 0) {
+      // v2.0.0-rc.33 W4 review-fix (gemini Critical-1): persist the counter
+      // BEFORE returning so the turn-window check still advances on suppressed
+      // fires. Skipping the write here caused dedup state to permanently stick
+      // — every subsequent fire would read the old counter, see at_turn within
+      // the window, and keep suppressing. Now: counter ticks on every fire,
+      // window-naturally expires after `windowTurns` PreToolUse events.
+      if (!(env && env.skipCacheWrite === true)) {
+        writeNarrowDedupWindow(cwd, dedupDecision.nextState);
+      }
       if (!(env && env.skipSilenceCounter === true)) {
         appendHintSilenceCounter(cwd, now);
       }
@@ -1244,7 +1253,13 @@ function main(env, stdio) {
     // contract: stdout JSON with hookSpecificOutput.additionalContext is
     // injected into the model's context window; the hook DOES NOT block the
     // edit (additionalContext is informational, not a permissionDecision).
-    if (!(env && env.skipStdout === true) && readReminderToContext(cwd)) {
+    // v2.0.0-rc.33 W4 review-fix (gemini High-1): CC-specific stdout envelope.
+    // See knowledge-hint-broad.cjs companion for rationale — CLAUDE_PROJECT_DIR
+    // is the CC presence signal; Codex CLI / Cursor don't set it.
+    const _isClaudeCode =
+      typeof process.env.CLAUDE_PROJECT_DIR === "string" &&
+      process.env.CLAUDE_PROJECT_DIR.length > 0;
+    if (!(env && env.skipStdout === true) && _isClaudeCode && readReminderToContext(cwd)) {
       try {
         const envelope = {
           hookSpecificOutput: {

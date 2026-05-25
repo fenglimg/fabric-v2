@@ -768,7 +768,17 @@ function main(env, stdio) {
     //
     // Failure to write JSON envelope must NOT crash the hook — stderr already
     // delivered, the stdout layer is best-effort.
-    const reminderToContext = readReminderToContext(cwd);
+    // v2.0.0-rc.33 W4 review-fix (gemini High-1): the stdout JSON envelope
+    // is Claude Code-specific (hookSpecificOutput.additionalContext contract).
+    // Codex CLI / Cursor don't parse it — leaking it to their stdout risks
+    // either polluting the terminal or crashing the host's hook-parsing
+    // pipeline. CLAUDE_PROJECT_DIR is set by CC when invoking hooks (see
+    // packages/cli/templates/hooks/configs/claude-code.json sigil paths);
+    // its presence is the single-bit "this is Claude Code" signal.
+    const isClaudeCode =
+      typeof process.env.CLAUDE_PROJECT_DIR === "string" &&
+      process.env.CLAUDE_PROJECT_DIR.length > 0;
+    const reminderToContext = readReminderToContext(cwd) && isClaudeCode;
     if (reminderToContext && !(env && env.skipStdout === true)) {
       try {
         const envelope = {

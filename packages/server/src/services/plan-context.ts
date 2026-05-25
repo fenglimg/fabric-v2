@@ -670,13 +670,27 @@ function localityTier(relevancePath: string, targetPath: string): number {
 }
 
 function dirnameOfPath(p: string): string {
-  // Strip trailing glob segments (e.g. `packages/cli/src/**/*.ts` → `packages/cli/src`)
-  // and read the directory. We treat `*` and `**` as glob delimiters; the
-  // first one terminates the path prefix.
+  // v2.0.0-rc.33 W4 review-fix (gemini Critical-2): two distinct cases need
+  // different "dirname" semantics:
+  //
+  //   - Glob pattern (e.g. `src/**/*.ts`): the "directory" IS the prefix
+  //     before the first glob wildcard — `src` in this example. Walking
+  //     parent-dirname on `src/` strips it to `""`, which over-broadens
+  //     and breaks LOCALITY_SAME_DIR for target `src/foo.ts`.
+  //
+  //   - File path (e.g. `src/foo.ts`): "directory" is the parent —
+  //     `src` via lastIndexOf("/"). Standard dirname semantics.
+  //
+  // Pre-fix code applied parent-dirname to BOTH cases, causing globs to
+  // double-strip and never match same-dir-tier with their own files.
   const idx = p.search(/[*?[]/);
-  const stem = idx >= 0 ? p.slice(0, idx).replace(/\/$/, "") : p;
-  const lastSlash = stem.lastIndexOf("/");
-  return lastSlash >= 0 ? stem.slice(0, lastSlash) : "";
+  if (idx >= 0) {
+    // Glob: directory == prefix before first wildcard, trailing slash stripped.
+    return p.slice(0, idx).replace(/\/$/, "");
+  }
+  // File path: dirname (one level up).
+  const lastSlash = p.lastIndexOf("/");
+  return lastSlash >= 0 ? p.slice(0, lastSlash) : "";
 }
 
 function packageRootOfPath(p: string): string {

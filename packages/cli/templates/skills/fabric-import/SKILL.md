@@ -1,6 +1,6 @@
 ---
 name: fabric-import
-description: Cold-start enrich .fabric/knowledge/ from project git log + docs/*.md as broad+[] pending entries (NOT for code/data/module import). Trigger on 导入历史/bootstrap fabric/mine changelog/import knowledge from git/挖掘 commit/挖掘文档.
+description: 冷启动从 git log + docs/*.md 回灌 .fabric/knowledge/pending (NOT code/data import). Triggers 导入历史/bootstrap fabric/mine changelog/挖掘 commit.
 allowed-tools: Read, Glob, Grep, Bash, mcp__fabric__fab_extract_knowledge, mcp__fabric__fab_review
 ---
 

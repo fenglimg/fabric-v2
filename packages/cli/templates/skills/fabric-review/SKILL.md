@@ -1,6 +1,6 @@
 ---
 name: fabric-review
-description: Review pending entries and revisit/modify canonical entries (NOT PR/code review) — list / approve / reject / modify (incl. layer flip) / search / defer / revisit. Trigger on 审批/批准/驳回/修改/复审/重审 canonical/list pending/approve/reject/review pending knowledge.
+description: 审 .fabric/knowledge pending+canonical (NOT PR review):approve/reject/modify/revisit/defer。Triggers 审批/驳回/复审/重审/approve/reject/review pending.
 allowed-tools: Read, Glob, Grep, Bash, Edit, mcp__fabric__fab_review
 ---
 

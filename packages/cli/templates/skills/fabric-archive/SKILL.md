@@ -1,6 +1,6 @@
 ---
 name: fabric-archive
-description: Archive session insights to .fabric/knowledge/pending/. Trigger on normative language (以后/always/from now on/下次/never/记一下/永远不要/from now), wrong-turn-and-revert reflections, decision confirmations with rationale, or explicit dismissals with reason; also Stop-hook archive signals or explicit /fabric-archive invocation.
+description: 归档对话洞察到 .fabric/knowledge/pending (NOT code review). Triggers 以后/always/never/下次/记一下;wrong-turn-revert;decision-confirm;dismissal-reason;/fabric-archive.
 allowed-tools: Read, Glob, Grep, Bash, mcp__fabric__fab_extract_knowledge
 ---
 
