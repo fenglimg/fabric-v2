@@ -142,7 +142,19 @@ function readPayload(rawStdin) {
       return null;
     }
     return parsed;
-  } catch {
+  } catch (e) {
+    // v2.0.0-rc.29 REVIEW (codex LOW-1): apply BUG-L1's malformed-input
+    // diagnostic uniformly across hook scripts. fabric-hint.cjs got the stderr
+    // trace in TASK-008; without this matching write here, a broken Codex /
+    // Cursor host payload silently kills the narrow hint with no operator
+    // signal at all. Best-effort: a failed stderr write must not throw upward
+    // (hook contract — never crash the host's edit pipeline).
+    try {
+      const message = (e && typeof e === "object" && "message" in e) ? String(e.message) : String(e);
+      process.stderr.write(`[fabric-knowledge-hint-narrow] malformed input: ${message}\n`);
+    } catch {
+      // stderr write itself failed (sandbox / closed fd) — accept silence.
+    }
     return null;
   }
 }

@@ -183,9 +183,11 @@ Each mode produces user-facing output, then routes per-item or per-batch decisio
 
 1. Extract the topic keyword(s) from the user's message (e.g. "find about deepMerge" → query="deepMerge").
 2. Call `fab_review action="search"` with `query` and any obvious filters (if user said "team-only" → `filters.layer="team"`).
-3. Server returns `items[]` ranked by relevance — these are entries already in `.fabric/knowledge/{layer}/{type}/` (NOT pending), unless `filters` says otherwise.
-4. Render top-N (cap at `review_topic_result_cap`, config-resolved, default 8) results with title / summary / pending_path.
-5. If the user follow-up indicates intent to act ("approve all", "modify the second one"), pivot into the corresponding pending mode action — the search result already gives the `pending_path` needed for the action.
+3. Server returns `items[]` ranked by relevance. Each item carries `area: "pending" | "canonical"` and `path` (NOT `pending_path` — search spans both pending and canonical entries; v2.0.0-rc.29 TASK-007 M4 introduced the discriminator so consumers can branch on entry state).
+4. Render top-N (cap at `review_topic_result_cap`, config-resolved, default 8) results with title / summary / area / path.
+5. If the user follow-up indicates intent to act ("approve all", "modify the second one"), branch on `area`:
+   - `area: "pending"` → pivot into the corresponding pending-mode action (`approve` / `reject` / `defer` / `modify`) using the item's `path` in place of `pending_path` (the underlying server APIs still expect `pending_paths=[path]`).
+   - `area: "canonical"` → only `modify` is legal (the entry is already promoted; approve/reject/defer don't apply). Surface a clarification if the user verb maps to a pending-only action.
 6. NEVER surface a per-item AskUserQuestion just for browsing — only when the user signals an action verb.
 
 ### Mode: health — Corpus Health & Stale Detection

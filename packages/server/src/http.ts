@@ -29,6 +29,19 @@ import { invalidateKnowledgeSyncCooldown } from "./services/knowledge-sync.js";
 const DEFAULT_HOST = "127.0.0.1";
 const NOTIFY_DEBOUNCE_MS = 200;
 
+// v2.0.0-rc.29 REVIEW (codex HIGH-1): server-layer guard for the
+// `allowLoopbackNoAuth` opt-in. The CLI's `validateHost` enforces a loopback
+// fallback in `serve.ts`, but a programmatic caller invoking
+// `createFabricHttpApp` / `startHttpServer` directly was previously trusted to
+// supply a loopback host — combining `allowLoopbackNoAuth: true` with a public
+// bind would expose `/api`, `/events`, `/mcp` without auth. Defining the
+// loopback set here (rather than reusing the CLI helper) keeps fabric-server a
+// self-contained SDK with no CLI dependency.
+const LOOPBACK_HOSTS: ReadonlySet<string> = new Set(["127.0.0.1", "localhost", "::1"]);
+function isLoopbackHost(host: string): boolean {
+  return LOOPBACK_HOSTS.has(host);
+}
+
 type FabricHttpSession = {
   server: McpServer;
   transport: StreamableHTTPServerTransport;
@@ -205,6 +218,19 @@ export function handleCacheWatcherEvent(
 
 export function createFabricHttpApp(options: CreateFabricHttpAppOptions) {
   const { projectRoot, host = DEFAULT_HOST, authToken, allowLoopbackNoAuth = false } = options;
+
+  // v2.0.0-rc.29 REVIEW (codex HIGH-1): reject the `allowLoopbackNoAuth +
+  // non-loopback host` combination at construction time. Throw rather than
+  // silently mounting deny-all so programmatic misuse fails loud — a request
+  // would otherwise reach a 401 only by accident of the deny-all path, which
+  // an opt-in caller would treat as a bug to suppress.
+  if (allowLoopbackNoAuth && authToken === undefined && !isLoopbackHost(host)) {
+    throw new Error(
+      `createFabricHttpApp: allowLoopbackNoAuth=true requires a loopback host ` +
+        `(127.0.0.1 / localhost / ::1); got ${JSON.stringify(host)}. ` +
+        `Either bind to loopback or set FABRIC_AUTH_TOKEN.`,
+    );
+  }
   const app = createMcpExpressApp({ host }) as FabricHttpApp;
   const eventStore = new JsonlEventStore(projectRoot);
   const sessions = new Map<string, FabricHttpSession>();

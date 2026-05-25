@@ -147,6 +147,10 @@ export const zhCNMessages: Messages = {
   "doctor.section.manual": "需手动修复：",
   "doctor.section.warnings": "警告：",
   "doctor.section.fix-knowledge-mutations": "Fix-knowledge 变更：",
+  // v2.0.0-rc.29 REVIEW (codex LOW-2): F2 的 payload 阈值之前只出现在 JSON envelope，
+  // 人类输出看不到，导致改了 mcpPayloadLimits 之后没法用 `fab doctor` 快速确认是否生效。
+  "doctor.section.payload-limits": "MCP payload 阈值：",
+  "doctor.payload-limits.line": "warn={warnKb} KB, hard={hardKb} KB (来源: {source})",
   // rc.20 TASK-07: cite-coverage 人类可读格式化键。
   "doctor.section.cite-coverage": "Cite 覆盖率:",
   "doctor.cite.header": "起始 {since} (政策激活时间 {marker})",

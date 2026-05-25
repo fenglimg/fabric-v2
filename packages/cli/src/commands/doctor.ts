@@ -458,6 +458,27 @@ function renderHumanReport(report: DoctorReport, dt: DoctorTranslator): void {
   writeIssueSection(dt("doctor.section.fixable"), report.fixable_errors);
   writeIssueSection(dt("doctor.section.manual"), report.manual_errors);
   writeIssueSection(dt("doctor.section.warnings"), report.warnings);
+  renderPayloadLimits(report, dt);
+}
+
+// v2.0.0-rc.29 REVIEW (codex LOW-2): F2's `payload_limits` reached the JSON
+// envelope but not the human renderer. Print one line so an operator who edits
+// `mcpPayloadLimits` in `fabric.config.json` can confirm via `fab doctor` that
+// the override took effect (source=config vs source=default).
+function renderPayloadLimits(report: DoctorReport, dt: DoctorTranslator): void {
+  const limits = report.summary.payload_limits;
+  if (limits === undefined) {
+    return;
+  }
+  writeStdout("");
+  writeStdout(dt("doctor.section.payload-limits"));
+  writeStdout(
+    `- ${dt("doctor.payload-limits.line", {
+      warnKb: String(Math.round(limits.warn_bytes / 1024)),
+      hardKb: String(Math.round(limits.hard_bytes / 1024)),
+      source: limits.source,
+    })}`,
+  );
 }
 
 function renderFixKnowledgeMutations(

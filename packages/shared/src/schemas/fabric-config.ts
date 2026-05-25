@@ -20,6 +20,13 @@ export const mcpPayloadLimitsSchema = z.object({
   hardBytes: z.number().int().positive().optional(),
 }).optional();
 
+// v2.0.0-rc.29 REVIEW (codex HIGH-3): exported so the server config-loader can
+// safe-parse the field independently of the full fabricConfigSchema, keeping
+// plan_context's hot read path resilient to corruption in unrelated config
+// fields. The range guard (30s..1h) mirrors the rationale documented at the
+// fabricConfigSchema `selection_token_ttl_ms` field.
+export const selectionTokenTtlMsSchema = z.number().int().min(30_000).max(3_600_000);
+
 // v2.0 (grill-followup Q3) / rc.12 broad-gate-fabric-lang: Drives init-scan
 // baseline template language and the zh-CN body rewrite policy.
 // `match-existing` preserves whatever language the project is already
@@ -214,10 +221,10 @@ export const fabricConfigSchema = z.object({
   // of 5*60*1000 ms." Range 30s..1h keeps the value useful — below 30s the
   // token expires before MCP round-trips finish; above 1h it stops being a
   // meaningful liveness signal for the plan-context cache.
-  selection_token_ttl_ms: z
-    .number()
-    .int()
-    .min(30_000)
-    .max(3_600_000)
-    .optional(),
+  //
+  // The single-field schema is exported separately (`selectionTokenTtlMsSchema`)
+  // so the server-side per-field reader can validate without re-running the
+  // whole fabricConfigSchema on every plan_context call — that lets a corrupt
+  // unrelated field stay isolated from the hot read path.
+  selection_token_ttl_ms: selectionTokenTtlMsSchema.optional(),
 });

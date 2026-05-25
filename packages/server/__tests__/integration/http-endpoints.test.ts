@@ -536,3 +536,54 @@ describe("HTTP integration — rc.29 BUG-K1 --allow-loopback-no-auth opt-in", ()
     expect(res.status).toBe(200);
   });
 });
+
+// ---------------------------------------------------------------------------
+// rc.29 REVIEW (codex HIGH-1): allowLoopbackNoAuth + non-loopback host = throw
+// ---------------------------------------------------------------------------
+
+describe("HTTP integration — rc.29 REVIEW HIGH-1 server-layer loopback guard", () => {
+  let tempDir: string;
+
+  beforeEach(() => {
+    tempDir = makeTempRoot();
+  });
+
+  afterEach(() => {
+    rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  it("throws when allowLoopbackNoAuth=true is combined with a non-loopback host (no token)", () => {
+    expect(() =>
+      createFabricHttpApp({
+        projectRoot: tempDir,
+        host: "0.0.0.0",
+        allowLoopbackNoAuth: true,
+      }),
+    ).toThrow(/allowLoopbackNoAuth.*requires a loopback host/);
+  });
+
+  it("accepts allowLoopbackNoAuth=true with each canonical loopback host", () => {
+    for (const host of ["127.0.0.1", "localhost", "::1"]) {
+      const localApp = createFabricHttpApp({
+        projectRoot: tempDir,
+        host,
+        allowLoopbackNoAuth: true,
+      });
+      expect(localApp).toBeDefined();
+      // Cleanup the per-iteration app so disposal does not leak file watchers.
+      // eslint-disable-next-line @typescript-eslint/no-floating-promises
+      localApp.dispose();
+    }
+  });
+
+  it("accepts a non-loopback host when a token is supplied (auth still mounted)", () => {
+    expect(() =>
+      createFabricHttpApp({
+        projectRoot: tempDir,
+        host: "0.0.0.0",
+        authToken: "test-token",
+        allowLoopbackNoAuth: true,
+      }),
+    ).not.toThrow();
+  });
+});

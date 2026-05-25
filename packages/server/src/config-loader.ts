@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { selectionTokenTtlMsSchema } from "@fenglimg/fabric-shared";
 import type { FabricConfig, McpPayloadLimits } from "@fenglimg/fabric-shared";
 
 /**
@@ -36,10 +37,20 @@ export function readPayloadLimits(projectRoot: string): McpPayloadLimits | undef
  * falls back to its 5-minute default. Best-effort: any parse failure returns
  * undefined rather than throwing — plan_context is on the hot read path and
  * must not crash on a corrupt config file.
+ *
+ * v2.0.0-rc.29 REVIEW (codex HIGH-3): the raw JSON read previously bypassed
+ * schema validation via `readFabricConfig`'s cast, so a string / negative /
+ * out-of-range value would propagate into `plan-context.ts`'s
+ * `expires_at = now + ttlMs` and produce a bogus expiry. Now: read raw, then
+ * `selectionTokenTtlMsSchema.safeParse` — failure returns undefined and the
+ * caller falls back to the library default.
  */
 export function readSelectionTokenTtlMs(projectRoot: string): number | undefined {
   try {
-    return readFabricConfig(projectRoot).selection_token_ttl_ms;
+    const raw = readFabricConfig(projectRoot).selection_token_ttl_ms;
+    if (raw === undefined) return undefined;
+    const parsed = selectionTokenTtlMsSchema.safeParse(raw);
+    return parsed.success ? parsed.data : undefined;
   } catch {
     return undefined;
   }

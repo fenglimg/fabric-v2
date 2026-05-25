@@ -149,6 +149,12 @@ export const enMessages: Messages = {
   "doctor.section.manual": "Manual errors:",
   "doctor.section.warnings": "Warnings:",
   "doctor.section.fix-knowledge-mutations": "Fix-knowledge mutations:",
+  // v2.0.0-rc.29 REVIEW (codex LOW-2): F2's payload-limit defaults reach the JSON
+  // envelope but never surfaced in the human renderer, so operators tuning
+  // `mcpPayloadLimits` had no fast `fab doctor` confirmation that their config
+  // override took effect. Two strings: a section header + a one-liner row.
+  "doctor.section.payload-limits": "MCP payload limits:",
+  "doctor.payload-limits.line": "warn={warnKb} KB, hard={hardKb} KB (source: {source})",
   // rc.20 TASK-07: cite-coverage human-readable formatter keys.
   "doctor.section.cite-coverage": "Cite coverage:",
   "doctor.cite.header": "Since {since} via marker {marker}",

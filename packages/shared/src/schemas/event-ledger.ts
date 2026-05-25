@@ -575,12 +575,20 @@ export const serveLockClearedEventSchema = z.object({
 //   stub values without prompting; `interactive` would be the future
 //   user-driven branch (currently `auto` is the only emitter, but the enum is
 //   pre-locked so future modes can ship without a schema bump).
+//
+// v2.0.0-rc.29 REVIEW (codex follow-up): TASK-007 M1 split the runtime
+// `EnrichDescriptionsMode` into `auto | preview | readonly | interactive` to
+// stop labelling a no-write dry-run pass as `interactive`. The ledger enum was
+// missed in that pass (caught by tsup DTS, not by tests, because no test
+// exercises the ledger-append path for the new modes). Aligning the schema
+// avoids a TS2322 at the emit site and preserves the `readonly`/`preview`
+// audit-trail granularity that M1 introduced.
 export const knowledgeEnrichedEventSchema = z.object({
   ...eventLedgerEnvelopeSchema,
   event_type: z.literal("knowledge_enriched"),
   path: z.string(),
   added_fields: z.array(z.enum(["intent_clues", "tech_stack", "impact", "must_read_if"])),
-  mode: z.enum(["auto", "interactive"]),
+  mode: z.enum(["auto", "preview", "readonly", "interactive"]),
   timestamp: z.string().datetime(),
 });
 

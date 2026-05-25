@@ -201,6 +201,22 @@ describe("knowledge-hint-narrow.cjs — readPayload", () => {
     expect(hook.readPayload("{ not json")).toBeNull();
   });
 
+  it("writes a best-effort stderr diagnostic on malformed JSON (rc.29 REVIEW LOW-1)", () => {
+    const writes: string[] = [];
+    const original = process.stderr.write.bind(process.stderr);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    process.stderr.write = ((chunk: any) => {
+      writes.push(typeof chunk === "string" ? chunk : String(chunk));
+      return true;
+    }) as typeof process.stderr.write;
+    try {
+      expect(hook.readPayload("{ definitely not json")).toBeNull();
+    } finally {
+      process.stderr.write = original;
+    }
+    expect(writes.some((line) => line.startsWith("[fabric-knowledge-hint-narrow] malformed input:"))).toBe(true);
+  });
+
   it("returns null for non-object JSON (array, primitive)", () => {
     expect(hook.readPayload("[1,2,3]")).toBeNull();
     expect(hook.readPayload("42")).toBeNull();
