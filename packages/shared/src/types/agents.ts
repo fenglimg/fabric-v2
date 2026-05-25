@@ -68,12 +68,15 @@ export interface AgentsMetaNode {
   sections?: string[];
   // v2.0-rc.5 A1: legacy L0/L1/L2 protocol fields retired from the Zod
   // schema but kept here as optionals for TASK-007 transitional consumers.
+  // v2.0.0-rc.30 TASK-004 (B.1): `layer` field dropped — was a v1→v2 dual
+  // with `level` (disk wrote both, values were identical "L1"/"L1" in every
+  // observed workspace). Single source of truth = `level` (declared optional)
+  // OR derive from file path via `deriveAgentsMetaLayer` when unset.
   // Consumers should derive these via `deriveAgentsMetaLayer` /
   // `deriveAgentsMetaTopologyType` rather than reading them off the node.
   deps?: string[];
   priority?: "high" | "medium" | "low";
   level?: AgentsLayer;
-  layer?: AgentsLayer;
   topology_type?: AgentsTopologyType;
 }
 

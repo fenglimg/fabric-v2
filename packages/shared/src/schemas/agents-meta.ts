@@ -71,36 +71,24 @@ export const ruleDescriptionIndexItemSchema = z
 // when consumers need it. Older on-disk meta files carrying these fields
 // continue to load (Zod strips unknown keys by default).
 //
-// v2.0.0-rc.29 TASK-007 (BUG-P1): documentation-only clarification of the
-// `level` vs `layer` double semantic for any code path still consuming the
-// passthrough fields (currently `knowledge-sections.ts` + `get-knowledge.ts`):
+// v2.0.0-rc.30 TASK-004 (B.1, replacing rc.29 TASK-007 BUG-P1 documentation):
+// the `level` vs `layer` double semantic is GONE — `layer` was removed
+// entirely from AgentsMetaNode + withDerivedAgentsMetaNodeDefaults. The
+// v1→v2 dual-write was a migration shim where disk wrote both fields with
+// identical values; cleanup deferred until knowledge-sections.ts +
+// get-knowledge.ts upstream consumers migrated to `node.level ??
+// deriveAgentsMetaLayer(file)` in TASK-003. Single source of truth for
+// loading semantic:
 //
-//   - `layer`  → STORAGE LOCATION. Which on-disk root the file lives under.
-//                "personal" = ~/.fabric/knowledge/...; "team" = workspace
-//                .fabric/knowledge/...; older meta files use the L-token
-//                vocabulary ("L0"|"L1"|"L2") with the same precedence-stack
-//                meaning that `level` carries — the two were intentionally
-//                kept interchangeable in rc.4 and earlier to ease migration,
-//                but going forward `layer` is the storage-of-truth.
+//   - declared `node.level` (override on meta.json) takes priority
+//   - else `deriveAgentsMetaLayer(file)` derives L0/L1/L2 from file path depth
 //
-//   - `level`  → PRECEDENCE-STACK POSITION. Where the entry sits in the
-//                resolution order applied by `knowledge-sections.ts:251`:
-//                  L0 = personal-override (highest precedence, narrowest scope)
-//                  L1 = workspace          (default working surface)
-//                  L2 = team               (broadest sharable scope, lowest
-//                                            precedence below L0/L1)
-//                When `level` is absent, `knowledge-sections.ts` falls back
-//                to `layer` (then default "L2") — the dual semantic that the
-//                rc.28 audit (BUG-P1) flagged. The rename to
-//                `storage_level` / `precedence_level` is deferred (would
-//                require a schema migration touching every consumer); the
-//                fallback chain documented at services/knowledge-sections.ts
-//                lines 245-260 remains the canonical contract.
-//
-// Rule of thumb when reading code: a check that influences DISK PLACEMENT
-// (which root to write/read) consults `layer`; a check that influences
-// PRECEDENCE (which entry wins on collision) consults `level`. The
-// inputs may coincide in vocabulary but they are semantically distinct.
+// Storage layer (team vs personal) is a SEPARATE concept tracked at
+// frontmatter (`knowledge_layer`) + disk path (`.fabric/knowledge/team/*`
+// vs `~/.fabric/knowledge/personal/*`) — never the `layer` field on this
+// schema (which was always L0/L1/L2 enum, not team/personal). See
+// memory/project_l0_l1_l2_redesign_v21.md for v2.1 redesign that will
+// rename `level` to `load` and add explicit `scope: team|personal`.
 const agentsMetaNodeBaseSchema = z.object({
   file: z.string(),
   content_ref: z.string().optional(),
@@ -116,7 +104,7 @@ const agentsMetaNodeBaseSchema = z.object({
     .optional(),
   description: ruleDescriptionSchema.optional(),
   sections: z.array(z.string()).optional(),
-}).passthrough(); // v2.0-rc.5: L0/L1/L2 protocol fields (level/layer/deps/topology_type/priority) removed from the declared schema but preserved through parse() via .passthrough(). After TASK-007 (A3): plan-context.ts no longer reads these fields, BUT knowledge-sections.ts (`node.level`/`node.priority`/`node.layer` at services/knowledge-sections.ts:270-291) and get-knowledge.ts (`node.level`/`node.priority`/`node.layer` at services/get-knowledge.ts:89-245) still consume them. Passthrough + `withDerivedAgentsMetaNodeDefaults` shim retained until those services are migrated (follow-up task — knowledge-sections.ts uses level/priority for output ordering, get-knowledge.ts for the same precedence walk).
+}).passthrough(); // v2.0-rc.5: L0/L1/L2 protocol fields (level/deps/topology_type/priority) removed from the declared schema but preserved through parse() via .passthrough(). v2.0.0-rc.30 TASK-003+TASK-004 closure: knowledge-sections.ts + get-knowledge.ts upstream consumers migrated to `node.level ?? deriveAgentsMetaLayer(file)`, `node.priority` kept as fallback for test fixture sort contracts; `node.layer` field removed entirely (was a dual-write of `level` with identical values in every observed workspace). Passthrough retained to load pre-rc.30 on-disk meta files without re-key churn; v2.1 redesign (see memory/project_l0_l1_l2_redesign_v21.md) may replace passthrough with strict schema once disk migration completes.
 
 export const agentsMetaNodeSchema = z.preprocess((value) => {
   if (!isRecord(value) || typeof value.file !== "string") {
@@ -178,16 +166,17 @@ export function withDerivedAgentsMetaNodeDefaults(node: AgentsMetaNodeInput): Ag
   const stableId = node.stable_id ?? deriveAgentsMetaStableId(node.file);
   const identitySource = isKnowledgeEntry ? "declared" : deriveAgentsMetaIdentitySource(node);
 
-  // v2.0-rc.5: legacy L0/L1/L2 protocol fields (layer/level/topology_type)
-  // are no longer declared in the Zod schema. They remain populated as
+  // v2.0-rc.5: legacy L0/L1/L2 protocol fields (level/topology_type) are
+  // no longer declared in the Zod schema. They remain populated as
   // transitional defaults via .passthrough() so knowledge-sections.ts and
-  // get-knowledge.ts (which still order rules by level/priority) keep
-  // functioning. After TASK-007 (A3) plan-context.ts no longer needs them.
-  // New code should call `deriveAgentsMetaLayer(file)` directly.
+  // get-knowledge.ts (after TASK-003 migration: only as the optional
+  // `node.level ?? derive()` short-circuit) keep functioning.
+  // v2.0.0-rc.30 TASK-004 (B.1): `layer` field dropped — was a v1→v2 dual
+  // with `level` writing identical values to disk. Single source of truth:
+  // declared `node.level` (override) OR derive from file path.
   return {
     ...node,
-    layer: node.layer ?? node.level ?? deriveAgentsMetaLayer(node.file),
-    level: node.level ?? node.layer ?? deriveAgentsMetaLayer(node.file),
+    level: node.level ?? deriveAgentsMetaLayer(node.file),
     topology_type: node.topology_type ?? deriveAgentsMetaTopologyType(node.file),
     stable_id: stableId,
     identity_source: identitySource,

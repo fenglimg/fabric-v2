@@ -630,8 +630,9 @@ function createDefaultNodeMeta(contentRef: string): NodeMeta {
     scope_glob: deriveScopeGlob(contentRef),
     deps: layer === "L0" ? [] : ["L0"],
     priority: layer === "L0" ? "high" : "medium",
+    // v2.0.0-rc.30 TASK-004: dropped duplicate `layer:` write — was always
+    // identical to `level:`; AgentsMetaNode no longer carries the field.
     level: layer,
-    layer,
     topology_type: topologyType,
     hash: "",
   };

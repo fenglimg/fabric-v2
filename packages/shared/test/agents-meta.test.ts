@@ -96,7 +96,7 @@ describe("agentsMetaNodeSchema", () => {
       deps: [],
       priority: "medium",
       level: "L1",
-      layer: "L1",
+      // v2.0.0-rc.30 TASK-004: `layer: "L1"` removed (field dropped from schema).
       topology_type: "domain",
       hash: "sha256:test",
       description: {
@@ -112,8 +112,8 @@ describe("agentsMetaNodeSchema", () => {
     expect(parsed.content_ref).toBe(".fabric/knowledge/guidelines/ui-batch-rendering.md");
     expect(parsed.description?.summary).toBe("UI batch rendering rules");
     // A1 transitional: legacy fields preserved via .passthrough() until A3.
+    // v2.0.0-rc.30 TASK-004: `layer` assertion removed (field dropped).
     expect(parsed.level).toBe("L1");
-    expect(parsed.layer).toBe("L1");
     expect(parsed.topology_type).toBe("domain");
   });
 
@@ -127,7 +127,8 @@ describe("agentsMetaNodeSchema", () => {
     });
 
     expect(parsed.activation).toBeUndefined();
-    expect(parsed.layer).toBe("L1");
+    // v2.0.0-rc.30 TASK-004: `layer` field dropped; loading semantic now on `level`.
+    expect(parsed.level).toBe("L1");
     expect(parsed.topology_type).toBe("mirror");
   });
 
@@ -148,7 +149,8 @@ describe("agentsMetaNodeSchema", () => {
       tier: "description",
       description: "TypeScript rules available when the task is TS-related.",
     });
-    expect(parsed.layer).toBe("L1");
+    // v2.0.0-rc.30 TASK-004: `layer` field dropped; loading semantic now on `level`.
+    expect(parsed.level).toBe("L1");
     expect(parsed.topology_type).toBe("cross-cutting");
 
     expect(
