@@ -277,6 +277,63 @@ type SkillRefMirrorInspection =
       driftedPaths: string[]; // relative paths reported in remediation
     };
 
+// v2.0.0-rc.33 W3-6 (P1-13): SKILL.md token budget lint. Scans installed
+// `.claude/skills/<slug>/SKILL.md` for each known skill, estimates token
+// count via chars/3 (mixed CJK/EN markdown heuristic — conservative side of
+// chars/4 because SKILL.md is Chinese-heavy in this project). Warn > 5K
+// tokens, error > 10K tokens — aligned with Anthropic's recommendation that
+// SKILL.md hot path stay under ~3K so progressive disclosure works.
+type SkillTokenBudgetInspection = {
+  status: "ok" | "warn" | "error";
+  // Per-skill estimates surfaced in the doctor message — empty when status === "ok".
+  overSize: Array<{ slug: string; tokens: number; severity: "warn" | "error" }>;
+};
+
+// v2.0.0-rc.33 W3-7 (P1-14): SKILL.md description structural lint. Static
+// proxy for trigger-recall — a real auto-invoke test requires a live LLM
+// (gemini ran one in W1 Verify), but a structural check catches regression
+// on the description quality contract:
+//
+//   1. description frontmatter present + non-empty
+//   2. <= 60 tokens (chars / 3) so the host's auto-invoke matcher sees a
+//      tight signal rather than a wall of prose
+//   3. contains at least one CJK trigger phrase (Chinese-speaking users
+//      should be able to trigger via natural language)
+//   4. contains at least one ASCII trigger phrase (parallel English support)
+//
+// The 20-scenario "trigger fixture" called out in PLAN W3-7 is the gemini
+// verify in W1-VERIFY-RESULT.md — re-running it here would require a live
+// model. The structural lint is the deterministic, in-process proxy.
+type SkillDescriptionLintInspection = {
+  status: "ok" | "warn";
+  issues: Array<{ slug: string; problem: "missing" | "too_long" | "no_cjk" | "no_ascii"; detail: string }>;
+};
+
+// v2.0.0-rc.33 W3-3 (P1-3): cite-policy Goodhart detection. Static heuristics
+// over the last 7 days of `assistant_turn_observed` events. Four anti-patterns
+// (G4 was unallocated by the audit author — fired pattern set is G1/G2/G3/G5):
+//
+//   G1 ritual_cite     — same (kb_id, "recalled") tuple repeated > 5 times
+//                        across the window without contract change. Signal:
+//                        user is reciting the cite incantation without acting.
+//   G2 dismissal_abuse — > 60% of "recalled" cites carry a skip_reason
+//                        commitment instead of an operator contract. Signal:
+//                        user is bypassing contract enforcement.
+//   G3 chained_from_misuse — "chained-from" cites with empty operators AND
+//                        null skip_reason. Signal: chained-from tag attached
+//                        but no actual chain link / commitment recorded.
+//   G5 placeholder_cite — "none" cites with generic kb_line_raw ("KB: none"
+//                        or "[unspecified]") > 5. Signal: cite line ritual
+//                        without semantic intent.
+//
+// All four are warning-level (never error) — Goodhart heuristics produce
+// false positives by definition. Message enumerates fired patterns so the
+// operator can audit per-pattern without re-running.
+type CiteGoodhartInspection = {
+  status: "ok" | "warn";
+  fired: Array<{ pattern: "G1" | "G2" | "G3" | "G5"; detail: string }>;
+};
+
 type KnowledgeTestIndexInspection =
   | {
       present: true;
@@ -899,6 +956,16 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
   // Pure-sync (readdirSync + readFileSync), so it lives outside the
   // Promise.all block.
   const skillRefMirror = inspectSkillRefMirror(projectRoot);
+  // v2.0.0-rc.33 W3-6 (P1-13): SKILL.md token budget. Pure-sync (readFileSync
+  // + Math.ceil), so it joins the synchronous inspection block above.
+  const skillTokenBudget = inspectSkillTokenBudget(projectRoot);
+  // v2.0.0-rc.33 W3-7 (P1-14): SKILL.md description structural lint
+  // (deterministic proxy for trigger-recall — see type docstring).
+  const skillDescription = inspectSkillDescription(projectRoot);
+  // v2.0.0-rc.33 W3-3 (P1-3): cite-policy Goodhart pattern detection. Async
+  // (reads event ledger); placed after the sync inspections so the await
+  // doesn't gate them.
+  const citeGoodhart = await inspectCiteGoodhart(projectRoot);
   const metaManuallyDiverged = await inspectMetaManuallyDiverged(projectRoot);
   const knowledgeDirUnindexed = inspectKnowledgeDirUnindexed(projectRoot, meta);
   const knowledgeDirMissing = inspectKnowledgeDirMissing(projectRoot);
@@ -1037,6 +1104,9 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     // contract between .claude/skills/<slug>/ref/ and .codex/skills/<slug>/
     // ref/. warning severity — fab install restores parity.
     createSkillRefMirrorCheck(t, skillRefMirror),
+    createSkillTokenBudgetCheck(t, skillTokenBudget),
+    createSkillDescriptionCheck(t, skillDescription),
+    createCiteGoodhartCheck(t, citeGoodhart),
     createMcpConfigInWrongFileCheck(t, mcpConfigInWrongFile),
     createMetaManuallyDivergedCheck(t, metaManuallyDiverged),
     createKnowledgeDirUnindexedCheck(t, knowledgeDirUnindexed),
@@ -2261,6 +2331,213 @@ function inspectSkillRefMirror(projectRoot: string): SkillRefMirrorInspection {
   return { status: "drift", driftedPaths };
 }
 
+// v2.0.0-rc.33 W3-6 (P1-13): inspect each installed SKILL.md and report
+// token-budget violations. Scans `.claude/skills/<slug>/SKILL.md` only —
+// `.codex/skills/` mirror (per skill_ref_mirror) carries the same body so
+// re-scanning is redundant. When the Claude install path is missing (user
+// only installed Codex, or no fab install yet), the slug silently degrades
+// to OK — non-existence isn't a budget violation.
+//
+// Token estimation uses chars / 3 for CJK/EN mixed markdown — between the
+// chars/2 CJK-heavy heuristic and the chars/4 English heuristic. SKILL.md
+// in this project is Chinese-heavy so chars/3 errs on the safe (over-
+// estimate) side, which is correct for a budget lint: better to nag at the
+// 4.9K-actual / 5.0K-estimated boundary than to silently miss a 5.1K-actual
+// SKILL.md that the chars/4 heuristic reports as 3.8K.
+function inspectSkillTokenBudget(projectRoot: string): SkillTokenBudgetInspection {
+  const skillSlugs = ["fabric-archive", "fabric-review", "fabric-import"];
+  const WARN_TOKENS = 5_000;
+  const ERROR_TOKENS = 10_000;
+  const overSize: Array<{ slug: string; tokens: number; severity: "warn" | "error" }> = [];
+  let highestSeverity: "ok" | "warn" | "error" = "ok";
+  for (const slug of skillSlugs) {
+    const skillMdPath = join(projectRoot, ".claude", "skills", slug, "SKILL.md");
+    let body: string;
+    try {
+      body = readFileSync(skillMdPath, "utf8");
+    } catch {
+      // Skill not installed for Claude — skip (not a budget violation).
+      continue;
+    }
+    const tokens = Math.ceil(body.length / 3);
+    if (tokens > ERROR_TOKENS) {
+      overSize.push({ slug, tokens, severity: "error" });
+      highestSeverity = "error";
+    } else if (tokens > WARN_TOKENS) {
+      overSize.push({ slug, tokens, severity: "warn" });
+      if (highestSeverity !== "error") highestSeverity = "warn";
+    }
+  }
+  return { status: highestSeverity, overSize };
+}
+
+// v2.0.0-rc.33 W3-7 (P1-14): per-skill structural lint over SKILL.md
+// description frontmatter. Reads the YAML frontmatter directly (avoids
+// pulling a YAML parser into this lib) — the description field is single-
+// line in practice, so a regex on the first 200 lines is sufficient.
+function inspectSkillDescription(projectRoot: string): SkillDescriptionLintInspection {
+  const skillSlugs = ["fabric-archive", "fabric-review", "fabric-import"];
+  const MAX_DESCRIPTION_TOKENS = 60;
+  const issues: SkillDescriptionLintInspection["issues"] = [];
+  // CJK range covers the bulk of common CJK ideographs + extension A. Enough
+  // for trigger-phrase detection — we are not classifying script families.
+  const CJK_PATTERN = /[㐀-䶿一-鿿]/;
+  // ASCII letter requirement is intentionally loose — any [a-zA-Z]+ run
+  // counts as an English trigger; we are not enforcing a specific lexicon.
+  const ASCII_PATTERN = /[a-zA-Z]{2,}/;
+
+  for (const slug of skillSlugs) {
+    const skillMdPath = join(projectRoot, ".claude", "skills", slug, "SKILL.md");
+    let body: string;
+    try {
+      body = readFileSync(skillMdPath, "utf8");
+    } catch {
+      continue; // Skill not installed for Claude — skip.
+    }
+
+    // YAML frontmatter (delimited by --- on the first line). Extract
+    // description: ... (single-line value in our skill contract).
+    const fmMatch = body.match(/^---\n([\s\S]*?)\n---/);
+    if (!fmMatch) {
+      issues.push({ slug, problem: "missing", detail: "no YAML frontmatter" });
+      continue;
+    }
+    const descMatch = fmMatch[1].match(/^description:\s*(.+?)\s*$/m);
+    if (!descMatch || descMatch[1].trim().length === 0) {
+      issues.push({ slug, problem: "missing", detail: "description field empty or absent" });
+      continue;
+    }
+    // YAML may quote the value; strip surrounding quotes for length / language checks.
+    const description = descMatch[1].replace(/^["'](.+)["']$/, "$1");
+    const tokens = Math.ceil(description.length / 3);
+    if (tokens > MAX_DESCRIPTION_TOKENS) {
+      issues.push({ slug, problem: "too_long", detail: `${tokens} tok (max ${MAX_DESCRIPTION_TOKENS})` });
+    }
+    if (!CJK_PATTERN.test(description)) {
+      issues.push({ slug, problem: "no_cjk", detail: "no Chinese trigger phrase" });
+    }
+    if (!ASCII_PATTERN.test(description)) {
+      issues.push({ slug, problem: "no_ascii", detail: "no English trigger phrase" });
+    }
+  }
+
+  return { status: issues.length === 0 ? "ok" : "warn", issues };
+}
+
+// v2.0.0-rc.33 W3-3 (P1-3): Goodhart inspection over 7d of cite events.
+// Reads `assistant_turn_observed` events from the ledger, applies 4 simple
+// heuristics. Threshold tuning matches the rc.32 baseline cite-coverage 3.1%
+// scenario — at that low signal density, > 5 instances of any one pattern
+// over 7d is meaningful (vs noise floor < 1 per day).
+async function inspectCiteGoodhart(projectRoot: string): Promise<CiteGoodhartInspection> {
+  const WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+  const RITUAL_REPEAT_THRESHOLD = 5;
+  const DISMISSAL_ABUSE_RATIO = 0.6;
+  const PLACEHOLDER_COUNT_THRESHOLD = 5;
+  const cutoffMs = Date.now() - WINDOW_MS;
+  const fired: CiteGoodhartInspection["fired"] = [];
+
+  let events: EventLedgerEvent[] = [];
+  try {
+    const result = await readEventLedger(projectRoot);
+    events = result.events;
+  } catch {
+    return { status: "ok", fired: [] };
+  }
+  const turns = events.filter(
+    (e): e is Extract<EventLedgerEvent, { event_type: "assistant_turn_observed" }> => {
+      if (e.event_type !== "assistant_turn_observed") return false;
+      const ts = Date.parse(e.timestamp);
+      return Number.isFinite(ts) && ts >= cutoffMs;
+    },
+  );
+  if (turns.length === 0) {
+    return { status: "ok", fired: [] };
+  }
+
+  // G1: count (kb_id, "recalled") tuples. Same tuple > threshold = ritual.
+  const recalledCount = new Map<string, number>();
+  for (const turn of turns) {
+    for (let i = 0; i < turn.cite_ids.length; i += 1) {
+      if (turn.cite_tags[i] === "recalled") {
+        const key = turn.cite_ids[i];
+        recalledCount.set(key, (recalledCount.get(key) ?? 0) + 1);
+      }
+    }
+  }
+  for (const [id, n] of recalledCount.entries()) {
+    if (n > RITUAL_REPEAT_THRESHOLD) {
+      fired.push({ pattern: "G1", detail: `${id} repeated as [recalled] ${n}x in 7d` });
+      break; // one example is enough — operator scans the ledger for the rest
+    }
+  }
+
+  // G2: dismissal abuse — skip_reason ratio on recalled cites.
+  let recalledTotal = 0;
+  let recalledWithSkip = 0;
+  for (const turn of turns) {
+    for (let i = 0; i < turn.cite_ids.length; i += 1) {
+      if (turn.cite_tags[i] !== "recalled") continue;
+      recalledTotal += 1;
+      const commitment = turn.cite_commitments[i];
+      if (commitment && typeof commitment.skip_reason === "string" && commitment.skip_reason.length > 0) {
+        recalledWithSkip += 1;
+      }
+    }
+  }
+  if (recalledTotal >= 5 && recalledWithSkip / recalledTotal > DISMISSAL_ABUSE_RATIO) {
+    fired.push({
+      pattern: "G2",
+      detail: `${recalledWithSkip}/${recalledTotal} recalled cites used skip:<reason> (> ${Math.round(DISMISSAL_ABUSE_RATIO * 100)}%)`,
+    });
+  }
+
+  // G3: chained-from misuse — empty operators + null skip_reason.
+  let chainedFromMisuse = 0;
+  for (const turn of turns) {
+    for (let i = 0; i < turn.cite_ids.length; i += 1) {
+      if (turn.cite_tags[i] !== "chained-from") continue;
+      const commitment = turn.cite_commitments[i];
+      if (!commitment) {
+        chainedFromMisuse += 1;
+        continue;
+      }
+      const hasOps = Array.isArray(commitment.operators) && commitment.operators.length > 0;
+      const hasSkip = typeof commitment.skip_reason === "string" && commitment.skip_reason.length > 0;
+      if (!hasOps && !hasSkip) chainedFromMisuse += 1;
+    }
+  }
+  if (chainedFromMisuse > RITUAL_REPEAT_THRESHOLD) {
+    fired.push({
+      pattern: "G3",
+      detail: `${chainedFromMisuse} chained-from cites with no commitment (operators=[] + skip_reason=null) in 7d`,
+    });
+  }
+
+  // G5: placeholder cite — "none" tags with generic kb_line_raw.
+  // Generic markers: a kb_line_raw that is exactly "KB: none" (no bracketed reason)
+  // OR contains "[unspecified]". The rc.33 cite-policy doc lists these as the
+  // legacy/sentinel forms operators should NOT use long-term.
+  let placeholderCount = 0;
+  for (const turn of turns) {
+    if (turn.cite_tags.length === 0) continue;
+    const allNone = turn.cite_tags.every((t) => t === "none");
+    if (!allNone) continue;
+    const raw = (turn.kb_line_raw ?? "").trim();
+    if (raw === "KB: none" || raw.includes("[unspecified]")) {
+      placeholderCount += 1;
+    }
+  }
+  if (placeholderCount > PLACEHOLDER_COUNT_THRESHOLD) {
+    fired.push({
+      pattern: "G5",
+      detail: `${placeholderCount} placeholder "KB: none" / "[unspecified]" cites in 7d`,
+    });
+  }
+
+  return { status: fired.length === 0 ? "ok" : "warn", fired };
+}
+
 async function inspectKnowledgeTestIndex(projectRoot: string): Promise<KnowledgeTestIndexInspection> {
   const path = join(projectRoot, ".fabric", ".cache", "knowledge-test.index.json");
   const built = await tryBuildRuleMeta(projectRoot);
@@ -3003,6 +3280,97 @@ function createSkillRefMirrorCheck(
       list: inspection.driftedPaths.join(", "),
     }),
     t("doctor.check.skill_ref_mirror.remediation"),
+  );
+}
+
+// v2.0.0-rc.33 W3-6 (P1-13): create the SKILL.md token budget check. Warning
+// at 5K, error at 10K — sized for Anthropic's progressive disclosure target
+// (~3K hot path). The check message lists each over-budget slug with its
+// estimated token count so the operator knows which file to split first.
+function createSkillTokenBudgetCheck(
+  t: Translator,
+  inspection: SkillTokenBudgetInspection,
+): DoctorCheck {
+  if (inspection.status === "ok") {
+    return okCheck(
+      t("doctor.check.skill_token_budget.name"),
+      t("doctor.check.skill_token_budget.ok"),
+    );
+  }
+  const list = inspection.overSize
+    .map((s) => `${s.slug}=${s.tokens} tok (${s.severity})`)
+    .join(", ");
+  const count = inspection.overSize.length;
+  return issueCheck(
+    t("doctor.check.skill_token_budget.name"),
+    inspection.status,
+    inspection.status === "error" ? "manual_error" : "warning",
+    "skill_token_budget_exceeded",
+    t(`doctor.check.skill_token_budget.message.${count === 1 ? "singular" : "plural"}`, {
+      count: String(count),
+      list,
+    }),
+    t("doctor.check.skill_token_budget.remediation"),
+  );
+}
+
+// v2.0.0-rc.33 W3-3 (P1-3): cite-policy Goodhart check. Aggregates fired
+// patterns into a single multi-line message so the operator gets the full
+// audit hit list in one report row. Always warning severity — Goodhart
+// heuristics are advisory, not error-grade.
+function createCiteGoodhartCheck(
+  t: Translator,
+  inspection: CiteGoodhartInspection,
+): DoctorCheck {
+  if (inspection.status === "ok") {
+    return okCheck(
+      t("doctor.check.cite_goodhart.name"),
+      t("doctor.check.cite_goodhart.ok"),
+    );
+  }
+  const list = inspection.fired.map((f) => `${f.pattern}: ${f.detail}`).join("; ");
+  const count = inspection.fired.length;
+  return issueCheck(
+    t("doctor.check.cite_goodhart.name"),
+    "warn",
+    "warning",
+    "cite_goodhart_pattern",
+    t(`doctor.check.cite_goodhart.message.${count === 1 ? "singular" : "plural"}`, {
+      count: String(count),
+      list,
+    }),
+    t("doctor.check.cite_goodhart.remediation"),
+  );
+}
+
+// v2.0.0-rc.33 W3-7 (P1-14): create the SKILL.md description structural lint
+// check. Always `warn` severity (never error) — a bad description hurts
+// auto-invoke recall but doesn't break correctness. The message enumerates
+// each per-slug issue so the operator can fix without re-running inspection.
+function createSkillDescriptionCheck(
+  t: Translator,
+  inspection: SkillDescriptionLintInspection,
+): DoctorCheck {
+  if (inspection.status === "ok") {
+    return okCheck(
+      t("doctor.check.skill_description.name"),
+      t("doctor.check.skill_description.ok"),
+    );
+  }
+  const list = inspection.issues
+    .map((i) => `${i.slug}: ${i.problem} (${i.detail})`)
+    .join("; ");
+  const count = inspection.issues.length;
+  return issueCheck(
+    t("doctor.check.skill_description.name"),
+    "warn",
+    "warning",
+    "skill_description_quality",
+    t(`doctor.check.skill_description.message.${count === 1 ? "singular" : "plural"}`, {
+      count: String(count),
+      list,
+    }),
+    t("doctor.check.skill_description.remediation"),
   );
 }
 
@@ -3809,15 +4177,38 @@ async function buildLastConsumedIndex(
   }
 
   for (const event of events) {
+    const ts = event.ts;
+    if (typeof ts !== "number" || !Number.isFinite(ts)) {
+      continue;
+    }
+
+    // v2.0.0-rc.33 W3-4 (P1-4): include `knowledge_sections_fetched` as a
+    // use-signal alongside knowledge_consumed. The MCP fab_get_knowledge_sections
+    // tool emits `knowledge_sections_fetched` (carrying final_stable_ids[])
+    // for every fetch; the legacy `knowledge_consumed` path is only hit when
+    // the AI actually reaches into the per-id body. An entry that was
+    // section-fetched (loaded into context) but not separately consumed should
+    // NOT be demoted as orphan — the agent saw it. Without this signal,
+    // doctor reports false-positive orphan_demote candidates whenever the
+    // AI's working memory keeps referring to fetched-but-not-deeply-consumed
+    // entries (which is the rc.32 baseline cite-coverage 3.1% reality).
+    if (event.event_type === "knowledge_sections_fetched") {
+      const ids = Array.isArray(event.final_stable_ids) ? event.final_stable_ids : [];
+      for (const stableId of ids) {
+        if (typeof stableId !== "string" || stableId.length === 0) continue;
+        const prev = map.get(stableId);
+        if (prev === undefined || ts > prev) {
+          map.set(stableId, ts);
+        }
+      }
+      continue;
+    }
+
     if (
       event.event_type !== "knowledge_consumed" &&
       event.event_type !== "knowledge_demoted" &&
       event.event_type !== "knowledge_archived"
     ) {
-      continue;
-    }
-    const ts = event.ts;
-    if (typeof ts !== "number" || !Number.isFinite(ts)) {
       continue;
     }
     const stableId = event.stable_id;

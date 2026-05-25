@@ -299,8 +299,9 @@ export const enMessages: Messages = {
     "{count} baseline knowledge file uses the deprecated bare-slug filename format and must be migrated to `${id}--${slug}.md`. First: {detail}.",
   "doctor.check.baseline_filename_format.message.plural":
     "{count} baseline knowledge files use the deprecated bare-slug filename format and must be migrated to `${id}--${slug}.md`. First: {detail}.",
+  // v2.0.0-rc.33 W3-2 (T6 #5): reference the file names from the message so users can copy-paste rm targets rather than grep for them.
   "doctor.check.baseline_filename_format.remediation":
-    "Delete the legacy bare-slug baseline file(s) manually — the baseline pipeline was removed in rc.23 and is no longer an auto-fix path.",
+    "Manually rm the bare-slug baseline file(s) listed in the message (e.g. `rm <file from message>`). The baseline pipeline was removed in rc.23 and is no longer an auto-fix path.",
   "doctor.check.knowledge_dir_missing.name": "Knowledge layout",
   "doctor.check.knowledge_dir_missing.message.singular":
     "{count} required knowledge subdir is missing: {list}.",
@@ -341,8 +342,9 @@ export const enMessages: Messages = {
     "{count} content_ref entry is outside .fabric/knowledge.",
   "doctor.check.rule_content_refs.message.outside.plural":
     "{count} content_ref entries are outside .fabric/knowledge.",
+  // v2.0.0-rc.33 W3-2 (T6 #12): project rules forbid hand-editing agents.meta.json (see .fabric/AGENTS.md). Direct users through doctor --fix reconcile path instead.
   "doctor.check.rule_content_refs.remediation.outside":
-    "Edit agents.meta.json to ensure all content_ref values point inside .fabric/knowledge/{type}/ (team) or ~/.fabric/knowledge/{type}/ (personal).",
+    "Run `fab doctor --fix` to let reconcile auto-prune external content_refs (rc.31+ compatible). Do NOT hand-edit agents.meta.json — the engine reconciles automatically.",
   "doctor.check.rule_content_refs.message.missing.singular":
     "{count} content_ref target is missing. Run `fab doctor --fix` to reconcile.",
   "doctor.check.rule_content_refs.message.missing.plural":
@@ -377,8 +379,9 @@ export const enMessages: Messages = {
   "doctor.check.event_ledger.remediation.not_writable":
     "Check file permissions on .fabric/events.jsonl and ensure no other process holds a write lock.",
   "doctor.check.event_ledger.message.invalid-default": ".fabric/events.jsonl is invalid.",
+  // v2.0.0-rc.33 W3-1 (P0-6): archive-history mode — direct users to mv the broken ledger into events.archive/ before recreating, preserving history rather than rm'ing it. Mirrors rotateEventLedgerIfNeeded's events-rotated-YYYY-MM-DD.jsonl naming convention (events-corrupted-YYYY-MM-DD.jsonl distinguishes this archive cause from sliding-window rotation).
   "doctor.check.event_ledger.remediation.invalid":
-    "Delete .fabric/events.jsonl and run `fab doctor --fix` to recreate it.",
+    "Archive history first (`mkdir -p .fabric/events.archive && mv .fabric/events.jsonl .fabric/events.archive/events-corrupted-$(date +%Y-%m-%d).jsonl`), then run `fab doctor --fix` to create a new empty ledger. Historical events are preserved under events.archive/.",
   "doctor.check.event_ledger.ok":
     ".fabric/events.jsonl exists, is writable, and is parseable.",
   "doctor.check.mcp_config_in_wrong_file.name": "Claude MCP config location",
@@ -407,8 +410,9 @@ export const enMessages: Messages = {
     "events.jsonl has {count} row(s) with unsupported `schema_version` (samples: {samples}).",
   "doctor.check.event_ledger_schema_compat.message.event_type":
     "events.jsonl has {count} row(s) with unknown `event_type` (samples: {samples}).",
+  // v2.0.0-rc.33 W3-1 (P0-6): archive-history mode — same as event_ledger.invalid above. Explicit "archive" wording (rather than "back up") makes it clear the old ledger is preserved under events.archive/, not discarded.
   "doctor.check.event_ledger_schema_compat.remediation":
-    "Either upgrade the fab CLI to a server-compatible version, or archive `.fabric/events.jsonl` and run `fab doctor --fix` to recreate a fresh ledger.",
+    "Preferred: upgrade the fab CLI to a server-compatible version. Otherwise archive history first (`mkdir -p .fabric/events.archive && mv .fabric/events.jsonl .fabric/events.archive/events-schema-mismatch-$(date +%Y-%m-%d).jsonl`), then run `fab doctor --fix` to create a new empty ledger. Historical events stay under events.archive/ for later manual migration.",
   // v2.0.0-rc.28 TASK-04 (audit §3.1): SKILL ref/ mirror parity check.
   "doctor.check.skill_ref_mirror.name": "Skill ref mirror parity",
   "doctor.check.skill_ref_mirror.ok":
@@ -417,6 +421,36 @@ export const enMessages: Messages = {
     "{count} skill ref file(s) differ between `.claude/skills/` and `.codex/skills/` (paths: {list}). One client was hand-edited or partially installed.",
   "doctor.check.skill_ref_mirror.remediation":
     "Run `fab install` to rewrite both client subtrees from the canonical templates and restore parity.",
+  // v2.0.0-rc.33 W3-6 (P1-13): SKILL.md token budget lint. warn > 5K / error > 10K tokens (chars/3 estimate). Anthropic recommends SKILL.md hot path stay ~3K; over 5K hurts progressive disclosure; over 10K is blocking (wasted model context + load latency).
+  "doctor.check.skill_token_budget.name": "Skill token budget",
+  "doctor.check.skill_token_budget.ok":
+    "All .claude/skills/<slug>/SKILL.md files are within token budget (warn 5K / error 10K).",
+  "doctor.check.skill_token_budget.message.singular":
+    "{count} SKILL.md exceeds the token budget: {list}. Sink detail into ref/ for progressive disclosure.",
+  "doctor.check.skill_token_budget.message.plural":
+    "{count} SKILL.md files exceed the token budget: {list}. Sink detail into ref/ for progressive disclosure.",
+  "doctor.check.skill_token_budget.remediation":
+    "Move detailed phase / worked-examples / decision tables out of the SKILL.md hot path into `templates/skills/<slug>/ref/*.md`. Keep SKILL.md focused on trigger-gate + key-phase summaries; see W1 progressive disclosure split. Re-run `fab install` to sync both client subtrees.",
+  // v2.0.0-rc.33 W3-7 (P1-14): SKILL.md description structural lint. Proxy for trigger-recall (a live-LLM recall test requires a model — W1 ran gemini for that). This lint catches regression: missing description / >60 tokens / no Chinese trigger / no English trigger.
+  "doctor.check.skill_description.name": "Skill description quality",
+  "doctor.check.skill_description.ok":
+    "All SKILL.md description fields are well-structured (non-empty, <60 tokens, bilingual triggers).",
+  "doctor.check.skill_description.message.singular":
+    "{count} SKILL.md description structural issue: {list}. The description field is the host's primary auto-invoke matching signal.",
+  "doctor.check.skill_description.message.plural":
+    "{count} SKILL.md description structural issues: {list}. The description field is the host's primary auto-invoke matching signal.",
+  "doctor.check.skill_description.remediation":
+    "Edit the `description:` field in `packages/cli/templates/skills/<slug>/SKILL.md` frontmatter: (1) non-empty; (2) <60 tokens (chars/3 estimate, ~180 chars); (3) at least one Chinese trigger phrase; (4) at least one English trigger phrase. See W1 description rewrite style. Re-run `fab install` to sync both client subtrees. For recall verification, run the W1 gemini delegate (see .workflow/.scratchpad/rc33-plan/W1-VERIFY-RESULT.md).",
+  // v2.0.0-rc.33 W3-3 (P1-3): cite-policy Goodhart pattern detection. Scans 7d of assistant_turn_observed events for 4 anti-patterns (G1 ritual / G2 dismissal abuse / G3 chained-from misuse / G5 placeholder cite). Warning severity — heuristics can false-positive; advisory only.
+  "doctor.check.cite_goodhart.name": "Cite-policy Goodhart",
+  "doctor.check.cite_goodhart.ok":
+    "No cite-policy Goodhart patterns detected over the last 7 days.",
+  "doctor.check.cite_goodhart.message.singular":
+    "Detected {count} cite-policy Goodhart pattern: {list}.",
+  "doctor.check.cite_goodhart.message.plural":
+    "Detected {count} cite-policy Goodhart patterns: {list}.",
+  "doctor.check.cite_goodhart.remediation":
+    "Review the fired patterns: G1 ritual → the same id repeated as [recalled] suggests the KB should land into a contract instead; G2 dismissal abuse → > 60% of recalled cites used skip: bypasses contract enforcement, audit skip-reason validity; G3 chained-from misuse → chained-from tag with no commitment (operators=[] + skip_reason=null), add operators or use a different tag; G5 placeholder cite → too many bare 'KB: none' / [unspecified], prefer specific sentinels like [no-relevant] / [not-applicable]. For raw data, run `fab doctor --cite-coverage --since=7d`.",
   "doctor.check.meta_manually_diverged.name": "Meta manual divergence",
   "doctor.check.meta_manually_diverged.ok.unreadable":
     "agents.meta.json not readable; skipping divergence check.",
@@ -448,8 +482,9 @@ export const enMessages: Messages = {
     "stable_id \"{stableId}\" is declared in {fileCount} files: {files}. Edit one of the knowledge files to use a unique stable_id.",
   "doctor.check.stable_id_collision.message.plural":
     "{count} stable_id collisions detected. First: \"{stableId}\" in {files}. Edit one of the knowledge files to use a unique stable_id.",
+  // v2.0.0-rc.33 W3-2 (T6 #27): route through fabric-review modify so the canonical id allocator picks a fresh id (avoids hand-counter math).
   "doctor.check.stable_id_collision.remediation":
-    "Edit one of the colliding knowledge files to declare a different `id: K[PT]-XXX-NNNN` frontmatter value.",
+    "Run `/fabric-review modify <one of the colliding ids from the message>` to let the canonical id allocator reassign it (updates frontmatter + counters + historical cross-refs atomically). Do NOT hand-edit id frontmatter — it will desync counters.",
   "doctor.check.stable_id_collision.ok":
     "No declared stable_id collisions found in .fabric/knowledge/.",
   "doctor.check.counter_desync.name": "Knowledge counter desync",
@@ -510,8 +545,9 @@ export const enMessages: Messages = {
     "{count} stable_id duplicated across canonical knowledge files (path-decoupled identity invariant). First: {detail}.",
   "doctor.check.stable_id_duplicate.message.plural":
     "{count} stable_ids duplicated across canonical knowledge files (path-decoupled identity invariant). First: {detail}.",
+  // v2.0.0-rc.33 W3-2 (T6 #34): same as stable_id_collision — route through fabric-review modify so allocator handles the new id.
   "doctor.check.stable_id_duplicate.remediation":
-    "Manually rename one of the colliding files to a fresh `<prefix>-<type>-<counter>--<slug>.md` allocated via the canonical id allocator; do not edit by hand.",
+    "Run `/fabric-review modify <one of the duplicate ids from the message>` to let the canonical id allocator assign a fresh `<prefix>-<type>-<counter>--<slug>.md` (renames the file + updates frontmatter + corrects counters in one shot).",
   "doctor.check.layer_mismatch.name": "Knowledge layer mismatch",
   "doctor.check.layer_mismatch.ok":
     "All canonical knowledge files are physically located under the layer their stable_id prefix declares.",
@@ -519,8 +555,9 @@ export const enMessages: Messages = {
     "{count} canonical knowledge file are physically misaligned with their stable_id layer prefix (KT-* must live under team/, KP-* under personal/). First: {detail}.",
   "doctor.check.layer_mismatch.message.plural":
     "{count} canonical knowledge files are physically misaligned with their stable_id layer prefix (KT-* must live under team/, KP-* under personal/). First: {detail}.",
+  // v2.0.0-rc.33 W3-2 (T6 #35): make the skill entry point explicit so users know how to invoke fabric-review.
   "doctor.check.layer_mismatch.remediation":
-    "Move the file to the correct layer root, or use the fabric-review modify flow to flip its layer (which renames the stable_id prefix accordingly).",
+    "Move the file to the correct layer root (KT-* → .fabric/knowledge/team/, KP-* → ~/.fabric/knowledge/personal/), or run `/fabric-review modify <id from the message>` to flip its layer (which renames the stable_id prefix accordingly).",
   "doctor.check.index_drift.name": "Knowledge index drift",
   "doctor.check.index_drift.ok":
     "agents.meta.json counters envelope is at or above the highest existing canonical counter for every (layer, type) pair.",

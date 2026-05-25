@@ -164,6 +164,12 @@ describe("runDoctorReport", () => {
       "Event ledger partial write",
       "Event ledger schema compat",
       "Skill ref mirror parity",
+      // v2.0.0-rc.33 W3-6 / W3-7 / W3-3: SKILL.md token budget + description
+      // structural lint + cite-policy Goodhart detection. All three are
+      // observability checks (no mutation), inserted adjacent to skill_ref_mirror.
+      "Skill token budget",
+      "Skill description quality",
+      "Cite-policy Goodhart",
       "Claude MCP config location",
       "Meta manual divergence",
       "Knowledge dir unindexed",
@@ -201,7 +207,7 @@ describe("runDoctorReport", () => {
       "Promote ledger invariant",
       "Preexisting root markdown",
     ]);
-    expect(report.checks).toHaveLength(39);
+    expect(report.checks).toHaveLength(42);
   });
 
   it("v2.0: clean post-init repo (mocked layout) reports zero errors AND zero warnings", async () => {
@@ -1746,11 +1752,16 @@ describe("runDoctorReport", () => {
       expect(report.warnings.map((w) => w.code)).not.toContain("knowledge_orphan_demote_required");
     });
 
-    // v2.0 rc.5 TASK-014 (C5): confirm a knowledge_sections_fetched (the
-    // legacy activity signal) alone is NO LONGER enough to keep an old entry
-    // off the orphan_demote list — only knowledge_consumed counts now.
-    it("orphan_demote: knowledge_sections_fetched alone does NOT suppress orphan (post-C5 pivot)", async () => {
-      const target = createInitializedProject("doctor-rc5-orphan-fetched-only");
+    // v2.0.0-rc.33 W3-4 (P1-4): reverses the rc.5 C5 decision — a recent
+    // knowledge_sections_fetched event now DOES suppress orphan_demote. The
+    // rc.5 C5 rationale ("only knowledge_consumed counts") proved too tight
+    // for the rc.32 baseline cite-coverage 3.1% reality, where the AI sees
+    // entries via fab_get_knowledge_sections (which emits
+    // knowledge_sections_fetched) without separately hitting the
+    // knowledge_consumed code path. Treating the fetch as a use-signal stops
+    // doctor from false-positive flagging entries the agent actually read.
+    it("orphan_demote: knowledge_sections_fetched alone DOES suppress orphan (W3-4 reverses rc.5 C5)", async () => {
+      const target = createInitializedProject("doctor-rc33-w3-4-orphan-fetched-suppresses");
       await writeKnowledgeMeta(target, { source: "doctor_fix" });
       writeFile(".fabric/events.jsonl", "", target);
 
@@ -1761,10 +1772,11 @@ describe("runDoctorReport", () => {
         "stable",
         200,
       );
-      // Only a legacy fetched event, no knowledge_consumed.
+      // Only a knowledge_sections_fetched event — no knowledge_consumed. Per
+      // W3-4 this counts as a use-signal and keeps the entry off the demote list.
       appendRawEvent(target, {
         kind: "fabric-event",
-        id: "event:rc5-fetched-only",
+        id: "event:rc33-fetched-only",
         ts: NOW_MS - 5 * dayMs,
         schema_version: 1,
         event_type: "knowledge_sections_fetched",
@@ -1776,9 +1788,9 @@ describe("runDoctorReport", () => {
 
       const report = await runDoctorReport(target);
       const check = report.checks.find((c) => c.name === "Knowledge orphan demote");
-      expect(check?.kind).toBe("warning");
-      expect(check?.code).toBe("knowledge_orphan_demote_required");
-      expect(report.warnings.map((w) => w.code)).toContain("knowledge_orphan_demote_required");
+      // Under W3-4 the fetch IS a use-signal — the 200d-old entry is no longer flagged.
+      expect(check?.status).toBe("ok");
+      expect(report.warnings.map((w) => w.code)).not.toContain("knowledge_orphan_demote_required");
     });
 
     it("orphan_demote: ok status when no canonical entries exist", async () => {

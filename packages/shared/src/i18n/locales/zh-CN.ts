@@ -289,8 +289,9 @@ export const zhCNMessages: Messages = {
     "{count} 个 baseline knowledge 文件仍使用已废弃的 bare-slug 文件名格式，必须迁移为 `${id}--${slug}.md`。首个：{detail}。",
   "doctor.check.baseline_filename_format.message.plural":
     "{count} 个 baseline knowledge 文件仍使用已废弃的 bare-slug 文件名格式，必须迁移为 `${id}--${slug}.md`。首个：{detail}。",
+  // v2.0.0-rc.33 W3-2 (T6 #5): 文案显式引用 message 内已列出的 detail (file 名), 让用户直接 rm 而非自己去 grep 找。baseline pipeline 已 rc.23 移除, 没有 auto-fix。
   "doctor.check.baseline_filename_format.remediation":
-    "手动删除旧 bare-slug baseline file(s)；baseline pipeline 已在 rc.23 移除，不再提供 auto-fix 路径。",
+    "手动删除上面 message 中列出的 bare-slug baseline file(s) (例如 `rm <message 列出的 file>`);baseline pipeline 已在 rc.23 移除, 不再提供 auto-fix 路径。",
   "doctor.check.knowledge_dir_missing.name": "Knowledge layout",
   "doctor.check.knowledge_dir_missing.message.singular":
     "{count} 个必需 knowledge subdir 缺失：{list}。",
@@ -331,8 +332,9 @@ export const zhCNMessages: Messages = {
     "{count} 个 content_ref entry 位于 .fabric/knowledge 外部。",
   "doctor.check.rule_content_refs.message.outside.plural":
     "{count} 个 content_ref entries 位于 .fabric/knowledge 外部。",
+  // v2.0.0-rc.33 W3-2 (T6 #12): 项目规则禁止手动编辑 agents.meta.json (见 .fabric/AGENTS.md); 改引导用户跑 doctor --fix 走 reconcile 路径 (rc.31+ 兼容自动剔除外部 refs)。
   "doctor.check.rule_content_refs.remediation.outside":
-    "编辑 agents.meta.json，确保所有 content_ref 值都指向 .fabric/knowledge/{type}/（team）或 ~/.fabric/knowledge/{type}/（personal）内部。",
+    "运行 `fab doctor --fix` 让 reconcile 自动剔除外部 content_ref (rc.31+ 兼容)。严禁手动编辑 agents.meta.json — engine 会自动 reconcile。",
   "doctor.check.rule_content_refs.message.missing.singular":
     "{count} 个 content_ref target 缺失。运行 `fab doctor --fix` 执行 reconcile。",
   "doctor.check.rule_content_refs.message.missing.plural":
@@ -367,8 +369,9 @@ export const zhCNMessages: Messages = {
   "doctor.check.event_ledger.remediation.not_writable":
     "检查 .fabric/events.jsonl 的文件权限，并确认没有其他进程持有写锁。",
   "doctor.check.event_ledger.message.invalid-default": ".fabric/events.jsonl 无效。",
+  // v2.0.0-rc.33 W3-1 (P0-6): archive-history 模式 — 引导用户先 mv 备份到 events.archive/ 保留历史, 再跑 --fix 重建空 ledger。与 rotateEventLedgerIfNeeded 的命名约定一致 (events-rotated-YYYY-MM-DD.jsonl 是滑窗 rotation; events-corrupted-YYYY-MM-DD.jsonl 是 invalid-fix 归档)。
   "doctor.check.event_ledger.remediation.invalid":
-    "删除 .fabric/events.jsonl 并运行 `fab doctor --fix` 重新创建。",
+    "先归档历史 (`mkdir -p .fabric/events.archive && mv .fabric/events.jsonl .fabric/events.archive/events-corrupted-$(date +%Y-%m-%d).jsonl`), 再运行 `fab doctor --fix` 创建新空 ledger。历史事件保留在 events.archive/ 不丢。",
   "doctor.check.event_ledger.ok":
     ".fabric/events.jsonl 已存在，可写，且可解析。",
   "doctor.check.mcp_config_in_wrong_file.name": "Claude MCP config 位置",
@@ -397,8 +400,9 @@ export const zhCNMessages: Messages = {
     "events.jsonl 含 {count} 行 `schema_version` 不被当前 CLI 识别（样本: {samples}）。",
   "doctor.check.event_ledger_schema_compat.message.event_type":
     "events.jsonl 含 {count} 行 `event_type` 不在当前 schema 中（样本: {samples}）。",
+  // v2.0.0-rc.33 W3-1 (P0-6): archive-history 模式 — 同 event_ledger.invalid, 文案显式说"归档备份"而非"备份后重建",避免用户误以为旧 ledger 被丢弃。
   "doctor.check.event_ledger_schema_compat.remediation":
-    "升级 fab CLI 到与 server 兼容的版本，或备份 `.fabric/events.jsonl` 后跑 `fab doctor --fix` 重建空 ledger。",
+    "升级 fab CLI 到与 server 兼容的版本 (首选);或先归档历史 (`mkdir -p .fabric/events.archive && mv .fabric/events.jsonl .fabric/events.archive/events-schema-mismatch-$(date +%Y-%m-%d).jsonl`),再跑 `fab doctor --fix` 创建新空 ledger。历史事件保留在 events.archive/ 不丢,可后续手动迁移。",
   // v2.0.0-rc.28 TASK-04 (audit §3.1): SKILL ref/ 镜像一致性检查。
   "doctor.check.skill_ref_mirror.name": "Skill ref 镜像一致性",
   "doctor.check.skill_ref_mirror.ok":
@@ -407,6 +411,36 @@ export const zhCNMessages: Messages = {
     "有 {count} 个 ref 文件在 `.claude/skills/` 与 `.codex/skills/` 之间不一致（路径: {list}）。可能某端被手动编辑或 install 写入失败。",
   "doctor.check.skill_ref_mirror.remediation":
     "跑 `fab install` 从 canonical templates 重写两端 ref 子树以恢复一致。",
+  // v2.0.0-rc.33 W3-6 (P1-13): SKILL.md token budget lint。warn > 5K / error > 10K token (chars/3 估算)。基于 Anthropic 推荐 SKILL.md 热路径 ~3K, 超过 5K 已影响 progressive disclosure;超过 10K 是阻断级 (model context 浪费 + 加载延迟)。
+  "doctor.check.skill_token_budget.name": "Skill token budget",
+  "doctor.check.skill_token_budget.ok":
+    "所有 .claude/skills/<slug>/SKILL.md 在 token budget 内 (warn 5K / error 10K)。",
+  "doctor.check.skill_token_budget.message.singular":
+    "{count} 个 SKILL.md 超出 token budget: {list}。建议把详细内容下沉到 ref/ progressive disclosure。",
+  "doctor.check.skill_token_budget.message.plural":
+    "{count} 个 SKILL.md 超出 token budget: {list}。建议把详细内容下沉到 ref/ progressive disclosure。",
+  "doctor.check.skill_token_budget.remediation":
+    "将超标 SKILL.md 中的详细 phase / worked-examples / decision 表移到 `templates/skills/<slug>/ref/*.md`,SKILL.md 热路径只留 trigger gate + 关键 phase 概要;参考 W1 progressive disclosure 拆分模式。重新跑 `fab install` 同步两端。",
+  // v2.0.0-rc.33 W3-7 (P1-14): SKILL.md description 结构 lint。代理 trigger-recall (真 LLM 测要 live model, W1 已用 gemini 跑过);本 lint 抓回归: description 缺失 / 超 60 token / 缺中文 trigger / 缺英文 trigger。
+  "doctor.check.skill_description.name": "Skill description quality",
+  "doctor.check.skill_description.ok":
+    "所有 SKILL.md description 字段结构良好 (非空 / <60 token / 中英双语 trigger)。",
+  "doctor.check.skill_description.message.singular":
+    "{count} 个 SKILL.md description 结构问题: {list}。description 是 host 端 auto-invoke 的主要匹配信号。",
+  "doctor.check.skill_description.message.plural":
+    "{count} 个 SKILL.md description 结构问题: {list}。description 是 host 端 auto-invoke 的主要匹配信号。",
+  "doctor.check.skill_description.remediation":
+    "编辑 `packages/cli/templates/skills/<slug>/SKILL.md` frontmatter `description:` 字段: (1) 非空; (2) <60 token (chars/3 估算, 约 180 字符); (3) 至少 1 个中文 trigger 短语; (4) 至少 1 个英文 trigger 短语。参考 W1 description rewrite 风格。重新跑 `fab install` 同步两端。如需验证 recall, 跑 W1 的 gemini delegate (见 .workflow/.scratchpad/rc33-plan/W1-VERIFY-RESULT.md)。",
+  // v2.0.0-rc.33 W3-3 (P1-3): cite-policy Goodhart 模式检测。扫 7d 内 assistant_turn_observed 事件, 4 个 anti-pattern (G1 仪式化 / G2 抄底引用 / G3 chained-from 滥用 / G5 placeholder cite)。warning 级 (启发式有 false-positive, 不阻断)。
+  "doctor.check.cite_goodhart.name": "Cite-policy Goodhart",
+  "doctor.check.cite_goodhart.ok":
+    "过去 7d 未检测到 cite-policy Goodhart 反模式。",
+  "doctor.check.cite_goodhart.message.singular":
+    "检测到 {count} 个 cite-policy Goodhart 模式: {list}。",
+  "doctor.check.cite_goodhart.message.plural":
+    "检测到 {count} 个 cite-policy Goodhart 模式: {list}。",
+  "doctor.check.cite_goodhart.remediation":
+    "审阅触发的 pattern: G1 仪式化 → 同一 [recalled] cite 重复用,该把 KB 真正落到 contract; G2 抄底引用 → > 60% recalled 用 skip: 是绕过 contract, review skip reason 真实性; G3 chained-from 滥用 → chained-from 标了但没 commitment, 要补 operators 或改用其他 tag; G5 placeholder cite → 'KB: none' / [unspecified] 太多, 该用具体 sentinel 如 [no-relevant] / [not-applicable]。详细数据跑 `fab doctor --cite-coverage --since=7d`。",
   "doctor.check.meta_manually_diverged.name": "Meta manual divergence",
   "doctor.check.meta_manually_diverged.ok.unreadable":
     "agents.meta.json 不可读，跳过 divergence 检查。",
@@ -438,8 +472,9 @@ export const zhCNMessages: Messages = {
     "stable_id \"{stableId}\" 被声明在 {fileCount} 个文件中：{files}。请编辑其中一个 knowledge file，改用唯一 stable_id。",
   "doctor.check.stable_id_collision.message.plural":
     "检测到 {count} 个 stable_id collisions。首个：\"{stableId}\" 位于 {files}。请编辑其中一个 knowledge file，改用唯一 stable_id。",
+  // v2.0.0-rc.33 W3-2 (T6 #27): 走 fabric-review modify 流程让 canonical id allocator 重新分配, 而非让用户自己选 id (易撞 counter, 难手算)。
   "doctor.check.stable_id_collision.remediation":
-    "编辑其中一个 colliding knowledge file，改用不同的 `id: K[PT]-XXX-NNNN` frontmatter 值。",
+    "调 `/fabric-review modify <message 中列出的 colliding id 之一>`, 让 canonical id allocator 自动重分配 id (会同步更新 frontmatter + counters + 历史 cross-ref)。严禁手工编辑 id frontmatter — 会撞 counter。",
   "doctor.check.stable_id_collision.ok":
     ".fabric/knowledge/ 中未发现已声明的 stable_id collisions。",
   "doctor.check.counter_desync.name": "Knowledge counter desync",
@@ -500,8 +535,9 @@ export const zhCNMessages: Messages = {
     "{count} 个 stable_id 在 canonical knowledge files 中重复（path-decoupled identity invariant）。首个：{detail}。",
   "doctor.check.stable_id_duplicate.message.plural":
     "{count} 个 stable_ids 在 canonical knowledge files 中重复（path-decoupled identity invariant）。首个：{detail}。",
+  // v2.0.0-rc.33 W3-2 (T6 #34): 同 stable_id_collision — 走 fabric-review modify 让 allocator 分配新 id, 不让用户手算。
   "doctor.check.stable_id_duplicate.remediation":
-    "手动将其中一个 colliding file 重命名为通过 canonical id allocator 分配的新 `<prefix>-<type>-<counter>--<slug>.md`；不要手工编辑。",
+    "调 `/fabric-review modify <message 中列出的 duplicate id 之一>`, 由 canonical id allocator 分配新的 `<prefix>-<type>-<counter>--<slug>.md` (会同步重命名文件 + 更新 frontmatter + 修正 counters)。",
   "doctor.check.layer_mismatch.name": "Knowledge layer mismatch",
   "doctor.check.layer_mismatch.ok":
     "所有 canonical knowledge files 都位于 stable_id prefix 声明的 layer 下。",
@@ -509,8 +545,9 @@ export const zhCNMessages: Messages = {
     "{count} 个 canonical knowledge file 与其 stable_id layer prefix 的物理位置不一致（KT-* must live under team/, KP-* under personal/）。首个：{detail}。",
   "doctor.check.layer_mismatch.message.plural":
     "{count} 个 canonical knowledge files 与其 stable_id layer prefix 的物理位置不一致（KT-* must live under team/, KP-* under personal/）。首个：{detail}。",
+  // v2.0.0-rc.33 W3-2 (T6 #35): 加 skill 入口 (`/fabric-review modify <id>`) 让用户知道怎么 invoke。
   "doctor.check.layer_mismatch.remediation":
-    "将文件移动到正确的 layer root，或通过 fabric-review modify 流程切换其 layer（会相应重命名 stable_id prefix）。",
+    "将文件移动到正确的 layer root (KT-* → .fabric/knowledge/team/, KP-* → ~/.fabric/knowledge/personal/), 或调 `/fabric-review modify <message 中列出的 id>` 切换其 layer (会相应重命名 stable_id prefix)。",
   "doctor.check.index_drift.name": "Knowledge index drift",
   "doctor.check.index_drift.ok":
     "agents.meta.json counters envelope 对每个 (layer, type) pair 都大于或等于现有 canonical counter 最大值。",
