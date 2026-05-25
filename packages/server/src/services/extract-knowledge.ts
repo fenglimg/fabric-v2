@@ -353,6 +353,16 @@ function renderFreshEntry(args: FreshEntryArgs): string {
     `created_at: ${createdAt}`,
     `source_sessions: [${args.sourceSessions.map((s) => JSON.stringify(s)).join(", ")}]`,
     `proposed_reason: ${args.proposedReason}`,
+    // rc.31 BUG-2.9/2.1: persist the caller-supplied summary in frontmatter so
+    // knowledge-meta-builder.extractDescriptionFromFrontmatter picks it up
+    // directly. Without this, the meta-builder fell back to extractRule
+    // Description's h1-or-stable-id-or-placeholder synthesis (line ~944),
+    // which made user-visible description.summary == stable_id for any
+    // pending file whose body started with h2-only sections (`## Summary` is
+    // the canonical pending shape). The frontmatter `summary:` line is the
+    // canonical source-of-truth: `extractDescriptionFromFrontmatter` reads it
+    // before extractRuleDescription's fallback kicks in.
+    `summary: ${quoteRelevancePath(args.summary)}`,
     "tags: []",
   ];
   if (args.relevanceScope !== undefined) {

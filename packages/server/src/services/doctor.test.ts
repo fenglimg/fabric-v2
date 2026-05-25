@@ -191,9 +191,17 @@ describe("runDoctorReport", () => {
       // rc.23 TASK-014 (F8c): Onboard coverage advisory — info kind. Sits
       // adjacent to Skill markdown YAML (both are Skill-adjacent advisories).
       "Onboard coverage",
+      // rc.31 BUG-M3/NEW-4: hooks_wired observability (Claude Code hook
+      // injection state). Adjacent to onboard / promote-ledger — all three
+      // are install/runtime-state advisories. Warning kind when missing.
+      "Claude Code hooks wired",
+      // rc.31 BUG-G2/G5: promote-ledger invariant (proposed >= started >=
+      // promoted). Adjacent to hooks_wired — both are observability checks
+      // built off events.jsonl + project state.
+      "Promote ledger invariant",
       "Preexisting root markdown",
     ]);
-    expect(report.checks).toHaveLength(37);
+    expect(report.checks).toHaveLength(39);
   });
 
   it("v2.0: clean post-init repo (mocked layout) reports zero errors AND zero warnings", async () => {
@@ -3913,7 +3921,7 @@ describe("runDoctorReport", () => {
       expect(check?.message).toContain("missing-both.md");
       expect(check?.message).toMatch(/relevance_scope/);
       expect(check?.message).toMatch(/relevance_paths/);
-      expect(check?.actionHint).toMatch(/--apply-lint/);
+      expect(check?.actionHint).toMatch(/--fix-knowledge/);
       expect(report.infos.map((i) => i.code)).toContain(
         "knowledge_relevance_fields_missing",
       );

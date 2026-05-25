@@ -606,6 +606,9 @@ function invokePlanContextHint(cwd, paths) {
   if (!Array.isArray(paths) || paths.length === 0) return null;
   const pathsArg = paths.join(",");
   const candidates = ["fabric", "fab"];
+  // rc.31 NEW-6: see knowledge-hint-broad.cjs for rationale — surface plan-
+  // context-hint failures on stderr so degraded KB chain is observable.
+  let lastFailure = null;
   for (const bin of candidates) {
     let res;
     try {
@@ -618,15 +621,32 @@ function invokePlanContextHint(cwd, paths) {
     } catch {
       continue;
     }
-    if (res.error || res.status === null || res.status !== 0) continue;
+    if (res.error) {
+      if (res.error.code !== "ENOENT") {
+        lastFailure = { bin, reason: String(res.error.message || res.error.code || res.error) };
+      }
+      continue;
+    }
+    if (res.status === null || res.status !== 0) {
+      const stderrSnip = (res.stderr || "").trim().slice(0, 240);
+      if (stderrSnip.length > 0) {
+        lastFailure = { bin, reason: stderrSnip };
+      }
+      continue;
+    }
     const raw = (res.stdout || "").trim();
     if (raw.length === 0) continue;
     try {
       const parsed = JSON.parse(raw);
       if (parsed && typeof parsed === "object") return parsed;
-    } catch {
-      // malformed JSON — try next bin
+    } catch (err) {
+      lastFailure = { bin, reason: `malformed JSON from plan-context-hint: ${String(err && err.message || err)}` };
     }
+  }
+  if (lastFailure !== null) {
+    process.stderr.write(
+      `[fabric-hint] plan-context-hint (${lastFailure.bin}) failed: ${lastFailure.reason.replace(/\n/g, " ")}\n`,
+    );
   }
   return null;
 }

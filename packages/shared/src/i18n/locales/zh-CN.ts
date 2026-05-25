@@ -315,7 +315,7 @@ export const zhCNMessages: Messages = {
     "运行 `fab doctor --fix` 从 .fabric/knowledge/ 重建 agents.meta.json。",
   "doctor.check.agents_meta.message.invalid-default": ".fabric/agents.meta.json 无效。",
   "doctor.check.agents_meta.remediation.invalid":
-    "删除 .fabric/agents.meta.json 并运行 `fab doctor --fix` 重新生成。",
+    "运行 `fab doctor --fix` 让 reconcile 从 .fabric/knowledge/ 磁盘 ground-truth 重建 agents.meta.json（rc.31 起兼容历史 schema 的 singular knowledge_type 自动迁移到 plural；不要手动删除 agents.meta.json，会丢 counters envelope 与 promote ledger 关联）。",
   "doctor.check.agents_meta.message.stale":
     ".fabric/agents.meta.json revision {revision} 与 .fabric/knowledge 派生 revision {computedRevision} 不一致。",
   "doctor.check.agents_meta.remediation.stale":
@@ -474,7 +474,7 @@ export const zhCNMessages: Messages = {
   "doctor.check.orphan_demote.message.plural":
     "{count} 个 canonical knowledge entries 超过按 maturity 设定的 inactivity threshold（stable={stableDays}d / endorsed={endorsedDays}d / draft={draftDays}d）。首个：{detail}。",
   "doctor.check.orphan_demote.remediation":
-    "运行 `fab doctor --apply-lint`（rc.4 TASK-003）将 orphan entries 降级一个 maturity tier。",
+    "运行 `fab doctor --fix-knowledge`（rc.4 TASK-003）将 orphan entries 降级一个 maturity tier。",
   "doctor.check.stale_archive.name": "Knowledge stale archive",
   "doctor.check.stale_archive.ok":
     "没有 draft knowledge entries 超过额外的 stale-archive quiet window。",
@@ -483,7 +483,7 @@ export const zhCNMessages: Messages = {
   "doctor.check.stale_archive.message.plural":
     "{count} 个 draft knowledge entries 已超过 demote+{additionalDays}d 额外 quiet window。首个：{detail}。",
   "doctor.check.stale_archive.remediation":
-    "运行 `fab doctor --apply-lint`（rc.4 TASK-003）将 stale entries 移动到 `.fabric/.archive/<type>/`。",
+    "运行 `fab doctor --fix-knowledge`（rc.4 TASK-003）将 stale entries 移动到 `.fabric/.archive/<type>/`。",
   "doctor.check.pending_overdue.name": "Knowledge pending overdue",
   "doctor.check.pending_overdue.ok":
     "没有 pending knowledge entries 超过 14-day review threshold。",
@@ -519,7 +519,7 @@ export const zhCNMessages: Messages = {
   "doctor.check.index_drift.message.plural":
     "{count} 个 (layer, type) counter slots 已低于观测到的 canonical maximum（next allocate would collide）。首个：{detail}。",
   "doctor.check.index_drift.remediation":
-    "运行 `fab doctor --apply-lint`（rc.4 TASK-003）将 agents.meta.json counters 提升到 max_observed + 1。",
+    "运行 `fab doctor --fix-knowledge`（rc.4 TASK-003）将 agents.meta.json counters 提升到 max_observed + 1。",
   "doctor.check.underseeded.name": "Knowledge underseeded",
   "doctor.check.underseeded.ok":
     "知识库已有 {count} 个 canonical entries（>= {threshold}）。",
@@ -581,7 +581,7 @@ export const zhCNMessages: Messages = {
   "doctor.check.session_hints_stale.message.plural":
     ".fabric/.cache/ 下有 {count} 个 session-hints cache files 超过 {days} 天。首个：{detail}。",
   "doctor.check.session_hints_stale.remediation":
-    "运行 `fab doctor --apply-lint` 删除过期的 session-hints cache files。",
+    "运行 `fab doctor --fix-knowledge` 删除过期的 session-hints cache files。",
   "doctor.check.stale_serve_lock.name": "Serve lock",
   "doctor.check.stale_serve_lock.ok.no_lock": "未发现 .fabric/.serve.lock。",
   "doctor.check.stale_serve_lock.ok.live_pid":
@@ -602,7 +602,28 @@ export const zhCNMessages: Messages = {
   "doctor.check.relevance_fields_missing.message.plural":
     "{count} 个 pending entries 的 frontmatter 缺少 relevance_scope 和/或 relevance_paths。首个：{detail}。",
   "doctor.check.relevance_fields_missing.remediation":
-    "运行 `fab doctor --apply-lint` 回填 schema defaults（relevance_scope: broad，relevance_paths: []）。",
+    "运行 `fab doctor --fix-knowledge` 回填 schema defaults（relevance_scope: broad，relevance_paths: []）。",
+  // rc.31 BUG-M3/NEW-4: hooks_wired observability.
+  "doctor.check.hooks_wired.name": "Claude Code hooks wired",
+  "doctor.check.hooks_wired.ok.skipped": "项目未启用 Claude Code（无 .claude/ 目录）；跳过 hooks_wired 检查。",
+  "doctor.check.hooks_wired.ok.wired":
+    ".claude/settings.json 已注入 Stop:fabric-hint / SessionStart:knowledge-hint-broad / PreToolUse:knowledge-hint-narrow 三个 fabric hook。",
+  "doctor.check.hooks_wired.message.missing_settings":
+    ".claude/ 目录存在但 .claude/settings.json 缺失或无法解析；fab install 可能从未跑成功，或文件被外部清空。",
+  "doctor.check.hooks_wired.message.incomplete":
+    ".claude/settings.json 缺少 fabric hook 注入：{missing}。fab install 的 dry-run 报告与实际状态不一致（rc.30 audit BUG-M3 / NEW-4）。",
+  "doctor.check.hooks_wired.remediation":
+    "运行 `fab install` 重新注入 hooks（幂等；只补缺失项）。若意外覆盖了 hooks 配置，先备份 .claude/settings.json 再跑。",
+  // rc.31 BUG-G2/G5: promote-ledger invariant check.
+  "doctor.check.promote_ledger_invariant.name": "Promote ledger invariant",
+  "doctor.check.promote_ledger_invariant.ok":
+    "knowledge_proposed={proposed} ≥ knowledge_promote_started={started} ≥ knowledge_promoted={promoted}，ledger 不变量持有。",
+  "doctor.check.promote_ledger_invariant.message.proposed-lt-started":
+    "knowledge_proposed={proposed} 小于 knowledge_promote_started={started}（ledger 不变量被破坏；部分 pending 在 approve 时未经过 fab_extract_knowledge → 缺少 propose 事件）。",
+  "doctor.check.promote_ledger_invariant.message.started-lt-promoted":
+    "knowledge_promote_started={started} 小于 knowledge_promoted={promoted}（ledger 不变量被破坏；存在未配对的 promoted 事件，可能来自 doctor filesystem-edit fallback 或外部写入）。",
+  "doctor.check.promote_ledger_invariant.remediation":
+    "rc.31 起 review.approve 会补发 knowledge_proposed 事件以维护不变量；新 approve 后再跑一次 fab doctor 即可恢复。历史失衡仅是可观测性指示，不影响 KB 功能。",
   "doctor.check.skill_md_yaml_invalid.name": "Skill markdown YAML",
   "doctor.check.skill_md_yaml_invalid.ok":
     "所有 .claude/.codex SKILL.md frontmatter values 都能按 strict YAML 解析。",

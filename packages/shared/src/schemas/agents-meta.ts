@@ -16,6 +16,18 @@ import {
 
 const FABRIC_AGENTS_PREFIX = ".fabric/agents/";
 
+// rc.31 NEW-1: legacy singular → canonical plural map for knowledge_type
+// forward-compat. Mirrors knowledge-meta-builder.ts SINGULAR_TO_PLURAL but
+// applied at the schema-validation layer so already-persisted agents.meta.json
+// entries load without aborting doctor / plan-context-hint.
+const KNOWLEDGE_TYPE_SINGULAR_TO_PLURAL = {
+  model: "models",
+  decision: "decisions",
+  guideline: "guidelines",
+  pitfall: "pitfalls",
+  process: "processes",
+} as const;
+
 export const AGENTS_META_LAYERS = ["L0", "L1", "L2"] as const;
 export const AGENTS_META_TOPOLOGY_TYPES = ["mirror", "cross-cutting", "domain", "local", "global"] as const;
 export const AGENTS_META_IDENTITY_SOURCES = ["declared", "derived"] as const;
@@ -39,7 +51,20 @@ export const ruleDescriptionSchema = z
     entities: z.array(z.string()).optional(),
     // v2.0 knowledge entry fields (TASK-002 schemas). All optional for backward compat.
     id: z.string().optional(),
-    knowledge_type: z.enum(["models", "decisions", "guidelines", "pitfalls", "processes"]).optional(),
+    // rc.31 NEW-1: forward-compat for legacy on-disk agents.meta.json carrying
+    // singular knowledge_type values (model/decision/guideline/pitfall/process).
+    // Normalize to canonical plural form before enum validation so doctor and
+    // plan-context-hint can load pre-rc.28 meta files without aborting. Disk
+    // gets rewritten to plural on next reconcile (via knowledge-meta-builder).
+    knowledge_type: z
+      .preprocess(
+        (value) =>
+          typeof value === "string" && value in KNOWLEDGE_TYPE_SINGULAR_TO_PLURAL
+            ? KNOWLEDGE_TYPE_SINGULAR_TO_PLURAL[value as keyof typeof KNOWLEDGE_TYPE_SINGULAR_TO_PLURAL]
+            : value,
+        z.enum(["models", "decisions", "guidelines", "pitfalls", "processes"]),
+      )
+      .optional(),
     maturity: z.enum(["draft", "verified", "proven"]).optional(),
     knowledge_layer: z.enum(["personal", "team"]).optional(),
     layer_reason: z.string().optional(),

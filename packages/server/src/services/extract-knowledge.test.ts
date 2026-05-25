@@ -194,11 +194,12 @@ describe("extractKnowledge", () => {
     // No legacy `## Evidence (call N)` blocks at all.
     expect(body).not.toMatch(/^## Evidence \(call \d+\)$/mu);
     // The note bullet appears exactly once under Notes (dedup by trimmed text);
-    // it also surfaces in the `## Summary` section, so total occurrences in the
-    // document is 2 (Summary copy + 1 deduped Notes bullet) — but NEVER 3+
+    // it also surfaces in the `## Summary` section AND (rc.31 BUG-2.9 fix) in
+    // the frontmatter `summary:` field, so total occurrences is 3 (frontmatter
+    // summary + Summary body copy + 1 deduped Notes bullet) — but NEVER 4+
     // duplicated Notes blocks the way the rc.6 append-on-collision behaved.
     const noteOccurrences = body.split(sharedNote).length - 1;
-    expect(noteOccurrences).toBe(2);
+    expect(noteOccurrences).toBe(3);
     // The bulleted note line under Notes appears exactly once.
     const bulletOccurrences = (body.match(new RegExp(`^- ${sharedNote.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")}$`, "gmu")) ?? []).length;
     expect(bulletOccurrences).toBe(1);

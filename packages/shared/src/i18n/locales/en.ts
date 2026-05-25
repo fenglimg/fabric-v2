@@ -325,7 +325,7 @@ export const enMessages: Messages = {
     "Run `fab doctor --fix` to rebuild agents.meta.json from .fabric/knowledge/.",
   "doctor.check.agents_meta.message.invalid-default": ".fabric/agents.meta.json is invalid.",
   "doctor.check.agents_meta.remediation.invalid":
-    "Delete .fabric/agents.meta.json and run `fab doctor --fix` to regenerate it.",
+    "Run `fab doctor --fix` to let reconcile rebuild agents.meta.json from the .fabric/knowledge/ disk ground-truth (rc.31+ auto-migrates legacy singular knowledge_type values to canonical plural; do NOT manually delete agents.meta.json — you would lose counters envelope and promote-ledger associations).",
   "doctor.check.agents_meta.message.stale":
     ".fabric/agents.meta.json revision {revision} does not match .fabric/knowledge derived revision {computedRevision}.",
   "doctor.check.agents_meta.remediation.stale":
@@ -484,7 +484,7 @@ export const enMessages: Messages = {
   "doctor.check.orphan_demote.message.plural":
     "{count} canonical knowledge entries exceed their maturity-keyed inactivity threshold (stable={stableDays}d / endorsed={endorsedDays}d / draft={draftDays}d). First: {detail}.",
   "doctor.check.orphan_demote.remediation":
-    "Run `fab doctor --apply-lint` (rc.4 TASK-003) to demote orphan entries one maturity tier.",
+    "Run `fab doctor --fix-knowledge` (rc.4 TASK-003) to demote orphan entries one maturity tier.",
   "doctor.check.stale_archive.name": "Knowledge stale archive",
   "doctor.check.stale_archive.ok":
     "No draft knowledge entries exceed the additional stale-archive quiet window.",
@@ -493,7 +493,7 @@ export const enMessages: Messages = {
   "doctor.check.stale_archive.message.plural":
     "{count} draft knowledge entries are stale beyond the demote+{additionalDays}d additional quiet window. First: {detail}.",
   "doctor.check.stale_archive.remediation":
-    "Run `fab doctor --apply-lint` (rc.4 TASK-003) to move stale entries into `.fabric/.archive/<type>/`.",
+    "Run `fab doctor --fix-knowledge` (rc.4 TASK-003) to move stale entries into `.fabric/.archive/<type>/`.",
   "doctor.check.pending_overdue.name": "Knowledge pending overdue",
   "doctor.check.pending_overdue.ok":
     "No pending knowledge entries exceed the 14-day review threshold.",
@@ -529,7 +529,7 @@ export const enMessages: Messages = {
   "doctor.check.index_drift.message.plural":
     "{count} (layer, type) counter slots have drifted below the observed canonical maximum (next allocate would collide). First: {detail}.",
   "doctor.check.index_drift.remediation":
-    "Run `fab doctor --apply-lint` (rc.4 TASK-003) to bump agents.meta.json counters to max_observed + 1.",
+    "Run `fab doctor --fix-knowledge` (rc.4 TASK-003) to bump agents.meta.json counters to max_observed + 1.",
   "doctor.check.underseeded.name": "Knowledge underseeded",
   "doctor.check.underseeded.ok":
     "Knowledge corpus has {count} canonical entries (>= {threshold}).",
@@ -591,7 +591,7 @@ export const enMessages: Messages = {
   "doctor.check.session_hints_stale.message.plural":
     "{count} session-hints cache files under .fabric/.cache/ are older than {days} days. First: {detail}.",
   "doctor.check.session_hints_stale.remediation":
-    "Run `fab doctor --apply-lint` to delete stale session-hints cache files.",
+    "Run `fab doctor --fix-knowledge` to delete stale session-hints cache files.",
   "doctor.check.stale_serve_lock.name": "Serve lock",
   "doctor.check.stale_serve_lock.ok.no_lock": "No .fabric/.serve.lock present.",
   "doctor.check.stale_serve_lock.ok.live_pid":
@@ -612,7 +612,28 @@ export const enMessages: Messages = {
   "doctor.check.relevance_fields_missing.message.plural":
     "{count} pending entries are missing relevance_scope and/or relevance_paths in frontmatter. First: {detail}.",
   "doctor.check.relevance_fields_missing.remediation":
-    "Run `fab doctor --apply-lint` to back-fill the schema defaults (relevance_scope: broad, relevance_paths: []).",
+    "Run `fab doctor --fix-knowledge` to back-fill the schema defaults (relevance_scope: broad, relevance_paths: []).",
+  // rc.31 BUG-M3/NEW-4: hooks_wired observability.
+  "doctor.check.hooks_wired.name": "Claude Code hooks wired",
+  "doctor.check.hooks_wired.ok.skipped": "Project does not use Claude Code (no .claude/ directory); hooks_wired check skipped.",
+  "doctor.check.hooks_wired.ok.wired":
+    ".claude/settings.json has the three fabric hooks wired: Stop:fabric-hint / SessionStart:knowledge-hint-broad / PreToolUse:knowledge-hint-narrow.",
+  "doctor.check.hooks_wired.message.missing_settings":
+    ".claude/ exists but .claude/settings.json is absent or unparseable; fab install may have never run successfully, or the file was wiped externally.",
+  "doctor.check.hooks_wired.message.incomplete":
+    ".claude/settings.json is missing fabric hook injections: {missing}. fab install dry-run report does not match actual state (rc.30 audit BUG-M3 / NEW-4).",
+  "doctor.check.hooks_wired.remediation":
+    "Run `fab install` to re-inject hooks (idempotent; only fills missing slots). If hooks config was accidentally wiped, back up .claude/settings.json before running.",
+  // rc.31 BUG-G2/G5: promote-ledger invariant check.
+  "doctor.check.promote_ledger_invariant.name": "Promote ledger invariant",
+  "doctor.check.promote_ledger_invariant.ok":
+    "knowledge_proposed={proposed} >= knowledge_promote_started={started} >= knowledge_promoted={promoted}; ledger invariant holds.",
+  "doctor.check.promote_ledger_invariant.message.proposed-lt-started":
+    "knowledge_proposed={proposed} is less than knowledge_promote_started={started} (ledger invariant violated; some pending entries were approved without going through fab_extract_knowledge, so no propose event was emitted for them).",
+  "doctor.check.promote_ledger_invariant.message.started-lt-promoted":
+    "knowledge_promote_started={started} is less than knowledge_promoted={promoted} (ledger invariant violated; unpaired promoted events exist, possibly from doctor filesystem-edit fallback or external writers).",
+  "doctor.check.promote_ledger_invariant.remediation":
+    "Starting in rc.31, review.approve synthesizes a knowledge_proposed event to keep the invariant; re-run fab doctor after the next approve to settle. Historical imbalance is observability-only and does not affect KB function.",
   "doctor.check.skill_md_yaml_invalid.name": "Skill markdown YAML",
   "doctor.check.skill_md_yaml_invalid.ok":
     "All .claude/.codex SKILL.md frontmatter values parse as strict YAML.",

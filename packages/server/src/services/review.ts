@@ -497,6 +497,26 @@ async function approveOne(
   }
   const slug = basename(pendingPath).replace(/\.md$/u, "");
 
+  // rc.31 BUG-G2: previously `knowledge_proposed` was only emitted by
+  // extract-knowledge.ts (i.e. only when a pending file was created via the
+  // fab_extract_knowledge MCP tool). Pending files written by hand or by
+  // third-party Skills would never produce a proposed event, so the ledger
+  // invariant `proposed_count >= promoted_count` got silently violated (in
+  // werewolf-minigame rc.30 audit: proposed=17, promoted=52). Synthesize a
+  // proposed event here at approve-time so the (proposed → promote_started →
+  // promoted) triple stays balanced regardless of how the pending file was
+  // born. The synth reason prefix lets cite-coverage / ledger consumers
+  // distinguish backfill emissions from real extract-time ones.
+  //
+  // Best-effort: failure to write the synth proposed must not block the
+  // approve, the promote_started/promoted pair below is the authoritative
+  // signal for the operation.
+  await emitEventBestEffort(projectRoot, {
+    event_type: "knowledge_proposed",
+    timestamp: new Date().toISOString(),
+    reason: `approve-synth:${slug}`,
+  });
+
   // Phase 1: signal we're starting. Emitted before any allocator/IO mutation
   // so forensic recovery (rc.3 doctor filesystem-edit fallback) can detect a
   // crashed approve mid-flight.

@@ -288,6 +288,11 @@ const MATURITY_DRAFT = "draft";
  */
 function invokePlanContextHint(cwd) {
   const candidates = ["fabric", "fab"];
+  // rc.31 NEW-6: capture the last meaningful failure so we can surface it on
+  // stderr before fail-open. Without this, hook silently swallows backend
+  // crashes (e.g. agents_meta_invalid → plan-context-hint exits with stderr
+  // payload and the AI / user never sees KB chain is dead).
+  let lastFailure = null;
   for (const bin of candidates) {
     let res;
     try {
@@ -300,16 +305,36 @@ function invokePlanContextHint(cwd) {
     } catch {
       continue; // spawn throw (extremely rare) — try next candidate
     }
-    // ENOENT surfaces as error on the result object.
-    if (res.error || res.status === null || res.status !== 0) continue;
+    // ENOENT surfaces as error on the result object. Skip silently for ENOENT
+    // (bin not installed is expected for `fabric` when only `fab` is shipped).
+    if (res.error) {
+      if (res.error.code !== "ENOENT") {
+        lastFailure = { bin, reason: String(res.error.message || res.error.code || res.error) };
+      }
+      continue;
+    }
+    if (res.status === null || res.status !== 0) {
+      const stderrSnip = (res.stderr || "").trim().slice(0, 240);
+      if (stderrSnip.length > 0) {
+        lastFailure = { bin, reason: stderrSnip };
+      }
+      continue;
+    }
     const raw = (res.stdout || "").trim();
     if (raw.length === 0) continue;
     try {
       const parsed = JSON.parse(raw);
       if (parsed && typeof parsed === "object") return parsed;
-    } catch {
-      // malformed JSON — try next bin (unlikely to differ, but no harm)
+    } catch (err) {
+      lastFailure = { bin, reason: `malformed JSON from plan-context-hint: ${String(err && err.message || err)}` };
     }
+  }
+  if (lastFailure !== null) {
+    // Single warning line — never throws, never blocks the hook. Lets users /
+    // AI notice that the KB chain is degraded instead of being silently empty.
+    process.stderr.write(
+      `[fabric-hint] plan-context-hint (${lastFailure.bin}) failed: ${lastFailure.reason.replace(/\n/g, " ")}\n`,
+    );
   }
   return null;
 }

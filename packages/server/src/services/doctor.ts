@@ -980,6 +980,22 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
   // /fabric-archive (whose first-run phase tours the project and proposes
   // pending entries with `onboard_slot: <slot>` set).
   const onboardCoverage = inspectOnboardCoverage(projectRoot);
+  // rc.31 BUG-M3/NEW-4: hooks_wired observability. Reads project-local
+  // .claude/settings.json and verifies the three fabric Stop / SessionStart
+  // / PreToolUse hooks are present. Warns when .claude/ exists (project uses
+  // Claude Code) but hook references are missing — install ran but stopped
+  // short, or partial-install left dangling artifacts. Skipped (ok) when
+  // there is no .claude/ at all (project doesn't use Claude Code).
+  const hooksWired = inspectHooksWired(projectRoot);
+  // rc.31 BUG-G2/G5: promote-ledger invariant check (proposed >= started >= promoted).
+  // Surfaces ledger desync (e.g. werewolf-minigame rc.30 audit: proposed=17,
+  // started=48, promoted=52). Warning kind — does not bump report status to
+  // error; emit-cadence in extract / approve owns the actual fix. Skipped when
+  // the ledger is unparseable so the check never amplifies an existing read
+  // failure already surfaced by event_ledger_partial_write / schema_compat.
+  const promoteLedgerInvariant = eventLedger.exists && eventLedger.writable && eventLedger.parseable
+    ? await inspectPromoteLedgerInvariant(projectRoot)
+    : null;
   const checks: DoctorCheck[] = [
     createBootstrapAnchorCheck(t, bootstrapAnchor),
     // v2.0.0-rc.19 TASK-004: bootstrap marker migration check sits adjacent to
@@ -1074,6 +1090,14 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     // first-run phase. Sits adjacent to Skill markdown YAML — both are
     // Skill-adjacent advisories. --fix never mutates onboard state.
     createOnboardCoverageCheck(t, onboardCoverage),
+    // rc.31 BUG-M3/NEW-4: hooks_wired observability. Adjacent to onboard /
+    // promote-ledger checks — all three are install/runtime-state advisories.
+    createHooksWiredCheck(t, hooksWired),
+    // rc.31 BUG-G2/G5: promote-ledger invariant. Sits adjacent to onboard
+    // coverage — both are observability advisories built off events.jsonl.
+    ...(promoteLedgerInvariant === null
+      ? []
+      : [createPromoteLedgerInvariantCheck(t, promoteLedgerInvariant)]),
     createPreexistingRootFilesCheck(t, preexistingRootFiles),
     // v2.0 / rc.2: `createLegacyClientPathCheck` removed. The schema now
     // rejects retired clientPaths keys (windsurf/rooCode/geminiCLI) at Zod
@@ -1227,9 +1251,18 @@ export async function runDoctorFix(target: string): Promise<DoctorFixReport> {
   // audit §2.14). reconcileKnowledge rebuilds nodes from disk ground-truth
   // so dangling meta entries (nodes for which no file exists) are dropped
   // and hash-mismatch entries get fresh hashes.
+  // rc.31 NEW-3: `agents_meta_invalid` joins reconcileCodes so doctor --fix
+  // unblocks the double-error deadlock with `knowledge_dir_unindexed` (which
+  // sits in fixable_errors but couldn't run while invalid meta blocked it).
+  // Paired with rc.31 NEW-1 (schema z.preprocess for singular knowledge_type)
+  // the load layer now tolerates legacy values, and reconcile rewrites the
+  // on-disk file in the canonical plural form — so a single --fix invocation
+  // is sufficient. The check also looks in `manual_errors` because invalid
+  // meta is currently classified as `manual_error` in runDoctorReport.
   const reconcileCodes = [
     "agents_meta_missing",
     "agents_meta_stale",
+    "agents_meta_invalid",
     "knowledge_test_index_missing",
     "knowledge_test_index_stale",
     "content_ref_missing",
@@ -1239,6 +1272,7 @@ export async function runDoctorFix(target: string): Promise<DoctorFixReport> {
   if (
     before.fixable_errors.some((issue) => reconcileCodes.includes(issue.code))
     || before.warnings.some((issue) => reconcileCodes.includes(issue.code))
+    || before.manual_errors.some((issue) => reconcileCodes.includes(issue.code))
   ) {
     // D22: doctor's role is now consistency repairer, not baseline promoter.
     // reconcileKnowledge rewrites agents.meta.json from disk ground-truth and emits
@@ -1252,6 +1286,13 @@ export async function runDoctorFix(target: string): Promise<DoctorFixReport> {
       fixed.push(issue);
     }
     for (const issue of before.warnings.filter((candidate) =>
+      reconcileCodes.includes(candidate.code),
+    )) {
+      fixed.push(issue);
+    }
+    // rc.31 NEW-3: also record manual_error → fixed transitions so the
+    // doctor --fix exit-status / remaining_manual_errors reflect reality.
+    for (const issue of before.manual_errors.filter((candidate) =>
       reconcileCodes.includes(candidate.code),
     )) {
       fixed.push(issue);
@@ -2993,6 +3034,183 @@ function createEventLedgerPartialWriteCheck(t: Translator, ledger: EventLedgerIn
 
 function okCheck(name: string, message: string): DoctorCheck {
   return { name, status: "ok", message };
+}
+
+// rc.31 BUG-M3/NEW-4: hooks_wired inspection.
+//
+// Verifies project-local .claude/settings.json declares all three fabric hooks
+// (fabric-hint at Stop, knowledge-hint-broad at SessionStart, knowledge-hint-
+// narrow at PreToolUse). The audit symptom this addresses: `fab install` dry-
+// run reported "hooks=是 mcp-install=global" but actual settings.json had
+// zero fabric references — the user had no way to verify the injection
+// happened. By surfacing the wired state at doctor-time, partial / corrupted
+// installs become detectable.
+//
+// Skipped (ok) when there is no .claude/ directory at all (project does not
+// use Claude Code; nothing to check). Returns "missing" when the dir exists
+// but settings.json is absent or unparseable. "incomplete" when settings is
+// parseable but one or more fabric hook references are missing.
+type HooksWiredStatus = "ok" | "skipped" | "missing-settings" | "incomplete";
+type HooksWiredInspection = {
+  status: HooksWiredStatus;
+  missingHooks: string[];
+};
+
+function inspectHooksWired(projectRoot: string): HooksWiredInspection {
+  const claudeDir = join(projectRoot, ".claude");
+  if (!existsSync(claudeDir)) {
+    return { status: "skipped", missingHooks: [] };
+  }
+  const settingsPath = join(projectRoot, ".claude", "settings.json");
+  if (!existsSync(settingsPath)) {
+    return { status: "missing-settings", missingHooks: [] };
+  }
+  let raw: string;
+  try {
+    raw = readFileSync(settingsPath, "utf8");
+  } catch {
+    return { status: "missing-settings", missingHooks: [] };
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return { status: "missing-settings", missingHooks: [] };
+  }
+  const required: Array<{ event: string; hookFile: string }> = [
+    { event: "Stop", hookFile: "fabric-hint.cjs" },
+    { event: "SessionStart", hookFile: "knowledge-hint-broad.cjs" },
+    { event: "PreToolUse", hookFile: "knowledge-hint-narrow.cjs" },
+  ];
+  const missing: string[] = [];
+  const hooksSection = isRecord(parsed) ? parsed.hooks : undefined;
+  for (const { event, hookFile } of required) {
+    if (!isHookWiredForEvent(hooksSection, event, hookFile)) {
+      missing.push(`${event}:${hookFile}`);
+    }
+  }
+  if (missing.length === 0) {
+    return { status: "ok", missingHooks: [] };
+  }
+  return { status: "incomplete", missingHooks: missing };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isHookWiredForEvent(hooks: unknown, event: string, hookFile: string): boolean {
+  if (!isRecord(hooks)) return false;
+  const eventEntries = hooks[event];
+  if (!Array.isArray(eventEntries)) return false;
+  for (const matcherBlock of eventEntries) {
+    if (!isRecord(matcherBlock)) continue;
+    const inner = matcherBlock.hooks;
+    if (!Array.isArray(inner)) continue;
+    for (const hookEntry of inner) {
+      if (!isRecord(hookEntry)) continue;
+      const cmd = hookEntry.command;
+      if (typeof cmd === "string" && cmd.includes(hookFile)) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+function createHooksWiredCheck(t: Translator, inspection: HooksWiredInspection): DoctorCheck {
+  if (inspection.status === "skipped") {
+    return okCheck(
+      t("doctor.check.hooks_wired.name"),
+      t("doctor.check.hooks_wired.ok.skipped"),
+    );
+  }
+  if (inspection.status === "ok") {
+    return okCheck(
+      t("doctor.check.hooks_wired.name"),
+      t("doctor.check.hooks_wired.ok.wired"),
+    );
+  }
+  if (inspection.status === "missing-settings") {
+    return issueCheck(
+      t("doctor.check.hooks_wired.name"),
+      "warn",
+      "warning",
+      "hooks_wired_missing_settings",
+      t("doctor.check.hooks_wired.message.missing_settings"),
+      t("doctor.check.hooks_wired.remediation"),
+    );
+  }
+  return issueCheck(
+    t("doctor.check.hooks_wired.name"),
+    "warn",
+    "warning",
+    "hooks_wired_incomplete",
+    t("doctor.check.hooks_wired.message.incomplete", {
+      missing: inspection.missingHooks.join(", "),
+    }),
+    t("doctor.check.hooks_wired.remediation"),
+  );
+}
+
+// rc.31 BUG-G2/G5: promote-ledger invariant inspection.
+//
+// Invariant: proposed_count >= promote_started_count >= promoted_count.
+// Counter-examples surface ledger emit-cadence bugs (e.g. werewolf-minigame
+// rc.30 audit: proposed=17, started=48, promoted=52 — both proposed<started
+// and started<promoted violated). The check is observability-only and never
+// blocks --fix; remediation is to verify all 3 events fire in extract+approve
+// paths or rerun fab doctor after rc.31 review.approve synth fix.
+type PromoteLedgerInvariantInspection = {
+  proposedCount: number;
+  promoteStartedCount: number;
+  promotedCount: number;
+  violation: "proposed-lt-started" | "started-lt-promoted" | null;
+};
+
+async function inspectPromoteLedgerInvariant(
+  projectRoot: string,
+): Promise<PromoteLedgerInvariantInspection> {
+  const [proposed, started, promoted] = await Promise.all([
+    readEventLedger(projectRoot, { event_type: "knowledge_proposed" }),
+    readEventLedger(projectRoot, { event_type: "knowledge_promote_started" }),
+    readEventLedger(projectRoot, { event_type: "knowledge_promoted" }),
+  ]);
+  const proposedCount = proposed.events.length;
+  const promoteStartedCount = started.events.length;
+  const promotedCount = promoted.events.length;
+  let violation: PromoteLedgerInvariantInspection["violation"] = null;
+  if (proposedCount < promoteStartedCount) {
+    violation = "proposed-lt-started";
+  } else if (promoteStartedCount < promotedCount) {
+    violation = "started-lt-promoted";
+  }
+  return { proposedCount, promoteStartedCount, promotedCount, violation };
+}
+
+function createPromoteLedgerInvariantCheck(
+  t: Translator,
+  inspection: PromoteLedgerInvariantInspection,
+): DoctorCheck {
+  const params = {
+    proposed: String(inspection.proposedCount),
+    started: String(inspection.promoteStartedCount),
+    promoted: String(inspection.promotedCount),
+  };
+  if (inspection.violation === null) {
+    return okCheck(
+      t("doctor.check.promote_ledger_invariant.name"),
+      t("doctor.check.promote_ledger_invariant.ok", params),
+    );
+  }
+  return issueCheck(
+    t("doctor.check.promote_ledger_invariant.name"),
+    "warn",
+    "warning",
+    "promote_ledger_invariant_violated",
+    t(`doctor.check.promote_ledger_invariant.message.${inspection.violation}`, params),
+    t("doctor.check.promote_ledger_invariant.remediation"),
+  );
 }
 
 function issueCheck(
