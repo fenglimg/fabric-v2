@@ -144,3 +144,16 @@ Wave 11 Release + Memory 回灌
 - TASK-24 release-rc bump rc.36
 - TASK-25 memory 回灌
 
+---
+
+## Wave 10 + 11 完成 log
+
+[2026-05-26 13:15] TASK-32 iter 1 DONE — Gemini-3.1-pro-preview CONDITIONAL SHIP (1 High drift_unconsumed 逻辑 + 1 Low remediation 文案);output 落 .workflow/.scratchpad/rc36-closure/gemini-review-iter-1.md
+[2026-05-26 13:18] TASK-32 review-iter1 fix DONE (10 min) commit:9328d2c — count-delta heuristic + i18n 加 demoteCount 占位符 + remediation manual-only 文案
+[2026-05-26 13:22] TASK-32 iter 2 DONE — Gemini SHIP verdict,无 High/Medium 残留;output 落 .workflow/.scratchpad/rc36-closure/gemini-review-iter-2.md
+[2026-05-26 13:25] TASK-24 bump + tag + push DONE (5 min) commit:f5013dd tag:v2.0.0-rc.36 — gates 全绿 (1800 tests + lint 0 + tsc 0);Release workflow 监控中
+[2026-05-26 13:28] TASK-25 Memory 回灌 DONE (3 memo + MEMORY.md +3 行):
+  - project_rc36_shipped.md (shipped 事实 + commit list + theme)
+  - feedback_autonomous_executor_scope_convergence.md (32→8 task 收敛方法学)
+  - feedback_gemini_review_apply_exact_suggested_fix.md (跨 LLM review fix 验证 [[feedback-trust-recommendations]])
+
