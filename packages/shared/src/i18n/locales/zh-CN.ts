@@ -472,6 +472,14 @@ export const zhCNMessages: Messages = {
     "{emptyCount}/{totalCount} ({pct}%) canonical knowledge entries 的 `tags:` 为空 — 主题聚类与跨条目检索退化。fabric-archive / fabric-import skill 应每个 entry 产 2-4 个 tag。",
   "doctor.check.knowledge_tags_empty.remediation":
     "下一轮 archive/import 时,在 frontmatter `tags:` 写 2-4 个 kebab-case 主题词;批量补旧 entry tag 用 `/fabric-review` modify 流。",
+  // rc.36 TASK-09 (P1-NEW1): drift_detected 未消化告警。
+  "doctor.check.drift_unconsumed.name": "Knowledge drift unconsumed",
+  "doctor.check.drift_unconsumed.ok":
+    "近 30 天内 knowledge_drift_detected 事件已被对应 knowledge_demoted 消化,或事件数太少不评。",
+  "doctor.check.drift_unconsumed.message":
+    "近 30 天内检测到 {driftCount} 次 knowledge_drift_detected 事件,但**零次** knowledge_demoted。drift 被识别但无后续 demote/archive,KB 会缓慢失活。",
+  "doctor.check.drift_unconsumed.remediation":
+    "运行 `fabric doctor --fix` 触发一轮 orphan-demote / stale-archive 自愈流;或调 `/fabric-review` 主动审 drift 标记的条目。",
   "doctor.check.meta_manually_diverged.name": "Meta manual divergence",
   "doctor.check.meta_manually_diverged.ok.unreadable":
     "agents.meta.json 不可读，跳过 divergence 检查。",

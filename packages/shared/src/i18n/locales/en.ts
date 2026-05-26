@@ -482,6 +482,14 @@ export const enMessages: Messages = {
     "{emptyCount}/{totalCount} ({pct}%) canonical knowledge entries have empty `tags:` — topical clustering and cross-entry retrieval degrade. The fabric-archive / fabric-import skills should produce 2-4 tags per entry.",
   "doctor.check.knowledge_tags_empty.remediation":
     "On the next archive/import run, populate `tags:` in the frontmatter with 2-4 kebab-case keywords. To backfill existing entries in bulk, use `/fabric-review` with the modify flow.",
+  // rc.36 TASK-09 (P1-NEW1): drift_detected events unconsumed by demote.
+  "doctor.check.drift_unconsumed.name": "Knowledge drift unconsumed",
+  "doctor.check.drift_unconsumed.ok":
+    "knowledge_drift_detected events in the last 30 days have been consumed by paired knowledge_demoted, or event volume is too low to compute.",
+  "doctor.check.drift_unconsumed.message":
+    "{driftCount} knowledge_drift_detected events in the last 30 days but ZERO knowledge_demoted. Drift is observed but never acted on — KB slowly stales.",
+  "doctor.check.drift_unconsumed.remediation":
+    "Run `fabric doctor --fix` to trigger orphan-demote / stale-archive auto-heal; or invoke `/fabric-review` to manually triage drift-flagged entries.",
   "doctor.check.meta_manually_diverged.name": "Meta manual divergence",
   "doctor.check.meta_manually_diverged.ok.unreadable":
     "agents.meta.json not readable; skipping divergence check.",

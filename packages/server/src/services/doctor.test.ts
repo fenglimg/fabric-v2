@@ -176,6 +176,8 @@ describe("runDoctorReport", () => {
       // rc.36 TASK-05 (P0-8): empty-tags ratio. Adjacent to draft_backlog —
       // both flag observability gaps in canonical entry quality.
       "Knowledge tags coverage",
+      // rc.36 TASK-09 (P1-NEW1): drift unconsumed observability lint.
+      "Knowledge drift unconsumed",
       "Claude MCP config location",
       "Meta manual divergence",
       "Knowledge dir unindexed",
@@ -221,7 +223,7 @@ describe("runDoctorReport", () => {
       "Promote ledger invariant",
       "Preexisting root markdown",
     ]);
-    expect(report.checks).toHaveLength(46);
+    expect(report.checks).toHaveLength(47);
   });
 
   it("v2.0: clean post-init repo (mocked layout) reports zero errors AND zero warnings", async () => {
