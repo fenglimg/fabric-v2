@@ -215,6 +215,11 @@ export const zhCNMessages: Messages = {
     "应用知识库 lint 变更：降级孤立的规范条目、归档陈旧 draft、修正漂移的索引计数器。默认 doctor 运行仍然只读。",
   "cli.doctor.args.yes.description":
     "跳过 --fix-knowledge 的安全确认；非 tty 调用必须显式设置该标记，或在环境变量中设置 FABRIC_NONINTERACTIVE=1。",
+  // rc.35 TASK-12 (P0-11): --verbose 展开 maintainer 受众的 remediation。
+  "cli.doctor.args.verbose.description":
+    "展开全部 action hint,包括 maintainer 受众的(Fabric 贡献者修源码用)。默认 npm 终端用户视图会把这些折叠。",
+  "doctor.maintainer-hint-folded":
+    "(maintainer-only remediation — 加 `fabric doctor --verbose` 查看)",
   "cli.doctor.errors.fix-knowledge-fix-mutually-exclusive":
     "--fix-knowledge 与 --fix 不可同时使用。--fix-knowledge 修改用户知识状态（降级/归档）；--fix 修复派生状态（meta/索引）。请分别运行。",
   // rc.20 TASK-05: --cite-coverage 报告参数；只读，与 --fix/--fix-knowledge 互斥。

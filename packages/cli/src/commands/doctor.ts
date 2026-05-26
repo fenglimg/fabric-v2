@@ -39,6 +39,8 @@ type DoctorArgs = {
   // and runs git mv. Required for any non-tty invocation (CI, nested
   // pipelines) unless FABRIC_NONINTERACTIVE=1 is set in the environment.
   yes?: boolean;
+  // rc.35 TASK-12 (P0-11): unfold maintainer-audience action hints.
+  verbose?: boolean;
   // rc.20 TASK-05: cite policy adherence report. Read-only; mutually exclusive
   // with --fix and --fix-knowledge (those mutate state; cite-coverage only
   // reads ledger events). Pairs with --since (window) and --client (filter).
@@ -125,6 +127,16 @@ export const doctorCommand = defineCommand({
     yes: {
       type: "boolean",
       description: t("cli.doctor.args.yes.description"),
+      default: false,
+    },
+    // rc.35 TASK-12 (P0-11): expose maintainer-audience actionHints. By
+    // default the renderer folds remediation strings that target Fabric
+    // contributors (edit `packages/cli/templates/...`, interpret G1-G5
+    // cite-goodhart codes, etc.) since npm end users have no actionable
+    // lever for them. --verbose shows them.
+    verbose: {
+      type: "boolean",
+      description: t("cli.doctor.args.verbose.description"),
       default: false,
     },
     // rc.20 TASK-05: cite policy adherence report (read-only). Skips standard
@@ -420,7 +432,7 @@ export const doctorCommand = defineCommand({
         // address.
         writeStdout(dt("cli.doctor.fix-dry-run-banner"));
       }
-      renderHumanReport(report, dt);
+      renderHumanReport(report, dt, args.verbose === true);
     }
 
     // v2.0.0-rc.7 T10: emit doctor_run event so Signal D in fabric-hint can
@@ -464,14 +476,15 @@ export const doctorCommand = defineCommand({
 
 export default doctorCommand;
 
-function renderHumanReport(report: DoctorReport, dt: DoctorTranslator): void {
+function renderHumanReport(report: DoctorReport, dt: DoctorTranslator, verbose: boolean): void {
   writeStdout(`${renderStatus(report.status)} ${paint.ai("fabric doctor")} ${paint.human(report.summary.target)}`);
   for (const check of report.checks) {
     writeStdout(`${renderStatus(check.status)} ${check.name}: ${check.message}`);
   }
-  writeIssueSection(dt("doctor.section.fixable"), report.fixable_errors);
-  writeIssueSection(dt("doctor.section.manual"), report.manual_errors);
-  writeIssueSection(dt("doctor.section.warnings"), report.warnings);
+  const opts = { verbose, dt };
+  writeIssueSection(dt("doctor.section.fixable"), report.fixable_errors, opts);
+  writeIssueSection(dt("doctor.section.manual"), report.manual_errors, opts);
+  writeIssueSection(dt("doctor.section.warnings"), report.warnings, opts);
   renderPayloadLimits(report, dt);
 }
 
@@ -511,7 +524,11 @@ function renderFixKnowledgeMutations(
   }
 }
 
-function writeIssueSection(title: string, issues: DoctorIssue[]): void {
+function writeIssueSection(
+  title: string,
+  issues: DoctorIssue[],
+  options: { verbose: boolean; dt: DoctorTranslator },
+): void {
   if (issues.length === 0) {
     return;
   }
@@ -520,8 +537,14 @@ function writeIssueSection(title: string, issues: DoctorIssue[]): void {
   writeStdout(title);
   for (const issue of issues) {
     writeStdout(`- ${issue.code}: ${issue.message}`);
+    // rc.35 TASK-12 (P0-11): fold maintainer-audience actionHints unless
+    // --verbose. Print a one-line breadcrumb so users know the hint exists.
     if (issue.actionHint !== undefined && issue.actionHint.length > 0) {
-      writeStdout(`  → ${issue.actionHint}`);
+      if (issue.audience === "maintainer" && !options.verbose) {
+        writeStdout(`  → ${options.dt("doctor.maintainer-hint-folded")}`);
+      } else {
+        writeStdout(`  → ${issue.actionHint}`);
+      }
     }
   }
 }

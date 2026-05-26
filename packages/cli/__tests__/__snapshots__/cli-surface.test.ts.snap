@@ -151,6 +151,15 @@ exports[`CLI surface drift gate (docs/test-seed/cli.md §1) > command 'doctor' s
     {
       "alias": undefined,
       "default": false,
+      "description": "Show all action hints including maintainer-audience ones (Fabric contributors editing the source tree). By default these are folded for npm end users.",
+      "name": "verbose",
+      "negativeDescription": undefined,
+      "required": undefined,
+      "type": "boolean",
+    },
+    {
+      "alias": undefined,
+      "default": false,
       "description": "Skip the --fix-knowledge safety confirm. Required for non-tty invocations unless FABRIC_NONINTERACTIVE=1 is set in the environment.",
       "name": "yes",
       "negativeDescription": undefined,

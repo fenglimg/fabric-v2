@@ -64,6 +64,18 @@ export type DoctorCheck = {
   code?: string;
   fixable?: boolean;
   actionHint?: string;
+  // rc.35 TASK-12 (P0-11): audience classifier for the actionHint remediation.
+  //   - "user"        → npm-installed end users can act on it (default).
+  //                     Examples: `fabric doctor --fix`, `fabric install`,
+  //                     edit a knowledge entry.
+  //   - "maintainer"  → only Fabric contributors with the source tree can
+  //                     act (e.g. edit `packages/cli/templates/skills/*` or
+  //                     interpret the G1-G5 cite-goodhart patterns).
+  //
+  // CLI renderer folds maintainer remediations by default; `fabric doctor
+  // --verbose` shows them. Undefined ≡ "user" so legacy checks render
+  // unchanged.
+  audience?: "user" | "maintainer";
 };
 
 export type DoctorIssue = {
@@ -75,6 +87,9 @@ export type DoctorIssue = {
   // text from DoctorCheck.actionHint so CLI consumers can render it inline with
   // the issue. Optional — pre-rc.26 issues without actionHint stay backward-compat.
   actionHint?: string;
+  // rc.35 TASK-12 (P0-11): forwarded from DoctorCheck.audience for the
+  // renderer to decide whether to fold the actionHint.
+  audience?: "user" | "maintainer";
 };
 
 // v2.0.0-rc.29 TASK-008 (BUG-F2): surface the active MCP payload thresholds so
@@ -3437,6 +3452,10 @@ function createSkillTokenBudgetCheck(
       list,
     }),
     t("doctor.check.skill_token_budget.remediation"),
+    // rc.35 TASK-12 (P0-11): maintainer audience. Remediation points at
+    // `packages/cli/templates/skills/*` source — only Fabric contributors
+    // can act. CLI renderer folds by default; --verbose unfolds.
+    "maintainer",
   );
 }
 
@@ -3495,6 +3514,10 @@ function createCiteGoodhartCheck(
       list,
     }),
     t("doctor.check.cite_goodhart.remediation"),
+    // rc.35 TASK-12 (P0-11): maintainer audience. G1/G2/G3/G5 are internal
+    // pattern codes from the cite-policy design memo — npm end users have
+    // no actionable lever for these. Fold by default; --verbose unfolds.
+    "maintainer",
   );
 }
 
@@ -3526,6 +3549,9 @@ function createSkillDescriptionCheck(
       list,
     }),
     t("doctor.check.skill_description.remediation"),
+    // rc.35 TASK-12 (P0-11): maintainer audience. Remediation points at
+    // `packages/cli/templates/skills/<slug>/SKILL.md` frontmatter.
+    "maintainer",
   );
 }
 
@@ -3961,6 +3987,7 @@ function issueCheck(
   code: string,
   message: string,
   actionHint?: string,
+  audience?: "user" | "maintainer",
 ): DoctorCheck {
   return {
     name,
@@ -3970,6 +3997,7 @@ function issueCheck(
     fixable: kind === "fixable_error",
     message,
     actionHint,
+    audience,
   };
 }
 
@@ -3981,6 +4009,7 @@ function collectIssues(checks: DoctorCheck[], kind: DoctorIssueKind): DoctorIssu
       name: check.name,
       message: check.message,
       actionHint: check.actionHint,
+      audience: check.audience,
     }));
 }
 

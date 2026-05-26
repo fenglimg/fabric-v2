@@ -224,6 +224,11 @@ export const enMessages: Messages = {
     "Apply knowledge lint mutations: demote orphaned canonical entries, archive stale drafts, and bump drifted index counters. Default doctor run remains report-only.",
   "cli.doctor.args.yes.description":
     "Skip the --fix-knowledge safety confirm. Required for non-tty invocations unless FABRIC_NONINTERACTIVE=1 is set in the environment.",
+  // rc.35 TASK-12 (P0-11): --verbose unfolds maintainer-audience hints.
+  "cli.doctor.args.verbose.description":
+    "Show all action hints including maintainer-audience ones (Fabric contributors editing the source tree). By default these are folded for npm end users.",
+  "doctor.maintainer-hint-folded":
+    "(maintainer-only remediation — re-run with `fabric doctor --verbose` to see)",
   "cli.doctor.errors.fix-knowledge-fix-mutually-exclusive":
     "--fix-knowledge and --fix cannot be combined. --fix-knowledge mutates user knowledge state (demote/archive); --fix repairs derived state (meta/index). Run them separately.",
   // rc.20 TASK-05: --cite-coverage report flags. Read-only; mutually exclusive with --fix/--fix-knowledge.
