@@ -5,7 +5,24 @@ All notable changes to Fabric will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [2.0.0-rc.34] - Unreleased
+## [2.0.0-rc.35] - Unreleased
+
+rc.35 werewolf-eval-bundle release: 来自 rc.34 真实长跑测评 (`werewolf-eval` 8 天 19535 events baseline,7 batch 抓出 31 个具体问题) 的 P0 lean 8 项 + Batch 7 onboarding 4 项 = 12 TASK 串行修复。无 schema 重构、无 hook 接口变更。Wave 1-5 按依赖串行,Wave 6 dogfood 闭口。详见 `.workflow/.lite-plan/rc35-werewolf-eval-bundle-2026-05-26/`。
+
+> ⚠️ **BREAKING (functional, not API)** — **rc.30 及以下用户必读**:
+>
+> rc.31 在 `.fabric/agents.meta.json` schema 上落了 `z.preprocess` singular→plural fix。该修复**已在 rc.31 工程发布**,但 npm-installed rc.30 全局 CLI **没有同步升级**,导致老用户的 hook 在新项目下**100% 静默失效** (P0-9 根因)。
+>
+> 升级路径 (两步,任一遗漏均无效):
+>
+> 1. `npm install -g @fenglimg/fabric-cli@latest` — 把全局 `fab` CLI 升到 rc.35
+> 2. 在每个 fabric-managed 项目下重跑 `fab install` — 把 SKILL.md / hooks / `.fabric/AGENTS.md` 同步到新版本
+>
+> 详细 checklist 见 [`docs/UPGRADE.md`](./docs/UPGRADE.md)。
+>
+> 不升级的症状: SessionStart hook 无 banner / fabric-archive Skill 不触发 / `fab doctor` 报全表 ERROR JSON dump。
+
+## [2.0.0-rc.34] - 2026-05-26
 
 rc.34 战术收尾 release: 全部 rc.33 7 项 P2 deferred + W1 SKILL.md token 二轮还债。无新功能方向、无 schema 重构、无新 doctor lint。8 TASK 串行执行,per-task 独立 commit,Gemini batch review 末尾一次,新增 52 单测,gates 全绿。战略线 ([[kb-candidate-pool-master]] Part A 21 个候选概念) 全部 out-of-scope,推到 rc.34 ship + 完整测评后单独立项。
 
