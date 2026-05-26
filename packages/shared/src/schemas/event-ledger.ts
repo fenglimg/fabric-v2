@@ -57,7 +57,11 @@ export const editIntentCheckedEventSchema = z.object({
   compliant: z.boolean(),
   intent: z.string(),
   ledger_entry_id: z.string(),
-  ledger_source: z.enum(["ai", "human"]).optional(),
+  // rc.35 TASK-07 (P0-2): add "hook" — emitted by the PreToolUse narrow hook
+  // for every Edit/Write/MultiEdit fire so cite-coverage doctor metrics see
+  // actual edit signals (previously editsTouched was permanently 0 because
+  // no production caller of appendLedgerEntry existed).
+  ledger_source: z.enum(["ai", "human", "hook"]).optional(),
   commit_sha: z.string().optional(),
   parent_sha: z.string().optional(),
   parent_ledger_entry_id: z.string().optional(),

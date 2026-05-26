@@ -101,6 +101,14 @@ const DEFAULT_SUMMARY_MAX_LEN = 80;
 const EDIT_COUNTER_DIR_REL = join(".fabric", ".cache");
 const EDIT_COUNTER_FILE = "edit-counter";
 
+// rc.35 TASK-07 (P0-2): events.jsonl path. PreToolUse Edit fires append a
+// `edit_intent_checked` event (ledger_source: 'hook') so doctor cite-
+// coverage's editsTouched metric sees actual edit signals. Without this
+// signal the entire cite-policy contract validation is structurally inert
+// (rc.30 audit P0-2: 18582 turns / 240 edits / 0 events).
+const EVENTS_LEDGER_DIR_REL = ".fabric";
+const EVENTS_LEDGER_FILE = "events.jsonl";
+
 // rc.6 TASK-023 (E6): hint-silence-counter sidecar — companion to the
 // edit-counter above. Where edit-counter records every PreToolUse fire
 // (numerator-agnostic), the silence-counter records only those fires that
@@ -323,6 +331,72 @@ function extractPaths(toolInput) {
  *     array. The fire-count signal is preserved; the activity overview
  *     just contributes nothing from those lines.
  */
+/**
+ * rc.35 TASK-07 (P0-2): append one `edit_intent_checked` event per touched
+ * path to `.fabric/events.jsonl`. Carries `ledger_source: 'hook'` so doctor
+ * cite-coverage can distinguish hook-originated edit signals from
+ * AI/human-originated `appendLedgerEntry` calls.
+ *
+ * Best-effort:
+ *   - Skips silently when `.fabric/` does not exist (project not init'd).
+ *   - Skips silently when paths is empty (counter signal is preserved by
+ *     the sibling appendEditCounter call; cite-coverage only cares about
+ *     non-empty path events).
+ *   - ANY error (mkdir, append, JSON throw) is swallowed — the hook must
+ *     remain non-blocking per the rc.6 contract.
+ *
+ * Atomicity:
+ *   - One JSON line per path. Append on small writes (< PIPE_BUF, ~4KB on
+ *     POSIX) is atomic at the OS level, so concurrent PreToolUse fires
+ *     from parallel sessions interleave cleanly without partial writes.
+ */
+function appendEditIntentToLedger(projectRoot, now, paths, toolName) {
+  try {
+    const fabricDir = join(projectRoot, EVENTS_LEDGER_DIR_REL);
+    // No .fabric/ → project not initialised. Bail before any write.
+    if (!existsSync(fabricDir)) return;
+    const { isAbsolute: pathIsAbsolute, relative: pathRelative } = require("node:path");
+    const pathList = Array.isArray(paths)
+      ? paths
+          .filter((p) => typeof p === "string" && p.length > 0)
+          .map((p) => {
+            if (pathIsAbsolute(p)) {
+              const rel = pathRelative(projectRoot, p);
+              return rel.startsWith("..") ? null : rel;
+            }
+            // Already-relative paths: drop ones that escape the project tree.
+            return p.startsWith("..") ? null : p;
+          })
+          .filter((p) => typeof p === "string" && p.length > 0)
+          // Use forward slashes for cross-platform consistency on disk.
+          .map((p) => p.split(/[\\/]/).join("/"))
+      : [];
+    if (pathList.length === 0) return;
+    const tsMs = now instanceof Date ? now.getTime() : Number(now);
+    const ledgerEntryId = `hook:${randomUUID()}`;
+    const intent = typeof toolName === "string" && toolName.length > 0 ? toolName : "edit";
+    const lines = pathList
+      .map((p) => JSON.stringify({
+        kind: "fabric-event",
+        id: `event:${randomUUID()}`,
+        ts: tsMs,
+        schema_version: 1,
+        event_type: "edit_intent_checked",
+        path: p,
+        compliant: true,
+        intent,
+        ledger_entry_id: ledgerEntryId,
+        ledger_source: "hook",
+        matched_rule_context_ts: null,
+        window_ms: 0,
+      }))
+      .join("\n") + "\n";
+    appendFileSync(join(fabricDir, EVENTS_LEDGER_FILE), lines, "utf8");
+  } catch {
+    // Silent — events ledger failure must never block the edit.
+  }
+}
+
 function appendEditCounter(projectRoot, now, paths) {
   try {
     const dir = join(projectRoot, EDIT_COUNTER_DIR_REL);
@@ -1085,6 +1159,11 @@ function main(env, stdio) {
     }
     if (!(env && env.skipCounter === true)) {
       appendEditCounter(cwd, now, paths);
+      // rc.35 TASK-07 (P0-2): mirror the edit-counter sidecar into the
+      // events.jsonl ledger so doctor cite-coverage's editsTouched metric
+      // sees actual edit signals. Best-effort — failure is swallowed inside
+      // appendEditIntentToLedger and does not block the hook.
+      appendEditIntentToLedger(cwd, now, paths, toolName);
     }
 
     // E2 path is conditional on a recognized tool + extractable paths.
@@ -1314,6 +1393,10 @@ module.exports = {
   renderSummary,
   truncateSummary,
   formatEntryLine,
+  // rc.35 TASK-07 (P0-2): cite-infrastructure wire-up. Exported so the
+  // integration test can drive the writer directly without standing up the
+  // entire PreToolUse main() flow.
+  appendEditIntentToLedger,
   // rc.6 TASK-021 (E3) — session-hints cache exports for tests / future
   // consumers (TASK-023 silence-counter telemetry will reuse the same
   // session-id resolution + cache shape).
@@ -1343,6 +1426,8 @@ module.exports = {
     EDIT_COUNTER_FILE,
     HINT_SILENCE_COUNTER_DIR_REL,
     HINT_SILENCE_COUNTER_FILE,
+    EVENTS_LEDGER_DIR_REL,
+    EVENTS_LEDGER_FILE,
     EDIT_TOOL_NAMES,
     SESSION_HINTS_DIR_REL,
     SESSION_HINTS_FILE_PREFIX,
