@@ -328,6 +328,11 @@ export const enMessages: Messages = {
   "doctor.check.agents_meta.remediation.missing":
     "Run `fabric doctor --fix` to rebuild agents.meta.json from .fabric/knowledge/.",
   "doctor.check.agents_meta.message.invalid-default": ".fabric/agents.meta.json is invalid.",
+  // rc.35 TASK-09 (P0-14): humanised parse-failure messages.
+  "doctor.check.agents_meta.message.invalid-zod":
+    ".fabric/agents.meta.json fails schema validation — {issues}. The file was likely written by an incompatible fabric CLI version, or hand-edited.",
+  "doctor.check.agents_meta.message.invalid-from-old-cli":
+    ".fabric/agents.meta.json fails schema validation because the GLOBAL `fabric` CLI on PATH ({version}) is older than the minimum-supported {minVersion}. The schema gained backward-compatible singular→plural normalisation in rc.31; older CLIs cannot parse the result they themselves write back.",
   "doctor.check.agents_meta.remediation.invalid":
     "Run `fabric doctor --fix` to let reconcile rebuild agents.meta.json from the .fabric/knowledge/ disk ground-truth (rc.31+ auto-migrates legacy singular knowledge_type values to canonical plural; do NOT manually delete agents.meta.json — you would lose counters envelope and promote-ledger associations).",
   "doctor.check.agents_meta.message.stale":

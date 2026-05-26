@@ -6,6 +6,7 @@ import { homedir } from "node:os";
 import { isAbsolute, join, posix, relative as nodeRelative, resolve, sep } from "node:path";
 
 import { minimatch } from "minimatch";
+import { ZodError } from "zod";
 
 import {
   agentsMetaSchema,
@@ -225,6 +226,12 @@ type MetaInspection =
       revision: null;
       computedRevision: string | null;
       ruleCount: number;
+      // rc.35 TASK-09 (P0-14): structured parse-failure hints so renderer
+      // can swap the raw ZodError JSON dump for a human sentence + actionable
+      // command. `readErrorKind === "zod"` carries up to N issues with
+      // {path, message} so the doctor check produces stable copy.
+      readErrorKind?: "zod" | "json" | "other";
+      readErrorZodIssues?: Array<{ path: string; message: string }>;
       missingContentRefs: string[];
       invalidContentRefs: string[];
       stale: boolean;
@@ -1116,7 +1123,7 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     // The file's absence is a legitimate post-init state when the skill has
     // not yet run, so flagging it as a doctor manual_error misrepresents
     // ownership.
-    createMetaCheck(t, meta),
+    createMetaCheck(t, meta, globalCliVersion),
     createRuleContentRefCheck(t, meta),
     // v2.0 / rc.2: `createRuleSectionsCheck` removed — it parsed v1.x
     // [MANDATORY_INJECTION] sections out of legacy rule files, a structural
@@ -2161,6 +2168,19 @@ async function inspectMeta(projectRoot: string): Promise<MetaInspection> {
         changed: built?.changed ?? true,
       };
     }
+    // rc.35 TASK-09 (P0-14): classify the parse failure so createMetaCheck
+    // can render a human sentence instead of dumping the raw ZodError JSON.
+    let readErrorKind: "zod" | "json" | "other" = "other";
+    let readErrorZodIssues: Array<{ path: string; message: string }> | undefined;
+    if (error instanceof ZodError) {
+      readErrorKind = "zod";
+      readErrorZodIssues = error.issues.slice(0, 3).map((issue) => ({
+        path: issue.path.length > 0 ? issue.path.join(".") : "<root>",
+        message: issue.message,
+      }));
+    } else if (error instanceof SyntaxError) {
+      readErrorKind = "json";
+    }
     return {
       present: true,
       valid: false,
@@ -2168,6 +2188,8 @@ async function inspectMeta(projectRoot: string): Promise<MetaInspection> {
       revision: null,
       computedRevision: built?.meta.revision ?? null,
       ruleCount: 0,
+      readErrorKind,
+      readErrorZodIssues,
       missingContentRefs: [],
       invalidContentRefs: [],
       stale: true,
@@ -3082,7 +3104,11 @@ function createForensicCheck(
 // v2.0: `createInitContextCheck` removed alongside `inspectInitContext` —
 // see comment at the call site in `runDoctorReport`.
 
-function createMetaCheck(t: Translator, meta: MetaInspection): DoctorCheck {
+function createMetaCheck(
+  t: Translator,
+  meta: MetaInspection,
+  globalCli?: GlobalCliInspection,
+): DoctorCheck {
   if (!meta.present) {
     return issueCheck(
       t("doctor.check.agents_meta.name"),
@@ -3094,6 +3120,40 @@ function createMetaCheck(t: Translator, meta: MetaInspection): DoctorCheck {
     );
   }
   if (!meta.valid) {
+    // rc.35 TASK-09 (P0-14): swap the raw ZodError JSON dump for a human
+    // sentence. Three message paths:
+    //   1. Global CLI is outdated (TASK-04 already detected it) → prioritise
+    //      the version-mismatch story because it is the most common root
+    //      cause of schema errors against rc.31+ projects.
+    //   2. ZodError → format up to 3 issues as `field=value reason`.
+    //   3. JSON syntax error or other → keep the original message but wrap
+    //      it with the standard remediation pointer.
+    if (globalCli && globalCli.status === "outdated") {
+      return issueCheck(
+        t("doctor.check.agents_meta.name"),
+        "error",
+        "manual_error",
+        "agents_meta_invalid_global_cli_outdated",
+        t("doctor.check.agents_meta.message.invalid-from-old-cli", {
+          version: globalCli.version,
+          minVersion: globalCli.minVersion,
+        }),
+        t("doctor.check.global_cli_outdated.remediation"),
+      );
+    }
+    if (meta.readErrorKind === "zod" && meta.readErrorZodIssues && meta.readErrorZodIssues.length > 0) {
+      const formatted = meta.readErrorZodIssues
+        .map((issue) => `${issue.path}: ${issue.message}`)
+        .join("; ");
+      return issueCheck(
+        t("doctor.check.agents_meta.name"),
+        "error",
+        "manual_error",
+        "agents_meta_invalid",
+        t("doctor.check.agents_meta.message.invalid-zod", { issues: formatted }),
+        t("doctor.check.agents_meta.remediation.invalid"),
+      );
+    }
     return issueCheck(
       t("doctor.check.agents_meta.name"),
       "error",

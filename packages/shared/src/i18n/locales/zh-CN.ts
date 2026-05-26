@@ -318,6 +318,11 @@ export const zhCNMessages: Messages = {
   "doctor.check.agents_meta.remediation.missing":
     "运行 `fabric doctor --fix` 从 .fabric/knowledge/ 重建 agents.meta.json。",
   "doctor.check.agents_meta.message.invalid-default": ".fabric/agents.meta.json 无效。",
+  // rc.35 TASK-09 (P0-14): 人话化的 schema 解析失败消息。
+  "doctor.check.agents_meta.message.invalid-zod":
+    ".fabric/agents.meta.json schema 校验失败 — {issues}。该文件很可能由不兼容版本的 fabric CLI 写入,或被手工编辑。",
+  "doctor.check.agents_meta.message.invalid-from-old-cli":
+    ".fabric/agents.meta.json schema 校验失败,因为 PATH 上的全局 `fabric` CLI ({version}) 低于最低支持版本 {minVersion}。rc.31 引入了向后兼容的 singular→plural 归一化,旧版 CLI 写出的文件自己也无法解析。",
   "doctor.check.agents_meta.remediation.invalid":
     "运行 `fabric doctor --fix` 让 reconcile 从 .fabric/knowledge/ 磁盘 ground-truth 重建 agents.meta.json（rc.31 起兼容历史 schema 的 singular knowledge_type 自动迁移到 plural；不要手动删除 agents.meta.json，会丢 counters envelope 与 promote ledger 关联）。",
   "doctor.check.agents_meta.message.stale":
