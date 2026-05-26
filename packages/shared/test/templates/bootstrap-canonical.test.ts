@@ -19,9 +19,22 @@ describe("bootstrap-canonical", () => {
     });
 
     it("contains all required H2 sections", () => {
+      // rc.35 TASK-11 (P0-13/P1-9): For Developers section sits between the
+      // intro paragraph and the existing AI-facing sections. ≤5 lines,
+      // second-person, points dev at USER-QUICKSTART.md to deflect the
+      // "AGENTS.md is dev onboarding" misread Batch 7 caught.
+      expect(BOOTSTRAP_CANONICAL).toContain("## For Developers");
+      expect(BOOTSTRAP_CANONICAL).toContain("docs/USER-QUICKSTART.md");
       expect(BOOTSTRAP_CANONICAL).toContain("## 行为规则");
       expect(BOOTSTRAP_CANONICAL).toContain("## 知识库(KB)");
       expect(BOOTSTRAP_CANONICAL).toContain("## Cite policy");
+    });
+
+    it("For Developers section precedes the AI-facing sections", () => {
+      const devIdx = BOOTSTRAP_CANONICAL.indexOf("## For Developers");
+      const aiIdx = BOOTSTRAP_CANONICAL.indexOf("## 行为规则");
+      expect(devIdx).toBeGreaterThan(0);
+      expect(aiIdx).toBeGreaterThan(devIdx);
     });
 
     it("is at least 800 bytes (utf-8)", () => {

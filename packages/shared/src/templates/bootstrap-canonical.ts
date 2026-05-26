@@ -62,6 +62,12 @@ export const BOOTSTRAP_CANONICAL = `# Fabric Bootstrap
 
 本项目使用 Fabric 管理跨客户端 AI 知识与行为规则。本文件由 \`fabric install\` 同步到三端 managed block,**不要手动编辑三端的 block**,只改这里 + 重跑 \`fabric install\`。
 
+## For Developers
+
+这个文件是 **AI 客户端的策略与规约配置**,不是 dev onboarding。你不需要读 Self-archive / Cite / Phase 0.4 等细节。
+作为 dev 你只需要:在每个 repo 跑一次 \`fabric install\`,出问题跑 \`fabric doctor\`,在 \`.fabric/knowledge/<type>/\` 下写 markdown。
+完整 5 分钟版 quickstart 见 \`docs/USER-QUICKSTART.md\`。**严禁手动编辑 \`.fabric/agents.meta.json\`** — 派生状态由 engine 重建。
+
 ## 行为规则
 - **修改任何文件前**:两步调用——先 \`fab_plan_context(paths=[<被改文件>])\` 拿到 \`selection_token\` 与候选 \`entries\`(挑 \`selectable===true\` 的 \`stable_id\`),再 \`fab_get_knowledge_sections({ selection_token, ai_selected_stable_ids: [<id>...] })\` 取规则正文。
 - **\`.fabric/agents.meta.json\` 严禁手动编辑**;engine 会自动同步派生状态,显式 reconcile 跑 \`fabric doctor --fix\`。
