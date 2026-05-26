@@ -1393,6 +1393,28 @@ describe("fabric-hint.cjs — evaluateMaintenanceSignal (rc.7 T10)", () => {
     expect(r).not.toBeNull();
     expect(r?.signal).toBe("maintenance");
   });
+
+  it("rc.34 TASK-01: backward clock skew (lastEmitMs > nowMs) does not crash gate, stays silent", () => {
+    // Scenario: laptop wakes from suspend, NTP corrects clock backward, or
+    // user crosses TZ boundary. The cooldown sidecar's lastEmitMs is now in
+    // the "future" relative to nowMs (delta < 0).
+    //
+    // Contract: gate must not throw, must not pass-through with a result.
+    // Math.max(0, nowMs - lastEmitMs) ensures the comparison clamps the
+    // negative delta to 0, so the gate evaluates `0 < cooldown` (silent).
+    // The user-visible win is that silence is bounded to one cooldown
+    // window from nowMs, not (cooldown + |skew|).
+    const staleDoctor = NOW_MS - 30 * DAY_MS;
+    const futureEmit = NOW_MS + 6 * HOUR_MS; // skewed forward
+    const events = [makeEvent("doctor_run", staleDoctor)];
+
+    expect(() =>
+      hook.evaluateMaintenanceSignal(events, FIXED_NOW, 10, futureEmit),
+    ).not.toThrow();
+
+    const result = hook.evaluateMaintenanceSignal(events, FIXED_NOW, 10, futureEmit);
+    expect(result).toBeNull();
+  });
 });
 
 describe("fabric-hint.cjs — findLastDoctorRunTs (rc.7 T10)", () => {

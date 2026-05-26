@@ -1018,10 +1018,13 @@ function evaluateMaintenanceSignal(events, now, canonicalCount, lastEmitMs, thre
   }
 
   // Cooldown gate — short-circuit when we just nagged.
+  // rc.34 TASK-01: Math.max(0, …) bounds backward clock skew (NTP sync,
+  // suspend-wake, TZ change) to one cooldown window instead of (cooldown +
+  // |skew|).
   if (
     typeof lastEmitMs === "number" &&
     Number.isFinite(lastEmitMs) &&
-    nowMs - lastEmitMs < cooldownDays * MS_PER_DAY
+    Math.max(0, nowMs - lastEmitMs) < cooldownDays * MS_PER_DAY
   ) {
     return null;
   }
@@ -1733,7 +1736,12 @@ function main(env, stdio) {
     const cooldownMs = readCooldownHours(cwd) * MS_PER_HOUR;
     const cache = readShownCache(cwd);
     const lastShown = cache[result.signal];
-    if (typeof lastShown === "number" && nowMs - lastShown < cooldownMs) {
+    // rc.34 TASK-01: Math.max(0, …) bounds backward clock skew so an NTP
+    // correction or suspend-wake doesn't extend silence beyond cooldownMs.
+    if (
+      typeof lastShown === "number" &&
+      Math.max(0, nowMs - lastShown) < cooldownMs
+    ) {
       return; // Still in cooldown — silent.
     }
 

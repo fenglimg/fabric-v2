@@ -708,7 +708,11 @@ function main(env, stdio) {
       const lastEmitMs = readBroadLastEmit(cwd);
       if (
         typeof lastEmitMs === "number" &&
-        nowMs - lastEmitMs < cooldownHours * MS_PER_HOUR
+        // rc.34 TASK-01: Math.max(0, …) bounds backward clock skew (NTP
+        // sync, suspend-wake, TZ change) to one cooldown window instead of
+        // (cooldown + |skew|) — otherwise a 6h backward jump on a 12h
+        // cooldown silences the banner for 18h+.
+        Math.max(0, nowMs - lastEmitMs) < cooldownHours * MS_PER_HOUR
       ) {
         return; // still in cooldown — silent
       }
