@@ -1394,26 +1394,29 @@ describe("fabric-hint.cjs — evaluateMaintenanceSignal (rc.7 T10)", () => {
     expect(r?.signal).toBe("maintenance");
   });
 
-  it("rc.34 TASK-01: backward clock skew (lastEmitMs > nowMs) does not crash gate, stays silent", () => {
+  it("rc.34 TASK-01 + review-fix: future-stamped lastEmit (backward clock skew) bypasses cooldown — fires immediately", () => {
     // Scenario: laptop wakes from suspend, NTP corrects clock backward, or
     // user crosses TZ boundary. The cooldown sidecar's lastEmitMs is now in
     // the "future" relative to nowMs (delta < 0).
     //
-    // Contract: gate must not throw, must not pass-through with a result.
-    // Math.max(0, nowMs - lastEmitMs) ensures the comparison clamps the
-    // negative delta to 0, so the gate evaluates `0 < cooldown` (silent).
-    // The user-visible win is that silence is bounded to one cooldown
-    // window from nowMs, not (cooldown + |skew|).
+    // Contract (post Gemini P1 review-fix): future-stamped sidecar is treated
+    // as expired — gate FIRES on the next invocation so the signal heals
+    // immediately instead of waiting (cooldown + |skew|) real-time. Pre-fix
+    // (Math.max(0, …)) was a no-op that left silence at cooldown + |skew|;
+    // current logic uses `nowMs >= lastEmitMs && delta < cooldown` so the
+    // first conjunct short-circuits false on backward skew.
     const staleDoctor = NOW_MS - 30 * DAY_MS;
-    const futureEmit = NOW_MS + 6 * HOUR_MS; // skewed forward
+    const futureEmit = NOW_MS + 6 * HOUR_MS; // 6h forward = backward clock skew
     const events = [makeEvent("doctor_run", staleDoctor)];
 
     expect(() =>
       hook.evaluateMaintenanceSignal(events, FIXED_NOW, 10, futureEmit),
     ).not.toThrow();
 
+    // Backward skew should FIRE (not stay silent for cooldown + skew window).
     const result = hook.evaluateMaintenanceSignal(events, FIXED_NOW, 10, futureEmit);
-    expect(result).toBeNull();
+    expect(result).not.toBeNull();
+    expect(result?.signal).toBe("maintenance");
   });
 });
 

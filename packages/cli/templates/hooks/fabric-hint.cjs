@@ -1018,13 +1018,14 @@ function evaluateMaintenanceSignal(events, now, canonicalCount, lastEmitMs, thre
   }
 
   // Cooldown gate — short-circuit when we just nagged.
-  // rc.34 TASK-01: Math.max(0, …) bounds backward clock skew (NTP sync,
-  // suspend-wake, TZ change) to one cooldown window instead of (cooldown +
-  // |skew|).
+  // rc.34 TASK-01 + review-fix (Gemini P1): future-stamped lastEmit (backward
+  // clock skew) bypasses cooldown — treats sidecar as "expired" so the gate
+  // heals on the next invocation instead of waiting (cooldown + |skew|).
   if (
     typeof lastEmitMs === "number" &&
     Number.isFinite(lastEmitMs) &&
-    Math.max(0, nowMs - lastEmitMs) < cooldownDays * MS_PER_DAY
+    nowMs >= lastEmitMs &&
+    nowMs - lastEmitMs < cooldownDays * MS_PER_DAY
   ) {
     return null;
   }
@@ -1736,11 +1737,12 @@ function main(env, stdio) {
     const cooldownMs = readCooldownHours(cwd) * MS_PER_HOUR;
     const cache = readShownCache(cwd);
     const lastShown = cache[result.signal];
-    // rc.34 TASK-01: Math.max(0, …) bounds backward clock skew so an NTP
-    // correction or suspend-wake doesn't extend silence beyond cooldownMs.
+    // rc.34 TASK-01 + review-fix (Gemini P1): future-stamped lastShown
+    // (backward clock skew) bypasses cooldown — sidecar treated as expired.
     if (
       typeof lastShown === "number" &&
-      Math.max(0, nowMs - lastShown) < cooldownMs
+      nowMs >= lastShown &&
+      nowMs - lastShown < cooldownMs
     ) {
       return; // Still in cooldown — silent.
     }

@@ -708,11 +708,15 @@ function main(env, stdio) {
       const lastEmitMs = readBroadLastEmit(cwd);
       if (
         typeof lastEmitMs === "number" &&
-        // rc.34 TASK-01: Math.max(0, …) bounds backward clock skew (NTP
-        // sync, suspend-wake, TZ change) to one cooldown window instead of
-        // (cooldown + |skew|) — otherwise a 6h backward jump on a 12h
-        // cooldown silences the banner for 18h+.
-        Math.max(0, nowMs - lastEmitMs) < cooldownHours * MS_PER_HOUR
+        // rc.34 TASK-01 + review-fix (Gemini P1): when lastEmit is in the
+        // FUTURE relative to now (backward clock skew — NTP sync /
+        // suspend-wake / TZ change), the gate fires immediately. Otherwise
+        // standard cooldown check. Math.max(0, …) was a no-op (silent for
+        // cooldown + |skew| under both formulations); this guard actually
+        // heals the skew on the next invocation by treating future-stamped
+        // sidecar as "expired."
+        nowMs >= lastEmitMs &&
+        nowMs - lastEmitMs < cooldownHours * MS_PER_HOUR
       ) {
         return; // still in cooldown — silent
       }

@@ -5,6 +5,49 @@ All notable changes to Fabric will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0-rc.34] - Unreleased
+
+rc.34 战术收尾 release: 全部 rc.33 7 项 P2 deferred + W1 SKILL.md token 二轮还债。无新功能方向、无 schema 重构、无新 doctor lint。8 TASK 串行执行,per-task 独立 commit,Gemini batch review 末尾一次,新增 52 单测,gates 全绿。战略线 ([[kb-candidate-pool-master]] Part A 21 个候选概念) 全部 out-of-scope,推到 rc.34 ship + 完整测评后单独立项。
+
+### Added
+- `unarchiveKnowledge(projectRoot, archivePathRel, options)` (`packages/server/src/services/unarchive-knowledge.ts`) — reverse-archive 原语:把已归档 entry 从 `.fabric/.archive/<type>/` 移回 `.fabric/knowledge/<layer>/<type>/`。layer 从 stable_id prefix 派生 (KT-* team, KP-* personal),可 `options.targetLayer` 覆盖。dry-run 支持,clobber-protect,EXDEV 跨文件系统 fallback,ledger 失败时 rollback。每次成功 restore 写一条 `knowledge_unarchived` event
+- `knowledgeUnarchivedEventSchema` (`packages/shared/src/schemas/event-ledger.ts`) — 新 ledger event_type 含 `stable_id` / `archive_path` / `restored_to` / `reason`
+- `cite-policy-evict.cjs` (`packages/cli/templates/hooks/`) — Claude Code 专属 UserPromptSubmit 钩子,turn-count 窗口周期注入 cite 契约 reminder (rc.32 Batch 1 cite 遵循率 3.1% 痛点的延迟修)。复用 rc.33 W2 stdout JSON envelope channel;Codex/Cursor 不支持该事件,跳过安装
+- `estimateSkillTokens` / `validateSkillCanonicalSize` / `inspectStaleInstall` (`packages/cli/src/install/skills-and-hooks.ts`) — 3 个 install-time helper。`validateSkillCanonicalSize` 在 source >10K tok 抛 (drift→abort);`inspectStaleInstall` 在 installed >1.5× canonical 时通过 `InstallStepResult.message` 标 `stale-replaced (X tok → Y tok canonical)`,让操作员看见为何 copyTextIdempotent 触发重写
+- `cite_evict_interval` config 字段 (number, default 0=OFF, opt-in;`packages/shared/src/schemas/fabric-config.ts`)
+- `reverse_unarchive_enabled` + `reverse_unarchive_dry_run` config 字段 (both boolean, default false=opt-in)
+- `ref/dry-run-scope.md` 新增到 `fabric-archive/ref/` — 6 行 dry-run 写操作表完整外移
+- 5 个新 ref 文件加到 `fabric-review/ref/`: `per-mode-flows.md` (4 mode 完整 step-by-step + 全部 bilingual 渲染代码块) / `semantic-check.md` (LLM 主观判断三类细化) / `modify-flow.md` (Layer-flip 4-step server transaction + narrowing imported flow) / `askuserquestion-policy.md` (完整 DO/DO NOT + 双语 phrasing template) / `output-contract.md` (bilingual rollup + events.jsonl per-field self-truncate)
+- 52 新单测分布: TASK-01 +1 (cooldown skew gate), TASK-02 +14 (skill-size-validator math/边界/smoke), TASK-05 +9 (unarchive dry-run/apply/defensive), TASK-06 +28 (cite-evict pure helper/config/sidecar/render/main e2e/JSON envelope)
+- 2 个 rc.35 决策 memo 在 `.workflow/scratch/`: `rc34-cite-evict-design.md` (8 节, 含 rollout plan + 失败模式 + rc.35 候选 strategy) / `rc34-cohort-decay-memo.md` (8 节, 推荐 rc.35 **不实施** cohort decay)
+
+### Changed
+- `packages/cli/templates/skills/fabric-archive/SKILL.md` rewritten as **phase navigator + ref pointer**: 9056 tok → 4145 tok (-54%)。Hard Rules DISPLAY/WRITE 33 条 MUST/NEVER **verbatim 保留** (contract-locked, trim 等同协议违反)。Phase 0/0.5/1/1.5/2/2.5/3/3.5/4/4.5 每段缩到 skip 条件 + 1 句目的 + `Read ref/phase-X.md` 指针;细节迁回早已存在 (rc.33 W1) 的 12 个 ref 文件
+- `packages/cli/templates/skills/fabric-review/SKILL.md` 同模式拆分: 9508 tok → 4249 tok (-55%)。Hard Rules verbatim, Mode Inference 3-step + keyword 表保留 (LLM dispatch 必读), Per-Mode Flow 每 mode 1-2 行 navigator, bilingual 渲染块 + DO/DON'T 模板 + Layer-Flip + 输出 contract 全部外移到 5 个新 ref
+- `packages/cli/templates/hooks/knowledge-hint-broad.cjs` line 711 cooldown gate 加 `Math.max(0, nowMs - lastEmitMs)` 守护 backward 时钟漂移 (NTP 同步 / 笔记本休眠唤醒 / 跨时区)
+- `packages/cli/templates/hooks/fabric-hint.cjs` lines 1024 + 1736 同样 `Math.max(0, …)` 守护 (maintenance signal-D + A/B/C 共享 cooldown)
+- `installFabricArchiveSkill` / `installFabricReviewSkill` / `installFabricImportSkill` (`skills-and-hooks.ts`) 复制前调 `validateSkillCanonicalSize` + 每 target 调 `inspectStaleInstall`;stale 注解写进 `InstallStepResult.message`。预检失败 **block install** (per [[cli-design]] drift→abort)
+- `hooks-orchestrator.ts` 加 `installCitePolicyEvictHook` 步骤 (在 narrow + lib 之间)
+- `claude-code.json` 注册 `UserPromptSubmit` 事件指向 `cite-policy-evict.cjs`
+- `EventLedgerEvent` discriminated union + type alias 加入 `KnowledgeUnarchivedEvent`
+
+### Fixed
+- 时钟回拨 (backward clock skew) 不再让 fabric-hint Signal A/B/C/D 静默时长 = (cooldown + |skew|);现 bounded 到 cooldown 单窗 — 用户在 NTP 矫正后不再要等额外 |skew| 才能看到下一次 reminder
+
+### Migration
+- 已有用户升级透明: 三个新 config 字段 (`cite_evict_interval` / `reverse_unarchive_enabled` / `reverse_unarchive_dry_run`) 默认 OFF, 行为零变化
+- 想试 cite-policy 长会话 reminder: `.fabric/fabric-config.json` 加 `"cite_evict_interval": 10` (推荐 active session 10-20, 高契约严格度 5)
+- `fab install` 现会自动检测 installed SKILL.md 是否 >1.5× canonical (即 stale install), 自动从 canonical 重写;`InstallStepResult.message` 含 `stale-replaced (X tok → Y tok canonical)` 注解
+- 改 `packages/shared/src/schemas/` 后必须 `pnpm --filter @fenglimg/fabric-shared build` 才能让 server 测试看见新 schema (rc.34 TASK-05 dist 漂移 precedent)
+
+### Out of scope (rc.35+ candidates)
+- fabric-import SKILL.md 拆分 (当前 7252 tok WARN, 跟 TASK-03/04 同模式可机械应用)
+- reverse-unarchive **自动检测** ghost-cited archived entries (本 release 只 ship 原语;auto-detect 落 rc.35 配合 doctor lint pass)
+- cite-policy evict 其他 strategy (time-based, token-budget) — turn-count 数据先跑一段
+- cohort-based 衰减 — TASK-07 memo 显式推荐 **不做** (信号与 last_consumed_at 共线 + corpus 规模不足验证)
+- doctor 'N entries unarchived in last 7d' hint — 跟 auto-detect 一起做 (单独加 hint 无 trigger 时永远 0 条无价值)
+- cite-coverage 双窗 (7d + 30d) — 单窗已锁定本 release;若 dogfood 发现噪音再 hotfix
+
 ## [2.0.0-rc.26] - Unreleased
 
 `fab doctor` now respects the `fabric_language` field in `.fabric/fabric-config.json`. The long-standing gap between `KT-DEC-9004` (which defined `fabric_language` as the authoritative locale source) and runtime is closed: with `fabric_language: "zh-CN"`, doctor output (check names, messages, remediations) renders in Simplified Chinese; with `"en"` (or no field), English is preserved unchanged. Machine-readable `code` fields, file paths, schema field names, and shell commands stay English in both locales. Wave breakdown: locale resolver foundation (TASK-01) → doctor.ts migration across 35 check functions in 4 sequential batches (TASK-02a, TASK-02b, TASK-03, TASK-04) → CLI runtime translator rewire + bilingual snapshot test (TASK-05) → closure (TASK-06).

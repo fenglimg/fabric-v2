@@ -81,11 +81,21 @@ function extractStableId(filename: string): string | null {
 }
 
 function deriveType(archivePathPosix: string): string | null {
+  // Caller MUST have normalized backslashes upstream (see normalizeToPosix).
   // Expected shape: ".fabric/.archive/<type>/<filename>" — extract <type>.
   const parts = archivePathPosix.split("/");
   const archiveIdx = parts.indexOf(".archive");
   if (archiveIdx === -1 || archiveIdx + 1 >= parts.length - 1) return null;
   return parts[archiveIdx + 1] ?? null;
+}
+
+// rc.34 review-fix (Gemini P0): single normalization point. Windows callers
+// pass backslashes; Node's POSIX `basename` treats `\` as a filename char,
+// so we MUST convert at entry before any of basename / split-on-`/` / etc.
+// run. Keeping this isolated to one helper means every downstream helper
+// can assume forward-slash input without per-site guards.
+function normalizeToPosix(p: string): string {
+  return p.replace(/\\/g, "/");
 }
 
 /**
@@ -99,17 +109,22 @@ export async function unarchiveKnowledge(
   options: UnarchiveOptions = {},
 ): Promise<UnarchiveResult> {
   const dryRun = options.dryRun === true;
-  const archivePathAbs = join(projectRoot, archivePathRel);
-  const filename = basename(archivePathRel);
+  // rc.34 review-fix (Gemini P0): normalize once at entry — every downstream
+  // helper assumes POSIX separators. Windows callers can pass backslashes;
+  // result.archivePath is reported in POSIX form (callers can re-localize
+  // for display if needed, but the contract is "relative POSIX path").
+  const archivePathPosix = normalizeToPosix(archivePathRel);
+  const archivePathAbs = join(projectRoot, archivePathPosix);
+  const filename = basename(archivePathPosix);
   const stableId = extractStableId(filename);
   const layer = deriveLayer(filename, options.targetLayer);
-  const type = deriveType(archivePathRel);
+  const type = deriveType(archivePathPosix);
 
   if (layer === null) {
     return {
       ok: false,
       stableId,
-      archivePath: archivePathRel,
+      archivePath: archivePathPosix,
       restoredTo: null,
       applied: false,
       dryRun,
@@ -120,11 +135,11 @@ export async function unarchiveKnowledge(
     return {
       ok: false,
       stableId,
-      archivePath: archivePathRel,
+      archivePath: archivePathPosix,
       restoredTo: null,
       applied: false,
       dryRun,
-      error: `cannot derive type from archive path '${archivePathRel}'; expected '.fabric/.archive/<type>/<filename>'`,
+      error: `cannot derive type from archive path '${archivePathPosix}'; expected '.fabric/.archive/<type>/<filename>'`,
     };
   }
 
@@ -135,7 +150,7 @@ export async function unarchiveKnowledge(
     return {
       ok: true,
       stableId,
-      archivePath: archivePathRel,
+      archivePath: archivePathPosix,
       restoredTo: restoredToRel,
       applied: false,
       dryRun: true,
@@ -146,18 +161,18 @@ export async function unarchiveKnowledge(
     return {
       ok: false,
       stableId,
-      archivePath: archivePathRel,
+      archivePath: archivePathPosix,
       restoredTo: restoredToRel,
       applied: false,
       dryRun,
-      error: `archive source does not exist: ${archivePathRel}`,
+      error: `archive source does not exist: ${archivePathPosix}`,
     };
   }
   if (existsSync(restoredToAbs)) {
     return {
       ok: false,
       stableId,
-      archivePath: archivePathRel,
+      archivePath: archivePathPosix,
       restoredTo: restoredToRel,
       applied: false,
       dryRun,
@@ -188,7 +203,7 @@ export async function unarchiveKnowledge(
     return {
       ok: false,
       stableId,
-      archivePath: archivePathRel,
+      archivePath: archivePathPosix,
       restoredTo: restoredToRel,
       applied: false,
       dryRun,
@@ -204,7 +219,7 @@ export async function unarchiveKnowledge(
       stable_id: stableId ?? undefined,
       timestamp: new Date().toISOString(),
       reason: options.reason ?? "unspecified",
-      archive_path: archivePathRel,
+      archive_path: archivePathPosix,
       restored_to: restoredToRel,
     });
   } catch (ledgerError) {
@@ -214,7 +229,7 @@ export async function unarchiveKnowledge(
       return {
         ok: false,
         stableId,
-        archivePath: archivePathRel,
+        archivePath: archivePathPosix,
         restoredTo: restoredToRel,
         applied: false,
         dryRun,
@@ -224,7 +239,7 @@ export async function unarchiveKnowledge(
     return {
       ok: false,
       stableId,
-      archivePath: archivePathRel,
+      archivePath: archivePathPosix,
       restoredTo: restoredToRel,
       applied: false,
       dryRun,
@@ -235,7 +250,7 @@ export async function unarchiveKnowledge(
   return {
     ok: true,
     stableId,
-    archivePath: archivePathRel,
+    archivePath: archivePathPosix,
     restoredTo: restoredToRel,
     applied: true,
     dryRun,

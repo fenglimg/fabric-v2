@@ -229,4 +229,24 @@ describe("unarchiveKnowledge — defensive failures (rc.34 TASK-05)", () => {
     expect(result.ok).toBe(false);
     expect(result.error).toMatch(/cannot derive type/);
   });
+
+  it("rc.34 TASK-05 review-fix (Gemini P0): Windows-style backslash archive path derives correctly", async () => {
+    // Caller on Windows passes ".fabric\\.archive\\decisions\\KT-D-0007--x.md".
+    // deriveType() must normalize backslashes → forward slashes before splitting.
+    // dry-run mode: only path math runs, no actual disk move (the seeded file
+    // uses POSIX path; we're asserting the derivation logic, not file ops).
+    const archiveRel = await seedArchivedFile(
+      projectRoot,
+      "decisions",
+      "KT-D-0007--single-cjs-hook.md",
+    );
+    const winStylePath = archiveRel.replace(/\//g, "\\");
+    const result = await unarchiveKnowledge(projectRoot, winStylePath, { dryRun: true });
+
+    expect(result.ok).toBe(true);
+    expect(result.stableId).toBe("KT-D-0007");
+    expect(result.restoredTo).toBe(
+      ".fabric/knowledge/team/decisions/KT-D-0007--single-cjs-hook.md",
+    );
+  });
 });
