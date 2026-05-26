@@ -124,6 +124,18 @@ export const SKILL_DESTINATIONS = {
   ],
 } as const;
 
+// rc.35 TASK-03 (P2-6): legacy Skill directories that `fab install` must
+// remove. The template directory was already deleted, but rc.30-and-earlier
+// installs still carry the residual copy in `.codex/skills/` and
+// `.claude/skills/`. Listed as full directories (not just SKILL.md) because
+// the skill ships supporting files; rm -rf the whole subtree is the only
+// safe cleanup. Removal is best-effort and runs before the modern skills
+// are installed so users see the deprecation as a single install side-effect.
+export const DEPRECATED_SKILL_DIRS = [
+  ".claude/skills/fabric-init",
+  ".codex/skills/fabric-init",
+] as const;
+
 
 /**
  * Project-root-relative destination paths for the three cross-client hook
@@ -427,6 +439,47 @@ export async function installFabricImportSkill(
     results.push(result);
   }
   results.push(...(await installSkillRefFiles(projectRoot, "fabric-import")));
+  return results;
+}
+
+/**
+ * v2.0.0-rc.35 TASK-03 (P2-6): remove deprecated skill directories left over
+ * from rc.30-and-earlier installs. Idempotent: absent paths become `skipped /
+ * absent` rows; present paths are removed via `rm -rf` and recorded as
+ * `written / removed-deprecated`. Failures are surfaced as `error` rows but
+ * never abort `fab install` (caller wraps in runBestEffort).
+ *
+ * Must run BEFORE the modern installFabric*Skill calls so a user upgrading
+ * from rc.30 sees the deprecated removal and the modern install as a single
+ * coherent diff in stdout.
+ */
+export async function cleanupDeprecatedSkills(
+  projectRoot: string,
+): Promise<InstallStepResult[]> {
+  const results: InstallStepResult[] = [];
+  for (const rel of DEPRECATED_SKILL_DIRS) {
+    const target = join(projectRoot, rel);
+    if (!existsSync(target)) {
+      results.push({ step: "skill-deprecated-cleanup", path: target, status: "skipped", message: "absent" });
+      continue;
+    }
+    try {
+      await rm(target, { recursive: true, force: true });
+      results.push({
+        step: "skill-deprecated-cleanup",
+        path: target,
+        status: "written",
+        message: "removed-deprecated",
+      });
+    } catch (error: unknown) {
+      results.push({
+        step: "skill-deprecated-cleanup",
+        path: target,
+        status: "error",
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
   return results;
 }
 

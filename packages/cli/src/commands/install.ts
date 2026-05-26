@@ -22,6 +22,7 @@ import { detectExistingLanguage, type ResolvedLanguage } from "../lib/detect-lan
 import { buildForensicReport } from "../scanner/forensic.js";
 import { detectClientSupports, type DetectedClientSupport } from "../config/resolver.js";
 import {
+  cleanupDeprecatedSkills,
   installArchiveHintHook,
   installFabricArchiveSkill,
   installFabricImportSkill,
@@ -985,6 +986,10 @@ async function executeInitStagePlan(
         // unreadable) is logged but does not abort init — other clients
         // and downstream stages continue.
         const installResults: InstallStepResult[] = [];
+        // rc.35 TASK-03 (P2-6): remove deprecated skill subtrees (e.g.
+        // fabric-init) before installing modern skills, so rc.30 → rc.35
+        // upgraders see deprecation cleanup as part of the install diff.
+        installResults.push(...await runBestEffort("skill-deprecated-cleanup", () => cleanupDeprecatedSkills(plan.target)));
         installResults.push(...await runBestEffort("skill-install", () => installFabricArchiveSkill(plan.target)));
         installResults.push(...await runBestEffort("skill-review-install", () => installFabricReviewSkill(plan.target)));
         installResults.push(...await runBestEffort("skill-import-install", () => installFabricImportSkill(plan.target)));
