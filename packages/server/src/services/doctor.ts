@@ -859,6 +859,13 @@ const MATURITY_LINE_PATTERN = /^maturity:\s*("?)(stable|endorsed|draft)\1\s*$/mu
 // Regex extracting `created_at:` (ISO 8601 datetime) from YAML frontmatter.
 const CREATED_AT_LINE_PATTERN = /^created_at:\s*("?)([^"\n]+)\1\s*$/mu;
 
+// rc.36 TASK-05 (P0-8 + P2-1): regex extracting `tags:` inline-array from YAML
+// frontmatter (e.g. `tags: [foo, bar]`). Empty `tags: []` matches with body
+// `""`; missing line returns null. We deliberately ignore block-style
+// `tags:\n  - foo` since the canonical entries use inline arrays exclusively
+// (per the schema in packages/shared/src/schemas/knowledge.ts).
+const TAGS_LINE_PATTERN = /^tags:\s*\[(.*)\]\s*$/mu;
+
 // rc.5 TASK-013 (C4): regexes extracting `relevance_scope` and
 // `relevance_paths` from YAML frontmatter. Mirrors the line-based parsing
 // style used elsewhere in this module (we avoid a YAML dependency for a
@@ -1007,6 +1014,8 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
   const citeGoodhart = await inspectCiteGoodhart(projectRoot);
   // v2.0.0-rc.33 W4-A4 (T5 P2): draft-backlog ratio (sync, disk-only).
   const draftBacklog = inspectDraftBacklog(projectRoot);
+  // rc.36 TASK-05 (P0-8): empty-tags ratio across canonical entries.
+  const knowledgeTagsEmpty = inspectKnowledgeTagsEmpty(projectRoot);
   const metaManuallyDiverged = await inspectMetaManuallyDiverged(projectRoot);
   const knowledgeDirUnindexed = inspectKnowledgeDirUnindexed(projectRoot, meta);
   const knowledgeDirMissing = inspectKnowledgeDirMissing(projectRoot);
@@ -1160,6 +1169,7 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     createSkillDescriptionCheck(t, skillDescription),
     createCiteGoodhartCheck(t, citeGoodhart),
     createDraftBacklogCheck(t, draftBacklog),
+    createKnowledgeTagsEmptyCheck(t, knowledgeTagsEmpty),
     createMcpConfigInWrongFileCheck(t, mcpConfigInWrongFile),
     createMetaManuallyDivergedCheck(t, metaManuallyDiverged),
     createKnowledgeDirUnindexedCheck(t, knowledgeDirUnindexed),
@@ -2641,6 +2651,49 @@ function inspectDraftBacklog(projectRoot: string): DraftBacklogInspection {
   };
 }
 
+// rc.36 TASK-05 (P0-8): empty-tags ratio across canonical entries. Warn when
+// >50% of entries carry `tags: []` — clustering / topical surfacing degrades
+// when most entries are tag-less. Threshold mirrors draft_backlog (>50% with
+// ≥10 entries total to avoid spurious warns in fresh repos).
+type EmptyTagsInspection = {
+  status: "ok" | "warn";
+  emptyCount: number;
+  totalCount: number;
+  ratio: number;
+};
+
+function inspectKnowledgeTagsEmpty(projectRoot: string): EmptyTagsInspection {
+  const EMPTY_TAGS_RATIO_THRESHOLD = 0.5;
+  const MIN_TOTAL_FOR_RATIO = 10;
+  let emptyCount = 0;
+  let totalCount = 0;
+  for (const entry of iterateCanonicalEntries(projectRoot, new Map())) {
+    let source: string;
+    try {
+      source = readFileSync(entry.absPath, "utf8");
+    } catch {
+      continue;
+    }
+    const isEmpty = isKnowledgeFrontmatterTagsEmpty(source);
+    // null → no tags line at all (legacy); treat as empty (still degrades
+    // clustering). false → tags present, non-empty.
+    if (isEmpty === null || isEmpty === true) {
+      emptyCount += 1;
+    }
+    totalCount += 1;
+  }
+  if (totalCount < MIN_TOTAL_FOR_RATIO) {
+    return { status: "ok", emptyCount, totalCount, ratio: 0 };
+  }
+  const ratio = emptyCount / totalCount;
+  return {
+    status: ratio > EMPTY_TAGS_RATIO_THRESHOLD ? "warn" : "ok",
+    emptyCount,
+    totalCount,
+    ratio,
+  };
+}
+
 async function inspectKnowledgeTestIndex(projectRoot: string): Promise<KnowledgeTestIndexInspection> {
   const path = join(projectRoot, ".fabric", ".cache", "knowledge-test.index.json");
   const built = await tryBuildRuleMeta(projectRoot);
@@ -3492,6 +3545,32 @@ function createDraftBacklogCheck(
       pct: String(pct),
     }),
     t("doctor.check.draft_backlog.remediation"),
+  );
+}
+
+// rc.36 TASK-05 (P0-8): empty-tags warn check.
+function createKnowledgeTagsEmptyCheck(
+  t: Translator,
+  inspection: EmptyTagsInspection,
+): DoctorCheck {
+  if (inspection.status === "ok") {
+    return okCheck(
+      t("doctor.check.knowledge_tags_empty.name"),
+      t("doctor.check.knowledge_tags_empty.ok"),
+    );
+  }
+  const pct = Math.round(inspection.ratio * 100);
+  return issueCheck(
+    t("doctor.check.knowledge_tags_empty.name"),
+    "warn",
+    "warning",
+    "knowledge_tags_empty_ratio",
+    t("doctor.check.knowledge_tags_empty.message", {
+      emptyCount: String(inspection.emptyCount),
+      totalCount: String(inspection.totalCount),
+      pct: String(pct),
+    }),
+    t("doctor.check.knowledge_tags_empty.remediation"),
   );
 }
 
@@ -4743,6 +4822,25 @@ function extractKnowledgeFrontmatterMaturity(source: string): LintMaturity | nul
   }
   const match = MATURITY_LINE_PATTERN.exec(fm[1]);
   return match === null ? null : (match[2] as LintMaturity);
+}
+
+// rc.36 TASK-05 (P0-8): true if the frontmatter has a `tags:` line with an
+// empty inline array, e.g. `tags: []`. Returns false for missing-line or
+// non-empty array. Whitespace-only contents (e.g. `tags: [ , ]`) count as
+// empty.
+function isKnowledgeFrontmatterTagsEmpty(source: string): boolean | null {
+  const FM_PATTERN = /^(?:﻿)?---\r?\n([\s\S]*?)\r?\n---/u;
+  const fm = FM_PATTERN.exec(source);
+  if (fm === null) {
+    return null;
+  }
+  const match = TAGS_LINE_PATTERN.exec(fm[1]);
+  if (match === null) {
+    return null;
+  }
+  // Strip whitespace + trailing comma; non-empty if any token remains.
+  const inner = match[1].replace(/[\s,]/g, "");
+  return inner === "";
 }
 
 function extractKnowledgeFrontmatterCreatedAt(source: string): number | null {

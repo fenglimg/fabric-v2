@@ -173,6 +173,9 @@ describe("runDoctorReport", () => {
       // v2.0.0-rc.33 W4-A4 (T5 P2): draft-backlog ratio. Inserted adjacent to
       // cite_goodhart — both are observability checks built on disk + ledger.
       "Knowledge draft backlog",
+      // rc.36 TASK-05 (P0-8): empty-tags ratio. Adjacent to draft_backlog —
+      // both flag observability gaps in canonical entry quality.
+      "Knowledge tags coverage",
       "Claude MCP config location",
       "Meta manual divergence",
       "Knowledge dir unindexed",
@@ -218,7 +221,7 @@ describe("runDoctorReport", () => {
       "Promote ledger invariant",
       "Preexisting root markdown",
     ]);
-    expect(report.checks).toHaveLength(45);
+    expect(report.checks).toHaveLength(46);
   });
 
   it("v2.0: clean post-init repo (mocked layout) reports zero errors AND zero warnings", async () => {

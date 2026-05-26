@@ -464,6 +464,14 @@ export const zhCNMessages: Messages = {
     "{draftCount}/{totalCount} ({pct}%) canonical knowledge entries 卡在 draft maturity — promote 断流 (rc.32 baseline 92%)。",
   "doctor.check.draft_backlog.remediation":
     "调 `/fabric-review` 批量审 draft entries: approve 升 verified/proven, reject 丢, modify 修。draft 长期堆积通常意味着 archive skill 产 draft 太快或 review skill 没跟上。",
+  // rc.36 TASK-05 (P0-8): empty-tags ratio warn.
+  "doctor.check.knowledge_tags_empty.name": "Knowledge tags coverage",
+  "doctor.check.knowledge_tags_empty.ok":
+    "canonical knowledge entries 中 empty tags 占比正常 (≤ 50%, 或 workspace 太小不评)。",
+  "doctor.check.knowledge_tags_empty.message":
+    "{emptyCount}/{totalCount} ({pct}%) canonical knowledge entries 的 `tags:` 为空 — 主题聚类与跨条目检索退化。fabric-archive / fabric-import skill 应每个 entry 产 2-4 个 tag。",
+  "doctor.check.knowledge_tags_empty.remediation":
+    "下一轮 archive/import 时,在 frontmatter `tags:` 写 2-4 个 kebab-case 主题词;批量补旧 entry tag 用 `/fabric-review` modify 流。",
   "doctor.check.meta_manually_diverged.name": "Meta manual divergence",
   "doctor.check.meta_manually_diverged.ok.unreadable":
     "agents.meta.json 不可读，跳过 divergence 检查。",

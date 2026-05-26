@@ -474,6 +474,14 @@ export const enMessages: Messages = {
     "{draftCount}/{totalCount} ({pct}%) canonical knowledge entries are stuck at draft maturity — promote loop is broken (rc.32 baseline was 92%).",
   "doctor.check.draft_backlog.remediation":
     "Run `/fabric-review` to triage drafts: approve to promote to verified/proven, reject to drop, modify to fix. A long-standing draft backlog usually means archive produces drafts faster than review can promote them.",
+  // rc.36 TASK-05 (P0-8): empty-tags ratio warn.
+  "doctor.check.knowledge_tags_empty.name": "Knowledge tags coverage",
+  "doctor.check.knowledge_tags_empty.ok":
+    "empty-tag ratio is healthy (≤ 50%, or workspace too small to compute).",
+  "doctor.check.knowledge_tags_empty.message":
+    "{emptyCount}/{totalCount} ({pct}%) canonical knowledge entries have empty `tags:` — topical clustering and cross-entry retrieval degrade. The fabric-archive / fabric-import skills should produce 2-4 tags per entry.",
+  "doctor.check.knowledge_tags_empty.remediation":
+    "On the next archive/import run, populate `tags:` in the frontmatter with 2-4 kebab-case keywords. To backfill existing entries in bulk, use `/fabric-review` with the modify flow.",
   "doctor.check.meta_manually_diverged.name": "Meta manual divergence",
   "doctor.check.meta_manually_diverged.ok.unreadable":
     "agents.meta.json not readable; skipping divergence check.",
