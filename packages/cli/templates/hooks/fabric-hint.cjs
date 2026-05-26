@@ -106,7 +106,7 @@ const DEFAULT_REVIEW_HINT_PENDING_AGE_DAYS = 7;
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 // rc.7 T7 / T10 pre-wiring: Signal D (maintenance hint) thresholds. T10 will
-// consume these to decide when a "run fabric doctor" reminder fires; T7 only
+// consume these to decide when a "run fab doctor" reminder fires; T7 only
 // surfaces them on the config-loader surface so T10 doesn't have to bump the
 // config schema in a second commit. Defaults: 14d since last doctor invoke
 // triggers; 7d cooldown between repeats.
@@ -993,7 +993,7 @@ function writeMaintenanceLastEmit(projectRoot, nowMs) {
  *   - null on no trigger
  *
  * `recommended_skill` is intentionally null — the maintenance prompt
- * recommends a CLI invocation (`fabric doctor --lint`), not a Skill, because
+ * recommends a CLI invocation (`fab doctor --lint`), not a Skill, because
  * doctor is a CLI surface (Q-13 boundary). The hook payload still shapes the
  * `recommended_skill` key so consumers can branch on it.
  */
@@ -1041,7 +1041,7 @@ function evaluateMaintenanceSignal(events, now, canonicalCount, lastEmitMs, thre
   }
 
   // rc.16 TASK-002: i18n via lib. Substrings ('从未运行 lint 检查',
-  // '已 N 天未跑 lint', 'fabric doctor --lint') preserved by the lib's
+  // '已 N 天未跑 lint', 'fab doctor --lint') preserved by the lib's
   // zh-CN templates. ageDays passed as already-toFixed(1) string to keep
   // the lib pure (no number formatting in render path).
   const line2 = renderBanner("maintenanceLine2", variant, {});

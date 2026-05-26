@@ -924,7 +924,7 @@ const IGNORED_DIRECTORIES = new Set([
 //
 // Note: `.fabric/init-context.json` is intentionally NOT listed here. v2.0
 // init-context is owned by the AI-side client init skill (Claude Code / Codex
-// CLI), not by `fabric install` CLI. If the skill never ran the file is
+// CLI), not by `fab install` CLI. If the skill never ran the file is
 // legitimately absent and doctor must not flag it as a state issue.
 const TARGET_FILE_PATHS = [
   ".fabric/forensic.json",
@@ -1101,7 +1101,7 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     createBaselineFilenameFormatCheck(t, baselineFilenameFormat),
     createForensicCheck(t, forensic, framework.kind, entryPoints.length),
     // v2.0: removed `createInitContextCheck` — `.fabric/init-context.json`
-    // is owned by the AI-side client init skill, not by `fabric install` CLI.
+    // is owned by the AI-side client init skill, not by `fab install` CLI.
     // The file's absence is a legitimate post-init state when the skill has
     // not yet run, so flagging it as a doctor manual_error misrepresents
     // ownership.
@@ -2072,7 +2072,7 @@ async function inspectForensic(projectRoot: string): Promise<{ present: boolean;
 }
 
 // v2.0: `inspectInitContext` removed. `.fabric/init-context.json` is owned
-// by the AI-side client init skill, not by `fabric install` CLI. Its absence
+// by the AI-side client init skill, not by `fab install` CLI. Its absence
 // after `fab install` is a legitimate "skill has not run yet" state, not a
 // doctor concern.
 
@@ -2882,7 +2882,7 @@ function createL2ManagedBlockDriftCheck(
 function createBootstrapAnchorCheck(t: Translator, inspection: BootstrapAnchorInspection): DoctorCheck {
   // v2.0: bootstrap is anchored at the repo root via AGENTS.md or CLAUDE.md.
   // Either one (or both) is sufficient; missing both is a fixable_error in
-  // the sense that `fabric install` is the canonical remediation (we do not
+  // the sense that `fab install` is the canonical remediation (we do not
   // auto-write the anchor file from doctor --fix).
   if (!inspection.hasAgentsMd && !inspection.hasClaudeMd) {
     return issueCheck(

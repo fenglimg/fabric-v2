@@ -1,6 +1,6 @@
 # RULE_REGISTRY: Stable ID 与规则注册状态
 
-本文记录当前仓库可确认的规则身份事实。它不是 `.fabric/agents.meta.json` 的替代品；真实运行时索引必须由 `fabric doctor --fix` 从 `.fabric/rules/` 生成和维护。
+本文记录当前仓库可确认的规则身份事实。它不是 `.fabric/agents.meta.json` 的替代品；真实运行时索引必须由 `fab doctor --fix` 从 `.fabric/rules/` 生成和维护。
 
 ## 当前项目 Registry 状态
 
@@ -29,14 +29,14 @@
 
 - 本仓库当前不能把根 `.fabric/` 当作完整 Fabric runtime registry。
 - 下方表格记录的是源码、模板和 example 中的规则身份来源，不等价于当前项目已激活规则。
-- 若要让本仓库自身成为 Fabric-managed project，应先运行 `fabric install` 或恢复 `.fabric/rules/`，再用 `fabric doctor --fix` 固化派生索引。
+- 若要让本仓库自身成为 Fabric-managed project，应先运行 `fab install` 或恢复 `.fabric/rules/`，再用 `fab doctor --fix` 固化派生索引。
 
 ## Stable ID 契约
 
 | 规则 | 状态 |
 | --- | --- |
 | 核心规则文件首选 `<!-- fab:rule-id scope/name -->`。 | 已实现解析。 |
-| `fabric doctor --fix` 将声明 ID 编译为 `stable_id`。 | 目标实现。 |
+| `fab doctor --fix` 将声明 ID 编译为 `stable_id`。 | 目标实现。 |
 | 未声明 ID 时使用派生 ID，`identity_source = "derived"`。 | 已实现。 |
 | `fab_plan_context` 对派生 ID 给出 warning。 | 已实现。 |
 | 修改规则节点时同步更新本文件。 | 本次建立。 |
@@ -50,16 +50,16 @@
 
 ## RuleTestIndex V1 Sidecar
 
-`.fabric/rule-test.index.json` 是 `fabric doctor --fix` 生成的 V1 静态契约测试 sidecar，不是 registry 真源，也不替代 `.fabric/agents.meta.json`。
+`.fabric/rule-test.index.json` 是 `fab doctor --fix` 生成的 V1 静态契约测试 sidecar，不是 registry 真源，也不替代 `.fabric/agents.meta.json`。
 
 V1 sidecar 只记录：
 
 - 测试文件中的 `// @fabric-verify <stable_id>` 声明。
 - 对应 rule/test 的当前 hash。
-- 上一次索引中的 `previous_rule_hash` 和 `previous_test_hash`，用于 `fabric doctor` 判断 hash drift。
+- 上一次索引中的 `previous_rule_hash` 和 `previous_test_hash`，用于 `fab doctor` 判断 hash drift。
 - 声明位置等静态定位信息。
 
-`fabric doctor` 可基于该 sidecar 报告 covered、stale_rule、stale_test、orphan、missing。`orphan` 表示测试声明引用了当前 registry 中不存在的 Stable ID；`missing` 表示需要声明覆盖的规则没有当前索引项。
+`fab doctor` 可基于该 sidecar 报告 covered、stale_rule、stale_test、orphan、missing。`orphan` 表示测试声明引用了当前 registry 中不存在的 Stable ID；`missing` 表示需要声明覆盖的规则没有当前索引项。
 
 V1 明确不记录或承诺：
 
@@ -129,4 +129,4 @@ describe("seer script contract", () => {
 1. 在本文新增或更新 module Stable ID。
 2. 如果 execution flow、schema、rule priority、MCP transport、Stable ID、cache 或 audit behavior 发生变化，更新 [SPEC_INTERNAL](./SPEC_INTERNAL.md)。
 3. 如果 `packages/` 文件新增、删除、重命名或职责变化，更新 [CODEBASE_LANDSCAPE](./CODEBASE_LANDSCAPE.md)。
-4. 如果变更创建或修改 `.fabric/rules/` rules，使用 `fabric doctor --fix` 接受 baseline；不要直接编辑 `.fabric/agents.meta.json`。
+4. 如果变更创建或修改 `.fabric/rules/` rules，使用 `fab doctor --fix` 接受 baseline；不要直接编辑 `.fabric/agents.meta.json`。

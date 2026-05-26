@@ -21,7 +21,7 @@ import {
 /**
  * Install helpers for the v2 fabric-archive / fabric-review / fabric-import
  * Skills + the cross-client fabric-hint Stop hook (renamed from archive-hint
- * in rc.5 TASK-010). Each helper is idempotent — re-running `fabric install` (or
+ * in rc.5 TASK-010). Each helper is idempotent — re-running `fab install` (or
  * `fabric hooks install`) after the first successful run produces no diff.
  *
  * Wiring sites:

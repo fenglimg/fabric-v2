@@ -5,7 +5,7 @@
 ## 当前闭环
 
 ```text
-fabric install
+fab install
   -> 写入 .fabric/AGENTS.md、.fabric/INITIAL_TAXONOMY.md、.fabric/forensic.json、.fabric/events.jsonl
   -> 规则正文进入 .fabric/rules/
 
@@ -160,9 +160,9 @@ type RuleSelectionAuditEntry = {
 };
 ```
 
-`fabric doctor` 检查 `.fabric/events.jsonl` 是否存在、可写、可解析。
+`fab doctor` 检查 `.fabric/events.jsonl` 是否存在、可写、可解析。
 
-`fabric doctor` also reports L2 `[BUSINESS_LOGIC_CHUNKS]` anchor health when rule nodes declare that section:
+`fab doctor` also reports L2 `[BUSINESS_LOGIC_CHUNKS]` anchor health when rule nodes declare that section:
 
 - `missing`: a chunk omits a valid `Anchor`.
 - `stale`: a chunk anchor has no matching `@fabric-anchor <ID>` in source.
@@ -191,7 +191,7 @@ describe("seer script contract", () => {
 });
 ```
 
-`fabric doctor --fix` scans test files for `@fabric-verify` comments and writes `.fabric/rule-test.index.json` as a generated sidecar. The sidecar is separate from `.fabric/agents.meta.json` so rule selection metadata stays focused on rule discovery and precedence.
+`fab doctor --fix` scans test files for `@fabric-verify` comments and writes `.fabric/rule-test.index.json` as a generated sidecar. The sidecar is separate from `.fabric/agents.meta.json` so rule selection metadata stays focused on rule discovery and precedence.
 
 V1 `RuleTestIndex` entries record static facts:
 
@@ -207,9 +207,9 @@ type RuleTestIndexEntry = {
 };
 ```
 
-When regenerating the sidecar, `fabric doctor --fix` preserves `previous_rule_hash` and `previous_test_hash` from the last index entry. This lets `fabric doctor` distinguish ordinary coverage from drift, for example a rule hash changing while the linked test hash stayed the same.
+When regenerating the sidecar, `fab doctor --fix` preserves `previous_rule_hash` and `previous_test_hash` from the last index entry. This lets `fab doctor` distinguish ordinary coverage from drift, for example a rule hash changing while the linked test hash stayed the same.
 
-`fabric doctor` uses the sidecar for static contract checks only:
+`fab doctor` uses the sidecar for static contract checks only:
 
 - `covered`: a rule has at least one declared `@fabric-verify` entry.
 - `stale_rule`: the current rule hash differs from the indexed rule hash and the linked test did not move with it.
@@ -232,18 +232,18 @@ Explicit V1 exclusions:
 Public CLI commands:
 
 ```text
-fabric install
-fabric scan
-fabric doctor
+fab install
+fab scan
+fab doctor
 fabric serve
 ```
 
 Doctor modes:
 
 ```text
-fabric doctor --json
-fabric doctor --strict
-fabric doctor --fix
+fab doctor --json
+fab doctor --strict
+fab doctor --fix
 ```
 
 Target `.fabric/` state:
@@ -257,4 +257,4 @@ Target `.fabric/` state:
 - `.fabric/rule-test.index.json`
 - `.fabric/events.jsonl`
 
-`.fabric/rules/` is the rule source of truth. `.fabric/events.jsonl` is the only ledger. `fabric doctor --fix` may rebuild deterministic derived state and append `rule_baseline_accepted` / `baseline_synced` typed events, but it must not repair missing rule sections, rule semantic conflicts, incomplete init-context confirmation, MCP client local config issues, or business-code-versus-rule mismatch.
+`.fabric/rules/` is the rule source of truth. `.fabric/events.jsonl` is the only ledger. `fab doctor --fix` may rebuild deterministic derived state and append `rule_baseline_accepted` / `baseline_synced` typed events, but it must not repair missing rule sections, rule semantic conflicts, incomplete init-context confirmation, MCP client local config issues, or business-code-versus-rule mismatch.

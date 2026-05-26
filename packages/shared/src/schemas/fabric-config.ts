@@ -113,7 +113,7 @@ export const fabricConfigSchema = z.object({
   review_hint_pending_age_days: z.number().int().positive().optional().default(7),
   // rc.7 T7 + T10 pre-wiring: days-since-last-doctor cutoff for the future
   // Signal D (maintenance hint). T10 will consume this to decide when the
-  // fabric-hint Stop hook surfaces a "run `fabric doctor`" reminder.
+  // fabric-hint Stop hook surfaces a "run `fab doctor`" reminder.
   // Default 14 reflects a fortnightly cadence — long enough to avoid nag,
   // short enough to catch index drift before it compounds.
   maintenance_hint_days: z.number().int().positive().optional().default(14),

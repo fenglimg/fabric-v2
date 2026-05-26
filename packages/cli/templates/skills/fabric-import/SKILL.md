@@ -8,7 +8,7 @@ allowed-tools: Read, Glob, Grep, Bash, mcp__fabric__fab_extract_knowledge, mcp__
 
 ## Purpose
 
-`fabric-import` is a one-time (per project) cold-start skill that lifts existing project artifacts — git commit history and Markdown documentation — into the knowledge layer as pending entries. It is the bridge between a brand-new Fabric installation (which only has the 4–7 baseline entries produced by `fabric install`'s deterministic scan) and a useful corpus that reflects accumulated team thinking. Run it once when adopting Fabric on an existing repo, or after a major refactor that invalidates large chunks of canonical knowledge. Default layer is `team`: project artifacts in git/docs are team-shared by definition; the user can later layer-flip individual entries to `personal` via `fabric-review` modify.
+`fabric-import` is a one-time (per project) cold-start skill that lifts existing project artifacts — git commit history and Markdown documentation — into the knowledge layer as pending entries. It is the bridge between a brand-new Fabric installation (which only has the 4–7 baseline entries produced by `fab install`'s deterministic scan) and a useful corpus that reflects accumulated team thinking. Run it once when adopting Fabric on an existing repo, or after a major refactor that invalidates large chunks of canonical knowledge. Default layer is `team`: project artifacts in git/docs are team-shared by definition; the user can later layer-flip individual entries to `personal` via `fabric-review` modify.
 
 ## Precondition
 
@@ -29,7 +29,7 @@ If none of the above hold, stop the skill immediately and tell the user:
 
 This skill SHOULD be skipped (warn the user, do not proceed) when:
 
-- `.fabric/` does not exist — direct the user to run `fabric install` first; `fabric-import` is NOT a substitute for the deterministic install-scan
+- `.fabric/` does not exist — direct the user to run `fab install` first; `fabric-import` is NOT a substitute for the deterministic install-scan
 - `.fabric/knowledge/` already holds **>`import_skip_canonical_threshold` canonical entries (config-resolved, default 50)** across all types — the project is mature; use `fabric-archive` (per-session capture) and `fabric-review` (lifecycle review) instead; bulk import would just create dup churn
 - `.fabric/.import-state.json` exists with `phase: "complete"` and `last_checkpoint_at` is **<24h ago** — the user just ran import; surface the prior result rather than re-running
 
@@ -77,7 +77,7 @@ The pipeline runs strictly in order. Each phase reads the prior phase's outputs 
 
 ### Phase 1 — Init-Scan Reference (NO RE-IMPLEMENTATION)
 
-> Verbatim boundary: `fabric install` (v2.0+, deterministic CLI) already produces the baseline scan. Phase 1 of this skill **REFERENCES** that output. It does NOT redo the scan.
+> Verbatim boundary: `fab install` (v2.0+, deterministic CLI) already produces the baseline scan. Phase 1 of this skill **REFERENCES** that output. It does NOT redo the scan.
 
 The deterministic init-scan has already populated `.fabric/knowledge/team/` with 4–7 baseline entries derived from:
 
@@ -94,8 +94,8 @@ Phase 1 actions performed by THIS skill:
 2. Glob `.fabric/knowledge/team/**/*.md` to enumerate baseline entry titles. Capture the list — Phase 2 uses these titles as a **negative filter** (signals already covered by init-scan should be skipped, not re-proposed).
 3. If `.fabric/agents.meta.json` is missing OR `.fabric/knowledge/team/` is empty: STOP. Tell the user (UX i18n Policy class 2 — errors/preconditions):
 
-   - zh-CN: `请先运行 fabric install 完成基线扫描，再调用 fabric-import`
-   - en: `Please run fabric install first to complete the baseline scan, then invoke fabric-import`
+   - zh-CN: `请先运行 fab install 完成基线扫描，再调用 fabric-import`
+   - en: `Please run fab install first to complete the baseline scan, then invoke fabric-import`
 
    …and exit.
 4. Update `.fabric/.import-state.json`: `phase = "P1-done"`, `p1_baseline_titles = [<list>]`, `last_checkpoint_at = <ISO8601 now>`.

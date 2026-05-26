@@ -13,7 +13,7 @@ following 5 categories MUST be rendered in the resolved language:
 1. **Roll-up templates** — final summary blocks (`# Import Summary — phase=...`,
    `## Phase 2 — Mining`, `## Phase 3 — Dedup`, etc.). zh-CN ↔ en mirror.
 2. **Errors / Preconditions warnings** — abort + gate-fail messages (e.g.
-   "请先运行 fabric install 完成基线扫描…" / "Please run fabric install first…").
+   "请先运行 fab install 完成基线扫描…" / "Please run fab install first…").
    zh-CN ↔ en mirror.
 3. **Confirmation prompts** — re-run-within-24h prompt, reset prompts, etc.
    zh-CN ↔ en mirror.

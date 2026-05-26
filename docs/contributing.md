@@ -38,7 +38,7 @@ pnpm --filter @fenglimg/fabric-server build
 
 ## FAB_SERVER_PATH
 
-`fabric install` 会把 MCP client config 指向已打包的 server entry。若在本 monorepo 内测试，希望 client config 指向本地构建的 server，请显式设置 `FAB_SERVER_PATH`：
+`fab install` 会把 MCP client config 指向已打包的 server entry。若在本 monorepo 内测试，希望 client config 指向本地构建的 server，请显式设置 `FAB_SERVER_PATH`：
 
 ```bash
 export FAB_SERVER_PATH="$PWD/packages/server/dist/index.js"

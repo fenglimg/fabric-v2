@@ -53,13 +53,13 @@ $ cd my-repo
 $ pnpm dlx @fenglimg/fabric-cli install
 ```
 
-`fabric install` scans the repo, installs Skills + Stop/SessionStart/PreToolUse
+`fab install` scans the repo, installs Skills + Stop/SessionStart/PreToolUse
 hooks for each detected client, writes the `.fabric/` tree, and produces 4–7
 seed knowledge entries. No LLM is consulted. The output is reproducible
 given the same input tree.
 
 Why CLI not Skill: this is the **bootstrap paradox**. The Skill files
-don't exist on disk until `fabric install` puts them there. The AI client
+don't exist on disk until `fab install` puts them there. The AI client
 can't load a Skill it doesn't have yet. Skills assume Fabric is already
 installed; CLI is what installs Fabric.
 
@@ -118,7 +118,7 @@ Surface choice isn't just documentation — it shapes how features are
 implemented:
 
 - **CLI features must work without an LLM in scope.** That's why
-  `fabric install` includes a deterministic `runInitScan` that produces 4–7
+  `fab install` includes a deterministic `runInitScan` that produces 4–7
   seed entries from forensic scanning, instead of waiting for an AI to
   populate them. The Skill (`fabric-import`) then enriches from `git log`
   *after* the CLI has bootstrapped enough state for the AI client to even
@@ -138,7 +138,7 @@ implemented:
 
 ## FAQ
 
-### Why is `fabric install` a CLI command and not a Skill?
+### Why is `fab install` a CLI command and not a Skill?
 
 Bootstrap paradox (covered above). Three additional reasons:
 
@@ -146,7 +146,7 @@ Bootstrap paradox (covered above). Three additional reasons:
    tree. No judgment is needed.
 2. **No client coupling.** CI, `Makefile`, post-clone scripts, and CLI-only
    users all need `init`. A Skill would lock it to AI clients only.
-3. **Idempotency.** `fabric install --reapply` is a well-defined operation;
+3. **Idempotency.** `fab install --reapply` is a well-defined operation;
    a Skill-driven re-init would have to re-derive intent every time.
 
 ### Why is `fabric-archive` a Skill and not a CLI subcommand?
@@ -182,7 +182,7 @@ Hooks are wiring, not a user-facing surface. `fabric-hint.cjs` (Stop),
 (PreToolUse) are deterministic JSON emitters that nudge the AI to load
 the right Skill at the right time. They run in subprocesses,
 short-circuit on cooldowns, and never call MCP themselves. Treat them as
-"things `fabric install` installs", not as a surface you reason about
+"things `fab install` installs", not as a surface you reason about
 directly.
 
 ## Cross-references
@@ -192,5 +192,5 @@ directly.
   blockquote: "Surface: Skill. See docs/surfaces.md."
 - `packages/cli/templates/skills/fabric-review/SKILL.md` → same.
 - `packages/cli/templates/skills/fabric-import/SKILL.md` → same.
-- `fabric install` stdout footer → "More: docs/surfaces.md explains when to
+- `fab install` stdout footer → "More: docs/surfaces.md explains when to
   use CLI vs Skill vs MCP".

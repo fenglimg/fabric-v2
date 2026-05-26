@@ -465,7 +465,7 @@ export const doctorCommand = defineCommand({
 export default doctorCommand;
 
 function renderHumanReport(report: DoctorReport, dt: DoctorTranslator): void {
-  writeStdout(`${renderStatus(report.status)} ${paint.ai("fabric doctor")} ${paint.human(report.summary.target)}`);
+  writeStdout(`${renderStatus(report.status)} ${paint.ai("fab doctor")} ${paint.human(report.summary.target)}`);
   for (const check of report.checks) {
     writeStdout(`${renderStatus(check.status)} ${check.name}: ${check.message}`);
   }

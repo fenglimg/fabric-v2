@@ -238,7 +238,7 @@ the long tail.
 
 ### `fabric_language` (default `match-existing`)
 
-Drives `fabric install` baseline template language. `match-existing` detects the language
+Drives `fab install` baseline template language. `match-existing` detects the language
 of the repo's README / docs prose; explicit `zh-CN` / `en` lock the policy
 regardless of detected content. `zh-CN-hybrid` (rc.12) renders Chinese
 narrative prose with English technical terms preserved (MCP tool names,
@@ -257,7 +257,7 @@ narrow the default surface for projects that only curate one layer.
 
 ### `audit_mode` (default unset — equivalent to `warn`)
 
-Either `strict`, `warn`, or `off`. Drives the `fabric review` skill's
+Either `strict`, `warn`, or `off`. Drives the `fab review` skill's
 behavior when deferred entries surface.
 
 ### `mcpPayloadLimits`
@@ -286,7 +286,7 @@ external fixture; ignored in production.
 
 ## `--apply-lint` safety (rc.7 T11)
 
-`fabric doctor --apply-lint` mutates user-knowledge state: it rewrites
+`fab doctor --apply-lint` mutates user-knowledge state: it rewrites
 frontmatter (`maturity` demotions), runs `git mv` to relocate stale entries
 into `.fabric/.archive/`, deletes session-hint cache files, and bumps drifted
 counters in `agents.meta.json`. Because the surface is destructive, the
@@ -313,7 +313,7 @@ When `--apply-lint` is invoked the doctor command:
 
 The pair `--yes` + `FABRIC_NONINTERACTIVE` is intentional and orthogonal:
 
-- `--yes` is the explicit-CLI knob (`fabric doctor --apply-lint --yes`).
+- `--yes` is the explicit-CLI knob (`fab doctor --apply-lint --yes`).
 - `FABRIC_NONINTERACTIVE=1` is the environment knob (POSIX-style, mirrors
   `DEBIAN_FRONTEND=noninteractive`). It is useful when Fabric is invoked
   from a wrapping pipeline that does not have direct control over the
@@ -322,9 +322,9 @@ The pair `--yes` + `FABRIC_NONINTERACTIVE` is intentional and orthogonal:
 ### Recommended usage
 
 - **Local development (interactive)**: just run
-  `fabric doctor --apply-lint`. Read the plan, confirm if it looks right.
+  `fab doctor --apply-lint`. Read the plan, confirm if it looks right.
 - **CI (workflow steps)**: use `--yes` explicitly. Example:
-  `fabric doctor --apply-lint --yes`. Prefer this over the env var because
+  `fab doctor --apply-lint --yes`. Prefer this over the env var because
   the intent is visible in the workflow file.
 - **Wrapped invocations (e.g. nested doctor calls in a build pipeline)**:
   set `FABRIC_NONINTERACTIVE=1` once at the top of the pipeline and let
@@ -339,7 +339,7 @@ emitted.
 
 ## Doctor lint #28: `knowledge_relevance_fields_missing` (rc.9 TASK-003)
 
-`fabric doctor --lint` reports pending knowledge entries
+`fab doctor --lint` reports pending knowledge entries
 (`.fabric/knowledge/pending/**/*.md` and `~/.fabric/knowledge/pending/**/*.md`)
 whose YAML frontmatter is missing one or both of the rc.5-introduced
 `relevance_scope` and `relevance_paths` fields. The lint is info-kind and

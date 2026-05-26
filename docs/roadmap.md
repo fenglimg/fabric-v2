@@ -18,9 +18,9 @@ v2.0 is a clean rebrand from v1.x. Fabric's mission shifted from
 deliverable is the full archive → review → promote → lint → archive loop,
 hardened across three AI clients.
 
-**Release signal.** `fabric install` on a clean repo produces a 4–7 entry
+**Release signal.** `fab install` on a clean repo produces a 4–7 entry
 baseline; the agent's Stop hook eventually prompts archival; the
-`fabric-review` Skill drains `pending/`; `fabric doctor --lint` keeps the
+`fabric-review` Skill drains `pending/`; `fab doctor --lint` keeps the
 tree healthy.
 
 ### Shipped
@@ -42,11 +42,11 @@ tree healthy.
 - **Stop hooks** for Claude Code and Codex CLI (Cursor: tracked in v2.1).
   Single `archive-hint.cjs` script serves both clients via identical
   stdout JSON shape.
-- **`fabric doctor --lint`** — 6 deterministic checks: orphan demote,
+- **`fab doctor --lint`** — 6 deterministic checks: orphan demote,
   stale archive, stable_id duplicate, layer mismatch, index drift,
   pending overdue. Plus 1 filesystem-edit fallback (synthesizes
   `knowledge_promoted` for canonical files lacking provenance).
-- **`fabric doctor --apply-lint`** — applies fixes and emits
+- **`fab doctor --apply-lint`** — applies fixes and emits
   `knowledge_demoted` / `knowledge_archived` events.
 - **Late-bind id allocation** — `KP-` (personal) / `KT-` (team) prefix +
   type code (`DEC` / `PIT` / `GLD` / `MOD` / `PRO`) + monotonic counter
@@ -114,8 +114,8 @@ designed but not yet implemented; APIs may shift before release.
 
 ### Release signal
 
-`fabric install --team-remote <git-url>` clones the team-knowledge.git
-submodule; `fabric review` enforces role checks; new event types appear
+`fab install --team-remote <git-url>` clones the team-knowledge.git
+submodule; `fab review` enforces role checks; new event types appear
 in `events.jsonl`.
 
 ---

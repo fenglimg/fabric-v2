@@ -369,11 +369,11 @@ export const knowledgeScopeDegradedEventSchema = z.object({
   reason: z.string(),
 });
 
-// v2.0.0-rc.7 T10: emitted by `fabric doctor` at the end of every invocation
+// v2.0.0-rc.7 T10: emitted by `fab doctor` at the end of every invocation
 // (both --lint report-only and --apply-lint mutation modes). Drives Signal D
 // (maintenance hint) in the fabric-hint Stop hook: when no doctor_run event
 // has fired in `maintenance_hint_days` (default 14) AND canonical entries ≥5,
-// the hook surfaces a "run `fabric doctor --lint`" reminder. The maintenance
+// the hook surfaces a "run `fab doctor --lint`" reminder. The maintenance
 // signal closes Q-16 — without an emit site the chain stayed dormant.
 //
 // `mode`: "lint" for read-only reports, "fix-knowledge" for mutation runs
@@ -686,7 +686,7 @@ export const eventLedgerEventSchema = z.discriminatedUnion("event_type", [
   // v2.0 rc.5 TASK-013 (C4): knowledge_path_dangled — emitted by doctor lint
   // #24 when a glob in relevance_paths resolves to zero filesystem matches.
   knowledgePathDangledEventSchema,
-  // v2.0.0-rc.7 T10: doctor_run — emitted by `fabric doctor` to drive Signal D.
+  // v2.0.0-rc.7 T10: doctor_run — emitted by `fab doctor` to drive Signal D.
   doctorRunEventSchema,
   // v2.0.0-rc.9 TASK-003 (A3): relevance_migration_run — emitted by
   // `doctor --apply-lint` after the lint #26 frontmatter back-fill pass.

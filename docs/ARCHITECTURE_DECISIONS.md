@@ -82,7 +82,7 @@
 
 ## ADR-005: Doctor Fix Precompiles Rule Identity
 
-决策：stable identity 由 `fabric doctor --fix` 从 `.fabric/rules/` 编译进 `.fabric/agents.meta.json`，不在 rule delivery hot path 中临时提取。
+决策：stable identity 由 `fab doctor --fix` 从 `.fabric/rules/` 编译进 `.fabric/agents.meta.json`，不在 rule delivery hot path 中临时提取。
 
 原因：
 
@@ -144,7 +144,7 @@
 
 - Read-heavy views 读取 rules、doctor、events 和 rules-context read models。
 - Dashboard 不作为规则真源。
-- Dashboard 不承担 deterministic derived-state repair；使用 `fabric doctor --fix`。
+- Dashboard 不承担 deterministic derived-state repair；使用 `fab doctor --fix`。
 
 ## ADR-009: Event Ledger Is The Only Ledger
 
@@ -163,7 +163,7 @@
 
 ## ADR-010: Doctor Is Target-State Diagnosis
 
-决策：`fabric doctor` 默认只读，围绕 target-state MCP readiness 诊断 `.fabric/`。
+决策：`fab doctor` 默认只读，围绕 target-state MCP readiness 诊断 `.fabric/`。
 
 原因：
 

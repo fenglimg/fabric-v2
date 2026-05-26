@@ -249,7 +249,7 @@ Demote/archive thresholds (default; configurable in v2.x):
   by archive-hint Stop hook as a review prompt.
 
 The full lint check matrix is in [docs/data-schema.md](./data-schema.md) and
-implemented in `fabric doctor --lint`.
+implemented in `fab doctor --lint`.
 
 ---
 

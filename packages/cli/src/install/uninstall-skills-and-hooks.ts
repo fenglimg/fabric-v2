@@ -30,7 +30,7 @@ import { fabricAgentsSnapshotPath } from "./write-bootstrap-snapshot.js";
  *
  * Wiring site: TASK-002's `fab uninstall` command bootstrap stage invokes
  * {@link uninstallBootstrapStage} which fans out to every helper here in the
- * exact reverse order of `fabric install`'s install pipeline.
+ * exact reverse order of `fab install`'s install pipeline.
  *
  * Scope: project-local artifacts only. Personal root (`$FABRIC_HOME/.fabric/`)
  * is OUTSIDE bootstrap scope and is never touched by any helper here.
@@ -472,7 +472,7 @@ export async function deleteFabricAgentsSnapshot(
 
 /**
  * Bootstrap-stage uninstall orchestrator. Runs every helper in this module
- * in the exact reverse order of `fabric install`'s install pipeline:
+ * in the exact reverse order of `fab install`'s install pipeline:
  *
  *   1. Pointer-line strip (CLAUDE.md / AGENTS.md / .cursor/rules)
  *   2. Hook-config un-merge (cursor → codex → claude — reverse of install)
