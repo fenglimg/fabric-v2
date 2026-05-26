@@ -5,6 +5,13 @@ All notable changes to Fabric will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased] - rc.36 in progress
+
+### Breaking
+
+- **`fab ` CLI 简写在 docs / CHANGELOG / `.fabric/AGENTS.md` 中完全 sweep** (TASK-08)。`fab install`/`fab doctor`/`fab scan` 等历史简写已统一回写 `fabric install`/`fabric doctor`/`fabric scan`。`fab_*` MCP 工具名(如 `fab_plan_context`、`fab_extract_knowledge`)**仍保留**,是 server API surface,不在本次 sweep 范围。
+  - **迁移**: 用户脚本若直接调用 `fab install` 等命令,需替换为 `fabric install`。`packages/cli/package.json` 的 `bin` 字段在 rc.35 已只暴露 `fabric`,因此 rc.35+ 全局安装的用户已经只能用 `fabric` 子命令,无需额外操作。
+
 ## [2.0.0-rc.35] - 2026-05-26
 
 rc.35 werewolf-eval-bundle release: 来自 rc.34 真实长跑测评 (`werewolf-eval` 8 天 19535 events baseline,7 batch 抓出 31 个具体问题) 的 P0 lean 8 项 + Batch 7 onboarding 4 项 = 12 TASK + 1 反向 sweep,共 13 commits。Gates 全绿 (cli 727 / server 643 / shared 430,typecheck 0)。无 schema 破坏性变更 (MCP tool prefix `fab_*` + `fab:rule-id` HTML marker 显式 defer 到 rc.36)。
@@ -93,7 +100,7 @@ rc.34 战术收尾 release: 全部 rc.33 7 项 P2 deferred + W1 SKILL.md token �
 ### Migration
 - 已有用户升级透明: 三个新 config 字段 (`cite_evict_interval` / `reverse_unarchive_enabled` / `reverse_unarchive_dry_run`) 默认 OFF, 行为零变化
 - 想试 cite-policy 长会话 reminder: `.fabric/fabric-config.json` 加 `"cite_evict_interval": 10` (推荐 active session 10-20, 高契约严格度 5)
-- `fab install` 现会自动检测 installed SKILL.md 是否 >1.5× canonical (即 stale install), 自动从 canonical 重写;`InstallStepResult.message` 含 `stale-replaced (X tok → Y tok canonical)` 注解
+- `fabric install` 现会自动检测 installed SKILL.md 是否 >1.5× canonical (即 stale install), 自动从 canonical 重写;`InstallStepResult.message` 含 `stale-replaced (X tok → Y tok canonical)` 注解
 - 改 `packages/shared/src/schemas/` 后必须 `pnpm --filter @fenglimg/fabric-shared build` 才能让 server 测试看见新 schema (rc.34 TASK-05 dist 漂移 precedent)
 
 ### Out of scope (rc.35+ candidates)
@@ -106,11 +113,11 @@ rc.34 战术收尾 release: 全部 rc.33 7 项 P2 deferred + W1 SKILL.md token �
 
 ## [2.0.0-rc.26] - Unreleased
 
-`fab doctor` now respects the `fabric_language` field in `.fabric/fabric-config.json`. The long-standing gap between `KT-DEC-9004` (which defined `fabric_language` as the authoritative locale source) and runtime is closed: with `fabric_language: "zh-CN"`, doctor output (check names, messages, remediations) renders in Simplified Chinese; with `"en"` (or no field), English is preserved unchanged. Machine-readable `code` fields, file paths, schema field names, and shell commands stay English in both locales. Wave breakdown: locale resolver foundation (TASK-01) → doctor.ts migration across 35 check functions in 4 sequential batches (TASK-02a, TASK-02b, TASK-03, TASK-04) → CLI runtime translator rewire + bilingual snapshot test (TASK-05) → closure (TASK-06).
+`fabric doctor` now respects the `fabric_language` field in `.fabric/fabric-config.json`. The long-standing gap between `KT-DEC-9004` (which defined `fabric_language` as the authoritative locale source) and runtime is closed: with `fabric_language: "zh-CN"`, doctor output (check names, messages, remediations) renders in Simplified Chinese; with `"en"` (or no field), English is preserved unchanged. Machine-readable `code` fields, file paths, schema field names, and shell commands stay English in both locales. Wave breakdown: locale resolver foundation (TASK-01) → doctor.ts migration across 35 check functions in 4 sequential batches (TASK-02a, TASK-02b, TASK-03, TASK-04) → CLI runtime translator rewire + bilingual snapshot test (TASK-05) → closure (TASK-06).
 
 ### Added
 - `resolveFabricLocale(projectRoot)` shared helper — reads `.fabric/fabric-config.json::fabric_language`, falls back to `detectNodeLocale()` then `"en"`; never throws (every failure path degrades silently)
-- `getDoctorTranslator(projectRoot)` CLI factory — γ-pattern projectRoot-aware translator used by the `fab doctor` command; module-level `t` retained for help/banner contexts where projectRoot is unknown
+- `getDoctorTranslator(projectRoot)` CLI factory — γ-pattern projectRoot-aware translator used by the `fabric doctor` command; module-level `t` retained for help/banner contexts where projectRoot is unknown
 - `packages/server/src/services/doctor-i18n.test.ts` — 2-locale snapshot test verifying en + zh-CN structural alignment (identical check ordering, severity, and `code` field across locales)
 - ~280 new i18n keys per locale (en + zh-CN) under the `doctor.check.<inspect_name>.{name|ok|message[.arm|.singular|.plural]|remediation[.arm]}` namespace
 
@@ -124,7 +131,7 @@ rc.34 战术收尾 release: 全部 rc.33 7 项 P2 deferred + W1 SKILL.md token �
 
 ### Migration
 - Existing users: upgrade is transparent if your config has no `fabric_language` field — locale detection falls through to `detectNodeLocale()` (`FAB_LANG` → `LANG` → `"en"`), preserving current behavior
-- zh-CN users: set `fabric_language: "zh-CN"` in `.fabric/fabric-config.json` (either by re-running `fab init` or hand-editing). Existing `fab init` runs eager-resolve this field per `KT-DEC-9004`
+- zh-CN users: set `fabric_language: "zh-CN"` in `.fabric/fabric-config.json` (either by re-running `fabric init` or hand-editing). Existing `fabric init` runs eager-resolve this field per `KT-DEC-9004`
 - Pre-rc.26 doctor test snapshots may need regeneration if they captured English strings: accept with `pnpm test -- -u`
 
 ### Out of Scope (Deferred)
@@ -134,7 +141,7 @@ rc.34 战术收尾 release: 全部 rc.33 7 项 P2 deferred + W1 SKILL.md token �
 ## [2.0.0-rc.25] - 2026-05-19
 
 ### Added
-- `fab doctor --archive-history [--since=Nd]` — session-by-session archive attempt audit
+- `fabric doctor --archive-history [--since=Nd]` — session-by-session archive attempt audit
 - `session_archive_attempted` event type in events.jsonl — tracks per-session archive outcomes (proposed | viability_failed | user_dismissed | skipped_no_signal)
 - fabric-archive Phase -0.5 Range Resolution — natural-language parsing for '今日复盘' / '上周' / 'rc.20' style invocations
 - AGENTS.md Self-archive policy — AI E3 self-trigger via 4 normative signals
@@ -147,12 +154,12 @@ rc.34 战术收尾 release: 全部 rc.33 7 项 P2 deferred + W1 SKILL.md token �
 - fabric-archive Phase 0.5 — silent-skip path for E1/E3/E5 contexts
 
 ### Migration
-- Run `fab install` after upgrade to sync new AGENTS.md Self-archive policy to all client managed blocks
+- Run `fabric install` after upgrade to sync new AGENTS.md Self-archive policy to all client managed blocks
 - Old events.jsonl without session_archive_attempted entries — natural cold-start, no migration needed
 
 ## [2.0.0-rc.24] - 2026-05-19
 
-Cite contract policy. The rc.20 cite policy answered "did the AI cite a KB id?" — rc.24 answers "did the AI honour the rule it cited?" by adding a 5-operator commitment syntax on `KB:` lines for decisions/pitfalls類 entries and wiring `fab doctor --cite-coverage` to cross-check committed operators against the session's actual edit diff. Bootstrap drift gates marker activation so the contract policy never partially fires during the rc.24 upgrade window. Wave breakdown: schema + bootstrap (TASK-01, TASK-02) → shared parser + hook templates (TASK-03, TASK-04, TASK-05) → doctor service (TASK-06, TASK-07, TASK-08) → shared schema + i18n + CLI (TASK-09, TASK-10, TASK-11) → release (TASK-12).
+Cite contract policy. The rc.20 cite policy answered "did the AI cite a KB id?" — rc.24 answers "did the AI honour the rule it cited?" by adding a 5-operator commitment syntax on `KB:` lines for decisions/pitfalls類 entries and wiring `fabric doctor --cite-coverage` to cross-check committed operators against the session's actual edit diff. Bootstrap drift gates marker activation so the contract policy never partially fires during the rc.24 upgrade window. Wave breakdown: schema + bootstrap (TASK-01, TASK-02) → shared parser + hook templates (TASK-03, TASK-04, TASK-05) → doctor service (TASK-06, TASK-07, TASK-08) → shared schema + i18n + CLI (TASK-09, TASK-10, TASK-11) → release (TASK-12).
 
 ### Added
 
@@ -171,7 +178,7 @@ Cite contract policy. The rc.20 cite policy answered "did the AI cite a KB id?" 
   - Operator comparator: `edit:<glob>` minimatch over session edit paths; `not_edit:<glob>` violates on any match; `require:<symbol>` / `forbid:<symbol>` substring-match changed file paths (NOT diff content — strict downgrade documented inline pending an `edit_intent_checked` schema widening) (TASK-08).
 - **`citeCoverageReportSchema` + `CiteContractMetrics` + `CiteLayerTypeBreakdown` Zod schemas** in `@fenglimg/fabric-shared` — mirror the TASK-08 runtime types verbatim with all rc.24 additions optional to preserve rc.20 wire-compat (TASK-09).
 - **27 bilingual i18n keys under `cite-coverage.*`** — header / counter labels / 3-value status enum / 6 singular type labels / 2 layer labels (+ `team — review` / `personal — fyi` suffix) / 6 skip-reason labels. zh-CN ↔ en parity guarded by `api-contracts.test.ts` superset-equality test (TASK-09).
-- **`fab doctor --cite-coverage --layer=<team|personal|all>` CLI flag** — string-typed citty arg with `default: "all"` and `valueHint: "team|personal|all"`. Explicitly rejects `"both"` (the rc.20 plan-context vocabulary) to keep the two filter semantics from leaking. New `cli.doctor.errors.invalid-layer` + `cli.doctor.args.layer.description` i18n keys (TASK-10).
+- **`fabric doctor --cite-coverage --layer=<team|personal|all>` CLI flag** — string-typed citty arg with `default: "all"` and `valueHint: "team|personal|all"`. Explicitly rejects `"both"` (the rc.20 plan-context vocabulary) to keep the two filter semantics from leaking. New `cli.doctor.errors.invalid-layer` + `cli.doctor.args.layer.description` i18n keys (TASK-10).
 - **Bilingual contract-report renderer** — `appendContractSection` helper in `renderCiteCoverageReport`. Emits `### Contract check` block when `status === 'ok'`, drift-warning line when `'skipped:bootstrap_drift'`, fully suppresses when `'awaiting_marker'` + all counts zero. `hard_violated` line carries `[team — review]` / `[personal — fyi]` layer suffix; per-layer × type cross-tab + `skip_count` histogram + tail `⚠ Unresolved cite IDs: N` line all conditionally rendered (TASK-10).
 - **`docs/test-seed/cli.md` `--layer` row** — curated public-flag list updated with rc.24 inline annotation (TASK-11).
 
@@ -186,19 +193,19 @@ Cite contract policy. The rc.20 cite policy answered "did the AI cite a KB id?" 
 
 - **`packages/server/src/services/event-ledger.test.ts` strict-typecheck regression** — two test fixtures at L74 + L112 omitted `cite_commitments`, which Zod accepts at parse-time via `.default([])` but the TypeScript *input* type requires explicitly (same rc.21 shape: `.default()` does not relax `z.input` types). Both fixtures now include `cite_commitments: []`. Caught by the release-rc skill's Phase 3 `pnpm typecheck` gate before tag — this is exactly the rc.21 hotfix pattern the gate was designed to surface.
 
-### Breaking (require `fab install` rerun)
+### Breaking (require `fabric install` rerun)
 
-- **`BOOTSTRAP_CANONICAL` byte content changed** — the existing three-end managed blocks (`AGENTS.md` for Claude Code / Codex, `CLAUDE.md` for Cursor) are now out of sync with the canonical source. Running `fab install` will overwrite them with the new contract-policy section. The drift gate at `inspectL1BootstrapSnapshotDrift` will report `status: "drift"` until the install completes.
-- **Hook template `fabric-hint.cjs` updated** — emits `cite_commitments` on every assistant turn, requires the new `lib/cite-line-parser.cjs` + `lib/cite-contract-reminder.cjs` files. Existing rc.23-installed hooks will continue to function (graceful degrade: degraded mode emits `cite_commitments: []` if the parser lib is missing) but won't surface the new soft-reminder. `fab install` reships all three.
+- **`BOOTSTRAP_CANONICAL` byte content changed** — the existing three-end managed blocks (`AGENTS.md` for Claude Code / Codex, `CLAUDE.md` for Cursor) are now out of sync with the canonical source. Running `fabric install` will overwrite them with the new contract-policy section. The drift gate at `inspectL1BootstrapSnapshotDrift` will report `status: "drift"` until the install completes.
+- **Hook template `fabric-hint.cjs` updated** — emits `cite_commitments` on every assistant turn, requires the new `lib/cite-line-parser.cjs` + `lib/cite-contract-reminder.cjs` files. Existing rc.23-installed hooks will continue to function (graceful degrade: degraded mode emits `cite_commitments: []` if the parser lib is missing) but won't surface the new soft-reminder. `fabric install` reships all three.
 
 ### Migration
 
-After upgrade, run `fab uninstall && fab install` to sync `BOOTSTRAP_CANONICAL` + hook templates + parser libs across all three clients (Claude Code / Codex CLI / Cursor). Until reinstall completes:
+After upgrade, run `fabric uninstall && fab install` to sync `BOOTSTRAP_CANONICAL` + hook templates + parser libs across all three clients (Claude Code / Codex CLI / Cursor). Until reinstall completes:
 
-- `fab doctor --cite-coverage` will render `contract_check: skipped (bootstrap drift — run \`fab install\`)` in place of the contract-metrics block — this is the **B5-α drift gate** behaving correctly (refuses to activate the contract policy while the toolchain is partially upgraded).
+- `fabric doctor --cite-coverage` will render `contract_check: skipped (bootstrap drift — run \`fabric install\`)` in place of the contract-metrics block — this is the **B5-α drift gate** behaving correctly (refuses to activate the contract policy while the toolchain is partially upgraded).
 - The Stop-hook soft reminder will not fire on rc.23-era installed hooks (degraded mode: no `cite_commitments` parsed → no offenders detected).
 
-Post-install, the first `fab doctor --cite-coverage` invocation emits the `cite_contract_policy_activated` marker and opens the contract audit window. The rc.20 marker (`cite_policy_activated`) is independent — it does not need to be re-activated.
+Post-install, the first `fabric doctor --cite-coverage` invocation emits the `cite_contract_policy_activated` marker and opens the contract audit window. The rc.20 marker (`cite_policy_activated`) is independent — it does not need to be re-activated.
 
 ### Deferred to rc.25+
 
@@ -223,7 +230,7 @@ Post-install, the first `fab doctor --cite-coverage` invocation emits the `cite_
 - **typecheck**: clean (after TASK-12 fix-forward of the two pre-existing `event-ledger.test.ts` `cite_commitments`-missing fixtures — rc.21 precedent).
 - **lint** (`knip --strict`): clean.
 - **CLI surface snapshot**: single new `--layer` arg block in `'doctor' surface`; no other commands' snapshots touched.
-- **Cite coverage on this repo**: rc.24 self-host run pending the post-tag `fab install` step (drift gate refuses to activate the contract window until the new BOOTSTRAP_CANONICAL is propagated).
+- **Cite coverage on this repo**: rc.24 self-host run pending the post-tag `fabric install` step (drift gate refuses to activate the contract window until the new BOOTSTRAP_CANONICAL is propagated).
 
 ### Notes
 
@@ -233,25 +240,25 @@ Post-install, the first `fab doctor --cite-coverage` invocation emits the `cite_
 
 ## [2.0.0-rc.23] - 2026-05-18
 
-Combined 12-scope release. Bootstrap + AGENTS.md realigned to the actual two-step API, api-contracts.ts taken through a schema sweep, read-side description auto-heal mirrored from rc.22 D2 pattern, cite policy widened with two new sentinels, MCP startup made non-blocking with a 5s handler gate, stale serve-lock surfaced as a doctor advisory, and the rc.5-era `fab scan` baseline mechanism + sections-enum tuple fully removed in favor of a clean-state KB that fills from the Skill onboarding phase. Two new tracks added during in-session grill: F8a/F8b clean-state demolition + F8c onboard-phase mechanism (S5 slot enum + onboard-coverage CLI + `onboard_slot` frontmatter + dismiss/reset). Gemini batch review verdict captured in TASK-011.
+Combined 12-scope release. Bootstrap + AGENTS.md realigned to the actual two-step API, api-contracts.ts taken through a schema sweep, read-side description auto-heal mirrored from rc.22 D2 pattern, cite policy widened with two new sentinels, MCP startup made non-blocking with a 5s handler gate, stale serve-lock surfaced as a doctor advisory, and the rc.5-era `fabric scan` baseline mechanism + sections-enum tuple fully removed in favor of a clean-state KB that fills from the Skill onboarding phase. Two new tracks added during in-session grill: F8a/F8b clean-state demolition + F8c onboard-phase mechanism (S5 slot enum + onboard-coverage CLI + `onboard_slot` frontmatter + dismiss/reset). Gemini batch review verdict captured in TASK-011.
 
 ### Added
 
-- **F8c — onboard phase + S5 slot mechanism** — `fabric-archive` SKILL.md grows a first-run onboard phase that proposes entries for the five "tone" slots (`tech-stack-decision` / `architecture-pattern` / `code-style-tone` / `build-system-idiom` / `domain-vocabulary`). New `fab onboard-coverage` CLI command + `onboard_slot` frontmatter field on knowledge entries + `onboard_slots_opted_out: string[]` in `fabric-config.json` for explicit dismiss. `fab doctor` surfaces an advisory when slots are missing and not dismissed. Closes the "新装 fabric KB 空白怎么补基调" gap left by F8a's removal of baseline-scan.
+- **F8c — onboard phase + S5 slot mechanism** — `fabric-archive` SKILL.md grows a first-run onboard phase that proposes entries for the five "tone" slots (`tech-stack-decision` / `architecture-pattern` / `code-style-tone` / `build-system-idiom` / `domain-vocabulary`). New `fabric onboard-coverage` CLI command + `onboard_slot` frontmatter field on knowledge entries + `onboard_slots_opted_out: string[]` in `fabric-config.json` for explicit dismiss. `fabric doctor` surfaces an advisory when slots are missing and not dismissed. Closes the "新装 fabric KB 空白怎么补基调" gap left by F8a's removal of baseline-scan.
 - **a-C1 — `FabExtractKnowledge*Schema` 4 optional fields** — `intent_clues` / `tech_stack` / `impact` / `must_read_if` (all `z.string().optional()`) added to extract-knowledge input + output schemas. Carry-through to frontmatter assembly in `extract-knowledge.ts`. Backward-compatible: existing entries without these fields parse unchanged.
-- **a-C2 — `fab doctor --enrich-descriptions`** — new doctor sub-flag that scans `.fabric/knowledge/**/*.md`, identifies entries missing the rc.23 fields, and back-fills them (stub-on-`--auto`, interactive prompt otherwise). Uses `atomicWriteText` for safe frontmatter rewrites. Audit events written to `events.jsonl`.
+- **a-C2 — `fabric doctor --enrich-descriptions`** — new doctor sub-flag that scans `.fabric/knowledge/**/*.md`, identifies entries missing the rc.23 fields, and back-fills them (stub-on-`--auto`, interactive prompt otherwise). Uses `atomicWriteText` for safe frontmatter rewrites. Audit events written to `events.jsonl`.
 - **c — Cite sentinel enums** — `KB: none [no-relevant]` and `KB: none [not-applicable]` join the existing `[planned|recalled|chained-from|dismissed:<reason>]` enum. `KB: none` (bare) maps to `[unspecified]` for historical event-stream compatibility. `parseKbLine` extended (5-branch parser); `renderCiteCoverageReport` gains a breakdown column for the two new sentinels. Bootstrap text updated to teach the new enums.
 - **d — Non-blocking MCP startup + 5s handler gate** — `startStdioServer` now calls `server.connect` first and kicks off `reconcileKnowledge` as a fire-and-forget promise stored on `serverContext`. Each tool handler entry-point awaits the promise with a 5s timeout via `awaitWithTimeout`. On timeout, response includes `reconcile_pending: true` warning + fresh `meta_stale_at_handler` event. First-call latency budget < 100ms in the warm path.
-- **e — Stale `.serve.lock` advisory** — `fab doctor` now reports a stale `.serve.lock` (pid dead or `>24h` old) as an advisory line. `fab doctor --fix` unlinks the file and emits a `serve_lock_cleared` event. Never auto-cleaned — matches rc.22 "demote-to-warning" precedent.
+- **e — Stale `.serve.lock` advisory** — `fabric doctor` now reports a stale `.serve.lock` (pid dead or `>24h` old) as an advisory line. `fabric doctor --fix` unlinks the file and emits a `serve_lock_cleared` event. Never auto-cleaned — matches rc.22 "demote-to-warning" precedent.
 
 ### Changed
 
-- **F1 — Bootstrap real-API alignment** — `bootstrap-canonical.ts` + project `.fabric/AGENTS.md` updated to describe the actual two-step KB-fetch API (`fab_plan_context` → `fab_get_knowledge_sections`). Prior single-step `fab_get_rules`-style hint removed (it never matched runtime). Three-end managed blocks propagate via `fab install`.
+- **F1 — Bootstrap real-API alignment** — `bootstrap-canonical.ts` + project `.fabric/AGENTS.md` updated to describe the actual two-step KB-fetch API (`fab_plan_context` → `fab_get_knowledge_sections`). Prior single-step `fab_get_rules`-style hint removed (it never matched runtime). Three-end managed blocks propagate via `fabric install`.
 - **F2/F3/F4 — `api-contracts.ts` schema sweep** — `.describe()` strings tightened across all MCP-tool input/output schemas (one-line role descriptions, no historical baggage). `precedence` field marked `deprecated` in JSDoc. Dead exports removed: `getKnowledgeInput` / `getKnowledgeOutput` / `getKnowledgeAnnotations` / `fab_get_rules` tool registration. Hard delete, no transition period — pre-user clean-slate.
 - **F5 — `source_session` (singular) removed** — only `source_sessions: string[]` survives on `FabExtractKnowledgeInput`. `superRefine` simplified.
 - **F6 — `fab_get_knowledge_sections` self-describes** — MCP tool description now contains the full usage contract (input shape + output shape + invariants). F8b later simplified this further by removing the `sections: enum[]` input parameter — body is returned as a single string.
 - **a-B — `description===undefined` read-side auto-heal** — `buildPreflightDiagnostics` in `plan-context.ts` detects entries where the active meta record is missing `description`, triggers `reconcileKnowledge({trigger: 'auto-heal-description'})`, and returns `auto_healed: true` + `previous_revision_hash` on the response. Matches rc.22 D2 read-side auto-heal pattern.
-- **F8a — `fab scan` baseline mechanism removed** — `packages/cli/src/commands/scan.ts` deleted; `fab scan` subcommand unregistered; 4 baseline `.md` files removed from `.fabric/knowledge/` (`KT-MOD-0001..3`, `KT-PRO-0001`); `install.ts` no longer seeds baselines; `doctor.ts` no longer lints baseline filenames. Rationale: dogfood data showed all 5 baseline entries were `selectable: false` in plan_context — zero LLM contribution. KB is now seeded exclusively via the `fabric-archive` / `fabric-import` / `fabric-review` Skill paths.
+- **F8a — `fabric scan` baseline mechanism removed** — `packages/cli/src/commands/scan.ts` deleted; `fabric scan` subcommand unregistered; 4 baseline `.md` files removed from `.fabric/knowledge/` (`KT-MOD-0001..3`, `KT-PRO-0001`); `install.ts` no longer seeds baselines; `doctor.ts` no longer lints baseline filenames. Rationale: dogfood data showed all 5 baseline entries were `selectable: false` in plan_context — zero LLM contribution. KB is now seeded exclusively via the `fabric-archive` / `fabric-import` / `fabric-review` Skill paths.
 - **F8b — `KNOWLEDGE_SECTION_NAMES_TUPLE` + `sections:` input removed** — `fab_get_knowledge_sections` now takes only `id` and returns `body: string` (full entry body) instead of `rules[].sections`. The A-set `## [BRACKET]` heading convention is gone; only the B-set `## <PlainTitle>` form survives. `knowledge-meta-builder.ts` parser updated. `fabric-archive` / `fabric-import` / `fabric-review` SKILL.md text re-flowed to drop sections-enum demonstrations.
 
 ### Removed
@@ -268,19 +275,19 @@ Combined 12-scope release. Bootstrap + AGENTS.md realigned to the actual two-ste
 ### Verification
 
 - **Tests**: 354 shared + 524 server (+ 1 skipped) + 578 CLI = **1456 passing**, zero failures.
-- **Cite coverage**: `fab doctor --cite-coverage --since=7d --client=all` reports cleanly from the rc.20 activation-marker floor; new sentinel breakdown column renders for `[no-relevant]` / `[not-applicable]`.
-- **Dogfood**: rc.23 cumulative diff cuts ~722 net lines (3440 ins / 4162 del) via clean-state demolition of `fab scan` + baseline KB + sections-enum.
+- **Cite coverage**: `fabric doctor --cite-coverage --since=7d --client=all` reports cleanly from the rc.20 activation-marker floor; new sentinel breakdown column renders for `[no-relevant]` / `[not-applicable]`.
+- **Dogfood**: rc.23 cumulative diff cuts ~722 net lines (3440 ins / 4162 del) via clean-state demolition of `fabric scan` + baseline KB + sections-enum.
 - **Werewolf-minigame regression**: deferred — to be verified post-tag in the consumer repo.
 
 ### Migration
 
-**None.** Pre-user clean-slate. Existing repos run `fab install` + `fab doctor --fix` to refresh three-end managed blocks. The 4 baseline `.md` files removed from this repo are pre-existing fabric-scan outputs — consumer repos that haven't run `fab scan` are unaffected. KB onboarding now flows through the `fabric-archive` first-run prompt or `fab onboard-coverage` advisory; no manual back-fill required.
+**None.** Pre-user clean-slate. Existing repos run `fabric install` + `fabric doctor --fix` to refresh three-end managed blocks. The 4 baseline `.md` files removed from this repo are pre-existing fabric-scan outputs — consumer repos that haven't run `fabric scan` are unaffected. KB onboarding now flows through the `fabric-archive` first-run prompt or `fabric onboard-coverage` advisory; no manual back-fill required.
 
 ### Notes
 
 - `release-rc` skill handles version bump (root + workspaces) + tag + push. This CHANGELOG entry is preparatory.
 - Cite policy from rc.20 remains active; new sentinels are additive.
-- Next: post-tag werewolf-minigame regression sample + monitor `fab doctor --enrich-descriptions` adoption.
+- Next: post-tag werewolf-minigame regression sample + monitor `fabric doctor --enrich-descriptions` adoption.
 
 ## [2.0.0-rc.21] - 2026-05-15
 
@@ -303,16 +310,16 @@ Hotfix for rc.20 CI breakage. rc.20 tag landed with two strict-typecheck regress
 
 ## [2.0.0-rc.20] - 2026-05-15
 
-Cite policy. Closes the "KB 是否真的被用了" audit loop. AI agents working on this repo MUST write a first-line `KB: <id> (<≤8字 用法>) [planned|recalled|chained-from <id>|dismissed:<reason>]` or `KB: none` directive before every edit / decide / propose-plan action. `fab doctor --cite-coverage` reads the resulting `assistant_turn_observed` events from `.fabric/events.jsonl` and reports cite coverage with denominators computed from `agents.meta.json` `relevance_paths`. Policy text lives in `BOOTSTRAP_CANONICAL` (added in rc.19), so the three-end managed block writers automatically propagate it. **rc.20 scope: Claude Code first-class + Codex assume-and-test; Cursor capture deferred to rc.21** (Cursor PreToolUse hook only sees `tool_input`, not assistant reply text — needs PostToolUse or journal scan, separate RC).
+Cite policy. Closes the "KB 是否真的被用了" audit loop. AI agents working on this repo MUST write a first-line `KB: <id> (<≤8字 用法>) [planned|recalled|chained-from <id>|dismissed:<reason>]` or `KB: none` directive before every edit / decide / propose-plan action. `fabric doctor --cite-coverage` reads the resulting `assistant_turn_observed` events from `.fabric/events.jsonl` and reports cite coverage with denominators computed from `agents.meta.json` `relevance_paths`. Policy text lives in `BOOTSTRAP_CANONICAL` (added in rc.19), so the three-end managed block writers automatically propagate it. **rc.20 scope: Claude Code first-class + Codex assume-and-test; Cursor capture deferred to rc.21** (Cursor PreToolUse hook only sees `tool_input`, not assistant reply text — needs PostToolUse or journal scan, separate RC).
 
 ### Added
 
-- **`## Cite policy` section in `BOOTSTRAP_CANONICAL`** — extends the rc.19 single-source canonical with 5 locked bullets: 触发 / `[recalled]` 验证 / id 反查 / dismissed reason enum / 稽核 hook. Propagates to all three end blocks via existing `fab install` writers; no new install plumbing.
+- **`## Cite policy` section in `BOOTSTRAP_CANONICAL`** — extends the rc.19 single-source canonical with 5 locked bullets: 触发 / `[recalled]` 验证 / id 反查 / dismissed reason enum / 稽核 hook. Propagates to all three end blocks via existing `fabric install` writers; no new install plumbing.
 - **Two event ledger variants** in `@fenglimg/fabric-shared`:
   - `assistant_turn_observed` — captures per-turn `KB:` line emission with `kb_line_raw`, `cite_ids[]`, `cite_tags[]` (enum: planned / recalled / chained-from / dismissed / none), `client` (cc/codex/cursor, optional), `turn_id`, `envelope_index`, `timestamp`.
-  - `cite_policy_activated` — idempotent marker emitted on first `fab doctor --cite-coverage` invocation to establish the ts-floor for downstream coverage queries.
+  - `cite_policy_activated` — idempotent marker emitted on first `fabric doctor --cite-coverage` invocation to establish the ts-floor for downstream coverage queries.
 - **`fabric-hint.cjs` capture surface** — extends `summarizeTranscript` to harvest `role:'assistant'` envelopes + first-line `KB:` regex. New helpers: `parseKbLine(raw)` (tolerant parser handling multi-cite + nested tags + `dismissed:<reason>` + `KB: none`), `detectClient()` (env-var override + `__dirname` path heuristic), `extractAndWriteAssistantTurnsBestEffort(cwd, stdinPayload)` (best-effort emit, never throws). Wired right after `writeSessionDigestBestEffort` in `main()`.
-- **`fab doctor --cite-coverage` flag + `runDoctorCiteCoverage` server entry** — three new flags (`--cite-coverage` / `--since` / `--client`) on `fab doctor` with mutex validation against `--fix` / `--fix-knowledge`. Fast-path branch skips the 28-check inspection pipeline. `parseSinceDuration` handles `Nd` / `Nh` / `Nm` / epoch-ms; `--client` enum validation (cc|codex|cursor|all).
+- **`fabric doctor --cite-coverage` flag + `runDoctorCiteCoverage` server entry** — three new flags (`--cite-coverage` / `--since` / `--client`) on `fabric doctor` with mutex validation against `--fix` / `--fix-knowledge`. Fast-path branch skips the 28-check inspection pipeline. `parseSinceDuration` handles `Nd` / `Nh` / `Nm` / epoch-ms; `--client` enum validation (cc|codex|cursor|all).
 - **Single-pass cite coverage algorithm** — one `readEventLedger` pass partitions events into assistant_turns / edits / fetches; joins against `agents.meta.json` `relevance_paths` to compute narrow denominators (minimatch glob) vs broad denominators (total edit count); session-correlated `recalled_unverified` detection (±60s window); `expected_but_missed` for narrow KBs with no matching cite; `per_client` breakdown when `--client=all`; `dismissed_reason_histogram` (current schema buckets all dismisseds under `unspecified`; per-reason buckets land when TASK-09-followup schema widens).
 - **Bilingual cite coverage report formatter** — 16 new i18n keys symmetric in en + zh-CN under `doctor.cite.*` namespace. Locked zh-CN metric names preserved verbatim: `Edit 触达数 / 合格 cite / recalled 但未验证 / 应查没查 / 总回合数`. Conditional sections for per-client and dismissed reasons. `marker_emitted_now` warning prepended on first invocation.
 - **29 new tests** — 14 server-side (`doctor.test.ts`: empty-ledger, narrow/broad denominator, recalled verification, dismissed histogram, per-client split, since/client filters, expected_but_missed, performance 10k events <2s) + 15 hook-side (`fabric-hint-cite.test.ts`: parseKbLine all tag enum + multi-cite + Zod roundtrip + 3 never-throws + client detection).
@@ -331,12 +338,12 @@ Cite policy. Closes the "KB 是否真的被用了" audit loop. AI agents working
 
 ### Migration
 
-**None.** Pre-user clean-slate. Existing repos need only `fab install` + `fab doctor --fix` to refresh their three-end managed blocks with the new `## Cite policy` section. First `fab doctor --cite-coverage` invocation emits the activation marker; subsequent runs report coverage normally.
+**None.** Pre-user clean-slate. Existing repos need only `fabric install` + `fabric doctor --fix` to refresh their three-end managed blocks with the new `## Cite policy` section. First `fabric doctor --cite-coverage` invocation emits the activation marker; subsequent runs report coverage normally.
 
 ### Notes
 
 - AI agents working on this repo from rc.20 onward MUST follow the cite policy. The policy text in the managed block IS the source of truth — AI consults it on every session start via SessionStart hook.
-- `fab doctor --cite-coverage` runs in fast-path mode (zero of the 28 standard checks). Read-only. Safe to run frequently.
+- `fabric doctor --cite-coverage` runs in fast-path mode (zero of the 28 standard checks). Read-only. Safe to run frequently.
 - Performance budget: 10k events processed in <200ms locally (single-pass O(N) replay).
 - Memory `project_cite_policy.md` locked the 6 scenarios + 8 details that drove this RC. Cursor + dismissed_reason follow-ups noted under "Deferred to rc.21".
 
@@ -347,14 +354,14 @@ Bootstrap consolidation. Collapses the three-end client bootstrap surfaces (Clau
 ### Added
 
 - **`@fenglimg/fabric-shared` canonical exports** — `BOOTSTRAP_CANONICAL` (zh-CN-hybrid locked body), `BOOTSTRAP_MARKER_BEGIN/END`, `LEGACY_KB_MARKER_BEGIN/END`, `BOOTSTRAP_REGEX`, `LEGACY_KB_REGEX`. Re-exported via root barrel + `./templates/bootstrap-canonical` subpath.
-- **`fab install` four-step bootstrap stage** — `bootstrap-snapshot` writes `.fabric/AGENTS.md` from canonical, then per-client `bootstrap-claude` / `bootstrap-codex` / `bootstrap-cursor` writers propagate to the three ends. Claude uses real `@-import` (no managed block); Codex + Cursor get byte-copy managed blocks with new `fabric:bootstrap` marker. Cursor target migrates from legacy single-file `.cursor/rules` to `.cursor/rules/fabric-bootstrap.mdc` directory rule with `alwaysApply: true` front-matter. `.fabric/project-rules.md` is only-if-exists: when present, concatenated into Codex + Cursor managed blocks via `\n---\n` separator and surfaced as an additional `@-import` in CLAUDE.md.
-- **`fab doctor` two-layer drift detection** — L1 byte-compares `BOOTSTRAP_CANONICAL` ↔ `.fabric/AGENTS.md` (`bootstrap_snapshot_drift`); L2 byte-compares expected body (snapshot + optional project-rules concat) ↔ each three-end managed block (`managed_block_drift`). Zero normalization: CRLF differences trigger drift. Skips L2 inspection on files in legacy-marker-only state (handled by marker migration check first).
-- **`fab doctor --fix` one-time marker migration** — Detects legacy `fabric:knowledge-base` markers across CLAUDE.md / AGENTS.md / `.cursor/rules` / `.cursor/rules/fabric-bootstrap.mdc`; rewrites to `fabric:bootstrap` and emits one `bootstrap_marker_migrated` ledger event per migrated file. Migration runs FIRST in dispatcher; L1 fix and L2 fix follow in order.
+- **`fabric install` four-step bootstrap stage** — `bootstrap-snapshot` writes `.fabric/AGENTS.md` from canonical, then per-client `bootstrap-claude` / `bootstrap-codex` / `bootstrap-cursor` writers propagate to the three ends. Claude uses real `@-import` (no managed block); Codex + Cursor get byte-copy managed blocks with new `fabric:bootstrap` marker. Cursor target migrates from legacy single-file `.cursor/rules` to `.cursor/rules/fabric-bootstrap.mdc` directory rule with `alwaysApply: true` front-matter. `.fabric/project-rules.md` is only-if-exists: when present, concatenated into Codex + Cursor managed blocks via `\n---\n` separator and surfaced as an additional `@-import` in CLAUDE.md.
+- **`fabric doctor` two-layer drift detection** — L1 byte-compares `BOOTSTRAP_CANONICAL` ↔ `.fabric/AGENTS.md` (`bootstrap_snapshot_drift`); L2 byte-compares expected body (snapshot + optional project-rules concat) ↔ each three-end managed block (`managed_block_drift`). Zero normalization: CRLF differences trigger drift. Skips L2 inspection on files in legacy-marker-only state (handled by marker migration check first).
+- **`fabric doctor --fix` one-time marker migration** — Detects legacy `fabric:knowledge-base` markers across CLAUDE.md / AGENTS.md / `.cursor/rules` / `.cursor/rules/fabric-bootstrap.mdc`; rewrites to `fabric:bootstrap` and emits one `bootstrap_marker_migrated` ledger event per migrated file. Migration runs FIRST in dispatcher; L1 fix and L2 fix follow in order.
 - **23 new tests** — 11 in `packages/shared/test/templates/bootstrap-canonical.test.ts`, 14 in `packages/server/src/services/doctor.test.ts` (L1 drift / L2 drift incl. CRLF regression guards on both AGENTS.md and Cursor mdc / marker migration with ledger-event assertion), 9 in `packages/cli/__tests__/integration/{install-skills-and-hooks, bootstrap-snapshot, uninstall-skills-and-hooks}.test.ts`.
 
 ### Changed (Breaking — bootstrap surface)
 
-- **Marker token**: `<!-- fabric:knowledge-base:begin/end -->` → `<!-- fabric:bootstrap:begin/end -->`. One-time migration runs under `fab doctor --fix` only; install's clean-slate strip also rewrites if encountered. No compat shim.
+- **Marker token**: `<!-- fabric:knowledge-base:begin/end -->` → `<!-- fabric:bootstrap:begin/end -->`. One-time migration runs under `fabric doctor --fix` only; install's clean-slate strip also rewrites if encountered. No compat shim.
 - **Cursor target path**: `.cursor/rules` flat-file → `.cursor/rules/fabric-bootstrap.mdc` directory rule. Install clean-slate deletes the legacy flat-file when present.
 - **Root `AGENTS.md` ownership**: scaffold-stage no longer writes `AGENTS_MD_DEFAULT_CONTENT`; bootstrap-stage owns the file end-to-end via `writeCodexBootstrapManagedBlock`.
 - **`CLAUDE.md`**: minimal thin shell — `# Project Knowledge\n\n@.fabric/AGENTS.md` (no managed block).
@@ -370,7 +377,7 @@ Bootstrap consolidation. Collapses the three-end client bootstrap surfaces (Clau
 
 ### Migration
 
-**None for users.** Existing repos with legacy `fabric:knowledge-base` markers will see `fab doctor` report `bootstrap_marker_migration_required` as a fixable error; running `fab doctor --fix` migrates in place + emits ledger events. Re-running `fab install` thereafter is idempotent. Pre-user clean-slate: no shim.
+**None for users.** Existing repos with legacy `fabric:knowledge-base` markers will see `fabric doctor` report `bootstrap_marker_migration_required` as a fixable error; running `fabric doctor --fix` migrates in place + emits ledger events. Re-running `fabric install` thereafter is idempotent. Pre-user clean-slate: no shim.
 
 ### Notes
 
@@ -395,11 +402,11 @@ Phase 5 of the post-grill 5-phase backlog: **Protocol v2**. Hard cut of the `pla
 ### Rationale
 
 - **`entries` over `narrow`**: the consumer-side already had a local rebind (`knowledge-hint-broad.cjs:443`) precisely because the maintainer found `narrow` misleading at the rendering layer. The deferred-task comment at lines 437-441 is now closed by adopting the rebind name as the wire name. Mode-agnostic — fits both `--paths` and `--all` modes equally.
-- **Silent-skip + breadcrumb**: aligns with the existing hook contract (`knowledge-hint-broad.cjs:464` wraps everything in try/catch with silent-exit-0). Upgrade-safe — a `fab` binary update before re-running `fab install` won't crash SessionStart. The single-line stderr breadcrumb gives diagnose-ability without source-diving.
+- **Silent-skip + breadcrumb**: aligns with the existing hook contract (`knowledge-hint-broad.cjs:464` wraps everything in try/catch with silent-exit-0). Upgrade-safe — a `fab` binary update before re-running `fabric install` won't crash SessionStart. The single-line stderr breadcrumb gives diagnose-ability without source-diving.
 
 ### Migration
 
-**None.** Pre-user clean-slate. Anyone with a stale hook installation should re-run `fab install` to refresh the templates. The new emitter unconditionally produces v2; old v1 hooks (now impossible after `fab install`) would silent-skip with a breadcrumb if they somehow received a v2 payload (no — wait, it's the opposite: new v2 emitter + new v2 hooks; the silent-skip protects against the cross-version scenario where user ran a partial upgrade).
+**None.** Pre-user clean-slate. Anyone with a stale hook installation should re-run `fabric install` to refresh the templates. The new emitter unconditionally produces v2; old v1 hooks (now impossible after `fabric install`) would silent-skip with a breadcrumb if they somehow received a v2 payload (no — wait, it's the opposite: new v2 emitter + new v2 hooks; the silent-skip protects against the cross-version scenario where user ran a partial upgrade).
 
 ### Tests
 
@@ -442,7 +449,7 @@ Phase 4 of the post-grill 5-phase backlog: **Polish**. Four parallel tracks land
 
 ### Fixed
 
-- **Bug Y (parked since rc.14)**: confirmed **not reproducible**. TASK-006 diagnosis ran a real `fab install --dry-run` against the user's `~/.codex/config.toml` — the writer correctly appends `[mcp_servers.fabric]` while preserving all 8 pre-existing sections (`features`, `notice`, multiple `projects."<path>"` blocks, top-level `model = ...`, etc.). Most likely original-report cause: stale binary or legacy `[mcp.servers.fabric]` (dot-spelling) that pre-dated the migration logic. The new regression test guards against future repro.
+- **Bug Y (parked since rc.14)**: confirmed **not reproducible**. TASK-006 diagnosis ran a real `fabric install --dry-run` against the user's `~/.codex/config.toml` — the writer correctly appends `[mcp_servers.fabric]` while preserving all 8 pre-existing sections (`features`, `notice`, multiple `projects."<path>"` blocks, top-level `model = ...`, etc.). Most likely original-report cause: stale binary or legacy `[mcp.servers.fabric]` (dot-spelling) that pre-dated the migration logic. The new regression test guards against future repro.
 
 ### Tests
 
@@ -460,26 +467,26 @@ Phase 4 of the post-grill 5-phase backlog: **Polish**. Four parallel tracks land
 
 ## [2.0.0-rc.16] - 2026-05-15
 
-Phase 3 of the post-grill 5-phase backlog: **Config + i18n closure**. F2 (banner i18n) lands first to give every Stop-hook banner four-language rendering; F1 (`fab config` clack TUI panel) replaces the rc.15 placeholder with a schema-driven menu loop.
+Phase 3 of the post-grill 5-phase backlog: **Config + i18n closure**. F2 (banner i18n) lands first to give every Stop-hook banner four-language rendering; F1 (`fabric config` clack TUI panel) replaces the rc.15 placeholder with a schema-driven menu loop.
 
 ### Added
 
 - **Banner i18n library** (`packages/cli/templates/hooks/lib/banner-i18n.cjs`) — shared `.cjs` lib exposing `readFabricLanguage(projectRoot)` + `renderBanner(key, variant, params)` + 11-key × 4-variant string table (`zh-CN` / `en` / `zh-CN-hybrid` / `match-existing`). Default-on-unset is `zh-CN` to preserve rc.15 user-visible behavior; explicit `match-existing` folds to `en` per the UX i18n Policy class 1 rule. Protected tokens (slash-command names, `` `fabric doctor --lint` ``) preserved verbatim across all variants.
 - **Schema introspection helper** (`packages/shared/src/schemas/fabric-config-introspect.ts`) — exports `getPanelFields()` / `getPanelFieldByKey(key)` returning typed metadata for the 11 Group A+B+C fields (2 locale + 8 hint thresholds + 1 audit). Single source of truth for the panel — adding a defaulted field requires only one new entry.
-- **`fab config` clack TUI panel** (`packages/cli/src/commands/config.ts`) — interactive menu loop replacing the rc.15 placeholder. Iterates `getPanelFields()`, branches on widget type (`select` for enums, `text` for positive integers), atomic-writes to `.fabric/fabric-config.json` (tmp + rename, no lock check), re-renders after each save. Top-level CLI surface: `--target` only (per "能交互选的就别做 flag"). Uninit workspace → exitCode 1 with `fab install` hint.
+- **`fabric config` clack TUI panel** (`packages/cli/src/commands/config.ts`) — interactive menu loop replacing the rc.15 placeholder. Iterates `getPanelFields()`, branches on widget type (`select` for enums, `text` for positive integers), atomic-writes to `.fabric/fabric-config.json` (tmp + rename, no lock check), re-renders after each save. Top-level CLI surface: `--target` only (per "能交互选的就别做 flag"). Uninit workspace → exitCode 1 with `fabric install` hint.
 - **Install pipeline copies hook libs** — `installHooks()` (in `packages/cli/src/install/hooks-orchestrator.ts` + `skills-and-hooks.ts`) now ships the entire `templates/hooks/lib/` directory (banner-i18n.cjs + session-digest-writer.cjs) into all three client install targets (Claude / Cursor / Codex). Symmetric uninstall cascade-prunes empty `lib/` dirs.
 - **i18n keys** — 40 new `cli.config.*` keys across both `en.ts` and `zh-CN.ts` (parity verified): panel intro/outro, menu prompts, per-field labels + descriptions, validation messages, write success/failure, value display formatters.
 
 ### Changed
 
-- **`fab config` placeholder** (rc.15) → full clack panel. The placeholder string `cli.config.placeholder` is removed. `installMcpClients` named export is preserved verbatim — `install.ts` re-imports it during the MCP install stage.
+- **`fabric config` placeholder** (rc.15) → full clack panel. The placeholder string `cli.config.placeholder` is removed. `installMcpClients` named export is preserved verbatim — `install.ts` re-imports it during the MCP install stage.
 - **5 hardcoded zh-CN banner blocks** in `fabric-hint.cjs` (Signals A/B/C/D) → `renderBanner()` calls. Existing test-asserted substrings (`${count} 条`, `${days} 天`, `阈值 ${threshold}`, `从未运行 lint 检查`, `已 N 天未跑 lint`, `` `fabric doctor --lint` ``) preserved by the lib's zh-CN variant.
 - **1 hardcoded zh-CN banner constant** (`IMPORT_RECOMMENDATION_BANNER`) in `knowledge-hint-broad.cjs` → `renderBanner()` call. Constant declaration removed.
 
 ### Tests
 
 - 55 new banner-i18n unit tests (4-variant × 11-key matrix + readFabricLanguage edge cases + protected-token verbatim assertions).
-- 8 new `fab config` panel scenarios (uninit gate ×2, exit path, Group A enum roundtrip, Group B int roundtrip, validator rejection ×2, installMcpClients export contract).
+- 8 new `fabric config` panel scenarios (uninit gate ×2, exit path, Group A enum roundtrip, Group B int roundtrip, validator rejection ×2, installMcpClients export contract).
 - Integration tests asserting hook libs ship to all 3 clients + symmetric uninstall cascade-prunes.
 - CLI test suite: 478 → 552 passed (no regressions).
 
@@ -500,35 +507,35 @@ Phase 3 of the post-grill 5-phase backlog: **Config + i18n closure**. F2 (banner
 
 ### Changed (Breaking — CLI surface contraction)
 
-**`fab install` flags** 12 → 4:
+**`fabric install` flags** 12 → 4:
 - Killed: `--force`, `--reapply`, `--interactive`, `--no-bootstrap`, `--no-mcp`, `--no-hooks`, `--mcp-install`, `--scope`
 - Renamed: `--plan` → `--dry-run`
 - Final: `--target`, `--debug`, `--yes`, `--dry-run`
 - All killed flags had interactive prompts in the install flow (rc.14 wizard); CLI surface now matches "能交互选的就别做 flag" principle (memory/feedback_cli_design.md)
 
-**`fab uninstall` flags** 11 → 4:
+**`fabric uninstall` flags** 11 → 4:
 - Killed: `--force`, `--interactive`, `--no-bootstrap`, `--no-mcp`, `--no-scaffold`, `--purge`, `--clean-empties`
 - Renamed: `--plan` → `--dry-run`
 - `--clean-empties` behavior is now always-on default (option deleted entirely, no preservation toggle)
 - `--purge` removal makes `.fabric/knowledge/` unconditionally preserved
 - Final flags symmetric with install: `--target`, `--debug`, `--yes`, `--dry-run`
 
-**`fab doctor` flags**:
+**`fabric doctor` flags**:
 - Killed: `--force` (lock conflict aborts unconditionally per drift→abort principle)
 - Renamed: `--apply-lint` → `--fix-knowledge` (parallel naming with `--fix`)
 - Added: `--rescan` (composable: rescan → mutations → report single-pass)
 - CLI flag rename + doctor.ts local identifier renames; server-side `runDoctorApplyLint` kept (minimize blast radius)
 
-**`fab serve` flags**:
+**`fabric serve` flags**:
 - Killed: `--force` (lock conflict aborts per drift→abort principle)
 
 ### Changed (Breaking — Command tree pruning)
 
-- **Deleted**: top-level `fab hooks` command. `installHooks` + `validateHookPaths` helpers moved to NEW `packages/cli/src/install/hooks-orchestrator.ts` (convention match with `skills-and-hooks.ts`)
-- **Deleted**: top-level `fab scan` command. Use `fab doctor --rescan` instead. Legacy v1 scan helpers (`createScanReport`, `walkFiles`, `buildRecommendations`, etc.) removed; `runInitScan` preserved as internal export
-- **Stripped**: `fab config install` and `fab config hooks` subcommands. `fab config` becomes a rc.16 placeholder pointing at the upcoming TUI panel
-- **Hidden**: `fab plan-context-hint` from `fab --help` (via citty `meta.hidden: true` — still callable by hook scripts)
-- **Visible commands**: `fab --help` now lists exactly 5 — `install`, `doctor`, `serve`, `uninstall`, `config` (three-entry mental model: 装 / 配 / 跑 per memory/feedback_cli_design.md)
+- **Deleted**: top-level `fabric hooks` command. `installHooks` + `validateHookPaths` helpers moved to NEW `packages/cli/src/install/hooks-orchestrator.ts` (convention match with `skills-and-hooks.ts`)
+- **Deleted**: top-level `fabric scan` command. Use `fabric doctor --rescan` instead. Legacy v1 scan helpers (`createScanReport`, `walkFiles`, `buildRecommendations`, etc.) removed; `runInitScan` preserved as internal export
+- **Stripped**: `fabric config install` and `fabric config hooks` subcommands. `fabric config` becomes a rc.16 placeholder pointing at the upcoming TUI panel
+- **Hidden**: `fabric plan-context-hint` from `fabric --help` (via citty `meta.hidden: true` — still callable by hook scripts)
+- **Visible commands**: `fabric --help` now lists exactly 5 — `install`, `doctor`, `serve`, `uninstall`, `config` (three-entry mental model: 装 / 配 / 跑 per memory/feedback_cli_design.md)
 
 ### Changed (UX)
 - `ServeLockHeldError` message rewritten via `cli.serve.lock-held.action-hint` i18n key. New message includes target PID and concrete stop guidance (Ctrl-C in that terminal or `kill PID`). Drops the now-defunct `--force to override` suggestion.
@@ -538,7 +545,7 @@ Phase 3 of the post-grill 5-phase backlog: **Config + i18n closure**. F2 (banner
 
 ### Migration
 
-For users on rc.14: the deprecation warnings for `--force` and `--reapply` (added in rc.14) signaled this rc.15 removal. Drift recovery is now exclusively `fab uninstall && fab install` (no flag override path). Run `fab install --dry-run` (renamed from `--plan`) to preview before applying.
+For users on rc.14: the deprecation warnings for `--force` and `--reapply` (added in rc.14) signaled this rc.15 removal. Drift recovery is now exclusively `fabric uninstall && fab install` (no flag override path). Run `fabric install --dry-run` (renamed from `--plan`) to preview before applying.
 
 For configs with legacy keys: any `fabric-config.json` declaring `auditMode` should rename to `audit_mode`. No automatic migration shim.
 
@@ -557,20 +564,20 @@ For configs with legacy keys: any `fabric-config.json` declaring `auditMode` sho
   [Cursor official docs](https://cursor.com/cn/docs/hooks):
   top-level `{version: 1, hooks: {stop, sessionStart, preToolUse}}` with
   camelCase event names and flat per-entry shape. No migration shim per
-  clean-slate policy — re-run `fab install` to refresh.
-- **`fab install` idempotency + dry-run on existing workspace** (Bug V + Z) —
-  `fab install` is now naturally idempotent via diff-mode. Re-running on a
+  clean-slate policy — re-run `fabric install` to refresh.
+- **`fabric install` idempotency + dry-run on existing workspace** (Bug V + Z) —
+  `fabric install` is now naturally idempotent via diff-mode. Re-running on a
   canonical workspace prints `Workspace already canonical (N files verified)`
   and exits 0. Missing pieces auto-apply (e.g., MCP for a newly-installed
-  client). Drift triggers abort with helpful message pointing to `fab doctor`
-  (inspect) or `fab uninstall && fab install` (reset). `--dry-run` now works
+  client). Drift triggers abort with helpful message pointing to `fabric doctor`
+  (inspect) or `fabric uninstall && fab install` (reset). `--dry-run` now works
   on any workspace state. New `install_diff_applied` ledger event emitted for
   diff-mode runs.
 
 ### Deprecated
-- `fab install --force` and `fab install --reapply` — slated for removal in
+- `fabric install --force` and `fabric install --reapply` — slated for removal in
   rc.15 (Phase 2 CLI surface contraction). Deprecation warning now printed
-  on use. The new diff-mode default behavior (`fab install` with no flags)
+  on use. The new diff-mode default behavior (`fabric install` with no flags)
   replaces both: missing pieces auto-apply, drift aborts with reset guidance.
 
 ### Deferred
@@ -580,13 +587,13 @@ For configs with legacy keys: any `fabric-config.json` declaring `auditMode` sho
   block until then.
 
 ### Coming in rc.15 (Phase 2: CLI surface contraction)
-- `fab install` flag count 12 → 4 (kill `--force`, `--reapply`, `--interactive`,
+- `fabric install` flag count 12 → 4 (kill `--force`, `--reapply`, `--interactive`,
   `--no-bootstrap`, `--no-mcp`, `--no-hooks`, `--mcp-install`, `--scope`;
   rename `--plan` → `--dry-run`)
-- `fab uninstall` flag count 11 → 4 (symmetric kills + `--clean-empties`
+- `fabric uninstall` flag count 11 → 4 (symmetric kills + `--clean-empties`
   becomes default behavior)
-- Remove `fab hooks` command, `fab config install/hooks` subcommands
-- Fold `fab scan` into `fab doctor --rescan`
+- Remove `fabric hooks` command, `fabric config install/hooks` subcommands
+- Fold `fabric scan` into `fabric doctor --rescan`
 - See `.workflow/.lite-plan/rc14-stop-the-bleeding-2026-05-14/` artifacts for
   the full 5-phase backlog.
 
@@ -603,7 +610,7 @@ failed publish.
 ## [2.0.0-rc.12] — 2026-05-14
 
 **Broad gate + fabric_language naming alignment.** Four breaking renames
-land in a single rc: the `fab init` command becomes `fab install`, the
+land in a single rc: the `fabric init` command becomes `fabric install`, the
 `knowledge_language` config field becomes `fabric_language`, the
 SessionStart `revision_hash` gate is removed in favour of the
 managed-section header, and the legacy `POINTER_LINE` mechanism migrates
@@ -613,14 +620,14 @@ preference).
 
 ### Changed
 
-- **`fab init` → `fab install` hard rename**: the command, file
+- **`fabric init` → `fabric install` hard rename**: the command, file
   (`packages/cli/src/commands/install.ts`), citty `meta.name`, exported
   `installCommand` symbol, dispatch table entry, ~30 `cli.install.*`
   i18n keys (renamed from `cli.init.*` in `en.ts` + `zh-CN.ts`), help
   text values ("Initialize Fabric" → "Install Fabric"; "初始化 Fabric"
   → "安装 Fabric"), six doctor / meta-reader / api `action_hint`
   strings, and 15+ docs / README references all switch to the install
-  verb. Legacy `fab init` invocations now emit citty's "unknown
+  verb. Legacy `fabric init` invocations now emit citty's "unknown
   command" error — no deprecation message, no alias. Snapshots
   (`cli-surface.test.ts.snap` + `i18n.test.ts.snap`) regenerated to
   match.
@@ -724,7 +731,7 @@ deterministic SessionStart self-check.
 
 ## [2.0.0-rc.9] — 2026-05-13
 
-**`fab uninstall` command.** Symmetric inverse of `fab init` — removes
+**`fabric uninstall` command.** Symmetric inverse of `fabric init` — removes
 Fabric-managed artifacts across the same three stages (scaffold → bootstrap
 → MCP) without touching post-init user content. Defaults preserve
 `.fabric/knowledge/` and state files (`events.jsonl`, `agents.meta.json`,
@@ -734,7 +741,7 @@ exits 0 with all step statuses `skipped`.
 
 ### Added
 
-- **`fab uninstall` command**: full inverse of `fab init`'s three-stage
+- **`fabric uninstall` command**: full inverse of `fabric init`'s three-stage
   pipeline with citty `defineCommand` orchestrator and per-stage opt-out.
   Flags: `--plan`, `--force`, `--yes`, `--no-bootstrap`, `--no-mcp`,
   `--no-scaffold`, `--target`, `--interactive`, `--purge`, `--clean-empties`.
@@ -1025,7 +1032,7 @@ clean break from v1.x; no migration path — existing v1.x repos must re-init.
 - `fabric-config.ts` now uses `.strict()` Zod schema — unknown client keys hard-fail with ZodError (was silently preserved via `.passthrough()`)
 - Renamed event types in event ledger: `rule_*` → `knowledge_*` (4 renames); deleted 3 obsolete: `rule_baseline_accepted`, `baseline_synced`, `legacy_client_path_present`
 - Deleted `INITIAL_TAXONOMY.md` (v1 structural topology — replaced by `docs/schema.md` + AGENTS.md guidance)
-- Deleted `fab bootstrap` standalone command (folded into `fab init` 4-stage pipeline)
+- Deleted `fabric bootstrap` standalone command (folded into `fabric init` 4-stage pipeline)
 - Deleted `fabric-init` skill three-piece (claude-skills, codex-skills, skill-source) — v2 init pipeline is turnkey, LLM enrichment moved to `fabric-import` skill in rc.4
 - Deleted `husky/pre-commit` template (v1 sync gate; v2 model is async-review via `pending/` + `fabric-review` skill in rc.3)
 
@@ -1070,7 +1077,7 @@ clean break from v1.x; no migration path — existing v1.x repos must re-init.
 ### Changed
 
 - Claude reminder hook fully renamed to match the unified skill name: `agents-md-init-reminder.cjs` → `fabric-init-reminder.cjs`. The Stop-hook reason text now says "调用 fabric-init skill" (and the equivalent English copy in `cli.init.reason-message`). Skill frontmatter `name:` and i18n strings are aligned to `fabric-init`.
-- `init.ts` Stop-hook filter recognizes both old (`agents-md-init-reminder.cjs`) and new (`fabric-init-reminder.cjs`) names, so re-running `fab init` on an existing project cleanly replaces the legacy entry.
+- `init.ts` Stop-hook filter recognizes both old (`agents-md-init-reminder.cjs`) and new (`fabric-init-reminder.cjs`) names, so re-running `fabric init` on an existing project cleanly replaces the legacy entry.
 
 ### Added
 
@@ -1093,7 +1100,7 @@ clean break from v1.x; no migration path — existing v1.x repos must re-init.
 - Doctor checks: `mcp_config_in_wrong_file`, `event_ledger_partial_write`, `meta_manually_diverged`, `rules_dir_unindexed`, `stable_id_collision`, `claude_skill_legacy_path`, `preexisting_root_claude_md` (info-level), `legacy_client_path_present`.
 - Knip dead-code detector with zero baseline integrated into `pnpm lint`.
 - Per-client config golden snapshots (drift detection guards against unintended init output changes).
-- `fab init --scope project|user` flag — controls whether Claude MCP config is written to `.mcp.json` (project, default) or `~/.claude.json` (user).
+- `fabric init --scope project|user` flag — controls whether Claude MCP config is written to `.mcp.json` (project, default) or `~/.claude.json` (user).
 
 ### Changed
 
@@ -1111,7 +1118,7 @@ clean break from v1.x; no migration path — existing v1.x repos must re-init.
 
 ### Deprecated
 
-- Clients `windsurf`, `rooCode`, `geminiCLI` are deprecated and removed in the same release. The doctor `legacy_client_path_present` check fires on first run after upgrade so users can clean their `fabric.config.json` via `fab doctor --fix` before the legacy keys become inert.
+- Clients `windsurf`, `rooCode`, `geminiCLI` are deprecated and removed in the same release. The doctor `legacy_client_path_present` check fires on first run after upgrade so users can clean their `fabric.config.json` via `fabric doctor --fix` before the legacy keys become inert.
 
 ### Removed
 
@@ -1287,7 +1294,7 @@ clean break from v1.x; no migration path — existing v1.x repos must re-init.
 - **Check-not-Ask fab init flow**: the `agents-md-init` Claude Skill is rewritten as Phase 0 active reconnaissance (≤15 files × 100 lines budget) → Phase 1 single-screen Architecture Review batch Check with file:line evidence anchors → Phase 2 auto-construct into `.fabric/agents/`. HIGH-confidence assertions are implicit-accept, MEDIUM/LOW require explicit acceptance.
 - **`ForensicAssertion[]` data contract** (shared): structured assertions with `type`, `statement`, `confidence`, `evidence[]`, `coverage`, optional `proposed_rule`, and `alternatives`. Adds `CandidateFileEntry[]` grouped by family (`entry`/`component`/`config`/`test`/`domain`) with a top-3-per-family cap of 12, plus `sampling_budget {max_files:15, max_lines_per_file:100}`.
 - **`fab_plan_context(paths[])` MCP tool** (server): batch multi-path rule query that aggregates `fab_get_rules` output across several candidate files in a single call, designed for the planning/exploration phase.
-- **`fab doctor --audit` compliance check** (cli + server): records every file edit with or without a preceding `fab_get_rules` call into `.fabric/audit.jsonl`, with `off` / `warn` / `strict` modes.
+- **`fabric doctor --audit` compliance check** (cli + server): records every file edit with or without a preceding `fab_get_rules` call into `.fabric/audit.jsonl`, with `off` / `warn` / `strict` modes.
 - **`topology_type` and `layer` metadata** (shared + cli): `AgentsMetaNode` now carries `layer: L0|L1|L2` and `topology_type: mirror|cross-cutting`, with `z.preprocess` backward compatibility for legacy meta files. `sync-meta` derives both from `.fabric/agents/` path depth and the `_cross/` prefix.
 - **`confidence_snapshot` on `InitContextInvariant`** and `topology_type` + `target_path` on `InitContextDomainGroup`; interview trail records Architecture Review presentation and user corrections.
 
@@ -1309,7 +1316,7 @@ clean break from v1.x; no migration path — existing v1.x repos must re-init.
 ### Migration Notes
 
 - Fabric v1.1 requires an **MCP-capable AI client** (Claude Code, Cursor with MCP, Codex, Gemini CLI). Clients without MCP can no longer see sub-directory rules.
-- To migrate a v1.0 repository: move every colocated `packages/X/AGENTS.md` into `.fabric/agents/packages/X/index.md`, delete the original, run `fab sync-meta`, and verify `fab_get_rules` returns the expected rules for each path.
+- To migrate a v1.0 repository: move every colocated `packages/X/AGENTS.md` into `.fabric/agents/packages/X/index.md`, delete the original, run `fabric sync-meta`, and verify `fab_get_rules` returns the expected rules for each path.
 
 ## [1.0.0] - 2026-04-19
 
@@ -1317,7 +1324,7 @@ clean break from v1.x; no migration path — existing v1.x repos must re-init.
 
 - Published the monorepo under the public `@fenglimg/fabric-*` scope with a unified `1.0.0` version for the root workspace and all release-track packages.
 - Standardized package naming for `@fenglimg/fabric-cli`, `@fenglimg/fabric-server`, `@fenglimg/fabric-dashboard`, and `@fenglimg/fabric-shared`, and updated bootstrap templates to stop emitting legacy `@fenglimg/*` references.
-- Shipped the Fabric CLI as the canonical maintainer entry point with `fab init`, `fab serve`, `fab scan`, `fab bootstrap`, `fab hooks`, `fab config`, `fab human-lint`, `fab ledger-append`, `fab sync-meta`, and related workflows.
+- Shipped the Fabric CLI as the canonical maintainer entry point with `fabric init`, `fabric serve`, `fabric scan`, `fabric bootstrap`, `fabric hooks`, `fabric config`, `fabric human-lint`, `fabric ledger-append`, `fabric sync-meta`, and related workflows.
 - Added the first public local control-plane loop: install Fabric, initialize a repository, configure clients, start the HTTP control plane, and inspect state through the packaged Dashboard.
 - Added the packaged MCP server runtime with stdio and HTTP transports, including the `fab_get_rules`, `fab_append_intent`, and `fab_update_registry` tool surfaces.
 - Added the Fabric Dashboard for rules inspection, human lock review, intent timeline playback, history replay, and doctor diagnostics within one local session.

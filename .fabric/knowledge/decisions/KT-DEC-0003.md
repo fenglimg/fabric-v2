@@ -34,7 +34,7 @@ models、processes、pending。
 
 ## Tradeoffs
 
-Doctor 必须独立检查两个 root；`fab init` 需要同时创建两个；init-scan
+Doctor 必须独立检查两个 root；`fabric init` 需要同时创建两个；init-scan
 只写入 team root。
 
 ## Reference

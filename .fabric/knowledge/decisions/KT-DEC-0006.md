@@ -23,8 +23,8 @@ Review skill 通过观察调用上下文（最近的 events、用户消息内容
   菜单让用户选择。否决——`AskUserQuestion` 应当留给那些必须由用户拍板的
   真实决策（例如「是否 approve 这条 entry？」）；mode 选择本身可以从
   context 推断出来，每次都弹菜单只会徒增摩擦。
-- **Separate skill commands per mode**：拆成 `fab review-pending`、
-  `fab review-topic` 等独立命令。否决——入口太多，而 mode 之间的边界在
+- **Separate skill commands per mode**：拆成 `fabric review-pending`、
+  `fabric review-topic` 等独立命令。否决——入口太多，而 mode 之间的边界在
   实际使用中本来就模糊。
 
 ## Rationale
