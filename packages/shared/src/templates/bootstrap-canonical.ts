@@ -97,6 +97,8 @@ export const BOOTSTRAP_CANONICAL = `# Fabric Bootstrap
 - **session_id**: 调用 \`fab_plan_context\` 时, 务必把当前 client session id 作为 \`session_id\` 参数传入(Claude Code 的 session id 在 stdin payload 中, Codex 的对应 identifier 同理)。这能让 \`fabric doctor --archive-history\` 与 archive-hint hook 准确识别跨会话 debt 状态。
 - **Write flows**:\`fabric-archive\` / \`fabric-review\` / \`fabric-import\` 三个 Skills。
 - **Language**:渲染按 \`.fabric/fabric-config.json\` 的 \`fabric_language\` 字段。
+- **Archive cadence nudge** (rc.36): 每完成 5+ 次 Edit / 显著 decision 后,在合适回合主动 propose 调 \`fabric-archive\` skill — archive 没建立频率会让 KB 慢速死掉。
+- **Review backlog nudge** (rc.36): \`.fabric/knowledge/pending/\` 累积 >10 条时,在合适回合主动 propose 调 \`fabric-review\` skill 批量审,避免 draft 卡死。
 
 ## Self-archive policy
 

@@ -83,6 +83,10 @@ Wave 11 Release + Memory 回灌
 ## Execution log (append-only,新终端逐 task 追加)
 
 [2026-05-26 12:30] TASK-08 DONE (10 min) commit:f2a537d — fab sweep + CHANGELOG BREAKING (doctor lint deferred for later wave)
+[2026-05-26 12:53] TASK-07 P1-2 DONE (10 min) commit:b00b76d — agents_meta_stale hash-equal 分支 (P1-3 + P1-NEW2 deferred)
+[2026-05-26 12:55] TASK-04 DONE (10 min) commit:772b431 — BOOTSTRAP_CANONICAL ## 5 分钟上手 段 (727 cli tests)
+[2026-05-26 13:00] TASK-05 DONE (15 min) commit:00273c1 — doctor knowledge_tags_empty_ratio lint + i18n + snapshot (46 checks)
+[2026-05-26 13:00] TASK-00 DONE — rc.35 npm publish 成功 (Release workflow rerun after pnpm/action-setup 网络问题 + 2.0.0-rc.35 现于 npm registry)
 
 ---
 
