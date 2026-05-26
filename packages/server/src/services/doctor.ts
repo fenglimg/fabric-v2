@@ -3580,8 +3580,14 @@ async function inspectDriftUnconsumed(projectRoot: string): Promise<DriftUnconsu
     if (e.event_type === "knowledge_drift_detected") driftCount += 1;
     else if (e.event_type === "knowledge_demoted") demoteCount += 1;
   }
+  // rc.36 TASK-32 review-iter-1 fix: warn whenever drift events outnumber
+  // demote events by the threshold. The earlier `demoteCount === 0` form
+  // cleared the warning the moment a single demote landed, even if 10 drift
+  // events remained unconsumed. Per-event pairing is deferred to the rc.37
+  // auto-demote pipeline; this count-delta heuristic is sufficient until then.
+  const unconsumed = driftCount - demoteCount;
   return {
-    status: driftCount >= MIN_DRIFT_FOR_WARN && demoteCount === 0 ? "warn" : "ok",
+    status: unconsumed >= MIN_DRIFT_FOR_WARN ? "warn" : "ok",
     driftCount,
     demoteCount,
   };
@@ -3604,6 +3610,7 @@ function createDriftUnconsumedCheck(
     "knowledge_drift_unconsumed",
     t("doctor.check.drift_unconsumed.message", {
       driftCount: String(inspection.driftCount),
+      demoteCount: String(inspection.demoteCount),
     }),
     t("doctor.check.drift_unconsumed.remediation"),
   );

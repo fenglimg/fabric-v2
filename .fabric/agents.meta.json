@@ -1,5 +1,5 @@
 {
-  "revision": "sha256:c98e502eb7c115c699572c7cbafc776326e0b06707797d0f72db37b6a561ff94",
+  "revision": "sha256:c22af4430a2406c4df2ba005655152e7246572fdf63e07e5d7fa5d18ebd6b2e2",
   "nodes": {
     "KP-PRO-0001": {
       "file": "~/.fabric/knowledge/processes/KP-PRO-0001--stale-git-lock-safe-removal.md",
@@ -123,7 +123,7 @@
       "priority": "medium",
       "level": "L1",
       "topology_type": "mirror",
-      "hash": "sha256:dc642c30594642556d62e61bf87f4956d014576aba35e45c23621d5b74856076",
+      "hash": "sha256:2facd76e42a0a6a927fe3c3644daf6b954ed40ace70bd7728205e3523633d104",
       "stable_id": "KT-DEC-0003",
       "identity_source": "declared",
       "description": {
@@ -243,7 +243,7 @@
       "priority": "medium",
       "level": "L1",
       "topology_type": "mirror",
-      "hash": "sha256:00b9f770283988cea25328e41317aa9d4804225b7cdd86725235a4fb5ea41109",
+      "hash": "sha256:30995b9f866d96f451aa6c6f2293b3bbbfcdd886aefcd5ca6a29b45d7d0a1af3",
       "stable_id": "KT-DEC-0006",
       "identity_source": "declared",
       "description": {

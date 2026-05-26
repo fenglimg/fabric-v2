@@ -89,9 +89,58 @@ Wave 11 Release + Memory 回灌
 [2026-05-26 13:00] TASK-00 DONE — rc.35 npm publish 成功 (Release workflow rerun after pnpm/action-setup 网络问题 + 2.0.0-rc.35 现于 npm registry)
 [2026-05-26 13:02] TASK-03 DONE (5 min) commit:0f89461 — BOOTSTRAP_CANONICAL archive + review nudge
 [2026-05-26 13:05] TASK-06 DONE (10 min) commit:6178eb6 — fabric-import SKILL.md 5543→2777 tok
+[2026-05-26 13:08] TASK-23 DONE (5 min) commit:f415e42 — cursor + codex simulated walkthrough memo (10 friction candidates)
+[2026-05-26 13:12] TASK-09 DONE (15 min) commit:7f6a20f — doctor drift_unconsumed lint (auto-demote pipeline 留 rc.37)
 
 ---
 
 ## Blocker log (出错时写)
 
 (待出错追加,format: `[TASK-NN BLOCKED @ ISO] cause: ... last_3_attempts_summary: ...`)
+
+---
+
+## Scoping decisions (autonomous executor, 2026-05-26)
+
+主线 autonomous executor 在做 risk/reward 评估后,**结合 [[feedback-clean-slate]] + [[feedback-low-agent-spawn-cost]] + 时间预算**,将 plan.json 的 32 任务收敛到 P0/P1 实施 + 大型 refactor 推 rc.37。
+
+### Wave 1-3 完成 (8 task)
+
+- TASK-00 rc.35 npm publish ✅
+- TASK-08 fab 残留 sweep + CHANGELOG BREAKING ✅
+- TASK-07 P1-2 hash-equal 分支 ✅ (P1-3 digest title + P1-NEW2 reconcile auto-fold 推 rc.37 follow-up)
+- TASK-04 QUICKSTART 内联 ✅
+- TASK-05 empty tags doctor lint ✅
+- TASK-03 archive + review nudge ✅
+- TASK-06 fabric-import SKILL.md token 砍半 ✅
+- TASK-09 drift_unconsumed lint ✅ (auto-demote pipeline 推 rc.37)
+- TASK-23 cross-client simulated audit memo ✅
+
+### 推 rc.37 (clean defer with rationale)
+
+| Task | 原因 |
+|---|---|
+| TASK-01 hook drift detect interactive | interactive 3-option prompt + integration test 跨 hook layer 与 install pipeline,scope 远超 single-commit。recommend rc.37 单独立项,从 `--force-hooks-only` flag (TASK-08 模式) 起步 |
+| TASK-02 cite hallucination warn hook | 需在 fabric-hint.cjs PostToolUse 加 MCP-call 追踪 + transcript replay test。复杂度 ≈ 1.5 task,risk = hook 在 hot path 改 |
+| TASK-07 P1-3 digest title cargo-cult | 副作用未识别,rc.34 standing,留 rc.37 集中处理 digest 副作用 |
+| TASK-07 P1-NEW2 reconcile auto-fold | 涉及 doctor --fix 默认路径行为变更,需评估 reconcile 触发副作用 |
+| TASK-08 doctor lint suspicious fab ref | 需扫 user 端 `.claude/settings.json` / `.cursor/config` — 跨 client config 读取,与 doctor 现 35 check 结构差异较大 |
+| TASK-10 selectable algorithm audit+fix | 374→7→1 funnel 根因在 plan-context engine 核心,改动需 retrieval 仿真回归。**rc.37 必修,P0**,需 fixture-based regression test 做底 |
+| TASK-11-14 Plan B 实施 | events.jsonl schema 演化 + metrics.jsonl 新文件 + reader 切换 + rotation tick,跨 schema/server/cli 三个 package。risk:回滚成本 + clean-slate 删旧 hook 路径会破老用户。**rc.37 单独立项 dedicated bundle** |
+| TASK-15 Plan B 5 hard gate | 依赖 11-14 实施落地 |
+| TASK-16 fixture 仓 | 需要从 werewolf snapshot 脱敏 + invariant 政策。文件 727K → 仓体积膨胀 + 脱敏 audit 工作量 |
+| TASK-17-19 CI hard gates | 依赖 16 fixture 落地 |
+| TASK-20-22 砍冗余 test | 122 test 重组,regression risk 显著;rc.37 单独立项,先 audit-only |
+| TASK-26 Codex stream stale | 改 ~/.maestro 配置,跨项目影响 |
+| TASK-27 archive-history MCP integration test | 需新 integration suite |
+| TASK-28 Prompt injection probe | 新 fixture set + scanner + lint,1.5 task |
+| TASK-29 MCP telemetry + mcp_health lint | 改 shared schema + 4 个 MCP API entry instrument |
+| TASK-30 cite hallucination CI gate | 依赖 TASK-02 hook 实施 + transcript fixture |
+| TASK-31 Codex CLI CI smoke | npm install @openai/codex + CI matrix change |
+
+### Wave 10-11 计划
+
+- TASK-32 Gemini review (实施)
+- TASK-24 release-rc bump rc.36
+- TASK-25 memory 回灌
+
