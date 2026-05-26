@@ -694,6 +694,16 @@ export const enMessages: Messages = {
     "Could not parse `fabric -v` output ({detail}). Skipping outdated-version check.",
   "doctor.check.global_cli_outdated.remediation":
     "Run `npm install -g @fenglimg/fabric-cli@latest`, then re-run `fabric install` in each fabric-managed project to resync hooks + SKILL.md.",
+  // rc.35 TASK-05 (P0-10.a): knowledge_summary_opaque.
+  "doctor.check.knowledge_summary_opaque.name": "Knowledge summary opacity",
+  "doctor.check.knowledge_summary_opaque.ok.skipped":
+    "agents.meta.json is absent or invalid; summary-opacity check skipped.",
+  "doctor.check.knowledge_summary_opaque.ok":
+    "{opaque}/{total} entries have summary == stable_id; opacity ratio is within the healthy band.",
+  "doctor.check.knowledge_summary_opaque.message.warn":
+    "{opaque}/{total} entries ({pct}%) have description.summary equal to their stable_id, exceeding the {threshold}% threshold. Narrow-hint output renders as `<id> · <id>`, signaling nothing useful, and AI clients skip the fetch. First opaque: {sample}.",
+  "doctor.check.knowledge_summary_opaque.remediation":
+    "Run the fabric-review skill to rewrite opaque summaries with one short human-readable phrase. The rc.35 hint renderer fallback (TASK-06) will also synthesize a temporary summary from the entry's `## Summary` section.",
   "doctor.check.skill_md_yaml_invalid.name": "Skill markdown YAML",
   "doctor.check.skill_md_yaml_invalid.ok":
     "All .claude/.codex SKILL.md frontmatter values parse as strict YAML.",

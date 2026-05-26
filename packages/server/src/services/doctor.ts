@@ -1198,6 +1198,11 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     // installs against rc.31+ project schemas (the silent-hooks fault mode).
     // Sits next to hooks_wired since both lints diagnose runtime install state.
     createGlobalCliVersionCheck(t, globalCliVersion),
+    // rc.35 TASK-05 (P0-10.a): opaque-summary ratio — surfaces the
+    // werewolf-eval failure mode where description.summary == stable_id so
+    // hint output is "KT-PIT-0001 · KT-PIT-0001" (AI skips fetch). Built
+    // from the same MetaInspection so no extra disk reads.
+    createKnowledgeSummaryOpaqueCheck(t, inspectKnowledgeSummaryOpaque(meta)),
     // rc.31 BUG-G2/G5: promote-ledger invariant. Sits adjacent to onboard
     // coverage — both are observability advisories built off events.jsonl.
     ...(promoteLedgerInvariant === null
@@ -3783,6 +3788,109 @@ export function createGlobalCliVersionCheck(
     "global_cli_unparseable",
     t("doctor.check.global_cli_outdated.message.unparseable", { detail: inspection.detail }),
     t("doctor.check.global_cli_outdated.remediation"),
+  );
+}
+
+// rc.35 TASK-05 (P0-10.a): knowledge_summary_opaque inspection.
+//
+// P0-10 audit on werewolf-eval: 42/43 nodes had description.summary equal to
+// the stable_id itself, producing narrow-hint output like "KT-PIT-0001 ·
+// KT-PIT-0001" where the AI cannot tell what the entry is about and skips
+// fetching it. The fault was invisible to operators because doctor did not
+// inspect summary content. This lint counts nodes where
+// description.summary == stable_id (after whitespace trim) and warns when
+// the opacity ratio exceeds the threshold.
+//
+// Threshold rationale: a small handful of opaque summaries is benign (rare
+// auto-generated stubs). >30% means the corpus itself is unreadable.
+const KNOWLEDGE_SUMMARY_OPAQUE_THRESHOLD = 0.30;
+
+export type KnowledgeSummaryOpaqueInspection = {
+  status: "skipped" | "ok" | "warn";
+  totalWithDescription: number;
+  opaqueCount: number;
+  ratio: number;
+  threshold: number;
+  // First few opaque stable_ids for actionable diagnostics; capped to 5 to
+  // keep doctor output bounded.
+  opaqueSample: string[];
+};
+
+export function inspectKnowledgeSummaryOpaque(
+  meta: MetaInspection,
+): KnowledgeSummaryOpaqueInspection {
+  const baseline = {
+    totalWithDescription: 0,
+    opaqueCount: 0,
+    ratio: 0,
+    threshold: KNOWLEDGE_SUMMARY_OPAQUE_THRESHOLD,
+    opaqueSample: [] as string[],
+  };
+  if (!meta.valid || meta.meta === null) {
+    return { status: "skipped", ...baseline };
+  }
+  let total = 0;
+  const opaqueIds: string[] = [];
+  for (const node of Object.values(meta.meta.nodes)) {
+    const description = node.description;
+    const stableId = node.stable_id;
+    if (!description || typeof stableId !== "string" || stableId.length === 0) {
+      continue;
+    }
+    total += 1;
+    const summary = (description.summary ?? "").trim();
+    if (summary === stableId.trim()) {
+      opaqueIds.push(stableId);
+    }
+  }
+  if (total === 0) {
+    return { status: "ok", ...baseline };
+  }
+  const ratio = opaqueIds.length / total;
+  const status = ratio > KNOWLEDGE_SUMMARY_OPAQUE_THRESHOLD ? "warn" : "ok";
+  return {
+    status,
+    totalWithDescription: total,
+    opaqueCount: opaqueIds.length,
+    ratio,
+    threshold: KNOWLEDGE_SUMMARY_OPAQUE_THRESHOLD,
+    opaqueSample: opaqueIds.slice(0, 5),
+  };
+}
+
+export function createKnowledgeSummaryOpaqueCheck(
+  t: Translator,
+  inspection: KnowledgeSummaryOpaqueInspection,
+): DoctorCheck {
+  if (inspection.status === "skipped") {
+    return okCheck(
+      t("doctor.check.knowledge_summary_opaque.name"),
+      t("doctor.check.knowledge_summary_opaque.ok.skipped"),
+    );
+  }
+  if (inspection.status === "ok") {
+    return okCheck(
+      t("doctor.check.knowledge_summary_opaque.name"),
+      t("doctor.check.knowledge_summary_opaque.ok", {
+        opaque: String(inspection.opaqueCount),
+        total: String(inspection.totalWithDescription),
+      }),
+    );
+  }
+  const pct = Math.round(inspection.ratio * 1000) / 10;
+  return issueCheck(
+    t("doctor.check.knowledge_summary_opaque.name"),
+    "warn",
+    "warning",
+    "knowledge_summary_opaque",
+    t("doctor.check.knowledge_summary_opaque.message.warn", {
+      opaque: String(inspection.opaqueCount),
+      total: String(inspection.totalWithDescription),
+      pct: String(pct),
+      threshold: String(Math.round(inspection.threshold * 100)),
+      sample: inspection.opaqueSample.join(", "),
+    }),
+    t("doctor.check.knowledge_summary_opaque.remediation"),
   );
 }
 

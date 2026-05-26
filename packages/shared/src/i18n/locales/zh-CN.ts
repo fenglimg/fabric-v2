@@ -684,6 +684,16 @@ export const zhCNMessages: Messages = {
     "无法解析 `fabric -v` 输出（{detail}），跳过版本检查。",
   "doctor.check.global_cli_outdated.remediation":
     "运行 `npm install -g @fenglimg/fabric-cli@latest`，然后到每个 fabric-managed 项目下重跑 `fabric install` 同步 hook + SKILL.md。",
+  // rc.35 TASK-05 (P0-10.a): knowledge_summary_opaque.
+  "doctor.check.knowledge_summary_opaque.name": "知识 summary 透明度",
+  "doctor.check.knowledge_summary_opaque.ok.skipped":
+    "agents.meta.json 缺失或无效，跳过 summary 透明度检查。",
+  "doctor.check.knowledge_summary_opaque.ok":
+    "{opaque}/{total} 个 entry 的 summary == stable_id，比例在健康范围内。",
+  "doctor.check.knowledge_summary_opaque.message.warn":
+    "{opaque}/{total} 个 entry ({pct}%) 的 description.summary 等于 stable_id，超过 {threshold}% 阈值。narrow hint 输出会变成 `<id> · <id>` 而非真实概要，AI 看不到信息会主动跳过 fetch。首批不透明: {sample}。",
+  "doctor.check.knowledge_summary_opaque.remediation":
+    "调 fabric-review skill 重写不透明 summary 为一句人类可读的概要。rc.35 hint renderer fallback (TASK-06) 也会从 entry 的 `## Summary` 段自动合成临时 summary。",
   "doctor.check.skill_md_yaml_invalid.name": "Skill markdown YAML",
   "doctor.check.skill_md_yaml_invalid.ok":
     "所有 .claude/.codex SKILL.md frontmatter values 都能按 strict YAML 解析。",

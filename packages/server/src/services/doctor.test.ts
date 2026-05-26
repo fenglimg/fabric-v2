@@ -208,13 +208,17 @@ describe("runDoctorReport", () => {
       // PATH installs against rc.31+ project schemas (P0-9 root cause).
       // Sits next to hooks_wired — both diagnose runtime install state.
       "Global fabric CLI version",
+      // rc.35 TASK-05 (P0-10.a): opaque-summary ratio — surfaces the
+      // werewolf-eval failure mode where description.summary == stable_id.
+      // Built from the same MetaInspection so no extra disk reads.
+      "Knowledge summary opacity",
       // rc.31 BUG-G2/G5: promote-ledger invariant (proposed >= started >=
       // promoted). Adjacent to hooks_wired — both are observability checks
       // built off events.jsonl + project state.
       "Promote ledger invariant",
       "Preexisting root markdown",
     ]);
-    expect(report.checks).toHaveLength(44);
+    expect(report.checks).toHaveLength(45);
   });
 
   it("v2.0: clean post-init repo (mocked layout) reports zero errors AND zero warnings", async () => {
