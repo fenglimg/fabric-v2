@@ -62,3 +62,44 @@
 - Reviewer ran with Gemini `--rule analysis-review-code-quality` over 11-file `@`-list. Used ~198K tokens input / 970 output. Single-pass; no follow-up needed.
 - Two-finding output is typical for tactical-cleanup batches (low surface area, scope-locked). For feature-heavy RCs expect 5-15 findings.
 - Reviewer's HOLD verdict is preserved verbatim; my SHIP recommendation is post-disposition (both findings fixed in this commit batch).
+
+---
+
+## Appendix — SKILL.md recall gate (Goodhart guard for TASK-03 + TASK-04)
+
+**Delegate execution ID**: `gem-130007-67eb`
+**Tokens**: 23,294 in / 460 out
+**Verdict**: **PASS** (both skills ≥ 80% threshold)
+
+Pre-ship empirical check: gave Gemini the trimmed `fabric-archive/SKILL.md` (4145 tok) and `fabric-review/SKILL.md` (4249 tok) and asked it to dispatch 12 canonical scenarios — 7 archive (E1-E5 invocation entry-points, Phase 2.5 viability gate, Phase 3 layer / Phase 3.5 scope assignment, Phase 4 WRITE Rule) + 5 review (mode inference for pending/topic/revisit, semantic check, layer-flip).
+
+### Per-scenario results
+
+**fabric-archive (7/7 = 100%)**:
+- A1 PASS — Stop-hook payload → Phase 0 + `ref/phase-0-range-resolution.md` pointer (E1_hook, range='all')
+- A2 PASS — `今日复盘` → Phase 0 bilingual time-window via ref
+- A3 PASS — `'把上周关于 cite policy 的讨论归档'` → HIGH confidence parse (time='上周', topic='cite policy')
+- A4 PASS — Phase 2.5 viability gate explicit branch (E1/E3/E5 silent-skip, E2/E4 message)
+- A5 PASS — Editor preference → personal layer → forced broad + relevance_paths=[]
+- A6 PASS — Single-module edit_paths → narrow per Phase 3.5 rule
+- A7 PASS — Batch 3 candidates into one fab_extract_knowledge → refused per WRITE Rule (one per call)
+
+**fabric-review (5/5 = 100%)**:
+- R1 PASS — `'review pending'` → mode inference Step 1 keyword → pending
+- R2 PASS — `'find anything about deepMerge'` → Step 1 keyword → topic
+- R3 PASS — `'look at KT-D-7'` → Step 1 keyword → revisit
+- R4 PASS — Semantic Check `⚠ Possible duplicate of <stable_id>` flag surfaced
+- R5 PASS — Layer-flip team→personal → AskUserQuestion + reallocate stable_id + surface prior_stable_id + new_stable_id
+
+### Significance vs prior baselines
+
+- rc.33 W1 archive recall: 85.7% (post first-round split)
+- rc.34 TASK-03 archive recall: **100%** (post second-round split, even more aggressive trim 9056 → 4145 tok)
+- rc.33 W1 review recall: F1 100% (pre-split baseline)
+- rc.34 TASK-04 review recall: **100%** (post first-time split, 9508 → 4249 tok)
+
+The phase navigator + ref pointer pattern with verbatim Hard Rules preservation does NOT degrade dispatch capability — confirms the structural assertion that the trim moved detail to ref/* without removing dispatch signal from SKILL.md.
+
+### Caveat
+
+Recall gate uses LLM-judged dispatch over 12 scenarios; not a substitute for production usage telemetry. If users report archive/review skills behaving wrong post-ship, the rc.35 response is empirical re-evaluation with a larger scenario set + potential rollback of `b9295de` (archive) or `32f72fc` (review).
