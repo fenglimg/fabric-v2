@@ -682,6 +682,18 @@ export const enMessages: Messages = {
     "knowledge_promote_started={started} is less than knowledge_promoted={promoted} (ledger invariant violated; unpaired promoted events exist, possibly from doctor filesystem-edit fallback or external writers).",
   "doctor.check.promote_ledger_invariant.remediation":
     "Starting in rc.31, review.approve synthesizes a knowledge_proposed event to keep the invariant; re-run fabric doctor after the next approve to settle. Historical imbalance is observability-only and does not affect KB function.",
+  // rc.35 TASK-04 (P0-9.b): global_cli_outdated.
+  "doctor.check.global_cli_outdated.name": "Global fabric CLI version",
+  "doctor.check.global_cli_outdated.ok":
+    "Global `fabric` on PATH is {version}; compatible with the rc.31+ project schema.",
+  "doctor.check.global_cli_outdated.message.outdated":
+    "Global `fabric` on PATH is {version}, older than the minimum-supported {minVersion}. rc.31 introduced an agents.meta.json schema fix; hooks installed by an outdated binary silently fail. Upgrade the global CLI to match the project.",
+  "doctor.check.global_cli_outdated.message.not_found":
+    "No `fabric` binary on PATH. The CLI is required for `fabric install` / `fabric doctor`; install it globally.",
+  "doctor.check.global_cli_outdated.message.unparseable":
+    "Could not parse `fabric -v` output ({detail}). Skipping outdated-version check.",
+  "doctor.check.global_cli_outdated.remediation":
+    "Run `npm install -g @fenglimg/fabric-cli@latest`, then re-run `fabric install` in each fabric-managed project to resync hooks + SKILL.md.",
   "doctor.check.skill_md_yaml_invalid.name": "Skill markdown YAML",
   "doctor.check.skill_md_yaml_invalid.ok":
     "All .claude/.codex SKILL.md frontmatter values parse as strict YAML.",

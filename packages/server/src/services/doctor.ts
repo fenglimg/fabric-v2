@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { access, mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { constants } from "node:fs";
@@ -1082,6 +1082,17 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
   const promoteLedgerInvariant = eventLedger.exists && eventLedger.writable && eventLedger.parseable
     ? await inspectPromoteLedgerInvariant(projectRoot)
     : null;
+  // rc.35 TASK-04 (P0-9.b): global CLI version probe. Spawns `fabric -v` and
+  // compares against MIN_SUPPORTED_GLOBAL_CLI_VERSION (rc.31 — the schema fix
+  // point). Synchronous spawn; runs outside the Promise.all block. ENOENT
+  // / parse failure both degrade to warn (never blocks doctor).
+  //
+  // Under vitest the host's actual global CLI is non-deterministic, so the
+  // lint reports "ok" by default. The inspect function itself is exercised
+  // with an injected spawn in doctor-global-cli.test.ts.
+  const globalCliVersion: GlobalCliInspection = process.env.VITEST === "true"
+    ? { status: "ok", version: "test-skipped" }
+    : inspectGlobalCliVersion();
   const checks: DoctorCheck[] = [
     createBootstrapAnchorCheck(t, bootstrapAnchor),
     // v2.0.0-rc.19 TASK-004: bootstrap marker migration check sits adjacent to
@@ -1183,6 +1194,10 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     // rc.31 BUG-M3/NEW-4: hooks_wired observability. Adjacent to onboard /
     // promote-ledger checks — all three are install/runtime-state advisories.
     createHooksWiredCheck(t, hooksWired),
+    // rc.35 TASK-04 (P0-9.b): global CLI version probe — surfaces rc.30 PATH
+    // installs against rc.31+ project schemas (the silent-hooks fault mode).
+    // Sits next to hooks_wired since both lints diagnose runtime install state.
+    createGlobalCliVersionCheck(t, globalCliVersion),
     // rc.31 BUG-G2/G5: promote-ledger invariant. Sits adjacent to onboard
     // coverage — both are observability advisories built off events.jsonl.
     ...(promoteLedgerInvariant === null
@@ -3653,6 +3668,121 @@ function createPromoteLedgerInvariantCheck(
     "promote_ledger_invariant_violated",
     t(`doctor.check.promote_ledger_invariant.message.${inspection.violation}`, params),
     t("doctor.check.promote_ledger_invariant.remediation"),
+  );
+}
+
+// rc.35 TASK-04 (P0-9.b): global_cli_outdated inspection.
+//
+// rc.31 introduced an `.fabric/agents.meta.json` schema fix (z.preprocess
+// singular→plural) that is incompatible with rc.30-and-earlier global CLI
+// installs. Users who upgraded their PROJECT but left the GLOBAL `fabric`
+// binary at rc.30 see hooks silently fail because the binary cannot parse
+// the new schema. Doctor previously had no visibility into the global PATH
+// CLI, so this fault was invisible to users (P0-9 root cause).
+//
+// This lint spawns `fabric -v` on PATH, parses the rc.NN suffix, and emits a
+// manual_error when the binary is older than MIN_SUPPORTED_VERSION. ENOENT
+// (no global binary on PATH) and other spawn-time failures degrade to warn —
+// the lint never blocks a doctor run.
+const MIN_SUPPORTED_GLOBAL_CLI_VERSION = "2.0.0-rc.31";
+
+type GlobalCliInspection =
+  | { status: "ok"; version: string }
+  | { status: "outdated"; version: string; minVersion: string }
+  | { status: "not-found" }
+  | { status: "unparseable"; detail: string };
+
+type GlobalCliSpawnResult = {
+  error?: NodeJS.ErrnoException | Error | null;
+  status?: number | null;
+  stdout?: string;
+};
+
+// Injectable for tests — production passes the default spawnSync wrapper.
+type GlobalCliSpawnFn = () => GlobalCliSpawnResult;
+
+const defaultGlobalCliSpawn: GlobalCliSpawnFn = () => {
+  const res = spawnSync("fabric", ["-v"], {
+    encoding: "utf8",
+    timeout: 5000,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  return { error: res.error ?? null, status: res.status, stdout: res.stdout };
+};
+
+export function inspectGlobalCliVersion(
+  spawn: GlobalCliSpawnFn = defaultGlobalCliSpawn,
+): GlobalCliInspection {
+  let res: GlobalCliSpawnResult;
+  try {
+    res = spawn();
+  } catch (e) {
+    return { status: "unparseable", detail: e instanceof Error ? e.message : String(e) };
+  }
+  if (res.error) {
+    if ((res.error as NodeJS.ErrnoException).code === "ENOENT") {
+      return { status: "not-found" };
+    }
+    return { status: "unparseable", detail: res.error.message };
+  }
+  if (res.status !== 0) {
+    return { status: "unparseable", detail: `exit ${res.status ?? "?"}` };
+  }
+  const raw = (res.stdout ?? "").trim();
+  const m = /(\d+)\.(\d+)\.(\d+)-rc\.(\d+)/.exec(raw);
+  if (!m) {
+    return { status: "unparseable", detail: raw.slice(0, 80) };
+  }
+  const version = `${m[1]}.${m[2]}.${m[3]}-rc.${m[4]}`;
+  const observedRc = Number(m[4]);
+  const minMatch = /-rc\.(\d+)/.exec(MIN_SUPPORTED_GLOBAL_CLI_VERSION);
+  const minRc = minMatch ? Number(minMatch[1]) : 0;
+  if (observedRc < minRc) {
+    return { status: "outdated", version, minVersion: MIN_SUPPORTED_GLOBAL_CLI_VERSION };
+  }
+  return { status: "ok", version };
+}
+
+export function createGlobalCliVersionCheck(
+  t: Translator,
+  inspection: GlobalCliInspection,
+): DoctorCheck {
+  if (inspection.status === "ok") {
+    return okCheck(
+      t("doctor.check.global_cli_outdated.name"),
+      t("doctor.check.global_cli_outdated.ok", { version: inspection.version }),
+    );
+  }
+  if (inspection.status === "outdated") {
+    return issueCheck(
+      t("doctor.check.global_cli_outdated.name"),
+      "error",
+      "manual_error",
+      "global_cli_outdated",
+      t("doctor.check.global_cli_outdated.message.outdated", {
+        version: inspection.version,
+        minVersion: inspection.minVersion,
+      }),
+      t("doctor.check.global_cli_outdated.remediation"),
+    );
+  }
+  if (inspection.status === "not-found") {
+    return issueCheck(
+      t("doctor.check.global_cli_outdated.name"),
+      "warn",
+      "warning",
+      "global_cli_not_found",
+      t("doctor.check.global_cli_outdated.message.not_found"),
+      t("doctor.check.global_cli_outdated.remediation"),
+    );
+  }
+  return issueCheck(
+    t("doctor.check.global_cli_outdated.name"),
+    "warn",
+    "warning",
+    "global_cli_unparseable",
+    t("doctor.check.global_cli_outdated.message.unparseable", { detail: inspection.detail }),
+    t("doctor.check.global_cli_outdated.remediation"),
   );
 }
 

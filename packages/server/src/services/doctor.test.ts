@@ -204,13 +204,17 @@ describe("runDoctorReport", () => {
       // injection state). Adjacent to onboard / promote-ledger — all three
       // are install/runtime-state advisories. Warning kind when missing.
       "Claude Code hooks wired",
+      // rc.35 TASK-04 (P0-9.b): global CLI version probe — surfaces rc.30
+      // PATH installs against rc.31+ project schemas (P0-9 root cause).
+      // Sits next to hooks_wired — both diagnose runtime install state.
+      "Global fabric CLI version",
       // rc.31 BUG-G2/G5: promote-ledger invariant (proposed >= started >=
       // promoted). Adjacent to hooks_wired — both are observability checks
       // built off events.jsonl + project state.
       "Promote ledger invariant",
       "Preexisting root markdown",
     ]);
-    expect(report.checks).toHaveLength(43);
+    expect(report.checks).toHaveLength(44);
   });
 
   it("v2.0: clean post-init repo (mocked layout) reports zero errors AND zero warnings", async () => {

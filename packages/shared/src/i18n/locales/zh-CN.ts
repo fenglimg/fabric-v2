@@ -672,6 +672,18 @@ export const zhCNMessages: Messages = {
     "knowledge_promote_started={started} 小于 knowledge_promoted={promoted}（ledger 不变量被破坏；存在未配对的 promoted 事件，可能来自 doctor filesystem-edit fallback 或外部写入）。",
   "doctor.check.promote_ledger_invariant.remediation":
     "rc.31 起 review.approve 会补发 knowledge_proposed 事件以维护不变量；新 approve 后再跑一次 fabric doctor 即可恢复。历史失衡仅是可观测性指示，不影响 KB 功能。",
+  // rc.35 TASK-04 (P0-9.b): global_cli_outdated.
+  "doctor.check.global_cli_outdated.name": "全局 fabric CLI 版本",
+  "doctor.check.global_cli_outdated.ok":
+    "PATH 上的 `fabric` 是 {version}，与 rc.31+ 项目 schema 兼容。",
+  "doctor.check.global_cli_outdated.message.outdated":
+    "PATH 上的 `fabric` 是 {version}，低于最低支持版本 {minVersion}。rc.31 修复了 agents.meta.json schema，旧版 CLI 安装的 hook 会静默失效，必须升级。",
+  "doctor.check.global_cli_outdated.message.not_found":
+    "PATH 上找不到 `fabric` 二进制。`fabric install` / `fabric doctor` 都依赖它，请先全局安装。",
+  "doctor.check.global_cli_outdated.message.unparseable":
+    "无法解析 `fabric -v` 输出（{detail}），跳过版本检查。",
+  "doctor.check.global_cli_outdated.remediation":
+    "运行 `npm install -g @fenglimg/fabric-cli@latest`，然后到每个 fabric-managed 项目下重跑 `fabric install` 同步 hook + SKILL.md。",
   "doctor.check.skill_md_yaml_invalid.name": "Skill markdown YAML",
   "doctor.check.skill_md_yaml_invalid.ok":
     "所有 .claude/.codex SKILL.md frontmatter values 都能按 strict YAML 解析。",
