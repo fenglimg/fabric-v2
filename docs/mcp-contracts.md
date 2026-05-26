@@ -305,7 +305,7 @@ Per-action notes:
 - **`search`** — same shape as `list` but free-text + filter combination;
   pure read.
 - **`defer`** — pending entries marked deferred until `until`. Emits
-  `knowledge_deferred`. Expiry detection runs as a `fab doctor` lint check
+  `knowledge_deferred`. Expiry detection runs as a `fabric doctor` lint check
   (Q7.d LOCKED — no proactive hook).
 
 Errors:
@@ -380,7 +380,7 @@ are LLM judgment calls; rows in **MCP** are deterministic primitives.
 | Frontmatter assembly (final YAML block) | MCP | Mechanical serialization of validated fields. |
 | Pending → promoted file move (`git mv`) | MCP | Single transactional step; no LLM involvement. |
 | Layer-language detection (zh-CN vs EN body) | Skill | LLM scans existing entries; respects `fabric_language` config. |
-| Drift reporting (id-set + frontmatter mismatch) | MCP | Pure comparison; runs in `rule-meta-builder` and `fab doctor`. |
+| Drift reporting (id-set + frontmatter mismatch) | MCP | Pure comparison; runs in `rule-meta-builder` and `fabric doctor`. |
 | Event payload composition (which fields to log) | MCP | Schema-driven; Skill never writes to `events.jsonl`. |
 
 The matrix is the contract. Any rc.2/3 implementation that crosses these

@@ -8,9 +8,9 @@
 
 ### Public commands (5)
 - `install` — 项目脚手架与客户端配置写入；flags: `--target`, `--debug`, `--yes`, `--dry-run`
-- `doctor` — 一致性自检与修复；flags: `--target`, `--fix`, `--fix-knowledge`, `--json`, `--layer`(rc.24: filter cite contract audit by KB layer — team|personal|all), `--archive-history`(rc.25: per-session archive attempt audit, reads session_archive_attempted events), `--rescan`, `--strict`, `--yes`（`--rescan` 替代 rc.15 已移除的 `fab scan` 顶层命令）
+- `doctor` — 一致性自检与修复；flags: `--target`, `--fix`, `--fix-knowledge`, `--json`, `--layer`(rc.24: filter cite contract audit by KB layer — team|personal|all), `--archive-history`(rc.25: per-session archive attempt audit, reads session_archive_attempted events), `--rescan`, `--strict`, `--yes`（`--rescan` 替代 rc.15 已移除的 `fabric scan` 顶层命令）
 - `serve` — 启动 HTTP MCP server；flags: `--port`(默认 7373), `--host`(默认 127.0.0.1), `--target`, `--debug`
-- `uninstall` — Remove Fabric-managed artifacts symmetrically to `fab install`. Flags: `--target`, `--debug`, `--yes`, `--dry-run`.
+- `uninstall` — Remove Fabric-managed artifacts symmetrically to `fabric install`. Flags: `--target`, `--debug`, `--yes`, `--dry-run`.
 - `config` — rc.15 起为占位命令（rc.16 上线配置面板）；flags: `--target`。
 
 ### Hidden top-level commands（callable but absent from `--help`）
@@ -37,9 +37,9 @@ I7. v1.8.0 弃用客户端 (`windsurf` / `rooCode` / `geminiCLI`) 触发 `legacy
 I8. `scan` 在源码目录为空或不可读时不抛异常，产出有效 `forensic.json`（fileCount 可为 0，recommendations 数组存在）。
 I9. `serve` 在 `EADDRINUSE` 时释放已获取的 serve-lock 并抛带 next-port 提示的错误，不留持锁孤儿进程。
 I10. `doctor` / `serve` 在另一进程持锁时拒绝执行（rc.15: `--force` 已移除；CLI 层无逃生通道，需手动停止持锁进程）；锁条目带 PID 校验，错误消息暴露 PID 与停止指引。
-I11. `fab uninstall` is idempotent — re-run on already-uninstalled project: exit code 0, all step statuses `skipped`.
-I12. `fab uninstall` never modifies `~/.fabric/knowledge/` (personal root) regardless of `--purge`.
-I13. `fab uninstall` un-merge preserves all non-fabric entries in deep-merged hook configs verbatim.
+I11. `fabric uninstall` is idempotent — re-run on already-uninstalled project: exit code 0, all step statuses `skipped`.
+I12. `fabric uninstall` never modifies `~/.fabric/knowledge/` (personal root) regardless of `--purge`.
+I13. `fabric uninstall` un-merge preserves all non-fabric entries in deep-merged hook configs verbatim.
 
 ## §3 Known-Tricky Cases
 
@@ -57,10 +57,10 @@ T4. **既有 root markdown 下的 install 行为** — 项目根已有 `CLAUDE.m
 
 T5. **legacy 客户端清理路径** — `fabric.config.json` 中残留 `windsurf` / `rooCode` / `geminiCLI` 的 clientPaths 时，`doctor --fix` 应移除这些 key 而不影响活跃客户端配置。
 
-T6. **`fab uninstall` round-trip equality (install → uninstall)** — bootstrap stage helpers preserve byte-for-byte equality of pre-install state on already-initialized fixtures; un-merge restores non-fabric hook entries verbatim and removes only fabric-owned ones (matched by command-path against `FABRIC_HOOK_COMMAND_PATHS`).
+T6. **`fabric uninstall` round-trip equality (install → uninstall)** — bootstrap stage helpers preserve byte-for-byte equality of pre-install state on already-initialized fixtures; un-merge restores non-fabric hook entries verbatim and removes only fabric-owned ones (matched by command-path against `FABRIC_HOOK_COMMAND_PATHS`).
     覆盖: `packages/cli/__tests__/integration/uninstall-skills-and-hooks.test.ts` 对 cocos-stub fixture 做 init → uninstall → diff 三步断言（pinned in advance; created by TASK-005）。
 
-T7. **`fab uninstall --plan` no-write contract** — `--plan` 模式必须列出 scaffold entries + per-stage actions + 检测到的客户端，但绝不触发任何 `rm` / `writer.remove`；stage results 全部 `skipped`。
+T7. **`fabric uninstall --plan` no-write contract** — `--plan` 模式必须列出 scaffold entries + per-stage actions + 检测到的客户端，但绝不触发任何 `rm` / `writer.remove`；stage results 全部 `skipped`。
     覆盖: `packages/cli/__tests__/uninstall.test.ts`（断言 `--plan` 调用后 fixture 目录 mtime 不变且 `writer.remove` spy 调用 0 次）。
 
 ## §4 Out of Scope
@@ -69,8 +69,8 @@ T7. **`fab uninstall --plan` no-write contract** — `--plan` 模式必须列出
 - shared 包内部 schema/error/i18n 单元行为 — 见 `shared.md`
 - dashboard 客户端 UI
 - 已弃用的 `mcp-config` 命令（v1.8.0 已移除）
-- 已弃用的顶层 `fab scan` 命令（rc.15 已移除 — 等价行为现由 `fab doctor --rescan` 提供）
-- 已弃用的顶层 `fab hooks` 命令与 `fab config {install,hooks}` 子命令（rc.15 移除；`installHooks` helper 迁至 `packages/cli/src/install/hooks-orchestrator.ts`）
+- 已弃用的顶层 `fabric scan` 命令（rc.15 已移除 — 等价行为现由 `fabric doctor --rescan` 提供）
+- 已弃用的顶层 `fabric hooks` 命令与 `fabric config {install,hooks}` 子命令（rc.15 移除；`installHooks` helper 迁至 `packages/cli/src/install/hooks-orchestrator.ts`）
 
 ## §5 Source Traceability
 

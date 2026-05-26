@@ -11,7 +11,7 @@
  *   2. reconcileKnowledge per-file gate suppressing top-level revision
  *      drift writes — pre-fix, `if (events.length > 0)` meant that an
  *      on-disk meta with a stale schema/revision but per-file-hash-matching
- *      content was never repaired by `fab doctor --fix`.
+ *      content was never repaired by `fabric doctor --fix`.
  *
  * Real-fs tests; no mocks. Each test isolates FABRIC_HOME to a tempdir so
  * the developer's actual `~/.fabric` cannot pollute results.

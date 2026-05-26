@@ -1,6 +1,6 @@
 # Client hook config templates
 
-These JSON files are **fragment templates** consumed by `fab install` and
+These JSON files are **fragment templates** consumed by `fabric install` and
 `fabric hooks install`. They are not standalone client config files.
 
 The supported clients are pinned by `packages/shared/src/schemas/fabric-config.ts`

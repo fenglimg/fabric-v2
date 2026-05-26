@@ -184,7 +184,7 @@ export async function buildForensicReport(targetInput: string): Promise<Forensic
   const report: ForensicReport = {
     version: "1.0",
     generated_at: new Date().toISOString(),
-    generated_by: `fab-cli@${getCliVersion()}`,
+    generated_by: `fabric-cli@${getCliVersion()}`,
     target,
     project_name: readProjectName(target),
     framework,

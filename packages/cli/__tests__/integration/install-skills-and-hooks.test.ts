@@ -320,7 +320,7 @@ describe("TASK-006 install-skills-and-hooks: dedup", () => {
   // v2.0.0-rc.27 TASK-004 (audit §2.6): legacy archive-hint.cjs is swept on
   // install. Pre-rc.5 workspaces registered hooks under the old
   // `archive-hint.cjs` name; the rc.5 TASK-010 rename to `fabric-hint.cjs`
-  // did not retroactively remove those entries — re-running `fab install`
+  // did not retroactively remove those entries — re-running `fabric install`
   // would deepMerge the new entry alongside the legacy one and both fired
   // for every Stop event. rc.27 introduces stripStaleHookEntries to drop
   // any entry whose hook command basename is in FABRIC_HOOK_SCRIPT_BASENAMES

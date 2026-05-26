@@ -7,7 +7,7 @@
  * that translation actually happened (variant-specific substring present)
  * AND that protected tokens survive verbatim across all variants
  * (slash commands `/fabric-archive`, `/fabric-review`, `/fabric-import`,
- * the literal CLI command `` `fab doctor --lint` `` with backticks, the
+ * the literal CLI command `` `fabric doctor --lint` `` with backticks, the
  * `📋 Fabric:` banner prefix, and rc.15 substring contracts the existing
  * `fabric-hint.test.ts` / `knowledge-hint-broad.test.ts` suites assert on).
  *
@@ -120,7 +120,7 @@ describe("banner-i18n: STRINGS table coverage envelope", () => {
 //      - zh-CN-hybrid : Chinese characters present AND protected English
 //                       tokens preserved verbatim
 //      - match-existing : BYTE-IDENTICAL to en (lib's documented fallback)
-//   3. protected tokens (slash commands / `fab doctor --lint` / 📋 Fabric:)
+//   3. protected tokens (slash commands / `fabric doctor --lint` / 📋 Fabric:)
 //      preserved verbatim across all four variants where the key carries them.
 // ---------------------------------------------------------------------------
 
@@ -198,7 +198,7 @@ const CONTRACTS: Record<string, KeyContract> = {
     enHints: ["14 days since the last lint check"],
   },
   maintenanceLine2: {
-    protectedTokens: ["`fab doctor --lint`"],
+    protectedTokens: ["`fabric doctor --lint`"],
     zhCNContract: ["是否调"],
     enHints: ["Run"],
   },

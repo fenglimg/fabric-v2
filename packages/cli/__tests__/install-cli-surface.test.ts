@@ -68,7 +68,7 @@ describe("init CLI surface", () => {
     expect(existsSync(`${target}/.fabric/knowledge`)).toBe(false);
   });
 
-  // rc.15 (formerly rc.14 TASK-002): default `fab install` on an existing
+  // rc.15 (formerly rc.14 TASK-002): default `fabric install` on an existing
   // canonical workspace is a no-op success — no throws, the canonical
   // confirmation banner is emitted.
   it("default install on existing canonical workspace is a no-op success", async () => {

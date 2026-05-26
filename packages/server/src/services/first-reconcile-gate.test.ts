@@ -70,7 +70,7 @@ describe("awaitFirstReconcileGate", () => {
     const warn = gateWarning(result);
     expect(warn).not.toBeNull();
     expect(warn?.code).toBe("reconcile_failed");
-    expect(warn?.action_hint).toMatch(/fab doctor --fix/);
+    expect(warn?.action_hint).toMatch(/fabric doctor --fix/);
   });
 
   it("returns ready immediately when no reconcile has been registered", async () => {

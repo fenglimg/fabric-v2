@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-// rc.16 TASK-007 (F1-tests): coverage for the `fab config` clack TUI panel.
+// rc.16 TASK-007 (F1-tests): coverage for the `fabric config` clack TUI panel.
 // Tests mock @clack/prompts and exercise configCmd.run() end-to-end against
 // fixture workspaces with isolated `.fabric/fabric-config.json` state.
 //
@@ -97,7 +97,7 @@ async function loadConfigCmd() {
   return mod.configCmd;
 }
 
-describe("rc.16 TASK-007: fab config panel — uninit gate", () => {
+describe("rc.16 TASK-007: fabric config panel — uninit gate", () => {
   it("exits 1 with stderr error when .fabric/ is absent", async () => {
     const configCmd = await loadConfigCmd();
     const dir = makeWorkspace(false);
@@ -124,7 +124,7 @@ describe("rc.16 TASK-007: fab config panel — uninit gate", () => {
   });
 });
 
-describe("rc.16 TASK-007: fab config panel — exit path", () => {
+describe("rc.16 TASK-007: fabric config panel — exit path", () => {
   it("EXIT_CHOICE from top menu writes nothing and calls outro-no-changes", async () => {
     const configCmd = await loadConfigCmd();
     const dir = makeWorkspace(true);
@@ -141,7 +141,7 @@ describe("rc.16 TASK-007: fab config panel — exit path", () => {
   });
 });
 
-describe("rc.16 TASK-007: fab config panel — Group A enum field roundtrip", () => {
+describe("rc.16 TASK-007: fabric config panel — Group A enum field roundtrip", () => {
   it("editing fabric_language to 'en' writes the new value and leaves no .tmp residue", async () => {
     const configCmd = await loadConfigCmd();
     const dir = makeWorkspace(true);
@@ -166,7 +166,7 @@ describe("rc.16 TASK-007: fab config panel — Group A enum field roundtrip", ()
   });
 });
 
-describe("rc.16 TASK-007: fab config panel — Group B int field roundtrip", () => {
+describe("rc.16 TASK-007: fabric config panel — Group B int field roundtrip", () => {
   it("editing archive_hint_hours to '48' writes 48 (number, not string)", async () => {
     const configCmd = await loadConfigCmd();
     const dir = makeWorkspace(true);

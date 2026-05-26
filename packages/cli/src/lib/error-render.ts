@@ -44,7 +44,7 @@ export function hasActionHint(err: unknown): err is FabricErrorShape {
  * indented action-hint arrow on the next line:
  *
  *     serve lock held by live PID 12345
- *       -> Stop the running 'fab serve' (Ctrl-C in its terminal, or 'kill 12345')
+ *       -> Stop the running 'fabric serve' (Ctrl-C in its terminal, or 'kill 12345')
  *
  * The arrow uses ASCII "-> " (not Unicode →) for GBK terminal compatibility.
  */

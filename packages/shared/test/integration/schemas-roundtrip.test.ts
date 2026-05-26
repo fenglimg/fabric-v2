@@ -198,7 +198,7 @@ describe('I1.5 initContextSchema round-trip', () => {
 const baseForensicReport = {
   version: '1.0',
   generated_at: '2026-05-08T00:00:00.000Z',
-  generated_by: 'fab-cli@test',
+  generated_by: 'fabric-cli@test',
   target: '/tmp/test-project',
   project_name: 'test-project',
   framework: { kind: 'vite', version: '5.0.0', subkind: 'vite-application', evidence: [] },
@@ -247,7 +247,7 @@ describe('I1.7 structuredWarningSchema round-trip', () => {
     roundTrip(structuredWarningSchema, {
       code: 'config_stale',
       file: '.fabric/agents.meta.json',
-      action_hint: 'Run fab sync-meta.',
+      action_hint: 'Run fabric sync-meta.',
     })
   })
 })

@@ -132,7 +132,7 @@ export const planContextInputSchema = z.object({
     .string()
     .optional()
     .describe(
-      "Recommended: pass the current client session id (Claude Code: $session_id; Codex: corresponding identifier) — enables cross-session debt tracking in fab doctor and accurate archive-hint cross-session count. Falls back gracefully if omitted.",
+      "Recommended: pass the current client session id (Claude Code: $session_id; Codex: corresponding identifier) — enables cross-session debt tracking in fabric doctor and accurate archive-hint cross-session count. Falls back gracefully if omitted.",
     ),
   // v2.0-rc.5 A3 (TASK-007): `include_deprecated` removed — it was a no-op
   // placeholder (MaturitySchema has no `deprecated` value). When the maturity
@@ -503,8 +503,8 @@ const _FabExtractKnowledgeInputBaseSchema = z.object({
     ),
   // v2.0.0-rc.23 TASK-014 (F8c): optional onboard-slot tag. The S5 slot
   // mechanism reintroduces a Skill-orchestrated "project tone" capture
-  // surface after F8a deleted the auto-`fab scan` baseline pipeline.
-  // fabric-archive's first-run phase reads `fab onboard-coverage` to
+  // surface after F8a deleted the auto-`fabric scan` baseline pipeline.
+  // fabric-archive's first-run phase reads `fabric onboard-coverage` to
   // discover unclaimed slots, then propagates the chosen slot label here
   // so the resulting pending entry counts toward coverage.
   //
@@ -914,7 +914,7 @@ export const fabReviewAnnotations = {
 } as const;
 
 // ---------------------------------------------------------------------------
-// CLI contract — `fab doctor --cite-coverage`
+// CLI contract — `fabric doctor --cite-coverage`
 //
 // v2.0.0-rc.24 TASK-09: Zod schema mirroring the `CiteCoverageReport` runtime
 // type that lives in `packages/server/src/services/doctor.ts` (TASK-08). The

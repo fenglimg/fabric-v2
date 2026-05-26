@@ -1,5 +1,5 @@
 /**
- * Integration tests: rc.15 (formerly rc.14 TASK-002) — `fab install`
+ * Integration tests: rc.15 (formerly rc.14 TASK-002) — `fabric install`
  * diff-mode idempotency.
  *
  * Scenarios:
@@ -10,7 +10,7 @@
  *      re-running install restores it.
  *   3. drift aborts with a helpful message: byte-modifying a managed
  *      scaffold file (agents.meta.json) then re-running install throws
- *      an error mentioning `fab doctor` AND `fab uninstall && fab install`.
+ *      an error mentioning `fabric doctor` AND `fabric uninstall && fabric install`.
  *   4. --dry-run on existing workspace works: runInit with planOnly=true on
  *      a post-install fixture does NOT throw and emits no writes. Output
  *      includes a per-file DiffFileState row.
@@ -22,8 +22,8 @@
  *
  * Scenarios 5 (--force legacy bypass) and 7 (events.jsonl as directory +
  * --force) were retired in rc.15 alongside the --force/--reapply flags.
- * The recovery path for both pathological cases is now `fab uninstall &&
- * fab install`, surfaced by the drift-abort message.
+ * The recovery path for both pathological cases is now `fabric uninstall &&
+ * fabric install`, surfaced by the drift-abort message.
  */
 
 import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
@@ -149,7 +149,7 @@ describe("rc.14 TASK-002 install-diff-mode: missing file auto-applies", () => {
 // ---------------------------------------------------------------------------
 
 describe("rc.14 TASK-002 install-diff-mode: drift aborts with helpful message", () => {
-  it("aborts with a stderr message naming the path, `fab doctor`, and `fab uninstall && fab install`", async () => {
+  it("aborts with a stderr message naming the path, `fabric doctor`, and `fabric uninstall && fabric install`", async () => {
     const target = createWerewolfFixtureRoot("itg-diff-drift-abort");
     tempRoots.push(target);
 
@@ -167,8 +167,8 @@ describe("rc.14 TASK-002 install-diff-mode: drift aborts with helpful message", 
 
     expect(thrown).not.toBeNull();
     expect(thrown!.message).toMatch(/agents\.meta\.json/);
-    expect(thrown!.message).toMatch(/fab doctor/);
-    expect(thrown!.message).toMatch(/fab uninstall/);
+    expect(thrown!.message).toMatch(/fabric doctor/);
+    expect(thrown!.message).toMatch(/fabric uninstall/);
   });
 });
 
@@ -255,8 +255,8 @@ describe("rc.14 TASK-004 install-diff-mode: .fabric as regular file aborts with 
     // Friendly drift-abort message names the offending path and points at the
     // recovery commands. Must NOT be a native ENOTDIR/EEXIST stack trace.
     expect(thrown!.message).toMatch(/\.fabric/);
-    expect(thrown!.message).toMatch(/fab doctor/);
-    expect(thrown!.message).toMatch(/fab uninstall/);
+    expect(thrown!.message).toMatch(/fabric doctor/);
+    expect(thrown!.message).toMatch(/fabric uninstall/);
     expect(thrown!.message).not.toMatch(/ENOTDIR|EEXIST/);
 
     // The regular file at `.fabric` is preserved verbatim — abort fires before

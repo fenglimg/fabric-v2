@@ -1,6 +1,6 @@
 # Phase 1.5 — First-run Onboard Phase (ref)
 
-> **Loaded on demand.** SKILL.md hot path only runs this when entry_point ∈ {E2_explicit_user_invoke, E4_user_range_rollback} AND `fab onboard-coverage --json` reports `missing.length > 0`. For E1/E3/E5 entries OR fully-covered workspaces, this entire phase is skipped — no reason to load.
+> **Loaded on demand.** SKILL.md hot path only runs this when entry_point ∈ {E2_explicit_user_invoke, E4_user_range_rollback} AND `fabric onboard-coverage --json` reports `missing.length > 0`. For E1/E3/E5 entries OR fully-covered workspaces, this entire phase is skipped — no reason to load.
 
 ## Phase 1.5 — First-run Onboard Phase
 
@@ -55,7 +55,7 @@ tone.
 A first-time user whose ONLY invocations ever come via hook (never an
 explicit `/fabric-archive`) will not see the onboard prompt; the 5
 onboard slots remain empty. Mitigation: documentation tells users to
-run an explicit `fab archive` at least once to populate the onboard
+run an explicit `fabric archive` at least once to populate the onboard
 baseline.
 
 ##### Worked example
@@ -82,7 +82,7 @@ $ /fabric-archive
 
 ---
 
-After F8a removed the auto-`fab scan` baseline pipeline, a freshly installed
+After F8a removed the auto-`fabric scan` baseline pipeline, a freshly installed
 Fabric workspace ships with an EMPTY `.fabric/knowledge/` tree. Five fixed
 **S5 onboard slots** capture the "project tone" baseline that the AI needs
 for high-quality plan_context retrieval from day one:
@@ -98,10 +98,10 @@ gathering, so coverage state is fresh for the session.
 
 #### Step 1 — Check coverage
 
-Invoke `fab onboard-coverage --json` and parse the JSON payload:
+Invoke `fabric onboard-coverage --json` and parse the JSON payload:
 
 ```bash
-fab onboard-coverage --json
+fabric onboard-coverage --json
 ```
 
 Expected shape:
@@ -147,8 +147,8 @@ proposed entry counts toward coverage once approved via fab_review.
 | User choice    | Action |
 |----------------|--------|
 | `fill-all`     | For EACH slot in `missing`, run Step 4 (Tour-and-propose). All proposals share session_id; one batch review at the end (Phase 3). |
-| `fill-each`    | Loop slot-by-slot through `missing`. Per slot: ask user `confirm | dismiss | skip` (per-slot AskUserQuestion); `confirm` → run Step 4; `dismiss` → `fab config dismiss-slot <slot>`; `skip` → leave for next archive run. |
-| `dismiss-all`  | For EACH slot in `missing`, invoke `Bash("fab config dismiss-slot <slot>")`. Print a one-line confirmation each. Skip to Phase 0. |
+| `fill-each`    | Loop slot-by-slot through `missing`. Per slot: ask user `confirm | dismiss | skip` (per-slot AskUserQuestion); `confirm` → run Step 4; `dismiss` → `fabric config dismiss-slot <slot>`; `skip` → leave for next archive run. |
+| `dismiss-all`  | For EACH slot in `missing`, invoke `Bash("fabric config dismiss-slot <slot>")`. Print a one-line confirmation each. Skip to Phase 0. |
 | `skip`         | No-op. Slots remain in `missing` for the next archive run. Skip to Phase 0. |
 
 #### Step 4 — Tour-and-propose (per-slot)
@@ -174,7 +174,7 @@ After Read-ing the slot-specific sources, classify the observation:
 
 Call `fab_extract_knowledge` with the inferred fields PLUS `onboard_slot:
 <slot>`. The pending file's frontmatter will carry the slot label, and the
-next `fab onboard-coverage` run will see the slot as filled (once approved
+next `fabric onboard-coverage` run will see the slot as filled (once approved
 via fab_review).
 
 Example:
@@ -201,9 +201,9 @@ mcp__fabric__fab_extract_knowledge({
 
 - MUST run BEFORE Phase 2 evidence gathering — onboard is a separate flow,
   not interleaved with session-archive candidates.
-- MUST call `fab onboard-coverage --json` before deciding; never assume
+- MUST call `fabric onboard-coverage --json` before deciding; never assume
   coverage state.
-- NEVER fill a slot that is in `opted_out` — `fab onboard-coverage` already
+- NEVER fill a slot that is in `opted_out` — `fabric onboard-coverage` already
   excludes those from `missing`, but the Skill MUST NOT re-propose them
   even if the user asks "fill all of them" — the dismiss is intentional.
 - NEVER prompt the user when `missing.length === 0` — silent skip.

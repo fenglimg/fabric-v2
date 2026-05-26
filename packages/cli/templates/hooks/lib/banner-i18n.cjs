@@ -37,7 +37,7 @@
  *
  * Protected tokens — NEVER translated, kept verbatim across all 4 variants:
  *   - Slash commands: /fabric-archive, /fabric-review, /fabric-import
- *   - CLI commands:   `fab doctor --lint`
+ *   - CLI commands:   `fabric doctor --lint`
  *   - Numeric / template substrings the existing tests assert on:
  *       "${hoursElapsed.toFixed(1)}h" (e.g. "25.0h"), "阈值 ${N}h",
  *       "${count} 条", "${nodeCount}/${threshold}", "${days} 天"
@@ -230,12 +230,12 @@ const STRINGS = {
     "zh-CN-hybrid": (p) => `📋 Fabric: 已 ${p.days} 天未跑 lint 检查（实际 ${p.ageDays}d）。`,
   },
 
-  // Source (zh-CN): fabric-hint.cjs:929  `   是否调 \`fab doctor --lint\` 看看知识库健康度?`
-  // params: {} — protected token `fab doctor --lint` (with backticks) verbatim.
+  // Source (zh-CN): fabric-hint.cjs:929  `   是否调 \`fabric doctor --lint\` 看看知识库健康度?`
+  // params: {} — protected token `fabric doctor --lint` (with backticks) verbatim.
   maintenanceLine2: {
-    "zh-CN": () => "   是否调 `fab doctor --lint` 看看知识库健康度?",
-    en: () => "   Run `fab doctor --lint` to check knowledge-base health?",
-    "zh-CN-hybrid": () => "   是否调 `fab doctor --lint` 看看知识库健康度?",
+    "zh-CN": () => "   是否调 `fabric doctor --lint` 看看知识库健康度?",
+    en: () => "   Run `fabric doctor --lint` to check knowledge-base health?",
+    "zh-CN-hybrid": () => "   是否调 `fabric doctor --lint` 看看知识库健康度?",
   },
 
   // ---- Broad hook: import recommendation ------------------------------------

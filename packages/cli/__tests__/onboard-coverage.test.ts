@@ -1,5 +1,5 @@
 /**
- * Unit tests for `fab onboard-coverage` (rc.23 TASK-014 / F8c).
+ * Unit tests for `fabric onboard-coverage` (rc.23 TASK-014 / F8c).
  *
  * Coverage matrix:
  *   1. Empty workspace → all 5 S5 slots in `missing`, none filled, none opted-out.

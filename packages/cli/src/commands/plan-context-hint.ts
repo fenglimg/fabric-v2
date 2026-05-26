@@ -102,9 +102,9 @@ export const planContextHintCommand = defineCommand({
     name: "plan-context-hint",
     description:
       "Emit versioned knowledge hint JSON to stdout. Used by rc.6 hooks and the fabric-import skill.",
-    // rc.15 TASK-004 (C8): hidden from `fab --help` listing. The command stays
+    // rc.15 TASK-004 (C8): hidden from `fabric --help` listing. The command stays
     // callable so hook scripts and the fabric-import skill can still invoke
-    // it via `fab plan-context-hint ...`; it just no longer appears in the
+    // it via `fabric plan-context-hint ...`; it just no longer appears in the
     // top-level usage banner alongside install/doctor/serve/uninstall/config.
     hidden: true,
   },

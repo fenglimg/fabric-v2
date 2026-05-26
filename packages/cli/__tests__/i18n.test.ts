@@ -65,7 +65,7 @@ async function collectSnapshots(locale: "en" | "zh-CN") {
 
   // rc.23 TASK-012 (F8a): legacy baseline scan paths were removed clean-slate;
   // KB on fresh install is empty by design.
-  // rc.15 TASK-004 (C9): capture `fab config` placeholder output as the replacement
+  // rc.15 TASK-004 (C9): capture `fabric config` placeholder output as the replacement
   // i18n snapshot — locks the rc.16 placeholder string in en + zh-CN.
   vi.resetModules();
   const { configCmd } = await import("../src/commands/config.ts");
@@ -93,7 +93,7 @@ async function collectSnapshots(locale: "en" | "zh-CN") {
   vi.resetModules();
   const uninstallMod = await import("../src/commands/uninstall.ts");
   const uninstallCmd = uninstallMod.default;
-  const usageFirstLine = `fab uninstall - ${uninstallCmd.meta?.description ?? ""}`;
+  const usageFirstLine = `fabric uninstall - ${uninstallCmd.meta?.description ?? ""}`;
   const uninstallEntry = {
     description: uninstallCmd.meta?.description ?? "",
     usage: usageFirstLine,

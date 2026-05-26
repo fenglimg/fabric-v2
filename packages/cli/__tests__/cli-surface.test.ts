@@ -84,7 +84,7 @@ describe("CLI surface drift gate (docs/test-seed/cli.md \u00A71)", () => {
     const surface = commandSurface(cmd);
     // toMatchSnapshot's hint argument is appended to the snapshot key, surfacing
     // DRIFT_HINT in the error path when a developer runs vitest without -u.
-    expect(surface).toMatchSnapshot(`fab ${name} surface — ${DRIFT_HINT}`);
+    expect(surface).toMatchSnapshot(`fabric ${name} surface — ${DRIFT_HINT}`);
   });
 
   // Top-level CLI surface: assert the public command set matches the seed.

@@ -1,5 +1,5 @@
 /**
- * Integration tests: `fab uninstall` round-trip — drive a real init via the
+ * Integration tests: `fabric uninstall` round-trip — drive a real init via the
  * public execution-plan API (skipping MCP), then drive uninstall, and verify
  * the symmetric inverse:
  *

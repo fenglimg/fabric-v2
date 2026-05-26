@@ -263,7 +263,7 @@ export type InitExecutionResult = {
 // v2/rc.2: The v1 client-side init skill (and its reminder hooks for Claude
 // / Codex) was removed. rc.2/3/4 will introduce v2 skills (fabric-archive,
 // fabric-review, fabric-import) with their own templates and wiring; until
-// then `fab install` only emits MCP-agnostic state (knowledge dirs, AGENTS.md,
+// then `fabric install` only emits MCP-agnostic state (knowledge dirs, AGENTS.md,
 // forensic.json, events.jsonl).
 const LOCAL_FABRIC_SERVER_PATH = join("node_modules", "@fenglimg", "fabric-server", "dist", "index.js");
 const FABRIC_SERVER_PACKAGE = "@fenglimg/fabric-server";
@@ -309,9 +309,9 @@ export async function runInitCommand(args: InitArgs): Promise<InitExecutionResul
 
   // rc.15 — Preflight lock check on any already-initialized workspace.
   // Diff-mode default appends ledger events on every run
-  // (install_diff_applied) which opens events.jsonl, so a running `fab serve`
+  // (install_diff_applied) which opens events.jsonl, so a running `fabric serve`
   // holding the lock would race the write. No legacy --force bypass remains;
-  // recovery from a stuck lock is `fab uninstall && fab install`.
+  // recovery from a stuck lock is `fabric uninstall && fabric install`.
   const fabricInitialized = existsSync(join(intent.target, ".fabric", "events.jsonl"));
   if (fabricInitialized) {
     // rc.15 TASK-007: explicitly render `.actionHint` from FabricError-shaped
@@ -389,7 +389,7 @@ export async function runInitCommand(args: InitArgs): Promise<InitExecutionResul
  *
  * Idempotent: writes ONLY when the file does not exist. NEVER merges
  * missing fields into an existing file. NEVER overwrites user edits. Every
- * `fab install` invocation shares this helper with identical semantics —
+ * `fabric install` invocation shares this helper with identical semantics —
  * re-runs preserve user customisations verbatim.
  */
 function writeDefaultFabricConfig(fabricDir: string, targetRoot: string): void {
@@ -572,7 +572,7 @@ export async function executeInitExecutionPlan(plan: InitExecutionPlan): Promise
   // false when ".fabric" is a file), which bypasses the per-file drift-abort
   // gate below and leads to mkdirSync raising native ENOTDIR/EEXIST at
   // write time. Surface the friendly drift-abort message instead — recovery
-  // from a file-where-dir-belongs is `fab uninstall && fab install`.
+  // from a file-where-dir-belongs is `fabric uninstall && fabric install`.
   if (
     existsSync(plan.scaffold.fabricDir)
     && !statSync(plan.scaffold.fabricDir).isDirectory()
@@ -585,7 +585,7 @@ export async function executeInitExecutionPlan(plan: InitExecutionPlan): Promise
   // rc.15 (formerly rc.14 TASK-002) — unconditional drift-abort gate. Fires
   // at mutation time (i.e. not planOnly) when any scaffold path is in a
   // non-canonical state. No legacy escape hatch — the message points to
-  // `fab doctor` (inspect) and `fab uninstall && fab install` (reset).
+  // `fabric doctor` (inspect) and `fabric uninstall && fabric install` (reset).
   const drifted = scaffoldStates.find(
     (entry) => entry.state === "drifted" || entry.state === "user-modified",
   );
@@ -1082,7 +1082,7 @@ async function executeInitStagePlan(
 // user-modified (planning never throws); the abort gate inside
 // `executeInitExecutionPlan` surfaces a single helpful drift-abort message
 // before any write. With --force removed in rc.15, this always returns
-// false — recovery from a file-where-dir-belongs is `fab uninstall && fab
+// false — recovery from a file-where-dir-belongs is `fabric uninstall && fab
 // install`.
 function shouldReplaceWritableDirectory(path: string, _options?: InitOptions): boolean {
   if (!existsSync(path)) {

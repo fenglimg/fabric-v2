@@ -51,7 +51,7 @@ function makeCandidateFile(i: number) {
 const BASE_REPORT = {
   version: '1.0',
   generated_at: '2026-05-08T00:00:00.000Z',
-  generated_by: 'fab-cli@integration-test',
+  generated_by: 'fabric-cli@integration-test',
   target: '/tmp/large-project',
   project_name: 'large-project',
   framework: {

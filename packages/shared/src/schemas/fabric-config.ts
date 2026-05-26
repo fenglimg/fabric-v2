@@ -113,7 +113,7 @@ export const fabricConfigSchema = z.object({
   review_hint_pending_age_days: z.number().int().positive().optional().default(7),
   // rc.7 T7 + T10 pre-wiring: days-since-last-doctor cutoff for the future
   // Signal D (maintenance hint). T10 will consume this to decide when the
-  // fabric-hint Stop hook surfaces a "run `fab doctor`" reminder.
+  // fabric-hint Stop hook surfaces a "run `fabric doctor`" reminder.
   // Default 14 reflects a fortnightly cadence — long enough to avoid nag,
   // short enough to catch index drift before it compounds.
   maintenance_hint_days: z.number().int().positive().optional().default(14),
@@ -215,12 +215,12 @@ export const fabricConfigSchema = z.object({
   fabric_event_retention_days: z.union([z.literal(7), z.literal(30), z.literal(90)]).optional(),
   // v2.0.0-rc.23 TASK-014 (F8c): onboard slot opt-out list. Tracks slot
   // names the user explicitly dismissed during fabric-archive's first-run
-  // onboard phase (or via `fab config dismiss-slot <slot>`). Dismissed
-  // slots are excluded from `fab onboard-coverage`'s `missing` set and the
+  // onboard phase (or via `fabric config dismiss-slot <slot>`). Dismissed
+  // slots are excluded from `fabric onboard-coverage`'s `missing` set and the
   // doctor `Onboard coverage` advisory's recompute, so the user is never
   // re-prompted for slots they consciously declined.
   //
-  // Re-opening a dismissed slot requires `fab config onboard-reset <slot>`
+  // Re-opening a dismissed slot requires `fabric config onboard-reset <slot>`
   // — a deliberate two-command UX to keep the dismiss intent reversible
   // but never silently undone. Schema is intentionally `z.array(z.string())`
   // rather than `z.array(onboardSlotSchema)` so historical configs survive

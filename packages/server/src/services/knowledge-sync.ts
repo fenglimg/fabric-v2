@@ -283,7 +283,7 @@ function validateFrontmatter(
     const msg = `Unterminated YAML frontmatter in ${filePath}`;
     if (throwOnInvalid) {
       throw new RuleValidationError(msg, {
-        actionHint: "Run `fab doctor --fix` to repair frontmatter",
+        actionHint: "Run `fabric doctor --fix` to repair frontmatter",
         fixable: true,
         details: { file: filePath },
       });
@@ -292,7 +292,7 @@ function validateFrontmatter(
     return {
       code: "rule_frontmatter_invalid",
       file: filePath,
-      action_hint: "Run `fab doctor --fix` to repair frontmatter",
+      action_hint: "Run `fabric doctor --fix` to repair frontmatter",
     };
   }
 
@@ -308,7 +308,7 @@ function validateFrontmatter(
       const msg = `Invalid YAML frontmatter line "${trimmed}" in ${filePath}`;
       if (throwOnInvalid) {
         throw new RuleValidationError(msg, {
-          actionHint: "Run `fab doctor --fix` to repair frontmatter",
+          actionHint: "Run `fabric doctor --fix` to repair frontmatter",
           fixable: true,
           details: { file: filePath, line: trimmed },
         });
@@ -317,7 +317,7 @@ function validateFrontmatter(
       return {
         code: "rule_frontmatter_invalid",
         file: filePath,
-        action_hint: "Run `fab doctor --fix` to repair frontmatter",
+        action_hint: "Run `fabric doctor --fix` to repair frontmatter",
       };
     }
   }

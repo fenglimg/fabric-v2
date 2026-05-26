@@ -23,7 +23,7 @@ status: draft
 运行以下命令自动清理 `fabric.config.json` 中的废弃键：
 
 ```bash
-fab doctor --fix
+fabric doctor --fix
 ```
 
 执行后，doctor 会从 `clientPaths` 中删除 `windsurf`、`rooCode`、`geminiCLI`，
@@ -32,16 +32,16 @@ fab doctor --fix
 ### 升级流程
 
 1. 升级到 v1.8.0
-2. 运行 `fab doctor`：若 `fabric.config.json` 中存在已废弃的客户端键，会显示 `legacy_client_path_present` 检查项
-3. 运行 `fab doctor --fix`：自动从 `clientPaths` 中删除废弃键并写入 `legacy_client_path_present` 账本事件
+2. 运行 `fabric doctor`：若 `fabric.config.json` 中存在已废弃的客户端键，会显示 `legacy_client_path_present` 检查项
+3. 运行 `fabric doctor --fix`：自动从 `clientPaths` 中删除废弃键并写入 `legacy_client_path_present` 账本事件
 
-> 注：原计划经由 v1.7.1 提供废弃警告作为预告，但相关检查在实现上深度依赖 v1.8.0 的 FabricError 与新事件账本类型，无法干净地反向移植到 v1.7.0 主干。因此废弃 + 移除合并在 v1.8.0 一并发布；用户首次升级时仍可通过 `fab doctor` 看到清理建议再决定是否执行。
+> 注：原计划经由 v1.7.1 提供废弃警告作为预告，但相关检查在实现上深度依赖 v1.8.0 的 FabricError 与新事件账本类型，无法干净地反向移植到 v1.7.0 主干。因此废弃 + 移除合并在 v1.8.0 一并发布；用户首次升级时仍可通过 `fabric doctor` 看到清理建议再决定是否执行。
 
 ## 2. 配置迁移
 
 ### Claude MCP 配置路径变更
 
-在 v1.8.0 之前，`fab init` 将 Claude Code 的 MCP 服务器条目写入
+在 v1.8.0 之前，`fabric init` 将 Claude Code 的 MCP 服务器条目写入
 `.claude/settings.json`。这与 Claude Code 规范不符——该文件仅用于 hooks 和
 权限配置，MCP 服务器条目应写入专用位置。
 
@@ -54,12 +54,12 @@ fab doctor --fix
 
 ### 作用域标志
 
-`fab init` 新增 `--scope` 参数：
+`fabric init` 新增 `--scope` 参数：
 
 ```bash
-fab init                    # 等同于 --scope project，写入 .mcp.json
-fab init --scope project    # 写入 <repo-root>/.mcp.json
-fab init --scope user       # 写入 ~/.claude.json
+fabric init                    # 等同于 --scope project，写入 .mcp.json
+fabric init --scope project    # 写入 <repo-root>/.mcp.json
+fabric init --scope user       # 写入 ~/.claude.json
 ```
 
 ### 深合并策略
@@ -89,17 +89,17 @@ fab init --scope user       # 写入 ~/.claude.json
 若 `.claude/settings.json` 中存在 `mcpServers.fabric` 条目，doctor 会报告
 `mcp_config_in_wrong_file` 检查失败，并提供以下修复流程：
 
-1. `fab doctor --fix` 从 `.claude/settings.json` 中**删除** `mcpServers.fabric` 条目。
-2. 用户随后运行 `fab init`（或 `fab init --scope user`）将条目写入正确位置。
+1. `fabric doctor --fix` 从 `.claude/settings.json` 中**删除** `mcpServers.fabric` 条目。
+2. 用户随后运行 `fabric init`（或 `fabric init --scope user`）将条目写入正确位置。
 
 > 注意：doctor --fix 仅移除错误位置的条目，不会自动决定新的目标位置。
-> 请根据团队协作需求选择 project 或 user 作用域后重新运行 `fab init`。
+> 请根据团队协作需求选择 project 或 user 作用域后重新运行 `fabric init`。
 
 ## 3. --reapply 行为变更
 
 ### 事件账本不再被截断
 
-在 v1.8.0 之前，`fab init --reapply` 会清空 `.fabric/events.jsonl`（截断操作）。
+在 v1.8.0 之前，`fabric init --reapply` 会清空 `.fabric/events.jsonl`（截断操作）。
 从 v1.8.0 起，账本文件**字节内容完整保留**，现有事件历史不受影响。
 
 ### agents.meta.json 保留策略
@@ -132,7 +132,7 @@ v1.8.0 新增以下 doctor 检查项：
 
 | 检查项 | 说明 | 可修复 |
 |--------|------|--------|
-| `mcp_config_in_wrong_file` | `.claude/settings.json` 中存在 `mcpServers.fabric` 条目（应在 `.mcp.json` 或 `~/.claude.json`）。`--fix` 从错误文件中删除该条目，之后需重新运行 `fab init` 写入正确位置。 | 是 |
+| `mcp_config_in_wrong_file` | `.claude/settings.json` 中存在 `mcpServers.fabric` 条目（应在 `.mcp.json` 或 `~/.claude.json`）。`--fix` 从错误文件中删除该条目，之后需重新运行 `fabric init` 写入正确位置。 | 是 |
 | `event_ledger_partial_write` | `.fabric/events.jsonl` 末尾存在不完整的 JSON 行（写入被中断）。`--fix` 截断尾部残行并写入 `LedgerWarning` 事件。 | 是 |
 | `meta_manually_diverged` | `agents.meta.json` 中的规则哈希与磁盘上 `rules/` 文件内容不一致，说明 meta 被手动修改或规则文件在 Fabric 外部变更。`--fix` 调用 `reconcileRules` 重建 meta。 | 是 |
 | `legacy_client_path_present` | `fabric.config.json` 中存在已废弃的客户端键（`windsurf`、`rooCode`、`geminiCLI`）。`--fix` 从 `clientPaths` 中删除这些键。 | 是 |
@@ -144,8 +144,8 @@ v1.8.0 新增以下 doctor 检查项：
 ### 使用方式
 
 ```bash
-fab doctor           # 列出所有检查结果
-fab doctor --fix     # 自动修复所有可修复项
+fabric doctor           # 列出所有检查结果
+fabric doctor --fix     # 自动修复所有可修复项
 ```
 
 ## 5. FAQ
@@ -193,8 +193,8 @@ Both thresholds are configurable in `fabric.config.json`:
 
 **Q: What is the serve lockfile and what happens if the server crashes?**
 
-A: When `fab serve` starts, it writes `.fabric/.serve.lock` containing the current process PID. This prevents accidental double-starts in the same repository.
+A: When `fabric serve` starts, it writes `.fabric/.serve.lock` containing the current process PID. This prevents accidental double-starts in the same repository.
 
 - **Stale lockfile** (PID is no longer alive): automatically recovered — the old lockfile is deleted and the new server starts normally.
-- **Live lockfile** (PID is running): `fab serve` refuses to start and prints the conflicting PID.
-- **Force override**: pass `--force` to `fab serve` to remove the lockfile and start regardless (use with caution; only appropriate when you are certain the other process is safe to displace).
+- **Live lockfile** (PID is running): `fabric serve` refuses to start and prints the conflicting PID.
+- **Force override**: pass `--force` to `fabric serve` to remove the lockfile and start regardless (use with caution; only appropriate when you are certain the other process is safe to displace).

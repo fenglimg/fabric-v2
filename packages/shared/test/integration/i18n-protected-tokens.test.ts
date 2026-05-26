@@ -42,7 +42,7 @@ describe('I7 protected tokens: tokens preserved across locales', () => {
     // Override a key that might reference a protected token — check that the
     // *en* fallback or value preserves the token.
     // The key we use needs to exist in the en locale.
-    'cli.sync-meta.drift-detected': 'Translation attempt of fab sync-meta drift.',
+    'cli.sync-meta.drift-detected': 'Translation attempt of fabric sync-meta drift.',
   }
 
   const protectedTokensList = PROTECTED_TOKENS as ReadonlyArray<string>

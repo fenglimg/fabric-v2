@@ -40,7 +40,7 @@ export function createLoopbackDenyMiddleware() {
       res,
       401,
       "UNAUTHORIZED",
-      "FABRIC_AUTH_TOKEN is not set. Either export FABRIC_AUTH_TOKEN=<secret> before running `fab serve`, or pass `--allow-loopback-no-auth` to explicitly opt in to unauthenticated loopback access (security risk).",
+      "FABRIC_AUTH_TOKEN is not set. Either export FABRIC_AUTH_TOKEN=<secret> before running `fabric serve`, or pass `--allow-loopback-no-auth` to explicitly opt in to unauthenticated loopback access (security risk).",
     );
   };
 }

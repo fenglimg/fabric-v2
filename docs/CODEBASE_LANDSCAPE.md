@@ -29,7 +29,7 @@ packages/shared
 数据流：
 
 ```text
-fab install
+fabric install
   cli/commands/install.ts
   -> cli/scanner/forensic.ts
   -> shared detector 和 schemas

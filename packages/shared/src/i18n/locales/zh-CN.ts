@@ -5,17 +5,17 @@ export const zhCNMessages: Messages = {
     "Fabric CLI - AI 智能体协作框架。\n" +
     "\n" +
     "三步心智模型：\n" +
-    "  装 (install) - fab install   一键完成项目初始化\n" +
-    "  配 (config)  - fab config    打开交互式配置面板\n" +
-    "  跑 (run)     - fab serve     启动本地 MCP HTTP 服务\n" +
-    "                fab doctor     运行目标态诊断\n" +
+    "  装 (install) - fabric install   一键完成项目初始化\n" +
+    "  配 (config)  - fabric config    打开交互式配置面板\n" +
+    "  跑 (run)     - fabric serve     启动本地 MCP HTTP 服务\n" +
+    "                fabric doctor     运行目标态诊断\n" +
     "\n" +
     "示例：\n" +
-    "  fab install                  在当前项目中安装 Fabric\n" +
-    "  fab config                   打开交互式配置面板\n" +
-    "  fab serve --port 7373        启动 MCP HTTP 服务\n" +
-    "  fab doctor --fix             修复 Fabric 派生状态\n" +
-    "  fab uninstall --dry-run      预览卸载，不删除文件",
+    "  fabric install                  在当前项目中安装 Fabric\n" +
+    "  fabric config                   打开交互式配置面板\n" +
+    "  fabric serve --port 7373        启动 MCP HTTP 服务\n" +
+    "  fabric doctor --fix             修复 Fabric 派生状态\n" +
+    "  fabric uninstall --dry-run      预览卸载，不删除文件",
   "cli.shared.created": "已创建",
   "cli.shared.skipped": "已跳过",
   "cli.shared.next": "下一步",
@@ -62,8 +62,8 @@ export const zhCNMessages: Messages = {
     "打开 Fabric 交互式配置面板（语言、知识层、审计模式、提示窗口、MCP 客户端配置等）。\n" +
     "\n" +
     "示例：\n" +
-    "  fab config                   打开交互式面板\n" +
-    "  fab config --target /path    编辑指定项目的配置",
+    "  fabric config                   打开交互式面板\n" +
+    "  fabric config --target /path    编辑指定项目的配置",
   "cli.config.args.target.description": "目标项目目录（默认当前工作目录）。",
   "cli.config.clients.claude": "Claude Code CLI",
   "cli.config.install.description": "将 Fabric MCP 服务端条目安装到检测到的客户端配置中。",
@@ -78,7 +78,7 @@ export const zhCNMessages: Messages = {
   "cli.config.install.dry-run": "[dry-run] {client}：将写入 {path}",
   "cli.config.install.wrote": "{client}：已写入 {path}",
 
-  // rc.16 TASK-006 (F1-panel): clack 驱动的 `fab config` 交互式面板。
+  // rc.16 TASK-006 (F1-panel): clack 驱动的 `fabric config` 交互式面板。
   // 由 packages/cli/src/commands/config.ts（菜单循环 + 字段编辑）以及
   // getPanelFields() 的 label_i18n_key 引用消费。
   "cli.config.intro": "Fabric 配置",
@@ -86,7 +86,7 @@ export const zhCNMessages: Messages = {
   "cli.config.outro-no-changes": "未做任何修改。",
   "cli.config.cancel": "已取消。",
   "cli.config.non-tty-notice":
-    "fab config 需要在交互式终端中运行。请在 TTY 中执行以编辑配置字段。",
+    "fabric config 需要在交互式终端中运行。请在 TTY 中执行以编辑配置字段。",
   "cli.config.menu.field-select": "选择要编辑的字段：",
   "cli.config.menu.exit": "退出",
   "cli.config.value.current": "当前：{value}",
@@ -96,7 +96,7 @@ export const zhCNMessages: Messages = {
   "cli.config.write.success": "已保存 {key} = {value}",
   "cli.config.write.failure": "写入 fabric-config.json 失败：{message}",
   "cli.config.errors.uninit-workspace.message":
-    "工作区尚未初始化。请先运行 `fab install`。",
+    "工作区尚未初始化。请先运行 `fabric install`。",
   "cli.config.errors.invalid-int": "必须是正整数。",
   "cli.config.errors.unknown-field": "未知字段选择 — 已跳过。",
   "cli.config.errors.no-enum-options": "该字段没有可选枚举值 — 已跳过。",
@@ -139,16 +139,16 @@ export const zhCNMessages: Messages = {
     "运行 Fabric 目标态诊断（meta 同步、知识索引、bootstrap、events ledger、human-lock 漂移）。\n" +
     "\n" +
     "示例：\n" +
-    "  fab doctor                   只读诊断报告\n" +
-    "  fab doctor --fix             修复派生状态（meta + 索引）\n" +
-    "  fab doctor --fix-knowledge   应用知识库 lint 变更（降级 / 归档）\n" +
-    "  fab doctor --json --strict   机器可读输出，warning 视为失败",
+    "  fabric doctor                   只读诊断报告\n" +
+    "  fabric doctor --fix             修复派生状态（meta + 索引）\n" +
+    "  fabric doctor --fix-knowledge   应用知识库 lint 变更（降级 / 归档）\n" +
+    "  fabric doctor --json --strict   机器可读输出，warning 视为失败",
   "doctor.section.fixable": "可修复错误：",
   "doctor.section.manual": "需手动修复：",
   "doctor.section.warnings": "警告：",
   "doctor.section.fix-knowledge-mutations": "Fix-knowledge 变更：",
   // v2.0.0-rc.29 REVIEW (codex LOW-2): F2 的 payload 阈值之前只出现在 JSON envelope，
-  // 人类输出看不到，导致改了 mcpPayloadLimits 之后没法用 `fab doctor` 快速确认是否生效。
+  // 人类输出看不到，导致改了 mcpPayloadLimits 之后没法用 `fabric doctor` 快速确认是否生效。
   "doctor.section.payload-limits": "MCP payload 阈值：",
   "doctor.payload-limits.line": "warn={warnKb} KB, hard={hardKb} KB (来源: {source})",
   // rc.20 TASK-07: cite-coverage 人类可读格式化键。
@@ -185,7 +185,7 @@ export const zhCNMessages: Messages = {
   "cite-coverage.contract.skip_count": "skip 桶",
   "cite-coverage.contract.status.ok": "正常",
   "cite-coverage.contract.status.skipped_bootstrap_drift":
-    "已跳过（bootstrap drift — 请运行 fab install）",
+    "已跳过（bootstrap drift — 请运行 fabric install）",
   "cite-coverage.contract.status.awaiting_marker": "等待首次 marker emit",
   // 复数知识类型（rc.29 BUG-C1: 与统一后的 KnowledgeTypeSchema 枚举字面量逐字对齐）+ 第六桶 unresolved。
   "cite-coverage.contract.type.decisions": "decisions",
@@ -244,7 +244,7 @@ export const zhCNMessages: Messages = {
     "与 --enrich-descriptions --auto 或 --fix 搭配:仅预览改动计划,不写入磁盘。fix-dry-run 输出与 --fix 相同的 fixable_errors 列表,但不执行任何 mutation。",
   // v2.0.0-rc.33 W4-B1 (T6 P2): --fix --dry-run banner — 出现在 report 之前, 让用户明确没有发生 mutation。
   "cli.doctor.fix-dry-run-banner":
-    "[dry-run] 未应用任何 mutation。下方 fixable_errors 列表就是 `fab doctor --fix` 会处理的项;去掉 --dry-run 再跑可实际修复。",
+    "[dry-run] 未应用任何 mutation。下方 fixable_errors 列表就是 `fabric doctor --fix` 会处理的项;去掉 --dry-run 再跑可实际修复。",
   "cli.doctor.errors.enrich-descriptions-mutex":
     "--enrich-descriptions 不能与 --fix / --fix-knowledge / --cite-coverage 同时使用,请分别运行。",
   "doctor.enrich.allComplete":
@@ -258,12 +258,12 @@ export const zhCNMessages: Messages = {
   "doctor.check.bootstrap_marker_migration.message.plural":
     "{count} 个文件仍带有旧 fabric:knowledge-base bootstrap marker：{list}。",
   "doctor.check.bootstrap_marker_migration.remediation":
-    "运行 `fab doctor --fix` 迁移到 fabric:bootstrap marker",
+    "运行 `fabric doctor --fix` 迁移到 fabric:bootstrap marker",
   "doctor.check.bootstrap_snapshot_drift.name": "Bootstrap snapshot drift",
   "doctor.check.bootstrap_snapshot_drift.message.drift":
     ".fabric/AGENTS.md 内容与 BOOTSTRAP_CANONICAL 逐字节不一致。",
   "doctor.check.bootstrap_snapshot_drift.remediation.drift":
-    "运行 `fab doctor --fix` 恢复 canonical bootstrap snapshot",
+    "运行 `fabric doctor --fix` 恢复 canonical bootstrap snapshot",
   "doctor.check.bootstrap_snapshot_drift.ok.ok":
     ".fabric/AGENTS.md 与 BOOTSTRAP_CANONICAL 逐字节一致。",
   "doctor.check.bootstrap_snapshot_drift.ok.missing_delegated":
@@ -274,7 +274,7 @@ export const zhCNMessages: Messages = {
   "doctor.check.managed_block_drift.message.plural":
     "{count} 个 three-end managed block 与期望内容（snapshot + 可选 project-rules concat）不一致：{list}。",
   "doctor.check.managed_block_drift.remediation":
-    "运行 `fab doctor --fix` 从 canonical 恢复 three-end managed blocks",
+    "运行 `fabric doctor --fix` 从 canonical 恢复 three-end managed blocks",
   "doctor.check.managed_block_drift.ok.ok":
     "Three-end managed blocks 与 expectedBody 逐字节一致。",
   "doctor.check.managed_block_drift.ok.no_managed_block":
@@ -283,7 +283,7 @@ export const zhCNMessages: Messages = {
   "doctor.check.bootstrap_anchor.message.missing":
     "repo root 下 AGENTS.md 与 CLAUDE.md 都不存在。Fabric 需要在项目根目录存在 bootstrap anchor 文件。",
   "doctor.check.bootstrap_anchor.remediation.missing":
-    "运行 `fab install` 在 repo root 生成 AGENTS.md / CLAUDE.md bootstrap anchor。",
+    "运行 `fabric install` 在 repo root 生成 AGENTS.md / CLAUDE.md bootstrap anchor。",
   "doctor.check.bootstrap_anchor.ok": "repo root 下已存在 Bootstrap anchor：{present}。",
   "doctor.check.baseline_filename_format.name": "Baseline 文件名格式",
   "doctor.check.baseline_filename_format.ok":
@@ -301,7 +301,7 @@ export const zhCNMessages: Messages = {
   "doctor.check.knowledge_dir_missing.message.plural":
     "{count} 个必需 knowledge subdir 缺失：{list}。",
   "doctor.check.knowledge_dir_missing.remediation":
-    "运行 `fab doctor --fix` 创建缺失的 .fabric/knowledge/* subdirectories。",
+    "运行 `fabric doctor --fix` 创建缺失的 .fabric/knowledge/* subdirectories。",
   "doctor.check.knowledge_dir_missing.ok":
     "全部 {count} 个必需 .fabric/knowledge/* subdirectories 均已存在。",
   "doctor.check.forensic.name": "Scan evidence",
@@ -311,50 +311,50 @@ export const zhCNMessages: Messages = {
     "{error} 实时扫描检测到 {frameworkKind}，共有 {count} 个入口点。",
   "doctor.check.forensic.message.missing-default": ".fabric/forensic.json 缺失。",
   "doctor.check.forensic.message.invalid-default": ".fabric/forensic.json 无效。",
-  "doctor.check.forensic.remediation": "运行 `fab install` 重新生成 .fabric/forensic.json。",
+  "doctor.check.forensic.remediation": "运行 `fabric install` 重新生成 .fabric/forensic.json。",
   "doctor.check.forensic.ok": ".fabric/forensic.json 对 {frameworkKind} 有效。",
   "doctor.check.agents_meta.name": "Agents metadata",
   "doctor.check.agents_meta.message.missing": ".fabric/agents.meta.json 缺失。",
   "doctor.check.agents_meta.remediation.missing":
-    "运行 `fab doctor --fix` 从 .fabric/knowledge/ 重建 agents.meta.json。",
+    "运行 `fabric doctor --fix` 从 .fabric/knowledge/ 重建 agents.meta.json。",
   "doctor.check.agents_meta.message.invalid-default": ".fabric/agents.meta.json 无效。",
   "doctor.check.agents_meta.remediation.invalid":
-    "运行 `fab doctor --fix` 让 reconcile 从 .fabric/knowledge/ 磁盘 ground-truth 重建 agents.meta.json（rc.31 起兼容历史 schema 的 singular knowledge_type 自动迁移到 plural；不要手动删除 agents.meta.json，会丢 counters envelope 与 promote ledger 关联）。",
+    "运行 `fabric doctor --fix` 让 reconcile 从 .fabric/knowledge/ 磁盘 ground-truth 重建 agents.meta.json（rc.31 起兼容历史 schema 的 singular knowledge_type 自动迁移到 plural；不要手动删除 agents.meta.json，会丢 counters envelope 与 promote ledger 关联）。",
   "doctor.check.agents_meta.message.stale":
     ".fabric/agents.meta.json revision {revision} 与 .fabric/knowledge 派生 revision {computedRevision} 不一致。",
   "doctor.check.agents_meta.remediation.stale":
-    "可忽略；engine 会在下一次 plan-context/get-sections 调用时自动修复。需要显式 reconcile 时运行 `fab doctor --fix`。",
+    "可忽略；engine 会在下一次 plan-context/get-sections 调用时自动修复。需要显式 reconcile 时运行 `fabric doctor --fix`。",
   "doctor.check.agents_meta.ok":
     ".fabric/agents.meta.json revision {revision} 已与 .fabric/knowledge 对齐。",
   "doctor.check.rule_content_refs.name": "Rule content refs",
   "doctor.check.rule_content_refs.message.unavailable":
     "agents.meta.json 有效前，无法检查 content_ref entries。",
   "doctor.check.rule_content_refs.remediation.unavailable":
-    "先修复 agents.meta.json：运行 `fab doctor --fix`。",
+    "先修复 agents.meta.json：运行 `fabric doctor --fix`。",
   "doctor.check.rule_content_refs.message.outside.singular":
     "{count} 个 content_ref entry 位于 .fabric/knowledge 外部。",
   "doctor.check.rule_content_refs.message.outside.plural":
     "{count} 个 content_ref entries 位于 .fabric/knowledge 外部。",
   // v2.0.0-rc.33 W3-2 (T6 #12): 项目规则禁止手动编辑 agents.meta.json (见 .fabric/AGENTS.md); 改引导用户跑 doctor --fix 走 reconcile 路径 (rc.31+ 兼容自动剔除外部 refs)。
   "doctor.check.rule_content_refs.remediation.outside":
-    "运行 `fab doctor --fix` 让 reconcile 自动剔除外部 content_ref (rc.31+ 兼容)。严禁手动编辑 agents.meta.json — engine 会自动 reconcile。",
+    "运行 `fabric doctor --fix` 让 reconcile 自动剔除外部 content_ref (rc.31+ 兼容)。严禁手动编辑 agents.meta.json — engine 会自动 reconcile。",
   "doctor.check.rule_content_refs.message.missing.singular":
-    "{count} 个 content_ref target 缺失。运行 `fab doctor --fix` 执行 reconcile。",
+    "{count} 个 content_ref target 缺失。运行 `fabric doctor --fix` 执行 reconcile。",
   "doctor.check.rule_content_refs.message.missing.plural":
-    "{count} 个 content_ref targets 缺失。运行 `fab doctor --fix` 执行 reconcile。",
+    "{count} 个 content_ref targets 缺失。运行 `fabric doctor --fix` 执行 reconcile。",
   "doctor.check.rule_content_refs.remediation.missing":
-    "运行 `fab doctor --fix` 让 agents.meta.json 与 .fabric/knowledge/ 中的现有文件 reconcile。",
+    "运行 `fabric doctor --fix` 让 agents.meta.json 与 .fabric/knowledge/ 中的现有文件 reconcile。",
   "doctor.check.rule_content_refs.ok":
     "所有 content_ref entries 都能解析到 .fabric/knowledge files。",
   "doctor.check.knowledge_test_index.name": "Knowledge-test index",
   "doctor.check.knowledge_test_index.remediation.missing":
-    "运行 `fab doctor --fix` 重建 .fabric/.cache/knowledge-test.index.json。",
+    "运行 `fabric doctor --fix` 重建 .fabric/.cache/knowledge-test.index.json。",
   "doctor.check.knowledge_test_index.remediation.invalid":
-    "删除 .fabric/.cache/knowledge-test.index.json 并运行 `fab doctor --fix` 重新生成。",
+    "删除 .fabric/.cache/knowledge-test.index.json 并运行 `fabric doctor --fix` 重新生成。",
   "doctor.check.knowledge_test_index.message.stale":
     ".fabric/.cache/knowledge-test.index.json 已过期。",
   "doctor.check.knowledge_test_index.remediation.stale":
-    "运行 `fab doctor --fix` 重建 knowledge-test index。",
+    "运行 `fabric doctor --fix` 重建 knowledge-test index。",
   "doctor.check.knowledge_test_index.ok.link_singular.orphan_singular":
     "已索引 {linkCount} 个 link 和 {orphanCount} 个 orphan annotation。",
   "doctor.check.knowledge_test_index.ok.link_singular.orphan_plural":
@@ -366,7 +366,7 @@ export const zhCNMessages: Messages = {
   "doctor.check.event_ledger.name": "Event ledger",
   "doctor.check.event_ledger.message.missing": ".fabric/events.jsonl 缺失。",
   "doctor.check.event_ledger.remediation.missing":
-    "运行 `fab doctor --fix` 创建 .fabric/events.jsonl。",
+    "运行 `fabric doctor --fix` 创建 .fabric/events.jsonl。",
   "doctor.check.event_ledger.message.not_writable-default":
     ".fabric/events.jsonl 不可写。",
   "doctor.check.event_ledger.remediation.not_writable":
@@ -374,14 +374,14 @@ export const zhCNMessages: Messages = {
   "doctor.check.event_ledger.message.invalid-default": ".fabric/events.jsonl 无效。",
   // v2.0.0-rc.33 W3-1 (P0-6): archive-history 模式 — 引导用户先 mv 备份到 events.archive/ 保留历史, 再跑 --fix 重建空 ledger。与 rotateEventLedgerIfNeeded 的命名约定一致 (events-rotated-YYYY-MM-DD.jsonl 是滑窗 rotation; events-corrupted-YYYY-MM-DD.jsonl 是 invalid-fix 归档)。
   "doctor.check.event_ledger.remediation.invalid":
-    "先归档历史 (`mkdir -p .fabric/events.archive && mv .fabric/events.jsonl .fabric/events.archive/events-corrupted-$(date +%Y-%m-%d).jsonl`), 再运行 `fab doctor --fix` 创建新空 ledger。历史事件保留在 events.archive/ 不丢。",
+    "先归档历史 (`mkdir -p .fabric/events.archive && mv .fabric/events.jsonl .fabric/events.archive/events-corrupted-$(date +%Y-%m-%d).jsonl`), 再运行 `fabric doctor --fix` 创建新空 ledger。历史事件保留在 events.archive/ 不丢。",
   "doctor.check.event_ledger.ok":
     ".fabric/events.jsonl 已存在，可写，且可解析。",
   "doctor.check.mcp_config_in_wrong_file.name": "Claude MCP config 位置",
   "doctor.check.mcp_config_in_wrong_file.message":
-    ".claude/settings.json 包含 mcpServers.fabric；此文件仅用于 hooks/permissions。运行 --fix 移除它，然后重新运行 fab install 写入 .mcp.json。",
+    ".claude/settings.json 包含 mcpServers.fabric；此文件仅用于 hooks/permissions。运行 --fix 移除它，然后重新运行 fabric install 写入 .mcp.json。",
   "doctor.check.mcp_config_in_wrong_file.remediation":
-    "运行 `fab doctor --fix` 从 .claude/settings.json 中移除 mcpServers.fabric，然后运行 `fab install` 写入 .mcp.json。",
+    "运行 `fabric doctor --fix` 从 .claude/settings.json 中移除 mcpServers.fabric，然后运行 `fabric install` 写入 .mcp.json。",
   "doctor.check.mcp_config_in_wrong_file.ok":
     "mcpServers.fabric 不在 .claude/settings.json 中。",
   "doctor.check.event_ledger_partial_write.name": "Event ledger partial write",
@@ -390,7 +390,7 @@ export const zhCNMessages: Messages = {
   "doctor.check.event_ledger_partial_write.message":
     "events.jsonl 在 byte offset {byteOffset} 处存在 partial write（{byteLength} 个 corrupted bytes）。运行 --fix 截断并保留 corrupted bytes。",
   "doctor.check.event_ledger_partial_write.remediation":
-    "运行 `fab doctor --fix` 截断 partial write 并将 events.jsonl 恢复到有效状态。",
+    "运行 `fabric doctor --fix` 截断 partial write 并将 events.jsonl 恢复到有效状态。",
   "doctor.check.event_ledger_partial_write.ok.clean":
     "events.jsonl 没有 partial trailing write。",
   // v2.0.0-rc.27 TASK-010 (audit §2.24): schema-compat 向前兼容警告类别。
@@ -405,7 +405,7 @@ export const zhCNMessages: Messages = {
     "events.jsonl 含 {count} 行 `event_type` 不在当前 schema 中（样本: {samples}）。",
   // v2.0.0-rc.33 W3-1 (P0-6): archive-history 模式 — 同 event_ledger.invalid, 文案显式说"归档备份"而非"备份后重建",避免用户误以为旧 ledger 被丢弃。
   "doctor.check.event_ledger_schema_compat.remediation":
-    "升级 fab CLI 到与 server 兼容的版本 (首选);或先归档历史 (`mkdir -p .fabric/events.archive && mv .fabric/events.jsonl .fabric/events.archive/events-schema-mismatch-$(date +%Y-%m-%d).jsonl`),再跑 `fab doctor --fix` 创建新空 ledger。历史事件保留在 events.archive/ 不丢,可后续手动迁移。",
+    "升级 fabric CLI 到与 server 兼容的版本 (首选);或先归档历史 (`mkdir -p .fabric/events.archive && mv .fabric/events.jsonl .fabric/events.archive/events-schema-mismatch-$(date +%Y-%m-%d).jsonl`),再跑 `fabric doctor --fix` 创建新空 ledger。历史事件保留在 events.archive/ 不丢,可后续手动迁移。",
   // v2.0.0-rc.28 TASK-04 (audit §3.1): SKILL ref/ 镜像一致性检查。
   "doctor.check.skill_ref_mirror.name": "Skill ref 镜像一致性",
   "doctor.check.skill_ref_mirror.ok":
@@ -413,7 +413,7 @@ export const zhCNMessages: Messages = {
   "doctor.check.skill_ref_mirror.message":
     "有 {count} 个 ref 文件在 `.claude/skills/` 与 `.codex/skills/` 之间不一致（路径: {list}）。可能某端被手动编辑或 install 写入失败。",
   "doctor.check.skill_ref_mirror.remediation":
-    "跑 `fab install` 从 canonical templates 重写两端 ref 子树以恢复一致。",
+    "跑 `fabric install` 从 canonical templates 重写两端 ref 子树以恢复一致。",
   // v2.0.0-rc.33 W3-6 (P1-13): SKILL.md token budget lint。warn > 5K / error > 10K token (chars/3 估算)。基于 Anthropic 推荐 SKILL.md 热路径 ~3K, 超过 5K 已影响 progressive disclosure;超过 10K 是阻断级 (model context 浪费 + 加载延迟)。
   "doctor.check.skill_token_budget.name": "Skill token budget",
   "doctor.check.skill_token_budget.ok":
@@ -423,7 +423,7 @@ export const zhCNMessages: Messages = {
   "doctor.check.skill_token_budget.message.plural":
     "{count} 个 SKILL.md 超出 token budget: {list}。建议把详细内容下沉到 ref/ progressive disclosure。",
   "doctor.check.skill_token_budget.remediation":
-    "将超标 SKILL.md 中的详细 phase / worked-examples / decision 表移到 `templates/skills/<slug>/ref/*.md`,SKILL.md 热路径只留 trigger gate + 关键 phase 概要;参考 W1 progressive disclosure 拆分模式。重新跑 `fab install` 同步两端。",
+    "将超标 SKILL.md 中的详细 phase / worked-examples / decision 表移到 `templates/skills/<slug>/ref/*.md`,SKILL.md 热路径只留 trigger gate + 关键 phase 概要;参考 W1 progressive disclosure 拆分模式。重新跑 `fabric install` 同步两端。",
   // v2.0.0-rc.33 W3-7 (P1-14): SKILL.md description 结构 lint。代理 trigger-recall (真 LLM 测要 live model, W1 已用 gemini 跑过);本 lint 抓回归: description 缺失 / 超 60 token / 缺中文 trigger / 缺英文 trigger。
   "doctor.check.skill_description.name": "Skill description quality",
   "doctor.check.skill_description.ok":
@@ -433,7 +433,7 @@ export const zhCNMessages: Messages = {
   "doctor.check.skill_description.message.plural":
     "{count} 个 SKILL.md description 结构问题: {list}。description 是 host 端 auto-invoke 的主要匹配信号。",
   "doctor.check.skill_description.remediation":
-    "编辑 `packages/cli/templates/skills/<slug>/SKILL.md` frontmatter `description:` 字段: (1) 非空; (2) <60 token (chars/3 估算, 约 180 字符); (3) 至少 1 个中文 trigger 短语; (4) 至少 1 个英文 trigger 短语。参考 W1 description rewrite 风格。重新跑 `fab install` 同步两端。如需验证 recall, 跑 W1 的 gemini delegate (见 .workflow/.scratchpad/rc33-plan/W1-VERIFY-RESULT.md)。",
+    "编辑 `packages/cli/templates/skills/<slug>/SKILL.md` frontmatter `description:` 字段: (1) 非空; (2) <60 token (chars/3 估算, 约 180 字符); (3) 至少 1 个中文 trigger 短语; (4) 至少 1 个英文 trigger 短语。参考 W1 description rewrite 风格。重新跑 `fabric install` 同步两端。如需验证 recall, 跑 W1 的 gemini delegate (见 .workflow/.scratchpad/rc33-plan/W1-VERIFY-RESULT.md)。",
   // v2.0.0-rc.33 W3-3 (P1-3): cite-policy Goodhart 模式检测。扫 7d 内 assistant_turn_observed 事件, 4 个 anti-pattern (G1 仪式化 / G2 抄底引用 / G3 chained-from 滥用 / G5 placeholder cite)。warning 级 (启发式有 false-positive, 不阻断)。
   "doctor.check.cite_goodhart.name": "Cite-policy Goodhart",
   "doctor.check.cite_goodhart.ok":
@@ -443,7 +443,7 @@ export const zhCNMessages: Messages = {
   "doctor.check.cite_goodhart.message.plural":
     "检测到 {count} 个 cite-policy Goodhart 模式: {list}。",
   "doctor.check.cite_goodhart.remediation":
-    "审阅触发的 pattern: G1 仪式化 → 同一 [recalled] cite 重复用,该把 KB 真正落到 contract; G2 抄底引用 → > 60% recalled 用 skip: 是绕过 contract, review skip reason 真实性; G3 chained-from 滥用 → chained-from 标了但没 commitment, 要补 operators 或改用其他 tag; G5 placeholder cite → 'KB: none' / [unspecified] 太多, 该用具体 sentinel 如 [no-relevant] / [not-applicable]。详细数据跑 `fab doctor --cite-coverage --since=7d`。",
+    "审阅触发的 pattern: G1 仪式化 → 同一 [recalled] cite 重复用,该把 KB 真正落到 contract; G2 抄底引用 → > 60% recalled 用 skip: 是绕过 contract, review skip reason 真实性; G3 chained-from 滥用 → chained-from 标了但没 commitment, 要补 operators 或改用其他 tag; G5 placeholder cite → 'KB: none' / [unspecified] 太多, 该用具体 sentinel 如 [no-relevant] / [not-applicable]。详细数据跑 `fabric doctor --cite-coverage --since=7d`。",
   // v2.0.0-rc.33 W4-A4 (T5 P2): draft-backlog lint。rc.32 baseline 92% entry 卡在 draft, 揭示 promote 断流。> 50% draft 触发 warning (workspace 必须 >= 10 entries 才计算比率, 避免小语料噪音)。
   "doctor.check.draft_backlog.name": "Knowledge draft backlog",
   "doctor.check.draft_backlog.ok":
@@ -460,22 +460,22 @@ export const zhCNMessages: Messages = {
   "doctor.check.meta_manually_diverged.message.extra.plural":
     "agents.meta.json 中有 {count} 个 entries 在磁盘上没有对应文件。运行 --fix 执行 reconcile。",
   "doctor.check.meta_manually_diverged.remediation.extra":
-    "运行 `fab doctor --fix` 让 agents.meta.json 与磁盘上当前的 rule files reconcile。",
+    "运行 `fabric doctor --fix` 让 agents.meta.json 与磁盘上当前的 rule files reconcile。",
   "doctor.check.meta_manually_diverged.message.hash.singular":
     "agents.meta.json 中有 {count} 个 entry 的 hash 与磁盘文件不匹配。运行 --fix 执行 reconcile。",
   "doctor.check.meta_manually_diverged.message.hash.plural":
     "agents.meta.json 中有 {count} 个 entries 的 hash 与磁盘文件不匹配。运行 --fix 执行 reconcile。",
   "doctor.check.meta_manually_diverged.remediation.hash":
-    "运行 `fab doctor --fix` 让 agents.meta.json 与当前 rule file 内容 reconcile。",
+    "运行 `fabric doctor --fix` 让 agents.meta.json 与当前 rule file 内容 reconcile。",
   "doctor.check.meta_manually_diverged.ok.consistent":
     "agents.meta.json 与磁盘上的 rule files 一致。",
   "doctor.check.knowledge_dir_unindexed.name": "Knowledge dir unindexed",
   "doctor.check.knowledge_dir_unindexed.message.singular":
-    ".fabric/knowledge/ 中有 {count} 个 .md file 未索引到 agents.meta.json。运行 `fab doctor --fix` 索引缺失的 knowledge files。",
+    ".fabric/knowledge/ 中有 {count} 个 .md file 未索引到 agents.meta.json。运行 `fabric doctor --fix` 索引缺失的 knowledge files。",
   "doctor.check.knowledge_dir_unindexed.message.plural":
-    ".fabric/knowledge/ 中有 {count} 个 .md files 未索引到 agents.meta.json。运行 `fab doctor --fix` 索引缺失的 knowledge files。",
+    ".fabric/knowledge/ 中有 {count} 个 .md files 未索引到 agents.meta.json。运行 `fabric doctor --fix` 索引缺失的 knowledge files。",
   "doctor.check.knowledge_dir_unindexed.remediation":
-    "运行 `fab doctor --fix` 索引缺失的 knowledge files。",
+    "运行 `fabric doctor --fix` 索引缺失的 knowledge files。",
   "doctor.check.knowledge_dir_unindexed.ok":
     "所有 .fabric/knowledge/ .md files 都已索引到 agents.meta.json。",
   "doctor.check.stable_id_collision.name": "Stable ID collision",
@@ -490,11 +490,11 @@ export const zhCNMessages: Messages = {
     ".fabric/knowledge/ 中未发现已声明的 stable_id collisions。",
   "doctor.check.counter_desync.name": "Knowledge counter desync",
   "doctor.check.counter_desync.message.singular":
-    "{count} 个 knowledge counter 与观测到的 stable_ids 不同步。{counterPath} = {current}，但检测到 {observedId}。运行 `fab doctor --fix` bump counters。",
+    "{count} 个 knowledge counter 与观测到的 stable_ids 不同步。{counterPath} = {current}，但检测到 {observedId}。运行 `fabric doctor --fix` bump counters。",
   "doctor.check.counter_desync.message.plural":
-    "{count} 个 knowledge counters 与观测到的 stable_ids 不同步。{counterPath} = {current}，但检测到 {observedId}。运行 `fab doctor --fix` bump counters。",
+    "{count} 个 knowledge counters 与观测到的 stable_ids 不同步。{counterPath} = {current}，但检测到 {observedId}。运行 `fabric doctor --fix` bump counters。",
   "doctor.check.counter_desync.remediation":
-    "运行 `fab doctor --fix` 将 agents.meta.json counters 提升到观测到的最大 counter 值。",
+    "运行 `fabric doctor --fix` 将 agents.meta.json counters 提升到观测到的最大 counter 值。",
   "doctor.check.counter_desync.ok":
     "agents.meta.json counters envelope 与观测到的 stable_ids 一致。",
   "doctor.check.preexisting_root_files.name": "Preexisting root markdown",
@@ -520,7 +520,7 @@ export const zhCNMessages: Messages = {
   "doctor.check.orphan_demote.message.plural":
     "{count} 个 canonical knowledge entries 超过按 maturity 设定的 inactivity threshold（stable={stableDays}d / endorsed={endorsedDays}d / draft={draftDays}d）。首个：{detail}。",
   "doctor.check.orphan_demote.remediation":
-    "运行 `fab doctor --fix-knowledge`将 orphan entries 降级一个 maturity tier。",
+    "运行 `fabric doctor --fix-knowledge`将 orphan entries 降级一个 maturity tier。",
   "doctor.check.stale_archive.name": "Knowledge stale archive",
   "doctor.check.stale_archive.ok":
     "没有 draft knowledge entries 超过额外的 stale-archive quiet window。",
@@ -529,7 +529,7 @@ export const zhCNMessages: Messages = {
   "doctor.check.stale_archive.message.plural":
     "{count} 个 draft knowledge entries 已超过 demote+{additionalDays}d 额外 quiet window。首个：{detail}。",
   "doctor.check.stale_archive.remediation":
-    "运行 `fab doctor --fix-knowledge`将 stale entries 移动到 `.fabric/.archive/<type>/`。",
+    "运行 `fabric doctor --fix-knowledge`将 stale entries 移动到 `.fabric/.archive/<type>/`。",
   "doctor.check.pending_overdue.name": "Knowledge pending overdue",
   "doctor.check.pending_overdue.ok":
     "没有 pending knowledge entries 超过 14-day review threshold。",
@@ -567,7 +567,7 @@ export const zhCNMessages: Messages = {
   "doctor.check.index_drift.message.plural":
     "{count} 个 (layer, type) counter slots 已低于观测到的 canonical maximum（next allocate would collide）。首个：{detail}。",
   "doctor.check.index_drift.remediation":
-    "运行 `fab doctor --fix-knowledge`将 agents.meta.json counters 提升到 max_observed + 1。",
+    "运行 `fabric doctor --fix-knowledge`将 agents.meta.json counters 提升到 max_observed + 1。",
   "doctor.check.underseeded.name": "Knowledge underseeded",
   "doctor.check.underseeded.ok":
     "知识库已有 {count} 个 canonical entries（>= {threshold}）。",
@@ -629,7 +629,7 @@ export const zhCNMessages: Messages = {
   "doctor.check.session_hints_stale.message.plural":
     ".fabric/.cache/ 下有 {count} 个 session-hints cache files 超过 {days} 天。首个：{detail}。",
   "doctor.check.session_hints_stale.remediation":
-    "运行 `fab doctor --fix-knowledge` 删除过期的 session-hints cache files。",
+    "运行 `fabric doctor --fix-knowledge` 删除过期的 session-hints cache files。",
   "doctor.check.stale_serve_lock.name": "Serve lock",
   "doctor.check.stale_serve_lock.ok.no_lock": "未发现 .fabric/.serve.lock。",
   "doctor.check.stale_serve_lock.ok.live_pid":
@@ -639,9 +639,9 @@ export const zhCNMessages: Messages = {
   "doctor.check.stale_serve_lock.age.hour.singular": "{count} 小时前",
   "doctor.check.stale_serve_lock.age.hour.plural": "{count} 小时前",
   "doctor.check.stale_serve_lock.message.dead_pid":
-    "[advisory] .fabric/.serve.lock 持有 dead PID {pid}（acquired {acquiredAgo}）。运行 `fab doctor --fix` 移除。",
+    "[advisory] .fabric/.serve.lock 持有 dead PID {pid}（acquired {acquiredAgo}）。运行 `fabric doctor --fix` 移除。",
   "doctor.check.stale_serve_lock.remediation.dead_pid":
-    "运行 `fab doctor --fix` 移除过期的 .fabric/.serve.lock。",
+    "运行 `fabric doctor --fix` 移除过期的 .fabric/.serve.lock。",
   "doctor.check.relevance_fields_missing.name": "Knowledge relevance fields missing",
   "doctor.check.relevance_fields_missing.ok":
     "所有 pending entries 都声明了 relevance_scope 和 relevance_paths。",
@@ -650,18 +650,18 @@ export const zhCNMessages: Messages = {
   "doctor.check.relevance_fields_missing.message.plural":
     "{count} 个 pending entries 的 frontmatter 缺少 relevance_scope 和/或 relevance_paths。首个：{detail}。",
   "doctor.check.relevance_fields_missing.remediation":
-    "运行 `fab doctor --fix-knowledge` 回填 schema defaults（relevance_scope: broad，relevance_paths: []）。",
+    "运行 `fabric doctor --fix-knowledge` 回填 schema defaults（relevance_scope: broad，relevance_paths: []）。",
   // rc.31 BUG-M3/NEW-4: hooks_wired observability.
   "doctor.check.hooks_wired.name": "Claude Code hooks wired",
   "doctor.check.hooks_wired.ok.skipped": "项目未启用 Claude Code（无 .claude/ 目录）；跳过 hooks_wired 检查。",
   "doctor.check.hooks_wired.ok.wired":
     ".claude/settings.json 已注入 Stop:fabric-hint / SessionStart:knowledge-hint-broad / PreToolUse:knowledge-hint-narrow 三个 fabric hook。",
   "doctor.check.hooks_wired.message.missing_settings":
-    ".claude/ 目录存在但 .claude/settings.json 缺失或无法解析；fab install 可能从未跑成功，或文件被外部清空。",
+    ".claude/ 目录存在但 .claude/settings.json 缺失或无法解析；fabric install 可能从未跑成功，或文件被外部清空。",
   "doctor.check.hooks_wired.message.incomplete":
-    ".claude/settings.json 缺少 fabric hook 注入：{missing}。fab install 的 dry-run 报告与实际状态不一致（rc.30 audit BUG-M3 / NEW-4）。",
+    ".claude/settings.json 缺少 fabric hook 注入：{missing}。fabric install 的 dry-run 报告与实际状态不一致（rc.30 audit BUG-M3 / NEW-4）。",
   "doctor.check.hooks_wired.remediation":
-    "运行 `fab install` 重新注入 hooks（幂等；只补缺失项）。若意外覆盖了 hooks 配置，先备份 .claude/settings.json 再跑。",
+    "运行 `fabric install` 重新注入 hooks（幂等；只补缺失项）。若意外覆盖了 hooks 配置，先备份 .claude/settings.json 再跑。",
   // rc.31 BUG-G2/G5: promote-ledger invariant check.
   "doctor.check.promote_ledger_invariant.name": "Promote ledger invariant",
   "doctor.check.promote_ledger_invariant.ok":
@@ -671,7 +671,7 @@ export const zhCNMessages: Messages = {
   "doctor.check.promote_ledger_invariant.message.started-lt-promoted":
     "knowledge_promote_started={started} 小于 knowledge_promoted={promoted}（ledger 不变量被破坏；存在未配对的 promoted 事件，可能来自 doctor filesystem-edit fallback 或外部写入）。",
   "doctor.check.promote_ledger_invariant.remediation":
-    "rc.31 起 review.approve 会补发 knowledge_proposed 事件以维护不变量；新 approve 后再跑一次 fab doctor 即可恢复。历史失衡仅是可观测性指示，不影响 KB 功能。",
+    "rc.31 起 review.approve 会补发 knowledge_proposed 事件以维护不变量；新 approve 后再跑一次 fabric doctor 即可恢复。历史失衡仅是可观测性指示，不影响 KB 功能。",
   "doctor.check.skill_md_yaml_invalid.name": "Skill markdown YAML",
   "doctor.check.skill_md_yaml_invalid.ok":
     "所有 .claude/.codex SKILL.md frontmatter values 都能按 strict YAML 解析。",
@@ -722,9 +722,9 @@ export const zhCNMessages: Messages = {
     "在目标项目中安装 Fabric（脚手架 .fabric/、bootstrap 模板、MCP 客户端配置、git hooks）。\n" +
     "\n" +
     "示例：\n" +
-    "  fab install                  在当前项目中以交互模式安装\n" +
-    "  fab install --yes            接受默认值，跳过 TTY 向导\n" +
-    "  fab install --dry-run        仅预览安装计划，不写入文件",
+    "  fabric install                  在当前项目中以交互模式安装\n" +
+    "  fabric install --yes            接受默认值，跳过 TTY 向导\n" +
+    "  fabric install --dry-run        仅预览安装计划，不写入文件",
   "cli.install.args.target.description":
     "目标项目路径。默认依次使用 --target、EXTERNAL_FIXTURE_PATH、当前目录。",
   "cli.install.args.debug.description": "将目标解析细节输出到 stderr。",
@@ -805,7 +805,7 @@ export const zhCNMessages: Messages = {
   "cli.install.capabilities.follow-up.ready": "可在客户端继续",
   "cli.install.capabilities.follow-up.install": "安装客户端资产",
   "cli.install.capabilities.follow-up.manual": "需要手动后续处理",
-  "cli.install.next-step.message": "运行 fab hooks install 以添加第 4 天的 pre-commit 流水线。",
+  "cli.install.next-step.message": "运行 fabric hooks install 以添加第 4 天的 pre-commit 流水线。",
   "cli.install.reason-message.installable-body": ".fabric/forensic.json 已就绪；部分已检测到的客户端已支持 Fabric 后续接力，但仍需安装客户端资产。",
   "cli.install.reason-message.manual-body": ".fabric/forensic.json 已就绪；部分已检测到的客户端尚未安装 Fabric skill，需要手动完成后续安装。",
   "cli.install.codex-hooks.created": "{label} {path}，并写入 Codex hooks 配置（需启用 features.codex_hooks = true）。",
@@ -819,11 +819,11 @@ export const zhCNMessages: Messages = {
   "cli.install.claude-settings.invalid-json": "{label} {path}：JSON 无效（{reason}）。",
   "cli.install.claude-settings.invalid-hooks": "{label} {path}：\"hooks\" 必须是 JSON 对象。",
   "cli.install.claude-settings.invalid-stop-array": "{label} {path}：\"hooks.Stop\" 必须是数组。",
-  "cli.install.errors.abort-existing": "中止：{path} 已存在。fab install 是非破坏性的。",
+  "cli.install.errors.abort-existing": "中止：{path} 已存在。fabric install 是非破坏性的。",
   "cli.install.diff.canonical": "工作区已是规范状态（已校验 {count} 个文件）。",
   "cli.install.diff.applying-missing": "正在补齐 {count} 个缺失项：{files}",
   "cli.install.diff.drift-abort":
-    "检测到 {path} 已被修改。运行 `fab doctor` 进行检查，或 `fab uninstall && fab install` 进行重置。",
+    "检测到 {path} 已被修改。运行 `fabric doctor` 进行检查，或 `fabric uninstall && fabric install` 进行重置。",
   "cli.install.diff.state.missing": "缺失",
   "cli.install.diff.state.present-canonical": "规范",
   "cli.install.diff.state.drifted": "漂移",
@@ -833,9 +833,9 @@ export const zhCNMessages: Messages = {
     "从目标项目中卸载 Fabric。.fabric/knowledge/ 始终保留；~/.fabric/knowledge/ 永不受影响。\n" +
     "\n" +
     "示例：\n" +
-    "  fab uninstall                在当前项目中以交互模式卸载\n" +
-    "  fab uninstall --yes          接受默认值，跳过 TTY 向导\n" +
-    "  fab uninstall --dry-run      仅预览卸载计划，不删除文件",
+    "  fabric uninstall                在当前项目中以交互模式卸载\n" +
+    "  fabric uninstall --yes          接受默认值，跳过 TTY 向导\n" +
+    "  fabric uninstall --dry-run      仅预览卸载计划，不删除文件",
   "cli.uninstall.args.target.description":
     "目标项目路径。默认依次使用 --target、EXTERNAL_FIXTURE_PATH、当前目录。",
   "cli.uninstall.args.debug.description": "将目标解析细节输出到 stderr。",
@@ -896,7 +896,7 @@ export const zhCNMessages: Messages = {
   "cli.scan.args.debug.description": "以格式化输出打印检测证据。",
   "cli.scan.args.json.description": "以 JSON 格式输出诊断报告。",
   "cli.scan.error.missing-forensic":
-    "未找到 forensic.json（路径 {path}）；请先运行 `fab install` 生成项目快照。",
+    "未找到 forensic.json（路径 {path}）；请先运行 `fabric install` 生成项目快照。",
   "cli.scan.summary.created": "已写入 {count} 条知识条目至 .fabric/knowledge/。",
   "cli.scan.summary.skipped": "无差异；{count} 条已存在的条目保持不变。",
   "cli.scan.report.title": "Fabric 扫描报告",
@@ -911,7 +911,7 @@ export const zhCNMessages: Messages = {
   "cli.scan.report.recommendations": "建议：",
   "cli.scan.readme-quality.ok": "良好",
   "cli.scan.readme-quality.stub": "草稿",
-  "cli.scan.recommendation.init": "L0：运行 fab install，在 .fabric/AGENTS.md 生成 Fabric 引导规范内容。",
+  "cli.scan.recommendation.init": "L0：运行 fabric install，在 .fabric/AGENTS.md 生成 Fabric 引导规范内容。",
   "cli.scan.recommendation.readme": "L0：先补充 README.md，再把项目事实整理到 Fabric 参考文件中。",
   "cli.scan.recommendation.contributing": "L0：添加 CONTRIBUTING.md，或在 bootstrap 中留下贡献流程的 TODO 说明。",
   "cli.scan.recommendation.unknown-framework": "L1：当前未检测到框架标记，需要手动补充技术栈说明。",
@@ -921,9 +921,9 @@ export const zhCNMessages: Messages = {
     "启动本地 Fabric MCP HTTP 服务。\n" +
     "\n" +
     "示例：\n" +
-    "  fab serve                              绑定 127.0.0.1:7373（默认）\n" +
-    "  fab serve --port 8787                  使用自定义端口\n" +
-    "  FABRIC_AUTH_TOKEN=<token> fab serve --host 0.0.0.0   绑定非 loopback 并启用 Bearer 鉴权",
+    "  fabric serve                              绑定 127.0.0.1:7373（默认）\n" +
+    "  fabric serve --port 8787                  使用自定义端口\n" +
+    "  FABRIC_AUTH_TOKEN=<token> fabric serve --host 0.0.0.0   绑定非 loopback 并启用 Bearer 鉴权",
   "cli.serve.args.port.description": "监听端口，默认 7373。",
   "cli.serve.args.host.description":
     "监听主机，默认 127.0.0.1。绑定非 loopback 主机（如 0.0.0.0）必须设置 FABRIC_AUTH_TOKEN 启用 Bearer 鉴权，否则将自动回退到 127.0.0.1。",
@@ -934,9 +934,9 @@ export const zhCNMessages: Messages = {
     "显式允许在 loopback 上以无鉴权方式运行（默认 default-deny）。仅在可信单用户机器上使用——否则任何本机进程都能读取你的知识库账本。",
   "cli.serve.ready.title": "Fabric 仪表盘",
   "cli.serve.lock-held.action-hint":
-    "另一个 `fab serve` 进程 (PID {pid}) 正占用工作区锁。请先停止它 (在该终端按 Ctrl-C 或运行 `kill {pid}`) 再执行此命令。",
+    "另一个 `fabric serve` 进程 (PID {pid}) 正占用工作区锁。请先停止它 (在该终端按 Ctrl-C 或运行 `kill {pid}`) 再执行此命令。",
   "cli.serve.warning.host-fallback":
-    "--host {host} 需要设置 FABRIC_AUTH_TOKEN 才能对外暴露；已回退到 127.0.0.1。如需绑定 {host}，请运行：FABRIC_AUTH_TOKEN=<token> fab serve --host {host}",
+    "--host {host} 需要设置 FABRIC_AUTH_TOKEN 才能对外暴露；已回退到 127.0.0.1。如需绑定 {host}，请运行：FABRIC_AUTH_TOKEN=<token> fabric serve --host {host}",
   "cli.serve.warning.loopback-deny-default":
     "未设置 FABRIC_AUTH_TOKEN：/api /events /mcp 默认返回 401（否则任何本机进程都能读取 .fabric/agents.meta.json + forensic.json + events.jsonl）。请设置 FABRIC_AUTH_TOKEN=<secret>，或传入 --allow-loopback-no-auth 显式放行。",
   "cli.serve.error.port-in-use": "端口 {port} 已被占用，可尝试 --port {nextPort}",
@@ -958,7 +958,7 @@ export const zhCNMessages: Messages = {
   "cli.sync-meta.description": "从内部规则文件同步 Fabric 元数据。",
   "cli.sync-meta.args.target.description": "目标项目路径，默认为当前工作目录。",
   "cli.sync-meta.args.check-only.description": "如果 .fabric/agents.meta.json 已过期，则以代码 1 退出。",
-  "cli.sync-meta.drift-detected": "检测到 Fabric 元数据漂移。请运行 fab sync-meta 进行更新。",
+  "cli.sync-meta.drift-detected": "检测到 Fabric 元数据漂移。请运行 fabric sync-meta 进行更新。",
   "cli.sync-meta.updated": "{label} {path}",
 
   "dashboard.app.nav.aria-label": "仪表盘视图导航",

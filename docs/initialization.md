@@ -1,6 +1,6 @@
 # Initialization
 
-`fab install` is the standard entry point. In v2.0 it does **three things** in
+`fabric install` is the standard entry point. In v2.0 it does **three things** in
 a single idempotent run: scan the repo, install Skills, install Stop hooks.
 Every step is safe to re-run; existing user customizations are preserved.
 
@@ -9,7 +9,7 @@ Every step is safe to re-run; existing user customizations are preserved.
 ## Overview
 
 ```text
-fab install
+fabric install
   │
   ├─ Phase 1: pre-flight checks
   │     project root · package manager · existing .fabric/
@@ -34,11 +34,11 @@ fab install
         .fabric/{knowledge/{5 type dirs}, pending/{5 type dirs}, agents.meta.json, events.jsonl}
 ```
 
-`fabric` is the primary command; `fab` is a permanent alias.
+`fabric` is the CLI entry point.
 
 ## Phase 1 — Pre-flight checks
 
-Before any file is written, `fab install`:
+Before any file is written, `fabric install`:
 
 1. Detects the project root (walks up to find the nearest `package.json` or
    `.git/`). Aborts if neither is found.
@@ -172,13 +172,13 @@ Final filesystem state after a fresh init:
 └── events.jsonl        # append-only event ledger (15 typed events)
 ```
 
-`agents.meta.json` and `events.jsonl` are **derived** — `fab doctor --fix`
+`agents.meta.json` and `events.jsonl` are **derived** — `fabric doctor --fix`
 can rebuild them from the knowledge tree if corrupted. The knowledge tree
 itself is the source of truth.
 
 ## Idempotent re-run
 
-`fab install` is safe to run repeatedly. On re-run:
+`fabric install` is safe to run repeatedly. On re-run:
 
 - Phase 1 detects the existing scaffold and switches to re-apply mode.
 - Phase 2 skips re-scanning if `.fabric/forensic.json` is fresh (<24h);
@@ -188,7 +188,7 @@ itself is the source of truth.
 - Phase 5 checks for existing pointer line; no-op if present.
 - Phase 6 creates only missing directories; never deletes existing entries.
 
-Use `fab install --force` to override the freshness check on Phase 2.
+Use `fabric install --force` to override the freshness check on Phase 2.
 
 ## `fabric hooks` — re-apply hook install only
 
@@ -228,7 +228,7 @@ path; tracked in [docs/roadmap.md](./roadmap.md) v2.1.
 After init, run:
 
 ```bash
-fab doctor
+fabric doctor
 ```
 
 Expected output: 0 errors, 0 fixable findings. The Stop hook is installed
@@ -249,10 +249,10 @@ Total baseline count is 4–7 entries depending on what the repo exposes.
 
 | Symptom | Cause | Fix |
 |---------|-------|-----|
-| `fab install` reports "no project root" | run from outside a repo | `cd` into a repo with `package.json` or `.git/` |
+| `fabric install` reports "no project root" | run from outside a repo | `cd` into a repo with `package.json` or `.git/` |
 | Re-init wiped my custom Stop hook | should not happen — please file an issue | meanwhile: re-add manually in `settings.json` |
 | Cursor doesn't trigger archive prompt | expected — Cursor lacks Stop-hook surface | use Skill manually: invoke `fabric-archive` |
-| `fab doctor` reports `counter_desync` | `agents.meta.json` drifted from filesystem | `fab doctor --fix` rebuilds counters |
+| `fabric doctor` reports `counter_desync` | `agents.meta.json` drifted from filesystem | `fabric doctor --fix` rebuilds counters |
 | `pending/` has >10 entries and growing | review backlog | invoke `fabric-review` Skill (Stop hook now prompts) |
 
 For deeper schema and event reference, see [docs/data-schema.md](./data-schema.md)

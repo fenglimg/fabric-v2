@@ -1333,7 +1333,7 @@ describe("fabric-hint.cjs — evaluateMaintenanceSignal (rc.7 T10)", () => {
     expect(result?.signal).toBe("maintenance");
     expect(result?.recommended_skill).toBeNull();
     expect(result?.reason).toMatch(/已 14 天未跑 lint/);
-    expect(result?.reason).toMatch(/fab doctor --lint/);
+    expect(result?.reason).toMatch(/fabric doctor --lint/);
   });
 
   it("fires when no doctor_run event has ever been recorded AND canonical_count >= 5", () => {
@@ -1842,7 +1842,7 @@ describe("fabric-hint.cjs — rc.7 T4 banner reformat", () => {
     expect(result).not.toBeNull();
     expect(result?.reason).toMatch(/📋 Fabric:/);
     expect(result?.reason).toMatch(/从未运行 lint 检查/);
-    expect(result?.reason).toMatch(/fab doctor --lint/);
+    expect(result?.reason).toMatch(/fabric doctor --lint/);
     expect(result?.reason).toMatch(/是否调/);
   });
 

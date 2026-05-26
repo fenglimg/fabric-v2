@@ -50,7 +50,7 @@ Lead with the verb. The host LLM picks "what does this skill do?" from the first
 List the **literal phrases users say** when they want this skill. Mix:
 - Normative language: 以后 / 下次注意 / always / never / from now on
 - Action verbs: 归档 / 审批 / 驳回 / approve / archive / mine
-- Skill name aliases: fab archive / fabric-archive / /fabric-archive
+- Skill name aliases: fabric archive / fabric-archive / /fabric-archive
 - Domain phrases tied to the skill's job
 
 The W1 verify (gemini analysis @ `.workflow/.scratchpad/rc33-plan/W1-VERIFY-RESULT.md`) is the canonical test: 20 scenarios, target recall ≥ 80% per skill. See [W1 verify scenarios](../.workflow/.scratchpad/rc33-plan/W1-VERIFY-SCENARIOS.md) for the format.

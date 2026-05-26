@@ -20,7 +20,7 @@ export class AgentsMetaFileMissingError extends IOFabricError {
 
   constructor(readonly metaPath: string, opts?: { actionHint?: string }) {
     super(`Fabric agents metadata file is missing: ${metaPath}`, {
-      actionHint: opts?.actionHint ?? "Run `fab install` to scaffold the .fabric/agents.meta.json file",
+      actionHint: opts?.actionHint ?? "Run `fabric install` to scaffold the .fabric/agents.meta.json file",
     });
   }
 }

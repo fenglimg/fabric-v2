@@ -26,10 +26,10 @@ import { writeFabricAgentsSnapshot } from "./write-bootstrap-snapshot.js";
 //
 // Pure orchestrator for hook + skill installation. Previously lived in
 // `packages/cli/src/commands/hooks.ts`; relocated in rc.15 because
-// `commands/` is reserved for citty command wrappers and the `fab hooks`
+// `commands/` is reserved for citty command wrappers and the `fabric hooks`
 // top-level command was deleted in TASK-004 (C5) while these helpers
 // survive as install-stage infrastructure. Callers:
-//   - `fab install` (packages/cli/src/commands/install.ts) — primary entry
+//   - `fabric install` (packages/cli/src/commands/install.ts) — primary entry
 //   - `installHooks` integration + unit tests
 //
 // The neighbour file `skills-and-hooks.ts` provides the lower-level
@@ -47,8 +47,8 @@ export type InstallHooksResult = {
 };
 
 /**
- * v2/rc.2+rc.3+rc.4+rc.5 hook installer. Re-installable from `fab install`
- * (and was historically also `fab hooks install` until rc.15 deleted the
+ * v2/rc.2+rc.3+rc.4+rc.5 hook installer. Re-installable from `fabric install`
+ * (and was historically also `fabric hooks install` until rc.15 deleted the
  * top-level command). Performs the full archive+review+import-feature install
  * in sequence (each idempotent):
  *   1. Copy templates/skills/fabric-archive/SKILL.md into .claude/skills/ + .codex/skills/

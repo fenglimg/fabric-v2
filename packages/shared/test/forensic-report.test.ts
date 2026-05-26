@@ -41,7 +41,7 @@ describe("forensicReportSchema", () => {
     const report = {
       version: "1.0",
       generated_at: "2026-04-19T12:00:00.000Z",
-      generated_by: "fab-cli@test",
+      generated_by: "fabric-cli@test",
       target: "/tmp/werewolf-minigame-stub",
       project_name: "werewolf-minigame-stub",
       framework: {
@@ -107,7 +107,7 @@ describe("forensicReportSchema", () => {
     const parsed = forensicReportSchema.parse({
       version: "1.0",
       generated_at: "2026-04-19T12:00:00.000Z",
-      generated_by: "fab-cli@test",
+      generated_by: "fabric-cli@test",
       target: "/tmp/legacy-report",
       project_name: "legacy-report",
       framework: {

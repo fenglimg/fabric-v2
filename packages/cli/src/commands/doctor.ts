@@ -209,7 +209,7 @@ export const doctorCommand = defineCommand({
 
     // v2.0.0-rc.29 TASK-007 (BUG-M2): up-front --since validation. Previously
     // `parseSinceDuration` was only called inside the --archive-history and
-    // --cite-coverage arms; bare `fab doctor --since=bogus` silently dropped
+    // --cite-coverage arms; bare `fabric doctor --since=bogus` silently dropped
     // the value with exit 0. Lift the parse here so any future arm that
     // consumes the field gets a validated number, and an invalid format on
     // ANY invocation fails fast with a clear stderr line.
@@ -416,7 +416,7 @@ export const doctorCommand = defineCommand({
       } else if (fix && args["dry-run"] === true) {
         // v2.0.0-rc.33 W4-B1: dry-run banner. Surfaces above the standard
         // report so user knows no mutations were applied; the fixable_errors
-        // section already lists what `fab doctor --fix` (sans --dry-run) would
+        // section already lists what `fabric doctor --fix` (sans --dry-run) would
         // address.
         writeStdout(dt("cli.doctor.fix-dry-run-banner"));
       }
@@ -465,7 +465,7 @@ export const doctorCommand = defineCommand({
 export default doctorCommand;
 
 function renderHumanReport(report: DoctorReport, dt: DoctorTranslator): void {
-  writeStdout(`${renderStatus(report.status)} ${paint.ai("fab doctor")} ${paint.human(report.summary.target)}`);
+  writeStdout(`${renderStatus(report.status)} ${paint.ai("fabric doctor")} ${paint.human(report.summary.target)}`);
   for (const check of report.checks) {
     writeStdout(`${renderStatus(check.status)} ${check.name}: ${check.message}`);
   }
@@ -477,7 +477,7 @@ function renderHumanReport(report: DoctorReport, dt: DoctorTranslator): void {
 
 // v2.0.0-rc.29 REVIEW (codex LOW-2): F2's `payload_limits` reached the JSON
 // envelope but not the human renderer. Print one line so an operator who edits
-// `mcpPayloadLimits` in `fabric.config.json` can confirm via `fab doctor` that
+// `mcpPayloadLimits` in `fabric.config.json` can confirm via `fabric doctor` that
 // the override took effect (source=config vs source=default).
 function renderPayloadLimits(report: DoctorReport, dt: DoctorTranslator): void {
   const limits = report.summary.payload_limits;
@@ -811,7 +811,7 @@ function renderCiteCoverageReport(
  *     cite). Per convergence criterion: "Renderer suppresses contract section
  *     when status='awaiting_marker' AND all counts 0".
  *   - `skipped:bootstrap_drift` → emit a one-line "skipped" warning so the
- *     user is told to run `fab install`.
+ *     user is told to run `fabric install`.
  *   - `ok` (or `awaiting_marker` with any non-zero count) → emit full block.
  *
  * Layout (ok mode):
@@ -872,7 +872,7 @@ function appendContractSection(
 
   if (status === "skipped:bootstrap_drift") {
     // One-line skipped warning. The i18n string already carries the
-    // remediation hint ("run `fab install`").
+    // remediation hint ("run `fabric install`").
     lines.push(`  ${dt("cite-coverage.contract.status.skipped_bootstrap_drift")}`);
     return;
   }
@@ -982,7 +982,7 @@ function renderEnrichDescriptionsReport(
   report: EnrichDescriptionsReport,
   dt: DoctorTranslator,
 ): void {
-  const header = `${symbol.ok} ${paint.ai("fab doctor --enrich-descriptions")} mode=${report.mode}${
+  const header = `${symbol.ok} ${paint.ai("fabric doctor --enrich-descriptions")} mode=${report.mode}${
     report.dryRun ? " (dry-run)" : ""
   } scanned=${report.scanned} modified=${report.modified} skipped=${report.skipped}`;
   writeStdout(header);

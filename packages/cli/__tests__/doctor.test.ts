@@ -636,12 +636,12 @@ describe("doctor command", () => {
   });
 
   // v2.0.0-rc.29 TASK-007 (BUG-M2): --since is now validated up-front before
-  // any dispatch arm checks. Previously bare `fab doctor --since=bogus`
+  // any dispatch arm checks. Previously bare `fabric doctor --since=bogus`
   // (without --cite-coverage / --archive-history) silently dropped the value
   // and exited 0; now it fails fast with exit 1 and the standard
   // cli.doctor.errors.invalid-since stderr line.
   describe("--since up-front validation (rc.29 BUG-M2)", () => {
-    it("rejects bogus --since on a bare `fab doctor` invocation (no --cite-coverage / --archive-history)", async () => {
+    it("rejects bogus --since on a bare `fabric doctor` invocation (no --cite-coverage / --archive-history)", async () => {
       vi.doMock("@fenglimg/fabric-server", () => ({
         checkLockOrThrow: vi.fn(),
         runDoctorReport: vi.fn().mockResolvedValue(createReport("ok")),
@@ -670,7 +670,7 @@ describe("doctor command", () => {
       expect(stderr.lines.join("\n")).toContain("bogus-format");
     });
 
-    it("accepts a valid --since on a bare `fab doctor` invocation and still runs the standard check pipeline", async () => {
+    it("accepts a valid --since on a bare `fabric doctor` invocation and still runs the standard check pipeline", async () => {
       const reportSpy = vi.fn().mockResolvedValue(createReport("ok"));
       vi.doMock("@fenglimg/fabric-server", () => ({
         checkLockOrThrow: vi.fn(),

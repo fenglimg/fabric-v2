@@ -1,5 +1,5 @@
 /**
- * Unit / command-surface tests for `fab uninstall`.
+ * Unit / command-surface tests for `fabric uninstall`.
  *
  * Mirrors the init test pattern: real-filesystem + tmpdir cocos-stub fixture,
  * module-scoped tempRoots[] drained in afterEach, vi.restoreAllMocks() also in

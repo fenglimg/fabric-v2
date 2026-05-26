@@ -1,5 +1,5 @@
 /**
- * Unit tests for `fab plan-context-hint` CLI shim.
+ * Unit tests for `fabric plan-context-hint` CLI shim.
  *
  * v2.0.0-rc.22 Scope D T-D3 (TASK-010): cover the auto-heal banner pair
  * (`auto_healed` + `previous_revision_hash`) addition. The shim is a thin

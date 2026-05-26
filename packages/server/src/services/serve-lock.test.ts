@@ -205,7 +205,7 @@ describe("serve-lock", () => {
       expect(e.actionHint).toBeDefined();
       expect(e.actionHint).toContain(String(livePid));
       expect(e.actionHint).not.toContain("--force");
-      expect(e.actionHint).toMatch(/Ctrl-C|fab serve|kill/);
+      expect(e.actionHint).toMatch(/Ctrl-C|fabric serve|kill/);
     }
 
     try {

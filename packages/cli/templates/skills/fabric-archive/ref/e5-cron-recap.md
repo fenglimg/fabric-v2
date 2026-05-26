@@ -8,7 +8,7 @@
 
 `今日复盘` = E5 entry point. Default scope = today. Falls back to historical scan if today yields no candidates (silent-skip per Phase 4.5).
 
-E5 是 5 入口模型中唯一由 OS 调度器或 Claude Code `/loop` 周期触发的入口形态。fab 端**零代码**——不提供 `fab schedule` 子命令,亦不内嵌 daemon。用户基于自己的执行环境二选一接入: `/loop`(Claude Code 原生,推荐) 或 OS cron(跨平台 fallback)。
+E5 是 5 入口模型中唯一由 OS 调度器或 Claude Code `/loop` 周期触发的入口形态。fabric 端**零代码**——不提供 `fabric schedule` 子命令,亦不内嵌 daemon。用户基于自己的执行环境二选一接入: `/loop`(Claude Code 原生,推荐) 或 OS cron(跨平台 fallback)。
 
 ### /loop sample (primary path for Claude Code)
 

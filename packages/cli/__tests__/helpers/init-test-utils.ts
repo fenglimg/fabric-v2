@@ -90,7 +90,7 @@ export function setProcessTty(
 // integration tests and the new install-diff-mode test suite.
 
 /**
- * Drive `fab install` end-to-end via the public execution-plan API but skip
+ * Drive `fabric install` end-to-end via the public execution-plan API but skip
  * the MCP stage — local MCP install would try to write outside the fixture
  * (npm install, global config) which is out of scope for fixture-based
  * install tests. Bootstrap (skill + hook + per-client configs + pointer) and

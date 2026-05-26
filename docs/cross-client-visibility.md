@@ -41,7 +41,7 @@ turn that triggered the Stop.
 
 The 人-first banner introduced in rc.7 T4 renders cleanly on Claude Code's
 markdown-aware system-note view: the `📋` emoji prefix, the three indented
-lines, and embedded backticks (` ` `fab doctor --lint` ` `) all display
+lines, and embedded backticks (` ` `fabric doctor --lint` ` `) all display
 correctly.
 
 **Gotchas**
@@ -135,7 +135,7 @@ When capturing screenshots, exercise the following scenarios per client:
 - [ ] **Stop hook Signal C** (canonical < 10 AND init ≥24h ago) → import
   banner.
 - [ ] **Stop hook Signal D** (≥14d since last `doctor_run`) → maintenance
-  banner with `fab doctor --lint` CLI prompt.
+  banner with `fabric doctor --lint` CLI prompt.
 
 ---
 

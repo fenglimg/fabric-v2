@@ -28,9 +28,9 @@ import { fabricAgentsSnapshotPath } from "./write-bootstrap-snapshot.js";
  *     were fabric pointers — install cannot prove it created the file, so
  *     uninstall preserves it to avoid clobbering pre-existing user content.
  *
- * Wiring site: TASK-002's `fab uninstall` command bootstrap stage invokes
+ * Wiring site: TASK-002's `fabric uninstall` command bootstrap stage invokes
  * {@link uninstallBootstrapStage} which fans out to every helper here in the
- * exact reverse order of `fab install`'s install pipeline.
+ * exact reverse order of `fabric install`'s install pipeline.
  *
  * Scope: project-local artifacts only. Personal root (`$FABRIC_HOME/.fabric/`)
  * is OUTSIDE bootstrap scope and is never touched by any helper here.
@@ -167,7 +167,7 @@ async function removeHookScripts(
  * same conservatism that keeps `<client>/hooks/` itself in place.
  *
  * rc.16 TASK-004 (F2-tests): added in lock-step with installHookLibs so
- * `fab uninstall` returns the workspace to a clean state without orphan
+ * `fabric uninstall` returns the workspace to a clean state without orphan
  * lib files.
  */
 export async function removeHookLibs(
@@ -472,7 +472,7 @@ export async function deleteFabricAgentsSnapshot(
 
 /**
  * Bootstrap-stage uninstall orchestrator. Runs every helper in this module
- * in the exact reverse order of `fab install`'s install pipeline:
+ * in the exact reverse order of `fabric install`'s install pipeline:
  *
  *   1. Pointer-line strip (CLAUDE.md / AGENTS.md / .cursor/rules)
  *   2. Hook-config un-merge (cursor → codex → claude — reverse of install)

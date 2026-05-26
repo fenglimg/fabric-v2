@@ -25,7 +25,7 @@
  *          based on stale view.
  *        - `failed`: reconcile already rejected; handler proceeds with the
  *          existing on-disk meta and emits a fail-loud `reconcile_failed`
- *          warning pointing the operator at `fab doctor --fix`.
+ *          warning pointing the operator at `fabric doctor --fix`.
  *
  * The "proceed regardless" semantics are deliberate. Blocking on reconcile at
  * handler entry would just shift the original latency problem from handshake
@@ -71,14 +71,14 @@ export function gateWarning(result: GateStatus): GateWarning | null {
       code: "meta_stale",
       file: "<response>",
       action_hint:
-        "Initial reconcile still pending; results may use cached meta. Retry shortly or run `fab doctor --fix`.",
+        "Initial reconcile still pending; results may use cached meta. Retry shortly or run `fabric doctor --fix`.",
     };
   }
   return {
     code: "reconcile_failed",
     file: "<response>",
     action_hint:
-      "Reconcile failed at startup; run `fab doctor --fix` and restart the MCP server.",
+      "Reconcile failed at startup; run `fabric doctor --fix` and restart the MCP server.",
   };
 }
 

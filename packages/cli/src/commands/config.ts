@@ -19,7 +19,7 @@ import type { ClientKind } from "../config/writer.js";
 import { t } from "../i18n.js";
 
 // ---------------------------------------------------------------------------
-// rc.16 TASK-006 (F1-panel): `fab config` is now a clack-based interactive
+// rc.16 TASK-006 (F1-panel): `fabric config` is now a clack-based interactive
 // menu loop driven by `getPanelFields()` introspection (TASK-005). The panel
 // edits `.fabric/fabric-config.json` directly via atomic writes (tmp +
 // rename). Top-level CLI flag set: `--target` only — every field choice and
@@ -29,7 +29,7 @@ import { t } from "../i18n.js";
 // `resolveServerPath`, plus the `InstallMcpClientsResult` type) are PRESERVED
 // as named exports because `install.ts` re-imports them via
 // `import * as configCommand` to wire MCP entries during the install stage.
-// Do NOT remove or rename — that contract is load-bearing for `fab install`.
+// Do NOT remove or rename — that contract is load-bearing for `fabric install`.
 // ---------------------------------------------------------------------------
 
 type ConfigArgs = {
@@ -81,7 +81,7 @@ function resolveServerPath(override?: string): string {
 }
 
 // `.fabric/fabric-config.json` — panel-managed config (Group A/B/C fields
-// per TASK-005's getPanelFields()). Created by `fab install`'s
+// per TASK-005's getPanelFields()). Created by `fabric install`'s
 // writeDefaultFabricConfig.
 const PANEL_CONFIG_RELATIVE_PATH = [".fabric", "fabric-config.json"] as const;
 
@@ -92,12 +92,12 @@ type PanelConfig = Record<string, unknown>;
 // ---------------------------------------------------------------------------
 // v2.0.0-rc.23 TASK-014 (F8c): onboard-slot opt-out helpers.
 //
-// `fab config dismiss-slot <slot>` is invoked by fabric-archive's first-run
+// `fabric config dismiss-slot <slot>` is invoked by fabric-archive's first-run
 // onboard phase when the user picks "dismiss" — it appends the slot name to
 // `onboard_slots_opted_out` in `.fabric/fabric-config.json` so subsequent
-// `fab onboard-coverage` runs treat the slot as resolved (no missing report).
+// `fabric onboard-coverage` runs treat the slot as resolved (no missing report).
 //
-// `fab config onboard-reset <slot>` is the reverse — it removes the slot
+// `fabric config onboard-reset <slot>` is the reverse — it removes the slot
 // from the opted-out list. Naming discipline: `dismiss-slot` = add to list,
 // `onboard-reset` = remove from list. Keeping the verbs distinct prevents
 // users from accidentally re-prompting a deliberately dismissed slot.
@@ -191,7 +191,7 @@ const dismissSlotCmd = defineCommand({
       const next = [...optedOut, slot];
       const merged = { ...config, onboard_slots_opted_out: next };
       await atomicWriteJson(configPath, merged);
-      console.log(`Dismissed onboard slot "${slot}". Run \`fab config onboard-reset ${slot}\` to re-open.`);
+      console.log(`Dismissed onboard slot "${slot}". Run \`fabric config onboard-reset ${slot}\` to re-open.`);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       console.error(`dismiss-slot failed: ${message}`);
@@ -239,7 +239,7 @@ const onboardResetCmd = defineCommand({
       const next = optedOut.filter((s) => s !== slot);
       const merged = { ...config, onboard_slots_opted_out: next };
       await atomicWriteJson(configPath, merged);
-      console.log(`Reset onboard slot "${slot}"; it will appear in \`fab onboard-coverage\` as missing again.`);
+      console.log(`Reset onboard slot "${slot}"; it will appear in \`fabric onboard-coverage\` as missing again.`);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       console.error(`onboard-reset failed: ${message}`);
@@ -270,7 +270,7 @@ export const configCmd = defineCommand({
     // `onboard-reset`) do their own work; we must NOT also launch the
     // interactive panel after them. Short-circuit by detecting the
     // subcommand name in process.argv — argv[3] is the first positional
-    // after `fab config` (argv[0]=node, argv[1]=fab, argv[2]=config).
+    // after `fabric config` (argv[0]=node, argv[1]=fab, argv[2]=config).
     const argvSub = process.argv[3];
     if (argvSub === "dismiss-slot" || argvSub === "onboard-reset") {
       return;
@@ -282,8 +282,8 @@ export const configCmd = defineCommand({
 
     // Uninit-workspace gate. Both `.fabric/` AND
     // `.fabric/fabric-config.json` must exist; either missing means the user
-    // hasn't run `fab install` yet. Per CLI design principle (drift -> abort,
-    // never auto-bootstrap), we exit 1 with a hint pointing at `fab install`.
+    // hasn't run `fabric install` yet. Per CLI design principle (drift -> abort,
+    // never auto-bootstrap), we exit 1 with a hint pointing at `fabric install`.
     const fabricDirOk = existsSync(fabricDir) && statSync(fabricDir).isDirectory();
     const configOk = fabricDirOk && existsSync(configPath);
     if (!configOk) {
@@ -293,7 +293,7 @@ export const configCmd = defineCommand({
     }
 
     // Non-TTY short-circuit. clack prompts require a TTY for keyboard input;
-    // running `fab config` from a non-interactive shell (CI, snapshot tests,
+    // running `fabric config` from a non-interactive shell (CI, snapshot tests,
     // pipes) prints the intro + a one-line notice and exits 0 instead of
     // hanging. The interactive workflow is the only supported edit path.
     if (!isInteractiveConfig()) {

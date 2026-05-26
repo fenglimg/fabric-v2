@@ -261,7 +261,7 @@ export async function extractKnowledge(
     // v2.0.0-rc.23 TASK-014 (F8c): optional S5 onboard-slot tag. Same emit
     // discipline as the four a-C1 fields — bare YAML line iff caller-supplied,
     // never in the idempotency_key hash. fabric-archive's first-run phase is
-    // the only producer; downstream `fab onboard-coverage` walks frontmatter
+    // the only producer; downstream `fabric onboard-coverage` walks frontmatter
     // looking for this exact key.
     onboardSlot: input.onboard_slot,
   });

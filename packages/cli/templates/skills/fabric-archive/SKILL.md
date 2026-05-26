@@ -53,7 +53,7 @@ Graceful degradation: missing digest cache → single-session fallback. Missing 
 
 ### Phase 1.5 — First-run Onboard (ref-only)
 
-**SKIP this phase entirely unless** entry_point ∈ {E2_explicit_user_invoke, E4_user_range_rollback} AND `fab onboard-coverage --json` reports `missing.length > 0`. For E1/E3/E5, silently fall through to Phase 0.
+**SKIP this phase entirely unless** entry_point ∈ {E2_explicit_user_invoke, E4_user_range_rollback} AND `fabric onboard-coverage --json` reports `missing.length > 0`. For E1/E3/E5, silently fall through to Phase 0.
 
 `Read ref/phase-1-5-onboard.md` for the Step 1-4 coverage check → user prompt → tour-and-propose procedure.
 

@@ -80,7 +80,7 @@ export type DoctorIssue = {
 // operators can see (a) what's enforced and (b) whether the values came from
 // the library default or a fabric.config.json override. Previously
 // DEFAULT_WARN/DEFAULT_HARD were buried in code and never rendered in
-// `fab doctor --json`, leaving operators in the dark about why a knowledge
+// `fabric doctor --json`, leaving operators in the dark about why a knowledge
 // section returned with `mcp_payload_warn`.
 export type DoctorPayloadLimits = {
   warn_bytes: number;
@@ -259,7 +259,7 @@ type EventLedgerInspection = {
 // v2.0.0-rc.28 TASK-04 (audit §3.1 follow-up): SKILL.md split moved
 // reference content from a single SKILL.md into per-skill `ref/` subdirs.
 // Both `.claude/skills/<slug>/ref/` and `.codex/skills/<slug>/ref/` get
-// byte-identical copies via `fab install`. A hand-edit to one client's
+// byte-identical copies via `fabric install`. A hand-edit to one client's
 // ref/ file OR a partial install (one client succeeded, the other got an
 // error mid-write) breaks mirror parity. This inspection collects the
 // drifted pairs so the doctor check can surface them.
@@ -601,13 +601,13 @@ type SessionHintsStaleInspection = {
 };
 
 // rc.23 TASK-010 (e): stale `.fabric/.serve.lock` advisory. The lock is
-// written by `acquireLock` at the top of `fab serve` and removed by
+// written by `acquireLock` at the top of `fabric serve` and removed by
 // `releaseLock` on graceful shutdown; a SIGKILL / crash leaves the file
-// behind, holding a dead PID. A subsequent `fab serve` invocation then hits
+// behind, holding a dead PID. A subsequent `fabric serve` invocation then hits
 // `ServeLockHeldError` with confusing 423 prose. Doctor surfaces a
 // non-blocking info-kind advisory (`stale_serve_lock`) when the lock holds a
 // dead PID, and `--fix` unlinks the corpse. `present=false` means no lock
-// file (skip); `pidAlive=true` means a healthy `fab serve` is running (skip).
+// file (skip); `pidAlive=true` means a healthy `fabric serve` is running (skip).
 type StaleServeLockInspection =
   | { present: false }
   | {
@@ -924,7 +924,7 @@ const IGNORED_DIRECTORIES = new Set([
 //
 // Note: `.fabric/init-context.json` is intentionally NOT listed here. v2.0
 // init-context is owned by the AI-side client init skill (Claude Code / Codex
-// CLI), not by `fab install` CLI. If the skill never ran the file is
+// CLI), not by `fabric install` CLI. If the skill never ran the file is
 // legitimately absent and doctor must not flag it as a state issue.
 const TARGET_FILE_PATHS = [
   ".fabric/forensic.json",
@@ -1061,7 +1061,7 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
   // manual fix only.
   const skillMdYamlInvalid = inspectSkillMdYamlInvalid(projectRoot);
   // v2.0.0-rc.23 TASK-014 (F8c): onboard-coverage advisory. Info kind —
-  // does not bump report status. Mirrors the fab onboard-coverage CLI
+  // does not bump report status. Mirrors the fabric onboard-coverage CLI
   // scanner; reports which of the 5 S5 slots are unclaimed and recommends
   // /fabric-archive (whose first-run phase tours the project and proposes
   // pending entries with `onboard_slot: <slot>` set).
@@ -1101,7 +1101,7 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     createBaselineFilenameFormatCheck(t, baselineFilenameFormat),
     createForensicCheck(t, forensic, framework.kind, entryPoints.length),
     // v2.0: removed `createInitContextCheck` — `.fabric/init-context.json`
-    // is owned by the AI-side client init skill, not by `fab install` CLI.
+    // is owned by the AI-side client init skill, not by `fabric install` CLI.
     // The file's absence is a legitimate post-init state when the skill has
     // not yet run, so flagging it as a doctor manual_error misrepresents
     // ownership.
@@ -1121,7 +1121,7 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     // v2.0.0-rc.28 TASK-04 (audit §3.1 follow-up): SKILL ref/ mirror parity.
     // Detects hand-edits or partial install that breaks the byte-identical
     // contract between .claude/skills/<slug>/ref/ and .codex/skills/<slug>/
-    // ref/. warning severity — fab install restores parity.
+    // ref/. warning severity — fabric install restores parity.
     createSkillRefMirrorCheck(t, skillRefMirror),
     createSkillTokenBudgetCheck(t, skillTokenBudget),
     createSkillDescriptionCheck(t, skillDescription),
@@ -1330,13 +1330,13 @@ export async function runDoctorFix(target: string): Promise<DoctorFixReport> {
   }
 
   // rc.22 TASK-012: agents_meta_stale is now a `warning` tier (engine
-  // auto-heals on next MCP call), but `fab doctor --fix` must still reconcile
+  // auto-heals on next MCP call), but `fabric doctor --fix` must still reconcile
   // it explicitly. We look in both `fixable_errors` and `warnings` so the
   // demotion doesn't break the existing fix-path.
   //
   // v2.0.0-rc.27 TASK-004 (audit §2.14): `meta_manually_diverged` added.
   // Before rc.27 this warning surfaced a remediation message that said "run
-  // fab doctor --fix" but the --fix arm took no reconcile path — the warning
+  // fabric doctor --fix" but the --fix arm took no reconcile path — the warning
   // remained on every subsequent run (self-referential loop documented in
   // audit §2.14). reconcileKnowledge rebuilds nodes from disk ground-truth
   // so dangling meta entries (nodes for which no file exists) are dropped
@@ -2072,8 +2072,8 @@ async function inspectForensic(projectRoot: string): Promise<{ present: boolean;
 }
 
 // v2.0: `inspectInitContext` removed. `.fabric/init-context.json` is owned
-// by the AI-side client init skill, not by `fab install` CLI. Its absence
-// after `fab install` is a legitimate "skill has not run yet" state, not a
+// by the AI-side client init skill, not by `fabric install` CLI. Its absence
+// after `fabric install` is a legitimate "skill has not run yet" state, not a
 // doctor concern.
 
 function inspectMcpConfigInWrongFile(projectRoot: string): McpConfigInWrongFileInspection {
@@ -2355,7 +2355,7 @@ function inspectSkillRefMirror(projectRoot: string): SkillRefMirrorInspection {
 // token-budget violations. Scans `.claude/skills/<slug>/SKILL.md` only —
 // `.codex/skills/` mirror (per skill_ref_mirror) carries the same body so
 // re-scanning is redundant. When the Claude install path is missing (user
-// only installed Codex, or no fab install yet), the slug silently degrades
+// only installed Codex, or no fabric install yet), the slug silently degrades
 // to OK — non-existence isn't a budget violation.
 //
 // Token estimation uses chars / 3 for CJK/EN mixed markdown — between the
@@ -2882,7 +2882,7 @@ function createL2ManagedBlockDriftCheck(
 function createBootstrapAnchorCheck(t: Translator, inspection: BootstrapAnchorInspection): DoctorCheck {
   // v2.0: bootstrap is anchored at the repo root via AGENTS.md or CLAUDE.md.
   // Either one (or both) is sufficient; missing both is a fixable_error in
-  // the sense that `fab install` is the canonical remediation (we do not
+  // the sense that `fabric install` is the canonical remediation (we do not
   // auto-write the anchor file from doctor --fix).
   if (!inspection.hasAgentsMd && !inspection.hasClaudeMd) {
     return issueCheck(
@@ -3304,7 +3304,7 @@ function createEventLedgerSchemaCompatCheck(
 // drift between `.claude/skills/<slug>/ref/` and `.codex/skills/<slug>/ref/`.
 // `warning` severity (not `error`): the workspace stays functional; the
 // concern is that an LLM consulting the drifted ref/ file may see different
-// content depending on which client surfaced it. `fab install` restores
+// content depending on which client surfaced it. `fabric install` restores
 // parity by rewriting both subtrees from the canonical templates/.
 function createSkillRefMirrorCheck(
   t: Translator,
@@ -3483,7 +3483,7 @@ function okCheck(name: string, message: string): DoctorCheck {
 //
 // Verifies project-local .claude/settings.json declares all three fabric hooks
 // (fabric-hint at Stop, knowledge-hint-broad at SessionStart, knowledge-hint-
-// narrow at PreToolUse). The audit symptom this addresses: `fab install` dry-
+// narrow at PreToolUse). The audit symptom this addresses: `fabric install` dry-
 // run reported "hooks=是 mcp-install=global" but actual settings.json had
 // zero fabric references — the user had no way to verify the injection
 // happened. By surfacing the wired state at doctor-time, partial / corrupted
@@ -3603,7 +3603,7 @@ function createHooksWiredCheck(t: Translator, inspection: HooksWiredInspection):
 // rc.30 audit: proposed=17, started=48, promoted=52 — both proposed<started
 // and started<promoted violated). The check is observability-only and never
 // blocks --fix; remediation is to verify all 3 events fire in extract+approve
-// paths or rerun fab doctor after rc.31 review.approve synth fix.
+// paths or rerun fabric doctor after rc.31 review.approve synth fix.
 type PromoteLedgerInvariantInspection = {
   proposedCount: number;
   promoteStartedCount: number;
@@ -5134,7 +5134,7 @@ function createSessionHintsStaleCheck(
 // as an info-kind advisory. Status stays "ok" — a stale lock is operator
 // hygiene, not a doctor-fatal. `--fix` (runDoctorFix) unlinks the file and
 // emits `serve_lock_cleared`. Skip cases: no lock file (steady state) and
-// lock held by a live PID (a healthy `fab serve` is running — never touch).
+// lock held by a live PID (a healthy `fabric serve` is running — never touch).
 function createStaleServeLockCheck(
   t: Translator,
   inspection: StaleServeLockInspection,
@@ -6826,16 +6826,16 @@ export async function ensureCitePolicyActivatedMarker(
 //
 // The gate reuses `inspectL1BootstrapSnapshotDrift` (rc.19): if `.fabric/
 // AGENTS.md` byte-equals the current `BOOTSTRAP_CANONICAL`, the user has run
-// the rc.24 `fab install` and the hook layer is in sync with the schema.
+// the rc.24 `fabric install` and the hook layer is in sync with the schema.
 // 'missing' is also treated as drift (deliberate conservative choice — no
 // install snapshot present means we cannot prove the hook layer matches; user
-// must run `fab install` to seed `.fabric/AGENTS.md`).
+// must run `fabric install` to seed `.fabric/AGENTS.md`).
 //
 // Return shape mirrors `ensureCitePolicyActivatedMarker` with one added
 // discriminator: `blocked_by`. `null` when activation succeeded (or marker
 // already existed); `'bootstrap_drift'` when the snapshot did not byte-equal
 // canonical. Caller (`runDoctorCiteCoverage` extension in TASK-08) renders
-// `contract_check: skipped (bootstrap drift — run fab install)` when this
+// `contract_check: skipped (bootstrap drift — run fabric install)` when this
 // field is non-null.
 export async function ensureCiteContractPolicyActivatedMarker(
   projectRoot: string,
@@ -6892,7 +6892,7 @@ export async function ensureCiteContractPolicyActivatedMarker(
 }
 
 // v2.0.0-rc.20 TASK-05: cite policy adherence report shape returned by
-// `fab doctor --cite-coverage`. STUB scaffolding — TASK-06 fills the
+// `fabric doctor --cite-coverage`. STUB scaffolding — TASK-06 fills the
 // `metrics` / `per_client` / `dismissed_reason_histogram` fields by scanning
 // `assistant_turn_observed` ledger events emitted by TASK-03. The shape is
 // finalized here so the CLI renderer (TASK-07) and any downstream consumers
@@ -6981,7 +6981,7 @@ export type CiteCoverageReport = {
   none_reason_histogram?: Record<string, number>;
   // v2.0.0-rc.24 TASK-08: contract-policy audit metrics. `status` discriminates:
   //   - 'ok'                       — contract metrics populated (marker present).
-  //   - 'skipped:bootstrap_drift'  — `fab install` has not run post-upgrade;
+  //   - 'skipped:bootstrap_drift'  — `fabric install` has not run post-upgrade;
   //                                  contract_metrics shape is present but all
   //                                  counters are zero.
   //   - 'awaiting_marker'          — marker emit succeeded in the past but a
@@ -7102,12 +7102,12 @@ export async function runDoctorCiteCoverage(
   // ensureCiteContractPolicyActivatedMarker bridges the rc.23→rc.24
   // half-upgrade window: when `.fabric/AGENTS.md` does NOT byte-equal the
   // current BOOTSTRAP_CANONICAL we refuse activation, so contract metrics
-  // surface as 'skipped:bootstrap_drift' until the user reruns `fab install`.
+  // surface as 'skipped:bootstrap_drift' until the user reruns `fabric install`.
   const contractMarker = await ensureCiteContractPolicyActivatedMarker(projectRoot);
   // idTypeMap loaded once per invocation — typical corpora <200 entries so
   // <5ms, no caching needed. An empty map (no meta or read failure) collapses
   // every cite into the cite_id_unresolved bucket which is the correct
-  // degraded mode (operators can fix by running `fab doctor --fix`).
+  // degraded mode (operators can fix by running `fabric doctor --fix`).
   const idTypeMap = await loadKbIdTypeMap(projectRoot);
   const generatedAt = new Date().toISOString();
   const zeroMetrics: CiteCoverageReport["metrics"] = {
@@ -7637,7 +7637,7 @@ export async function runDoctorCiteCoverage(
 }
 
 // ---------------------------------------------------------------------------
-// v2.0.0-rc.25 TASK-10: `fab doctor --archive-history`
+// v2.0.0-rc.25 TASK-10: `fabric doctor --archive-history`
 // ---------------------------------------------------------------------------
 //
 // Read-only audit surface that renders one row per session showing the MOST
@@ -7906,7 +7906,7 @@ function isMissingFileError(error: unknown): error is NodeJS.ErrnoException {
 }
 
 // ---------------------------------------------------------------------------
-// v2.0.0-rc.23 TASK-007 (a-C2): `fab doctor --enrich-descriptions`
+// v2.0.0-rc.23 TASK-007 (a-C2): `fabric doctor --enrich-descriptions`
 // ---------------------------------------------------------------------------
 //
 // TASK-006 (a-C1) added four optional description-grade frontmatter fields
@@ -7932,7 +7932,7 @@ function isMissingFileError(error: unknown): error is NodeJS.ErrnoException {
 
 // v2.0.0-rc.29 TASK-007 (BUG-M1): expand the mode label so the report
 // honestly distinguishes the three observable behaviors of
-// `fab doctor --enrich-descriptions`:
+// `fabric doctor --enrich-descriptions`:
 //   - readonly: no `--auto`, no `--dry-run` → scan + report, write nothing.
 //   - preview : `--auto --dry-run` → simulate writes, show diff, write nothing.
 //   - auto    : `--auto` (no `--dry-run`) → actually mutate frontmatter on disk.

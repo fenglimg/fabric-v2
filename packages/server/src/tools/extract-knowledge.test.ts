@@ -203,7 +203,7 @@ describe("registerExtractKnowledge", () => {
 
     expect(result.structuredContent.warnings).toBeDefined();
     expect(result.structuredContent.warnings?.[0]?.code).toBe("reconcile_failed");
-    expect(result.structuredContent.warnings?.[0]?.action_hint).toMatch(/fab doctor --fix/);
+    expect(result.structuredContent.warnings?.[0]?.action_hint).toMatch(/fabric doctor --fix/);
   });
 
   // v2.0.0-rc.23 TASK-006 (a-C1): four optional structured triage fields

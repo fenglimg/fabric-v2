@@ -6,7 +6,7 @@ import { join } from "node:path";
  * `@fenglimg/fabric-shared` minus the "match-existing" placeholder — this
  * type is what fixated config stores after auto-detection.
  *
- * rc.23 TASK-012 (F8a): extracted from the deleted `fab scan` command. The
+ * rc.23 TASK-012 (F8a): extracted from the deleted `fabric scan` command. The
  * detector is the sole remaining caller — `writeDefaultFabricConfig` invokes
  * it once on a fresh init to fixate `fabric_language` in fabric-config.json.
  */

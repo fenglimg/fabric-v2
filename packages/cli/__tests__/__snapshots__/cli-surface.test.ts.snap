@@ -1,6 +1,6 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
-exports[`CLI surface drift gate (docs/test-seed/cli.md §1) > command 'config' surface matches snapshot > fab config surface — CLI surface drift detected. Either:
+exports[`CLI surface drift gate (docs/test-seed/cli.md §1) > command 'config' surface matches snapshot > fabric config surface — CLI surface drift detected. Either:
   - Update snapshot if intentional: pnpm --filter @fenglimg/fabric-cli test -u
   - Update docs/test-seed/cli.md §1 if seed is now outdated
   - Revert command change if unintentional 1`] = `
@@ -19,13 +19,13 @@ exports[`CLI surface drift gate (docs/test-seed/cli.md §1) > command 'config' s
   "description": "Open the interactive Fabric configuration panel (language, knowledge layer, audit mode, hint windows, MCP client wiring, etc.).
 
 Examples:
-  fab config                   open the interactive panel
-  fab config --target /path    edit configuration for a specific project",
+  fabric config                   open the interactive panel
+  fabric config --target /path    edit configuration for a specific project",
   "name": "config",
 }
 `;
 
-exports[`CLI surface drift gate (docs/test-seed/cli.md §1) > command 'doctor' surface matches snapshot > fab doctor surface — CLI surface drift detected. Either:
+exports[`CLI surface drift gate (docs/test-seed/cli.md §1) > command 'doctor' surface matches snapshot > fabric doctor surface — CLI surface drift detected. Either:
   - Update snapshot if intentional: pnpm --filter @fenglimg/fabric-cli test -u
   - Update docs/test-seed/cli.md §1 if seed is now outdated
   - Revert command change if unintentional 1`] = `
@@ -161,15 +161,15 @@ exports[`CLI surface drift gate (docs/test-seed/cli.md §1) > command 'doctor' s
   "description": "Run Fabric target-state diagnostics (meta sync, knowledge index, bootstrap, events ledger, human-lock drift).
 
 Examples:
-  fab doctor                   read-only diagnostics report
-  fab doctor --fix             repair derived state (meta + indexes)
-  fab doctor --fix-knowledge   apply lint mutations (demote / archive)
-  fab doctor --json --strict   machine-readable output, warnings as errors",
+  fabric doctor                   read-only diagnostics report
+  fabric doctor --fix             repair derived state (meta + indexes)
+  fabric doctor --fix-knowledge   apply lint mutations (demote / archive)
+  fabric doctor --json --strict   machine-readable output, warnings as errors",
   "name": "doctor",
 }
 `;
 
-exports[`CLI surface drift gate (docs/test-seed/cli.md §1) > command 'install' surface matches snapshot > fab install surface — CLI surface drift detected. Either:
+exports[`CLI surface drift gate (docs/test-seed/cli.md §1) > command 'install' surface matches snapshot > fabric install surface — CLI surface drift detected. Either:
   - Update snapshot if intentional: pnpm --filter @fenglimg/fabric-cli test -u
   - Update docs/test-seed/cli.md §1 if seed is now outdated
   - Revert command change if unintentional 1`] = `
@@ -215,14 +215,14 @@ exports[`CLI surface drift gate (docs/test-seed/cli.md §1) > command 'install' 
   "description": "Install Fabric in the target project (scaffold .fabric/, bootstrap templates, MCP client wiring, git hooks).
 
 Examples:
-  fab install                  interactive install in the current project
-  fab install --yes            accept defaults, skip the TTY wizard
-  fab install --dry-run        preview the install plan without writing files",
+  fabric install                  interactive install in the current project
+  fabric install --yes            accept defaults, skip the TTY wizard
+  fabric install --dry-run        preview the install plan without writing files",
   "name": "install",
 }
 `;
 
-exports[`CLI surface drift gate (docs/test-seed/cli.md §1) > command 'serve' surface matches snapshot > fab serve surface — CLI surface drift detected. Either:
+exports[`CLI surface drift gate (docs/test-seed/cli.md §1) > command 'serve' surface matches snapshot > fabric serve surface — CLI surface drift detected. Either:
   - Update snapshot if intentional: pnpm --filter @fenglimg/fabric-cli test -u
   - Update docs/test-seed/cli.md §1 if seed is now outdated
   - Revert command change if unintentional 1`] = `
@@ -277,14 +277,14 @@ exports[`CLI surface drift gate (docs/test-seed/cli.md §1) > command 'serve' su
   "description": "Start the local Fabric MCP HTTP service.
 
 Examples:
-  fab serve                              bind 127.0.0.1:7373 (default)
-  fab serve --port 8787                  use a custom port
-  FABRIC_AUTH_TOKEN=<token> fab serve --host 0.0.0.0   bind non-loopback with Bearer auth",
+  fabric serve                              bind 127.0.0.1:7373 (default)
+  fabric serve --port 8787                  use a custom port
+  FABRIC_AUTH_TOKEN=<token> fabric serve --host 0.0.0.0   bind non-loopback with Bearer auth",
   "name": "serve",
 }
 `;
 
-exports[`CLI surface drift gate (docs/test-seed/cli.md §1) > command 'uninstall' surface matches snapshot > fab uninstall surface — CLI surface drift detected. Either:
+exports[`CLI surface drift gate (docs/test-seed/cli.md §1) > command 'uninstall' surface matches snapshot > fabric uninstall surface — CLI surface drift detected. Either:
   - Update snapshot if intentional: pnpm --filter @fenglimg/fabric-cli test -u
   - Update docs/test-seed/cli.md §1 if seed is now outdated
   - Revert command change if unintentional 1`] = `
@@ -330,9 +330,9 @@ exports[`CLI surface drift gate (docs/test-seed/cli.md §1) > command 'uninstall
   "description": "Uninstall Fabric from the target project. .fabric/knowledge/ is always preserved; ~/.fabric/knowledge/ is never touched.
 
 Examples:
-  fab uninstall                interactive uninstall in the current project
-  fab uninstall --yes          accept defaults, skip the TTY wizard
-  fab uninstall --dry-run      preview the uninstall plan without removing files",
+  fabric uninstall                interactive uninstall in the current project
+  fabric uninstall --yes          accept defaults, skip the TTY wizard
+  fabric uninstall --dry-run      preview the uninstall plan without removing files",
   "name": "uninstall",
 }
 `;

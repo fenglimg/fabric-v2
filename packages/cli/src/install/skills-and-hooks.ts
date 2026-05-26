@@ -21,7 +21,7 @@ import {
 /**
  * Install helpers for the v2 fabric-archive / fabric-review / fabric-import
  * Skills + the cross-client fabric-hint Stop hook (renamed from archive-hint
- * in rc.5 TASK-010). Each helper is idempotent — re-running `fab install` (or
+ * in rc.5 TASK-010). Each helper is idempotent — re-running `fabric install` (or
  * `fabric hooks install`) after the first successful run produces no diff.
  *
  * Wiring sites:
@@ -100,8 +100,8 @@ const CURSOR_HOOK_CONFIG_TEMPLATE_REL = "hooks/configs/cursor-hooks.json";
 
 /**
  * Project-root-relative destination paths for the three v2 Skill markdown
- * files, one entry per supported client. Source of truth shared by `fab install`
- * (install) and `fab uninstall` (removal). Paths are stored with forward
+ * files, one entry per supported client. Source of truth shared by `fabric install`
+ * (install) and `fabric uninstall` (removal). Paths are stored with forward
  * slashes; callers must run them through `join(projectRoot, ...)` to obtain
  * absolute, OS-normalized targets.
  *
@@ -124,7 +124,7 @@ export const SKILL_DESTINATIONS = {
   ],
 } as const;
 
-// rc.35 TASK-03 (P2-6): legacy Skill directories that `fab install` must
+// rc.35 TASK-03 (P2-6): legacy Skill directories that `fabric install` must
 // remove. The template directory was already deleted, but rc.30-and-earlier
 // installs still carry the residual copy in `.codex/skills/` and
 // `.claude/skills/`. Listed as full directories (not just SKILL.md) because
@@ -140,7 +140,7 @@ export const DEPRECATED_SKILL_DIRS = [
 /**
  * Project-root-relative destination paths for the three cross-client hook
  * scripts (Stop / SessionStart / PreToolUse). Source of truth shared by
- * `fab install` (install) and `fab uninstall` (removal). All three clients —
+ * `fabric install` (install) and `fabric uninstall` (removal). All three clients —
  * Claude Code, Codex CLI, and Cursor — receive every script.
  */
 export const HOOK_SCRIPT_DESTINATIONS = {
@@ -173,7 +173,7 @@ export const HOOK_SCRIPT_DESTINATIONS = {
  * with a relative path that works identically in dev (templates/) and in
  * the user's installed workspace.
  *
- * Source of truth shared by `fab install` (copy) and `fab uninstall` (prune).
+ * Source of truth shared by `fabric install` (copy) and `fabric uninstall` (prune).
  *
  * rc.16 TASK-004 (F2-tests): added when banner-i18n.cjs (rc.16 TASK-001)
  * became the second `lib/*.cjs` file required at hook runtime. The pre-
@@ -190,8 +190,8 @@ export const HOOK_LIB_DESTINATIONS = [
 
 /**
  * Project-root-relative paths of each client's hook-config JSON file that
- * `fab install` merges fabric entries into. Source of truth shared with
- * `fab uninstall` (which must locate and prune those entries).
+ * `fabric install` merges fabric entries into. Source of truth shared with
+ * `fabric uninstall` (which must locate and prune those entries).
  */
 export const HOOK_CONFIG_TARGETS = {
   claudeCode: ".claude/settings.json",
@@ -203,7 +203,7 @@ export const HOOK_CONFIG_TARGETS = {
  * Dotted JSON-path locations of the array slots each client's hook-config
  * uses for the three fabric events. Mirrors the `arrayAppendPaths` argument
  * passed to {@link mergeJsonIdempotent}. Source of truth shared with
- * `fab uninstall` (which must prune fabric entries from those same arrays).
+ * `fabric uninstall` (which must prune fabric entries from those same arrays).
  *
  * Note the client-specific shape: Claude Code groups under `hooks.*`
  * (PascalCase event names), Codex under `events.*` (PascalCase), and Cursor
@@ -220,7 +220,7 @@ export const HOOK_CONFIG_ARRAY_PATHS = {
 
 /**
  * Per-client `command` field values that identify a fabric-owned hook entry
- * inside a hook-config array. Source of truth shared with `fab uninstall`
+ * inside a hook-config array. Source of truth shared with `fabric uninstall`
  * (which prunes entries whose `command` matches one of these literals).
  * Values match the strings shipped in templates/hooks/configs/*.json.
  */
@@ -266,7 +266,7 @@ export {
  * "zh-CN" | "en" | "zh-CN-hybrid"`) when present, else `"match-existing"` as
  * the documented default. Tolerant of missing files and malformed JSON: the
  * fallback keeps the install path robust even when called before the
- * fabric-config has been scaffolded (e.g. an isolated `fab hooks install` on
+ * fabric-config has been scaffolded (e.g. an isolated `fabric hooks install` on
  * a half-initialized workspace).
  *
  * rc.12 broad-gate-fabric-lang TASK-006: extracted from install.ts so the
@@ -447,7 +447,7 @@ export async function installFabricImportSkill(
  * from rc.30-and-earlier installs. Idempotent: absent paths become `skipped /
  * absent` rows; present paths are removed via `rm -rf` and recorded as
  * `written / removed-deprecated`. Failures are surfaced as `error` rows but
- * never abort `fab install` (caller wraps in runBestEffort).
+ * never abort `fabric install` (caller wraps in runBestEffort).
  *
  * Must run BEFORE the modern installFabric*Skill calls so a user upgrading
  * from rc.30 sees the deprecated removal and the modern install as a single
@@ -1248,7 +1248,7 @@ async function copyTextIdempotent(
 /**
  * v2.0.0-rc.27 TASK-004 (audit §2.6): canonical basenames for the three
  * cross-client hook scripts plus the rc.5-era legacy name. Used by the
- * install-time sweep below and by `fab doctor`'s SettingsHookDuplicates
+ * install-time sweep below and by `fabric doctor`'s SettingsHookDuplicates
  * invariant to identify fabric-owned entries inside each client's hook
  * config — regardless of which path form (relative / `${CLAUDE_PROJECT_DIR}`
  * sigil / Codex `$(git rev-parse ...)` substitution) the entry was authored

@@ -17,7 +17,7 @@
  *
  * Outputs JSON-shaped trace to stdout for capture into dogfood-evidence.md.
  *
- * Note: install verification is performed separately via `fab hooks install`
+ * Note: install verification is performed separately via `fabric hooks install`
  * (executed prior to this script). Fixture seed entries persist on disk as
  * forensic evidence per rc.2/rc.3 precedent.
  */

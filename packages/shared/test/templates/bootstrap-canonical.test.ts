@@ -48,8 +48,8 @@ describe("bootstrap-canonical", () => {
         expect(BOOTSTRAP_CANONICAL).toContain("not-applicable");
       });
 
-      it("references the fab doctor --cite-coverage audit command", () => {
-        expect(BOOTSTRAP_CANONICAL).toContain("fab doctor --cite-coverage");
+      it("references the fabric doctor --cite-coverage audit command", () => {
+        expect(BOOTSTRAP_CANONICAL).toContain("fabric doctor --cite-coverage");
       });
 
       describe("cite contract syntax (rc.24)", () => {
@@ -57,7 +57,7 @@ describe("bootstrap-canonical", () => {
         // append operator-based contract commitments. BOOTSTRAP_CANONICAL is
         // the byte-locked source of truth for the contract vocabulary —
         // operators, skip-reason dictionary, and type routing all live here
-        // first, then propagate to hooks + doctor via fab install.
+        // first, then propagate to hooks + doctor via fabric install.
 
         it("contains-operator-syntax — shows the `→ edit:` operator anchor", () => {
           expect(BOOTSTRAP_CANONICAL).toContain("→ edit:");

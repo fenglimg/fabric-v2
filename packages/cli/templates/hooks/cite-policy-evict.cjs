@@ -141,7 +141,7 @@ function renderReminder(turnCount, interval) {
     "decisions/pitfalls cite MUST end with contract: → <operator> [<operator>...] where operator ∈ {edit:<glob> !edit:<glob> require:<symbol> forbid:<symbol> skip:<reason>}.",
     "skip reasons: sequencing | conditional | semantic | aesthetic | architectural | other:<text>.",
     "KB: none sentinels: [no-relevant] (queried but nothing matched) | [not-applicable] (pure exploration / read-only / user Q&A).",
-    "Audit: fab doctor --cite-coverage — this rule does not block work, only records.",
+    "Audit: fabric doctor --cite-coverage — this rule does not block work, only records.",
   ].join("\n");
 }
 

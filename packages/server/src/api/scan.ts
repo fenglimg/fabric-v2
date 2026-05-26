@@ -157,7 +157,7 @@ function buildRecommendations(input: {
   const recommendations: string[] = [];
 
   if (!input.hasExistingFabric) {
-    recommendations.push("L0: Run `fab install` to scaffold the .fabric/ knowledge layout (decisions, pitfalls, guidelines, models, processes).");
+    recommendations.push("L0: Run `fabric install` to scaffold the .fabric/ knowledge layout (decisions, pitfalls, guidelines, models, processes).");
   }
 
   if (input.readmeQuality === "stub") {

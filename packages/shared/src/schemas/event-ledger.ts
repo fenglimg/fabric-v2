@@ -103,7 +103,7 @@ export const reapplyCompletedEventSchema = z.object({
 });
 
 // v2.0.0-rc.29 TASK-003 (BUG-H4): install_diff_applied — emitted by
-// `fab install` (cli `commands/install.ts:appendInstallDiffLedgerEvent`)
+// `fabric install` (cli `commands/install.ts:appendInstallDiffLedgerEvent`)
 // per install run summarizing managed-file diff outcomes. Closes the
 // `event_ledger_schema_compat` warn that CLI-only events produced when the
 // server schema lacked the discriminant.
@@ -130,7 +130,7 @@ export const mcpConfigMigratedEventSchema = z.object({
   removed_from: z.string(),
 });
 
-// v2.0.0-rc.19 bootstrap-consolidation TASK-004: emitted by `fab doctor --fix`
+// v2.0.0-rc.19 bootstrap-consolidation TASK-004: emitted by `fabric doctor --fix`
 // once per file when the legacy `<!-- fabric:knowledge-base:* -->` managed-block
 // markers are rewritten to the new `<!-- fabric:bootstrap:* -->` marker pair.
 // One-time migration audit trail — runs FIRST in runDoctorFix dispatcher so
@@ -369,11 +369,11 @@ export const knowledgeScopeDegradedEventSchema = z.object({
   reason: z.string(),
 });
 
-// v2.0.0-rc.7 T10: emitted by `fab doctor` at the end of every invocation
+// v2.0.0-rc.7 T10: emitted by `fabric doctor` at the end of every invocation
 // (both --lint report-only and --apply-lint mutation modes). Drives Signal D
 // (maintenance hint) in the fabric-hint Stop hook: when no doctor_run event
 // has fired in `maintenance_hint_days` (default 14) AND canonical entries ≥5,
-// the hook surfaces a "run `fab doctor --lint`" reminder. The maintenance
+// the hook surfaces a "run `fabric doctor --lint`" reminder. The maintenance
 // signal closes Q-16 — without an emit site the chain stayed dormant.
 //
 // `mode`: "lint" for read-only reports, "fix-knowledge" for mutation runs
@@ -503,7 +503,7 @@ export const citePolicyActivatedEventSchema = z.object({
 });
 
 // v2.0.0-rc.24 TASK-01: idempotent marker emitted once per session (or per
-// policy bump) by `fab doctor --cite-coverage` when the cite-contract policy
+// policy bump) by `fabric doctor --cite-coverage` when the cite-contract policy
 // layer activates — but only if no bootstrap drift is detected (otherwise
 // the marker emit is skipped to bridge the rc.23→rc.24 half-upgrade window
 // where servers run rc.24 but installed hooks still produce rc.23-shape
@@ -555,9 +555,9 @@ export const knowledgeMetaAutoHealedEventSchema = z.object({
   caller: z.enum(["planContext", "getKnowledgeSections", "getKnowledge", "extractKnowledge"]).optional(),
 });
 
-// v2.0.0-rc.23 TASK-010 (e): emitted by `fab doctor --fix` when a stale
+// v2.0.0-rc.23 TASK-010 (e): emitted by `fabric doctor --fix` when a stale
 // `.fabric/.serve.lock` file holding a dead PID is unlinked. The lock is
-// written by `acquireLock` at the top of `fab serve` and released on graceful
+// written by `acquireLock` at the top of `fabric serve` and released on graceful
 // shutdown; a SIGKILL / crash leaves the file behind, blocking subsequent
 // serve attempts with a confusing 423 error. The doctor advisory + --fix
 // unlink restores the workspace to a serveable state. One event per cleared
@@ -574,7 +574,7 @@ export const serveLockClearedEventSchema = z.object({
   timestamp: z.string().datetime(),
 });
 
-// v2.0.0-rc.23 TASK-007 (a-C2): emitted by `fab doctor --enrich-descriptions`
+// v2.0.0-rc.23 TASK-007 (a-C2): emitted by `fabric doctor --enrich-descriptions`
 // once per modified canonical knowledge file when one or more of the four
 // rc.23 description-grade frontmatter fields (`intent_clues`, `tech_stack`,
 // `impact`, `must_read_if`) is back-filled. Audit trail for the legacy
@@ -616,7 +616,7 @@ export const knowledgeEnrichedEventSchema = z.object({
 // `user_dismissed`), covered_through_ts watermark vs current max event ts for
 // rescan candidacy, and the 12h anti-loop cooldown live on top of these
 // records. Single source of truth: events.jsonl owns session archive state,
-// rc.22 rotation handles row turnover, and `fab doctor --archive-history`
+// rc.22 rotation handles row turnover, and `fabric doctor --archive-history`
 // (TASK-04) renders the history report directly from this event stream.
 //
 // `outcome`: closed enum covering the four terminal states of the skill's
@@ -654,7 +654,7 @@ export const eventLedgerEventSchema = z.discriminatedUnion("event_type", [
   eventLedgerTruncatedEventSchema,
   mcpConfigMigratedEventSchema,
   // v2.0.0-rc.19 TASK-004: bootstrap_marker_migrated — one-time fabric:knowledge-base
-  // → fabric:bootstrap marker rewrite emitted per file by `fab doctor --fix`.
+  // → fabric:bootstrap marker rewrite emitted per file by `fabric doctor --fix`.
   bootstrapMarkerMigratedEventSchema,
   metaReconciledOnStartupEventSchema,
   metaReconciledEventSchema,
@@ -686,7 +686,7 @@ export const eventLedgerEventSchema = z.discriminatedUnion("event_type", [
   // v2.0 rc.5 TASK-013 (C4): knowledge_path_dangled — emitted by doctor lint
   // #24 when a glob in relevance_paths resolves to zero filesystem matches.
   knowledgePathDangledEventSchema,
-  // v2.0.0-rc.7 T10: doctor_run — emitted by `fab doctor` to drive Signal D.
+  // v2.0.0-rc.7 T10: doctor_run — emitted by `fabric doctor` to drive Signal D.
   doctorRunEventSchema,
   // v2.0.0-rc.9 TASK-003 (A3): relevance_migration_run — emitted by
   // `doctor --apply-lint` after the lint #26 frontmatter back-fill pass.
@@ -709,18 +709,18 @@ export const eventLedgerEventSchema = z.discriminatedUnion("event_type", [
   // stale entries to events.archive/events-rotated-YYYY-MM-DD.jsonl.
   eventsRotatedEventSchema,
   // v2.0.0-rc.23 TASK-010 (e): serve_lock_cleared — emitted by
-  // `fab doctor --fix` when a stale `.fabric/.serve.lock` with a dead PID is
+  // `fabric doctor --fix` when a stale `.fabric/.serve.lock` with a dead PID is
   // unlinked.
   serveLockClearedEventSchema,
   // v2.0.0-rc.23 TASK-007 (a-C2): knowledge_enriched — emitted by
-  // `fab doctor --enrich-descriptions` once per modified canonical knowledge
+  // `fabric doctor --enrich-descriptions` once per modified canonical knowledge
   // file when one or more of the four rc.23 description-grade frontmatter
   // fields is back-filled.
   knowledgeEnrichedEventSchema,
   // v2.0.0-rc.25 TASK-01: session_archive_attempted — emitted by the
   // fabric-archive skill at the end of every invocation. Drives Phase 0.0
   // cross-session digest, outcome-based rescan filter (skips user_dismissed),
-  // covered_through_ts watermark, and `fab doctor --archive-history`.
+  // covered_through_ts watermark, and `fabric doctor --archive-history`.
   sessionArchiveAttemptedEventSchema,
 ]);
 

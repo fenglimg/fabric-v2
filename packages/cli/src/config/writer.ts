@@ -12,7 +12,7 @@ export type ServerEntry = {
 
 /**
  * Result of a {@link ClientConfigWriter.remove} invocation. The shape mirrors
- * the per-client install report consumed by `fab uninstall` so the orchestrator
+ * the per-client install report consumed by `fabric uninstall` so the orchestrator
  * can roll detail records up into a single summary table.
  *
  * Semantics:
@@ -43,7 +43,7 @@ export interface ClientConfigWriter {
    * than throwing. Preserves every other `mcpServers` entry byte-for-byte so
    * users do not lose their other-tool registrations.
    *
-   * Added in rc.9 for the `fab uninstall` MCP stage. See {@link RemoveResult}
+   * Added in rc.9 for the `fabric uninstall` MCP stage. See {@link RemoveResult}
    * for the result schema.
    */
   remove(serverName: string, workspaceRoot: string, overridePath?: string): Promise<RemoveResult>;

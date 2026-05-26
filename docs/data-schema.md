@@ -77,11 +77,11 @@ for which MCP tool emits which event.
 | `event_ledger_truncated` | `byte_offset`, `byte_length`, `corrupted_path` | event-ledger.ts | Recovery event written when the ledger is truncated to remove a partial tail write. |
 | `mcp_config_migrated` | `source`, `removed_from` | doctor.ts | Emitted when MCP server config is migrated from a legacy file location. |
 | `meta_reconciled_on_startup` | `reconciled_files`, `duration_ms`, `source` | rule-sync.ts | Full meta reconciliation run triggered at server startup. |
-| `meta_reconciled` | `reconciled_files`, `duration_ms`, `trigger`, `source` | rule-sync.ts | Meta reconciliation triggered by `fab doctor` or manual request. |
+| `meta_reconciled` | `reconciled_files`, `duration_ms`, `trigger`, `source` | rule-sync.ts | Meta reconciliation triggered by `fabric doctor` or manual request. |
 | `claude_skill_path_migrated` | `from`, `to` | doctor.ts | Skill file moved from v1.x path to v2.0 path. |
 | `claude_hook_path_migrated` | `from`, `to` | doctor.ts | Hook file moved from v1.x path to v2.0 path. |
 | `codex_skill_path_migrated` | `from`, `to` | doctor.ts | Codex skill file moved from v1.x path to v2.0 path. |
-| `init_scan_completed` | `written_stable_ids`, `duration_ms`, `source?` | scan.ts | Emitted after `fab scan` finishes writing baseline knowledge entries. |
+| `init_scan_completed` | `written_stable_ids`, `duration_ms`, `source?` | scan.ts | Emitted after `fabric scan` finishes writing baseline knowledge entries. |
 
 ### Group B — knowledge.* lifecycle (11, pre-registered for rc.2/3/4)
 
@@ -100,13 +100,13 @@ emit sites.
 | `knowledge_proposed` | `stable_id?`, `timestamp` (ISO), `reason?` | Emitted when a pending entry is written under `pending/`. `stable_id` absent at this stage (Q2 late-bind). |
 | `knowledge_promote_started` | `stable_id?`, `timestamp`, `reason?` | Phase-1 of the 2-phase approve transaction. Pairs with one of `knowledge_promoted` / `knowledge_promote_failed`. |
 | `knowledge_promoted` | `stable_id?`, `timestamp`, `reason?` | Phase-2 success. `stable_id` populated post-counter-allocation. |
-| `knowledge_promote_failed` | `stable_id?`, `timestamp`, `reason` (required) | Phase-2 failure. Counter increment is NOT rolled back — the orphaned slot is reported by `fab doctor`. |
+| `knowledge_promote_failed` | `stable_id?`, `timestamp`, `reason` (required) | Phase-2 failure. Counter increment is NOT rolled back — the orphaned slot is reported by `fabric doctor`. |
 | `knowledge_layer_changed` | `stable_id?`, `timestamp`, `reason?`, `from_layer`, `to_layer` | Layer-flip via `fab_review/modify.changes.layer`. Triggers `redirect_to` in subsequent `fab_get_rule_sections` calls. |
 | `knowledge_slug_renamed` | `stable_id?`, `timestamp`, `reason?`, `from_slug`, `to_slug` | Explicit `git mv` keeping `id` stable. |
 | `knowledge_demoted` | `stable_id?`, `timestamp`, `reason?` | Maturity transition (e.g. `proven → verified`, `verified → draft`). |
 | `knowledge_archived` | `stable_id?`, `timestamp`, `reason?` | Entry moved to archive subtree (still discoverable via id, hidden from default selection). |
 | `knowledge_archive_attempted` | `stable_id?`, `timestamp`, `reason?` | Archive attempt that failed pre-conditions (e.g. dependent entries still active). |
-| `knowledge_deferred` | `stable_id?`, `timestamp`, `reason?`, `until?` (ISO) | Pending entry put on hold until `until`; expiry detected by `fab doctor`. |
+| `knowledge_deferred` | `stable_id?`, `timestamp`, `reason?`, `until?` (ISO) | Pending entry put on hold until `until`; expiry detected by `fabric doctor`. |
 | `knowledge_rejected` | `stable_id?`, `timestamp`, `reason` (required) | Pending entry rejected; counter NOT incremented (Q2 late-bind). |
 
 Payload contract is intentionally minimal: this guarantees the ledger

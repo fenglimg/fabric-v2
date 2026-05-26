@@ -613,7 +613,7 @@ describe("runDoctorReport", () => {
   });
 
   // v2.0.0-rc.22 Scope A T4: rotateEventLedgerIfNeeded integration into
-  // `fab doctor --fix`. Rotation runs as an unconditional hygiene step (no
+  // `fabric doctor --fix`. Rotation runs as an unconditional hygiene step (no
   // gating check) and is idempotent — a re-run on a freshly-rotated ledger
   // is a no-op. A `event_ledger_rotated` synthetic `fixed[]` entry is
   // surfaced ONLY when archivedCount > 0; no-op runs do not pollute the
@@ -905,7 +905,7 @@ describe("runDoctorReport", () => {
 
   // rc.22 TASK-012 (Scope D T-D5): agents_meta_stale demoted from error → warning.
   // Auto-heal on next plan-context/get-sections MCP call means a detected drift is
-  // benign; doctor exit code stays 0 (unless --strict). `fab doctor --fix` still
+  // benign; doctor exit code stays 0 (unless --strict). `fabric doctor --fix` still
   // reconciles explicitly via the warnings-aware guard in runDoctorFix.
   describe("rc.22 TASK-012: agents_meta_stale severity demotion", () => {
     it("meta_check_stale_emits_warning_not_error: stale meta surfaces as warning, not fixable_error", async () => {
@@ -1009,7 +1009,7 @@ describe("runDoctorReport", () => {
       expect(check?.actionHint).toContain("Benign");
       expect(check?.actionHint).toContain("auto-heals");
       expect(check?.actionHint).toContain("plan-context/get-sections");
-      expect(check?.actionHint).toContain("fab doctor --fix");
+      expect(check?.actionHint).toContain("fabric doctor --fix");
     });
   });
 
@@ -3577,7 +3577,7 @@ describe("runDoctorReport", () => {
   });
 
   // rc.23 TASK-010 (e): stale `.fabric/.serve.lock` advisory + --fix unlink.
-  // The serve lock is written by `acquireLock` at the top of `fab serve` and
+  // The serve lock is written by `acquireLock` at the top of `fabric serve` and
   // released on graceful shutdown; a SIGKILL leaves the file on disk holding
   // a dead PID, blocking subsequent serve attempts. Doctor surfaces an
   // info-kind advisory; `--fix` unlinks the corpse and emits
@@ -4880,7 +4880,7 @@ describe("ensureCiteContractPolicyActivatedMarker", () => {
     const blocked = await ensureCiteContractPolicyActivatedMarker(target);
     expect(blocked.blocked_by).toBe("bootstrap_drift");
 
-    // Phase 2: user runs `fab install` → snapshot restored to canonical.
+    // Phase 2: user runs `fabric install` → snapshot restored to canonical.
     writeFileSync(join(target, ".fabric", "AGENTS.md"), BOOTSTRAP_CANONICAL, "utf8");
     const emitted = await ensureCiteContractPolicyActivatedMarker(target);
     expect(emitted.emitted_now).toBe(true);

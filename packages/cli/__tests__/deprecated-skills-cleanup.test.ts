@@ -1,7 +1,7 @@
 /**
  * Tests for `cleanupDeprecatedSkills(projectRoot)` — the rc.35 TASK-03
  * helper that removes legacy skill subtrees (e.g. fabric-init) left over
- * from rc.30-and-earlier installs. The helper is wired into `fab install`'s
+ * from rc.30-and-earlier installs. The helper is wired into `fabric install`'s
  * skill-install phase BEFORE the modern install* calls.
  *
  * Two contract cases per TASK-03 spec:

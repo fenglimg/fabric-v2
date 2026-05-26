@@ -1,6 +1,6 @@
 /**
  * Canonical Fabric bootstrap content + marker constants — single source of truth
- * consumed by both `fab install` (writer) and the server-side doctor (drift
+ * consumed by both `fabric install` (writer) and the server-side doctor (drift
  * comparator). Mirrors the rc.18 banner-i18n shared-module pattern: shared
  * constants in `packages/shared` so the cross-package boundary stays clean
  * (server has zero dep on cli).
@@ -53,23 +53,23 @@ export const LEGACY_KB_REGEX =
 /**
  * Canonical bootstrap body — byte-locked per rc.19 locked clarification 3.
  * Rendered into the managed block between {@link BOOTSTRAP_MARKER_BEGIN} and
- * {@link BOOTSTRAP_MARKER_END} by `fab install` across all three supported
+ * {@link BOOTSTRAP_MARKER_END} by `fabric install` across all three supported
  * clients (Claude Code, Cursor, Codex CLI).
  *
  * Length guarantee: ≥ 800 bytes (rc.24: grew from ≥400 with cite-contract syntax).
  */
 export const BOOTSTRAP_CANONICAL = `# Fabric Bootstrap
 
-本项目使用 Fabric 管理跨客户端 AI 知识与行为规则。本文件由 \`fab install\` 同步到三端 managed block,**不要手动编辑三端的 block**,只改这里 + 重跑 \`fab install\`。
+本项目使用 Fabric 管理跨客户端 AI 知识与行为规则。本文件由 \`fabric install\` 同步到三端 managed block,**不要手动编辑三端的 block**,只改这里 + 重跑 \`fabric install\`。
 
 ## 行为规则
 - **修改任何文件前**:两步调用——先 \`fab_plan_context(paths=[<被改文件>])\` 拿到 \`selection_token\` 与候选 \`entries\`(挑 \`selectable===true\` 的 \`stable_id\`),再 \`fab_get_knowledge_sections({ selection_token, ai_selected_stable_ids: [<id>...] })\` 取规则正文。
-- **\`.fabric/agents.meta.json\` 严禁手动编辑**;engine 会自动同步派生状态,显式 reconcile 跑 \`fab doctor --fix\`。
+- **\`.fabric/agents.meta.json\` 严禁手动编辑**;engine 会自动同步派生状态,显式 reconcile 跑 \`fabric doctor --fix\`。
 
 ## 知识库(KB)
 - **Discovery**:SessionStart hook 列 broad-scoped 条目(含 personal layer \`KP-*\` 条目,引用方式相同);edit 文件时 PreToolUse hook 可能触发 narrow hint。
 - **Usage**:两步式——\`fab_plan_context(paths=[...])\` 返回 \`selection_token\` + 候选 entries,再 \`fab_get_knowledge_sections({ selection_token, ai_selected_stable_ids: [<id>...] })\` 拉全文;\`selection_token\` 必须来自最近一次 \`fab_plan_context\`,不可凭空编造。
-- **session_id**: 调用 \`fab_plan_context\` 时, 务必把当前 client session id 作为 \`session_id\` 参数传入(Claude Code 的 session id 在 stdin payload 中, Codex 的对应 identifier 同理)。这能让 \`fab doctor --archive-history\` 与 archive-hint hook 准确识别跨会话 debt 状态。
+- **session_id**: 调用 \`fab_plan_context\` 时, 务必把当前 client session id 作为 \`session_id\` 参数传入(Claude Code 的 session id 在 stdin payload 中, Codex 的对应 identifier 同理)。这能让 \`fabric doctor --archive-history\` 与 archive-hint hook 准确识别跨会话 debt 状态。
 - **Write flows**:\`fabric-archive\` / \`fabric-review\` / \`fabric-import\` 三个 Skills。
 - **Language**:渲染按 \`.fabric/fabric-config.json\` 的 \`fabric_language\` 字段。
 
@@ -109,5 +109,5 @@ export const BOOTSTRAP_CANONICAL = `# Fabric Bootstrap
 - **用户口头提规则没给 id**: 先调 \`fab_extract_knowledge\` 或 \`search_context\` 反查。
 - **dismissed reason**: 枚举 \`scope-mismatch | outdated | not-applicable | other:<text>\`。
 - **\`KB: none\` sentinel**: 枚举两种合规理由——\`[no-relevant]\` 已调 \`fab_plan_context\`(或 hook 输出可见)但无可用条目;\`[not-applicable]\` 当前动作不在 cite 范围(纯探索 / Bash 只读 / 用户问答)。裸 \`KB: none\`(无后缀)仍然 valid,归类为 \`[unspecified]\`(legacy 兼容,鼓励后续补注)。
-- **稽核**: \`fab doctor --cite-coverage [--since=7d] [--client=cc|codex|all]\` 输出 cite 覆盖率,含 \`KB: none\` sentinel 拆分。本规则不阻断你工作,只记录。
+- **稽核**: \`fabric doctor --cite-coverage [--since=7d] [--client=cc|codex|all]\` 输出 cite 覆盖率,含 \`KB: none\` sentinel 拆分。本规则不阻断你工作,只记录。
 `;

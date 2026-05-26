@@ -415,12 +415,11 @@ const MATURITY_DRAFT = "draft";
  * Spawn `fabric plan-context-hint --all` and return parsed JSON. Returns
  * null on any failure (ENOENT, non-zero exit, malformed JSON). Never throws.
  *
- * spawn strategy: try `fabric` first (user-PATH install) then `fab` (the
- * alternate bin name shipped by @fenglimg/fabric-cli). If neither is on PATH,
- * return null — the hook stays silent rather than nagging about install state.
+ * If `fabric` is not on PATH, return null — the hook stays silent rather
+ * than nagging about install state.
  */
 function invokePlanContextHint(cwd) {
-  const candidates = ["fabric", "fab"];
+  const candidates = ["fabric"];
   // rc.31 NEW-6: capture the last meaningful failure so we can surface it on
   // stderr before fail-open. Without this, hook silently swallows backend
   // crashes (e.g. agents_meta_invalid → plan-context-hint exits with stderr
@@ -439,7 +438,7 @@ function invokePlanContextHint(cwd) {
       continue; // spawn throw (extremely rare) — try next candidate
     }
     // ENOENT surfaces as error on the result object. Skip silently for ENOENT
-    // (bin not installed is expected for `fabric` when only `fab` is shipped).
+    // (bin not installed is the only legitimate reason to bail).
     if (res.error) {
       if (res.error.code !== "ENOENT") {
         lastFailure = { bin, reason: String(res.error.message || res.error.code || res.error) };

@@ -3,7 +3,7 @@ import { z } from "zod";
 // ---------------------------------------------------------------------------
 // v2.0.0-rc.23 TASK-014 (F8c): S5 onboard-slot mechanism.
 //
-// After rc.23 F8a removed the auto-`fab scan` baseline pipeline, a freshly
+// After rc.23 F8a removed the auto-`fabric scan` baseline pipeline, a freshly
 // installed Fabric workspace ships with an EMPTY `.fabric/knowledge/` tree —
 // none of the "project tone" baseline entries (tech stack / module layout /
 // build config / etc.) exist until the user explicitly archives them.
@@ -18,7 +18,7 @@ import { z } from "zod";
 // The five slot names are LOCKED via the `grill` design pass. Adding /
 // removing / reordering requires schema evolution + a doctor migration —
 // downstream code keys off this `as const` tuple for both enum validation
-// and stable-iteration order (e.g. `fab onboard-coverage` table rendering).
+// and stable-iteration order (e.g. `fabric onboard-coverage` table rendering).
 // ---------------------------------------------------------------------------
 
 export const ONBOARD_SLOT_NAMES = [
@@ -33,7 +33,7 @@ export type OnboardSlot = (typeof ONBOARD_SLOT_NAMES)[number];
 
 // Zod enum derived from the tuple — single source of truth for both the
 // FabExtractKnowledgeInputSchema `onboard_slot` field (api-contracts.ts) and
-// CLI side validators (`fab config dismiss-slot <slot>` arg check).
+// CLI side validators (`fabric config dismiss-slot <slot>` arg check).
 export const onboardSlotSchema = z.enum(ONBOARD_SLOT_NAMES);
 
 // Convenience: total slot count, mirrored in onboard-coverage output's `total`

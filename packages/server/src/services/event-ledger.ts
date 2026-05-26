@@ -51,7 +51,7 @@ export type LedgerWarning =
   // an unknown `event_type` token used to be silently dropped — operators had
   // no way to spot stale rc.0/rc.1 ledger rows or events emitted by a newer
   // server against an older CLI. These warnings get surfaced through
-  // `fab doctor` so the operator can decide whether to archive + re-create the
+  // `fabric doctor` so the operator can decide whether to archive + re-create the
   // ledger or upgrade the CLI to a server-compatible version.
   | {
       kind: "schema_version_unsupported";
@@ -146,7 +146,7 @@ export async function appendEventLedgerEvent(
 
   // v2.0.0-rc.22 Scope A T3: post-append size check. Emits a one-shot stderr
   // warning when the ledger crosses 50MB so operators of long-lived MCP
-  // servers know to run `fab doctor --fix` (which will invoke
+  // servers know to run `fabric doctor --fix` (which will invoke
   // rotateEventLedgerIfNeeded in T4) before the file grows unbounded.
   // Best-effort: stat failures are swallowed (filesystem race, etc.) — the
   // warning is hint-grade, not load-bearing.
@@ -156,7 +156,7 @@ export async function appendEventLedgerEvent(
       if (size > EVENT_LEDGER_SIZE_WARN_BYTES) {
         warnedOversize = true;
         process.stderr.write(
-          'fabric: events.jsonl > 50MB, run "fab doctor --fix" to rotate\n',
+          'fabric: events.jsonl > 50MB, run "fabric doctor --fix" to rotate\n',
         );
       }
     } catch {
@@ -210,7 +210,7 @@ export async function readEventLedger(
   }
 
   // v2.0.0-rc.27 TASK-010 (audit §2.24): classify rejected lines so
-  // forward-compat warnings surface through `fab doctor`. We walk lines once,
+  // forward-compat warnings surface through `fabric doctor`. We walk lines once,
   // collecting either a parsed event or a warning describing why the line
   // failed validation (currently: schema_version mismatch or unknown
   // event_type). Lines that fail JSON.parse OR fail Zod for unclassified

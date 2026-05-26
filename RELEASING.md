@@ -53,7 +53,7 @@ This document defines the manual release path for Fabric. The workflow is intent
    ```
 
 8. **Run post-publish validation / 发布后验证**
-   Validate the published artifacts against the technical onboarding path in `docs/getting-started.md`: install the published CLI, run `fab install`, start `fabric serve`, verify MCP tools, append one ledger entry, and approve intentional human-lock drift when applicable.
+   Validate the published artifacts against the technical onboarding path in `docs/getting-started.md`: install the published CLI, run `fabric install`, start `fabric serve`, verify MCP tools, append one ledger entry, and approve intentional human-lock drift when applicable.
 
 9. **Create GitHub Release / GitHub Release**
    Create a GitHub Release for the new tag, using the matching `CHANGELOG.md` notes and any known caveats from the smoke run.

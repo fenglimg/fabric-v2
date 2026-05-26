@@ -15,12 +15,12 @@ rc.35 werewolf-eval-bundle release: 来自 rc.34 真实长跑测评 (`werewolf-e
 >
 > 升级路径 (两步,任一遗漏均无效):
 >
-> 1. `npm install -g @fenglimg/fabric-cli@latest` — 把全局 `fab` CLI 升到 rc.35
-> 2. 在每个 fabric-managed 项目下重跑 `fab install` — 把 SKILL.md / hooks / `.fabric/AGENTS.md` 同步到新版本
+> 1. `npm install -g @fenglimg/fabric-cli@latest` — 把全局 `fabric` CLI 升到 rc.35
+> 2. 在每个 fabric-managed 项目下重跑 `fabric install` — 把 SKILL.md / hooks / `.fabric/AGENTS.md` 同步到新版本
 >
 > 详细 checklist 见 [`docs/UPGRADE.md`](./docs/UPGRADE.md)。
 >
-> 不升级的症状: SessionStart hook 无 banner / fabric-archive Skill 不触发 / `fab doctor` 报全表 ERROR JSON dump。
+> 不升级的症状: SessionStart hook 无 banner / fabric-archive Skill 不触发 / `fabric doctor` 报全表 ERROR JSON dump。
 
 ## [2.0.0-rc.34] - 2026-05-26
 

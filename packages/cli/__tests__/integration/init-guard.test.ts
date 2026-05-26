@@ -2,9 +2,9 @@
  * Integration tests: init command guard behavior
  *
  * Covers (post rc.15 — --force/--reapply removed):
- *   I2 — default `fab install` on already-init canonical workspace is a no-op
+ *   I2 — default `fabric install` on already-init canonical workspace is a no-op
  *        success (no throw); drift on a managed file aborts with a helpful
- *        message pointing to `fab doctor` and `fab uninstall && fab install`
+ *        message pointing to `fabric doctor` and `fabric uninstall && fabric install`
  *   I3 — default-install idempotency: byte-identical agents.meta.json across
  *        re-runs.
  *   T4 — preexisting root markdown files are not modified by init
@@ -37,7 +37,7 @@ function sha256(content: Buffer | string): string {
   return createHash("sha256").update(content).digest("hex");
 }
 
-// I2 — default `fab install` on already-init canonical workspace is a no-op
+// I2 — default `fabric install` on already-init canonical workspace is a no-op
 // success (diff-mode contract). Drift on a managed file aborts.
 describe("I2: init guard — diff-mode behavior", () => {
   it("does NOT throw on an already-initialized canonical workspace when no flags are set", async () => {
@@ -72,11 +72,11 @@ describe("I2: init guard — diff-mode behavior", () => {
     }
 
     expect(thrownError).not.toBeNull();
-    // The thrown error must mention the conflicting path, fab doctor, and
-    // the fab uninstall + fab install reset suggestion.
+    // The thrown error must mention the conflicting path, fabric doctor, and
+    // the fabric uninstall + fabric install reset suggestion.
     expect(thrownError!.message).toMatch(/agents\.meta\.json/);
-    expect(thrownError!.message).toMatch(/fab doctor/);
-    expect(thrownError!.message).toMatch(/fab uninstall/);
+    expect(thrownError!.message).toMatch(/fabric doctor/);
+    expect(thrownError!.message).toMatch(/fabric uninstall/);
   });
 
   it("existing legacy v1.x bootstrap files are untouched by v2.0 init (no guard, no overwrite)", async () => {
@@ -94,10 +94,10 @@ describe("I2: init guard — diff-mode behavior", () => {
 });
 
 // I3 — default-install idempotency. agents.meta.json and events.jsonl are
-// byte-stable across re-runs under default `fab install`. (The legacy
+// byte-stable across re-runs under default `fabric install`. (The legacy
 // --reapply path that lived here in rc.14 was retired with the flag in rc.15.)
 describe("I3: init default-install idempotency", () => {
-  it("produces byte-identical agents.meta.json on second `fab install` (no flags)", async () => {
+  it("produces byte-identical agents.meta.json on second `fabric install` (no flags)", async () => {
     const target = createWerewolfFixtureRoot("itg-init-idem-meta");
     tempRoots.push(target);
 

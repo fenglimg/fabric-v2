@@ -918,7 +918,7 @@ describe("appendEventLedgerEvent — 50MB soft-warn (rc.22 Scope A T3)", () => {
       );
       expect(warnCalls).toHaveLength(1);
       expect(warnCalls[0][0]).toBe(
-        'fabric: events.jsonl > 50MB, run "fab doctor --fix" to rotate\n',
+        'fabric: events.jsonl > 50MB, run "fabric doctor --fix" to rotate\n',
       );
     } finally {
       stderrSpy.mockRestore();

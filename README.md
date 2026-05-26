@@ -96,7 +96,7 @@ without polluting agent context.
    the agent knows which Skill to run next without polluting the user's
    transcript.
 
-8. **Doctor as unified lifecycle engine.** `fab doctor` runs 25 lint checks
+8. **Doctor as unified lifecycle engine.** `fabric doctor` runs 25 lint checks
    in one pass: orphan demotion (now driven by `last_consumed_at` derived
    from `knowledge_consumed` events, not last-referenced heuristics), stale
    archive, overdue pending with `--apply-lint` auto-archive, stable-id
@@ -176,7 +176,7 @@ Genes are shared. The architecture is original to this project.
 
 Fabric splits cleanly across three entry points; pick by who's in the loop:
 
-- **CLI** — terminal, no AI in loop: `fab install`, `fab doctor`,
+- **CLI** — terminal, no AI in loop: `fabric install`, `fabric doctor`,
   `fabric plan-context-hint`.
 - **Skill** — AI is in the conversation and needs to judge content:
   `/fabric-archive`, `/fabric-review`, `/fabric-import`.
@@ -199,16 +199,16 @@ for each detected client, and writes a baseline `.fabric/` tree with 4-7 seed
 entries.
 
 ```bash
-fab install                    # install hooks + Skills + bootstrap
+fabric install                    # install hooks + Skills + bootstrap
 fabric serve                      # start the MCP server
-fab doctor                     # run all 25 lints, report only
-fab doctor --apply-lint        # apply auto-fixable lints
+fabric doctor                     # run all 25 lints, report only
+fabric doctor --apply-lint        # apply auto-fixable lints
 fabric plan-context-hint --all    # JSON snapshot for hook scripts
 fabric hooks install              # re-install hooks for all clients
 fabric uninstall                  # remove Fabric-managed artifacts (knowledge stays unless --purge; ~/.fabric/knowledge/ is never touched)
 ```
 
-A healthy install reports zero fixable findings from `fab doctor`.
+A healthy install reports zero fixable findings from `fabric doctor`.
 
 Supported clients:
 
@@ -254,7 +254,7 @@ Fabric exposes four MCP tools and three Skills.
 **Hooks** install per client but point at a single Node script
 (`fabric-hint.cjs`). One implementation, three configs.
 
-**Lifecycle** — `fab doctor` runs 25 lints in one pass: orphan demotion
+**Lifecycle** — `fabric doctor` runs 25 lints in one pass: orphan demotion
 driven by `last_consumed_at` (from `knowledge_consumed` events), stale archive,
 overdue pending (auto-archive with `--apply-lint`), stable-id duplicates,
 layer-mismatch corruption, index drift, narrow/broad bindings (#23-#25),
@@ -265,7 +265,7 @@ is report-only.
 
 - [Knowledge Types](./docs/knowledge-types.md) — semantic definitions of the 5
   entry types, decision criteria, examples.
-- [Initialization](./docs/initialization.md) — what `fab install` does, what
+- [Initialization](./docs/initialization.md) — what `fabric install` does, what
   it produces, how to re-run safely.
 - [Roadmap](./docs/roadmap.md) — v2.0 (current), v2.1 (team-knowledge.git +
   permissions), v2.x (semantic search, federated teams).
@@ -275,7 +275,7 @@ is report-only.
 
 This is a pnpm monorepo:
 
-- `packages/cli` — the `fabric` / `fab` CLI (`init`, `serve`, `doctor`,
+- `packages/cli` — the `fabric` CLI (`init`, `serve`, `doctor`,
   `hooks`, `scan`, `plan-context-hint`).
 - `packages/server` — the MCP server `fabric-knowledge-server` (4 tools) plus
   the lifecycle service (review, doctor, lint, event ledger).

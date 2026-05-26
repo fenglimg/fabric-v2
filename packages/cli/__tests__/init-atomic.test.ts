@@ -147,7 +147,7 @@ describe("init-atomic: P1 scaffold artifacts use atomic writes", () => {
     await initFabric(target);
 
     // rc.23 TASK-012 (F8a): KB is intentionally empty on fresh install. No
-    // .md files under .fabric/knowledge/ should be written by `fab install`
+    // .md files under .fabric/knowledge/ should be written by `fabric install`
     // — the fabric-archive / fabric-import / fabric-review Skill flows are
     // the sole post-install entry sources.
     const knowledgeMarkdownCalls = spy.mock.calls.filter(

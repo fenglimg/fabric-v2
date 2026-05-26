@@ -5,8 +5,8 @@
  * both `.message` and `.actionHint`. citty's default error handler prints
  * `.message` only — the actionHint (which carries the TASK-003 verbose PID
  * + Ctrl-C/kill recovery guidance) was being silently dropped at every CLI
- * surface that hits a lock conflict (`fab serve`, `fab doctor`, `fab install`,
- * `fab uninstall`).
+ * surface that hits a lock conflict (`fabric serve`, `fabric doctor`, `fabric install`,
+ * `fabric uninstall`).
  *
  * The error-render util provides the structural type guard + stderr renderer
  * that lock-check call sites invoke before `process.exit(1)`. These tests
@@ -81,24 +81,24 @@ describe("renderFabricError", () => {
   it("writes BOTH message and actionHint to the supplied stream", () => {
     const stream = captureStream();
     renderFabricError(
-      { message: "serve lock held by live PID 12345", actionHint: "Stop the running 'fab serve' (Ctrl-C or 'kill 12345')" },
+      { message: "serve lock held by live PID 12345", actionHint: "Stop the running 'fabric serve' (Ctrl-C or 'kill 12345')" },
       stream,
     );
     expect(stream.captured).toContain("serve lock held by live PID 12345");
-    expect(stream.captured).toContain("Stop the running 'fab serve' (Ctrl-C or 'kill 12345')");
+    expect(stream.captured).toContain("Stop the running 'fabric serve' (Ctrl-C or 'kill 12345')");
   });
 
   it("renders ServeLockHeldError end-to-end (TASK-003 wording surfaces in output)", () => {
     const stream = captureStream();
     const err = new ServeLockHeldError("serve lock held by live PID 4242", {
-      actionHint: "Stop the running 'fab serve' (Ctrl-C in its terminal, or 'kill 4242') before retrying.",
+      actionHint: "Stop the running 'fabric serve' (Ctrl-C in its terminal, or 'kill 4242') before retrying.",
     });
     renderFabricError(err, stream);
     // BOTH wording lines must reach the user — this is the regression the
     // hotfix exists to prevent.
     expect(stream.captured).toContain("serve lock held by live PID 4242");
     expect(stream.captured).toContain("kill 4242");
-    expect(stream.captured).toMatch(/Ctrl-C|fab serve/);
+    expect(stream.captured).toMatch(/Ctrl-C|fabric serve/);
   });
 
   it("formats actionHint as an indented arrow on its own line", () => {

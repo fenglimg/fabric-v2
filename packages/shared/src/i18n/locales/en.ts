@@ -5,17 +5,17 @@ export const enMessages: Messages = {
     "Fabric CLI - AI agent collaboration framework.\n" +
     "\n" +
     "Three-step mental model:\n" +
-    "  Install (装) - fab install   one-shot project setup\n" +
-    "  Configure (配) - fab config  interactive configuration panel\n" +
-    "  Run (跑) - fab serve         launch the local MCP HTTP service\n" +
-    "             fab doctor        run target-state diagnostics\n" +
+    "  Install (装) - fabric install   one-shot project setup\n" +
+    "  Configure (配) - fabric config  interactive configuration panel\n" +
+    "  Run (跑) - fabric serve         launch the local MCP HTTP service\n" +
+    "             fabric doctor        run target-state diagnostics\n" +
     "\n" +
     "Examples:\n" +
-    "  fab install                  install Fabric in the current project\n" +
-    "  fab config                   open the interactive configuration panel\n" +
-    "  fab serve --port 7373        start the MCP HTTP service\n" +
-    "  fab doctor --fix             repair derived Fabric state\n" +
-    "  fab uninstall --dry-run      preview uninstall without removing files",
+    "  fabric install                  install Fabric in the current project\n" +
+    "  fabric config                   open the interactive configuration panel\n" +
+    "  fabric serve --port 7373        start the MCP HTTP service\n" +
+    "  fabric doctor --fix             repair derived Fabric state\n" +
+    "  fabric uninstall --dry-run      preview uninstall without removing files",
   "cli.shared.created": "Created",
   "cli.shared.skipped": "Skipped",
   "cli.shared.next": "Next",
@@ -63,8 +63,8 @@ export const enMessages: Messages = {
     "Open the interactive Fabric configuration panel (language, knowledge layer, audit mode, hint windows, MCP client wiring, etc.).\n" +
     "\n" +
     "Examples:\n" +
-    "  fab config                   open the interactive panel\n" +
-    "  fab config --target /path    edit configuration for a specific project",
+    "  fabric config                   open the interactive panel\n" +
+    "  fabric config --target /path    edit configuration for a specific project",
   "cli.config.args.target.description": "Target project directory (defaults to cwd).",
   "cli.config.clients.claude": "Claude Code CLI",
   "cli.config.install.description": "Install Fabric MCP server entries into detected client configs.",
@@ -80,7 +80,7 @@ export const enMessages: Messages = {
   "cli.config.install.dry-run": "[dry-run] {client}: would write {path}",
   "cli.config.install.wrote": "{client}: wrote {path}",
 
-  // rc.16 TASK-006 (F1-panel): clack-driven `fab config` interactive panel.
+  // rc.16 TASK-006 (F1-panel): clack-driven `fabric config` interactive panel.
   // Keys consumed by packages/cli/src/commands/config.ts (menu loop +
   // per-field prompts) and by getPanelFields() (label_i18n_key references).
   "cli.config.intro": "Fabric Configuration",
@@ -88,7 +88,7 @@ export const enMessages: Messages = {
   "cli.config.outro-no-changes": "No changes made.",
   "cli.config.cancel": "Cancelled.",
   "cli.config.non-tty-notice":
-    "fab config requires an interactive terminal. Run it from a TTY to edit configuration fields.",
+    "fabric config requires an interactive terminal. Run it from a TTY to edit configuration fields.",
   "cli.config.menu.field-select": "Select a field to edit:",
   "cli.config.menu.exit": "Exit",
   "cli.config.value.current": "current: {value}",
@@ -98,7 +98,7 @@ export const enMessages: Messages = {
   "cli.config.write.success": "Saved {key} = {value}",
   "cli.config.write.failure": "Failed to write fabric-config.json: {message}",
   "cli.config.errors.uninit-workspace.message":
-    "Workspace not initialized. Run `fab install` first.",
+    "Workspace not initialized. Run `fabric install` first.",
   "cli.config.errors.invalid-int": "Must be a positive integer.",
   "cli.config.errors.unknown-field": "Unknown field selection — skipping.",
   "cli.config.errors.no-enum-options": "No enum options available for this field — skipping.",
@@ -141,17 +141,17 @@ export const enMessages: Messages = {
     "Run Fabric target-state diagnostics (meta sync, knowledge index, bootstrap, events ledger, human-lock drift).\n" +
     "\n" +
     "Examples:\n" +
-    "  fab doctor                   read-only diagnostics report\n" +
-    "  fab doctor --fix             repair derived state (meta + indexes)\n" +
-    "  fab doctor --fix-knowledge   apply lint mutations (demote / archive)\n" +
-    "  fab doctor --json --strict   machine-readable output, warnings as errors",
+    "  fabric doctor                   read-only diagnostics report\n" +
+    "  fabric doctor --fix             repair derived state (meta + indexes)\n" +
+    "  fabric doctor --fix-knowledge   apply lint mutations (demote / archive)\n" +
+    "  fabric doctor --json --strict   machine-readable output, warnings as errors",
   "doctor.section.fixable": "Fixable errors:",
   "doctor.section.manual": "Manual errors:",
   "doctor.section.warnings": "Warnings:",
   "doctor.section.fix-knowledge-mutations": "Fix-knowledge mutations:",
   // v2.0.0-rc.29 REVIEW (codex LOW-2): F2's payload-limit defaults reach the JSON
   // envelope but never surfaced in the human renderer, so operators tuning
-  // `mcpPayloadLimits` had no fast `fab doctor` confirmation that their config
+  // `mcpPayloadLimits` had no fast `fabric doctor` confirmation that their config
   // override took effect. Two strings: a section header + a one-liner row.
   "doctor.section.payload-limits": "MCP payload limits:",
   "doctor.payload-limits.line": "warn={warnKb} KB, hard={hardKb} KB (source: {source})",
@@ -192,7 +192,7 @@ export const enMessages: Messages = {
   "cite-coverage.contract.skip_count": "Skip bucket",
   "cite-coverage.contract.status.ok": "ok",
   "cite-coverage.contract.status.skipped_bootstrap_drift":
-    "skipped (bootstrap drift — run `fab install`)",
+    "skipped (bootstrap drift — run `fabric install`)",
   "cite-coverage.contract.status.awaiting_marker": "awaiting first marker emit",
   // Plural knowledge-type labels (rc.29 BUG-C1: verbatim alignment with
   // canonical KnowledgeTypeSchema) plus the sixth "unresolved" bucket.
@@ -254,7 +254,7 @@ export const enMessages: Messages = {
     "With --enrich-descriptions --auto or --fix: preview the planned changes without writing to disk. The fix-dry-run output mirrors --fix's fixable_errors list but executes no mutations.",
   // v2.0.0-rc.33 W4-B1 (T6 P2): --fix --dry-run banner — printed before the standard report so users see no mutations were applied.
   "cli.doctor.fix-dry-run-banner":
-    "[dry-run] No mutations were applied. The fixable_errors list below shows what `fab doctor --fix` would address; rerun without --dry-run to actually fix.",
+    "[dry-run] No mutations were applied. The fixable_errors list below shows what `fabric doctor --fix` would address; rerun without --dry-run to actually fix.",
   "cli.doctor.errors.enrich-descriptions-mutex":
     "--enrich-descriptions cannot be combined with --fix, --fix-knowledge, or --cite-coverage. Run them separately.",
   "doctor.enrich.allComplete":
@@ -268,12 +268,12 @@ export const enMessages: Messages = {
   "doctor.check.bootstrap_marker_migration.message.plural":
     "{count} files still carry the legacy fabric:knowledge-base bootstrap marker: {list}.",
   "doctor.check.bootstrap_marker_migration.remediation":
-    "Run `fab doctor --fix` to migrate to fabric:bootstrap marker",
+    "Run `fabric doctor --fix` to migrate to fabric:bootstrap marker",
   "doctor.check.bootstrap_snapshot_drift.name": "Bootstrap snapshot drift",
   "doctor.check.bootstrap_snapshot_drift.message.drift":
     ".fabric/AGENTS.md content diverges byte-for-byte from BOOTSTRAP_CANONICAL.",
   "doctor.check.bootstrap_snapshot_drift.remediation.drift":
-    "Run `fab doctor --fix` to restore canonical bootstrap snapshot",
+    "Run `fabric doctor --fix` to restore canonical bootstrap snapshot",
   "doctor.check.bootstrap_snapshot_drift.ok.ok":
     ".fabric/AGENTS.md byte-equals BOOTSTRAP_CANONICAL.",
   "doctor.check.bootstrap_snapshot_drift.ok.missing_delegated":
@@ -284,7 +284,7 @@ export const enMessages: Messages = {
   "doctor.check.managed_block_drift.message.plural":
     "{count} three-end managed blocks diverge from expected body (snapshot + optional project-rules concat): {list}.",
   "doctor.check.managed_block_drift.remediation":
-    "Run `fab doctor --fix` to restore three-end managed blocks from canonical",
+    "Run `fabric doctor --fix` to restore three-end managed blocks from canonical",
   "doctor.check.managed_block_drift.ok.ok":
     "Three-end managed blocks byte-equal expectedBody.",
   "doctor.check.managed_block_drift.ok.no_managed_block":
@@ -293,7 +293,7 @@ export const enMessages: Messages = {
   "doctor.check.bootstrap_anchor.message.missing":
     "Neither AGENTS.md nor CLAUDE.md exists at the repo root. Fabric requires a bootstrap anchor file at the project root.",
   "doctor.check.bootstrap_anchor.remediation.missing":
-    "Run `fab install` to generate the AGENTS.md / CLAUDE.md bootstrap anchor at the repo root.",
+    "Run `fabric install` to generate the AGENTS.md / CLAUDE.md bootstrap anchor at the repo root.",
   "doctor.check.bootstrap_anchor.ok": "Bootstrap anchor present at repo root: {present}.",
   "doctor.check.baseline_filename_format.name": "Baseline filename format",
   "doctor.check.baseline_filename_format.ok":
@@ -311,7 +311,7 @@ export const enMessages: Messages = {
   "doctor.check.knowledge_dir_missing.message.plural":
     "{count} required knowledge subdirs are missing: {list}.",
   "doctor.check.knowledge_dir_missing.remediation":
-    "Run `fab doctor --fix` to create the missing .fabric/knowledge/* subdirectories.",
+    "Run `fabric doctor --fix` to create the missing .fabric/knowledge/* subdirectories.",
   "doctor.check.knowledge_dir_missing.ok":
     "All {count} required .fabric/knowledge/* subdirectories exist.",
   "doctor.check.forensic.name": "Scan evidence",
@@ -321,50 +321,50 @@ export const enMessages: Messages = {
     "{error} Live scan detects {frameworkKind} with {count} entry points.",
   "doctor.check.forensic.message.missing-default": ".fabric/forensic.json is missing.",
   "doctor.check.forensic.message.invalid-default": ".fabric/forensic.json is invalid.",
-  "doctor.check.forensic.remediation": "Run `fab install` to regenerate .fabric/forensic.json.",
+  "doctor.check.forensic.remediation": "Run `fabric install` to regenerate .fabric/forensic.json.",
   "doctor.check.forensic.ok": ".fabric/forensic.json is valid for {frameworkKind}.",
   "doctor.check.agents_meta.name": "Agents metadata",
   "doctor.check.agents_meta.message.missing": ".fabric/agents.meta.json is missing.",
   "doctor.check.agents_meta.remediation.missing":
-    "Run `fab doctor --fix` to rebuild agents.meta.json from .fabric/knowledge/.",
+    "Run `fabric doctor --fix` to rebuild agents.meta.json from .fabric/knowledge/.",
   "doctor.check.agents_meta.message.invalid-default": ".fabric/agents.meta.json is invalid.",
   "doctor.check.agents_meta.remediation.invalid":
-    "Run `fab doctor --fix` to let reconcile rebuild agents.meta.json from the .fabric/knowledge/ disk ground-truth (rc.31+ auto-migrates legacy singular knowledge_type values to canonical plural; do NOT manually delete agents.meta.json — you would lose counters envelope and promote-ledger associations).",
+    "Run `fabric doctor --fix` to let reconcile rebuild agents.meta.json from the .fabric/knowledge/ disk ground-truth (rc.31+ auto-migrates legacy singular knowledge_type values to canonical plural; do NOT manually delete agents.meta.json — you would lose counters envelope and promote-ledger associations).",
   "doctor.check.agents_meta.message.stale":
     ".fabric/agents.meta.json revision {revision} does not match .fabric/knowledge derived revision {computedRevision}.",
   "doctor.check.agents_meta.remediation.stale":
-    "Benign — engine auto-heals on next plan-context/get-sections call. Run `fab doctor --fix` for explicit reconciliation.",
+    "Benign — engine auto-heals on next plan-context/get-sections call. Run `fabric doctor --fix` for explicit reconciliation.",
   "doctor.check.agents_meta.ok":
     ".fabric/agents.meta.json revision {revision} is aligned with .fabric/knowledge.",
   "doctor.check.rule_content_refs.name": "Rule content refs",
   "doctor.check.rule_content_refs.message.unavailable":
     "Cannot inspect content_ref entries until agents.meta.json is valid.",
   "doctor.check.rule_content_refs.remediation.unavailable":
-    "Fix agents.meta.json first: run `fab doctor --fix`.",
+    "Fix agents.meta.json first: run `fabric doctor --fix`.",
   "doctor.check.rule_content_refs.message.outside.singular":
     "{count} content_ref entry is outside .fabric/knowledge.",
   "doctor.check.rule_content_refs.message.outside.plural":
     "{count} content_ref entries are outside .fabric/knowledge.",
   // v2.0.0-rc.33 W3-2 (T6 #12): project rules forbid hand-editing agents.meta.json (see .fabric/AGENTS.md). Direct users through doctor --fix reconcile path instead.
   "doctor.check.rule_content_refs.remediation.outside":
-    "Run `fab doctor --fix` to let reconcile auto-prune external content_refs (rc.31+ compatible). Do NOT hand-edit agents.meta.json — the engine reconciles automatically.",
+    "Run `fabric doctor --fix` to let reconcile auto-prune external content_refs (rc.31+ compatible). Do NOT hand-edit agents.meta.json — the engine reconciles automatically.",
   "doctor.check.rule_content_refs.message.missing.singular":
-    "{count} content_ref target is missing. Run `fab doctor --fix` to reconcile.",
+    "{count} content_ref target is missing. Run `fabric doctor --fix` to reconcile.",
   "doctor.check.rule_content_refs.message.missing.plural":
-    "{count} content_ref targets are missing. Run `fab doctor --fix` to reconcile.",
+    "{count} content_ref targets are missing. Run `fabric doctor --fix` to reconcile.",
   "doctor.check.rule_content_refs.remediation.missing":
-    "Run `fab doctor --fix` to reconcile agents.meta.json with the files present in .fabric/knowledge/.",
+    "Run `fabric doctor --fix` to reconcile agents.meta.json with the files present in .fabric/knowledge/.",
   "doctor.check.rule_content_refs.ok":
     "All content_ref entries resolve to .fabric/knowledge files.",
   "doctor.check.knowledge_test_index.name": "Knowledge-test index",
   "doctor.check.knowledge_test_index.remediation.missing":
-    "Run `fab doctor --fix` to rebuild .fabric/.cache/knowledge-test.index.json.",
+    "Run `fabric doctor --fix` to rebuild .fabric/.cache/knowledge-test.index.json.",
   "doctor.check.knowledge_test_index.remediation.invalid":
-    "Delete .fabric/.cache/knowledge-test.index.json and run `fab doctor --fix` to regenerate it.",
+    "Delete .fabric/.cache/knowledge-test.index.json and run `fabric doctor --fix` to regenerate it.",
   "doctor.check.knowledge_test_index.message.stale":
     ".fabric/.cache/knowledge-test.index.json is stale.",
   "doctor.check.knowledge_test_index.remediation.stale":
-    "Run `fab doctor --fix` to rebuild the knowledge-test index.",
+    "Run `fabric doctor --fix` to rebuild the knowledge-test index.",
   "doctor.check.knowledge_test_index.ok.link_singular.orphan_singular":
     "{linkCount} link and {orphanCount} orphan annotation indexed.",
   "doctor.check.knowledge_test_index.ok.link_singular.orphan_plural":
@@ -376,7 +376,7 @@ export const enMessages: Messages = {
   "doctor.check.event_ledger.name": "Event ledger",
   "doctor.check.event_ledger.message.missing": ".fabric/events.jsonl is missing.",
   "doctor.check.event_ledger.remediation.missing":
-    "Run `fab doctor --fix` to create .fabric/events.jsonl.",
+    "Run `fabric doctor --fix` to create .fabric/events.jsonl.",
   "doctor.check.event_ledger.message.not_writable-default":
     ".fabric/events.jsonl is not writable.",
   "doctor.check.event_ledger.remediation.not_writable":
@@ -384,14 +384,14 @@ export const enMessages: Messages = {
   "doctor.check.event_ledger.message.invalid-default": ".fabric/events.jsonl is invalid.",
   // v2.0.0-rc.33 W3-1 (P0-6): archive-history mode — direct users to mv the broken ledger into events.archive/ before recreating, preserving history rather than rm'ing it. Mirrors rotateEventLedgerIfNeeded's events-rotated-YYYY-MM-DD.jsonl naming convention (events-corrupted-YYYY-MM-DD.jsonl distinguishes this archive cause from sliding-window rotation).
   "doctor.check.event_ledger.remediation.invalid":
-    "Archive history first (`mkdir -p .fabric/events.archive && mv .fabric/events.jsonl .fabric/events.archive/events-corrupted-$(date +%Y-%m-%d).jsonl`), then run `fab doctor --fix` to create a new empty ledger. Historical events are preserved under events.archive/.",
+    "Archive history first (`mkdir -p .fabric/events.archive && mv .fabric/events.jsonl .fabric/events.archive/events-corrupted-$(date +%Y-%m-%d).jsonl`), then run `fabric doctor --fix` to create a new empty ledger. Historical events are preserved under events.archive/.",
   "doctor.check.event_ledger.ok":
     ".fabric/events.jsonl exists, is writable, and is parseable.",
   "doctor.check.mcp_config_in_wrong_file.name": "Claude MCP config location",
   "doctor.check.mcp_config_in_wrong_file.message":
-    ".claude/settings.json contains mcpServers.fabric — this file is for hooks/permissions only. Run --fix to remove it, then re-run fab install to write .mcp.json.",
+    ".claude/settings.json contains mcpServers.fabric — this file is for hooks/permissions only. Run --fix to remove it, then re-run fabric install to write .mcp.json.",
   "doctor.check.mcp_config_in_wrong_file.remediation":
-    "Run `fab doctor --fix` to remove mcpServers.fabric from .claude/settings.json, then run `fab install` to write .mcp.json.",
+    "Run `fabric doctor --fix` to remove mcpServers.fabric from .claude/settings.json, then run `fabric install` to write .mcp.json.",
   "doctor.check.mcp_config_in_wrong_file.ok":
     "mcpServers.fabric is not in .claude/settings.json.",
   "doctor.check.event_ledger_partial_write.name": "Event ledger partial write",
@@ -400,7 +400,7 @@ export const enMessages: Messages = {
   "doctor.check.event_ledger_partial_write.message":
     "events.jsonl has a partial write at byte offset {byteOffset} ({byteLength} corrupted bytes). Run --fix to truncate and preserve corrupted bytes.",
   "doctor.check.event_ledger_partial_write.remediation":
-    "Run `fab doctor --fix` to truncate the partial write and restore events.jsonl to a valid state.",
+    "Run `fabric doctor --fix` to truncate the partial write and restore events.jsonl to a valid state.",
   "doctor.check.event_ledger_partial_write.ok.clean":
     "events.jsonl has no partial trailing write.",
   // v2.0.0-rc.27 TASK-010 (audit §2.24): schema-compat forward-warn category.
@@ -415,7 +415,7 @@ export const enMessages: Messages = {
     "events.jsonl has {count} row(s) with unknown `event_type` (samples: {samples}).",
   // v2.0.0-rc.33 W3-1 (P0-6): archive-history mode — same as event_ledger.invalid above. Explicit "archive" wording (rather than "back up") makes it clear the old ledger is preserved under events.archive/, not discarded.
   "doctor.check.event_ledger_schema_compat.remediation":
-    "Preferred: upgrade the fab CLI to a server-compatible version. Otherwise archive history first (`mkdir -p .fabric/events.archive && mv .fabric/events.jsonl .fabric/events.archive/events-schema-mismatch-$(date +%Y-%m-%d).jsonl`), then run `fab doctor --fix` to create a new empty ledger. Historical events stay under events.archive/ for later manual migration.",
+    "Preferred: upgrade the fabric CLI to a server-compatible version. Otherwise archive history first (`mkdir -p .fabric/events.archive && mv .fabric/events.jsonl .fabric/events.archive/events-schema-mismatch-$(date +%Y-%m-%d).jsonl`), then run `fabric doctor --fix` to create a new empty ledger. Historical events stay under events.archive/ for later manual migration.",
   // v2.0.0-rc.28 TASK-04 (audit §3.1): SKILL ref/ mirror parity check.
   "doctor.check.skill_ref_mirror.name": "Skill ref mirror parity",
   "doctor.check.skill_ref_mirror.ok":
@@ -423,7 +423,7 @@ export const enMessages: Messages = {
   "doctor.check.skill_ref_mirror.message":
     "{count} skill ref file(s) differ between `.claude/skills/` and `.codex/skills/` (paths: {list}). One client was hand-edited or partially installed.",
   "doctor.check.skill_ref_mirror.remediation":
-    "Run `fab install` to rewrite both client subtrees from the canonical templates and restore parity.",
+    "Run `fabric install` to rewrite both client subtrees from the canonical templates and restore parity.",
   // v2.0.0-rc.33 W3-6 (P1-13): SKILL.md token budget lint. warn > 5K / error > 10K tokens (chars/3 estimate). Anthropic recommends SKILL.md hot path stay ~3K; over 5K hurts progressive disclosure; over 10K is blocking (wasted model context + load latency).
   "doctor.check.skill_token_budget.name": "Skill token budget",
   "doctor.check.skill_token_budget.ok":
@@ -433,7 +433,7 @@ export const enMessages: Messages = {
   "doctor.check.skill_token_budget.message.plural":
     "{count} SKILL.md files exceed the token budget: {list}. Sink detail into ref/ for progressive disclosure.",
   "doctor.check.skill_token_budget.remediation":
-    "Move detailed phase / worked-examples / decision tables out of the SKILL.md hot path into `templates/skills/<slug>/ref/*.md`. Keep SKILL.md focused on trigger-gate + key-phase summaries; see W1 progressive disclosure split. Re-run `fab install` to sync both client subtrees.",
+    "Move detailed phase / worked-examples / decision tables out of the SKILL.md hot path into `templates/skills/<slug>/ref/*.md`. Keep SKILL.md focused on trigger-gate + key-phase summaries; see W1 progressive disclosure split. Re-run `fabric install` to sync both client subtrees.",
   // v2.0.0-rc.33 W3-7 (P1-14): SKILL.md description structural lint. Proxy for trigger-recall (a live-LLM recall test requires a model — W1 ran gemini for that). This lint catches regression: missing description / >60 tokens / no Chinese trigger / no English trigger.
   "doctor.check.skill_description.name": "Skill description quality",
   "doctor.check.skill_description.ok":
@@ -443,7 +443,7 @@ export const enMessages: Messages = {
   "doctor.check.skill_description.message.plural":
     "{count} SKILL.md description structural issues: {list}. The description field is the host's primary auto-invoke matching signal.",
   "doctor.check.skill_description.remediation":
-    "Edit the `description:` field in `packages/cli/templates/skills/<slug>/SKILL.md` frontmatter: (1) non-empty; (2) <60 tokens (chars/3 estimate, ~180 chars); (3) at least one Chinese trigger phrase; (4) at least one English trigger phrase. See W1 description rewrite style. Re-run `fab install` to sync both client subtrees. For recall verification, run the W1 gemini delegate (see .workflow/.scratchpad/rc33-plan/W1-VERIFY-RESULT.md).",
+    "Edit the `description:` field in `packages/cli/templates/skills/<slug>/SKILL.md` frontmatter: (1) non-empty; (2) <60 tokens (chars/3 estimate, ~180 chars); (3) at least one Chinese trigger phrase; (4) at least one English trigger phrase. See W1 description rewrite style. Re-run `fabric install` to sync both client subtrees. For recall verification, run the W1 gemini delegate (see .workflow/.scratchpad/rc33-plan/W1-VERIFY-RESULT.md).",
   // v2.0.0-rc.33 W3-3 (P1-3): cite-policy Goodhart pattern detection. Scans 7d of assistant_turn_observed events for 4 anti-patterns (G1 ritual / G2 dismissal abuse / G3 chained-from misuse / G5 placeholder cite). Warning severity — heuristics can false-positive; advisory only.
   "doctor.check.cite_goodhart.name": "Cite-policy Goodhart",
   "doctor.check.cite_goodhart.ok":
@@ -453,7 +453,7 @@ export const enMessages: Messages = {
   "doctor.check.cite_goodhart.message.plural":
     "Detected {count} cite-policy Goodhart patterns: {list}.",
   "doctor.check.cite_goodhart.remediation":
-    "Review the fired patterns: G1 ritual → the same id repeated as [recalled] suggests the KB should land into a contract instead; G2 dismissal abuse → > 60% of recalled cites used skip: bypasses contract enforcement, audit skip-reason validity; G3 chained-from misuse → chained-from tag with no commitment (operators=[] + skip_reason=null), add operators or use a different tag; G5 placeholder cite → too many bare 'KB: none' / [unspecified], prefer specific sentinels like [no-relevant] / [not-applicable]. For raw data, run `fab doctor --cite-coverage --since=7d`.",
+    "Review the fired patterns: G1 ritual → the same id repeated as [recalled] suggests the KB should land into a contract instead; G2 dismissal abuse → > 60% of recalled cites used skip: bypasses contract enforcement, audit skip-reason validity; G3 chained-from misuse → chained-from tag with no commitment (operators=[] + skip_reason=null), add operators or use a different tag; G5 placeholder cite → too many bare 'KB: none' / [unspecified], prefer specific sentinels like [no-relevant] / [not-applicable]. For raw data, run `fabric doctor --cite-coverage --since=7d`.",
   // v2.0.0-rc.33 W4-A4 (T5 P2): draft-backlog lint. rc.32 baseline showed 92% of entries stuck at draft, signaling a broken promote loop. Warns when > 50% draft (workspace must have >= 10 entries to compute the ratio — small corpora are noisy).
   "doctor.check.draft_backlog.name": "Knowledge draft backlog",
   "doctor.check.draft_backlog.ok":
@@ -470,22 +470,22 @@ export const enMessages: Messages = {
   "doctor.check.meta_manually_diverged.message.extra.plural":
     "agents.meta.json has {count} entries with no backing file on disk. Run --fix to reconcile.",
   "doctor.check.meta_manually_diverged.remediation.extra":
-    "Run `fab doctor --fix` to reconcile agents.meta.json with the rule files currently on disk.",
+    "Run `fabric doctor --fix` to reconcile agents.meta.json with the rule files currently on disk.",
   "doctor.check.meta_manually_diverged.message.hash.singular":
     "agents.meta.json has {count} entry whose hash does not match the file on disk. Run --fix to reconcile.",
   "doctor.check.meta_manually_diverged.message.hash.plural":
     "agents.meta.json has {count} entries whose hash does not match the file on disk. Run --fix to reconcile.",
   "doctor.check.meta_manually_diverged.remediation.hash":
-    "Run `fab doctor --fix` to reconcile agents.meta.json with the current rule file contents.",
+    "Run `fabric doctor --fix` to reconcile agents.meta.json with the current rule file contents.",
   "doctor.check.meta_manually_diverged.ok.consistent":
     "agents.meta.json is consistent with rule files on disk.",
   "doctor.check.knowledge_dir_unindexed.name": "Knowledge dir unindexed",
   "doctor.check.knowledge_dir_unindexed.message.singular":
-    "{count} .md file in .fabric/knowledge/ not indexed in agents.meta.json. Run `fab doctor --fix` to index the missing knowledge files.",
+    "{count} .md file in .fabric/knowledge/ not indexed in agents.meta.json. Run `fabric doctor --fix` to index the missing knowledge files.",
   "doctor.check.knowledge_dir_unindexed.message.plural":
-    "{count} .md files in .fabric/knowledge/ not indexed in agents.meta.json. Run `fab doctor --fix` to index the missing knowledge files.",
+    "{count} .md files in .fabric/knowledge/ not indexed in agents.meta.json. Run `fabric doctor --fix` to index the missing knowledge files.",
   "doctor.check.knowledge_dir_unindexed.remediation":
-    "Run `fab doctor --fix` to index the missing knowledge files.",
+    "Run `fabric doctor --fix` to index the missing knowledge files.",
   "doctor.check.knowledge_dir_unindexed.ok":
     "All .fabric/knowledge/ .md files are indexed in agents.meta.json.",
   "doctor.check.stable_id_collision.name": "Stable ID collision",
@@ -500,11 +500,11 @@ export const enMessages: Messages = {
     "No declared stable_id collisions found in .fabric/knowledge/.",
   "doctor.check.counter_desync.name": "Knowledge counter desync",
   "doctor.check.counter_desync.message.singular":
-    "{count} knowledge counter desynced from observed stable_ids. {counterPath} = {current} but observed {observedId}. Run `fab doctor --fix` to bump counters.",
+    "{count} knowledge counter desynced from observed stable_ids. {counterPath} = {current} but observed {observedId}. Run `fabric doctor --fix` to bump counters.",
   "doctor.check.counter_desync.message.plural":
-    "{count} knowledge counters desynced from observed stable_ids. {counterPath} = {current} but observed {observedId}. Run `fab doctor --fix` to bump counters.",
+    "{count} knowledge counters desynced from observed stable_ids. {counterPath} = {current} but observed {observedId}. Run `fabric doctor --fix` to bump counters.",
   "doctor.check.counter_desync.remediation":
-    "Run `fab doctor --fix` to bump agents.meta.json counters to the maximum observed counter value.",
+    "Run `fabric doctor --fix` to bump agents.meta.json counters to the maximum observed counter value.",
   "doctor.check.counter_desync.ok":
     "agents.meta.json counters envelope is consistent with observed stable_ids.",
   "doctor.check.preexisting_root_files.name": "Preexisting root markdown",
@@ -530,7 +530,7 @@ export const enMessages: Messages = {
   "doctor.check.orphan_demote.message.plural":
     "{count} canonical knowledge entries exceed their maturity-keyed inactivity threshold (stable={stableDays}d / endorsed={endorsedDays}d / draft={draftDays}d). First: {detail}.",
   "doctor.check.orphan_demote.remediation":
-    "Run `fab doctor --fix-knowledge` to demote orphan entries one maturity tier.",
+    "Run `fabric doctor --fix-knowledge` to demote orphan entries one maturity tier.",
   "doctor.check.stale_archive.name": "Knowledge stale archive",
   "doctor.check.stale_archive.ok":
     "No draft knowledge entries exceed the additional stale-archive quiet window.",
@@ -539,7 +539,7 @@ export const enMessages: Messages = {
   "doctor.check.stale_archive.message.plural":
     "{count} draft knowledge entries are stale beyond the demote+{additionalDays}d additional quiet window. First: {detail}.",
   "doctor.check.stale_archive.remediation":
-    "Run `fab doctor --fix-knowledge` to move stale entries into `.fabric/.archive/<type>/`.",
+    "Run `fabric doctor --fix-knowledge` to move stale entries into `.fabric/.archive/<type>/`.",
   "doctor.check.pending_overdue.name": "Knowledge pending overdue",
   "doctor.check.pending_overdue.ok":
     "No pending knowledge entries exceed the 14-day review threshold.",
@@ -577,7 +577,7 @@ export const enMessages: Messages = {
   "doctor.check.index_drift.message.plural":
     "{count} (layer, type) counter slots have drifted below the observed canonical maximum (next allocate would collide). First: {detail}.",
   "doctor.check.index_drift.remediation":
-    "Run `fab doctor --fix-knowledge` to bump agents.meta.json counters to max_observed + 1.",
+    "Run `fabric doctor --fix-knowledge` to bump agents.meta.json counters to max_observed + 1.",
   "doctor.check.underseeded.name": "Knowledge underseeded",
   "doctor.check.underseeded.ok":
     "Knowledge corpus has {count} canonical entries (>= {threshold}).",
@@ -639,7 +639,7 @@ export const enMessages: Messages = {
   "doctor.check.session_hints_stale.message.plural":
     "{count} session-hints cache files under .fabric/.cache/ are older than {days} days. First: {detail}.",
   "doctor.check.session_hints_stale.remediation":
-    "Run `fab doctor --fix-knowledge` to delete stale session-hints cache files.",
+    "Run `fabric doctor --fix-knowledge` to delete stale session-hints cache files.",
   "doctor.check.stale_serve_lock.name": "Serve lock",
   "doctor.check.stale_serve_lock.ok.no_lock": "No .fabric/.serve.lock present.",
   "doctor.check.stale_serve_lock.ok.live_pid":
@@ -649,9 +649,9 @@ export const enMessages: Messages = {
   "doctor.check.stale_serve_lock.age.hour.singular": "{count} hour ago",
   "doctor.check.stale_serve_lock.age.hour.plural": "{count} hours ago",
   "doctor.check.stale_serve_lock.message.dead_pid":
-    "[advisory] .fabric/.serve.lock holds dead PID {pid} (acquired {acquiredAgo}). Run `fab doctor --fix` to remove.",
+    "[advisory] .fabric/.serve.lock holds dead PID {pid} (acquired {acquiredAgo}). Run `fabric doctor --fix` to remove.",
   "doctor.check.stale_serve_lock.remediation.dead_pid":
-    "Run `fab doctor --fix` to remove the stale .fabric/.serve.lock.",
+    "Run `fabric doctor --fix` to remove the stale .fabric/.serve.lock.",
   "doctor.check.relevance_fields_missing.name": "Knowledge relevance fields missing",
   "doctor.check.relevance_fields_missing.ok":
     "All pending entries declare both relevance_scope and relevance_paths.",
@@ -660,18 +660,18 @@ export const enMessages: Messages = {
   "doctor.check.relevance_fields_missing.message.plural":
     "{count} pending entries are missing relevance_scope and/or relevance_paths in frontmatter. First: {detail}.",
   "doctor.check.relevance_fields_missing.remediation":
-    "Run `fab doctor --fix-knowledge` to back-fill the schema defaults (relevance_scope: broad, relevance_paths: []).",
+    "Run `fabric doctor --fix-knowledge` to back-fill the schema defaults (relevance_scope: broad, relevance_paths: []).",
   // rc.31 BUG-M3/NEW-4: hooks_wired observability.
   "doctor.check.hooks_wired.name": "Claude Code hooks wired",
   "doctor.check.hooks_wired.ok.skipped": "Project does not use Claude Code (no .claude/ directory); hooks_wired check skipped.",
   "doctor.check.hooks_wired.ok.wired":
     ".claude/settings.json has the three fabric hooks wired: Stop:fabric-hint / SessionStart:knowledge-hint-broad / PreToolUse:knowledge-hint-narrow.",
   "doctor.check.hooks_wired.message.missing_settings":
-    ".claude/ exists but .claude/settings.json is absent or unparseable; fab install may have never run successfully, or the file was wiped externally.",
+    ".claude/ exists but .claude/settings.json is absent or unparseable; fabric install may have never run successfully, or the file was wiped externally.",
   "doctor.check.hooks_wired.message.incomplete":
-    ".claude/settings.json is missing fabric hook injections: {missing}. fab install dry-run report does not match actual state (rc.30 audit BUG-M3 / NEW-4).",
+    ".claude/settings.json is missing fabric hook injections: {missing}. fabric install dry-run report does not match actual state (rc.30 audit BUG-M3 / NEW-4).",
   "doctor.check.hooks_wired.remediation":
-    "Run `fab install` to re-inject hooks (idempotent; only fills missing slots). If hooks config was accidentally wiped, back up .claude/settings.json before running.",
+    "Run `fabric install` to re-inject hooks (idempotent; only fills missing slots). If hooks config was accidentally wiped, back up .claude/settings.json before running.",
   // rc.31 BUG-G2/G5: promote-ledger invariant check.
   "doctor.check.promote_ledger_invariant.name": "Promote ledger invariant",
   "doctor.check.promote_ledger_invariant.ok":
@@ -681,7 +681,7 @@ export const enMessages: Messages = {
   "doctor.check.promote_ledger_invariant.message.started-lt-promoted":
     "knowledge_promote_started={started} is less than knowledge_promoted={promoted} (ledger invariant violated; unpaired promoted events exist, possibly from doctor filesystem-edit fallback or external writers).",
   "doctor.check.promote_ledger_invariant.remediation":
-    "Starting in rc.31, review.approve synthesizes a knowledge_proposed event to keep the invariant; re-run fab doctor after the next approve to settle. Historical imbalance is observability-only and does not affect KB function.",
+    "Starting in rc.31, review.approve synthesizes a knowledge_proposed event to keep the invariant; re-run fabric doctor after the next approve to settle. Historical imbalance is observability-only and does not affect KB function.",
   "doctor.check.skill_md_yaml_invalid.name": "Skill markdown YAML",
   "doctor.check.skill_md_yaml_invalid.ok":
     "All .claude/.codex SKILL.md frontmatter values parse as strict YAML.",
@@ -735,9 +735,9 @@ export const enMessages: Messages = {
     "Install Fabric in the target project (scaffold .fabric/, bootstrap templates, MCP client wiring, git hooks).\n" +
     "\n" +
     "Examples:\n" +
-    "  fab install                  interactive install in the current project\n" +
-    "  fab install --yes            accept defaults, skip the TTY wizard\n" +
-    "  fab install --dry-run        preview the install plan without writing files",
+    "  fabric install                  interactive install in the current project\n" +
+    "  fabric install --yes            accept defaults, skip the TTY wizard\n" +
+    "  fabric install --dry-run        preview the install plan without writing files",
   "cli.install.args.target.description":
     "Target project path. Defaults to --target, then EXTERNAL_FIXTURE_PATH, then cwd.",
   "cli.install.args.debug.description": "Print target resolution details to stderr.",
@@ -818,7 +818,7 @@ export const enMessages: Messages = {
   "cli.install.capabilities.follow-up.ready": "continue in client",
   "cli.install.capabilities.follow-up.install": "install client assets",
   "cli.install.capabilities.follow-up.manual": "manual step required",
-  "cli.install.next-step.message": "run fab hooks install to add the Day 4 pre-commit pipeline.",
+  "cli.install.next-step.message": "run fabric hooks install to add the Day 4 pre-commit pipeline.",
   "cli.install.reason-message.installable-body":
     ".fabric/forensic.json is ready; some detected clients support Fabric follow-up but still need client assets installed.",
   "cli.install.reason-message.manual-body":
@@ -834,11 +834,11 @@ export const enMessages: Messages = {
   "cli.install.claude-settings.invalid-json": "{label} {path}: invalid JSON ({reason}).",
   "cli.install.claude-settings.invalid-hooks": "{label} {path}: \"hooks\" must be a JSON object.",
   "cli.install.claude-settings.invalid-stop-array": "{label} {path}: \"hooks.Stop\" must be an array.",
-  "cli.install.errors.abort-existing": "ABORT: {path} already exists. fab install is non-destructive.",
+  "cli.install.errors.abort-existing": "ABORT: {path} already exists. fabric install is non-destructive.",
   "cli.install.diff.canonical": "Workspace already canonical ({count} files verified).",
   "cli.install.diff.applying-missing": "Applying {count} missing pieces: {files}",
   "cli.install.diff.drift-abort":
-    "Drift detected in {path}. Run `fab doctor` to inspect, or `fab uninstall && fab install` to reset.",
+    "Drift detected in {path}. Run `fabric doctor` to inspect, or `fabric uninstall && fabric install` to reset.",
   "cli.install.diff.state.missing": "missing",
   "cli.install.diff.state.present-canonical": "canonical",
   "cli.install.diff.state.drifted": "drifted",
@@ -848,9 +848,9 @@ export const enMessages: Messages = {
     "Uninstall Fabric from the target project. .fabric/knowledge/ is always preserved; ~/.fabric/knowledge/ is never touched.\n" +
     "\n" +
     "Examples:\n" +
-    "  fab uninstall                interactive uninstall in the current project\n" +
-    "  fab uninstall --yes          accept defaults, skip the TTY wizard\n" +
-    "  fab uninstall --dry-run      preview the uninstall plan without removing files",
+    "  fabric uninstall                interactive uninstall in the current project\n" +
+    "  fabric uninstall --yes          accept defaults, skip the TTY wizard\n" +
+    "  fabric uninstall --dry-run      preview the uninstall plan without removing files",
   "cli.uninstall.args.target.description":
     "Target project path. Defaults to --target, then EXTERNAL_FIXTURE_PATH, then cwd.",
   "cli.uninstall.args.debug.description": "Print target resolution details to stderr.",
@@ -912,7 +912,7 @@ export const enMessages: Messages = {
   "cli.scan.args.debug.description": "Print detection evidence in formatted output.",
   "cli.scan.args.json.description": "Print the diagnostic report as JSON.",
   "cli.scan.error.missing-forensic":
-    "forensic.json not found at {path}; run `fab install` first to produce the deterministic project snapshot.",
+    "forensic.json not found at {path}; run `fabric install` first to produce the deterministic project snapshot.",
   "cli.scan.summary.created": "Wrote {count} knowledge entries to .fabric/knowledge/.",
   "cli.scan.summary.skipped": "No changes detected; {count} entries already up-to-date.",
   "cli.scan.report.title": "Fabric scan report",
@@ -927,7 +927,7 @@ export const enMessages: Messages = {
   "cli.scan.report.recommendations": "Recommendations:",
   "cli.scan.readme-quality.ok": "ok",
   "cli.scan.readme-quality.stub": "stub",
-  "cli.scan.recommendation.init": "L0: Run fab install to scaffold `.fabric/AGENTS.md` with the canonical Fabric bootstrap content.",
+  "cli.scan.recommendation.init": "L0: Run fabric install to scaffold `.fabric/AGENTS.md` with the canonical Fabric bootstrap content.",
   "cli.scan.recommendation.readme":
     "L0: Expand README.md before promoting project facts into Fabric references.",
   "cli.scan.recommendation.contributing":
@@ -940,9 +940,9 @@ export const enMessages: Messages = {
     "Start the local Fabric MCP HTTP service.\n" +
     "\n" +
     "Examples:\n" +
-    "  fab serve                              bind 127.0.0.1:7373 (default)\n" +
-    "  fab serve --port 8787                  use a custom port\n" +
-    "  FABRIC_AUTH_TOKEN=<token> fab serve --host 0.0.0.0   bind non-loopback with Bearer auth",
+    "  fabric serve                              bind 127.0.0.1:7373 (default)\n" +
+    "  fabric serve --port 8787                  use a custom port\n" +
+    "  FABRIC_AUTH_TOKEN=<token> fabric serve --host 0.0.0.0   bind non-loopback with Bearer auth",
   "cli.serve.args.port.description": "Listen port, default 7373.",
   "cli.serve.args.host.description":
     "Listen host, default 127.0.0.1. Non-loopback hosts (e.g. 0.0.0.0) require FABRIC_AUTH_TOKEN to enable Bearer auth, otherwise serve falls back to 127.0.0.1.",
@@ -953,9 +953,9 @@ export const enMessages: Messages = {
     "Opt in to running the loopback HTTP server without Bearer auth (default-deny). Use only on a trusted single-user machine; any local process can then read your knowledge ledger.",
   "cli.serve.ready.title": "Fabric Dashboard",
   "cli.serve.lock-held.action-hint":
-    "A `fab serve` instance (PID {pid}) is holding the workspace lock. Stop it (Ctrl-C in that terminal or `kill {pid}`) before running this command.",
+    "A `fabric serve` instance (PID {pid}) is holding the workspace lock. Stop it (Ctrl-C in that terminal or `kill {pid}`) before running this command.",
   "cli.serve.warning.host-fallback":
-    "--host {host} requires FABRIC_AUTH_TOKEN for non-loopback exposure; falling back to 127.0.0.1. To bind {host}, run: FABRIC_AUTH_TOKEN=<token> fab serve --host {host}",
+    "--host {host} requires FABRIC_AUTH_TOKEN for non-loopback exposure; falling back to 127.0.0.1. To bind {host}, run: FABRIC_AUTH_TOKEN=<token> fabric serve --host {host}",
   "cli.serve.warning.loopback-deny-default":
     "FABRIC_AUTH_TOKEN is not set: /api /events /mcp will return 401 by default (any local process could otherwise read .fabric/agents.meta.json + forensic.json + events.jsonl). Set FABRIC_AUTH_TOKEN=<secret> or pass --allow-loopback-no-auth to opt in.",
   "cli.serve.error.port-in-use": "Port {port} in use - try --port {nextPort}",
@@ -978,7 +978,7 @@ export const enMessages: Messages = {
   "cli.sync-meta.args.target.description": "Target project path, default is the current working directory.",
   "cli.sync-meta.args.check-only.description":
     "Exit with code 1 when .fabric/agents.meta.json is out of date.",
-  "cli.sync-meta.drift-detected": "Fabric metadata drift detected. Run fab sync-meta to update.",
+  "cli.sync-meta.drift-detected": "Fabric metadata drift detected. Run fabric sync-meta to update.",
   "cli.sync-meta.updated": "{label} {path}",
 
   "dashboard.app.nav.aria-label": "Dashboard views",

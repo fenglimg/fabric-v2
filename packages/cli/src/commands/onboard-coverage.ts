@@ -12,7 +12,7 @@ import {
 import { t } from "../i18n.js";
 
 // ---------------------------------------------------------------------------
-// v2.0.0-rc.23 TASK-014 (F8c) — `fab onboard-coverage`
+// v2.0.0-rc.23 TASK-014 (F8c) — `fabric onboard-coverage`
 //
 // Walks `.fabric/knowledge/{decisions,pitfalls,guidelines,models,processes}/*.md`
 // (canonical only — pending/ ignored, since the slot only counts once the
@@ -253,7 +253,7 @@ function renderHumanReadable(report: OnboardCoverageReport): string {
       detail = entries.join(", ");
     } else if (report.opted_out.includes(slot)) {
       status = "opted-out";
-      detail = "(user-dismissed; run `fab config onboard-reset` to re-open)";
+      detail = "(user-dismissed; run `fabric config onboard-reset` to re-open)";
     } else {
       status = "missing";
       detail = "(run /fabric-archive to onboard)";
@@ -273,12 +273,12 @@ export const onboardCoverageCommand = defineCommand({
     name: "onboard-coverage",
     // v2.0.0-rc.29 TASK-008 (BUG-L2): route description strings through t()
     // (mirrors serve.ts pattern). Previously this command was English-only
-    // even when the rest of `fab --help` rendered zh-CN, so Chinese-locale
+    // even when the rest of `fabric --help` rendered zh-CN, so Chinese-locale
     // users saw an isolated English block under --help.
     description: t("cli.onboard-coverage.description"),
-    // Mirrors `plan-context-hint`: hidden from `fab --help` so the top-level
+    // Mirrors `plan-context-hint`: hidden from `fabric --help` so the top-level
     // banner stays focused on install/doctor/serve/config. The command stays
-    // callable directly from Skills via `fab onboard-coverage --json`.
+    // callable directly from Skills via `fabric onboard-coverage --json`.
     hidden: true,
   },
   args: {

@@ -8,7 +8,7 @@ import {
 } from "./fabric-config.js";
 
 // rc.16 TASK-005 (F1-introspect): schema-introspection helper that exposes
-// metadata for the `fab config` clack TUI panel (Group A locale + Group B
+// metadata for the `fabric config` clack TUI panel (Group A locale + Group B
 // hint thresholds + Group C audit). Single source of truth — adding a panel
 // field requires one entry here, NOT a parallel edit in commands/config.ts.
 //
@@ -167,7 +167,7 @@ function pickStringDefault(key: keyof FabricConfigSchemaShape): string {
 const AUDIT_MODE_PANEL_DEFAULT = "warn";
 
 /**
- * Returns the per-field metadata array driving the `fab config` clack panel.
+ * Returns the per-field metadata array driving the `fabric config` clack panel.
  * Group A (2) + Group B (8) + Group C (1) = 11 entries.
  */
 export function getPanelFields(): readonly PanelFieldMeta[] {
