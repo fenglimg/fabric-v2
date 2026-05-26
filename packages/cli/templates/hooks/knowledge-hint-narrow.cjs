@@ -75,6 +75,12 @@ const {
 } = require("node:fs");
 const { dirname, join } = require("node:path");
 
+// rc.35 TASK-06 (P0-10.b): summary-fallback. Substitutes opaque entries
+// (where description.summary === stable_id) with a snippet read from the
+// entry's .md `## Summary` section. Caches results in
+// `.fabric/.cache/summary-fallback.json` keyed by revision_hash.
+const { resolveOpaqueSummaries } = require("./lib/summary-fallback.cjs");
+
 // -----------------------------------------------------------------------------
 // CONSTANTS
 // -----------------------------------------------------------------------------
@@ -1237,7 +1243,21 @@ function main(env, stdio) {
     }
 
     const summaryMaxLen = readSummaryMaxLen(cwd);
-    const lines = renderSummary({ ...cliPayload, entries: dedupDecision.filtered }, summaryMaxLen);
+    // rc.35 TASK-06 (P0-10.b): substitute opaque summaries before render.
+    // Same lib used by the broad hook — opaque entries seen from both call
+    // sites share a single .fabric/.cache/summary-fallback.json file.
+    // Best-effort — any failure leaves the original opaque summary intact.
+    let resolvedEntries = dedupDecision.filtered;
+    try {
+      resolvedEntries = resolveOpaqueSummaries(
+        dedupDecision.filtered,
+        cwd,
+        currentRevisionHash,
+      );
+    } catch {
+      // resolveOpaqueSummaries swallows its own errors; defensive catch.
+    }
+    const lines = renderSummary({ ...cliPayload, entries: resolvedEntries }, summaryMaxLen);
     if (lines.length === 0) return;
 
     // Stderr: human-facing breadcrumb + legacy contract.

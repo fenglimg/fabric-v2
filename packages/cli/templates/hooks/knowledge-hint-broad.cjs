@@ -61,6 +61,7 @@ const { dirname, join } = require("node:path");
 // (TASK-002). Variant is resolved ONCE per main() invocation via
 // readFabricLanguage(cwd) and threaded into renderBanner — no fs in render path.
 const { renderBanner, readFabricLanguage } = require("./lib/banner-i18n.cjs");
+const { resolveOpaqueSummaries } = require("./lib/summary-fallback.cjs");
 
 // -----------------------------------------------------------------------------
 // rc.12: SessionStart broad-menu is now unconditionally emitted on every
@@ -737,6 +738,26 @@ function main(env, stdio) {
         ? { ...payload, entries: payload.entries.slice(0, topK) }
         : payload;
 
+    // rc.35 TASK-06 (P0-10.b): summary-fallback substitution. Entries whose
+    // description.summary equals stable_id render as "<id> · <id>" and the
+    // AI skips fetching them; the fallback reads `## Summary` from the
+    // entry's .md file and swaps in the first paragraph. Best-effort —
+    // failure leaves the original opaque summary untouched.
+    let resolvedPayload = slicedPayload;
+    try {
+      if (slicedPayload && Array.isArray(slicedPayload.entries)) {
+        const resolvedEntries = resolveOpaqueSummaries(
+          slicedPayload.entries,
+          cwd,
+          typeof slicedPayload.revision_hash === "string" ? slicedPayload.revision_hash : "",
+        );
+        resolvedPayload = { ...slicedPayload, entries: resolvedEntries };
+      }
+    } catch {
+      // resolveOpaqueSummaries swallows its own errors; this catch is belt
+      // + suspenders for any unexpected exception from the lib layer.
+    }
+
     // rc.8 underseed self-check: decide whether to surface the one-line
     // `/fabric-import` recommendation banner alongside the broad summary.
     const recommendImport = shouldRecommendImport(cwd);
@@ -748,7 +769,7 @@ function main(env, stdio) {
     // for the agent's working memory. rc.33 W2-5 reintroduces an opt-in
     // hours-based cooldown via fabric-config (see gate above).
     const summaryMaxLen = readSummaryMaxLen(cwd);
-    const lines = renderSummary(slicedPayload, summaryMaxLen);
+    const lines = renderSummary(resolvedPayload, summaryMaxLen);
 
     if (recommendImport) {
       // rc.16 TASK-003: resolve fabric_language ONCE per invocation (only when
