@@ -1,0 +1,235 @@
+{
+  "summary": "rc.34 战术收尾 — rc.33 7 项 P2 deferred 全做 + W1 SKILL.md token 二轮还债 (canonical ~9K → <5K)。无新功能、无 schema 变更、无新 doctor lint。8 TASK / 5 wave / ~18h。战略线 ([[kb-candidate-pool-master]] Part A 21 概念) 全部 out-of-scope,推到 rc.34 ship + 完整测评后开挑战会话。Per-task 独立 commit, Gemini batch review 末尾一次, 版本 bump 由 /release-rc 单独走。",
+  "approach": "5-wave chain。Wave 1 (~3h) quick hardenings 先 ship: cooldown clock skew `Math.max(0,…)` 1h + fab install SKILL.md 大小预检 + auto re-install 2h。Wave 2 (~6h) SKILL.md token 二轮 sequential: fabric-archive canonical ~9K→<5K (W1 欠债 4h) + fabric-review progressive disclosure 2h — sequential 避免 token measurement merge conflict + 共享 install pipeline。Wave 3 (~3h) reverse-unarchive impl 独立模块。Wave 4 (~6h) parallel-safe: cite-policy long-session evict sidecar (W4-B2 设计+实现 4h) + cohort 衰减评估 memo (W4-C2 analysis-only 2h, 输出决定 rc.35 推/不推)。Wave 5 (~2h) closure: dogfood evidence + Gemini batch review + CHANGELOG。每 TASK 跑 `pnpm -r exec tsc --noEmit` + `pnpm test` + `pnpm lint` + `fab doctor --json` 0 error。",
+  "complexity": "Medium",
+  "task_ids": ["TASK-01", "TASK-02", "TASK-03", "TASK-04", "TASK-05", "TASK-06", "TASK-07", "TASK-08"],
+  "task_count": 8,
+  "estimated_time": "1080 minutes (~18 hours)",
+  "recommended_execution": "Agent (single-agent serial per low-Agent-spawn preference)",
+  "branch": "rc34/deferred-cleanup",
+  "base_commit": "d488620",
+  "waves": [
+    {
+      "wave": 1,
+      "label": "Quick hardenings (parallel-safe)",
+      "task_ids": ["TASK-01", "TASK-02"],
+      "estimated_minutes": 180,
+      "rationale": "体积最小、风险最低、不依赖其他 wave。先 ship 拿快速反馈。两 task 文件不重叠 (cooldown hook .cjs vs install pipeline .ts),可并行但单 agent serial 走也 OK。"
+    },
+    {
+      "wave": 2,
+      "label": "SKILL.md token 二轮 (sequential)",
+      "task_ids": ["TASK-03", "TASK-04"],
+      "estimated_minutes": 360,
+      "rationale": "两 task 都改 skill artifact;虽然不同 skill 目录,但 install pipeline 共享、token measurement 共享、易在 doctor skill_token_budget rerun 上 merge conflict — sequential 更稳。TASK-03 先 (W1 真欠债, 用户痛点最锐), TASK-04 复用 TASK-03 拆分模式。"
+    },
+    {
+      "wave": 3,
+      "label": "Reverse-unarchive flow",
+      "task_ids": ["TASK-05"],
+      "estimated_minutes": 180,
+      "rationale": "独立模块, 不阻塞 Wave 1/2。放 Wave 3 是因为反向流由 archive skill 触发, 需要先确认 Wave 2 拆分后 archive 仍能正常 surface 该入口 (Goodhart 守门)。"
+    },
+    {
+      "wave": 4,
+      "label": "Design + analysis (parallel-safe)",
+      "task_ids": ["TASK-06", "TASK-07"],
+      "estimated_minutes": 360,
+      "rationale": "TASK-06 真做 (设计+实现+test),TASK-07 仅 analysis memo (不改代码)。无共享文件可并行。两者放最后是因为 Wave 1-3 完成后,evict 行为与 cohort 信号才能在干净的 baseline 上设计/评估。"
+    },
+    {
+      "wave": 5,
+      "label": "Closure",
+      "task_ids": ["TASK-08"],
+      "estimated_minutes": 120,
+      "rationale": "Per feedback_review_batching: 末尾一次 Gemini review on 全 7 TASK diff。dogfood evidence 在本仓 (pcf) 跑 1 轮 doctor + 触发 evict + 触发 reverse-unarchive。CHANGELOG draft 给 /release-rc 用。版本 bump 不在本 plan, 由 /release-rc 单独 commit。"
+    }
+  ],
+  "tasks": [
+    {
+      "id": "TASK-01",
+      "title": "Cooldown clock skew hardening",
+      "wave": 1,
+      "type": "fix",
+      "effort_min": 60,
+      "files": ["packages/cli/src/hooks/cite-policy.cjs (or relevant cooldown logic)"],
+      "deferred_origin": "rc.33 W2 留观",
+      "what": "在 cooldown 时间差计算处加 `Math.max(0, now - lastTrigger)`, 防止系统时钟回拨导致负值穿透 cooldown",
+      "why": "rc.33 W2 cooldown_hours 引入后未防护时钟回拨;NTP sync、跨时区切换、笔记本休眠唤醒都可能出现。1 行修复 + 1 单测,零设计风险。",
+      "acceptance": ["新增 unit test 模拟 now < lastTrigger 场景 cooldown 仍生效", "现有 cooldown 测试全过"]
+    },
+    {
+      "id": "TASK-02",
+      "title": "fab install SKILL.md 大小预检 + auto re-install",
+      "wave": 1,
+      "type": "feature",
+      "effort_min": 120,
+      "files": ["packages/cli/src/install/", "packages/cli/src/install/skills.ts (or wherever skill copy logic lives)"],
+      "deferred_origin": "rc.33 W1 暴露 'installed 19K stale' 根因",
+      "what": "fab install 时对每个 skill SKILL.md 跑大小校验 (chars/3 ≈ token);若超 doctor skill_token_budget error 阈值则 abort install + 报告 source canonical 大小;auto re-install: 若检测到 installed > canonical 1.5x (stale 迹象) 自动 re-copy",
+      "why": "rc.33 W3 lint 在 installed artifact 上跑 → canonical 9K + installed 19K stale 都被标 error, 用户无法区分。预检在 install pipeline 截断, 杜绝 stale 漂移源头。符合 [[cli-design]] drift→abort 哲学。",
+      "acceptance": ["fab install 在 SKILL.md 超 10K 时 abort 并打印 canonical size", "stale 检测触发后 auto re-install + log", "integration test cover 三场景 (clean/超阈/stale)"]
+    },
+    {
+      "id": "TASK-03",
+      "title": "W1 二轮 — fabric-archive SKILL.md canonical ~9K → <5K",
+      "wave": 2,
+      "type": "refactor",
+      "effort_min": 240,
+      "files": ["packages/cli/skills/fabric-archive/SKILL.md", "packages/cli/skills/fabric-archive/phases/*.md"],
+      "deferred_origin": "rc.33 W1 真欠债 ([[rc33-w1-token-target-missed]]: canonical ~9K vs <5K 目标), W3 skill_token_budget lint 自暴 error",
+      "what": "二次拆分 fabric-archive SKILL.md:(a) 把 SKILL.md 留 entry point + phase 导航骨架,(b) 把残留厚 prose 进一步迁移到 phases/*.md, (c) 必要时新增 references/*.md 存反例/示例。目标 SKILL.md canonical ≤5K token。",
+      "why": "rc.33 W1 gemini PASS 量的是 description recall 不是 body size;SKILL.md 是 progressive disclosure 入口, 入口越薄 LLM 越能精准 dispatch。Goodhart 守门: 拆完跑 fabric-archive recall gate, 必须 ≥80% (rc.33 W1 达 85.7%), 否则 rollback。",
+      "acceptance": ["fab doctor skill_token_budget canonical < 5K (≈ 16500 chars)", "fabric-archive recall gate ≥ 80%", "phases/*.md 文件大小分布合理 (无单文件超 5K)"]
+    },
+    {
+      "id": "TASK-04",
+      "title": "fabric-review SKILL.md progressive disclosure (W4-C3)",
+      "wave": 2,
+      "type": "refactor",
+      "effort_min": 120,
+      "files": ["packages/cli/skills/fabric-review/SKILL.md", "packages/cli/skills/fabric-review/phases/*.md (new)"],
+      "deferred_origin": "rc.33 W4-C3 P2 deferred",
+      "what": "复用 rc.28 (fabric-archive 2932→2247 chars, -23%) + rc.33 W1 (archive -55%, import -58%) 拆分模式, 对 fabric-review SKILL.md 做 progressive disclosure 拆分。",
+      "why": "fabric-review 当前 SKILL.md 是三 skill 中唯一未拆的, doctor skill_token_budget 暴露后是下一个 lint 目标;同 batch 处理避免 rc.35 再开同类 task。",
+      "acceptance": ["SKILL.md canonical token 下降 ≥40%", "fabric-review 9-action recall 不下降 (rc.32 baseline F1 100%)"]
+    },
+    {
+      "id": "TASK-05",
+      "title": "Reverse-unarchive 机制 (W4-C1)",
+      "wave": 3,
+      "type": "feature",
+      "effort_min": 180,
+      "files": ["packages/server/src/knowledge/reconcile.ts", "packages/server/src/knowledge/ledger.ts (event 新类型)", "test"],
+      "deferred_origin": "rc.33 W4-C1 P2 deferred",
+      "what": "reconcileKnowledge 加反向流: 已归档 entry 若被检测到重新被 cite / fab_get_knowledge_sections fetch / hook 召回, 自动从 archive 移回 active, 写 reverse_unarchive ledger event。默认 opt-in (config flag), 含 dry-run。",
+      "why": "rc.33 W3-4 orphan_demote 加 use-signal 后, 死路一条 — 一旦归档无回头路。用户在测评中可能误归档活跃 entry, 需要逆向流。",
+      "acceptance": ["reverse_unarchive ledger event 类型加入 + zod schema", "integration test: archive → re-cite → 自动 unarchive (dry-run 模式不触发)", "fab doctor 新增不阻塞 hint 'N entries unarchived in last 7d'"]
+    },
+    {
+      "id": "TASK-06",
+      "title": "Cite-policy long-session evict (W4-B2)",
+      "wave": 4,
+      "type": "feature",
+      "effort_min": 240,
+      "files": ["packages/cli/src/hooks/cite-policy-evict.cjs (NEW)", "packages/cli/src/install/hooks.ts (wire)", "fabric-config schema (new optional field)", "integration test", ".workflow/scratch/rc34-cite-evict-design.md (设计 memo)"],
+      "deferred_origin": "rc.33 W4-B2 P2 deferred (用户原始估时 4h)",
+      "what": "新增 sidecar hook 周期注入 cite-policy reminder: 长 session 中 cite contract 渐渐被 model 遗忘, evict 机制在 N turn 间隔重新注入 contract 摘要。strategy 单一 (turn-count window), 可配置化, 走 rc.33 W2 已建 stdout JSON envelope 通道。",
+      "why": "rc.32 Batch 1 cite 遵循率 3.1%, rc.33 W2 已用 hook+reminder 拉, 但长 session attention decay 仍存在。evict = 周期再注入。先做单一 strategy (turn-count), 测评数据出来再决定是否加 token-budget / topic-shift detection。",
+      "acceptance": ["新 hook 文件 + 单测", "fabric-config 字段 cite_evict_interval (默认 0 = 不开)", "integration test: 模拟 30 turn session, interval=10, reminder 触发 3 次", "设计 memo lock 'turn-count window' 决策, 其他 strategy 推 rc.35"]
+    },
+    {
+      "id": "TASK-07",
+      "title": "Cohort-based 衰减评估 memo (W4-C2)",
+      "wave": 4,
+      "type": "analysis",
+      "effort_min": 120,
+      "files": [".workflow/scratch/rc34-cohort-decay-memo.md (NEW)"],
+      "deferred_origin": "rc.33 W4-C2 P2 deferred",
+      "what": "Analysis only, **不改代码**。评估 cohort-based 衰减(按入库时间分队, 老 cohort 更高衰减权重) vs 现有 last_consumed_at orphan demotion 的 ROI:数据基础足不足? schema 影响? rc.35 是否值得 impl?",
+      "why": "当前衰减只看 last_consumed_at (LRU-ish);cohort 维度能区分 '上周入库 + 0 use' (新, 给宽限) vs '半年前入库 + 0 use' (该衰减)。但需要更复杂 schema。memo 输出 rc.35 推/不推决策。",
+      "acceptance": ["memo 含: 现状数据 (有多少 entry 跨 cohort 区间) + 设计草案 + rc.35 推/不推决策 + 若推估时", "在 Wave 5 review 中被引用"]
+    },
+    {
+      "id": "TASK-08",
+      "title": "Closure — dogfood evidence + Gemini batch review + CHANGELOG",
+      "wave": 5,
+      "type": "closure",
+      "effort_min": 120,
+      "files": [".workflow/.lite-plan/rc34-deferred-cleanup-2026-05-26/dogfood-evidence.md (NEW)", ".workflow/.lite-plan/rc34-deferred-cleanup-2026-05-26/review.md (NEW)", "CHANGELOG draft"],
+      "deferred_origin": "本 plan 闭环",
+      "what": "在 pcf 仓自跑 rc.34 build: 触发 evict (TASK-06)、触发 reverse-unarchive (TASK-05)、跑 fab doctor (TASK-03+04 后 skill_token_budget 应 0 error)。Gemini batch review on 7 TASK 全量 diff, P0/P1 必修。CHANGELOG draft 写 rc.34 user-facing summary 给 /release-rc。",
+      "why": "Per feedback_review_batching 末尾一次。dogfood evidence 是 release 前最后 sanity check, 历史多次抓出 last-mile bug。",
+      "acceptance": ["dogfood-evidence.md 含 4 项证据 (evict trigger / reverse-unarchive trigger / doctor 0 error / install pre-check 触发)", "review.md 含 Gemini 输出 + 处置记录 (修/拒/defer)", "CHANGELOG diff 准备好"]
+    }
+  ],
+  "design_decisions": [
+    {
+      "decision": "rc.34 战术 only — 战略 Part A 21 概念全部 out-of-scope",
+      "rationale": "用户 2026-05-26 明确锁定: 战略线需等 rc.34 ship + 完整测评后用真实数据驱动需求挑战, 决定哪些进 rc.35+。",
+      "tradeoff": "rc.34 不交付新功能 → user-facing changelog 偏 'cleanup'。可接受 — Fabric 当前阶段欠债清账比新功能更重要, 且 cite 遵循率痛点已经 rc.33 W2 治理过一次, 等测评数据再决定下一刀。"
+    },
+    {
+      "decision": "W1 SKILL.md token 二轮 (TASK-03) 必修, 不推 rc.35",
+      "rationale": "rc.33 W3 新加 skill_token_budget lint 当前对 canonical fabric-archive 标 error → 'doctor 自己 error 自己' 状态对外不好看, 任何下游 user 跑 doctor 会失败。",
+      "tradeoff": "TASK-03 单 task 4h 占 plan 22%。可接受 — W1 是 [[rc33-w1-token-target-missed]] 标记的真欠债, 拖到 rc.35 测评数据夹杂噪音。"
+    },
+    {
+      "decision": "TASK-07 (cohort 衰减) 是 analysis-only, 不改代码",
+      "rationale": "rc.34 scope 锁战术。cohort 衰减是 schema 变更 + 设计抉择, 应走 rc.35 完整 plan 而非 rc.34 顺手 impl。",
+      "tradeoff": "TASK-07 输出只是 memo, 没有可 ship 工件 → 看起来'轻'。但 memo 锁定 rc.35 决策本身有价值, 避免 rc.35 又一轮浅讨论。"
+    },
+    {
+      "decision": "Wave 2 sequential (不 parallel TASK-03/04)",
+      "rationale": "两 task 都改 skill artifact, doctor skill_token_budget rerun 共享 measurement, parallel agent 易在测量 baseline 上 race。",
+      "tradeoff": "Wall-clock 4h+2h = 6h 不能压缩。可接受 — 单 task 内已严控时长, 顺序执行更可控。"
+    },
+    {
+      "decision": "Per-task commit, 末尾批量 Gemini review",
+      "rationale": "Per rc.20/rc.24/rc.25/rc.26/rc.33 precedent + [[review-batching]] feedback memory。每 commit 原子可 revert, review 上下文集中。",
+      "tradeoff": "8 commit 比 1 mega-commit 仪式重, 但 bisect granularity + review cognitive load 都更好。"
+    },
+    {
+      "decision": "版本 bump 不在 plan, 由 /release-rc 单独走",
+      "rationale": "rc.26 precedent — TASK-06 closure 后才跑 /release-rc, 避免 release commit 跟 TASK commit 交错乱序。",
+      "tradeoff": "需要两次 'session': 本 plan 跑完 + 单独 /release-rc invocation。可接受 — 边界清晰。"
+    }
+  ],
+  "out_of_scope": [
+    "[[kb-candidate-pool-master]] Part A 21 概念 (A1 agent-type 注入 / A2 keyword 注入 / A6 inline-rule 双层 / A22 spec-knowhow 哲学 等全部)",
+    "v2.1 knowledge schema redesign (单独 RC)",
+    "新 doctor lint (rc.33 已加 3 个, rc.34 不再加)",
+    "Dashboard / 通知 / RBAC / 远程操控 (Part E boundary 锁定)",
+    "Cohort-based 衰减实现 (TASK-07 仅 memo, 实现推 rc.35)",
+    "Cite-policy evict 多 strategy (TASK-06 仅 turn-count, 其他 strategy 推 rc.35)",
+    "测评本身 (rc.34 ship 后单独跑)"
+  ],
+  "risks": [
+    {
+      "risk": "TASK-03 SKILL.md 拆到 <5K 后语义信息丢失 (Goodhart)",
+      "likelihood": "Medium",
+      "mitigation": "拆分前先跑 fabric-archive recall gate (现 85.7%), 拆后必须 ≥80%, 否则 rollback"
+    },
+    {
+      "risk": "TASK-05 反向 unarchive 触发条件设计错 (cohort 误判)",
+      "likelihood": "Medium",
+      "mitigation": "invariant test;dry-run flag, 默认 opt-in;reverse_unarchive event 写 ledger 便于审计"
+    },
+    {
+      "risk": "TASK-06 sidecar evict 跟现有 hook 通道冲突",
+      "likelihood": "Low",
+      "mitigation": "复用 rc.33 W2 stdout JSON envelope 通道, 不新开 transport"
+    },
+    {
+      "risk": "TASK-07 memo 得出 '该 impl' 结论但 rc.34 已无 budget",
+      "likelihood": "Low",
+      "mitigation": "memo 显式接受 '推 rc.35' 输出, 不阻塞 rc.34 ship"
+    },
+    {
+      "risk": "W1 二轮 (TASK-03) 拆完仍 >5K",
+      "likelihood": "Medium",
+      "mitigation": "接受 5-7K 区间, lint threshold 临时调到 7K warn / 10K error, 再 rc.35 三轮"
+    },
+    {
+      "risk": "CI typecheck-gate 复发 (rc.21/24/29 precedent)",
+      "likelihood": "Medium",
+      "mitigation": "每 TASK 本地必跑 `pnpm -r exec tsc --noEmit`, 不光靠 `pnpm build` ([[local-tsc-vs-ci-tsc]])"
+    }
+  ],
+  "open_questions": [],
+  "locked_decisions_2026_05_26": [
+    "TASK-06 sidecar 周期窗口单位 = turn-count (最简实现, 其他 strategy [time-based / token-budget] 推 rc.35)",
+    "TASK-02 install 预检失败后 auto re-install 仍超阈 = block (符合 [[cli-design]] drift→abort 哲学;打印 canonical size + 提示用户检查 skill source)",
+    "rc.34 cite-coverage 仍单窗 (7d), 双窗 (7d + 30d) 推 rc.35;若 TASK-08 dogfood 发现 7d 噪音太大单独 hotfix"
+  ],
+  "acceptance_summary": [
+    "8 TASK 全 commit, 全 gates 绿",
+    "fab doctor 0 error (skill_token_budget canonical ≤5K, 或临时阈调到 7K)",
+    "fabric-archive + fabric-review installed SKILL.md ≤目标 (TASK-02 预检通过)",
+    "reverse-unarchive 端到端 1 个 integration test",
+    "cite-policy long-session evict 跑通 demo + 1 integration test",
+    "cohort-decay memo 输出 rc.35 决策",
+    "dogfood evidence 含 4 项",
+    "Gemini batch review 无 P0/P1"
+  ]
+}
