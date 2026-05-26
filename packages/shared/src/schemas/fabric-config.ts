@@ -181,6 +181,17 @@ export const fabricConfigSchema = z.object({
   // 7d Signal-B trigger because review specifically targets the long
   // tail. Large repos with slower cadence can raise to 30.
   review_stale_pending_days: z.number().int().positive().optional().default(14),
+  // v2.0.0-rc.34 TASK-05: reverse-unarchive opt-in. When true, callers of the
+  // `unarchiveKnowledge` primitive (and any future doctor auto-detect lint built
+  // on top) will execute the file move + ledger emit. When false (default),
+  // the same callers MUST short-circuit before any mutation — the primitive is
+  // shipped but inert until explicitly enabled. Opt-in posture mirrors the
+  // archive-flow precedent: destructive-ish file moves stay behind a flag.
+  reverse_unarchive_enabled: z.boolean().optional().default(false),
+  // v2.0.0-rc.34 TASK-05: forces `unarchiveKnowledge` into dry-run mode even
+  // when called with `options.dryRun=false`. Lets operators preview a
+  // restoration pass before flipping `reverse_unarchive_enabled` to true.
+  reverse_unarchive_dry_run: z.boolean().optional().default(false),
   // v2.0.0-rc.22 Scope A T3: sliding-window retention (in days) for the
   // event ledger rotation primitive (`rotateEventLedgerIfNeeded`). Lines
   // whose `ts` is older than `now - fabric_event_retention_days * 86_400_000`

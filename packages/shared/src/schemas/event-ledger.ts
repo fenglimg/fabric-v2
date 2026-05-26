@@ -306,6 +306,23 @@ export const knowledgeArchiveAttemptedEventSchema = z.object({
   reason: z.string().optional(),
 });
 
+// v2.0.0-rc.34 TASK-05: knowledge_unarchived — reverse flow of knowledge_archived.
+// Emitted when an archived entry is moved back from .fabric/.archive/<type>/ to
+// the canonical layer path (.fabric/knowledge/<layer>/<type>/). Reason field
+// records the trigger (e.g. "manual:fab_review_unarchive", "ghost_cited_7d").
+// Drives the doctor 7d hint surfacing reverse-flow activity.
+export const knowledgeUnarchivedEventSchema = z.object({
+  ...eventLedgerEnvelopeSchema,
+  event_type: z.literal("knowledge_unarchived"),
+  stable_id: z.string().optional(),
+  timestamp: z.string().datetime(),
+  reason: z.string().optional(),
+  // Pre-move archive path (e.g. ".fabric/.archive/decisions/KT-D-0007--single-cjs-hook.md").
+  archive_path: z.string().optional(),
+  // Post-move canonical path (e.g. ".fabric/knowledge/team/decisions/KT-D-0007--single-cjs-hook.md").
+  restored_to: z.string().optional(),
+});
+
 export const knowledgeDeferredEventSchema = z.object({
   ...eventLedgerEnvelopeSchema,
   event_type: z.literal("knowledge_deferred"),
@@ -655,6 +672,8 @@ export const eventLedgerEventSchema = z.discriminatedUnion("event_type", [
   knowledgeDemotedEventSchema,
   knowledgeArchivedEventSchema,
   knowledgeArchiveAttemptedEventSchema,
+  // v2.0.0-rc.34 TASK-05: reverse of knowledge_archived
+  knowledgeUnarchivedEventSchema,
   knowledgeDeferredEventSchema,
   knowledgeRejectedEventSchema,
   // v2.0 rc.5 TASK-014: knowledge_consumed (consumption tracking)
@@ -731,6 +750,7 @@ export type KnowledgeSlugRenamedEvent = z.infer<typeof knowledgeSlugRenamedEvent
 export type KnowledgeDemotedEvent = z.infer<typeof knowledgeDemotedEventSchema>;
 export type KnowledgeArchivedEvent = z.infer<typeof knowledgeArchivedEventSchema>;
 export type KnowledgeArchiveAttemptedEvent = z.infer<typeof knowledgeArchiveAttemptedEventSchema>;
+export type KnowledgeUnarchivedEvent = z.infer<typeof knowledgeUnarchivedEventSchema>;
 export type KnowledgeDeferredEvent = z.infer<typeof knowledgeDeferredEventSchema>;
 export type KnowledgeRejectedEvent = z.infer<typeof knowledgeRejectedEventSchema>;
 export type KnowledgeConsumedEvent = z.infer<typeof knowledgeConsumedEventSchema>;
@@ -774,6 +794,7 @@ export type EventLedgerEvent =
   | KnowledgeDemotedEvent
   | KnowledgeArchivedEvent
   | KnowledgeArchiveAttemptedEvent
+  | KnowledgeUnarchivedEvent
   | KnowledgeDeferredEvent
   | KnowledgeRejectedEvent
   | KnowledgeConsumedEvent
