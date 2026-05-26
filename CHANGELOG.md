@@ -5,12 +5,40 @@ All notable changes to Fabric will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased] - rc.36 in progress
+## [2.0.0-rc.36] - 2026-05-26
+
+rc.36 extended bundle (autonomous executor lean): 来自 rc.35 真实测评 (werewolf-minigame 8 天 19726 events) 的高信噪比 P0/P1 子集 8 task + Gemini review-fix 2 轮闭环 (CONDITIONAL→SHIP)。大部分原 plan.json 32 任务的 high-risk refactor (Plan B events.jsonl counter 化 / hook drift detect / 测试合并 / 跨 client integration / prompt injection) 显式推 rc.37 单独立项。无新 schema 破坏性变更。
+
+Gates 全绿: cli 727 / server 643 / shared 430 (1800 tests) / typecheck 0 / lint 0 / Gemini review iter 2 SHIP verdict.
 
 ### Breaking
 
 - **`fab ` CLI 简写在 docs / CHANGELOG / `.fabric/AGENTS.md` 中完全 sweep** (TASK-08)。`fab install`/`fab doctor`/`fab scan` 等历史简写已统一回写 `fabric install`/`fabric doctor`/`fabric scan`。`fab_*` MCP 工具名(如 `fab_plan_context`、`fab_extract_knowledge`)**仍保留**,是 server API surface,不在本次 sweep 范围。
   - **迁移**: 用户脚本若直接调用 `fab install` 等命令,需替换为 `fabric install`。`packages/cli/package.json` 的 `bin` 字段在 rc.35 已只暴露 `fabric`,因此 rc.35+ 全局安装的用户已经只能用 `fabric` 子命令,无需额外操作。
+
+### Added
+
+- **`doctor.knowledge_tags_empty_ratio` lint** (TASK-05 / P0-8)。新 `Knowledge tags coverage` check (#46),扫 canonical knowledge entries 的 `tags:` frontmatter,当 ≥50% (MIN 10 entries) empty/missing → warn 提示 fabric-archive/fabric-import 应每 entry 产 2-4 tag,主题聚类与跨 entry 检索才不退化。
+- **`doctor.knowledge_drift_unconsumed` lint** (TASK-09 / P1-NEW1)。新 `Knowledge drift unconsumed` check (#47),扫 events.jsonl 近 30 天 `knowledge_drift_detected` vs `knowledge_demoted`,当 (drift − demote) ≥ 5 → warn。auto-demote pipeline 推 rc.37 (per-event pairing + 14-day demote 阈值)。
+- **`BOOTSTRAP_CANONICAL` ## 5 分钟上手 段** (TASK-04 / P0-NEW3)。新 dev quickstart 段 (~20 行) 直接进 bootstrap,含 DO/DON'T 对照表 + 4 步循环 + 真例。修 docs/USER-QUICKSTART.md 不会传到 fabric install 端的根因。
+- **`BOOTSTRAP_CANONICAL` archive + review 双 nudge** (TASK-03 / P0-4 + P1-5)。bootstrap 知识库段加 2 行 instruction nudge: archive 每 5+ edit 主动 propose / review backlog >10 主动批量审。
+
+### Fixed
+
+- **`doctor.agents_meta_stale` hash-equal 分支** (TASK-07 P1-2)。当 `meta.revision === meta.computedRevision` 但 `stale=true` (由 `changed` flag 触发, 例如 mtime-only drift) 时,显示新文案 `agents.meta.json 已与 .fabric/knowledge 内容一致,但 mtime/counters 派生状态过期`,避免旧版"两个相同 hash 不一致"的迷惑。
+
+### Refactored
+
+- **`fabric-import` SKILL.md 二轮砍 token** (TASK-06 / P0-5 残留)。235 行 → 147 行,细节下沉 ref/。doctor `chars/3` 估算 5543 → 2777 tok (-50%),首次达 plan target <3000。727 cli tests pass。
+
+### Audit Memos (推 rc.37 实施)
+
+- **`.workflow/.scratchpad/rc36-werewolf-eval/T23-cross-client-sim.md`** (TASK-23)。Cursor + Codex 双 persona simulated walkthrough,识别 10 个 friction candidate (4 P0 / 6 P1);所有 fix 推 rc.37 真实 client integration。
+- **rc.37 follow-up 大单**: hook drift detect interactive prompt (TASK-01) / cite hallucination warn hook (TASK-02) / selectable algorithm audit+fix (TASK-10) / events.jsonl Plan B counter 化 (TASK-11-15) / fixture 仓 + CI hard gates (TASK-16-19) / 测试合并 (TASK-20-22) / 原推 rc.37 6 task (TASK-26-31)。完整 deferred list + rationale 见 `.workflow/.lite-plan/rc36-extended-bundle-2026-05-26/progress.md` "Scoping decisions"。
+
+### Review
+
+- **Gemini-3.1-pro-preview review-fix loop** (TASK-32, 2 iter)。Iter 1: CONDITIONAL SHIP — 1 High `drift_unconsumed` 用 `demoteCount === 0` 判停过早 + 1 Low remediation 文案缺 rc.36 manual-only 说明。Iter 2: SHIP — fix 落地, count-delta heuristic 健壮。review output 落 `.workflow/.scratchpad/rc36-closure/gemini-review-iter-{1,2}.md`。
 
 ## [2.0.0-rc.35] - 2026-05-26
 
