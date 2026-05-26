@@ -192,6 +192,14 @@ export const fabricConfigSchema = z.object({
   // when called with `options.dryRun=false`. Lets operators preview a
   // restoration pass before flipping `reverse_unarchive_enabled` to true.
   reverse_unarchive_dry_run: z.boolean().optional().default(false),
+  // v2.0.0-rc.34 TASK-06: long-session cite-policy evict window in user-prompt
+  // turns. UserPromptSubmit hook (Claude Code only) maintains a per-session
+  // counter and re-injects the cite contract reminder via
+  // hookSpecificOutput.additionalContext when `turn_count % interval === 0`.
+  // Default 0 = OFF (opt-in). Recommend 10-20 for active sessions; 5 for
+  // high-contract-criticality projects. Other strategies (time-based,
+  // token-budget) deferred to rc.35 per plan locked-decisions 2026-05-26.
+  cite_evict_interval: z.number().int().min(0).optional().default(0),
   // v2.0.0-rc.22 Scope A T3: sliding-window retention (in days) for the
   // event ledger rotation primitive (`rotateEventLedgerIfNeeded`). Lines
   // whose `ts` is older than `now - fabric_event_retention_days * 86_400_000`

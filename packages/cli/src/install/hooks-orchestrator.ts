@@ -10,6 +10,7 @@ import {
   installHookLibs,
   installKnowledgeHintBroadHook,
   installKnowledgeHintNarrowHook,
+  installCitePolicyEvictHook,
   mergeClaudeCodeHookConfig,
   mergeCodexHookConfig,
   mergeCursorHookConfig,
@@ -99,6 +100,11 @@ export async function installHooks(
   // edit-counter sidecar. Same copy plumbing as the broad sibling — three
   // dest dirs, chmod 0o755 on POSIX, copy before merge so validate finds it.
   results.push(...await runStep(() => installKnowledgeHintNarrowHook(normalizedTarget)));
+  // v2.0.0-rc.34 TASK-06: Claude Code-only UserPromptSubmit cite-policy
+  // long-session evict sidecar. Single destination (.claude/hooks/) — Codex
+  // and Cursor lack the event registration. Default OFF; user opt-in via
+  // fabric-config.json#cite_evict_interval.
+  results.push(...await runStep(() => installCitePolicyEvictHook(normalizedTarget)));
   // rc.16 TASK-004 (F2-tests): copy shared lib/*.cjs helpers (banner-i18n,
   // session-digest-writer) into each client's <client>/hooks/lib/ dir. The
   // hook scripts above hard-require these via `./lib/<name>.cjs` and crash

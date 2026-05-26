@@ -85,6 +85,8 @@ const HOOK_BROAD_SCRIPT_TEMPLATE_REL = "hooks/knowledge-hint-broad.cjs";
 // plumbing but registered against PreToolUse with Edit|Write|MultiEdit
 // matchers in each client config.
 const HOOK_NARROW_SCRIPT_TEMPLATE_REL = "hooks/knowledge-hint-narrow.cjs";
+// v2.0.0-rc.34 TASK-06: cite-policy long-session evict sidecar.
+const HOOK_CITE_EVICT_SCRIPT_TEMPLATE_REL = "hooks/cite-policy-evict.cjs";
 // rc.16 TASK-004 (F2-tests): shared `.cjs` helpers consumed by the three
 // hook scripts at runtime via `require("./lib/<name>.cjs")`. Currently
 // houses banner-i18n.cjs (rc.16 TASK-001) and session-digest-writer.cjs
@@ -145,6 +147,11 @@ export const HOOK_SCRIPT_DESTINATIONS = {
     ".codex/hooks/knowledge-hint-narrow.cjs",
     ".cursor/hooks/knowledge-hint-narrow.cjs",
   ],
+  // v2.0.0-rc.34 TASK-06: Claude Code only — UserPromptSubmit cite-policy
+  // long-session evict sidecar. Codex / Cursor don't have an equivalent
+  // event registration; cite-coverage telemetry there relies on the existing
+  // Stop / SessionStart hooks (knowledge-hint-broad rc.33 W2 channel).
+  citePolicyEvict: [".claude/hooks/cite-policy-evict.cjs"],
 } as const;
 
 /**
@@ -586,6 +593,34 @@ export async function installKnowledgeHintNarrowHook(
   const results: InstallStepResult[] = [];
   for (const target of targets) {
     const result = await copyTextIdempotent("hook-narrow-script", source, target);
+    if (result.status === "written" && process.platform !== "win32") {
+      try {
+        chmodSync(target, 0o755);
+      } catch {
+        // best-effort — hook still functions when invoked via `node script.cjs`
+      }
+    }
+    results.push(result);
+  }
+  return results;
+}
+
+/**
+ * v2.0.0-rc.34 TASK-06: copy templates/hooks/cite-policy-evict.cjs into the
+ * Claude Code hooks directory ONLY. The sidecar relies on Claude Code's
+ * UserPromptSubmit event + hookSpecificOutput stdout JSON envelope, neither
+ * of which Codex CLI or Cursor expose. Defaults to OFF
+ * (`cite_evict_interval = 0`); opt-in via fabric-config.json.
+ */
+export async function installCitePolicyEvictHook(
+  projectRoot: string,
+  _options: InstallOptions = {},
+): Promise<InstallStepResult[]> {
+  const source = await readTemplate(HOOK_CITE_EVICT_SCRIPT_TEMPLATE_REL);
+  const targets = HOOK_SCRIPT_DESTINATIONS.citePolicyEvict.map((rel) => join(projectRoot, rel));
+  const results: InstallStepResult[] = [];
+  for (const target of targets) {
+    const result = await copyTextIdempotent("hook-cite-evict-script", source, target);
     if (result.status === "written" && process.platform !== "win32") {
       try {
         chmodSync(target, 0o755);
