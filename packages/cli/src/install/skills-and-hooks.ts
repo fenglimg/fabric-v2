@@ -272,6 +272,63 @@ export function readFabricLanguagePreference(projectRoot: string): string {
   }
 }
 
+// rc.34 TASK-02: SKILL.md size pre-check + stale-install detection.
+//
+// Backstory: rc.33 W3-6 introduced a doctor skill_token_budget lint that
+// estimates SKILL.md size as chars/3. It flagged canonical templates AND
+// installed copies — but install-time silence meant users could end up with
+// 19K-char stale installs from older RCs (rc.21 era) sitting on disk
+// indefinitely. This pre-check + stale signal closes that loop:
+//
+//   - Pre-check: if the canonical template itself estimates > ERROR_TOKENS,
+//     install throws (drift→abort, per cli-design philosophy). Fabric must
+//     ship clean; oversized templates are a release bug, not a recoverable
+//     runtime state.
+//   - Stale detection: if an existing target estimates > STALE_INSTALL_RATIO
+//     × canonical, we surface a `stale-replaced` message in the
+//     InstallStepResult. copyTextIdempotent already overwrites diff content;
+//     the message tells operators *why* they saw a write.
+//
+// Thresholds mirror server/src/services/doctor.ts inspectSkillTokenBudget
+// (chars/3 token estimate, 10K ERROR). Kept duplicated rather than imported
+// because shared has no canonical home for these and importing from server
+// into cli would invert the dependency direction.
+const SKILL_TOKEN_ERROR_TOKENS = 10_000;
+const STALE_INSTALL_RATIO = 1.5;
+
+export function estimateSkillTokens(text: string): number {
+  return Math.ceil(text.length / 3);
+}
+
+export function validateSkillCanonicalSize(source: string, slug: string): void {
+  const tokens = estimateSkillTokens(source);
+  if (tokens > SKILL_TOKEN_ERROR_TOKENS) {
+    throw new Error(
+      `Skill '${slug}' canonical SKILL.md estimates ${tokens} tok ` +
+        `(>${SKILL_TOKEN_ERROR_TOKENS} ERROR threshold). Install aborted — ` +
+        `this is a Fabric release bug, not a user-recoverable state. ` +
+        `Re-split SKILL.md via progressive disclosure (see fabric-archive/phases/* ` +
+        `as canonical example) and rebuild.`,
+    );
+  }
+}
+
+export function inspectStaleInstall(target: string, source: string): string | null {
+  if (!existsSync(target)) return null;
+  let existing: string;
+  try {
+    existing = readFileSync(target, "utf8");
+  } catch {
+    return null;
+  }
+  const existingTok = estimateSkillTokens(existing);
+  const sourceTok = estimateSkillTokens(source);
+  if (existingTok > sourceTok * STALE_INSTALL_RATIO) {
+    return `stale-replaced (${existingTok} tok → ${sourceTok} tok canonical)`;
+  }
+  return null;
+}
+
 /**
  * Copy templates/skills/fabric-archive/SKILL.md into both .claude/skills/
  * and .codex/skills/ subtrees under the project root. Idempotent: if the
@@ -280,16 +337,26 @@ export function readFabricLanguagePreference(projectRoot: string): string {
  * v2.0.0-rc.28 TASK-01 (audit §3.1): also walks the skill's `ref/` directory
  * and ships every `*.md` companion to the same client subtrees so
  * load-on-demand references resolve at runtime.
+ *
+ * v2.0.0-rc.34 TASK-02: validates canonical SKILL.md size before copy
+ * (throws if > 10K tok ERROR threshold); annotates results with
+ * `stale-replaced` when existing target is > 1.5× canonical.
  */
 export async function installFabricArchiveSkill(
   projectRoot: string,
   _options: InstallOptions = {},
 ): Promise<InstallStepResult[]> {
   const source = await readTemplate(SKILL_TEMPLATE_REL);
+  validateSkillCanonicalSize(source, "fabric-archive");
   const targets = SKILL_DESTINATIONS.fabricArchive.map((rel) => join(projectRoot, rel));
   const results: InstallStepResult[] = [];
   for (const target of targets) {
-    results.push(await copyTextIdempotent("skill", source, target));
+    const staleMsg = inspectStaleInstall(target, source);
+    const result = await copyTextIdempotent("skill", source, target);
+    if (staleMsg && result.status === "written") {
+      result.message = result.message ? `${staleMsg}; ${result.message}` : staleMsg;
+    }
+    results.push(result);
   }
   results.push(...(await installSkillRefFiles(projectRoot, "fabric-archive")));
   return results;
@@ -310,10 +377,16 @@ export async function installFabricReviewSkill(
   _options: InstallOptions = {},
 ): Promise<InstallStepResult[]> {
   const source = await readTemplate(SKILL_REVIEW_TEMPLATE_REL);
+  validateSkillCanonicalSize(source, "fabric-review");
   const targets = SKILL_DESTINATIONS.fabricReview.map((rel) => join(projectRoot, rel));
   const results: InstallStepResult[] = [];
   for (const target of targets) {
-    results.push(await copyTextIdempotent("skill-review", source, target));
+    const staleMsg = inspectStaleInstall(target, source);
+    const result = await copyTextIdempotent("skill-review", source, target);
+    if (staleMsg && result.status === "written") {
+      result.message = result.message ? `${staleMsg}; ${result.message}` : staleMsg;
+    }
+    results.push(result);
   }
   results.push(...(await installSkillRefFiles(projectRoot, "fabric-review")));
   return results;
@@ -335,10 +408,16 @@ export async function installFabricImportSkill(
   _options: InstallOptions = {},
 ): Promise<InstallStepResult[]> {
   const source = await readTemplate(SKILL_IMPORT_TEMPLATE_REL);
+  validateSkillCanonicalSize(source, "fabric-import");
   const targets = SKILL_DESTINATIONS.fabricImport.map((rel) => join(projectRoot, rel));
   const results: InstallStepResult[] = [];
   for (const target of targets) {
-    results.push(await copyTextIdempotent("skill-import", source, target));
+    const staleMsg = inspectStaleInstall(target, source);
+    const result = await copyTextIdempotent("skill-import", source, target);
+    if (staleMsg && result.status === "written") {
+      result.message = result.message ? `${staleMsg}; ${result.message}` : staleMsg;
+    }
+    results.push(result);
   }
   results.push(...(await installSkillRefFiles(projectRoot, "fabric-import")));
   return results;
