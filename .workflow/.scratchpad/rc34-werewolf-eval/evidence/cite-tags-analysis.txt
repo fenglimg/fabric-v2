@@ -1,0 +1,15 @@
+assistant_turn_observed total: 18582
+  empty cite_tags:    17996 (96.8%)
+  non-empty cite_tags: 586 (3.2%)
+  client breakdown: {'cc': 16860, '?': 1554, 'codex': 168}
+  cite_tag head categories: {'none': 586}
+=== nonempty samples ===
+{"ts": 1779090073440, "client": "cc", "cite_tags": ["none"], "kb_line_raw": "KB: none"}
+{"ts": 1779090138541, "client": "cc", "cite_tags": ["none"], "kb_line_raw": "KB: none"}
+{"ts": 1779090138541, "client": "cc", "cite_tags": ["none"], "kb_line_raw": "KB: none"}
+{"ts": 1779090199506, "client": "cc", "cite_tags": ["none"], "kb_line_raw": "KB: none"}
+{"ts": 1779090199507, "client": "cc", "cite_tags": ["none"], "kb_line_raw": "KB: none"}
+=== empty samples (with kb_line_raw) ===
+{"ts": 1779090073439, "client": "cc", "kb_line_raw": null}
+{"ts": 1779090138541, "client": "cc", "kb_line_raw": null}
+{"ts": 1779090138541, "client": "cc", "kb_line_raw": null}

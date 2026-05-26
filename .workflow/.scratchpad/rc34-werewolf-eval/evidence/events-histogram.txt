@@ -1,0 +1,40 @@
+=== kinds ===
+ 19535  fabric-event
+=== schemas ===
+ 19535  1
+=== event_types ===
+ 18582  assistant_turn_observed
+   370  knowledge_context_planned
+   315  meta_reconciled
+    62  doctor_run
+    52  knowledge_promoted
+    48  knowledge_promote_started
+    30  knowledge_drift_detected
+    17  knowledge_proposed
+    15  meta_reconciled_on_startup
+     9  install_diff_applied
+     7  knowledge_selection
+     7  knowledge_sections_fetched
+     6  knowledge_meta_auto_healed
+     3  init_scan_completed
+     3  knowledge_rejected
+     1  mcp_config_migrated
+     1  cite_policy_activated
+     1  relevance_migration_run
+     1  serve_lock_cleared
+     1  cite_contract_policy_activated
+     1  knowledge_consumed
+     1  knowledge_deferred
+     1  knowledge_layer_changed
+     1  session_archive_attempted
+---
+sessions: 46
+span days: 8 first/last: 2026-05-14 / 2026-05-26
+top days:
+  2026-05-15: 30
+  2026-05-18: 1323
+  2026-05-19: 586
+  2026-05-20: 13136
+  2026-05-21: 4000
+  2026-05-25: 326
+  2026-05-26: 25
