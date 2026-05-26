@@ -87,6 +87,8 @@ Wave 11 Release + Memory 回灌
 [2026-05-26 12:55] TASK-04 DONE (10 min) commit:772b431 — BOOTSTRAP_CANONICAL ## 5 分钟上手 段 (727 cli tests)
 [2026-05-26 13:00] TASK-05 DONE (15 min) commit:00273c1 — doctor knowledge_tags_empty_ratio lint + i18n + snapshot (46 checks)
 [2026-05-26 13:00] TASK-00 DONE — rc.35 npm publish 成功 (Release workflow rerun after pnpm/action-setup 网络问题 + 2.0.0-rc.35 现于 npm registry)
+[2026-05-26 13:02] TASK-03 DONE (5 min) commit:0f89461 — BOOTSTRAP_CANONICAL archive + review nudge
+[2026-05-26 13:05] TASK-06 DONE (10 min) commit:6178eb6 — fabric-import SKILL.md 5543→2777 tok
 
 ---
 
