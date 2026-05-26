@@ -765,6 +765,15 @@ export const enMessages: Messages = {
   "cli.install.args.debug.description": "Print target resolution details to stderr.",
   "cli.install.args.yes.description": "Accept the current install plan and run without the TTY wizard",
   "cli.install.args.dry-run.description": "Print the install plan without writing files or running follow-up stages",
+  // rc.35 TASK-08 (P0-5/6): --force-skills-only.
+  "cli.install.args.force-skills-only.description":
+    "Skip bootstrap / MCP / hooks / settings; refresh ONLY the fabric Skill template copies (.claude/.codex/.cursor/skills/*).",
+  "cli.install.force-skills-only.banner": "Refreshing fabric Skill templates only",
+  "cli.install.force-skills-only.uninitialised.message":
+    "fabric install --force-skills-only: project is not initialised (.fabric/agents.meta.json is missing).",
+  "cli.install.force-skills-only.uninitialised.hint":
+    "Run `fabric install` (without --force-skills-only) first to lay down the base scaffold, then re-run with --force-skills-only for subsequent Skill refreshes.",
+  "cli.install.force-skills-only.summary": "Skills refresh complete — written: {written}, skipped: {skipped}, errors: {errors}",
   "cli.install.mcp.install.global": "Using globally-installed @fenglimg/fabric-server",
   "cli.install.mcp.install.local": "Installing @fenglimg/fabric-server to project devDependencies",
   "cli.install.mcp.local.installing": "Running {manager} add -D @fenglimg/fabric-server...",

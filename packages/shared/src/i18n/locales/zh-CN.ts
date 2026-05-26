@@ -752,6 +752,15 @@ export const zhCNMessages: Messages = {
   "cli.install.args.debug.description": "将目标解析细节输出到 stderr。",
   "cli.install.args.yes.description": "接受当前安装计划并跳过 TTY 向导直接执行",
   "cli.install.args.dry-run.description": "仅输出安装计划，不写文件也不执行后续阶段",
+  // rc.35 TASK-08 (P0-5/6): --force-skills-only。
+  "cli.install.args.force-skills-only.description":
+    "跳过 bootstrap / MCP / hooks / settings,只重新刷新 fabric Skill 模板 (.claude/.codex/.cursor/skills/*)。",
+  "cli.install.force-skills-only.banner": "只刷新 fabric Skill 模板",
+  "cli.install.force-skills-only.uninitialised.message":
+    "fabric install --force-skills-only: 项目未初始化(找不到 .fabric/agents.meta.json)。",
+  "cli.install.force-skills-only.uninitialised.hint":
+    "请先运行 `fabric install`(不带 --force-skills-only)铺设基础 scaffold;之后再用 --force-skills-only 做后续 Skill 刷新。",
+  "cli.install.force-skills-only.summary": "Skill 刷新完成 — 写入: {written}, 跳过: {skipped}, 错误: {errors}",
   "cli.install.mcp.install.global": "使用全局安装的 @fenglimg/fabric-server",
   "cli.install.mcp.install.local": "将 @fenglimg/fabric-server 安装到项目 devDependencies",
   "cli.install.mcp.local.installing": "正在运行 {manager} add -D @fenglimg/fabric-server...",

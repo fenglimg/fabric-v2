@@ -45,6 +45,12 @@ type InitArgs = {
   debug?: boolean;
   yes?: boolean;
   "dry-run"?: boolean;
+  // rc.35 TASK-08 (P0-5/6): skills-only refresh path. Reruns ONLY the
+  // template/skills/* copy stage; skips bootstrap / mcp / hooks /
+  // settings.json merges. Designed for the rc.34 W1 SKILL-description-update
+  // scenario where a project owner wants the new SKILL.md without touching
+  // their customised hooks/settings/MCP wiring.
+  "force-skills-only"?: boolean;
 };
 
 type InitOptions = {
@@ -294,6 +300,11 @@ export const installCommand = defineCommand({
       description: t("cli.install.args.yes.description"),
       default: false,
     },
+    "force-skills-only": {
+      type: "boolean",
+      description: t("cli.install.args.force-skills-only.description"),
+      default: false,
+    },
   },
   async run({ args }: { args: InitArgs }) {
     await runInitCommand(args);
@@ -302,9 +313,81 @@ export const installCommand = defineCommand({
 
 export default installCommand;
 
+/**
+ * rc.35 TASK-08 (P0-5/6) — `fabric install --force-skills-only`.
+ *
+ * Reruns ONLY the 3 fabric Skill template copies + the deprecated-skill
+ * cleanup. Skips bootstrap pointer writes, MCP wiring, hook script copies,
+ * settings.json merges, and AGENTS.md managed-block updates.
+ *
+ * Used when a project owner wants to absorb a SKILL.md description update
+ * (e.g. rc.34 W1) without re-running the full install pipeline that
+ * potentially overwrites customised hooks/settings.
+ *
+ * Failure modes:
+ *   - target uninitialised (.fabric/agents.meta.json absent) → exits 1 with
+ *     an actionable message pointing to `fabric install` (full).
+ *   - All other failures bubble up from the underlying install helpers
+ *     (which already use the InstallStepResult shape).
+ */
+export async function runSkillsOnlyRefresh(targetInput: string): Promise<void> {
+  const target = normalizeTarget(targetInput);
+  const metaPath = join(target, ".fabric", "agents.meta.json");
+  if (!existsSync(metaPath)) {
+    const message = t("cli.install.force-skills-only.uninitialised.message");
+    const hint = t("cli.install.force-skills-only.uninitialised.hint");
+    process.stderr.write(`${message}\n${hint}\n`);
+    process.exitCode = 1;
+    return;
+  }
+
+  console.log(formatInitStageHeader(t("cli.install.force-skills-only.banner")));
+  const results: InstallStepResult[] = [];
+  results.push(...(await cleanupDeprecatedSkills(target)));
+  results.push(...(await installFabricArchiveSkill(target)));
+  results.push(...(await installFabricReviewSkill(target)));
+  results.push(...(await installFabricImportSkill(target)));
+
+  let written = 0;
+  let skipped = 0;
+  let errors = 0;
+  for (const r of results) {
+    if (r.status === "written") written += 1;
+    else if (r.status === "skipped") skipped += 1;
+    else if (r.status === "error") errors += 1;
+  }
+  console.log(
+    t("cli.install.force-skills-only.summary", {
+      written: String(written),
+      skipped: String(skipped),
+      errors: String(errors),
+    }),
+  );
+  if (errors > 0) {
+    for (const r of results) {
+      if (r.status === "error") {
+        process.stderr.write(`  ${r.step} ${r.path}: ${r.message ?? "error"}\n`);
+      }
+    }
+    process.exitCode = 1;
+  }
+}
+
 export async function runInitCommand(args: InitArgs): Promise<InitExecutionResult | void> {
   const logger = createDebugLogger(args.debug);
   const resolution = resolveDevMode(args.target, process.cwd());
+
+  // rc.35 TASK-08 (P0-5/6): --force-skills-only fast-path. Short-circuits
+  // the full install pipeline (bootstrap / mcp / hooks / settings merges)
+  // and ONLY refreshes the 3 fabric Skill templates into .claude/.codex/
+  // .cursor/ on a project that's already initialised. Surfaces a clear
+  // error when target is uninitialised — bootstrap can't be safely skipped
+  // without an existing .fabric/agents.meta.json contract.
+  if (args["force-skills-only"] === true) {
+    await runSkillsOnlyRefresh(resolution.target);
+    return;
+  }
+
   const intent = resolveInitCliIntent(args, resolution.target);
 
   // rc.15 — Preflight lock check on any already-initialized workspace.
