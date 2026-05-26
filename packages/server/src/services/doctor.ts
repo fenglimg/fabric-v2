@@ -3185,15 +3185,22 @@ function createMetaCheck(
     // check visible (operator wants to see drift for transient debugging) but
     // exit code 0 unless --strict is set. The fix path at the warnings guard
     // (see runDoctorFix) still reconciles when --fix is invoked explicitly.
+    //
+    // rc.36 TASK-07 (P1-2): byte-equal revisions but stale=true (driven by
+    // `changed` flag, e.g. mtime-only drift) — show a clearer message that
+    // explains the hashes are identical and the staleness is non-content.
+    const revision = meta.revision;
+    const computedRevision = meta.computedRevision ?? "<unknown>";
+    const messageKey =
+      revision !== null && revision === meta.computedRevision
+        ? "doctor.check.agents_meta.message.stale_hash_equal"
+        : "doctor.check.agents_meta.message.stale";
     return issueCheck(
       t("doctor.check.agents_meta.name"),
       "warn",
       "warning",
       "agents_meta_stale",
-      t("doctor.check.agents_meta.message.stale", {
-        revision: meta.revision,
-        computedRevision: meta.computedRevision ?? "<unknown>",
-      }),
+      t(messageKey, { revision, computedRevision }),
       t("doctor.check.agents_meta.remediation.stale"),
     );
   }

@@ -342,6 +342,8 @@ export const enMessages: Messages = {
     "Run `fabric doctor --fix` to let reconcile rebuild agents.meta.json from the .fabric/knowledge/ disk ground-truth (rc.31+ auto-migrates legacy singular knowledge_type values to canonical plural; do NOT manually delete agents.meta.json — you would lose counters envelope and promote-ledger associations).",
   "doctor.check.agents_meta.message.stale":
     ".fabric/agents.meta.json revision {revision} does not match .fabric/knowledge derived revision {computedRevision}.",
+  "doctor.check.agents_meta.message.stale_hash_equal":
+    ".fabric/agents.meta.json content is aligned with .fabric/knowledge (revision {revision}) but the mtime/counters derived state is out of date. Benign.",
   "doctor.check.agents_meta.remediation.stale":
     "Benign — engine auto-heals on next plan-context/get-sections call. Run `fabric doctor --fix` for explicit reconciliation.",
   "doctor.check.agents_meta.ok":

@@ -82,7 +82,7 @@ Wave 11 Release + Memory 回灌
 
 ## Execution log (append-only,新终端逐 task 追加)
 
-(待启动后追加)
+[2026-05-26 12:30] TASK-08 DONE (10 min) commit:f2a537d — fab sweep + CHANGELOG BREAKING (doctor lint deferred for later wave)
 
 ---
 

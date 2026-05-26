@@ -332,6 +332,8 @@ export const zhCNMessages: Messages = {
     "运行 `fabric doctor --fix` 让 reconcile 从 .fabric/knowledge/ 磁盘 ground-truth 重建 agents.meta.json（rc.31 起兼容历史 schema 的 singular knowledge_type 自动迁移到 plural；不要手动删除 agents.meta.json，会丢 counters envelope 与 promote ledger 关联）。",
   "doctor.check.agents_meta.message.stale":
     ".fabric/agents.meta.json revision {revision} 与 .fabric/knowledge 派生 revision {computedRevision} 不一致。",
+  "doctor.check.agents_meta.message.stale_hash_equal":
+    ".fabric/agents.meta.json 已与 .fabric/knowledge 内容一致（revision {revision}），但 mtime/counters 派生状态过期。可忽略。",
   "doctor.check.agents_meta.remediation.stale":
     "可忽略；engine 会在下一次 plan-context/get-sections 调用时自动修复。需要显式 reconcile 时运行 `fabric doctor --fix`。",
   "doctor.check.agents_meta.ok":
