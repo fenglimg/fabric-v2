@@ -1,5 +1,7 @@
 # Fabric
 
+> **New here?** Start with [`docs/USER-QUICKSTART.md`](./docs/USER-QUICKSTART.md) (5 min) — mental model, the 4-step flow, and first-30-min troubleshooting.
+
 > Fabric — cross-client knowledge sustainment for AI coding agents.
 
 AI coding agents work without persistent project context. Each session re-learns
