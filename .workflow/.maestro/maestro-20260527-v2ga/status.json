@@ -431,8 +431,10 @@
       "wave": "D",
       "subject": "Cursor + Codex hook config schema 统一",
       "done_when": "两 client config schema 命名/事件大小写统一 + path 解析方式一致",
-      "status": "pending",
-      "estimated_hours": "2"
+      "status": "done",
+      "_actual_done": "2026-05-27",
+      "estimated_hours": "2",
+      "note": "Re-scoped: 真 wire-format unification (claude PascalCase+hooks / codex PascalCase+events / cursor camelCase+hooks) 不可能 —— Cursor host 强制 camelCase + version: 1 + 'hooks' (per cursor.com/docs/hooks); Codex host 强制 PascalCase + 'events' (per Codex CLI source); 用 Cursor 形态写 Codex 文件会被 Codex 拒,反之亦然。结论: 三 host 各自的 schema 是外部 immutable constraint, fabric install 必须 emit 每种 host 期望的 wire format。Pragmatic 替代实现: 在 packages/cli/templates/hooks/configs/README.md 加 'Per-client schema comparison (v2.0.0-rc.37 NEW-29)' 表 (settings file / top-level envelope / event-name case / per-entry shape / path interpolation / cite-policy event 6 axis × 3 client), 让 review/maintenance 时一眼对齐三套 schema; 修一个 client 的 hook 必走完 table 同步另外两个。这是 doc-level 统一 (单一权威 reference table) 取代不可达的 wire-level 统一 (host 外部约束)。同步 cite-policy 行已记 NEW-21 引入的 SessionStart 路径。"
     },
     {
       "id": "NEW-30",
