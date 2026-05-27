@@ -469,6 +469,13 @@ export default doctorCommand;
 
 function renderHumanReport(report: DoctorReport, dt: DoctorTranslator, verbose: boolean): void {
   writeStdout(`${renderStatus(report.status)} ${paint.ai("fabric doctor")} ${paint.human(report.summary.target)}`);
+  // v2.0.0-rc.37 NEW-25: TL;DR top-3 critical surface. Doctor's full check
+  // list runs 48 long now; without a header summary the user has to scroll
+  // through every OK row to find the actionable issues. Pick top-3 from
+  // (fixable_errors ∪ manual_errors ∪ warnings) in that severity order and
+  // print them as a one-line each header BEFORE the per-check enumeration.
+  // Empty TL;DR (everything OK) just emits a single green line.
+  renderTldrHeader(report);
   for (const check of report.checks) {
     writeStdout(`${renderStatus(check.status)} ${check.name}: ${check.message}`);
   }
@@ -537,6 +544,43 @@ function writeIssueSection(
         writeStdout(`  → ${issue.actionHint}`);
       }
     }
+  }
+}
+
+// v2.0.0-rc.37 NEW-25: doctor TL;DR top-3 critical issues header. Surfaces
+// the highest-severity 3 findings at the top of the human-readable output so
+// users see the actionable signal without scrolling past 48 OK checks. Severity
+// order: fixable_errors > manual_errors > warnings. When the report is all
+// green, emits a single OK line instead of an empty header.
+function renderTldrHeader(report: DoctorReport): void {
+  const ranked: Array<{ severity: "fixable" | "manual" | "warn"; code: string; message: string }> = [];
+  for (const issue of report.fixable_errors) {
+    ranked.push({ severity: "fixable", code: issue.code, message: issue.message });
+  }
+  for (const issue of report.manual_errors) {
+    ranked.push({ severity: "manual", code: issue.code, message: issue.message });
+  }
+  for (const issue of report.warnings) {
+    ranked.push({ severity: "warn", code: issue.code, message: issue.message });
+  }
+  if (ranked.length === 0) {
+    writeStdout(`${symbol.ok} TL;DR: all 48 checks green — nothing to fix.`);
+    return;
+  }
+  const top3 = ranked.slice(0, 3);
+  writeStdout(
+    `TL;DR (top ${top3.length} of ${ranked.length}, severity order: fixable→manual→warn):`,
+  );
+  for (const item of top3) {
+    const marker =
+      item.severity === "fixable"
+        ? symbol.error
+        : item.severity === "manual"
+          ? symbol.error
+          : symbol.warn;
+    // Truncate verbose check messages so the TL;DR stays single-line-ish.
+    const truncated = item.message.length > 140 ? `${item.message.slice(0, 137)}...` : item.message;
+    writeStdout(`  ${marker} ${item.code}: ${truncated}`);
   }
 }
 

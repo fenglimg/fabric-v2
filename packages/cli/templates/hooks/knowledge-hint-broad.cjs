@@ -771,16 +771,26 @@ function main(env, stdio) {
     const summaryMaxLen = readSummaryMaxLen(cwd);
     const lines = renderSummary(resolvedPayload, summaryMaxLen);
 
-    if (recommendImport) {
-      // rc.16 TASK-003: resolve fabric_language ONCE per invocation (only when
-      // we actually need to emit the banner — keeps the no-banner path free of
-      // the extra config read). 'match-existing' / unknown variant folds to 'en'
-      // inside renderBanner per UX i18n Policy class 1.
-      const variant = readFabricLanguage(cwd);
-      lines.push(renderBanner("broadImportBanner", variant, {}));
+    // v2.0.0-rc.37 NEW-23: resolve fabric_language ONCE per emit path —
+    // shared between the (existing) broadImportBanner branch and the new
+    // 'next step' nudge tail added below. 'match-existing' / unknown variants
+    // fold to 'en' inside renderBanner per UX i18n Policy class 1.
+    const fabricLanguageForEmit = lines.length > 0 || recommendImport ? readFabricLanguage(cwd) : null;
+    if (recommendImport && fabricLanguageForEmit !== null) {
+      lines.push(renderBanner("broadImportBanner", fabricLanguageForEmit, {}));
     }
 
     if (lines.length === 0) return; // nothing to say — silent exit
+
+    // v2.0.0-rc.37 NEW-23: SessionStart 索引末尾"下一步"引导。Tail line that
+    // tells the AI what to do with the broad index it just received. Without
+    // this, the model often parses the index and moves on without ever calling
+    // fab_recall / fab_plan_context. One-line nudge, bilingual.
+    const nextStepNudge =
+      fabricLanguageForEmit === "zh-CN"
+        ? "下一步: 调 fab_recall(paths) 拿 KB 相关条目;或调 fab_plan_context 先看候选 description_index。"
+        : "Next: call fab_recall(paths) to fetch related KB entries, or fab_plan_context to preview the description_index first.";
+    lines.push(nextStepNudge);
 
     // Stderr: always emit (human-facing breadcrumb + legacy contract).
     for (const line of lines) {

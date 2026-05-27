@@ -49,16 +49,19 @@
 const { spawnSync } = require("node:child_process");
 const {
   existsSync,
+  mkdirSync,
   readdirSync,
   readFileSync,
+  writeFileSync,
 } = require("node:fs");
-const { join } = require("node:path");
+const { dirname, join } = require("node:path");
 
 // rc.16 TASK-003: shared banner-i18n lib (resolves fabric_language config and
 // renders localized banner text). Mirror of the wiring in fabric-hint.cjs
 // (TASK-002). Variant is resolved ONCE per main() invocation via
 // readFabricLanguage(cwd) and threaded into renderBanner — no fs in render path.
 const { renderBanner, readFabricLanguage } = require("./lib/banner-i18n.cjs");
+const { resolveOpaqueSummaries } = require("./lib/summary-fallback.cjs");
 
 // -----------------------------------------------------------------------------
 // rc.12: SessionStart broad-menu is now unconditionally emitted on every
@@ -88,6 +91,30 @@ const KNOWLEDGE_CANONICAL_TYPES = [
   "processes",
 ];
 const DEFAULT_UNDERSEED_NODE_THRESHOLD = 10;
+
+// v2.0.0-rc.33 W2-1 (P0-9): TopK upper bound on broad-scoped entries surfaced
+// per SessionStart fire. Keeps the banner inside ~1 screenful so the agent
+// actually reads the top-priority entries instead of triaging a wall of text.
+// Overridable via fabric-config.json#hint_broad_top_k (range 1..50).
+const DEFAULT_HINT_BROAD_TOP_K = 8;
+
+// v2.0.0-rc.33 W2-5 (P1-8): cooldown (in hours) between broad-hint re-emits.
+// Default 0 preserves rc.32 behavior — every SessionStart re-fires the banner.
+// Cache key uses a separate sidecar from the fabric-hint Signal A/B/C cache
+// so the two cooldowns don't interfere.
+const DEFAULT_HINT_BROAD_COOLDOWN_HOURS = 0;
+const MS_PER_HOUR = 60 * 60 * 1000;
+const HINT_BROAD_LAST_EMIT_FILE = join(
+  ".fabric",
+  ".cache",
+  "knowledge-hint-broad-last-emit",
+);
+
+// v2.0.0-rc.33 W2-6 (P0-7): when true, emit banner as
+// hookSpecificOutput.additionalContext JSON on stdout (Claude Code PreToolUse
+// contract) so the model receives the reminder in-context. Stderr remains the
+// human-facing channel for logs / breadcrumbs.
+const DEFAULT_HINT_REMINDER_TO_CONTEXT = true;
 
 // -----------------------------------------------------------------------------
 // rc.8 underseed self-check helpers.
@@ -151,6 +178,97 @@ function readUnderseedThreshold(projectRoot) {
     // fall through to default
   }
   return DEFAULT_UNDERSEED_NODE_THRESHOLD;
+}
+
+/**
+ * v2.0.0-rc.33 W2-1: resolve hint_broad_top_k from fabric-config.json. Slices
+ * the broad entry list to TopK before group/truncation render. Validates the
+ * schema's 1..50 range inline so a malformed config silently falls back.
+ */
+function readBroadTopK(projectRoot) {
+  const configPath = join(projectRoot, FABRIC_DIR_REL, FABRIC_CONFIG_FILE);
+  if (!existsSync(configPath)) return DEFAULT_HINT_BROAD_TOP_K;
+  try {
+    const parsed = JSON.parse(readFileSync(configPath, "utf8"));
+    const v = parsed && parsed.hint_broad_top_k;
+    if (typeof v === "number" && Number.isFinite(v) && v >= 1 && v <= 50) {
+      return Math.floor(v);
+    }
+  } catch {
+    // fall through to default
+  }
+  return DEFAULT_HINT_BROAD_TOP_K;
+}
+
+/**
+ * v2.0.0-rc.33 W2-5: resolve hint_broad_cooldown_hours. Schema clamps 0..168;
+ * 0 means "no cooldown" (re-emit on every SessionStart, rc.32 behavior).
+ */
+function readBroadCooldownHours(projectRoot) {
+  const configPath = join(projectRoot, FABRIC_DIR_REL, FABRIC_CONFIG_FILE);
+  if (!existsSync(configPath)) return DEFAULT_HINT_BROAD_COOLDOWN_HOURS;
+  try {
+    const parsed = JSON.parse(readFileSync(configPath, "utf8"));
+    const v = parsed && parsed.hint_broad_cooldown_hours;
+    if (typeof v === "number" && Number.isFinite(v) && v >= 0 && v <= 168) {
+      return v;
+    }
+  } catch {
+    // fall through to default
+  }
+  return DEFAULT_HINT_BROAD_COOLDOWN_HOURS;
+}
+
+/**
+ * v2.0.0-rc.33 W2-6: resolve hint_reminder_to_context. Boolean flag — when
+ * true (default) the hook writes a Claude-Code-shaped JSON envelope to stdout
+ * carrying the banner under hookSpecificOutput.additionalContext so the model
+ * receives the reminder in-context. Stderr stays informational either way.
+ */
+function readReminderToContext(projectRoot) {
+  const configPath = join(projectRoot, FABRIC_DIR_REL, FABRIC_CONFIG_FILE);
+  if (!existsSync(configPath)) return DEFAULT_HINT_REMINDER_TO_CONTEXT;
+  try {
+    const parsed = JSON.parse(readFileSync(configPath, "utf8"));
+    const v = parsed && parsed.hint_reminder_to_context;
+    if (typeof v === "boolean") return v;
+  } catch {
+    // fall through to default
+  }
+  return DEFAULT_HINT_REMINDER_TO_CONTEXT;
+}
+
+/**
+ * v2.0.0-rc.33 W2-5: read/write the broad-hint last-emit timestamp sidecar.
+ * Distinct from fabric-hint's shown-cache so signal cooldowns stay isolated.
+ * Returns epoch ms or null when missing/unreadable.
+ */
+function readBroadLastEmit(projectRoot) {
+  const p = join(projectRoot, HINT_BROAD_LAST_EMIT_FILE);
+  if (!existsSync(p)) return null;
+  try {
+    const raw = readFileSync(p, "utf8").trim();
+    if (raw.length === 0) return null;
+    const asNum = Number(raw);
+    if (Number.isFinite(asNum) && asNum > 0) return asNum;
+    const ms = Date.parse(raw);
+    if (Number.isFinite(ms)) return ms;
+  } catch {
+    // ignore
+  }
+  return null;
+}
+
+function writeBroadLastEmit(projectRoot, nowMs) {
+  const p = join(projectRoot, HINT_BROAD_LAST_EMIT_FILE);
+  try {
+    if (!existsSync(dirname(p))) {
+      mkdirSync(dirname(p), { recursive: true });
+    }
+    writeFileSync(p, String(nowMs));
+  } catch {
+    // Silent — sidecar failure must never block session start.
+  }
 }
 
 /**
@@ -227,12 +345,16 @@ function shouldRecommendImport(projectRoot) {
 // CONSTANTS
 // -----------------------------------------------------------------------------
 
-// Per-type truncation triggers when total narrow entries > 30. The threshold
-// was originally aligned with the rc.5 plan-context degenerate-mode cutoff,
-// which is now retired (rc.7 T9 — see docs/decisions/rc5-a3-superseded.md).
-// We keep 30 here as a stable rendering boundary independent of that protocol
-// change: it's a UI-density choice, not a wire-shape one.
-const TRUNCATION_THRESHOLD = 30;
+// Per-type truncation triggers when total broad-scope entries > N.
+// v2.0.0-rc.29 TASK-007 (BUG-F1): lowered from 30 → 12. SessionStart hint
+// should bias toward "is there anything relevant?" rather than "exhaustive
+// index" — at 30, the banner consumed several terminal screens on
+// well-seeded repos and operators reported scroll fatigue. 12 keeps a
+// dense-enough scan (still fits "top hits per type" in 1-2 screenfuls)
+// without prompting the user to mentally truncate themselves. The constant
+// stays a stable rendering boundary; downstream consumers (banner-i18n.cjs,
+// truncation summary lines) consume it as a single source of truth.
+const TRUNCATION_THRESHOLD = 12;
 
 // `fabric plan-context-hint` is a thin wrapper over planContext(); on a
 // well-seeded repo it returns in ~100ms. Two-second cap is defensive — any
@@ -241,8 +363,24 @@ const CLI_TIMEOUT_MS = 2000;
 
 // Maximum summary length per entry. Keeps each line bounded so stderr does
 // not blow up terminal width with multi-paragraph summaries from sloppy
-// pending entries. Truncation appends an ellipsis.
-const SUMMARY_MAX_LEN = 80;
+// pending entries. Truncation appends an ellipsis. v2.0.0-rc.33 W4-A3:
+// `hint_summary_max_len` in fabric-config overrides this default (range 40..240).
+const DEFAULT_SUMMARY_MAX_LEN = 80;
+
+function readSummaryMaxLen(projectRoot) {
+  const configPath = join(projectRoot, FABRIC_DIR_REL, FABRIC_CONFIG_FILE);
+  if (!existsSync(configPath)) return DEFAULT_SUMMARY_MAX_LEN;
+  try {
+    const parsed = JSON.parse(readFileSync(configPath, "utf8"));
+    const v = parsed && parsed.hint_summary_max_len;
+    if (typeof v === "number" && Number.isFinite(v) && v >= 40 && v <= 240) {
+      return Math.floor(v);
+    }
+  } catch {
+    // fall through to default
+  }
+  return DEFAULT_SUMMARY_MAX_LEN;
+}
 
 // Canonical type order — render groups in this sequence so output is stable
 // across runs (Object.keys iteration order is insertion order, but the JSON
@@ -278,12 +416,16 @@ const MATURITY_DRAFT = "draft";
  * Spawn `fabric plan-context-hint --all` and return parsed JSON. Returns
  * null on any failure (ENOENT, non-zero exit, malformed JSON). Never throws.
  *
- * spawn strategy: try `fabric` first (user-PATH install) then `fab` (the
- * alternate bin name shipped by @fenglimg/fabric-cli). If neither is on PATH,
- * return null — the hook stays silent rather than nagging about install state.
+ * If `fabric` is not on PATH, return null — the hook stays silent rather
+ * than nagging about install state.
  */
 function invokePlanContextHint(cwd) {
-  const candidates = ["fabric", "fab"];
+  const candidates = ["fabric"];
+  // rc.31 NEW-6: capture the last meaningful failure so we can surface it on
+  // stderr before fail-open. Without this, hook silently swallows backend
+  // crashes (e.g. agents_meta_invalid → plan-context-hint exits with stderr
+  // payload and the AI / user never sees KB chain is dead).
+  let lastFailure = null;
   for (const bin of candidates) {
     let res;
     try {
@@ -296,16 +438,36 @@ function invokePlanContextHint(cwd) {
     } catch {
       continue; // spawn throw (extremely rare) — try next candidate
     }
-    // ENOENT surfaces as error on the result object.
-    if (res.error || res.status === null || res.status !== 0) continue;
+    // ENOENT surfaces as error on the result object. Skip silently for ENOENT
+    // (bin not installed is the only legitimate reason to bail).
+    if (res.error) {
+      if (res.error.code !== "ENOENT") {
+        lastFailure = { bin, reason: String(res.error.message || res.error.code || res.error) };
+      }
+      continue;
+    }
+    if (res.status === null || res.status !== 0) {
+      const stderrSnip = (res.stderr || "").trim().slice(0, 240);
+      if (stderrSnip.length > 0) {
+        lastFailure = { bin, reason: stderrSnip };
+      }
+      continue;
+    }
     const raw = (res.stdout || "").trim();
     if (raw.length === 0) continue;
     try {
       const parsed = JSON.parse(raw);
       if (parsed && typeof parsed === "object") return parsed;
-    } catch {
-      // malformed JSON — try next bin (unlikely to differ, but no harm)
+    } catch (err) {
+      lastFailure = { bin, reason: `malformed JSON from plan-context-hint: ${String(err && err.message || err)}` };
     }
+  }
+  if (lastFailure !== null) {
+    // Single warning line — never throws, never blocks the hook. Lets users /
+    // AI notice that the KB chain is degraded instead of being silently empty.
+    process.stderr.write(
+      `[fabric-hint] plan-context-hint (${lastFailure.bin}) failed: ${lastFailure.reason.replace(/\n/g, " ")}\n`,
+    );
   }
   return null;
 }
@@ -347,17 +509,21 @@ function groupEntries(narrow) {
   return { typeOrder, byType };
 }
 
-function truncateSummary(raw) {
+// v2.0.0-rc.33 W4-A3: maxLen is now caller-supplied (sourced from
+// fabric-config#hint_summary_max_len in main; tests + ad-hoc callers may
+// omit to fall back to DEFAULT_SUMMARY_MAX_LEN).
+function truncateSummary(raw, maxLen) {
   const s = typeof raw === "string" ? raw : "";
   // Collapse newlines / runs of whitespace so each entry fits one line.
   const flat = s.replace(/\s+/g, " ").trim();
-  if (flat.length <= SUMMARY_MAX_LEN) return flat;
-  return `${flat.slice(0, SUMMARY_MAX_LEN - 1)}…`;
+  const cap = typeof maxLen === "number" && maxLen > 0 ? maxLen : DEFAULT_SUMMARY_MAX_LEN;
+  if (flat.length <= cap) return flat;
+  return `${flat.slice(0, cap - 1)}…`;
 }
 
-function formatEntryLine(entry) {
+function formatEntryLine(entry, maxLen) {
   const id = entry.id || "(no-id)";
-  const summary = truncateSummary(entry.summary);
+  const summary = truncateSummary(entry.summary, maxLen);
   return summary.length > 0 ? `    - ${id} · ${summary}` : `    - ${id}`;
 }
 
@@ -366,7 +532,7 @@ function formatEntryLine(entry) {
  * Each entry gets one line: `    - <id> · <summary>`. Type/maturity headers
  * group the listing.
  */
-function renderFull(narrow) {
+function renderFull(narrow, maxLen) {
   const { typeOrder, byType } = groupEntries(narrow);
   const lines = [];
   for (const type of typeOrder) {
@@ -385,7 +551,7 @@ function renderFull(narrow) {
     for (const maturity of maturities) {
       lines.push(`  [${type}] (${maturity}):`);
       for (const entry of maturityMap.get(maturity)) {
-        lines.push(formatEntryLine(entry));
+        lines.push(formatEntryLine(entry, maxLen));
       }
     }
   }
@@ -398,7 +564,7 @@ function renderFull(narrow) {
  * an inline id list (no summary); draft (and unknown) buckets collapse to a
  * count.
  */
-function renderTruncated(narrow) {
+function renderTruncated(narrow, maxLen) {
   const { typeOrder, byType } = groupEntries(narrow);
   const lines = [];
   for (const type of typeOrder) {
@@ -409,7 +575,7 @@ function renderTruncated(narrow) {
     if (proven && proven.length > 0) {
       lines.push(`  [${type}] proven (${proven.length}):`);
       for (const entry of proven) {
-        lines.push(formatEntryLine(entry));
+        lines.push(formatEntryLine(entry, maxLen));
       }
     }
 
@@ -446,7 +612,7 @@ function renderTruncated(narrow) {
  * after writing exactly one stderr breadcrumb so operators grepping a stuck-
  * banner report can diagnose the version drift without source-diving.
  */
-function renderSummary(payload) {
+function renderSummary(payload, maxLen) {
   if (!payload || payload.version !== 2) {
     if (payload && payload.version !== undefined) {
       try {
@@ -469,7 +635,7 @@ function renderSummary(payload) {
     ? `[fabric] Session start — ${entries.length} broad-scoped knowledge entries available (truncated):`
     : `[fabric] Session start — ${entries.length} broad-scoped knowledge entries available:`;
 
-  const body = truncated ? renderTruncated(entries) : renderFull(entries);
+  const body = truncated ? renderTruncated(entries, maxLen) : renderFull(entries, maxLen);
 
   const lines = [banner, ...body];
   const revHash = typeof payload.revision_hash === "string" ? payload.revision_hash : null;
@@ -528,13 +694,69 @@ function renderSummary(payload) {
 function main(env, stdio) {
   try {
     const cwd = (env && env.cwd) || process.cwd();
+    const now = (env && env.now) || new Date();
+    const nowMs = now instanceof Date ? now.getTime() : Number(now);
     const err = (stdio && stdio.stderr) || process.stderr;
+    const out = (stdio && stdio.stdout) || process.stdout;
+
+    // v2.0.0-rc.33 W2-5 (P1-8): cooldown gate. When configured > 0 hours, the
+    // broad banner stays silent for that many hours after a successful emit.
+    // 0 (default) preserves rc.32 behavior — every SessionStart re-fires the
+    // banner. Test seam env.skipCooldown bypasses for unit tests.
+    const cooldownHours = readBroadCooldownHours(cwd);
+    if (cooldownHours > 0 && !(env && env.skipCooldown === true)) {
+      const lastEmitMs = readBroadLastEmit(cwd);
+      if (
+        typeof lastEmitMs === "number" &&
+        // rc.34 TASK-01 + review-fix (Gemini P1): when lastEmit is in the
+        // FUTURE relative to now (backward clock skew — NTP sync /
+        // suspend-wake / TZ change), the gate fires immediately. Otherwise
+        // standard cooldown check. Math.max(0, …) was a no-op (silent for
+        // cooldown + |skew| under both formulations); this guard actually
+        // heals the skew on the next invocation by treating future-stamped
+        // sidecar as "expired."
+        nowMs >= lastEmitMs &&
+        nowMs - lastEmitMs < cooldownHours * MS_PER_HOUR
+      ) {
+        return; // still in cooldown — silent
+      }
+    }
 
     // Test seam: env.payload short-circuits the CLI spawn so unit tests can
     // feed canned plan-context-hint JSON without depending on a built CLI.
     const payload =
       env && env.payload !== undefined ? env.payload : invokePlanContextHint(cwd);
     if (payload === null || payload === undefined) return; // silent
+
+    // v2.0.0-rc.33 W2-1 (P0-9): apply TopK slice BEFORE renderSummary so the
+    // grouped/truncation rendering operates on the bounded set. Slicing here
+    // (not inside renderSummary) keeps the formatter pure — it never has to
+    // know about the cap.
+    const topK = readBroadTopK(cwd);
+    const slicedPayload =
+      payload && Array.isArray(payload.entries) && payload.entries.length > topK
+        ? { ...payload, entries: payload.entries.slice(0, topK) }
+        : payload;
+
+    // rc.35 TASK-06 (P0-10.b): summary-fallback substitution. Entries whose
+    // description.summary equals stable_id render as "<id> · <id>" and the
+    // AI skips fetching them; the fallback reads `## Summary` from the
+    // entry's .md file and swaps in the first paragraph. Best-effort —
+    // failure leaves the original opaque summary untouched.
+    let resolvedPayload = slicedPayload;
+    try {
+      if (slicedPayload && Array.isArray(slicedPayload.entries)) {
+        const resolvedEntries = resolveOpaqueSummaries(
+          slicedPayload.entries,
+          cwd,
+          typeof slicedPayload.revision_hash === "string" ? slicedPayload.revision_hash : "",
+        );
+        resolvedPayload = { ...slicedPayload, entries: resolvedEntries };
+      }
+    } catch {
+      // resolveOpaqueSummaries swallows its own errors; this catch is belt
+      // + suspenders for any unexpected exception from the lib layer.
+    }
 
     // rc.8 underseed self-check: decide whether to surface the one-line
     // `/fabric-import` recommendation banner alongside the broad summary.
@@ -544,22 +766,77 @@ function main(env, stdio) {
     // SessionStart fire (Skill-style progressive disclosure). The prior
     // revision_hash cooldown gate (rc.7 T8 — rc.11) was removed because
     // compact/clear-triggered SessionStart re-fires must re-inject the menu
-    // for the agent's working memory.
-    const lines = renderSummary(payload);
+    // for the agent's working memory. rc.33 W2-5 reintroduces an opt-in
+    // hours-based cooldown via fabric-config (see gate above).
+    const summaryMaxLen = readSummaryMaxLen(cwd);
+    const lines = renderSummary(resolvedPayload, summaryMaxLen);
 
-    if (recommendImport) {
-      // rc.16 TASK-003: resolve fabric_language ONCE per invocation (only when
-      // we actually need to emit the banner — keeps the no-banner path free of
-      // the extra config read). 'match-existing' / unknown variant folds to 'en'
-      // inside renderBanner per UX i18n Policy class 1.
-      const variant = readFabricLanguage(cwd);
-      lines.push(renderBanner("broadImportBanner", variant, {}));
+    // v2.0.0-rc.37 NEW-23: resolve fabric_language ONCE per emit path —
+    // shared between the (existing) broadImportBanner branch and the new
+    // 'next step' nudge tail added below. 'match-existing' / unknown variants
+    // fold to 'en' inside renderBanner per UX i18n Policy class 1.
+    const fabricLanguageForEmit = lines.length > 0 || recommendImport ? readFabricLanguage(cwd) : null;
+    if (recommendImport && fabricLanguageForEmit !== null) {
+      lines.push(renderBanner("broadImportBanner", fabricLanguageForEmit, {}));
     }
 
     if (lines.length === 0) return; // nothing to say — silent exit
 
+    // v2.0.0-rc.37 NEW-23: SessionStart 索引末尾"下一步"引导。Tail line that
+    // tells the AI what to do with the broad index it just received. Without
+    // this, the model often parses the index and moves on without ever calling
+    // fab_recall / fab_plan_context. One-line nudge, bilingual.
+    const nextStepNudge =
+      fabricLanguageForEmit === "zh-CN"
+        ? "下一步: 调 fab_recall(paths) 拿 KB 相关条目;或调 fab_plan_context 先看候选 description_index。"
+        : "Next: call fab_recall(paths) to fetch related KB entries, or fab_plan_context to preview the description_index first.";
+    lines.push(nextStepNudge);
+
+    // Stderr: always emit (human-facing breadcrumb + legacy contract).
     for (const line of lines) {
       err.write(`${line}\n`);
+    }
+
+    // v2.0.0-rc.33 W2-6 (P0-7): stdout JSON envelope. When
+    // hint_reminder_to_context is true (default), serialize the same banner
+    // body as Claude Code's SessionStart hookSpecificOutput shape so the model
+    // receives the reminder IN-CONTEXT (rc.32 baseline cite-coverage 3.1%
+    // root cause: reminders never entered model context). Stderr stays the
+    // host-facing channel.
+    //
+    // Failure to write JSON envelope must NOT crash the hook — stderr already
+    // delivered, the stdout layer is best-effort.
+    // v2.0.0-rc.33 W4 review-fix (gemini High-1): the stdout JSON envelope
+    // is Claude Code-specific (hookSpecificOutput.additionalContext contract).
+    // Codex CLI / Cursor don't parse it — leaking it to their stdout risks
+    // either polluting the terminal or crashing the host's hook-parsing
+    // pipeline. CLAUDE_PROJECT_DIR is set by CC when invoking hooks (see
+    // packages/cli/templates/hooks/configs/claude-code.json sigil paths);
+    // its presence is the single-bit "this is Claude Code" signal.
+    const isClaudeCode =
+      typeof process.env.CLAUDE_PROJECT_DIR === "string" &&
+      process.env.CLAUDE_PROJECT_DIR.length > 0;
+    const reminderToContext = readReminderToContext(cwd) && isClaudeCode;
+    if (reminderToContext && !(env && env.skipStdout === true)) {
+      try {
+        const envelope = {
+          hookSpecificOutput: {
+            hookEventName: "SessionStart",
+            additionalContext: lines.join("\n"),
+          },
+        };
+        out.write(`${JSON.stringify(envelope)}\n`);
+      } catch {
+        // Best-effort — stderr is the durable contract
+      }
+    }
+
+    // v2.0.0-rc.33 W2-5 (P1-8): record successful emit timestamp for the
+    // cooldown gate's next-invocation check. Skip when cooldown is disabled
+    // (cooldownHours === 0) to avoid polluting the FS with a never-read
+    // sidecar on rc.32-style "no cooldown" workspaces.
+    if (cooldownHours > 0 && !(env && env.skipCooldownWrite === true)) {
+      writeBroadLastEmit(cwd, nowMs);
     }
   } catch {
     // Silent — never block session start on hook failure.
@@ -579,16 +856,28 @@ module.exports = {
   readUnderseedThreshold,
   isImportTouched,
   shouldRecommendImport,
+  // v2.0.0-rc.33 W2-1 / W2-5 / W2-6 helpers.
+  readBroadTopK,
+  readBroadCooldownHours,
+  readReminderToContext,
+  readBroadLastEmit,
+  writeBroadLastEmit,
+  readSummaryMaxLen,
   CONSTANTS: {
     TRUNCATION_THRESHOLD,
     CLI_TIMEOUT_MS,
-    SUMMARY_MAX_LEN,
+    SUMMARY_MAX_LEN: DEFAULT_SUMMARY_MAX_LEN,
+    DEFAULT_SUMMARY_MAX_LEN,
     CANONICAL_TYPE_ORDER,
     MATURITY_PROVEN,
     MATURITY_VERIFIED,
     MATURITY_DRAFT,
     DEFAULT_UNDERSEED_NODE_THRESHOLD,
     KNOWLEDGE_CANONICAL_TYPES,
+    DEFAULT_HINT_BROAD_TOP_K,
+    DEFAULT_HINT_BROAD_COOLDOWN_HOURS,
+    DEFAULT_HINT_REMINDER_TO_CONTEXT,
+    HINT_BROAD_LAST_EMIT_FILE,
   },
 };
 

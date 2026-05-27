@@ -1708,6 +1708,14 @@ function printInitCapabilitySummary(
   for (const row of rows) {
     console.log(formatCapabilityTableRow(row, widths));
   }
+  // v2.0.0-rc.37 NEW-22: post-install restart banner. The MCP server is
+  // spawned by the client when it boots; an already-running Claude Code /
+  // Cursor / Codex session won't pick up the new mcp config until restart,
+  // so users hit a confusing "tools missing" failure mode without this
+  // explicit nudge. Single-line bilingual hint added after the capability
+  // table where users naturally look for "what next?".
+  console.log("");
+  console.log(t("cli.install.restart-banner"));
 }
 
 function toCapabilityRow(

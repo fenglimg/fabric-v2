@@ -876,6 +876,11 @@ export const enMessages: Messages = {
   "cli.install.wizard.invalid-select": "Invalid value. Use one of: {options}.",
   "cli.install.wizard.cancelled": "Fabric install cancelled before execution.",
   "cli.install.capabilities.title": "Client capability summary",
+  // v2.0.0-rc.37 NEW-22: post-install restart banner. The MCP server is
+  // spawned by the client; already-running Claude Code / Cursor / Codex
+  // sessions won't pick up the new mcp config until they restart.
+  "cli.install.restart-banner":
+    "Restart hint: any already-running Claude Code / Cursor / Codex CLI session must restart to pick up the new MCP server config; new sessions will autoload the Fabric tools.",
   "cli.install.capabilities.none": "No supported client was detected for bootstrap or MCP follow-up.",
   "cli.install.capabilities.header.client": "Client",
   "cli.install.capabilities.header.bootstrap": "Bootstrap",

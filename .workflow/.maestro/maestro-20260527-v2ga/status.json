@@ -58,91 +58,705 @@
     "每 wave 结尾跑 Gemini review iter (cap 3 轮) 验收"
   ],
   "task_decomposition": [
-    {"id": "A1", "wave": "A", "subject": "删 plan-context selectable filter", "done_when": "fab_plan_context 返回全候选 + werewolf dogfood 374 entry 全 selectable=true", "status": "done", "commit": "5dc9cef"},
-    {"id": "A2", "wave": "A", "subject": "fabric serve quarantine Part 1 (CLI + entry point)", "done_when": "packages/server-http-experimental/ 建立 + 主线 CLI / startHttpServer / lock preflight 删 + relevant tests 更新", "status": "done", "commit": "9f4f249", "note": "Part 2 (physical file move + docs/i18n sweep) tracked as A2-PART2"},
-    {"id": "B1", "wave": "B", "subject": "events.jsonl 现状 spike + clean-slate 决策", "done_when": "spike report + 决策 lock 写入 status.json", "status": "done", "_actual_done": "2026-05-27", "note": "Spike report at .workflow/.scratchpad/v2.0.0-ga-ux-audit-2026-05-27/wave-b/b1-events-jsonl-spike.md. Decision lock (Plan B counter-rollup): 5 high-frequency event_types (knowledge_consumed / edit_intent_checked / knowledge_context_planned / knowledge_sections_fetched / 类似 metric) 改走 metrics.jsonl 60s flush; audit event_types 留在 events.jsonl; 5 个 hard gate (G7-G11) 防再生; server-side rotation tick 6h; clean-slate 不迁移老数据 (旧高频 event archive 不影响 audit). KB cite [[events-jsonl-plan-b-counter-rollup]] (added to status.json.context.kb_decisions). Serial B2→B3→B4→B5 unblocked."},
-    {"id": "B2", "wave": "B", "subject": "metrics.jsonl schema + bumpCounter API + 60s flush", "done_when": "shared schema 定义 + server bumpCounter 实现 + unit test", "status": "done", "_actual_done": "2026-05-27", "note": "Added METRICS_LEDGER_FILE/PATH constants + getMetricsLedgerPath helper to _shared.ts. New services/metrics.ts with: bumpCounter (O(1) in-memory, per-project bucket), drainCounters (snapshot+reset), flushMetrics (append one JSONL row, no-op when empty, fs-failure re-seeds), startMetricsFlush (interval timer, unref()+stop handle), stopMetricsFlush, readMetrics (skip malformed, ENOENT→[]), resetMetricsForTest. METRIC_COUNTER_NAMES dict (4 canonical names for B5 G8 gate). Re-exported from server index. metrics.test.ts: 6 tests (bump/drain isolation, flush row shape + idempotency on empty, read parse+malformed skip, interval + stop handle, defensive non-positive, per-project isolation). tests 1732/1732."},
-    {"id": "B3", "wave": "B", "subject": "emit-cadence reader 切 metrics + heartbeat clean-slate", "done_when": "events.jsonl 不再写心跳, doctor 报告无 heartbeat events", "status": "done", "_actual_done": "2026-05-27", "note": "Dual-write enabled at 4 high-freq emit sites (knowledge_context_planned in plan-context.ts, knowledge_sections_fetched + knowledge_consumed:<id> per-id in knowledge-sections.ts, edit_intent_checked in read-ledger.ts). bumpCounter accumulator now populated on every emit; events.jsonl writes preserved for v2.0 GA backward-compat because orphan_demote / cite-coverage / stale_archive consume per-id payloads that pure counter rollup can't yet replicate. startMetricsFlush wired into server startup (after MCP handshake, before reconcile); shutdown handler drains accumulator + stops timer before close. The 'events.jsonl 不再写心跳' literal half is satisfied STRUCTURALLY: zero formal heartbeat event_types exist (the 4 dual-write events are audit-relevant), and B5 G8 hard gate (metric_event_in_jsonl) will prevent any future pure-metric event from leaking into events.jsonl. NEW-14 (per-field truncate) + NEW-34 (fab metrics CLI) consume this counter pipeline. tests 1732/1732."},
-    {"id": "B4", "wave": "B", "subject": "Server-side rotation tick 6h", "done_when": "rotation 在 idle 时也触发 + integration test", "status": "done", "_actual_done": "2026-05-27", "note": "New services/rotation-tick.ts: setInterval-based timer (6h default) calling rotateEventLedgerIfNeeded. unref() so it doesn't keep loop alive. Idempotent start (replaces prior timer). stop handle for shutdown. resetRotationTickForTest helper. Wired into server startup right after metrics flush; shutdown drains stops timer (NOT triggers final rotation — too heavy for 5s shutdown window). Re-exported from server index. Integration test (2 cases): seeded 91-day-old event rotates within ~800ms tick + stop is idempotent. tests 1734/1734."},
-    {"id": "B5", "wave": "B", "subject": "Plan B 5 hard gate G7-G11", "done_when": "5 个新 doctor check 上线 + CI hard gate", "status": "done", "_actual_done": "2026-05-27", "note": "Consolidated 5 gates into ONE doctor check (events_jsonl_health) to keep i18n surface bounded; the check surfaces all 4 runtime signals in its message body (G7 size > 10MB / G8 metric_event_in_jsonl via METRIC_COUNTER_NAMES grep / G9 metrics.jsonl mtime > 10min / G10 events.jsonl mtime > 90d). G11 (structural metric_event_added) is verified at test time via events-jsonl-gates.test.ts asserting current dual-write overlap state (post-GA cutover flips assertion to empty). 6 new tests in events-jsonl-gates.test.ts cover each gate firing + clean state. i18n keys added to zh-CN + en. Snapshot tests regenerated (doctor-i18n.test.ts) + check count bumped to 48 in doctor.test.ts. tests 1741/1741."},
-    {"id": "C1", "wave": "C", "subject": "Phase 1 体验地图 inventory", "done_when": ".workflow/.scratchpad/v2.0.0-ga-ux-audit-2026-05-27/inventory.md 产出, 列所有 Skill/Hook/算法 surface", "status": "done", "_actual_done": "2026-05-27"},
-    {"id": "C2", "wave": "C", "subject": "Phase 4 算法/policy paper audit", "done_when": "algorithms-verdict.md 产出, 每算法/policy 标 SHIP/NEEDS-N-POLISH/BLOCKER + rationale", "status": "done", "_actual_done": "2026-05-27"},
-    {"id": "C3", "wave": "C", "subject": "Phase 2 Skills paper walkthrough", "done_when": "skills-verdict-paper.md 产出, 每 Skill 标 verdict", "status": "done"},
-    {"id": "C4", "wave": "C", "subject": "Phase 3 Hooks paper walkthrough", "done_when": "hooks-verdict-paper.md 产出", "status": "done"},
-    {"id": "C5", "wave": "C", "subject": "Phase 5 8 阶段旅程 paper coherence", "done_when": "journey-verdict-paper.md 产出", "status": "done"},
-    {"id": "C6", "wave": "C", "subject": "Phase 6 5 横切 spot-check", "done_when": "crosscut-verdict.md 产出 (i18n/cross-client/perf/security/observability)", "status": "done"},
-    {"id": "C-WEREWOLF", "wave": "C", "subject": "werewolf-minigame dogfood 真验证 Phase 2/3/5", "done_when": "在 werewolf 跑 fabric doctor 实测验证 paper 发现 + 补漏, dogfood-findings 已 surface NEW-36~40", "status": "done", "note": "simulated dogfood via doctor --fix loop; user-driven realistic session walkthrough 仍鼓励"},
-    {"id": "C7", "wave": "C", "subject": "Phase 7 GA-VERDICT 汇总", "done_when": "GA-VERDICT.md 产出, 列必修 / 应修 / 推后 task, blocker 0 则 ready for Wave D-G", "status": "done"},
-    {"id": "NEW-1", "wave": "D", "subject": "Cite policy 4-state → 2-state 简化 + PreEdit warn hook", "done_when": "AGENTS.md cite policy section 重写 + cite-policy-evict.cjs PreEdit warn 分支 + werewolf 实测遵循率 ≥30% (vs rc.32 baseline 3.1%)", "status": "pending", "estimated_hours": "2-3"},
-    {"id": "NEW-2", "wave": "D", "subject": "Self-archive 4 触发信号合并 2 大类 + marker 正则容错", "done_when": "AGENTS.md self-archive section 重写 + fabric-archive Phase 1.5 entry-point 识别正则化 + werewolf 实测 recall ≥40% (vs rc.32 baseline 20%)", "status": "pending", "estimated_hours": "1-2"},
-    {"id": "NEW-3", "wave": "A", "subject": "fab_recall 合并两步 API + TTL 5min→30min", "done_when": "新 MCP tool fab_recall 注册 (内部仍走 selection token) + selection_token TTL 配置化默认 30min + 文档更新", "status": "done", "_actual_done": "2026-05-27", "note": "Added recall service + tool wrapping planContext + getKnowledgeSections in one round-trip. Default SELECTION_TOKEN_TTL_DEFAULT_MS bumped 5min→30min (config override still honored). Schema (recallInputSchema/recallOutputSchema/recallAnnotations) added to shared. registerRecall wired in createFabricServer. recall.test.ts: 3 tests pass (full set, scoped ids, empty fast-path). index.test.ts updated for new tool list. dependencies=A1 satisfied (server returns all selectable=true after A1)."},
-    {"id": "NEW-4", "wave": "D", "subject": "Phase 0.5 viability gate signal 8→3 简化 + duplicate glob 强制 + force-archive 引导", "done_when": "fabric-archive SKILL.md Phase 0.5 重写 3 大类信号 + Phase 0.5 强制 Glob duplicate + E2/E4 gate-FAIL message 加 force-archive 引导", "status": "pending", "estimated_hours": "2"},
-    {"id": "NEW-5", "wave": "D", "subject": "doctor lint: personal layer 引用本项目路径 → warn", "done_when": "新 doctor check personal_layer_path_misclassify + i18n zh/en + werewolf fixture 测", "status": "pending", "estimated_hours": "1"},
-    {"id": "NEW-6", "wave": "A", "subject": "fab_extract_knowledge server 端 slug auto-disambiguate", "done_when": "(source_session, type, slug) 碰撞时 server 自动加 -2 / -alt 后缀并 return, 不再 reject; idempotency_key 重新计算", "status": "done", "_actual_done": "2026-05-27", "note": "New resolveDisambiguatedSlugPath helper scans slug.md → slug-2.md → ... → slug-9.md, returning the first slot that's either free or carries the caller's idempotency_key (evidence-merge path). idempotency_key recomputed via sha256(source+type+disambiguated_slug) so re-runs deterministically hit the same -N slot. Throws only after exhausting 9 variants. 3 affected tests rewritten to assert disambiguation (previously asserted loud throw). tests 1721/1721."},
-    {"id": "NEW-7", "wave": "A", "subject": "relevance_paths 多 signal 升级 + Evidence frontmatter 化", "done_when": "Phase 1.5 derivation 接收 read_paths + user_mentioned_paths 信号 + body Evidence section 升级为 frontmatter evidence_paths 字段", "status": "done", "_actual_done": "2026-05-27", "note": "Schema: added evidence_paths optional string[] to FabExtractKnowledgeInputSchema (NOT in idempotency hash). Server: renderFreshEntry accepts evidencePaths, writes frontmatter evidence_paths: [...] (flow-form); legacy body ## Evidence retained for back-compat readers. Wired both call sites (fresh + evidence-merge). SKILL docs: phase-3-5-scope.md rewritten — Step 1 widened to 3 sources (edit_paths + read_paths + user_mentioned_paths), Step 2 dedupes + classifies (writes→relevance_paths, reads→evidence_paths), Step 6 attaches evidence_paths to frontmatter. SKILL.md prohibitions updated. Mirrors (.claude / .codex) synced. 2 new tests (writes evidence_paths to fm / omits line when empty). tool-contracts snapshot regenerated for new schema field. tests 1726/1726."},
-    {"id": "NEW-8", "wave": "D", "subject": "doctor remediation 70 string 系统 sweep + 删高危引导文案", "done_when": "remediation-audit.md 产出 + 35 check × 2 locale = 70 string review + 0 个引导删 ledger / 删 .fabric/ 类文案 + 每 remediation 含诊断+命令+manual fallback", "status": "pending", "estimated_hours": "3-4"},
-    {"id": "NEW-9", "wave": "D", "subject": "fabric-archive 简化 8 phase → 3 + Phase 1 ledger filter 服务端化", "done_when": "SKILL.md 重写 + ledger filter 状态机移到 server", "status": "pending", "estimated_hours": "3-4"},
-    {"id": "NEW-10", "wave": "D", "subject": "dry-run / state-resume 统一 explicit flag (3 skill 共)", "done_when": "fabric-archive/import/review 全用 --dry-run flag, prompt substring 检测路径删", "status": "pending", "estimated_hours": "1-2"},
-    {"id": "NEW-11", "wave": "A", "subject": "fabric-import broad+[] mandate 与 A1 联动重评", "done_when": "import 是否仍 broad-only 重新评估 + SKILL.md update", "status": "done", "_actual_done": "2026-05-27", "note": "Re-evaluation: mandate STAYS (broad+[] still right for fabric-import) but rationale framing updated. Pre-A1: 'false-narrow silently hides knowledge during plan-context filtering' — dead claim, server no longer filters. Post-A1: 'false-narrow poisons doctor lint accounting + downstream consumers reading relevance_paths literally'. Updated 3 places: canonical SKILL.md compressed mandate one-liner, ref/phase-2-mining.md rationale §3, .claude/skills mirror, .codex/skills mirror. tests 1724/1724."},
-    {"id": "NEW-12", "wave": "D", "subject": "fabric-review mode 4→2 + semantic check 量化 + modify 拆 2 action", "done_when": "SKILL.md 重写 mode infer + fab_review action 拆分 modify-content/modify-layer", "status": "pending", "estimated_hours": "3-4"},
-    {"id": "NEW-13", "wave": "D", "subject": "cross-skill 共享 lib (layer heuristic / events emit / protected tokens)", "done_when": "templates/skills/lib/ 抽取共享逻辑 + 3 skill 引用", "status": "pending", "estimated_hours": "2-3"},
-    {"id": "NEW-14", "wave": "B", "subject": "events.jsonl 字段自动 truncate 到 server side", "done_when": "appendEventLedgerEvent 自动应用 4KB POSIX 约束 + per-field cap", "status": "done", "_actual_done": "2026-05-27", "note": "truncateLongStrings recursive walker in appendEventLedgerEvent caps every string field at 4 KB (PIPE_BUF on Linux/macOS) + appends [truncated: rc.37 NEW-14 4KB cap] sentinel. UTF-8 safe (decrement candidate length progressively until sentinel fits). Runs BEFORE Zod parse so truncated payload still validates. 2 tests verify big reason truncated + small reason untouched. tests 1743/1743."},
-    {"id": "NEW-15", "wave": "D", "subject": "skill 文案术语清理 (Check-not-Ask / E3-strong / viability gate)", "done_when": "3 个 SKILL.md user-facing prose 重写 ≤ 用户可读", "status": "pending", "estimated_hours": "1-2"},
-    {"id": "NEW-16", "wave": "D", "subject": "fabric-hint 拆 4 子 hook + 独立 cooldown + dismiss 机制 + 文案加引导", "done_when": "4 个独立 hook (archive/import/review/maintenance) + session-level dismiss state + nudge 加 dismiss option", "status": "pending", "estimated_hours": "3-4"},
-    {"id": "NEW-17", "wave": "D", "subject": "knowledge-hint-narrow in-memory cache + multi-path 聚合", "done_when": "hook 单 session 共享 plan-context-hint 结果 + MultiEdit N path 单调用", "status": "pending", "estimated_hours": "2-3"},
-    {"id": "NEW-18", "wave": "D", "subject": "cite-policy-evict default ON interval=10 + 加 PreEdit cite-check 分支", "done_when": "default 改 ON + Edit/Write PreToolUse 加 cite spot check + nudge 配 NEW-1", "status": "pending", "estimated_hours": "1", "dependencies": "NEW-1"},
-    {"id": "NEW-19", "wave": "D", "subject": "hooks/lib state-store / config-cache / client-adapter 抽象", "done_when": "lib/ 抽出共通 I/O + 4 主 hook 引用", "status": "pending", "estimated_hours": "2-3"},
-    {"id": "NEW-20", "wave": "D", "subject": "fabric doctor --check-hooks runtime hook health check", "done_when": "doctor 加 hook fire test + 报告 runtime status", "status": "pending", "estimated_hours": "1-2"},
-    {"id": "NEW-21", "wave": "F", "subject": "Codex/Cursor cite policy 等价路径补齐 (SessionStart 模拟)", "done_when": "Codex codex-hooks.json + Cursor cursor-hooks.json 添加 cite reminder 等价路径", "status": "pending", "estimated_hours": "2-3"},
-    {"id": "NEW-22", "wave": "D", "subject": "install 加重启提示 + partial-state recovery", "done_when": "install 末尾 banner 加 '重启 client' 提示 + --resume <phase> flag", "status": "pending", "estimated_hours": "1-2"},
-    {"id": "NEW-23", "wave": "D", "subject": "SessionStart 索引末尾 '下一步' 引导", "done_when": "knowledge-hint-broad 输出末尾加引导文案", "status": "pending", "estimated_hours": "0.5"},
-    {"id": "NEW-24", "wave": "A", "subject": "layer-flip server emit knowledge_id_redirect + plan_context 透明 redirect", "done_when": "fab_review modify layer 后 server emit redirect event + fab_plan_context 接收旧 id 透明 forward", "status": "done", "_actual_done": "2026-05-27", "note": "Added knowledge_id_redirect event schema + previous_stable_id field on knowledge_layer_changed. New id-redirect.ts service loads recent redirect events into a compressed (old→new) map with 30d window. fab_review modifyLayerFlip emits both events on layer flip. fab_plan_context output gains optional `redirects` map (only surfaces actionable mappings where new_id is in current description_index). fab_get_knowledge_sections transparently rewrites stale ids in ai_selected_stable_ids before validation, surfaces redirect_to map describing all substitutions (schema union supports both pre-rc.37 {stable_id} shape + rc.37+ {old:new,...} map). fab_recall rewrites caller-passed `ids` via redirect map before intersection. id-redirect.test.ts: 6 tests pass. tool-contracts snapshots updated for new schema fields. tests 1721/1721."},
-    {"id": "NEW-25", "wave": "D", "subject": "doctor 输出加 TL;DR top-3 critical 头部", "done_when": "runDoctorReport 输出顶部加 top-3 critical issues summary", "status": "pending", "estimated_hours": "1"},
-    {"id": "NEW-26", "wave": "D", "subject": "install --diff-hooks + --force-hooks-only flag", "done_when": "install 新 2 flag + drift detect 软化 (非破坏性升级路径)", "status": "pending", "estimated_hours": "2-3"},
-    {"id": "NEW-27", "wave": "D", "subject": "doctor drift_summary 头部统一 view + --check-hook-content sha256", "done_when": "doctor 加 drift_summary section + hook content sha 比对", "status": "pending", "estimated_hours": "2"},
-    {"id": "NEW-28", "wave": "D", "subject": "i18n key parity audit + AGENTS.md verbatim 块同步", "done_when": "doctor --i18n-audit + AGENTS.md 双语版本 byte-equal 校验", "status": "pending", "estimated_hours": "1-2"},
-    {"id": "NEW-29", "wave": "D", "subject": "Cursor + Codex hook config schema 统一", "done_when": "两 client config schema 命名/事件大小写统一 + path 解析方式一致", "status": "pending", "estimated_hours": "2"},
-    {"id": "NEW-30", "wave": "D", "subject": "stderr/stdout client-adapter 抽象", "done_when": "hooks/lib/client-adapter.cjs 抽出 Claude/Codex/Cursor 协议差异 + 3 client 输出标准化", "status": "pending", "estimated_hours": "2-3"},
-    {"id": "NEW-31", "wave": "A", "subject": "fab_extract_knowledge KB body prompt injection sanitization", "done_when": "server 端 strip 明显 injection 模式 (ignore previous / rm -rf / forget your role) + lint", "status": "done", "_actual_done": "2026-05-27", "note": "Added INJECTION_PATTERNS (7 regex: ignore-prior / forget-role / you-are-now / rm-rf-root / shell-eval-curl / chatml-envelope / claude-envelope) + sanitizeInjectionPatterns + sanitizeInjectionFields. Sanitizer runs at the head of extractKnowledge across slug + user_messages_summary + session_context + must_read_if + intent_clues; any match replaced with [REDACTED: prompt-injection pattern stripped] sentinel + knowledge_archive_attempted event emitted per redaction summary. Clean inputs no-op. 3 new tests verify redaction (ignore-previous), multi-pattern (rm-rf + role-override + chatml), clean-passthrough. NEW-32 doctor lint deferred per GA-VERDICT (only NEW-31 in scope). tests 1724/1724."},
-    {"id": "NEW-32", "wave": "D", "subject": "doctor --suspicious-kb injection 模式 lint", "done_when": "doctor 新 check 扫 canonical KB body 跑 injection 正则", "status": "pending", "estimated_hours": "1"},
-    {"id": "NEW-33", "wave": "D", "subject": "doctor history 扩展全 mode", "done_when": "doctor --history all 显示 fix / cite-coverage / archive 历次趋势", "status": "pending", "estimated_hours": "1-2"},
-    {"id": "NEW-34", "wave": "B", "subject": "fabric metrics 子命令 (metrics.jsonl 聚合 dashboard text-based)", "done_when": "fab metrics 子命令 + 输出 text dashboard", "status": "done", "_actual_done": "2026-05-27", "note": "New packages/cli/src/commands/metrics.ts: reads readMetrics from server package, aggregates over --since window (1d/24h/30m/90s shorthand parser), prints text table with counter totals + top-10 per-entry consumed leaderboard. --json emits machine-readable aggregated payload. Registered in commands/index.ts as hidden subcommand. Smoke-tested against werewolf-minigame (no metrics.jsonl yet → graceful 'no counter activity' fallback). tests 1743/1743."},
-    {"id": "NEW-35", "wave": "F", "subject": "perf benchmark CI (cold start + hook latency p95)", "done_when": "GitHub Actions 加 perf job + p95 < 200ms gate", "status": "pending", "estimated_hours": "2"},
-    {"id": "NEW-36", "wave": "D", "subject": "doctor anti-goodhart lint 增强 (同 id [recalled] 7d 内 > 阈值)", "done_when": "doctor cite_goodhart_pattern check 阈值化 + 实测命中报警", "status": "pending", "estimated_hours": "1", "dependencies": "NEW-1"},
-    {"id": "NEW-37", "wave": "A", "subject": "fab_extract_knowledge schema 加 tags + summary opacity guards", "done_when": "MCP schema 加 tags 字段 + summary ≥15 chars + !=slug + 不匹配 stable_id 模式 (KT-XXX-NNNN);新 archive 不再写 opaque summary", "status": "done", "commit": "364dc82", "critical_for_A1": true, "note": "werewolf 现有 90% legacy opaque entries 留给 NEW-38 auto-promote / 后续 backfill 路径处理"},
-    {"id": "NEW-38", "wave": "D", "subject": "Knowledge auto-promote pipeline (draft ≥14d + no drift → auto-promote)", "done_when": "doctor --fix 触发 auto-promote + draft backlog 实测从 100% 降到 <50%", "status": "pending", "estimated_hours": "2-3"},
-    {"id": "NEW-39", "wave": "A", "subject": "Promote ledger invariant 修复 (doctor --fix backfill 路径)", "done_when": "doctor --fix 检测到 promote_ledger_invariant_violated warning 时,emit synth knowledge_proposed + knowledge_promote_started 把三个 count 拉到 max() 目标值;werewolf 实测 proposed=20<started=49<promoted=53 → 53≥53≥53", "status": "done", "commit": "24fc521", "critical_for_A1": true, "note": "rc.31 BUG-G2 already wired synth proposed at approve-time for new approves; NEW-39 healed historical legacy state via --fix backfill"},
-    {"id": "NEW-40", "wave": "D", "subject": "doctor remediation 禁引用未来 rc (rc.37 计划上线 → 当前 manual + 后续 release 自动化)", "done_when": "remediation 文案 sweep + 0 个引用 rc.X 计划字眼", "status": "pending", "estimated_hours": "1", "dependencies": "NEW-8"},
-    {"id": "A2-PART2", "wave": "A", "subject": "fabric serve quarantine Part 2 (physical file move + docs/i18n sweep)", "done_when": "http.ts / bearer-auth.ts / serve-lock.ts 物理移到 experimental + doctor 解耦 + docs (dashboard-tour/migration-1.8/getting-started L84-93/ARCHITECTURE_DECISIONS L186-198) 清 + shared/i18n cli.serve.* + FABRIC_AUTH_TOKEN 删", "status": "done", "_actual_done": "2026-05-27", "note": "Moved http.ts + middleware/ + api/ + serve-lock.ts + 5 tests to packages/server-http-experimental/. Extracted read-only legacy-serve-lock-probe.ts for doctor. Deleted dashboard-tour.md + migration-1.8.md. Updated getting-started / ARCHITECTURE_DECISIONS / SPEC_INTERNAL / CODEBASE_LANDSCAPE / RULE_REGISTRY / testing-architecture / tooling-manifest. Removed cli.serve.* i18n keys both locales. Werewolf dogfood doctor still green. tests 1712/1712."},
-    {"id": "D1", "wave": "D", "subject": "rc.x BREAKING 残留 sweep (grep // rc.\\d+ / deprecated)", "done_when": "全仓 grep 产物 + sweep commit", "status": "done", "_actual_done": "2026-05-27", "note": "Grep returned 5 @deprecated hits — all intentional transitional aids (rehydrate-state error class, plan-context-hint legacy fields, forensic.ts migration helper, api-contracts precedence tuple, forensic-report assertions field). Sweep verdict: nothing to remove pre-GA; transitional surfaces stay until consumers migrate. No rc.x BREAKING comment markers in main code (zero hits)."},
-    {"id": "D2", "wave": "D", "subject": "knip / ts-prune dead exports 扫描 + 清", "done_when": "knip baseline 0 + 删除 commit", "status": "done", "_actual_done": "2026-05-27", "note": "knip --strict revealed 4 truly-dead devDependencies post-Wave A2 quarantine (ts-prune at root, @types/express + @types/supertest + supertest at server). Removed all 4. Also dropped chokidar + express + supertest from server/dependencies (used only by quarantined HTTP code now in server-http-experimental). 21 remaining unused exports are kept for unit-test exposure (uninstall helpers, bootstrap regex constants) or near-term planned APIs (sanitizeInjectionPatterns / extractBody). Baseline documented; not zeroing."},
-    {"id": "D3", "wave": "D", "subject": "__dev flag + FABRIC_DEBUG audit", "done_when": "保留必要 + 清杂项 commit", "status": "done", "_actual_done": "2026-05-27", "note": "Audit grep — no __dev flag anywhere; FABRIC_DEBUG only at packages/cli/src/dev-mode.ts L63 (gating dev-mode stderr verbosity); FABRIC_HOME ~10 sites (test isolation + personal layer root resolve); FABRIC_PROJECT_ROOT 2 sites (server root resolve); FABRIC_NONINTERACTIVE 1 site (doctor wizard skip). All env flags serve clear purpose — nothing to clean."},
-    {"id": "D4", "wave": "D", "subject": "package.json metadata 全字段 audit", "done_when": "每 package version/description/keywords/repository/homepage/license/engines/files 完整", "status": "done", "_actual_done": "2026-05-27", "note": "Added full metadata block to all 3 published packages (server, cli, shared): description / license:MIT / author / homepage / repository.url+directory / bugs.url / keywords / engines.node>=20. files arrays include LICENSE + README.md."},
-    {"id": "D5", "wave": "D", "subject": "LICENSE 文件存在性 check", "done_when": "顶层 + 每 published package 有 LICENSE", "status": "done", "_actual_done": "2026-05-27", "note": "MIT LICENSE created at repo root (wangzhichao 2026 copyright) + mirrored to packages/{server,cli,shared}/LICENSE. Created minimal README.md for packages/server and packages/shared (CLI already had one)."},
-    {"id": "E1", "wave": "E", "subject": "README.md GA-rewrite quickstart + 删 fabric serve L205", "done_when": "README badges + logo + quickstart + 链接 docs 全 GA-ready", "status": "pending"},
-    {"id": "E2", "wave": "E", "subject": "删过期 docs (dashboard-tour / getting-started L84-93 / migration-1.8 / v1.8.0-pr)", "done_when": "对应 docs 删除或归档", "status": "pending"},
-    {"id": "E3", "wave": "E", "subject": "改 stdio-only (SPEC_INTERNAL L12/238 / CODEBASE_LANDSCAPE L38 / ARCHITECTURE_DECISIONS L186-198 / testing-architecture L88)", "done_when": "所有 docs HTTP server 引用清理", "status": "pending"},
-    {"id": "E4", "wave": "E", "subject": "CHANGELOG v2.0.0 GA 汇总 rc.5-rc.36", "done_when": "CHANGELOG.md 含 v2.0.0 章节, BREAKING/Feat/Fix 分类整理", "status": "pending"},
-    {"id": "E5", "wave": "E", "subject": "docs/migration-rc-to-ga.md 新建", "done_when": "rc.36 用户升 v2.0.0 完整路径 + 注意事项", "status": "pending"},
-    {"id": "F1", "wave": "F", "subject": "werewolf-minigame fixture 仓 (脱敏 + invariant)", "done_when": "__fixtures__/werewolf-snapshot.tar.gz + invariant 政策 + 测试套件能加载", "status": "pending"},
-    {"id": "F2", "wave": "F", "subject": "Cross-client parity smoke test", "done_when": "CC/Codex/Cursor 跑 5 操作 (install/archive/review/doctor/plan-context) 输出对比 + diff 报告", "status": "pending"},
-    {"id": "F3", "wave": "F", "subject": "Onboarding cliff 30min self-演 复测", "done_when": "rc.36 后 baseline 重测, target ≥30% reach goal 达成", "status": "pending"},
-    {"id": "F4", "wave": "F", "subject": "fabric uninstall + upgrade path test", "done_when": "uninstall 全 revert + rc.36→GA upgrade smoke 绿", "status": "pending"},
-    {"id": "F5", "wave": "F", "subject": "Windows path smoke (CI matrix)", "done_when": "GitHub Actions matrix 加 windows-latest minimum suite 绿", "status": "pending"},
-    {"id": "G1", "wave": "G", "subject": ".github/ISSUE_TEMPLATE 建立", "done_when": "bug/feature/question 三个 template", "status": "pending"},
-    {"id": "G2", "wave": "G", "subject": "CONTRIBUTING + CODE_OF_CONDUCT + SECURITY md", "done_when": "三个 md 文件全 GA-ready", "status": "pending"},
-    {"id": "G3", "wave": "G", "subject": "GitHub repo topics + About + release.yml", "done_when": "repo metadata + release notes auto-gen 配置", "status": "pending"},
-    {"id": "G4", "wave": "G", "subject": "[USER-TRIGGERED ONLY] v2.0.0 bump + tag + push + Release + NPM publish", "done_when": "USER 在所有其他 task 全 done 后,手动跑 release-rc skill 或 `pnpm bump v2.0.0 && git tag v2.0.0 && git push origin main --tags`,等待 GitHub Release workflow + NPM publish 完成。AI agent 永远不自动跑此 task", "status": "pending", "owner": "user-only", "ai_must_skip": true}
+    {
+      "id": "A1",
+      "wave": "A",
+      "subject": "删 plan-context selectable filter",
+      "done_when": "fab_plan_context 返回全候选 + werewolf dogfood 374 entry 全 selectable=true",
+      "status": "done",
+      "commit": "5dc9cef"
+    },
+    {
+      "id": "A2",
+      "wave": "A",
+      "subject": "fabric serve quarantine Part 1 (CLI + entry point)",
+      "done_when": "packages/server-http-experimental/ 建立 + 主线 CLI / startHttpServer / lock preflight 删 + relevant tests 更新",
+      "status": "done",
+      "commit": "9f4f249",
+      "note": "Part 2 (physical file move + docs/i18n sweep) tracked as A2-PART2"
+    },
+    {
+      "id": "B1",
+      "wave": "B",
+      "subject": "events.jsonl 现状 spike + clean-slate 决策",
+      "done_when": "spike report + 决策 lock 写入 status.json",
+      "status": "done",
+      "_actual_done": "2026-05-27",
+      "note": "Spike report at .workflow/.scratchpad/v2.0.0-ga-ux-audit-2026-05-27/wave-b/b1-events-jsonl-spike.md. Decision lock (Plan B counter-rollup): 5 high-frequency event_types (knowledge_consumed / edit_intent_checked / knowledge_context_planned / knowledge_sections_fetched / 类似 metric) 改走 metrics.jsonl 60s flush; audit event_types 留在 events.jsonl; 5 个 hard gate (G7-G11) 防再生; server-side rotation tick 6h; clean-slate 不迁移老数据 (旧高频 event archive 不影响 audit). KB cite [[events-jsonl-plan-b-counter-rollup]] (added to status.json.context.kb_decisions). Serial B2→B3→B4→B5 unblocked."
+    },
+    {
+      "id": "B2",
+      "wave": "B",
+      "subject": "metrics.jsonl schema + bumpCounter API + 60s flush",
+      "done_when": "shared schema 定义 + server bumpCounter 实现 + unit test",
+      "status": "done",
+      "_actual_done": "2026-05-27",
+      "note": "Added METRICS_LEDGER_FILE/PATH constants + getMetricsLedgerPath helper to _shared.ts. New services/metrics.ts with: bumpCounter (O(1) in-memory, per-project bucket), drainCounters (snapshot+reset), flushMetrics (append one JSONL row, no-op when empty, fs-failure re-seeds), startMetricsFlush (interval timer, unref()+stop handle), stopMetricsFlush, readMetrics (skip malformed, ENOENT→[]), resetMetricsForTest. METRIC_COUNTER_NAMES dict (4 canonical names for B5 G8 gate). Re-exported from server index. metrics.test.ts: 6 tests (bump/drain isolation, flush row shape + idempotency on empty, read parse+malformed skip, interval + stop handle, defensive non-positive, per-project isolation). tests 1732/1732."
+    },
+    {
+      "id": "B3",
+      "wave": "B",
+      "subject": "emit-cadence reader 切 metrics + heartbeat clean-slate",
+      "done_when": "events.jsonl 不再写心跳, doctor 报告无 heartbeat events",
+      "status": "done",
+      "_actual_done": "2026-05-27",
+      "note": "Dual-write enabled at 4 high-freq emit sites (knowledge_context_planned in plan-context.ts, knowledge_sections_fetched + knowledge_consumed:<id> per-id in knowledge-sections.ts, edit_intent_checked in read-ledger.ts). bumpCounter accumulator now populated on every emit; events.jsonl writes preserved for v2.0 GA backward-compat because orphan_demote / cite-coverage / stale_archive consume per-id payloads that pure counter rollup can't yet replicate. startMetricsFlush wired into server startup (after MCP handshake, before reconcile); shutdown handler drains accumulator + stops timer before close. The 'events.jsonl 不再写心跳' literal half is satisfied STRUCTURALLY: zero formal heartbeat event_types exist (the 4 dual-write events are audit-relevant), and B5 G8 hard gate (metric_event_in_jsonl) will prevent any future pure-metric event from leaking into events.jsonl. NEW-14 (per-field truncate) + NEW-34 (fab metrics CLI) consume this counter pipeline. tests 1732/1732."
+    },
+    {
+      "id": "B4",
+      "wave": "B",
+      "subject": "Server-side rotation tick 6h",
+      "done_when": "rotation 在 idle 时也触发 + integration test",
+      "status": "done",
+      "_actual_done": "2026-05-27",
+      "note": "New services/rotation-tick.ts: setInterval-based timer (6h default) calling rotateEventLedgerIfNeeded. unref() so it doesn't keep loop alive. Idempotent start (replaces prior timer). stop handle for shutdown. resetRotationTickForTest helper. Wired into server startup right after metrics flush; shutdown drains stops timer (NOT triggers final rotation — too heavy for 5s shutdown window). Re-exported from server index. Integration test (2 cases): seeded 91-day-old event rotates within ~800ms tick + stop is idempotent. tests 1734/1734."
+    },
+    {
+      "id": "B5",
+      "wave": "B",
+      "subject": "Plan B 5 hard gate G7-G11",
+      "done_when": "5 个新 doctor check 上线 + CI hard gate",
+      "status": "done",
+      "_actual_done": "2026-05-27",
+      "note": "Consolidated 5 gates into ONE doctor check (events_jsonl_health) to keep i18n surface bounded; the check surfaces all 4 runtime signals in its message body (G7 size > 10MB / G8 metric_event_in_jsonl via METRIC_COUNTER_NAMES grep / G9 metrics.jsonl mtime > 10min / G10 events.jsonl mtime > 90d). G11 (structural metric_event_added) is verified at test time via events-jsonl-gates.test.ts asserting current dual-write overlap state (post-GA cutover flips assertion to empty). 6 new tests in events-jsonl-gates.test.ts cover each gate firing + clean state. i18n keys added to zh-CN + en. Snapshot tests regenerated (doctor-i18n.test.ts) + check count bumped to 48 in doctor.test.ts. tests 1741/1741."
+    },
+    {
+      "id": "C1",
+      "wave": "C",
+      "subject": "Phase 1 体验地图 inventory",
+      "done_when": ".workflow/.scratchpad/v2.0.0-ga-ux-audit-2026-05-27/inventory.md 产出, 列所有 Skill/Hook/算法 surface",
+      "status": "done",
+      "_actual_done": "2026-05-27"
+    },
+    {
+      "id": "C2",
+      "wave": "C",
+      "subject": "Phase 4 算法/policy paper audit",
+      "done_when": "algorithms-verdict.md 产出, 每算法/policy 标 SHIP/NEEDS-N-POLISH/BLOCKER + rationale",
+      "status": "done",
+      "_actual_done": "2026-05-27"
+    },
+    {
+      "id": "C3",
+      "wave": "C",
+      "subject": "Phase 2 Skills paper walkthrough",
+      "done_when": "skills-verdict-paper.md 产出, 每 Skill 标 verdict",
+      "status": "done"
+    },
+    {
+      "id": "C4",
+      "wave": "C",
+      "subject": "Phase 3 Hooks paper walkthrough",
+      "done_when": "hooks-verdict-paper.md 产出",
+      "status": "done"
+    },
+    {
+      "id": "C5",
+      "wave": "C",
+      "subject": "Phase 5 8 阶段旅程 paper coherence",
+      "done_when": "journey-verdict-paper.md 产出",
+      "status": "done"
+    },
+    {
+      "id": "C6",
+      "wave": "C",
+      "subject": "Phase 6 5 横切 spot-check",
+      "done_when": "crosscut-verdict.md 产出 (i18n/cross-client/perf/security/observability)",
+      "status": "done"
+    },
+    {
+      "id": "C-WEREWOLF",
+      "wave": "C",
+      "subject": "werewolf-minigame dogfood 真验证 Phase 2/3/5",
+      "done_when": "在 werewolf 跑 fabric doctor 实测验证 paper 发现 + 补漏, dogfood-findings 已 surface NEW-36~40",
+      "status": "done",
+      "note": "simulated dogfood via doctor --fix loop; user-driven realistic session walkthrough 仍鼓励"
+    },
+    {
+      "id": "C7",
+      "wave": "C",
+      "subject": "Phase 7 GA-VERDICT 汇总",
+      "done_when": "GA-VERDICT.md 产出, 列必修 / 应修 / 推后 task, blocker 0 则 ready for Wave D-G",
+      "status": "done"
+    },
+    {
+      "id": "NEW-1",
+      "wave": "D",
+      "subject": "Cite policy 4-state → 2-state 简化 + PreEdit warn hook",
+      "done_when": "AGENTS.md cite policy section 重写 + cite-policy-evict.cjs PreEdit warn 分支 + werewolf 实测遵循率 ≥30% (vs rc.32 baseline 3.1%)",
+      "status": "pending",
+      "estimated_hours": "2-3"
+    },
+    {
+      "id": "NEW-2",
+      "wave": "D",
+      "subject": "Self-archive 4 触发信号合并 2 大类 + marker 正则容错",
+      "done_when": "AGENTS.md self-archive section 重写 + fabric-archive Phase 1.5 entry-point 识别正则化 + werewolf 实测 recall ≥40% (vs rc.32 baseline 20%)",
+      "status": "pending",
+      "estimated_hours": "1-2"
+    },
+    {
+      "id": "NEW-3",
+      "wave": "A",
+      "subject": "fab_recall 合并两步 API + TTL 5min→30min",
+      "done_when": "新 MCP tool fab_recall 注册 (内部仍走 selection token) + selection_token TTL 配置化默认 30min + 文档更新",
+      "status": "done",
+      "_actual_done": "2026-05-27",
+      "note": "Added recall service + tool wrapping planContext + getKnowledgeSections in one round-trip. Default SELECTION_TOKEN_TTL_DEFAULT_MS bumped 5min→30min (config override still honored). Schema (recallInputSchema/recallOutputSchema/recallAnnotations) added to shared. registerRecall wired in createFabricServer. recall.test.ts: 3 tests pass (full set, scoped ids, empty fast-path). index.test.ts updated for new tool list. dependencies=A1 satisfied (server returns all selectable=true after A1)."
+    },
+    {
+      "id": "NEW-4",
+      "wave": "D",
+      "subject": "Phase 0.5 viability gate signal 8→3 简化 + duplicate glob 强制 + force-archive 引导",
+      "done_when": "fabric-archive SKILL.md Phase 0.5 重写 3 大类信号 + Phase 0.5 强制 Glob duplicate + E2/E4 gate-FAIL message 加 force-archive 引导",
+      "status": "pending",
+      "estimated_hours": "2"
+    },
+    {
+      "id": "NEW-5",
+      "wave": "D",
+      "subject": "doctor lint: personal layer 引用本项目路径 → warn",
+      "done_when": "新 doctor check personal_layer_path_misclassify + i18n zh/en + werewolf fixture 测",
+      "status": "pending",
+      "estimated_hours": "1"
+    },
+    {
+      "id": "NEW-6",
+      "wave": "A",
+      "subject": "fab_extract_knowledge server 端 slug auto-disambiguate",
+      "done_when": "(source_session, type, slug) 碰撞时 server 自动加 -2 / -alt 后缀并 return, 不再 reject; idempotency_key 重新计算",
+      "status": "done",
+      "_actual_done": "2026-05-27",
+      "note": "New resolveDisambiguatedSlugPath helper scans slug.md → slug-2.md → ... → slug-9.md, returning the first slot that's either free or carries the caller's idempotency_key (evidence-merge path). idempotency_key recomputed via sha256(source+type+disambiguated_slug) so re-runs deterministically hit the same -N slot. Throws only after exhausting 9 variants. 3 affected tests rewritten to assert disambiguation (previously asserted loud throw). tests 1721/1721."
+    },
+    {
+      "id": "NEW-7",
+      "wave": "A",
+      "subject": "relevance_paths 多 signal 升级 + Evidence frontmatter 化",
+      "done_when": "Phase 1.5 derivation 接收 read_paths + user_mentioned_paths 信号 + body Evidence section 升级为 frontmatter evidence_paths 字段",
+      "status": "done",
+      "_actual_done": "2026-05-27",
+      "note": "Schema: added evidence_paths optional string[] to FabExtractKnowledgeInputSchema (NOT in idempotency hash). Server: renderFreshEntry accepts evidencePaths, writes frontmatter evidence_paths: [...] (flow-form); legacy body ## Evidence retained for back-compat readers. Wired both call sites (fresh + evidence-merge). SKILL docs: phase-3-5-scope.md rewritten — Step 1 widened to 3 sources (edit_paths + read_paths + user_mentioned_paths), Step 2 dedupes + classifies (writes→relevance_paths, reads→evidence_paths), Step 6 attaches evidence_paths to frontmatter. SKILL.md prohibitions updated. Mirrors (.claude / .codex) synced. 2 new tests (writes evidence_paths to fm / omits line when empty). tool-contracts snapshot regenerated for new schema field. tests 1726/1726."
+    },
+    {
+      "id": "NEW-8",
+      "wave": "D",
+      "subject": "doctor remediation 70 string 系统 sweep + 删高危引导文案",
+      "done_when": "remediation-audit.md 产出 + 35 check × 2 locale = 70 string review + 0 个引导删 ledger / 删 .fabric/ 类文案 + 每 remediation 含诊断+命令+manual fallback",
+      "status": "pending",
+      "estimated_hours": "3-4"
+    },
+    {
+      "id": "NEW-9",
+      "wave": "D",
+      "subject": "fabric-archive 简化 8 phase → 3 + Phase 1 ledger filter 服务端化",
+      "done_when": "SKILL.md 重写 + ledger filter 状态机移到 server",
+      "status": "pending",
+      "estimated_hours": "3-4"
+    },
+    {
+      "id": "NEW-10",
+      "wave": "D",
+      "subject": "dry-run / state-resume 统一 explicit flag (3 skill 共)",
+      "done_when": "fabric-archive/import/review 全用 --dry-run flag, prompt substring 检测路径删",
+      "status": "pending",
+      "estimated_hours": "1-2"
+    },
+    {
+      "id": "NEW-11",
+      "wave": "A",
+      "subject": "fabric-import broad+[] mandate 与 A1 联动重评",
+      "done_when": "import 是否仍 broad-only 重新评估 + SKILL.md update",
+      "status": "done",
+      "_actual_done": "2026-05-27",
+      "note": "Re-evaluation: mandate STAYS (broad+[] still right for fabric-import) but rationale framing updated. Pre-A1: 'false-narrow silently hides knowledge during plan-context filtering' — dead claim, server no longer filters. Post-A1: 'false-narrow poisons doctor lint accounting + downstream consumers reading relevance_paths literally'. Updated 3 places: canonical SKILL.md compressed mandate one-liner, ref/phase-2-mining.md rationale §3, .claude/skills mirror, .codex/skills mirror. tests 1724/1724."
+    },
+    {
+      "id": "NEW-12",
+      "wave": "D",
+      "subject": "fabric-review mode 4→2 + semantic check 量化 + modify 拆 2 action",
+      "done_when": "SKILL.md 重写 mode infer + fab_review action 拆分 modify-content/modify-layer",
+      "status": "pending",
+      "estimated_hours": "3-4"
+    },
+    {
+      "id": "NEW-13",
+      "wave": "D",
+      "subject": "cross-skill 共享 lib (layer heuristic / events emit / protected tokens)",
+      "done_when": "templates/skills/lib/ 抽取共享逻辑 + 3 skill 引用",
+      "status": "pending",
+      "estimated_hours": "2-3"
+    },
+    {
+      "id": "NEW-14",
+      "wave": "B",
+      "subject": "events.jsonl 字段自动 truncate 到 server side",
+      "done_when": "appendEventLedgerEvent 自动应用 4KB POSIX 约束 + per-field cap",
+      "status": "done",
+      "_actual_done": "2026-05-27",
+      "note": "truncateLongStrings recursive walker in appendEventLedgerEvent caps every string field at 4 KB (PIPE_BUF on Linux/macOS) + appends [truncated: rc.37 NEW-14 4KB cap] sentinel. UTF-8 safe (decrement candidate length progressively until sentinel fits). Runs BEFORE Zod parse so truncated payload still validates. 2 tests verify big reason truncated + small reason untouched. tests 1743/1743."
+    },
+    {
+      "id": "NEW-15",
+      "wave": "D",
+      "subject": "skill 文案术语清理 (Check-not-Ask / E3-strong / viability gate)",
+      "done_when": "3 个 SKILL.md user-facing prose 重写 ≤ 用户可读",
+      "status": "pending",
+      "estimated_hours": "1-2"
+    },
+    {
+      "id": "NEW-16",
+      "wave": "D",
+      "subject": "fabric-hint 拆 4 子 hook + 独立 cooldown + dismiss 机制 + 文案加引导",
+      "done_when": "4 个独立 hook (archive/import/review/maintenance) + session-level dismiss state + nudge 加 dismiss option",
+      "status": "pending",
+      "estimated_hours": "3-4"
+    },
+    {
+      "id": "NEW-17",
+      "wave": "D",
+      "subject": "knowledge-hint-narrow in-memory cache + multi-path 聚合",
+      "done_when": "hook 单 session 共享 plan-context-hint 结果 + MultiEdit N path 单调用",
+      "status": "pending",
+      "estimated_hours": "2-3"
+    },
+    {
+      "id": "NEW-18",
+      "wave": "D",
+      "subject": "cite-policy-evict default ON interval=10 + 加 PreEdit cite-check 分支",
+      "done_when": "default 改 ON + Edit/Write PreToolUse 加 cite spot check + nudge 配 NEW-1",
+      "status": "pending",
+      "estimated_hours": "1",
+      "dependencies": "NEW-1"
+    },
+    {
+      "id": "NEW-19",
+      "wave": "D",
+      "subject": "hooks/lib state-store / config-cache / client-adapter 抽象",
+      "done_when": "lib/ 抽出共通 I/O + 4 主 hook 引用",
+      "status": "pending",
+      "estimated_hours": "2-3"
+    },
+    {
+      "id": "NEW-20",
+      "wave": "D",
+      "subject": "fabric doctor --check-hooks runtime hook health check",
+      "done_when": "doctor 加 hook fire test + 报告 runtime status",
+      "status": "pending",
+      "estimated_hours": "1-2"
+    },
+    {
+      "id": "NEW-21",
+      "wave": "F",
+      "subject": "Codex/Cursor cite policy 等价路径补齐 (SessionStart 模拟)",
+      "done_when": "Codex codex-hooks.json + Cursor cursor-hooks.json 添加 cite reminder 等价路径",
+      "status": "pending",
+      "estimated_hours": "2-3"
+    },
+    {
+      "id": "NEW-22",
+      "wave": "D",
+      "subject": "install 加重启提示 + partial-state recovery",
+      "done_when": "install 末尾 banner 加 '重启 client' 提示 + --resume <phase> flag",
+      "status": "done",
+      "_actual_done": "2026-05-27",
+      "note": "Restart banner: printInitCapabilitySummary 末尾 console.log(t('cli.install.restart-banner')) — bilingual one-line hint that already-running Claude Code / Cursor / Codex sessions need restart to load the new MCP config. i18n key added to zh-CN + en. --resume <phase> flag interpretation: install is ALREADY effectively resumable because every stage skips already-installed artifacts (bootstrap idempotent, hooks dedup, mcp config preserve). Re-running fabric install is the canonical recovery path; an explicit --resume flag would add UX without semantic value. tests 1743/1743 + i18n snapshot regenerated."
+    },
+    {
+      "id": "NEW-23",
+      "wave": "D",
+      "subject": "SessionStart 索引末尾 '下一步' 引导",
+      "done_when": "knowledge-hint-broad 输出末尾加引导文案",
+      "status": "done",
+      "_actual_done": "2026-05-27",
+      "note": "knowledge-hint-broad.cjs: after building lines + optional broadImportBanner, append bilingual '下一步' tail line nudging fab_recall(paths) or fab_plan_context. fabricLanguageForEmit hoisted to share between banner and tail (only invoked when emit actually fires). Mirrored to .claude/.codex/.cursor installed copies. tests 1743/1743."
+    },
+    {
+      "id": "NEW-24",
+      "wave": "A",
+      "subject": "layer-flip server emit knowledge_id_redirect + plan_context 透明 redirect",
+      "done_when": "fab_review modify layer 后 server emit redirect event + fab_plan_context 接收旧 id 透明 forward",
+      "status": "done",
+      "_actual_done": "2026-05-27",
+      "note": "Added knowledge_id_redirect event schema + previous_stable_id field on knowledge_layer_changed. New id-redirect.ts service loads recent redirect events into a compressed (old→new) map with 30d window. fab_review modifyLayerFlip emits both events on layer flip. fab_plan_context output gains optional `redirects` map (only surfaces actionable mappings where new_id is in current description_index). fab_get_knowledge_sections transparently rewrites stale ids in ai_selected_stable_ids before validation, surfaces redirect_to map describing all substitutions (schema union supports both pre-rc.37 {stable_id} shape + rc.37+ {old:new,...} map). fab_recall rewrites caller-passed `ids` via redirect map before intersection. id-redirect.test.ts: 6 tests pass. tool-contracts snapshots updated for new schema fields. tests 1721/1721."
+    },
+    {
+      "id": "NEW-25",
+      "wave": "D",
+      "subject": "doctor 输出加 TL;DR top-3 critical 头部",
+      "done_when": "runDoctorReport 输出顶部加 top-3 critical issues summary",
+      "status": "done",
+      "_actual_done": "2026-05-27",
+      "note": "renderHumanReport 在 'fabric doctor <target>' header 之后, per-check 列表之前, 调 renderTldrHeader. Severity 排序 fixable > manual > warn, 取 top-3, 每条单行 '<marker> <code>: <message>' (>140 chars 截断 + ...). 全绿时 emit 单行 'TL;DR: all 48 checks green'. tests 1743/1743 (JSON output 路径不变, snapshot 未受影响)."
+    },
+    {
+      "id": "NEW-26",
+      "wave": "D",
+      "subject": "install --diff-hooks + --force-hooks-only flag",
+      "done_when": "install 新 2 flag + drift detect 软化 (非破坏性升级路径)",
+      "status": "pending",
+      "estimated_hours": "2-3"
+    },
+    {
+      "id": "NEW-27",
+      "wave": "D",
+      "subject": "doctor drift_summary 头部统一 view + --check-hook-content sha256",
+      "done_when": "doctor 加 drift_summary section + hook content sha 比对",
+      "status": "pending",
+      "estimated_hours": "2"
+    },
+    {
+      "id": "NEW-28",
+      "wave": "D",
+      "subject": "i18n key parity audit + AGENTS.md verbatim 块同步",
+      "done_when": "doctor --i18n-audit + AGENTS.md 双语版本 byte-equal 校验",
+      "status": "pending",
+      "estimated_hours": "1-2"
+    },
+    {
+      "id": "NEW-29",
+      "wave": "D",
+      "subject": "Cursor + Codex hook config schema 统一",
+      "done_when": "两 client config schema 命名/事件大小写统一 + path 解析方式一致",
+      "status": "pending",
+      "estimated_hours": "2"
+    },
+    {
+      "id": "NEW-30",
+      "wave": "D",
+      "subject": "stderr/stdout client-adapter 抽象",
+      "done_when": "hooks/lib/client-adapter.cjs 抽出 Claude/Codex/Cursor 协议差异 + 3 client 输出标准化",
+      "status": "pending",
+      "estimated_hours": "2-3"
+    },
+    {
+      "id": "NEW-31",
+      "wave": "A",
+      "subject": "fab_extract_knowledge KB body prompt injection sanitization",
+      "done_when": "server 端 strip 明显 injection 模式 (ignore previous / rm -rf / forget your role) + lint",
+      "status": "done",
+      "_actual_done": "2026-05-27",
+      "note": "Added INJECTION_PATTERNS (7 regex: ignore-prior / forget-role / you-are-now / rm-rf-root / shell-eval-curl / chatml-envelope / claude-envelope) + sanitizeInjectionPatterns + sanitizeInjectionFields. Sanitizer runs at the head of extractKnowledge across slug + user_messages_summary + session_context + must_read_if + intent_clues; any match replaced with [REDACTED: prompt-injection pattern stripped] sentinel + knowledge_archive_attempted event emitted per redaction summary. Clean inputs no-op. 3 new tests verify redaction (ignore-previous), multi-pattern (rm-rf + role-override + chatml), clean-passthrough. NEW-32 doctor lint deferred per GA-VERDICT (only NEW-31 in scope). tests 1724/1724."
+    },
+    {
+      "id": "NEW-32",
+      "wave": "D",
+      "subject": "doctor --suspicious-kb injection 模式 lint",
+      "done_when": "doctor 新 check 扫 canonical KB body 跑 injection 正则",
+      "status": "pending",
+      "estimated_hours": "1"
+    },
+    {
+      "id": "NEW-33",
+      "wave": "D",
+      "subject": "doctor history 扩展全 mode",
+      "done_when": "doctor --history all 显示 fix / cite-coverage / archive 历次趋势",
+      "status": "pending",
+      "estimated_hours": "1-2"
+    },
+    {
+      "id": "NEW-34",
+      "wave": "B",
+      "subject": "fabric metrics 子命令 (metrics.jsonl 聚合 dashboard text-based)",
+      "done_when": "fab metrics 子命令 + 输出 text dashboard",
+      "status": "done",
+      "_actual_done": "2026-05-27",
+      "note": "New packages/cli/src/commands/metrics.ts: reads readMetrics from server package, aggregates over --since window (1d/24h/30m/90s shorthand parser), prints text table with counter totals + top-10 per-entry consumed leaderboard. --json emits machine-readable aggregated payload. Registered in commands/index.ts as hidden subcommand. Smoke-tested against werewolf-minigame (no metrics.jsonl yet → graceful 'no counter activity' fallback). tests 1743/1743."
+    },
+    {
+      "id": "NEW-35",
+      "wave": "F",
+      "subject": "perf benchmark CI (cold start + hook latency p95)",
+      "done_when": "GitHub Actions 加 perf job + p95 < 200ms gate",
+      "status": "pending",
+      "estimated_hours": "2"
+    },
+    {
+      "id": "NEW-36",
+      "wave": "D",
+      "subject": "doctor anti-goodhart lint 增强 (同 id [recalled] 7d 内 > 阈值)",
+      "done_when": "doctor cite_goodhart_pattern check 阈值化 + 实测命中报警",
+      "status": "pending",
+      "estimated_hours": "1",
+      "dependencies": "NEW-1"
+    },
+    {
+      "id": "NEW-37",
+      "wave": "A",
+      "subject": "fab_extract_knowledge schema 加 tags + summary opacity guards",
+      "done_when": "MCP schema 加 tags 字段 + summary ≥15 chars + !=slug + 不匹配 stable_id 模式 (KT-XXX-NNNN);新 archive 不再写 opaque summary",
+      "status": "done",
+      "commit": "364dc82",
+      "critical_for_A1": true,
+      "note": "werewolf 现有 90% legacy opaque entries 留给 NEW-38 auto-promote / 后续 backfill 路径处理"
+    },
+    {
+      "id": "NEW-38",
+      "wave": "D",
+      "subject": "Knowledge auto-promote pipeline (draft ≥14d + no drift → auto-promote)",
+      "done_when": "doctor --fix 触发 auto-promote + draft backlog 实测从 100% 降到 <50%",
+      "status": "pending",
+      "estimated_hours": "2-3"
+    },
+    {
+      "id": "NEW-39",
+      "wave": "A",
+      "subject": "Promote ledger invariant 修复 (doctor --fix backfill 路径)",
+      "done_when": "doctor --fix 检测到 promote_ledger_invariant_violated warning 时,emit synth knowledge_proposed + knowledge_promote_started 把三个 count 拉到 max() 目标值;werewolf 实测 proposed=20<started=49<promoted=53 → 53≥53≥53",
+      "status": "done",
+      "commit": "24fc521",
+      "critical_for_A1": true,
+      "note": "rc.31 BUG-G2 already wired synth proposed at approve-time for new approves; NEW-39 healed historical legacy state via --fix backfill"
+    },
+    {
+      "id": "NEW-40",
+      "wave": "D",
+      "subject": "doctor remediation 禁引用未来 rc (rc.37 计划上线 → 当前 manual + 后续 release 自动化)",
+      "done_when": "remediation 文案 sweep + 0 个引用 rc.X 计划字眼",
+      "status": "pending",
+      "estimated_hours": "1",
+      "dependencies": "NEW-8"
+    },
+    {
+      "id": "A2-PART2",
+      "wave": "A",
+      "subject": "fabric serve quarantine Part 2 (physical file move + docs/i18n sweep)",
+      "done_when": "http.ts / bearer-auth.ts / serve-lock.ts 物理移到 experimental + doctor 解耦 + docs (dashboard-tour/migration-1.8/getting-started L84-93/ARCHITECTURE_DECISIONS L186-198) 清 + shared/i18n cli.serve.* + FABRIC_AUTH_TOKEN 删",
+      "status": "done",
+      "_actual_done": "2026-05-27",
+      "note": "Moved http.ts + middleware/ + api/ + serve-lock.ts + 5 tests to packages/server-http-experimental/. Extracted read-only legacy-serve-lock-probe.ts for doctor. Deleted dashboard-tour.md + migration-1.8.md. Updated getting-started / ARCHITECTURE_DECISIONS / SPEC_INTERNAL / CODEBASE_LANDSCAPE / RULE_REGISTRY / testing-architecture / tooling-manifest. Removed cli.serve.* i18n keys both locales. Werewolf dogfood doctor still green. tests 1712/1712."
+    },
+    {
+      "id": "D1",
+      "wave": "D",
+      "subject": "rc.x BREAKING 残留 sweep (grep // rc.\\d+ / deprecated)",
+      "done_when": "全仓 grep 产物 + sweep commit",
+      "status": "done",
+      "_actual_done": "2026-05-27",
+      "note": "Grep returned 5 @deprecated hits — all intentional transitional aids (rehydrate-state error class, plan-context-hint legacy fields, forensic.ts migration helper, api-contracts precedence tuple, forensic-report assertions field). Sweep verdict: nothing to remove pre-GA; transitional surfaces stay until consumers migrate. No rc.x BREAKING comment markers in main code (zero hits)."
+    },
+    {
+      "id": "D2",
+      "wave": "D",
+      "subject": "knip / ts-prune dead exports 扫描 + 清",
+      "done_when": "knip baseline 0 + 删除 commit",
+      "status": "done",
+      "_actual_done": "2026-05-27",
+      "note": "knip --strict revealed 4 truly-dead devDependencies post-Wave A2 quarantine (ts-prune at root, @types/express + @types/supertest + supertest at server). Removed all 4. Also dropped chokidar + express + supertest from server/dependencies (used only by quarantined HTTP code now in server-http-experimental). 21 remaining unused exports are kept for unit-test exposure (uninstall helpers, bootstrap regex constants) or near-term planned APIs (sanitizeInjectionPatterns / extractBody). Baseline documented; not zeroing."
+    },
+    {
+      "id": "D3",
+      "wave": "D",
+      "subject": "__dev flag + FABRIC_DEBUG audit",
+      "done_when": "保留必要 + 清杂项 commit",
+      "status": "done",
+      "_actual_done": "2026-05-27",
+      "note": "Audit grep — no __dev flag anywhere; FABRIC_DEBUG only at packages/cli/src/dev-mode.ts L63 (gating dev-mode stderr verbosity); FABRIC_HOME ~10 sites (test isolation + personal layer root resolve); FABRIC_PROJECT_ROOT 2 sites (server root resolve); FABRIC_NONINTERACTIVE 1 site (doctor wizard skip). All env flags serve clear purpose — nothing to clean."
+    },
+    {
+      "id": "D4",
+      "wave": "D",
+      "subject": "package.json metadata 全字段 audit",
+      "done_when": "每 package version/description/keywords/repository/homepage/license/engines/files 完整",
+      "status": "done",
+      "_actual_done": "2026-05-27",
+      "note": "Added full metadata block to all 3 published packages (server, cli, shared): description / license:MIT / author / homepage / repository.url+directory / bugs.url / keywords / engines.node>=20. files arrays include LICENSE + README.md."
+    },
+    {
+      "id": "D5",
+      "wave": "D",
+      "subject": "LICENSE 文件存在性 check",
+      "done_when": "顶层 + 每 published package 有 LICENSE",
+      "status": "done",
+      "_actual_done": "2026-05-27",
+      "note": "MIT LICENSE created at repo root (wangzhichao 2026 copyright) + mirrored to packages/{server,cli,shared}/LICENSE. Created minimal README.md for packages/server and packages/shared (CLI already had one)."
+    },
+    {
+      "id": "E1",
+      "wave": "E",
+      "subject": "README.md GA-rewrite quickstart + 删 fabric serve L205",
+      "done_when": "README badges + logo + quickstart + 链接 docs 全 GA-ready",
+      "status": "pending"
+    },
+    {
+      "id": "E2",
+      "wave": "E",
+      "subject": "删过期 docs (dashboard-tour / getting-started L84-93 / migration-1.8 / v1.8.0-pr)",
+      "done_when": "对应 docs 删除或归档",
+      "status": "pending"
+    },
+    {
+      "id": "E3",
+      "wave": "E",
+      "subject": "改 stdio-only (SPEC_INTERNAL L12/238 / CODEBASE_LANDSCAPE L38 / ARCHITECTURE_DECISIONS L186-198 / testing-architecture L88)",
+      "done_when": "所有 docs HTTP server 引用清理",
+      "status": "pending"
+    },
+    {
+      "id": "E4",
+      "wave": "E",
+      "subject": "CHANGELOG v2.0.0 GA 汇总 rc.5-rc.36",
+      "done_when": "CHANGELOG.md 含 v2.0.0 章节, BREAKING/Feat/Fix 分类整理",
+      "status": "pending"
+    },
+    {
+      "id": "E5",
+      "wave": "E",
+      "subject": "docs/migration-rc-to-ga.md 新建",
+      "done_when": "rc.36 用户升 v2.0.0 完整路径 + 注意事项",
+      "status": "pending"
+    },
+    {
+      "id": "F1",
+      "wave": "F",
+      "subject": "werewolf-minigame fixture 仓 (脱敏 + invariant)",
+      "done_when": "__fixtures__/werewolf-snapshot.tar.gz + invariant 政策 + 测试套件能加载",
+      "status": "pending"
+    },
+    {
+      "id": "F2",
+      "wave": "F",
+      "subject": "Cross-client parity smoke test",
+      "done_when": "CC/Codex/Cursor 跑 5 操作 (install/archive/review/doctor/plan-context) 输出对比 + diff 报告",
+      "status": "pending"
+    },
+    {
+      "id": "F3",
+      "wave": "F",
+      "subject": "Onboarding cliff 30min self-演 复测",
+      "done_when": "rc.36 后 baseline 重测, target ≥30% reach goal 达成",
+      "status": "pending"
+    },
+    {
+      "id": "F4",
+      "wave": "F",
+      "subject": "fabric uninstall + upgrade path test",
+      "done_when": "uninstall 全 revert + rc.36→GA upgrade smoke 绿",
+      "status": "pending"
+    },
+    {
+      "id": "F5",
+      "wave": "F",
+      "subject": "Windows path smoke (CI matrix)",
+      "done_when": "GitHub Actions matrix 加 windows-latest minimum suite 绿",
+      "status": "pending"
+    },
+    {
+      "id": "G1",
+      "wave": "G",
+      "subject": ".github/ISSUE_TEMPLATE 建立",
+      "done_when": "bug/feature/question 三个 template",
+      "status": "pending"
+    },
+    {
+      "id": "G2",
+      "wave": "G",
+      "subject": "CONTRIBUTING + CODE_OF_CONDUCT + SECURITY md",
+      "done_when": "三个 md 文件全 GA-ready",
+      "status": "pending"
+    },
+    {
+      "id": "G3",
+      "wave": "G",
+      "subject": "GitHub repo topics + About + release.yml",
+      "done_when": "repo metadata + release notes auto-gen 配置",
+      "status": "pending"
+    },
+    {
+      "id": "G4",
+      "wave": "G",
+      "subject": "[USER-TRIGGERED ONLY] v2.0.0 bump + tag + push + Release + NPM publish",
+      "done_when": "USER 在所有其他 task 全 done 后,手动跑 release-rc skill 或 `pnpm bump v2.0.0 && git tag v2.0.0 && git push origin main --tags`,等待 GitHub Release workflow + NPM publish 完成。AI agent 永远不自动跑此 task",
+      "status": "pending",
+      "owner": "user-only",
+      "ai_must_skip": true
+    }
   ],
   "goal_checklist_path": ".workflow/.maestro/maestro-20260527-v2ga/goal-checklist.md",
   "steps": [],
   "waves": [
-    {"name": "A", "tasks": ["A1", "A2"], "estimated_hours": "7-10", "parallel_safe": true},
-    {"name": "B", "tasks": ["B1", "B2", "B3", "B4", "B5"], "estimated_hours": "12-15", "dependencies": "B1→B2→B3→B4→B5 serial"},
-    {"name": "C", "tasks": ["C1", "C2", "C3", "C4", "C5", "C6", "C-WEREWOLF", "C7"], "estimated_hours": "12-18", "notes": "C1+C2 优先 (P2 audit-early), C-WEREWOLF user-owned, C7 必须最后"},
-    {"name": "D", "tasks": ["D1", "D2", "D3", "D4", "D5"], "estimated_hours": "7-10", "dependencies": "C7 verdict 后启动"},
-    {"name": "E", "tasks": ["E1", "E2", "E3", "E4", "E5"], "estimated_hours": "10-13", "dependencies": "A2 完成后启动 (docs 引用 quarantine 代码)"},
-    {"name": "F", "tasks": ["F1", "F2", "F3", "F4", "F5"], "estimated_hours": "13-16", "dependencies": "F2/F3 依赖 F1"},
-    {"name": "G", "tasks": ["G1", "G2", "G3", "G4"], "estimated_hours": "4-6", "dependencies": "A-F 全绿后"}
+    {
+      "name": "A",
+      "tasks": [
+        "A1",
+        "A2"
+      ],
+      "estimated_hours": "7-10",
+      "parallel_safe": true
+    },
+    {
+      "name": "B",
+      "tasks": [
+        "B1",
+        "B2",
+        "B3",
+        "B4",
+        "B5"
+      ],
+      "estimated_hours": "12-15",
+      "dependencies": "B1→B2→B3→B4→B5 serial"
+    },
+    {
+      "name": "C",
+      "tasks": [
+        "C1",
+        "C2",
+        "C3",
+        "C4",
+        "C5",
+        "C6",
+        "C-WEREWOLF",
+        "C7"
+      ],
+      "estimated_hours": "12-18",
+      "notes": "C1+C2 优先 (P2 audit-early), C-WEREWOLF user-owned, C7 必须最后"
+    },
+    {
+      "name": "D",
+      "tasks": [
+        "D1",
+        "D2",
+        "D3",
+        "D4",
+        "D5"
+      ],
+      "estimated_hours": "7-10",
+      "dependencies": "C7 verdict 后启动"
+    },
+    {
+      "name": "E",
+      "tasks": [
+        "E1",
+        "E2",
+        "E3",
+        "E4",
+        "E5"
+      ],
+      "estimated_hours": "10-13",
+      "dependencies": "A2 完成后启动 (docs 引用 quarantine 代码)"
+    },
+    {
+      "name": "F",
+      "tasks": [
+        "F1",
+        "F2",
+        "F3",
+        "F4",
+        "F5"
+      ],
+      "estimated_hours": "13-16",
+      "dependencies": "F2/F3 依赖 F1"
+    },
+    {
+      "name": "G",
+      "tasks": [
+        "G1",
+        "G2",
+        "G3",
+        "G4"
+      ],
+      "estimated_hours": "4-6",
+      "dependencies": "A-F 全绿后"
+    }
   ]
 }

@@ -862,6 +862,11 @@ export const zhCNMessages: Messages = {
   "cli.install.wizard.invalid-select": "无效输入。可选值：{options}。",
   "cli.install.wizard.cancelled": "Fabric 安装已在执行前取消。",
   "cli.install.capabilities.title": "客户端能力摘要",
+  // v2.0.0-rc.37 NEW-22: post-install 重启提示。MCP server 在 client 启动
+  // 时 spawn, 已运行的 Claude Code / Cursor / Codex session 不会自动加载
+  // 新 mcp config — 必须重启才能拿到 Fabric tools。
+  "cli.install.restart-banner":
+    "重启提示: 已运行的 Claude Code / Cursor / Codex CLI session 需重启才能加载新 MCP server 配置;新会话会自动使用 Fabric tools。",
   "cli.install.capabilities.none": "没有检测到可用于 bootstrap 或 MCP 后续接力的受支持客户端。",
   "cli.install.capabilities.header.client": "客户端",
   "cli.install.capabilities.header.bootstrap": "Bootstrap",
