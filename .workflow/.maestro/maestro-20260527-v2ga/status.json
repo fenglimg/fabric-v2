@@ -620,7 +620,9 @@
       "wave": "E",
       "subject": "docs/migration-rc-to-ga.md 新建",
       "done_when": "rc.36 用户升 v2.0.0 完整路径 + 注意事项",
-      "status": "pending"
+      "status": "done",
+      "_actual_done": "2026-05-27",
+      "note": "263-line docs/migration-rc-to-ga.md (untracked, 本 commit 落地) 覆盖: TL;DR 3 命令 (pnpm add → fabric install → restart client) / rc.37 Wave A+B+D 变更汇总 (fabric serve quarantine + FABRIC_AUTH_TOKEN 退役 + fab_recall 合并 API + metrics.jsonl sidecar + 5 new doctor checks + cite policy 2-state simplification + self-archive 2-signal simplification + AGENTS.md re-sync + skill 文案清理) / Hooks & client-config 自动迁移注意 / 'will doctor immediately complain' 5 known patterns (drift_unconsumed / opaque summary / events_jsonl_health > 10MB / legacy lock / personal layer path 误分) / removed surfaces 表格 (含 cli.serve.* i18n / FABRIC_AUTH_TOKEN / docs deletions / 4-state cite tags / 4-name signals) / rollback path (pnpm add @fenglimg/fabric-cli@2.0.0-rc.36) / when-to-file-issue trigger list。"
     },
     {
       "id": "F1",
