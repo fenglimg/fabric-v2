@@ -309,6 +309,7 @@
       "_actual_done": "2026-05-27",
       "estimated_hours": "1-2",
       "note": "Swept 3 jargon terms across canonical sources. 'Check-not-Ask' in fabric-import/SKILL.md L147 → '...inspect existing state and continue from the last completed phase — do not prompt the user mid-flow.'; in fabric-archive/SKILL.md L24 → 'This skill runs automatically — it does not interview the user for preferences.' (also clarified Phase 2.5 as 'the signal check' parenthetical, keeping 'viability gate' as the defined section header at L64 so internal refs unbroken). 'E3-strong mode' in .fabric/AGENTS.md L18 + AGENTS.md L28 + packages/shared/src/templates/bootstrap-canonical.ts L105 → '走 AI 自触发入口 E3_ai_self_trigger' (entry-point name is real, surfaces the actual routing). fabric-review/SKILL.md had no hits. Pre-existing AGENTS.md ↔ bootstrap-canonical.ts drift (rc.37 NEW-2 content) belongs to NEW-28; touched both this turn to avoid widening the drift. Gates: typecheck 0 / tests 1753 (430+606+717) / lint 0."
+    },
     {
       "id": "NEW-16",
       "wave": "D",
