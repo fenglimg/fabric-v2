@@ -159,11 +159,19 @@ export const HOOK_SCRIPT_DESTINATIONS = {
     ".codex/hooks/knowledge-hint-narrow.cjs",
     ".cursor/hooks/knowledge-hint-narrow.cjs",
   ],
-  // v2.0.0-rc.34 TASK-06: Claude Code only — UserPromptSubmit cite-policy
-  // long-session evict sidecar. Codex / Cursor don't have an equivalent
-  // event registration; cite-coverage telemetry there relies on the existing
-  // Stop / SessionStart hooks (knowledge-hint-broad rc.33 W2 channel).
-  citePolicyEvict: [".claude/hooks/cite-policy-evict.cjs"],
+  // v2.0.0-rc.34 TASK-06: Claude Code — UserPromptSubmit cite-policy long-
+  // session evict sidecar.
+  // v2.0.0-rc.37 NEW-21: extended to Codex / Cursor SessionStart slots.
+  // Those clients don't have an equivalent per-prompt event, so cite-policy-
+  // evict.cjs runs in "SessionStart mode" (one-shot stderr emit per session
+  // boot, no turn-counter). Cadence is lower than Claude Code's per-prompt
+  // window but strictly better than 0 (rc.32 baseline measured Codex/Cursor
+  // at 3.1% cite coverage when no cite-reminder surface existed).
+  citePolicyEvict: [
+    ".claude/hooks/cite-policy-evict.cjs",
+    ".codex/hooks/cite-policy-evict.cjs",
+    ".cursor/hooks/cite-policy-evict.cjs",
+  ],
 } as const;
 
 /**

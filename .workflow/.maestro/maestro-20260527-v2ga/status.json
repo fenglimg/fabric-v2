@@ -359,8 +359,10 @@
       "wave": "F",
       "subject": "Codex/Cursor cite policy 等价路径补齐 (SessionStart 模拟)",
       "done_when": "Codex codex-hooks.json + Cursor cursor-hooks.json 添加 cite reminder 等价路径",
-      "status": "pending",
-      "estimated_hours": "2-3"
+      "status": "done",
+      "_actual_done": "2026-05-27",
+      "estimated_hours": "2-3",
+      "note": "extend cite-policy-evict.cjs hook with SessionStart-mode branch: 在 main() 顶部读 stdin payload, 若 hook_event_name === 'SessionStart' (Codex/Cursor SessionStart 注入) 或 env.forceSessionStart, 走一次 unconditional reminder → stderr (no turn-counter / no state sidecar / no Claude Code stdout envelope)。原 UserPromptSubmit + Claude Code turn-counter 路径保留 untouched。citePolicyEvict install-target array 从 1 个 (.claude/) 扩到 3 个 (+ .codex/ + .cursor/), 让 install 把 hook 文件 copy 到 3 个 client root。codex-hooks.json events.SessionStart 加第二个 entry → cite-policy-evict.cjs; cursor-hooks.json sessionStart 加第二个 entry → cite-policy-evict.cjs (两 client 都已 wire knowledge-hint-broad 作首 entry, cite 注入紧随其后, 顺序 deterministic)。Codex/Cursor 节奏比 Claude Code per-prompt 低 (1 次 per session boot vs N 次 per session), 但显著优于 rc.32 baseline 3.1% (Codex/Cursor 完全无 cite reminder 状态)。i18n.test.ts snapshot 更新 (installed hooks 1 → 5: 加 codex/cursor cite-policy-evict + 各自 lib/ ?, 实际 snapshot 显示 installed=5 / skipped=98)。Gates: typecheck 0 / tests 1755 / lint 0."
     },
     {
       "id": "NEW-22",

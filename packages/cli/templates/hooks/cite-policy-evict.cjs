@@ -196,15 +196,46 @@ async function main(env) {
       return; // feature off — silent exit
     }
 
-    // Skip Claude Code-specific stdout envelope on Codex/Cursor. Counter
-    // bookkeeping also skipped — there's no fire path on those clients.
+    // Read stdin payload (Claude Code passes hook_event_name; Codex/Cursor
+    // SessionStart payloads are smaller but still JSON). Tests inject
+    // env.payload to bypass the stdin read.
+    const payload = env && env.payload !== undefined ? env.payload : await readStdinJson();
+
+    // v2.0.0-rc.37 NEW-21: SessionStart-mode parity for Codex/Cursor.
+    // When the hook fires on SessionStart (instead of UserPromptSubmit),
+    // emit ONE unconditional cite-policy reminder to stderr. This gives
+    // Codex/Cursor users the cite-contract nudge at session boot — lower
+    // cadence than Claude Code's per-prompt UserPromptSubmit window, but
+    // strictly better than 0 (rc.32 cite-coverage baseline 3.1% measured
+    // when Codex/Cursor had no cite-reminder surface at all).
+    const eventName =
+      payload && typeof payload.hook_event_name === "string"
+        ? payload.hook_event_name
+        : null;
+    const sessionStartMode =
+      (env && env.forceSessionStart === true) || eventName === "SessionStart";
+
+    if (sessionStartMode) {
+      const reminder = renderReminder(/* turnCount = */ 0, interval);
+      const err = (env && env.stdio && env.stdio.stderr) || process.stderr;
+      try {
+        // One-shot stderr emit (knowledge-hint-broad convention). No
+        // hookSpecificOutput JSON envelope — Codex/Cursor parse stderr;
+        // Claude Code SessionStart will also surface stderr to the user.
+        err.write(`${reminder}\n`);
+      } catch {
+        // best-effort
+      }
+      return;
+    }
+
+    // Claude Code UserPromptSubmit path (unchanged from rc.34 TASK-06).
+    // Skip Claude Code-specific stdout envelope on Codex/Cursor when not
+    // in SessionStart mode (no UserPromptSubmit event registration there).
     if (!isClaudeCode() && !(env && env.forceClaudeCode === true)) {
       return;
     }
 
-    // Read stdin payload to learn session_id. Tests inject env.payload to
-    // bypass the stdin read; production reads JSON envelope from stdin.
-    const payload = env && env.payload !== undefined ? env.payload : await readStdinJson();
     const sessionId =
       payload && typeof payload.session_id === "string" && payload.session_id.length > 0
         ? payload.session_id

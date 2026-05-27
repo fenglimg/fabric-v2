@@ -5,7 +5,8 @@
       { "command": ".cursor/hooks/fabric-hint.cjs" }
     ],
     "sessionStart": [
-      { "command": ".cursor/hooks/knowledge-hint-broad.cjs" }
+      { "command": ".cursor/hooks/knowledge-hint-broad.cjs" },
+      { "command": ".cursor/hooks/cite-policy-evict.cjs" }
     ],
     "preToolUse": [
       {
