@@ -40,7 +40,7 @@
       "related_rules": [
         {
           "anchor": "dashboard-static-serving",
-          "target": "packages/server/src/http.ts",
+          "target": "packages/server-http-experimental/src/http.ts",
           "description": "The copied assets are served by the Fabric HTTP server."
         },
         {

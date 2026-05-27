@@ -51,7 +51,7 @@ import {
 } from "./event-ledger.js";
 import { reconcileKnowledge } from "./knowledge-sync.js";
 import { readAgentsMeta } from "../meta-reader.js";
-import { isAlive, readLockState } from "./serve-lock.js";
+import { isAlive, readLockState } from "./legacy-serve-lock-probe.js";
 
 export type DoctorStatus = "ok" | "warn" | "error";
 export type DoctorIssueKind = "fixable_error" | "manual_error" | "warning" | "info";

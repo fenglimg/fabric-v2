@@ -22,7 +22,7 @@ This layer exists to answer three questions without reading each script end-to-e
 - Path: `packages/server/scripts/copy-dashboard.mjs`
 - Role: build-time asset bridge from the dashboard package to the packaged server.
 - Why it matters: if dashboard output layout or server static serving changes, this script can silently become stale.
-- Review with: `packages/server/package.json`, `packages/server/src/http.ts`
+- Review with: `packages/server/package.json`, `packages/server-http-experimental/src/http.ts` (quarantined v2.0.0-rc.37)
 
 ### `lint-protected-tokens`
 

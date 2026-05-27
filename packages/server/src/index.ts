@@ -119,13 +119,11 @@ export {
   type KnowledgeSyncReport,
   type StructuredWarning,
 } from "./services/knowledge-sync.js";
-// v2.0.0-rc.37 Wave A2: serve-lock re-exports removed from the main public
-// surface. `services/serve-lock.ts` is still on disk because doctor's
-// stale-serve-lock advisory + `--fix` unlink path still need to reap legacy
-// lock files left behind by rc ≤36 `fabric serve` invocations. The doctor
-// imports `isAlive` / `readLockState` directly from the relative path, so the
-// internal API survives without re-exporting it publicly.
-// Restore alongside startHttpServer if the web UI surface is ever re-enabled.
+// v2.0.0-rc.37 Wave A2 Part 2: serve-lock fully quarantined to
+// packages/server-http-experimental/. Main retains a read-only probe at
+// `services/legacy-serve-lock-probe.ts` (isAlive + readLockState) so doctor
+// can reap legacy `.fabric/.serve.lock` corpses left behind by rc ≤36
+// `fabric serve` invocations. No public re-exports remain.
 
 export function createFabricServer(tracker?: InFlightTracker): McpServer {
   const server = new McpServer({

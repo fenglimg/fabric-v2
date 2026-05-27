@@ -9,7 +9,6 @@ import { cleanupFixtureRoot, createWerewolfFixtureRoot, setProcessTty } from "./
 const tempRoots: string[] = [];
 const originalFabLang = process.env.FAB_LANG;
 const originalNoColor = process.env.NO_COLOR;
-const originalAuthToken = process.env.FABRIC_AUTH_TOKEN;
 const originalHome = process.env.HOME;
 const restoreTtyMocks: Array<() => void> = [];
 
@@ -28,7 +27,6 @@ afterEach(() => {
 
   restoreEnv("FAB_LANG", originalFabLang);
   restoreEnv("NO_COLOR", originalNoColor);
-  restoreEnv("FABRIC_AUTH_TOKEN", originalAuthToken);
   restoreEnv("HOME", originalHome);
 });
 
@@ -49,7 +47,6 @@ describe("cli i18n", () => {
 async function collectSnapshots(locale: "en" | "zh-CN") {
   process.env.FAB_LANG = locale;
   process.env.NO_COLOR = "1";
-  delete process.env.FABRIC_AUTH_TOKEN;
 
   const isolatedHome = mkdtempSync(join(tmpdir(), "fab-i18n-home-"));
   tempRoots.push(isolatedHome);
@@ -160,7 +157,7 @@ function sanitizeSnapshot(value: unknown): unknown {
   return value;
 }
 
-function restoreEnv(name: "FAB_LANG" | "NO_COLOR" | "FABRIC_AUTH_TOKEN", value: string | undefined): void {
+function restoreEnv(name: "FAB_LANG" | "NO_COLOR" | "HOME", value: string | undefined): void {
   if (value === undefined) {
     delete process.env[name];
     return;

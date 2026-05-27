@@ -995,29 +995,10 @@ export const enMessages: Messages = {
     "L1: Add tech-stack TODOs manually because no framework marker was detected.",
   "cli.scan.recommendation.framework-dirs": "L1: Review {framework} directories for future scoped Fabric rule files.",
 
-  "cli.serve.description":
-    "Start the local Fabric MCP HTTP service.\n" +
-    "\n" +
-    "Examples:\n" +
-    "  fabric serve                              bind 127.0.0.1:7373 (default)\n" +
-    "  fabric serve --port 8787                  use a custom port\n" +
-    "  FABRIC_AUTH_TOKEN=<token> fabric serve --host 0.0.0.0   bind non-loopback with Bearer auth",
-  "cli.serve.args.port.description": "Listen port, default 7373.",
-  "cli.serve.args.host.description":
-    "Listen host, default 127.0.0.1. Non-loopback hosts (e.g. 0.0.0.0) require FABRIC_AUTH_TOKEN to enable Bearer auth, otherwise serve falls back to 127.0.0.1.",
-  "cli.serve.args.target.description":
-    "Target project path. Defaults to --target, then EXTERNAL_FIXTURE_PATH, then cwd.",
-  "cli.serve.args.debug.description": "Print target resolution details to stderr.",
-  "cli.serve.args.allow-loopback-no-auth.description":
-    "Opt in to running the loopback HTTP server without Bearer auth (default-deny). Use only on a trusted single-user machine; any local process can then read your knowledge ledger.",
-  "cli.serve.ready.title": "Fabric Dashboard",
-  "cli.serve.lock-held.action-hint":
-    "A `fabric serve` instance (PID {pid}) is holding the workspace lock. Stop it (Ctrl-C in that terminal or `kill {pid}`) before running this command.",
-  "cli.serve.warning.host-fallback":
-    "--host {host} requires FABRIC_AUTH_TOKEN for non-loopback exposure; falling back to 127.0.0.1. To bind {host}, run: FABRIC_AUTH_TOKEN=<token> fabric serve --host {host}",
-  "cli.serve.warning.loopback-deny-default":
-    "FABRIC_AUTH_TOKEN is not set: /api /events /mcp will return 401 by default (any local process could otherwise read .fabric/agents.meta.json + forensic.json + events.jsonl). Set FABRIC_AUTH_TOKEN=<secret> or pass --allow-loopback-no-auth to opt in.",
-  "cli.serve.error.port-in-use": "Port {port} in use - try --port {nextPort}",
+  // v2.0.0-rc.37 Wave A2 Part 2: cli.serve.* + FABRIC_AUTH_TOKEN keys removed
+  // alongside `fabric serve` quarantine to packages/server-http-experimental/
+  // per [[fabric-serve-quarantine-not-delete]]. Restore from git history when
+  // the web UI surface is re-enabled.
 
   // v2.0.0-rc.29 TASK-008 (BUG-L2): onboard-coverage i18n keys.
   "cli.onboard-coverage.description":

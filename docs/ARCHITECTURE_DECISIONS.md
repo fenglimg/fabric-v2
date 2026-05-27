@@ -108,10 +108,7 @@
 
 证据：
 
-- `/mcp` 读取 `mcp-session-id`：`packages/server/src/http.ts:217`。
-- 缺少 session id 时，只有 initialize 请求会被接受：`packages/server/src/http.ts:231`。
-- `createSession` 构造 server 和 transport：`packages/server/src/http.ts:272`。
-- Transport 使用 `sessionIdGenerator`、`enableJsonResponse`、`eventStore`：`packages/server/src/http.ts:278`。
+- 实现已 quarantine 到 `packages/server-http-experimental/src/http.ts`（v2.0.0-rc.37 Wave A2 Part 2，KB [[fabric-serve-quarantine-not-delete]]）；v2.0.0 起 stdio MCP 是唯一受支持的 transport。
 
 ## ADR-007: Dashboard Is HTTP Consumer, Not MCP Client
 
@@ -128,7 +125,7 @@
 - Dashboard API client 调用 `/api/rules`：`packages/dashboard/src/api/client.ts:129`。
 - Dashboard API client 调用 `/api/rules/context`：`packages/dashboard/src/api/client.ts:133`。
 - Dashboard SSE client 使用 fetch stream 和 `Last-Event-ID`：`packages/dashboard/src/api/client.ts:194`。
-- Server 将 Dashboard REST APIs 与 `/mcp` 分开注册：`packages/server/src/http.ts:208`。
+- Server route 注册逻辑 quarantine 到 `packages/server-http-experimental/src/http.ts`（v2.0.0-rc.37 Wave A2 Part 2）。
 
 ## ADR-008: Dashboard Write Surface Is Being Constrained Toward Observation
 
@@ -177,34 +174,14 @@
 - Fixable state includes `.fabric/agents.meta.json`、`.fabric/rule-test.index.json`、missing `.fabric/events.jsonl`、deterministic bootstrap README、stale meta hashes。
 - Manual state includes missing rule sections、semantic conflicts、incomplete init-context confirmation、MCP client local config issues、business-code-versus-rule mismatch。
 
-## ADR-011: Dashboard Static Served By Server Package
+## ADR-011: Dashboard Static Served By Server Package（已 quarantine — v2.0.0-rc.37）
 
-决策：server package 在 production 中提供已构建的 Dashboard static assets。
+历史决策：server package 在 production 中提供已构建的 Dashboard static assets，由 `fabric serve` 同时暴露 MCP、REST、SSE 和 UI。
 
-原因：
+v2.0.0 现状：三个受支持的 client（Claude Code / Cursor / Codex CLI）全部使用 **stdio MCP transport**，HTTP server 不再有消费者。`fabric serve` 命令及其全部依赖（http.ts / bearer-auth / serve-lock / api routes / Dashboard static handler）已 quarantine 到 `packages/server-http-experimental/`（不 build / 不 test），见 KB [[fabric-serve-quarantine-not-delete]] 设计取舍。
 
-- 一个 `fabric serve` process 同时暴露 MCP、REST、SSE 和 UI。
-- CLI 只需要启动 server，不需要管理单独的 frontend server。
+## ADR-012: Localhost Default With Token-required Public Host（已 quarantine — v2.0.0-rc.37）
 
-证据：
+历史决策：`fabric serve` 默认使用 loopback；请求 non-loopback host 且未设置 `FABRIC_AUTH_TOKEN` 时回退到 `127.0.0.1`。
 
-- `fabric serve` 调用 `startHttpServer`：`packages/cli/src/commands/serve.ts:58`。
-- HTTP app 最后注册 Dashboard static：`packages/server/src/http.ts:239`。
-- dist 缺失时 static handler 返回 404：`packages/server/src/api/static.ts:27`。
-- SPA fallback 排除 `/api`、`/mcp`、`/events`：`packages/server/src/api/static.ts:41`。
-
-## ADR-012: Localhost Default With Token-required Public Host
-
-决策：`fabric serve` 默认使用 loopback；请求 non-loopback host 且未设置 `FABRIC_AUTH_TOKEN` 时回退到 `127.0.0.1`。
-
-原因：
-
-- Local control plane 不应意外暴露 project state。
-- Authenticated remote binding 仍然可用。
-
-证据：
-
-- Default host：`packages/cli/src/commands/serve.ts:29`。
-- Env token read：`packages/cli/src/commands/serve.ts:99`。
-- Host fallback：`packages/cli/src/commands/serve.ts:104`。
-- token 存在时挂载 Bearer middleware：`packages/server/src/http.ts:201`。
+v2.0.0 现状：随 `fabric serve` quarantine 一并归档；FABRIC_AUTH_TOKEN 不再被主线代码读取。如需恢复，参考 `packages/server-http-experimental/README.md` 的复活路径。

@@ -113,7 +113,7 @@ describe("seer script contract", () => {
 | `core/rule-index-builder` | Rule metadata compiler、stable-id extraction 和 rule-test sidecar builder | target server service |
 | `core/forensic-scan` | Forensic project scan 和 evidence model | `packages/cli/src/scanner/forensic.ts` |
 | `core/server-mcp` | MCP server creation 和 tool registration | `packages/server/src/index.ts` |
-| `core/http-app` | REST/SSE/MCP HTTP app 和 session lifecycle | `packages/server/src/http.ts` |
+| ~~`core/http-app`~~ | quarantine v2.0.0-rc.37 | `packages/server-http-experimental/src/http.ts` |
 | `core/get-rules` | Single-path rule resolution service | `packages/server/src/services/get-rules.ts` |
 | `core/plan-context` | Batch planning 和 shared rule bundle | `packages/server/src/services/plan-context.ts` |
 | `core/events` | SSE event projection 和 replay | `packages/server/src/api/events.ts` |

@@ -35,11 +35,9 @@ fabric install
   -> shared detector 和 schemas
   -> 写入 .fabric/AGENTS.md、.fabric/INITIAL_TAXONOMY、.fabric/forensic、.fabric/events.jsonl、hooks、client config
 
-fabric serve
-  cli/commands/serve.ts
-  -> server/index.ts startHttpServer
-  -> server/http.ts createFabricHttpApp
-  -> REST /api/*, SSE /events, MCP /mcp, Dashboard static
+fabric serve  # (v2.0.0-rc.37: quarantine 到 packages/server-http-experimental/，主线不再 build)
+  -> packages/server-http-experimental/src/{http,middleware/bearer-auth,services/serve-lock}.ts
+  -> 详见 KB [[fabric-serve-quarantine-not-delete]]
 
 fab_plan_context / fab_get_rule_sections
   MCP client
@@ -62,7 +60,7 @@ Dashboard rule view
 | `src/index.ts` | CLI root command、version injection、main entrypoint。 | `packages/cli/src/index.ts:11` |
 | `src/commands/index.ts` | Public lazy subcommand registry；target public surface is `init`、`scan`、`doctor`、`serve`。 | `packages/cli/src/commands/index.ts:1` |
 | `src/commands/init.ts` | 一站式 init state machine、wizard、scaffold plan、MCP/bootstrap/hooks phases。 | `packages/cli/src/commands/init.ts:249`, `packages/cli/src/commands/init.ts:317` |
-| `src/commands/serve.ts` | 启动本地 HTTP server，并校验 host 和 auth token。 | `packages/cli/src/commands/serve.ts:18`, `packages/cli/src/commands/serve.ts:104` |
+| ~~`src/commands/serve.ts`~~ | (已删 — v2.0.0-rc.37 quarantine 到 `packages/server-http-experimental/`) | git history |
 | `src/commands/doctor.ts` | Target-state diagnosis with `--json`、`--strict`、`--fix` modes。 | command registry：`packages/cli/src/commands/index.ts:7` |
 | `src/commands/scan.ts` | 围绕 forensic report generation 的 scan command。 | command registry：`packages/cli/src/commands/index.ts:5` |
 | `src/scanner/forensic.ts` | 生成 `.fabric/forensic.json`：topology、entrypoints、code samples、assertions、recommendations。 | `packages/cli/src/scanner/forensic.ts:174`, `packages/cli/src/scanner/forensic.ts:218` |
@@ -84,21 +82,12 @@ Dashboard rule view
 | 文件 | 职责 | 证据 |
 | --- | --- | --- |
 | `src/index.ts` | 创建 MCP server，注册 tools/resources，启动 stdio 或 HTTP server。 | `packages/server/src/index.ts:43`, `packages/server/src/index.ts:79` |
-| `src/http.ts` | Express/MCP HTTP app、`/mcp` session lifecycle、JSON-RPC errors、Dashboard static registration、cache watcher。 | `packages/server/src/http.ts:142`, `packages/server/src/http.ts:217` |
+| ~~`src/http.ts`~~ | (已移走 — v2.0.0-rc.37 quarantine 到 `packages/server-http-experimental/src/http.ts`) | git history |
 | `src/cache.ts` | Process-local cache，覆盖 meta/context/audit cursor。 | `packages/server/src/cache.ts:1` |
 | `src/constants.ts` | Shared server constants，例如 bootstrap resource URI。 | import 位置：`packages/server/src/index.ts:9` |
 | `src/meta-reader.ts` | 读取并校验 `.fabric/agents.meta.json`；解析 project root。 | `packages/server/src/meta-reader.ts:35`, `packages/server/src/meta-reader.ts:39` |
-| `src/middleware/bearer-auth.ts` | HTTP `/api`、`/events`、`/mcp` 的 Bearer auth middleware。 | 挂载位置：`packages/server/src/http.ts:201` |
-| `src/api/_error.ts` | API error helpers。 | API modules 使用 |
-| `src/api/rules.ts` | `GET /api/rules`，返回解析后的 `AgentsMeta`。 | `packages/server/src/api/rules.ts:4` |
-| `src/api/rules-context.ts` | `GET /api/rules/context?path=...`，返回 Dashboard 使用的 rules payload。 | `packages/server/src/api/rules-context.ts:4` |
-| `src/api/events.ts` | SSE watch 和 event replay，覆盖 meta、forensic、events ledger。 | `packages/server/src/api/events.ts:95`, `packages/server/src/api/events.ts:180` |
-| `src/api/intent.ts` | 当前 HTTP intent annotation 写入口。 | `packages/server/src/api/intent.ts:7` |
-| `src/api/ledger.ts` | Ledger read API。 | 注册位置：`packages/server/src/http.ts:210` |
-| `src/api/history.ts` | History replay API。 | 注册位置：`packages/server/src/http.ts:211` |
-| `src/api/scan.ts` | 基于 forensic scanner 的 scan API。 | 注册位置：`packages/server/src/http.ts:212` |
-| `src/api/doctor.ts` | Doctor report API。 | 注册位置：`packages/server/src/http.ts:213` |
-| `src/api/static.ts` | 提供 Dashboard dist 和 SPA fallback。 | `packages/server/src/api/static.ts:16` |
+| ~~`src/middleware/`、`src/api/*`~~ | (已移走 — v2.0.0-rc.37 quarantine 到 `packages/server-http-experimental/src/{middleware,api}/`) | git history |
+| `src/services/legacy-serve-lock-probe.ts` | 只读 probe（`readLockState` + `isAlive`），doctor 用它检测/清理 rc ≤36 遗留的 `.fabric/.serve.lock`。完整 lock 实现已 quarantine。 | `packages/server/src/services/legacy-serve-lock-probe.ts:1` |
 | `src/services/get-rules.ts` | Core rules resolution：context load、matching、priority sort、activation、payload。 | `packages/server/src/services/get-rules.ts:83`, `packages/server/src/services/get-rules.ts:145` |
 | `src/services/plan-context.ts` | Batch rules planning 和 shared bundle view。 | `packages/server/src/services/plan-context.ts:52` |
 | `src/services/event-ledger.ts` | `.fabric/events.jsonl` typed Event Ledger append/read model。 | server services 使用 |

@@ -9,8 +9,8 @@ fabric install
   -> 写入 .fabric/AGENTS.md、.fabric/INITIAL_TAXONOMY.md、.fabric/forensic.json、.fabric/events.jsonl
   -> 规则正文进入 .fabric/rules/
 
-fabric serve
-  -> 注册 MCP tools
+MCP server (stdio transport — v2.0.0 唯一受支持 transport)
+  -> client 通过其 MCP 配置 spawn `node packages/server/dist/index.js`，stdio 通信
   -> client 先调用 fab_plan_context
   -> server 返回中立 requirement_profile、L0/L1/L2 description_index、selection_token
   -> AI 只对 L1 自行选择 stable_id，并给出 ai_selection_reasons
@@ -235,8 +235,10 @@ Public CLI commands:
 fabric install
 fabric scan
 fabric doctor
-fabric serve
+fabric uninstall
 ```
+
+> v1.8 时代的 `fabric serve` 已在 v2.0.0-rc.37 quarantine 到 `packages/server-http-experimental/`（KB [[fabric-serve-quarantine-not-delete]]）。v2.0.0 起 client 通过 stdio MCP 直连 server，不再需要本地 HTTP 进程。
 
 Doctor modes:
 

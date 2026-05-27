@@ -78,26 +78,11 @@ fabric install
 
 Codex hooks 需要本机配置启用 `features.codex_hooks = true`；否则 `.codex/hooks.json` 不会自动触发，但仍可手动执行仓库 skill。
 
-## 4. 启动本地服务
+## 4. MCP 接入（stdio-only）
 
-```bash
-fabric serve
-```
+v2.0.0 起 Fabric 仅通过 **stdio MCP transport** 与 client 交互（Claude Code / Cursor / Codex CLI 全部使用 stdio）。`fabric install` 已为每个 client 写好 MCP 配置，client 启动时会 spawn `node packages/server/dist/index.js` 并通过 stdin/stdout 通信，**无需任何本地 HTTP server**。
 
-默认地址：
-
-```text
-http://127.0.0.1:7373
-```
-
-`fabric serve` 同时承载：
-
-- Dashboard 静态页面
-- REST API：`/api/*`
-- SSE：`/events`
-- Streamable HTTP MCP：`/mcp`
-
-需要非 loopback host 时必须设置 `FABRIC_AUTH_TOKEN`，否则 CLI 会回退到 `127.0.0.1`。
+> v1.8 时代的 `fabric serve`（Express + REST + SSE + Dashboard UI）已在 v2.0.0-rc.37 被 quarantine 到 `packages/server-http-experimental/`（不再 build / test），保留代码仅供未来恢复 web UI 时参考。详情见 [KB 决策 `fabric-serve-quarantine-not-delete`](../.fabric/knowledge/team/decisions/fabric-serve-quarantine-not-delete.md)。
 
 ## 5. 验证 MCP 规则分发
 
