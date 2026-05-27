@@ -1,5 +1,9 @@
 # Fabric
 
+[![npm version](https://img.shields.io/npm/v/@fenglimg/fabric-cli.svg)](https://www.npmjs.com/package/@fenglimg/fabric-cli)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
+[![Node](https://img.shields.io/badge/node-%3E%3D20-brightgreen.svg)](https://nodejs.org)
+
 > **New here?** Start with [`docs/USER-QUICKSTART.md`](./docs/USER-QUICKSTART.md) (5 min) — mental model, the 4-step flow, and first-30-min troubleshooting.
 
 > Fabric — cross-client knowledge sustainment for AI coding agents.
@@ -16,7 +20,7 @@ a hook-driven reminder layer so the knowledge actually fires when it matters.
 ```text
                 ┌─────────────────────────────┐
                 │  fabric-knowledge-server    │
-                │  (MCP, 4 tools, 1 protocol) │
+                │  (MCP, 5 tools, stdio only) │
                 └──────────────┬──────────────┘
                                │
         ┌──────────────────────┼──────────────────────┐
@@ -53,9 +57,9 @@ without polluting agent context.
 ### 8 truly differentiated features
 
 1. **Cross-client MCP-first surface.** One server (`fabric-knowledge-server`),
-   four tools (`fab_plan_context`, `fab_get_knowledge_sections`,
+   five tools (`fab_plan_context`, `fab_get_knowledge_sections`, `fab_recall`,
    `fab_extract_knowledge`, `fab_review`), three clients reading and writing
-   through the same protocol. Knowledge stops being a per-client artifact.
+   through the same protocol via stdio. Knowledge stops being a per-client artifact.
 
 2. **Harness-agnostic by design.** No 16-stage workflow state machine, no
    IDE-vendor lock-in. Fabric integrates via the surfaces every modern agent
@@ -201,22 +205,28 @@ for each detected client, and writes a baseline `.fabric/` tree with 4-7 seed
 entries.
 
 ```bash
-fabric install                    # install hooks + Skills + bootstrap
-fabric serve                      # start the MCP server
-fabric doctor                     # run all 25 lints, report only
-fabric doctor --apply-lint        # apply auto-fixable lints
-fabric plan-context-hint --all    # JSON snapshot for hook scripts
-fabric hooks install              # re-install hooks for all clients
-fabric uninstall                  # remove Fabric-managed artifacts (knowledge stays unless --purge; ~/.fabric/knowledge/ is never touched)
+fabric install                    # install hooks + Skills + bootstrap + MCP client config
+fabric doctor                     # run 48 lints, report only (--fix applies auto-fixable)
+fabric metrics                    # text dashboard from .fabric/metrics.jsonl (rc.37 NEW-34)
+fabric uninstall                  # remove Fabric-managed artifacts (knowledge stays; ~/.fabric/knowledge/ is never touched)
 ```
 
-A healthy install reports zero fixable findings from `fabric doctor`.
+A healthy install reports zero fixable findings from `fabric doctor`. The MCP
+server runs over **stdio transport only** — `fabric install` writes each
+client's MCP config so the client spawns `node packages/server/dist/index.js`
+on session start; there is no separate `fabric serve` process to run. (The
+v1.8-era HTTP server was quarantined to `packages/server-http-experimental/`
+in v2.0.0-rc.37; see [KB decision `fabric-serve-quarantine-not-delete`](./.fabric/knowledge/team/decisions/fabric-serve-quarantine-not-delete.md).)
 
-Supported clients:
+**Restart the client after `fabric install`** — already-running Claude Code /
+Cursor / Codex CLI sessions won't pick up the new MCP config until restart;
+new sessions autoload it.
 
-- **Claude Code** — Stop hook + Skill templates
-- **Cursor** — Stop hook + Skill templates
-- **Codex CLI** — Stop hook (via `codex` hook config) + Skill templates
+Supported clients (v2.0):
+
+- **Claude Code** — Stop hook + UserPromptSubmit cite-policy hook + Skill templates + MCP stdio
+- **Cursor** — Stop hook + Skill templates + MCP stdio
+- **Codex CLI** — Stop hook (via `codex` hook config) + Skill templates + MCP stdio
 
 ## How It Works
 
@@ -277,24 +287,29 @@ is report-only.
 
 This is a pnpm monorepo:
 
-- `packages/cli` — the `fabric` CLI (`init`, `serve`, `doctor`,
-  `hooks`, `scan`, `plan-context-hint`).
-- `packages/server` — the MCP server `fabric-knowledge-server` (4 tools) plus
-  the lifecycle service (review, doctor, lint, event ledger).
+- `packages/cli` — the `fabric` CLI (`install`, `scan`, `doctor`,
+  `uninstall`, `metrics`).
+- `packages/server` — the MCP server `fabric-knowledge-server` (5 tools, stdio)
+  plus the lifecycle service (review, doctor, lint, event ledger, metrics).
 - `packages/shared` — schemas (event ledger, api contracts, knowledge
   frontmatter) shared between CLI and server.
+- `packages/server-http-experimental` — the v1.8-era HTTP/REST/SSE server +
+  Dashboard package, quarantined v2.0.0-rc.37. Not built / not tested; restoration
+  recipe in its README.
 - `packages/cli/templates/skills/` — the three Skill templates
   (`fabric-archive`, `fabric-review`, `fabric-import`) shipped to clients on
-  `init`.
-- `packages/cli/templates/hooks/` — `fabric-hint.cjs` plus per-client hook
+  `fabric install`.
+- `packages/cli/templates/hooks/` — `fabric-hint.cjs` + `knowledge-hint-broad.cjs`
+  + `knowledge-hint-narrow.cjs` + `cite-policy-evict.cjs` plus per-client hook
   configs (`claude-code.json`, `cursor-hooks.json`, `codex-hooks.json`).
 
 Contributors: clone, `pnpm install`, `pnpm -r build`, `pnpm -r test`.
 
 ## Status
 
-**v2.0.0** — release-candidate line (`v2.0.0-rc.N` toward `v2.0.0` stable).
-See [CHANGELOG.md](./CHANGELOG.md) for what changed since v1.x.
+**v2.0.0 GA** — first stable release of the stdio-only knowledge-server line.
+Upgrading from `v2.0.0-rc.x`? See [docs/migration-rc-to-ga.md](./docs/migration-rc-to-ga.md).
+See [CHANGELOG.md](./CHANGELOG.md) for the GA highlights + rc chain summary.
 
 Repository: https://github.com/fenglimg/fabric
 

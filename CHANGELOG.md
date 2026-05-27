@@ -5,6 +5,84 @@ All notable changes to Fabric will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0] - 2026 (GA)
+
+> Fabric v2.0.0 ships **stdio-only MCP** + a knowledge-first surface for
+> Claude Code, Cursor, and Codex CLI. The migration guide from rc.x is
+> [docs/migration-rc-to-ga.md](./docs/migration-rc-to-ga.md). This entry rolls
+> up rc.37 + summarizes the rc.5 → rc.37 chain at a high level; per-rc detail
+> stays in the entries below.
+
+### Highlights
+
+- **stdio MCP transport** is the only supported wire protocol. The v1.8-era `fabric serve` HTTP/REST/SSE/Dashboard server is quarantined to `packages/server-http-experimental/` (not built, not tested, restoration recipe in its README). Three clients (Claude Code / Cursor / Codex CLI) spawn the server via their own MCP config.
+- **5 MCP tools** (rc.37 adds `fab_recall`): `fab_plan_context`, `fab_get_knowledge_sections`, `fab_recall`, `fab_extract_knowledge`, `fab_review`.
+- **3 user-facing Skills**: `fabric-archive` (capture session knowledge), `fabric-review` (triage pending entries), `fabric-import` (cold-start mining from git history + docs).
+- **48 doctor lints** with i18n (zh-CN + en) covering events ledger / knowledge hygiene / hook drift / cite policy Goodhart patterns / SKILL.md token budget + structural quality.
+- **Plan B counter-rollup** for high-frequency observability events: `.fabric/metrics.jsonl` sidecar (60s flush) keeps the audit-grade `.fabric/events.jsonl` bounded; 6h rotation tick prunes > 90d entries.
+
+### Breaking changes (rc.36 → GA)
+
+- `fabric serve` CLI command removed from main install (quarantined).
+- `FABRIC_AUTH_TOKEN` env var no longer read.
+- `--host` / `--port` / `--allow-loopback-no-auth` flags removed.
+- `cli.serve.*` i18n locale keys removed from both locales.
+- Cite policy vocabulary collapsed `[planned|recalled|chained-from|dismissed]` → `[applied|dismissed:<reason>]` (parser back-compat on read).
+- Self-archive trigger taxonomy collapsed 4 signals → 2 categories (User-driven normative / Wrong-turn-and-revert); marker substring gate is forward+backward compatible.
+- `selection_token` TTL default 5min → 30min (overridable via `fabric-config.selection_token_ttl_ms`).
+- `DEFAULT_CITE_EVICT_INTERVAL` flipped 0 (opt-in OFF) → 10 (default ON; opt out with `cite_evict_interval: 0` in fabric-config).
+
+### Added (rc.37 → GA)
+
+- **`fab_recall` MCP tool** — one-call combined recall replacing the two-step `fab_plan_context → fab_get_knowledge_sections` ceremony for the common case (rc.37 NEW-3).
+- **Layer-flip id-redirect** — `fab_review modify --layer` emits `knowledge_id_redirect` event; `fab_plan_context` surfaces `redirects` map; `fab_get_knowledge_sections` + `fab_recall` transparently rewrite stale caller-held ids (rc.37 NEW-24).
+- **`evidence_paths` frontmatter field** on `fab_extract_knowledge` — read-only paths the agent consulted persist as structured data (rc.37 NEW-7).
+- **`tags[]` frontmatter** on `fab_extract_knowledge` — topic clustering signal (rc.37 NEW-37).
+- **Slug auto-disambiguation** — `slug.md` → `slug-2.md` → ... `slug-9.md` instead of throwing on parallel-session collision (rc.37 NEW-6).
+- **Prompt-injection sanitization** at `fab_extract_knowledge` — strips 7 dangerous regex patterns (ignore-prior / forget-role / you-are-now / rm-rf / shell-eval-curl / chatml-envelope / claude-envelope) (rc.37 NEW-31).
+- **Per-field 4 KB truncate** on `appendEventLedgerEvent` (PIPE_BUF defense; UTF-8 safe with sentinel marker) (rc.37 NEW-14).
+- **`.fabric/metrics.jsonl` sidecar** + server-side `bumpCounter` API + 60s flush + `readMetrics` (rc.37 B2).
+- **`fabric metrics` CLI subcommand** — text dashboard + `--since 24h` / `--json` + top-10 per-entry consumed leaderboard (rc.37 NEW-34).
+- **6h rotation tick** — events.jsonl pruning runs even when doctor isn't invoked (rc.37 B4).
+- **`events_jsonl_health` composite doctor check** — G7 size / G8 metric leak / G9 metrics stale / G10 rotation overdue (rc.37 B5).
+- **Doctor TL;DR header** — top-3 critical issues banner before per-check list (rc.37 NEW-25).
+- **SessionStart `下一步 / Next:` nudge** at end of knowledge-hint-broad emit (rc.37 NEW-23).
+- **install end restart banner** — bilingual reminder that running clients need restart (rc.37 NEW-22).
+- **AGENTS.md `evidence_paths` + multi-signal Phase 3.5 derivation** documented in fabric-archive ref (rc.37 NEW-7).
+
+### Removed (rc.37 → GA)
+
+- `packages/server/src/http.ts` + `middleware/bearer-auth.ts` + `services/serve-lock.ts` + entire `api/*` directory + 5 HTTP integration tests — quarantined to `packages/server-http-experimental/` (rc.37 A2-PART2).
+- `docs/dashboard-tour.md` (Dashboard UI gone).
+- `docs/migration-1.8.md` (v1.8 archived).
+- `docs/release/v1.8.0-pr.md` (v1.8 archived).
+- Stale `cli.serve.*` i18n keys + `FABRIC_AUTH_TOKEN` env handling (rc.37 A2-PART2).
+- `chokidar` / `express` / `supertest` / `@types/express` / `@types/supertest` from `@fenglimg/fabric-server` deps + `ts-prune` root dev dep (rc.37 D2).
+
+### Fixed
+
+- Persistent server-side rotation now triggers on idle workspaces (rc.37 B4).
+- Layer-flip silently breaking AI's cached id references (rc.37 NEW-24).
+- Slug collision aborting parallel-session archives (rc.37 NEW-6).
+- `events.jsonl` row > PIPE_BUF causing atomic-write corruption (rc.37 NEW-14).
+- Long-form user-supplied text persisting unchecked to canonical KB body (rc.37 NEW-31).
+- `evidence_paths` lost in markdown body (rc.37 NEW-7).
+- Stale `rc.37 计划上线...` future-rc reference in doctor remediation text (rc.37 NEW-40).
+
+### Architecture & scope decisions (KB-locked)
+
+- `no-server-side-kb-filter` (rc.37 A1) — server returns every selectable entry; AI decides what to recall.
+- `fabric-serve-quarantine-not-delete` (rc.37 A2) — HTTP server preserved in git history but removed from main install.
+- `events-jsonl-plan-b-counter-rollup` (rc.37 B1) — high-freq events route to metrics.jsonl instead of bloating audit ledger.
+- `v2-ga-closure-6-wave-plan` (rc.37) — closed via A / B / D / E / F / G waves.
+
+### Maintenance
+
+- LICENSE + per-package README + full package metadata (description / repository / homepage / bugs / keywords / engines / files) on all 3 published packages (rc.37 D4 + D5).
+- 35 doctor checks (rc.26) → 48 checks (rc.37) all with bilingual i18n.
+
+---
+
 ## [2.0.0-rc.36] - 2026-05-26
 
 rc.36 extended bundle (autonomous executor lean): 来自 rc.35 真实测评 (werewolf-minigame 8 天 19726 events) 的高信噪比 P0/P1 子集 8 task + Gemini review-fix 2 轮闭环 (CONDITIONAL→SHIP)。大部分原 plan.json 32 任务的 high-risk refactor (Plan B events.jsonl counter 化 / hook drift detect / 测试合并 / 跨 client integration / prompt injection) 显式推 rc.37 单独立项。无新 schema 破坏性变更。

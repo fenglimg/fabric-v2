@@ -588,7 +588,9 @@
       "wave": "E",
       "subject": "README.md GA-rewrite quickstart + 删 fabric serve L205",
       "done_when": "README badges + logo + quickstart + 链接 docs 全 GA-ready",
-      "status": "pending"
+      "status": "done",
+      "_actual_done": "2026-05-27",
+      "note": "README.md GA-rewrite: (1) badges 加 npm version + License MIT + Node >=20 三个 shields。(2) ASCII 拓扑改 '(MCP, 5 tools, stdio only)' (was 4 tools, 1 protocol)。(3) 8 differentiated features §1 改 'five tools (fab_plan_context / fab_get_knowledge_sections / fab_recall / fab_extract_knowledge / fab_review), three clients reading and writing through the same protocol via stdio'。(4) Quick Start §1: 删 'fabric serve' + 'fabric plan-context-hint --all' + 'fabric hooks install' (rc.36 deprecated), 改 'fabric install / doctor / metrics / uninstall' 四命令。 (5) 加 stdio-only 段落 + restart 提示 + KB 决策 link。(6) Supported clients 列表加 MCP stdio + UserPromptSubmit cite-policy hook 等 (rc.37 新增 surface)。(7) Project Layout: cli 命令 init/serve/doctor/hooks/scan/plan-context-hint → install/scan/doctor/uninstall/metrics; 加 server-http-experimental 段; hooks 列出 fabric-hint + knowledge-hint-broad/narrow + cite-policy-evict (rc.37 全集)。(8) Status: 'release-candidate line' → 'v2.0.0 GA — first stable release of the stdio-only knowledge-server line', 加 migration guide link。"
     },
     {
       "id": "E2",
@@ -613,7 +615,9 @@
       "wave": "E",
       "subject": "CHANGELOG v2.0.0 GA 汇总 rc.5-rc.36",
       "done_when": "CHANGELOG.md 含 v2.0.0 章节, BREAKING/Feat/Fix 分类整理",
-      "status": "pending"
+      "status": "done",
+      "_actual_done": "2026-05-27",
+      "note": "CHANGELOG.md 顶部 (在 'All notable changes' 段后, [2.0.0-rc.36] 前) 加 [2.0.0] - 2026 (GA) 章节 78 行: Highlights (stdio-only + 5 tools + 3 skills + 48 doctor lints + Plan B counter rollup), Breaking changes rc.36 → GA (fabric serve removal / FABRIC_AUTH_TOKEN / cli flags / cite vocab simplify / self-archive 4→2 / selection_token TTL 5→30min / cite_evict default ON), Added rc.37 → GA (fab_recall / id-redirect / evidence_paths / tags[] / slug auto-disambig / injection sanitize / 4KB truncate / metrics.jsonl / fab metrics CLI / 6h rotation tick / events_jsonl_health / TL;DR header / SessionStart 下一步 / install restart banner / multi-signal Phase 3.5), Removed (http.ts + middleware + api/ + 5 HTTP tests + dashboard-tour + migration-1.8 + v1.8.0-pr + cli.serve.* i18n + chokidar/express/supertest deps), Fixed (rotation idle / layer-flip cache / slug collision / events.jsonl PIPE_BUF / KB injection / evidence_paths lost / future-rc remediation), Architecture decisions KB-locked (no-server-side-kb-filter / fabric-serve-quarantine / events-jsonl-plan-b / v2-ga-closure-6-wave), Maintenance (LICENSE + per-package README + 35→48 checks)。Keep-a-Changelog 风格保留, per-rc detail 留在底下 [2.0.0-rc.N] 历史 entries 不动。"
     },
     {
       "id": "E5",
