@@ -15,7 +15,7 @@ This is non-negotiable and applies to BOTH Step 2.1 (git mining) AND Step 2.2 (d
 
 1. `fabric-import` is LLM-driven (mines git log + docs), not session-driven (no live `edit_paths` signal).
 2. `git diff --stat` lists files touched by a commit, but those files are the commit's **effect surface**, not the **applicability surface** of the underlying observation. A pitfall surfaced by a fix in `packages/server/src/retry.ts` may apply to every retry call-site in the repo, not just that one file.
-3. LLM-inferred `relevance_paths` from historical commit metadata produces false-narrow bindings — entries get filtered out for paths they actually govern. False-narrow is worse than broad because it silently hides knowledge during plan-context filtering.
+3. LLM-inferred `relevance_paths` from historical commit metadata produces false-narrow bindings — `relevance_paths` becomes a lie about applicability. Post-rc.37 A1 the server no longer filters by `relevance_scope`, so false-narrow does NOT hide knowledge from AI recall (every selectable entry is surfaced regardless of scope). The damage is now downstream: doctor lint accounting, future-AI judgment, and any consumer that reads `relevance_paths` literally treats the wrong globs as ground truth. Broad+[] keeps the metadata honest until the user has the real applicability surface in hand to declare narrow.
 4. Doc-mined observations are usually architectural / cross-cutting (a `docs/architecture.md` "Why a monolith?" decision applies to the whole codebase, not just to `docs/`).
 
 **Strict prohibitions — DO NOT attempt any of the following:**

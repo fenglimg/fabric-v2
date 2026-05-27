@@ -65,7 +65,7 @@ Classify each candidate into 5 types (decisions/pitfalls/guidelines/models/proce
 
 #### Mandatory Scope Rule — broad + empty paths (NON-NEGOTIABLE)
 
-Every call MUST `relevance_scope="broad"` AND `relevance_paths=[]`. No exceptions. Why: import is LLM-driven (not session-driven); LLM-inferred narrow → false-narrow that silently hides knowledge. Narrowing deferred to `fab_review.modify` post-import. Full rationale + prohibitions + doctor lint #23 → `Read .../ref/phase-2-mining.md`.
+Every call MUST `relevance_scope="broad"` AND `relevance_paths=[]`. No exceptions. Why: import is LLM-driven (not session-driven); LLM-inferred narrow lies about applicability. Post-rc.37 A1 the server returns every selectable entry regardless of scope, so false-narrow no longer hides knowledge — but it still poisons doctor lint accounting + downstream consumers that read `relevance_paths` literally. Narrowing deferred to `fab_review.modify` post-import when the user has the real applicability surface. Full rationale + prohibitions + doctor lint #23 → `Read .../ref/phase-2-mining.md`.
 
 #### Step 2.1 — Git Mining
 
