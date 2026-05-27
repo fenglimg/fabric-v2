@@ -501,6 +501,20 @@ const _FabExtractKnowledgeInputBaseSchema = z.object({
     .describe(
       "One-line strong trigger; when this condition holds the entry is considered required reading. Single line ≤160 chars (e.g. 'touching anything under packages/cli/src/commands/hooks.ts'). Optional — omit when no single strong trigger fits.",
     ),
+  // v2.0.0-rc.37 NEW-37 (werewolf dogfood remediation): optional tags array.
+  // Werewolf实测发现 100% canonical entries 的 `tags: []` 为空,主题聚类与
+  // 跨条目检索退化。Skills (fabric-archive / fabric-import) 应每个 entry 产
+  // 2-4 个 kebab-case 主题词。Server 写入时直接落 frontmatter `tags: [...]`;
+  // empty array 仍然合法(skill 无法 confident 推断时显式空)。
+  // IDEMPOTENCY: tags MUST NOT 参与 idempotency_key hash(同 relevance_*
+  // / intent_clues 等可变字段一致),re-extract 时 tags 调整不应产生重复
+  // pending file。
+  tags: z
+    .array(z.string())
+    .optional()
+    .describe(
+      "Optional topic tags (2-4 kebab-case strings recommended). Drives cross-entry retrieval + topic clustering. Skill-inferred from session content; omit when not confidently inferable. Empty array allowed but discouraged (degrades narrow hint topic signal).",
+    ),
   // v2.0.0-rc.23 TASK-014 (F8c): optional onboard-slot tag. The S5 slot
   // mechanism reintroduces a Skill-orchestrated "project tone" capture
   // surface after F8a deleted the auto-`fabric scan` baseline pipeline.

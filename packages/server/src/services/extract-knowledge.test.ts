@@ -326,7 +326,8 @@ describe("extractKnowledge", () => {
       event_type: "knowledge_archive_attempted",
       correlation_id: "sess-003",
       session_id: "sess-003",
-      reason: "extract_knowledge:empty-input",
+      // v2.0.0-rc.37 NEW-37: reason suffix encodes which opacity guard fired.
+      reason: "extract_knowledge:empty-input:empty_summary",
     });
   });
 
@@ -336,7 +337,7 @@ describe("extractKnowledge", () => {
     const result = await extractKnowledge(projectRoot, buildInput({
       source_sessions: ["sess-004"],
       recent_paths: ["x.ts"],
-      user_messages_summary: "Some content.",
+      user_messages_summary: "Some content for slug sanitization coverage.",
       type: "models",
       // Mix of upper-case, spaces, slashes, punctuation, accented chars.
       slug: "  Multi Word //  Slug!! With    Punctuation  ",
@@ -385,7 +386,8 @@ describe("extractKnowledge", () => {
     expect(archive.events).toHaveLength(1);
     // Reason falls back to input.slug when sanitizedSlug is empty.
     expect((archive.events[0] as KnowledgeArchiveAttemptedEvent | undefined)?.reason).toBe(
-      "extract_knowledge:!!!@@@###",
+      // v2.0.0-rc.37 NEW-37: reason suffix encodes which opacity guard fired.
+      "extract_knowledge:!!!@@@###:empty_slug",
     );
   });
 
@@ -443,7 +445,7 @@ describe("extractKnowledge", () => {
     const first = await extractKnowledge(projectRoot, buildInput({
       source_sessions: ["sess-no-nl"],
       recent_paths: ["a.ts"],
-      user_messages_summary: "First body.",
+      user_messages_summary: "First body for evidence merge path.",
       type: "guidelines",
       slug: "no-newline",
     }));
@@ -466,7 +468,7 @@ describe("extractKnowledge", () => {
 
     const body = await readFile(path, "utf8");
     // Both notes present, single Evidence section.
-    expect(body).toMatch(/First body\./u);
+    expect(body).toMatch(/First body for evidence merge path\./u);
     expect(body).toMatch(/Second body, merged\./u);
     expect((body.match(/^## Evidence$/gmu) ?? []).length).toBe(1);
   });
@@ -533,7 +535,7 @@ describe("extractKnowledge", () => {
     const result = await extractKnowledge(projectRoot, buildInput({
       source_sessions: ["sess-long"],
       recent_paths: [],
-      user_messages_summary: "Body.",
+      user_messages_summary: "Body for long-slug truncation coverage.",
       type: "decisions",
       slug: longSlug,
     }));

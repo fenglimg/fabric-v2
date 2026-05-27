@@ -106,16 +106,43 @@ export async function extractKnowledge(
   );
 
   const summary = input.user_messages_summary ?? "";
-  const summaryIsEmpty = summary.trim().length === 0;
+  const summaryTrimmed = summary.trim();
+  const summaryIsEmpty = summaryTrimmed.length === 0;
   const slugIsEmpty = sanitizedSlug.length === 0;
 
-  if (summaryIsEmpty || slugIsEmpty) {
+  // v2.0.0-rc.37 NEW-37 (werewolf dogfood remediation): summary opacity guards.
+  // Pre-rc.37 only the empty-summary case aborted, allowing entries whose
+  // summary was literally the slug or a stable_id-shaped string to land on
+  // disk. Werewolf 实测发现 45/50 (90%) canonical summaries 等于 stable_id
+  // → narrow hint 输出沦为 `<id> · <id>` noise → AI 看不到信息信号 → 主动
+  // 跳过 fetch → cite recall 流失。新增 3 个阻断条件防再生:
+  //   1. summary 太短 (<15 chars):稍长于 stable_id (11 chars),低于阈值
+  //      意味着信息密度不可能高于 id 形态本身
+  //   2. summary === slug (case-insensitive):无新信息
+  //   3. summary 匹配 stable_id 模式 (K[TP]-XXX-NNNN):直接是 id 形态
+  const summaryTooShort = !summaryIsEmpty && summaryTrimmed.length < 15;
+  const summaryEqualsSlug =
+    !summaryIsEmpty && summaryTrimmed.toLowerCase() === sanitizedSlug.toLowerCase();
+  const summaryLooksLikeStableId =
+    !summaryIsEmpty && /^K[TP]-[A-Z]{3}-\d{4}$/.test(summaryTrimmed);
+  const summaryIsOpaque = summaryTooShort || summaryEqualsSlug || summaryLooksLikeStableId;
+
+  if (summaryIsEmpty || slugIsEmpty || summaryIsOpaque) {
+    const reason = summaryIsEmpty
+      ? "empty_summary"
+      : slugIsEmpty
+        ? "empty_slug"
+        : summaryTooShort
+          ? "summary_too_short"
+          : summaryEqualsSlug
+            ? "summary_equals_slug"
+            : "summary_looks_like_stable_id";
     await emitEventBestEffort(projectRoot, {
       event_type: "knowledge_archive_attempted",
       timestamp: new Date().toISOString(),
       correlation_id: primarySession,
       session_id: primarySession,
-      reason: `extract_knowledge:${sanitizedSlug || input.slug}`,
+      reason: `extract_knowledge:${sanitizedSlug || input.slug}:${reason}`,
     });
     return {
       pending_path: "",
@@ -206,6 +233,8 @@ export async function extractKnowledge(
         impact: input.impact,
         mustReadIf: input.must_read_if,
         onboardSlot: input.onboard_slot,
+        // v2.0.0-rc.37 NEW-37: pass-through topic tags.
+        tags: input.tags,
       });
       const augmented = mergeEvidenceNotes(existing, fresh);
       await atomicWriteText(absolutePath, augmented);
@@ -264,6 +293,8 @@ export async function extractKnowledge(
     // the only producer; downstream `fabric onboard-coverage` walks frontmatter
     // looking for this exact key.
     onboardSlot: input.onboard_slot,
+    // v2.0.0-rc.37 NEW-37: pass-through topic tags (skill-inferred, 2-4 kebab-case).
+    tags: input.tags,
   });
   await atomicWriteText(absolutePath, fresh);
 
@@ -330,6 +361,10 @@ type FreshEntryArgs = {
   // idempotency_key hash. The value is the bare slot name (no quoting needed —
   // every slot name in `ONBOARD_SLOT_NAMES` is alphanumeric+dash).
   onboardSlot?: string;
+  // v2.0.0-rc.37 NEW-37: optional topic tags (2-4 kebab-case recommended).
+  // Skill-inferred; empty array allowed but degrades narrow hint topic signal.
+  // NOT part of idempotency_key.
+  tags?: string[];
 };
 
 function renderFreshEntry(args: FreshEntryArgs): string {
@@ -363,7 +398,13 @@ function renderFreshEntry(args: FreshEntryArgs): string {
     // canonical source-of-truth: `extractDescriptionFromFrontmatter` reads it
     // before extractRuleDescription's fallback kicks in.
     `summary: ${quoteRelevancePath(args.summary)}`,
-    "tags: []",
+    // v2.0.0-rc.37 NEW-37: render caller-supplied tags or fall back to empty
+    // array. Empty array still legal but doctor's knowledge_tags_empty_ratio
+    // lint will warn at the corpus level. Encourages 2-4 kebab-case topic
+    // strings per entry for cross-entry retrieval signal.
+    args.tags !== undefined && args.tags.length > 0
+      ? `tags: [${args.tags.map((t) => quoteRelevancePath(t)).join(", ")}]`
+      : "tags: []",
   ];
   if (args.relevanceScope !== undefined) {
     frontmatterLines.push(`relevance_scope: ${args.relevanceScope}`);

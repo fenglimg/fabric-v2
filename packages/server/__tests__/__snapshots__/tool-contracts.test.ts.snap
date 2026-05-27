@@ -102,6 +102,13 @@ exports[`tool contracts > fab-extract-knowledge contract matches snapshot 1`] = 
         "minItems": 1,
         "type": "array",
       },
+      "tags": {
+        "description": "Optional topic tags (2-4 kebab-case strings recommended). Drives cross-entry retrieval + topic clustering. Skill-inferred from session content; omit when not confidently inferable. Empty array allowed but discouraged (degrades narrow hint topic signal).",
+        "items": {
+          "type": "string",
+        },
+        "type": "array",
+      },
       "tech_stack": {
         "description": "Tech stack / languages / frameworks the rule applies to (e.g. ['typescript', 'cocos-creator', 'nodejs']). Inferred from recent_paths file extensions and manifest files. Optional — omit when the rule is stack-agnostic.",
         "items": {
