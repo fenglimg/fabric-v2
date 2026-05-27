@@ -219,9 +219,9 @@
       "wave": "D",
       "subject": "doctor lint: personal layer 引用本项目路径 → warn",
       "done_when": "新 doctor check personal_layer_path_misclassify + i18n zh/en + werewolf fixture 测",
-      "status": "pending",
-      "estimated_hours": "1"
-    },
+      "status": "done",
+      "_actual_done": "2026-05-27",
+      "note": "New inspectPersonalLayerPathMisclassify walks iterateRelevanceFrontmatter for visit.layer==='personal' entries; each relevance_paths glob (skipping ~/ and / absolute anchors that are definitionally project-agnostic) is minimatch-tested against collectWorkspacePathsForGlobMatch. Matches flag the entry. Warning kind — no auto-fix; remediation prompts fab_review.modify layer→team or rewriting anchors. Wired into runDoctorReport adjacent to relevance_paths_drift (shares the iterator + glob matcher). i18n keys added to both locales; doctor-i18n snapshot regenerated. 4 new tests (positive flag / team layer untouched / empty paths skipped / home+absolute anchors skipped). doctor.test.ts check count bumped 48→49. tests 1747/1747 + lint 0 + typecheck 0."
     {
       "id": "NEW-6",
       "wave": "A",

@@ -720,6 +720,23 @@ type RelevancePathsDriftInspection = {
   git_available: boolean;
 };
 
+// rc.37 NEW-5: personal_layer_path_misclassify. Personal-layer entries
+// (KP-*) live under ~/.fabric/knowledge/ and are meant to be project-agnostic.
+// When a personal entry declares relevance_paths whose globs resolve against
+// files in the CURRENT project, that's a misclassification signal — the
+// content is project-bound and probably belongs in the team layer.
+type PersonalLayerPathMisclassifyCandidate = {
+  stable_id: string;
+  // ~/.fabric/knowledge/... display form.
+  path: string;
+  // Subset of relevance_paths globs that matched files in the current project.
+  matched_globs: string[];
+};
+
+type PersonalLayerPathMisclassifyInspection = {
+  candidates: PersonalLayerPathMisclassifyCandidate[];
+};
+
 // rc.4 TASK-002: read-side integrity lint inspections (#19-21). Each
 // inspection walks both the team-rooted (`<projectRoot>/.fabric/knowledge/`)
 // and personal-rooted (`<FABRIC_HOME>/.fabric/knowledge/`) canonical trees
@@ -1076,6 +1093,10 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
   const narrowNoPaths = inspectNarrowNoPaths(projectRoot);
   const relevancePathsDangling = inspectRelevancePathsDangling(projectRoot);
   const relevancePathsDrift = inspectRelevancePathsDrift(projectRoot);
+  // rc.37 NEW-5: personal-layer entries whose relevance_paths match files in
+  // the current project — signals layer misclassification (content is
+  // project-bound, should be team-layer).
+  const personalLayerPathMisclassify = inspectPersonalLayerPathMisclassify(projectRoot);
   // rc.6 TASK-023 (E6): narrow_too_few (#26). Two-arm check — structural
   // ratio + telemetry silence rate. Info-kind; safe-degrades to "skipped"
   // telemetry when the edit-counter has no fires in the 30d window.
@@ -1215,6 +1236,11 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     createNarrowNoPathsCheck(t, narrowNoPaths),
     createRelevancePathsDanglingCheck(t, relevancePathsDangling),
     createRelevancePathsDriftCheck(t, relevancePathsDrift),
+    // rc.37 NEW-5: personal-layer path misclassification advisory. Sits in
+    // the relevance_paths hygiene cluster — same iterator, same path-glob
+    // matcher, warning kind (no auto-fix; remediation is fab_review modify
+    // layer flip to team).
+    createPersonalLayerPathMisclassifyCheck(t, personalLayerPathMisclassify),
     // rc.6 TASK-023 (E6): narrow_too_few (lint #26). Info kind; both arms
     // (structural + telemetry) recommend the same fabric-import action.
     createNarrowTooFewCheck(t, narrowTooFew),
@@ -6214,6 +6240,80 @@ function createRelevancePathsDriftCheck(
       detail,
     }),
     t("doctor.check.relevance_paths_drift.remediation"),
+  );
+}
+
+// rc.37 NEW-5: inspect personal-layer entries whose relevance_paths globs
+// resolve against the current project. Signals that the entry is actually
+// project-bound and likely belongs in the team layer.
+function inspectPersonalLayerPathMisclassify(
+  projectRoot: string,
+): PersonalLayerPathMisclassifyInspection {
+  const candidates: PersonalLayerPathMisclassifyCandidate[] = [];
+  const workspacePaths = collectWorkspacePathsForGlobMatch(projectRoot);
+  if (workspacePaths.length === 0) {
+    return { candidates };
+  }
+  for (const { visit, paths } of iterateRelevanceFrontmatter(projectRoot)) {
+    if (visit.layer !== "personal") {
+      continue;
+    }
+    if (paths.length === 0) {
+      continue;
+    }
+    const matched: string[] = [];
+    for (const rawGlob of paths) {
+      // Anchors that explicitly point at the personal layer or absolute paths
+      // outside the project are excluded — they're definitionally
+      // project-agnostic. The misclassification signal is project-relative
+      // globs that resolve against THIS workspace.
+      if (rawGlob.startsWith("~/") || rawGlob.startsWith("/")) {
+        continue;
+      }
+      const glob = rawGlob.endsWith("/") ? `${rawGlob}**` : rawGlob;
+      for (const target of workspacePaths) {
+        if (minimatch(target, glob, { dot: true, matchBase: false })) {
+          matched.push(rawGlob);
+          break;
+        }
+      }
+    }
+    if (matched.length === 0) {
+      continue;
+    }
+    candidates.push({
+      stable_id: visit.parsed.stable_id,
+      path: visit.displayPath,
+      matched_globs: matched,
+    });
+  }
+  candidates.sort((a, b) => a.stable_id.localeCompare(b.stable_id));
+  return { candidates };
+}
+
+function createPersonalLayerPathMisclassifyCheck(
+  t: Translator,
+  inspection: PersonalLayerPathMisclassifyInspection,
+): DoctorCheck {
+  if (inspection.candidates.length === 0) {
+    return okCheck(
+      t("doctor.check.personal_layer_path_misclassify.name"),
+      t("doctor.check.personal_layer_path_misclassify.ok"),
+    );
+  }
+  const first = inspection.candidates[0];
+  const detail = `${first.stable_id} → ${first.matched_globs.slice(0, 2).join(", ")}`;
+  const count = inspection.candidates.length;
+  return issueCheck(
+    t("doctor.check.personal_layer_path_misclassify.name"),
+    "warn",
+    "warning",
+    "knowledge_personal_layer_path_misclassify",
+    t(`doctor.check.personal_layer_path_misclassify.message.${count === 1 ? "singular" : "plural"}`, {
+      count: String(count),
+      detail,
+    }),
+    t("doctor.check.personal_layer_path_misclassify.remediation"),
   );
 }
 

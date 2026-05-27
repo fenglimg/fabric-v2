@@ -649,6 +649,15 @@ export const zhCNMessages: Messages = {
     "{count} 个 narrow-scope canonical entries 的 relevance_paths globs 没有匹配到最近 {windowDays}d git history 中触碰过的文件。首个：{detail}。",
   "doctor.check.relevance_paths_drift.remediation":
     "审阅该 entry 是否仍然相关 — 使用 `fab_review.modify` 刷新 anchors，或使用 `fab_review.reject` 归档。",
+  "doctor.check.personal_layer_path_misclassify.name": "Personal-layer path misclassify",
+  "doctor.check.personal_layer_path_misclassify.ok":
+    "没有 personal-layer entries 的 relevance_paths 解析到当前项目内的文件。",
+  "doctor.check.personal_layer_path_misclassify.message.singular":
+    "{count} 个 personal-layer entry 的 relevance_paths 命中当前项目内的文件（personal 层应保持项目无关）。首个：{detail}。",
+  "doctor.check.personal_layer_path_misclassify.message.plural":
+    "{count} 个 personal-layer entries 的 relevance_paths 命中当前项目内的文件（personal 层应保持项目无关）。首个：{detail}。",
+  "doctor.check.personal_layer_path_misclassify.remediation":
+    "用 `fab_review.modify` 把 layer 翻成 team，或重写 relevance_paths 让 anchors 保持项目无关（删掉项目特定 globs）。",
   "doctor.check.narrow_too_few.name": "Knowledge narrow too few",
   "doctor.check.narrow_too_few.ok":
     "Narrow-with-paths ratio {ratioPct}%（{narrowCount}/{totalCount}）；{teleNote}。",

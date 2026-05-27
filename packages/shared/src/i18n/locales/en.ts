@@ -660,6 +660,15 @@ export const enMessages: Messages = {
     "{count} narrow-scope canonical entries have relevance_paths whose globs match no file touched in the last {windowDays}d of git history. First: {detail}.",
   "doctor.check.relevance_paths_drift.remediation":
     "Review whether the entry is still relevant — use `fab_review.modify` to refresh the anchors or `fab_review.reject` to archive.",
+  "doctor.check.personal_layer_path_misclassify.name": "Personal-layer path misclassify",
+  "doctor.check.personal_layer_path_misclassify.ok":
+    "No personal-layer entries declare relevance_paths that resolve against the current project.",
+  "doctor.check.personal_layer_path_misclassify.message.singular":
+    "{count} personal-layer entry declares relevance_paths that match files in the current project (personal layer should be project-agnostic). First: {detail}.",
+  "doctor.check.personal_layer_path_misclassify.message.plural":
+    "{count} personal-layer entries declare relevance_paths that match files in the current project (personal layer should be project-agnostic). First: {detail}.",
+  "doctor.check.personal_layer_path_misclassify.remediation":
+    "Use `fab_review.modify` with `layer: \"team\"` to flip the entry, or rewrite the relevance_paths so the anchors are project-agnostic (e.g. drop project-specific globs).",
   "doctor.check.narrow_too_few.name": "Knowledge narrow too few",
   "doctor.check.narrow_too_few.ok":
     "Narrow-with-paths ratio {ratioPct}% ({narrowCount}/{totalCount}); {teleNote}.",

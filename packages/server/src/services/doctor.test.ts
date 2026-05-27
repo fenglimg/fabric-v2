@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ZodError } from "zod";
@@ -195,6 +195,9 @@ describe("runDoctorReport", () => {
       "Knowledge narrow without paths",
       "Knowledge relevance_paths dangling",
       "Knowledge relevance_paths drift",
+      // rc.37 NEW-5: personal-layer path misclassification advisory. Sits
+      // in the relevance_paths hygiene cluster — warning kind.
+      "Personal-layer path misclassify",
       "Knowledge narrow too few",
       "Knowledge session-hints stale",
       // rc.23 TASK-010 (e): stale `.fabric/.serve.lock` advisory sits adjacent
@@ -224,7 +227,7 @@ describe("runDoctorReport", () => {
       "Promote ledger invariant",
       "Preexisting root markdown",
     ]);
-    expect(report.checks).toHaveLength(48);
+    expect(report.checks).toHaveLength(49);
   });
 
   it("v2.0: clean post-init repo (mocked layout) reports zero errors AND zero warnings", async () => {
@@ -3414,6 +3417,88 @@ describe("runDoctorReport", () => {
       expect(report.infos.map((i) => i.code)).not.toContain(
         "knowledge_relevance_paths_drift",
       );
+    });
+  });
+
+  // rc.37 NEW-5: personal_layer_path_misclassify. Personal-layer entries that
+  // declare project-relative relevance_paths matching the current workspace are
+  // misclassified — the content is project-bound and likely belongs in team.
+  describe("rc.37 NEW-5: personal_layer_path_misclassify lint", () => {
+    function seedPersonalCanonical(
+      relPath: string,
+      stableId: string,
+      paths: string[],
+    ): void {
+      const personalRoot = process.env.FABRIC_HOME!;
+      const abs = join(personalRoot, ".fabric", "knowledge", relPath);
+      mkdirSync(dirname(abs), { recursive: true });
+      const pathsField = `[${paths.join(", ")}]`;
+      const fm =
+        `---\nid: ${stableId}\ntype: decision\nmaturity: stable\nlayer: personal\n` +
+        `relevance_scope: narrow\nrelevance_paths: ${pathsField}\n---\n# ${stableId}\nBody.\n`;
+      writeFileSync(abs, fm, "utf8");
+    }
+
+    it("flags personal entry whose relevance_paths match files in the current project", async () => {
+      const target = createInitializedProject("doctor-rc37-new5-personal-bound");
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+      // src/main.ts exists under createInitializedProject; `src/**` resolves.
+      seedPersonalCanonical("decisions/KP-DEC-9001--project-bound.md", "KP-DEC-9001", ["src/**"]);
+
+      const report = await runDoctorReport(target);
+      const check = report.checks.find((c) => c.name === "Personal-layer path misclassify");
+      expect(check?.code).toBe("knowledge_personal_layer_path_misclassify");
+      expect(check?.kind).toBe("warning");
+      expect(check?.status).toBe("warn");
+      expect(check?.message).toContain("KP-DEC-9001");
+      expect(report.warnings.map((w) => w.code)).toContain(
+        "knowledge_personal_layer_path_misclassify",
+      );
+    });
+
+    it("does NOT flag team entry even when relevance_paths match the project", async () => {
+      const target = createInitializedProject("doctor-rc37-new5-team-bound");
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+      // Team entries are EXPECTED to anchor on project paths.
+      const fm =
+        `---\nid: KT-DEC-9002\ntype: decision\nmaturity: stable\nlayer: team\n` +
+        `relevance_scope: narrow\nrelevance_paths: [src/**]\n---\n# KT-DEC-9002\nBody.\n`;
+      writeFile(".fabric/knowledge/decisions/KT-DEC-9002--team-bound.md", fm, target);
+
+      const report = await runDoctorReport(target);
+      const check = report.checks.find((c) => c.name === "Personal-layer path misclassify");
+      expect(check?.status).toBe("ok");
+      expect(report.warnings.map((w) => w.code)).not.toContain(
+        "knowledge_personal_layer_path_misclassify",
+      );
+    });
+
+    it("does NOT flag personal entry with empty relevance_paths (broad/agnostic)", async () => {
+      const target = createInitializedProject("doctor-rc37-new5-personal-empty");
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+      seedPersonalCanonical("decisions/KP-DEC-9003--agnostic.md", "KP-DEC-9003", []);
+
+      const report = await runDoctorReport(target);
+      const check = report.checks.find((c) => c.name === "Personal-layer path misclassify");
+      expect(check?.status).toBe("ok");
+    });
+
+    it("does NOT flag personal entry with absolute / home-anchored paths (project-agnostic)", async () => {
+      const target = createInitializedProject("doctor-rc37-new5-personal-agnostic-anchors");
+      await writeKnowledgeMeta(target, { source: "doctor_fix" });
+      writeFile(".fabric/events.jsonl", "", target);
+      seedPersonalCanonical(
+        "decisions/KP-DEC-9004--home-anchor.md",
+        "KP-DEC-9004",
+        ["~/.config/**", "/etc/**"],
+      );
+
+      const report = await runDoctorReport(target);
+      const check = report.checks.find((c) => c.name === "Personal-layer path misclassify");
+      expect(check?.status).toBe("ok");
     });
   });
 
