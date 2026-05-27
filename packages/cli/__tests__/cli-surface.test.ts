@@ -12,7 +12,9 @@ vi.hoisted(() => {
 import configCmd from "../src/commands/config.ts";
 import doctorCommand from "../src/commands/doctor.ts";
 import installCommand from "../src/commands/install.ts";
-import serveCommand from "../src/commands/serve.ts";
+// v2.0.0-rc.37 Wave A2: serveCommand import removed alongside fabric serve
+// quarantine (per [[fabric-serve-quarantine-not-delete]]); the command no
+// longer exists in main and is not part of the CLI surface contract.
 import uninstallCommand from "../src/commands/uninstall.ts";
 
 // Drift gate guidance — surfaced via snapshot hint and assertion failure messages.
@@ -74,10 +76,10 @@ function commandSurface(cmd: CittyCommand): CommandSurface {
 
 describe("CLI surface drift gate (docs/test-seed/cli.md \u00A71)", () => {
   // Snapshot layer: any add/remove/rename/default-change of a flag fails CI.
+  // v2.0.0-rc.37 Wave A2: `serve` row removed alongside command quarantine.
   it.each([
     ["install", installCommand as CittyCommand],
     ["doctor", doctorCommand as CittyCommand],
-    ["serve", serveCommand as CittyCommand],
     ["uninstall", uninstallCommand as CittyCommand],
     ["config", configCmd as CittyCommand],
   ])("command '%s' surface matches snapshot", (name, cmd) => {
@@ -93,15 +95,16 @@ describe("CLI surface drift gate (docs/test-seed/cli.md \u00A71)", () => {
   //  re-asserted here to fail loudly if a 6th public command appears.)
   // rc.15 TASK-004 (C7+C9): rotated `scan` -> `config`; `plan-context-hint`
   // stays callable but is hidden from --help and therefore from this assertion.
-  it("public command set is exactly { install, doctor, serve, uninstall, config }", () => {
+  // v2.0.0-rc.37 Wave A2: `serve` removed from the public command set;
+  // restore alongside startHttpServer if the web UI surface is ever re-enabled.
+  it("public command set is exactly { install, doctor, uninstall, config }", () => {
     const names = [
       installCommand.meta?.name,
       doctorCommand.meta?.name,
-      serveCommand.meta?.name,
       uninstallCommand.meta?.name,
       configCmd.meta?.name,
     ].sort();
-    expect(names).toEqual(["config", "doctor", "install", "serve", "uninstall"]);
+    expect(names).toEqual(["config", "doctor", "install", "uninstall"]);
   });
 
   // Critical-flag layer: even if a future refactor renames descriptions, these
@@ -127,14 +130,8 @@ describe("CLI surface drift gate (docs/test-seed/cli.md \u00A71)", () => {
     expect(flags, DRIFT_HINT).toEqual(expect.arrayContaining(["target"]));
   });
 
-  it("serve exposes critical flags --port / --host (seed §1)", () => {
-    const surface = commandSurface(serveCommand as CittyCommand);
-    const flagMap = new Map(surface.args.map((a) => [a.name, a] as const));
-    expect(flagMap.has("port"), DRIFT_HINT).toBe(true);
-    expect(flagMap.has("host"), DRIFT_HINT).toBe(true);
-    // Seed §1 documents specific defaults — pin them so silent default changes
-    // (e.g. switching default port) require updating the seed.
-    expect(flagMap.get("port")?.default, DRIFT_HINT).toBe("7373");
-    expect(flagMap.get("host")?.default, DRIFT_HINT).toBe("127.0.0.1");
-  });
+  // v2.0.0-rc.37 Wave A2: serve --port / --host drift gate removed; the
+  // serve command is quarantined to packages/server-http-experimental/ per
+  // [[fabric-serve-quarantine-not-delete]]. Restore alongside startHttpServer
+  // if the web UI surface is ever re-enabled.
 });

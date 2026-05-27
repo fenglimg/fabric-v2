@@ -8,13 +8,16 @@ import { cancel, confirm, group, intro, isCancel, log, note, outro, select } fro
 import { defaultAgentsMetaCounters, type AgentsMeta } from "@fenglimg/fabric-shared";
 import { atomicWriteJson } from "@fenglimg/fabric-shared/node/atomic-write";
 import { defineCommand } from "citty";
-import { checkLockOrThrow } from "@fenglimg/fabric-server";
+// v2.0.0-rc.37 Wave A2: serve-lock preflight import removed. With `fabric serve`
+// quarantined to packages/server-http-experimental/, no main-line process
+// writes `.fabric/.serve.lock`, so the install vs serve race condition this
+// guarded against can no longer happen. See KB
+// [[fabric-serve-quarantine-not-delete]] for the design decision.
 
 import { displayWidth, paint, padEnd } from "../colors.js";
 import { createDebugLogger, resolveDevMode } from "../dev-mode.js";
 import type { ClaudeMcpScope } from "../config/json.js";
 import { t } from "../i18n.js";
-import { hasActionHint, renderFabricError } from "../lib/error-render.js";
 import * as configCommand from "./config.js";
 import { installHooks } from "../install/hooks-orchestrator.js";
 import { writeFabricAgentsSnapshot } from "../install/write-bootstrap-snapshot.js";
@@ -390,25 +393,11 @@ export async function runInitCommand(args: InitArgs): Promise<InitExecutionResul
 
   const intent = resolveInitCliIntent(args, resolution.target);
 
-  // rc.15 — Preflight lock check on any already-initialized workspace.
-  // Diff-mode default appends ledger events on every run
-  // (install_diff_applied) which opens events.jsonl, so a running `fabric serve`
-  // holding the lock would race the write. No legacy --force bypass remains;
-  // recovery from a stuck lock is `fabric uninstall && fabric install`.
-  const fabricInitialized = existsSync(join(intent.target, ".fabric", "events.jsonl"));
-  if (fabricInitialized) {
-    // rc.15 TASK-007: explicitly render `.actionHint` from FabricError-shaped
-    // failures (citty's default handler prints `.message` only).
-    try {
-      checkLockOrThrow(intent.target);
-    } catch (err) {
-      if (hasActionHint(err)) {
-        renderFabricError(err);
-        process.exit(1);
-      }
-      throw err;
-    }
-  }
+  // v2.0.0-rc.37 Wave A2: rc.15 serve-lock preflight removed alongside
+  // `fabric serve` quarantine. No main-line process writes `.fabric/.serve.lock`
+  // any more, so the install-vs-serve race this guarded against cannot occur.
+  // Legacy lock files left over from rc ≤36 will be reaped by the doctor's
+  // stale-serve-lock advisory + `fabric doctor --fix` unlink path.
 
   logger(`init target source: ${resolution.source}`);
   for (const step of resolution.chain) {

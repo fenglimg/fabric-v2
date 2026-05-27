@@ -51,21 +51,6 @@ Examples:
     ],
   },
   "locale": "en",
-  "serve": {
-    "description": "Start the local Fabric MCP HTTP service.
-
-Examples:
-  fabric serve                              bind 127.0.0.1:7373 (default)
-  fabric serve --port 8787                  use a custom port
-  FABRIC_AUTH_TOKEN=<token> fabric serve --host 0.0.0.0   bind non-loopback with Bearer auth",
-    "errors": [
-      "[warn] --host 0.0.0.0 requires FABRIC_AUTH_TOKEN for non-loopback exposure; falling back to 127.0.0.1. To bind 0.0.0.0, run: FABRIC_AUTH_TOKEN=<token> fabric serve --host 0.0.0.0",
-    ],
-    "stderr": [],
-    "stdout": [
-      "[ok] Fabric Dashboard http://127.0.0.1:7373",
-    ],
-  },
   "uninstall": {
     "description": "Uninstall Fabric from the target project. .fabric/knowledge/ is always preserved; ~/.fabric/knowledge/ is never touched.
 
@@ -134,21 +119,6 @@ exports[`cli i18n > renders zh-CN command descriptions and output snapshots 1`] 
     ],
   },
   "locale": "zh-CN",
-  "serve": {
-    "description": "启动本地 Fabric MCP HTTP 服务。
-
-示例：
-  fabric serve                              绑定 127.0.0.1:7373（默认）
-  fabric serve --port 8787                  使用自定义端口
-  FABRIC_AUTH_TOKEN=<token> fabric serve --host 0.0.0.0   绑定非 loopback 并启用 Bearer 鉴权",
-    "errors": [
-      "[warn] --host 0.0.0.0 需要设置 FABRIC_AUTH_TOKEN 才能对外暴露；已回退到 127.0.0.1。如需绑定 0.0.0.0，请运行：FABRIC_AUTH_TOKEN=<token> fabric serve --host 0.0.0.0",
-    ],
-    "stderr": [],
-    "stdout": [
-      "[ok] Fabric 仪表盘 http://127.0.0.1:7373",
-    ],
-  },
   "uninstall": {
     "description": "从目标项目中卸载 Fabric。.fabric/knowledge/ 始终保留；~/.fabric/knowledge/ 永不受影响。
 

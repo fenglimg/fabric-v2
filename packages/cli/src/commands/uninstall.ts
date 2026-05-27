@@ -5,14 +5,15 @@ import { isAbsolute, join, relative, resolve, sep } from "node:path";
 
 import { cancel, confirm, group, intro, isCancel, log, note, outro } from "@clack/prompts";
 import { defineCommand } from "citty";
-import { checkLockOrThrow } from "@fenglimg/fabric-server";
+// v2.0.0-rc.37 Wave A2: serve-lock preflight removed alongside fabric serve
+// quarantine — no main-line process writes `.fabric/.serve.lock` any more.
+// See KB [[fabric-serve-quarantine-not-delete]].
 
 import { paint } from "../colors.js";
 import { createDebugLogger, resolveDevMode } from "../dev-mode.js";
 import { detectClientSupports, resolveClients, type DetectedClientSupport } from "../config/resolver.js";
 import type { ClientConfigWriter, RemoveResult } from "../config/writer.js";
 import { t } from "../i18n.js";
-import { hasActionHint, renderFabricError } from "../lib/error-render.js";
 import {
   uninstallBootstrapStage,
   type UninstallOptions as BootstrapUninstallOptions,
@@ -210,18 +211,10 @@ export async function runUninstallCommand(args: UninstallArgs): Promise<Uninstal
     logger(step);
   }
 
-  // Lock safety: refuse if a serve process holds the lock.
-  // rc.15 TASK-007: explicitly render `.actionHint` from FabricError-shaped
-  // failures (citty's default handler prints `.message` only).
-  try {
-    checkLockOrThrow(intent.target);
-  } catch (err) {
-    if (hasActionHint(err)) {
-      renderFabricError(err);
-      process.exit(1);
-    }
-    throw err;
-  }
+  // v2.0.0-rc.37 Wave A2: rc.15 serve-lock preflight removed — no main-line
+  // process writes `.fabric/.serve.lock` any more (per
+  // [[fabric-serve-quarantine-not-delete]]). Legacy lock files left over from
+  // rc ≤36 are reaped by the doctor's stale-serve-lock advisory + --fix.
 
   const supports = detectClientSupports(intent.target);
   const basePlan = await buildUninstallExecutionPlan(intent.target, {

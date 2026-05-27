@@ -1,5 +1,3 @@
-import type { Server as HttpServer } from "node:http";
-
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 afterEach(() => {
@@ -7,50 +5,11 @@ afterEach(() => {
   vi.resetModules();
 });
 
-describe("startHttpServer", () => {
-  it("disposes HTTP app resources when the server closes", async () => {
-    let closeHandler: (() => void) | undefined;
-    const dispose = vi.fn().mockResolvedValue(undefined);
-    const fakeServer = {
-      once: vi.fn((event: string, handler: (...args: unknown[]) => void) => {
-        if (event === "listening") {
-          queueMicrotask(() => {
-            handler();
-          });
-        }
-        if (event === "close") {
-          closeHandler = () => {
-            handler();
-          };
-        }
-        return fakeServer;
-      }),
-    } as unknown as HttpServer;
-
-    vi.doMock("./http.js", () => ({
-      createFabricHttpApp: vi.fn(() => ({
-        listen: vi.fn(() => fakeServer),
-        dispose,
-      })),
-    }));
-
-    const { startHttpServer } = await import("./index.js");
-    const serverPromise = startHttpServer({
-      port: 7373,
-      projectRoot: "/tmp/fabric-project",
-    });
-
-    const server = await serverPromise;
-
-    expect(server).toBe(fakeServer);
-    expect(dispose).not.toHaveBeenCalled();
-
-    closeHandler?.();
-    await Promise.resolve();
-
-    expect(dispose).toHaveBeenCalledTimes(1);
-  }, 10_000);
-});
+// v2.0.0-rc.37 Wave A2: `describe("startHttpServer", ...)` block removed.
+// startHttpServer was quarantined to packages/server-http-experimental/ per
+// KB [[fabric-serve-quarantine-not-delete]]; this block tested the HTTP boot
+// path that no longer exists in main. Restore alongside startHttpServer if
+// the web UI surface is ever re-enabled.
 
 describe("createFabricServer", () => {
   it("registers only current MCP tools", async () => {

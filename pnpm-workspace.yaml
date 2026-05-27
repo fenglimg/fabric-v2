@@ -1,2 +1,6 @@
 packages:
   - packages/*
+  # v2.0.0-rc.37 Wave A2: exclude server-http-experimental from main workspace
+  # so pnpm -r build / test / tsc skip it cleanly (per
+  # [[fabric-serve-quarantine-not-delete]] — quarantine = 主线 zero burden).
+  - "!packages/server-http-experimental"

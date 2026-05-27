@@ -1,7 +1,11 @@
+// v2.0.0-rc.37 Wave A2: `serve` subcommand quarantined to
+// packages/server-http-experimental/ per KB decision
+// [[fabric-serve-quarantine-not-delete]]. The HTTP-server entry point is no
+// longer wired into the main CLI; restore via the package README's restoration
+// recipe if a future web UI surface re-introduces it.
 export const allCommands = {
   install: () => import("./install.js").then((module) => module.default),
   doctor: () => import("./doctor.js").then((module) => module.default),
-  serve: () => import("./serve.js").then((module) => module.default),
   uninstall: () => import("./uninstall.js").then((module) => module.default),
   config: () => import("./config.js").then((module) => module.default),
   "plan-context-hint": () =>

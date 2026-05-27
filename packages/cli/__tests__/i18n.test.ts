@@ -73,18 +73,11 @@ async function collectSnapshots(locale: "en" | "zh-CN") {
     await configCmd.run?.({ args: {} } as never);
   });
 
-  const serveTarget = trackFixture(`fab-i18n-serve-${locale}`);
-  vi.resetModules();
-  vi.doMock("@fenglimg/fabric-server", () => ({
-    acquireLock: vi.fn(),
-    releaseLock: vi.fn(),
-    checkLockOrThrow: vi.fn(),
-    startHttpServer: vi.fn().mockResolvedValue(undefined),
-  }));
-  const { serveCommand } = await import("../src/commands/serve.ts");
-  const serveOutput = await captureOutput(async () => {
-    await serveCommand.run?.({ args: { target: serveTarget, host: "0.0.0.0", port: "7373" } } as never);
-  });
+  // v2.0.0-rc.37 Wave A2: `fabric serve` snapshot removed alongside the
+  // command's quarantine (per [[fabric-serve-quarantine-not-delete]]). The
+  // serve i18n strings remain in locales for backward-compat consumers but
+  // are no longer reachable via the main CLI surface — see
+  // packages/server-http-experimental/README.md for the restoration recipe.
 
   // MINIMAL uninstall snapshot — description + usage help-text first line only.
   // Per plan clarification #8, uninstall stdout iterates across rc.9/10/etc.;
@@ -109,10 +102,7 @@ async function collectSnapshots(locale: "en" | "zh-CN") {
       description: configCmd.meta?.description,
       ...configOutput,
     },
-    serve: {
-      description: serveCommand.meta.description,
-      ...serveOutput,
-    },
+    // serve snapshot removed in v2.0.0-rc.37 Wave A2 (quarantine).
     uninstall: uninstallEntry,
   });
 }

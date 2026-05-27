@@ -1,6 +1,9 @@
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import type { Server as HttpServer } from "node:http";
+// v2.0.0-rc.37 Wave A2: `node:http` Server type no longer imported — the
+// startHttpServer entry point was quarantined to packages/server-http-experimental/
+// per KB [[fabric-serve-quarantine-not-delete]]. Restore alongside startHttpServer
+// if the web UI surface is ever re-enabled.
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -116,15 +119,13 @@ export {
   type KnowledgeSyncReport,
   type StructuredWarning,
 } from "./services/knowledge-sync.js";
-export {
-  acquireLock,
-  checkLockOrThrow,
-  readLockState,
-  releaseLock,
-  ServeLockHeldError,
-  type AcquireOptions,
-  type LockState,
-} from "./services/serve-lock.js";
+// v2.0.0-rc.37 Wave A2: serve-lock re-exports removed from the main public
+// surface. `services/serve-lock.ts` is still on disk because doctor's
+// stale-serve-lock advisory + `--fix` unlink path still need to reap legacy
+// lock files left behind by rc ≤36 `fabric serve` invocations. The doctor
+// imports `isAlive` / `readLockState` directly from the relative path, so the
+// internal API survives without re-exporting it publicly.
+// Restore alongside startHttpServer if the web UI surface is ever re-enabled.
 
 export function createFabricServer(tracker?: InFlightTracker): McpServer {
   const server = new McpServer({
@@ -290,33 +291,12 @@ export function createShutdownHandler(deps: ShutdownHandlerDeps): () => void {
   };
 }
 
-export async function startHttpServer(options: {
-  port: number;
-  projectRoot: string;
-  host?: string;
-  authToken?: string;
-  // v2.0.0-rc.29 TASK-002 (BUG-K1): forwarded to createFabricHttpApp.
-  allowLoopbackNoAuth?: boolean;
-}): Promise<HttpServer> {
-  const { createFabricHttpApp } = await import("./http.js");
-  const { port, projectRoot, host = "127.0.0.1", authToken, allowLoopbackNoAuth } = options;
-  const app = createFabricHttpApp({ projectRoot, host, authToken, allowLoopbackNoAuth });
-
-  return await new Promise<HttpServer>((resolveServer, rejectServer) => {
-    const server = app.listen(port, host);
-
-    server.once("close", () => {
-      void app.dispose();
-    });
-
-    server.once("listening", () => {
-      resolveServer(server);
-    });
-    server.once("error", (error: Error) => {
-      rejectServer(error);
-    });
-  });
-}
+// v2.0.0-rc.37 Wave A2: `startHttpServer` removed. The CLI surface
+// (`fabric serve`) is quarantined to packages/server-http-experimental/ per
+// KB [[fabric-serve-quarantine-not-delete]]. The Express app factory still
+// lives at `./http.ts` for tests + future restoration, but no main-line entry
+// point boots it. To restore: re-introduce this function alongside the moved
+// command file in the experimental package.
 
 const entrypoint = process.argv[1];
 const currentFilePath = fileURLToPath(import.meta.url);

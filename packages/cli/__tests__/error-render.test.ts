@@ -21,8 +21,12 @@ import { Writable } from "node:stream";
 
 import { describe, expect, it } from "vitest";
 
-import { ServeLockHeldError } from "@fenglimg/fabric-server";
-
+// v2.0.0-rc.37 Wave A2: `ServeLockHeldError` no longer re-exported from the
+// main server package (the class itself lives at server/src/services/serve-lock.ts
+// for doctor's stale-lock advisory, but is no longer part of the public API).
+// FabricError subclass coverage is still provided by the plain-object tests
+// below (`hasActionHint` / `renderFabricError` only care about the structural
+// shape `{ message: string, actionHint: string }`).
 import { hasActionHint, renderFabricError } from "../src/lib/error-render.js";
 
 function captureStream(): Writable & { captured: string } {
@@ -42,12 +46,9 @@ function captureStream(): Writable & { captured: string } {
 }
 
 describe("hasActionHint", () => {
-  it("returns true for ServeLockHeldError (real FabricError subclass)", () => {
-    const err = new ServeLockHeldError("lock held", {
-      actionHint: "Stop the running serve",
-    });
-    expect(hasActionHint(err)).toBe(true);
-  });
+  // v2.0.0-rc.37 Wave A2: ServeLockHeldError-shaped test removed (class no
+  // longer re-exported). Structural type guard coverage continues via the
+  // plain-object tests below — they exercise the same shape contract.
 
   it("returns true for plain object with message + actionHint", () => {
     expect(hasActionHint({ message: "m", actionHint: "a" })).toBe(true);
@@ -88,18 +89,9 @@ describe("renderFabricError", () => {
     expect(stream.captured).toContain("Stop the running 'fabric serve' (Ctrl-C or 'kill 12345')");
   });
 
-  it("renders ServeLockHeldError end-to-end (TASK-003 wording surfaces in output)", () => {
-    const stream = captureStream();
-    const err = new ServeLockHeldError("serve lock held by live PID 4242", {
-      actionHint: "Stop the running 'fabric serve' (Ctrl-C in its terminal, or 'kill 4242') before retrying.",
-    });
-    renderFabricError(err, stream);
-    // BOTH wording lines must reach the user — this is the regression the
-    // hotfix exists to prevent.
-    expect(stream.captured).toContain("serve lock held by live PID 4242");
-    expect(stream.captured).toContain("kill 4242");
-    expect(stream.captured).toMatch(/Ctrl-C|fabric serve/);
-  });
+  // v2.0.0-rc.37 Wave A2: ServeLockHeldError end-to-end test removed alongside
+  // the class re-export. The "writes BOTH message and actionHint" test above
+  // still covers the renderer's user-facing contract via plain-object input.
 
   it("formats actionHint as an indented arrow on its own line", () => {
     const stream = captureStream();
