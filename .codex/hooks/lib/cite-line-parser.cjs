@@ -35,10 +35,16 @@ const FULL_RE =
 const CHAINED_FROM_ID_RE = /chained-from\s+(K[TP]-[A-Z]+-\d+)/i;
 
 const ALLOWED_TAGS = new Set([
+  // v2.0.0-rc.37 NEW-1: new simplified 2-state tag set ([applied] / [dismissed]).
+  // Old 4-state tags (planned / recalled / chained-from) accepted for
+  // backward compat — they continue to parse and count toward cite-coverage
+  // so in-flight workspaces don't lose their existing audit signal.
+  "applied",
+  "dismissed",
+  // Legacy tags (rc ≤36).
   "planned",
   "recalled",
   "chained-from",
-  "dismissed",
   "none",
 ]);
 

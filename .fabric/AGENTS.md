@@ -39,14 +39,15 @@
   ```
   第一行是 Phase 1.5 Trigger Gate 用来识别 E3 入口的 structured marker (verbatim 字符串 `self-archive policy triggered by signal`, 后接冒号 + 触发信号名)。第二行起是给用户看的中文提示。两行都必须出现; 缺 marker 行 Phase 1.5 无法路由到 E3_ai_self_trigger。
 
-## Cite policy
+## Cite policy (v2.0.0-rc.37 NEW-1: 简化 4-state → 2-state)
 
-- **触发**: 做 edit / decide / propose plan 之前,**回复首行**必须写 `KB: <id> (<≤8字 用法>) [planned|recalled|chained-from <id>|dismissed:<reason>]` 或 `KB: none [<reason>]`。
-- **`[recalled]` 验证**: 必须紧跟两步调用——先 `fab_plan_context(paths=[...])` 拿 `selection_token`,再 `fab_get_knowledge_sections({ selection_token, ai_selected_stable_ids: [<id>] })`,防止编造 id。
-- **contract 语法**: decisions/pitfalls 类引用必须在尾段加 contract: `→ <operator> [<operator> ...]`,operator ∈ {`edit:<glob>` `!edit:<glob>` `require:<symbol>` `forbid:<symbol>` `skip:<reason>`}。例:`KB: K-001 (auth) [planned] → edit:src/auth/**/*.ts !edit:src/legacy/**`。
+- **触发**: 做 edit / decide / propose plan 之前,**回复首行**必须写 `KB: <id> (<≤8字 用法>) [applied|dismissed:<reason>]` 或 `KB: none [<reason>]`。
+- **`[applied]` 验证义务**: 引用任何 id 前必须先用 fab_recall (或两步 fab_plan_context → fab_get_knowledge_sections) 实际抓 KB body, 防止编造 id。验证不通过 = 不能 cite。
+- **contract 语法**: decisions/pitfalls 类 `[applied]` cite 尾段加 contract: `→ <operator> [<operator> ...]`,operator ∈ {`edit:<glob>` `!edit:<glob>` `require:<symbol>` `forbid:<symbol>` `skip:<reason>`}。例:`KB: K-001 (auth) [applied] → edit:src/auth/**/*.ts !edit:src/legacy/**`。
 - **skip reason 词典**: `sequencing | conditional | semantic | aesthetic | architectural | other:<text>`。
 - **type 路由**: models 类引用为 reference cite,不需要 contract;guidelines/processes 类暂不强制,推后 LLM-judge。
-- **用户口头提规则没给 id**: 先调 `fab_extract_knowledge` 或 `search_context` 反查。
+- **用户口头提规则没给 id**: 先调 `fab_recall(paths)` 或 `fab_extract_knowledge` 反查。
 - **dismissed reason**: 枚举 `scope-mismatch | outdated | not-applicable | other:<text>`。
-- **`KB: none` sentinel**: 枚举两种合规理由——`[no-relevant]` 已调 `fab_plan_context`(或 hook 输出可见)但无可用条目;`[not-applicable]` 当前动作不在 cite 范围(纯探索 / Bash 只读 / 用户问答)。裸 `KB: none`(无后缀)仍然 valid,归类为 `[unspecified]`(legacy 兼容,鼓励后续补注)。
+- **`KB: none` sentinel**: 枚举两种合规理由——`[no-relevant]` 已调 `fab_recall` / `fab_plan_context`(或 hook 输出可见)但无可用条目;`[not-applicable]` 当前动作不在 cite 范围(纯探索 / Bash 只读 / 用户问答)。裸 `KB: none`(无后缀)仍然 valid,归类为 `[unspecified]`(legacy 兼容,鼓励后续补注)。
 - **稽核**: `fabric doctor --cite-coverage [--since=7d] [--client=cc|codex|all]` 输出 cite 覆盖率,含 `KB: none` sentinel 拆分。本规则不阻断你工作,只记录。
+- **Backward compat**: 解析器同时接受老 4-state tags (`planned` / `recalled` / `chained-from <id>`) — 都映射到 `[applied]` 语义,gradually 迁到新简化形态即可,旧 session 留下的 cite 仍然计入 cite-coverage。

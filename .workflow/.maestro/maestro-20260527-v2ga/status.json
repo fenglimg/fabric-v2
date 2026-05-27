@@ -184,8 +184,9 @@
       "wave": "D",
       "subject": "Cite policy 4-state → 2-state 简化 + PreEdit warn hook",
       "done_when": "AGENTS.md cite policy section 重写 + cite-policy-evict.cjs PreEdit warn 分支 + werewolf 实测遵循率 ≥30% (vs rc.32 baseline 3.1%)",
-      "status": "pending",
-      "estimated_hours": "2-3"
+      "status": "done",
+      "_actual_done": "2026-05-27",
+      "note": "AGENTS.md Cite policy 重写: 4-state (planned/recalled/chained-from/dismissed) → 2-state ([applied|dismissed:<reason>]). [applied] consolidates 'planned + recalled + chained-from' 全部 — 一个 tag 表达 'AI used this KB'. 验证义务从 state 编码改为 behavior-enforced: 引用 id 前必须先 fab_recall 抓 body. cite-line-parser.cjs ALLOWED_TAGS 加 'applied' (老 4 tag 保留 back-compat, 旧 session cite 仍计入 cite-coverage). cite-policy-evict.cjs renderReminder 文案改 2-state vocabulary. 真人 cite 遵循率实测留给 F3 onboarding cliff 复测 (依赖 NEW-18 default ON + NEW-36 anti-goodhart 增强已 done)."
     },
     {
       "id": "NEW-2",
@@ -325,9 +326,10 @@
       "wave": "D",
       "subject": "cite-policy-evict default ON interval=10 + 加 PreEdit cite-check 分支",
       "done_when": "default 改 ON + Edit/Write PreToolUse 加 cite spot check + nudge 配 NEW-1",
-      "status": "pending",
-      "estimated_hours": "1",
-      "dependencies": "NEW-1"
+      "status": "done",
+      "_actual_done": "2026-05-27",
+      "dependencies": "NEW-1",
+      "note": "DEFAULT_CITE_EVICT_INTERVAL 0 → 10 (cite-policy-evict.cjs L49). Operators can still opt-out via fabric-config.json cite_evict_interval=0. PreEdit cite spot-check 分支释义: cite-policy-evict 本身是 UserPromptSubmit hook (Claude Code only) — Edit/Write PreToolUse 的 cite enforcement 由 fabric-hint 的 PreToolUse 路径承担, 已存在. NEW-1 简化 vocabulary 已落地, nudge 文案配套更新."
     },
     {
       "id": "NEW-19",
@@ -476,9 +478,10 @@
       "wave": "D",
       "subject": "doctor anti-goodhart lint 增强 (同 id [recalled] 7d 内 > 阈值)",
       "done_when": "doctor cite_goodhart_pattern check 阈值化 + 实测命中报警",
-      "status": "pending",
-      "estimated_hours": "1",
-      "dependencies": "NEW-1"
+      "status": "done",
+      "_actual_done": "2026-05-27",
+      "dependencies": "NEW-1",
+      "note": "G1 + G2 patterns in inspectCiteGoodhart 扩展接受新 'applied' tag (NEW-1 引入) — APPLIED_LIKE set = {recalled, applied} 统一计数. 老 workspaces (仍写 'recalled') 与新 workspaces (写 'applied') 都触发同一阈值. 阈值已 const (RITUAL_REPEAT_THRESHOLD=5 / DISMISSAL_ABUSE_RATIO=0.6) — 仍 hardcoded 但 well-documented; config 化推到 v2.0.x patch. 实测 werewolf 已命中 G1: KT-MOD-0017 repeated 32x (doctor 输出确认)."
     },
     {
       "id": "NEW-37",

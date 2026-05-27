@@ -2572,11 +2572,16 @@ async function inspectCiteGoodhart(projectRoot: string): Promise<CiteGoodhartIns
     return { status: "ok", fired: [] };
   }
 
-  // G1: count (kb_id, "recalled") tuples. Same tuple > threshold = ritual.
+  // G1: count (kb_id, "applied|recalled") tuples. Same tuple > threshold = ritual.
+  // v2.0.0-rc.37 NEW-1 + NEW-36: count BOTH legacy 'recalled' and new 'applied'
+  // tags under the same pattern bucket — same Goodhart signal (AI cites a
+  // single hot id over and over instead of expanding coverage). Mixed
+  // workspaces (some sessions on old vocab, some on new) get a unified count.
+  const APPLIED_LIKE = new Set(["recalled", "applied"]);
   const recalledCount = new Map<string, number>();
   for (const turn of turns) {
     for (let i = 0; i < turn.cite_ids.length; i += 1) {
-      if (turn.cite_tags[i] === "recalled") {
+      if (APPLIED_LIKE.has(turn.cite_tags[i])) {
         const key = turn.cite_ids[i];
         recalledCount.set(key, (recalledCount.get(key) ?? 0) + 1);
       }
@@ -2584,17 +2589,17 @@ async function inspectCiteGoodhart(projectRoot: string): Promise<CiteGoodhartIns
   }
   for (const [id, n] of recalledCount.entries()) {
     if (n > RITUAL_REPEAT_THRESHOLD) {
-      fired.push({ pattern: "G1", detail: `${id} repeated as [recalled] ${n}x in 7d` });
+      fired.push({ pattern: "G1", detail: `${id} repeated as [applied|recalled] ${n}x in 7d` });
       break; // one example is enough — operator scans the ledger for the rest
     }
   }
 
-  // G2: dismissal abuse — skip_reason ratio on recalled cites.
+  // G2: dismissal abuse — skip_reason ratio on applied|recalled cites.
   let recalledTotal = 0;
   let recalledWithSkip = 0;
   for (const turn of turns) {
     for (let i = 0; i < turn.cite_ids.length; i += 1) {
-      if (turn.cite_tags[i] !== "recalled") continue;
+      if (!APPLIED_LIKE.has(turn.cite_tags[i])) continue;
       recalledTotal += 1;
       const commitment = turn.cite_commitments[i];
       if (commitment && typeof commitment.skip_reason === "string" && commitment.skip_reason.length > 0) {
