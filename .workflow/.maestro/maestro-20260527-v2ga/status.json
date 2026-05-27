@@ -211,8 +211,10 @@
       "wave": "D",
       "subject": "Phase 0.5 viability gate signal 8→3 简化 + duplicate glob 强制 + force-archive 引导",
       "done_when": "fabric-archive SKILL.md Phase 0.5 重写 3 大类信号 + Phase 0.5 强制 Glob duplicate + E2/E4 gate-FAIL message 加 force-archive 引导",
-      "status": "pending",
-      "estimated_hours": "2"
+      "status": "done",
+      "_actual_done": "2026-05-27",
+      "estimated_hours": "2",
+      "note": "Phase naming: spec 写 'Phase 0.5' 但实际 viability gate 在 Phase 2.5 (history rename); 实际 target 是 viability gate phase, 已落到 Phase 2.5 文件。简化 8 → 3 类信号 (mirror rc.37 NEW-2 AGENTS.md self-archive 4→2 简化): (1) User-driven knowledge expression (legacy #1 normative + #6 decision-conf + #7 dismissal-with-reason); (2) Reflective discovery (legacy #2 wrong-turn-revert + #3 long-debug-loop + #5 new-pattern); (3) Concrete artifact change (legacy #4 new-dep + #8 process-formalization)。Legacy 8 signal 名保留作 back-compat scoring inputs (任何 path 触发老 signal 也触发对应 category), 不破坏老 SKILL execution traces。Phase 2.5 强制 duplicate Glob: rewrite anti-signal #4 'Duplicate of existing canonical' 从 'Do a quick Glob before deciding' (advisory) → mandatory pre-PASS MUST step (每 candidate 必 Glob '.fabric/knowledge/**/*.md' keyed on slug-stem, dup 则 drop), 加 rationale (silent near-dup 是 highest-noise fault, 一次 glob 代价远小于 dup-write 累积污染)。E2/E4 gate-FAIL force-archive 引导: 已在 phase-2-5-viability.md L48 (zh-CN) + L54 (en) 双 locale 完备, 本 task 在 SKILL.md hot path 额外显式 inline 双 locale 短语 (`如需强制归档，请显式调用 fabric-archive` / `To force-archive, explicitly invoke fabric-archive`), 确保 hot-path 读者不需要 'Read ref/' 跳转就能看到 escape hatch。Gates: tests 1758 / lint 0。"
     },
     {
       "id": "NEW-5",

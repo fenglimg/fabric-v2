@@ -2,18 +2,32 @@
 
 > **Loaded on demand.** SKILL.md hot path retains the signal lists, gate decision pseudocode, and entry-point branching summary. This file holds the verbose explanations for each signal, gate-FAIL message variants (zh-CN/en), the events.jsonl 4KB atomicity constraint note, and rationale.
 
-## Archive signals — verbose explanation
+## Archive signals — verbose explanation (rc.37 NEW-4 simplified 8 → 3)
 
-Scan `user_messages_summary` + `recent_paths` + the events tail collected in Phase 2. Each signal listed in SKILL.md hot path is explained below:
+Scan `user_messages_summary` + `recent_paths` + the events tail collected in Phase 2. The legacy 8-signal list was simplified in v2.0.0-rc.37 NEW-4 to **3 major categories**, mirroring the AGENTS.md Self-archive policy rc.37 NEW-2 simplification. Legacy signal names remain valid scoring inputs for back-compat (any path that fires a legacy signal also fires the corresponding category):
 
-1. **Explicit normative language** — user said `always` / `never` / `from now on` / `下次注意` / `记一下` / `以后` / `永远不要`. Strongest single signal — even one normative cue is sufficient.
-2. **Wrong-turn-and-revert** — a path was edited, then reverted (or partially undone) after diagnosis. Indicates a pitfall worth recording (the why-not lives in the revert).
-3. **Long diagnostic loop** — an issue took > 15 minutes (or > ~10 tool turns) of debugging before resolution. Implies a non-obvious cause worth capturing.
-4. **New dependency adoption** — a new package / library / external tool was introduced (e.g. `package.json` / `pyproject.toml` / `Cargo.toml` diff adds a dep).
-5. **New pattern emergence** — a reusable abstraction or naming convention was named ("the X phase", "the Y pattern", "let's call this Z").
-6. **Decision confirmation** — ≥ 2 alternatives were weighed AND a rationale was given before settling. The rationale is the archivable knowledge.
-7. **Explicit dismissal-with-reason** — user rejected an approach AND stated why. The why is the archivable knowledge, not the dismissal itself.
-8. **Process formalization** — a multi-step procedure was executed in a specific order AND the order was identified as load-bearing.
+### Category 1 — User-driven knowledge expression
+
+Covers legacy signals #1 (normative language) + #6 (decision confirmation) + #7 (dismissal-with-reason). All three are "user message contains structured knowledge worth keeping":
+
+- **Normative language** — user said `always` / `never` / `from now on` / `下次注意` / `记一下` / `以后` / `永远不要`. Strongest single cue.
+- **Decision confirmation** — ≥ 2 alternatives were weighed AND a rationale was given before settling. The rationale is the archivable knowledge.
+- **Dismissal-with-reason** — user rejected an approach AND stated why. The why is archivable, not the dismissal itself.
+
+### Category 2 — Reflective discovery
+
+Covers legacy signals #2 (wrong-turn-and-revert) + #3 (long diagnostic loop) + #5 (new pattern emergence). All three are "AI execution surfaced a non-obvious insight":
+
+- **Wrong-turn-and-revert** — a path was edited, then reverted (or partially undone) after diagnosis. The why-not lives in the revert.
+- **Long diagnostic loop** — an issue took > 15 minutes (or > ~10 tool turns) of debugging before resolution. Non-obvious cause worth capturing.
+- **New pattern emergence** — a reusable abstraction or naming convention was named in-session ("the X phase", "the Y pattern", "let's call this Z").
+
+### Category 3 — Concrete artifact change
+
+Covers legacy signals #4 (new dependency) + #8 (process formalization). Both surface in tangible workspace artifacts:
+
+- **New dependency adoption** — a new package / library / external tool was introduced (`package.json` / `pyproject.toml` / `Cargo.toml` diff adds a dep).
+- **Process formalization** — a multi-step procedure was executed in a specific order AND the order was identified as load-bearing.
 
 ## Anti-archive signals — verbose explanation
 
@@ -22,7 +36,7 @@ These force the gate to FAIL **unless** an archive signal also fires (i.e. anti-
 1. **Typo-only edits** — the entire session is whitespace / spelling / formatting changes. No semantic content to archive.
 2. **Pure refactor** — rename / move / extract with no behavior change AND no naming convention being established.
 3. **Narrow rename request** — user asked to rename one symbol / file with no rationale. Zero generalization potential.
-4. **Duplicate of existing canonical** — the observation is already covered by an existing entry under `.fabric/knowledge/<type>/`. Do a quick Glob before deciding.
+4. **Duplicate of existing canonical** — v2.0.0-rc.37 NEW-4: this check is now **mandatory** (was "do a quick Glob before deciding"). Pre-PASS MUST step: for each candidate, `Glob('.fabric/knowledge/**/*.md')` keyed on slug-stem. If duplicate found → drop candidate. Silently writing a near-duplicate is the highest-noise failure mode and dwarfs the cost of one extra glob per candidate.
 
 ## Gate-FAIL user messages (E2 / E4 only)
 

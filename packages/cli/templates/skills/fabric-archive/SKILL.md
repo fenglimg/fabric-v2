@@ -63,7 +63,15 @@ Gather raw evidence: tail `.fabric/events.jsonl` since last `knowledge_proposed`
 
 ### Phase 2.5 — Viability Gate (Anti-Archive Guard)
 
-Coarse viability check. **PASS conditions**: user_explicit_invoke OR ≥1 archive signal hit (normative language, wrong-turn-and-revert, long diagnostic loop, new dependency, new pattern, decision confirmation, dismissal-with-reason, process formalization). **FAIL → branch by entry_point**: E1/E3/E5 silent-skip (emit Phase 4.5 event `outcome='skipped_no_signal'`); E2/E4 render gate-FAIL message (emit `outcome='viability_failed'`).
+Coarse viability check. **PASS conditions**: user_explicit_invoke OR ≥1 archive signal hit. v2.0.0-rc.37 NEW-4 simplifies the legacy 8-signal list into **3 major categories** (each maps to multiple legacy signals for back-compat scoring):
+
+1. **User-driven knowledge expression** — user message contains normative language (`always`/`never`/`from now on`/`下次注意`/`记一下`/`以后`/`永远不要`), OR user weighed ≥2 alternatives and gave rationale (decision confirmation), OR user explicitly dismissed an approach AND stated why (dismissal-with-reason). Legacy signals #1 + #6 + #7.
+2. **Reflective discovery** — AI tried path X, reflected, then took path Y (wrong-turn-and-revert); OR a long diagnostic loop (>15 min / >10 turns) surfaced a non-obvious cause; OR a reusable pattern was named in the session ("the X phase", "the Y pattern"). Legacy signals #2 + #3 + #5.
+3. **Concrete artifact change** — a new dependency was added (package.json/pyproject.toml/Cargo.toml diff), OR a load-bearing multi-step procedure was formalized in a specific order. Legacy signals #4 + #8.
+
+Pre-PASS MUST step (rc.37 NEW-4): for each candidate, run a quick `Glob` over `.fabric/knowledge/**/*.md` keyed on slug-stem to check for duplicate canonical entry. If duplicate found → drop candidate (treat as anti-signal #4 'duplicate of existing canonical'). This is a HARD gate, not advisory — silently writing a near-duplicate is the highest-noise failure mode.
+
+**FAIL → branch by entry_point**: E1/E3/E5 silent-skip (emit Phase 4.5 event `outcome='skipped_no_signal'`); E2/E4 render gate-FAIL message (emit `outcome='viability_failed'`). Gate-FAIL message for E2/E4 MUST include the "to force-archive, explicitly invoke fabric-archive" remediation pointer so the user has an unambiguous escape hatch when the gate misclassifies (zh-CN: `如需强制归档，请显式调用 fabric-archive` / en: `To force-archive, explicitly invoke fabric-archive`).
 
 `Read ref/phase-2-5-viability.md` for verbose signal definitions, zh-CN/en gate-FAIL message bodies, anti-archive signals (typo / refactor / rename / duplicate), and the events.jsonl 4KB POSIX atomicity constraint.
 
