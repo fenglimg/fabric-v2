@@ -604,7 +604,9 @@
       "wave": "E",
       "subject": "改 stdio-only (SPEC_INTERNAL L12/238 / CODEBASE_LANDSCAPE L38 / ARCHITECTURE_DECISIONS L186-198 / testing-architecture L88)",
       "done_when": "所有 docs HTTP server 引用清理",
-      "status": "pending"
+      "status": "done",
+      "_actual_done": "2026-05-27",
+      "note": "SPEC_INTERNAL L12/L238/L241 + testing-architecture L88 + CODEBASE_LANDSCAPE L38/L63/L85/L89 + ARCHITECTURE_DECISIONS L111/L181/L187 在 A2-PART2 已 inline 化 stdio-only + quarantine note。本 task 补 sweep 范围更广的残留: ADR-001 (cli/server/shared/dashboard 4 层→3 层 stdio-only 描述 + 删 REST API 证据 / dashboard 引用) / ADR-007 (Dashboard HTTP consumer → 标记历史 + quarantine 跳转) / ADR-008 (Dashboard write surface → 标记历史) / CODEBASE_LANDSCAPE 拓扑图 (4 包 → 3+1 quarantine) / 数据流图 (砍 Dashboard rule view 链路 + fab_get_rule_sections rename → fab_get_knowledge_sections) / CLI public surface (init/scan/doctor/serve → install/scan/doctor/uninstall) / server src/index.ts 描述 (stdio runtime) / dashboard package 整表 (replace 18-row table 为 quarantine note 段落) / api-contracts.ts (HTTP query/body → MCP tool contracts) / events.ts (SSE event types → ledger event discriminated union)。Gates: typecheck 0 / tests 1755 / lint 0."
     },
     {
       "id": "E4",

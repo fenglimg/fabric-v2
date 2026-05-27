@@ -6,24 +6,23 @@
 
 ```text
 packages/cli
-  public command surface: init、scan、doctor、serve
-  -> serve 时调用 @fenglimg/fabric-server
+  public command surface: install、scan、doctor、uninstall
+  -> 客户端通过 MCP 配置 spawn @fenglimg/fabric-server (stdio)
   -> 使用 @fenglimg/fabric-shared 的 schemas、detector、i18n
 
 packages/server
-  MCP stdio + Streamable HTTP + REST + SSE + Dashboard static
+  MCP stdio runtime (tools + services + event ledger)
   -> 读写 .fabric/*
   -> 导入 @fenglimg/fabric-shared schemas
 
-packages/dashboard
-  browser UI
-  -> fetch /api/*
-  -> 打开 /events
-  -> 不直接访问 MCP
+packages/server-http-experimental  (v2.0.0-rc.37 quarantine)
+  历史 HTTP/REST/SSE 实现 + Dashboard static handler
+  -> 不 build / 不 test，仅供未来恢复 web UI 时参考
+  -> KB [[fabric-serve-quarantine-not-delete]]
 
 packages/shared
   schema、type、i18n、detector contract
-  -> 被 cli、server、dashboard 消费
+  -> 被 cli、server 消费
 ```
 
 数据流：
@@ -39,18 +38,15 @@ fabric serve  # (v2.0.0-rc.37: quarantine 到 packages/server-http-experimental/
   -> packages/server-http-experimental/src/{http,middleware/bearer-auth,services/serve-lock}.ts
   -> 详见 KB [[fabric-serve-quarantine-not-delete]]
 
-fab_plan_context / fab_get_rule_sections
-  MCP client
-  -> server/tools/plan-context.ts / server/tools/rule-sections.ts
-  -> server/services/plan-context.ts / server/services/rule-sections.ts
+fab_plan_context / fab_get_knowledge_sections
+  MCP client (stdio)
+  -> server/tools/plan-context.ts / server/tools/knowledge-sections.ts
+  -> server/services/plan-context.ts / server/services/knowledge-sections.ts
   -> meta-reader.ts, event-ledger.ts, cache.ts
   -> 返回 structuredContent
 
-Dashboard rule view
-  dashboard/views/rules-explain.tsx
-  -> dashboard/api/client.ts getRules + getRulesContext
-  -> server/api/rules.ts + rules-context.ts
-  -> server/services/get-rules.ts
+(历史 Dashboard rule view 数据流在 v2.0.0-rc.37 quarantine 时归档；
+ 复活路径见 packages/server-http-experimental/。)
 ```
 
 ## `packages/cli`
@@ -58,7 +54,7 @@ Dashboard rule view
 | 文件 | 职责 | 证据 |
 | --- | --- | --- |
 | `src/index.ts` | CLI root command、version injection、main entrypoint。 | `packages/cli/src/index.ts:11` |
-| `src/commands/index.ts` | Public lazy subcommand registry；target public surface is `init`、`scan`、`doctor`、`serve`。 | `packages/cli/src/commands/index.ts:1` |
+| `src/commands/index.ts` | Public lazy subcommand registry；v2.0.0 public surface is `install`、`scan`、`doctor`、`uninstall`（`serve` 在 v2.0.0-rc.37 已 quarantine）。 | `packages/cli/src/commands/index.ts:1` |
 | `src/commands/init.ts` | 一站式 init state machine、wizard、scaffold plan、MCP/bootstrap/hooks phases。 | `packages/cli/src/commands/init.ts:249`, `packages/cli/src/commands/init.ts:317` |
 | ~~`src/commands/serve.ts`~~ | (已删 — v2.0.0-rc.37 quarantine 到 `packages/server-http-experimental/`) | git history |
 | `src/commands/doctor.ts` | Target-state diagnosis with `--json`、`--strict`、`--fix` modes。 | command registry：`packages/cli/src/commands/index.ts:7` |
@@ -81,7 +77,7 @@ Dashboard rule view
 
 | 文件 | 职责 | 证据 |
 | --- | --- | --- |
-| `src/index.ts` | 创建 MCP server，注册 tools/resources，启动 stdio 或 HTTP server。 | `packages/server/src/index.ts:43`, `packages/server/src/index.ts:79` |
+| `src/index.ts` | 创建 MCP server，注册 tools/resources，启动 stdio runtime（v2.0.0-rc.37 起 HTTP 路径已 quarantine）。 | `packages/server/src/index.ts` |
 | ~~`src/http.ts`~~ | (已移走 — v2.0.0-rc.37 quarantine 到 `packages/server-http-experimental/src/http.ts`) | git history |
 | `src/cache.ts` | Process-local cache，覆盖 meta/context/audit cursor。 | `packages/server/src/cache.ts:1` |
 | `src/constants.ts` | Shared server constants，例如 bootstrap resource URI。 | import 位置：`packages/server/src/index.ts:9` |
@@ -98,27 +94,9 @@ Dashboard rule view
 | `src/tools/plan-context.ts` | plan-context 的 MCP tool wrapper。 | `packages/server/src/tools/plan-context.ts:77` |
 | `src/tools/rule-sections.ts` | rule-sections 的 MCP tool wrapper。 | MCP server registration |
 
-## `packages/dashboard`
+## `packages/dashboard`（v2.0.0-rc.37 移除）
 
-| 文件 | 职责 | 证据 |
-| --- | --- | --- |
-| `src/main.tsx` | Browser entrypoint。 | Dashboard source node，待补精确行号 |
-| `src/app.tsx` | App shell 和 view routing。 | Dashboard source node，待补精确行号 |
-| `src/api/client.ts` | REST 和 SSE 的 browser API client。 | `packages/dashboard/src/api/client.ts:129`, `packages/dashboard/src/api/client.ts:194` |
-| `src/hooks/use-events.ts` | SSE hook layer。 | 使用 API client 的 `openSseConnection` |
-| `src/views/readiness.tsx` | Readiness check view。 | Dashboard readiness node |
-| `src/views/rules-explain.tsx` | Rule hit explanation and tree view。 | Dashboard rules node |
-| `src/views/timeline.tsx` | Ledger timeline and history replay view。 | Dashboard timeline node |
-| `src/views/health.tsx` | Doctor report and runtime health view。 | Dashboard health node |
-| `src/components/coverage-heatmap.tsx` | Rule coverage visualization。 | rules explain 使用：`packages/dashboard/src/views/rules-explain.tsx` |
-| `src/components/hit-reason-panel.tsx` | Per-path hit reason panel。 | rules explain 使用：`packages/dashboard/src/views/rules-explain.tsx` |
-| `src/components/drift-indicator.tsx` | Error/drift banner component。 | rules explain 使用 |
-| `src/components/tree-node.tsx` | Rules tree node renderer。 | rules explain 使用 |
-| `src/components/source-badge.tsx` | Source label component。 | component node |
-| `src/components/timeline-entry.tsx` | Ledger event renderer。 | component node |
-| `src/i18n/*` | Dashboard i18n runtime/provider/hook。 | views/components 导入 |
-| `src/styles/tokens.css` | Dashboard visual token source。 | conventions 引用 |
-| `src/styles/app.css` | App layout 和 component styles。 | Dashboard style node |
+Dashboard package 在 v2.0.0-rc.37 与 HTTP/REST/SSE 一同 quarantine；package 不再存在于主线 `packages/`。源码与组件结构（views/api/components/i18n/styles）保留在 `packages/server-http-experimental/` 的 historical reference 中，未来恢复 web UI 时参考。复活路径见 KB [[fabric-serve-quarantine-not-delete]]。
 
 ## `packages/shared`
 
@@ -128,8 +106,8 @@ Dashboard rule view
 | `src/node.ts` | Node-side shared exports。 | CLI detector 导入 |
 | `src/detector.ts` | Framework detection 和 tech profile contract。 | re-export 位置：`packages/cli/src/scanner/detector.ts:1` |
 | `src/schemas/agents-meta.ts` | `AgentsMeta` schema、layer/topology/stable-id derivation。 | `packages/shared/src/schemas/agents-meta.ts:12`, `packages/shared/src/schemas/agents-meta.ts:54` |
-| `src/schemas/api-contracts.ts` | HTTP query/body schemas。 | `packages/shared/src/schemas/api-contracts.ts:32`, `packages/shared/src/schemas/api-contracts.ts:52` |
-| `src/schemas/events.ts` | SSE event types 和 discriminated union。 | `packages/shared/src/schemas/events.ts:10`, `packages/shared/src/schemas/events.ts:79` |
+| `src/schemas/api-contracts.ts` | MCP tool contracts（plan-context / knowledge-sections / extract-knowledge / recall / review）的 input/output schemas，外加 R24 structuredWarning。 | `packages/shared/src/schemas/api-contracts.ts` |
+| `src/schemas/events.ts` | `.fabric/events.jsonl` 的 typed event discriminated union（archive/cite/doctor 等 ledger 事件）。 | `packages/shared/src/schemas/events.ts:79` |
 | `src/schemas/fabric-config.ts` | Fabric config schema。 | shared schema node |
 | `src/schemas/forensic-report.ts` | Scanner/server events 消费的 forensic report schema。 | events 导入：`packages/server/src/api/events.ts:9` |
 | `src/schemas/init-context.ts` | Init context schema。 | shared schema node |

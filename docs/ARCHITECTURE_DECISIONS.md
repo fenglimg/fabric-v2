@@ -2,23 +2,22 @@
 
 本文只记录已经有源码证据或已形成明确约束的架构选择。未完全落地的约束必须标明偏离点。
 
-## ADR-001: CLI / Server / Shared / Dashboard 分层
+## ADR-001: CLI / Server / Shared 分层（v2.0.0 后 3 层）
 
-决策：`cli` 只承载命令面和本地写入编排，`server` 承载 MCP/HTTP/REST/SSE，`shared` 承载 schema/type/i18n/detector，`dashboard` 只通过 HTTP API 消费数据。
+决策（v2.0.0）：`cli` 只承载命令面和本地写入编排，`server` 承载 MCP stdio runtime（tools + services + event ledger），`shared` 承载 schema/type/i18n/detector。HTTP/REST/SSE 与 Dashboard package 在 v2.0.0-rc.37 已 quarantine 到 `packages/server-http-experimental/`（不 build / 不 test），见 KB [[fabric-serve-quarantine-not-delete]]。
 
 原因：
 
-- 避免 Dashboard 或 CLI 复制协议 schema。
-- MCP tool 和 REST API 可以共享 server services。
-- Browser 不直接读取 `.fabric/*`，减少文件系统权限和状态竞争。
+- 避免 CLI 复制协议 schema。
+- 三个受支持的 client（Claude Code / Cursor / Codex CLI）全部使用 stdio MCP，HTTP server 不再有消费者。
+- 保留 quarantine 包以便未来恢复 web UI（参考 `packages/server-http-experimental/README.md`）。
 
 证据：
 
 - CLI subcommands lazy registry：`packages/cli/src/commands/index.ts:1`。
 - Server tool registration：`packages/server/src/index.ts:49`。
-- REST APIs 调用 services：`packages/server/src/api/rules-context.ts:17`。
-- Dashboard 调用 `/api/rules` 和 `/api/rules/context`：`packages/dashboard/src/api/client.ts:129`。
-- Shared schemas 被 server 和 dashboard 消费：`packages/server/src/tools/get-rules.ts:2`, `packages/dashboard/src/api/client.ts:1`。
+- Shared schemas 被 server 消费：`packages/server/src/tools/get-rules.ts:2`。
+- 历史 REST routes + Dashboard 实现：`packages/server-http-experimental/src/`（archived）。
 
 ## ADR-002: MCP-first Rule Distribution
 
@@ -110,38 +109,17 @@
 
 - 实现已 quarantine 到 `packages/server-http-experimental/src/http.ts`（v2.0.0-rc.37 Wave A2 Part 2，KB [[fabric-serve-quarantine-not-delete]]）；v2.0.0 起 stdio MCP 是唯一受支持的 transport。
 
-## ADR-007: Dashboard Is HTTP Consumer, Not MCP Client
+## ADR-007: Dashboard Is HTTP Consumer, Not MCP Client（已 quarantine — v2.0.0-rc.37）
 
-决策：Dashboard 使用 REST 和 SSE APIs，不使用 MCP tools。
+历史决策：Dashboard 使用 REST 和 SSE APIs，不使用 MCP tools。Browser UI 需要 fetch/EventSource 语义，所以 MCP 保留为 AI-client runtime protocol，Dashboard 走 HTTP read models。
 
-原因：
+v2.0.0 现状：Dashboard package 与 HTTP routes 一并 quarantine 到 `packages/server-http-experimental/`（不 build / 不 test）。`fabric serve` 命令不再主线暴露，主线 server 是 stdio MCP only。如需恢复，参考 `packages/server-http-experimental/README.md` 的复活路径与 KB [[fabric-serve-quarantine-not-delete]]。
 
-- Browser UI 需要低摩擦的 fetch/EventSource 语义。
-- MCP 保持为 AI-client runtime protocol。
-- REST APIs 可以暴露面向可视化优化的 read models。
+## ADR-008: Dashboard Write Surface Is Being Constrained Toward Observation（已 quarantine — v2.0.0-rc.37）
 
-证据：
+历史决策：Dashboard 的架构目标是 observation-first，核心写入保留在 CLI/MCP tooling。防止 browser UI 变成 rule truth source；将可审查的状态变更保留在能追加 ledger/audit context 的 CLI/MCP paths。
 
-- Dashboard API client 调用 `/api/rules`：`packages/dashboard/src/api/client.ts:129`。
-- Dashboard API client 调用 `/api/rules/context`：`packages/dashboard/src/api/client.ts:133`。
-- Dashboard SSE client 使用 fetch stream 和 `Last-Event-ID`：`packages/dashboard/src/api/client.ts:194`。
-- Server route 注册逻辑 quarantine 到 `packages/server-http-experimental/src/http.ts`（v2.0.0-rc.37 Wave A2 Part 2）。
-
-## ADR-008: Dashboard Write Surface Is Being Constrained Toward Observation
-
-决策：Dashboard 的架构目标是 observation-first，核心写入保留在 CLI/MCP tooling。
-
-原因：
-
-- 防止 browser UI 变成 rule truth source。
-- 将可审查的状态变更保留在能追加 ledger/audit context 的 CLI/MCP paths。
-- 降低 `.fabric/*` 上的 concurrent write ambiguity。
-
-当前目标状态：
-
-- Read-heavy views 读取 rules、doctor、events 和 rules-context read models。
-- Dashboard 不作为规则真源。
-- Dashboard 不承担 deterministic derived-state repair；使用 `fabric doctor --fix`。
+v2.0.0 现状：Dashboard package 与全部 HTTP routes 一同 quarantine（见 ADR-007）。Read-only write-surface 边界保留在 server-http-experimental 内部，供未来 web UI 复活时复用。规则真源始终是 `.fabric/`；deterministic derived-state repair 始终走 `fabric doctor --fix`。
 
 ## ADR-009: Event Ledger Is The Only Ledger
 
