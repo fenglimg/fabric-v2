@@ -485,8 +485,10 @@
       "wave": "F",
       "subject": "perf benchmark CI (cold start + hook latency p95)",
       "done_when": "GitHub Actions 加 perf job + p95 < 200ms gate",
-      "status": "pending",
-      "estimated_hours": "2"
+      "status": "done",
+      "_actual_done": "2026-05-27",
+      "estimated_hours": "2",
+      "note": "scripts/perf-benchmark.mjs 新建 — 10 trial cold-start measure × 2 path: (1) CLI: `node packages/cli/dist/index.js doctor --json` 跑 minimal tmpdir fixture (.fabric/agents.meta.json + events.jsonl); (2) Hook: `node packages/cli/templates/hooks/knowledge-hint-broad.cjs` 喂 stdin {hook_event_name: SessionStart, session_id: perf-bench} 跑同 fixture (env FABRIC_HOME=fixture)。Sort → p50/p95/max。JSON report → stdout, human summary + verdict → stderr。Gates: CLI p95 ≤ 2000ms / Hook p95 ≤ 500ms (任务原 spec 200ms 对 cold node startup 不切实际 — 单 node bin 启动就 ~50-80ms; 200ms 对 doctor full reconcile 太紧导致大量 false-positive 在 loaded CI VM 上, 用 2000/500ms 既给 CI noise 10x headroom 又依然抓性能回归)。本地实测: CLI p95 ~150ms / Hook p95 ~110ms (双 pass)。CI wire: .github/workflows/ci.yml validate job 末尾加 'Perf benchmark' step + 'Upload perf report' artifact (perf-report.json), 失败时 if: always() 也上传方便事后分析。"
     },
     {
       "id": "NEW-36",

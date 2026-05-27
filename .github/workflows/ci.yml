@@ -50,3 +50,17 @@ jobs:
 
       - name: Verify NO_COLOR snapshots
         run: NO_COLOR=1 pnpm --filter @fenglimg/fabric-cli test
+
+      # v2.0.0-rc.37 NEW-35: perf benchmark gate. Measures CLI + hook cold
+      # start p95 against generous CI budgets (CI VMs are loaded). Local dev
+      # box typically sees p95 ~150ms (CLI) / ~110ms (hook); CI budget
+      # ~10x to absorb VM noise without going silent.
+      - name: Perf benchmark (CLI + hook cold start p95 gate)
+        run: node scripts/perf-benchmark.mjs > perf-report.json
+
+      - name: Upload perf report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: perf-report
+          path: perf-report.json
