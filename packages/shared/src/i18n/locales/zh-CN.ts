@@ -389,6 +389,21 @@ export const zhCNMessages: Messages = {
     "先归档历史 (`mkdir -p .fabric/events.archive && mv .fabric/events.jsonl .fabric/events.archive/events-corrupted-$(date +%Y-%m-%d).jsonl`), 再运行 `fabric doctor --fix` 创建新空 ledger。历史事件保留在 events.archive/ 不丢。",
   "doctor.check.event_ledger.ok":
     ".fabric/events.jsonl 已存在，可写，且可解析。",
+  // v2.0.0-rc.37 Wave B (B5): 复合 hard-gate 检查 events.jsonl/metrics.jsonl 健康
+  // (G7 size / G8 metric_leak / G9 metrics_stale / G10 rotation_overdue)。
+  "doctor.check.events_jsonl_health.name": "Events ledger 健康 (rc.37 Plan B 5 hard gate)",
+  "doctor.check.events_jsonl_health.ok":
+    ".fabric/events.jsonl 大小、新鲜度、metric 隔离全部正常。",
+  "doctor.check.events_jsonl_health.message.size":
+    ".fabric/events.jsonl 已 {sizeMb} MB，超过 10 MB 阈值。",
+  "doctor.check.events_jsonl_health.message.metric_leak":
+    ".fabric/events.jsonl 含 {count} 行 metric-counter 类 event_type ({samples})。这些 event 应由 metrics.jsonl 计数, 不再进入 audit ledger。",
+  "doctor.check.events_jsonl_health.message.metrics_stale":
+    ".fabric/metrics.jsonl 已 {minutes} 分钟未更新；server-side 60s flush 可能 stalled。",
+  "doctor.check.events_jsonl_health.message.rotation_overdue":
+    ".fabric/events.jsonl 已 {days} 天未 rotate；6h rotation tick 可能未运行。",
+  "doctor.check.events_jsonl_health.remediation":
+    "运行 `fabric doctor --fix` 触发 rotation; 重启 MCP server 让 startMetricsFlush + startRotationTick 重新调度。若 metric_leak 命中, 检查最近代码改动是否绕过 bumpCounter API 直接 appendEventLedgerEvent 写了 4 个 metric-managed event_type 之一。",
   "doctor.check.mcp_config_in_wrong_file.name": "Claude MCP config 位置",
   "doctor.check.mcp_config_in_wrong_file.message":
     ".claude/settings.json 包含 mcpServers.fabric；此文件仅用于 hooks/permissions。运行 --fix 移除它，然后重新运行 fabric install 写入 .mcp.json。",

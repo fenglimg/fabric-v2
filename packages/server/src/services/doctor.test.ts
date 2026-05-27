@@ -162,6 +162,7 @@ describe("runDoctorReport", () => {
       "Knowledge-test index",
       "Event ledger",
       "Event ledger partial write",
+      "Events ledger health (rc.37 Plan B 5 hard gate)",
       "Event ledger schema compat",
       "Skill ref mirror parity",
       // v2.0.0-rc.33 W3-6 / W3-7 / W3-3: SKILL.md token budget + description
@@ -223,7 +224,7 @@ describe("runDoctorReport", () => {
       "Promote ledger invariant",
       "Preexisting root markdown",
     ]);
-    expect(report.checks).toHaveLength(47);
+    expect(report.checks).toHaveLength(48);
   });
 
   it("v2.0: clean post-init repo (mocked layout) reports zero errors AND zero warnings", async () => {

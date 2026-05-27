@@ -399,6 +399,22 @@ export const enMessages: Messages = {
     "Archive history first (`mkdir -p .fabric/events.archive && mv .fabric/events.jsonl .fabric/events.archive/events-corrupted-$(date +%Y-%m-%d).jsonl`), then run `fabric doctor --fix` to create a new empty ledger. Historical events are preserved under events.archive/.",
   "doctor.check.event_ledger.ok":
     ".fabric/events.jsonl exists, is writable, and is parseable.",
+  // v2.0.0-rc.37 Wave B (B5): composite hard-gate check for events.jsonl /
+  // metrics.jsonl health (G7 size / G8 metric_leak / G9 metrics_stale /
+  // G10 rotation_overdue).
+  "doctor.check.events_jsonl_health.name": "Events ledger health (rc.37 Plan B 5 hard gate)",
+  "doctor.check.events_jsonl_health.ok":
+    ".fabric/events.jsonl size, freshness, and metric isolation all healthy.",
+  "doctor.check.events_jsonl_health.message.size":
+    ".fabric/events.jsonl is {sizeMb} MB, above the 10 MB threshold.",
+  "doctor.check.events_jsonl_health.message.metric_leak":
+    ".fabric/events.jsonl contains {count} rows with metric-counter event_types ({samples}). Those events should be aggregated in metrics.jsonl, not in the audit ledger.",
+  "doctor.check.events_jsonl_health.message.metrics_stale":
+    ".fabric/metrics.jsonl hasn't been updated for {minutes} minutes; the server-side 60s flush may be stalled.",
+  "doctor.check.events_jsonl_health.message.rotation_overdue":
+    ".fabric/events.jsonl hasn't rotated for {days} days; the 6h rotation tick may not be running.",
+  "doctor.check.events_jsonl_health.remediation":
+    "Run `fabric doctor --fix` to trigger a rotation; restart the MCP server so startMetricsFlush + startRotationTick reschedule. If metric_leak fires, audit recent code changes for direct appendEventLedgerEvent calls bypassing bumpCounter for one of the 4 metric-managed event_types.",
   "doctor.check.mcp_config_in_wrong_file.name": "Claude MCP config location",
   "doctor.check.mcp_config_in_wrong_file.message":
     ".claude/settings.json contains mcpServers.fabric — this file is for hooks/permissions only. Run --fix to remove it, then re-run fabric install to write .mcp.json.",

@@ -52,6 +52,10 @@ import {
 import { reconcileKnowledge } from "./knowledge-sync.js";
 import { readAgentsMeta } from "../meta-reader.js";
 import { isAlive, readLockState } from "./legacy-serve-lock-probe.js";
+import {
+  inspectEventsJsonlGates,
+  type EventsJsonlGatesReport,
+} from "./events-jsonl-gates.js";
 
 export type DoctorStatus = "ok" | "warn" | "error";
 export type DoctorIssueKind = "fixable_error" | "manual_error" | "warning" | "info";
@@ -978,6 +982,7 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     forensic,
     meta,
     eventLedger,
+    eventsJsonlGates,
     knowledgeTestIndex,
     bootstrapMarkerMigration,
     l1BootstrapSnapshotDrift,
@@ -986,6 +991,9 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     inspectForensic(projectRoot),
     inspectMeta(projectRoot),
     inspectEventLedger(projectRoot),
+    // v2.0.0-rc.37 Wave B (B5): composite hard-gate inspection (G7 size /
+    // G8 metric leak / G9 metrics stale / G10 rotation overdue).
+    inspectEventsJsonlGates(projectRoot),
     inspectKnowledgeTestIndex(projectRoot),
     // v2.0.0-rc.19 TASK-004: one-time fabric:knowledge-base → fabric:bootstrap
     // marker migration scan. Inspect runs in this Promise.all block to keep
@@ -1159,6 +1167,7 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     createKnowledgeTestIndexCheck(t, knowledgeTestIndex),
     createEventLedgerCheck(t, eventLedger),
     createEventLedgerPartialWriteCheck(t, eventLedger),
+    createEventsJsonlHealthCheck(t, eventsJsonlGates),
     // v2.0.0-rc.27 TASK-010 (audit §2.24): forward-compat warning surface for
     // events.jsonl rows that fail Zod validation because of unknown
     // schema_version or event_type tokens. Previously silently dropped.
@@ -3366,6 +3375,61 @@ function createKnowledgeTestIndexCheck(t: Translator, index: KnowledgeTestIndexI
       `doctor.check.knowledge_test_index.ok.${index.linkCount === 1 ? "link_singular" : "link_plural"}.${index.orphanCount === 1 ? "orphan_singular" : "orphan_plural"}`,
       { linkCount: String(index.linkCount), orphanCount: String(index.orphanCount) },
     ),
+  );
+}
+
+// v2.0.0-rc.37 Wave B (B5): composite hard-gate check for events.jsonl /
+// metrics.jsonl health. Surfaces G7 (size) / G8 (metric leak) /
+// G9 (metrics staleness) / G10 (rotation overdue) as a single
+// warning-severity finding. G11 is a code-time invariant verified by
+// services/events-jsonl-gates.test.ts.
+function createEventsJsonlHealthCheck(
+  t: Translator,
+  report: EventsJsonlGatesReport,
+): DoctorCheck {
+  const findings: string[] = [];
+  if (report.ledgerSizeWarn) {
+    findings.push(
+      t("doctor.check.events_jsonl_health.message.size", {
+        sizeMb: (report.ledgerSizeBytes / (1024 * 1024)).toFixed(1),
+      }),
+    );
+  }
+  if (report.metricLeakCount > 0) {
+    findings.push(
+      t("doctor.check.events_jsonl_health.message.metric_leak", {
+        count: String(report.metricLeakCount),
+        samples: report.metricLeakSamples.join(", "),
+      }),
+    );
+  }
+  if (report.metricsStaleWarn && report.metricsStalenessMs !== null) {
+    findings.push(
+      t("doctor.check.events_jsonl_health.message.metrics_stale", {
+        minutes: String(Math.floor(report.metricsStalenessMs / 60_000)),
+      }),
+    );
+  }
+  if (report.rotationOverdueWarn && report.ledgerStalenessMs !== null) {
+    findings.push(
+      t("doctor.check.events_jsonl_health.message.rotation_overdue", {
+        days: String(Math.floor(report.ledgerStalenessMs / 86_400_000)),
+      }),
+    );
+  }
+  if (findings.length === 0) {
+    return okCheck(
+      t("doctor.check.events_jsonl_health.name"),
+      t("doctor.check.events_jsonl_health.ok"),
+    );
+  }
+  return issueCheck(
+    t("doctor.check.events_jsonl_health.name"),
+    "warn",
+    "warning",
+    "events_jsonl_health_degraded",
+    findings.join(" | "),
+    t("doctor.check.events_jsonl_health.remediation"),
   );
 }
 
