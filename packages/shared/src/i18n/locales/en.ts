@@ -505,7 +505,7 @@ export const enMessages: Messages = {
   "doctor.check.drift_unconsumed.message":
     "{driftCount} knowledge_drift_detected events in the last 30 days, but only {demoteCount} knowledge_demoted. Drift > demote by ≥ 5 means part of the drift is going unconsumed — KB slowly stales.",
   "doctor.check.drift_unconsumed.remediation":
-    "rc.36 has no auto-demote pipeline; act manually: run `fabric doctor --fix` to trigger orphan-demote / stale-archive auto-heal, or invoke `/fabric-review` to manually triage drift-flagged entries. Automatic 14-day demote is planned for rc.37.",
+    "Run `fabric doctor --fix` to trigger orphan-demote / stale-archive auto-heal, or invoke `/fabric-review` to manually triage drift-flagged entries.",
   "doctor.check.meta_manually_diverged.name": "Meta manual divergence",
   "doctor.check.meta_manually_diverged.ok.unreadable":
     "agents.meta.json not readable; skipping divergence check.",

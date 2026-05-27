@@ -494,7 +494,7 @@ export const zhCNMessages: Messages = {
   "doctor.check.drift_unconsumed.message":
     "近 30 天内 knowledge_drift_detected 事件 {driftCount} 次,knowledge_demoted 事件 {demoteCount} 次。drift > demote 至少 5 → 部分 drift 没被消化,KB 会缓慢失活。",
   "doctor.check.drift_unconsumed.remediation":
-    "rc.36 没有 auto-demote pipeline,需手动处理:运行 `fabric doctor --fix` 触发 orphan-demote / stale-archive 自愈流,或调 `/fabric-review` 主动审 drift 标记的条目。rc.37 计划上线自动 14-day demote。",
+    "运行 `fabric doctor --fix` 触发 orphan-demote / stale-archive 自愈流,或调 `/fabric-review` 主动审 drift 标记的条目。",
   "doctor.check.meta_manually_diverged.name": "Meta manual divergence",
   "doctor.check.meta_manually_diverged.ok.unreadable":
     "agents.meta.json 不可读，跳过 divergence 检查。",

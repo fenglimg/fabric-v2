@@ -13,18 +13,18 @@
 - **Write flows**:`fabric-archive` / `fabric-review` / `fabric-import` 三个 Skills。
 - **Language**:渲染按 `.fabric/fabric-config.json` 的 `fabric_language` 字段。
 
-## Self-archive policy
+## Self-archive policy (v2.0.0-rc.37 NEW-2: 简化 4 信号 → 2 大类)
 
-- **触发**: 本会话出现以下任一信号, 在该 turn 回复末尾自主调用 `fabric-archive` skill (E3-strong mode):
-  1. **Normative 语言** — 用户消息出现 `以后` / `always` / `never` / `from now on` / `下次注意` / `记一下` / `永远不要`
-  2. **Wrong-turn-and-revert** — AI 尝试 path X, 反思后改走 path Y (尤其当 path X 是非显然踩坑)
-  3. **Decision confirmation** — 用户在 ≥2 候选中权衡后给出 rationale 锁定方向
-  4. **Explicit dismissal with reason** — 用户拒了某建议**并**说了原因
+- **触发** (本会话出现以下任一信号, 在该 turn 回复末尾自主调用 `fabric-archive` skill, E3-strong mode):
+  1. **User-driven normative** — 用户消息中显式表达 normative 意图: `以后` / `always` / `never` / `from now on` / `下次注意` / `记一下` / `永远不要`, OR 用户在 ≥2 候选间权衡后给出 rationale 锁定方向, OR 用户拒了某建议**并**说了原因 (拒绝理由本身是知识)
+  2. **Wrong-turn-and-revert** — AI 尝试 path X, 反思后改走 path Y (尤其当 path X 是非显然踩坑); 涵盖技术决策反转 + 工具/范式切换 + 失败重试。Anchor: 一定有"否定+替代"的两步结构, 不是单纯探索失败
+
+  老 4-state (Normative / Decision-confirmation / Explicit-dismissal / Wrong-turn) 现合并: 前 3 个全是"用户消息中显式表达"性质, 折成 1 类; 第 4 是"AI 自己的反思路径", 独立 1 类。两类各自的本质判别不变, 触发面没变窄。
 
 - **Anti-trigger** (明确不触发):
   - 用户纯询问 (无 normative 表达)
   - 简单 refactor / typo fix
-  - AI 自己产生的'洞察' (必须由用户消息中信号触发)
+  - AI 自己产生的'洞察' (必须由用户消息中信号或 AI 自己的 wrong-turn 触发, 不是凭空"我学到了"性质)
 
 - **Anti-loop 三条防护**:
   - 同 turn 最多自调 1 次
@@ -33,11 +33,13 @@
 
 - **呈现模板** (turn 末尾插入, 两行: 先 marker 行供 Phase 1.5 检测, 再 user-facing 提示):
   ```
-  self-archive policy triggered by signal: <Normative|Wrong-turn-and-revert|Decision confirmation|Explicit dismissal>
+  self-archive policy triggered by signal: <User-driven normative|Wrong-turn-and-revert>
   顺手归档: 注意到你说 `<触发短语>`, 已调用 fabric-archive 抓 N 条候选 → .fabric/knowledge/pending/...
   若不该记, 答 '撤销' 我会调 fab_review reject。
   ```
-  第一行是 Phase 1.5 Trigger Gate 用来识别 E3 入口的 structured marker (verbatim 字符串 `self-archive policy triggered by signal`, 后接冒号 + 触发信号名)。第二行起是给用户看的中文提示。两行都必须出现; 缺 marker 行 Phase 1.5 无法路由到 E3_ai_self_trigger。
+  第一行是 Phase 1.5 Trigger Gate 识别 E3 入口的 structured marker (verbatim 字符串 `self-archive policy triggered by signal`, 后接冒号 + 触发信号名)。第二行起是给用户看的中文提示。两行都必须出现; 缺 marker 行 Phase 1.5 无法路由到 E3_ai_self_trigger。
+
+  Backward compat: Phase 1.5 entry-point regex 同时识别老 4 个信号名 (Normative / Wrong-turn-and-revert / Decision confirmation / Explicit dismissal) 与新 2 大类名, 旧 session marker 仍能正确路由。
 
 ## Cite policy (v2.0.0-rc.37 NEW-1: 简化 4-state → 2-state)
 

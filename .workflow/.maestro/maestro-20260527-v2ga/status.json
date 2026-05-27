@@ -193,8 +193,9 @@
       "wave": "D",
       "subject": "Self-archive 4 触发信号合并 2 大类 + marker 正则容错",
       "done_when": "AGENTS.md self-archive section 重写 + fabric-archive Phase 1.5 entry-point 识别正则化 + werewolf 实测 recall ≥40% (vs rc.32 baseline 20%)",
-      "status": "pending",
-      "estimated_hours": "1-2"
+      "status": "done",
+      "_actual_done": "2026-05-27",
+      "note": "AGENTS.md Self-archive 信号合并 4 → 2: User-driven normative (合并 Normative + Decision-confirmation + Explicit-dismissal, 都是用户消息显式表达) + Wrong-turn-and-revert (独立, AI 反思路径). Anti-trigger / anti-loop / 呈现模板保持. Phase 1.5 marker substring 检测已 forward-compat (只看 verbatim 前缀, signal 名是 free-form 后缀), 老 4 个 signal 名 + 新 2 大类名都正确路由 — ref/phase-1-5-onboard.md E3 行加 explicit back-compat 说明. Recall 实测复测留给 F3 onboarding cliff 复测."
     },
     {
       "id": "NEW-3",
@@ -516,9 +517,10 @@
       "wave": "D",
       "subject": "doctor remediation 禁引用未来 rc (rc.37 计划上线 → 当前 manual + 后续 release 自动化)",
       "done_when": "remediation 文案 sweep + 0 个引用 rc.X 计划字眼",
-      "status": "pending",
-      "estimated_hours": "1",
-      "dependencies": "NEW-8"
+      "status": "done",
+      "_actual_done": "2026-05-27",
+      "dependencies": "NEW-8",
+      "note": "Grep swept locale strings — only 1 future-rc reference found: doctor.check.drift_unconsumed.remediation 在 zh-CN + en 都说 'rc.37 计划上线自动 14-day demote' / 'Automatic 14-day demote is planned for rc.37'. Removed both, 改成当下可操作的 manual 指引 ('运行 fabric doctor --fix ... 或调 fabric-review 审 drift 标记的条目'). 0 个其他 'planned for rc.X' 残留. dependencies=NEW-8 释义: NEW-8 (70 string sweep) 范围更广, NEW-40 只针对 future-rc 字眼这一条切线, 独立可完成。"
     },
     {
       "id": "A2-PART2",

@@ -101,10 +101,13 @@ describe("evaluateCiteEvict (rc.34 TASK-06)", () => {
   });
 });
 
-describe("readEvictInterval (rc.34 TASK-06)", () => {
-  it("returns default 0 when fabric-config.json missing", () => {
+describe("readEvictInterval (rc.34 TASK-06 / rc.37 NEW-18 default flip)", () => {
+  // v2.0.0-rc.37 NEW-18: DEFAULT_CITE_EVICT_INTERVAL flipped 0 (opt-in OFF) →
+  // 10 (default ON every 10 turns). Operators can still set cite_evict_interval=0
+  // explicitly to opt back out. The 'default' assertions below now pin the new 10.
+  it("returns default 10 when fabric-config.json missing (rc.37 NEW-18)", () => {
     const cwd = mkTemp();
-    expect(hook.readEvictInterval(cwd)).toBe(0);
+    expect(hook.readEvictInterval(cwd)).toBe(10);
   });
 
   it("returns parsed value when config has cite_evict_interval", () => {
@@ -113,21 +116,27 @@ describe("readEvictInterval (rc.34 TASK-06)", () => {
     expect(hook.readEvictInterval(cwd)).toBe(15);
   });
 
-  it("returns 0 when config value is non-integer or negative", () => {
+  it("explicit opt-out (cite_evict_interval=0) is honored — disables emission", () => {
     const cwd = mkTemp();
-    writeConfig(cwd, { cite_evict_interval: -5 });
-    expect(hook.readEvictInterval(cwd)).toBe(0);
-    writeConfig(cwd, { cite_evict_interval: "10" });
-    expect(hook.readEvictInterval(cwd)).toBe(0);
-    writeConfig(cwd, { cite_evict_interval: 3.14 });
+    writeConfig(cwd, { cite_evict_interval: 0 });
     expect(hook.readEvictInterval(cwd)).toBe(0);
   });
 
-  it("returns 0 on malformed JSON (defensive)", () => {
+  it("returns default 10 when config value is non-integer or negative", () => {
+    const cwd = mkTemp();
+    writeConfig(cwd, { cite_evict_interval: -5 });
+    expect(hook.readEvictInterval(cwd)).toBe(10);
+    writeConfig(cwd, { cite_evict_interval: "10" });
+    expect(hook.readEvictInterval(cwd)).toBe(10);
+    writeConfig(cwd, { cite_evict_interval: 3.14 });
+    expect(hook.readEvictInterval(cwd)).toBe(10);
+  });
+
+  it("returns default 10 on malformed JSON (defensive)", () => {
     const cwd = mkTemp();
     mkdirSync(join(cwd, ".fabric"), { recursive: true });
     writeFileSync(join(cwd, ".fabric", "fabric-config.json"), "{ not valid json");
-    expect(hook.readEvictInterval(cwd)).toBe(0);
+    expect(hook.readEvictInterval(cwd)).toBe(10);
   });
 });
 
