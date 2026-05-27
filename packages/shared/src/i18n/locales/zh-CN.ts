@@ -723,6 +723,18 @@ export const zhCNMessages: Messages = {
     ".claude/settings.json 缺少 fabric hook 注入：{missing}。fabric install 的 dry-run 报告与实际状态不一致（rc.30 audit BUG-M3 / NEW-4）。",
   "doctor.check.hooks_wired.remediation":
     "运行 `fabric install` 重新注入 hooks（幂等；只补缺失项）。若意外覆盖了 hooks 配置，先备份 .claude/settings.json 再跑。",
+  // v2.0.0-rc.37 NEW-20: hooks_runtime — shebang + Node.js syntax validity
+  // of installed *.cjs hook files (one layer below hooks_wired).
+  "doctor.check.hooks_runtime.name": "Hooks 运行时健康",
+  "doctor.check.hooks_runtime.ok.skipped": "未发现已安装的 hook 文件（.claude/hooks/ / .codex/hooks/ / .cursor/hooks/ 都缺）；跳过 hooks_runtime 检查。",
+  "doctor.check.hooks_runtime.ok.healthy":
+    "已扫描 {count} 个 hook .cjs 文件，shebang 与 Node.js 语法解析全部通过。",
+  "doctor.check.hooks_runtime.message.singular":
+    "{count} 个 hook 文件 runtime 不健康；首例：{first_path}（{first_detail}）。",
+  "doctor.check.hooks_runtime.message.plural":
+    "{count} 个 hook 文件 runtime 不健康；首例：{first_path}（{first_detail}）。",
+  "doctor.check.hooks_runtime.remediation":
+    "运行 `fabric install` 重写损坏的 hook 文件（覆盖式，幂等）。若文件是被外部进程破坏的，确认源头再跑 install。",
   // rc.31 BUG-G2/G5: promote-ledger invariant check.
   "doctor.check.promote_ledger_invariant.name": "Promote ledger invariant",
   "doctor.check.promote_ledger_invariant.ok":

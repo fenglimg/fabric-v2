@@ -734,6 +734,18 @@ export const enMessages: Messages = {
     ".claude/settings.json is missing fabric hook injections: {missing}. fabric install dry-run report does not match actual state (rc.30 audit BUG-M3 / NEW-4).",
   "doctor.check.hooks_wired.remediation":
     "Run `fabric install` to re-inject hooks (idempotent; only fills missing slots). If hooks config was accidentally wiped, back up .claude/settings.json before running.",
+  // v2.0.0-rc.37 NEW-20: hooks_runtime — shebang + Node.js syntax validity
+  // of installed *.cjs hook files (one layer below hooks_wired).
+  "doctor.check.hooks_runtime.name": "Hooks runtime health",
+  "doctor.check.hooks_runtime.ok.skipped": "No installed hook files found under .claude/hooks/ / .codex/hooks/ / .cursor/hooks/; skipping hooks_runtime check.",
+  "doctor.check.hooks_runtime.ok.healthy":
+    "Scanned {count} hook .cjs file(s); shebang and Node.js syntax parse all pass.",
+  "doctor.check.hooks_runtime.message.singular":
+    "{count} hook file is unhealthy at runtime; first: {first_path} ({first_detail}).",
+  "doctor.check.hooks_runtime.message.plural":
+    "{count} hook files are unhealthy at runtime; first: {first_path} ({first_detail}).",
+  "doctor.check.hooks_runtime.remediation":
+    "Run `fabric install` to overwrite broken hook files (idempotent). If a hook was corrupted by an external process, confirm the cause before re-running install.",
   // rc.31 BUG-G2/G5: promote-ledger invariant check.
   "doctor.check.promote_ledger_invariant.name": "Promote ledger invariant",
   "doctor.check.promote_ledger_invariant.ok":

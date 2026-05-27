@@ -4,6 +4,7 @@ import { access, mkdir, readFile, rename, unlink, writeFile } from "node:fs/prom
 import { constants } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, join, posix, relative as nodeRelative, resolve, sep } from "node:path";
+import { Script } from "node:vm";
 
 import { minimatch } from "minimatch";
 import { ZodError } from "zod";
@@ -1157,6 +1158,9 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
   // short, or partial-install left dangling artifacts. Skipped (ok) when
   // there is no .claude/ at all (project doesn't use Claude Code).
   const hooksWired = inspectHooksWired(projectRoot);
+  // v2.0.0-rc.37 NEW-20: hooks_runtime closes the gap below hooks_wired —
+  // shebang + Node.js syntax validity of each installed .cjs hook file.
+  const hooksRuntime = inspectHooksRuntime(projectRoot);
   // rc.31 BUG-G2/G5: promote-ledger invariant check (proposed >= started >= promoted).
   // Surfaces ledger desync (e.g. werewolf-minigame rc.30 audit: proposed=17,
   // started=48, promoted=52). Warning kind — does not bump report status to
@@ -1290,6 +1294,7 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     // rc.31 BUG-M3/NEW-4: hooks_wired observability. Adjacent to onboard /
     // promote-ledger checks — all three are install/runtime-state advisories.
     createHooksWiredCheck(t, hooksWired),
+    createHooksRuntimeCheck(t, hooksRuntime),
     // rc.35 TASK-04 (P0-9.b): global CLI version probe — surfaces rc.30 PATH
     // installs against rc.31+ project schemas (the silent-hooks fault mode).
     // Sits next to hooks_wired since both lints diagnose runtime install state.
@@ -3990,6 +3995,137 @@ function createHooksWiredCheck(t: Translator, inspection: HooksWiredInspection):
       missing: inspection.missingHooks.join(", "),
     }),
     t("doctor.check.hooks_wired.remediation"),
+  );
+}
+
+// v2.0.0-rc.37 NEW-20: hooks runtime health.
+//
+// hooks_wired (above) checks that settings.json *references* the right hook
+// files. NEW-20 closes the next-layer gap: are the referenced .cjs files
+// (a) present on disk, (b) starting with a `#!` shebang, and (c) parseable
+// as Node.js? An install that wrote settings.json but left a hook file
+// corrupted will silently fail at session-start — this check catches that
+// before the user blames the client.
+//
+// Scope: scans `<client_dir>/hooks/*.cjs` for the three known client roots
+// (`.claude/`, `.codex/`, `.cursor/`). Each file:
+//   1. Must read successfully.
+//   2. Must start with `#!` (POSIX hook contract — `fabric install` always
+//      writes the `#!/usr/bin/env node` shebang).
+//   3. Must parse cleanly via `new vm.Script(code)`. Parsing is pure (no
+//      execution), so user code is never run by doctor — keeps the check
+//      cheap and safe.
+//
+// Hook files inside per-client `lib/` subdirs are skipped (they're libraries
+// loaded via require, not standalone scripts; no shebang requirement).
+type HookRuntimeIssue = {
+  path: string;
+  client: "claude" | "codex" | "cursor";
+  kind: "missing_shebang" | "parse_error" | "read_error";
+  detail: string;
+};
+type HooksRuntimeInspection = {
+  scanned: number;
+  issues: HookRuntimeIssue[];
+};
+
+const HOOKS_RUNTIME_CLIENT_DIRS: Array<{ client: "claude" | "codex" | "cursor"; dir: string }> = [
+  { client: "claude", dir: ".claude/hooks" },
+  { client: "codex", dir: ".codex/hooks" },
+  { client: "cursor", dir: ".cursor/hooks" },
+];
+
+function inspectHooksRuntime(projectRoot: string): HooksRuntimeInspection {
+  const issues: HookRuntimeIssue[] = [];
+  let scanned = 0;
+  for (const { client, dir } of HOOKS_RUNTIME_CLIENT_DIRS) {
+    const absDir = join(projectRoot, dir);
+    if (!existsSync(absDir)) continue;
+    let entries: string[];
+    try {
+      entries = readdirSync(absDir);
+    } catch {
+      continue;
+    }
+    for (const name of entries) {
+      if (!name.endsWith(".cjs")) continue;
+      const abs = join(absDir, name);
+      const displayPath = `${dir}/${name}`;
+      let stat;
+      try {
+        stat = statSync(abs);
+      } catch {
+        continue;
+      }
+      if (!stat.isFile()) continue;
+      scanned += 1;
+      let body: string;
+      try {
+        body = readFileSync(abs, "utf8");
+      } catch (err) {
+        issues.push({
+          path: displayPath,
+          client,
+          kind: "read_error",
+          detail: err instanceof Error ? err.message : String(err),
+        });
+        continue;
+      }
+      if (!body.startsWith("#!")) {
+        issues.push({
+          path: displayPath,
+          client,
+          kind: "missing_shebang",
+          detail: "first line is not a `#!` shebang",
+        });
+      }
+      try {
+        new Script(body, { filename: displayPath });
+      } catch (err) {
+        issues.push({
+          path: displayPath,
+          client,
+          kind: "parse_error",
+          detail: err instanceof Error ? err.message.split("\n")[0] : String(err),
+        });
+      }
+    }
+  }
+  issues.sort((a, b) => a.path.localeCompare(b.path));
+  return { scanned, issues };
+}
+
+function createHooksRuntimeCheck(
+  t: Translator,
+  inspection: HooksRuntimeInspection,
+): DoctorCheck {
+  if (inspection.scanned === 0) {
+    return okCheck(
+      t("doctor.check.hooks_runtime.name"),
+      t("doctor.check.hooks_runtime.ok.skipped"),
+    );
+  }
+  if (inspection.issues.length === 0) {
+    return okCheck(
+      t("doctor.check.hooks_runtime.name"),
+      t("doctor.check.hooks_runtime.ok.healthy", {
+        count: String(inspection.scanned),
+      }),
+    );
+  }
+  const first = inspection.issues[0];
+  const count = inspection.issues.length;
+  return issueCheck(
+    t("doctor.check.hooks_runtime.name"),
+    "warn",
+    "warning",
+    "hooks_runtime_invalid",
+    t(`doctor.check.hooks_runtime.message.${count === 1 ? "singular" : "plural"}`, {
+      count: String(count),
+      first_path: first.path,
+      first_detail: `${first.kind}: ${first.detail}`,
+    }),
+    t("doctor.check.hooks_runtime.remediation"),
   );
 }
 

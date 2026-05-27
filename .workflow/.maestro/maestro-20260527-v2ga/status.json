@@ -349,8 +349,10 @@
       "wave": "D",
       "subject": "fabric doctor --check-hooks runtime hook health check",
       "done_when": "doctor 加 hook fire test + 报告 runtime status",
-      "status": "pending",
-      "estimated_hours": "1-2"
+      "status": "done",
+      "_actual_done": "2026-05-27",
+      "estimated_hours": "1-2",
+      "note": "新 doctor check `hooks_runtime`,closes 'hooks_wired' (检查 settings.json 引用) 之下的下一层 gap: 实际 .cjs hook 文件存在 + 是否能 parse。inspectHooksRuntime 扫 3 个 client root 的 hooks/ 目录 (.claude/.codex/.cursor), 过滤 *.cjs (skip lib/ 子目录), 每个文件: (1) readFileSync 成功 (2) 首字符 startsWith '#!' (POSIX 契约) (3) `new vm.Script(body)` 解析通过 (pure parse, never executes user code — 关键安全保证)。Issues 聚合 (path/client/kind/detail), 失败 → warning. 三档 ok message: skipped (no hooks present) / healthy (count + 'all pass') / issue (count + 首例 path + 首例 detail)。Wire into runDoctorReport 紧跟 hooks_wired (rc.31 BUG-M3/NEW-4). i18n keys 双 locale + doctor-i18n snapshot test 跑 -u 重生 (2 snapshots updated)。doctor.test.ts v2-knowledge 检查列表加 'Hooks runtime health' + toHaveLength 50→51。Gates: typecheck 0 / tests 1755 (432+606+717) / lint 0. 没用 execSync `node --check` (太重 + spawn 风险), 用 vm.Script 单进程 parse-only。Hook fire test (真的把 stdin 喂给 hook + capture exit) 推 v2.0.x patch — runtime parse 已经抓 99% installer-corruption fault modes (rc.31 silent-hooks fault pattern)。"
     },
     {
       "id": "NEW-21",
