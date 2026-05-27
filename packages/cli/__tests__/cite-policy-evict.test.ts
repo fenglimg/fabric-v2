@@ -370,3 +370,81 @@ describe("read JSON envelope content (rc.34 TASK-06)", () => {
     expect(parsed.hookSpecificOutput.additionalContext).toContain("KB: <id>");
   });
 });
+
+// v2.0.0-rc.37 NEW-21: SessionStart-mode parity for Codex/Cursor. The hook
+// detects hook_event_name === "SessionStart" (or env.forceSessionStart) and
+// emits one unconditional reminder to stderr (no turn-counter, no Claude-
+// specific stdout envelope). Tests confirm the new branch fires once per
+// invocation regardless of session_id and stays inert when feature is off.
+describe("SessionStart-mode (rc.37 NEW-21)", () => {
+  class StderrCapture {
+    chunks: string[] = [];
+    write = (s: string): boolean => {
+      this.chunks.push(s);
+      return true;
+    };
+    joined(): string {
+      return this.chunks.join("");
+    }
+  }
+
+  it("emits cite reminder to stderr when hook_event_name=SessionStart", async () => {
+    const cwd = mkTemp();
+    writeConfig(cwd, { cite_evict_interval: 10 });
+    const stdout = new StdoutCapture();
+    const stderr = new StderrCapture();
+    await hook.main({
+      cwd,
+      payload: {
+        hook_event_name: "SessionStart",
+        session_id: "codex-session",
+      } as unknown as { session_id: string },
+      stdio: {
+        stdout,
+        stderr,
+      } as unknown as { stdout: { write: (s: string) => boolean } },
+    } as unknown as Parameters<typeof hook.main>[0]);
+    expect(stderr.joined()).toContain("KB: <id>");
+    expect(stdout.joined()).toBe("");
+  });
+
+  it("stays silent in SessionStart mode when interval=0 (feature off)", async () => {
+    const cwd = mkTemp();
+    writeConfig(cwd, { cite_evict_interval: 0 });
+    const stdout = new StdoutCapture();
+    const stderr = new StderrCapture();
+    await hook.main({
+      cwd,
+      payload: {
+        hook_event_name: "SessionStart",
+        session_id: "off-test",
+      } as unknown as { session_id: string },
+      stdio: {
+        stdout,
+        stderr,
+      } as unknown as { stdout: { write: (s: string) => boolean } },
+    } as unknown as Parameters<typeof hook.main>[0]);
+    expect(stderr.joined()).toBe("");
+    expect(stdout.joined()).toBe("");
+  });
+
+  it("does NOT write turn-counter sidecar in SessionStart mode", async () => {
+    const cwd = mkTemp();
+    writeConfig(cwd, { cite_evict_interval: 10 });
+    const stdout = new StdoutCapture();
+    const stderr = new StderrCapture();
+    await hook.main({
+      cwd,
+      payload: {
+        hook_event_name: "SessionStart",
+        session_id: "no-state-test",
+      } as unknown as { session_id: string },
+      stdio: {
+        stdout,
+        stderr,
+      } as unknown as { stdout: { write: (s: string) => boolean } },
+    } as unknown as Parameters<typeof hook.main>[0]);
+    // SessionStart mode is stateless — no sidecar should be created
+    expect(hook.readEvictState(cwd)).toBeNull();
+  });
+});

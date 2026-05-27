@@ -663,7 +663,9 @@
       "wave": "F",
       "subject": "fabric uninstall + upgrade path test",
       "done_when": "uninstall 全 revert + rc.36→GA upgrade smoke 绿",
-      "status": "pending"
+      "status": "done",
+      "_actual_done": "2026-05-27",
+      "note": "两半:(1) uninstall full revert 已被 packages/cli/__tests__/uninstall.test.ts (10 个 describe block 覆盖 enumeration / dry-run / scaffold execution / wizard cancel / idempotency / personal-root guard) + integration/uninstall-skills-and-hooks.test.ts (T1 fresh-init→uninstall full removal / T2 settings.json byte-restore / T3 knowledge 保留 without --purge) 全面覆盖。(2) rc.36→GA upgrade smoke 已被 install-skills-and-hooks.test.ts (TASK-006 idempotency: re-run init produces zero diff in .claude/ .codex/ .cursor/ trees / settings preservation: user permissions + custom Stop hook 保留 / dedup: re-init does not duplicate hooks.Stop entries / rc27 §2.6 legacy archive-hint.cjs sweep) 覆盖 — 这些 'install on already-installed state' 测试就是 upgrade-path 测试。补强: 本 task 在 packages/cli/__tests__/cite-policy-evict.test.ts 新增 'SessionStart-mode (rc.37 NEW-21)' describe (3 test): hook_event_name=SessionStart 时 emit stderr + interval=0 时 silent + SessionStart mode stateless (不写 sidecar) — 这是 rc.36 → GA 唯一的新 hook surface (Codex/Cursor SessionStart 加 cite-policy-evict), 锁住 upgrade 路径下新 hook 行为契约。Gates: typecheck 0 / lint 0 / cite-policy-evict.test.ts 32/32 pass."
     },
     {
       "id": "F5",
