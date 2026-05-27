@@ -662,14 +662,18 @@
       "wave": "G",
       "subject": ".github/ISSUE_TEMPLATE 建立",
       "done_when": "bug/feature/question 三个 template",
-      "status": "pending"
+      "status": "done",
+      "_actual_done": "2026-05-27",
+      "note": ".github/ISSUE_TEMPLATE/{bug_report,feature_request,question}.md 三个模板 (untracked → 本 commit 落地)。bug_report: Summary / Environment (fabric version + OS + Node + AI client + install method) / Steps to reproduce / Expected / Actual / Doctor output / Additional context;feature_request: Problem / Proposed solution / Alternatives / Scope checkboxes (CLI / MCP / Skills / hooks / docs) / Additional context;question: 简易 'What trying to do / What tried / Specific question(s)'."
     },
     {
       "id": "G2",
       "wave": "G",
       "subject": "CONTRIBUTING + CODE_OF_CONDUCT + SECURITY md",
       "done_when": "三个 md 文件全 GA-ready",
-      "status": "pending"
+      "status": "done",
+      "_actual_done": "2026-05-27",
+      "note": "CONTRIBUTING.md (untracked) 已包含 TL;DR (clone + tsc + test + knip), project layout, dev workflow (required gates + recommended werewolf dogfood + shared rebuild), 中文 conventional-commit 格式 + 例子, per-task per-commit discipline, 'Architectural decisions are KB-locked' KB grep pointer, adding MCP tool/Skill/doctor check 路径指引, release process (user-only), CoC + Security + License footer。新加 CODE_OF_CONDUCT.md (Contributor Covenant 2.1 verbatim adoption + 维护者邮箱 fenglimg90@gmail.com)。新加 SECURITY.md (supported versions / 漏洞报告流程 / scope (含 quarantine 排除 + 第三方 client 排除 + injection 模式说明) / hardening notes (INJECTION_PATTERNS / 4KB POSIX truncate / no listening socket) / disclosure preference)。"
     },
     {
       "id": "G3",
