@@ -895,17 +895,27 @@ exports[`tool contracts > knowledge-sections contract matches snapshot 1`] = `
         "type": "array",
       },
       "redirect_to": {
-        "additionalProperties": false,
-        "description": "Post-layer-flip redirect. Populated when stable_id changed after token mint (rc.3 fab_review/modify).",
-        "properties": {
-          "stable_id": {
-            "type": "string",
+        "anyOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "stable_id": {
+                "type": "string",
+              },
+            },
+            "required": [
+              "stable_id",
+            ],
+            "type": "object",
           },
-        },
-        "required": [
-          "stable_id",
+          {
+            "additionalProperties": {
+              "type": "string",
+            },
+            "type": "object",
+          },
         ],
-        "type": "object",
+        "description": "Post-layer-flip redirect. Pre-rc.37: { stable_id } shape from rc.3 fab_review/modify. rc.37+: also accepts a (old_id → new_id) map for fab_get_knowledge_sections / fab_recall transparent rewrite.",
       },
       "revision_hash": {
         "type": "string",
@@ -1270,6 +1280,12 @@ exports[`tool contracts > plan-context contract matches snapshot 1`] = `
       },
       "previous_revision_hash": {
         "type": "string",
+      },
+      "redirects": {
+        "additionalProperties": {
+          "type": "string",
+        },
+        "type": "object",
       },
       "revision_hash": {
         "type": "string",

@@ -15,6 +15,7 @@
 
 import { planContext, type PlanContextInput, type PlanContextResult } from "./plan-context.js";
 import { getKnowledgeSections, extractBody } from "./knowledge-sections.js";
+import { loadIdRedirectMap, resolveRedirectedId } from "./id-redirect.js";
 
 export type RecallInput = PlanContextInput & {
   /**
@@ -53,7 +54,22 @@ export async function recall(projectRoot: string, input: RecallInput): Promise<R
   const planResult = await planContext(projectRoot, input);
 
   const candidateIds = planResult.shared.description_index.map((item) => item.stable_id);
-  const requestedIds = input.ids === undefined ? candidateIds : input.ids.filter((id) => candidateIds.includes(id));
+  // v2.0.0-rc.37 NEW-24: callers passing `ids` may hand back a stale (pre
+  // layer-flip) id. Rewrite via the redirect resolver so the substitution
+  // happens before the intersection check; the rewritten ids are what we
+  // actually fetch. Best-effort — if the ledger read fails we just skip the
+  // rewrite and let the intersection naturally drop the stale id.
+  let rewrittenIds: string[] | undefined;
+  if (input.ids !== undefined) {
+    try {
+      const redirectMap = await loadIdRedirectMap(projectRoot);
+      rewrittenIds = input.ids.map((id) => resolveRedirectedId(redirectMap, id));
+    } catch {
+      rewrittenIds = input.ids;
+    }
+  }
+  const effectiveIds = rewrittenIds ?? candidateIds;
+  const requestedIds = effectiveIds.filter((id) => candidateIds.includes(id));
   // De-dupe while preserving the candidate ordering — planContext already
   // dedupes via dedupeDescriptionIndex; we just preserve that order for the
   // bodies array so callers see stable response shape.

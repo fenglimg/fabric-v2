@@ -9,6 +9,7 @@ import { appendEventLedgerEvent } from "./event-ledger.js";
 import { normalizeKnowledgePath } from "./get-knowledge.js";
 import { readSelectionToken } from "./plan-context.js";
 import { loadActiveMeta } from "./load-active-meta.js";
+import { loadIdRedirectMap, resolveRedirectedId } from "./id-redirect.js";
 
 // v2.0.0-rc.23 TASK-013 (F8b): KNOWLEDGE_SECTION_NAMES + KnowledgeSectionName
 // + the `missing_section` diagnostic + the per-section structured response
@@ -53,6 +54,11 @@ export type KnowledgeSectionResult = {
     body: string;
   }>;
   diagnostics: KnowledgeSectionDiagnostic[];
+  // v2.0.0-rc.37 NEW-24: populated when the input `ai_selected_stable_ids`
+  // referenced a layer-flipped id that was transparently rewritten to the
+  // post-flip canonical id before fetching. Maps OLD id → NEW id so the
+  // caller can refresh its cached selection. Omitted when no rewrites fired.
+  redirect_to?: { stable_id: string } | Record<string, string>;
 };
 
 type NodePriority = NonNullable<AgentsMeta["nodes"][string]["priority"]>;
@@ -98,14 +104,42 @@ export async function getKnowledgeSections(
     throw new Error("selection_token is missing or expired");
   }
 
-  validateAiSelections(token.ai_selectable_stable_ids, input.ai_selected_stable_ids, input.ai_selection_reasons);
+  // v2.0.0-rc.37 NEW-24: rewrite any layer-flipped ids in the caller-supplied
+  // selection BEFORE selectable-set validation. A stale id (cached from a
+  // pre-flip plan-context call) would otherwise fail validation; with the
+  // rewrite the caller transparently sees the new canonical id served and
+  // gets back a redirect_to map describing every substitution that fired.
+  let idRedirects: Map<string, string>;
+  try {
+    idRedirects = await loadIdRedirectMap(projectRoot);
+  } catch {
+    idRedirects = new Map();
+  }
+  const rewriteApplied: Record<string, string> = {};
+  const rewrittenAiSelected = input.ai_selected_stable_ids.map((stableId) => {
+    const resolved = resolveRedirectedId(idRedirects, stableId);
+    if (resolved !== stableId) {
+      rewriteApplied[stableId] = resolved;
+    }
+    return resolved;
+  });
+  // Reasons map keys may also reference the old id. Re-key onto the new id
+  // so validateAiSelections sees a consistent (id, reason) pair set.
+  const rewrittenReasons: Record<string, string> = { ...input.ai_selection_reasons };
+  for (const [oldId, newId] of Object.entries(rewriteApplied)) {
+    if (rewrittenReasons[oldId] !== undefined && rewrittenReasons[newId] === undefined) {
+      rewrittenReasons[newId] = rewrittenReasons[oldId];
+    }
+  }
+
+  validateAiSelections(token.ai_selectable_stable_ids, rewrittenAiSelected, rewrittenReasons);
 
   // v2.0.0-rc.22 Scope D T-D2: strict meta-load. Section delivery is an
   // authoritative id-based lookup; serving stale meta would mean handing back
   // bodies for ids that no longer exist or missing newly-resolved ones. We
   // want a loud failure (vs. silent staleness) when buildKnowledgeMeta breaks.
   const { meta } = await loadActiveMeta(projectRoot, { caller: "getKnowledgeSections" });
-  const selectedStableIds = [...token.required_stable_ids, ...input.ai_selected_stable_ids];
+  const selectedStableIds = [...token.required_stable_ids, ...rewrittenAiSelected];
   const selectedRules = sortRuleNodes(selectedStableIds.map((stableId) => findRuleNode(meta, stableId)));
   const diagnostics: KnowledgeSectionDiagnostic[] = [];
   const rules = [];
@@ -148,6 +182,13 @@ export async function getKnowledgeSections(
     selected_stable_ids: rules.map((rule) => rule.stable_id),
     rules,
     diagnostics,
+    // v2.0.0-rc.37 NEW-24: only surface redirect_to when a rewrite actually
+    // fired. The shape is a `{ old_id: new_id, ... }` map so callers can
+    // refresh multiple stale ids in one response; the legacy single-stable_id
+    // form is preserved as a degenerate special case in the schema for
+    // forward-compat (one rewrite = the canonical pre-rc.37 shape consumers
+    // already understood).
+    ...(Object.keys(rewriteApplied).length > 0 ? { redirect_to: rewriteApplied } : {}),
   };
 
   try {

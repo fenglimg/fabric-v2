@@ -274,6 +274,27 @@ export const knowledgeLayerChangedEventSchema = z.object({
   reason: z.string().optional(),
   from_layer: z.enum(["team", "personal"]),
   to_layer: z.enum(["team", "personal"]),
+  // v2.0.0-rc.37 NEW-24: record the pre-flip stable_id so downstream consumers
+  // (fab_plan_context redirect surface, fab_get_knowledge_sections.redirect_to)
+  // can map a stale caller-held id back to the post-flip canonical id without
+  // requiring the caller to re-issue plan-context. Optional for forward-
+  // compatibility with rc ≤36 events that never carried this field.
+  previous_stable_id: z.string().optional(),
+});
+
+// v2.0.0-rc.37 NEW-24: dedicated id-redirect event. Emitted alongside
+// knowledge_layer_changed whenever a flip allocates a new stable_id under a
+// different layer counter (KT-* ↔ KP-*). Downstream tooling that just needs
+// the old→new mapping (without caring about the layer-flip semantics) can
+// subscribe to this single event instead of replaying knowledge_layer_changed
+// + filtering. The two events share `reason` so they can be correlated.
+export const knowledgeIdRedirectEventSchema = z.object({
+  ...eventLedgerEnvelopeSchema,
+  event_type: z.literal("knowledge_id_redirect"),
+  timestamp: z.string().datetime(),
+  previous_stable_id: z.string(),
+  new_stable_id: z.string(),
+  reason: z.string().optional(),
 });
 
 export const knowledgeSlugRenamedEventSchema = z.object({
@@ -672,6 +693,8 @@ export const eventLedgerEventSchema = z.discriminatedUnion("event_type", [
   knowledgePromotedEventSchema,
   knowledgePromoteFailedEventSchema,
   knowledgeLayerChangedEventSchema,
+  // v2.0.0-rc.37 NEW-24: dedicated old→new stable_id mapping event
+  knowledgeIdRedirectEventSchema,
   knowledgeSlugRenamedEventSchema,
   knowledgeDemotedEventSchema,
   knowledgeArchivedEventSchema,
@@ -750,6 +773,7 @@ export type KnowledgePromoteStartedEvent = z.infer<typeof knowledgePromoteStarte
 export type KnowledgePromotedEvent = z.infer<typeof knowledgePromotedEventSchema>;
 export type KnowledgePromoteFailedEvent = z.infer<typeof knowledgePromoteFailedEventSchema>;
 export type KnowledgeLayerChangedEvent = z.infer<typeof knowledgeLayerChangedEventSchema>;
+export type KnowledgeIdRedirectEvent = z.infer<typeof knowledgeIdRedirectEventSchema>;
 export type KnowledgeSlugRenamedEvent = z.infer<typeof knowledgeSlugRenamedEventSchema>;
 export type KnowledgeDemotedEvent = z.infer<typeof knowledgeDemotedEventSchema>;
 export type KnowledgeArchivedEvent = z.infer<typeof knowledgeArchivedEventSchema>;
@@ -794,6 +818,7 @@ export type EventLedgerEvent =
   | KnowledgePromotedEvent
   | KnowledgePromoteFailedEvent
   | KnowledgeLayerChangedEvent
+  | KnowledgeIdRedirectEvent
   | KnowledgeSlugRenamedEvent
   | KnowledgeDemotedEvent
   | KnowledgeArchivedEvent

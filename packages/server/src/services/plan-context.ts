@@ -8,6 +8,7 @@ import { appendEventLedgerEvent } from "./event-ledger.js";
 import { normalizeKnowledgePath } from "./get-knowledge.js";
 import { loadActiveMetaOrStale } from "./load-active-meta.js";
 import { reconcileKnowledge } from "./knowledge-sync.js";
+import { loadIdRedirectMap, trimRedirectsToActiveIds } from "./id-redirect.js";
 
 export type PlanContextInput = {
   paths: string[];
@@ -77,6 +78,11 @@ export type PlanContextResult = {
   // a one-line banner without querying the event ledger.
   auto_healed?: boolean;
   previous_revision_hash?: string;
+  // v2.0.0-rc.37 NEW-24: stale-id redirect map (old → new). Populated only
+  // when at least one recent knowledge_id_redirect event maps a layer-flipped
+  // entry to a stable_id present in the current description_index. Empty
+  // mappings are omitted to keep the steady-state wire shape minimal.
+  redirects?: Record<string, string>;
 };
 
 export type SelectionTokenState = {
@@ -278,6 +284,21 @@ export async function planContext(
   const ttlMs = readSelectionTokenTtlMs(projectRoot) ?? SELECTION_TOKEN_TTL_DEFAULT_MS;
   const selectionToken = createSelectionToken(meta.revision, uniquePaths, [], sharedStableIds, Date.now(), ttlMs);
 
+  // v2.0.0-rc.37 NEW-24: load recent knowledge_id_redirect events and
+  // surface only the (old → new) mappings whose `new` id is in the current
+  // description_index. Best-effort: ledger read failures degrade silently
+  // so a corrupt ledger never blocks plan-context.
+  let redirects: Record<string, string> | undefined;
+  try {
+    const redirectMap = await loadIdRedirectMap(projectRoot);
+    const trimmed = trimRedirectsToActiveIds(redirectMap, sharedStableIds);
+    if (Object.keys(trimmed).length > 0) {
+      redirects = trimmed;
+    }
+  } catch {
+    // Redirect surfacing is opportunistic; never block planning on it.
+  }
+
   const result: PlanContextResult = {
     revision_hash: meta.revision,
     stale,
@@ -298,6 +319,7 @@ export async function planContext(
           previous_revision_hash: firstSeenPreviousRevision,
         }
       : {}),
+    ...(redirects !== undefined ? { redirects } : {}),
   };
 
   try {

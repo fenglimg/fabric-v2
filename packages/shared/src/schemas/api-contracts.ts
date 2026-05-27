@@ -202,6 +202,14 @@ export const planContextOutputSchema = z.object({
   // having to query the event ledger.
   auto_healed: z.boolean().optional(),
   previous_revision_hash: z.string().optional(),
+  // v2.0.0-rc.37 NEW-24: stale-id redirect map. Populated when one or more
+  // recent fab_review modify-layer flips reassigned a canonical stable_id
+  // and the NEW id is in this response's description_index. Callers that
+  // cached the OLD id from a prior session look it up here and substitute
+  // the new id before issuing fab_get_knowledge_sections / fab_recall. Empty
+  // (field omitted) when no actionable redirects exist for the surfaced
+  // candidate set. See packages/server/src/services/id-redirect.ts.
+  redirects: z.record(z.string()).optional(),
 });
 
 export const planContextAnnotations = {
@@ -331,14 +339,21 @@ export const knowledgeSectionsOutputSchema = z.object({
       message: z.string(),
     }),
   ),
-  // v2/rc.3 (Q6): present iff a layer-flip in fab_review/modify changed the
-  // canonical stable_id since the caller's selection_token was minted.
-  // Clients should retry against `redirect_to.stable_id`.
+  // v2/rc.3 (Q6) + v2.0.0-rc.37 NEW-24: present iff at least one stable_id in
+  // the caller-supplied ai_selected_stable_ids was rewritten by the layer-flip
+  // redirect resolver. Pre-rc.37: this was a single { stable_id } object set
+  // only on the rare token-mint-vs-flip race. rc.37+: also accepts a map of
+  // (old_id → new_id) when multiple rewrites fire in one fetch. Both shapes
+  // are accepted for forward-compat; readers should branch on shape and
+  // refresh their cached ids accordingly.
   redirect_to: z
-    .object({ stable_id: z.string() })
+    .union([
+      z.object({ stable_id: z.string() }),
+      z.record(z.string()),
+    ])
     .optional()
     .describe(
-      "Post-layer-flip redirect. Populated when stable_id changed after token mint (rc.3 fab_review/modify).",
+      "Post-layer-flip redirect. Pre-rc.37: { stable_id } shape from rc.3 fab_review/modify. rc.37+: also accepts a (old_id → new_id) map for fab_get_knowledge_sections / fab_recall transparent rewrite.",
     ),
   warnings: z.array(structuredWarningSchema).optional(),
 });
@@ -465,6 +480,11 @@ export const recallOutputSchema = z.object({
   warnings: z.array(structuredWarningSchema).optional(),
   auto_healed: z.boolean().optional(),
   previous_revision_hash: z.string().optional(),
+  // v2.0.0-rc.37 NEW-24: parallel to planContextOutputSchema.redirects — see
+  // that field for semantics. fab_recall transparently rewrites any old ids
+  // passed via `ids` before fetching bodies; the surfaced map still exposes
+  // the substitution to callers that want to refresh their cached state.
+  redirects: z.record(z.string()).optional(),
 });
 
 export const recallAnnotations = {

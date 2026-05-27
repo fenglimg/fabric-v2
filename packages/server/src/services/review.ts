@@ -930,14 +930,36 @@ async function modifyLayerFlip(
     await unlink(target.absPath);
   }
 
+  const flipReason = `layer_flip:${priorStableId ?? "<unassigned>"}->${newStableId}`;
+  const flipTimestamp = new Date().toISOString();
   await emitEventBestEffort(projectRoot, {
     event_type: "knowledge_layer_changed",
     stable_id: newStableId,
-    timestamp: new Date().toISOString(),
+    timestamp: flipTimestamp,
     from_layer: fromLayer,
     to_layer: toLayer,
-    reason: `layer_flip:${priorStableId ?? "<unassigned>"}->${newStableId}`,
+    reason: flipReason,
+    // v2.0.0-rc.37 NEW-24: stamp old id so downstream redirect resolvers
+    // (fab_plan_context.redirects, fab_get_knowledge_sections.redirect_to)
+    // can map stale caller-held ids without rebuilding from path history.
+    ...(priorStableId !== undefined ? { previous_stable_id: priorStableId } : {}),
   });
+
+  // v2.0.0-rc.37 NEW-24: dedicated id-redirect event. Emitted only when a
+  // previous id existed (a layer-flip on an unassigned pending row mints a
+  // fresh id with no "old" to map from). Consumers that only care about the
+  // id remap subscribe to this single event instead of replaying
+  // knowledge_layer_changed. Shares `reason` with the paired flip event for
+  // correlation.
+  if (priorStableId !== undefined) {
+    await emitEventBestEffort(projectRoot, {
+      event_type: "knowledge_id_redirect",
+      timestamp: flipTimestamp,
+      previous_stable_id: priorStableId,
+      new_stable_id: newStableId,
+      reason: flipReason,
+    });
+  }
 
   // v2.0-rc.5 C3 (TASK-012): emit knowledge_scope_degraded when the flip
   // auto-degraded the relevance scope. The event records the original scope
