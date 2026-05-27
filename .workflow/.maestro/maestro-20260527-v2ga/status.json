@@ -686,7 +686,9 @@
       "wave": "G",
       "subject": "GitHub repo topics + About + release.yml",
       "done_when": "repo metadata + release notes auto-gen 配置",
-      "status": "pending"
+      "status": "done",
+      "_actual_done": "2026-05-27",
+      "note": "Release notes 自动生成: .github/workflows/release.yml 新增 github-release job (依赖 publish), 用 awk 抽 CHANGELOG.md '## [<version>]' 到下一个 '## [' 之间 section 为 release_notes.md, 再用 softprops/action-gh-release@v2 创建 GitHub Release (name=tag, body_path=release_notes.md, prerelease=tag 含 -rc./-beta./-alpha. 时 true)。CHANGELOG section 缺失走 fallback (brief autogen note + link to CHANGELOG.md)。GitHub repo topics + About description 部分留给 user-only G4 (需要 admin 权限通过 GitHub UI / gh repo edit, AI 无 token)。建议 topics: 'mcp', 'claude-code', 'cursor', 'codex-cli', 'ai-agents', 'knowledge-base', 'developer-tools', 'cli'; About: 'Cross-client knowledge sustainment for AI coding agents — one MCP-first knowledge layer for Claude Code, Cursor, and Codex CLI.'。"
     },
     {
       "id": "G4",
