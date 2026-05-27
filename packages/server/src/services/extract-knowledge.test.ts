@@ -67,6 +67,8 @@ function buildInput(partial: Partial<FabExtractKnowledgeInput>): FabExtractKnowl
     must_read_if: partial.must_read_if,
     // v2.0.0-rc.23 TASK-014 (F8c): optional S5 onboard-slot tag.
     onboard_slot: partial.onboard_slot,
+    // v2.0.0-rc.37 NEW-7: optional read-only evidence paths (frontmatter).
+    evidence_paths: partial.evidence_paths,
   } as FabExtractKnowledgeInput;
 }
 
@@ -1194,6 +1196,46 @@ describe("extractKnowledge", () => {
     expect(body).not.toMatch(/you\s+are\s+now\s+a/iu);
     expect(body).not.toMatch(/<\|im_end\|>/u);
     expect(body).toContain("[REDACTED: prompt-injection pattern stripped");
+  });
+
+  // ---------------------------------------------------------------------------
+  // v2.0.0-rc.37 NEW-7: evidence_paths frontmatter persistence
+  // ---------------------------------------------------------------------------
+
+  it("extractKnowledge_writes_evidence_paths_to_frontmatter (rc.37 NEW-7)", async () => {
+    const projectRoot = await createTempProject();
+    const result = await extractKnowledge(
+      projectRoot,
+      buildInput({
+        source_sessions: ["sess-evidence"],
+        slug: "evidence-test",
+        type: "decisions",
+        user_messages_summary: "Decision derived from inspecting auth call sites.",
+        evidence_paths: [
+          "packages/server/src/middleware/auth-helpers.ts",
+          "packages/server/src/services/session.ts",
+        ],
+      }),
+    );
+    const body = await readFile(join(projectRoot, result.pending_path), "utf8");
+    expect(body).toMatch(
+      /^evidence_paths: \["packages\/server\/src\/middleware\/auth-helpers\.ts", "packages\/server\/src\/services\/session\.ts"\]$/mu,
+    );
+  });
+
+  it("extractKnowledge_omits_evidence_paths_line_when_empty (rc.37 NEW-7)", async () => {
+    const projectRoot = await createTempProject();
+    const result = await extractKnowledge(
+      projectRoot,
+      buildInput({
+        source_sessions: ["sess-no-evidence"],
+        slug: "no-evidence",
+        type: "decisions",
+        user_messages_summary: "Decision with no read-only evidence captured.",
+      }),
+    );
+    const body = await readFile(join(projectRoot, result.pending_path), "utf8");
+    expect(body).not.toMatch(/^evidence_paths:/mu);
   });
 
   it("extractKnowledge_leaves_clean_body_untouched (rc.37 NEW-31)", async () => {

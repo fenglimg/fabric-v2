@@ -682,6 +682,23 @@ const _FabExtractKnowledgeInputBaseSchema = z.object({
     .describe(
       "Optional slot tag from the S5 onboarding set (tech-stack-decision / architecture-pattern / code-style-tone / build-system-idiom / domain-vocabulary); lets fabric-archive's first-run phase claim a project-tone slot. Skill propose-time only; never required.",
     ),
+  // v2.0.0-rc.37 NEW-7: read-only evidence paths lifted from the legacy
+  // body `## Evidence` markdown block into structured frontmatter. These are
+  // paths the agent CONSULTED while building this knowledge but never
+  // modified — they document context without participating in the
+  // activation gate (relevance_paths does that). Splitting evidence into a
+  // first-class frontmatter array lets future plan-context retrieval read
+  // it as data (intersect with current paths to surface high-recall hits)
+  // instead of re-parsing markdown. Optional; omit when no read-only
+  // signal was captured. Like relevance_paths it MUST NOT participate in
+  // the idempotency_key hash (an idempotent re-extract may surface a
+  // slightly different read set without spawning a duplicate pending).
+  evidence_paths: z
+    .array(z.string())
+    .optional()
+    .describe(
+      "Workspace-relative paths the agent CONSULTED (read but never modified) while building this knowledge. Documents context without affecting activation. Lifted from the legacy body ## Evidence markdown block into structured frontmatter so plan-context retrieval can read it as data.",
+    ),
 });
 
 // Exported alias of the base shape — MCP tool registration uses `.shape` to

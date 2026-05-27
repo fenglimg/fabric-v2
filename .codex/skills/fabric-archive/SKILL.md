@@ -27,7 +27,7 @@ This skill is `Check-not-Ask`, not a preference interview:
 - Phase 0 proactively gathers candidate evidence from the session
 - Phase 0.5 viability gate aborts the skill if the session lacks any archive-signal (anti-archive guard)
 - Phase 1 classifies / layers / slugs each candidate and presents one batch review for user correction
-- Phase 1.5 assigns `relevance_scope=narrow|broad` and derives `relevance_paths` from edit history (rc.5 single-signal source)
+- Phase 1.5 assigns `relevance_scope=narrow|broad` and derives `relevance_paths` from edit_paths ∪ user_mentioned_paths; read_paths flows to `evidence_paths` frontmatter (rc.37 NEW-7 multi-signal upgrade)
 - Phase 2 calls `fab_extract_knowledge` once per confirmed candidate
 
 ## 执行流程 (6 Phase / 1 User Review Round)
@@ -648,9 +648,9 @@ Special case — Personal layer ALWAYS resolves to `relevance_scope=broad` with 
 - `model: wave-1-parallel-task-dag` → `narrow` (tied to `packages/cli/src/commands/plan.ts`)
 - `guideline: indent-style-by-language` (personal layer) → `broad + []` (personal forces broad)
 
-#### relevance_paths derivation algorithm (rc.5 single-signal: edit_paths only)
+#### relevance_paths derivation algorithm (rc.37 NEW-7 multi-signal)
 
-rc.5 uses ONLY the `edit_paths` signal — list of paths modified by `Edit` / `Write` / `MultiEdit` tool calls in the current session. Multi-signal (read_paths + body regex + symbols) is explicitly deferred to rc.7 per design decision.
+rc.37 NEW-7 widened the rc.5 single-signal (`edit_paths` only) to three sources: `edit_paths` ∪ `user_mentioned_paths` (verbatim paths the user typed) drives `relevance_paths`; `read_paths` (files read but never modified) flows to `evidence_paths` frontmatter. Body regex / symbol extraction remain reserved for v2.1+.
 
 ```
 Step 1: COLLECT
@@ -933,7 +933,7 @@ Next day's cron rescan: Phase 0.0 sees `covered_through_ts < max(ts of session's
 - NEVER classify a candidate as `personal` when a 强 team signal applies. Default to team on ambiguity.
 - NEVER emit a non-empty `relevance_paths` when `relevance_scope=broad` — broad MUST always carry `relevance_paths=[]`.
 - NEVER emit a non-empty `relevance_paths` when `layer=personal` — personal forces `relevance_scope=broad` + `relevance_paths=[]`.
-- NEVER use multi-signal sources for relevance_paths in rc.5 — `edit_paths` is the SOLE source. `read_paths`, body regex, and symbol extraction are reserved for rc.7+.
+- v2.0.0-rc.37 NEW-7 widened Phase 1.5: `edit_paths` ∪ `user_mentioned_paths` drives `relevance_paths`; `read_paths` flows separately to `evidence_paths` (structured frontmatter, not body markdown). NEVER lift body regex / symbol extraction into `relevance_paths` — those remain reserved for v2.1+.
 - NEVER batch multiple candidates into a single fab_extract_knowledge call; one call per candidate.
 - NEVER paraphrase the verbatim layer heuristic block above — the Chinese text is contract-locked.
 - MUST preserve protected tokens exactly: `stable_id`, `knowledge_proposed`, `knowledge_archive_aborted`, `knowledge_scope_degraded`, `.fabric/knowledge/pending/`, `fab_extract_knowledge`, `relevance_paths`, `relevance_scope`, `narrow`, `broad`, `edit_paths`, `source_sessions`, `proposed_reason`, `session_context`, `intent_clues`, `tech_stack`, `impact`, `must_read_if`, `pending_path`, `layer`, `team`, `personal`, `MUST`, `NEVER`, `强 team`, `强 personal`, `默认 team`.

@@ -13,6 +13,13 @@ exports[`tool contracts > fab-extract-knowledge contract matches snapshot 1`] = 
     "$schema": "http://json-schema.org/draft-07/schema#",
     "additionalProperties": false,
     "properties": {
+      "evidence_paths": {
+        "description": "Workspace-relative paths the agent CONSULTED (read but never modified) while building this knowledge. Documents context without affecting activation. Lifted from the legacy body ## Evidence markdown block into structured frontmatter so plan-context retrieval can read it as data.",
+        "items": {
+          "type": "string",
+        },
+        "type": "array",
+      },
       "impact": {
         "description": "Consequences of ignoring this rule, used by the LLM to weight relevance vs cost. Each item ≤120 chars (e.g. 'O(n²) re-render on every frame', 'silent data loss on collision'). Optional — omit when impact is not observable.",
         "items": {

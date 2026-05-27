@@ -1,45 +1,73 @@
 # Phase 3.5 — Scope Decision + relevance_paths Derivation (ref)
 
-> **Loaded on demand.** SKILL.md hot path retains the scope decision pseudocode, personal-layer-forces-broad rule, and brief examples. This file holds the rc.5 single-signal `edit_paths` derivation algorithm (Steps 1-6) + worked generalization example + inline-edit re-derivation rules.
+> **Loaded on demand.** SKILL.md hot path retains the scope decision pseudocode, personal-layer-forces-broad rule, and brief examples. This file holds the rc.37 multi-signal derivation algorithm (edit_paths + read_paths + user_mentioned_paths), Steps 1-6 + worked generalization example + inline-edit re-derivation rules + the frontmatter `evidence_paths` upgrade.
 
-## relevance_paths derivation algorithm (rc.5 single-signal: edit_paths only)
+## relevance_paths derivation algorithm (rc.37 multi-signal — NEW-7)
 
-rc.5 uses ONLY the `edit_paths` signal — list of paths modified by `Edit` / `Write` / `MultiEdit` tool calls in the current session. Multi-signal (read_paths + body regex + symbols) is explicitly deferred to rc.7 per design decision.
+rc.37 NEW-7 widens Step 1 from the rc.5 single-signal (`edit_paths` only) to three sources:
+
+1. **`edit_paths`** — files modified by `Edit` / `Write` / `MultiEdit` tool calls. The primary activation signal: if the agent CHANGED a file, the knowledge derived in this session most likely applies there.
+2. **`read_paths`** — files inspected via `Read` / `Grep` / `Glob` without modification. Secondary signal: read-only inspection often anchors the applicability surface even when no write happened (e.g. discovering that a pitfall surfaces in a getter that the agent only READ).
+3. **`user_mentioned_paths`** — paths the user typed verbatim in messages (`packages/server/src/foo.ts`, `\`packages/cli/**/*.ts\`` etc.). Strongest signal of all: an explicit user-named path is ground-truth applicability surface, independent of what the agent did.
 
 ```
-Step 1: COLLECT
+Step 1: COLLECT (rc.37 NEW-7 — three sources)
   edit_paths = []
+  read_paths = []
+  user_mentioned_paths = []
+
+  // 1a — edit signal (rc.5 primary)
   Scan session transcript for tool_use entries where
     tool_use.name ∈ {Edit, Write, MultiEdit}
   Extract the file_path argument from each, push into edit_paths.
 
-Step 2: DEDUPE
-  edit_paths = unique(edit_paths)
+  // 1b — read signal (rc.37 NEW-7 secondary)
+  Scan session transcript for tool_use entries where
+    tool_use.name ∈ {Read, Grep, Glob}
+  Extract the file_path / path / glob argument from each, push into read_paths.
 
-Step 3: BLACKLIST FILTER
+  // 1c — user-mentioned signal (rc.37 NEW-7 ground truth)
+  Scan user messages for token sequences matching workspace-relative
+  path patterns: `<segment>/<segment>/...<ext>` or `<segment>/**` or
+  ``<path>`` (backtick-quoted). De-dupe and push into user_mentioned_paths.
+
+Step 2: DEDUPE + CLASSIFY
+  // Union all three sources for the relevance_paths candidate set.
+  candidate_paths = unique(edit_paths ∪ user_mentioned_paths)
+  // read_paths stay separate — they become evidence_paths (Step 6) rather
+  // than activation triggers. A path that appears in BOTH edit_paths and
+  // read_paths goes to candidate_paths (writes dominate reads).
+  evidence_candidate_paths = unique(read_paths \ edit_paths)
+
+Step 3: BLACKLIST FILTER (applies to BOTH candidate sets)
   Drop paths matching any of:
     - **/*.<ext>          where <ext> is a single trivial extension on a single file
                           (i.e. avoid emitting bare **/*.md as a relevance pattern)
     - Repo-root single files: README.md, package.json, package-lock.json,
       pnpm-lock.yaml, tsconfig.json, .gitignore, LICENSE, CHANGELOG.md
-    - Read-only paths (never modified) — those go to ## Evidence, not relevance_paths
 
 Step 4: PUBLIC-PREFIX GENERALIZE (depth ≤ 2, minGroupSize = 2)
-  Group remaining paths by common prefix.
+  Group remaining candidate_paths by common prefix.
   For each group of ≥ 2 sibling paths sharing a prefix:
     - Compute longest common directory prefix
     - Limit generalization depth: at most 2 levels below the common prefix
     - Emit glob: <common-prefix>/**/*.<ext>  (or <common-prefix>/**/<filename>)
   Singleton paths (group size = 1) are kept as-is (literal path, no glob).
+  (Evidence paths are NOT generalized — they stay literal so plan-context
+  retrieval can do exact-match recall lookups.)
 
 Step 5: SCOPE GATE
-  IF relevance_scope == broad → relevance_paths = []  (force empty regardless of edit_paths)
+  IF relevance_scope == broad → relevance_paths = []  (force empty regardless of candidate_paths)
   IF relevance_scope == narrow → relevance_paths = result of Step 4
 
-Step 6: ATTACH READ-ONLY EVIDENCE
-  Read-only paths (filtered in Step 3) are emitted as a ## Evidence markdown
-  block in the pending entry body — NOT in relevance_paths. They document
-  what the agent consulted without making them part of the activation gate.
+Step 6: ATTACH evidence_paths to FRONTMATTER (rc.37 NEW-7 upgrade)
+  Pass evidence_candidate_paths (from Step 2, post-blacklist Step 3) to
+  fab_extract_knowledge as the `evidence_paths` input field. Server writes
+  them to frontmatter `evidence_paths: [...]` (NOT to body `## Evidence`).
+  This makes evidence consumable by plan-context retrieval as structured
+  data instead of forcing markdown re-parsing every recall. The legacy
+  body `## Evidence` block stays for back-compat readers but is no longer
+  the source of truth.
 ```
 
 ## Worked generalization example

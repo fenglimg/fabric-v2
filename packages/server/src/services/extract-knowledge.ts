@@ -388,6 +388,8 @@ export async function extractKnowledge(
         onboardSlot: input.onboard_slot,
         // v2.0.0-rc.37 NEW-37: pass-through topic tags.
         tags: input.tags,
+        // v2.0.0-rc.37 NEW-7: pass-through evidence_paths to frontmatter.
+        evidencePaths: input.evidence_paths,
       });
       const augmented = mergeEvidenceNotes(existing, fresh);
       await atomicWriteText(absolutePath, augmented);
@@ -429,6 +431,8 @@ export async function extractKnowledge(
     mustReadIf: input.must_read_if,
     onboardSlot: input.onboard_slot,
     tags: input.tags,
+    // v2.0.0-rc.37 NEW-7: pass-through evidence_paths to frontmatter.
+    evidencePaths: input.evidence_paths,
   });
   await atomicWriteText(absolutePath, fresh);
 
@@ -552,6 +556,12 @@ type FreshEntryArgs = {
   // Skill-inferred; empty array allowed but degrades narrow hint topic signal.
   // NOT part of idempotency_key.
   tags?: string[];
+  // v2.0.0-rc.37 NEW-7: read-only paths the agent consulted while building
+  // this knowledge. Lifted from the legacy body `## Evidence` markdown block
+  // into structured frontmatter so plan-context retrieval can intersect with
+  // current request paths as data. Optional; omit when no read-only signal
+  // captured. NOT part of idempotency_key (mutable, like relevance_paths).
+  evidencePaths?: string[];
 };
 
 function renderFreshEntry(args: FreshEntryArgs): string {
@@ -629,6 +639,14 @@ function renderFreshEntry(args: FreshEntryArgs): string {
   // bare-scalar shape upstream of this block. Omitted when undefined.
   if (args.onboardSlot !== undefined) {
     frontmatterLines.push(`onboard_slot: ${args.onboardSlot}`);
+  }
+  // v2.0.0-rc.37 NEW-7: structured read-only evidence paths. Emitted when
+  // caller-supplied; falls back to legacy body `## Evidence` block when
+  // omitted (back-compat — existing skills that don't yet pass evidencePaths
+  // continue to work). Flow-form array shape mirrors relevance_paths.
+  if (args.evidencePaths !== undefined && args.evidencePaths.length > 0) {
+    const body = args.evidencePaths.map((p) => quoteRelevancePath(p)).join(", ");
+    frontmatterLines.push(`evidence_paths: [${body}]`);
   }
   frontmatterLines.push(
     `x-fabric-idempotency-key: ${args.idempotencyKey}`,
