@@ -569,22 +569,22 @@ describe("planContext", () => {
     );
   }
 
-  it("test_plan_context_filter_broad_always_included — broad entries pass any target_paths", async () => {
+  it("test_plan_context_returns_all_even_unrelated_path — Wave A1: unrelated path still returns ALL entries (no filter)", async () => {
     const projectRoot = await createTempProject();
     await seedRelevanceRegistry(projectRoot);
 
-    // No glob matches any of the narrow entries.
+    // Pre-Wave-A1: src/unrelated/ did not match any narrow relevance_paths
+    // → only broad survived.
+    // Wave A1: server returns ALL, LLM decides via descriptions.
     const result = await planContext(projectRoot, {
       paths: ["src/unrelated/index.ts"],
       target_paths: ["src/unrelated/index.ts"],
     });
-    const ids = result.shared.description_index.map((item) => item.stable_id);
-    expect(ids).toContain("KT-GLD-0001"); // broad always
-    expect(ids).not.toContain("KT-GLD-0002"); // narrow filtered out
-    expect(ids).not.toContain("KT-DEC-0001"); // narrow filtered out
+    const ids = result.shared.description_index.map((item) => item.stable_id).sort();
+    expect(ids).toEqual(["KT-DEC-0001", "KT-GLD-0001", "KT-GLD-0002"]);
   });
 
-  it("test_plan_context_filter_narrow_matched_path — narrow entries pass when relevance_paths matches", async () => {
+  it("test_plan_context_returns_all_for_ui_path — Wave A1: src/ui path still returns ALL entries (broad + both narrows)", async () => {
     const projectRoot = await createTempProject();
     await seedRelevanceRegistry(projectRoot);
 
@@ -593,11 +593,13 @@ describe("planContext", () => {
       target_paths: ["src/ui/Button.tsx"],
     });
     const ids = result.shared.description_index.map((item) => item.stable_id).sort();
-    // Broad + ui-narrow match; auth-narrow does not.
-    expect(ids).toEqual(["KT-GLD-0001", "KT-GLD-0002"]);
+    // Wave A1: server returns ALL candidates with descriptions; LLM picks.
+    // Pre-Wave-A1 this would have been [KT-GLD-0001, KT-GLD-0002] (broad +
+    // ui-narrow only, auth-narrow excluded).
+    expect(ids).toEqual(["KT-DEC-0001", "KT-GLD-0001", "KT-GLD-0002"]);
   });
 
-  it("test_plan_context_filter_narrow_unmatched_excluded — non-matching narrow entries excluded", async () => {
+  it("test_plan_context_no_narrow_filter — Wave A1: server returns ALL candidates regardless of relevance_scope/relevance_paths match", async () => {
     const projectRoot = await createTempProject();
     await seedRelevanceRegistry(projectRoot);
 
@@ -606,8 +608,11 @@ describe("planContext", () => {
       target_paths: ["src/auth/login.ts"],
     });
     const ids = result.shared.description_index.map((item) => item.stable_id).sort();
-    // Broad + auth-narrow match; ui-narrow does not.
-    expect(ids).toEqual(["KT-DEC-0001", "KT-GLD-0001"]);
+    // Wave A1 (per KB [[no-server-side-kb-filter]]): no server-side relevance
+    // filter — broad + ALL narrow entries returned, LLM picks via descriptions.
+    // Pre-Wave-A1 behavior excluded ui-narrow when its relevance_paths did not
+    // anchor against the target_paths; that filter is now disabled.
+    expect(ids).toEqual(["KT-DEC-0001", "KT-GLD-0001", "KT-GLD-0002"]);
   });
 
   it("test_plan_context_no_paths_returns_all — empty target_paths fails open (narrow included)", async () => {
@@ -623,17 +628,18 @@ describe("planContext", () => {
     expect(ids).toEqual(["KT-DEC-0001", "KT-GLD-0001", "KT-GLD-0002"]);
   });
 
-  it("test_plan_context_filter_dir_anchor_match — relevance_paths ending in / matches via /** expansion", async () => {
+  it("test_plan_context_returns_all_for_dir_anchored_path — Wave A1: dir-anchored path still returns ALL entries", async () => {
     const projectRoot = await createTempProject();
     await seedRelevanceRegistry(projectRoot);
 
-    // packages/ui/ in registry → packages/ui/** under the hood.
+    // Pre-Wave-A1: packages/ui/ → packages/ui/** matched ui-narrow only.
+    // Wave A1: server returns ALL, LLM decides relevance from descriptions.
     const result = await planContext(projectRoot, {
       paths: ["packages/ui/Card.tsx"],
       target_paths: ["packages/ui/Card.tsx"],
     });
     const ids = result.shared.description_index.map((item) => item.stable_id).sort();
-    expect(ids).toEqual(["KT-GLD-0001", "KT-GLD-0002"]);
+    expect(ids).toEqual(["KT-DEC-0001", "KT-GLD-0001", "KT-GLD-0002"]);
   });
 
   it("test_plan_context_drops_cocos_fields — output schema lacks Cocos + L0/L1/L2 ceremony fields", async () => {

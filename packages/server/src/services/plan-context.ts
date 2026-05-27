@@ -468,19 +468,24 @@ function matchesAnyPath(globs: string[], targetPaths: string[]): boolean {
 }
 
 function shouldIncludeByRelevance(
-  item: RuleDescriptionIndexItem,
-  targetPaths: string[],
+  _item: RuleDescriptionIndexItem,
+  _targetPaths: string[],
 ): boolean {
-  // Default scope is broad: missing field → always pass.
-  const scope = item.relevance_scope ?? "broad";
-  if (scope === "broad") {
-    return true;
-  }
-  // Narrow scope. Fail-open when no target_paths supplied.
-  if (targetPaths.length === 0) {
-    return true;
-  }
-  return matchesAnyPath(item.relevance_paths ?? [], targetPaths);
+  // v2.0.0-rc.37 Wave A1 (per KB [[no-server-side-kb-filter]]): server returns
+  // ALL candidates with descriptions and the LLM decides which to load via
+  // ai_selected_stable_ids on fab_get_knowledge_sections. Server-side
+  // relevance_scope/relevance_paths filter is removed because:
+  //   1. Server keyword/path matching is blind to user task nuance that lives
+  //      only in the LLM's conversation context.
+  //   2. LLM looking at natural-language descriptions does semantic matching
+  //      natively — 374 entries × ~100 tok description ≈ 37K tok fits a single
+  //      MCP response comfortably.
+  //   3. Architectural extension of [[feedback-trust-recommendations]]: trust
+  //      the LLM at the system-design boundary, not just within a single turn.
+  // relevance_scope / relevance_paths remain in the schema for downstream
+  // consumers (hint CLI, audit tooling) but no longer gate plan-context
+  // surfacing.
+  return true;
 }
 
 function inferKnowledgeLayerFromContentRef(contentRef: string | undefined): "team" | "personal" | undefined {
