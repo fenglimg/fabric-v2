@@ -90,6 +90,7 @@ import {
   startMetricsFlush,
   stopMetricsFlush,
 } from "./services/metrics.js";
+import { startRotationTick, stopRotationTick } from "./services/rotation-tick.js";
 export {
   bumpCounter,
   drainCounters,
@@ -101,6 +102,7 @@ export {
   type MetricsRow,
   type MetricCounterName,
 } from "./services/metrics.js";
+export { startRotationTick, stopRotationTick } from "./services/rotation-tick.js";
 
 function writeStderr(message: string): void {
   process.stderr.write(`${message}\n`);
@@ -228,6 +230,11 @@ export async function startStdioServer(): Promise<void> {
   // first tool call (B2 bumpCounter writes), but no flush has fired yet.
   // The handler is best-effort; failures are swallowed inside flushMetrics.
   startMetricsFlush(projectRoot);
+  // v2.0.0-rc.37 Wave B (B4): start the 6h rotation tick so events.jsonl
+  // stays bounded even when the server is idle. Pre-rc.37 rotation only
+  // fired on doctor --fix; a long-lived stdio server that never sees
+  // doctor invocations let the ledger grow unchecked.
+  startRotationTick(projectRoot);
 
   const syncStart = Date.now();
   const backgroundReconcile = (async () => {
@@ -313,6 +320,11 @@ export function createShutdownHandler(deps: ShutdownHandlerDeps): () => void {
       // before exit. Best-effort; failures swallowed inside flushMetrics.
       await flushMetrics(deps.projectRoot);
       stopMetricsFlush(deps.projectRoot);
+      // v2.0.0-rc.37 Wave B (B4): cancel the rotation tick. Final rotation
+      // is intentionally NOT triggered here (a 5-second drain window is
+      // not the right place for retention-window pruning that can rewrite
+      // an MB-scale file). The next server start picks it up.
+      stopRotationTick(deps.projectRoot);
       process.stderr.write("[shutdown] ledger fsynced; closing server\n");
       try {
         await deps.closeServer();
