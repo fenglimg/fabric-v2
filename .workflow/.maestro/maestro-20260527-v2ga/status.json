@@ -670,7 +670,9 @@
       "wave": "F",
       "subject": "Windows path smoke (CI matrix)",
       "done_when": "GitHub Actions matrix 加 windows-latest minimum suite 绿",
-      "status": "pending"
+      "status": "done",
+      "_actual_done": "2026-05-27",
+      "note": "ci.yml 加第 2 job `windows-smoke` (runs-on: windows-latest), 跑 minimum suite: shared schema + atomic-write tests (POSIX-vs-Windows path 差异最敏感的 surface) + CLI --version smoke (bash shell, 验证 cross-platform binary 工作)。Full vitest matrix 留在 Linux validate job 以省 CI 分钟数 (Windows runner 计费 ~2x Linux)。覆盖目标: 抓 POSIX-only path concat / shebang / tmpdir assumption / windows path sep / forward-slash hardcoded 类 regression。"
     },
     {
       "id": "G1",
