@@ -214,6 +214,15 @@ exports[`CLI surface drift gate (docs/test-seed/cli.md §1) > command 'install' 
     {
       "alias": undefined,
       "default": false,
+      "description": "Skip bootstrap / MCP / skills / settings; only refresh fabric hook scripts + per-client hook config merges (.claude/.codex/.cursor/hooks/*).",
+      "name": "force-hooks-only",
+      "negativeDescription": undefined,
+      "required": undefined,
+      "type": "boolean",
+    },
+    {
+      "alias": undefined,
+      "default": false,
       "description": "Skip bootstrap / MCP / hooks / settings; refresh ONLY the fabric Skill template copies (.claude/.codex/.cursor/skills/*).",
       "name": "force-skills-only",
       "negativeDescription": undefined,

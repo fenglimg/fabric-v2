@@ -54,6 +54,13 @@ type InitArgs = {
   // scenario where a project owner wants the new SKILL.md without touching
   // their customised hooks/settings/MCP wiring.
   "force-skills-only"?: boolean;
+  // v2.0.0-rc.37 NEW-26: hooks-only refresh path (analogous to skills-only).
+  // Reruns the hook scripts + per-client hook config merges; skips bootstrap
+  // / MCP wiring / skill templates / settings.json (beyond the hooks block).
+  // Used when an upgrade ships new hook scripts (e.g. rc.37 NEW-21 added
+  // cite-policy-evict.cjs to Codex / Cursor) and the operator wants to absorb
+  // them without re-running the whole pipeline.
+  "force-hooks-only"?: boolean;
 };
 
 type InitOptions = {
@@ -308,6 +315,11 @@ export const installCommand = defineCommand({
       description: t("cli.install.args.force-skills-only.description"),
       default: false,
     },
+    "force-hooks-only": {
+      type: "boolean",
+      description: t("cli.install.args.force-hooks-only.description"),
+      default: false,
+    },
   },
   async run({ args }: { args: InitArgs }) {
     await runInitCommand(args);
@@ -376,6 +388,49 @@ export async function runSkillsOnlyRefresh(targetInput: string): Promise<void> {
   }
 }
 
+/**
+ * v2.0.0-rc.37 NEW-26 — `fabric install --force-hooks-only`.
+ *
+ * Reruns ONLY the hook scripts + per-client hook config merges. Skips
+ * bootstrap snapshot rewrite, MCP wiring, skill templates, and settings.json
+ * merges beyond what the hook installers themselves touch.
+ *
+ * Used when an upgrade ships new hook scripts (rc.37 NEW-21: cite-policy-
+ * evict.cjs landed in Codex / Cursor SessionStart slots) and the operator
+ * wants the new hooks without re-running the full pipeline.
+ *
+ * Failure modes mirror --force-skills-only: uninitialised target exits 1
+ * with a clear pointer to `fabric install` (full).
+ */
+export async function runHooksOnlyRefresh(targetInput: string): Promise<void> {
+  const target = normalizeTarget(targetInput);
+  const metaPath = join(target, ".fabric", "agents.meta.json");
+  if (!existsSync(metaPath)) {
+    const message = t("cli.install.force-hooks-only.uninitialised.message");
+    const hint = t("cli.install.force-hooks-only.uninitialised.hint");
+    process.stderr.write(`${message}\n${hint}\n`);
+    process.exitCode = 1;
+    return;
+  }
+
+  console.log(formatInitStageHeader(t("cli.install.force-hooks-only.banner")));
+  const result = await installHooks(target);
+
+  console.log(
+    t("cli.install.force-hooks-only.summary", {
+      written: String(result.installed.length),
+      skipped: String(result.skipped.length),
+      errors: String(result.errors.length),
+    }),
+  );
+  if (result.errors.length > 0) {
+    for (const err of result.errors) {
+      process.stderr.write(`  ${err}\n`);
+    }
+    process.exitCode = 1;
+  }
+}
+
 export async function runInitCommand(args: InitArgs): Promise<InitExecutionResult | void> {
   const logger = createDebugLogger(args.debug);
   const resolution = resolveDevMode(args.target, process.cwd());
@@ -388,6 +443,17 @@ export async function runInitCommand(args: InitArgs): Promise<InitExecutionResul
   // without an existing .fabric/agents.meta.json contract.
   if (args["force-skills-only"] === true) {
     await runSkillsOnlyRefresh(resolution.target);
+    return;
+  }
+
+  // v2.0.0-rc.37 NEW-26: --force-hooks-only mirror of --force-skills-only.
+  // Reruns the hook scripts + per-client hook config merges only — skips
+  // bootstrap snapshot rewrite, MCP wiring, skill templates, AGENTS.md
+  // managed-block updates. Designed for absorbing rc.37 NEW-21 cite-policy-
+  // evict.cjs additions to Codex/Cursor SessionStart slots without touching
+  // unrelated install state.
+  if (args["force-hooks-only"] === true) {
+    await runHooksOnlyRefresh(resolution.target);
     return;
   }
 

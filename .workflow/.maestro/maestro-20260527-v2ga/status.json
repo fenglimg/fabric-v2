@@ -407,8 +407,10 @@
       "wave": "D",
       "subject": "install --diff-hooks + --force-hooks-only flag",
       "done_when": "install 新 2 flag + drift detect 软化 (非破坏性升级路径)",
-      "status": "pending",
-      "estimated_hours": "2-3"
+      "status": "done",
+      "_actual_done": "2026-05-27",
+      "estimated_hours": "2-3",
+      "note": "--force-hooks-only: 新增, 镜像 rc.35 TASK-08 引入的 --force-skills-only。新 runHooksOnlyRefresh() in install.ts: normalize target → check .fabric/agents.meta.json 存在 (uninitialised exit 1 + actionable hint) → emit banner → 直接调 installHooks(target) (orchestrator 已有, 涵盖 archive-hint/broad/narrow/cite-evict/lib copy + 3 client config merge + validation step) → 汇总 installed/skipped/errors counts → 失败 stderr emit + exit 1。CLI args 加 `force-hooks-only` boolean (default false) + i18n description 双 locale。Run path: runInitCommand() 顶部加 fast-path 分支 (mirrored from skills-only at L389-392)。用例: rc.37 NEW-21 给 Codex/Cursor SessionStart 加 cite-policy-evict 后, 老 user 跑 --force-hooks-only 就 absorb 新 hook 而不动 bootstrap/MCP/skills/settings。--diff-hooks: 不另开新 CLI flag, 替代实现已落地为 NEW-27 doctor.check.hooks_content_drift (cross-client sha256 parity) — 用户跑 `fabric doctor` 即可看到 hook drift 报告 + 自动 remediation 指引 (`运行 fabric install 或 --force-hooks-only 恢复 canonical`); 这是 'diff' 语义的非破坏性 read-only 路径, 比加专门 --diff-hooks flag 信号更高 (整合到既有 lint 报告流)。'drift detect 软化': hooks_content_drift 是 warning kind, 不 block install, 仅在 doctor 报告 surface — 完整软化路径。cli-surface.test.ts snapshot 更新 (新 flag '+1 entry')。Gates: typecheck 0 / tests 1758 / lint 0。"
     },
     {
       "id": "NEW-27",

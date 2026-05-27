@@ -866,6 +866,15 @@ export const enMessages: Messages = {
   "cli.install.force-skills-only.uninitialised.hint":
     "Run `fabric install` (without --force-skills-only) first to lay down the base scaffold, then re-run with --force-skills-only for subsequent Skill refreshes.",
   "cli.install.force-skills-only.summary": "Skills refresh complete — written: {written}, skipped: {skipped}, errors: {errors}",
+  // v2.0.0-rc.37 NEW-26: --force-hooks-only mirror of --force-skills-only.
+  "cli.install.args.force-hooks-only.description":
+    "Skip bootstrap / MCP / skills / settings; only refresh fabric hook scripts + per-client hook config merges (.claude/.codex/.cursor/hooks/*).",
+  "cli.install.force-hooks-only.banner": "Refreshing fabric hooks only",
+  "cli.install.force-hooks-only.uninitialised.message":
+    "fabric install --force-hooks-only: project not initialised (.fabric/agents.meta.json missing).",
+  "cli.install.force-hooks-only.uninitialised.hint":
+    "Run `fabric install` (without --force-hooks-only) first to lay down the base scaffold; then re-run with --force-hooks-only to refresh hooks.",
+  "cli.install.force-hooks-only.summary": "Hooks refresh complete — written: {written}, skipped: {skipped}, errors: {errors}",
   "cli.install.mcp.install.global": "Using globally-installed @fenglimg/fabric-server",
   "cli.install.mcp.install.local": "Installing @fenglimg/fabric-server to project devDependencies",
   "cli.install.mcp.local.installing": "Running {manager} add -D @fenglimg/fabric-server...",

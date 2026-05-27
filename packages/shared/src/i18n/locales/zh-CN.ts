@@ -852,6 +852,15 @@ export const zhCNMessages: Messages = {
   "cli.install.force-skills-only.uninitialised.hint":
     "请先运行 `fabric install`(不带 --force-skills-only)铺设基础 scaffold;之后再用 --force-skills-only 做后续 Skill 刷新。",
   "cli.install.force-skills-only.summary": "Skill 刷新完成 — 写入: {written}, 跳过: {skipped}, 错误: {errors}",
+  // v2.0.0-rc.37 NEW-26: --force-hooks-only mirror of --force-skills-only。
+  "cli.install.args.force-hooks-only.description":
+    "跳过 bootstrap / MCP / skills / settings,只重新刷新 fabric hook scripts + per-client hook config 合并 (.claude/.codex/.cursor/hooks/*)。",
+  "cli.install.force-hooks-only.banner": "只刷新 fabric hooks",
+  "cli.install.force-hooks-only.uninitialised.message":
+    "fabric install --force-hooks-only: 项目未初始化(找不到 .fabric/agents.meta.json)。",
+  "cli.install.force-hooks-only.uninitialised.hint":
+    "请先运行 `fabric install`(不带 --force-hooks-only)铺设基础 scaffold;之后再用 --force-hooks-only 做后续 hook 刷新。",
+  "cli.install.force-hooks-only.summary": "Hooks 刷新完成 — 写入: {written}, 跳过: {skipped}, 错误: {errors}",
   "cli.install.mcp.install.global": "使用全局安装的 @fenglimg/fabric-server",
   "cli.install.mcp.install.local": "将 @fenglimg/fabric-server 安装到项目 devDependencies",
   "cli.install.mcp.local.installing": "正在运行 {manager} add -D @fenglimg/fabric-server...",
