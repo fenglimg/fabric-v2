@@ -1,6 +1,28 @@
 {
   "name": "@fenglimg/fabric-shared",
   "version": "2.0.0-rc.36",
+  "description": "Fabric shared types — Zod schemas, i18n, atomic-write helpers, MCP payload guard, error classes. Consumed by @fenglimg/fabric-server + @fenglimg/fabric-cli.",
+  "license": "MIT",
+  "author": "wangzhichao <fenglimg90@gmail.com>",
+  "homepage": "https://github.com/fenglimg/fabric-v2#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/fenglimg/fabric-v2.git",
+    "directory": "packages/shared"
+  },
+  "bugs": {
+    "url": "https://github.com/fenglimg/fabric-v2/issues"
+  },
+  "keywords": [
+    "fabric",
+    "shared",
+    "zod-schemas",
+    "i18n",
+    "mcp"
+  ],
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -43,7 +65,9 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "LICENSE",
+    "README.md"
   ],
   "scripts": {
     "build": "tsup src/index.ts src/i18n/index.ts src/types/index.ts src/node.ts src/node/atomic-write.ts src/node/mcp-payload-guard.ts src/errors/index.ts src/schemas/api-contracts.ts src/templates/bootstrap-canonical.ts --format esm --dts --clean",

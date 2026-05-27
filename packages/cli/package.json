@@ -1,6 +1,30 @@
 {
   "name": "@fenglimg/fabric-cli",
   "version": "2.0.0-rc.36",
+  "description": "Fabric CLI — installs the MCP server + skills + hooks for Claude Code, Cursor, and Codex CLI; runs doctor / knowledge maintenance.",
+  "license": "MIT",
+  "author": "wangzhichao <fenglimg90@gmail.com>",
+  "homepage": "https://github.com/fenglimg/fabric-v2#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/fenglimg/fabric-v2.git",
+    "directory": "packages/cli"
+  },
+  "bugs": {
+    "url": "https://github.com/fenglimg/fabric-v2/issues"
+  },
+  "keywords": [
+    "fabric",
+    "mcp",
+    "cli",
+    "claude-code",
+    "cursor",
+    "codex-cli",
+    "ai-knowledge-management"
+  ],
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "type": "module",
   "bin": {
     "fabric": "dist/index.js"
@@ -9,7 +33,9 @@
   "types": "./dist/index.d.ts",
   "files": [
     "dist",
-    "templates"
+    "templates",
+    "LICENSE",
+    "README.md"
   ],
   "scripts": {
     "build": "tsup",

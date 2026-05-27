@@ -1,11 +1,38 @@
 {
   "name": "@fenglimg/fabric-server",
   "version": "2.0.0-rc.36",
+  "description": "Fabric MCP knowledge server — stdio transport for Claude Code / Cursor / Codex CLI, manages .fabric/ knowledge base + agents.meta.json + event ledger.",
+  "license": "MIT",
+  "author": "wangzhichao <fenglimg90@gmail.com>",
+  "homepage": "https://github.com/fenglimg/fabric-v2#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/fenglimg/fabric-v2.git",
+    "directory": "packages/server"
+  },
+  "bugs": {
+    "url": "https://github.com/fenglimg/fabric-v2/issues"
+  },
+  "keywords": [
+    "fabric",
+    "mcp",
+    "model-context-protocol",
+    "claude-code",
+    "cursor",
+    "codex-cli",
+    "ai-knowledge-management",
+    "stdio"
+  ],
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "files": [
-    "dist"
+    "dist",
+    "LICENSE",
+    "README.md"
   ],
   "scripts": {
     "build": "tsup src/index.ts --format esm --dts --clean",
@@ -16,16 +43,11 @@
   "dependencies": {
     "@fenglimg/fabric-shared": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.29.0",
-    "chokidar": "^4.0.3",
-    "express": "^5.2.1",
     "minimatch": "^10.0.1",
     "zod": "^3.25.0"
   },
   "devDependencies": {
-    "@types/express": "^5.0.6",
     "@types/node": "^22.15.0",
-    "@types/supertest": "^7.2.0",
-    "supertest": "^7.2.2",
     "tsup": "^8.5.0",
     "typescript": "^5.8.3",
     "vitest": "^3.2.4",
