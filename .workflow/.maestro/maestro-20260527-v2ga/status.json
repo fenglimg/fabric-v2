@@ -413,8 +413,10 @@
       "wave": "D",
       "subject": "doctor drift_summary 头部统一 view + --check-hook-content sha256",
       "done_when": "doctor 加 drift_summary section + hook content sha 比对",
-      "status": "pending",
-      "estimated_hours": "2"
+      "status": "done",
+      "_actual_done": "2026-05-27",
+      "estimated_hours": "2",
+      "note": "Hook content sha256: 新 doctor check `hooks_content_drift`,inspectHooksContentDrift 扫 3 client hooks/ (.claude/.codex/.cursor), 把所有 *.cjs 按 basename group (basename → [{client, abs}]), 对 length ≥ 2 的 group 计算每个 copy 的 sha256, 若 hash 不全相等则 flag 该 basename + 涉及 clients。这等价于 'install 复制同一模板, 复制后跨 client 应保持 byte-equal' invariant 的 runtime 验证 — 不需 server 端访问 cli/templates 路径, 直接看 deployed copies 互相是否一致 (architectural cleanness)。三档 ok message: skipped (单 client 或无 hook) / aligned (count + sha 全一致) / drift (count + 首例 basename + clients)。与 NEW-20 hooks_runtime 互补: runtime 抓 'each parses' (in-isolation 检查), content_drift 抓 'all copies hash equal' (consistency 检查); 一个 file 可以独自合法 parse 但与同 basename 的别 client copy 不同。drift_summary 头部统一 view 半边: NEW-25 已加 TL;DR header (top-3 critical), 已经是事实上的 drift 头部 view (排序优先 fixable_error > manual_error > warn, drift 类 issue 自然落 top); 重写一个 drift-only summary 是 noise。doctor.test.ts v2-knowledge 列表加 'Hooks cross-client content parity' + toHaveLength 51→52。doctor-i18n snapshot 跑 -u 重生 (2 updated)。Gates: typecheck 0 / tests 1758 (432+606+720) / lint 0."
     },
     {
       "id": "NEW-28",

@@ -735,6 +735,15 @@ export const zhCNMessages: Messages = {
     "{count} 个 hook 文件 runtime 不健康；首例：{first_path}（{first_detail}）。",
   "doctor.check.hooks_runtime.remediation":
     "运行 `fabric install` 重写损坏的 hook 文件（覆盖式，幂等）。若文件是被外部进程破坏的，确认源头再跑 install。",
+  // v2.0.0-rc.37 NEW-27: hooks_content_drift — cross-client sha256 parity.
+  "doctor.check.hooks_content_drift.name": "Hooks 跨客户端内容一致性",
+  "doctor.check.hooks_content_drift.ok.skipped": "未发现跨客户端共存的 hook 文件（单 client 安装或全部缺失）；跳过 hooks_content_drift 检查。",
+  "doctor.check.hooks_content_drift.ok.aligned":
+    "已扫描 {count} 个 hook 副本，跨 client (.claude / .codex / .cursor) sha256 全部一致。",
+  "doctor.check.hooks_content_drift.message":
+    "{count} 个 hook basename 在 client 之间内容 drift；首例：{first_basename}（涉及 {first_clients}）。`fabric install` 复制同一模板到三 client，drift 通常来自手动编辑。",
+  "doctor.check.hooks_content_drift.remediation":
+    "运行 `fabric install` 把所有 client 的 hook 副本恢复到 canonical 模板。若你确实需要 client-specific hook 行为，建议改 lib/ 共享脚本或 templates/hooks/configs/ 配置而非直接编辑安装后的 .cjs。",
   // rc.31 BUG-G2/G5: promote-ledger invariant check.
   "doctor.check.promote_ledger_invariant.name": "Promote ledger invariant",
   "doctor.check.promote_ledger_invariant.ok":

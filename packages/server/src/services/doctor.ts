@@ -1161,6 +1161,9 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
   // v2.0.0-rc.37 NEW-20: hooks_runtime closes the gap below hooks_wired —
   // shebang + Node.js syntax validity of each installed .cjs hook file.
   const hooksRuntime = inspectHooksRuntime(projectRoot);
+  // v2.0.0-rc.37 NEW-27: hooks_content_drift — cross-client sha256 parity
+  // for the same hook basename across .claude/.codex/.cursor.
+  const hooksContentDrift = inspectHooksContentDrift(projectRoot);
   // rc.31 BUG-G2/G5: promote-ledger invariant check (proposed >= started >= promoted).
   // Surfaces ledger desync (e.g. werewolf-minigame rc.30 audit: proposed=17,
   // started=48, promoted=52). Warning kind — does not bump report status to
@@ -1295,6 +1298,7 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     // promote-ledger checks — all three are install/runtime-state advisories.
     createHooksWiredCheck(t, hooksWired),
     createHooksRuntimeCheck(t, hooksRuntime),
+    createHooksContentDriftCheck(t, hooksContentDrift),
     // rc.35 TASK-04 (P0-9.b): global CLI version probe — surfaces rc.30 PATH
     // installs against rc.31+ project schemas (the silent-hooks fault mode).
     // Sits next to hooks_wired since both lints diagnose runtime install state.
@@ -3995,6 +3999,125 @@ function createHooksWiredCheck(t: Translator, inspection: HooksWiredInspection):
       missing: inspection.missingHooks.join(", "),
     }),
     t("doctor.check.hooks_wired.remediation"),
+  );
+}
+
+// v2.0.0-rc.37 NEW-27: hook-content cross-client drift.
+//
+// `fabric install` copies the SAME canonical template into each of the three
+// client `<client>/hooks/` directories. If a user manually edits one copy
+// (debugging a hook, accidentally), drift accumulates — the same hook fires
+// differently across clients. This check verifies cross-client sha256 parity:
+// for each hook basename present in MORE than one client root, all copies
+// must hash identically.
+//
+// Distinct from hooks_runtime (rc.37 NEW-20): that one validates each file
+// in isolation (shebang + parseable). This one is the *consistency* gate:
+// hooks_runtime passes if every copy individually parses but copies have
+// silently diverged. Together they cover the fault tree.
+//
+// Note: cross-client byte-equality is the *desired* invariant — `fabric
+// install` copies the same template bytes to each client root. We don't
+// need access to the original template here; equality between deployed
+// copies is sufficient signal. Single-client workspaces (e.g. only .claude/
+// exists) trivially pass.
+type HookContentDriftPair = {
+  basename: string;
+  clients: Array<"claude" | "codex" | "cursor">;
+  hashes: Array<{ client: string; sha: string }>;
+};
+type HooksContentDriftInspection = {
+  scanned: number;
+  drifts: HookContentDriftPair[];
+};
+
+function inspectHooksContentDrift(projectRoot: string): HooksContentDriftInspection {
+  const hookFilesByBasename = new Map<
+    string,
+    Array<{ client: "claude" | "codex" | "cursor"; abs: string }>
+  >();
+  for (const { client, dir } of HOOKS_RUNTIME_CLIENT_DIRS) {
+    const absDir = join(projectRoot, dir);
+    if (!existsSync(absDir)) continue;
+    let entries: string[];
+    try {
+      entries = readdirSync(absDir);
+    } catch {
+      continue;
+    }
+    for (const name of entries) {
+      if (!name.endsWith(".cjs")) continue;
+      const abs = join(absDir, name);
+      let stat;
+      try {
+        stat = statSync(abs);
+      } catch {
+        continue;
+      }
+      if (!stat.isFile()) continue;
+      const arr = hookFilesByBasename.get(name) ?? [];
+      arr.push({ client, abs });
+      hookFilesByBasename.set(name, arr);
+    }
+  }
+  const drifts: HookContentDriftPair[] = [];
+  let scanned = 0;
+  for (const [basename, copies] of hookFilesByBasename) {
+    if (copies.length < 2) continue; // single-client install — nothing to compare
+    scanned += copies.length;
+    const hashes: Array<{ client: string; sha: string }> = [];
+    for (const { client, abs } of copies) {
+      try {
+        const body = readFileSync(abs);
+        hashes.push({ client, sha: sha256(body.toString("utf8")) });
+      } catch {
+        // unreadable copy — let hooks_runtime catch it; skip drift comparison
+      }
+    }
+    if (hashes.length < 2) continue;
+    const first = hashes[0].sha;
+    if (hashes.some((h) => h.sha !== first)) {
+      drifts.push({
+        basename,
+        clients: copies.map((c) => c.client),
+        hashes,
+      });
+    }
+  }
+  drifts.sort((a, b) => a.basename.localeCompare(b.basename));
+  return { scanned, drifts };
+}
+
+function createHooksContentDriftCheck(
+  t: Translator,
+  inspection: HooksContentDriftInspection,
+): DoctorCheck {
+  if (inspection.scanned === 0) {
+    return okCheck(
+      t("doctor.check.hooks_content_drift.name"),
+      t("doctor.check.hooks_content_drift.ok.skipped"),
+    );
+  }
+  if (inspection.drifts.length === 0) {
+    return okCheck(
+      t("doctor.check.hooks_content_drift.name"),
+      t("doctor.check.hooks_content_drift.ok.aligned", {
+        count: String(inspection.scanned),
+      }),
+    );
+  }
+  const first = inspection.drifts[0];
+  return issueCheck(
+    t("doctor.check.hooks_content_drift.name"),
+    "warn",
+    "warning",
+    "hooks_content_drift",
+    t("doctor.check.hooks_content_drift.message", {
+      count: String(inspection.drifts.length),
+      first_basename: first.basename,
+      first_clients: first.clients.join(", "),
+    }),
+    t("doctor.check.hooks_content_drift.remediation"),
   );
 }
 

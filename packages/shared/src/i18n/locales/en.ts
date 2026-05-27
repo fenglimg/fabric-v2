@@ -746,6 +746,15 @@ export const enMessages: Messages = {
     "{count} hook files are unhealthy at runtime; first: {first_path} ({first_detail}).",
   "doctor.check.hooks_runtime.remediation":
     "Run `fabric install` to overwrite broken hook files (idempotent). If a hook was corrupted by an external process, confirm the cause before re-running install.",
+  // v2.0.0-rc.37 NEW-27: hooks_content_drift — cross-client sha256 parity.
+  "doctor.check.hooks_content_drift.name": "Hooks cross-client content parity",
+  "doctor.check.hooks_content_drift.ok.skipped": "No hook files co-exist across multiple clients (single-client install or no hooks present); skipping hooks_content_drift check.",
+  "doctor.check.hooks_content_drift.ok.aligned":
+    "Scanned {count} hook copies; sha256 of every basename matches across .claude / .codex / .cursor.",
+  "doctor.check.hooks_content_drift.message":
+    "{count} hook basename(s) drift across clients; first: {first_basename} (involves {first_clients}). `fabric install` copies the same template to all three clients — drift usually comes from manual edits.",
+  "doctor.check.hooks_content_drift.remediation":
+    "Run `fabric install` to restore each client's hook copy to the canonical template. If you actually need client-specific behavior, modify a shared lib/ helper or templates/hooks/configs/ wiring instead of editing the installed .cjs in place.",
   // rc.31 BUG-G2/G5: promote-ledger invariant check.
   "doctor.check.promote_ledger_invariant.name": "Promote ledger invariant",
   "doctor.check.promote_ledger_invariant.ok":
