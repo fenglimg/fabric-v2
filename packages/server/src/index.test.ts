@@ -33,6 +33,7 @@ describe("createFabricServer", () => {
       "fab_extract_knowledge",
       "fab_get_knowledge_sections",
       "fab_plan_context",
+      "fab_recall",
       "fab_review",
     ]);
   });

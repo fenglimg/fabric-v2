@@ -352,6 +352,130 @@ export const knowledgeSectionsAnnotations = {
 } as const;
 
 // ---------------------------------------------------------------------------
+// MCP tool contract — fab_recall (v2.0.0-rc.37 NEW-3)
+//
+// One-call shortcut over (fab_plan_context → fab_get_knowledge_sections). After
+// rc.37 Wave A1 removed server-side selectable filtering, the LLM-driven
+// id-picking step lost most of its value: every entry returned by plan-context
+// is `selectable=true`, so the AI's "selection" is almost always "pick all".
+// `fab_recall` collapses the two-step ceremony for that common case: pass
+// `paths` (+ optional `intent`), get back the full markdown bodies + plan
+// metadata in a single MCP round-trip. Internally still walks the same
+// planContext + getKnowledgeSections services so emitted ledger events,
+// selection token TTL, and auto-heal paths are identical.
+// ---------------------------------------------------------------------------
+
+export const recallInputSchema = z.object({
+  paths: z
+    .array(z.string())
+    .min(1)
+    .describe(
+      "Candidate file paths to recall Fabric rules for. Same semantics as fab_plan_context.paths.",
+    ),
+  intent: z
+    .string()
+    .optional()
+    .describe("User-stated requirement or implementation intent; used to build a neutral requirement profile."),
+  known_tech: z
+    .array(z.string())
+    .optional()
+    .describe("Known technologies involved."),
+  detected_entities: z
+    .record(z.array(z.string()))
+    .optional()
+    .describe("Optional path-keyed detected entities."),
+  client_hash: z
+    .string()
+    .optional()
+    .describe("Revision hash from a prior call; enables stale detection."),
+  correlation_id: z
+    .string()
+    .optional()
+    .describe("Optional caller-provided correlation id for Event Ledger records."),
+  session_id: z
+    .string()
+    .optional()
+    .describe(
+      "Current client session id (Claude Code: $session_id; Codex: corresponding identifier). Enables cross-session debt tracking. Falls back gracefully if omitted.",
+    ),
+  layer_filter: z
+    .enum(["team", "personal", "both"])
+    .optional()
+    .describe(
+      "Restrict recall to the named layer. Default: fabric-config.default_layer_filter.",
+    ),
+  target_paths: z
+    .array(z.string())
+    .optional()
+    .describe(
+      "Path context for narrow-scope relevance filtering. Defaults to `paths`; empty = no filter.",
+    ),
+  ids: z
+    .array(z.string())
+    .optional()
+    .describe(
+      "Optional explicit stable_ids to fetch. When omitted, fab_recall returns ALL entries plan-context surfaces (the common case after rc.37 selectable-filter removal). When provided, filters fetched bodies to this set.",
+    ),
+});
+
+export const recallOutputSchema = z.object({
+  revision_hash: z.string(),
+  stale: z.boolean(),
+  // Selection token surfaced for callers who want to continue the conversation
+  // with fab_get_knowledge_sections (e.g. fetch additional ids later) — every
+  // recall response is still token-backed internally.
+  selection_token: z.string(),
+  entries: z.array(
+    z.object({
+      path: z.string(),
+      requirement_profile: _requirementProfileSchema,
+      description_index: z.array(_descriptionIndexItemSchema),
+    }),
+  ),
+  shared: z.object({
+    description_index: z.array(_descriptionIndexItemSchema),
+    preflight_diagnostics: z.array(
+      z.object({
+        code: z.literal("missing_description"),
+        severity: z.literal("warn"),
+        message: z.string(),
+        stable_ids: z.array(z.string()).optional(),
+        path: z.string().optional(),
+      }),
+    ),
+  }),
+  // Same shape as knowledgeSectionsOutputSchema.rules — full body keyed by stable_id.
+  rules: z.array(
+    z.object({
+      stable_id: z.string(),
+      level: z.enum(["L0", "L1", "L2"]),
+      path: z.string(),
+      body: z.string(),
+    }),
+  ),
+  selected_stable_ids: z.array(z.string()),
+  diagnostics: z.array(
+    z.object({
+      code: z.literal("missing_knowledge_metadata"),
+      severity: z.literal("warn"),
+      stable_id: z.string(),
+      message: z.string(),
+    }),
+  ),
+  warnings: z.array(structuredWarningSchema).optional(),
+  auto_healed: z.boolean().optional(),
+  previous_revision_hash: z.string().optional(),
+});
+
+export const recallAnnotations = {
+  readOnlyHint: true,
+  idempotentHint: true,
+  destructiveHint: false,
+  openWorldHint: false,
+  title: "Recall Fabric knowledge (one-call)",
+} as const;
+
+// ---------------------------------------------------------------------------
 // MCP tool contracts — fab_extract_knowledge (rc.2 protocol pre-lock)
 //
 // Semi-thick design: the Skill summarizes the user/session context, the MCP

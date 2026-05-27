@@ -91,8 +91,16 @@ export type SelectionTokenState = {
 
 // v2.0.0-rc.29 TASK-008 (BUG-F3): default selection_token TTL. Overridable
 // at runtime via fabric.config.json's `selection_token_ttl_ms` (per
-// projectRoot). The default 5 minutes matches the pre-rc.29 hard-coded value.
-const SELECTION_TOKEN_TTL_DEFAULT_MS = 5 * 60 * 1000;
+// projectRoot).
+//
+// v2.0.0-rc.37 NEW-3: default bumped 5min → 30min. After A1 removed
+// `selectable=false` server-side filtering, the AI can legitimately reuse a
+// single fab_plan_context token across a longer reasoning loop (multi-tool
+// chains, iterative refinement). 5min was tuned for the single straight-through
+// plan→fetch pair; 30min covers mid-task token reuse without bloating cache
+// (tokens are still cleared on every `revision_hash` change). Operators on
+// long-running agents can override via fabric-config.selection_token_ttl_ms.
+const SELECTION_TOKEN_TTL_DEFAULT_MS = 30 * 60 * 1000;
 // v2.0-rc.7 T9: degenerate-mode threshold removed — the API is now symmetric
 // across all candidate counts. See docs/decisions/rc5-a3-superseded.md.
 const selectionTokenCache = new Map<string, SelectionTokenState>();
