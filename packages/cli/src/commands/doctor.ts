@@ -8,6 +8,7 @@ import {
   runDoctorArchiveHistory,
   runDoctorCiteCoverage,
   runDoctorFix,
+  runDoctorHistoryAll,
   runDoctorReport,
   type ArchiveHistoryReport,
   type CiteCoverageReport,
@@ -15,6 +16,7 @@ import {
   type DoctorIssue,
   type DoctorReport,
   type EnrichDescriptionsReport,
+  type HistoryAllReport,
 } from "@fenglimg/fabric-server";
 
 import { paint, symbol } from "../colors.js";
@@ -64,6 +66,8 @@ type DoctorArgs = {
   // mutually exclusive with the other mutation/report surfaces. Pairs with
   // `--since` for the time window (default 7d).
   "archive-history"?: boolean;
+  // rc.37 NEW-33: unified history view. Mode = `archive | fix | all`.
+  history?: string;
 };
 
 // rc.7 T11: lint codes that --fix-knowledge will mutate, mapped to the human
@@ -193,6 +197,16 @@ export const doctorCommand = defineCommand({
       description: t("cli.doctor.args.archive-history.description"),
       default: false,
     },
+    // rc.37 NEW-33: unified history view across archive / fix / all surfaces.
+    // Mode = `archive | fix | all` (the `archive` mode delegates to the
+    // existing runDoctorArchiveHistory; `fix` aggregates doctor_run events;
+    // `all` rolls up both into a per-day count table). Read-only; mutex
+    // with the mutation arms.
+    history: {
+      type: "string",
+      description: t("cli.doctor.args.history.description"),
+      valueHint: "archive|fix|all",
+    },
   },
   async run({ args }: { args: DoctorArgs }) {
     const workspaceRoot = process.cwd();
@@ -224,6 +238,49 @@ export const doctorCommand = defineCommand({
         process.exitCode = 1;
         return;
       }
+    }
+
+    // rc.37 NEW-33: unified --history <mode> view. archive | fix | all.
+    // Read-only; mutex with all mutation arms. `archive` mode delegates to
+    // the existing archive-history surface for backward compatibility.
+    const historyMode = args.history;
+    if (typeof historyMode === "string" && historyMode.length > 0) {
+      if (fix || fixKnowledge || citeCoverage || enrichDesc || archiveHistory) {
+        writeStderr(dt("cli.doctor.errors.history-mutex"));
+        process.exitCode = 1;
+        return;
+      }
+      if (historyMode !== "archive" && historyMode !== "fix" && historyMode !== "all") {
+        writeStderr(dt("cli.doctor.errors.invalid-history-mode", { input: historyMode }));
+        process.exitCode = 1;
+        return;
+      }
+      const sinceInput = args.since ?? "7d";
+      let sinceMs: number;
+      try {
+        sinceMs = parseSinceDuration(sinceInput);
+      } catch {
+        writeStderr(dt("cli.doctor.errors.invalid-since", { input: sinceInput }));
+        process.exitCode = 1;
+        return;
+      }
+      if (historyMode === "archive") {
+        const report = await runDoctorArchiveHistory(resolution.target, { since: sinceMs });
+        if (args.json === true) {
+          writeStdout(JSON.stringify(report, null, 2));
+        } else {
+          renderArchiveHistoryReport(report, sinceInput, dt);
+        }
+        return;
+      }
+      // fix | all → unified per-day rollup
+      const report = await runDoctorHistoryAll(resolution.target, { since: sinceMs });
+      if (args.json === true) {
+        writeStdout(JSON.stringify(report, null, 2));
+      } else {
+        renderHistoryAllReport(report, sinceInput, historyMode, dt);
+      }
+      return;
     }
 
     // v2.0.0-rc.25 TASK-10: --archive-history is a read-only audit surface.
@@ -1164,6 +1221,48 @@ function renderArchiveHistoryReport(
     lines.push(
       `| ${entry.session_id_short} | ${lastAttempt} | ${entry.outcome} | ${entry.candidates_proposed} | ${entry.age_since_covered_hours}h |`,
     );
+  }
+  writeStdout(lines.join("\n"));
+}
+
+// rc.37 NEW-33: render the unified per-day history table. `fix` and `all`
+// modes share the same row shape; `fix` shows only doctor_run columns and
+// `all` adds archive columns. Empty windows print a single empty-state line.
+function renderHistoryAllReport(
+  report: HistoryAllReport,
+  sinceLabel: string,
+  mode: "fix" | "all",
+  dt: DoctorTranslator,
+): void {
+  if (report.rows.length === 0) {
+    writeStdout(dt("doctor.history.empty", { sinceLabel, mode }));
+    return;
+  }
+  const lines: string[] = [];
+  lines.push(
+    dt("doctor.history.header", {
+      sinceLabel,
+      mode,
+      days: String(report.rows.length),
+    }),
+  );
+  lines.push("");
+  if (mode === "fix") {
+    lines.push("| date       | lint | fix | issues | mutations |");
+    lines.push("| ---------- | ---- | --- | ------ | --------- |");
+    for (const row of report.rows) {
+      lines.push(
+        `| ${row.date} | ${row.doctor_runs_lint} | ${row.doctor_runs_fix} | ${row.doctor_total_issues} | ${row.doctor_total_mutations} |`,
+      );
+    }
+  } else {
+    lines.push("| date       | lint | fix | issues | mutations | archive | proposed |");
+    lines.push("| ---------- | ---- | --- | ------ | --------- | ------- | -------- |");
+    for (const row of report.rows) {
+      lines.push(
+        `| ${row.date} | ${row.doctor_runs_lint} | ${row.doctor_runs_fix} | ${row.doctor_total_issues} | ${row.doctor_total_mutations} | ${row.archive_attempts} | ${row.archive_proposed} |`,
+      );
+    }
   }
   writeStdout(lines.join("\n"));
 }

@@ -783,6 +783,15 @@ export const zhCNMessages: Messages = {
   "doctor.archive-history.table.outcome": "结果",
   "doctor.archive-history.table.candidates": "候选数",
   "doctor.archive-history.table.coveredGap": "覆盖距今",
+  // rc.37 NEW-33: 统一 --history <mode> 视图 (archive | fix | all)。
+  "cli.doctor.args.history.description":
+    "渲染统一的逐日 doctor / archive 历史 (mode: archive | fix | all)。只读;与 --fix / --fix-knowledge / --cite-coverage / --enrich-descriptions / --archive-history 互斥。",
+  "cli.doctor.errors.history-mutex":
+    "--history 不能与 --fix / --fix-knowledge / --cite-coverage / --enrich-descriptions / --archive-history 组合。请分别运行。",
+  "cli.doctor.errors.invalid-history-mode":
+    "无效的 --history mode '{input}'。可选: archive | fix | all。",
+  "doctor.history.header": "Doctor 历史 (mode={mode}, 近 {sinceLabel}, 共 {days} 天)",
+  "doctor.history.empty": "--since={sinceLabel} 窗口内无 doctor 或 archive 活动 (mode={mode})。",
 
   "cli.hooks.description": "管理 Fabric Git 钩子模板。",
   "cli.hooks.install.description": "安装 Fabric Husky pre-commit 钩子模板。",

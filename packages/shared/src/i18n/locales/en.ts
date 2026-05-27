@@ -796,6 +796,15 @@ export const enMessages: Messages = {
   "doctor.archive-history.table.outcome": "Outcome",
   "doctor.archive-history.table.candidates": "Candidates",
   "doctor.archive-history.table.coveredGap": "Covered gap",
+  // rc.37 NEW-33: unified --history <mode> view (archive | fix | all).
+  "cli.doctor.args.history.description":
+    "Render unified per-day history (mode: archive | fix | all). Read-only; mutex with --fix / --fix-knowledge / --cite-coverage / --enrich-descriptions / --archive-history.",
+  "cli.doctor.errors.history-mutex":
+    "--history cannot be combined with --fix, --fix-knowledge, --cite-coverage, --enrich-descriptions, or --archive-history. Run them separately.",
+  "cli.doctor.errors.invalid-history-mode":
+    "Invalid --history mode '{input}'. Use archive | fix | all.",
+  "doctor.history.header": "Doctor history (mode={mode}, last {sinceLabel}, {days} day(s))",
+  "doctor.history.empty": "No doctor or archive activity within the --since={sinceLabel} window (mode={mode}).",
 
   "cli.hooks.description": "Manage Fabric Git hook templates.",
   "cli.hooks.install.description": "Install the Fabric Husky pre-commit hook template.",

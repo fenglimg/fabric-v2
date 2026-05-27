@@ -454,9 +454,9 @@
       "wave": "D",
       "subject": "doctor history 扩展全 mode",
       "done_when": "doctor --history all 显示 fix / cite-coverage / archive 历次趋势",
-      "status": "pending",
-      "estimated_hours": "1-2"
-    },
+      "status": "done",
+      "_actual_done": "2026-05-27",
+      "note": "新 `--history <mode>` flag (archive | fix | all), 读 doctor_run + session_archive_attempted 事件做逐日 rollup. archive mode 委托给现有 runDoctorArchiveHistory (背向兼容); fix mode 列 doctor_run 当日 lint/fix 计数 + 累计 issues/mutations; all mode 在 fix 基础上加 archive_attempts + archive_proposed 两列. CLI mutex 与所有 mutation 弧 + archive-history 冲突报错. cite-coverage 历次趋势未独立列出 — 该弧依赖 cite_policy_activated marker, 用户调 `--cite-coverage --since=...` 直接拿汇总; 把它折进 history 会改变报告 shape, 不在 1-2h 范围。i18n keys + CLI surface snapshot + docs/test-seed/cli.md §1 同步. 2 新测试: empty window / 双日桶聚合 + 倒序. tests 1752/1752 + lint 0 + typecheck 0."
     {
       "id": "NEW-34",
       "wave": "B",

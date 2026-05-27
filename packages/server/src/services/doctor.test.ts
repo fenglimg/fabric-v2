@@ -7051,6 +7051,96 @@ describe("runDoctorArchiveHistory", () => {
   });
 });
 
+// rc.37 NEW-33: runDoctorHistoryAll — unified per-day rollup across doctor_run
+// + session_archive_attempted events. Validates the bucket aggregation +
+// sort + empty-window fast-path.
+describe("runDoctorHistoryAll", () => {
+  function seedDoctorRunEvent(
+    target: string,
+    ts: number,
+    mode: "lint" | "fix-knowledge",
+    issues: number,
+    mutations?: number,
+  ): void {
+    const ledgerPath = join(target, ".fabric", "events.jsonl");
+    const existing = existsSync(ledgerPath) ? readFileSync(ledgerPath, "utf8") : "";
+    const payload: Record<string, unknown> = {
+      kind: "fabric-event",
+      id: `event:doc:${randomUUID()}`,
+      ts,
+      schema_version: 1,
+      event_type: "doctor_run",
+      mode,
+      issues,
+      timestamp: new Date(ts).toISOString(),
+    };
+    if (mutations !== undefined) payload.mutations = mutations;
+    writeFileSync(ledgerPath, existing + JSON.stringify(payload) + "\n", "utf8");
+  }
+
+  function seedArchiveEvent(target: string, ts: number, proposed: number): void {
+    const ledgerPath = join(target, ".fabric", "events.jsonl");
+    const existing = existsSync(ledgerPath) ? readFileSync(ledgerPath, "utf8") : "";
+    const payload = {
+      kind: "fabric-event",
+      id: `event:arch:${randomUUID()}`,
+      ts,
+      schema_version: 1,
+      session_id: `sess-${ts}`,
+      event_type: "session_archive_attempted",
+      outcome: proposed > 0 ? "proposed" : "skipped_no_signal",
+      covered_through_ts: ts,
+      candidates_proposed: proposed,
+      knowledge_proposed_ids: [],
+    };
+    writeFileSync(ledgerPath, existing + JSON.stringify(payload) + "\n", "utf8");
+  }
+
+  it("returns empty rows when no doctor or archive events sit in the window", async () => {
+    const { runDoctorHistoryAll } = await import("./doctor.js");
+    const target = createInitializedProject("history-all-empty");
+    writeFile(".fabric/events.jsonl", "", target);
+
+    const report = await runDoctorHistoryAll(target, { since: 0 });
+    expect(report.rows).toHaveLength(0);
+    expect(report.since_ms).toBe(0);
+    expect(Number.isNaN(new Date(report.generated_at).getTime())).toBe(false);
+  });
+
+  it("buckets doctor_run and archive events by UTC date and sorts desc", async () => {
+    const { runDoctorHistoryAll } = await import("./doctor.js");
+    const target = createInitializedProject("history-all-buckets");
+    writeFile(".fabric/events.jsonl", "", target);
+
+    // Two UTC dates: day A (older) and day B (newer). Crafted in epoch-ms.
+    const dayA = Date.UTC(2026, 0, 10, 12, 0, 0);
+    const dayB = Date.UTC(2026, 0, 11, 12, 0, 0);
+    seedDoctorRunEvent(target, dayA, "lint", 5);
+    seedDoctorRunEvent(target, dayA, "fix-knowledge", 3, 2);
+    seedArchiveEvent(target, dayA, 4);
+    seedDoctorRunEvent(target, dayB, "lint", 1);
+    seedArchiveEvent(target, dayB, 0);
+
+    const report = await runDoctorHistoryAll(target, { since: 0 });
+    expect(report.rows).toHaveLength(2);
+    // Sorted descending — newer first.
+    expect(report.rows[0].date).toBe("2026-01-11");
+    expect(report.rows[1].date).toBe("2026-01-10");
+    // Day B aggregates: 1 lint, 0 fix, 1 issue, 0 mut, 1 archive attempt, 0 proposed.
+    expect(report.rows[0].doctor_runs_lint).toBe(1);
+    expect(report.rows[0].doctor_runs_fix).toBe(0);
+    expect(report.rows[0].archive_attempts).toBe(1);
+    expect(report.rows[0].archive_proposed).toBe(0);
+    // Day A aggregates: 1 lint + 1 fix, 5+3 issues, 2 mut, 1 archive, 4 proposed.
+    expect(report.rows[1].doctor_runs_lint).toBe(1);
+    expect(report.rows[1].doctor_runs_fix).toBe(1);
+    expect(report.rows[1].doctor_total_issues).toBe(8);
+    expect(report.rows[1].doctor_total_mutations).toBe(2);
+    expect(report.rows[1].archive_attempts).toBe(1);
+    expect(report.rows[1].archive_proposed).toBe(4);
+  });
+});
+
 function createInitializedProject(name: string): string {
   const target = createProject(name);
   writeFile("package.json", JSON.stringify({ name, dependencies: { vite: "^7.0.0" } }, null, 2), target);

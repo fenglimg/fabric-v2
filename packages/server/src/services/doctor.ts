@@ -8617,6 +8617,96 @@ export async function runDoctorArchiveHistory(
   };
 }
 
+// rc.37 NEW-33: unified history view. Aggregates doctor_run + archive
+// attempt events into a per-day rollup over the --since window. Lightweight
+// projection — daily counts only; for per-session detail operators continue
+// to use the original --archive-history surface.
+export type HistoryDayRow = {
+  date: string; // YYYY-MM-DD (UTC)
+  doctor_runs_lint: number;
+  doctor_runs_fix: number;
+  doctor_total_issues: number;
+  doctor_total_mutations: number;
+  archive_attempts: number;
+  archive_proposed: number;
+};
+
+export type HistoryAllReport = {
+  rows: HistoryDayRow[];
+  since_ms: number;
+  generated_at: string;
+};
+
+export async function runDoctorHistoryAll(
+  projectRoot: string,
+  options: { since: number },
+): Promise<HistoryAllReport> {
+  const generatedAt = new Date().toISOString();
+  const buckets = new Map<string, HistoryDayRow>();
+  const getBucket = (ts: number): HistoryDayRow => {
+    const date = new Date(ts).toISOString().slice(0, 10);
+    let row = buckets.get(date);
+    if (row === undefined) {
+      row = {
+        date,
+        doctor_runs_lint: 0,
+        doctor_runs_fix: 0,
+        doctor_total_issues: 0,
+        doctor_total_mutations: 0,
+        archive_attempts: 0,
+        archive_proposed: 0,
+      };
+      buckets.set(date, row);
+    }
+    return row;
+  };
+
+  // doctor_run events
+  try {
+    const { events } = await readEventLedger(projectRoot, {
+      event_type: "doctor_run",
+      since: options.since,
+    });
+    for (const event of events) {
+      if (event.event_type !== "doctor_run") continue;
+      const row = getBucket(event.ts);
+      if (event.mode === "lint") {
+        row.doctor_runs_lint += 1;
+      } else {
+        row.doctor_runs_fix += 1;
+      }
+      row.doctor_total_issues += event.issues;
+      row.doctor_total_mutations += event.mutations ?? 0;
+    }
+  } catch {
+    // Degraded ledger — proceed with archive arm only.
+  }
+
+  // session_archive_attempted events
+  try {
+    const { events } = await readEventLedger(projectRoot, {
+      event_type: "session_archive_attempted",
+      since: options.since,
+    });
+    for (const event of events) {
+      if (event.event_type !== "session_archive_attempted") continue;
+      const row = getBucket(event.ts);
+      row.archive_attempts += 1;
+      if (event.outcome === "proposed") {
+        row.archive_proposed += event.candidates_proposed;
+      }
+    }
+  } catch {
+    // Degraded — empty archive arm.
+  }
+
+  const rows = Array.from(buckets.values()).sort((a, b) =>
+    a.date < b.date ? 1 : a.date > b.date ? -1 : 0,
+  );
+
+  return { rows, since_ms: options.since, generated_at: generatedAt };
+}
+
 // session_id truncation helper. The schema does not constrain session_id
 // length (CLI clients pick arbitrary opaque strings — UUIDs, short prefixes,
 // "sess-<n>" patterns) so the rule is: keep the first 8 chars and append

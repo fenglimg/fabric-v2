@@ -105,6 +105,15 @@ exports[`CLI surface drift gate (docs/test-seed/cli.md §1) > command 'doctor' s
     },
     {
       "alias": undefined,
+      "default": undefined,
+      "description": "Render unified per-day history (mode: archive | fix | all). Read-only; mutex with --fix / --fix-knowledge / --cite-coverage / --enrich-descriptions / --archive-history.",
+      "name": "history",
+      "negativeDescription": undefined,
+      "required": undefined,
+      "type": "string",
+    },
+    {
+      "alias": undefined,
       "default": false,
       "description": "Print the doctor report as JSON.",
       "name": "json",
