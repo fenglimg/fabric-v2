@@ -15,7 +15,8 @@
     "kb_decisions": [
       "no-server-side-kb-filter",
       "fabric-serve-quarantine-not-delete",
-      "v2-ga-closure-6-wave-plan"
+      "v2-ga-closure-6-wave-plan",
+      "events-jsonl-plan-b-counter-rollup"
     ],
     "dogfood_target": "~/Desktop/projects/werewolf-minigame",
     "subagent_policy": "minimal per wave per [[feedback-low-agent-spawn-cost]]",
@@ -59,7 +60,7 @@
   "task_decomposition": [
     {"id": "A1", "wave": "A", "subject": "删 plan-context selectable filter", "done_when": "fab_plan_context 返回全候选 + werewolf dogfood 374 entry 全 selectable=true", "status": "done", "commit": "5dc9cef"},
     {"id": "A2", "wave": "A", "subject": "fabric serve quarantine Part 1 (CLI + entry point)", "done_when": "packages/server-http-experimental/ 建立 + 主线 CLI / startHttpServer / lock preflight 删 + relevant tests 更新", "status": "done", "commit": "9f4f249", "note": "Part 2 (physical file move + docs/i18n sweep) tracked as A2-PART2"},
-    {"id": "B1", "wave": "B", "subject": "events.jsonl 现状 spike + clean-slate 决策", "done_when": "spike report + 决策 lock 写入 status.json", "status": "pending"},
+    {"id": "B1", "wave": "B", "subject": "events.jsonl 现状 spike + clean-slate 决策", "done_when": "spike report + 决策 lock 写入 status.json", "status": "done", "_actual_done": "2026-05-27", "note": "Spike report at .workflow/.scratchpad/v2.0.0-ga-ux-audit-2026-05-27/wave-b/b1-events-jsonl-spike.md. Decision lock (Plan B counter-rollup): 5 high-frequency event_types (knowledge_consumed / edit_intent_checked / knowledge_context_planned / knowledge_sections_fetched / 类似 metric) 改走 metrics.jsonl 60s flush; audit event_types 留在 events.jsonl; 5 个 hard gate (G7-G11) 防再生; server-side rotation tick 6h; clean-slate 不迁移老数据 (旧高频 event archive 不影响 audit). KB cite [[events-jsonl-plan-b-counter-rollup]] (added to status.json.context.kb_decisions). Serial B2→B3→B4→B5 unblocked."},
     {"id": "B2", "wave": "B", "subject": "metrics.jsonl schema + bumpCounter API + 60s flush", "done_when": "shared schema 定义 + server bumpCounter 实现 + unit test", "status": "pending"},
     {"id": "B3", "wave": "B", "subject": "emit-cadence reader 切 metrics + heartbeat clean-slate", "done_when": "events.jsonl 不再写心跳, doctor 报告无 heartbeat events", "status": "pending"},
     {"id": "B4", "wave": "B", "subject": "Server-side rotation tick 6h", "done_when": "rotation 在 idle 时也触发 + integration test", "status": "pending"},
