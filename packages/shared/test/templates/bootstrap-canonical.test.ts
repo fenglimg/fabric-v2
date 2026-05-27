@@ -50,9 +50,16 @@ describe("bootstrap-canonical", () => {
         expect(BOOTSTRAP_CANONICAL).toContain("KB: <id>");
       });
 
-      it("contains all four cite status keywords", () => {
-        expect(BOOTSTRAP_CANONICAL).toContain("planned|recalled|chained-from");
+      it("exposes the rc.37 NEW-1 simplified 2-state cite vocabulary", () => {
+        // rc.37 NEW-1 collapsed planned / recalled / chained-from into a single
+        // `applied` tag, leaving `dismissed:<reason>` untouched. Legacy 4-state
+        // tags are still recognised by the parser and must still be documented
+        // in the canonical Backward compat bullet so workspaces with old cite
+        // history keep round-tripping under cite-coverage audits.
+        expect(BOOTSTRAP_CANONICAL).toContain("applied|dismissed:<reason>");
         expect(BOOTSTRAP_CANONICAL).toContain("dismissed:<reason>");
+        expect(BOOTSTRAP_CANONICAL).toContain("Backward compat");
+        expect(BOOTSTRAP_CANONICAL).toMatch(/planned.*recalled.*chained-from/);
       });
 
       it("enumerates all dismissed-reason values", () => {

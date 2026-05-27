@@ -930,6 +930,32 @@ describe("CiteCoverageReport i18n key parity (rc.24 TASK-09)", () => {
   });
 });
 
+// v2.0.0-rc.37 NEW-28: full-locale parity gate. Catches any new i18n key
+// added to one locale but not the other before the bundle ships. Previously
+// only the cite-coverage.* prefix had a parity test (rc.24 TASK-09); rc.37
+// generalises to the entire keyspace because earlier waves (rc.26 i18n
+// migration, rc.31 archive lints, rc.37 NEW-5/22/23/25/31/32 doctor checks)
+// keep widening surface area faster than per-feature parity tests can keep up.
+describe("Full i18n locale parity (rc.37 NEW-28)", () => {
+  it("zh-CN and en expose identical key sets", () => {
+    const zhKeys = Object.keys(zhCNMessages).sort();
+    const enKeys = Object.keys(enMessages).sort();
+    const onlyInZh = zhKeys.filter((k) => !(k in enMessages));
+    const onlyInEn = enKeys.filter((k) => !(k in zhCNMessages));
+    expect(onlyInZh, `keys only in zh-CN: ${onlyInZh.slice(0, 5).join(", ")}`).toEqual([]);
+    expect(onlyInEn, `keys only in en: ${onlyInEn.slice(0, 5).join(", ")}`).toEqual([]);
+  });
+
+  it("no locale value is empty or whitespace-only", () => {
+    for (const [key, value] of Object.entries(zhCNMessages)) {
+      expect(value.trim().length, `zh-CN.${key} empty`).toBeGreaterThan(0);
+    }
+    for (const [key, value] of Object.entries(enMessages)) {
+      expect(value.trim().length, `en.${key} empty`).toBeGreaterThan(0);
+    }
+  });
+});
+
 // rc.29 BUG-C1 — knowledge_type vocabulary has been unified to PLURAL across
 // the codebase (schema, frontmatter, MCP I/O, FS layout, agents-meta, i18n).
 // The previous singular ↔ plural bridge collapses to identity; this test now

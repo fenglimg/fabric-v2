@@ -2,6 +2,31 @@
 
 本项目使用 Fabric 管理跨客户端 AI 知识与行为规则。本文件由 `fabric install` 同步到三端 managed block,**不要手动编辑三端的 block**,只改这里 + 重跑 `fabric install`。
 
+## For Developers
+
+这个文件是 **AI 客户端的策略与规约配置**,不是 dev onboarding。你不需要读 Self-archive / Cite / Phase 0.4 等细节。
+作为 dev 你只需要:在每个 repo 跑一次 `fabric install`,出问题跑 `fabric doctor`,在 `.fabric/knowledge/<type>/` 下写 markdown。
+**严禁手动编辑 `.fabric/agents.meta.json`** — 派生状态由 engine 重建。
+
+## 5 分钟上手 (Dev Quickstart)
+
+**Fabric 是什么**:跨客户端(Claude Code / Codex CLI / Cursor)的 AI 知识层。把团队/项目的 **decisions / pitfalls / guidelines / models / processes** 存为 markdown,hook 自动 surface 给 AI,让 AI 不用每次重学。
+
+**你要做的 (DO)** vs **engine 自动的 (DON'T 手动)**:
+
+| 你 DO | 你 DON'T |
+| --- | --- |
+| 每个 repo 跑一次 `fabric install` | 手编 `.fabric/agents.meta.json` |
+| 异常时跑 `fabric doctor` (--fix 自愈) | 手编 `.claude/hooks/` 下 `.cjs` |
+| 在 `.fabric/knowledge/<type>/` 下写 markdown | 操心 Phase 0.4 / E3 / cite policy |
+| `npm install -g @fenglimg/fabric-cli@latest` 升级 | 背 35 条 doctor lint 代码 |
+
+**4 步循环**: `fabric install` (一次) → AI 正常工作 (hook on session start + edit) → AI 提议条目入 `.fabric/knowledge/pending/` → 用 `fabric-review` skill 或 `fabric doctor --fix` 审核归档。
+
+**真例**:某 sprite 黑边 root cause 是 `atlas.premultiplyAlpha` flag 反向 — 写进 `.fabric/knowledge/pitfalls/` 后,下次同类问题 AI 自动 reference。
+
+完整 maintainer 版见 `docs/USER-QUICKSTART.md`。
+
 ## 行为规则
 - **修改任何文件前**:两步调用——先 `fab_plan_context(paths=[<被改文件>])` 拿到 `selection_token` 与候选 `entries`(挑 `selectable===true` 的 `stable_id`),再 `fab_get_knowledge_sections({ selection_token, ai_selected_stable_ids: [<id>...] })` 取规则正文。
 - **`.fabric/agents.meta.json` 严禁手动编辑**;engine 会自动同步派生状态,显式 reconcile 跑 `fabric doctor --fix`。
@@ -12,6 +37,8 @@
 - **session_id**: 调用 `fab_plan_context` 时, 务必把当前 client session id 作为 `session_id` 参数传入(Claude Code 的 session id 在 stdin payload 中, Codex 的对应 identifier 同理)。这能让 `fabric doctor --archive-history` 与 archive-hint hook 准确识别跨会话 debt 状态。
 - **Write flows**:`fabric-archive` / `fabric-review` / `fabric-import` 三个 Skills。
 - **Language**:渲染按 `.fabric/fabric-config.json` 的 `fabric_language` 字段。
+- **Archive cadence nudge** (rc.36): 每完成 5+ 次 Edit / 显著 decision 后,在合适回合主动 propose 调 `fabric-archive` skill — archive 没建立频率会让 KB 慢速死掉。
+- **Review backlog nudge** (rc.36): `.fabric/knowledge/pending/` 累积 >10 条时,在合适回合主动 propose 调 `fabric-review` skill 批量审,避免 draft 卡死。
 
 ## Self-archive policy (v2.0.0-rc.37 NEW-2: 简化 4 信号 → 2 大类)
 

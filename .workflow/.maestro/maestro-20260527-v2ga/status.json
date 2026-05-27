@@ -416,8 +416,10 @@
       "wave": "D",
       "subject": "i18n key parity audit + AGENTS.md verbatim 块同步",
       "done_when": "doctor --i18n-audit + AGENTS.md 双语版本 byte-equal 校验",
-      "status": "pending",
-      "estimated_hours": "1-2"
+      "status": "done",
+      "_actual_done": "2026-05-27",
+      "estimated_hours": "1-2",
+      "note": "两半:(1) AGENTS.md verbatim 同步——BOOTSTRAP_CANONICAL 与 .fabric/AGENTS.md 在 rc.37 NEW-1 / NEW-2 简化后已 drift (.fabric/AGENTS.md 走在前面)。把 NEW-1 simplified 2-state Cite policy + NEW-2 simplified 2-signal Self-archive policy merge 回 packages/shared/src/templates/bootstrap-canonical.ts (canonical 仍保留 'For Developers' / Quickstart dev preamble, 因为 doctor.bootstrap_snapshot_drift 走 byte-equal,canonical 是 source of truth)。rebuild shared + server + cli, 跑 doctor --fix 把 .fabric/AGENTS.md + 根 AGENTS.md + .cursor/rules/fabric-bootstrap.mdc 三端 regenerate 到与 canonical byte-equal。doctor 验证: bootstrap_snapshot_drift + managed_block_drift 双 [ok]。(2) doctor --i18n-audit 不再做独立 CLI flag,改为 CI 时 gate: packages/shared/test/api-contracts.test.ts 加 'Full i18n locale parity (rc.37 NEW-28)' describe block:zh-CN vs en key set 全集等价 + 任意 key value 非空非纯空白。理由: locale 是 bundled @fenglimg/fabric-shared 的 const, 运行时不会变, CI gate (release 前) 比 doctor 运行时 (post-publish) 更早抓 drift。bootstrap-canonical.test.ts cite-status-keyword 旧 4-state assertion 同步改为 NEW-1 'applied|dismissed' + Backward compat 保留 legacy 4-state. Gates: typecheck 0 / tests 1755 (432+606+717) / lint 0 / doctor 干净 (除 pre-existing meta_manual_divergence 1 entry warn + KT-DEC-9002 dangling glob warn, 与本 task 无关)."
     },
     {
       "id": "NEW-29",

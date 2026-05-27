@@ -100,41 +100,44 @@ export const BOOTSTRAP_CANONICAL = `# Fabric Bootstrap
 - **Archive cadence nudge** (rc.36): 每完成 5+ 次 Edit / 显著 decision 后,在合适回合主动 propose 调 \`fabric-archive\` skill — archive 没建立频率会让 KB 慢速死掉。
 - **Review backlog nudge** (rc.36): \`.fabric/knowledge/pending/\` 累积 >10 条时,在合适回合主动 propose 调 \`fabric-review\` skill 批量审,避免 draft 卡死。
 
-## Self-archive policy
+## Self-archive policy (v2.0.0-rc.37 NEW-2: 简化 4 信号 → 2 大类)
 
-- **触发**: 本会话出现以下任一信号, 在该 turn 回复末尾自主调用 \`fabric-archive\` skill (走 AI 自触发入口 E3_ai_self_trigger):
-  1. **Normative 语言** — 用户消息出现 \`以后\` / \`always\` / \`never\` / \`from now on\` / \`下次注意\` / \`记一下\` / \`永远不要\`
-  2. **Wrong-turn-and-revert** — AI 尝试 path X, 反思后改走 path Y (尤其当 path X 是非显然踩坑)
-  3. **Decision confirmation** — 用户在 ≥2 候选中权衡后给出 rationale 锁定方向
-  4. **Explicit dismissal with reason** — 用户拒了某建议**并**说了原因
+- **触发** (本会话出现以下任一信号, 在该 turn 回复末尾自主调用 \`fabric-archive\` skill, 走 AI 自触发入口 E3_ai_self_trigger):
+  1. **User-driven normative** — 用户消息中显式表达 normative 意图: \`以后\` / \`always\` / \`never\` / \`from now on\` / \`下次注意\` / \`记一下\` / \`永远不要\`, OR 用户在 ≥2 候选间权衡后给出 rationale 锁定方向, OR 用户拒了某建议**并**说了原因 (拒绝理由本身是知识)
+  2. **Wrong-turn-and-revert** — AI 尝试 path X, 反思后改走 path Y (尤其当 path X 是非显然踩坑); 涵盖技术决策反转 + 工具/范式切换 + 失败重试。Anchor: 一定有"否定+替代"的两步结构, 不是单纯探索失败
+
+  老 4-state (Normative / Decision-confirmation / Explicit-dismissal / Wrong-turn) 现合并: 前 3 个全是"用户消息中显式表达"性质, 折成 1 类; 第 4 是"AI 自己的反思路径", 独立 1 类。两类各自的本质判别不变, 触发面没变窄。
 
 - **Anti-trigger** (明确不触发):
   - 用户纯询问 (无 normative 表达)
   - 简单 refactor / typo fix
-  - AI 自己产生的'洞察' (必须由用户消息中信号触发)
+  - AI 自己产生的'洞察' (必须由用户消息中信号或 AI 自己的 wrong-turn 触发, 不是凭空"我学到了"性质)
 
 - **Anti-loop 三条防护**:
   - 同 turn 最多自调 1 次
   - 同 session 同 outcome 不重复 (若 user_dismissed, 本会话不再自调相同主题)
-  - Phase 0.5 viability gate 兜底 (skill 内部仍跑 gate, AI 判错不会乱写 pending)
+  - Phase 2.5 viability gate 兜底 (skill 内部仍跑 gate, AI 判错不会乱写 pending)
 
-- **呈现模板** (turn 末尾插入, 两行: 先 marker 行供 Phase 0.4 检测, 再 user-facing 提示):
+- **呈现模板** (turn 末尾插入, 两行: 先 marker 行供 Phase 1.5 检测, 再 user-facing 提示):
   \`\`\`
-  self-archive policy triggered by signal: <Normative|Wrong-turn-and-revert|Decision confirmation|Explicit dismissal>
+  self-archive policy triggered by signal: <User-driven normative|Wrong-turn-and-revert>
   顺手归档: 注意到你说 \`<触发短语>\`, 已调用 fabric-archive 抓 N 条候选 → .fabric/knowledge/pending/...
   若不该记, 答 '撤销' 我会调 fab_review reject。
   \`\`\`
-  第一行是 Phase 0.4 Trigger Gate 用来识别 E3 入口的 structured marker (verbatim 字符串 \`self-archive policy triggered by signal\`, 后接冒号 + 触发信号名)。第二行起是给用户看的中文提示。两行都必须出现; 缺 marker 行 Phase 0.4 无法路由到 E3_ai_self_trigger。
+  第一行是 Phase 1.5 Trigger Gate 识别 E3 入口的 structured marker (verbatim 字符串 \`self-archive policy triggered by signal\`, 后接冒号 + 触发信号名)。第二行起是给用户看的中文提示。两行都必须出现; 缺 marker 行 Phase 1.5 无法路由到 E3_ai_self_trigger。
 
-## Cite policy
+  Backward compat: Phase 1.5 entry-point regex 同时识别老 4 个信号名 (Normative / Wrong-turn-and-revert / Decision confirmation / Explicit dismissal) 与新 2 大类名, 旧 session marker 仍能正确路由。
 
-- **触发**: 做 edit / decide / propose plan 之前,**回复首行**必须写 \`KB: <id> (<≤8字 用法>) [planned|recalled|chained-from <id>|dismissed:<reason>]\` 或 \`KB: none [<reason>]\`。
-- **\`[recalled]\` 验证**: 必须紧跟两步调用——先 \`fab_plan_context(paths=[...])\` 拿 \`selection_token\`,再 \`fab_get_knowledge_sections({ selection_token, ai_selected_stable_ids: [<id>] })\`,防止编造 id。
-- **contract 语法**: decisions/pitfalls 类引用必须在尾段加 contract: \`→ <operator> [<operator> ...]\`,operator ∈ {\`edit:<glob>\` \`!edit:<glob>\` \`require:<symbol>\` \`forbid:<symbol>\` \`skip:<reason>\`}。例:\`KB: K-001 (auth) [planned] → edit:src/auth/**/*.ts !edit:src/legacy/**\`。
+## Cite policy (v2.0.0-rc.37 NEW-1: 简化 4-state → 2-state)
+
+- **触发**: 做 edit / decide / propose plan 之前,**回复首行**必须写 \`KB: <id> (<≤8字 用法>) [applied|dismissed:<reason>]\` 或 \`KB: none [<reason>]\`。
+- **\`[applied]\` 验证义务**: 引用任何 id 前必须先用 fab_recall (或两步 fab_plan_context → fab_get_knowledge_sections) 实际抓 KB body, 防止编造 id。验证不通过 = 不能 cite。
+- **contract 语法**: decisions/pitfalls 类 \`[applied]\` cite 尾段加 contract: \`→ <operator> [<operator> ...]\`,operator ∈ {\`edit:<glob>\` \`!edit:<glob>\` \`require:<symbol>\` \`forbid:<symbol>\` \`skip:<reason>\`}。例:\`KB: K-001 (auth) [applied] → edit:src/auth/**/*.ts !edit:src/legacy/**\`。
 - **skip reason 词典**: \`sequencing | conditional | semantic | aesthetic | architectural | other:<text>\`。
 - **type 路由**: models 类引用为 reference cite,不需要 contract;guidelines/processes 类暂不强制,推后 LLM-judge。
-- **用户口头提规则没给 id**: 先调 \`fab_extract_knowledge\` 或 \`search_context\` 反查。
+- **用户口头提规则没给 id**: 先调 \`fab_recall(paths)\` 或 \`fab_extract_knowledge\` 反查。
 - **dismissed reason**: 枚举 \`scope-mismatch | outdated | not-applicable | other:<text>\`。
-- **\`KB: none\` sentinel**: 枚举两种合规理由——\`[no-relevant]\` 已调 \`fab_plan_context\`(或 hook 输出可见)但无可用条目;\`[not-applicable]\` 当前动作不在 cite 范围(纯探索 / Bash 只读 / 用户问答)。裸 \`KB: none\`(无后缀)仍然 valid,归类为 \`[unspecified]\`(legacy 兼容,鼓励后续补注)。
+- **\`KB: none\` sentinel**: 枚举两种合规理由——\`[no-relevant]\` 已调 \`fab_recall\` / \`fab_plan_context\`(或 hook 输出可见)但无可用条目;\`[not-applicable]\` 当前动作不在 cite 范围(纯探索 / Bash 只读 / 用户问答)。裸 \`KB: none\`(无后缀)仍然 valid,归类为 \`[unspecified]\`(legacy 兼容,鼓励后续补注)。
 - **稽核**: \`fabric doctor --cite-coverage [--since=7d] [--client=cc|codex|all]\` 输出 cite 覆盖率,含 \`KB: none\` sentinel 拆分。本规则不阻断你工作,只记录。
+- **Backward compat**: 解析器同时接受老 4-state tags (\`planned\` / \`recalled\` / \`chained-from <id>\`) — 都映射到 \`[applied]\` 语义,gradually 迁到新简化形态即可,旧 session 留下的 cite 仍然计入 cite-coverage。
 `;
