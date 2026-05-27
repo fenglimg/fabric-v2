@@ -3,7 +3,6 @@ import { defineCommand } from "citty";
 
 import {
   appendEventLedgerEvent,
-  checkLockOrThrow,
   enrichDescriptions,
   runDoctorApplyLint as runDoctorFixKnowledge,
   runDoctorArchiveHistory,
@@ -21,7 +20,8 @@ import {
 import { paint, symbol } from "../colors.js";
 import { resolveDevMode } from "../dev-mode.js";
 import { getDoctorTranslator, t } from "../i18n.js";
-import { hasActionHint, renderFabricError } from "../lib/error-render.js";
+// v2.0.0-rc.37 Wave A2: error-render imports removed alongside serve-lock
+// preflight call. See KB [[fabric-serve-quarantine-not-delete]].
 
 type DoctorTranslator = typeof t;
 
@@ -199,19 +199,10 @@ export const doctorCommand = defineCommand({
     const resolution = resolveDevMode(args.target, workspaceRoot);
     const dt = getDoctorTranslator(resolution.target);
 
-    // Preflight: refuse to run when serve is actively holding the lock.
-    // rc.15: --force was removed (drift→abort principle).
-    // rc.15 TASK-007: explicitly render `.actionHint` from FabricError-shaped
-    // failures (citty's default handler prints `.message` only).
-    try {
-      checkLockOrThrow(resolution.target);
-    } catch (err) {
-      if (hasActionHint(err)) {
-        renderFabricError(err);
-        process.exit(1);
-      }
-      throw err;
-    }
+    // v2.0.0-rc.37 Wave A2: rc.15 serve-lock preflight removed alongside
+    // fabric serve quarantine. No main-line process writes .fabric/.serve.lock
+    // any more (per [[fabric-serve-quarantine-not-delete]]); legacy lock
+    // files are reaped by the doctor's own stale-serve-lock advisory.
 
     const fixKnowledge = args["fix-knowledge"] === true;
     const fix = args.fix === true;

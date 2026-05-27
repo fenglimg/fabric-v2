@@ -1525,6 +1525,23 @@ export async function runDoctorFix(target: string): Promise<DoctorFixReport> {
     }
   }
 
+  // v2.0.0-rc.37 NEW-39 (werewolf dogfood remediation): backfill the
+  // promote_ledger_invariant deficit. The check itself emits as a `warning`
+  // (not fixable_error) because it never blocks user work — but `--fix` is
+  // the canonical heal surface for accumulated ledger imbalance, so we look
+  // in `before.warnings` here.
+  //
+  // Healing semantics: the fix function emits (started - proposed) synth
+  // proposed events + (promoted - started) synth promote_started events. The
+  // re-runDoctorReport at the end of this function picks up the now-healed
+  // state, so subsequent doctor invocations report invariant.ok unless new
+  // imbalance accrues (which only happens through the rc.31 BUG-G2 path that
+  // synth-on-approve already addresses for new approves).
+  if (before.warnings.some((issue) => issue.code === "promote_ledger_invariant_violated")) {
+    await fixPromoteLedgerInvariant(projectRoot);
+    fixed.push(findIssue(before.warnings, "promote_ledger_invariant_violated"));
+  }
+
   const report = await runDoctorReport(projectRoot);
 
   return {
@@ -3914,6 +3931,69 @@ function createPromoteLedgerInvariantCheck(
     t(`doctor.check.promote_ledger_invariant.message.${inspection.violation}`, params),
     t("doctor.check.promote_ledger_invariant.remediation"),
   );
+}
+
+/**
+ * v2.0.0-rc.37 NEW-39 (werewolf dogfood remediation): backfill emitter that
+ * heals a violated `promote_ledger_invariant` warning.
+ *
+ * Werewolf 实测: proposed=20 < promote_started=49 < promoted=53 — 部分 approve
+ * 在 rc.31 BUG-G2 fix 之前 happened without emitting knowledge_proposed (real
+ * extract didn't go through fab_extract_knowledge → no propose event). The
+ * rc.31 fix made approve emit synth proposed unconditionally going forward,
+ * but it CANNOT retroactively heal pre-fix events.
+ *
+ * This function reads the current inspection, computes the deficit for each
+ * lifecycle stage, and emits N synthetic backfill events tagged with reason
+ * `doctor-fix-backfill:legacy-N`. After running, the invariant
+ * (proposed ≥ promote_started ≥ promoted) is restored.
+ *
+ * Tagging policy: every backfill event carries a deterministic reason prefix
+ * so cite-coverage / ledger consumers can grep them out of historical analyses.
+ * No correlation_id / session_id is attached — these are bulk backfills, not
+ * tied to any one session.
+ *
+ * Best-effort emits: each append failure is silently swallowed (per
+ * `emitEventBestEffort` semantics). If the ledger is unwritable, the fix
+ * degrades gracefully — the warning will re-surface on the next doctor run.
+ */
+async function fixPromoteLedgerInvariant(projectRoot: string): Promise<void> {
+  const inspection = await inspectPromoteLedgerInvariant(projectRoot);
+  if (inspection.violation === null) return;
+
+  // Target the MAX of the three counts. After heal: all three equal target.
+  // Backfilling to the max simultaneously closes both possible violations
+  // (proposed-lt-started AND started-lt-promoted) in one pass — computing
+  // each delta against the same fixed snapshot avoids the staleness pitfall
+  // where the second loop reads inflated counts from the first loop's emits.
+  const target = Math.max(
+    inspection.proposedCount,
+    inspection.promoteStartedCount,
+    inspection.promotedCount,
+  );
+
+  // Emit (target - proposedCount) synth proposed events.
+  const proposedDelta = target - inspection.proposedCount;
+  for (let i = 0; i < proposedDelta; i++) {
+    await appendEventLedgerEvent(projectRoot, {
+      event_type: "knowledge_proposed",
+      timestamp: new Date().toISOString(),
+      reason: `doctor-fix-backfill:legacy-proposed-${i}`,
+    }).catch(() => {});
+  }
+
+  // Emit (target - promoteStartedCount) synth promote_started events.
+  const startedDelta = target - inspection.promoteStartedCount;
+  for (let i = 0; i < startedDelta; i++) {
+    await appendEventLedgerEvent(projectRoot, {
+      event_type: "knowledge_promote_started",
+      timestamp: new Date().toISOString(),
+      reason: `doctor-fix-backfill:legacy-started-${i}`,
+    }).catch(() => {});
+  }
+  // No `knowledge_promoted` backfill — promoted is the "leaf" event;
+  // emitting more promoted without corresponding files on disk would be
+  // misleading.
 }
 
 // rc.35 TASK-04 (P0-9.b): global_cli_outdated inspection.
