@@ -50,6 +50,7 @@ import {
   truncateLedgerToLastNewline,
 } from "./event-ledger.js";
 import { reconcileKnowledge } from "./knowledge-sync.js";
+import { INJECTION_PATTERNS } from "./extract-knowledge.js";
 import { readAgentsMeta } from "../meta-reader.js";
 import { isAlive, readLockState } from "./legacy-serve-lock-probe.js";
 import {
@@ -737,6 +738,23 @@ type PersonalLayerPathMisclassifyInspection = {
   candidates: PersonalLayerPathMisclassifyCandidate[];
 };
 
+// rc.37 NEW-32: suspicious_kb_injection. Scans canonical KB body files
+// (both layers) for the same prompt-injection patterns that
+// extract-knowledge's sanitizer strips on archive (NEW-31). Legacy entries
+// written before NEW-31 landed could carry surviving injection tokens —
+// this check surfaces them so an operator can fab_review.modify or reject.
+type SuspiciousKbCandidate = {
+  stable_id: string;
+  // ~/.fabric/... or project-relative POSIX path.
+  path: string;
+  // Subset of INJECTION_PATTERNS names that matched the body.
+  patterns: string[];
+};
+
+type SuspiciousKbInspection = {
+  candidates: SuspiciousKbCandidate[];
+};
+
 // rc.4 TASK-002: read-side integrity lint inspections (#19-21). Each
 // inspection walks both the team-rooted (`<projectRoot>/.fabric/knowledge/`)
 // and personal-rooted (`<FABRIC_HOME>/.fabric/knowledge/`) canonical trees
@@ -1097,6 +1115,9 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
   // the current project — signals layer misclassification (content is
   // project-bound, should be team-layer).
   const personalLayerPathMisclassify = inspectPersonalLayerPathMisclassify(projectRoot);
+  // rc.37 NEW-32: scan canonical KB bodies for prompt-injection patterns
+  // (legacy entries archived before NEW-31's sanitizer landed).
+  const suspiciousKb = inspectSuspiciousKb(projectRoot);
   // rc.6 TASK-023 (E6): narrow_too_few (#26). Two-arm check — structural
   // ratio + telemetry silence rate. Info-kind; safe-degrades to "skipped"
   // telemetry when the edit-counter has no fires in the 30d window.
@@ -1241,6 +1262,10 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     // matcher, warning kind (no auto-fix; remediation is fab_review modify
     // layer flip to team).
     createPersonalLayerPathMisclassifyCheck(t, personalLayerPathMisclassify),
+    // rc.37 NEW-32: suspicious_kb_injection — scan canonical bodies for
+    // prompt-injection tokens. Symmetric with NEW-31's archive-time
+    // sanitization; catches legacy pre-NEW-31 entries. Warning kind.
+    createSuspiciousKbCheck(t, suspiciousKb),
     // rc.6 TASK-023 (E6): narrow_too_few (lint #26). Info kind; both arms
     // (structural + telemetry) recommend the same fabric-import action.
     createNarrowTooFewCheck(t, narrowTooFew),
@@ -6314,6 +6339,70 @@ function createPersonalLayerPathMisclassifyCheck(
       detail,
     }),
     t("doctor.check.personal_layer_path_misclassify.remediation"),
+  );
+}
+
+// rc.37 NEW-32: scan canonical KB bodies for prompt-injection patterns
+// (the same set the extract-knowledge sanitizer redacts on archive,
+// NEW-31). Surfaces legacy entries that pre-date NEW-31. Read-only; no
+// auto-fix.
+function inspectSuspiciousKb(projectRoot: string): SuspiciousKbInspection {
+  const candidates: SuspiciousKbCandidate[] = [];
+  for (const visit of iterateCanonicalFilenames(projectRoot)) {
+    const layerRoot = visit.layer === "team"
+      ? join(projectRoot, ".fabric", "knowledge")
+      : resolvePersonalKnowledgeRoot();
+    const absPath = join(layerRoot, visit.type, visit.filename);
+    let body: string;
+    try {
+      body = readFileSync(absPath, "utf8");
+    } catch {
+      continue;
+    }
+    const matched: string[] = [];
+    for (const { name, pattern } of INJECTION_PATTERNS) {
+      // Reset lastIndex defensively (g-flagged regex state leaks across calls).
+      pattern.lastIndex = 0;
+      if (pattern.test(body)) {
+        matched.push(name);
+      }
+    }
+    if (matched.length === 0) {
+      continue;
+    }
+    candidates.push({
+      stable_id: visit.parsed.stable_id,
+      path: visit.displayPath,
+      patterns: matched,
+    });
+  }
+  candidates.sort((a, b) => a.stable_id.localeCompare(b.stable_id));
+  return { candidates };
+}
+
+function createSuspiciousKbCheck(
+  t: Translator,
+  inspection: SuspiciousKbInspection,
+): DoctorCheck {
+  if (inspection.candidates.length === 0) {
+    return okCheck(
+      t("doctor.check.suspicious_kb.name"),
+      t("doctor.check.suspicious_kb.ok"),
+    );
+  }
+  const first = inspection.candidates[0];
+  const detail = `${first.stable_id} → ${first.patterns.slice(0, 2).join(", ")}`;
+  const count = inspection.candidates.length;
+  return issueCheck(
+    t("doctor.check.suspicious_kb.name"),
+    "warn",
+    "warning",
+    "knowledge_suspicious_kb_injection",
+    t(`doctor.check.suspicious_kb.message.${count === 1 ? "singular" : "plural"}`, {
+      count: String(count),
+      detail,
+    }),
+    t("doctor.check.suspicious_kb.remediation"),
   );
 }
 

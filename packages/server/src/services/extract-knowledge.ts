@@ -42,7 +42,7 @@ const SLUG_MAX_LENGTH = 40;
 // the archived entry retains structural shape but the dangerous tokens
 // can't survive a future fetch. We also emit a knowledge_archive_attempted
 // event per redaction so operators can audit the source session.
-const INJECTION_PATTERNS: Array<{ name: string; pattern: RegExp }> = [
+export const INJECTION_PATTERNS: Array<{ name: string; pattern: RegExp }> = [
   {
     name: "ignore-prior-instructions",
     pattern: /\b(?:ignore|forget|disregard)\s+(?:all\s+)?(?:previous|prior|above|earlier)\s+(?:instructions?|messages?|prompts?|rules?)\b/giu,

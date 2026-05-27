@@ -658,6 +658,15 @@ export const zhCNMessages: Messages = {
     "{count} 个 personal-layer entries 的 relevance_paths 命中当前项目内的文件（personal 层应保持项目无关）。首个：{detail}。",
   "doctor.check.personal_layer_path_misclassify.remediation":
     "用 `fab_review.modify` 把 layer 翻成 team，或重写 relevance_paths 让 anchors 保持项目无关（删掉项目特定 globs）。",
+  "doctor.check.suspicious_kb.name": "Suspicious KB injection",
+  "doctor.check.suspicious_kb.ok":
+    "所有 canonical knowledge body 均未命中已知 prompt-injection 模式。",
+  "doctor.check.suspicious_kb.message.singular":
+    "{count} 个 canonical entry body 含命中 prompt-injection 模式的 token（多半是 NEW-31 之前归档的 legacy 条目）。首个：{detail}。",
+  "doctor.check.suspicious_kb.message.plural":
+    "{count} 个 canonical entry bodies 含命中 prompt-injection 模式的 token（多半是 NEW-31 之前归档的 legacy 条目）。首个：{detail}。",
+  "doctor.check.suspicious_kb.remediation":
+    "审阅被标记的条目 — 用 `fab_review.modify` 擦掉 body 中的 injection token，或 `fab_review.reject` 归档不该 canonicalize 的条目。",
   "doctor.check.narrow_too_few.name": "Knowledge narrow too few",
   "doctor.check.narrow_too_few.ok":
     "Narrow-with-paths ratio {ratioPct}%（{narrowCount}/{totalCount}）；{teleNote}。",

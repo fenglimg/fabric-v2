@@ -669,6 +669,15 @@ export const enMessages: Messages = {
     "{count} personal-layer entries declare relevance_paths that match files in the current project (personal layer should be project-agnostic). First: {detail}.",
   "doctor.check.personal_layer_path_misclassify.remediation":
     "Use `fab_review.modify` with `layer: \"team\"` to flip the entry, or rewrite the relevance_paths so the anchors are project-agnostic (e.g. drop project-specific globs).",
+  "doctor.check.suspicious_kb.name": "Suspicious KB injection",
+  "doctor.check.suspicious_kb.ok":
+    "No canonical knowledge bodies match known prompt-injection patterns.",
+  "doctor.check.suspicious_kb.message.singular":
+    "{count} canonical entry body contains tokens matching prompt-injection patterns (likely legacy pre-NEW-31 archive). First: {detail}.",
+  "doctor.check.suspicious_kb.message.plural":
+    "{count} canonical entry bodies contain tokens matching prompt-injection patterns (likely legacy pre-NEW-31 archive). First: {detail}.",
+  "doctor.check.suspicious_kb.remediation":
+    "Review the flagged entries — use `fab_review.modify` to scrub the injection tokens from the body, or `fab_review.reject` to archive entries that should not have been canonicalised.",
   "doctor.check.narrow_too_few.name": "Knowledge narrow too few",
   "doctor.check.narrow_too_few.ok":
     "Narrow-with-paths ratio {ratioPct}% ({narrowCount}/{totalCount}); {teleNote}.",

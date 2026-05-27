@@ -446,9 +446,9 @@
       "wave": "D",
       "subject": "doctor --suspicious-kb injection 模式 lint",
       "done_when": "doctor 新 check 扫 canonical KB body 跑 injection 正则",
-      "status": "pending",
-      "estimated_hours": "1"
-    },
+      "status": "done",
+      "_actual_done": "2026-05-27",
+      "note": "Exported INJECTION_PATTERNS from extract-knowledge.ts (NEW-31) so doctor reuses the 7-regex set without duplication. inspectSuspiciousKb walks iterateCanonicalFilenames, reads each body, defensively resets pattern.lastIndex (g-flag state) before .test(). Matches surface stable_id + matched pattern names. createSuspiciousKbCheck — warning kind, no auto-fix; remediation prompts fab_review.modify (scrub) or .reject (archive). i18n keys added to both locales; doctor-i18n snapshot regenerated. 3 new tests (flagged on ignore-previous / clean body untouched / multi-pattern body). doctor.test.ts check count 49→50. tests 1750/1750 + lint 0 + typecheck 0."
     {
       "id": "NEW-33",
       "wave": "D",
