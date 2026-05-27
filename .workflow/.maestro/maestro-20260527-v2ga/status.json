@@ -595,7 +595,9 @@
       "wave": "E",
       "subject": "删过期 docs (dashboard-tour / getting-started L84-93 / migration-1.8 / v1.8.0-pr)",
       "done_when": "对应 docs 删除或归档",
-      "status": "pending"
+      "status": "done",
+      "_actual_done": "2026-05-27",
+      "note": "Verified A2-PART2 已删除 docs/dashboard-tour.md + docs/migration-1.8.md (per A2-PART2 note); docs/getting-started.md L83-85 已重写指向 stdio + quarantine. 余 docs/release/v1.8.0-pr.md 这一项在本 commit finalize 删除 (pre-existing uncommitted D 状态)。剩余 v1.8 引用 (knowledge-types.md L109 / testing-architecture.md L86 / SPEC_INTERNAL.md L241 / test-seed/cli.md) 都是 intentional 历史 context, 保留。docs/migration-rc-to-ga.md (NEW-untracked, E5 scope) 不在本 task。"
     },
     {
       "id": "E3",
