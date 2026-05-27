@@ -12,6 +12,12 @@ export const LEDGER_PATH = `${FABRIC_DIR}/${LEDGER_FILE}`;
 export const LEGACY_LEDGER_PATH = LEDGER_FILE;
 export const EVENT_LEDGER_FILE = "events.jsonl";
 export const EVENT_LEDGER_PATH = `${FABRIC_DIR}/${EVENT_LEDGER_FILE}`;
+// v2.0.0-rc.37 Wave B (Plan B counter-rollup): metrics sidecar for high-
+// frequency counter events (knowledge_consumed / edit_intent_checked /
+// knowledge_context_planned / knowledge_sections_fetched). One JSONL row per
+// flush interval (60s default) carrying { timestamp, window, counters }.
+export const METRICS_LEDGER_FILE = "metrics.jsonl";
+export const METRICS_LEDGER_PATH = `${FABRIC_DIR}/${METRICS_LEDGER_FILE}`;
 
 export function getLedgerPath(projectRoot: string): string {
   return join(projectRoot, LEDGER_PATH);
@@ -23,6 +29,10 @@ export function getLegacyLedgerPath(projectRoot: string): string {
 
 export function getEventLedgerPath(projectRoot: string): string {
   return join(projectRoot, EVENT_LEDGER_PATH);
+}
+
+export function getMetricsLedgerPath(projectRoot: string): string {
+  return join(projectRoot, METRICS_LEDGER_PATH);
 }
 
 export async function ensureParentDirectory(path: string): Promise<void> {

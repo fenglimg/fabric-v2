@@ -79,10 +79,23 @@ export {
   EVENT_LEDGER_PATH,
   LEGACY_LEDGER_PATH,
   LEDGER_PATH,
+  METRICS_LEDGER_PATH,
   getEventLedgerPath,
   getLedgerPath,
   getLegacyLedgerPath,
+  getMetricsLedgerPath,
 } from "./services/_shared.js";
+export {
+  bumpCounter,
+  drainCounters,
+  flushMetrics,
+  readMetrics,
+  startMetricsFlush,
+  stopMetricsFlush,
+  METRIC_COUNTER_NAMES,
+  type MetricsRow,
+  type MetricCounterName,
+} from "./services/metrics.js";
 
 function writeStderr(message: string): void {
   process.stderr.write(`${message}\n`);
