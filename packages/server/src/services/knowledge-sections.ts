@@ -10,6 +10,7 @@ import { normalizeKnowledgePath } from "./get-knowledge.js";
 import { readSelectionToken } from "./plan-context.js";
 import { loadActiveMeta } from "./load-active-meta.js";
 import { loadIdRedirectMap, resolveRedirectedId } from "./id-redirect.js";
+import { bumpCounter, METRIC_COUNTER_NAMES } from "./metrics.js";
 
 // v2.0.0-rc.23 TASK-013 (F8b): KNOWLEDGE_SECTION_NAMES + KnowledgeSectionName
 // + the `missing_section` diagnostic + the per-section structured response
@@ -210,6 +211,11 @@ export async function getKnowledgeSections(
     // Selection telemetry is best-effort and must not block rule delivery.
   }
 
+  // v2.0.0-rc.37 Wave B (B3): dual-write counter rollup. Per-call bump for
+  // the fetched signal; the audit event continues to land in events.jsonl
+  // because orphan_demote consumes per-id final_stable_ids[]. Cutover to
+  // counter-only happens post-GA after lint readers migrate.
+  bumpCounter(projectRoot, METRIC_COUNTER_NAMES.knowledge_sections_fetched);
   try {
     // v2.0.0-rc.23 TASK-013 (F8b): `requested_sections` retained in the
     // ledger envelope for replay/audit continuity (event schema is generic
@@ -245,6 +251,11 @@ export async function getKnowledgeSections(
       continue;
     }
     emittedConsumed.add(stableId);
+    // v2.0.0-rc.37 Wave B (B3): dual-write per-id consumption counter alongside
+    // the audit event. Counter name embeds the stable_id so post-GA migration
+    // of orphan_demote / cite-coverage can switch to reading the metrics
+    // sidecar without losing per-entry granularity.
+    bumpCounter(projectRoot, `${METRIC_COUNTER_NAMES.knowledge_consumed}:${stableId}`);
     try {
       await appendEventLedgerEvent(projectRoot, {
         event_type: "knowledge_consumed",

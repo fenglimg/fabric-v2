@@ -9,6 +9,7 @@ import { normalizeKnowledgePath } from "./get-knowledge.js";
 import { loadActiveMetaOrStale } from "./load-active-meta.js";
 import { reconcileKnowledge } from "./knowledge-sync.js";
 import { loadIdRedirectMap, trimRedirectsToActiveIds } from "./id-redirect.js";
+import { bumpCounter, METRIC_COUNTER_NAMES } from "./metrics.js";
 
 export type PlanContextInput = {
   paths: string[];
@@ -322,6 +323,12 @@ export async function planContext(
     ...(redirects !== undefined ? { redirects } : {}),
   };
 
+  // v2.0.0-rc.37 Wave B (B3): dual-write counter rollup. The audit event still
+  // lands in events.jsonl because downstream lints (doctor.buildLastActiveIndex
+  // walks `ai_selectable_stable_ids[]` for orphan/stale signals) need per-id
+  // payloads. The metrics.jsonl counter is the forward-compatible signal that
+  // will become the SOLE write path once those lint readers migrate.
+  bumpCounter(projectRoot, METRIC_COUNTER_NAMES.knowledge_context_planned);
   try {
     await appendEventLedgerEvent(projectRoot, {
       event_type: "knowledge_context_planned",

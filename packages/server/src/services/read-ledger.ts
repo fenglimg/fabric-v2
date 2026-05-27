@@ -11,6 +11,7 @@ import {
   sha256,
 } from "./_shared.js";
 import { appendEventLedgerEvent, readEventLedger, type StoredEventLedgerEvent } from "./event-ledger.js";
+import { bumpCounter, METRIC_COUNTER_NAMES } from "./metrics.js";
 
 export type LedgerSourceFilter = "ai" | "human";
 
@@ -96,6 +97,13 @@ export async function appendLedgerEntry(
   const nextEntry = createStoredLedgerEntry(entry);
 
   for (const affectedPath of nextEntry.affected_paths) {
+    // v2.0.0-rc.37 Wave B (B3): dual-write counter rollup. edit_intent_checked
+    // is the highest-frequency event (PreToolUse fires per affected_path on
+    // every Edit/Write/MultiEdit) and the audit payload (path, rule context,
+    // commit sha) is still consumed by future cite-coverage replays — so the
+    // event stays in events.jsonl for v2.0 GA. metrics.jsonl counter is the
+    // forward-compat path for post-GA when the audit consumer migrates.
+    bumpCounter(projectRoot, METRIC_COUNTER_NAMES.edit_intent_checked);
     await appendEventLedgerEvent(projectRoot, {
       event_type: "edit_intent_checked",
       ts: nextEntry.ts,

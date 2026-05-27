@@ -85,6 +85,11 @@ export {
   getLegacyLedgerPath,
   getMetricsLedgerPath,
 } from "./services/_shared.js";
+import {
+  flushMetrics,
+  startMetricsFlush,
+  stopMetricsFlush,
+} from "./services/metrics.js";
 export {
   bumpCounter,
   drainCounters,
@@ -218,6 +223,12 @@ export async function startStdioServer(): Promise<void> {
   // (`meta_stale` / `reconcile_failed` warnings).
   await server.connect(transport);
 
+  // v2.0.0-rc.37 Wave B (B3): kick the metrics flush timer once the MCP
+  // handshake is up. Counter accumulator was filling in-process since the
+  // first tool call (B2 bumpCounter writes), but no flush has fired yet.
+  // The handler is best-effort; failures are swallowed inside flushMetrics.
+  startMetricsFlush(projectRoot);
+
   const syncStart = Date.now();
   const backgroundReconcile = (async () => {
     const reconcileResult = await reconcileKnowledge(projectRoot, { trigger: "startup" });
@@ -298,6 +309,10 @@ export function createShutdownHandler(deps: ShutdownHandlerDeps): () => void {
       process.stderr.write(`[shutdown] drained ${result.drained}, timed_out ${result.timed_out}\n`);
       // fsyncSync AFTER drain, BEFORE close — Gemini G1 ordering requirement
       flushAndSyncEventLedger(deps.projectRoot);
+      // v2.0.0-rc.37 Wave B (B3): drain accumulated counters to metrics.jsonl
+      // before exit. Best-effort; failures swallowed inside flushMetrics.
+      await flushMetrics(deps.projectRoot);
+      stopMetricsFlush(deps.projectRoot);
       process.stderr.write("[shutdown] ledger fsynced; closing server\n");
       try {
         await deps.closeServer();
