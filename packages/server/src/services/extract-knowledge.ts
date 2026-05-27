@@ -186,18 +186,40 @@ export async function extractKnowledge(
     });
   }
 
+  // v2.0.0-rc.37 NEW-6: slug auto-disambiguate.
+  // Two distinct triples whose slugs sanitize/truncate to the same canonical
+  // form previously threw at the collision branch (rc.4 TASK-006 fix b loud-
+  // fail). Werewolf dogfood observed this firing on legitimate parallel-session
+  // archives — operators had no path forward except renaming the slug
+  // manually. We now scan `slug.md`, `slug-2.md`, `slug-3.md`, ..., `slug-9.md`
+  // until we find either (a) our idempotency_key for the evidence-merge
+  // path or (b) a free slot to write into. The disambiguated slug is then
+  // baked into a fresh idempotency_key so subsequent re-runs with the same
+  // input still deterministically hit the same -N variant.
   const baseDir = pendingBase(layer, projectRoot);
-  const absolutePath = join(baseDir, input.type, `${sanitizedSlug}.md`);
+  const { absolutePath, sanitizedSlug: chosenSlug, idempotencyKey: chosenKey } =
+    await resolveDisambiguatedSlugPath({
+      baseDir,
+      type: input.type,
+      slug: sanitizedSlug,
+      primarySession,
+      baseIdempotencyKey: idempotencyKey,
+    });
   const reportedPath = layer === "personal"
     ? `~/${relative(resolvePersonalRoot(), absolutePath)}`
     : relative(projectRoot, absolutePath);
+
+  // Rebind the upper-scope variables so downstream renderers / event
+  // payloads use the disambiguated slug + matching idempotency_key.
+  const effectiveSanitizedSlug = chosenSlug;
+  const effectiveIdempotencyKey = chosenKey;
 
   await ensureParentDirectory(absolutePath);
 
   if (existsSync(absolutePath)) {
     const existing = await readFile(absolutePath, "utf8");
     const existingKey = readFrontmatterKey(existing, "x-fabric-idempotency-key");
-    if (existingKey === idempotencyKey) {
+    if (existingKey === effectiveIdempotencyKey) {
       // v2.0.0-rc.7 T6: Evidence-merge on idempotency_key collision.
       // Previously, each repeated call appended `## Evidence (call N)` with
       // the full summary verbatim — re-running extract three times produced
@@ -220,7 +242,7 @@ export async function extractKnowledge(
       const fresh = renderFreshEntry({
         type: input.type,
         sourceSessions,
-        idempotencyKey,
+        idempotencyKey: effectiveIdempotencyKey,
         summary,
         recentPaths: input.recent_paths,
         layer,
@@ -243,36 +265,26 @@ export async function extractKnowledge(
         timestamp: new Date().toISOString(),
         correlation_id: primarySession,
         session_id: primarySession,
-        reason: `extract_knowledge:${sanitizedSlug}`,
+        reason: `extract_knowledge:${effectiveSanitizedSlug}`,
       });
       return {
         pending_path: reportedPath,
-        idempotency_key: idempotencyKey,
+        idempotency_key: effectiveIdempotencyKey,
       };
     }
-    // rc.4 TASK-006 fix (b): different idempotency_key on existing pending
-    // file = slug collision (typically two distinct triples whose slugs
-    // sanitize/truncate to the same canonical form). Previously this branch
-    // silently overwrote, causing data loss for the prior triple. Now we
-    // throw loudly so the caller can disambiguate (rename slug or merge
-    // upstream). Emit a knowledge_archive_attempted observability event
-    // before throwing so forensics can correlate.
-    await emitEventBestEffort(projectRoot, {
-      event_type: "knowledge_archive_attempted",
-      timestamp: new Date().toISOString(),
-      correlation_id: primarySession,
-      session_id: primarySession,
-      reason: `extract_knowledge:${sanitizedSlug}: slug-collision (existing key ${existingKey ?? "<none>"} != incoming ${idempotencyKey})`,
-    });
+    // v2.0.0-rc.37 NEW-6: this branch is now unreachable because
+    // resolveDisambiguatedSlugPath either returns a free slot or throws
+    // when all suffixes are exhausted. Kept as a defensive guard against
+    // future refactors that might bypass the disambiguation helper.
     throw new Error(
-      `slug collision: pending file ${reportedPath} already exists with a different idempotency_key (existing=${existingKey ?? "<missing>"}, incoming=${idempotencyKey}); rename slug or resolve upstream`,
+      `slug collision (unreachable after rc.37 NEW-6): pending file ${reportedPath} already exists with key ${existingKey ?? "<missing>"} != ${effectiveIdempotencyKey}`,
     );
   }
 
   const fresh = renderFreshEntry({
     type: input.type,
     sourceSessions,
-    idempotencyKey,
+    idempotencyKey: effectiveIdempotencyKey,
     summary,
     recentPaths: input.recent_paths,
     layer,
@@ -280,20 +292,11 @@ export async function extractKnowledge(
     sessionContext: input.session_context,
     relevanceScope,
     relevancePaths,
-    // v2.0.0-rc.23 TASK-006 (a-C1): optional structured triage fields. Each is
-    // emitted as a YAML line only when caller-supplied; omitted lines preserve
-    // the historical pending-file shape.
     intentClues: input.intent_clues,
     techStack: input.tech_stack,
     impact: input.impact,
     mustReadIf: input.must_read_if,
-    // v2.0.0-rc.23 TASK-014 (F8c): optional S5 onboard-slot tag. Same emit
-    // discipline as the four a-C1 fields — bare YAML line iff caller-supplied,
-    // never in the idempotency_key hash. fabric-archive's first-run phase is
-    // the only producer; downstream `fabric onboard-coverage` walks frontmatter
-    // looking for this exact key.
     onboardSlot: input.onboard_slot,
-    // v2.0.0-rc.37 NEW-37: pass-through topic tags (skill-inferred, 2-4 kebab-case).
     tags: input.tags,
   });
   await atomicWriteText(absolutePath, fresh);
@@ -303,13 +306,66 @@ export async function extractKnowledge(
     timestamp: new Date().toISOString(),
     correlation_id: primarySession,
     session_id: primarySession,
-    reason: `extract_knowledge:${sanitizedSlug}`,
+    reason: `extract_knowledge:${effectiveSanitizedSlug}`,
   });
 
   return {
     pending_path: reportedPath,
-    idempotency_key: idempotencyKey,
+    idempotency_key: effectiveIdempotencyKey,
   };
+}
+
+// v2.0.0-rc.37 NEW-6: scan slug.md → slug-2.md → ... → slug-9.md, returning
+// the first slot whose file either doesn't exist or already carries the
+// caller's idempotency_key (evidence-merge path). Throws after MAX_VARIANTS
+// exhausted so a runaway slug collision still surfaces loudly. The chosen
+// slug is folded back into a fresh sha256(source_session+type+slug) so the
+// returned idempotency_key matches the slot actually written to — critical
+// for the evidence-merge contract on subsequent re-runs.
+const SLUG_DISAMBIGUATE_MAX_VARIANTS = 9;
+
+async function resolveDisambiguatedSlugPath(args: {
+  baseDir: string;
+  type: string;
+  slug: string;
+  primarySession: string;
+  baseIdempotencyKey: string;
+}): Promise<{ absolutePath: string; sanitizedSlug: string; idempotencyKey: string }> {
+  for (let n = 1; n <= SLUG_DISAMBIGUATE_MAX_VARIANTS; n += 1) {
+    const candidateSlug = n === 1 ? args.slug : `${args.slug}-${n}`;
+    const candidatePath = join(args.baseDir, args.type, `${candidateSlug}.md`);
+    const candidateKey = n === 1
+      ? args.baseIdempotencyKey
+      : sha256(
+          JSON.stringify({
+            source_session: args.primarySession,
+            type: args.type,
+            slug: candidateSlug,
+          }),
+        );
+
+    if (!existsSync(candidatePath)) {
+      return {
+        absolutePath: candidatePath,
+        sanitizedSlug: candidateSlug,
+        idempotencyKey: candidateKey,
+      };
+    }
+    // File exists — peek at its key to decide whether to merge or skip.
+    const existing = await readFile(candidatePath, "utf8");
+    const existingKey = readFrontmatterKey(existing, "x-fabric-idempotency-key");
+    if (existingKey === candidateKey) {
+      return {
+        absolutePath: candidatePath,
+        sanitizedSlug: candidateSlug,
+        idempotencyKey: candidateKey,
+      };
+    }
+    // Key mismatch — try the next suffix.
+  }
+  throw new Error(
+    `slug exhaustion: tried ${args.slug}.md plus -2..-${SLUG_DISAMBIGUATE_MAX_VARIANTS} suffix variants and all slots are taken by entries with different idempotency_keys; rename slug at the caller and retry`,
+  );
 }
 
 /**

@@ -391,7 +391,7 @@ describe("extractKnowledge", () => {
     );
   });
 
-  it("extractKnowledge_throws_on_collision_with_different_idempotency_key", async () => {
+  it("extractKnowledge_disambiguates_slug_on_different_idempotency_key (rc.37 NEW-6)", async () => {
     const projectRoot = await createTempProject();
 
     const dir = join(projectRoot, ".fabric/knowledge/pending/decisions");
@@ -407,19 +407,26 @@ describe("extractKnowledge", () => {
     ].join("\n");
     await writeFile(target, stale, "utf8");
 
-    await expect(
-      extractKnowledge(projectRoot, buildInput({
-        source_sessions: ["sess-collision"],
-        recent_paths: [],
-        user_messages_summary: "Fresh body must NOT win.",
-        type: "decisions",
-        slug: "collision",
-      })),
-    ).rejects.toThrow(/slug collision/u);
+    // v2.0.0-rc.37 NEW-6: server-side slug auto-disambiguate. Different
+    // idempotency_key on `collision.md` → server picks the next free slot
+    // `collision-2.md` and writes fresh content there. The stale file is
+    // preserved verbatim (no data loss); the caller's response carries the
+    // disambiguated path + a fresh idempotency_key hashed against the new slug.
+    const result = await extractKnowledge(projectRoot, buildInput({
+      source_sessions: ["sess-collision"],
+      recent_paths: [],
+      user_messages_summary: "Fresh body lands in collision-2.md.",
+      type: "decisions",
+      slug: "collision",
+    }));
 
-    // Stale file untouched (no data loss).
-    const after = await readFile(target, "utf8");
-    expect(after).toBe(stale);
+    expect(result.pending_path).toBe(
+      ".fabric/knowledge/pending/decisions/collision-2.md",
+    );
+    const stalePreserved = await readFile(target, "utf8");
+    expect(stalePreserved).toBe(stale);
+    const freshBody = await readFile(join(projectRoot, result.pending_path), "utf8");
+    expect(freshBody).toMatch(/Fresh body lands in collision-2\.md\./u);
   });
 
   it("extractKnowledge_renders_no_recent_paths_marker_when_recent_paths_empty", async () => {
@@ -473,7 +480,7 @@ describe("extractKnowledge", () => {
     expect((body.match(/^## Evidence$/gmu) ?? []).length).toBe(1);
   });
 
-  it("extractKnowledge_throws_on_existing_file_without_frontmatter", async () => {
+  it("extractKnowledge_disambiguates_on_existing_file_without_frontmatter (rc.37 NEW-6)", async () => {
     const projectRoot = await createTempProject();
     const dir = join(projectRoot, ".fabric/knowledge/pending/decisions");
     await mkdir(dir, { recursive: true });
@@ -481,16 +488,21 @@ describe("extractKnowledge", () => {
     const original = "Body without any frontmatter at all.\n";
     await writeFile(target, original, "utf8");
 
-    await expect(
-      extractKnowledge(projectRoot, buildInput({
-        source_sessions: ["sess-no-fm"],
-        recent_paths: [],
-        user_messages_summary: "Replacement body.",
-        type: "decisions",
-        slug: "no-frontmatter",
-      })),
-    ).rejects.toThrow(/slug collision/u);
+    // v2.0.0-rc.37 NEW-6: pre-existing file without frontmatter has no
+    // idempotency_key, so the disambiguation helper treats it as a key
+    // mismatch and falls through to `no-frontmatter-2.md`. The original
+    // file is preserved verbatim.
+    const result = await extractKnowledge(projectRoot, buildInput({
+      source_sessions: ["sess-no-fm"],
+      recent_paths: [],
+      user_messages_summary: "Replacement body in -2 slot.",
+      type: "decisions",
+      slug: "no-frontmatter",
+    }));
 
+    expect(result.pending_path).toBe(
+      ".fabric/knowledge/pending/decisions/no-frontmatter-2.md",
+    );
     const after = await readFile(target, "utf8");
     expect(after).toBe(original);
   });
@@ -548,7 +560,7 @@ describe("extractKnowledge", () => {
     expect(slugFromPath).not.toMatch(/-$/u);
   });
 
-  it("extractKnowledge_throws_loudly_on_slug_collision_across_sessions", async () => {
+  it("extractKnowledge_disambiguates_across_sessions (rc.37 NEW-6)", async () => {
     const projectRoot = await createTempProject();
 
     const first = await extractKnowledge(projectRoot, buildInput({
@@ -566,33 +578,36 @@ describe("extractKnowledge", () => {
       "utf8",
     );
 
-    await expect(
-      extractKnowledge(projectRoot, buildInput({
-        source_sessions: ["sess-B"],
-        recent_paths: ["b.ts"],
-        user_messages_summary: "Conflicting entry from session B.",
-        type: "decisions",
-        slug: "shared-slug",
-      })),
-    ).rejects.toThrow(/slug collision/u);
+    // v2.0.0-rc.37 NEW-6: parallel session targeting the same slug routes
+    // to the next free `-2` slot instead of throwing. session-A entry stays
+    // untouched, session-B entry lands in shared-slug-2.md with its own
+    // disambiguated idempotency_key.
+    const second = await extractKnowledge(projectRoot, buildInput({
+      source_sessions: ["sess-B"],
+      recent_paths: ["b.ts"],
+      user_messages_summary: "Concurrent entry from session B.",
+      type: "decisions",
+      slug: "shared-slug",
+    }));
+    expect(second.pending_path).toBe(
+      ".fabric/knowledge/pending/decisions/shared-slug-2.md",
+    );
+    expect(second.idempotency_key).not.toBe(first.idempotency_key);
 
+    // session-A entry intact.
     const after = await readFile(
       join(projectRoot, first.pending_path),
       "utf8",
     );
     expect(after).toBe(originalBody);
     expect(after).toMatch(/Original entry from session A\./u);
-    expect(after).not.toMatch(/Conflicting entry from session B\./u);
-
-    const ledger = await readEventLedger(projectRoot, {
-      event_type: "knowledge_archive_attempted",
-    });
-    expect(ledger.events.length).toBeGreaterThanOrEqual(1);
-    expect(
-      ledger.events.some((e) =>
-        ((e as { reason?: string }).reason ?? "").includes("slug-collision"),
-      ),
-    ).toBe(true);
+    expect(after).not.toMatch(/Concurrent entry from session B\./u);
+    // session-B entry written to disambiguated slot.
+    const secondBody = await readFile(
+      join(projectRoot, second.pending_path),
+      "utf8",
+    );
+    expect(secondBody).toMatch(/Concurrent entry from session B\./u);
   });
 
   // -------------------------------------------------------------------------
