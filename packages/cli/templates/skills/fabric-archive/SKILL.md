@@ -21,7 +21,7 @@ If none hold, stop the skill and tell the user (UX i18n Policy class 2):
 
 Render per `fabric_language` resolved in Phase 0.5.
 
-This skill is `Check-not-Ask`, not a preference interview. Phase 2 proactively gathers evidence; Phase 2.5 viability gate aborts if no archive signal exists; Phase 3 classifies / layers / slugs + batch-review; Phase 4 persists via `fab_extract_knowledge` (one call per candidate).
+This skill runs automatically — it does not interview the user for preferences. Phase 2 proactively gathers evidence; Phase 2.5 (the signal check) aborts if no archive signal exists; Phase 3 classifies / layers / slugs + batch-review; Phase 4 persists via `fab_extract_knowledge` (one call per candidate).
 
 ## 执行流程 (1 User Review Round)
 

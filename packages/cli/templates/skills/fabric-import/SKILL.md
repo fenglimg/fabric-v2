@@ -144,4 +144,4 @@ Roll-up sections (per `fabric_language`): `Phase 2 — Mining` | `Phase 3 — De
 - State corruption: P0 detects → rename `.json.corrupt-<ISO>` → restart P1.
 - MCP unreachable: halt + `MCP 工具未注册；请检查 fabric server 是否运行` / `MCP tool not registered; please check that the fabric server is running` → exit without state write.
 
-Check-not-Ask: inspect state, resume deterministically.
+Resume policy: inspect existing state and continue from the last completed phase — do not prompt the user mid-flow.

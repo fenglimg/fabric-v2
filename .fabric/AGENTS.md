@@ -15,7 +15,7 @@
 
 ## Self-archive policy (v2.0.0-rc.37 NEW-2: 简化 4 信号 → 2 大类)
 
-- **触发** (本会话出现以下任一信号, 在该 turn 回复末尾自主调用 `fabric-archive` skill, E3-strong mode):
+- **触发** (本会话出现以下任一信号, 在该 turn 回复末尾自主调用 `fabric-archive` skill, 走 AI 自触发入口 E3_ai_self_trigger):
   1. **User-driven normative** — 用户消息中显式表达 normative 意图: `以后` / `always` / `never` / `from now on` / `下次注意` / `记一下` / `永远不要`, OR 用户在 ≥2 候选间权衡后给出 rationale 锁定方向, OR 用户拒了某建议**并**说了原因 (拒绝理由本身是知识)
   2. **Wrong-turn-and-revert** — AI 尝试 path X, 反思后改走 path Y (尤其当 path X 是非显然踩坑); 涵盖技术决策反转 + 工具/范式切换 + 失败重试。Anchor: 一定有"否定+替代"的两步结构, 不是单纯探索失败
 

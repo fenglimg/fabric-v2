@@ -25,7 +25,7 @@ See `.fabric/knowledge/` for project decisions, pitfalls, guidelines, models, an
 
 ## Self-archive policy
 
-- **触发**: 本会话出现以下任一信号, 在该 turn 回复末尾自主调用 `fabric-archive` skill (E3-strong mode):
+- **触发**: 本会话出现以下任一信号, 在该 turn 回复末尾自主调用 `fabric-archive` skill (走 AI 自触发入口 E3_ai_self_trigger):
   1. **Normative 语言** — 用户消息出现 `以后` / `always` / `never` / `from now on` / `下次注意` / `记一下` / `永远不要`
   2. **Wrong-turn-and-revert** — AI 尝试 path X, 反思后改走 path Y (尤其当 path X 是非显然踩坑)
   3. **Decision confirmation** — 用户在 ≥2 候选中权衡后给出 rationale 锁定方向

@@ -222,6 +222,7 @@
       "status": "done",
       "_actual_done": "2026-05-27",
       "note": "New inspectPersonalLayerPathMisclassify walks iterateRelevanceFrontmatter for visit.layer==='personal' entries; each relevance_paths glob (skipping ~/ and / absolute anchors that are definitionally project-agnostic) is minimatch-tested against collectWorkspacePathsForGlobMatch. Matches flag the entry. Warning kind — no auto-fix; remediation prompts fab_review.modify layer→team or rewriting anchors. Wired into runDoctorReport adjacent to relevance_paths_drift (shares the iterator + glob matcher). i18n keys added to both locales; doctor-i18n snapshot regenerated. 4 new tests (positive flag / team layer untouched / empty paths skipped / home+absolute anchors skipped). doctor.test.ts check count bumped 48→49. tests 1747/1747 + lint 0 + typecheck 0."
+    },
     {
       "id": "NEW-6",
       "wave": "A",
@@ -264,6 +265,7 @@
       "status": "done",
       "_actual_done": "2026-05-27",
       "note": "Dry-run detection 收窄到 verbatim --dry-run token, 删 legacy substring fallback (bare 'dry-run' / 'dry_run' / '预览'); 避免 'preview the table' / '做个 dry run later' 之类的偶发提及触发 false positive. canonical sources: fabric-archive/ref/dry-run-scope.md + fabric-import/SKILL.md + fabric-import/ref/phase-2-mining.md. installed mirrors (.claude / .codex) 的 fabric-import/SKILL.md 同步更新 (2 处). state-resume 路径不变: fabric-import 已是 state-file 驱动 (.fabric/.import-state.json), 无 prompt substring 检测可删; fabric-archive 无 resume 概念 (single-shot per session); fabric-review 无 dry-run / resume 概念. tests 1752/1752 + lint 0 + typecheck 0."
+    },
     {
       "id": "NEW-11",
       "wave": "A",
@@ -303,9 +305,10 @@
       "wave": "D",
       "subject": "skill 文案术语清理 (Check-not-Ask / E3-strong / viability gate)",
       "done_when": "3 个 SKILL.md user-facing prose 重写 ≤ 用户可读",
-      "status": "pending",
-      "estimated_hours": "1-2"
-    },
+      "status": "done",
+      "_actual_done": "2026-05-27",
+      "estimated_hours": "1-2",
+      "note": "Swept 3 jargon terms across canonical sources. 'Check-not-Ask' in fabric-import/SKILL.md L147 → '...inspect existing state and continue from the last completed phase — do not prompt the user mid-flow.'; in fabric-archive/SKILL.md L24 → 'This skill runs automatically — it does not interview the user for preferences.' (also clarified Phase 2.5 as 'the signal check' parenthetical, keeping 'viability gate' as the defined section header at L64 so internal refs unbroken). 'E3-strong mode' in .fabric/AGENTS.md L18 + AGENTS.md L28 + packages/shared/src/templates/bootstrap-canonical.ts L105 → '走 AI 自触发入口 E3_ai_self_trigger' (entry-point name is real, surfaces the actual routing). fabric-review/SKILL.md had no hits. Pre-existing AGENTS.md ↔ bootstrap-canonical.ts drift (rc.37 NEW-2 content) belongs to NEW-28; touched both this turn to avoid widening the drift. Gates: typecheck 0 / tests 1753 (430+606+717) / lint 0."
     {
       "id": "NEW-16",
       "wave": "D",
@@ -449,6 +452,7 @@
       "status": "done",
       "_actual_done": "2026-05-27",
       "note": "Exported INJECTION_PATTERNS from extract-knowledge.ts (NEW-31) so doctor reuses the 7-regex set without duplication. inspectSuspiciousKb walks iterateCanonicalFilenames, reads each body, defensively resets pattern.lastIndex (g-flag state) before .test(). Matches surface stable_id + matched pattern names. createSuspiciousKbCheck — warning kind, no auto-fix; remediation prompts fab_review.modify (scrub) or .reject (archive). i18n keys added to both locales; doctor-i18n snapshot regenerated. 3 new tests (flagged on ignore-previous / clean body untouched / multi-pattern body). doctor.test.ts check count 49→50. tests 1750/1750 + lint 0 + typecheck 0."
+    },
     {
       "id": "NEW-33",
       "wave": "D",
@@ -457,6 +461,7 @@
       "status": "done",
       "_actual_done": "2026-05-27",
       "note": "新 `--history <mode>` flag (archive | fix | all), 读 doctor_run + session_archive_attempted 事件做逐日 rollup. archive mode 委托给现有 runDoctorArchiveHistory (背向兼容); fix mode 列 doctor_run 当日 lint/fix 计数 + 累计 issues/mutations; all mode 在 fix 基础上加 archive_attempts + archive_proposed 两列. CLI mutex 与所有 mutation 弧 + archive-history 冲突报错. cite-coverage 历次趋势未独立列出 — 该弧依赖 cite_policy_activated marker, 用户调 `--cite-coverage --since=...` 直接拿汇总; 把它折进 history 会改变报告 shape, 不在 1-2h 范围。i18n keys + CLI surface snapshot + docs/test-seed/cli.md §1 同步. 2 新测试: empty window / 双日桶聚合 + 倒序. tests 1752/1752 + lint 0 + typecheck 0."
+    },
     {
       "id": "NEW-34",
       "wave": "B",
