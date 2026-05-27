@@ -1,6 +1,6 @@
 # Dry-run Scope (unified)
 
-`dry_run = true` (per Phase 4.5 detection rule — substring match on `--dry-run` | `dry-run` | `dry_run` | `预览` token) suspends ALL side-effecting writes below; read-side machinery (Phase 1 digest collection, Phase 2.5 viability gate evaluation, Phase 3 candidate render) executes normally so the user can preview what WOULD happen.
+`dry_run = true` (per Phase 4.5 detection rule — invocation MUST carry the verbatim token `--dry-run`; v2.0.0-rc.37 NEW-10 dropped the legacy substring fallback on bare `dry-run` / `dry_run` / `预览` to eliminate false positives on incidental mentions of those words mid-prompt) suspends ALL side-effecting writes below; read-side machinery (Phase 1 digest collection, Phase 2.5 viability gate evaluation, Phase 3 candidate render) executes normally so the user can preview what WOULD happen.
 
 | Write operation | Normal mode | Dry-run mode |
 |---|---|---|

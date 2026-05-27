@@ -261,9 +261,9 @@
       "wave": "D",
       "subject": "dry-run / state-resume 统一 explicit flag (3 skill 共)",
       "done_when": "fabric-archive/import/review 全用 --dry-run flag, prompt substring 检测路径删",
-      "status": "pending",
-      "estimated_hours": "1-2"
-    },
+      "status": "done",
+      "_actual_done": "2026-05-27",
+      "note": "Dry-run detection 收窄到 verbatim --dry-run token, 删 legacy substring fallback (bare 'dry-run' / 'dry_run' / '预览'); 避免 'preview the table' / '做个 dry run later' 之类的偶发提及触发 false positive. canonical sources: fabric-archive/ref/dry-run-scope.md + fabric-import/SKILL.md + fabric-import/ref/phase-2-mining.md. installed mirrors (.claude / .codex) 的 fabric-import/SKILL.md 同步更新 (2 处). state-resume 路径不变: fabric-import 已是 state-file 驱动 (.fabric/.import-state.json), 无 prompt substring 检测可删; fabric-archive 无 resume 概念 (single-shot per session); fabric-review 无 dry-run / resume 概念. tests 1752/1752 + lint 0 + typecheck 0."
     {
       "id": "NEW-11",
       "wave": "A",

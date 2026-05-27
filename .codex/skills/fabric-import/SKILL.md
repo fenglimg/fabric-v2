@@ -304,7 +304,7 @@ After Step 2.2 completes (or hits the cap), update `.fabric/.import-state.json`:
 
 #### Dry-Run Mode
 
-When the user invocation includes `dry-run` / `预览` / `--dry-run` keywords, Phase 2 runs WITHOUT calling `fab_extract_knowledge`. Instead it prints a table. UX i18n Policy class 4 — dry-run table headers; the header + column titles are bilingualized; row content (slug / commit sha / doc path) is data and is NOT translated. The protected tokens `broad`, `relevance_scope`, `relevance_paths` appear verbatim in both variants:
+When the user invocation carries the verbatim token `--dry-run`, Phase 2 runs WITHOUT calling `fab_extract_knowledge`. Instead it prints a table. v2.0.0-rc.37 NEW-10 dropped the legacy substring fallback on bare `dry-run` / `预览` (false-positive on incidental mentions). UX i18n Policy class 4 — dry-run table headers; the header + column titles are bilingualized; row content (slug / commit sha / doc path) is data and is NOT translated. The protected tokens `broad`, `relevance_scope`, `relevance_paths` appear verbatim in both variants:
 
 zh-CN variant (`fabric_language === "zh-CN"`):
 
@@ -525,7 +525,7 @@ The contract: re-invoking fabric-import after ANY interruption (Ctrl-C, crash, n
 | Git log commit-scan cap             | config-resolved (default 500)        | `import_max_commits_scan` in `.fabric/fabric-config.json`      |
 | Skip-import canonical threshold     | config-resolved (default 50)         | `import_skip_canonical_threshold` in `.fabric/fabric-config.json` |
 | Docs scan depth                     | `3`         | User explicit ("scan docs/ recursively")                       |
-| Dry-run mode                        | OFF         | User keyword `dry-run` / `预览` / `--dry-run`                  |
+| Dry-run mode                        | OFF         | Verbatim `--dry-run` token (rc.37 NEW-10)                        |
 | Re-run within 24h of complete       | BLOCKED     | User keyword `re-run import` / `reset import`                  |
 
 ## Hard Rules — DISPLAY / WRITE Split

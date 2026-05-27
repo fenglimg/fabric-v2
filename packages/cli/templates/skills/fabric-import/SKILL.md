@@ -85,7 +85,7 @@ Skip if: cosmetic-only / metadata-only / in baseline / not classifiable / slug n
 
 #### Dry-Run
 
-Keyword `dry-run` / `预览` / `--dry-run` → skip MCP, render bilingual preview table (every Scope row `broad+[]`). State NOT written. P3 skipped.
+Explicit token `--dry-run` in invocation → skip MCP, render bilingual preview table (every Scope row `broad+[]`). State NOT written. P3 skipped. v2.0.0-rc.37 NEW-10 dropped legacy substring fallback on bare `dry-run` / `预览` (false-positive on incidental mentions).
 
 Full MCP call shape, Step 2.1.5 table, dry-run templates, T5 idempotency → `Read .../ref/phase-2-mining.md`.
 
