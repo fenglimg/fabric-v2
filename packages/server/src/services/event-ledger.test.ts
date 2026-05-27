@@ -947,6 +947,40 @@ describe("appendEventLedgerEvent — 50MB soft-warn (rc.22 Scope A T3)", () => {
   });
 });
 
+describe("appendEventLedgerEvent — per-field truncate (rc.37 NEW-14)", () => {
+  it("truncates a string field exceeding 4 KB and appends a sentinel marker", async () => {
+    const projectRoot = await createTempProject();
+    const longReason = "x".repeat(8 * 1024); // 8 KB > 4 KB cap
+    await appendEventLedgerEvent(projectRoot, {
+      event_type: "knowledge_proposed",
+      timestamp: new Date().toISOString(),
+      reason: longReason,
+    });
+    const { events } = await readEventLedger(projectRoot, {
+      event_type: "knowledge_proposed",
+    });
+    expect(events).toHaveLength(1);
+    const persisted = (events[0] as { reason: string }).reason;
+    expect(persisted.length).toBeLessThan(longReason.length);
+    expect(persisted).toContain("[truncated: rc.37 NEW-14 4KB cap]");
+    expect(Buffer.byteLength(persisted, "utf8")).toBeLessThanOrEqual(4 * 1024);
+  });
+
+  it("leaves a small string field untouched", async () => {
+    const projectRoot = await createTempProject();
+    const smallReason = "ok";
+    await appendEventLedgerEvent(projectRoot, {
+      event_type: "knowledge_proposed",
+      timestamp: new Date().toISOString(),
+      reason: smallReason,
+    });
+    const { events } = await readEventLedger(projectRoot, {
+      event_type: "knowledge_proposed",
+    });
+    expect((events[0] as { reason: string }).reason).toBe("ok");
+  });
+});
+
 async function createTempProject(): Promise<string> {
   const projectRoot = await mkdtemp(join(tmpdir(), "fabric-event-ledger-"));
   tempDirs.push(projectRoot);

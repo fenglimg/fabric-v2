@@ -14,4 +14,6 @@ export const allCommands = {
   // fabric-archive Skill's first-run phase to detect unclaimed slots.
   "onboard-coverage": () =>
     import("./onboard-coverage.js").then((module) => module.default),
+  // v2.0.0-rc.37 NEW-34: text dashboard over .fabric/metrics.jsonl.
+  metrics: () => import("./metrics.js").then((module) => module.default),
 };

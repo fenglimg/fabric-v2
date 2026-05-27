@@ -128,13 +128,56 @@ export type ReadEventLedgerResult = {
   warnings: LedgerWarning[];
 };
 
+// v2.0.0-rc.37 Wave B (NEW-14): per-field truncate cap. POSIX guarantees
+// atomic writes only up to PIPE_BUF (4096 bytes on Linux/macOS). When a single
+// JSONL line exceeds that, concurrent writers can interleave bytes — splitting
+// an event mid-string and corrupting the ledger. We cap each STRING field at
+// 4 KB and emit a sentinel marker so consumers can detect the truncation when
+// the original payload was long-form (e.g. a paste of a giant stack trace into
+// `intent`).
+const EVENT_FIELD_TRUNCATE_BYTES = 4 * 1024;
+const TRUNCATION_SENTINEL = "…[truncated: rc.37 NEW-14 4KB cap]";
+
+function truncateOneString(value: string): string {
+  if (Buffer.byteLength(value, "utf8") <= EVENT_FIELD_TRUNCATE_BYTES) return value;
+  // UTF-8 safe truncation: slice progressively from the byte cap until the
+  // result + sentinel encodes back to ≤ cap.
+  let candidate = value;
+  while (
+    Buffer.byteLength(candidate, "utf8") + TRUNCATION_SENTINEL.length >
+    EVENT_FIELD_TRUNCATE_BYTES
+  ) {
+    candidate = candidate.slice(0, Math.max(0, candidate.length - 32));
+  }
+  return candidate + TRUNCATION_SENTINEL;
+}
+
+function truncateLongStrings(value: unknown): unknown {
+  if (typeof value === "string") return truncateOneString(value);
+  if (Array.isArray(value)) return value.map((v) => truncateLongStrings(v));
+  if (value !== null && typeof value === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      out[k] = truncateLongStrings(v);
+    }
+    return out;
+  }
+  return value;
+}
+
 export async function appendEventLedgerEvent(
   projectRoot: string,
   event: EventLedgerEventInput,
 ): Promise<StoredEventLedgerEvent> {
   const eventPath = getEventLedgerPath(projectRoot);
+  // v2.0.0-rc.37 NEW-14: apply per-field truncate BEFORE Zod validation —
+  // the truncated value still satisfies every existing schema (strings stay
+  // strings). Run on the input shape because Zod removes excess properties
+  // on parse; running post-parse would skip any optional fields that
+  // happened to also be too long.
+  const truncated = truncateLongStrings(event) as EventLedgerEventInput;
   const nextEvent = eventLedgerEventSchema.parse({
-    ...event,
+    ...truncated,
     kind: "fabric-event",
     id: event.id ?? `event:${randomUUID()}`,
     ts: event.ts ?? Date.now(),
