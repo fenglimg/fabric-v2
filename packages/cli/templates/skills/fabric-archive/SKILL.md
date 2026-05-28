@@ -21,11 +21,17 @@ If none hold, stop the skill and tell the user (UX i18n Policy class 2):
 
 Render per `fabric_language` resolved in Phase 0.5.
 
-This skill runs automatically — it does not interview the user for preferences. Phase 2 proactively gathers evidence; Phase 2.5 (the signal check) aborts if no archive signal exists; Phase 3 classifies / layers / slugs + batch-review; Phase 4 persists via `fab_extract_knowledge` (one call per candidate).
+This skill runs automatically — it does not interview the user for preferences. It gathers evidence, aborts if no archive signal exists, then classifies + persists.
 
 ## 执行流程 (1 User Review Round)
 
-Phase chain: `0 → 0.5 → 1 → [1.5] → 2 → 2.5 → 3 → 3.5 → 4 → 4.5`. Each phase below is a navigator stub — full procedure, decision tables, and worked examples live in `ref/`.
+v2.0.0-rc.37 NEW-9 collapsed the flow to **3 macro-phases**; the legacy fine-grained phases survive as labelled sub-steps (back-compat for `ref/` navigation + existing traces):
+
+- **GATHER** = Phase 0 (range) → 0.5 (config) → 1 (ledger scan via `fab_archive_scan`) → [1.5 onboard] → 2 (candidates). Resolve scope, load config, deterministically scan the ledger for in-scope sessions, collect candidate observations.
+- **REVIEW** = Phase 2.5 (viability gate — abort guard) → 3 (classify / layer / slug + batch review) → 3.5 (scope + relevance_paths). The single user review round lives here.
+- **PERSIST** = Phase 4 (`fab_extract_knowledge`, one call per candidate) → 4.5 (archive-attempt ledger).
+
+Sub-step chain: `0 → 0.5 → 1 → [1.5] → 2 → 2.5 → 3 → 3.5 → 4 → 4.5`. Each below is a navigator stub — full procedure, decision tables, and worked examples live in `ref/`.
 
 ### Phase 0 — Range Resolution
 
@@ -43,11 +49,19 @@ Read `fabric_language` (`zh-CN` / `en` / `zh-CN-hybrid` / `match-existing`); emi
 
 `Read ref/i18n-policy.md` for the full 5-class taxonomy + edge cases.
 
-### Phase 1 — Collect Cross-Session Digests
+### Phase 1 — Collect Cross-Session Digests (server-side ledger scan, rc.37 NEW-9)
 
-Stitch context from every session accumulated since the last `knowledge_proposed` event. Tail-scan `.fabric/events.jsonl` → find anchor → forward-collect distinct `session_id`s → load per-session digests from `.fabric/.cache/session-digests/<session_id>.md` → concatenate into `### Cross-session digest` block, populating `source_sessions[]` + `session_context` for Phase 4. Cap at `archive_digest_max_sessions`.
+The deterministic ledger scan now runs **server-side** — call `fab_archive_scan({ range, session_id })` (range = Phase 0's `session_id[]` or `"all"`/omitted). It returns:
 
-`Read ref/phase-1-cross-session.md` for the Step 4.5 ledger filter state machine (rules a-f), `ANTI_LOOP_HOURS` / `HIGH_VALUE_EVENT_TYPES` / `NORMATIVE_KEYWORDS` constants, and 3 worked examples (user_dismissed / cooldown / re-scan-with-signal).
+- `anchor_ts` — ts of the last `knowledge_proposed` (the lower bound).
+- `session_ids[]` — distinct in-scope sessions since the anchor, ALREADY filtered through the outcome-ledger state machine (drops `user_dismissed`, sessions inside the 12h anti-loop cooldown, and watermarked sessions with no new high-value signal). First-seen order.
+- `dropped[]` — `{session_id, reason}` for transparency.
+- `covered_through_ts` — max ts examined (becomes the next watermark).
+- `already_proposed_keys[]` — idempotency keys already proposed but not yet reviewed; drop matching candidates in Phase 3 (cross-session pending dedupe).
+
+Then (LLM side, Boundary B): for each returned `session_id`, load `.fabric/.cache/session-digests/<session_id>.md`, concatenate into a `### Cross-session digest` block, and populate `source_sessions[]` + `session_context` for Phase 4. Cap at `archive_digest_max_sessions`. Missing digest files degrade silently.
+
+`Read ref/phase-1-cross-session.md` for the (now server-side) filter state machine rules + the digest-stitch + graceful-degradation notes. The hand-rolled `tail -n 200` events.jsonl scan is retired — `fab_archive_scan` is the source of truth for which sessions to load.
 
 Graceful degradation: missing digest cache → single-session fallback. Missing `session_archive_attempted` events (pre-rc.25) → legacy "scan everything since anchor" behaviour.
 

@@ -30,6 +30,7 @@ describe("createFabricServer", () => {
 
     const toolNames = registerTool.mock.calls.map((call) => call[0]);
     expect(toolNames.sort()).toEqual([
+      "fab_archive_scan",
       "fab_extract_knowledge",
       "fab_get_knowledge_sections",
       "fab_plan_context",

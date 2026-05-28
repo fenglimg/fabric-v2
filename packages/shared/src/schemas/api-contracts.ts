@@ -495,6 +495,67 @@ export const recallAnnotations = {
   title: "Recall Fabric knowledge (one-call)",
 } as const;
 
+// v2.0.0-rc.37 NEW-9: deterministic Phase 1 ledger scan for fabric-archive.
+// Ports the error-prone LLM-side anchor-find + session forward-collect +
+// outcome-ledger filter state machine (user_dismissed / cooldown /
+// covered_through_ts high-value-signal) to the server. The Skill calls this,
+// then loads digests for the returned session_ids + does semantic stitching
+// (Boundary B: deterministic scan → MCP; semantic selection → LLM).
+export const archiveScanInputSchema = z.object({
+  range: z
+    .union([z.array(z.string()).min(1), z.literal("all")])
+    .optional()
+    .describe(
+      "Phase 0 scope: explicit session_id[] to constrain the scan, or the 'all' sentinel. Omitted = scan everything since the last knowledge_proposed anchor.",
+    ),
+  now_ms: z
+    .number()
+    .int()
+    .nonnegative()
+    .optional()
+    .describe("Override for the anti-loop cooldown clock (testing). Defaults to Date.now()."),
+  correlation_id: z
+    .string()
+    .optional()
+    .describe("Optional caller-provided correlation id for Event Ledger records."),
+  session_id: z
+    .string()
+    .optional()
+    .describe("Current client session id; recorded for cross-session debt tracking."),
+});
+
+export const archiveScanOutputSchema = z.object({
+  // ts of the most recent knowledge_proposed event (the lower bound), or null
+  // when the workspace has never archived (scan everything).
+  anchor_ts: z.number().nullable(),
+  // Distinct session_ids since the anchor that survived the outcome filter,
+  // in first-seen order — ready for the Skill to load digests + stitch.
+  session_ids: z.array(z.string()),
+  // Sessions dropped by the filter, with the rule that fired (audit/debug).
+  dropped: z.array(
+    z.object({
+      session_id: z.string(),
+      reason: z.enum(["user_dismissed", "cooldown", "no_new_signal"]),
+    }),
+  ),
+  // max ts examined across the scan — becomes the next covered_through_ts.
+  covered_through_ts: z.number().nullable(),
+  // Idempotency keys already proposed by prior archive runs but not yet
+  // reviewed (Phase 4.5 cross-session pending dedupe). Drop matching candidates.
+  already_proposed_keys: z.array(z.string()),
+  warnings: z.array(structuredWarningSchema).optional(),
+});
+
+export const archiveScanAnnotations = {
+  readOnlyHint: true,
+  idempotentHint: true,
+  destructiveHint: false,
+  openWorldHint: false,
+  title: "Scan event ledger for archive candidates (deterministic)",
+} as const;
+export type ArchiveScanInput = z.infer<typeof archiveScanInputSchema>;
+export type ArchiveScanOutput = z.infer<typeof archiveScanOutputSchema>;
+
 // ---------------------------------------------------------------------------
 // MCP tool contracts — fab_extract_knowledge (rc.2 protocol pre-lock)
 //

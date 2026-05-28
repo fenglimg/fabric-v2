@@ -258,8 +258,10 @@
       "wave": "D",
       "subject": "fabric-archive 简化 8 phase → 3 + Phase 1 ledger filter 服务端化",
       "done_when": "SKILL.md 重写 + ledger filter 状态机移到 server",
-      "status": "pending",
-      "estimated_hours": "3-4"
+      "status": "done",
+      "_actual_done": "2026-05-28",
+      "estimated_hours": "3-4",
+      "note": "两块全交付。(1) 8 phase → 3 macro-phase: SKILL.md 执行流程重构为 GATHER (Phase 0+0.5+1+[1.5]+2) / REVIEW (2.5 viability gate + 3 + 3.5) / PERSIST (4 + 4.5) 三大阶段; 老细粒度 phase 保留作 labelled sub-step (back-compat ref 导航 + 既有 traces); sub-step chain 注明. (2) Phase 1 ledger filter 服务端化: 新 server service archive-scan.ts collectArchiveScan() 把原 LLM 手跑的 events.jsonl tail-scan + anchor-find + session forward-collect + Step 4.5 outcome-ledger filter 状态机 (user_dismissed permanent-drop / 12h anti-loop cooldown / covered_through_ts high-value-signal probe via HIGH_VALUE_EVENT_TYPES + NORMATIVE_KEYWORDS) + cross-session pending dedupe (已 proposed idempotency keys) 全部确定性化, never-throw degrade to scan-everything. 新 MCP tool fab_archive_scan (read-only, 第 6 个工具) registered in createFabricServer; schema archiveScanInput/Output/Annotations + types 加到 api-contracts. SKILL Phase 1 改为调 fab_archive_scan 拿 filtered session_ids, 再 LLM 侧 load digests + 语义 stitch (Boundary B: 确定性 scan → MCP; 语义 selection → LLM). phase-1-cross-session.md 加 server-side note (Steps 1-4.5 现为 server 计算的 authoritative spec). 新增 archive-scan.test.ts 7 test (empty / anchor+forward-collect order / user_dismissed drop / cooldown drop / watermark+high-value keep / watermark no-signal drop / range constraint). index.test tool list +fab_archive_scan; tool-contracts snapshot regen. Gates: tsc 0 / tests 1801 (434+617+750) / lint 0. SKILL.md 15454B (~3.9K tok, 远低于 10K 上限)。"
     },
     {
       "id": "NEW-10",

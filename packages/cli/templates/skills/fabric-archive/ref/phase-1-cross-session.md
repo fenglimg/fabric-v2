@@ -2,6 +2,8 @@
 
 > **Loaded on demand.** SKILL.md hot path retains Phase 1's purpose statement + 5-step summary + graceful-degradation note. This file holds Steps 1-5 detailed implementation (events.jsonl tail-scan, anchor-walk, digest load, rc.25 TASK-05 ledger filter algorithm + constants + worked examples, cross-session context build).
 
+> **v2.0.0-rc.37 NEW-9 — Steps 1-4.5 moved server-side.** The deterministic part of this algorithm (events.jsonl tail-scan, anchor-find, session forward-collect, and the Step 4.5 outcome-ledger filter state machine) now runs in the server and is exposed as the `fab_archive_scan` MCP tool — call it instead of hand-running `tail`/grep. The tool returns the already-filtered `session_ids[]` + `anchor_ts` + `covered_through_ts` + `already_proposed_keys[]`. Steps 1-4.5 below remain as the AUTHORITATIVE SPEC of what the server computes (and the contract tests pin it); the Skill no longer executes them by hand. Step 5 (digest load + cross-session context stitch) stays LLM-side per Boundary B.
+
 ## Step 1 — Read events.jsonl tail
 
 Use `Bash` with `tail -n 200 .fabric/events.jsonl` (tolerate ENOENT — empty ledger is a normal first-run state).

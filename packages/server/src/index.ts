@@ -19,6 +19,7 @@ import { reconcileKnowledge } from "./services/knowledge-sync.js";
 import { registerExtractKnowledge } from "./tools/extract-knowledge.js";
 import { registerPlanContext } from "./tools/plan-context.js";
 import { registerRecall } from "./tools/recall.js";
+import { registerArchiveScan } from "./tools/archive-scan.js";
 import { registerReview } from "./tools/review.js";
 import { registerKnowledgeSections } from "./tools/knowledge-sections.js";
 
@@ -163,6 +164,7 @@ export function createFabricServer(tracker?: InFlightTracker): McpServer {
   registerPlanContext(server, tracker);
   registerKnowledgeSections(server, tracker);
   registerRecall(server, tracker);
+  registerArchiveScan(server, tracker);
   registerExtractKnowledge(server, tracker);
   registerReview(server, tracker);
 
