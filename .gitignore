@@ -10,6 +10,7 @@ coverage/
 .fabric/events.jsonl
 .fabric/events.archive/
 .fabric/events.jsonl.corrupted.*
+.fabric/metrics.jsonl
 .fabric-personal-dogfood-tmp/
 # MCP client configs contain absolute local paths — per-machine, not for repo
 .mcp.json

@@ -242,6 +242,14 @@ export const fabricConfigSchema = z.object({
   // TRUNCATION_THRESHOLD=12 grouped-render kicks in. Mirrors the rc.7 T7 +
   // archive_max_* pattern of externalizing previously-hardcoded thresholds.
   hint_broad_top_k: z.number().int().min(1).max(50).optional().default(8),
+  // v2.0.0-rc.37 NEW-16: durable per-signal dismiss for the fabric-hint Stop
+  // hook nudges. Any signal type listed here is suppressed at emit time across
+  // all sessions (the session-scoped sibling lives in a .fabric/.cache sidecar
+  // written on request). Mirrors the cite_evict_interval=0 opt-out convention —
+  // a knob for an existing surface, not a new feature. Unknown types ignored.
+  hint_dismiss_signals: z
+    .array(z.enum(["archive", "review", "import", "maintenance"]))
+    .optional(),
   // v2.0.0-rc.33 W2-1 (P0-9): TopK upper bound for the narrow PreToolUse hint
   // emitted by knowledge-hint-narrow.cjs. After filtering to entries whose
   // `relevance_scope === "narrow"` (rc.27 TASK-005 audit §2.5 fix), the hook

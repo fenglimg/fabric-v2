@@ -317,8 +317,10 @@
       "wave": "D",
       "subject": "fabric-hint 拆 4 子 hook + 独立 cooldown + dismiss 机制 + 文案加引导",
       "done_when": "4 个独立 hook (archive/import/review/maintenance) + session-level dismiss state + nudge 加 dismiss option",
-      "status": "pending",
-      "estimated_hours": "3-4"
+      "status": "done",
+      "_actual_done": "2026-05-28",
+      "estimated_hours": "3-4",
+      "note": "Re-scoped (mirror NEW-29 host-constraint pragmatism): 物理拆 4 个独立 Stop-hook 文件被否决 —— (1) Stop hook 每 turn fire, 4 文件 = 4× cold node spawn/turn (perf regression, 违背 hook 性能审慎); (2) 破坏 fabric-hint 刻意的 single-nudge-per-turn precedence 模型 (archive>review>import>maintenance, 防 nag-overload, KT-DEC-0007 anti-nag spirit)。'独立 cooldown' 半边发现已存在: A/B/C 走 signal-keyed SHOWN_CACHE (archive-hint-shown.json 每 signal 独立 timestamp), maintenance 走独立 day-cooldown sidecar —— 4 signal cooldown 早已彼此独立。真正交付的两块 dismiss 价值: (a) per-signal dismiss 两 lever —— config-durable fabric-config.json#hint_dismiss_signals (跨 session, schema enum ['archive','review','import','maintenance'] 加到 fabric-config.ts + rebuild shared) + session-scoped .fabric/.cache/hint-dismiss-{sessionId}.json (ephemeral, agent 应用户请求写, Fabric AI-driven 写约定无新 CLI); readDismissedSignals 在 emit 前 union 两源, 命中则 silent (同 cooldown shape), 覆盖 maintenance + A/B/C 双 emit path。(b) nudge 文案: renderDismissOption 双语行 append 到每条 nudge.reason, 指明 config lever + session dismiss 途径。helpers (readDismissedSignals/writeSessionDismiss/sessionDismissFileName/renderDismissOption/DISMISSABLE_SIGNALS) 经 guarded require config-cache+state-store (house style)。新增 fabric-hint-dismiss.test.ts 8 test (config/sidecar union + 加性 merge + 双语行 + main() 端到端 archive suppress)。顺手 .gitignore 加 .fabric/metrics.jsonl (B-wave 运行态, 之前漏 ignore)。Gates: tsc 0 / tests 1788 (432+606+750) / lint 0。"
     },
     {
       "id": "NEW-17",
