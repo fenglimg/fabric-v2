@@ -51,7 +51,7 @@
 - [ ] **UX-14** doctor 故障自救 dogfood（自救率 ≥80% floor 60% + 次要 mode 输出，并 G2，X3 最大盲区，≥2 LLM）
 - [ ] **UX-16** S7 升级 + S8 退出/撤销 UX 冒烟（历史 0% UX 覆盖）
 
-- [ ] **UX-18** AGENTS.md 两步协议工效（G5，最高频 AI 交互，P1，≥2 LLM）
+- [x] **UX-18** AGENTS.md 两步协议工效（G5，最高频 AI 交互，P1，≥2 LLM）✅ 修 stale shape + fab_recall 设默认 (claude+gemini SOUND)
 
 ### D-PARITY — 跨客户端（X1，per-client 能力面）
 - [ ] **UX-11** Claude CLI vs Codex CLI 能力面验证（自动，仅 2 CLI，builds-on 工程本 F2）
