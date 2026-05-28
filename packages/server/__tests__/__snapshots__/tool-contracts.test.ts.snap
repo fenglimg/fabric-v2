@@ -389,6 +389,81 @@ exports[`tool contracts > fab-review contract matches snapshot 1`] = `
         "additionalProperties": false,
         "properties": {
           "action": {
+            "const": "modify-content",
+            "type": "string",
+          },
+          "changes": {
+            "$ref": "#/anyOf/3/properties/changes",
+          },
+          "pending_path": {
+            "minLength": 1,
+            "type": "string",
+          },
+        },
+        "required": [
+          "action",
+          "pending_path",
+          "changes",
+        ],
+        "type": "object",
+      },
+      {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "const": "modify-layer",
+            "type": "string",
+          },
+          "changes": {
+            "additionalProperties": false,
+            "properties": {
+              "layer": {
+                "enum": [
+                  "team",
+                  "personal",
+                ],
+                "type": "string",
+              },
+              "maturity": {
+                "$ref": "#/anyOf/3/properties/changes/properties/maturity",
+              },
+              "relevance_paths": {
+                "$ref": "#/anyOf/3/properties/changes/properties/relevance_paths",
+              },
+              "relevance_scope": {
+                "$ref": "#/anyOf/3/properties/changes/properties/relevance_scope",
+              },
+              "summary": {
+                "$ref": "#/anyOf/3/properties/changes/properties/summary",
+              },
+              "tags": {
+                "$ref": "#/anyOf/3/properties/changes/properties/tags",
+              },
+              "title": {
+                "$ref": "#/anyOf/3/properties/changes/properties/title",
+              },
+            },
+            "required": [
+              "layer",
+            ],
+            "type": "object",
+          },
+          "pending_path": {
+            "minLength": 1,
+            "type": "string",
+          },
+        },
+        "required": [
+          "action",
+          "pending_path",
+          "changes",
+        ],
+        "type": "object",
+      },
+      {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
             "const": "search",
             "type": "string",
           },

@@ -152,4 +152,4 @@ Full bilingual rendering blocks + step-by-step procedures for the four modes ref
 
 ### Anti-Pattern (Hard Rule restatement)
 
-NEVER emit an `AskUserQuestion` whose options include {pending, topic, health, revisit}. The user does not pick the mode. If inference is genuinely ambiguous after all 3 steps, default to `pending` and proceed; the user can always cancel and redirect.
+NEVER emit an `AskUserQuestion` whose options include {pending, maintain} (or the legacy {topic, health, revisit} aliases). The user does not pick the mode. If inference is genuinely ambiguous after both steps, default to `pending` and proceed; the user can always cancel and redirect. (rc.37 NEW-12 collapsed the 4 legacy modes to 2: `pending` + `maintain`.)

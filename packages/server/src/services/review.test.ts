@@ -326,6 +326,61 @@ describe("reviewKnowledge", () => {
   });
 
   // -------------------------------------------------------------------------
+  // rc.37 NEW-12: explicit modify split (modify-content / modify-layer)
+  // -------------------------------------------------------------------------
+
+  it("modify-content edits scalars and never flips layer (layer stripped)", async () => {
+    const projectRoot = await createTempProject();
+    const pendingPath = await seedPendingFile(projectRoot, "decisions", "content-only", {
+      tags: ["initial"],
+      layer: "team",
+    });
+
+    // Even though a layer is passed, modify-content MUST strip it → no flip.
+    const result = await reviewKnowledge(projectRoot, {
+      action: "modify-content",
+      pending_path: pendingPath,
+      changes: { tags: ["edited"], layer: "personal" },
+    });
+    expect(result.action).toBe("modify");
+    if (result.action !== "modify") throw new Error("unreachable");
+    expect(result.prior_stable_id).toBeUndefined();
+    expect(result.new_stable_id).toBeUndefined();
+
+    const updated = await readFile(join(projectRoot, pendingPath), "utf8");
+    expect(updated).toMatch(/^tags: \[edited\]$/mu);
+    expect(updated).toMatch(/^layer: team$/mu); // unchanged — layer flip suppressed
+    const layerEvents = await readEventLedger(projectRoot, {
+      event_type: "knowledge_layer_changed",
+    });
+    expect(layerEvents.events).toHaveLength(0);
+  });
+
+  it("modify-layer flips layer (dedicated layer-flip path)", async () => {
+    const projectRoot = await createTempProject();
+    const pendingPath = await seedPendingFile(projectRoot, "decisions", "flip-explicit", {
+      layer: "team",
+    });
+    const approve = await reviewKnowledge(projectRoot, {
+      action: "approve",
+      pending_paths: [pendingPath],
+    });
+    if (approve.action !== "approve") throw new Error("unreachable");
+    const priorId = approve.approved[0].stable_id;
+    const canonicalRel = `.fabric/knowledge/decisions/${priorId}--flip-explicit.md`;
+
+    const result = await reviewKnowledge(projectRoot, {
+      action: "modify-layer",
+      pending_path: canonicalRel,
+      changes: { layer: "personal" },
+    });
+    expect(result.action).toBe("modify");
+    if (result.action !== "modify") throw new Error("unreachable");
+    expect(result.prior_stable_id).toBe(priorId);
+    expect(result.new_stable_id).toMatch(/^KP-DEC-\d{4}$/u);
+  });
+
+  // -------------------------------------------------------------------------
   // TASK-002: modify action — layer flip
   // -------------------------------------------------------------------------
 

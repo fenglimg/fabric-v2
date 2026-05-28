@@ -206,11 +206,12 @@ describe("registerReview", () => {
   // -------------------------------------------------------------------------
 
   it("test_fab_review_input_shape_exposes_action_enum_and_optional_fields", () => {
-    // (a) action is a required ZodEnum exposing all 6 literals.
+    // (a) action is a required ZodEnum exposing all 8 literals (rc.37 NEW-12
+    // added modify-content + modify-layer alongside the legacy modify alias).
     const actionSchema = FabReviewInputShape.action;
     expect(actionSchema).toBeInstanceOf(z.ZodEnum);
     expect(actionSchema.options.sort()).toEqual(
-      ["approve", "defer", "list", "modify", "reject", "search"],
+      ["approve", "defer", "list", "modify", "modify-content", "modify-layer", "reject", "search"],
     );
 
     // (b) Every other declared field is optional (so the SDK-flattened shape

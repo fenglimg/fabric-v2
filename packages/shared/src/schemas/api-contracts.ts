@@ -818,6 +818,24 @@ export const FabReviewInputSchema = z.discriminatedUnion("action", [
     pending_path: z.string().min(1),
     changes: _fabReviewModifyChangesSchema,
   }),
+  // v2.0.0-rc.37 NEW-12: explicit modify split. `modify-content` edits scalar
+  // frontmatter/body fields (title/summary/maturity/tags/relevance_*) and MUST
+  // NOT carry a layer change. `modify-layer` is the dedicated layer-flip path
+  // (changes.layer REQUIRED) which may reallocate the stable_id + emit an
+  // id-redirect (rc.37 NEW-24). Legacy `modify` stays for back-compat and
+  // routes by whether changes.layer is present.
+  z.object({
+    action: z.literal("modify-content"),
+    pending_path: z.string().min(1),
+    changes: _fabReviewModifyChangesSchema,
+  }),
+  z.object({
+    action: z.literal("modify-layer"),
+    pending_path: z.string().min(1),
+    changes: _fabReviewModifyChangesSchema.extend({
+      layer: z.enum(["team", "personal"]),
+    }),
+  }),
   z.object({
     action: z.literal("search"),
     query: z.string().min(1),
@@ -847,9 +865,9 @@ export type FabReviewInput = z.infer<typeof FabReviewInputSchema>;
 // branches is caught by a unit test in packages/server/src/tools/review.test.ts.
 export const FabReviewInputShape = {
   action: z
-    .enum(["list", "approve", "reject", "modify", "search", "defer"])
+    .enum(["list", "approve", "reject", "modify", "modify-content", "modify-layer", "search", "defer"])
     .describe(
-      "Action selector. Discriminates the per-action fields below; required.",
+      "Action selector. Discriminates the per-action fields below; required. modify-content edits scalars (no layer); modify-layer is the layer-flip path (changes.layer required); modify is the legacy combined alias.",
     ),
   filters: _fabReviewFiltersSchema.describe(
     "Optional filters (type/layer/maturity/tags/created_after). Used by action=list and action=search.",

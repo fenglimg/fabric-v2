@@ -284,8 +284,10 @@
       "wave": "D",
       "subject": "fabric-review mode 4→2 + semantic check 量化 + modify 拆 2 action",
       "done_when": "SKILL.md 重写 mode infer + fab_review action 拆分 modify-content/modify-layer",
-      "status": "pending",
-      "estimated_hours": "3-4"
+      "status": "done",
+      "_actual_done": "2026-05-28",
+      "estimated_hours": "3-4",
+      "note": "三块全交付: (1) mode 4→2 — SKILL.md mode inference 从 {pending,topic,health,revisit} 4 种简化为 {pending, maintain} 2 种 (topic+health+revisit 合并 maintain='operate on existing canonical KB', pending='triage write-side backlog'); 3-step 推断算法压成 2-step; per-mode-flows.md anti-pattern 行同步; 老 4 mode 名作 back-compat alias 仍 resolve 到 maintain. (2) modify 拆 2 action — FabReviewInputSchema 加 modify-content (scalar 编辑, 服务端 strip 任何 changes.layer 禁 flip) + modify-layer (changes.layer REQUIRED, dedicated layer-flip 路径, 复用 NEW-24 id-redirect); 老 modify 保留 back-compat alias (按 changes.layer 有无路由); 两新 action 在 review.ts switch 委托 modifyEntry (输出 action 仍 'modify', 兼容 FabReviewOutputSchema 无需改). enum + FabReviewInputShape + tool-contracts snapshot + drift test 更新. modify-flow.md 文档化拆分. (3) semantic check 量化 — semantic-check 三类 flag 加 3-level overlap band (high/medium/low), 仅 medium+ surface (low 抑噪), 仍 LLM 判断不用 embedding %. KB cite KT-DEC-0006 (review mode inferred from context). 新增 2 server test (modify-content strip layer / modify-layer flip). Gates: tsc 0 / tests 1794 (434+610+750) / lint 0. 注: 仓内 dogfood 安装镜像 (.claude/.codex skills) 未同步 (沿用前序 commit 惯例, 测试走 fresh install, package templates/ 为源)。"
     },
     {
       "id": "NEW-13",

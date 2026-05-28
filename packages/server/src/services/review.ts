@@ -117,6 +117,18 @@ export async function reviewKnowledge(
       };
     case "modify":
       return await modifyEntry(projectRoot, input.pending_path, input.changes);
+    // v2.0.0-rc.37 NEW-12: explicit modify split. Both delegate to modifyEntry
+    // (which already branches content-edit vs layer-flip internally); the split
+    // makes the SKILL's intent explicit at the call site + lets the contract
+    // enforce "content edits never carry a layer flip".
+    case "modify-content": {
+      // Strip any layer field so this path can never flip layer.
+      const { layer: _droppedLayer, ...contentChanges } = input.changes;
+      return await modifyEntry(projectRoot, input.pending_path, contentChanges);
+    }
+    case "modify-layer":
+      // changes.layer is REQUIRED by the modify-layer input schema.
+      return await modifyEntry(projectRoot, input.pending_path, input.changes);
     case "search":
       return {
         action: "search",

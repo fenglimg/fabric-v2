@@ -2,7 +2,15 @@
 
 ## Modify Sub-Flow
 
-`modify` is the only action that mutates frontmatter or stable_id. It accepts `changes` of shape `{title?, summary?, layer?, maturity?, tags?}`. Server semantics:
+The modify family is the only action group that mutates frontmatter or stable_id. It accepts `changes` of shape `{title?, summary?, layer?, maturity?, tags?, relevance_scope?, relevance_paths?}`.
+
+**v2.0.0-rc.37 NEW-12 — explicit split.** Prefer the dedicated action over the legacy combined `modify`:
+
+- `action="modify-content"` — scalar edits (title/summary/tags/maturity/relevance_*); stable_id PRESERVED; the server STRIPS any `changes.layer` so this path can never flip layer. Emits `knowledge_slug_renamed` only when slug derives from title.
+- `action="modify-layer"` — the dedicated layer-flip path; `changes.layer` is REQUIRED. The ONLY legal stable_id mutation in the system (see Layer-Flip Rules below).
+- `action="modify"` (legacy alias) — still accepted; routes to content-edit OR layer-flip by whether `changes.layer` is present. New call sites should use the explicit pair.
+
+Server semantics (identical regardless of which action selected the path):
 
 - **title / summary / tags / maturity changes** → in-place rewrite; stable_id PRESERVED; emits `knowledge_slug_renamed` only when slug derives from title.
 - **layer change** → the ONLY legal stable_id mutation in the system.

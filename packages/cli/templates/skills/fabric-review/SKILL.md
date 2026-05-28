@@ -48,46 +48,46 @@ Read `fabric_language` (`zh-CN` / `en` / `zh-CN-hybrid` / `match-existing`); emi
 
 ## Mode Inference (System Infers — NEVER Ask)
 
-> Verbatim from rc.3 locked decisions:
-> "review 永远走 fabric-review skill，**模式从上下文推断**（4 种 mode：pending queue / by topic / health overview / revisit existing）"
+> Locked decision (KT-DEC-0006): "Review mode inferred from context, not solicited via AskUserQuestion."
 > "**AskUserQuestion 仅在真有选择时用**——'何种 mode' 不是真选择（系统能推断），'approve/reject/modify 单条' 是真选择"
 
-The skill MUST infer one of {`pending`, `topic`, `health`, `revisit`} BEFORE any user-facing output.
+The skill MUST infer one of **2 modes** BEFORE any user-facing output (v2.0.0-rc.37 NEW-12 simplified 4 → 2):
 
-### 3-Step Inference Algorithm
+- **`pending`** — triage the write-side backlog (`.fabric/knowledge/pending/`): approve / reject / modify / defer per item. The dominant entry point.
+- **`maintain`** — sustain the EXISTING canonical KB: browse by topic (search), survey staleness/health, or revisit a specific entry. Merges the legacy `topic` + `health` + `revisit` modes — they are all "operate on already-canonical knowledge", distinct from triaging new drafts.
 
-**Step 1 — Recent user message keyword scan.** Match against priority order:
+### 2-Step Inference Algorithm
+
+**Step 1 — Recent user message keyword scan:**
 
 | Keywords (zh-CN + en) | Inferred mode |
 |---|---|
 | "approve", "review pending", "promote", "what's queued", "审核 pending", "通过" | `pending` |
-| "search for X about Y", "find entries about <topic>", "关于…的知识", "找一下 <topic>" | `topic` |
-| "what's stale", "demote old", "health check", "过期的", "陈旧的", "整理一下" | `health` |
-| "look at <id>", "revisit KT-…", "show <slug>", "再看下 <id>", "回顾" | `revisit` |
+| "search/find about <topic>", "what's stale", "demote old", "health check", "look at <id>", "revisit KT-…", "关于…的知识", "过期的", "陈旧的", "整理一下", "再看下 <id>", "回顾" | `maintain` |
 
-Exactly one row matches → lock mode, skip to Step 3.
+A `maintain`-row match → lock `maintain`. A `pending`-row match (or 0/ambiguous) → fall to Step 2.
 
-**Step 2 — events.jsonl tail scan.** If Step 1 yielded 0 or >1 matches, tail (last 200 lines) `.fabric/events.jsonl`:
-
-- `>5` recent `knowledge_proposed` since last `knowledge_promoted` → `pending` (write side piled up).
-- `≥1` `knowledge_demoted` or `lint` events in 24h → `health` (corpus quality signal).
-- Recent `knowledge_layer_changed` for the entry user referenced → `revisit`.
-
-**Step 3 — Pending count default.** Still ambiguous → glob `.fabric/knowledge/pending/**/*.md`:
+**Step 2 — Backlog default.** Glob `.fabric/knowledge/pending/**/*.md`:
 
 - Count ≥ `review_hint_pending_count` (default 10) OR oldest mtime > `review_hint_pending_age_days` (default 7) → `pending` (overflow, same threshold as Stop-hook).
 - Otherwise → default `pending` (most common review entry point).
 
-`Read ref/per-mode-flows.md` for 5 inference examples and anti-pattern restatement.
+> Back-compat: the legacy 4-mode names (`topic` / `health` / `revisit`) still resolve — they all map to `maintain`. Old session traces / muscle memory keep working.
+
+`Read ref/per-mode-flows.md` for inference examples and anti-pattern restatement.
 
 ## Per-Mode Flow
 
 Each mode produces user-facing output, then routes per-item or per-batch decisions through `fab_review` actions. Display body = zh-CN summaries (M3 style); section headings = EN.
 
-- **`pending`** — list pending entries → run Semantic Check (see `ref/semantic-check.md`) → per-item AskUserQuestion `{approve, reject, modify, defer, skip}` → route per choice (modify path = `ref/modify-flow.md`).
-- **`topic`** — extract keywords → `fab_review action="search"` → render top-N (cap `review_topic_result_cap`) → only AskUserQuestion when user signals action verb.
-- **`health`** — `fab_review action="list"` + tail events → compute stale → render dashboard → per-stale AskUserQuestion `{defer, demote, skip}`.
-- **`revisit`** — user referenced specific id/slug → `Read` canonical file directly OR `fab_review action="list"` with narrow filters → display body + history → AskUserQuestion only if pending.
+- **`pending`** — list pending entries → run Semantic Check (see `ref/semantic-check.md`) → per-item AskUserQuestion `{approve, reject, modify, defer, skip}` → route per choice. The modify branch chooses between two explicit actions (rc.37 NEW-12):
+  - `fab_review action="modify-content"` — edit scalars (title/summary/maturity/tags/relevance_*); NEVER flips layer.
+  - `fab_review action="modify-layer"` — the dedicated layer-flip path (`changes.layer` required); may reallocate the stable_id + emit an id-redirect.
+  - (Legacy `action="modify"` still works — it routes by whether `changes.layer` is present.) See `ref/modify-flow.md`.
+- **`maintain`** — sub-flow inferred from the same keywords:
+  - *browse-by-topic*: extract keywords → `fab_review action="search"` → render top-N (cap `review_topic_result_cap`) → AskUserQuestion only on an action verb.
+  - *health/staleness*: `fab_review action="list"` + tail events → compute stale → render dashboard → per-stale AskUserQuestion `{defer, demote, skip}`.
+  - *revisit*: user referenced a specific id/slug → `Read` canonical file directly OR `fab_review action="list"` with narrow filters → display body + history → AskUserQuestion only if actionable.
 
 `Read ref/per-mode-flows.md` for full step-by-step procedures, bilingual rendering blocks (en + zh-CN per-item display, AskUserQuestion templates, health dashboard format), and the rc.7 T6 `proposed_reason` + `## Why proposed` + `## Session context` rendering contract.
 
@@ -97,11 +97,17 @@ Each mode produces user-facing output, then routes per-item or per-batch decisio
 
 Semantic check is the LLM's job — the MCP tool does NOT compare meaning. Run during `pending` mode (and on demand during `topic`): for each pending entry, `fab_review action="search"` scoped by `filters.type` → LLM judges semantically against returned canonical entries → surface one of three flags as informational:
 
-- `⚠ Possible duplicate of <stable_id>` — same essential claim
-- `⚠ Contradicts <stable_id>` — opposing claims, same scope
-- `⚠ Subsumed by <stable_id>; consider modify-to-merge` — fully covered
+- `⚠ Possible duplicate of <stable_id> (overlap: high)` — same essential claim
+- `⚠ Contradicts <stable_id> (overlap: high)` — opposing claims, same scope
+- `⚠ Subsumed by <stable_id> (overlap: medium+); consider modify-to-merge` — fully covered
 
-Thresholds intentionally NOT quantified (no similarity %). User decides: still-approve (flag informational), modify-to-harmonize, or reject-as-duplicate (reason MUST cite existing stable_id).
+**Quantified overlap band (rc.37 NEW-12).** The LLM still judges meaning (no embedding %), but MUST tag each flag with a 3-level band so the signal is comparable across entries and the user can triage at a glance:
+
+- `high` — ≥ ~80% of the candidate's essential claim is restated; near-certain dup/contradiction. Recommend reject-as-duplicate or modify-to-merge.
+- `medium` — substantial conceptual overlap but the new entry adds a distinct facet (different path scope, added caveat). Recommend modify-to-harmonize.
+- `low` — adjacent topic, not a real overlap. Do NOT raise a flag at `low` — it is below the surfacing threshold (suppresses noise).
+
+Only `medium`+ flags are surfaced. User decides: still-approve (flag informational), modify-to-harmonize, or reject-as-duplicate (reason MUST cite existing stable_id).
 
 DO NOT AskUserQuestion "is this a duplicate?" — LLM already judged. User only chooses approve/reject/modify.
 
