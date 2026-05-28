@@ -30,25 +30,18 @@ export interface RuleDescription {
   relevance_paths?: string[];
 }
 
+// v2.0.0-rc.38 UX-3 (D-MCP fold ③): collapsed to the two load-bearing fields.
+// Removed the dead L0/L1/L2 selection-ceremony scalars (level/required/
+// selectable — write-only since rc.5 A3) and every top-level mirror of a
+// `description.*` field (type/maturity/layer/layer_reason/relevance_scope/
+// relevance_paths/tags). All knowledge surface the LLM needs for selection
+// lives in `description`; the mirrors were ~7 redundant keys per entry. The
+// inferred knowledge layer (from content_ref) is now backfilled into
+// `description.knowledge_layer` at build time so the layer signal survives
+// without the top-level copy.
 export interface RuleDescriptionIndexItem {
   stable_id: string;
-  level: AgentsLayer;
-  required: boolean;
-  selectable: boolean;
   description: RuleDescription;
-  // v2.0: knowledge-layer surface for client-side filtering. Mirrors the
-  // homonymous fields on `description` so callers don't have to reach into
-  // the nested payload. Optional because v1.x entries lack frontmatter.
-  type?: "models" | "decisions" | "guidelines" | "pitfalls" | "processes";
-  maturity?: "draft" | "verified" | "proven";
-  layer?: "personal" | "team";
-  layer_reason?: string;
-  // v2.0-rc.5 (C1/C3): top-level relevance surface. Mirrors `description.*`
-  // and the Zod schema in api-contracts.ts so MCP clients (and the C3
-  // plan-context relevance-paths filter) can read these without reaching
-  // into the nested payload. Defaults at the parse layer: broad + [].
-  relevance_scope?: "narrow" | "broad";
-  relevance_paths?: string[];
 }
 
 export interface AgentsMetaNodeActivation {

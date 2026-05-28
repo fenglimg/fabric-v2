@@ -105,7 +105,7 @@ describe("recall (one-call combined service — NEW-3)", () => {
     expect(result.revision_hash).toEqual(expect.any(String));
     expect(result.selection_token).toEqual(expect.any(String));
     expect(result.entries).toHaveLength(1);
-    expect(result.shared.description_index.map((item) => item.stable_id).sort()).toEqual([
+    expect(result.candidates.map((item) => item.stable_id).sort()).toEqual([
       "decisions/auth",
       "guidelines/ui",
     ]);
@@ -145,7 +145,7 @@ describe("recall (one-call combined service — NEW-3)", () => {
     // But the shared description_index still shows the full candidate set —
     // callers can re-fetch the skipped ones via fab_get_knowledge_sections
     // against the same selection_token.
-    expect(result.shared.description_index.map((item) => item.stable_id).sort()).toEqual([
+    expect(result.candidates.map((item) => item.stable_id).sort()).toEqual([
       "decisions/auth",
       "guidelines/ui",
     ]);

@@ -53,37 +53,27 @@ const _ruleDescriptionSchema = z.object({
   knowledge_layer: _layerEnum.optional(),
   layer_reason: z.string().optional(),
   created_at: z.string().optional(),
-});
-
-const _descriptionIndexItemSchema = z.object({
-  stable_id: z.string(),
-  level: z.enum(["L0", "L1", "L2"]),
-  required: z.boolean(),
-  selectable: z.boolean(),
-  description: _ruleDescriptionSchema,
-  // v2.0: top-level knowledge surface for client-side filtering. Mirrors
-  // description.* — exposed here so MCP clients can filter without reaching
-  // into the nested payload.
-  type: _knowledgeTypeEnum.optional(),
-  maturity: _maturityEnum.optional(),
-  layer: _layerEnum.optional(),
-  layer_reason: z.string().optional(),
-  // v2/rc.2: tag list shipped via frontmatter (commit a85121a). Exposed at
-  // the API surface so MCP clients can filter without re-parsing the
-  // description payload. Absent on legacy entries; consumers should treat
-  // missing as [].
+  // v2.0.0-rc.38 UX-3 (D-MCP fold ③): these three were previously carried ONLY
+  // as top-level mirrors on the index item. With the mirrors removed,
+  // `description` becomes their canonical (and only) home, so the schema must
+  // validate them here. Optional + default-safe (tags/[]/broad) so legacy
+  // entries without frontmatter still parse.
   tags: z.array(z.string()).optional(),
-  // v2.0-rc.5 (C1): relevance scope/paths drive plan-context-hint narrowing.
-  // Exposed at the API surface so MCP clients (and the `fabric
-  // plan-context-hint` CLI from D1) can filter without re-parsing the
-  // description payload. Defaults applied at the parse layer
-  // (knowledge-meta-builder + agentsMetaNodeBaseSchema):
-  //   relevance_scope → 'broad'  (always-surface, safe default)
-  //   relevance_paths → []       (no path anchors)
-  // Consumers should treat missing fields as broad/[]. Optional on the wire
-  // so older servers without rc.5 schemas remain wire-compatible.
   relevance_scope: z.enum(["narrow", "broad"]).optional(),
   relevance_paths: z.array(z.string()).optional(),
+});
+
+// v2.0.0-rc.38 UX-3 (D-MCP fold ③): collapsed to { stable_id, description }.
+// The dead L0/L1/L2 ceremony scalars (level/required/selectable) and every
+// top-level mirror of a `description.*` field (type/maturity/layer/
+// layer_reason/relevance_scope/relevance_paths/tags) were removed — they were
+// ~7 redundant keys per entry and read by no production consumer (the hint
+// CLI already falls back to `description.*`). The inferred knowledge layer is
+// backfilled into `description.knowledge_layer` server-side so the layer
+// signal survives.
+const _descriptionIndexItemSchema = z.object({
+  stable_id: z.string(),
+  description: _ruleDescriptionSchema,
 });
 
 // v2.0-rc.5 A3 (TASK-007): Cocos-era profile inference retired.
@@ -91,10 +81,12 @@ const _descriptionIndexItemSchema = z.object({
 // (Chinese game-perf token list), and `impact_hints` (Performance regex)
 // dropped from the requirement profile — they had zero applicability beyond
 // the werewolf-stub-era game project.
+// v2.0.0-rc.38 UX-3 (D-MCP fold ③): dropped `path_segments` (== target_path
+// split on "/") and `extension` (== suffix of target_path) — both trivially
+// derivable by any consumer, so shipping them per-entry was pure bloat. The
+// remaining fields are input echoes kept for caller convenience.
 const _requirementProfileSchema = z.object({
   target_path: z.string(),
-  path_segments: z.array(z.string()),
-  extension: z.string(),
   known_tech: z.array(z.string()),
   user_intent: z.string(),
   detected_entities: z.array(z.string()),
@@ -171,6 +163,26 @@ export const planContextInputSchema = z.object({
 // inline `candidates_full_content` degenerate-mode field is gone. See
 // docs/decisions/rc5-a3-superseded.md. The per-entry `.passthrough()` escape
 // from TASK-005 is removed — entries now have a fixed shape.
+// v2.0.0-rc.38 UX-1 (D-MCP fold ①): `entries[].description_index` is gone.
+// Since rc.37 A1 removed server-side relevance filtering every per-path index
+// was a byte-for-byte copy of the shared index — N paths shipped N+1 copies of
+// the same candidate list. The candidate index is now a single top-level
+// `candidates` array (was `shared.description_index`) and `entries` carries
+// only the per-path requirement profile. `preflight_diagnostics` is lifted to
+// the top level (the `shared` wrapper held nothing else).
+const _preflightDiagnosticSchema = z.object({
+  // v2.0.0-rc.38 UX-2: `empty_shell_suppressed` surfaces draft entries whose
+  // description carries no selection signal (summary === stable_id + empty
+  // intent_clues/tech_stack/impact). They are filtered out of `candidates` to
+  // cut noise; this diagnostic names them so `fabric doctor` /
+  // --enrich-descriptions can prompt enrichment.
+  code: z.enum(["missing_description", "empty_shell_suppressed"]),
+  severity: z.literal("warn"),
+  message: z.string(),
+  stable_ids: z.array(z.string()).optional(),
+  path: z.string().optional(),
+});
+
 export const planContextOutputSchema = z.object({
   revision_hash: z.string(),
   stale: z.boolean(),
@@ -179,21 +191,10 @@ export const planContextOutputSchema = z.object({
     z.object({
       path: z.string(),
       requirement_profile: _requirementProfileSchema,
-      description_index: z.array(_descriptionIndexItemSchema),
     }),
   ),
-  shared: z.object({
-    description_index: z.array(_descriptionIndexItemSchema),
-    preflight_diagnostics: z.array(
-      z.object({
-        code: z.literal("missing_description"),
-        severity: z.literal("warn"),
-        message: z.string(),
-        stable_ids: z.array(z.string()).optional(),
-        path: z.string().optional(),
-      }),
-    ),
-  }),
+  candidates: z.array(_descriptionIndexItemSchema),
+  preflight_diagnostics: z.array(_preflightDiagnosticSchema),
   warnings: z.array(structuredWarningSchema).optional(),
   // v2.0.0-rc.22 Scope D T-D2: optional auto-heal banner fields. Surfaced
   // ONLY when the loadActiveMetaOrStale call detected drift and rebuilt the
@@ -275,7 +276,7 @@ export const knowledgeSectionsInputSchema = z.object({
   ai_selected_stable_ids: z
     .array(z.string())
     .describe(
-      "Stable ids picked from fab_plan_context entries[].description_index[].stable_id where selectable=true; choose 1..N to fetch bodies for",
+      "Stable ids picked from fab_plan_context candidates[].stable_id; choose 1..N to fetch bodies for",
     ),
   ai_selection_reasons: z
     .record(z.string().min(1))
@@ -299,19 +300,10 @@ export const knowledgeSectionsInputSchema = z.object({
 
 export const knowledgeSectionsOutputSchema = z.object({
   revision_hash: z.string(),
-  /**
-   * @deprecated rc.23 TASK-002 F3 — removed in rc.24. The L0/L1/L2 selection
-   * ceremony was fully retired in rc.5 A3 (see comment above
-   * `planContextOutputSchema`); downstream consumers should use
-   * `rules[].level` directly. Kept as optional for one rc to avoid breaking
-   * pre-rc.23 clients that destructure this field.
-   */
-  precedence: z
-    .tuple([z.literal("L2"), z.literal("L1"), z.literal("L0")])
-    .optional()
-    .describe(
-      "DEPRECATED (removed in rc.24): hardcoded L2/L1/L0 precedence tuple from the retired rc.5 selection ceremony. Use rules[].level instead.",
-    ),
+  // v2.0.0-rc.38 UX-13 (D-MCP step-2 audit): the deprecated `precedence`
+  // L2/L1/L0 tuple (flagged "removed in rc.24" but still emitted) is gone — it
+  // was a constant 3-string field on every response read by no production
+  // consumer. Use rules[].level for ordering.
   selected_stable_ids: z.array(z.string()),
   rules: z.array(
     z.object({
@@ -440,25 +432,17 @@ export const recallOutputSchema = z.object({
   // with fab_get_knowledge_sections (e.g. fetch additional ids later) — every
   // recall response is still token-backed internally.
   selection_token: z.string(),
+  // v2.0.0-rc.38 UX-1/UX-4: mirrors planContextOutputSchema fold ① — per-path
+  // description_index collapsed into a single top-level `candidates`, and
+  // `preflight_diagnostics` lifted out of the removed `shared` wrapper.
   entries: z.array(
     z.object({
       path: z.string(),
       requirement_profile: _requirementProfileSchema,
-      description_index: z.array(_descriptionIndexItemSchema),
     }),
   ),
-  shared: z.object({
-    description_index: z.array(_descriptionIndexItemSchema),
-    preflight_diagnostics: z.array(
-      z.object({
-        code: z.literal("missing_description"),
-        severity: z.literal("warn"),
-        message: z.string(),
-        stable_ids: z.array(z.string()).optional(),
-        path: z.string().optional(),
-      }),
-    ),
-  }),
+  candidates: z.array(_descriptionIndexItemSchema),
+  preflight_diagnostics: z.array(_preflightDiagnosticSchema),
   // Same shape as knowledgeSectionsOutputSchema.rules — full body keyed by stable_id.
   rules: z.array(
     z.object({

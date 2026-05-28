@@ -884,7 +884,7 @@ exports[`tool contracts > knowledge-sections contract matches snapshot 1`] = `
     "additionalProperties": false,
     "properties": {
       "ai_selected_stable_ids": {
-        "description": "Stable ids picked from fab_plan_context entries[].description_index[].stable_id where selectable=true; choose 1..N to fetch bodies for",
+        "description": "Stable ids picked from fab_plan_context candidates[].stable_id; choose 1..N to fetch bodies for",
         "items": {
           "type": "string",
         },
@@ -954,26 +954,6 @@ exports[`tool contracts > knowledge-sections contract matches snapshot 1`] = `
           ],
           "type": "object",
         },
-        "type": "array",
-      },
-      "precedence": {
-        "description": "DEPRECATED (removed in rc.24): hardcoded L2/L1/L0 precedence tuple from the retired rc.5 selection ceremony. Use rules[].level instead.",
-        "items": [
-          {
-            "const": "L2",
-            "type": "string",
-          },
-          {
-            "const": "L1",
-            "type": "string",
-          },
-          {
-            "const": "L0",
-            "type": "string",
-          },
-        ],
-        "maxItems": 3,
-        "minItems": 3,
         "type": "array",
       },
       "redirect_to": {
@@ -1161,151 +1141,122 @@ exports[`tool contracts > plan-context contract matches snapshot 1`] = `
       "auto_healed": {
         "type": "boolean",
       },
+      "candidates": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "description": {
+              "additionalProperties": false,
+              "properties": {
+                "created_at": {
+                  "type": "string",
+                },
+                "entities": {
+                  "items": {
+                    "type": "string",
+                  },
+                  "type": "array",
+                },
+                "id": {
+                  "type": "string",
+                },
+                "impact": {
+                  "items": {
+                    "type": "string",
+                  },
+                  "type": "array",
+                },
+                "intent_clues": {
+                  "items": {
+                    "type": "string",
+                  },
+                  "type": "array",
+                },
+                "knowledge_layer": {
+                  "enum": [
+                    "personal",
+                    "team",
+                  ],
+                  "type": "string",
+                },
+                "knowledge_type": {
+                  "enum": [
+                    "models",
+                    "decisions",
+                    "guidelines",
+                    "pitfalls",
+                    "processes",
+                  ],
+                  "type": "string",
+                },
+                "layer_reason": {
+                  "type": "string",
+                },
+                "maturity": {
+                  "enum": [
+                    "draft",
+                    "verified",
+                    "proven",
+                  ],
+                  "type": "string",
+                },
+                "must_read_if": {
+                  "type": "string",
+                },
+                "relevance_paths": {
+                  "items": {
+                    "type": "string",
+                  },
+                  "type": "array",
+                },
+                "relevance_scope": {
+                  "enum": [
+                    "narrow",
+                    "broad",
+                  ],
+                  "type": "string",
+                },
+                "summary": {
+                  "type": "string",
+                },
+                "tags": {
+                  "items": {
+                    "type": "string",
+                  },
+                  "type": "array",
+                },
+                "tech_stack": {
+                  "items": {
+                    "type": "string",
+                  },
+                  "type": "array",
+                },
+              },
+              "required": [
+                "summary",
+                "intent_clues",
+                "tech_stack",
+                "impact",
+                "must_read_if",
+              ],
+              "type": "object",
+            },
+            "stable_id": {
+              "type": "string",
+            },
+          },
+          "required": [
+            "stable_id",
+            "description",
+          ],
+          "type": "object",
+        },
+        "type": "array",
+      },
       "entries": {
         "items": {
           "additionalProperties": false,
           "properties": {
-            "description_index": {
-              "items": {
-                "additionalProperties": false,
-                "properties": {
-                  "description": {
-                    "additionalProperties": false,
-                    "properties": {
-                      "created_at": {
-                        "type": "string",
-                      },
-                      "entities": {
-                        "items": {
-                          "type": "string",
-                        },
-                        "type": "array",
-                      },
-                      "id": {
-                        "type": "string",
-                      },
-                      "impact": {
-                        "items": {
-                          "type": "string",
-                        },
-                        "type": "array",
-                      },
-                      "intent_clues": {
-                        "items": {
-                          "type": "string",
-                        },
-                        "type": "array",
-                      },
-                      "knowledge_layer": {
-                        "enum": [
-                          "personal",
-                          "team",
-                        ],
-                        "type": "string",
-                      },
-                      "knowledge_type": {
-                        "enum": [
-                          "models",
-                          "decisions",
-                          "guidelines",
-                          "pitfalls",
-                          "processes",
-                        ],
-                        "type": "string",
-                      },
-                      "layer_reason": {
-                        "type": "string",
-                      },
-                      "maturity": {
-                        "enum": [
-                          "draft",
-                          "verified",
-                          "proven",
-                        ],
-                        "type": "string",
-                      },
-                      "must_read_if": {
-                        "type": "string",
-                      },
-                      "summary": {
-                        "type": "string",
-                      },
-                      "tech_stack": {
-                        "items": {
-                          "type": "string",
-                        },
-                        "type": "array",
-                      },
-                    },
-                    "required": [
-                      "summary",
-                      "intent_clues",
-                      "tech_stack",
-                      "impact",
-                      "must_read_if",
-                    ],
-                    "type": "object",
-                  },
-                  "layer": {
-                    "$ref": "#/properties/entries/items/properties/description_index/items/properties/description/properties/knowledge_layer",
-                  },
-                  "layer_reason": {
-                    "type": "string",
-                  },
-                  "level": {
-                    "enum": [
-                      "L0",
-                      "L1",
-                      "L2",
-                    ],
-                    "type": "string",
-                  },
-                  "maturity": {
-                    "$ref": "#/properties/entries/items/properties/description_index/items/properties/description/properties/maturity",
-                  },
-                  "relevance_paths": {
-                    "items": {
-                      "type": "string",
-                    },
-                    "type": "array",
-                  },
-                  "relevance_scope": {
-                    "enum": [
-                      "narrow",
-                      "broad",
-                    ],
-                    "type": "string",
-                  },
-                  "required": {
-                    "type": "boolean",
-                  },
-                  "selectable": {
-                    "type": "boolean",
-                  },
-                  "stable_id": {
-                    "type": "string",
-                  },
-                  "tags": {
-                    "items": {
-                      "type": "string",
-                    },
-                    "type": "array",
-                  },
-                  "type": {
-                    "$ref": "#/properties/entries/items/properties/description_index/items/properties/description/properties/knowledge_type",
-                  },
-                },
-                "required": [
-                  "stable_id",
-                  "level",
-                  "required",
-                  "selectable",
-                  "description",
-                ],
-                "type": "object",
-              },
-              "type": "array",
-            },
             "path": {
               "type": "string",
             },
@@ -1318,16 +1269,7 @@ exports[`tool contracts > plan-context contract matches snapshot 1`] = `
                   },
                   "type": "array",
                 },
-                "extension": {
-                  "type": "string",
-                },
                 "known_tech": {
-                  "items": {
-                    "type": "string",
-                  },
-                  "type": "array",
-                },
-                "path_segments": {
                   "items": {
                     "type": "string",
                   },
@@ -1342,8 +1284,6 @@ exports[`tool contracts > plan-context contract matches snapshot 1`] = `
               },
               "required": [
                 "target_path",
-                "path_segments",
-                "extension",
                 "known_tech",
                 "user_intent",
                 "detected_entities",
@@ -1354,7 +1294,43 @@ exports[`tool contracts > plan-context contract matches snapshot 1`] = `
           "required": [
             "path",
             "requirement_profile",
-            "description_index",
+          ],
+          "type": "object",
+        },
+        "type": "array",
+      },
+      "preflight_diagnostics": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "code": {
+              "enum": [
+                "missing_description",
+                "empty_shell_suppressed",
+              ],
+              "type": "string",
+            },
+            "message": {
+              "type": "string",
+            },
+            "path": {
+              "type": "string",
+            },
+            "severity": {
+              "const": "warn",
+              "type": "string",
+            },
+            "stable_ids": {
+              "items": {
+                "type": "string",
+              },
+              "type": "array",
+            },
+          },
+          "required": [
+            "code",
+            "severity",
+            "message",
           ],
           "type": "object",
         },
@@ -1374,56 +1350,6 @@ exports[`tool contracts > plan-context contract matches snapshot 1`] = `
       },
       "selection_token": {
         "type": "string",
-      },
-      "shared": {
-        "additionalProperties": false,
-        "properties": {
-          "description_index": {
-            "items": {
-              "$ref": "#/properties/entries/items/properties/description_index/items",
-            },
-            "type": "array",
-          },
-          "preflight_diagnostics": {
-            "items": {
-              "additionalProperties": false,
-              "properties": {
-                "code": {
-                  "const": "missing_description",
-                  "type": "string",
-                },
-                "message": {
-                  "type": "string",
-                },
-                "path": {
-                  "type": "string",
-                },
-                "severity": {
-                  "const": "warn",
-                  "type": "string",
-                },
-                "stable_ids": {
-                  "items": {
-                    "type": "string",
-                  },
-                  "type": "array",
-                },
-              },
-              "required": [
-                "code",
-                "severity",
-                "message",
-              ],
-              "type": "object",
-            },
-            "type": "array",
-          },
-        },
-        "required": [
-          "description_index",
-          "preflight_diagnostics",
-        ],
-        "type": "object",
       },
       "stale": {
         "type": "boolean",
@@ -1460,7 +1386,8 @@ exports[`tool contracts > plan-context contract matches snapshot 1`] = `
       "stale",
       "selection_token",
       "entries",
-      "shared",
+      "candidates",
+      "preflight_diagnostics",
     ],
     "type": "object",
   },

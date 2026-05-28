@@ -21,6 +21,9 @@ afterEach(() => {
   process.exitCode = originalExitCode;
 });
 
+// v2.0.0-rc.38 UX-1/UX-3: per-path description_index collapsed into top-level
+// `candidates`; preflight_diagnostics lifted out of the removed `shared`
+// wrapper; index item is now { stable_id, description }.
 type ServerPlanContextResult = {
   revision_hash: string;
   stale: boolean;
@@ -28,12 +31,9 @@ type ServerPlanContextResult = {
   entries: Array<{
     path: string;
     requirement_profile: Record<string, unknown>;
-    description_index: unknown[];
   }>;
-  shared: {
-    description_index: unknown[];
-    preflight_diagnostics: unknown[];
-  };
+  candidates: unknown[];
+  preflight_diagnostics: unknown[];
   auto_healed?: boolean;
   previous_revision_hash?: string;
 };
@@ -50,10 +50,8 @@ function freshResult(): ServerPlanContextResult {
     stale: false,
     selection_token: "tok-fresh",
     entries: [],
-    shared: {
-      description_index: [],
-      preflight_diagnostics: [],
-    },
+    candidates: [],
+    preflight_diagnostics: [],
   };
 }
 
@@ -63,10 +61,8 @@ function healedResult(): ServerPlanContextResult {
     stale: false,
     selection_token: "tok-healed",
     entries: [],
-    shared: {
-      description_index: [],
-      preflight_diagnostics: [],
-    },
+    candidates: [],
+    preflight_diagnostics: [],
     auto_healed: true,
     previous_revision_hash: "rev-stale-001",
   };
@@ -168,7 +164,8 @@ describe("plan-context-hint — auto_healed projection (TASK-010)", () => {
       stale: false,
       selection_token: "tok-partial",
       entries: [],
-      shared: { description_index: [], preflight_diagnostics: [] },
+      candidates: [],
+      preflight_diagnostics: [],
       auto_healed: true,
       // previous_revision_hash intentionally omitted
     });
@@ -189,6 +186,8 @@ describe("plan-context-hint — auto_healed projection (TASK-010)", () => {
 // v2.0.0-rc.27 TASK-002 (audit §2.5/§2.7): scope expose + split counts.
 // ---------------------------------------------------------------------------
 
+// v2.0.0-rc.38 UX-3: top-level mirrors removed — type/maturity/relevance_scope/
+// relevance_paths now live on description only.
 function makeIndexItem(opts: {
   id: string;
   scope: "narrow" | "broad";
@@ -197,9 +196,6 @@ function makeIndexItem(opts: {
 }): unknown {
   return {
     stable_id: opts.id,
-    level: "L2",
-    required: false,
-    selectable: false,
     description: {
       summary: `summary for ${opts.id}`,
       intent_clues: [],
@@ -208,11 +204,9 @@ function makeIndexItem(opts: {
       must_read_if: `summary for ${opts.id}`,
       knowledge_type: opts.type ?? "guideline",
       maturity: opts.maturity ?? "draft",
+      relevance_scope: opts.scope,
+      relevance_paths: opts.scope === "narrow" ? ["src/**/*.ts"] : [],
     },
-    type: opts.type ?? "guideline",
-    maturity: opts.maturity ?? "draft",
-    relevance_scope: opts.scope,
-    relevance_paths: opts.scope === "narrow" ? ["src/**/*.ts"] : [],
   };
 }
 
@@ -225,10 +219,8 @@ describe("plan-context-hint — relevance_scope expose (TASK-002 / audit §2.5/�
       stale: false,
       selection_token: "tok-scope",
       entries: [],
-      shared: {
-        description_index: [narrow, broad],
-        preflight_diagnostics: [],
-      },
+      candidates: [narrow, broad],
+      preflight_diagnostics: [],
     });
 
     const { runPlanContextHint } = await import(
@@ -253,10 +245,8 @@ describe("plan-context-hint — relevance_scope expose (TASK-002 / audit §2.5/�
       stale: false,
       selection_token: "tok-counts",
       entries: [],
-      shared: {
-        description_index: items,
-        preflight_diagnostics: [],
-      },
+      candidates: items,
+      preflight_diagnostics: [],
     });
 
     const { runPlanContextHint } = await import(
@@ -295,10 +285,8 @@ describe("plan-context-hint — relevance_scope expose (TASK-002 / audit §2.5/�
       stale: false,
       selection_token: "tok-default",
       entries: [],
-      shared: {
-        description_index: [item],
-        preflight_diagnostics: [],
-      },
+      candidates: [item],
+      preflight_diagnostics: [],
     });
 
     const { runPlanContextHint } = await import(

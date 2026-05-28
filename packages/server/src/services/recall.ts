@@ -53,7 +53,7 @@ const RECALL_REASON_MARKER = "fab_recall: combined-call auto-selection";
 export async function recall(projectRoot: string, input: RecallInput): Promise<RecallResult> {
   const planResult = await planContext(projectRoot, input);
 
-  const candidateIds = planResult.shared.description_index.map((item) => item.stable_id);
+  const candidateIds = planResult.candidates.map((item) => item.stable_id);
   // v2.0.0-rc.37 NEW-24: callers passing `ids` may hand back a stale (pre
   // layer-flip) id. Rewrite via the redirect resolver so the substitution
   // happens before the intersection check; the rewritten ids are what we

@@ -46,7 +46,6 @@ type KnowledgeSectionDiagnostic = {
 
 export type KnowledgeSectionResult = {
   revision_hash: string;
-  precedence: ["L2", "L1", "L0"];
   selected_stable_ids: string[];
   rules: Array<{
     stable_id: string;
@@ -179,7 +178,6 @@ export async function getKnowledgeSections(
 
   const result: KnowledgeSectionResult = {
     revision_hash: meta.revision,
-    precedence: ["L2", "L1", "L0"],
     selected_stable_ids: rules.map((rule) => rule.stable_id),
     rules,
     diagnostics,
@@ -282,7 +280,9 @@ function validateAiSelections(
 
   for (const stableId of aiSelectedStableIds) {
     if (!selectable.has(stableId)) {
-      throw new Error(`Invalid L1 rule selection: ${stableId}`);
+      throw new Error(
+        `Invalid rule selection "${stableId}": not in this token's plan-context candidates. Pass only stable_ids from fab_plan_context candidates[].stable_id.`,
+      );
     }
 
     if (aiSelectionReasons[stableId]?.trim() === "") {

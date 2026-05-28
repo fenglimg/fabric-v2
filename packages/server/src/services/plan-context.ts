@@ -1,6 +1,4 @@
-import { minimatch } from "minimatch";
-
-import { deriveAgentsMetaLayer, type RuleDescription, type RuleDescriptionIndexItem } from "@fenglimg/fabric-shared";
+import { type RuleDescription, type RuleDescriptionIndexItem } from "@fenglimg/fabric-shared";
 
 import { readSelectionTokenTtlMs } from "../config-loader.js";
 import { type AgentsMeta } from "../meta-reader.js";
@@ -30,10 +28,10 @@ export type PlanContextInput = {
 // v2.0-rc.5 A3 (TASK-007): Cocos-era profile inference retired. The profile
 // is now a neutral path/intent echo — no UI/Gameplay/Asset hardcoded domains,
 // no Chinese game-perf token list, no Performance regex.
+// v2.0.0-rc.38 UX-3 (D-MCP fold ③): dropped path_segments / extension —
+// trivially derivable from target_path, pure per-entry bloat.
 export type RequirementProfile = {
   target_path: string;
-  path_segments: string[];
-  extension: string;
   known_tech: string[];
   user_intent: string;
   detected_entities: string[];
@@ -50,10 +48,21 @@ export type RequirementProfile = {
 // to fetch bodies. Rationale: the inline-body branch silently bypassed
 // `knowledge_consumed` event emission, breaking rc.5 C5 closure. See
 // docs/decisions/rc5-a3-superseded.md.
+// v2.0.0-rc.38 UX-1 (D-MCP fold ①): per-path `description_index` removed. Since
+// rc.37 A1 dropped server-side relevance filtering it was identical to the
+// shared index for every path — N paths shipped N+1 copies. The candidate list
+// is now a single top-level `candidates`.
 export type PlanContextEntry = {
   path: string;
   requirement_profile: RequirementProfile;
-  description_index: RuleDescriptionIndexItem[];
+};
+
+export type PreflightDiagnostic = {
+  code: "missing_description" | "empty_shell_suppressed";
+  severity: "warn";
+  message: string;
+  stable_ids?: string[];
+  path?: string;
 };
 
 export type PlanContextResult = {
@@ -61,16 +70,11 @@ export type PlanContextResult = {
   stale: boolean;
   selection_token: string;
   entries: PlanContextEntry[];
-  shared: {
-    description_index: RuleDescriptionIndexItem[];
-    preflight_diagnostics: Array<{
-      code: "missing_description";
-      severity: "warn";
-      message: string;
-      stable_ids?: string[];
-      path?: string;
-    }>;
-  };
+  // v2.0.0-rc.38 UX-1: was `shared.description_index`. Lifted to a single
+  // top-level array; `preflight_diagnostics` lifted alongside it (the `shared`
+  // wrapper held nothing else).
+  candidates: RuleDescriptionIndexItem[];
+  preflight_diagnostics: PreflightDiagnostic[];
   // v2.0.0-rc.22 Scope D T-D2: optional auto-heal banner fields. Surfaced ONLY
   // when loadActiveMetaOrStale detected drift between on-disk meta and the
   // derived knowledge tree and rebuilt the meta in-place. Omitted (undefined)
@@ -249,35 +253,24 @@ export async function planContext(
     nowMs: Date.now(),
     targetPaths: input.target_paths ?? dedupePaths(input.paths),
   };
-  const allDescriptions = buildDescriptionIndex(meta, scoringContext);
+  // v2.0.0-rc.38 UX-1/UX-2: build the single candidate index once. The per-path
+  // filters (shouldIncludeIndexItemForPath / shouldIncludeByRelevance) have been
+  // no-ops since rc.37 A1, so there is no per-path narrowing to do — every path
+  // sees the same candidates. We dedupe by stable_id and surface empty-shell
+  // suppressions as a preflight diagnostic.
+  const { items: builtItems, suppressedStableIds } = buildDescriptionIndex(meta, scoringContext);
+  const candidates = dedupeDescriptionIndex(builtItems);
 
-  // v2.0-rc.5 C3 (TASK-012): caller-supplied path context for relevance
-  // filtering. When omitted, fall back to `paths` so direct callers (without
-  // a separate target_paths surface) still benefit from narrowing on
-  // narrow-scoped entries whose globs anchor against the requested paths.
-  // Empty resolved set → fail-open at the matcher layer (narrow always passes).
-  const relevanceTargetPaths = input.target_paths ?? uniquePaths;
-
-  const entries: PlanContextEntry[] = uniquePaths.map((path) => {
-    const profile = buildRequirementProfile(path, input);
-    const descriptionIndex = allDescriptions
-      .filter((item) => shouldIncludeIndexItemForPath(item, meta, path))
-      .filter((item) => shouldIncludeByRelevance(item, relevanceTargetPaths));
-
-    return {
-      path,
-      requirement_profile: profile,
-      description_index: descriptionIndex,
-    };
-  });
-
-  const sharedDescriptionIndex = dedupeDescriptionIndex(entries.flatMap((entry) => entry.description_index));
+  const entries: PlanContextEntry[] = uniquePaths.map((path) => ({
+    path,
+    requirement_profile: buildRequirementProfile(path, input),
+  }));
 
   // v2.0-rc.7 T9: always emit a selection_token. The Agent must follow up with
   // `fab_get_knowledge_sections` (which DOES emit the `knowledge_consumed`
   // event required for rc.5 C5 closure) to load bodies. The inline
   // `candidates_full_content` short-circuit is gone.
-  const sharedStableIds = sharedDescriptionIndex.map((item) => item.stable_id);
+  const sharedStableIds = candidates.map((item) => item.stable_id);
   // v2.0.0-rc.29 TASK-008 (BUG-F3): resolve per-workspace TTL override (if any)
   // and thread it through createSelectionToken so the token's expires_at lines
   // up with the operator's chosen lifetime. Hot-path safe: readSelectionTokenTtlMs
@@ -305,10 +298,8 @@ export async function planContext(
     stale,
     selection_token: selectionToken,
     entries,
-    shared: {
-      description_index: sharedDescriptionIndex,
-      preflight_diagnostics: buildPreflightDiagnostics(meta),
-    },
+    candidates,
+    preflight_diagnostics: buildPreflightDiagnostics(meta, suppressedStableIds),
     // v2.0.0-rc.22 Scope D T-D2 + rc.23 TASK-005 (a-B): surface auto-heal pair
     // only when a heal actually fired (either revision-drift heal in
     // loadActiveMetaOrStale or description-undefined heal driven from here).
@@ -334,13 +325,13 @@ export async function planContext(
       event_type: "knowledge_context_planned",
       target_paths: uniquePaths,
       required_stable_ids: [],
-      ai_selectable_stable_ids: sharedDescriptionIndex.map((item) => item.stable_id),
+      ai_selectable_stable_ids: sharedStableIds,
       final_stable_ids: [],
       selection_token: selectionToken,
       client_hash: input.client_hash,
       intent: input.intent,
       known_tech: input.known_tech,
-      diagnostics: result.shared.preflight_diagnostics,
+      diagnostics: result.preflight_diagnostics,
       correlation_id: input.correlation_id,
       session_id: input.session_id,
     });
@@ -418,111 +409,69 @@ function buildRequirementProfile(path: string, input: PlanContextInput): Require
 
   return {
     target_path: normalizedPath,
-    path_segments: normalizedPath.split("/").filter(Boolean),
-    extension: extensionMatch?.[1] ?? "",
     known_tech: knownTech,
     user_intent: input.intent ?? "",
     detected_entities: input.detected_entities?.[normalizedPath] ?? input.detected_entities?.[path] ?? [],
   };
 }
 
+// v2.0.0-rc.38 UX-3 (D-MCP fold ③): emit only { stable_id, description }. Every
+// previously-mirrored top-level field is read off `description` now; the
+// inferred knowledge layer is backfilled INTO description so the layer signal
+// survives without a separate top-level key.
+//
+// v2.0.0-rc.38 UX-2 (fold ②): empty-shell entries (summary === stable_id with
+// empty intent_clues/tech_stack/impact) carry zero selection signal — they are
+// dropped from `items` and their ids returned in `suppressedStableIds` so the
+// caller can raise a data-quality diagnostic.
 function buildDescriptionIndex(
   meta: AgentsMeta,
   scoringContext?: { nowMs: number; targetPaths: string[] },
-): RuleDescriptionIndexItem[] {
-  return Object.entries(meta.nodes)
+): { items: RuleDescriptionIndexItem[]; suppressedStableIds: string[] } {
+  const suppressedStableIds: string[] = [];
+  const items = Object.entries(meta.nodes)
     .flatMap(([nodeId, node]) => {
-      // v2.0-rc.5 A3 (TASK-007): legacy `node.level` / `node.layer` reads
-      // retired. Layer is derived from the file path so plan-context no
-      // longer depends on the (deprecated) on-disk level field. Path-derived
-      // layer stays L0/L1/L2-shaped for back-compat with consumers that still
-      // surface a level value, but it carries no selection semantics here.
-      const level = deriveAgentsMetaLayer(node.file);
-      const description = node.description ?? descriptionFromLegacyActivation(node.activation?.description);
-      if (description === undefined) {
+      const baseDescription = node.description ?? descriptionFromLegacyActivation(node.activation?.description);
+      if (baseDescription === undefined) {
         return [];
       }
 
-      // v2.0: prefer fields that flowed in via frontmatter (description.*).
-      // Fall back to the inferred knowledge layer derived from the
-      // content_ref/file root (team vs personal) so MCP clients always see
-      // SOMETHING for the layer surface — even on un-migrated entries.
-      const inferredLayer = inferKnowledgeLayerFromContentRef(node.content_ref ?? node.file);
+      const stableId = node.stable_id ?? nodeId;
 
-      // v2.0-rc.5 A3: `required`/`selectable` no longer carry meaning — they
-      // were the L0/L1/L2 selection ceremony. We emit them as `false` so the
-      // shared schema (which still types them as booleans) remains valid;
-      // consumers should not branch on these fields any more.
-      return [{
-        stable_id: node.stable_id ?? nodeId,
-        level,
-        required: false,
-        selectable: false,
-        description,
-        type: description.knowledge_type,
-        maturity: description.maturity,
-        layer: description.knowledge_layer ?? inferredLayer,
-        layer_reason: description.layer_reason,
-        // v2.0-rc.5 C3 (TASK-012): surface relevance fields at the top level
-        // so the per-entry filter + downstream MCP clients can read them
-        // without reaching into description.*. Defaults (broad + []) are
-        // applied at the meta-builder layer; we just pass them through here.
-        relevance_scope: description.relevance_scope,
-        relevance_paths: description.relevance_paths,
-      }];
+      // fold ②: suppress signal-less shells.
+      if (isEmptyShellDescription(baseDescription, stableId)) {
+        suppressedStableIds.push(stableId);
+        return [];
+      }
+
+      // Backfill the path-inferred knowledge layer (team vs personal from the
+      // content_ref/file root) when frontmatter left it unset, so MCP clients
+      // always see a layer without a separate top-level mirror.
+      const inferredLayer = inferKnowledgeLayerFromContentRef(node.content_ref ?? node.file);
+      const description =
+        baseDescription.knowledge_layer === undefined && inferredLayer !== undefined
+          ? { ...baseDescription, knowledge_layer: inferredLayer }
+          : baseDescription;
+
+      return [{ stable_id: stableId, description }];
     })
     .sort((left, right) => compareDescriptionIndexItems(left, right, scoringContext));
+
+  return { items, suppressedStableIds };
 }
 
-// v2.0-rc.5 C3 (TASK-012): relevance-paths filter. Returns true when an entry
-// should be surfaced for a given request path-context:
-//   * `broad` (or missing scope) entries always pass — they're cross-cutting.
-//   * `narrow` entries pass only when at least one of their `relevance_paths`
-//     globs matches at least one path in `targetPaths`.
-//   * Empty `targetPaths` is fail-open: every narrow entry passes. This matches
-//     the rc.5 D1 hint CLI semantics (no path context → no filter).
-//   * Empty `relevance_paths` on a narrow entry means "narrow but un-anchored"
-//     — there's no glob to match, so the entry is excluded under a non-empty
-//     target_paths set. The frontmatter parser defaults to broad+[] precisely
-//     to avoid this case slipping through silently.
-//
-// Glob matching delegates to `minimatch` (already a server dep). We accept
-// path-prefix anchors too: a `relevance_paths` entry ending with `/` is
-// treated as a directory anchor and matched as `<dir>/**`.
-function matchesAnyPath(globs: string[], targetPaths: string[]): boolean {
-  if (globs.length === 0) {
-    return false;
-  }
-  for (const rawGlob of globs) {
-    const glob = rawGlob.endsWith("/") ? `${rawGlob}**` : rawGlob;
-    for (const target of targetPaths) {
-      if (minimatch(target, glob, { dot: true, matchBase: false })) {
-        return true;
-      }
-    }
-  }
-  return false;
-}
-
-function shouldIncludeByRelevance(
-  _item: RuleDescriptionIndexItem,
-  _targetPaths: string[],
-): boolean {
-  // v2.0.0-rc.37 Wave A1 (per KB [[no-server-side-kb-filter]]): server returns
-  // ALL candidates with descriptions and the LLM decides which to load via
-  // ai_selected_stable_ids on fab_get_knowledge_sections. Server-side
-  // relevance_scope/relevance_paths filter is removed because:
-  //   1. Server keyword/path matching is blind to user task nuance that lives
-  //      only in the LLM's conversation context.
-  //   2. LLM looking at natural-language descriptions does semantic matching
-  //      natively — 374 entries × ~100 tok description ≈ 37K tok fits a single
-  //      MCP response comfortably.
-  //   3. Architectural extension of [[feedback-trust-recommendations]]: trust
-  //      the LLM at the system-design boundary, not just within a single turn.
-  // relevance_scope / relevance_paths remain in the schema for downstream
-  // consumers (hint CLI, audit tooling) but no longer gate plan-context
-  // surfacing.
-  return true;
+// v2.0.0-rc.38 UX-2: an entry whose summary just echoes its stable_id and whose
+// signal arrays are all empty provides nothing for the LLM to select on. These
+// are legacy draft stubs (created before frontmatter enrichment). Predicate is
+// intentionally strict: any real summary OR any populated signal array keeps
+// the entry in `candidates`.
+function isEmptyShellDescription(description: RuleDescription, stableId: string): boolean {
+  return (
+    description.summary === stableId &&
+    description.intent_clues.length === 0 &&
+    description.tech_stack.length === 0 &&
+    description.impact.length === 0
+  );
 }
 
 function inferKnowledgeLayerFromContentRef(contentRef: string | undefined): "team" | "personal" | undefined {
@@ -552,20 +501,6 @@ function descriptionFromLegacyActivation(summary: string | undefined): RuleDescr
   };
 }
 
-// v2.0-rc.5 A3 (TASK-007): the L0/L1/L2 short-circuit + scope_glob match was
-// the legacy per-path filter. With the L0/L1/L2 selection ceremony retired
-// every candidate flows through. The relevance-paths filter (TASK-012, C3)
-// lives in `shouldIncludeByRelevance` and is applied as a separate stage by
-// `planContext()`; this hook is kept for any future per-path constraint that
-// is NOT covered by the relevance pipeline.
-function shouldIncludeIndexItemForPath(
-  _item: RuleDescriptionIndexItem,
-  _meta: AgentsMeta,
-  _path: string,
-): boolean {
-  return true;
-}
-
 /**
  * v2.0.0-rc.23 TASK-005 (a-B): detector for description-undefined drift.
  *
@@ -584,22 +519,35 @@ function hasUndefinedDescription(meta: AgentsMeta): boolean {
   );
 }
 
-function buildPreflightDiagnostics(meta: AgentsMeta): PlanContextResult["shared"]["preflight_diagnostics"] {
+function buildPreflightDiagnostics(meta: AgentsMeta, suppressedStableIds: string[]): PreflightDiagnostic[] {
+  const diagnostics: PreflightDiagnostic[] = [];
+
   const missingDescriptionStableIds = Object.entries(meta.nodes)
     .filter(([, node]) => node.description === undefined && node.activation?.description === undefined)
     .map(([nodeId, node]) => node.stable_id ?? nodeId)
     .sort();
 
-  if (missingDescriptionStableIds.length === 0) {
-    return [];
+  if (missingDescriptionStableIds.length > 0) {
+    diagnostics.push({
+      code: "missing_description",
+      severity: "warn",
+      stable_ids: missingDescriptionStableIds,
+      message: `Resolved registry includes ${missingDescriptionStableIds.length} node(s) without structured descriptions.`,
+    });
   }
 
-  return [{
-    code: "missing_description",
-    severity: "warn",
-    stable_ids: missingDescriptionStableIds,
-    message: `Resolved registry includes ${missingDescriptionStableIds.length} node(s) without structured descriptions.`,
-  }];
+  // v2.0.0-rc.38 UX-2: surface signal-less shells suppressed from `candidates`
+  // so the user can enrich them (fabric doctor --enrich-descriptions).
+  if (suppressedStableIds.length > 0) {
+    diagnostics.push({
+      code: "empty_shell_suppressed",
+      severity: "warn",
+      stable_ids: [...suppressedStableIds].sort(),
+      message: `${suppressedStableIds.length} draft entr${suppressedStableIds.length === 1 ? "y" : "ies"} hidden from candidates (summary === stable_id, no signal). Run \`fabric doctor --enrich-descriptions\` to populate them.`,
+    });
+  }
+
+  return diagnostics;
 }
 
 function dedupeStableIds(stableIds: string[]): string[] {
@@ -686,7 +634,7 @@ function scoreDescriptionItem(
 
   // W2-4: path-locality scoring — max over (relevance_path, target_path).
   if (targetPaths.length > 0) {
-    const relevancePaths = item.relevance_paths ?? item.description?.relevance_paths ?? [];
+    const relevancePaths = item.description?.relevance_paths ?? [];
     let best = 0;
     for (const rp of relevancePaths) {
       for (const tp of targetPaths) {

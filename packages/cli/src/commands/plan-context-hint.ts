@@ -169,31 +169,19 @@ export async function runPlanContextHint(opts: {
     paths: targetPaths,
   });
 
-  // Today (pre-C1/C3) the registry has no `relevance_scope` field, so every
-  // entry is treated as broad. `narrow` therefore returns the description
-  // index for the requested path(s), and `broad_count` reports the total
-  // number of broad entries available in the registry (== shared index size
-  // when no path filter is active). Once C3 lands, `narrow` will be
-  // pre-filtered by `relevance_paths` glob match inside planContext itself.
-  const sharedIndex = result.shared.description_index;
-  const narrowSource = all
-    ? sharedIndex
-    : // Path mode: union of per-entry description_index across requested
-      // paths, deduped by stable_id. This is identical to `shared` for L0/L1
-      // entries (always included) and additionally captures L2 entries whose
-      // scope_glob matches the requested path.
-      dedupeByStableId(result.entries.flatMap((entry) => entry.description_index));
+  // v2.0.0-rc.38 UX-1: the server collapsed per-path `description_index` into a
+  // single top-level `candidates` array (since rc.37 A1 every per-path index
+  // was a copy of the shared one). `--all` and path mode now read the same
+  // candidate list. UX-3 removed the top-level mirrors, so type/maturity/
+  // relevance_scope are read off `description.*`.
+  const candidates = result.candidates;
 
-  const entries: PlanContextHintEntry[] = narrowSource.map((item) => ({
+  const entries: PlanContextHintEntry[] = candidates.map((item) => ({
     id: item.stable_id,
-    type: item.type ?? item.description.knowledge_type ?? "",
-    maturity: item.maturity ?? item.description.maturity ?? "",
+    type: item.description.knowledge_type ?? "",
+    maturity: item.description.maturity ?? "",
     summary: item.description.summary,
-    // v2.0.0-rc.27 TASK-002 (§2.5/§2.7): forward the server-side scope.
-    // RuleDescriptionIndexItem already carries this field — knowledge-meta-
-    // builder defaults to "broad" for entries without an explicit
-    // relevance_scope frontmatter, so this read is total and never undefined.
-    relevance_scope: item.relevance_scope ?? "broad",
+    relevance_scope: item.description.relevance_scope ?? "broad",
   }));
 
   // v2.0.0-rc.27 TASK-002: compute split totals from the result entries so
@@ -212,8 +200,8 @@ export async function runPlanContextHint(opts: {
     target_paths: targetPaths,
     entries,
     // Legacy field — preserved for v2 consumers that haven't migrated. Value
-    // semantics unchanged from rc.18 (sharedIndex total).
-    broad_count: sharedIndex.length,
+    // semantics unchanged from rc.18 (total candidate count).
+    broad_count: candidates.length,
     narrow_count,
     broad_only_count,
   };
@@ -240,15 +228,4 @@ function parsePathsArg(raw: string | undefined): string[] {
     .split(",")
     .map((part) => part.trim())
     .filter((part) => part.length > 0);
-}
-
-function dedupeByStableId<T extends { stable_id: string }>(items: T[]): T[] {
-  const seen = new Set<string>();
-  const result: T[] = [];
-  for (const item of items) {
-    if (seen.has(item.stable_id)) continue;
-    seen.add(item.stable_id);
-    result.push(item);
-  }
-  return result;
 }

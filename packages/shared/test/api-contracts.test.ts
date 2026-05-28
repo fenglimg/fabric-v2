@@ -27,46 +27,41 @@ const validDescription = {
   must_read_if: "when",
 };
 
-// Minimal valid plan-context output used to roundtrip an index item with/without tags.
-// v2.0-rc.7 T9: `selection_token` is required on every response (degenerate
-// single-stage mode removed — see docs/decisions/rc5-a3-superseded.md).
-// `shared.required_stable_ids`/`shared.ai_selectable_stable_ids` were removed
-// in rc.5 A3; per-entry selection ceremony fields gone.
-function buildPlanContextOutput(extraIndexFields: Record<string, unknown>) {
+// Minimal valid plan-context output used to roundtrip a candidate index item
+// with/without tags.
+// v2.0.0-rc.38 UX-1/UX-3: per-path description_index collapsed into top-level
+// `candidates`, preflight_diagnostics lifted out of the removed `shared`
+// wrapper, and the index item is now just { stable_id, description } — tags now
+// live on `description` (their only home after the top-level mirror removal).
+function buildPlanContextOutput(extraDescriptionFields: Record<string, unknown>) {
   return {
     revision_hash: "rev",
     stale: false,
     selection_token: "selection:rev:test:fixture",
     entries: [],
-    shared: {
-      description_index: [
-        {
-          stable_id: "ui-batch-rendering",
-          level: "L1" as const,
-          required: false,
-          selectable: true,
-          description: validDescription,
-          ...extraIndexFields,
-        },
-      ],
-      preflight_diagnostics: [],
-    },
+    candidates: [
+      {
+        stable_id: "ui-batch-rendering",
+        description: { ...validDescription, ...extraDescriptionFields },
+      },
+    ],
+    preflight_diagnostics: [],
   };
 }
 
 describe("RuleDescriptionIndexItem (api-contracts) — tags surface", () => {
-  it("accepts an index item without tags (legacy)", () => {
+  it("accepts a candidate item without tags (legacy)", () => {
     const parsed = planContextOutputSchema.parse(buildPlanContextOutput({}));
-    const item = parsed.shared.description_index[0]!;
-    expect(item.tags).toBeUndefined();
+    const item = parsed.candidates[0]!;
+    expect(item.description.tags).toBeUndefined();
   });
 
-  it("accepts an index item with tags array (rc.2)", () => {
+  it("accepts a candidate item with tags array (rc.2)", () => {
     const parsed = planContextOutputSchema.parse(
       buildPlanContextOutput({ tags: ["typescript", "ui"] }),
     );
-    const item = parsed.shared.description_index[0]!;
-    expect(item.tags).toEqual(["typescript", "ui"]);
+    const item = parsed.candidates[0]!;
+    expect(item.description.tags).toEqual(["typescript", "ui"]);
   });
 });
 
@@ -113,7 +108,6 @@ describe("GetRuleSectionsResult — redirect_to", () => {
   it("accepts redirect_to populated post-layer-flip", () => {
     const parsed = knowledgeSectionsOutputSchema.parse({
       revision_hash: "r",
-      precedence: ["L2", "L1", "L0"],
       selected_stable_ids: [],
       rules: [],
       diagnostics: [],
@@ -125,7 +119,6 @@ describe("GetRuleSectionsResult — redirect_to", () => {
   it("parses cleanly when redirect_to is absent (regression)", () => {
     const parsed = knowledgeSectionsOutputSchema.parse({
       revision_hash: "r",
-      precedence: ["L2", "L1", "L0"],
       selected_stable_ids: [],
       rules: [],
       diagnostics: [],
@@ -166,7 +159,6 @@ describe("knowledgeSectionsOutputSchema — rc.23 F8b body shape", () => {
   it("accepts rules[].body as a string and rejects legacy sections record", () => {
     const parsed = knowledgeSectionsOutputSchema.parse({
       revision_hash: "r",
-      precedence: ["L2", "L1", "L0"],
       selected_stable_ids: ["ui-batch-rendering"],
       rules: [
         {
@@ -184,7 +176,6 @@ describe("knowledgeSectionsOutputSchema — rc.23 F8b body shape", () => {
   it("rejects a rule entry missing the body field", () => {
     const result = knowledgeSectionsOutputSchema.safeParse({
       revision_hash: "r",
-      precedence: ["L2", "L1", "L0"],
       selected_stable_ids: ["x"],
       rules: [
         {

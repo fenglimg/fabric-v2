@@ -43,22 +43,23 @@ describe("mcp-server integration (v2.0 dual-root)", () => {
     const projectRoot = await createV2Project();
     const result = await planContext(projectRoot, { paths: ["src/index.ts"] });
     const indexById = new Map(
-      result.shared.description_index.map((item) => [item.stable_id, item] as const),
+      result.candidates.map((item) => [item.stable_id, item] as const),
     );
 
-    expect(indexById.get("KT-DEC-0001")).toMatchObject({
-      type: "decisions",
+    // v2.0.0-rc.38 UX-3: type/maturity/layer mirrors collapsed into description.*.
+    expect(indexById.get("KT-DEC-0001")?.description).toMatchObject({
+      knowledge_type: "decisions",
       maturity: "verified",
-      layer: "team",
+      knowledge_layer: "team",
     });
-    expect(indexById.get("KP-GLD-0001")).toMatchObject({
-      type: "guidelines",
+    expect(indexById.get("KP-GLD-0001")?.description).toMatchObject({
+      knowledge_type: "guidelines",
       maturity: "draft",
-      layer: "personal",
+      knowledge_layer: "personal",
     });
 
     // Sanity: both layers present in the merged index.
-    const layers = new Set(result.shared.description_index.map((item) => item.layer));
+    const layers = new Set(result.candidates.map((item) => item.description.knowledge_layer));
     expect(layers).toEqual(new Set(["team", "personal"]));
   });
 
@@ -75,7 +76,7 @@ describe("mcp-server integration (v2.0 dual-root)", () => {
     expect(plan.selection_token).toEqual(expect.any(String));
     expect(plan).not.toHaveProperty("candidates_full_content");
 
-    const ids = plan.shared.description_index.map((item) => item.stable_id).sort();
+    const ids = plan.candidates.map((item) => item.stable_id).sort();
     expect(ids).toEqual(["KP-GLD-0001", "KT-DEC-0001"]);
   });
 });

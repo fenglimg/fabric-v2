@@ -118,7 +118,6 @@ describe("getKnowledgeSections", () => {
     // stale-meta tests below.
     expect(result.revision_hash).toEqual(expect.any(String));
     expect(result.revision_hash.length).toBeGreaterThan(0);
-    expect(result.precedence).toEqual(["L2", "L1", "L0"]);
     expect(result.selected_stable_ids).toEqual(["global-protocol", "ui-batch-rendering", "battle-view-local"]);
     // v2.0.0-rc.23 TASK-013 (F8b): the API now returns the full markdown body
     // (frontmatter stripped). We assert shape + signature substrings rather
@@ -342,7 +341,7 @@ describe("getKnowledgeSections", () => {
       selection_token: selectionToken,
       ai_selected_stable_ids: ["unknown-l1"],
       ai_selection_reasons: { "unknown-l1": "not selectable" },
-    })).rejects.toThrow(/Invalid L1 rule selection/u);
+    })).rejects.toThrow(/Invalid rule selection/u);
 
     await expect(getKnowledgeSections(projectRoot, {
       selection_token: selectionToken,
@@ -354,7 +353,7 @@ describe("getKnowledgeSections", () => {
       selection_token: selectionToken,
       ai_selected_stable_ids: ["global-protocol"],
       ai_selection_reasons: { "global-protocol": "L0 cannot be selected by AI." },
-    })).rejects.toThrow(/Invalid L1 rule selection/u);
+    })).rejects.toThrow(/Invalid rule selection/u);
   });
 
   it("hard-errors missing or expired selection tokens", async () => {
@@ -386,8 +385,6 @@ describe("getKnowledgeSections", () => {
         "ui-batch-rendering": "Primary UI rendering rule.",
       },
     });
-
-    expect(result.precedence).toEqual(["L2", "L1", "L0"]);
     expect(result.selected_stable_ids).toEqual([
       "global-protocol",
       "ui-batch-rendering",

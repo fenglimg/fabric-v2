@@ -110,11 +110,13 @@ describe("planContext", () => {
     expect(result.entries[0]?.path).toBe("src/index.ts");
     expect(result.entries[0]?.requirement_profile).toMatchObject({
       target_path: "src/index.ts",
-      extension: ".ts",
       user_intent: "rendering tweak",
       known_tech: ["TypeScript"],
       detected_entities: ["Renderer"],
     });
+    // v2.0.0-rc.38 UX-3: path_segments / extension dropped (derivable).
+    expect(result.entries[0]?.requirement_profile).not.toHaveProperty("extension");
+    expect(result.entries[0]?.requirement_profile).not.toHaveProperty("path_segments");
 
     // v2.0-rc.5 A3 (TASK-007): Cocos-era fields removed from the profile.
     expect(result.entries[0]?.requirement_profile).not.toHaveProperty("inferred_domain");
@@ -127,11 +129,13 @@ describe("planContext", () => {
     expect(result.entries[0]).not.toHaveProperty("initial_selected_stable_ids");
     expect(result.entries[0]).not.toHaveProperty("selection_policy");
 
-    // Same fields gone from `shared` too.
-    expect(result.shared).not.toHaveProperty("required_stable_ids");
-    expect(result.shared).not.toHaveProperty("ai_selectable_stable_ids");
+    // Same fields never existed on the top-level result either.
+    expect(result).not.toHaveProperty("required_stable_ids");
+    expect(result).not.toHaveProperty("ai_selectable_stable_ids");
+    // v2.0.0-rc.38 UX-1: per-path description_index collapsed into top-level candidates.
+    expect(result.entries[0]).not.toHaveProperty("description_index");
 
-    const index = result.entries[0]?.description_index ?? [];
+    const index = result.candidates;
     expect(index.map((item) => item.stable_id)).toEqual(["global-protocol", "ui-batch-rendering"]);
 
     // v2.0-rc.7 T9: symmetric output — every response carries a
@@ -177,12 +181,11 @@ describe("planContext", () => {
     expect(result.entries).toEqual([
       {
         path: "src/index.ts",
-        description_index: [],
         requirement_profile: expect.objectContaining({ target_path: "src/index.ts" }),
       },
     ]);
-    expect(result.shared.description_index).toEqual([]);
-    expect(result.shared.preflight_diagnostics).toEqual([]);
+    expect(result.candidates).toEqual([]);
+    expect(result.preflight_diagnostics).toEqual([]);
     // v2.0-rc.7 T9: symmetric output — selection_token issued even for an
     // empty description_index; candidates_full_content field is gone.
     expect(result.selection_token).toEqual(expect.any(String));
@@ -304,26 +307,31 @@ describe("planContext", () => {
     );
 
     const result = await planContext(projectRoot, { paths: ["src/index.ts"] });
-    const indexById = new Map(result.shared.description_index.map((item) => [item.stable_id, item] as const));
+    const indexById = new Map(result.candidates.map((item) => [item.stable_id, item] as const));
 
-    expect(indexById.get("KT-DEC-0001")).toMatchObject({
-      type: "decisions",
+    // v2.0.0-rc.38 UX-3: top-level type/maturity/layer mirrors removed — these
+    // now live only on description.*, and the inferred layer is backfilled into
+    // description.knowledge_layer.
+    expect(indexById.get("KT-DEC-0001")?.description).toMatchObject({
+      knowledge_type: "decisions",
       maturity: "verified",
-      layer: "team",
+      knowledge_layer: "team",
       layer_reason: "shared across services",
     });
+    expect(indexById.get("KT-DEC-0001")).not.toHaveProperty("type");
+    expect(indexById.get("KT-DEC-0001")).not.toHaveProperty("layer");
 
-    expect(indexById.get("KP-GLD-0001")).toMatchObject({
-      type: "guidelines",
+    expect(indexById.get("KP-GLD-0001")?.description).toMatchObject({
+      knowledge_type: "guidelines",
       maturity: "draft",
-      layer: "personal",
+      knowledge_layer: "personal",
     });
 
-    expect(indexById.get("legacy-v1")).toMatchObject({
-      type: undefined,
-      maturity: undefined,
-      layer: "team",
-    });
+    // legacy-v1 had no knowledge_type/knowledge_layer in frontmatter; the layer
+    // is backfilled from the (team-rooted) content_ref, type stays undefined.
+    expect(indexById.get("legacy-v1")?.description.knowledge_type).toBeUndefined();
+    expect(indexById.get("legacy-v1")?.description.maturity).toBeUndefined();
+    expect(indexById.get("legacy-v1")?.description.knowledge_layer).toBe("team");
   });
 
   // ---------------------------------------------------------------------------
@@ -371,7 +379,7 @@ describe("planContext", () => {
     const result = await planContext(projectRoot, { paths: ["src/index.ts"] });
 
     expect(result.selection_token).toEqual(expect.any(String));
-    expect(result.shared.description_index).toHaveLength(5);
+    expect(result.candidates).toHaveLength(5);
     // Negative assertion: degenerate-mode field is gone from the response.
     expect(result).not.toHaveProperty("candidates_full_content");
   });
@@ -422,7 +430,7 @@ describe("planContext", () => {
     const result = await planContext(projectRoot, { paths: ["src/index.ts"] });
 
     expect(result.selection_token).toEqual(expect.any(String));
-    expect(result.shared.description_index).toHaveLength(100);
+    expect(result.candidates).toHaveLength(100);
     expect(result).not.toHaveProperty("candidates_full_content");
   });
 
@@ -580,7 +588,7 @@ describe("planContext", () => {
       paths: ["src/unrelated/index.ts"],
       target_paths: ["src/unrelated/index.ts"],
     });
-    const ids = result.shared.description_index.map((item) => item.stable_id).sort();
+    const ids = result.candidates.map((item) => item.stable_id).sort();
     expect(ids).toEqual(["KT-DEC-0001", "KT-GLD-0001", "KT-GLD-0002"]);
   });
 
@@ -592,7 +600,7 @@ describe("planContext", () => {
       paths: ["src/ui/Button.tsx"],
       target_paths: ["src/ui/Button.tsx"],
     });
-    const ids = result.shared.description_index.map((item) => item.stable_id).sort();
+    const ids = result.candidates.map((item) => item.stable_id).sort();
     // Wave A1: server returns ALL candidates with descriptions; LLM picks.
     // Pre-Wave-A1 this would have been [KT-GLD-0001, KT-GLD-0002] (broad +
     // ui-narrow only, auth-narrow excluded).
@@ -607,7 +615,7 @@ describe("planContext", () => {
       paths: ["src/auth/login.ts"],
       target_paths: ["src/auth/login.ts"],
     });
-    const ids = result.shared.description_index.map((item) => item.stable_id).sort();
+    const ids = result.candidates.map((item) => item.stable_id).sort();
     // Wave A1 (per KB [[no-server-side-kb-filter]]): no server-side relevance
     // filter — broad + ALL narrow entries returned, LLM picks via descriptions.
     // Pre-Wave-A1 behavior excluded ui-narrow when its relevance_paths did not
@@ -624,7 +632,7 @@ describe("planContext", () => {
       paths: ["**"],
       target_paths: [],
     });
-    const ids = result.shared.description_index.map((item) => item.stable_id).sort();
+    const ids = result.candidates.map((item) => item.stable_id).sort();
     expect(ids).toEqual(["KT-DEC-0001", "KT-GLD-0001", "KT-GLD-0002"]);
   });
 
@@ -638,7 +646,7 @@ describe("planContext", () => {
       paths: ["packages/ui/Card.tsx"],
       target_paths: ["packages/ui/Card.tsx"],
     });
-    const ids = result.shared.description_index.map((item) => item.stable_id).sort();
+    const ids = result.candidates.map((item) => item.stable_id).sort();
     expect(ids).toEqual(["KT-DEC-0001", "KT-GLD-0001", "KT-GLD-0002"]);
   });
 
@@ -691,8 +699,8 @@ describe("planContext", () => {
     expect(entry).not.toHaveProperty("required_stable_ids");
     expect(entry).not.toHaveProperty("ai_selectable_stable_ids");
     expect(entry).not.toHaveProperty("initial_selected_stable_ids");
-    expect(result.shared).not.toHaveProperty("required_stable_ids");
-    expect(result.shared).not.toHaveProperty("ai_selectable_stable_ids");
+    expect(result).not.toHaveProperty("required_stable_ids");
+    expect(result).not.toHaveProperty("ai_selectable_stable_ids");
   });
 
   // ---------------------------------------------------------------------------
@@ -993,6 +1001,131 @@ describe("planContext path sandbox (TASK-002 / audit §2.22)", () => {
     const result = await planContext(projectRoot, { paths: ["**"] });
     expect(result.entries).toHaveLength(1);
     expect(result.entries[0]?.path).toBe("**");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// v2.0.0-rc.38 UX-2 (fold ②): empty-shell suppression
+// ---------------------------------------------------------------------------
+
+describe("planContext empty-shell suppression (UX-2)", () => {
+  it("drops signal-less shells from candidates and surfaces them via empty_shell_suppressed", async () => {
+    const projectRoot = await createTempProject();
+    await mkdir(join(projectRoot, ".fabric", "knowledge", "decisions"), { recursive: true });
+    await writeFile(join(projectRoot, ".fabric", "human-lock.json"), `${JSON.stringify({ locked: [] }, null, 2)}\n`);
+    // Seed real YAML frontmatter so auto-heal's re-derivation reproduces the
+    // same descriptions (heading-only files would let reconcile rewrite them).
+    await writeFile(
+      join(projectRoot, ".fabric", "knowledge", "decisions", "real.md"),
+      [
+        "---",
+        "summary: A real decision with signal",
+        "id: KT-DEC-0001",
+        "type: decision",
+        "maturity: proven",
+        "layer: team",
+        "intent_clues: [when wiring auth]",
+        "---",
+        "# Real",
+        "",
+      ].join("\n"),
+    );
+    // Empty shell: summary === stable_id, all signal arrays empty.
+    await writeFile(
+      join(projectRoot, ".fabric", "knowledge", "decisions", "shell.md"),
+      [
+        "---",
+        "summary: KT-DEC-9001",
+        "id: KT-DEC-9001",
+        "type: decision",
+        "maturity: draft",
+        "layer: team",
+        "---",
+        "# Shell",
+        "",
+      ].join("\n"),
+    );
+    const { writeKnowledgeMeta } = await import("./knowledge-meta-builder.js");
+    await writeKnowledgeMeta(projectRoot, { source: "doctor_fix" });
+
+    const result = await planContext(projectRoot, { paths: ["src/index.ts"] });
+
+    const ids = result.candidates.map((item) => item.stable_id);
+    expect(ids).toContain("KT-DEC-0001");
+    expect(ids).not.toContain("KT-DEC-9001");
+
+    const suppressed = result.preflight_diagnostics.find((d) => d.code === "empty_shell_suppressed");
+    expect(suppressed).toBeDefined();
+    expect(suppressed?.stable_ids).toContain("KT-DEC-9001");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// v2.0.0-rc.38 UX-1 / UX-4 (fold ①): payload no longer scales per-path, and a
+// realistic single-path payload stays well under the 4000-token budget
+// (G-MCP-PAYLOAD). Baseline before the fold: ~11900 tokens on this repo.
+// ---------------------------------------------------------------------------
+
+describe("planContext payload size (UX-1/UX-4 regression)", () => {
+  async function seedRealisticRegistry(projectRoot: string, count: number): Promise<void> {
+    await mkdir(join(projectRoot, ".fabric", "knowledge", "decisions"), { recursive: true });
+    await writeFile(join(projectRoot, ".fabric", "human-lock.json"), `${JSON.stringify({ locked: [] }, null, 2)}\n`);
+    const nodes: Record<string, unknown> = {};
+    for (let i = 0; i < count; i += 1) {
+      const id = `KT-DEC-${String(i + 1).padStart(4, "0")}`;
+      const file = `.fabric/knowledge/decisions/d${i + 1}.md`;
+      await writeFile(join(projectRoot, file), `# Decision ${i + 1}\n\nBody for ${id}.\n`);
+      nodes[id] = {
+        stable_id: id,
+        file,
+        content_ref: file,
+        scope_glob: "**",
+        hash: `sha256:d${i + 1}`,
+        identity_source: "declared",
+        description: {
+          summary: `Decision ${i + 1}: a representative architecture decision with a realistic summary length`,
+          intent_clues: ["when touching the relevant module"],
+          tech_stack: ["TypeScript"],
+          impact: ["affects downstream consumers"],
+          must_read_if: "before editing the relevant area",
+          id,
+          knowledge_type: "decisions",
+          maturity: "proven",
+          knowledge_layer: "team",
+          created_at: "2026-05-10T00:00:00Z",
+        },
+      };
+    }
+    await writeFile(
+      join(projectRoot, ".fabric", "agents.meta.json"),
+      `${JSON.stringify({ revision: `rev-${count}`, nodes }, null, 2)}\n`,
+    );
+  }
+
+  it("single-path payload stays under the 4000-token budget (~25 typical entries)", async () => {
+    const projectRoot = await createTempProject();
+    await seedRealisticRegistry(projectRoot, 25);
+
+    const result = await planContext(projectRoot, { paths: ["src/index.ts"] });
+    const serialized = JSON.stringify(result);
+    // char/4 token proxy — conservative for dense JSON.
+    const approxTokens = Math.ceil(serialized.length / 4);
+    expect(approxTokens).toBeLessThanOrEqual(4000);
+  });
+
+  it("payload does not scale per-path (fold ① — N paths != N copies of candidates)", async () => {
+    const projectRoot = await createTempProject();
+    await seedRealisticRegistry(projectRoot, 25);
+
+    const one = JSON.stringify(await planContext(projectRoot, { paths: ["src/a.ts"] })).length;
+    const ten = JSON.stringify(
+      await planContext(projectRoot, {
+        paths: ["src/a.ts", "src/b.ts", "src/c.ts", "src/d.ts", "src/e.ts", "src/f.ts", "src/g.ts", "src/h.ts", "src/i.ts", "src/j.ts"],
+      }),
+    ).length;
+    // 10 paths add only ~10 small requirement_profile objects, NOT 10 extra
+    // copies of the candidate index. Pre-fold this ratio was ~10x.
+    expect(ten).toBeLessThan(one * 1.5);
   });
 });
 
