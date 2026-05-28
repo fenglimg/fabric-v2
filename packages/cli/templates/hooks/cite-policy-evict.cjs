@@ -35,12 +35,15 @@
  * fabric-hint and SessionStart knowledge-hint-broad (rc.33 W2 channel).
  */
 
-const { existsSync, mkdirSync, readFileSync, writeFileSync } = require("node:fs");
-const { dirname, join } = require("node:path");
+// v2.0.0-rc.37 NEW-19: config + sidecar I/O now flow through shared libs so
+// the read-config-or-default and read/write-sidecar boilerplate lives in one
+// canonical place. Unguarded require mirrors knowledge-hint-broad's
+// banner-i18n import — the installer copies every lib/*.cjs alongside the hook.
+const { readConfigNumber } = require("./lib/config-cache.cjs");
+const { readJsonState, writeJsonState } = require("./lib/state-store.cjs");
 
-const FABRIC_DIR_REL = ".fabric";
-const FABRIC_CONFIG_FILE = "fabric-config.json";
-const EVICT_STATE_FILE = join(".fabric", ".cache", "cite-evict-state.json");
+// Sidecar basename resolved under .fabric/.cache/ by state-store.
+const EVICT_STATE_FILE_NAME = "cite-evict-state.json";
 
 // Default OFF (opt-in). Mirrors hint_broad_cooldown_hours and
 // archive_hint_cooldown_hours convention of "feature exists but inert until
@@ -60,18 +63,10 @@ const DEFAULT_CITE_EVICT_INTERVAL = 10;
  * defensive config-read pattern in knowledge-hint-broad.cjs readBroadCooldownHours.
  */
 function readEvictInterval(cwd) {
-  const configPath = join(cwd, FABRIC_DIR_REL, FABRIC_CONFIG_FILE);
-  if (!existsSync(configPath)) return DEFAULT_CITE_EVICT_INTERVAL;
-  try {
-    const parsed = JSON.parse(readFileSync(configPath, "utf8"));
-    const v = parsed && parsed.cite_evict_interval;
-    if (typeof v === "number" && Number.isInteger(v) && v >= 0) {
-      return v;
-    }
-  } catch {
-    // ignore — defensive default
-  }
-  return DEFAULT_CITE_EVICT_INTERVAL;
+  return readConfigNumber(cwd, "cite_evict_interval", DEFAULT_CITE_EVICT_INTERVAL, {
+    min: 0,
+    integer: true,
+  });
 }
 
 /**
@@ -80,33 +75,21 @@ function readEvictInterval(cwd) {
  * with turn_count=1).
  */
 function readEvictState(cwd) {
-  const path = join(cwd, EVICT_STATE_FILE);
-  if (!existsSync(path)) return null;
-  try {
-    const parsed = JSON.parse(readFileSync(path, "utf8"));
-    if (
+  return readJsonState(
+    cwd,
+    EVICT_STATE_FILE_NAME,
+    (parsed) =>
       parsed &&
       typeof parsed.session_id === "string" &&
       typeof parsed.turn_count === "number" &&
       Number.isInteger(parsed.turn_count) &&
-      parsed.turn_count >= 0
-    ) {
-      return parsed;
-    }
-  } catch {
-    // ignore — corrupted sidecar is treated as no prior state
-  }
-  return null;
+      parsed.turn_count >= 0,
+  );
 }
 
 function writeEvictState(cwd, sessionId, turnCount) {
-  const path = join(cwd, EVICT_STATE_FILE);
-  try {
-    mkdirSync(dirname(path), { recursive: true });
-    writeFileSync(path, JSON.stringify({ session_id: sessionId, turn_count: turnCount }));
-  } catch {
-    // best-effort — counter loss is acceptable, hook never blocks
-  }
+  // best-effort — counter loss is acceptable, hook never blocks
+  writeJsonState(cwd, EVICT_STATE_FILE_NAME, { session_id: sessionId, turn_count: turnCount });
 }
 
 /**

@@ -343,8 +343,9 @@
       "wave": "D",
       "subject": "hooks/lib state-store / config-cache / client-adapter 抽象",
       "done_when": "lib/ 抽出共通 I/O + 4 主 hook 引用",
-      "status": "pending",
-      "estimated_hours": "2-3"
+      "status": "done",
+      "_actual_done": "2026-05-28",
+      "note": "两个新 lib: config-cache.cjs (mtime-keyed memoised fabric-config reader + typed getters readConfigNumber/Boolean/String; integer:true=reject 非整 vs floor:true=truncate 两独立语义保留各 caller legacy 契约) + state-store.cjs (generic .fabric/.cache sidecar read/writeJsonState + read/writeTextState, 全 never-throw 契约 KT-DEC-0007). Wired: cite-policy-evict.cjs (readEvictInterval→readConfigNumber, readEvictState/writeEvictState→state-store, 删 node:fs/path imports) + knowledge-hint-broad.cjs (5 config readers underseed/topK/cooldown/reminderToContext/summaryMaxLen→config-cache 一次 parse per fire vs 旧 5 次; readBroadLastEmit/writeBroadLastEmit→state-store; 删 dead imports mkdirSync/writeFileSync/dirname + FABRIC_CONFIG_FILE const). client-adapter 部分 (NEW-19 spec 三件套之一) 移交 NEW-30 单独实现 (client detect + stderr/stdout protocol). 余 2 主 hook (fabric-hint/narrow) 的 lib 引用分别落 NEW-30 (client detect) + NEW-17 (narrow cache via state-store) — 跨 3 task 后 4 主 hook 全 reference 新 lib 层. 新增 hooks-lib-state-config.test.ts 9 test (config range/integer-reject/floor/mtime-invalidate + sidecar round-trip/corrupt-tolerance). installer 自动 copy lib/*.cjs → i18n snapshot skipped 98→104 (2 lib × 3 client) regen. Gates: tsc 0 / tests 1767 (432+606+729) / lint 0."
     },
     {
       "id": "NEW-20",

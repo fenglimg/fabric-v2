@@ -47,14 +47,8 @@
  */
 
 const { spawnSync } = require("node:child_process");
-const {
-  existsSync,
-  mkdirSync,
-  readdirSync,
-  readFileSync,
-  writeFileSync,
-} = require("node:fs");
-const { dirname, join } = require("node:path");
+const { existsSync, readdirSync, readFileSync } = require("node:fs");
+const { join } = require("node:path");
 
 // rc.16 TASK-003: shared banner-i18n lib (resolves fabric_language config and
 // renders localized banner text). Mirror of the wiring in fabric-hint.cjs
@@ -62,6 +56,15 @@ const { dirname, join } = require("node:path");
 // readFabricLanguage(cwd) and threaded into renderBanner — no fs in render path.
 const { renderBanner, readFabricLanguage } = require("./lib/banner-i18n.cjs");
 const { resolveOpaqueSummaries } = require("./lib/summary-fallback.cjs");
+// v2.0.0-rc.37 NEW-19: shared fabric-config reader + sidecar I/O. Replaces the
+// five per-key readFileSync+parse config readers (one parse per fire now) and
+// the bespoke last-emit sidecar helpers. The L78 "refactor into lib/ if a
+// third hook needs it" note is now realised.
+const {
+  readConfigNumber,
+  readConfigBoolean,
+} = require("./lib/config-cache.cjs");
+const { readTextState, writeTextState } = require("./lib/state-store.cjs");
 
 // -----------------------------------------------------------------------------
 // rc.12: SessionStart broad-menu is now unconditionally emitted on every
@@ -80,7 +83,6 @@ const FABRIC_DIR_REL = ".fabric";
 // cannot `require` each other. If a third hook ever needs the same logic,
 // refactor into packages/cli/templates/hooks/lib/. Keep these values in sync
 // with packages/cli/templates/hooks/fabric-hint.cjs.
-const FABRIC_CONFIG_FILE = "fabric-config.json";
 const AGENTS_META_FILE = "agents.meta.json";
 const IMPORT_STATE_FILE = ".import-state.json";
 const KNOWLEDGE_CANONICAL_TYPES = [
@@ -104,11 +106,8 @@ const DEFAULT_HINT_BROAD_TOP_K = 8;
 // so the two cooldowns don't interfere.
 const DEFAULT_HINT_BROAD_COOLDOWN_HOURS = 0;
 const MS_PER_HOUR = 60 * 60 * 1000;
-const HINT_BROAD_LAST_EMIT_FILE = join(
-  ".fabric",
-  ".cache",
-  "knowledge-hint-broad-last-emit",
-);
+// v2.0.0-rc.37 NEW-19: state-store resolves this basename under .fabric/.cache/.
+const HINT_BROAD_LAST_EMIT_FILE_NAME = "knowledge-hint-broad-last-emit";
 
 // v2.0.0-rc.33 W2-6 (P0-7): when true, emit banner as
 // hookSpecificOutput.additionalContext JSON on stdout (Claude Code PreToolUse
@@ -168,16 +167,11 @@ function countCanonicalNodes(projectRoot) {
  * Any read/parse failure → default (never block on config errors).
  */
 function readUnderseedThreshold(projectRoot) {
-  const configPath = join(projectRoot, FABRIC_DIR_REL, FABRIC_CONFIG_FILE);
-  if (!existsSync(configPath)) return DEFAULT_UNDERSEED_NODE_THRESHOLD;
-  try {
-    const parsed = JSON.parse(readFileSync(configPath, "utf8"));
-    const v = parsed && parsed.underseed_node_threshold;
-    if (typeof v === "number" && Number.isFinite(v) && v > 0) return v;
-  } catch {
-    // fall through to default
-  }
-  return DEFAULT_UNDERSEED_NODE_THRESHOLD;
+  // > 0 guard via min: Number.MIN_VALUE (any positive). config-cache returns
+  // the parsed number when finite & in-range, else the default.
+  return readConfigNumber(projectRoot, "underseed_node_threshold", DEFAULT_UNDERSEED_NODE_THRESHOLD, {
+    min: Number.MIN_VALUE,
+  });
 }
 
 /**
@@ -186,18 +180,11 @@ function readUnderseedThreshold(projectRoot) {
  * schema's 1..50 range inline so a malformed config silently falls back.
  */
 function readBroadTopK(projectRoot) {
-  const configPath = join(projectRoot, FABRIC_DIR_REL, FABRIC_CONFIG_FILE);
-  if (!existsSync(configPath)) return DEFAULT_HINT_BROAD_TOP_K;
-  try {
-    const parsed = JSON.parse(readFileSync(configPath, "utf8"));
-    const v = parsed && parsed.hint_broad_top_k;
-    if (typeof v === "number" && Number.isFinite(v) && v >= 1 && v <= 50) {
-      return Math.floor(v);
-    }
-  } catch {
-    // fall through to default
-  }
-  return DEFAULT_HINT_BROAD_TOP_K;
+  return readConfigNumber(projectRoot, "hint_broad_top_k", DEFAULT_HINT_BROAD_TOP_K, {
+    min: 1,
+    max: 50,
+    floor: true,
+  });
 }
 
 /**
@@ -205,18 +192,10 @@ function readBroadTopK(projectRoot) {
  * 0 means "no cooldown" (re-emit on every SessionStart, rc.32 behavior).
  */
 function readBroadCooldownHours(projectRoot) {
-  const configPath = join(projectRoot, FABRIC_DIR_REL, FABRIC_CONFIG_FILE);
-  if (!existsSync(configPath)) return DEFAULT_HINT_BROAD_COOLDOWN_HOURS;
-  try {
-    const parsed = JSON.parse(readFileSync(configPath, "utf8"));
-    const v = parsed && parsed.hint_broad_cooldown_hours;
-    if (typeof v === "number" && Number.isFinite(v) && v >= 0 && v <= 168) {
-      return v;
-    }
-  } catch {
-    // fall through to default
-  }
-  return DEFAULT_HINT_BROAD_COOLDOWN_HOURS;
+  return readConfigNumber(projectRoot, "hint_broad_cooldown_hours", DEFAULT_HINT_BROAD_COOLDOWN_HOURS, {
+    min: 0,
+    max: 168,
+  });
 }
 
 /**
@@ -226,16 +205,7 @@ function readBroadCooldownHours(projectRoot) {
  * receives the reminder in-context. Stderr stays informational either way.
  */
 function readReminderToContext(projectRoot) {
-  const configPath = join(projectRoot, FABRIC_DIR_REL, FABRIC_CONFIG_FILE);
-  if (!existsSync(configPath)) return DEFAULT_HINT_REMINDER_TO_CONTEXT;
-  try {
-    const parsed = JSON.parse(readFileSync(configPath, "utf8"));
-    const v = parsed && parsed.hint_reminder_to_context;
-    if (typeof v === "boolean") return v;
-  } catch {
-    // fall through to default
-  }
-  return DEFAULT_HINT_REMINDER_TO_CONTEXT;
+  return readConfigBoolean(projectRoot, "hint_reminder_to_context", DEFAULT_HINT_REMINDER_TO_CONTEXT);
 }
 
 /**
@@ -244,31 +214,18 @@ function readReminderToContext(projectRoot) {
  * Returns epoch ms or null when missing/unreadable.
  */
 function readBroadLastEmit(projectRoot) {
-  const p = join(projectRoot, HINT_BROAD_LAST_EMIT_FILE);
-  if (!existsSync(p)) return null;
-  try {
-    const raw = readFileSync(p, "utf8").trim();
-    if (raw.length === 0) return null;
-    const asNum = Number(raw);
-    if (Number.isFinite(asNum) && asNum > 0) return asNum;
-    const ms = Date.parse(raw);
-    if (Number.isFinite(ms)) return ms;
-  } catch {
-    // ignore
-  }
+  const raw = readTextState(projectRoot, HINT_BROAD_LAST_EMIT_FILE_NAME);
+  if (raw === null || raw.length === 0) return null;
+  const asNum = Number(raw);
+  if (Number.isFinite(asNum) && asNum > 0) return asNum;
+  const ms = Date.parse(raw);
+  if (Number.isFinite(ms)) return ms;
   return null;
 }
 
 function writeBroadLastEmit(projectRoot, nowMs) {
-  const p = join(projectRoot, HINT_BROAD_LAST_EMIT_FILE);
-  try {
-    if (!existsSync(dirname(p))) {
-      mkdirSync(dirname(p), { recursive: true });
-    }
-    writeFileSync(p, String(nowMs));
-  } catch {
-    // Silent — sidecar failure must never block session start.
-  }
+  // Silent — sidecar failure must never block session start.
+  writeTextState(projectRoot, HINT_BROAD_LAST_EMIT_FILE_NAME, String(nowMs));
 }
 
 /**
@@ -368,18 +325,11 @@ const CLI_TIMEOUT_MS = 2000;
 const DEFAULT_SUMMARY_MAX_LEN = 80;
 
 function readSummaryMaxLen(projectRoot) {
-  const configPath = join(projectRoot, FABRIC_DIR_REL, FABRIC_CONFIG_FILE);
-  if (!existsSync(configPath)) return DEFAULT_SUMMARY_MAX_LEN;
-  try {
-    const parsed = JSON.parse(readFileSync(configPath, "utf8"));
-    const v = parsed && parsed.hint_summary_max_len;
-    if (typeof v === "number" && Number.isFinite(v) && v >= 40 && v <= 240) {
-      return Math.floor(v);
-    }
-  } catch {
-    // fall through to default
-  }
-  return DEFAULT_SUMMARY_MAX_LEN;
+  return readConfigNumber(projectRoot, "hint_summary_max_len", DEFAULT_SUMMARY_MAX_LEN, {
+    min: 40,
+    max: 240,
+    floor: true,
+  });
 }
 
 // Canonical type order — render groups in this sequence so output is stable
@@ -877,7 +827,7 @@ module.exports = {
     DEFAULT_HINT_BROAD_TOP_K,
     DEFAULT_HINT_BROAD_COOLDOWN_HOURS,
     DEFAULT_HINT_REMINDER_TO_CONTEXT,
-    HINT_BROAD_LAST_EMIT_FILE,
+    HINT_BROAD_LAST_EMIT_FILE_NAME,
   },
 };
 
