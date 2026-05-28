@@ -55,6 +55,16 @@ try {
   citeContractReminder = null;
 }
 
+// v2.0.0-rc.37 NEW-30: shared client-protocol adapter. Guarded require (this
+// hook runs in arbitrary user repos); detectClient delegates the 3-tier
+// detection to the lib, falling back to env-only when the lib is absent.
+let clientAdapter = null;
+try {
+  clientAdapter = require("./lib/client-adapter.cjs");
+} catch {
+  clientAdapter = null;
+}
+
 // CONSTANTS — duplicated from packages/server/src/services/_shared.ts.
 // DRY violation accepted: this hook script runs in user repos WITHOUT
 // node_modules access, so it cannot import from @fenglimg/fabric-server.
@@ -1161,20 +1171,19 @@ function parseKbLine(raw) {
  * so omitting it leaves the event valid.
  */
 function detectClient() {
+  // Delegate the full 3-tier detection (env → CLAUDE_PROJECT_DIR → path
+  // heuristic, incl. .cursor) to the shared adapter. __dirname is passed so
+  // the path heuristic reflects THIS hook's location.
+  if (clientAdapter && typeof clientAdapter.detectClient === "function") {
+    return clientAdapter.detectClient(__dirname);
+  }
+  // Fallback (adapter lib absent): env override only.
   const envClient = process.env.FABRIC_HINT_CLIENT;
   if (typeof envClient === "string" && envClient.length > 0) {
     const normalised = envClient.trim().toLowerCase();
     if (normalised === "cc" || normalised === "codex" || normalised === "cursor") {
       return normalised;
     }
-  }
-  // Path heuristic — __dirname is the directory containing this .cjs file
-  // when invoked normally (require.main === module).
-  try {
-    if (__dirname.includes(".claude/") || __dirname.includes(".claude\\")) return "cc";
-    if (__dirname.includes(".codex/") || __dirname.includes(".codex\\")) return "codex";
-  } catch {
-    // __dirname always defined for cjs modules; fall through defensively.
   }
   return undefined;
 }

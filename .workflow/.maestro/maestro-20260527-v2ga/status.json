@@ -448,8 +448,10 @@
       "wave": "D",
       "subject": "stderr/stdout client-adapter 抽象",
       "done_when": "hooks/lib/client-adapter.cjs 抽出 Claude/Codex/Cursor 协议差异 + 3 client 输出标准化",
-      "status": "pending",
-      "estimated_hours": "2-3"
+      "status": "done",
+      "_actual_done": "2026-05-28",
+      "estimated_hours": "2-3",
+      "note": "新 lib/client-adapter.cjs: isClaudeCode (CLAUDE_PROJECT_DIR single-bit) + detectClient (3-tier: FABRIC_HINT_CLIENT env → CLAUDE_PROJECT_DIR=cc → __dirname path heuristic 含 .cursor, 接受 dirnameHint param 默认 lib 自身 __dirname) + readStdinJson (async promise reader + 1s timeout) + emitContext (channel-aware: cc→stdout hookSpecificOutput envelope, codex/cursor→stderr plain; forceStderr override pins stderr 即使 cc, 用于 SessionStart one-shot). 全 never-throw (KT-DEC-0007). Wired 3 hook (narrow 无 client/stdin/emit 关注点, 故非 4): cite-policy-evict.cjs 全删 local isClaudeCode+readStdinJson, 两 emit path (SessionStart stderr forceStderr + UserPromptSubmit stdout envelope) 走 emitContext; fabric-hint.cjs detectClient 委托 adapter (guarded require house-style + env-only fallback, 顺带补 .cursor 支持原 detectClient 对 cursor 返 undefined); knowledge-hint-broad.cjs inline CLAUDE_PROJECT_DIR const → isClaudeCode(). 至此跨 NEW-19/30 (+NEW-17 narrow) 4 主 hook 全 reference 新 lib 层. 新增 hooks-lib-client-adapter.test.ts 7 test (detect 3-tier + cursor + emit cc/codex/forceStderr). installer auto-copy → i18n snapshot skipped 104→107 (1 lib × 3 client) regen. Gates: tsc 0 / tests 1774 (432+606+736) / lint 0."
     },
     {
       "id": "NEW-31",

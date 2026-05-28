@@ -41,6 +41,10 @@
 // banner-i18n import — the installer copies every lib/*.cjs alongside the hook.
 const { readConfigNumber } = require("./lib/config-cache.cjs");
 const { readJsonState, writeJsonState } = require("./lib/state-store.cjs");
+// v2.0.0-rc.37 NEW-30: client detect + stdin + channel-aware emit now flow
+// through the shared adapter (Claude Code stdout envelope vs Codex/Cursor
+// stderr). Replaces the local isClaudeCode + readStdinJson + inline emits.
+const { isClaudeCode, readStdinJson, emitContext } = require("./lib/client-adapter.cjs");
 
 // Sidecar basename resolved under .fabric/.cache/ by state-store.
 const EVICT_STATE_FILE_NAME = "cite-evict-state.json";
@@ -136,37 +140,6 @@ function renderReminder(turnCount, interval) {
   ].join("\n");
 }
 
-/**
- * Detect Claude Code via CLAUDE_PROJECT_DIR env. Same single-bit signal used
- * by knowledge-hint-broad.cjs rc.33 W4 review-fix (Gemini High-1). Codex /
- * Cursor don't set this var.
- */
-function isClaudeCode() {
-  return (
-    typeof process.env.CLAUDE_PROJECT_DIR === "string" &&
-    process.env.CLAUDE_PROJECT_DIR.length > 0
-  );
-}
-
-async function readStdinJson() {
-  return new Promise((resolve) => {
-    let buffer = "";
-    process.stdin.on("data", (chunk) => {
-      buffer += chunk;
-    });
-    process.stdin.on("end", () => {
-      try {
-        resolve(JSON.parse(buffer));
-      } catch {
-        resolve(null);
-      }
-    });
-    process.stdin.on("error", () => resolve(null));
-    // Defensive timeout: if stdin never closes (host bug), give up after 1s.
-    setTimeout(() => resolve(null), 1000).unref();
-  });
-}
-
 async function main(env) {
   try {
     const cwd =
@@ -198,17 +171,16 @@ async function main(env) {
     const sessionStartMode =
       (env && env.forceSessionStart === true) || eventName === "SessionStart";
 
+    const streams = (env && env.stdio) || {};
+
     if (sessionStartMode) {
-      const reminder = renderReminder(/* turnCount = */ 0, interval);
-      const err = (env && env.stdio && env.stdio.stderr) || process.stderr;
-      try {
-        // One-shot stderr emit (knowledge-hint-broad convention). No
-        // hookSpecificOutput JSON envelope — Codex/Cursor parse stderr;
-        // Claude Code SessionStart will also surface stderr to the user.
-        err.write(`${reminder}\n`);
-      } catch {
-        // best-effort
-      }
+      // One-shot stderr emit (knowledge-hint-broad convention). forceStderr
+      // pins stderr even on Claude Code — Codex/Cursor parse stderr; CC
+      // SessionStart also surfaces stderr to the user.
+      emitContext(renderReminder(/* turnCount = */ 0, interval), {
+        forceStderr: true,
+        streams,
+      });
       return;
     }
 
@@ -232,19 +204,14 @@ async function main(env) {
       return; // not on a window boundary — silent
     }
 
-    const reminder = renderReminder(turnCount, interval);
-    const out = (env && env.stdio && env.stdio.stdout) || process.stdout;
-    try {
-      const envelope = {
-        hookSpecificOutput: {
-          hookEventName: "UserPromptSubmit",
-          additionalContext: reminder,
-        },
-      };
-      out.write(`${JSON.stringify(envelope)}\n`);
-    } catch {
-      // best-effort
-    }
+    // Claude Code UserPromptSubmit: stdout JSON envelope. client:'cc' forces
+    // the envelope since the isClaudeCode/forceClaudeCode gate above already
+    // confirmed this is the Claude Code path.
+    emitContext(renderReminder(turnCount, interval), {
+      client: "cc",
+      eventName: "UserPromptSubmit",
+      streams,
+    });
   } catch {
     // Silent — never block user prompt on hook failure.
   }

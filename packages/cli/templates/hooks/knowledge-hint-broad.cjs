@@ -65,6 +65,9 @@ const {
   readConfigBoolean,
 } = require("./lib/config-cache.cjs");
 const { readTextState, writeTextState } = require("./lib/state-store.cjs");
+// v2.0.0-rc.37 NEW-30: shared client detection (replaces the inline
+// CLAUDE_PROJECT_DIR single-bit check below).
+const { isClaudeCode } = require("./lib/client-adapter.cjs");
 
 // -----------------------------------------------------------------------------
 // rc.12: SessionStart broad-menu is now unconditionally emitted on every
@@ -762,11 +765,9 @@ function main(env, stdio) {
     // either polluting the terminal or crashing the host's hook-parsing
     // pipeline. CLAUDE_PROJECT_DIR is set by CC when invoking hooks (see
     // packages/cli/templates/hooks/configs/claude-code.json sigil paths);
-    // its presence is the single-bit "this is Claude Code" signal.
-    const isClaudeCode =
-      typeof process.env.CLAUDE_PROJECT_DIR === "string" &&
-      process.env.CLAUDE_PROJECT_DIR.length > 0;
-    const reminderToContext = readReminderToContext(cwd) && isClaudeCode;
+    // its presence is the single-bit "this is Claude Code" signal (now via
+    // the shared client-adapter, rc.37 NEW-30).
+    const reminderToContext = readReminderToContext(cwd) && isClaudeCode();
     if (reminderToContext && !(env && env.skipStdout === true)) {
       try {
         const envelope = {
