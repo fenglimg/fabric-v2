@@ -59,6 +59,12 @@ async function main() {
   for (const packagePath of workspacePackagePaths) {
     const manifest = await readPackageManifest(packagePath);
 
+    // Private packages are never published, so they are exempt from the
+    // release version line (e.g. quarantined experimental packages).
+    if (manifest.private === true) {
+      continue;
+    }
+
     if (manifest.version !== rootManifest.version) {
       mismatches.push({
         name: manifest.name,
