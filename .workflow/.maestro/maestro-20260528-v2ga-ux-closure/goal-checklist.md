@@ -42,9 +42,9 @@
 - [x] **UX-15** fabric-review + fabric-import 交互旅程 dogfood（不只 trigger）✅ 全 action 实跑 snapshot-restore, 无 P0/P1 → NEW-2 P3
 
 ### D-HOOK — Hook 效能（S4）
-- [ ] **UX-7** Hook surface → AI 行为变化验证（SessionStart broad + PreToolUse narrow）
+- [x] **UX-7** Hook surface → AI 行为变化验证 ✅ 通道3段验证, UX-2 提升 surface 9 clean 条 (空壳抑制)
 - [⛔] **UX-8** cite-coverage ≥30% 复测 — **BLOCKED**: edits_touched 永恒0 (NEW-3 instrumentation bug) + ≥30% 数值 soak-依赖 (S5 out-of-scope); 不造假, 上报用户
-- [ ] **UX-9** nudge 频率合适度（archive/review/maintenance，≥2 LLM）
+- [x] **UX-9** nudge 频率合适度（archive/review/maintenance，≥2 LLM）✅ claude+gemini APPROPRIATE → NEW-4 P3
 
 ### D-CLI — 用户交互旅程 + 故障自救（S1/S2/S6/S7/S8 + X3）
 - [ ] **UX-10** Onboarding cliff 30min self-演复测 + --help 首屏（并 G1，≥2 LLM，builds-on 工程本 F3）

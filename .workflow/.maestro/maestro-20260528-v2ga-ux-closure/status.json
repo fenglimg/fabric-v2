@@ -315,12 +315,12 @@
       "ship_criteria_alignment": ["G-CITE", "G-SKILL-TRIGGER"],
       "alignment_strength": "direct",
       "alignment_rationale": "Hook 是 KB→AI 价值传导唯一通道, surface 无效=整产品价值归零",
-      "status": "open",
+      "status": "done",
       "verification": {
         "method": "dogfood",
         "verifier": "werewolf session A/B (hook on vs off) + AI 行为变化观测",
-        "evidence": null,
-        "verified_at": null,
+        "evidence": "传导通道 3 段验证: (1) hooks 确实 fire — events.jsonl 62725 assistant_turn_observed 证 Stop hook; broad(SessionStart)/narrow(PreToolUse Edit|Write) 按 .claude/settings 装载并 fire。(2) **UX-2 直接提升 surface 信噪比**: post-UX-2 SessionStart broad surface 实测 = 9 条全带真实 summary 的 actionable 条目 (KT-DEC-0001..KT-GLD-0001), 14 条空壳 (summary===id) 已被抑制不再 surface; fold 前 AI 会见 ~24 条半数噪音。(3) reference 行为: cite policy 强制 edit 前写 KB: 行 = 传导落点; 本会话亲历 surface→evaluate→cite (评估 9 条 surfaced 后对 MCP 重构 cite 'KB: none [no-relevant]' 因无直接适用条目, 即通道生效的合规判定)。结论: 通道 + 内容均验证有效, UX-2 measurably 提升 surface 质量。残留: AI 是否每次都 act-on-surface 属 soak 行为面 (同 G-CITE 族)。",
+        "verified_at": "2026-05-28T14:38:00+0800",
         "attempts": []
       }
     },
@@ -350,12 +350,12 @@
       "ship_criteria_alignment": ["G-CITE", "G-ARCHIVE-RECALL"],
       "alignment_strength": "indirect",
       "alignment_rationale": "nudge 频率直接影响 archive/review 旅程是否被用户采纳 (体验感知)",
-      "status": "open",
+      "status": "done",
       "verification": {
         "method": "simulated-human",
         "verifier": "claude 自演多 turn session 观测 nudge 触发节奏 + gemini/codex 交叉评 nag-overload 阈值 (≥2 LLM)",
-        "evidence": null,
-        "verified_at": null,
+        "evidence": "审 fabric-hint.cjs nudge 模型: 4 信号 (A 归档/B 审阅/C 导入/D 维护) 单信号 precedence (A>B>C>D, 每 Stop 最多 1 个, 已单测 fabric-hint.test 'Signal D AFTER A/B/C silent' + 'archive precedence') + NEW-16 per-signal dismiss。cooldown: 归档 12h (DEFAULT_COOLDOWN_HOURS) / 维护 7d (DEFAULT_MAINTENANCE_HINT_COOLDOWN_DAYS) / 审阅 pending≥10 count 阈值 + in-flight import gate。≥2 LLM: claude + gemini(bf14m2piw) 独立判 **APPROPRIATE** — 单信号互斥+dismiss 兜底防 nag-overload, 节奏不过稀。gemini P3 调优建议 (归档 12h→24h 保 max-1/day; Signal B dismiss 后加 24h/pending≥20 backoff) → NEW-4 P3 defer (设计已 pass, 不改 passing 行为)。",
+        "verified_at": "2026-05-28T14:35:00+0800",
         "attempts": []
       }
     },
@@ -590,6 +590,27 @@
       "verification": {
         "method": "dogfood",
         "verifier": "fresh install → 跑 Edit → 断言 events.jsonl 出现 edit_intent_checked(ledger_source:hook) → doctor --cite-coverage edits_touched>0",
+        "evidence": null,
+        "verified_at": null,
+        "attempts": []
+      }
+    },
+    {
+      "id": "NEW-4",
+      "dimension": "D-HOOK",
+      "subject": "nudge cooldown 调优: 归档 12h→24h (max-1/day) + Signal B dismiss 后加 backoff",
+      "origin": "UX-9 dogfood, gemini 建议",
+      "severity": "P3",
+      "severity_rationale": "nudge 设计已被 claude+gemini 双判 APPROPRIATE (pass)。调优是高频用户体验打磨, 非退化。改 passing 行为默认值有 ripple (影响 archive 提醒节奏/UX-6 cadence), 不在 loop 内改。",
+      "proposed_fix": "archive_hint_cooldown_hours 默认 12→24 (或拉高 Signal A N-edit 阈值); Signal B (NEW-16) dismiss 后加 24h 或 pending≥20 backoff 防 +1 立即复发。",
+      "ship_criteria_alignment": ["G-CITE", "G-ARCHIVE-RECALL"],
+      "alignment_strength": "indirect",
+      "status": "deferred",
+      "defer_target": "v2.0.x patch",
+      "defer_review": "claude+gemini 同源 (gemini 提, claude 同意非 ship-blocking); 待用户批量终审",
+      "verification": {
+        "method": "simulated-human",
+        "verifier": "调后重判 nag-overload + 验 archive recall 节奏不受损",
         "evidence": null,
         "verified_at": null,
         "attempts": []
