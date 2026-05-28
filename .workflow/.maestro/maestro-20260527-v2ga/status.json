@@ -665,7 +665,9 @@
       "wave": "F",
       "subject": "werewolf-minigame fixture 仓 (脱敏 + invariant)",
       "done_when": "__fixtures__/werewolf-snapshot.tar.gz + invariant 政策 + 测试套件能加载",
-      "status": "pending"
+      "status": "done",
+      "_actual_done": "2026-05-28",
+      "note": "packages/server/__tests__/__fixtures__/werewolf-snapshot.tar.gz (103KB) — 脱敏 werewolf-minigame .fabric 快照: knowledge (57 entry) + agents.meta.json + fabric-config + AGENTS.md + forensic + trimmed events.jsonl (全 audit event type verbatim + 首 40 assistant_turn_observed, 把 live 9.7MB 压到 ~100KB). 脱敏: 所有 /Users/<name>/ → /fixtures/ (0 residual, 测试断言). werewolf-snapshot.policy.md 记 sanitization policy + invariant 表 (57 总 = dec7/pit17/gld10/mod16/pro7, 53 draft + 4 verified, 1185 events) + 再生步骤. werewolf-fixture.test.ts 3 test: extract+tree intact / 0 /Users/ paths / runDoctorReport 加载并 pin invariants (agents_meta 非 invalid + draft_backlog 53/57 + auto-promote info surface 在). 导出 extractWerewolfFixture helper 供 F2 parity 复用. Gates: tsc 0 / tests 1804 (434+620+750) / lint 0."
     },
     {
       "id": "F2",
