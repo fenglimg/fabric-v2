@@ -1,5 +1,11 @@
 # UX i18n Policy — fabric-review full reference
 
+> **Shared core (rc.37 NEW-13):** the cross-skill invariants — protected-token
+> NEVER-translate list, AskUserQuestion routing-key rule, layer heuristic, and
+> events-emit convention — live once in `../../lib/shared-policy.md`. This file
+> keeps only the fabric-review-specific 5-class examples. Read the shared lib
+> for the common rules; do not fork them here.
+
 > **Loaded on demand.** Only consult when you need to disambiguate which of the 5 classes a given string belongs to. SKILL.md gives the operative rule.
 
 ## UX i18n Policy (5-class bilingualization)

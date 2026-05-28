@@ -7,6 +7,7 @@ import {
   installFabricArchiveSkill,
   installFabricImportSkill,
   installFabricReviewSkill,
+  installSharedSkillLib,
   installHookLibs,
   installKnowledgeHintBroadHook,
   installKnowledgeHintNarrowHook,
@@ -90,6 +91,9 @@ export async function installHooks(
   results.push(...await runStep(() => installFabricArchiveSkill(normalizedTarget)));
   results.push(...await runStep(() => installFabricReviewSkill(normalizedTarget)));
   results.push(...await runStep(() => installFabricImportSkill(normalizedTarget)));
+  // rc.37 NEW-13: cross-skill shared policy lib (single source the 3 skills'
+  // ref files reference for protected tokens / routing keys / layer heuristic).
+  results.push(...await runStep(() => installSharedSkillLib(normalizedTarget)));
   results.push(...await runStep(() => installArchiveHintHook(normalizedTarget)));
   // rc.6 TASK-019 (E1): SessionStart broad-injection hook script. Mirrors
   // the fabric-hint.cjs copy step — same three client dest dirs, same

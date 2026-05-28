@@ -569,6 +569,55 @@ async function installSkillRefFiles(
 }
 
 /**
+ * v2.0.0-rc.37 NEW-13: copy the cross-skill shared policy lib
+ * (templates/skills/lib/*.md) into each client's `skills/lib/` ONCE. The three
+ * skills' ref files reference `../../lib/shared-policy.md` for the common core
+ * (protected tokens / AskUserQuestion routing keys / layer heuristic / events
+ * emit) instead of each re-prosing it. Sibling to the per-skill ref walk; uses
+ * the same two client prefixes (.claude + .codex). `skills/lib/` carries no
+ * SKILL.md so the client skill loader ignores it, and skill_ref_mirror only
+ * scans the three named skill ref/ dirs — so the lib dir never trips parity.
+ */
+export async function installSharedSkillLib(
+  projectRoot: string,
+  _options: InstallOptions = {},
+): Promise<InstallStepResult[]> {
+  let libTemplateDir: string;
+  try {
+    libTemplateDir = findTemplatePath("skills/lib");
+  } catch {
+    return [{ step: "skill-lib", path: "skills/lib", status: "skipped", message: "no-lib-dir" }];
+  }
+  let libFiles: string[];
+  try {
+    libFiles = readdirSync(libTemplateDir).filter((name) => name.endsWith(".md"));
+  } catch {
+    return [{ step: "skill-lib", path: libTemplateDir, status: "skipped", message: "no-lib-files" }];
+  }
+  const clientPrefixes = [".claude", ".codex"] as const;
+  const results: InstallStepResult[] = [];
+  for (const libFile of libFiles) {
+    let source: string;
+    try {
+      source = readFileSync(join(libTemplateDir, libFile), "utf8");
+    } catch (error: unknown) {
+      results.push({
+        step: "skill-lib",
+        path: join(libTemplateDir, libFile),
+        status: "error",
+        message: error instanceof Error ? error.message : String(error),
+      });
+      continue;
+    }
+    for (const prefix of clientPrefixes) {
+      const target = join(projectRoot, prefix, "skills", "lib", libFile);
+      results.push(await copyTextIdempotent("skill-lib", source, target));
+    }
+  }
+  return results;
+}
+
+/**
  * Copy templates/hooks/fabric-hint.cjs into all three supported clients'
  * hooks directories: .claude/hooks/, .codex/hooks/, and .cursor/hooks/.
  * Marked executable on POSIX (chmod 0o755). Skipped on Windows where the

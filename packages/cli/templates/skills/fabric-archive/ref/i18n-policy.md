@@ -1,5 +1,11 @@
 # UX i18n Policy — full reference
 
+> **Shared core (rc.37 NEW-13):** the cross-skill invariants — protected-token
+> NEVER-translate list, AskUserQuestion routing-key rule, layer heuristic, and
+> events-emit convention — live once in `../../lib/shared-policy.md`. This file
+> keeps only the fabric-archive-specific 5-class examples. Read the shared lib
+> for the common rules; do not fork them here.
+
 > **Loaded on demand.** Only consult when rendering bilingual output AND you're unsure which class a string belongs to. SKILL.md gives the operative rule: read `.fabric/fabric-config.json` → `fabric_language`, emit prose in resolved variant, never translate protected tokens. The 5-class taxonomy below disambiguates edge cases.
 
 ## UX i18n Policy (5-class bilingualization)

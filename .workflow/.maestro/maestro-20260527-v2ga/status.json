@@ -292,8 +292,10 @@
       "wave": "D",
       "subject": "cross-skill 共享 lib (layer heuristic / events emit / protected tokens)",
       "done_when": "templates/skills/lib/ 抽取共享逻辑 + 3 skill 引用",
-      "status": "pending",
-      "estimated_hours": "2-3"
+      "status": "done",
+      "_actual_done": "2026-05-28",
+      "estimated_hours": "2-3",
+      "note": "新 templates/skills/lib/shared-policy.md: 单一 canonical 源, 4 节 (protected-token NEVER-translate list + 指向 PROTECTED_TOKENS/lint-protected-tokens.ts authority / AskUserQuestion routing-key 不变式 + canonical option arrays / layer heuristic 强team-强personal-默认team / events-emit convention 经 MCP tool 不手写 ledger). 3 skill i18n-policy.md (archive/import/review) 各 H1 后加 shared-core pointer block 引用 ../../lib/shared-policy.md, 保留各自 skill-specific 5-class 示例 — 共同核心不再 fork. Shipping: 新 installSharedSkillLib() copy skills/lib/*.md → .claude/skills/lib/ + .codex/skills/lib/ (2 client, 镜像 per-skill ref walk), wire 进 hooks-orchestrator 在 3 skill install 后. 安全性: skills/lib/ 无 SKILL.md → client skill loader 忽略; inspectSkillRefMirror 只扫 3 named skill ref/ → 不波及 lib; skill ref 用 within-tree 相对路径 ../../lib/ AI 可 Read. i18n.test install snapshot +2 (1 lib × 2 client) regen. install/uninstall 集成测试全过 (idempotent re-run zero diff). Gates: tsc 0 / tests 1792 (434+608+750) / lint 0."
     },
     {
       "id": "NEW-14",
