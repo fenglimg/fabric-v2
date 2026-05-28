@@ -17,7 +17,7 @@
 | 指标 | 维度 | target | actual | blocking |
 |---|---|---|---|---|
 | G-MCP-PAYLOAD | D-MCP | 单 path payload ≤ 4k tok（基线 ~11.9k） | ~1.4k ✅ | ✅ |
-| G-CITE | D-HOOK | cite-coverage ≥ 30%（baseline 3.1%） | ⛔ BLOCKED (公式语义+soak; instrumentation已验证OK) | ✅ |
+| G-CITE | D-HOOK | cite_compliance_rate ≥ 30%（用户授权方案 C；baseline 3.1%） | 99.8% ✅ (594/595 live；session_id 死分母真根因已修+≥2 LLM) | ✅ |
 | G-ARCHIVE-RECALL | D-SKILL | archive recall ≥ 40%（baseline 20%） | 100% ✅ | ✅ |
 | G-SKILL-TRIGGER | D-SKILL | auto-invoke F1 ≥ 71% 无回归 | 100% ✅ | ⬜ |
 | G-PARITY | D-PARITY | CC/Codex 5 操作 diff 无 blocking | 无 blocking ✅ | ✅ |
@@ -43,7 +43,7 @@
 
 ### D-HOOK — Hook 效能（S4）
 - [x] **UX-7** Hook surface → AI 行为变化验证 ✅ 通道3段验证, UX-2 提升 surface 9 clean 条 (空壳抑制)
-- [⛔] **UX-8** cite-coverage ≥30% — **BLOCKED**: [更正] NEW-3 误报撤销, instrumentation 已验证工作; 剩余=公式语义(合规KB:none是否计入,实测合规≈100%)+id密度soak; 需用户决 C/A
+- [x] **UX-8** cite_compliance_rate ≥30% ✅ **PASS 99.8%**: 找到真根因(narrow hook edit_intent_checked 缺 session_id → expected_but_missed 关联恒0 → compliance 结构性钉死100%)→ 修复(emit 加真实 session_id)→ live 实测 99.8%(editsTouched12/missed1/uncorrelatable4 hardening)+ 判别单测 + claude/codex ≥2 LLM 签字 → NEW-9 P3(时序关联精度)
 - [x] **UX-9** nudge 频率合适度（archive/review/maintenance，≥2 LLM）✅ claude+gemini APPROPRIATE → NEW-4 P3
 
 ### D-CLI — 用户交互旅程 + 故障自救（S1/S2/S6/S7/S8 + X3）
@@ -69,12 +69,13 @@
 
 ---
 
-## 收口状态 (2026-05-28, autonomous-ceiling)
+## 收口状态 (2026-05-28, G-CITE 闭环后)
 
-**未达 ALL_GOALS_DONE** — 17/19 UX done, 7/8 ship_criteria 绿。剩 G-CITE blocking UNMET + UX-19 manual + NEW-3 P1。
+**8/8 ship_criteria 全绿;唯一未 done = UX-19(user-manual,设计上循环不碰)** — 18/19 UX done。
 
-- ✅ 7 ship_criteria 绿: G-MCP-PAYLOAD(~1.4k tok ↓88%) / G-SKILL-TRIGGER(F1 100%) / G-ARCHIVE-RECALL(100%) / G-GREEN(全绿) / G-DOCTOR-RECOVERY(6/6) / G-PARITY(无 blocking diff) / G-COVERAGE(0 漏)
-- ⛔ G-CITE UNMET: cite-coverage ≥30% 不可 loop 内诚实测 (NEW-3 instrumentation + soak); below-floor 拒造假 → 用户决策
-- ⏳ UX-19 manual: checklist 已交付待用户回填
-- 🔧 NEW-3 (P1): cite edits_touched 永恒 0 的 hook 修复 (非 trivial)
-- 📋 7 个 P2/P3 defer 候选待用户批量终审 (均 ≥2 LLM 非 blocking)
+- ✅ **8 ship_criteria 全绿**: G-MCP-PAYLOAD(~1.4k tok ↓88%) / G-SKILL-TRIGGER(F1 100%) / G-ARCHIVE-RECALL(100%) / G-GREEN(全绿 1813 tests) / G-DOCTOR-RECOVERY(6/6) / G-PARITY(无 blocking diff) / G-COVERAGE(0 漏) / **G-CITE PASS 99.8%**
+- ✅ **G-CITE 本轮闭环**: 真根因 = narrow hook 的 `edit_intent_checked` 缺 `session_id` → `expected_but_missed` 关联(session_id 为键)恒0 → `cite_compliance_rate` 结构性钉死 100%(Goodhart-broken)。prior loop NEW-3 撤销漏验此点。修复(emit 加真实 session_id, 不用 synthetic)+ live 实测 99.8%(594/595)+ 判别单测(compliance 能=0.5)+ uncorrelatable_edits hardening(暴露 stale-hook gap)+ claude/codex(零上下文)≥2 LLM 签字 PASS。
+- ⏳ **UX-19(唯一剩余, user-only)**: Desktop GUI 手动 fire-test, GUI 跑不进 CI/dogfood(设计决策, 循环不碰), checklist 已交付待用户回填。**此项非 autonomous 可闭** → ALL_GOALS_DONE 需用户跑完 UX-19 fire-test。
+- 📋 8 个 P2/P3 defer 候选(NEW-1/2/4/5/6/7/8/9)待用户批量终审(均 ≥2 LLM 非 ship-blocking)。
+
+> **ALL_GOALS_DONE 阻塞点**: 仅 UX-19 1 项, 且其本质为 user-manual GUI fire-test(循环不碰约束)。所有 autonomous 可达成的 ship_criteria + task 已全绿/done。

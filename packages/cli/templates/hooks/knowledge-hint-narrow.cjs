@@ -358,7 +358,7 @@ function extractPaths(toolInput) {
  *     POSIX) is atomic at the OS level, so concurrent PreToolUse fires
  *     from parallel sessions interleave cleanly without partial writes.
  */
-function appendEditIntentToLedger(projectRoot, now, paths, toolName) {
+function appendEditIntentToLedger(projectRoot, now, paths, toolName, sessionId) {
   try {
     const fabricDir = join(projectRoot, EVENTS_LEDGER_DIR_REL);
     // No .fabric/ → project not initialised. Bail before any write.
@@ -383,12 +383,20 @@ function appendEditIntentToLedger(projectRoot, now, paths, toolName) {
     const tsMs = now instanceof Date ? now.getTime() : Number(now);
     const ledgerEntryId = `hook:${randomUUID()}`;
     const intent = typeof toolName === "string" && toolName.length > 0 ? toolName : "edit";
+    // rc.38 UX-8 (C): thread the REAL payload session_id (never the synthetic
+    // fallback) so doctor cite-coverage's expected_but_missed arm can correlate
+    // this edit against the same session's assistant_turn cite lines. Omitting
+    // it (the rc.35 oversight) left the correlation key undefined → missed
+    // permanently 0 → cite_compliance_rate structurally pinned at 100%.
+    const validSessionId =
+      typeof sessionId === "string" && sessionId.length > 0 ? sessionId : null;
     const lines = pathList
       .map((p) => JSON.stringify({
         kind: "fabric-event",
         id: `event:${randomUUID()}`,
         ts: tsMs,
         schema_version: 1,
+        ...(validSessionId ? { session_id: validSessionId } : {}),
         event_type: "edit_intent_checked",
         path: p,
         compliant: true,
@@ -1249,7 +1257,15 @@ function main(env, stdio) {
       // events.jsonl ledger so doctor cite-coverage's editsTouched metric
       // sees actual edit signals. Best-effort — failure is swallowed inside
       // appendEditIntentToLedger and does not block the hook.
-      appendEditIntentToLedger(cwd, now, paths, toolName);
+      // rc.38 UX-8 (C): pass the REAL payload session_id (not resolveSessionId,
+      // which would substitute a synthetic per-process id that matches no
+      // assistant_turn and would inflate expected_but_missed with false
+      // positives under --client=all). null when the client omits session_id.
+      const payloadSessionId =
+        payload && typeof payload === "object" && typeof payload.session_id === "string"
+          ? payload.session_id
+          : null;
+      appendEditIntentToLedger(cwd, now, paths, toolName, payloadSessionId);
     }
 
     // E2 path is conditional on a recognized tool + extractable paths.

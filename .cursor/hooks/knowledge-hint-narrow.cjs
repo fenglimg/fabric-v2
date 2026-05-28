@@ -71,9 +71,20 @@ const {
   mkdirSync,
   readFileSync,
   renameSync,
+  statSync,
   writeFileSync,
 } = require("node:fs");
 const { dirname, join } = require("node:path");
+
+// rc.35 TASK-06 (P0-10.b): summary-fallback. Substitutes opaque entries
+// (where description.summary === stable_id) with a snippet read from the
+// entry's .md `## Summary` section. Caches results in
+// `.fabric/.cache/summary-fallback.json` keyed by revision_hash.
+const { resolveOpaqueSummaries } = require("./lib/summary-fallback.cjs");
+// v2.0.0-rc.37 NEW-17: shared sidecar I/O for the plan-context-hint result
+// cache (skips a redundant CLI cold-start spawn when the same path-set is
+// re-edited within a session and the knowledge graph hasn't changed).
+const { readJsonState, writeJsonState } = require("./lib/state-store.cjs");
 
 // -----------------------------------------------------------------------------
 // CONSTANTS
@@ -86,12 +97,22 @@ const CLI_TIMEOUT_MS = 2000;
 
 // Maximum summary length per entry. Bounds each stderr line so a sloppy
 // pending entry can't blow up terminal width. Truncation appends an ellipsis.
-const SUMMARY_MAX_LEN = 80;
+// v2.0.0-rc.33 W4-A3: `hint_summary_max_len` in fabric-config overrides this
+// default (range 40..240). Resolved per-invocation via readSummaryMaxLen.
+const DEFAULT_SUMMARY_MAX_LEN = 80;
 
 // Edit-counter sidecar — workspace-relative path. Process-local file; no
 // network. TASK-022 will read this back to compute edits-since-archive.
 const EDIT_COUNTER_DIR_REL = join(".fabric", ".cache");
 const EDIT_COUNTER_FILE = "edit-counter";
+
+// rc.35 TASK-07 (P0-2): events.jsonl path. PreToolUse Edit fires append a
+// `edit_intent_checked` event (ledger_source: 'hook') so doctor cite-
+// coverage's editsTouched metric sees actual edit signals. Without this
+// signal the entire cite-policy contract validation is structurally inert
+// (rc.30 audit P0-2: 18582 turns / 240 edits / 0 events).
+const EVENTS_LEDGER_DIR_REL = ".fabric";
+const EVENTS_LEDGER_FILE = "events.jsonl";
 
 // rc.6 TASK-023 (E6): hint-silence-counter sidecar — companion to the
 // edit-counter above. Where edit-counter records every PreToolUse fire
@@ -126,6 +147,53 @@ let SYNTHETIC_SESSION_ID = null;
 // many tool names across clients; we only react to file-edit tools.
 const EDIT_TOOL_NAMES = new Set(["Edit", "Write", "MultiEdit"]);
 
+// v2.0.0-rc.33 W2 fabric-config keys & defaults. Mirror of the schema in
+// packages/shared/src/schemas/fabric-config.ts — hooks cannot require()
+// shared modules (rendered as standalone templates at init), so the values
+// are duplicated inline. Keep these in sync if the schema changes.
+const FABRIC_DIR_REL = ".fabric";
+const FABRIC_CONFIG_FILE = "fabric-config.json";
+// rc.37 NEW-17: derived index the server rewrites on any knowledge edit; its
+// mtime is the cheap freshness token for the plan-context-hint result cache.
+const AGENTS_META_FILE = "agents.meta.json";
+
+// W2-1 (P0-9): narrow TopK upper bound. Five matches the per-Edit hint
+// "terse banner" UX: any more and the model's working memory bloats.
+const DEFAULT_HINT_NARROW_TOP_K = 5;
+
+// W2-2 (P0-9): per-file dedup window in turns. Same (file_path, stable_id)
+// stays silent for this many PreToolUse fires across sessions, addressing
+// the rc.32 finding that a single hot file (e.g. GameRoom.tsx edited 30
+// times in a row) re-fired identical narrow hints and trained the agent
+// to ignore them. Distinct sidecar from session-hints (E3) so window-only
+// suppression doesn't poison cross-session dedupe semantics.
+const DEFAULT_HINT_NARROW_DEDUP_WINDOW_TURNS = 5;
+const NARROW_DEDUP_WINDOW_FILE = join(
+  ".fabric",
+  ".cache",
+  "narrow-dedup-window.json",
+);
+// Cap the recent-emission ring buffer at this many records so the sidecar
+// stays bounded on long-running workspaces. The window check only needs the
+// last `window` entries per (path, entry_id) so a 4x safety multiplier is
+// generous. Pruning happens lazily on write.
+const NARROW_DEDUP_RING_CAP = 1000;
+
+// W2-5 (P1-8): cooldown between narrow-hint re-emits in hours. 0 = no
+// cooldown (rc.32 behavior, every PreToolUse fire is gate-eligible).
+const DEFAULT_HINT_NARROW_COOLDOWN_HOURS = 0;
+const MS_PER_HOUR = 60 * 60 * 1000;
+const HINT_NARROW_LAST_EMIT_FILE = join(
+  ".fabric",
+  ".cache",
+  "knowledge-hint-narrow-last-emit",
+);
+
+// W2-6 (P0-7): mirror of the broad hook flag — when true, emit the banner
+// as a Claude Code PreToolUse hookSpecificOutput.additionalContext JSON
+// envelope on stdout so the model receives the reminder IN-CONTEXT.
+const DEFAULT_HINT_REMINDER_TO_CONTEXT = true;
+
 // -----------------------------------------------------------------------------
 // Payload parsing
 // -----------------------------------------------------------------------------
@@ -142,7 +210,19 @@ function readPayload(rawStdin) {
       return null;
     }
     return parsed;
-  } catch {
+  } catch (e) {
+    // v2.0.0-rc.29 REVIEW (codex LOW-1): apply BUG-L1's malformed-input
+    // diagnostic uniformly across hook scripts. fabric-hint.cjs got the stderr
+    // trace in TASK-008; without this matching write here, a broken Codex /
+    // Cursor host payload silently kills the narrow hint with no operator
+    // signal at all. Best-effort: a failed stderr write must not throw upward
+    // (hook contract — never crash the host's edit pipeline).
+    try {
+      const message = (e && typeof e === "object" && "message" in e) ? String(e.message) : String(e);
+      process.stderr.write(`[fabric-knowledge-hint-narrow] malformed input: ${message}\n`);
+    } catch {
+      // stderr write itself failed (sandbox / closed fd) — accept silence.
+    }
     return null;
   }
 }
@@ -259,6 +339,80 @@ function extractPaths(toolInput) {
  *     array. The fire-count signal is preserved; the activity overview
  *     just contributes nothing from those lines.
  */
+/**
+ * rc.35 TASK-07 (P0-2): append one `edit_intent_checked` event per touched
+ * path to `.fabric/events.jsonl`. Carries `ledger_source: 'hook'` so doctor
+ * cite-coverage can distinguish hook-originated edit signals from
+ * AI/human-originated `appendLedgerEntry` calls.
+ *
+ * Best-effort:
+ *   - Skips silently when `.fabric/` does not exist (project not init'd).
+ *   - Skips silently when paths is empty (counter signal is preserved by
+ *     the sibling appendEditCounter call; cite-coverage only cares about
+ *     non-empty path events).
+ *   - ANY error (mkdir, append, JSON throw) is swallowed — the hook must
+ *     remain non-blocking per the rc.6 contract.
+ *
+ * Atomicity:
+ *   - One JSON line per path. Append on small writes (< PIPE_BUF, ~4KB on
+ *     POSIX) is atomic at the OS level, so concurrent PreToolUse fires
+ *     from parallel sessions interleave cleanly without partial writes.
+ */
+function appendEditIntentToLedger(projectRoot, now, paths, toolName, sessionId) {
+  try {
+    const fabricDir = join(projectRoot, EVENTS_LEDGER_DIR_REL);
+    // No .fabric/ → project not initialised. Bail before any write.
+    if (!existsSync(fabricDir)) return;
+    const { isAbsolute: pathIsAbsolute, relative: pathRelative } = require("node:path");
+    const pathList = Array.isArray(paths)
+      ? paths
+          .filter((p) => typeof p === "string" && p.length > 0)
+          .map((p) => {
+            if (pathIsAbsolute(p)) {
+              const rel = pathRelative(projectRoot, p);
+              return rel.startsWith("..") ? null : rel;
+            }
+            // Already-relative paths: drop ones that escape the project tree.
+            return p.startsWith("..") ? null : p;
+          })
+          .filter((p) => typeof p === "string" && p.length > 0)
+          // Use forward slashes for cross-platform consistency on disk.
+          .map((p) => p.split(/[\\/]/).join("/"))
+      : [];
+    if (pathList.length === 0) return;
+    const tsMs = now instanceof Date ? now.getTime() : Number(now);
+    const ledgerEntryId = `hook:${randomUUID()}`;
+    const intent = typeof toolName === "string" && toolName.length > 0 ? toolName : "edit";
+    // rc.38 UX-8 (C): thread the REAL payload session_id (never the synthetic
+    // fallback) so doctor cite-coverage's expected_but_missed arm can correlate
+    // this edit against the same session's assistant_turn cite lines. Omitting
+    // it (the rc.35 oversight) left the correlation key undefined → missed
+    // permanently 0 → cite_compliance_rate structurally pinned at 100%.
+    const validSessionId =
+      typeof sessionId === "string" && sessionId.length > 0 ? sessionId : null;
+    const lines = pathList
+      .map((p) => JSON.stringify({
+        kind: "fabric-event",
+        id: `event:${randomUUID()}`,
+        ts: tsMs,
+        schema_version: 1,
+        ...(validSessionId ? { session_id: validSessionId } : {}),
+        event_type: "edit_intent_checked",
+        path: p,
+        compliant: true,
+        intent,
+        ledger_entry_id: ledgerEntryId,
+        ledger_source: "hook",
+        matched_rule_context_ts: null,
+        window_ms: 0,
+      }))
+      .join("\n") + "\n";
+    appendFileSync(join(fabricDir, EVENTS_LEDGER_FILE), lines, "utf8");
+  } catch {
+    // Silent — events ledger failure must never block the edit.
+  }
+}
+
 function appendEditCounter(projectRoot, now, paths) {
   try {
     const dir = join(projectRoot, EDIT_COUNTER_DIR_REL);
@@ -594,6 +748,9 @@ function invokePlanContextHint(cwd, paths) {
   if (!Array.isArray(paths) || paths.length === 0) return null;
   const pathsArg = paths.join(",");
   const candidates = ["fabric", "fab"];
+  // rc.31 NEW-6: see knowledge-hint-broad.cjs for rationale — surface plan-
+  // context-hint failures on stderr so degraded KB chain is observable.
+  let lastFailure = null;
   for (const bin of candidates) {
     let res;
     try {
@@ -606,37 +763,398 @@ function invokePlanContextHint(cwd, paths) {
     } catch {
       continue;
     }
-    if (res.error || res.status === null || res.status !== 0) continue;
+    if (res.error) {
+      if (res.error.code !== "ENOENT") {
+        lastFailure = { bin, reason: String(res.error.message || res.error.code || res.error) };
+      }
+      continue;
+    }
+    if (res.status === null || res.status !== 0) {
+      const stderrSnip = (res.stderr || "").trim().slice(0, 240);
+      if (stderrSnip.length > 0) {
+        lastFailure = { bin, reason: stderrSnip };
+      }
+      continue;
+    }
     const raw = (res.stdout || "").trim();
     if (raw.length === 0) continue;
     try {
       const parsed = JSON.parse(raw);
       if (parsed && typeof parsed === "object") return parsed;
-    } catch {
-      // malformed JSON — try next bin
+    } catch (err) {
+      lastFailure = { bin, reason: `malformed JSON from plan-context-hint: ${String(err && err.message || err)}` };
     }
   }
+  if (lastFailure !== null) {
+    process.stderr.write(
+      `[fabric-hint] plan-context-hint (${lastFailure.bin}) failed: ${lastFailure.reason.replace(/\n/g, " ")}\n`,
+    );
+  }
   return null;
+}
+
+// -----------------------------------------------------------------------------
+// v2.0.0-rc.37 NEW-17 — plan-context-hint result cache (per-session).
+//
+// Each PreToolUse fire is a separate process, so "in-memory" caching means a
+// per-session sidecar of the CLI result keyed on the edited path-set. A repeat
+// edit to the same file(s) — common during iterative work on one module —
+// re-reads the cached result instead of paying another `fabric plan-context-
+// hint` cold-start spawn (~50-150ms). MultiEdit's N paths already collapse to
+// ONE spawn (extractPaths dedupes + invokePlanContextHint joins --paths); this
+// cache extends that win across fires within a stable knowledge graph.
+//
+// Freshness: the cache is invalidated wholesale when `.fabric/agents.meta.json`
+// mtime changes (the derived index the server rewrites on any knowledge edit).
+// This is a cheap stat — no spawn — so the freshness check itself is ~free.
+// -----------------------------------------------------------------------------
+
+// Bound the per-session result map so a long stable session editing many
+// distinct files can't grow the sidecar without limit.
+const NARROW_RESULT_CACHE_MAX_ENTRIES = 50;
+
+function metaFreshnessToken(cwd) {
+  try {
+    const metaPath = join(cwd, FABRIC_DIR_REL, AGENTS_META_FILE);
+    if (!existsSync(metaPath)) return null;
+    return statSync(metaPath).mtimeMs;
+  } catch {
+    return null;
+  }
+}
+
+function narrowResultCacheFileName(sessionId) {
+  const safe = String(sessionId || "anonymous").replace(/[^A-Za-z0-9_.-]/g, "-");
+  return `narrow-result-cache-${safe}.json`;
+}
+
+// Order-independent key for a path-set (sorted + NUL-joined so [a,b] and [b,a]
+// hit the same cache slot).
+function pathSetKey(paths) {
+  return [...paths].sort().join(" ");
+}
+
+// Returns the cached cliPayload for `paths` iff the cache's meta token matches
+// the current knowledge-graph freshness, else null (caller spawns the CLI).
+function readNarrowResultCache(cwd, sessionId, paths, metaToken) {
+  if (metaToken === null) return null;
+  const cache = readJsonState(
+    cwd,
+    narrowResultCacheFileName(sessionId),
+    (parsed) => parsed && typeof parsed === "object" && parsed.results && typeof parsed.results === "object",
+  );
+  if (!cache || cache.meta_token !== metaToken) return null;
+  const hit = cache.results[pathSetKey(paths)];
+  return hit && typeof hit === "object" ? hit : null;
+}
+
+// Persist `cliPayload` under the path-set key. Resets the map when the meta
+// token changed (stale graph) and caps the map size (FIFO-ish: drop oldest
+// insertion-order keys). Best-effort — never throws.
+function writeNarrowResultCache(cwd, sessionId, paths, metaToken, cliPayload) {
+  if (metaToken === null) return;
+  const fileName = narrowResultCacheFileName(sessionId);
+  const prior = readJsonState(
+    cwd,
+    fileName,
+    (parsed) => parsed && typeof parsed === "object" && parsed.results && typeof parsed.results === "object",
+  );
+  const results =
+    prior && prior.meta_token === metaToken && prior.results ? { ...prior.results } : {};
+  results[pathSetKey(paths)] = cliPayload;
+  const keys = Object.keys(results);
+  if (keys.length > NARROW_RESULT_CACHE_MAX_ENTRIES) {
+    for (const stale of keys.slice(0, keys.length - NARROW_RESULT_CACHE_MAX_ENTRIES)) {
+      delete results[stale];
+    }
+  }
+  writeJsonState(cwd, fileName, { meta_token: metaToken, results });
+}
+
+// -----------------------------------------------------------------------------
+// v2.0.0-rc.33 W2 — fabric-config readers + per-file dedup-window sidecar.
+//
+// All readers follow the project convention: inline JSON.parse of
+// .fabric/fabric-config.json with default-on-failure. Hooks cannot require()
+// the TS schema, so the schema's range constraints are duplicated inline as
+// guard clauses (kept in sync with packages/shared/src/schemas/fabric-config.ts).
+// -----------------------------------------------------------------------------
+
+function _readNarrowConfigValue(projectRoot) {
+  const configPath = join(projectRoot, FABRIC_DIR_REL, FABRIC_CONFIG_FILE);
+  if (!existsSync(configPath)) return null;
+  try {
+    return JSON.parse(readFileSync(configPath, "utf8"));
+  } catch {
+    return null;
+  }
+}
+
+function readNarrowTopK(projectRoot) {
+  const parsed = _readNarrowConfigValue(projectRoot);
+  if (parsed && typeof parsed === "object") {
+    const v = parsed.hint_narrow_top_k;
+    if (typeof v === "number" && Number.isFinite(v) && v >= 1 && v <= 20) {
+      return Math.floor(v);
+    }
+  }
+  return DEFAULT_HINT_NARROW_TOP_K;
+}
+
+function readNarrowDedupWindowTurns(projectRoot) {
+  const parsed = _readNarrowConfigValue(projectRoot);
+  if (parsed && typeof parsed === "object") {
+    const v = parsed.hint_narrow_dedup_window_turns;
+    if (typeof v === "number" && Number.isFinite(v) && v >= 1 && v <= 50) {
+      return Math.floor(v);
+    }
+  }
+  return DEFAULT_HINT_NARROW_DEDUP_WINDOW_TURNS;
+}
+
+function readNarrowCooldownHours(projectRoot) {
+  const parsed = _readNarrowConfigValue(projectRoot);
+  if (parsed && typeof parsed === "object") {
+    const v = parsed.hint_narrow_cooldown_hours;
+    if (typeof v === "number" && Number.isFinite(v) && v >= 0 && v <= 168) {
+      return v;
+    }
+  }
+  return DEFAULT_HINT_NARROW_COOLDOWN_HOURS;
+}
+
+function readReminderToContext(projectRoot) {
+  const parsed = _readNarrowConfigValue(projectRoot);
+  if (parsed && typeof parsed === "object") {
+    const v = parsed.hint_reminder_to_context;
+    if (typeof v === "boolean") return v;
+  }
+  return DEFAULT_HINT_REMINDER_TO_CONTEXT;
+}
+
+function readNarrowLastEmit(projectRoot) {
+  const p = join(projectRoot, HINT_NARROW_LAST_EMIT_FILE);
+  if (!existsSync(p)) return null;
+  try {
+    const raw = readFileSync(p, "utf8").trim();
+    if (raw.length === 0) return null;
+    const asNum = Number(raw);
+    if (Number.isFinite(asNum) && asNum > 0) return asNum;
+    const ms = Date.parse(raw);
+    if (Number.isFinite(ms)) return ms;
+  } catch {
+    // ignore
+  }
+  return null;
+}
+
+function writeNarrowLastEmit(projectRoot, nowMs) {
+  const p = join(projectRoot, HINT_NARROW_LAST_EMIT_FILE);
+  try {
+    if (!existsSync(dirname(p))) {
+      mkdirSync(dirname(p), { recursive: true });
+    }
+    writeFileSync(p, String(nowMs));
+  } catch {
+    // Silent — sidecar failure must never block edits.
+  }
+}
+
+/**
+ * v2.0.0-rc.33 W2-2: per-file dedup window sidecar.
+ *
+ * On-disk shape (in .fabric/.cache/narrow-dedup-window.json):
+ *   {
+ *     "counter": <monotonic int — incremented on each render>,
+ *     "recent": [
+ *       { "path": "<file_path>", "entry_id": "<stable_id>", "at_turn": <int> },
+ *       ...
+ *     ]
+ *   }
+ *
+ * The `recent` array is a ring buffer capped at NARROW_DEDUP_RING_CAP entries
+ * so the sidecar stays bounded on long-running workspaces. Pruning happens
+ * lazily on write.
+ *
+ * Read failures and shape mismatches both return a fresh zero-state — the
+ * window degrades to "no dedup" rather than blocking the hint.
+ */
+function readNarrowDedupWindow(projectRoot) {
+  const empty = { revision_hash: "", counter: 0, recent: [] };
+  const p = join(projectRoot, NARROW_DEDUP_WINDOW_FILE);
+  if (!existsSync(p)) return empty;
+  try {
+    const raw = readFileSync(p, "utf8");
+    if (raw.length === 0) return empty;
+    const parsed = JSON.parse(raw);
+    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return empty;
+    }
+    const counter =
+      typeof parsed.counter === "number" && Number.isFinite(parsed.counter)
+        ? parsed.counter
+        : 0;
+    const revision_hash =
+      typeof parsed.revision_hash === "string" ? parsed.revision_hash : "";
+    const recent = Array.isArray(parsed.recent)
+      ? parsed.recent.filter(
+          (r) =>
+            r &&
+            typeof r === "object" &&
+            typeof r.path === "string" &&
+            r.path.length > 0 &&
+            typeof r.entry_id === "string" &&
+            r.entry_id.length > 0 &&
+            typeof r.at_turn === "number" &&
+            Number.isFinite(r.at_turn),
+        )
+      : [];
+    return { revision_hash, counter, recent };
+  } catch {
+    return empty;
+  }
+}
+
+function writeNarrowDedupWindow(projectRoot, state) {
+  const p = join(projectRoot, NARROW_DEDUP_WINDOW_FILE);
+  try {
+    if (!existsSync(dirname(p))) {
+      mkdirSync(dirname(p), { recursive: true });
+    }
+    // Lazy prune: keep only the most recent NARROW_DEDUP_RING_CAP records.
+    // Newer records are at the tail; slicing from -CAP preserves ring semantics.
+    const recent =
+      state.recent.length > NARROW_DEDUP_RING_CAP
+        ? state.recent.slice(-NARROW_DEDUP_RING_CAP)
+        : state.recent;
+    const tmp = `${p}.tmp-${process.pid}`;
+    writeFileSync(
+      tmp,
+      JSON.stringify({
+        revision_hash: state.revision_hash || "",
+        counter: state.counter,
+        recent,
+      }),
+    );
+    renameSync(tmp, p);
+  } catch {
+    // Silent — sidecar failure must never block edits.
+  }
+}
+
+/**
+ * Apply the dedup-window filter. Returns `{ filtered, nextState }`:
+ *   filtered: NarrowEntry[] — entries whose (path, id) is NOT within `window`
+ *             turns of a prior emission for any of `targetPaths`.
+ *   nextState: the merged window state to persist if the caller decides to
+ *             render (records appended with at_turn = state.counter + 1).
+ *
+ * Decision rule: an entry is filtered out if ALL of its candidate
+ * (path, entry_id) pairs already appear in `state.recent` with
+ * `state.counter - at_turn < window`. The entry's "candidate pairs" are
+ * (path, entry.id) for every path in targetPaths (the entry was about to be
+ * surfaced for those paths). One path still missing → keep the entry.
+ *
+ * Side-effect-free; caller persists nextState only after a successful render.
+ */
+function applyNarrowDedupWindow(state, narrow, targetPaths, windowTurns, currentRevisionHash) {
+  const revHash =
+    typeof currentRevisionHash === "string" ? currentRevisionHash : "";
+  // Wholesale drop on revision flip — mirrors E3 emit-gate semantics so the
+  // two layers stay coherent. Without this coordination a revision-graph
+  // change would re-emit at the E3 layer but the dedup-window layer would
+  // still suppress the hint.
+  const liveState =
+    state && state.revision_hash === revHash && revHash.length > 0
+      ? state
+      : { revision_hash: revHash, counter: state ? state.counter : 0, recent: [] };
+
+  if (!Array.isArray(narrow) || narrow.length === 0) {
+    return { filtered: [], nextState: liveState };
+  }
+  if (!Array.isArray(targetPaths) || targetPaths.length === 0) {
+    return { filtered: narrow.slice(), nextState: liveState };
+  }
+
+  const currentTurn = liveState.counter + 1;
+  const cutoff = currentTurn - windowTurns;
+
+  // Build a (path, entry_id) → at_turn lookup. Most recent wins on duplicates.
+  const lookup = new Map();
+  for (const rec of liveState.recent) {
+    const key = `${rec.path} ${rec.entry_id}`;
+    const existing = lookup.get(key);
+    if (existing === undefined || rec.at_turn > existing) {
+      lookup.set(key, rec.at_turn);
+    }
+  }
+
+  const filtered = [];
+  const newRecords = [];
+  for (const entry of narrow) {
+    const entryId = entry && typeof entry.id === "string" ? entry.id : null;
+    if (entryId === null) {
+      // No id — can't dedup, surface defensively.
+      filtered.push(entry);
+      continue;
+    }
+    // Entry is suppressed only if every targetPath has a recent record.
+    let allRecent = true;
+    for (const path of targetPaths) {
+      const key = `${path} ${entryId}`;
+      const lastTurn = lookup.get(key);
+      if (lastTurn === undefined || lastTurn < cutoff) {
+        allRecent = false;
+        break;
+      }
+    }
+    if (!allRecent) {
+      filtered.push(entry);
+      for (const path of targetPaths) {
+        newRecords.push({ path, entry_id: entryId, at_turn: currentTurn });
+      }
+    }
+  }
+
+  const nextState = {
+    revision_hash: revHash,
+    counter: currentTurn,
+    recent: filtered.length > 0 ? liveState.recent.concat(newRecords) : liveState.recent,
+  };
+  return { filtered, nextState };
 }
 
 // -----------------------------------------------------------------------------
 // Rendering
 // -----------------------------------------------------------------------------
 
-function truncateSummary(raw) {
+// v2.0.0-rc.33 W4-A3: maxLen sourced from fabric-config#hint_summary_max_len.
+function truncateSummary(raw, maxLen) {
   const s = typeof raw === "string" ? raw : "";
   const flat = s.replace(/\s+/g, " ").trim();
-  if (flat.length <= SUMMARY_MAX_LEN) return flat;
-  return `${flat.slice(0, SUMMARY_MAX_LEN - 1)}…`;
+  const cap = typeof maxLen === "number" && maxLen > 0 ? maxLen : DEFAULT_SUMMARY_MAX_LEN;
+  if (flat.length <= cap) return flat;
+  return `${flat.slice(0, cap - 1)}…`;
 }
 
-function formatEntryLine(entry) {
+function formatEntryLine(entry, maxLen) {
   const id = entry.id || "(no-id)";
   const type = entry.type || "unknown";
   const maturity = entry.maturity || "unknown";
-  const summary = truncateSummary(entry.summary);
+  const summary = truncateSummary(entry.summary, maxLen);
   const tail = summary.length > 0 ? ` ${summary}` : "";
   return `  [${id}] (${type}/${maturity})${tail}`;
+}
+
+function readSummaryMaxLen(projectRoot) {
+  const parsed = _readNarrowConfigValue(projectRoot);
+  if (parsed && typeof parsed === "object") {
+    const v = parsed.hint_summary_max_len;
+    if (typeof v === "number" && Number.isFinite(v) && v >= 40 && v <= 240) {
+      return Math.floor(v);
+    }
+  }
+  return DEFAULT_SUMMARY_MAX_LEN;
 }
 
 /**
@@ -658,7 +1176,7 @@ function formatEntryLine(entry) {
  *     ...
  *   (如需重读 broad 决策，调 fab_plan_context 或 fabric plan-context-hint --all)
  */
-function renderSummary(payload) {
+function renderSummary(payload, maxLen) {
   if (!payload || payload.version !== 2) {
     if (payload && payload.version !== undefined) {
       // breadcrumb only if payload exists but version mismatches (avoid
@@ -681,7 +1199,7 @@ function renderSummary(payload) {
     `[fabric] ${entries.length} narrow-scoped knowledge entries match your edit targets:`,
   ];
   for (const entry of entries) {
-    lines.push(formatEntryLine(entry));
+    lines.push(formatEntryLine(entry, maxLen));
   }
   lines.push("  (如需重读 broad 决策，调 fab_plan_context 或 fabric plan-context-hint --all)");
   return lines;
@@ -695,7 +1213,9 @@ function main(env, stdio) {
   try {
     const cwd = (env && env.cwd) || process.cwd();
     const now = (env && env.now) || new Date();
+    const nowMs = now instanceof Date ? now.getTime() : Number(now);
     const err = (stdio && stdio.stderr) || process.stderr;
+    const out = (stdio && stdio.stdout) || process.stdout;
 
     // Parse hook payload. Test seam: env.payload short-circuits stdin so
     // unit tests don't need to muck with process.stdin.
@@ -733,6 +1253,19 @@ function main(env, stdio) {
     }
     if (!(env && env.skipCounter === true)) {
       appendEditCounter(cwd, now, paths);
+      // rc.35 TASK-07 (P0-2): mirror the edit-counter sidecar into the
+      // events.jsonl ledger so doctor cite-coverage's editsTouched metric
+      // sees actual edit signals. Best-effort — failure is swallowed inside
+      // appendEditIntentToLedger and does not block the hook.
+      // rc.38 UX-8 (C): pass the REAL payload session_id (not resolveSessionId,
+      // which would substitute a synthetic per-process id that matches no
+      // assistant_turn and would inflate expected_but_missed with false
+      // positives under --client=all). null when the client omits session_id.
+      const payloadSessionId =
+        payload && typeof payload === "object" && typeof payload.session_id === "string"
+          ? payload.session_id
+          : null;
+      appendEditIntentToLedger(cwd, now, paths, toolName, payloadSessionId);
     }
 
     // E2 path is conditional on a recognized tool + extractable paths.
@@ -740,12 +1273,55 @@ function main(env, stdio) {
     if (!toolName || !EDIT_TOOL_NAMES.has(toolName)) return;
     if (paths.length === 0) return;
 
+    // v2.0.0-rc.33 W2-5 (P1-8): cooldown gate. When configured > 0, suppress
+    // the hint for that many hours after a successful emit. Counted as
+    // silence so doctor lint #26 sees the suppression. Test seam
+    // env.skipCooldown bypasses for unit tests.
+    const cooldownHours = readNarrowCooldownHours(cwd);
+    if (cooldownHours > 0 && !(env && env.skipCooldown === true)) {
+      const lastEmitMs = readNarrowLastEmit(cwd);
+      if (
+        typeof lastEmitMs === "number" &&
+        nowMs - lastEmitMs < cooldownHours * MS_PER_HOUR
+      ) {
+        if (!(env && env.skipSilenceCounter === true)) {
+          appendHintSilenceCounter(cwd, now);
+        }
+        return;
+      }
+    }
+
+    // Resolve session id up-front (needed for the rc.37 NEW-17 result cache
+    // key, and reused by the E3 emit-gate below).
+    const sessionId = resolveSessionId(payload, env);
+
     // Test seam: env.cliResult short-circuits the CLI spawn so unit tests
     // can feed canned plan-context-hint JSON without a built CLI binary.
-    const cliPayload =
-      env && env.cliResult !== undefined
-        ? env.cliResult
-        : invokePlanContextHint(cwd, paths);
+    //
+    // rc.37 NEW-17: when not in test-seam mode, first consult the per-session
+    // result cache keyed on the edited path-set. A hit (same paths, unchanged
+    // knowledge-graph mtime) skips the redundant `fabric plan-context-hint`
+    // cold-start spawn. Misses spawn the CLI then populate the cache. The
+    // env.skipResultCache seam disables both read+write for tests asserting
+    // raw spawn behaviour.
+    let cliPayload;
+    if (env && env.cliResult !== undefined) {
+      cliPayload = env.cliResult;
+    } else {
+      const useResultCache = !(env && env.skipResultCache === true);
+      const metaToken = useResultCache ? metaFreshnessToken(cwd) : null;
+      const cached = useResultCache
+        ? readNarrowResultCache(cwd, sessionId, paths, metaToken)
+        : null;
+      if (cached !== null) {
+        cliPayload = cached;
+      } else {
+        cliPayload = invokePlanContextHint(cwd, paths);
+        if (useResultCache && cliPayload !== null && cliPayload !== undefined) {
+          writeNarrowResultCache(cwd, sessionId, paths, metaToken, cliPayload);
+        }
+      }
+    }
     if (cliPayload === null || cliPayload === undefined) return;
 
     // Protocol v2 (rc.18 TASK-005): wire field is `entries`, no v1 shim.
@@ -762,7 +1338,18 @@ function main(env, stdio) {
     // / malformed item) we treat it as broad and skip — pre-rc.27 entries
     // without the field are exactly the broad-leak surface §2.5 calls out.
     const allEntries = Array.isArray(cliPayload.entries) ? cliPayload.entries : [];
-    const narrow = allEntries.filter((entry) => entry && entry.relevance_scope === "narrow");
+    const narrowFiltered = allEntries.filter((entry) => entry && entry.relevance_scope === "narrow");
+
+    // v2.0.0-rc.33 W2-1 (P0-9): apply TopK slice to narrow set BEFORE the
+    // emit-gate / dedup-window cascade. The server-side ranking already
+    // produced a sensible order, so slicing here bounds the per-Edit hint
+    // surface area to `hint_narrow_top_k` (default 5) so the agent's working
+    // memory isn't displaced by an unwieldy banner.
+    const topK = readNarrowTopK(cwd);
+    const narrow = narrowFiltered.length > topK
+      ? narrowFiltered.slice(0, topK)
+      : narrowFiltered;
+
     if (narrow.length === 0) {
       // rc.6 TASK-023 (E6): silence-counter — matched-narrow == 0. The CLI
       // had a chance to match against the extracted paths but came back
@@ -789,7 +1376,7 @@ function main(env, stdio) {
     // can add the counter increment either here (before the early return)
     // or inside applyEmitGate when render === false.
     // -------------------------------------------------------------------------
-    const sessionId = resolveSessionId(payload, env);
+    // sessionId already resolved up-front (rc.37 NEW-17) for the result cache.
     const currentRevisionHash =
       typeof cliPayload.revision_hash === "string" ? cliPayload.revision_hash : "";
     // Test seam: env.cacheSeed short-circuits the on-disk cache read so unit
@@ -811,6 +1398,39 @@ function main(env, stdio) {
       return;
     }
 
+    // v2.0.0-rc.33 W2-2 (P0-9): per-file dedup window. The E3 session-hints
+    // cache covers per-session dedupe; this layer adds workspace-level "same
+    // (file, entry) not within last N turns" suppression so a hot file's
+    // identical hints don't train the agent to ignore them. Counted as
+    // silence on full filter-out so doctor lint #26 visibility is preserved.
+    const windowTurns = readNarrowDedupWindowTurns(cwd);
+    const windowState =
+      env && env.dedupWindowSeed !== undefined
+        ? env.dedupWindowSeed
+        : readNarrowDedupWindow(cwd);
+    const dedupDecision = applyNarrowDedupWindow(
+      windowState,
+      gateDecision.narrow,
+      paths,
+      windowTurns,
+      currentRevisionHash,
+    );
+    if (dedupDecision.filtered.length === 0) {
+      // v2.0.0-rc.33 W4 review-fix (gemini Critical-1): persist the counter
+      // BEFORE returning so the turn-window check still advances on suppressed
+      // fires. Skipping the write here caused dedup state to permanently stick
+      // — every subsequent fire would read the old counter, see at_turn within
+      // the window, and keep suppressing. Now: counter ticks on every fire,
+      // window-naturally expires after `windowTurns` PreToolUse events.
+      if (!(env && env.skipCacheWrite === true)) {
+        writeNarrowDedupWindow(cwd, dedupDecision.nextState);
+      }
+      if (!(env && env.skipSilenceCounter === true)) {
+        appendHintSilenceCounter(cwd, now);
+      }
+      return;
+    }
+
     // Persist the cache BEFORE rendering. If the render itself throws (e.g.
     // stderr write errors), the cache update still reflects the intent —
     // the alternative (post-render write) could leave us in a state where
@@ -825,12 +1445,63 @@ function main(env, stdio) {
         ...gateDecision.cache,
         session_id: sessionId,
       });
+      writeNarrowDedupWindow(cwd, dedupDecision.nextState);
     }
 
-    const lines = renderSummary({ ...cliPayload, entries: gateDecision.narrow });
+    const summaryMaxLen = readSummaryMaxLen(cwd);
+    // rc.35 TASK-06 (P0-10.b): substitute opaque summaries before render.
+    // Same lib used by the broad hook — opaque entries seen from both call
+    // sites share a single .fabric/.cache/summary-fallback.json file.
+    // Best-effort — any failure leaves the original opaque summary intact.
+    let resolvedEntries = dedupDecision.filtered;
+    try {
+      resolvedEntries = resolveOpaqueSummaries(
+        dedupDecision.filtered,
+        cwd,
+        currentRevisionHash,
+      );
+    } catch {
+      // resolveOpaqueSummaries swallows its own errors; defensive catch.
+    }
+    const lines = renderSummary({ ...cliPayload, entries: resolvedEntries }, summaryMaxLen);
     if (lines.length === 0) return;
+
+    // Stderr: human-facing breadcrumb + legacy contract.
     for (const line of lines) {
       err.write(`${line}\n`);
+    }
+
+    // v2.0.0-rc.33 W2-6 (P0-7): stdout JSON envelope. When
+    // hint_reminder_to_context is true (default), serialize the same banner
+    // body as Claude Code's PreToolUse hookSpecificOutput shape so the model
+    // receives the reminder IN-CONTEXT (rc.32 baseline cite-coverage 3.1%
+    // root cause: reminders never entered model context). PreToolUse hook
+    // contract: stdout JSON with hookSpecificOutput.additionalContext is
+    // injected into the model's context window; the hook DOES NOT block the
+    // edit (additionalContext is informational, not a permissionDecision).
+    // v2.0.0-rc.33 W4 review-fix (gemini High-1): CC-specific stdout envelope.
+    // See knowledge-hint-broad.cjs companion for rationale — CLAUDE_PROJECT_DIR
+    // is the CC presence signal; Codex CLI / Cursor don't set it.
+    const _isClaudeCode =
+      typeof process.env.CLAUDE_PROJECT_DIR === "string" &&
+      process.env.CLAUDE_PROJECT_DIR.length > 0;
+    if (!(env && env.skipStdout === true) && _isClaudeCode && readReminderToContext(cwd)) {
+      try {
+        const envelope = {
+          hookSpecificOutput: {
+            hookEventName: "PreToolUse",
+            additionalContext: lines.join("\n"),
+          },
+        };
+        out.write(`${JSON.stringify(envelope)}\n`);
+      } catch {
+        // Best-effort — stderr is the durable contract.
+      }
+    }
+
+    // v2.0.0-rc.33 W2-5: record successful emit for cooldown gate.
+    if (cooldownHours > 0 && !(env && env.skipCooldownWrite === true)) {
+      writeNarrowLastEmit(cwd, nowMs);
     }
   } catch {
     // Silent — never block edits on hook failure.
@@ -849,6 +1520,10 @@ module.exports = {
   renderSummary,
   truncateSummary,
   formatEntryLine,
+  // rc.35 TASK-07 (P0-2): cite-infrastructure wire-up. Exported so the
+  // integration test can drive the writer directly without standing up the
+  // entire PreToolUse main() flow.
+  appendEditIntentToLedger,
   // rc.6 TASK-021 (E3) — session-hints cache exports for tests / future
   // consumers (TASK-023 silence-counter telemetry will reuse the same
   // session-id resolution + cache shape).
@@ -859,17 +1534,44 @@ module.exports = {
   writeSessionHintsCache,
   computeIndexHash,
   applyEmitGate,
+  // v2.0.0-rc.33 W2-1 / W2-2 / W2-5 / W2-6 — exports for unit tests.
+  readNarrowTopK,
+  readNarrowDedupWindowTurns,
+  readNarrowCooldownHours,
+  readReminderToContext,
+  readNarrowLastEmit,
+  writeNarrowLastEmit,
+  readNarrowDedupWindow,
+  writeNarrowDedupWindow,
+  applyNarrowDedupWindow,
+  readSummaryMaxLen,
+  // v2.0.0-rc.37 NEW-17 — plan-context-hint result cache exports for tests.
+  metaFreshnessToken,
+  narrowResultCacheFileName,
+  pathSetKey,
+  readNarrowResultCache,
+  writeNarrowResultCache,
   CONSTANTS: {
     CLI_TIMEOUT_MS,
-    SUMMARY_MAX_LEN,
+    SUMMARY_MAX_LEN: DEFAULT_SUMMARY_MAX_LEN,
+    DEFAULT_SUMMARY_MAX_LEN,
     EDIT_COUNTER_DIR_REL,
     EDIT_COUNTER_FILE,
     HINT_SILENCE_COUNTER_DIR_REL,
     HINT_SILENCE_COUNTER_FILE,
+    EVENTS_LEDGER_DIR_REL,
+    EVENTS_LEDGER_FILE,
     EDIT_TOOL_NAMES,
     SESSION_HINTS_DIR_REL,
     SESSION_HINTS_FILE_PREFIX,
     SESSION_HINTS_FILE_SUFFIX,
+    DEFAULT_HINT_NARROW_TOP_K,
+    DEFAULT_HINT_NARROW_DEDUP_WINDOW_TURNS,
+    DEFAULT_HINT_NARROW_COOLDOWN_HOURS,
+    DEFAULT_HINT_REMINDER_TO_CONTEXT,
+    NARROW_DEDUP_WINDOW_FILE,
+    NARROW_DEDUP_RING_CAP,
+    HINT_NARROW_LAST_EMIT_FILE,
   },
 };
 

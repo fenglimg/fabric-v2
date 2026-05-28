@@ -8291,6 +8291,10 @@ export type CiteCoverageReport = {
     cite_compliance_rate?: number | null;
     compliant_cites?: number;
     noncompliant_cites?: number;
+    // v2.0.0-rc.38 UX-8 (C, hardening): edit signals lacking session_id (can't
+    // correlate → silently excluded from expected_but_missed). >0 usually means
+    // a stale pre-session_id hook is installed; run `fabric install`.
+    uncorrelatable_edits?: number;
   };
   per_client?: Record<string, Partial<CiteCoverageReport["metrics"]>>;
   dismissed_reason_histogram?: Record<string, number>;
@@ -8882,6 +8886,13 @@ export async function runDoctorCiteCoverage(
   // raise false positives).
   let editsTouched = 0;
   let expectedButMissed = 0;
+  // v2.0.0-rc.38 UX-8 (C, hardening): edits with no session_id can never be
+  // correlated against assistant_turn cite lines, so they silently never reach
+  // expected_but_missed. Surfacing the count turns the previous SILENT
+  // undercount (a stale pre-session_id hook emits edits without session_id)
+  // into a visible signal — exactly the confound that pinned compliance at a
+  // misleading 100% for two prior closure attempts.
+  let uncorrelatableEdits = 0;
   for (const edit of editEvents) {
     // Edit events have no `client` field; per-client edits_touched stays at 0
     // (per_client only tabulates assistant-side metrics — see comment block).
@@ -8893,12 +8904,15 @@ export async function runDoctorCiteCoverage(
     // legacy conservative count when the filter is 'all', and are likewise
     // skipped under a narrowed filter (no way to attribute them).
     const sid = edit.session_id;
+    const hasSid = typeof sid === "string" && sid.length > 0;
+    // No session_id → uncorrelatable under ANY client filter. Count once.
+    if (!hasSid) uncorrelatableEdits += 1;
     if (clientSessionIds !== null) {
-      if (typeof sid !== "string" || sid.length === 0) continue;
+      if (!hasSid) continue;
       if (!clientSessionIds.has(sid)) continue;
     }
     editsTouched += 1;
-    if (typeof sid !== "string" || sid.length === 0) continue;
+    if (!hasSid) continue;
     const citedSet = sessionCitedKbs.get(sid) ?? new Set<string>();
     for (const [kbId, kb] of kbIndex) {
       if (kb.relevance_scope !== "narrow") continue;
@@ -8930,6 +8944,7 @@ export async function runDoctorCiteCoverage(
     cite_compliance_rate: citeComplianceRate,
     compliant_cites: compliantCites,
     noncompliant_cites: noncompliantCites,
+    uncorrelatable_edits: uncorrelatableEdits,
   };
 
   // per_client breakdown is only emitted when client filter is 'all' — for a

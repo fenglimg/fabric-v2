@@ -717,6 +717,73 @@ describe("knowledge-hint-narrow.cjs — main (E4 edit-counter sidecar)", () => {
 });
 
 // ---------------------------------------------------------------------------
+// rc.38 UX-8 (C) — edit_intent_checked must carry the REAL payload session_id
+// so doctor cite-coverage's expected_but_missed arm can correlate the edit
+// against the same session's assistant_turn cite lines. The synthetic fallback
+// must NOT be used (it would match no turn and inflate missed false-positives).
+// ---------------------------------------------------------------------------
+
+describe("knowledge-hint-narrow.cjs — edit_intent_checked session_id (rc.38 UX-8 C)", () => {
+  function readEditIntentEvents(root: string): Array<Record<string, unknown>> {
+    const file = join(root, ".fabric", "events.jsonl");
+    if (!existsSync(file)) return [];
+    return readFileSync(file, "utf8")
+      .split("\n")
+      .filter((l) => l.length > 0)
+      .map((l) => JSON.parse(l) as Record<string, unknown>)
+      .filter((e) => e.event_type === "edit_intent_checked");
+  }
+
+  it("threads the real payload session_id into the emitted event", () => {
+    const root = mkRoot("narrow-emit-sid-present");
+    captureStderr({
+      cwd: root,
+      payload: {
+        session_id: "sess-real-1",
+        tool_name: "Edit",
+        tool_input: { file_path: "src/foo.ts" },
+      },
+      cliResult: makeCliPayload([]),
+    });
+    const events = readEditIntentEvents(root);
+    expect(events.length).toBe(1);
+    expect(events[0].session_id).toBe("sess-real-1");
+    expect(events[0].path).toBe("src/foo.ts");
+  });
+
+  it("omits session_id when the payload has none (no synthetic fallback)", () => {
+    const root = mkRoot("narrow-emit-sid-absent");
+    captureStderr({
+      cwd: root,
+      payload: {
+        tool_name: "Edit",
+        tool_input: { file_path: "src/foo.ts" },
+      },
+      cliResult: makeCliPayload([]),
+    });
+    const events = readEditIntentEvents(root);
+    expect(events.length).toBe(1);
+    expect(events[0].session_id).toBeUndefined();
+  });
+
+  it("omits session_id when payload.session_id is empty string", () => {
+    const root = mkRoot("narrow-emit-sid-empty");
+    captureStderr({
+      cwd: root,
+      payload: {
+        session_id: "",
+        tool_name: "Write",
+        tool_input: { file_path: "src/bar.ts" },
+      },
+      cliResult: makeCliPayload([]),
+    });
+    const events = readEditIntentEvents(root);
+    expect(events.length).toBe(1);
+    expect(events[0].session_id).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // rc.6 TASK-021 (E3) — session-hints cache emit-gate
 // ---------------------------------------------------------------------------
 

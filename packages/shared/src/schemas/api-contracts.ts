@@ -1225,6 +1225,11 @@ export const citeCoverageReportSchema = z.object({
     cite_compliance_rate: z.number().min(0).max(1).nullable().optional(),
     compliant_cites: z.number().int().nonnegative().optional(),
     noncompliant_cites: z.number().int().nonnegative().optional(),
+    // Edit signals lacking session_id → uncorrelatable, silently excluded from
+    // expected_but_missed. >0 typically means a stale pre-session_id hook is
+    // installed (run `fabric install`). Surfaced so the denominator gap is
+    // visible rather than a silent 100% confound.
+    uncorrelatable_edits: z.number().int().nonnegative().optional(),
   }),
   per_client: z
     .record(

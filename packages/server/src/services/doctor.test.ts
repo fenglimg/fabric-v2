@@ -5379,6 +5379,7 @@ describe("runDoctorCiteCoverage", () => {
       cite_compliance_rate: null,
       compliant_cites: 0,
       noncompliant_cites: 0,
+      uncorrelatable_edits: 0,
     });
   });
 
@@ -5939,6 +5940,40 @@ describe("runDoctorCiteCoverage", () => {
 
     expect(report.metrics.edits_touched).toBe(1);
     expect(report.metrics.expected_but_missed).toBe(1);
+    // v2.0.0-rc.38 UX-8 (C): the compliance metric MUST drop below 100% when a
+    // cite-expected edit is missed. 1 compliant (none sentinel) / (1 + 1 miss)
+    // = 0.5. This is the discrimination proof — without a session_id on the
+    // edit event the correlation never fires and this would falsely read 1.0.
+    expect(report.metrics.cite_compliance_rate).toBe(0.5);
+  });
+
+  // 13b. v2.0.0-rc.38 UX-8 (C, hardening): an edit event WITHOUT session_id is
+  //      uncorrelatable — it must be surfaced via uncorrelatable_edits rather
+  //      than silently excluded (the stale-hook confound). It must NOT inflate
+  //      expected_but_missed (no false positive without a correlation key).
+  it("edit without session_id is counted in uncorrelatable_edits, not expected_but_missed", async () => {
+    const target = createInitializedProject("cite-coverage-uncorrelatable");
+    writeFile(".fabric/events.jsonl", "", target);
+
+    const marker = await ensureCitePolicyActivatedMarker(target);
+    seedAgentsMeta(target, [
+      { stable_id: "KT-DEC-0701", relevance_scope: "narrow", relevance_paths: ["src/foo/**"] },
+    ]);
+
+    seedEvents(target, [
+      // Edit on a narrow-covered path but with NO session_id (stale pre-fix
+      // hook). Cannot be correlated → must not become a false missed.
+      mkEditEvent({
+        path: "src/foo/x.ts",
+        ts: marker.marker_ts + 10,
+      }),
+    ]);
+
+    const report = await runDoctorCiteCoverage(target, { since: 0, client: "all" });
+
+    expect(report.metrics.edits_touched).toBe(1);
+    expect(report.metrics.expected_but_missed).toBe(0);
+    expect(report.metrics.uncorrelatable_edits).toBe(1);
   });
 
   // 14. Performance: seed 10k assistant_turn_observed events and assert the

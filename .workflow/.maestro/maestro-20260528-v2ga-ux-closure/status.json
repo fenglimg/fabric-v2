@@ -137,11 +137,11 @@
       "name": "G-CITE",
       "dimension": "D-HOOK",
       "tier": "empirical",
-      "target": "cite-coverage ≥ 30% (rc.32 baseline 3.1%)",
+      "target": "cite-coverage ≥ 30% (rc.32 baseline 3.1%) — 用户授权方案 C 后 = cite_compliance_rate",
       "floor": "≥ 20% (hard-block; 没过不许发 rc.38)",
-      "actual": "BLOCKED-需用户决策。[二次更正, 防自身过度声明] (1) NEW-3 误报撤销: cite instrumentation 已验证工作 (fire hook → edit_intent_checked count=1; dev-repo edits_touched=0 = stale-install drift, install 修)。(2) 595 条合规 KB:none cite-line 已解析 (AI 确在写合规 cite), 0 qualifying-id。**但 compliance-rate 在 dev-repo 不可算**: expected_but_missed=0 是因 edit-arm 被 stale hook 弄死(无 edit 事件可比), 非'AI 0 漏'—— 我先前'≈100% 合规'是过度声明, 撤回。(3) 任何诚实数字 (无论 qualifying-id 定义还是 compliance 定义) 都需 fresh-install(工作 hook) + 真 soak session (edit + cite 双信号) 才能算 → S5 out-of-scope。需用户决: C(公式该测 compliance 含合规 KB:none, 还是 id 密度) + A(授权 soak 测真值)。拒绝移动球门/合成 events 造假。",
-      "verifier_cmd": "fabric doctor --cite-coverage --since=7d --client=cc (werewolf dogfood)",
-      "verified_at": null,
+      "actual": "PASS — cite_compliance_rate=99.8% (594/595) live 实测 ≥ target 30% 远超 floor 20%。**真根因找到并修复**(prior loop NEW-3 撤销漏验): narrow hook 的 edit_intent_checked 事件从不写 session_id, 而 expected_but_missed 关联以 session_id 为键 → 对任何 repo 恒=0 → cite_compliance_rate 结构性钉死 100% (Goodhart-broken, 无法检测不合规)。修复: appendEditIntentToLedger 加 session_id (仅真实 payload, 不用 synthetic 防 false-positive)。**live 端到端证明** (本 pcf session, --client=cc): editsTouched=12 (原永恒0, instrumentation 修复) / expected_but_missed=1 (检测臂真实触发: narrow KT-DEC-9002 覆盖路径上的 edit 被 dismissed-cite 正确计 miss) / compliance=99.8% (脱离 100% 钉死, 度量活体判别) / uncorrelatable_edits=4 (hardening: 修复前缺 session_id 的 edit 显式暴露, 即坑了前两轮的 silent confound)。判别确定性单测: doctor.test.ts test 13 断言 compliance=0.5 (missed 时); 13b 断言 uncorrelatable 不污染 missed。**≥2 LLM 签字**: claude(本) + codex(零上下文, cdx-162132) 独立各判根因/修复/PASS SOUND (gemini 因容量 429 挂, codex 替补; codex Q4 提 2 hardening lever: uncorrelatable [本轮已实现] + cite-before-edit 时序关联 [→ NEW-9 P3 defer])。非移动球门(用户授权 C)、非合成造假(修真 bug)。",
+      "verifier_cmd": "node packages/cli/dist/index.js doctor --cite-coverage --since=7d --client=cc (本 repo live)",
+      "verified_at": "2026-05-28T16:25:00+0800",
       "blocking": true
     },
     {
@@ -332,14 +332,13 @@
       "ship_criteria_alignment": ["G-CITE"],
       "alignment_strength": "direct",
       "alignment_rationale": "cite 是指令遵循 D9 核心可量化指标 (rc.32 P0-A)",
-      "status": "blocked",
-      "blocked_reason": "[CORRECTED — NEW-3 误报已撤销] G-CITE ≥30% 不可 loop 内诚实测, 但根因**不是** instrumentation bug。复核(诊断 .scratchpad/ux8-cite-coverage-diagnosis.md '重大更正'): (1) **instrumentation 已验证工作**: narrow hook appendEditIntentToLedger(line361)在 main()line1252 无条件调用 emit edit_intent_checked, fire hook 实测 count=1; dev-repo edits_touched=0 = stale-install drift (install 修), 非产品 bug。(2) **compliance 已验证高**: dev-repo doctor 实测 expected_but_missed=0 + 595 合规 KB:none, 即 AI 全程合规 cite 漏 0。(3) 真正剩余 = 度量定义 (现 coverage=qualifying-id/edits 把合规 KB:none 算未覆盖, 测的是'有适用 id 的频率'非'是否守 cite policy'; 按合规率算≈100%) + 真 id-cite 密度的 soak 依赖 (S5 out-of-scope)。拒绝单方面改 ship 指标语义(移动球门)+ 拒绝合成 events 凑数(Goodhart)。上报用户决 C(公式语义) / A(soak)。",
+      "status": "done",
       "verification": {
         "method": "dogfood",
-        "verifier": "fabric doctor --cite-coverage --since=7d --client=cc",
-        "evidence": "本 repo 实测: edits_touched=0, qualifying_cites=0, total_turns=37176, KB:none=595 (not-applicable 502/unspecified 64/no-relevant 29), 契约审计 skip(bootstrap drift)。0<floor 20% 但根因=measurement infra (drift+死分母+soak依赖), 非 loop 内可修的 cite 行为 code lever。产品侧确认: cite policy(2-state+default ON) + parsing 正确。",
-        "verified_at": null,
-        "attempts": [{"at": "2026-05-28T14:30:00+0800", "result": "blocked-measurement-infra", "note": "edit_intent_checked 无 emitter (NEW-3) + ≥30% soak-dependent"}]
+        "verifier": "node packages/cli/dist/index.js doctor --cite-coverage --since=7d --client=cc (本 repo live) + 确定性单测 + ≥2 LLM",
+        "evidence": "用户授权方案 C(compliance 语义)后, 本轮找到并修复真根因: narrow hook 的 edit_intent_checked 事件缺 session_id → expected_but_missed 关联(以 session_id 为键)对任何 repo 恒=0 → cite_compliance_rate 结构性钉死 100%(Goodhart-broken)。prior loop NEW-3 撤销只验 emit count, 漏验 session_id 缺失。修复: appendEditIntentToLedger 加 session_id(仅真实 payload, 不用 synthetic 防 false-positive)+ call site 传入。live 端到端(--client=cc): editsTouched=12(原永恒0)/ expected_but_missed=1(检测臂活体触发)/ compliance=99.8%(594/595, 脱离 100% 钉死)/ uncorrelatable_edits=4(新增 hardening 暴露 stale-hook gap)。判别单测: doctor.test.ts test13 断言 compliance=0.5, test13b 断言 uncorrelatable 不污染 missed; hook 单测 3 例锁 session_id 透传/省略。≥2 LLM: claude+codex(零上下文 cdx-162132)各判 SOUND PASS; codex Q4 的第2 lever(cite-before-edit 时序)→ NEW-9 P3。绿灯: tsc0/lint0/1813 tests。compliance 99.8% ≥ target 30% PASS。诊断 brief: .scratchpad/v2.0.0-ga-ux-closure/ux8-cite-session-id-rootcause.md。",
+        "verified_at": "2026-05-28T16:25:00+0800",
+        "attempts": [{"at": "2026-05-28T14:30:00+0800", "result": "blocked-measurement-infra", "note": "误判为 soak-dependent; 实为 session_id 死分母, 本轮修复"}]
       }
     },
     {
@@ -699,6 +698,27 @@
         "verified_at": null,
         "attempts": []
       }
+    },
+    {
+      "id": "NEW-9",
+      "dimension": "D-HOOK",
+      "subject": "cite_compliance_rate 精度硬化: session 级关联升级为 cite-before-edit 时序 + dismissed-cite 是否计 compliant",
+      "origin": "UX-8 ≥2 LLM 复核 codex Q4 第2 lever",
+      "severity": "P3",
+      "severity_rationale": "G-CITE 已 PASS(99.8% ≥target, 死分母真根因[session_id]已修, uncorrelatable hardening 已实现)。剩余 = 测量精度细化: (1) sessionCitedKbs 是 session 级集合, 同 session 任一 turn cite 即覆盖全 session edit, 不校验 cite 是否在 edit 之前(doctor.ts:8641/8763/8902); (2) live 实测中 dismissed-cite(KB:id [dismissed:reason]) 未计入 citedSet → narrow 路径上的 dismiss 被计 miss(本轮 expected_but_missed=1 即此例), 度量偏保守(低估 compliance, 安全方向)。两者均不推翻 PASS, 属 measurement hardening 未完全收口。",
+      "proposed_fix": "(1) 关联加 turn/edit 时序或序号校验(cite must precede edit); (2) 评估 dismissed-with-reason 是否应计 compliant(policy 视 dismiss 为合规 cite 行为, 但 metric 现仅认 applied)——需定义 dismiss 对 expected_but_missed 的语义。",
+      "ship_criteria_alignment": ["G-CITE"],
+      "alignment_strength": "indirect",
+      "status": "deferred",
+      "defer_target": "v2.0.x patch",
+      "defer_review": "codex(零上下文)提出并明确判为非 ship-blocking(PASS 不受影响); claude 同意; 待用户批量终审",
+      "verification": {
+        "method": "dogfood",
+        "verifier": "时序关联单测 + dismiss 语义定义后重测 compliance",
+        "evidence": null,
+        "verified_at": null,
+        "attempts": []
+      }
     }
   ],
   "drift_checks": [
@@ -725,14 +745,14 @@
     }
   ],
   "completion_gate": {
-    "task_gate": { "criterion": "all task ∈ {done, blocked}", "blocking": true, "status": "MET (19 UX: 17 done + 2 blocked UX-8/UX-19; 8 NEW-N: 1 open NEW-3 + 7 deferred). 无 open UX task。" },
-    "goal_gate": { "criterion": "所有 blocking ship_criteria actual>=target 且 verified_at!=null", "blocking": true, "status": "UNMET — 7/8 ship_criteria 绿 (G-MCP-PAYLOAD/G-ARCHIVE-RECALL/G-SKILL-TRIGGER/G-PARITY/G-GREEN/G-DOCTOR-RECOVERY/G-COVERAGE); G-CITE blocking UNMET (UX-8 BLOCKED: NEW-3 instrumentation bug + ≥30% soak-依赖 S5 out-of-scope; below-floor 不可造假)。" },
+    "task_gate": { "criterion": "all task ∈ {done, blocked}", "blocking": true, "status": "18 UX done + 1 blocked(UX-19 manual/user-only); 9 NEW-N(1 done NEW-3 撤销 + 8 deferred)。唯一非 done UX = UX-19(GUI fire-test, 设计上 user-manual, 循环不碰)。" },
+    "goal_gate": { "criterion": "所有 blocking ship_criteria actual>=target 且 verified_at!=null", "blocking": true, "status": "MET(autonomous-closeable 全绿) — 8/8 ship_criteria 全绿: G-MCP-PAYLOAD/G-ARCHIVE-RECALL/G-SKILL-TRIGGER/G-PARITY/G-GREEN/G-DOCTOR-RECOVERY/G-COVERAGE + **G-CITE PASS(99.8% ≥target, session_id 死分母真根因已修 + ≥2 LLM 签字 + uncorrelatable hardening)**。" },
     "drift_gate": { "criterion": "direct+indirect alignment task 占比 ≥60%", "actual_pct": 100, "status": "MET — 全 task direct/indirect aligned, 无 unaligned。" }
   },
   "loop_exit_status": {
-    "reached": "autonomous-ceiling",
-    "summary": "17/19 UX done + 7/8 ship_criteria 绿。autonomous 全做完。**NEW-3 已撤销(误报)**: cite instrumentation 经直接验证工作 (hook emit edit_intent_checked count=1; dev-repo 0 = stale-install drift, install 修)。剩余 2 类需用户: (1) G-CITE/UX-8 — instrumentation OK + compliance 实测≈100% (expected_but_missed=0, 595 合规 KB:none); 现公式 qualifying-id/edits≈0 测的是'有适用 id 频率'非'守 policy'。需用户决 C(把合规 KB:none 计入 → 合规率≈100% 过 floor) 或 A(真 soak 测 id 密度, S5 out-of-scope)。我拒绝单方面改 ship 指标语义(移动球门)+ 拒绝合成 events 造假(Goodhart)。(2) UX-19 — Desktop GUI 手动 fire-test, checklist 已交付待用户回填。另: 7 个 P2/P3 defer 候选 (NEW-1/2/4/5/6/7/8, NEW-3 撤销) 均 ≥2 LLM 复核非 ship-blocking, 待用户批量终审。",
-    "at": "2026-05-28T15:55:00+0800"
+    "reached": "all-ship-criteria-green; 唯一剩余 UX-19 是 user-manual(设计上循环不碰)",
+    "summary": "18/19 UX done + **8/8 ship_criteria 全绿**。本轮闭环 G-CITE(prior loop 卡点): 找到真根因——narrow hook 的 edit_intent_checked 缺 session_id → expected_but_missed 关联恒 0 → compliance 结构性钉死 100%(Goodhart-broken, prior loop NEW-3 撤销漏验此点)。修复 + live 实测 compliance=99.8%(594/595, editsTouched 12, missed 1 活体触发, uncorrelatable 4 hardening 暴露)+ 确定性判别单测 + claude/codex ≥2 LLM(含零上下文)签字 PASS。非移动球门(用户授权 C)非合成造假(修真 bug)。绿灯 tsc0/lint0/1813 tests。**唯一未 done = UX-19**: Desktop GUI 手动 fire-test, 设计上 user-only(GUI 跑不进 CI/dogfood), checklist 已交付待用户回填——非 autonomous 可闭。9 个 NEW-N(NEW-3 done 撤销, 余 8 个 P2/P3 defer 均 ≥2 LLM 非 ship-blocking)待用户批量终审。",
+    "at": "2026-05-28T16:25:00+0800"
   },
   "goal_checklist_path": ".workflow/.maestro/maestro-20260528-v2ga-ux-closure/goal-checklist.md",
   "steps": []
