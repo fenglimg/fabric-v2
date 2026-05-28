@@ -49,7 +49,7 @@
 ### D-CLI — 用户交互旅程 + 故障自救（S1/S2/S6/S7/S8 + X3）
 - [x] **UX-10** Onboarding cliff + --help（并 G1，≥2 LLM）✅ 修前 35/20 reach<30% → 修(tagline+Next steps桥) → 72/100 reach≥30% → NEW-7 P3
 - [x] **UX-14** doctor 故障自救 dogfood ✅ 6/6=100% 自救 (claude+gemini), 6 broken state + 次要 mode 可读
-- [ ] **UX-16** S7 升级 + S8 退出/撤销 UX 冒烟（历史 0% UX 覆盖）
+- [x] **UX-16** S7 升级 + S8 退出/撤销 UX 冒烟 ✅ 幂等/force-only/dry-run/knowledge保留/重装恢复; uninstall 残留 → NEW-8 P2
 
 - [x] **UX-18** AGENTS.md 两步协议工效（G5，最高频 AI 交互，P1，≥2 LLM）✅ 修 stale shape + fab_recall 设默认 (claude+gemini SOUND)
 

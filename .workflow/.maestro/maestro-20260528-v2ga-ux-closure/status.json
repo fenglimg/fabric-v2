@@ -469,12 +469,12 @@
       "ship_criteria_alignment": ["G-GREEN", "G-DOCTOR-RECOVERY"],
       "alignment_strength": "indirect",
       "alignment_rationale": "S8 退出撤销历史 0% UX 覆盖; 工程本 F4 仅验功能 revert 非体验",
-      "status": "open",
+      "status": "done",
       "verification": {
         "method": "dogfood",
         "verifier": "fresh tmpdir install→uninstall→reinstall 旅程冒烟 + undo 路径实跑",
-        "evidence": null,
-        "verified_at": null,
+        "evidence": "fresh tmp install→reinstall→force-only→uninstall(dry+真)→reinstall 全跑。S7 升级: 二次 install 幂等 (已存在跳过, installed=0 skipped=102/114, 不 clobber); --force-skills-only 刷新成功 (写0 跳62 错0)。S8 退出: uninstall --dry-run 计划清晰 + 显式 '.fabric/knowledge 始终保留'; 真 uninstall removed 62 errors=0, knowledge 保留, AGENTS.md fabric block 清零, reinstall→doctor --fix→green 恢复。undo 单条: fab_review reject 路径已在 UX-15 实跑。**发现 NEW-8 (残留检查命中)**: uninstall 仅 3 stage (scaffold/bootstrap/mcp), 无 hooks/skills stage → 卸载后 .claude/.codex skills(4+4) + hooks config(settings.json/hooks.json 仍接线指向部分已删脚本) 残留。≥2 LLM (claude+gemini biqgpg7yf) 一致评 **P2 非 blocking** (无数据丢 knowledge 保留 / hooks fail-safe KT-DEC-0007 不阻断 / uninstall 低频) → defer。",
+        "verified_at": "2026-05-28T15:35:00+0800",
         "attempts": []
       }
     },
@@ -678,6 +678,27 @@
         "verified_at": null,
         "attempts": []
       }
+    },
+    {
+      "id": "NEW-8",
+      "dimension": "D-CLI",
+      "subject": "fabric uninstall 不完整 clean revert: 无 hooks/skills stage, 卸后残留 skills + 接线指向部分已删脚本的 hooks config",
+      "origin": "UX-16 dogfood 残留检查命中 (verified: UninstallStageName 仅 scaffold|bootstrap|mcp)",
+      "severity": "P2",
+      "severity_rationale": "≥2 LLM (claude+gemini) 一致 P2 非 blocking: (1) 无数据丢 — .fabric/knowledge 完整保留, reinstall→--fix→green 可恢复; (2) 无阻断 — hooks fail-safe (KT-DEC-0007 reminder/exit2/never-block), 引用已删脚本只 noisy 不断核心调用; (3) uninstall 极低频退出路径。属 dirty-state 体验瑕疵。",
+      "proposed_fix": "uninstall 加 hooks + skills 两 stage: 删 .claude/.codex 下 hooks+skills 产物 + 安全移除 settings.json/.codex hooks.json 注入的 fabric hook 节点, 实现 clean revert。",
+      "ship_criteria_alignment": ["G-DOCTOR-RECOVERY"],
+      "alignment_strength": "indirect",
+      "status": "deferred",
+      "defer_target": "v2.0.x patch",
+      "defer_review": "claude+gemini 已 ≥2 LLM 复核确认 P2 非 ship-blocking; 待用户批量终审",
+      "verification": {
+        "method": "dogfood",
+        "verifier": "uninstall→断言 .claude/.codex skills+hooks 全清 + settings.json/hooks.json 无 fabric 节点",
+        "evidence": null,
+        "verified_at": null,
+        "attempts": []
+      }
     }
   ],
   "drift_checks": [
@@ -687,6 +708,13 @@
       "closed_count": 5,
       "alignment": "5/5 direct (G-MCP-PAYLOAD) — 100% direct, 远超 ≥60% 门槛",
       "scope_note": "D-MCP 全维度 (6 task 中 5 已闭, 仅 UX-18 AGENTS.md 协议工效 dogfood 待跑). 无 scope drift, 无 NEW-N 衍生. payload 实测降 88% 一次性达标."
+    },
+    {
+      "at": "2026-05-28T15:35:00+0800",
+      "after_tasks": ["UX-7", "UX-9", "UX-12", "UX-14", "UX-11", "UX-17", "UX-10", "UX-16"],
+      "closed_count": 17,
+      "alignment": "累计 17 done + 1 BLOCKED(UX-8) = 18/19 closed (UX-19 manual 待用户)。direct+indirect alignment 占比 100% (无 unaligned task)。",
+      "scope_note": "D-MCP/D-SKILL/D-HOOK/D-CLI/D-PARITY/meta/D-GREEN 全维度推完 (UX-8 BLOCKED, UX-19 manual)。7/8 ship_criteria 绿 (仅 G-CITE BLOCKED on NEW-3 instrumentation + soak)。NEW-N 累计 8 (NEW-3 P1 待修 / NEW-6+8 P2 / 其余 P3 defer), 低于 ≈29 告警线。无 scope drift。"
     },
     {
       "at": "2026-05-28T14:25:00+0800",
