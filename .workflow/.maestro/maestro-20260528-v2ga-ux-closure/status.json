@@ -332,13 +332,14 @@
       "ship_criteria_alignment": ["G-CITE"],
       "alignment_strength": "direct",
       "alignment_rationale": "cite 是指令遵循 D9 核心可量化指标 (rc.32 P0-A)",
-      "status": "open",
+      "status": "blocked",
+      "blocked_reason": "G-CITE ≥30% 数值不可在 loop 内诚实测量。根因穷尽(诊断存 .scratchpad/ux8-cite-coverage-diagnosis.md): (1) 确认 instrumentation bug → NEW-3: PreToolUse narrow hook 从不发 edit_intent_checked (rc.35 P0-2 只加了 schema enum 'hook', 未实装 hook emit; appendLedgerEntry 无 production caller — event-ledger.ts:63 自承), 故 edits_touched 永恒 0, coverage edit-touch 臂死。(2) ≥30% 是涌现行为, 需全新 install 消 drift + 真 soak session (AI 真在 edit 前 cite 真 id + commit 进 ledger) — ledger 自身把 S5 周 soak 列 out_of_scope/placeholder。(3) 合成 events 凑数=doctor Goodhart 检测要抓的造假, 违反 rigor。fix NEW-3 仅复活分母, 仍不产 in-loop 数。上报用户决策 (A/B/C 见诊断文件)。",
       "verification": {
         "method": "dogfood",
         "verifier": "fabric doctor --cite-coverage --since=7d --client=cc",
-        "evidence": null,
+        "evidence": "本 repo 实测: edits_touched=0, qualifying_cites=0, total_turns=37176, KB:none=595 (not-applicable 502/unspecified 64/no-relevant 29), 契约审计 skip(bootstrap drift)。0<floor 20% 但根因=measurement infra (drift+死分母+soak依赖), 非 loop 内可修的 cite 行为 code lever。产品侧确认: cite policy(2-state+default ON) + parsing 正确。",
         "verified_at": null,
-        "attempts": []
+        "attempts": [{"at": "2026-05-28T14:30:00+0800", "result": "blocked-measurement-infra", "note": "edit_intent_checked 无 emitter (NEW-3) + ≥30% soak-dependent"}]
       }
     },
     {
@@ -568,6 +569,27 @@
       "verification": {
         "method": "dogfood",
         "verifier": "fab_review 各 action 响应回显字段断言 + search 分词 case",
+        "evidence": null,
+        "verified_at": null,
+        "attempts": []
+      }
+    },
+    {
+      "id": "NEW-3",
+      "dimension": "D-HOOK",
+      "subject": "cite-coverage edits_touched 永恒 0: PreToolUse narrow hook 从不发 edit_intent_checked",
+      "origin": "UX-8 cite-coverage 根因诊断 (verified, [[feedback-audit-verification]] grep 确认)",
+      "severity": "P1",
+      "severity_rationale": "已覆盖模块 (cite-coverage doctor 报告) 的 edit-touch 臂 (edits_touched/expected_but_missed) 永恒死: rc.35 TASK-07 P0-2 只加了 schema enum 'hook'(event-ledger.ts:64) 但 narrow hook .cjs 未实装 emit; appendLedgerEntry 无 production caller (event-ledger.ts:63 自承)。直接削弱 blocking ship_criterion G-CITE 的可测量性。report 仍有 qualifying_cites/total_turns broad 臂兜底, 故非 P0 全断。",
+      "proposed_fix": "PreToolUse narrow hook (knowledge-hint-narrow.cjs) 在每次 Edit/Write/MultiEdit fire 时 append 一条 edit_intent_checked 事件 (ledger_source:'hook', path=tool_input.file_path), 复活 edits_touched 分母。注: 仅复活分母, G-CITE ≥30% 数值仍需真 soak。",
+      "ship_criteria_alignment": ["G-CITE"],
+      "alignment_strength": "direct",
+      "status": "open",
+      "blocks": ["G-CITE 完整测量"],
+      "note": "与 UX-8 BLOCKED 同源上报用户; fix 是 bundled-hook 改动, 非 trivial, 且不在 loop 内产数值。",
+      "verification": {
+        "method": "dogfood",
+        "verifier": "fresh install → 跑 Edit → 断言 events.jsonl 出现 edit_intent_checked(ledger_source:hook) → doctor --cite-coverage edits_touched>0",
         "evidence": null,
         "verified_at": null,
         "attempts": []

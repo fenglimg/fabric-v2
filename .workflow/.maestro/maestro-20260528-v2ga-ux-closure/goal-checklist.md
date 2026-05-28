@@ -17,7 +17,7 @@
 | 指标 | 维度 | target | actual | blocking |
 |---|---|---|---|---|
 | G-MCP-PAYLOAD | D-MCP | 单 path payload ≤ 4k tok（基线 ~11.9k） | ~1.4k ✅ | ✅ |
-| G-CITE | D-HOOK | cite-coverage ≥ 30%（baseline 3.1%） | — | ✅ |
+| G-CITE | D-HOOK | cite-coverage ≥ 30%（baseline 3.1%） | ⛔ BLOCKED (NEW-3+soak) | ✅ |
 | G-ARCHIVE-RECALL | D-SKILL | archive recall ≥ 40%（baseline 20%） | 100% ✅ | ✅ |
 | G-SKILL-TRIGGER | D-SKILL | auto-invoke F1 ≥ 71% 无回归 | 100% ✅ | ⬜ |
 | G-PARITY | D-PARITY | CC/Codex 5 操作 diff 无 blocking | — | ✅ |
@@ -43,7 +43,7 @@
 
 ### D-HOOK — Hook 效能（S4）
 - [ ] **UX-7** Hook surface → AI 行为变化验证（SessionStart broad + PreToolUse narrow）
-- [ ] **UX-8** cite-coverage ≥30% 复测
+- [⛔] **UX-8** cite-coverage ≥30% 复测 — **BLOCKED**: edits_touched 永恒0 (NEW-3 instrumentation bug) + ≥30% 数值 soak-依赖 (S5 out-of-scope); 不造假, 上报用户
 - [ ] **UX-9** nudge 频率合适度（archive/review/maintenance，≥2 LLM）
 
 ### D-CLI — 用户交互旅程 + 故障自救（S1/S2/S6/S7/S8 + X3）
