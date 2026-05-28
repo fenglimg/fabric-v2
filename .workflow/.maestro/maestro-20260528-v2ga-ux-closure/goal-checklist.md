@@ -21,7 +21,7 @@
 | G-ARCHIVE-RECALL | D-SKILL | archive recall ≥ 40%（baseline 20%） | 100% ✅ | ✅ |
 | G-SKILL-TRIGGER | D-SKILL | auto-invoke F1 ≥ 71% 无回归 | 100% ✅ | ⬜ |
 | G-PARITY | D-PARITY | CC/Codex 5 操作 diff 无 blocking | — | ✅ |
-| G-GREEN | D-GREEN | tsc 0 / test 全绿 / lint 0 / doctor green | — | ✅ |
+| G-GREEN | D-GREEN | tsc 0 / test 全绿 / lint 0 / doctor green | 全绿 ✅ | ✅ |
 | G-DOCTOR-RECOVERY | D-CLI | 自救率 ≥80%（floor 60%） | — | ✅ |
 | G-COVERAGE | meta | 每模块 ≥1 task + 收尾 self-audit 0 漏 | — | ✅ |
 
@@ -58,7 +58,7 @@
 - [ ] **UX-19** Claude Desktop Code tab + Codex Desktop 安装正确性 + hook-fire（**manual / 用户手动**，P1）
 
 ### D-GREEN — 基建绿灯（Tier B）
-- [ ] **UX-12** 绿灯门 + 关键路径冒烟 + config/metrics 可读性（并 G4）
+- [x] **UX-12** 绿灯门 + 关键路径冒烟（并 G4）✅ tsc0/test1809/lint0 + fresh install→--fix→doctor green; dev-repo error=stale drift → NEW-5 P3
 
 ### meta — 覆盖门（保证『及时暴露所有』）
 - [ ] **UX-17** surface→task 覆盖映射表 + 收尾 self-audit + ≥2 LLM 交叉协议
