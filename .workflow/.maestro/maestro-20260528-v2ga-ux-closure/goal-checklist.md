@@ -47,7 +47,7 @@
 - [x] **UX-9** nudge 频率合适度（archive/review/maintenance，≥2 LLM）✅ claude+gemini APPROPRIATE → NEW-4 P3
 
 ### D-CLI — 用户交互旅程 + 故障自救（S1/S2/S6/S7/S8 + X3）
-- [ ] **UX-10** Onboarding cliff 30min self-演复测 + --help 首屏（并 G1，≥2 LLM，builds-on 工程本 F3）
+- [x] **UX-10** Onboarding cliff + --help（并 G1，≥2 LLM）✅ 修前 35/20 reach<30% → 修(tagline+Next steps桥) → 72/100 reach≥30% → NEW-7 P3
 - [x] **UX-14** doctor 故障自救 dogfood ✅ 6/6=100% 自救 (claude+gemini), 6 broken state + 次要 mode 可读
 - [ ] **UX-16** S7 升级 + S8 退出/撤销 UX 冒烟（历史 0% UX 覆盖）
 

@@ -2,7 +2,7 @@ import type { Messages } from "../types.js";
 
 export const zhCNMessages: Messages = {
   "cli.main.description":
-    "Fabric CLI - AI 智能体协作框架。\n" +
+    "Fabric CLI — 自动把本项目的决策 / 踩坑 / 规范喂给你的 AI 助手，让它不必每次会话重新学。\n" +
     "\n" +
     "三步心智模型：\n" +
     "  装 (install) - fabric install   一键完成项目初始化\n" +
@@ -934,6 +934,11 @@ export const zhCNMessages: Messages = {
   // 新 mcp config — 必须重启才能拿到 Fabric tools。
   "cli.install.restart-banner":
     "重启提示: 已运行的 Claude Code / Cursor / Codex CLI session 需重启才能加载新 MCP server 配置;新会话会自动使用 Fabric tools。",
+  "cli.install.next-steps":
+    "下一步 —— 拿到第一份价值:\n" +
+    "  1. 重启你的 AI 客户端 (Claude Code / Codex)。它现在会自动把本项目的知识 surface 给助手。\n" +
+    "  2. 沉淀知识: 正常干活即可 —— 当你做决策或踩坑时, fabric-archive skill 会提议入库; 或跑 fabric-import skill 从 git 历史回灌。\n" +
+    "  3. 验证生效: 问你的 AI「Fabric 对这个 repo 知道些什么?」, 或跑 `fabric doctor` 查健康。",
   "cli.install.capabilities.none": "没有检测到可用于 bootstrap 或 MCP 后续接力的受支持客户端。",
   "cli.install.capabilities.header.client": "客户端",
   "cli.install.capabilities.header.bootstrap": "Bootstrap",

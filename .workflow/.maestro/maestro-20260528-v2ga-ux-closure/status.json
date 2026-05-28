@@ -367,12 +367,12 @@
       "ship_criteria_alignment": ["G-CITE"],
       "alignment_strength": "indirect",
       "alignment_rationale": "S1/S2 onboarding 是最大流失点, CLI 引导是用户第一印象",
-      "status": "open",
+      "status": "done",
       "verification": {
         "method": "simulated-human",
         "verifier": "claude fresh-eyes 30min onboarding 协议 (per [[feedback-claude-simulated-onboarding]]) + gemini/codex 交叉复核 cliff 点 (≥2 LLM)",
-        "evidence": null,
-        "verified_at": null,
+        "evidence": "fresh-eyes 测→修→复测闭环。**修前**: 2 LLM 零上下文 (claude context-clean adc06 35/100 + gemini bh8puiuc2 20/100, reach<30% '任务失败') 一致找同一 cliff: install 后无 '下一步' 桥接到首价值 + --help tagline 'AI 智能体协作框架' 太虚。**修** (UX-10 scope 'cognitive cliff 点修复' + '--help 首屏'): (1) i18n tagline 改具体价值句 'feeds your project decisions/pitfalls/conventions to AI...stops re-learning each session' (en+zh); (2) install 完成加 'Next steps' 3 步桥 (重启→沉淀(archive/import)→验证) (en+zh, install.ts:498)。**复测**: claude context-clean a6ed6 = **72/100** (↑35), what/why+next-action 'crisp', reach ≥30% PASS (≈ F3 baseline 45% 维持)。残留 P3 (import-first for empty repo / 'Skill' 未定义 / manual-client 无引导 / CLI locale 与 fabric_language split) → NEW-7。tsc0, shared 434 + cli 752 green, i18n snapshot 更新。",
+        "verified_at": "2026-05-28T15:25:00+0800",
         "attempts": []
       }
     },
@@ -653,6 +653,27 @@
       "verification": {
         "method": "dogfood",
         "verifier": "error-UX 矩阵 + i18n 4 模式专测断言",
+        "evidence": null,
+        "verified_at": null,
+        "attempts": []
+      }
+    },
+    {
+      "id": "NEW-7",
+      "dimension": "D-CLI",
+      "subject": "onboarding 残留打磨: import-first for empty repo + 'Skill' 概念未定义 + manual-client 无引导 + CLI locale/fabric_language split",
+      "origin": "UX-10 post-fix re-judge (72/100, claude context-clean a6ed6)",
+      "severity": "P3",
+      "severity_rationale": "主 cliff (无 next-action 桥) 已修, reach 35→72 过 ≥30% target。残留为增量打磨: (a) 空 repo 冷启动应让 fabric-import 当 step1 (现作 '或跑' 次选) (b) Next steps 引用 'Skill' 但新用户不知其为何物/在哪调 (c) Desktop/Cursor 'manual follow-up' 无具体指令 (d) CLI UI locale 与 fabric_language 不一致显示 (en tagline + zh next-steps 混排, 关联 NEW-6 i18n)。",
+      "proposed_fix": "Next steps step2 改 import-first (空 repo); 加一句 'Skill = 在 AI 客户端里说触发短语即可调用'; manual-client 行附具体后续命令; 统一 CLI 输出 locale。",
+      "ship_criteria_alignment": ["G-CITE"],
+      "alignment_strength": "indirect",
+      "status": "deferred",
+      "defer_target": "v2.0.x patch",
+      "defer_review": "claude 单判 P3 (主 cliff 已修过 target); gemini 复核可批量补; 待用户终审",
+      "verification": {
+        "method": "simulated-human",
+        "verifier": "重测 onboarding reach + 空 repo 冷启动路径",
         "evidence": null,
         "verified_at": null,
         "attempts": []

@@ -2,7 +2,7 @@ import type { Messages } from "../types.js";
 
 export const enMessages: Messages = {
   "cli.main.description":
-    "Fabric CLI - AI agent collaboration framework.\n" +
+    "Fabric CLI — feeds your project's decisions, pitfalls & conventions to your AI assistant automatically, so it stops re-learning them every session.\n" +
     "\n" +
     "Three-step mental model:\n" +
     "  Install (装) - fabric install   one-shot project setup\n" +
@@ -948,6 +948,11 @@ export const enMessages: Messages = {
   // sessions won't pick up the new mcp config until they restart.
   "cli.install.restart-banner":
     "Restart hint: any already-running Claude Code / Cursor / Codex CLI session must restart to pick up the new MCP server config; new sessions will autoload the Fabric tools.",
+  "cli.install.next-steps":
+    "Next steps — get your first value:\n" +
+    "  1. Restart your AI client (Claude Code / Codex). It now auto-surfaces this project's knowledge to the assistant.\n" +
+    "  2. Seed knowledge: just work normally — when you make a decision or hit a pitfall, the fabric-archive skill proposes an entry. Or run the fabric-import skill to backfill from git history.\n" +
+    "  3. Verify it works: ask your AI \"what does Fabric know about this repo?\", or run `fabric doctor` to check health.",
   "cli.install.capabilities.none": "No supported client was detected for bootstrap or MCP follow-up.",
   "cli.install.capabilities.header.client": "Client",
   "cli.install.capabilities.header.bootstrap": "Bootstrap",

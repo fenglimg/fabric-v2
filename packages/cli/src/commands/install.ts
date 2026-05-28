@@ -495,6 +495,13 @@ export async function runInitCommand(args: InitArgs): Promise<InitExecutionResul
   // line is intentionally a single console.log — paint.muted-only so it
   // doesn't compete with the capability table above it.
   if (!intent.options.planOnly) {
+    // v2.0.0-rc.38 UX-10 (onboarding cliff fix): bridge the "installed → first
+    // value" gap. Both ≥2 LLM fresh-eyes judges rated reach <30% because the
+    // success output stated status but never the next action that gets the user
+    // to value. This concrete 3-step block closes that cliff.
+    console.log("");
+    console.log(t("cli.install.next-steps"));
+    console.log("");
     console.log(paint.muted("More: docs/surfaces.md explains when to use CLI vs Skill vs MCP."));
   }
   return result;
