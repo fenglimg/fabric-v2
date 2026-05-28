@@ -726,9 +726,14 @@
     }
   ],
   "completion_gate": {
-    "task_gate": { "criterion": "all task ∈ {done, blocked}", "blocking": true },
-    "goal_gate": { "criterion": "所有 blocking ship_criteria actual>=target 且 verified_at!=null", "blocking": true },
-    "drift_gate": { "criterion": "direct+indirect alignment task 占比 ≥60%", "actual_pct": null }
+    "task_gate": { "criterion": "all task ∈ {done, blocked}", "blocking": true, "status": "MET (19 UX: 17 done + 2 blocked UX-8/UX-19; 8 NEW-N: 1 open NEW-3 + 7 deferred). 无 open UX task。" },
+    "goal_gate": { "criterion": "所有 blocking ship_criteria actual>=target 且 verified_at!=null", "blocking": true, "status": "UNMET — 7/8 ship_criteria 绿 (G-MCP-PAYLOAD/G-ARCHIVE-RECALL/G-SKILL-TRIGGER/G-PARITY/G-GREEN/G-DOCTOR-RECOVERY/G-COVERAGE); G-CITE blocking UNMET (UX-8 BLOCKED: NEW-3 instrumentation bug + ≥30% soak-依赖 S5 out-of-scope; below-floor 不可造假)。" },
+    "drift_gate": { "criterion": "direct+indirect alignment task 占比 ≥60%", "actual_pct": 100, "status": "MET — 全 task direct/indirect aligned, 无 unaligned。" }
+  },
+  "loop_exit_status": {
+    "reached": "autonomous-ceiling",
+    "summary": "17/19 UX task done + 7/8 ship_criteria 绿。autonomous 可做的全做完。剩余 3 类需用户: (1) G-CITE/UX-8/NEW-3 — cite-coverage ≥30% 不可在 loop 内诚实测 (NEW-3 hook 不发 edit_intent_checked 使 edits_touched 恒 0 + 数值 soak-依赖); below-floor 拒绝造假; 需用户决策 A 真 soak / B 优先修 NEW-3 / C 重审 coverage 公式纳入合规 KB:none。(2) UX-19 — Desktop GUI 手动 fire-test, checklist 已交付待用户回填。(3) 7 个 P2/P3 defer 候选 (NEW-1/2/4/5/6/7/8) — 均 ≥2 LLM 复核非 ship-blocking, 待用户批量终审。NEW-3 (P1, G-CITE lever) fix=bundled-hook 改动, 非 trivial, 建议用户确认 PreToolUse 实时发 edit_intent_checked 的设计意图后修。",
+    "at": "2026-05-28T15:40:00+0800"
   },
   "goal_checklist_path": ".workflow/.maestro/maestro-20260528-v2ga-ux-closure/goal-checklist.md",
   "steps": []

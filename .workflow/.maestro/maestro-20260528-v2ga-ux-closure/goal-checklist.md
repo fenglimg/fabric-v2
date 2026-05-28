@@ -66,3 +66,15 @@
 ## 完成判据
 
 `task_decomposition[*].status` 全 `done`（等价：本文件末尾出现 `ALL_GOALS_DONE`）+ 所有 blocking ship_criteria `verified_at != null`。
+
+---
+
+## 收口状态 (2026-05-28, autonomous-ceiling)
+
+**未达 ALL_GOALS_DONE** — 17/19 UX done, 7/8 ship_criteria 绿。剩 G-CITE blocking UNMET + UX-19 manual + NEW-3 P1。
+
+- ✅ 7 ship_criteria 绿: G-MCP-PAYLOAD(~1.4k tok ↓88%) / G-SKILL-TRIGGER(F1 100%) / G-ARCHIVE-RECALL(100%) / G-GREEN(全绿) / G-DOCTOR-RECOVERY(6/6) / G-PARITY(无 blocking diff) / G-COVERAGE(0 漏)
+- ⛔ G-CITE UNMET: cite-coverage ≥30% 不可 loop 内诚实测 (NEW-3 instrumentation + soak); below-floor 拒造假 → 用户决策
+- ⏳ UX-19 manual: checklist 已交付待用户回填
+- 🔧 NEW-3 (P1): cite edits_touched 永恒 0 的 hook 修复 (非 trivial)
+- 📋 7 个 P2/P3 defer 候选待用户批量终审 (均 ≥2 LLM 非 blocking)
