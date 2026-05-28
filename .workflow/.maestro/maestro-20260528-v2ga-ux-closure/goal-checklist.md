@@ -55,7 +55,7 @@
 
 ### D-PARITY — 跨客户端（X1，per-client 能力面）
 - [x] **UX-11** Claude CLI vs Codex CLI 能力面验证 ✅ 共享资产 byte-equal, 唯一 diff=cite hook 挂载点(平台适配,非 blocking)
-- [ ] **UX-19** Claude Desktop Code tab + Codex Desktop 安装正确性 + hook-fire（**manual / 用户手动**，P1）
+- [⏳] **UX-19** Desktop GUI fire-test（**manual/用户手动**）— checklist 已产出交用户 (UX-19-desktop-gui-firetest-checklist.md), 待用户回填
 
 ### D-GREEN — 基建绿灯（Tier B）
 - [x] **UX-12** 绿灯门 + 关键路径冒烟（并 G4）✅ tsc0/test1809/lint0 + fresh install→--fix→doctor green; dev-repo error=stale drift → NEW-5 P3

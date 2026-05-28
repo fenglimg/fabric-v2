@@ -523,11 +523,12 @@
       "alignment_rationale": "配置共享≠GUI runtime 一致 (#51904 实例); CLI 装对的传递性需一次 GUI fire-test 兜底; 用户明确要保 Desktop, P1",
       "severity": "P1",
       "execution_mode": "manual-user (GUI app 跑不进 CI/dogfood; 自动循环不碰, 产出 checklist 交用户跑)",
-      "status": "open",
+      "status": "blocked",
+      "blocked_reason": "manual-user: 循环已产出 fire-test checklist (UX-19-desktop-gui-firetest-checklist.md, 涵盖 A Claude Desktop Code tab hook-fire/MCP + B MCP 双注册 + C Codex Desktop + D 装完无残留报错), 交用户手动跑。verification.verified_at 待用户回填结果。GUI runtime 跑不进 CI/dogfood (设计决策), 自动循环不碰。",
       "verification": {
         "method": "simulated-human",
         "verifier": "用户手动 GUI fire-test checklist (Claude Desktop Code tab + Codex Desktop 各一次)",
-        "evidence": null,
+        "evidence": "checklist 已交付: .workflow/.maestro/maestro-20260528-v2ga-ux-closure/UX-19-desktop-gui-firetest-checklist.md。CLI 侧配置层已自动验 (UX-11: .claude/.codex 共享资产 byte-equal, 装对)。GUI runtime 差异待用户手动 fire-test 回填。",
         "verified_at": null,
         "attempts": []
       }
