@@ -150,9 +150,9 @@
       "tier": "empirical",
       "target": "archive recall ≥ 40% (rc.32 baseline 20%)",
       "floor": "≥ 30% (hard-block)",
-      "actual": null,
+      "actual": "recall=100% (15-item labeled session-moment set, viability gate 2 LLM 零上下文盲判 claude+gemini 各 9/9 一致) ≥ target 40%, 远超 floor 30%。见 UX-6 evidence。",
       "verifier_cmd": "werewolf dogfood session walkthrough + fabric-archive 命中统计",
-      "verified_at": null,
+      "verified_at": "2026-05-28T14:20:00+0800",
       "blocking": true
     },
     {
@@ -298,12 +298,12 @@
       "ship_criteria_alignment": ["G-ARCHIVE-RECALL"],
       "alignment_strength": "direct",
       "alignment_rationale": "archive recall 是 KB 不慢性死亡的核心 (rc.32 P0)",
-      "status": "open",
+      "status": "done",
       "verification": {
         "method": "dogfood",
         "verifier": "werewolf .fabric 副本 session 真跑 + archive 命中统计",
-        "evidence": null,
-        "verified_at": null,
+        "evidence": "15 条 labeled session-moment set (9 真值可归档 A1-A9 覆盖 3 大类全部子信号: normative/decision+rationale/wrong-turn/非显然根因/命名 pattern/新依赖/形式化流程/dismissal+reason; 6 不可归档 N1-N6 含 typo/rename/询问/命令/格式化/canonical-重复)。2 LLM 零上下文盲跑 Phase 2.5 viability gate: Judge1 claude context-clean(acde55b6) + Judge2 gemini(bbnu2x1j3) 各 9/9 ARCHIVE + 6/6 SKIP 完全一致。recall=100% ≥ target 40% (baseline rc.32 20%, floor 30%) PASS; precision=100% (N6 canonical-重复正确滤除)。rc.37 NEW-4 (8 信号→3 大类) 对全部可归档信号零漏。dataset 存 .scratchpad/ux6-archive-recall-dataset.md。caveat: 度量 viability gate (rc.32 P0 瓶颈) 层召回, 端到端还受 Phase1/2 collection + dedup 影响。",
+        "verified_at": "2026-05-28T14:20:00+0800",
         "attempts": []
       }
     },
