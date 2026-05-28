@@ -165,6 +165,8 @@ export const enMessages: Messages = {
   "doctor.cite.metric.recalledUnverified": "Recalled but not verified",
   "doctor.cite.metric.expectedButMissed": "Expected cite missing",
   "doctor.cite.metric.totalTurns": "Total turns",
+  "doctor.cite.metric.complianceRate": "cite compliance rate (incl. KB:none[reason])",
+  "doctor.cite.metric.complianceNA": "N/A (no cite-expected turns)",
   "doctor.cite.section.perClient": "Per-client",
   "doctor.cite.section.dismissedReasons": "Dismissed reasons",
   "doctor.cite.dismissed.scope-mismatch": "Scope mismatch",

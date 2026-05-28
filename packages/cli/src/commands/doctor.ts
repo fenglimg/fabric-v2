@@ -859,6 +859,12 @@ function renderCiteCoverageReport(
   lines.push(`  ${dt("doctor.cite.metric.recalledUnverified")}: ${report.metrics.recalled_unverified}`);
   lines.push(`  ${dt("doctor.cite.metric.expectedButMissed")}: ${report.metrics.expected_but_missed}`);
   lines.push(`  ${dt("doctor.cite.metric.totalTurns")}: ${report.metrics.total_turns}`);
+  // v2.0.0-rc.38 UX-8 (C): cite-policy compliance rate (corrected G-CITE metric).
+  const complianceRate = report.metrics.cite_compliance_rate;
+  const complianceStr = complianceRate === null || complianceRate === undefined
+    ? dt("doctor.cite.metric.complianceNA")
+    : `${(complianceRate * 100).toFixed(1)}% (${report.metrics.compliant_cites ?? 0}/${(report.metrics.compliant_cites ?? 0) + (report.metrics.noncompliant_cites ?? 0)})`;
+  lines.push(`  ${dt("doctor.cite.metric.complianceRate")}: ${complianceStr}`);
 
   // Per-client subsection: only renders for `--client all` when more than one
   // client bucket exists. A single-client filter (or a single observed client)

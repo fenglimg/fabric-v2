@@ -5375,6 +5375,10 @@ describe("runDoctorCiteCoverage", () => {
       recalled_unverified: 0,
       expected_but_missed: 0,
       total_turns: 0,
+      // v2.0.0-rc.38 UX-8 (C): compliance metric — null on no cite-expected turns.
+      cite_compliance_rate: null,
+      compliant_cites: 0,
+      noncompliant_cites: 0,
     });
   });
 
@@ -5429,6 +5433,10 @@ describe("runDoctorCiteCoverage", () => {
     expect(report.metrics.qualifying_cites).toBe(1);
     expect(report.metrics.edits_touched).toBe(1);
     expect(report.metrics.expected_but_missed).toBe(0);
+    // v2.0.0-rc.38 UX-8 (C): compliance metric — 1 qualifying cite, 0 missed → 100%.
+    expect(report.metrics.compliant_cites).toBe(1);
+    expect(report.metrics.noncompliant_cites).toBe(0);
+    expect(report.metrics.cite_compliance_rate).toBe(1);
   });
 
   // 4. Narrow KB with relevance_paths=['src/foo/**'] + edit on src/foo/bar.ts

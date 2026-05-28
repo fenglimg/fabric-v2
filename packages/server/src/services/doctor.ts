@@ -8286,6 +8286,11 @@ export type CiteCoverageReport = {
     recalled_unverified: number;
     expected_but_missed: number;
     total_turns: number;
+    // v2.0.0-rc.38 UX-8 (C): cite-policy compliance rate (corrected G-CITE
+    // metric). See api-contracts citeCoverageReportSchema for semantics.
+    cite_compliance_rate?: number | null;
+    compliant_cites?: number;
+    noncompliant_cites?: number;
   };
   per_client?: Record<string, Partial<CiteCoverageReport["metrics"]>>;
   dismissed_reason_histogram?: Record<string, number>;
@@ -8904,12 +8909,27 @@ export async function runDoctorCiteCoverage(
     }
   }
 
+  // v2.0.0-rc.38 UX-8 (C): cite-policy COMPLIANCE rate. Compliant = every valid
+  // cite line: qualifying id-cites + ALL `KB: none [reason]` sentinels (the
+  // policy permits the none sentinel as compliant). Non-compliant = turns where
+  // a cite was expected but none was written (expected_but_missed). null when no
+  // cite-expected turns exist (no compliant + no missed) → avoids 0/0 reading as
+  // "0% compliant" when the AI simply had nothing to cite.
+  const noneTotal = Object.values(noneHistogram).reduce((a, b) => a + b, 0);
+  const compliantCites = qualifyingCites + noneTotal;
+  const noncompliantCites = expectedButMissed;
+  const complianceDenom = compliantCites + noncompliantCites;
+  const citeComplianceRate = complianceDenom > 0 ? compliantCites / complianceDenom : null;
+
   const metrics: CiteCoverageReport["metrics"] = {
     edits_touched: editsTouched,
     qualifying_cites: qualifyingCites,
     recalled_unverified: recalledUnverified,
     expected_but_missed: expectedButMissed,
     total_turns: totalTurns,
+    cite_compliance_rate: citeComplianceRate,
+    compliant_cites: compliantCites,
+    noncompliant_cites: noncompliantCites,
   };
 
   // per_client breakdown is only emitted when client filter is 'all' — for a

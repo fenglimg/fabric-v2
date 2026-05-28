@@ -1214,6 +1214,17 @@ export const citeCoverageReportSchema = z.object({
     recalled_unverified: z.number().int().nonnegative(),
     expected_but_missed: z.number().int().nonnegative(),
     total_turns: z.number().int().nonnegative(),
+    // v2.0.0-rc.38 UX-8 (C, user-authorized): cite-policy COMPLIANCE rate —
+    // the corrected G-CITE semantic. The legacy qualifying_cites/edits ratio
+    // measured "how often an applicable KB id existed" (a function of corpus
+    // density / soak), NOT "did the AI follow the cite policy". Compliance
+    // credits every valid cite line — `KB: <id> [applied|dismissed]` AND
+    // `KB: none [reason]` (the policy explicitly allows the none sentinel) —
+    // over the turns where a cite was expected. null when no cite-expected
+    // turns observed (avoids a misleading 0/0 → 0). Range [0,1].
+    cite_compliance_rate: z.number().min(0).max(1).nullable().optional(),
+    compliant_cites: z.number().int().nonnegative().optional(),
+    noncompliant_cites: z.number().int().nonnegative().optional(),
   }),
   per_client: z
     .record(
