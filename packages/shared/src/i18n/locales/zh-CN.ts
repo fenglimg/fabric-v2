@@ -479,6 +479,16 @@ export const zhCNMessages: Messages = {
     "{draftCount}/{totalCount} ({pct}%) canonical knowledge entries 卡在 draft maturity — promote 断流 (rc.32 baseline 92%)。",
   "doctor.check.draft_backlog.remediation":
     "调 `/fabric-review` 批量审 draft entries: approve 升 verified/proven, reject 丢, modify 修。draft 长期堆积通常意味着 archive skill 产 draft 太快或 review skill 没跟上。",
+  // rc.37 NEW-38: knowledge auto-promote (info surface; --fix 执行).
+  "doctor.check.draft_auto_promote.name": "Knowledge auto-promote",
+  "doctor.check.draft_auto_promote.ok":
+    "无 settled draft 待自动 promote (draft 均未满 14 天或已被 drift 标记)。",
+  "doctor.check.draft_auto_promote.message":
+    "{count} 个 draft entries 已沉淀 ≥14 天且无 drift ({sample}{suffix}) — 可自动 promote 到 verified。跑 `fabric doctor --fix` 执行。",
+  "doctor.check.draft_auto_promote.remediation":
+    "跑 `fabric doctor --fix` 把这些 settled draft 自动升到 verified (排掉 draft_backlog); 或调 `/fabric-review` 手动逐条定夺。",
+  "doctor.check.draft_auto_promote.fixed":
+    "自动 promote {count} 个 settled draft entries → verified。",
   // rc.36 TASK-05 (P0-8): empty-tags ratio warn.
   "doctor.check.knowledge_tags_empty.name": "Knowledge tags coverage",
   "doctor.check.knowledge_tags_empty.ok":

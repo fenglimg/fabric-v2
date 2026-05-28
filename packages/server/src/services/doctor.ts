@@ -349,6 +349,21 @@ type DraftBacklogInspection = {
   ratio: number; // draftCount / totalCount, 0..1
 };
 
+// v2.0.0-rc.37 NEW-38: knowledge auto-promote candidates — canonical `draft`
+// entries created ≥ DRAFT_AUTO_PROMOTE_MIN_AGE_DAYS ago that carry no recorded
+// drift. Surfaced as an info check in the report; the --fix arm flips each to
+// `verified` + emits a knowledge_promoted event, which is what actually drains
+// the draft_backlog ratio.
+type DraftAutoPromoteCandidate = {
+  stable_id: string;
+  relPath: string;
+  absPath: string;
+  ageDays: number;
+};
+type DraftAutoPromoteInspection = {
+  candidates: DraftAutoPromoteCandidate[];
+};
+
 // v2.0.0-rc.33 W3-3 (P1-3): cite-policy Goodhart detection. Static heuristics
 // over the last 7 days of `assistant_turn_observed` events. Four anti-patterns
 // (G4 was unallocated by the audit author — fired pattern set is G1/G2/G3/G5):
@@ -832,6 +847,16 @@ const ORPHAN_DEMOTE_THRESHOLD_DAYS: Record<LintMaturity, number> = {
 // is responsible for the prior tier transitions.
 const STALE_ARCHIVE_ADDITIONAL_DAYS = 90;
 
+// v2.0.0-rc.37 NEW-38: knowledge auto-promote. A canonical `draft` entry that
+// has survived this many days WITHOUT being flagged drifted has "settled" —
+// it stops inflating the draft_backlog metric by graduating draft → verified.
+// 14d mirrors the draft orphan-demote threshold: an entry that outlives the
+// demote window without going stale has demonstrated staying power.
+const DRAFT_AUTO_PROMOTE_MIN_AGE_DAYS = 14;
+// Reason prefix for the synthesized knowledge_promoted event emitted by the
+// auto-promote --fix pass (parallels SYNTHESIZED_PROMOTED_REASON).
+const AUTO_PROMOTED_REASON = "doctor auto-promote: draft settled ≥14d, no drift";
+
 // Pending entries older than this threshold (based on frontmatter.created_at
 // when present, otherwise file mtime) are flagged for human triage.
 const PENDING_OVERDUE_THRESHOLD_DAYS = 14;
@@ -1058,6 +1083,8 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
   const citeGoodhart = await inspectCiteGoodhart(projectRoot);
   // v2.0.0-rc.33 W4-A4 (T5 P2): draft-backlog ratio (sync, disk-only).
   const draftBacklog = inspectDraftBacklog(projectRoot);
+  // rc.37 NEW-38: auto-promote candidates (info surface; --fix does the work).
+  const draftAutoPromote = await inspectDraftAutoPromote(projectRoot);
   // rc.36 TASK-05 (P0-8): empty-tags ratio across canonical entries.
   const knowledgeTagsEmpty = inspectKnowledgeTagsEmpty(projectRoot);
   // rc.36 TASK-09 (P1-NEW1): drift_detected events without paired demote
@@ -1230,6 +1257,7 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
     createSkillDescriptionCheck(t, skillDescription),
     createCiteGoodhartCheck(t, citeGoodhart),
     createDraftBacklogCheck(t, draftBacklog),
+    createDraftAutoPromoteCheck(t, draftAutoPromote),
     createKnowledgeTagsEmptyCheck(t, knowledgeTagsEmpty),
     createDriftUnconsumedCheck(t, driftUnconsumed),
     createMcpConfigInWrongFileCheck(t, mcpConfigInWrongFile),
@@ -1611,6 +1639,26 @@ export async function runDoctorFix(target: string): Promise<DoctorFixReport> {
     fixed.push(findIssue(before.warnings, "promote_ledger_invariant_violated"));
   }
 
+  // v2.0.0-rc.37 NEW-38: knowledge auto-promote janitorial pass. Settled drafts
+  // (created ≥14d ago, never flagged drifted) graduate draft → verified so they
+  // stop inflating the draft_backlog ratio. Runs unconditionally — promotable
+  // drafts surface as an info check (not a fixable_error), so there is no gate
+  // in `before` to key off. reconcileKnowledge after the rewrites keeps
+  // agents.meta.json maturity + hashes consistent with the new frontmatter.
+  const autoPromote = await inspectDraftAutoPromote(projectRoot);
+  if (autoPromote.candidates.length > 0) {
+    const { promoted } = await applyDraftAutoPromote(projectRoot, autoPromote.candidates);
+    if (promoted.length > 0) {
+      await reconcileKnowledge(projectRoot, { trigger: "doctor" });
+      const tFix = createTranslator(resolveFabricLocale(projectRoot));
+      fixed.push({
+        code: "draft_auto_promotable",
+        name: tFix("doctor.check.draft_auto_promote.name"),
+        message: tFix("doctor.check.draft_auto_promote.fixed", { count: String(promoted.length) }),
+      });
+    }
+  }
+
   const report = await runDoctorReport(projectRoot);
 
   return {
@@ -1831,6 +1879,30 @@ function rewriteFrontmatterMaturity(
   );
   // Splice replacement back into the original. Use string slicing to preserve
   // BOM / line endings outside the captured block exactly.
+  const blockStart = source.indexOf(block);
+  if (blockStart < 0) {
+    return null;
+  }
+  return source.slice(0, blockStart) + replacedBlock + source.slice(blockStart + block.length);
+}
+
+// v2.0.0-rc.37 NEW-38: promote rewriter. Distinct from rewriteFrontmatterMaturity
+// (which speaks the legacy stable|endorsed|draft demote vocabulary) — this one
+// flips `maturity: draft` → `maturity: verified` using the live schema
+// vocabulary (draft|verified|proven). Returns null when no `maturity: draft`
+// line is present (caller skips). Preserves BOM / line endings via slicing.
+function rewriteFrontmatterMaturityPromote(source: string): string | null {
+  const FM_PATTERN = /^(?:﻿)?---\r?\n([\s\S]*?)\r?\n---/u;
+  const fm = FM_PATTERN.exec(source);
+  if (fm === null) {
+    return null;
+  }
+  const block = fm[1];
+  const DRAFT_LINE = /^maturity:\s*("?)draft\1\s*$/mu;
+  if (!DRAFT_LINE.test(block)) {
+    return null;
+  }
+  const replacedBlock = block.replace(DRAFT_LINE, (line) => line.replace(/draft/u, "verified"));
   const blockStart = source.indexOf(block);
   if (blockStart < 0) {
     return null;
@@ -2723,16 +2795,52 @@ async function inspectCiteGoodhart(projectRoot: string): Promise<CiteGoodhartIns
 // v2.0.0-rc.33 W4-A4 (T5 P2): draft-backlog ratio. Reuses iterateCanonicalEntries
 // which already exposes the parsed maturity. No event-ledger read — purely
 // disk-state. Total < 10 is fail-open (small workspaces are noisy denominators).
+// v2.0.0-rc.37 NEW-38: schema-aware maturity extractor (draft|verified|proven)
+// PLUS legacy (stable|endorsed) for back-compat. Distinct from the
+// orphan-demote MATURITY_LINE_PATTERN (legacy-only) — draft_backlog MUST see
+// verified/proven entries in the denominator, otherwise promoting draft →
+// verified silently removes the entry from BOTH numerator and denominator and
+// the ratio never drops (the bug NEW-38 dogfood surfaced: 53/53 → 20/20).
+const MATURITY_LINE_PATTERN_FULL =
+  /^maturity:\s*("?)(stable|endorsed|draft|verified|proven)\1\s*$/mu;
+function extractMaturityFull(source: string): string | null {
+  const fm = /^(?:﻿)?---\r?\n([\s\S]*?)\r?\n---/u.exec(source);
+  if (fm === null) return null;
+  const m = MATURITY_LINE_PATTERN_FULL.exec(fm[1]);
+  return m === null ? null : m[2];
+}
+
 function inspectDraftBacklog(projectRoot: string): DraftBacklogInspection {
   const DRAFT_BACKLOG_RATIO = 0.5;
   const MIN_TOTAL_FOR_RATIO = 10;
   let draftCount = 0;
   let totalCount = 0;
-  // Pass an empty index — iterateCanonicalEntries only consults it for the
-  // lastReferenceMs field which we don't need here.
-  for (const entry of iterateCanonicalEntries(projectRoot, new Map())) {
-    totalCount += 1;
-    if (entry.maturity === "draft") draftCount += 1;
+  // Walk canonical files directly with the full-vocabulary maturity extractor
+  // so verified/proven entries stay in totalCount (iterateCanonicalEntries
+  // skips them — it uses the legacy-only pattern for orphan-demote).
+  const knowledgeRoot = join(projectRoot, ".fabric", "knowledge");
+  for (const typeDir of KNOWLEDGE_CANONICAL_TYPE_DIRS) {
+    const dir = join(knowledgeRoot, typeDir);
+    if (!existsSync(dir)) continue;
+    let entries;
+    try {
+      entries = readdirSync(dir, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      if (!entry.isFile()) continue;
+      if (CANONICAL_KNOWLEDGE_FILENAME_PATTERN.exec(entry.name) === null) continue;
+      let maturity: string | null;
+      try {
+        maturity = extractMaturityFull(readFileSync(join(dir, entry.name), "utf8"));
+      } catch {
+        continue;
+      }
+      if (maturity === null) continue;
+      totalCount += 1;
+      if (maturity === "draft") draftCount += 1;
+    }
   }
   if (totalCount < MIN_TOTAL_FOR_RATIO) {
     return { status: "ok", draftCount, totalCount, ratio: 0 };
@@ -2744,6 +2852,117 @@ function inspectDraftBacklog(projectRoot: string): DraftBacklogInspection {
     totalCount,
     ratio,
   };
+}
+
+// v2.0.0-rc.37 NEW-38: union of stable_ids ever flagged by a
+// knowledge_drift_detected event (drifted_stable_ids[]). Auto-promote excludes
+// these — a drifted draft is unsettled by definition.
+async function buildDriftedStableIds(projectRoot: string): Promise<Set<string>> {
+  const set = new Set<string>();
+  try {
+    const { events } = await readEventLedger(projectRoot);
+    for (const e of events) {
+      if (e.event_type === "knowledge_drift_detected" && Array.isArray(e.drifted_stable_ids)) {
+        for (const id of e.drifted_stable_ids) {
+          if (typeof id === "string" && id.length > 0) set.add(id);
+        }
+      }
+    }
+  } catch {
+    // empty set — no ledger / unreadable → nothing excluded by drift
+  }
+  return set;
+}
+
+// v2.0.0-rc.37 NEW-38: collect auto-promote candidates. Read-only; the actual
+// frontmatter rewrite + event emission lives in the runDoctorFix arm.
+async function inspectDraftAutoPromote(
+  projectRoot: string,
+  now: number = Date.now(),
+): Promise<DraftAutoPromoteInspection> {
+  const drifted = await buildDriftedStableIds(projectRoot);
+  const minAgeMs = DRAFT_AUTO_PROMOTE_MIN_AGE_DAYS * 24 * 60 * 60 * 1000;
+  const candidates: DraftAutoPromoteCandidate[] = [];
+  for (const entry of iterateCanonicalEntries(projectRoot, new Map())) {
+    if (entry.maturity !== "draft") continue;
+    if (drifted.has(entry.stable_id)) continue;
+    let createdAt: number | null;
+    try {
+      createdAt = extractKnowledgeFrontmatterCreatedAt(readFileSync(entry.absPath, "utf8"));
+    } catch {
+      continue;
+    }
+    if (createdAt === null) continue;
+    const ageMs = now - createdAt;
+    if (ageMs < minAgeMs) continue;
+    candidates.push({
+      stable_id: entry.stable_id,
+      relPath: entry.relPath,
+      absPath: entry.absPath,
+      ageDays: Math.floor(ageMs / (24 * 60 * 60 * 1000)),
+    });
+  }
+  return { candidates };
+}
+
+function createDraftAutoPromoteCheck(
+  t: Translator,
+  inspection: DraftAutoPromoteInspection,
+): DoctorCheck {
+  if (inspection.candidates.length === 0) {
+    return okCheck(
+      t("doctor.check.draft_auto_promote.name"),
+      t("doctor.check.draft_auto_promote.ok"),
+    );
+  }
+  const sample = inspection.candidates.slice(0, 3).map((c) => c.stable_id).join(", ");
+  return {
+    name: t("doctor.check.draft_auto_promote.name"),
+    status: "ok",
+    kind: "info",
+    code: "draft_auto_promotable",
+    fixable: false,
+    message: t("doctor.check.draft_auto_promote.message", {
+      count: String(inspection.candidates.length),
+      sample,
+      suffix: inspection.candidates.length > 3 ? ", ..." : "",
+    }),
+    actionHint: t("doctor.check.draft_auto_promote.remediation"),
+  };
+}
+
+// v2.0.0-rc.37 NEW-38: the --fix mutation. Flips each candidate draft → verified
+// and emits a knowledge_promoted event. Returns the count + promoted ids for
+// the fix report. Best-effort per entry — a single rewrite failure does not
+// abort the batch.
+async function applyDraftAutoPromote(
+  projectRoot: string,
+  candidates: DraftAutoPromoteCandidate[],
+): Promise<{ promoted: string[] }> {
+  const promoted: string[] = [];
+  for (const candidate of candidates) {
+    let source: string;
+    try {
+      source = readFileSync(candidate.absPath, "utf8");
+    } catch {
+      continue;
+    }
+    const rewritten = rewriteFrontmatterMaturityPromote(source);
+    if (rewritten === null || rewritten === source) continue;
+    try {
+      await atomicWriteText(candidate.absPath, rewritten);
+    } catch {
+      continue;
+    }
+    await appendEventLedgerEvent(projectRoot, {
+      event_type: "knowledge_promoted",
+      stable_id: candidate.stable_id,
+      timestamp: new Date().toISOString(),
+      reason: AUTO_PROMOTED_REASON,
+    }).catch(() => {});
+    promoted.push(candidate.stable_id);
+  }
+  return { promoted };
 }
 
 // rc.36 TASK-05 (P0-8): empty-tags ratio across canonical entries. Warn when

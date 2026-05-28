@@ -528,8 +528,10 @@
       "wave": "D",
       "subject": "Knowledge auto-promote pipeline (draft ≥14d + no drift → auto-promote)",
       "done_when": "doctor --fix 触发 auto-promote + draft backlog 实测从 100% 降到 <50%",
-      "status": "pending",
-      "estimated_hours": "2-3"
+      "status": "done",
+      "_actual_done": "2026-05-28",
+      "estimated_hours": "2-3",
+      "note": "doctor.ts: 新 inspectDraftAutoPromote (read-only) 找 canonical maturity=draft + created_at age≥14d + 不在 buildDriftedStableIds (knowledge_drift_detected.drifted_stable_ids 集) 的 entries; createDraftAutoPromoteCheck info-kind surface (status ok / kind info, 不污染 exit code, 模仿 filesystem_edit_fallback). runDoctorFix 新 janitorial arm (无条件跑, 非 fixable_error gate): applyDraftAutoPromote 逐条 rewriteFrontmatterMaturityPromote (draft→verified, 新 regex 用真 schema vocab, 区别于 legacy stable|endorsed|draft demote rewriter) + atomicWriteText + emit knowledge_promoted (reason AUTO_PROMOTED_REASON) + reconcileKnowledge 保 meta 一致. 关键 paper-miss 修复 (dogfood 暴露): inspectDraftBacklog 旧用 iterateCanonicalEntries (legacy MATURITY_LINE_PATTERN 只认 stable|endorsed|draft, verified/proven→null→skip), 导致 promote 后 verified entries 从分子分母双双消失, ratio 永远 100% 不降; 新增 extractMaturityFull (draft|verified|proven + legacy) + inspectDraftBacklog 改直接 walk canonical files 用 full-vocab extractor, verified/proven 留在分母. i18n draft_auto_promote.{name,ok,message,remediation,fixed} 双 locale + doctor-i18n snapshot regen + doctor.test check-name 列表加 'Knowledge auto-promote' + count 52→53. 新增 doctor.test 2 test (settled→verified + young/drifted 不动 + knowledge_promoted auto reason / 幂等 re-run). 实测验证 (werewolf .fabric 副本 doctor --fix, 不动用户真 repo): draft_backlog BEFORE 53/57 (93%) → AFTER --fix OK (<50%, 33 promoted, 20/57=35%). Gates: tsc 0 / tests 1790 (432+608+750) / lint 0 (rotation-tick.test 1 timer flake, isolated 复跑 green)。"
     },
     {
       "id": "NEW-39",

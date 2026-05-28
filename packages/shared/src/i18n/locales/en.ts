@@ -490,6 +490,16 @@ export const enMessages: Messages = {
     "{draftCount}/{totalCount} ({pct}%) canonical knowledge entries are stuck at draft maturity — promote loop is broken (rc.32 baseline was 92%).",
   "doctor.check.draft_backlog.remediation":
     "Run `/fabric-review` to triage drafts: approve to promote to verified/proven, reject to drop, modify to fix. A long-standing draft backlog usually means archive produces drafts faster than review can promote them.",
+  // rc.37 NEW-38: knowledge auto-promote (info surface; --fix applies).
+  "doctor.check.draft_auto_promote.name": "Knowledge auto-promote",
+  "doctor.check.draft_auto_promote.ok":
+    "No settled drafts awaiting auto-promote (drafts are younger than 14 days or flagged drifted).",
+  "doctor.check.draft_auto_promote.message":
+    "{count} draft entries have settled for ≥14 days with no drift ({sample}{suffix}) — eligible for auto-promote to verified. Run `fabric doctor --fix` to apply.",
+  "doctor.check.draft_auto_promote.remediation":
+    "Run `fabric doctor --fix` to auto-promote these settled drafts to verified (drains draft_backlog); or run `/fabric-review` to triage each manually.",
+  "doctor.check.draft_auto_promote.fixed":
+    "Auto-promoted {count} settled draft entries → verified.",
   // rc.36 TASK-05 (P0-8): empty-tags ratio warn.
   "doctor.check.knowledge_tags_empty.name": "Knowledge tags coverage",
   "doctor.check.knowledge_tags_empty.ok":

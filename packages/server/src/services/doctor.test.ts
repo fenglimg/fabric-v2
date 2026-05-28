@@ -174,6 +174,8 @@ describe("runDoctorReport", () => {
       // v2.0.0-rc.33 W4-A4 (T5 P2): draft-backlog ratio. Inserted adjacent to
       // cite_goodhart — both are observability checks built on disk + ledger.
       "Knowledge draft backlog",
+      // rc.37 NEW-38: auto-promote info surface (adjacent to draft_backlog).
+      "Knowledge auto-promote",
       // rc.36 TASK-05 (P0-8): empty-tags ratio. Adjacent to draft_backlog —
       // both flag observability gaps in canonical entry quality.
       "Knowledge tags coverage",
@@ -238,7 +240,7 @@ describe("runDoctorReport", () => {
       "Promote ledger invariant",
       "Preexisting root markdown",
     ]);
-    expect(report.checks).toHaveLength(52);
+    expect(report.checks).toHaveLength(53);
   });
 
   it("v2.0: clean post-init repo (mocked layout) reports zero errors AND zero warnings", async () => {
@@ -7169,6 +7171,92 @@ function createInitializedProject(name: string): string {
   writeFile("packages/server/rules.contract.test.ts", "// @fabric-verify rules/server\nexpect(true).toBe(true);\n", target);
   return target;
 }
+
+// v2.0.0-rc.37 NEW-38: knowledge auto-promote pipeline.
+describe("knowledge auto-promote (rc.37 NEW-38)", () => {
+  const DAY_MS = 24 * 60 * 60 * 1000;
+
+  function draftEntry(id: string, slug: string, ageDays: number): string {
+    const createdAt = new Date(Date.now() - ageDays * DAY_MS).toISOString();
+    return [
+      "---",
+      `id: ${id}`,
+      "type: decision",
+      "maturity: draft",
+      "layer: team",
+      `created_at: ${createdAt}`,
+      "tags: [auto-promote-test]",
+      "---",
+      "",
+      `# ${slug}`,
+      "",
+      "## Summary",
+      "Body content for the auto-promote test fixture.",
+      "",
+    ].join("\n");
+  }
+
+  it("--fix promotes settled drafts (≥14d, no drift) to verified; leaves young + drifted drafts", async () => {
+    const target = createV2KnowledgeProject("doctor-auto-promote");
+    // Settled draft (20d old, no drift) → promote.
+    writeFile(".fabric/knowledge/decisions/KT-DEC-0050--settled-draft.md", draftEntry("KT-DEC-0050", "settled-draft", 20), target);
+    // Young draft (5d old) → stays draft.
+    writeFile(".fabric/knowledge/decisions/KT-DEC-0051--young-draft.md", draftEntry("KT-DEC-0051", "young-draft", 5), target);
+    // Drifted draft (20d old but flagged) → stays draft.
+    writeFile(".fabric/knowledge/decisions/KT-DEC-0052--drifted-draft.md", draftEntry("KT-DEC-0052", "drifted-draft", 20), target);
+    const driftEvent = {
+      kind: "fabric-event",
+      id: "event:drift-1",
+      ts: Date.now(),
+      schema_version: 1,
+      event_type: "knowledge_drift_detected",
+      drifted_stable_ids: ["KT-DEC-0052"],
+      missing_files: [],
+      stale_files: [],
+    };
+    writeFile(".fabric/events.jsonl", `${JSON.stringify(driftEvent)}\n`, target);
+    await writeKnowledgeMeta(target, { source: "doctor_fix" });
+
+    // Report surfaces the info check before fix.
+    const before = await runDoctorReport(target);
+    const infoCheck = before.checks.find((c) => c.code === "draft_auto_promotable");
+    expect(infoCheck?.message).toContain("KT-DEC-0050");
+
+    await runDoctorFix(target);
+
+    const settled = readFileSync(join(target, ".fabric/knowledge/decisions/KT-DEC-0050--settled-draft.md"), "utf8");
+    const young = readFileSync(join(target, ".fabric/knowledge/decisions/KT-DEC-0051--young-draft.md"), "utf8");
+    const drifted = readFileSync(join(target, ".fabric/knowledge/decisions/KT-DEC-0052--drifted-draft.md"), "utf8");
+    expect(settled).toContain("maturity: verified");
+    expect(young).toContain("maturity: draft");
+    expect(drifted).toContain("maturity: draft");
+
+    const { events } = await readEventLedger(target);
+    // Note: filesystem-edit-fallback also synthesizes a knowledge_promoted for
+    // never-promoted canonical entries during the report pass, so assert that
+    // SOME promoted event carries the auto-promote reason (not promoted[0]).
+    const autoPromoted = events.filter(
+      (e) =>
+        e.event_type === "knowledge_promoted" &&
+        e.stable_id === "KT-DEC-0050" &&
+        typeof (e as { reason?: string }).reason === "string" &&
+        (e as { reason?: string }).reason!.includes("auto-promote"),
+    );
+    expect(autoPromoted.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("--fix is idempotent: a re-run promotes nothing once drafts are verified", async () => {
+    const target = createV2KnowledgeProject("doctor-auto-promote-idem");
+    writeFile(".fabric/knowledge/decisions/KT-DEC-0060--settled.md", draftEntry("KT-DEC-0060", "settled", 30), target);
+    await writeKnowledgeMeta(target, { source: "doctor_fix" });
+    await runDoctorFix(target);
+    const after = await runDoctorReport(target);
+    // okCheck carries no `code` field, so find the now-clean check by name.
+    const check = after.checks.find((c) => c.name === "Knowledge auto-promote");
+    expect(check?.status).toBe("ok");
+    expect(check?.kind).not.toBe("info"); // no remaining candidates
+  });
+});
 
 function createProject(name: string): string {
   const root = mkdtempSync(join(tmpdir(), `${name}-`));
