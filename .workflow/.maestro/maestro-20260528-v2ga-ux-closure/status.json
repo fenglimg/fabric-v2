@@ -161,9 +161,8 @@
       "tier": "empirical",
       "target": "skill auto-invoke description-trigger F1 ≥ 71% 维持 (无回归)",
       "floor": "≥ 65% (hard-block)",
-      "actual": null,
-      "verifier_cmd": "LLM-judge / simulated-human 跑 trigger 命中真值标注",
-      "verified_at": null,
+      "actual": "F1=100% (22-item labeled set, 2 LLM 零上下文盲判 claude+gemini 各 22/22 一致) ≥ target 71% 无回归, 远超 floor。见 UX-5 evidence。",
+      "verified_at": "2026-05-28T14:15:00+0800",
       "blocking": false
     },
     {
@@ -282,12 +281,12 @@
       "ship_criteria_alignment": ["G-SKILL-TRIGGER"],
       "alignment_strength": "direct",
       "alignment_rationale": "auto-invoke 是 S3 写 KB 旅程的入口, 触发不准则整条体验断裂",
-      "status": "open",
+      "status": "done",
       "verification": {
         "method": "simulated-human",
         "verifier": "claude 自演 persona 跑 trigger 短语集 (per [[feedback-claude-simulated-onboarding]]) + gemini/codex 交叉复核命中标注 (≥2 LLM)",
-        "evidence": null,
-        "verified_at": null,
+        "evidence": "22 条 labeled set (14 正: archive 6/review 4/import 4; 8 负: 专打 NOT code-review/PR-review/code-import/data-import 消歧子句 + 无 normative 纯操作)。2 LLM 零上下文盲判: Judge1=claude context-clean subagent(accc8cb5) 22/22; Judge2=gemini(gem-141435-a140, 零上下文) 22/22。完全一致。F1=100% ≥ target 71% (baseline rc.32 71%) 无回归, 远超 floor 65%。8 易混负样本全部正确压制。dataset+判定存 .workflow/.scratchpad/v2.0.0-ga-ux-closure/ux5-trigger-dataset.md。残留: 两 LLM 共同 flag 日常短触发词(以后/always/review/导入) 真实高频对话过触发风险 → NEW-1 P3 defer 候选。",
+        "verified_at": "2026-05-28T14:15:00+0800",
         "attempts": []
       }
     },
@@ -527,6 +526,27 @@
       "verification": {
         "method": "simulated-human",
         "verifier": "用户手动 GUI fire-test checklist (Claude Desktop Code tab + Codex Desktop 各一次)",
+        "evidence": null,
+        "verified_at": null,
+        "attempts": []
+      }
+    },
+    {
+      "id": "NEW-1",
+      "dimension": "D-SKILL",
+      "subject": "skill trigger 短词精度尾部: 以后/always/review/导入 在高频对话过触发风险",
+      "origin": "UX-5 dogfood, 两 LLM (claude+gemini) 共同 flag",
+      "severity": "P3",
+      "severity_rationale": "F1 在 adversarial labeled set 上 100% (NOT 子句已正确压制全部 8 易混负样本); 过触发为真实高频对话的推测性尾部风险, 非已覆盖模块的明确退化, 非 ship-blocking。属打磨。",
+      "proposed_fix": "把 archive/import 的裸短词改复合限定词 (如 'review knowledge' / '导入历史知识'), 进一步降日常 dev 对话误触发; 需重测 F1 防过紧伤 recall。",
+      "ship_criteria_alignment": ["G-SKILL-TRIGGER"],
+      "alignment_strength": "indirect",
+      "status": "deferred",
+      "defer_target": "v2.0.x patch",
+      "defer_review": "≥2 LLM 已复核 (claude+gemini 同源 flag, 同意非 ship-blocking); 待用户批量终审",
+      "verification": {
+        "method": "simulated-human",
+        "verifier": "重跑 UX-5 labeled set F1 + 扩充真实高频对话负样本",
         "evidence": null,
         "verified_at": null,
         "attempts": []

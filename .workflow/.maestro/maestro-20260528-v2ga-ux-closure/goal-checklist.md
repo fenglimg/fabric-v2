@@ -19,7 +19,7 @@
 | G-MCP-PAYLOAD | D-MCP | 单 path payload ≤ 4k tok（基线 ~11.9k） | ~1.4k ✅ | ✅ |
 | G-CITE | D-HOOK | cite-coverage ≥ 30%（baseline 3.1%） | — | ✅ |
 | G-ARCHIVE-RECALL | D-SKILL | archive recall ≥ 40%（baseline 20%） | — | ✅ |
-| G-SKILL-TRIGGER | D-SKILL | auto-invoke F1 ≥ 71% 无回归 | — | ⬜ |
+| G-SKILL-TRIGGER | D-SKILL | auto-invoke F1 ≥ 71% 无回归 | 100% ✅ | ⬜ |
 | G-PARITY | D-PARITY | CC/Codex 5 操作 diff 无 blocking | — | ✅ |
 | G-GREEN | D-GREEN | tsc 0 / test 全绿 / lint 0 / doctor green | — | ✅ |
 | G-DOCTOR-RECOVERY | D-CLI | 自救率 ≥80%（floor 60%） | — | ✅ |
@@ -37,7 +37,7 @@
 - [x] **UX-13** fab_get_knowledge_sections (step-2 全文拉取) payload audit + MCP 工具报错反馈（并 G3）✅ 删 precedence + de-jargon
 
 ### D-SKILL — Skill 效果 + 交互旅程（S3/S5）
-- [ ] **UX-5** auto-invoke 触发准确度复测（archive/import/review，F1 ≥ 71%，≥2 LLM）
+- [x] **UX-5** auto-invoke 触发准确度复测（archive/import/review，F1 ≥ 71%，≥2 LLM）✅ F1=100% (claude+gemini 各 22/22) → NEW-1 P3 defer
 - [ ] **UX-6** fabric-archive recall dogfood（≥40%）
 - [ ] **UX-15** fabric-review + fabric-import 交互旅程 dogfood（不只 trigger）
 
