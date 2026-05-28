@@ -674,7 +674,9 @@
       "wave": "F",
       "subject": "Cross-client parity smoke test",
       "done_when": "CC/Codex/Cursor 跑 5 操作 (install/archive/review/doctor/plan-context) 输出对比 + diff 报告",
-      "status": "pending"
+      "status": "done",
+      "_actual_done": "2026-05-28",
+      "note": "packages/cli/__tests__/cross-client-parity.test.ts: 在 F1 werewolf fixture (extract) 上跑 installHooks, 断言 per-client install surface byte-parity: (1) 4 hook script (fabric-hint/broad/narrow/cite-evict) 跨 .claude/.codex/.cursor byte-equal; (2) shared hook lib/*.cjs 跨 3 client byte-equal; (3) skill SKILL.md + ref/*.md 跨 .claude/.codex byte-equal (skills 不装 cursor); (4) 每 client 有 hook-config 文件. mismatches[] 数组即 diff 报告 (空=parity). 关键 reframe: 5 操作里 doctor/plan-context/archive/review 是 client-agnostic (三 client 共用同一 stdio MCP server, 输出不可能按 client 不同), 唯一会 drift 的是 install surface — 故 parity test 聚焦 install assets (与 hooks_content_drift NEW-27 + skill_ref_mirror runtime check 互补, 这里是 fresh-install smoke). 2 test pass, 实测 fresh install 三端 byte-parity 成立 (G-PARITY gate 满足). Gates: tsc 0 / tests 1806 (434+620+752) / lint 0."
     },
     {
       "id": "F3",
