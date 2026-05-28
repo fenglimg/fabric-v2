@@ -638,7 +638,7 @@ export const zhCNMessages: Messages = {
   "doctor.check.narrow_no_paths.message.plural":
     "{count} 个 narrow-scope canonical entries 的 relevance_paths array 为空（silent recall risk — narrow without anchors can never match a target path）。首个：{detail}。",
   "doctor.check.narrow_no_paths.remediation":
-    "为 relevance_paths 添加 path anchors，或将 entry 的 relevance_scope 放宽到 broad。",
+    "调 `/fabric-review` 选该 entry → modify 为 relevance_paths 添加 path anchors，或将 relevance_scope 放宽到 broad；也可直接编辑 entry frontmatter。",
   "doctor.check.relevance_paths_dangling.name": "Knowledge relevance_paths dangling",
   "doctor.check.relevance_paths_dangling.ok":
     "所有 relevance_paths globs 都能在 workspace root 下解析到至少 1 个文件。",

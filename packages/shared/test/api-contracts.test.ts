@@ -956,6 +956,45 @@ describe("Full i18n locale parity (rc.37 NEW-28)", () => {
   });
 });
 
+// v2.0.0-rc.37 NEW-8: doctor remediation safety guardrail. The rc.32 GA audit
+// flagged remediation copy that nudged users toward destructive recovery
+// ("delete the event ledger", "rm -rf .fabric"). This test permanently bars
+// any doctor remediation/actionHint string from recommending deletion of the
+// event ledger, the .fabric root, or canonical knowledge entries. Deleting a
+// REGENERABLE derived cache (.fabric/.cache/*) is explicitly allowed — it's the
+// documented recovery for a corrupt index and loses no source-of-truth data.
+describe("doctor remediation destructive-guidance guard (rc.37 NEW-8)", () => {
+  // Patterns that destroy source-of-truth state. `.fabric/.cache/` deletions
+  // are carved out (regenerable). Matches both English + 中文 verbs.
+  const DESTRUCTIVE = [
+    /\b(rm|delete|remove|删除?|清空)\b[^.\n]*\bevents\.jsonl/i, // ledger deletion
+    /\brm\s+-rf?\s+[^\n]*\.fabric(?!\/\.cache)/i, // rm -rf .fabric (non-cache)
+    /\b(delete|删除?|清空)\b[^.\n]*\.fabric\/(?!\.cache)(?:knowledge|events)/i, // wipe knowledge/events tree
+    /\b(rm|delete|删除?)\b[^.\n]*\.fabric\/knowledge\/[^\n]*\.md/i, // delete a canonical entry file
+  ];
+  const isRemediationKey = (k: string): boolean =>
+    /^doctor\.check\..*\.remediation/.test(k) || k.endsWith(".actionHint");
+
+  for (const [localeName, messages] of [
+    ["zh-CN", zhCNMessages],
+    ["en", enMessages],
+  ] as const) {
+    it(`${localeName}: no remediation recommends destroying source-of-truth state`, () => {
+      const offenders: string[] = [];
+      for (const [key, value] of Object.entries(messages)) {
+        if (!isRemediationKey(key)) continue;
+        for (const pat of DESTRUCTIVE) {
+          if (pat.test(value)) {
+            offenders.push(`${key}: ${value.slice(0, 80)}`);
+            break;
+          }
+        }
+      }
+      expect(offenders, `destructive remediation copy:\n${offenders.join("\n")}`).toEqual([]);
+    });
+  }
+});
+
 // rc.29 BUG-C1 — knowledge_type vocabulary has been unified to PLURAL across
 // the codebase (schema, frontmatter, MCP I/O, FS layout, agents-meta, i18n).
 // The previous singular ↔ plural bridge collapses to identity; this test now

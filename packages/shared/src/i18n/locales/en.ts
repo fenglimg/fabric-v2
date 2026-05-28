@@ -649,7 +649,7 @@ export const enMessages: Messages = {
   "doctor.check.narrow_no_paths.message.plural":
     "{count} narrow-scope canonical entries have an empty relevance_paths array (silent recall risk — narrow without anchors can never match a target path). First: {detail}.",
   "doctor.check.narrow_no_paths.remediation":
-    "Either add path anchors to relevance_paths or widen the entry's relevance_scope to broad.",
+    "Run `/fabric-review`, select the entry → modify to add path anchors to relevance_paths or widen relevance_scope to broad; or edit the entry frontmatter directly.",
   "doctor.check.relevance_paths_dangling.name": "Knowledge relevance_paths dangling",
   "doctor.check.relevance_paths_dangling.ok":
     "All relevance_paths globs resolve to at least one file under the workspace root.",
