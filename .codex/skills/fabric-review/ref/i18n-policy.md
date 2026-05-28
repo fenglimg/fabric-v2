@@ -1,5 +1,11 @@
 # UX i18n Policy — fabric-review full reference
 
+> **Shared core (rc.37 NEW-13):** the cross-skill invariants — protected-token
+> NEVER-translate list, AskUserQuestion routing-key rule, layer heuristic, and
+> events-emit convention — live once in `../../lib/shared-policy.md`. This file
+> keeps only the fabric-review-specific 5-class examples. Read the shared lib
+> for the common rules; do not fork them here.
+
 > **Loaded on demand.** Only consult when you need to disambiguate which of the 5 classes a given string belongs to. SKILL.md gives the operative rule.
 
 ## UX i18n Policy (5-class bilingualization)
@@ -33,7 +39,7 @@ Rendering rule:
 
 - `fabric_language === "zh-CN"` → emit the zh-CN variant; pure monolingual, no language mixing inside a single user-facing block.
 - `fabric_language === "en"` → emit the en variant; pure monolingual, no language mixing inside a single user-facing block.
-- `fabric_language === "zh-CN-hybrid"` → emit Chinese narrative prose with English technical terms preserved. Protected tokens (always EN): MCP tool names (e.g. `fab_get_knowledge_sections`), CLI command names (e.g. `fab install`), file paths, technical concepts (`Skill`, `SessionStart`, `hook`, `MCP`, `revision_hash`, `pending`, `proven`, `verified`, `draft`).
+- `fabric_language === "zh-CN-hybrid"` → emit Chinese narrative prose with English technical terms preserved. Protected tokens (always EN): MCP tool names (e.g. `fab_get_knowledge_sections`), CLI command names (e.g. `fabric install`), file paths, technical concepts (`Skill`, `SessionStart`, `hook`, `MCP`, `revision_hash`, `pending`, `proven`, `verified`, `draft`).
 - `fabric_language === "match-existing"` or any other value → emit the en variant; pure monolingual.
 
 Protected tokens (`fab_review`, `relevance_scope`, `relevance_paths`,

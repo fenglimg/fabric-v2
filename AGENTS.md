@@ -38,13 +38,13 @@ See `.fabric/knowledge/` for project decisions, pitfalls, guidelines, models, an
 完整 maintainer 版见 `docs/USER-QUICKSTART.md`。
 
 ## 行为规则
-- **修改任何文件前**:两步调用——先 `fab_plan_context(paths=[<被改文件>])` 拿到 `selection_token` 与候选 `entries`(挑 `selectable===true` 的 `stable_id`),再 `fab_get_knowledge_sections({ selection_token, ai_selected_stable_ids: [<id>...] })` 取规则正文。
+- **修改任何文件前**:优先单步 `fab_recall(paths=[<被改文件>])` —— 一次调用直接拿回所有相关 KB 正文(rc.37+ 默认路径,省掉手动挑 id 的环节)。**仅当单步拉回的正文过多、导致上下文过载需精确裁剪噪音时**才走两步:先 `fab_plan_context(paths=[...])` 拿 `selection_token` + 顶层 `candidates[]`(从 `candidates[].stable_id` 挑),再 `fab_get_knowledge_sections({ selection_token, ai_selected_stable_ids: [<id>...] })` 取正文。
 - **`.fabric/agents.meta.json` 严禁手动编辑**;engine 会自动同步派生状态,显式 reconcile 跑 `fabric doctor --fix`。
 
 ## 知识库(KB)
 - **Discovery**:SessionStart hook 列 broad-scoped 条目(含 personal layer `KP-*` 条目,引用方式相同);edit 文件时 PreToolUse hook 可能触发 narrow hint。
-- **Usage**:两步式——`fab_plan_context(paths=[...])` 返回 `selection_token` + 候选 entries,再 `fab_get_knowledge_sections({ selection_token, ai_selected_stable_ids: [<id>...] })` 拉全文;`selection_token` 必须来自最近一次 `fab_plan_context`,不可凭空编造。
-- **session_id**: 调用 `fab_plan_context` 时, 务必把当前 client session id 作为 `session_id` 参数传入(Claude Code 的 session id 在 stdin payload 中, Codex 的对应 identifier 同理)。这能让 `fabric doctor --archive-history` 与 archive-hint hook 准确识别跨会话 debt 状态。
+- **Usage**:常态走单步 `fab_recall(paths=[...])` 一次拿回相关 KB 正文。仅当单步正文过多致上下文过载、需精确裁剪噪音时才两步:`fab_plan_context(paths=[...])` 返回 `selection_token` + 顶层 `candidates[]`,再 `fab_get_knowledge_sections({ selection_token, ai_selected_stable_ids: [<从 candidates[].stable_id 挑>...] })` 拉全文;`selection_token` 必须来自最近一次 `fab_plan_context`,不可凭空编造。
+- **session_id**: 调用 `fab_recall` / `fab_plan_context` 时, 务必把当前 client session id 作为 `session_id` 参数传入(Claude Code 的 session id 在 stdin payload 中, Codex 的对应 identifier 同理)。这能让 `fabric doctor --archive-history` 与 archive-hint hook 准确识别跨会话 debt 状态。
 - **Write flows**:`fabric-archive` / `fabric-review` / `fabric-import` 三个 Skills。
 - **Language**:渲染按 `.fabric/fabric-config.json` 的 `fabric_language` 字段。
 - **Archive cadence nudge** (rc.36): 每完成 5+ 次 Edit / 显著 decision 后,在合适回合主动 propose 调 `fabric-archive` skill — archive 没建立频率会让 KB 慢速死掉。

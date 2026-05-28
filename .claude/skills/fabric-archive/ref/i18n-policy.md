@@ -1,5 +1,11 @@
 # UX i18n Policy — full reference
 
+> **Shared core (rc.37 NEW-13):** the cross-skill invariants — protected-token
+> NEVER-translate list, AskUserQuestion routing-key rule, layer heuristic, and
+> events-emit convention — live once in `../../lib/shared-policy.md`. This file
+> keeps only the fabric-archive-specific 5-class examples. Read the shared lib
+> for the common rules; do not fork them here.
+
 > **Loaded on demand.** Only consult when rendering bilingual output AND you're unsure which class a string belongs to. SKILL.md gives the operative rule: read `.fabric/fabric-config.json` → `fabric_language`, emit prose in resolved variant, never translate protected tokens. The 5-class taxonomy below disambiguates edge cases.
 
 ## UX i18n Policy (5-class bilingualization)
@@ -12,7 +18,7 @@ following 5 categories MUST be rendered in the resolved language:
 
 1. **Roll-up templates** — the `# Archive Review — N candidates` batch
    review block (one per candidate) AND any final session summary the
-   skill emits after Phase 2 completes. zh-CN ↔ en mirror.
+   skill emits after Phase 4 completes. zh-CN ↔ en mirror.
 2. **Errors / Preconditions warnings** — abort + gate-fail messages (e.g.
    the "没有触发归档信号…" trigger-miss and the "本次会话为常规执行…"
    viability-gate-FAIL message). zh-CN ↔ en mirror.
@@ -20,13 +26,13 @@ following 5 categories MUST be rendered in the resolved language:
    edit … inline, N to skip)` line in the batch review template. zh-CN
    ↔ en mirror.
 4. **Dry-run table headers** — v2.0.0-rc.27 TASK-007 added a dry-run
-   override path (see Phase 2.5 "dry-run") so users can preview the
+   override path (see Phase 4.5 "dry-run") so users can preview the
    archive proposal without writing pending entries. The dry-run summary
    header and per-candidate preview labels MUST be bilingualized per
    this policy. zh-CN ↔ en mirror.
 5. **AskUserQuestion** — `header` + `question` fields (NOT `options[]`).
    zh-CN ↔ en mirror. fabric-archive itself does not surface
-   AskUserQuestion in the current contract (Phase 1 batch review is a
+   AskUserQuestion in the current contract (Phase 3 batch review is a
    single markdown screen, not a structured question), but if a future
    version adds one — e.g. to confirm layer flip — this rule applies.
 
@@ -34,7 +40,7 @@ Rendering rule:
 
 - `fabric_language === "zh-CN"` → emit the zh-CN variant; pure monolingual, no language mixing inside a single user-facing block.
 - `fabric_language === "en"` → emit the en variant; pure monolingual, no language mixing inside a single user-facing block.
-- `fabric_language === "zh-CN-hybrid"` → emit Chinese narrative prose with English technical terms preserved. Protected tokens (always EN): MCP tool names (e.g. `fab_get_knowledge_sections`), CLI command names (e.g. `fab install`), file paths, technical concepts (`Skill`, `SessionStart`, `hook`, `MCP`, `revision_hash`, `pending`, `proven`, `verified`, `draft`).
+- `fabric_language === "zh-CN-hybrid"` → emit Chinese narrative prose with English technical terms preserved. Protected tokens (always EN): MCP tool names (e.g. `fab_get_knowledge_sections`), CLI command names (e.g. `fabric install`), file paths, technical concepts (`Skill`, `SessionStart`, `hook`, `MCP`, `revision_hash`, `pending`, `proven`, `verified`, `draft`).
 - `fabric_language === "match-existing"` or any other value → emit the en variant; pure monolingual.
 
 Protected tokens (`fab_extract_knowledge`, `relevance_scope`,

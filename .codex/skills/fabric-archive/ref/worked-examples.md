@@ -74,5 +74,5 @@ mcp__fabric__fab_extract_knowledge({
 })
 ```
 
-Layer = personal (跨项目通用 + 工具/编辑器偏好 signals dominate; no 强 team signal applies). Scope = broad with `relevance_paths=[]` (personal layer ALWAYS forces broad — paths don't generalize across projects per Phase 1.5 special case).
+Layer = personal (跨项目通用 + 工具/编辑器偏好 signals dominate; no 强 team signal applies). Scope = broad with `relevance_paths=[]` (personal layer ALWAYS forces broad — paths don't generalize across projects per Phase 3.5 special case).
 

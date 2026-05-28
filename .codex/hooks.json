@@ -7,6 +7,9 @@
     ],
     "SessionStart": [
       {
+        "command": "\"$(git rev-parse --show-toplevel)/.codex/hooks/cite-policy-evict.cjs\""
+      },
+      {
         "command": "\"$(git rev-parse --show-toplevel)/.codex/hooks/knowledge-hint-broad.cjs\""
       }
     ],

@@ -55,6 +55,32 @@ try {
   citeContractReminder = null;
 }
 
+// v2.0.0-rc.37 NEW-30: shared client-protocol adapter. Guarded require (this
+// hook runs in arbitrary user repos); detectClient delegates the 3-tier
+// detection to the lib, falling back to env-only when the lib is absent.
+let clientAdapter = null;
+try {
+  clientAdapter = require("./lib/client-adapter.cjs");
+} catch {
+  clientAdapter = null;
+}
+
+// v2.0.0-rc.37 NEW-16: shared config + sidecar I/O for the per-signal dismiss
+// feature (config-level durable opt-out + session-scoped sidecar). Guarded
+// require (house style); dismiss simply doesn't fire if the lib is absent.
+let configCache = null;
+let stateStore = null;
+try {
+  configCache = require("./lib/config-cache.cjs");
+} catch {
+  configCache = null;
+}
+try {
+  stateStore = require("./lib/state-store.cjs");
+} catch {
+  stateStore = null;
+}
+
 // CONSTANTS — duplicated from packages/server/src/services/_shared.ts.
 // DRY violation accepted: this hook script runs in user repos WITHOUT
 // node_modules access, so it cannot import from @fenglimg/fabric-server.
@@ -929,6 +955,97 @@ function writeShownCache(projectRoot, cache) {
   }
 }
 
+// -----------------------------------------------------------------------------
+// v2.0.0-rc.37 NEW-16 — per-signal dismiss.
+//
+// Two suppression levers, both honoured at emit time (a chosen signal whose
+// type is dismissed exits silently, exactly like a cooldown hit):
+//   1. Durable opt-out — fabric-config.json#hint_dismiss_signals: string[].
+//      Mirrors the cite_evict_interval=0 opt-out convention; survives across
+//      sessions. The concrete user-actionable lever surfaced in the nudge.
+//   2. Session-scoped — .fabric/.cache/hint-dismiss-{sessionId}.json
+//      { dismissed: string[] }. Ephemeral; written by the agent when the user
+//      asks to silence a nudge type for the current session (Fabric's
+//      AI-driven write convention — no new CLI surface).
+//
+// The four signal types ('archive' / 'review' / 'import' / 'maintenance')
+// each have an independent cooldown ALREADY (signal-keyed SHOWN_CACHE for
+// A/B/C + the maintenance day-cooldown sidecar), so dismiss layers cleanly on
+// top of per-signal cadence without a physical 4-hook split (which would 4×
+// the per-Stop process spawn and break the deliberate single-nudge-per-turn
+// precedence model — KT-DEC-0007 anti-nag spirit).
+// -----------------------------------------------------------------------------
+
+const DISMISSABLE_SIGNALS = ["archive", "review", "import", "maintenance"];
+
+function sessionDismissFileName(sessionId) {
+  const safe = String(sessionId || "anonymous").replace(/[^A-Za-z0-9_.-]/g, "-");
+  return `hint-dismiss-${safe}.json`;
+}
+
+// Returns a Set of dismissed signal types (config-durable ∪ session sidecar).
+// Never throws — degrades to an empty set when libs are absent.
+function readDismissedSignals(projectRoot, sessionId) {
+  const dismissed = new Set();
+  try {
+    if (configCache && typeof configCache.readConfig === "function") {
+      const cfg = configCache.readConfig(projectRoot);
+      const list = cfg && cfg.hint_dismiss_signals;
+      if (Array.isArray(list)) {
+        for (const s of list) {
+          if (DISMISSABLE_SIGNALS.includes(s)) dismissed.add(s);
+        }
+      }
+    }
+  } catch {
+    // defensive
+  }
+  try {
+    if (stateStore && typeof stateStore.readJsonState === "function" && sessionId) {
+      const sidecar = stateStore.readJsonState(
+        projectRoot,
+        sessionDismissFileName(sessionId),
+        (p) => p && typeof p === "object" && Array.isArray(p.dismissed),
+      );
+      if (sidecar) {
+        for (const s of sidecar.dismissed) {
+          if (DISMISSABLE_SIGNALS.includes(s)) dismissed.add(s);
+        }
+      }
+    }
+  } catch {
+    // defensive
+  }
+  return dismissed;
+}
+
+// Persist a session-scoped dismiss set (additive merge). Exposed for the
+// agent-driven write path + tests; not auto-invoked by the hook. Never throws.
+function writeSessionDismiss(projectRoot, sessionId, signals) {
+  if (!stateStore || typeof stateStore.writeJsonState !== "function") return;
+  const fileName = sessionDismissFileName(sessionId);
+  const prior = stateStore.readJsonState(
+    projectRoot,
+    fileName,
+    (p) => p && typeof p === "object" && Array.isArray(p.dismissed),
+  );
+  const merged = new Set(prior && Array.isArray(prior.dismissed) ? prior.dismissed : []);
+  for (const s of Array.isArray(signals) ? signals : []) {
+    if (DISMISSABLE_SIGNALS.includes(s)) merged.add(s);
+  }
+  stateStore.writeJsonState(projectRoot, fileName, { dismissed: [...merged] });
+}
+
+// Bilingual one-line dismiss hint appended to every nudge so the user knows
+// the lever exists. Variant fold mirrors banner-i18n: zh-CN / zh-CN-hybrid →
+// Chinese; en / match-existing / unknown → English.
+function renderDismissOption(signal, variant) {
+  const zh = variant === "zh-CN" || variant === "zh-CN-hybrid";
+  return zh
+    ? `  (不想再看到此类提醒？在 .fabric/fabric-config.json 设 "hint_dismiss_signals": ["${signal}"]，或让我本会话关闭 ${signal} 提醒)`
+    : `  (Silence this nudge? Set "hint_dismiss_signals": ["${signal}"] in .fabric/fabric-config.json, or ask me to dismiss ${signal} for this session)`;
+}
+
 /**
  * v2.0.0-rc.7 T10: find the most recent doctor_run event ts in the ledger.
  * Returns the ts (epoch ms) of the newest doctor_run event, or null if none
@@ -1018,9 +1135,13 @@ function evaluateMaintenanceSignal(events, now, canonicalCount, lastEmitMs, thre
   }
 
   // Cooldown gate — short-circuit when we just nagged.
+  // rc.34 TASK-01 + review-fix (Gemini P1): future-stamped lastEmit (backward
+  // clock skew) bypasses cooldown — treats sidecar as "expired" so the gate
+  // heals on the next invocation instead of waiting (cooldown + |skew|).
   if (
     typeof lastEmitMs === "number" &&
     Number.isFinite(lastEmitMs) &&
+    nowMs >= lastEmitMs &&
     nowMs - lastEmitMs < cooldownDays * MS_PER_DAY
   ) {
     return null;
@@ -1079,7 +1200,20 @@ function tryReadStdinJson() {
     const parsed = JSON.parse(buf);
     if (parsed === null || typeof parsed !== "object") return null;
     return parsed;
-  } catch {
+  } catch (e) {
+    // v2.0.0-rc.29 TASK-008 (BUG-L1): hook used to silent-swallow JSON.parse
+    // errors which masked real client-side payload bugs (e.g. CLI hosts that
+    // stopped emitting Stop-hook JSON envelopes). Log a single best-effort
+    // diagnostic line so operators see WHY the hook went quiet; keep returning
+    // null so downstream behaviour (graceful exit 0, no rule render) is
+    // unchanged.
+    try {
+      const message = (e && typeof e === "object" && "message" in e) ? String(e.message) : String(e);
+      process.stderr.write(`[fabric-hint] malformed input: ${message}\n`);
+    } catch {
+      // stderr write failed (very unusual — sandbox / closed fd). The
+      // hook contract still requires we never throw upward.
+    }
     return null;
   }
 }
@@ -1144,20 +1278,19 @@ function parseKbLine(raw) {
  * so omitting it leaves the event valid.
  */
 function detectClient() {
+  // Delegate the full 3-tier detection (env → CLAUDE_PROJECT_DIR → path
+  // heuristic, incl. .cursor) to the shared adapter. __dirname is passed so
+  // the path heuristic reflects THIS hook's location.
+  if (clientAdapter && typeof clientAdapter.detectClient === "function") {
+    return clientAdapter.detectClient(__dirname);
+  }
+  // Fallback (adapter lib absent): env override only.
   const envClient = process.env.FABRIC_HINT_CLIENT;
   if (typeof envClient === "string" && envClient.length > 0) {
     const normalised = envClient.trim().toLowerCase();
     if (normalised === "cc" || normalised === "codex" || normalised === "cursor") {
       return normalised;
     }
-  }
-  // Path heuristic — __dirname is the directory containing this .cjs file
-  // when invoked normally (require.main === module).
-  try {
-    if (__dirname.includes(".claude/") || __dirname.includes(".claude\\")) return "cc";
-    if (__dirname.includes(".codex/") || __dirname.includes(".codex\\")) return "codex";
-  } catch {
-    // __dirname always defined for cjs modules; fall through defensively.
   }
   return undefined;
 }
@@ -1705,6 +1838,21 @@ function main(env, stdio) {
 
     if (result === null) return;
 
+    // v2.0.0-rc.37 NEW-16: per-signal dismiss. A chosen signal whose type the
+    // user dismissed (config-durable or session sidecar) exits silently —
+    // same shape as a cooldown hit. Covers BOTH maintenance and A/B/C paths.
+    const sessionId =
+      stdinPayload && typeof stdinPayload.session_id === "string"
+        ? stdinPayload.session_id
+        : null;
+    if (readDismissedSignals(cwd, sessionId).has(result.signal)) {
+      return;
+    }
+    // Append the bilingual dismiss-option line so the lever is discoverable.
+    if (typeof result.reason === "string") {
+      result.reason = `${result.reason}\n${renderDismissOption(result.signal, variant)}`;
+    }
+
     // v2.0.0-rc.7 T10: Signal D uses its own cooldown sidecar (day-based,
     // see MAINTENANCE_HINT_LAST_EMIT_FILE). The A/B/C shared cooldown cache
     // uses hours, so we branch here to avoid mixing semantics.
@@ -1720,7 +1868,13 @@ function main(env, stdio) {
     const cooldownMs = readCooldownHours(cwd) * MS_PER_HOUR;
     const cache = readShownCache(cwd);
     const lastShown = cache[result.signal];
-    if (typeof lastShown === "number" && nowMs - lastShown < cooldownMs) {
+    // rc.34 TASK-01 + review-fix (Gemini P1): future-stamped lastShown
+    // (backward clock skew) bypasses cooldown — sidecar treated as expired.
+    if (
+      typeof lastShown === "number" &&
+      nowMs >= lastShown &&
+      nowMs - lastShown < cooldownMs
+    ) {
       return; // Still in cooldown — silent.
     }
 
@@ -1748,6 +1902,13 @@ module.exports = {
   readCooldownHours,
   readUnderseedThreshold,
   readArchiveEditThreshold,
+  // v2.0.0-rc.37 NEW-16: per-signal dismiss helpers (exported for tests +
+  // the agent-driven session-dismiss write path).
+  readDismissedSignals,
+  writeSessionDismiss,
+  sessionDismissFileName,
+  renderDismissOption,
+  DISMISSABLE_SIGNALS,
   // v2.0.0-rc.7 T5: session digest helpers (exported for unit testing).
   tryReadStdinJson,
   summarizeTranscript,

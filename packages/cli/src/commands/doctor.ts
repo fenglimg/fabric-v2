@@ -865,6 +865,13 @@ function renderCiteCoverageReport(
     ? dt("doctor.cite.metric.complianceNA")
     : `${(complianceRate * 100).toFixed(1)}% (${report.metrics.compliant_cites ?? 0}/${(report.metrics.compliant_cites ?? 0) + (report.metrics.noncompliant_cites ?? 0)})`;
   lines.push(`  ${dt("doctor.cite.metric.complianceRate")}: ${complianceStr}`);
+  // v2.0.0-rc.38 UX-8 (C, hardening): warn when edit signals couldn't be
+  // correlated (no session_id) — a stale pre-session_id hook silently deflates
+  // expected_but_missed, so surface it instead of hiding behind a clean 100%.
+  const uncorrelatable = report.metrics.uncorrelatable_edits ?? 0;
+  if (uncorrelatable > 0) {
+    lines.push(`  ${dt("doctor.cite.metric.uncorrelatableEdits")}: ${uncorrelatable}`);
+  }
 
   // Per-client subsection: only renders for `--client all` when more than one
   // client bucket exists. A single-client filter (or a single observed client)
