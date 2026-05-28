@@ -683,7 +683,9 @@
       "wave": "F",
       "subject": "Onboarding cliff 30min self-演 复测",
       "done_when": "rc.36 后 baseline 重测, target ≥30% reach goal 达成",
-      "status": "pending"
+      "status": "done",
+      "_actual_done": "2026-05-28",
+      "note": "真跑 fresh install + doctor + SessionStart hook 观测真实 onboarding 表面 (非 narrative). 报告 onboarding-cliff-retest-f3.md: reach-goal ~45% ≥ 30% target (vs rc.32 5%) — G-CLIFF PASS. 核心路径 install→AI client→SessionStart hook (surfaces KB + 'Next: fab_recall' nudge NEW-23 + sparse-KB import nudge + meta auto-reconcile) →archive 现端到端 guided; rc.32 三大 cliff (CLI-vs-Skill-vs-MCP 困惑 / 'now what' dead-end / MCP-tools-not-showing) 分别由 install 'More: docs/surfaces.md' pointer + SessionStart Next/import nudge + restart banner (NEW-22) 解决; cite/self-archive 4→2 简化降 contract 学习负荷. 2 findings (写入 dogfood-findings-continuous.md, 均 verified NON-BLOCKING 故未升 NEW task): F3-FIND-1 fresh install→doctor 2 transient fixable_errors (knowledge_test_index_missing + knowledge_index_drift; 验证 first MCP call/SessionStart 自愈 '🔄 meta auto-refreshed', 真实路径不暴露, --fix 清零; 尝试 runDoctorFix-at-install fix 但其无条件 rotateEventLedgerIfNeeded 会归档老事件违反 'install preserves events.jsonl' invariant init-guard I3 → 比 cliff 更糟 → 已 revert; 正确未来路径=scaffold 时写正确 meta revision + bundled counter, 非 runtime heal, 超 GA risk budget 因 lazy heal 已覆盖真实路径). F3-FIND-2 bundled KP-PRO-0001 opaque summary (NEW-37 guard 后于此 bundled legacy entry; cosmetic 1 行自纠). 无代码改动 (heal 已 revert), 交付=报告 + findings doc. Gates 保持 1806 (434+620+752) green。"
     },
     {
       "id": "F4",
