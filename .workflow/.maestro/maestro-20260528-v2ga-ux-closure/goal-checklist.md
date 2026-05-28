@@ -23,7 +23,7 @@
 | G-PARITY | D-PARITY | CC/Codex 5 操作 diff 无 blocking | 无 blocking ✅ | ✅ |
 | G-GREEN | D-GREEN | tsc 0 / test 全绿 / lint 0 / doctor green | 全绿 ✅ | ✅ |
 | G-DOCTOR-RECOVERY | D-CLI | 自救率 ≥80%（floor 60%） | 100% ✅ | ✅ |
-| G-COVERAGE | meta | 每模块 ≥1 task + 收尾 self-audit 0 漏 | — | ✅ |
+| G-COVERAGE | meta | 每模块 ≥1 task + 收尾 self-audit 0 漏 | 0 漏 ✅ | ✅ |
 
 > floor 硬门：G-CITE ≥20% / G-ARCHIVE-RECALL ≥30% / G-SKILL-TRIGGER ≥65% / G-DOCTOR-RECOVERY ≥60% —— 没过 floor 不许发 rc.38。
 
@@ -61,7 +61,7 @@
 - [x] **UX-12** 绿灯门 + 关键路径冒烟（并 G4）✅ tsc0/test1809/lint0 + fresh install→--fix→doctor green; dev-repo error=stale drift → NEW-5 P3
 
 ### meta — 覆盖门（保证『及时暴露所有』）
-- [ ] **UX-17** surface→task 覆盖映射表 + 收尾 self-audit + ≥2 LLM 交叉协议
+- [x] **UX-17** surface→task 覆盖映射表 + 收尾 self-audit + ≥2 LLM 交叉 ✅ 0 离散模块 GAP; gemini 补横切面 → NEW-6 P2
 
 ## 完成判据
 

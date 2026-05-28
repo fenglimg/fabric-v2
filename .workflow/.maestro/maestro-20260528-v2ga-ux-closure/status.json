@@ -198,9 +198,9 @@
       "name": "G-COVERAGE",
       "dimension": "meta",
       "target": "surface-coverage-map 每个 user-facing 模块 (Skill/Hook/MCP/CLI/Policy/Doctor) 映射 ≥1 task; 收尾覆盖 self-audit 0 漏模块",
-      "actual": null,
+      "actual": "0 离散模块 GAP (全 Skill/Hook/MCP/CLI/Policy/Doctor 映射 ≥1 task); 收尾 self-audit 5 项 + gemini ≥2 LLM 交叉补横切面均判非漏洞 (真 gap=error-UX/i18n 深测 → NEW-6 P2 非 blocking)。见 surface-coverage-map.md。",
       "verifier_cmd": "surface-coverage-map.md 完整性 check + 收尾 self-audit",
-      "verified_at": null,
+      "verified_at": "2026-05-28T15:10:00+0800",
       "blocking": true
     }
   ],
@@ -486,12 +486,12 @@
       "ship_criteria_alignment": ["G-COVERAGE"],
       "alignment_strength": "infrastructure",
       "alignment_rationale": "机制化保证不再静默漏模块, 是『及时暴露所有』的结构前提",
-      "status": "open",
+      "status": "done",
       "verification": {
         "method": "deterministic",
         "verifier": "surface-coverage-map.md 完整性人工+脚本 check (每模块行有非空映射) + 收尾 self-audit checklist",
-        "evidence": null,
-        "verified_at": null,
+        "evidence": "产出 surface-coverage-map.md: 3 Skill + 4 Hook 挂载点 + 6 MCP tool + 8 CLI + 4 Policy + doctor ~53 域 + GUI 全映射 ≥1 task, **0 离散模块 GAP**。收尾 self-audit 5 项均判非覆盖漏洞。≥2 LLM 交叉 (gemini bui0fz39k) 补横切面: 逐条核实 — --help 已在 UX-10, upgrade 在 UX-16, privacy-consent N/A (核实 local-first 无外部 telemetry), version-notif N/A; 真 gap = 广义 error/fallback UX 系统深测 + i18n dedicated → NEW-6 P2 (partial 覆盖已在, 非已知缺陷, 非 blocking)。",
+        "verified_at": "2026-05-28T15:10:00+0800",
         "attempts": []
       }
     },
@@ -632,6 +632,27 @@
       "verification": {
         "method": "dogfood",
         "verifier": "fresh install → doctor exit=0 无需 --fix",
+        "evidence": null,
+        "verified_at": null,
+        "attempts": []
+      }
+    },
+    {
+      "id": "NEW-6",
+      "dimension": "meta",
+      "subject": "横切 UX 面系统性深测: 广义 error/fallback UX (MCP 断连/skill timeout/malformed config) + i18n dedicated 覆盖",
+      "origin": "UX-17 覆盖 self-audit, gemini ≥2 LLM 交叉发现",
+      "severity": "P2",
+      "severity_rationale": "离散模块 0 GAP; 横切面 partial 覆盖已在 (error-UX: UX-13 G3 MCP 传错参 + UX-14 doctor 6/6; i18n: 所有 dogfood 隐式见 en+zh 正确渲染)。缺的是系统性深测 (MCP server 中途宕/skill timeout 的 friendly localized error vs stack trace 全路径 + i18n 4 模式专测), 非已知缺陷。属测试深度补强, 非 ship-blocking (无已知 error-UX 断裂)。privacy-consent/version-notif 经核实 N/A 已排除。",
+      "proposed_fix": "加 error-UX 矩阵测 (MCP 断连/超时/坏 config → 断言 friendly localized 输出非 raw stack) + i18n 4 模式 (zh-CN/en/hybrid/match-existing) 渲染专测。",
+      "ship_criteria_alignment": ["G-COVERAGE"],
+      "alignment_strength": "indirect",
+      "status": "deferred",
+      "defer_target": "v2.0.x patch",
+      "defer_review": "claude+gemini 同源 (gemini 提 5 项, claude 核实排除 3 项 N/A/已映射, 锁 2 项真 gap); 待用户批量终审",
+      "verification": {
+        "method": "dogfood",
+        "verifier": "error-UX 矩阵 + i18n 4 模式专测断言",
         "evidence": null,
         "verified_at": null,
         "attempts": []
