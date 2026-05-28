@@ -19,7 +19,7 @@ jobs:
         uses: actions/checkout@v5
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
         with:
           version: 9
           run_install: false
@@ -60,7 +60,7 @@ jobs:
 
       - name: Upload perf report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: perf-report
           path: perf-report.json
@@ -79,7 +79,7 @@ jobs:
         uses: actions/checkout@v5
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
         with:
           version: 9
           run_install: false
