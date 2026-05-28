@@ -22,7 +22,7 @@
 | G-SKILL-TRIGGER | D-SKILL | auto-invoke F1 ≥ 71% 无回归 | 100% ✅ | ⬜ |
 | G-PARITY | D-PARITY | CC/Codex 5 操作 diff 无 blocking | — | ✅ |
 | G-GREEN | D-GREEN | tsc 0 / test 全绿 / lint 0 / doctor green | 全绿 ✅ | ✅ |
-| G-DOCTOR-RECOVERY | D-CLI | 自救率 ≥80%（floor 60%） | — | ✅ |
+| G-DOCTOR-RECOVERY | D-CLI | 自救率 ≥80%（floor 60%） | 100% ✅ | ✅ |
 | G-COVERAGE | meta | 每模块 ≥1 task + 收尾 self-audit 0 漏 | — | ✅ |
 
 > floor 硬门：G-CITE ≥20% / G-ARCHIVE-RECALL ≥30% / G-SKILL-TRIGGER ≥65% / G-DOCTOR-RECOVERY ≥60% —— 没过 floor 不许发 rc.38。
@@ -48,7 +48,7 @@
 
 ### D-CLI — 用户交互旅程 + 故障自救（S1/S2/S6/S7/S8 + X3）
 - [ ] **UX-10** Onboarding cliff 30min self-演复测 + --help 首屏（并 G1，≥2 LLM，builds-on 工程本 F3）
-- [ ] **UX-14** doctor 故障自救 dogfood（自救率 ≥80% floor 60% + 次要 mode 输出，并 G2，X3 最大盲区，≥2 LLM）
+- [x] **UX-14** doctor 故障自救 dogfood ✅ 6/6=100% 自救 (claude+gemini), 6 broken state + 次要 mode 可读
 - [ ] **UX-16** S7 升级 + S8 退出/撤销 UX 冒烟（历史 0% UX 覆盖）
 
 - [x] **UX-18** AGENTS.md 两步协议工效（G5，最高频 AI 交互，P1，≥2 LLM）✅ 修 stale shape + fab_recall 设默认 (claude+gemini SOUND)

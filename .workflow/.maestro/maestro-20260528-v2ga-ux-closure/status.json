@@ -189,9 +189,9 @@
       "tier": "empirical",
       "target": "人为制造的 N 种 broken state (≥6 类: corrupt agents.meta / missing description / events.jsonl bloat / hook 损坏 / cross-client drift / stale lock) 中, 用户仅凭 doctor remediation 即可自救 ≥80%",
       "floor": "≥ 60% (hard-block)",
-      "actual": null,
+      "actual": "自救率 6/6=100% (6 broken-state dogfood: corrupt-meta/missing-desc/events-bloat/hook-broken/cross-client-drift/stale-lock; 2 LLM claude+gemini 各判 6/6) ≥ target 80% 远超 floor 60%。见 UX-14 evidence。",
       "verifier_cmd": "broken-state dogfood + simulated-human 自救率统计 (≥2 LLM 交叉)",
-      "verified_at": null,
+      "verified_at": "2026-05-28T14:55:00+0800",
       "blocking": true
     },
     {
@@ -435,12 +435,12 @@
       "ship_criteria_alignment": ["G-DOCTOR-RECOVERY"],
       "alignment_strength": "direct",
       "alignment_rationale": "doctor 是最大 CLI 模块 + 故障时唯一自救面, 现仅验绿灯未验红了能否救",
-      "status": "open",
+      "status": "done",
       "verification": {
         "method": "simulated-human",
         "verifier": "broken-state fixture dogfood + claude 自演用户自救 + gemini/codex 交叉评 remediation 可操作度 (≥2 LLM)",
-        "evidence": null,
-        "verified_at": null,
+        "evidence": "fresh install→--fix 得绿基线→snapshot→诱导 6 类 broken state→doctor 检测+remediation→自救→restore。6/6 全可自救: S1 corrupt-meta (agents_meta_invalid 精确报 JSON 行列, --fix 重建) / S2 missing-desc (--fix reconcile) / S3 events-bloat (size-gate>10MB + partial-write 'Run --fix to truncate') / S4 hook-broken (hooks_runtime_invalid 点名文件+missing_shebang, install 重拷) / S5 cross-client-drift (hooks_content_drift 点名+install copies) / S6 stale .serve.lock (advisory + --fix auto-removed 'dead PID')。remediation 普遍精确定位+明确 next-action(--fix OR fabric install, 文案点名不需猜)。≥2 LLM: claude + gemini(bcfjopd30) 独立各判 **6/6=100%** 自救率 ≥ target 80% 远超 floor 60%。次要 mode (--cite-coverage/--fix-knowledge 等) 输出结构化可读 (G2)。dataset .scratchpad/ux14-doctor-recovery.md。",
+        "verified_at": "2026-05-28T14:55:00+0800",
         "attempts": []
       }
     },
