@@ -71,6 +71,7 @@ const {
   mkdirSync,
   readFileSync,
   renameSync,
+  statSync,
   writeFileSync,
 } = require("node:fs");
 const { dirname, join } = require("node:path");
@@ -80,6 +81,10 @@ const { dirname, join } = require("node:path");
 // entry's .md `## Summary` section. Caches results in
 // `.fabric/.cache/summary-fallback.json` keyed by revision_hash.
 const { resolveOpaqueSummaries } = require("./lib/summary-fallback.cjs");
+// v2.0.0-rc.37 NEW-17: shared sidecar I/O for the plan-context-hint result
+// cache (skips a redundant CLI cold-start spawn when the same path-set is
+// re-edited within a session and the knowledge graph hasn't changed).
+const { readJsonState, writeJsonState } = require("./lib/state-store.cjs");
 
 // -----------------------------------------------------------------------------
 // CONSTANTS
@@ -148,6 +153,9 @@ const EDIT_TOOL_NAMES = new Set(["Edit", "Write", "MultiEdit"]);
 // are duplicated inline. Keep these in sync if the schema changes.
 const FABRIC_DIR_REL = ".fabric";
 const FABRIC_CONFIG_FILE = "fabric-config.json";
+// rc.37 NEW-17: derived index the server rewrites on any knowledge edit; its
+// mtime is the cheap freshness token for the plan-context-hint result cache.
+const AGENTS_META_FILE = "agents.meta.json";
 
 // W2-1 (P0-9): narrow TopK upper bound. Five matches the per-Edit hint
 // "terse banner" UX: any more and the model's working memory bloats.
@@ -778,6 +786,84 @@ function invokePlanContextHint(cwd, paths) {
 }
 
 // -----------------------------------------------------------------------------
+// v2.0.0-rc.37 NEW-17 — plan-context-hint result cache (per-session).
+//
+// Each PreToolUse fire is a separate process, so "in-memory" caching means a
+// per-session sidecar of the CLI result keyed on the edited path-set. A repeat
+// edit to the same file(s) — common during iterative work on one module —
+// re-reads the cached result instead of paying another `fabric plan-context-
+// hint` cold-start spawn (~50-150ms). MultiEdit's N paths already collapse to
+// ONE spawn (extractPaths dedupes + invokePlanContextHint joins --paths); this
+// cache extends that win across fires within a stable knowledge graph.
+//
+// Freshness: the cache is invalidated wholesale when `.fabric/agents.meta.json`
+// mtime changes (the derived index the server rewrites on any knowledge edit).
+// This is a cheap stat — no spawn — so the freshness check itself is ~free.
+// -----------------------------------------------------------------------------
+
+// Bound the per-session result map so a long stable session editing many
+// distinct files can't grow the sidecar without limit.
+const NARROW_RESULT_CACHE_MAX_ENTRIES = 50;
+
+function metaFreshnessToken(cwd) {
+  try {
+    const metaPath = join(cwd, FABRIC_DIR_REL, AGENTS_META_FILE);
+    if (!existsSync(metaPath)) return null;
+    return statSync(metaPath).mtimeMs;
+  } catch {
+    return null;
+  }
+}
+
+function narrowResultCacheFileName(sessionId) {
+  const safe = String(sessionId || "anonymous").replace(/[^A-Za-z0-9_.-]/g, "-");
+  return `narrow-result-cache-${safe}.json`;
+}
+
+// Order-independent key for a path-set (sorted + NUL-joined so [a,b] and [b,a]
+// hit the same cache slot).
+function pathSetKey(paths) {
+  return [...paths].sort().join(" ");
+}
+
+// Returns the cached cliPayload for `paths` iff the cache's meta token matches
+// the current knowledge-graph freshness, else null (caller spawns the CLI).
+function readNarrowResultCache(cwd, sessionId, paths, metaToken) {
+  if (metaToken === null) return null;
+  const cache = readJsonState(
+    cwd,
+    narrowResultCacheFileName(sessionId),
+    (parsed) => parsed && typeof parsed === "object" && parsed.results && typeof parsed.results === "object",
+  );
+  if (!cache || cache.meta_token !== metaToken) return null;
+  const hit = cache.results[pathSetKey(paths)];
+  return hit && typeof hit === "object" ? hit : null;
+}
+
+// Persist `cliPayload` under the path-set key. Resets the map when the meta
+// token changed (stale graph) and caps the map size (FIFO-ish: drop oldest
+// insertion-order keys). Best-effort — never throws.
+function writeNarrowResultCache(cwd, sessionId, paths, metaToken, cliPayload) {
+  if (metaToken === null) return;
+  const fileName = narrowResultCacheFileName(sessionId);
+  const prior = readJsonState(
+    cwd,
+    fileName,
+    (parsed) => parsed && typeof parsed === "object" && parsed.results && typeof parsed.results === "object",
+  );
+  const results =
+    prior && prior.meta_token === metaToken && prior.results ? { ...prior.results } : {};
+  results[pathSetKey(paths)] = cliPayload;
+  const keys = Object.keys(results);
+  if (keys.length > NARROW_RESULT_CACHE_MAX_ENTRIES) {
+    for (const stale of keys.slice(0, keys.length - NARROW_RESULT_CACHE_MAX_ENTRIES)) {
+      delete results[stale];
+    }
+  }
+  writeJsonState(cwd, fileName, { meta_token: metaToken, results });
+}
+
+// -----------------------------------------------------------------------------
 // v2.0.0-rc.33 W2 — fabric-config readers + per-file dedup-window sidecar.
 //
 // All readers follow the project convention: inline JSON.parse of
@@ -1189,12 +1275,37 @@ function main(env, stdio) {
       }
     }
 
+    // Resolve session id up-front (needed for the rc.37 NEW-17 result cache
+    // key, and reused by the E3 emit-gate below).
+    const sessionId = resolveSessionId(payload, env);
+
     // Test seam: env.cliResult short-circuits the CLI spawn so unit tests
     // can feed canned plan-context-hint JSON without a built CLI binary.
-    const cliPayload =
-      env && env.cliResult !== undefined
-        ? env.cliResult
-        : invokePlanContextHint(cwd, paths);
+    //
+    // rc.37 NEW-17: when not in test-seam mode, first consult the per-session
+    // result cache keyed on the edited path-set. A hit (same paths, unchanged
+    // knowledge-graph mtime) skips the redundant `fabric plan-context-hint`
+    // cold-start spawn. Misses spawn the CLI then populate the cache. The
+    // env.skipResultCache seam disables both read+write for tests asserting
+    // raw spawn behaviour.
+    let cliPayload;
+    if (env && env.cliResult !== undefined) {
+      cliPayload = env.cliResult;
+    } else {
+      const useResultCache = !(env && env.skipResultCache === true);
+      const metaToken = useResultCache ? metaFreshnessToken(cwd) : null;
+      const cached = useResultCache
+        ? readNarrowResultCache(cwd, sessionId, paths, metaToken)
+        : null;
+      if (cached !== null) {
+        cliPayload = cached;
+      } else {
+        cliPayload = invokePlanContextHint(cwd, paths);
+        if (useResultCache && cliPayload !== null && cliPayload !== undefined) {
+          writeNarrowResultCache(cwd, sessionId, paths, metaToken, cliPayload);
+        }
+      }
+    }
     if (cliPayload === null || cliPayload === undefined) return;
 
     // Protocol v2 (rc.18 TASK-005): wire field is `entries`, no v1 shim.
@@ -1249,7 +1360,7 @@ function main(env, stdio) {
     // can add the counter increment either here (before the early return)
     // or inside applyEmitGate when render === false.
     // -------------------------------------------------------------------------
-    const sessionId = resolveSessionId(payload, env);
+    // sessionId already resolved up-front (rc.37 NEW-17) for the result cache.
     const currentRevisionHash =
       typeof cliPayload.revision_hash === "string" ? cliPayload.revision_hash : "";
     // Test seam: env.cacheSeed short-circuits the on-disk cache read so unit
@@ -1418,6 +1529,12 @@ module.exports = {
   writeNarrowDedupWindow,
   applyNarrowDedupWindow,
   readSummaryMaxLen,
+  // v2.0.0-rc.37 NEW-17 — plan-context-hint result cache exports for tests.
+  metaFreshnessToken,
+  narrowResultCacheFileName,
+  pathSetKey,
+  readNarrowResultCache,
+  writeNarrowResultCache,
   CONSTANTS: {
     CLI_TIMEOUT_MS,
     SUMMARY_MAX_LEN: DEFAULT_SUMMARY_MAX_LEN,

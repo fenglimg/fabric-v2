@@ -325,8 +325,10 @@
       "wave": "D",
       "subject": "knowledge-hint-narrow in-memory cache + multi-path 聚合",
       "done_when": "hook 单 session 共享 plan-context-hint 结果 + MultiEdit N path 单调用",
-      "status": "pending",
-      "estimated_hours": "2-3"
+      "status": "done",
+      "_actual_done": "2026-05-28",
+      "estimated_hours": "2-3",
+      "note": "Multi-path 单调用半边已存在 (extractPaths dedupe within request → invokePlanContextHint 单次 spawn `--paths p1,p2,...`), 本 task 验证保留. 核心新增: plan-context-hint 结果缓存. 关键观察 — 每次 PreToolUse 是独立进程 + invokePlanContextHint spawn (cold node ~50-150ms) 在 E3 session cache 之前无条件跑; '单 session 共享' 实为持久化 CLI 结果到 per-session sidecar (narrow-result-cache-{sessionId}.json via state-store), 同 path-set 重编辑读缓存跳 spawn. Freshness: cache 以 .fabric/agents.meta.json mtime (server 任何 knowledge edit 重写的派生 index) 为 token, mtime 变则 wholesale drop — 纯 stat 无 spawn. pathSetKey 排序+NUL join 做 order-independent key; FIFO cap 50 entries 防长 session 膨胀. resolveSessionId hoist 到 spawn 前复用 (删 E3 处重复 resolve). Test seam env.cliResult/skipResultCache 保留 (tests 不受影响). 引用 state-store lib (完成 NEW-19/30 承诺的 narrow lib 引用). 新增 knowledge-hint-narrow-result-cache.test.ts 6 test (order-indep key / round-trip / meta-token 失效 / null-token bypass / FIFO cap). Gates: tsc 0 / tests 1780 (432+606+742) / lint 0."
     },
     {
       "id": "NEW-18",
