@@ -48,3 +48,6 @@ G-CITE 在 metric_gap_policy 下: 当前 0 < floor 20% = "bug 非 gap, 不许发
 若坚持 qualifying-id-only 定义: ~0, 但这测的是"有适用 KB id 的频率"(soak + 语料依赖), 不是"AI 是否遵守 cite policy"。
 
 → G-CITE 的 in-loop 不可达, 根因不是 instrumentation (已验证 OK), 而是**度量定义 vs target 语义错配** (C) + 真实 id-cite 密度的 soak 依赖。这是用户决策, 我不单方面改 ship 指标语义 (避免移动球门)。
+
+## 二次更正 (防自身过度声明)
+先前写'compliance≈100% (expected_but_missed=0)'是**过度声明, 撤回**: expected_but_missed=0 是因 dev-repo 的 edit-arm 被 stale hook 弄死(0 edit 事件 → 无可比对 → 平凡 0), **不是** 'AI 0 漏 cite'。真相只到: 595 条合规 KB:none cite-line 已解析(AI 在写合规 cite) + 0 qualifying-id。compliance-rate 在 dev-repo **不可算**(缺 edit 信号)。任何诚实数字(qualifying-id 或 compliance 定义)都需 fresh-install(工作 hook)+真 soak(edit+cite 双信号)。→ 用户决 C(公式语义)+A(soak)。

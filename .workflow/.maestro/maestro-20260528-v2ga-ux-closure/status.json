@@ -139,7 +139,7 @@
       "tier": "empirical",
       "target": "cite-coverage ≥ 30% (rc.32 baseline 3.1%)",
       "floor": "≥ 20% (hard-block; 没过不许发 rc.38)",
-      "actual": "BLOCKED-需用户决策。[更正: NEW-3 误报撤销] instrumentation 已验证工作 (hook emit edit_intent_checked count=1; dev-repo 0=stale drift)。compliance 实测≈100% (expected_but_missed=0 + 595 合规 KB:none, 漏 cite=0)。现公式 qualifying-id/edits≈0 测的是'有适用 id 频率'非'守 policy'; 按合规率算≈100% 远过 floor。剩余=公式语义(C, 用户决)+真 id 密度 soak(A, S5 out-of-scope)。拒绝移动球门/造假。",
+      "actual": "BLOCKED-需用户决策。[二次更正, 防自身过度声明] (1) NEW-3 误报撤销: cite instrumentation 已验证工作 (fire hook → edit_intent_checked count=1; dev-repo edits_touched=0 = stale-install drift, install 修)。(2) 595 条合规 KB:none cite-line 已解析 (AI 确在写合规 cite), 0 qualifying-id。**但 compliance-rate 在 dev-repo 不可算**: expected_but_missed=0 是因 edit-arm 被 stale hook 弄死(无 edit 事件可比), 非'AI 0 漏'—— 我先前'≈100% 合规'是过度声明, 撤回。(3) 任何诚实数字 (无论 qualifying-id 定义还是 compliance 定义) 都需 fresh-install(工作 hook) + 真 soak session (edit + cite 双信号) 才能算 → S5 out-of-scope。需用户决: C(公式该测 compliance 含合规 KB:none, 还是 id 密度) + A(授权 soak 测真值)。拒绝移动球门/合成 events 造假。",
       "verifier_cmd": "fabric doctor --cite-coverage --since=7d --client=cc (werewolf dogfood)",
       "verified_at": null,
       "blocking": true
