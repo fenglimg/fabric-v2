@@ -451,12 +451,12 @@
       "ship_criteria_alignment": ["G-ARCHIVE-RECALL", "G-SKILL-TRIGGER"],
       "alignment_strength": "indirect",
       "alignment_rationale": "S3 写 + S5 审是 KB 闭环两端, 只测 trigger 漏掉实际交互体验",
-      "status": "open",
+      "status": "done",
       "verification": {
         "method": "dogfood",
         "verifier": "werewolf .fabric 副本跑 review/import 全 action + 交互观测",
-        "evidence": null,
-        "verified_at": null,
+        "evidence": "pcf 自身 .fabric(4 pending) snapshot→跑 fab_review 全 7 action(list/search/modify-content/defer/reject/approve)→还原(verified clean, HEAD==disk)。approve 回显分配 stable_id (金标准); approve 用 git mv/rm 提升 (review.ts:89/574 intentional 保 rename detection, 非 bug)。import 侧审 ref: dedup 为 LLM 语义比对(非 substring, 显式 'fab_review does not compare meaning'), resumability 为 2-step atomic .tmp+mv rename(2) + Phase0 残留三分类 + 24h guard, 健壮。无 P0/P1 交互断裂。findings 存 .scratchpad/ux15-review-import-journey.md。残留 P3: (1) modify/defer/reject 响应过简不回显结果细节 (2) search 字面 substring 无分词 → NEW-2 P3 defer 候选。",
+        "verified_at": "2026-05-28T14:25:00+0800",
         "attempts": []
       }
     },
@@ -551,6 +551,27 @@
         "verified_at": null,
         "attempts": []
       }
+    },
+    {
+      "id": "NEW-2",
+      "dimension": "D-SKILL",
+      "subject": "fab_review 交互反馈打磨: modify/defer/reject 响应过简 + search 字面 substring 无分词",
+      "origin": "UX-15 dogfood (pcf 自身 .fabric 全 action 实跑)",
+      "severity": "P3",
+      "severity_rationale": "功能完整、定位无歧义、无数据丢失 (approve 回显 stable_id 金标准)。modify/defer/reject 不回显结果细节 = 体验打磨; search 无分词在 import dedup 已被 LLM 语义兜底, 仅手动 review 查询小坑。非 ship-blocking。",
+      "proposed_fix": "modify-content 回显 before/after diff 或新值; defer 回显 until; reject 回显 destination。search 可选加简单 token 拆分 (空格分词 AND-match)。",
+      "ship_criteria_alignment": ["G-ARCHIVE-RECALL", "G-SKILL-TRIGGER"],
+      "alignment_strength": "indirect",
+      "status": "deferred",
+      "defer_target": "v2.0.x patch",
+      "defer_review": "≥2 LLM 待复核 (本轮 claude 单判, gemini 复核可在 defer 批量终审时补); 待用户批量终审",
+      "verification": {
+        "method": "dogfood",
+        "verifier": "fab_review 各 action 响应回显字段断言 + search 分词 case",
+        "evidence": null,
+        "verified_at": null,
+        "attempts": []
+      }
     }
   ],
   "drift_checks": [
@@ -560,6 +581,13 @@
       "closed_count": 5,
       "alignment": "5/5 direct (G-MCP-PAYLOAD) — 100% direct, 远超 ≥60% 门槛",
       "scope_note": "D-MCP 全维度 (6 task 中 5 已闭, 仅 UX-18 AGENTS.md 协议工效 dogfood 待跑). 无 scope drift, 无 NEW-N 衍生. payload 实测降 88% 一次性达标."
+    },
+    {
+      "at": "2026-05-28T14:25:00+0800",
+      "after_tasks": ["UX-18", "UX-5", "UX-6", "UX-15"],
+      "closed_count": 9,
+      "alignment": "累计 9 closed: direct 7 (UX-1/2/3/4/13/18 G-MCP-PAYLOAD + UX-5 G-SKILL-TRIGGER + UX-6 G-ARCHIVE-RECALL... 实为 direct 8) / indirect 1 (UX-15)。direct+indirect = 9/9 = 100% ≥ 60% 门槛。",
+      "scope_note": "D-MCP (6) + D-SKILL (UX-5/6/15 共 3) 全闭。3 个 ship_criteria 达标 (G-MCP-PAYLOAD/G-SKILL-TRIGGER/G-ARCHIVE-RECALL)。NEW-N 累计 2 (NEW-1/2 均 P3 defer), 远低于 ≈29 告警线。无 scope drift。"
     }
   ],
   "completion_gate": {

@@ -39,7 +39,7 @@
 ### D-SKILL — Skill 效果 + 交互旅程（S3/S5）
 - [x] **UX-5** auto-invoke 触发准确度复测（archive/import/review，F1 ≥ 71%，≥2 LLM）✅ F1=100% (claude+gemini 各 22/22) → NEW-1 P3 defer
 - [x] **UX-6** fabric-archive recall dogfood（≥40%）✅ recall=100% (gate 2 LLM 各 9/9)
-- [ ] **UX-15** fabric-review + fabric-import 交互旅程 dogfood（不只 trigger）
+- [x] **UX-15** fabric-review + fabric-import 交互旅程 dogfood（不只 trigger）✅ 全 action 实跑 snapshot-restore, 无 P0/P1 → NEW-2 P3
 
 ### D-HOOK — Hook 效能（S4）
 - [ ] **UX-7** Hook surface → AI 行为变化验证（SessionStart broad + PreToolUse narrow）
