@@ -20,7 +20,7 @@
 | G-CITE | D-HOOK | cite-coverage ≥ 30%（baseline 3.1%） | ⛔ BLOCKED (NEW-3+soak) | ✅ |
 | G-ARCHIVE-RECALL | D-SKILL | archive recall ≥ 40%（baseline 20%） | 100% ✅ | ✅ |
 | G-SKILL-TRIGGER | D-SKILL | auto-invoke F1 ≥ 71% 无回归 | 100% ✅ | ⬜ |
-| G-PARITY | D-PARITY | CC/Codex 5 操作 diff 无 blocking | — | ✅ |
+| G-PARITY | D-PARITY | CC/Codex 5 操作 diff 无 blocking | 无 blocking ✅ | ✅ |
 | G-GREEN | D-GREEN | tsc 0 / test 全绿 / lint 0 / doctor green | 全绿 ✅ | ✅ |
 | G-DOCTOR-RECOVERY | D-CLI | 自救率 ≥80%（floor 60%） | 100% ✅ | ✅ |
 | G-COVERAGE | meta | 每模块 ≥1 task + 收尾 self-audit 0 漏 | — | ✅ |
@@ -54,7 +54,7 @@
 - [x] **UX-18** AGENTS.md 两步协议工效（G5，最高频 AI 交互，P1，≥2 LLM）✅ 修 stale shape + fab_recall 设默认 (claude+gemini SOUND)
 
 ### D-PARITY — 跨客户端（X1，per-client 能力面）
-- [ ] **UX-11** Claude CLI vs Codex CLI 能力面验证（自动，仅 2 CLI，builds-on 工程本 F2）
+- [x] **UX-11** Claude CLI vs Codex CLI 能力面验证 ✅ 共享资产 byte-equal, 唯一 diff=cite hook 挂载点(平台适配,非 blocking)
 - [ ] **UX-19** Claude Desktop Code tab + Codex Desktop 安装正确性 + hook-fire（**manual / 用户手动**，P1）
 
 ### D-GREEN — 基建绿灯（Tier B）

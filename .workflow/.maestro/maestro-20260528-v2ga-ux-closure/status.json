@@ -169,9 +169,9 @@
       "name": "G-PARITY",
       "dimension": "D-PARITY",
       "target": "CC/Codex 5 操作 (install/archive/review/doctor/plan-context) 输出 diff 无 blocking 差异",
-      "actual": null,
+      "actual": "无 blocking 差异: 共享资产 (hooks/lib/skills/MCP/CLI) byte-equal; 5 操作 parity; 唯一 diff=cite-policy-evict 事件挂载点 (Claude UserPromptSubmit vs Codex SessionStart) 为平台约束下正确适配, 非 blocking。见 UX-11 evidence。",
       "verifier_cmd": "cross-client parity smoke (复用工程本 F2 extractWerewolfFixture)",
-      "verified_at": null,
+      "verified_at": "2026-05-28T15:00:00+0800",
       "blocking": true
     },
     {
@@ -384,12 +384,12 @@
       "ship_criteria_alignment": ["G-PARITY"],
       "alignment_strength": "direct",
       "alignment_rationale": "两 CLI 是能进 CI 的自动可测部分; X1 重框为 per-client 能力面自洽",
-      "status": "open",
+      "status": "done",
       "verification": {
         "method": "dogfood",
         "verifier": "cross-client smoke (extractWerewolfFixture 复用), 仅 Claude CLI + Codex CLI",
-        "evidence": null,
-        "verified_at": null,
+        "evidence": "fresh install --yes 进 tmp, 比对 .claude vs .codex 全树。共享资产全等: 4 hooks + 8 lib + 3 skills(全 ref/) byte-equal (fabric-hint.cjs / archive SKILL.md diff -q BYTE-EQUAL, F2 复证)。5 操作 parity: install(两端 ready/0 失败) / doctor(client-agnostic CLI) / plan-context(共享 MCP) / archive+review(两端 SKILL.md 同字节)。hook 事件接线等价, 唯一 diff= cite-policy-evict: Claude→UserPromptSubmit(每 prompt), Codex→SessionStart(每 session) —— **非 blocking 的正确 per-client 适配** (Codex 事件模型无 UserPromptSubmit, SessionStart 是合理 fallback; cite 提醒在 Codex 频率较弱属平台约束, 非可修缺陷)。无 blocking 差异。",
+        "verified_at": "2026-05-28T15:00:00+0800",
         "attempts": []
       }
     },
