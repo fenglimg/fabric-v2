@@ -27,7 +27,7 @@
 - [x] **Wave 2 · P0.6** — Resolver 实现（TDD 转绿 P0.5 red-suite）✓ verified 2026-05-30
 - [x] **Wave 3 · P1** — 多 store 存储+git 核心+跨库 pending 聚合 ✓ verified 2026-05-30
 - [x] **Wave 4 · P2** — MCP 工具契约+resolution+写路径防泄漏 ✓ verified 2026-05-30
-- [ ] **Wave 5 · P3** — CLI 命令面+install 事务+bindings 快照
+- [x] **Wave 5 · P3** — CLI 命令面+install 事务+bindings 快照 ✓ verified 2026-05-30
 - [ ] **Wave 6 · P4** — Skills+Hooks 改造（store-aware）
 - [ ] **Wave 7 · P5** — 治理+端侧 parity E2E
 - [ ] **Wave 8 · P6** — 性能硬化+观测
@@ -38,7 +38,8 @@
 - 跨 store pending 聚合：P1 提供 API → P2 fab_review 使用
 
 ## 当前状态
-- Wave 5 / P3（进行中）。**5/9 phase done**：P0 契约 → P0.5 测试墙 → P0.6 resolver TDD → P1 多 store 核心 → P2 MCP 契约/resolution/防泄漏。shared 476 + server 639 测试全绿。
+- Wave 6 / P4（进行中）。**6/9 phase done**：P0 契约 → P0.5 测试墙 → P0.6 resolver TDD → P1 多 store 核心 → P2 MCP 契约/resolution/防泄漏 → **P3 CLI 命令面+install 事务+sync+bindings 快照+doctor**。cli 806 + shared 476 + server 639 全绿。
+- **P3 done(2026-05-30)**：收尾闭合 3 真实缺口(verify-before-fix 命中 checklist 过度声称)——sync --continue/--abort(run-sync 编排+citty+8 测试)· bindings 快照接线(bind/sync→regenerateBindingsSnapshot, 与 scopeExplain 一致, 3 测试)· doctor 接 storeDoctorChecks(S10, best-effort 不阻断, 1 测试)。+12 测试, repo tsc 0。
 - P2 done 范围(verifier=6 工具 schema 测试+secret/lint negative)：provenance/mcp-store 契约 + resolution 双轴引擎 + secret-scan(已 LIVE extract gate) + cross-store lint。**live 多 store 运行时行为(provenance emission/多 store 写目标/cross-store live 拦截)依赖 P3 创建多 store 环境,按 roadmap「P3 后自然扩展」**。
 - **P3 子进展(done_when 件大部已建+测试, cli 785 全绿)**：
   - DONE：bindings 快照(P3→P4 链, 与 resolver 一致)· store lifecycle 核心 · **store 6 命令 list/add/remove/explain/bind/switch-write**(集成测试)· **whoami/status**(F5)· **install 事务核心**(顺序 apply/逆序 rollback/receipt S1/S28/S36)· **install --global 核心**(事务化 uid+personal store+global config, 真实 git, 幂等)· **clone 缺 store 引导**(missingRequiredStores S51)· **非法 config abort**(load 抛错 S34)· **sync 状态机**(conflict/offline/continue/abort+deferred push S9/S17/S37)
