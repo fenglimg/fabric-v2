@@ -29,7 +29,7 @@
 - [x] **Wave 4 · P2** — MCP 工具契约+resolution+写路径防泄漏 ✓ verified 2026-05-30
 - [x] **Wave 5 · P3** — CLI 命令面+install 事务+bindings 快照 ✓ verified 2026-05-30
 - [x] **Wave 6 · P4** — Skills+Hooks 改造（store-aware）✓ verified 2026-05-30
-- [ ] **Wave 7 · P5** — 治理+端侧 parity E2E
+- [x] **Wave 7 · P5** — 治理+端侧 parity E2E ✓ verified 2026-05-30
 - [ ] **Wave 8 · P6** — 性能硬化+观测
 
 ## 三依赖链（不可断）
@@ -38,7 +38,8 @@
 - 跨 store pending 聚合：P1 提供 API → P2 fab_review 使用
 
 ## 当前状态
-- Wave 7 / P5（进行中）。**7/9 phase done**：P0→P0.5→P0.6→P1→P2→P3→**P4 Skills+Hooks store-aware**。cli 820 + shared 496 + server 639 全绿。
+- Wave 8 / P6（进行中）。**8/9 phase done**：P0→P0.5→P0.6→P1→P2→P3→P4→**P5 治理+三端 parity E2E**。cli 822 + shared 500 + server 639 全绿。
+- **P5 done(2026-05-30)**：parity-matrix-e2e(7 能力×3 端=21 cell 全交付, 闭合 P0→P5 链) · R5#3 隐私边界 negative(isPersonalLeakIntoSharedStore + resolver personal-scope 结构路由) · 渲染三端+fabric_language(既有 bootstrap 传播+i18n 快照).
 - **P4 done(2026-05-30)**：cite store 前缀(parser+CJS twin+cite_stores+policy 文档化) · 3 skill + 新 fabric-sync skill store-aware(install/uninstall 双向接线) · 3 hook(SessionStart/PreToolUse/Stop)接 bindings-snapshot-reader.cjs 渲染 store 标签(走 CLI 预生成快照不直读 store 树) · S65 RCE 防线(findStoreExecutableViolations + doctor executable_in_store) · S3/S44 thin-stub(@.fabric/AGENTS.md)+canonical 集中已存。记 ADJ-P4-1(既有 TS/CJS applied tag drift, 非阻塞).
 - **P3 done(2026-05-30)**：收尾闭合 3 真实缺口(verify-before-fix 命中 checklist 过度声称)——sync --continue/--abort(run-sync 编排+citty+8 测试)· bindings 快照接线(bind/sync→regenerateBindingsSnapshot, 与 scopeExplain 一致, 3 测试)· doctor 接 storeDoctorChecks(S10, best-effort 不阻断, 1 测试)。+12 测试, repo tsc 0。
 - P2 done 范围(verifier=6 工具 schema 测试+secret/lint negative)：provenance/mcp-store 契约 + resolution 双轴引擎 + secret-scan(已 LIVE extract gate) + cross-store lint。**live 多 store 运行时行为(provenance emission/多 store 写目标/cross-store live 拦截)依赖 P3 创建多 store 环境,按 roadmap「P3 后自然扩展」**。
