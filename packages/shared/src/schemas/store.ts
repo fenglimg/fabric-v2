@@ -158,6 +158,15 @@ export const mountedStoreSchema = z
     // Git remote locator for this clone, if any. Absent = local-only store
     // (valid; doctor nudges to add a remote for backup — R5#5, P6).
     remote: z.string().min(1).optional(),
+    // v2.1.0-rc.1 P3: marks the implicit personal store (the one minted by
+    // `install --global`). Exactly one mounted store carries personal=true; it
+    // is the write target for personal-scope entries (R5#3) and always in the
+    // read-set (S11). Optional (no default) so the output type stays a plain
+    // optional — consumers coalesce `?? false` when building resolver input.
+    personal: z.boolean().optional(),
+    // Whether writes are accepted into this store from this machine. Optional;
+    // consumers coalesce `?? true`. Shared stores cloned read-only set false.
+    writable: z.boolean().optional(),
   })
   .strict();
 

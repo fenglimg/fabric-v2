@@ -83,7 +83,7 @@ export async function installGlobalCore(
       apply: () => {
         const next = globalConfigSchema.parse({
           uid: options.uid,
-          stores: [{ store_uuid: options.personalStoreUuid, alias }],
+          stores: [{ store_uuid: options.personalStoreUuid, alias, personal: true }],
         });
         saveGlobalConfig(next, options.globalRoot);
         config = next;

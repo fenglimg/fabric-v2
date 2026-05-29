@@ -10,6 +10,7 @@ export const allCommands = {
   // v2.1.0-rc.1 P3 (F5): read-only identity/status info commands.
   whoami: () => import("./whoami.js").then((module) => module.default),
   status: () => import("./status.js").then((module) => module.default),
+  "scope-explain": () => import("./scope-explain.js").then((module) => module.default),
   doctor: () => import("./doctor.js").then((module) => module.default),
   uninstall: () => import("./uninstall.js").then((module) => module.default),
   config: () => import("./config.js").then((module) => module.default),
