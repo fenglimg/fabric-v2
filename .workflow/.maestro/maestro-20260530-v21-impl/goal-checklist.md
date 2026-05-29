@@ -40,6 +40,8 @@
 ## 当前状态
 - Wave 5 / P3（进行中）。**5/9 phase done**：P0 契约 → P0.5 测试墙 → P0.6 resolver TDD → P1 多 store 核心 → P2 MCP 契约/resolution/防泄漏。shared 476 + server 639 测试全绿。
 - P2 done 范围(verifier=6 工具 schema 测试+secret/lint negative)：provenance/mcp-store 契约 + resolution 双轴引擎 + secret-scan(已 LIVE extract gate) + cross-store lint。**live 多 store 运行时行为(provenance emission/多 store 写目标/cross-store live 拦截)依赖 P3 创建多 store 环境,按 roadmap「P3 后自然扩展」**。
-- 下一步 P3：install 事务(plan/apply/verify/rollback+receipt) → store lifecycle(list/add/remove/bind/switch-write/explain) → sync 冲突/离线 → bindings 快照 + doctor + status/scope-explain/whoami。**这是触及 cli 包的大相 phase, 且 install 事务驱动整个多 store 存储落地**。
+- **P3 子进展(done_when 件大部已建+测试, cli 785 全绿)**：
+  - DONE：bindings 快照(P3→P4 链, 与 resolver 一致)· store lifecycle 核心 · **store 6 命令 list/add/remove/explain/bind/switch-write**(集成测试)· **whoami/status**(F5)· **install 事务核心**(顺序 apply/逆序 rollback/receipt S1/S28/S36)· **install --global 核心**(事务化 uid+personal store+global config, 真实 git, 幂等)· **clone 缺 store 引导**(missingRequiredStores S51)· **非法 config abort**(load 抛错 S34)· **sync 状态机**(conflict/offline/continue/abort+deferred push S9/S17/S37)
+  - REMAINING(thin citty 包装 + I/O 边, 需研读既有 install.ts/doctor.ts)：`install --global`/`sync` citty 命令(派生 uid from git user.email hash + crypto.randomUUID + git pull --rebase 实操接 sync 状态机)· scope-explain 命令(组装 resolveInput 跑 resolveReadSet)· doctor 扩展(drift/rebuild/refresh-registrations/--debug-bundle)。逻辑核心已全测, 剩 git/uid I/O 接线。
 - 待拍板（非阻塞）：ADJ-P0-1 ProjectRootResolver 四信号优先级解读，见 status.json#/needs_adjudication
 </content>
