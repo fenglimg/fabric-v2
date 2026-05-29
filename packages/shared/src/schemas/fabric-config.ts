@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { requiredStoreEntrySchema } from "./store.js";
+
 export const auditModeSchema = z.enum(["strict", "warn", "off"]);
 
 // v2.0: Fabric scope is locked to Claude Code, Cursor, and Codex CLI.
@@ -54,6 +56,20 @@ export const defaultLayerFilterSchema = z.enum(["team", "personal", "both"]);
 
 export const fabricConfigSchema = z.object({
   clientPaths: clientPathsSchema.optional(),
+  // v2.1.0-rc.1 P0 (S13-projectid): the project's stable identity. A UUID
+  // bound at `fabric install` time; a remote-derived hash is only a SUGGESTED
+  // default, never authoritative (so re-homing the git remote does not change
+  // project identity). Optional under the zero-user clean-slate — pre-v2.1
+  // fabric-config.json files simply lack it and the ProjectRootResolver mints
+  // one on next install. `.fabric/fabric-config.json` carrying this field is
+  // also the upward marker the ProjectRootResolver searches for (S15/S32).
+  project_id: z.string().optional(),
+  // v2.1.0-rc.1 P0 (S59/B3): the stores this repo expects mounted. Each entry
+  // names a store by alias/UUID with an optional suggested_remote (or the
+  // `$personal` sentinel). Drives the read-set (required_stores ∪ implicit
+  // personal, S11/S54) and `clone`'s missing-store onboarding (S51). Optional
+  // + absent → read-set is just the implicit personal store.
+  required_stores: z.array(requiredStoreEntrySchema).optional(),
   // rc.17 (R-cut): the dev/test fixture-path config field was removed
   // end-to-end. The `EXTERNAL_FIXTURE_PATH` env var is now the sole source
   // consumed by `resolveDevMode()`. No z.preprocess alias — pre-rc.17

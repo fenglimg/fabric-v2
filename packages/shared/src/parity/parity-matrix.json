@@ -1,0 +1,76 @@
+{
+  "version": "1",
+  "generated_for": "v2.1.0-rc.1 (P0 contract stub — P4 develops against it, P5 verifies E2E)",
+  "capabilities": [
+    {
+      "id": "hook.session-start-hint",
+      "surface": "hook",
+      "description": "On session start, surface broad-scoped knowledge entries grouped by store with global_ref labels.",
+      "clients": {
+        "claudeCode": { "supported": true, "mechanism": "SessionStart hook; session_id from stdin payload" },
+        "codexCLI": { "supported": true, "mechanism": "session-start equivalent; corresponding session identifier" },
+        "cursor": { "supported": true, "mechanism": ".cursor/hooks session-start; reads same CLI JSON output" }
+      }
+    },
+    {
+      "id": "hook.pretooluse-hint",
+      "surface": "hook",
+      "description": "Before an edit, emit a store-aware narrow hint for the touched file paths.",
+      "clients": {
+        "claudeCode": { "supported": true, "mechanism": "PreToolUse hook; additionalContext JSON contract" },
+        "codexCLI": { "supported": true, "mechanism": "pre-edit equivalent hook" },
+        "cursor": { "supported": true, "mechanism": ".cursor/hooks pre-tool equivalent" }
+      }
+    },
+    {
+      "id": "hook.stop-backlog-hint",
+      "surface": "hook",
+      "description": "On stop, surface per-store review/archive backlog (per-store, not aggregated).",
+      "clients": {
+        "claudeCode": { "supported": true, "mechanism": "Stop hook" },
+        "codexCLI": { "supported": true, "mechanism": "turn-end equivalent" },
+        "cursor": { "supported": true, "mechanism": ".cursor/hooks stop equivalent" }
+      }
+    },
+    {
+      "id": "skill.fabric-archive",
+      "surface": "skill",
+      "description": "Archive flow writes to the active write store and echoes written_to_store.",
+      "clients": {
+        "claudeCode": { "supported": true, "mechanism": ".claude/skills (managed block)" },
+        "codexCLI": { "supported": true, "mechanism": ".codex/skills" },
+        "cursor": { "supported": true, "mechanism": ".cursor/skills (also reads .claude/.codex skills for back-compat)" }
+      }
+    },
+    {
+      "id": "skill.fabric-review",
+      "surface": "skill",
+      "description": "Review aggregates pending across the read-set's writable stores; promotion is a normal git commit.",
+      "clients": {
+        "claudeCode": { "supported": true },
+        "codexCLI": { "supported": true },
+        "cursor": { "supported": true }
+      }
+    },
+    {
+      "id": "mcp.fab_recall",
+      "surface": "mcp",
+      "description": "Recall returns read-set candidates, each carrying store_uuid + alias + local_id + global_ref.",
+      "clients": {
+        "claudeCode": { "supported": true, "mechanism": "MCP stdio; cwd→project via ProjectRootResolver" },
+        "codexCLI": { "supported": true, "mechanism": "MCP stdio" },
+        "cursor": { "supported": true, "mechanism": "MCP stdio" }
+      }
+    },
+    {
+      "id": "render.knowledge-text",
+      "surface": "render",
+      "description": "Plain-text / markdown minimal render set, language per project fabric_language.",
+      "clients": {
+        "claudeCode": { "supported": true, "mechanism": "markdown in context" },
+        "codexCLI": { "supported": true, "mechanism": "markdown/plain text" },
+        "cursor": { "supported": true, "mechanism": "markdown in context" }
+      }
+    }
+  ]
+}

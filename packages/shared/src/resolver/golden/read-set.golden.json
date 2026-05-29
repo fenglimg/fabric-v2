@@ -1,0 +1,106 @@
+{
+  "contract": "read-set.golden",
+  "cases": [
+    {
+      "name": "read-set-is-required-union-personal",
+      "note": "S11/S54: read-set = project required_stores ∪ implicit personal store; team scope writes to the active write store (S60).",
+      "input": {
+        "uid": "u-abc123",
+        "mountedStores": [
+          { "store_uuid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "alias": "personal", "writable": true, "personal": true },
+          { "store_uuid": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", "alias": "team", "remote": "git@github.com:acme/team-kb.git", "writable": true, "personal": false }
+        ],
+        "requiredStores": [{ "id": "team" }],
+        "activeWriteAlias": "team"
+      },
+      "writeScope": "team",
+      "expected": {
+        "readSet": {
+          "stores": [
+            { "store_uuid": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", "alias": "team", "remote": "git@github.com:acme/team-kb.git", "writable": true },
+            { "store_uuid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "alias": "personal", "writable": true }
+          ],
+          "warnings": []
+        },
+        "writeTarget": { "store_uuid": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", "alias": "team" },
+        "writeWarnings": []
+      }
+    },
+    {
+      "name": "personal-scope-writes-to-personal-store",
+      "note": "S60: a personal-scope entry always lands in the implicit personal store regardless of active write alias (R5#3 privacy boundary).",
+      "input": {
+        "uid": "u-abc123",
+        "mountedStores": [
+          { "store_uuid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "alias": "personal", "writable": true, "personal": true },
+          { "store_uuid": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", "alias": "team", "remote": "git@github.com:acme/team-kb.git", "writable": true, "personal": false }
+        ],
+        "requiredStores": [{ "id": "team" }],
+        "activeWriteAlias": "team"
+      },
+      "writeScope": "personal",
+      "expected": {
+        "readSet": {
+          "stores": [
+            { "store_uuid": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", "alias": "team", "remote": "git@github.com:acme/team-kb.git", "writable": true },
+            { "store_uuid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "alias": "personal", "writable": true }
+          ],
+          "warnings": []
+        },
+        "writeTarget": { "store_uuid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "alias": "personal" },
+        "writeWarnings": []
+      }
+    },
+    {
+      "name": "missing-required-store-warns",
+      "note": "S51: a required_stores entry with no matching mounted store surfaces a missing_store warning (NOT a silent drop). Personal write still resolves.",
+      "input": {
+        "uid": "u-abc123",
+        "mountedStores": [
+          { "store_uuid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "alias": "personal", "writable": true, "personal": true }
+        ],
+        "requiredStores": [{ "id": "platform", "suggested_remote": "git@github.com:acme/platform-kb.git" }]
+      },
+      "writeScope": "personal",
+      "expected": {
+        "readSet": {
+          "stores": [
+            { "store_uuid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "alias": "personal", "writable": true }
+          ],
+          "warnings": [
+            { "code": "missing_store", "ref": "platform", "message": "required store 'platform' is not mounted; run `fabric store add` (suggested remote: git@github.com:acme/platform-kb.git)" }
+          ]
+        },
+        "writeTarget": { "store_uuid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "alias": "personal" },
+        "writeWarnings": []
+      }
+    },
+    {
+      "name": "local-only-store-nudges-no-remote",
+      "note": "R5#5: a mounted store with no remote is included (writable) but surfaces a local_only_no_remote nudge to add a backup remote.",
+      "input": {
+        "uid": "u-abc123",
+        "mountedStores": [
+          { "store_uuid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "alias": "personal", "writable": true, "personal": true },
+          { "store_uuid": "cccccccc-cccc-4ccc-8ccc-cccccccccccc", "alias": "team", "writable": true, "personal": false }
+        ],
+        "requiredStores": [{ "id": "team" }],
+        "activeWriteAlias": "team"
+      },
+      "writeScope": "team",
+      "expected": {
+        "readSet": {
+          "stores": [
+            { "store_uuid": "cccccccc-cccc-4ccc-8ccc-cccccccccccc", "alias": "team", "writable": true },
+            { "store_uuid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "alias": "personal", "writable": true }
+          ],
+          "warnings": [
+            { "code": "local_only_no_remote", "ref": "team", "message": "store 'team' is local-only; add a git remote to back it up (`fabric store ... ` / doctor nudge)" }
+          ]
+        },
+        "writeTarget": { "store_uuid": "cccccccc-cccc-4ccc-8ccc-cccccccccccc", "alias": "team" },
+        "writeWarnings": []
+      }
+    }
+  ]
+}
