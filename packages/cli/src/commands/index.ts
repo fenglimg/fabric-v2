@@ -5,6 +5,8 @@
 // recipe if a future web UI surface re-introduces it.
 export const allCommands = {
   install: () => import("./install.js").then((module) => module.default),
+  // v2.1.0-rc.1 P3: multi-store lifecycle command group (list/add/remove/explain).
+  store: () => import("./store.js").then((module) => module.default),
   doctor: () => import("./doctor.js").then((module) => module.default),
   uninstall: () => import("./uninstall.js").then((module) => module.default),
   config: () => import("./config.js").then((module) => module.default),
