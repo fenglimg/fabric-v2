@@ -38,8 +38,9 @@
 - 跨 store pending 聚合：P1 提供 API → P2 fab_review 使用
 
 ## 当前状态
-- Wave 4 / P2，step 20（maestro-plan P2）。**4/9 phase done**：P0 契约 → P0.5 测试墙 → P0.6 resolver TDD → P1 多 store 核心。
-- 无 it.fails 残留（全部转绿）。shared 463 测试全绿。
-- 下一步 P2：6 MCP 工具 schema(provenance/store-qualified) + resolution 双轴 tie-break + 写路径防泄漏(secret-scan gate + 跨 store lint negative)。
+- Wave 4 / P2（进行中）。**4/9 phase done**：P0 契约 → P0.5 测试墙 → P0.6 resolver TDD → P1 多 store 核心。shared 476 测试全绿。
+- **P2 子进展（contract/engine/lint 层 done，server 接线 remaining）**：
+  - DONE: provenance schema · store-qualified-id 解析(裸 id 唯一/shadow 歧义 S61) · resolution 双轴+tie-break+不降级 引擎 · secret-scan(S26) · cross-store lint(S49) · 6 工具 store-aware 契约 schema(mcp-store-contracts) — 全含 negative test
+  - REMAINING: server 工具接线 —— recall/plan-context/sections emit provenance；archive/extract 写 P1 默认 store + viability gate 调 hasSecrets + 回显 written_to_store；fab_review 走 aggregatePendingAcrossStores（单 default store，不需 P3 多 store CLI）
 - 待拍板（非阻塞）：ADJ-P0-1 ProjectRootResolver 四信号优先级解读，见 status.json#/needs_adjudication
 </content>

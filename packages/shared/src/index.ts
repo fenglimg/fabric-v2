@@ -23,6 +23,7 @@ export * from "./store/core.js";
 export * from "./store/secret-scan.js";
 export * from "./store/cross-store-lint.js";
 export * from "./schemas/provenance.js";
+export * from "./schemas/mcp-store-contracts.js";
 export * from "./schemas/forensic-report.js";
 export * from "./schemas/init-context.js";
 export * from "./schemas/events.js";
