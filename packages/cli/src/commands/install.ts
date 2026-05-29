@@ -20,6 +20,7 @@ import type { ClaudeMcpScope } from "../config/json.js";
 import { t } from "../i18n.js";
 import * as configCommand from "./config.js";
 import { installHooks } from "../install/hooks-orchestrator.js";
+import { runGlobalInstall } from "../install/run-global-install.js";
 import { writeFabricAgentsSnapshot } from "../install/write-bootstrap-snapshot.js";
 import { detectExistingLanguage, type ResolvedLanguage } from "../lib/detect-language.js";
 import { buildForensicReport } from "../scanner/forensic.js";
@@ -48,6 +49,11 @@ type InitArgs = {
   debug?: boolean;
   yes?: boolean;
   "dry-run"?: boolean;
+  // v2.1.0-rc.1 P3 (S4/S8): global multi-store install. `--global` sets up
+  // ~/.fabric (uid + personal store + global config) and, when `url` is given,
+  // clones + mounts that shared store. Fast-paths before the per-repo pipeline.
+  global?: boolean;
+  url?: string;
   // rc.35 TASK-08 (P0-5/6): skills-only refresh path. Reruns ONLY the
   // template/skills/* copy stage; skips bootstrap / mcp / hooks /
   // settings.json merges. Designed for the rc.34 W1 SKILL-description-update
@@ -320,6 +326,15 @@ export const installCommand = defineCommand({
       description: t("cli.install.args.force-hooks-only.description"),
       default: false,
     },
+    global: {
+      type: "boolean",
+      description: "Set up global Fabric (~/.fabric: uid + personal store + config)",
+      default: false,
+    },
+    url: {
+      type: "string",
+      description: "With --global: clone + mount this shared store remote",
+    },
   },
   async run({ args }: { args: InitArgs }) {
     await runInitCommand(args);
@@ -433,6 +448,14 @@ export async function runHooksOnlyRefresh(targetInput: string): Promise<void> {
 
 export async function runInitCommand(args: InitArgs): Promise<InitExecutionResult | void> {
   const logger = createDebugLogger(args.debug);
+
+  // v2.1.0-rc.1 P3 (S4/S8): `fabric install --global [<url>]` fast-path — global
+  // multi-store setup, independent of the per-repo install pipeline below.
+  if (args.global === true) {
+    await runGlobalInstall({ url: args.url });
+    return;
+  }
+
   const resolution = resolveDevMode(args.target, process.cwd());
 
   // rc.35 TASK-08 (P0-5/6): --force-skills-only fast-path. Short-circuits

@@ -7,7 +7,8 @@
 ## §1 Feature Surface
 
 ### Public commands (5)
-- `install` — 项目脚手架与客户端配置写入；flags: `--target`, `--debug`, `--yes`, `--dry-run`
+- `install` — 项目脚手架与客户端配置写入；flags: `--target`, `--debug`, `--yes`, `--dry-run`, `--force-skills-only`, `--force-hooks-only`, `--global`(v2.1 P3: 全局多 store 安装 ~/.fabric uid+personal store+config), `--url`(配合 --global: clone+mount 共享 store remote)
+- **v2.1 P3 新增命令**: `store` (子命令 list/add/remove/explain/bind/switch-write — 多 store 生命周期, detach≠delete), `whoami` (机器 uid + mounted stores, F5), `status` (项目 store 状态聚合, S30/F5), `scope-explain` (读集+写目标解析显化, S21/S53/F5)
 - `doctor` — 一致性自检与修复；flags: `--target`, `--fix`, `--fix-knowledge`, `--json`, `--layer`(rc.24: filter cite contract audit by KB layer — team|personal|all), `--archive-history`(rc.25: per-session archive attempt audit, reads session_archive_attempted events), `--history`(rc.37 NEW-33: 统一逐日历史视图; mode=archive|fix|all), `--rescan`, `--strict`, `--yes`（`--rescan` 替代 rc.15 已移除的 `fabric scan` 顶层命令）
 - `serve` — 启动 HTTP MCP server；flags: `--port`(默认 7373), `--host`(默认 127.0.0.1), `--target`, `--debug`
 - `uninstall` — Remove Fabric-managed artifacts symmetrically to `fabric install`. Flags: `--target`, `--debug`, `--yes`, `--dry-run`.
