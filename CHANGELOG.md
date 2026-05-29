@@ -5,13 +5,28 @@ All notable changes to Fabric will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [2.0.0] - 2026 (GA)
+## [2.0.1] - 2026-05-29 (GA)
 
-> Fabric v2.0.0 ships **stdio-only MCP** + a knowledge-first surface for
+> Fabric v2.0.1 is the **first stable GA** of the v2 line. (`2.0.0` was burned by
+> an accidental pre-rc publish on 2026-05-13 that fell outside npm's unpublish
+> window; it carries no GA content and is deprecated — always install `2.0.1`+.)
+> Fabric ships **stdio-only MCP** + a knowledge-first surface for
 > Claude Code, Cursor, and Codex CLI. The migration guide from rc.x is
 > [docs/migration-rc-to-ga.md](./docs/migration-rc-to-ga.md). This entry rolls
-> up rc.37 + summarizes the rc.5 → rc.37 chain at a high level; per-rc detail
-> stays in the entries below.
+> up the rc.37 → rc.39 chain + summarizes rc.5 → rc.36 at a high level; per-rc
+> detail stays in the entries below.
+
+### Added (rc.38 → rc.39 → GA)
+
+- **events.jsonl cite-audit rollup** — `assistant_turn_observed` rows past the cite window are folded into a compliance counter inside `runDoctorHistoryAll` instead of accumulating; raw rows are physically pruned and a one-time migration compacts the historical ledger, so `events.jsonl` no longer grows unbounded while long-range cite-compliance trend is preserved (rc.39).
+- **events emit-fold + archive gzip** — over-window turn rows fold at emit time; rotated archives are gzip-compressed (rc.39).
+
+### Fixed (rc.38 → GA)
+
+- `meta_manually_diverged` doctor check no longer permanently false-positives on `personal`-layer nodes — root cause was a bare `join(projectRoot, contentRef)` violating the dual-root layout; now resolves via `resolveContentRefPath` (rc.39).
+- `cite_compliance_rate` dead-denominator — `edit_intent_checked` events were missing `session_id`, breaking the compliance-rate calculation (rc.38 UX-8/C).
+- fabric-archive auto-invoke recall raised to 100% on the evaluated natural-language trigger set (rc.38 UX-6).
+- install `Next steps` onboarding bridge + concrete tagline to soften the first-run cognitive cliff (rc.38 UX-10).
 
 ### Highlights
 
