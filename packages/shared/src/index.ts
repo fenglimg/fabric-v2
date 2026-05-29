@@ -26,6 +26,7 @@ export * from "./schemas/provenance.js";
 export * from "./schemas/mcp-store-contracts.js";
 export * from "./schemas/bindings-snapshot.js";
 export * from "./store/bindings.js";
+export * from "./store/store-lifecycle.js";
 export * from "./schemas/forensic-report.js";
 export * from "./schemas/init-context.js";
 export * from "./schemas/events.js";
