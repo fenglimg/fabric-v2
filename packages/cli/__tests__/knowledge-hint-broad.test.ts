@@ -553,6 +553,53 @@ describe("knowledge-hint-broad.cjs — main", () => {
     expect(stderr).toMatch(/fab_get_knowledge_sections/);
   });
 
+  it("appends a per-store read-set label from the bindings snapshot (v2.1 P4, F4/S63)", () => {
+    // Project config supplies the project_id that keys the snapshot.
+    const projectId = "11111111-1111-4111-8111-111111111111";
+    mkdirSync(join(tempRoot, ".fabric"), { recursive: true });
+    writeFileSync(
+      join(tempRoot, ".fabric", "fabric-config.json"),
+      JSON.stringify({ project_id: projectId, fabric_language: "en" }),
+      "utf8",
+    );
+    // Isolated FABRIC_HOME with a CLI-pre-generated snapshot (hook reads THIS,
+    // never the store trees).
+    const home = mkdtempSync(join(tmpdir(), "knowledge-hint-broad-home-"));
+    const prevHome = process.env.FABRIC_HOME;
+    process.env.FABRIC_HOME = home;
+    mkdirSync(join(home, ".fabric", "state", "bindings"), { recursive: true });
+    writeFileSync(
+      join(home, ".fabric", "state", "bindings", `${projectId}_resolved.json`),
+      JSON.stringify({
+        version: 1,
+        project_id: projectId,
+        generated_at: "2026-05-30T00:00:00.000Z",
+        read_set: {
+          stores: [
+            { store_uuid: "p", alias: "personal", writable: true },
+            { store_uuid: "t", alias: "team", writable: true },
+          ],
+          warnings: [],
+        },
+        write_target: { store_uuid: "t", alias: "team" },
+      }),
+      "utf8",
+    );
+    try {
+      const writes = captureStderr({
+        payload: makePayload([makeEntry("KT-DEC-0001", "decision", "proven", "s")]),
+      });
+      const stderr = writes.join("");
+      expect(stderr).toContain("read-set stores:");
+      expect(stderr).toContain("team (write)");
+      expect(stderr).toContain("personal");
+    } finally {
+      if (prevHome === undefined) delete process.env.FABRIC_HOME;
+      else process.env.FABRIC_HOME = prevHome;
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
   it("never throws on malformed payload (defensive try/catch)", () => {
     const writes: string[] = [];
     const stderr = { write: (chunk: string) => writes.push(chunk) };

@@ -68,6 +68,28 @@ const { readTextState, writeTextState } = require("./lib/state-store.cjs");
 // v2.0.0-rc.37 NEW-30: shared client detection (replaces the inline
 // CLAUDE_PROJECT_DIR single-bit check below).
 const { isClaudeCode } = require("./lib/client-adapter.cjs");
+// v2.1.0-rc.1 P4 (F4/S63): hook-side reader for the CLI pre-generated
+// resolved-bindings snapshot. The hook NEVER re-resolves stores or walks store
+// trees — it only echoes the read-set the CLI already computed. Best-effort.
+let bindingsSnapshotReader = null;
+try {
+  bindingsSnapshotReader = require("./lib/bindings-snapshot-reader.cjs");
+} catch {
+  // Lib missing (old install) — store labels degrade to silent absence.
+}
+
+// Read the project's own `project_id` from `.fabric/fabric-config.json` (the
+// snapshot key). Reading the PROJECT config is not a store-tree read — it is how
+// the hook learns which snapshot to fetch. Returns null on any failure.
+function readProjectId(cwd) {
+  try {
+    const raw = readFileSync(join(cwd, ".fabric", "fabric-config.json"), "utf8");
+    const parsed = JSON.parse(raw);
+    return typeof parsed.project_id === "string" ? parsed.project_id : null;
+  } catch {
+    return null;
+  }
+}
 
 // -----------------------------------------------------------------------------
 // rc.12: SessionStart broad-menu is now unconditionally emitted on every
@@ -734,6 +756,24 @@ function main(env, stdio) {
     }
 
     if (lines.length === 0) return; // nothing to say — silent exit
+
+    // v2.1.0-rc.1 P4 (F4/S63): append a per-store read-set label from the
+    // CLI-pre-generated bindings snapshot so the session opens aware of which
+    // stores it reads and where writes land. Best-effort, never blocks: a
+    // missing snapshot / single-store setup just omits the line.
+    if (bindingsSnapshotReader !== null) {
+      try {
+        const projectId = readProjectId(cwd);
+        if (projectId) {
+          const label = bindingsSnapshotReader.formatStoreLabels(
+            bindingsSnapshotReader.readBindingsSnapshot(projectId),
+          );
+          if (label) lines.push(label);
+        }
+      } catch {
+        // store labels are decorative provenance — never crash the hook
+      }
+    }
 
     // v2.0.0-rc.37 NEW-23: SessionStart 索引末尾"下一步"引导。Tail line that
     // tells the AI what to do with the broad index it just received. Without
