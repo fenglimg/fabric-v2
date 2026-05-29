@@ -26,7 +26,7 @@
 - [x] **Wave 1 · P0.5** — 验证基建（隔离测试墙，第一可执行件）✓ verified 2026-05-30
 - [x] **Wave 2 · P0.6** — Resolver 实现（TDD 转绿 P0.5 red-suite）✓ verified 2026-05-30
 - [x] **Wave 3 · P1** — 多 store 存储+git 核心+跨库 pending 聚合 ✓ verified 2026-05-30
-- [ ] **Wave 4 · P2** — MCP 工具契约+resolution+写路径防泄漏
+- [x] **Wave 4 · P2** — MCP 工具契约+resolution+写路径防泄漏 ✓ verified 2026-05-30
 - [ ] **Wave 5 · P3** — CLI 命令面+install 事务+bindings 快照
 - [ ] **Wave 6 · P4** — Skills+Hooks 改造（store-aware）
 - [ ] **Wave 7 · P5** — 治理+端侧 parity E2E
@@ -38,9 +38,8 @@
 - 跨 store pending 聚合：P1 提供 API → P2 fab_review 使用
 
 ## 当前状态
-- Wave 4 / P2（进行中）。**4/9 phase done**：P0 契约 → P0.5 测试墙 → P0.6 resolver TDD → P1 多 store 核心。shared 476 测试全绿。
-- **P2 子进展（contract/engine/lint 层 done，server 接线 remaining）**：
-  - DONE: provenance schema · store-qualified-id 解析(裸 id 唯一/shadow 歧义 S61) · resolution 双轴+tie-break+不降级 引擎 · secret-scan(S26) · cross-store lint(S49) · 6 工具 store-aware 契约 schema(mcp-store-contracts) — 全含 negative test
-  - REMAINING: server 工具接线 —— recall/plan-context/sections emit provenance；archive/extract 写 P1 默认 store + viability gate 调 hasSecrets + 回显 written_to_store；fab_review 走 aggregatePendingAcrossStores（单 default store，不需 P3 多 store CLI）
+- Wave 5 / P3（进行中）。**5/9 phase done**：P0 契约 → P0.5 测试墙 → P0.6 resolver TDD → P1 多 store 核心 → P2 MCP 契约/resolution/防泄漏。shared 476 + server 639 测试全绿。
+- P2 done 范围(verifier=6 工具 schema 测试+secret/lint negative)：provenance/mcp-store 契约 + resolution 双轴引擎 + secret-scan(已 LIVE extract gate) + cross-store lint。**live 多 store 运行时行为(provenance emission/多 store 写目标/cross-store live 拦截)依赖 P3 创建多 store 环境,按 roadmap「P3 后自然扩展」**。
+- 下一步 P3：install 事务(plan/apply/verify/rollback+receipt) → store lifecycle(list/add/remove/bind/switch-write/explain) → sync 冲突/离线 → bindings 快照 + doctor + status/scope-explain/whoami。**这是触及 cli 包的大相 phase, 且 install 事务驱动整个多 store 存储落地**。
 - 待拍板（非阻塞）：ADJ-P0-1 ProjectRootResolver 四信号优先级解读，见 status.json#/needs_adjudication
 </content>
