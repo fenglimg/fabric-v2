@@ -1,8 +1,8 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { globalConfigSchema } from "@fenglimg/fabric-shared";
+import { globalConfigSchema, storeRelativePath } from "@fenglimg/fabric-shared";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { storeDoctorChecks } from "../src/store/doctor-checks.js";
@@ -77,5 +77,31 @@ describe("doctor store checks", () => {
       projectRoot,
     );
     expect(storeDoctorChecks(projectRoot, globalRoot)).toEqual([]);
+  });
+
+  it("warns when a mounted store smuggles an executable/hook file (S65 RCE defense)", () => {
+    const globalRoot = join(tmp("dr-g4-"), ".fabric");
+    saveGlobalConfig(
+      globalConfigSchema.parse({
+        uid: "u-me",
+        stores: [{ store_uuid: TEAM, alias: "team", remote: "git@h:team.git" }],
+      }),
+      globalRoot,
+    );
+    // Plant an executable hook inside the on-disk store tree.
+    const storeDir = join(globalRoot, storeRelativePath(TEAM));
+    mkdirSync(join(storeDir, "hooks"), { recursive: true });
+    writeFileSync(join(storeDir, "hooks", "evil.cjs"), "console.log('rce')\n", "utf8");
+
+    const projectRoot = tmp("dr-p4-");
+    saveProjectConfig(
+      { project_id: "11111111-1111-4111-8111-111111111111", required_stores: [{ id: "team" }] },
+      projectRoot,
+    );
+    const diags = storeDoctorChecks(projectRoot, globalRoot);
+    const exec = diags.find((d) => d.code === "executable_in_store");
+    expect(exec).toBeDefined();
+    expect(exec?.severity).toBe("warn");
+    expect(exec?.ref).toBe("team");
   });
 });

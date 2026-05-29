@@ -1,3 +1,7 @@
+import { join } from "node:path";
+
+import { findStoreExecutableViolations, storeRelativePath } from "@fenglimg/fabric-shared";
+
 import { loadGlobalConfig, resolveGlobalRoot } from "./global-config-io.js";
 import { missingRequiredStores } from "./store-ops.js";
 
@@ -12,7 +16,8 @@ import { missingRequiredStores } from "./store-ops.js";
 export type StoreDiagnosticCode =
   | "no_global_config"
   | "missing_required_store"
-  | "local_only_store";
+  | "local_only_store"
+  | "executable_in_store";
 
 export interface StoreDiagnostic {
   code: StoreDiagnosticCode;
@@ -53,6 +58,17 @@ export function storeDoctorChecks(
         severity: "info",
         ref: store.alias,
         message: `store '${store.alias}' is local-only; add a git remote to back it up`,
+      });
+    }
+    // S65 RCE defense: a mounted store must be data-only. Flag any executable /
+    // hook surface smuggled into the store tree (it is NEVER projected/run).
+    const violations = findStoreExecutableViolations(join(globalRoot, storeRelativePath(store.store_uuid)));
+    if (violations.length > 0) {
+      diagnostics.push({
+        code: "executable_in_store",
+        severity: "warn",
+        ref: store.alias,
+        message: `store '${store.alias}' contains executable/script files (${violations.slice(0, 3).join(", ")}${violations.length > 3 ? ", …" : ""}) — stores are data-only; Fabric never runs them (S65)`,
       });
     }
   }
