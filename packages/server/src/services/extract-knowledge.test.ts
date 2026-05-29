@@ -73,6 +73,36 @@ function buildInput(partial: Partial<FabExtractKnowledgeInput>): FabExtractKnowl
 }
 
 describe("extractKnowledge", () => {
+  it("extractKnowledge_secret_scan_gate_blocks_credential_content", async () => {
+    // v2.1.0-rc.1 P2 (S26-gate) negative test: content carrying a credential
+    // must be refused (no pending written) — a secret must never reach a store.
+    const projectRoot = await createTempProject();
+
+    const result = await extractKnowledge(projectRoot, buildInput({
+      source_sessions: ["sess-secret"],
+      user_messages_summary: "We hardcoded the AWS key AKIAIOSFODNN7EXAMPLE in the config — note for later.",
+      type: "pitfalls",
+      slug: "leaked-aws-key",
+    }));
+
+    expect(result.pending_path).toBe("");
+    const ledger = await readEventLedger(projectRoot, { event_type: "knowledge_archive_attempted" });
+    expect(
+      ledger.events.some((e) => ((e as { reason?: string }).reason ?? "").includes("secret_detected")),
+    ).toBe(true);
+  });
+
+  it("extractKnowledge_secret_scan_gate_passes_clean_content", async () => {
+    const projectRoot = await createTempProject();
+    const result = await extractKnowledge(projectRoot, buildInput({
+      source_sessions: ["sess-clean"],
+      user_messages_summary: "Use bcrypt with cost factor 12 for password hashing per the security review.",
+      type: "decisions",
+      slug: "bcrypt-cost-12",
+    }));
+    expect(result.pending_path).not.toBe("");
+  });
+
   it("extractKnowledge_writes_pending_file_without_id", async () => {
     const projectRoot = await createTempProject();
 

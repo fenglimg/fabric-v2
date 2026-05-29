@@ -10,6 +10,7 @@ import {
   type ProposedReason,
 } from "@fenglimg/fabric-shared/schemas/api-contracts";
 import type { EventLedgerEventInput } from "@fenglimg/fabric-shared";
+import { hasSecrets } from "@fenglimg/fabric-shared";
 
 import { AgentsMetaFileMissingError } from "../meta-reader.js";
 
@@ -274,6 +275,33 @@ export async function extractKnowledge(
       correlation_id: primarySession,
       session_id: primarySession,
       reason: `extract_knowledge:${sanitizedSlug || input.slug}:${reason}`,
+    });
+    return {
+      pending_path: "",
+      idempotency_key: idempotencyKey,
+    };
+  }
+
+  // v2.1.0-rc.1 P2 (S26-gate): secret-scan viability gate. Refuse to persist a
+  // pending whose user-supplied text carries a credential-shaped string — a
+  // secret must never land in a store git (least of all a shared one). Mirrors
+  // the opacity gate's refuse-with-empty-pending_path contract above; runs on
+  // the already-injection-sanitized fields and is store-agnostic (works for the
+  // current layout and the v2.1 multi-store write target alike). Clean content
+  // scans to no findings, so the hot path is unchanged.
+  const secretScanTarget = [
+    input.user_messages_summary ?? "",
+    input.session_context ?? "",
+    input.must_read_if ?? "",
+    ...(input.intent_clues ?? []),
+  ].join("\n");
+  if (hasSecrets(secretScanTarget)) {
+    await emitEventBestEffort(projectRoot, {
+      event_type: "knowledge_archive_attempted",
+      timestamp: new Date().toISOString(),
+      correlation_id: primarySession,
+      session_id: primarySession,
+      reason: `extract_knowledge:${sanitizedSlug || input.slug}:secret_detected`,
     });
     return {
       pending_path: "",
