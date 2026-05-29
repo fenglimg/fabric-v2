@@ -7,6 +7,7 @@ import {
   installFabricArchiveSkill,
   installFabricImportSkill,
   installFabricReviewSkill,
+  installFabricSyncSkill,
   installSharedSkillLib,
   installHookLibs,
   installKnowledgeHintBroadHook,
@@ -91,6 +92,7 @@ export async function installHooks(
   results.push(...await runStep(() => installFabricArchiveSkill(normalizedTarget)));
   results.push(...await runStep(() => installFabricReviewSkill(normalizedTarget)));
   results.push(...await runStep(() => installFabricImportSkill(normalizedTarget)));
+  results.push(...await runStep(() => installFabricSyncSkill(normalizedTarget)));
   // rc.37 NEW-13: cross-skill shared policy lib (single source the 3 skills'
   // ref files reference for protected tokens / routing keys / layer heuristic).
   results.push(...await runStep(() => installSharedSkillLib(normalizedTarget)));

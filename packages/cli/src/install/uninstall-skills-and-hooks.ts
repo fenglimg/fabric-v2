@@ -84,6 +84,16 @@ export async function uninstallFabricImportSkill(
   return removeSkill("skill-import", SKILL_DESTINATIONS.fabricImport, projectRoot);
 }
 
+/**
+ * Inverse of `installFabricSyncSkill` (v2.1 P4). Removes each SKILL.md at
+ * `SKILL_DESTINATIONS.fabricSync`, then attempts to remove the empty parent.
+ */
+export async function uninstallFabricSyncSkill(
+  projectRoot: string,
+): Promise<UninstallStepResult[]> {
+  return removeSkill("skill-sync", SKILL_DESTINATIONS.fabricSync, projectRoot);
+}
+
 async function removeSkill(
   step: string,
   rels: readonly string[],
@@ -531,7 +541,10 @@ export async function uninstallBootstrapStage(
     removeArchiveHintHook(projectRoot),
   );
 
-  // 5. Skill files (reverse of install order: import → review → archive)
+  // 5. Skill files (reverse of install order: sync → import → review → archive)
+  await runAndCollect(results, "skill-sync", projectRoot, () =>
+    uninstallFabricSyncSkill(projectRoot),
+  );
   await runAndCollect(results, "skill-import", projectRoot, () =>
     uninstallFabricImportSkill(projectRoot),
   );

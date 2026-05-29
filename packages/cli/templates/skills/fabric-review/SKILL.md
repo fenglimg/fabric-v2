@@ -40,6 +40,10 @@ Read `.fabric/fabric-config.json`; resolve:
 
 Missing or unreadable → defaults silently.
 
+### Store routing (v2.1 multi-store)
+
+Review iterates **per-store** — the read-set may span multiple stores (`fabric scope-explain team` → resolved `readSet.stores`). Pending/backlog is reported per-store (NOT aggregated into one undifferentiated pile); each candidate's provenance store is surfaced in cites as `KB: <store-alias>:<id>`. Promotion (draft → verified/proven) is a normal edit + git commit **inside that store's own repo** — no cross-store move. A `dismissed`/`modify` that flips layer between team and personal still goes through `AskUserQuestion`. Never read `~/.fabric` store trees directly; go through the MCP recall path / `scope-explain`.
+
 ### UX i18n Policy
 
 Read `fabric_language` (`zh-CN` / `en` / `zh-CN-hybrid` / `match-existing`); emit user-facing prose in resolved variant. Protected tokens (`fab_review`, `fab_extract_knowledge`, `relevance_scope`, layer/scope enums, `stable_id`, the verbatim `强 team` / `强 personal` / `默认 team` block) NEVER translated. `AskUserQuestion` policy: `header` + `question` translate; `options[]` stay English (routing keys).

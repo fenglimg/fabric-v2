@@ -43,6 +43,10 @@ Parse user's prompt for time-window (`今日` / `last week`), topic keyword (`rc
 
 Read `.fabric/fabric-config.json`; resolve `archive_max_candidates_per_batch` (default 8), `archive_max_recent_paths` (default 20), `archive_digest_max_sessions` (default 10). Missing file → defaults silently.
 
+### Phase 0.6 — Store routing (v2.1 multi-store)
+
+Archives land in the **active write store** for the entry's scope — NEVER pick a store yourself. Run `fabric scope-explain team` (or the relevant scope) to get the resolved `writeTarget` (alias + UUID); that is where `fab_extract_knowledge` persists. Single-store / no global config → the lone store (back-compat). After persisting, **echo the target store alias** to the user (`归档到 store '<alias>'`). Personal-scope entries route to the personal store (never the shared team store, R5#3). Do NOT read `~/.fabric` store trees directly — go through `scope-explain` / the MCP write path.
+
 ### UX i18n Policy
 
 Read `fabric_language` (`zh-CN` / `en` / `zh-CN-hybrid` / `match-existing`); emit user-facing prose in resolved variant. Protected tokens (MCP tool names, schema fields, the verbatim `强 team` / `强 personal` / `默认 team` heuristic) NEVER translated. `AskUserQuestion` policy: `header` + `question` translate; `options[]` stay English (routing keys).

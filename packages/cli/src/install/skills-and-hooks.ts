@@ -75,6 +75,8 @@ export type InstallOptions = {
 const SKILL_TEMPLATE_REL = "skills/fabric-archive/SKILL.md";
 const SKILL_REVIEW_TEMPLATE_REL = "skills/fabric-review/SKILL.md";
 const SKILL_IMPORT_TEMPLATE_REL = "skills/fabric-import/SKILL.md";
+// v2.1.0-rc.1 P4 (S46): multi-store git sync assistant skill.
+const SKILL_SYNC_TEMPLATE_REL = "skills/fabric-sync/SKILL.md";
 const HOOK_SCRIPT_TEMPLATE_REL = "hooks/fabric-hint.cjs";
 // rc.6 TASK-019 (E1): SessionStart broad-injection hook script. Sibling to
 // fabric-hint.cjs — shares install/copy plumbing but is registered against a
@@ -121,6 +123,12 @@ export const SKILL_DESTINATIONS = {
   fabricImport: [
     ".claude/skills/fabric-import/SKILL.md",
     ".codex/skills/fabric-import/SKILL.md",
+  ],
+  // v2.1.0-rc.1 P4 (S46): fabric-sync mirrors the sibling skills' 2-client
+  // coverage (Claude Code + Codex CLI surface a Skills directory).
+  fabricSync: [
+    ".claude/skills/fabric-sync/SKILL.md",
+    ".codex/skills/fabric-sync/SKILL.md",
   ],
 } as const;
 
@@ -447,6 +455,31 @@ export async function installFabricImportSkill(
     results.push(result);
   }
   results.push(...(await installSkillRefFiles(projectRoot, "fabric-import")));
+  return results;
+}
+
+/**
+ * v2.1.0-rc.1 P4 (S46): install the fabric-sync Skill — the AI-assisted layer
+ * over `fabric sync` (multi-store git traversal + rebase-conflict resolution).
+ * Sibling installer to archive/review/import; same 2-client coverage. No `ref/`
+ * dir (single-file skill), so installSkillRefFiles records a `no-ref-dir` skip.
+ */
+export async function installFabricSyncSkill(
+  projectRoot: string,
+  _options: InstallOptions = {},
+): Promise<InstallStepResult[]> {
+  const source = await readTemplate(SKILL_SYNC_TEMPLATE_REL);
+  validateSkillCanonicalSize(source, "fabric-sync");
+  const targets = SKILL_DESTINATIONS.fabricSync.map((rel) => join(projectRoot, rel));
+  const results: InstallStepResult[] = [];
+  for (const target of targets) {
+    const staleMsg = inspectStaleInstall(target, source);
+    const result = await copyTextIdempotent("skill-sync", source, target);
+    if (staleMsg && result.status === "written") {
+      result.message = result.message ? `${staleMsg}; ${result.message}` : staleMsg;
+    }
+    results.push(result);
+  }
   return results;
 }
 
