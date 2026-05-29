@@ -42,6 +42,7 @@
 - P2 done 范围(verifier=6 工具 schema 测试+secret/lint negative)：provenance/mcp-store 契约 + resolution 双轴引擎 + secret-scan(已 LIVE extract gate) + cross-store lint。**live 多 store 运行时行为(provenance emission/多 store 写目标/cross-store live 拦截)依赖 P3 创建多 store 环境,按 roadmap「P3 后自然扩展」**。
 - **P3 子进展(done_when 件大部已建+测试, cli 785 全绿)**：
   - DONE：bindings 快照(P3→P4 链, 与 resolver 一致)· store lifecycle 核心 · **store 6 命令 list/add/remove/explain/bind/switch-write**(集成测试)· **whoami/status**(F5)· **install 事务核心**(顺序 apply/逆序 rollback/receipt S1/S28/S36)· **install --global 核心**(事务化 uid+personal store+global config, 真实 git, 幂等)· **clone 缺 store 引导**(missingRequiredStores S51)· **非法 config abort**(load 抛错 S34)· **sync 状态机**(conflict/offline/continue/abort+deferred push S9/S17/S37)
-  - REMAINING(thin citty 包装 + I/O 边, 需研读既有 install.ts/doctor.ts)：`install --global`/`sync` citty 命令(派生 uid from git user.email hash + crypto.randomUUID + git pull --rebase 实操接 sync 状态机)· scope-explain 命令(组装 resolveInput 跑 resolveReadSet)· doctor 扩展(drift/rebuild/refresh-registrations/--debug-bundle)。逻辑核心已全测, 剩 git/uid I/O 接线。
+  - DONE 续：**scope-explain 命令**(组装 resolveInput 跑 resolver, F5)· **doctor 多 store 健康检查核心**(no_global/missing_required/local-only nudge, S10/S51/R5#5)
+  - REMAINING(纯 git/uid I/O 边 + 既有大文件集成, 逻辑核心已全测)：`install --global`/`sync` citty 命令外壳(派生 uid from git user.email hash + crypto.randomUUID + git pull --rebase 实操接 sync 状态机 + 把 install-global 核心接 install.ts)· doctor-checks 接入既有 doctor.ts 输出 · refresh-registrations/--debug-bundle redaction。**P3 全部命令逻辑+事务+状态机+诊断已建并测试(cli 791 全绿), 剩纯 I/O 接线。**
 - 待拍板（非阻塞）：ADJ-P0-1 ProjectRootResolver 四信号优先级解读，见 status.json#/needs_adjudication
 </content>
