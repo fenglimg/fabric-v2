@@ -528,6 +528,61 @@ describe("fabric-hint.cjs — main (Signal A edit-count integration)", () => {
     expect(payload.reason).toMatch(/20 次编辑/);
   });
 
+  it("appends per-store read-set label to the Stop hint reason (v2.1 P4, F4/S63)", () => {
+    mkdirSync(join(tempRoot, ".fabric"), { recursive: true });
+    const projectId = "11111111-1111-4111-8111-111111111111";
+    writeFileSync(
+      join(tempRoot, ".fabric", "fabric-config.json"),
+      JSON.stringify({ project_id: projectId }),
+      "utf8",
+    );
+    const proposedTs = NOW_MS - 5 * HOUR_MS;
+    writeFileSync(
+      join(tempRoot, ".fabric", "events.jsonl"),
+      `${JSON.stringify(makeEvent("knowledge_proposed", proposedTs))}\n`,
+      "utf8",
+    );
+    const editLines: string[] = [];
+    for (let i = 1; i <= 20; i += 1) {
+      editLines.push(new Date(proposedTs + i * 60 * 1000).toISOString());
+    }
+    seedEditCounter(tempRoot, editLines);
+
+    const home = mkdtempSync(join(tmpdir(), "fabric-hint-store-home-"));
+    const prevHome = process.env.FABRIC_HOME;
+    process.env.FABRIC_HOME = home;
+    mkdirSync(join(home, ".fabric", "state", "bindings"), { recursive: true });
+    writeFileSync(
+      join(home, ".fabric", "state", "bindings", `${projectId}_resolved.json`),
+      JSON.stringify({
+        version: 1,
+        project_id: projectId,
+        generated_at: "2026-05-30T00:00:00.000Z",
+        read_set: {
+          stores: [
+            { store_uuid: "p", alias: "personal", writable: true },
+            { store_uuid: "t", alias: "team", writable: true },
+          ],
+          warnings: [],
+        },
+        write_target: { store_uuid: "t", alias: "team" },
+      }),
+      "utf8",
+    );
+    try {
+      const writes: string[] = [];
+      hook.main({ cwd: tempRoot, now: FIXED_NOW }, { stdout: { write: (c: string) => writes.push(c) } });
+      expect(writes).toHaveLength(1);
+      const payload = JSON.parse(writes[0] as string) as { reason: string };
+      expect(payload.reason).toContain("read-set stores:");
+      expect(payload.reason).toContain("team (write)");
+    } finally {
+      if (prevHome === undefined) delete process.env.FABRIC_HOME;
+      else process.env.FABRIC_HOME = prevHome;
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
   it("stays silent when 19 edits accumulated (just below default threshold 20) and <24h", () => {
     mkdirSync(join(tempRoot, ".fabric"), { recursive: true });
     const proposedTs = NOW_MS - 5 * HOUR_MS;

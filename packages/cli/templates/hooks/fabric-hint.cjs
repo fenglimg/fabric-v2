@@ -81,6 +81,27 @@ try {
   stateStore = null;
 }
 
+// v2.1.0-rc.1 P4 (F4/S63): hook-side reader for the CLI pre-generated
+// resolved-bindings snapshot. The Stop hint surfaces the read-set stores
+// (per-store, NOT aggregated into one pile) without re-resolving / walking
+// store trees. Best-effort — a missing lib/snapshot omits the store line.
+let bindingsSnapshotReader = null;
+try {
+  bindingsSnapshotReader = require("./lib/bindings-snapshot-reader.cjs");
+} catch {
+  bindingsSnapshotReader = null;
+}
+
+// Read the project's own `project_id` (the snapshot key) from its config.
+function readProjectId(cwd) {
+  try {
+    const parsed = JSON.parse(readFileSync(join(cwd, ".fabric", "fabric-config.json"), "utf8"));
+    return typeof parsed.project_id === "string" ? parsed.project_id : null;
+  } catch {
+    return null;
+  }
+}
+
 // CONSTANTS — duplicated from packages/server/src/services/_shared.ts.
 // DRY violation accepted: this hook script runs in user repos WITHOUT
 // node_modules access, so it cannot import from @fenglimg/fabric-server.
@@ -1905,6 +1926,25 @@ function main(env, stdio) {
     // Append the bilingual dismiss-option line so the lever is discoverable.
     if (typeof result.reason === "string") {
       result.reason = `${result.reason}\n${renderDismissOption(result.signal, variant)}`;
+    }
+
+    // v2.1.0-rc.1 P4 (F4/S63): surface the read-set stores on the Stop hint so
+    // backlog/maintenance nudges are read per-store, not as one undifferentiated
+    // pile. Best-effort; missing snapshot / single-store omits the line.
+    if (bindingsSnapshotReader !== null && typeof result.reason === "string") {
+      try {
+        const projectId = readProjectId(cwd);
+        if (projectId) {
+          const label = bindingsSnapshotReader.formatStoreLabels(
+            bindingsSnapshotReader.readBindingsSnapshot(projectId),
+          );
+          if (label) {
+            result.reason = `${result.reason}\n${label}`;
+          }
+        }
+      } catch {
+        // store label is decorative provenance — never crash the hook
+      }
     }
 
     // v2.0.0-rc.7 T10: Signal D uses its own cooldown sidecar (day-based,

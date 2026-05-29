@@ -85,6 +85,26 @@ const { resolveOpaqueSummaries } = require("./lib/summary-fallback.cjs");
 // cache (skips a redundant CLI cold-start spawn when the same path-set is
 // re-edited within a session and the knowledge graph hasn't changed).
 const { readJsonState, writeJsonState } = require("./lib/state-store.cjs");
+// v2.1.0-rc.1 P4 (F4/S63): hook-side reader for the CLI pre-generated
+// resolved-bindings snapshot. Store-aware hint surfaces the write-target store
+// for the edited file WITHOUT re-resolving or walking store trees. Best-effort.
+let bindingsSnapshotReader = null;
+try {
+  bindingsSnapshotReader = require("./lib/bindings-snapshot-reader.cjs");
+} catch {
+  // Lib missing (old install) — store labels degrade to silent absence.
+}
+
+// Read the project's own `project_id` (the snapshot key) from its config. Not a
+// store-tree read — it is how the hook learns which snapshot to fetch.
+function readProjectId(cwd) {
+  try {
+    const parsed = JSON.parse(readFileSync(join(cwd, ".fabric", "fabric-config.json"), "utf8"));
+    return typeof parsed.project_id === "string" ? parsed.project_id : null;
+  } catch {
+    return null;
+  }
+}
 
 // -----------------------------------------------------------------------------
 // CONSTANTS
@@ -1465,6 +1485,25 @@ function main(env, stdio) {
     }
     const lines = renderSummary({ ...cliPayload, entries: resolvedEntries }, summaryMaxLen);
     if (lines.length === 0) return;
+
+    // v2.1.0-rc.1 P4 (F4/S63): store-aware hint — append the write-target store
+    // so the edit-time hint says WHERE a derived knowledge entry would land.
+    // Best-effort; missing snapshot / single-store setup omits the line.
+    if (bindingsSnapshotReader !== null) {
+      try {
+        const projectId = readProjectId(cwd);
+        if (projectId) {
+          const snapshot = bindingsSnapshotReader.readBindingsSnapshot(projectId);
+          const writeAlias =
+            snapshot && snapshot.write_target && snapshot.write_target.alias;
+          if (writeAlias) {
+            lines.push(`[fabric] writes here land in store '${writeAlias}'`);
+          }
+        }
+      } catch {
+        // store label is decorative provenance — never crash the hook
+      }
+    }
 
     // Stderr: human-facing breadcrumb + legacy contract.
     for (const line of lines) {

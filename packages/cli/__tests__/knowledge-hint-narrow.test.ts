@@ -17,6 +17,7 @@ import {
   mkdtempSync,
   readFileSync,
   rmSync,
+  writeFileSync,
 } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
@@ -479,6 +480,44 @@ describe("knowledge-hint-narrow.cjs — main (E2 narrow render)", () => {
     expect(stderr).toMatch(/narrow-scoped knowledge entries match/);
     expect(stderr).toMatch(/KT-DEC-0001/);
     expect(stderr).toMatch(/如需重读 broad 决策/);
+  });
+
+  it("appends the write-target store label from the bindings snapshot (v2.1 P4, F4/S63)", () => {
+    const root = mkRoot("narrow-main-store-label");
+    const projectId = "11111111-1111-4111-8111-111111111111";
+    mkdirSync(join(root, ".fabric"), { recursive: true });
+    writeFileSync(
+      join(root, ".fabric", "fabric-config.json"),
+      JSON.stringify({ project_id: projectId }),
+      "utf8",
+    );
+    const home = mkdtempSync(join(tmpdir(), "narrow-store-home-"));
+    const prevHome = process.env.FABRIC_HOME;
+    process.env.FABRIC_HOME = home;
+    mkdirSync(join(home, ".fabric", "state", "bindings"), { recursive: true });
+    writeFileSync(
+      join(home, ".fabric", "state", "bindings", `${projectId}_resolved.json`),
+      JSON.stringify({
+        version: 1,
+        project_id: projectId,
+        generated_at: "2026-05-30T00:00:00.000Z",
+        read_set: { stores: [{ store_uuid: "t", alias: "team", writable: true }], warnings: [] },
+        write_target: { store_uuid: "t", alias: "team" },
+      }),
+      "utf8",
+    );
+    try {
+      const writes = captureStderr({
+        cwd: root,
+        payload: { tool_name: "Edit", tool_input: { file_path: "src/foo.ts" } },
+        cliResult: makeCliPayload([makeEntry("KT-DEC-0001", "decision", "proven", "s")]),
+      });
+      expect(writes.join("")).toContain("writes here land in store 'team'");
+    } finally {
+      if (prevHome === undefined) delete process.env.FABRIC_HOME;
+      else process.env.FABRIC_HOME = prevHome;
+      rmSync(home, { recursive: true, force: true });
+    }
   });
 
   it("stays silent when narrow matches == 0", () => {
