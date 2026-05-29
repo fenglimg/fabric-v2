@@ -32,16 +32,31 @@ export type ProjectRootSignal = z.infer<typeof projectRootSignalSchema>;
 // supplied when the environment/filesystem provides them. Modeled as plain
 // data so the resolver stays pure/testable (no direct fs/env access in the
 // contract — the impl wires real signal collection in P0.6).
+//
+// Precedence (highest first), applied by `resolve`:
+//   env > markerDir > repoRoot   (and bare cwd with no marker/repo → null)
+// The `signalUsed` distinguishes a cwd-self marker from an ancestor marker by
+// comparing `markerDir` to `cwd` (markerDir === cwd → "cwd", else "marker").
+// This makes all four signals reachable while honoring "one repo = one .fabric
+// = one project_id" — see ADJ-P0-1 and project-root.golden.json.
 export const projectRootSignalsSchema = z
   .object({
     // FABRIC_PROJECT_ROOT, if set.
     env: z.string().optional(),
-    // Nearest ancestor directory holding `.fabric/fabric-config.json`, if any.
+    // Nearest directory AT-OR-ABOVE cwd holding `.fabric/fabric-config.json`,
+    // if any (the upward marker search result; may equal cwd).
     markerDir: z.string().optional(),
     // Always present — the process cwd.
     cwd: z.string().min(1),
     // git repo root, if inside a repo.
     repoRoot: z.string().optional(),
+    // The `project_id` read from the winning root's fabric-config.json during
+    // (fs) signal collection. The pure resolver echoes it — it cannot invent a
+    // UUID. Worktrees of one repo share the committed config, hence the same
+    // project_id (S45 merge). Absent when no .fabric config exists at the root
+    // yet (fresh repo-fallback) → resolution still yields the root with a null
+    // projectId so the caller can mint+persist one at install time.
+    discoveredProjectId: z.string().optional(),
   })
   .strict();
 export type ProjectRootSignals = z.infer<typeof projectRootSignalsSchema>;
@@ -52,7 +67,9 @@ export const projectRootResolutionSchema = z
     projectRoot: z.string().min(1),
     // Stable project identity. One repo = one .fabric = one project_id (S32);
     // git worktrees of the same repo resolve to the SAME project_id (S45).
-    projectId: z.string().min(1),
+    // Null when the resolved root has no fabric-config.json yet (fresh
+    // repo-fallback) — the caller mints + persists a UUID at install time.
+    projectId: z.string().min(1).nullable(),
     // Which signal won.
     signalUsed: projectRootSignalSchema,
   })

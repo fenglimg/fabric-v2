@@ -13,15 +13,24 @@ import { createStoreResolver } from "../../src/resolver/store-resolver.js";
 import { cleanupTestWall, createLegacyInRepoLayout } from "../helpers/test-wall.js";
 
 // ---------------------------------------------------------------------------
-// v2.1.0-rc.1 P0.5 — RED-SUITE (xfail). Every case here is `it.fails`: the
-// resolver / disk-reader STUBS throw NotImplemented, so each test currently
-// PASSES-as-expected-failure and does NOT break the main CI ("主 CI 只验证测试
-// 墙本身可执行, xfail 不计失败"). P0.6 implements the resolvers and P1 the disk
-// reader; at that point these assertions start passing for real, `it.fails`
-// inverts to a failure, and the implementer removes `.fails` — the TDD ratchet.
+// v2.1.0-rc.1 — Golden test-wall. The resolver suites are GREEN as of P0.6
+// (the four-signal ProjectRootResolver + StoreResolver are implemented and
+// asserted against the golden EXPECTED VALUES in resolver/golden/*.json).
 //
-// The golden EXPECTED VALUES live in resolver/golden/*.json (authored in P0).
+// The legacy-negative case remains `it.fails` (xfail) until P1 implements the
+// store disk reader (`recognizeStoreDir`) — at that point its assertion passes,
+// `it.fails` inverts, and P1 removes `.fails` (the TDD ratchet).
+//
+// Warnings are compared by {code, ref} (the contract), not by message text
+// (UX copy, i18n later) — so resolver wording can evolve without breaking the
+// golden contract.
 // ---------------------------------------------------------------------------
+
+function warningKeys(
+  warnings: ReadonlyArray<{ code: string; ref: string }>,
+): Array<{ code: string; ref: string }> {
+  return warnings.map((w) => ({ code: w.code, ref: w.ref }));
+}
 
 function readGolden(relative: string): unknown {
   return JSON.parse(readFileSync(fileURLToPath(new URL(relative, import.meta.url)), "utf8"));
@@ -38,23 +47,26 @@ afterEach(() => {
   cleanupTestWall();
 });
 
-describe("P0.5 red-suite — ProjectRootResolver golden (xfail until P0.6)", () => {
+describe("ProjectRootResolver golden (P0.6 green)", () => {
   for (const c of projectRootGolden.cases) {
-    it.fails(`project-root: ${c.name}`, () => {
+    it(`project-root: ${c.name}`, () => {
       const got = createProjectRootResolver().resolve(c.signals);
       expect(got).toEqual(c.expected);
     });
   }
 });
 
-describe("P0.5 red-suite — StoreResolver golden (xfail until P0.6)", () => {
+describe("StoreResolver golden (P0.6 green)", () => {
   for (const c of readSetGolden.cases) {
-    it.fails(`read-set: ${c.name}`, () => {
+    it(`read-set: ${c.name}`, () => {
       const resolver = createStoreResolver();
-      expect(resolver.resolveReadSet(c.input)).toEqual(c.expected.readSet);
+      const readSet = resolver.resolveReadSet(c.input);
+      expect(readSet.stores).toEqual(c.expected.readSet.stores);
+      expect(warningKeys(readSet.warnings)).toEqual(warningKeys(c.expected.readSet.warnings));
+
       const wt = resolver.resolveWriteTarget(c.input, c.writeScope);
       expect(wt.target).toEqual(c.expected.writeTarget);
-      expect(wt.warnings).toEqual(c.expected.writeWarnings);
+      expect(warningKeys(wt.warnings)).toEqual(warningKeys(c.expected.writeWarnings));
     });
   }
 });
