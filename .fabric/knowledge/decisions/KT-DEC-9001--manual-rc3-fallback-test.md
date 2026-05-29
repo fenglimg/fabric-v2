@@ -1,7 +1,7 @@
 ---
 id: KT-DEC-9001
 type: decisions
-maturity: draft
+maturity: verified
 layer: team
 created_at: 2026-05-10T15:28:03.164Z
 source_session: WFS-rc3-dogfood-2026-05-10

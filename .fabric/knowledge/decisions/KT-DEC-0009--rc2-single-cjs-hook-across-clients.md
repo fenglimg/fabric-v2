@@ -1,7 +1,7 @@
 ---
 id: KT-DEC-0009
 type: decisions
-maturity: draft
+maturity: verified
 layer: team
 created_at: 2026-05-10T11:29:43.862Z
 source_session: WFS-rc2-impl-2026-05-10

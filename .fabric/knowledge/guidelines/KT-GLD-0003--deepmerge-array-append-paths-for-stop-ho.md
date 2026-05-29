@@ -1,7 +1,7 @@
 ---
 id: KT-GLD-0003
 type: guidelines
-maturity: draft
+maturity: verified
 layer: team
 created_at: 2026-05-10T11:29:43.867Z
 source_session: WFS-rc2-impl-2026-05-10

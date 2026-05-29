@@ -1,7 +1,7 @@
 ---
 id: KT-DEC-9004
 type: decisions
-maturity: draft
+maturity: verified
 layer: team
 created_at: 2026-05-14T02:58:43.499Z
 source_sessions: ["WFS-2026-05-14-fabric-skills-contract-fix"]

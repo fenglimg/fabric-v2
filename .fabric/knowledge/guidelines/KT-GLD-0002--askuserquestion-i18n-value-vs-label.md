@@ -1,7 +1,7 @@
 ---
 id: KT-GLD-0002
 type: guidelines
-maturity: draft
+maturity: verified
 layer: team
 created_at: 2026-05-14T02:58:52.319Z
 source_sessions: ["WFS-2026-05-14-fabric-skills-contract-fix"]
