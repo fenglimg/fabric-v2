@@ -17,6 +17,7 @@ export * from "./resolver/contracts.js";
 export * from "./resolver/project-root-resolver.js";
 export * from "./resolver/store-resolver.js";
 export * from "./resolver/store-disk-reader.js";
+export * from "./store/core.js";
 export * from "./schemas/forensic-report.js";
 export * from "./schemas/init-context.js";
 export * from "./schemas/events.js";
