@@ -103,8 +103,8 @@
       "subject": "性能硬化 + 观测",
       "done_when": "大库 fixture(1k条/5store) recall p95≤基线×1.2 且不全扫(扫描条数≤read-set size); 失败有结构化 trace; --debug-bundle redaction negative test 不含明文; local-only 库有 remote nudge",
       "covered_surfaces": ["S35","S40","R5#5"],
-      "ship_criteria_alignment": ["complete-roadmap-v4"], "alignment_strength": "direct", "status": "open",
-      "verification": { "method": "deterministic", "verifier": "perf 基线测试 + redaction negative test + trace 断言", "evidence": "", "verified_at": null } }
+      "ship_criteria_alignment": ["complete-roadmap-v4"], "alignment_strength": "direct", "status": "done",
+      "verification": { "method": "deterministic", "verifier": "perf 基线测试 + redaction negative test + trace 断言", "evidence": "P6 done_when 4 子句全闭合: (1) 大库 recall 不全扫(S35) — recall-perf.test.ts: 1k条/5store fixture, readKnowledgeAcrossStores(2-store read-set) 只返该 2 store 条目(provenance 证不触其余 3 store), 扫描条数===read-set size<1000; p95 over 30 iter ≤ 全扫基线×1.2(read-set 做 2/5 work 结构性更快)。(2) 失败结构化 trace(S40) — buildFailureTrace(install/sync/hook/mcp 统一 stage/code/message/context, secret 脱敏), 3 测试。(3) --debug-bundle redaction negative(S40) — secret-scan 加 redactSecrets, observability buildDebugBundle 深度 redaction(默认排除 events), doctor --debug-bundle flag 接入, observability.test 含 secret 输入断言 bundle 无明文[REDACTED:] + doctor.test CLI negative(AKIA/sk- 不出现); cli-surface 快照+seed doc 同步。(4) local-only remote nudge(R5#5) — P3 doctor local_only_store 诊断已上线+测试。shared 508(+4 observability+2 perf) + cli 823(+1 doctor-bundle) + server 639 全绿 + repo tsc 0。", "verified_at": "2026-05-30" } }
   ],
   "needs_adjudication": [
     { "id": "ADJ-P0-1", "phase": "P0", "topic": "ProjectRootResolver 四信号优先级字面歧义",
@@ -127,7 +127,7 @@
     { "wave": 5, "phase": "P3", "tasks": ["P3"], "status": "completed" },
     { "wave": 6, "phase": "P6", "tasks": ["P4"], "status": "completed" },
     { "wave": 7, "phase": "P6", "tasks": ["P5"], "status": "completed" },
-    { "wave": 8, "phase": "P6", "tasks": ["P6"], "status": "in_progress" }
+    { "wave": 8, "phase": "P6", "tasks": ["P6"], "status": "completed" }
   ],
   "steps": [
     { "index": 0, "skill": "maestro-plan", "args": "P0 (roadmap-v4 wave0: Schema+Resolver契约+parity矩阵)", "type": "cli", "status": "completed", "started_at": "2026-05-30", "completed_at": "2026-05-30", "error": null, "goal_ref": "P0", "note": "plan=roadmap-v4 P0 详尽规格(已任务级), 主线执行" },
@@ -170,14 +170,14 @@
     { "index": 37, "skill": "maestro-verify", "args": "P5", "type": "skill", "status": "completed", "started_at": "2026-05-30", "completed_at": "2026-05-30", "error": null, "goal_ref": "P5", "note": "deterministic: parity 21 cell 全交付 + 隐私 negative + shared 500/cli 822 + repo tsc 0" },
     { "index": 38, "skill": "quality-review", "args": "P5 --model claude", "type": "skill", "status": "completed", "started_at": "2026-05-30", "completed_at": "2026-05-30", "error": null, "goal_ref": "P5", "note": "inline 自审: parity E2E 由桩 schema 驱动遍历全 cell(非 cherry-pick)+ cells===21 防空扫; 隐私边界双层(写守卫+resolver 结构路由); cursor skill 经 back-compat 读 .claude 符合 parity-matrix mechanism 声明" },
     { "index": 39, "type": "decision", "decision": "post-goal-audit", "retry_count": 0, "max_retries": 2, "status": "completed", "completed_at": "2026-05-30", "verdict": "all_met(P5)", "note": "P5 done_when 全绿(parity-matrix E2E 100% + 隐私边界 negative) → 推进 wave8(P6)" },
-    { "index": 40, "skill": "maestro-plan", "args": "P6 (性能硬化+观测: 大库 fixture recall p95≤基线×1.2 且不全扫 / 结构化失败 trace / --debug-bundle redaction negative / local-only remote nudge)", "type": "cli", "status": "pending", "started_at": null, "completed_at": null, "error": null, "goal_ref": "P6" },
-    { "index": 41, "skill": "maestro-execute", "args": "P6", "type": "cli", "status": "pending", "started_at": null, "completed_at": null, "error": null, "goal_ref": "P6" },
-    { "index": 42, "skill": "maestro-verify", "args": "P6", "type": "skill", "status": "pending", "started_at": null, "completed_at": null, "error": null, "goal_ref": "P6" },
-    { "index": 43, "skill": "quality-review", "args": "P6 --model claude", "type": "skill", "status": "pending", "started_at": null, "completed_at": null, "error": null, "goal_ref": "P6" },
-    { "index": 44, "type": "decision", "decision": "post-goal-audit", "retry_count": 0, "max_retries": 2, "status": "pending", "note": "P6 done_when 全绿(perf 基线 + redaction negative + trace 断言) → 全 9 phase done → ALL_GOALS_DONE" }
+    { "index": 40, "skill": "maestro-plan", "args": "P6 (性能硬化+观测: 大库 fixture recall p95≤基线×1.2 且不全扫 / 结构化失败 trace / --debug-bundle redaction negative / local-only remote nudge)", "type": "cli", "status": "completed", "started_at": "2026-05-30", "completed_at": "2026-05-30", "error": null, "goal_ref": "P6", "note": "拆 4 done_when 子句; local-only nudge 已 P3 复用" },
+    { "index": 41, "skill": "maestro-execute", "args": "P6", "type": "cli", "status": "completed", "started_at": "2026-05-30", "completed_at": "2026-05-30", "error": null, "goal_ref": "P6", "note": "recall-perf 扫描边界测试 + observability(trace/debug-bundle) + redactSecrets + doctor --debug-bundle" },
+    { "index": 42, "skill": "maestro-verify", "args": "P6", "type": "skill", "status": "completed", "started_at": "2026-05-30", "completed_at": "2026-05-30", "error": null, "goal_ref": "P6", "note": "deterministic: 不全扫结构断言 + p95≤基线×1.2 + redaction negative(无明文) + trace; shared 508/cli 823/server 639 + repo tsc 0" },
+    { "index": 43, "skill": "quality-review", "args": "P6 --model claude", "type": "skill", "status": "completed", "started_at": "2026-05-30", "completed_at": "2026-05-30", "error": null, "goal_ref": "P6", "note": "inline 自审: 不全扫断言走 provenance 结构(非 flaky timing 兜底); debug-bundle 深度 redaction 默认排 events; perf p95 比较用 median over 30 iter + read-set 真做更少 work 防 flake" },
+    { "index": 44, "type": "decision", "decision": "post-goal-audit", "retry_count": 0, "max_retries": 2, "status": "completed", "completed_at": "2026-05-30", "verdict": "all_met(P6) → ALL_GOALS_DONE", "note": "P6 done_when 全绿 → 全 9 phase(P0/P0.5/P0.6/P1-P6) status=done → 终止判据达成 ALL_GOALS_DONE" }
   ],
-  "current_step": 40,
+  "current_step": 44,
   "goal_checklist_path": ".workflow/.maestro/maestro-20260530-v21-impl/goal-checklist.md",
-  "status": "running",
+  "status": "completed",
   "updated_at": "2026-05-30"
 }
