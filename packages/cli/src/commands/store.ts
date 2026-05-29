@@ -1,6 +1,7 @@
 import type { MountedStore } from "@fenglimg/fabric-shared";
 import { defineCommand } from "citty";
 
+import { regenerateBindingsSnapshot } from "../store/bindings-io.js";
 import {
   storeAdd,
   storeBind,
@@ -85,6 +86,9 @@ const bindCommand = defineCommand({
       args.remote === undefined ? { id: args.id } : { id: args.id, suggested_remote: args.remote };
     const next = storeBind(process.cwd(), entry);
     console.log(`bound required store '${args.id}' (${next.required_stores?.length ?? 0} required)`);
+    // Regenerate the resolved-bindings snapshot so P4 hooks read a consistent
+    // read-set/write-target without re-resolving (P3→P4 chain, done_when).
+    regenerateBindingsSnapshot(process.cwd(), { now: new Date().toISOString() });
   },
 });
 

@@ -22,6 +22,7 @@ import {
 import { paint, symbol } from "../colors.js";
 import { resolveDevMode } from "../dev-mode.js";
 import { getDoctorTranslator, t } from "../i18n.js";
+import { storeDoctorChecks, type StoreDiagnostic } from "../store/doctor-checks.js";
 // v2.0.0-rc.37 Wave A2: error-render imports removed alongside serve-lock
 // preflight call. See KB [[fabric-serve-quarantine-not-delete]].
 
@@ -462,8 +463,17 @@ export const doctorCommand = defineCommand({
       report = await runDoctorReport(resolution.target);
     }
 
+    // v2.1.0-rc.1 P3 (S10): multi-store health surfaced alongside the report.
+    const storeDiagnostics = collectStoreDiagnostics(resolution.target);
+
     if (args.json === true) {
-      writeStdout(JSON.stringify(fixKnowledgeReport ?? fixReport ?? report, null, 2));
+      writeStdout(
+        JSON.stringify(
+          { ...(fixKnowledgeReport ?? fixReport ?? report), store_diagnostics: storeDiagnostics },
+          null,
+          2,
+        ),
+      );
     } else {
       if (fixKnowledgeReport !== null) {
         writeStdout(fixKnowledgeReport.message);
@@ -481,6 +491,7 @@ export const doctorCommand = defineCommand({
         writeStdout(dt("cli.doctor.fix-dry-run-banner"));
       }
       renderHumanReport(report, dt, args.verbose === true);
+      renderStoreDiagnostics(storeDiagnostics);
     }
 
     // v2.0.0-rc.7 T10: emit doctor_run event so Signal D in fabric-hint can
@@ -541,6 +552,31 @@ function renderHumanReport(report: DoctorReport, dt: DoctorTranslator, verbose: 
   writeIssueSection(dt("doctor.section.manual"), report.manual_errors, opts);
   writeIssueSection(dt("doctor.section.warnings"), report.warnings, opts);
   renderPayloadLimits(report, dt);
+}
+
+// v2.1.0-rc.1 P3 (S10/S51/R5#5): multi-store health checks. Read-only and
+// best-effort — a store-check failure must never change doctor's exit semantics
+// or block (KT-DEC-0007). Surfaces no_global_config / missing_required_store /
+// local_only_store under the main report.
+function collectStoreDiagnostics(projectRoot: string): StoreDiagnostic[] {
+  try {
+    return storeDoctorChecks(projectRoot);
+  } catch {
+    return [];
+  }
+}
+
+function renderStoreDiagnostics(diagnostics: StoreDiagnostic[]): void {
+  if (diagnostics.length === 0) {
+    return;
+  }
+  writeStdout("");
+  writeStdout(paint.ai("store health"));
+  for (const diagnostic of diagnostics) {
+    const mark = diagnostic.severity === "warn" ? symbol.warn : "[info]";
+    const ref = diagnostic.ref === undefined ? "" : ` [${diagnostic.ref}]`;
+    writeStdout(`${mark}${ref} ${diagnostic.message}`);
+  }
 }
 
 // v2.0.0-rc.29 REVIEW (codex LOW-2): F2's `payload_limits` reached the JSON

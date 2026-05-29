@@ -7,6 +7,8 @@ export const allCommands = {
   install: () => import("./install.js").then((module) => module.default),
   // v2.1.0-rc.1 P3: multi-store lifecycle command group (list/add/remove/explain).
   store: () => import("./store.js").then((module) => module.default),
+  // v2.1.0-rc.1 P3 (S9/S17/S37): multi-store pull --rebase + push, conflict resume.
+  sync: () => import("./sync.js").then((module) => module.default),
   // v2.1.0-rc.1 P3 (F5): read-only identity/status info commands.
   whoami: () => import("./whoami.js").then((module) => module.default),
   status: () => import("./status.js").then((module) => module.default),

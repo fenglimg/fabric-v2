@@ -42,6 +42,42 @@ describe("doctor command", () => {
     expect(process.exitCode).toBe(1);
   });
 
+  it("surfaces multi-store health diagnostics (S10) in the JSON report", async () => {
+    vi.doMock("@fenglimg/fabric-server", () => ({
+      checkLockOrThrow: vi.fn(),
+      runDoctorReport: vi.fn().mockResolvedValue(createReport("ok")),
+      runDoctorFix: vi.fn(),
+      runDoctorApplyLint: vi.fn(),
+    }));
+
+    // Isolated FABRIC_HOME with no global config → no_global_config diagnostic.
+    const { mkdtempSync, rmSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const home = mkdtempSync(join(tmpdir(), "fabric-doctor-store-"));
+    const prevHome = process.env.FABRIC_HOME;
+    process.env.FABRIC_HOME = home;
+
+    const { doctorCommand } = await import("../src/commands/doctor.ts");
+    const stdout = captureStdout();
+    try {
+      await doctorCommand.run?.({
+        args: { target: "/tmp/fabric-target", json: true, strict: false, fix: false },
+      } as never);
+    } finally {
+      stdout.restore();
+      if (prevHome === undefined) delete process.env.FABRIC_HOME;
+      else process.env.FABRIC_HOME = prevHome;
+      rmSync(home, { recursive: true, force: true });
+    }
+
+    const parsed = JSON.parse(stdout.lines.join("\n"));
+    expect(Array.isArray(parsed.store_diagnostics)).toBe(true);
+    expect(parsed.store_diagnostics.map((d: { code: string }) => d.code)).toContain(
+      "no_global_config",
+    );
+  });
+
   it("treats warnings as failures in strict mode", async () => {
     vi.doMock("@fenglimg/fabric-server", () => ({
       checkLockOrThrow: vi.fn(),
