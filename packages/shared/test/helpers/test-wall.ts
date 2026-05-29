@@ -146,6 +146,30 @@ export function createLegacyInRepoLayout(prefix = "fabric-testwall-legacy-"): st
   return join(repo, ".fabric");
 }
 
+/**
+ * Build a recognizable v2.1 store directory (valid store.json) under a fresh
+ * temp dir; returns its absolute path. The positive counterpart to
+ * createLegacyInRepoLayout() for store-disk-reader recognition tests.
+ */
+export function createValidStoreDir(prefix = "fabric-testwall-store-"): string {
+  const dir = track(mkdtempSync(join(tmpdir(), prefix)));
+  mkdirSync(join(dir, "knowledge", "decisions"), { recursive: true });
+  writeFileSync(
+    join(dir, "store.json"),
+    JSON.stringify(
+      {
+        store_uuid: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        created_at: "2026-05-30T00:00:00.000Z",
+        canonical_alias: "team",
+      },
+      null,
+      2,
+    ),
+    "utf8",
+  );
+  return dir;
+}
+
 /** Remove all tracked temp dirs and restore env. Call in afterEach. */
 export function cleanupTestWall(): void {
   for (const [key, value] of savedEnv.splice(0).reverse()) {

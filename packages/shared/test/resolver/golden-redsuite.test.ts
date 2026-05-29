@@ -10,7 +10,11 @@ import {
 import { createProjectRootResolver } from "../../src/resolver/project-root-resolver.js";
 import { recognizeStoreDir } from "../../src/resolver/store-disk-reader.js";
 import { createStoreResolver } from "../../src/resolver/store-resolver.js";
-import { cleanupTestWall, createLegacyInRepoLayout } from "../helpers/test-wall.js";
+import {
+  cleanupTestWall,
+  createLegacyInRepoLayout,
+  createValidStoreDir,
+} from "../helpers/test-wall.js";
 
 // ---------------------------------------------------------------------------
 // v2.1.0-rc.1 — Golden test-wall. The resolver suites are GREEN as of P0.6
@@ -71,10 +75,15 @@ describe("StoreResolver golden (P0.6 green)", () => {
   }
 });
 
-describe("P0.5 red-suite — clean-slate legacy negative (xfail until P1)", () => {
-  it.fails("legacy in-repo .fabric/knowledge is NOT recognized as a v2.1 store", () => {
+describe("clean-slate legacy negative (P1 green)", () => {
+  it("legacy in-repo .fabric/knowledge is NOT recognized as a v2.1 store", () => {
     const legacyFabricDir = createLegacyInRepoLayout();
     // v2.1 reader recognizes a store only by store.json; legacy layout has none.
     expect(recognizeStoreDir(legacyFabricDir)).toBe(false);
+  });
+
+  it("a directory with a valid store.json IS recognized", () => {
+    const storeDir = createValidStoreDir();
+    expect(recognizeStoreDir(storeDir)).toBe(true);
   });
 });
