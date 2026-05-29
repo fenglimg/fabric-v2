@@ -78,6 +78,48 @@ describe("doctor command", () => {
     );
   });
 
+  it("--debug-bundle emits a redacted bundle (S40, no plaintext secrets)", async () => {
+    vi.doMock("@fenglimg/fabric-server", () => ({
+      checkLockOrThrow: vi.fn(),
+      runDoctorReport: vi.fn().mockResolvedValue(createReport("ok")),
+      runDoctorFix: vi.fn(),
+      runDoctorApplyLint: vi.fn(),
+    }));
+
+    const { mkdtempSync, mkdirSync, rmSync, writeFileSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const home = mkdtempSync(join(tmpdir(), "fabric-doctor-bundle-"));
+    const prevHome = process.env.FABRIC_HOME;
+    process.env.FABRIC_HOME = home;
+    // Global config carrying a secret-shaped remote — must be redacted.
+    mkdirSync(join(home, ".fabric"), { recursive: true });
+    writeFileSync(
+      join(home, ".fabric", "fabric-global.json"),
+      JSON.stringify({ uid: "u", stores: [{ store_uuid: "b0000000-0000-4000-8000-000000000000", alias: "team", remote: "https://AKIA1234567890ABCDEF@h/r.git" }] }),
+      "utf8",
+    );
+
+    const { doctorCommand } = await import("../src/commands/doctor.ts");
+    const stdout = captureStdout();
+    try {
+      await doctorCommand.run?.({
+        args: { target: "/tmp/fabric-target", json: false, strict: false, fix: false, "debug-bundle": true },
+      } as never);
+    } finally {
+      stdout.restore();
+      if (prevHome === undefined) delete process.env.FABRIC_HOME;
+      else process.env.FABRIC_HOME = prevHome;
+      rmSync(home, { recursive: true, force: true });
+    }
+
+    const out = stdout.lines.join("\n");
+    expect(out).not.toContain("AKIA1234567890ABCDEF");
+    expect(out).toContain("[REDACTED:");
+    const parsed = JSON.parse(out);
+    expect(parsed.redacted).toBe(true);
+  });
+
   it("treats warnings as failures in strict mode", async () => {
     vi.doMock("@fenglimg/fabric-server", () => ({
       checkLockOrThrow: vi.fn(),

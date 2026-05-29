@@ -23,6 +23,9 @@ import { paint, symbol } from "../colors.js";
 import { resolveDevMode } from "../dev-mode.js";
 import { getDoctorTranslator, t } from "../i18n.js";
 import { storeDoctorChecks, type StoreDiagnostic } from "../store/doctor-checks.js";
+import { buildDebugBundle } from "@fenglimg/fabric-shared";
+import { loadGlobalConfig, resolveGlobalRoot } from "../store/global-config-io.js";
+import { loadProjectConfig } from "../store/project-config-io.js";
 // v2.0.0-rc.37 Wave A2: error-render imports removed alongside serve-lock
 // preflight call. See KB [[fabric-serve-quarantine-not-delete]].
 
@@ -33,6 +36,8 @@ type DoctorArgs = {
   fix?: boolean;
   json?: boolean;
   strict?: boolean;
+  // v2.1.0-rc.1 P6 (S40): redacted diagnostic bundle.
+  "debug-bundle"?: boolean;
   // rc.4 TASK-003 (rc.15 rename): enable lint mutations (orphan demote /
   // stale archive / index counter bump). Default doctor invocation remains
   // report-only. Renamed from --apply-lint in rc.15 for parallel naming with
@@ -124,6 +129,14 @@ export const doctorCommand = defineCommand({
     strict: {
       type: "boolean",
       description: t("cli.doctor.args.strict.description"),
+      default: false,
+    },
+    // v2.1.0-rc.1 P6 (S40): emit a redacted diagnostic bundle (config + store
+    // diagnostics; events excluded by default). Every string is secret-redacted
+    // so the bundle is safe to paste into a bug report. Read-only.
+    "debug-bundle": {
+      type: "boolean",
+      description: "Emit a redacted diagnostic bundle (config + store health) for bug reports",
       default: false,
     },
     // rc.7 T11: skip the safety confirm before mutations. Required for any
@@ -224,6 +237,28 @@ export const doctorCommand = defineCommand({
     const citeCoverage = args["cite-coverage"] === true;
     const enrichDesc = args["enrich-descriptions"] === true;
     const archiveHistory = args["archive-history"] === true;
+
+    // v2.1.0-rc.1 P6 (S40): --debug-bundle. Read-only; emits a redacted bundle
+    // (config + store diagnostics, events excluded) safe to paste into a bug
+    // report. Short-circuits the standard report path. Best-effort config load.
+    if (args["debug-bundle"] === true) {
+      const globalRoot = resolveGlobalRoot();
+      let config: Record<string, unknown> = {};
+      try {
+        config = {
+          global: loadGlobalConfig(globalRoot) ?? null,
+          project: loadProjectConfig(resolution.target) ?? null,
+        };
+      } catch {
+        config = {};
+      }
+      const bundle = buildDebugBundle({
+        config,
+        diagnostics: collectStoreDiagnostics(resolution.target),
+      });
+      writeStdout(JSON.stringify(bundle, null, 2));
+      return;
+    }
 
     // v2.0.0-rc.29 TASK-007 (BUG-M2): up-front --since validation. Previously
     // `parseSinceDuration` was only called inside the --archive-history and

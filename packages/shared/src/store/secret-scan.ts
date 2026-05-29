@@ -50,3 +50,20 @@ export function scanForSecrets(content: string): SecretFinding[] {
 export function hasSecrets(content: string): boolean {
   return scanForSecrets(content).length > 0;
 }
+
+// v2.1.0-rc.1 P6 (S40): replace every secret-shaped match with a redaction
+// placeholder so diagnostics (e.g. `doctor --debug-bundle`) can include content
+// without leaking credentials. The matched span is swapped for
+// `[REDACTED:<rule>]`; non-secret text is untouched. Idempotent on clean input.
+export const REDACTION_PLACEHOLDER_PREFIX = "[REDACTED:";
+
+export function redactSecrets(content: string): string {
+  let out = content;
+  for (const { rule, re } of SECRET_RULES) {
+    // Global, case-insensitive variant of each rule so every occurrence on
+    // every line is replaced (the scan rules are single-match by design).
+    const flags = re.flags.includes("i") ? "gi" : "g";
+    out = out.replace(new RegExp(re.source, flags), `${REDACTION_PLACEHOLDER_PREFIX}${rule}]`);
+  }
+  return out;
+}
