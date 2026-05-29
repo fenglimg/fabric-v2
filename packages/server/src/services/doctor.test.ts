@@ -933,6 +933,56 @@ describe("runDoctorReport", () => {
     expect(report.checks.find((c) => c.name === "Meta manual divergence")?.status).toBe("ok");
   });
 
+  // Dual-root layout (KT-DEC-0003): a personal node's content_ref carries the
+  // `~/.fabric/knowledge/` prefix and resolves against the personal root, not
+  // projectRoot. Before the resolveContentRefPath fix, the check joined the ref
+  // onto projectRoot — yielding <repo>/~/.fabric/... — and flagged every personal
+  // mirror node as a permanent false-positive divergence that --fix could not clear.
+  function injectPersonalNode(target: string, content: string): void {
+    const relRef = "~/.fabric/knowledge/processes/KP-PRO-0001--foo.md";
+    const metaPath = join(target, ".fabric", "agents.meta.json");
+    const meta = JSON.parse(readFileSync(metaPath, "utf8"));
+    meta.nodes["KP-PRO-0001"] = {
+      file: relRef,
+      content_ref: relRef,
+      scope_glob: relRef,
+      hash: sha256(content),
+      stable_id: "KP-PRO-0001",
+    };
+    writeFileSync(metaPath, JSON.stringify(meta, null, 2), "utf8");
+  }
+
+  it("meta_manually_diverged: does not false-positive on personal nodes whose ~/.fabric file exists", async () => {
+    const target = createInitializedProject("doctor-meta-personal-ok");
+    await writeKnowledgeMeta(target, { source: "doctor_fix" });
+    writeFile(".fabric/events.jsonl", "", target);
+
+    const content = "---\nid: KP-PRO-0001\nlayer: personal\n---\n# stub\n";
+    const personalDir = join(process.env.FABRIC_HOME!, ".fabric", "knowledge", "processes");
+    mkdirSync(personalDir, { recursive: true });
+    writeFileSync(join(personalDir, "KP-PRO-0001--foo.md"), content, "utf8");
+    injectPersonalNode(target, content);
+
+    const report = await runDoctorReport(target);
+
+    expect(report.warnings.map((w) => w.code)).not.toContain("meta_manually_diverged");
+    expect(report.checks.find((c) => c.name === "Meta manual divergence")?.status).toBe("ok");
+  });
+
+  it("meta_manually_diverged: still flags a personal node whose ~/.fabric file is missing", async () => {
+    const target = createInitializedProject("doctor-meta-personal-missing");
+    await writeKnowledgeMeta(target, { source: "doctor_fix" });
+    writeFile(".fabric/events.jsonl", "", target);
+
+    // Inject the meta node but never write the backing personal file.
+    injectPersonalNode(target, "---\nid: KP-PRO-0001\nlayer: personal\n---\n# stub\n");
+
+    const report = await runDoctorReport(target);
+
+    expect(report.warnings.map((w) => w.code)).toContain("meta_manually_diverged");
+    expect(report.checks.find((c) => c.name === "Meta manual divergence")?.status).toBe("warn");
+  });
+
   // rc.22 TASK-012 (Scope D T-D5): agents_meta_stale demoted from error → warning.
   // Auto-heal on next plan-context/get-sections MCP call means a detected drift is
   // benign; doctor exit code stays 0 (unless --strict). `fabric doctor --fix` still

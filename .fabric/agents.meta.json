@@ -1,24 +1,37 @@
 {
-  "revision": "sha256:c22af4430a2406c4df2ba005655152e7246572fdf63e07e5d7fa5d18ebd6b2e2",
+  "revision": "sha256:9c1021aaee09334886efd01d4e2ae5c6cd7c77a7cd20eb4e2c873a3d1ea98382",
   "nodes": {
     "KP-PRO-0001": {
       "file": "~/.fabric/knowledge/processes/KP-PRO-0001--stale-git-lock-safe-removal.md",
       "content_ref": "~/.fabric/knowledge/processes/KP-PRO-0001--stale-git-lock-safe-removal.md",
       "scope_glob": "processes/KP-PRO-0001--stale-git-lock-safe-removal/**",
-      "hash": "sha256:68919c5721c1fbfe5277dc4fd1e6834bc95fa5ac1656cbb3439cd888e10e79b8",
+      "deps": [
+        "L0"
+      ],
+      "priority": "medium",
+      "level": "L1",
+      "topology_type": "mirror",
+      "hash": "sha256:5088a2d71bbf044dd90def318beec1e7a70820557260f34acb46f5d83e9d8a54",
       "stable_id": "KP-PRO-0001",
       "identity_source": "declared",
       "description": {
-        "summary": "KP-PRO-0001",
+        "summary": "macOS git stale .git/index.lock 安全删除流程：lsof 无持有进程 + lock 0 字节 + ps 无活 git 进程 + 时间戳陈旧，四项同时满足才 rm，然后 stash→pull→pop 恢复工作。",
         "intent_clues": [],
         "tech_stack": [],
         "impact": [],
-        "must_read_if": "KP-PRO-0001",
+        "must_read_if": "macOS git stale .git/index.lock 安全删除流程：lsof 无持有进程 + lock 0 字节 + ps 无活 git 进程 + 时间戳陈旧，四项同时满足才 rm，然后 stash→pull→pop 恢复工作。",
+        "entities": [],
         "id": "KP-PRO-0001",
         "knowledge_type": "processes",
         "maturity": "draft",
         "knowledge_layer": "personal",
         "created_at": "2026-05-18T07:59:28.459Z",
+        "tags": [
+          "git",
+          "index-lock",
+          "macos",
+          "troubleshooting"
+        ],
         "relevance_scope": "broad",
         "relevance_paths": []
       },
@@ -27,18 +40,18 @@
         "Why proposed",
         "Session context",
         "Evidence"
-      ],
-      "deps": [
-        "L0"
-      ],
-      "priority": "medium",
-      "level": "L1",
-      "topology_type": "mirror"
+      ]
     },
     "KT-DEC-0001": {
       "file": ".fabric/knowledge/decisions/KT-DEC-0001.md",
       "content_ref": ".fabric/knowledge/decisions/KT-DEC-0001.md",
       "scope_glob": "decisions/KT-DEC-0001/**",
+      "deps": [
+        "L0"
+      ],
+      "priority": "medium",
+      "level": "L1",
+      "topology_type": "mirror",
       "hash": "sha256:a632197470a264aebf4a4df622c6a9869272b19ef4207f92a543341370e6fa87",
       "stable_id": "KT-DEC-0001",
       "identity_source": "declared",
@@ -66,18 +79,18 @@
         "Alternatives considered",
         "Rationale",
         "Reference"
-      ],
-      "deps": [
-        "L0"
-      ],
-      "priority": "medium",
-      "level": "L1",
-      "topology_type": "mirror"
+      ]
     },
     "KT-DEC-0002": {
       "file": ".fabric/knowledge/decisions/KT-DEC-0002.md",
       "content_ref": ".fabric/knowledge/decisions/KT-DEC-0002.md",
       "scope_glob": "decisions/KT-DEC-0002/**",
+      "deps": [
+        "L0"
+      ],
+      "priority": "medium",
+      "level": "L1",
+      "topology_type": "mirror",
       "hash": "sha256:b704567ab43bd713fb3e1a1014d56d30f8c217dacec6010ab02a0fdfdd2eddb4",
       "stable_id": "KT-DEC-0002",
       "identity_source": "declared",
@@ -105,18 +118,18 @@
         "Alternatives considered",
         "Rationale",
         "Reference"
-      ],
-      "deps": [
-        "L0"
-      ],
-      "priority": "medium",
-      "level": "L1",
-      "topology_type": "mirror"
+      ]
     },
     "KT-DEC-0003": {
       "file": ".fabric/knowledge/decisions/KT-DEC-0003.md",
       "content_ref": ".fabric/knowledge/decisions/KT-DEC-0003.md",
       "scope_glob": "decisions/KT-DEC-0003/**",
+      "deps": [
+        "L0"
+      ],
+      "priority": "medium",
+      "level": "L1",
+      "topology_type": "mirror",
       "hash": "sha256:2facd76e42a0a6a927fe3c3644daf6b954ed40ace70bd7728205e3523633d104",
       "stable_id": "KT-DEC-0003",
       "identity_source": "declared",
@@ -145,18 +158,18 @@
         "Rationale",
         "Tradeoffs",
         "Reference"
-      ],
-      "deps": [
-        "L0"
-      ],
-      "priority": "medium",
-      "level": "L1",
-      "topology_type": "mirror"
+      ]
     },
     "KT-DEC-0004": {
       "file": ".fabric/knowledge/decisions/KT-DEC-0004.md",
       "content_ref": ".fabric/knowledge/decisions/KT-DEC-0004.md",
       "scope_glob": "decisions/KT-DEC-0004/**",
+      "deps": [
+        "L0"
+      ],
+      "priority": "medium",
+      "level": "L1",
+      "topology_type": "mirror",
       "hash": "sha256:2ce2adf4bf15301ba59aa8cfc19dd0d97ee656e6ff867c6514dc626a43b99458",
       "stable_id": "KT-DEC-0004",
       "identity_source": "declared",
@@ -186,18 +199,18 @@
         "Rationale",
         "Constraints",
         "Reference"
-      ],
-      "deps": [
-        "L0"
-      ],
-      "priority": "medium",
-      "level": "L1",
-      "topology_type": "mirror"
+      ]
     },
     "KT-DEC-0005": {
       "file": ".fabric/knowledge/decisions/KT-DEC-0005.md",
       "content_ref": ".fabric/knowledge/decisions/KT-DEC-0005.md",
       "scope_glob": "decisions/KT-DEC-0005/**",
+      "deps": [
+        "L0"
+      ],
+      "priority": "medium",
+      "level": "L1",
+      "topology_type": "mirror",
       "hash": "sha256:2efcb6919b48663c6c29d4f0c046d8cfe0211279a78ca41e37f278445bea54e7",
       "stable_id": "KT-DEC-0005",
       "identity_source": "declared",
@@ -225,18 +238,18 @@
         "Alternatives considered",
         "Rationale",
         "Reference"
-      ],
-      "deps": [
-        "L0"
-      ],
-      "priority": "medium",
-      "level": "L1",
-      "topology_type": "mirror"
+      ]
     },
     "KT-DEC-0006": {
       "file": ".fabric/knowledge/decisions/KT-DEC-0006.md",
       "content_ref": ".fabric/knowledge/decisions/KT-DEC-0006.md",
       "scope_glob": "decisions/KT-DEC-0006/**",
+      "deps": [
+        "L0"
+      ],
+      "priority": "medium",
+      "level": "L1",
+      "topology_type": "mirror",
       "hash": "sha256:30995b9f866d96f451aa6c6f2293b3bbbfcdd886aefcd5ca6a29b45d7d0a1af3",
       "stable_id": "KT-DEC-0006",
       "identity_source": "declared",
@@ -264,18 +277,18 @@
         "Alternatives considered",
         "Rationale",
         "Reference"
-      ],
-      "deps": [
-        "L0"
-      ],
-      "priority": "medium",
-      "level": "L1",
-      "topology_type": "mirror"
+      ]
     },
     "KT-DEC-0007": {
       "file": ".fabric/knowledge/decisions/KT-DEC-0007.md",
       "content_ref": ".fabric/knowledge/decisions/KT-DEC-0007.md",
       "scope_glob": "decisions/KT-DEC-0007/**",
+      "deps": [
+        "L0"
+      ],
+      "priority": "medium",
+      "level": "L1",
+      "topology_type": "mirror",
       "hash": "sha256:736eb5a83fed3005b97a7be1a0936f64ab41111fce8ebf7117fc2ccca77b911a",
       "stable_id": "KT-DEC-0007",
       "identity_source": "declared",
@@ -303,18 +316,18 @@
         "Alternatives considered",
         "Rationale",
         "Reference"
-      ],
-      "deps": [
-        "L0"
-      ],
-      "priority": "medium",
-      "level": "L1",
-      "topology_type": "mirror"
+      ]
     },
     "KT-DEC-0008": {
       "file": ".fabric/knowledge/decisions/KT-DEC-0008.md",
       "content_ref": ".fabric/knowledge/decisions/KT-DEC-0008.md",
       "scope_glob": "decisions/KT-DEC-0008/**",
+      "deps": [
+        "L0"
+      ],
+      "priority": "medium",
+      "level": "L1",
+      "topology_type": "mirror",
       "hash": "sha256:eb5ec81143e00201168587c80ed9783ac85ca9ee42fde49bb9d68870c6e4492f",
       "stable_id": "KT-DEC-0008",
       "identity_source": "declared",
@@ -344,18 +357,18 @@
         "Rationale",
         "Tradeoffs",
         "Reference"
-      ],
-      "deps": [
-        "L0"
-      ],
-      "priority": "medium",
-      "level": "L1",
-      "topology_type": "mirror"
+      ]
     },
     "KT-DEC-0009": {
       "file": ".fabric/knowledge/decisions/KT-DEC-0009--rc2-single-cjs-hook-across-clients.md",
       "content_ref": ".fabric/knowledge/decisions/KT-DEC-0009--rc2-single-cjs-hook-across-clients.md",
       "scope_glob": "decisions/KT-DEC-0009--rc2-single-cjs-hook-across-clients/**",
+      "deps": [
+        "L0"
+      ],
+      "priority": "medium",
+      "level": "L1",
+      "topology_type": "mirror",
       "hash": "sha256:f05d50a42b238ba27aba9acad93efb5530a4245da6b55e6e3b8fcbe09a1baa9d",
       "stable_id": "KT-DEC-0009",
       "identity_source": "declared",
@@ -381,18 +394,18 @@
         "Evidence (call 4)",
         "Evidence (call 5)",
         "Evidence (call 6)"
-      ],
-      "deps": [
-        "L0"
-      ],
-      "priority": "medium",
-      "level": "L1",
-      "topology_type": "mirror"
+      ]
     },
     "KT-DEC-9001": {
       "file": ".fabric/knowledge/decisions/KT-DEC-9001--manual-rc3-fallback-test.md",
       "content_ref": ".fabric/knowledge/decisions/KT-DEC-9001--manual-rc3-fallback-test.md",
       "scope_glob": "decisions/KT-DEC-9001--manual-rc3-fallback-test/**",
+      "deps": [
+        "L0"
+      ],
+      "priority": "medium",
+      "level": "L1",
+      "topology_type": "mirror",
       "hash": "sha256:2a82468e986a3787df85c060fbfed84e2ab63035eeb801d4b0588017da4c387f",
       "stable_id": "KT-DEC-9001",
       "identity_source": "declared",
@@ -417,18 +430,18 @@
       "sections": [
         "Summary",
         "Evidence"
-      ],
-      "deps": [
-        "L0"
-      ],
-      "priority": "medium",
-      "level": "L1",
-      "topology_type": "mirror"
+      ]
     },
     "KT-DEC-9002": {
       "file": ".fabric/knowledge/decisions/KT-DEC-9002--file-boundary-over-section-boundary.md",
       "content_ref": ".fabric/knowledge/decisions/KT-DEC-9002--file-boundary-over-section-boundary.md",
       "scope_glob": "decisions/KT-DEC-9002--file-boundary-over-section-boundary/**",
+      "deps": [
+        "L0"
+      ],
+      "priority": "medium",
+      "level": "L1",
+      "topology_type": "mirror",
       "hash": "sha256:41d6a27504840da5aff1a69bca70f2f767380835d2efc36eca2c88632b31ef17",
       "stable_id": "KT-DEC-9002",
       "identity_source": "declared",
@@ -456,18 +469,18 @@
         "Why proposed",
         "Session context",
         "Evidence"
-      ],
-      "deps": [
-        "L0"
-      ],
-      "priority": "medium",
-      "level": "L1",
-      "topology_type": "mirror"
+      ]
     },
     "KT-DEC-9003": {
       "file": ".fabric/knowledge/decisions/KT-DEC-9003--fabric-rules-via-doclink-not-native-memo.md",
       "content_ref": ".fabric/knowledge/decisions/KT-DEC-9003--fabric-rules-via-doclink-not-native-memo.md",
       "scope_glob": "decisions/KT-DEC-9003--fabric-rules-via-doclink-not-native-memo/**",
+      "deps": [
+        "L0"
+      ],
+      "priority": "medium",
+      "level": "L1",
+      "topology_type": "mirror",
       "hash": "sha256:84bc4d1801baf1bc71b66ec9f7845ceb7118bd2993465c3b11320da2052f05ee",
       "stable_id": "KT-DEC-9003",
       "identity_source": "declared",
@@ -490,18 +503,18 @@
         "Why proposed",
         "Session context",
         "Evidence"
-      ],
-      "deps": [
-        "L0"
-      ],
-      "priority": "medium",
-      "level": "L1",
-      "topology_type": "mirror"
+      ]
     },
     "KT-DEC-9004": {
       "file": ".fabric/knowledge/decisions/KT-DEC-9004--init-fixate-knowledge-language.md",
       "content_ref": ".fabric/knowledge/decisions/KT-DEC-9004--init-fixate-knowledge-language.md",
       "scope_glob": "decisions/KT-DEC-9004--init-fixate-knowledge-language/**",
+      "deps": [
+        "L0"
+      ],
+      "priority": "medium",
+      "level": "L1",
+      "topology_type": "mirror",
       "hash": "sha256:00c939de1b7c4194096616bf84ec95aa925dc2427eb17aac2d72db076b25f333",
       "stable_id": "KT-DEC-9004",
       "identity_source": "declared",
@@ -524,18 +537,18 @@
         "Why proposed",
         "Session context",
         "Evidence"
-      ],
-      "deps": [
-        "L0"
-      ],
-      "priority": "medium",
-      "level": "L1",
-      "topology_type": "mirror"
+      ]
     },
     "KT-GLD-0001": {
       "file": ".fabric/knowledge/guidelines/KT-GLD-0001--code-style.md",
       "content_ref": ".fabric/knowledge/guidelines/KT-GLD-0001--code-style.md",
       "scope_glob": "guidelines/KT-GLD-0001--code-style/**",
+      "deps": [
+        "L0"
+      ],
+      "priority": "medium",
+      "level": "L1",
+      "topology_type": "mirror",
       "hash": "sha256:a10f451b2b156330c956f48785daadab2b0240dc765e4c7d18cfb6a180c16e1c",
       "stable_id": "KT-GLD-0001",
       "identity_source": "declared",
@@ -558,18 +571,18 @@
         "[MISSION_STATEMENT]",
         "[MANDATORY_INJECTION]",
         "[CONTEXT_INFO]"
-      ],
-      "deps": [
-        "L0"
-      ],
-      "priority": "medium",
-      "level": "L1",
-      "topology_type": "mirror"
+      ]
     },
     "KT-GLD-0002": {
       "file": ".fabric/knowledge/guidelines/KT-GLD-0002--askuserquestion-i18n-value-vs-label.md",
       "content_ref": ".fabric/knowledge/guidelines/KT-GLD-0002--askuserquestion-i18n-value-vs-label.md",
       "scope_glob": "guidelines/KT-GLD-0002--askuserquestion-i18n-value-vs-label/**",
+      "deps": [
+        "L0"
+      ],
+      "priority": "medium",
+      "level": "L1",
+      "topology_type": "mirror",
       "hash": "sha256:448601fb792b84c6f3f91ea8ab99d603d97ea9783aad79103098141d53d993c2",
       "stable_id": "KT-GLD-0002",
       "identity_source": "declared",
@@ -592,18 +605,18 @@
         "Why proposed",
         "Session context",
         "Evidence"
-      ],
-      "deps": [
-        "L0"
-      ],
-      "priority": "medium",
-      "level": "L1",
-      "topology_type": "mirror"
+      ]
     },
     "KT-GLD-0003": {
       "file": ".fabric/knowledge/guidelines/KT-GLD-0003--deepmerge-array-append-paths-for-stop-ho.md",
       "content_ref": ".fabric/knowledge/guidelines/KT-GLD-0003--deepmerge-array-append-paths-for-stop-ho.md",
       "scope_glob": "guidelines/KT-GLD-0003--deepmerge-array-append-paths-for-stop-ho/**",
+      "deps": [
+        "L0"
+      ],
+      "priority": "medium",
+      "level": "L1",
+      "topology_type": "mirror",
       "hash": "sha256:416742a2a0282ff6421e933869b798a49f68d962a4da7a02ba88af3d57b3a792",
       "stable_id": "KT-GLD-0003",
       "identity_source": "declared",
@@ -626,18 +639,18 @@
         "Evidence (call 1)",
         "Evidence (call 2)",
         "Evidence (call 3)"
-      ],
-      "deps": [
-        "L0"
-      ],
-      "priority": "medium",
-      "level": "L1",
-      "topology_type": "mirror"
+      ]
     },
     "KT-GLD-0004": {
       "file": ".fabric/knowledge/guidelines/KT-GLD-0004--skill-md-promise-matches-llm-capability.md",
       "content_ref": ".fabric/knowledge/guidelines/KT-GLD-0004--skill-md-promise-matches-llm-capability.md",
       "scope_glob": "guidelines/KT-GLD-0004--skill-md-promise-matches-llm-capability/**",
+      "deps": [
+        "L0"
+      ],
+      "priority": "medium",
+      "level": "L1",
+      "topology_type": "mirror",
       "hash": "sha256:a4bea24b68e059afd6013cd34a179a7e9b1440af6551e4ce1fefe82e6321aa07",
       "stable_id": "KT-GLD-0004",
       "identity_source": "declared",
@@ -660,18 +673,18 @@
         "Why proposed",
         "Session context",
         "Evidence"
-      ],
-      "deps": [
-        "L0"
-      ],
-      "priority": "medium",
-      "level": "L1",
-      "topology_type": "mirror"
+      ]
     },
     "KT-PIT-9101": {
       "file": ".fabric/knowledge/pitfalls/KT-PIT-9101--rc4-dogfood-orphan-demote-fixture.md",
       "content_ref": ".fabric/knowledge/pitfalls/KT-PIT-9101--rc4-dogfood-orphan-demote-fixture.md",
       "scope_glob": "pitfalls/KT-PIT-9101--rc4-dogfood-orphan-demote-fixture/**",
+      "deps": [
+        "L0"
+      ],
+      "priority": "medium",
+      "level": "L1",
+      "topology_type": "mirror",
       "hash": "sha256:311cee17be60b346ca151e4c4c64dbb84770dc498849eb73a4e301f47fba7d13",
       "stable_id": "KT-PIT-9101",
       "identity_source": "declared",
@@ -696,18 +709,18 @@
       "sections": [
         "Summary",
         "Evidence"
-      ],
-      "deps": [
-        "L0"
-      ],
-      "priority": "medium",
-      "level": "L1",
-      "topology_type": "mirror"
+      ]
     },
     "KT-PIT-9102": {
       "file": ".fabric/knowledge/pitfalls/KT-PIT-9102--doctor-lint-number-prealloc-check.md",
       "content_ref": ".fabric/knowledge/pitfalls/KT-PIT-9102--doctor-lint-number-prealloc-check.md",
       "scope_glob": "pitfalls/KT-PIT-9102--doctor-lint-number-prealloc-check/**",
+      "deps": [
+        "L0"
+      ],
+      "priority": "medium",
+      "level": "L1",
+      "topology_type": "mirror",
       "hash": "sha256:bd556d185b7ae9fbdc2230a5607aa48ad8e69cc640f3a13b5ea07ed8f6b9f9e4",
       "stable_id": "KT-PIT-9102",
       "identity_source": "declared",
@@ -730,18 +743,18 @@
         "Why proposed",
         "Session context",
         "Evidence"
-      ],
-      "deps": [
-        "L0"
-      ],
-      "priority": "medium",
-      "level": "L1",
-      "topology_type": "mirror"
+      ]
     },
     "KT-PIT-9103": {
       "file": ".fabric/knowledge/pitfalls/KT-PIT-9103--lint-stale-ref-after-content-relocation.md",
       "content_ref": ".fabric/knowledge/pitfalls/KT-PIT-9103--lint-stale-ref-after-content-relocation.md",
       "scope_glob": "pitfalls/KT-PIT-9103--lint-stale-ref-after-content-relocation/**",
+      "deps": [
+        "L0"
+      ],
+      "priority": "medium",
+      "level": "L1",
+      "topology_type": "mirror",
       "hash": "sha256:1cd764e22b699b007d225c4afca116b105fba958e1ea3bb436529e1790a4964e",
       "stable_id": "KT-PIT-9103",
       "identity_source": "declared",
@@ -767,18 +780,18 @@
         "Why proposed",
         "Session context",
         "Evidence"
-      ],
-      "deps": [
-        "L0"
-      ],
-      "priority": "medium",
-      "level": "L1",
-      "topology_type": "mirror"
+      ]
     },
     "KT-PIT-9104": {
       "file": ".fabric/knowledge/pitfalls/KT-PIT-9104--skill-template-mirror-drift.md",
       "content_ref": ".fabric/knowledge/pitfalls/KT-PIT-9104--skill-template-mirror-drift.md",
       "scope_glob": "pitfalls/KT-PIT-9104--skill-template-mirror-drift/**",
+      "deps": [
+        "L0"
+      ],
+      "priority": "medium",
+      "level": "L1",
+      "topology_type": "mirror",
       "hash": "sha256:487dc4289ff5d88e6368df17f64f52a86198eed7deb5065a6e1ea8583fae70b5",
       "stable_id": "KT-PIT-9104",
       "identity_source": "declared",
@@ -801,18 +814,18 @@
         "Why proposed",
         "Session context",
         "Evidence"
-      ],
-      "deps": [
-        "L0"
-      ],
-      "priority": "medium",
-      "level": "L1",
-      "topology_type": "mirror"
+      ]
     },
     "KT-PIT-9105": {
       "file": ".fabric/knowledge/pitfalls/KT-PIT-9105--zod-strip-drops-unknown-mcp-fields.md",
       "content_ref": ".fabric/knowledge/pitfalls/KT-PIT-9105--zod-strip-drops-unknown-mcp-fields.md",
       "scope_glob": "pitfalls/KT-PIT-9105--zod-strip-drops-unknown-mcp-fields/**",
+      "deps": [
+        "L0"
+      ],
+      "priority": "medium",
+      "level": "L1",
+      "topology_type": "mirror",
       "hash": "sha256:70fabf08c9504b0a60915a76015891ca165dc6b6ccb3e19b1ad9c5493ecfa5c5",
       "stable_id": "KT-PIT-9105",
       "identity_source": "declared",
@@ -835,13 +848,7 @@
         "Why proposed",
         "Session context",
         "Evidence"
-      ],
-      "deps": [
-        "L0"
-      ],
-      "priority": "medium",
-      "level": "L1",
-      "topology_type": "mirror"
+      ]
     }
   },
   "counters": {

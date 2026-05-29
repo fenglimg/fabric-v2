@@ -50,7 +50,7 @@ import {
   rotateEventLedgerIfNeeded,
   truncateLedgerToLastNewline,
 } from "./event-ledger.js";
-import { reconcileKnowledge } from "./knowledge-sync.js";
+import { reconcileKnowledge, resolveContentRefPath } from "./knowledge-sync.js";
 import { INJECTION_PATTERNS } from "./extract-knowledge.js";
 import { readAgentsMeta } from "../meta-reader.js";
 import { isAlive, readLockState } from "./legacy-serve-lock-probe.js";
@@ -4878,7 +4878,11 @@ async function inspectMetaManuallyDiverged(projectRoot: string): Promise<MetaMan
 
   for (const node of Object.values(meta.nodes)) {
     const contentRef = node.content_ref ?? node.file;
-    const absPath = join(projectRoot, contentRef);
+    // Dual-root layout (KT-DEC-0003): personal nodes carry a `~/.fabric/knowledge/`
+    // content_ref that resolves against the personal root, not projectRoot. A bare
+    // join() would point at <repo>/~/.fabric/... — a path that never exists — and
+    // flag every personal mirror node as a permanent false-positive divergence.
+    const absPath = resolveContentRefPath(projectRoot, contentRef);
 
     if (!existsSync(absPath)) {
       extraMetaEntries.push(contentRef);

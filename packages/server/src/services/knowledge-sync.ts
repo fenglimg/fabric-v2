@@ -64,7 +64,7 @@ function resolvePersonalRoot(): string {
  * `~/.fabric/knowledge/` prefix; team entries are plain project-relative
  * paths under `.fabric/knowledge/`.
  */
-function resolveContentRefPath(projectRoot: string, relPath: string): string {
+export function resolveContentRefPath(projectRoot: string, relPath: string): string {
   if (relPath.startsWith(PERSONAL_CONTENT_REF_PREFIX)) {
     return join(
       resolvePersonalRoot(),
