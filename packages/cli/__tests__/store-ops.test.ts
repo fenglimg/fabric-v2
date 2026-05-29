@@ -6,7 +6,15 @@ import { globalConfigSchema } from "@fenglimg/fabric-shared";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { loadGlobalConfig, saveGlobalConfig } from "../src/store/global-config-io.js";
-import { storeAdd, storeExplain, storeList, storeRemove } from "../src/store/store-ops.js";
+import { loadProjectConfig, saveProjectConfig } from "../src/store/project-config-io.js";
+import {
+  storeAdd,
+  storeBind,
+  storeExplain,
+  storeList,
+  storeRemove,
+  storeSwitchWrite,
+} from "../src/store/store-ops.js";
 
 // v2.1.0-rc.1 P3 — `fabric store {list,add,remove,explain}` integration tests
 // against an isolated global root (no FABRIC_HOME / real ~/.fabric touched).
@@ -71,5 +79,38 @@ describe("no global config", () => {
     const fresh = join(mkdtempSync(join(tmpdir(), "fabric-store-empty-")), ".fabric");
     dirs.push(fresh);
     expect(() => storeList(fresh)).toThrow(/install --global/);
+  });
+});
+
+describe("fabric store bind / switch-write (project config)", () => {
+  function seedProject(): string {
+    const projectRoot = mkdtempSync(join(tmpdir(), "fabric-store-proj-"));
+    dirs.push(projectRoot);
+    saveProjectConfig(
+      { project_id: "11111111-1111-4111-8111-111111111111", required_stores: [] },
+      projectRoot,
+    );
+    return projectRoot;
+  }
+
+  it("binds a required store and persists it (dedupe by id)", () => {
+    const projectRoot = seedProject();
+    storeBind(projectRoot, { id: "team", suggested_remote: "git@h:team.git" });
+    storeBind(projectRoot, { id: "team", suggested_remote: "git@h:team-2.git" });
+    const cfg = loadProjectConfig(projectRoot);
+    expect(cfg?.required_stores).toHaveLength(1);
+    expect(cfg?.required_stores?.[0]?.suggested_remote).toBe("git@h:team-2.git");
+  });
+
+  it("switch-write sets the active write store", () => {
+    const projectRoot = seedProject();
+    storeSwitchWrite(projectRoot, "team");
+    expect(loadProjectConfig(projectRoot)?.active_write_store).toBe("team");
+  });
+
+  it("guides to `install` when the project config is absent", () => {
+    const bare = mkdtempSync(join(tmpdir(), "fabric-store-bare-"));
+    dirs.push(bare);
+    expect(() => storeBind(bare, { id: "team" })).toThrow(/install/);
   });
 });

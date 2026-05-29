@@ -1,13 +1,17 @@
 import {
   addMountedStore,
+  bindRequiredStore,
   detachMountedStore,
   explainStore,
+  type FabricConfig,
   type GlobalConfig,
   type MountedStore,
+  type RequiredStoreEntry,
   type StoreExplain,
 } from "@fenglimg/fabric-shared";
 
 import { loadGlobalConfig, resolveGlobalRoot, saveGlobalConfig } from "./global-config-io.js";
+import { loadProjectConfig, saveProjectConfig } from "./project-config-io.js";
 
 // ---------------------------------------------------------------------------
 // v2.1.0-rc.1 P3 — `fabric store {list,add,remove,explain}` orchestration.
@@ -56,4 +60,39 @@ export function storeExplain(
   globalRoot: string = resolveGlobalRoot(),
 ): StoreExplain | null {
   return explainStore(requireConfig(globalRoot), alias);
+}
+
+const NO_PROJECT_CONFIG =
+  "no project Fabric config — run `fabric install` in this repo first";
+
+function requireProjectConfig(projectRoot: string): FabricConfig {
+  const config = loadProjectConfig(projectRoot);
+  if (config === null) {
+    throw new Error(NO_PROJECT_CONFIG);
+  }
+  return config;
+}
+
+// `fabric store bind <id>`: declare a required store on the PROJECT config
+// (drives the read-set + clone onboarding). Dedupes by id (S59).
+export function storeBind(
+  projectRoot: string,
+  entry: RequiredStoreEntry,
+): FabricConfig {
+  const config = requireProjectConfig(projectRoot);
+  const next: FabricConfig = {
+    ...config,
+    required_stores: bindRequiredStore(config.required_stores ?? [], entry),
+  };
+  saveProjectConfig(next, projectRoot);
+  return next;
+}
+
+// `fabric store switch-write <alias>`: set the project's active write store for
+// non-personal scopes (S60). Personal-scope writes are unaffected (R5#3).
+export function storeSwitchWrite(projectRoot: string, alias: string): FabricConfig {
+  const config = requireProjectConfig(projectRoot);
+  const next: FabricConfig = { ...config, active_write_store: alias };
+  saveProjectConfig(next, projectRoot);
+  return next;
 }

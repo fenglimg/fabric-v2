@@ -1,7 +1,14 @@
 import type { MountedStore } from "@fenglimg/fabric-shared";
 import { defineCommand } from "citty";
 
-import { storeAdd, storeExplain, storeList, storeRemove } from "../store/store-ops.js";
+import {
+  storeAdd,
+  storeBind,
+  storeExplain,
+  storeList,
+  storeRemove,
+  storeSwitchWrite,
+} from "../store/store-ops.js";
 
 // ---------------------------------------------------------------------------
 // v2.1.0-rc.1 P3 — `fabric store` command group (S57/E4/S7).
@@ -67,6 +74,31 @@ const explainCommand = defineCommand({
   },
 });
 
+const bindCommand = defineCommand({
+  meta: { name: "bind", description: "Declare a required store on this project's config" },
+  args: {
+    id: { type: "positional", required: true, description: "Store alias/UUID to require" },
+    remote: { type: "string", description: "Suggested remote for clone onboarding" },
+  },
+  run({ args }) {
+    const entry =
+      args.remote === undefined ? { id: args.id } : { id: args.id, suggested_remote: args.remote };
+    const next = storeBind(process.cwd(), entry);
+    console.log(`bound required store '${args.id}' (${next.required_stores?.length ?? 0} required)`);
+  },
+});
+
+const switchWriteCommand = defineCommand({
+  meta: { name: "switch-write", description: "Set the active write store for non-personal scopes" },
+  args: {
+    alias: { type: "positional", required: true, description: "Alias of the store to write to" },
+  },
+  run({ args }) {
+    storeSwitchWrite(process.cwd(), args.alias);
+    console.log(`active write store set to '${args.alias}' for this project`);
+  },
+});
+
 export default defineCommand({
   meta: { name: "store", description: "Manage mounted Fabric knowledge stores" },
   subCommands: {
@@ -74,5 +106,7 @@ export default defineCommand({
     add: addCommand,
     remove: removeCommand,
     explain: explainCommand,
+    bind: bindCommand,
+    "switch-write": switchWriteCommand,
   },
 });

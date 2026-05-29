@@ -70,6 +70,12 @@ export const fabricConfigSchema = z.object({
   // personal, S11/S54) and `clone`'s missing-store onboarding (S51). Optional
   // + absent → read-set is just the implicit personal store.
   required_stores: z.array(requiredStoreEntrySchema).optional(),
+  // v2.1.0-rc.1 P3 (S60 / `store switch-write`): alias of the store that
+  // non-personal-scope writes land in for this project. Set by
+  // `fabric store switch-write <alias>`; consumed as the resolver's
+  // activeWriteAlias. Absent → no active write store yet. Personal-scope
+  // writes always target the implicit personal store regardless (R5#3).
+  active_write_store: z.string().optional(),
   // rc.17 (R-cut): the dev/test fixture-path config field was removed
   // end-to-end. The `EXTERNAL_FIXTURE_PATH` env var is now the sole source
   // consumed by `resolveDevMode()`. No z.preprocess alias — pre-rc.17
