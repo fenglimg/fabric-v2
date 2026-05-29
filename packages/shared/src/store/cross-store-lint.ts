@@ -54,3 +54,26 @@ export function lintCrossStoreReferences(input: CrossStoreLintInput): CrossStore
   }
   return violations;
 }
+
+// ---------------------------------------------------------------------------
+// v2.1.0-rc.1 P5 — R5#3 privacy boundary: a personal-layer entry must NEVER be
+// written into a shared store. The shared library carries ONLY team/project
+// scope; personal knowledge lives exclusively in the personal store. This is
+// the write-side companion to lintCrossStoreReferences (which guards
+// references): here we guard the ENTRY itself. The resolver already ROUTES
+// personal-scope writes to the personal store (resolveWriteTarget, R5#3); this
+// guard is the explicit refusal for any path that would force a personal entry
+// into a shared target anyway.
+// ---------------------------------------------------------------------------
+
+export type EntryLayer = "team" | "personal";
+
+// True when persisting `entryLayer` into a store of `storeVisibility` would leak
+// personal knowledge into a shared library. Only personal→shared is blocked;
+// team→shared, personal→personal, team→personal are all allowed.
+export function isPersonalLeakIntoSharedStore(
+  entryLayer: EntryLayer,
+  storeVisibility: StoreVisibility,
+): boolean {
+  return entryLayer === "personal" && storeVisibility === "shared";
+}
