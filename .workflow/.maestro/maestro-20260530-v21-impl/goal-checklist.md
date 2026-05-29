@@ -23,7 +23,7 @@
 
 ## Wave 进度（严格 DAG 串行）
 - [x] **Wave 0 · P0** — Schema+Resolver 契约+parity 矩阵（纯定义，不碰 HOME）✓ verified 2026-05-30
-- [ ] **Wave 1 · P0.5** — 验证基建（隔离测试墙，第一可执行件）
+- [x] **Wave 1 · P0.5** — 验证基建（隔离测试墙，第一可执行件）✓ verified 2026-05-30
 - [ ] **Wave 2 · P0.6** — Resolver 实现（TDD 转绿 P0.5 red-suite）
 - [ ] **Wave 3 · P1** — 多 store 存储+git 核心+跨库 pending 聚合
 - [ ] **Wave 4 · P2** — MCP 工具契约+resolution+写路径防泄漏
@@ -38,6 +38,7 @@
 - 跨 store pending 聚合：P1 提供 API → P2 fab_review 使用
 
 ## 当前状态
-- Wave 1 / P0.5，step 5（maestro-plan P0.5）。P0 已 done（4 schema+parity+resolver 契约+golden，build/test/tsc 全绿）。
+- Wave 2 / P0.6，step 10（maestro-plan P0.6）。P0 + P0.5 已 done。
+- P0.5 留下 11 个 it.fails 红套件（6 projectRoot + 4 readSet + 1 legacy-negative）+ 测试墙 helpers，P0.6 实现 resolver 把 golden 转绿（移除 .fails）。
 - 待拍板（非阻塞）：ADJ-P0-1 ProjectRootResolver 四信号优先级解读，见 status.json#/needs_adjudication
 </content>
