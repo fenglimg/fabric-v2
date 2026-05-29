@@ -46,10 +46,13 @@ import { ensureParentDirectory, getEventLedgerPath, sha256 } from "./_shared.js"
 import { buildKnowledgeMeta, isSameKnowledgeTestIndex, loadKbIdTypeMap, writeKnowledgeMeta } from "./knowledge-meta-builder.js";
 import {
   appendEventLedgerEvent,
+  dropEventsFromLedger,
   readEventLedger,
   rotateEventLedgerIfNeeded,
   truncateLedgerToLastNewline,
 } from "./event-ledger.js";
+import { appendCiteRollupRow, readCiteRollup, utcDayKey, utcDayBounds } from "./cite-rollup.js";
+import type { CiteRollupRow } from "./cite-rollup.js";
 import { reconcileKnowledge, resolveContentRefPath } from "./knowledge-sync.js";
 import { INJECTION_PATTERNS } from "./extract-knowledge.js";
 import { readAgentsMeta } from "../meta-reader.js";
@@ -1562,6 +1565,26 @@ export async function runDoctorFix(target: string): Promise<DoctorFixReport> {
       corrupted_path: truncResult.corrupted_path,
     });
     fixed.push(findIssue(before.fixable_errors, "event_ledger_partial_write"));
+  }
+
+  // v2.0.0-rc.39: cite-audit rollup. Runs BEFORE rotation so it captures the
+  // compliance signal of EVERY assistant_turn_observed older than the cite
+  // window (7d) — including turns 7-30d old that rotation would otherwise leave,
+  // AND turns >30d that rotation would archive raw without ever rolling up.
+  // Idempotent: no rollable turn → no-op. Drops rolled-up turns (archived),
+  // bounding events.jsonl near the cite window. Best-effort: a failure here
+  // must not block the rest of --fix, so it is wrapped.
+  try {
+    const rollup = await rollupCiteAuditIfNeeded(projectRoot);
+    if (rollup.turns_dropped > 0) {
+      fixed.push({
+        code: "cite_audit_rolled_up",
+        name: "Cite-audit rolled up",
+        message: `Rolled up ${rollup.turns_dropped} assistant turn(s) across ${rollup.days_rolled_up} day(s) into cite-rollup.jsonl and dropped them from the main ledger`,
+      });
+    }
+  } catch {
+    // rollup is best-effort hygiene; never block --fix on it.
   }
 
   // v2.0.0-rc.22 Scope A T4: unconditional sliding-window rotation step. This
@@ -8324,6 +8347,13 @@ export type CiteCoverageReport = {
   per_layer_type?: CiteLayerTypeBreakdown;
   contract_marker_ts?: number;
   generated_at: string;
+  // v2.0.0-rc.39: when the --since window reaches into cite-audit-rolled-up
+  // days, the rolled-up daily metrics are merged into the totals above (raw +
+  // rollup are disjoint). These surface the merge for transparency + let the
+  // CLI render the long-range daily compliance trend. Omitted when no rollup
+  // day fell in window (the common short-window case).
+  rollup_days_merged?: number;
+  rollup_trend?: { date: string; generated_at: string; metrics: CiteCoverageReport["metrics"] }[];
 };
 
 // v2.0.0-rc.23 TASK-08(c): extract the `KB: none` sentinel reason from the raw
@@ -8422,6 +8452,12 @@ export async function runDoctorCiteCoverage(
     // — defaults to 'all' so the CLI rc.20 surface (which has not yet wired
     // --layer; TASK-10 owns that change) keeps working byte-for-byte.
     layer?: "team" | "personal" | "all";
+    // rc.39: optional exclusive upper bound (ms). When set, only events with
+    // ts < until are aggregated. Additive — omitting it preserves byte-for-byte
+    // behaviour. Used by the cite-audit rollup to compute a single UTC-day
+    // window {since: dayStart, until: dayEnd} by reusing this exact aggregation
+    // (no duplicate metric logic that could drift from the live report).
+    until?: number;
   },
 ): Promise<CiteCoverageReport> {
   const layerFilter = options.layer ?? "all";
@@ -8504,7 +8540,10 @@ export async function runDoctorCiteCoverage(
   let ledgerEvents: EventLedgerEvent[] = [];
   try {
     const result = await readEventLedger(projectRoot, { since: effectiveSince });
-    ledgerEvents = result.events;
+    // rc.39: apply optional exclusive upper bound for single-day rollup windows.
+    ledgerEvents = options.until === undefined
+      ? result.events
+      : result.events.filter((e) => e.ts < (options.until as number));
   } catch {
     // Degraded ledger — fall back to ok-with-zero rather than 'skipped' since
     // the marker is present. CLI renderer (TASK-07) surfaces zero metrics as
@@ -8951,6 +8990,43 @@ export async function runDoctorCiteCoverage(
     uncorrelatable_edits: uncorrelatableEdits,
   };
 
+  // rc.39: merge cite-audit rollup days into the totals. Rolled-up turns were
+  // physically dropped from the raw ledger, so rollup rows and the raw metrics
+  // above are temporally DISJOINT — summing is exact, no double-count. Gated on
+  // `options.until === undefined` so the per-day rollup-computation calls (which
+  // always set `until`) never recursively merge prior rollup rows into
+  // themselves. With the default 7d window no rollup row qualifies (cutoff ≥ 7d),
+  // so the common-case report stays byte-for-byte identical.
+  let rollupDaysMerged = 0;
+  let rollupTrend: CiteRollupRow[] | undefined;
+  if (options.until === undefined) {
+    let rollupRows: CiteRollupRow[] = [];
+    try {
+      rollupRows = await readCiteRollup(projectRoot);
+    } catch {
+      rollupRows = [];
+    }
+    const inWindow = rollupRows.filter((r) => utcDayBounds(r.date).end > effectiveSince);
+    if (inWindow.length > 0) {
+      rollupTrend = inWindow;
+      rollupDaysMerged = inWindow.length;
+      for (const r of inWindow) {
+        metrics.total_turns += r.metrics.total_turns;
+        metrics.qualifying_cites += r.metrics.qualifying_cites;
+        metrics.recalled_unverified += r.metrics.recalled_unverified;
+        metrics.expected_but_missed += r.metrics.expected_but_missed;
+        metrics.edits_touched += r.metrics.edits_touched;
+        metrics.compliant_cites = (metrics.compliant_cites ?? 0) + (r.metrics.compliant_cites ?? 0);
+        metrics.noncompliant_cites =
+          (metrics.noncompliant_cites ?? 0) + (r.metrics.noncompliant_cites ?? 0);
+        metrics.uncorrelatable_edits =
+          (metrics.uncorrelatable_edits ?? 0) + (r.metrics.uncorrelatable_edits ?? 0);
+      }
+      const mergedDenom = (metrics.compliant_cites ?? 0) + (metrics.noncompliant_cites ?? 0);
+      metrics.cite_compliance_rate = mergedDenom > 0 ? (metrics.compliant_cites ?? 0) / mergedDenom : null;
+    }
+  }
+
   // per_client breakdown is only emitted when client filter is 'all' — for a
   // narrowed query the top-level metrics already represent that client and a
   // single-entry record would be redundant noise.
@@ -8988,6 +9064,115 @@ export async function runDoctorCiteCoverage(
     per_layer_type: layerTypeAccum,
     contract_marker_ts: contractMarker.marker_ts,
     generated_at: generatedAt,
+    ...(rollupDaysMerged > 0 ? { rollup_days_merged: rollupDaysMerged, rollup_trend: rollupTrend } : {}),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// v2.0.0-rc.39: cite-audit rollup
+// ---------------------------------------------------------------------------
+//
+// assistant_turn_observed dominates events.jsonl (~96% in heavy dogfood). Each
+// turn carries a cite audit payload that cite-coverage reads, but once a turn is
+// older than the cite window it is dead weight in the main ledger. This pass
+// rolls every such turn's day into ONE cite-rollup.jsonl row (computed by
+// replaying runDoctorCiteCoverage over a single-UTC-day window — same metric
+// logic as the live report, no drift) then DROPS the rolled-up turns from the
+// main ledger (archived to events.archive/, never deleted). Net effect: the
+// main ledger stays bounded near the cite window while the long-range compliance
+// trend survives as compact daily rows.
+//
+// Only assistant_turn_observed is rolled/dropped — every other (low-volume)
+// event stays in the ledger untouched. The per-day metrics are computed BEFORE
+// the drop, while turns + edit_intent_checked + knowledge_sections_fetched are
+// all still present, so correlation-based metrics (expected_but_missed etc.)
+// stay correct (modulo sessions that straddle a UTC midnight — an accepted
+// observability approximation, not exact accounting).
+export type CiteRollupResult = {
+  days_rolled_up: number;
+  turns_dropped: number;
+  cutoff_ts: number;
+};
+
+export async function rollupCiteAuditIfNeeded(
+  projectRoot: string,
+  opts: { cutoffDays?: number; now?: Date } = {},
+): Promise<CiteRollupResult> {
+  const now = opts.now ?? new Date();
+  // Default cutoff mirrors the cite-coverage default window (7d): turns younger
+  // than this stay raw so the live report is unaffected; older ones roll up.
+  const cutoffDays = typeof opts.cutoffDays === "number" && opts.cutoffDays >= 0 ? opts.cutoffDays : 7;
+  const cutoffMs = now.getTime() - cutoffDays * 86_400_000;
+
+  // Find the distinct UTC days that have at least one rollable turn.
+  let events: EventLedgerEvent[] = [];
+  try {
+    const result = await readEventLedger(projectRoot);
+    events = result.events;
+  } catch {
+    return { days_rolled_up: 0, turns_dropped: 0, cutoff_ts: cutoffMs };
+  }
+  const days = new Set<string>();
+  let rollableTurns = 0;
+  for (const e of events) {
+    if (e.event_type === "assistant_turn_observed" && e.ts < cutoffMs) {
+      days.add(utcDayKey(e.ts));
+      rollableTurns += 1;
+    }
+  }
+  if (rollableTurns === 0) {
+    return { days_rolled_up: 0, turns_dropped: 0, cutoff_ts: cutoffMs };
+  }
+
+  // One rollup row per day — reuse runDoctorCiteCoverage with a single-day
+  // {since, until} window so the stored metrics are byte-identical to what the
+  // live report would have produced for that day.
+  let daysRolledUp = 0;
+  const rolledDays = new Set<string>();
+  for (const date of [...days].sort()) {
+    const { start, end } = utcDayBounds(date);
+    // Boundary day is split at the exact cutoff ms: only turns that will be
+    // DROPPED (ts < cutoffMs) belong in the rollup row, so raw + rollup stay
+    // disjoint and the Task-4 merge can sum them without double-counting.
+    const report = await runDoctorCiteCoverage(projectRoot, {
+      since: start,
+      until: Math.min(end, cutoffMs),
+      client: "all",
+    });
+    // A day that cannot be rolled up (no cite-policy marker → status 'skipped',
+    // or zero coverable turns) is LEFT in the ledger — never silently drop a
+    // turn whose cite signal was not captured. Such turns fall to the general
+    // 30d rotation instead. This is the no-marker repo's safe path.
+    if (report.status !== "ok" || report.metrics.total_turns === 0) continue;
+    await appendCiteRollupRow(projectRoot, {
+      date,
+      generated_at: now.toISOString(),
+      metrics: report.metrics,
+    });
+    rolledDays.add(date);
+    daysRolledUp += 1;
+  }
+
+  if (rolledDays.size === 0) {
+    return { days_rolled_up: 0, turns_dropped: 0, cutoff_ts: cutoffMs };
+  }
+
+  // Drop ONLY turns whose day was successfully rolled up (archived, not
+  // deleted). Day-aware so un-rolled-up turns (pre-marker / skipped days) stay.
+  const dropResult = await dropEventsFromLedger(projectRoot, {
+    label: "cite-rolled",
+    now,
+    predicate: (parsed) =>
+      parsed["event_type"] === "assistant_turn_observed" &&
+      typeof parsed["ts"] === "number" &&
+      (parsed["ts"] as number) < cutoffMs &&
+      rolledDays.has(utcDayKey(parsed["ts"] as number)),
+  });
+
+  return {
+    days_rolled_up: daysRolledUp,
+    turns_dropped: dropResult.archivedCount,
+    cutoff_ts: cutoffMs,
   };
 }
 

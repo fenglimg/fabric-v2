@@ -18,6 +18,13 @@ export const EVENT_LEDGER_PATH = `${FABRIC_DIR}/${EVENT_LEDGER_FILE}`;
 // flush interval (60s default) carrying { timestamp, window, counters }.
 export const METRICS_LEDGER_FILE = "metrics.jsonl";
 export const METRICS_LEDGER_PATH = `${FABRIC_DIR}/${METRICS_LEDGER_FILE}`;
+// v2.0.0-rc.39: cite-audit rollup sidecar. assistant_turn_observed events carry
+// per-turn cite audit payload but are high-volume; once older than the cite
+// window they are rolled up into one daily compliance row here and dropped from
+// the main ledger, bounding events.jsonl while preserving the long-range cite
+// trend. gitignored (per-dev audit telemetry, like events/metrics).
+export const CITE_ROLLUP_FILE = "cite-rollup.jsonl";
+export const CITE_ROLLUP_PATH = `${FABRIC_DIR}/${CITE_ROLLUP_FILE}`;
 
 export function getLedgerPath(projectRoot: string): string {
   return join(projectRoot, LEDGER_PATH);
@@ -33,6 +40,10 @@ export function getEventLedgerPath(projectRoot: string): string {
 
 export function getMetricsLedgerPath(projectRoot: string): string {
   return join(projectRoot, METRICS_LEDGER_PATH);
+}
+
+export function getCiteRollupPath(projectRoot: string): string {
+  return join(projectRoot, CITE_ROLLUP_PATH);
 }
 
 export async function ensureParentDirectory(path: string): Promise<void> {

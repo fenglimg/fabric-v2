@@ -509,6 +509,99 @@ export async function rotateEventLedgerIfNeeded(
   });
 }
 
+// v2.0.0-rc.39: generic predicate-driven drop. Archives every line whose
+// parsed JSON satisfies `predicate` to `.fabric/events.archive/events-
+// {label}-YYYY-MM-DD.jsonl` and atomically rewrites the main ledger without
+// them. Mirrors rotateEventLedgerIfNeeded's archive/rewrite/tail-tolerance
+// machinery but cuts on an arbitrary predicate instead of a time cutoff — used
+// by the cite-audit rollup to drop rolled-up assistant_turn_observed rows while
+// leaving every other event in place. Lines that fail to parse are always kept
+// (never drop data we cannot classify). Reuses the `events_rotated` audit event
+// (its archived_count/kept_count/archive_path fields describe the drop exactly).
+export async function dropEventsFromLedger(
+  projectRoot: string,
+  opts: { predicate: (parsed: Record<string, unknown>) => boolean; label: string; now?: Date },
+): Promise<RotateEventLedgerResult> {
+  const eventPath = getEventLedgerPath(projectRoot);
+
+  return ledgerQueue.runExclusive(eventPath, async () => {
+    const now = opts.now ?? new Date();
+
+    let raw: string;
+    try {
+      raw = await readFile(eventPath, "utf8");
+    } catch (error) {
+      if (isNodeError(error) && error.code === "ENOENT") {
+        return { rotated: false, archivedCount: 0, keptCount: 0 };
+      }
+      throw error;
+    }
+    if (raw.length === 0) {
+      return { rotated: false, archivedCount: 0, keptCount: 0 };
+    }
+
+    const hasTrailingNewline = raw.endsWith("\n");
+    const segments = raw.split(/\r?\n/);
+    let keptTail = "";
+    if (!hasTrailingNewline && segments.length > 0) {
+      keptTail = segments.pop() ?? "";
+    }
+
+    const archived: string[] = [];
+    const kept: string[] = [];
+    for (const line of segments) {
+      const trimmed = line.trim();
+      if (trimmed.length === 0) continue;
+      let drop = false;
+      try {
+        const parsed = JSON.parse(trimmed) as Record<string, unknown>;
+        drop = opts.predicate(parsed);
+      } catch {
+        drop = false; // unparseable — keep
+      }
+      if (drop) archived.push(trimmed);
+      else kept.push(trimmed);
+    }
+
+    if (archived.length === 0) {
+      return { rotated: false, archivedCount: 0, keptCount: kept.length };
+    }
+
+    const yyyymmdd = formatUtcDate(now);
+    const archiveDirAbsolute = join(projectRoot, EVENT_LEDGER_ARCHIVE_DIR);
+    const archiveFilename = `events-${opts.label}-${yyyymmdd}.jsonl`;
+    const archiveAbsolutePath = join(archiveDirAbsolute, archiveFilename);
+    const archiveRelativePath = `${EVENT_LEDGER_ARCHIVE_DIR}/${archiveFilename}`;
+
+    await mkdir(archiveDirAbsolute, { recursive: true });
+    await appendFile(archiveAbsolutePath, archived.map((line) => `${line}\n`).join(""), "utf8");
+
+    const auditEvent = eventLedgerEventSchema.parse({
+      kind: "fabric-event",
+      id: `event:${randomUUID()}`,
+      ts: now.getTime(),
+      schema_version: 1,
+      event_type: "events_rotated",
+      cutoff_ts: now.toISOString(),
+      archived_count: archived.length,
+      kept_count: kept.length,
+      archive_path: archiveRelativePath,
+    });
+
+    const newMainLines: string[] = [JSON.stringify(auditEvent), ...kept];
+    let newMainContent = newMainLines.join("\n") + "\n";
+    if (keptTail.length > 0) newMainContent += keptTail;
+    await atomicWriteText(eventPath, newMainContent);
+
+    return {
+      rotated: true,
+      archivedCount: archived.length,
+      keptCount: kept.length,
+      archivePath: archiveRelativePath,
+    };
+  });
+}
+
 function resolveRetentionDays(projectRoot: string, override?: number): number {
   if (typeof override === "number" && Number.isFinite(override) && override >= 0) {
     return override;

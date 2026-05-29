@@ -19,12 +19,14 @@ import {
   ensureCiteContractPolicyActivatedMarker,
   ensureCitePolicyActivatedMarker,
   enrichDescriptions,
+  rollupCiteAuditIfNeeded,
   runDoctorCiteCoverage,
   runDoctorEmitCadenceCheck,
   runDoctorFix,
   runDoctorReport,
 } from "./doctor.js";
 import { readEventLedger } from "./event-ledger.js";
+import { readCiteRollup } from "./cite-rollup.js";
 import { writeKnowledgeMeta } from "./knowledge-meta-builder.js";
 import { sha256 } from "./_shared.js";
 
@@ -5152,6 +5154,124 @@ describe("ensureCiteContractPolicyActivatedMarker", () => {
 // per-metric coverage lands in TASK-08; this smoke locks the contract that the
 // real algorithm replaced the stub (non-zero metrics from seeded events) and
 // that the 'skipped' branch still surfaces when the marker cannot be written.
+// v2.0.0-rc.39: cite-audit rollup. Rolls assistant_turn_observed older than the
+// cite window into compact daily cite-rollup.jsonl rows + drops them from the
+// main ledger (archived), bounding events.jsonl while preserving the trend.
+describe("rollupCiteAuditIfNeeded", () => {
+  function appendLedgerLines(target: string, lines: Record<string, unknown>[]): void {
+    const ledgerPath = join(target, ".fabric", "events.jsonl");
+    const existing = readFileSync(ledgerPath, "utf8");
+    writeFileSync(ledgerPath, `${existing}${lines.map((e) => JSON.stringify(e)).join("\n")}\n`, "utf8");
+  }
+  function turnEvent(id: string, ts: number, citeId: string | null): Record<string, unknown> {
+    return {
+      kind: "fabric-event",
+      id: `event:${id}`,
+      ts,
+      schema_version: 1,
+      session_id: `sess-${id}`,
+      event_type: "assistant_turn_observed",
+      kb_line_raw: citeId ? `KB: ${citeId}` : null,
+      cite_ids: citeId ? [citeId] : [],
+      cite_tags: citeId ? ["planned"] : ["none"],
+      client: "cc",
+      turn_id: id,
+      timestamp: new Date(ts).toISOString(),
+    };
+  }
+
+  it("rolls up + drops old turns, keeps recent, and cite-coverage merges the rollup", async () => {
+    const target = createInitializedProject("cite-rollup-basic");
+    writeFile(".fabric/events.jsonl", "", target);
+
+    const nowMs = Date.UTC(2026, 4, 29, 12, 0, 0); // fixed clock
+    const day = 86_400_000;
+    // Marker predates all turns so they are coverable.
+    appendLedgerLines(target, [
+      {
+        kind: "fabric-event",
+        id: "event:marker",
+        ts: nowMs - 20 * day,
+        schema_version: 1,
+        event_type: "cite_policy_activated",
+        policy_version: "rc39-test",
+        timestamp: new Date(nowMs - 20 * day).toISOString(),
+      },
+    ]);
+    // Two OLD turns (10d ago, same UTC day, > 7d cutoff) + one RECENT turn (1d ago).
+    appendLedgerLines(target, [
+      turnEvent("old-1", nowMs - 10 * day, "KT-DEC-0001"),
+      turnEvent("old-2", nowMs - 10 * day, null),
+      turnEvent("recent-1", nowMs - 1 * day, "KT-DEC-0002"),
+    ]);
+
+    const result = await rollupCiteAuditIfNeeded(target, { now: new Date(nowMs), cutoffDays: 7 });
+    expect(result.turns_dropped).toBe(2);
+    expect(result.days_rolled_up).toBe(1);
+
+    // Old turns dropped from the main ledger, recent turn kept.
+    const { events } = await readEventLedger(target);
+    const turnIds = events
+      .filter((e) => e.event_type === "assistant_turn_observed")
+      .map((e) => (e as { turn_id?: string }).turn_id);
+    expect(turnIds).toEqual(["recent-1"]);
+
+    // One rollup row capturing the old day's 2 turns.
+    const rollup = await readCiteRollup(target);
+    expect(rollup).toHaveLength(1);
+    expect(rollup[0].metrics.total_turns).toBe(2);
+
+    // Long-window cite-coverage merges rollup + raw: 2 rolled + 1 raw = 3 turns.
+    const report = await runDoctorCiteCoverage(target, { since: 0, client: "all" });
+    expect(report.status).toBe("ok");
+    expect(report.metrics.total_turns).toBe(3);
+    expect(report.rollup_days_merged).toBe(1);
+  });
+
+  it("does NOT drop turns when there is no cite-policy marker (un-rollable)", async () => {
+    // werewolf-minigame repro: old turns but no cite_policy_activated marker →
+    // per-day cite-coverage is 'skipped' → nothing rolls up → nothing dropped.
+    const target = createInitializedProject("cite-rollup-no-marker");
+    writeFile(".fabric/events.jsonl", "", target);
+    const nowMs = Date.UTC(2026, 4, 29, 12, 0, 0);
+    appendLedgerLines(target, [
+      turnEvent("old-1", nowMs - 10 * 86_400_000, "KT-DEC-0001"),
+      turnEvent("old-2", nowMs - 10 * 86_400_000, "KT-DEC-0002"),
+    ]);
+
+    const result = await rollupCiteAuditIfNeeded(target, { now: new Date(nowMs), cutoffDays: 7 });
+    expect(result.turns_dropped).toBe(0);
+    expect(result.days_rolled_up).toBe(0);
+    expect(await readCiteRollup(target)).toHaveLength(0);
+    // Turns are LEFT in the ledger (fall to general 30d rotation instead).
+    const { events } = await readEventLedger(target);
+    expect(events.filter((e) => e.event_type === "assistant_turn_observed")).toHaveLength(2);
+  });
+
+  it("is a no-op when no turn is older than the cutoff", async () => {
+    const target = createInitializedProject("cite-rollup-noop");
+    writeFile(".fabric/events.jsonl", "", target);
+    const nowMs = Date.UTC(2026, 4, 29, 12, 0, 0);
+    appendLedgerLines(target, [
+      {
+        kind: "fabric-event",
+        id: "event:marker",
+        ts: nowMs - 20 * 86_400_000,
+        schema_version: 1,
+        event_type: "cite_policy_activated",
+        policy_version: "rc39-test",
+        timestamp: new Date(nowMs - 20 * 86_400_000).toISOString(),
+      },
+      turnEvent("recent-1", nowMs - 1 * 86_400_000, "KT-DEC-0001"),
+    ]);
+
+    const result = await rollupCiteAuditIfNeeded(target, { now: new Date(nowMs), cutoffDays: 7 });
+    expect(result.turns_dropped).toBe(0);
+    expect(result.days_rolled_up).toBe(0);
+    expect(await readCiteRollup(target)).toHaveLength(0);
+  });
+});
+
 describe("runDoctorCiteCoverage (smoke)", () => {
   it("aggregates total_turns + qualifying_cites + dismissed_histogram from seeded turns", async () => {
     const target = createInitializedProject("cite-coverage-smoke-turns");
