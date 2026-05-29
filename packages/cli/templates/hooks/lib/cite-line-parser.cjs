@@ -29,10 +29,25 @@
 const ID_RE = /^K[TP]-[A-Z]+-\d+$/;
 const SENTINEL_RE = /^KB:\s*none\b\s*(?:\[[^\]]*\])?\s*$/i;
 // v2.0.0-rc.27 TASK-003 (audit §2.18): multi-id citations supported via
-// comma-separated ID group. Mirrors packages/shared/src/cite-line-parser.ts.
-const FULL_RE =
-  /^KB:\s+(K[TP]-[A-Z]+-\d+(?:\s*,\s*K[TP]-[A-Z]+-\d+)*)(?:\s+\(([^)]*)\))?(?:\s+\[([^\]]+)\])?(?:\s+→\s*(.+))?\s*$/;
+// comma-separated ID group. v2.1.0-rc.1 P4 (F3/S62): each id may carry an
+// optional `<store>:` prefix. Mirrors packages/shared/src/cite-line-parser.ts.
+const QUALIFIED_ID = "(?:[^\\s,:]+:)?K[TP]-[A-Z]+-\\d+";
+const FULL_RE = new RegExp(
+  "^KB:\\s+(" +
+    QUALIFIED_ID +
+    "(?:\\s*,\\s*" +
+    QUALIFIED_ID +
+    ")*)(?:\\s+\\(([^)]*)\\))?(?:\\s+\\[([^\\]]+)\\])?(?:\\s+→\\s*(.+))?\\s*$",
+);
 const CHAINED_FROM_ID_RE = /chained-from\s+(K[TP]-[A-Z]+-\d+)/i;
+
+// Split `<store>:<id>` into qualifier + local id; bare id → null qualifier.
+function splitStorePrefix(token) {
+  const colon = token.lastIndexOf(":");
+  return colon === -1
+    ? { store: null, id: token }
+    : { store: token.slice(0, colon), id: token.slice(colon + 1) };
+}
 
 const ALLOWED_TAGS = new Set([
   // v2.0.0-rc.37 NEW-1: new simplified 2-state tag set ([applied] / [dismissed]).
@@ -89,17 +104,21 @@ function parseLine(line) {
   const trimmed = line.trim();
   if (trimmed.length === 0) return null;
   if (SENTINEL_RE.test(trimmed)) {
-    return { ids: [], tag: "none", commitment: null };
+    return { ids: [], stores: [], tag: "none", commitment: null };
   }
   const fullMatch = trimmed.match(FULL_RE);
   if (fullMatch) {
     // v2.0.0-rc.27 TASK-003 (audit §2.18): split + revalidate each id;
-    // capture chained-from tail id when present.
-    const primaryIds = fullMatch[1]
+    // capture chained-from tail id when present. v2.1.0-rc.1 P4 (F3): strip +
+    // surface any `<store>:` prefix into a parallel stores array.
+    const split = fullMatch[1]
       .split(",")
       .map((part) => part.trim())
-      .filter((part) => part.length > 0);
-    if (primaryIds.some((id) => !ID_RE.test(id))) return null;
+      .filter((part) => part.length > 0)
+      .map(splitStorePrefix);
+    if (split.some((entry) => !ID_RE.test(entry.id))) return null;
+    const primaryIds = split.map((entry) => entry.id);
+    const primaryStores = split.map((entry) => entry.store);
 
     const rawTag = fullMatch[3];
     const tag = parseTag(rawTag);
@@ -114,6 +133,7 @@ function parseLine(line) {
 
     return {
       ids: primaryIds.concat(chainedIds),
+      stores: primaryStores.concat(chainedIds.map(() => null)),
       tag,
       commitment: parseContractTail(fullMatch[4]),
     };
@@ -131,14 +151,15 @@ function parseLine(line) {
  * embedded id as an additional cite_id. cite_tags carries one tag per LINE.
  */
 function parseCiteLine(raw) {
-  const result = { cite_ids: [], cite_tags: [], cite_commitments: [] };
+  const result = { cite_ids: [], cite_tags: [], cite_commitments: [], cite_stores: [] };
   if (typeof raw !== "string") return result;
   for (const line of raw.split(/\r?\n/)) {
     const parsed = parseLine(line);
     if (!parsed) continue;
     result.cite_tags.push(parsed.tag);
-    for (const id of parsed.ids) {
-      result.cite_ids.push(id);
+    for (let i = 0; i < parsed.ids.length; i += 1) {
+      result.cite_ids.push(parsed.ids[i]);
+      result.cite_stores.push(parsed.stores[i] == null ? null : parsed.stores[i]);
     }
     if (parsed.commitment !== null) {
       // v2.0.0-rc.27.1 (Codex review fix): cite_commitments MUST be index-

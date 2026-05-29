@@ -35,20 +35,41 @@ export interface ParseCiteLineResult {
   cite_ids: string[];
   cite_tags: CiteTag[];
   cite_commitments: CiteCommitment[];
+  // v2.1.0-rc.1 P4 (F3/S62): store qualifier per cite_id, index-aligned with
+  // cite_ids. `<alias-or-uuid>:<id>` → the qualifier; a bare id → null. The
+  // qualifier disambiguates a shadowed local id across the read-set (S61).
+  cite_stores: (string | null)[];
 }
 
 const ID_RE = /^K[TP]-[A-Z]+-\d+$/;
 const SENTINEL_RE = /^KB:\s*none\b\s*(?:\[[^\]]*\])?\s*$/i;
-// `KB: <ID>[, <ID>...] [(anchor)] [[tag]] [→ <contract>]` — anchor / tag /
-// contract are individually optional. Contract tail starts at the first `→`.
+// `KB: [<store>:]<ID>[, [<store>:]<ID>...] [(anchor)] [[tag]] [→ <contract>]` —
+// store qualifier / anchor / tag / contract are individually optional. Contract
+// tail starts at the first `→`.
 //
 // v2.0.0-rc.27 TASK-003 (audit §2.18): the ID group now accepts comma-separated
 // multi-id citations (e.g. `KB: KT-DEC-0001, KT-PIT-0005 (combined)`). The
 // shared AGENTS.md cite-policy promised this since rc.5 but rc.26 emitted
 // `cite_ids: []` for any comma input — parser-doc gap. ID_RE still validates
 // each individual id at extract time so malformed entries still drop cleanly.
-const FULL_RE =
-  /^KB:\s+(K[TP]-[A-Z]+-\d+(?:\s*,\s*K[TP]-[A-Z]+-\d+)*)(?:\s+\(([^)]*)\))?(?:\s+\[([^\]]+)\])?(?:\s+→\s*(.+))?\s*$/;
+//
+// v2.1.0-rc.1 P4 (F3/S62): each id may carry an optional `<store>:` prefix
+// (`team:KT-DEC-0001`). The store qualifier (`[^\s,:]+`) is everything before
+// the local id's final `:`; it is stripped + surfaced into cite_stores.
+const QUALIFIED_ID = String.raw`(?:[^\s,:]+:)?K[TP]-[A-Z]+-\d+`;
+const FULL_RE = new RegExp(
+  String.raw`^KB:\s+(${QUALIFIED_ID}(?:\s*,\s*${QUALIFIED_ID})*)(?:\s+\(([^)]*)\))?(?:\s+\[([^\]]+)\])?(?:\s+→\s*(.+))?\s*$`,
+);
+
+// Split `<store>:<id>` into its qualifier + local id; a bare id yields a null
+// qualifier. The local id is the `K[PT]-...` tail (never contains a colon), so
+// the final colon separates the (optional) store qualifier from the id.
+function splitStorePrefix(token: string): { store: string | null; id: string } {
+  const colon = token.lastIndexOf(":");
+  return colon === -1
+    ? { store: null, id: token }
+    : { store: token.slice(0, colon), id: token.slice(colon + 1) };
+}
 // Extracts the embedded id from a `[chained-from <ID>]` tag tail. The audit
 // (§2.18) called out that rc.26's parser recognised the tag name but
 // silently dropped the chained id. We now expose it as a sibling cite_id so
@@ -108,13 +129,14 @@ function parseLine(line: string): {
   // primary citation group, PLUS any tag-embedded chained-from id appended
   // at the end. Sentinel lines return an empty array.
   ids: string[];
+  stores: (string | null)[];
   tag: CiteTag;
   commitment: CiteCommitment | null;
 } | null {
   const trimmed = line.trim();
   if (trimmed.length === 0) return null;
   if (SENTINEL_RE.test(trimmed)) {
-    return { ids: [], tag: "none", commitment: null };
+    return { ids: [], stores: [], tag: "none", commitment: null };
   }
   const fullMatch = trimmed.match(FULL_RE);
   if (fullMatch) {
@@ -122,11 +144,16 @@ function parseLine(line: string): {
     // commas (FULL_RE already validated the joint shape). Each candidate is
     // re-validated against ID_RE so a malformed entry inside an otherwise
     // well-formed multi-id line drops cleanly instead of partial-emitting.
-    const primaryIds = fullMatch[1]
+    // v2.1.0-rc.1 P4 (F3): each candidate may carry a `<store>:` prefix; strip
+    // + surface it alongside the validated local id.
+    const split = fullMatch[1]
       .split(",")
       .map((part) => part.trim())
-      .filter((part) => part.length > 0);
-    if (primaryIds.some((id) => !ID_RE.test(id))) return null;
+      .filter((part) => part.length > 0)
+      .map(splitStorePrefix);
+    if (split.some((entry) => !ID_RE.test(entry.id))) return null;
+    const primaryIds = split.map((entry) => entry.id);
+    const primaryStores = split.map((entry) => entry.store);
 
     const rawTag = fullMatch[3];
     const tag = parseTag(rawTag);
@@ -144,6 +171,8 @@ function parseLine(line: string): {
 
     return {
       ids: [...primaryIds, ...chainedIds],
+      // chained-from ids are never store-qualified → null per chained id.
+      stores: [...primaryStores, ...chainedIds.map(() => null)],
       tag,
       commitment: parseContractTail(fullMatch[4]),
     };
@@ -169,14 +198,16 @@ export function parseCiteLine(raw: string): ParseCiteLineResult {
     cite_ids: [],
     cite_tags: [],
     cite_commitments: [],
+    cite_stores: [],
   };
   if (typeof raw !== "string") return result;
   for (const line of raw.split(/\r?\n/)) {
     const parsed = parseLine(line);
     if (!parsed) continue;
     result.cite_tags.push(parsed.tag);
-    for (const id of parsed.ids) {
-      result.cite_ids.push(id);
+    for (let i = 0; i < parsed.ids.length; i += 1) {
+      result.cite_ids.push(parsed.ids[i]);
+      result.cite_stores.push(parsed.stores[i] ?? null);
     }
     if (parsed.commitment !== null) {
       // v2.0.0-rc.27.1 (Codex review fix): cite_commitments MUST be index-

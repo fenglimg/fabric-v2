@@ -73,6 +73,14 @@ const CORPUS: string[] = [
   "KB: KT-DEC-0001 [planned]\nKB: KP-PAT-0042 [recalled] → edit:foo.ts\nKB: KT-DEC-9003 [dismissed:scope-mismatch]",
   "KB: none\nKB: KT-DEC-0001 [recalled] → edit:foo.ts",
   "prose line\nKB: KT-DEC-0001 [planned]\nmore prose",
+  // v2.1.0-rc.1 P4 (F3/S62): store-qualified cite prefixes. NOTE: tags here use
+  // the legacy 5-state vocabulary the TS source + event-ledger enum share; the
+  // CJS twin's extra `applied`/`dismissed` recognition is a pre-existing drift
+  // tracked separately, so the parity corpus avoids `[applied]`.
+  "KB: team:KT-DEC-0001 (a) [recalled]",
+  "KB: platform-kb:KT-DEC-0001, KT-PIT-0005 (mixed) [recalled]",
+  "KB: bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb:KT-DEC-0001 [recalled] → edit:foo.ts",
+  "KB: team:KT-DEC-0001 (a) [chained-from KT-DEC-0009]",
 ];
 
 describe("cite-line-parser CJS twin — behavioral parity with TS source", () => {
@@ -92,7 +100,7 @@ describe("cite-line-parser CJS twin — behavioral parity with TS source", () =>
     // Runtime tolerance: parseCiteLine must not throw on null/undefined.
     // The TS signature is `(raw: string)`; both implementations defend.
     /* eslint-disable @typescript-eslint/no-explicit-any */
-    const empty = { cite_ids: [], cite_tags: [], cite_commitments: [] };
+    const empty = { cite_ids: [], cite_tags: [], cite_commitments: [], cite_stores: [] };
     expect((parseCiteLineCjs as any)(null)).toEqual(empty);
     expect((parseCiteLineCjs as any)(undefined)).toEqual(empty);
     expect((parseCiteLineTs as any)(null)).toEqual(empty);

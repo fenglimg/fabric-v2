@@ -111,7 +111,12 @@
       "context": "roadmap-v4 P0 文字 'env > 向上探 marker > cwd > repo marker' 字面自相矛盾: cwd 必然存在则 repo 信号永不可达。",
       "ai_decision": "采用可达的清晰优先级阶梯实现 golden 契约: env > 祖先 marker(向上探) > cwd 自身含 marker > repo root fallback。四信号各有 golden case 可达(project-root.golden.json)。",
       "blocking": false,
-      "needs_user": "若你本意是 repo 优先于 cwd(或 cwd 指 cwd-自身-marker 应高于祖先 marker), 请指正; P0.6 实现将据此对齐, 当前 golden 已锁本解读。" }
+      "needs_user": "若你本意是 repo 优先于 cwd(或 cwd 指 cwd-自身-marker 应高于祖先 marker), 请指正; P0.6 实现将据此对齐, 当前 golden 已锁本解读。" },
+    { "id": "ADJ-P4-1", "phase": "P4", "topic": "cite tag 词汇漂移: TS parser + event-ledger enum 仍 legacy 5-state, 未跟 rc.37 NEW-1 的 applied/dismissed 2-state",
+      "context": "P4 实现 cite store 前缀(F3/S62)时发现既有 drift: hooks/lib cite-line-parser.cjs(twin)已识别 [applied]/[dismissed] 2-state(rc.37 NEW-1 policy), 但 packages/shared/src/cite-line-parser.ts(TS 源)的 CiteTag/ALLOWED_TAGS 与 packages/shared/src/schemas/event-ledger.ts 的 cite_tags zod enum 仍是 legacy 5-state(planned/recalled/chained-from/dismissed/none, 无 applied)。后果: 服务端 cite-coverage(经 TS parser + event ledger)把 [applied] cite 归类为 none, 低估覆盖率; AGENTS.md cite policy 却已强制 [applied]。本 drift 早于 v2.1 多 store 重构, 与之正交。",
+      "ai_decision": "P4 不扩展修这个 drift — store 前缀工作(QUALIFIED_ID + cite_stores, TS+CJS twin 双改 + parity 守)已闭合并测试(shared 491 + cli parity 绿)。parity 语料避开 [applied] 防误触 drift。修复需改持久化 event-ledger zod enum(数据契约迁移风险: 旧事件 legacy enum / 新事件 applied 混存)+ TS CiteTag + 校验 cite-rollup/doctor cite-coverage 分类, 属独立 cite-词汇对齐 pass。",
+      "blocking": false,
+      "needs_user": "是否要在本 loop 内(或单独 rc)把 TS parser + event-ledger cite_tags enum 对齐到 rc.37 2-state(applied/dismissed), 修正服务端 cite-coverage 低估? 涉及持久化 enum 迁移, 需你拍板迁移策略(向后兼容并存 vs 全量重映射)。当前 parser 安全降级(applied→none)不阻断工作。" }
   ],
   "waves": [
     { "wave": 0, "phase": "P0", "tasks": ["P0"], "status": "completed" },

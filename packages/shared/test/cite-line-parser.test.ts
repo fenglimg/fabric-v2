@@ -182,6 +182,7 @@ describe("parseCiteLine — forward-compat / malformed token tolerance", () => {
       cite_ids: [],
       cite_tags: [],
       cite_commitments: [],
+      cite_stores: [],
     });
   });
 
@@ -190,18 +191,21 @@ describe("parseCiteLine — forward-compat / malformed token tolerance", () => {
       cite_ids: [],
       cite_tags: [],
       cite_commitments: [],
+      cite_stores: [],
     });
     // @ts-expect-error — runtime tolerance check
     expect(parseCiteLine(null)).toEqual({
       cite_ids: [],
       cite_tags: [],
       cite_commitments: [],
+      cite_stores: [],
     });
     // @ts-expect-error — runtime tolerance check
     expect(parseCiteLine(undefined)).toEqual({
       cite_ids: [],
       cite_tags: [],
       cite_commitments: [],
+      cite_stores: [],
     });
   });
 
@@ -375,5 +379,40 @@ describe("parseCiteLine — rc.27 multi-id + chained-from (audit §2.18)", () =>
       sharedCommitment,
       sharedCommitment,
     ]);
+  });
+});
+
+describe("parseCiteLine — store-qualified cite prefix (v2.1 P4, F3/S62)", () => {
+  it("strips and surfaces an alias prefix into cite_stores (bare id → null)", () => {
+    const r = parseCiteLine("KB: team:KT-DEC-0001 (auth) [applied]");
+    expect(r.cite_ids).toEqual(["KT-DEC-0001"]);
+    expect(r.cite_stores).toEqual(["team"]);
+  });
+
+  it("keeps cite_stores index-aligned across a mixed multi-id line", () => {
+    const r = parseCiteLine("KB: platform-kb:KT-DEC-0001, KT-PIT-0005 (mixed) [recalled]");
+    expect(r.cite_ids).toEqual(["KT-DEC-0001", "KT-PIT-0005"]);
+    // First id store-qualified, second bare.
+    expect(r.cite_stores).toEqual(["platform-kb", null]);
+  });
+
+  it("accepts a UUID qualifier and preserves the local id tail", () => {
+    const uuid = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+    const r = parseCiteLine(`KB: ${uuid}:KT-DEC-0001 [recalled] → edit:foo.ts`);
+    expect(r.cite_ids).toEqual(["KT-DEC-0001"]);
+    expect(r.cite_stores).toEqual([uuid]);
+    expect(r.cite_commitments[0].operators).toEqual([{ kind: "edit", target: "foo.ts" }]);
+  });
+
+  it("bare ids (no prefix) yield null stores — backward compatible", () => {
+    const r = parseCiteLine("KB: KT-DEC-0001 [applied]");
+    expect(r.cite_ids).toEqual(["KT-DEC-0001"]);
+    expect(r.cite_stores).toEqual([null]);
+  });
+
+  it("a chained-from id is never store-qualified (null slot)", () => {
+    const r = parseCiteLine("KB: team:KT-DEC-0001 (a) [chained-from KT-DEC-0009]");
+    expect(r.cite_ids).toEqual(["KT-DEC-0001", "KT-DEC-0009"]);
+    expect(r.cite_stores).toEqual(["team", null]);
   });
 });
