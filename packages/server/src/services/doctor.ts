@@ -1,6 +1,6 @@
 import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync } from "node:fs";
-import { access, mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
+import { access, appendFile, mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { constants } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, join, posix, relative as nodeRelative, resolve, sep } from "node:path";
@@ -42,7 +42,7 @@ import { readOrphanDemoteThresholdDays, readPayloadLimits } from "../config-load
 
 import { contextCache } from "../cache.js";
 import { atomicWriteJson, atomicWriteText } from "@fenglimg/fabric-shared/node/atomic-write";
-import { ensureParentDirectory, getEventLedgerPath, sha256 } from "./_shared.js";
+import { ensureParentDirectory, getEventLedgerPath, getMetricsLedgerPath, sha256 } from "./_shared.js";
 import { buildKnowledgeMeta, isSameKnowledgeTestIndex, loadKbIdTypeMap, writeKnowledgeMeta } from "./knowledge-meta-builder.js";
 import {
   appendEventLedgerEvent,
@@ -53,6 +53,8 @@ import {
 } from "./event-ledger.js";
 import { appendCiteRollupRow, readCiteRollup, utcDayKey, utcDayBounds } from "./cite-rollup.js";
 import type { CiteRollupRow } from "./cite-rollup.js";
+import { readMetrics, METRIC_COUNTER_NAMES } from "./metrics.js";
+import type { MetricsRow } from "./metrics.js";
 import { reconcileKnowledge, resolveContentRefPath } from "./knowledge-sync.js";
 import { INJECTION_PATTERNS } from "./extract-knowledge.js";
 import { readAgentsMeta } from "../meta-reader.js";
@@ -1585,6 +1587,22 @@ export async function runDoctorFix(target: string): Promise<DoctorFixReport> {
     }
   } catch {
     // rollup is best-effort hygiene; never block --fix on it.
+  }
+
+  // v2.0.0-rc.39 (P1 emit-fold): fold the EXISTING empty-shell backlog. Runs
+  // after the rollup so it only touches the live-window (<7d) empties the rollup
+  // left raw. Best-effort: a failure must not block the rest of --fix.
+  try {
+    const purge = await purgeEmptyShellTurnsIfNeeded(projectRoot);
+    if (purge.turns_folded > 0) {
+      fixed.push({
+        code: "empty_shell_turns_folded",
+        name: "Empty-shell turns folded",
+        message: `Folded ${purge.turns_folded} empty-shell assistant turn(s) into ${purge.groups_written} metrics.jsonl counter row(s) and dropped them from the main ledger`,
+      });
+    }
+  } catch {
+    // emit-fold purge is best-effort hygiene; never block --fix on it.
   }
 
   // v2.0.0-rc.22 Scope A T4: unconditional sliding-window rotation step. This
@@ -8418,6 +8436,49 @@ function matchesRelevancePath(editPath: string, relevancePaths: readonly string[
   return false;
 }
 
+// v2.0.0-rc.39 (P1 emit-fold reader merge): empty-shell assistant_turn_observed
+// turns no longer hit events.jsonl — the fabric-hint Stop hook (and the one-time
+// doctor --fix purge) fold them into metrics.jsonl counter rows keyed
+// `assistant_turn_observed[:<client>]`. To keep total_turns byte-for-byte
+// invariant across the fold, the live cite-coverage / emit-cadence readers add
+// these counters back. This helper sums the in-window folded turns, honouring
+// the same client + `[since, until)` window semantics the raw-turn loop applies.
+//
+// Window: a row counts when `since <= row.ts (< until)`. The fold writer stamps
+// each row with a ts inside the original turns' day (min ts of the folded
+// group), so day-level windowing matches the raw-event filter exactly for any
+// since/until that does not bisect a folded group's day — the real corpora keep
+// all folded empties strictly inside the live window, so this is exact.
+//
+// Client filter mirrors filteredTurns: 'all' sums every namespace (incl. the
+// bare, client-undefined key); a specific client sums ONLY that client's
+// namespaced key (a bare-key fold has no client discriminator, exactly as a
+// client-undefined raw turn is excluded from a narrowed query).
+const ASSISTANT_TURN_COUNTER_PREFIX = "assistant_turn_observed";
+function sumFoldedTurnCounters(
+  rows: MetricsRow[],
+  options: { since: number; until?: number; client: "cc" | "codex" | "cursor" | "all" },
+): number {
+  let sum = 0;
+  for (const row of rows) {
+    const ts = Date.parse(row.timestamp);
+    if (!Number.isFinite(ts)) continue;
+    if (ts < options.since) continue;
+    if (options.until !== undefined && ts >= options.until) continue;
+    for (const [key, value] of Object.entries(row.counters)) {
+      if (typeof value !== "number" || !Number.isFinite(value)) continue;
+      let matches = false;
+      if (options.client === "all") {
+        matches = key === ASSISTANT_TURN_COUNTER_PREFIX || key.startsWith(`${ASSISTANT_TURN_COUNTER_PREFIX}:`);
+      } else {
+        matches = key === `${ASSISTANT_TURN_COUNTER_PREFIX}:${options.client}`;
+      }
+      if (matches) sum += value;
+    }
+  }
+  return sum;
+}
+
 // v2.0.0-rc.20 TASK-06: Real cite-coverage report. Single readEventLedger pass
 // (event-type filter is intentionally omitted so the discriminated-union
 // partitioning happens in a single for-loop, per the buildLastActiveIndex
@@ -9025,6 +9086,26 @@ export async function runDoctorCiteCoverage(
       const mergedDenom = (metrics.compliant_cites ?? 0) + (metrics.noncompliant_cites ?? 0);
       metrics.cite_compliance_rate = mergedDenom > 0 ? (metrics.compliant_cites ?? 0) / mergedDenom : null;
     }
+
+    // rc.39 emit-fold: add the folded empty-shell turns back into total_turns.
+    // Same gate as the rollup merge (only the live report, never the per-day
+    // until-bounded rollup-computation calls — those aggregate raw events only,
+    // and the live reader adds the folded counters once). Empty shells carry
+    // zero cite signal, so they touch ONLY total_turns: compliance
+    // (compliant/(compliant+noncompliant)) and every other metric are unchanged.
+    // per_client is intentionally left raw-event-only here, mirroring the rollup
+    // merge above which also updates top-level metrics only.
+    try {
+      const metricsRows = await readMetrics(projectRoot);
+      const foldedTurns = sumFoldedTurnCounters(metricsRows, {
+        since: effectiveSince,
+        client: options.client,
+      });
+      metrics.total_turns += foldedTurns;
+    } catch {
+      // metrics.jsonl is best-effort observability — a read failure degrades to
+      // "no folded turns" rather than throwing (consistent with readCiteRollup).
+    }
   }
 
   // per_client breakdown is only emitted when client filter is 'all' — for a
@@ -9174,6 +9255,110 @@ export async function rollupCiteAuditIfNeeded(
     turns_dropped: dropResult.archivedCount,
     cutoff_ts: cutoffMs,
   };
+}
+
+// ---------------------------------------------------------------------------
+// v2.0.0-rc.39 (P1 emit-fold, one-time backlog purge):
+//
+// The rc.39 hook folds NEW empty-shell turns at the source. This function folds
+// the EXISTING backlog of empty-shell assistant_turn_observed events already
+// sitting in events.jsonl (heavy dogfood repos accrued tens of thousands). It
+// runs inside `doctor --fix` AFTER the cite-audit rollup (which sweeps every
+// turn ≥7d, cite-bearing or empty), so this targets the live-window (<7d) empty
+// shells the rollup intentionally leaves raw.
+//
+// Fold mechanism mirrors the hook: empties are tallied into metrics.jsonl
+// counter rows keyed `assistant_turn_observed[:<client>]`, then dropped from the
+// ledger (archived, never deleted). To keep cite-coverage total_turns invariant
+// across the purge, each counter row is stamped with the MIN original ts of its
+// (UTC-day, client) group: the reader's window filter (`ts >= effectiveSince`)
+// then treats the folded group exactly as it treated the raw events, as long as
+// the group's day does not straddle a window boundary — which holds because the
+// rollup already removed everything ≥7d, leaving only recent days strictly
+// inside the live window. The immediate cite-coverage re-check (dogfood
+// verification) confirms the number is unchanged.
+//
+// Empty-shell predicate is identical to the hook's: no KB: line (kb_line_raw
+// null/absent) AND no cite_ids AND no cite_commitments — i.e. zero cite signal.
+export type EmptyShellPurgeResult = {
+  turns_folded: number;
+  groups_written: number;
+};
+
+function isEmptyShellTurn(parsed: Record<string, unknown>): boolean {
+  if (parsed["event_type"] !== "assistant_turn_observed") return false;
+  const kb = parsed["kb_line_raw"];
+  if (kb !== null && kb !== undefined) return false;
+  const citeIds = parsed["cite_ids"];
+  if (Array.isArray(citeIds) && citeIds.length > 0) return false;
+  const citeCommitments = parsed["cite_commitments"];
+  if (Array.isArray(citeCommitments) && citeCommitments.length > 0) return false;
+  return true;
+}
+
+export async function purgeEmptyShellTurnsIfNeeded(
+  projectRoot: string,
+  opts: { now?: Date } = {},
+): Promise<EmptyShellPurgeResult> {
+  const now = opts.now ?? new Date();
+
+  let events: EventLedgerEvent[] = [];
+  try {
+    const result = await readEventLedger(projectRoot);
+    events = result.events;
+  } catch {
+    return { turns_folded: 0, groups_written: 0 };
+  }
+
+  // Group empty shells by (UTC-day, client). Value tracks count + min ts so the
+  // folded counter row lands inside the original turns' window.
+  const groups = new Map<string, { client: string | undefined; count: number; minTs: number }>();
+  for (const e of events) {
+    const parsed = e as unknown as Record<string, unknown>;
+    if (!isEmptyShellTurn(parsed)) continue;
+    const ts = typeof parsed["ts"] === "number" ? (parsed["ts"] as number) : now.getTime();
+    const client = typeof parsed["client"] === "string" ? (parsed["client"] as string) : undefined;
+    const key = `${utcDayKey(ts)}::${client ?? ""}`;
+    const existing = groups.get(key);
+    if (existing === undefined) {
+      groups.set(key, { client, count: 1, minTs: ts });
+    } else {
+      existing.count += 1;
+      if (ts < existing.minTs) existing.minTs = ts;
+    }
+  }
+
+  if (groups.size === 0) {
+    return { turns_folded: 0, groups_written: 0 };
+  }
+
+  // Write the folded counter rows BEFORE dropping (mirrors the rollup's
+  // sidecar-then-drop order). Each row carries one (day, client) group.
+  const metricsPath = getMetricsLedgerPath(projectRoot);
+  await ensureParentDirectory(metricsPath);
+  let turnsFolded = 0;
+  let groupsWritten = 0;
+  for (const { client, count, minTs } of groups.values()) {
+    const counterKey =
+      client !== undefined ? `${ASSISTANT_TURN_COUNTER_PREFIX}:${client}` : ASSISTANT_TURN_COUNTER_PREFIX;
+    const row: MetricsRow = {
+      timestamp: new Date(minTs).toISOString(),
+      window: "purge-fold",
+      counters: { [counterKey]: count },
+    };
+    await appendFile(metricsPath, `${JSON.stringify(row)}\n`);
+    turnsFolded += count;
+    groupsWritten += 1;
+  }
+
+  // Drop the folded empty shells (archived to events.archive/, never deleted).
+  await dropEventsFromLedger(projectRoot, {
+    label: "empty-shell-fold",
+    now,
+    predicate: (parsed) => isEmptyShellTurn(parsed),
+  });
+
+  return { turns_folded: turnsFolded, groups_written: groupsWritten };
 }
 
 // ---------------------------------------------------------------------------
@@ -9831,6 +10016,23 @@ export async function runDoctorEmitCadenceCheck(projectRoot: string): Promise<Em
     } else if (event.event_type === "assistant_turn_observed") {
       observed += 1;
     }
+  }
+
+  // rc.39 emit-fold + rc.37 Wave B: both signals are counter-managed in part.
+  // `knowledge_sections_fetched` moved to metrics.jsonl wholesale (rc.37); the
+  // empty-shell half of `assistant_turn_observed` folds into metrics.jsonl
+  // counters (rc.39). Without adding these back the ratio would read artificially
+  // low once the fold/clean-slate took effect. All-time window (since=0) — the
+  // cadence check has no `--since` bound.
+  try {
+    const metricsRows = await readMetrics(projectRoot);
+    observed += sumFoldedTurnCounters(metricsRows, { since: 0, client: "all" });
+    for (const row of metricsRows) {
+      const v = row.counters[METRIC_COUNTER_NAMES.knowledge_sections_fetched];
+      if (typeof v === "number" && Number.isFinite(v)) fetched += v;
+    }
+  } catch {
+    // best-effort — degrade to events-only counts on read failure.
   }
   if (fetched === 0) {
     return {

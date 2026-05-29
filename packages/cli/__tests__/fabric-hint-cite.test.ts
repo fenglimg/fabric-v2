@@ -432,6 +432,99 @@ describe("fabric-hint.cjs — extractAndWriteAssistantTurnsBestEffort", () => {
       { operators: [{ kind: "require", target: "trimEnd" }], skip_reason: null },
     ]);
   });
+
+  // -------------------------------------------------------------------------
+  // v2.0.0-rc.39 (P1 emit-fold): empty-shell turns (no KB: line, no cites)
+  // are NOT written to events.jsonl — they fold into one metrics.jsonl counter
+  // row. This is the core bloat fix (99% of turns are empty shells).
+  // -------------------------------------------------------------------------
+  it("rc.39 emit-fold: empty-shell turns write no events.jsonl line, fold into one metrics.jsonl counter row", () => {
+    writeTranscriptFixture(transcriptPath, [
+      { role: "user", text: "u1" },
+      { role: "assistant", text: "no KB line here, just a plain answer" },
+      { role: "user", text: "u2" },
+      { role: "assistant", text: "another plain turn with no cite" },
+      { role: "user", text: "u3" },
+      { role: "assistant", text: "third empty shell" },
+    ]);
+
+    hook.extractAndWriteAssistantTurnsBestEffort(tempRoot, {
+      session_id: "empty-shell-session",
+      transcript_path: transcriptPath,
+    });
+
+    // No events.jsonl at all — every assistant turn was an empty shell.
+    const ledgerPath = join(tempRoot, ".fabric", "events.jsonl");
+    expect(existsSync(ledgerPath)).toBe(false);
+
+    // metrics.jsonl carries exactly one row with the folded count.
+    const metricsPath = join(tempRoot, ".fabric", "metrics.jsonl");
+    expect(existsSync(metricsPath)).toBe(true);
+    const rows = readFileSync(metricsPath, "utf8")
+      .split(/\r?\n/)
+      .filter((l) => l.length > 0)
+      .map((l) => JSON.parse(l));
+    expect(rows).toHaveLength(1);
+    // detectClient() returns undefined in the test env (no adapter/env), so the
+    // counter folds into the bare key.
+    expect(rows[0].counters.assistant_turn_observed).toBe(3);
+  });
+
+  it("rc.39 emit-fold: mixed batch emits events only for cite-bearing turns; empty shells fold to counter; total_turns reconstructs", () => {
+    writeTranscriptFixture(transcriptPath, [
+      { role: "user", text: "u1" },
+      { role: "assistant", text: "plain empty shell #1" },
+      { role: "user", text: "u2" },
+      { role: "assistant", text: "KB: KT-DEC-0001 [planned]\n\nbody" },
+      { role: "user", text: "u3" },
+      { role: "assistant", text: "plain empty shell #2" },
+      { role: "user", text: "u4" },
+      { role: "assistant", text: "KB: none\n\nbody" },
+    ]);
+
+    hook.extractAndWriteAssistantTurnsBestEffort(tempRoot, {
+      session_id: "mixed-session",
+      transcript_path: transcriptPath,
+    });
+
+    // 2 cite-bearing turns (one id-cite, one KB: none sentinel) → 2 events.
+    const ledgerPath = join(tempRoot, ".fabric", "events.jsonl");
+    const events = readFileSync(ledgerPath, "utf8")
+      .split(/\r?\n/)
+      .filter((l) => l.length > 0)
+      .map((l) => JSON.parse(l));
+    expect(events).toHaveLength(2);
+    for (const e of events) {
+      expect(() => assistantTurnObservedEventSchema.parse(e)).not.toThrow();
+    }
+
+    // 2 empty shells → counter = 2.
+    const metricsPath = join(tempRoot, ".fabric", "metrics.jsonl");
+    const rows = readFileSync(metricsPath, "utf8")
+      .split(/\r?\n/)
+      .filter((l) => l.length > 0)
+      .map((l) => JSON.parse(l));
+    expect(rows).toHaveLength(1);
+    expect(rows[0].counters.assistant_turn_observed).toBe(2);
+
+    // total_turns invariant: events (2) + counter (2) = 4 assistant turns.
+    expect(events.length + rows[0].counters.assistant_turn_observed).toBe(4);
+  });
+
+  it("rc.39 emit-fold: zero empty shells writes no metrics.jsonl row (no spurious zero rows)", () => {
+    writeTranscriptFixture(transcriptPath, [
+      { role: "user", text: "u1" },
+      { role: "assistant", text: "KB: KT-DEC-0001 [planned]\n\nbody" },
+    ]);
+
+    hook.extractAndWriteAssistantTurnsBestEffort(tempRoot, {
+      session_id: "no-empty-session",
+      transcript_path: transcriptPath,
+    });
+
+    const metricsPath = join(tempRoot, ".fabric", "metrics.jsonl");
+    expect(existsSync(metricsPath)).toBe(false);
+  });
 });
 
 // ---------------------------------------------------------------------------

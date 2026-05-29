@@ -19,6 +19,7 @@ import {
   ensureCiteContractPolicyActivatedMarker,
   ensureCitePolicyActivatedMarker,
   enrichDescriptions,
+  purgeEmptyShellTurnsIfNeeded,
   rollupCiteAuditIfNeeded,
   runDoctorCiteCoverage,
   runDoctorEmitCadenceCheck,
@@ -5269,6 +5270,199 @@ describe("rollupCiteAuditIfNeeded", () => {
     expect(result.turns_dropped).toBe(0);
     expect(result.days_rolled_up).toBe(0);
     expect(await readCiteRollup(target)).toHaveLength(0);
+  });
+});
+
+// v2.0.0-rc.39 (P1 emit-fold): empty-shell turns fold into metrics.jsonl counter
+// rows; the live cite-coverage / emit-cadence readers add them back so the
+// metric stays invariant across the fold.
+describe("rc.39 emit-fold counter merge", () => {
+  function seedEvents(target: string, events: unknown[]): void {
+    const ledgerPath = join(target, ".fabric", "events.jsonl");
+    const existing = existsSync(ledgerPath) ? readFileSync(ledgerPath, "utf8") : "";
+    writeFileSync(ledgerPath, existing + events.map((e) => JSON.stringify(e)).join("\n") + "\n", "utf8");
+  }
+  function writeMetricsRows(target: string, rows: unknown[]): void {
+    const metricsPath = join(target, ".fabric", "metrics.jsonl");
+    writeFileSync(metricsPath, rows.map((r) => JSON.stringify(r)).join("\n") + "\n", "utf8");
+  }
+  function citeTurn(id: string, ts: number, client: string): Record<string, unknown> {
+    return {
+      kind: "fabric-event",
+      id: `event:${id}`,
+      ts,
+      schema_version: 1,
+      session_id: `sess-${id}`,
+      event_type: "assistant_turn_observed",
+      kb_line_raw: "KB: KT-DEC-0001 [planned]",
+      cite_ids: ["KT-DEC-0001"],
+      cite_tags: ["planned"],
+      client,
+      turn_id: id,
+      timestamp: new Date(ts).toISOString(),
+    };
+  }
+
+  it("adds in-window folded counters to total_turns (invariant: events + counter)", async () => {
+    const target = createInitializedProject("emit-fold-merge-basic");
+    writeFile(".fabric/events.jsonl", "", target);
+    const marker = await ensureCitePolicyActivatedMarker(target);
+    // 1 cite-bearing event + a folded counter of 40 empty shells (same client).
+    seedEvents(target, [citeTurn("c1", marker.marker_ts + 10, "cc")]);
+    writeMetricsRows(target, [
+      {
+        timestamp: new Date(marker.marker_ts + 20).toISOString(),
+        window: "stop",
+        counters: { "assistant_turn_observed:cc": 40 },
+      },
+    ]);
+
+    const report = await runDoctorCiteCoverage(target, { since: 0, client: "all" });
+    expect(report.status).toBe("ok");
+    // 1 raw cite event + 40 folded empty shells = 41 total turns.
+    expect(report.metrics.total_turns).toBe(41);
+    // Compliance is unaffected by empty shells (they touch only total_turns).
+    expect(report.metrics.qualifying_cites).toBe(1);
+  });
+
+  it("honours the client filter (a narrowed query sums only that client's namespaced counter)", async () => {
+    const target = createInitializedProject("emit-fold-merge-client");
+    writeFile(".fabric/events.jsonl", "", target);
+    const marker = await ensureCitePolicyActivatedMarker(target);
+    seedEvents(target, [
+      citeTurn("cc1", marker.marker_ts + 10, "cc"),
+      citeTurn("cx1", marker.marker_ts + 11, "codex"),
+    ]);
+    writeMetricsRows(target, [
+      {
+        timestamp: new Date(marker.marker_ts + 20).toISOString(),
+        window: "stop",
+        counters: { "assistant_turn_observed:cc": 5, "assistant_turn_observed:codex": 7 },
+      },
+    ]);
+
+    const all = await runDoctorCiteCoverage(target, { since: 0, client: "all" });
+    expect(all.metrics.total_turns).toBe(2 + 5 + 7); // 2 events + 12 folded
+
+    const ccOnly = await runDoctorCiteCoverage(target, { since: 0, client: "cc" });
+    expect(ccOnly.metrics.total_turns).toBe(1 + 5); // cc event + cc fold only
+
+    const codexOnly = await runDoctorCiteCoverage(target, { since: 0, client: "codex" });
+    expect(codexOnly.metrics.total_turns).toBe(1 + 7);
+  });
+
+  it("excludes folded counters older than the window (since filter)", async () => {
+    const target = createInitializedProject("emit-fold-merge-window");
+    writeFile(".fabric/events.jsonl", "", target);
+    const marker = await ensureCitePolicyActivatedMarker(target);
+    seedEvents(target, [citeTurn("c1", marker.marker_ts + 10, "cc")]);
+    // One counter inside the window, one stamped far in the past (before marker).
+    writeMetricsRows(target, [
+      {
+        timestamp: new Date(marker.marker_ts + 20).toISOString(),
+        window: "stop",
+        counters: { "assistant_turn_observed:cc": 3 },
+      },
+      {
+        timestamp: new Date(marker.marker_ts - 10_000).toISOString(),
+        window: "stop",
+        counters: { "assistant_turn_observed:cc": 99 },
+      },
+    ]);
+
+    const report = await runDoctorCiteCoverage(target, { since: 0, client: "all" });
+    // effectiveSince = marker_ts, so the pre-marker counter (99) is excluded.
+    expect(report.metrics.total_turns).toBe(1 + 3);
+  });
+
+  it("emit-cadence: observed includes folded turn counters; fetched includes the metrics counter", async () => {
+    const target = createInitializedProject("emit-fold-cadence");
+    writeFile(".fabric/events.jsonl", "", target);
+    const marker = await ensureCitePolicyActivatedMarker(target);
+    // 2 cite-bearing turns remain as events.
+    seedEvents(target, [
+      citeTurn("c1", marker.marker_ts + 10, "cc"),
+      citeTurn("c2", marker.marker_ts + 11, "cc"),
+    ]);
+    writeMetricsRows(target, [
+      {
+        timestamp: new Date(marker.marker_ts + 20).toISOString(),
+        window: "stop",
+        counters: { "assistant_turn_observed:cc": 8, knowledge_sections_fetched: 10 },
+      },
+    ]);
+
+    const cadence = await runDoctorEmitCadenceCheck(target);
+    // observed = 2 events + 8 folded = 10; fetched = 0 events + 10 counter = 10.
+    expect(cadence.observed).toBe(10);
+    expect(cadence.fetched).toBe(10);
+    expect(cadence.ratio).toBeCloseTo(1.0, 5);
+    expect(cadence.status).toBe("ok");
+  });
+
+  function emptyTurn(id: string, ts: number, client: string): Record<string, unknown> {
+    return {
+      kind: "fabric-event",
+      id: `event:${id}`,
+      ts,
+      schema_version: 1,
+      session_id: `sess-${id}`,
+      event_type: "assistant_turn_observed",
+      kb_line_raw: null,
+      cite_ids: [],
+      cite_tags: ["none"],
+      client,
+      turn_id: id,
+      timestamp: new Date(ts).toISOString(),
+    };
+  }
+
+  it("purge: folds existing empty-shell backlog to counters, drops events, keeps cite-coverage total_turns invariant", async () => {
+    const target = createInitializedProject("emit-fold-purge");
+    writeFile(".fabric/events.jsonl", "", target);
+    const marker = await ensureCitePolicyActivatedMarker(target);
+    // 1 cite-bearing turn + 5 empty shells (recent, same day, same client).
+    seedEvents(target, [
+      citeTurn("c1", marker.marker_ts + 10, "cc"),
+      emptyTurn("e1", marker.marker_ts + 20, "cc"),
+      emptyTurn("e2", marker.marker_ts + 21, "cc"),
+      emptyTurn("e3", marker.marker_ts + 22, "cc"),
+      emptyTurn("e4", marker.marker_ts + 23, "cc"),
+      emptyTurn("e5", marker.marker_ts + 24, "cc"),
+    ]);
+
+    // Baseline total_turns (empties still raw events): 1 cite + 5 empty = 6.
+    const before = await runDoctorCiteCoverage(target, { since: 0, client: "all" });
+    expect(before.metrics.total_turns).toBe(6);
+
+    const result = await purgeEmptyShellTurnsIfNeeded(target);
+    expect(result.turns_folded).toBe(5);
+    expect(result.groups_written).toBe(1); // one (day, client) group
+
+    // Empty shells dropped from the ledger; only the cite turn remains.
+    const { events } = await readEventLedger(target);
+    const turnIds = events
+      .filter((e) => e.event_type === "assistant_turn_observed")
+      .map((e) => (e as { turn_id?: string }).turn_id);
+    expect(turnIds).toEqual(["c1"]);
+
+    // INVARIANT: total_turns unchanged across the purge (1 raw + 5 folded = 6).
+    const after = await runDoctorCiteCoverage(target, { since: 0, client: "all" });
+    expect(after.metrics.total_turns).toBe(6);
+    expect(after.metrics.cite_compliance_rate).toBe(before.metrics.cite_compliance_rate);
+  });
+
+  it("purge: idempotent — a second run finds no empties and is a no-op", async () => {
+    const target = createInitializedProject("emit-fold-purge-idem");
+    writeFile(".fabric/events.jsonl", "", target);
+    const marker = await ensureCitePolicyActivatedMarker(target);
+    seedEvents(target, [emptyTurn("e1", marker.marker_ts + 20, "cc")]);
+
+    const first = await purgeEmptyShellTurnsIfNeeded(target);
+    expect(first.turns_folded).toBe(1);
+    const second = await purgeEmptyShellTurnsIfNeeded(target);
+    expect(second.turns_folded).toBe(0);
+    expect(second.groups_written).toBe(0);
   });
 });
 

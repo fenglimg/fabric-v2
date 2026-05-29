@@ -86,6 +86,16 @@ try {
 // node_modules access, so it cannot import from @fenglimg/fabric-server.
 const FABRIC_DIR = ".fabric";
 const EVENT_LEDGER_FILE = "events.jsonl";
+// v2.0.0-rc.39 (P1 emit-fold): high-frequency empty-shell assistant_turn_observed
+// turns (kb_line_raw=null AND no cite_ids AND no cite_commitments) carry zero
+// cite-audit signal, so emitting one events.jsonl line each is pure bloat. They
+// are folded at the emit source into a single per-Stop metrics.jsonl counter row
+// `{ counters: { assistant_turn_observed[:<client>]: N } }`. The cite-coverage /
+// emit-cadence readers add this counter back into total_turns so the metric is
+// byte-for-byte invariant (the fold preserves count semantics, incl. the legacy
+// per-Stop re-emission, exactly). Mirrors packages/server/src/services/metrics.ts
+// row shape; written directly (the .cjs hook cannot import the TS service).
+const METRICS_LEDGER_FILE = "metrics.jsonl";
 const EVENT_TYPE_PROPOSED = "knowledge_proposed";
 const EVENT_TYPE_INIT_SCAN_COMPLETED = "init_scan_completed";
 // v2.0.0-rc.7 T10: doctor_run event drives Signal D (maintenance hint).
@@ -1336,8 +1346,28 @@ function extractAndWriteAssistantTurnsBestEffort(cwd, stdinPayload) {
       randomUUID = null;
     }
 
+    // v2.0.0-rc.39 (P1 emit-fold): empty-shell turns (no KB: line, no cites)
+    // do not get an events.jsonl line — they are tallied and folded into one
+    // metrics.jsonl counter row at the end of this batch. This zeroes the 99%
+    // empty-shell bloat at the source while keeping cite-bearing turns as
+    // discrete audit events. Count carries per-Stop re-emission exactly (we
+    // tally every empty turn the transcript presents, not just new ones), so
+    // the reader-side counter merge reconstructs total_turns byte-for-byte.
+    let emptyShellCount = 0;
     for (const turn of turns) {
       try {
+        const citeIds = Array.isArray(turn.cite_ids) ? turn.cite_ids : [];
+        const citeCommitments = Array.isArray(turn.cite_commitments)
+          ? turn.cite_commitments
+          : [];
+        const isEmptyShell =
+          (turn.kb_line_raw === null || turn.kb_line_raw === undefined) &&
+          citeIds.length === 0 &&
+          citeCommitments.length === 0;
+        if (isEmptyShell) {
+          emptyShellCount += 1;
+          continue;
+        }
         const idSuffix = typeof randomUUID === "function"
           ? randomUUID()
           : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
@@ -1349,7 +1379,7 @@ function extractAndWriteAssistantTurnsBestEffort(cwd, stdinPayload) {
           session_id: sessionId,
           event_type: EVENT_TYPE_ASSISTANT_TURN_OBSERVED,
           kb_line_raw: turn.kb_line_raw,
-          cite_ids: Array.isArray(turn.cite_ids) ? turn.cite_ids : [],
+          cite_ids: citeIds,
           cite_tags: Array.isArray(turn.cite_tags) ? turn.cite_tags : [],
           // rc.24 TASK-04: cite_commitments parallel array (assistantTurn
           // ObservedEventSchema gained this slot in rc.24 TASK-01). Empty
@@ -1357,7 +1387,7 @@ function extractAndWriteAssistantTurnsBestEffort(cwd, stdinPayload) {
           // the schema defaults `.default([])` so omitting it would also be
           // valid, but emitting an explicit `[]` keeps the on-disk shape
           // uniform across rc.24+ events.
-          cite_commitments: Array.isArray(turn.cite_commitments) ? turn.cite_commitments : [],
+          cite_commitments: citeCommitments,
           turn_id: `${sessionId}-${turn.envelope_index}`,
           envelope_index: turn.envelope_index,
           timestamp: new Date().toISOString(),
@@ -1367,6 +1397,30 @@ function extractAndWriteAssistantTurnsBestEffort(cwd, stdinPayload) {
       } catch {
         // Per-turn failure must not abort the remaining turns; the Stop hook
         // contract is "never block on hook failure". Best-effort continues.
+      }
+    }
+
+    // rc.39 emit-fold: write one metrics.jsonl counter row for the folded
+    // empty-shell turns. Best-effort — a failure here must never block the
+    // Stop hook (KT-DEC-0007). The counter key is namespaced by client so the
+    // reader's per_client total_turns breakdown stays invariant; an undefined
+    // client (adapter lib absent) folds into the bare `assistant_turn_observed`
+    // key, mirroring how such turns omit the event-side `client` discriminator.
+    if (emptyShellCount > 0) {
+      try {
+        const counterKey =
+          client !== undefined
+            ? `${EVENT_TYPE_ASSISTANT_TURN_OBSERVED}:${client}`
+            : EVENT_TYPE_ASSISTANT_TURN_OBSERVED;
+        const metricsRow = {
+          timestamp: new Date().toISOString(),
+          window: "stop",
+          counters: { [counterKey]: emptyShellCount },
+        };
+        const metricsPath = join(fabricDir, METRICS_LEDGER_FILE);
+        appendFileSync(metricsPath, JSON.stringify(metricsRow) + "\n", "utf8");
+      } catch {
+        // metrics fold is observability-only; never block the hook on failure.
       }
     }
   } catch {
@@ -1938,6 +1992,8 @@ module.exports = {
   CONSTANTS: {
     FABRIC_DIR,
     EVENT_LEDGER_FILE,
+    METRICS_LEDGER_FILE,
+    EVENT_TYPE_ASSISTANT_TURN_OBSERVED,
     EVENT_TYPE_PROPOSED,
     EVENT_TYPE_INIT_SCAN_COMPLETED,
     // rc.7 T7: legacy aliases kept for back-compat with the existing test

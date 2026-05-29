@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { existsSync, fsyncSync, openSync, closeSync, readFileSync, statSync } from "node:fs";
 import { appendFile, mkdir, readFile, truncate, writeFile } from "node:fs/promises";
+import { gzipSync, gunzipSync } from "node:zlib";
 import { join } from "node:path";
 
 import {
@@ -567,14 +568,30 @@ export async function dropEventsFromLedger(
       return { rotated: false, archivedCount: 0, keptCount: kept.length };
     }
 
+    // v2.0.0-rc.39 (T6): dropEventsFromLedger backs the cite-audit rollup and
+    // the one-time empty-shell fold — both produce LARGE one-shot dumps (tens of
+    // MB on heavy dogfood). Write the archive gzip-compressed (.jsonl.gz) so the
+    // cold-storage dump does not balloon the repo. Same-day same-label re-runs
+    // append by decompress→concat→recompress (rare; the fold is idempotent so a
+    // second run finds nothing to archive). Archives are cold storage — no live
+    // reader globs events.archive/, so .gz is purely a disk-footprint win.
     const yyyymmdd = formatUtcDate(now);
     const archiveDirAbsolute = join(projectRoot, EVENT_LEDGER_ARCHIVE_DIR);
-    const archiveFilename = `events-${opts.label}-${yyyymmdd}.jsonl`;
+    const archiveFilename = `events-${opts.label}-${yyyymmdd}.jsonl.gz`;
     const archiveAbsolutePath = join(archiveDirAbsolute, archiveFilename);
     const archiveRelativePath = `${EVENT_LEDGER_ARCHIVE_DIR}/${archiveFilename}`;
 
     await mkdir(archiveDirAbsolute, { recursive: true });
-    await appendFile(archiveAbsolutePath, archived.map((line) => `${line}\n`).join(""), "utf8");
+    const newArchiveText = archived.map((line) => `${line}\n`).join("");
+    let combinedArchiveText = newArchiveText;
+    try {
+      const existingGz = await readFile(archiveAbsolutePath);
+      combinedArchiveText = gunzipSync(existingGz).toString("utf8") + newArchiveText;
+    } catch (error) {
+      if (!(isNodeError(error) && error.code === "ENOENT")) throw error;
+      // No prior same-day archive — write a fresh .gz.
+    }
+    await writeFile(archiveAbsolutePath, gzipSync(Buffer.from(combinedArchiveText, "utf8")));
 
     const auditEvent = eventLedgerEventSchema.parse({
       kind: "fabric-event",

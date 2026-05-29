@@ -3,12 +3,15 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { gunzipSync } from "node:zlib";
+
 import { describe, expect, it, afterEach, beforeEach, vi } from "vitest";
 
 import { EVENT_LEDGER_PATH } from "./_shared.js";
 import {
   __resetOversizeWarnForTests,
   appendEventLedgerEvent,
+  dropEventsFromLedger,
   readEventLedger,
   rotateEventLedgerIfNeeded,
   truncateLedgerToLastNewline,
@@ -978,6 +981,76 @@ describe("appendEventLedgerEvent — per-field truncate (rc.37 NEW-14)", () => {
       event_type: "knowledge_proposed",
     });
     expect((events[0] as { reason: string }).reason).toBe("ok");
+  });
+});
+
+describe("dropEventsFromLedger — gzip archive (rc.39 T6)", () => {
+  async function seedLedger(projectRoot: string, lines: Record<string, unknown>[]): Promise<void> {
+    await mkdir(join(projectRoot, ".fabric"), { recursive: true });
+    await writeFile(
+      join(projectRoot, ".fabric", "events.jsonl"),
+      lines.map((l) => JSON.stringify(l)).join("\n") + "\n",
+      "utf8",
+    );
+  }
+
+  it("writes the archive gzip-compressed (.jsonl.gz) and rewrites the main ledger without the dropped events", async () => {
+    const projectRoot = await createTempProject();
+    const now = new Date("2026-05-29T12:00:00.000Z");
+    await seedLedger(projectRoot, [
+      { kind: "fabric-event", id: "event:keep-1", ts: now.getTime(), schema_version: 1, event_type: "doctor_run" },
+      { kind: "fabric-event", id: "event:drop-1", ts: now.getTime(), schema_version: 1, event_type: "assistant_turn_observed", kb_line_raw: null, cite_ids: [], cite_commitments: [] },
+      { kind: "fabric-event", id: "event:drop-2", ts: now.getTime(), schema_version: 1, event_type: "assistant_turn_observed", kb_line_raw: null, cite_ids: [], cite_commitments: [] },
+    ]);
+
+    const result = await dropEventsFromLedger(projectRoot, {
+      label: "empty-shell-fold",
+      now,
+      predicate: (p) => p["event_type"] === "assistant_turn_observed",
+    });
+
+    expect(result.rotated).toBe(true);
+    expect(result.archivedCount).toBe(2);
+    expect(result.archivePath).toBe(".fabric/events.archive/events-empty-shell-fold-2026-05-29.jsonl.gz");
+
+    // Archive is a real gzip stream that decompresses to the two dropped events.
+    const gzPath = join(projectRoot, ".fabric", "events.archive", "events-empty-shell-fold-2026-05-29.jsonl.gz");
+    expect(existsSync(gzPath)).toBe(true);
+    const decompressed = gunzipSync(await readFile(gzPath)).toString("utf8");
+    const archivedLines = decompressed.split("\n").filter((l) => l.length > 0).map((l) => JSON.parse(l));
+    expect(archivedLines.map((e) => e.id)).toEqual(["event:drop-1", "event:drop-2"]);
+    // No uncompressed .jsonl twin was left behind.
+    expect(existsSync(join(projectRoot, ".fabric", "events.archive", "events-empty-shell-fold-2026-05-29.jsonl"))).toBe(false);
+
+    // Main ledger keeps the non-matching event and drops the two turns. Assert
+    // against the raw file (the kept event is a minimal hand-crafted shape, so
+    // readEventLedger's schema validation is bypassed here on purpose).
+    const mainRaw = await readFile(join(projectRoot, ".fabric", "events.jsonl"), "utf8");
+    expect(mainRaw).toContain("event:keep-1");
+    expect(mainRaw).not.toContain("event:drop-1");
+    expect(mainRaw).not.toContain("event:drop-2");
+  });
+
+  it("same-day same-label re-run appends into the existing .gz (decompress → concat → recompress)", async () => {
+    const projectRoot = await createTempProject();
+    const now = new Date("2026-05-29T12:00:00.000Z");
+    await seedLedger(projectRoot, [
+      { kind: "fabric-event", id: "event:a", ts: now.getTime(), schema_version: 1, event_type: "assistant_turn_observed", kb_line_raw: null, cite_ids: [], cite_commitments: [] },
+    ]);
+    await dropEventsFromLedger(projectRoot, { label: "empty-shell-fold", now, predicate: (p) => p["event_type"] === "assistant_turn_observed" });
+
+    // Second batch, same day + label — re-seed the main ledger with a new turn.
+    await seedLedger(projectRoot, [
+      { kind: "fabric-event", id: "event:b", ts: now.getTime() + 1, schema_version: 1, event_type: "assistant_turn_observed", kb_line_raw: null, cite_ids: [], cite_commitments: [] },
+    ]);
+    await dropEventsFromLedger(projectRoot, { label: "empty-shell-fold", now, predicate: (p) => p["event_type"] === "assistant_turn_observed" });
+
+    const gzPath = join(projectRoot, ".fabric", "events.archive", "events-empty-shell-fold-2026-05-29.jsonl.gz");
+    const decompressed = gunzipSync(await readFile(gzPath)).toString("utf8");
+    const ids = decompressed.split("\n").filter((l) => l.length > 0).map((l) => JSON.parse(l).id);
+    // Both batches present — the second run appended, not overwrote.
+    expect(ids).toContain("event:a");
+    expect(ids.length).toBeGreaterThanOrEqual(2);
   });
 });
 
