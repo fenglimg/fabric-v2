@@ -96,3 +96,22 @@ export function storeSwitchWrite(projectRoot: string, alias: string): FabricConf
   saveProjectConfig(next, projectRoot);
   return next;
 }
+
+// Clone-onboarding guidance core (S51): which of this project's required_stores
+// are NOT mounted in the global registry. After `git clone` of a Fabric project
+// the CLI runs this to guide the user to `fabric store add` the missing stores.
+// Empty global config ⇒ every required store is missing (nothing mounted yet).
+export function missingRequiredStores(
+  projectRoot: string,
+  globalRoot: string = resolveGlobalRoot(),
+): RequiredStoreEntry[] {
+  const project = loadProjectConfig(projectRoot);
+  if (project === null || project.required_stores === undefined) {
+    return [];
+  }
+  const global = loadGlobalConfig(globalRoot);
+  const mounted = new Set(
+    (global?.stores ?? []).flatMap((s) => [s.alias, s.store_uuid]),
+  );
+  return project.required_stores.filter((r) => !mounted.has(r.id));
+}

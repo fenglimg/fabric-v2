@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -6,8 +6,13 @@ import { globalConfigSchema } from "@fenglimg/fabric-shared";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { loadGlobalConfig, saveGlobalConfig } from "../src/store/global-config-io.js";
-import { loadProjectConfig, saveProjectConfig } from "../src/store/project-config-io.js";
 import {
+  loadProjectConfig,
+  projectConfigPath,
+  saveProjectConfig,
+} from "../src/store/project-config-io.js";
+import {
+  missingRequiredStores,
   storeAdd,
   storeBind,
   storeExplain,
@@ -112,5 +117,33 @@ describe("fabric store bind / switch-write (project config)", () => {
     const bare = mkdtempSync(join(tmpdir(), "fabric-store-bare-"));
     dirs.push(bare);
     expect(() => storeBind(bare, { id: "team" })).toThrow(/install/);
+  });
+});
+
+describe("clone onboarding — missing required stores (S51)", () => {
+  it("lists required stores not mounted in the global registry", () => {
+    storeAdd({ store_uuid: TEAM, alias: "team" }, globalRoot);
+    const projectRoot = mkdtempSync(join(tmpdir(), "fabric-clone-"));
+    dirs.push(projectRoot);
+    saveProjectConfig(
+      {
+        project_id: "11111111-1111-4111-8111-111111111111",
+        required_stores: [{ id: "team" }, { id: "platform", suggested_remote: "git@h:platform.git" }],
+      },
+      projectRoot,
+    );
+    const missing = missingRequiredStores(projectRoot, globalRoot);
+    expect(missing.map((m) => m.id)).toEqual(["platform"]);
+  });
+});
+
+describe("config abort (S34)", () => {
+  it("aborts (throws) on a malformed project fabric-config.json", () => {
+    const projectRoot = mkdtempSync(join(tmpdir(), "fabric-badcfg-"));
+    dirs.push(projectRoot);
+    const path = projectConfigPath(projectRoot);
+    mkdirSync(join(projectRoot, ".fabric"), { recursive: true });
+    writeFileSync(path, "{ not valid json", "utf8");
+    expect(() => loadProjectConfig(projectRoot)).toThrow();
   });
 });
