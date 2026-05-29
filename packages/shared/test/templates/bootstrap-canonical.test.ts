@@ -50,6 +50,13 @@ describe("bootstrap-canonical", () => {
         expect(BOOTSTRAP_CANONICAL).toContain("KB: <id>");
       });
 
+      it("documents the v2.1 store-qualified cite prefix (F3/S62)", () => {
+        // Multi-store read-sets disambiguate a shadowed local id via a
+        // `<store-alias>:<id>` cite prefix; the canonical policy must teach it.
+        expect(BOOTSTRAP_CANONICAL).toContain("KB: <store-alias>:<id>");
+        expect(BOOTSTRAP_CANONICAL).toContain("personal-only");
+      });
+
       it("exposes the rc.37 NEW-1 simplified 2-state cite vocabulary", () => {
         // rc.37 NEW-1 collapsed planned / recalled / chained-from into a single
         // `applied` tag, leaving `dismissed:<reason>` untouched. Legacy 4-state

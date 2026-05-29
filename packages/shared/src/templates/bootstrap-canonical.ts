@@ -132,6 +132,7 @@ export const BOOTSTRAP_CANONICAL = `# Fabric Bootstrap
 
 - **触发**: 做 edit / decide / propose plan 之前,**回复首行**必须写 \`KB: <id> (<≤8字 用法>) [applied|dismissed:<reason>]\` 或 \`KB: none [<reason>]\`。
 - **\`[applied]\` 验证义务**: 引用任何 id 前必须先用 fab_recall (或两步 fab_plan_context → fab_get_knowledge_sections) 实际抓 KB body, 防止编造 id。验证不通过 = 不能 cite。
+- **store 前缀 (v2.1, 多 store)**: 当 read-set 含多个 store 且同一 local id 在多 store 间 shadow 时,cite 必须 store-qualified: \`KB: <store-alias>:<id> ...\`(如 \`KB: team:KT-DEC-0001 (auth) [applied]\`);alias 用户自定/canonical,底层 UUID。单 store 或无歧义时裸 \`KB: <id>\` 仍 valid。personal-only 条目 cite 进团队产物=强 warning(接 P2 写路径防泄漏 R5#3)。
 - **contract 语法**: decisions/pitfalls 类 \`[applied]\` cite 尾段加 contract: \`→ <operator> [<operator> ...]\`,operator ∈ {\`edit:<glob>\` \`!edit:<glob>\` \`require:<symbol>\` \`forbid:<symbol>\` \`skip:<reason>\`}。例:\`KB: K-001 (auth) [applied] → edit:src/auth/**/*.ts !edit:src/legacy/**\`。
 - **skip reason 词典**: \`sequencing | conditional | semantic | aesthetic | architectural | other:<text>\`。
 - **type 路由**: models 类引用为 reference cite,不需要 contract;guidelines/processes 类暂不强制,推后 LLM-judge。
