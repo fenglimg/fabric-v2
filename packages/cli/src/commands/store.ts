@@ -3,6 +3,7 @@ import { defineCommand } from "citty";
 
 import { regenerateBindingsSnapshot } from "../store/bindings-io.js";
 import {
+  assertStoreMountable,
   storeAdd,
   storeBind,
   storeExplain,
@@ -38,6 +39,9 @@ const addCommand = defineCommand({
     remote: { type: "string", description: "Git remote locator (omit for local-only)" },
   },
   run({ args }) {
+    // ADJ-NEWN-6: fail fast on a phantom mount (uuid with no on-disk tree)
+    // instead of writing the registry entry and crashing later in `sync`.
+    assertStoreMountable(args.uuid);
     const store: MountedStore =
       args.remote === undefined
         ? { store_uuid: args.uuid, alias: args.alias }

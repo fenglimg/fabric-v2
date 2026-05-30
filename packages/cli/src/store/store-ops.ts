@@ -1,8 +1,12 @@
+import { existsSync } from "node:fs";
+import { join } from "node:path";
+
 import {
   addMountedStore,
   bindRequiredStore,
   detachMountedStore,
   explainStore,
+  storeRelativePath,
   type FabricConfig,
   type GlobalConfig,
   type MountedStore,
@@ -44,6 +48,27 @@ export function storeAdd(
   const next = addMountedStore(requireConfig(globalRoot), store);
   saveGlobalConfig(next, globalRoot);
   return next;
+}
+
+// ADJ-NEWN-6 (v2.1 dogfood): refuse a "phantom mount". `store add` previously
+// wrote the registry entry even when no store tree existed on disk for that
+// uuid — the failure only surfaced later when `fabric sync` crashed on a
+// non-existent cwd (spawnSync git ENOENT). This guard moves the failure to
+// `add` time: the store directory must already exist on disk (cloned via
+// `fabric install --global --url <remote>` or created locally). Pure existence
+// check so the I/O edge (commands/store.ts) stays testable.
+export function assertStoreMountable(
+  uuid: string,
+  globalRoot: string = resolveGlobalRoot(),
+): void {
+  const storeDir = join(globalRoot, storeRelativePath(uuid));
+  if (!existsSync(join(storeDir, "store.json"))) {
+    throw new Error(
+      `cannot mount store ${uuid}: no store tree at ${storeDir} — ` +
+        `clone it first (\`fabric install --global --url <remote>\`) or create it locally, ` +
+        `then re-run \`fabric store add\`. Refusing to register a phantom store.`,
+    );
+  }
 }
 
 export function storeRemove(

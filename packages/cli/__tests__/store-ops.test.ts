@@ -12,6 +12,7 @@ import {
   saveProjectConfig,
 } from "../src/store/project-config-io.js";
 import {
+  assertStoreMountable,
   missingRequiredStores,
   storeAdd,
   storeBind,
@@ -57,6 +58,26 @@ describe("fabric store add/list", () => {
     expect(() => storeAdd({ store_uuid: PLATFORM, alias: "team" }, globalRoot)).toThrow(
       /alias 'team' already mounts/,
     );
+  });
+});
+
+// ADJ-NEWN-6 (v2.1 Wave0 dogfood): `store add` registered a uuid whose store
+// tree never existed (phantom mount), deferring the crash to `fabric sync`
+// (spawnSync git ENOENT on a non-existent cwd). The guard moves the failure to
+// add time.
+describe("assertStoreMountable (ADJ-NEWN-6 phantom-mount guard)", () => {
+  it("throws when the store directory has no store.json", () => {
+    expect(() => assertStoreMountable(PLATFORM, globalRoot)).toThrow(/phantom store/);
+  });
+
+  it("passes when the store tree exists on disk", () => {
+    const dir = join(globalRoot, "stores", PLATFORM);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(
+      join(dir, "store.json"),
+      JSON.stringify({ store_uuid: PLATFORM, created_at: "2026-05-30T00:00:00.000Z", canonical_alias: "platform" }),
+    );
+    expect(() => assertStoreMountable(PLATFORM, globalRoot)).not.toThrow();
   });
 });
 
