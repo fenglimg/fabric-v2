@@ -176,7 +176,8 @@ describe("summarizeTranscript — Codex CLI shape (audit §2.16 regression)", ()
       "KB: KT-DEC-0001 [recalled] → edit:src/foo.ts",
     );
     expect(r.assistant_turns[0].cite_ids).toEqual(["KT-DEC-0001"]);
-    expect(r.assistant_turns[0].cite_tags).toEqual(["recalled"]);
+    // v2.1.0-rc.1 (ADJ-P4-1): legacy [recalled] input remaps to [applied].
+    expect(r.assistant_turns[0].cite_tags).toEqual(["applied"]);
   });
 
   it("returns empty result on missing file (best-effort, no throw)", () => {

@@ -18,7 +18,10 @@
 //     auto-ships to cc/codex/cursor with no install pipeline change.
 //
 // Vocabulary contract (mirrored 1:1 with the TS source):
-//   - cite_tags enum: planned | recalled | chained-from | dismissed | none
+//   - cite_tags enum: applied | dismissed | none (rc.37 NEW-1 2-state vocab).
+//     v2.1.0-rc.1 (ADJ-P4-1, full remap): legacy rc≤36 tags (planned / recalled
+//     / chained-from) are REMAPPED to `applied` here — accepted as input but no
+//     longer emitted verbatim, so the TS source and this twin stay in lockstep.
 //   - operator kinds: edit | not_edit | require | forbid
 //     (source token `!edit:` → schema kind `not_edit`)
 //   - skip:<reason> captures everything after the first colon, so
@@ -49,26 +52,24 @@ function splitStorePrefix(token) {
     : { store: token.slice(0, colon), id: token.slice(colon + 1) };
 }
 
-const ALLOWED_TAGS = new Set([
-  // v2.0.0-rc.37 NEW-1: new simplified 2-state tag set ([applied] / [dismissed]).
-  // Old 4-state tags (planned / recalled / chained-from) accepted for
-  // backward compat — they continue to parse and count toward cite-coverage
-  // so in-flight workspaces don't lose their existing audit signal.
-  "applied",
-  "dismissed",
-  // Legacy tags (rc ≤36).
-  "planned",
-  "recalled",
-  "chained-from",
-  "none",
-]);
+// v2.1.0-rc.1 (ADJ-P4-1, full remap): legacy rc≤36 tags collapse to `applied`.
+// Mirrors LEGACY_CITE_TAG_REMAP / normalizeCiteTag in the TS source — accepted
+// as input but emitted as the 2-state vocab so cite-coverage never undercounts.
+const LEGACY_CITE_TAG_REMAP = {
+  planned: "applied",
+  recalled: "applied",
+  "chained-from": "applied",
+};
 
 function parseTag(rawTag) {
   if (!rawTag) return "none";
   // Tags may carry tails like `chained-from KT-DEC-0001` or
   // `dismissed:scope-mismatch`; head token (whitespace/colon-bounded) wins.
   const head = rawTag.trim().split(/[\s:]+/)[0].toLowerCase();
-  return ALLOWED_TAGS.has(head) ? head : "none";
+  if (head === "applied" || head === "dismissed" || head === "none") {
+    return head;
+  }
+  return LEGACY_CITE_TAG_REMAP[head] || "none";
 }
 
 function parseContractTail(tail) {

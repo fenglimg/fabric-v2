@@ -3,14 +3,14 @@
  * `packages/cli/templates/hooks/fabric-hint.cjs` +
  * `packages/cli/templates/hooks/lib/cite-contract-reminder.cjs`.
  *
- * Reminder contract (B2 + B6 locks):
- *   - Triggered ONLY when cite_tags contains "recalled" AND
- *     cite_commitments[i].operators is empty AND skip_reason is null AND
- *     idTypeMap.get(cite_ids[i]) ∈ {decision, pitfall}.
+ * Reminder contract (B2 + B6 locks; v2.1.0-rc.1 ADJ-P4-1 full remap):
+ *   - Triggered ONLY when cite_tags contains "applied" (legacy planned/recalled/
+ *     chained-from remap to applied) AND cite_commitments[i].operators is empty
+ *     AND skip_reason is null AND idTypeMap.get(cite_ids[i]) ∈ {decision, pitfall}.
  *   - One reminder line per offending id, deduplicated across the turn
  *     summary; sentinel turns contribute no offenders.
  *   - Reminder format:
- *     `⚠ KB: <id> cited as [recalled] but missing contract; add ` +
+ *     `⚠ KB: <id> cited as [applied] but missing contract; add ` +
  *     `\`→ edit:<glob>\` or \`→ skip:<reason>\` next turn`
  *   - Non-blocking — written to stderr, never throws.
  *
@@ -153,7 +153,7 @@ describe("cite-contract-reminder.cjs — formatContractMissingReminders", () => 
         envelope_index: 0,
         kb_line_raw: "KB: KT-DEC-0001 [recalled] → edit:src/foo.ts",
         cite_ids: ["KT-DEC-0001"],
-        cite_tags: ["recalled"],
+        cite_tags: ["applied"],
         cite_commitments: [
           { operators: [{ kind: "edit", target: "src/foo.ts" }], skip_reason: null },
         ],
@@ -170,7 +170,7 @@ describe("cite-contract-reminder.cjs — formatContractMissingReminders", () => 
         envelope_index: 0,
         kb_line_raw: "KB: KT-DEC-0001 [recalled]",
         cite_ids: ["KT-DEC-0001"],
-        cite_tags: ["recalled"],
+        cite_tags: ["applied"],
         cite_commitments: [{ operators: [], skip_reason: null }],
       },
     ];
@@ -180,7 +180,7 @@ describe("cite-contract-reminder.cjs — formatContractMissingReminders", () => 
     });
     expect(out).toHaveLength(1);
     expect(out[0]).toContain("⚠ KB: KT-DEC-0001");
-    expect(out[0]).toContain("[recalled]");
+    expect(out[0]).toContain("[applied]");
     expect(out[0]).toContain("→ edit:");
     expect(out[0]).toContain("→ skip:");
   });
@@ -191,7 +191,7 @@ describe("cite-contract-reminder.cjs — formatContractMissingReminders", () => 
         envelope_index: 0,
         kb_line_raw: "KB: KT-PIT-0001 [recalled] → skip:sequencing",
         cite_ids: ["KT-PIT-0001"],
-        cite_tags: ["recalled"],
+        cite_tags: ["applied"],
         cite_commitments: [{ operators: [], skip_reason: "sequencing" }],
       },
     ];
@@ -206,7 +206,7 @@ describe("cite-contract-reminder.cjs — formatContractMissingReminders", () => 
         envelope_index: 0,
         kb_line_raw: "KB: KT-MOD-0001 [recalled]",
         cite_ids: ["KT-MOD-0001"],
-        cite_tags: ["recalled"],
+        cite_tags: ["applied"],
         cite_commitments: [{ operators: [], skip_reason: null }],
       },
     ];
@@ -221,14 +221,14 @@ describe("cite-contract-reminder.cjs — formatContractMissingReminders", () => 
         envelope_index: 0,
         kb_line_raw: "KB: KT-GLD-0001 [recalled]",
         cite_ids: ["KT-GLD-0001"],
-        cite_tags: ["recalled"],
+        cite_tags: ["applied"],
         cite_commitments: [{ operators: [], skip_reason: null }],
       },
       {
         envelope_index: 1,
         kb_line_raw: "KB: KT-PRO-0001 [recalled]",
         cite_ids: ["KT-PRO-0001"],
-        cite_tags: ["recalled"],
+        cite_tags: ["applied"],
         cite_commitments: [{ operators: [], skip_reason: null }],
       },
     ];
@@ -243,7 +243,7 @@ describe("cite-contract-reminder.cjs — formatContractMissingReminders", () => 
         envelope_index: 0,
         kb_line_raw: "KB: KT-DEC-9999 [recalled]",
         cite_ids: ["KT-DEC-9999"], // not in idTypeMap
-        cite_tags: ["recalled"],
+        cite_tags: ["applied"],
         cite_commitments: [{ operators: [], skip_reason: null }],
       },
     ];
@@ -258,21 +258,21 @@ describe("cite-contract-reminder.cjs — formatContractMissingReminders", () => 
         envelope_index: 0,
         kb_line_raw: "KB: KT-DEC-0001 [recalled]",
         cite_ids: ["KT-DEC-0001"],
-        cite_tags: ["recalled"],
+        cite_tags: ["applied"],
         cite_commitments: [{ operators: [], skip_reason: null }],
       },
       {
         envelope_index: 1,
         kb_line_raw: "KB: KT-PIT-0001 [recalled]",
         cite_ids: ["KT-PIT-0001"],
-        cite_tags: ["recalled"],
+        cite_tags: ["applied"],
         cite_commitments: [{ operators: [], skip_reason: null }],
       },
       {
         envelope_index: 2,
         kb_line_raw: "KB: KT-DEC-0001 [recalled]",
         cite_ids: ["KT-DEC-0001"], // duplicate id — must not produce a second line.
-        cite_tags: ["recalled"],
+        cite_tags: ["applied"],
         cite_commitments: [{ operators: [], skip_reason: null }],
       },
     ];
@@ -298,7 +298,7 @@ describe("cite-contract-reminder.cjs — formatContractMissingReminders", () => 
         envelope_index: 0,
         kb_line_raw: "KB: KT-DEC-0001, KT-PIT-0001 [recalled]",
         cite_ids: ["KT-DEC-0001", "KT-PIT-0001"],
-        cite_tags: ["recalled"],
+        cite_tags: ["applied"],
         cite_commitments: [
           { operators: [], skip_reason: null },
           { operators: [], skip_reason: null },
@@ -327,7 +327,7 @@ describe("cite-contract-reminder.cjs — formatContractMissingReminders", () => 
         kb_line_raw:
           "KB: KT-DEC-0001, KT-PIT-0001 [recalled] → edit:src/foo.ts",
         cite_ids: ["KT-DEC-0001", "KT-PIT-0001"],
-        cite_tags: ["recalled"],
+        cite_tags: ["applied"],
         cite_commitments: [sharedCommitment, sharedCommitment],
       },
     ];
@@ -336,13 +336,16 @@ describe("cite-contract-reminder.cjs — formatContractMissingReminders", () => 
     ).toEqual([]);
   });
 
-  it("(7) non-recalled tag (planned) → NO reminder even on decisions cite", () => {
+  // v2.1.0-rc.1 (ADJ-P4-1): in the rc.37 2-state vocab the only non-triggering
+  // tags are `dismissed` / `none` — legacy `planned`/`recalled` both remap to
+  // `applied` and DO trigger. A `dismissed` decision cite must not nudge.
+  it("(7) dismissed tag → NO reminder even on decisions cite", () => {
     const turns: AssistantTurn[] = [
       {
         envelope_index: 0,
-        kb_line_raw: "KB: KT-DEC-0001 [planned]",
+        kb_line_raw: "KB: KT-DEC-0001 [dismissed:scope-mismatch]",
         cite_ids: ["KT-DEC-0001"],
-        cite_tags: ["planned"],
+        cite_tags: ["dismissed"],
         cite_commitments: [{ operators: [], skip_reason: null }],
       },
     ];
@@ -381,7 +384,7 @@ describe("cite-contract-reminder.cjs — formatContractMissingReminders", () => 
         envelope_index: 0,
         kb_line_raw: "KB: KT-DEC-0001 [recalled]",
         cite_ids: ["KT-DEC-0001"],
-        cite_tags: ["recalled"],
+        cite_tags: ["applied"],
         cite_commitments: [{ operators: [], skip_reason: null }],
       },
     ];
@@ -399,7 +402,7 @@ describe("cite-contract-reminder.cjs — formatContractMissingReminders", () => 
         envelope_index: 0,
         kb_line_raw: "KB: KP-DEC-0001 [recalled]",
         cite_ids: ["KP-DEC-0001"],
-        cite_tags: ["recalled"],
+        cite_tags: ["applied"],
         cite_commitments: [{ operators: [], skip_reason: null }],
       },
     ];

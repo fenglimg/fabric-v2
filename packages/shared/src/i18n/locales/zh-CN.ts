@@ -157,7 +157,7 @@ export const zhCNMessages: Messages = {
   "doctor.cite.warning.justActivated": "本次首次激活 Cite policy,暂无历史数据。",
   "doctor.cite.metric.editsTouched": "Edit 触达数",
   "doctor.cite.metric.qualifyingCites": "合格 cite",
-  "doctor.cite.metric.recalledUnverified": "recalled 但未验证",
+  "doctor.cite.metric.recalledUnverified": "applied 但未验证",
   "doctor.cite.metric.expectedButMissed": "应查没查",
   "doctor.cite.metric.totalTurns": "总回合数",
   "doctor.cite.metric.complianceRate": "cite 合规率 (含 KB:none[reason])",

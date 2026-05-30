@@ -76,9 +76,10 @@ describe("event-ledger", () => {
     const timestamp = new Date(3_000).toISOString();
     const event = await appendEventLedgerEvent(projectRoot, {
       event_type: "assistant_turn_observed",
-      kb_line_raw: "KB: bootstrap, ui-rules [planned, recalled]",
+      kb_line_raw: "KB: bootstrap, ui-rules [applied, dismissed]",
       cite_ids: ["bootstrap", "ui-rules"],
-      cite_tags: ["planned", "recalled"],
+      // v2.1.0-rc.1 (ADJ-P4-1): authoring contract is the rc.37 2-state vocab.
+      cite_tags: ["applied", "dismissed"],
       cite_commitments: [],
       client: "cc",
       turn_id: "turn-42",
@@ -95,9 +96,9 @@ describe("event-ledger", () => {
       kind: "fabric-event",
       schema_version: 1,
       event_type: "assistant_turn_observed",
-      kb_line_raw: "KB: bootstrap, ui-rules [planned, recalled]",
+      kb_line_raw: "KB: bootstrap, ui-rules [applied, dismissed]",
       cite_ids: ["bootstrap", "ui-rules"],
-      cite_tags: ["planned", "recalled"],
+      cite_tags: ["applied", "dismissed"],
       client: "cc",
       turn_id: "turn-42",
       envelope_index: 0,
@@ -107,6 +108,36 @@ describe("event-ledger", () => {
     });
     expect(entries).toEqual([event]);
     expect(warnings).toEqual([]);
+  });
+
+  it("remaps a legacy 5-state cite_tags event on read (ADJ-P4-1 full remap)", async () => {
+    const projectRoot = await createTempProject();
+
+    // Write a raw legacy JSONL line directly (bypassing the now-2-state typed
+    // authoring API) to simulate an rc≤36 event already on disk.
+    const legacyLine = JSON.stringify({
+      kind: "fabric-event",
+      id: "event:legacy-1",
+      ts: 3_500,
+      schema_version: 1,
+      event_type: "assistant_turn_observed",
+      kb_line_raw: "KB: KT-DEC-0001 [planned], KP-PAT-0042 [recalled]",
+      cite_ids: ["KT-DEC-0001", "KP-PAT-0042"],
+      cite_tags: ["planned", "recalled", "chained-from", "dismissed", "none"],
+      turn_id: "turn-legacy",
+      timestamp: new Date(3_500).toISOString(),
+    });
+    await mkdir(join(projectRoot, ".fabric"), { recursive: true });
+    await writeFile(join(projectRoot, ".fabric", "events.jsonl"), `${legacyLine}\n`, "utf8");
+
+    const { events: entries } = await readEventLedger(projectRoot);
+    expect(entries).toHaveLength(1);
+    // Legacy planned/recalled/chained-from collapse to `applied`; dismissed/none
+    // pass through. The event is NOT dropped by safeParse.
+    expect(entries[0]).toMatchObject({
+      event_type: "assistant_turn_observed",
+      cite_tags: ["applied", "applied", "applied", "dismissed", "none"],
+    });
   });
 
   it("roundtrips an assistant_turn_observed event when kb_line_raw is null and defaults apply", async () => {

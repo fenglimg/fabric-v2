@@ -7,13 +7,17 @@
 // emits a "none" cite_tag only — no id, no commitment (bracket reason is
 // retained in kb_line_raw upstream per rc.23 T8). Unknown contract tokens
 // are silently dropped for rc.25+ forward-compat.
+//
+// v2.1.0-rc.1 (ADJ-P4-1, full remap): the rc.37 NEW-1 2-state vocabulary
+// (`applied` / `dismissed`) is now the ONLY emitted tag set. Legacy rc≤36 tags
+// (planned / recalled / chained-from) all expressed "I applied this KB" and are
+// remapped to `applied` at parse time — not accepted verbatim. The same remap
+// (`normalizeCiteTag`) is reused by event-ledger.ts cite_tags preprocess so
+// on-disk legacy events normalize to the 2-state vocab on read. Full remap, not
+// dual-vocabulary coexistence: downstream consumers only ever see
+// applied/dismissed/none.
 
-export type CiteTag =
-  | "planned"
-  | "recalled"
-  | "chained-from"
-  | "dismissed"
-  | "none";
+export type CiteTag = "applied" | "dismissed" | "none";
 
 export type CiteCommitmentOperatorKind =
   | "edit"
@@ -76,22 +80,34 @@ function splitStorePrefix(token: string): { store: string | null; id: string } {
 // downstream cite-coverage routing can connect the chain.
 const CHAINED_FROM_ID_RE = /chained-from\s+(K[TP]-[A-Z]+-\d+)/i;
 
-const ALLOWED_TAGS: ReadonlySet<CiteTag> = new Set([
-  "planned",
-  "recalled",
-  "chained-from",
-  "dismissed",
-  "none",
-]);
+// v2.1.0-rc.1 (ADJ-P4-1, full remap): legacy rc≤36 tags collapse to `applied`.
+// Single source of truth — reused by event-ledger.ts cite_tags preprocess so a
+// stored head (e.g. "recalled") and a raw tag with a tail (e.g.
+// "chained-from KT-DEC-0009") both normalize identically.
+const LEGACY_CITE_TAG_REMAP: Readonly<Record<string, CiteTag>> = {
+  planned: "applied",
+  recalled: "applied",
+  "chained-from": "applied",
+};
 
-function parseTag(rawTag: string | undefined): CiteTag {
-  if (!rawTag) return "none";
+/**
+ * Normalize a raw cite tag (with optional tail) into the 2-state vocabulary.
+ * `applied` / `dismissed` / `none` pass through; the three legacy tags remap to
+ * `applied`; anything else degrades to `none` (forward/back-compat tolerance).
+ */
+export function normalizeCiteTag(rawTag: string): CiteTag {
   // Tags may carry tails like `chained-from KT-DEC-0001` or
   // `dismissed:scope-mismatch`; head token (whitespace/colon-bounded) wins.
   const head = rawTag.trim().split(/[\s:]+/)[0].toLowerCase();
-  return (ALLOWED_TAGS as ReadonlySet<string>).has(head)
-    ? (head as CiteTag)
-    : "none";
+  if (head === "applied" || head === "dismissed" || head === "none") {
+    return head;
+  }
+  return LEGACY_CITE_TAG_REMAP[head] ?? "none";
+}
+
+function parseTag(rawTag: string | undefined): CiteTag {
+  if (!rawTag) return "none";
+  return normalizeCiteTag(rawTag);
 }
 
 function parseContractTail(tail: string | undefined): CiteCommitment {

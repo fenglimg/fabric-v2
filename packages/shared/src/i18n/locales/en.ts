@@ -162,7 +162,7 @@ export const enMessages: Messages = {
     "Cite policy activated on this run; no historical data yet.",
   "doctor.cite.metric.editsTouched": "Edits touched",
   "doctor.cite.metric.qualifyingCites": "Qualifying cites",
-  "doctor.cite.metric.recalledUnverified": "Recalled but not verified",
+  "doctor.cite.metric.recalledUnverified": "Applied but not verified",
   "doctor.cite.metric.expectedButMissed": "Expected cite missing",
   "doctor.cite.metric.totalTurns": "Total turns",
   "doctor.cite.metric.complianceRate": "cite compliance rate (incl. KB:none[reason])",

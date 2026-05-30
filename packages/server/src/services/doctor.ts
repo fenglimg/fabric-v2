@@ -370,28 +370,31 @@ type DraftAutoPromoteInspection = {
 };
 
 // v2.0.0-rc.33 W3-3 (P1-3): cite-policy Goodhart detection. Static heuristics
-// over the last 7 days of `assistant_turn_observed` events. Four anti-patterns
-// (G4 was unallocated by the audit author — fired pattern set is G1/G2/G3/G5):
+// over the last 7 days of `assistant_turn_observed` events.
 //
-//   G1 ritual_cite     — same (kb_id, "recalled") tuple repeated > 5 times
+//   G1 ritual_cite     — same (kb_id, "applied") tuple repeated > 5 times
 //                        across the window without contract change. Signal:
 //                        user is reciting the cite incantation without acting.
-//   G2 dismissal_abuse — > 60% of "recalled" cites carry a skip_reason
+//   G2 dismissal_abuse — > 60% of "applied" cites carry a skip_reason
 //                        commitment instead of an operator contract. Signal:
 //                        user is bypassing contract enforcement.
-//   G3 chained_from_misuse — "chained-from" cites with empty operators AND
-//                        null skip_reason. Signal: chained-from tag attached
-//                        but no actual chain link / commitment recorded.
 //   G5 placeholder_cite — "none" cites with generic kb_line_raw ("KB: none"
 //                        or "[unspecified]") > 5. Signal: cite line ritual
 //                        without semantic intent.
 //
-// All four are warning-level (never error) — Goodhart heuristics produce
+// v2.1.0-rc.1 (ADJ-P4-1, full remap): G3 chained_from_misuse was retired —
+// rc.37 NEW-1 collapsed the cite vocabulary to 2-state, so the `chained-from`
+// tag no longer exists (the parser/schema remap it to `applied`). The chain
+// LINK it carried is still surfaced as a sibling cite_id, but the distinct tag
+// it policed can never appear, so the lint became permanently dead. Removed
+// rather than left as a no-op (fix, don't hide).
+//
+// All patterns are warning-level (never error) — Goodhart heuristics produce
 // false positives by definition. Message enumerates fired patterns so the
 // operator can audit per-pattern without re-running.
 type CiteGoodhartInspection = {
   status: "ok" | "warn";
-  fired: Array<{ pattern: "G1" | "G2" | "G3" | "G5"; detail: string }>;
+  fired: Array<{ pattern: "G1" | "G2" | "G5"; detail: string }>;
 };
 
 type KnowledgeTestIndexInspection =
@@ -2745,69 +2748,50 @@ async function inspectCiteGoodhart(projectRoot: string): Promise<CiteGoodhartIns
     return { status: "ok", fired: [] };
   }
 
-  // G1: count (kb_id, "applied|recalled") tuples. Same tuple > threshold = ritual.
-  // v2.0.0-rc.37 NEW-1 + NEW-36: count BOTH legacy 'recalled' and new 'applied'
-  // tags under the same pattern bucket — same Goodhart signal (AI cites a
-  // single hot id over and over instead of expanding coverage). Mixed
-  // workspaces (some sessions on old vocab, some on new) get a unified count.
-  const APPLIED_LIKE = new Set(["recalled", "applied"]);
-  const recalledCount = new Map<string, number>();
+  // G1: count (kb_id, "applied") tuples. Same tuple > threshold = ritual.
+  // v2.1.0-rc.1 (ADJ-P4-1, full remap): cite_tags reaches here normalized to the
+  // 2-state vocab (legacy 'recalled'/'planned'/'chained-from' → 'applied' on
+  // read), so the single 'applied' category captures the Goodhart signal (AI
+  // cites a single hot id over and over instead of expanding coverage).
+  const appliedCount = new Map<string, number>();
   for (const turn of turns) {
     for (let i = 0; i < turn.cite_ids.length; i += 1) {
-      if (APPLIED_LIKE.has(turn.cite_tags[i])) {
+      if (turn.cite_tags[i] === "applied") {
         const key = turn.cite_ids[i];
-        recalledCount.set(key, (recalledCount.get(key) ?? 0) + 1);
+        appliedCount.set(key, (appliedCount.get(key) ?? 0) + 1);
       }
     }
   }
-  for (const [id, n] of recalledCount.entries()) {
+  for (const [id, n] of appliedCount.entries()) {
     if (n > RITUAL_REPEAT_THRESHOLD) {
-      fired.push({ pattern: "G1", detail: `${id} repeated as [applied|recalled] ${n}x in 7d` });
+      fired.push({ pattern: "G1", detail: `${id} repeated as [applied] ${n}x in 7d` });
       break; // one example is enough — operator scans the ledger for the rest
     }
   }
 
-  // G2: dismissal abuse — skip_reason ratio on applied|recalled cites.
-  let recalledTotal = 0;
-  let recalledWithSkip = 0;
+  // G2: dismissal abuse — skip_reason ratio on applied cites.
+  let appliedTotal = 0;
+  let appliedWithSkip = 0;
   for (const turn of turns) {
     for (let i = 0; i < turn.cite_ids.length; i += 1) {
-      if (!APPLIED_LIKE.has(turn.cite_tags[i])) continue;
-      recalledTotal += 1;
+      if (turn.cite_tags[i] !== "applied") continue;
+      appliedTotal += 1;
       const commitment = turn.cite_commitments[i];
       if (commitment && typeof commitment.skip_reason === "string" && commitment.skip_reason.length > 0) {
-        recalledWithSkip += 1;
+        appliedWithSkip += 1;
       }
     }
   }
-  if (recalledTotal >= 5 && recalledWithSkip / recalledTotal > DISMISSAL_ABUSE_RATIO) {
+  if (appliedTotal >= 5 && appliedWithSkip / appliedTotal > DISMISSAL_ABUSE_RATIO) {
     fired.push({
       pattern: "G2",
-      detail: `${recalledWithSkip}/${recalledTotal} recalled cites used skip:<reason> (> ${Math.round(DISMISSAL_ABUSE_RATIO * 100)}%)`,
+      detail: `${appliedWithSkip}/${appliedTotal} applied cites used skip:<reason> (> ${Math.round(DISMISSAL_ABUSE_RATIO * 100)}%)`,
     });
   }
 
-  // G3: chained-from misuse — empty operators + null skip_reason.
-  let chainedFromMisuse = 0;
-  for (const turn of turns) {
-    for (let i = 0; i < turn.cite_ids.length; i += 1) {
-      if (turn.cite_tags[i] !== "chained-from") continue;
-      const commitment = turn.cite_commitments[i];
-      if (!commitment) {
-        chainedFromMisuse += 1;
-        continue;
-      }
-      const hasOps = Array.isArray(commitment.operators) && commitment.operators.length > 0;
-      const hasSkip = typeof commitment.skip_reason === "string" && commitment.skip_reason.length > 0;
-      if (!hasOps && !hasSkip) chainedFromMisuse += 1;
-    }
-  }
-  if (chainedFromMisuse > RITUAL_REPEAT_THRESHOLD) {
-    fired.push({
-      pattern: "G3",
-      detail: `${chainedFromMisuse} chained-from cites with no commitment (operators=[] + skip_reason=null) in 7d`,
-    });
-  }
+  // G3 chained_from_misuse retired in v2.1.0-rc.1 (ADJ-P4-1) — the chained-from
+  // tag no longer exists post-remap, so the lint was permanently dead. See the
+  // CiteGoodhartInspection type doc above.
 
   // G5: placeholder cite — "none" tags with generic kb_line_raw.
   // Generic markers: a kb_line_raw that is exactly "KB: none" (no bracketed reason)
@@ -8401,10 +8385,14 @@ function parseNoneSentinel(kbLineRaw: string | null | undefined): string {
 // TASK-09 widens the schema, the histogram only counts `dismissed` as a
 // generic bucket. The split logic is wired here so TASK-09 only needs to flip
 // on a schema field without touching the aggregator.
-type CiteTagCategory = "planned" | "recalled" | "chained-from" | "dismissed" | "none";
+// v2.1.0-rc.1 (ADJ-P4-1, full remap): cite_tags reaches this aggregator already
+// normalized to the rc.37 NEW-1 2-state vocab — citeTagSchema's preprocess
+// remaps legacy planned/recalled/chained-from → `applied` on read, so the legacy
+// categories can never appear here. `applied` is the single qualifying category.
+type CiteTagCategory = "applied" | "dismissed" | "none";
 
 function categorizeCiteTag(tag: string): { category: CiteTagCategory; reason?: string } {
-  if (tag === "planned" || tag === "recalled" || tag === "chained-from" || tag === "none") {
+  if (tag === "applied" || tag === "none") {
     return { category: tag };
   }
   if (tag === "dismissed") {
@@ -8486,9 +8474,13 @@ function sumFoldedTurnCounters(
 //
 //   - total_turns:           assistant_turn_observed in window (filtered by
 //                            client when options.client !== 'all').
-//   - qualifying_cites:      cite_tags ∈ {planned, recalled, chained-from}.
-//   - recalled_unverified:   'recalled' tag with no knowledge_sections_fetched
-//                            in the same session within ±60s.
+//   - qualifying_cites:      cite_tags === 'applied' (rc.37 2-state vocab; the
+//                            legacy planned/recalled/chained-from are remapped
+//                            to 'applied' on read — see ADJ-P4-1).
+//   - recalled_unverified:   'applied' tag with no knowledge_sections_fetched
+//                            in the same session within ±60s (the [applied]
+//                            verification-obligation check; field name retained
+//                            for report-contract stability).
 //   - edits_touched:         edit_intent_checked events in window.
 //   - expected_but_missed:   edit_intent_checked whose path matches some kb
 //                            entry's relevance_paths but no assistant_turn in
@@ -8881,18 +8873,16 @@ export async function runDoctorCiteCoverage(
     // rc.20 cite_tags walk (unchanged behavior — touch only if the
     // categorize/dismissed/none shape needs widening).
     // -------------------------------------------------------------------
-    let turnHadRecalled = false;
+    let turnHadApplied = false;
     for (const tag of turn.cite_tags) {
       const { category, reason } = categorizeCiteTag(tag);
       switch (category) {
-        case "planned":
-        case "recalled":
-        case "chained-from":
+        case "applied":
           qualifyingCites += 1;
           bumpClient(turn.client, (m) => {
             m.qualifying_cites += 1;
           });
-          if (category === "recalled") turnHadRecalled = true;
+          turnHadApplied = true;
           break;
         case "dismissed": {
           const key = reason ?? "unspecified";
@@ -8911,7 +8901,11 @@ export async function runDoctorCiteCoverage(
       }
     }
 
-    if (turnHadRecalled && !isRecallVerified(turn)) {
+    // v2.1.0-rc.1 (ADJ-P4-1): `recalled_unverified` retains its report-contract
+    // name but now measures the rc.37 NEW-1 `[applied]` verification obligation
+    // directly — an `applied` cite with no knowledge_sections_fetched in the same
+    // session within ±60s (legacy `recalled` is remapped to `applied` on read).
+    if (turnHadApplied && !isRecallVerified(turn)) {
       recalledUnverified += 1;
       bumpClient(turn.client, (m) => {
         m.recalled_unverified += 1;

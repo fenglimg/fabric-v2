@@ -1,5 +1,22 @@
 import { z } from "zod";
 
+import { normalizeCiteTag } from "../cite-line-parser.js";
+
+// v2.1.0-rc.1 (ADJ-P4-1, full remap): cite_tags is persisted in events.jsonl.
+// rc≤36 events stored the legacy 5-state vocabulary (planned/recalled/
+// chained-from/dismissed/none); rc.37 NEW-1 collapsed authoring to the 2-state
+// vocab (applied/dismissed). Rather than carry both forever (dual-vocab
+// coexistence), this preprocess remaps every legacy element to its 2-state
+// equivalent on READ — so historical events normalize to applied/dismissed/none
+// and no longer fail safeParse / get undercounted by cite-coverage. New writes
+// already emit the 2-state vocab (parser remaps at parse time), so the
+// preprocess is a no-op for them. Reuses `normalizeCiteTag` — the same remap the
+// parser applies — to keep read-normalization and parse-emission in lockstep.
+const citeTagSchema = z.preprocess(
+  (value) => (typeof value === "string" ? normalizeCiteTag(value) : value),
+  z.enum(["applied", "dismissed", "none"]),
+);
+
 const eventLedgerEnvelopeSchema = {
   kind: z.literal("fabric-event"),
   id: z.string(),
@@ -478,7 +495,9 @@ export const pendingAutoArchivedEventSchema = z.object({
 // its first non-empty line. Drives cite-policy observability — the Stop hook
 // (or transcript scanner) records the raw KB: line text (or null when the
 // turn opened without one), plus the parsed cite_ids and the per-id cite_tags
-// vocabulary (planned/recalled/chained-from/dismissed/none). `client` records
+// vocabulary. v2.1.0-rc.1 (ADJ-P4-1): cite_tags is the rc.37 NEW-1 2-state vocab
+// (applied/dismissed/none); legacy rc≤36 elements (planned/recalled/chained-from)
+// are remapped to `applied` on read via citeTagSchema's preprocess. `client` records
 // which surface produced the turn so per-client compliance can be tabulated
 // without joining against session metadata. `turn_id` is the conversation-
 // local turn identifier; `envelope_index` (optional) is a monotonic counter
@@ -489,7 +508,7 @@ export const assistantTurnObservedEventSchema = z.object({
   event_type: z.literal("assistant_turn_observed"),
   kb_line_raw: z.string().nullable(),
   cite_ids: z.array(z.string()).default([]),
-  cite_tags: z.array(z.enum(["planned", "recalled", "chained-from", "dismissed", "none"])).default([]),
+  cite_tags: z.array(citeTagSchema).default([]),
   // v2.0.0-rc.24 TASK-01: per-cite contract commitments. Index-aligned with
   // cite_ids/cite_tags (commitments[i] belongs to cite_ids[i]). Each slot
   // carries `operators[]` (kind + glob target) or `skip_reason` when the cite

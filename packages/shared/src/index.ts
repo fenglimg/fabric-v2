@@ -33,7 +33,7 @@ export * from "./schemas/init-context.js";
 export * from "./schemas/events.js";
 export * from "./schemas/event-ledger.js";
 export * from "./templates/index.js";
-export { parseCiteLine } from "./cite-line-parser.js";
+export { parseCiteLine, normalizeCiteTag } from "./cite-line-parser.js";
 export type {
   CiteTag,
   CiteCommitment,

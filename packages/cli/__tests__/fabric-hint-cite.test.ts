@@ -68,25 +68,25 @@ const hook = require(hookPath) as HookSurface;
 // The shim accepts the post-`KB:` substring (callers strip the prefix).
 // ---------------------------------------------------------------------------
 describe("fabric-hint.cjs — parseKbLine (rc.24 shim delegating to shared parseCiteLine)", () => {
-  it("parses '(review) [planned]' on strict id form: cite_ids=[KT-DEC-0001], cite_tags=[planned], commitment with no operators", () => {
+  it("parses '(review) [planned]' on strict id form: cite_ids=[KT-DEC-0001], cite_tags=[applied] (legacy planned remapped), commitment with no operators", () => {
     const r = hook.parseKbLine("KT-DEC-0001 (review) [planned]");
     expect(r.cite_ids).toEqual(["KT-DEC-0001"]);
-    expect(r.cite_tags).toEqual(["planned"]);
+    expect(r.cite_tags).toEqual(["applied"]);
     expect(r.cite_commitments).toEqual([
       { operators: [], skip_reason: null },
     ]);
   });
 
-  it("parses '[recalled]' as cite_ids=[KP-PAT-0042] cite_tags=[recalled] with empty operators/null skip", () => {
+  it("parses '[recalled]' as cite_ids=[KP-PAT-0042] cite_tags=[applied] (legacy recalled remapped) with empty operators/null skip", () => {
     const r = hook.parseKbLine("KP-PAT-0042 [recalled]");
     expect(r.cite_ids).toEqual(["KP-PAT-0042"]);
-    expect(r.cite_tags).toEqual(["recalled"]);
+    expect(r.cite_tags).toEqual(["applied"]);
     expect(r.cite_commitments).toEqual([
       { operators: [], skip_reason: null },
     ]);
   });
 
-  it("parses '[chained-from KT-DEC-0009]' — bracket tail head normalized to 'chained-from', embedded id surfaced (rc.27)", () => {
+  it("parses '[chained-from KT-DEC-0009]' — bracket tail head remapped to 'applied' (ADJ-P4-1), embedded id surfaced (rc.27)", () => {
     const r = hook.parseKbLine("KT-DEC-0001 (anchor) [chained-from KT-DEC-0009]");
     // v2.0.0-rc.27 TASK-003 (audit §2.18): the chained-from tail's embedded
     // id now lands in cite_ids as a sibling reference so cite-coverage
@@ -94,7 +94,7 @@ describe("fabric-hint.cjs — parseKbLine (rc.24 shim delegating to shared parse
     // silently — the tag was recognised but the linked id never reached
     // downstream consumers.
     expect(r.cite_ids).toEqual(["KT-DEC-0001", "KT-DEC-0009"]);
-    expect(r.cite_tags).toEqual(["chained-from"]);
+    expect(r.cite_tags).toEqual(["applied"]);
     // No `→` tail → empty commitment. v2.0.0-rc.27.1 (Codex review fix):
     // commitment array is index-aligned with cite_ids, so the shared empty
     // commitment appears once per id slot.
@@ -142,7 +142,7 @@ describe("fabric-hint.cjs — parseKbLine (rc.24 shim delegating to shared parse
       "KT-DEC-9003 (Summary) [recalled] → edit:.fabric/AGENTS.md",
     );
     expect(r.cite_ids).toEqual(["KT-DEC-9003"]);
-    expect(r.cite_tags).toEqual(["recalled"]);
+    expect(r.cite_tags).toEqual(["applied"]);
     expect(r.cite_commitments).toEqual([
       {
         operators: [{ kind: "edit", target: ".fabric/AGENTS.md" }],
@@ -313,7 +313,7 @@ describe("fabric-hint.cjs — extractAndWriteAssistantTurnsBestEffort", () => {
       "KB: KT-DEC-9003 (Summary) [recalled] → edit:.fabric/AGENTS.md !edit:CLAUDE.md",
     );
     expect(parsed[0].cite_ids).toEqual(["KT-DEC-9003"]);
-    expect(parsed[0].cite_tags).toEqual(["recalled"]);
+    expect(parsed[0].cite_tags).toEqual(["applied"]);
     expect(parsed[0].cite_commitments).toEqual([
       {
         operators: [
@@ -427,7 +427,7 @@ describe("fabric-hint.cjs — extractAndWriteAssistantTurnsBestEffort", () => {
       "KB: KT-DEC-0007 [recalled] → require:trimEnd",
     );
     expect(parsed.cite_ids).toEqual(["KT-DEC-0007"]);
-    expect(parsed.cite_tags).toEqual(["recalled"]);
+    expect(parsed.cite_tags).toEqual(["applied"]);
     expect(parsed.cite_commitments).toEqual([
       { operators: [{ kind: "require", target: "trimEnd" }], skip_reason: null },
     ]);

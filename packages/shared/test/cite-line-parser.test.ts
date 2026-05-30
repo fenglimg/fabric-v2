@@ -9,6 +9,12 @@ import { parseCiteLine } from "../src/cite-line-parser.js";
 // packages/shared/src/templates/bootstrap-canonical.ts (rc.24 contract
 // syntax) and the index-alignment contract documented on
 // assistantTurnObservedEventSchema.cite_commitments (rc.24 schema).
+//
+// v2.1.0-rc.1 (ADJ-P4-1, full remap): the parser now emits ONLY the rc.37
+// NEW-1 2-state vocabulary (applied / dismissed / none). Legacy rc≤36 tags
+// (planned / recalled / chained-from) are accepted as input but remapped to
+// `applied` — the assertions below reflect the remapped output, not the raw
+// authored tag. A dedicated describe block at the bottom locks the remap.
 // ---------------------------------------------------------------------------
 
 describe("parseCiteLine — sentinel forms", () => {
@@ -38,24 +44,24 @@ describe("parseCiteLine — sentinel forms", () => {
 });
 
 describe("parseCiteLine — anchored cite without contract", () => {
-  it("parses `KB: KT-DEC-0001 (anchor) [planned]`", () => {
+  it("parses `KB: KT-DEC-0001 (anchor) [planned]` (legacy → applied)", () => {
     const r = parseCiteLine("KB: KT-DEC-0001 (anchor) [planned]");
     expect(r.cite_ids).toEqual(["KT-DEC-0001"]);
-    expect(r.cite_tags).toEqual(["planned"]);
+    expect(r.cite_tags).toEqual(["applied"]);
     expect(r.cite_commitments).toEqual([
       { operators: [], skip_reason: null },
     ]);
   });
 
-  it("parses cite without anchor: `KB: KP-PAT-0042 [recalled]`", () => {
+  it("parses cite without anchor: `KB: KP-PAT-0042 [recalled]` (legacy → applied)", () => {
     const r = parseCiteLine("KB: KP-PAT-0042 [recalled]");
     expect(r.cite_ids).toEqual(["KP-PAT-0042"]);
-    expect(r.cite_tags).toEqual(["recalled"]);
+    expect(r.cite_tags).toEqual(["applied"]);
   });
 
-  it("normalizes `chained-from KT-DEC-0009` tag to `chained-from`", () => {
+  it("remaps `chained-from KT-DEC-0009` tag to `applied` (legacy → applied)", () => {
     const r = parseCiteLine("KB: KT-DEC-0001 (a) [chained-from KT-DEC-0009]");
-    expect(r.cite_tags).toEqual(["chained-from"]);
+    expect(r.cite_tags).toEqual(["applied"]);
   });
 
   it("normalizes `dismissed:scope-mismatch` tag to `dismissed`", () => {
@@ -72,7 +78,7 @@ describe("parseCiteLine — full form with contract tail", () => {
       "KB: KT-DEC-9003 (Summary) [recalled] → edit:.fabric/AGENTS.md",
     );
     expect(r.cite_ids).toEqual(["KT-DEC-9003"]);
-    expect(r.cite_tags).toEqual(["recalled"]);
+    expect(r.cite_tags).toEqual(["applied"]);
     expect(r.cite_commitments).toEqual([
       {
         operators: [{ kind: "edit", target: ".fabric/AGENTS.md" }],
@@ -232,7 +238,7 @@ describe("parseCiteLine — whitespace and line-ending tolerance", () => {
       "KB: KT-DEC-0001 (a) [planned]\r\nKB: KP-PAT-0042 [recalled]",
     );
     expect(r.cite_ids).toEqual(["KT-DEC-0001", "KP-PAT-0042"]);
-    expect(r.cite_tags).toEqual(["planned", "recalled"]);
+    expect(r.cite_tags).toEqual(["applied", "applied"]);
   });
 
   it("skips blank lines in multi-line input", () => {
@@ -256,7 +262,7 @@ describe("parseCiteLine — multi-line input (index alignment)", () => {
       "KP-PAT-0042",
       "KT-DEC-9003",
     ]);
-    expect(r.cite_tags).toEqual(["recalled", "planned", "recalled"]);
+    expect(r.cite_tags).toEqual(["applied", "applied", "applied"]);
     expect(r.cite_commitments).toEqual([
       { operators: [{ kind: "edit", target: "foo.ts" }], skip_reason: null },
       {
@@ -274,7 +280,7 @@ describe("parseCiteLine — multi-line input (index alignment)", () => {
     ].join("\n");
     const r = parseCiteLine(input);
     expect(r.cite_ids).toEqual(["KT-DEC-0001"]);
-    expect(r.cite_tags).toEqual(["none", "recalled"]);
+    expect(r.cite_tags).toEqual(["none", "applied"]);
     // cite_commitments is index-aligned with cite_ids (length 1), not tags.
     expect(r.cite_commitments).toEqual([
       { operators: [{ kind: "edit", target: "foo.ts" }], skip_reason: null },
@@ -290,7 +296,7 @@ describe("parseCiteLine — multi-line input (index alignment)", () => {
     ].join("\n");
     const r = parseCiteLine(input);
     expect(r.cite_ids).toEqual(["KT-DEC-0001", "KP-PAT-0042"]);
-    expect(r.cite_tags).toEqual(["planned", "recalled"]);
+    expect(r.cite_tags).toEqual(["applied", "applied"]);
   });
 });
 
@@ -304,7 +310,7 @@ describe("parseCiteLine — rc.27 multi-id + chained-from (audit §2.18)", () =>
       "KB: KT-DEC-0001, KT-PIT-0005 (combined) [recalled] → edit:src/foo.ts",
     );
     expect(r.cite_ids).toEqual(["KT-DEC-0001", "KT-PIT-0005"]);
-    expect(r.cite_tags).toEqual(["recalled"]);
+    expect(r.cite_tags).toEqual(["applied"]);
     // v2.0.0-rc.27.1 (Codex review fix): cite_commitments MUST be index-
     // aligned with cite_ids per schema doc — a shared contract propagates to
     // every id slot so doctor.ts + cite-contract-reminder.cjs can index by
@@ -355,7 +361,7 @@ describe("parseCiteLine — rc.27 multi-id + chained-from (audit §2.18)", () =>
       "KB: KT-DEC-0001 (a) [chained-from KT-MOD-0007]",
     );
     expect(r.cite_ids).toEqual(["KT-DEC-0001", "KT-MOD-0007"]);
-    expect(r.cite_tags).toEqual(["chained-from"]);
+    expect(r.cite_tags).toEqual(["applied"]);
   });
 
   it("audit §2.18 reproduction — multi-id + chained-from + contract together", () => {
@@ -367,7 +373,7 @@ describe("parseCiteLine — rc.27 multi-id + chained-from (audit §2.18)", () =>
       "KT-PIT-0005",
       "KT-MOD-0007",
     ]);
-    expect(r.cite_tags).toEqual(["chained-from"]);
+    expect(r.cite_tags).toEqual(["applied"]);
     // v2.0.0-rc.27.1 (Codex review fix): commitments are index-aligned with
     // cite_ids — primary + chained ids each carry the shared parsed contract.
     const sharedCommitment = {
@@ -414,5 +420,39 @@ describe("parseCiteLine — store-qualified cite prefix (v2.1 P4, F3/S62)", () =
     const r = parseCiteLine("KB: team:KT-DEC-0001 (a) [chained-from KT-DEC-0009]");
     expect(r.cite_ids).toEqual(["KT-DEC-0001", "KT-DEC-0009"]);
     expect(r.cite_stores).toEqual(["team", null]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// v2.1.0-rc.1 (ADJ-P4-1, full remap): legacy 5-state → 2-state vocabulary.
+// Locks the remap so the parser can never regress to emitting legacy tags.
+// ---------------------------------------------------------------------------
+
+describe("parseCiteLine — legacy tag remap (ADJ-P4-1)", () => {
+  it.each([
+    ["planned", "applied"],
+    ["recalled", "applied"],
+    ["chained-from KT-MOD-0007", "applied"],
+  ])("remaps legacy `[%s]` → `%s`", (rawTag, expected) => {
+    const r = parseCiteLine(`KB: KT-DEC-0001 (a) [${rawTag}]`);
+    expect(r.cite_tags).toEqual([expected]);
+  });
+
+  it.each(["applied", "dismissed", "none"])(
+    "passes the 2-state tag `[%s]` through unchanged",
+    (tag) => {
+      const r = parseCiteLine(`KB: KT-DEC-0001 (a) [${tag}]`);
+      expect(r.cite_tags).toEqual([tag]);
+    },
+  );
+
+  it("preserves the dismissed reason tail head (`[dismissed:scope-mismatch]` → `dismissed`)", () => {
+    const r = parseCiteLine("KB: KT-DEC-0001 (a) [dismissed:scope-mismatch]");
+    expect(r.cite_tags).toEqual(["dismissed"]);
+  });
+
+  it("degrades an unknown tag to `none` (forward-compat tolerance)", () => {
+    const r = parseCiteLine("KB: KT-DEC-0001 (a) [future-tag-xyz]");
+    expect(r.cite_tags).toEqual(["none"]);
   });
 });

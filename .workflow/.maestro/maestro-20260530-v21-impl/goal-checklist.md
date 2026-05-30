@@ -41,7 +41,7 @@
 - **9/9 phase done**：P0→P0.5→P0.6→P1→P2→P3→P4→P5→**P6 性能硬化+观测**。cli 823 + shared 508 + server 639 全绿 + repo tsc 0。
 - **P5 done(2026-05-30)**：parity-matrix-e2e(7 能力×3 端=21 cell 全交付, 闭合 P0→P5 链) · R5#3 隐私边界 negative(isPersonalLeakIntoSharedStore + resolver personal-scope 结构路由) · 渲染三端+fabric_language(既有 bootstrap 传播+i18n 快照).
 - **P6 done(2026-05-30)**：recall-perf(1k条/5store, read-set 限界不全扫, p95≤基线×1.2) · 结构化 failure trace(install/sync/hook/mcp) · debug-bundle redaction(doctor --debug-bundle, secret 脱敏 negative test) · local-only remote nudge(P3 复用).
-- 待拍板(非阻塞): ADJ-P0-1(四信号优先级解读) · ADJ-P4-1(TS/CJS applied tag 词汇 drift), 见 status.json#/needs_adjudication.
+- 拍板已闭合(2026-05-30): ADJ-P0-1 → 按当前实现 marker 优先定稿(worktree 分析支持, 不改) · ADJ-P4-1 → 全量重映射已实现(parser+CJS twin remap / event-ledger citeTagSchema preprocess / doctor 分类器 applied 单类 + G3 退役 / cite-contract-reminder gate→applied / i18n 文案). shared 516/server 640/cli 823 全绿 tsc 0. 见 status.json#/needs_adjudication[*].resolution.
 
 ALL_GOALS_DONE
 - **P4 done(2026-05-30)**：cite store 前缀(parser+CJS twin+cite_stores+policy 文档化) · 3 skill + 新 fabric-sync skill store-aware(install/uninstall 双向接线) · 3 hook(SessionStart/PreToolUse/Stop)接 bindings-snapshot-reader.cjs 渲染 store 标签(走 CLI 预生成快照不直读 store 树) · S65 RCE 防线(findStoreExecutableViolations + doctor executable_in_store) · S3/S44 thin-stub(@.fabric/AGENTS.md)+canonical 集中已存。记 ADJ-P4-1(既有 TS/CJS applied tag drift, 非阻塞).
