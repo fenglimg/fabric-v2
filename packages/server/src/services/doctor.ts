@@ -137,7 +137,57 @@ export type DoctorSummary = {
   targetFiles: Record<string, boolean>;
   // v2.0.0-rc.29 TASK-008 (BUG-F2): active MCP payload thresholds.
   payload_limits: DoctorPayloadLimits;
+  // v2.2 A14-doctor-health (W3-T4): a single 0-100 KB health rollup derived from
+  // the existing lint set — no new probes, just an aggregate the fabric-audit
+  // skill (SK1) consumes to triage "how healthy is the KB?" in one number.
+  kb_health: DoctorKbHealth;
 };
+
+// v2.2 A14-doctor-health (W3-T4): KB health rollup. `score` is 0-100, `grade` is
+// the band, and `penalties` itemizes how each severity bucket subtracted from a
+// perfect 100 — so the number is explainable, not a black box.
+export type DoctorKbHealth = {
+  score: number;
+  grade: "A" | "B" | "C" | "D" | "F";
+  penalties: {
+    manual_errors: number;
+    fixable_errors: number;
+    warnings: number;
+  };
+};
+
+// Per-finding penalty weights. Manual (un-auto-fixable) errors hurt most; a
+// warning is a light nudge. Infos never penalize (they are FYI, not debt).
+const KB_HEALTH_PENALTY_MANUAL_ERROR = 15;
+const KB_HEALTH_PENALTY_FIXABLE_ERROR = 8;
+const KB_HEALTH_PENALTY_WARNING = 3;
+
+/**
+ * v2.2 A14-doctor-health (W3-T4): roll the lint findings into a 0-100 score +
+ * letter grade. Pure + deterministic — reuses the same counts doctor already
+ * computes, so the score moves in lockstep with the lint set with no new I/O.
+ */
+export function computeKbHealth(
+  manualErrorCount: number,
+  fixableErrorCount: number,
+  warningCount: number,
+): DoctorKbHealth {
+  const manualPenalty = manualErrorCount * KB_HEALTH_PENALTY_MANUAL_ERROR;
+  const fixablePenalty = fixableErrorCount * KB_HEALTH_PENALTY_FIXABLE_ERROR;
+  const warningPenalty = warningCount * KB_HEALTH_PENALTY_WARNING;
+  const score = Math.max(0, Math.min(100, 100 - manualPenalty - fixablePenalty - warningPenalty));
+  const grade: DoctorKbHealth["grade"] =
+    score >= 90 ? "A" : score >= 75 ? "B" : score >= 60 ? "C" : score >= 40 ? "D" : "F";
+  return {
+    score,
+    grade,
+    penalties: {
+      manual_errors: manualPenalty,
+      fixable_errors: fixablePenalty,
+      warnings: warningPenalty,
+    },
+  };
+}
 
 export type DoctorReport = {
   status: DoctorStatus;
@@ -1396,6 +1446,8 @@ export async function runDoctorReport(target: string): Promise<DoctorReport> {
       // Best-effort: a corrupt fabric.config.json should not fail doctor; on
       // any read/parse error fall back to library defaults with source="default".
       payload_limits: resolvePayloadLimits(projectRoot),
+      // v2.2 A14-doctor-health (W3-T4): 0-100 KB health rollup over the lint set.
+      kb_health: computeKbHealth(manualErrors.length, fixableErrors.length, warnings.length),
     },
   };
 }
