@@ -466,6 +466,9 @@ export async function ensureKnowledgeFresh(
 
   const metaEntries = await readMetaEntries(projectRoot);
   const ruleFiles = await findRuleFiles(projectRoot);
+  // ISS-009: O(1) membership for the removal scan below (was Array.includes,
+  // O(metaEntries × ruleFiles) when nested in the loop).
+  const ruleFileSet = new Set(ruleFiles);
 
   // High 1 fix: Never pre-skip files based on time alone. The debounce check
   // inside processSingleFile deduplicates correctly: it reads the disk hash first
@@ -493,7 +496,7 @@ export async function ensureKnowledgeFresh(
   // v2.0.0-rc.22 TASK-014: meta paths may carry the personal prefix —
   // resolve via resolveContentRefPath to check both layers correctly.
   for (const [relPath, entry] of metaEntries) {
-    if (!ruleFiles.includes(relPath)) {
+    if (!ruleFileSet.has(relPath)) {
       const absPath = resolveContentRefPath(projectRoot, relPath);
       if (!existsSync(absPath)) {
         events.push({
@@ -600,6 +603,8 @@ export async function reconcileKnowledge(projectRoot: string, opts?: ReconcileKn
 
   const metaEntries = await readMetaEntries(projectRoot);
   const ruleFiles = await findRuleFiles(projectRoot);
+  // ISS-009: O(1) membership for the removal scan below.
+  const ruleFileSet = new Set(ruleFiles);
 
   // Full scan — process every rule file
   for (const relPath of ruleFiles) {
@@ -617,7 +622,7 @@ export async function reconcileKnowledge(projectRoot: string, opts?: ReconcileKn
 
   // Check for removals. v2.0.0-rc.22 TASK-014: resolve dual-root paths.
   for (const [relPath, entry] of metaEntries) {
-    if (!ruleFiles.includes(relPath)) {
+    if (!ruleFileSet.has(relPath)) {
       const absPath = resolveContentRefPath(projectRoot, relPath);
       if (!existsSync(absPath)) {
         events.push({

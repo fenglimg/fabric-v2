@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { STORES_ROOT_DIR, addMountedStore, readStoreIdentity } from "@fenglimg/fabric-shared";
+import { GenericIOError } from "@fenglimg/fabric-shared/errors";
 
 import {
   loadGlobalConfig,
@@ -35,7 +36,24 @@ export interface RunGlobalInstallOptions {
 }
 
 function gitClone(url: string, dest: string): void {
-  execFileSync("git", ["clone", url, dest], { stdio: ["ignore", "ignore", "pipe"] });
+  // ISS-031: announce the clone so `fabric install --global <url>` is not silent
+  // during a slow network fetch, and inherit git's stderr so its native progress
+  // bar (and, on failure, its real diagnostic — ISS-032) reaches the user.
+  console.log(`cloning store from ${url} (this may take a while)…`);
+  try {
+    // `--` terminates option parsing so an option-like url (e.g. `--upload-pack=…`,
+    // `-x`, `ext::sh -c …`) is treated as a positional repo argument, never as a
+    // git option (ISS-002 arg-injection hardening).
+    execFileSync("git", ["clone", "--", url, dest], { stdio: ["ignore", "ignore", "inherit"] });
+  } catch (error) {
+    // ISS-037: git's own diagnostic was just printed (inherited stderr); add the
+    // actionable next step so the failure is not a bare "Command failed".
+    throw new GenericIOError(`git clone of ${url} failed`, {
+      actionHint:
+        "check the url is reachable and points to a Fabric store git repo (the git error above shows the cause), then re-run `fabric install --global <url>`",
+      details: error,
+    });
+  }
 }
 
 function mountStoreFromRemote(url: string, globalRoot: string): void {
@@ -48,7 +66,11 @@ function mountStoreFromRemote(url: string, globalRoot: string): void {
 
   const identity = readStoreIdentity(cloneDest);
   if (identity === null) {
-    throw new Error(`cloned store at ${url} has no valid store.json (not a Fabric store)`);
+    // ISS-037: a successful clone of a repo that is not a Fabric store.
+    throw new GenericIOError(`cloned store at ${url} has no valid store.json (not a Fabric store)`, {
+      actionHint:
+        "verify the url points to a repository created by `fabric` (it must contain a store.json at its root); if you meant to mount a different store, re-run with the correct url",
+    });
   }
 
   const finalDir = join(storesRoot, identity.store_uuid);
@@ -56,7 +78,11 @@ function mountStoreFromRemote(url: string, globalRoot: string): void {
 
   const config = loadGlobalConfig(globalRoot);
   if (config === null) {
-    throw new Error("global config missing after install");
+    // ISS-037: internal invariant — the global config should exist by now.
+    throw new GenericIOError("global config missing after install", {
+      actionHint:
+        "re-run `fabric install --global` to (re)create the global config, then retry mounting the store; if it persists, inspect ~/.fabric for a partial install",
+    });
   }
   const alias = identity.canonical_alias ?? "team";
   saveGlobalConfig(
@@ -76,7 +102,15 @@ export async function runGlobalInstall(
 
   const result = await installGlobalCore({ globalRoot, uid, personalStoreUuid, now });
   if (!result.receipt.ok) {
-    throw new Error(`global install failed at step '${result.receipt.failedStep}': ${result.receipt.error}`);
+    // ISS-037: surface which step failed with a concrete remedy instead of a
+    // bare internal step name.
+    throw new GenericIOError(
+      `global install failed at step '${result.receipt.failedStep}': ${result.receipt.error}`,
+      {
+        actionHint:
+          "check write permissions and free space under ~/.fabric, then re-run `fabric install --global` (the install is transactional and rolls back partial state)",
+      },
+    );
   }
   console.log(
     result.alreadyInstalled

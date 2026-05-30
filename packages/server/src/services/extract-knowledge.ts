@@ -715,8 +715,21 @@ function renderFreshEntry(args: FreshEntryArgs): string {
 // Mirrors scan.ts:1085 quoteIfNeeded (always quote, escape inner quotes) so
 // the doctor.ts:627-628 line-based regex parses both quoted and unquoted
 // forms uniformly across creation surfaces.
-function quoteRelevancePath(value: string): string {
-  return `"${value.replace(/"/g, '\\"')}"`;
+//
+// ISS-001: emit a SAFE YAML double-quoted flow scalar. Escaping only `"` was a
+// frontmatter-injection hole: a value ending in a backslash (`foo\`) produced
+// `"foo\"` whose trailing `\"` escapes the closing quote, letting the rest of
+// the value break out and forge arbitrary frontmatter keys; embedded newlines
+// likewise broke the single-line structure. Escape the backslash FIRST, then
+// the quote, then collapse control chars to their YAML escapes.
+export function quoteRelevancePath(value: string): string {
+  const escaped = value
+    .replace(/\\/g, "\\\\")
+    .replace(/"/g, '\\"')
+    .replace(/\n/g, "\\n")
+    .replace(/\r/g, "\\r")
+    .replace(/\t/g, "\\t");
+  return `"${escaped}"`;
 }
 
 function renderEvidenceBlock(summary: string, recentPaths: string[]): string {

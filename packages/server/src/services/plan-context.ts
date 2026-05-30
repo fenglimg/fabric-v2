@@ -27,6 +27,10 @@ type ScoringContext = {
   bm25?: Bm25Model;
   vectorScores?: Map<string, number>;
   vectorWeight?: number;
+  // ISS-007: precomputed stable_id → flattened document text, built ONCE in
+  // planContext and reused across the vector + BM25 paths so documentTextForItem
+  // (a multi-array join) is not rebuilt per consumer.
+  docTexts?: Map<string, string>;
 };
 
 export type PlanContextInput = {
@@ -297,6 +301,15 @@ export async function planContext(
   // suppressions as a preflight diagnostic.
   const { rawItems, suppressedStableIds } = buildRawDescriptionItems(meta);
 
+  // ISS-007: flatten each candidate's selection text ONCE here, then reuse the
+  // same string for vector embedding (below) and BM25 tokenization (in
+  // sortDescriptionItems) instead of rebuilding it per consumer.
+  const docTexts = new Map<string, string>();
+  for (const item of rawItems) {
+    docTexts.set(item.stable_id, documentTextForItem(item.description));
+  }
+  scoringContext.docTexts = docTexts;
+
   // v2.2 C2-vector (W2-T7): OPTIONAL semantic recall supplement. Default OFF —
   // only runs when `embed_enabled` is set AND the optional fastembed package
   // loads AND a query exists. buildVectorScores returns null (→ text-only) on
@@ -312,7 +325,10 @@ export async function planContext(
     const vectorScores = await buildVectorScores(
       embedder,
       queryText,
-      rawItems.map((item) => ({ stable_id: item.stable_id, text: documentTextForItem(item.description) })),
+      rawItems.map((item) => ({
+        stable_id: item.stable_id,
+        text: docTexts.get(item.stable_id) ?? documentTextForItem(item.description),
+      })),
     );
     if (vectorScores !== null) {
       scoringContext.vectorScores = vectorScores;
@@ -550,7 +566,10 @@ function sortDescriptionItems(
       ? {
           ...scoringContext,
           bm25: buildBm25Model(
-            rawItems.map((item) => ({ id: item.stable_id, tokens: tokenize(documentTextForItem(item.description)) })),
+            rawItems.map((item) => ({
+              id: item.stable_id,
+              tokens: tokenize(scoringContext.docTexts?.get(item.stable_id) ?? documentTextForItem(item.description)),
+            })),
           ),
         }
       : scoringContext;
@@ -803,10 +822,13 @@ function scoreDescriptionItem(item: RuleDescriptionIndexItem, context: ScoringCo
   if (context.targetPaths.length > 0) {
     const relevancePaths = item.description?.relevance_paths ?? [];
     let best = 0;
-    for (const rp of relevancePaths) {
+    // ISS-010: stop as soon as the top tier is reached — LOCALITY_SAME_FILE can
+    // never be beaten, so exhausting the rest of the cartesian product is waste.
+    outer: for (const rp of relevancePaths) {
       for (const tp of context.targetPaths) {
         const tier = localityTier(rp, tp);
         if (tier > best) best = tier;
+        if (best === LOCALITY_SAME_FILE) break outer;
       }
     }
     score += best;

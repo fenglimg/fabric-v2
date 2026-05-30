@@ -139,7 +139,19 @@ export async function getKnowledgeSections(
   // want a loud failure (vs. silent staleness) when buildKnowledgeMeta breaks.
   const { meta } = await loadActiveMeta(projectRoot, { caller: "getKnowledgeSections" });
   const selectedStableIds = [...token.required_stable_ids, ...rewrittenAiSelected];
-  const selectedRules = sortRuleNodes(selectedStableIds.map((stableId) => findRuleNode(meta, stableId)));
+  // ISS-008: build the stable_id → node index ONCE (O(nodes)) instead of a full
+  // Object.entries scan per selected id. In the common rc.37 "pick all" path
+  // selectedStableIds ≈ every node, so the old per-id linear scan was O(n²).
+  const ruleNodeIndex = buildRuleNodeIndex(meta);
+  const selectedRules = sortRuleNodes(
+    selectedStableIds.map((stableId) => {
+      const entry = ruleNodeIndex.get(stableId);
+      if (entry === undefined) {
+        throw new Error(`Selected rule is not present in agents.meta.json: ${stableId}`);
+      }
+      return entry;
+    }),
+  );
   const diagnostics: KnowledgeSectionDiagnostic[] = [];
   const rules = [];
 
@@ -294,14 +306,17 @@ function validateAiSelections(
   }
 }
 
-function findRuleNode(meta: AgentsMeta, stableId: string): RuleNodeEntry {
+// ISS-008: one-pass index of stable_id → resolved RuleNodeEntry. Preserves the
+// previous linear-scan semantics exactly: first occurrence wins on a duplicate
+// stable_id (Object.entries iteration order), so we never overwrite an existing
+// key. Resolution of level/path/priority is identical to the old findRuleNode.
+function buildRuleNodeIndex(meta: AgentsMeta): Map<string, RuleNodeEntry> {
+  const index = new Map<string, RuleNodeEntry>();
   for (const [nodeId, node] of Object.entries(meta.nodes)) {
     const nodeStableId = node.stable_id ?? nodeId;
-
-    if (nodeStableId !== stableId) {
-      continue;
+    if (index.has(nodeStableId)) {
+      continue; // first-match-wins, mirroring the original scan's early return.
     }
-
     // v2.0.0-rc.30 TASK-003 (B.1 前置): 三段 fallback `node.level ?? node.layer
     // ?? "L2"` 简化为 `node.level ?? deriveAgentsMetaLayer(node.file)` —
     // 删 `node.layer` 中间段,移除对即将被 TASK-004 删除的 passthrough field
@@ -310,16 +325,15 @@ function findRuleNode(meta: AgentsMeta, stableId: string): RuleNodeEntry {
     // `priority` 同理保留 declared 优先 — fixture 依赖 priority sort,
     // 提早全硬编码 "medium" 会破现有测试契约。
     const level: AgentsLayer = node.level ?? deriveAgentsMetaLayer(node.file);
-    return {
+    index.set(nodeStableId, {
       stable_id: nodeStableId,
       level,
       path: normalizeKnowledgePath(node.content_ref ?? node.file),
       priority: node.priority ?? "medium",
       node,
-    };
+    });
   }
-
-  throw new Error(`Selected rule is not present in agents.meta.json: ${stableId}`);
+  return index;
 }
 
 function sortRuleNodes(rules: RuleNodeEntry[]): RuleNodeEntry[] {

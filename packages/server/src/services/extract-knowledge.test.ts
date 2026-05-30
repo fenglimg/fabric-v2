@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { readEventLedger } from "./event-ledger.js";
-import { extractKnowledge, pendingBase } from "./extract-knowledge.js";
+import { extractKnowledge, pendingBase, quoteRelevancePath } from "./extract-knowledge.js";
 import type { FabExtractKnowledgeInput } from "@fenglimg/fabric-shared/schemas/api-contracts";
 import type {
   KnowledgeArchiveAttemptedEvent,
@@ -71,6 +71,39 @@ function buildInput(partial: Partial<FabExtractKnowledgeInput>): FabExtractKnowl
     evidence_paths: partial.evidence_paths,
   } as FabExtractKnowledgeInput;
 }
+
+// W3-01 (ISS-001): caller-supplied frontmatter strings must be safely YAML-
+// escaped. Escaping only `"` was an injection hole — a trailing backslash
+// escaped the closing quote and an embedded newline broke onto a new line,
+// either of which could forge arbitrary frontmatter keys.
+describe("quoteRelevancePath (ISS-001 YAML escaping)", () => {
+  it("escapes a trailing backslash so it cannot escape the closing quote", () => {
+    const out = quoteRelevancePath("evil\\");
+    // Backslash doubled → the closing quote is NOT escaped.
+    expect(out).toBe('"evil\\\\"');
+    // Well-formed: opens and closes with an unescaped quote.
+    expect(out.startsWith('"')).toBe(true);
+    expect(out.endsWith('"')).toBe(true);
+  });
+
+  it("escapes embedded newlines/CR/tab so the value stays on one line", () => {
+    const out = quoteRelevancePath("x\nforged_key: pwned\r\tend");
+    expect(out).not.toContain("\n");
+    expect(out).not.toContain("\r");
+    expect(out).not.toContain("\t");
+    expect(out).toContain("\\n");
+    expect(out).toContain("\\r");
+    expect(out).toContain("\\t");
+  });
+
+  it("still escapes embedded double quotes", () => {
+    expect(quoteRelevancePath('a"b')).toBe('"a\\"b"');
+  });
+
+  it("leaves a plain value quoted-but-unescaped", () => {
+    expect(quoteRelevancePath("packages/cli/src")).toBe('"packages/cli/src"');
+  });
+});
 
 describe("extractKnowledge", () => {
   it("extractKnowledge_secret_scan_gate_blocks_credential_content", async () => {

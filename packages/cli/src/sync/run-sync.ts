@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node
 import { join } from "node:path";
 
 import { GLOBAL_STATE_DIR, storeRelativePath } from "@fenglimg/fabric-shared";
+import { GenericIOError } from "@fenglimg/fabric-shared/errors";
 
 import { regenerateBindingsSnapshot } from "../store/bindings-io.js";
 import { loadGlobalConfig, resolveGlobalRoot } from "../store/global-config-io.js";
@@ -87,8 +88,10 @@ function clearSession(globalRoot: string): void {
 
 // Real `git pull --rebase`, classified into the three sync outcomes. A conflict
 // exits non-zero with CONFLICT in its output; an unreachable remote is offline
-// (S17 offline-first). Any other git failure is corruption — rethrow loudly.
-function defaultPull(storeDir: string): GitRebaseOutcome {
+// (S17 offline-first). Any other git failure is corruption — surface git's own
+// diagnostic in an actionable FabricError (ISS-032), not execFileSync's bare
+// "Command failed". Exported for direct error-surfacing tests.
+export function defaultPull(storeDir: string): GitRebaseOutcome {
   try {
     execFileSync("git", ["pull", "--rebase"], {
       cwd: storeDir,
@@ -107,7 +110,15 @@ function defaultPull(storeDir: string): GitRebaseOutcome {
     ) {
       return "offline";
     }
-    throw error;
+    // ISS-032: any other failure (auth denied, detached HEAD, dirty tree, no
+    // upstream) — re-surface the git diagnostic we just captured instead of
+    // discarding it behind execFileSync's generic "Command failed" message.
+    const gitMessage = detail.trim().length > 0 ? detail.trim() : "unknown git error";
+    throw new GenericIOError(`git pull --rebase failed in ${storeDir}: ${gitMessage}`, {
+      actionHint:
+        "resolve the git issue above (e.g. authentication, a dirty working tree, or a detached HEAD), then re-run `fabric sync`",
+      details: error,
+    });
   }
 }
 
