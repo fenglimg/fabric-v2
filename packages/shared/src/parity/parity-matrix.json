@@ -103,6 +103,16 @@
       }
     },
     {
+      "id": "skill.fabric-store",
+      "surface": "skill",
+      "description": "Knowledge-store ops façade (create/add/bind/list/switch-write) delivered as a Skill (ADJ-NEWN-1/#4). Delivered to all three clients (SKILL_DESTINATIONS.store).",
+      "clients": {
+        "claudeCode": { "supported": true, "mechanism": ".claude/skills/fabric-store" },
+        "codexCLI": { "supported": true, "mechanism": ".codex/skills/fabric-store" },
+        "cursor": { "supported": true, "mechanism": ".cursor/skills/fabric-store (also reads .claude/.codex for back-compat)" }
+      }
+    },
+    {
       "id": "render.knowledge-text",
       "surface": "render",
       "description": "Plain-text / markdown minimal render set, language per project fabric_language.",

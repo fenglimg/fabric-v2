@@ -45,6 +45,8 @@ const SKILL_SLUG = {
   // ADJ-NEWN-2 coverage fill: import + sync skills are delivered too.
   "skill.fabric-import": "fabric-import",
   "skill.fabric-sync": "fabric-sync",
+  // ADJ-NEWN-1/#4: fabric-store knowledge-store ops skill.
+  "skill.fabric-store": "fabric-store",
 } as const;
 
 // ADJ-NEWN-2: per-MCP-tool store-aware contract key, so each mcp capability row

@@ -130,6 +130,12 @@ export const SKILL_DESTINATIONS = {
     ".claude/skills/fabric-sync/SKILL.md",
     ".codex/skills/fabric-sync/SKILL.md",
   ],
+  // v2.1 ADJ-NEWN-1/#4: fabric-store knowledge-store ops skill, same 2-client
+  // coverage as the sibling skills.
+  fabricStore: [
+    ".claude/skills/fabric-store/SKILL.md",
+    ".codex/skills/fabric-store/SKILL.md",
+  ],
 } as const;
 
 // rc.35 TASK-03 (P2-6): legacy Skill directories that `fabric install` must
@@ -475,6 +481,31 @@ export async function installFabricSyncSkill(
   for (const target of targets) {
     const staleMsg = inspectStaleInstall(target, source);
     const result = await copyTextIdempotent("skill-sync", source, target);
+    if (staleMsg && result.status === "written") {
+      result.message = result.message ? `${staleMsg}; ${result.message}` : staleMsg;
+    }
+    results.push(result);
+  }
+  return results;
+}
+
+/**
+ * v2.1 ADJ-NEWN-1/#4: install the fabric-store Skill — the conversational
+ * façade over `fabric store …` (create/add/bind/list/switch-write). Sibling
+ * installer to archive/review/import/sync; same 2-client coverage. Single-file
+ * skill (no `ref/` dir).
+ */
+export async function installFabricStoreSkill(
+  projectRoot: string,
+  _options: InstallOptions = {},
+): Promise<InstallStepResult[]> {
+  const source = await readTemplate(SKILL_STORE_TEMPLATE_REL);
+  validateSkillCanonicalSize(source, "fabric-store");
+  const targets = SKILL_DESTINATIONS.fabricStore.map((rel) => join(projectRoot, rel));
+  const results: InstallStepResult[] = [];
+  for (const target of targets) {
+    const staleMsg = inspectStaleInstall(target, source);
+    const result = await copyTextIdempotent("skill-store", source, target);
     if (staleMsg && result.status === "written") {
       result.message = result.message ? `${staleMsg}; ${result.message}` : staleMsg;
     }
