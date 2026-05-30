@@ -63,6 +63,7 @@ const { resolveOpaqueSummaries } = require("./lib/summary-fallback.cjs");
 const {
   readConfigNumber,
   readConfigBoolean,
+  readConfigString,
 } = require("./lib/config-cache.cjs");
 const { readTextState, writeTextState } = require("./lib/state-store.cjs");
 // v2.0.0-rc.37 NEW-30: shared client detection (replaces the inline
@@ -360,8 +361,22 @@ const DEFAULT_SUMMARY_MAX_LEN = 80;
 // fabric-config.json#hint_broad_budget_chars (range 200..20000); 0 disables.
 const DEFAULT_HINT_BROAD_BUDGET_CHARS = 2000;
 
+// v2.2 C5-budget (W2-T3): bind the injection char budget to the layered retrieval
+// budget profile. Mirrors the injectionChars column of shared/retrieval-budget.ts
+// PROFILES (kept in sync — the hook cannot require the TS resolver). The explicit
+// `hint_broad_budget_chars` knob still wins; the profile only supplies the
+// default. `balanced` (and an absent/unknown profile) keeps the historical 2000.
+const RETRIEVAL_BUDGET_INJECTION_CHARS = {
+  conservative: 1000,
+  balanced: 2000,
+  generous: 4000,
+};
+
 function readBroadBudgetChars(projectRoot) {
-  return readConfigNumber(projectRoot, "hint_broad_budget_chars", DEFAULT_HINT_BROAD_BUDGET_CHARS, {
+  const profile = readConfigString(projectRoot, "retrieval_budget_profile", "balanced");
+  const profileDefault =
+    RETRIEVAL_BUDGET_INJECTION_CHARS[profile] ?? DEFAULT_HINT_BROAD_BUDGET_CHARS;
+  return readConfigNumber(projectRoot, "hint_broad_budget_chars", profileDefault, {
     min: 0,
     max: 20000,
     floor: true,

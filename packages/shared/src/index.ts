@@ -36,6 +36,15 @@ export * from "./templates/index.js";
 export { parseCiteLine, normalizeCiteTag } from "./cite-line-parser.js";
 // v2.2 A-INFRA-2 (W1-T1-CJK): CJK-aware tokenizer for BM25 content scoring.
 export { tokenize } from "./text-tokenize.js";
+// v2.2 C5-budget (W2-T3): layered retrieval budget strategy.
+export {
+  resolveRetrievalBudget,
+  retrievalBudgetProfile,
+  DEFAULT_RETRIEVAL_BUDGET_PROFILE,
+  type RetrievalBudgetProfile,
+  type ResolvedRetrievalBudget,
+  type RetrievalBudgetOverrides,
+} from "./retrieval-budget.js";
 export type {
   CiteTag,
   CiteCommitment,

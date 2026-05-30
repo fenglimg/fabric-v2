@@ -381,4 +381,12 @@ export const fabricConfigSchema = z.object({
   // applied after BM25 ranking. Absent → library default (24). See
   // planContextTopKSchema for the range/calibration rationale.
   plan_context_top_k: planContextTopKSchema.optional(),
+  // v2.2 C5-budget (W2-T3): layered retrieval budget profile. A single coherent
+  // strategy across the injection + MCP layers — `balanced` (default) reproduces
+  // the historical per-knob defaults exactly, `conservative` / `generous` scale
+  // the whole truncation chain (top_k + payload bytes + injection chars) down /
+  // up together. Per-field knobs (plan_context_top_k, mcpPayloadLimits.*,
+  // hint_broad_budget_chars) still override the profile when set. See
+  // retrieval-budget.ts (resolveRetrievalBudget) for the resolution order.
+  retrieval_budget_profile: z.enum(["conservative", "balanced", "generous"]).optional(),
 });
