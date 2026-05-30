@@ -22,7 +22,7 @@
  *         - <id> · <summary>
  *       ...
  *     revision_hash: <hash>
- *     Use `fab_get_knowledge_sections` to fetch full content.
+ *     Load full content: `fab_recall(paths)`, or `fab_plan_context` -> `fab_get_knowledge_sections` to trim first.
  *
  *   When narrow count > 30 (grouped-truncation mode, per type):
  *     [fabric] Session start — N broad-scoped knowledge entries available (truncated):
@@ -33,7 +33,7 @@
  *       [decision] draft: 7 entries
  *       ...
  *     revision_hash: <hash>
- *     Use `fab_get_knowledge_sections` to fetch full content.
+ *     Load full content: `fab_recall(paths)`, or `fab_plan_context` -> `fab_get_knowledge_sections` to trim first.
  *
  *   When 0 entries / CLI unavailable / CLI error / parse failure:
  *     (no output — silent exit 0)
@@ -657,7 +657,18 @@ function renderSummary(payload, maxLen) {
     }
   }
 
-  lines.push("  Use `fab_get_knowledge_sections` to fetch full content.");
+  // v2.2 MC3-fix-guidance (W1-T5): unify the footer with the canonical recall
+  // flow. The prior text ("Use `fab_get_knowledge_sections` to fetch full
+  // content.") told the agent to call a tool that REQUIRES a selection_token it
+  // does not yet have — directly contradicting the bilingual next-step nudge
+  // (and AGENTS.md) which leads with `fab_recall`. Footer now states the same
+  // two-path model: single-step `fab_recall`, or `fab_plan_context` →
+  // `fab_get_knowledge_sections` when the bodies must be trimmed first. Keeps
+  // the `fab_get_knowledge_sections` token (downstream substring contracts) but
+  // sequences it correctly behind the token-issuing `fab_plan_context`.
+  lines.push(
+    "  Load full content: `fab_recall(paths)` (one step), or `fab_plan_context` → `fab_get_knowledge_sections` to trim first.",
+  );
   return lines;
 }
 
